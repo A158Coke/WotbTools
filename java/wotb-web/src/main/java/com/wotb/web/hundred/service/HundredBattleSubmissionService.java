@@ -5,6 +5,7 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.TankInfo;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.ref.Tankopedia;
+import com.wotb.web.hof.service.HallOfFameUploadService;
 import com.wotb.web.hundred.dto.HundredAdminDetailDto;
 import com.wotb.web.hundred.dto.HundredAdminPageDto;
 import com.wotb.web.hundred.dto.HundredCreateResult;
@@ -27,10 +28,15 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -47,8 +53,10 @@ import java.util.Set;
  * </ul>
  *
  * <p>proof 生命周期：截图以 base64 data URL 存 DB（同 Boost Apply 模式），审核终态事务内清空，
- * 与业务状态原子提交——不存在「文件删除失败回滚业务状态」问题；5 个 replay 不落库，
- * 创建时解析校验后即丢弃（Spring multipart 临时文件自动清理）。</p>
+ * 与业务状态原子提交——不存在「文件删除失败回滚业务状态」问题；5 个原始 {@code .wotbreplay}
+ * 由 {@link HundredReplayEvidenceService} 内容寻址持久化（{@code hundred_battle_replay_evidence} 元数据
+ * + 物理文件，PENDING 全程可审核），审核终态（APPROVE/REJECT/CANCEL）同事务删元数据行并在
+ * commit 后 best-effort 清理物理文件（跨表引用计数，失败仅 WARN 保留 orphan）。</p>
  */
 @Service
 public class HundredBattleSubmissionService {
@@ -71,15 +79,18 @@ public class HundredBattleSubmissionService {
     private final HundredBattleSubmissionRepository repository;
     private final HundredBattleMapper mapper;
     private final UserProfileService userProfileService;
+    private final HundredReplayEvidenceService evidenceService;
     private final Tankopedia tankopedia = Tankopedia.load();
 
     public HundredBattleSubmissionService(
             final HundredBattleSubmissionRepository repository,
             final HundredBattleMapper mapper,
-            final UserProfileService userProfileService) {
+            final UserProfileService userProfileService,
+            final HundredReplayEvidenceService evidenceService) {
         this.repository = repository;
         this.mapper = mapper;
         this.userProfileService = userProfileService;
+        this.evidenceService = evidenceService;
     }
 
     // ── Phase 3：Submission ──────────────────────────────────────────────
@@ -87,7 +98,10 @@ public class HundredBattleSubmissionService {
     /**
      * 创建百场 submission（需登录且 Profile 已配置 gameId/nickname）。
      * 硬门禁：Tier X authoritative 校验 + 固定 1 张截图 + 正好 5 个 replay 全部解析成功、
-     * gameId/vehicleId 匹配、5 场不同 battle；任意失败 → 整单失败，不进入 PENDING。
+     * gameId/vehicleId 匹配、5 场不同 battle；任意失败 → 整单失败，不进入 PENDING，零持久化残留。
+     * 全部校验通过后：5 个原始 replay 内容寻址落盘（幂等）→ 单事务写 submission + 恰好 5 行
+     * {@code hundred_battle_replay_evidence}；文件存储失败或 DB 写入失败 → 整单失败 +
+     * 已存文件 best-effort 清理（引用计数保护），绝不产生「只保存 3/5 个 replay 的合法 PENDING」。
      */
     @Transactional
     public HundredCreateResult createSubmission(final String userId,
@@ -126,9 +140,14 @@ public class HundredBattleSubmissionService {
         }
 
         // 硬门禁：5 个 replay 全部解析成功 + gameId/vehicleId 匹配 + 5 场不同 battle。
+        // 解析循环同时收集证据持久化所需数据（每文件只读一次字节；originalFilename 仅用于展示）。
         final Set<String> arenaIds = new HashSet<>();
+        final List<HundredReplayEvidenceService.PendingReplay> pendingReplays = new ArrayList<>();
+        int slot = 0;
         for (final MultipartFile file : replays) {
-            final Battle battle = parse(file);
+            slot++;
+            final byte[] bytes = readBytes(file);
+            final Battle battle = parse(bytes);
             if (!StringUtils.hasText(battle.arenaId)) {
                 throw new IllegalArgumentException("INVALID_REPLAY_FILE");
             }
@@ -142,6 +161,9 @@ public class HundredBattleSubmissionService {
             if (!arenaIds.add(battle.arenaId)) {
                 throw new IllegalArgumentException("HUNDRED_REPLAY_DUPLICATE_BATTLE");
             }
+            pendingReplays.add(new HundredReplayEvidenceService.PendingReplay(
+                    slot, HallOfFameUploadService.originalName(file), sha256(bytes), bytes.length,
+                    battle.arenaId, bytes));
         }
         if (arenaIds.size() != REPLAY_COUNT) {
             throw new IllegalArgumentException("HUNDRED_REPLAY_DUPLICATE_BATTLE");
@@ -154,6 +176,13 @@ public class HundredBattleSubmissionService {
                 && claimedAverageDamage <= current.getApprovedAverageDamage()) {
             throw new IllegalStateException("HUNDRED_NOT_HIGHER");
         }
+
+        // 全部硬门禁通过后落盘 5 个原始回放（内容寻址幂等；失败时已存文件 best-effort 清理）。
+        // 文件落盘在 DB 写入之前：DB 提交成功 ⇒ 物理文件必已存在（不变量「DB 引用 H ⇒ H 存在」）。
+        evidenceService.storeAll(pendingReplays);
+        final List<String> storedHashes = pendingReplays.stream()
+                .map(HundredReplayEvidenceService.PendingReplay::sha256)
+                .toList();
 
         final HundredBattleSubmission submission = new HundredBattleSubmission();
         submission.setUserKeycloakId(userId);
@@ -169,7 +198,16 @@ public class HundredBattleSubmissionService {
             repository.saveAndFlush(submission);
         } catch (final DataIntegrityViolationException e) {
             // 并发双提交竞态：partial unique index 只允许一条 PENDING。
+            evidenceService.cleanupStoredFiles(storedHashes);
             throw new IllegalStateException("HUNDRED_PENDING_EXISTS");
+        }
+        try {
+            // submission 与 5 行 evidence 同事务原子写入；attach 失败 → 事务回滚 submission，
+            // 已落盘文件 best-effort 清理（引用计数保护，含 HoF 共享引用）。
+            evidenceService.attach(submission.getId(), pendingReplays);
+        } catch (final RuntimeException e) {
+            evidenceService.cleanupStoredFiles(storedHashes);
+            throw e;
         }
         return new HundredCreateResult(submission.getId(), submission.getStatus());
     }
@@ -384,12 +422,30 @@ public class HundredBattleSubmissionService {
         return normalized;
     }
 
-    /** 解析失败 → 稳定 400 INVALID_REPLAY_FILE。 */
-    private static Battle parse(final MultipartFile file) {
+    /** 读取 MultipartFile 原始字节（读取失败 → 稳定 400 INVALID_REPLAY_FILE，非 500）。 */
+    private static byte[] readBytes(final MultipartFile file) {
         try {
-            return ReplayParser.parse(file.getBytes());
+            return file.getBytes();
+        } catch (final IOException e) {
+            throw new IllegalArgumentException("INVALID_REPLAY_FILE");
+        }
+    }
+
+    /** 解析失败 → 稳定 400 INVALID_REPLAY_FILE。 */
+    private static Battle parse(final byte[] bytes) {
+        try {
+            return ReplayParser.parse(bytes);
         } catch (final Exception e) {
             throw new IllegalArgumentException("INVALID_REPLAY_FILE");
+        }
+    }
+
+    private static String sha256(final byte[] data) {
+        try {
+            final MessageDigest md = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(md.digest(data));
+        } catch (final NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
         }
     }
 

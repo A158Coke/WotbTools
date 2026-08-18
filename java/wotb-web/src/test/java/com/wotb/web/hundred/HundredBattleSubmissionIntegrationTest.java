@@ -1,8 +1,13 @@
 package com.wotb.web.hundred;
 
+import com.wotb.web.hof.dto.ReplayDownload;
+import com.wotb.web.hundred.dto.HundredReplayEvidenceDto;
+import com.wotb.web.hundred.entity.HundredBattleReplayEvidence;
 import com.wotb.web.hundred.entity.HundredBattleSubmission;
+import com.wotb.web.hundred.repository.HundredBattleReplayEvidenceRepository;
 import com.wotb.web.hundred.repository.HundredBattleSubmissionRepository;
 import com.wotb.web.hundred.service.HundredBattleSubmissionService;
+import com.wotb.web.hundred.service.HundredReplayEvidenceService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,10 +19,20 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -54,10 +69,18 @@ class HundredBattleSubmissionIntegrationTest {
     HundredBattleSubmissionRepository repository;
 
     @Autowired
+    HundredBattleReplayEvidenceRepository evidenceRepository;
+
+    @Autowired
     HundredBattleSubmissionService service;
+
+    @Autowired
+    HundredReplayEvidenceService evidenceService;
 
     @BeforeEach
     void clean() {
+        // evidence 行有 FK RESTRICT → 先清 evidence 再清 submission
+        evidenceRepository.deleteAll();
         repository.deleteAll();
         repository.flush();
     }
@@ -122,5 +145,60 @@ class HundredBattleSubmissionIntegrationTest {
         assertEquals("PENDING", pendingRow.getStatus(), "事务回滚后 PENDING 不得留下半完成状态");
         assertEquals(1, currentCount(), "rollback 后 CURRENT 数量不变");
         assertTrue(pendingRow.getApprovedAverageDamage() == null, "PENDING 不得残留 approved 值");
+    }
+
+    /**
+     * Evidence 全生命周期（真实 PG + 真实文件系统，storage 目录 data/replays-it）：
+     * storeAll 落盘 5 文件 → attach 恰好 5 行（slot 1..5）→ admin list/download 可读 →
+     * discard 终态清理：行删除 + 物理文件删除（无其他引用）。
+     * createSubmission 的解析/校验部分由单元测试（mock ReplayParser）覆盖。
+     */
+    @Test
+    void evidencePersistenceRoundTripWithRealStorage() throws Exception {
+        final HundredBattleSubmission s = insertRow("PENDING", 4200, 150);
+        final Path storageDir = Path.of("data/replays-it");
+
+        final List<HundredReplayEvidenceService.PendingReplay> replays = new ArrayList<>();
+        for (int i = 1; i <= 5; i++) {
+            final byte[] data = ("evidence-replay-" + i + "-" + UUID.randomUUID()).getBytes();
+            replays.add(new HundredReplayEvidenceService.PendingReplay(
+                    i, "battle-" + i + ".wotbreplay", sha256(data), data.length, "arena-" + i, data));
+        }
+        evidenceService.storeAll(replays);
+        evidenceService.attach(s.getId(), replays);
+
+        // 恰好 5 行 + slot 顺序 + 物理文件存在（DB 引用 H ⇒ 物理 H 存在）
+        final List<HundredBattleReplayEvidence> rows =
+                evidenceRepository.findBySubmissionIdOrderBySlotAsc(s.getId());
+        assertEquals(5, rows.size());
+        assertEquals(List.of(1, 2, 3, 4, 5),
+                rows.stream().map(HundredBattleReplayEvidence::getSlot).toList());
+        for (final HundredBattleReplayEvidence row : rows) {
+            assertTrue(Files.exists(storageDir.resolve(row.getSha256() + ".wotbreplay")),
+                    "evidence 物理文件必须存在: " + row.getSha256());
+        }
+
+        // admin list 元数据 + 下载原始字节
+        final List<HundredReplayEvidenceDto> dtos = evidenceService.adminListEvidence(s.getId());
+        assertEquals(5, dtos.size());
+        assertEquals("battle-3.wotbreplay", dtos.get(2).originalFilename());
+        final ReplayDownload download = evidenceService.downloadEvidence(s.getId(), rows.get(2).getId());
+        assertArrayEquals(replays.get(2).data(), download.data(), "下载必须是用户原始字节");
+
+        // 终态清理：行删除 + 物理文件删除（本表与 HoF 均无引用）
+        final String firstHash = rows.get(0).getSha256();
+        evidenceService.discardForSubmission(s.getId());
+        assertTrue(evidenceRepository.findBySubmissionId(s.getId()).isEmpty());
+        assertFalse(Files.exists(storageDir.resolve(firstHash + ".wotbreplay")),
+                "无引用后物理文件应被清理");
+    }
+
+    private static String sha256(final byte[] data) {
+        try {
+            final MessageDigest md = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(md.digest(data));
+        } catch (final NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

@@ -236,9 +236,37 @@ export async function hofAdminHundredList(params = {}) {
 }
 
 /** 百场审核详情（PENDING 时含 proofScreenshot）。 */
+/** 百场审核详情（PENDING 时含 proofScreenshot）。 */
 export async function hofAdminHundredDetail(id) {
   const r = await hofAdminRequest(`/api/admin/hof/hundred/submissions/${encodeURIComponent(id)}`)
   return r.json()
+}
+
+/** 百场审核证据列表（admin-only）：slot/originalFilename/fileSize/arenaId/sha256。旧 PENDING → 空数组。 */
+export async function hofAdminHundredReplays(submissionId) {
+  const r = await hofAdminRequest(`/api/admin/hof/hundred/submissions/${encodeURIComponent(submissionId)}/replays`)
+  return r.json()
+}
+
+/**
+ * 下载单个审核回放（admin-only）：authenticated fetch → blob → createObjectURL → 触发下载。
+ * 禁止裸 <a href>（SPA 不会自动携带 Authorization: Bearer）。
+ */
+export async function hofAdminHundredReplayDownload(submissionId, replayId) {
+  const r = await hofAdminRequest(
+    `/api/admin/hof/hundred/submissions/${encodeURIComponent(submissionId)}/replays/${encodeURIComponent(replayId)}`
+  )
+  const blob = await r.blob()
+  const cd = r.headers.get('Content-Disposition') || ''
+  const name = filenameFromDisposition(cd) || `replay-${replayId}.wotbreplay`
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }
 
 /** APPROVE：{approvedAverageDamage, approvedBattleCount}。 */

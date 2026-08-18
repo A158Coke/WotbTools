@@ -68,7 +68,14 @@
 - `findByIdForUpdate`（PESSIMISTIC_WRITE 行锁）使 APPROVE / REJECT / CANCEL 从 PENDING → terminal **只成功一次**；败者得 `HUNDRED_SUBMISSION_NOT_PENDING`（409）。
 - APPROVE 事务内重新读取 CURRENT（行锁）并按管理员最终 `approvedAverageDamage > current.approvedAverageDamage` 比较（`HUNDRED_APPROVE_STALE`，409）；旧 CURRENT → SUPERSEDED，新 submission → CURRENT。
 - REJECT / 删除 CURRENT 原因强制（分类 + OTHER 必填文本）。
-- **proof 生命周期**：截图以 base64 存 DB（临时私有审核资产），审核终态事务内清空（不永久保存）；5 个 replay 不落库（multipart 临时文件由 Spring 清理）。proof 绝不进入公开 replay 下载体系：公开榜只输出审核后快照。
+- **proof 生命周期**：截图以 base64 存 DB（临时私有审核资产），审核终态事务内清空（不永久保存）；5 个原始 replay 由 `hundred_battle_replay_evidence`（Flyway V19）**内容寻址持久化**（复用 `HallOfFameReplayStorage`，`{HOF_REPLAY_DIR}/{sha256}.wotbreplay`，幂等/原子/防路径穿越），PENDING 全程可审核；审核终态（APPROVE/REJECT/CANCEL）同事务删除 evidence 行并在 commit 后 best-effort 清理物理文件（**跨表引用计数**：hall_of_fame_record 与本表均无引用才删，失败仅 WARN 保留 orphan，不回滚业务状态）。proof 绝不进入公开 replay 下载体系：公开榜只输出审核后快照。
+
+## 回放审核证据（admin-only）
+
+- **存储**：与名人堂单场回放共享同一内容寻址存储目录（`HOF_REPLAY_DIR`，生产 `/data/replays` volume）；`original_filename` 仅用于展示 / Content-Disposition（basename + 限长，绝不参与路径）；`sha256` 即存储 key（服务端生成）。一个 submission 恰好 5 行 evidence（`submission_id + slot` 唯一，service 单事务保证），任意文件存储失败 → 整单失败 + 已存文件 best-effort 清理，绝不产生部分 evidence 的合法 PENDING。
+- **访问边界**：`/api/admin/hof/hundred/**` 要求 `HoF-admin` 或 `wotbtools-admin`（`SecurityConfig` `HOF_ADMIN_PATTERN`）。普通登录用户与匿名用户均无法读取审核证据（猜 ID 不可下载；下载端点校验 replayId 必须属于 submissionId）。
+- **Legacy PENDING**：证据持久化功能上线前创建的旧 PENDING 无 evidence 行 → replay 列表返回空数组，审核 UI 显示明确提示「原始回放不可用，请拒绝并要求用户重新提交」；不伪造 replayAvailable、不报错。
+- **机器验证与原始证据的关系**：现有 4 项机器验证（Parsed / GameID match / Vehicle match / Distinct battles）保留展示，但只是初审结果；管理员以原始截图 + 5 个原始 replay 为准做最终人工判断。
 
 ## API
 
@@ -80,6 +87,8 @@
 | `GET /api/users/hundred/status` | 登录 | 个人中心：CURRENT / PENDING / 最近拒绝 |
 | `GET /api/admin/hof/hundred/submissions` | HoF-admin/wotbtools-admin | 审核列表（status 过滤） |
 | `GET /api/admin/hof/hundred/submissions/{id}` | 同上 | 审核详情（proofScreenshot 仅 PENDING 返回） |
+| `GET /api/admin/hof/hundred/submissions/{id}/replays` | 同上 | 回放审核证据 metadata 列表（旧 PENDING → 空） |
+| `GET /api/admin/hof/hundred/submissions/{submissionId}/replays/{replayId}` | 同上 | 下载单个原始 .wotbreplay（ownership 校验 + UTF-8 filename） |
 | `POST /api/admin/hof/hundred/submissions/{id}/approve` | 同上 | 通过（approved 值可修正） |
 | `POST /api/admin/hof/hundred/submissions/{id}/reject` | 同上 | 拒绝（原因强制） |
 | `POST /api/admin/hof/hundred/submissions/{id}/delete` | 同上 | 删除 CURRENT（原因强制，不恢复 SUPERSEDED） |

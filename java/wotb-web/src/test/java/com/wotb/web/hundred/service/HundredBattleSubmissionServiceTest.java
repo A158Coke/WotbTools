@@ -3,6 +3,7 @@ package com.wotb.web.hundred.service;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.ReplayParser;
+import com.wotb.web.hof.exception.HallOfFameStorageException;
 import com.wotb.web.hundred.dto.HundredLeaderboardPageDto;
 import com.wotb.web.hundred.dto.HundredSubmissionSummaryDto;
 import com.wotb.web.hundred.entity.HundredBattleSubmission;
@@ -32,9 +33,11 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -61,15 +64,24 @@ class HundredBattleSubmissionServiceTest {
     @Mock
     UserProfileService userProfileService;
 
+    @Mock
+    HundredReplayEvidenceService evidenceService;
+
     HundredBattleSubmissionService service;
 
     @BeforeEach
     void setUp() {
         // 真实 mapper（无依赖），便于断言返回 DTO；Service 构造器注入，无 Spring。
-        service = new HundredBattleSubmissionService(repository, new HundredBattleMapper(), userProfileService);
+        service = new HundredBattleSubmissionService(
+                repository, new HundredBattleMapper(), userProfileService, evidenceService);
         // 未触发终态保存的用例不报 UnnecessaryStubbing（lenient）；已触发时返回入参避免 mapper 吃 null。
         org.mockito.Mockito.lenient().when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        org.mockito.Mockito.lenient().when(repository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        // saveAndFlush 返回带 id 的实体：createSubmission 需要 submission.getId() 供 evidence attach（无 DB 的真实 id）。
+        org.mockito.Mockito.lenient().when(repository.saveAndFlush(any())).thenAnswer(inv -> {
+            final HundredBattleSubmission s = inv.getArgument(0);
+            s.setId(10L);
+            return s;
+        });
     }
 
     // ── helpers ──────────────────────────────────────────────────────────
@@ -159,7 +171,6 @@ class HundredBattleSubmissionServiceTest {
     @Test
     void validSubmissionCreatesPendingWithFrozenSnapshot() throws Exception {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
-        when(repository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
 
         try (final var mocked = mockStatic(ReplayParser.class)) {
             mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv -> {
@@ -385,7 +396,6 @@ class HundredBattleSubmissionServiceTest {
         org.mockito.Mockito.lenient()
                 .when(repository.existsByUserKeycloakIdAndVehicleIdAndStatus(USER, TIER10_VEHICLE, "PENDING"))
                 .thenReturn(true);
-        when(repository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
 
         try (final var mocked = mockStatic(ReplayParser.class)) {
             mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv -> {
@@ -427,7 +437,6 @@ class HundredBattleSubmissionServiceTest {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
         when(repository.findByUserKeycloakIdAndVehicleIdAndStatus(USER, TIER10_VEHICLE, "CURRENT"))
                 .thenReturn(Optional.of(currentSubmission(4000)));
-        when(repository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
 
         try (final var mocked = mockStatic(ReplayParser.class)) {
             mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv ->
@@ -476,7 +485,6 @@ class HundredBattleSubmissionServiceTest {
     @Test
     void noCurrentWithHistoricalDeletedOrSupersededAllowsRestart() throws Exception {
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
-        when(repository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
 
         try (final var mocked = mockStatic(ReplayParser.class)) {
             mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv ->
@@ -786,5 +794,103 @@ class HundredBattleSubmissionServiceTest {
         }
         verify(repository, never()).saveAndFlush(any());
         verify(repository, never()).save(any());
+    }
+
+    // ── Evidence 持久化（V19：5 个 replay 内容寻址落盘 + metadata 入库）──────────
+
+    @Test
+    void validSubmissionStoresAndAttachesAllFiveEvidence() throws Exception {
+        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+
+        try (final var mocked = mockStatic(ReplayParser.class)) {
+            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv ->
+                    battle(new String((byte[]) inv.getArgument(0))));
+
+            service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                    "data:image/png;base64,AAAA", fiveReplays());
+        }
+
+        // 5 个 replay 全部落盘
+        verify(evidenceService).storeAll(anyList());
+        // attach 收到恰好 5 行，slot 1..5、原始文件名、内容寻址 hash（SHA-256 of arena bytes）
+        @SuppressWarnings("unchecked")
+        final ArgumentCaptor<List<HundredReplayEvidenceService.PendingReplay>> captor =
+                ArgumentCaptor.forClass(List.class);
+        verify(evidenceService).attach(eq(10L), captor.capture());
+        final List<HundredReplayEvidenceService.PendingReplay> pending = captor.getValue();
+        assertThat(pending).hasSize(5);
+        assertThat(pending).extracting(HundredReplayEvidenceService.PendingReplay::slot)
+                .containsExactly(1, 2, 3, 4, 5);
+        assertThat(pending).extracting(HundredReplayEvidenceService.PendingReplay::originalFilename)
+                .containsExactly("battle-0.wotbreplay", "battle-1.wotbreplay", "battle-2.wotbreplay",
+                        "battle-3.wotbreplay", "battle-4.wotbreplay");
+        // fileSize 与原始字节一致；sha256 为真实 SHA-256（不是用户提供的路径/文件名）
+        assertThat(pending).allSatisfy(p -> {
+            assertThat(p.fileSize()).isEqualTo(p.data().length);
+            assertThat(p.sha256()).hasSize(64);
+        });
+        assertThat(pending.get(0).arenaId()).isEqualTo("a1");
+        assertThat(pending.get(4).arenaId()).isEqualTo("a5");
+    }
+
+    @Test
+    void validationFailureNeverStoresOrAttachesEvidence() throws Exception {
+        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+
+        try (final var mocked = mockStatic(ReplayParser.class)) {
+            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv ->
+                    battle(new String((byte[]) inv.getArgument(0))));
+
+            // 第 2 份与第 1 份同 arena → 硬门禁失败，整单拒绝
+            assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                    "data:image/png;base64,AAAA", replays(5, "a1", "a1", "a3", "a4", "a5")))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("HUNDRED_REPLAY_DUPLICATE_BATTLE");
+        }
+        verify(evidenceService, never()).storeAll(anyList());
+        verify(evidenceService, never()).attach(anyLong(), anyList());
+        verify(evidenceService, never()).cleanupStoredFiles(anyList());
+        verify(repository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void storageFailureAbortsSubmissionWithoutPersisting() throws Exception {
+        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        doThrow(new HallOfFameStorageException("REPLAY_STORAGE_FULL",
+                org.springframework.http.HttpStatus.INSUFFICIENT_STORAGE, "disk full"))
+                .when(evidenceService).storeAll(anyList());
+
+        try (final var mocked = mockStatic(ReplayParser.class)) {
+            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv ->
+                    battle(new String((byte[]) inv.getArgument(0))));
+
+            assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                    "data:image/png;base64,AAAA", fiveReplays()))
+                    .isInstanceOf(HallOfFameStorageException.class);
+        }
+        // 任意文件存储失败 → submission 绝不创建、evidence 绝不写入
+        verify(repository, never()).saveAndFlush(any());
+        verify(evidenceService, never()).attach(anyLong(), anyList());
+    }
+
+    @Test
+    void pendingUniqueRaceCleansUpStoredFiles() throws Exception {
+        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(repository.saveAndFlush(any()))
+                .thenThrow(new DataIntegrityViolationException("uk_hundred_battle_pending_user_vehicle"));
+
+        try (final var mocked = mockStatic(ReplayParser.class)) {
+            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv ->
+                    battle(new String((byte[]) inv.getArgument(0))));
+
+            assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                    "data:image/png;base64,AAAA", fiveReplays()))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("HUNDRED_PENDING_EXISTS");
+        }
+        // DB 写入失败 → 已落盘文件 best-effort 清理（不允许留下无 DB 引用的孤儿文件常态）
+        verify(evidenceService).storeAll(anyList());
+        verify(evidenceService).cleanupStoredFiles(anyList());
+        verify(evidenceService, never()).attach(anyLong(), anyList());
     }
 }
