@@ -390,6 +390,13 @@
         "size": "每页",
         "close": "关闭",
         "cancel": "取消",
+        "evidence": "审核证据",
+        "downloadScreenshot": "下载截图",
+        "zoomClose": "关闭大图",
+        "replayDownload": "下载回放",
+        "legacyNoReplays": "该申请创建于回放证据持久化功能上线前，原始回放不可用。请拒绝并要求用户重新提交。",
+        "evidenceIncomplete": "审核证据不完整（需恰好 5 个回放），无法通过。",
+        "approveDisabledHint": "审核证据不完整，无法通过",
         "approvedBattlesMin": "通过场次不能少于 100 场"
     },
     "player_labels": {

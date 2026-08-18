@@ -111,8 +111,9 @@ public class HallOfFameUploadService {
     /**
      * 原始文件名仅用于 Content-Disposition：取 basename 并限长（≤255），绝不参与文件路径。
      * 无有效 basename（如 "/"、""、纯分隔符、空白）→ 安全 fallback "replay.wotbreplay"。
+     * public 供百场 evidence 复用（同语义，避免两处漂移）。
      */
-    static String originalName(final MultipartFile file) {
+    public static String originalName(final MultipartFile file) {
         final String name = file.getOriginalFilename();
         String base = "";
         if (name != null) {
