@@ -1,0 +1,407 @@
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useAuth } from '../composables/useAuth.js'
+import { mapLabel } from '../utils/helpers.js'
+import { apiErrorLabel } from '../utils/display.js'
+import * as api from '../utils/api.js'
+
+const { t, te, locale } = useI18n()
+const { initPromise, tokenParsed, login } = useAuth()
+
+// 授权在 auth 初始化完成后决定（不先渲染再等 403）；直接访问无权限 → 明确无权限状态。
+const canAdmin = computed(() => {
+  const roles = tokenParsed.value?.realm_access?.roles
+  return Array.isArray(roles) && (roles.includes('HoF-admin') || roles.includes('wotbtools-admin'))
+})
+
+const authPhase = ref('init') // init | login | ready
+const denied = ref(false)
+const error = ref('')
+const activeTab = ref('records')
+
+// ── 名人堂记录 tab ──
+const rows = ref([])
+const loading = ref(false)
+const page = ref(1)
+const size = ref(50)
+const totalPages = ref(0)
+const totalItems = ref(0)
+const fNickname = ref('')
+const fAccountId = ref('')
+const fArenaId = ref('')
+const fUploadedBy = ref('')
+const fBattleType = ref('')
+const fTankId = ref('')
+const fReplayAvailable = ref('')
+const fSort = ref('')
+let gen = 0
+
+// ── 操作日志 tab（只读）──
+const auditRows = ref([])
+const auditLoading = ref(false)
+const auditPage = ref(1)
+const auditTotalPages = ref(0)
+const auditTotalItems = ref(0)
+let auditGen = 0
+
+// ── 删除确认 ──
+const deleteTarget = ref(null)
+const deleting = ref(false)
+const deleteMsg = ref('')
+
+onMounted(async () => {
+  let loggedIn = false
+  try {
+    loggedIn = Boolean(await initPromise)
+  } catch {
+    loggedIn = false
+  }
+  if (!loggedIn) {
+    authPhase.value = 'login'
+    login('hof-admin')
+    return
+  }
+  authPhase.value = 'ready'
+  if (!canAdmin.value) {
+    denied.value = true
+    return
+  }
+  loadRecords()
+})
+
+async function loadRecords() {
+  const g = ++gen
+  loading.value = true
+  error.value = ''
+  try {
+    const params = { page: page.value, size: size.value }
+    if (fNickname.value.trim()) params.nickname = fNickname.value.trim()
+    if (fAccountId.value.trim()) params.accountId = fAccountId.value.trim()
+    if (fArenaId.value.trim()) params.arenaId = fArenaId.value.trim()
+    if (fUploadedBy.value.trim()) params.uploadedBy = fUploadedBy.value.trim()
+    if (fBattleType.value) params.battleType = fBattleType.value
+    if (fTankId.value.trim()) params.tankId = fTankId.value.trim()
+    if (fReplayAvailable.value !== '') params.replayAvailable = fReplayAvailable.value === 'true'
+    if (fSort.value) params.sort = fSort.value
+    const res = await api.hofAdminList(params)
+    if (g !== gen) return
+    rows.value = res.items || []
+    totalPages.value = res.totalPages || 0
+    totalItems.value = res.totalItems || 0
+  } catch (e) {
+    if (g === gen) error.value = apiErrorLabel(t, te, e)
+  } finally {
+    if (g === gen) loading.value = false
+  }
+}
+
+function search() {
+  page.value = 1
+  loadRecords()
+}
+
+function onSizeChange() {
+  page.value = 1
+  loadRecords()
+}
+
+function goPage(p) {
+  page.value = p
+  loadRecords()
+}
+
+async function loadAudit() {
+  const g = ++auditGen
+  auditLoading.value = true
+  try {
+    const res = await api.hofAdminAudit({ page: auditPage.value, size: size.value })
+    if (g !== auditGen) return
+    auditRows.value = res.items || []
+    auditTotalPages.value = res.totalPages || 0
+    auditTotalItems.value = res.totalItems || 0
+  } catch (e) {
+    if (g === auditGen) error.value = apiErrorLabel(t, te, e)
+  } finally {
+    if (g === auditGen) auditLoading.value = false
+  }
+}
+
+function switchTab(tab) {
+  activeTab.value = tab
+  if (tab === 'audit' && !auditRows.value.length) loadAudit()
+}
+
+async function download(id) {
+  try {
+    await api.hofAdminDownload(id)
+  } catch (e) {
+    error.value = apiErrorLabel(t, te, e)
+  }
+}
+
+// Hard delete 必须二次确认；单击删除不立即执行。
+function askDelete(row) {
+  deleteTarget.value = row
+  deleteMsg.value = ''
+}
+
+function cancelDelete() {
+  deleteTarget.value = null
+  deleteMsg.value = ''
+}
+
+async function confirmDelete() {
+  if (!deleteTarget.value || deleting.value) return
+  deleting.value = true
+  deleteMsg.value = ''
+  try {
+    await api.hofAdminDelete(deleteTarget.value.id)
+    cancelDelete()
+    await loadRecords()
+  } catch (e) {
+    deleteMsg.value = apiErrorLabel(t, te, e)
+  } finally {
+    deleting.value = false
+  }
+}
+
+function fmtTime(s) {
+  if (!s) return ''
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return ''
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+function battleTypeLabel(tp) {
+  if (tp === 'RATING') return t('hof.battleType.rating')
+  if (tp === 'RANDOM') return t('hof.battleType.random')
+  return tp || '-'
+}
+</script>
+
+<template>
+  <div class="hof-admin">
+    <!-- 登录流程 -->
+    <div v-if="authPhase === 'login'" class="hof-admin-login muted">{{ $t('hofAdmin.login') }}</div>
+
+    <!-- 无权限 -->
+    <div v-else-if="denied" class="hof-admin-denied">
+      <h2>{{ $t('hofAdmin.deniedTitle') }}</h2>
+      <p>{{ $t('hofAdmin.deniedHint') }}</p>
+    </div>
+
+    <template v-else>
+      <div class="hof-admin-tabs">
+        <button :class="{ active: activeTab === 'records' }" @click="switchTab('records')">{{ $t('hofAdmin.recordsTab') }}</button>
+        <button :class="{ active: activeTab === 'audit' }" @click="switchTab('audit')">{{ $t('hofAdmin.auditTab') }}</button>
+      </div>
+
+      <!-- ── 名人堂记录 ── -->
+      <div v-if="activeTab === 'records'">
+        <div class="hof-admin-filters">
+          <input v-model="fNickname" :placeholder="$t('hofAdmin.fNickname')" @keyup.enter="search" />
+          <input v-model="fAccountId" :placeholder="$t('hofAdmin.fAccountId')" @keyup.enter="search" />
+          <input v-model="fArenaId" :placeholder="$t('hofAdmin.fArenaId')" @keyup.enter="search" />
+          <input v-model="fUploadedBy" :placeholder="$t('hofAdmin.fUploadedBy')" @keyup.enter="search" />
+          <input v-model="fTankId" :placeholder="$t('hofAdmin.fTankId')" @keyup.enter="search" />
+          <select v-model="fBattleType" @change="search">
+            <option value="">{{ $t('hofAdmin.battleTypeAll') }}</option>
+            <option value="RANDOM">{{ $t('hof.battleType.random') }}</option>
+            <option value="RATING">{{ $t('hof.battleType.rating') }}</option>
+          </select>
+          <select v-model="fReplayAvailable" @change="search">
+            <option value="">{{ $t('hofAdmin.replayAll') }}</option>
+            <option value="true">{{ $t('hofAdmin.replayAvailable') }}</option>
+            <option value="false">{{ $t('hofAdmin.replayMissing') }}</option>
+          </select>
+          <select v-model="fSort" @change="search">
+            <option value="">{{ $t('hofAdmin.sortDamage') }}</option>
+            <option value="battle_time">{{ $t('hofAdmin.sortBattleTime') }}</option>
+            <option value="upload_time">{{ $t('hofAdmin.sortUploadTime') }}</option>
+          </select>
+          <button class="btn-sm" @click="search">{{ $t('hofAdmin.search') }}</button>
+        </div>
+
+        <p v-if="error" class="error">{{ error }}</p>
+        <p v-if="loading" class="muted">{{ $t('hofAdmin.loading') }}</p>
+        <p v-else-if="!rows.length" class="muted">{{ $t('hofAdmin.empty') }}</p>
+        <div v-else class="tablewrap">
+          <table class="hof-admin-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>{{ $t('hofAdmin.player') }}</th>
+                <th>{{ $t('hofAdmin.accountId') }}</th>
+                <th>{{ $t('hofAdmin.tank') }}</th>
+                <th>{{ $t('hofAdmin.battleType') }}</th>
+                <th>arenaBonusType</th>
+                <th>{{ $t('hofAdmin.damage') }}</th>
+                <th>{{ $t('hofAdmin.map') }}</th>
+                <th>{{ $t('hofAdmin.version') }}</th>
+                <th>{{ $t('hofAdmin.battleTime') }}</th>
+                <th>{{ $t('hofAdmin.uploadTime') }}</th>
+                <th>{{ $t('hofAdmin.replayHash') }}</th>
+                <th>{{ $t('hofAdmin.replaySize') }}</th>
+                <th>{{ $t('hofAdmin.uploadedBy') }}</th>
+                <th>{{ $t('hofAdmin.replay') }}</th>
+                <th>{{ $t('hofAdmin.actions') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in rows" :key="r.id">
+                <td class="muted">{{ r.id }}</td>
+                <td>{{ r.nickname }}</td>
+                <td class="muted">{{ r.accountId }}</td>
+                <td>{{ r.tankName }}</td>
+                <td><span class="bt-badge" :class="r.battleType === 'RATING' ? 'bt-rating' : 'bt-random'">{{ battleTypeLabel(r.battleType) }}</span></td>
+                <td class="muted">{{ r.arenaBonusType }}</td>
+                <td class="dmg">{{ r.damageDealt.toLocaleString() }}</td>
+                <td>{{ mapLabel(r.mapName, locale) }}</td>
+                <td class="muted">{{ r.version || '-' }}</td>
+                <td class="muted">{{ fmtTime(r.battleTime) || '-' }}</td>
+                <td class="muted">{{ fmtTime(r.createdAt) }}</td>
+                <td class="muted hash">{{ r.replayHash ? r.replayHash.slice(0, 12) + '…' : '-' }}</td>
+                <td class="muted">{{ r.replaySize != null ? r.replaySize.toLocaleString() : '-' }}</td>
+                <td class="muted">{{ r.replayUploadedBy || '-' }}</td>
+                <td>{{ r.replayAvailable ? '✓' : '—' }}</td>
+                <td class="actions">
+                  <button v-if="r.replayAvailable" class="btn-sm" :title="$t('hofAdmin.download')" @click="download(r.id)">⬇</button>
+                  <button class="btn-sm danger" :title="$t('hofAdmin.delete')" @click="askDelete(r)">🗑</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-if="totalPages > 1" class="pagination">
+          <button :disabled="page <= 1" @click="goPage(page - 1)">{{ $t('hofAdmin.prev') }}</button>
+          <span>{{ $t('hofAdmin.pageInfo', { page, total: totalPages, items: totalItems }) }}</span>
+          <button :disabled="page >= totalPages" @click="goPage(page + 1)">{{ $t('hofAdmin.next') }}</button>
+        </div>
+        <label class="page-size">{{ $t('hofAdmin.size') }}
+          <select v-model.number="size" @change="onSizeChange">
+            <option :value="20">20</option>
+            <option :value="50">50</option>
+            <option :value="100">100</option>
+          </select>
+        </label>
+      </div>
+
+      <!-- ── 操作日志（只读）── -->
+      <div v-else>
+        <p v-if="auditLoading" class="muted">{{ $t('hofAdmin.loading') }}</p>
+        <p v-else-if="!auditRows.length" class="muted">{{ $t('hofAdmin.auditEmpty') }}</p>
+        <div v-else class="tablewrap">
+          <table class="hof-admin-table">
+            <thead>
+              <tr>
+                <th>{{ $t('hofAdmin.auditTime') }}</th>
+                <th>{{ $t('hofAdmin.auditAction') }}</th>
+                <th>{{ $t('hofAdmin.auditAdmin') }}</th>
+                <th>Record ID</th>
+                <th>Arena ID</th>
+                <th>Account ID</th>
+                <th>{{ $t('hofAdmin.player') }}</th>
+                <th>{{ $t('hofAdmin.tank') }}</th>
+                <th>{{ $t('hofAdmin.damage') }}</th>
+                <th>{{ $t('hofAdmin.battleType') }}</th>
+                <th>arenaBonusType</th>
+                <th>{{ $t('hofAdmin.replayHash') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="a in auditRows" :key="a.id">
+                <td class="muted">{{ fmtTime(a.createdAt) }}</td>
+                <td><span class="audit-action">{{ a.action }}</span></td>
+                <td class="muted">{{ a.adminUsername || a.adminKeycloakUserId }}</td>
+                <td class="muted">{{ a.recordId }}</td>
+                <td class="muted">{{ a.arenaId }}</td>
+                <td class="muted">{{ a.accountId }}</td>
+                <td>{{ a.nickname }}</td>
+                <td>{{ a.tankName }}</td>
+                <td class="dmg">{{ a.damageDealt.toLocaleString() }}</td>
+                <td>{{ battleTypeLabel(a.battleType) }}</td>
+                <td class="muted">{{ a.arenaBonusType }}</td>
+                <td class="muted hash">{{ a.replayHash ? a.replayHash.slice(0, 12) + '…' : '-' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-if="auditTotalPages > 1" class="pagination">
+          <button :disabled="auditPage <= 1" @click="auditPage--; loadAudit()">{{ $t('hofAdmin.prev') }}</button>
+          <span>{{ $t('hofAdmin.pageInfo', { page: auditPage, total: auditTotalPages, items: auditTotalItems }) }}</span>
+          <button :disabled="auditPage >= auditTotalPages" @click="auditPage++; loadAudit()">{{ $t('hofAdmin.next') }}</button>
+        </div>
+      </div>
+
+      <!-- ── 删除二次确认 ── -->
+      <div v-if="deleteTarget" class="modal-overlay" @click.self="cancelDelete">
+        <div class="modal hof-delete-modal">
+          <h3>{{ $t('hofAdmin.deleteTitle') }}</h3>
+          <p class="hof-delete-msg">{{ $t('hofAdmin.deleteHint') }}</p>
+          <table class="hof-delete-table">
+            <tbody>
+              <tr><th>{{ $t('hofAdmin.player') }}</th><td>{{ deleteTarget.nickname }}</td></tr>
+              <tr><th>{{ $t('hofAdmin.tank') }}</th><td>{{ deleteTarget.tankName }}</td></tr>
+              <tr><th>{{ $t('hofAdmin.damage') }}</th><td>{{ deleteTarget.damageDealt.toLocaleString() }}</td></tr>
+              <tr><th>{{ $t('hofAdmin.battleType') }}</th><td>{{ battleTypeLabel(deleteTarget.battleType) }}</td></tr>
+              <tr><th>{{ $t('hofAdmin.map') }}</th><td>{{ mapLabel(deleteTarget.mapName, locale) }}</td></tr>
+              <tr><th>{{ $t('hofAdmin.battleTime') }}</th><td>{{ fmtTime(deleteTarget.battleTime) || '-' }}</td></tr>
+              <tr><th>Arena ID</th><td>{{ deleteTarget.arenaId }}</td></tr>
+            </tbody>
+          </table>
+          <p v-if="deleteMsg" class="error">{{ deleteMsg }}</p>
+          <div class="modal-actions">
+            <button class="btn-sm" :disabled="deleting" @click="cancelDelete">{{ $t('hofAdmin.cancel') }}</button>
+            <button class="btn-sm danger" :disabled="deleting" @click="confirmDelete">
+              {{ deleting ? $t('hofAdmin.deleting') : $t('hofAdmin.delete') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+</template>
+
+<style scoped>
+.hof-admin { max-width: 1280px; margin: 0 auto; padding: 24px 20px 56px; }
+.hof-admin-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.hof-admin-tabs button { padding: 8px 16px; border: 1px solid var(--border-ghost); border-radius: 8px;
+  background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-family: inherit; font-size: .9rem; }
+.hof-admin-tabs button.active { background: var(--bg-blue); color: var(--accent-dark); border-color: var(--border-tab-active); font-weight: 700; }
+.hof-admin-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.hof-admin-filters input, .hof-admin-filters select {
+  border: 1px solid var(--border-ghost); background: var(--bg-card2); color: var(--text-label);
+  padding: 6px 10px; border-radius: 7px; font-size: 13px; font-family: inherit; }
+.hof-admin-table { font-size: .8rem; }
+.hof-admin-table th { white-space: nowrap; padding: 6px 8px; }
+.hof-admin-table td { padding: 6px 8px; }
+.hof-admin-table .dmg { font-weight: 700; color: var(--accent-dark); font-variant-numeric: tabular-nums; }
+.hof-admin-table .muted { color: var(--text-muted); }
+.hof-admin-table .hash { font-family: monospace; font-size: .75rem; }
+.hof-admin-table .actions { white-space: nowrap; }
+.bt-badge { display: inline-block; padding: 1px 7px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.bt-random { background: var(--rating-good-bg); color: var(--rating-good-fg); }
+.bt-rating { background: var(--rating-great-bg); color: var(--rating-great-fg); }
+.audit-action { display: inline-block; padding: 1px 7px; border-radius: 6px; background: var(--status-warn-bg); color: var(--status-warn-fg); font-size: 11px; font-weight: 600; }
+.btn-sm { padding: 5px 12px; border: 1px solid var(--border-ghost); border-radius: 7px; background: var(--bg-card2);
+  color: var(--text-label); cursor: pointer; font-family: inherit; font-size: .8rem; }
+.btn-sm.danger { color: var(--delete); border-color: color-mix(in srgb, var(--delete) 45%, var(--border-ghost)); }
+.btn-sm.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--delete) 8%, var(--bg-card2)); }
+.btn-sm:disabled { opacity: .5; cursor: not-allowed; }
+.pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 14px 0; font-size: .82rem; }
+.pagination button { padding: 5px 12px; border: 1px solid var(--border-ghost); border-radius: 7px; background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-family: inherit; }
+.pagination button:disabled { opacity: .4; cursor: not-allowed; }
+.page-size { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-label); margin-top: 8px; }
+.page-size select { border: 1px solid var(--border-ghost); background: var(--bg-card2); color: var(--text-label); padding: 4px 8px; border-radius: 6px; font-family: inherit; }
+.error { display: inline-block; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--error) 35%, var(--border)); border-radius: 8px; background: color-mix(in srgb, var(--error) 8%, var(--bg-card)); color: var(--error); }
+.muted { padding: 24px 4px; color: var(--text-muted); }
+.hof-admin-denied { max-width: 520px; margin: 48px auto; text-align: center; }
+.hof-admin-denied h2 { color: var(--text-heading); }
+.hof-delete-table { width: 100%; font-size: .85rem; margin: 12px 0; }
+.hof-delete-table th { text-align: left; padding: 6px 10px; color: var(--text-muted); font-weight: 600; width: 40%; }
+.hof-delete-table td { padding: 6px 10px; }
+.hof-delete-msg { color: var(--warn-text); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+</style>

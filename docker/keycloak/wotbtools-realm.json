@@ -17,7 +17,8 @@
       { "name": "wotbtools-admin", "description": "WoTBTools admin" },
       { "name": "wotbtools-user", "description": "WoTBTools user" },
       { "name": "boost-manager", "description": "Boost manager" },
-      { "name": "booster", "description": "Booster" }
+      { "name": "booster", "description": "Booster" },
+        { "name": "HoF-admin", "description": "Hall of Fame administrator" }
     ]
   },
   "defaultRoles": ["wotbtools-user"],

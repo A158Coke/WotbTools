@@ -23,7 +23,7 @@
 |---|---|
 | `features/battle-playback.md` | 改地图鸟瞰 / 战局回放 / 双层坦克标记时 |
 | `features/rating.md` | 改评分 / 潜在伤害时 |
-| `features/leaderboard.md` | 改排行榜时 |
+| `features/hall-of-fame.md` | 改名人堂时 |
 | `features/team-ai-review.md` | 改团队复盘产品语义时 |
 
 ## Research（逆向研究）

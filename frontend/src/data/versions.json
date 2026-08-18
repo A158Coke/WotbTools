@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.11.23",
+    "date": "2026-08-18",
+    "tag": "chg",
+    "zh": "排行榜全面升级为名人堂：随机战斗与评级战斗成绩统一上榜（同伤害时评级优先），公开页新增战斗模式筛选、坦克筛选与玩家昵称搜索，成绩为当前筛选下的实时排名；新增名人堂管理后台（仅 HoF-admin / wotbtools-admin 角色可进入）：查看/搜索/筛选全部记录、下载回放、二次确认后硬删除成绩（删除后同一回放未来可重新上传），并保留完整操作审计日志。",
+    "en": "The leaderboard is now the Hall of Fame: Random and Rating battle scores share one unified board (Rating ranks ahead of Random on equal damage), with battle-type, tank and nickname filters plus live ranking under the current filter; a new Hall of Fame admin panel (HoF-admin / wotbtools-admin only) lets you view/search/filter all records, download replays, hard-delete entries after confirmation (the same replay can be re-uploaded later), and browse a complete operation audit log.",
+    "ru": "Рейтинг стал Залом славы: результаты случайных и рейтинговых боёв теперь в едином рейтинге (при равном уроне рейтинговый бой идёт выше), с фильтрами по режиму, танку и имени игрока и живым местом в текущем фильтре; появилась админ-панель Зала славы (только HoF-admin / wotbtools-admin): просмотр/поиск/фильтрация всех записей, скачивание реплеев, удаление записи после подтверждения (тот же реплей можно загрузить снова) и полный журнал операций."
+  },
+  {
     "v": "2.11.22",
     "date": "2026-08-17",
     "tag": "fix",
