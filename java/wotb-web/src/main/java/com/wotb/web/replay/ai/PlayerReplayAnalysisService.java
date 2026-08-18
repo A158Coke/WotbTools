@@ -72,12 +72,19 @@ public class PlayerReplayAnalysisService {
     }
 
     /**
-     * 基于完整 battle + reconstruction + feature set 生成单场个人复盘（无重建时的入口）。
+     * 基于完整 battle + reconstruction + feature set 生成单场个人复盘。
+     * <p><b>非 production AI Review entrypoint（PR #102 review 顺手检查）</b>：本组
+     * {@code analyzePlayerContext(ctx[, recon], ...)} 重载只被历史测试/兼容 API 使用；
+     * production 个人复盘必须走 {@link #analyzePlayerOrFallback}（其中无重建 / 录像者未解析 /
+     * canonical timeline 不可用 → {@code AiTimelineUnusableException} hard reject，见
+     * docs/current-plan.md §3）。若未来出现 production caller，必须先执行 canonical
+     * Timeline hard gate，否则构成 hard-gate bypass。</p>
      */
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx) {
         return analyzePlayerContext(ctx, AllowedLanguage.ZH);
     }
 
+    /** 见 {@link #analyzePlayerContext(SinglePlayerBattleAnalysisContext)}：非 production entrypoint。 */
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx,
                                               final AllowedLanguage language) {
         if (!isConfigured()) throw new AiNotConfiguredException();

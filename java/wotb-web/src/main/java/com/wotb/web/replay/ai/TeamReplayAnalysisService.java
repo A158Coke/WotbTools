@@ -13,11 +13,16 @@ import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
+import com.wotb.core.replay.timeline.BattleTimeline;
+import com.wotb.core.replay.timeline.BattleTimelineBuilder;
+import com.wotb.core.replay.timeline.BattleTimelineResult;
+import com.wotb.core.replay.timeline.TimelinePerspective;
 
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
+import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -40,6 +45,13 @@ import java.util.function.LongSupplier;
  * 单团队单元后追加 Team Autopsy（判负战犯 / 判胜 MVP）——这是<b>结算级</b>独立 TEAM_AUTOPSY
  * 调用：Autopsy 输入只有权威逐人结算（无 Call #1 prior / Critical Window / Route 证据），相关结论置信度
  * PARTIAL/UNKNOWN。随机战斗个人复盘不输出战犯/MVP。</p>
+ * <p><b>Canonical Timeline hard gate（PR #102 review B1）</b>：{@code analyzeTeamGroups}
+ * 是 Team AI 的<b>唯一 production 编排入口</b>（由 {@code AiReplayReviewService} 调用）。
+ * 它在<b>任何 LLM 调用之前</b>（Call #1 prior / Call #2 / Team Autopsy）为每个 context 构建并
+ * 验证 canonical BattleTimeline（一次 build、一次 validation）：reconstruction 缺失 /
+ * timeline 不可用 / timeline 为 null → 立即抛 {@link AiTimelineUnusableException}（AI Gateway
+ * requests = 0），禁止 settlement-only fallback；验证通过后同一 validated timeline 下传给
+ * {@link TeamAiPromptBuilder} 渲染 TACTICAL TIMELINE 段（绝不在 PromptBuilder 内重复 build）。</p>
  */
 @Service
 public class TeamReplayAnalysisService {
@@ -84,7 +96,12 @@ public class TeamReplayAnalysisService {
     }
 
     /**
-     * 单场团队上下文入口。使用与 orchestrated path (analyzeTeamGroups) 相同的 RosterEvidence contract。
+     * 单场团队上下文入口（<b>非 production AI Review entrypoint</b>：仅供兼容 facade /
+     * 历史契约测试引用；production Team AI 必须走 {@link #analyzeTeamGroups}，后者在
+     * 任何 LLM 调用前执行 canonical Timeline hard gate）。
+     * <p>本入口保持旧语义（Call #1 → prompt 构建 → Call #2 + Autopsy），不执行 timeline
+     * hard gate，也不渲染 TACTICAL TIMELINE 段（未提供 validated timeline）；不得被
+     * production 编排引用（否则构成 hard-gate bypass，见 PR #102 review B1）。</p>
      */
     public AnalyzeResult analyzeSingleTeamContext(final SingleTeamBattleAnalysisContext context) {
         return analyzeSingleTeamContext(context, AllowedLanguage.ZH);
@@ -162,6 +179,15 @@ public class TeamReplayAnalysisService {
                 throw new IllegalArgumentException("Duplicate analysisUnitId: " + ctx.analysisUnitId());
             }
         }
+        // Canonical Timeline hard gate（PR #102 review B1）：在任何 LLM 调用（Call #1 /
+        // Call #2 / Team Autopsy）之前为每个 context 构建并验证 canonical timeline。
+        // reconstruction 缺失 / timeline 不可用 / timeline 为 null → 立即拒绝（AI Gateway
+        // requests = 0），禁止 settlement-only fallback；验证通过后同一 timeline 下传给
+        // TeamAiPromptBuilder 渲染 TACTICAL TIMELINE（不重复 build）。
+        final Map<String, BattleTimeline> timelinesByUnitId = new LinkedHashMap<>();
+        for (final SingleTeamBattleAnalysisContext ctx : contexts) {
+            timelinesByUnitId.put(ctx.analysisUnitId(), validatedTeamTimeline(ctx));
+        }
         final Map<String, TeamRosterResolver.RosterEvidence> evidenceByUnitId = new LinkedHashMap<>();
         for (final SingleTeamBattleAnalysisContext ctx : contexts) {
             evidenceByUnitId.put(ctx.analysisUnitId(), TeamRosterResolver.RosterEvidence.from(ctx));
@@ -188,7 +214,8 @@ public class TeamReplayAnalysisService {
                             TeamRosterResolver.rosterEvidenceLimits(evidence),
                             priorsByUnitId.get(ctx.analysisUnitId()),
                             config.estimator(),
-                            config.singleReplayMaxInputTokens());
+                            config.singleReplayMaxInputTokens(),
+                            timelinesByUnitId.get(ctx.analysisUnitId()));
             final AnalyzeResult result = callSingleTeamContext(ctx, input, language, startNanos, listener);
             if (firstAnalysis == null) {
                 firstAnalysis = result;
@@ -206,6 +233,27 @@ public class TeamReplayAnalysisService {
                         language,
                         firstContext.battle() == null ? null : firstContext.battle().mapName);
         return new TeamAnalyzeResult(firstAnalysis, preBattleSection);
+    }
+
+    /**
+     * 构建并验证单个 context 的 canonical Team timeline（hard gate，见类 javadoc）。
+     * reconstruction 缺失 / build 不可用 / timeline 为 null → 抛
+     * {@link AiTimelineUnusableException}（拒绝整个 Team AI Review，AI Gateway requests = 0）。
+     */
+    private static BattleTimeline validatedTeamTimeline(final SingleTeamBattleAnalysisContext ctx) {
+        if (ctx == null || ctx.battle() == null || ctx.reconstruction() == null) {
+            LOGGER.info("Team AI rejecting review: NO_RECONSTRUCTION (timeline unusable)");
+            throw new AiTimelineUnusableException("NO_RECONSTRUCTION");
+        }
+        final BattleTimelineResult result = BattleTimelineBuilder.build(
+                ctx.battle(), ctx.reconstruction(),
+                TimelinePerspective.team(ctx.perspectiveTeam()));
+        if (!result.usable() || result.timeline() == null) {
+            LOGGER.info("Team AI rejecting review: timeline unusable: {}",
+                    result.validation().errors());
+            throw new AiTimelineUnusableException(result.validation().errors());
+        }
+        return result.timeline();
     }
 
     private PreBattleStrategicPrior call1Prior(final Battle battle,

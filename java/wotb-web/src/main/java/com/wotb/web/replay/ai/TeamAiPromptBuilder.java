@@ -3,9 +3,7 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
-import com.wotb.core.replay.timeline.BattleTimelineBuilder;
-import com.wotb.core.replay.timeline.BattleTimelineResult;
-import com.wotb.core.replay.timeline.TimelinePerspective;
+import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 
 import java.util.HashMap;
@@ -19,6 +17,14 @@ import java.util.Set;
  * 不接收或输出原始 ReplayEvent/逐帧位置流。
  * <p>
  * 使用 AiTokenEstimator 进行 token 预算管理，不再使用固定字符限制或固定数量截断。
+ * </p>
+ * <p><b>Canonical Timeline 契约（PR #102 review）</b>：本类<b>不</b>构建
+ * {@link BattleTimeline}——build+validation 的唯一入口在
+ * {@link TeamReplayAnalysisService} orchestration 层（任何 LLM 调用之前，一次 build
+ * 一次 validation）；本类只做确定性渲染。production Team Call #2 通过带
+ * {@code BattleTimeline} 的 {@link #single(SingleTeamBattleAnalysisContext, List,
+ * PreBattleStrategicPrior, AiTokenEstimator, int, BattleTimeline)} 重载接收已验证
+ * timeline 并注入 TACTICAL TIMELINE 段；无 timeline 的兼容/测试重载不渲染该段。</p>
  */
 public final class TeamAiPromptBuilder {
 
@@ -49,6 +55,36 @@ public final class TeamAiPromptBuilder {
             final PreBattleStrategicPrior prior,
             final AiTokenEstimator estimator,
             final int maxInputTokens
+    ) {
+        return single(context, extraLimitations, prior, estimator, maxInputTokens, (String) null);
+    }
+
+    /**
+     * production Team Call #2 入口：接收 orchestration 层已 build+validate 的 canonical
+     * {@link BattleTimeline}（PR #102 review B1）——一次 build、一次 validation 后下传，
+     * 本方法只渲染（绝不再次 build / 绝不 catch 后降级）；validated timeline 渲染为空是
+     * 编程错误 → fail loud。timeline 为 null 只允许出现在兼容/测试入口（本方法不接收 null
+     * 语义：production 必然非 null，若调用方传入 null 等价于无 timeline 段）。
+     */
+    public static PromptInput single(
+            final SingleTeamBattleAnalysisContext context,
+            final List<String> extraLimitations,
+            final PreBattleStrategicPrior prior,
+            final AiTokenEstimator estimator,
+            final int maxInputTokens,
+            final BattleTimeline timeline
+    ) {
+        return single(context, extraLimitations, prior, estimator, maxInputTokens,
+                renderTimelineBlock(timeline, context.perspectiveTeam()));
+    }
+
+    private static PromptInput single(
+            final SingleTeamBattleAnalysisContext context,
+            final List<String> extraLimitations,
+            final PreBattleStrategicPrior prior,
+            final AiTokenEstimator estimator,
+            final int maxInputTokens,
+            final String timelineBlock
     ) {
         final Set<String> limitations = collectLimitations(context, extraLimitations);
 
@@ -100,9 +136,8 @@ public final class TeamAiPromptBuilder {
         headerBuf.append("unitLimitations=").append(limitations).append("\n");
         final String headerBlock = headerBuf.toString();
 
-        // Canonical Timeline 时间线段（团队视角·双方对称）：一次性构建，随 optional 预算裁剪
-        final String timelineBlock = teamTimelineBlock(context);
-        // 构建所有 optional details（无固定截断；点数局势段作为完整区块参与预算）
+        // Canonical Timeline 时间线段（团队视角·双方对称）：由 orchestration 层 build+validate
+        // 后传入（timelineBlock 参数），本方法只做确定性渲染/预算裁剪，绝不在此 build。
         String optBlock = buildOptionalBlock(context, limitations, true, timelineBlock);
 
         // 如果 mandatory（header + HPF + prior）超出 token 预算，直接抛出异常
@@ -190,30 +225,23 @@ public final class TeamAiPromptBuilder {
     }
 
     /**
-     * 团队 canonical timeline 段（battle + reconstruction + perspectiveTeam；不可用时省略）。
-     * 只表达当时双方已知信息（anti-future-leak 由 timeline 保证），确定性渲染。
+     * 渲染已验证 canonical timeline 的 TACTICAL TIMELINE 段（确定性；只渲染，不 build、
+     * 不 catch、不静默降级）。
+     * <p>PR #102 review B1：timeline 由 orchestration 层在 LLM 调用之前构建并验证后传入，
+     * 此处只消费；{@code timeline == null}（兼容/测试入口未提供 validated timeline）时不
+     * 渲染任何段；非 null 却渲染为空是编程错误 → fail loud，不得降级为「无 timeline 的
+     * AI Review」。</p>
      */
-    static String teamTimelineBlock(final SingleTeamBattleAnalysisContext context) {
-        if (context == null || context.battle() == null || context.reconstruction() == null) {
+    static String renderTimelineBlock(final BattleTimeline timeline, final int perspectiveTeam) {
+        if (timeline == null) {
             return "";
         }
-        try {
-            final BattleTimelineResult result = BattleTimelineBuilder.build(
-                    context.battle(), context.reconstruction(),
-                    TimelinePerspective.team(context.perspectiveTeam()));
-            if (!result.usable()) {
-                return "";
-            }
-            final String section = TeamAiContextCompiler.renderTimelineSection(
-                    result.timeline(), context.perspectiveTeam());
-            if (section.isBlank()) {
-                return "";
-            }
-            return "\n=== TACTICAL TIMELINE（时间有序战局章节·battle-relative 确定性） ===\n" + section;
-        } catch (final RuntimeException e) {
-            // Timeline 构建失败不阻断团队复盘（该段省略）
-            return "";
+        final String section = TeamAiContextCompiler.renderTimelineSection(timeline, perspectiveTeam);
+        if (section.isBlank()) {
+            throw new IllegalStateException(
+                    "validated team timeline rendered blank TACTICAL TIMELINE: map=" + timeline.mapCode());
         }
+        return "\n=== TACTICAL TIMELINE（时间有序战局章节·battle-relative 确定性） ===\n" + section;
     }
 
     private static Set<String> collectLimitations(
