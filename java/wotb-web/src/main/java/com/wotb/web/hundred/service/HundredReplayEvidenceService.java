@@ -72,6 +72,8 @@ public class HundredReplayEvidenceService {
      * best-effort 清理已存文件（引用计数保护，含 HoF 共享引用）+ 抛出
      * {@code HallOfFameStorageException}（全局 handler 映射 REPLAY_STORAGE_FULL / REPLAY_STORAGE_ERROR）。
      * 调用方必须保证：DB 尚未写入任何引用（失败清理不会误删他人文件）。
+     * <b>锁契约</b>：生产路径由 {@code HundredBattleSubmissionService.createSubmission} 的外层
+     * {@code runWithLocksResult} 持有全部 hash 锁；失败清理复用该外层锁（不嵌套取锁，防 self-deadlock）。
      */
     public void storeAll(final List<PendingReplay> replays) {
         final List<String> stored = new ArrayList<>();
@@ -81,7 +83,7 @@ public class HundredReplayEvidenceService {
                 stored.add(r.sha256());
             }
         } catch (final RuntimeException e) {
-            cleanupFiles(stored);
+            cleanupFilesUnlocked(stored);
             throw e;
         }
     }
@@ -121,15 +123,16 @@ public class HundredReplayEvidenceService {
             return;
         }
         repository.deleteBySubmissionId(submissionId);
-        scheduleAfterCommit(() -> cleanupFiles(hashes));
+        scheduleAfterCommit(() -> cleanupFilesLocked(hashes));
     }
 
     /**
-     * 创建失败路径（文件已落盘但 DB 写入失败/回滚）：立即 best-effort 清理已存文件。
-     * 引用计数保护：本表或 HoF 记录仍引用该 hash 时保留文件（同 hash 内容相同，复用无害）。
+     * 创建失败路径（文件已落盘但 DB 事务失败/回滚后）：best-effort 清理已存文件。
+     * <b>必须在外层 advisory lock 内调用</b>（{@code createSubmission} 的 runWithLocksResult 临界区内、
+     * DB rollback 完成后）——引用计数保护 + 不嵌套取锁。
      */
     public void cleanupStoredFiles(final List<String> sha256s) {
-        cleanupFiles(sha256s);
+        cleanupFilesUnlocked(sha256s);
     }
 
     /** 管理后台 evidence 列表（admin-only；旧 PENDING 无 evidence → 空列表，不 500）。 */
@@ -171,29 +174,51 @@ public class HundredReplayEvidenceService {
     }
 
     /**
-     * 物理文件清理：跨表引用计数（本表 + HoF 记录）均无引用才删；失败仅 WARN。
-     * 引用检查 + 删除在 {@link ReplayHashLock}（PostgreSQL advisory lock）内串行化：
-     * 与 HoF 上传/删除同锁，防止「检查后、删除前」并发上传同 hash 引用该文件导致
-     * 破坏「DB 引用 H ⇒ 物理 H 存在」不变量（与 HallOfFameAdminService.cleanupReplayFile 同语义）。
+     * 跨域引用计数（HoF admin delete 复用）：hall_of_fame_record + 本表均引用数之和。
+     * 所有删除共享 replay storage 物理文件的路径都必须以此 TOTAL REFERENCES 为准——
+     * 只有总和为 0 才允许 storage.delete(hash)，保证「DB 引用 H ⇒ 物理 H 存在」双向一致。
      */
-    private void cleanupFiles(final List<String> sha256s) {
+    public long countReferences(final String sha256) {
+        return repository.countBySha256(sha256) + hallOfFameService.countReplayHashReferences(sha256);
+    }
+
+    /**
+     * 每个 hash 在 {@link ReplayHashLock}（PostgreSQL advisory lock）内清理。
+     * 用于终态（APPROVE/REJECT/CANCEL）commit 后路径——此时无外层锁，必须逐 hash 取锁，
+     * 与 HoF 上传/删除串行化，防止「检查后、删除前」并发引用该文件破坏不变量。
+     */
+    private void cleanupFilesLocked(final List<String> sha256s) {
         for (final String hash : sha256s) {
-            replayHashLock.runWithLock(hash, () -> {
-                if (repository.countBySha256(hash) > 0) {
-                    return;
-                }
-                if (hallOfFameService.countReplayHashReferences(hash) > 0) {
-                    return;
-                }
-                try {
-                    storage.delete(hash);
-                    log.info("hundred evidence: replay file {} removed (no remaining reference)", hash);
-                } catch (final RuntimeException e) {
-                    // DB 状态已提交；物理清理失败仅 WARN，orphan 保留供未来维护。
-                    log.warn("hundred evidence: replay file {} cleanup failed, orphan retained: {}",
-                            hash, e.getMessage());
-                }
-            });
+            replayHashLock.runWithLock(hash, () -> cleanupSingle(hash));
+        }
+    }
+
+    /**
+     * 不取锁的清理（调用方必须已持有对应 hash 的 advisory lock）。
+     * 用于 createSubmission 失败路径——其整个 store + DB 事务都在外层
+     * {@code runWithLocksResult(hashes)} 内，外层锁已覆盖本表与 HoF 的并发删除/引用。
+     * 嵌套再取同 hash 锁会在另一连接上 self-deadlock（session 级锁不可跨连接重入）。
+     */
+    private void cleanupFilesUnlocked(final List<String> sha256s) {
+        for (final String hash : sha256s) {
+            cleanupSingle(hash);
+        }
+    }
+
+    private void cleanupSingle(final String hash) {
+        if (repository.countBySha256(hash) > 0) {
+            return;
+        }
+        if (hallOfFameService.countReplayHashReferences(hash) > 0) {
+            return;
+        }
+        try {
+            storage.delete(hash);
+            log.info("hundred evidence: replay file {} removed (no remaining reference)", hash);
+        } catch (final RuntimeException e) {
+            // DB 状态已提交；物理清理失败仅 WARN，orphan 保留供未来维护。
+            log.warn("hundred evidence: replay file {} cleanup failed, orphan retained: {}",
+                    hash, e.getMessage());
         }
     }
 

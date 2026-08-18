@@ -71,6 +71,9 @@ const replayEvidence = ref([])
 const evidenceLoading = ref(false)
 const evidenceError = ref('')
 const screenshotZoom = ref(false)
+// stale-response guard：openReview(A) → loadEvidence(A) 后立刻 openReview(B)，
+// 若 A 的请求最后才返回，禁止 A 的 evidence 覆盖当前 B 的审核弹窗。
+let evidenceGen = 0
 
 // ── 百场删除弹窗（CURRENT 行）──
 const hundredDeleteTarget = ref(null)
@@ -269,15 +272,19 @@ async function openReview(row) {
 
 /** 加载该 submission 的 replay evidence 元数据（旧 PENDING → 空列表，UI 显示 legacy 提示）。 */
 async function loadEvidence(submissionId) {
+  const g = ++evidenceGen
   evidenceLoading.value = true
   evidenceError.value = ''
   try {
-    replayEvidence.value = (await api.hofAdminHundredReplays(submissionId)) || []
+    const rows = (await api.hofAdminHundredReplays(submissionId)) || []
+    if (g !== evidenceGen) return // 过期响应：当前已打开别的 submission，丢弃
+    replayEvidence.value = rows
   } catch (e) {
+    if (g !== evidenceGen) return
     evidenceError.value = apiErrorLabel(t, te, e)
     replayEvidence.value = []
   } finally {
-    evidenceLoading.value = false
+    if (g === evidenceGen) evidenceLoading.value = false
   }
 }
 

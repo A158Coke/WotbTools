@@ -7,6 +7,7 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.function.Supplier;
 
 /**
@@ -59,6 +60,41 @@ public class ReplayHashLock {
     /** 临界区无返回值（如 admin delete 的事务 + 文件清理）。 */
     public void runWithLock(final String sha256, final Runnable action) {
         runWithLockResult(sha256, () -> {
+            action.run();
+            return null;
+        });
+    }
+
+    /**
+     * 多 hash 临界区带返回值（如百场创建：先落盘 5 文件再单事务入库，commit 必须发生在锁释放前）。
+     * <b>锁顺序</b>：内部按 SHA-256 字典序排序并去重后依次 acquire、反向 release——
+     * 任何调用方都走同一稳定顺序，杜绝 request A 锁 H1→H2 与 request B 锁 H2→H1 的 deadlock。
+     * 全部锁持有在同一物理连接（session 级 advisory lock 语义，见类 javadoc）。
+     */
+    public <T> T runWithLocksResult(final List<String> sha256s, final Supplier<T> action) {
+        final List<Long> keys = sha256s.stream().distinct().sorted()
+                .map(ReplayHashLock::key)
+                .toList();
+        final Connection conn = DataSourceUtils.getConnection(dataSource);
+        try {
+            for (final long key : keys) {
+                advisory(conn, "select pg_advisory_lock(?)", key);
+            }
+            try {
+                return action.get();
+            } finally {
+                for (int i = keys.size() - 1; i >= 0; i--) {
+                    advisory(conn, "select pg_advisory_unlock(?)", keys.get(i));
+                }
+            }
+        } finally {
+            DataSourceUtils.releaseConnection(conn, dataSource);
+        }
+    }
+
+    /** 多 hash 临界区无返回值（见 {@link #runWithLocksResult(List, Supplier)}）。 */
+    public void runWithLocks(final List<String> sha256s, final Runnable action) {
+        runWithLocksResult(sha256s, () -> {
             action.run();
             return null;
         });

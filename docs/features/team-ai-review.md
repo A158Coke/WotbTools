@@ -43,7 +43,7 @@ Controller 只负责 HTTP binding + 委托 Service。Service 接管 validate / p
 - AI Review 单次最多 1 个原始回放文件
 - 原始数量检查早于 getBytes / hash / parsing
 - 空文件和重复文件计入原始数量
-- 单文件 <= 5MB，总请求 <= 200MB
+- 单文件 <= 20MB，总请求 <= 200MB
 - `/api/replay/process` 和 `/api/replay/reconstruct-batch` 不受 1 文件限制
 
 ## 4. Grouping 与 Partition

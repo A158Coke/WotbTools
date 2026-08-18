@@ -236,7 +236,6 @@ export async function hofAdminHundredList(params = {}) {
 }
 
 /** 百场审核详情（PENDING 时含 proofScreenshot）。 */
-/** 百场审核详情（PENDING 时含 proofScreenshot）。 */
 export async function hofAdminHundredDetail(id) {
   const r = await hofAdminRequest(`/api/admin/hof/hundred/submissions/${encodeURIComponent(id)}`)
   return r.json()
