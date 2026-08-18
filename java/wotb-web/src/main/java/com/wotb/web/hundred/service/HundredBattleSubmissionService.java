@@ -69,13 +69,6 @@ public class HundredBattleSubmissionService {
     private static final int MAX_PAGE_SIZE = 100;
     private static final int REPLAY_COUNT = 5;
 
-    /**
-     * 百场单回放上限 5MiB（域内独立 size policy；全局 {@code ReplayUploadValidator.MAX_FILE_SIZE}
-     * 保持 20MiB 不动）。WoT Blitz 真实回放 1~3MiB；百场持久化 5 个原始回放，单文件 20MiB 时
-     * 单申请最多 100MiB 的磁盘风险显著。超过 → 400 HUNDRED_REPLAY_TOO_LARGE。
-     */
-    private static final int HUNDRED_MAX_REPLAY_SIZE = 5 * 1024 * 1024;
-
     /** 「百场」资格最低场次：管理员最终 approvedBattleCount 必须 ≥ 100（人工审核为最终资格判断）。 */
     private static final int MIN_APPROVED_BATTLE_COUNT = 100;
 
@@ -114,7 +107,7 @@ public class HundredBattleSubmissionService {
     /**
      * 创建百场 submission（需登录且 Profile 已配置 gameId/nickname）。
      * 硬门禁：Tier X authoritative 校验 + 固定 1 张截图 + 正好 5 个 replay 全部解析成功、
-     * gameId/vehicleId 匹配、5 场不同 battle、单文件 ≤ {@link #HUNDRED_MAX_REPLAY_SIZE}；
+     * gameId/vehicleId 匹配、5 场不同 battle（size/type 复用 {@code ReplayUploadValidator} 全局 contract）；
      * 任意失败 → 整单失败，不进入 PENDING，零持久化残留。
      *
      * <p><b>锁与事务协议</b>（与 {@link ReplayHashLock} 全协议对齐，多实例安全）：</p>
@@ -173,10 +166,6 @@ public class HundredBattleSubmissionService {
         for (final MultipartFile file : replays) {
             slot++;
             final byte[] bytes = readBytes(file);
-            if (bytes.length > HUNDRED_MAX_REPLAY_SIZE) {
-                // 百场域独立 size policy（全局 ReplayUploadValidator 保持 20MiB；百场单文件 5MiB 控磁盘成本）
-                throw new IllegalArgumentException("HUNDRED_REPLAY_TOO_LARGE");
-            }
             final Battle battle = parse(bytes);
             if (!StringUtils.hasText(battle.arenaId)) {
                 throw new IllegalArgumentException("INVALID_REPLAY_FILE");
@@ -380,6 +369,11 @@ public class HundredBattleSubmissionService {
         final HundredBattleSubmission submission = repository.findByIdForUpdate(submissionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "HUNDRED_SUBMISSION_NOT_FOUND"));
         requirePending(submission);
+
+        // APPROVE 前置：完整审核证据校验（backend authoritative，非前端 UX）。
+        // 必须在任何业务状态改变之前——旧 CURRENT → SUPERSEDED 之前；失败时 submission 保持
+        // PENDING、CURRENT 不变、evidence 与 screenshot 不清理。legacy PENDING（0 evidence）必然被拒。
+        evidenceService.requireCompleteEvidenceForApproval(submission.getId(), submission.getProofScreenshot());
 
         // 重新读取 CURRENT（行锁），最终判断：approvedAverageDamage > current.approvedAverageDamage。
         final HundredBattleSubmission current = repository.findCurrentForUpdate(

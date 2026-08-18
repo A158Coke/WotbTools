@@ -395,6 +395,8 @@
         "zoomClose": "Close",
         "replayDownload": "Download replay",
         "legacyNoReplays": "This submission was created before replay evidence persistence existed; original replays are unavailable. Please reject and ask the user to resubmit.",
+        "evidenceIncomplete": "Review evidence is incomplete (exactly 5 replays required); approval is not possible.",
+        "approveDisabledHint": "Review evidence is incomplete, cannot approve",
         "approvedBattlesMin": "Approved battle count cannot be below 100"
     },
     "player_labels": {
@@ -904,7 +906,6 @@
         "UNSUPPORTED_BATTLE_TYPE": "Only Random and Rating battles are supported.",
         "TOO_MANY_REPLAY_FILES": "Too many replay files",
         "FILE_TOO_LARGE": "File is too large",
-        "HUNDRED_REPLAY_TOO_LARGE": "A 100-battles replay cannot exceed 5MB",
         "REQUEST_TOO_LARGE": "The upload is too large",
         "REPLAY_BUSY": "Replay processing is busy. Try again later.",
         "AI_REVIEW_BUSY": "AI review service is busy. Try again later.",

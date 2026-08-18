@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
@@ -40,6 +41,9 @@ import java.util.List;
 public class HundredReplayEvidenceService {
 
     private static final Logger log = LoggerFactory.getLogger(HundredReplayEvidenceService.class);
+
+    /** APPROVE 前置校验要求的 evidence 行数（一个 PENDING 恰好 5 个原始回放）。 */
+    private static final int APPROVAL_EVIDENCE_COUNT = 5;
 
     private final HallOfFameReplayStorage storage;
     private final HundredBattleReplayEvidenceRepository repository;
@@ -180,6 +184,39 @@ public class HundredReplayEvidenceService {
      */
     public long countReferences(final String sha256) {
         return repository.countBySha256(sha256) + hallOfFameService.countReplayHashReferences(sha256);
+    }
+
+    /**
+     * APPROVE 前置权威校验（backend authoritative，前端仅 UX）：PENDING 必须具备完整审核证据
+     * 才能进入 CURRENT。验证：
+     * <ol>
+     *   <li>evidence 行数 == {@value #APPROVAL_EVIDENCE_COUNT}</li>
+     *   <li>slot 恰好为 {{@code 1,2,3,4,5}}（防重复/缺号数据异常）</li>
+     *   <li>每行 SHA 对应物理 {@code .wotbreplay} 文件存在</li>
+     *   <li>proofScreenshot 存在且为有效 {@code data:image/} URL</li>
+     * </ol>
+     * 任一失败 → 抛 {@code HUNDRED_INCOMPLETE_REVIEW_EVIDENCE}（物理文件缺失 →
+     * {@code HUNDRED_REPLAY_FILE_NOT_FOUND}）；<b>不改变任何业务状态、不清理 evidence / screenshot</b>。
+     * legacy PENDING（0 evidence）必然失败 → 只能 REJECT 或用户重新提交，绝不伪造 evidence。
+     * <b>调用时机：approve 任何业务状态改变（含旧 CURRENT → SUPERSEDED）之前。</b>
+     */
+    @Transactional(readOnly = true)
+    public void requireCompleteEvidenceForApproval(final long submissionId, final String proofScreenshot) {
+        final List<HundredBattleReplayEvidence> rows = repository.findBySubmissionIdOrderBySlotAsc(submissionId);
+        final boolean slotsComplete = rows.size() == APPROVAL_EVIDENCE_COUNT
+                && rows.stream().map(HundredBattleReplayEvidence::getSlot).sorted().toList()
+                .equals(List.of(1, 2, 3, 4, 5));
+        if (!slotsComplete) {
+            throw new IllegalStateException("HUNDRED_INCOMPLETE_REVIEW_EVIDENCE");
+        }
+        for (final HundredBattleReplayEvidence row : rows) {
+            if (storage.load(row.getSha256()).isEmpty()) {
+                throw new IllegalStateException("HUNDRED_REPLAY_FILE_NOT_FOUND");
+            }
+        }
+        if (!StringUtils.hasText(proofScreenshot) || !proofScreenshot.trim().startsWith("data:image/")) {
+            throw new IllegalStateException("HUNDRED_INCOMPLETE_REVIEW_EVIDENCE");
+        }
     }
 
     /**

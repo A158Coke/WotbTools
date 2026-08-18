@@ -138,18 +138,18 @@ public class HallOfFameAdminService {
 
     /**
      * commit 后文件清理：<b>跨域引用计数</b>（hall_of_fame_record + hundred_battle_replay_evidence
-     * 均无引用）才删除物理文件。与 HundredReplayEvidenceService 的清理共享同一 TOTAL REFERENCES
-     * 语义——防止 hash H 同时被两域引用时，删除最后一个 HoF record 后误删仍被 Hundred evidence
-     * 引用的文件（Hundred admin replay download 404）。失败仅 WARN，orphan 保留。
+     * 均无引用）才删除物理文件。TOTAL REFERENCES 由 {@code HundredReplayEvidenceService.countReferences}
+     * 统一提供（一次且仅一次 = HoF refs + Hundred refs）——防止重复计算 HoF refs，也防止删除
+     * 最后一个 HoF record 后误删仍被 Hundred evidence 引用的文件（Hundred admin download 404）。
+     * 失败仅 WARN，orphan 保留。
      */
     private void cleanupReplayFile(final DeletedEntry deleted) {
         if (deleted.replayHash() == null) {
             return;
         }
-        final long refs = repository.countByReplayHash(deleted.replayHash())
-                + hundredEvidenceService.countReferences(deleted.replayHash());
+        final long refs = hundredEvidenceService.countReferences(deleted.replayHash());
         if (refs > 0) {
-            log.info("HoF admin delete: replay {} still referenced by {} total record(s), file retained",
+            log.info("HoF admin delete: replay {} still referenced by {} total reference(s), file retained",
                     deleted.replayHash(), refs);
             return;
         }

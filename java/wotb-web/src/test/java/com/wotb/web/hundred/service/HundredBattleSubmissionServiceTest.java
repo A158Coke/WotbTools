@@ -572,6 +572,25 @@ class HundredBattleSubmissionServiceTest {
     }
 
     @Test
+    void approveRejectsIncompleteEvidenceWithoutSupersedingCurrent() {
+        // Blocker：evidence 校验失败必须在任何业务状态改变（旧 CURRENT → SUPERSEDED）之前发生。
+        // 不 stub findCurrentForUpdate：校验失败短路于任何 CURRENT 读取/变更之前。
+        final HundredBattleSubmission s = pendingSubmission();
+        when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
+        org.mockito.Mockito.doThrow(new IllegalStateException("HUNDRED_INCOMPLETE_REVIEW_EVIDENCE"))
+                .when(evidenceService).requireCompleteEvidenceForApproval(anyLong(), any());
+
+        assertThatThrownBy(() -> service.approve(ADMIN, 10L, 4200, 136))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("HUNDRED_INCOMPLETE_REVIEW_EVIDENCE");
+
+        // 未触碰 CURRENT 读取/变更：无 supersede、无 evidence 清理、PENDING 保持
+        verify(repository, never()).findCurrentForUpdate(anyString(), anyLong());
+        verify(evidenceService, never()).discardForSubmission(anyLong());
+        assertThat(s.getStatus()).isEqualTo("PENDING");
+    }
+
+    @Test
     void approveRejectsWhenCurrentRoseAfterSubmission() {
         final HundredBattleSubmission s = pendingSubmission();
         final HundredBattleSubmission current = currentSubmission(4300);
@@ -928,27 +947,5 @@ class HundredBattleSubmissionServiceTest {
         verify(evidenceService).storeAll(anyList());
         verify(evidenceService).cleanupStoredFiles(anyList());
         verify(evidenceService, never()).attach(anyLong(), anyList());
-    }
-
-    @Test
-    void hundredReplayOver5MiBRejectedWithoutPersisting() throws Exception {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
-
-        // 第 1 份超 5MiB（域内独立限制；全局 ReplayUploadValidator 仍 20MiB）
-        final byte[] huge = new byte[5 * 1024 * 1024 + 1];
-        final MockMultipartFile big = new MockMultipartFile("replays", "big.wotbreplay",
-                "application/octet-stream", huge);
-        final List<MultipartFile> files = new ArrayList<>(List.of(big));
-        files.addAll(replays(4));
-
-        assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                "data:image/png;base64,AAAA", files))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("HUNDRED_REPLAY_TOO_LARGE");
-        // 校验阶段即拒绝：零持久化、零锁、零存储
-        verify(replayHashLock, never()).runWithLocksResult(anyList(), any());
-        verify(evidenceService, never()).storeAll(anyList());
-        verify(evidenceService, never()).attach(anyLong(), anyList());
-        verify(repository, never()).saveAndFlush(any());
     }
 }

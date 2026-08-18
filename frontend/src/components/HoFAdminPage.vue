@@ -15,6 +15,10 @@ const canAdmin = computed(() => {
   return Array.isArray(roles) && (roles.includes('HoF-admin') || roles.includes('wotbtools-admin'))
 })
 
+// 审核证据完整性（与 backend approve invariant 对齐）：exactly 5 行 evidence 且加载无错误才允许 APPROVE。
+// legacy PENDING（0 evidence）/ 加载失败 / 数量 != 5 → 禁用 Approve；REJECT 始终可用（backend 仍为权威边界）。
+const evidenceComplete = computed(() => replayEvidence.value.length === 5 && !evidenceError.value)
+
 const authPhase = ref('init') // init | login | ready
 const denied = ref(false)
 const error = ref('')
@@ -709,6 +713,7 @@ function battleTypeLabel(tp) {
               <p v-else-if="evidenceError" class="error">{{ evidenceError }}</p>
               <template v-else>
                 <p v-if="!replayEvidence.length" class="hundred-legacy-warn">{{ $t('hundredAdmin.legacyNoReplays') }}</p>
+                <p v-else-if="replayEvidence.length !== 5" class="hundred-legacy-warn">{{ $t('hundredAdmin.evidenceIncomplete') }}</p>
                 <ul v-else class="replay-evidence-list">
                   <li v-for="ev in replayEvidence" :key="ev.id" class="replay-evidence-item">
                     <span class="replay-slot">#{{ ev.slot }}</span>
@@ -743,7 +748,7 @@ function battleTypeLabel(tp) {
             <div v-if="reviewPhase === 'view'" class="modal-actions">
               <button class="btn-sm" :disabled="actionBusy" @click="closeReview">{{ $t('hundredAdmin.close') }}</button>
               <button class="btn-sm danger" :disabled="actionBusy" @click="askReject">{{ $t('hundredAdmin.reject') }}</button>
-              <button class="btn-sm ok" :disabled="actionBusy" @click="askApprove">{{ $t('hundredAdmin.approve') }}</button>
+              <button class="btn-sm ok" :disabled="actionBusy || !evidenceComplete" :title="evidenceComplete ? '' : $t('hundredAdmin.approveDisabledHint')" @click="askApprove">{{ $t('hundredAdmin.approve') }}</button>
             </div>
 
             <div v-else-if="reviewPhase === 'approve-confirm'" class="hundred-action-area">
