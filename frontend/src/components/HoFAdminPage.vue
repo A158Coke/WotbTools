@@ -294,7 +294,7 @@ function downloadScreenshot() {
 }
 
 function screenshotFileName(src) {
-  const m = /^data:image/([a-z0-9+]+);/i.exec(src)
+  const m = /^data:image\/([a-z0-9+]+);/i.exec(src)
   return m ? ('screenshot.' + (m[1] === 'jpeg' ? 'jpg' : m[1])) : 'screenshot.png'
 }
 

@@ -511,10 +511,11 @@ class HundredBattleSubmissionServiceTest {
         assertThat(s.getApprovedBattleCount()).isEqualTo(136);
         assertThat(s.getApprovedAt()).isNotNull();
         assertThat(s.getApprovedBy()).isEqualTo(ADMIN);
-        // APPROVE 终态：proof 截图事务内清空（不永久保存）
+        // APPROVE 终态：proof 截图事务内清空（不永久保存）；evidence 同事务删行 + commit 后清理
         assertThat(s.getProofScreenshot()).isNull();
         // 无旧 CURRENT：仅保存 submission（saveAndFlush 保证提交）
         verify(repository).saveAndFlush(s);
+        verify(evidenceService).discardForSubmission(10L);
     }
 
     @Test
@@ -616,6 +617,8 @@ class HundredBattleSubmissionServiceTest {
         assertThat(s.getRejectReason()).isEqualTo("SCREENSHOT_MISMATCH");
         assertThat(s.getRejectReasonText()).isNull();
         assertThat(s.getProofScreenshot()).isNull();
+        // REJECT 终态：evidence 同事务删行 + commit 后清理
+        verify(evidenceService).discardForSubmission(10L);
     }
 
     @Test
@@ -656,6 +659,8 @@ class HundredBattleSubmissionServiceTest {
         assertThat(result.status()).isEqualTo("CANCELLED");
         assertThat(s.getCancelledAt()).isNotNull();
         assertThat(s.getProofScreenshot()).isNull();
+        // CANCEL 终态：evidence 同事务删行 + commit 后清理
+        verify(evidenceService).discardForSubmission(10L);
     }
 
     @Test

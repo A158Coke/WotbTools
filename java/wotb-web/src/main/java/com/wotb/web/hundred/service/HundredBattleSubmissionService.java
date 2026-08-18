@@ -224,7 +224,10 @@ public class HundredBattleSubmissionService {
         submission.setStatus(HundredBattleStatus.CANCELLED.name());
         submission.setCancelledAt(OffsetDateTime.now());
         submission.setProofScreenshot(null);
-        return mapper.toSummary(repository.save(submission));
+        final HundredSubmissionSummaryDto result = mapper.toSummary(repository.save(submission));
+        // 终态：同事务删 evidence 行 + commit 后引用计数清理物理文件（失败仅 WARN，不回滚 CANCEL）。
+        evidenceService.discardForSubmission(submission.getId());
+        return result;
     }
 
     // ── Phase 5：Public leaderboard ───────────────────────────────────────
@@ -342,7 +345,10 @@ public class HundredBattleSubmissionService {
         submission.setApprovedAt(OffsetDateTime.now());
         submission.setApprovedBy(adminUserId);
         submission.setProofScreenshot(null);
-        return mapper.toSummary(repository.saveAndFlush(submission));
+        final HundredSubmissionSummaryDto result = mapper.toSummary(repository.saveAndFlush(submission));
+        // 终态：同事务删 evidence 行 + commit 后引用计数清理物理文件（失败仅 WARN，不回滚 APPROVE）。
+        evidenceService.discardForSubmission(submission.getId());
+        return result;
     }
 
     /** REJECT：原因强制（OTHER 必须填文本）；proof 截图同事务清空；CURRENT 不变。 */
@@ -364,7 +370,10 @@ public class HundredBattleSubmissionService {
         submission.setRejectReason(reason);
         submission.setRejectReasonText(StringUtils.hasText(rejectReasonText) ? rejectReasonText.trim() : null);
         submission.setProofScreenshot(null);
-        return mapper.toSummary(repository.save(submission));
+        final HundredSubmissionSummaryDto result = mapper.toSummary(repository.save(submission));
+        // 终态：同事务删 evidence 行 + commit 后引用计数清理物理文件（失败仅 WARN，不回滚 REJECT）。
+        evidenceService.discardForSubmission(submission.getId());
+        return result;
     }
 
     /** 删除 CURRENT（管理员）：CURRENT → DELETED，不恢复 SUPERSEDED；原因强制。 */
