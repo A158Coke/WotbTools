@@ -99,6 +99,24 @@ Type8
 
 **遗留**：需扫描全部真实 fixtures/replays 的 propId3 高位值，确认是否还有 FFFC/FFFE 等其它负值 sentinel。
 
+## DEATH_TIME_PRECEDENCE（死亡时刻优先级链 · 2026-08 落地）
+
+**结论**：玩家死亡时刻（`PlayerResultFormat#deathSec`，进而 playback 死亡 ✕ 与 AI/阶段/导出）只信
+可归属到同一实体/账号的可靠死亡证据，优先级：
+
+```
+1. battle_results 结算 deathTimeMillis（proto #104，游戏权威；>0 时直接采用）
+2. 重建事件流 EXACT alive=false（type-7 propId=3 HP=0 / 0xFFFD 死亡 sentinel，同实体→账号映射，
+   取该账号全部实体最后一条 = 最终阵亡；覆盖争霸/复生多次死亡）
+3. legacy 启发式估算（damage-threshold / EntityLeave / Position 停止；仅在无 1/2 证据时兜底）
+```
+
+**落地**：`DeathTimeReconciler`（`DefaultReplayProcessingFacade` 重建成功后对
+`deathTimeMillis==0` 且非存活的玩家校准 `survivalTimeSec`）。damage-threshold 启发式只看累计伤害
+是否越过结算承伤阈值、无视同实体 EXACT HP 观测，会因 overcount/装备 HP 差提前越阈把「残血仍存活」
+误判为「已阵亡」（真实样本：IS-4 96.9s 被判死、实际 HP=102 alive、128.12s 才 HP=0）。位置/方向/伤害
+事件不参与推断（阵亡后服务器仍广播死车位置）；`summaryOnly()` 预览/导出路径无重建事件源，保留 legacy。
+
 ## 关键结论
 
 - 两种战斗模式（7v7 团队 / 30 人随机）类型集一致，频率也一致 → type 31/35/39 是**全局/录像者流**，不是按实体广播。

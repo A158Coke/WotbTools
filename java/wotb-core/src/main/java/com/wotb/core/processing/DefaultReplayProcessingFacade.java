@@ -166,6 +166,12 @@ public class DefaultReplayProcessingFacade {
         // 回放实测血量（含装备/物资加成）回填到 players.observedMaxHp，供 AI 事实与地图鸟瞰使用
         ObservedMaxHp.populate(battle,
                 reconstruction != null ? reconstruction.events() : null, teamEntityMapping);
+        // 死亡时刻校准：结算缺失死亡时刻（deathTimeMillis==0）且非存活时，用重建事件流的
+        // 权威 HP 死亡证据（EXACT alive=false）校准 survivalTimeSec，覆盖 legacy 启发式
+        // （damage-threshold 等）的提前误判——如 IS-4 残血（102 HP）在 96.9s 被提前判死。
+        DeathTimeReconciler.reconcile(battle,
+                reconstruction != null ? reconstruction.events() : null,
+                reconstruction != null ? reconstruction.battleStartRawClockSec() : null);
         final boolean playerFeaturePossible = reconOk && recorderEntityMapped;
         final boolean teamFeaturePossible = reconOk
                 && perspectiveTeamResolved
