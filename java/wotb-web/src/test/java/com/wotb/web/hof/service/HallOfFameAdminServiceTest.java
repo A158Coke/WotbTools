@@ -42,13 +42,15 @@ class HallOfFameAdminServiceTest {
     private final HallOfFameAdminAuditMapper auditMapper = mock(HallOfFameAdminAuditMapper.class);
     private final HallOfFameReplayStorage storage = mock(HallOfFameReplayStorage.class);
     private final ReplayHashLock replayHashLock = mock(ReplayHashLock.class);
+    private final com.wotb.web.hundred.service.HundredReplayEvidenceService hundredEvidenceService =
+            mock(com.wotb.web.hundred.service.HundredReplayEvidenceService.class);
     private final PlatformTransactionManager txManager = mock(PlatformTransactionManager.class);
 
     private HallOfFameAdminService service() {
         // mock txManager.getTransaction → null：TransactionTemplate.execute 仍会执行回调（单事务语义由真实 Spring 管理，
         // 单元测试只验证回调内的业务编排：audit+delete 顺序与失败传播）。
         return new HallOfFameAdminService(repository, recordMapper, auditRepository,
-                auditMapper, storage, replayHashLock, txManager);
+                auditMapper, storage, replayHashLock, hundredEvidenceService, txManager);
     }
 
     @AfterEach
@@ -143,11 +145,12 @@ class HallOfFameAdminServiceTest {
 
     @Test
     void deleteSharedHashRetainsPhysicalFile() {
+        // 1 HoF + 0 Hundred → TOTAL=1 → 保留
         login();
         runLockInline();
         final HallOfFameRecord r = record(42L, "c".repeat(64));
         when(repository.findById(42L)).thenReturn(Optional.of(r));
-        when(repository.countByReplayHash("c".repeat(64))).thenReturn(2L);
+        when(hundredEvidenceService.countReferences("c".repeat(64))).thenReturn(1L);
 
         service().deleteEntry(42L);
 
@@ -158,15 +161,48 @@ class HallOfFameAdminServiceTest {
 
     @Test
     void deleteLastReferenceRemovesPhysicalFile() {
+        // 0 HoF + 0 Hundred → TOTAL=0 → 删除
         login();
         runLockInline();
         final HallOfFameRecord r = record(42L, "d".repeat(64));
         when(repository.findById(42L)).thenReturn(Optional.of(r));
-        when(repository.countByReplayHash("d".repeat(64))).thenReturn(0L);
+        when(hundredEvidenceService.countReferences("d".repeat(64))).thenReturn(0L);
 
         service().deleteEntry(42L);
 
         verify(storage).delete("d".repeat(64));
+    }
+
+    @Test
+    void deleteLastHoFReferenceRetainsFileWhenHundredEvidenceStillReferences() {
+        // 0 HoF + 1 Hundred → TOTAL=1 → 保留
+        login();
+        runLockInline();
+        final HallOfFameRecord r = record(42L, "e".repeat(64));
+        when(repository.findById(42L)).thenReturn(Optional.of(r));
+        when(hundredEvidenceService.countReferences("e".repeat(64))).thenReturn(1L);
+
+        service().deleteEntry(42L);
+
+        verify(auditRepository).save(any(HallOfFameAdminLog.class));
+        verify(repository).delete(r);
+        verify(storage, never()).delete(anyString());
+    }
+
+    @Test
+    void deleteRetainsFileWhenBothDomainsReference() {
+        // 1 HoF + 1 Hundred → TOTAL=2 → 保留（且日志引用数正确）
+        login();
+        runLockInline();
+        final HallOfFameRecord r = record(42L, "f".repeat(64));
+        when(repository.findById(42L)).thenReturn(Optional.of(r));
+        when(hundredEvidenceService.countReferences("f".repeat(64))).thenReturn(2L);
+
+        service().deleteEntry(42L);
+
+        verify(auditRepository).save(any(HallOfFameAdminLog.class));
+        verify(repository).delete(r);
+        verify(storage, never()).delete(anyString());
     }
 
     @Test

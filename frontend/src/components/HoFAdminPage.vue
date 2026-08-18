@@ -15,6 +15,10 @@ const canAdmin = computed(() => {
   return Array.isArray(roles) && (roles.includes('HoF-admin') || roles.includes('wotbtools-admin'))
 })
 
+// 审核证据完整性（与 backend approve invariant 对齐）：exactly 5 行 evidence 且加载无错误才允许 APPROVE。
+// legacy PENDING（0 evidence）/ 加载失败 / 数量 != 5 → 禁用 Approve；REJECT 始终可用（backend 仍为权威边界）。
+const evidenceComplete = computed(() => replayEvidence.value.length === 5 && !evidenceError.value)
+
 const authPhase = ref('init') // init | login | ready
 const denied = ref(false)
 const error = ref('')
@@ -65,6 +69,15 @@ const rejectReason = ref('')
 const rejectReasonText = ref('')
 const actionMsg = ref('')
 const actionBusy = ref(false)
+
+// ── 审核证据（PENDING：截图 + 5 replay metadata）──
+const replayEvidence = ref([])
+const evidenceLoading = ref(false)
+const evidenceError = ref('')
+const screenshotZoom = ref(false)
+// stale-response guard：openReview(A) → loadEvidence(A) 后立刻 openReview(B)，
+// 若 A 的请求最后才返回，禁止 A 的 evidence 覆盖当前 B 的审核弹窗。
+let evidenceGen = 0
 
 // ── 百场删除弹窗（CURRENT 行）──
 const hundredDeleteTarget = ref(null)
@@ -248,8 +261,12 @@ async function openReview(row) {
   approveBattles.value = String(row.claimedBattleCount ?? '')
   rejectReason.value = ''
   rejectReasonText.value = ''
+  replayEvidence.value = []
+  evidenceError.value = ''
+  screenshotZoom.value = false
   try {
     reviewDetail.value = await api.hofAdminHundredDetail(row.id)
+    loadEvidence(row.id)
   } catch (e) {
     actionMsg.value = apiErrorLabel(t, te, e)
   } finally {
@@ -257,11 +274,64 @@ async function openReview(row) {
   }
 }
 
+/** 加载该 submission 的 replay evidence 元数据（旧 PENDING → 空列表，UI 显示 legacy 提示）。 */
+async function loadEvidence(submissionId) {
+  const g = ++evidenceGen
+  evidenceLoading.value = true
+  evidenceError.value = ''
+  try {
+    const rows = (await api.hofAdminHundredReplays(submissionId)) || []
+    if (g !== evidenceGen) return // 过期响应：当前已打开别的 submission，丢弃
+    replayEvidence.value = rows
+  } catch (e) {
+    if (g !== evidenceGen) return
+    evidenceError.value = apiErrorLabel(t, te, e)
+    replayEvidence.value = []
+  } finally {
+    if (g === evidenceGen) evidenceLoading.value = false
+  }
+}
+
+/** 下载截图：base64 data URL 直接触发浏览器下载（无需后端端点）。 */
+function downloadScreenshot() {
+  const src = reviewDetail.value?.proofScreenshot
+  if (!src) return
+  const a = document.createElement('a')
+  a.href = src
+  a.download = screenshotFileName(src)
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+}
+
+function screenshotFileName(src) {
+  const m = /^data:image\/([a-z0-9+]+);/i.exec(src)
+  return m ? ('screenshot.' + (m[1] === 'jpeg' ? 'jpg' : m[1])) : 'screenshot.png'
+}
+
+/** 下载单个 replay evidence（authenticated download API）。 */
+async function downloadReplay(ev) {
+  if (!reviewTarget.value) return
+  try {
+    await api.hofAdminHundredReplayDownload(reviewTarget.value.id, ev.id)
+  } catch (e) {
+    evidenceError.value = apiErrorLabel(t, te, e)
+  }
+}
+
+function fmtSize(bytes) {
+  if (bytes == null) return ''
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
+}
+
 function closeReview() {
   if (actionBusy.value) return
   reviewTarget.value = null
   reviewDetail.value = null
   actionMsg.value = ''
+  screenshotZoom.value = false
 }
 
 function askApprove() {
@@ -630,9 +700,29 @@ function battleTypeLabel(tp) {
             </div>
 
             <div class="hundred-review-section">
-              <div class="hundred-review-label">{{ $t('hundredAdmin.screenshot') }}</div>
-              <img v-if="reviewDetail.proofScreenshot" class="hundred-proof" :src="reviewDetail.proofScreenshot" :alt="$t('hundredAdmin.screenshot')" />
-              <span v-else class="hundred-proof-empty">—</span>
+              <div class="hundred-review-label">{{ $t('hundredAdmin.evidence') }}</div>
+              <div class="hundred-proof-row">
+                <img v-if="reviewDetail.proofScreenshot" class="hundred-proof" :src="reviewDetail.proofScreenshot"
+                     :alt="$t('hundredAdmin.screenshot')" @click="screenshotZoom = true" />
+                <span v-else class="hundred-proof-empty">—</span>
+                <button v-if="reviewDetail.proofScreenshot" class="btn-sm" @click="downloadScreenshot">
+                  {{ $t('hundredAdmin.downloadScreenshot') }}
+                </button>
+              </div>
+              <p v-if="evidenceLoading" class="muted">{{ $t('hundredAdmin.loading') }}</p>
+              <p v-else-if="evidenceError" class="error">{{ evidenceError }}</p>
+              <template v-else>
+                <p v-if="!replayEvidence.length" class="hundred-legacy-warn">{{ $t('hundredAdmin.legacyNoReplays') }}</p>
+                <p v-else-if="replayEvidence.length !== 5" class="hundred-legacy-warn">{{ $t('hundredAdmin.evidenceIncomplete') }}</p>
+                <ul v-else class="replay-evidence-list">
+                  <li v-for="ev in replayEvidence" :key="ev.id" class="replay-evidence-item">
+                    <span class="replay-slot">#{{ ev.slot }}</span>
+                    <span class="replay-name" :title="ev.originalFilename">{{ ev.originalFilename }}</span>
+                    <span class="replay-size">{{ fmtSize(ev.fileSize) }}</span>
+                    <button class="btn-sm" :title="$t('hundredAdmin.replayDownload')" @click="downloadReplay(ev)">⬇</button>
+                  </li>
+                </ul>
+              </template>
             </div>
 
             <div class="hundred-review-section">
@@ -658,7 +748,7 @@ function battleTypeLabel(tp) {
             <div v-if="reviewPhase === 'view'" class="modal-actions">
               <button class="btn-sm" :disabled="actionBusy" @click="closeReview">{{ $t('hundredAdmin.close') }}</button>
               <button class="btn-sm danger" :disabled="actionBusy" @click="askReject">{{ $t('hundredAdmin.reject') }}</button>
-              <button class="btn-sm ok" :disabled="actionBusy" @click="askApprove">{{ $t('hundredAdmin.approve') }}</button>
+              <button class="btn-sm ok" :disabled="actionBusy || !evidenceComplete" :title="evidenceComplete ? '' : $t('hundredAdmin.approveDisabledHint')" @click="askApprove">{{ $t('hundredAdmin.approve') }}</button>
             </div>
 
             <div v-else-if="reviewPhase === 'approve-confirm'" class="hundred-action-area">
@@ -687,6 +777,14 @@ function battleTypeLabel(tp) {
               </div>
             </div>
           </template>
+        </div>
+      </div>
+
+      <!-- ── 截图放大（lightbox）── -->
+      <div v-if="screenshotZoom && reviewDetail?.proofScreenshot" class="modal-overlay screenshot-zoom" @click.self="screenshotZoom = false">
+        <div class="screenshot-zoom-inner">
+          <img :src="reviewDetail.proofScreenshot" :alt="$t('hundredAdmin.screenshot')" />
+          <button class="btn-sm" @click="screenshotZoom = false">{{ $t('hundredAdmin.zoomClose') }}</button>
         </div>
       </div>
 
@@ -800,8 +898,18 @@ function battleTypeLabel(tp) {
 .hundred-inputs input {
   width: 110px; border: 1px solid var(--border-ghost); background: var(--bg-card2); color: var(--text-label);
   padding: 5px 8px; border-radius: 7px; font-size: 13px; font-family: inherit; }
-.hundred-proof { display: block; max-width: 100%; max-height: 320px; border: 1px solid var(--border-ghost); border-radius: 8px; }
+.hundred-proof { display: block; max-width: 100%; max-height: 320px; border: 1px solid var(--border-ghost); border-radius: 8px; cursor: zoom-in; }
 .hundred-proof-empty { color: var(--text-muted); }
+.hundred-proof-row { display: flex; align-items: flex-start; gap: 10px; }
+.hundred-proof-row .btn-sm { margin-top: 4px; white-space: nowrap; }
+.replay-evidence-list { list-style: none; padding: 0; margin: 6px 0; }
+.replay-evidence-item { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: .85rem; color: var(--text-label); }
+.replay-slot { color: var(--text-muted); font-weight: 600; min-width: 2.2em; }
+.replay-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.replay-size { color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hundred-legacy-warn { color: var(--warn-text); font-size: .85rem; margin: 6px 0; }
+.screenshot-zoom .screenshot-zoom-inner { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.screenshot-zoom .screenshot-zoom-inner img { max-width: 90vw; max-height: 80vh; border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,.5); }
 .val-list { list-style: none; padding: 0; margin: 6px 0; }
 .val-list li { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: .85rem; color: var(--text-label); }
 .val-mark { font-weight: 700; }

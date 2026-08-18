@@ -18,7 +18,9 @@ const hofAdminApi = vi.hoisted(() => ({
   hofAdminHundredDetail: vi.fn(() => Promise.resolve({})),
   hofAdminHundredApprove: vi.fn(() => Promise.resolve({ status: 'CURRENT' })),
   hofAdminHundredReject: vi.fn(() => Promise.resolve({ status: 'REJECTED' })),
-  hofAdminHundredDelete: vi.fn(() => Promise.resolve(undefined))
+  hofAdminHundredDelete: vi.fn(() => Promise.resolve(undefined)),
+  hofAdminHundredReplays: vi.fn(() => Promise.resolve([])),
+  hofAdminHundredReplayDownload: vi.fn(() => Promise.resolve(undefined))
 }))
 
 let roles = ['HoF-admin']
@@ -219,6 +221,7 @@ describe('HoFAdminPage', () => {
       page: 1, size: 50, totalItems: 1, totalPages: 1
     })
     hofAdminApi.hofAdminHundredDetail.mockResolvedValue(pendingDetail)
+    hofAdminApi.hofAdminHundredReplays.mockResolvedValue(replayEvidence) // 完整 5 evidence → approve 可用
     const wrapper = mountPage()
     await flushPromises()
     await switchToHundred(wrapper)
@@ -318,6 +321,7 @@ describe('HoFAdminPage', () => {
       items: [pendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1
     })
     hofAdminApi.hofAdminHundredDetail.mockResolvedValue(pendingDetail)
+    hofAdminApi.hofAdminHundredReplays.mockResolvedValue(replayEvidence) // 完整 5 evidence → approve 可用
     const wrapper = mountPage()
     await flushPromises()
     await switchToHundred(wrapper)
@@ -332,5 +336,139 @@ describe('HoFAdminPage', () => {
     await flushPromises()
     expect(hofAdminApi.hofAdminHundredApprove).not.toHaveBeenCalled()
     expect(wrapper.find('.hof-review-modal').text()).toContain('hundredAdmin.approvedBattlesMin')
+  })
+
+  const replayEvidence = [
+    { id: 101, slot: 1, originalFilename: 'b1.wotbreplay', fileSize: 1024, arenaId: 'a1', sha256: 'x'.repeat(64), createdAt: '2024-01-01T00:00:00Z' },
+    { id: 102, slot: 2, originalFilename: 'b2.wotbreplay', fileSize: 2048, arenaId: 'a2', sha256: 'y'.repeat(64), createdAt: '2024-01-01T00:00:00Z' },
+    { id: 103, slot: 3, originalFilename: 'b3.wotbreplay', fileSize: 3 * 1024 * 1024, arenaId: 'a3', sha256: 'z'.repeat(64), createdAt: '2024-01-01T00:00:00Z' },
+    { id: 104, slot: 4, originalFilename: 'b4.wotbreplay', fileSize: 4 * 1024, arenaId: 'a4', sha256: 'w'.repeat(64), createdAt: '2024-01-01T00:00:00Z' },
+    { id: 105, slot: 5, originalFilename: 'b5.wotbreplay', fileSize: 5, arenaId: 'a5', sha256: 'v'.repeat(64), createdAt: '2024-01-01T00:00:00Z' }
+  ]
+
+  async function openReviewWithEvidence(wrapper, replays = replayEvidence) {
+    hofAdminApi.hofAdminHundredList.mockResolvedValue({
+      items: [pendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1
+    })
+    hofAdminApi.hofAdminHundredDetail.mockResolvedValue(pendingDetail)
+    hofAdminApi.hofAdminHundredReplays.mockResolvedValue(replays)
+    const w = wrapper
+    await flushPromises()
+    await switchToHundred(w)
+    await w.find('.hof-hundred .actions .btn-sm').trigger('click')
+    await flushPromises()
+    return w
+  }
+
+  it('review modal loads 5 replay evidence rows with filename/size and per-row download', async () => {
+    const wrapper = mountPage()
+    await openReviewWithEvidence(wrapper)
+
+    expect(hofAdminApi.hofAdminHundredReplays).toHaveBeenCalledWith(11)
+    const items = wrapper.findAll('.replay-evidence-item')
+    expect(items.length).toBe(5)
+    expect(items[0].text()).toContain('#1')
+    expect(items[0].text()).toContain('b1.wotbreplay')
+    expect(items[0].text()).toContain('1.0 KB')
+    expect(items[2].text()).toContain('3.00 MB')
+
+    // 点击单个 replay 下载 → 调 authenticated download API（submissionId + replayId）
+    await items[0].find('button').trigger('click')
+    await flushPromises()
+    expect(hofAdminApi.hofAdminHundredReplayDownload).toHaveBeenCalledWith(11, 101)
+  })
+
+  it('legacy PENDING without replay evidence shows explicit warning and no JS error', async () => {
+    const wrapper = mountPage()
+    await openReviewWithEvidence(wrapper, [])
+
+    expect(wrapper.findAll('.replay-evidence-item').length).toBe(0)
+    const warn = wrapper.find('.hundred-legacy-warn')
+    expect(warn.exists()).toBe(true)
+    expect(warn.text()).toContain('hundredAdmin.legacyNoReplays')
+  })
+
+  it('evidence API failure shows error message', async () => {
+    const wrapper = mountPage()
+    hofAdminApi.hofAdminHundredList.mockResolvedValue({
+      items: [pendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1
+    })
+    hofAdminApi.hofAdminHundredDetail.mockResolvedValue(pendingDetail)
+    hofAdminApi.hofAdminHundredReplays.mockRejectedValue({ code: 'NETWORK_ERROR' })
+    await flushPromises()
+    await switchToHundred(wrapper)
+    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.hundred-review-section .error').exists()).toBe(true)
+    expect(wrapper.find('.hundred-review-section .error').text()).toContain('err:NETWORK_ERROR')
+  })
+
+  it('screenshot click opens zoom lightbox and close button dismisses it', async () => {
+    const wrapper = mountPage()
+    await openReviewWithEvidence(wrapper)
+
+    await wrapper.find('.hundred-proof').trigger('click')
+    expect(wrapper.find('.screenshot-zoom').exists()).toBe(true)
+    expect(wrapper.find('.screenshot-zoom img').attributes('src')).toBe('/api/screenshots/11.png')
+
+    await wrapper.find('.screenshot-zoom .btn-sm').trigger('click')
+    expect(wrapper.find('.screenshot-zoom').exists()).toBe(false)
+  })
+
+  it('download screenshot triggers browser download of the data URL', async () => {
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const wrapper = mountPage()
+    await openReviewWithEvidence(wrapper)
+
+    await wrapper.findAll('.hundred-proof-row .btn-sm')[0].trigger('click')
+    expect(clickSpy).toHaveBeenCalled()
+    clickSpy.mockRestore()
+  })
+
+  function approveBtn(wrapper) {
+    return wrapper.findAll('.hof-review-modal button').find(b => b.text() === 'hundredAdmin.approve')
+  }
+
+  it('legacy PENDING with 0 evidence disables approve but keeps reject available', async () => {
+    const wrapper = mountPage()
+    await openReviewWithEvidence(wrapper, [])
+
+    expect(approveBtn(wrapper).attributes('disabled')).toBeDefined()
+    // REJECT 在 evidence 不完整时仍可用
+    const rejectBtn = wrapper.findAll('.hof-review-modal button').find(b => b.text() === 'hundredAdmin.reject')
+    expect(rejectBtn.attributes('disabled')).toBeUndefined()
+    // 点击禁用按钮不会进入 approve-confirm
+    await approveBtn(wrapper).trigger('click')
+    expect(wrapper.find('.hof-review-modal').text()).not.toContain('hundredAdmin.approveConfirm')
+    expect(hofAdminApi.hofAdminHundredApprove).not.toHaveBeenCalled()
+  })
+
+  it('evidence API failure disables approve', async () => {
+    const wrapper = mountPage()
+    hofAdminApi.hofAdminHundredList.mockResolvedValue({
+      items: [pendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1
+    })
+    hofAdminApi.hofAdminHundredDetail.mockResolvedValue(pendingDetail)
+    hofAdminApi.hofAdminHundredReplays.mockRejectedValue({ code: 'NETWORK_ERROR' })
+    await flushPromises()
+    await switchToHundred(wrapper)
+    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
+    await flushPromises()
+
+    expect(approveBtn(wrapper).attributes('disabled')).toBeDefined()
+    expect(wrapper.findAll('.hof-review-modal button').find(b => b.text() === 'hundredAdmin.reject').attributes('disabled')).toBeUndefined()
+  })
+
+  it('4 evidence disables approve', async () => {
+    const wrapper = mountPage()
+    await openReviewWithEvidence(wrapper, replayEvidence.slice(0, 4))
+    expect(approveBtn(wrapper).attributes('disabled')).toBeDefined()
+  })
+
+  it('exactly 5 evidence enables approve', async () => {
+    const wrapper = mountPage()
+    await openReviewWithEvidence(wrapper, replayEvidence)
+    expect(approveBtn(wrapper).attributes('disabled')).toBeUndefined()
   })
 })
