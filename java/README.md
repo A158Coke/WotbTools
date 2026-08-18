@@ -170,8 +170,8 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
   - `POST /api/hof/hundred/submissions` — 提交百场成绩（**需登录** + Profile gameId/nickname 已配置；multipart：vehicleId/averageDamage/battleCount/screenshot(base64)/replays×5）。硬门禁：Tier X authoritative 校验、5 个 replay 全部解析成功且 gameId/vehicleId 匹配、5 场不同 battle；任一失败整单拒绝不进入 PENDING。同车已有 PENDING → 409 `HUNDRED_PENDING_EXISTS`；新成绩未严格高于 CURRENT → 409 `HUNDRED_NOT_HIGHER`。
   - `POST /api/hof/hundred/submissions/{id}/cancel` — 用户撤销自己的 PENDING（**需登录**）。
   - `GET /api/users/hundred/status` — 个人中心百场状态（CURRENT / PENDING / 最近拒绝；**需登录**）。
-  - 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof/hundred/submissions`（status 过滤）、`GET .../submissions/{id}`（详情，proofScreenshot 仅 PENDING 返回）、`POST .../{id}/approve`（事务内重读 CURRENT 按 approvedAverageDamage 严格比较，旧 CURRENT→SUPERSEDED）、`POST .../{id}/reject`（原因强制）、`POST .../{id}/delete`（仅 CURRENT，原因强制，不恢复 SUPERSEDED）。
-  - 数据模型：`hundred_battle_submission` 单表生命周期（Flyway `V18`），partial unique index 保证 user+vehicle 最多一个 PENDING/CURRENT；身份/成绩快照创建瞬间冻结；proof 截图终态事务内清空（不永久保存），5 个 replay 不落库。
+  - 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof/hundred/submissions`（status 过滤）、`GET .../submissions/{id}`（详情，proofScreenshot 仅 PENDING 返回）、`GET .../submissions/{id}/replays`（回放审核证据 metadata 列表，旧 PENDING → 空）、`GET .../submissions/{submissionId}/replays/{replayId}`（下载原始 .wotbreplay，ownership 校验 + UTF-8 filename）、`POST .../{id}/approve`（事务内重读 CURRENT 按 approvedAverageDamage 严格比较，旧 CURRENT→SUPERSEDED）、`POST .../{id}/reject`（原因强制）、`POST .../{id}/delete`（仅 CURRENT，原因强制，不恢复 SUPERSEDED）。
+  - 数据模型：`hundred_battle_submission` 单表生命周期（Flyway `V18`），partial unique index 保证 user+vehicle 最多一个 PENDING/CURRENT；身份/成绩快照创建瞬间冻结；proof 截图终态事务内清空（不永久保存）；5 个原始 replay 由 `hundred_battle_replay_evidence`（Flyway `V19`）内容寻址持久化（复用 `HallOfFameReplayStorage`），终态（APPROVE/REJECT/CANCEL）同事务删 evidence 行 + commit 后跨表引用计数清理物理文件（失败仅 WARN 保留 orphan）。
 
 ### 陪练与打手（仅在线版）
 
