@@ -51,7 +51,7 @@ class TeamAutopsyServiceTest {
 
     private static AiReplayAnalysisConfig config() {
         return new AiReplayAnalysisConfig(
-                ESTIMATOR, "test-model", 100_000, 131_072, 8192, 1000, false, null, 315);
+                ESTIMATOR, "test-model", 100_000, 131_072, 8192, 1000, false, null, 315, 4096);
     }
 
     /** 7 名本方玩家使用同名坦克，验证 playerKey 可区分。 */

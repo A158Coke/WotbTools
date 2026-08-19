@@ -292,28 +292,6 @@ class DefaultTeamBattleFeatureExtractorTest {
     }
 
     @Test
-    void engagementOutcomeUsesOnePointTwoFiveAsAnExclusiveBoundary() {
-        final Fixture fixture = fixture();
-        final List<ReplayEvent> evenEvents = List.of(
-                mapping(1, 10, 100L),
-                mapping(2, 20, 200L),
-                damage(3, 20f, 10, 20, 125),
-                damage(4, 25f, 20, 10, 100));
-        final List<ReplayEvent> favorableEvents = List.of(
-                mapping(1, 10, 100L),
-                mapping(2, 20, 200L),
-                damage(3, 20f, 10, 20, 126),
-                damage(4, 25f, 20, 10, 100));
-
-        assertEquals(
-                EngagementOutcome.EVEN,
-                extract(fixture, evenEvents).engagements().getFirst().outcome());
-        assertEquals(
-                EngagementOutcome.FAVORABLE,
-                extract(fixture, favorableEvents).engagements().getFirst().outcome());
-    }
-
-    @Test
     void formationClusteringUsesOneHundredMetersAsAnInclusiveBoundary() {
         final Fixture fixture = fixture();
 
@@ -423,7 +401,9 @@ class DefaultTeamBattleFeatureExtractorTest {
     }
 
     @Test
-    void unmappedPositionsHaveAnExplicitCoverageCount() {
+    void unmappedPositionsAreCountedAsNonCombatantNotTactical() {
+        // B 类：无任何 #301 归属的实体（观战镜头/场景对象）位置 → 只进 nonCombatantPositionEventCount
+        // （internal diagnostic），不得进入 AI-visible UNATTRIBUTED limitation。
         final Fixture fixture = fixture();
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),
@@ -431,9 +411,151 @@ class DefaultTeamBattleFeatureExtractorTest {
 
         final TeamBattleFeatureSet features = extract(fixture, events);
 
+        assertEquals(1, features.coverage().nonCombatantPositionEventCount());
+        assertEquals(0, features.coverage().unattributedPositionEventCount());
+        assertFalse(features.limitations().contains(
+                "UNATTRIBUTED_POSITION_EVENTS_PRESENT"));
+    }
+
+    @Test
+    void spectatorEntityDoesNotCreateTeamPositionLimitations() {
+        // R1：观战玩家 X（在 #201/updateArena2/event stream 出现、有位置，但不属于 #301）
+        // 不得产生 UNATTRIBUTED_POSITION_EVENTS_PRESENT，也不得让 #301 成员被误判 unmapped。
+        final Fixture fixture = fixture();
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                mapping(2, 11, 101L),
+                mapping(3, 20, 200L),
+                mapping(4, 30, 300L),
+                // spectator：不在 battle.players（#301）
+                position(5, 5f, 10, 0f, 0f),
+                position(6, 5f, 11, 125f, 0f),
+                position(7, 5f, 20, 250f, 250f),
+                position(8, 1f, 30, 10f, 10f));
+ // spectator 位置
+
+        final TeamBattleFeatureSet features = extract(fixture, events);
+
+        assertEquals(1, features.coverage().nonCombatantPositionEventCount());
+        assertEquals(0, features.coverage().unattributedPositionEventCount());
+        assertFalse(features.limitations().contains(
+                "UNATTRIBUTED_POSITION_EVENTS_PRESENT"));
+        assertTrue(features.members().stream()
+                .allMatch(member -> !member.limitations().contains(
+                        "TEAM_MEMBER_ENTITY_UNMAPPED")
+                        && !member.limitations().contains("TEAM_MEMBER_POSITION_UNAVAILABLE")));
+    }
+
+    @Test
+    void actualCombatantEntityUnattributableStillRaisesLimitation() {
+        // A 类：映射到 #301 实际参战账号的实体无法归因（同一实体映射冲突被 TeamEntityMapper 排除）
+        // → 真实数据质量问题，UNATTRIBUTED_POSITION_EVENTS_PRESENT 必须出现。
+        final Fixture fixture = fixture();
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                mapping(2, 10, 200L),
+    // 冲突：entity 10 同时归属 100/200 → ambiguous 排除
+                position(3, 5f, 10, 0f, 0f));
+
+        final TeamBattleFeatureSet features = extract(fixture, events);
+
         assertEquals(1, features.coverage().unattributedPositionEventCount());
         assertTrue(features.limitations().contains(
                 "UNATTRIBUTED_POSITION_EVENTS_PRESENT"));
+        assertTrue(features.limitations().contains("TEAM_ENTITY_MAPPING_CONFLICT"));
+    }
+
+    @Test
+    void actualCombatantWithoutEntityMappingRaisesUnmappedLimitation() {
+        // R3：A ∈ #301 但完全无 entity mapping → TEAM_MEMBER_ENTITY_UNMAPPED 必须出现。
+        final Fixture fixture = fixture();
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+        // 只有 AllyOne 映射；AllyTwo(101) 无任何实体
+                position(2, 5f, 10, 0f, 0f));
+
+        final TeamBattleFeatureSet features = extract(fixture, events);
+        final TeamMemberFeatureSet allyTwo = features.members().stream()
+                .filter(member -> member.accountId() == 101L)
+                .findFirst().orElseThrow();
+
+        assertTrue(allyTwo.limitations().contains("TEAM_MEMBER_ENTITY_UNMAPPED"));
+        assertTrue(allyTwo.entityIds().isEmpty());
+        // P2 cleanup：完全 unmapped 只披露 mapping failure，不再重复披露派生 position failure
+        assertFalse(allyTwo.limitations().contains("TEAM_MEMBER_POSITION_UNAVAILABLE"),
+                "完全 unmapped 成员不得同时产生 TEAM_MEMBER_POSITION_UNAVAILABLE: " + allyTwo.limitations());
+    }
+
+    @Test
+    void mappedCombatantWithoutUsablePositionRaisesPositionUnavailable() {
+        // R4：A ∈ #301、entity mapping 正常，但整个战斗无任何 usable position
+        // → TEAM_MEMBER_POSITION_UNAVAILABLE（原 TEAM_MEMBER_MOVEMENT_UNAVAILABLE 改名）。
+        final Fixture fixture = fixture();
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                mapping(2, 11, 101L));
+ // AllyTwo mapped 但零位置事件
+
+        final TeamBattleFeatureSet features = extract(fixture, events);
+        final TeamMemberFeatureSet allyTwo = features.members().stream()
+                .filter(member -> member.accountId() == 101L)
+                .findFirst().orElseThrow();
+
+        assertTrue(allyTwo.limitations().contains("TEAM_MEMBER_POSITION_UNAVAILABLE"));
+        assertFalse(allyTwo.limitations().contains("TEAM_MEMBER_ENTITY_UNMAPPED"));
+    }
+
+    @Test
+    void nicknameMappedCombatantEntityStillRaisesLimitation() {
+        // A 类变体：映射事件只有昵称（accountId=0），昵称指向 #301 成员但 TeamEntityMapper 无法归因
+        // （#301 内昵称重名 → uniquePlayersByNickname 剔除）→ 该实体位置仍应计入 unattributed combatant。
+        final PlayerResult allyOneA = player(100L, "AllyOne", 1, 400, 100, true, 0);
+        final PlayerResult allyOneB = player(105L, "AllyOne", 1, 400, 100, true, 0);
+ // 重名
+        final PlayerResult enemy = player(200L, "Enemy", 2, 600, 300, true, 0);
+        final Battle battle = new Battle();
+        battle.arenaId = "arena-team";
+        battle.arenaBonusType = 2;
+        battle.mapName = "test-map";
+        battle.durationS = 120.0;
+        battle.winnerTeam = 1;
+        battle.recorder = "Enemy";
+        // recorder 必须唯一（"AllyOne" 重名会触发 RECORDER_IDENTITY_CONFLICT）
+        battle.players = List.of(allyOneA, allyOneB, enemy);
+        final List<BattleParticipant> participants = List.of(
+                new BattleParticipant(100L, "AllyOne", 1, 1, "a", false),
+                new BattleParticipant(105L, "AllyOne", 1, 2, "b", false),
+                new BattleParticipant(200L, "Enemy", 2, 3, "c", true));
+        final List<ReplayEvent> events = List.of(
+                new ParticipantMappingEvent(1, new ReplayTimestamp(0f, null), 8,
+                        DecodeConfidence.EXACT, 10, 0L, "AllyOne", 1),
+ // nickname-only mapping
+                position(2, 5f, 10, 0f, 0f));
+
+        final TeamBattleFeatureSet features = extract(new Fixture(battle, participants, events), events);
+
+        assertEquals(1, features.coverage().unattributedPositionEventCount());
+        assertEquals(0, features.coverage().nonCombatantPositionEventCount());
+        assertTrue(features.limitations().contains("UNATTRIBUTED_POSITION_EVENTS_PRESENT"));
+    }
+
+    @Test
+    void coverageToStringDoesNotLeakNonCombatantCounter() {
+        // PR #103 §6：non-#301 实体位置计数是 internal-only；AI-visible 渲染（TeamEvidenceFormatter 的
+        // coverage= 行 = record toString）不得包含 nonCombatantPositionEventCount，后端字段访问仍可用。
+        final Fixture fixture = fixture();
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                mapping(2, 30, 300L),
+   // spectator（不在 #301 battle.players）
+                position(3, 5f, 30, 0f, 0f));
+        final TeamFeatureCoverage coverage = extract(fixture, events).coverage();
+
+        assertEquals(1, coverage.nonCombatantPositionEventCount());
+        assertFalse(coverage.toString().contains("nonCombatantPositionEventCount"),
+                "AI-visible coverage 渲染不得泄露 non-combatant 计数: " + coverage);
+        assertFalse(coverage.toString().contains("nonCombatant"),
+                "AI-visible coverage 渲染不得泄露 non-combatant 字样: " + coverage);
     }
 
     @Test

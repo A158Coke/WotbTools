@@ -99,6 +99,58 @@ Type8
 
 **遗留**：需扫描全部真实 fixtures/replays 的 propId3 高位值，确认是否还有 FFFC/FFFE 等其它负值 sentinel。
 
+## SPECTATOR / NON-COMBATANT ENTITY（观战/非参战实体 · 2026-08-19 验证）
+
+**结论**：`battle_results` 名册 #201、`updateArena2`（type-8 sub48 wrapper=1 roster）与事件流
+都可能包含<b>不属于 #301（actual combatant 战绩集合）</b>的人员/实体。
+tactical analysis 的 actual combatant source 一律以 <b>battle_results #301</b> 为准；
+non-#301 实体不得计入 team formation / position coverage / combatant mapping limitation。
+
+- **#201 可含非 #301 账号**：11.18 团队样本（20260725_1535，malinovka）名册 #201=15 人、#301=14 人，
+  多出的账号 3117047709（昵称 结城凛音，team=2）不在战绩 #301 中。
+- **观战实体在事件流中带完整位置**：该观战账号经 updateArena2 映射到 eid=12183248，
+  拥有 1611 个 usable position（battle-relative 0.0s→203.2s，覆盖整场，无 EntityLeave）。
+  <b>未观察到 11.18 样本中「battle start 即 leave」</b>；用户提供的 11.19 样本描述观战人员
+  在战斗开始时离开/消失——两种生命周期都不改变「non-#301 ≠ actual combatant」的判定。
+- **TeamEntityMapper 拒绝观战实体**：账号不在 #301 → reconstruction roster（context 仅含 #301）
+  无该账号 → `isVehicleParticipant` 失败 → identity 不可用（identity=null）。
+- **历史污染**：这些 non-#301 实体的位置此前全部计入 `UNATTRIBUTED_POSITION_EVENTS_PRESENT`
+  （6/6 真实样本 100% 由 non-#301 实体触发；观战镜头实体如 13185652、场景静态物
+  12558633/34/49/59/60/78 等也有独立位置流）。PR #103 起按 #301 成员资格重分类：
+  仅「#301 成员实体无法归因」进入该 limitation；non-#301 实体仅记 internal diagnostic
+  `NON_COMBATANT_POSITION_ENTITY_IGNORED`（不进 AI prompt）。
+
+**判定标准**（production contract）：
+
+```text
+出现在 #201 / updateArena2 / event stream  !=  actual combatant
+ActualCombatantSet  ==  battle_results #301
+spectator != missing team member
+no PositionChanged != missing position（静止同坐标 gap 已证实，见下节）
+```
+
+**PositionChanged 是 change/state-driven（2026-08-19 验证）**：
+- 存活己方静止车辆可长时间无新位置包：11.18 Maus 样本（20260808_1608，holland）
+  7/7 己方成员开局 `gap=10.8s [0.0s→10.8s]` 同坐标（dist=0.0m）且无 EntityLeave，
+  其中 4 人整场存活——「>5s 无 PositionChanged」≠ 位置丢失/失效。
+- 阵亡后服务器仍广播死车位置（同坐标），产生 30s/44.5s 级同坐标 gap（random/1600 样本）。
+- 因此己方（actual combatant）位置语义 = last position + 无 EntityLeave + 未 destroyed
+  → carry-forward 当前位置；敌方保持 UNKNOWN/LAST_KNOWN（anti-future-leak）。
+- **证据层知识契约（2026-08 第六轮）**：FormationDepthEvidence / RelativeDepthHpEvidence 的阶段位置参考
+  带 knowledge provenance（CURRENT / LAST_KNOWN，复用 canonical PositionKnowledge）——friendly
+  carry-forward → CURRENT；enemy 最后观测 age ≤ canonical 当前阈值（5s）→ CURRENT，否则 LAST_KNOWN；
+  exact 阵型/覆盖/距离数学只消费 CURRENT，enemy LAST_KNOWN 不得满足 current completeness / 作为当前
+  centroid / 坐标 / 生成 exact 距离（fail-closed）；LAST_KNOWN 只作为独立信息段
+  （ENEMY_LAST_KNOWN_POSITION_REFERENCES：account + region + observedAtSec + ageSec + knowledge）输出。
+  Region presence 基于 resolved 车辆位置 state（每辆 CURRENT 车辆 +1，不是位置包数量）。
+- **Canonical BattleTimeline ActualCombatantEntitySet（2026-08 第七轮）**：timeline 的 tactical
+  FrameVehicle universe 在 BattleTimelineBuilder 源头按 #301 过滤——只允许可靠映射到 battle.players
+  （#301 actual combatant，accountId > 0）账号的实体进入帧；non-#301 spectator/camera/observer/静态实体
+  即使被 broad roster / ParticipantMapping 赋予完整身份（accountId/team/nickname/坦克元数据）也不进入，
+  因此不产生 FIRST_KNOWN/ENEMY_LOST/ENEMY_REACQUIRED/POSITION_CHANGE/REGION_CHANGE/DESTROYED 等
+  tactical delta（spectator ≠ combatant；#301 是权威边界）。WorldSummary 以 #301 roster 为战术名单；
+  raw timeline.events 保留原始事件供协议用途。
+
 ## DEATH_TIME_PRECEDENCE（死亡时刻优先级链 · 2026-08 落地）
 
 **结论**：玩家死亡时刻（`PlayerResultFormat#deathSec`，供 playback 死亡 ✕ 与 AI/阶段消费）只信

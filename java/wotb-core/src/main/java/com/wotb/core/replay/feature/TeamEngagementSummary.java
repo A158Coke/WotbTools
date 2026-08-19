@@ -19,7 +19,6 @@ public record TeamEngagementSummary(
         int damageReceived,
         List<Long> focusedTargetAccountIds,
         int targetSwitchCount,
-        EngagementOutcome outcome,
         DecodeConfidence confidence
 ) {
 

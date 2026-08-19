@@ -11,7 +11,6 @@ import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.core.processing.FriendlyEnemyResult;
 import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
-import com.wotb.core.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
@@ -229,7 +228,8 @@ public class TeamReplayAnalysisService {
                 : PreBattleSectionRenderer.render(
                         priorsByUnitId.get(firstContext.analysisUnitId()),
                         firstContext.perspectiveTeam(),
-                        TeamRosterResolver.resolveTeamLabel(firstContext.battle(), firstContext.perspectiveTeam()),
+                        // display label：无可靠 clan 时为空串 → renderer 只显示「我方画像」
+                        TeamRosterResolver.resolveDisplayLabel(firstContext.battle(), firstContext.perspectiveTeam()),
                         language,
                         firstContext.battle() == null ? null : firstContext.battle().mapName);
         return new TeamAnalyzeResult(firstAnalysis, preBattleSection);
@@ -288,18 +288,21 @@ public class TeamReplayAnalysisService {
         final List<Map<String, Object>> messages = List.of(
                 Map.<String, Object>of("role", "system", "content", systemPrompt),
                 Map.<String, Object>of("role", "user", "content", userContent));
+        // PR #103 review BLOCKER C：Team Call #2 独立输出上限——effective = min(global, teamReview)，
+        // 同时用于 AiPromptBudgetGuard（input + output 预算）与 AiChatRequest；Player Call #2 保持 global。
+        final int maxOutput = Math.min(config.maxOutputTokens(), config.teamReviewMaxOutputTokens());
         AiPromptBudgetGuard.enforce(
                 config.estimator().estimateMessagesTokens(messages),
                 config.singleReplayMaxInputTokens(),
                 config.contextWindowTokens(),
-                config.maxOutputTokens(),
+                maxOutput,
                 config.promptSafetyMarginTokens());
         final AiChatRequest request = new AiChatRequest(
                 systemPrompt,
                 userContent,
                 config.model(),
                 null,
-                config.maxOutputTokens(),
+                maxOutput,
                 config.call2ThinkingEnabled(),
                 config.call2ThinkingEnabled() ? config.reasoningEffort() : null,
                 null,
@@ -333,10 +336,9 @@ public class TeamReplayAnalysisService {
             count("budget_exhausted");
             return reviewText;
         }
-        final String teamLabel = context.battle().players == null ? null
-                : TeamPerspectiveLabelResolver.resolve(context.battle().players.stream()
-                        .filter(p -> p.team == context.perspectiveTeam())
-                        .toList());
+        // display label（无可靠 clan → 空串）：Autopsy 渲染侧 fallback「本方」，绝不出现 队伍-XXXX
+        final String teamLabel = TeamRosterResolver.resolveDisplayLabel(
+                context.battle(), context.perspectiveTeam());
         final TeamAutopsyOutcome outcome = teamAutopsyService.analyze(
                 context.battle(),
                 context.reconstruction(),
@@ -350,9 +352,10 @@ public class TeamReplayAnalysisService {
         if (outcome == null) {
             return reviewText;
         }
+        // PR #103 最终收尾 BLOCKER A：renderSection 不再接收胜负/队名参数——Autopsy 不重复胜负，
+        // 只渲染「重点复查/高贡献者」两块（无 standout 时为空串）；playerKey 仅作内部 lookup。
         return reviewText + TeamAutopsyPromptBuilder.renderSection(
-                outcome.result(), winner, outcome.roster(), teamLabel,
-                context.battle(), context.perspectiveTeam());
+                outcome.result(), outcome.roster());
     }
 
     /**

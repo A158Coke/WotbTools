@@ -6,7 +6,7 @@ import com.wotb.core.replay.evidence.PointsSituationSkill;
 import com.wotb.core.replay.evidence.PointsSituationSkill.CapturePresence;
 import com.wotb.core.replay.evidence.PointsSituationSkill.KillPointsEvent;
 import com.wotb.core.replay.evidence.PointsSituationSkill.PositionSample;
-import com.wotb.core.replay.evidence.PointsSituationSkill.PushWindow;
+import com.wotb.core.replay.evidence.PointsSituationSkill.ControlRegionEntryWindow;
 import com.wotb.core.replay.evidence.PointsSituationSkill.VehicleTrack;
 import org.junit.jupiter.api.Test;
 
@@ -114,11 +114,11 @@ class PointsSituationSkillTest {
                 new PositionSample(10f, -60f, 0f),
                 new PositionSample(12f, -40f, 0f)));
 
-        final List<PushWindow> windows = PointsSituationSkill.pushWindows(
+        final List<ControlRegionEntryWindow> windows = PointsSituationSkill.controlRegionEntryWindows(
                 List.of(track), Set.of("5"), MAP);
 
         assertEquals(1, windows.size());
-        final PushWindow window = windows.get(0);
+        final ControlRegionEntryWindow window = windows.get(0);
         assertEquals(0f, window.startSec());
         assertEquals(12f, window.endSec());
         assertEquals(1, window.team());
@@ -135,7 +135,7 @@ class PointsSituationSkillTest {
                 new PositionSample(4f, -80f, 0f),    // 进入 5 区
                 new PositionSample(6f, -70f, 0f)));
 
-        final List<PushWindow> windows = PointsSituationSkill.pushWindows(
+        final List<ControlRegionEntryWindow> windows = PointsSituationSkill.controlRegionEntryWindows(
                 List.of(track), Set.of("5"), MAP);
 
         assertEquals(1, windows.size());
@@ -153,14 +153,14 @@ class PointsSituationSkillTest {
                 new PositionSample(0f, -120f, 0f),
                 new PositionSample(10f, -80f, 0f)));
 
-        final List<PushWindow> windows = PointsSituationSkill.pushWindows(
+        final List<ControlRegionEntryWindow> windows = PointsSituationSkill.controlRegionEntryWindows(
                 List.of(inside, gapped), Set.of("5"), MAP);
 
         assertTrue(windows.isEmpty());
     }
 
     @Test
-    void pushWindowsMergeSameTeamOverlappingWindows() {
+    void entryWindowsMergeSameTeamOverlappingWindows() {
         // 两辆车同队、时间重叠 → 合并为一个窗口，车辆去重并集
         final VehicleTrack first = new VehicleTrack(101, 1, List.of(
                 new PositionSample(0f, -120f, 0f),
@@ -172,7 +172,7 @@ class PointsSituationSkillTest {
                 new PositionSample(6f, -70f, 0f),
                 new PositionSample(8f, -60f, 0f)));
 
-        final List<PushWindow> windows = PointsSituationSkill.pushWindows(
+        final List<ControlRegionEntryWindow> windows = PointsSituationSkill.controlRegionEntryWindows(
                 List.of(first, second), Set.of("5"), MAP);
 
         assertEquals(1, windows.size());
@@ -185,29 +185,29 @@ class PointsSituationSkillTest {
     }
 
     @Test
-    void pushWindowsEmptyWithoutControlRegions() {
+    void entryWindowsEmptyWithoutControlRegions() {
         final VehicleTrack track = new VehicleTrack(101, 1, List.of(
                 new PositionSample(0f, -120f, 0f),
                 new PositionSample(2f, -80f, 0f)));
-        assertTrue(PointsSituationSkill.pushWindows(List.of(track), Set.of(), MAP).isEmpty());
+        assertTrue(PointsSituationSkill.controlRegionEntryWindows(List.of(track), Set.of(), MAP).isEmpty());
     }
 
     @Test
-    void boundaryJitterBelowMoveThresholdDoesNotCreatePushWindow() {
+    void boundaryJitterBelowMoveThresholdDoesNotCreateEntryWindow() {
         // 九宫格边界两侧（canonical x=166.67）：x=-84 → 4 区，x=-83 → 5 区，位移仅 1m < 4m
         // 坐标抖动/边界小幅移动不得生成推进窗口；位移达标（14m）的跨越仍正常生成
         final VehicleTrack jitter = new VehicleTrack(101, 1, List.of(
                 new PositionSample(0f, -84f, 0f),
                 new PositionSample(2f, -83f, 0f),
                 new PositionSample(4f, -70f, 0f)));
-        final List<PushWindow> jitterWindows = PointsSituationSkill.pushWindows(
+        final List<ControlRegionEntryWindow> jitterWindows = PointsSituationSkill.controlRegionEntryWindows(
                 List.of(jitter), Set.of("5"), MAP);
         assertTrue(jitterWindows.isEmpty(), "1m 边界抖动不得生成推进窗口");
 
         final VehicleTrack moving = new VehicleTrack(102, 1, List.of(
                 new PositionSample(0f, -84f, 0f),
                 new PositionSample(2f, -70f, 0f)));
-        final List<PushWindow> movingWindows = PointsSituationSkill.pushWindows(
+        final List<ControlRegionEntryWindow> movingWindows = PointsSituationSkill.controlRegionEntryWindows(
                 List.of(moving), Set.of("5"), MAP);
         assertEquals(1, movingWindows.size());
         assertEquals(2f, movingWindows.get(0).startSec());
@@ -226,12 +226,12 @@ class PointsSituationSkillTest {
                 new PositionSample(0f, -120f, 120f),  // 1 区（非占领点区域）
                 new PositionSample(2f, -120f, 0f)));   // 4 区
 
-        final List<PushWindow> windows = PointsSituationSkill.pushWindows(
+        final List<ControlRegionEntryWindow> windows = PointsSituationSkill.controlRegionEntryWindows(
                 List.of(toFive, toFour), Set.of("4", "5"), MAP);
 
         assertEquals(2, windows.size(), "不同目标区域不得合并");
         final Set<Integer> regions = windows.stream()
-                .map(PushWindow::targetRegion).collect(java.util.stream.Collectors.toSet());
+                .map(ControlRegionEntryWindow::targetRegion).collect(java.util.stream.Collectors.toSet());
         assertEquals(Set.of(4, 5), regions);
         assertEquals(1, windows.stream().filter(w -> w.targetRegion() == 5).findFirst()
                 .orElseThrow().accountIds().size());

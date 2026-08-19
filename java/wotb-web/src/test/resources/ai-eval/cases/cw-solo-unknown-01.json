@@ -6,12 +6,12 @@
   "lessonRef": "docs/ai-lessons/cw-solo-unknown-01.md",
   "expectedJudgment": "无法确定（观测不足，禁止臆断意图）",
   "checks": [
-    { "kind": "prompt_contains", "text": "TEAM_MEMBER_MOVEMENT_UNAVAILABLE" },
+    { "kind": "prompt_contains", "text": "TEAM_MEMBER_POSITION_UNAVAILABLE" },
     { "kind": "prompt_omits", "text": "=== MEMBER_MOVEMENTS ===" },
     { "kind": "prompt_omits", "text": "cluster[" },
     { "kind": "prompt_omits", "text": "SOLO_DELAY" },
     { "kind": "prompt_omits", "text": "SOLO_DETACHED" },
-    { "kind": "prompt_omits", "text": "OPENING_MAP_CONTROL" }
+    { "kind": "prompt_omits", "text": "OPENING_SPREAD" }
   ],
   "note": "无 OBSERVED 位置/事件缺失：不产出移动与簇证据。Step 2 将断言信号不足 → 空候选（prompt 规则要求 AI 写无法确定）。"
 }

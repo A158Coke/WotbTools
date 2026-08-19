@@ -75,16 +75,19 @@ class TeamPromptLocalizerTest {
         assertFalse(zh.contains("击杀夺分累计净劣势"), "old wording must be gone from ZH");
         assertFalse(en.contains("a net kill-steal deficit, a points loss"), "old wording must be gone from EN");
         assertFalse(ru.contains("чистый минус по очкам за фраги или поражение"), "old wording must be gone from RU");
-        assertTrue(zh.contains("过路费：对方进攻推进窗口（PUSH_WINDOWS）"),
-                "ZH must carry the toll rule");
+        assertTrue(zh.contains("进入控制点区域窗口（CONTROL_REGION_ENTRY_WINDOWS）"),
+                "ZH must carry the control-region entry window rule");
+        assertFalse(zh.contains("PUSH_WINDOWS"), "ZH must not carry PUSH_WINDOWS");
         assertTrue(en.contains("Points situation and attack/defense posture"),
                 "EN must carry the points-situation rule");
-        assertTrue(en.contains("Toll: inside the opposing team's push window (PUSH_WINDOWS)"),
-                "EN must carry the toll rule");
+        assertTrue(en.contains("The control-region entry window (CONTROL_REGION_ENTRY_WINDOWS)"),
+                "EN must carry the control-region entry window rule");
+        assertFalse(en.contains("PUSH_WINDOWS"), "EN must not carry PUSH_WINDOWS");
         assertTrue(ru.contains("Ситуация по очкам и стойка атаки/обороны"),
                 "RU must carry the points-situation rule");
-        assertTrue(ru.contains("Плата за проезд: в окне продвижения противника (PUSH_WINDOWS)"),
-                "RU must carry the toll rule");
+        assertTrue(ru.contains("Окно входа в зону контроля (CONTROL_REGION_ENTRY_WINDOWS)"),
+                "RU must carry the control-region entry window rule");
+        assertFalse(ru.contains("PUSH_WINDOWS"), "RU must not carry PUSH_WINDOWS");
         assertFalse(en.contains("点数局势与攻防姿态"), "EN must not retain the Chinese rule");
         assertFalse(ru.contains("点数局势与攻防姿态"), "RU must not retain the Chinese rule");
     }

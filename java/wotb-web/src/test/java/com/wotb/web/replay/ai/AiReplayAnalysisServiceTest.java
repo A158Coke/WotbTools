@@ -33,7 +33,6 @@ import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
 import com.wotb.core.replay.stream.ReplayStreamHeader;
-import com.wotb.core.replay.feature.EngagementOutcome;
 import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MovementType;
@@ -216,7 +215,14 @@ class AiReplayAnalysisServiceTest {
         assertEquals("SINGLE_TEAM_BATTLE", req.analysisMode());
         assertTrue(req.systemPrompt().contains("资深团队教练"));
         assertTrue(req.systemPrompt().contains("不可信数据"));
-        assertTrue(teamLastBody().contains("teamLabel="));
+        assertTrue(teamLastBody().contains("teamDisplayLabel="),
+                "header must carry teamDisplayLabel (PR #103 review BLOCKER A)");
+        assertFalse(teamLastBody().contains("teamLabel="),
+                "old teamLabel= internal header must be replaced by teamDisplayLabel=");
+        assertTrue(teamLastBody().contains("opponentDisplayLabel="),
+                "header must carry opponentDisplayLabel");
+        assertFalse(teamLastBody().contains("队伍-"),
+                "user-facing prompt body must not contain 队伍- hash fallback");
         assertTrue(teamLastBody().contains("AUTHORITATIVE_TEAM_RESULT"));
         assertTrue(teamLastBody().contains("OBSERVED_EVENT_SUBSET_NOT_AUTHORITATIVE"));
         assertTrue(teamLastBody().contains("RECORDER_ENTITY_UNMAPPED"));
@@ -257,7 +263,26 @@ class AiReplayAnalysisServiceTest {
                         .getFirst());
         final var result = service.analyzeSingleTeamContext(context);
         assertTrue(result.analysis().startsWith("team review"));
-        assertTrue(result.analysis().contains("团队剖析"));
+        // PR #103 最终收尾 BLOCKER A（生产装配输出，测试 E）：最终 analysis 不得出现
+        // 逐人贡献 / P1（ / P2（ / P3（ / 置信度 / PARTIAL / 团队剖析 header / 重复胜负
+        assertTrue(result.analysis().contains("## 高贡献者"),
+                "有 MVP 时必须输出高贡献者块: " + result.analysis());
+        assertFalse(result.analysis().contains("逐人贡献"),
+                "最终 analysis 不得包含逐人贡献: " + result.analysis());
+        assertFalse(result.analysis().contains("P1（"),
+                "最终 analysis 不得暴露 P1（ internal key: " + result.analysis());
+        assertFalse(result.analysis().contains("P2（"),
+                "最终 analysis 不得暴露 P2（ internal key: " + result.analysis());
+        assertFalse(result.analysis().contains("P3（"),
+                "最终 analysis 不得暴露 P3（ internal key: " + result.analysis());
+        assertFalse(result.analysis().contains("置信度"),
+                "最终 analysis 不得暴露置信度: " + result.analysis());
+        assertFalse(result.analysis().contains("PARTIAL"),
+                "最终 analysis 不得暴露 PARTIAL: " + result.analysis());
+        assertFalse(result.analysis().contains("团队剖析"),
+                "最终 analysis 不得输出团队剖析 header: " + result.analysis());
+        assertFalse(result.analysis().contains("胜负:"),
+                "最终 analysis 不得重复胜负: " + result.analysis());
         final var autopsyRequest = gateway.requests.stream()
                 .filter(r -> "TEAM_AUTOPSY".equals(r.analysisMode()))
                 .findFirst().orElseThrow();
@@ -325,8 +350,8 @@ class AiReplayAnalysisServiceTest {
         // Opposing perspectives now use SEPARATE SINGLE_TEAM calls instead of one MULTI_TEAM call.
         assertTrue(teamLastBody().contains("SINGLE_TEAM_CONTEXT"),
                 "Must use SINGLE_TEAM_CONTEXT for opposing perspectives");
-        assertTrue(teamLastBody().contains("teamLabel="),
-                "Single-team context must contain teamLabel");
+        assertTrue(teamLastBody().contains("teamDisplayLabel="),
+                "Single-team context must contain teamDisplayLabel");
         assertFalse(teamLastBody().contains("MULTI_TEAM_CONTEXT"),
                 "Must NOT use MULTI_TEAM_CONTEXT for opposing perspectives");
         assertFalse(teamLastBody().contains("PERSPECTIVE 1"),
@@ -347,7 +372,8 @@ class AiReplayAnalysisServiceTest {
         final String section = result.preBattleSection();
         assertNotNull(section, "Call #1 prior must be rendered when available");
         assertTrue(section.contains("赛前预测"), "section must be user-visible Chinese");
-        assertTrue(section.contains("我方（队伍-"), "perspective team must be rendered as 我方 with team label");
+        assertTrue(section.contains("我方画像"), "perspective team must be rendered as 我方画像 without hash label");
+        assertFalse(section.contains("队伍-"), "PreBattle user-visible section must not contain 队伍- hash fallback");
         assertTrue(section.contains("重坦正面推进"), "teamA strengths must be readable");
         assertTrue(section.contains("关键对阵"), "key matchups must be present");
         assertFalse(section.contains("PRE-BATTLE"), "machine section header must be removed");
@@ -553,7 +579,7 @@ class AiReplayAnalysisServiceTest {
         final var service = new PlayerReplayAnalysisService(
                 gateway, new AiReplayAnalysisConfig(
                         new ConservativeDeepSeekTokenEstimator(), "test-model",
-                        30000, 131072, 8192, 1000, true, "high", 315));
+                        30000, 131072, 8192, 1000, true, "high", 315, 4096));
         assertThrows(com.wotb.web.replay.exception.AiTimelineUnusableException.class,
                 () -> service.analyzePlayerOrFallback(randomResultWithoutReconstruction()));
         assertTrue(gateway.requests.isEmpty(),
@@ -711,10 +737,10 @@ class AiReplayAnalysisServiceTest {
         final List<EngagementSummary> engagements = List.of(
                 new EngagementSummary(0f, 10f, List.of(), List.of(), 600, 0,
                         new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
-                        EngagementOutcome.FAVORABLE, DecodeConfidence.EXACT),
+                        DecodeConfidence.EXACT),
                 new EngagementSummary(10f, 20f, List.of(), List.of(), 600, 0,
                         new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
-                        EngagementOutcome.FAVORABLE, DecodeConfidence.EXACT));
+                        DecodeConfidence.EXACT));
         final var ctx = buildContextWithFeatures(battle,
                 new PlayerBattleFeatureSet(List.of(), engagements, List.of(), List.of(), List.of(), true));
         service.analyzePlayerContext(ctx);

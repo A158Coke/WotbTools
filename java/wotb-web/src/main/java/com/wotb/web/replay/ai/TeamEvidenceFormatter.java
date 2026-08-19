@@ -9,7 +9,7 @@ import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.evidence.AiEvidence;
-import com.wotb.core.replay.evidence.TeamSoloIntentSkill;
+import com.wotb.core.replay.evidence.TeamSeparationEvidenceSkill;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.CanonicalMapPosition;
 import com.wotb.core.replay.feature.KeyBattleEvent;
@@ -261,7 +261,7 @@ final class TeamEvidenceFormatter {
                 limitations != null && limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
         appendKeyEvents(writer, features.keyEvents());
         appendCaptureAndPoints(writer, battle, perspectiveTeam, mapCode);
-        appendSoloIntentCandidates(writer, features, battle, mapCode);
+        appendSpatialSeparationEvidence(writer, features, battle, mapCode);
     }
 
     /** 争霸赛占点证据段（权威结算 + 静态占领点区域；P3 optional）。 */
@@ -377,7 +377,7 @@ final class TeamEvidenceFormatter {
             writer.append("opposing victoryPointsEarned=UNKNOWN\n");
         }
         final List<String> regions = new ArrayList<>(
-                TeamSoloIntentSkill.controlPointRegions(SEMANTICS_REGISTRY.semanticsFor(mapCode)));
+                TeamSeparationEvidenceSkill.controlPointRegions(SEMANTICS_REGISTRY.semanticsFor(mapCode)));
         regions.sort(String::compareTo);
         writer.append("controlPointRegions="
                 + (regions.isEmpty() ? "UNKNOWN" : regions) + "\n");
@@ -385,7 +385,7 @@ final class TeamEvidenceFormatter {
 
     /**
      * 点数局势证据段（P3 optional）：击杀夺分时间线 + 占领点区域位置存在 +
-     * 进攻推进窗口（含推进方窗口内承受伤害 = 防守方过路费）。
+     * 进入控制点区域窗口（含窗口内进入车辆承受伤害 = 可观测换血事实）。
      * 口径：实时比分未解码，只给可证明信号；OBSERVED_DAMAGE_IS_PARTIAL 时抑制伤害数字。
      */
     static void appendPointsSituation(
@@ -402,29 +402,43 @@ final class TeamEvidenceFormatter {
         }
     }
 
-    /** 单走行为候选段（TeamSoloIntentSkill 规则候选，PARTIAL；P3 optional）。 */
-    static void appendSoloIntentCandidates(
+    /**
+     * 空间分离证据段（TeamSeparationEvidenceSkill 确定性派生证据，PARTIAL；P3 optional）。
+     * <p>Backend Evidence Boundary：只输出中性空间结构事实（kind/distance/静止占比/局部敌情/
+     * 承伤/输出/主力簇位移/其他队友活动），不输出拖延/脱节/图控等战术 verdict——由 LLM 判断。</p>
+     */
+    static void appendSpatialSeparationEvidence(
             final BudgetWriter writer,
             final TeamBattleFeatureSet features,
             final Battle battle,
             final String mapCode
     ) {
-        final List<AiEvidence> candidates = TeamSoloIntentSkill.detect(
+        final List<AiEvidence> evidence = TeamSeparationEvidenceSkill.detect(
                 features, battle, features.battlePhases(),
                 SEMANTICS_REGISTRY.semanticsFor(mapCode));
-        if (candidates.isEmpty()) {
+        if (evidence.isEmpty()) {
             return;
         }
-        writer.append("\n=== SOLO_INTENT_SIGNALS（单走行为信号） ===\n");
-        for (final AiEvidence candidate : candidates) {
+        writer.append("\n=== SPATIAL_SEPARATION_EVIDENCE（空间分离证据·中性结构事实） ===\n");
+        for (final AiEvidence candidate : evidence) {
             writer.append("[" + format(candidate.startSec()) + "-" + format(candidate.endSec()) + "] "
                     + candidate.summary() + "\n");
-            writer.append("  intent=" + candidate.labels().get("intent")
+            writer.append("  kind=" + candidate.labels().get("kind")
+                    + " phase=" + candidate.labels().get("phase")
+                    + " movementState=" + candidate.labels().get("movementState")
                     + " distanceM=" + format(candidate.numbers().get("distanceM"))
+                    + " distanceGrowthM=" + format(candidate.numbers().get("distanceGrowthM"))
                     + " stationaryRatio=" + format(candidate.numbers().get("stationaryRatio"))
-                    + " teammateBenefit=" + format(candidate.numbers().get("teammateBenefit"))
+                    + " mainClusterDisplacementM=" + format(candidate.numbers().get("mainClusterDisplacementM"))
+                    + " observedEnemyNearby=" + format(candidate.numbers().get("observedEnemyNearby"))
+                    + " damageReceivedDuringSpan=" + format(candidate.numbers().get("damageReceivedDuringSpan"))
+                    + " damageDealtDuringSpan=" + format(candidate.numbers().get("damageDealtDuringSpan"))
+                    + " deathDuringSpan=" + format(candidate.numbers().get("deathDuringSpan"))
+                    + " otherFriendlyDeathsDuringSpan=" + format(candidate.numbers().get("otherFriendlyDeathsDuringSpan"))
+                    + " otherFriendlyEngagementCountDuringSpan=" + format(candidate.numbers().get("otherFriendlyEngagementCountDuringSpan"))
+                    + " otherFriendlyDamageDealtDuringSpan=" + format(candidate.numbers().get("otherFriendlyDamageDealtDuringSpan"))
+                    + " otherFriendlyDamageReceivedDuringSpan=" + format(candidate.numbers().get("otherFriendlyDamageReceivedDuringSpan"))
                     + " objectiveProximity=" + format(candidate.numbers().get("objectiveProximity"))
-                    + " nearbyEnemy=" + format(candidate.numbers().get("nearbyEnemy"))
                     + " region=" + candidate.labels().get("region")
                     + " confidence=部分\n");
         }
@@ -704,7 +718,6 @@ final class TeamEvidenceFormatter {
                     + " receivedSubset=" + engagement.damageReceived()
                     + " focusedTargets=" + engagement.focusedTargetAccountIds()
                     + " targetSwitches=" + engagement.targetSwitchCount()
-                    + " outcome=" + PlayerAnalysisTerms.outcomeLabel(engagement.outcome())
                     + " confidence=" + PlayerAnalysisTerms.confidenceLabel(engagement.confidence())
                     + "\n");
         }
@@ -857,14 +870,29 @@ final class TeamEvidenceFormatter {
         return region > 0 ? String.valueOf(region) : null;
     }
 
-    static String resolvePerspectiveLabel(
+    /**
+     * 视角队伍的用户可见 display label（PR #103 review BLOCKER A）：唯一 dominant 且严格多数
+     * 的 clan tag，否则空串（上层 fallback「我方」）；绝不返回 {@code 队伍-XXXX}。
+     */
+    static String resolveDisplayLabel(
             final List<PlayerResult> players, final int perspectiveTeam) {
-        if (players == null) return "未知队伍";
+        if (players == null) return "";
         final List<PlayerResult> perspectivePlayers = players.stream()
                 .filter(p -> p.team == perspectiveTeam)
                 .toList();
-        if (perspectivePlayers.isEmpty()) return "未知队伍";
-        return TeamPerspectiveLabelResolver.resolve(perspectivePlayers);
+        if (perspectivePlayers.isEmpty()) return "";
+        return TeamPerspectiveLabelResolver.resolveDisplayLabel(perspectivePlayers);
+    }
+
+    /** 对方队伍的用户可见 display label（独立解析；无可靠 clan → 空串，上层 fallback「对方」）。 */
+    static String resolveOpponentDisplayLabel(
+            final List<PlayerResult> players, final int perspectiveTeam) {
+        if (players == null) return "";
+        final List<PlayerResult> opponents = players.stream()
+                .filter(p -> PlayerSideResolver.isValidRawTeam(p.team) && p.team != perspectiveTeam)
+                .toList();
+        if (opponents.isEmpty()) return "";
+        return TeamPerspectiveLabelResolver.resolveDisplayLabel(opponents);
     }
 
     static String resolveTankName(final long tankId, final String existingTankName) {

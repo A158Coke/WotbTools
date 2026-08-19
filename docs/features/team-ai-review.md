@@ -77,6 +77,47 @@ Controller 只负责 HTTP binding + 委托 Service。Service 接管 validate / p
 
 事件流迄今只逆向出 sub3 直接伤害，观测聚合与权威结算不一致时标记 `OBSERVED_DAMAGE_IS_PARTIAL`（条件触发：观测=权威时自动消失），prompt 层抑制观测数字、强制以 `AUTHORITATIVE_TEAM_RESULT` 为唯一可信口径；随机战交火段同步抑制「观测输出子集 + 百分比」。待事件流覆盖达 100%（type 5/31/35/39 与更多 EntityMethod subtype 逆向完成）后数字自动恢复输出。
 
+### 5.5 位置知识状态契约（CURRENT / LAST_KNOWN，2026-08 第六轮）
+
+FormationDepthEvidence / RelativeDepthHpEvidence 的阶段位置参考带 knowledge provenance
+（`PhasePositionReference`：accountId / team / x / z / knowledge / observedAtSec / ageSec，
+knowledge 复用 canonical `PositionKnowledge`）：
+
+- **friendly actual combatant**（last position + 无 EntityLeave + 未阵亡）→ **CURRENT**
+  （含 phase 内无新 PositionChanged 的 carry-forward，与 canonical BattleTimeline 同口径）；
+- **enemy** → 最后观测 age ≤ canonical 当前阈值（`BattleTimelineBuilder.POSITION_GAP_SEC=5s`）
+  → **CURRENT**，否则 **LAST_KNOWN**；
+- **exact 阵型/覆盖/距离数学只消费 CURRENT**：enemy LAST_KNOWN 不得满足 current-position completeness、
+  不得作为当前 enemy centroid / enemyPositionPresence / enemyWeightedCoverageScore 坐标、不生成
+  memberDist/referenceDist/relativeDepthM exact 距离；
+- CURRENT 不完整时 FormationDepth fail-close 只输出 `POSITION_COVERAGE_INSUFFICIENT` + CURRENT presence
+  + 独立信息段 `ENEMY_LAST_KNOWN_POSITION_REFERENCES`（account + region + observedAtSec + ageSec +
+  knowledge=LAST_KNOWN，不伪装 current）；RelativeDepthHp 直接 fail-close 该 phase 的 exact 距离测量；
+- **Region presence 基于 resolved 车辆位置 state**（每辆 CURRENT 车辆 +1，不是位置包数量）——同一车辆
+  100 个包 presence 仍 1，coverageCompleteness 与 presence 同一套 resolved state；
+- **Actual Combatant 边界**：证据层只消费 battle_results #301（battle.players）成员位置；
+  spectator/observer/camera/静态实体位置绝不进入战术位置覆盖。
+
+### 5.6 ActualCombatantEntitySet（Canonical BattleTimeline 边界，2026-08 第七轮）
+
+Canonical BattleTimeline 的 tactical FrameVehicle universe 从源头按 #301 过滤（实际参战实体集）：
+
+- **建立方式**：`TeamEntityMapping.actualCombatantEntityIds(#301 账号集)`——
+  #301 账号集 = battle.players 中 accountId > 0 的账号（battle_results #301 actual combatant）；
+  实体集 = mapping.entitiesById 中 identity.usable 且 identity.accountId ∈ #301 账号集的实体；
+  `BattleTimelineBuilder` 帧循环只对 `knownEntityIdsAt(t) ∩ actualCombatantEntityIds` 构造 FrameVehicle；
+  空实体集 → fail-close `TIMELINE_MAPPING_INSUFFICIENT`（timeline 不进入 AI Review）。
+- **为何必须源头过滤**：`BattleDeltaEngine` 以 `isEnemy = !friendly()` 判定敌方，team=null 的
+  spectator/camera 实体会被当作 enemy，产生假的 FIRST_KNOWN / ENEMY_LOST / ENEMY_REACQUIRED，
+  POSITION_CHANGE / REGION_CHANGE 本身无 team gate——只在 FrameVehicle 层过滤才能堵死全部 delta 路径。
+- **broad-roster 完整身份也不放行**：即使 #201 / ParticipantMapping / reconstruction participants 给
+  spectator 提供 accountId / team / nickname / 坦克元数据（usable identity），只要 account 不在 #301，
+  仍从 tactical timeline 排除（防止未来 spectator metadata 更完整后重新污染）。
+- **下游确认**：WorldSummary（#301 roster 为战术名单）、BattleDeltaEngine、EpisodeDetector、
+  TimelineFocusWindowSelector、TeamAiContextCompiler / PersonalAiContextCompiler 全部只消费过滤后的
+  universe（compiler 输出不得出现 spectator 的 车辆#<eid> / account）；raw timeline.events 保留原始事件
+  供必要协议用途。
+
 ### 5.1 战斗开始
 
 `BattleStartResolver.resolve()` 返回 `BattleStartResolution`（IDENTIFIED / ESTIMATED / UNRESOLVED）。所有事件时间通过 `tryRelative()` 转换为 battle-relative（即开战后第 N 秒）。准备阶段事件被排除。
@@ -171,7 +212,7 @@ prompt 构建内部（`TeamAiPromptBuilder` 的 included/omitted/truncated 集�
 
 - `DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS`
 - `TEAM_MEMBER_ENTITY_UNMAPPED`
-- `TEAM_MEMBER_MOVEMENT_UNAVAILABLE`
+- `TEAM_MEMBER_POSITION_UNAVAILABLE`
 - `BATTLE_END_UNRESOLVED`
 - `AI_PERSPECTIVE_OMITTED_FROM_PROMPT`
 - `AI_INPUT_TRUNCATED`（仅当该 unit 实际发生 truncation）

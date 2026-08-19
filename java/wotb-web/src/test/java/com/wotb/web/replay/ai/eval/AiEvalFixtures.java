@@ -10,10 +10,9 @@ import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
-import com.wotb.core.replay.evidence.TeamSoloIntentSkill;
+import com.wotb.core.replay.evidence.TeamSeparationEvidenceSkill;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.CanonicalMapPosition;
-import com.wotb.core.replay.feature.EngagementOutcome;
 import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.MapCoordinateResolution;
@@ -110,7 +109,7 @@ public final class AiEvalFixtures {
         };
     }
 
-    /** 随机战开局图控：录像者开局散开、未接火未阵亡 → OPENING_MAP_CONTROL。 */
+    /** 随机战开局分散（中性 signal）：录像者开局散开、未接火未阵亡 → OPENING_SPREAD。 */
     private static PlayerFixture playerOpeningMapControl() {
         return playerFixtureOf(
                 0, true,
@@ -122,7 +121,7 @@ public final class AiEvalFixtures {
                 new float[]{200f, 200f, 200f});
     }
 
-    /** 随机战卡点拖延：录像者静止 + 敌情压力 → SOLO_DELAY。 */
+    /** 随机战静止分离：录像者静止 + 敌情压力（中性分离窗口；是否拖延由 LLM 判断）。 */
     private static PlayerFixture playerDelayHold() {
         return playerFixtureOf(
                 200, true,
@@ -134,7 +133,7 @@ public final class AiEvalFixtures {
                 new float[]{200f, 200f});
     }
 
-    /** 随机战单走推进被集火：移动 + 无掩护 + 承伤高 → SOLO_DETACHED。 */
+    /** 随机战移动分离 + 承伤高（中性分离窗口；是否脱节由 LLM 判断）。 */
     private static PlayerFixture playerDetachPush() {
         return playerFixtureOf(
                 1800, true,
@@ -216,7 +215,7 @@ public final class AiEvalFixtures {
                 new float[]{1015f, 1030f, 1045f},
                 new float[]{200f, 200f, 200f},
                 new float[]{200f, 200f, 200f},
-                List.of(TeamSoloIntentSkill.OBSERVED_DAMAGE_IS_PARTIAL));
+                List.of(TeamSeparationEvidenceSkill.OBSERVED_DAMAGE_IS_PARTIAL));
     }
 
     private static PlayerFixture playerFixtureOf(
@@ -331,10 +330,10 @@ public final class AiEvalFixtures {
         // 生产形态：DefaultPlayerBattleFeatureExtractor 构造的 player engagement 敌我 account 列表为空
         return new EngagementSummary(start, end, List.of(), List.of(),
                 300, damageReceived, new Vector3(100f, 0f, 150f), new Vector3(100f, 0f, 150f),
-                EngagementOutcome.UNFAVORABLE, DecodeConfidence.PARTIAL);
+                DecodeConfidence.PARTIAL);
     }
 
-    // ===== 场景一：开局图控（散开拿视野，非脱节） =====
+    // ===== 场景一：开局分散（信息覆盖 trade-off，非脱节） =====
 
     private static SingleTeamBattleAnalysisContext openingMapControl() {
         final List<TeamMemberFeatureSet> members = List.of(
@@ -449,14 +448,14 @@ public final class AiEvalFixtures {
         final List<TeamMemberFeatureSet> members = new ArrayList<>();
         for (int index = 0; index < 7; index++) {
             members.add(member(index, 100, true, null, null,
-                    List.of(), List.of(), List.of("TEAM_MEMBER_MOVEMENT_UNAVAILABLE")));
+                    List.of(), List.of(), List.of("TEAM_MEMBER_POSITION_UNAVAILABLE")));
         }
         final TeamAggregateResult aggregate = new TeamAggregateResult(
                 7, 4000, 800, 0, 0, 0, 7, 0, null, null, null, true);
         return context("cw-solo-unknown-01", 2, 1, new double[7],
                 members, aggregate, List.of(), BattlePhaseSummary.buildRelativePhases(60, 300),
                 List.of(keyEvent(60, "TEAM_FIRST_CONTACT", "damage=120")),
-                List.of("TEAM_MEMBER_MOVEMENT_UNAVAILABLE"));
+                List.of("TEAM_MEMBER_POSITION_UNAVAILABLE"));
     }
 
     // ===== 场景六：单走静止但无获利（不硬判拖延） =====
@@ -734,8 +733,8 @@ public final class AiEvalFixtures {
     }
 
     private static SingleTeamBattleAnalysisContext benefitPartialOverlapUnknown() {
-        // 队友 FAVORABLE 交火 40-65s 与单走 span 60-90s 部分重叠：teammateBenefit=UNKNOWN，
-        // 即使单走成员窗口内承伤 1000 且持续拉大距离，也不得生成拖延/脱节
+        // 队友交火 40-65s 与单走 span 60-90s 部分重叠：活动无法可靠归属到窗口（覆盖不足），
+        // 后端不输出该窗口（不得硬生成任何结论）
         final List<TeamMemberFeatureSet> members = List.of(
                 member(0, 0, true, null, null,
                         List.of(move(60, 90, 100, 150, 0, 150, 2f)),
@@ -763,8 +762,8 @@ public final class AiEvalFixtures {
     }
 
     private static SingleTeamBattleAnalysisContext damagePartialBenefitUnknown() {
-        // OBSERVED_DAMAGE_IS_PARTIAL + 没有队友 Engagement：teammateBenefit=UNKNOWN，
-        // 即使单走成员窗口内承伤 1000 且持续拉大距离，也不得生成拖延/脱节
+        // OBSERVED_DAMAGE_IS_PARTIAL + 没有队友活动：不得用「没有观察到」证明未发生，
+        // 后端不输出该窗口（不得硬生成任何结论）
         final List<TeamMemberFeatureSet> members = List.of(
                 member(0, 0, true, null, null,
                         List.of(move(60, 90, 100, 150, 0, 150, 2f)),
@@ -788,7 +787,7 @@ public final class AiEvalFixtures {
         return context("cw-damage-partial-benefit-unknown-01", 3, 2, new double[7],
                 members, aggregate, phases, BattlePhaseSummary.buildRelativePhases(40, 300),
                 List.of(keyEvent(40, "TEAM_FIRST_CONTACT", "damage=120")),
-                List.of(TeamSoloIntentSkill.OBSERVED_DAMAGE_IS_PARTIAL));
+                List.of(TeamSeparationEvidenceSkill.OBSERVED_DAMAGE_IS_PARTIAL));
     }
 
     private static TeamFormationPhase twoClusterPhase(
@@ -1075,7 +1074,7 @@ public final class AiEvalFixtures {
             final long allyAccountId, final List<Long> enemyAccountIds) {
         return new EngagementSummary(start, end, List.of(allyAccountId), enemyAccountIds,
                 300, 200, new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
-                EngagementOutcome.UNFAVORABLE, DecodeConfidence.PARTIAL);
+                DecodeConfidence.PARTIAL);
     }
 
     private static EngagementSummary engagement(
@@ -1084,14 +1083,14 @@ public final class AiEvalFixtures {
             final int damageReceived) {
         return new EngagementSummary(start, end, List.of(allyAccountId), enemyAccountIds,
                 300, damageReceived, new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
-                EngagementOutcome.UNFAVORABLE, DecodeConfidence.PARTIAL);
+                DecodeConfidence.PARTIAL);
     }
 
     private static EngagementSummary favorableEngagement(final float start, final float end,
                                                          final long allyAccountId) {
         return new EngagementSummary(start, end, List.of(allyAccountId), List.of(20_001L),
                 300, 50, new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
-                EngagementOutcome.FAVORABLE, DecodeConfidence.PARTIAL);
+                DecodeConfidence.PARTIAL);
     }
 
     private static KeyBattleEvent keyEvent(final float clock, final String type, final String label) {

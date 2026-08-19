@@ -16,9 +16,11 @@ import com.wotb.core.replay.reconstruction.Vector3;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Canonical BattleTimeline 构建器。
@@ -27,11 +29,19 @@ import java.util.Map;
  * Timeline = INVALID，该 replay 不进入 AI Review（§3，禁止 settlement-only fallback）。</p>
  * <p>Anti-future-leak invariant（§10）：任意 frame second=N 的状态只使用 battle-relative
  * time ≤ N 的事件信息，绝不使用未来信息（含 battle_results 最终状态）。</p>
+ * <p>ActualCombatantEntitySet 边界：tactical FrameVehicle universe 只包含可靠映射到
+ * battle_results #301（battle.players）actual combatant 账号的实体；non-#301
+ * spectator/camera/observer/场景静态实体即使被 broad roster / ParticipantMapping 赋予完整身份
+ * （accountId/team/nickname/坦克元数据），也不得进入 FrameVehicle —— 因此不会产生
+ * FIRST_KNOWN / ENEMY_LOST / ENEMY_REACQUIRED / POSITION_CHANGE / REGION_CHANGE / DESTROYED
+ * 等 tactical deltas（spectator ≠ combatant；#301 是权威边界）。
+ * raw timeline.events 保留原始事件供必要协议用途。</p>
  */
 public final class BattleTimelineBuilder {
 
-    /** 位置流中断阈值（秒）：超过则位置转为 last-known；与 playback POSITION_GAP_SEC 对齐。 */
-    static final double POSITION_GAP_SEC = 5.0;
+    /** 位置流中断阈值（秒）：超过则位置转为 last-known；与 playback POSITION_GAP_SEC 对齐。
+     * public：证据层（FormationDepth/RelativeDepth）复用同一 canonical 阈值判定 enemy CURRENT/LAST_KNOWN。 */
+    public static final double POSITION_GAP_SEC = 5.0;
     /** 位置显著变化阈值（canonical 米）。 */
     static final double POSITION_CHANGE_THRESHOLD_M = 5.0;
     /** 防御性帧数上限（450s 战斗约 451 帧；超长异常拒绝而非 OOM）。 */
@@ -77,6 +87,19 @@ public final class BattleTimelineBuilder {
             return new BattleTimelineResult(null, BattleTimelineValidationResult.invalid(
                     TimelineError.TIMELINE_MAPPING_INSUFFICIENT,
                     "no entity→account mapping could be established"));
+        }
+
+        // ActualCombatantEntitySet（#301 权威边界）：只允许可靠映射到 battle.players
+        // （battle_results #301 actual combatant）账号的实体进入 tactical FrameVehicle universe。
+        // 即使 broad roster / ParticipantMapping 给 non-#301 实体提供完整身份，spectator 仍不得
+        // 形成 tactical vehicle delta（杜绝 team=null 被 BattleDeltaEngine 当作 enemy）。
+        final Set<Long> actualCombatantAccounts = actualCombatantAccounts(battle);
+        final Set<Integer> actualCombatantEntityIds =
+                mapping.actualCombatantEntityIds(actualCombatantAccounts);
+        if (actualCombatantEntityIds.isEmpty()) {
+            return new BattleTimelineResult(null, BattleTimelineValidationResult.invalid(
+                    TimelineError.TIMELINE_MAPPING_INSUFFICIENT,
+                    "no entity maps to a #301 actual combatant account"));
         }
 
         final EntityIndex index = EntityIndex.collect(recon.events(), clock.startRawClockSec());
@@ -125,8 +148,10 @@ public final class BattleTimelineBuilder {
             final double t = second;
             final List<FrameVehicle> vehicles = new ArrayList<>();
             for (final int entityId : index.knownEntityIdsAt(t)) {
-                vehicles.add(frameVehicle(entityId, t, index, mapping, battle,
-                        perspectiveTeam, enricher));
+                if (actualCombatantEntityIds.contains(entityId)) {
+                    vehicles.add(frameVehicle(entityId, t, index, mapping, battle,
+                            perspectiveTeam, enricher));
+                }
             }
             vehicles.sort(Comparator.comparingInt(FrameVehicle::entityId));
 
@@ -369,10 +394,14 @@ public final class BattleTimelineBuilder {
             knowledge = VehicleKnowledgeState.UNKNOWN;
         } else {
             final double age = t - pos.clock();
-            final boolean active = !interruptedByLeave && age <= POSITION_GAP_SEC;
+            // 己方 actual combatant：服务器持续下发完整位置 state，静止时不重复发同坐标包；
+            // last position + 无 EntityLeave + 未 destroyed = 可 carry-forward 的当前位置，
+            // 不因 age > POSITION_GAP_SEC 降级为 LAST_KNOWN（2026-08-19 真实样本：存活己方静止 10.8s 无新位置）。
+            // 敌方保持 anti-future-leak / observation semantics（LAST_KNOWN）。
+            final boolean active = !interruptedByLeave && (friendly || age <= POSITION_GAP_SEC);
             final PositionKnowledge pk = active
                     ? PositionKnowledge.CURRENT : PositionKnowledge.LAST_KNOWN;
-            final PositionSource source = active
+            final PositionSource source = age <= 1e-3
                     ? PositionSource.OBSERVED_EVENT : PositionSource.CARRIED_FORWARD;
             final Confidence conf = active ? Confidence.HIGH : Confidence.MEDIUM;
             position = new FramePosition(
@@ -564,6 +593,24 @@ public final class BattleTimelineBuilder {
     }
 
     record RosterCounts(int friendly, int enemy) {
+    }
+
+    /**
+     * #301 actual combatant 账号集（battle.players，accountId > 0）。
+     * spectator/observer/camera/场景静态实体不在 #301 中，即使出现在 #201 / updateArena2 / 事件流
+     * 也不得进入 tactical vehicle universe（ActualCombatantSet == battle_results #301）。
+     */
+    static Set<Long> actualCombatantAccounts(final Battle battle) {
+        if (battle == null || battle.players == null) {
+            return Set.of();
+        }
+        final Set<Long> accounts = new HashSet<>();
+        for (final PlayerResult p : battle.players) {
+            if (p != null && p.accountId > 0) {
+                accounts.add(p.accountId);
+            }
+        }
+        return accounts;
     }
 
     static RosterCounts rosterCounts(final Battle battle, final int perspectiveTeam) {

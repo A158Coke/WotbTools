@@ -63,7 +63,7 @@ class TeamReplayAnalysisServiceTimelineGateTest {
         gateway = new FakeAiChatGateway();
         final AiReplayAnalysisConfig config = new AiReplayAnalysisConfig(
                 new ConservativeDeepSeekTokenEstimator(), "test-model",
-                200_000, 131_072, 8192, 1000, true, "high", 315);
+                200_000, 131_072, 8192, 1000, true, "high", 315, 4096);
         service = new TeamReplayAnalysisService(
                 gateway, config,
                 new PreBattleStrategicService(gateway, config, null),

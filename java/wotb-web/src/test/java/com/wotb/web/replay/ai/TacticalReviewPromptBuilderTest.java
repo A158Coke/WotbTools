@@ -18,7 +18,6 @@ import com.wotb.core.replay.evidence.EvidenceProvenance;
 import com.wotb.core.replay.evidence.EvidenceSkillResult;
 import com.wotb.core.replay.evidence.EvidenceType;
 import com.wotb.core.replay.evidence.HpMomentumSkill;
-import com.wotb.core.replay.feature.EngagementOutcome;
 import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MovementType;
@@ -150,7 +149,6 @@ class TacticalReviewPromptBuilderTest {
                 List.of(2001L),
                 800, 300,
                 null, null,
-                EngagementOutcome.FAVORABLE,
                 DecodeConfidence.EXACT);
         final PlayerBattleFeatureSet features = new PlayerBattleFeatureSet(
                 List.of(),
@@ -306,7 +304,7 @@ class TacticalReviewPromptBuilderTest {
                 List.of(),
                 List.of(new EngagementSummary(
                         10f, 20f, List.of(1001L), List.of(2001L),
-                        800, 300, null, null, EngagementOutcome.FAVORABLE,
+                        800, 300, null, null,
                         DecodeConfidence.EXACT)),
                 List.of(), List.of(),
                 List.of("OBSERVED_DAMAGE_IS_PARTIAL"), true);

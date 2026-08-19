@@ -4,9 +4,11 @@ import java.util.List;
 
 /**
  * Team Autopsy（team perspective 结算级 TEAM_AUTOPSY）的结构化输出契约。
- * <p>判负 → {@code biggestLiabilities}（战犯，≥1，可多人）；判胜 → {@code mvps}（≥1）。
+ * <p>判负 → {@code biggestLiabilities}（渲染为「重点复查」，允许为空，可多人）；判胜 → {@code mvps}（渲染为「高贡献者」，允许为空）。
  * 所有玩家与 verdict 通过 {@code playerKey}（P1..P7）引用后端 roster，禁止使用坦克/昵称做身份键；
- * 最终渲染由后端按 playerKey 回查权威 nickname/tankName，不信任 LLM 返回的名称。</p>
+ * 最终渲染由后端按 playerKey 回查权威 nickname/tankName，不信任 LLM 返回的名称；playerKey 仅作
+ * 内部 lookup，绝不进入用户可见正文（PR #103 最终收尾 BLOCKER A）。两者均为空 → 无 standout，
+ * 渲染为空串（不输出 header/胜负/逐人贡献）。</p>
  */
 public record TeamAutopsyResult(
         List<AutopsyPlayer> players,

@@ -15,7 +15,11 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 团队名册解析器：RosterEvidence 构建、覆盖度/Jaccard 校验、主导军团归一化与 teamLabel。
+ * 团队名册解析器：RosterEvidence 构建、覆盖度/Jaccard 校验、主导军团归一化与 display label。
+ * <p>PR #103 review BLOCKER A：user-facing 名称只经 {@link #resolveDisplayLabel} /
+ * {@link #resolveOpponentDisplayLabel} 输出——无可靠 clan（无 clan / 平票 / 非多数）时返回
+ * 空串，由上层 fallback 到「我方/对方」；{@code 队伍-XXXX} 只保留在 core 的 internal
+ * {@code resolveStableKey}，绝不进入 Prompt/UI。</p>
  * <p>从 {@link TeamReplayAnalysisService} 拆出，纯静态工具类，不做编排。</p>
  */
 final class TeamRosterResolver {
@@ -29,13 +33,32 @@ final class TeamRosterResolver {
         return evidence == null ? List.of() : evidence.limitations();
     }
 
-    static String resolveTeamLabel(final Battle battle, final int perspectiveTeam) {
-        if (battle == null || battle.players == null) return "未知队伍";
+    /**
+     * 视角队伍的用户可见 display label：唯一 dominant 且严格多数（&gt; 一半）的 clan tag
+     * （最常见 casing）；无可靠 clan 时返回空串（调用方 fallback 到「我方」）。
+     * 绝不返回 {@code 队伍-XXXX}。
+     */
+    static String resolveDisplayLabel(final Battle battle, final int perspectiveTeam) {
+        if (battle == null || battle.players == null) return "";
         final List<PlayerResult> perspectivePlayers = battle.players.stream()
                 .filter(p -> p.team == perspectiveTeam)
                 .toList();
-        if (perspectivePlayers.isEmpty()) return "未知队伍";
-        return TeamPerspectiveLabelResolver.resolve(perspectivePlayers);
+        if (perspectivePlayers.isEmpty()) return "";
+        return TeamPerspectiveLabelResolver.resolveDisplayLabel(perspectivePlayers);
+    }
+
+    /**
+     * 对方队伍的用户可见 display label：独立解析（与视角队伍互不影响）；
+     * 无可靠 clan 时返回空串（调用方 fallback 到「对方」）。绝不返回 {@code 队伍-XXXX}。
+     */
+    static String resolveOpponentDisplayLabel(final Battle battle, final int perspectiveTeam) {
+        if (battle == null || battle.players == null) return "";
+        final List<PlayerResult> opponents = battle.players.stream()
+                .filter(p -> com.wotb.core.processing.PlayerSideResolver.isValidRawTeam(p.team)
+                        && p.team != perspectiveTeam)
+                .toList();
+        if (opponents.isEmpty()) return "";
+        return TeamPerspectiveLabelResolver.resolveDisplayLabel(opponents);
     }
 
     record RosterEvidence(
