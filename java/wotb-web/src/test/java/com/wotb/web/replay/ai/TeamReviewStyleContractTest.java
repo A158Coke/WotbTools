@@ -73,4 +73,44 @@ class TeamReviewStyleContractTest {
                 "总量数据由 UI/后端展示，正文不重复罗列");
         assertTrue(ZH.contains("禁止把复盘写成时间线流水账"), "禁止时间线流水账");
     }
+
+    /**
+     * PR #103 最终收尾 BLOCKER B：局部规则不得重新把 UNKNOWN 定义成「必须告诉用户」——
+     * 任何「证据不足」都必须收敛到内部 UNKNOWN + 默认静默，只有符合全局选择性条件才自然说明。
+     */
+    @Test
+    void localRulesCannotReimposeMandatoryUnknownDisclosure() {
+        // 1) Opening Spread：不得再强制写「无法确认其实际视野收益」
+        assertFalse(ZH.contains("UNKNOWN（写「无法确认其实际视野收益」）"),
+                "Opening Spread 不得强制写「无法确认其实际视野收益」");
+        assertFalse(ZH.contains("视野类收益统一视为 UNKNOWN（写"),
+                "Opening Spread 不得出现 UNKNOWN（写…）强制句式");
+        // 2) Solo candidate：不得再强制「信号不足或矛盾时明确写…」
+        assertFalse(ZH.contains("信号不足或矛盾时明确写「无法从当前回放数据确定」"),
+                "Solo 规则不得强制写「无法从当前回放数据确定」");
+        // 3) points/capture 8e：不得再强制「信号不足或矛盾时写…」
+        assertFalse(ZH.contains("信号不足或矛盾时写「无法从当前回放数据确定」"),
+                "点数规则不得强制写「无法从当前回放数据确定」");
+        // 4) 统一原则：证据不足 → 内部 UNKNOWN；只有符合全局选择性条件才自然说明
+        assertTrue(ZH.contains("保持内部 UNKNOWN"),
+                "证据不足必须收敛到内部 UNKNOWN 语义");
+        assertTrue(ZH.contains("仅当符合全局选择性 UNKNOWN 条件时才自然说明"),
+                "任何自然说明必须显式引用全局选择性 UNKNOWN 条件");
+        // 5) EN / RU 同步：不得残留强制披露句式，必须携带选择性条件引用
+        for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
+            final String localized = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, lang);
+            assertFalse(localized.contains("explicitly write \"cannot be determined from the current replay data\""),
+                    lang + " 不得残留强制写 cannot-be-determined");
+            assertFalse(localized.contains("vision benefit of an opening spread is UNKNOWN (write"),
+                    lang + " 不得残留 UNKNOWN (write…) 强制句式");
+            assertFalse(localized.contains("пишите «невозможно определить по данным реплея»"),
+                    lang + " 不得残留 RU 强制写 невозможно-определить");
+        }
+        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
+        assertTrue(en.contains("selective-UNKNOWN"), "EN 必须携带全局选择性 UNKNOWN 条件");
+        assertTrue(en.contains("stays internal UNKNOWN"), "EN 必须表达内部 UNKNOWN");
+        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
+        assertTrue(ru.contains("селективного UNKNOWN"), "RU 必须携带全局选择性 UNKNOWN 条件");
+        assertTrue(ru.contains("внутренним UNKNOWN"), "RU 必须表达内部 UNKNOWN");
+    }
 }

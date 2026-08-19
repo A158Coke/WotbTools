@@ -152,36 +152,95 @@ class TeamAutopsyPromptBuilderTest {
                 "autopsy must ban window-level toll/attack-defense claims");
     }
 
+    /** BLOCKER A-1：empty verdict（players 完整但 mvps/biggestLiabilities 均为空）→ renderSection 返回空串。 */
     @Test
-    void renderSectionResolvesPlayerKeysThroughRoster() {
+    void renderSectionIsEmptyWithoutStandout() {
+        final TeamAutopsyResult empty = new TeamAutopsyResult(
+                List.of(
+                        new TeamAutopsyResult.AutopsyPlayer("P1", "HIGH", "PARTIAL"),
+                        new TeamAutopsyResult.AutopsyPlayer("P2", "LOW", "PARTIAL"),
+                        new TeamAutopsyResult.AutopsyPlayer("P3", "MEDIUM", "UNKNOWN"),
+                        new TeamAutopsyResult.AutopsyPlayer("P4", "UNKNOWN", "UNKNOWN"),
+                        new TeamAutopsyResult.AutopsyPlayer("P5", "HIGH", "PARTIAL"),
+                        new TeamAutopsyResult.AutopsyPlayer("P6", "MEDIUM", "PARTIAL"),
+                        new TeamAutopsyResult.AutopsyPlayer("P7", "LOW", "UNKNOWN")),
+                List.of(), List.of(), List.of());
+        assertEquals("", TeamAutopsyPromptBuilder.renderSection(empty, sevenStats()),
+                "mvps=[] 且 biggestLiabilities=[] 时整段必须为空（没有 standout 是合法结果）");
+        assertEquals("", TeamAutopsyPromptBuilder.renderSection(null, sevenStats()));
+    }
+
+    /** BLOCKER A-2：只有 liability（重点复查）时，只显示 nickname/tank + reason，不暴露任何 internal。 */
+    @Test
+    void renderSectionLiabilityOnlyShowsNicknameTankAndReason() {
         final TeamAutopsyResult result = new TeamAutopsyResult(
-                List.of(new TeamAutopsyResult.AutopsyPlayer("P1", "HIGH", "EXACT")),
+                List.of(),
+                List.of(),
                 List.of(new TeamAutopsyResult.AutopsyVerdict(
-                        "P1", "关键窗口输出", List.of("e1"), "EXACT")),
+                        "P2", "过早阵亡，这一段值得重点回看", List.of("e2"), "PARTIAL")),
+                List.of());
+        final String section = TeamAutopsyPromptBuilder.renderSection(result, sevenStats());
+        assertTrue(section.contains("## 重点复查"), "必须输出重点复查标题：" + section);
+        assertTrue(section.contains("nick2 / Kranvagn 2"), "必须显示 nickname / tank：" + section);
+        assertTrue(section.contains("过早阵亡，这一段值得重点回看"), "必须直接接 reason：" + section);
+        assertFalse(section.contains("P1"), "不得暴露 P1 internal key：" + section);
+        assertFalse(section.contains("P2（"), "不得暴露 P2（ internal key：" + section);
+        assertFalse(section.contains("P3"), "不得暴露 P3 internal key：" + section);
+        assertFalse(section.contains("逐人贡献"), "不得输出逐人贡献：" + section);
+        assertFalse(section.contains("置信度"), "不得暴露置信度：" + section);
+        assertFalse(section.contains("PARTIAL"), "不得暴露 PARTIAL：" + section);
+        assertFalse(section.contains("UNKNOWN"), "不得暴露 UNKNOWN：" + section);
+        assertFalse(section.contains("胜负"), "不得重复胜负：" + section);
+        assertFalse(section.contains("团队剖析"), "不得输出团队剖析 header：" + section);
+        assertFalse(section.contains("高贡献者"), "无 MVP 时不得输出高贡献者块：" + section);
+    }
+
+    /** BLOCKER A-3：只有 MVP（高贡献者）时，同上；不输出重点复查。 */
+    @Test
+    void renderSectionMvpOnlyShowsNicknameTankAndReason() {
+        final TeamAutopsyResult result = new TeamAutopsyResult(
+                List.of(),
+                List.of(new TeamAutopsyResult.AutopsyVerdict(
+                        "P1", "结算贡献明显突出", List.of("e1"), "PARTIAL")),
+                List.of(),
+                List.of());
+        final String section = TeamAutopsyPromptBuilder.renderSection(result, sevenStats());
+        assertTrue(section.contains("## 高贡献者"), "必须输出高贡献者标题：" + section);
+        assertTrue(section.contains("nick1 / Kranvagn 1"), "必须显示 nickname / tank：" + section);
+        assertTrue(section.contains("结算贡献明显突出"), "必须直接接 reason：" + section);
+        assertFalse(section.contains("P1（"), "不得暴露 P1（ internal key：" + section);
+        assertFalse(section.contains("P2"), "不得暴露 P2 internal key：" + section);
+        assertFalse(section.contains("逐人贡献"), "不得输出逐人贡献：" + section);
+        assertFalse(section.contains("置信度"), "不得暴露置信度：" + section);
+        assertFalse(section.contains("PARTIAL"), "不得暴露 PARTIAL：" + section);
+        assertFalse(section.contains("UNKNOWN"), "不得暴露 UNKNOWN：" + section);
+        assertFalse(section.contains("胜负"), "不得重复胜负：" + section);
+        assertFalse(section.contains("重点复查"), "无 liability 时不得输出重点复查块：" + section);
+    }
+
+    /** BLOCKER A-4：既有 liability 又有 MVP 时允许同时显示，但仍保持简洁、无 internal。 */
+    @Test
+    void renderSectionBothBlocksConciseWithoutInternalLeak() {
+        final TeamAutopsyResult result = new TeamAutopsyResult(
+                List.of(),
+                List.of(new TeamAutopsyResult.AutopsyVerdict(
+                        "P1", "结算贡献明显突出", List.of("e1"), "PARTIAL")),
                 List.of(new TeamAutopsyResult.AutopsyVerdict(
                         "P2", "过早阵亡", List.of("e2"), "PARTIAL")),
-                List.of("l"));
-        final String section = TeamAutopsyPromptBuilder.renderSection(
-                result, win(Winner.ENEMY_WIN), sevenStats(), "CHRD", completeBothAlive(), 1);
-        assertTrue(section.contains("团队剖析"));
-        assertTrue(section.contains("CHRD落败"));
-        // PR #103 review BLOCKER D：用户可见渲染不暴露 confidence/PARTIAL/UNKNOWN 等内部契约
-        assertFalse(section.contains("置信度"), "用户可见复盘不得暴露置信度：" + section);
-        assertFalse(section.contains("部分"), "用户可见复盘不得暴露 PARTIAL 中文标签：" + section);
-        assertFalse(section.contains("PARTIAL"), "用户可见复盘不得暴露 PARTIAL：" + section);
-        assertFalse(section.contains("UNKNOWN"), "用户可见复盘不得暴露 UNKNOWN：" + section);
-        assertTrue(section.contains(": 高"), "HIGH contribution must render as 高");
-        assertTrue(section.contains("**重点复查对象：**"), "重点复查对象标题必须加粗：" + section);
-        assertTrue(section.contains("**高贡献者：**"), "高贡献者标题必须加粗：" + section);
-        assertTrue(section.contains("**P2（\"nick2 / Kranvagn 2\"）**：过早阵亡"),
-                "重点复查对象玩家名必须加粗并直接接 reason：" + section);
-        assertTrue(section.contains("**P1（\"nick1 / Kranvagn 1\"）**：关键窗口输出"),
-                "高贡献者玩家名必须加粗并直接接 reason：" + section);
-        assertTrue(section.contains("依据：e1"), "verdict evidence 渲染为自然「依据」：" + section);
-        assertTrue(section.contains("依据：e2"), "verdict evidence 渲染为自然「依据」：" + section);
-        assertTrue(section.contains("逐人贡献"));
-        assertFalse(section.contains("限制"), "用户可见复盘不得包含限制段：" + section);
-        assertFalse(section.contains("未知玩家"));
+                List.of());
+        final String section = TeamAutopsyPromptBuilder.renderSection(result, sevenStats());
+        assertTrue(section.contains("## 重点复查"), "必须输出重点复查：" + section);
+        assertTrue(section.contains("## 高贡献者"), "必须输出高贡献者：" + section);
+        assertTrue(section.contains("nick1 / Kranvagn 1"), "MVP 显示 nickname / tank：" + section);
+        assertTrue(section.contains("nick2 / Kranvagn 2"), "liability 显示 nickname / tank：" + section);
+        assertFalse(section.contains("P1（"), "不得暴露 P1（：" + section);
+        assertFalse(section.contains("P2（"), "不得暴露 P2（：" + section);
+        assertFalse(section.contains("逐人贡献"), "不得输出逐人贡献：" + section);
+        assertFalse(section.contains("置信度"), "不得暴露置信度：" + section);
+        assertFalse(section.contains("PARTIAL"), "不得暴露 PARTIAL：" + section);
+        assertFalse(section.contains("UNKNOWN"), "不得暴露 UNKNOWN：" + section);
+        assertFalse(section.contains("胜负"), "不得重复胜负：" + section);
+        assertFalse(section.contains("依据"), "evidence 是 internal structured contract，不渲染：" + section);
     }
 
     @Test
@@ -196,11 +255,11 @@ class TeamAutopsyPromptBuilderTest {
         assertTrue(content.contains("叙述必须写「时间耗尽」"));
         assertTrue(content.contains("不要描述成敌方全歼"));
 
+        // BLOCKER A：空 standout（无重点复查/高贡献者）时 renderSection 必须为空串，
+        // 不再输出胜负标签（胜负由主复盘/UI 提供，Autopsy 不重复）。
         final TeamAutopsyResult empty =
                 new TeamAutopsyResult(List.of(), List.of(), List.of(), List.of());
-        final String section = TeamAutopsyPromptBuilder.renderSection(
-                empty, points, sevenStats(), "CHRD", completeBothAlive(), 1);
-        assertTrue(section.contains("CHRD落败（时间耗尽点数判定）"));
+        assertEquals("", TeamAutopsyPromptBuilder.renderSection(empty, sevenStats()));
     }
 
     @Test
@@ -251,14 +310,22 @@ class TeamAutopsyPromptBuilderTest {
         assertEquals("本方获胜", TeamAutopsyPromptBuilder.winnerLabel(
                 new TeamBattleWinner(Winner.FRIENDLY_WIN, WinnerSource.BATTLE_RESULTS, false,
                         PointsEndReason.NOT_APPLICABLE), null, completeBothAlive(), 1));
+        // BLOCKER A：无 standout 时 renderSection 为空串——胜负标签只存在于 winnerLabel（prompt 侧），
+        // 用户可见渲染不输出胜负；也不得出现 TEAM_A / 队伍- / 主要军团。
         final TeamAutopsyResult empty =
                 new TeamAutopsyResult(List.of(), List.of(), List.of(), List.of());
-        final String section = TeamAutopsyPromptBuilder.renderSection(
-                empty, win(Winner.ENEMY_WIN), sevenStats(), "", completeBothAlive(), 1);
-        assertTrue(section.contains("本方落败"), "renderSection 无 clan 时胜负标签必须是本方: " + section);
+        assertEquals("", TeamAutopsyPromptBuilder.renderSection(empty, sevenStats()));
+        final TeamAutopsyResult liabilityOnly = new TeamAutopsyResult(
+                List.of(),
+                List.of(),
+                List.of(new TeamAutopsyResult.AutopsyVerdict(
+                        "P2", "过早阵亡", List.of("e2"), "PARTIAL")),
+                List.of());
+        final String section = TeamAutopsyPromptBuilder.renderSection(liabilityOnly, sevenStats());
         assertFalse(section.contains("TEAM_A"), "用户可见渲染不得出现 TEAM_A: " + section);
         assertFalse(section.contains("队伍-"), "用户可见渲染不得出现 队伍- hash: " + section);
         assertFalse(section.contains("主要军团"), "用户可见渲染不得出现「主要军团」proper noun: " + section);
+        assertFalse(section.contains("本方落败"), "renderSection 不得重复胜负: " + section);
     }
 
     @Test

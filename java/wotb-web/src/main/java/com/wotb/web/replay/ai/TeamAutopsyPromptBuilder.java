@@ -18,8 +18,9 @@ import java.util.stream.Collectors;
  * <p>身份使用 playerKey（P1..P7）引用，nickname/tankName 只作展示；
  * 死亡时间线仅包含本方 TEAM_A 玩家；渲染时按 playerKey 回查后端 roster，
  * 不信任 LLM 返回的名称。settlement-only：LLM 判断的 confidence 仅 PARTIAL/UNKNOWN——
- * confidence/PARTIAL/UNKNOWN/settlement-only/规则候选/provenance 都是 internal structured
- * contract（PR #103 review BLOCKER D），{@link #renderSection} 用户可见渲染一律不暴露。</p>
+ * confidence/PARTIAL/UNKNOWN/settlement-only/规则候选/provenance、playerKey 与逐人贡献分类
+ * 都是 internal structured contract（PR #103 review BLOCKER D + 最终收尾 BLOCKER A），
+ * {@link #renderSection} 用户可见渲染一律不暴露——无 standout 时整段为空，绝不输出 P1~P7。</p>
  */
 public final class TeamAutopsyPromptBuilder {
 
@@ -134,66 +135,56 @@ public final class TeamAutopsyPromptBuilder {
         return sb.toString();
     }
 
-    /** 把结构化结果渲染为追加到复盘尾部的中文「团队剖析」段；按 playerKey 回查 roster。 */
+    /**
+     * 把结构化结果渲染为追加到复盘尾部的中文段落（仅在有 standout 时）。
+     * <p>PR #103 最终收尾 BLOCKER A：{@code mvps} 与 {@code biggestLiabilities} 均为空时返回空串
+     * （没有 standout 是合法结果，UI/主复盘已知胜负，不重复）；有 standout 时只输出
+     * {@code ## 重点复查} / {@code ## 高贡献者} 两小块，每行 {@code nickname / tank：reason}。
+     * playerKey（P1..P7）仅作内部 lookup，绝不进入用户正文；confidence/PARTIAL/UNKNOWN、
+     * settlement-only/规则候选/provenance、逐人贡献分类都是 internal structured contract，
+     * 用户可见渲染一律不暴露（PR #103 review BLOCKER D）。</p>
+     */
     static String renderSection(final TeamAutopsyResult result,
-                                final TeamBattleWinner winner,
-                                final List<TeamAutopsyStats> roster,
-                                final String teamLabel,
-                                final Battle battle,
-                                final int perspectiveTeam) {
-        if (result == null) {
+                                final List<TeamAutopsyStats> roster) {
+        if (result == null
+                || (result.biggestLiabilities().isEmpty() && result.mvps().isEmpty())) {
             return "";
         }
         final Map<String, TeamAutopsyStats> byKey = roster == null ? Map.of()
                 : roster.stream().collect(Collectors.toMap(
                         TeamAutopsyStats::playerKey, Function.identity()));
-        final StringBuilder sb = new StringBuilder(1024);
-        sb.append("\n\n======================== 团队剖析 ========================\n");
-        sb.append("胜负: ").append(winnerLabel(winner, teamLabel, battle, perspectiveTeam)).append('\n');
-        // PR #103 review BLOCKER D：用户可见渲染不暴露 confidence/PARTIAL/UNKNOWN/
-        // settlement-only/规则候选/provenance 等内部契约——置信度只存在于 LLM JSON 契约层。
+        final StringBuilder sb = new StringBuilder(512);
         if (!result.biggestLiabilities().isEmpty()) {
-            sb.append("**重点复查对象：**\n");
+            sb.append("\n\n## 重点复查\n\n");
             for (final TeamAutopsyResult.AutopsyVerdict v : result.biggestLiabilities()) {
-                sb.append("- **").append(renderPlayer(v.playerKey(), byKey)).append("**：")
+                sb.append(renderPlayer(v.playerKey(), byKey)).append("：")
                         .append(v.reason() == null ? "" : v.reason()).append('\n');
-                if (v.evidence() != null && !v.evidence().isEmpty()) {
-                    sb.append("  依据：").append(String.join("；", v.evidence())).append('\n');
-                }
             }
         }
         if (!result.mvps().isEmpty()) {
-            sb.append("**高贡献者：**\n");
+            sb.append("\n\n## 高贡献者\n\n");
             for (final TeamAutopsyResult.AutopsyVerdict v : result.mvps()) {
-                sb.append("- **").append(renderPlayer(v.playerKey(), byKey)).append("**：")
+                sb.append(renderPlayer(v.playerKey(), byKey)).append("：")
                         .append(v.reason() == null ? "" : v.reason()).append('\n');
-                if (v.evidence() != null && !v.evidence().isEmpty()) {
-                    sb.append("  依据：").append(String.join("；", v.evidence())).append('\n');
-                }
-            }
-        }
-        if (!result.players().isEmpty()) {
-            sb.append("逐人贡献:\n");
-            for (final TeamAutopsyResult.AutopsyPlayer p : result.players()) {
-                sb.append("- ").append(renderPlayer(p.playerKey(), byKey))
-                        .append(": ")
-                        .append(contributionLabel(p.contribution()))
-                        .append('\n');
             }
         }
         return sb.toString();
     }
 
-    /** 按 playerKey 回查后端 roster 的权威昵称/坦克名，不信任 LLM 返回的名称。 */
+    /** 按 playerKey 回查后端 roster 的权威昵称/坦克名；playerKey 仅作内部 lookup，绝不进入用户正文。 */
     private static String renderPlayer(final String playerKey,
                                        final Map<String, TeamAutopsyStats> byKey) {
         final TeamAutopsyStats stat = byKey.get(playerKey);
         if (stat == null) {
-            return PromptDataQuoter.quote(playerKey, "未知玩家");
+            return "未知玩家";
         }
-        final String label = stat.nickname().isBlank()
-                ? stat.tankName() : stat.nickname() + " / " + stat.tankName();
-        return playerKey + "（" + PromptDataQuoter.quote(label, stat.tankName()) + "）";
+        final String nickname = stat.nickname();
+        final String tank = stat.tankName();
+        final String label = !nickname.isBlank() && !tank.isBlank()
+                ? nickname + " / " + tank
+                : (!nickname.isBlank() ? nickname : tank);
+        // 用户可见展示：昵称/坦克名来自回放数据，防换行注入；不暴露 playerKey。
+        return label.replaceAll("[\\r\\n]", " ");
     }
 
     /** 团队赛胜负标签（battle 可用时附加全歼双向语义）：全歼敌方获胜 / 被敌方全歼落败。 */
@@ -247,35 +238,6 @@ public final class TeamAutopsyPromptBuilder {
             case UNKNOWN, NOT_APPLICABLE -> "本局为争霸赛点数判定（结束时刻双方均未全员阵亡），"
                     + "不要描述成敌方全歼；无法证明「达到 1000 分提前结束」或「时间耗尽」时只写「点数判定」，"
                     + "终局比分未知，不得编造。";
-        };
-    }
-
-    /**
-     * 渲染层中文映射：LLM JSON 契约保持英文枚举，仅展示时翻译。
-     * <p>PR #103 review BLOCKER D：confidence 是 internal structured contract，用户可见
-     * 渲染（renderSection）不再输出置信度标签；本方法仅保留给 prompt 输入侧使用。</p>
-     */
-    static String confidenceLabel(final String confidence) {
-        if (confidence == null) {
-            return "未知";
-        }
-        return switch (confidence.toUpperCase(java.util.Locale.ROOT)) {
-            case "EXACT" -> "精确";
-            case "INFERRED" -> "推断";
-            case "PARTIAL" -> "部分";
-            default -> "未知";
-        };
-    }
-
-    static String contributionLabel(final String contribution) {
-        if (contribution == null) {
-            return "未知";
-        }
-        return switch (contribution.toUpperCase(java.util.Locale.ROOT)) {
-            case "HIGH" -> "高";
-            case "MEDIUM" -> "中";
-            case "LOW" -> "低";
-            default -> "未知";
         };
     }
 }
