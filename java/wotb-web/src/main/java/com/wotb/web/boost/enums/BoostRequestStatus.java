@@ -1,8 +1,6 @@
 package com.wotb.web.boost.enums;
 
-/**
- * Boost request lifecycle. Database stores English enum names.
- */
+/** Boost request lifecycle. Database stores English enum names. */
 public enum BoostRequestStatus {
     NEW,
     REVIEWING,

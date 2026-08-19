@@ -27,31 +27,23 @@ public record ReplayDecodeResult(
         }
     }
 
-    /**
-     * 无事件、无警告的成功结果
-     */
+    /** 无事件、无警告的成功结果 */
     public static ReplayDecodeResult empty() {
         return new ReplayDecodeResult(DecodeStatus.SUCCESS, List.of(), List.of());
     }
 
-    /**
-     * 单个事件的成功结果
-     */
+    /** 单个事件的成功结果 */
     public static ReplayDecodeResult of(ReplayEvent event) {
         return new ReplayDecodeResult(DecodeStatus.SUCCESS,
                 Collections.singletonList(event), List.of());
     }
 
-    /**
-     * 多个事件的成功结果
-     */
+    /** 多个事件的成功结果 */
     public static ReplayDecodeResult of(List<ReplayEvent> events) {
         return new ReplayDecodeResult(DecodeStatus.SUCCESS, events, List.of());
     }
 
-    /**
-     * 未知类型的占位结果
-     */
+    /** 未知类型的占位结果 */
     public static ReplayDecodeResult unsupported() {
         return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED, List.of(), List.of());
     }

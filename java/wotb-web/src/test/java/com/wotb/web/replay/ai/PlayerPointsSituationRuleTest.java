@@ -5,9 +5,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 点数局势与攻防姿态规则契约：player 三 prompt 逐字携带 ZH 规则，EN/RU 替换后不残留中文。
- */
+/** 点数局势与攻防姿态规则契约：player 三 prompt 逐字携带 ZH 规则，EN/RU 替换后不残留中文。 */
 class PlayerPointsSituationRuleTest {
 
     @Test

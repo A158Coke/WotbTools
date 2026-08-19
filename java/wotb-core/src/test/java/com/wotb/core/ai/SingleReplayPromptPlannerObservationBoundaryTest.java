@@ -150,9 +150,7 @@ class SingleReplayPromptPlannerObservationBoundaryTest {
                 reconstruction(checkpoints), context(keyEventSecs), BATTLE_START);
     }
 
-    /**
-     * LEVEL_3 的当前位置输出行（不带 LAST_KNOWN_POSITION 标记）。
-     */
+    /** LEVEL_3 的当前位置输出行（不带 LAST_KNOWN_POSITION 标记）。 */
     private static String currentLine(final float relSec, final float canonicalX, final float canonicalZ) {
         return String.format("t=%.1fs entity=E%d coordinateStatus=VALID canonicalX=%.1f canonicalZ=%.1f%n",
                 relSec, ENEMY_ENTITY_ID, canonicalX, canonicalZ);

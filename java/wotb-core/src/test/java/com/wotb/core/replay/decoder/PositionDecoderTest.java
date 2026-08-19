@@ -17,9 +17,7 @@ class PositionDecoderTest {
     private final PositionDecoder decoder = new PositionDecoder();
     private final ReplayDecodeContext ctx = new ReplayDecodeContext("11.18.0_china_apple");
 
-    /**
-     * 构造一个 type=10 的包，payload 为全 0 的指定长度（坐标 0 为合法有限值）。
-     */
+    /** 构造一个 type=10 的包，payload 为全 0 的指定长度（坐标 0 为合法有限值）。 */
     private static RawReplayPacket positionPacket(int payloadLen) {
         final byte[] payload = new byte[payloadLen];
         return new RawReplayPacket(0, 0, payloadLen, 10, 1.0f,

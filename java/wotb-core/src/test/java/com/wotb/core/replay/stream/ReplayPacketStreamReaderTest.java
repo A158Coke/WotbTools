@@ -4,10 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * ReplayPacketStreamReader 单元测试。
@@ -39,15 +36,12 @@ class ReplayPacketStreamReaderTest {
         final byte[] ver = "1.2.3".getBytes(StandardCharsets.UTF_8);
         final byte[] data = new byte[4 + 8 + 1 + hash.length + 1 + ver.length + 1];
         int off = 0;
-        writeI32LE(data, off, 0x12345678);
-        off += 4;
+        writeI32LE(data, off, 0x12345678); off += 4;
         off += 8; // unknown
         data[off++] = (byte) hash.length;
-        System.arraycopy(hash, 0, data, off, hash.length);
-        off += hash.length;
+        System.arraycopy(hash, 0, data, off, hash.length); off += hash.length;
         data[off++] = (byte) ver.length;
-        System.arraycopy(ver, 0, data, off, ver.length);
-        off += ver.length;
+        System.arraycopy(ver, 0, data, off, ver.length); off += ver.length;
         data[off] = 0; // padding
 
         final ReplayStreamHeader header = ReplayStreamHeader.parse(data);

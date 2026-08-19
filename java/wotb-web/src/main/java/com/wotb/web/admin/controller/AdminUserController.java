@@ -16,9 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-/**
- * 管理员用户管理 API。需要 wotbtools-admin 角色。
- */
+/** 管理员用户管理 API。需要 wotbtools-admin 角色。 */
 @RestController
 @RequestMapping(ApiPaths.ADMIN_USERS)
 public class AdminUserController {

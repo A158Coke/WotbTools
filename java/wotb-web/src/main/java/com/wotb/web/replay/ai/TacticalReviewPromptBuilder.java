@@ -34,14 +34,13 @@ public final class TacticalReviewPromptBuilder {
     static final int MAX_WINDOW_DETAIL = 8;
 
 
+
     static final String TACTICAL_SYSTEM_PROMPT = AiPromptLibrary.zh("player/tactical");
 
     private TacticalReviewPromptBuilder() {
     }
 
-    /**
-     * 最终产物：system + user（含裁剪状态 + 各 context section 的 token 估算，供可观测性）。
-     */
+    /** 最终产物：system + user（含裁剪状态 + 各 context section 的 token 估算，供可观测性）。 */
     public record PreparedHarnessPrompt(
             String systemPrompt,
             String userContent,
@@ -110,13 +109,13 @@ public final class TacticalReviewPromptBuilder {
         // 一律不得进入 LLM（即使调用方传入未过滤的 EvidenceSkillResult）。
         final List<AiEvidence> evidenceForPrompt = damagePartial
                 ? rawEvidence.stream()
-                .filter(e -> e.type() != EvidenceType.ENGAGEMENT_TRADE)
-                .toList()
+                        .filter(e -> e.type() != EvidenceType.ENGAGEMENT_TRADE)
+                        .toList()
                 : rawEvidence;
         final List<AiEvidence> windows = damagePartial
                 ? rawWindows.stream()
-                .filter(w -> !windowCarriesTradeDamage(w))
-                .toList()
+                        .filter(w -> !windowCarriesTradeDamage(w))
+                        .toList()
                 : rawWindows;
         int windowDetail = Math.min(MAX_WINDOW_DETAIL, windows.size());
         boolean includeEvidence = !evidenceForPrompt.isEmpty();
@@ -131,14 +130,14 @@ public final class TacticalReviewPromptBuilder {
         }
         final String damageWindowsSection = recorder != null && recorder.accountId() != null
                 ? PlayerEvidenceFormatter.recorderDamageReceivedWindowsSection(
-                battle, recon, recorder.accountId(), damagePartial)
+                        battle, recon, recorder.accountId(), damagePartial)
                 : "";
         boolean includeDamageWindows = !damageWindowsSection.isEmpty();
         boolean includePhases = features != null && features.phases() != null && !features.phases().isEmpty();
         // 点数局势（击杀夺分时间线/占领点存在/进入控制点区域窗口）：录像者队伍视角
         final String pointsSituationSection = recorder != null && recorder.team() != null
                 ? PointsSituationEvidence.renderSection(
-                battle, recon, recorder.team(), damagePartial, "你的队伍", "敌方")
+                        battle, recon, recorder.team(), damagePartial, "你的队伍", "敌方")
                 : "";
         boolean includePointsSituation = !pointsSituationSection.isEmpty();
         boolean includeTop = !windows.isEmpty();
@@ -318,19 +317,15 @@ public final class TacticalReviewPromptBuilder {
         return sb.toString();
     }
 
-    /**
-     * 关键窗口是否携带换血伤害数字（覆盖不全时防御性剔除，避免未来调用方传入未过滤结果）。
-     */
+    /** 关键窗口是否携带换血伤害数字（覆盖不全时防御性剔除，避免未来调用方传入未过滤结果）。 */
     private static boolean windowCarriesTradeDamage(final AiEvidence window) {
         final Map<String, Double> numbers = window.numbers();
         return numbers != null
                 && (numbers.containsKey("recorderDamageDealt")
-                || numbers.containsKey("recorderDamageReceived"));
+                        || numbers.containsKey("recorderDamageReceived"));
     }
 
-    /**
-     * 对炮明细的对方玩家：优先昵称，缺失时回退 accountId。
-     */
+    /** 对炮明细的对方玩家：优先昵称，缺失时回退 accountId。 */
     private static String opponentNames(final List<Long> accountIds, final Battle battle) {
         if (accountIds == null || accountIds.isEmpty()) {
             return "未知";

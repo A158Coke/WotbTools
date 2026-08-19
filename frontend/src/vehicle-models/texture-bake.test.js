@@ -1,11 +1,11 @@
 /**
  * Texture-Baked Top-View prototype（Phase B）— 纯函数契约测试（B16 #9-18）。
  */
-import {describe, expect, it} from 'vitest'
-import {readdirSync, readFileSync} from 'node:fs'
-import {fileURLToPath} from 'node:url'
-import {bakeTopView, encodePng, interpolateUV, neutralize, sampleTexture} from '../../scripts/texture-bake-lib.mjs'
-import {computeTurretModelPivot} from '../../scripts/extractor-lib.mjs'
+import { describe, expect, it } from 'vitest'
+import { readFileSync, readdirSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { bakeTopView, encodePng, interpolateUV, neutralize, sampleTexture } from '../../scripts/texture-bake-lib.mjs'
+import { computeTurretModelPivot } from '../../scripts/extractor-lib.mjs'
 
 const ASSETS = fileURLToPath(new URL('./assets/maus/', import.meta.url))
 

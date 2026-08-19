@@ -142,9 +142,7 @@ class Is4DeathProbeTest {
         }
     }
 
-    /**
-     * 该实体最后一次 EXACT alive=false (HP=0) 事件的 battle-relative 秒；无则 null。
-     */
+    /** 该实体最后一次 EXACT alive=false (HP=0) 事件的 battle-relative 秒；无则 null。 */
     private static Double evidenceDeathTime(
             final List<ReplayEvent> events, final int eid, final Float battleStartRawClockSec) {
         Double last = null;
@@ -197,8 +195,7 @@ class Is4DeathProbeTest {
                     lastPos = p.timestamp().rawClockSec();
                 }
                 case TurretDirectionChangedEvent t when t.entityId() == eid -> turCount++;
-                default -> {
-                }
+                default -> { }
             }
         }
         System.out.println("    entity " + eid + ": hpEvents=" + hpCount

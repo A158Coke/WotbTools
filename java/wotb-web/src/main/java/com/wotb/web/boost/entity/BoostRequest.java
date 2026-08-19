@@ -10,9 +10,7 @@ import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.OffsetDateTime;
 
-/**
- * 陪练需求/订单。与 boost_request 的 Flyway 迁移逐列对齐。
- */
+/** 陪练需求/订单。与 boost_request 的 Flyway 迁移逐列对齐。 */
 @Entity
 @Table(name = "boost_request")
 public class BoostRequest {
@@ -80,155 +78,62 @@ public class BoostRequest {
         // JPA
     }
 
-    public Long getId() {
-        return id;
-    }
+    public Long getId() { return id; }
+    public void setId(final Long id) { this.id = id; }
 
-    public void setId(final Long id) {
-        this.id = id;
-    }
+    public String getRequesterUserId() { return requesterUserId; }
+    public void setRequesterUserId(final String requesterUserId) { this.requesterUserId = requesterUserId; }
 
-    public String getRequesterUserId() {
-        return requesterUserId;
-    }
+    public Long getWotbAccountId() { return wotbAccountId; }
+    public void setWotbAccountId(final Long wotbAccountId) { this.wotbAccountId = wotbAccountId; }
 
-    public void setRequesterUserId(final String requesterUserId) {
-        this.requesterUserId = requesterUserId;
-    }
+    public Long getPlayerAccountId() { return playerAccountId; }
+    public void setPlayerAccountId(final Long playerAccountId) { this.playerAccountId = playerAccountId; }
 
-    public Long getWotbAccountId() {
-        return wotbAccountId;
-    }
+    public String getPlayerNickname() { return playerNickname; }
+    public void setPlayerNickname(final String playerNickname) { this.playerNickname = playerNickname; }
 
-    public void setWotbAccountId(final Long wotbAccountId) {
-        this.wotbAccountId = wotbAccountId;
-    }
+    public String getRegion() { return region; }
+    public void setRegion(final String region) { this.region = region; }
 
-    public Long getPlayerAccountId() {
-        return playerAccountId;
-    }
+    public String getRequestType() { return requestType; }
+    public void setRequestType(final String requestType) { this.requestType = requestType; }
 
-    public void setPlayerAccountId(final Long playerAccountId) {
-        this.playerAccountId = playerAccountId;
-    }
+    public String getTargetDescription() { return targetDescription; }
+    public void setTargetDescription(final String targetDescription) { this.targetDescription = targetDescription; }
 
-    public String getPlayerNickname() {
-        return playerNickname;
-    }
+    public String getBudgetRange() { return budgetRange; }
+    public void setBudgetRange(final String budgetRange) { this.budgetRange = budgetRange; }
 
-    public void setPlayerNickname(final String playerNickname) {
-        this.playerNickname = playerNickname;
-    }
+    public String getContactType() { return contactType; }
+    public void setContactType(final String contactType) { this.contactType = contactType; }
 
-    public String getRegion() {
-        return region;
-    }
+    public String getContactValue() { return contactValue; }
+    public void setContactValue(final String contactValue) { this.contactValue = contactValue; }
 
-    public void setRegion(final String region) {
-        this.region = region;
-    }
+    public String getAvailableTime() { return availableTime; }
+    public void setAvailableTime(final String availableTime) { this.availableTime = availableTime; }
 
-    public String getRequestType() {
-        return requestType;
-    }
+    public String getRemark() { return remark; }
+    public void setRemark(final String remark) { this.remark = remark; }
 
-    public void setRequestType(final String requestType) {
-        this.requestType = requestType;
-    }
+    public String getStatus() { return status; }
+    public void setStatus(final String status) { this.status = status; }
 
-    public String getTargetDescription() {
-        return targetDescription;
-    }
+    public String getAdminNote() { return adminNote; }
+    public void setAdminNote(final String adminNote) { this.adminNote = adminNote; }
 
-    public void setTargetDescription(final String targetDescription) {
-        this.targetDescription = targetDescription;
-    }
-
-    public String getBudgetRange() {
-        return budgetRange;
-    }
-
-    public void setBudgetRange(final String budgetRange) {
-        this.budgetRange = budgetRange;
-    }
-
-    public String getContactType() {
-        return contactType;
-    }
-
-    public void setContactType(final String contactType) {
-        this.contactType = contactType;
-    }
-
-    public String getContactValue() {
-        return contactValue;
-    }
-
-    public void setContactValue(final String contactValue) {
-        this.contactValue = contactValue;
-    }
-
-    public String getAvailableTime() {
-        return availableTime;
-    }
-
-    public void setAvailableTime(final String availableTime) {
-        this.availableTime = availableTime;
-    }
-
-    public String getRemark() {
-        return remark;
-    }
-
-    public void setRemark(final String remark) {
-        this.remark = remark;
-    }
-
-    public String getStatus() {
-        return status;
-    }
-
-    public void setStatus(final String status) {
-        this.status = status;
-    }
-
-    public String getAdminNote() {
-        return adminNote;
-    }
-
-    public void setAdminNote(final String adminNote) {
-        this.adminNote = adminNote;
-    }
-
-    public OffsetDateTime getCompletionSubmittedAt() {
-        return completionSubmittedAt;
-    }
-
+    public OffsetDateTime getCompletionSubmittedAt() { return completionSubmittedAt; }
     public void setCompletionSubmittedAt(final OffsetDateTime completionSubmittedAt) {
         this.completionSubmittedAt = completionSubmittedAt;
     }
 
-    public OffsetDateTime getAutoConfirmAt() {
-        return autoConfirmAt;
-    }
+    public OffsetDateTime getAutoConfirmAt() { return autoConfirmAt; }
+    public void setAutoConfirmAt(final OffsetDateTime autoConfirmAt) { this.autoConfirmAt = autoConfirmAt; }
 
-    public void setAutoConfirmAt(final OffsetDateTime autoConfirmAt) {
-        this.autoConfirmAt = autoConfirmAt;
-    }
+    public OffsetDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(final OffsetDateTime createdAt) { this.createdAt = createdAt; }
 
-    public OffsetDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(final OffsetDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
-
-    public OffsetDateTime getUpdatedAt() {
-        return updatedAt;
-    }
-
-    public void setUpdatedAt(final OffsetDateTime updatedAt) {
-        this.updatedAt = updatedAt;
-    }
+    public OffsetDateTime getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(final OffsetDateTime updatedAt) { this.updatedAt = updatedAt; }
 }

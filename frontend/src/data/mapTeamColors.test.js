@@ -1,9 +1,9 @@
 // PR3 §19 —— friendly tone 显式配置契约（新增地图未配置 → CI FAIL）。
 // 禁止默认颜色 silent fallback：mapImages 每个 key 必须在 MAP_FRIENDLY_TONE 中有
 // green|blue 显式配置；tone 值域合法；team token 集完整（green/blue/red × text/outline/glow）。
-import {describe, expect, it} from 'vitest'
-import {mapImages} from './mapImages'
-import {friendlyToneForMap, MAP_FRIENDLY_TONE, TEAM_TOKENS} from './mapTeamColors'
+import { describe, expect, it } from 'vitest'
+import { mapImages } from './mapImages'
+import { MAP_FRIENDLY_TONE, TEAM_TOKENS, friendlyToneForMap } from './mapTeamColors'
 
 describe('PR3 §19 map friendly tone config（每图显式配置，无默认回退）', () => {
   it('mapImages 每个地图 key 都有显式 friendly tone 配置（新增地图无配置 → FAIL）', () => {

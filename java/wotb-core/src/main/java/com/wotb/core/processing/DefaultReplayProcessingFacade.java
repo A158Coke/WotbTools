@@ -4,13 +4,13 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
 import com.wotb.core.parse.ReplayParser;
-import com.wotb.core.replay.event.ParticipantMappingEvent;
+import com.wotb.core.util.PlayerResultFormat;
 import com.wotb.core.replay.evidence.ObservedMaxHp;
+import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionContext;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
-import com.wotb.core.util.PlayerResultFormat;
 import org.springframework.util.StringUtils;
 
 import java.security.MessageDigest;
@@ -200,9 +200,7 @@ public class DefaultReplayProcessingFacade {
         return assembleBatchResult(totalInputs, results);
     }
 
-    /**
-     * 统一汇总入口：mode + duplicates + summary。processBatch 与 buildBatchResult 共享。
-     */
+    /** 统一汇总入口：mode + duplicates + summary。processBatch 与 buildBatchResult 共享。 */
     private ReplayBatchProcessingResult assembleBatchResult(
             final int totalInputs, final List<ReplayProcessingResult> results) {
         final var partition = ExactReplayDuplicateDetector.partition(results);
@@ -244,9 +242,7 @@ public class DefaultReplayProcessingFacade {
                 null);
     }
 
-    /**
-     * 文件级基础验证：扩展名 + 非空 + 大小限制。
-     */
+    /** 文件级基础验证：扩展名 + 非空 + 大小限制。 */
     private static ReplayFileValidationResult validateFile(final Source input) {
         final List<ReplayValidationError> errors = new ArrayList<>();
         final String name = input.name();
@@ -313,18 +309,14 @@ public class DefaultReplayProcessingFacade {
         );
     }
 
-    /**
-     * 重建 participants 中是否存在标记为录像者的 participant。
-     */
+    /** 重建 participants 中是否存在标记为录像者的 participant。 */
     private static boolean isRecorderParticipantResolved(final ReplayReconstruction reconstruction) {
         return reconstruction != null
                 && reconstruction.participants().stream()
-                .anyMatch(BattleParticipant::recorder);
+                        .anyMatch(BattleParticipant::recorder);
     }
 
-    /**
-     * 基于 ParticipantMappingEvent 判断录像者 entity ID 是否已映射。
-     */
+    /** 基于 ParticipantMappingEvent 判断录像者 entity ID 是否已映射。 */
     private static boolean isRecorderEntityMapped(final ReplayReconstruction reconstruction) {
         if (reconstruction == null) return false;
         final var recorderAccounts = reconstruction.participants().stream()

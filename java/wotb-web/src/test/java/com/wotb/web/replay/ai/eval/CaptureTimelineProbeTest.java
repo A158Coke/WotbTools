@@ -118,9 +118,7 @@ class CaptureTimelineProbeTest {
         return sb.toString();
     }
 
-    /**
-     * Type 7 payload: entityId(u32)+propId(u32)+valueLen(u32)+value 循环。
-     */
+    /** Type 7 payload: entityId(u32)+propId(u32)+valueLen(u32)+value 循环。 */
     private static void collectPropIds(final byte[] payload, final Map<Integer, Integer> propIds) {
         int offset = 0;
         while (offset + 12 <= payload.length) {

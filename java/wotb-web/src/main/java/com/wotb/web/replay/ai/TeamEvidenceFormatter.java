@@ -9,7 +9,6 @@ import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.evidence.AiEvidence;
-import com.wotb.core.replay.evidence.ObservedMaxHp;
 import com.wotb.core.replay.evidence.TeamSeparationEvidenceSkill;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.CanonicalMapPosition;
@@ -18,6 +17,7 @@ import com.wotb.core.replay.feature.MapCoordinateResolution;
 import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.TeamAggregateResult;
+import com.wotb.core.replay.evidence.ObservedMaxHp;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamEngagementSummary;
 import com.wotb.core.replay.feature.TeamFormationCluster;
@@ -54,8 +54,8 @@ final class TeamEvidenceFormatter {
             MapTacticalSemanticsRegistry.load();
 
     static String priorSection(final PreBattleStrategicPrior prior,
-                               final int perspectiveTeam,
-                               final String teamLabel) {
+                                       final int perspectiveTeam,
+                                       final String teamLabel) {
         final StringBuilder sb = new StringBuilder(2048);
         sb.append("=== PRE-BATTLE STRATEGIC PRIOR（Call #1 赛前战略基线，仅基于地图与双方阵容，未读取任何战斗结果） ===\n");
         if (prior == null || !prior.hasContent()) {
@@ -99,8 +99,8 @@ final class TeamEvidenceFormatter {
     }
 
     static void appendTeamProfile(final StringBuilder sb,
-                                  final String label,
-                                  final PreBattleStrategicPrior.TeamProfile profile) {
+                                          final String label,
+                                          final PreBattleStrategicPrior.TeamProfile profile) {
         if (profile == null) {
             return;
         }
@@ -190,7 +190,7 @@ final class TeamEvidenceFormatter {
                     + " penetrations=" + p.nPenetrationsDealt
                     + " enemiesDamaged=" + p.nEnemiesDamaged
                     + " death=" + PlayerAnalysisTerms.survivalDisplay(
-                    p.survived, PlayerResultFormat.deathSec(p))
+                            p.survived, PlayerResultFormat.deathSec(p))
                     + "\n");
             damage += p.damageDealt;
             received += p.damageReceived;
@@ -215,9 +215,7 @@ final class TeamEvidenceFormatter {
         return structuredTankFacts(tankId, null);
     }
 
-    /**
-     * 同上；hp 按 provenance 口径（OBSERVED_EXACT → 已证明进场满血；否则 tankopedia base）。
-     */
+    /** 同上；hp 按 provenance 口径（OBSERVED_EXACT → 已证明进场满血；否则 tankopedia base）。 */
     static String structuredTankFacts(final long tankId, final PlayerResult player) {
         final StringBuilder sb = new StringBuilder(80);
         appendFact(sb, "tier", ReplayDisplayNames.tankTier(tankId));
@@ -266,9 +264,7 @@ final class TeamEvidenceFormatter {
         appendSpatialSeparationEvidence(writer, features, battle, mapCode);
     }
 
-    /**
-     * 争霸赛占点证据段（权威结算 + 静态占领点区域；P3 optional）。
-     */
+    /** 争霸赛占点证据段（权威结算 + 静态占领点区域；P3 optional）。 */
     static void appendCaptureAndPoints(
             final BudgetWriter writer,
             final Battle battle,
@@ -348,12 +344,12 @@ final class TeamEvidenceFormatter {
                 if (reached1000 && winner.winner() != Winner.DRAW_OR_UNKNOWN) {
                     writer.append("finalScore: team="
                             + (winner.winner() == Winner.FRIENDLY_WIN
-                            ? FriendlyEnemyResult.SUPREMACY_WIN_POINTS
-                            + "（达到1000分上限提前结束, 业务规则）" : "UNKNOWN")
+                                    ? FriendlyEnemyResult.SUPREMACY_WIN_POINTS
+                                            + "（达到1000分上限提前结束, 业务规则）" : "UNKNOWN")
                             + " opposing="
                             + (winner.winner() == Winner.ENEMY_WIN
-                            ? FriendlyEnemyResult.SUPREMACY_WIN_POINTS
-                            + "（达到1000分上限提前结束, 业务规则）" : "UNKNOWN")
+                                    ? FriendlyEnemyResult.SUPREMACY_WIN_POINTS
+                                            + "（达到1000分上限提前结束, 业务规则）" : "UNKNOWN")
                             + "\n");
                 } else if (reached1000) {
                     writer.append("finalScore: team=UNKNOWN opposing=UNKNOWN "
@@ -587,7 +583,7 @@ final class TeamEvidenceFormatter {
                     // vehicleClass / tier / nation 只来自 tankopedia 的结构化字段，不得由 tank 名称推断
                     + " vehicleClass=" + resolveTankClass(member.tankId())
                     + structuredTankFacts(member.tankId(),
-                    playersByAccount == null ? null : playersByAccount.get(member.accountId()))
+                            playersByAccount == null ? null : playersByAccount.get(member.accountId()))
                     + " entityIds=" + member.entityIds()
                     + " mapping=" + PlayerAnalysisTerms.confidenceLabel(member.mappingConfidence())
                     + " finalDamage=" + member.finalDamage()
@@ -597,8 +593,8 @@ final class TeamEvidenceFormatter {
                     + " kills=" + member.kills()
                     + " survived=" + member.survived()
                     + " deathTime=" + (member.deathTimeSec() == null
-                    ? "未知" : PlayerAnalysisTerms.survivalDisplay(
-                    member.survived(), member.deathTimeSec()))
+                            ? "未知" : PlayerAnalysisTerms.survivalDisplay(
+                                    member.survived(), member.deathTimeSec()))
                     + "\n");
             final TeamMemberFeatureSet.DeathProximity prox = member.deathProximity();
             if (prox != null) {
@@ -763,7 +759,7 @@ final class TeamEvidenceFormatter {
     }
 
     static String resolveTeamResult(final Battle battle, final int perspectiveTeam,
-                                    final String teamLabel) {
+                                            final String teamLabel) {
         final var winner = FriendlyEnemyResult.resolveTeamBattle(battle, perspectiveTeam);
         final String label = StringUtils.hasText(teamLabel) ? teamLabel : "本队";
         final String base = switch (winner.winner()) {
@@ -783,16 +779,12 @@ final class TeamEvidenceFormatter {
         return winner.pointsDecided() ? base + pointsSuffix(winner) : base;
     }
 
-    /**
-     * result 行的胜负来源（BATTLE_RESULTS / SURVIVOR_SETTLEMENT / UNKNOWN；无权威胜方时不再做点数推断）。
-     */
+    /** result 行的胜负来源（BATTLE_RESULTS / SURVIVOR_SETTLEMENT / UNKNOWN；无权威胜方时不再做点数推断）。 */
     static String resolveTeamResultSource(final Battle battle, final int perspectiveTeam) {
         return FriendlyEnemyResult.resolveTeamBattle(battle, perspectiveTeam).source().name();
     }
 
-    /**
-     * 点数胜负的结束方式后缀：时间耗尽 / 1000 分提前 / 未知。
-     */
+    /** 点数胜负的结束方式后缀：时间耗尽 / 1000 分提前 / 未知。 */
     private static String pointsSuffix(final FriendlyEnemyResult.TeamBattleWinner winner) {
         return switch (winner.pointsEndReason()) {
             case REACHED_1000 -> "（达到 1000 分提前获胜）";
@@ -892,9 +884,7 @@ final class TeamEvidenceFormatter {
         return TeamPerspectiveLabelResolver.resolveDisplayLabel(perspectivePlayers);
     }
 
-    /**
-     * 对方队伍的用户可见 display label（独立解析；无可靠 clan → 空串，上层 fallback「对方」）。
-     */
+    /** 对方队伍的用户可见 display label（独立解析；无可靠 clan → 空串，上层 fallback「对方」）。 */
     static String resolveOpponentDisplayLabel(
             final List<PlayerResult> players, final int perspectiveTeam) {
         if (players == null) return "";

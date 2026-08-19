@@ -6,22 +6,10 @@
   "lessonRef": "docs/ai-lessons/cw-detach-rotate-01.md",
   "expectedJudgment": "脱节但被接应（不把转场误判为失误）",
   "checks": [
-    {
-      "kind": "prompt_contains",
-      "text": "type=移动"
-    },
-    {
-      "kind": "prompt_contains",
-      "text": "=== FORMATION_PHASES ==="
-    },
-    {
-      "kind": "prompt_omits",
-      "text": "SOLO_DELAY"
-    },
-    {
-      "kind": "prompt_omits",
-      "text": "SOLO_DETACHED"
-    }
+    { "kind": "prompt_contains", "text": "type=移动" },
+    { "kind": "prompt_contains", "text": "=== FORMATION_PHASES ===" },
+    { "kind": "prompt_omits", "text": "SOLO_DELAY" },
+    { "kind": "prompt_omits", "text": "SOLO_DETACHED" }
   ],
   "note": "脱节后队友转场接应成功：预期 vs 实际对照，AI 不得把转场接应误判为失误。Step 2 将断言候选 + 队友接应关联。"
 }

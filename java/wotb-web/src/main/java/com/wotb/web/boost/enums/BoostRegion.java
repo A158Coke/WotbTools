@@ -1,8 +1,6 @@
 package com.wotb.web.boost.enums;
 
-/**
- * 陪练需求支持的 WoTB 服务区域。
- */
+/** 陪练需求支持的 WoTB 服务区域。 */
 public enum BoostRegion {
     CN,
     ASIA,

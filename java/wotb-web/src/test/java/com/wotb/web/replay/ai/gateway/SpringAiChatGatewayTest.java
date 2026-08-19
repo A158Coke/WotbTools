@@ -1,5 +1,21 @@
 package com.wotb.web.replay.ai.gateway;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.io.IOException;
+import java.net.SocketTimeoutException;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
 import com.openai.core.JsonValue;
 import com.openai.core.http.Headers;
 import com.openai.errors.BadRequestException;
@@ -11,8 +27,6 @@ import com.openai.errors.UnauthorizedException;
 import com.openai.errors.UnexpectedStatusCodeException;
 import com.openai.models.ErrorObject;
 import com.openai.models.completions.CompletionUsage;
-import com.wotb.core.processing.AiNotConfiguredException;
-import com.wotb.web.config.AiModelProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -30,21 +44,8 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 
-import java.io.IOException;
-import java.net.SocketTimeoutException;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import com.wotb.core.processing.AiNotConfiguredException;
+import com.wotb.web.config.AiModelProperties;
 
 /**
  * Gateway unit tests: a mocked {@link ChatModel} completely avoids real

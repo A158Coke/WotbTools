@@ -1,6 +1,5 @@
-import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
-import {ApiError} from './http.js'
-import {hofDownload, hofUpload} from './api.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from './http.js'
 
 // 只 mock useAuth（避免实例化 Keycloak）与全局 fetch——
 // 绝不 mock ../utils/api.js 本身，否则会漏掉 hofUpload() 的真实实现 bug。
@@ -13,6 +12,8 @@ const auth = vi.hoisted(() => ({
 vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => auth,
 }))
+
+import { hofDownload, hofUpload } from './api.js'
 
 function jsonResponse(status, body) {
   return {

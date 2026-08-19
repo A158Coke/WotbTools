@@ -1,8 +1,6 @@
 package com.wotb.web.boost.enums;
 
-/**
- * 陪练需求类型。
- */
+/** 陪练需求类型。 */
 public enum BoostRequestType {
     COACHING,
     RATING_IMPROVEMENT,

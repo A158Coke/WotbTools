@@ -20,9 +20,7 @@ public final class ReplayDisplayNames {
 
     private static final Tankopedia TANKOPEDIA = Tankopedia.load();
 
-    /**
-     * tankopedia 未提供车辆类型时的稳定占位值。
-     */
+    /** tankopedia 未提供车辆类型时的稳定占位值。 */
     public static final String UNKNOWN_TANK_CLASS = "未知";
 
     private ReplayDisplayNames() {
@@ -69,9 +67,7 @@ public final class ReplayDisplayNames {
         return type;
     }
 
-    /**
-     * 结构化车辆等级，仅取自 tankopedia 的 {@code tier}；缺失返回空串，不得由名称推断。
-     */
+    /** 结构化车辆等级，仅取自 tankopedia 的 {@code tier}；缺失返回空串，不得由名称推断。 */
     public static String tankTier(final long tankId) {
         if (tankId <= 0) {
             return "";
@@ -81,9 +77,7 @@ public final class ReplayDisplayNames {
         return text.isBlank() ? "" : text;
     }
 
-    /**
-     * 结构化车辆国家，仅取自 tankopedia 的 {@code nation}（英文，如 USA）；缺失返回空串。
-     */
+    /** 结构化车辆国家，仅取自 tankopedia 的 {@code nation}（英文，如 USA）；缺失返回空串。 */
     public static String tankNation(final long tankId) {
         if (tankId <= 0) {
             return "";
@@ -92,9 +86,7 @@ public final class ReplayDisplayNames {
         return StringUtils.hasText(nation) ? nation : "";
     }
 
-    /**
-     * 结构化车辆炮伤，仅取自 tankopedia 的 {@code alphaDamage}；缺失或 ≤0 返回空串。
-     */
+    /** 结构化车辆炮伤，仅取自 tankopedia 的 {@code alphaDamage}；缺失或 ≤0 返回空串。 */
     public static String tankAlphaDamage(final long tankId) {
         if (tankId <= 0) {
             return "";
@@ -103,9 +95,7 @@ public final class ReplayDisplayNames {
         return alpha != null && alpha > 0 ? String.valueOf(alpha) : "";
     }
 
-    /**
-     * 结构化车辆血量，仅取自 tankopedia 的 {@code hp/maxHp}；缺失或 ≤0 返回空串。
-     */
+    /** 结构化车辆血量，仅取自 tankopedia 的 {@code hp/maxHp}；缺失或 ≤0 返回空串。 */
     public static String tankMaxHp(final long tankId) {
         if (tankId <= 0) {
             return "";
@@ -114,9 +104,7 @@ public final class ReplayDisplayNames {
         return hp != null && hp > 0 ? String.valueOf(hp) : "";
     }
 
-    /**
-     * 结构化车辆满血量数值（tankopedia maxHp）；缺失或 ≤0 返回 null（供掉血百分比计算）。
-     */
+    /** 结构化车辆满血量数值（tankopedia maxHp）；缺失或 ≤0 返回 null（供掉血百分比计算）。 */
     public static Integer tankMaxHpValue(final long tankId) {
         if (tankId <= 0) {
             return null;
@@ -125,9 +113,7 @@ public final class ReplayDisplayNames {
         return hp != null && hp > 0 ? hp : null;
     }
 
-    /**
-     * 手工维护的每辆车知识点，取自 tankopedia 的 {@code extraInfo}；空串时不输出。
-     */
+    /** 手工维护的每辆车知识点，取自 tankopedia 的 {@code extraInfo}；空串时不输出。 */
     public static String tankExtraInfo(final long tankId) {
         if (tankId <= 0) {
             return "";

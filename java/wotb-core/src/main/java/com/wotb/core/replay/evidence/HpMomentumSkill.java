@@ -244,9 +244,7 @@ public final class HpMomentumSkill {
                 before, after, Math.abs(team1Delta - team2Delta), coverage, common.size());
     }
 
-    /**
-     * 在指定实体集合上计算队伍 1 与队伍 2 的 HP 差。
-     */
+    /** 在指定实体集合上计算队伍 1 与队伍 2 的 HP 差。 */
     private static double leadOver(final HpMomentumSample sample, final Set<Integer> entities) {
         double t1 = 0;
         double t2 = 0;

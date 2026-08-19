@@ -1,5 +1,5 @@
 <script setup>
-import {useI18n} from 'vue-i18n'
+import { useI18n } from 'vue-i18n'
 import versions from '../data/versions.json'
 
 const { locale, t } = useI18n()

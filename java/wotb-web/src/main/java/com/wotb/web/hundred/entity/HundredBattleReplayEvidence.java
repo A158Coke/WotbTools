@@ -34,39 +34,27 @@ public class HundredBattleReplayEvidence {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /**
-     * 所属百场 submission（FK → hundred_battle_submission.id，ON DELETE RESTRICT）。
-     */
+    /** 所属百场 submission（FK → hundred_battle_submission.id，ON DELETE RESTRICT）。 */
     @Column(name = "submission_id", nullable = false)
     private long submissionId;
 
-    /**
-     * 回放序号 1..5（submission + slot 唯一）。
-     */
+    /** 回放序号 1..5（submission + slot 唯一）。 */
     @Column(name = "slot", nullable = false)
     private int slot;
 
-    /**
-     * 用户原始文件名（仅展示 / Content-Disposition；不参与路径）。
-     */
+    /** 用户原始文件名（仅展示 / Content-Disposition；不参与路径）。 */
     @Column(name = "original_filename", nullable = false, length = 255)
     private String originalFilename;
 
-    /**
-     * SHA-256 内容寻址 key（= 物理文件名 {sha256}.wotbreplay）。
-     */
+    /** SHA-256 内容寻址 key（= 物理文件名 {sha256}.wotbreplay）。 */
     @Column(name = "sha256", nullable = false, length = 64)
     private String sha256;
 
-    /**
-     * 原始回放字节数。
-     */
+    /** 原始回放字节数。 */
     @Column(name = "file_size", nullable = false)
     private long fileSize;
 
-    /**
-     * 该回放对应的战斗 arenaId（机器校验结果，审核 debug 价值）。
-     */
+    /** 该回放对应的战斗 arenaId（机器校验结果，审核 debug 价值）。 */
     @Column(name = "arena_id", nullable = false, length = 64)
     private String arenaId;
 
@@ -78,67 +66,20 @@ public class HundredBattleReplayEvidence {
         // JPA / service 组装
     }
 
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(final Long id) {
-        this.id = id;
-    }
-
-    public long getSubmissionId() {
-        return submissionId;
-    }
-
-    public void setSubmissionId(final long submissionId) {
-        this.submissionId = submissionId;
-    }
-
-    public int getSlot() {
-        return slot;
-    }
-
-    public void setSlot(final int slot) {
-        this.slot = slot;
-    }
-
-    public String getOriginalFilename() {
-        return originalFilename;
-    }
-
-    public void setOriginalFilename(final String originalFilename) {
-        this.originalFilename = originalFilename;
-    }
-
-    public String getSha256() {
-        return sha256;
-    }
-
-    public void setSha256(final String sha256) {
-        this.sha256 = sha256;
-    }
-
-    public long getFileSize() {
-        return fileSize;
-    }
-
-    public void setFileSize(final long fileSize) {
-        this.fileSize = fileSize;
-    }
-
-    public String getArenaId() {
-        return arenaId;
-    }
-
-    public void setArenaId(final String arenaId) {
-        this.arenaId = arenaId;
-    }
-
-    public OffsetDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(final OffsetDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
+    public Long getId() { return id; }
+    public void setId(final Long id) { this.id = id; }
+    public long getSubmissionId() { return submissionId; }
+    public void setSubmissionId(final long submissionId) { this.submissionId = submissionId; }
+    public int getSlot() { return slot; }
+    public void setSlot(final int slot) { this.slot = slot; }
+    public String getOriginalFilename() { return originalFilename; }
+    public void setOriginalFilename(final String originalFilename) { this.originalFilename = originalFilename; }
+    public String getSha256() { return sha256; }
+    public void setSha256(final String sha256) { this.sha256 = sha256; }
+    public long getFileSize() { return fileSize; }
+    public void setFileSize(final long fileSize) { this.fileSize = fileSize; }
+    public String getArenaId() { return arenaId; }
+    public void setArenaId(final String arenaId) { this.arenaId = arenaId; }
+    public OffsetDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(final OffsetDateTime createdAt) { this.createdAt = createdAt; }
 }

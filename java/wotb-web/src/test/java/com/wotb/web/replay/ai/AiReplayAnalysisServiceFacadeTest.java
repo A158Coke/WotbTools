@@ -1,7 +1,10 @@
 package com.wotb.web.replay.ai;
 
+import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
+import com.wotb.core.processing.ReplayAnalysisScope;
+import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;

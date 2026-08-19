@@ -1,23 +1,24 @@
-import {describe, expect, it} from 'vitest'
-import {createMapView} from './mapView.js'
+import { describe, expect, it } from 'vitest'
+import { createMapView } from './mapView.js'
 import {
-    ANNOT_COLORS,
-    ANNOT_WIDTH_MAX,
-    ANNOT_WIDTH_MIN,
-    applyEraser,
-    arrowHeadPoints,
-    canRedo,
-    canUndo,
-    circleFromCorners,
-    commit,
-    polylinePoints,
-    rectFromCorners,
-    redo,
-    screenToSemantic,
-    screenToSvg,
-    svgToScreen,
-    undo,
-    UNDO_LIMIT
+  ANNOT_COLORS,
+  ANNOT_FONT_SIZE,
+  ANNOT_WIDTH_MAX,
+  ANNOT_WIDTH_MIN,
+  UNDO_LIMIT,
+  applyEraser,
+  arrowHeadPoints,
+  canRedo,
+  canUndo,
+  circleFromCorners,
+  commit,
+  polylinePoints,
+  rectFromCorners,
+  redo,
+  screenToSemantic,
+  screenToSvg,
+  svgToScreen,
+  undo
 } from './annotation.js'
 
 const mapView = createMapView({

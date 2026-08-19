@@ -6,8 +6,8 @@ import com.wotb.web.boost.dto.CreateBoostRequestRequest;
 import com.wotb.web.boost.dto.CreateBoostRequestResponse;
 import com.wotb.web.boost.service.BoostAssignmentService;
 import com.wotb.web.boost.service.BoostRequestService;
-import com.wotb.web.config.ApiPaths;
 import com.wotb.web.util.JwtUtil;
+import com.wotb.web.config.ApiPaths;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,9 +22,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 玩家侧需求接口 — 需登录。
- */
+/** 玩家侧需求接口 — 需登录。 */
 @RestController
 @RequestMapping(ApiPaths.BOOST_REQUESTS)
 @CrossOrigin(origins = "*")

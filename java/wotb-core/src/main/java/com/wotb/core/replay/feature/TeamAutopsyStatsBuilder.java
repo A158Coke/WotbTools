@@ -4,8 +4,8 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.ref.ReplayDisplayNames;
-import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.evidence.AiEvidence;
+import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
@@ -22,17 +22,13 @@ import java.util.List;
  */
 public final class TeamAutopsyStatsBuilder {
 
-    /**
-     * 早死阈值：阵亡时刻早于战斗时长的该比例（是否算"过早"由 LLM 结合车种职责判断）。
-     */
+    /** 早死阈值：阵亡时刻早于战斗时长的该比例（是否算"过早"由 LLM 结合车种职责判断）。 */
     public static final double EARLY_DEATH_DURATION_RATIO = 0.5;
-    /**
-     * 输出不足阈值：damageDealt 低于本方队伍均值的该比例（输出车才适用，由 LLM 判断）。
-     */
+    /** 输出不足阈值：damageDealt 低于本方队伍均值的该比例（输出车才适用，由 LLM 判断）。 */
     public static final double WEAK_OUTPUT_MEAN_RATIO = 0.5;
 
     /**
-     * @param recorderTeam      录像者队伍（1/2）；非法时返回空列表（调用方应跳过 TEAM_AUTOPSY）
+     * @param recorderTeam     录像者队伍（1/2）；非法时返回空列表（调用方应跳过 TEAM_AUTOPSY）
      * @param recorderAccountId 录像者 accountId；null 表示未知，全部玩家按结算级代理处理
      */
     public List<TeamAutopsyStats> build(final Battle battle,
@@ -130,9 +126,7 @@ public final class TeamAutopsyStatsBuilder {
         };
     }
 
-    /**
-     * 结算级代理（非录像者）的窗口归因不得标为 EXACT。
-     */
+    /** 结算级代理（非录像者）的窗口归因不得标为 EXACT。 */
     private static DecodeConfidence nonExactForSettlement(final DecodeConfidence c) {
         return c == DecodeConfidence.EXACT ? DecodeConfidence.PARTIAL : c;
     }

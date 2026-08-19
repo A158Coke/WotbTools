@@ -11,16 +11,14 @@ import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.OffsetDateTime;
 
-/**
- * WotBTools 业务用户资料。Keycloak 负责认证，本表负责轻量业务数据。
- */
+/** WotBTools 业务用户资料。Keycloak 负责认证，本表负责轻量业务数据。 */
 @Entity
 @Table(
-        name = "user_profile",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_user_profile_wotb_account",
-                columnNames = {"wotb_server", "wotb_account_id"}
-        )
+    name = "user_profile",
+    uniqueConstraints = @UniqueConstraint(
+        name = "uk_user_profile_wotb_account",
+        columnNames = {"wotb_server", "wotb_account_id"}
+    )
 )
 public class UserProfile {
 
@@ -63,87 +61,38 @@ public class UserProfile {
         // JPA
     }
 
-    public Long getId() {
-        return id;
-    }
+    public Long getId() { return id; }
+    public void setId(final Long id) { this.id = id; }
 
-    public void setId(final Long id) {
-        this.id = id;
-    }
+    public String getKeycloakUserId() { return keycloakUserId; }
+    public void setKeycloakUserId(final String keycloakUserId) { this.keycloakUserId = keycloakUserId; }
 
-    public String getKeycloakUserId() {
-        return keycloakUserId;
-    }
+    public String getDisplayName() { return displayName; }
+    public void setDisplayName(final String displayName) { this.displayName = displayName; }
 
-    public void setKeycloakUserId(final String keycloakUserId) {
-        this.keycloakUserId = keycloakUserId;
-    }
+    public String getUsername() { return username; }
+    public void setUsername(final String username) { this.username = username; }
 
-    public String getDisplayName() {
-        return displayName;
-    }
+    public Long getWotbAccountId() { return wotbAccountId; }
+    public void setWotbAccountId(final Long wotbAccountId) { this.wotbAccountId = wotbAccountId; }
 
-    public void setDisplayName(final String displayName) {
-        this.displayName = displayName;
-    }
+    public String getWotbNickname() { return wotbNickname; }
+    public void setWotbNickname(final String wotbNickname) { this.wotbNickname = wotbNickname; }
 
-    public String getUsername() {
-        return username;
-    }
+    public String getWotbServer() { return wotbServer; }
+    public void setWotbServer(final String wotbServer) { this.wotbServer = wotbServer; }
 
-    public void setUsername(final String username) {
-        this.username = username;
-    }
-
-    public Long getWotbAccountId() {
-        return wotbAccountId;
-    }
-
-    public void setWotbAccountId(final Long wotbAccountId) {
-        this.wotbAccountId = wotbAccountId;
-    }
-
-    public String getWotbNickname() {
-        return wotbNickname;
-    }
-
-    public void setWotbNickname(final String wotbNickname) {
-        this.wotbNickname = wotbNickname;
-    }
-
-    public String getWotbServer() {
-        return wotbServer;
-    }
-
-    public void setWotbServer(final String wotbServer) {
-        this.wotbServer = wotbServer;
-    }
-
-    public String getWotbAccountSource() {
-        return wotbAccountSource;
-    }
-
+    public String getWotbAccountSource() { return wotbAccountSource; }
     public void setWotbAccountSource(final String wotbAccountSource) {
         this.wotbAccountSource = wotbAccountSource;
     }
 
-    public OffsetDateTime getWotbAccountVerifiedAt() {
-        return wotbAccountVerifiedAt;
-    }
-
+    public OffsetDateTime getWotbAccountVerifiedAt() { return wotbAccountVerifiedAt; }
     public void setWotbAccountVerifiedAt(final OffsetDateTime wotbAccountVerifiedAt) {
         this.wotbAccountVerifiedAt = wotbAccountVerifiedAt;
     }
 
-    public OffsetDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public OffsetDateTime getUpdatedAt() {
-        return updatedAt;
-    }
-
-    public void setUpdatedAt(final OffsetDateTime updatedAt) {
-        this.updatedAt = updatedAt;
-    }
+    public OffsetDateTime getCreatedAt() { return createdAt; }
+    public OffsetDateTime getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(final OffsetDateTime updatedAt) { this.updatedAt = updatedAt; }
 }

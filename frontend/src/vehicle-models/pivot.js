@@ -19,7 +19,7 @@
  * rotate 以 transform-origin 为不动点；img 与 320×320 viewBox 1:1 对齐
  * （局部坐标 == viewBox 坐标），origin 直接用 viewBox 像素值 × renderScale。
  */
-import {VIEWBOX} from './types.js'
+import { VIEWBOX } from './types.js'
 
 /**
  * hull 层样式：绕画布中心（viewBox 中心）旋转。

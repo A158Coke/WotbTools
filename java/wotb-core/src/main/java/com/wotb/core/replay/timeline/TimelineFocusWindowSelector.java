@@ -3,6 +3,7 @@ package com.wotb.core.replay.timeline;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 团队复盘 Focus Window 选择器（确定性、小型，docs/current-plan.md §4/§5）。
@@ -27,25 +28,17 @@ import java.util.List;
  */
 public final class TimelineFocusWindowSelector {
 
-    /**
-     * 输出窗口上限（1–3）。
-     */
+    /** 输出窗口上限（1–3）。 */
     public static final int MAX_WINDOWS = 3;
-    /**
-     * 有界核心窗口最大跨度（秒）：阵亡窗口只接受总跨度 ≤ 该值的子区间（业务/算法窗口）。
-     */
+    /** 有界核心窗口最大跨度（秒）：阵亡窗口只接受总跨度 ≤ 该值的子区间（业务/算法窗口）。 */
     public static final double WINDOW_SEC = 20.0;
-    /**
-     * 非死亡簇的最小信息分（低于则不出现在输出中；单独一次首次接敌不算关键窗口）。
-     */
+    /** 非死亡簇的最小信息分（低于则不出现在输出中；单独一次首次接敌不算关键窗口）。 */
     static final double MIN_CANDIDATE_SCORE = 120.0;
 
     private TimelineFocusWindowSelector() {
     }
 
-    /**
-     * 一个 Team Review Focus Window（全部字段来自 canonical timeline，确定性）。
-     */
+    /** 一个 Team Review Focus Window（全部字段来自 canonical timeline，确定性）。 */
     public record FocusWindow(
             double startSec,
             double endSec,
@@ -206,9 +199,7 @@ public final class TimelineFocusWindowSelector {
         return result;
     }
 
-    /**
-     * 该时刻是否已被某个阵亡候选的核心区间覆盖（核心区间内的伴随信号随阵亡窗口一起输出）。
-     */
+    /** 该时刻是否已被某个阵亡候选的核心区间覆盖（核心区间内的伴随信号随阵亡窗口一起输出）。 */
     private static boolean coveredByDeathWindow(final double timeSec, final List<Candidate> deathCandidates) {
         for (final Candidate c : deathCandidates) {
             if (timeSec >= c.startSec && timeSec <= c.endSec) {
@@ -221,14 +212,12 @@ public final class TimelineFocusWindowSelector {
     private static boolean significantNonDeath(final BattleDelta d) {
         return switch (d.kind()) {
             case FIRST_CONTACT, ALIVE_COUNT_CHANGE, HP_GAP_DELTA, POINTS_CHANGE,
-                 ENGAGEMENT_ACTIVITY, LOCAL_FORCE_CHANGE, HP_CHANGE -> true;
+                    ENGAGEMENT_ACTIVITY, LOCAL_FORCE_CHANGE, HP_CHANGE -> true;
             default -> false;
         };
     }
 
-    /**
-     * 以 core（cluster 覆盖区间）为窗口：events 只含 [coreStart, coreEnd] 内的有信息量 delta。
-     */
+    /** 以 core（cluster 覆盖区间）为窗口：events 只含 [coreStart, coreEnd] 内的有信息量 delta。 */
     private static Candidate buildCandidate(
             final BattleTimeline timeline,
             final List<BattleDelta> all,
@@ -360,9 +349,7 @@ public final class TimelineFocusWindowSelector {
         return frame == null ? WorldSummary.EMPTY : frame.world();
     }
 
-    /**
-     * DESTROYED delta 的 side：按当时帧车辆 friendly 标志解析（不依赖文本猜测）。
-     */
+    /** DESTROYED delta 的 side：按当时帧车辆 friendly 标志解析（不依赖文本猜测）。 */
     static boolean isFriendly(final BattleTimeline timeline, final BattleDelta d) {
         if (d.entityId() == null || timeline == null) {
             return false;
@@ -375,9 +362,7 @@ public final class TimelineFocusWindowSelector {
                 .anyMatch(v -> v.entityId() == d.entityId() && v.friendly());
     }
 
-    /**
-     * delta 是否作为事件行进入窗口（有信息量的变化 + 关键活动）。
-     */
+    /** delta 是否作为事件行进入窗口（有信息量的变化 + 关键活动）。 */
     private static boolean informative(final BattleTimeline timeline, final BattleDelta d) {
         if (d.kind() == DeltaKind.DESTROYED || significantNonDeath(d)) {
             return true;

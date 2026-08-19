@@ -23,16 +23,12 @@ public final class HallOfFameBattleTypePolicy {
     private HallOfFameBattleTypePolicy() {
     }
 
-    /**
-     * raw → 归一模式；未知/null/不支持 → empty。
-     */
+    /** raw → 归一模式；未知/null/不支持 → empty。 */
     public static Optional<HallOfFameBattleType> resolve(final Integer arenaBonusType) {
         return HallOfFameBattleType.resolve(arenaBonusType);
     }
 
-    /**
-     * 是否受支持（RANDOM / RATING）。
-     */
+    /** 是否受支持（RANDOM / RATING）。 */
     public static boolean isSupported(final Integer arenaBonusType) {
         return resolve(arenaBonusType).isPresent();
     }

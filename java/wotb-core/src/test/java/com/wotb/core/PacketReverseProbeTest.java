@@ -11,9 +11,11 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
@@ -132,9 +134,7 @@ class PacketReverseProbeTest {
         type39YawVsTank(es, byType);
     }
 
-    /**
-     * f0 (deg) vs recorder tank type-10 yaw: |f0 - yaw| distribution (free-look deviations).
-     */
+    /** f0 (deg) vs recorder tank type-10 yaw: |f0 - yaw| distribution (free-look deviations). */
     private static void type39YawVsTank(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -187,9 +187,7 @@ class PacketReverseProbeTest {
                 n == 0 ? 0 : 100.0 * close60 / n);
     }
 
-    /**
-     * type5 vs type33 timing pairing + type32 double values.
-     */
+    /** type5 vs type33 timing pairing + type32 double values. */
     private static void type5Vs33(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -229,9 +227,7 @@ class PacketReverseProbeTest {
         }
     }
 
-    /**
-     * Damage dealt/killed by each account from direct damage events + EntityLeave correlation.
-     */
+    /** Damage dealt/killed by each account from direct damage events + EntityLeave correlation. */
     private static void statsByAccount(final EventStreamReader.EventStream es) {
         final List<EventStreamReader.DirectDamageEvent> dmg = EventStreamReader.extractDirectDamageEvents(
                 es.packets, EventStreamReader.extractEntityToAccountMap(es.packets));
@@ -293,9 +289,7 @@ class PacketReverseProbeTest {
         }
     }
 
-    /**
-     * type26 timestamps vs damage events where victim = recorder account (3115055801).
-     */
+    /** type26 timestamps vs damage events where victim = recorder account (3115055801). */
     private static void type26VsRecorderHits(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -317,9 +311,7 @@ class PacketReverseProbeTest {
                 .forEach(d -> System.out.printf(Locale.ROOT, "    dmg=%d@%.1fs%n", d.damage(), d.clockSecs()));
     }
 
-    /**
-     * Recorder position/speed/yaw at each type23=0 (shot) moment.
-     */
+    /** Recorder position/speed/yaw at each type23=0 (shot) moment. */
     private static void recorderMotionAtShots(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -355,9 +347,7 @@ class PacketReverseProbeTest {
         }
     }
 
-    /**
-     * type23 toggle times vs type31 value + type8 events + damage events at those moments.
-     */
+    /** type23 toggle times vs type31 value + type8 events + damage events at those moments. */
     private static void type23VsType31(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -407,9 +397,7 @@ class PacketReverseProbeTest {
         }
     }
 
-    /**
-     * Print ALL packets in windows around type31 start (52.7s) and last reset (114.5s).
-     */
+    /** Print ALL packets in windows around type31 start (52.7s) and last reset (114.5s). */
     private static void packetContextWindows(final EventStreamReader.EventStream es) {
         System.out.println("== packet context windows (type31 start / last reset) ==");
         for (final double[] win : new double[][]{{52.2, 53.8}, {113.8, 115.3}}) {
@@ -425,9 +413,7 @@ class PacketReverseProbeTest {
         }
     }
 
-    /**
-     * type32: length histogram + samples; try to identify leading int/float.
-     */
+    /** type32: length histogram + samples; try to identify leading int/float. */
     private static void type32Structure(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -462,9 +448,7 @@ class PacketReverseProbeTest {
         return out;
     }
 
-    /**
-     * type33: 12B fixed; samples + int/float view.
-     */
+    /** type33: 12B fixed; samples + int/float view. */
     private static void type33Structure(
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
         final List<EventStreamReader.ParsedPacket> t33 = byType.getOrDefault(33, List.of());
@@ -480,9 +464,7 @@ class PacketReverseProbeTest {
         });
     }
 
-    /**
-     * type23/26 timestamps vs type31 reset times and recorder death.
-     */
+    /** type23/26 timestamps vs type31 reset times and recorder death. */
     private static void type23_26Correlation(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -496,9 +478,7 @@ class PacketReverseProbeTest {
         }
     }
 
-    /**
-     * type1: hex + printable strings (recorder nickname).
-     */
+    /** type1: hex + printable strings (recorder nickname). */
     private static void dumpType1String(
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
         final List<EventStreamReader.ParsedPacket> t1 = byType.getOrDefault(1, List.of());
@@ -524,9 +504,7 @@ class PacketReverseProbeTest {
         }
     }
 
-    /**
-     * For the random battle: find the recorder vehicle (one whose positions hug type39 f2/f3/f4).
-     */
+    /** For the random battle: find the recorder vehicle (one whose positions hug type39 f2/f3/f4). */
     private static void randomRecorderVsType39(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -569,9 +547,7 @@ class PacketReverseProbeTest {
                 + String.format(Locale.ROOT, "%.1fm", x.getValue())));
     }
 
-    /**
-     * type31 raw values at battle start/end of the stream + recorder->enemy distances.
-     */
+    /** type31 raw values at battle start/end of the stream + recorder->enemy distances. */
     private static void type31DetailWindows(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -717,9 +693,7 @@ class PacketReverseProbeTest {
                 n, mean, Math.sqrt(var), minOff, maxOff);
     }
 
-    /**
-     * Print type39 floats every 0.5s for the last 40s of the stream.
-     */
+    /** Print type39 floats every 0.5s for the last 40s of the stream. */
     private static void type39LastSeconds(
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType, final String label) {
         final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
@@ -746,9 +720,7 @@ class PacketReverseProbeTest {
         }
     }
 
-    /**
-     * Full timeline of entity 13185652: distinct (x,y,z,yaw) states and their time windows.
-     */
+    /** Full timeline of entity 13185652: distinct (x,y,z,yaw) states and their time windows. */
     private static void entity13185652Timeline(final EventStreamReader.EventStream es) {
         final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
         final List<EventStreamReader.PositionData> e = positions.stream()
@@ -849,9 +821,7 @@ class PacketReverseProbeTest {
                 n == 0 ? 0 : 100.0 * close60 / n);
     }
 
-    /**
-     * Print entity 13185652 type-10 trajectory alongside type39 (f0,f1,f2) at 2s steps.
-     */
+    /** Print entity 13185652 type-10 trajectory alongside type39 (f0,f1,f2) at 2s steps. */
     private static void eid13185652VsType39(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -898,9 +868,7 @@ class PacketReverseProbeTest {
         }
     }
 
-    /**
-     * Full least-squares affine fit of type39 (f0,f1,f2) -> each entity (x,y,z).
-     */
+    /** Full least-squares affine fit of type39 (f0,f1,f2) -> each entity (x,y,z). */
     private static void type39FullAffine(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -1016,9 +984,7 @@ class PacketReverseProbeTest {
         return inv;
     }
 
-    /**
-     * Print team-1 (enemy) positions at 115..147s alongside type39 (f0,f1,f2).
-     */
+    /** Print team-1 (enemy) positions at 115..147s alongside type39 (f0,f1,f2). */
     private static void enemiesVsType39Late(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -1100,9 +1066,7 @@ class PacketReverseProbeTest {
         }
     }
 
-    /**
-     * Print team-2 (ally) positions at 115..147s alongside type39 (f0,f1,f2).
-     */
+    /** Print team-2 (ally) positions at 115..147s alongside type39 (f0,f1,f2). */
     private static void alliesVsType39Late(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -1184,9 +1148,7 @@ class PacketReverseProbeTest {
         }
     }
 
-    /**
-     * Print trajectories of team=-1 mystery entities alongside type39 (f0,f1,f2).
-     */
+    /** Print trajectories of team=-1 mystery entities alongside type39 (f0,f1,f2). */
     private static void mysteryEntitiesVsType39(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -1342,9 +1304,7 @@ class PacketReverseProbeTest {
                 .forEach(e -> System.out.println("  bestEid=" + e.getKey() + " samples=" + e.getValue()));
     }
 
-    /**
-     * type39: raw hex + floats at 0.25s resolution for t in [100..147].
-     */
+    /** type39: raw hex + floats at 0.25s resolution for t in [100..147]. */
     private static void type39LateRaw(
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
         final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
@@ -1442,9 +1402,7 @@ class PacketReverseProbeTest {
         System.out.println("  checked=" + checked);
     }
 
-    /**
-     * type39 vs recorder position at endgame (110..147s) — does camera track vehicle?
-     */
+    /** type39 vs recorder position at endgame (110..147s) — does camera track vehicle? */
     private static void type39Endgame(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -1485,9 +1443,7 @@ class PacketReverseProbeTest {
         }
     }
 
-    /**
-     * type39: payload length distribution + trailing bytes beyond 7 floats.
-     */
+    /** type39: payload length distribution + trailing bytes beyond 7 floats. */
     private static void type39Lengths(
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
         final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
@@ -1506,9 +1462,7 @@ class PacketReverseProbeTest {
         }
     }
 
-    /**
-     * type39: find rows where f5/f6 change materially; print 3 rows before/after for context.
-     */
+    /** type39: find rows where f5/f6 change materially; print 3 rows before/after for context. */
     private static void type39AngleChangeContext(
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
         final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
@@ -1623,9 +1577,7 @@ class PacketReverseProbeTest {
                 posN, posN == 0 ? -1 : sumPosErr / posN, posNH == 0 ? -1 : sumPosErrH / posNH);
     }
 
-    /**
-     * type39: print only rows whose payload differs from the previous (evolution of values).
-     */
+    /** type39: print only rows whose payload differs from the previous (evolution of values). */
     private static void type39ChangeEvents(
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
         final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
@@ -1652,9 +1604,7 @@ class PacketReverseProbeTest {
         System.out.println("  (total changes: " + changes + "+ shown)");
     }
 
-    /**
-     * type39: histograms of f3/f4 (discrete modes?) and f5/f6 distributions.
-     */
+    /** type39: histograms of f3/f4 (discrete modes?) and f5/f6 distributions. */
     private static void type39Histograms(
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
         final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
@@ -1690,9 +1640,7 @@ class PacketReverseProbeTest {
                 java.util.Arrays.stream(f6).average().orElse(0));
     }
 
-    /**
-     * type39 = recorder aiming info? f0/f1/f2 aim point, f3/f4/f5 gun pos (~vehicle pos).
-     */
+    /** type39 = recorder aiming info? f0/f1/f2 aim point, f3/f4/f5 gun pos (~vehicle pos). */
     private static void type39AimingHypothesis(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -1744,9 +1692,7 @@ class PacketReverseProbeTest {
                 n, n == 0 ? -1 : sumD0 / n, close0, n == 0 ? -1 : sumD34 / n, close34);
     }
 
-    /**
-     * type31 vs "HP%" hypothesis: match float to any tracked vehicle's HP fraction (0-100).
-     */
+    /** type31 vs "HP%" hypothesis: match float to any tracked vehicle's HP fraction (0-100). */
     private static void type31HpHypothesis(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -1803,9 +1749,7 @@ class PacketReverseProbeTest {
         System.out.printf(Locale.ROOT, "  best: acc=%d mean=%.2f%n", bestAcc, bestMean);
     }
 
-    /**
-     * type7 propId=2 (2-byte int) vs the same vehicle's type-10 yaw (degrees).
-     */
+    /** type7 propId=2 (2-byte int) vs the same vehicle's type-10 yaw (degrees). */
     private static void type7YawVsPos(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -1863,9 +1807,7 @@ class PacketReverseProbeTest {
         return a;
     }
 
-    /**
-     * type31 single float vs recorder vehicle (eid 12558552) speed/yaw from type-10.
-     */
+    /** type31 single float vs recorder vehicle (eid 12558552) speed/yaw from type-10. */
     private static void type31VsRecorder(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -1913,9 +1855,7 @@ class PacketReverseProbeTest {
                 count, count == 0 ? -1 : sumSpeedErr / count, count == 0 ? -1 : sumYawErr / count);
     }
 
-    /**
-     * Per-entity first/last position time + count + team (from updateArena2 field 4).
-     */
+    /** Per-entity first/last position time + count + team (from updateArena2 field 4). */
     private static void teamCoverage(final EventStreamReader.EventStream es) {
         final Map<Integer, Integer> eidTeam = new HashMap<>();
         for (final EventStreamReader.ParsedPacket pkt : es.packets) {
@@ -1975,9 +1915,7 @@ class PacketReverseProbeTest {
         }
     }
 
-    /**
-     * Find the recorder vehicle eid by nickname, then fit type39 (f0,f2) -> its (x,z).
-     */
+    /** Find the recorder vehicle eid by nickname, then fit type39 (f0,f2) -> its (x,z). */
     private static void recorderAffine(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -2022,17 +1960,9 @@ class PacketReverseProbeTest {
         double sx = 0, sz = 0, su = 0, sv = 0, sxx = 0, szz = 0, sxz = 0, sux = 0, suz = 0, svx = 0, svz = 0;
         for (final double[] q : pairs) {
             final double u = q[0], v = q[1], x = q[2], z = q[3];
-            sx += x;
-            sz += z;
-            su += u;
-            sv += v;
-            sxx += x * x;
-            szz += z * z;
-            sxz += x * z;
-            sux += u * x;
-            suz += u * z;
-            svx += v * x;
-            svz += v * z;
+            sx += x; sz += z; su += u; sv += v;
+            sxx += x * x; szz += z * z; sxz += x * z;
+            sux += u * x; suz += u * z; svx += v * x; svz += v * z;
         }
         final int n = pairs.size();
         final double[][] m = {{sxx, sxz, sx}, {sxz, szz, sz}, {sx, sz, n}};
@@ -2132,9 +2062,7 @@ class PacketReverseProbeTest {
         return x;
     }
 
-    /**
-     * Find the recorder's vehicle eid by nickname in updateArena2 protobuf.
-     */
+    /** Find the recorder's vehicle eid by nickname in updateArena2 protobuf. */
     private static void findRecorder(final EventStreamReader.EventStream es) {
         final Map<Integer, Long> e2a = EventStreamReader.extractEntityToAccountMap(es.packets);
         System.out.println("== entity->account (first 20) ==");
@@ -2142,9 +2070,7 @@ class PacketReverseProbeTest {
                 System.out.println("  eid=" + e.getKey() + " acc=" + e.getValue()));
     }
 
-    /**
-     * Type 39 vs per-vehicle type-10 positions: find most stable offset mapping.
-     */
+    /** Type 39 vs per-vehicle type-10 positions: find most stable offset mapping. */
     private static void type39VehicleCorrelation(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -2218,9 +2144,7 @@ class PacketReverseProbeTest {
         best.stream().limit(12).forEach(e -> System.out.println("  " + e.getKey()));
     }
 
-    /**
-     * Type 39: inter-packet deltas + first 20 consecutive float rows + recorder-position match.
-     */
+    /** Type 39: inter-packet deltas + first 20 consecutive float rows + recorder-position match. */
     private static void type39Stream(
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
         final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
@@ -2249,9 +2173,7 @@ class PacketReverseProbeTest {
         }
     }
 
-    /**
-     * Type 0/1/2/5/11/13: hex head + printable strings + account-id search.
-     */
+    /** Type 0/1/2/5/11/13: hex head + printable strings + account-id search. */
     private static void dumpCreatePackets(
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) throws Exception {
         for (final int t : new int[]{0, 1, 2, 5, 11, 13}) {
@@ -2305,9 +2227,7 @@ class PacketReverseProbeTest {
         return -1;
     }
 
-    /**
-     * Type 39: try axis swaps/negations to match type-10 positions.
-     */
+    /** Type 39: try axis swaps/negations to match type-10 positions. */
     private static void transformType39(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -2347,9 +2267,7 @@ class PacketReverseProbeTest {
         }
     }
 
-    /**
-     * Type 31: print values around EntityLeave times (death correlation).
-     */
+    /** Type 31: print values around EntityLeave times (death correlation). */
     private static void type31AroundDeaths(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -2371,9 +2289,7 @@ class PacketReverseProbeTest {
         }
     }
 
-    /**
-     * Dump ALL protobuf fields of updateArena player entries for one account over time.
-     */
+    /** Dump ALL protobuf fields of updateArena player entries for one account over time. */
     private static void dumpPlayerProtobuf(final EventStreamReader.EventStream es, final long accountId) {
         System.out.println("== updateArena protobuf player fields for account=" + accountId + " ==");
         int printed = 0;
@@ -2470,9 +2386,7 @@ class PacketReverseProbeTest {
     }
 
 
-    /**
-     * type 7: find the propId whose value drops match damage events for the most-hit victim.
-     */
+    /** type 7: find the propId whose value drops match damage events for the most-hit victim. */
     private static void correlateHp(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
@@ -2523,9 +2437,7 @@ class PacketReverseProbeTest {
         }
     }
 
-    /**
-     * type 39: match f0/f1/f2 to nearest type-10 position to identify the entity.
-     */
+    /** type 39: match f0/f1/f2 to nearest type-10 position to identify the entity. */
     private static void matchType39(
             final EventStreamReader.EventStream es,
             final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {

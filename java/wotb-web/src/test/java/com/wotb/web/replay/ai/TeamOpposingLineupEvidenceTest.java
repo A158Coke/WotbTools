@@ -1,8 +1,9 @@
 package com.wotb.web.replay.ai;
+import com.wotb.web.replay.ai.TeamReplayAnalysisService;
 
-import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.processing.BatchAnalyzer;
 import com.wotb.core.processing.ReplayIdentity;
 import com.wotb.core.processing.ReplayProcessingCapabilities;
@@ -171,15 +172,8 @@ class TeamOpposingLineupEvidenceTest {
         final var group = new BatchAnalyzer().analyze(List.of(result)).groups().getFirst();
         return new AiReplayAnalysisService(
                 new AiChatGateway() {
-                    @Override
-                    public AiChatResponse chat(final AiChatRequest r) {
-                        return null;
-                    }
-
-                    @Override
-                    public boolean isConfigured() {
-                        return false;
-                    }
+                    @Override public AiChatResponse chat(final AiChatRequest r) { return null; }
+                    @Override public boolean isConfigured() { return false; }
                 }, "", 30000, new ConservativeDeepSeekTokenEstimator())
                 .buildSingleTeamContext(group);
     }

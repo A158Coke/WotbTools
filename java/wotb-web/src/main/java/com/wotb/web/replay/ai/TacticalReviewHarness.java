@@ -5,18 +5,18 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.evidence.EvidenceSkillContext;
 import com.wotb.core.replay.evidence.EvidenceSkillEngine;
 import com.wotb.core.replay.evidence.EvidenceSkillResult;
-import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
-import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
 import com.wotb.core.replay.timeline.TimelinePerspective;
+import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
+import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
-import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.exception.AiTimelineUnusableException;
+import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,17 +42,11 @@ public class TacticalReviewHarness {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TacticalReviewHarness.class);
 
-    /**
-     * Call #2 前保留的安全余量（秒），避免恰好在 endpoint deadline 边缘结束。
-     */
+    /** Call #2 前保留的安全余量（秒），避免恰好在 endpoint deadline 边缘结束。 */
     static final int SAFETY_MARGIN_SEC = 10;
-    /**
-     * Call #1 失败后进入旧路径 fallback 所需的最小剩余预算（秒）。
-     */
+    /** Call #1 失败后进入旧路径 fallback 所需的最小剩余预算（秒）。 */
     static final int FALLBACK_MIN_REMAINING_SEC = 60;
-    /**
-     * 前端/后端/nginx 的请求生命周期上限（秒），用于理论最坏时间断言。
-     */
+    /** 前端/后端/nginx 的请求生命周期上限（秒），用于理论最坏时间断言。 */
     static final int ENDPOINT_DEADLINE_SEC = 1100;
 
     /**
@@ -94,9 +88,7 @@ public class TacticalReviewHarness {
         this.meterRegistry = meterRegistry;
     }
 
-    /**
-     * 运行双 Call Harness；不满足前提时回退到旧单 Call 路径。
-     */
+    /** 运行双 Call Harness；不满足前提时回退到旧单 Call 路径。 */
     public AnalyzeResult analyze(final ReplayProcessingResult result, final AllowedLanguage language) {
         return analyzeWithPrior(result, language, AiReviewStreamListener.NOOP).result();
     }
@@ -202,7 +194,7 @@ public class TacticalReviewHarness {
         if (meterRegistry != null && prepared.sectionTokens() != null) {
             prepared.sectionTokens().forEach((section, tokens) ->
                     meterRegistry.counter(
-                                    "wotb_ai_review_context_section_tokens", "section", section)
+                            "wotb_ai_review_context_section_tokens", "section", section)
                             .increment(tokens));
         }
         final AiChatRequest request = new AiChatRequest(

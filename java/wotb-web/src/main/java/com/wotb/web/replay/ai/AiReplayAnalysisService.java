@@ -1,6 +1,7 @@
 package com.wotb.web.replay.ai;
 
-import com.wotb.core.ai.AiTokenEstimator;
+import java.util.List;
+
 import com.wotb.core.model.Battle;
 import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
@@ -8,12 +9,12 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+
+import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-
-import java.util.List;
 
 /**
  * 兼容 facade：保持 Controller / Review Service / 现有测试的公共入口不变，
@@ -85,23 +86,19 @@ public class AiReplayAnalysisService {
         return playerService.analyze(battle, recon, language);
     }
 
-    /**
-     * 兼容 facade 转发；{@code analyzePlayerContext} 非 production AI Review entrypoint（见 PlayerReplayAnalysisService）。
-     */
+    /** 兼容 facade 转发；{@code analyzePlayerContext} 非 production AI Review entrypoint（见 PlayerReplayAnalysisService）。 */
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx) {
         return analyzePlayerContext(ctx, AllowedLanguage.ZH);
     }
 
-    /**
-     * 兼容 facade 转发；{@code analyzePlayerContext} 非 production AI Review entrypoint（见 PlayerReplayAnalysisService）。
-     */
+    /** 兼容 facade 转发；{@code analyzePlayerContext} 非 production AI Review entrypoint（见 PlayerReplayAnalysisService）。 */
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx,
                                               final AllowedLanguage language) {
         return playerService.analyzePlayerContext(ctx, language);
     }
 
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx,
-                                              final ReplayReconstruction recon) {
+                                             final ReplayReconstruction recon) {
         return analyzePlayerContext(ctx, recon, AllowedLanguage.ZH);
     }
 

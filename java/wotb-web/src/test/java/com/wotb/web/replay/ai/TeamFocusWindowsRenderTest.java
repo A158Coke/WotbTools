@@ -65,9 +65,7 @@ class TeamFocusWindowsRenderTest {
         return b;
     }
 
-    /**
-     * 8 车（4v4）开局 + 连续减员：本方 112/121/132，对方 128；残局 170。
-     */
+    /** 8 车（4v4）开局 + 连续减员：本方 112/121/132，对方 128；残局 170。 */
     private static List<ReplayEvent> collapseEvents() {
         seq = 0;
         final List<ReplayEvent> events = new ArrayList<>();

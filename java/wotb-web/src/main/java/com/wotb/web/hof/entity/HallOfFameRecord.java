@@ -42,15 +42,11 @@ public class HallOfFameRecord {
     @Column(name = "nickname", nullable = false, length = 100)
     private String nickname;
 
-    /**
-     * 业务归一战斗模式：RANDOM / RATING（VARCHAR + CHECK，非 PG ENUM）。
-     */
+    /** 业务归一战斗模式：RANDOM / RATING（VARCHAR + CHECK，非 PG ENUM）。 */
     @Column(name = "battle_type", nullable = false, length = 16)
     private String battleType;
 
-    /**
-     * replay 解析出的 authoritative raw arenaBonusType（protocol provenance / 调试 / 未来扩展）。
-     */
+    /** replay 解析出的 authoritative raw arenaBonusType（protocol provenance / 调试 / 未来扩展）。 */
     @Column(name = "arena_bonus_type", nullable = false)
     private int arenaBonusType;
 

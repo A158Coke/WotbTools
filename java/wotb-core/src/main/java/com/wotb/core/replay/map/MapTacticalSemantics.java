@@ -38,9 +38,7 @@ public record MapTacticalSemantics(
         displayName = displayName == null ? "" : displayName;
     }
 
-    /**
-     * 无语义数据时返回的空语义；{@link #hasSemantics()} 为 false。
-     */
+    /** 无语义数据时返回的空语义；{@link #hasSemantics()} 为 false。 */
     public static final MapTacticalSemantics UNKNOWN =
             new MapTacticalSemantics("", Map.of(), List.of(), Map.of(), false, "", "");
 
@@ -48,9 +46,7 @@ public record MapTacticalSemantics(
         return !areas.isEmpty();
     }
 
-    /**
-     * 单个战术区域。
-     */
+    /** 单个战术区域。 */
     public record TacticalArea(
             String id,
             String label,

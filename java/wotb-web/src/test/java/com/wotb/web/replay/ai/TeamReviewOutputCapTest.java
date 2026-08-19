@@ -1,5 +1,9 @@
 package com.wotb.web.replay.ai;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
@@ -33,10 +37,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * PR #103 review BLOCKER C：Team Call #2 独立输出上限。
@@ -102,7 +102,7 @@ class TeamReviewOutputCapTest {
     private static SingleTeamBattleAnalysisContext context(final CapGateway gateway,
                                                            final TeamReplayAnalysisService service) {
         final List<ReplayPerspectiveGroup> groups = new BatchAnalyzer().analyze(
-                        List.of(teamResult("cap.wotbreplay", "arena-cap", "Ally", 1001L, 1, validRecon())))
+                List.of(teamResult("cap.wotbreplay", "arena-cap", "Ally", 1001L, 1, validRecon())))
                 .groups();
         return service.buildSingleTeamContext(groups.getFirst());
     }
@@ -196,9 +196,7 @@ class TeamReviewOutputCapTest {
                 DecodeConfidence.EXACT, eid, hp, null, alive);
     }
 
-    /**
-     * 记录全部 gateway 请求的替身；从不发起真实 HTTP。
-     */
+    /** 记录全部 gateway 请求的替身；从不发起真实 HTTP。 */
     private static final class CapGateway implements AiChatGateway {
         final List<AiChatRequest> requests = new CopyOnWriteArrayList<>();
 

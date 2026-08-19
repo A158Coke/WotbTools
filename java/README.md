@@ -8,39 +8,19 @@
 
 ## 模块
 
-| 模块/目录                     | 说明                                                                                                                                                                                                                              |
-|-------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `wotb-core`                   | 核心库：解压回放、读取 pickle、解码 protobuf、车辆库映射、去重汇总、POI 导出 xlsx                                                                                                                                                 |
-| `wotb-web`                    | Spring Boot 4 REST API + PostgreSQL/Flyway/Keycloak，监听 `8087`（管理端口 `8088`，Actuator/Prometheus）                                                                                                                          |
-| `frontend`                    | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                                                                                                                                                                         |
+| 模块/目录       | 说明                                                           |
+|-------------|--------------------------------------------------------------|
+| `wotb-core` | 核心库：解压回放、读取 pickle、解码 protobuf、车辆库映射、去重汇总、POI 导出 xlsx        |
+| `wotb-web`  | Spring Boot 4 REST API + PostgreSQL/Flyway/Keycloak，监听 `8087`（管理端口 `8088`，Actuator/Prometheus） |
+| `frontend`  | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
 | `keycloak-wargaming-provider` | Keycloak 26 自定义 Identity Provider：Wargaming.net 登录 SPI（Provider ID `wargaming`，region 配置 ASIA/EU/NA → 官方 host 白名单：认证 `api.worldoftanks.*/wot/auth/`、账号 `api.wotblitz.*/wotb/account/`；ASIA/EU/NA 三个实例） |
-| `docker/online/`              | `docker-compose.yml`：`build:` 从源码编译运行八服务（postgres + keycloak + backend + frontend + prometheus + loki + alloy + grafana）                                                                                             |
+| `docker/online/` | `docker-compose.yml`：`build:` 从源码编译运行八服务（postgres + keycloak + backend + frontend + prometheus + loki + alloy + grafana） |
 
-> 车辆库 `common/tankopedia-tier{7,8,9,10}.json` 与地图名映射 `common/map_names.json`（仓库根的共享目录）都会在
-> `wotb-core` 构建时自动复制到 classpath，无需在模块内再放副本。
+> 车辆库 `common/tankopedia-tier{7,8,9,10}.json` 与地图名映射 `common/map_names.json`（仓库根的共享目录）都会在 `wotb-core` 构建时自动复制到 classpath，无需在模块内再放副本。
 
 ## AI Review Harness（双 Call + Team Autopsy）
 
-随机战个人复盘（ZH）在重建与特征可用时走 `TacticalReviewHarness`（双 Call）：Call #1 用双方阵容 +
-`common/tank_tactical_profiles.json` + 地图语义（`common/map-semantics/*.semantic.json`，由 `map-semanticizer` 从 Wot
-Blitz 客户端 SC2 + heightmap 解码生成）建立赛前战略基线（不含任何战斗结果），Backend Evidence Skills（HpMomentum /
-EngagementTrade / LocalSupport / DeathCascade / Route / CriticalWindow）输出确定性战术证据，Call #2 按 Priority Bookends
-对照「预期 vs 实际」输出复盘，输入含走位/区域时间线、逐次对炮明细、≤8 个关键决策窗口完整证据与口语化语气约束；随机战斗不评判
-MVP/战犯。任何前提不满足自动降级旧单 Call 路径；EN/RU 保持旧路径。地图战术语义层（`MapTacticalSemanticsRegistry`）：按
-`mapCodes` / `mapId` / token 边界别名查询，未收录地图明确 UNKNOWN（禁止编造区域语义）；语义数据 `displayName` 用
-`map_names.json` 的 en 名（未收录回退 mapId），Call #1 语义段显示可读地图名 + 内部 code；语义 AREA 标注 `gridRegions`
-（GRID_REGION_1~9），与 `MapRegionResolver` 同一坐标约定（±250 m → 500×500 → 3×3），回放定位与地图语义共用同一九宫格；Call #1
-有独立 45s stage 预算，Call #2 使用剩余预算并留安全余量，整体不超过 `AI_CALL_TIMEOUT_SEC`。 **结构化 JSON 小调用关闭
-thinking**：Call #1 与 TEAM_AUTOPSY 在请求层强制 `thinkingEnabled=false`（`reasoningEffort=null`）——生产实测 DeepSeek
-thinking（`AI_REASONING_EFFORT=max`）会把整个输出预算消耗在 reasoning 上返回空正文（`AI_EMPTY_RESPONSE`），关闭后直接输出契约
-JSON；Call #2 主复盘默认也关闭 thinking（`AI_THINKING_ENABLED_CALL2` 默认 false）——DeepSeek 推理模式会让 content 末尾一次性到达、破坏
-SSE 逐段流式，需要推理深度时开启（流式由网关分块兜底保证）。团队复盘（训练房/联赛，`TeamReplayAnalysisService`）与随机战一样
-**先执行 Call #1**（地图 + 双方阵容赛前先验，按视角队伍重标 TEAM_A=你的队伍 / TEAM_B=对方队伍 后注入团队
-Prompt，先识别实际战局类型再对照「预期打法 vs 实际执行」；Call #1 失败仅缺 prior 段不阻断复盘），团队输入含每名成员整场路线序列（九宫格），单团队单元后追加
-**结算级** TEAM_AUTOPSY（判负→主要战犯 / 判胜→MVP，≥1，可多人）：仅当 recorderTeam 恰好 7 名有效本方玩家时才调用（0–6/8 人跳过并记录
-roster_incomplete），Autopsy 无 Call #1 prior / Critical Window / Route 证据，LLM 判断 confidence 仅
-PARTIAL/UNKNOWN（EXACT/INFERRED 拒绝），玩家身份用 `playerKey`（完整 roster 契约），预算 min (30s, 整体剩余 - margin)
-，失败/解析失败不输出该段且不影响主复盘；`AnalyzeResponse` 结构与前端零改动。
+随机战个人复盘（ZH）在重建与特征可用时走 `TacticalReviewHarness`（双 Call）：Call #1 用双方阵容 + `common/tank_tactical_profiles.json` + 地图语义（`common/map-semantics/*.semantic.json`，由 `map-semanticizer` 从 Wot Blitz 客户端 SC2 + heightmap 解码生成）建立赛前战略基线（不含任何战斗结果），Backend Evidence Skills（HpMomentum / EngagementTrade / LocalSupport / DeathCascade / Route / CriticalWindow）输出确定性战术证据，Call #2 按 Priority Bookends 对照「预期 vs 实际」输出复盘，输入含走位/区域时间线、逐次对炮明细、≤8 个关键决策窗口完整证据与口语化语气约束；随机战斗不评判 MVP/战犯。任何前提不满足自动降级旧单 Call 路径；EN/RU 保持旧路径。地图战术语义层（`MapTacticalSemanticsRegistry`）：按 `mapCodes` / `mapId` / token 边界别名查询，未收录地图明确 UNKNOWN（禁止编造区域语义）；语义数据 `displayName` 用 `map_names.json` 的 en 名（未收录回退 mapId），Call #1 语义段显示可读地图名 + 内部 code；语义 AREA 标注 `gridRegions`（GRID_REGION_1~9），与 `MapRegionResolver` 同一坐标约定（±250 m → 500×500 → 3×3），回放定位与地图语义共用同一九宫格；Call #1 有独立 45s stage 预算，Call #2 使用剩余预算并留安全余量，整体不超过 `AI_CALL_TIMEOUT_SEC`。**结构化 JSON 小调用关闭 thinking**：Call #1 与 TEAM_AUTOPSY 在请求层强制 `thinkingEnabled=false`（`reasoningEffort=null`）——生产实测 DeepSeek thinking（`AI_REASONING_EFFORT=max`）会把整个输出预算消耗在 reasoning 上返回空正文（`AI_EMPTY_RESPONSE`），关闭后直接输出契约 JSON；Call #2 主复盘默认也关闭 thinking（`AI_THINKING_ENABLED_CALL2` 默认 false）——DeepSeek 推理模式会让 content 末尾一次性到达、破坏 SSE 逐段流式，需要推理深度时开启（流式由网关分块兜底保证）。团队复盘（训练房/联赛，`TeamReplayAnalysisService`）与随机战一样**先执行 Call #1**（地图 + 双方阵容赛前先验，按视角队伍重标 TEAM_A=你的队伍 / TEAM_B=对方队伍 后注入团队 Prompt，先识别实际战局类型再对照「预期打法 vs 实际执行」；Call #1 失败仅缺 prior 段不阻断复盘），团队输入含每名成员整场路线序列（九宫格），单团队单元后追加**结算级** TEAM_AUTOPSY（判负→主要战犯 / 判胜→MVP，≥1，可多人）：仅当 recorderTeam 恰好 7 名有效本方玩家时才调用（0–6/8 人跳过并记录 roster_incomplete），Autopsy 无 Call #1 prior / Critical Window / Route 证据，LLM 判断 confidence 仅 PARTIAL/UNKNOWN（EXACT/INFERRED 拒绝），玩家身份用 `playerKey`（完整 roster 契约），预算 min(30s, 整体剩余 - margin)，失败/解析失败不输出该段且不影响主复盘；`AnalyzeResponse` 结构与前端零改动。
 
 ## Web 版（Docker + PostgreSQL）
 
@@ -51,14 +31,9 @@ docker compose up -d --build
 
 访问 http://localhost:8088 （健康检查 `http://localhost:8088/api/health`）。
 
-`docker/online/docker-compose.yml` 启动 **八服务**（`postgres:18` + `keycloak` + `wotb-backend` + `wotb-frontend` +
-`prometheus` + `loki` + `alloy` + `grafana`），后端与前端分别构建 `docker/Dockerfile.backend` 和
-`docker/Dockerfile.frontend`，观测四件套使用固定版本镜像。nginx 托管 Vue + 反代 `/api → wotb-backend:8087`，后端连接
-PostgreSQL 并由 Flyway 管理 schema。本地启动观测栈需在环境变量或 `docker/online/.env` 提供 `GRAFANA_ADMIN_USER` /
-`GRAFANA_ADMIN_PASSWORD`（compose required 语法校验）。
+`docker/online/docker-compose.yml` 启动**八服务**（`postgres:18` + `keycloak` + `wotb-backend` + `wotb-frontend` + `prometheus` + `loki` + `alloy` + `grafana`），后端与前端分别构建 `docker/Dockerfile.backend` 和 `docker/Dockerfile.frontend`，观测四件套使用固定版本镜像。nginx 托管 Vue + 反代 `/api → wotb-backend:8087`，后端连接 PostgreSQL 并由 Flyway 管理 schema。本地启动观测栈需在环境变量或 `docker/online/.env` 提供 `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`（compose required 语法校验）。
 
-赞助页从 `/sponsor-config.json` 读取运行时配置。生产配置保存在 `/opt/wotb/config/sponsor-config.json`，二维码保存在
-`/opt/wotb/config/sponsor/`，以只读方式挂载到前端容器；仓库仅提供 disabled 示例配置，不包含个人收款二维码。
+赞助页从 `/sponsor-config.json` 读取运行时配置。生产配置保存在 `/opt/wotb/config/sponsor-config.json`，二维码保存在 `/opt/wotb/config/sponsor/`，以只读方式挂载到前端容器；仓库仅提供 disabled 示例配置，不包含个人收款二维码。
 
 ### CI/CD 自动部署
 
@@ -70,12 +45,9 @@ PostgreSQL 并由 Flyway 管理 schema。本地启动观测栈需在环境变量
 4. SSH 部署前先备份 `wotb` 与 `keycloak` 两个数据库，再 `docker compose pull && up -d`。
 5. 部署等待 `wotb-backend` 的 `/api/health` 成功；失败会输出后端/前端日志并让 workflow 失败。
 
-线上 502 排查可手动运行 [`.github/workflows/prod-diagnostics.yml`](../.github/workflows/prod-diagnostics.yml)，读取 VPS
-compose 状态与后端/前端日志。
+线上 502 排查可手动运行 [`.github/workflows/prod-diagnostics.yml`](../.github/workflows/prod-diagnostics.yml)，读取 VPS compose 状态与后端/前端日志。
 
-> 八个服务：`postgres:18`（数据持久化，卷挂 `/var/lib/postgresql`）→ `keycloak`（认证，`auth.wotbtools.com`）→ `wotb-backend`
-> （Spring Boot 8087，管理端口 8088）→ `wotb-frontend`（nginx + Vue，暴露 8088:80）+ 观测四件套（`prometheus`/`loki`/`alloy`/
-> `grafana`，仅 Docker 内部网络）。`paths` 过滤使纯文档 push 不触发部署。
+> 八个服务：`postgres:18`（数据持久化，卷挂 `/var/lib/postgresql`）→ `keycloak`（认证，`auth.wotbtools.com`）→ `wotb-backend`（Spring Boot 8087，管理端口 8088）→ `wotb-frontend`（nginx + Vue，暴露 8088:80）+ 观测四件套（`prometheus`/`loki`/`alloy`/`grafana`，仅 Docker 内部网络）。`paths` 过滤使纯文档 push 不触发部署。
 
 ## 本地开发
 
@@ -105,21 +77,22 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 返回服务状态与已加载车辆数量。
 
-所有 JSON API 只返回英文 key、raw enum 与稳定 `code`/`error`；不返回本地化 `*Label` 或 `message`。前端通过三语 locale
-显示状态、成功和错误文案。 未显式声明的 `/api/**` 默认拒绝；`boost-manager` 仅能访问 `/api/admin/boost/**`。
+所有 JSON API 只返回英文 key、raw enum 与稳定 `code`/`error`；不返回本地化 `*Label` 或 `message`。前端通过三语 locale 显示状态、成功和错误文案。
+未显式声明的 `/api/**` 默认拒绝；`boost-manager` 仅能访问 `/api/admin/boost/**`。
 
-列定义由后端 `/api/preview` 响应中的 `playerColumns`/`aggregateColumns` 字段和 `/api/columns` 提供（纯英文 key）；实时
-rating 使用 `ratingColumns`。 前端用 `vue-i18n` 三语 locale（`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` /
-`agg_labels` / `rating_labels`）映射显示名， 导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx
-表头。回放页列选择器会把单场/汇总两套列顺序与可见性记到 `localStorage`，
+
+列定义由后端 `/api/preview` 响应中的 `playerColumns`/`aggregateColumns` 字段和 `/api/columns` 提供（纯英文 key）；实时 rating 使用 `ratingColumns`。
+前端用 `vue-i18n` 三语 locale（`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels` / `rating_labels`）映射显示名，
+导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx 表头。回放页列选择器会把单场/汇总两套列顺序与可见性记到 `localStorage`，
 并在后端新增列时自动补齐缺失键。详见 [DEVELOPER_GUIDE.md](../docs/DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
 
-地图名由共享字典 `common/map_names.json` 提供 `zh/en/ru` 三语映射；前端 `mapLabel()` 按当前 locale 取值，导出层
-`MapNames.cn()` 继续固定使用中文。
 
-扩展页 `/extended` 可展示原回放页隐藏的扩展字段：`alpha_damage`、`rank`、`potential_damage`、`potential_damage_supplement`、
-`potential_damage_detail`。 这些字段仍会出现在 API 与导出列定义中，原回放页面的列选择器会过滤扩展专用字段。`xp`、`credits`
-仅在 parser/model 保留，不作为战绩字段展示。
+地图名由共享字典 `common/map_names.json` 提供 `zh/en/ru` 三语映射；前端 `mapLabel()` 按当前 locale 取值，导出层 `MapNames.cn()` 继续固定使用中文。
+
+
+扩展页 `/extended` 可展示原回放页隐藏的扩展字段：`alpha_damage`、`rank`、`potential_damage`、`potential_damage_supplement`、`potential_damage_detail`。
+这些字段仍会出现在 API 与导出列定义中，原回放页面的列选择器会过滤扩展专用字段。`xp`、`credits` 仅在 parser/model 保留，不作为战绩字段展示。
+
 
 ### `GET /api/rating`
 
@@ -131,14 +104,15 @@ rating 使用 `ratingColumns`。 前端用 `vue-i18n` 三语 locale（`frontend/
   "classFactor": { "HEAVY_TANK": 1.0, "MEDIUM_TANK": 0.9, "TANK_DESTROYER": 1.0, "LIGHT_TANK": 0.7, "OTHER": 0.9 } }
 ```
 
+
+
 ### `POST /api/rating`
 
 `multipart/form-data`，字段名为 `files`。只基于本次上传回放实时计算，不落库、不读取历史记录。
 
 返回：
 
-- `rows`：每名选手的 `rating`、`kast`、`contribution`、`impact`、`assist_avg`、`multi_damage_rate`、`damage_avg`、
-  `potential_damage_avg`、`kills` 等。
+- `rows`：每名选手的 `rating`、`kast`、`contribution`、`impact`、`assist_avg`、`multi_damage_rate`、`damage_avg`、`potential_damage_avg`、`kills` 等。
 - `duplicates` / `failures`：与 `/api/preview` 相同的去重和失败信息。
 - `ratingColumns`：纯英文 key + 是否数值，前端由三语 `rating_labels` 显示。
 
@@ -148,8 +122,7 @@ rating 使用 `ratingColumns`。 前端用 `vue-i18n` 三语 locale（`frontend/
 
 `multipart/form-data`，字段名为 `files`，可上传一个或多个 `.wotbreplay`。
 
-入口限制：最多 100 个文件，单文件不超过 20 MiB，请求合计不超过 200 MiB；每个应用实例默认最多同时处理 2 个解析任务（
-`REPLAY_MAX_CONCURRENT_JOBS` 可调），容量满返回 HTTP 503 + `REPLAY_BUSY`。ZIP、pickle、protobuf、单场玩家数与事件流包/扫描次数另有独立预算。
+入口限制：最多 100 个文件，单文件不超过 20 MiB，请求合计不超过 200 MiB；每个应用实例默认最多同时处理 2 个解析任务（`REPLAY_MAX_CONCURRENT_JOBS` 可调），容量满返回 HTTP 503 + `REPLAY_BUSY`。ZIP、pickle、protobuf、单场玩家数与事件流包/扫描次数另有独立预算。
 
 返回：
 
@@ -170,126 +143,57 @@ rating 使用 `ratingColumns`。 前端用 `vue-i18n` 三语 locale（`frontend/
 
 ### AI 复盘与批量处理（wotbtools-user / wotbtools-admin）
 
-完整战斗重建：读取 `data.wotreplay` 全部事件包 → 解码为领域事件 → 重建战场状态。 重建不单独暴露端点，由 `/analyze` 在内部完成。
+完整战斗重建：读取 `data.wotreplay` 全部事件包 → 解码为领域事件 → 重建战场状态。
+重建不单独暴露端点，由 `/analyze` 在内部完成。
 
-- `POST /api/replay/reconstruct-batch` — 批量重建（单文件 ≤ 20 MiB、请求合计 ≤ 200 MiB），返回 `ReplayBatchProcessingResult`
-  （含 `suggestedAnalysisMode`、逐文件 `ReplayProcessingResult`）。
+- `POST /api/replay/reconstruct-batch` — 批量重建（单文件 ≤ 20 MiB、请求合计 ≤ 200 MiB），返回 `ReplayBatchProcessingResult`（含 `suggestedAnalysisMode`、逐文件 `ReplayProcessingResult`）。
 - `POST /api/replay/process?reconstruct=false` — 通用批量处理，可选开启重建。
-- `POST /api/replay/analyze` — 上传 `files[]` 生成 AI 战术复盘； **单文件限制（`AiReplayBatchPolicy.MAX_FILES=1`）**，仅
-  `SINGLE_PLAYER_BATTLE` / `SINGLE_TEAM_BATTLE` 模式（多文件 AI 复盘已移除，2026-08-12）。表单字段 `lang`（必填，白名单 `zh`/
-  `en`/`ru`）控制 AI 复盘输出语言；缺失时返回 `400`，空白或未知值返回 `400 UNKNOWN_LOCALE`。可选表单字段 `correlationId`
-  用于客户端取消；`POST /api/replay/analyze/cancel?correlationId=...` 中断 in-flight 上游调用（返回 `204`，未注册返回 `404`
-  ），被取消请求稳定返回 `AI_CANCELLED`。`POST /api/replay/map-overview` — 上传 `files[]` 只解析回放并确定性生成
-  `MapOverview`（热力/路线/战局回放， **不调 AI**），同步 JSON 返回；地图不可构建（未知地图/无观测/无名册/视角未解析）返回
-  `204`；校验与错误码与 analyze 一致。 **响应为 SSE 流式（breaking change，旧同步 JSON 端点不保留）**：事件 `call1_start` /
-  `call1_done` / `evidence_done` / `call2_token`（`{"delta"}`）/ `autopsy_start` / `autopsy_done` / `done`（
-  `{"analysis","preBattleSection","mapOverview"}`，`mapOverview` 可空，字段见 `docs/features/battle-playback.md`）/
-  `error`（`{"code"}`，worker 启动后的失败经 SSE 传达）；request-envelope 校验与 worker 池饱和在返回 `SseEmitter` 前由 HTTP
-  状态码 + 稳定错误码文本返回（400/503）。完整协议见 `docs/features/team-ai-review.md` §8。
+- `POST /api/replay/analyze` — 上传 `files[]` 生成 AI 战术复盘；**单文件限制（`AiReplayBatchPolicy.MAX_FILES=1`）**，仅 `SINGLE_PLAYER_BATTLE` / `SINGLE_TEAM_BATTLE` 模式（多文件 AI 复盘已移除，2026-08-12）。表单字段 `lang`（必填，白名单 `zh`/`en`/`ru`）控制 AI 复盘输出语言；缺失时返回 `400`，空白或未知值返回 `400 UNKNOWN_LOCALE`。可选表单字段 `correlationId` 用于客户端取消；`POST /api/replay/analyze/cancel?correlationId=...` 中断 in-flight 上游调用（返回 `204`，未注册返回 `404`），被取消请求稳定返回 `AI_CANCELLED`。`POST /api/replay/map-overview` — 上传 `files[]` 只解析回放并确定性生成 `MapOverview`（热力/路线/战局回放，**不调 AI**），同步 JSON 返回；地图不可构建（未知地图/无观测/无名册/视角未解析）返回 `204`；校验与错误码与 analyze 一致。**响应为 SSE 流式（breaking change，旧同步 JSON 端点不保留）**：事件 `call1_start` / `call1_done` / `evidence_done` / `call2_token`（`{"delta"}`）/ `autopsy_start` / `autopsy_done` / `done`（`{"analysis","preBattleSection","mapOverview"}`，`mapOverview` 可空，字段见 `docs/features/battle-playback.md`）/ `error`（`{"code"}`，worker 启动后的失败经 SSE 传达）；request-envelope 校验与 worker 池饱和在返回 `SseEmitter` 前由 HTTP 状态码 + 稳定错误码文本返回（400/503）。完整协议见 `docs/features/team-ai-review.md` §8。
 
-**策略**：上传文件先统一校验扩展名、空文件和单文件大小；通过预校验后，解析/重建错误才按文件隔离。系统执行 SHA-256 精确去重，并按
-battle + perspective 分组。随机战斗分析录像者个人；训练房/联赛分析录像者所在整队，录像者只用于解析 `perspectiveTeam`
-。同场同队回放只选一个代表，同场双方保持独立；未点亮敌人仍未知，不能跨录像补全视野。
+**策略**：上传文件先统一校验扩展名、空文件和单文件大小；通过预校验后，解析/重建错误才按文件隔离。系统执行 SHA-256 精确去重，并按 battle + perspective 分组。随机战斗分析录像者个人；训练房/联赛分析录像者所在整队，录像者只用于解析 `perspectiveTeam`。同场同队回放只选一个代表，同场双方保持独立；未点亮敌人仍未知，不能跨录像补全视野。
 
-团队总伤害、承伤、助攻、格挡、击杀、存活来自 `battle_results.dat` 权威结算；死亡时刻优先 `battle_results` 的
-deathTimeMillis，缺失时回退事件流估算（`PlayerResultFormat.deathSec`，来源经 `DEATH_SOURCE`
-标注）；事件流伤害只作为观测子集。重建可用时补充每名队员独立移动、阵型、交火和关键事件；重建不可用时仍可生成明确标注的权威结算
-fallback。AI 输入不包含原始事件流，prompt 长度由 token 估算器（`AiTokenEstimator`）按 `AiModelProperties` 预算控制（
-`singleReplayMaxInputTokens` 等），不再使用固定成员数/事件数/字符数截断；超限时返回 `AI_INPUT_TRUNCATED` limitation。
+团队总伤害、承伤、助攻、格挡、击杀、存活来自 `battle_results.dat` 权威结算；死亡时刻优先 `battle_results` 的 deathTimeMillis，缺失时回退事件流估算（`PlayerResultFormat.deathSec`，来源经 `DEATH_SOURCE` 标注）；事件流伤害只作为观测子集。重建可用时补充每名队员独立移动、阵型、交火和关键事件；重建不可用时仍可生成明确标注的权威结算 fallback。AI 输入不包含原始事件流，prompt 长度由 token 估算器（`AiTokenEstimator`）按 `AiModelProperties` 预算控制（`singleReplayMaxInputTokens` 等），不再使用固定成员数/事件数/字符数截断；超限时返回 `AI_INPUT_TRUNCATED` limitation。
 
-AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`AI_CANCELLED`、`AI_UPSTREAM_UNAVAILABLE` 等），前端以 zh/en/ru
-本地化。`/api/replay/**` 需要 `wotbtools-user` 或 `wotbtools-admin` 角色；未配置 `AI_API_KEY` 时 `/analyze` 返回
-`AI_NOT_CONFIGURED`，应用其余功能不受影响。全链路超时对齐：整体 deadline 默认 1100s（团队 3 次 AI 调用 + 余量，
-`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）→ 前端 analyze 安全超时 1100s < 容器 nginx `/api/replay/analyze` 1120s，后端 AI
-单次预算 `AI_CALL_TIMEOUT_SEC=315s` + 解析余量；`AI_TIMEOUT` 不再自动重试（上游可能已计费）。
+AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`AI_CANCELLED`、`AI_UPSTREAM_UNAVAILABLE` 等），前端以 zh/en/ru 本地化。`/api/replay/**` 需要 `wotbtools-user` 或 `wotbtools-admin` 角色；未配置 `AI_API_KEY` 时 `/analyze` 返回 `AI_NOT_CONFIGURED`，应用其余功能不受影响。全链路超时对齐：整体 deadline 默认 1100s（团队 3 次 AI 调用 + 余量，`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）→ 前端 analyze 安全超时 1100s < 容器 nginx `/api/replay/analyze` 1120s，后端 AI 单次预算 `AI_CALL_TIMEOUT_SEC=315s` + 解析余量；`AI_TIMEOUT` 不再自动重试（上游可能已计费）。
 
 ### 名人堂（Hall of Fame）
 
-每条记录 = 录像者本人在一场 **随机战斗**（`arenaBonusType==1`）或 **评级战斗**（`==7`）中用某辆车打出的单场伤害（战斗模式判断集中在
-`HallOfFameBattleTypePolicy`，其余模式 → 400 `UNSUPPORTED_BATTLE_TYPE`，零持久化）；通过名人堂上传入口写入（去重键
-`arena_id + account_id`）。
+每条记录 = 录像者本人在一场**随机战斗**（`arenaBonusType==1`）或**评级战斗**（`==7`）中用某辆车打出的单场伤害（战斗模式判断集中在 `HallOfFameBattleTypePolicy`，其余模式 → 400 `UNSUPPORTED_BATTLE_TYPE`，零持久化）；通过名人堂上传入口写入（去重键 `arena_id + account_id`）。
 
-- `GET /api/hof?battleType=RANDOM|RATING&tankId=&nickname=&page=&size=` — 统一公开查询（匿名；排序 damage DESC → RATING
-  优先 → battleTime ASC NULLS LAST → createdAt → id；rank = 当前 filter 上下文位置排名）。
-- `POST /api/hof/upload` — 上传单场回放（ **需登录**）；不支持战斗模式 → 400 `UNSUPPORTED_BATTLE_TYPE`；其余跳过时返回英文
-  `reasonCode`（`DUPLICATE_OR_UNKNOWN_RECORDER` / `REPLAY_HASH_CONFLICT`），由前端本地化。
-- `GET /api/hof/{id}/replay` — 下载该记录原始回放文件（ **需登录**，任意已登录用户；无文件 → 404 `REPLAY_FILE_NOT_FOUND`）。
-- 管理后台（ **需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof`（搜索/筛选/排序/分页）、
-  `GET /api/admin/hof/audit`（操作日志，只读）、`GET /api/admin/hof/{id}/replay`（下载）、`DELETE /api/admin/hof/{id}`（hard
-  delete，audit+delete 单事务，最后引用清理物理文件；删除后同一回放可重新上传）。
-- 原始 .wotbreplay 以 SHA-256 内容寻址存 `HOF_REPLAY_DIR`（默认 `data/replays`，生产 volume `/data/replays`
-  ）；老记录无文件不显示下载按钮。
+- `GET /api/hof?battleType=RANDOM|RATING&tankId=&nickname=&page=&size=` — 统一公开查询（匿名；排序 damage DESC → RATING 优先 → battleTime ASC NULLS LAST → createdAt → id；rank = 当前 filter 上下文位置排名）。
+- `POST /api/hof/upload` — 上传单场回放（**需登录**）；不支持战斗模式 → 400 `UNSUPPORTED_BATTLE_TYPE`；其余跳过时返回英文 `reasonCode`（`DUPLICATE_OR_UNKNOWN_RECORDER` / `REPLAY_HASH_CONFLICT`），由前端本地化。
+- `GET /api/hof/{id}/replay` — 下载该记录原始回放文件（**需登录**，任意已登录用户；无文件 → 404 `REPLAY_FILE_NOT_FOUND`）。
+- 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof`（搜索/筛选/排序/分页）、`GET /api/admin/hof/audit`（操作日志，只读）、`GET /api/admin/hof/{id}/replay`（下载）、`DELETE /api/admin/hof/{id}`（hard delete，audit+delete 单事务，最后引用清理物理文件；删除后同一回放可重新上传）。
+- 原始 .wotbreplay 以 SHA-256 内容寻址存 `HOF_REPLAY_DIR`（默认 `data/replays`，生产 volume `/data/replays`）；老记录无文件不显示下载按钮。
 - **百场（Hundred Battles）**：Tier X 车辆独立的生涯场均伤害排行榜，成绩需管理员人工审核（`com.wotb.web.hundred` 域）：
-    - `GET /api/hof/hundred?vehicleId=&page=&size=` — 公开排行榜（匿名；competition ranking 1,2,2,4 由分组计数前缀和
-      query-time 派生，不落库；只输出 approved* 快照）。
-    - `POST /api/hof/hundred/submissions` — 提交百场成绩（ **需登录** + Profile gameId/nickname
-      已配置；multipart：vehicleId/averageDamage/battleCount/screenshot (base64)/replays×5）。硬门禁：Tier X authoritative
-      校验、5 个 replay 全部解析成功且 gameId/vehicleId 匹配、5 场不同 battle；任一失败整单拒绝不进入 PENDING。同车已有
-      PENDING → 409 `HUNDRED_PENDING_EXISTS`；新成绩未严格高于 CURRENT → 409 `HUNDRED_NOT_HIGHER`。
-    - `POST /api/hof/hundred/submissions/{id}/cancel` — 用户撤销自己的 PENDING（ **需登录**）。
-    - `GET /api/users/hundred/status` — 个人中心百场状态（CURRENT / PENDING / 最近拒绝； **需登录**）。
-    - 管理后台（ **需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof/hundred/submissions`（status 过滤）、
-      `GET .../submissions/{id}`（详情，proofScreenshot 仅 PENDING 返回）、`GET .../submissions/{id}/replays`（回放审核证据
-      metadata 列表，旧 PENDING → 空）、`GET .../submissions/{submissionId}/replays/{replayId}`（下载原始
-      .wotbreplay，ownership 校验 + UTF-8 filename）、`POST .../{id}/approve`（事务内重读 CURRENT 按 approvedAverageDamage
-      严格比较，旧 CURRENT→SUPERSEDED）、`POST .../{id}/reject`（原因强制）、`POST .../{id}/delete`（仅 CURRENT，原因强制，不恢复
-      SUPERSEDED）。
-    - 数据模型：`hundred_battle_submission` 单表生命周期（Flyway `V18`），partial unique index 保证 user+vehicle 最多一个
-      PENDING/CURRENT；身份/成绩快照创建瞬间冻结；proof 截图终态事务内清空（不永久保存）；5 个原始 replay 由
-      `hundred_battle_replay_evidence`（Flyway `V19`）内容寻址持久化（复用 `HallOfFameReplayStorage`
-      ），终态（APPROVE/REJECT/CANCEL）同事务删 evidence 行 + commit 后跨表引用计数清理物理文件（失败仅 WARN 保留 orphan）。
+  - `GET /api/hof/hundred?vehicleId=&page=&size=` — 公开排行榜（匿名；competition ranking 1,2,2,4 由分组计数前缀和 query-time 派生，不落库；只输出 approved* 快照）。
+  - `POST /api/hof/hundred/submissions` — 提交百场成绩（**需登录** + Profile gameId/nickname 已配置；multipart：vehicleId/averageDamage/battleCount/screenshot(base64)/replays×5）。硬门禁：Tier X authoritative 校验、5 个 replay 全部解析成功且 gameId/vehicleId 匹配、5 场不同 battle；任一失败整单拒绝不进入 PENDING。同车已有 PENDING → 409 `HUNDRED_PENDING_EXISTS`；新成绩未严格高于 CURRENT → 409 `HUNDRED_NOT_HIGHER`。
+  - `POST /api/hof/hundred/submissions/{id}/cancel` — 用户撤销自己的 PENDING（**需登录**）。
+  - `GET /api/users/hundred/status` — 个人中心百场状态（CURRENT / PENDING / 最近拒绝；**需登录**）。
+  - 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof/hundred/submissions`（status 过滤）、`GET .../submissions/{id}`（详情，proofScreenshot 仅 PENDING 返回）、`GET .../submissions/{id}/replays`（回放审核证据 metadata 列表，旧 PENDING → 空）、`GET .../submissions/{submissionId}/replays/{replayId}`（下载原始 .wotbreplay，ownership 校验 + UTF-8 filename）、`POST .../{id}/approve`（事务内重读 CURRENT 按 approvedAverageDamage 严格比较，旧 CURRENT→SUPERSEDED）、`POST .../{id}/reject`（原因强制）、`POST .../{id}/delete`（仅 CURRENT，原因强制，不恢复 SUPERSEDED）。
+  - 数据模型：`hundred_battle_submission` 单表生命周期（Flyway `V18`），partial unique index 保证 user+vehicle 最多一个 PENDING/CURRENT；身份/成绩快照创建瞬间冻结；proof 截图终态事务内清空（不永久保存）；5 个原始 replay 由 `hundred_battle_replay_evidence`（Flyway `V19`）内容寻址持久化（复用 `HallOfFameReplayStorage`），终态（APPROVE/REJECT/CANCEL）同事务删 evidence 行 + commit 后跨表引用计数清理物理文件（失败仅 WARN 保留 orphan）。
 
 ### 陪练与打手（仅在线版）
 
-`GET /api/booster/assignments` 默认返回当前登录打手的活跃订单；追加 `?includeHistory=true` 时返回活跃 +
-历史订单（活跃优先、历史按分配时间倒序），供个人中心回看已完成/已取消/已拒绝订单。`PATCH /api/boost/boosters/my/availability`
-允许打手本人切换 `available`，用于暂停/恢复接收新订单，并返回最新 `BoosterDto` 给个人中心即时刷新。打手可通过
-`PATCH /api/booster/assignments/{id}/accept|start|complete|decline` 流转自己的订单；提交完成后需求进入 `PENDING_CONFIRM`
-，客户调用 `PATCH /api/boost/requests/my/{id}/confirm-completion` 确认为 `CLOSED`。若客户未操作，系统默认 72
-小时后自动确认；管理员也可关闭 `PENDING_CONFIRM`/`EXCEPTION` 订单。三条入口共用带行锁的幂等完结路径，同时把分配置为
-`COMPLETED`、写入 `unassigned_at` 并释放打手。管理员分配订单时要求打手资格为 `ACTIVE`
-、未暂停接单且没有活跃订单；前端会按资格、接单状态、活跃订单数、等级和擅长内容推荐排序。
+`GET /api/booster/assignments` 默认返回当前登录打手的活跃订单；追加 `?includeHistory=true` 时返回活跃 + 历史订单（活跃优先、历史按分配时间倒序），供个人中心回看已完成/已取消/已拒绝订单。`PATCH /api/boost/boosters/my/availability` 允许打手本人切换 `available`，用于暂停/恢复接收新订单，并返回最新 `BoosterDto` 给个人中心即时刷新。打手可通过 `PATCH /api/booster/assignments/{id}/accept|start|complete|decline` 流转自己的订单；提交完成后需求进入 `PENDING_CONFIRM`，客户调用 `PATCH /api/boost/requests/my/{id}/confirm-completion` 确认为 `CLOSED`。若客户未操作，系统默认 72 小时后自动确认；管理员也可关闭 `PENDING_CONFIRM`/`EXCEPTION` 订单。三条入口共用带行锁的幂等完结路径，同时把分配置为 `COMPLETED`、写入 `unassigned_at` 并释放打手。管理员分配订单时要求打手资格为 `ACTIVE`、未暂停接单且没有活跃订单；前端会按资格、接单状态、活跃订单数、等级和擅长内容推荐排序。
 
-客户提交陪练需求和打手资格申请都支持 `CN / ASIA / EU / NA` 四个区服。`GET /api/boost/options` 从 `BoostRegion`
-动态返回客户需求区服选项，空值默认 `CN`、未知值返回 `UNSUPPORTED_BOOST_REGION`；需求区服会显示在客户、管理员列表，并通过
-`BoostAssignmentDto.region` 提供给打手工作台。打手申请则把用户资料中规范化后的真实区服写入申请记录；审批后区服固化到
-`booster_profile.wotb_server`。玩家可申请 `CASUAL / SKILLED / ELITE / PRO / MASTER` 五档；兼容内部值 `AVERAGE_GOD`
-的“殿堂级”（英文 `Mythic`）只能由管理员编辑已有打手授予，且每服最多一名。申请 ID、账号 ID、档期等仍保存在申请表专用字段，不写进可编辑打手备注。列表接口
-`GET /api/boost/booster-applications/my` 与 `GET /api/admin/boost/booster-applications` 返回不含截图、微信、日常时段和自评的
-`BoosterApplicationSummaryDto`，并通过 JPA 构造投影避免读取 Base64 图片列；审核状态变更接口也返回该摘要
-DTO，避免重复回传图片。管理员需要完整资料时调用 `GET /api/admin/boost/booster-applications/{id}`；资格审批前端只在点击“详情”后请求该接口。
+客户提交陪练需求和打手资格申请都支持 `CN / ASIA / EU / NA` 四个区服。`GET /api/boost/options` 从 `BoostRegion` 动态返回客户需求区服选项，空值默认 `CN`、未知值返回 `UNSUPPORTED_BOOST_REGION`；需求区服会显示在客户、管理员列表，并通过 `BoostAssignmentDto.region` 提供给打手工作台。打手申请则把用户资料中规范化后的真实区服写入申请记录；审批后区服固化到 `booster_profile.wotb_server`。玩家可申请 `CASUAL / SKILLED / ELITE / PRO / MASTER` 五档；兼容内部值 `AVERAGE_GOD` 的“殿堂级”（英文 `Mythic`）只能由管理员编辑已有打手授予，且每服最多一名。申请 ID、账号 ID、档期等仍保存在申请表专用字段，不写进可编辑打手备注。列表接口 `GET /api/boost/booster-applications/my` 与 `GET /api/admin/boost/booster-applications` 返回不含截图、微信、日常时段和自评的 `BoosterApplicationSummaryDto`，并通过 JPA 构造投影避免读取 Base64 图片列；审核状态变更接口也返回该摘要 DTO，避免重复回传图片。管理员需要完整资料时调用 `GET /api/admin/boost/booster-applications/{id}`；资格审批前端只在点击“详情”后请求该接口。
 
-完成确认窗口由 `BOOST_AUTO_CONFIRM_HOURS` 配置（默认 `72`），到期扫描间隔由 `BOOST_AUTO_CONFIRM_SCAN_MS` 配置（默认 `300000`
-毫秒）；线上部署可用同名 GitHub repository variables 覆盖。Flyway V11 会给已有 `PENDING_CONFIRM` 订单从迁移时刻起补一个 72
-小时窗口。
+完成确认窗口由 `BOOST_AUTO_CONFIRM_HOURS` 配置（默认 `72`），到期扫描间隔由 `BOOST_AUTO_CONFIRM_SCAN_MS` 配置（默认 `300000` 毫秒）；线上部署可用同名 GitHub repository variables 覆盖。Flyway V11 会给已有 `PENDING_CONFIRM` 订单从迁移时刻起补一个 72 小时窗口。
 
-`DELETE /api/admin/boost/boosters/{id}` 会保留资格申请并清空其 `approved_booster_id`；存在任意订单分配历史时以
-`BOOSTER_HAS_DEPENDENCIES` 拒绝。管理员删除用户时会先复用该流程清理关联打手档案，再删除本地资料与 Keycloak 用户。
+`DELETE /api/admin/boost/boosters/{id}` 会保留资格申请并清空其 `approved_booster_id`；存在任意订单分配历史时以 `BOOSTER_HAS_DEPENDENCIES` 拒绝。管理员删除用户时会先复用该流程清理关联打手档案，再删除本地资料与 Keycloak 用户。
 
-`GET /api/users/notifications`、`GET /api/users/notifications/unread-count`、`PATCH /api/users/notifications/{id}/read` 和
-`PATCH /api/users/notifications/read-all` 提供站内通知基础能力。通知 API 返回英文 `type` 与 `payload` 数据，具体文案由前端三语
-i18n 渲染。
+`GET /api/users/notifications`、`GET /api/users/notifications/unread-count`、`PATCH /api/users/notifications/{id}/read` 和 `PATCH /api/users/notifications/read-all` 提供站内通知基础能力。通知 API 返回英文 `type` 与 `payload` 数据，具体文案由前端三语 i18n 渲染。
 
 ### 用户资料（WoTB 账号）
 
 - `GET /api/users/profile` — 当前用户资料；未创建返回 404 `PROFILE_NOT_FOUND`。
-- `POST /api/users/profile` — 懒创建资料。JWT 带可信 WG claims（`wotb_verified=true` 且 `wotb_region ∈ {ASIA,EU,NA}`
-  且账号/昵称有效）时自动创建对应区服资料（`wotb_account_source=WARGAMING`、`wotb_account_verified_at=首次同步时间`）；否则按
-  CN（`MANUAL`）创建。
-- `PATCH /api/users/wotb-account` — CN 手动绑定（仅允许 `wotbServer=CN`）；WARGAMING source 资料返回只读错误（ASIA 为 400
-  `ASIA_PROFILE_READONLY`，EU/NA 为 400 `WARGAMING_PROFILE_READONLY`）。
-- `PUT /api/users/wotb-account/from-login` — WG 登录后的幂等同步（无 body，只读 JWT）；Profile 不存在时原子创建 WARGAMING、空
-  Profile 升级为 WARGAMING、同 (region, account_id) 刷新官方昵称（不刷新 verified_at）；已绑定 CN 覆盖或跨区服返回 409
-  `PROFILE_REGION_MISMATCH`、换账号返回 409 `WOTB_ACCOUNT_MISMATCH`、账号被他人占用返回 409 `WOTB_ACCOUNT_ALREADY_USED`
-  、Claims 缺失返回 400 `WOTB_CLAIMS_INVALID`。
-- `DELETE /api/users/wotb-account` — 解绑；WARGAMING source 资料返回只读错误（ASIA 为 400 `ASIA_PROFILE_READONLY`，EU/NA 为
-  400 `WARGAMING_PROFILE_READONLY`）。
+- `POST /api/users/profile` — 懒创建资料。JWT 带可信 WG claims（`wotb_verified=true` 且 `wotb_region ∈ {ASIA,EU,NA}` 且账号/昵称有效）时自动创建对应区服资料（`wotb_account_source=WARGAMING`、`wotb_account_verified_at=首次同步时间`）；否则按 CN（`MANUAL`）创建。
+- `PATCH /api/users/wotb-account` — CN 手动绑定（仅允许 `wotbServer=CN`）；WARGAMING source 资料返回只读错误（ASIA 为 400 `ASIA_PROFILE_READONLY`，EU/NA 为 400 `WARGAMING_PROFILE_READONLY`）。
+- `PUT /api/users/wotb-account/from-login` — WG 登录后的幂等同步（无 body，只读 JWT）；Profile 不存在时原子创建 WARGAMING、空 Profile 升级为 WARGAMING、同 (region, account_id) 刷新官方昵称（不刷新 verified_at）；已绑定 CN 覆盖或跨区服返回 409 `PROFILE_REGION_MISMATCH`、换账号返回 409 `WOTB_ACCOUNT_MISMATCH`、账号被他人占用返回 409 `WOTB_ACCOUNT_ALREADY_USED`、Claims 缺失返回 400 `WOTB_CLAIMS_INVALID`。
+- `DELETE /api/users/wotb-account` — 解绑；WARGAMING source 资料返回只读错误（ASIA 为 400 `ASIA_PROFILE_READONLY`，EU/NA 为 400 `WARGAMING_PROFILE_READONLY`）。
 
-资料 DTO 含 `wotbAccountSource`（MANUAL/WARGAMING）与 `wotbAccountVerifiedAt`（ISO 时间或 null）。JWT claims 由 Keycloak
-realm 的 4 个 protocol mapper 提供（`region→wotb_region`、`wotb.account_id→wotb_account_id`、`wotb.nickname→wotb_nickname`、
-`wotb.verified→wotb_verified(boolean)`）；Keycloak 容器需注入 `WG_APPLICATION_ID`（WoT Blitz 应用 ID，缺失时仅 WG
-登录报错）。详见 [docs/auth/wargaming-asia-login.md](../docs/auth/wargaming-asia-login.md)
-与部署手册 [docs/auth/wargaming-asia-deployment.md](../docs/auth/wargaming-asia-deployment.md)。
+资料 DTO 含 `wotbAccountSource`（MANUAL/WARGAMING）与 `wotbAccountVerifiedAt`（ISO 时间或 null）。JWT claims 由 Keycloak realm 的 4 个 protocol mapper 提供（`region→wotb_region`、`wotb.account_id→wotb_account_id`、`wotb.nickname→wotb_nickname`、`wotb.verified→wotb_verified(boolean)`）；Keycloak 容器需注入 `WG_APPLICATION_ID`（WoT Blitz 应用 ID，缺失时仅 WG 登录报错）。详见 [docs/auth/wargaming-asia-login.md](../docs/auth/wargaming-asia-login.md) 与部署手册 [docs/auth/wargaming-asia-deployment.md](../docs/auth/wargaming-asia-deployment.md)。
 
 ## 测试
 
@@ -320,15 +224,13 @@ npm run build
 - `.github/workflows/database-backup.yml` 每日香港时间 03:15 备份 `wotb` 与 `keycloak`；部署前也会自动备份。
 - 归档在 `/opt/wotb/backups/{wotb,keycloak}/`，通过 catalog + 全压缩数据读取校验，按数据库分别保留 7 天。
 - 查看归档：`deploy/postgres-backup-inspect.sh <archive.dump>`。
-- 恢复：`deploy/postgres-restore.sh --database wotb|keycloak --file <archive.dump> --confirm RESTORE-<database>`
-  。脚本会先做安全备份；恢复失败时依赖服务保持停止，需人工处理。
+- 恢复：`deploy/postgres-restore.sh --database wotb|keycloak --file <archive.dump> --confirm RESTORE-<database>`。脚本会先做安全备份；恢复失败时依赖服务保持停止，需人工处理。
 
 ## 构建配置
 
 项目使用独立 Maven 配置，避免污染或依赖用户全局 Maven 设置：
 
-- `java/settings.xml`：仓库跟踪的可移植本地 Maven settings；在 `java/` 目录执行时使用独立仓库 `java/.m2repo`，干净 clone
-  无需生成。
+- `java/settings.xml`：仓库跟踪的可移植本地 Maven settings；在 `java/` 目录执行时使用独立仓库 `java/.m2repo`，干净 clone 无需生成。
 - `java/settings-docker.xml`：Docker 构建用 Maven settings。
 - `frontend/package-lock.json`：固定前端依赖版本。
 
@@ -356,6 +258,4 @@ wotb:
 ## 维护注意
 
 - 列定义在 `wotb-core/.../Columns.java` 中集中管理，前端通过 `/api/preview` 响应获取列定义，不在前端硬编码业务字段。
-- 车辆库单一来源在 `common/tankopedia-tier{7,8,9,10}.json`（由 `common/python/update_tankopedia.py` 从 blitzkit
-  游戏客户端数据同步，按等级拆分 4 个文件，`vehicles` 数组全英文格式，含手工 `extraInfo` 每车知识点与每车可用物资/消耗品/装备）；
-  `wotb-core` 构建时自动复制到 classpath，勿在模块内再放副本。
+- 车辆库单一来源在 `common/tankopedia-tier{7,8,9,10}.json`（由 `common/python/update_tankopedia.py` 从 blitzkit 游戏客户端数据同步，按等级拆分 4 个文件，`vehicles` 数组全英文格式，含手工 `extraInfo` 每车知识点与每车可用物资/消耗品/装备）；`wotb-core` 构建时自动复制到 classpath，勿在模块内再放副本。

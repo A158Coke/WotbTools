@@ -11,9 +11,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * 用户资料仓库。
- */
+/** 用户资料仓库。 */
 public interface UserProfileRepository extends JpaRepository<UserProfile, Long> {
 
     Optional<UserProfile> findByKeycloakUserId(String keycloakUserId);
@@ -26,9 +24,7 @@ public interface UserProfileRepository extends JpaRepository<UserProfile, Long> 
     boolean existsByWotbServerAndWotbAccountIdAndKeycloakUserIdNot(
             String wotbServer, Long wotbAccountId, String keycloakUserId);
 
-    /**
-     * 管理员搜索用户：按 keycloakUserId / displayName / wotbNickname / wotbAccountId 模糊匹配。
-     */
+    /** 管理员搜索用户：按 keycloakUserId / displayName / wotbNickname / wotbAccountId 模糊匹配。 */
     @Query("SELECT u FROM UserProfile u WHERE "
             + "LOWER(u.keycloakUserId) LIKE LOWER(CONCAT('%', :query, '%')) "
             + "OR LOWER(u.displayName) LIKE LOWER(CONCAT('%', :query, '%')) "

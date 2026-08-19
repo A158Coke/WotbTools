@@ -1,5 +1,5 @@
-import {describe, expect, it, vi} from 'vitest'
-import {localizeAiError} from './reconstruction-analysis.js'
+import { describe, expect, it, vi } from 'vitest'
+import { localizeAiError } from './reconstruction-analysis.js'
 
 const t = vi.fn((key, values) => values ? `${key}:${values.max ?? values.status}` : key)
 

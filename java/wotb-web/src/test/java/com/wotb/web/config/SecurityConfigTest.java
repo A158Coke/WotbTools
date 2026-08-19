@@ -160,9 +160,7 @@ class SecurityConfigTest {
                 .andExpect(status().isOk());
     }
 
-    /**
-     * HoF-admin 只管理名人堂；wotbtools-admin 拥有全部 admin 权限。
-     */
+    /** HoF-admin 只管理名人堂；wotbtools-admin 拥有全部 admin 权限。 */
     @Test
     void hofAdminRoleGatesAreExact() throws Exception {
         // anonymous → 401

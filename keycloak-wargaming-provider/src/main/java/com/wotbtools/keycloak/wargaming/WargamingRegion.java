@@ -30,23 +30,17 @@ enum WargamingRegion {
         this.accountHost = accountHost;
     }
 
-    /**
-     * broker id 使用的小写区服段，如 {@code asia} / {@code eu} / {@code na}。
-     */
+    /** broker id 使用的小写区服段，如 {@code asia} / {@code eu} / {@code na}。 */
     String key() {
         return key;
     }
 
-    /**
-     * 认证 API host（login/prolongate/logout），仅来自白名单。
-     */
+    /** 认证 API host（login/prolongate/logout），仅来自白名单。 */
     String authHost() {
         return authHost;
     }
 
-    /**
-     * WoT Blitz 账号 API host（account/info），仅来自白名单。
-     */
+    /** WoT Blitz 账号 API host（account/info），仅来自白名单。 */
     String accountHost() {
         return accountHost;
     }

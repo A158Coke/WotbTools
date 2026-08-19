@@ -53,9 +53,7 @@ public class HallOfFameService {
         this.storage = storage;
     }
 
-    /**
-     * 下载回放：记录无 hash / 文件缺失（best-effort 语义）→ 404 REPLAY_FILE_NOT_FOUND。
-     */
+    /** 下载回放：记录无 hash / 文件缺失（best-effort 语义）→ 404 REPLAY_FILE_NOT_FOUND。 */
     public ReplayDownload downloadReplay(final long id) {
         final HallOfFameRecord record = repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "REPLAY_FILE_NOT_FOUND"));
@@ -178,9 +176,7 @@ public class HallOfFameService {
         }
     }
 
-    /**
-     * 竞态后按 winner 当前 hash 分类：同 hash → IDEMPOTENT；异 hash / 无 hash → SKIPPED_HASH_CONFLICT。
-     */
+    /** 竞态后按 winner 当前 hash 分类：同 hash → IDEMPOTENT；异 hash / 无 hash → SKIPPED_HASH_CONFLICT。 */
     private RecordOutcome classifyByCurrentHash(final String arenaId, final long accountId,
                                                 final ReplayFileMeta meta) {
         final HallOfFameRecord winner = repository
@@ -224,9 +220,7 @@ public class HallOfFameService {
         return mapper.toPageDtoWithRank(records, page, size);
     }
 
-    /**
-     * 过滤参数只接受 RANDOM / RATING（缺省 All）；其余 → 400。
-     */
+    /** 过滤参数只接受 RANDOM / RATING（缺省 All）；其余 → 400。 */
     private static String normalizeBattleTypeFilter(final String battleType) {
         if (!StringUtils.hasText(battleType)) {
             return null;
@@ -238,9 +232,7 @@ public class HallOfFameService {
         return upper;
     }
 
-    /**
-     * 指定玩家的伤害记录。保持 flat 返回供个人中心使用。
-     */
+    /** 指定玩家的伤害记录。保持 flat 返回供个人中心使用。 */
     public List<HallOfFameRecordDto> recordsByAccountId(final long accountId, final int limit) {
         return repository.findByAccountIdOrderByDamageDealtDesc(accountId, PageRequest.of(0, clamp(limit)))
                 .stream().map(mapper::toDto).toList();

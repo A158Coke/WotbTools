@@ -9,12 +9,10 @@ import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
+import java.util.Locale;
 
-/**
- * Realtime rating leaderboard for an uploaded replay batch.
- */
+/** Realtime rating leaderboard for an uploaded replay batch. */
 public final class RatingAnalyzer {
 
     private static final double EXPECTED_BATTLE_SHARE = 1.0 / 14.0;

@@ -6,26 +6,11 @@
   "lessonRef": "docs/ai-lessons/cw-opening-mapcontrol-01.md",
   "expectedJudgment": "开局分散（地图信息覆盖 trade-off，非脱节；不得声称拿视野/点亮）",
   "checks": [
-    {
-      "kind": "prompt_contains",
-      "text": "=== FORMATION_PHASES ==="
-    },
-    {
-      "kind": "prompt_contains",
-      "text": "clusters="
-    },
-    {
-      "kind": "prompt_contains",
-      "text": "团队首次接敌"
-    },
-    {
-      "kind": "prompt_contains",
-      "text": "OPENING_SPREAD"
-    },
-    {
-      "kind": "prompt_omits",
-      "text": "队员阵亡"
-    }
+    { "kind": "prompt_contains", "text": "=== FORMATION_PHASES ===" },
+    { "kind": "prompt_contains", "text": "clusters=" },
+    { "kind": "prompt_contains", "text": "团队首次接敌" },
+    { "kind": "prompt_contains", "text": "OPENING_SPREAD" },
+    { "kind": "prompt_omits", "text": "队员阵亡" }
   ],
   "note": "开局全队分散：多簇阵型、未接火、无阵亡。只证明位置/队形分离（OPENING_SPREAD），不证明拿视野/点亮；断言其抑制脱节候选。"
 }

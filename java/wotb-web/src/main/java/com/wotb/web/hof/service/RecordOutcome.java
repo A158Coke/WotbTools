@@ -28,9 +28,7 @@ public enum RecordOutcome {
         return reasonCode != null;
     }
 
-    /**
-     * SKIPPED 时的稳定英文 reasonCode；非 SKIPPED 为 null。
-     */
+    /** SKIPPED 时的稳定英文 reasonCode；非 SKIPPED 为 null。 */
     public String getReasonCode() {
         return reasonCode;
     }

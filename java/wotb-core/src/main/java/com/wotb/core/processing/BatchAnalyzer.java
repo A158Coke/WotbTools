@@ -52,9 +52,7 @@ public class BatchAnalyzer {
         return analyzePartition(ExactReplayDuplicateDetector.partition(results));
     }
 
-    /**
-     * 直接使用已计算的 partition（package-private 供 Facade 共享）。
-     */
+    /** 直接使用已计算的 partition（package-private 供 Facade 共享）。 */
     AnalysisPlan analyzePartition(
             final ExactReplayDuplicateDetector.ExactDuplicatePartition partition
     ) {
@@ -253,9 +251,7 @@ public class BatchAnalyzer {
         return null;
     }
 
-    /**
-     * 基于 scope 的实际可分析判定（不在 Facade 中预计算）。
-     */
+    /** 基于 scope 的实际可分析判定（不在 Facade 中预计算）。 */
     public static boolean isAiAnalyzable(final ReplayProcessingCapabilities caps, final ReplayAnalysisScope scope) {
         if (caps == null || scope == null) return false;
         return switch (scope) {
@@ -263,20 +259,16 @@ public class BatchAnalyzer {
             case TEAM_PERSPECTIVE -> caps.summaryAvailable()
                     && caps.perspectiveTeamResolved()
                     && (caps.recorderResultAvailable()
-                    || caps.teamFeatureExtractionPossible());
+                            || caps.teamFeatureExtractionPossible());
         };
     }
 
-    /**
-     * 从 ReplayProcessingResult 提取 capabilities。
-     */
+    /** 从 ReplayProcessingResult 提取 capabilities。 */
     public static boolean isAiAnalyzable(final ReplayProcessingResult result, final ReplayAnalysisScope scope) {
         return isAiAnalyzable(result != null ? result.capabilities() : null, scope);
     }
 
-    /**
-     * 简化重载：从 ScopedResult 取 scope。
-     */
+    /** 简化重载：从 ScopedResult 取 scope。 */
     public static boolean isAiAnalyzable(final ReplayProcessingResult result, final ScopedResult scoped) {
         return isAiAnalyzable(result, scoped != null ? scoped.scope() : null);
     }

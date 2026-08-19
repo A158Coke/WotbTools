@@ -8,12 +8,12 @@ import java.time.OffsetDateTime;
  * 仅用于展示 / Content-Disposition。
  */
 public record HundredReplayEvidenceDto(
-        Long id,
-        int slot,
-        String originalFilename,
-        long fileSize,
-        String arenaId,
-        String sha256,
-        OffsetDateTime createdAt
+    Long id,
+    int slot,
+    String originalFilename,
+    long fileSize,
+    String arenaId,
+    String sha256,
+    OffsetDateTime createdAt
 ) {
 }

@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 
-import {afterEach, describe, expect, it, vi} from 'vitest'
-import {flushPromises, mount} from '@vue/test-utils'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import BattlePlayback from './BattlePlayback.vue'
-import {preloadBattleModels} from '../vehicle-models/runtime.js'
-import {PLAYER_FADE_MS, PLAYER_HIDE_MS, PLAYER_SHOW_MS} from '../utils/labelLayout'
+import { preloadBattleModels } from '../vehicle-models/runtime.js'
+import { PLAYER_FADE_MS, PLAYER_HIDE_MS, PLAYER_SHOW_MS } from '../utils/labelLayout'
 
 const i18n = vi.hoisted(() => ({
   t: vi.fn(key => key)

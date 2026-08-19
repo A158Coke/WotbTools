@@ -17,11 +17,9 @@ public record EngagementSummary(
         DecodeConfidence confidence
 ) {
     public EngagementSummary {
-        if (!Float.isFinite(startTime) || startTime < 0)
-            throw new IllegalArgumentException("startTime invalid: " + startTime);
+        if (!Float.isFinite(startTime) || startTime < 0) throw new IllegalArgumentException("startTime invalid: " + startTime);
         if (!Float.isFinite(endTime) || endTime < 0) throw new IllegalArgumentException("endTime invalid: " + endTime);
-        if (startTime > endTime)
-            throw new IllegalArgumentException("startTime > endTime: " + startTime + " > " + endTime);
+        if (startTime > endTime) throw new IllegalArgumentException("startTime > endTime: " + startTime + " > " + endTime);
         if (damageDealt < 0) throw new IllegalArgumentException("damageDealt negative: " + damageDealt);
         if (damageReceived < 0) throw new IllegalArgumentException("damageReceived negative: " + damageReceived);
         if (alliedAccountIds == null) throw new IllegalArgumentException("alliedAccountIds must not be null");

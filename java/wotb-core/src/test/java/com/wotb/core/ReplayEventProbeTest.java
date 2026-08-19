@@ -293,9 +293,7 @@ class ReplayEventProbeTest {
         return sb.toString();
     }
 
-    /**
-     * 前 4 个 hex 字符按 LE u16 解析（两个字节）。
-     */
+    /** 前 4 个 hex 字符按 LE u16 解析（两个字节）。 */
     private static int le16(final String hex4) {
         final int lo = Integer.parseInt(hex4.substring(0, 2), 16);
         final int hi = Integer.parseInt(hex4.substring(2, 4), 16);

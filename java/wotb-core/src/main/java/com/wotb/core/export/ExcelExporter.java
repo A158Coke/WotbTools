@@ -17,9 +17,7 @@ public final class ExcelExporter {
     private ExcelExporter() {
     }
 
-    /**
-     * 单场工作簿: 战斗信息 / 玩家数据 / 原始字段。
-     */
+    /** 单场工作簿: 战斗信息 / 玩家数据 / 原始字段。 */
     public static void writeSingle(final Battle battle, final Tankopedia tp, final OutputStream out) throws IOException {
         Rating.compute(List.of(battle), tp);   // 基准=该场内
         final ExcelStyles styles = new ExcelStyles();
@@ -27,9 +25,7 @@ public final class ExcelExporter {
         styles.writeTo(out);
     }
 
-    /**
-     * 多场汇总工作簿 (去重后): 汇总 / 明细 / 战斗列表。
-     */
+    /** 多场汇总工作簿 (去重后): 汇总 / 明细 / 战斗列表。 */
     public static void writeAggregate(final List<Battle> battles, final List<String> sourceNames,
                                       final List<String[]> duplicates, final Tankopedia tp,
                                       final OutputStream out) throws IOException {

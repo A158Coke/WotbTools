@@ -130,9 +130,7 @@ public final class TankTacticalProfileRegistry {
         };
     }
 
-    /**
-     * 归一化车种：中文 / 英文（含 blitzkit 新格式 "Heavy tank" 等）→ 语义枚举。
-     */
+    /** 归一化车种：中文 / 英文（含 blitzkit 新格式 "Heavy tank" 等）→ 语义枚举。 */
     static String normalizeClass(final String type) {
         if (!StringUtils.hasText(type)) {
             return UNKNOWN_CLASS;

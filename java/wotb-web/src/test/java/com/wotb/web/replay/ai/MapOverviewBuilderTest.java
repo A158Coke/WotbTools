@@ -4,9 +4,9 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
+import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
-import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.EntityRemovedEvent;
@@ -132,8 +132,8 @@ class MapOverviewBuilderTest {
                 lastT = s.timeSec();
                 assertTrue(Double.isFinite(s.hullYawDeg()), "hull yaw 必须 finite");
                 assertTrue(Double.isFinite(s.turretRelativeYawDeg())
-                                && s.turretRelativeYawDeg() >= -180.0
-                                && s.turretRelativeYawDeg() < 180.0,
+                        && s.turretRelativeYawDeg() >= -180.0
+                        && s.turretRelativeYawDeg() < 180.0,
                         "turretRelativeYawDeg ∈ [-180,180)");
                 if (v.deathSec() != null) {
                     assertTrue(s.timeSec() <= v.deathSec() + 1e-6, "阵亡后不采样");
@@ -257,11 +257,13 @@ class MapOverviewBuilderTest {
         assertEquals(1L, payload.get("recorderAccountId"));
         assertTrue(payload.containsKey("playback"));
         assertNull(payload.get("playback"), "降级样例 playback 恒 null");
-        @SuppressWarnings("unchecked") final Map<String, Object> route = (Map<String, Object>) ((List<?>) payload.get("routes")).get(0);
+        @SuppressWarnings("unchecked")
+        final Map<String, Object> route = (Map<String, Object>) ((List<?>) payload.get("routes")).get(0);
         assertTrue(route.containsKey("firstObservedSec"));
         assertTrue(route.containsKey("lastObservedSec"));
         assertTrue(route.containsKey("deathSec"));
-        @SuppressWarnings("unchecked") final Map<String, Object> point = (Map<String, Object>) ((List<?>) route.get("points")).get(0);
+        @SuppressWarnings("unchecked")
+        final Map<String, Object> point = (Map<String, Object>) ((List<?>) route.get("points")).get(0);
         assertTrue(point.containsKey("timeSec"));
         assertTrue(point.containsKey("x"));
         assertTrue(point.containsKey("y"));

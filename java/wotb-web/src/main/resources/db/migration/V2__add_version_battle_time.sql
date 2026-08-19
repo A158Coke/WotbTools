@@ -4,7 +4,7 @@
 -- 两列均可为 NULL, 兼容旧数据。
 
 alter table leaderboard_record
-    add column version varchar(32);
+    add column version     varchar(32);
 
 alter table leaderboard_record
     add column battle_time timestamptz;

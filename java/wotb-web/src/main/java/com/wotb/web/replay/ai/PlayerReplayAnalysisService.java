@@ -1,5 +1,8 @@
 package com.wotb.web.replay.ai;
 
+import java.util.List;
+import java.util.Map;
+
 import com.wotb.core.ai.EvidenceDensity;
 import com.wotb.core.model.Battle;
 import com.wotb.core.processing.AiNotConfiguredException;
@@ -11,6 +14,7 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
 import com.wotb.core.replay.timeline.TimelinePerspective;
+
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
@@ -18,9 +22,6 @@ import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-
-import java.util.List;
-import java.util.Map;
 
 /**
  * 单玩家/多场趋势 AI 复盘编排。
@@ -83,9 +84,7 @@ public class PlayerReplayAnalysisService {
         return analyzePlayerContext(ctx, AllowedLanguage.ZH);
     }
 
-    /**
-     * 见 {@link #analyzePlayerContext(SinglePlayerBattleAnalysisContext)}：非 production entrypoint。
-     */
+    /** 见 {@link #analyzePlayerContext(SinglePlayerBattleAnalysisContext)}：非 production entrypoint。 */
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx,
                                               final AllowedLanguage language) {
         if (!isConfigured()) throw new AiNotConfiguredException();
@@ -100,7 +99,7 @@ public class PlayerReplayAnalysisService {
      * 基于完整 battle + reconstruction + feature set 生成单场个人复盘（含重建）。
      */
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx,
-                                              final ReplayReconstruction recon) {
+                                             final ReplayReconstruction recon) {
         return analyzePlayerContext(ctx, recon, AllowedLanguage.ZH);
     }
 
@@ -180,8 +179,8 @@ public class PlayerReplayAnalysisService {
         }
 
         return analyzePlayerContext(new SinglePlayerBattleAnalysisContext(
-                        null, result.battle(), features, recorder,
-                        result.reconstruction().coverage(), features.limitations()),
+                null, result.battle(), features, recorder,
+                result.reconstruction().coverage(), features.limitations()),
                 result.reconstruction(), language, listener);
     }
 

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
-import {afterEach, describe, expect, it, vi} from 'vitest'
-import {flushPromises, mount} from '@vue/test-utils'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import AnalysisResultPanel from './AnalysisResultPanel.vue'
 
 const i18n = vi.hoisted(() => ({

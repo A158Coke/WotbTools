@@ -10,9 +10,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/**
- * 从 classpath:ai-eval/cases/*.json 加载 golden cases（按 id 稳定排序）。
- */
+/** 从 classpath:ai-eval/cases/*.json 加载 golden cases（按 id 稳定排序）。 */
 public final class AiEvalCaseLoader {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();

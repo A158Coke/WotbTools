@@ -1,8 +1,6 @@
 package com.wotb.web.replay.ai.gateway;
 
 import com.wotb.core.ai.AiTokenEstimator;
-import com.wotb.web.replay.ai.PlayerReplayAnalysisService;
-import com.wotb.web.replay.ai.TeamReplayAnalysisService;
 
 /**
  * Player/Team AI 编排共享的预算与模型选项配置。

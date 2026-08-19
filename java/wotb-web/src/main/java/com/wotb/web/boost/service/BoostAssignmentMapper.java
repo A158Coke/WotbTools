@@ -7,9 +7,7 @@ import com.wotb.web.boost.entity.BoostRequestAssignment;
 import com.wotb.web.boost.entity.BoosterProfile;
 import org.springframework.stereotype.Service;
 
-/**
- * 双参映射（Assignment + Booster），不实现 Mapper<E,D> 单参接口。
- */
+/** 双参映射（Assignment + Booster），不实现 Mapper<E,D> 单参接口。 */
 @Service
 public class BoostAssignmentMapper {
 

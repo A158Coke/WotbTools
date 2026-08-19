@@ -2,17 +2,15 @@ package com.wotb.core.replay.feature;
 
 public record MapCoordinateResolution(Status status, CanonicalMapPosition position, int region) {
 
-    public enum Status {VALID, CLAMPED, INVALID}
+    public enum Status { VALID, CLAMPED, INVALID }
 
     public MapCoordinateResolution {
         if (status == null) throw new IllegalArgumentException("status must not be null");
         switch (status) {
             case VALID, CLAMPED -> {
                 if (position == null) throw new IllegalArgumentException("VALID/CLAMPED must have non-null position");
-                if (region < 1 || region > 9)
-                    throw new IllegalArgumentException("VALID/CLAMPED region must be 1-9: " + region);
-                if (position.region() != region)
-                    throw new IllegalArgumentException("region " + region + " != position.region() " + position.region());
+                if (region < 1 || region > 9) throw new IllegalArgumentException("VALID/CLAMPED region must be 1-9: " + region);
+                if (position.region() != region) throw new IllegalArgumentException("region " + region + " != position.region() " + position.region());
             }
             case INVALID -> {
                 if (position != null) throw new IllegalArgumentException("INVALID must have null position");

@@ -32,9 +32,7 @@ public class HundredBattleController {
         this.service = service;
     }
 
-    /**
-     * 公开排行榜：单车辆独立排行（vehicleId 必传），competition ranking。
-     */
+    /** 公开排行榜：单车辆独立排行（vehicleId 必传），competition ranking。 */
     @GetMapping
     public HundredLeaderboardPageDto leaderboard(
             @RequestParam(name = "vehicleId") final long vehicleId,
@@ -58,9 +56,7 @@ public class HundredBattleController {
                 vehicleId, averageDamage, battleCount, screenshot, replays);
     }
 
-    /**
-     * 用户取消自己的 PENDING submission。
-     */
+    /** 用户取消自己的 PENDING submission。 */
     @PostMapping("/submissions/{id}/cancel")
     public HundredSubmissionSummaryDto cancel(@PathVariable final long id) {
         return service.cancelSubmission(JwtUtil.requireUserId(), id);

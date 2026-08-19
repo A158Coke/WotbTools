@@ -23,8 +23,7 @@ public record BattlePhaseSummary(
         if (!Float.isFinite(endTime)) throw new IllegalArgumentException("endTime must be finite");
         if (startTime < 0) throw new IllegalArgumentException("startTime must be >= 0: " + startTime);
         if (endTime < 0) throw new IllegalArgumentException("endTime must be >= 0: " + endTime);
-        if (startTime > endTime)
-            throw new IllegalArgumentException("startTime > endTime: " + startTime + " > " + endTime);
+        if (startTime > endTime) throw new IllegalArgumentException("startTime > endTime: " + startTime + " > " + endTime);
         if (type == null) throw new IllegalArgumentException("type must not be null");
         if (confidence == null) confidence = DecodeConfidence.UNKNOWN;
         if (friendlyAlive != null && friendlyAlive < 0) {
@@ -35,9 +34,7 @@ public record BattlePhaseSummary(
         }
     }
 
-    /**
-     * 无存活人数信息的阶段（现有调用方与测试保持原行为）。
-     */
+    /** 无存活人数信息的阶段（现有调用方与测试保持原行为）。 */
     public BattlePhaseSummary(
             final float startTime,
             final float endTime,
@@ -54,13 +51,9 @@ public record BattlePhaseSummary(
     static final float FIRST_CONTACT_DURATION = 10f;
     static final float MID_GAME_MIN_DURATION = 60f;
 
-    /**
-     * 密集击杀窗口判定：窗口宽度（秒）。
-     */
+    /** 密集击杀窗口判定：窗口宽度（秒）。 */
     public static final float DENSE_KILL_WINDOW_SEC = 15f;
-    /**
-     * 密集击杀窗口判定：窗口内（双方合计）至少的阵亡数。
-     */
+    /** 密集击杀窗口判定：窗口内（双方合计）至少的阵亡数。 */
     public static final int MIN_DENSE_KILLS = 3;
 
     /**
@@ -147,9 +140,7 @@ public record BattlePhaseSummary(
         return result;
     }
 
-    /**
-     * 阶段边界构建（不含存活人数），行为与 {@link #buildRelativePhases} 保持逐字节一致。
-     */
+    /** 阶段边界构建（不含存活人数），行为与 {@link #buildRelativePhases} 保持逐字节一致。 */
     private static List<BattlePhaseSummary> buildPhases(
             final float firstContactRelative,
             final float battleEndRelative
@@ -190,9 +181,7 @@ public record BattlePhaseSummary(
         return phases;
     }
 
-    /**
-     * 阶段结束时的存活人数 = 总人数 - 已阵亡（死亡时刻 <= endTime 的玩家数）。
-     */
+    /** 阶段结束时的存活人数 = 总人数 - 已阵亡（死亡时刻 <= endTime 的玩家数）。 */
     private static int aliveCount(
             final List<Float> sortedDeathTimes,
             final int rosterSize,

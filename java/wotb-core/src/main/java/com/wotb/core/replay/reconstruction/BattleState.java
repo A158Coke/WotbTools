@@ -38,59 +38,22 @@ public final class BattleState {
 
     // ---- Getters ----
 
-    public float getRawClockSec() {
-        return rawClockSec;
-    }
-
-    public Float getBattleClockSec() {
-        return battleClockSec;
-    }
-
-    public BattleLifecycle getLifecycle() {
-        return lifecycle;
-    }
-
-    public Map<Integer, VehicleState> getVehiclesByEntityId() {
-        return vehiclesByEntityId;
-    }
-
-    public Map<Long, Integer> getEntityIdByAccountId() {
-        return entityIdByAccountId;
-    }
-
-    public List<BattleParticipant> getParticipants() {
-        return participants;
-    }
-
-    public boolean isBattleEnded() {
-        return battleEnded;
-    }
-
-    public Integer getWinnerTeam() {
-        return winnerTeam;
-    }
+    public float getRawClockSec() { return rawClockSec; }
+    public Float getBattleClockSec() { return battleClockSec; }
+    public BattleLifecycle getLifecycle() { return lifecycle; }
+    public Map<Integer, VehicleState> getVehiclesByEntityId() { return vehiclesByEntityId; }
+    public Map<Long, Integer> getEntityIdByAccountId() { return entityIdByAccountId; }
+    public List<BattleParticipant> getParticipants() { return participants; }
+    public boolean isBattleEnded() { return battleEnded; }
+    public Integer getWinnerTeam() { return winnerTeam; }
 
     // ---- Setters ----
 
-    public void setRawClockSec(float rawClockSec) {
-        this.rawClockSec = rawClockSec;
-    }
-
-    public void setBattleClockSec(Float battleClockSec) {
-        this.battleClockSec = battleClockSec;
-    }
-
-    public void setLifecycle(BattleLifecycle lifecycle) {
-        this.lifecycle = lifecycle;
-    }
-
-    public void setBattleEnded(boolean battleEnded) {
-        this.battleEnded = battleEnded;
-    }
-
-    public void setWinnerTeam(Integer winnerTeam) {
-        this.winnerTeam = winnerTeam;
-    }
+    public void setRawClockSec(float rawClockSec) { this.rawClockSec = rawClockSec; }
+    public void setBattleClockSec(Float battleClockSec) { this.battleClockSec = battleClockSec; }
+    public void setLifecycle(BattleLifecycle lifecycle) { this.lifecycle = lifecycle; }
+    public void setBattleEnded(boolean battleEnded) { this.battleEnded = battleEnded; }
+    public void setWinnerTeam(Integer winnerTeam) { this.winnerTeam = winnerTeam; }
 
     // ---- Entity management ----
 

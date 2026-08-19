@@ -6,11 +6,11 @@
  * cache 测试隔离：module-lifetime cache 是模块级 Map——每个用例前 vi.resetModules() +
  * 动态 import 获取全新模块实例（不污染生产 API，不用 test-only reset hook）。
  */
-import {beforeEach, describe, expect, it, vi} from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 // cache 无关的纯符号用静态 import（fallow 可静态链接消费方）；
 // preloadBattleModels 依赖 module-lifetime cache，在 cache describe 内用
 // vi.resetModules + 动态 import 隔离（不污染生产 API）。
-import {modelKeyForTank, PRELOAD_TIMEOUT_MS, resolveModel} from './runtime.js'
+import { PRELOAD_TIMEOUT_MS, modelKeyForTank, resolveModel } from './runtime.js'
 
 describe('modelKeyForTank（tankId → modelKey）', () => {
   it('Tier X tankId 命中 mapping', () => {

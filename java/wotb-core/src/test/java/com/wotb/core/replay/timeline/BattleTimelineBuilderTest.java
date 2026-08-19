@@ -146,14 +146,14 @@ class BattleTimelineBuilderTest {
         final WorldSummary before = timeline.frameAt(10).world();
         assertEquals(2, before.enemyAlive(), "阵亡前敌方 2 车存活");
         assertEquals(2, before.enemyKnown() + before.enemyLastKnown()
-                        + before.enemyUnknown() + before.enemyDestroyedKnown(),
+                + before.enemyUnknown() + before.enemyDestroyedKnown(),
                 "knowledge partition 必须等于 enemyTotal");
 
         final WorldSummary after = timeline.frameAt(30).world();
         assertEquals(1, after.enemyAlive(), "一辆敌车阵亡只减少一个 enemyAlive");
         assertEquals(1, after.enemyDestroyedKnown(), "destroyed 只计一次");
         assertEquals(2, after.enemyKnown() + after.enemyLastKnown()
-                        + after.enemyUnknown() + after.enemyDestroyedKnown(),
+                + after.enemyUnknown() + after.enemyDestroyedKnown(),
                 "knowledge partition 必须等于 enemyTotal（互斥、无重复）");
         // 阵亡车仍是 known（DESTROYED_KNOWN 属于已知），未知数不虚增
         assertEquals(0, after.enemyUnknown());

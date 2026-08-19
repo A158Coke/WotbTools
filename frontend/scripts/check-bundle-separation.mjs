@@ -18,7 +18,7 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import {fileURLToPath} from 'node:url'
+import { fileURLToPath } from 'node:url'
 
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist')
 const ASSET_MARK = 'vehicle-models/assets'

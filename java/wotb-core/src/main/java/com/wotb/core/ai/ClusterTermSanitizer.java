@@ -20,9 +20,7 @@ public final class ClusterTermSanitizer {
     private ClusterTermSanitizer() {
     }
 
-    /**
-     * 确定性替换：无保护名单版本（仅自由文本语义；调用方应优先传入权威 proper noun）。
-     */
+    /** 确定性替换：无保护名单版本（仅自由文本语义；调用方应优先传入权威 proper noun）。 */
     public static String sanitize(final String text) {
         return sanitize(text, List.of());
     }
@@ -72,9 +70,7 @@ public final class ClusterTermSanitizer {
         return sb.toString();
     }
 
-    /**
-     * 「簇」替换链（短语优先，单字兜底）。
-     */
+    /** 「簇」替换链（短语优先，单字兜底）。 */
     private static String replaceCluster(final String text) {
         return text
                 .replace("簇拥", "聚集")

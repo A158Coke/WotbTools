@@ -41,9 +41,7 @@ public class ReplayHashLock {
         return Long.parseUnsignedLong(sha256.substring(0, 16), 16);
     }
 
-    /**
-     * 临界区带返回值（如 upload 的 recordRecorder 结果）。
-     */
+    /** 临界区带返回值（如 upload 的 recordRecorder 结果）。 */
     public <T> T runWithLockResult(final String sha256, final Supplier<T> action) {
         final long key = key(sha256);
         final Connection conn = DataSourceUtils.getConnection(dataSource);
@@ -59,9 +57,7 @@ public class ReplayHashLock {
         }
     }
 
-    /**
-     * 临界区无返回值（如 admin delete 的事务 + 文件清理）。
-     */
+    /** 临界区无返回值（如 admin delete 的事务 + 文件清理）。 */
     public void runWithLock(final String sha256, final Runnable action) {
         runWithLockResult(sha256, () -> {
             action.run();
@@ -96,9 +92,7 @@ public class ReplayHashLock {
         }
     }
 
-    /**
-     * 多 hash 临界区无返回值（见 {@link #runWithLocksResult(List, Supplier)}）。
-     */
+    /** 多 hash 临界区无返回值（见 {@link #runWithLocksResult(List, Supplier)}）。 */
     public void runWithLocks(final List<String> sha256s, final Runnable action) {
         runWithLocksResult(sha256s, () -> {
             action.run();

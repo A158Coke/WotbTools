@@ -18,31 +18,21 @@
     <profiles>
         <profile>
             <id>docker</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
+            <activation><activeByDefault>true</activeByDefault></activation>
             <repositories>
                 <repository>
                     <id>aliyun-public</id>
                     <name>Aliyun Public</name>
                     <url>https://maven.aliyun.com/repository/public</url>
-                    <releases>
-                        <enabled>true</enabled>
-                    </releases>
-                    <snapshots>
-                        <enabled>false</enabled>
-                    </snapshots>
+                    <releases><enabled>true</enabled></releases>
+                    <snapshots><enabled>false</enabled></snapshots>
                 </repository>
                 <repository>
                     <id>central-fallback</id>
                     <name>Maven Central</name>
                     <url>https://repo.maven.apache.org/maven2</url>
-                    <releases>
-                        <enabled>true</enabled>
-                    </releases>
-                    <snapshots>
-                        <enabled>false</enabled>
-                    </snapshots>
+                    <releases><enabled>true</enabled></releases>
+                    <snapshots><enabled>false</enabled></snapshots>
                 </repository>
             </repositories>
         </profile>

@@ -4,9 +4,9 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.evidence.PointsSituationSkill;
 import com.wotb.core.replay.evidence.PointsSituationSkill.CapturePresence;
-import com.wotb.core.replay.evidence.PointsSituationSkill.ControlRegionEntryWindow;
 import com.wotb.core.replay.evidence.PointsSituationSkill.KillPointsEvent;
 import com.wotb.core.replay.evidence.PointsSituationSkill.PositionSample;
+import com.wotb.core.replay.evidence.PointsSituationSkill.ControlRegionEntryWindow;
 import com.wotb.core.replay.evidence.PointsSituationSkill.VehicleTrack;
 import org.junit.jupiter.api.Test;
 

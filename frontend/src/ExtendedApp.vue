@@ -1,5 +1,5 @@
 <script setup>
-import {useTheme} from './composables/useTheme.js'
+import { useTheme } from './composables/useTheme.js'
 import ExtendedPage from './components/ExtendedPage.vue'
 
 const { theme, handleTheme } = useTheme()

@@ -36,9 +36,7 @@ final class WargamingApiClient {
                 request -> http.send(request, HttpResponse.BodyHandlers.ofString()));
     }
 
-    /**
-     * 测试钩子：注入可控 sender 以确定性模拟 IOException / InterruptedException。
-     */
+    /** 测试钩子：注入可控 sender 以确定性模拟 IOException / InterruptedException。 */
     WargamingApiClient(final URI authApiBase, final URI accountApiBase,
                        final HttpSender sender) {
         this.authApiBase = authApiBase;
@@ -179,9 +177,7 @@ final class WargamingApiClient {
         return nickname;
     }
 
-    /**
-     * 立即销毁 WG token（尽力而为，失败由调用方记录不含 token 的安全警告）。
-     */
+    /** 立即销毁 WG token（尽力而为，失败由调用方记录不含 token 的安全警告）。 */
     void logout(final String applicationId, final String accessToken) {
         final String body = postForm(authApiBase.resolve("logout/"),
                 "application_id=" + encode(applicationId)
@@ -237,8 +233,8 @@ final class WargamingApiClient {
         final String safeMessage = field.isBlank()
                 ? "WG API rejected request: code=" + code + ", message=" + message
                 : "WG API rejected request: code=" + code
-                + ", message=" + message
-                + ", field=" + field;
+                        + ", message=" + message
+                        + ", field=" + field;
         throw new WargamingApiException(safeMessage);
     }
 
@@ -257,17 +253,13 @@ final class WargamingApiClient {
         return value;
     }
 
-    /**
-     * prolongate 响应字段优先读 {@code data} 对象；缺失时兼容根节点 payload。
-     */
+    /** prolongate 响应字段优先读 {@code data} 对象；缺失时兼容根节点 payload。 */
     private static JsonNode responsePayload(final JsonNode json) {
         final JsonNode data = json.path("data");
         return data.isObject() ? data : json;
     }
 
-    /**
-     * 发送 HTTP 请求的接缝：默认走 {@link HttpClient}，测试可注入异常。
-     */
+    /** 发送 HTTP 请求的接缝：默认走 {@link HttpClient}，测试可注入异常。 */
     @FunctionalInterface
     interface HttpSender {
         HttpResponse<String> send(HttpRequest request) throws IOException, InterruptedException;
@@ -280,9 +272,7 @@ final class WargamingApiClient {
     record ProlongatedToken(String accessToken, long accountId, long expiresAt) {
     }
 
-    /**
-     * WG API 调用失败（消息不含 token / 原始正文）。
-     */
+    /** WG API 调用失败（消息不含 token / 原始正文）。 */
     static final class WargamingApiException extends RuntimeException {
         WargamingApiException(final String message) {
             super(message);

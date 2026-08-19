@@ -24,9 +24,7 @@ public final class PickleReader {
     static final int MAX_STACK_ITEMS = 4096;
     private static final int MAX_OPCODES = 100_000;
 
-    /**
-     * MARK 与 NONE 使用独立占位符，避免 ArrayDeque 拒绝 null。
-     */
+    /** MARK 与 NONE 使用独立占位符，避免 ArrayDeque 拒绝 null。 */
     private static final Object MARK = new Object();
     private static final Object NONE = new Object();
 
@@ -38,9 +36,7 @@ public final class PickleReader {
         this.data = data;
     }
 
-    /**
-     * 解析整个 pickle, 返回顶层对象。
-     */
+    /** 解析整个 pickle, 返回顶层对象。 */
     public static Object loads(final byte[] data) {
         if (data == null) {
             throw invalid("input is null", 0);
@@ -223,9 +219,7 @@ public final class PickleReader {
         return value;
     }
 
-    /**
-     * LONG1: 1 字节长度 + 小端二进制补码大整数。
-     */
+    /** LONG1: 1 字节长度 + 小端二进制补码大整数。 */
     private Object readLong1() {
         return readLong(readUnsignedByte("LONG1 length"), "LONG1");
     }

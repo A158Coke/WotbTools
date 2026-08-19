@@ -41,8 +41,8 @@ final class PlayerSummaryBuilder {
     /**
      * Fallback 路径：基于结算数据 + 重建是否可用，产出一份系统/用户 prompt ready 的包。
      *
-     * @param battle 权威结算
-     * @param recon  完整重建（可为 null）
+     * @param battle    权威结算
+     * @param recon     完整重建（可为 null）
      * @return {@link PreparedAiPrompt}，analysisMode = {@code SINGLE_PLAYER_SUMMARY}
      */
     public static PreparedAiPrompt prepareFallback(final Battle battle,
@@ -63,7 +63,7 @@ final class PlayerSummaryBuilder {
                 ? null : PlayerSideResolver.resolveRecorderTeam(battle);
         final String pointsSection = recorderTeam == null ? ""
                 : PointsSituationEvidence.renderSection(
-                battle, recon, recorderTeam, true, "你的队伍", "敌方");
+                        battle, recon, recorderTeam, true, "你的队伍", "敌方");
         // Canonical Timeline 段：fallback 不再是 settlement-only——时间线化主叙事注入
         // （docs/current-plan.md §3/§33；recon 或 recorder 缺失时自动省略）
         final String timelineSection = timelineSection(battle, recon);
@@ -143,7 +143,7 @@ final class PlayerSummaryBuilder {
                 ? null : PlayerSideResolver.resolveRecorderTeam(ctx.battle());
         final String pointsSection = recorderTeam == null ? ""
                 : PointsSituationEvidence.renderSection(
-                ctx.battle(), null, recorderTeam, true, "你的队伍", "敌方");
+                        ctx.battle(), null, recorderTeam, true, "你的队伍", "敌方");
         final String summary = buildPlayerContextSummary(ctx)
                 + (pointsSection.isEmpty() ? "" : "\n" + pointsSection);
         final String systemPrompt = PlayerPromptRules.localizePlayerSystemPrompt(PlayerPromptRules.SINGLE_PLAYER_PROMPT, language);
@@ -231,9 +231,7 @@ final class PlayerSummaryBuilder {
                 "SINGLE_PLAYER_BATTLE", planned.density(), estimatedTokens);
     }
 
-    /**
-     * Player 与 Team 一致的 OBSERVED_DAMAGE_IS_PARTIAL 抑制口径（上下文与特征集任一命中即抑制）。
-     */
+    /** Player 与 Team 一致的 OBSERVED_DAMAGE_IS_PARTIAL 抑制口径（上下文与特征集任一命中即抑制）。 */
     private static boolean hasObservedDamagePartial(final SinglePlayerBattleAnalysisContext ctx) {
         if (ctx.limitations() != null
                 && ctx.limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL")) {
@@ -383,14 +381,14 @@ final class PlayerSummaryBuilder {
                 final String who = PlayerAnalysisPromptFormatter.isSamePlayer(p, recorder)
                         ? "你"
                         : switch (PlayerSideResolver.resolve(battle, p)) {
-                    case FRIENDLY -> "队友 " + PlayerResultFormat.quoteForPrompt(p.nickname);
-                    case ENEMY -> "敌方 " + PlayerResultFormat.quoteForPrompt(p.nickname);
-                    case UNKNOWN -> "未知阵营 " + PlayerResultFormat.quoteForPrompt(p.nickname);
-                };
+                            case FRIENDLY -> "队友 " + PlayerResultFormat.quoteForPrompt(p.nickname);
+                            case ENEMY -> "敌方 " + PlayerResultFormat.quoteForPrompt(p.nickname);
+                            case UNKNOWN -> "未知阵营 " + PlayerResultFormat.quoteForPrompt(p.nickname);
+                        };
                 events.add(new KeyBattleEvent(deathSec, "VEHICLE_DESTROYED",
                         PlayerAnalysisTerms.knownDeathClock(deathSec) + " " + who
                                 + "（" + PlayerResultFormat.quoteForPrompt(
-                                ReplayDisplayNames.tankName(p.tankId, p.tankName)) + "）"
+                                        ReplayDisplayNames.tankName(p.tankId, p.tankName)) + "）"
                                 + (deathSec > 0 ? "阵亡" : "阵亡（时刻未知）")));
             }
         }

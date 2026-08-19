@@ -3,9 +3,7 @@ package com.wotb.core.model;
 import java.util.Map;
 import java.util.TreeMap;
 
-/**
- * 一位选手的跨场累计 (由 Aggregator 聚合产生)。
- */
+/** 一位选手的跨场累计 (由 Aggregator 聚合产生)。 */
 public final class Agg {
     public long accountId;
     public String nickname = "";

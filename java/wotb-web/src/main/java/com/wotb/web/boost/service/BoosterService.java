@@ -7,9 +7,9 @@ import com.wotb.web.boost.entity.BoosterProfile;
 import com.wotb.web.boost.enums.BoosterLevel;
 import com.wotb.web.boost.enums.BoosterStatus;
 import com.wotb.web.boost.enums.ContactType;
-import com.wotb.web.boost.repository.BoostRequestAssignmentRepository;
 import com.wotb.web.boost.repository.BoosterApplicationRepository;
 import com.wotb.web.boost.repository.BoosterProfileRepository;
+import com.wotb.web.boost.repository.BoostRequestAssignmentRepository;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
 import org.slf4j.Logger;
@@ -30,9 +30,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 
-/**
- * 打手档案、关联依赖检查与 Keycloak booster role 的统一编排服务。
- */
+/** 打手档案、关联依赖检查与 Keycloak booster role 的统一编排服务。 */
 @Service
 public class BoosterService {
 
@@ -304,7 +302,7 @@ public class BoosterService {
                                               final Long currentBoosterId) {
         if (BoosterLevel.AVERAGE_GOD.name().equals(level)
                 && boosterRepository.existsByWotbServerAndLevelAndIdNot(
-                wotbServer, BoosterLevel.AVERAGE_GOD.name(), currentBoosterId)) {
+                        wotbServer, BoosterLevel.AVERAGE_GOD.name(), currentBoosterId)) {
             throw new IllegalArgumentException("AVERAGE_GOD_ALREADY_EXISTS");
         }
     }
@@ -403,8 +401,7 @@ public class BoosterService {
     private record RollbackCompensation(boolean deferred, Runnable action) {
 
         private static RollbackCompensation none() {
-            return new RollbackCompensation(true, () -> {
-            });
+            return new RollbackCompensation(true, () -> { });
         }
 
         private void afterFailure(final RuntimeException original) {

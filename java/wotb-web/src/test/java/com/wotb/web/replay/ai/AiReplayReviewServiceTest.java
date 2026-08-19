@@ -1,5 +1,9 @@
 package com.wotb.web.replay.ai;
 
+import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
@@ -20,10 +24,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
 import tools.jackson.databind.json.JsonMapper;
-
-import java.io.IOException;
-import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;

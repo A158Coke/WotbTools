@@ -1,5 +1,9 @@
 package com.wotb.web.replay.controller;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.replay.timeline.TimelineError;
@@ -12,22 +16,17 @@ import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.AiTimelineUnusableException;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-
-import java.util.List;
-import java.util.UUID;
-import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * PR #102 review P0：{@code AiTimelineUnusableException} 的 SSE error 契约。
@@ -148,9 +147,7 @@ class ReconstructionControllerTimelineUnusableTest {
         return m.group(1);
     }
 
-    /**
-     * 断言文本不含任何 TimelineError 内部 validation 码（stable 码自身含 TIMELINE_ 子串）。
-     */
+    /** 断言文本不含任何 TimelineError 内部 validation 码（stable 码自身含 TIMELINE_ 子串）。 */
     private static void assertNoInternalValidationCodes(final String text) {
         for (final TimelineError error : TimelineError.values()) {
             assertFalse(text.contains(error.name()),
@@ -163,9 +160,7 @@ class ReconstructionControllerTimelineUnusableTest {
                 "files", "stream.wotbreplay", "application/octet-stream", new byte[]{1})};
     }
 
-    /**
-     * 真实 controller 子类：注入收集事件的 emitter（替代 Mockito spy）。
-     */
+    /** 真实 controller 子类：注入收集事件的 emitter（替代 Mockito spy）。 */
     private static final class TestableController extends ReconstructionController {
         final ReconstructionControllerStreamingTest.RecordingEmitter emitter;
 
@@ -185,9 +180,7 @@ class ReconstructionControllerTimelineUnusableTest {
         }
     }
 
-    /**
-     * 抛 {@code AiTimelineUnusableException} 的假 review service（不依赖 Mockito）。
-     */
+    /** 抛 {@code AiTimelineUnusableException} 的假 review service（不依赖 Mockito）。 */
     private static final class ThrowingReviewService extends AiReplayReviewService {
         private final RuntimeException failure;
 

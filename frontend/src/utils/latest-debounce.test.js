@@ -1,5 +1,5 @@
-import {afterEach, describe, expect, it, vi} from 'vitest'
-import {createLatestDebounce} from './latest-debounce.js'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createLatestDebounce } from './latest-debounce.js'
 
 afterEach(() => {
   vi.useRealTimers()

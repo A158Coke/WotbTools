@@ -286,9 +286,7 @@ final class PlayerEvidenceFormatter {
         return true;
     }
 
-    /**
-     * 渲染录像者掉血窗口段（供 PlayerSummaryBuilder 与 TacticalReviewPromptBuilder 复用，口径一致）。
-     */
+    /** 渲染录像者掉血窗口段（供 PlayerSummaryBuilder 与 TacticalReviewPromptBuilder 复用，口径一致）。 */
     static String recorderDamageReceivedWindowsSection(final Battle battle,
                                                        final ReplayReconstruction recon,
                                                        final long recorderAccountId,
@@ -347,9 +345,7 @@ final class PlayerEvidenceFormatter {
         sb.append('\n').append(section);
     }
 
-    /**
-     * 逐次伤害里的攻防双方称呼：玩家本人写「你」，其余写「阵营 + 昵称 + 驾驶的 <坦克名>」。
-     */
+    /** 逐次伤害里的攻防双方称呼：玩家本人写「你」，其余写「阵营 + 昵称 + 驾驶的 <坦克名>」。 */
     private static String damageActorText(final Battle battle,
                                           final PlayerResult player,
                                           final long recorderAccountId) {
@@ -370,16 +366,12 @@ final class PlayerEvidenceFormatter {
                 + "驾驶的" + tank;
     }
 
-    /**
-     * tankopedia 提供的结构化车辆事实（等级/国家）；缺失即为空串，绝不由名称推断。
-     */
+    /** tankopedia 提供的结构化车辆事实（等级/国家）；缺失即为空串，绝不由名称推断。 */
     private static String structuredTankFacts(final long tankId) {
         return structuredTankFacts(tankId, null);
     }
 
-    /**
-     * 同上；血量按 provenance 口径（OBSERVED_EXACT → 已证明进场满血；否则 tankopedia base）。
-     */
+    /** 同上；血量按 provenance 口径（OBSERVED_EXACT → 已证明进场满血；否则 tankopedia base）。 */
     private static String structuredTankFacts(final long tankId, final PlayerResult player) {
         final StringBuilder sb = new StringBuilder(24);
         EntityIdentityResolver.appendStructuredTankFacts(sb, tankId, player);
@@ -481,10 +473,10 @@ final class PlayerEvidenceFormatter {
     }
 
     static void appendClassSummary(final StringBuilder sb,
-                                   final List<PlayerResult> friendlies,
-                                   final List<PlayerResult> enemies,
-                                   final List<PlayerResult> unknowns,
-                                   final Battle battle) {
+                                            final List<PlayerResult> friendlies,
+                                            final List<PlayerResult> enemies,
+                                            final List<PlayerResult> unknowns,
+                                            final Battle battle) {
         sb.append("\n=== COMPOSITION_AUTHORITATIVE（双方车种构成·权威结算） ===\n");
         sb.append("本队（含你） ").append(friendlies.size()).append(" 辆:");
         appendClassCounts(sb, friendlies);
@@ -518,9 +510,9 @@ final class PlayerEvidenceFormatter {
     }
 
     static void appendAggregates(final StringBuilder sb,
-                                 final List<PlayerResult> friendlies,
-                                 final List<PlayerResult> enemies,
-                                 final List<PlayerResult> unknowns) {
+                                          final List<PlayerResult> friendlies,
+                                          final List<PlayerResult> enemies,
+                                          final List<PlayerResult> unknowns) {
         sb.append("\n=== FRIENDLY_AUTHORITATIVE_RESULT（本队合计·权威结算，含你） ===\n");
         appendTeamAggregate(sb, friendlies);
         sb.append("=== ENEMY_AUTHORITATIVE_RESULT（敌方合计·权威结算） ===\n");
@@ -562,8 +554,8 @@ final class PlayerEvidenceFormatter {
     }
 
     static void appendRecorderRanking(final StringBuilder sb, final PlayerResult rec,
-                                      final List<PlayerResult> friendlies,
-                                      final Battle battle) {
+                                               final List<PlayerResult> friendlies,
+                                               final Battle battle) {
         final int totalFriendly = friendlies.size();
         final int dmgRank = (int) friendlies.stream()
                 .filter(p -> p.damageDealt > rec.damageDealt).count() + 1;
@@ -621,7 +613,7 @@ final class PlayerEvidenceFormatter {
             final String who = PlayerAnalysisPromptFormatter.isSamePlayer(p, recorder)
                     ? "你"
                     : PlayerAnalysisPromptFormatter.sideLabel(PlayerSideResolver.resolve(battle, p))
-                    + " " + PlayerResultFormat.quoteForPrompt(p.nickname);
+                            + " " + PlayerResultFormat.quoteForPrompt(p.nickname);
             sb.append(deathSec > 0
                             ? PlayerAnalysisTerms.battleClock((float) deathSec) : "未知").append(' ')
                     .append(who)
@@ -633,8 +625,8 @@ final class PlayerEvidenceFormatter {
     }
 
     static void appendEventStreamEvidence(final StringBuilder sb,
-                                          final SinglePlayerBattleAnalysisContext ctx,
-                                          final Battle battle) {
+                                            final SinglePlayerBattleAnalysisContext ctx,
+                                            final Battle battle) {
         final var features = ctx.features();
 
         // Entity mapping evidence
@@ -747,10 +739,10 @@ final class PlayerEvidenceFormatter {
         for (final MovementSegment seg : movements) {
             final int startRegion = seg.rawStartPosition() != null
                     ? MapRegionResolver.resolveRegionFromRaw(
-                    seg.rawStartPosition().x(), seg.rawStartPosition().z(), mapCode) : 0;
+                            seg.rawStartPosition().x(), seg.rawStartPosition().z(), mapCode) : 0;
             final int endRegion = seg.rawEndPosition() != null
                     ? MapRegionResolver.resolveRegionFromRaw(
-                    seg.rawEndPosition().x(), seg.rawEndPosition().z(), mapCode) : 0;
+                            seg.rawEndPosition().x(), seg.rawEndPosition().z(), mapCode) : 0;
             final String startStr = startRegion > 0 ? startRegion + "区" : "未知区域";
             final String endStr = endRegion > 0 ? endRegion + "区" : "未知区域";
             if (!startStr.equals(lastRegion)) {

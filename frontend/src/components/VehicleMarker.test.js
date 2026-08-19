@@ -3,8 +3,8 @@
  * VehicleMarker 正式组件测试（PR2 — §17）：generic / dedicated turreted / dedicated
  * turretless 三条渲染路径 + 状态 class + select 事件。
  */
-import {describe, expect, it} from 'vitest'
-import {mount} from '@vue/test-utils'
+import { describe, expect, it, vi } from 'vitest'
+import { mount } from '@vue/test-utils'
 import VehicleMarker from './VehicleMarker.vue'
 import markerSource from './VehicleMarker.vue?raw'
 

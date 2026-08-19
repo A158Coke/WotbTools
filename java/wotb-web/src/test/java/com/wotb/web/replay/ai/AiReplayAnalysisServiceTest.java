@@ -5,7 +5,6 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.core.processing.BatchAnalyzer;
-import com.wotb.core.processing.BattleCategory;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.processing.ReplayIdentity;
@@ -19,29 +18,29 @@ import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
-import com.wotb.core.replay.feature.EngagementSummary;
-import com.wotb.core.replay.feature.KeyBattleEvent;
-import com.wotb.core.replay.feature.MovementSegment;
-import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
+import com.wotb.core.processing.BattleCategory;
+import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
+import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamAggregateResult;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamFeatureCoverage;
-import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
-import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
 import com.wotb.core.replay.stream.ReplayStreamHeader;
+import com.wotb.core.replay.feature.EngagementSummary;
+import com.wotb.core.replay.feature.MovementSegment;
+import com.wotb.core.replay.feature.MovementType;
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
-import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -59,6 +58,14 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+
+import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 
 class AiReplayAnalysisServiceTest {
 
@@ -131,9 +138,7 @@ class AiReplayAnalysisServiceTest {
                 new ConservativeDeepSeekTokenEstimator());
     }
 
-    /**
-     * 传给 Gateway 的最后一个请求的 user prompt（即原 HTTP body 的 user message 内容）。
-     */
+    /** 传给 Gateway 的最后一个请求的 user prompt（即原 HTTP body 的 user message 内容）。 */
     private String lastBody() {
         return gateway.requests.getLast().userPrompt();
     }
@@ -241,8 +246,8 @@ class AiReplayAnalysisServiceTest {
         final var result = service.analyzeSingleTeamContext(context);
         assertEquals("team review", result.analysis());
         assertTrue(teamLastBody().contains("result=TEAM_WIN")
-                        || teamLastBody().contains("result=TEAM_LOSS")
-                        || teamLastBody().contains("result=DRAW_OR_UNKNOWN"),
+                || teamLastBody().contains("result=TEAM_LOSS")
+                || teamLastBody().contains("result=DRAW_OR_UNKNOWN"),
                 "Request body must contain result=TEAM_WIN/LOSS/DRAW_OR_UNKNOWN, not winnerTeam=");
         assertFalse(teamLastBody().contains("winnerTeam="));
     }
@@ -573,8 +578,8 @@ class AiReplayAnalysisServiceTest {
         // 无重建 → 拒绝：绝不调用 AI（settlement-only fallback 已按 V2 移除）
         final var service = new PlayerReplayAnalysisService(
                 gateway, new AiReplayAnalysisConfig(
-                new ConservativeDeepSeekTokenEstimator(), "test-model",
-                30000, 131072, 8192, 1000, true, "high", 315, 4096));
+                        new ConservativeDeepSeekTokenEstimator(), "test-model",
+                        30000, 131072, 8192, 1000, true, "high", 315, 4096));
         assertThrows(com.wotb.web.replay.exception.AiTimelineUnusableException.class,
                 () -> service.analyzePlayerOrFallback(randomResultWithoutReconstruction()));
         assertTrue(gateway.requests.isEmpty(),
@@ -966,8 +971,8 @@ class AiReplayAnalysisServiceTest {
                 fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new ReplayIdentity("hash-" + fileName, arenaId, "11.0", "team_map",
                         recorderAccountId, null),
-                battle, null, null, capabilities, null, null);
-    }
+                  battle, null, null, capabilities, null, null);
+      }
 
     /**
      * {@link #teamResult} 的有效重建变体：通过 Team canonical Timeline hard gate
@@ -985,9 +990,7 @@ class AiReplayAnalysisServiceTest {
                 base.error(), base.reconstructionError());
     }
 
-    /**
-     * 由 battle roster 派生最小有效重建（IDENTIFIED 时钟 + 逐 player 映射/位置/血量）。
-     */
+    /** 由 battle roster 派生最小有效重建（IDENTIFIED 时钟 + 逐 player 映射/位置/血量）。 */
     private static ReplayReconstruction teamReconstruction(final Battle battle) {
         final ReplayMetadata meta = new ReplayMetadata(
                 "arena", "team_map", "1", "1", 2, "rec1", "", 300.0, 0L);
@@ -1015,9 +1018,7 @@ class AiReplayAnalysisServiceTest {
                 events, List.of(), BattleStateSnapshot.empty(), coverage, diag);
     }
 
-    /**
-     * 完整 7 名本方玩家 + 1 名敌方的团队回放（Team Autopsy 成功 fixture）。
-     */
+    /** 完整 7 名本方玩家 + 1 名敌方的团队回放（Team Autopsy 成功 fixture）。 */
     private static ReplayProcessingResult sevenTeamResult(
             final String fileName, final String arenaId,
             final String recorderNickname, final long recorderAccountId,
@@ -1125,7 +1126,7 @@ class AiReplayAnalysisServiceTest {
     }
 
     private static PlayerResult clanPlayer(final long accountId, final String nickname,
-                                           final int team, final int damage, final String clan) {
+                                            final int team, final int damage, final String clan) {
         final PlayerResult p = player(accountId, nickname, team, damage);
         p.clan = clan;
         return p;

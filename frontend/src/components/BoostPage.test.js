@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 
-import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
-import {flushPromises, mount} from '@vue/test-utils'
-import {ref} from 'vue'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { ref } from 'vue'
 import BoostPage from './BoostPage.vue'
 
 const api = vi.hoisted(() => ({

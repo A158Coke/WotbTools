@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * type 8（EntityMethod）解码回归：
  * - direct damage（subtype 8、body[13]=3、damage>0）必须精确解码为单个 DamageEvent（LE/BE 字节序验证）；
  * - 结构合法但未解码的伤害变体（非 direct / 零伤害 / 短体）→ UNSUPPORTED_DAMAGE_VARIANT（PARTIAL），
- * 不产出事件、不算解析失败（PARSE_FAILED 不得出现）；
+ *   不产出事件、不算解析失败（PARSE_FAILED 不得出现）；
  * - 真正截断（payload<8）→ MALFORMED + TRUNCATED_PAYLOAD。
  * 撤回 ShotEvent 后，direct damage 解码不得退化。
  */
@@ -27,14 +27,12 @@ class EntityMethodDecoderTest {
     private final EntityMethodDecoder decoder = new EntityMethodDecoder();
     private final ReplayDecodeContext context = new ReplayDecodeContext("test");
 
-    /**
-     * 伤害方法包（type 8 / sub 8）：payload[0..3]=entityId、[4..7]=subtype、body[4..7]=攻击者 eid(LE)、
-     * body[8..11]=目标 eid(LE)、body[13]=伤害子类型、body[14..15]=伤害（u16 BE：高字节在前）。
-     */
+    /** 伤害方法包（type 8 / sub 8）：payload[0..3]=entityId、[4..7]=subtype、body[4..7]=攻击者 eid(LE)、
+     *  body[8..11]=目标 eid(LE)、body[13]=伤害子类型、body[14..15]=伤害（u16 BE：高字节在前）。 */
     private static RawReplayPacket damageMethodPacket(final int seq, final float clock,
-                                                      final int entityId, final int attackerEid,
-                                                      final int victimEid, final int damageSub,
-                                                      final int damage) {
+                                                       final int entityId, final int attackerEid,
+                                                       final int victimEid, final int damageSub,
+                                                       final int damage) {
         final byte[] payload = new byte[33];
         payload[0] = (byte) (entityId & 0xFF);
         payload[1] = (byte) ((entityId >> 8) & 0xFF);
@@ -263,19 +261,15 @@ class EntityMethodDecoderTest {
         return out.toByteArray();
     }
 
-    /**
-     * wrapper=13（实时点数）的完整 subtype48 载荷。
-     */
+    /** wrapper=13（实时点数）的完整 subtype48 载荷。 */
     private static RawReplayPacket pointsPacket(final int seq, final float clock,
-                                                final int team1, final int p1, final int team2, final int p2) {
+                                                 final int team1, final int p1, final int team2, final int p2) {
         return rawPacket48(EntityMethodDecoder.WRAPPER_SUPREMACY_POINTS,
                 concat(fieldDelimited(12, teamPointsMessage(team1, p1)),
                         fieldDelimited(12, teamPointsMessage(team2, p2))));
     }
 
-    /**
-     * subtype48 载荷：body[0..3] 固定字段 + varint(wrapperFieldNumber) + msgLen + protoData（root 直接放入）。
-     */
+    /** subtype48 载荷：body[0..3] 固定字段 + varint(wrapperFieldNumber) + msgLen + protoData（root 直接放入）。 */
     private static RawReplayPacket rawPacket48(final long wrapperFieldNumber, final byte[] root) {
         final byte[] payload = new byte[8 + 4 + 1 + 1 + root.length];
         payload[4] = EntityMethodDecoder.SUBTYPE_UPDATE_ARENA2;

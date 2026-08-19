@@ -16,7 +16,7 @@
  * 失败语义：resolve 失败（缺 metadata / 未知 tankId）→ null（generic）；
  * preload 图片解码超时/失败 → 该 modelKey failed（generic fallback）。静默，console.error 记录。
  */
-import {MODEL_DEFINITIONS, TANK_ID_TO_MODEL} from './mapping.js'
+import { MODEL_DEFINITIONS, TANK_ID_TO_MODEL } from './mapping.js'
 
 // Vite 静态打包：?url 输出为同源静态文件 URL（确定性路径，build 后 hash 命名）
 const hullUrls = import.meta.glob('./assets/*/hull.webp', { query: '?url', import: 'default', eager: true })

@@ -21,13 +21,9 @@ import java.util.List;
  */
 public final class PersonalAiContextCompiler {
 
-    /**
-     * Episode 渲染上限（超出折叠为一行摘要，保证 token 有界）。
-     */
+    /** Episode 渲染上限（超出折叠为一行摘要，保证 token 有界）。 */
     static final int MAX_EPISODES = 14;
-    /**
-     * 每个 Episode 的 delta 渲染上限。
-     */
+    /** 每个 Episode 的 delta 渲染上限。 */
     static final int MAX_DELTAS_PER_EPISODE = 8;
 
     private PersonalAiContextCompiler() {
@@ -276,9 +272,7 @@ public final class PersonalAiContextCompiler {
         return false;
     }
 
-    /**
-     * Episode tacticalChanges 短标签 → 中文（结构化标签不进入 prompt）。
-     */
+    /** Episode tacticalChanges 短标签 → 中文（结构化标签不进入 prompt）。 */
     static String changeLabel(final String change) {
         if (change == null || change.isBlank()) {
             return "";

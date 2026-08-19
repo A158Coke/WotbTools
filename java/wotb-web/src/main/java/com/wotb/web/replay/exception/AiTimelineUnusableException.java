@@ -16,9 +16,7 @@ import java.util.List;
  */
 public class AiTimelineUnusableException extends IllegalArgumentException {
 
-    /**
-     * 客户端稳定错误码（SSE error 事件 / 同步 HTTP 响应共用，禁止携带 detail）。
-     */
+    /** 客户端稳定错误码（SSE error 事件 / 同步 HTTP 响应共用，禁止携带 detail）。 */
     public static final String STABLE_ERROR_CODE = "AI_TIMELINE_UNUSABLE";
 
     public AiTimelineUnusableException(final List<TimelineError> errors) {

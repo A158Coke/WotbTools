@@ -9,9 +9,7 @@ package com.wotb.core.replay.reconstruction;
  */
 public record Vector3(float x, float y, float z) {
 
-    /**
-     * 零向量
-     */
+    /** 零向量 */
     public static final Vector3 ZERO = new Vector3(0, 0, 0);
 
     public Vector3 {

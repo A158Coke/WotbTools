@@ -41,17 +41,13 @@ public class HallOfFameController {
         this.uploadService = uploadService;
     }
 
-    /**
-     * 上传单场回放，写入名人堂。
-     */
+    /** 上传单场回放，写入名人堂。 */
     @PostMapping("/upload")
     public Map<String, Object> upload(@RequestParam(name = "file") final MultipartFile file) throws Exception {
         return uploadService.upload(file);
     }
 
-    /**
-     * 统一公开查询：battleType=RANDOM|RATING（缺省 All）、tankId、nickname 模糊、page、size。
-     */
+    /** 统一公开查询：battleType=RANDOM|RATING（缺省 All）、tankId、nickname 模糊、page、size。 */
     @GetMapping
     public HallOfFamePageDto list(
             @RequestParam(name = "battleType", required = false) final String battleType,

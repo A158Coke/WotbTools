@@ -11,9 +11,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.OffsetDateTime;
 
-/**
- * 管理员操作日志。记录管理员对用户的所有操作（删除等）、谁做的、结果如何。
- */
+/** 管理员操作日志。记录管理员对用户的所有操作（删除等）、谁做的、结果如何。 */
 @Entity
 @Table(name = "admin_user_log")
 public class AdminUserLog {
@@ -72,8 +70,7 @@ public class AdminUserLog {
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
 
-    public AdminUserLog() {
-    }
+    public AdminUserLog() {}
 
     // ── 工厂方法 ────────────────────────────────────────────────────
 
@@ -119,71 +116,21 @@ public class AdminUserLog {
 
     // ── Getters ─────────────────────────────────────────────────────
 
-    public Long getId() {
-        return id;
-    }
-
-    public String getOperation() {
-        return operation;
-    }
-
-    public String getTargetKeycloakUserId() {
-        return targetKeycloakUserId;
-    }
-
-    public Long getTargetProfileId() {
-        return targetProfileId;
-    }
-
-    public String getTargetDisplayName() {
-        return targetDisplayName;
-    }
-
-    public Long getTargetWotbAccountId() {
-        return targetWotbAccountId;
-    }
-
-    public String getTargetWotbNickname() {
-        return targetWotbNickname;
-    }
-
-    public String getTargetWotbServer() {
-        return targetWotbServer;
-    }
-
-    public String getAdminKeycloakUserId() {
-        return adminKeycloakUserId;
-    }
-
-    public String getAdminUsername() {
-        return adminUsername;
-    }
-
-    public String getStatus() {
-        return status;
-    }
-
-    public boolean isLocalProfileDeleted() {
-        return localProfileDeleted;
-    }
-
-    public boolean isKeycloakUserDeleted() {
-        return keycloakUserDeleted;
-    }
-
-    public String getErrorCode() {
-        return errorCode;
-    }
-
-    public String getErrorMessage() {
-        return errorMessage;
-    }
-
-    public OffsetDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public OffsetDateTime getUpdatedAt() {
-        return updatedAt;
-    }
+    public Long getId() { return id; }
+    public String getOperation() { return operation; }
+    public String getTargetKeycloakUserId() { return targetKeycloakUserId; }
+    public Long getTargetProfileId() { return targetProfileId; }
+    public String getTargetDisplayName() { return targetDisplayName; }
+    public Long getTargetWotbAccountId() { return targetWotbAccountId; }
+    public String getTargetWotbNickname() { return targetWotbNickname; }
+    public String getTargetWotbServer() { return targetWotbServer; }
+    public String getAdminKeycloakUserId() { return adminKeycloakUserId; }
+    public String getAdminUsername() { return adminUsername; }
+    public String getStatus() { return status; }
+    public boolean isLocalProfileDeleted() { return localProfileDeleted; }
+    public boolean isKeycloakUserDeleted() { return keycloakUserDeleted; }
+    public String getErrorCode() { return errorCode; }
+    public String getErrorMessage() { return errorMessage; }
+    public OffsetDateTime getCreatedAt() { return createdAt; }
+    public OffsetDateTime getUpdatedAt() { return updatedAt; }
 }

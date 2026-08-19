@@ -1,9 +1,9 @@
 package com.wotb.web.replay.ai.gateway;
 
-import org.springframework.stereotype.Component;
-
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
+
+import org.springframework.stereotype.Component;
 
 /**
  * Registry of in-flight AI Review requests keyed by correlation id, so the
@@ -15,9 +15,7 @@ import java.util.regex.Pattern;
 @Component
 public class AiCancellationRegistry {
 
-    /**
-     * Canonical UUID correlation id（格式 + 长度 36）：客户端提供的 id 必须匹配。
-     */
+    /** Canonical UUID correlation id（格式 + 长度 36）：客户端提供的 id 必须匹配。 */
     private static final Pattern UUID_PATTERN = Pattern.compile(
             "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
 
@@ -44,7 +42,7 @@ public class AiCancellationRegistry {
      * Cancels the in-flight request identified by {@code correlationId}.
      *
      * @return {@code true} if the request was registered (whether or not it was
-     * already cancelled)
+     *         already cancelled)
      */
     public boolean cancel(final String correlationId) {
         final AiCancellationToken token = active.get(correlationId);
@@ -65,9 +63,7 @@ public class AiCancellationRegistry {
         }
     }
 
-    /**
-     * 客户端提供的 correlationId 校验：canonical UUID（格式 + 长度 36）。
-     */
+    /** 客户端提供的 correlationId 校验：canonical UUID（格式 + 长度 36）。 */
     public static boolean isValidCorrelationId(final String correlationId) {
         return correlationId != null && UUID_PATTERN.matcher(correlationId).matches();
     }
