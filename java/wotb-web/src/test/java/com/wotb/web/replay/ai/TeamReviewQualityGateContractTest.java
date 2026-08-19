@@ -33,19 +33,52 @@ class TeamReviewQualityGateContractTest {
     }
 
     @Test
-    void openingSpreadIsNeutralNotMapControl() {
+    void openingSpreadIsTradeOffNotMapControl() {
         // 旧规则「开局散开…是图控/拿视野，不是脱节」必须删除
         assertFalse(ZH.contains("是图控/拿视野，不是脱节"),
                 "不得再断言开局散开=图控/拿视野");
-        // 新中性规则
-        assertTrue(ZH.contains("开局散开（首次接敌前或开局 45 秒内、未接火未承伤未阵亡）本身是中性行为"),
-                "开局散开必须是中性行为");
+        assertFalse(ZH.contains("OPENING_MAP_CONTROL"),
+                "不得再暴露 OPENING_MAP_CONTROL 标签");
+        // 新规则：开局分散 = 信息覆盖 ↔ 局部兵力集中度的战术交换（中性 signal）
+        assertTrue(ZH.contains("开局分散（OPENING_SPREAD"),
+                "必须携带 OPENING_SPREAD 中性 signal");
+        assertTrue(ZH.contains("地图信息覆盖 ↔ 局部兵力集中度"),
+                "必须定义信息覆盖 vs 局部兵力集中度的 trade-off");
+        assertTrue(ZH.contains("不得把「可能获得更多地图信息」说成「已经点亮了谁/提供了具体侦察收益」"),
+                "允许 trade-off 分析但禁止具体点亮/侦察归因");
         assertTrue(ZH.contains("不能仅凭分散判为脱节"),
                 "不能仅凭分散判脱节");
         assertTrue(ZH.contains("也不能仅凭分散判为图控/拿视野"),
                 "不能仅凭分散判图控/拿视野");
-        assertTrue(ZH.contains("无法从当前回放数据确定其战术目的"),
-                "证据不足时写 UNKNOWN");
+        assertTrue(ZH.contains("只有专门且经过验证的 visibility/spotting evidence 才允许写「点亮了」「提供了视野」「侦察到了」等具体归因"),
+                "具体视野归因必须有专门 evidence");
+        assertTrue(ZH.contains("视野类收益统一视为 UNKNOWN"),
+                "无专门 evidence 时视野收益 UNKNOWN");
+        // 响应分析：拿到信息后是否及时响应
+        assertTrue(ZH.contains("开局分散的质量取决于拿到信息后是否及时响应"),
+                "必须分析信息获得后的响应（合流/收缩/转场）");
+    }
+
+    @Test
+    void openingSpreadStrategicInterpretationContractInThreeLanguages() {
+        // 追加修正 §13-B：三语都必须携带「信息覆盖 ↔ 局部兵力集中度」trade-off 语义
+        for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
+            final String localized = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, lang);
+            assertFalse(localized.contains("OPENING_MAP_CONTROL"),
+                    lang + " 不得暴露 OPENING_MAP_CONTROL");
+        }
+        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
+        assertTrue(en.contains("information/spatial coverage ↔ local force concentration")
+                        || en.contains("information/spatial coverage"),
+                "EN 必须携带信息覆盖 vs 局部兵力 trade-off");
+        assertTrue(en.contains("OPENING_SPREAD"), "EN 必须携带 OPENING_SPREAD");
+        assertTrue(en.contains("do not call it map control / vision gathering"),
+                "EN 不得把开局分散当图控/拿视野");
+        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
+        assertTrue(ru.contains("покрытие информацией/пространством ↔ концентрация локальных сил")
+                        || ru.contains("покрытие информацией"),
+                "RU 必须携带信息覆盖 vs 局部兵力 trade-off");
+        assertTrue(ru.contains("OPENING_SPREAD"), "RU 必须携带 OPENING_SPREAD");
     }
 
     @Test
@@ -69,8 +102,12 @@ class TeamReviewQualityGateContractTest {
         assertTrue(ZH.contains("卖头"), "禁止「卖头」");
         assertTrue(ZH.contains("hull-down"), "禁止 hull-down");
         assertTrue(ZH.contains("对方有无遮挡射界"), "禁止「无遮挡射界」");
-        assertTrue(ZH.contains("提供视野"), "禁止「提供视野」");
-        assertTrue(ZH.contains("点亮了"), "禁止「点亮了」");
+        // 5a 允许一般战术解释（分散可以扩大地图信息覆盖），但禁止具体视野归因
+        assertTrue(ZH.contains("允许一般战术解释"), "允许 general tactical interpretation");
+        assertTrue(ZH.contains("分散可以扩大地图信息覆盖"), "允许「分散扩大信息覆盖」");
+        assertTrue(ZH.contains("A 点亮了 B"), "禁止「A 点亮了 B」");
+        assertTrue(ZH.contains("A 提供了具体视野"), "禁止「A 提供了具体视野」");
+        assertTrue(ZH.contains("A 获得了侦察收益"), "禁止「A 获得了侦察收益」");
         assertTrue(ZH.contains("位置感很好"), "禁止「位置感很好」");
         assertTrue(ZH.contains("必然被逐个击破"), "禁止必然性因果");
     }

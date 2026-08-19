@@ -44,7 +44,7 @@ class TeamSoloIntentSkillTest {
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
 
         assertEquals(1, evidence.size());
-        assertEquals("OPENING_MAP_CONTROL", evidence.getFirst().labels().get("intent"));
+        assertEquals("OPENING_SPREAD", evidence.getFirst().labels().get("intent"));
     }
 
     @Test
@@ -171,7 +171,7 @@ class TeamSoloIntentSkillTest {
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
 
         assertTrue(evidence.isEmpty(),
-                "without battle phases no OPENING_MAP_CONTROL may be emitted");
+                "without battle phases no OPENING_SPREAD may be emitted");
     }
 
     @Test
@@ -406,7 +406,7 @@ class TeamSoloIntentSkillTest {
 
     @Test
     void partiallyOverlappingEngagementAtOpeningBoundarySuppressesOpening() {
-        // 开局窗口 [15,45] 与交火 40-65s 部分重叠：无法证明窗口内未接火 → 不生成 OPENING_MAP_CONTROL
+        // 开局窗口 [15,45] 与交火 40-65s 部分重叠：无法证明窗口内未接火 → 不生成 OPENING_SPREAD
         final Battle battle = battle(1, new double[7], new long[7]);
         final TeamMemberFeatureSet solo = member(0, 0, true, null,
                 List.of(stationary(15, 45, 350, 400)),
@@ -557,7 +557,7 @@ class TeamSoloIntentSkillTest {
 
     @Test
     void observedDamagePartialSuppressesOpening() {
-        // OBSERVED_DAMAGE_IS_PARTIAL + 开局未观察到交火：不得用“没有观察到”证明未接火 → 不生成 OPENING_MAP_CONTROL
+        // OBSERVED_DAMAGE_IS_PARTIAL + 开局未观察到交火：不得用“没有观察到”证明未接火 → 不生成 OPENING_SPREAD
         final Battle battle = battle(1, new double[7], new long[7]);
         final TeamMemberFeatureSet solo = member(0, 0, true, null,
                 List.of(stationary(15, 45, 350, 400)),

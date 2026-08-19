@@ -49,7 +49,7 @@ class SoloPlayIntentSkillTest {
         final List<AiEvidence> evidence = SoloPlayIntentSkill.detect(ctx);
 
         assertEquals(1, evidence.size());
-        assertEquals("OPENING_MAP_CONTROL", evidence.getFirst().labels().get("intent"));
+        assertEquals("OPENING_SPREAD", evidence.getFirst().labels().get("intent"));
     }
 
     @Test
@@ -64,7 +64,7 @@ class SoloPlayIntentSkillTest {
         final List<AiEvidence> evidence = SoloPlayIntentSkill.detect(ctx);
 
         assertEquals(1, evidence.size());
-        assertEquals("OPENING_MAP_CONTROL", evidence.getFirst().labels().get("intent"));
+        assertEquals("OPENING_SPREAD", evidence.getFirst().labels().get("intent"));
     }
 
     @Test
@@ -147,7 +147,7 @@ class SoloPlayIntentSkillTest {
 
     @Test
     void openingWindowWithInWindowContactIsNotMapControl() {
-        // 开局窗口内有交火（窗口内承伤 > 0）：不满足「未接火」→ 不生成 OPENING_MAP_CONTROL，也不硬判其他标签
+        // 开局窗口内有交火（窗口内承伤 > 0）：不满足「未接火」→ 不生成 OPENING_SPREAD，也不硬判其他标签
         final EvidenceSkillContext ctx = context(200, true, 0,
                 List.of(move(5, 40, 200, 200, 200, 200, 1f)),
                 List.of(engagement(5, 40, 200)),
@@ -157,7 +157,7 @@ class SoloPlayIntentSkillTest {
 
         final List<AiEvidence> evidence = SoloPlayIntentSkill.detect(ctx);
 
-        assertTrue(evidence.isEmpty(), "contact inside the opening window must not be OPENING_MAP_CONTROL");
+        assertTrue(evidence.isEmpty(), "contact inside the opening window must not be OPENING_SPREAD");
     }
 
     @Test
@@ -173,7 +173,7 @@ class SoloPlayIntentSkillTest {
         final List<AiEvidence> evidence = SoloPlayIntentSkill.detect(ctx);
 
         assertEquals(1, evidence.size());
-        assertEquals("OPENING_MAP_CONTROL", evidence.getFirst().labels().get("intent"));
+        assertEquals("OPENING_SPREAD", evidence.getFirst().labels().get("intent"));
     }
 
     @Test
@@ -240,7 +240,7 @@ class SoloPlayIntentSkillTest {
 
     @Test
     void partiallyOverlappingEngagementAtOpeningBoundarySuppressesOpening() {
-        // 开局窗口 [15,45] 与交火 40-65s 部分重叠：无法证明窗口内未接火 → 不生成 OPENING_MAP_CONTROL
+        // 开局窗口 [15,45] 与交火 40-65s 部分重叠：无法证明窗口内未接火 → 不生成 OPENING_SPREAD
         final EvidenceSkillContext ctx = context(0, true, 0,
                 List.of(move(5, 40, 200, 200, 200, 200, 1f)),
                 List.of(engagement(40, 65, 200)),

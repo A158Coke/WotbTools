@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 单走行为候选 Skill（team perspective）：把「图控 / 拖延 / 脱节」从可观测行为 + 队友获利
+ * 单走行为候选 Skill（team perspective）：把「开局分散 / 拖延 / 脱节」从可观测行为 + 队友获利
  * 时序关联中确定性推导为候选证据（用户 B1 口径：单走判拖延取决于队友是否因他获利）。
  * <p>只输出候选与信号数字（confidence=PARTIAL，规则候选），最终行为标签由 Call #2 结合
  * prior/战局类型判定；信号不足/矛盾/无法按时间归属时不输出结论（prompt 规则要求 AI 写「无法确定」）。</p>
@@ -64,7 +64,7 @@ public final class TeamSoloIntentSkill {
     /**
      * @param features     团队特征（阵型簇/成员移动/交火）
      * @param battle       权威结算（仅作胜负/背景，不用于窗口内获利判定）
-     * @param battlePhases 战斗阶段（OPENING 边界/首次接敌；缺失时不开局图控）
+     * @param battlePhases 战斗阶段（OPENING 边界/首次接敌；缺失时不出开局分散候选）
      * @param mapSemantics 地图语义（占领点区域；可为 UNKNOWN）
      */
     public static List<AiEvidence> detect(
@@ -126,7 +126,8 @@ public final class TeamSoloIntentSkill {
             final SoloSpan span,
             final TeamBattleFeatureSet features,
             final OpeningWindow opening) {
-        // 开局图控：OPENING 窗口已确定、span 完全在内、窗口内未接火/未阵亡
+        // 开局分散（中性 signal）：OPENING 窗口已确定、span 完全在内、窗口内未接火/未阵亡
+        // ——只证明位置/队形分离事实，不证明拿视野/图控/点亮/侦察
         if (opening != null
                 && span.startSec() >= opening.startSec()
                 && span.endSec() <= opening.endSec()
@@ -134,7 +135,7 @@ public final class TeamSoloIntentSkill {
                 && !memberDeadIn(member, span)
                 && !span.hasPartialOverlapEngagement()
                 && !observedDamageIsPartial(features)) {
-            return "OPENING_MAP_CONTROL";
+            return "OPENING_SPREAD";
         }
         if (opening != null && span.startSec() < opening.endSec()) {
             // 与开局窗口重叠但不完全在内：窗口信号混合，不硬判
@@ -169,7 +170,8 @@ public final class TeamSoloIntentSkill {
     private static String summary(final String intent, final SoloSpan span,
                                   final TeamMemberFeatureSet member) {
         return switch (intent) {
-            case "OPENING_MAP_CONTROL" -> "开局图控：%s 在开局散开拿视野（与主力相距约 %.0fm）"
+            case "OPENING_SPREAD" -> ("开局分散：%s 在开局阶段与主力保持明显距离，扩大了队伍的空间覆盖；"
+                    + "实际获得多少敌方信息需结合后续敌方已知状态与接敌情况判断（与主力相距约 %.0fm）")
                     .formatted(member.nickname(), span.maxDistanceM());
             case "SOLO_DELAY" -> "单走拖延：%s 静止卡点/守点且有敌情压力，队友获利（约 %.0fs，与主力相距约 %.0fm）"
                     .formatted(member.nickname(), span.durationSec(), span.maxDistanceM());

@@ -24,11 +24,11 @@ import java.util.Set;
 
 /**
  * 单走行为候选 Skill（player 路径）：复用 {@link RouteSkill} 脱节窗口，按可观测行为
- * （静止/卡点/守点 + 敌情压力、持续拉大距离 + 被白吃/阵亡）推导「图控 / 拖延 / 脱节」候选。
+ * （静止/卡点/守点 + 敌情压力、持续拉大距离 + 被白吃/阵亡）推导「开局分散 / 拖延 / 脱节」候选。
  * <p>时间口径：接火/承伤/阵亡/距离增长只使用与当前窗口重叠的证据；整场承伤/最终存活不作为
  * 早期窗口依据。未知不等于结论：移动覆盖不足 ≠ MOVING，region/语义缺失 ≠ 远离目标点。</p>
- * <p>开局图控：OPENING 窗口（缺失时回退 45s 安全上限）内未接火/未阵亡；后续掉血/阵亡不抑制
- * 已成立的早期图控。</p>
+ * <p>开局分散（中性 signal）：OPENING 窗口（缺失时回退 45s 安全上限）内未接火/未阵亡；
+ * 只证明位置/队形分离，不证明拿视野/点亮/侦察；后续掉血/阵亡不抑制已成立的早期分散。</p>
  */
 public final class SoloPlayIntentSkill {
 
@@ -117,7 +117,7 @@ public final class SoloPlayIntentSkill {
         final boolean underPressure = inWindowDamage > 0f;
         final boolean untouchedInWindow = !contactObserved && !memberDeadIn(recorder, window);
         if (opening && untouchedInWindow && !partialOverlap && !damageCoveragePartial) {
-            return "OPENING_MAP_CONTROL";
+            return "OPENING_SPREAD";
         }
         if (window.startSec() < openingEnd) {
             return null;
@@ -160,7 +160,8 @@ public final class SoloPlayIntentSkill {
         final String who = recorder == null || recorder.nickname == null
                 ? "录像者" : recorder.nickname;
         return switch (intent) {
-            case "OPENING_MAP_CONTROL" -> "开局图控：%s 开局散开拿视野（%.0fs）"
+            case "OPENING_SPREAD" -> ("开局分散：%s 开局与主力拉开，扩大了所在方向的空间覆盖（%.0fs）；"
+                    + "实际侦察/点亮收益需专门 visibility evidence 确认")
                     .formatted(who, window.endSec() - window.startSec());
             case "SOLO_DELAY" -> "单走拖延：%s 静止卡点/守点且有敌情压力（约 %.0fs）"
                     .formatted(who, window.endSec() - window.startSec());

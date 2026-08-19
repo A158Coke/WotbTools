@@ -284,33 +284,38 @@ final class PlayerPromptRules {
     static final String SOLO_INTENT_RULE = """
 
             === 单走行为判定规则（强制，随机战个人复盘） ===
-            1. 开局散开（首次接敌前或开局 45 秒内、未接火未承伤未阵亡）本身是中性行为：不能仅凭分散判为脱节，
-               也不能仅凭分散判为图控/拿视野；只能描述车辆之间的实际位置、距离和移动关系。
-               只有后端提供可靠证据（如 OPENING_MAP_CONTROL 等候选）时才能进一步判断图控/侦察/点亮/视野收益/战术脱节；
-               证据不足时写「无法从当前回放数据确定其战术目的」。
-            2. 单走判「拖延」需要可观测行为：静止/卡点/守点 + 有敌情压力（不撤退）；只基于位置、移动、交火判定行为模式，不得把行为模式说成玩家心理意图；正文不得出现「簇/质心/候选/规则候选/PARTIAL」等内部术语，一律转成自然中文。
-            3. 判「脱节」需要持续拉大距离 + 无掩护/无收益 + 被白吃或阵亡。
-            4. 证据不足或信号矛盾时明确写「无法从当前回放数据确定」，禁止硬下标签。""";
-
+            1. 开局分散（OPENING_SPREAD：首次接敌前或开局 45 秒内、未接火未承伤未阵亡、与队友/主力拉开距离）是
+               「地图信息覆盖 ↔ 局部兵力集中度」的战术交换：收益是扩大所在方向的空间覆盖、更容易获取敌方动向；
+               代价是如果对方主力直接撞上你所在一侧，你得到队友支援会更慢。
+               可以分析这种 trade-off，但不得把「可能获得更多地图信息」说成「已经点亮了谁/提供了具体侦察收益」；
+               开局分散不是天然正确也不是天然错误。
+            2. 只有专门且经过验证的 visibility/spotting evidence 才允许写「你成功点亮了 X」「你提供了具体视野」等具体归因；
+               当前没有这种 evidence 时，视野类收益统一视为 UNKNOWN。
+            3. 单走判「拖延」需要可观测行为：静止/卡点/守点 + 有敌情压力（不撤退）；只基于位置、移动、交火判定行为模式，不得把行为模式说成玩家心理意图；正文不得出现「簇/质心/候选/规则候选/PARTIAL」等内部术语，一律转成自然中文。
+            4. 判「脱节」需要持续拉大距离 + 无掩护/无收益 + 被白吃或阵亡。
+            5. 证据不足或信号矛盾时明确写「无法从当前回放数据确定」，禁止硬下标签。
+            6. 开局分散的质量取决于拿到信息后是否及时响应：敌方主力方向确认后你是否及时合流/收缩/转场，被接敌一侧的局部人数关系，队友支援能否及时赶到。
+            """;
     static final String SOLO_INTENT_RULE_EN = """
 
             === SOLO-PLAY JUDGMENT RULES (mandatory, random-battle personal review) ===
-            1. An opening spread (before first contact or within the first 45 seconds, no damage dealt/received, no destruction) is a neutral behavior by itself: you may not call it detachment merely because the team is spread out, and you may not call it map control / vision gathering either; only describe the actual positional, distance and movement relations between vehicles.
-               Only when the backend provides reliable evidence (e.g. an OPENING_MAP_CONTROL candidate) may you further judge map control / recon / spotting / vision benefit / tactical detachment; with insufficient evidence write "its tactical purpose cannot be determined from the current replay data".
-            2. Calling a solo play "delay" requires observable behavior: holding/stationary at a key point + enemy pressure (no retreat); judge behavior patterns only from position, movement and engagements, never describe a behavior pattern as the player's mental intent. Never echo internal terms such as cluster/centroid/candidate/PARTIAL; use natural language.
-            3. "Detachment" requires continuously increasing distance + no cover/no payoff + being caught out or destroyed.
-            4. When signals are insufficient or contradictory, explicitly write "cannot be determined from the current replay data" and never force a label.""";
-
+            1. An opening spread (OPENING_SPREAD: before first contact or within the first 45 seconds, no damage dealt/received, no destruction, and a clear distance from teammates/the main body) is a tactical trade of "information/spatial coverage ↔ local force concentration": the gain is wider spatial coverage on your side and a better chance to learn the enemy's movements; the cost is that if the enemy's main force pushes straight into your side, support from teammates arrives more slowly. You may analyze this trade-off, but you may NOT present "possibly gaining more map information" as "already spotted someone / provided specific recon benefit"; an opening spread is neither inherently correct nor inherently wrong.
+            2. Only dedicated, validated visibility/spotting evidence allows specific claims like "you successfully spotted X", "you provided specific vision"; without such evidence, vision benefits are UNKNOWN.
+            3. Calling a solo play "delay" requires observable behavior: holding/stationary at a key point + enemy pressure (no retreat); judge behavior patterns only from position, movement and engagements, never describe a behavior pattern as the player's mental intent. Never echo internal terms such as cluster/centroid/candidate/PARTIAL; use natural language.
+            4. "Detachment" requires continuously increasing distance + no cover/no payoff + being caught out or destroyed.
+            5. When signals are insufficient or contradictory, explicitly write "cannot be determined from the current replay data" and never force a label.
+            6. The quality of an opening spread depends on how you responded once information arrived: after the enemy's main force direction was confirmed, did you regroup/contract/rotate in time, what were the local force relations on the contacted side, and could teammates support in time.
+            """;
     static final String SOLO_INTENT_RULE_RU = """
 
             === ПРАВИЛА ОЦЕНКИ ДЕЙСТВИЙ В ОДИНОЧКУ (обязательно, личный разбор случайного боя) ===
-            1. Рассредоточение на старте (до первого контакта или в первые 45 секунд, без нанесённого/полученного урона, без уничтожения) само по себе нейтрально: нельзя называть его отрывом только из-за рассредоточения, но и контролем карты / сбором обзора — тоже; описывайте только фактические позиционные, дистанционные и двигательные отношения между машинами.
-               Только при надёжных доказательствах бэкенда (например, кандидат OPENING_MAP_CONTROL) можно судить о контроле карты / разведке / засвете / выгоде обзора / тактическом отрыве; при недостатке доказательств пишите «его тактическая цель по данным реплея не определяется».
-            2. Называть действие «задержкой» можно только на основе наблюдаемого поведения: удержание/неподвижность на ключевой позиции + давление противника (без отхода); оценивайте паттерны только по позиции, движению и перестрелкам, не выдавайте паттерн за психологические намерения игрока. Не используйте внутренние термины (кластер/центроид/кандидат/PARTIAL); излагайте естественно.
-            3. «Отрыв» требует непрерывного увеличения дистанции + отсутствия прикрытия/выгоды + размена без пользы или уничтожения.
-            4. При недостатке или противоречивости сигналов прямо пишите «невозможно определить по данным реплея» и не навешивайте ярлык.""";
-
-    /** Player 专用：点数局势与攻防姿态（ZH；与 prompts/player/*.zh.md 内文本逐字一致）。 */
+            1. Рассредоточение на старте (OPENING_SPREAD: до первого контакта или в первые 45 секунд, без нанесённого/полученного урона, без уничтожения и при заметном удалении от союзников/основной группы) — это тактический размен «покрытие информацией/пространством ↔ концентрация локальных сил»: выгода — более широкое покрытие пространства на вашем направлении и больше шансов узнать о передвижениях противника; цена — если главные силы противника идут прямо на ваш фланг, поддержка союзников подойдёт медленнее. Вы можете анализировать этот размен, но НЕ можете выдавать «возможно, получили больше информации о карте» за «уже засветил кого-то / дал конкретную разведывательную выгоду»; рассредоточение на старте не является ни изначально правильным, ни изначально ошибочным.
+            2. Только специальные проверенные visibility/spotting evidence позволяют писать конкретные утверждения вроде «вы успешно засветили X», «вы обеспечили конкретный обзор»; без таких evidence обзорные выгоды — UNKNOWN.
+            3. Называть действие «задержкой» можно только на основе наблюдаемого поведения: удержание/неподвижность на ключевой позиции + давление противника (без отхода); оценивайте паттерны только по позиции, движению и перестрелкам, не выдавайте паттерн за психологические намерения игрока. Не используйте внутренние термины (кластер/центроид/кандидат/PARTIAL); излагайте естественно.
+            4. «Отрыв» требует непрерывного увеличения дистанции + отсутствия прикрытия/выгоды + размена без пользы или уничтожения.
+            5. При недостатке или противоречивости сигналов прямо пишите «невозможно определить по данным реплея» и не навешивайте ярлык.
+            6. Качество рассредоточения зависит от реакции после получения информации: после подтверждения направления главных сил противника успели ли вы вовремя перегруппироваться/сжаться/ротироваться, каково локальное соотношение сил на стороне контакта и успела ли подойти поддержка союзников.
+            """;
     static final String POINTS_SITUATION_RULE = """
 
             === 点数局势与攻防姿态（强制，随机战个人复盘） ===
