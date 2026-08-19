@@ -85,6 +85,12 @@ class RelativeDepthHpEvidenceTest {
         events.add(pos(13, 42f, 11, -80f, 0f));    // 1002 t=22
         events.add(pos(20, 40f, 20, 200f, 0f));    // 2001
         events.add(pos(21, 40f, 21, 230f, 50f));   // 2002
+        // 敌方 phase 末保持 CURRENT：opening=[0,45]（有交火）用 t=44；无交火时 opening=[0,100] 用 t=100。
+        // enemy 位置 ≥ 当前阈值内才算 current，不能只开局有位置（enemy stale → LAST_KNOWN → fail-close）
+        events.add(pos(22, 64f, 20, 200f, 0f));    // 2001 t=44
+        events.add(pos(23, 64f, 21, 230f, 50f));   // 2002 t=44
+        events.add(pos(24, 120f, 20, 200f, 0f));   // 2001 t=100
+        events.add(pos(25, 120f, 21, 230f, 50f));  // 2002 t=100
         if (withHp) {
             // 1001 血量 1800/2000=90%；1002 血量 1000/2000=50%（1001 比率 1.8× ≥ 1.2×）
             events.add(hp(30, 30f, 10, 1800));
@@ -166,6 +172,9 @@ class RelativeDepthHpEvidenceTest {
         events.add(pos(12, 40f, 11, -90f, 0f));
         events.add(pos(20, 40f, 20, 200f, 0f));
         events.add(pos(21, 40f, 21, 230f, 50f));
+        // 无交火 → opening=[0,100]；敌方 phase 末（t=100）保持 CURRENT（1.1× 判定才真正生效）
+        events.add(pos(22, 120f, 20, 200f, 0f));   // 2001 t=100
+        events.add(pos(23, 120f, 21, 230f, 50f));  // 2002 t=100
         events.add(hp(30, 30f, 10, 1100));  // 55%
         events.add(hp(31, 30f, 11, 1000));  // 50%
         final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
@@ -265,13 +274,21 @@ class RelativeDepthHpEvidenceTest {
                 DecodeConfidence.EXACT, 20, 2001L));
         events.add(new ParticipantMappingEvent(4, new ReplayTimestamp(20f, null), 8,
                 DecodeConfidence.EXACT, 21, 2002L));
-        // 位置：1001 全程靠后，1002 靠前；敌方靠右
+        // 位置：1001 全程靠后，1002 靠前；敌方靠右（t=10/30/50/70）
         for (final float t : new float[]{30f, 50f, 70f, 90f}) {
             events.add(pos(10, t, 10, -220f, 0f));
             events.add(pos(12, t, 11, -90f, 0f));
             events.add(pos(20, t, 20, 200f, 0f));
             events.add(pos(21, t, 21, 230f, 50f));
         }
+        // 敌方每阶段末保持 CURRENT（opening 末 t=44 / mid 末 t=84 / late 末 t=99；age ≤ 5s）：
+        // 交火 t=30 → opening [0,45] / mid [45,85] / late [85,100]
+        events.add(pos(44, 64f, 20, 200f, 0f));    // 2001 t=44
+        events.add(pos(45, 64f, 21, 230f, 50f));   // 2002 t=44
+        events.add(pos(46, 104f, 20, 200f, 0f));   // 2001 t=84
+        events.add(pos(47, 104f, 21, 230f, 50f));  // 2002 t=84
+        events.add(pos(48, 119f, 20, 200f, 0f));   // 2001 t=99
+        events.add(pos(49, 119f, 21, 230f, 50f));  // 2002 t=99
         events.add(hp(30, 25f, 10, 1800));
         events.add(hp(31, 25f, 11, 1000));
         events.add(hp(32, 45f, 10, 1700));
@@ -337,6 +354,9 @@ class RelativeDepthHpEvidenceTest {
         events.add(pos(12, 40f, 11, -60f, 0f));    // 1002 LT 最靠前（距敌最近）
         events.add(pos(20, 40f, 20, 200f, 0f));
         events.add(pos(21, 40f, 21, 230f, 50f));
+        // 无交火 → opening=[0,100]；敌方 phase 末保持 CURRENT
+        events.add(pos(22, 120f, 20, 200f, 0f));   // 2001 t=100
+        events.add(pos(23, 120f, 21, 230f, 50f));  // 2002 t=100
         events.add(hp(30, 30f, 10, 1800));
         events.add(hp(31, 30f, 11, 400));
         final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
@@ -372,6 +392,9 @@ class RelativeDepthHpEvidenceTest {
         events.add(pos(12, 40f, 11, -60f, 0f));    // 1002 纸 TD 最靠前
         events.add(pos(20, 40f, 20, 200f, 0f));
         events.add(pos(21, 40f, 21, 230f, 50f));
+        // 无交火 → opening=[0,100]；敌方 phase 末保持 CURRENT
+        events.add(pos(22, 120f, 20, 200f, 0f));   // 2001 t=100
+        events.add(pos(23, 120f, 21, 230f, 50f));  // 2002 t=100
         events.add(hp(30, 30f, 10, 1800));
         events.add(hp(31, 30f, 11, 400));
         final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
@@ -454,6 +477,8 @@ class RelativeDepthHpEvidenceTest {
         events.add(pos(10, 40f, 10, -220f, 0f));
         events.add(pos(12, 40f, 11, -90f, 0f));
         events.add(pos(20, 40f, 20, 200f, 0f));   // 2001 有位置
+        // 无交火 → opening=[0,100]；2001 phase 末保持 CURRENT（排除 stale 干扰），2002 仍无位置
+        events.add(pos(22, 120f, 20, 200f, 0f));  // 2001 t=100
         // 2002 无位置（仅 mapping）→ enemyRef=1/2 → 不完整
         events.add(hp(30, 30f, 10, 1800));
         events.add(hp(31, 30f, 11, 1000));
@@ -506,6 +531,9 @@ class RelativeDepthHpEvidenceTest {
         events.add(pos(12, 40f, 11, -90f, 0f));
         events.add(pos(20, 40f, 20, 200f, 0f));
         events.add(pos(21, 40f, 21, 230f, 50f));
+        // 无交火 → opening=[0,100]；敌方 phase 末保持 CURRENT
+        events.add(pos(22, 120f, 20, 200f, 0f));   // 2001 t=100
+        events.add(pos(23, 120f, 21, 230f, 50f));  // 2002 t=100
         events.add(hp(30, 30f, 10, 1800));
         events.add(hp(31, 30f, 11, 1000));
         events.add(new HealthChangedEvent(32, new ReplayTimestamp(35f, null), 7,
@@ -538,6 +566,9 @@ class RelativeDepthHpEvidenceTest {
         events.add(pos(12, 40f, 11, -90f, 0f));
         events.add(pos(20, 40f, 20, 200f, 0f));
         events.add(pos(21, 40f, 21, 230f, 50f));
+        // 无交火 → opening=[0,100]；敌方 phase 末保持 CURRENT（0 死亡终态路径才真正生效）
+        events.add(pos(22, 120f, 20, 200f, 0f));   // 2001 t=100
+        events.add(pos(23, 120f, 21, 230f, 50f));  // 2002 t=100
         events.add(hp(30, 30f, 10, 1800));
         events.add(hp(31, 30f, 11, 1000));
         events.add(hp(32, 50f, 10, 0));
@@ -564,6 +595,9 @@ class RelativeDepthHpEvidenceTest {
         events.add(pos(12, 40f, 11, -90f, 0f));    // 1002 靠前
         events.add(pos(20, 40f, 20, 200f, 0f));
         events.add(pos(21, 40f, 21, 230f, 50f));
+        // 无 HP/伤害事件 → opening=[0,100]；敌方 phase 末保持 CURRENT（几何事实路径才成立）
+        events.add(pos(22, 120f, 20, 200f, 0f));   // 2001 t=100
+        events.add(pos(23, 120f, 21, 230f, 50f));  // 2002 t=100
         // 无 HP/伤害事件 → 走 opening 几何事实路径
         final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
                 events, List.of(), null, null, null);
@@ -574,5 +608,38 @@ class RelativeDepthHpEvidenceTest {
         assertTrue(section.contains("TANK_DESTROYER"), "必须附 TD 静态 profile 事实");
         assertFalse(section.contains("未上前线"), "不得输出「未上前线」战术判定");
         assertFalse(section.contains("frontlineCapable"), section);
+    }
+
+    @Test
+    void staleEnemyDoesNotProduceExactRelativeDepthDistance() {
+        // enemy 最后位置 t=10，phaseEnd（opening 末 45）明显 >15，phase 内无新位置
+        // → enemy LAST_KNOWN 不得满足 current completeness，不得产生 memberDist/referenceDist/relativeDepthM
+        //   exact 距离（fail-close；不得 future-leak 成「当前精确距离」）。
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 10, 1001L));
+        events.add(new ParticipantMappingEvent(2, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 11, 1002L));
+        events.add(new ParticipantMappingEvent(3, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 20, 2001L));
+        events.add(new ParticipantMappingEvent(4, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 21, 2002L));
+        events.add(pos(10, 40f, 10, -220f, 0f));   // 1001 t=20
+        events.add(pos(12, 40f, 11, -90f, 0f));    // 1002 t=20
+        events.add(pos(20, 30f, 20, 200f, 0f));    // 2001 t=10（stale）
+        events.add(pos(21, 30f, 21, 230f, 50f));   // 2002 t=10（stale）
+        events.add(hp(30, 30f, 10, 1800));
+        events.add(hp(31, 30f, 11, 1000));
+        // 交火 t=30 → opening [0,45] / mid [45,85] / late [85,100]：enemy 全程 stale
+        events.add(dmg(40, 50f, 10, 20));
+        final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
+                events, List.of(), null, null, null);
+        final String section = RelativeDepthHpEvidence.renderTeamSection(
+                battle(E100, E100), recon, 1, false);
+        assertTrue(section.isEmpty(), "stale enemy 不得产生 exact RelativeDepth 测量，got: " + section);
+        assertFalse(section.contains("memberDist="), "不得输出 memberDist: " + section);
+        assertFalse(section.contains("referenceDist="), "不得输出 referenceDist: " + section);
+        assertFalse(section.contains("relativeDepthM="), "不得输出 relativeDepthM: " + section);
+        assertFalse(section.contains("vs reference"), "不得输出 reference 测量行: " + section);
     }
 }

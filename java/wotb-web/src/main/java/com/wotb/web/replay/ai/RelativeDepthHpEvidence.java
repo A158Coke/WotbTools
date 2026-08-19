@@ -145,6 +145,10 @@ final class RelativeDepthHpEvidence {
                 if (identity == null || !identity.usable() || identity.accountId() <= 0) {
                     continue;
                 }
+                // ActualCombatantSet（battle_results #301）：非 #301 实体位置不得进入战术测量
+                if (!playersByAccount.containsKey(identity.accountId())) {
+                    continue;
+                }
                 if (!Float.isFinite(pos.x()) || !Float.isFinite(pos.z())) {
                     continue;
                 }
@@ -276,94 +280,87 @@ final class RelativeDepthHpEvidence {
             final Map<Integer, Double> lastLeaveByEntity
     ) {
         final List<PhaseHit> hits = new ArrayList<>();
-        final Map<Long, double[]> meanByAccount = new LinkedHashMap<>();
-        for (final Map.Entry<Long, List<double[]>> entry : tracks.entrySet()) {
-            double sx = 0, sz = 0;
-            int n = 0;
-            for (final double[] sample : entry.getValue()) {
-                if (sample[0] < phase.start() || sample[0] > phase.end()) {
-                    continue;
-                }
-                sx += sample[1];
-                sz += sample[2];
-                n++;
-            }
-            if (n > 0) {
-                meanByAccount.put(entry.getKey(), new double[]{sx / n, sz / n});
-            }
-        }
-        // carry-forward 位置 state：phase 内无新 PositionChanged 但 phase 前有最后位置（无 EntityLeave/未阵亡）的车辆
-        // 位置沿用（friendly=authoritative carry-forward；enemy=LAST_KNOWN 参考，不 future-leak）。
-        for (final Map.Entry<Long, List<double[]>> entry : tracks.entrySet()) {
-            if (meanByAccount.containsKey(entry.getKey())) {
-                continue;
-            }
-            if (!FormationDepthEvidence.isAliveAt(playersByAccount, entry.getKey(), phase.end())) {
-                continue; // 阵亡车辆不 carry-forward（位置 state 已终止）
-            }
-            final double[] carry = FormationDepthEvidence.carriedForwardReference(
-                    entry.getValue(), phase.end(), mapping, lastLeaveByEntity, entry.getKey());
-            if (carry != null) {
-                meanByAccount.put(entry.getKey(), new double[]{carry[1], carry[2]});
-            }
-        }
-        if (meanByAccount.size() < 2) {
+        final int ownTeam = teamByAccount.getOrDefault(targets.get(0), 0);
+        if (ownTeam <= 0) {
             return new PhaseResult(null, hits);
         }
-        final int ownTeam = teamByAccount.getOrDefault(targets.get(0), 0);
-        final boolean ownTeamValid = ownTeam > 0;
-        final Map<Long, Double> distToEnemy = new LinkedHashMap<>();
-        if (ownTeamValid) {
-            final List<double[]> enemyMeans = new ArrayList<>();
-            final List<Map.Entry<Long, double[]>> ownMeans = new ArrayList<>();
-            for (final Map.Entry<Long, double[]> entry : meanByAccount.entrySet()) {
-                if (teamByAccount.getOrDefault(entry.getKey(), 0) == ownTeam) {
-                    ownMeans.add(entry);
-                } else {
-                    enemyMeans.add(entry.getValue());
-                }
+        final int enemyTeam = 3 - ownTeam;
+        // 阶段位置参考（带知识状态）：复用 FormationDepthEvidence 的 canonical 同口径解析
+        // （friendly actual combatant carry-forward=CURRENT；enemy 按 phase 末最后观测
+        // age ≤ canonical 当前阈值判定 CURRENT，否则 LAST_KNOWN）。
+        // 相对纵深/血量呈现为确定性距离测量 → 只允许 CURRENT 参考参与 exact 距离；
+        // enemy LAST_KNOWN 不得生成仿佛当前精确位置的 memberDist/referenceDist/relativeDepthM
+        // （fail-closed，不 future-leak）。
+        final Map<Long, FormationDepthEvidence.PhasePositionReference> refsByAccount = new LinkedHashMap<>();
+        for (final Map.Entry<Long, List<double[]>> entry : tracks.entrySet()) {
+            final int team = teamByAccount.getOrDefault(entry.getKey(), 0);
+            final FormationDepthEvidence.PhasePositionReference ref =
+                    FormationDepthEvidence.resolvePhasePosition(
+                            entry.getKey(), team, entry.getValue(),
+                            phase.start(), phase.end(), playersByAccount,
+                            mapping, lastLeaveByEntity, ownTeam);
+            if (ref != null) {
+                refsByAccount.put(entry.getKey(), ref);
             }
-            if (!enemyMeans.isEmpty()) {
-                for (final Map.Entry<Long, double[]> entry : ownMeans) {
-                    double best = Double.POSITIVE_INFINITY;
-                    for (final double[] e : enemyMeans) {
-                        final double dx = entry.getValue()[0] - e[0];
-                        final double dz = entry.getValue()[1] - e[1];
-                        best = Math.min(best, Math.hypot(dx, dz));
-                    }
-                    distToEnemy.put(entry.getKey(), best);
+        }
+        if (refsByAccount.size() < 2) {
+            return new PhaseResult(null, hits);
+        }
+        // 只消费 CURRENT 参考：own 成员（friendly CURRENT）+ 敌方 CURRENT
+        final Map<Long, FormationDepthEvidence.PhasePositionReference> ownCurrent = new LinkedHashMap<>();
+        final Map<Long, FormationDepthEvidence.PhasePositionReference> enemyCurrent = new LinkedHashMap<>();
+        for (final Map.Entry<Long, FormationDepthEvidence.PhasePositionReference> entry : refsByAccount.entrySet()) {
+            final FormationDepthEvidence.PhasePositionReference ref = entry.getValue();
+            if (!ref.current()) {
+                continue; // LAST_KNOWN（enemy stale / EntityLeave 中断）不参与 exact 距离
+            }
+            if (ref.team() == ownTeam) {
+                ownCurrent.put(entry.getKey(), ref);
+            } else {
+                enemyCurrent.put(entry.getKey(), ref);
+            }
+        }
+        final Map<Long, Double> distToEnemy = new LinkedHashMap<>();
+        if (!enemyCurrent.isEmpty()) {
+            for (final Map.Entry<Long, FormationDepthEvidence.PhasePositionReference> entry : ownCurrent.entrySet()) {
+                double best = Double.POSITIVE_INFINITY;
+                for (final FormationDepthEvidence.PhasePositionReference e : enemyCurrent.values()) {
+                    final double dx = entry.getValue().x() - e.x();
+                    final double dz = entry.getValue().z() - e.z();
+                    best = Math.min(best, Math.hypot(dx, dz));
                 }
+                distToEnemy.put(entry.getKey(), best);
             }
         }
         if (distToEnemy.size() < 2) {
             if ("opening".equals(phase.key())) {
-                final String opening = renderOpeningRearTercile(meanByAccount, teamByAccount,
+                final String opening = renderOpeningRearTercile(ownCurrent, enemyCurrent,
                         ownTeam, profiles, targets, playerPath);
                 return new PhaseResult(opening == null ? null : opening, hits);
             }
             return new PhaseResult(null, hits);
         }
-        // 敌方位置参考完整性门禁：本阶段存活的敌方车辆中缺失位置参考时，
-        // 最近观测敌方 ≠ 真实最近敌方，禁止输出「距敌更远/血量优势」测量（避免误导 LLM）
-        final int enemyTeamId = 3 - ownTeam;
+        // 敌方 CURRENT 位置参考完整性门禁：本阶段存活的敌方车辆中缺少 CURRENT 位置参考时，
+        // 最近观测敌方 ≠ 真实最近敌方（enemy LAST_KNOWN 不得满足 current-position completeness），
+        // 禁止输出「距敌更远/血量优势」精确距离测量（fail-closed，避免误导 LLM）
         int enemyAliveCount = 0;
         int enemyRefCount = 0;
         for (final Map.Entry<Long, PlayerResult> entry : playersByAccount.entrySet()) {
             final PlayerResult pl = entry.getValue();
-            if (pl == null || pl.team != enemyTeamId) {
+            if (pl == null || pl.team != enemyTeam) {
                 continue;
             }
             if (!FormationDepthEvidence.isAliveAt(playersByAccount, entry.getKey(), phase.end())) {
                 continue;
             }
             enemyAliveCount++;
-            if (meanByAccount.containsKey(entry.getKey())) {
+            if (enemyCurrent.containsKey(entry.getKey())) {
                 enemyRefCount++;
             }
         }
         final boolean enemyRefComplete = enemyRefCount >= enemyAliveCount;
         if (!enemyRefComplete) {
-            // 敌方位置参考不完整：最近观测敌方 ≠ 真实最近敌方，不输出不可信距离测量
+            // 敌方 CURRENT 位置参考不完整：最近观测敌方 ≠ 真实最近敌方，不输出不可信距离测量
             return new PhaseResult(null, hits);
         }
 
@@ -438,7 +435,7 @@ final class RelativeDepthHpEvidence {
             }
         }
         if ("opening".equals(phase.key())) {
-            final String opening = renderOpeningRearTercile(meanByAccount, teamByAccount,
+            final String opening = renderOpeningRearTercile(ownCurrent, enemyCurrent,
                     ownTeam, profiles, targets, playerPath);
             if (opening != null) {
                 sb.append(opening);
@@ -513,11 +510,12 @@ final class RelativeDepthHpEvidence {
     }
 
     /**
-     * opening 附加几何事实：本队成员阶段平均位置在最靠后三分位（纯几何，附静态 profile 事实，不判角色）。
+     * opening 附加几何事实：本队成员阶段平均位置在最靠后三分位（纯几何，附静态 profile 事实，不判角色；
+     * 只消费 CURRENT 位置参考——enemy LAST_KNOWN 不得作为当前 enemy centroid / 轴参考）。
      */
     private static String renderOpeningRearTercile(
-            final Map<Long, double[]> meanByAccount,
-            final Map<Long, Integer> teamByAccount,
+            final Map<Long, FormationDepthEvidence.PhasePositionReference> ownCurrent,
+            final Map<Long, FormationDepthEvidence.PhasePositionReference> enemyCurrent,
             final int ownTeam,
             final Map<Long, TankTacticalProfile> profiles,
             final List<Long> targets,
@@ -525,12 +523,12 @@ final class RelativeDepthHpEvidence {
     ) {
         final List<Map.Entry<Long, double[]>> own = new ArrayList<>();
         final List<double[]> enemyMeans = new ArrayList<>();
-        for (final Map.Entry<Long, double[]> entry : meanByAccount.entrySet()) {
-            if (teamByAccount.getOrDefault(entry.getKey(), 0) == ownTeam) {
-                own.add(entry);
-            } else {
-                enemyMeans.add(entry.getValue());
-            }
+        for (final Map.Entry<Long, FormationDepthEvidence.PhasePositionReference> entry : ownCurrent.entrySet()) {
+            own.add(new java.util.AbstractMap.SimpleImmutableEntry<>(entry.getKey(),
+                    new double[]{entry.getValue().x(), entry.getValue().z()}));
+        }
+        for (final FormationDepthEvidence.PhasePositionReference ref : enemyCurrent.values()) {
+            enemyMeans.add(new double[]{ref.x(), ref.z()});
         }
         if (own.size() < 2 || enemyMeans.isEmpty()) {
             return null;

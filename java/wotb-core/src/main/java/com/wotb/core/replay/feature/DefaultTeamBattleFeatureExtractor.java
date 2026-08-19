@@ -421,10 +421,11 @@ public class DefaultTeamBattleFeatureExtractor {
         if (memberId.ambiguousNickname()) {
             limitations.add("TEAM_MEMBER_IDENTITY_UNRESOLVED");
         }
+        // mapping 根本不存在 → mapping failure；mapping 存在但没有 usable position → position failure。
+        // 避免对同一个完全 unmapped 成员重复披露两个派生 limitation（P2 cleanup）。
         if (entityIds.isEmpty()) {
             limitations.add("TEAM_MEMBER_ENTITY_UNMAPPED");
-        }
-        if (movements.isEmpty()) {
+        } else if (movements.isEmpty()) {
             limitations.add("TEAM_MEMBER_POSITION_UNAVAILABLE");
         }
         final Double deathTime = player.survived || PlayerResultFormat.deathSec(player) <= 0

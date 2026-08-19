@@ -136,6 +136,13 @@ no PositionChanged != missing position（静止同坐标 gap 已证实，见下�
 - 阵亡后服务器仍广播死车位置（同坐标），产生 30s/44.5s 级同坐标 gap（random/1600 样本）。
 - 因此己方（actual combatant）位置语义 = last position + 无 EntityLeave + 未 destroyed
   → carry-forward 当前位置；敌方保持 UNKNOWN/LAST_KNOWN（anti-future-leak）。
+- **证据层知识契约（2026-08 第六轮）**：FormationDepthEvidence / RelativeDepthHpEvidence 的阶段位置参考
+  带 knowledge provenance（CURRENT / LAST_KNOWN，复用 canonical PositionKnowledge）——friendly
+  carry-forward → CURRENT；enemy 最后观测 age ≤ canonical 当前阈值（5s）→ CURRENT，否则 LAST_KNOWN；
+  exact 阵型/覆盖/距离数学只消费 CURRENT，enemy LAST_KNOWN 不得满足 current completeness / 作为当前
+  centroid / 坐标 / 生成 exact 距离（fail-closed）；LAST_KNOWN 只作为独立信息段
+  （ENEMY_LAST_KNOWN_POSITION_REFERENCES：account + region + observedAtSec + ageSec + knowledge）输出。
+  Region presence 基于 resolved 车辆位置 state（每辆 CURRENT 车辆 +1，不是位置包数量）。
 
 ## DEATH_TIME_PRECEDENCE（死亡时刻优先级链 · 2026-08 落地）
 

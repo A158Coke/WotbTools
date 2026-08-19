@@ -30,8 +30,9 @@ import java.util.Map;
  */
 public final class BattleTimelineBuilder {
 
-    /** 位置流中断阈值（秒）：超过则位置转为 last-known；与 playback POSITION_GAP_SEC 对齐。 */
-    static final double POSITION_GAP_SEC = 5.0;
+    /** 位置流中断阈值（秒）：超过则位置转为 last-known；与 playback POSITION_GAP_SEC 对齐。
+     * public：证据层（FormationDepth/RelativeDepth）复用同一 canonical 阈值判定 enemy CURRENT/LAST_KNOWN。 */
+    public static final double POSITION_GAP_SEC = 5.0;
     /** 位置显著变化阈值（canonical 米）。 */
     static final double POSITION_CHANGE_THRESHOLD_M = 5.0;
     /** 防御性帧数上限（450s 战斗约 451 帧；超长异常拒绝而非 OOM）。 */
