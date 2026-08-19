@@ -218,4 +218,62 @@ class TeamReviewQualityGateContractTest {
         final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
         assertTrue(ru.contains("ПРАВИЛО ВЫВОДА О ПЕРЕГРУППИРОВКЕ"), "RU 必须携带重新集中规则");
     }
+
+    // ---- PR #103 最终收尾：对方关键威胁 optional contract 统一 ----
+
+    @Test
+    void opposingThreatIsOptionalOnlyWhenMaterial() {
+        // A. optional threat：必须显式「可选」+「只在确实有价值时」
+        assertTrue(ZH.contains("对方关键威胁（可选）"), "输出结构必须标记对方关键威胁为可选");
+        assertTrue(ZH.contains("对方关键威胁是【可选】内容"), "团队规则必须统一为可选语义");
+        assertTrue(ZH.contains("只有对核心复盘确有价值时才指出 1-3 辆对方关键威胁"),
+                "必须只在确实有价值时输出");
+        assertTrue(ZH.contains("没有明显关键威胁或对核心复盘没有帮助时直接省略"),
+                "无 material threat 时必须允许完全省略");
+        assertTrue(ZH.contains("不得为了结构完整强行选一个"),
+                "不得为了结构完整强行选威胁");
+    }
+
+    @Test
+    void noMandatoryOpponentThreatContradiction() {
+        // B. 不得存在 mandatory contradiction
+        assertFalse(ZH.contains("分析对方阵容并指出对方主要威胁车辆"),
+                "不得保留无条件 mandatory 威胁规则");
+        assertFalse(ZH.contains("必须分析对方"), "不得强制分析对方");
+    }
+
+    @Test
+    void noForcedOpponentDataDisclaimer() {
+        // C. no forced missing-data disclaimer：改为 selective UNKNOWN
+        assertFalse(ZH.contains("对方数据缺失时明确说明"),
+                "不得强制输出缺失数据 disclaimer");
+        assertTrue(ZH.contains("对方数据不足时不得猜测"), "不得猜测");
+        assertTrue(ZH.contains("缺失本身保持内部 UNKNOWN"), "缺失保持内部 UNKNOWN");
+        assertTrue(ZH.contains("按全局选择性 UNKNOWN 规则自然说明"),
+                "缺失说明必须引用全局选择性 UNKNOWN 条件");
+    }
+
+    @Test
+    void opposingThreatOptionalContractLocalizedInThreeLanguages() {
+        // D. EN/RU parity：同样不得强制威胁段 / 强制缺失 disclaimer
+        for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
+            final String localized = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, lang);
+            assertFalse(localized.contains("Analyze the opposing lineup and point out the opposing team's main threat vehicles"),
+                    lang + " 不得强制 Analyze the opposing lineup");
+            assertFalse(localized.contains("say so explicitly instead of guessing"),
+                    lang + " 不得强制 say so explicitly");
+            assertFalse(localized.contains("Проанализируйте состав противника и укажите основные угрозы"),
+                    lang + " 不得强制 RU 分析阵容");
+            assertFalse(localized.contains("прямо скажите об этом"),
+                    lang + " 不得强制 RU 缺失说明");
+        }
+        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
+        assertTrue(en.contains("Opposing threats are optional content"), "EN 必须标记为可选");
+        assertTrue(en.contains("only point out 1-3 enemy vehicles when they genuinely help"),
+                "EN 必须只在确有价值时输出");
+        assertTrue(en.contains("selective-UNKNOWN"), "EN 必须引用全局选择性 UNKNOWN");
+        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
+        assertTrue(ru.contains("опциональное содержание"), "RU 必须标记为可选");
+        assertTrue(ru.contains("селективного UNKNOWN"), "RU 必须引用全局选择性 UNKNOWN");
+    }
 }

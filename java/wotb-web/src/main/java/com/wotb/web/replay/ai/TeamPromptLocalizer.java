@@ -19,7 +19,11 @@ final class TeamPromptLocalizer {
             禁止把整支队伍称为「你」，本文不使用第二人称。
             如需提及双方名称，只能使用 backend 提供的 teamDisplayLabel / opponentDisplayLabel（无值时用我方/对方）；
             禁止自创「X 对阵 Y」标题；「主要军团/对方队伍」等只是通用措辞，不是 proper noun 队名。
-            分析对方阵容并指出对方主要威胁车辆（最多 3 辆，不逐车作文）；对方数据缺失时明确说明，不得猜测。
+            对方关键威胁是【可选】内容：只有对核心复盘确有价值时才指出 1-3 辆对方关键威胁
+               （对核心结论、关键决策窗口、已确认团队问题或对应训练建议有实际帮助）；不逐车作文；
+               没有明显关键威胁或对核心复盘没有帮助时直接省略，不得为了结构完整强行选一个；
+               对方数据不足时不得猜测，缺失本身保持内部 UNKNOWN——只有该缺失直接影响核心判断、
+               因果判断或训练建议时，才按全局选择性 UNKNOWN 规则自然说明。
             """;
 
     /** Team 专用：EN 团队规则（替换 TEAM_ANALYSIS_RULE）。 */
@@ -33,8 +37,13 @@ final class TeamPromptLocalizer {
                         Never address the whole team as "you"; do not use the second person in this review.
                         When naming either side, use only the backend-provided teamDisplayLabel / opponentDisplayLabel (fall back to "our team"/"the opposing team" when empty);
                         never invent an "X vs Y" title; "the main clan / the opposing team" are generic wording, not proper-noun team names.
-                        Analyze the opposing lineup and point out the opposing team's main threat vehicles (at most 3,
-                        without a tank-by-tank essay); when opposing data is missing, say so explicitly instead of guessing.
+                        Opposing threats are optional content: only point out 1-3 enemy vehicles when they genuinely help
+                        the core review (they matter to the core conclusion, a key decision window, a confirmed team problem,
+                        or the corresponding training advice); never write a tank-by-tank essay of the whole lineup; if there
+                        is no clear key threat or it does not help the core review, omit it entirely — never force a threat
+                        pick for structural completeness. When opposing data is insufficient, do not guess; the gap stays
+                        internal UNKNOWN — only explain naturally when the gap directly affects the core judgment, causal
+                        judgment, or training advice, per the global selective-UNKNOWN rule.
             """;
 
     /** Team 专用：RU 团队规则（替换 TEAM_ANALYSIS_RULE）。 */
@@ -48,8 +57,13 @@ final class TeamPromptLocalizer {
                         Не обращайтесь ко всей команде как к «вы»; в этом разборе не используйте второе лицо.
                         При упоминании сторон используйте только предоставленные бэкендом teamDisplayLabel / opponentDisplayLabel (при отсутствии — «наша команда»/«команда противника»);
                         не выдумывайте заголовок «X против Y»; «главный клан / команда противника» — лишь общие слова, а не собственные имена команд.
-                        Проанализируйте состав противника и укажите основные угрозы команды противника (не более 3 машин,
-                        без разбора каждой машины отдельно); при отсутствии данных о противнике прямо скажите об этом, не угадывая.
+                        Угрозы противника — опциональное содержание: указывайте 1–3 машины противника, только если они действительно
+                        важны для основного разбора (для ключевого вывода, ключевого окна решений, подтверждённой проблемы команды
+                        или соответствующей рекомендации); не разбирайте каждую машину отдельно; если явной ключевой угрозы нет или она
+                        не помогает основному разбору, опустите её полностью — не подбирайте угрозу ради полноты структуры. При недостатке
+                        данных о противнике не угадывайте; пробел остаётся внутренним UNKNOWN — объясняйте естественно, только если он
+                        напрямую влияет на ключевой вывод, причинно-следственный вывод или рекомендацию, согласно правилу глобального
+                        селективного UNKNOWN.
             """;
 
     /** Team 专用（PR #103 review BLOCKER B）：内部证据 ≠ 用户输出模板。 */
