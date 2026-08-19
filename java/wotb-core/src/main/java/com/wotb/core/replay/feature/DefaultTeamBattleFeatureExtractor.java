@@ -13,6 +13,7 @@ import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import org.springframework.util.StringUtils;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
@@ -321,18 +322,32 @@ public class DefaultTeamBattleFeatureExtractor {
         // 实际参战账号权威集合 = battle_results #301（actual combatant source，唯一权威）；
         // 观战/辅助实体只出现在 #201/updateArena2/event stream，不属于 #301。
         final Set<Long> combatantAccounts = new LinkedHashSet<>();
+        final Set<String> combatantNicknames = new LinkedHashSet<>();
         if (battle != null && battle.players != null) {
             for (final PlayerResult player : battle.players) {
-                if (player != null && player.accountId > 0) {
+                if (player == null) {
+                    continue;
+                }
+                if (player.accountId > 0) {
                     combatantAccounts.add(player.accountId);
+                }
+                if (StringUtils.hasText(player.nickname)) {
+                    combatantNicknames.add(player.nickname);
                 }
             }
         }
-        // entity -> 映射账号（来自 updateArena2 roster 映射事件；未映射实体（观战镜头/场景对象）不在其中）
+        // entity -> 映射账号/昵称（来自 updateArena2 roster 映射事件；未映射实体（观战镜头/场景对象）不在其中）。
+        // 昵称映射（accountId=0）也可能指向 #301 成员（如昵称重名导致 TeamEntityMapper 无法归因），
+        // 需一并纳入 A/B 分类，避免把 #301 成员实体的位置误判为非参战。
         final Map<Integer, Long> accountByEntity = new HashMap<>();
+        final Map<Integer, String> nicknameByEntity = new HashMap<>();
         for (final ReplayEvent event : events) {
-            if (event instanceof ParticipantMappingEvent pm && pm.accountId() > 0) {
-                accountByEntity.putIfAbsent(pm.entityId(), pm.accountId());
+            if (event instanceof ParticipantMappingEvent pm) {
+                if (pm.accountId() > 0) {
+                    accountByEntity.putIfAbsent(pm.entityId(), pm.accountId());
+                } else if (StringUtils.hasText(pm.nickname())) {
+                    nicknameByEntity.putIfAbsent(pm.entityId(), pm.nickname());
+                }
             }
         }
         int unattributedCombatantCount = 0;
@@ -350,7 +365,11 @@ public class DefaultTeamBattleFeatureExtractor {
             if (identity == null || !identity.usable()) {
                 // A. actual combatant（#301）实体无法归因 -> 真实数据质量问题
                 final Long mappedAccount = accountByEntity.get(position.entityId());
-                if (mappedAccount != null && combatantAccounts.contains(mappedAccount)) {
+                final String mappedNickname = nicknameByEntity.get(position.entityId());
+                final boolean combatantEntity = mappedAccount != null
+                        && combatantAccounts.contains(mappedAccount)
+                        || mappedNickname != null && combatantNicknames.contains(mappedNickname);
+                if (combatantEntity) {
                     unattributedCombatantCount++;
                 } else {
                     // B. 非参战实体（观战玩家/镜头/场景对象）-> 战术证据忽略，仅 internal diagnostic
