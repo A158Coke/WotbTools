@@ -1,10 +1,10 @@
 package com.wotb.core;
 
+import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.JsonNodeFactory;
 import tools.jackson.databind.node.ObjectNode;
-import tools.jackson.databind.json.JsonMapper;
-import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.nio.file.Path;
@@ -13,7 +13,6 @@ import java.util.HashSet;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -68,43 +67,69 @@ class ItemCatalogValidationTest {
     // Uses helpers: setEffect, numericEffect, assertInvalid, assertValid
 
     @Test
-    void setMissingValueFails() { assertInvalid(setEffect(null)); }
+    void setMissingValueFails() {
+        assertInvalid(setEffect(null));
+    }
 
     @Test
-    void setNullValueFails() { assertInvalid(setEffect(NF.nullNode())); }
+    void setNullValueFails() {
+        assertInvalid(setEffect(NF.nullNode()));
+    }
 
     @Test
-    void setObjectValueFails() { assertInvalid(setEffect(obj())); }
+    void setObjectValueFails() {
+        assertInvalid(setEffect(obj()));
+    }
 
     @Test
-    void setArrayValueFails() { assertInvalid(setEffect(array())); }
+    void setArrayValueFails() {
+        assertInvalid(setEffect(array()));
+    }
 
     @Test
-    void setBlankStringValueFails() { assertInvalid(setEffect("   ")); }
+    void setBlankStringValueFails() {
+        assertInvalid(setEffect("   "));
+    }
 
     @Test
-    void setNonFiniteNumberFails() { assertInvalid(setEffect(NF.numberNode(Double.NaN))); }
+    void setNonFiniteNumberFails() {
+        assertInvalid(setEffect(NF.numberNode(Double.NaN)));
+    }
 
     @Test
-    void setBinaryValueFails() { assertInvalid(setEffect(NF.binaryNode(new byte[]{1}))); }
+    void setBinaryValueFails() {
+        assertInvalid(setEffect(NF.binaryNode(new byte[]{1})));
+    }
 
     @Test
-    void setPojoValueFails() { assertInvalid(setEffect(NF.pojoNode("x"))); }
+    void setPojoValueFails() {
+        assertInvalid(setEffect(NF.pojoNode("x")));
+    }
 
     @Test
-    void setBooleanValuePasses() { assertValid(setEffect(true)); }
+    void setBooleanValuePasses() {
+        assertValid(setEffect(true));
+    }
 
     @Test
-    void setStringValuePasses() { assertValid(setEffect("x")); }
+    void setStringValuePasses() {
+        assertValid(setEffect("x"));
+    }
 
     @Test
-    void setNumericValuePasses() { assertValid(setEffect(1)); }
+    void setNumericValuePasses() {
+        assertValid(setEffect(1));
+    }
 
     @Test
-    void setDoubleValuePasses() { assertValid(setEffect(0.75)); }
+    void setDoubleValuePasses() {
+        assertValid(setEffect(0.75));
+    }
 
     @Test
-    void setNegativeValuePasses() { assertValid(setEffect(-2.5)); }
+    void setNegativeValuePasses() {
+        assertValid(setEffect(-2.5));
+    }
 
     @Test
     void addMissingStatFails() {
@@ -215,7 +240,7 @@ class ItemCatalogValidationTest {
     void activationTypeMissingFails() {
         assertThrows(AssertionError.class,
                 () -> validateConsumableItem(obj("id", 1, "code", "X", "cooldownSeconds", 10, "effects",
-                        array(obj("operation", "MULTIPLY", "value", 0.5, "stat", "x"))),
+                                array(obj("operation", "MULTIPLY", "value", 0.5, "stat", "x"))),
                         0, new HashSet<>(), new HashSet<>()));
     }
 
@@ -223,9 +248,10 @@ class ItemCatalogValidationTest {
     void sourceIdsNotArrayFails() {
         assertThrows(AssertionError.class,
                 () -> validateProvisionItem(obj("id", "p", "code", "X", "sourceIds", "x", "effects",
-                        array(obj("operation", "MULTIPLY", "value", 0.5, "stat", "x"))),
+                                array(obj("operation", "MULTIPLY", "value", 0.5, "stat", "x"))),
                         0, new HashSet<>(), new HashSet<>(), new HashSet<>()));
     }
+
     @Test
     void gridNotObjectFails() {
         assertThrows(AssertionError.class,
@@ -243,7 +269,7 @@ class ItemCatalogValidationTest {
     // ======== Item validators ========
 
     private static void validateEquipmentItem(final JsonNode item, final int idx,
-            final Set<Integer> ids, final Set<String> codes) {
+                                              final Set<Integer> ids, final Set<String> codes) {
         assertTrue(item.isObject(), "equipment[" + idx + "] must be object");
         final int id = requireNonNegativeInt(item, "id", "equipment[" + idx + "]");
         assertTrue(ids.add(id), "Duplicate equipment id: " + id);
@@ -254,7 +280,7 @@ class ItemCatalogValidationTest {
     }
 
     private static void validateConsumableItem(final JsonNode item, final int idx,
-            final Set<Integer> ids, final Set<String> codes) {
+                                               final Set<Integer> ids, final Set<String> codes) {
         assertTrue(item.isObject(), "consumables[" + idx + "] must be object");
         final int id = requireNonNegativeInt(item, "id", "consumables[" + idx + "]");
         assertTrue(ids.add(id), "Duplicate consumable id: " + id);
@@ -274,7 +300,7 @@ class ItemCatalogValidationTest {
     }
 
     private static void validateProvisionItem(final JsonNode item, final int idx,
-            final Set<String> ids, final Set<String> codes, final Set<Integer> allSourceIds) {
+                                              final Set<String> ids, final Set<String> codes, final Set<Integer> allSourceIds) {
         assertTrue(item.isObject(), "provisions[" + idx + "] must be object");
         final String pid = requireNonBlankText(item, "id", "provisions[" + idx + "]");
         assertTrue(ids.add(pid), "Duplicate provision id: " + pid);
@@ -379,8 +405,7 @@ class ItemCatalogValidationTest {
                     final double max = effect.get("maximumMultiplier").doubleValue();
                     assertTrue(min <= max, context + " minimumMultiplier must not exceed maximumMultiplier");
                 }
-                case "INSTANT_ACTION" ->
-                    requireNonBlankText(effect, "action", context + " INSTANT_ACTION");
+                case "INSTANT_ACTION" -> requireNonBlankText(effect, "action", context + " INSTANT_ACTION");
                 default -> fail(context + " unknown operation: " + operation);
             }
         }
@@ -429,7 +454,9 @@ class ItemCatalogValidationTest {
 
     // ======== Effect test helpers ========
 
-    /** Create a SET effect with the given raw value node (converted to JsonNode via obj's logic). */
+    /**
+     * Create a SET effect with the given raw value node (converted to JsonNode via obj's logic).
+     */
     private static JsonNode setEffect(final Object rawValue) {
         if (rawValue == null) {
             return array(obj("operation", "SET", "stat", "x"));
@@ -437,12 +464,16 @@ class ItemCatalogValidationTest {
         return array(obj("operation", "SET", "value", rawValue, "stat", "x"));
     }
 
-    /** Assert that an effect (as a single-element array) fails validateEffects. */
+    /**
+     * Assert that an effect (as a single-element array) fails validateEffects.
+     */
     private static void assertInvalid(final JsonNode effect) {
         assertThrows(AssertionError.class, () -> validateEffects(effect, "t"));
     }
 
-    /** Assert that an effect (as a single-element array) passes validateEffects. */
+    /**
+     * Assert that an effect (as a single-element array) passes validateEffects.
+     */
     private static void assertValid(final JsonNode effect) {
         assertDoesNotThrow(() -> validateEffects(effect, "t"));
     }

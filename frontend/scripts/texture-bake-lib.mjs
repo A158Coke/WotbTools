@@ -11,7 +11,7 @@
  * - 无 dynamic light / shadow / reflection / gloss / outline / fake bevel。
  * 所有视觉信息来自 BlitzKit model.glb + 内嵌材质/纹理，确定性生成。
  */
-import { deflateSync } from 'node:zlib'
+import {deflateSync} from 'node:zlib'
 
 /**
  * 确定性 bilinear + wrap 纹理采样（RGBA float 数组，行主序）。

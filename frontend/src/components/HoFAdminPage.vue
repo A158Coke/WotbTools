@@ -1,9 +1,9 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { useAuth } from '../composables/useAuth.js'
-import { mapLabel } from '../utils/helpers.js'
-import { apiErrorLabel } from '../utils/display.js'
+import {computed, onMounted, ref} from 'vue'
+import {useI18n} from 'vue-i18n'
+import {useAuth} from '../composables/useAuth.js'
+import {mapLabel} from '../utils/helpers.js'
+import {apiErrorLabel} from '../utils/display.js'
 import * as api from '../utils/api.js'
 
 const { t, te, locale } = useI18n()

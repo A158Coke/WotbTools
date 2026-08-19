@@ -1,5 +1,5 @@
-import { ref, computed, watch } from 'vue'
-import { DEFAULT_VISIBLE, EXTENDED_ONLY_PLAYER_KEYS } from '../utils/helpers.js'
+import {computed, ref, watch} from 'vue'
+import {DEFAULT_VISIBLE, EXTENDED_ONLY_PLAYER_KEYS} from '../utils/helpers.js'
 
 const STORAGE_KEYS = {
   playerVisible: 'wotb-replay-player-visible-cols',

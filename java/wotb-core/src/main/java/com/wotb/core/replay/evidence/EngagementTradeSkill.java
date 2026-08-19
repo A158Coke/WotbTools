@@ -1,6 +1,5 @@
 package com.wotb.core.replay.evidence;
 
-import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.util.PlayerResultFormat;

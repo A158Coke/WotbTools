@@ -1,5 +1,5 @@
-import { ref, onMounted, onUnmounted } from 'vue'
-import { readTheme, saveTheme, applyTheme } from '../utils/theme.js'
+import {onUnmounted, ref} from 'vue'
+import {applyTheme, readTheme, saveTheme} from '../utils/theme.js'
 
 export function useTheme() {
   const theme = ref(readTheme() || 'auto')

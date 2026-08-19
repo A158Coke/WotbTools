@@ -1,29 +1,29 @@
 package com.wotb.web.controller;
 
 import com.wotb.web.admin.exception.AdminBadRequestException;
-import com.wotb.web.hof.exception.HallOfFameStorageException;
 import com.wotb.web.admin.exception.AdminConflictException;
 import com.wotb.web.admin.exception.AdminInternalException;
+import com.wotb.web.hof.exception.HallOfFameStorageException;
 import com.wotb.web.replay.exception.ReplayBusyException;
+import org.apache.catalina.connector.ClientAbortException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.apache.catalina.connector.ClientAbortException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotWritableException;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.MultipartException;
-import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.server.ResponseStatusException;
-import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.time.Instant;
-import java.util.Locale;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -33,7 +33,9 @@ public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
     private static final Pattern ERROR_CODE_PATTERN = Pattern.compile("[A-Z][A-Z0-9_]*");
-    /** WoTB 账号业务拒绝：记录安全错误码用于诊断（不含 token / JWT / 敏感值）。 */
+    /**
+     * WoTB 账号业务拒绝：记录安全错误码用于诊断（不含 token / JWT / 敏感值）。
+     */
     private static final Set<String> WOTB_AUDIT_ERRORS = Set.of(
             "WOTB_CLAIMS_INVALID",
             "PROFILE_REGION_MISMATCH",
@@ -187,7 +189,9 @@ public class GlobalExceptionHandler {
                 || lower.contains("forcibly closed");
     }
 
-    /** 仅允许稳定英文错误码出现在 API 中，避免回显异常细节或本地化文案。 */
+    /**
+     * 仅允许稳定英文错误码出现在 API 中，避免回显异常细节或本地化文案。
+     */
     private static String errorCode(final String value, final String fallback) {
         if (!StringUtils.hasText(value)) {
             return fallback;

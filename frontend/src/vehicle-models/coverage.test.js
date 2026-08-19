@@ -7,15 +7,10 @@
  * - assets/ 下每个已就位目录（含 metadata.json）必须资产完整（hull + turret 按 kind）；
  * - 未来新增 Tier X → 缺失 mapping → CI FAIL（禁止 silent fallback）。
  */
-import { describe, expect, it } from 'vitest'
+import {describe, expect, it} from 'vitest'
 import tankopedia from '../../../common/tankopedia-tier10.json'
-import { MODEL_DEFINITIONS, TANK_ID_TO_MODEL } from './mapping.js'
-import {
-  listModelKeys,
-  readModelDir,
-  validateCoverage,
-  validateModelEntry,
-} from './validate.js'
+import {MODEL_DEFINITIONS, TANK_ID_TO_MODEL} from './mapping.js'
+import {listModelKeys, readModelDir, validateCoverage, validateModelEntry,} from './validate.js'
 
 describe('Tier X coverage（common/tankopedia-tier10.json vs mapping）', () => {
   it('Tankopedia 数据自洽（meta.count === vehicles.length）', () => {

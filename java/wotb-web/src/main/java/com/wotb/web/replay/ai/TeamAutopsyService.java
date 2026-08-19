@@ -3,9 +3,9 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.model.Battle;
 import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.processing.FriendlyEnemyResult.Winner;
-import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.feature.TeamAutopsyStats;
 import com.wotb.core.replay.feature.TeamAutopsyStatsBuilder;
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
@@ -39,8 +39,10 @@ public class TeamAutopsyService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TeamAutopsyService.class);
 
-    /** Team Autopsy 输入为 7 人权威结算；TEAM_AUTOPSY stage budget 上限（秒），
-     *  实际值由编排器按整体剩余预算裁剪（min(30s, 剩余 - margin)）。 */
+    /**
+     * Team Autopsy 输入为 7 人权威结算；TEAM_AUTOPSY stage budget 上限（秒），
+     * 实际值由编排器按整体剩余预算裁剪（min(30s, 剩余 - margin)）。
+     */
     static final int AUTOPSY_CALL_TIMEOUT_SEC = 30;
     static final int AUTOPSY_MAX_OUTPUT_TOKENS = 2048;
 
@@ -58,8 +60,8 @@ public class TeamAutopsyService {
     }
 
     /**
-     * @param winner           通过显式 recorderTeam 计算的胜负（Prompt 与渲染共用同一值）
-     * @param callTimeoutSec   TEAM_AUTOPSY 的 stage budget（已由编排器按整体剩余预算裁剪）
+     * @param winner         通过显式 recorderTeam 计算的胜负（Prompt 与渲染共用同一值）
+     * @param callTimeoutSec TEAM_AUTOPSY 的 stage budget（已由编排器按整体剩余预算裁剪）
      * @return 结构化结果 + 本方 roster；DRAW / 非法队伍 / 非 ZH / 预算不足 / 调用或解析失败 → null
      */
     public TeamAutopsyOutcome analyze(final Battle battle,

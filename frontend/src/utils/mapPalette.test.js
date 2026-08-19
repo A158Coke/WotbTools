@@ -1,10 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import {
-  LUMINANCE_THRESHOLD,
-  darkMapPalette,
-  lightMapPalette,
-  paletteForLuminance
-} from './mapPalette'
+import {describe, expect, it} from 'vitest'
+import {darkMapPalette, lightMapPalette, LUMINANCE_THRESHOLD, paletteForLuminance} from './mapPalette'
 
 describe('mapPalette', () => {
   it('uses the dark palette below the threshold and the light palette at/above it', () => {

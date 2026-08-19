@@ -1,12 +1,14 @@
 package com.wotb.core.processing;
 
-import static org.junit.jupiter.api.Assertions.*;
-
 import com.wotb.core.model.PlayerResult;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * PR #103 review BLOCKER A：internal identity 与 user-facing display label 分离。

@@ -1,8 +1,5 @@
 package com.wotb.core.replay.reconstruction;
 
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.json.JsonMapper;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.ReplayArchiveReader;
@@ -16,6 +13,9 @@ import com.wotb.core.replay.stream.RawReplayPacket;
 import com.wotb.core.replay.stream.ReplayPacketStreamReader;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
 import org.springframework.util.StringUtils;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.util.ArrayList;

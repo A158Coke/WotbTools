@@ -1,5 +1,5 @@
-import { ApiError, apiErrorFromResponse } from './http.js'
-import { useAuth } from '../composables/useAuth.js'
+import {ApiError, apiErrorFromResponse} from './http.js'
+import {useAuth} from '../composables/useAuth.js'
 
 async function requireOk(response) {
   if (!response.ok) throw await apiErrorFromResponse(response)

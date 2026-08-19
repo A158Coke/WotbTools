@@ -2,9 +2,9 @@
 
 // 真实 vue-i18n 回归测试：不使用 mock $t，直接走 message compiler。
 // 覆盖「选中 last-known/已击毁车辆后整个战局回放消失」的 locale 裸 @ bug（zh/en/ru）。
-import { describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
+import {describe, expect, it, vi} from 'vitest'
+import {flushPromises, mount} from '@vue/test-utils'
+import {createI18n} from 'vue-i18n'
 import zh from '../locales/zh.json'
 import en from '../locales/en.json'
 import ru from '../locales/ru.json'

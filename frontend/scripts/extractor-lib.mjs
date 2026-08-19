@@ -190,6 +190,9 @@ export function buildMetadata({
  */
 import polygonClipping from 'polygon-clipping'
 import * as THREE from 'three'
+// —— BlitzKit definitions 解析共享（extractor CLI 与 bake CLI 共用）——
+import {readFileSync} from 'node:fs'
+import protobuf from 'protobufjs'
 
 /**
  * 从 POSITION + INDEX 数组构建三角形列表（3D 顶点引用）。
@@ -1154,10 +1157,6 @@ export function edgesToSvgPath(edges, fit, stroke) {
     .join(' ')
   return { d, stroke, strokeWidth: 5, fill: 'none' }
 }
-// —— BlitzKit definitions 解析共享（extractor CLI 与 bake CLI 共用）——
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import protobuf from 'protobufjs'
 
 /** models.pb schema（BlitzKit 官方 protoc 字段号，勿改——见 protos/models.proto）。 */
 export const BLITZKIT_MODELS_PROTO = readFileSync(new URL('./protos/models.proto', import.meta.url), 'utf8')

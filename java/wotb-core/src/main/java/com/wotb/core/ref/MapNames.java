@@ -1,8 +1,8 @@
 package com.wotb.core.ref;
 
+import org.springframework.util.StringUtils;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
-import org.springframework.util.StringUtils;
 
 import java.io.InputStream;
 import java.util.HashMap;
@@ -32,7 +32,7 @@ public final class MapNames {
             if (in != null) {
                 final JsonNode root = JsonMapper.builder().build().readTree(in);
                 root.properties().forEach(entry ->
-                    map.put(normalizeKey(entry.getKey()), resolveChineseLabel(entry.getKey(), entry.getValue()))
+                        map.put(normalizeKey(entry.getKey()), resolveChineseLabel(entry.getKey(), entry.getValue()))
                 );
             }
         } catch (Exception ignored) {
@@ -72,7 +72,9 @@ public final class MapNames {
         return mapName == null ? "" : mapName.toLowerCase(Locale.ROOT).trim();
     }
 
-    /** 单张地图的三语显示名（zh/en/ru；未收录时三语均回退内部 code）。 */
+    /**
+     * 单张地图的三语显示名（zh/en/ru；未收录时三语均回退内部 code）。
+     */
     public record Localized(String zh, String en, String ru) {
     }
 
@@ -107,7 +109,9 @@ public final class MapNames {
         return hit != null ? hit : new Localized(mapName, mapName, mapName);
     }
 
-    /** 中文名,未匹配则原样返回(与 Python get_map_cn_name 行为一致)。 */
+    /**
+     * 中文名,未匹配则原样返回(与 Python get_map_cn_name 行为一致)。
+     */
     public static String cn(final String mapName) {
         if (!StringUtils.hasText(mapName)) {
             return mapName;

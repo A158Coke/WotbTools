@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
-import { describe, expect, it, vi } from 'vitest'
+import {describe, expect, it, vi} from 'vitest'
+import {useAuth} from './useAuth.js'
 
 const kcLogin = vi.fn(() => Promise.resolve(undefined))
 const kcInit = vi.fn(() => Promise.resolve(true))
@@ -16,8 +17,6 @@ vi.mock('keycloak-js', () => ({
     updateToken = kcUpdateToken
   }
 }))
-
-import { useAuth } from './useAuth.js'
 
 describe('useAuth', () => {
   it('login() redirects to the Keycloak login page with the profile view', async () => {

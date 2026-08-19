@@ -1,12 +1,7 @@
 package com.wotb.core.replay.feature;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import com.wotb.core.replay.reconstruction.Vector3;
-
+import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.DamageEvent;
@@ -16,13 +11,17 @@ import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
-import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.replay.reconstruction.Vector3;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DefaultPlayerBattleFeatureExtractorTest {
 
@@ -33,7 +32,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
     }
 
     private static PositionChangedEvent position(final int seq, final float time, final int eid,
-                                                  final float x, final float z) {
+                                                 final float x, final float z) {
         return new PositionChangedEvent(seq, ts(time), 10, DecodeConfidence.EXACT, eid, 0, 0,
                 x, 0, z, 0, 0, 0, 0, 0, 0, (byte) 0);
     }
@@ -277,13 +276,13 @@ class DefaultPlayerBattleFeatureExtractorTest {
     }
 
     private static PositionChangedEvent position(final int seq, final float raw, final Float battle,
-                                                  final int eid, final float x, final float z) {
+                                                 final int eid, final float x, final float z) {
         return new PositionChangedEvent(seq, ts(raw, battle), 10, DecodeConfidence.EXACT, eid, 0, 0,
                 x, 0, z, 0, 0, 0, 0, 0, 0, (byte) 0);
     }
 
     private static DamageEvent damage(final int seq, final float raw, final Float battle,
-                                       final int att, final int vic, final int dmg) {
+                                      final int att, final int vic, final int dmg) {
         return new DamageEvent(seq, ts(raw, battle), 8, DecodeConfidence.EXACT, att, vic, null, null, dmg, false);
     }
 

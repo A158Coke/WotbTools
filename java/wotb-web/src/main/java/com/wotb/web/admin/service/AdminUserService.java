@@ -8,9 +8,9 @@ import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.admin.exception.AdminConflictException;
 import com.wotb.web.admin.exception.AdminInternalException;
 import com.wotb.web.boost.service.BoosterService;
-import com.wotb.web.util.ErrorCode;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
+import com.wotb.web.util.ErrorCode;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
@@ -82,7 +82,9 @@ public class AdminUserService {
         return mapper.toDetailDto(keycloakUserId, profileDto, keycloakDto, warnings);
     }
 
-    /** 删除用户：先 flush 本地删除，再删 Keycloak；外部调用失败会回滚本地事务。 */
+    /**
+     * 删除用户：先 flush 本地删除，再删 Keycloak；外部调用失败会回滚本地事务。
+     */
     @Transactional
     public AdminDeleteUserResponse deleteUser(final String targetKeycloakUserId,
                                               final boolean confirm,

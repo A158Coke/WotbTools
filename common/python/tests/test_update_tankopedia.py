@@ -232,7 +232,7 @@ class ParseTanksTest(unittest.TestCase):
         # T-34 形状：车体 496 + 炮塔 124 = 620；76mm：AP 140/85 + HEAT 120/115
         pb = root(tank_data(
             1, 5, 1, 496, turret(124,
-                gun(100, [shell("ap", 140, 85), shell("hc_premium", 120, 115)])),
+                                 gun(100, [shell("ap", 140, 85), shell("hc_premium", 120, 115)])),
             name="T-34", nation="ussr", speed_fwd=56, speed_bwd=20,
             weight=10000, engine_power=400, track_traverse=46.0,
         ))
@@ -263,8 +263,8 @@ class ParseTanksTest(unittest.TestCase):
         pb = root(tank_data(
             9489, 10, 2, 2070,
             turret(680,
-                gun(269329, [shell("ap", 460, 256), shell("ap_cr_premium", 390, 311), shell("he", 600, 65)]),
-                gun(269073, [shell("ap", 645, 254), shell("hc_premium", 570, 334), shell("he", 990, 85)])),
+                   gun(269329, [shell("ap", 460, 256), shell("ap_cr_premium", 390, 311), shell("he", 600, 65)]),
+                   gun(269073, [shell("ap", 645, 254), shell("hc_premium", 570, 334), shell("he", 990, 85)])),
             name="E 100", nation="germany",
         ))
         vehicles = ut.parse_tanks(pb)
@@ -286,11 +286,11 @@ class ParseTanksTest(unittest.TestCase):
         pb = root(tank_data(
             1585, 8, 1, 1300,
             turret(360,
-                gun(817, [shell("ap", 200, 100)], tier=6),
-                gun(1073, [shell("ap", 200, 100)], tier=6),
-                gun(1329, [shell("ap", 280, 100)], tier=7),
-                gun(2353, [shell("ap", 400, 100)], tier=8),
-                gun(2609, [shell("ap", 280, 100)], tier=8)),
+                   gun(817, [shell("ap", 200, 100)], tier=6),
+                   gun(1073, [shell("ap", 200, 100)], tier=6),
+                   gun(1329, [shell("ap", 280, 100)], tier=7),
+                   gun(2353, [shell("ap", 400, 100)], tier=8),
+                   gun(2609, [shell("ap", 280, 100)], tier=8)),
             name="T-34-2", nation="china",
         ))
         v = ut.parse_tanks(pb)["1585"]
@@ -303,7 +303,7 @@ class ParseTanksTest(unittest.TestCase):
         # SPHT 形状：10 级单炮 -> 正常输出 alphaDamage
         pb = root(tank_data(
             29985, 10, 2, 3400, turret(1000,
-                gun(272929, [shell("ap", 400, 252)])),
+                                       gun(272929, [shell("ap", 400, 252)])),
             name="SPHT", nation="usa",
         ))
         v = ut.parse_tanks(pb)["29985"]
@@ -313,7 +313,7 @@ class ParseTanksTest(unittest.TestCase):
     def test_clip_flag_on_autoloader(self):
         pb = root(tank_data(
             3649, 10, 1, 1700, turret(500,
-                gun(25409, [shell("ap", 250, 238)], clip=True)),
+                                      gun(25409, [shell("ap", 250, 238)], clip=True)),
             name="B-C 25 t", nation="france",
         ))
         v = ut.parse_tanks(pb)["3649"]
@@ -322,10 +322,10 @@ class ParseTanksTest(unittest.TestCase):
     def test_missing_gun_yields_empty_guns_but_hp(self):
         turret_no_gun = f_varint(2, 600) + f_varint(7, 10)
         pb = root(f_bytes(1,
-            f_varint(1, 9) + f_bytes(2,
-                f_varint(16, 10) + f_varint(17, 2) + f_varint(10, 2000) +
-                f_bytes(11, b"germany") + f_bytes(12, i18n([("en", "E 100")])) +
-                f_bytes(20, turret_no_gun))))
+                          f_varint(1, 9) + f_bytes(2,
+                                                   f_varint(16, 10) + f_varint(17, 2) + f_varint(10, 2000) +
+                                                   f_bytes(11, b"germany") + f_bytes(12, i18n([("en", "E 100")])) +
+                                                   f_bytes(20, turret_no_gun))))
         v = ut.parse_tanks(pb)["9"]
         self.assertEqual(v["hp"], 2600)
         self.assertEqual(v["guns"], [])
@@ -336,7 +336,7 @@ class EquipmentTest(unittest.TestCase):
         # VK 72.01 形状：特殊预设带 俯角/履带齿 专属装备（122/123）
         tanks_pb = root(tank_data(
             58641, 10, 2, 2100, turret(600,
-                gun(100, [shell("ap", 460, 250)])),
+                                       gun(100, [shell("ap", 460, 250)])),
             name="VK 72.01", nation="germany",
             equipment_preset="DrumGunPitchLimitsPreset",
         ))
@@ -379,7 +379,7 @@ class EquipmentTest(unittest.TestCase):
     def test_unknown_preset_yields_empty_equipment(self):
         tanks_pb = root(tank_data(
             9489, 10, 2, 2070, turret(680,
-                gun(269329, [shell("ap", 460, 256)])),
+                                      gun(269329, [shell("ap", 460, 256)])),
             name="E 100", nation="germany", equipment_preset="no-such-preset",
         ))
         vehicles = ut.apply_equipment(ut.parse_tanks(tanks_pb), {}, {})
@@ -527,7 +527,8 @@ class MainPathTest(unittest.TestCase):
     def test_existing_output_different_paths_and_knowledge_preserved(self):
         tanks_pb = root(tank_data(
             1, 10, 2, 2070, turret(580,
-                gun(500, [shell("ap", 420, 258), shell("hc_premium", 360, 340), shell("he", 500, 68)])),
+                                   gun(500,
+                                       [shell("ap", 420, 258), shell("hc_premium", 360, 340), shell("he", 500, 68)])),
             name="IS-4", nation="ussr",
         ))
         provisions_pb = item_root(item_def(0, "Field Rations", include=[filter_nations(["other"])]))
@@ -607,18 +608,18 @@ class MainPathTest(unittest.TestCase):
         # 否则 tier 5 T-34 会触发 TANKOPEDIA_TIER_OUT_OF_RANGE 导致 workflow 失败。
         tanks_pb = root(
             tank_data(1, 5, 1, 496, turret(124,
-                gun(100, [shell("ap", 140, 85)])),
-                name="T-34", nation="ussr"),
+                                           gun(100, [shell("ap", 140, 85)])),
+                      name="T-34", nation="ussr"),
             tank_data(1585, 8, 1, 1300, turret(360,
-                gun(817, [shell("ap", 200, 100)], tier=6),
-                gun(1073, [shell("ap", 200, 100)], tier=6),
-                gun(1329, [shell("ap", 280, 100)], tier=7),
-                gun(2353, [shell("ap", 400, 100)], tier=8),
-                gun(2609, [shell("ap", 280, 100)], tier=8)),
-                name="T-34-2", nation="china"),
+                                               gun(817, [shell("ap", 200, 100)], tier=6),
+                                               gun(1073, [shell("ap", 200, 100)], tier=6),
+                                               gun(1329, [shell("ap", 280, 100)], tier=7),
+                                               gun(2353, [shell("ap", 400, 100)], tier=8),
+                                               gun(2609, [shell("ap", 280, 100)], tier=8)),
+                      name="T-34-2", nation="china"),
             tank_data(29985, 10, 2, 3400, turret(1000,
-                gun(272929, [shell("ap", 400, 252)])),
-                name="SPHT", nation="usa"),
+                                                 gun(272929, [shell("ap", 400, 252)])),
+                      name="SPHT", nation="usa"),
         )
         provisions_pb = item_root(item_def(0, "Field Rations", include=[filter_nations(["other"])]))
         consumables_pb = item_root(item_def(1, "Automatic Fire Extinguisher"))

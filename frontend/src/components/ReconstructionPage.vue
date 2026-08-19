@@ -1,8 +1,8 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { useAuth } from '../composables/useAuth.js'
-import { localizeAiError } from '../utils/reconstruction-analysis.js'
+import {computed, nextTick, onBeforeUnmount, onMounted, ref} from 'vue'
+import {useI18n} from 'vue-i18n'
+import {useAuth} from '../composables/useAuth.js'
+import {localizeAiError} from '../utils/reconstruction-analysis.js'
 import AnalysisResultPanel from './AnalysisResultPanel.vue'
 import MapOverview from './MapOverview.vue'
 import ReplayInputPanel from './ReplayInputPanel.vue'

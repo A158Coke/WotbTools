@@ -17,11 +17,11 @@ import com.wotb.web.replay.MapOverviewQueryService;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
-import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.ai.AllowedLanguage;
-import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.ai.AnalyzeResult;
 import com.wotb.web.replay.ai.TeamAnalyzeResult;
+import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
+import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
@@ -559,7 +559,9 @@ class ReconstructionControllerTeamAnalysisTest {
         return emitter;
     }
 
-    /** 断言 worker 通过 error 事件传达稳定错误码（而非 HTTP 状态码）。 */
+    /**
+     * 断言 worker 通过 error 事件传达稳定错误码（而非 HTTP 状态码）。
+     */
     private String analyzeConveyingError(final MockMultipartFile file) throws InterruptedException {
         final String body = drainUntilMarker(analyzeDirect(file), "event:error");
         assertTrue(body.contains("event:error"), body);
@@ -575,7 +577,9 @@ class ReconstructionControllerTeamAnalysisTest {
         return body;
     }
 
-    /** 轮询事件队列直到包含 marker（或超时），返回已收集的事件文本。 */
+    /**
+     * 轮询事件队列直到包含 marker（或超时），返回已收集的事件文本。
+     */
     private String drainUntilMarker(final ReconstructionControllerTestEmitter emitter,
                                     final String marker) throws InterruptedException {
         final StringBuilder body = new StringBuilder();

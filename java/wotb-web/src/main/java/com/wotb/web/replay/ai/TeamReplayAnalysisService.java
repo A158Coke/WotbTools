@@ -1,11 +1,5 @@
 package com.wotb.web.replay.ai;
 
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
 import com.wotb.core.model.Battle;
 import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.core.processing.FriendlyEnemyResult;
@@ -16,19 +10,23 @@ import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
 import com.wotb.core.replay.timeline.TimelinePerspective;
-
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
+import com.wotb.web.replay.ai.gateway.AiChatRequest;
+import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
-import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.exception.AiTimelineUnusableException;
-import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.LongSupplier;
 
 /**
@@ -57,7 +55,9 @@ public class TeamReplayAnalysisService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TeamReplayAnalysisService.class);
 
-    /** 团队复盘整体安全余量（秒）：后续调用保留，避免撞 endpoint deadline。 */
+    /**
+     * 团队复盘整体安全余量（秒）：后续调用保留，避免撞 endpoint deadline。
+     */
     static final int SAFETY_MARGIN_SEC = 10;
 
     private final AiChatGateway gateway;
@@ -226,12 +226,12 @@ public class TeamReplayAnalysisService {
         }
         final String preBattleSection = firstContext == null ? null
                 : PreBattleSectionRenderer.render(
-                        priorsByUnitId.get(firstContext.analysisUnitId()),
-                        firstContext.perspectiveTeam(),
-                        // display label：无可靠 clan 时为空串 → renderer 只显示「我方画像」
-                        TeamRosterResolver.resolveDisplayLabel(firstContext.battle(), firstContext.perspectiveTeam()),
-                        language,
-                        firstContext.battle() == null ? null : firstContext.battle().mapName);
+                priorsByUnitId.get(firstContext.analysisUnitId()),
+                firstContext.perspectiveTeam(),
+                // display label：无可靠 clan 时为空串 → renderer 只显示「我方画像」
+                TeamRosterResolver.resolveDisplayLabel(firstContext.battle(), firstContext.perspectiveTeam()),
+                language,
+                firstContext.battle() == null ? null : firstContext.battle().mapName);
         return new TeamAnalyzeResult(firstAnalysis, preBattleSection);
     }
 
@@ -386,7 +386,9 @@ public class TeamReplayAnalysisService {
         }
     }
 
-    /** OBSERVED_DAMAGE_IS_PARTIAL：上下文或特征集任一命中即抑制观测伤害数字（与 Team/Player 一致口径）。 */
+    /**
+     * OBSERVED_DAMAGE_IS_PARTIAL：上下文或特征集任一命中即抑制观测伤害数字（与 Team/Player 一致口径）。
+     */
     private static boolean hasObservedDamagePartial(final SingleTeamBattleAnalysisContext context) {
         if (context.limitations() != null && context.limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL")) {
             return true;

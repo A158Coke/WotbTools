@@ -19,7 +19,6 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -109,7 +108,9 @@ class HundredBattleSubmissionIntegrationTest {
         return repository.findByUserKeycloakIdAndStatusInOrderBySubmittedAtDesc("kc-user", List.of("CURRENT")).size();
     }
 
-    /** 场景 A：existing CURRENT(4000) + PENDING(4200) → approve(4200) 成功 → 恰好一个 CURRENT、旧行 SUPERSEDED。 */
+    /**
+     * 场景 A：existing CURRENT(4000) + PENDING(4200) → approve(4200) 成功 → 恰好一个 CURRENT、旧行 SUPERSEDED。
+     */
     @Test
     void approveReplacesCurrentWithSingleCurrentRow() throws Exception {
         final HundredBattleSubmission current = insertRow("CURRENT", 4000, 150);
@@ -201,7 +202,9 @@ class HundredBattleSubmissionIntegrationTest {
                 "无引用后物理文件应被清理");
     }
 
-    /** 给 PENDING 附 exactly 5 行 evidence + 物理文件（通过 APPROVE 前置校验用）。 */
+    /**
+     * 给 PENDING 附 exactly 5 行 evidence + 物理文件（通过 APPROVE 前置校验用）。
+     */
     private void attachCompleteEvidence(final long submissionId) throws Exception {
         final List<HundredReplayEvidenceService.PendingReplay> replays = new ArrayList<>();
         for (int i = 1; i <= 5; i++) {

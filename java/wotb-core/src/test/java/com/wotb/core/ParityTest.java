@@ -1,10 +1,10 @@
 package com.wotb.core;
 
+import com.wotb.core.export.ExcelExporter;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.Collected;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
-import com.wotb.core.export.ExcelExporter;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.parse.Replays;
 import com.wotb.core.ref.Tankopedia;
@@ -30,13 +30,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class ParityTest {
 
-    /** 定位提交版夹具目录（surefire 运行时 user.dir = wotb-core 模块目录）。 */
+    /**
+     * 定位提交版夹具目录（surefire 运行时 user.dir = wotb-core 模块目录）。
+     */
     private static Path fixturesDir() {
         return Path.of(System.getProperty("user.dir"), "..", "..", "common", "fixtures", "replays")
                 .normalize();
     }
 
-    /** 本地可选扩展样本目录 common/data（gitignored，无则跳过本地扩展样本）。 */
+    /**
+     * 本地可选扩展样本目录 common/data（gitignored，无则跳过本地扩展样本）。
+     */
     private static Path localDataDir() {
         return Path.of(System.getProperty("user.dir"), "..", "..", "common", "data").normalize();
     }

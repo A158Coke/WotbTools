@@ -5,10 +5,10 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.web.hof.dto.ReplayFileMeta;
 import com.wotb.web.hof.entity.HallOfFameRecord;
+import com.wotb.web.hof.policy.HallOfFameBattleTypePolicy;
 import com.wotb.web.hof.repository.HallOfFameRecordRepository;
 import com.wotb.web.hof.service.HallOfFameRecordMapper;
 import com.wotb.web.hof.service.HallOfFameService;
-import com.wotb.web.hof.policy.HallOfFameBattleTypePolicy;
 import com.wotb.web.hof.service.RecordOutcome;
 import com.wotb.web.hof.storage.HallOfFameReplayStorage;
 import org.junit.jupiter.api.Test;
@@ -101,7 +101,9 @@ class HallOfFameServiceTest {
         verify(repo, never()).findByArenaIdAndAccountId(any(), anyLong());
     }
 
-    /** eligibility 对不支持模式（训练房/联赛/Mad Games/未知）一律 SKIPPED_UNSUPPORTED_BATTLE_TYPE。 */
+    /**
+     * eligibility 对不支持模式（训练房/联赛/Mad Games/未知）一律 SKIPPED_UNSUPPORTED_BATTLE_TYPE。
+     */
     @Test
     void eligibilityRejectsUnsupportedBattleTypes() {
         final HallOfFameRecordRepository repo = mock(HallOfFameRecordRepository.class);
@@ -219,7 +221,9 @@ class HallOfFameServiceTest {
         verify(repo, never()).saveAndFlush(any());
     }
 
-    /** recordRecorder 最终 DB gate 与 eligibility 同一 policy：随机战(1) 正常入库。 */
+    /**
+     * recordRecorder 最终 DB gate 与 eligibility 同一 policy：随机战(1) 正常入库。
+     */
     @Test
     void recordRecorderAcceptsRandomBattleType() {
         final HallOfFameRecordRepository repo = mock(HallOfFameRecordRepository.class);
@@ -230,7 +234,9 @@ class HallOfFameServiceTest {
                 service.recordRecorder(battle("arenaA", "Recorder1", 111L), tankopedia, meta(SHA_1)));
     }
 
-    /** recordRecorder 最终 DB gate 不得再次拒绝 Rating(7)：与 eligibility 共用同一 policy。 */
+    /**
+     * recordRecorder 最终 DB gate 不得再次拒绝 Rating(7)：与 eligibility 共用同一 policy。
+     */
     @Test
     void recordRecorderFinalGateAllowsRatingBattleType() {
         final HallOfFameRecordRepository repo = mock(HallOfFameRecordRepository.class);

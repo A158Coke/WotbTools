@@ -1,7 +1,7 @@
 <script setup>
-import { ref, computed } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { RATING_KEYS, ratingTier, medal, fmtDuration } from '../utils/helpers.js'
+import {computed, ref} from 'vue'
+import {useI18n} from 'vue-i18n'
+import {fmtDuration, medal, RATING_KEYS, ratingTier} from '../utils/helpers.js'
 import poopUrl from '../assets/poop.png'
 
 const { t } = useI18n()

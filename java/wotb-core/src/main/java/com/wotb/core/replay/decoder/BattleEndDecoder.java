@@ -5,8 +5,6 @@ import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.stream.RawReplayPacket;
 
-import java.util.List;
-
 /**
  * Type 14 (Battle End) 解码器。
  * <p>

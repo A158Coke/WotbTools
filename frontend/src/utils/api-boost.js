@@ -1,7 +1,6 @@
-
 // ========== Boost / ==========
-import { useAuth } from '../composables/useAuth.js'
-import { ApiError, apiErrorFromResponse } from './http.js'
+import {useAuth} from '../composables/useAuth.js'
+import {ApiError, apiErrorFromResponse} from './http.js'
 
 async function boostHeaders() {
   const { token, ensureToken } = useAuth()

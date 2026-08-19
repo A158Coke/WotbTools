@@ -1,15 +1,5 @@
 package com.wotb.web.replay.ai;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Stream;
-
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
@@ -37,6 +27,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 语言指令结构契约：EN/RU 最终 system prompt 不得包含互斥的中文输出强制句（简体中文、
@@ -142,10 +142,10 @@ class AllowedLanguagePromptTest {
     void playerFallbackUsesLocalizedSystemPrompts() {
         final Battle battle = battle();
         assertTrue(PlayerReplayPromptBuilder.prepareFallback(
-                battle, (ReplayReconstruction) null, AllowedLanguage.EN)
+                        battle, (ReplayReconstruction) null, AllowedLanguage.EN)
                 .systemPrompt().contains("Write a concise, professional"));
         assertTrue(PlayerReplayPromptBuilder.prepareFallback(
-                battle, (ReplayReconstruction) null, AllowedLanguage.RU)
+                        battle, (ReplayReconstruction) null, AllowedLanguage.RU)
                 .systemPrompt().contains("на русском языке"));
         assertEquals(PlayerReplayPromptBuilder.prepareFallback(
                         battle, (ReplayReconstruction) null).systemPrompt(),
@@ -247,7 +247,9 @@ class AllowedLanguagePromptTest {
         return new BatchAnalyzer().analyze(List.of(result)).groups().getFirst();
     }
 
-    /** 有效团队 reconstruction（IDENTIFIED battle-relative 时钟 + 双方实体位置/血量）：通过 Team hard gate。 */
+    /**
+     * 有效团队 reconstruction（IDENTIFIED battle-relative 时钟 + 双方实体位置/血量）：通过 Team hard gate。
+     */
     private static ReplayReconstruction teamRecon() {
         final ReplayMetadata meta = new ReplayMetadata(
                 "arena", "team_map", "1", "1", 2, "rec1", "", 300.0, 0L);

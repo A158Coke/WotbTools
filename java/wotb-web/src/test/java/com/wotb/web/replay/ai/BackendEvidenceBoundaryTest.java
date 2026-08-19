@@ -1,6 +1,5 @@
 package com.wotb.web.replay.ai;
 
-import com.wotb.web.replay.ai.eval.AiEvalFixtures;
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.replay.evidence.AiEvidence;
 import com.wotb.core.replay.evidence.EvidenceSkillContext;
@@ -10,6 +9,7 @@ import com.wotb.core.replay.evidence.EvidenceType;
 import com.wotb.core.replay.evidence.TeamSeparationEvidenceSkill;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.map.MapTacticalSemantics;
+import com.wotb.web.replay.ai.eval.AiEvalFixtures;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

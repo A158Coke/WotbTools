@@ -6,8 +6,8 @@ import com.wotb.core.processing.BattleCategory;
 import com.wotb.core.processing.BattleCategoryUtils;
 import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
-import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.evidence.TeamSeparationEvidenceSkill;
@@ -36,8 +36,8 @@ import com.wotb.core.replay.reconstruction.ObservationState;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.reconstruction.VehicleState;
 import com.wotb.core.replay.reconstruction.Vector3;
+import com.wotb.core.replay.reconstruction.VehicleState;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
 import com.wotb.core.replay.stream.ReplayStreamHeader;
 
@@ -85,7 +85,9 @@ public final class AiEvalFixtures {
         };
     }
 
-    /** player 路径 fixture：battle + recon + features + recorder（供 AiEvalPromptProbe 走真实证据链）。 */
+    /**
+     * player 路径 fixture：battle + recon + features + recorder（供 AiEvalPromptProbe 走真实证据链）。
+     */
     public record PlayerFixture(
             Battle battle,
             ReplayReconstruction recon,
@@ -109,7 +111,9 @@ public final class AiEvalFixtures {
         };
     }
 
-    /** 随机战开局分散（中性 signal）：录像者开局散开、未接火未阵亡 → OPENING_SPREAD。 */
+    /**
+     * 随机战开局分散（中性 signal）：录像者开局散开、未接火未阵亡 → OPENING_SPREAD。
+     */
     private static PlayerFixture playerOpeningMapControl() {
         return playerFixtureOf(
                 0, true,
@@ -121,7 +125,9 @@ public final class AiEvalFixtures {
                 new float[]{200f, 200f, 200f});
     }
 
-    /** 随机战静止分离：录像者静止 + 敌情压力（中性分离窗口；是否拖延由 LLM 判断）。 */
+    /**
+     * 随机战静止分离：录像者静止 + 敌情压力（中性分离窗口；是否拖延由 LLM 判断）。
+     */
     private static PlayerFixture playerDelayHold() {
         return playerFixtureOf(
                 200, true,
@@ -133,7 +139,9 @@ public final class AiEvalFixtures {
                 new float[]{200f, 200f});
     }
 
-    /** 随机战移动分离 + 承伤高（中性分离窗口；是否脱节由 LLM 判断）。 */
+    /**
+     * 随机战移动分离 + 承伤高（中性分离窗口；是否脱节由 LLM 判断）。
+     */
     private static PlayerFixture playerDetachPush() {
         return playerFixtureOf(
                 1800, true,
@@ -145,7 +153,9 @@ public final class AiEvalFixtures {
                 new float[]{200f, 240f});
     }
 
-    /** 随机战 false-positive：窗口内移动但距离无增长 + 承伤 → 不应判脱节。 */
+    /**
+     * 随机战 false-positive：窗口内移动但距离无增长 + 承伤 → 不应判脱节。
+     */
     private static PlayerFixture playerNoGrowth() {
         return playerFixtureOf(
                 1800, true,
@@ -157,7 +167,9 @@ public final class AiEvalFixtures {
                 new float[]{200f, 200f});
     }
 
-    /** 随机战 false-positive：窗口内移动覆盖不足（未知）≠ MOVING → 不应判任何候选。 */
+    /**
+     * 随机战 false-positive：窗口内移动覆盖不足（未知）≠ MOVING → 不应判任何候选。
+     */
     private static PlayerFixture playerUnknownStationary() {
         return playerFixtureOf(
                 1800, true,
@@ -169,7 +181,9 @@ public final class AiEvalFixtures {
                 new float[]{200f, 200f});
     }
 
-    /** éšæœºæˆ˜ false-positiveï¼šå¼€å±€çª—å£å†…æœ‰äº¤ç«ï¼ˆçª—å£å†…æ‰¿ä¼¤>0ï¼‰â†’ ä¸å¾—åˆ¤å¼€å±´å›¾æŽ§ã€‚ */
+    /**
+     * éšæœºæˆ˜ false-positiveï¼šå¼€å±€çª—å£å†…æœ‰äº¤ç«ï¼ˆçª—å£å†…æ‰¿ä¼¤>0ï¼‰â†’ ä¸å¾—åˆ¤å¼€å±´å›¾æŽ§ã€‚
+     */
     private static PlayerFixture playerOpeningContact() {
         return playerFixtureOf(
                 200, true,
@@ -181,7 +195,9 @@ public final class AiEvalFixtures {
                 new float[]{200f, 200f, 200f});
     }
 
-    /** éšæœºæˆ˜ false-positiveï¼šçª—å£å†…ç§»åŠ¨è¦†ç›–æžä½Žï¼ˆ1s/15sï¼‰â‰  MOVINGï¼Œå³³ä½¿çª—å£å†…æ‰¿ä¼¤ 1800 ä¹Ÿä¸åˆ¤è„±èŠ‚ã€‚ */
+    /**
+     * éšæœºæˆ˜ false-positiveï¼šçª—å£å†…ç§»åŠ¨è¦†ç›–æžä½Žï¼ˆ1s/15sï¼‰â‰  MOVINGï¼Œå³³ä½¿çª—å£å†…æ‰¿ä¼¤ 1800 ä¹Ÿä¸åˆ¤è„±èŠ‚ã€‚
+     */
     private static PlayerFixture playerThinCoverage() {
         return playerFixtureOf(
                 1800, true,
@@ -193,7 +209,9 @@ public final class AiEvalFixtures {
                 new float[]{200f, 200f, 240f});
     }
 
-    /** éšæœºæˆ˜ false-positiveï¼šå½•åƒè€…éƒ¨åˆ†é‡å äº¤ç«ï¼ˆ40-65sï¼‰+ çª—å£å†…æ‰¿ä¼¤ 1000 + æ‹‰å¤§è·ç¦» â†’ ä¸å¾—ç¡¬ç”Ÿæˆè„±èŠ‚/æ‹–å»¶ã€‚ */
+    /**
+     * éšæœºæˆ˜ false-positiveï¼šå½•åƒè€…éƒ¨åˆ†é‡å äº¤ç«ï¼ˆ40-65sï¼‰+ çª—å£å†…æ‰¿ä¼¤ 1000 + æ‹‰å¤§è·ç¦» â†’ ä¸å¾—ç¡¬ç”Ÿæˆè„±èŠ‚/æ‹–å»¶ã€‚
+     */
     private static PlayerFixture playerPartialOverlapStrongSignals() {
         return playerFixtureOf(
                 0, true,
@@ -205,7 +223,9 @@ public final class AiEvalFixtures {
                 new float[]{200f, 200f, 240f});
     }
 
-    /** éšæœºæˆ˜ false-positiveï¼šOBSERVED_DAMAGE_IS_PARTIAL + å¼€å±´æœªè§‚å¯Ÿåˆ°äº¤ç« â†’ ä¸å¾—ç”¨â€œæ²¡æœ‰è§‚å¯Ÿåˆ°â€è¯æ˜ŽæœªæŽ¥ç«ã€‚ */
+    /**
+     * éšæœºæˆ˜ false-positiveï¼šOBSERVED_DAMAGE_IS_PARTIAL + å¼€å±´æœªè§‚å¯Ÿåˆ°äº¤ç« â†’ ä¸å¾—ç”¨â€œæ²¡æœ‰è§‚å¯Ÿåˆ°â€è¯æ˜ŽæœªæŽ¥ç«ã€‚
+     */
     private static PlayerFixture playerDamagePartialOpening() {
         return playerFixtureOf(
                 0, true,
@@ -674,12 +694,12 @@ public final class AiEvalFixtures {
         final List<TeamFormationPhase> phases = List.of(
                 new TeamFormationPhase(60, 75, new CanonicalMapPosition(250, 250), 80f, 4,
                         DecodeConfidence.EXACT, List.of(
-                                cluster(60, 75, 250, 250, List.of(key(0), key(1), key(2))),
-                                cluster(60, 75, 400, 400, List.of(key(6))))),
+                        cluster(60, 75, 250, 250, List.of(key(0), key(1), key(2))),
+                        cluster(60, 75, 400, 400, List.of(key(6))))),
                 new TeamFormationPhase(75, 90, new CanonicalMapPosition(300, 250), 80f, 4,
                         DecodeConfidence.EXACT, List.of(
-                                cluster(75, 90, 300, 250, List.of(key(0), key(1), key(2))),
-                                cluster(75, 90, 400, 400, List.of(key(6))))));
+                        cluster(75, 90, 300, 250, List.of(key(0), key(1), key(2))),
+                        cluster(75, 90, 400, 400, List.of(key(6))))));
         final TeamAggregateResult aggregate = new TeamAggregateResult(
                 7, 4000, 2000, 0, 0, 0, 7, 0, null, null, null, true);
         return context("cw-partial-observation-01", 3, 1, new double[7],
@@ -807,8 +827,8 @@ public final class AiEvalFixtures {
         return new TeamFormationPhase(
                 start, end, new CanonicalMapPosition(mainX, mainZ), 80f, 7,
                 DecodeConfidence.EXACT, List.of(
-                        cluster(start, end, mainX, mainZ, main),
-                        cluster(start, end, smallX, smallZ, small)));
+                cluster(start, end, mainX, mainZ, main),
+                cluster(start, end, smallX, smallZ, small)));
     }
 
     // ===== 构建辅助 =====
@@ -1022,7 +1042,9 @@ public final class AiEvalFixtures {
                 0f, 0f, DecodeConfidence.EXACT);
     }
 
-    /** 15s 窗口序列：单走簇质心（可选渐变）+ 主力簇质心（可选渐变），首尾拼接成连续单走时段。 */
+    /**
+     * 15s 窗口序列：单走簇质心（可选渐变）+ 主力簇质心（可选渐变），首尾拼接成连续单走时段。
+     */
     private static List<TeamFormationPhase> soloPhases(
             final float start, final float end,
             final float soloX1, final float soloZ1, final float soloX2, final float soloZ2,
@@ -1041,8 +1063,8 @@ public final class AiEvalFixtures {
             phases.add(new TeamFormationPhase(
                     t, windowEnd, new CanonicalMapPosition(mainX, mainZ), 90f, 7,
                     DecodeConfidence.EXACT, List.of(
-                            cluster(t, windowEnd, soloX, soloZ, List.of(soloIdentity)),
-                            cluster(t, windowEnd, mainX, mainZ, mainIdentities))));
+                    cluster(t, windowEnd, soloX, soloZ, List.of(soloIdentity)),
+                    cluster(t, windowEnd, mainX, mainZ, mainIdentities))));
             t = windowEnd;
             guard++;
         }

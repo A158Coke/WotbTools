@@ -1,8 +1,8 @@
 package com.wotb.core.ref;
 
+import com.wotb.core.model.TankInfo;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
-import com.wotb.core.model.TankInfo;
 
 import java.io.InputStream;
 import java.util.HashMap;
@@ -10,7 +10,9 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-/** 车辆库 (tank_id -> 车辆信息), 来自 blitzkit（按等级拆分的 4 个 tier 文件）。 */
+/**
+ * 车辆库 (tank_id -> 车辆信息), 来自 blitzkit（按等级拆分的 4 个 tier 文件）。
+ */
 public final class Tankopedia {
 
     private static final String[] TIER_RESOURCES = {
@@ -26,7 +28,9 @@ public final class Tankopedia {
         this.vehicles = vehicles;
     }
 
-    /** 从 classpath 的 4 个等级文件加载（tankopedia-tier{7,8,9,10}.json）。 */
+    /**
+     * 从 classpath 的 4 个等级文件加载（tankopedia-tier{7,8,9,10}.json）。
+     */
     public static Tankopedia load() {
         final Map<Long, JsonNode> map = new HashMap<>();
         for (final String resource : TIER_RESOURCES) {

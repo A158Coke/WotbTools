@@ -1,22 +1,21 @@
 package com.wotb.core.replay.feature;
 
-import com.wotb.core.model.Battle;
 import com.wotb.core.processing.RecorderEntityMapping;
-import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.reconstruction.VehicleState;
-import com.wotb.core.replay.reconstruction.BattleLifecycle;
+import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
 
-import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 18.5: PlayerBattleFeatureExtractor 测试。

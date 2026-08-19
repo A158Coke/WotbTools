@@ -1,10 +1,10 @@
 <script setup>
-import { ref, computed, nextTick, onBeforeUnmount, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { useAuth } from '../composables/useAuth.js'
-import { apiCodeLabel, apiErrorLabel, enumLabel } from '../utils/display.js'
-import { normalizeSpringPage } from '../utils/page.js'
-import { createLatestDebounce } from '../utils/latest-debounce.js'
+import {computed, nextTick, onBeforeUnmount, onMounted, ref} from 'vue'
+import {useI18n} from 'vue-i18n'
+import {useAuth} from '../composables/useAuth.js'
+import {apiCodeLabel, apiErrorLabel, enumLabel} from '../utils/display.js'
+import {normalizeSpringPage} from '../utils/page.js'
+import {createLatestDebounce} from '../utils/latest-debounce.js'
 import {
   acceptMyBoosterAssignment,
   adminBoostAssign,
@@ -22,7 +22,6 @@ import {
   adminBoostUnassign,
   adminBoostUpdateStatus,
   adminSearchUsers,
-  completeMyBoosterAssignment,
   boostCancelRequest,
   boostConfirmRequestCompletion,
   boostCreateBoosterApplication,
@@ -30,6 +29,7 @@ import {
   boostListMyBoosterApplications,
   boostListMyRequests,
   boostOptions,
+  completeMyBoosterAssignment,
   createUserProfile,
   declineMyBoosterAssignment,
   getMyBoosterAssignments,

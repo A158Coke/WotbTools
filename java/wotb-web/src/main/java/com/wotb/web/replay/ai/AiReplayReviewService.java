@@ -10,15 +10,21 @@ import com.wotb.core.processing.BatchAnalyzer;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.PerspectiveTeamNotResolvedException;
 import com.wotb.core.processing.PlayerSideResolver;
+import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.processing.ReplayAnalysisScope;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
-import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.processing.TeamPerspectiveResolver;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
-import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.ref.ReplayDisplayNames;
+import com.wotb.core.replay.reconstruction.ReplayCoverage;
+import com.wotb.web.replay.ReplayUploadValidator;
+import com.wotb.web.replay.ai.gateway.AiUpstreamException;
+import com.wotb.web.replay.dto.AnalyzeResponse;
+import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
+import com.wotb.web.replay.exception.AiTimelineUnusableException;
+import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import com.wotb.web.replay.metrics.ReplayUsageMetrics;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -27,20 +33,14 @@ import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import com.wotb.web.replay.ai.gateway.AiUpstreamException;
-import com.wotb.web.replay.dto.AnalyzeResponse;
-import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
-import com.wotb.web.replay.exception.AiTimelineUnusableException;
-import com.wotb.web.replay.ReplayUploadValidator;
-import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 @Service
@@ -56,6 +56,7 @@ public class AiReplayReviewService {
 
     private final AtomicInteger aiReviewInFlight = new AtomicInteger();
     private Timer aiReviewDuration;
+
     public AiReplayReviewService(
             final DefaultReplayProcessingFacade processingFacade,
             final AiReplayAnalysisService aiAnalysisService) {
@@ -204,7 +205,8 @@ public class AiReplayReviewService {
         final BatchAnalyzer.AnalysisPlan plan = new BatchAnalyzer().analyze(allResults);
         final boolean hasParsedBattle = allResults.stream().anyMatch(r -> r.battle() != null);
         if (!hasParsedBattle) throw new IllegalArgumentException("NO_BATTLE_DATA");
-        if (plan.dominantScope() == null) throw new UnsupportedReplayAnalysisModeException("UNSUPPORTED_BATTLE_CATEGORY");
+        if (plan.dominantScope() == null)
+            throw new UnsupportedReplayAnalysisModeException("UNSUPPORTED_BATTLE_CATEGORY");
         final var analyzableGroups = plan.groups().stream()
                 .filter(g -> g.representative().capabilities() != null
                         && BatchAnalyzer.isAiAnalyzable(g.representative(), plan.dominantScope()))
@@ -231,8 +233,8 @@ public class AiReplayReviewService {
                         representative, language, listener);
                 final Battle battle = representative.battle();
                 final List<String> corrected = sanitizeClusterTerms(correctTankNames(packageSections(
-                        outcome.result().analysis(),
-                        renderRandomBattleSection(representative, outcome.preBattlePrior(), language)),
+                                outcome.result().analysis(),
+                                renderRandomBattleSection(representative, outcome.preBattlePrior(), language)),
                         battle), battle);
                 yield new AnalyzeResponse(
                         withDisclaimerFooter(corrected.get(0), language),
@@ -325,7 +327,9 @@ public class AiReplayReviewService {
         return out;
     }
 
-    /** 组装 correction package 的各段（允许 null 元素，null 段原样保留）。 */
+    /**
+     * 组装 correction package 的各段（允许 null 元素，null 段原样保留）。
+     */
     private static List<String> packageSections(final String analysis, final String preBattleSection) {
         final List<String> sections = new ArrayList<>(2);
         sections.add(analysis);
@@ -333,7 +337,9 @@ public class AiReplayReviewService {
         return sections;
     }
 
-    /** 复盘固定结尾免责句（三语），追加在 analysis 末尾。 */
+    /**
+     * 复盘固定结尾免责句（三语），追加在 analysis 末尾。
+     */
     private static String withDisclaimerFooter(final String analysis, final AllowedLanguage language) {
         if (analysis == null || analysis.isBlank()) {
             return analysis;
