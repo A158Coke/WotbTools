@@ -32,7 +32,10 @@
    inference（HP_GAP_DELTA：幅度可知、精确时刻/攻击者/原因 UNKNOWN）。
 4. **Knowledge-world 分层**（§49）：canonical model 保留 backend 世界状态（playback/debug），
    FrameVehicle 的 knowledgeState 表达「当时已知」——敌方位置流中断即 LAST_KNOWN（带 age），
-   绝不把 last-known 当 current（§9.1）。
+   绝不把 last-known 当 current（§9.1）。**己方 actual combatant（PR #103）**：服务器持续下发完整
+   位置 state，静止时不重复发同坐标包（真实样本存活己方静止 10.8s 无新位置）；
+   last position + 无 EntityLeave + 未 destroyed = 可 carry-forward 的当前位置，
+   不因 age > POSITION_GAP_SEC 降级为 LAST_KNOWN（enemy 语义不变）。
 5. **保守语义**：Type-5 点亮语义未正式证明（visibility.md 门禁 A = PARTIAL），
    位置流状态使用 POSITION_STREAM_ACTIVE / LAST_KNOWN / UNKNOWN / DESTROYED_KNOWN，
    不声称 SPOTTED/UNSPOTTED（§12/§57）。

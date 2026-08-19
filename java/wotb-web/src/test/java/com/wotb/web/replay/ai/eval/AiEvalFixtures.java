@@ -448,14 +448,14 @@ public final class AiEvalFixtures {
         final List<TeamMemberFeatureSet> members = new ArrayList<>();
         for (int index = 0; index < 7; index++) {
             members.add(member(index, 100, true, null, null,
-                    List.of(), List.of(), List.of("TEAM_MEMBER_MOVEMENT_UNAVAILABLE")));
+                    List.of(), List.of(), List.of("TEAM_MEMBER_POSITION_UNAVAILABLE")));
         }
         final TeamAggregateResult aggregate = new TeamAggregateResult(
                 7, 4000, 800, 0, 0, 0, 7, 0, null, null, null, true);
         return context("cw-solo-unknown-01", 2, 1, new double[7],
                 members, aggregate, List.of(), BattlePhaseSummary.buildRelativePhases(60, 300),
                 List.of(keyEvent(60, "TEAM_FIRST_CONTACT", "damage=120")),
-                List.of("TEAM_MEMBER_MOVEMENT_UNAVAILABLE"));
+                List.of("TEAM_MEMBER_POSITION_UNAVAILABLE"));
     }
 
     // ===== 场景六：单走静止但无获利（不硬判拖延） =====

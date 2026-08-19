@@ -369,10 +369,14 @@ public final class BattleTimelineBuilder {
             knowledge = VehicleKnowledgeState.UNKNOWN;
         } else {
             final double age = t - pos.clock();
-            final boolean active = !interruptedByLeave && age <= POSITION_GAP_SEC;
+            // 己方 actual combatant：服务器持续下发完整位置 state，静止时不重复发同坐标包；
+            // last position + 无 EntityLeave + 未 destroyed = 可 carry-forward 的当前位置，
+            // 不因 age > POSITION_GAP_SEC 降级为 LAST_KNOWN（2026-08-19 真实样本：存活己方静止 10.8s 无新位置）。
+            // 敌方保持 anti-future-leak / observation semantics（LAST_KNOWN）。
+            final boolean active = !interruptedByLeave && (friendly || age <= POSITION_GAP_SEC);
             final PositionKnowledge pk = active
                     ? PositionKnowledge.CURRENT : PositionKnowledge.LAST_KNOWN;
-            final PositionSource source = active
+            final PositionSource source = age <= 1e-3
                     ? PositionSource.OBSERVED_EVENT : PositionSource.CARRIED_FORWARD;
             final Confidence conf = active ? Confidence.HIGH : Confidence.MEDIUM;
             position = new FramePosition(

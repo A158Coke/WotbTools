@@ -8,6 +8,7 @@ import com.wotb.core.processing.TeamEntityMapping;
 import com.wotb.core.processing.TeamPerspectiveResolution;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 
@@ -82,7 +83,7 @@ public class DefaultTeamBattleFeatureExtractor {
         final Map<Integer, List<PositionChangedEvent>> positionsByEntity =
                 teamPositionsByEntity(events, entityMapping, perspectiveTeam, resolutionByEvent, mapCode);
         final PositionEvidenceAudit positionAudit =
-                auditPositionEvidence(events, entityMapping, perspectiveTeam, resolutionByEvent, mapCode);
+                auditPositionEvidence(events, entityMapping, perspectiveTeam, resolutionByEvent, mapCode, battle);
         final int invalidTimestampEventCount = (int) resolvedEvents.stream()
                 .filter(re -> re.resolution().status() == TacticalTimeResolution.Status.INVALID_TIMESTAMP)
                 .count();
@@ -192,7 +193,8 @@ public class DefaultTeamBattleFeatureExtractor {
                 observedPositionEventCount,
                 timedDamages.size(),
                 unattributedDamageCount,
-                positionAudit.unattributedCount(),
+                positionAudit.unattributedCombatantCount(),
+                positionAudit.nonCombatantPositionCount(),
                 clampedPositionEventCount,
                 positionAudit.outOfBoundsCount(),
                 invalidTimestampEventCount,
@@ -229,7 +231,7 @@ public class DefaultTeamBattleFeatureExtractor {
         if (unattributedDamageCount > 0) {
             limitations.add("UNATTRIBUTED_DAMAGE_EVENTS_PRESENT");
         }
-        if (positionAudit.unattributedCount() > 0) {
+        if (positionAudit.unattributedCombatantCount() > 0) {
             limitations.add("UNATTRIBUTED_POSITION_EVENTS_PRESENT");
         }
         if (positionAudit.outOfBoundsCount() > 0) {
@@ -313,9 +315,28 @@ public class DefaultTeamBattleFeatureExtractor {
             final TeamEntityMapping mapping,
             final int perspectiveTeam,
             final Map<ReplayEvent, TacticalTimeResolution> resolutionByEvent,
-            final String mapCode
+            final String mapCode,
+            final Battle battle
     ) {
-        int unattributedCount = 0;
+        // 实际参战账号权威集合 = battle_results #301（actual combatant source，唯一权威）；
+        // 观战/辅助实体只出现在 #201/updateArena2/event stream，不属于 #301。
+        final Set<Long> combatantAccounts = new LinkedHashSet<>();
+        if (battle != null && battle.players != null) {
+            for (final PlayerResult player : battle.players) {
+                if (player != null && player.accountId > 0) {
+                    combatantAccounts.add(player.accountId);
+                }
+            }
+        }
+        // entity -> 映射账号（来自 updateArena2 roster 映射事件；未映射实体（观战镜头/场景对象）不在其中）
+        final Map<Integer, Long> accountByEntity = new HashMap<>();
+        for (final ReplayEvent event : events) {
+            if (event instanceof ParticipantMappingEvent pm && pm.accountId() > 0) {
+                accountByEntity.putIfAbsent(pm.entityId(), pm.accountId());
+            }
+        }
+        int unattributedCombatantCount = 0;
+        int nonCombatantPositionCount = 0;
         int outOfBoundsCount = 0;
         for (final ReplayEvent event : events) {
             if (!(event instanceof PositionChangedEvent position)) {
@@ -327,7 +348,14 @@ public class DefaultTeamBattleFeatureExtractor {
             }
             final TeamEntityIdentity identity = mapping.identity(position.entityId());
             if (identity == null || !identity.usable()) {
-                unattributedCount++;
+                // A. actual combatant（#301）实体无法归因 -> 真实数据质量问题
+                final Long mappedAccount = accountByEntity.get(position.entityId());
+                if (mappedAccount != null && combatantAccounts.contains(mappedAccount)) {
+                    unattributedCombatantCount++;
+                } else {
+                    // B. 非参战实体（观战玩家/镜头/场景对象）-> 战术证据忽略，仅 internal diagnostic
+                    nonCombatantPositionCount++;
+                }
                 continue;
             }
             if (identity.team() != perspectiveTeam) {
@@ -337,7 +365,8 @@ public class DefaultTeamBattleFeatureExtractor {
                 outOfBoundsCount++;
             }
         }
-        return new PositionEvidenceAudit(unattributedCount, outOfBoundsCount);
+        return new PositionEvidenceAudit(
+                unattributedCombatantCount, nonCombatantPositionCount, outOfBoundsCount);
     }
 
     private static TeamMemberFeatureSet buildMember(
@@ -377,7 +406,7 @@ public class DefaultTeamBattleFeatureExtractor {
             limitations.add("TEAM_MEMBER_ENTITY_UNMAPPED");
         }
         if (movements.isEmpty()) {
-            limitations.add("TEAM_MEMBER_MOVEMENT_UNAVAILABLE");
+            limitations.add("TEAM_MEMBER_POSITION_UNAVAILABLE");
         }
         final Double deathTime = player.survived || PlayerResultFormat.deathSec(player) <= 0
                 ? null : PlayerResultFormat.deathSec(player);
@@ -462,7 +491,8 @@ public class DefaultTeamBattleFeatureExtractor {
     }
 
     private record PositionEvidenceAudit(
-            int unattributedCount,
+            int unattributedCombatantCount,
+            int nonCombatantPositionCount,
             int outOfBoundsCount
     ) {
     }

@@ -84,6 +84,26 @@ class BattleTimelineBuilderTest {
     }
 
     @Test
+    void friendlyPositionCarriesForwardBeyondStalenessGap() {
+        // R7：存活己方 actual combatant 静止 >5s（无新 PositionChanged、无 EntityLeave、未阵亡）
+        // → 位置 state 保持 CURRENT / POSITION_STREAM_ACTIVE，不因 age > POSITION_GAP_SEC 降级 LAST_KNOWN。
+        // 2026-08-19 真实样本（Maus holland）：存活己方 7/7 成员开局静止 10.8s 同坐标无新位置。
+        final Battle battle = TimelineTestFixtures.battle(60.0);
+        final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
+        // 己方 FRIENDLY_EID 位置仅 t=0（同坐标不重复广播）；录像者/敌方保持原样
+        final ReplayReconstruction recon = TimelineTestFixtures.recon(60.0, events);
+        final BattleTimeline timeline = BattleTimelineBuilder
+                .build(battle, recon, TimelineTestFixtures.personalPerspective()).timeline();
+
+        final FrameVehicle at20 = vehicleAt(timeline, TimelineTestFixtures.FRIENDLY_EID, 20);
+        assertEquals(VehicleKnowledgeState.POSITION_STREAM_ACTIVE, at20.knowledgeState());
+        assertEquals(PositionKnowledge.CURRENT, at20.position().knowledge());
+        assertNotNull(at20.position().position());
+        assertEquals(20.0, at20.position().positionAgeSec(), 1e-9);
+        assertEquals(PositionSource.CARRIED_FORWARD, at20.position().source());
+    }
+
+    @Test
     void destroyedKnownIsWorldFactAtTimeAndOverridesPositionKnowledge() {
         final Battle battle = TimelineTestFixtures.battle(60.0);
         final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());

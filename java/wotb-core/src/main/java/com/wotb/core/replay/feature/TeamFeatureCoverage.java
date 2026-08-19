@@ -17,6 +17,7 @@ public record TeamFeatureCoverage(
         int observedDamageEventCount,
         int unattributedDamageEventCount,
         int unattributedPositionEventCount,
+        int nonCombatantPositionEventCount,
         int clampedPositionEventCount,
         int ignoredOutOfBoundsPositionEventCount,
         int ignoredInvalidTimestampEventCount,
@@ -58,6 +59,6 @@ public record TeamFeatureCoverage(
     public static TeamFeatureCoverage empty() {
         return new TeamFeatureCoverage(
                 false, false, false, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0.0, false);
+                0, 0, 0, 0, 0, 0, 0.0, false);
     }
 }
