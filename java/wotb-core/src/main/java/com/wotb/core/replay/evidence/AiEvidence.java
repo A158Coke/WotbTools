@@ -10,6 +10,11 @@ import java.util.Map;
  * 统一的战术证据载体（文档 §28 AiEvidence 的 V1 落地）。
  * <p>数值与文本指标分开存储（均为原始类型 map），保证确定性渲染与测试；
  * 渲染成 Prompt 时由调用方按 {@code labels}/{@code numbers} 字段逐项输出。</p>
+ * <p><b>Backend Evidence Boundary（PR #103 架构收口）</b>：Backend Evidence MUST represent
+ * observed facts / deterministic derived measurements / neutral structural classifications；
+ * Backend Evidence MUST NOT encode player intent、tactical correctness、tactical benefit、
+ * tactical blame 或 recommendation——战术解释（拖延/脱节/图控/交换是否值得等）全部由 LLM
+ * 基于多个事实自行判断。新增 Evidence Skill 时必须遵守。</p>
  *
  * @param id         稳定证据 ID（如 CW_01 / HM_03）
  * @param type       证据类型

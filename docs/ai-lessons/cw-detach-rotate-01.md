@@ -9,4 +9,4 @@
   - 队友时序关联：主力质心向单走成员位移（接应）；
   - 结果：无白吃、无人阵亡。
 - **对应 golden case**：`ai-eval/cases/cw-detach-rotate-01.json`
-- **规则引用**：Step 2 `SOLO_INTENT_RULE`（结合 prior 战局类型，避免单因素定罪）。
+- **规则引用**：Step 2 `SEPARATION_EVIDENCE_RULE`（结合 prior 战局类型，避免单因素定罪）。

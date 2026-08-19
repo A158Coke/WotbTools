@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PR #103 B1 生产链路集成测试：TeamSoloIntentSkill / SoloPlayIntentSkill
+ * PR #103 架构收口生产链路集成测试：TeamSeparationEvidenceSkill / PlayerSeparationEvidenceSkill
  * → TeamEvidenceFormatter / TacticalEvidenceFormatter → Call #2 user content。
  * <p>验证：OPENING_SPREAD（开局分散）以中性 signal 输出（summary 无拿视野/点亮/侦察），
  * 且 production Prompt 不暴露 OPENING_MAP_CONTROL 原始标签。</p>
@@ -27,11 +27,15 @@ class OpeningSpreadProductionIntegrationTest {
                 AiEvalFixtures.context("cw-opening-mapcontrol-01");
         final String user = TeamAiPromptBuilder.single(ctx, List.of(), null, null, Integer.MAX_VALUE).content();
 
-        assertTrue(user.contains("SOLO_INTENT_SIGNALS"), "必须渲染单走/开局分散信号段");
-        assertTrue(user.contains("intent=OPENING_SPREAD"),
-                "必须输出 OPENING_SPREAD 中性标签: " + user);
-        assertFalse(user.contains("intent=OPENING_MAP_CONTROL"),
+        assertTrue(user.contains("SPATIAL_SEPARATION_EVIDENCE"), "必须渲染空间分离证据段");
+        assertTrue(user.contains("kind=OPENING_SPREAD"),
+                "必须输出 OPENING_SPREAD 中性结构分类: " + user);
+        assertFalse(user.contains("kind=OPENING_MAP_CONTROL"),
                 "production user content 不得暴露 OPENING_MAP_CONTROL: " + user);
+        assertFalse(user.contains("intent="),
+                "production user content 不得再出现 intent= 战术标签: " + user);
+        assertFalse(user.contains("SOLO_INTENT_SIGNALS"),
+                "旧 SOLO_INTENT_SIGNALS 段名必须删除: " + user);
         // summary 必须是中性「开局分散」，不得声称拿视野/提供视野/点亮/侦察收益
         assertTrue(user.contains("开局分散"),
                 "summary 必须使用中性「开局分散」: " + user);

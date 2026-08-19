@@ -16,7 +16,8 @@ class AiEvalHarnessTest {
     @Test
     void teamSystemPromptCarriesSoloIntentAndCaptureRules() {
         final String systemPrompt = AiPromptLibrary.zh("team/single");
-        assertTrue(systemPrompt.contains("单走行为判定规则"), "team system prompt must carry SOLO_INTENT_RULE");
+        assertTrue(systemPrompt.contains("空间分离证据使用规则"),
+                "team system prompt must carry SEPARATION_EVIDENCE_RULE");
         assertTrue(systemPrompt.contains("争霸赛占点规则"), "team system prompt must carry CAPTURE_RULE");
         assertTrue(systemPrompt.contains("玩家心理意图"),
                 "intent clause must allow observable behavior patterns while banning mental-intent claims");

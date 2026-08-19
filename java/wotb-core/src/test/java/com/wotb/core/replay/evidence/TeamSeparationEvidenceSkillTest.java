@@ -29,10 +29,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class TeamSoloIntentSkillTest {
+/**
+ * TeamSeparationEvidenceSkill — Backend Evidence Boundary 回归测试。
+ * <p>只输出中性空间分离结构事实（kind=OPENING_SPREAD / SEPARATION_WINDOW + 确定性测量），
+ * 不输出 SOLO_DELAY / SOLO_DETACHED / teammateBenefit / 队友获利 / 卡点 / 守点等战术 verdict。</p>
+ */
+class TeamSeparationEvidenceSkillTest {
 
     @Test
-    void openingSpreadLabelsMapControlNotDetach() {
+    void openingSpreadIsNeutralSpatialStructure() {
         final Battle battle = battle(1, new double[7], new long[7]);
         final TeamBattleFeatureSet features = features(
                 List.of(member(0, 0, true, null, List.of(), List.of(), 1)),
@@ -40,15 +45,25 @@ class TeamSoloIntentSkillTest {
                 new TeamAggregateResult(7, 4200, 600, 0, 0, 0, 7, 0, null, null, null, true),
                 BattlePhaseSummary.buildRelativePhases(60, 300));
 
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+        final List<AiEvidence> evidence = TeamSeparationEvidenceSkill.detect(
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
 
         assertEquals(1, evidence.size());
-        assertEquals("OPENING_SPREAD", evidence.getFirst().labels().get("intent"));
+        assertEquals(EvidenceType.SPATIAL_SEPARATION, evidence.getFirst().type());
+        assertEquals("OPENING_SPREAD", evidence.getFirst().labels().get("kind"));
+        // summary 只描述空间结构，不得声称地图信息收益/拿视野/图控
+        assertTrue(evidence.getFirst().summary().contains("空间分离")
+                || evidence.getFirst().summary().contains("开局分散"), evidence.getFirst().summary());
+        assertFalse(evidence.getFirst().summary().contains("拿视野"), evidence.getFirst().summary());
+        assertFalse(evidence.getFirst().summary().contains("图控"), evidence.getFirst().summary());
+        assertFalse(evidence.getFirst().summary().contains("侦察收益"), evidence.getFirst().summary());
+        assertFalse(evidence.getFirst().summary().contains("拖延"), evidence.getFirst().summary());
+        assertFalse(evidence.getFirst().summary().contains("脱节"), evidence.getFirst().summary());
     }
 
     @Test
-    void stationaryHoldWithTeammateRotationLabelsDelay() {
+    void stationaryHoldEmitsNeutralSeparationWindowNotDelay() {
+        // 旧逻辑会输出 SOLO_DELAY（静止+压力+队友获利）；现在只输出中性 SEPARATION_WINDOW 事实
         final Battle battle = battle(3, new double[7], new long[7]);
         final TeamMemberFeatureSet solo = member(0, 200, true, null,
                 List.of(stationary(60, 240, 100, 150)),
@@ -59,16 +74,30 @@ class TeamSoloIntentSkillTest {
                 new TeamAggregateResult(7, 5200, 1500, 0, 0, 1, 7, 0, null, null, null, true),
                 BattlePhaseSummary.buildRelativePhases(60, 300));
 
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+        final List<AiEvidence> evidence = TeamSeparationEvidenceSkill.detect(
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
 
         assertEquals(1, evidence.size());
-        assertEquals("SOLO_DELAY", evidence.getFirst().labels().get("intent"));
-        assertTrue(evidence.getFirst().numbers().get("teammateBenefit") > 0);
+        assertEquals("SEPARATION_WINDOW", evidence.getFirst().labels().get("kind"));
+        assertEquals("STATIONARY", evidence.getFirst().labels().get("movementState"));
+        assertTrue(evidence.getFirst().numbers().get("distanceM") > 0);
+        assertTrue(evidence.getFirst().numbers().get("observedEnemyNearby") > 0);
+        assertTrue(evidence.getFirst().numbers().containsKey("damageReceivedDuringSpan"));
+        assertTrue(evidence.getFirst().numbers().containsKey("damageDealtDuringSpan"));
+        assertTrue(evidence.getFirst().numbers().containsKey("mainClusterDisplacementM"));
+        assertTrue(evidence.getFirst().numbers().containsKey("otherFriendlyDeathsDuringSpan"));
+        assertTrue(evidence.getFirst().numbers().containsKey("otherFriendlyEngagementCountDuringSpan"));
+        // 不得出现战术 verdict 词汇
+        assertFalse(evidence.getFirst().summary().contains("拖延"), evidence.getFirst().summary());
+        assertFalse(evidence.getFirst().summary().contains("脱节"), evidence.getFirst().summary());
+        assertFalse(evidence.getFirst().summary().contains("队友获利"), evidence.getFirst().summary());
+        assertFalse(evidence.getFirst().numbers().containsKey("teammateBenefit"));
+        assertFalse(evidence.getFirst().labels().containsKey("intent"));
     }
 
     @Test
-    void movingPushWithoutBenefitLabelsDetach() {
+    void movingPushEmitsNeutralSeparationWindowNotDetach() {
+        // 旧逻辑会输出 SOLO_DETACHED（移动+拉大距离+无获利+被白吃）；现在只输出中性事实
         final Battle battle = battle(3, new double[]{0, 0, 90, 0, 0, 0, 0}, new long[7]);
         final TeamMemberFeatureSet solo = member(0, 1800, false, 90.0,
                 List.of(move(45, 90, 0, 0, -150, -100, 5f)), List.of(), 1);
@@ -78,15 +107,21 @@ class TeamSoloIntentSkillTest {
                 new TeamAggregateResult(7, 3200, 3200, 0, 0, 0, 6, 1, 90.0, 90.0, 90.0, false),
                 BattlePhaseSummary.buildRelativePhases(40, 300));
 
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+        final List<AiEvidence> evidence = TeamSeparationEvidenceSkill.detect(
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
 
         assertEquals(1, evidence.size());
-        assertEquals("SOLO_DETACHED", evidence.getFirst().labels().get("intent"));
+        assertEquals("SEPARATION_WINDOW", evidence.getFirst().labels().get("kind"));
+        assertEquals("MOVING", evidence.getFirst().labels().get("movementState"));
+        assertFalse(evidence.getFirst().summary().contains("脱节"), evidence.getFirst().summary());
+        assertFalse(evidence.getFirst().summary().contains("无掩护"), evidence.getFirst().summary());
+        assertFalse(evidence.getFirst().summary().contains("拖延"), evidence.getFirst().summary());
+        assertFalse(evidence.getFirst().numbers().containsKey("teammateBenefit"));
     }
 
     @Test
     void contradictorySignalsProduceNoCandidate() {
+        // 部分重叠交火：压力/承伤无法可靠归属 → 不硬出（与旧契约一致）
         final Battle battle = battle(2, new double[7], new long[7]);
         final TeamMemberFeatureSet solo = member(0, 400, true, null,
                 List.of(stationary(115, 260, 150, 100)),
@@ -97,16 +132,14 @@ class TeamSoloIntentSkillTest {
                 new TeamAggregateResult(7, 3500, 2600, 0, 0, 0, 7, 0, null, null, null, false),
                 BattlePhaseSummary.buildRelativePhases(60, 300));
 
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+        final List<AiEvidence> evidence = TeamSeparationEvidenceSkill.detect(
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
 
-        assertTrue(evidence.isEmpty(), "contradictory signals must not produce a hard candidate");
+        assertTrue(evidence.isEmpty(), "partially overlapping engagement must not yield a hard candidate");
     }
 
     @Test
-    void fiveTwoSplitMainClusterMembersProduceNoCandidate() {
-        // 5+2 分簇：主力 5 人（P0-P4）+ 独立 2 人（P5-P6）。主力成员 P0 静止+接火+主力转场：
-        // 旧实现会反向把 P0 判成单走拖延；新实现只输出 P6。
+    void fiveTwoSplitOnlyOffMainMemberEmitsNeutralEvidence() {
         final Battle battle = battle(3, new double[7], new long[7]);
         final List<TeamMemberFeatureSet> members = new ArrayList<>();
         for (int index = 0; index < 7; index++) {
@@ -126,36 +159,20 @@ class TeamSoloIntentSkillTest {
                 new TeamAggregateResult(7, 4000, 2000, 0, 0, 0, 7, 0, null, null, null, true),
                 BattlePhaseSummary.buildRelativePhases(60, 300));
 
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+        final List<AiEvidence> evidence = TeamSeparationEvidenceSkill.detect(
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
 
-        assertEquals(1, evidence.size(), "only the off-main member must be a candidate");
-        assertEquals("SOLO_DELAY", evidence.getFirst().labels().get("intent"));
-        assertTrue(evidence.getFirst().summary().contains("P6"),
-                "candidate must belong to the small-cluster member");
-        assertFalse(evidence.getFirst().summary().contains("P0"),
-                "main-cluster member must never be flagged as solo");
-    }
-
-    @Test
-    void teamTwoPerspectiveIgnoresTeamOneCapturePoints() {
-        // Team 2 视角：Team 1 的整场占点分不是 Team 2 的队友获利证据。
-        final Battle battle = battle(3, new double[7], new long[]{0, 0, 0, 0, 0, 0, 999});
-        final TeamMemberFeatureSet solo = member(0, 200, true, null,
-                List.of(stationary(120, 135, 150, 100)),
-                List.of(engagement(120, 135, 10_001L, List.of(20_001L), 200)), 2);
-        final TeamBattleFeatureSet features = features(
-                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 2)),
-                phases(120, 135, 400, 350, 400, 350, 260, 260, 260, 260, "account:10001"),
-                new TeamAggregateResult(7, 1000, 500, 0, 0, 0, 7, 0, null, null, null, false),
-                BattlePhaseSummary.buildRelativePhases(60, 300),
-                2);
-
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
-                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
-
-        assertTrue(evidence.isEmpty(),
-                "team 1 capture points must not count as team 2 teammate benefit");
+        // 5+2 分簇：主力 5 人（P0-P4）+ 独立 2 人（P5-P6）→ 两个 off-main 成员都产生中性分离窗口
+        assertEquals(2, evidence.size(), "both off-main members must be candidates");
+        for (final AiEvidence e : evidence) {
+            assertEquals("SEPARATION_WINDOW", e.labels().get("kind"));
+            assertFalse(e.summary().contains("P0"), "main-cluster member must never be flagged");
+            assertFalse(e.summary().contains("拖延"), e.summary());
+        }
+        assertTrue(evidence.stream().anyMatch(e -> e.summary().contains("P6")),
+                "candidate must include the small-cluster member P6");
+        assertTrue(evidence.stream().anyMatch(e -> e.summary().contains("P5")),
+                "candidate must include the small-cluster member P5");
     }
 
     @Test
@@ -167,48 +184,14 @@ class TeamSoloIntentSkillTest {
                 new TeamAggregateResult(7, 4200, 600, 0, 0, 0, 7, 0, null, null, null, true),
                 List.of());
 
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+        final List<AiEvidence> evidence = TeamSeparationEvidenceSkill.detect(
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
 
-        assertTrue(evidence.isEmpty(),
-                "without battle phases no OPENING_SPREAD may be emitted");
-    }
-
-    @Test
-    void noDistanceGrowthSuppressesDetach() {
-        final Battle battle = battle(3, new double[7], new long[7]);
-        final TeamMemberFeatureSet solo = member(0, 0, true, null,
-                List.of(move(60, 75, 0, 0, 50, 0, 2f)),
-                List.of(engagement(60, 75, 10_001L, List.of(20_001L, 20_002L, 20_003L), 1800)), 1);
-        final TeamBattleFeatureSet features = features(
-                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
-                phases(60, 75, 150, 180, 150, 180, 300, 250, 300, 250, "account:10001"),
-                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
-                BattlePhaseSummary.buildRelativePhases(40, 300));
-
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
-                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
-
-        assertTrue(evidence.isEmpty(), "single-window span has no growth evidence -> no SOLO_DETACHED");
-    }
-
-    @Test
-    void lateDeathOutsideSpanDoesNotWhiteEaten() {
-        final Battle battle = battle(3, new double[]{0, 0, 0, 0, 0, 0, 200}, new long[7]);
-        final TeamMemberFeatureSet solo = member(0, 0, false, 200.0,
-                List.of(move(60, 90, 0, 0, -150, -100, 2f)),
-                List.of(), 1);
-        final TeamBattleFeatureSet features = features(
-                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
-                phases(60, 90, 150, 180, 100, 150, 300, 250, 300, 250, "account:10001"),
-                new TeamAggregateResult(7, 3000, 1000, 0, 0, 0, 6, 1, 200.0, 200.0, 200.0, false),
-                BattlePhaseSummary.buildRelativePhases(40, 300));
-
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
-                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
-
-        assertTrue(evidence.isEmpty(),
-                "death outside the span must not white-eat the window");
+        // 无 battle phases 时不得生成 OPENING_SPREAD（未证明开局边界）
+        for (final AiEvidence e : evidence) {
+            assertFalse("OPENING_SPREAD".equals(e.labels().get("kind")),
+                    "without battle phases no OPENING_SPREAD may be emitted: " + e.summary());
+        }
     }
 
     @Test
@@ -218,7 +201,6 @@ class TeamSoloIntentSkillTest {
         for (int index = 0; index < 7; index++) {
             members.add(member(index, 0, true, null, List.of(), List.of(), 1));
         }
-        // 3+3+1：两个 3 人簇平票，无法确定主力 → 不硬判
         final TeamFormationPhase phase = new TeamFormationPhase(
                 60, 75, new CanonicalMapPosition(250, 250), 80f, 7,
                 DecodeConfidence.EXACT, List.of(
@@ -230,35 +212,13 @@ class TeamSoloIntentSkillTest {
                 new TeamAggregateResult(7, 1000, 500, 0, 0, 0, 7, 0, null, null, null, true),
                 BattlePhaseSummary.buildRelativePhases(60, 300));
 
-        assertNull(TeamSoloIntentSkill.mainClusterOf(phase));
-        assertTrue(TeamSoloIntentSkill.detect(
+        assertNull(TeamSeparationEvidenceSkill.mainClusterOf(phase));
+        assertTrue(TeamSeparationEvidenceSkill.detect(
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN).isEmpty());
     }
 
     @Test
-    void engagementSpanningFourWindowsCountedOnce() {
-        // 同一交火段横跨 4 个 15s formation window：实际承伤 300、1 名敌人，按 span 去重后
-        // 不得被累计成承伤 1200 / 敌情 4，因此不得误生成 SOLO_DETACHED
-        final Battle battle = battle(3, new double[7], new long[7]);
-        final TeamMemberFeatureSet solo = member(0, 0, true, null,
-                List.of(move(60, 120, 100, 150, 0, 150, 2f)),
-                List.of(engagement(60, 120, 10_001L, List.of(20_001L), 300)), 1);
-        final TeamBattleFeatureSet features = features(
-                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
-                phases(60, 120, 100, 150, 0, 150, 300, 250, 300, 250, "account:10001"),
-                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
-                BattlePhaseSummary.buildRelativePhases(40, 300));
-
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
-                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
-
-        assertTrue(evidence.isEmpty(),
-                "one engagement across 4 windows must be counted once: received=300 enemies=1 -> no SOLO_DETACHED");
-    }
-
-    @Test
     void partialObservationDoesNotDeclareMainCluster() {
-        // 7 名成员存活但只观测到 4 人（3+1 子集）：不得把子集最大簇称为全局主力
         final Battle battle = battle(1, new double[7], new long[7]);
         final List<TeamMemberFeatureSet> members = new ArrayList<>();
         for (int index = 0; index < 7; index++) {
@@ -270,20 +230,19 @@ class TeamSoloIntentSkillTest {
                         cluster(60, 75, 250, 250, List.of(key(0), key(1), key(2))),
                         cluster(60, 75, 400, 400, List.of(key(6)))));
 
-        assertNull(TeamSoloIntentSkill.mainClusterOf(phase, 7),
+        assertNull(TeamSeparationEvidenceSkill.mainClusterOf(phase, 7),
                 "observed subset must not be declared global main cluster");
         final TeamBattleFeatureSet features = features(
                 members, List.of(phase),
                 new TeamAggregateResult(7, 1000, 500, 0, 0, 0, 7, 0, null, null, null, true),
                 BattlePhaseSummary.buildRelativePhases(60, 300));
 
-        assertTrue(TeamSoloIntentSkill.detect(
+        assertTrue(TeamSeparationEvidenceSkill.detect(
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN).isEmpty());
     }
 
     @Test
     void soloWindowsWithMissingPhaseAreNotMerged() {
-        // [60,75] 与 [90,105] 中间缺失 75-90 phase：禁止跨缺口合并 span，距离增长不得跨缺口计算
         final Battle battle = battle(3, new double[7], new long[7]);
         final TeamMemberFeatureSet solo = member(0, 0, true, null,
                 List.of(move(60, 75, 100, 150, 100, 150, 2f),
@@ -298,16 +257,15 @@ class TeamSoloIntentSkillTest {
                 new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
                 BattlePhaseSummary.buildRelativePhases(40, 300));
 
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+        final List<AiEvidence> evidence = TeamSeparationEvidenceSkill.detect(
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
 
         assertTrue(evidence.isEmpty(),
-                "solo windows separated by a missing 15s phase must not merge across the gap");
+                "separation windows separated by a missing phase must not merge across the gap");
     }
 
     @Test
-    void thinMovementCoverageIsUnknown() {
-        // 30s span 只有 1s 移动覆盖（60-61s）：覆盖/窗口时长 < 门控 → UNKNOWN，不得按 MOVING 判脱节
+    void thinMovementCoverageIsUnknownNotMoving() {
         final Battle battle = battle(3, new double[7], new long[7]);
         final TeamMemberFeatureSet solo = member(0, 0, true, null,
                 List.of(move(60, 61, 100, 150, 100, 150, 5f)),
@@ -319,35 +277,20 @@ class TeamSoloIntentSkillTest {
                 new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
                 BattlePhaseSummary.buildRelativePhases(40, 300));
 
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+        final List<AiEvidence> evidence = TeamSeparationEvidenceSkill.detect(
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
 
-        assertTrue(evidence.isEmpty(), "1s movement coverage in a 30s span must not imply MOVING");
-    }
-
-    @Test
-    void authoritativeDamageOutsideSpanDoesNotWhiteEaten() {
-        // 整场权威承伤（member.damageReceived=1800）没有对应窗口内交火：不得冒充窗口内被白吃
-        final Battle battle = battle(3, new double[7], new long[7]);
-        final TeamMemberFeatureSet solo = member(0, 1800, true, null,
-                List.of(move(60, 90, 0, 0, -150, -100, 2f)),
-                List.of(), 1);
-        final TeamBattleFeatureSet features = features(
-                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
-                phases(60, 90, 150, 180, 100, 150, 300, 250, 300, 250, "account:10001"),
-                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
-                BattlePhaseSummary.buildRelativePhases(40, 300));
-
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
-                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
-
-        assertTrue(evidence.isEmpty(),
-                "whole-battle authoritative damageReceived must not white-eat the window without in-window evidence");
+        // 覆盖不足 → movementState=UNKNOWN（不得按 MOVING 下结论），但分离窗口事实仍输出
+        assertFalse(evidence.isEmpty(), "separation window facts must still be emitted");
+        for (final AiEvidence e : evidence) {
+            assertEquals("UNKNOWN", e.labels().get("movementState"), e.summary());
+            assertFalse(e.summary().contains("脱节"), e.summary());
+            assertFalse(e.summary().contains("拖延"), e.summary());
+        }
     }
 
     @Test
     void partiallyOverlappingEngagementIsNotAttributedToSpan() {
-        // 交火 40-65s、承伤 1000，单走 span 60-90s：只部分重叠，不得把整段 1000 计入 span 内承伤
         final Battle battle = battle(3, new double[7], new long[7]);
         final TeamMemberFeatureSet solo = member(0, 0, true, null,
                 List.of(move(60, 90, 100, 150, 0, 150, 2f)),
@@ -358,16 +301,16 @@ class TeamSoloIntentSkillTest {
                 new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
                 BattlePhaseSummary.buildRelativePhases(40, 300));
 
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+        final List<AiEvidence> evidence = TeamSeparationEvidenceSkill.detect(
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
 
         assertTrue(evidence.isEmpty(),
-                "partially overlapping engagement must not contribute its full 1000 damage to the span");
+                "partially overlapping engagement must not contribute its full damage to the span");
     }
 
     @Test
-    void engagementFullyInsideSpanIsUsed() {
-        // 交火完全位于 span 内：整段承伤可正常归属 → SOLO_DETACHED
+    void engagementFullyInsideSpanOutputsFacts() {
+        // 交火完全位于 span 内：整段承伤可正常归属 → 输出中性 SEPARATION_WINDOW 事实
         final Battle battle = battle(3, new double[7], new long[7]);
         final TeamMemberFeatureSet solo = member(0, 0, true, null,
                 List.of(move(60, 90, 100, 150, 0, 150, 2f)),
@@ -378,35 +321,17 @@ class TeamSoloIntentSkillTest {
                 new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
                 BattlePhaseSummary.buildRelativePhases(40, 300));
 
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+        final List<AiEvidence> evidence = TeamSeparationEvidenceSkill.detect(
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
 
         assertEquals(1, evidence.size());
-        assertEquals("SOLO_DETACHED", evidence.getFirst().labels().get("intent"));
-    }
-
-    @Test
-    void engagementFullyOutsideSpanDoesNotAffect() {
-        // 交火完全位于 span 外：不影响 span 内判断
-        final Battle battle = battle(3, new double[7], new long[7]);
-        final TeamMemberFeatureSet solo = member(0, 0, true, null,
-                List.of(move(60, 90, 100, 150, 0, 150, 2f)),
-                List.of(engagement(95, 120, 10_001L, List.of(20_001L), 1000)), 1);
-        final TeamBattleFeatureSet features = features(
-                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
-                phases(60, 90, 100, 150, 0, 150, 300, 250, 300, 250, "account:10001"),
-                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
-                BattlePhaseSummary.buildRelativePhases(40, 300));
-
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
-                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
-
-        assertTrue(evidence.isEmpty(), "engagement outside the span must not affect it");
+        assertEquals("SEPARATION_WINDOW", evidence.getFirst().labels().get("kind"));
+        assertTrue(evidence.getFirst().numbers().get("damageReceivedDuringSpan") >= 1000);
+        assertFalse(evidence.getFirst().summary().contains("脱节"), evidence.getFirst().summary());
     }
 
     @Test
     void partiallyOverlappingEngagementAtOpeningBoundarySuppressesOpening() {
-        // 开局窗口 [15,45] 与交火 40-65s 部分重叠：无法证明窗口内未接火 → 不生成 OPENING_SPREAD
         final Battle battle = battle(1, new double[7], new long[7]);
         final TeamMemberFeatureSet solo = member(0, 0, true, null,
                 List.of(stationary(15, 45, 350, 400)),
@@ -417,7 +342,7 @@ class TeamSoloIntentSkillTest {
                 new TeamAggregateResult(7, 3000, 1000, 0, 0, 0, 7, 0, null, null, null, false),
                 BattlePhaseSummary.buildRelativePhases(60, 300));
 
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+        final List<AiEvidence> evidence = TeamSeparationEvidenceSkill.detect(
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
 
         assertTrue(evidence.isEmpty(),
@@ -425,139 +350,7 @@ class TeamSoloIntentSkillTest {
     }
 
     @Test
-    void teammateFavorablePartialOverlapMakesBenefitUnknown() {
-        // 单走 span 60-90s，其他队友 FAVORABLE Engagement 为 40-65s：teammateBenefit 必须为 UNKNOWN，
-        // 即使单走成员窗口内承伤 1000 且持续拉大距离，也不得把 UNKNOWN 当 false 生成 SOLO_DETACHED
-        final Battle battle = battle(3, new double[7], new long[7]);
-        final TeamMemberFeatureSet solo = member(0, 0, true, null,
-                List.of(move(60, 90, 100, 150, 0, 150, 2f)),
-                List.of(engagement(60, 90, 10_001L, List.of(20_001L), 1000)), 1);
-        final TeamMemberFeatureSet teammate = member(1, 0, true, null,
-                List.of(), List.of(favorableEngagement(40, 65, 10_002L)), 1);
-        final TeamBattleFeatureSet features = features(
-                List.of(solo, teammate, member(2, 0, true, null, List.of(), List.of(), 1)),
-                phases(60, 90, 100, 150, 0, 150, 300, 250, 300, 250, "account:10001"),
-                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
-                BattlePhaseSummary.buildRelativePhases(40, 300));
-
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
-                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
-
-        assertTrue(evidence.isEmpty(),
-                "partially overlapping teammate favorable engagement must make benefit UNKNOWN, not FALSE");
-    }
-
-    @Test
-    void teammateFavorableFullyInsideSpanYieldsDelay() {
-        // 队友 FAVORABLE Engagement 完全位于 span 内：teammateBenefit=TRUE → SOLO_DELAY
-        final Battle battle = battle(3, new double[7], new long[7]);
-        final TeamMemberFeatureSet solo = member(0, 0, true, null,
-                List.of(stationary(60, 90, 100, 150)),
-                List.of(engagement(60, 90, 10_001L, List.of(20_001L, 20_002L), 200)), 1);
-        final TeamMemberFeatureSet teammate = member(1, 0, true, null,
-                List.of(), List.of(favorableEngagement(60, 90, 10_002L)), 1);
-        final TeamBattleFeatureSet features = features(
-                List.of(solo, teammate, member(2, 0, true, null, List.of(), List.of(), 1)),
-                phases(60, 90, 100, 150, 100, 150, 300, 250, 300, 250, "account:10001"),
-                new TeamAggregateResult(7, 3000, 1500, 0, 0, 0, 7, 0, null, null, null, false),
-                BattlePhaseSummary.buildRelativePhases(40, 300));
-
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
-                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
-
-        assertEquals(1, evidence.size());
-        assertEquals("SOLO_DELAY", evidence.getFirst().labels().get("intent"));
-    }
-
-    @Test
-    void teammateEngagementsFullyOutsideAllowFalseDetach() {
-        // 所有队友 Engagement 完全位于 span 外且覆盖可靠：teammateBenefit=FALSE 允许判 SOLO_DETACHED
-        final Battle battle = battle(3, new double[7], new long[7]);
-        final TeamMemberFeatureSet solo = member(0, 0, true, null,
-                List.of(move(60, 90, 100, 150, 0, 150, 2f)),
-                List.of(engagement(60, 90, 10_001L, List.of(20_001L), 1000)), 1);
-        final TeamMemberFeatureSet teammate = member(1, 0, true, null,
-                List.of(), List.of(favorableEngagement(95, 120, 10_002L)), 1);
-        final TeamBattleFeatureSet features = features(
-                List.of(solo, teammate, member(2, 0, true, null, List.of(), List.of(), 1)),
-                phases(60, 90, 100, 150, 0, 150, 300, 250, 300, 250, "account:10001"),
-                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
-                BattlePhaseSummary.buildRelativePhases(40, 300));
-
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
-                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
-
-        assertEquals(1, evidence.size());
-        assertEquals("SOLO_DETACHED", evidence.getFirst().labels().get("intent"));
-    }
-
-    @Test
-    void soloMemberPartialOverlapWithInWindowDeathDoesNotDetach() {
-        // 单走成员部分重叠 Engagement（40-65s）+ 窗口内阵亡（75s）：
-        // 不得绕过 UNKNOWN 直接生成 SOLO_DETACHED
-        final Battle battle = battle(3, new double[]{0, 0, 0, 0, 0, 0, 75}, new long[7]);
-        final TeamMemberFeatureSet solo = member(0, 0, false, 75.0,
-                List.of(move(60, 90, 100, 150, 0, 150, 2f)),
-                List.of(engagement(40, 65, 10_001L, List.of(20_001L), 1000)), 1);
-        final TeamBattleFeatureSet features = features(
-                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
-                phases(60, 90, 100, 150, 0, 150, 300, 250, 300, 250, "account:10001"),
-                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 6, 1, 75.0, 75.0, 75.0, false),
-                BattlePhaseSummary.buildRelativePhases(40, 300));
-
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
-                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
-
-        assertTrue(evidence.isEmpty(),
-                "partial-overlap engagement + in-window death must not bypass UNKNOWN to emit SOLO_DETACHED");
-    }
-
-    @Test
-    void observedDamagePartialMakesBenefitUnknown() {
-        // 生产契约：事件流观测伤害不完整（OBSERVED_DAMAGE_IS_PARTIAL）且没有队友 Engagement：
-        // “没观察到队友获利”不等于“确定没获利” → teammateBenefit=UNKNOWN，不生成 SOLO_DETACHED
-        final Battle battle = battle(3, new double[7], new long[7]);
-        final TeamMemberFeatureSet solo = member(0, 0, true, null,
-                List.of(move(60, 90, 100, 150, 0, 150, 2f)),
-                List.of(engagement(60, 90, 10_001L, List.of(20_001L), 1000)), 1);
-        final TeamBattleFeatureSet features = features(
-                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
-                phases(60, 90, 100, 150, 0, 150, 300, 250, 300, 250, "account:10001"),
-                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
-                BattlePhaseSummary.buildRelativePhases(40, 300),
-                1,
-                List.of(TeamSoloIntentSkill.OBSERVED_DAMAGE_IS_PARTIAL));
-
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
-                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
-
-        assertTrue(evidence.isEmpty(),
-                "OBSERVED_DAMAGE_IS_PARTIAL must make teammateBenefit UNKNOWN, not FALSE");
-    }
-
-    @Test
-    void completeCoverageWithoutTeammateEngagementAllowsFalse() {
-        // 覆盖完整（无 OBSERVED_DAMAGE_IS_PARTIAL）且没有相关队友 Engagement：teammateBenefit=FALSE 允许判脱节
-        final Battle battle = battle(3, new double[7], new long[7]);
-        final TeamMemberFeatureSet solo = member(0, 0, true, null,
-                List.of(move(60, 90, 100, 150, 0, 150, 2f)),
-                List.of(engagement(60, 90, 10_001L, List.of(20_001L), 1000)), 1);
-        final TeamBattleFeatureSet features = features(
-                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
-                phases(60, 90, 100, 150, 0, 150, 300, 250, 300, 250, "account:10001"),
-                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
-                BattlePhaseSummary.buildRelativePhases(40, 300));
-
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
-                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
-
-        assertEquals(1, evidence.size());
-        assertEquals("SOLO_DETACHED", evidence.getFirst().labels().get("intent"));
-    }
-
-    @Test
-    void observedDamagePartialSuppressesOpening() {
-        // OBSERVED_DAMAGE_IS_PARTIAL + 开局未观察到交火：不得用“没有观察到”证明未接火 → 不生成 OPENING_SPREAD
+    void observedDamagePartialSuppressesOpeningAndNeverEmitsTacticalVerdict() {
         final Battle battle = battle(1, new double[7], new long[7]);
         final TeamMemberFeatureSet solo = member(0, 0, true, null,
                 List.of(stationary(15, 45, 350, 400)),
@@ -568,16 +361,19 @@ class TeamSoloIntentSkillTest {
                 new TeamAggregateResult(7, 3000, 1000, 0, 0, 0, 7, 0, null, null, null, false),
                 BattlePhaseSummary.buildRelativePhases(60, 300),
                 1,
-                List.of(TeamSoloIntentSkill.OBSERVED_DAMAGE_IS_PARTIAL));
+                List.of(TeamSeparationEvidenceSkill.OBSERVED_DAMAGE_IS_PARTIAL));
 
-        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+        final List<AiEvidence> evidence = TeamSeparationEvidenceSkill.detect(
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
 
-        assertTrue(evidence.isEmpty(),
-                "partial damage coverage must not support the negative 'no contact' opening judgment");
+        // partial 覆盖不得用“没有观察到”证明未接火 → 不生成 OPENING_SPREAD；也不得生成任何战术 verdict
+        for (final AiEvidence e : evidence) {
+            assertFalse("OPENING_SPREAD".equals(e.labels().get("kind")), e.summary());
+            assertFalse(e.summary().contains("拖延") || e.summary().contains("脱节"), e.summary());
+        }
     }
 
-    // ===== helpers =====
+    // ===== helpers（与原测试一致） =====
 
     private static TeamFormationPhase twoClusterPhase(
             final float start, final float end,
@@ -709,13 +505,6 @@ class TeamSoloIntentSkillTest {
         return new EngagementSummary(start, end, List.of(ally), enemies,
                 300, damageReceived, new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
                 EngagementOutcome.UNFAVORABLE, DecodeConfidence.PARTIAL);
-    }
-
-    private static EngagementSummary favorableEngagement(final float start, final float end,
-                                                         final long ally) {
-        return new EngagementSummary(start, end, List.of(ally), List.of(20_001L),
-                300, 50, new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
-                EngagementOutcome.FAVORABLE, DecodeConfidence.PARTIAL);
     }
 
     private static Battle battle(final int arenaBonusType, final double[] deathSecs,

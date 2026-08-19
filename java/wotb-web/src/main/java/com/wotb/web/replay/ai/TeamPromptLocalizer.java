@@ -400,47 +400,113 @@ final class TeamPromptLocalizer {
                     + "или пользователь естественно захочет узнать эту ключевую причину, — естественно скажите, что "
                     + "«по данным реплея это определить нельзя»; остальные неизвестные не перечисляйте.";
 
-    /** Team 专用：单走行为判定规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。 */
-    static final String SOLO_INTENT_RULE = """
+    /** Team 专用：空间分离证据使用规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。
+     *  <p>Backend Evidence Boundary：SPATIAL_SEPARATION_EVIDENCE 是观察事实与确定性派生测量，
+     *  不是战术 verdict；拖延/脱节/图控/有效牵制等判断由 LLM 完成。</p> */
+    static final String SEPARATION_EVIDENCE_RULE = """
 
-            === 单走行为判定规则（强制） ===
-            1. 开局分散（OPENING_SPREAD：首次接敌前或开局 45 秒内、未接火未承伤未阵亡、与主力保持明显距离）是
-               「地图信息覆盖 ↔ 局部兵力集中度」的战术交换：收益是扩大队伍早期的空间覆盖、更有机会从多个方向确认
-               敌方主力动向；代价是降低单一路线的局部兵力密度，面对对方集中推进时被接敌一侧可能短时间处于人数劣势。
-               可以分析这种 trade-off，但不得把「可能获得更多地图信息」说成「已经点亮了谁/提供了具体侦察收益」；
+            === 空间分离证据使用规则（强制） ===
+            1. 后端 SPATIAL_SEPARATION_EVIDENCE 段提供的是【观察事实与确定性派生测量】（空间分离窗口、
+               距离、距离增长、静止占比、移动覆盖、局部观察敌我数量、窗口内承伤/输出、阵亡、主力簇位移、
+               其他队友窗口内活动），不是战术 verdict。判断「拖延 / 脱节 / 图控 / 有效牵制 / 局部兵力不足 /
+               交换是否值得」是你（LLM）的职责：把这些事实组合起来，得出 supported tactical inference。
+            2. 开局分散（OPENING_SPREAD）只表示「开局阶段队伍形成了空间分离结构」，是中性结构分类；
+               可以分析「地图信息覆盖 ↔ 局部兵力集中度」的 trade-off，但不得把「可能获得更多地图信息」说成「已经点亮了谁/提供了具体侦察收益」；
                开局分散不是天然正确也不是天然错误，不能仅凭分散判为脱节，也不能仅凭分散判为图控/拿视野。
-            2. 只有专门且经过验证的 visibility/spotting evidence 才允许写「点亮了」「提供了视野」「侦察到了」等具体归因；
-               没有这种 evidence 时，开局分散的具体视野收益保持内部 UNKNOWN：正文不得声称具体点亮/侦察收益，
+            3. 只有专门且经过验证的 visibility/spotting evidence 才允许写「点亮了」「提供了视野」「侦察到了」等具体归因；
+               没有这种 evidence 时，具体视野收益保持内部 UNKNOWN：不得声称具体点亮/侦察收益，
                也不得自动追加「实际视野收益无法确认」——仅当该未知影响核心判断时才自然说明（符合全局选择性 UNKNOWN 条件）。
-            3. 单走成员是否判「拖延」取决于队友是否因他获利（转场/占点/另一侧推进/视野时间）：后端只提供时序关联，禁止声称「A 的行为导致 B 获利」的因果。
-            4. 判「脱节」需要无拖延收益且被白吃/丢点（无接应、承伤高或阵亡、远离目标点）。
-            5. 后端给出 OPENING_SPREAD / SOLO_DELAY / SOLO_DETACHED 候选时，先说明信号依据再下结论；信号不足或矛盾时不得硬下标签，
-               该判断保持内部 UNKNOWN——仅当符合全局选择性 UNKNOWN 条件时才自然说明。
-            6. 只基于可观测行为（位置、移动、交火、占点）判定战术行为模式，不得把行为模式说成玩家心理意图；正文不得出现「簇/质心/候选/规则候选/PARTIAL」等内部术语，一律转成自然中文。
-            7. 开局分散的质量取决于拿到信息后是否及时响应：敌方主力方向确认后本方是否及时合流/收缩/转场、被接敌一侧的
-               局部人数关系、另一侧支援能否及时赶到；分散获得的信息价值是否抵得上局部兵力不足的代价。
+            4. 判断空间分离成员的战术含义时，综合：空间分离窗口的距离/距离增长/静止占比、局部观察敌我数量、
+               敌方已知信息、窗口内交换结果（承伤/输出/阵亡）、主力簇位移与其他队友窗口内活动、以及后续
+               重新集中的时序。只基于可观测行为（位置、移动、交火、占点）判定行为模式，不得把行为模式说成
+               玩家心理意图；正文不得出现「簇/质心/候选/规则候选/PARTIAL」等内部术语，一律转成自然中文；
+               禁止声称「A 的行为导致 B 获利」的因果。
+            5. 数据不足时不得猜测：移动覆盖不足 → movementState=UNKNOWN；部分重叠交火无法可靠归属时后端
+               不输出该窗口；OBSERVED_DAMAGE_IS_PARTIAL 时不得用「没有观察到」证明未接火/未承伤。缺失本身
+               保持内部 UNKNOWN——仅当该未知直接影响核心判断、因果判断或训练建议时才自然说明。
+            6. 开局分散的质量取决于拿到信息后是否及时响应：敌方主力方向确认后本方是否及时合流/收缩/转场、
+               被接敌一侧的局部人数关系、另一侧支援能否及时赶到；分散获得的信息价值是否抵得上局部兵力不足的代价。
             """;
-    static final String SOLO_INTENT_RULE_EN = """
+    static final String SEPARATION_EVIDENCE_RULE_EN = """
 
-            === SOLO-PLAY JUDGMENT RULES (mandatory) ===
-            1. An opening spread (OPENING_SPREAD: before first contact or within the first 45 seconds, no damage dealt/received, no destruction, and a clear distance from the main body) is a tactical trade of "information/spatial coverage ↔ local force concentration": the gain is wider early map coverage and a better chance to confirm the enemy's main force direction from several directions; the cost is lower local force density on a single lane, so if the enemy pushes concentrated, the contacted group may briefly fight at a numbers disadvantage. You may analyze this trade-off, but you may NOT present "possibly gaining more map information" as "already spotted someone / provided specific recon benefit"; an opening spread is neither inherently correct nor inherently wrong — do not call it detachment merely because the team is spread out, and do not call it map control / vision gathering either.
-            2. Only dedicated, validated visibility/spotting evidence allows specific claims like "spotted", "provided vision", "recon'd"; without such evidence, the specific vision benefit of an opening spread stays internal UNKNOWN: never claim specific spotting/recon benefits and never automatically append "its actual vision benefit cannot be confirmed" — explain naturally only when that unknown affects the core judgment (the global selective-UNKNOWN condition).
-            3. Whether a solo member's play is "delay" depends on whether teammates profited from it (rotation / capture / advance on another flank / vision time): the backend provides temporal correlation only; never claim causation ("A's play caused B's profit").
-            4. "Detachment" requires no delay benefit and being caught out / losing ground (no support, high damage taken or destruction, away from objectives).
-            5. When the backend provides OPENING_SPREAD / SOLO_DELAY / SOLO_DETACHED candidates, state the signal basis before concluding; when signals are insufficient or contradictory, never force a label — keep that judgment internal UNKNOWN and explain naturally only when the global selective-UNKNOWN condition applies.
-            6. Judge tactical behavior patterns only from observable behavior (position, movement, engagements, capture points); never describe a behavior pattern as the player's mental intent. Never echo internal terms such as cluster/centroid/candidate/PARTIAL; use natural language.
-            7. The quality of an opening spread depends on how the team responded once information arrived: after the enemy's main force direction was confirmed, did the team regroup/contract/rotate in time, what were the local force relations on the contacted side, and could the other side support in time; was the information value of the spread worth the cost of local force scarcity.
+            === SPATIAL SEPARATION EVIDENCE USAGE RULES (mandatory) ===
+            1. The backend SPATIAL_SEPARATION_EVIDENCE section provides OBSERVATIONS and DETERMINISTIC DERIVED
+               MEASUREMENTS (separation windows, distance, distance growth, stationary ratio, movement coverage,
+               locally observed friendly/enemy counts, in-window damage received/dealt, deaths, main-cluster
+               displacement, other teammates' in-window activity) — NOT tactical verdicts. Judging "delay /
+               detachment / map control / effective holding / local force shortage / whether a trade was worth it"
+               is YOUR (the LLM's) job: combine these facts into a supported tactical inference.
+            2. An opening spread (OPENING_SPREAD) only means "the team formed a spatially separated structure
+               during the opening phase" — a neutral structural classification. You may analyze the trade-off of
+               "information/spatial coverage ↔ local force concentration", but you may NOT present "possibly
+               gaining more map information" as "already spotted someone / provided specific recon benefit";
+               an opening spread is neither inherently correct nor inherently wrong — do not call it detachment
+               merely because the team is spread out, and do not call it map control / vision gathering either.
+            3. Only dedicated, validated visibility/spotting evidence allows specific claims like "spotted",
+               "provided vision", "recon'd"; without such evidence, the specific vision benefit stays internal UNKNOWN:
+               never claim specific spotting/recon benefits and never automatically append "its actual vision benefit
+               cannot be confirmed" — explain naturally only when that unknown affects the core judgment (the global
+               selective-UNKNOWN condition).
+            4. When judging the tactical meaning of a spatially separated member, weigh together: the separation
+               window's distance / distance growth / stationary ratio, locally observed friendly/enemy counts,
+               known enemy information, the in-window trade result (damage received/dealt/deaths), main-cluster
+               displacement and other teammates' in-window activity, and the timing of later regrouping. Judge
+               behavior patterns only from observable behavior (position, movement, engagements, capture points);
+               never describe a behavior pattern as the player's mental intent. Never echo internal terms such as
+               cluster/centroid/candidate/PARTIAL; use natural language. Never claim causation ("A's play caused
+               B's profit").
+            5. Do not guess when data is insufficient: insufficient movement coverage → movementState=UNKNOWN;
+               when an engagement cannot be reliably attributed (partial overlap) the backend does not emit that
+               window; under OBSERVED_DAMAGE_IS_PARTIAL never use "not observed" to prove "no contact / no damage".
+               Gaps stay internal UNKNOWN — explain naturally only when a gap directly affects the core judgment,
+               causal judgment, or training advice (the global selective-UNKNOWN condition).
+            6. The quality of an opening spread depends on how the team responded once information arrived: after
+               the enemy's main force direction was confirmed, did the team regroup/contract/rotate in time, what
+               were the local force relations on the contacted side, and could the other side support in time; was
+               the information value of the spread worth the cost of local force scarcity.
             """;
-    static final String SOLO_INTENT_RULE_RU = """
+    static final String SEPARATION_EVIDENCE_RULE_RU = """
 
-            === ПРАВИЛА ОЦЕНКИ ДЕЙСТВИЙ В ОДИНОЧКУ (обязательно) ===
-            1. Рассредоточение на старте (OPENING_SPREAD: до первого контакта или в первые 45 секунд, без нанесённого/полученного урона, без уничтожения и при заметном удалении от основной группы) — это тактический размен «покрытие информацией/пространством ↔ концентрация локальных сил»: выгода — более широкое раннее покрытие карты и больше шансов с нескольких направлений подтвердить направление главных сил противника; цена — меньшая плотность локальных сил на одной линии, поэтому при концентрированном наступлении противника группа, принявшая контакт, может кратко оказаться в численном меньшинстве. Вы можете анализировать этот размен, но НЕ можете выдавать «возможно, получили больше информации о карте» за «уже засветил кого-то / дал конкретную разведывательную выгоду»; рассредоточение на старте не является ни изначально правильным, ни изначально ошибочным — не называйте его отрывом только из-за рассредоточения и не называйте его контролем карты / сбором обзора.
-            2. Только специальные проверенные visibility/spotting evidence позволяют писать конкретные утверждения вроде «засветил», «обеспечивал обзор», «разведал»; без таких evidence конкретная обзорная выгода рассредоточения остаётся внутренним UNKNOWN: не утверждайте конкретный засвет/разведку и не добавляйте автоматически «его фактическую обзорную выгоду подтвердить нельзя» — объясняйте естественно, только если это неизвестное влияет на ключевой вывод (условие глобального селективного UNKNOWN).
-            3. Является ли действие игрока «задержкой», зависит от того, извлекли ли союзники выгоду (ротация / захват / продвижение на другом фланге / время на разведку): бэкенд даёт только временну́ю корреляцию; запрещено утверждать причинность («действие A принесло выгоду B»).
-            4. «Отрыв» требует отсутствия выгоды от задержки и размена без пользы (без поддержки, высокий полученный урон или уничтожение, вдали от целей).
-            5. Когда бэкенд даёт кандидатов OPENING_SPREAD / SOLO_DELAY / SOLO_DETACHED, сначала укажите обоснование по сигналам; при недостатке или противоречивости сигналов не навешивайте ярлык — оставьте это суждение внутренним UNKNOWN и объясняйте естественно только при выполнении условия глобального селективного UNKNOWN.
-            6. Оценивайте только наблюдаемые паттерны поведения (позиция, движение, перестрелки, захват точек); не выдавайте паттерн поведения за психологические намерения игрока. Не используйте внутренние термины (кластер/центроид/кандидат/PARTIAL); излагайте естественно.
-            7. Качество рассредоточения зависит от реакции после получения информации: после подтверждения направления главных сил противника успела ли команда вовремя перегруппироваться/сжаться/ротироваться, каково было локальное соотношение сил на стороне контакта и успела ли подойти поддержка с другой стороны; стоила ли информационная ценность рассредоточения цены нехватки локальных сил.
+            === ПРАВИЛА ИСПОЛЬЗОВАНИЯ ДОКАЗАТЕЛЬСТВ ПРОСТРАНСТВЕННОГО ОТДЕЛЕНИЯ (обязательно) ===
+            1. Секция SPATIAL_SEPARATION_EVIDENCE на бэкенде предоставляет НАБЛЮДЕНИЯ и ДЕТЕРМИНИРОВАННЫЕ
+               ПРОИЗВОДНЫЕ ИЗМЕРЕНИЯ (окна отделения, дистанция, рост дистанции, доля неподвижности,
+               покрытие движения, локально наблюдаемое число союзников/противников, полученный/нанесённый
+               урон в окне, гибель, смещение главной группы, активность других союзников в окне) — а НЕ тактические вердикты.
+               Оценка «задержка / отрыв / контроль карты / эффективное удержание /
+               нехватка локальных сил / стоило ли размениваться» — это ВАША (LLM) задача: объедините эти
+               факты в подтверждённый тактический вывод.
+            2. Рассредоточение на старте (OPENING_SPREAD) означает лишь «в начальной фазе команда образовала
+               пространственно разделённую структуру» — нейтральная структурная классификация. Вы можете
+               анализировать размен «покрытие информацией/пространством ↔ концентрация локальных сил», но НЕ
+               можете выдавать «возможно, получили больше информации о карте» за «уже засветил кого-то / дал
+               конкретную разведывательную выгоду»; рассредоточение на старте не является ни изначально
+               правильным, ни изначально ошибочным — не называйте его отрывом только из-за рассредоточения и
+               не называйте его контролем карты / сбором обзора.
+            3. Только специальные проверенные visibility/spotting evidence позволяют писать конкретные
+               утверждения вроде «засветил», «обеспечивал обзор», «разведал»; без таких evidence конкретная
+               обзорная выгода остаётся внутренним UNKNOWN: не утверждайте конкретный засвет/разведку и не
+               добавляйте автоматически «его фактическую обзорную выгоду подтвердить нельзя» — объясняйте
+               естественно, только если это неизвестное влияет на ключевой вывод (условие глобального
+               селективного UNKNOWN).
+            4. Оценивая тактический смысл отделившегося члена, взвесьте вместе: дистанцию/рост дистанции/долю
+               неподвижности окна отделения, локально наблюдаемое число союзников/противников, известную
+               информацию о противнике, результат размена в окне (полученный/нанесённый урон, гибель), смещение
+               главной группы и активность других союзников в окне, а также время последующей перегруппировки.
+               Оценивайте только наблюдаемые паттерны поведения (позиция, движение, перестрелки, захват точек);
+               не выдавайте паттерн поведения за психологические намерения игрока. Не используйте внутренние
+               термины (кластер/центроид/кандидат/PARTIAL); излагайте естественно. Запрещено утверждать
+               причинность («действие A принесло выгоду B»).
+            5. Не угадывайте при нехватке данных: недостаточное покрытие движения → movementState=UNKNOWN;
+               когда перестрелку нельзя надёжно отнести к окну (частичное пересечение), бэкенд не выводит это
+               окно; при OBSERVED_DAMAGE_IS_PARTIAL не используйте «не наблюдалось» как доказательство
+               «нет контакта / нет урона». Пробелы остаются внутренним UNKNOWN — объясняйте естественно,
+               только если пробел напрямую влияет на ключевой вывод, причинно-следственный вывод или
+               рекомендацию (условие глобального селективного UNKNOWN).
+            6. Качество рассредоточения зависит от реакции после получения информации: после подтверждения
+               направления главных сил противника успела ли команда вовремя перегруппироваться/сжаться/
+               ротироваться, каково было локальное соотношение сил на стороне контакта и успела ли подойти
+               поддержка с другой стороны; стоила ли информационная ценность рассредоточения цены нехватки
+               локальных сил.
             """;
     /** Team 专用（PR #103 review BLOCKER E）：重新集中/合流是本场具体结论，必须有证据。 */
     static final String TEAM_REGROUP_INFERENCE_RULE = """
@@ -634,8 +700,8 @@ final class TeamPromptLocalizer {
                         en ? TEAM_PRIOR_RULE_EN : TEAM_PRIOR_RULE_RU)
                 .replace(TEAM_REGION_RULE,
                         en ? TEAM_REGION_RULE_EN : TEAM_REGION_RULE_RU)
-                .replace(SOLO_INTENT_RULE,
-                        en ? SOLO_INTENT_RULE_EN : SOLO_INTENT_RULE_RU)
+                .replace(SEPARATION_EVIDENCE_RULE,
+                        en ? SEPARATION_EVIDENCE_RULE_EN : SEPARATION_EVIDENCE_RULE_RU)
                 .replace(CAPTURE_RULE,
                         en ? CAPTURE_RULE_EN : CAPTURE_RULE_RU)
                 .replace(BEHIND_LINE_RULE,

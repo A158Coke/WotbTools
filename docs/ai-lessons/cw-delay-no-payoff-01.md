@@ -9,4 +9,4 @@
   - 无敌情压力；
   - 队友时序关联为空（未转场/未占点/未推进）。
 - **对应 golden case**：`ai-eval/cases/cw-delay-no-payoff-01.json`
-- **规则引用**：Step 2 `SOLO_INTENT_RULE`（拖延需行为 + 队友获利双条件）。
+- **规则引用**：Step 2 `SEPARATION_EVIDENCE_RULE`（拖延需行为 + 队友获利双条件）。
