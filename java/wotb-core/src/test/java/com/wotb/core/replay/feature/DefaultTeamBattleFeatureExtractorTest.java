@@ -503,6 +503,25 @@ class DefaultTeamBattleFeatureExtractorTest {
     }
 
     @Test
+    void coverageToStringDoesNotLeakNonCombatantCounter() {
+        // PR #103 §6：non-#301 实体位置计数是 internal-only；AI-visible 渲染（TeamEvidenceFormatter 的
+        // coverage= 行 = record toString）不得包含 nonCombatantPositionEventCount，后端字段访问仍可用。
+        final Fixture fixture = fixture();
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                mapping(2, 30, 300L),
+   // spectator（不在 #301 battle.players）
+                position(3, 5f, 30, 0f, 0f));
+        final TeamFeatureCoverage coverage = extract(fixture, events).coverage();
+
+        assertEquals(1, coverage.nonCombatantPositionEventCount());
+        assertFalse(coverage.toString().contains("nonCombatantPositionEventCount"),
+                "AI-visible coverage 渲染不得泄露 non-combatant 计数: " + coverage);
+        assertFalse(coverage.toString().contains("nonCombatant"),
+                "AI-visible coverage 渲染不得泄露 non-combatant 字样: " + coverage);
+    }
+
+    @Test
     void partialPositionsLowerMovementConfidence() {
         final Fixture fixture = fixture();
         final List<ReplayEvent> events = List.of(
