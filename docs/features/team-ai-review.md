@@ -77,6 +77,27 @@ Controller 只负责 HTTP binding + 委托 Service。Service 接管 validate / p
 
 事件流迄今只逆向出 sub3 直接伤害，观测聚合与权威结算不一致时标记 `OBSERVED_DAMAGE_IS_PARTIAL`（条件触发：观测=权威时自动消失），prompt 层抑制观测数字、强制以 `AUTHORITATIVE_TEAM_RESULT` 为唯一可信口径；随机战交火段同步抑制「观测输出子集 + 百分比」。待事件流覆盖达 100%（type 5/31/35/39 与更多 EntityMethod subtype 逆向完成）后数字自动恢复输出。
 
+### 5.5 位置知识状态契约（CURRENT / LAST_KNOWN，2026-08 第六轮）
+
+FormationDepthEvidence / RelativeDepthHpEvidence 的阶段位置参考带 knowledge provenance
+（`PhasePositionReference`：accountId / team / x / z / knowledge / observedAtSec / ageSec，
+knowledge 复用 canonical `PositionKnowledge`）：
+
+- **friendly actual combatant**（last position + 无 EntityLeave + 未阵亡）→ **CURRENT**
+  （含 phase 内无新 PositionChanged 的 carry-forward，与 canonical BattleTimeline 同口径）；
+- **enemy** → 最后观测 age ≤ canonical 当前阈值（`BattleTimelineBuilder.POSITION_GAP_SEC=5s`）
+  → **CURRENT**，否则 **LAST_KNOWN**；
+- **exact 阵型/覆盖/距离数学只消费 CURRENT**：enemy LAST_KNOWN 不得满足 current-position completeness、
+  不得作为当前 enemy centroid / enemyPositionPresence / enemyWeightedCoverageScore 坐标、不生成
+  memberDist/referenceDist/relativeDepthM exact 距离；
+- CURRENT 不完整时 FormationDepth fail-close 只输出 `POSITION_COVERAGE_INSUFFICIENT` + CURRENT presence
+  + 独立信息段 `ENEMY_LAST_KNOWN_POSITION_REFERENCES`（account + region + observedAtSec + ageSec +
+  knowledge=LAST_KNOWN，不伪装 current）；RelativeDepthHp 直接 fail-close 该 phase 的 exact 距离测量；
+- **Region presence 基于 resolved 车辆位置 state**（每辆 CURRENT 车辆 +1，不是位置包数量）——同一车辆
+  100 个包 presence 仍 1，coverageCompleteness 与 presence 同一套 resolved state；
+- **Actual Combatant 边界**：证据层只消费 battle_results #301（battle.players）成员位置；
+  spectator/observer/camera/静态实体位置绝不进入战术位置覆盖。
+
 ### 5.1 战斗开始
 
 `BattleStartResolver.resolve()` 返回 `BattleStartResolution`（IDENTIFIED / ESTIMATED / UNRESOLVED）。所有事件时间通过 `tryRelative()` 转换为 battle-relative（即开战后第 N 秒）。准备阶段事件被排除。

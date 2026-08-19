@@ -5,6 +5,35 @@
 ## [Unreleased]
 
 ### Fixed
+- **PR #103 第六轮——Evidence 层知识状态契约：enemy LAST_KNOWN 永不升级为 CURRENT exact geometry（2026-08）**：
+  ① **FormationDepthEvidence / RelativeDepthHpEvidence 引入带 provenance 的 PhasePositionReference
+  （accountId/team/x/z/knowledge/observedAtSec/ageSec，knowledge 复用 canonical PositionKnowledge）**——
+  「无 provenance 的 meanByAccount 同时表示 friendly CURRENT / enemy CURRENT / enemy LAST_KNOWN」结构删除；
+  exact 阵型/覆盖/距离数学只消费 CURRENT 参考：friendly actual combatant carry-forward
+  （last position + 无 EntityLeave + 未阵亡）→ CURRENT（canonical 同口径）；enemy 最后观测
+  age ≤ canonical 当前阈值（BattleTimelineBuilder.POSITION_GAP_SEC=5s，本条目改为 public 供证据层复用）
+  → CURRENT，否则 LAST_KNOWN。
+  ② **FormationDepth fail-close**——enemy LAST_KNOWN 不得满足 current-position completeness、不得作为
+  当前 enemy centroid / enemyPositionPresence / enemyWeightedCoverageScore 坐标；CURRENT 不完整时只输出
+  POSITION_COVERAGE_INSUFFICIENT + CURRENT presence + 新增独立信息段 ENEMY_LAST_KNOWN_POSITION_REFERENCES
+  （account + region + observedAtSec + ageSec + knowledge=LAST_KNOWN，独立信息不伪装 current，不 future-leak）；
+  GEOMETRIC_* 三分位轴只消费 CURRENT enemy refs。
+  ③ **RelativeDepthHp 更严格 fail-close**——enemy 只有 LAST_KNOWN 时该 phase 不生成
+  memberDist/referenceDist/relativeDepthM exact 距离测量（禁止「LAST_KNOWN → 当前精确距离」）。
+  ④ **Region presence 统一为 resolved 车辆位置 state**——ownPositionPresence/enemyPositionPresence 从
+  「位置包数量」改为「每辆 CURRENT 车辆 +1」（同一车辆 phase 内 100 个包 presence 仍 1），
+  与 coverageCompleteness 同一套 resolved position state。
+  ⑤ **Actual Combatant 边界加固**——证据层 tracks 增加 #301（battle.players）成员过滤：
+  spectator/observer/camera/静态实体位置绝不进入战术位置覆盖；TEAM_MEMBER_ENTITY_UNMAPPED 与
+  TEAM_MEMBER_POSITION_UNAVAILABLE 改为互斥（完全 unmapped → 只报 mapping failure，P2 cleanup）。
+  ⑥ **Prompt 三语 FORMATION_DEPTH_RULE 同步**——presence=基于 resolved 状态的车辆数（非包数）、
+  CURRENT/LAST_KNOWN 语义、ENEMY_LAST_KNOWN_POSITION_REFERENCES 不得当作当前精确位置。
+  ⑦ **测试**——friendlyStationaryCarryForwardRemainsCurrent / enemyStalePositionRemainsLastKnown
+  （knowledge=LAST_KNOWN + observedAtSec/ageSec 断言）/ staleEnemyDoesNotProduceExactRelativeDepthDistance /
+  carriedFriendlyCountsInRegionPresence / regionPresenceCountsVehiclesNotPositionPackets /
+  spectatorDoesNotAffectCoverage / mapped 零位置 → 仅 TEAM_MEMBER_POSITION_UNAVAILABLE（P2）；
+  回归 fixture 更新为真实连续位置流语义（enemy phase 末保持 CURRENT）。
+  文档：protocol.md 证据层知识契约；team-ai-review.md CURRENT-only exact math + LAST_KNOWN 独立信息段。
 - **PR #103 第五轮——Actual Combatant / Spectator 边界 + 己方位置 state 语义（2026-08-19）**：
   基于 6 个真实 replay 的协议调查（`ActualCombatantPositionProbeTest`，见 `docs/research/replay/protocol.md`
   SPECTATOR/NON-COMBATANT 节）：

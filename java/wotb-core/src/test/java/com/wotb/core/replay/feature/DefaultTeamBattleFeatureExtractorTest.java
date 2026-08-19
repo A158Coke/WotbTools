@@ -481,6 +481,9 @@ class DefaultTeamBattleFeatureExtractorTest {
 
         assertTrue(allyTwo.limitations().contains("TEAM_MEMBER_ENTITY_UNMAPPED"));
         assertTrue(allyTwo.entityIds().isEmpty());
+        // P2 cleanup：完全 unmapped 只披露 mapping failure，不再重复披露派生 position failure
+        assertFalse(allyTwo.limitations().contains("TEAM_MEMBER_POSITION_UNAVAILABLE"),
+                "完全 unmapped 成员不得同时产生 TEAM_MEMBER_POSITION_UNAVAILABLE: " + allyTwo.limitations());
     }
 
     @Test

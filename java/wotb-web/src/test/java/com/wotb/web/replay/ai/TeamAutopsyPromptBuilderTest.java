@@ -377,6 +377,21 @@ class TeamAutopsyPromptBuilderTest {
                 DecodeConfidence.EXACT, 20, 0, 0, 200f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
         events.add(new PositionChangedEvent(13, new ReplayTimestamp(40f, null), 10,
                 DecodeConfidence.EXACT, 21, 0, 0, 230f, 50f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
+        // 无交火时 opening=[0,100]：敌方 t=100 保持 CURRENT（否则 stale → LAST_KNOWN → fail-close）
+        events.add(new PositionChangedEvent(16, new ReplayTimestamp(120f, null), 10,
+                DecodeConfidence.EXACT, 20, 0, 0, 200f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
+        events.add(new PositionChangedEvent(17, new ReplayTimestamp(120f, null), 10,
+                DecodeConfidence.EXACT, 21, 0, 0, 230f, 50f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
+        // 敌方 opening 末（t=44，opening=[0,45]）保持 CURRENT：enemy stale → LAST_KNOWN → fail-close exact distance
+        events.add(new PositionChangedEvent(14, new ReplayTimestamp(64f, null), 10,
+                DecodeConfidence.EXACT, 20, 0, 0, 200f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
+        events.add(new PositionChangedEvent(15, new ReplayTimestamp(64f, null), 10,
+                DecodeConfidence.EXACT, 21, 0, 0, 230f, 50f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
+        // 无交火时 opening=[0,100]：敌方 t=100 保持 CURRENT（否则 stale → LAST_KNOWN → fail-close）
+        events.add(new PositionChangedEvent(16, new ReplayTimestamp(120f, null), 10,
+                DecodeConfidence.EXACT, 20, 0, 0, 200f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
+        events.add(new PositionChangedEvent(17, new ReplayTimestamp(120f, null), 10,
+                DecodeConfidence.EXACT, 21, 0, 0, 230f, 50f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
         events.add(new HealthChangedEvent(30, new ReplayTimestamp(30f, null), 7,
                 DecodeConfidence.EXACT, 10, 1800, null, true));
         events.add(new HealthChangedEvent(31, new ReplayTimestamp(30f, null), 7,
@@ -434,6 +449,21 @@ class TeamAutopsyPromptBuilderTest {
         events.add(new PositionChangedEvent(12, new ReplayTimestamp(40f, null), 10,
                 DecodeConfidence.EXACT, 20, 0, 0, 200f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
         events.add(new PositionChangedEvent(13, new ReplayTimestamp(40f, null), 10,
+                DecodeConfidence.EXACT, 21, 0, 0, 230f, 50f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
+        // 无交火时 opening=[0,100]：敌方 t=100 保持 CURRENT（否则 stale → LAST_KNOWN → fail-close）
+        events.add(new PositionChangedEvent(16, new ReplayTimestamp(120f, null), 10,
+                DecodeConfidence.EXACT, 20, 0, 0, 200f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
+        events.add(new PositionChangedEvent(17, new ReplayTimestamp(120f, null), 10,
+                DecodeConfidence.EXACT, 21, 0, 0, 230f, 50f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
+        // 敌方 opening 末（t=44，opening=[0,45]）保持 CURRENT：enemy stale → LAST_KNOWN → fail-close exact distance
+        events.add(new PositionChangedEvent(14, new ReplayTimestamp(64f, null), 10,
+                DecodeConfidence.EXACT, 20, 0, 0, 200f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
+        events.add(new PositionChangedEvent(15, new ReplayTimestamp(64f, null), 10,
+                DecodeConfidence.EXACT, 21, 0, 0, 230f, 50f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
+        // 无交火时 opening=[0,100]：敌方 t=100 保持 CURRENT（否则 stale → LAST_KNOWN → fail-close）
+        events.add(new PositionChangedEvent(16, new ReplayTimestamp(120f, null), 10,
+                DecodeConfidence.EXACT, 20, 0, 0, 200f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
+        events.add(new PositionChangedEvent(17, new ReplayTimestamp(120f, null), 10,
                 DecodeConfidence.EXACT, 21, 0, 0, 230f, 50f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
         events.add(new HealthChangedEvent(30, new ReplayTimestamp(30f, null), 7,
                 DecodeConfidence.EXACT, 10, 1800, null, true));
