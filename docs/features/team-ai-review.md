@@ -98,6 +98,26 @@ knowledge 复用 canonical `PositionKnowledge`）：
 - **Actual Combatant 边界**：证据层只消费 battle_results #301（battle.players）成员位置；
   spectator/observer/camera/静态实体位置绝不进入战术位置覆盖。
 
+### 5.6 ActualCombatantEntitySet（Canonical BattleTimeline 边界，2026-08 第七轮）
+
+Canonical BattleTimeline 的 tactical FrameVehicle universe 从源头按 #301 过滤（实际参战实体集）：
+
+- **建立方式**：`TeamEntityMapping.actualCombatantEntityIds(#301 账号集)`——
+  #301 账号集 = battle.players 中 accountId > 0 的账号（battle_results #301 actual combatant）；
+  实体集 = mapping.entitiesById 中 identity.usable 且 identity.accountId ∈ #301 账号集的实体；
+  `BattleTimelineBuilder` 帧循环只对 `knownEntityIdsAt(t) ∩ actualCombatantEntityIds` 构造 FrameVehicle；
+  空实体集 → fail-close `TIMELINE_MAPPING_INSUFFICIENT`（timeline 不进入 AI Review）。
+- **为何必须源头过滤**：`BattleDeltaEngine` 以 `isEnemy = !friendly()` 判定敌方，team=null 的
+  spectator/camera 实体会被当作 enemy，产生假的 FIRST_KNOWN / ENEMY_LOST / ENEMY_REACQUIRED，
+  POSITION_CHANGE / REGION_CHANGE 本身无 team gate——只在 FrameVehicle 层过滤才能堵死全部 delta 路径。
+- **broad-roster 完整身份也不放行**：即使 #201 / ParticipantMapping / reconstruction participants 给
+  spectator 提供 accountId / team / nickname / 坦克元数据（usable identity），只要 account 不在 #301，
+  仍从 tactical timeline 排除（防止未来 spectator metadata 更完整后重新污染）。
+- **下游确认**：WorldSummary（#301 roster 为战术名单）、BattleDeltaEngine、EpisodeDetector、
+  TimelineFocusWindowSelector、TeamAiContextCompiler / PersonalAiContextCompiler 全部只消费过滤后的
+  universe（compiler 输出不得出现 spectator 的 车辆#<eid> / account）；raw timeline.events 保留原始事件
+  供必要协议用途。
+
 ### 5.1 战斗开始
 
 `BattleStartResolver.resolve()` 返回 `BattleStartResolution`（IDENTIFIED / ESTIMATED / UNRESOLVED）。所有事件时间通过 `tryRelative()` 转换为 battle-relative（即开战后第 N 秒）。准备阶段事件被排除。

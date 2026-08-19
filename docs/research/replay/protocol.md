@@ -143,6 +143,13 @@ no PositionChanged != missing position（静止同坐标 gap 已证实，见下�
   centroid / 坐标 / 生成 exact 距离（fail-closed）；LAST_KNOWN 只作为独立信息段
   （ENEMY_LAST_KNOWN_POSITION_REFERENCES：account + region + observedAtSec + ageSec + knowledge）输出。
   Region presence 基于 resolved 车辆位置 state（每辆 CURRENT 车辆 +1，不是位置包数量）。
+- **Canonical BattleTimeline ActualCombatantEntitySet（2026-08 第七轮）**：timeline 的 tactical
+  FrameVehicle universe 在 BattleTimelineBuilder 源头按 #301 过滤——只允许可靠映射到 battle.players
+  （#301 actual combatant，accountId > 0）账号的实体进入帧；non-#301 spectator/camera/observer/静态实体
+  即使被 broad roster / ParticipantMapping 赋予完整身份（accountId/team/nickname/坦克元数据）也不进入，
+  因此不产生 FIRST_KNOWN/ENEMY_LOST/ENEMY_REACQUIRED/POSITION_CHANGE/REGION_CHANGE/DESTROYED 等
+  tactical delta（spectator ≠ combatant；#301 是权威边界）。WorldSummary 以 #301 roster 为战术名单；
+  raw timeline.events 保留原始事件供协议用途。
 
 ## DEATH_TIME_PRECEDENCE（死亡时刻优先级链 · 2026-08 落地）
 

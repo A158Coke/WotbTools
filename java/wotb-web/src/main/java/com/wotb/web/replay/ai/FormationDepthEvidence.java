@@ -266,7 +266,14 @@ final class FormationDepthEvidence {
                 + " [" + fmt(phase.start()) + "-" + fmt(phase.end()) + "s]\n";
 
         // 几何纵深：本队成员沿本队质心→敌方质心轴投影，按深度三分位（纯几何，只消费 CURRENT 位置；
-        // enemy LAST_KNOWN 不得作为当前 enemy centroid / 轴参考）
+        // enemy LAST_KNOWN 不得作为当前 enemy centroid / 轴参考）。
+        // fail-close gate（PR #103 最终 review）：任何依赖双方 current geometry 的 exact 计算
+        // （enemy centroid / GEOMETRIC_* / 距离加权覆盖分 / ratio）必须在 completeness gate 之前判定，
+        // 且只有 ownRefComplete && enemyRefComplete 才允许输出——enemyRef=1/2 时用 1 辆敌方 CURRENT
+        // 建立 whole-team enemy centroid 会与覆盖段 POSITION_COVERAGE_INSUFFICIENT 自相矛盾；
+        // partial CURRENT 只允许 INSUFFICIENT + CURRENT presence + coverage counts + LAST_KNOWN 独立信息。
+        final boolean ownRefComplete = ownRefCount >= ownAliveCount;
+        final boolean enemyRefComplete = enemyRefCount >= enemyAliveCount;
         final List<Map.Entry<Long, double[]>> own = new ArrayList<>();
         final List<double[]> enemyMeans = new ArrayList<>();
         for (final Map.Entry<Long, PhasePositionReference> entry : ownCurrent.entrySet()) {
@@ -276,7 +283,7 @@ final class FormationDepthEvidence {
         for (final Map.Entry<Long, PhasePositionReference> entry : enemyCurrent.entrySet()) {
             enemyMeans.add(new double[]{entry.getValue().x(), entry.getValue().z()});
         }
-        if (own.size() >= 2 && !enemyMeans.isEmpty()) {
+        if (ownRefComplete && enemyRefComplete && own.size() >= 2 && !enemyMeans.isEmpty()) {
             final double[] ownCentroid = centroid(own.stream().map(Map.Entry::getValue).toList());
             final double[] enemyCentroid = centroid(enemyMeans);
             final double ax = enemyCentroid[0] - ownCentroid[0];
