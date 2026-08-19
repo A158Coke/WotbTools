@@ -83,7 +83,6 @@ final class TeamPromptLocalizer {
             """;
 
     static final String TEAM_EVIDENCE_CONTRACT_RULE = """
-
             === 证据契约（强制）：FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN ===
             1. FACT（事实）：只能来自权威结算、权威阵容、已验证的 canonical timeline 与后端确定性证据。
                例如「1分52秒至2分12秒，本方连续损失3辆，对方同期损失1辆」。
@@ -94,7 +93,8 @@ final class TeamPromptLocalizer {
                写「当前数据可以确认连续减员及交换效率恶化，但无法确定主要原因究竟是掩体使用、指挥沟通还是具体射界问题」。
             4. RECOMMENDATION（建议）：必须从可确认问题反推、对应本局真实失败、不创造精确数字、不形成通用规则。
             5. 没有对应后端证据时，禁止输出以下断言或其同义改写：
-                a. 视野/点亮/侦察类：「提供视野」「拿到了视野」「点亮了」「侦察到了」「开局散开就是图控/拿视野」；
+                a. 视野/点亮/侦察类：允许一般战术解释——「分散可以扩大地图信息覆盖」「这种打法的潜在价值是更早确认敌方主力方向」「分路是以局部兵力密度换取空间/信息覆盖」「敌方主力确认后本方没有及时合流」；
+                  禁止无专门 visibility evidence 的具体归因——「A 点亮了 B」「A 提供了具体视野」「A 获得了侦察收益」「敌人是被 A 发现的」「开局散开就是图控/拿视野」；
                 b. 地形/掩体/LOS 类：「没有掩体」「没有掩体切割」「卡住掩体」「卖头」「hull-down」「对方有无遮挡射界」；
                 c. 位置感类：「位置感很好」「位置感差」；
                 d. 结算→时间线因果类：如「几乎每一波伤害都有他」「助攻高说明为队友提供输出窗口」「队友没有保护他」；
@@ -121,7 +121,8 @@ final class TeamPromptLocalizer {
                            This is higher quality than inventing a plausible-sounding cause. Example: "The current data confirms a run of losses and worsening trade efficiency, but it cannot determine whether the main cause was cover usage, command communication, or specific firing angles."
                         4. RECOMMENDATION: must derive from a confirmed problem, correspond to the real failure in this battle, never invent precise numbers, and never form universal rules.
                         5. Without corresponding backend evidence, the following claims (or equivalent rewording) are forbidden:
-                           a. Vision/spotting/recon: "provided vision", "got vision", "spotted", "recon'd", "an opening spread is map control / vision gathering";
+                           a. Vision/spotting/recon: general tactical interpretation is allowed — "spreading can widen map information coverage", "the potential value of this play is confirming the enemy's main force direction earlier", "splitting trades local force density for spatial/information coverage", "after the enemy main force was confirmed, the team did not regroup in time";
+                  without dedicated visibility evidence, specific attribution is forbidden — "A spotted B", "A provided specific vision", "A gained recon benefit", "the enemy was found by A", "an opening spread is map control / vision gathering";
                            b. Terrain/cover/LOS: "no cover", "no cover cutting", "held cover", "hull-down", "the enemy had an unobstructed firing angle";
                            c. Positioning sense: "great positioning sense", "poor positioning sense";
                            d. Turning settlement aggregates into timeline causation: "he was in every wave of damage", "high assisted damage proves he created firing windows for teammates", "teammates did not protect him";
@@ -144,7 +145,8 @@ final class TeamPromptLocalizer {
                            Это качественнее, чем выдумать правдоподобную причину. Пример: «Текущие данные подтверждают серию потерь и ухудшение размена, но нельзя определить, была ли главная причина в использовании укрытий, командной коммуникации или конкретных углах обстрела».
                         4. RECOMMENDATION (рекомендация): должна выводиться из подтверждённой проблемы, соответствовать реальному провалу в этом бою, не выдумывать точных цифр и не формулировать универсальные правила.
                         5. Без соответствующих доказательств бэкенда запрещены следующие утверждения (или их пересказ):
-                           a. Обзор/засвет/разведка: «обеспечивал обзор», «получил обзор», «засветил», «разведал», «рассредоточение на старте = контроль карты / сбор обзора»;
+                           a. Обзор/засвет/разведка: допустима общая тактическая интерпретация — «рассредоточение может расширить покрытие карты информацией», «потенциальная ценность этого хода — раньше подтвердить направление главных сил противника», «разделение меняет плотность локальных сил на пространственное/информационное покрытие», «после подтверждения главных сил противника команда не перегруппировалась вовремя»;
+                  без специальных visibility evidence запрещена конкретная атрибуция — «A засветил B», «A обеспечил конкретный обзор», «A получил разведывательную выгоду», «врага обнаружил A», «рассредоточение на старте = контроль карты / сбор обзора»;
                            b. Рельеф/укрытия/линия огня: «нет укрытий», «нет работы по укрытиям», «держал укрытие», «игра с башни», «hull-down», «у противника был свободный угол обстрела»;
                            c. Чувство позиции: «отличное чувство позиции», «плохое чувство позиции»;
                            d. Итоги → причинность таймлайна: «он был в каждой волне урона», «высокий урон с ассистом доказывает, что он создавал окна для союзников», «союзники его не прикрывали»;
@@ -301,43 +303,46 @@ final class TeamPromptLocalizer {
     static final String SOLO_INTENT_RULE = """
 
             === 单走行为判定规则（强制） ===
-            1. 开局散开（首次接敌前或开局 45 秒内、未接火未承伤未阵亡）本身是中性行为：不能仅凭分散判为脱节，
-               也不能仅凭分散判为图控/拿视野；只能描述车辆之间的实际位置、距离和移动关系。
-               只有后端提供可靠证据（如 OPENING_MAP_CONTROL 等候选）时才能进一步判断图控/侦察/点亮/视野收益/拖延收益/战术脱节；
-               证据不足时写「无法从当前回放数据确定其战术目的」。
-            2. 单走成员是否判「拖延」取决于队友是否因他获利（转场/占点/另一侧推进/视野时间）：后端只提供时序关联，禁止声称「A 的行为导致 B 获利」的因果。
-            3. 判「脱节」需要无拖延收益且被白吃/丢点（无接应、承伤高或阵亡、远离目标点）。
-            4. 后端给出 OPENING_MAP_CONTROL / SOLO_DELAY / SOLO_DETACHED 候选时，先说明信号依据再下结论；信号不足或矛盾时明确写「无法从当前回放数据确定」，禁止硬下标签。
-            5. 只基于可观测行为（位置、移动、交火、占点）判定战术行为模式，不得把行为模式说成玩家心理意图；正文不得出现「簇/质心/候选/规则候选/PARTIAL」等内部术语，一律转成自然中文。
+            1. 开局分散（OPENING_SPREAD：首次接敌前或开局 45 秒内、未接火未承伤未阵亡、与主力保持明显距离）是
+               「地图信息覆盖 ↔ 局部兵力集中度」的战术交换：收益是扩大队伍早期的空间覆盖、更有机会从多个方向确认
+               敌方主力动向；代价是降低单一路线的局部兵力密度，面对对方集中推进时被接敌一侧可能短时间处于人数劣势。
+               可以分析这种 trade-off，但不得把「可能获得更多地图信息」说成「已经点亮了谁/提供了具体侦察收益」；
+               开局分散不是天然正确也不是天然错误，不能仅凭分散判为脱节，也不能仅凭分散判为图控/拿视野。
+            2. 只有专门且经过验证的 visibility/spotting evidence 才允许写「点亮了」「提供了视野」「侦察到了」等具体归因；
+               当前没有这种 evidence 时，开局分散的视野类收益统一视为 UNKNOWN（写「无法确认其实际视野收益」）。
+            3. 单走成员是否判「拖延」取决于队友是否因他获利（转场/占点/另一侧推进/视野时间）：后端只提供时序关联，禁止声称「A 的行为导致 B 获利」的因果。
+            4. 判「脱节」需要无拖延收益且被白吃/丢点（无接应、承伤高或阵亡、远离目标点）。
+            5. 后端给出 OPENING_SPREAD / SOLO_DELAY / SOLO_DETACHED 候选时，先说明信号依据再下结论；信号不足或矛盾时明确写「无法从当前回放数据确定」，禁止硬下标签。
+            6. 只基于可观测行为（位置、移动、交火、占点）判定战术行为模式，不得把行为模式说成玩家心理意图；正文不得出现「簇/质心/候选/规则候选/PARTIAL」等内部术语，一律转成自然中文。
+            7. 开局分散的质量取决于拿到信息后是否及时响应：敌方主力方向确认后本方是否及时合流/收缩/转场、被接敌一侧的
+               局部人数关系、另一侧支援能否及时赶到；分散获得的信息价值是否抵得上局部兵力不足的代价。
             """;
-
     static final String SOLO_INTENT_RULE_EN = """
 
-                        === SOLO-PLAY JUDGMENT RULES (mandatory) ===
-                        1. An opening spread (before first contact or within the first 45 seconds, no damage dealt/received, no destruction) is a neutral behavior by itself: you may not call it detachment merely because the team is spread out, and you may not call it map control / vision gathering either; only describe the actual positional, distance and movement relations between vehicles.
-                           Only when the backend provides reliable evidence (e.g. an OPENING_MAP_CONTROL candidate) may you further judge map control / recon / spotting / vision benefit / delay benefit / tactical detachment; with insufficient evidence write "its tactical purpose cannot be determined from the current replay data".
-                        2. Whether a solo member's play is "delay" depends on whether teammates profited from it (rotation / capture / advance on another flank / vision time): the backend provides temporal correlation only; never claim causation ("A's play caused B's profit").
-                        3. "Detachment" requires no delay benefit and being caught out / losing ground (no support, high damage taken or destruction, away from objectives).
-                        4. When the backend provides OPENING_MAP_CONTROL / SOLO_DELAY / SOLO_DETACHED candidates, state the signal basis before concluding; when signals are insufficient or contradictory, explicitly write "cannot be determined from the current replay data" and never force a label.
-                        5. Judge tactical behavior patterns only from observable behavior (position, movement, engagements, capture points); never describe a behavior pattern as the player's mental intent. Never echo internal terms such as cluster/centroid/candidate/PARTIAL; use natural language.
+            === SOLO-PLAY JUDGMENT RULES (mandatory) ===
+            1. An opening spread (OPENING_SPREAD: before first contact or within the first 45 seconds, no damage dealt/received, no destruction, and a clear distance from the main body) is a tactical trade of "information/spatial coverage ↔ local force concentration": the gain is wider early map coverage and a better chance to confirm the enemy's main force direction from several directions; the cost is lower local force density on a single lane, so if the enemy pushes concentrated, the contacted group may briefly fight at a numbers disadvantage. You may analyze this trade-off, but you may NOT present "possibly gaining more map information" as "already spotted someone / provided specific recon benefit"; an opening spread is neither inherently correct nor inherently wrong — do not call it detachment merely because the team is spread out, and do not call it map control / vision gathering either.
+            2. Only dedicated, validated visibility/spotting evidence allows specific claims like "spotted", "provided vision", "recon'd"; without such evidence, the vision benefit of an opening spread is UNKNOWN (write "its actual vision benefit cannot be confirmed").
+            3. Whether a solo member's play is "delay" depends on whether teammates profited from it (rotation / capture / advance on another flank / vision time): the backend provides temporal correlation only; never claim causation ("A's play caused B's profit").
+            4. "Detachment" requires no delay benefit and being caught out / losing ground (no support, high damage taken or destruction, away from objectives).
+            5. When the backend provides OPENING_SPREAD / SOLO_DELAY / SOLO_DETACHED candidates, state the signal basis before concluding; when signals are insufficient or contradictory, explicitly write "cannot be determined from the current replay data" and never force a label.
+            6. Judge tactical behavior patterns only from observable behavior (position, movement, engagements, capture points); never describe a behavior pattern as the player's mental intent. Never echo internal terms such as cluster/centroid/candidate/PARTIAL; use natural language.
+            7. The quality of an opening spread depends on how the team responded once information arrived: after the enemy's main force direction was confirmed, did the team regroup/contract/rotate in time, what were the local force relations on the contacted side, and could the other side support in time; was the information value of the spread worth the cost of local force scarcity.
             """;
-
     static final String SOLO_INTENT_RULE_RU = """
 
-                        === ПРАВИЛА ОЦЕНКИ ДЕЙСТВИЙ В ОДИНОЧКУ (обязательно) ===
-                        1. Рассредоточение на старте (до первого контакта или в первые 45 секунд, без нанесённого/полученного урона, без уничтожения) само по себе нейтрально: нельзя называть его отрывом только из-за рассредоточения, но и контролем карты / сбором обзора — тоже; описывайте только фактические позиционные, дистанционные и двигательные отношения между машинами.
-                           Только при надёжных доказательствах бэкенда (например, кандидат OPENING_MAP_CONTROL) можно судить о контроле карты / разведке / засвете / выгоде обзора / выгоде задержки / тактическом отрыве; при недостатке доказательств пишите «его тактическая цель по данным реплея не определяется».
-                        2. Является ли действие игрока «задержкой», зависит от того, извлекли ли союзники выгоду (ротация / захват / продвижение на другом фланге / время на разведку): бэкенд даёт только временну́ю корреляцию; запрещено утверждать причинность («действие A принесло выгоду B»).
-                        3. «Отрыв» требует отсутствия выгоды от задержки и размена без пользы (без поддержки, высокий полученный урон или уничтожение, вдали от целей).
-                        4. Когда бэкенд даёт кандидатов OPENING_MAP_CONTROL / SOLO_DELAY / SOLO_DETACHED, сначала укажите обоснование по сигналам; при недостатке или противоречивости сигналов прямо пишите «невозможно определить по данным реплея» и не навешивайте ярлык.
-                        5. Оценивайте только наблюдаемые паттерны поведения (позиция, движение, перестрелки, захват точек); не выдавайте паттерн поведения за психологические намерения игрока. Не используйте внутренние термины (кластер/центроид/кандидат/PARTIAL); излагайте естественно.
+            === ПРАВИЛА ОЦЕНКИ ДЕЙСТВИЙ В ОДИНОЧКУ (обязательно) ===
+            1. Рассредоточение на старте (OPENING_SPREAD: до первого контакта или в первые 45 секунд, без нанесённого/полученного урона, без уничтожения и при заметном удалении от основной группы) — это тактический размен «покрытие информацией/пространством ↔ концентрация локальных сил»: выгода — более широкое раннее покрытие карты и больше шансов с нескольких направлений подтвердить направление главных сил противника; цена — меньшая плотность локальных сил на одной линии, поэтому при концентрированном наступлении противника группа, принявшая контакт, может кратко оказаться в численном меньшинстве. Вы можете анализировать этот размен, но НЕ можете выдавать «возможно, получили больше информации о карте» за «уже засветил кого-то / дал конкретную разведывательную выгоду»; рассредоточение на старте не является ни изначально правильным, ни изначально ошибочным — не называйте его отрывом только из-за рассредоточения и не называйте его контролем карты / сбором обзора.
+            2. Только специальные проверенные visibility/spotting evidence позволяют писать конкретные утверждения вроде «засветил», «обеспечивал обзор», «разведал»; без таких evidence обзорная выгода рассредоточения — UNKNOWN (пишите «его фактическую обзорную выгоду подтвердить нельзя»).
+            3. Является ли действие игрока «задержкой», зависит от того, извлекли ли союзники выгоду (ротация / захват / продвижение на другом фланге / время на разведку): бэкенд даёт только временну́ю корреляцию; запрещено утверждать причинность («действие A принесло выгоду B»).
+            4. «Отрыв» требует отсутствия выгоды от задержки и размена без пользы (без поддержки, высокий полученный урон или уничтожение, вдали от целей).
+            5. Когда бэкенд даёт кандидатов OPENING_SPREAD / SOLO_DELAY / SOLO_DETACHED, сначала укажите обоснование по сигналам; при недостатке или противоречивости сигналов прямо пишите «невозможно определить по данным реплея» и не навешивайте ярлык.
+            6. Оценивайте только наблюдаемые паттерны поведения (позиция, движение, перестрелки, захват точек); не выдавайте паттерн поведения за психологические намерения игрока. Не используйте внутренние термины (кластер/центроид/кандидат/PARTIAL); излагайте естественно.
+            7. Качество рассредоточения зависит от реакции после получения информации: после подтверждения направления главных сил противника успела ли команда вовремя перегруппироваться/сжаться/ротироваться, каково было локальное соотношение сил на стороне контакта и успела ли подойти поддержка с другой стороны; стоила ли информационная ценность рассредоточения цены нехватки локальных сил.
             """;
-
-    /** Team 专用：争霸赛占点规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。 */
     static final String CAPTURE_RULE = """
 
             === 争霸赛占点规则（强制，训练房/联赛恒为争霸赛） ===
-            1. 集中一波（多车集群推进）可能付出代价：失去高视野 + 被敌方偷家/占点，复盘必须权衡。
+            1. 集中推进可能减少分散的地图覆盖；是否实际造成侦察/视野损失必须有对应 evidence（不得仅凭集中断言失去视野），复盘必须权衡集中与分散的代价。
             2. result 行的胜负来源以 resultSource 为准，只有三级证据，BATTLE_RESULTS 存在时最高优先级：
                a. BATTLE_RESULTS：来自 battle_results#winnerTeam 的权威结算；LLM 不得用事件流、存活数或点数覆盖胜方；
                b. SURVIVOR_SETTLEMENT：结算存活状态推导（一方全员阵亡）；非 battle result 权威，不得伪装成权威结算；
@@ -383,7 +388,7 @@ final class TeamPromptLocalizer {
     static final String CAPTURE_RULE_EN = """
 
             === SUPREMACY CAPTURE RULES (mandatory; training room / clan battles are always supremacy) ===
-            1. A concentrated one-lane rush can cost the team: losing high vision and risking a base capture / being capped; always weigh this in the review.
+            1. A concentrated push may reduce distributed map coverage; whether it actually caused spotting/vision loss must have corresponding evidence (never claim vision loss from concentration alone); always weigh the cost of concentrating vs spreading.
             2. The win/loss line must be read with resultSource; there are only three evidence levels, and BATTLE_RESULTS has the highest priority when present:
                a. BATTLE_RESULTS: authoritative settlement from battle_results#winnerTeam; never override the winner with event-stream observations, survival counts, or points;
                b. SURVIVOR_SETTLEMENT: derived from settlement survival state (one team fully destroyed); not an authoritative battle-result winner, never present it as one;
@@ -411,7 +416,7 @@ final class TeamPromptLocalizer {
     static final String CAPTURE_RULE_RU = """
 
             === ПРАВИЛА ЗАХВАТА (обязательно; тренировочные бои и клановые бои — всегда supremacy) ===
-            1. Концентрированный рывок одной линией может стоить команде: потеря высокого обзора и риск захвата базы противником; всегда взвешивайте это в разборе.
+            1. Концентрированное продвижение может уменьшить распределённое покрытие карты; действительно ли оно привело к потере обзора/разведки — должно подтверждаться evidence (нельзя утверждать потерю обзора только из-за концентрации); всегда взвешивайте цену концентрации против рассредоточения.
             2. Строку result следует читать вместе с resultSource; существует только три уровня доказательности, и при наличии BATTLE_RESULTS он имеет высший приоритет:
                a. BATTLE_RESULTS: авторитетный итог из battle_results#winnerTeam; не подменяйте победителя наблюдениями из потока событий, числом выживших или очками;
                b. SURVIVOR_SETTLEMENT: вывод по статусу выживших из итогов (одна команда полностью уничтожена); это не авторитетное поле победителя battle result, не выдавайте его за таковое;

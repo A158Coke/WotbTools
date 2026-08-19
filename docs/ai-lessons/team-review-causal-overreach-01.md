@@ -34,8 +34,11 @@
 
 ## Expected focus window
 
-- 约 `1分52秒–2分12秒` 的连续减员窗口必须被 `TimelineFocusWindowSelector` 选中为 Top Focus Window：
-  本方 3 死、对方 1 死；BEFORE 7v7 → AFTER 4v6；精确秒数以 backend 最终事实为准（禁止硬编码）。
+- `TimelineFocusWindowSelector` 用 bounded core window（≤20s 子区间）识别短时间连续减员，
+  不被窗口末尾的对方后续阵亡污染（PR #103 B2）。
+- 真实回放验证（20260817 WildCat SPHT）：Top collapse core = `[109s, 128s]`（约 1分49秒–2分08秒，
+  与计划叙事 1分52秒–2分12秒在容差内），**本方 3 死、对方 1 死，BEFORE 7v7 → AFTER 4v6**；
+  精确秒数来自 canonical facts，不硬编码。
 - 输出只描述 canonical facts + evidence limitation（原因 UNKNOWN：掩体/射界/指挥沟通/个人操作无法区分）。
 
 ## Expected evidence boundaries

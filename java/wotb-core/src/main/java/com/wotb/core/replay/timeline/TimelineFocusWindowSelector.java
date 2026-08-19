@@ -14,6 +14,14 @@ import java.util.Objects;
  * <p><b>识别目标</b>：短时间连续减员（如 1分52秒–2分12秒 内本方 3 死对方 1 死）必须
  * 成为最高优先窗口；无阵亡时仍能通过 HP swing / 点数变化 / 首次接敌 / 交火活动选出
  * 有意义的窗口。只输出 canonical facts，绝不编造战术原因。</p>
+ * <p><b>CORE WINDOW 契约（PR #103 B2）</b>：窗口即核心区间（CORE WINDOW），
+ * <b>不应用 padding</b>——friendlyDeaths / enemyDeaths / BEFORE / AFTER / OBSERVED FACTS /
+ * startSec / endSec 全部基于核心区间内的 canonical delta 与帧状态，窗口外的阵亡
+ * （如紧跟核心窗口末尾的对方第 2 次阵亡）不得污染核心事实；窗口外的上下文由
+ * TACTICAL TIMELINE Episode 提供。</p>
+ * <p><b>识别算法</b>：从阵亡事件做 bounded sliding window——对每个阵亡时刻向后扩展，
+ * 只要 {@code end - start <= WINDOW_SEC}；每个有界区间是一个候选 core，其阵亡组成
+ * 固定为该区间内的阵亡（绝不链式吞并区间外阵亡）。无阵亡时用非死亡高信息簇兜底。</p>
  * <p><b>约束</b>：窗口 events 只含窗口时间范围内的 delta；BEFORE/AFTER 取对应秒的
  * knowledge-world 状态（timeline 已满足 anti-future-leak）；不重复 delta、不 future leak。
  * 不构建第二套战场事实模型，全部消费已验证 timeline。</p>
@@ -22,13 +30,9 @@ public final class TimelineFocusWindowSelector {
 
     /** 输出窗口上限（1–3）。 */
     public static final int MAX_WINDOWS = 3;
-    /** 连续减员合并间隔（秒）：相邻阵亡间隔不超过该值视为同一次连续减员（短时间连续减员）。 */
-    public static final double DEATH_MERGE_GAP_SEC = 20.0;
-    /** 单窗口核心跨度上限（秒）：超过后在最大间隔处拆分，避免整场死亡链合并成超大窗口。 */
-    static final double MAX_CLUSTER_SPAN_SEC = 40.0;
-    /** 窗口前后填充（秒）：吸收减员前后的伴随信号（掉血/交火/点数/存活变化）。 */
-    static final double PADDING_SEC = 15.0;
-    /** 非阵亡候选窗口的最低信息分（低于则不出现在输出中；单独一次首次接敌不算关键窗口）。 */
+    /** 有界核心窗口最大跨度（秒）：阵亡窗口只接受总跨度 ≤ 该值的子区间（业务/算法窗口）。 */
+    public static final double WINDOW_SEC = 20.0;
+    /** 非死亡簇的最小信息分（低于则不出现在输出中；单独一次首次接敌不算关键窗口）。 */
     static final double MIN_CANDIDATE_SCORE = 120.0;
 
     private TimelineFocusWindowSelector() {
@@ -86,18 +90,19 @@ public final class TimelineFocusWindowSelector {
             return List.of();
         }
 
-        // 候选窗口 = 死亡簇（核心信号）∪ 死亡簇之外的非死亡高信息簇
+        // 候选窗口 = 有界阵亡子窗口（core 信号）∪ 阵亡窗口之外的非死亡高信息簇
         final List<Candidate> candidates = new ArrayList<>();
-        candidates.addAll(deathClusters(timeline, all));
+        candidates.addAll(deathWindows(timeline, all));
         candidates.addAll(nonDeathClusters(timeline, all, candidates));
-        final List<Candidate> merged = mergeOverlapping(timeline, candidates);
 
-        final List<Candidate> ranked = merged.stream()
+        // 有界阵亡窗口语义下，重叠候选是不同核心窗口（不同阵亡组成），不得合并；
+        // 去重由下方 top-3 非重叠选择完成。
+        final List<Candidate> ranked = candidates.stream()
                 .filter(TimelineFocusWindowSelector::hasSignal)
                 .sorted(Comparator
                         .comparingDouble((Candidate c) -> score(c))
                         .reversed()
-                        .thenComparingDouble(c -> c.coreStartSec))
+                        .thenComparingDouble(c -> c.startSec))
                 .toList();
         final List<FocusWindow> out = new ArrayList<>();
         for (final Candidate c : ranked) {
@@ -115,8 +120,6 @@ public final class TimelineFocusWindowSelector {
     // ===== 候选构建 =====
 
     private record Candidate(
-            double coreStartSec,
-            double coreEndSec,
             double startSec,
             double endSec,
             List<BattleDelta> events,
@@ -130,34 +133,40 @@ public final class TimelineFocusWindowSelector {
     ) {
     }
 
-    /** 死亡簇：相邻阵亡间隔 ≤ DEATH_MERGE_GAP_SEC 合并；长链按最大间隔拆分。 */
-    private static List<Candidate> deathClusters(final BattleTimeline timeline, final List<BattleDelta> all) {
-        final List<List<BattleDelta>> clusters = new ArrayList<>();
-        List<BattleDelta> cluster = null;
-        double lastDeathTime = -1;
-        for (final BattleDelta d : all) {
-            if (d.kind() != DeltaKind.DESTROYED) {
-                continue;
-            }
-            if (cluster == null || d.timeSec() - lastDeathTime > DEATH_MERGE_GAP_SEC) {
-                cluster = new ArrayList<>();
-                clusters.add(cluster);
-            }
-            cluster.add(d);
-            lastDeathTime = d.timeSec();
-        }
+    /**
+     * 有界阵亡子窗口（bounded sliding window）：对每个阵亡时刻向后扩展，
+     * 只要 {@code end - start <= WINDOW_SEC}；每个有界区间的阵亡组成固定为该区间内的阵亡。
+     * 例如阵亡序列 112F/121F/128E/132F/136E：
+     * <ul>
+     *   <li>从 112 扩展：112/121/128/132（136 超界）→ core [112,132]：本方 3 死、对方 1 死；</li>
+     *   <li>从 121 扩展：121/128/132/136 → core [121,136]：本方 2 死、对方 2 死；</li>
+     *   <li>136s 的对方阵亡只出现在以 121/128/132/136 为起点的候选，不会改变 [112,132] 的 3:1 core。</li>
+     * </ul>
+     */
+    private static List<Candidate> deathWindows(final BattleTimeline timeline, final List<BattleDelta> all) {
+        final List<BattleDelta> deaths = all.stream()
+                .filter(d -> d.kind() == DeltaKind.DESTROYED)
+                .toList();
         final List<Candidate> out = new ArrayList<>();
-        for (final List<BattleDelta> c : clusters) {
-            for (final List<BattleDelta> piece : splitLongCluster(c)) {
-                out.add(buildCandidate(timeline, all, piece));
+        for (int startIndex = 0; startIndex < deaths.size(); startIndex++) {
+            final double start = deaths.get(startIndex).timeSec();
+            int endIndex = startIndex;
+            while (endIndex + 1 < deaths.size()
+                    && deaths.get(endIndex + 1).timeSec() - start <= WINDOW_SEC + 1e-9) {
+                endIndex++;
             }
+            final List<BattleDelta> coreDeaths = deaths.subList(startIndex, endIndex + 1);
+            if (coreDeaths.size() < 2) {
+                continue; // 单阵亡不成「窗口」；散落单阵亡由非死亡信号或其它候选体现
+            }
+            out.add(buildCandidate(timeline, all, coreDeaths));
         }
         return out;
     }
 
     /**
-     * 非死亡高信息簇：只取<b>未被死亡候选覆盖</b>的显著非死亡 delta（HP/点数/接敌/交火/存活变化），
-     * 避免与死亡窗口重复；按相同间隔合并、长链拆分，保证「正常交火 + 点数/HP swing」也能选出窗口。
+     * 非死亡高信息簇：只取<b>未被阵亡窗口覆盖</b>的显著非死亡 delta（HP/点数/接敌/交火/存活变化），
+     * 避免与阵亡窗口重复；按 ≤ WINDOW_SEC 间隔合并，保证「正常交火 + 点数/HP swing」也能选出窗口。
      */
     private static List<Candidate> nonDeathClusters(
             final BattleTimeline timeline,
@@ -173,7 +182,7 @@ public final class TimelineFocusWindowSelector {
             if (coveredByDeathWindow(d.timeSec(), deathCandidates)) {
                 continue;
             }
-            if (cluster == null || d.timeSec() - lastTime > DEATH_MERGE_GAP_SEC) {
+            if (cluster == null || d.timeSec() - lastTime > WINDOW_SEC) {
                 cluster = new ArrayList<>();
                 clusters.add(cluster);
             }
@@ -182,17 +191,18 @@ public final class TimelineFocusWindowSelector {
         }
         final List<Candidate> result = new ArrayList<>();
         for (final List<BattleDelta> c : clusters) {
-            for (final List<BattleDelta> piece : splitLongCluster(c)) {
-                result.add(buildCandidate(timeline, all, piece));
+            if (c.size() < 2) {
+                continue;
             }
+            result.add(buildCandidate(timeline, all, c));
         }
         return result;
     }
 
-    /** 该时刻是否已被某个死亡候选的填充范围覆盖（填充窗口内的伴随信号随死亡窗口一起输出）。 */
+    /** 该时刻是否已被某个阵亡候选的核心区间覆盖（核心区间内的伴随信号随阵亡窗口一起输出）。 */
     private static boolean coveredByDeathWindow(final double timeSec, final List<Candidate> deathCandidates) {
         for (final Candidate c : deathCandidates) {
-            if (timeSec >= c.coreStartSec - PADDING_SEC && timeSec <= c.coreEndSec + PADDING_SEC) {
+            if (timeSec >= c.startSec && timeSec <= c.endSec) {
                 return true;
             }
         }
@@ -207,106 +217,28 @@ public final class TimelineFocusWindowSelector {
         };
     }
 
-    /** 以 cluster 为核心（含前后填充），收集窗口内全部有信息量的 delta 形成候选。 */
+    /** 以 core（cluster 覆盖区间）为窗口：events 只含 [coreStart, coreEnd] 内的有信息量 delta。 */
     private static Candidate buildCandidate(
             final BattleTimeline timeline,
             final List<BattleDelta> all,
             final List<BattleDelta> cluster) {
-        final double coreStart = cluster.getFirst().timeSec();
-        final double coreEnd = cluster.getLast().timeSec();
-        double start = coreStart;
-        double end = coreEnd;
+        final double start = cluster.getFirst().timeSec();
+        final double end = cluster.getLast().timeSec();
         final List<BattleDelta> events = new ArrayList<>();
         for (final BattleDelta d : all) {
-            if (d.timeSec() >= coreStart - PADDING_SEC && d.timeSec() <= coreEnd + PADDING_SEC
+            if (d.timeSec() >= start - 1e-9 && d.timeSec() <= end + 1e-9
                     && informative(timeline, d)) {
                 events.add(d);
-                start = Math.min(start, d.timeSec());
-                end = Math.max(end, d.timeSec());
             }
         }
         events.sort(Comparator.comparingDouble(BattleDelta::timeSec)
                 .thenComparing(d -> d.kind().name()));
-        return new Candidate(coreStart, coreEnd, start, end, events,
+        return new Candidate(start, end, events,
                 friendlyDeaths(timeline, events), enemyDeaths(timeline, events),
                 hpSwing(events), engagementDamage(events),
                 hasKind(events, DeltaKind.POINTS_CHANGE),
                 hasKind(events, DeltaKind.FIRST_CONTACT),
                 (int) events.stream().filter(d -> d.kind() == DeltaKind.ALIVE_COUNT_CHANGE).count());
-    }
-
-    /** 递归拆分跨度超限的簇：在最大相邻间隔处一分为二，直到每段 ≤ MAX_CLUSTER_SPAN_SEC。 */
-    static List<List<BattleDelta>> splitLongCluster(final List<BattleDelta> cluster) {
-        if (cluster.size() < 2) {
-            return List.of(cluster);
-        }
-        final double span = cluster.getLast().timeSec() - cluster.getFirst().timeSec();
-        if (span <= MAX_CLUSTER_SPAN_SEC) {
-            return List.of(cluster);
-        }
-        int splitAt = -1;
-        double maxGap = -1;
-        for (int i = 1; i < cluster.size(); i++) {
-            final double gap = cluster.get(i).timeSec() - cluster.get(i - 1).timeSec();
-            if (gap > maxGap) {
-                maxGap = gap;
-                splitAt = i;
-            }
-        }
-        if (splitAt <= 0) {
-            return List.of(cluster);
-        }
-        final List<List<BattleDelta>> out = new ArrayList<>();
-        out.addAll(splitLongCluster(cluster.subList(0, splitAt)));
-        out.addAll(splitLongCluster(cluster.subList(splitAt, cluster.size())));
-        return out;
-    }
-
-    /** 仅合并核心重叠的候选（同一次减员/同一簇信号的重复候选），填充重叠不算合并。 */
-    private static List<Candidate> mergeOverlapping(
-            final BattleTimeline timeline, final List<Candidate> candidates) {
-        final List<Candidate> sorted = new ArrayList<>(candidates);
-        sorted.sort(Comparator.comparingDouble((Candidate c) -> c.coreStartSec)
-                .thenComparingDouble(c -> c.coreEndSec));
-        final List<Candidate> out = new ArrayList<>();
-        for (final Candidate c : sorted) {
-            if (out.isEmpty()) {
-                out.add(c);
-                continue;
-            }
-            final Candidate prev = out.get(out.size() - 1);
-            if (c.coreStartSec <= prev.coreEndSec + 1.0) {
-                final List<BattleDelta> mergedEvents = new ArrayList<>(prev.events);
-                for (final BattleDelta d : c.events) {
-                    if (mergedEvents.stream().noneMatch(x -> sameDelta(x, d))) {
-                        mergedEvents.add(d);
-                    }
-                }
-                mergedEvents.sort(Comparator.comparingDouble(BattleDelta::timeSec)
-                        .thenComparing(x -> x.kind().name()));
-                final double coreStart = Math.min(prev.coreStartSec, c.coreStartSec);
-                final double coreEnd = Math.max(prev.coreEndSec, c.coreEndSec);
-                final double start = Math.min(prev.startSec, c.startSec);
-                final double end = Math.max(prev.endSec, c.endSec);
-                out.set(out.size() - 1, new Candidate(
-                        coreStart, coreEnd, start, end, mergedEvents,
-                        friendlyDeaths(timeline, mergedEvents), enemyDeaths(timeline, mergedEvents),
-                        hpSwing(mergedEvents), engagementDamage(mergedEvents),
-                        hasKind(mergedEvents, DeltaKind.POINTS_CHANGE),
-                        hasKind(mergedEvents, DeltaKind.FIRST_CONTACT),
-                        (int) mergedEvents.stream()
-                                .filter(d -> d.kind() == DeltaKind.ALIVE_COUNT_CHANGE).count()));
-            } else {
-                out.add(c);
-            }
-        }
-        return out;
-    }
-
-    private static boolean sameDelta(final BattleDelta a, final BattleDelta b) {
-        return a.kind() == b.kind()
-                && Math.abs(a.timeSec() - b.timeSec()) < 1e-6
-                && Objects.equals(a.entityId(), b.entityId());
     }
 
     // ===== 聚合（全部来自事件列表，确定性） =====
@@ -345,9 +277,16 @@ public final class TimelineFocusWindowSelector {
 
     // ===== 打分 / 过滤 / 输出 =====
 
-    /** 信息分：阵亡权重最高，其次 HP swing / 交火 / 点数 / 首次接敌。 */
+    /**
+     * 信息分：绝对局势 swing（交换不对称）优先于总死亡密度——friendly/enemy 死亡都计入
+     * 「事件重要度」，但双方死亡差（|fd−ed|）是「局势 swing」主权重；balanced massacre
+     * 不会仅因总死亡数高而轻易压过明显单边 collapse/sweep。HP swing / 交火 / 点数 /
+     * 首次接敌 / 存活变化作为支撑信号。
+     */
     static double score(final Candidate c) {
-        double s = c.friendlyDeaths * 1000.0 + c.enemyDeaths * 800.0;
+        final int totalDeaths = c.friendlyDeaths + c.enemyDeaths;
+        final int swing = Math.abs(c.friendlyDeaths - c.enemyDeaths);
+        double s = swing * 800.0 + totalDeaths * 200.0;
         s += Math.min(c.hpSwing / 50.0, 500.0);
         s += Math.min(c.engagementDamage / 200.0, 300.0);
         s += c.pointsChanged ? 60.0 : 0.0;

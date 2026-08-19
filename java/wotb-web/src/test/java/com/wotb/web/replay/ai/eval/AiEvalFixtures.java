@@ -110,7 +110,7 @@ public final class AiEvalFixtures {
         };
     }
 
-    /** 随机战开局图控：录像者开局散开、未接火未阵亡 → OPENING_MAP_CONTROL。 */
+    /** 随机战开局分散（中性 signal）：录像者开局散开、未接火未阵亡 → OPENING_SPREAD。 */
     private static PlayerFixture playerOpeningMapControl() {
         return playerFixtureOf(
                 0, true,
@@ -334,7 +334,7 @@ public final class AiEvalFixtures {
                 EngagementOutcome.UNFAVORABLE, DecodeConfidence.PARTIAL);
     }
 
-    // ===== 场景一：开局图控（散开拿视野，非脱节） =====
+    // ===== 场景一：开局分散（信息覆盖 trade-off，非脱节） =====
 
     private static SingleTeamBattleAnalysisContext openingMapControl() {
         final List<TeamMemberFeatureSet> members = List.of(

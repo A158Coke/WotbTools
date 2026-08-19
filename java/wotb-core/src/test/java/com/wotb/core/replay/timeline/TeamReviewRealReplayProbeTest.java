@@ -77,16 +77,31 @@ class TeamReviewRealReplayProbeTest {
                     + " friendlyDeaths=" + w.friendlyDeaths() + " enemyDeaths=" + w.enemyDeaths()
                     + " hp=" + Math.round(w.hpSwing()) + " reasons=" + w.reasons());
         }
-        // 验收（§12）：必须找到至少一个包含连续减员（本方 ≥2 死）的 Focus Window
+        // 验收（§12/§13-G，PR #103 B2）：bounded core 必须捕获连续减员子窗口；
+        // 若真实 canonical facts 与计划叙事（约 112–132s 3:1）不一致，如实报告而不伪造。
         final TimelineFocusWindowSelector.FocusWindow collapse = windows.stream()
                 .filter(w -> w.friendlyDeaths() >= 2)
                 .findFirst().orElse(null);
         assertNotNull(collapse,
                 "必须找到连续减员 Focus Window（权威本方死亡 battle-relative: " + relativeDeaths + "）");
-        System.out.println("collapse window: " + collapse.startSec() + "-" + collapse.endSec()
-                + " friendlyDeaths=" + collapse.friendlyDeaths() + " enemyDeaths=" + collapse.enemyDeaths());
+        System.out.println("collapse core: " + collapse.startSec() + "-" + collapse.endSec()
+                + " friendlyDeaths=" + collapse.friendlyDeaths() + " enemyDeaths=" + collapse.enemyDeaths()
+                + " BEFORE=" + collapse.before().friendlyAlive() + "v" + collapse.before().enemyAlive()
+                + " AFTER=" + collapse.after().friendlyAlive() + "v" + collapse.after().enemyAlive());
+        // 计划叙事（docs/ai-lessons/team-review-causal-overreach-01.md）期望约 1分52秒–2分12秒 的 3:1 core；
+        // 真实回放以 canonical facts 为准：本方 ≥3 死（短时间连续减员窗口成立）即满足核心验收，
+        // 精确秒数与对方死亡数以真实解析为准（禁止为匹配叙事硬编码）。
+        assertTrue(collapse.friendlyDeaths() >= 3,
+                "collapse core 必须包含短时间连续减员（本方 ≥3 死）: " + collapse);
+        final boolean matchesNarrative = Math.abs(collapse.startSec() - 112.0) < 25.0
+                && Math.abs(collapse.endSec() - 132.0) < 25.0
+                && collapse.friendlyDeaths() == 3 && collapse.enemyDeaths() == 1
+                && collapse.before().friendlyAlive() == 7 && collapse.before().enemyAlive() == 7
+                && collapse.after().friendlyAlive() == 4 && collapse.after().enemyAlive() == 6;
+        System.out.println("collapse matches narrative (1:52-2:12 3:1 7v7->4v6): " + matchesNarrative
+                + "  [若 false：以真实解析为准，不伪造]");
 
-        // 窗口事实与权威死亡时间线一致：最早权威阵亡应落在窗口（含填充）内
+        // 窗口事实与权威死亡时间线一致：最早权威阵亡应落在 core 起点附近（core 无 padding）
         final double earliest = relativeDeaths.stream()
                 .filter(d -> d > 0)
                 .mapToDouble(Double::doubleValue).min().orElse(Double.NaN);
@@ -94,10 +109,12 @@ class TeamReviewRealReplayProbeTest {
             assertTrue(earliest >= collapse.startSec() - 20.0,
                     "最早权威阵亡必须接近窗口起点: " + earliest + " vs " + collapse.startSec());
         }
-        // 不 future leak：窗口事件时间必须 ≤ 窗口终点
+        // 不 future leak：core window 无 padding，窗口事件时间必须 ≤ 窗口终点
         for (final BattleDelta d : collapse.events()) {
             assertTrue(d.timeSec() <= collapse.endSec() + 1e-6,
                     "窗口事件不得超出窗口终点: " + d.timeSec());
+            assertTrue(d.timeSec() >= collapse.startSec() - 1e-6,
+                    "窗口事件不得早于窗口起点: " + d.timeSec());
         }
     }
 }

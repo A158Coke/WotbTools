@@ -11,7 +11,7 @@
     { "kind": "prompt_omits", "text": "cluster[" },
     { "kind": "prompt_omits", "text": "SOLO_DELAY" },
     { "kind": "prompt_omits", "text": "SOLO_DETACHED" },
-    { "kind": "prompt_omits", "text": "OPENING_MAP_CONTROL" }
+    { "kind": "prompt_omits", "text": "OPENING_SPREAD" }
   ],
   "note": "无 OBSERVED 位置/事件缺失：不产出移动与簇证据。Step 2 将断言信号不足 → 空候选（prompt 规则要求 AI 写无法确定）。"
 }

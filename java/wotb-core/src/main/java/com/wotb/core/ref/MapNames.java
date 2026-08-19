@@ -61,10 +61,10 @@ public final class MapNames {
     }
 
     private static String textOrNull(final JsonNode node) {
-        if (node == null || !node.isTextual()) {
+        if (node == null || !node.isString()) {
             return null;
         }
-        final String text = node.asText();
+        final String text = node.asString();
         return StringUtils.hasText(text) ? text : null;
     }
 

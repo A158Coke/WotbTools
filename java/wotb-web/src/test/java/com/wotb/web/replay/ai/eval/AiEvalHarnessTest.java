@@ -48,8 +48,11 @@ class AiEvalHarnessTest {
                 "must list forbidden claims");
         assertTrue(zh.contains("没有掩体切割") && zh.contains("hull-down") && zh.contains("对方有无遮挡射界"),
                 "must ban terrain/cover/LOS claims");
-        assertTrue(zh.contains("提供视野") && zh.contains("点亮了") && zh.contains("开局散开就是图控/拿视野"),
-                "must ban vision/spotting claims");
+        assertTrue(zh.contains("A 提供了具体视野") && zh.contains("A 点亮了 B")
+                        && zh.contains("A 获得了侦察收益") && zh.contains("开局散开就是图控/拿视野"),
+                "must ban specific vision/spotting claims without dedicated visibility evidence");
+        assertTrue(zh.contains("分散可以扩大地图信息覆盖") || zh.contains("地图信息覆盖"),
+                "must allow the general information-coverage trade-off");
         assertTrue(zh.contains("禁止创造「15米」「25米」「三分之一血」「连续两炮」「5秒」等精确阈值"),
                 "must ban magic-number coaching");
         assertTrue(zh.contains("禁止「2v4/3v5 就必须立刻离开当前掩体向地图另一端转移」"),
