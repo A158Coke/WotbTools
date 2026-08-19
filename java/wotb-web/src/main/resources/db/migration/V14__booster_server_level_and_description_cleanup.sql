@@ -42,7 +42,7 @@ UPDATE booster_profile bp
 SET description = NULL,
     updated_at  = NOW() FROM booster_application ba
 WHERE ba.approved_booster_id = bp.id
-  AND bp.description = CONCAT_WS(E '\n'
+  AND bp.description = CONCAT_WS(E'\n'
     , 'application_id=' || ba.id
     , 'wotb_account_id=' || ba.wotb_account_id
     , 'availability_tier=' || ba.availability_tier
