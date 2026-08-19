@@ -19,6 +19,7 @@ import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.event.TurretDirectionChangedEvent;
 import com.wotb.core.replay.event.VehicleDestroyedEvent;
+import com.wotb.core.replay.evidence.EntryHpSource;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.map.MapGridProfile;
 import com.wotb.core.replay.map.MapGridRegistry;
@@ -175,7 +176,11 @@ public final class MapOverviewBuilder {
                     intervals, deathSec, directionSamples,
                     player.observedMaxHp != null ? player.observedMaxHp
                             : ReplayDisplayNames.tankMaxHpValue(player.tankId),
-                    hpSamples));
+                    hpSamples,
+                    player.tankType == null ? "" : player.tankType,
+                    player.entryHpSource == null ? null : player.entryHpSource.name(),
+                    player.entryHpSource == EntryHpSource.OBSERVED_EXACT ? player.entryHp : null,
+                    finalStats(player)));
         }
         if (vehicles.isEmpty()) {
             return null;
@@ -551,6 +556,14 @@ public final class MapOverviewBuilder {
     private static Long resolveRecorderAccountId(final Battle battle) {
         final PlayerResult recorder = battle.recorderResult();
         return recorder != null && recorder.accountId > 0 ? recorder.accountId : null;
+    }
+
+    /** 整场最终战绩（结算口径；仅供「最终战绩」分区，不得冒充当前时间点状态）。 */
+    private static MapOverview.FinalStats finalStats(final PlayerResult p) {
+        return new MapOverview.FinalStats(
+                p.damageDealt, p.damageReceived, p.damageAssisted, p.kills,
+                p.nShots, p.nHitsDealt, p.nPenetrationsDealt,
+                p.nHitsReceived, p.nPenetrationsReceived, p.damageBlocked);
     }
 
     private static Integer resolveFriendlyTeam(

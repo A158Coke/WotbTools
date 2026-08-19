@@ -417,3 +417,117 @@ export function clampViewPan(view, viewW, viewH) {
     ty: noH ? view.ty : Math.min(0, Math.max(tyMin, view.ty))
   }
 }
+/**
+ * 单车 HP HUD 显示语义（docs/current-plan.md §4/§5/§6/§7）：
+ * - 已阵亡（t ≥ deathSec）→ 0（权威事实：即使无 0 采样也不冒充）；
+ * - 存活 → 最近可信 HP 采样（vehicleHpAt，不带回退，样本优先）；
+ * - 存活无采样且「本方 + 进场满血已证明（entryHpSource=OBSERVED_EXACT）」→ entryHp
+ *   （已含装备/物资加成；tankopedia base 永不冒充进场满血）；
+ * - 其余 → UNKNOWN（current=null，前端显示 —，绝不显示 0）。
+ * maxHp 缺失时百分比不伪造（pct=null，bar 进入 UNKNOWN 语义，不隐藏 HP 信息）。
+ *
+ * @returns {{ current:number|null, maxHp:number|null, pct:number|null, destroyed:boolean }|null}
+ */
+export function hpDisplay(vehicle, t, { friendly = false } = {}) {
+  if (!vehicle || !Number.isFinite(t)) return null
+  const destroyed = vehicle.deathSec != null && t >= vehicle.deathSec - 1e-6
+  let current = null
+  if (destroyed) {
+    current = 0
+  } else {
+    current = vehicleHpAt(vehicle, t, false)
+    if (current == null && friendly && vehicle.entryHpSource === 'OBSERVED_EXACT'
+        && Number.isFinite(vehicle.entryHp) && vehicle.entryHp > 0) {
+      current = vehicle.entryHp
+    }
+  }
+  const maxHp = Number.isFinite(vehicle.maxHp) && vehicle.maxHp > 0 ? vehicle.maxHp : null
+  const pct = current != null && maxHp != null
+    ? Math.max(0, Math.min(100, (current / maxHp) * 100))
+    : null
+  return { current, maxHp, pct, destroyed }
+}
+
+/**
+ * 某账号 t 时刻的累计战斗统计（确定性重建，纯事件驱动）：
+ * - dealt = Σ DAMAGE（该账号为攻击者，damage 值求和）；
+ * - received = Σ DAMAGE（该账号为受害者）；
+ * - kills = Σ KILL（该账号为攻击者；KILL 只在击杀者身份可解析时产生）。
+ * 只反映事件流中可解析的伤害通知（受击覆盖可能 PARTIAL——见 docs/research/replay/visibility.md），
+ * 与整场结算（finalStats）允许存在差异：本函数只用于「当前时间点」重建，不冒充最终战绩。
+ */
+export function cumulativeStatsAt(events, accountId, t) {
+  let dealt = 0
+  let received = 0
+  let kills = 0
+  for (const ev of events || []) {
+    if (!ev || !Number.isFinite(ev.timeSec) || ev.timeSec > t + 1e-6) continue
+    if (ev.type === 'DAMAGE' && Number.isFinite(ev.damage)) {
+      if (ev.accountId === accountId) dealt += ev.damage
+      if (ev.targetAccountId === accountId) received += ev.damage
+    } else if (ev.type === 'KILL' && ev.accountId === accountId) {
+      kills += 1
+    }
+  }
+  return { dealt, received, kills }
+}
+
+/**
+ * 播放时钟从 fromSec 前进到 toSec 时跨过的（新消费）事件：严格 > from（事件恰在
+ * cursor 上不重复触发——pause/resume 与 seek 到事件时刻都不补播），≤ to。
+ * 返回事件引用数组（保持原顺序）。
+ */
+export function eventsCrossed(events, fromSec, toSec) {
+  if (!Array.isArray(events) || !Number.isFinite(fromSec) || !Number.isFinite(toSec)) return []
+  return events.filter(ev =>
+    Number.isFinite(ev && ev.timeSec) && ev.timeSec > fromSec + 1e-9 && ev.timeSec <= toSec + 1e-9)
+}
+
+/** 伤害反馈是否允许（§7.2/§10.1）：受害者在事件时刻位置流覆盖（当前可见/可展示）；
+ * 失察期间受击 → 不跳伤害、不更新 HP、不显示 attacker（HP 冻结为最后可信值）。 */
+export function victimFeedbackAllowed(vehicle, eventTimeSec) {
+  if (!vehicle || !Number.isFinite(eventTimeSec)) return false
+  return positionCoveredAt(vehicle.positionIntervals, eventTimeSec)
+}
+
+// ---- transient feedback（wall-clock 生命周期，任意倍速保持相近可读时长）----
+/** 浮伤害数字寿命（真实 ms）。 */
+export const FLOAT_DMG_MS = 1000
+/** lost-HP ghost bar 消退（真实 ms）。 */
+export const GHOST_MS = 600
+/** HP bar 受击 flash（真实 ms）。 */
+export const FLASH_MS = 280
+/** 击毁 burst（真实 ms）。 */
+export const BURST_MS = 700
+/** kill feed 生命周期（真实 ms；计划 §16.2：约 4–6s）。 */
+export const KILL_FEED_MS = 5000
+/** kill feed 同时最多条数（§16.2：最多 3 条，队列，新进挤最旧）。 */
+export const KILL_FEED_MAX = 3
+
+/**
+ * 过滤仍未过期的 transient 项：item 需携带 bornRealMs（performance.now 基准）与 durationMs。
+ * 纯函数：由外层 wall-clock 驱动（播放帧 / 暂停时轻量时钟），seek 清空由调用方负责。
+ */
+export function transientsActive(items, nowRealMs) {
+  if (!Array.isArray(items) || !Number.isFinite(nowRealMs)) return []
+  return items.filter(i =>
+    i && Number.isFinite(i.bornRealMs) && Number.isFinite(i.durationMs)
+      && nowRealMs - i.bornRealMs < i.durationMs)
+}
+
+/** kill feed 入队：尾部追加，超限从最旧挤出（不合并多条 KILL，§16.2）。 */
+export function pushFeed(items, entry, max = KILL_FEED_MAX) {
+  const limit = Number.isFinite(max) && max > 0 ? Math.floor(max) : 0
+  if (limit <= 0) return []
+  return [...items, entry].slice(-limit)
+}
+
+/** 事件时刻受害者的 ghost 参数：{ prevPct, nextPct }（均 null 时无 ghost，§11）。 */
+export function ghostAround(vehicle, t, { friendly = false } = {}) {
+  const prev = hpDisplay(vehicle, t - 0.001, { friendly })
+  const next = hpDisplay(vehicle, t, { friendly })
+  const has = (p) => p != null && p.pct != null
+  if (!has(prev) || !has(next) || !(prev.pct > next.pct + 1e-9)) return null
+  return { prevPct: prev.pct, nextPct: next.pct }
+}
+
