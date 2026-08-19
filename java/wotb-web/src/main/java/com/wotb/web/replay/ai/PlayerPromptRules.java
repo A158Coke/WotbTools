@@ -13,7 +13,7 @@ final class PlayerPromptRules {
     }
 
     static final String COMMON_TANK_PROPER_NOUN_RULE = """
-            
+
             === 坦克名称专有名词规则（强制） ===
             证据中所有坦克名称（「坦克:」「tank=」等字段）都是由 tankId 经权威车辆库映射得到的完整专有名词，必须原样使用。
             禁止拆分、翻译、展开、按字母还原缩写，或把相似写法当作其他术语。
@@ -26,9 +26,7 @@ final class PlayerPromptRules {
             威胁分析只能基于已发生的事实：实际造成与承受的伤害、实际位置与路线、实际击毁、实际交火次数，以及证据中明确存在的结构化字段。
             本规则同时适用于阵容分析、伤害交换描述、威胁分析、战术建议与最终总结。""";
 
-    /**
-     * 坦克结构化字段缺失时的输出措辞（中文强制句，EN/RU 本地化时替换）。
-     */
+    /** 坦克结构化字段缺失时的输出措辞（中文强制句，EN/RU 本地化时替换）。 */
     static final String ZH_UNKNOWN_FIELD_RULE =
             "该字段为「未知」或未给出时，只能写「未知」，不得补充或猜测。";
     static final String EN_UNKNOWN_FIELD_RULE =
@@ -37,11 +35,9 @@ final class PlayerPromptRules {
             "Если структурированное поле неизвестно или отсутствует, укажите «неизвестно»; "
                     + "ничего не выводите по догадке.";
 
-    /**
-     * 公共：最终正文使用自然简体中文，不得回写机器标签。
-     */
+    /** 公共：最终正文使用自然简体中文，不得回写机器标签。 */
     static final String COMMON_CHINESE_LANGUAGE_RULE = """
-            
+
             === 语言规则（强制） ===
             最终正文必须使用自然、通顺的简体中文，禁止出现英文术语或证据里的英文标识。
             证据中的英文段头（如 OPPOSING_TEAM_LINEUP_AUTHORITATIVE）和全大写枚举名只是机器标签，
@@ -51,11 +47,9 @@ final class PlayerPromptRules {
             语气像资深教练当面复盘：自然、口语化、有重点，避免模板化套话与机械罗列；
             数据充分时直接给判断，只有确实不足才写「无法确定」，不要处处免责。""";
 
-    /**
-     * Player 专用：第二人称。
-     */
+    /** Player 专用：第二人称。 */
     static final String PLAYER_PERSON_RULE = """
-            
+
             === 人称规则（强制，仅随机战个人复盘） ===
             这份复盘直接写给上传回放的玩家本人看。
             上传回放的玩家一律称为「你」；作为教练的我自称「我」。
@@ -66,11 +60,9 @@ final class PlayerPromptRules {
             正确示例：你在3分12秒对敌方 E 75 造成了418点伤害；我认为你这次换血本身有利，但继续停留原地增加了被集火的风险。
             错误示例：录像者对敌方造成伤害；友方玩家进入中路；击杀录像者。""";
 
-    /**
-     * Player 专用：敌方逐车与逐次对炮要求。
-     */
+    /** Player 专用：敌方逐车与逐次对炮要求。 */
     static final String PLAYER_ENEMY_DAMAGE_RULE = """
-            
+
             === 敌方信息与对炮要求（强制，仅随机战个人复盘） ===
             必须逐车分析敌方阵容：引用敌方坦克名称与车种，结合其输出、损失血量、助攻、格挡、击杀、命中/击穿次数与阵亡时刻，
             指出哪几辆敌方车辆构成了主要威胁、威胁出现在哪个阶段、依据是什么。
@@ -79,11 +71,9 @@ final class PlayerPromptRules {
             逐次伤害是单次事件伤害，聚合摘要是整场累计的观测子集，两者不得混淆，
             不得把累计值说成单发伤害，也不得只给总量或含糊称「敌方火力」。""";
 
-    /**
-     * 公共：伤害语义——严格区分「损失血量」与「格挡伤害」，禁止把损失血量当表现差指标。
-     */
+    /** 公共：伤害语义——严格区分「损失血量」与「格挡伤害」，禁止把损失血量当表现差指标。 */
     static final String COMMON_DAMAGE_SEMANTICS_RULE = """
-            
+
             === 伤害语义（强制） ===
             严格区分「损失血量」与「格挡伤害」两个概念，它们不是同一类指标：
             1. 格挡伤害（damageBlocked）：被装甲阻挡、未造成 HP 损失的伤害，通常越高越好，代表抗线、吸引火力与装甲利用价值。
@@ -93,9 +83,7 @@ final class PlayerPromptRules {
             3. 评价玩家时，不得把「损失血量高」直接判定为表现差，也不得把「格挡伤害高」单独当作硬性优点；
                必须结合车型职责、存活时长、输出贡献与当时战况综合判断。""";
 
-    /**
-     * 中文时间格式强制句（fallback / full 基座末尾）。
-     */
+    /** 中文时间格式强制句（fallback / full 基座末尾）。 */
     static final String ZH_TIME_RULE =
             "输出复盘中的所有战斗时间必须使用“XX分XX秒”格式，例如 75 秒写作“1分15秒”、180 秒写作“3分00秒”，禁止仅使用累计秒数或“1:15”格式。";
 
@@ -116,11 +104,9 @@ final class PlayerPromptRules {
                     + "192 секунды \u2192 3 мин 12 с); "
                     + "нельзя использовать только суммарные секунды или «1:15».";
 
-    /**
-     * 公共：EN 最终正文输出语言与术语（替换 COMMON_CHINESE_LANGUAGE_RULE）。
-     */
+    /** 公共：EN 最终正文输出语言与术语（替换 COMMON_CHINESE_LANGUAGE_RULE）。 */
     static final String COMMON_LANGUAGE_RULE_EN = """
-            
+
             === OUTPUT LANGUAGE (mandatory) ===
             Write the entire final review in natural, fluent English.
             Do not echo evidence section markers or machine labels (e.g., OPPOSING_TEAM_LINEUP_AUTHORITATIVE) as prose;
@@ -133,11 +119,9 @@ final class PlayerPromptRules {
             and use "cannot be determined" only when the data is genuinely insufficient — do not hedge everywhere.
             they must not appear as review headings or prose.""";
 
-    /**
-     * 公共：RU 最终正文输出语言与术语（替换 COMMON_CHINESE_LANGUAGE_RULE）。
-     */
+    /** 公共：RU 最终正文输出语言与术语（替换 COMMON_CHINESE_LANGUAGE_RULE）。 */
     static final String COMMON_LANGUAGE_RULE_RU = """
-            
+
             === ПРАВИЛО ЯЗЫКА (обязательно) ===
             Пишите весь итоговый разбор на естественном русском языке.
             Не приводите дословно машинные метки из данных (например, OPPOSING_TEAM_LINEUP_AUTHORITATIVE) в тексте;
@@ -150,11 +134,9 @@ final class PlayerPromptRules {
             и пишите «невозможно определить» только при реальной нехватке данных — не оговаривайтесь на каждом шагу.
             они не должны появляться в заголовках или тексте разбора.""";
 
-    /**
-     * Player 专用：EN 人称（替换 PLAYER_PERSON_RULE）。
-     */
+    /** Player 专用：EN 人称（替换 PLAYER_PERSON_RULE）。 */
     static final String PLAYER_PERSON_RULE_EN = """
-            
+
             === PERSPECTIVE (mandatory, random-battle personal review only) ===
             This review is written directly for the player who uploaded the replay.
             Always call the uploading player "you"; call yourself, the coach, "I".
@@ -166,11 +148,9 @@ final class PlayerPromptRules {
             Incorrect example: The recorder dealt damage to the enemy; the friendly player entered mid;
             the recorder was destroyed.""";
 
-    /**
-     * Player 专用：RU 人称（替换 PLAYER_PERSON_RULE）。
-     */
+    /** Player 专用：RU 人称（替换 PLAYER_PERSON_RULE）。 */
     static final String PLAYER_PERSON_RULE_RU = """
-            
+
             === ПЕРСПЕКТИВА (обязательно, только личный разбор случайного боя) ===
             Разбор адресован напрямую игроку, который загрузил реплей.
             Всегда называйте этого игрока «вы»; себя как тренера — «я».
@@ -181,11 +161,9 @@ final class PlayerPromptRules {
             я считаю, что размен сам по себе был выгоден, но задержка на месте увеличила риск сосредоточенного огня.
             Неверный пример: рекордер нанёс урон противнику; дружественный игрок пошёл в центр; рекордер был уничтожен.""";
 
-    /**
-     * Player 专用：EN 敌方逐车与逐次对炮（替换 PLAYER_ENEMY_DAMAGE_RULE）。
-     */
+    /** Player 专用：EN 敌方逐车与逐次对炮（替换 PLAYER_ENEMY_DAMAGE_RULE）。 */
     static final String PLAYER_ENEMY_DAMAGE_RULE_EN = """
-            
+
             === ENEMY LINEUP & PER-HIT DAMAGE (mandatory, random-battle personal review only) ===
             Analyze the enemy lineup tank by tank, citing tank names and vehicle classes together with their output,
             damage taken, assistance, blocked, kills, hits/pens and death time; state which enemy vehicles were the
@@ -197,11 +175,9 @@ final class PlayerPromptRules {
             Never mix them, never present cumulative values as single-shot damage, and never give only totals
             or vague "enemy firepower".""";
 
-    /**
-     * Player 专用：RU 敌方逐车与逐次对炮（替换 PLAYER_ENEMY_DAMAGE_RULE）。
-     */
+    /** Player 专用：RU 敌方逐车与逐次对炮（替换 PLAYER_ENEMY_DAMAGE_RULE）。 */
     static final String PLAYER_ENEMY_DAMAGE_RULE_RU = """
-            
+
             === СОСТАВ ПРОТИВНИКА И ПОУРОННЫЙ ОБМЕН (обязательно, только личный разбор случайного боя) ===
             Разбирайте состав противника по машинам, называя танки и классы вместе с их уроном, полученным уроном,
             помощью, блокированным уроном, фрагами, попаданиями/пробитиями и временем уничтожения; укажите, какие
@@ -213,11 +189,9 @@ final class PlayerPromptRules {
             Не смешивайте их, не выдавайте суммарные значения за урон одного выстрела и не ограничивайтесь
             только итогами или расплывчатым «огнём противника».""";
 
-    /**
-     * 公共：EN 伤害语义（替换 COMMON_DAMAGE_SEMANTICS_RULE）。
-     */
+    /** 公共：EN 伤害语义（替换 COMMON_DAMAGE_SEMANTICS_RULE）。 */
     static final String COMMON_DAMAGE_SEMANTICS_RULE_EN = """
-            
+
             === DAMAGE SEMANTICS (mandatory) ===
             Strictly distinguish "HP lost" (damageReceived) from "damage blocked" (damageBlocked); they are not the same kind of metric:
             1. Damage blocked: damage stopped by armor that did not reduce HP. Usually the higher the better — it reflects holding a line, attracting fire, and armor usage.
@@ -227,11 +201,9 @@ final class PlayerPromptRules {
             3. When evaluating a player, never conclude "bad performance" merely from high HP lost, and never treat high damage blocked as a standalone merit;
                judge by class role, survival time, damage contribution, and the situation.""";
 
-    /**
-     * 公共：RU 伤害语义（替换 COMMON_DAMAGE_SEMANTICS_RULE）。
-     */
+    /** 公共：RU 伤害语义（替换 COMMON_DAMAGE_SEMANTICS_RULE）。 */
     static final String COMMON_DAMAGE_SEMANTICS_RULE_RU = """
-            
+
             === СЕМАНТИКА УРОНА (обязательно) ===
             Строго различайте «потерянные ОЗ» (damageReceived) и «заблокированный урон» (damageBlocked) — это не один и тот же показатель:
             1. Заблокированный урон: урон, остановленный бронёй и не снявший ОЗ. Обычно чем больше, тем лучше — это ценность удержания позиции, привлечения огня и использования брони.
@@ -241,11 +213,9 @@ final class PlayerPromptRules {
             3. Оценивая игрока, никогда не делайте вывод «играл плохо» только из-за больших потерь ОЗ и не считайте высокий заблокированный урон сам по себе достижением;
                учитывайте роль класса, время выживания, вклад по урону и ситуацию.""";
 
-    /**
-     * 公共：掉血时间范围（ZH；与 prompts/{player,team}/*.zh.md 内文本逐字一致）。
-     */
+    /** 公共：掉血时间范围（ZH；与 prompts/{player,team}/*.zh.md 内文本逐字一致）。 */
     static final String HP_LOSS_TIME_RULE = """
-            
+
             === 掉血时间范围（强制） ===
             1. 凡提及掉血/损失血量，必须给出明确时间范围（XX分XX秒–XX分XX秒）与掉血量，禁止「掉血较多」「前期掉血」这类无时间范围的笼统描述。
             2. 若在很短的时间窗口内掉了大量血，先说明是「短时间集中掉血/高压掉血窗口」；仅当窗口总跨度在 15 秒内、解析出 ≥2 个不同攻击者且无未解析攻击者时，才可写「被多车集火」；攻击者无法解析、只有 1 个攻击者或窗口总跨度超阈值时，不得断言集火。
@@ -254,7 +224,7 @@ final class PlayerPromptRules {
             5. 禁止同义反复废话：阵亡车辆的掉血必然达到其阵亡时剩余血量的 100%（含过量伤害），「阵亡所以掉了 100% 的血」是必然事实而不是分析发现，禁止作为发现、结论或证据写出；描述阵亡必须给出时间窗口与命中/击杀过程（如「03:12 起 5 秒内连中三炮被击毁」）；没有窗口证据就写「无法确定」。""";
 
     static final String HP_LOSS_TIME_RULE_EN = """
-            
+
             === HP LOSS TIME RANGE (mandatory) ===
             1. Whenever you mention HP loss / damage received, give an explicit time range (Xm Xs – Xm Xs) and the amount lost; never write vague statements without a time range like "lost a lot of HP early".
             2. If a large amount of HP is lost within a very short window, describe it as a "short concentrated HP-loss / high-pressure window" first; only when the window's total span is within 15 seconds and it contains 2 or more resolved distinct attackers with no unresolved attackers may you write "focus-fired by multiple vehicles"; never claim focus fire when attackers are unresolved, only one attacker is present, or the window spans longer than the threshold.
@@ -263,7 +233,7 @@ final class PlayerPromptRules {
             5. No tautological filler: a destroyed vehicle necessarily loses 100% of the HP it had left when it died (overkill damage included), so "it died, therefore it lost 100% HP" is a necessary fact, not an analytical finding; never present it as a finding, conclusion, or evidence. Describe a death with its time window and the hits/kill sequence (e.g. "destroyed by three hits within 5 seconds starting 03:12"); without window evidence write "cannot be determined".""";
 
     static final String HP_LOSS_TIME_RULE_RU = """
-            
+
             === ДИАПАЗОН ВРЕМЕНИ ПОТЕРИ ОЗ (обязательно) ===
             1. Упоминая потерю ОЗ / полученный урон, всегда указывайте точный временной диапазон (X мин X с – X мин X с) и количество потерянных ОЗ; запрещены расплывчатые формулировки без диапазона вроде «потерял много ОЗ в начале».
             2. Если за очень короткий промежуток потеряно много ОЗ, сначала опишите это как «окно кратковременной концентрированной потери ОЗ / окно высокого давления»; только когда общая протяжённость окна ≤15 секунд, в нём определено 2 и более различных атакующих и нет неопределённых атакующих, можно писать «сосредоточенный обстрел несколькими машинами»; при неопределённых атакующих, единственном атакующем или окне длиннее порога не утверждайте сосредоточенный огонь.
@@ -271,11 +241,9 @@ final class PlayerPromptRules {
             4. Окна с высоким уроном за короткий срок необходимо выделять явно: если в данных окно помечено «（短窗高额伤害窗口）» (протяжённость ≤10 секунд и суммарный урон ≥75% ДОКАЗАННОГО входного полного HP — входной HP, подтверждённый образцом до первого полученного урона, с бонусами оборудования/расходников), обязательно укажите точный временной диапазон и объём урона и прямо обозначьте это как сигнал высокого давления — получение такого урона за секунды само по себе заслуживает внимания; не преуменьшайте и не пропускайте. Урон относительно входного полного HP — это лишь расчётная база, а не фактическая доля потерянных ОЗ: не утверждайте фактический процент потери ОЗ и не превращайте «урон ≥ входного полного HP» в «уничтожена с полного HP» (мгновенное уничтожение) — данные не доказывают начальный HP, гибель внутри окна и точный максимум HP с учётом оборудования. Если входной полный HP не доказан (только базовый baseline), не помечайте окно высокого урона за короткий срок.
             5. Запрещены тавтологии: уничтоженная машина обязательно теряет 100% ОЗ, оставшихся к моменту гибели (включая избыточный урон), поэтому «погибла, значит потеряла 100% ОЗ» — это неизбежный факт, а не аналитическая находка; не выдавайте это за находку, вывод или доказательство. Описывайте гибель с временным диапазоном и последовательностью попаданий/уничтожения (например, «уничтожена тремя попаданиями за 5 секунд начиная с 03:12»); без данных об окне пишите «невозможно определить».""";
 
-    /**
-     * 公共：证据逻辑与术语（禁止集火同义反复、禁止机器标签直出、标题规范）。
-     */
+    /** 公共：证据逻辑与术语（禁止集火同义反复、禁止机器标签直出、标题规范）。 */
     static final String COMMON_EVIDENCE_LOGIC_RULE = """
-            
+
             === 证据逻辑与术语（强制） ===
             1. 车辆被击毁必然损失全部血量，所以「被打死的车承受了等于满血的伤害」是必然结果，不是集火证据；
                集火只能用「同一目标在短时间内被多车命中 / 多笔伤害归属」来证实；没有这类证据就写「无法确定」。
@@ -284,11 +252,9 @@ final class PlayerPromptRules {
             3. 复盘标题必须用「## 」写法（井号后带一个空格），标题独占一行，标题与正文之间空一行；
                段落之间用空行分隔，禁止标题与正文粘连。""";
 
-    /**
-     * 公共：EN 证据逻辑与术语（替换 COMMON_EVIDENCE_LOGIC_RULE）。
-     */
+    /** 公共：EN 证据逻辑与术语（替换 COMMON_EVIDENCE_LOGIC_RULE）。 */
     static final String COMMON_EVIDENCE_LOGIC_RULE_EN = """
-            
+
             === EVIDENCE LOGIC & TERMINOLOGY (mandatory) ===
             1. A destroyed vehicle necessarily loses all of its HP, so "the killed vehicle took damage equal to its
                full HP" is a tautology, not focus-fire evidence; focus fire can only be shown by multiple vehicles
@@ -300,11 +266,9 @@ final class PlayerPromptRules {
             3. Use "## " for headings (a space after the hashes), keep each heading on its own line, and leave a
                blank line between the heading and the following paragraph; separate paragraphs with blank lines.""";
 
-    /**
-     * 公共：RU 证据逻辑与术语（替换 COMMON_EVIDENCE_LOGIC_RULE）。
-     */
+    /** 公共：RU 证据逻辑与术语（替换 COMMON_EVIDENCE_LOGIC_RULE）。 */
     static final String COMMON_EVIDENCE_LOGIC_RULE_RU = """
-            
+
             === ЛОГИКА ДОКАЗАТЕЛЬСТВ И ТЕРМИНОЛОГИЯ (обязательно) ===
             1. Уничтоженная машина обязательно теряет все ОЗ, поэтому «убитая машина получила урон, равный её
                полному HP» — тавтология, а не доказательство сосредоточенного огня; сосредоточенный огонь можно
@@ -316,13 +280,11 @@ final class PlayerPromptRules {
             3. Заголовки оформляйте как «## » (пробел после решёток), каждый заголовок — на отдельной строке,
                между заголовком и следующим абзацем оставляйте пустую строку; абзацы разделяйте пустыми строками.""";
 
-    /**
-     * Player 专用：空间分离证据使用规则（ZH；与 prompts/player/*.zh.md 内文本逐字一致）。
-     * <p>Backend Evidence Boundary：SPATIAL_SEPARATION_EVIDENCE 是观察事实与确定性派生测量，
-     * 不是战术 verdict；拖延/脱节/有效牵制等判断由 LLM 完成。</p>
-     */
+    /** Player 专用：空间分离证据使用规则（ZH；与 prompts/player/*.zh.md 内文本逐字一致）。
+     *  <p>Backend Evidence Boundary：SPATIAL_SEPARATION_EVIDENCE 是观察事实与确定性派生测量，
+     *  不是战术 verdict；拖延/脱节/有效牵制等判断由 LLM 完成。</p> */
     static final String SEPARATION_EVIDENCE_RULE = """
-            
+
             === 空间分离证据使用规则（强制，随机战个人复盘） ===
             1. 后端 SPATIAL_SEPARATION_EVIDENCE 段提供的是【观察事实与确定性派生测量】（与队友/主力保持
                空间分离的窗口、距离、距离增长、静止占比、移动覆盖、窗口内输出/承伤、阵亡、目标点邻近关系），
@@ -344,7 +306,7 @@ final class PlayerPromptRules {
                一侧的局部人数关系，队友支援能否及时赶到。
             """;
     static final String SEPARATION_EVIDENCE_RULE_EN = """
-            
+
             === SPATIAL SEPARATION EVIDENCE USAGE RULES (mandatory, random-battle personal review) ===
             1. The backend SPATIAL_SEPARATION_EVIDENCE section provides OBSERVATIONS and DETERMINISTIC DERIVED
                MEASUREMENTS (windows where you stayed spatially separated from teammates/the main body, distance,
@@ -376,7 +338,7 @@ final class PlayerPromptRules {
                local force relations on the contacted side, and could teammates support in time.
             """;
     static final String SEPARATION_EVIDENCE_RULE_RU = """
-            
+
             === ПРАВИЛА ИСПОЛЬЗОВАНИЯ ДОКАЗАТЕЛЬСТВ ПРОСТРАНСТВЕННОГО ОТДЕЛЕНИЯ (обязательно, личный разбор случайного боя) ===
             1. Секция SPATIAL_SEPARATION_EVIDENCE на бэкенде предоставляет НАБЛЮДЕНИЯ и ДЕТЕРМИНИРОВАННЫЕ
                ПРОИЗВОДНЫЕ ИЗМЕРЕНИЯ (окна, где вы держали пространственное отделение от союзников/основной
@@ -409,7 +371,7 @@ final class PlayerPromptRules {
                каково локальное соотношение сил на стороне контакта и успела ли подойти поддержка союзников.
             """;
     static final String POINTS_SITUATION_RULE = """
-            
+
             === 点数局势与攻防姿态（强制，随机战个人复盘） ===
             1. 终局前任意时刻的绝对比分未解码（实时比分/占点进度/被动占点增长均无证据），禁止编造任何中间比分、
                精确领先幅度或「此刻领先多少分」式断言。击杀夺分时间线只表达「击杀换分项」的累计净差值，
@@ -432,7 +394,7 @@ final class PlayerPromptRules {
             5. 信号不足或矛盾时写「无法从当前回放数据确定」，不得硬下「落后/领先」结论。""";
 
     static final String POINTS_SITUATION_RULE_EN = """
-            
+
             === POINTS SITUATION AND ATTACK/DEFENSE POSTURE (mandatory, random-battle personal review) ===
             1. The absolute score at any moment before the end is undecoded (live score, capture progress, and passive accumulation have no evidence); never invent any mid-match score, an exact lead margin, or claims like "currently behind by X points". The kill-steal timeline expresses only the cumulative net delta of the "kill-steal component" — a partial provable signal, not the overall score: never present a net kill-steal deficit/lead as an overall points disadvantage/advantage; a final points loss describes only the final result — never retro-infer the overall points state at any earlier moment. Judge points pressure only from the provable signals in the POINTS_SITUATION section (kill-steal timeline, capture-point area presence, control-region entry windows) and the final settlement / end condition.
             2. Conditional analysis is allowed but must state its premise: if neither team accumulated more points through captures (capture accumulation is not observable), the team with a net kill-steal deficit usually bears greater points pressure and the team with a net kill-steal lead bears less — this only hints at the direction of points pressure; whether to push and capture or defend with crossfire is your inference from the whole situation, never write "net deficit ⇒ must push to capture" as a fixed rule; when judging your (and your team's) attack/capture/defense play, always state first that this is an inference based on the kill-steal component and capture-presence signals — never present it as an overall score lead/deficit.
@@ -441,7 +403,7 @@ final class PlayerPromptRules {
             5. When signals are insufficient or contradictory, write "cannot be determined from the current replay data"; never force a "behind/ahead" conclusion.""";
 
     static final String POINTS_SITUATION_RULE_RU = """
-            
+
             === СИТУАЦИЯ ПО ОЧКАМ И СТОЙКА АТАКИ/ОБОРОНЫ (обязательно, личный разбор случайного боя) ===
             1. Абсолютный счёт в любой момент до конца боя не декодирован (живой счёт, прогресс захвата и пассивное накопление не имеют доказательств); запрещено выдумывать любой промежуточный счёт, точный отрыв или утверждения вида «сейчас позади на X очков». Таймлайн очков за фраги выражает только накопленную чистую разницу «компоненты очков за фраги» — частичный доказуемый сигнал, а не общий счёт: запрещено выдавать чистый минус/плюс по очкам за фраги за общее отставание/преимущество по очкам; поражение по очкам описывает только итоговый результат — запрещено обратно выводить общее состояние по очкам на любой ранний момент. Оценивайте давление по очкам только по доказуемым сигналам секции POINTS_SITUATION (таймлайн очков за фраги, присутствие в зонах точек захвата, окна входа в зоны контроля) и итогу расчёта / условию завершения.
             2. Условный анализ разрешён, но обязан указывать предпосылку: если ни одна команда не накопила больше очков захватом (накопление за захват ненаблюдаемо), команда с чистым минусом по очкам за фраги обычно испытывает большее давление по очкам, а команда с плюсом — меньшее; это лишь указывает направление давления — нужно ли атаковать и захватывать точки или обороняться с перекрёстным огнём, выводите сами из всей обстановки, не превращайте «минус ⇒ обязательно атаковать и захватывать» в фиксированное правило: оценивая ваши (и вашей команды) атаку/захват/оборону, всегда сначала указывайте, что это вывод на основе компоненты очков за фраги и сигналов присутствия на точках, — не выдавайте его за общий счёт впереди/позади.
@@ -449,9 +411,7 @@ final class PlayerPromptRules {
             4. Окно входа в зону контроля (CONTROL_REGION_ENTRY_WINDOWS) выражает лишь структурный факт — машины переместились извне зоны точки захвата внутрь неё; само по себе оно не доказывает атаку, захват, оборону, ротацию или тактическую правильность/ошибочность. Урон, который ваша команда наносит входящим машинам, — лишь наблюдаемый факт обмена HP; означает ли он «недостаточную плату за проезд / ошибку обороны» — ваше supported tactical inference из сигнала очков за фраги, присутствия в зонах контроля, локальных чисел, времени боя, урона, потерь и последующего движения — никогда не превращайте «окно входа + низкий урон» в обязательный вердикт «ошибка обороны». Когда цифры урона недоступны (OBSERVED_DAMAGE_IS_PARTIAL), описывайте только качественно и не называйте чисел.
             5. При недостаточных или противоречивых сигналах пишите «невозможно определить по данным реплея»; не навязывайте вывод «позади/впереди».""";
 
-    /**
-     * 身后输出/血量优势（个人路径·中性测量）规则（ZH；与 prompts/player/single.zh.md 内文本逐字一致）。
-     */
+    /** 身后输出/血量优势（个人路径·中性测量）规则（ZH；与 prompts/player/single.zh.md 内文本逐字一致）。 */
     static final String BEHIND_LINE_RULE = """
             === 身后血量/位置优势测量规则（强制·中性） ===
             BEHIND_LINE_HP_ADVANTAGE 段是关于你本人的确定性测量（位置/血量比率/距敌距离差/已观察攻击事件/覆盖率/tank profile）：
@@ -464,7 +424,7 @@ final class PlayerPromptRules {
             4. 未提供本段时（位置/血量观测不足）禁止编造。""";
 
     static final String BEHIND_LINE_RULE_EN = """
-            
+
             === BEHIND-LINE HP/POSITION MEASUREMENT RULE (mandatory · neutral) ===
             The BEHIND_LINE_HP_ADVANTAGE section contains deterministic measurements about you (position/HP ratio/distance gap to the enemy/observed attack events/coverage/tank profile):
             1. If you are frontline-capable and your HP ratio ≥ the carrier teammate × 1.2 while being farther from the enemy, that is only a measurement combination the backend filtered for your attention —
@@ -474,7 +434,7 @@ final class PlayerPromptRules {
             4. When this section is absent (insufficient position/HP observation), never fabricate it.""";
 
     static final String BEHIND_LINE_RULE_RU = """
-            
+
             === ПРАВИЛО ИЗМЕРЕНИЙ «ЗА СПИНОЙ / ОЗ / ПОЗИЦИЯ» (обязательное · нейтрально) ===
             Секция BEHIND_LINE_HP_ADVANTAGE содержит детерминированные измерения о вас (позиция/доля ОЗ/разница дистанций до противника/наблюдаемые события атаки/полнота покрытия/профиль танка):
             1. Если вы способны держать фронт и ваша доля ОЗ ≥ союзника на первой линии × 1.2, а вы дальше от противника, — это лишь комбинация измерений, отобранная бэкендом для вашего внимания;
@@ -482,9 +442,7 @@ final class PlayerPromptRules {
             2. Наблюдение выхода уважает полноту событий: при coverage=PARTIAL значение observedAttackEvents=0 означает только «наблюдаемых событий атаки = 0» —
                не выводите «нет выхода/избегание боя»; HP_ADVANTAGE_UNKNOWN (недостаточно данных об ОЗ) даёт только факты о позиции и наблюдаемых событиях атаки.
             3. Появление за несколько фаз (salience) лишь показывает, что комбинация измерений сохранялась в нескольких фазах, — это подсказка значимости, а не негативная оценка.
-            4. Если секция отсутствует (недостаточно наблюдений позиций/ОЗ), запрещено её выдумывать.""";
-
-    /**
+            4. Если секция отсутствует (недостаточно наблюдений позиций/ОЗ), запрещено её выдумывать.""";    /**
      * 组装 system prompt：ZH 返回原样（字节级不变）；EN/RU 在中文基座上替换中文输出强制句
      * （输出语言、时间格式、车种与称谓规则），保留业务事实约束与注入防护。
      */

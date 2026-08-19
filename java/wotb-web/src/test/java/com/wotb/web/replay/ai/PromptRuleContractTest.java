@@ -17,9 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class PromptRuleContractTest {
 
-    /**
-     * md key → 必须逐字携带的 ZH 规则常量（strip 后）。
-     */
+    /** md key → 必须逐字携带的 ZH 规则常量（strip 后）。 */
     private static final Map<String, List<String>> MD_RULES = Map.of(
             "player/single", List.of(
                     PlayerPromptRules.COMMON_TANK_PROPER_NOUN_RULE,
