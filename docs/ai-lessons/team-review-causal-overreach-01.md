@@ -39,14 +39,21 @@
 - 真实回放验证（20260817 WildCat SPHT）：Top collapse core = `[109s, 128s]`（约 1分49秒–2分08秒，
   与计划叙事 1分52秒–2分12秒在容差内），**本方 3 死、对方 1 死，BEFORE 7v7 → AFTER 4v6**；
   精确秒数来自 canonical facts，不硬编码。
-- 输出只描述 canonical facts + evidence limitation（原因 UNKNOWN：掩体/射界/指挥沟通/个人操作无法区分）。
+- 输出只描述 canonical facts；原因 UNKNOWN 时按 selective 原则自然表达（只有不说明会误写成因果、或该未知影响核心结论/训练建议、或用户自然会关心时才说明；不逐条列 evidence limitation）。
+- Golden probe（PR #103 review §7）：TeamReviewRealReplayProbeTest 样本存在时<b>硬断言</b> friendlyDeaths==3、enemyDeaths==1、BEFORE 7v7、AFTER 4v6、core 接近 109–128s（±8s）；不再接受 print-only matchesNarrative 通过。
 
 ## Expected evidence boundaries
 
 - FACT：只能来自权威结算/权威阵容/已验证 canonical timeline/后端确定性证据
 - SUPPORTED INFERENCE：有 FACT 支撑、措辞保守（更符合…/从当前证据看…/较可能意味着…）
-- UNKNOWN：正常答案，质量高于编造原因
+- UNKNOWN：正常答案，质量高于编造原因；向用户披露是 <b>selective</b> 的（4 条件），不逐条列出
 - RECOMMENDATION：从可确认问题反推、不创造数字、不形成通用规则
+- internal vs user-facing（PR #103 review §3）：AUTHORITATIVE_*/OBSERVED_*/FACT/UNKNOWN/canonical 等是
+  后台推理材料，正文不得复述标签或解释证据体系；像真人教练说结论
+- battle-specific 合流推断（PR #103 review §6）：「敌方主力确认后本方没有及时合流」是本场具体结论，
+  需 4 证据门（enemy-known 支持主力确认 + 本方多分离集群 + 后续未靠近 + 首次关键交火在一侧集群）；
+  known=4/unknown=3 只能说「至少观察到 4 辆，其余 3 辆位置不明确」，禁止「7 辆主力已集中在这一侧」；
+  后知信息不得回填（anti-future-leak）
 
 ## 回归
 

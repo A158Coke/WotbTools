@@ -23,7 +23,8 @@ public record AiModelProperties(
         int promptSafetyMarginTokens,
         boolean thinkingEnabled,
         String reasoningEffort,
-        boolean call2ThinkingEnabled
+        boolean call2ThinkingEnabled,
+        @Positive int teamReviewMaxOutputTokens
 ) {
     public AiModelProperties {
         if (connectTimeoutSec < 1 || connectTimeoutSec > 3600) {
