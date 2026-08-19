@@ -216,7 +216,14 @@ class AiReplayAnalysisServiceTest {
         assertEquals("SINGLE_TEAM_BATTLE", req.analysisMode());
         assertTrue(req.systemPrompt().contains("资深团队教练"));
         assertTrue(req.systemPrompt().contains("不可信数据"));
-        assertTrue(teamLastBody().contains("teamLabel="));
+        assertTrue(teamLastBody().contains("teamDisplayLabel="),
+                "header must carry teamDisplayLabel (PR #103 review BLOCKER A)");
+        assertFalse(teamLastBody().contains("teamLabel="),
+                "old teamLabel= internal header must be replaced by teamDisplayLabel=");
+        assertTrue(teamLastBody().contains("opponentDisplayLabel="),
+                "header must carry opponentDisplayLabel");
+        assertFalse(teamLastBody().contains("队伍-"),
+                "user-facing prompt body must not contain 队伍- hash fallback");
         assertTrue(teamLastBody().contains("AUTHORITATIVE_TEAM_RESULT"));
         assertTrue(teamLastBody().contains("OBSERVED_EVENT_SUBSET_NOT_AUTHORITATIVE"));
         assertTrue(teamLastBody().contains("RECORDER_ENTITY_UNMAPPED"));
@@ -325,8 +332,8 @@ class AiReplayAnalysisServiceTest {
         // Opposing perspectives now use SEPARATE SINGLE_TEAM calls instead of one MULTI_TEAM call.
         assertTrue(teamLastBody().contains("SINGLE_TEAM_CONTEXT"),
                 "Must use SINGLE_TEAM_CONTEXT for opposing perspectives");
-        assertTrue(teamLastBody().contains("teamLabel="),
-                "Single-team context must contain teamLabel");
+        assertTrue(teamLastBody().contains("teamDisplayLabel="),
+                "Single-team context must contain teamDisplayLabel");
         assertFalse(teamLastBody().contains("MULTI_TEAM_CONTEXT"),
                 "Must NOT use MULTI_TEAM_CONTEXT for opposing perspectives");
         assertFalse(teamLastBody().contains("PERSPECTIVE 1"),
@@ -347,7 +354,8 @@ class AiReplayAnalysisServiceTest {
         final String section = result.preBattleSection();
         assertNotNull(section, "Call #1 prior must be rendered when available");
         assertTrue(section.contains("赛前预测"), "section must be user-visible Chinese");
-        assertTrue(section.contains("我方（队伍-"), "perspective team must be rendered as 我方 with team label");
+        assertTrue(section.contains("我方画像"), "perspective team must be rendered as 我方画像 without hash label");
+        assertFalse(section.contains("队伍-"), "PreBattle user-visible section must not contain 队伍- hash fallback");
         assertTrue(section.contains("重坦正面推进"), "teamA strengths must be readable");
         assertTrue(section.contains("关键对阵"), "key matchups must be present");
         assertFalse(section.contains("PRE-BATTLE"), "machine section header must be removed");
@@ -553,7 +561,7 @@ class AiReplayAnalysisServiceTest {
         final var service = new PlayerReplayAnalysisService(
                 gateway, new AiReplayAnalysisConfig(
                         new ConservativeDeepSeekTokenEstimator(), "test-model",
-                        30000, 131072, 8192, 1000, true, "high", 315));
+                        30000, 131072, 8192, 1000, true, "high", 315, 4096));
         assertThrows(com.wotb.web.replay.exception.AiTimelineUnusableException.class,
                 () -> service.analyzePlayerOrFallback(randomResultWithoutReconstruction()));
         assertTrue(gateway.requests.isEmpty(),

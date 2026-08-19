@@ -59,7 +59,7 @@ class TacticalReviewHarnessTest {
 
     private static AiReplayAnalysisConfig config() {
         return new AiReplayAnalysisConfig(
-                ESTIMATOR, "test-model", 100_000, 131_072, 8192, 1000, false, null, 315);
+                ESTIMATOR, "test-model", 100_000, 131_072, 8192, 1000, false, null, 315, 4096);
     }
 
     private static TacticalReviewHarness harness(final AiChatGateway gateway) {
@@ -340,5 +340,28 @@ class TacticalReviewHarnessTest {
         // Call #1(45s) + 旧路径 fallback(≤315s) 的理论最坏值必须低于前端/后端/nginx 的 1100s
         assertTrue(PreBattleStrategicService.PRE_BATTLE_CALL_TIMEOUT_SEC + config().callTimeoutSec()
                 < TacticalReviewHarness.ENDPOINT_DEADLINE_SEC);
+    }
+
+    @Test
+    void playerCall2IsNotLimitedByTeamReviewCap() {
+        // PR #103 review BLOCKER C：Team cap（teamReviewMaxOutputTokens）只作用于 Team Call #2；
+        // Player Call #2（TacticalReviewHarness）必须保持 global cap，不被 Team cap 无意限制。
+        final int globalMaxOutput = 32_768;
+        final int teamCap = 4_096;
+        final AiReplayAnalysisConfig cfg = new AiReplayAnalysisConfig(
+                ESTIMATOR, "test-model", 100_000, 131_072, globalMaxOutput, 1000,
+                false, null, 315, teamCap);
+        final RecordingGateway gateway = recordingGateway(PRIOR_JSON, null);
+        final PlayerReplayAnalysisService playerService = new PlayerReplayAnalysisService(gateway, cfg);
+        final PreBattleStrategicService preBattleService = new PreBattleStrategicService(gateway, cfg, null);
+        final TacticalReviewHarness harness = new TacticalReviewHarness(
+                playerService, preBattleService, gateway, cfg, System::nanoTime, null);
+
+        final AnalyzeResult result = harness.analyze(result(recon()), AllowedLanguage.ZH);
+
+        assertEquals("harness-review-text", result.analysis());
+        assertNotNull(gateway.lastHarnessRequest, "player Call #2 must run");
+        assertEquals(globalMaxOutput, gateway.lastHarnessRequest.maxOutputTokens(),
+                "Player Call #2 must keep the global output cap; Team cap must not leak into the player path");
     }
 }

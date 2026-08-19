@@ -17,7 +17,9 @@ import java.util.stream.Collectors;
  * Team Autopsy（team perspective 结算级 TEAM_AUTOPSY）Prompt 构造与中文段落渲染。
  * <p>身份使用 playerKey（P1..P7）引用，nickname/tankName 只作展示；
  * 死亡时间线仅包含本方 TEAM_A 玩家；渲染时按 playerKey 回查后端 roster，
- * 不信任 LLM 返回的名称。settlement-only：LLM 判断的 confidence 仅 PARTIAL/UNKNOWN。</p>
+ * 不信任 LLM 返回的名称。settlement-only：LLM 判断的 confidence 仅 PARTIAL/UNKNOWN——
+ * confidence/PARTIAL/UNKNOWN/settlement-only/规则候选/provenance 都是 internal structured
+ * contract（PR #103 review BLOCKER D），{@link #renderSection} 用户可见渲染一律不暴露。</p>
  */
 public final class TeamAutopsyPromptBuilder {
 
@@ -148,27 +150,25 @@ public final class TeamAutopsyPromptBuilder {
         final StringBuilder sb = new StringBuilder(1024);
         sb.append("\n\n======================== 团队剖析 ========================\n");
         sb.append("胜负: ").append(winnerLabel(winner, teamLabel, battle, perspectiveTeam)).append('\n');
+        // PR #103 review BLOCKER D：用户可见渲染不暴露 confidence/PARTIAL/UNKNOWN/
+        // settlement-only/规则候选/provenance 等内部契约——置信度只存在于 LLM JSON 契约层。
         if (!result.biggestLiabilities().isEmpty()) {
             sb.append("**重点复查对象：**\n");
             for (final TeamAutopsyResult.AutopsyVerdict v : result.biggestLiabilities()) {
-                sb.append("- **").append(renderPlayer(v.playerKey(), byKey)).append("**")
-                        .append("（置信度: ")
-                        .append(confidenceLabel(v.confidence()))
-                        .append("）: ").append(v.reason() == null ? "" : v.reason()).append('\n');
+                sb.append("- **").append(renderPlayer(v.playerKey(), byKey)).append("**：")
+                        .append(v.reason() == null ? "" : v.reason()).append('\n');
                 if (v.evidence() != null && !v.evidence().isEmpty()) {
-                    sb.append("    证据: ").append(String.join("；", v.evidence())).append('\n');
+                    sb.append("  依据：").append(String.join("；", v.evidence())).append('\n');
                 }
             }
         }
         if (!result.mvps().isEmpty()) {
             sb.append("**高贡献者：**\n");
             for (final TeamAutopsyResult.AutopsyVerdict v : result.mvps()) {
-                sb.append("- **").append(renderPlayer(v.playerKey(), byKey)).append("**")
-                        .append("（置信度: ")
-                        .append(confidenceLabel(v.confidence()))
-                        .append("）: ").append(v.reason() == null ? "" : v.reason()).append('\n');
+                sb.append("- **").append(renderPlayer(v.playerKey(), byKey)).append("**：")
+                        .append(v.reason() == null ? "" : v.reason()).append('\n');
                 if (v.evidence() != null && !v.evidence().isEmpty()) {
-                    sb.append("    证据: ").append(String.join("；", v.evidence())).append('\n');
+                    sb.append("  依据：").append(String.join("；", v.evidence())).append('\n');
                 }
             }
         }
@@ -178,9 +178,7 @@ public final class TeamAutopsyPromptBuilder {
                 sb.append("- ").append(renderPlayer(p.playerKey(), byKey))
                         .append(": ")
                         .append(contributionLabel(p.contribution()))
-                        .append("（")
-                        .append(confidenceLabel(p.confidence()))
-                        .append("）\n");
+                        .append('\n');
             }
         }
         return sb.toString();
@@ -204,7 +202,7 @@ public final class TeamAutopsyPromptBuilder {
         if (winner == null) {
             return "未知";
         }
-        final String label = teamLabel == null || teamLabel.isBlank() ? "TEAM_A" : teamLabel;
+        final String label = teamLabel == null || teamLabel.isBlank() ? "本方" : teamLabel;
         final String base = switch (winner.winner()) {
             case FRIENDLY_WIN -> label + "获胜";
             case ENEMY_WIN -> label + "落败";
@@ -252,7 +250,11 @@ public final class TeamAutopsyPromptBuilder {
         };
     }
 
-    /** 渲染层中文映射：LLM JSON 契约保持英文枚举，仅展示时翻译（MVP 保留英文）。 */
+    /**
+     * 渲染层中文映射：LLM JSON 契约保持英文枚举，仅展示时翻译。
+     * <p>PR #103 review BLOCKER D：confidence 是 internal structured contract，用户可见
+     * 渲染（renderSection）不再输出置信度标签；本方法仅保留给 prompt 输入侧使用。</p>
+     */
     static String confidenceLabel(final String confidence) {
         if (confidence == null) {
             return "未知";

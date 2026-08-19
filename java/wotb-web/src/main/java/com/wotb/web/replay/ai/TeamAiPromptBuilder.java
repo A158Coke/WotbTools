@@ -5,6 +5,7 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
+import org.springframework.util.StringUtils;
 
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -111,7 +112,7 @@ public final class TeamAiPromptBuilder {
         final String priorBlock = TeamEvidenceFormatter.priorSection(
                 prior, context.perspectiveTeam(),
                 context.battle() != null
-                        ? TeamEvidenceFormatter.resolvePerspectiveLabel(context.battle().players, context.perspectiveTeam())
+                        ? TeamEvidenceFormatter.resolveDisplayLabel(context.battle().players, context.perspectiveTeam())
                         : "");
 
         // 构建 header
@@ -122,9 +123,18 @@ public final class TeamAiPromptBuilder {
         headerBuf.append("battleIdentity=").append(TeamEvidenceFormatter.quoteData(context.battleId())).append("\n");
         headerBuf.append("category=").append(context.battleCategory()).append("\n");
         if (context.battle() != null) {
-            final String teamLabel = TeamEvidenceFormatter.resolvePerspectiveLabel(
+            // PR #103 review BLOCKER A：user-facing 名称只使用 backend display labels；
+            // 无可靠 clan（无 clan / 平票 / 非多数）时为空串，prompt 规则要求 fallback「我方/对方」。
+            final String teamLabel = TeamEvidenceFormatter.resolveDisplayLabel(
                     context.battle().players, context.perspectiveTeam());
-            headerBuf.append("teamLabel=").append(TeamEvidenceFormatter.quoteData(teamLabel)).append("\n");
+            final String opponentLabel = TeamEvidenceFormatter.resolveOpponentDisplayLabel(
+                    context.battle().players, context.perspectiveTeam());
+            // display label：无可靠 clan 时输出 (none)，prompt 规则要求正文称「我方/对方」；
+            // 不使用 quoteData 的 UNKNOWN fallback（避免把机器标签当队名泄漏给 LLM/用户）
+            headerBuf.append("teamDisplayLabel=").append(
+                    StringUtils.hasText(teamLabel) ? TeamEvidenceFormatter.quoteData(teamLabel) : "(none)").append("\n");
+            headerBuf.append("opponentDisplayLabel=").append(
+                    StringUtils.hasText(opponentLabel) ? TeamEvidenceFormatter.quoteData(opponentLabel) : "(none)").append("\n");
             headerBuf.append("map=").append(TeamEvidenceFormatter.quoteData(TeamEvidenceFormatter.resolveMapName(context.battle().mapName))).append("\n");
             headerBuf.append("durationSec=").append(TeamEvidenceFormatter.formatNullable(context.battle().durationS)).append("\n");
             final String result = TeamEvidenceFormatter.resolveTeamResult(

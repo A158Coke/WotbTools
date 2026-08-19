@@ -165,14 +165,20 @@ class TeamAutopsyPromptBuilderTest {
                 result, win(Winner.ENEMY_WIN), sevenStats(), "CHRD", completeBothAlive(), 1);
         assertTrue(section.contains("团队剖析"));
         assertTrue(section.contains("CHRD落败"));
-        assertTrue(section.contains("置信度: 精确"), "EXACT must render as 精确");
-        assertTrue(section.contains(": 高（"), "HIGH contribution must render as 高");
+        // PR #103 review BLOCKER D：用户可见渲染不暴露 confidence/PARTIAL/UNKNOWN 等内部契约
+        assertFalse(section.contains("置信度"), "用户可见复盘不得暴露置信度：" + section);
+        assertFalse(section.contains("部分"), "用户可见复盘不得暴露 PARTIAL 中文标签：" + section);
+        assertFalse(section.contains("PARTIAL"), "用户可见复盘不得暴露 PARTIAL：" + section);
+        assertFalse(section.contains("UNKNOWN"), "用户可见复盘不得暴露 UNKNOWN：" + section);
+        assertTrue(section.contains(": 高"), "HIGH contribution must render as 高");
         assertTrue(section.contains("**重点复查对象：**"), "重点复查对象标题必须加粗：" + section);
         assertTrue(section.contains("**高贡献者：**"), "高贡献者标题必须加粗：" + section);
-        assertTrue(section.contains("**P2（\"nick2 / Kranvagn 2\"）**"),
-                "重点复查对象玩家名必须加粗：" + section);
-        assertTrue(section.contains("**P1（\"nick1 / Kranvagn 1\"）**"),
-                "高贡献者玩家名必须加粗：" + section);
+        assertTrue(section.contains("**P2（\"nick2 / Kranvagn 2\"）**：过早阵亡"),
+                "重点复查对象玩家名必须加粗并直接接 reason：" + section);
+        assertTrue(section.contains("**P1（\"nick1 / Kranvagn 1\"）**：关键窗口输出"),
+                "高贡献者玩家名必须加粗并直接接 reason：" + section);
+        assertTrue(section.contains("依据：e1"), "verdict evidence 渲染为自然「依据」：" + section);
+        assertTrue(section.contains("依据：e2"), "verdict evidence 渲染为自然「依据」：" + section);
         assertTrue(section.contains("逐人贡献"));
         assertFalse(section.contains("限制"), "用户可见复盘不得包含限制段：" + section);
         assertFalse(section.contains("未知玩家"));
@@ -233,6 +239,26 @@ class TeamAutopsyPromptBuilderTest {
                         PointsEndReason.NOT_APPLICABLE), "CHRD", completeBothAlive(), 1));
         assertEquals("未知", TeamAutopsyPromptBuilder.winnerLabel(
                 null, "CHRD", completeBothAlive(), 1));
+    }
+
+    @Test
+    void winnerLabelFallsBackToBenFangWithoutReliableClan() {
+        // PR #103 review BLOCKER A/D：无可靠 clan 时 user-facing 胜负标签必须是「本方」，
+        // 绝不出现 TEAM_A / 队伍-XXXX / 主要军团
+        assertEquals("本方落败", TeamAutopsyPromptBuilder.winnerLabel(
+                new TeamBattleWinner(Winner.ENEMY_WIN, WinnerSource.BATTLE_RESULTS, false,
+                        PointsEndReason.NOT_APPLICABLE), "", completeBothAlive(), 1));
+        assertEquals("本方获胜", TeamAutopsyPromptBuilder.winnerLabel(
+                new TeamBattleWinner(Winner.FRIENDLY_WIN, WinnerSource.BATTLE_RESULTS, false,
+                        PointsEndReason.NOT_APPLICABLE), null, completeBothAlive(), 1));
+        final TeamAutopsyResult empty =
+                new TeamAutopsyResult(List.of(), List.of(), List.of(), List.of());
+        final String section = TeamAutopsyPromptBuilder.renderSection(
+                empty, win(Winner.ENEMY_WIN), sevenStats(), "", completeBothAlive(), 1);
+        assertTrue(section.contains("本方落败"), "renderSection 无 clan 时胜负标签必须是本方: " + section);
+        assertFalse(section.contains("TEAM_A"), "用户可见渲染不得出现 TEAM_A: " + section);
+        assertFalse(section.contains("队伍-"), "用户可见渲染不得出现 队伍- hash: " + section);
+        assertFalse(section.contains("主要军团"), "用户可见渲染不得出现「主要军团」proper noun: " + section);
     }
 
     @Test

@@ -152,6 +152,10 @@ class TeamReviewQualityGateContractTest {
                     lang + " 残留中文输出结构");
             assertFalse(localized.contains("=== 单走行为判定规则（强制） ==="),
                     lang + " 残留中文单走规则");
+            assertFalse(localized.contains("=== 重新集中推断规则（强制：本场具体结论必须有证据） ==="),
+                    lang + " 残留中文重新集中规则");
+            assertFalse(localized.contains("=== 内部证据与用户正文的关系（强制） ==="),
+                    lang + " 残留中文内部证据规则");
         }
         final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
         assertTrue(en.contains("EVIDENCE CONTRACT (mandatory): FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN"),
@@ -165,5 +169,53 @@ class TeamReviewQualityGateContractTest {
         assertTrue(ru.contains("КОНТРАКТ ДОКАЗАТЕЛЬСТВ"), "RU 必须携带证据契约");
         assertTrue(ru.contains("нормальный ответ, а не провал"), "RU 必须携带 UNKNOWN 语义");
         assertFalse(ru.contains("是图控/拿视野，不是脱节"), "RU 不得携带旧规则");
+    }
+
+    // ---- PR #103 review BLOCKER E：Opening Spread 的 battle-specific inference 必须有证据 ----
+
+    @Test
+    void regroupingIsBattleSpecificConclusionNeedingEvidence() {
+        // 「敌方主力确认后本方没有及时合流」是本场具体结论，不是一般战术解释
+        assertTrue(ZH.contains("是本场具体结论，不是一般战术解释"),
+                "必须把合流/重新集中标记为本场具体结论");
+        assertTrue(ZH.contains("重新集中推断规则（强制：本场具体结论必须有证据）"),
+                "必须携带重新集中推断规则");
+        assertTrue(ZH.contains("对方主力方向已经比较明确后，本方仍保持分散，重新集中的速度不够"),
+                "满足证据时的 supported inference 措辞");
+        assertTrue(ZH.contains("当时已有足够的敌方已知信息支持"),
+                "证据门 1：敌方已知信息支持主力方向确认");
+        assertTrue(ZH.contains("本方仍存在多个显著分离的集群"),
+                "证据门 2：本方仍多个显著分离集群");
+        assertTrue(ZH.contains("两个己方集群没有明显靠近或形成支援"),
+                "证据门 3：后续未靠近/未支援");
+        assertTrue(ZH.contains("首次关键交火/减员发生在其中一个集群"),
+                "证据门 4：首次关键交火发生在其中一个集群");
+        assertFalse(ZH.contains("分路是以局部兵力密度换取空间/信息覆盖」「敌方主力确认后本方没有及时合流」"),
+                "「合流」不得再列在允许的一般战术解释里");
+    }
+
+    @Test
+    void enemyUnknownWordingIsStrict() {
+        // known=4 / unknown=3：只能说「至少观察到 4 辆，其余 3 辆位置不明确」
+        assertTrue(ZH.contains("至少已经观察到 4 辆敌车"), "必须给出 unknown 措辞（至少观察到 X 辆）");
+        assertTrue(ZH.contains("其余 3 辆的位置还不明确"), "必须给出 unknown 措辞（其余未知）");
+        assertTrue(ZH.contains("禁止说「对方 7 辆主力已经集中在这一侧」"),
+                "禁止把已知+未知合计说成全部集中");
+        assertTrue(ZH.contains("不得回填到更早的判断窗口"), "anti-future-leak：后面信息不得回填");
+    }
+
+    @Test
+    void regroupingContractLocalizedInThreeLanguages() {
+        for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
+            final String localized = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, lang);
+            assertTrue(localized.contains("anti-future-leak"), lang + " 必须携带 anti-future-leak");
+        }
+        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
+        assertTrue(en.contains("REGROUPING INFERENCE RULE"), "EN 必须携带重新集中规则");
+        assertTrue(en.contains("at least 4 enemy vehicles were observed"),
+                "EN 必须给出 unknown 措辞");
+        assertFalse(en.contains("对方 7 辆主力已经集中在这一侧"), "EN 不得携带中文禁止句");
+        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
+        assertTrue(ru.contains("ПРАВИЛО ВЫВОДА О ПЕРЕГРУППИРОВКЕ"), "RU 必须携带重新集中规则");
     }
 }
