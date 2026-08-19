@@ -1,23 +1,23 @@
 package com.wotb.core.replay.evidence;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
 import com.wotb.core.replay.reconstruction.ObservationState;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.reconstruction.VehicleState;
 import com.wotb.core.replay.reconstruction.Vector3;
+import com.wotb.core.replay.reconstruction.VehicleState;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class EnemyLastKnownPositionResolverTest {
 
@@ -37,7 +37,9 @@ class EnemyLastKnownPositionResolverTest {
         return battle(players);
     }
 
-    /** OBSERVED 且有位置的车辆；lastPositionAt 按 raw clock 给定。 */
+    /**
+     * OBSERVED 且有位置的车辆；lastPositionAt 按 raw clock 给定。
+     */
     private static VehicleState observedVehicle(final int entityId, final long accountId,
                                                 final Integer team, final float x, final float z,
                                                 final float lastPosAt) {

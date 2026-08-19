@@ -2,13 +2,13 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.ref.MapNames;
-import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.processing.TeamEntityIdentity;
 import com.wotb.core.processing.TeamEntityMapper;
 import com.wotb.core.processing.TeamEntityMapping;
 import com.wotb.core.processing.TeamPerspectiveResolution;
 import com.wotb.core.processing.TeamPerspectiveResolver;
+import com.wotb.core.ref.MapNames;
+import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
@@ -396,7 +396,9 @@ public final class MapOverviewBuilder {
         return out;
     }
 
-    /** 在 [startSec, endSec] 区间内找时间上最接近 t 的位置（跨实体合并；禁止区间外配对）。 */
+    /**
+     * 在 [startSec, endSec] 区间内找时间上最接近 t 的位置（跨实体合并；禁止区间外配对）。
+     */
     private static Position nearestWithin(
             final List<Integer> entityIds,
             final Positions positions,
@@ -420,7 +422,9 @@ public final class MapOverviewBuilder {
         return best;
     }
 
-    /** 最短圆弧差（度，[-180,180]）。 */
+    /**
+     * 最短圆弧差（度，[-180,180]）。
+     */
     private static double shortestArcDeg(final double a, final double b) {
         double d = (a - b) % 360.0;
         if (d > 180) {
@@ -547,7 +551,9 @@ public final class MapOverviewBuilder {
         return identity != null ? identity.accountId() : 0L;
     }
 
-    /** 录像者账号 id（Battle.recorder 昵称已在 ReplayParser 解析时归一化，可稳定匹配 players）；未解析为 null。 */
+    /**
+     * 录像者账号 id（Battle.recorder 昵称已在 ReplayParser 解析时归一化，可稳定匹配 players）；未解析为 null。
+     */
     private static Long resolveRecorderAccountId(final Battle battle) {
         final PlayerResult recorder = battle.recorderResult();
         return recorder != null && recorder.accountId > 0 ? recorder.accountId : null;
@@ -778,7 +784,9 @@ public final class MapOverviewBuilder {
         return out;
     }
 
-    /** 阵亡时刻（battle-relative 秒）：仅未存活玩家；优先结算，回退事件流估算；未知为 null。 */
+    /**
+     * 阵亡时刻（battle-relative 秒）：仅未存活玩家；优先结算，回退事件流估算；未知为 null。
+     */
     private static Double resolveDeathSec(final PlayerResult player) {
         if (player.survived) {
             return null;
@@ -808,7 +816,9 @@ public final class MapOverviewBuilder {
     record Position(double timeSec, double x, double z, Double yawDeg) {
     }
 
-    /** 按实体聚合的位置时间线（有序），附带最近/最后位置查询。 */
+    /**
+     * 按实体聚合的位置时间线（有序），附带最近/最后位置查询。
+     */
     static final class Positions {
 
         private final Map<Integer, List<Position>> byEntity;
@@ -863,7 +873,9 @@ public final class MapOverviewBuilder {
             return lastTimeSec;
         }
 
-        /** 时间上最接近 t 的位置（|Δt| ≤ 3s 才返回，避免张冠李戴）。 */
+        /**
+         * 时间上最接近 t 的位置（|Δt| ≤ 3s 才返回，避免张冠李戴）。
+         */
         Position nearest(final int entityId, final double t) {
             final List<Position> list = byEntity.getOrDefault(entityId, List.of());
             Position best = null;
@@ -878,7 +890,9 @@ public final class MapOverviewBuilder {
             return best != null && bestDelta <= 3.0 ? best : null;
         }
 
-        /** 时间 ≤ t 的最后一个位置。 */
+        /**
+         * 时间 ≤ t 的最后一个位置。
+         */
         Position lastBefore(final int entityId, final double t) {
             final List<Position> list = byEntity.getOrDefault(entityId, List.of());
             Position result = null;
@@ -892,7 +906,9 @@ public final class MapOverviewBuilder {
             return result;
         }
 
-        /** 返回在给定实体集合中拥有该位置时刻的实体 id（用于死亡落格时的身份回查）。 */
+        /**
+         * 返回在给定实体集合中拥有该位置时刻的实体 id（用于死亡落格时的身份回查）。
+         */
         int entityForLatest(final Position deathPos, final List<Integer> entityIds) {
             for (final int eid : entityIds) {
                 final List<Position> list = byEntity.getOrDefault(eid, List.of());

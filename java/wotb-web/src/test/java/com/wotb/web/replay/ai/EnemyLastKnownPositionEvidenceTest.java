@@ -1,9 +1,5 @@
 package com.wotb.web.replay.ai;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
@@ -22,8 +18,8 @@ import com.wotb.core.replay.reconstruction.ObservationState;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.reconstruction.VehicleState;
 import com.wotb.core.replay.reconstruction.Vector3;
+import com.wotb.core.replay.reconstruction.VehicleState;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
 import com.wotb.core.replay.stream.ReplayStreamHeader;
 import org.junit.jupiter.api.Test;
@@ -31,6 +27,10 @@ import org.junit.jupiter.api.Test;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 敌方最后已知位置 prompt 契约（阶段 1：团队 single + 随机战 harness/fallback）。
@@ -86,7 +86,9 @@ class EnemyLastKnownPositionEvidenceTest {
         return vs;
     }
 
-    /** 最终快照：我方 (0,0) 与 (100,0) 观察中 → 质心 (50,0)；敌方 2001 在 (250,0)；2002 无记录。 */
+    /**
+     * 最终快照：我方 (0,0) 与 (100,0) 观察中 → 质心 (50,0)；敌方 2001 在 (250,0)；2002 无记录。
+     */
     private static ReplayReconstruction recon() {
         final Map<Integer, VehicleState> vehicles = new HashMap<>();
         vehicles.put(1, observedVehicle(1, 1001L, 1, 0f, 0f));
@@ -282,7 +284,7 @@ class EnemyLastKnownPositionEvidenceTest {
     void fullPathInjectsEnemyLastKnownPositions() {
         final SinglePlayerBattleAnalysisContext ctx = new SinglePlayerBattleAnalysisContext(
                 null, battle(), new PlayerBattleFeatureSet(
-                        List.of(), List.of(), List.of(), List.of(), List.of(), true),
+                List.of(), List.of(), List.of(), List.of(), List.of(), true),
                 new RecorderEntityMapping(1001L, 4481, 1, "rec1", 1, 4481, DecodeConfidence.EXACT),
                 new ReplayCoverage(true, 1, 1, 0, 0, 0, 1.0, Map.of()), List.of());
         final PreparedAiPrompt prepared = PlayerReplayPromptBuilder.prepareFull(

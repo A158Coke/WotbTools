@@ -1,9 +1,5 @@
 package com.wotb.web.replay.ai;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
@@ -24,6 +20,10 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 阶段时间线（阶段边界 + 双方存活人数）prompt 契约（阶段 2）。
@@ -89,7 +89,9 @@ class BattlePhaseTimelineEvidenceTest {
                 BattlePhaseSummary.SurvivalTimeline.fromBattleResults(battleWithUnknownEnemyDeath(), 1));
     }
 
-    /** 敌方 2006 阵亡但死亡时刻缺失 → 敌方存活人数不可算（UNKNOWN），我方不受影响。 */
+    /**
+     * 敌方 2006 阵亡但死亡时刻缺失 → 敌方存活人数不可算（UNKNOWN），我方不受影响。
+     */
     private static Battle battleWithUnknownEnemyDeath() {
         final Battle b = battle();
         final List<PlayerResult> players = new ArrayList<>(b.players);
@@ -111,7 +113,9 @@ class BattlePhaseTimelineEvidenceTest {
         return next < 0 ? rest : rest.substring(0, next);
     }
 
-    /** 从 fromHeader 截取到 toMarker（不含）之间的内容。 */
+    /**
+     * 从 fromHeader 截取到 toMarker（不含）之间的内容。
+     */
     private static String between(final String content, final String fromHeader, final String toMarker) {
         final int start = content.indexOf(fromHeader);
         assertTrue(start >= 0, "content must contain section header [" + fromHeader + "]:\n" + content);
@@ -287,7 +291,7 @@ class BattlePhaseTimelineEvidenceTest {
     void fullPathInjectsPhaseTimelineWithSurvival() {
         final SinglePlayerBattleAnalysisContext ctx = new SinglePlayerBattleAnalysisContext(
                 null, battle(), new PlayerBattleFeatureSet(
-                        List.of(), List.of(), phasesWithSurvival(), List.of(), List.of(), true),
+                List.of(), List.of(), phasesWithSurvival(), List.of(), List.of(), true),
                 new RecorderEntityMapping(1001L, 4481, 1, "rec1", 1, 4481, DecodeConfidence.EXACT),
                 new ReplayCoverage(true, 1, 1, 0, 0, 0, 1.0, Map.of()), List.of());
         final PreparedAiPrompt prepared = PlayerReplayPromptBuilder.prepareFull(

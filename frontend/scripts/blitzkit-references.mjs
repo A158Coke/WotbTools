@@ -20,10 +20,10 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-import tankopedia from '../../common/tankopedia-tier10.json' with { type: 'json' }
-import { MODEL_DEFINITIONS, TANK_ID_TO_MODEL } from '../src/vehicle-models/mapping.js'
-import { blitzkitIconUrl } from '../src/vehicle-models/types.js'
+import {fileURLToPath} from 'node:url'
+import tankopedia from '../../common/tankopedia-tier10.json' with {type: 'json'}
+import {MODEL_DEFINITIONS, TANK_ID_TO_MODEL} from '../src/vehicle-models/mapping.js'
+import {blitzkitIconUrl} from '../src/vehicle-models/types.js'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const CACHE_DIR = path.join(ROOT, 'frontend', 'scripts', '.vehicle-model-refs')

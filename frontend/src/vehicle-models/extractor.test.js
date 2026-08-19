@@ -6,43 +6,41 @@
  * - 确定性（相同输入两次输出一致）。
  * CI 不访问 BlitzKit 网络（任务 17）：端到端提取由 extractor CLI 本地执行。
  */
-import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { VIEWBOX } from './types.js'
-import { validateModelEntry } from './validate.js'
+import {describe, expect, it} from 'vitest'
+import {readFileSync} from 'node:fs'
+import {fileURLToPath} from 'node:url'
+import {VIEWBOX} from './types.js'
+import {validateModelEntry} from './validate.js'
 import {
-  bounds2D,
-  buildFeatureAudit,
-  buildMetadata,
-  classifyDetail,
-  clusterEdges,
-  collectNodeTriangles,
-  collectNodeVerts,
-  computeFit,
-  computeTurretModelPivot,
-  convexHull2D,
-  correctZYTuple,
-  extractMajorEdges,
-  extractTopSurfaces,
-  filterDegeneratePolys,
-  filterOccludedSurfaces,
-  groupRenderNodes,
-  hullToPath,
-  mergeVisualSurfaces,
-  projectTopFacingPolygons,
-  projectTopDown,
-  projectTriangles,
-  rasterVisibility,
-  resolveBakeScenes,
-  selectDefaultModules,
-  silhouetteToSvgPaths,
-  simplifyRing,
-  svgDocument,
-  toSvg,
-  trianglesFromGeometry,
-  unionTriangles,
-  visibilityPixel,
+    bounds2D,
+    buildFeatureAudit,
+    buildMetadata,
+    classifyDetail,
+    clusterEdges,
+    collectNodeTriangles,
+    collectNodeVerts,
+    computeFit,
+    computeTurretModelPivot,
+    convexHull2D,
+    correctZYTuple,
+    extractMajorEdges,
+    extractTopSurfaces,
+    filterDegeneratePolys,
+    filterOccludedSurfaces,
+    groupRenderNodes,
+    hullToPath,
+    mergeVisualSurfaces,
+    projectTopFacingPolygons,
+    projectTriangles,
+    rasterVisibility,
+    resolveBakeScenes,
+    selectDefaultModules,
+    silhouetteToSvgPaths,
+    simplifyRing,
+    toSvg,
+    trianglesFromGeometry,
+    unionTriangles,
+    visibilityPixel,
 } from '../../scripts/extractor-lib.mjs'
 
 /** 数学验证辅助：以 origin 为不动点的 rotate(deg) 下，点 point 的像（2D 仿射，角度制）。 */

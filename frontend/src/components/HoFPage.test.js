@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
-import { ref } from 'vue'
-import { ApiError } from '../utils/http.js'
+import {beforeEach, describe, expect, it, vi} from 'vitest'
+import {flushPromises, mount} from '@vue/test-utils'
+import {ref} from 'vue'
+import {ApiError} from '../utils/http.js'
 import HoFPage from './HoFPage.vue'
 
 let authenticated = true

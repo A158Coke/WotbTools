@@ -1,21 +1,18 @@
 package com.wotb.core;
 
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.json.JsonMapper;
-import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.EventStreamReader;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.feature.MapRegionResolver;
-import com.wotb.core.replay.stream.RawReplayPacket;
-import com.wotb.core.replay.stream.ReplayPacketStreamReader;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
@@ -179,8 +176,8 @@ class MapCoordinateCalibrationProbeTest {
             final JsonNode spawnPos = nearestSpawnPosition(spawns, first);
             final int spawnRegion = spawnPos == null ? -1
                     : MapRegionResolver.resolveRegionFromRaw(
-                            (float) spawnPos.path(0).asDouble(),
-                            (float) spawnPos.path(1).asDouble(), mapName);
+                    (float) spawnPos.path(0).asDouble(),
+                    (float) spawnPos.path(1).asDouble(), mapName);
             System.out.println(String.format(
                     "  eid=%d acc=%d team=%d tank=%d first@%.1fs (%.1f, %.1f) y=%.1f region=%d nearest=%s(team=%s,%.1fm,r=%d) alt=%s(%.1fm) %s(%.1fm)",
                     eid, acc == null ? -1 : acc, pr == null ? -1 : pr.team,
@@ -229,7 +226,9 @@ class MapCoordinateCalibrationProbeTest {
         }
     }
 
-    /** semantic 坐标 y 轴（map vertical）对应回放 z 轴；基于 playableBounds 输出三等分线。 */
+    /**
+     * semantic 坐标 y 轴（map vertical）对应回放 z 轴；基于 playableBounds 输出三等分线。
+     */
     private static String thirds(final JsonNode bounds, final String minField, final String maxField) {
         final double min = bounds.path(minField).asDouble();
         final double max = bounds.path(maxField).asDouble();

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { ApiError, apiErrorFromResponse } from './http.js'
+import {describe, expect, it} from 'vitest'
+import {ApiError, apiErrorFromResponse} from './http.js'
 
 describe('apiErrorFromResponse', () => {
   it('prefers the API error key', async () => {

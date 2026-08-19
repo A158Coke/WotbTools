@@ -1,8 +1,8 @@
 package com.wotb.web.config;
 
+import jakarta.validation.constraints.Positive;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
-import jakarta.validation.constraints.Positive;
 
 @ConfigurationProperties(prefix = "wotb.ai")
 @Validated
@@ -64,8 +64,8 @@ public record AiModelProperties(
         final long totalReserved = (long) singleReplayMaxInputTokens + maxOutputTokens + promptSafetyMarginTokens;
         if (totalReserved > (long) contextWindowTokens) {
             throw new IllegalArgumentException(
-                "Total budget exceeds context window: " + singleReplayMaxInputTokens + " + " + maxOutputTokens
-                + " + " + promptSafetyMarginTokens + " = " + totalReserved + " > " + contextWindowTokens);
+                    "Total budget exceeds context window: " + singleReplayMaxInputTokens + " + " + maxOutputTokens
+                            + " + " + promptSafetyMarginTokens + " = " + totalReserved + " > " + contextWindowTokens);
         }
         if ((thinkingEnabled || call2ThinkingEnabled)
                 && !"high".equals(reasoningEffort) && !"max".equals(reasoningEffort)) {

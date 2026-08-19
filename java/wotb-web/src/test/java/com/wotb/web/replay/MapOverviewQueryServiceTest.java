@@ -1,5 +1,20 @@
 package com.wotb.web.replay;
 
+import com.wotb.core.model.Battle;
+import com.wotb.core.processing.DefaultReplayProcessingFacade;
+import com.wotb.core.processing.ReplayProcessingOptions;
+import com.wotb.core.processing.ReplayProcessingResult;
+import com.wotb.core.processing.ReplayProcessingStatus;
+import com.wotb.web.replay.dto.MapOverview;
+import com.wotb.web.replay.exception.ReplayFileCountExceededException;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -8,21 +23,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-
-import com.wotb.core.model.Battle;
-import com.wotb.core.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.processing.ReplayProcessingOptions;
-import com.wotb.core.processing.ReplayProcessingResult;
-import com.wotb.core.processing.ReplayProcessingStatus;
-import com.wotb.web.replay.exception.ReplayFileCountExceededException;
-import com.wotb.web.replay.dto.MapOverview;
-import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.web.multipart.MultipartFile;
-
-import java.nio.file.Files;
-import java.nio.file.Path;
 
 /**
  * {@code /api/replay/map-overview} 查询服务契约：只解析回放、不调 AI；

@@ -12,7 +12,9 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-/** WG API 本地 stub：按路径返回可配置 JSON，记录收到的请求路径。 */
+/**
+ * WG API 本地 stub：按路径返回可配置 JSON，记录收到的请求路径。
+ */
 final class WargamingApiStub implements AutoCloseable {
 
     private final HttpServer server;
@@ -57,7 +59,9 @@ final class WargamingApiStub implements AutoCloseable {
         return URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/wotb/account/");
     }
 
-    /** 最近一次请求的原始 query string（用于断言参数完整性）。 */
+    /**
+     * 最近一次请求的原始 query string（用于断言参数完整性）。
+     */
     String requestQuery() {
         return lastRequestQuery;
     }

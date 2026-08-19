@@ -1,6 +1,6 @@
 <script setup>
-import { ref } from 'vue'
-import { catOf } from '../utils/helpers.js'
+import {ref} from 'vue'
+import {catOf} from '../utils/helpers.js'
 
 const props = defineProps({
   scope: String,

@@ -1,7 +1,6 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Source;
-import com.wotb.core.parse.ReplayArchiveReader;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.ReplayProcessingOptions;

@@ -1,8 +1,5 @@
 package com.wotb.web;
 
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.json.JsonMapper;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
@@ -14,14 +11,10 @@ import com.wotb.web.hof.entity.HallOfFameRecord;
 import com.wotb.web.hof.repository.HallOfFameRecordRepository;
 import com.wotb.web.hof.service.HallOfFameAdminService;
 import com.wotb.web.hof.service.HallOfFameService;
-import com.wotb.web.hof.service.ReplayHashLock;
 import com.wotb.web.hof.service.RecordOutcome;
+import com.wotb.web.hof.service.ReplayHashLock;
 import com.wotb.web.hof.storage.HallOfFameReplayStorage;
 import org.hibernate.resource.jdbc.spi.StatementInspector;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +22,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -37,14 +34,19 @@ import org.springframework.web.context.WebApplicationContext;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -52,22 +54,18 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.IntFunction;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
 import java.util.stream.Stream;
 import java.util.zip.ZipInputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
-import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 
 /**
  * MockMvc 进程内 REST API 测试 (不绑定端口)。
@@ -101,7 +99,9 @@ public class WebApiTest {
         registry.add("wotb.hof.replay-min-free-bytes", () -> "0");
     }
 
-    /** 集成测试专用回放存储目录（每次 JVM 唯一，避免串扰）。 */
+    /**
+     * 集成测试专用回放存储目录（每次 JVM 唯一，避免串扰）。
+     */
     private static final Path REPLAY_DIR = Path.of(
             System.getProperty("java.io.tmpdir"), "wotb-it-replays-" + UUID.randomUUID());
 
@@ -138,7 +138,7 @@ public class WebApiTest {
     private static List<Path> replays() throws Exception {
         final List<Path> result = new ArrayList<>();
         final Path committed = Path.of(
-                System.getProperty("user.dir"), "..", "..", "common", "fixtures", "replays")
+                        System.getProperty("user.dir"), "..", "..", "common", "fixtures", "replays")
                 .normalize();
         if (Files.isDirectory(committed)) {
             try (Stream<Path> s = Files.list(committed)) {
@@ -148,7 +148,7 @@ public class WebApiTest {
             }
         }
         final Path local = Path.of(
-                System.getProperty("user.dir"), "..", "..", "common", "data")
+                        System.getProperty("user.dir"), "..", "..", "common", "data")
                 .normalize();
         if (Files.isDirectory(local)) {
             try (Stream<Path> s = Files.list(local)) {

@@ -3,18 +3,18 @@
  * PR4（§26–§35）labelLayout 纯函数单测：估算宽度 / 碰撞盒 / TankName 位移 /
  * PlayerName 冲突 / viewport 裁剪 / hysteresis 时间阈值。
  */
-import { describe, expect, it } from 'vitest'
+import {describe, expect, it} from 'vitest'
 import {
-  CHAR_WIDTH_FACTOR,
-  LABEL_GAP_PX,
-  LABEL_PAD_X,
-  LABEL_PAD_Y,
-  PLAYER_HIDE_MS,
-  PLAYER_SHOW_MS,
-  TANK_SHIFT_MAX_PX,
-  computeLabelLayout,
-  estimateLabelWidth,
-  resolvePlayerVisibility,
+    CHAR_WIDTH_FACTOR,
+    computeLabelLayout,
+    estimateLabelWidth,
+    LABEL_GAP_PX,
+    LABEL_PAD_X,
+    LABEL_PAD_Y,
+    PLAYER_HIDE_MS,
+    PLAYER_SHOW_MS,
+    resolvePlayerVisibility,
+    TANK_SHIFT_MAX_PX,
 } from './labelLayout'
 
 const tankH = 12 + LABEL_PAD_Y // 14

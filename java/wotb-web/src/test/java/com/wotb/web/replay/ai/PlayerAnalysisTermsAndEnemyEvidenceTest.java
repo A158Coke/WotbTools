@@ -1,6 +1,4 @@
 package com.wotb.web.replay.ai;
-import com.wotb.web.replay.ai.TeamReplayAnalysisService;
-import com.wotb.web.replay.ai.PlayerReplayPromptBuilder;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
@@ -310,7 +308,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
     }
 
     private static DamageEvent damage(final float clock, final long attacker,
-                                     final long victim, final int amount) {
+                                      final long victim, final int amount) {
         return new DamageEvent(0, new ReplayTimestamp(clock, null), 8,
                 DecodeConfidence.EXACT, 0, 0, attacker, victim, amount, false);
     }

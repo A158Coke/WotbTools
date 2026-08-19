@@ -1,10 +1,10 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { mapImages } from '../data/mapImages'
-import { teamCssVars } from '../data/mapTeamColors'
-import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
-import { createMapView } from '../utils/mapView'
+import {computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch} from 'vue'
+import {useI18n} from 'vue-i18n'
+import {mapImages} from '../data/mapImages'
+import {teamCssVars} from '../data/mapTeamColors'
+import {darkMapPalette, luminanceOfImage, paletteForLuminance} from '../utils/mapPalette'
+import {createMapView} from '../utils/mapView'
 import VehicleMarker from './VehicleMarker.vue'
 import enemyHull from '../assets/tank-icons/tank-marker-enemy-hull.png'
 import enemyTurret from '../assets/tank-icons/tank-marker-enemy-turret.png'
@@ -28,10 +28,10 @@ import {
   zoomViewAt
 } from '../utils/battlePlayback'
 import {
+  computeLabelLayout,
   PLAYER_FADE_MS,
   PLAYER_HIDE_MS,
   PLAYER_SHOW_MS,
-  computeLabelLayout,
   resolvePlayerVisibility,
 } from '../utils/labelLayout'
 import {

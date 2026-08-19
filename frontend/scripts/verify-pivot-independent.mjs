@@ -36,18 +36,13 @@
  *   node scripts/verify-pivot-independent.mjs                # 全部 turreted
  *   node scripts/verify-pivot-independent.mjs maus grille-15
  */
-import { readFileSync, existsSync } from 'node:fs'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { NodeIO } from '@gltf-transform/core'
+import {existsSync, readFileSync} from 'node:fs'
+import {dirname, join} from 'node:path'
+import {fileURLToPath} from 'node:url'
+import {NodeIO} from '@gltf-transform/core'
 import * as THREE from 'three'
-import {
-  BLITZKIT_MODELS_PROTO,
-  BLITZKIT_TANKS_MIN_PROTO,
-  collectNodeVerts,
-  decodeBlitzkitPb,
-} from './extractor-lib.mjs'
-import { MODEL_DEFINITIONS } from '../src/vehicle-models/mapping.js'
+import {BLITZKIT_MODELS_PROTO, BLITZKIT_TANKS_MIN_PROTO, collectNodeVerts, decodeBlitzkitPb,} from './extractor-lib.mjs'
+import {MODEL_DEFINITIONS} from '../src/vehicle-models/mapping.js'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const CACHE = join(ROOT, 'frontend', 'scripts', '.vehicle-model-refs')

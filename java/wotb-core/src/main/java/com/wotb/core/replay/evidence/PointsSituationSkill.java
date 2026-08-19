@@ -2,7 +2,6 @@ package com.wotb.core.replay.evidence;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.processing.FriendlyEnemyResult;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.util.PlayerResultFormat;
@@ -36,22 +35,34 @@ public final class PointsSituationSkill {
     }
 
 
-    /** 占领点存在聚合时间窗（秒）。 */
+    /**
+     * 占领点存在聚合时间窗（秒）。
+     */
     public static final float PRESENCE_BIN_SEC = 15f;
 
-    /** 相邻位置采样间 canonical 位移 ≥ 该值（米）视为移动（位置流 2s 采样 → 约 2 m/s）。 */
+    /**
+     * 相邻位置采样间 canonical 位移 ≥ 该值（米）视为移动（位置流 2s 采样 → 约 2 m/s）。
+     */
     public static final float MIN_MOVE_METERS_PER_SAMPLE = 4f;
 
-    /** 进入控制点区域前向前追溯移动采样的上限（秒）。 */
+    /**
+     * 进入控制点区域前向前追溯移动采样的上限（秒）。
+     */
     public static final float MAX_ENTRY_LOOKBACK_SEC = 20f;
 
-    /** 同队进入窗口合并的最大间隔（秒）。 */
+    /**
+     * 同队进入窗口合并的最大间隔（秒）。
+     */
     public static final float ENTRY_MERGE_GAP_SEC = 8f;
 
-    /** 相邻位置采样时间差超过该值视为位置流中断，不得跨断线判移动/驻留。 */
+    /**
+     * 相邻位置采样时间差超过该值视为位置流中断，不得跨断线判移动/驻留。
+     */
     public static final float POSITION_STREAM_GAP_SEC = 5f;
 
-    /** battle-relative 秒的可信位置样本（raw replay 坐标 x/z）。 */
+    /**
+     * battle-relative 秒的可信位置样本（raw replay 坐标 x/z）。
+     */
     public record PositionSample(float timeSec, float x, float z) {
         public PositionSample {
             if (!Float.isFinite(timeSec) || timeSec < 0
@@ -63,14 +74,18 @@ public final class PointsSituationSkill {
         }
     }
 
-    /** 一车的按时间升序位置样本序列。 */
+    /**
+     * 一车的按时间升序位置样本序列。
+     */
     public record VehicleTrack(long accountId, int team, List<PositionSample> samples) {
         public VehicleTrack {
             samples = samples == null ? List.of() : List.copyOf(samples);
         }
     }
 
-    /** 击杀夺分事件：victimTeam 掉车（−40），beneficiaryTeam 得 40（叙述口径）。 */
+    /**
+     * 击杀夺分事件：victimTeam 掉车（−40），beneficiaryTeam 得 40（叙述口径）。
+     */
     public record KillPointsEvent(float timeSec, int victimTeam, int beneficiaryTeam) {
         public KillPointsEvent {
             if (!Float.isFinite(timeSec) || timeSec < 0) {
@@ -79,12 +94,16 @@ public final class PointsSituationSkill {
         }
     }
 
-    /** 占领点区域位置存在窗口：窗口内两队各有几辆车在该区域出现过（去重计数）。 */
+    /**
+     * 占领点区域位置存在窗口：窗口内两队各有几辆车在该区域出现过（去重计数）。
+     */
     public record CapturePresence(float startSec, float endSec, int team1Vehicles, int team2Vehicles) {
     }
 
-    /** 控制点区域进入窗口：team 的若干车辆从非控制点区域移动进入控制点区域的时间窗口
-     *  （中性结构分类；不表达进攻/抢点/防守意图——那是 LLM 的战术解释）。 */
+    /**
+     * 控制点区域进入窗口：team 的若干车辆从非控制点区域移动进入控制点区域的时间窗口
+     * （中性结构分类；不表达进攻/抢点/防守意图——那是 LLM 的战术解释）。
+     */
     public record ControlRegionEntryWindow(
             float startSec,
             float endSec,
@@ -236,7 +255,9 @@ public final class PointsSituationSkill {
         return windows;
     }
 
-    /** 从进入采样向前追溯连续移动采样；停在不移动、已在占领点区域或跨断线处。 */
+    /**
+     * 从进入采样向前追溯连续移动采样；停在不移动、已在占领点区域或跨断线处。
+     */
     private static float approachStart(
             final List<PositionSample> samples,
             final int entryIndex,
@@ -267,7 +288,9 @@ public final class PointsSituationSkill {
         return start;
     }
 
-    /** 从进入采样向后延续，直到离开占领点区域或位置流断线。 */
+    /**
+     * 从进入采样向后延续，直到离开占领点区域或位置流断线。
+     */
     private static float presenceEnd(
             final List<PositionSample> samples,
             final int entryIndex,
@@ -302,8 +325,10 @@ public final class PointsSituationSkill {
         return MapRegionResolver.resolveRegionFromRaw(x, z, mapCode);
     }
 
-    /** 同队同目标区域窗口按开始时刻排序、间隔 ≤ ENTRY_MERGE_GAP_SEC 时合并（车辆去重）；
-     *  不同目标区域不得合并（同一队伍同时进入不同控制点区域是两个独立进入窗口）。 */
+    /**
+     * 同队同目标区域窗口按开始时刻排序、间隔 ≤ ENTRY_MERGE_GAP_SEC 时合并（车辆去重）；
+     * 不同目标区域不得合并（同一队伍同时进入不同控制点区域是两个独立进入窗口）。
+     */
     private static List<ControlRegionEntryWindow> mergeByTeamAndRegion(
             final List<ControlRegionEntryWindow> windows) {
         final List<ControlRegionEntryWindow> sorted = new ArrayList<>(windows);

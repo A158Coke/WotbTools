@@ -8,7 +8,6 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -28,7 +27,9 @@ public final class MapCoordinateProfileRegistry {
     private MapCoordinateProfileRegistry() {
     }
 
-    /** 按地图 code 取 profile；未收录或无效时回退 DEFAULT。 */
+    /**
+     * 按地图 code 取 profile；未收录或无效时回退 DEFAULT。
+     */
     public static MapCoordinateProfile profileFor(final String mapCode) {
         final Map<String, MapCoordinateProfile> profiles = load();
         final String key = normalize(mapCode);
@@ -36,7 +37,9 @@ public final class MapCoordinateProfileRegistry {
                 : profiles.getOrDefault(key, MapCoordinateProfile.DEFAULT);
     }
 
-    /** 全量加载（懒加载 + 缓存）。 */
+    /**
+     * 全量加载（懒加载 + 缓存）。
+     */
     public static Map<String, MapCoordinateProfile> load() {
         Map<String, MapCoordinateProfile> local = cache;
         if (local != null) {
@@ -86,7 +89,9 @@ public final class MapCoordinateProfileRegistry {
         return profiles;
     }
 
-    /** 从 semantic playableBounds 推导：外接正方形半边长 + 中心偏移，clampTolerance 沿用默认 12.5。 */
+    /**
+     * 从 semantic playableBounds 推导：外接正方形半边长 + 中心偏移，clampTolerance 沿用默认 12.5。
+     */
     public static MapCoordinateProfile fromBounds(
             final double xMin, final double xMax, final double yMin, final double yMax) {
         final double centerX = (xMin + xMax) / 2.0;

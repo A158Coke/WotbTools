@@ -29,23 +29,23 @@
  *   node scripts/bake-tier-x-topview.mjs --tank-id 6929
  *   node scripts/bake-tier-x-topview.mjs --model-key maus --out-dir ../tmp/x
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { spawnSync } from 'node:child_process'
-import { NodeIO } from '@gltf-transform/core'
+import {existsSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs'
+import {dirname, join} from 'node:path'
+import {fileURLToPath} from 'node:url'
+import {spawnSync} from 'node:child_process'
+import {NodeIO} from '@gltf-transform/core'
 import * as THREE from 'three'
-import { MODEL_DEFINITIONS, TANK_ID_TO_MODEL } from '../src/vehicle-models/mapping.js'
-import { bakeTopView, encodePng } from './texture-bake-lib.mjs'
+import {MODEL_DEFINITIONS, TANK_ID_TO_MODEL} from '../src/vehicle-models/mapping.js'
+import {bakeTopView, encodePng} from './texture-bake-lib.mjs'
 import {
-  BLITZKIT_MODELS_PROTO,
-  BLITZKIT_TANKS_MIN_PROTO,
-  computeTurretModelPivot,
-  correctZYTuple,
-  decodeBlitzkitPb,
-  projectTopDown,
-  resolveBakeScenes,
-  selectDefaultModules,
+    BLITZKIT_MODELS_PROTO,
+    BLITZKIT_TANKS_MIN_PROTO,
+    computeTurretModelPivot,
+    correctZYTuple,
+    decodeBlitzkitPb,
+    projectTopDown,
+    resolveBakeScenes,
+    selectDefaultModules,
 } from './extractor-lib.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')

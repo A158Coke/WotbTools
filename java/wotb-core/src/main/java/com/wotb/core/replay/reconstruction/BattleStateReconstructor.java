@@ -2,18 +2,15 @@ package com.wotb.core.replay.reconstruction;
 
 import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.DamageEvent;
-import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.EntityCreatedEvent;
 import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
-import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.event.VehicleDestroyedEvent;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -25,10 +22,14 @@ import java.util.List;
  */
 public class BattleStateReconstructor {
 
-    /** 默认 checkpoint 间隔（秒） */
+    /**
+     * 默认 checkpoint 间隔（秒）
+     */
     static final float DEFAULT_CHECKPOINT_INTERVAL_SEC = 1.0f;
 
-    /** 默认事件数量间隔 checkpoint */
+    /**
+     * 默认事件数量间隔 checkpoint
+     */
     static final int DEFAULT_CHECKPOINT_EVENT_INTERVAL = 500;
 
     private final float checkpointIntervalSec;
@@ -38,8 +39,8 @@ public class BattleStateReconstructor {
     /**
      * 创建重建器。
      *
-     * @param battleStartRawClockSec 战斗开始原始时钟（可为 null）
-     * @param checkpointIntervalSec  checkpoint 时间间隔（秒）
+     * @param battleStartRawClockSec  战斗开始原始时钟（可为 null）
+     * @param checkpointIntervalSec   checkpoint 时间间隔（秒）
      * @param checkpointEventInterval checkpoint 事件数量间隔
      */
     public BattleStateReconstructor(
@@ -245,10 +246,10 @@ public class BattleStateReconstructor {
      * 存在时钟回退时使用安全全量重放。
      * </p>
      *
-     * @param targetClockSec      目标时间（原始时钟）
-     * @param events              全部领域事件列表
-     * @param checkpoints         checkpoint 列表
-     * @param hasClockRegression  是否存在时钟回退
+     * @param targetClockSec     目标时间（原始时钟）
+     * @param events             全部领域事件列表
+     * @param checkpoints        checkpoint 列表
+     * @param hasClockRegression 是否存在时钟回退
      * @return 目标时间的战场状态快照
      */
     public static BattleStateSnapshot stateAt(
@@ -263,7 +264,9 @@ public class BattleStateReconstructor {
         return stateAtSafe(targetClockSec, events);
     }
 
-    /** 向下兼容（默认安全全量重放）。 */
+    /**
+     * 向下兼容（默认安全全量重放）。
+     */
     public static BattleStateSnapshot stateAt(
             float targetClockSec,
             List<ReplayEvent> events,
@@ -271,7 +274,9 @@ public class BattleStateReconstructor {
         return stateAt(targetClockSec, events, checkpoints, true);
     }
 
-    /** 使用 checkpoint 快速查询。 */
+    /**
+     * 使用 checkpoint 快速查询。
+     */
     private static BattleStateSnapshot stateAtWithCheckpoints(
             float targetClockSec,
             List<ReplayEvent> events,
@@ -293,7 +298,9 @@ public class BattleStateReconstructor {
         return BattleStateSnapshot.from(state);
     }
 
-    /** 安全全量重放。 */
+    /**
+     * 安全全量重放。
+     */
     private static BattleStateSnapshot stateAtSafe(
             float targetClockSec, List<ReplayEvent> events) {
         final BattleState state = new BattleState();
@@ -304,13 +311,18 @@ public class BattleStateReconstructor {
             final float clock = event.timestamp().rawClockSec();
             if (clock > targetClockSec) continue;
             replayer.applyEvent(state, event);
-            if (!any || clock > maxClock) { maxClock = clock; any = true; }
+            if (!any || clock > maxClock) {
+                maxClock = clock;
+                any = true;
+            }
         }
         state.setRawClockSec(any ? maxClock : 0f);
         return BattleStateSnapshot.from(state);
     }
 
-    /** 将不可变快照转换为可变状态。 */
+    /**
+     * 将不可变快照转换为可变状态。
+     */
     private static BattleState snapshotToMutable(BattleStateSnapshot snapshot) {
         final BattleState state = new BattleState();
         state.setRawClockSec(snapshot.rawClockSec());

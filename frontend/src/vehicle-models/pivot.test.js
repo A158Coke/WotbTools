@@ -4,15 +4,15 @@
  * P' = C + rotate(P - C, H)，不是固定不动点；最终 turret world yaw = T。
  * 覆盖车型：Grille 15（明显后置 pivot）、Maus、FV4005、Leopard-1。
  */
-import { describe, expect, it } from 'vitest'
-import { VIEWBOX } from './types.js'
+import {describe, expect, it} from 'vitest'
+import {VIEWBOX} from './types.js'
 import {
-  hullLayerTransform,
-  markerTurretAssemblyTransform,
-  markerTurretImageTransform,
-  turretAssemblyTransform,
-  turretImageTransform,
-  turretRingPosition,
+    hullLayerTransform,
+    markerTurretAssemblyTransform,
+    markerTurretImageTransform,
+    turretAssemblyTransform,
+    turretImageTransform,
+    turretRingPosition,
 } from './pivot.js'
 
 const C = { x: VIEWBOX.width / 2, y: VIEWBOX.height / 2 }

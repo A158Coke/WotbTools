@@ -2,7 +2,6 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.evidence.EntryHpSource;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
@@ -10,6 +9,7 @@ import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.evidence.EntryHpSource;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import org.junit.jupiter.api.Test;
 
@@ -19,11 +19,15 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** BehindLineHpEvidence：身后血量/位置优势确定性测量（中性，不输出吸血/避战/利用队友/degree）。 */
+/**
+ * BehindLineHpEvidence：身后血量/位置优势确定性测量（中性，不输出吸血/避战/利用队友/degree）。
+ */
 class BehindLineHpEvidenceTest {
 
     private static final String MAP = "holland";
-    /** 真实 tankopedia id：9489=E 100(HEAVY)、9297=FV215b 183(TD)。 */
+    /**
+     * 真实 tankopedia id：9489=E 100(HEAVY)、9297=FV215b 183(TD)。
+     */
     private static final long E100 = 9489L;
     private static final long FV215B183 = 9297L;
 
@@ -59,7 +63,9 @@ class BehindLineHpEvidenceTest {
                 DecodeConfidence.EXACT, attackerEid, victimEid, null, null, 200, false);
     }
 
-    /** 事件流：双方各 2 车。本队 1001(HEAVY) 靠后高血、1002(HEAVY) 靠前低血；敌方 2001/2002 靠右。 */
+    /**
+     * 事件流：双方各 2 车。本队 1001(HEAVY) 靠后高血、1002(HEAVY) 靠前低血；敌方 2001/2002 靠右。
+     */
     private static ReplayReconstruction recon(final boolean withHp, final boolean withDamage) {
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,

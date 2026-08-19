@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
-import { nextTick, ref, computed } from 'vue'
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
+import {flushPromises, mount} from '@vue/test-utils'
+import {computed} from 'vue'
 import ReplayPage from './ReplayPage.vue'
 
 const i18n = vi.hoisted(() => ({

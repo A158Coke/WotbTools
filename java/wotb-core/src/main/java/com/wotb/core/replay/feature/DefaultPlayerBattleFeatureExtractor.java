@@ -1,12 +1,11 @@
 package com.wotb.core.replay.feature;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
-
-import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.Vector3;
 
@@ -88,7 +87,8 @@ public class DefaultPlayerBattleFeatureExtractor {
                         }
                     }
                 }
-                default -> {}
+                default -> {
+                }
             }
         }
 
@@ -115,8 +115,8 @@ public class DefaultPlayerBattleFeatureExtractor {
 
         // Phases (battle-relative) + 双方存活人数（battle_results deathTimeMillis，缺失时事件流估算）
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhasesWithSurvival(
-                        firstContactTime, phaseEndClock,
-                        BattlePhaseSummary.SurvivalTimeline.fromBattleResults(battle, recorder.team()));
+                firstContactTime, phaseEndClock,
+                BattlePhaseSummary.SurvivalTimeline.fromBattleResults(battle, recorder.team()));
 
         // 关键事件
         final List<KeyBattleEvent> keyEvents = extractRecorderKeyEvents(damages, recorder);
@@ -139,8 +139,8 @@ public class DefaultPlayerBattleFeatureExtractor {
                 .sum();
         final boolean observedMatchesAuthoritative = recorderResult != null
                 && ObservedDamageCoverage.matches(
-                        observedDealt, observedReceived,
-                        recorderResult.damageDealt, recorderResult.damageReceived);
+                observedDealt, observedReceived,
+                recorderResult.damageDealt, recorderResult.damageReceived);
         if (!observedMatchesAuthoritative) {
             limitations.add("OBSERVED_DAMAGE_IS_PARTIAL");
         }
@@ -285,8 +285,10 @@ public class DefaultPlayerBattleFeatureExtractor {
         return keyEvents;
     }
 
-    record TimedPosition(PositionChangedEvent event, float battleRelativeSec) {}
+    record TimedPosition(PositionChangedEvent event, float battleRelativeSec) {
+    }
 
-    private record TimedDamage(DamageEvent event, float battleRelativeSec) {}
+    private record TimedDamage(DamageEvent event, float battleRelativeSec) {
+    }
 
 }

@@ -13,14 +13,14 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import {fileURLToPath} from 'node:url'
 import {
-  VIEWBOX,
-  METADATA_KEYS,
-  ASSET_FILES,
-  MODEL_KEY_PATTERN,
-  SOURCE_PROVIDER_BLITZKIT,
-  GENERATION_METHOD_TEXTURE_BAKE,
+    ASSET_FILES,
+    GENERATION_METHOD_TEXTURE_BAKE,
+    METADATA_KEYS,
+    MODEL_KEY_PATTERN,
+    SOURCE_PROVIDER_BLITZKIT,
+    VIEWBOX,
 } from './types.js'
 
 const ASSETS_DIR = fileURLToPath(new URL('./assets/', import.meta.url))

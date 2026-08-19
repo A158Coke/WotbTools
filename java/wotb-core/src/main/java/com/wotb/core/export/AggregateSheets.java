@@ -1,9 +1,9 @@
 package com.wotb.core.export;
 
+import com.wotb.core.Columns;
 import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.Columns;
 import com.wotb.core.ref.MapNames;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.Aggregator;
@@ -23,10 +23,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
-/** 多场汇总工作簿的三张表: 汇总 / 明细 / 战斗列表。 */
+/**
+ * 多场汇总工作簿的三张表: 汇总 / 明细 / 战斗列表。
+ */
 final class AggregateSheets {
 
-    /** 汇总表的一列。 */
+    /**
+     * 汇总表的一列。
+     */
     private record AggregateColumn(String title, int xlsx, boolean num, Function<Agg, Object> get) {
     }
 

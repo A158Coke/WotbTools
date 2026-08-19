@@ -1,5 +1,36 @@
 package com.wotb.web.replay.controller;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wotb.core.processing.DefaultReplayProcessingFacade;
+import com.wotb.web.replay.MapOverviewQueryService;
+import com.wotb.web.replay.ReplayUploadValidator;
+import com.wotb.web.replay.ai.AiReplayAnalysisService;
+import com.wotb.web.replay.ai.AiReplayReviewService;
+import com.wotb.web.replay.ai.AiReviewStreamListener;
+import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
+import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
+import com.wotb.web.replay.ai.gateway.AiUpstreamException;
+import com.wotb.web.replay.dto.AnalyzeResponse;
+import com.wotb.web.replay.exception.ReplayFileCountExceededException;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -8,7 +39,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -16,37 +46,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-
-import com.wotb.core.processing.DefaultReplayProcessingFacade;
-import com.wotb.web.replay.ai.AiReplayAnalysisService;
-import com.wotb.web.replay.MapOverviewQueryService;
-import com.wotb.web.replay.ai.AiReplayReviewService;
-import com.wotb.web.replay.ai.AiReviewStreamListener;
-import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
-import com.wotb.web.replay.ReplayUploadValidator;
-import com.wotb.web.replay.exception.ReplayFileCountExceededException;
-import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
-import com.wotb.web.replay.ai.gateway.AiUpstreamException;
-import com.wotb.web.replay.dto.AnalyzeResponse;
-import java.util.List;
-import java.util.Map;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * {@code /api/replay/analyze} SSE 流式契约测试（真实异步 worker）：
@@ -453,7 +452,9 @@ class ReconstructionControllerStreamingTest {
         return emitter;
     }
 
-    /** 轮询事件队列直到 done（成功流）或 error（失败流）终止事件，返回所有事件文本。 */
+    /**
+     * 轮询事件队列直到 done（成功流）或 error（失败流）终止事件，返回所有事件文本。
+     */
     private String drainUntilTerminal(final RecordingEmitter emitter) throws InterruptedException {
         final StringBuilder body = new StringBuilder();
         final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
@@ -485,7 +486,9 @@ class ReconstructionControllerStreamingTest {
         return new MultipartFile[]{file, file};
     }
 
-    /** 收集 SSE 事件的 SseEmitter（send 不写真实 response，仅入队）。 */
+    /**
+     * 收集 SSE 事件的 SseEmitter（send 不写真实 response，仅入队）。
+     */
     static class RecordingEmitter extends SseEmitter {
 
         private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();

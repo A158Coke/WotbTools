@@ -1,12 +1,12 @@
 package com.wotb.core.stats;
 
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.json.JsonMapper;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.ref.VehicleCodes;
 import org.springframework.util.StringUtils;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.InputStream;
 import java.util.HashMap;
@@ -16,15 +16,17 @@ import java.util.stream.Collectors;
 
 /**
  * 自包含的表现评分 (类 WN8 机制, 但"期望值"来自当前处理的这批战斗, 不依赖外部表)。
- *  1) 每人每场算"有效贡献" EC(伤害为主, 计入协助/格挡/击杀)。
- *  2) 按车型(轻/中/重/TD)从这批数据求 EC 基准均值; 同型相比 -> 跨车型公平。
- *     同型样本不足时, 基准 = 全体均值 * 车型难度系数(避免独苗轻坦被重坦拉低)。
- *  3) Rating = scale * EC/基准 * (1 + 胜场微调)。scale(默认1000) = 同型平均。
+ * 1) 每人每场算"有效贡献" EC(伤害为主, 计入协助/格挡/击杀)。
+ * 2) 按车型(轻/中/重/TD)从这批数据求 EC 基准均值; 同型相比 -> 跨车型公平。
+ * 同型样本不足时, 基准 = 全体均值 * 车型难度系数(避免独苗轻坦被重坦拉低)。
+ * 3) Rating = scale * EC/基准 * (1 + 胜场微调)。scale(默认1000) = 同型平均。
  * 所有可调参数在 common/rating.json(classpath:/rating.json), 缺失则用内置默认。
  */
 public final class Rating {
 
-    /** 可调配置(对应 common/rating.json), 仅 Rating 内部使用。 */
+    /**
+     * 可调配置(对应 common/rating.json), 仅 Rating 内部使用。
+     */
     private static final class Config {
         public double assist = 0.6;
         public double block = 0.35;
@@ -46,7 +48,9 @@ public final class Rating {
     private Rating() {
     }
 
-    /** 当前生效的评分参数快照 (供 API / 前端展示; 内部计算仍直接用私有 config 字段)。 */
+    /**
+     * 当前生效的评分参数快照 (供 API / 前端展示; 内部计算仍直接用私有 config 字段)。
+     */
     public static RatingConfig config() {
         final Config c = config;
         final Map<String, Double> publicClassFactors = c.classFactor.entrySet().stream()
@@ -87,7 +91,9 @@ public final class Rating {
         return c;
     }
 
-    /** 有效贡献(伤害当量)。 */
+    /**
+     * 有效贡献(伤害当量)。
+     */
     public static double effectiveContribution(final PlayerResult p) {
         final Config c = config;
         return p.damageDealt
@@ -96,7 +102,9 @@ public final class Rating {
                 + c.killValue * p.kills;
     }
 
-    /** 对一批战斗的所有玩家计算并写入 rating。基准按车型从这批数据求得。 */
+    /**
+     * 对一批战斗的所有玩家计算并写入 rating。基准按车型从这批数据求得。
+     */
     public static void compute(final List<Battle> battles, final Tankopedia tp) {
         final Config c = config;
         final Map<String, double[]> byClass = new HashMap<>();   // class -> [sumEC, count]
@@ -136,7 +144,9 @@ public final class Rating {
         }
     }
 
-    /** 车型分桶键; 无车型信息归入"其他"。 */
+    /**
+     * 车型分桶键; 无车型信息归入"其他"。
+     */
     private static String classKey(final Tankopedia tp, final PlayerResult p) {
         final String type = tp.info(p.tankId).type();
         if (!StringUtils.hasText(type)) {

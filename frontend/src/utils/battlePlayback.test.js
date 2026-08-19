@@ -1,24 +1,24 @@
-import { describe, expect, it } from 'vitest'
+import {describe, expect, it} from 'vitest'
 import {
-  aggregateEventsBySecond,
-  clampViewPan,
-  formatClock,
-  interpolateDirection,
-  lastKnownPosition,
-  normalizeDeg,
-  parseAiTime,
-  positionAt,
-  positionCoveredAt,
-  recorderRelated,
-  screenRotation,
-  shortestArcDeg,
-  teamHp,
-  teamPointsAt,
-  vehicleHpAt,
-  tracerLines,
-  trustedPositionAt,
-  turretWorldYawDeg,
-  zoomViewAt
+    aggregateEventsBySecond,
+    clampViewPan,
+    formatClock,
+    interpolateDirection,
+    lastKnownPosition,
+    normalizeDeg,
+    parseAiTime,
+    positionAt,
+    positionCoveredAt,
+    recorderRelated,
+    screenRotation,
+    shortestArcDeg,
+    teamHp,
+    teamPointsAt,
+    tracerLines,
+    trustedPositionAt,
+    turretWorldYawDeg,
+    vehicleHpAt,
+    zoomViewAt
 } from './battlePlayback'
 
 describe('positionAt', () => {

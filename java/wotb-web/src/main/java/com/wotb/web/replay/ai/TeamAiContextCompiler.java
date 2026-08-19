@@ -1,9 +1,9 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.replay.timeline.BattleDelta;
-import com.wotb.core.replay.timeline.DeltaKind;
 import com.wotb.core.replay.timeline.BattleFrame;
 import com.wotb.core.replay.timeline.BattleTimeline;
+import com.wotb.core.replay.timeline.DeltaKind;
 import com.wotb.core.replay.timeline.EpisodeDetector;
 import com.wotb.core.replay.timeline.FrameVehicle;
 import com.wotb.core.replay.timeline.TacticalEpisode;
@@ -265,7 +265,9 @@ public final class TeamAiContextCompiler {
         }
     }
 
-    /** HP 类 delta 称谓：side 来自 delta 属性（friendly → 我方 / enemy → 敌方）。 */
+    /**
+     * HP 类 delta 称谓：side 来自 delta 属性（friendly → 我方 / enemy → 敌方）。
+     */
     private static String whoLabel(final BattleDelta d) {
         return "friendly".equals(d.attr("side", "enemy")) ? "我方" : "敌方";
     }

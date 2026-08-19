@@ -140,7 +140,9 @@ public class WargamingIdentityProvider
         return Response.status(400).entity("Token retrieval not supported").build();
     }
 
-    /** 读取环境变量中的 WG 应用 ID；未配置返回 null。 */
+    /**
+     * 读取环境变量中的 WG 应用 ID；未配置返回 null。
+     */
     static String applicationId() {
         final String override = applicationIdOverride;
         if (override != null) {

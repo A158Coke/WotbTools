@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 
-import { describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import {describe, expect, it, vi} from 'vitest'
+import {flushPromises, mount} from '@vue/test-utils'
 import MapOverview from './MapOverview.vue'
-import { luminanceOfImage } from '../utils/mapPalette'
+import {luminanceOfImage} from '../utils/mapPalette'
 
 const i18n = vi.hoisted(() => ({
   t: vi.fn(key => key)

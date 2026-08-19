@@ -1,14 +1,13 @@
 package com.wotb.web.replay.controller;
 
+import com.wotb.web.config.ApiPaths;
 import com.wotb.web.replay.dto.ExportResult;
 import com.wotb.web.replay.dto.PreviewResponse;
 import com.wotb.web.replay.dto.RatingResponse;
 import com.wotb.web.replay.service.ReplayService;
-import com.wotb.web.config.ApiPaths;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -22,7 +21,9 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
-/** 回放处理 REST API。 */
+/**
+ * 回放处理 REST API。
+ */
 @RestController
 @CrossOrigin(origins = "*")
 public class ReplayController {

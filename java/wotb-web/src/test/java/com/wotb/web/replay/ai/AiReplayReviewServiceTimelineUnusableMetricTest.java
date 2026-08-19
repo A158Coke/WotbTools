@@ -1,8 +1,5 @@
 package com.wotb.web.replay.ai;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-
 import com.wotb.core.model.Source;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.ReplayProcessingOptions;
@@ -10,10 +7,14 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.timeline.TimelineError;
 import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * PR #102 review P0：{@code AiTimelineUnusableException} 的错误类型指标。
@@ -64,7 +65,9 @@ class AiReplayReviewServiceTimelineUnusableMetricTest {
                 "wotb_ai_review_results_total", "result", "rejected").count());
     }
 
-    /** 构造 service 并初始化 metrics（@PostConstruct 语义，否则 aiReviewDuration 为 null）。 */
+    /**
+     * 构造 service 并初始化 metrics（@PostConstruct 语义，否则 aiReviewDuration 为 null）。
+     */
     private static AiReplayReviewService serviceWithMetrics(final SimpleMeterRegistry registry,
                                                             final ThrowingFacade facade) {
         final AiReplayReviewService service = new AiReplayReviewService(facade, null, null, registry, null);
@@ -77,7 +80,9 @@ class AiReplayReviewServiceTimelineUnusableMetricTest {
                 "files", "a.wotbreplay", "application/octet-stream", new byte[]{1})};
     }
 
-    /** 抛 {@code AiTimelineUnusableException} 的假 facade（模拟 timeline 门禁拒绝）。 */
+    /**
+     * 抛 {@code AiTimelineUnusableException} 的假 facade（模拟 timeline 门禁拒绝）。
+     */
     private static final class ThrowingFacade extends DefaultReplayProcessingFacade {
         private final AiTimelineUnusableException failure;
 

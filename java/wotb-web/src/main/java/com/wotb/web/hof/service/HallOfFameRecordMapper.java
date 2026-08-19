@@ -1,11 +1,11 @@
 package com.wotb.web.hof.service;
 
-import com.wotb.web.util.Mapper;
 import com.wotb.web.hof.dto.HallOfFamePageDto;
 import com.wotb.web.hof.dto.HallOfFameRecordDto;
 import com.wotb.web.hof.dto.HofAdminPageDto;
 import com.wotb.web.hof.dto.HofAdminRecordDto;
 import com.wotb.web.hof.entity.HallOfFameRecord;
+import com.wotb.web.util.Mapper;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
@@ -20,7 +20,9 @@ public class HallOfFameRecordMapper implements Mapper<HallOfFameRecord, HallOfFa
         return toPublicDto(r, null);
     }
 
-    /** 公开 DTO；rank 为当前查询上下文位置排名（无排名上下文时传 null）。 */
+    /**
+     * 公开 DTO；rank 为当前查询上下文位置排名（无排名上下文时传 null）。
+     */
     public HallOfFameRecordDto toPublicDto(final HallOfFameRecord r, final Integer rank) {
         return new HallOfFameRecordDto(r.getId(), rank, r.getTankId(), r.getTankName(),
                 r.getNickname(), r.getDamageDealt(), r.getBattleType(), r.getMapName(),
@@ -28,7 +30,9 @@ public class HallOfFameRecordMapper implements Mapper<HallOfFameRecord, HallOfFa
                 r.getReplayHash() != null);
     }
 
-    /** 管理后台全量 DTO（admin 内部字段，不对外）。 */
+    /**
+     * 管理后台全量 DTO（admin 内部字段，不对外）。
+     */
     public HofAdminRecordDto toAdminDto(final HallOfFameRecord r) {
         return new HofAdminRecordDto(r.getId(), r.getArenaId(), r.getAccountId(), r.getNickname(),
                 r.getTankId(), r.getTankName(), r.getBattleType(), r.getArenaBonusType(),
@@ -37,7 +41,9 @@ public class HallOfFameRecordMapper implements Mapper<HallOfFameRecord, HallOfFa
                 r.getReplayUploadedBy(), r.getReplayHash() != null);
     }
 
-    /** 公开分页 + 位置排名（rank = (page-1)*size + i + 1，基于当前 filter 上下文）。 */
+    /**
+     * 公开分页 + 位置排名（rank = (page-1)*size + i + 1，基于当前 filter 上下文）。
+     */
     public HallOfFamePageDto toPageDtoWithRank(final Page<HallOfFameRecord> page,
                                                final int pageNumber, final int pageSize) {
         final long offset = (long) (pageNumber - 1) * pageSize;

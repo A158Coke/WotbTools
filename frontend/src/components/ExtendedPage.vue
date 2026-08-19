@@ -1,9 +1,9 @@
 <script setup>
-import { computed, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
+import {computed, ref} from 'vue'
+import {useI18n} from 'vue-i18n'
 import * as api from '../utils/api.js'
-import { apiErrorLabel, replayValueLabel } from '../utils/display.js'
-import { mapLabel } from '../utils/helpers.js'
+import {apiErrorLabel, replayValueLabel} from '../utils/display.js'
+import {mapLabel} from '../utils/helpers.js'
 
 const { locale, t, te } = useI18n()
 

@@ -1,8 +1,8 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { mapImages } from '../data/mapImages'
-import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
+import {computed, ref, watch} from 'vue'
+import {useI18n} from 'vue-i18n'
+import {mapImages} from '../data/mapImages'
+import {darkMapPalette, luminanceOfImage, paletteForLuminance} from '../utils/mapPalette'
 import BattlePlayback from './BattlePlayback.vue'
 
 /**

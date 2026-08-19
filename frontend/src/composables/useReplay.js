@@ -1,7 +1,7 @@
-import { ref, computed } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { displayName, mapLabel, fileKey } from '../utils/helpers.js'
-import { apiErrorLabel } from '../utils/display.js'
+import {computed, ref} from 'vue'
+import {useI18n} from 'vue-i18n'
+import {displayName, fileKey, mapLabel} from '../utils/helpers.js'
+import {apiErrorLabel} from '../utils/display.js'
 import * as api from '../utils/api.js'
 
 export function useReplay() {

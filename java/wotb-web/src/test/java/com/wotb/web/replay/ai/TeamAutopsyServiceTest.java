@@ -1,20 +1,13 @@
 package com.wotb.web.replay.ai;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.processing.FriendlyEnemyResult.PointsEndReason;
 import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.processing.FriendlyEnemyResult.WinnerSource;
-import com.wotb.core.processing.FriendlyEnemyResult.PointsEndReason;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
@@ -25,6 +18,13 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TeamAutopsyServiceTest {
 
@@ -43,18 +43,20 @@ class TeamAutopsyServiceTest {
             + "{\"playerKey\":\"P5\",\"contribution\":\"HIGH\",\"confidence\":\"PARTIAL\"},"
             + "{\"playerKey\":\"P6\",\"contribution\":\"MEDIUM\",\"confidence\":\"PARTIAL\"},"
             + "{\"playerKey\":\"P7\",\"contribution\":\"LOW\",\"confidence\":\"UNKNOWN\"}],"
-                    + "\"mvps\":[{\"playerKey\":\"P1\",\"reason\":\"r\",\"evidence\":[\"e\"],"
-                    + "\"confidence\":\"UNKNOWN\"}],"
-                    + "\"biggestLiabilities\":[{\"playerKey\":\"P2\",\"reason\":\"r2\","
-                    + "\"evidence\":[\"e2\"],\"confidence\":\"UNKNOWN\"}],"
-                    + "\"limitations\":[\"l\"]}";
+            + "\"mvps\":[{\"playerKey\":\"P1\",\"reason\":\"r\",\"evidence\":[\"e\"],"
+            + "\"confidence\":\"UNKNOWN\"}],"
+            + "\"biggestLiabilities\":[{\"playerKey\":\"P2\",\"reason\":\"r2\","
+            + "\"evidence\":[\"e2\"],\"confidence\":\"UNKNOWN\"}],"
+            + "\"limitations\":[\"l\"]}";
 
     private static AiReplayAnalysisConfig config() {
         return new AiReplayAnalysisConfig(
                 ESTIMATOR, "test-model", 100_000, 131_072, 8192, 1000, false, null, 315, 4096);
     }
 
-    /** 7 名本方玩家使用同名坦克，验证 playerKey 可区分。 */
+    /**
+     * 7 名本方玩家使用同名坦克，验证 playerKey 可区分。
+     */
     private static Battle battle() {
         final Battle b = new Battle();
         b.mapName = "erlenberg";
@@ -107,7 +109,7 @@ class TeamAutopsyServiceTest {
         assertEquals(7, outcome.roster().stream()
                 .map(s -> s.playerKey()).distinct().count());
         assertEquals(7, outcome.roster().stream()
-                .map(s -> s.accountId()).distinct().count(),
+                        .map(s -> s.accountId()).distinct().count(),
                 "same tank names must remain distinguishable via playerKey/accountId");
     }
 
@@ -174,7 +176,7 @@ class TeamAutopsyServiceTest {
             };
             final TeamAutopsyService service = new TeamAutopsyService(counting, config(), null);
             assertNull(service.analyze(battle, null, false, 1, AllowedLanguage.ZH,
-                    win(Winner.ENEMY_WIN), "CHRD", 30),
+                            win(Winner.ENEMY_WIN), "CHRD", 30),
                     friendlyCount + " friendly players must skip autopsy");
             assertEquals(0, calls.get(),
                     "gateway must not be called for " + friendlyCount + " friendly players");

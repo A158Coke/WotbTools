@@ -9,6 +9,9 @@ import com.wotb.core.processing.PerspectiveTeamNotResolvedException;
 import com.wotb.core.processing.ReplayBatchProcessingResult;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
+import com.wotb.web.config.ApiPaths;
+import com.wotb.web.replay.MapOverviewQueryService;
+import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiReviewStreamListener;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
@@ -17,14 +20,11 @@ import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.ai.gateway.AiCancellationToken;
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
-import com.wotb.web.config.ApiPaths;
-import com.wotb.web.replay.MapOverviewQueryService;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.dto.MapOverview;
-import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
-import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import com.wotb.web.replay.exception.AiReviewBusyException;
+import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import com.wotb.web.replay.metrics.ReplayUsageMetrics;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -69,7 +69,9 @@ public class ReconstructionController {
      * SSE 连接超时：对齐 nginx analyze 1120s read timeout，避免服务端在代理之前
      * 提前关闭长流。
      */
-    /** 公开给配置契约测试（AiTimeoutChainContractTest）校验与 nginx 代理超时对齐。 */
+    /**
+     * 公开给配置契约测试（AiTimeoutChainContractTest）校验与 nginx 代理超时对齐。
+     */
     public static final long SSE_TIMEOUT_MS = 1_120_000L;
 
     @Autowired
@@ -347,7 +349,9 @@ public class ReconstructionController {
         return ResponseEntity.ok(overview);
     }
 
-    /** 执行并统计回放解析使用指标（成功与异常都记录；无 ReplayUsageMetrics 时原样执行）。 */
+    /**
+     * 执行并统计回放解析使用指标（成功与异常都记录；无 ReplayUsageMetrics 时原样执行）。
+     */
     private <T> T timed(final String operation, final int fileCount, final ThrowingSupplier<T> body) throws IOException {
         if (usageMetrics == null) {
             return invoke(body);

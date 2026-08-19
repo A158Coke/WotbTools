@@ -8,8 +8,8 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.TeamPerspectiveResolution;
 import com.wotb.core.processing.TeamPerspectiveResolver;
 import com.wotb.core.replay.feature.DefaultTeamBattleFeatureExtractor;
-import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
+import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 
 /**
  * 团队分析上下文构建器：single TeamBattleAnalysisContext 组装与未解析视角错误码。

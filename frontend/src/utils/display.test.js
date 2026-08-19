@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { apiCodeLabel, apiErrorLabel, enumLabel, replayValueLabel } from './display.js'
+import {describe, expect, it} from 'vitest'
+import {apiCodeLabel, apiErrorLabel, enumLabel, replayValueLabel} from './display.js'
 
 const values = {
   'boost.level.ELITE': 'Elite',

@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
-import { ref } from 'vue'
+import {beforeEach, describe, expect, it, vi} from 'vitest'
+import {flushPromises, mount} from '@vue/test-utils'
+import {ref} from 'vue'
 import HoFAdminPage from './HoFAdminPage.vue'
 
 const api = vi.hoisted(() => ({

@@ -1,10 +1,5 @@
 package com.wotb.web.replay.ai;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
@@ -32,6 +27,9 @@ import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import com.wotb.web.replay.exception.AiTimelineUnusableException;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -39,8 +37,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * PR #102 review B1：Team AI Canonical Timeline hard gate（真实 Team production
@@ -121,7 +122,7 @@ class TeamReplayAnalysisServiceTimelineGateTest {
         assertTrue(body.contains("战斗总时长: "), body);
         // valid path 不 gate 拒绝：Call #1 与 Call #2 都真实发生
         assertTrue(gateway.requests.stream()
-                .anyMatch(r -> "PRE_BATTLE_STRATEGIC_PRIOR".equals(r.analysisMode())),
+                        .anyMatch(r -> "PRE_BATTLE_STRATEGIC_PRIOR".equals(r.analysisMode())),
                 "Call #1 must run when timeline is valid: " + gateway.requests);
     }
 
@@ -188,7 +189,9 @@ class TeamReplayAnalysisServiceTimelineGateTest {
                 battle, recon, null, capabilities, null, null);
     }
 
-    /** 有效团队 fixture：battle-relative 时钟 IDENTIFIED + 双方实体位置/血量 + 首次接敌。 */
+    /**
+     * 有效团队 fixture：battle-relative 时钟 IDENTIFIED + 双方实体位置/血量 + 首次接敌。
+     */
     private static ReplayReconstruction validRecon() {
         final ReplayMetadata meta = new ReplayMetadata(
                 "arena", "team_map", "1", "1", 2, "rec1", "", 120.0, 0L);
@@ -216,7 +219,9 @@ class TeamReplayAnalysisServiceTimelineGateTest {
                 events, List.of(), BattleStateSnapshot.empty(), coverage, diag);
     }
 
-    /** 时钟不可解析 fixture：无 battle start、无 BattleEndedEvent → TIMELINE_CLOCK_UNRESOLVED。 */
+    /**
+     * 时钟不可解析 fixture：无 battle start、无 BattleEndedEvent → TIMELINE_CLOCK_UNRESOLVED。
+     */
     private static ReplayReconstruction clockUnresolvedRecon() {
         final ReplayMetadata meta = new ReplayMetadata(
                 "arena", "team_map", "1", "1", 2, "rec1", "", 120.0, 0L);
@@ -247,7 +252,9 @@ class TeamReplayAnalysisServiceTimelineGateTest {
                 DecodeConfidence.EXACT, eid, hp, null, alive);
     }
 
-    /** 记录全部 gateway 请求的替身（从不发起真实 HTTP）。 */
+    /**
+     * 记录全部 gateway 请求的替身（从不发起真实 HTTP）。
+     */
     private static final class FakeAiChatGateway implements AiChatGateway {
         final List<AiChatRequest> requests = new CopyOnWriteArrayList<>();
         volatile boolean configured = true;

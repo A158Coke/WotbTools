@@ -1,6 +1,6 @@
 <script setup>
-import { ref } from 'vue'
-import { fileKey, displayName } from '../utils/helpers.js'
+import {ref} from 'vue'
+import {displayName, fileKey} from '../utils/helpers.js'
 
 const emit = defineEmits(['update:files', 'preview', 'remove-request'])
 const props = defineProps({ files: Array, loading: Boolean, confirmRemove: Boolean })

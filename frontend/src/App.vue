@@ -1,7 +1,7 @@
 <script setup>
-import { computed, defineAsyncComponent, ref } from 'vue'
-import { useTheme } from './composables/useTheme.js'
-import { useError } from './composables/useError.js'
+import {computed, defineAsyncComponent, ref} from 'vue'
+import {useTheme} from './composables/useTheme.js'
+import {useError} from './composables/useError.js'
 import HomePage from './components/HomePage.vue'
 import ReplayPage from './components/ReplayPage.vue'
 import HoFPage from './components/HoFPage.vue'

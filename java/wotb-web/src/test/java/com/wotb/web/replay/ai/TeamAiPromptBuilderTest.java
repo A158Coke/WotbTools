@@ -1,22 +1,22 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.ai.AiTokenEstimator;
+import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.processing.BatchAnalyzer;
 import com.wotb.core.processing.ReplayIdentity;
 import com.wotb.core.processing.ReplayProcessingCapabilities;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
-import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
-import com.wotb.core.replay.feature.CanonicalMapPosition;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
+import com.wotb.core.replay.feature.CanonicalMapPosition;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
@@ -25,14 +25,14 @@ import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamEngagementSummary;
 import com.wotb.core.replay.feature.TeamFeatureCoverage;
 import com.wotb.core.replay.feature.TeamFormationPhase;
-import com.wotb.web.replay.ai.gateway.AiChatGateway;
-import com.wotb.web.replay.ai.gateway.AiChatRequest;
-import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.Vector3;
+import com.wotb.web.replay.ai.gateway.AiChatGateway;
+import com.wotb.web.replay.ai.gateway.AiChatRequest;
+import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -404,8 +404,15 @@ class TeamAiPromptBuilderTest {
                 .getFirst();
         return new AiReplayAnalysisService(
                 new AiChatGateway() {
-                    @Override public AiChatResponse chat(final AiChatRequest r) { return null; }
-                    @Override public boolean isConfigured() { return false; }
+                    @Override
+                    public AiChatResponse chat(final AiChatRequest r) {
+                        return null;
+                    }
+
+                    @Override
+                    public boolean isConfigured() {
+                        return false;
+                    }
                 }, "", 30000, new ConservativeDeepSeekTokenEstimator())
                 .buildSingleTeamContext(group);
     }
@@ -790,7 +797,6 @@ class TeamAiPromptBuilderTest {
     }
 
 
-
     @Test
     void pointsSituationBlockIsTrimmedAsWholeWhenOverBudget() {
         final AiTokenEstimator estimator = new ConservativeDeepSeekTokenEstimator();
@@ -821,7 +827,9 @@ class TeamAiPromptBuilderTest {
         assertFalse(trimmed.globalLimitations().contains("AI_INPUT_TRUNCATED"));
     }
 
-    /** 点数局势上下文：holland 地图 + 双方阵亡（击杀夺分时间线）+ 位置轨迹（存在/推进窗口）。 */
+    /**
+     * 点数局势上下文：holland 地图 + 双方阵亡（击杀夺分时间线）+ 位置轨迹（存在/推进窗口）。
+     */
     private static SingleTeamBattleAnalysisContext pointsSituationContext() {
         final Battle battle = new Battle();
         battle.mapName = "holland";

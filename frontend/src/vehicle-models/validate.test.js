@@ -1,15 +1,10 @@
 /**
  * Validator 单测：SVG 契约 / metadata 契约 / 目录完整性 / 覆盖校验（含非法输入）。
  */
-import { describe, expect, it } from 'vitest'
-import { VIEWBOX } from './types.js'
-import { MODEL_DEFINITIONS } from './mapping.js'
-import {
-  validateSvgText,
-  validateMetadata,
-  validateModelEntry,
-  validateCoverage,
-} from './validate.js'
+import {describe, expect, it} from 'vitest'
+import {VIEWBOX} from './types.js'
+import {MODEL_DEFINITIONS} from './mapping.js'
+import {validateCoverage, validateMetadata, validateModelEntry, validateSvgText,} from './validate.js'
 
 const GOOD_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VIEWBOX.width} ${VIEWBOX.height}">
   <g id="hull"><rect x="100" y="50" width="120" height="200"/></g>

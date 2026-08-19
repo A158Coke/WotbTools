@@ -1,5 +1,5 @@
 import Keycloak from 'keycloak-js'
-import { computed, ref } from 'vue'
+import {computed, ref} from 'vue'
 
 let keycloak = null
 let initPromise = null

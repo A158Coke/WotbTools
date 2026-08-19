@@ -118,34 +118,34 @@ class WargamingApiClientTest {
             final List<String> seen = new CopyOnWriteArrayList<>();
             final WargamingApiClient hostClient = new WargamingApiClient(
                     region.authBase(), region.accountBase(), request -> {
-                        seen.add(request.uri().toString());
-                        final String path = request.uri().getPath();
-                        return response(200,
-                                responsesByPath.getOrDefault(path, "{\"status\":\"ok\"}"));
-                    });
+                seen.add(request.uri().toString());
+                final String path = request.uri().getPath();
+                return response(200,
+                        responsesByPath.getOrDefault(path, "{\"status\":\"ok\"}"));
+            });
 
             assertEquals("https://asia.wargaming.net/id/openid/x",
                     hostClient.fetchLoginRedirectUrl("a", "c"));
             assertTrue(seen.get(0).startsWith(
-                    "https://" + region.authHost() + "/wot/auth/login/"),
+                            "https://" + region.authHost() + "/wot/auth/login/"),
                     "login must use auth host for " + region);
             seen.clear();
 
             hostClient.prolongate("a", "t");
             assertTrue(seen.get(0).startsWith(
-                    "https://" + region.authHost() + "/wot/auth/prolongate/"),
+                            "https://" + region.authHost() + "/wot/auth/prolongate/"),
                     "prolongate must use auth host for " + region);
             seen.clear();
 
             hostClient.logout("a", "t");
             assertTrue(seen.get(0).startsWith(
-                    "https://" + region.authHost() + "/wot/auth/logout/"),
+                            "https://" + region.authHost() + "/wot/auth/logout/"),
                     "logout must use auth host for " + region);
             seen.clear();
 
             assertEquals("P", hostClient.fetchOfficialNickname("a", 1L, "t"));
             assertTrue(seen.get(0).startsWith(
-                    "https://" + region.accountHost() + "/wotb/account/info/"),
+                            "https://" + region.accountHost() + "/wotb/account/info/"),
                     "account/info must use account host for " + region);
         }
     }
@@ -251,8 +251,8 @@ class WargamingApiClientTest {
     void interruptedRequestsRestoreInterruptFlagOnBothHttpPaths() {
         final WargamingApiClient throwingClient = new WargamingApiClient(
                 stub.authBase(), stub.accountBase(), request -> {
-                    throw new InterruptedException("boom");
-                });
+            throw new InterruptedException("boom");
+        });
         final Thread thread = Thread.currentThread();
         try {
             assertThrows(WargamingApiException.class,
@@ -273,8 +273,8 @@ class WargamingApiClientTest {
     void ioExceptionsDoNotMarkThreadInterruptedOnBothHttpPaths() {
         final WargamingApiClient throwingClient = new WargamingApiClient(
                 stub.authBase(), stub.accountBase(), request -> {
-                    throw new IOException("boom");
-                });
+            throw new IOException("boom");
+        });
         assertThrows(WargamingApiException.class,
                 () -> throwingClient.fetchLoginRedirectUrl(
                         "app-1", "https://auth.wotbtools.com/endpoint"));
