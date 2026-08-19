@@ -6,4 +6,4 @@
 - **正确判定**：主力簇成员不产生单走候选；只有明显小于主力簇（人数差 ≥2）且距离 ≥150m 的独立簇成员才进入候选。
 - **判定依据**：`TeamSeparationEvidenceSkill.mainClusterOf`（全局最大簇，平票不判）→ 成员在主力簇 → 无候选。
 - **对应 golden case**：`ai-eval/cases/cw-main-cluster-no-solo-01.json`
-- **规则引用**：`SEPARATION_EVIDENCE_RULE`（单走=脱离主力，主力内成员不是单走）。
+- **规则引用**：`SEPARATION_EVIDENCE_RULE`（主力簇成员不产生空间分离候选；「单走/拖延/脱节」是 LLM 的战术判断，不是 Backend 标签）。

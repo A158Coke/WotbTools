@@ -223,7 +223,7 @@ public final class TeamAiPromptBuilder {
             optTemp.append(formationDepth);
         }
         // 身后血量/位置优势测量（确定性）：小段，随 optional 预算裁剪
-        final String behindLine = BehindLineHpEvidence.renderTeamSection(
+        final String behindLine = RelativeDepthHpEvidence.renderTeamSection(
                 context.battle(),
                 context.reconstruction(),
                 context.perspectiveTeam(),

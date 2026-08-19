@@ -9,4 +9,4 @@
   - 该成员未接火/未承伤/未阵亡；
   - 队伍呈多簇/高离散阵型（分散，仅位置事实）。
 - **对应 golden case**：`ai-eval/cases/cw-opening-mapcontrol-01.json`
-- **规则引用**：Step 2 `SEPARATION_EVIDENCE_RULE`（开局分散窗口抑制脱节候选；视野类收益无专门 evidence 时 UNKNOWN）。
+- **规则引用**：`SEPARATION_EVIDENCE_RULE`（开局分散是中性结构分类；视野类收益无专门 evidence 时 UNKNOWN）。

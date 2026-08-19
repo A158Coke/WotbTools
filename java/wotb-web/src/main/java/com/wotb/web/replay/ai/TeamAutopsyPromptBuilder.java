@@ -125,7 +125,7 @@ public final class TeamAutopsyPromptBuilder {
                         .append('\n'));
         // 身后血量/位置优势测量（确定性）：供战犯/MVP 判定综合位置测量参考（见规则 1）
         if (recon != null) {
-            final String behindLine = BehindLineHpEvidence.renderTeamSection(
+            final String behindLine = RelativeDepthHpEvidence.renderTeamSection(
                     battle, recon, perspectiveTeam, observedDamagePartial);
             if (!behindLine.isEmpty()) {
                 sb.append(behindLine);
