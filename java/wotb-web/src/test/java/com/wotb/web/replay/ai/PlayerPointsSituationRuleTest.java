@@ -15,7 +15,8 @@ class PlayerPointsSituationRuleTest {
         final String tactical = AiPromptLibrary.zh("player/tactical");
         for (final String prompt : new String[]{single, fallback, tactical}) {
             assertTrue(prompt.contains("=== 点数局势与攻防姿态（强制，随机战个人复盘） ==="), prompt);
-            assertTrue(prompt.contains("过路费：对方进攻推进窗口（PUSH_WINDOWS）内，你方对推进方造成的伤害就是过路费"), prompt);
+            assertTrue(prompt.contains("进入控制点区域窗口（CONTROL_REGION_ENTRY_WINDOWS）"), prompt);
+            assertFalse(prompt.contains("PUSH_WINDOWS"), "不得再引用 PUSH_WINDOWS: " + prompt);
             assertTrue(prompt.contains("禁止编造任何中间比分"), prompt);
             // 击杀换分项 ≠ 整体点数：不得把净差值写成整体落后/领先，不得反推早期点数状态
             assertTrue(prompt.contains("击杀夺分时间线只表达「击杀换分项」的累计净差值"), prompt);

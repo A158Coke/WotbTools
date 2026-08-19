@@ -15,10 +15,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * BEHIND_LINE_HP_ADVANTAGE（吸血/避战候选）真实样本标定探针（手动维护，不进常规 CI 断言）：
+ * BEHIND_LINE_HP_ADVANTAGE 真实样本标定探针（手动维护，不进常规 CI 断言）：
  * 扫描 common/data（递归）与 common/fixtures/replays 的全部 .wotbreplay，逐样本输出
- * {@link BehindLineHpEvidence#renderTeamSection}（团队视角=录像者队伍）的命中名单与 degree 分级，
- * 供用户审阅并标定阈值（×1.2 血量优势/档位）。无样本自动跳过。
+ * {@link BehindLineHpEvidence#renderTeamSection}（团队视角=录像者队伍）的测量行与跨阶段 salience，
+ * 供用户审阅并标定阈值（×1.2 血量优势 salience filter）。无样本自动跳过。
  */
 class BehindLineEvidenceProbeTest {
 
@@ -58,21 +58,21 @@ class BehindLineEvidenceProbeTest {
                 final String section = BehindLineHpEvidence.renderTeamSection(
                         battle, recon, recorderTeam, false);
                 System.out.println(section.isEmpty() ? "  (无命中)" : section);
-                // OBSERVED_DAMAGE_IS_PARTIAL 对照：事件流观测不全时不得出现「无输出（避战）」
+                // OBSERVED_DAMAGE_IS_PARTIAL 对照：事件流观测不全时不得出现避战推断
                 final String partial = BehindLineHpEvidence.renderTeamSection(
                         battle, recon, recorderTeam, true);
-                if (partial.contains("无输出（避战）")) {
+                if (partial.contains("避战")) {
                     System.out.println("  !! PARTIAL_MODE_STILL_SAYS_AVOIDANCE");
                 } else if (!partial.isEmpty()) {
-                    System.out.println("  [partial 对照] 无「无输出（避战）」结论；outputStatus 行如下:");
-                    partial.lines().filter(l -> l.contains("outputStatus") || l.contains("observedAttackEvents"))
+                    System.out.println("  [partial 对照] 无避战推断；测量行如下:");
+                    partial.lines().filter(l -> l.contains("observedAttackEvents"))
                             .forEach(l -> System.out.println("    " + l));
                 }
-                // 地图控制权（controlRegions）：与阵型段同源输出，供用户审区域归属
+                // 区域覆盖测量（REGION_COVERAGE_MEASUREMENTS）：与阵型段同源输出，供用户审区域归属
                 final String formation = FormationDepthEvidence.renderSection(
                         battle, recon, recorderTeam,
                         battle.mapName == null ? null : battle.mapName);
-                if (formation.contains("controlRegions") || formation.contains("noArmorNote")) {
+                if (formation.contains("REGION_COVERAGE_MEASUREMENTS")) {
                     System.out.println(formation);
                 }
             } catch (Exception e) {

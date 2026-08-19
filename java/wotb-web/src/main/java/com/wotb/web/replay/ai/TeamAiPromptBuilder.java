@@ -204,7 +204,7 @@ public final class TeamAiPromptBuilder {
                 context.features() == null ? List.of() : context.features().members(),
                 context.reconstruction(),
                 limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
-        // 点数局势（击杀夺分时间线/占领点存在/推进窗口）：完整区块，超预算时整体移除
+        // 点数局势（击杀夺分时间线/占领点存在/进入控制点区域窗口）：完整区块，超预算时整体移除
         if (includePointsSituation) {
             TeamEvidenceFormatter.appendPointsSituation(
                     optTemp,
@@ -213,7 +213,7 @@ public final class TeamAiPromptBuilder {
                     context.perspectiveTeam(),
                     limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
         }
-        // 阵型深度（前后排）与实际控制区域（确定性，仅团队路径）：小段，随 optional 预算裁剪
+        // 阵型深度（前后排）与区域覆盖测量（确定性，仅团队路径）：小段，随 optional 预算裁剪
         final String formationDepth = FormationDepthEvidence.renderSection(
                 context.battle(),
                 context.reconstruction(),
@@ -221,7 +221,8 @@ public final class TeamAiPromptBuilder {
                 context.battle() == null ? null : context.battle().mapName);
         if (!formationDepth.isEmpty()) {
             optTemp.append(formationDepth);
-        // 身后输出/血量优势（吸血/避战候选·确定性）：小段，随 optional 预算裁剪
+        }
+        // 身后血量/位置优势测量（确定性）：小段，随 optional 预算裁剪
         final String behindLine = BehindLineHpEvidence.renderTeamSection(
                 context.battle(),
                 context.reconstruction(),
@@ -229,7 +230,6 @@ public final class TeamAiPromptBuilder {
                 limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
         if (!behindLine.isEmpty()) {
             optTemp.append(behindLine);
-        }
         }
         return optTemp.content();
     }

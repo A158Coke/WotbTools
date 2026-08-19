@@ -20,6 +20,7 @@ import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -77,20 +78,22 @@ public final class PlayerSeparationEvidenceSkill {
             final float distanceM = window.numbers().getOrDefault("distanceM", 150.0)
                     .floatValue();
             final int objectiveProximity = objectiveProximity(region, controlPointRegions);
+            // 单一数据源：AiEvidence.numbers 与 summary 都从同一组实际窗口测量生成
+            final java.util.Map<String, Double> numbers = java.util.Map.of(
+                    "distanceM", (double) distanceM,
+                    "distanceGrowthM", distanceGrowth == null ? -1.0 : distanceGrowth,
+                    "stationaryRatio", stationaryRatio == null ? -1.0 : stationaryRatio,
+                    "objectiveProximity", (double) objectiveProximity,
+                    "damageDealtDuringSpan", (double) inWindowDealt,
+                    "damageReceivedDuringSpan", (double) inWindowDamage,
+                    "deathDuringSpan", memberDeadIn(recorder, window) ? 1.0 : 0.0);
             result.add(new AiEvidence(
                     String.format("SS_%02d", ++index),
                     EvidenceType.SPATIAL_SEPARATION,
                     window.startSec(),
                     window.endSec(),
                     List.of(),
-                    java.util.Map.of(
-                            "distanceM", (double) distanceM,
-                            "distanceGrowthM", distanceGrowth == null ? -1.0 : distanceGrowth,
-                            "stationaryRatio", stationaryRatio == null ? -1.0 : stationaryRatio,
-                            "objectiveProximity", (double) objectiveProximity,
-                            "damageDealtDuringSpan", (double) inWindowDealt,
-                            "damageReceivedDuringSpan", (double) inWindowDamage,
-                            "deathDuringSpan", memberDeadIn(recorder, window) ? 1.0 : 0.0),
+                    numbers,
                     java.util.Map.of(
                             "kind", kind,
                             "phase", phaseOf(features.phases(), window.startSec()),
@@ -100,7 +103,7 @@ public final class PlayerSeparationEvidenceSkill {
                     DecodeConfidence.PARTIAL,
                     EvidencePriority.IMPORTANT,
                     EvidenceProvenance.RECONSTRUCTION_INFERRED,
-                    summary(kind, window, recorder, stationaryRatio)));
+                    summary(kind, window, recorder, stationaryRatio, numbers)));
         }
         return List.copyOf(result);
     }
@@ -152,11 +155,15 @@ public final class PlayerSeparationEvidenceSkill {
     }
 
     private static String summary(final String kind, final AiEvidence window,
-                                  final PlayerResult recorder, final Double stationaryRatio) {
+                                  final PlayerResult recorder, final Double stationaryRatio,
+                                  final Map<String, Double> numbers) {
         final String who = recorder == null || recorder.nickname == null
                 ? "录像者" : recorder.nickname;
         final String stationary = stationaryRatio == null
                 ? "移动覆盖不足" : String.format("静止占比 %.0f%%", stationaryRatio * 100);
+        // 单一数据源：与 AiEvidence.numbers 同一组 inWindowDealt/inWindowDamage 测量
+        final double dealt = numbers.getOrDefault("damageDealtDuringSpan", 0.0);
+        final double received = numbers.getOrDefault("damageReceivedDuringSpan", 0.0);
         return switch (kind) {
             case "OPENING_SPREAD" -> ("开局分散：%s 开局与主力拉开（%.0fs）；"
                     + "只反映空间分离结构，是否获得额外敌方信息需专门的 visibility evidence 确认")
@@ -165,8 +172,7 @@ public final class PlayerSeparationEvidenceSkill {
                     + "窗口内输出 %.0f / 承伤 %.0f——战术含义需综合判断")
                     .formatted(who, battleRange(window.startSec(), window.endSec()),
                             RouteSkill.SEPARATION_RADIUS_M, stationary,
-                            window.numbers().getOrDefault("damageDealtDuringSpan", 0.0),
-                            window.numbers().getOrDefault("damageReceivedDuringSpan", 0.0));
+                            dealt, received);
             default -> "空间分离：%s".formatted(who);
         };
     }

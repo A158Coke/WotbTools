@@ -134,7 +134,7 @@ public final class TacticalReviewPromptBuilder {
                 : "";
         boolean includeDamageWindows = !damageWindowsSection.isEmpty();
         boolean includePhases = features != null && features.phases() != null && !features.phases().isEmpty();
-        // 点数局势（击杀夺分时间线/占领点存在/推进窗口）：录像者队伍视角
+        // 点数局势（击杀夺分时间线/占领点存在/进入控制点区域窗口）：录像者队伍视角
         final String pointsSituationSection = recorder != null && recorder.team() != null
                 ? PointsSituationEvidence.renderSection(
                         battle, recon, recorder.team(), damagePartial, "你的队伍", "敌方")

@@ -385,7 +385,7 @@ final class TeamEvidenceFormatter {
 
     /**
      * 点数局势证据段（P3 optional）：击杀夺分时间线 + 占领点区域位置存在 +
-     * 进攻推进窗口（含推进方窗口内承受伤害 = 防守方过路费）。
+     * 进入控制点区域窗口（含窗口内进入车辆承受伤害 = 可观测换血事实）。
      * 口径：实时比分未解码，只给可证明信号；OBSERVED_DAMAGE_IS_PARTIAL 时抑制伤害数字。
      */
     static void appendPointsSituation(

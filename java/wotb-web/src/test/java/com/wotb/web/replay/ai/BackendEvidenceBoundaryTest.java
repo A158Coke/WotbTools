@@ -166,12 +166,94 @@ class BackendEvidenceBoundaryTest {
         assertTrue(ru.contains("а НЕ тактические вердикты"), "RU 必须声明不是战术 verdict");
     }
 
-    // R8 — Golden 3:1 不回归：TeamReviewRealReplayProbeTest 保持硬断言（样本存在时）
-    // （该测试已存在且保持 109–128s / 3:1 / 7v7→4v6 硬断言；无样本时 CI 自动跳过。）
+    // R8 — Golden 3:1 由 TeamReviewRealReplayProbeTest（wotb-core）负责硬断言：
+    // 109–128s / 3:1 / 7v7→4v6 / collapse core；样本存在时断言，样本缺失时自动跳过。
+    // 此处不保留 fake test（assertTrue(true) 已于 PR #103 第三轮删除）。
+
+    // R9 — BehindLine production 不再输出吸血/避战/利用队友等战术 verdict
     @Test
-    void r8GoldenProbeContractIsUnchanged() {
-        // 防止后续把 Golden probe 的硬断言改回 print-only 或放宽事实
-        // 真实断言在 TeamReviewRealReplayProbeTest（wotb-core），此处只做锚点文档断言。
-        assertTrue(true, "R8 由 TeamReviewRealReplayProbeTest 覆盖（3:1 / 109–128s / 7v7→4v6）");
+    void r9BehindLineProductionEmitsOnlyMeasurements() {
+        final SingleTeamBattleAnalysisContext ctx = AiEvalFixtures.context("cw-delay-hold-01");
+        final String user = TeamAiPromptBuilder.single(ctx, List.of(), null, null, Integer.MAX_VALUE).content();
+        if (user.contains("BEHIND_LINE_HP_ADVANTAGE")) {
+            assertFalse(user.contains("吸血"), "BehindLine 不得输出吸血: " + user);
+            assertFalse(user.contains("避战"), "BehindLine 不得输出避战: " + user);
+            assertFalse(user.contains("利用队友输出"), "BehindLine 不得输出利用队友输出");
+            assertFalse(user.contains("利用队友扛伤"), "BehindLine 不得输出利用队友扛伤");
+            assertFalse(user.contains("前线型车辆未上前线"), "BehindLine 不得输出前线型未上前线");
+            assertFalse(user.contains("degree="), "BehindLine 不得输出 tactical degree");
+        }
+    }
+
+    // R10 — Formation production 不输出权威 map-control verdict
+    @Test
+    void r10FormationOutputHasCoverageMeasurementsButNoControlVerdict() {
+        final SingleTeamBattleAnalysisContext ctx = AiEvalFixtures.context("cw-opening-mapcontrol-01");
+        final String user = TeamAiPromptBuilder.single(ctx, List.of(), null, null, Integer.MAX_VALUE).content();
+        assertFalse(user.contains("controlRegions own="), "不得输出 controlRegions own 权威标签");
+        assertFalse(user.contains("controlRegions contested="), "不得输出 controlRegions contested 权威标签");
+        assertFalse(user.contains("controlRegions enemy="), "不得输出 controlRegions enemy 权威标签");
+        if (user.contains("REGION_COVERAGE_MEASUREMENTS")) {
+            assertTrue(user.contains("ownPositionPresence="), "必须输出位置存在测量");
+            assertTrue(user.contains("ownWeightedCoverageScore="), "必须输出加权覆盖分数");
+            assertTrue(user.contains("coverageCompleteness="), "必须输出覆盖完整性");
+        }
+    }
+
+    // R11 — Team/Player Prompt 无 PUSH_WINDOWS，统一 CONTROL_REGION_ENTRY_WINDOWS
+    @Test
+    void r11PromptsUseControlRegionEntryWindowsNotPushWindows() {
+        final String team = AiPromptLibrary.zh("team/single");
+        assertFalse(team.contains("PUSH_WINDOWS"), "team prompt 不得含 PUSH_WINDOWS");
+        assertTrue(team.contains("CONTROL_REGION_ENTRY_WINDOWS"), "team prompt 必须统一 CONTROL_REGION_ENTRY_WINDOWS");
+        final String player = AiPromptLibrary.zh("player/tactical");
+        assertFalse(player.contains("PUSH_WINDOWS"), "player prompt 不得含 PUSH_WINDOWS");
+        assertTrue(player.contains("CONTROL_REGION_ENTRY_WINDOWS"), "player prompt 必须统一 CONTROL_REGION_ENTRY_WINDOWS");
+        // EN/RU 同步（本地化后不得残留中文规则、不得含旧术语）
+        final String teamEn = TeamPromptLocalizer.localizeTeamSystemPrompt(team, AllowedLanguage.EN);
+        assertFalse(teamEn.contains("PUSH_WINDOWS"), "team EN 不得含 PUSH_WINDOWS");
+        final String playerEn = PlayerPromptRules.localizePlayerSystemPrompt(player, AllowedLanguage.EN);
+        assertFalse(playerEn.contains("PUSH_WINDOWS"), "player EN 不得含 PUSH_WINDOWS");
+        final String teamRu = TeamPromptLocalizer.localizeTeamSystemPrompt(team, AllowedLanguage.RU);
+        assertFalse(teamRu.contains("PUSH_WINDOWS"), "team RU 不得含 PUSH_WINDOWS");
+    }
+
+    // R12 — 无 evidence→mandatory mistake 固定映射：旧句式「…时，必须指出防守方失误」不得再出现
+    // （新规则只以否定语境引用该说法：「不得把…固定映射成『必须指出防守方失误』」，允许出现）
+    @Test
+    void r12NoEvidenceToMandatoryDefensiveMistakeMapping() {
+        final String team = AiPromptLibrary.zh("team/single");
+        assertFalse(team.contains("过路费明显不足）时，必须指出防守方失误"), "不得存在 evidence→必须指出防守方失误 固定映射: " + team);
+        assertFalse(team.contains("必须指出你方防守失误）"), "不得存在 evidence→必须指出防守方失误 固定映射");
+        final String player = AiPromptLibrary.zh("player/tactical");
+        assertFalse(player.contains("过路费明显不足）时，必须指出你方防守失误"), "player 不得存在固定映射: " + player);
+    }
+
+    // R13 — Player separation numeric consistency：numbers 与 summary 同源（0/0 bug 回归）
+    @Test
+    void r13PlayerSeparationNumbersAndSummaryConsistent() {
+        final AiEvalFixtures.PlayerFixture fixture =
+                AiEvalFixtures.playerFixture("player-detach-push-01");
+        final EvidenceSkillResult evidence = new EvidenceSkillEngine().run(
+                new EvidenceSkillContext(fixture.battle(), fixture.recon(),
+                        fixture.features(), fixture.recorder()));
+        for (final AiEvidence e : evidence.evidence()) {
+            if (e.type() != EvidenceType.SPATIAL_SEPARATION) {
+                continue;
+            }
+            final double dealt = e.numbers().getOrDefault("damageDealtDuringSpan", 0.0);
+            final double received = e.numbers().getOrDefault("damageReceivedDuringSpan", 0.0);
+            // numbers 与 summary 必须一致：summary 引用同一组测量
+            if (dealt > 0 || received > 0) {
+                final String s = e.summary();
+                assertTrue(s.contains("窗口内输出 " + Math.round(dealt)),
+                        "summary 必须引用与 numbers 相同的输出测量: " + s + " vs " + dealt);
+                assertTrue(s.contains("承伤 " + Math.round(received)),
+                        "summary 必须引用与 numbers 相同的承伤测量: " + s + " vs " + received);
+            }
+            // numbers 自身不得出现 0/0 但 summary 有值的不一致（两个 key 必须都在）
+            assertTrue(e.numbers().containsKey("damageDealtDuringSpan"));
+            assertTrue(e.numbers().containsKey("damageReceivedDuringSpan"));
+        }
     }
 }
