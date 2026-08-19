@@ -10,4 +10,4 @@
   - 队友时序关联：主力质心向目标点位移/推进；
   - 因果边界：只描述时序关联，不声称「A 导致 B」。
 - **对应 golden case**：`ai-eval/cases/cw-delay-hold-01.json`
-- **规则引用**：Step 2 `SOLO_INTENT_RULE`（拖延=行为模式 + 队友获利）。
+- **规则引用**：Step 2 `SEPARATION_EVIDENCE_RULE`（拖延=行为模式 + 队友获利）。

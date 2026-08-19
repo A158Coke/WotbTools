@@ -150,8 +150,8 @@ class TeamReviewQualityGateContractTest {
                     lang + " 残留中文证据契约");
             assertFalse(localized.contains("团队复盘输出结构（强制）"),
                     lang + " 残留中文输出结构");
-            assertFalse(localized.contains("=== 单走行为判定规则（强制） ==="),
-                    lang + " 残留中文单走规则");
+            assertFalse(localized.contains("=== 空间分离证据使用规则（强制） ==="),
+                    lang + " 残留中文空间分离规则");
             assertFalse(localized.contains("=== 重新集中推断规则（强制：本场具体结论必须有证据） ==="),
                     lang + " 残留中文重新集中规则");
             assertFalse(localized.contains("=== 内部证据与用户正文的关系（强制） ==="),

@@ -9,4 +9,4 @@
   - 队友获利面：只半推进，不构成明确利用时间；
   - 后端候选为空时按低置信处理，AI 明说无法确定。
 - **对应 golden case**：`ai-eval/cases/cw-delay-vs-detach-ambiguous-01.json`
-- **规则引用**：Step 2 `SOLO_INTENT_RULE`（证据不足/矛盾 → 明说无法确定）。
+- **规则引用**：Step 2 `SEPARATION_EVIDENCE_RULE`（证据不足/矛盾 → 明说无法确定）。

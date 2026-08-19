@@ -25,8 +25,8 @@ import java.util.TreeSet;
  *   <li>击杀夺分时间线：±40/击杀业务规则（项目所有者确认）按双方阵亡时刻对齐，仅叙述口径；</li>
  *   <li>占领点区域位置存在：服务器位置流（type-10）在占领点九宫格区域内的存在，
  *       几何可证；位置存在 ≠ 占点产分（产分规则未解码）；</li>
- *   <li>进攻推进窗口：车辆从非占领点区域持续移动进入占领点区域的时间窗口（仅 MOVING
- *       相邻采样位移判定，不声称意图）。</li>
+ *   <li>控制点区域进入窗口（ControlRegionEntryWindow）：车辆从非控制点区域持续移动进入
+ *       控制点区域的时间窗口（仅 MOVING 相邻采样位移判定，不声称进攻/抢点/防守意图）。</li>
  * </ul>
  * <p>位置流覆盖 ≠ 点亮：所有存在/推进判断都基于服务器上报位置，不表达任何一方的可见性。</p>
  */
@@ -42,11 +42,11 @@ public final class PointsSituationSkill {
     /** 相邻位置采样间 canonical 位移 ≥ 该值（米）视为移动（位置流 2s 采样 → 约 2 m/s）。 */
     public static final float MIN_MOVE_METERS_PER_SAMPLE = 4f;
 
-    /** 进入占领点区域前向前追溯移动采样的上限（秒）。 */
-    public static final float MAX_PUSH_LOOKBACK_SEC = 20f;
+    /** 进入控制点区域前向前追溯移动采样的上限（秒）。 */
+    public static final float MAX_ENTRY_LOOKBACK_SEC = 20f;
 
-    /** 同队推进窗口合并的最大间隔（秒）。 */
-    public static final float PUSH_MERGE_GAP_SEC = 8f;
+    /** 同队进入窗口合并的最大间隔（秒）。 */
+    public static final float ENTRY_MERGE_GAP_SEC = 8f;
 
     /** 相邻位置采样时间差超过该值视为位置流中断，不得跨断线判移动/驻留。 */
     public static final float POSITION_STREAM_GAP_SEC = 5f;
@@ -83,15 +83,16 @@ public final class PointsSituationSkill {
     public record CapturePresence(float startSec, float endSec, int team1Vehicles, int team2Vehicles) {
     }
 
-    /** 进攻推进窗口：team 的若干车辆从非占领点区域移动进入占领点区域的时间窗口。 */
-    public record PushWindow(
+    /** 控制点区域进入窗口：team 的若干车辆从非控制点区域移动进入控制点区域的时间窗口
+     *  （中性结构分类；不表达进攻/抢点/防守意图——那是 LLM 的战术解释）。 */
+    public record ControlRegionEntryWindow(
             float startSec,
             float endSec,
             int team,
             List<Long> accountIds,
             int targetRegion
     ) {
-        public PushWindow {
+        public ControlRegionEntryWindow {
             accountIds = accountIds == null ? List.of() : List.copyOf(accountIds);
         }
     }
@@ -174,14 +175,15 @@ public final class PointsSituationSkill {
     }
 
     /**
-     * 进攻推进窗口：对每辆车识别「从非占领点区域移动进入占领点区域」——
+     * 控制点区域进入窗口：对每辆车识别「从非控制点区域移动进入控制点区域」——
      * 进入必须满足 previous→entry 段连续且 canonical 位移 ≥ {@link #MIN_MOVE_METERS_PER_SAMPLE}
-     * （九宫格边界小幅移动/坐标抖动不算推进）；进入时刻向前追溯到进入前连续移动的最早采样
-     * （上限 {@link #MAX_PUSH_LOOKBACK_SEC}），向后延续到离开占领点区域为止；
-     * 同队同目标区域窗口按 {@link #PUSH_MERGE_GAP_SEC} 合并，不同目标区域不合并。
+     * （九宫格边界小幅移动/坐标抖动不算进入）；进入时刻向前追溯到进入前连续移动的最早采样
+     * （上限 {@link #MAX_ENTRY_LOOKBACK_SEC}），向后延续到离开控制点区域为止；
+     * 同队同目标区域窗口按 {@link #ENTRY_MERGE_GAP_SEC} 合并，不同目标区域不合并。
      * 位置流中断（相邻采样时间差 &gt; {@link #POSITION_STREAM_GAP_SEC}）处不跨断线。
+     * 只表达「车辆从非控制点区域移动进入控制点区域」这一结构事实，不声称进攻/抢点/防守意图。
      */
-    public static List<PushWindow> pushWindows(
+    public static List<ControlRegionEntryWindow> controlRegionEntryWindows(
             final List<VehicleTrack> tracks,
             final Set<String> controlRegions,
             final String mapCode
@@ -190,23 +192,23 @@ public final class PointsSituationSkill {
                 || controlRegions == null || controlRegions.isEmpty()) {
             return List.of();
         }
-        final List<PushWindow> perVehicle = new ArrayList<>();
+        final List<ControlRegionEntryWindow> perVehicle = new ArrayList<>();
         for (final VehicleTrack track : tracks) {
             if (track.samples().size() < 2) {
                 continue;
             }
-            perVehicle.addAll(pushWindowsOf(track, controlRegions, mapCode));
+            perVehicle.addAll(entryWindowsOf(track, controlRegions, mapCode));
         }
         return mergeByTeamAndRegion(perVehicle);
     }
 
-    private static List<PushWindow> pushWindowsOf(
+    private static List<ControlRegionEntryWindow> entryWindowsOf(
             final VehicleTrack track,
             final Set<String> controlRegions,
             final String mapCode
     ) {
         final List<PositionSample> samples = track.samples();
-        final List<PushWindow> windows = new ArrayList<>();
+        final List<ControlRegionEntryWindow> windows = new ArrayList<>();
         for (int i = 1; i < samples.size(); i++) {
             final PositionSample entry = samples.get(i);
             final int entryRegion = regionOf(entry.x(), entry.z(), mapCode);
@@ -228,7 +230,7 @@ public final class PointsSituationSkill {
             }
             final float start = approachStart(samples, i, controlRegions, mapCode);
             final float end = presenceEnd(samples, i, controlRegions, mapCode);
-            windows.add(new PushWindow(start, end, track.team(),
+            windows.add(new ControlRegionEntryWindow(start, end, track.team(),
                     List.of(track.accountId()), entryRegion));
         }
         return windows;
@@ -246,7 +248,7 @@ public final class PointsSituationSkill {
         for (int j = entryIndex - 1; j >= 1; j--) {
             final PositionSample current = samples.get(j);
             final PositionSample before = samples.get(j - 1);
-            if (entryTime - before.timeSec() > MAX_PUSH_LOOKBACK_SEC) {
+            if (entryTime - before.timeSec() > MAX_ENTRY_LOOKBACK_SEC) {
                 break;
             }
             if (inside(current, controlRegions, mapCode)) {
@@ -300,28 +302,29 @@ public final class PointsSituationSkill {
         return MapRegionResolver.resolveRegionFromRaw(x, z, mapCode);
     }
 
-    /** 同队同目标区域窗口按开始时刻排序、间隔 ≤ PUSH_MERGE_GAP_SEC 时合并（车辆去重）；
-     *  不同目标区域不得合并（同一队伍同时推进不同占领点区域是两个独立推进窗口）。 */
-    private static List<PushWindow> mergeByTeamAndRegion(final List<PushWindow> windows) {
-        final List<PushWindow> sorted = new ArrayList<>(windows);
+    /** 同队同目标区域窗口按开始时刻排序、间隔 ≤ ENTRY_MERGE_GAP_SEC 时合并（车辆去重）；
+     *  不同目标区域不得合并（同一队伍同时进入不同控制点区域是两个独立进入窗口）。 */
+    private static List<ControlRegionEntryWindow> mergeByTeamAndRegion(
+            final List<ControlRegionEntryWindow> windows) {
+        final List<ControlRegionEntryWindow> sorted = new ArrayList<>(windows);
         sorted.sort(Comparator
-                .comparingInt(PushWindow::team)
-                .thenComparingInt(PushWindow::targetRegion)
-                .thenComparingDouble(PushWindow::startSec)
-                .thenComparingDouble(PushWindow::endSec));
-        final List<PushWindow> merged = new ArrayList<>();
-        PushWindow current = null;
-        for (final PushWindow window : sorted) {
+                .comparingInt(ControlRegionEntryWindow::team)
+                .thenComparingInt(ControlRegionEntryWindow::targetRegion)
+                .thenComparingDouble(ControlRegionEntryWindow::startSec)
+                .thenComparingDouble(ControlRegionEntryWindow::endSec));
+        final List<ControlRegionEntryWindow> merged = new ArrayList<>();
+        ControlRegionEntryWindow current = null;
+        for (final ControlRegionEntryWindow window : sorted) {
             if (current == null) {
                 current = window;
                 continue;
             }
             if (current.team() == window.team()
                     && current.targetRegion() == window.targetRegion()
-                    && window.startSec() <= current.endSec() + PUSH_MERGE_GAP_SEC) {
+                    && window.startSec() <= current.endSec() + ENTRY_MERGE_GAP_SEC) {
                 final Set<Long> accounts = new LinkedHashSet<>(current.accountIds());
                 accounts.addAll(window.accountIds());
-                current = new PushWindow(
+                current = new ControlRegionEntryWindow(
                         Math.min(current.startSec(), window.startSec()),
                         Math.max(current.endSec(), window.endSec()),
                         current.team(),

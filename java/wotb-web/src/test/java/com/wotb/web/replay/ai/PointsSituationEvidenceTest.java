@@ -48,12 +48,12 @@ class PointsSituationEvidenceTest {
                 DecodeConfidence.EXACT, 10, 1001L));
         events.add(new ParticipantMappingEvent(2, new ReplayTimestamp(20f, null), 8,
                 DecodeConfidence.EXACT, 20, 2001L));
-        // 1001（本队）：从非占领点区域（2 区）移动进入 5 区（t=12 进入，t=14 仍在）→ 推进窗口；
+        // 1001（本队）：从非占领点区域（2 区）移动进入 5 区（t=12 进入，t=14 仍在）→ 进入窗口；
         // 注意 holland 占领点区域集合为 {1,4,5,8,9}，接近段必须选在集合外的 2 区
         events.add(pos(3, 40f, 10, -80f, 120f));  // t=10 r2（非占领点区域）
         events.add(pos(4, 42f, 10, -80f, 0f));    // t=12 r5 进入
         events.add(pos(5, 44f, 10, -70f, 0f));    // t=14 r5
-        // 2001（对方）：起点已在 5 区并停留 → 只有存在、无推进窗口
+        // 2001（对方）：起点已在 5 区并停留 → 只有存在、无进入窗口
         events.add(pos(6, 40f, 20, 0f, 0f));      // t=10 r5
         events.add(pos(7, 42f, 20, 10f, 0f));     // t=12 r5
         return new ReplayReconstruction(null, null, 600f, battleStart, List.of(),
@@ -94,7 +94,7 @@ class PointsSituationEvidenceTest {
     }
 
     @Test
-    void renderSectionOutputsKillTimelinePresenceAndPushWindows() {
+    void renderSectionOutputsKillTimelinePresenceAndEntryWindows() {
         final String section = PointsSituationEvidence.renderSection(
                 battle(), reconWithPositions(30f), 1, true, "本队", "对方");
         assertTrue(section.contains("POINTS_SITUATION"), section);
@@ -102,10 +102,10 @@ class PointsSituationEvidenceTest {
         assertTrue(section.contains("本队车辆被击毁 → 本队 -40 / 对方 +40"), section);
         assertTrue(section.contains("CAPTURE_PRESENCE"), section);
         assertTrue(section.contains("本队 1 车 / 对方 1 车"), section);
-        assertTrue(section.contains("PUSH_WINDOWS"), section);
+        assertTrue(section.contains("CONTROL_REGION_ENTRY_WINDOWS"), section);
         assertTrue(section.contains("目标 5 区"), section);
         // damagePartial=true → 伤害数字抑制
-        assertTrue(section.contains("推进方窗口内承受伤害不可用（OBSERVED_DAMAGE_IS_PARTIAL）"), section);
+        assertTrue(section.contains("进入窗口车辆承受伤害不可用（OBSERVED_DAMAGE_IS_PARTIAL）"), section);
     }
 
     @Test
@@ -114,12 +114,12 @@ class PointsSituationEvidenceTest {
                 battle(), null, 1, true, "本队", "对方");
         assertTrue(section.contains("KILL_POINTS_TIMELINE"), section);
         assertFalse(section.contains("CAPTURE_PRESENCE"), section);
-        assertFalse(section.contains("PUSH_WINDOWS"), section);
+        assertFalse(section.contains("CONTROL_REGION_ENTRY_WINDOWS"), section);
     }
 
     @Test
     void tollCountsOnlyOppositeTeamResolvedAttackerDamageInsideWindow() {
-        // 推进方 1001（本队）在 5 区推进窗口 [12,14]；构造窗口内外的伤害事件：
+        // 进入窗口车辆 1001（本队）在 5 区进入窗口 [12,14]；构造窗口内外的伤害事件：
         //  - 窗口内 2001（对方）→1001 400：计入
         //  - 窗口内 attackerEid=999（未映射，环境伤害）→1001 300：排除（攻击者未解析）
         //  - 窗口内 2001→2001 自伤 250：排除（自伤）
@@ -137,7 +137,7 @@ class PointsSituationEvidenceTest {
         events.add(pos(7, 42f, 20, 10f, 0f));
         events.add(dmg(8, 42.5f, 20, 10, 400));   // 窗口内 对方→本队：计入
         events.add(dmg(9, 43f, 999, 10, 300));    // 攻击者未映射（环境伤害）：排除
-        events.add(dmg(10, 43.5f, 10, 10, 250));  // 自伤（推进方打自己）：排除
+        events.add(dmg(10, 43.5f, 10, 10, 250));  // 自伤（进入车辆打自己）：排除
         events.add(dmg(11, 50f, 20, 10, 200));    // t=20 窗口外：不计入
         final ReplayReconstruction recon = new ReplayReconstruction(null, null, 600f, 30f,
                 List.of(), events, List.of(), null, null, null);
@@ -145,8 +145,8 @@ class PointsSituationEvidenceTest {
         final String section = PointsSituationEvidence.renderSection(
                 battle, recon, 1, false, "本队", "对方");
 
-        assertTrue(section.contains("推进方窗口内承受伤害 400"), section);
-        assertTrue(section.contains("过路费排除 2 笔事件"), section);
+        assertTrue(section.contains("进入窗口车辆承受伤害 400"), section);
+        assertTrue(section.contains("排除 2 笔事件"), section);
         assertFalse(section.contains("承受伤害 700"), "环境伤害不得计入");
         assertFalse(section.contains("承受伤害 1150"), "窗口外伤害不得计入");
     }

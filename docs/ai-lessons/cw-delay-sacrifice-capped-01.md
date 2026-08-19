@@ -9,4 +9,4 @@
   - 阵亡时刻与主力质心距离大（`deathProximityMeters`）；
   - 队友时序关联：阵亡时段内队友向目标点位移/占点/获胜。
 - **对应 golden case**：`ai-eval/cases/cw-delay-sacrifice-capped-01.json`
-- **规则引用**：Step 2 `SOLO_INTENT_RULE`（牺牲拖延 + 队友获利）。
+- **规则引用**：Step 2 `SEPARATION_EVIDENCE_RULE`（牺牲拖延 + 队友获利）。

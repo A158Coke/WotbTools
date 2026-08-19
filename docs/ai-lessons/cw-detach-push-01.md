@@ -9,4 +9,4 @@
   - 远离目标点、无卡点行为；
   - 阵亡前承伤高、队友无转场/占点/推进关联。
 - **对应 golden case**：`ai-eval/cases/cw-detach-push-01.json`
-- **规则引用**：Step 2 `SOLO_INTENT_RULE`（脱节=无收益 + 被白吃/丢点）。
+- **规则引用**：Step 2 `SEPARATION_EVIDENCE_RULE`（脱节=无收益 + 被白吃/丢点）。

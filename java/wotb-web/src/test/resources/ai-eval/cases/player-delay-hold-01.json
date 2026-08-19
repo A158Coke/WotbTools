@@ -1,12 +1,35 @@
 {
-  "id": "player-delay-hold-01",
-  "mode": "PLAYER_FOCUSED",
-  "arenaBonusType": 1,
-  "fixtureKey": "player-delay-hold-01",
-  "lessonRef": "docs/ai-lessons/player-delay-hold-01.md",
-  "expectedJudgment": "拖延（静止卡点 + 敌情压力）",
-  "checks": [
-    { "kind": "prompt_contains", "text": "单走拖延" }
-  ],
-  "note": "随机战卡点拖延：静止 + 敌情压力 → SOLO_DELAY 候选（个人复盘无队友获利维度）。"
+ "id": "player-delay-hold-01",
+ "mode": "PLAYER_FOCUSED",
+ "arenaBonusType": 1,
+ "fixtureKey": "player-delay-hold-01",
+ "lessonRef": "docs/ai-lessons/player-delay-hold-01.md",
+ "expectedJudgment": "空间分离（静止+敌情压力；是否拖延由 LLM 判断）",
+ "checks": [
+  {
+   "kind": "prompt_contains",
+   "text": "SPATIAL_SEPARATION"
+  },
+  {
+   "kind": "prompt_contains",
+   "text": "空间分离"
+  },
+  {
+   "kind": "prompt_contains",
+   "text": "stationaryRatio="
+  },
+  {
+   "kind": "prompt_contains",
+   "text": "damageReceivedDuringSpan="
+  },
+  {
+   "kind": "prompt_omits",
+   "text": "单走拖延"
+  },
+  {
+   "kind": "prompt_omits",
+   "text": "SOLO_DELAY"
+  }
+ ],
+ "note": "随机战静止分离 + 敌情压力。Backend 只输出中性空间分离事实，是否拖延由 LLM 综合判断（Backend Evidence Boundary）。"
 }
