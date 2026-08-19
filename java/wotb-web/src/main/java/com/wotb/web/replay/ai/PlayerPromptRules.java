@@ -411,36 +411,36 @@ final class PlayerPromptRules {
             4. Окно входа в зону контроля (CONTROL_REGION_ENTRY_WINDOWS) выражает лишь структурный факт — машины переместились извне зоны точки захвата внутрь неё; само по себе оно не доказывает атаку, захват, оборону, ротацию или тактическую правильность/ошибочность. Урон, который ваша команда наносит входящим машинам, — лишь наблюдаемый факт обмена HP; означает ли он «недостаточную плату за проезд / ошибку обороны» — ваше supported tactical inference из сигнала очков за фраги, присутствия в зонах контроля, локальных чисел, времени боя, урона, потерь и последующего движения — никогда не превращайте «окно входа + низкий урон» в обязательный вердикт «ошибка обороны». Когда цифры урона недоступны (OBSERVED_DAMAGE_IS_PARTIAL), описывайте только качественно и не называйте чисел.
             5. При недостаточных или противоречивых сигналах пишите «невозможно определить по данным реплея»; не навязывайте вывод «позади/впереди».""";
 
-    /** 身后输出/血量优势（个人路径·中性测量）规则（ZH；与 prompts/player/single.zh.md 内文本逐字一致）。 */
-    static final String BEHIND_LINE_RULE = """
-            === 身后血量/位置优势测量规则（强制·中性） ===
-            BEHIND_LINE_HP_ADVANTAGE 段是关于你本人的确定性测量（位置/血量比率/距敌距离差/已观察攻击事件/覆盖率/tank profile）：
-            1. 若你具备扛线能力且血量比率 ≥ 扛线队友 × 1.2、距敌比扛线队友更远，这只是后端筛选出的测量组合——
+    /** 相对纵深/血量（个人路径·中性测量）规则（ZH；与 prompts/player/single.zh.md 内文本逐字一致）。 */
+    static final String RELATIVE_DEPTH_HP_RULE = """
+            === 相对纵深/血量测量规则（强制·中性） ===
+            RELATIVE_DEPTH_HP_MEASUREMENT 段是关于你本人的确定性测量（位置/血量比率/距敌距离差/已观察攻击事件/覆盖率/tank profile 静态事实）：
+            1. 参考成员（reference）由后端按<b>纯几何算法</b>选择：本阶段距观测敌方最近的存活本方成员；若你血量比率 ≥ 参考成员 × 1.2、距敌比参考成员更远，这只是后端筛选出的测量组合——
                它不构成任何战术判断；是否说明你避战/利用队友掩护/保持安全输出距离，由你综合位置、输出、掉血、战局自行推断，
-               不得把该段直接写成「吸血」或「避战」结论。
+               不得把该段直接写成「吸血」或「避战」结论，也不得把 reference 理解成「扛线队友」之类的战术角色。
             2. 输出观测受事件流覆盖约束：coverage=PARTIAL 时 observedAttackEvents=0 只表示「已观察攻击事件=0」，
-               不得据此推断你「无输出/避战」；HP_ADVANTAGE_UNKNOWN（血量数据不足）只提供位置与已观察攻击事件事实。
+               不得据此推断你「无输出/避战」；HP_RATIO_UNKNOWN（血量数据不足）只提供位置与已观察攻击事件事实。
             3. 跨阶段出现（salience）只表示该测量组合在多个阶段成立，是显著性提示，不是负面分级。
             4. 未提供本段时（位置/血量观测不足）禁止编造。""";
 
-    static final String BEHIND_LINE_RULE_EN = """
+    static final String RELATIVE_DEPTH_HP_RULE_EN = """
 
-            === BEHIND-LINE HP/POSITION MEASUREMENT RULE (mandatory · neutral) ===
-            The BEHIND_LINE_HP_ADVANTAGE section contains deterministic measurements about you (position/HP ratio/distance gap to the enemy/observed attack events/coverage/tank profile):
-            1. If you are frontline-capable and your HP ratio ≥ the carrier teammate × 1.2 while being farther from the enemy, that is only a measurement combination the backend filtered for your attention —
-               it is not any tactical judgement; whether it means you avoided engagement, used teammate cover to output, or kept a safe output distance is your inference from position, output, HP loss and the battle — never turn this section into a direct "HP-hoarding" or "avoiding" verdict.
-            2. Output observation respects event-stream coverage: with coverage=PARTIAL, observedAttackEvents=0 only means "observed attack events = 0" — never infer "no output / avoidance"; HP_ADVANTAGE_UNKNOWN (insufficient HP data) provides only positional and observed-attack-event facts.
+            === RELATIVE DEPTH / HP MEASUREMENT RULE (mandatory · neutral) ===
+            The RELATIVE_DEPTH_HP_MEASUREMENT section contains deterministic measurements about you (position/HP ratio/distance gap to the enemy/observed attack events/coverage/static tank-profile facts):
+            1. The reference member is chosen by the backend with a pure geometric algorithm: the alive own-team member nearest to the observed enemy in this phase; if your HP ratio ≥ the reference member × 1.2 while being farther from the enemy, that is only a measurement combination the backend filtered for your attention —
+               it is not any tactical judgement; whether it means you avoided engagement, used teammate cover to output, or kept a safe output distance is your inference from position, output, HP loss and the battle — never turn this section into a direct "HP-hoarding" or "avoiding" verdict, and never read "reference" as a tactical role like "front-line carrier".
+            2. Output observation respects event-stream coverage: with coverage=PARTIAL, observedAttackEvents=0 only means "observed attack events = 0" — never infer "no output / avoidance"; HP_RATIO_UNKNOWN (insufficient HP data) provides only positional and observed-attack-event facts.
             3. Cross-phase appearance (salience) only shows the measurement combination held across several phases — a salience hint, not a negative grade.
             4. When this section is absent (insufficient position/HP observation), never fabricate it.""";
 
-    static final String BEHIND_LINE_RULE_RU = """
+    static final String RELATIVE_DEPTH_HP_RULE_RU = """
 
-            === ПРАВИЛО ИЗМЕРЕНИЙ «ЗА СПИНОЙ / ОЗ / ПОЗИЦИЯ» (обязательное · нейтрально) ===
-            Секция BEHIND_LINE_HP_ADVANTAGE содержит детерминированные измерения о вас (позиция/доля ОЗ/разница дистанций до противника/наблюдаемые события атаки/полнота покрытия/профиль танка):
-            1. Если вы способны держать фронт и ваша доля ОЗ ≥ союзника на первой линии × 1.2, а вы дальше от противника, — это лишь комбинация измерений, отобранная бэкендом для вашего внимания;
-               она не является тактическим суждением; означает ли она избегание боя, использование прикрытия союзника для стрельбы или безопасную дистанцию — выводите сами из позиции, выхода, потери ОЗ и хода боя; не превращайте секцию в прямой вердикт «накопление ОЗ» или «избегание».
+            === ПРАВИЛО ИЗМЕРЕНИЙ ОТНОСИТЕЛЬНОЙ ГЛУБИНЫ / ОЗ (обязательное · нейтрально) ===
+            Секция RELATIVE_DEPTH_HP_MEASUREMENT содержит детерминированные измерения о вас (позиция/доля ОЗ/разница дистанций до противника/наблюдаемые события атаки/полнота покрытия/статические факты тактического профиля):
+            1. Эталонный член (reference) выбирается бэкендом по чисто геометрическому алгоритму: ближайший к наблюдаемому противнику живой член своей команды в этой фазе; если ваша доля ОЗ ≥ доли эталона × 1.2 и вы дальше от противника, — это лишь комбинация измерений, отобранная бэкендом для вашего внимания;
+               она не является тактическим суждением; означает ли она избегание боя, использование прикрытия союзника для стрельбы или безопасную дистанцию — выводите сами из позиции, выхода, потери ОЗ и хода боя; не превращайте секцию в прямой вердикт «накопление ОЗ» или «избегание» и не читайте «reference» как тактическую роль вроде «держащий фронт».
             2. Наблюдение выхода уважает полноту событий: при coverage=PARTIAL значение observedAttackEvents=0 означает только «наблюдаемых событий атаки = 0» —
-               не выводите «нет выхода/избегание боя»; HP_ADVANTAGE_UNKNOWN (недостаточно данных об ОЗ) даёт только факты о позиции и наблюдаемых событиях атаки.
+               не выводите «нет выхода/избегание боя»; HP_RATIO_UNKNOWN (недостаточно данных об ОЗ) даёт только факты о позиции и наблюдаемых событиях атаки.
             3. Появление за несколько фаз (salience) лишь показывает, что комбинация измерений сохранялась в нескольких фазах, — это подсказка значимости, а не негативная оценка.
             4. Если секция отсутствует (недостаточно наблюдений позиций/ОЗ), запрещено её выдумывать.""";    /**
      * 组装 system prompt：ZH 返回原样（字节级不变）；EN/RU 在中文基座上替换中文输出强制句
@@ -473,8 +473,8 @@ final class PlayerPromptRules {
                         en ? COMMON_EVIDENCE_LOGIC_RULE_EN : COMMON_EVIDENCE_LOGIC_RULE_RU)
                 .replace(SEPARATION_EVIDENCE_RULE,
                         en ? SEPARATION_EVIDENCE_RULE_EN : SEPARATION_EVIDENCE_RULE_RU)
-                .replace(BEHIND_LINE_RULE,
-                        en ? BEHIND_LINE_RULE_EN : BEHIND_LINE_RULE_RU)
+                .replace(RELATIVE_DEPTH_HP_RULE,
+                        en ? RELATIVE_DEPTH_HP_RULE_EN : RELATIVE_DEPTH_HP_RULE_RU)
                 .replace(POINTS_SITUATION_RULE,
                         en ? POINTS_SITUATION_RULE_EN : POINTS_SITUATION_RULE_RU);
         if (zhPrompt.contains(ZH_TIME_RULE)) {

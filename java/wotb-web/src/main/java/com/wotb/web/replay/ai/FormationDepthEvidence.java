@@ -24,15 +24,15 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 阵型深度（前后排）与地图控制区域（实际控制）确定性证据，仅供团队复盘（Team 路径）。
- * <p>口径（全确定性，只描述几何/计数事实，不裁决）：</p>
+ * 阵型纵深（纯几何深度三分位）与区域覆盖测量（REGION_COVERAGE_MEASUREMENTS）确定性证据，仅供团队复盘（Team 路径）。
+ * <p>口径（全确定性，只描述几何/测量事实，不裁决）：</p>
  * <ul>
  *   <li>阶段窗口按首次交火（首个 DamageEvent）与战斗时长切分 opening/mid/late
  *       （残局 = 战斗末 15s 窗口，与地图鸟瞰同口径）；</li>
- *   <li><b>前后排（profile-aware）</b>：某阶段内本队成员平均位置沿「本队质心 → 敌方质心」轴投影，
- *       按深度三分位分 前排/中排/后排（仅双方均有可用位置时输出）；阵容结构按 TankTacticalProfile
- *       判定（isFrontlineCapable=HEAVY/高装甲、isBacklineCapable=TD/LIGHT、MEDIUM 中性）——
- *       无前线型车辆时不产出前排名单（noFrontlineVehicle + 几何参考）、无后排型车辆时不产出后排名单（noBacklineVehicle）；</li>
+ *   <li><b>几何纵深（纯几何，不引用 tank profile）</b>：某阶段内本队成员平均位置沿「本队质心 → 敌方质心」轴投影，
+ *       按深度三分位输出 GEOMETRIC_FORWARD / GEOMETRIC_MIDDLE / GEOMETRIC_REAR（仅双方均有可用位置时输出）。
+ *       三分位只是几何分类，不是「前排抗线/后排支援」等战术角色；tank profile（车种/装甲等）作为成员静态事实附注，
+ *       该车处于这个纵深是否合理由 LLM 综合地图、阵容与战局判断。</li>
  *   <li><b>区域覆盖测量（REGION_COVERAGE_MEASUREMENTS）</b>：九宫格每区输出双方位置存在数
  *       （ownPositionPresence/enemyPositionPresence）与双方距离加权火力覆盖分
  *       （F=Σ 火力权重/(1+d/100)，ownWeightedCoverageScore/enemyWeightedCoverageScore）及 ratio；
@@ -212,13 +212,11 @@ final class FormationDepthEvidence {
                 enemyCanonical.put(entry.getKey(), pos);
             }
         }
-        boolean hasFront = false;
-
         final StringBuilder sb = new StringBuilder();
         final String header = "phase=" + phase.key()
                 + " [" + fmt(phase.start()) + "-" + fmt(phase.end()) + "s]\n";
 
-        // 前后排：本队成员沿本队质心→敌方质心轴投影，三分位（profile-aware）
+        // 几何纵深：本队成员沿本队质心→敌方质心轴投影，按深度三分位（纯几何，不引用 tank profile 分类）
         final List<Map.Entry<Long, double[]>> own = new ArrayList<>();
         final List<double[]> enemyMeans = new ArrayList<>();
         for (final Map.Entry<Long, double[]> entry : meanByAccount.entrySet()) {
@@ -243,66 +241,29 @@ final class FormationDepthEvidence {
                     depths.add(new double[]{d, member.getKey()});
                 }
                 depths.sort(Comparator.comparingDouble(a -> -a[0]));
-                // 阵容结构（tank profile）：可扛线（前线型）与后排型计数
-                int frontline = 0;
-                int backline = 0;
-                int neutralOnly = 0;
-                for (final double[] d : depths) {
-                    final TankTacticalProfile profile = profiles.get(Math.round(d[1]));
-                    final boolean f = isFrontlineCapable(profile);
-                    final boolean b = isBacklineCapable(profile);
-                    if (f) {
-                        frontline++;
-                    }
-                    if (b) {
-                        backline++;
-                    }
-                    if (!f && !b) {
-                        // neutralOnly 逐车按 !frontline && !backline 计数，绝不用减法推导（capability 可重叠）
-                        neutralOnly++;
-                    }
-                }
-                hasFront = frontline > 0;
-                final boolean hasBack = backline > 0;
-                sb.append(header)
-                        .append("lineupStructure=totalVehicles=").append(own.size())
-                        .append("/frontlineCapable=").append(frontline)
-                        .append("/backlineCapable=").append(backline)
-                        .append("/neutralOnly=").append(neutralOnly).append("\n");
-                if (!hasFront) {
-                    sb.append("noFrontlineVehicle=本阶段阵容无前线型车辆\n");
-                }
-                if (!hasBack) {
-                    sb.append("noBacklineVehicle=本阶段阵容无后排型车辆（几何靠后成员仍为前线型车辆）\n");
-                }
+                // 纯几何深度三分位：不引用 tank profile 分类，任何车种都按几何位置归入三分位
                 final double minD = depths.get(depths.size() - 1)[0];
                 final double maxD = depths.get(0)[0];
                 final double span = maxD - minD;
                 final double frontThreshold = span > 1e-6 ? minD + span * 2.0 / 3.0 : maxD;
                 final double backThreshold = span > 1e-6 ? minD + span / 3.0 : maxD;
-                final List<String> front = new ArrayList<>();
-                final List<String> mid = new ArrayList<>();
-                final List<String> back = new ArrayList<>();
+                final List<String> geometricForward = new ArrayList<>();
+                final List<String> geometricMiddle = new ArrayList<>();
+                final List<String> geometricRear = new ArrayList<>();
                 for (final double[] d : depths) {
                     final String key = annotate(Math.round(d[1]), profiles);
                     if (d[0] >= frontThreshold - 1e-9) {
-                        front.add(key);
+                        geometricForward.add(key);
                     } else if (d[0] <= backThreshold + 1e-9) {
-                        back.add(key);
+                        geometricRear.add(key);
                     } else {
-                        mid.add(key);
+                        geometricMiddle.add(key);
                     }
                 }
-                if (hasFront) {
-                    sb.append("frontLine=").append(String.join(",", front)).append("\n");
-                    sb.append("midLine=").append(String.join(",", mid)).append("\n");
-                    if (hasBack) {
-                        sb.append("backLine=").append(String.join(",", back)).append("\n");
-                    }
-                } else {
-                    // 无前线型车辆：不产出 frontLine/midLine/backLine 名单，只给几何位置参考
-                    sb.append("geometryFront=").append(geometryRef(depths, 0, 2)).append("\n");
-                }
+                sb.append(header)
+                        .append("GEOMETRIC_FORWARD=").append(String.join(",", geometricForward)).append("\n")
+                        .append("GEOMETRIC_MIDDLE=").append(String.join(",", geometricMiddle)).append("\n")
+                        .append("GEOMETRIC_REAR=").append(String.join(",", geometricRear)).append("\n");
 return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
                 ownCanonical, enemyCanonical, profiles, mapCode,
                 ownRefCount, enemyRefCount, ownAliveCount, enemyAliveCount);
@@ -323,32 +284,7 @@ return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
         return "account:" + accountId + "(" + profile.vehicleClass() + ",armor=" + profile.armorReliability() + ")";
     }
 
-    /** 几何参考：depth 排序（降序=最靠前）中取 [from, from+count) 的账号列表。 */
-    private static String geometryRef(final List<double[]> depths, final int from, final int count) {
-        final int end = Math.min(depths.size(), from + count);
-        final StringBuilder sb = new StringBuilder();
-        for (int i = from; i < end; i++) {
-            if (sb.length() > 0) {
-                sb.append(",");
-            }
-            sb.append("account:").append(Math.round(depths.get(i)[1]));
-        }
-        return sb.toString();
-    }
-
-    /** 可扛线（前线型）：HEAVY 或装甲可靠性 HIGH（TankTacticalProfile 语义）。 */
-    static boolean isFrontlineCapable(final TankTacticalProfile profile) {
-        return profile != null
-                && ("HEAVY".equals(profile.vehicleClass())
-                || "HIGH".equals(profile.armorReliability()));
-    }
-
-    /** 后排型：TANK_DESTROYER 或 LIGHT（远程支援/侦查车，天然后排；MEDIUM 为中性）。 */
-    static boolean isBacklineCapable(final TankTacticalProfile profile) {
-        return profile != null
-                && ("TANK_DESTROYER".equals(profile.vehicleClass())
-                || "LIGHT".equals(profile.vehicleClass()));
-    }
+    /** 坦克静态属性事实（车种/装甲）：只作成员标注，不参与几何三分位判定（Backend Evidence Boundary）。 */
 
     /** TankTacticalProfileRegistry 惰性加载（classpath json，与 PreBattleStrategicService 同源）。 */
     private static volatile TankTacticalProfileRegistry profileRegistryInstance;
@@ -470,7 +406,8 @@ return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
         return f;
     }
 
-    /** 火力权重（初值）：HEAVY/TD=2、MEDIUM=1.5、LIGHT=1；burst/sustained=HIGH 各 +0.5；可扛线 +0.5。 */
+    /** 火力权重（初值，纯静态 profile 事实）：HEAVY/TD=2、MEDIUM=1.5、LIGHT=1；burst/sustained=HIGH 各 +0.5。
+     * 不按任何战术角色调整权重（Backend Evidence Boundary：车种/火力属性只是静态事实，不是战术判定）。 */
     private static double fireWeight(final long accountId, final Map<Long, TankTacticalProfile> profiles) {
         final TankTacticalProfile profile = profiles.get(accountId);
         final String cls = profile == null ? "" : profile.vehicleClass();
@@ -485,9 +422,6 @@ return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
                 w += 0.5;
             }
             if ("HIGH".equals(profile.sustainedDpm())) {
-                w += 0.5;
-            }
-            if (isFrontlineCapable(profile)) {
                 w += 0.5;
             }
         }

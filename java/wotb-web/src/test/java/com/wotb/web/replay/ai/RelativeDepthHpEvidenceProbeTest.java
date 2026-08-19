@@ -15,17 +15,17 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * BEHIND_LINE_HP_ADVANTAGE 真实样本标定探针（手动维护，不进常规 CI 断言）：
+ * RELATIVE_DEPTH_HP_MEASUREMENT 真实样本标定探针（手动维护，不进常规 CI 断言）：
  * 扫描 common/data（递归）与 common/fixtures/replays 的全部 .wotbreplay，逐样本输出
- * {@link BehindLineHpEvidence#renderTeamSection}（团队视角=录像者队伍）的测量行与跨阶段 salience，
- * 供用户审阅并标定阈值（×1.2 血量优势 salience filter）。无样本自动跳过。
+ * {@link RelativeDepthHpEvidence#renderTeamSection}（团队视角=录像者队伍）的测量行与跨阶段 salience，
+ * 供用户审阅并标定阈值（×1.2 血量比率优势 salience filter）。无样本自动跳过。
  */
-class BehindLineEvidenceProbeTest {
+class RelativeDepthHpEvidenceProbeTest {
 
     private static final Path REPO_COMMON = Path.of("../../common");
 
     @Test
-    void behindLineHpAdvantageProbe() throws Exception {
+    void relativeDepthHpProbe() throws Exception {
         final List<Path> samples = new ArrayList<>();
         if (Files.isDirectory(REPO_COMMON)) {
             try (var walk = Files.walk(REPO_COMMON)) {
@@ -36,7 +36,7 @@ class BehindLineEvidenceProbeTest {
             }
         }
         Assumptions.assumeTrue(!samples.isEmpty(), "no replay samples under common/");
-        System.out.println("== BEHIND_LINE_HP_ADVANTAGE probe ==");
+        System.out.println("== RELATIVE_DEPTH_HP_MEASUREMENT probe ==");
         for (final Path sample : samples) {
             System.out.println("===== " + sample + " =====");
             try {
@@ -55,11 +55,11 @@ class BehindLineEvidenceProbeTest {
                     System.out.println("  recorderTeam unknown");
                     continue;
                 }
-                final String section = BehindLineHpEvidence.renderTeamSection(
+                final String section = RelativeDepthHpEvidence.renderTeamSection(
                         battle, recon, recorderTeam, false);
                 System.out.println(section.isEmpty() ? "  (无命中)" : section);
                 // OBSERVED_DAMAGE_IS_PARTIAL 对照：事件流观测不全时不得出现避战推断
-                final String partial = BehindLineHpEvidence.renderTeamSection(
+                final String partial = RelativeDepthHpEvidence.renderTeamSection(
                         battle, recon, recorderTeam, true);
                 if (partial.contains("避战")) {
                     System.out.println("  !! PARTIAL_MODE_STILL_SAYS_AVOIDANCE");

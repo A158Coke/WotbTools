@@ -8,4 +8,4 @@
   - 无移动段、无阵型簇证据；
   - 后端候选为空时，prompt 规则要求明确写「无法从当前回放数据确定」。
 - **对应 golden case**：`ai-eval/cases/cw-solo-unknown-01.json`
-- **规则引用**：Step 2 `SEPARATION_EVIDENCE_RULE`（证据不足禁止硬下标签）。
+- **规则引用**：`SEPARATION_EVIDENCE_RULE`（证据不足禁止硬下标签）。

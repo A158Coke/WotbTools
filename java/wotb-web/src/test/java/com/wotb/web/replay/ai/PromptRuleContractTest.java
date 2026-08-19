@@ -29,7 +29,7 @@ class PromptRuleContractTest {
                     PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE,
                     PlayerPromptRules.SEPARATION_EVIDENCE_RULE,
                     PlayerPromptRules.POINTS_SITUATION_RULE,
-                    PlayerPromptRules.BEHIND_LINE_RULE),
+                    PlayerPromptRules.RELATIVE_DEPTH_HP_RULE),
             "player/fallback", List.of(
                     PlayerPromptRules.COMMON_TANK_PROPER_NOUN_RULE,
                     PlayerPromptRules.COMMON_CHINESE_LANGUAGE_RULE,
@@ -64,7 +64,7 @@ class PromptRuleContractTest {
                     TeamPromptLocalizer.SEPARATION_EVIDENCE_RULE,
                     TeamPromptLocalizer.TEAM_REGROUP_INFERENCE_RULE,
                     TeamPromptLocalizer.CAPTURE_RULE,
-                    TeamPromptLocalizer.BEHIND_LINE_RULE,
+                    TeamPromptLocalizer.RELATIVE_DEPTH_HP_RULE,
                     TeamPromptLocalizer.TEAM_OUTPUT_STRUCTURE_RULE,
                     TeamPromptLocalizer.TEAM_EVIDENCE_CONTRACT_RULE));
 

@@ -198,7 +198,7 @@ final class PlayerSummaryBuilder {
                 summaryBuilder, ctx.battle(), recon, recorderAccountId, observedDamagePartial);
         PlayerEvidenceFormatter.appendEnemyLastKnownPositions(summaryBuilder, ctx.battle(), recon);
         // 身后血量/位置优势测量：仅录像者自己，中性测量（个人路径不评价队友）
-        final String behindLine = BehindLineHpEvidence.renderPlayerSection(
+        final String behindLine = RelativeDepthHpEvidence.renderPlayerSection(
                 ctx.battle(), recon, recorderAccountId, observedDamagePartial);
         if (!behindLine.isEmpty()) {
             summaryBuilder.append(behindLine);
