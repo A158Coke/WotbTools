@@ -90,9 +90,16 @@ class FormationDepthEvidenceTest {
         assertTrue(section.contains("lineupStructure=totalVehicles="), section);
         assertTrue(section.contains("/frontlineCapable="), section);
         assertTrue(section.contains("frontLine=account:1001(HEAVY"), section);
-        // 双方驻留不同区域 → own 与 enemy 区域都存在
-        assertTrue(section.contains("controlRegions own=GRID_REGION_"), section);
-        assertTrue(section.contains("controlRegions enemy=GRID_REGION_"), section);
+        // 双方驻留不同区域 → REGION_COVERAGE_MEASUREMENTS 输出双方位置存在与分数
+        assertTrue(section.contains("REGION_COVERAGE_MEASUREMENTS"), section);
+        assertTrue(section.contains("ownPositionPresence="), section);
+        assertTrue(section.contains("enemyPositionPresence="), section);
+        assertTrue(section.contains("ownWeightedCoverageScore="), section);
+        assertTrue(section.contains("coverageCompleteness="), section);
+        // 不得输出 own/contested/enemy 权威控制权标签
+        assertFalse(section.contains("controlRegions own="), "不得输出 controlRegions own 权威标签");
+        assertFalse(section.contains("controlRegions enemy="), "不得输出 controlRegions enemy 权威标签");
+        assertFalse(section.contains("controlRegions contested="), "不得输出 controlRegions contested 权威标签");
     }
 
     @Test
@@ -117,9 +124,9 @@ class FormationDepthEvidenceTest {
                 List.of(), new ArrayList<>(filtered), List.of(), null, null, null);
         final String section = FormationDepthEvidence.renderSection(battle, ownOnly, 1, MAP);
         assertTrue(section.contains("POSITION_COVERAGE_INSUFFICIENT"), section);
-        assertTrue(section.contains("controlRegions=UNKNOWN"), section);
-        assertTrue(section.contains("positionalPresence own=GRID_REGION_"), section);
-        assertFalse(section.contains("controlRegions own="), "敌方无位置参考时不得输出 own 强结论");
+        assertTrue(section.contains("REGION_COVERAGE_MEASUREMENTS"), section);
+        assertTrue(section.contains("ownPositionPresence=GRID_REGION_"), section);
+        assertFalse(section.contains("ownWeightedCoverageScore="), "敌方无位置参考时不得输出分数对比");
         assertFalse(section.contains("frontLine="), "敌方无位置观测时不得输出前后排");
     }
 
@@ -200,17 +207,19 @@ class FormationDepthEvidenceTest {
 
 
     @Test
-    void controlRegionsIncludeVisionAndFirepowerTags() {
-        // 本队 HEAVY+TD 在左侧区域有位置样本（presence），敌方在右侧 → own 带 (presence) 标签
+    void regionCoverageEmitsPresenceCountsNotControlTags() {
+        // 本队 HEAVY+TD 在左侧区域有位置样本，敌方在右侧 → ownPositionPresence > 0
         final String section = FormationDepthEvidence.renderSection(battle(), reconWithPositions(20f), 1, MAP);
-        assertTrue(section.contains("controlRegions own=GRID_REGION_"), section);
-        assertTrue(section.contains("(presence)"), "本队驻留区域应标 presence");
-        assertTrue(section.contains("controlRegions enemy=GRID_REGION_"), section);
+        assertTrue(section.contains("REGION_COVERAGE_MEASUREMENTS"), section);
+        assertTrue(section.contains("ownPositionPresence="), "必须输出本方位置存在数");
+        assertTrue(section.contains("enemyPositionPresence="), "必须输出敌方位置存在数");
+        assertFalse(section.contains("(presence)"), "不得输出 (presence) 控制权标签");
+        assertFalse(section.contains("(firepower)"), "不得输出 (firepower) 控制权标签");
     }
 
     @Test
-    void noArmorNoteWhenAllBacklineType() {
-        // 本队全 TD：无重甲车辆 → 控制权照判（火力权重即能力）+ noArmorNote 标注
+    void regionCoverageStillEmittedWhenAllBacklineType() {
+        // 本队全 TD：无重甲车辆 → 覆盖测量照常输出（火力权重即能力近似）
         final Battle battle = battle();
         battle.players = List.of(
                 player(1001L, 1, "AllyA", 9297L),
@@ -218,8 +227,8 @@ class FormationDepthEvidenceTest {
                 player(2001L, 2, "EnemyA", 9489L),
                 player(2002L, 2, "EnemyB", 9489L));
         final String section = FormationDepthEvidence.renderSection(battle, reconWithPositions(20f), 1, MAP);
-        assertTrue(section.contains("controlRegions"), "无重甲阵容仍输出控制权（火力权重即能力）");
-        assertTrue(section.contains("noArmorNote=本队无重甲车辆，控制权依赖火力投射"), section);
+        assertTrue(section.contains("REGION_COVERAGE_MEASUREMENTS"), "无重甲阵容仍输出区域覆盖测量");
+        assertFalse(section.contains("noArmorNote"), "不得输出控制权依赖注释");
     }
 
     @Test
@@ -248,8 +257,9 @@ class FormationDepthEvidenceTest {
                 player(2001L, 2, "EnemyA", 9489L),
                 player(2002L, 2, "EnemyB", 9489L));
         final String section = FormationDepthEvidence.renderSection(battle, recon, 1, MAP);
-        assertTrue(section.contains("controlRegions"), section);
-        assertTrue(section.contains("contested"), "对称火力应判 contested，got: " + section);
+        assertTrue(section.contains("REGION_COVERAGE_MEASUREMENTS"), section);
+        assertTrue(section.contains("ratio="), "对称火力应输出 ratio 测量，got: " + section);
+        assertFalse(section.contains("contested"), "不得输出 contested 权威标签，got: " + section);
     }
 
 
@@ -352,9 +362,9 @@ class FormationDepthEvidenceTest {
         final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
                 events, List.of(), null, null, null);
         final String section = FormationDepthEvidence.renderSection(battle, recon, 1, MAP);
-        assertFalse(section.contains("account:1001"), "阵亡车辆不得进入阵型/控制权, got: " + section);
-        // 本队存活 1002 有位置、敌方 2001/2002 有位置 → 参考完整，controlRegions 正常输出
-        assertTrue(section.contains("controlRegions"), section);
+        assertFalse(section.contains("account:1001"), "阵亡车辆不得进入阵型/覆盖测量, got: " + section);
+        // 本队存活 1002 有位置、敌方 2001/2002 有位置 → 参考完整，REGION_COVERAGE_MEASUREMENTS 正常输出
+        assertTrue(section.contains("REGION_COVERAGE_MEASUREMENTS"), section);
     }
 
     }

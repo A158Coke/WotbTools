@@ -23,20 +23,20 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 身后输出/血量优势（吸血/避战候选）确定性证据，团队 + 个人双路径。
- * <p>口径（全确定性，只描述事实，不裁决「吸血」）：</p>
+ * 身后血量/位置优势（BEHIND_LINE_HP_ADVANTAGE）确定性测量证据，团队 + 个人双路径。
+ * <p>口径（全确定性，只输出测量与几何事实，不裁决「吸血/避战/利用队友」）：</p>
  * <ul>
  *   <li>阶段窗口与 {@link FormationDepthEvidence} 同口径（opening/mid/late，复用其包内工具）；</li>
- *   <li>判据（阶段粒度）：X 具备扛线能力（TankTacticalProfile：HEAVY 或 armorReliability=HIGH）、
- *       扛线队友 = 本队内<b>可扛线</b>（isFrontlineCapable）且距敌最近的成员（无合格 carrier 不判定）、
- *       X 与扛线队友均有可用血量与位置、
- *       X 血量比率（hp/maxHp）≥ 扛线队友血量比率 × 1.2、X 距敌 &gt; 扛线队友距敌；
- *       输出分类受 <b>OBSERVED_DAMAGE_IS_PARTIAL</b> 约束：事件流观测不全时 0 个已观测攻击事件 ≠ 无输出，
- *       只输出 observedAttackEvents + outputStatus=UNKNOWN，禁止推断「无输出（避战）」；</li>
- *   <li>附加（opening）：可扛线账号阶段平均位置在本方后排分位 →「前线型车辆未上前线」；</li>
- *   <li>团队路径：遍历本队全体成员，措辞负面由 prompt 规则给出；个人路径：仅录像者自己，中性措辞。</li>
+ *   <li>筛选（salience filter，不是战术判定）：X 具备扛线能力（TankTacticalProfile：HEAVY 或
+ *       armorReliability=HIGH）、扛线队友 = 本队内<b>可扛线</b>（isFrontlineCapable）且距敌最近的成员
+ *       （无合格 carrier 不输出）、X 血量比率（hp/maxHp）≥ 扛线队友血量比率 × 1.2 且 X 距敌 &gt; 扛线队友距敌。
+ *       该筛选只决定「哪些成员值得给 LLM 看」，不意味着「满足 ⇒ 吸血/避战」——战术含义由 LLM 综合判断；</li>
+ *   <li>输出约束受 <b>OBSERVED_DAMAGE_IS_PARTIAL</b> 约束：事件流观测不全时只输出
+ *       observedAttackEvents + coverage=PARTIAL，禁止推断「无输出/避战」；</li>
+ *   <li>附加（opening）：可扛线账号阶段平均位置在本方后排分位 → 输出几何深度事实（不判「未上前线」）；</li>
+ *   <li>团队路径：遍历本队全体成员；个人路径：仅录像者自己。</li>
  * </ul>
- * <p>血量数据不足时只输出中性事实（位置关系 + observedAttackEvents + HP_ADVANTAGE_UNKNOWN），不判定吸血/避战；
+ * <p>血量数据不足时只输出中性事实（位置关系 + observedAttackEvents + HP_ADVANTAGE_UNKNOWN）；
  * 无前排阵容（全队不可扛线）不纳入任何成员。</p>
  */
 final class BehindLineHpEvidence {
@@ -44,18 +44,18 @@ final class BehindLineHpEvidence {
     private BehindLineHpEvidence() {
     }
 
-    /** 血量优势倍数（默认多 20%，Step 6 真实样本标定后调）。 */
+    /** 血量优势倍数（默认多 20%，salience/filter heuristic；不解释为「吸血」判定）。 */
     static final double HP_ADVANTAGE_RATIO = 1.2;
-    /** 有输出 = 阶段内作为攻击者的伤害事件 ≥ 1。 */
+    /** 有输出 = 阶段内作为攻击者的伤害事件 ≥ 1（仅完整覆盖时可用作「有输出」事实）。 */
     static final int ATTACKER_DAMAGE_MIN = 1;
-    /** 躲后距离差档位（米）。 */
+    /** 躲后距离差档位（米，聚合 salience 用）。 */
     static final double DIST_BAND_M = 50.0;
     static final double DIST_BAND_FAR_M = 150.0;
-    /** 血量差档位（血量比率倍率）。 */
+    /** 血量差档位（血量比率倍率，聚合 salience 用）。 */
     static final double HP_BAND_1 = 1.5;
     static final double HP_BAND_2 = 2.0;
 
-    /** 阶段命中记录：X 满足「血量优势 + 距敌更远 + 可扛线」的事实（供跨阶段聚合程度）。 */
+    /** 阶段命中记录：X 满足「血量优势 + 距敌更远 + 可扛线」筛选的测量（供跨阶段聚合次数）。 */
     private record PhaseHit(
             long accountId,
             double bloodRatio,
@@ -63,7 +63,7 @@ final class BehindLineHpEvidence {
     ) {
     }
 
-    /** 团队路径：本队全体成员的身后输出/血量优势事实段。 */
+    /** 团队路径：本队全体成员的身后血量/位置优势测量段。 */
     static String renderTeamSection(
             final Battle battle,
             final ReplayReconstruction recon,
@@ -73,7 +73,7 @@ final class BehindLineHpEvidence {
         return render(battle, recon, perspectiveTeam, null, observedDamagePartial);
     }
 
-    /** 个人路径：仅录像者自己（中性措辞）；录像者不在册或非本队成员时返回空。 */
+    /** 个人路径：仅录像者自己；录像者不在册或非本队成员时返回空。 */
     static String renderPlayerSection(
             final Battle battle,
             final ReplayReconstruction recon,
@@ -219,7 +219,7 @@ final class BehindLineHpEvidence {
             return "";
         }
         final StringBuilder out = new StringBuilder();
-        out.append("\n=== BEHIND_LINE_HP_ADVANTAGE（身后输出/血量优势·确定性） ===\n");
+        out.append("\n=== BEHIND_LINE_HP_ADVANTAGE（身后血量/位置优势·确定性测量） ===\n");
         out.append(sb);
         final String aggregate = renderAggregate(hits, selfAccountId != null);
         if (!aggregate.isEmpty()) {
@@ -298,7 +298,7 @@ final class BehindLineHpEvidence {
             return new PhaseResult(null, hits);
         }
         // 敌方位置参考完整性门禁：本阶段存活的敌方车辆中缺失位置参考时，
-        // 最近观测敌方 ≠ 真实最近敌方，禁止产生吸血/避战负面判定（最多中性事实）
+        // 最近观测敌方 ≠ 真实最近敌方，禁止输出「距敌更远/血量优势」测量（避免误导 LLM）
         final int enemyTeamId = 3 - ownTeam;
         int enemyAliveCount = 0;
         int enemyRefCount = 0;
@@ -317,7 +317,7 @@ final class BehindLineHpEvidence {
         }
         final boolean enemyRefComplete = enemyRefCount >= enemyAliveCount;
         if (!enemyRefComplete) {
-            // 敌方位置参考不完整：最近观测敌方 ≠ 真实最近敌方，禁止吸血/避战负面判定（也不输出不可信距离事实）
+            // 敌方位置参考不完整：最近观测敌方 ≠ 真实最近敌方，不输出不可信距离测量
             return new PhaseResult(null, hits);
         }
 
@@ -325,7 +325,7 @@ final class BehindLineHpEvidence {
         final StringBuilder sb = new StringBuilder();
         for (final long accountId : targets) {
             if (!FormationDepthEvidence.isAliveAt(playersByAccount, accountId, phase.end())) {
-                continue; // 本阶段已阵亡：不作为身后输出/血量优势判定目标
+                continue; // 本阶段已阵亡：不作为测量目标
             }
             final TankTacticalProfile profile = profiles.get(accountId);
             if (!FormationDepthEvidence.isFrontlineCapable(profile)) {
@@ -377,13 +377,13 @@ final class BehindLineHpEvidence {
                         .append("（血量比 ").append(fmtRatio(hpRatioX / teammateHpRatio)).append("×）")
                         .append(" 距敌+").append(Math.round(distX - teammateDist)).append("m")
                         .append(" ").append(outputStatus(observedAttackEvents, observedDamagePartial)).append("\n");
-                // outputStatus=UNKNOWN（partial 且 0 个已观测攻击事件）时禁止进入 degree 聚合
+                // outputStatus=UNKNOWN（partial 且 0 个已观测攻击事件）时禁止进入跨阶段聚合
                 if (!(observedDamagePartial && observedAttackEvents == 0)) {
                 hits.add(new PhaseHit(accountId,
                         hpRatioX / teammateHpRatio, distX - teammateDist));
                 }
             } else if (!hpKnown) {
-                // HP 优势未知：只输出中性事实（位置关系 + 已观察攻击事件），不判定吸血/避战
+                // HP 优势未知：只输出中性事实（位置关系 + 已观察攻击事件）
                 sb.append("- ").append(selfLabel).append(" hp=未知 HP_ADVANTAGE_UNKNOWN vs 扛线队友 ")
                         .append(key(teammate)).append(" hp=未知 距敌+")
                         .append(Math.round(distX - teammateDist)).append("m")
@@ -429,8 +429,8 @@ final class BehindLineHpEvidence {
         final PlayerResult p = playersByAccount.get(accountId);
         // hp ratio 分母只允许已证明的进场满血（OBSERVED_EXACT）：
         // observedMaxHp 是整场观测最大 current HP，可能低于真实 entry（装备加成/已受伤），
-        // 用它算 ratio 会让血量优势/利用队友输出/避战/吸血判定失真；BASE_FALLBACK 用
-        // tankopedia base 同样失真（装备加成后比例偏低/偏高）。无法证明 → -1 → HP_ADVANTAGE_UNKNOWN 中性路径。
+        // 用它算 ratio 会让血量优势测量失真；BASE_FALLBACK 用 tankopedia base 同样失真。
+        // 无法证明 → -1 → HP_ADVANTAGE_UNKNOWN 中性路径。
         if (p == null || p.entryHpSource != EntryHpSource.OBSERVED_EXACT
                 || p.entryHp == null || p.entryHp <= 0) {
             return -1;
@@ -439,20 +439,15 @@ final class BehindLineHpEvidence {
     }
 
     /**
-     * 输出分类（fail-closed）：OBSERVED_DAMAGE_IS_PARTIAL 时 0 个已观测攻击事件 ≠ 无输出，
-     * 只输出 observedAttackEvents + outputStatus=UNKNOWN；完整覆盖时才可给「有输出/无输出」结论。
+     * 输出观测事实（fail-closed）：只报 observedAttackEvents 与覆盖率；
+     * OBSERVED_DAMAGE_IS_PARTIAL 时 0 个已观测攻击事件 ≠ 无输出，禁止推断「无输出/避战」。
      */
     private static String outputStatus(final int observedAttackEvents, final boolean observedDamagePartial) {
-        if (observedAttackEvents >= ATTACKER_DAMAGE_MIN) {
-            if (observedDamagePartial) {
-                return "observedAttackEvents=" + observedAttackEvents + "（事件流观测不全，不得推断无输出）";
-            }
-            return "有输出（利用队友输出）";
-        }
         if (observedDamagePartial) {
-            return "observedAttackEvents=0 outputStatus=UNKNOWN（事件流观测不全，不得推断无输出/避战）";
+            return "observedAttackEvents=" + observedAttackEvents
+                    + " coverage=PARTIAL（事件流观测不全，0 事件 ≠ 无输出，不得推断避战）";
         }
-        return "无输出（避战）";
+        return "observedAttackEvents=" + observedAttackEvents + " coverage=COMPLETE";
     }
 
     private static int countIn(final List<Double> times, final FormationDepthEvidence.PhaseRange phase) {
@@ -468,7 +463,7 @@ final class BehindLineHpEvidence {
         return n;
     }
 
-    /** opening 附加事实：可扛线账号阶段平均位置在本方后排分位 → 前线型车辆未上前线。 */
+    /** opening 附加几何事实：可扛线账号阶段平均位置在本方后排分位（只报几何，不判「未上前线」）。 */
     private static String renderOpeningBackline(
             final Map<Long, double[]> meanByAccount,
             final Map<Long, Integer> teamByAccount,
@@ -524,12 +519,14 @@ final class BehindLineHpEvidence {
                 continue;
             }
             final String selfLabel = playerPath ? "你" : key(accountId);
-            sb.append("- ").append(selfLabel).append(" 前线型车辆未上前线（opening 平均位置在本方后排分位）\n");
+            sb.append("- ").append(selfLabel)
+                    .append(" opening 阶段平均位置在本方后排分位（几何深度；frontlineCapable=")
+                    .append(profile == null ? "UNKNOWN" : profile.vehicleClass()).append("）\n");
         }
         return sb.length() == 0 ? null : sb.toString();
     }
 
-    /** 跨阶段聚合：三因子（血量差幅度 + 持续阶段数 + 躲后距离差）→ 轻/中/重。 */
+    /** 跨阶段聚合：只报「该测量组合在 N 个阶段成立」的中性次数（salience），不输出战术分级。 */
     private static String renderAggregate(final List<PhaseHit> hits, final boolean playerPath) {
         if (hits.isEmpty()) {
             return "";
@@ -539,24 +536,11 @@ final class BehindLineHpEvidence {
             byAccount.computeIfAbsent(hit.accountId(), k -> new ArrayList<>()).add(hit);
         }
         final StringBuilder sb = new StringBuilder();
-        sb.append("degree（跨阶段聚合·三因子）:\n");
+        sb.append("跨阶段出现（salience filter·中性）:\n");
         for (final Map.Entry<Long, List<PhaseHit>> entry : byAccount.entrySet()) {
-            final List<PhaseHit> list = entry.getValue();
-            double rMax = 0;
-            double dMax = 0;
-            for (final PhaseHit hit : list) {
-                rMax = Math.max(rMax, hit.bloodRatio());
-                dMax = Math.max(dMax, hit.distDiffM());
-            }
-            final int bloodScore = rMax < HP_BAND_1 ? 1 : rMax < HP_BAND_2 ? 2 : 3;
-            final int durationScore = Math.min(3, list.size());
-            final int distScore = dMax < DIST_BAND_M ? 1 : dMax < DIST_BAND_FAR_M ? 2 : 3;
-            final int total = bloodScore + durationScore + distScore;
-            final String degree = total <= 4 ? "轻度" : total <= 6 ? "中度" : "重度";
             final String selfLabel = playerPath ? "你" : key(entry.getKey());
-            sb.append("- ").append(selfLabel).append(" → ").append(degree)
-                    .append("(blood=").append(bloodScore).append(",duration=").append(durationScore)
-                    .append(",distance=").append(distScore).append(")\n");
+            sb.append("- ").append(selfLabel).append(" 在 ").append(entry.getValue().size())
+                    .append("/3 阶段成立（血量比 / 距敌差测量组合）\n");
         }
         return sb.toString();
     }

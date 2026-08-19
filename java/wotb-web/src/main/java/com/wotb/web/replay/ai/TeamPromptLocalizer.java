@@ -314,76 +314,72 @@ final class TeamPromptLocalizer {
             дистанция до центра масс своей группы в момент гибели); запрещено делать вывод о дистанции
             по номерам областей.""";
 
-    /** Team 专用：阵型深度（前后排）与控制区域规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。 */
+    /** Team 专用：阵型深度（前后排）与区域覆盖测量规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。 */
     static final String FORMATION_DEPTH_RULE = """
-            === 阵型深度与地图控制权规则（强制） ===
-            FORMATION_DEPTH 段是确定性几何/火力近似证据，用于理解阵型、前后排与地图控制权（哪方有能力实际控制的区域）：
+            === 阵型深度与区域覆盖测量规则（强制） ===
+            FORMATION_DEPTH 段是确定性几何/测量证据，用于理解阵型、前后排与区域覆盖（哪些区域双方有位置存在与火力覆盖分数）：
             1. frontLine / midLine / backLine 是本队成员沿「本队质心 → 敌方质心」轴按深度三分位的分类，
-               描述阵型时用自然中文（如「前排抗线、中排输出、后排支援」），不得改判成员排位。
-            2. controlRegions 的 own / contested / enemy 是九宫格区域的「控制权确定性近似」——按双方距离加权火力覆盖分（F=Σ 火力权重/(1+距离/100)）对比：own=本方火力覆盖显著占优（≥1.2×）、contested=双方接近、enemy=敌方占优；(presence)=区域内有本方位置样本（位置存在，非视野/点亮）、(firepower)=无位置样本但火力覆盖占优（距离+profile 权重的确定性近似，不代表真实射界/地形 LOS）；noArmorNote=本队无重甲车辆，控制权依赖火力投射。这只是火力覆盖+位置几何的确定性近似，不等于真实占领/点亮/视野，不得断言「控制/占领了某区」，也不得表述为占领点得分、实时比分或地图语义区域名。
-            3. 未提供 FORMATION_DEPTH 段时（位置观测不足）禁止编造前后排或控制权情况。
+               描述阵型时用自然中文（如「靠前、居中、靠后」），不得改判成员排位，也不得把三分位直接写成「前排抗线、中排输出、后排支援」等战术角色断言。
+            2. REGION_COVERAGE_MEASUREMENTS 是九宫格区域的「确定性测量」——每区输出 ownPositionPresence / enemyPositionPresence（双方位置样本存在数）、ownWeightedCoverageScore / enemyWeightedCoverageScore（按双方距离加权火力覆盖分 F=Σ 火力权重/(1+距离/100)）与 ratio（双方分数比）；coverage completeness 说明双方存活车辆位置参考是否完整（参考不完整时只输出 ownPositionPresence，不输出分数对比）。这些只是火力覆盖+位置几何的确定性测量：是否意味着哪方「实际控制/压制/放弃了某区」由你综合位置、交火、点数压力自行判断；不得断言「控制/占领了某区」，也不得表述为占领点得分、实时比分或地图语义区域名。
+            3. 未提供 FORMATION_DEPTH 段时（位置观测不足）禁止编造前后排或区域覆盖。
             4. 区域只能引用证据中的 GRID_REGION_1~9 编号，禁止用裸坐标重新划区。""";
 
     static final String FORMATION_DEPTH_RULE_EN = """
 
-            === FORMATION DEPTH AND MAP CONTROL RULE (mandatory) ===
-            The FORMATION_DEPTH section is deterministic geometric/firepower-approximation evidence for understanding the formation, the front/mid/back lines and map control (regions a team is capable of actually controlling):
-            1. frontLine / midLine / backLine classify own-team members by depth terciles along the "own centroid → enemy centroid" axis; describe the formation in natural language (e.g. "front line holds, middle line outputs, back line supports") and do not re-judge member positions.
-            2. controlRegions own / contested / enemy are a "deterministic map-control approximation" of the nine-grid regions — computed from distance-weighted fire coverage (F=Σ fire weight/(1+distance/100)): own = own fire coverage significantly dominates (≥1.2×), contested = roughly even, enemy = the enemy dominates; (presence) = own position samples are present in the region (positional presence, not spotting/LOS), (firepower) = no positional samples but fire coverage dominates (deterministic approximation from distance + profile weights; not real line-of-fire or terrain LOS); noArmorNote = the team has no heavy-armor vehicles, control relies on firepower projection. This is only a deterministic approximation of fire coverage + position geometry — never claim a region is truly "controlled/captured", and never present it as capture points, a live score, or named tactical map areas.
-            3. If the FORMATION_DEPTH section is absent (insufficient position observation), never fabricate front/back lines or control coverage.
+            === FORMATION DEPTH AND REGION COVERAGE MEASUREMENTS RULE (mandatory) ===
+            The FORMATION_DEPTH section is deterministic geometric/measurement evidence for understanding the formation, the front/mid/back lines and region coverage (which regions have positional presence and fire-coverage scores on each side):
+            1. frontLine / midLine / backLine classify own-team members by depth terciles along the "own centroid → enemy centroid" axis; describe the formation in natural language (e.g. "forward, middle, rear") and do not re-judge member positions, and never turn the terciles into tactical-role assertions such as "front line holds, middle line outputs, back line supports".
+            2. REGION_COVERAGE_MEASUREMENTS is a "deterministic measurement" of the nine-grid regions — each region carries ownPositionPresence / enemyPositionPresence (positional sample counts on each side), ownWeightedCoverageScore / enemyWeightedCoverageScore (distance-weighted fire coverage F=Σ fire weight/(1+distance/100)) and ratio (the score ratio); coverage completeness states whether both sides' surviving vehicles have complete position references (when references are incomplete only ownPositionPresence is emitted, never score comparisons). These are only deterministic measurements of fire coverage + position geometry: whether they mean either side "actually controls / pressures / abandoned a region" is your judgement from position, engagements and points pressure — never claim a region is truly "controlled/captured", and never present it as capture points, a live score, or named tactical map areas.
+            3. If the FORMATION_DEPTH section is absent (insufficient position observation), never fabricate front/back lines or region coverage.
             4. Reference regions only by the GRID_REGION_1~9 ids in the evidence; never re-derive regions from raw coordinates.""";
 
     static final String FORMATION_DEPTH_RULE_RU = """
 
-            === ПРАВИЛО ГЛУБИНЫ СТРОЯ И КОНТРОЛЯ КАРТЫ (обязательно) ===
-            Секция FORMATION_DEPTH — детерминированное геометрическое/огневое приближение для понимания строя, передней/средней/задней линий и контроля карты (регионы, которые команда способна фактически контролировать):
-            1. frontLine / midLine / backLine классифицируют участников своей команды по терцилям глубины вдоль оси «центроид своей команды → центроид противника»; описывайте строй естественным языком (например, «передняя линия держит, средняя наносит урон, задняя поддерживает») и не пересматривайте позиции участников.
-            2. controlRegions own / contested / enemy — «детерминированное приближение контроля карты» по девятисекторным областям — по дистанционно-взвешенному огневому покрытию (F=Σ огневой вес/(1+дистанция/100)): own = своё огневое покрытие значительно превосходит (≥1.2×), contested = примерно равно, enemy = превосходит противник; (presence) = в области есть свои позиционные сэмплы (позиционное присутствие, не обнаружение/линия обзора), (firepower) = позиционных сэмплов нет, но огневое покрытие превосходит (детерминированное приближение по дистанции и весам профиля; не реальная линия огня/рельеф); noArmorNote = у команды нет тяжёлых машин, контроль зависит от огневой проекции. Это лишь детерминированное приближение огневого покрытия и геометрии позиций — запрещено утверждать, что область реально «контролируется/захвачена», и выдавать это за очки захвата, живой счёт или именованные тактические зоны карты.
-            3. Если секция FORMATION_DEPTH отсутствует (недостаточно наблюдений позиций), запрещено выдумывать переднюю/заднюю линию или контроль областей.
+            === ПРАВИЛО ГЛУБИНЫ СТРОЯ И ИЗМЕРЕНИЙ ПОКРЫТИЯ ОБЛАСТЕЙ (обязательно) ===
+            Секция FORMATION_DEPTH — детерминированные геометрические/измерительные данные для понимания строя, передней/средней/задней линий и покрытия областей (в каких регионах есть позиционное присутствие и баллы огневого покрытия у каждой стороны):
+            1. frontLine / midLine / backLine классифицируют участников своей команды по терцилям глубины вдоль оси «центроид своей команды → центроид противника»; описывайте строй естественным языком (например, «впереди, в середине, сзади») и не пересматривайте позиции участников, а также не превращайте терцили в утверждения о тактических ролях вроде «передняя линия держит, средняя наносит урон, задняя поддерживает».
+            2. REGION_COVERAGE_MEASUREMENTS — «детерминированные измерения» по девятисекторным областям: каждая область несёт ownPositionPresence / enemyPositionPresence (число позиционных сэмплов сторон), ownWeightedCoverageScore / enemyWeightedCoverageScore (дистанционно-взвешенное огневое покрытие F=Σ огневой вес/(1+дистанция/100)) и ratio (отношение баллов); coverage completeness указывает, полны ли позиционные ссылки живых машин обеих сторон (при неполных ссылках выводится только ownPositionPresence, без сравнения баллов). Это лишь детерминированные измерения огневого покрытия и геометрии позиций: означает ли это, что какая-то сторона «фактически контролирует/давит/оставила область», решаете вы по позициям, перестрелкам и давлению по очкам — запрещено утверждать, что область реально «контролируется/захвачена», и выдавать это за очки захвата, живой счёт или именованные тактические зоны карты.
+            3. Если секция FORMATION_DEPTH отсутствует (недостаточно наблюдений позиций), запрещено выдумывать переднюю/заднюю линию или покрытие областей.
             4. Зоны можно указывать только по идентификаторам GRID_REGION_1~9 из свидетельств; запрещено переопределять зоны по сырым координатам.""";
 
-    /** Team 专用：身后输出/血量优势（吸血/避战候选）规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。 */
+    /** Team 专用：身后血量/位置优势（确定性测量）规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。 */
     static final String BEHIND_LINE_RULE = """
-            === 身后输出/血量优势规则（强制·团队语境负面） ===
-            BEHIND_LINE_HP_ADVANTAGE 段是确定性事实（位置/血量/距离/已观察攻击事件/tank profile），用于识别「有扛线能力却在队友身后输出（利用队友扛伤害）」或「避战」的成员：
-            1. 判据由后端计算：扛线队友 = 本队内具备扛线能力（HEAVY/高装甲）且距敌最近的成员（无合格扛线队友时不判定）；
-               成员可扛线、血量比率 ≥ 扛线队友 × 1.2、距敌比扛线队友更远；degree=轻/中/重为跨阶段三因子分级。
-            2. 输出分类受事件流观测覆盖约束：OBSERVED_DAMAGE_IS_PARTIAL 时 outputStatus=UNKNOWN 表示「已观察攻击事件=0」，
-               <b>禁止</b>据此推断「无输出/避战」，也不得把 UNKNOWN 输出当作负面贡献依据；
-               完整覆盖时才可写「有输出（利用队友输出）/无输出（避战）」。
+            === 身后血量/位置优势测量规则（强制·中性测量） ===
+            BEHIND_LINE_HP_ADVANTAGE 段是确定性测量（位置/血量比率/距敌距离差/已观察攻击事件/覆盖率/tank profile）：
+            1. 筛选由后端计算（salience filter）：扛线队友 = 本队内具备扛线能力（HEAVY/高装甲）且距敌最近的成员（无合格扛线队友时不输出）；
+               成员可扛线、血量比率 ≥ 扛线队友 × 1.2、距敌比扛线队友更远。该筛选只决定哪些成员值得关注，不是战术判定——
+               成员是否避战/利用队友掩护输出/保持安全输出距离，由你综合位置、输出、掉血、战局自行推断，不得把该段直接写成「吸血/避战」结论。
+            2. 输出观测受事件流覆盖约束：coverage=PARTIAL 时 observedAttackEvents=0 只表示「已观察攻击事件=0」，
+               <b>禁止</b>据此推断「无输出/避战」，也不得把 0 事件当作负面贡献依据。
             3. HP_ADVANTAGE_UNKNOWN（血量数据不足）只提供位置关系与已观察攻击事件事实，禁止据此判定吸血/避战。
-            4. 团队语境可作负面评价：指出成员「避战/利用队友输出」属于团队复盘，但只依据本段事实，不得超出证据断言玩家意图。
-            5. 输出高不等于贡献高：即使伤害较高，若吸血程度重，其对团队贡献应打折——除非输出显著高于本队均值/输出占比靠前（可视为「非常非常高」）才可部分抵消；
-               战犯/MVP 判断（TEAM_AUTOPSY）必须考虑吸血程度。
-            6. 未提供本段时（位置/血量观测不足）禁止编造身后输出或吸血情况。""";
+            4. 团队复盘可以指出成员「长时间与扛线队友保持距离差异且输出贡献低」等观察组合，但必须用「基于测量」的措辞，
+               不得超出证据断言玩家意图，也不得把 salience 次数当作负面分级。
+            5. 输出高不等于贡献高：评价贡献时综合输出/损失血量/位置测量，但不得引用「吸血程度」作为已算好的权威标签——那是 LLM 的推断。
+            6. 未提供本段时（位置/血量观测不足）禁止编造。""";
 
     static final String BEHIND_LINE_RULE_EN = """
 
-            === BEHIND-LINE OUTPUT / HP ADVANTAGE RULE (mandatory · negative in team context) ===
-            The BEHIND_LINE_HP_ADVANTAGE section contains deterministic facts (position/HP/distance/observed attack events/tank profile) for identifying members who, despite frontline capability, output from behind a teammate (letting the teammate absorb fire) or avoid engagement:
-            1. The criteria are computed server-side: the carrier teammate is the own-team member with frontline capability (HEAVY/high armor) nearest to the enemy (no verdict when no qualified carrier exists);
-               the member is frontline-capable, HP ratio ≥ the carrier teammate × 1.2, and is farther from the enemy than the carrier teammate; degree=light/medium/heavy is the cross-phase three-factor grade.
-            2. Output classification respects event-stream observation coverage: under OBSERVED_DAMAGE_IS_PARTIAL, outputStatus=UNKNOWN means "observed attack events = 0" — never infer "no output / avoidance" from it, and never treat UNKNOWN output as negative-contribution evidence;
-               only with full coverage may you write "outputs from behind (uses teammate cover) / avoids engagement".
+            === BEHIND-LINE HP/POSITION MEASUREMENT RULE (mandatory · neutral measurements) ===
+            The BEHIND_LINE_HP_ADVANTAGE section contains deterministic measurements (position/HP ratio/distance gap to the enemy/observed attack events/coverage/tank profile):
+            1. The filter is computed server-side (salience filter): the carrier teammate is the own-team member with frontline capability (HEAVY/high armor) nearest to the enemy (nothing is emitted when no qualified carrier exists);
+               the member is frontline-capable, HP ratio ≥ the carrier teammate × 1.2, and is farther from the enemy than that teammate. The filter only decides who deserves attention — it is not a tactical judgement: whether a member avoided engagement, used teammate cover to output, or kept a safe output distance is your inference from position, output, HP loss and the battle — never turn this section into a direct "HP-hoarding / avoidance" verdict.
+            2. Output observation respects event-stream coverage: with coverage=PARTIAL, observedAttackEvents=0 only means "observed attack events = 0" — never infer "no output / avoidance" from it, and never treat the zero count as negative-contribution evidence.
             3. HP_ADVANTAGE_UNKNOWN (insufficient HP data) provides only positional-relation and observed-attack-event facts — never judge behind-line output or HP-hoarding from it.
-            4. In the team context this may be phrased negatively: pointing out that a member "avoids engagement / outputs from behind" is part of the team review, but only within these facts — never assert player intent beyond them.
-            5. High damage is not equal to high contribution: even with fairly high damage, a heavy behind-line grade must discount that member's team contribution — unless the damage is very high (significantly above the team average / top damage share, which may partially offset);
-               the war-criminal/MVP judgement (TEAM_AUTOPSY) must account for the behind-line degree.
-            6. When this section is absent (insufficient position/HP observation), never fabricate behind-line output or HP-hoarding.""";
+            4. The team review may point out observed combinations such as "kept a distance gap from the carrier teammate for a long time with low output contribution", but must phrase them as measurement-based — never assert player intent beyond the evidence, and never treat the salience count as a negative grade.
+            5. High damage is not equal to high contribution: weigh output / HP loss / position measurements when evaluating contribution, but never cite a precomputed "behind-line degree" as an authoritative label — that is your inference.
+            6. When this section is absent (insufficient position/HP observation), never fabricate it.""";
 
     static final String BEHIND_LINE_RULE_RU = """
 
-            === ПРАВИЛО «ИГРА ЗА СПИНОЙ / ПРЕИМУЩЕСТВО ПО ОЗ» (обязательное · негатив в командном контексте) ===
-            Секция BEHIND_LINE_HP_ADVANTAGE содержит детерминированные факты (позиция/ОЗ/дистанция/наблюдаемые события атаки/профиль танка) для выявления членов, которые, имея способность держать фронт, стреляют из-за спин союзников (заставляя союзника принимать огонь) или избегают боя:
-            1. Критерии вычисляются на сервере: союзник на первой линии = член своей команды со способностью держать фронт (HEAVY/высокая броня), ближайший к противнику (при отсутствии такого союзника вердикт не выносится);
-               член способен держать фронт, доля ОЗ ≥ союзника на первой линии × 1.2 и он дальше от противника, чем этот союзник; degree=лёгкая/средняя/тяжёлая — трёхфакторная оценка за фазы.
-            2. Классификация выхода уважает полноту наблюдения событий: при OBSERVED_DAMAGE_IS_PARTIAL outputStatus=UNKNOWN означает «наблюдаемых событий атаки = 0» — запрещено выводить из этого «без выхода/избегание боя» и использовать UNKNOWN-выход как негативное свидетельство вклада;
-               только при полном покрытии можно писать «стреляет из-за спины (использует прикрытие союзника) / избегает боя».
+            === ПРАВИЛО ИЗМЕРЕНИЙ «ЗА СПИНОЙ / ОЗ / ПОЗИЦИЯ» (обязательное · нейтральные измерения) ===
+            Секция BEHIND_LINE_HP_ADVANTAGE содержит детерминированные измерения (позиция/доля ОЗ/разница дистанций до противника/наблюдаемые события атаки/полнота покрытия/профиль танка):
+            1. Фильтр вычисляется на сервере (salience filter): союзник на первой линии = член своей команды со способностью держать фронт (HEAVY/высокая броня), ближайший к противнику (при отсутствии такого союзника секция не выводится);
+               член способен держать фронт, доля ОЗ ≥ союзника на первой линии × 1.2 и он дальше от противника, чем этот союзник. Фильтр лишь решает, кто заслуживает внимания, — это не тактическое суждение: избегает ли член боя, использует ли прикрытие союзника для стрельбы или держит безопасную дистанцию — выводите сами из позиции, выхода, потери ОЗ и хода боя; не превращайте секцию в прямой вердикт «накопление ОЗ / избегание».
+            2. Наблюдение выхода уважает полноту событий: при coverage=PARTIAL значение observedAttackEvents=0 означает только «наблюдаемых событий атаки = 0» — запрещено выводить «без выхода/избегание боя» и использовать нулевой счёт как негативное свидетельство вклада.
             3. HP_ADVANTAGE_UNKNOWN (недостаточно данных об ОЗ) даёт только факты о позиционных отношениях и наблюдаемых событиях атаки — запрещено судить об игре за спиной или накоплении ОЗ по ним.
-            4. В командном контексте это может быть негативной оценкой: указывать, что член «избегает боя / стреляет из-за спины», — часть командного разбора, но только в рамках фактов секции; не утверждать намерения игрока сверх них.
-            5. Высокий урон ≠ высокий вклад: даже при довольно высоком уроне тяжёлая оценка «игры за спиной» должна снижать вклад члена — если только урон не очень высок (заметно выше среднего по команде / большая доля урона команды, что может частично компенсировать);
-               вердикт «виновник/MVP» (TEAM_AUTOPSY) обязан учитывать степень игры за спиной.
-            6. Если секция отсутствует (недостаточно наблюдений позиций/ОЗ), запрещено выдумывать игру за спиной или накопление ОЗ.""";
+            4. Командный разбор может указывать наблюдаемые комбинации вроде «долго держал дистанцию до союзника на первой линии при низком вкладе по урону», но обязан формулировать их как основанные на измерениях — не утверждать намерения игрока сверх свидетельств и не превращать количество фаз (salience) в негативную оценку.
+            5. Высокий урон ≠ высокий вклад: оценивая вклад, взвешивайте урон / потерю ОЗ / позиционные измерения, но никогда не ссылайтесь на заранее вычисленную «степень игры за спиной» как на авторитетный ярлык — это ваше умозаключение.
+            6. Если секция отсутствует (недостаточно наблюдений позиций/ОЗ), запрещено её выдумывать.""";
 
     /** 数据不足时的输出措辞（PR #103 review BLOCKER B：UNKNOWN selective，不再 blanket 强制写明）。 */
     static final String ZH_CANNOT_DETERMINE_RULE =
@@ -594,14 +590,18 @@ final class TeamPromptLocalizer {
                   精确领先幅度或「此刻领先多少分」式断言。击杀夺分时间线只表达「击杀换分项」的累计净差值，
                   是部分可证明信号，不是整体点数：禁止把击杀换分项净劣势/优势直接写成整体点数落后/领先；
                   终局点数落败只能描述终局结果，禁止反推早期任意时刻的整体点数状态。判断点数压力只能用
-                  POINTS_SITUATION 段的可证明信号（击杀夺分时间线、占领点区域位置存在、推进窗口）与终局结算/结束方式。
+                  POINTS_SITUATION 段的可证明信号（击杀夺分时间线、占领点区域位置存在、进入控制点区域窗口）与终局结算/结束方式。
                b. 条件式分析（允许，须写明前提）：若双方未通过占点取得更大的点数积累（占点积累不可观测），
-                  击杀换分项净劣势的一方进攻压力更大——需要进攻抢点；击杀换分项净优势的一方可以更从容地
-                  防守拉交叉。必须先说明这是基于击杀换分项与占点存在信号的推断，不得说成整体比分领先/落后。
+                  击杀换分项净劣势的一方通常承受更大点数压力，净优势的一方压力更小——这只提示「点数压力方向」，
+                  是否应该抢点/防守拉交叉由你综合局势自行推断，不得把「净劣势 ⇒ 需要进攻抢点」写成固定结论。
+                  必须先说明这是基于击杀换分项与占点存在信号的推断，不得说成整体比分领先/落后。
                c. 进攻推进大概率付出掉血代价：评价进攻方掉血必须结合点数压力情境——为抢点/进攻付出的掉血未必是失误；
                   无点数压力时的无谓掉血、无交换的单方面掉血才是问题。
-               d. 过路费：对方进攻推进窗口（PUSH_WINDOWS）内，防守方对推进方造成的伤害就是过路费；
-                  窗口内推进方几乎无伤完成推进或达成占点存在（过路费明显不足）时，必须指出防守方失误；
+               d. 进入控制点区域窗口（CONTROL_REGION_ENTRY_WINDOWS）只表达「车辆从控制点区域外移动进入控制点区域」
+                  这一结构事实，本身不证明进攻/抢点/防守/转场，也不证明战术正确/错误。防守方对进入车辆造成的伤害
+                  只是可观测的换血事实；是否构成「过路费不足 / 防守失误」必须由你综合击杀换分信号、区域位置存在、
+                  局部人数、战局时间、伤害、阵亡与后续移动自行形成 supported tactical inference，
+                  不得把「进入窗口 + 低伤害」固定映射成「必须指出防守方失误」。
                   伤害数字不可用（OBSERVED_DAMAGE_IS_PARTIAL）时只做定性描述，不得报数字。
                e. 信号不足或矛盾时不得硬下「落后/领先」结论，该判断保持内部 UNKNOWN——仅当符合全局选择性 UNKNOWN 条件时才自然说明。""";
 
@@ -627,10 +627,10 @@ final class TeamPromptLocalizer {
             6. Capture-point areas (CONTAINS_CONTROL_POINT) only describe direction; when not provided, never claim who is capturing.
             7. Kill steals (business rule, confirmed by the project owner): in Supremacy every destroyed enemy tank steals 40 points from the enemy team and adds them to the killer's team, while the team that lost the tank loses 40 points; this rule is a narrative guideline only ("destroying vehicles usually changes both teams' points") — whether the settlement fields already include this adjustment is unproven, so never compute "capture points + 40×kills − 40×deaths" yourself and present the result as fact; only with an authoritative winner and a rule-provable early end is the winning team's final score 1000 (the 1000-point cap, a business convention) — all other final scores are unknown; never explain the win with a score that omits kill steals and never invent the losing team's exact score.
             8. Points situation and attack/defense posture (provable signals only):
-               a. The absolute score at any moment before the end is undecoded (live score, capture progress, and passive accumulation have no evidence); never invent any mid-match score, an exact lead margin, or claims like "currently behind by X points". The kill-steal timeline expresses only the cumulative net delta of the "kill-steal component" — a partial provable signal, not the overall score: never present a net kill-steal deficit/lead as an overall points disadvantage/advantage; a final points loss describes only the final result — never retro-infer the overall points state at any earlier moment. Judge points pressure only from the provable signals in the POINTS_SITUATION section (kill-steal timeline, capture-point area presence, push windows) and the final settlement / end condition.
+               a. The absolute score at any moment before the end is undecoded (live score, capture progress, and passive accumulation have no evidence); never invent any mid-match score, an exact lead margin, or claims like "currently behind by X points". The kill-steal timeline expresses only the cumulative net delta of the "kill-steal component" — a partial provable signal, not the overall score: never present a net kill-steal deficit/lead as an overall points disadvantage/advantage; a final points loss describes only the final result — never retro-infer the overall points state at any earlier moment. Judge points pressure only from the provable signals in the POINTS_SITUATION section (kill-steal timeline, capture-point area presence, control-region entry windows) and the final settlement / end condition.
                b. Conditional analysis is allowed but must state its premise: if neither team accumulated more points through captures (capture accumulation is not observable), the team with a net kill-steal deficit faces greater attack pressure — it needs to attack and capture; the team with a net kill-steal lead can more comfortably defend with crossfire. Always state first that this is an inference based on the kill-steal component and capture-presence signals — never present it as an overall score lead/deficit.
                c. Attacking pushes usually cost HP: judge an attacker's HP loss together with the points-pressure context — HP paid for a capture/push is not necessarily a mistake; pointless HP loss under no pressure, or one-sided loss without any trade, is the problem.
-               d. Toll: inside the opposing team's push window (PUSH_WINDOWS), the damage the defenders deal to the pushing team is the toll; when the pushing team completed the push or established capture-point presence almost unharmed (the toll is clearly insufficient), you must call out the defensive mistake; when damage numbers are unavailable (OBSERVED_DAMAGE_IS_PARTIAL), describe qualitatively only and never report numbers.
+               d. The control-region entry window (CONTROL_REGION_ENTRY_WINDOWS) only expresses the structural fact that vehicles moved from outside a control-point area into it — it does not by itself prove attack, capture, defense, rotation, or tactical rightness/wrongness. The damage the defenders deal to the entering vehicles is only an observable HP-exchange fact; whether it means "the toll was insufficient / a defensive mistake" must be your supported tactical inference from the kill-steal signal, control-region presence, local numbers, battle time, damage, deaths and subsequent movement — never map "entry window + low damage" to a mandatory "defensive mistake" verdict. When damage numbers are unavailable (OBSERVED_DAMAGE_IS_PARTIAL), describe qualitatively only and never report numbers.
                e. When signals are insufficient or contradictory, never force a "behind/ahead" conclusion — keep that judgment internal UNKNOWN and explain naturally only when the global selective-UNKNOWN condition applies.""";
 
     static final String CAPTURE_RULE_RU = """
@@ -655,10 +655,10 @@ final class TeamPromptLocalizer {
             6. Области точек захвата (CONTAINS_CONTROL_POINT) описывают только направление; если они не предоставлены, не утверждайте, кто захватывает.
             7. Очки за фраги (бизнес-правило, подтверждённое владельцем проекта): в Supremacy каждый уничтоженный вражеский танк отнимает у вражеской команды 40 очков и добавляет их команде убийцы, а команда, потерявшая машину, теряет 40 очков; это правило — только ориентир для описания («уничтожение машин обычно меняет очки обеих команд»): включена ли эта поправка в поля расчёта, не доказано, поэтому запрещено самому вычислять «очки захвата + 40×фраги − 40×потери» и выдавать результат за факт; только при авторитетном победителе и доказуемом по правилам досрочном завершении итоговый счёт победителя = 1000 (предел 1000 очков, деловое соглашение), все остальные итоговые счета неизвестны; запрещено объяснять победу счётом без очков за фраги и выдумывать точный счёт проигравшей команды.
             8. Ситуация по очкам и стойка атаки/обороны (только доказуемые сигналы):
-               a. Абсолютный счёт в любой момент до конца боя не декодирован (живой счёт, прогресс захвата и пассивное накопление не имеют доказательств); запрещено выдумывать любой промежуточный счёт, точный отрыв или утверждения вида «сейчас позади на X очков». Таймлайн очков за фраги выражает только накопленную чистую разницу «компоненты очков за фраги» — частичный доказуемый сигнал, а не общий счёт: запрещено выдавать чистый минус/плюс по очкам за фраги за общее отставание/преимущество по очкам; поражение по очкам описывает только итоговый результат — запрещено обратно выводить общее состояние по очкам на любой ранний момент. Оценивайте давление по очкам только по доказуемым сигналам секции POINTS_SITUATION (таймлайн очков за фраги, присутствие в зонах точек захвата, окна продвижения) и итогу расчёта / условию завершения.
-               b. Условный анализ разрешён, но обязан указывать предпосылку: если ни одна команда не накопила больше очков захватом (накопление за захват ненаблюдаемо), команда с чистым минусом по очкам за фраги испытывает большее атакующее давление — ей нужно атаковать и захватывать точки; команда с чистым плюсом по очкам за фраги может спокойнее обороняться с перекрёстным огнём. Сначала обязательно укажите, что это вывод на основе компоненты очков за фраги и сигналов присутствия на точках, — не выдавайте его за общий счёт впереди/позади.
+               a. Абсолютный счёт в любой момент до конца боя не декодирован (живой счёт, прогресс захвата и пассивное накопление не имеют доказательств); запрещено выдумывать любой промежуточный счёт, точный отрыв или утверждения вида «сейчас позади на X очков». Таймлайн очков за фраги выражает только накопленную чистую разницу «компоненты очков за фраги» — частичный доказуемый сигнал, а не общий счёт: запрещено выдавать чистый минус/плюс по очкам за фраги за общее отставание/преимущество по очкам; поражение по очкам описывает только итоговый результат — запрещено обратно выводить общее состояние по очкам на любой ранний момент. Оценивайте давление по очкам только по доказуемым сигналам секции POINTS_SITUATION (таймлайн очков за фраги, присутствие в зонах точек захвата, окна входа в зоны контроля) и итогу расчёта / условию завершения.
+               b. Условный анализ разрешён, но обязан указывать предпосылку: если ни одна команда не накопила больше очков захватом (накопление за захват ненаблюдаемо), команда с чистым минусом по очкам за фраги обычно испытывает большее давление по очкам, а команда с плюсом — меньшее; это лишь указывает направление давления — нужно ли атаковать и захватывать точки или обороняться с перекрёстным огнём, выводите сами из всей обстановки, не превращайте «минус ⇒ обязательно атаковать и захватывать» в фиксированное правило. Сначала обязательно укажите, что это вывод на основе компоненты очков за фраги и сигналов присутствия на точках, — не выдавайте его за общий счёт впереди/позади.
                c. Атакующее продвижение обычно стоит HP: оценивайте потерю HP атакующего вместе с давлением по очкам — HP, отданные за захват/атаку, не обязательно ошибка; бесполезная потеря HP без давления или односторонняя потеря без размена — проблема.
-               d. Плата за проезд: в окне продвижения противника (PUSH_WINDOWS) урон, который обороняющиеся наносят продвигающейся команде, и есть плата за проезд; когда продвигающаяся команда завершила продвижение или заняла точку почти без потерь (плата явно недостаточна), обязательно укажите ошибку обороны; когда цифры урона недоступны (OBSERVED_DAMAGE_IS_PARTIAL), описывайте только качественно и не называйте чисел.
+               d. Окно входа в зону контроля (CONTROL_REGION_ENTRY_WINDOWS) выражает лишь структурный факт — машины переместились извне зоны точки захвата внутрь неё; само по себе оно не доказывает атаку, захват, оборону, ротацию или тактическую правильность/ошибочность. Урон, который обороняющиеся наносят входящим машинам, — лишь наблюдаемый факт обмена HP; означает ли он «недостаточную плату за проезд / ошибку обороны» — ваше supported tactical inference из сигнала очков за фраги, присутствия в зонах контроля, локальных чисел, времени боя, урона, потерь и последующего движения — никогда не превращайте «окно входа + низкий урон» в обязательный вердикт «ошибка обороны». Когда цифры урона недоступны (OBSERVED_DAMAGE_IS_PARTIAL), описывайте только качественно и не называйте чисел.
                e. При недостаточных или противоречивых сигналах не навязывайте вывод «позади/впереди» — оставьте это суждение внутренним UNKNOWN и объясняйте естественно только при выполнении условия глобального селективного UNKNOWN.""";
 
     /**

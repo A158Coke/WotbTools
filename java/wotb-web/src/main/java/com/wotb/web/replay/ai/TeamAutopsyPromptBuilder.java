@@ -123,7 +123,7 @@ public final class TeamAutopsyPromptBuilder {
                         .append(PromptDataQuoter.quote(s.tankName(), "未知坦克"))
                         .append(s.deathSec() > 0 ? "" : "（时刻未知）")
                         .append('\n'));
-        // 身后输出/血量优势（吸血/避战候选·确定性）：战犯/MVP 判定须考虑吸血程度（见规则 3）
+        // 身后血量/位置优势测量（确定性）：供战犯/MVP 判定综合位置测量参考（见规则 1）
         if (recon != null) {
             final String behindLine = BehindLineHpEvidence.renderTeamSection(
                     battle, recon, perspectiveTeam, observedDamagePartial);

@@ -138,7 +138,7 @@ final class PlayerSummaryBuilder {
             final int maxOutputTokens,
             final int promptSafetyMarginTokens,
             final AllowedLanguage language) {
-        // 无重建路径：仅击杀夺分时间线（结算可证）；存在/推进窗口需重建，不输出
+        // 无重建路径：仅击杀夺分时间线（结算可证）；存在/进入控制点区域窗口需重建，不输出
         final Integer recorderTeam = ctx.battle() == null
                 ? null : PlayerSideResolver.resolveRecorderTeam(ctx.battle());
         final String pointsSection = recorderTeam == null ? ""
@@ -197,7 +197,7 @@ final class PlayerSummaryBuilder {
         PlayerEvidenceFormatter.appendRecorderDamageReceivedWindows(
                 summaryBuilder, ctx.battle(), recon, recorderAccountId, observedDamagePartial);
         PlayerEvidenceFormatter.appendEnemyLastKnownPositions(summaryBuilder, ctx.battle(), recon);
-        // 身后输出/血量优势（吸血/避战候选）：仅录像者自己，中性事实（个人路径不评价队友）
+        // 身后血量/位置优势测量：仅录像者自己，中性测量（个人路径不评价队友）
         final String behindLine = BehindLineHpEvidence.renderPlayerSection(
                 ctx.battle(), recon, recorderAccountId, observedDamagePartial);
         if (!behindLine.isEmpty()) {

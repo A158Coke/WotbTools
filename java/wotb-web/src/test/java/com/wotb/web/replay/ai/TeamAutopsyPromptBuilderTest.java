@@ -390,7 +390,9 @@ class TeamAutopsyPromptBuilderTest {
                 sevenStats(), null, List.of(),
                 win(Winner.ENEMY_WIN), "CHRD", battle, recon, 1, false);
         assertTrue(content.contains("BEHIND_LINE_HP_ADVANTAGE"), content);
-        assertTrue(content.contains("有输出（利用队友输出）"), content);
+        assertTrue(content.contains("observedAttackEvents=1"), content);
+        assertTrue(content.contains("coverage=COMPLETE"), content);
+        assertFalse(content.contains("利用队友输出"), "Autopsy 不得输出利用队友输出 verdict");
     }
 
 
@@ -444,7 +446,9 @@ class TeamAutopsyPromptBuilderTest {
                 sevenStats(), null, List.of(),
                 win(Winner.ENEMY_WIN), "CHRD", battle, recon, 1, true);
         assertTrue(content.contains("BEHIND_LINE_HP_ADVANTAGE"), content);
-        assertTrue(content.contains("outputStatus=UNKNOWN"), content);
+        assertTrue(content.contains("coverage=PARTIAL"), content);
+        assertTrue(content.contains("observedAttackEvents=0"), content);
         assertFalse(content.contains("无输出（避战）"), "partial 覆盖下 autopsy 不得出现避战负面分类");
+        assertFalse(content.contains("有输出（利用队友输出）"), "partial 覆盖下不得给出完整输出结论");
     }
 }

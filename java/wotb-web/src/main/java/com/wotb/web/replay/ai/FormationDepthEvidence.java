@@ -33,9 +33,10 @@ import java.util.Map;
  *       按深度三分位分 前排/中排/后排（仅双方均有可用位置时输出）；阵容结构按 TankTacticalProfile
  *       判定（isFrontlineCapable=HEAVY/高装甲、isBacklineCapable=TD/LIGHT、MEDIUM 中性）——
  *       无前线型车辆时不产出前排名单（noFrontlineVehicle + 几何参考）、无后排型车辆时不产出后排名单（noBacklineVehicle）；</li>
- *   <li><b>地图控制权（controlRegions）</b>：九宫格区域按双方距离加权火力覆盖分（F=Σ 火力权重/(1+d/100)）对比——
- *       (presence)=区域内有本方位置样本、
- *       (firepower)=无位置样本但火力覆盖占优。这只是火力覆盖+位置几何的确定性近似，不等于真实占领/点亮/视野。</li>
+ *   <li><b>区域覆盖测量（REGION_COVERAGE_MEASUREMENTS）</b>：九宫格每区输出双方位置存在数
+ *       （ownPositionPresence/enemyPositionPresence）与双方距离加权火力覆盖分
+ *       （F=Σ 火力权重/(1+d/100)，ownWeightedCoverageScore/enemyWeightedCoverageScore）及 ratio；
+ *       只给确定性测量，不输出 own/contested/enemy 权威控制权标签——哪方「实际控制/压制某区」由 LLM 判断。</li>
  * </ul>
  * <p>成员用 {@code account:<accountId>}（与 FORMATION_PHASES 簇成员一致）供 AI 交叉引用。</p>
  */
@@ -302,14 +303,14 @@ final class FormationDepthEvidence {
                     // 无前线型车辆：不产出 frontLine/midLine/backLine 名单，只给几何位置参考
                     sb.append("geometryFront=").append(geometryRef(depths, 0, 2)).append("\n");
                 }
-return sb.toString() + renderControl(ownRegionCount, enemyRegionCount,
-                ownCanonical, enemyCanonical, profiles, hasFront, mapCode,
+return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
+                ownCanonical, enemyCanonical, profiles, mapCode,
                 ownRefCount, enemyRefCount, ownAliveCount, enemyAliveCount);
             }
         }
         sb.append(header);
-return sb.toString() + renderControl(ownRegionCount, enemyRegionCount,
-                ownCanonical, enemyCanonical, profiles, hasFront, mapCode,
+return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
+                ownCanonical, enemyCanonical, profiles, mapCode,
                 ownRefCount, enemyRefCount, ownAliveCount, enemyAliveCount);
     }
 
@@ -388,17 +389,16 @@ return sb.toString() + renderControl(ownRegionCount, enemyRegionCount,
 
 
 
-    /** 区域控制权：九宫格双方距离加权火力覆盖分（F=Σ fireWeight/(1+d/100)），1.2 倍阈值判 own/contested/enemy。
-     * presence = 区域内有本方位置样本（位置存在，非视野/点亮）；无位置样本但火力覆盖占优 → 火力压制（firepower）。
-     * 确定性近似：火力覆盖（距离+profile 权重）与位置几何，不代表真实射界/地形 LOS，不等于真实占领/点亮，AI 不得断言「控制/占领」。
+    /** 区域覆盖测量：九宫格每区输出 own/enemy 位置存在数 + 双方距离加权火力覆盖分（F=Σ fireWeight/(1+d/100)）与 ratio。
+     * 只输出确定性测量（位置几何 + 火力权重近似），不输出 own/contested/enemy 权威控制权标签——
+     * 哪方「实际控制/压制/放弃某区」由 LLM 综合交火、点数压力等自行判断（Backend Evidence Boundary）。
      */
-    private static String renderControl(
+    private static String renderCoverage(
             final Map<Integer, Integer> own,
             final Map<Integer, Integer> enemy,
             final Map<Long, double[]> ownCanonical,
             final Map<Long, double[]> enemyCanonical,
             final Map<Long, TankTacticalProfile> profiles,
-            final boolean hasFront,
             final String mapCode,
             final int ownRefCount,
             final int enemyRefCount,
@@ -408,59 +408,53 @@ return sb.toString() + renderControl(ownRegionCount, enemyRegionCount,
         final boolean ownRefComplete = ownRefCount >= ownAliveCount;
         final boolean enemyRefComplete = enemyRefCount >= enemyAliveCount;
         if (!ownRefComplete || !enemyRefComplete) {
-            // 位置参考完整性门禁：任一方存活车辆缺少位置参考时，禁止输出 own/enemy/contested 强结论
-            // （缺失的敌方车辆 ≠ 不存在，也不得隐式当作 firepower=0）；只保留本方位置存在纯事实。
+            // 位置参考完整性门禁：任一方存活车辆缺少位置参考时，禁止输出分数对比（缺失的敌方车辆 ≠ 不存在）；
+            // 只输出双方位置存在纯事实 + coverage completeness。
             final StringBuilder fail = new StringBuilder();
             final List<String> presence = new ArrayList<>(own.keySet().stream()
                     .sorted().map(r -> "GRID_REGION_" + r).toList());
-            fail.append("controlRegions=UNKNOWN（POSITION_COVERAGE_INSUFFICIENT：")
+            fail.append("REGION_COVERAGE_MEASUREMENTS（POSITION_COVERAGE_INSUFFICIENT：")
                     .append("ownRef=").append(ownRefCount).append("/").append(ownAliveCount)
                     .append(" enemyRef=").append(enemyRefCount).append("/").append(enemyAliveCount).append("）\n");
             if (!presence.isEmpty()) {
-                fail.append("positionalPresence own=").append(String.join(",", presence)).append("\n");
+                fail.append("ownPositionPresence=").append(String.join(",", presence)).append("\n");
             }
             return fail.toString();
         }
         final java.util.Set<Integer> regions = new java.util.LinkedHashSet<>();
         regions.addAll(own.keySet());
         regions.addAll(enemy.keySet());
-        final List<String> ownList = new ArrayList<>();
-        final List<String> contested = new ArrayList<>();
-        final List<String> enemyList = new ArrayList<>();
+        final StringBuilder sb = new StringBuilder();
+        sb.append("REGION_COVERAGE_MEASUREMENTS（区域覆盖测量·确定性；LLM 自行判断含义）:\n");
         for (final int region : regions) {
             final double fOwn = fireCoverage(region, ownCanonical, profiles);
             final double fEnemy = fireCoverage(region, enemyCanonical, profiles);
-            final boolean presence = own.getOrDefault(region, 0) > 0;
-            final String tag = presence ? "(presence)" : "(firepower)";
-            if (fOwn >= fEnemy * CONTROL_RATIO && fOwn > 0) {
-                ownList.add("GRID_REGION_" + region + tag);
-            } else if (fEnemy >= fOwn * CONTROL_RATIO && fEnemy > 0) {
-                enemyList.add("GRID_REGION_" + region + tag);
-            } else if (fOwn > 0 || fEnemy > 0) {
-                contested.add("GRID_REGION_" + region + tag);
-            }
-        }
-        if (ownList.isEmpty() && contested.isEmpty() && enemyList.isEmpty()) {
-            return "";
-        }
-        final StringBuilder sb = new StringBuilder();
-        if (!ownList.isEmpty()) {
-            sb.append("controlRegions own=").append(String.join(",", ownList)).append("\n");
-        }
-        if (!contested.isEmpty()) {
-            sb.append("controlRegions contested=").append(String.join(",", contested)).append("\n");
-        }
-        if (!enemyList.isEmpty()) {
-            sb.append("controlRegions enemy=").append(String.join(",", enemyList)).append("\n");
-        }
-        if (!hasFront) {
-            sb.append("noArmorNote=本队无重甲车辆，控制权依赖火力投射\n");
+            final int ownPresence = own.getOrDefault(region, 0);
+            final int enemyPresence = enemy.getOrDefault(region, 0);
+            sb.append("  GRID_REGION_").append(region)
+                    .append(" ownPositionPresence=").append(ownPresence)
+                    .append(" enemyPositionPresence=").append(enemyPresence)
+                    .append(" ownWeightedCoverageScore=").append(fmt(fOwn))
+                    .append(" enemyWeightedCoverageScore=").append(fmt(fEnemy))
+                    .append(" ratio=").append(fmt(ratioOf(fOwn, fEnemy)))
+                    .append(" coverageCompleteness=ownRef=").append(ownRefCount).append("/").append(ownAliveCount)
+                    .append(" enemyRef=").append(enemyRefCount).append("/").append(enemyAliveCount)
+                    .append("\n");
         }
         return sb.toString();
     }
 
-    /** 控制权阈值（初值，探针标定后调）。 */
-    static final double CONTROL_RATIO = 1.2;
+    /** 双方分数比：一方为 0 时给 0（无对比意义）；两者皆 0 给 1（无信号）。 */
+    private static double ratioOf(final double own, final double enemy) {
+        if (own <= 0 && enemy <= 0) {
+            return 1.0;
+        }
+        if (own <= 0 || enemy <= 0) {
+            return 0.0;
+        }
+        return own / enemy;
+    }
+
     /** 火力覆盖距离归一化（米，初值可标定）。 */
     static final double FIRE_DISTANCE_NORM_M = 100.0;
 

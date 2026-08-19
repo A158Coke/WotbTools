@@ -19,7 +19,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** BehindLineHpEvidence：身后输出/血量优势（吸血/避战候选）判据与分级。 */
+/** BehindLineHpEvidence：身后血量/位置优势确定性测量（中性，不输出吸血/避战/利用队友/degree）。 */
 class BehindLineHpEvidenceTest {
 
     private static final String MAP = "holland";
@@ -104,25 +104,35 @@ class BehindLineHpEvidenceTest {
     }
 
     @Test
-    void teamSectionFlagsVampireCandidateWithOutput() {
-        // 1001(HEAVY) 血量 90% vs 扛线队友 1002 50%（1.8×）且距敌更远，有输出 → 有输出（利用队友输出）
+    void teamSectionEmitsMeasurementsNotVerdicts() {
+        // 1001(HEAVY) 血量 90% vs 扛线队友 1002 50%（1.8×）且距敌更远，有输出 → 只输出测量
         final String section = BehindLineHpEvidence.renderTeamSection(
                 battle(E100, E100), recon(true, true), 1, false);
         assertTrue(section.contains("=== BEHIND_LINE_HP_ADVANTAGE"), section);
         assertTrue(section.contains("account:1001"), section);
         assertTrue(section.contains("hp=90%"), section);
         assertTrue(section.contains("hp=50%"), section);
-        assertTrue(section.contains("有输出（利用队友输出）"), section);
+        assertTrue(section.contains("observedAttackEvents=2"), section);
+        assertTrue(section.contains("coverage=COMPLETE"), section);
+        // 战术 verdict 词汇必须消失
+        assertFalse(section.contains("有输出（利用队友输出）"), section);
+        assertFalse(section.contains("无输出（避战）"), section);
+        assertFalse(section.contains("吸血"), section);
+        assertFalse(section.contains("避战"), section);
+        assertFalse(section.contains("degree="), "不得输出 tactical degree");
         // 1002 是扛线队友（距敌最近），自身不满足「距敌更远」→ 不标
         assertFalse(section.contains("- account:1002 hp="), "扛线队友自身不得被标");
     }
 
     @Test
-    void teamSectionFlagsAvoidanceWithoutOutput() {
-        // 无输出 → 无输出（避战）
+    void teamSectionZeroObservedWithFullCoverageIsNeutralFact() {
+        // 无输出（完整覆盖）→ 只报 observedAttackEvents=0 coverage=COMPLETE，不判「避战」
         final String section = BehindLineHpEvidence.renderTeamSection(
                 battle(E100, E100), recon(true, false), 1, false);
-        assertTrue(section.contains("无输出（避战）"), section);
+        assertTrue(section.contains("observedAttackEvents=0"), section);
+        assertTrue(section.contains("coverage=COMPLETE"), section);
+        assertFalse(section.contains("避战"), "不得输出避战");
+        assertFalse(section.contains("无输出"), "不得输出无输出结论");
     }
 
     @Test
@@ -147,14 +157,12 @@ class BehindLineHpEvidenceTest {
                 events, List.of(), null, null, null);
         final String section = BehindLineHpEvidence.renderTeamSection(
                 battle(E100, E100), recon, 1, false);
-        assertFalse(section.contains("vs 扛线队友"), "血量优势不足 1.2× 不得输出完整判据行, got: " + section);
-        assertFalse(section.contains("仅位置+输出事实"), "血量数据足但优势不足不得降级输出");
+        assertFalse(section.contains("vs 扛线队友"), "血量优势不足 1.2× 不得输出测量行, got: " + section);
     }
 
     @Test
     void baseFallbackYieldsHpAdvantageUnknown() {
-        // BASE_FALLBACK（进场满血未证明）：hp ratio 不可用 → 中性 HP_ADVANTAGE_UNKNOWN，
-        // 不产生利用队友输出/避战的负面 HP 判定，不进 degree 聚合
+        // BASE_FALLBACK（进场满血未证明）：hp ratio 不可用 → 中性 HP_ADVANTAGE_UNKNOWN
         final Battle b = battle(E100, E100);
         for (final PlayerResult p : b.players) {
             p.entryHpSource = EntryHpSource.BASE_FALLBACK;
@@ -162,7 +170,6 @@ class BehindLineHpEvidenceTest {
         }
         final String section = BehindLineHpEvidence.renderTeamSection(b, recon(true, true), 1, false);
         assertTrue(section.contains("HP_ADVANTAGE_UNKNOWN"), section);
-        assertFalse(section.contains("有输出（利用队友输出）"), section);
         assertFalse(section.contains("避战"), section);
         assertFalse(section.contains("degree"), "血量不可用不得出分级: " + section);
     }
@@ -177,7 +184,6 @@ class BehindLineHpEvidenceTest {
         final String section = BehindLineHpEvidence.renderTeamSection(b, recon(true, true), 1, false);
         assertTrue(section.contains("HP_ADVANTAGE_UNKNOWN"), section);
         assertFalse(section.contains("避战"), section);
-        assertFalse(section.contains("有输出（利用队友输出）"), section);
     }
 
     @Test
@@ -191,8 +197,6 @@ class BehindLineHpEvidenceTest {
         }
         final String section = BehindLineHpEvidence.renderTeamSection(b, recon(true, true), 1, false);
         assertFalse(section.contains("hp=90%"), "不得用 observedMaxHp 作 ratio 分母: " + section);
-        assertFalse(section.contains("有输出（利用队友输出）"), section);
-        assertFalse(section.contains("避战"), section);
         assertTrue(section.contains("HP_ADVANTAGE_UNKNOWN"), section);
     }
 
@@ -201,7 +205,7 @@ class BehindLineHpEvidenceTest {
         // 1001 换成 TD：不可扛线 → 即使靠后高血也不标（TD 后排是正常分工）
         final String section = BehindLineHpEvidence.renderTeamSection(
                 battle(FV215B183, E100), recon(true, true), 1, false);
-        assertTrue(section.isEmpty(), "TD 不可扛线，不得纳入吸血/避战判据");
+        assertTrue(section.isEmpty(), "TD 不可扛线，不得纳入测量");
     }
 
     @Test
@@ -211,8 +215,6 @@ class BehindLineHpEvidenceTest {
                 battle(E100, E100), recon(false, true), 1, false);
         assertTrue(section.contains("hp=未知"), section);
         assertTrue(section.contains("HP_ADVANTAGE_UNKNOWN"), section);
-        assertFalse(section.contains("避战"), "HP 未知不得产生吸血/避战分类");
-        assertFalse(section.contains("有输出（利用队友输出）"), "HP 未知不得产生吸血分类");
         assertFalse(section.contains("degree"), "血量不足不得出分级");
     }
 
@@ -230,8 +232,8 @@ class BehindLineHpEvidenceTest {
     }
 
     @Test
-    void degreeAggregatesAcrossPhases() {
-        // 多阶段命中（opening+mid+late 各一次同判据）→ 跨阶段聚合 degree 出现
+    void crossPhaseAppearanceIsSalienceNotGrade() {
+        // 多阶段命中（opening+mid+late 各一次同判据）→ 跨阶段出现次数（中性 salience）
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,
                 DecodeConfidence.EXACT, 10, 1001L));
@@ -261,18 +263,23 @@ class BehindLineHpEvidenceTest {
                 events, List.of(), null, null, null);
         final String section = BehindLineHpEvidence.renderTeamSection(
                 battle(E100, E100), recon, 1, false);
-        assertTrue(section.contains("degree（跨阶段聚合·三因子）"), section);
-        assertTrue(section.contains("account:1001 → "), section);
+        assertTrue(section.contains("跨阶段出现"), section);
+        assertTrue(section.contains("account:1001 在 "), section);
+        assertFalse(section.contains("degree（跨阶段聚合"), "不得输出 degree 聚合");
+        assertFalse(section.contains("轻度"), "不得输出战术分级");
     }
 
     @Test
     void partialDamageCoverageWithZeroObservedNeverSaysAvoidance() {
-        // OBSERVED_DAMAGE_IS_PARTIAL + 0 observed DamageEvent → 不得出现「避战」，只写 observedAttackEvents + outputStatus=UNKNOWN
+        // OBSERVED_DAMAGE_IS_PARTIAL + 0 observed DamageEvent → 不得出现「避战」，只写 observedAttackEvents + coverage=PARTIAL
         final String section = BehindLineHpEvidence.renderTeamSection(
                 battle(E100, E100), recon(true, false), 1, true);
-        assertTrue(section.contains("observedAttackEvents=0 outputStatus=UNKNOWN"), section);
+        assertTrue(section.contains("observedAttackEvents=0"), section);
+        assertTrue(section.contains("coverage=PARTIAL"), section);
+        // 否定文案含「不得推断避战」字样，精确检查旧固定句式
         assertFalse(section.contains("无输出（避战）"), "partial 覆盖下 0 个已观测事件不得推断无输出/避战");
-        assertFalse(section.contains("有输出（利用队友输出）"), "partial 覆盖下不得声称输出覆盖完整");
+        assertFalse(section.contains("有输出（利用队友输出）"), "partial 覆盖下不得给出完整输出结论");
+        assertFalse(section.contains("degree"), "partial + 0 observed 不得生成 degree");
     }
 
     @Test
@@ -281,7 +288,7 @@ class BehindLineHpEvidenceTest {
         final String section = BehindLineHpEvidence.renderTeamSection(
                 battle(E100, E100), recon(true, true), 1, true);
         assertTrue(section.contains("observedAttackEvents=2"), section);
-        assertTrue(section.contains("事件流观测不全"), section);
+        assertTrue(section.contains("coverage=PARTIAL"), section);
         assertFalse(section.contains("有输出（利用队友输出）"), "partial 下不得给出完整输出结论");
     }
 
@@ -353,16 +360,17 @@ class BehindLineHpEvidenceTest {
 
     @Test
     void qualifiedFrontlineTeammateSelected() {
-        // HEAVY 在前、HEAVY 在后 → 正常选择 HEAVY 为扛线队友并判定
+        // HEAVY 在前、HEAVY 在后 → 正常选择 HEAVY 为扛线队友并输出测量
         final String section = BehindLineHpEvidence.renderTeamSection(
                 battle(E100, E100), recon(true, true), 1, false);
         assertTrue(section.contains("vs 扛线队友 account:1002"), "合格 HEAVY 应被选为扛线队友, got: " + section);
-        assertTrue(section.contains("有输出（利用队友输出）"), section);
+        assertTrue(section.contains("observedAttackEvents=2"), section);
+        assertFalse(section.contains("利用队友输出"), section);
     }
 
     @Test
     void noCarrierTeammateYieldsNoBehindLineVerdict() {
-        // 本队只有 X 一辆可扛线车，其余为 LT/纸 TD → 无合格 carrier → 无 BehindLine HP advantage 判定
+        // 本队只有 X 一辆可扛线车，其余为 LT/纸 TD → 无合格 carrier → 无 BehindLine 判定
         final Battle battle = new Battle();
         battle.mapName = MAP;
         battle.durationS = 100d;
@@ -399,18 +407,8 @@ class BehindLineHpEvidenceTest {
     }
 
     @Test
-    void partialWithZeroObservedProducesNoDegree() {
-        // partial + 0 observed attack → outputStatus=UNKNOWN，禁止进入 degree 聚合（不得因 UNKNOWN 增加负面程度）
-        final String section = BehindLineHpEvidence.renderTeamSection(
-                battle(E100, E100), recon(true, false), 1, true);
-        assertTrue(section.contains("outputStatus=UNKNOWN"), section);
-        assertFalse(section.contains("degree"), "partial + 0 observed 不得生成 degree, got: " + section);
-    }
-
-    @Test
     void deadFrontlineCannotBeCarrier() {
         // 1002(HEAVY) 距敌最近但已阵亡（deathSec=10，phase.end 后）→ 不得成为扛线队友
-        // 本队仅剩 1001 一个存活可扛线车且无其它 carrier 候选 → 无 BehindLine 判定
         final Battle battle = battle(E100, E100);
         for (final PlayerResult pl : battle.players) {
             if (pl.accountId == 1002L) {
@@ -424,8 +422,8 @@ class BehindLineHpEvidenceTest {
     }
 
     @Test
-    void enemyPositionReferenceIncompleteYieldsNoNegativeVerdict() {
-        // 敌方 2 车中 2002 无位置参考 → 最近观测敌方 ≠ 真实最近敌方 → 本阶段禁止负面 BehindLine 判定
+    void enemyPositionReferenceIncompleteYieldsNoMeasurements() {
+        // 敌方 2 车中 2002 无位置参考 → 最近观测敌方 ≠ 真实最近敌方 → 本阶段禁止输出 BehindLine 测量
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,
                 DecodeConfidence.EXACT, 10, 1001L));
@@ -447,7 +445,6 @@ class BehindLineHpEvidenceTest {
         final String section = BehindLineHpEvidence.renderTeamSection(
                 battle(E100, E100), recon, 1, false);
         assertFalse(section.contains("vs 扛线队友"), "敌方位置参考不完整时不得产生 BehindLine 判定, got: " + section);
-        assertFalse(section.contains("避战"), "敌方参考不完整时不得产生负面 verdict");
     }
 
     @Test
@@ -477,8 +474,7 @@ class BehindLineHpEvidenceTest {
 
     @Test
     void nullAndSentinelHpEventsAreSkippedWithoutException() {
-        // currentHealth=null（自动拆箱 NPE 回归）与 sentinel（65533=0xFFFD、65535=0xFFFF）事件必须被跳过：
-        // 不得抛异常、不得进入 hpSamples 污染血量；正常正 HP 判定保持不变
+        // currentHealth=null（自动拆箱 NPE 回归）与 sentinel（65533=0xFFFD、65535=0xFFFF）事件必须被跳过
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,
                 DecodeConfidence.EXACT, 10, 1001L));
@@ -492,13 +488,10 @@ class BehindLineHpEvidenceTest {
         events.add(pos(12, 40f, 11, -90f, 0f));
         events.add(pos(20, 40f, 20, 200f, 0f));
         events.add(pos(21, 40f, 21, 230f, 50f));
-        // 正常正 HP（1001=1800、1002=1000）→ 判定可正常成立
         events.add(hp(30, 30f, 10, 1800));
         events.add(hp(31, 30f, 11, 1000));
-        // currentHealth=null → 不得抛 NPE（自动拆箱回归）
         events.add(new HealthChangedEvent(32, new ReplayTimestamp(35f, null), 7,
                 DecodeConfidence.EXACT, 10, null, null, null));
-        // sentinel 高位（65533 / 65535）→ 忽略
         events.add(new HealthChangedEvent(33, new ReplayTimestamp(36f, null), 7,
                 DecodeConfidence.EXACT, 10, 65533, null, true));
         events.add(new HealthChangedEvent(34, new ReplayTimestamp(37f, null), 7,
@@ -513,8 +506,7 @@ class BehindLineHpEvidenceTest {
 
     @Test
     void zeroHpAllowedAsDeathTerminalWithoutException() {
-        // currentHealth=0（死亡终态）必须被允许进入 hpSamples（本次修复不得误过滤）：
-        // 作为最后采样时 hpRatio=0 → 血量优势不可判 → 中性输出，不抛异常、不产生吸血/避战结论
+        // currentHealth=0（死亡终态）必须被允许进入 hpSamples：作为最后采样时 hpRatio=0 → 中性输出
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,
                 DecodeConfidence.EXACT, 10, 1001L));
@@ -528,13 +520,13 @@ class BehindLineHpEvidenceTest {
         events.add(pos(12, 40f, 11, -90f, 0f));
         events.add(pos(20, 40f, 20, 200f, 0f));
         events.add(pos(21, 40f, 21, 230f, 50f));
-        events.add(hp(30, 30f, 10, 1800));   // 1001 正 HP
-        events.add(hp(31, 30f, 11, 1000));   // 1002 正 HP
-        events.add(hp(32, 50f, 10, 0));      // 1001 死亡终态 0
+        events.add(hp(30, 30f, 10, 1800));
+        events.add(hp(31, 30f, 11, 1000));
+        events.add(hp(32, 50f, 10, 0));
         final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
                 events, List.of(), null, null, null);
         final String section = BehindLineHpEvidence.renderTeamSection(
                 battle(E100, E100), recon, 1, false);
-        assertFalse(section.contains("有输出（利用队友输出）"), "0 死亡终态后不得再判吸血/避战");
+        assertFalse(section.contains("利用队友输出"), "0 死亡终态后不得再判吸血/避战");
     }
 }
