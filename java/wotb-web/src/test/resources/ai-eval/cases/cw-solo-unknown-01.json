@@ -6,7 +6,7 @@
   "lessonRef": "docs/ai-lessons/cw-solo-unknown-01.md",
   "expectedJudgment": "无法确定（观测不足，禁止臆断意图）",
   "checks": [
-    { "kind": "prompt_contains", "text": "TEAM_MEMBER_MOVEMENT_UNAVAILABLE" },
+    { "kind": "prompt_contains", "text": "TEAM_MEMBER_POSITION_UNAVAILABLE" },
     { "kind": "prompt_omits", "text": "=== MEMBER_MOVEMENTS ===" },
     { "kind": "prompt_omits", "text": "cluster[" },
     { "kind": "prompt_omits", "text": "SOLO_DELAY" },

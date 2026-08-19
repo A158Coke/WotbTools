@@ -106,6 +106,47 @@ class FormationDepthEvidenceTest {
     }
 
     @Test
+    void friendlyStationaryCarriedForwardPositionCountsAsReference() {
+        // R2：己方 actual combatant 在 phase 前有最后位置、phase 内无新 PositionChanged、无 EntityLeave、未阵亡
+        // → phase 内必须 carry-forward 位置 state（不得 POSITION_COVERAGE_INSUFFICIENT / 成员缺失）。
+        // 2026-08-19 真实样本（Maus holland）：存活己方开局静止 10.8s 同坐标无新位置。
+        final Battle battle = battle();
+        battle.durationS = 40d;
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 10, 1001L));
+        events.add(new ParticipantMappingEvent(2, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 11, 1002L));
+        events.add(new ParticipantMappingEvent(3, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 20, 2001L));
+        events.add(new ParticipantMappingEvent(4, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 21, 2002L));
+        // 双方所有位置都只在 opening（t<15.5）：mid [15.5,25] 内无任何新样本 → 全部 carry-forward
+        events.add(pos(10, 30f, 10, -100f, 0f));
+  // 1001 t=10
+        events.add(pos(11, 30f, 11, -200f, 0f));
+  // 1002 t=10
+        events.add(pos(12, 28f, 20, 200f, 0f));
+   // 2001 t=8
+        events.add(pos(13, 28f, 21, 230f, 50f));
+  // 2002 t=8
+        // 交火 t=0.5 → opening [0,15.5] / mid [15.5,25] / late [25,40]
+        events.add(new com.wotb.core.replay.event.DamageEvent(30, new ReplayTimestamp(20.5f, null), 8,
+                DecodeConfidence.EXACT, 11, 20, null, null, 200, false));
+        final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
+                events, List.of(), null, null, null);
+        final String section = FormationDepthEvidence.renderSection(battle, recon, 1, MAP);
+
+        assertTrue(section.contains("phase=mid"), section);
+        assertFalse(section.contains("POSITION_COVERAGE_INSUFFICIENT"),
+                "静止车辆 carry-forward 后不得判位置覆盖不足: " + section);
+        assertTrue(section.contains("REGION_COVERAGE_MEASUREMENTS"), section);
+        // 己方 1001（靠敌）仍出现在 mid 的几何纵深（carry-forward 位置参与阵型）
+        assertTrue(section.contains("GEOMETRIC_FORWARD=account:1001"), section);
+        assertTrue(section.contains("GEOMETRIC_REAR=account:1002"), section);
+    }
+
+    @Test
     void emptyWithoutReconOrMapping() {
         assertTrue(FormationDepthEvidence.renderSection(battle(), null, 1, MAP).isEmpty());
         final Battle empty = battle();

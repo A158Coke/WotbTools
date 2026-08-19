@@ -1,7 +1,7 @@
 # AI Lesson：cw-solo-unknown-01 — 观测不足必须写无法确定
 
 - **案例 id**：`cw-solo-unknown-01`
-- **场景**：回放事件流缺观测（无 OBSERVED 位置/移动段/簇证据），`TEAM_MEMBER_MOVEMENT_UNAVAILABLE`。
+- **场景**：回放事件流缺观测（无 OBSERVED 位置/移动段/簇证据），`TEAM_MEMBER_POSITION_UNAVAILABLE`。
 - **AI 常见误判**：证据不足时仍硬判脱节/拖延。
 - **正确判定**：**无法确定**（禁止臆断意图与行为标签）。
 - **判定依据**：

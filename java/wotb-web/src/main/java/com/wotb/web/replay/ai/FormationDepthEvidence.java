@@ -7,6 +7,7 @@ import com.wotb.core.processing.TeamEntityMapper;
 import com.wotb.core.processing.TeamEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.evidence.TankTacticalProfile;
@@ -19,6 +20,7 @@ import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -123,9 +125,18 @@ final class FormationDepthEvidence {
 
         final List<PhaseRange> phases = buildPhases(firstDamageTime(recon.events(), battleStart), battleEnd);
 
+        // entity -> 最后一次 EntityLeave（battle-relative）；carry-forward 位置 state 的终止边界
+        final Map<Integer, Double> lastLeaveByEntity = new HashMap<>();
+        for (final ReplayEvent event : recon.events()) {
+            if (event instanceof EntityRemovedEvent removed) {
+                final double t = relativeSec(removed, battleStart);
+                lastLeaveByEntity.merge(removed.entityId(), t, Math::max);
+            }
+        }
+
         final StringBuilder sb = new StringBuilder();
         for (final PhaseRange phase : phases) {
-            sb.append(renderPhase(phase, tracks, teamByAccount, perspectiveTeam, mapCode, playersByAccount, accountProfiles));
+            sb.append(renderPhase(phase, tracks, teamByAccount, perspectiveTeam, mapCode, playersByAccount, accountProfiles, mapping, lastLeaveByEntity));
         }
         return sb.isEmpty() ? "" : "\n=== FORMATION_DEPTH（阵型深度·确定性） ===\n" + sb;
     }
@@ -138,7 +149,9 @@ final class FormationDepthEvidence {
             final int perspectiveTeam,
             final String mapCode,
             final Map<Long, PlayerResult> playersByAccount,
-            final Map<Long, TankTacticalProfile> profiles
+            final Map<Long, TankTacticalProfile> profiles,
+            final TeamEntityMapping mapping,
+            final Map<Integer, Double> lastLeaveByEntity
     ) {
         // 阶段内每账号平均位置 + 九宫格样本计数
         final Map<Long, double[]> meanByAccount = new LinkedHashMap<>();
@@ -165,6 +178,22 @@ final class FormationDepthEvidence {
             }
             if (n > 0) {
                 meanByAccount.put(entry.getKey(), new double[]{sx / n, sz / n});
+            }
+        }
+        // carry-forward 位置 state：phase 内无新 PositionChanged 但 phase 前有最后位置（无 EntityLeave/未阵亡）的车辆
+        // 其位置沿用（friendly=authoritative carry-forward；enemy=LAST_KNOWN 参考，均不 future-leak）。
+        // 不再把「phase 内无事件」当作「位置缺失」（2026-08-19 真实样本：存活己方静止 10.8s 无新位置）。
+        for (final Map.Entry<Long, List<double[]>> entry : tracks.entrySet()) {
+            if (meanByAccount.containsKey(entry.getKey())) {
+                continue;
+            }
+            if (!isAliveAt(playersByAccount, entry.getKey(), phase.end())) {
+                continue; // 阵亡车辆不 carry-forward（位置 state 已终止）
+            }
+            final double[] carry = carriedForwardReference(
+                    entry.getValue(), phase.end(), mapping, lastLeaveByEntity, entry.getKey());
+            if (carry != null) {
+                meanByAccount.put(entry.getKey(), new double[]{carry[1], carry[2]});
             }
         }
         // 位置参考完整性（fail-closed 门禁）：本阶段存活的双方成员中拥有位置参考（meanByAccount）的计数
@@ -273,6 +302,37 @@ return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
 return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
                 ownCanonical, enemyCanonical, profiles, mapCode,
                 ownRefCount, enemyRefCount, ownAliveCount, enemyAliveCount);
+    }
+
+    /**
+     * 该账号在 phaseEnd 时刻的 carry-forward 位置参考：取 ≤ phaseEnd 的最后位置样本；
+     * 若该样本之后有 EntityLeave 且 leave ≤ phaseEnd（位置 state 已终止）或从未有样本 → null。
+     */
+    static double[] carriedForwardReference(
+            final List<double[]> track,
+            final double phaseEnd,
+            final TeamEntityMapping mapping,
+            final Map<Integer, Double> lastLeaveByEntity,
+            final long accountId) {
+        double[] carry = null;
+        for (final double[] s : track) {
+            if (s[0] <= phaseEnd + 1e-6) {
+                carry = s;
+            } else {
+                break;
+            }
+        }
+        if (carry == null) {
+            return null;
+        }
+        final List<Integer> eids = mapping.entityIds(accountId);
+        for (final int eid : eids) {
+            final Double leave = lastLeaveByEntity.get(eid);
+            if (leave != null && leave >= carry[0] - 1e-6 && leave <= phaseEnd + 1e-6) {
+                return null;
+            }
+        }
+        return carry;
     }
 
     /** 账号展示 key：附 tank profile 标注（如 account:1234(HEAVY,armor=HIGH)）；UNKNOWN 只标未知。 */

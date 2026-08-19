@@ -7,6 +7,7 @@ import com.wotb.core.processing.TeamEntityMapper;
 import com.wotb.core.processing.TeamEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
@@ -17,6 +18,7 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -219,11 +221,20 @@ final class RelativeDepthHpEvidence {
         if (targets.isEmpty()) {
             return "";
         }
+        // entity -> 最后一次 EntityLeave（battle-relative）；carry-forward 位置 state 的终止边界
+        final Map<Integer, Double> lastLeaveByEntity = new HashMap<>();
+        for (final ReplayEvent event : recon.events()) {
+            if (event instanceof EntityRemovedEvent removed) {
+                final double t = FormationDepthEvidence.relativeSec(removed, battleStart);
+                lastLeaveByEntity.merge(removed.entityId(), t, Math::max);
+            }
+        }
         final List<PhaseHit> hits = new ArrayList<>();
         final StringBuilder sb = new StringBuilder();
         for (final FormationDepthEvidence.PhaseRange phase : phases) {
             final PhaseResult result = renderPhase(phase, tracks, hpSamples, attacks, teamByAccount,
-                    playersByAccount, profiles, targets, selfAccountId != null, observedDamagePartial);
+                    playersByAccount, profiles, targets, selfAccountId != null, observedDamagePartial,
+                    mapping, lastLeaveByEntity);
             if (result.text() != null) {
                 sb.append(result.text());
             }
@@ -260,7 +271,9 @@ final class RelativeDepthHpEvidence {
             final Map<Long, TankTacticalProfile> profiles,
             final List<Long> targets,
             final boolean playerPath,
-            final boolean observedDamagePartial
+            final boolean observedDamagePartial,
+            final TeamEntityMapping mapping,
+            final Map<Integer, Double> lastLeaveByEntity
     ) {
         final List<PhaseHit> hits = new ArrayList<>();
         final Map<Long, double[]> meanByAccount = new LinkedHashMap<>();
@@ -277,6 +290,21 @@ final class RelativeDepthHpEvidence {
             }
             if (n > 0) {
                 meanByAccount.put(entry.getKey(), new double[]{sx / n, sz / n});
+            }
+        }
+        // carry-forward 位置 state：phase 内无新 PositionChanged 但 phase 前有最后位置（无 EntityLeave/未阵亡）的车辆
+        // 位置沿用（friendly=authoritative carry-forward；enemy=LAST_KNOWN 参考，不 future-leak）。
+        for (final Map.Entry<Long, List<double[]>> entry : tracks.entrySet()) {
+            if (meanByAccount.containsKey(entry.getKey())) {
+                continue;
+            }
+            if (!FormationDepthEvidence.isAliveAt(playersByAccount, entry.getKey(), phase.end())) {
+                continue; // 阵亡车辆不 carry-forward（位置 state 已终止）
+            }
+            final double[] carry = FormationDepthEvidence.carriedForwardReference(
+                    entry.getValue(), phase.end(), mapping, lastLeaveByEntity, entry.getKey());
+            if (carry != null) {
+                meanByAccount.put(entry.getKey(), new double[]{carry[1], carry[2]});
             }
         }
         if (meanByAccount.size() < 2) {

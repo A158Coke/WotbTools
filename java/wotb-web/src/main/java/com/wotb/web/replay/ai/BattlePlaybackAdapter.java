@@ -122,9 +122,13 @@ public final class BattlePlaybackAdapter {
     }
 
     /**
-     * 位置上报区间：frame 知识状态 POSITION_STREAM_ACTIVE 的连续段（与 MapOverviewBuilder 的
-     * gap>5s 聚类等价）；阵亡时刻最终 clamp（阵亡后不出现区间）。
+     * 位置上报区间 = 服务器位置流覆盖（packet gap > 5s 即中断），与 MapOverviewBuilder 的 gap 聚类等价；
+     * 阵亡时刻最终 clamp（阵亡后不出现区间）。
+     * <p>PR #103 起己方 FrameVehicle 知识 carry-forward 为 CURRENT（静止不降级），但 playback 覆盖语义
+     * 仍是「有包才算覆盖」，故区间判定额外要求 positionAgeSec ≤ POSITION_GAP_SEC（≠ AI 知识状态）。</p>
      */
+    private static final double POSITION_GAP_SEC = 5.0;
+
     static List<MapOverview.PositionInterval> positionIntervals(
             final BattleTimeline timeline,
             final List<Integer> entityIds,
@@ -136,10 +140,15 @@ public final class BattlePlaybackAdapter {
             Double runLastObserved = null;
             for (final BattleFrame frame : timeline.frames()) {
                 final FrameVehicle v = vehicleIn(frame, entityId);
+                // 位置上报区间 = 服务器位置流覆盖（packet gap > 5s 即中断），不是 AI 知识状态：
+                // PR #103 起己方 FrameVehicle 知识 carry-forward 为 CURRENT（静止不降级），
+                // 但 playback 覆盖语义仍是「有包才算覆盖」，与 MapOverviewBuilder gap 聚类保持一致。
                 final boolean active = v != null && v.position() != null
                         && v.position().position() != null
                         && v.position().knowledge() == PositionKnowledge.CURRENT
-                        && v.knowledgeState() == VehicleKnowledgeState.POSITION_STREAM_ACTIVE;
+                        && v.knowledgeState() == VehicleKnowledgeState.POSITION_STREAM_ACTIVE
+                        && v.position().positionAgeSec() != null
+                        && v.position().positionAgeSec() <= POSITION_GAP_SEC;
                 if (active) {
                     final double observed = v.position().positionObservedAtSec();
                     if (runStart == null) {
