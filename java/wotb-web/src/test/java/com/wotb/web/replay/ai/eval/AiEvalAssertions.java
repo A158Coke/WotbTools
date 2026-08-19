@@ -3,7 +3,9 @@ package com.wotb.web.replay.ai.eval;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 执行 golden case 的 prompt 级断言（CI 零 AI 成本）。 */
+/**
+ * 执行 golden case 的 prompt 级断言（CI 零 AI 成本）。
+ */
 public final class AiEvalAssertions {
 
     private AiEvalAssertions() {

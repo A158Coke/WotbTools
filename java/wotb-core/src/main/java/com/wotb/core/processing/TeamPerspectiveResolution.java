@@ -7,11 +7,11 @@ import java.util.List;
 /**
  * 训练房/联赛录像的团队视角解析结果。
  *
- * @param perspectiveTeam 录像者所属队伍；无法可靠解析时为 {@code null}
+ * @param perspectiveTeam   录像者所属队伍；无法可靠解析时为 {@code null}
  * @param recorderAccountId 录像者账号 ID；未知时为 {@code null}
- * @param recorderEntityId 录像者当前/最后一次映射的实体 ID；未知时为 {@code null}
- * @param confidence 解析置信度
- * @param limitations 稳定英文限制码
+ * @param recorderEntityId  录像者当前/最后一次映射的实体 ID；未知时为 {@code null}
+ * @param confidence        解析置信度
+ * @param limitations       稳定英文限制码
  */
 public record TeamPerspectiveResolution(
         Integer perspectiveTeam,

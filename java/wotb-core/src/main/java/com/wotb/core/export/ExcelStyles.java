@@ -39,7 +39,9 @@ final class ExcelStyles {
     private final CellStyle team2;
     private final CellStyle plain;
 
-    /** 按需组合 "填充 + 对齐" 的样式缓存。 */
+    /**
+     * 按需组合 "填充 + 对齐" 的样式缓存。
+     */
     private final Map<String, CellStyle> styleCache = new HashMap<>();
 
     ExcelStyles() {
@@ -81,7 +83,9 @@ final class ExcelStyles {
         return plain;
     }
 
-    /** 写出并关闭工作簿。 */
+    /**
+     * 写出并关闭工作簿。
+     */
     void writeTo(final OutputStream out) throws IOException {
         wb.write(out);
         wb.close();

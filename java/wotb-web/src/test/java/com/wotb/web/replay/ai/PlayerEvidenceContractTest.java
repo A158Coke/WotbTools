@@ -191,7 +191,9 @@ class PlayerEvidenceContractTest {
         return PlayerReplayPromptBuilder.buildPlayerContextSummary(ctx);
     }
 
-    /** 名册：你（recorderTeam）+ 同队 Mate + 对方 Foe。 */
+    /**
+     * 名册：你（recorderTeam）+ 同队 Mate + 对方 Foe。
+     */
     private static Battle battle(final int recorderTeam) {
         final int enemyTeam = recorderTeam == 1 ? 2 : 1;
         final Battle battle = new Battle();

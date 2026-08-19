@@ -50,14 +50,18 @@ public final class EnemyLastKnownPositionResolver {
         }
     }
 
-    /** 整体结果：逐车记录 + 覆盖计数 + 置信度。 */
+    /**
+     * 整体结果：逐车记录 + 覆盖计数 + 置信度。
+     */
     public record EnemyLastKnownPositionResult(
             List<EnemyLastKnownPosition> vehicles,
             int observedCount,
             int totalCount,
             DecodeConfidence confidence
     ) {
-        /** 敌方一侧是否全部有 OBSERVED 记录（可表达完整覆盖）。 */
+        /**
+         * 敌方一侧是否全部有 OBSERVED 记录（可表达完整覆盖）。
+         */
         public boolean enemyFullyObserved() {
             return totalCount > 0 && observedCount == totalCount;
         }
@@ -143,7 +147,9 @@ public final class EnemyLastKnownPositionResolver {
         return rel >= 0f ? rel : null;
     }
 
-    /** 按 accountId 查车辆状态：先走快照 entityIdByAccountId 索引，失败时线性回退。 */
+    /**
+     * 按 accountId 查车辆状态：先走快照 entityIdByAccountId 索引，失败时线性回退。
+     */
     private static VehicleState vehicleByAccountId(
             final Map<Integer, VehicleState> vehicles,
             final BattleStateSnapshot snapshot,
@@ -165,7 +171,9 @@ public final class EnemyLastKnownPositionResolver {
         return null;
     }
 
-    /** perspective 方 OBSERVED 且有位置车辆的原始坐标质心；无则 null。 */
+    /**
+     * perspective 方 OBSERVED 且有位置车辆的原始坐标质心；无则 null。
+     */
     private static float[] perspectiveCentroid(
             final Map<Integer, VehicleState> vehicles,
             final Map<Long, Integer> teamByAccountId,
@@ -200,7 +208,9 @@ public final class EnemyLastKnownPositionResolver {
         return map;
     }
 
-    /** 车辆归属队伍：VehicleState.team 优先，accountId→名册回退（与 NearbySupportCounter 一致）。 */
+    /**
+     * 车辆归属队伍：VehicleState.team 优先，accountId→名册回退（与 NearbySupportCounter 一致）。
+     */
     private static Integer teamOf(final VehicleState vs, final Map<Long, Integer> teamByAccountId) {
         if (vs.team() != null) {
             return vs.team();

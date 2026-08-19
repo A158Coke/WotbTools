@@ -43,8 +43,10 @@ public final class ObservedMaxHp {
     private ObservedMaxHp() {
     }
 
-    /** 按账号统计回放实测最大血量（EXACT 置信度且 hp>0；re-entry 跨实体合并取 max）。
-     * 语义 = 整场观测到的最大 current HP，不是进场满血。 */
+    /**
+     * 按账号统计回放实测最大血量（EXACT 置信度且 hp>0；re-entry 跨实体合并取 max）。
+     * 语义 = 整场观测到的最大 current HP，不是进场满血。
+     */
     public static Map<Long, Integer> byAccount(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping
@@ -72,7 +74,9 @@ public final class ObservedMaxHp {
         return observed;
     }
 
-    /** 幂等回填：观测最大 current HP + 进场满血量 provenance 写入 battle.players（无重建时跳过）。 */
+    /**
+     * 幂等回填：观测最大 current HP + 进场满血量 provenance 写入 battle.players（无重建时跳过）。
+     */
     public static void populate(
             final Battle battle,
             final List<ReplayEvent> events,
@@ -112,7 +116,9 @@ public final class ObservedMaxHp {
         return ReplayDisplayNames.tankMaxHpValue(p.tankId);
     }
 
-    /** 该账号受击覆盖是否完整：事件流 observed received 与权威结算一致（复用 ObservedDamageCoverage 匹配语义）。 */
+    /**
+     * 该账号受击覆盖是否完整：事件流 observed received 与权威结算一致（复用 ObservedDamageCoverage 匹配语义）。
+     */
     private static boolean receivedCoverageExact(final PlayerResult p, final Integer observedReceived) {
         final int authoritative = p.damageReceived;
         if (authoritative <= 0) {
@@ -121,7 +127,9 @@ public final class ObservedMaxHp {
         return observedReceived != null && observedReceived == authoritative;
     }
 
-    /** 观测最大血量解析：max(回放实测, tankopedia base)；均无 → null（调用方回退 tankopedia 语义）。 */
+    /**
+     * 观测最大血量解析：max(回放实测, tankopedia base)；均无 → null（调用方回退 tankopedia 语义）。
+     */
     public static Integer resolve(final Integer observed, final long tankId) {
         final Integer base = ReplayDisplayNames.tankMaxHpValue(tankId);
         if (observed == null) {
@@ -169,7 +177,9 @@ public final class ObservedMaxHp {
         player.entryHpSource = base != null ? EntryHpSource.BASE_FALLBACK : EntryHpSource.UNKNOWN;
     }
 
-    /** 每账号事件流受击总量（DamageEvent victim 聚合，用于覆盖判定）。 */
+    /**
+     * 每账号事件流受击总量（DamageEvent victim 聚合，用于覆盖判定）。
+     */
     private static Map<Long, Integer> observedReceivedByAccount(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping
@@ -191,7 +201,9 @@ public final class ObservedMaxHp {
         return out;
     }
 
-    /** 每账号 positive HP 时间线（battle-relative 秒升序；EXACT & plausible；re-entry 合并）。 */
+    /**
+     * 每账号 positive HP 时间线（battle-relative 秒升序；EXACT & plausible；re-entry 合并）。
+     */
     private static Map<Long, List<double[]>> hpTimelineByAccount(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping
@@ -218,7 +230,9 @@ public final class ObservedMaxHp {
         return out;
     }
 
-    /** 每账号首次受击时间（battle-relative 秒；无受击事件 → null）。 */
+    /**
+     * 每账号首次受击时间（battle-relative 秒；无受击事件 → null）。
+     */
     private static Map<Long, Double> firstDamageSecByAccount(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping

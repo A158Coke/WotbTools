@@ -22,12 +22,16 @@ final class DamageEventIdentityResolver {
     private DamageEventIdentityResolver() {
     }
 
-    /** 构建 entityId→accountId 映射（battle/recon 为 null 时返回空映射，直填账号仍可用）。 */
+    /**
+     * 构建 entityId→accountId 映射（battle/recon 为 null 时返回空映射，直填账号仍可用）。
+     */
     static TeamEntityMapping mapping(final Battle battle, final ReplayReconstruction recon) {
         return TeamEntityMapper.resolve(battle, recon);
     }
 
-    /** 受击者账号：直填 >0 优先，否则按 victimEid 解析；无法解析返回 0。 */
+    /**
+     * 受击者账号：直填 >0 优先，否则按 victimEid 解析；无法解析返回 0。
+     */
     static long victimAccount(final DamageEvent damage, final TeamEntityMapping mapping) {
         if (damage.victimAccountId() != null && damage.victimAccountId() > 0) {
             return damage.victimAccountId();
@@ -35,7 +39,9 @@ final class DamageEventIdentityResolver {
         return accountOf(damage.victimEid(), mapping);
     }
 
-    /** 攻击者账号：直填 >0 优先，否则按 attackerEid 解析；无法解析返回 0。 */
+    /**
+     * 攻击者账号：直填 >0 优先，否则按 attackerEid 解析；无法解析返回 0。
+     */
     static long attackerAccount(final DamageEvent damage, final TeamEntityMapping mapping) {
         if (damage.attackerAccountId() != null && damage.attackerAccountId() > 0) {
             return damage.attackerAccountId();

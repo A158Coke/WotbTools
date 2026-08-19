@@ -203,9 +203,9 @@ class TeamSeparationEvidenceSkillTest {
         final TeamFormationPhase phase = new TeamFormationPhase(
                 60, 75, new CanonicalMapPosition(250, 250), 80f, 7,
                 DecodeConfidence.EXACT, List.of(
-                        cluster(60, 75, 250, 250, List.of(key(0), key(1), key(2))),
-                        cluster(60, 75, 400, 400, List.of(key(3), key(4), key(5))),
-                        cluster(60, 75, 100, 100, List.of(key(6)))));
+                cluster(60, 75, 250, 250, List.of(key(0), key(1), key(2))),
+                cluster(60, 75, 400, 400, List.of(key(3), key(4), key(5))),
+                cluster(60, 75, 100, 100, List.of(key(6)))));
         final TeamBattleFeatureSet features = features(
                 members, List.of(phase),
                 new TeamAggregateResult(7, 1000, 500, 0, 0, 0, 7, 0, null, null, null, true),
@@ -226,8 +226,8 @@ class TeamSeparationEvidenceSkillTest {
         final TeamFormationPhase phase = new TeamFormationPhase(
                 60, 75, new CanonicalMapPosition(250, 250), 80f, 4,
                 DecodeConfidence.EXACT, List.of(
-                        cluster(60, 75, 250, 250, List.of(key(0), key(1), key(2))),
-                        cluster(60, 75, 400, 400, List.of(key(6)))));
+                cluster(60, 75, 250, 250, List.of(key(0), key(1), key(2))),
+                cluster(60, 75, 400, 400, List.of(key(6)))));
 
         assertNull(TeamSeparationEvidenceSkill.mainClusterOf(phase, 7),
                 "observed subset must not be declared global main cluster");
@@ -391,8 +391,8 @@ class TeamSeparationEvidenceSkillTest {
         return new TeamFormationPhase(
                 start, end, new CanonicalMapPosition(mainX, mainZ), 80f, 7,
                 DecodeConfidence.EXACT, List.of(
-                        cluster(start, end, mainX, mainZ, main),
-                        cluster(start, end, smallX, smallZ, small)));
+                cluster(start, end, mainX, mainZ, main),
+                cluster(start, end, smallX, smallZ, small)));
     }
 
     private static TeamBattleFeatureSet features(
@@ -459,8 +459,8 @@ class TeamSeparationEvidenceSkillTest {
             phases.add(new TeamFormationPhase(
                     t, windowEnd, new CanonicalMapPosition(mainX, mainZ), 90f, 7,
                     DecodeConfidence.EXACT, List.of(
-                            cluster(t, windowEnd, soloX, soloZ, List.of(soloIdentity)),
-                            cluster(t, windowEnd, mainX, mainZ, mainIdentities))));
+                    cluster(t, windowEnd, soloX, soloZ, List.of(soloIdentity)),
+                    cluster(t, windowEnd, mainX, mainZ, mainIdentities))));
             t = windowEnd;
             guard++;
         }

@@ -13,7 +13,8 @@ import java.util.List;
  */
 public final class BattleStartResolver {
 
-    private BattleStartResolver() {}
+    private BattleStartResolver() {
+    }
 
     public static BattleStartResolution resolve(final Float reconstructionBattleStart, final ReplayStreamDiagnostics diagnostics) {
         if (reconstructionBattleStart != null && Float.isFinite(reconstructionBattleStart)) {

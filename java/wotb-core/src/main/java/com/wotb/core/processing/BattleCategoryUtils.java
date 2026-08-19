@@ -6,7 +6,8 @@ package com.wotb.core.processing;
  */
 public final class BattleCategoryUtils {
 
-    private BattleCategoryUtils() {}
+    private BattleCategoryUtils() {
+    }
 
     /**
      * 从 arenaBonusType 映射 BattleCategory。

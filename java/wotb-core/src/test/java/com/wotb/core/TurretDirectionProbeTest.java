@@ -54,15 +54,21 @@ class TurretDirectionProbeTest {
 
     private static final double PI2 = 2.0 * Math.PI;
 
-    /** 一个 propId=2 样本（原始字节 + 无符号整数解释）。 */
+    /**
+     * 一个 propId=2 样本（原始字节 + 无符号整数解释）。
+     */
     private record Prop2Sample(float t, int len, long raw, byte[] bytes) {
     }
 
-    /** 解码候选：把原始值解释为角度（度）。 */
+    /**
+     * 解码候选：把原始值解释为角度（度）。
+     */
     private record Cand(String name, Function<Prop2Sample, Double> toDeg) {
     }
 
-    /** 检查项 11 拟合样本：{propDeg, yawDeg, bearingA, bearingB}（命中锚点，跨全部样本累计）。 */
+    /**
+     * 检查项 11 拟合样本：{propDeg, yawDeg, bearingA, bearingB}（命中锚点，跨全部样本累计）。
+     */
     private static final List<double[]> FIRE_FIT = new ArrayList<>();
     private static final List<double[]> HIT_FIT = new ArrayList<>();
 
@@ -328,7 +334,9 @@ class TurretDirectionProbeTest {
         return out;
     }
 
-    /** 默认解码：valueLen=2 -> u16*360/65536；valueLen=4 -> f32 弧度转度；valueLen=1 -> u8*360/256。 */
+    /**
+     * 默认解码：valueLen=2 -> u16*360/65536；valueLen=4 -> f32 弧度转度；valueLen=1 -> u8*360/256。
+     */
     private static double defaultDeg(final Prop2Sample s) {
         if (s.len() == 4) {
             return Math.toDegrees(f32(s.bytes(), 0));
@@ -818,7 +826,9 @@ class TurretDirectionProbeTest {
         return new double[]{k, bestB, bestRes};
     }
 
-    /** gun = k*yaw + prop2 + b 在锚点集上的平均圆形误差（双 bearing 约定取较小）。 */
+    /**
+     * gun = k*yaw + prop2 + b 在锚点集上的平均圆形误差（双 bearing 约定取较小）。
+     */
     private static double residualModel(final List<double[]> fit, final double k, final double b) {
         if (fit.isEmpty()) {
             return Double.NaN;
@@ -1080,7 +1090,9 @@ class TurretDirectionProbeTest {
         System.out.println("  (若 |prop2-f5| 小 => 同一量纲/同物理量; 若 |prop2-yaw-f5| 小 => f5 为相对角而 prop2 为绝对角)");
     }
 
-    /** type 23 开火/落地 时间线附近录像者 prop2 变化（辅助 [7]）。 */
+    /**
+     * type 23 开火/落地 时间线附近录像者 prop2 变化（辅助 [7]）。
+     */
     private static void type23AroundRecorder(final Map<Integer, List<EventStreamReader.ParsedPacket>> byType,
                                              final Map<Integer, List<EventStreamReader.PositionData>> posByEid,
                                              final Map<Integer, List<Prop2Sample>> prop2ByEid,
@@ -1148,7 +1160,9 @@ class TurretDirectionProbeTest {
         return out;
     }
 
-    /** Type 8 sub_type 48 (updateArena2) 里 eid -> team (field 4)。 */
+    /**
+     * Type 8 sub_type 48 (updateArena2) 里 eid -> team (field 4)。
+     */
     private static Map<Integer, Integer> extractTeams(
             final List<EventStreamReader.ParsedPacket> packets) {
         final Map<Integer, Integer> map = new HashMap<>();
@@ -1230,7 +1244,9 @@ class TurretDirectionProbeTest {
         return best;
     }
 
-    /** 角度差, 归一到 [-180, 180]。 */
+    /**
+     * 角度差, 归一到 [-180, 180]。
+     */
     private static double angDiffDeg(final double a, final double b) {
         double d = (a - b) % 360.0;
         if (d > 180) {

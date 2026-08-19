@@ -23,13 +23,21 @@ import java.util.List;
  */
 public final class EpisodeDetector {
 
-    /** 硬最小章节时长（秒）。 */
+    /**
+     * 硬最小章节时长（秒）。
+     */
     public static final double MIN_EPISODE_SEC = 8.0;
-    /** 首选最大章节时长（秒）。 */
+    /**
+     * 首选最大章节时长（秒）。
+     */
     public static final double PREFERRED_MAX_SEC = 45.0;
-    /** 硬最大章节时长（秒）。 */
+    /**
+     * 硬最大章节时长（秒）。
+     */
     public static final double HARD_MAX_SEC = 60.0;
-    /** 静默间隙（秒）：超过视为安静期，可切分。 */
+    /**
+     * 静默间隙（秒）：超过视为安静期，可切分。
+     */
     public static final double QUIET_GAP_SEC = 10.0;
 
     private EpisodeDetector() {
@@ -175,7 +183,9 @@ public final class EpisodeDetector {
         return frame == null ? WorldSummary.EMPTY : frame.world();
     }
 
-    /** 半开区间 [startSecond, endExclusiveSecond) 收集 delta：边界秒只归前一段（无重复）。 */
+    /**
+     * 半开区间 [startSecond, endExclusiveSecond) 收集 delta：边界秒只归前一段（无重复）。
+     */
     private static List<BattleDelta> collectDeltas(
             final List<List<BattleDelta>> deltasBySecond,
             final int startSecond,
@@ -187,7 +197,9 @@ public final class EpisodeDetector {
         return out;
     }
 
-    /** 确定性短标签（供 Context Compiler 渲染；结构化，不编造）。 */
+    /**
+     * 确定性短标签（供 Context Compiler 渲染；结构化，不编造）。
+     */
     static List<String> changes(final List<BattleDelta> deltas) {
         final List<String> out = new ArrayList<>();
         for (final BattleDelta d : deltas) {

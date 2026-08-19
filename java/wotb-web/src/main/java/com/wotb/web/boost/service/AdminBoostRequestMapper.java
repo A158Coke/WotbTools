@@ -9,7 +9,9 @@ import org.springframework.stereotype.Service;
 
 import java.util.Optional;
 
-/** 需求 → Admin DTO 映射。含活跃分配查询。 */
+/**
+ * 需求 → Admin DTO 映射。含活跃分配查询。
+ */
 @Service
 public class AdminBoostRequestMapper {
 

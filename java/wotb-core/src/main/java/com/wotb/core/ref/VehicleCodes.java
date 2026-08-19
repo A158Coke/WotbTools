@@ -2,7 +2,9 @@ package com.wotb.core.ref;
 
 import org.springframework.util.StringUtils;
 
-/** 将车辆库分类/国家值（中文或英文）转换为 API 使用的稳定英文码。 */
+/**
+ * 将车辆库分类/国家值（中文或英文）转换为 API 使用的稳定英文码。
+ */
 public final class VehicleCodes {
 
     private VehicleCodes() {

@@ -24,7 +24,9 @@ public final class TeamAutopsyParser {
 
     private static final Set<String> CONTRIBUTION_VALUES =
             Set.of("HIGH", "MEDIUM", "LOW", "UNKNOWN");
-    /** settlement-only 模式：LLM 判断（contribution / verdict）不是权威结算事实，只能 PARTIAL/UNKNOWN。 */
+    /**
+     * settlement-only 模式：LLM 判断（contribution / verdict）不是权威结算事实，只能 PARTIAL/UNKNOWN。
+     */
     private static final Set<String> SETTLEMENT_CONFIDENCE_VALUES =
             Set.of("PARTIAL", "UNKNOWN");
 
@@ -71,7 +73,9 @@ public final class TeamAutopsyParser {
         }
     }
 
-    /** players 的 playerKey 集合必须与 roster 完全相等；超长/缺失/额外/重复均拒绝。 */
+    /**
+     * players 的 playerKey 集合必须与 roster 完全相等；超长/缺失/额外/重复均拒绝。
+     */
     private static List<TeamAutopsyResult.AutopsyPlayer> parsePlayers(
             final JsonNode node, final Set<String> rosterPlayerKeys) {
         if (node == null || !node.isArray()
@@ -104,7 +108,9 @@ public final class TeamAutopsyParser {
         return result;
     }
 
-    /** verdict 列表 ≤3；每条必须引用有效 playerKey、列表内不重复、reason 非空、evidence 非空。 */
+    /**
+     * verdict 列表 ≤3；每条必须引用有效 playerKey、列表内不重复、reason 非空、evidence 非空。
+     */
     private static List<TeamAutopsyResult.AutopsyVerdict> parseVerdicts(
             final JsonNode node, final Set<String> rosterPlayerKeys) {
         if (node == null || !node.isArray()) {

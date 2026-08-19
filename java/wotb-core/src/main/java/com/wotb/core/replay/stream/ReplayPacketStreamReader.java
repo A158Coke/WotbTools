@@ -60,7 +60,7 @@ public final class ReplayPacketStreamReader {
      *
      * @param data data.wotreplay 的完整字节内容
      * @return 读取结果，包含头部、包列表和诊断信息
-     * @throws ReplayHeaderException 如果头部非法
+     * @throws ReplayHeaderException    如果头部非法
      * @throws IllegalArgumentException 如果超出安全限制
      */
     public static ReplayStreamResult read(byte[] data) {

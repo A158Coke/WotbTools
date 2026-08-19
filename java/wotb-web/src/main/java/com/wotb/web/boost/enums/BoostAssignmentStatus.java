@@ -1,6 +1,8 @@
 package com.wotb.web.boost.enums;
 
-/** Boost assignment lifecycle. Database stores English enum names. */
+/**
+ * Boost assignment lifecycle. Database stores English enum names.
+ */
 public enum BoostAssignmentStatus {
     ASSIGNED,
     ACCEPTED,

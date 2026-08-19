@@ -7,12 +7,20 @@ package com.wotb.core.replay.timeline;
  * 与录像者可见性无关（type-10 与点亮无关，见 docs/research/replay/protocol.md）。</p>
  */
 public enum VehicleKnowledgeState {
-    /** 位置流当前活跃（服务器持续广播位置）：位置即当前已知位置 */
+    /**
+     * 位置流当前活跃（服务器持续广播位置）：位置即当前已知位置
+     */
     POSITION_STREAM_ACTIVE,
-    /** 位置流已中断（gap 超过阈值）：仅保留最后已知位置 + age */
+    /**
+     * 位置流已中断（gap 超过阈值）：仅保留最后已知位置 + age
+     */
     LAST_KNOWN,
-    /** 从未观测到位置（敌方静止或尚未进入位置流） */
+    /**
+     * 从未观测到位置（敌方静止或尚未进入位置流）
+     */
     UNKNOWN,
-    /** 当时已确知阵亡（battle-relative 事件在 t 之前可靠证明） */
+    /**
+     * 当时已确知阵亡（battle-relative 事件在 t 之前可靠证明）
+     */
     DESTROYED_KNOWN
 }

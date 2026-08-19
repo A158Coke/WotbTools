@@ -44,40 +44,112 @@ public final class VehicleState {
 
     // ---- Getters ----
 
-    public int entityId() { return entityId; }
-    public Long accountId() { return accountId; }
-    public Integer vehicleId() { return vehicleId; }
-    public Integer tankId() { return tankId; }
-    public Integer team() { return team; }
-    public Vector3 position() { return position; }
-    public Rotation rotation() { return rotation; }
-    public Vector3 positionError() { return positionError; }
-    public Integer currentHealth() { return currentHealth; }
-    public Integer maxHealth() { return maxHealth; }
-    public LifeState lifeState() { return lifeState; }
-    public ObservationState observationState() { return observationState; }
-    public float firstObservedAt() { return firstObservedAt; }
-    public float lastObservedAt() { return lastObservedAt; }
-    public Float lastPositionAt() { return lastPositionAt; }
-    public Float removedAt() { return removedAt; }
-    public Float destroyedAt() { return destroyedAt; }
-    public int damageDealt() { return damageDealt; }
-    public int damageReceived() { return damageReceived; }
+    public int entityId() {
+        return entityId;
+    }
+
+    public Long accountId() {
+        return accountId;
+    }
+
+    public Integer vehicleId() {
+        return vehicleId;
+    }
+
+    public Integer tankId() {
+        return tankId;
+    }
+
+    public Integer team() {
+        return team;
+    }
+
+    public Vector3 position() {
+        return position;
+    }
+
+    public Rotation rotation() {
+        return rotation;
+    }
+
+    public Vector3 positionError() {
+        return positionError;
+    }
+
+    public Integer currentHealth() {
+        return currentHealth;
+    }
+
+    public Integer maxHealth() {
+        return maxHealth;
+    }
+
+    public LifeState lifeState() {
+        return lifeState;
+    }
+
+    public ObservationState observationState() {
+        return observationState;
+    }
+
+    public float firstObservedAt() {
+        return firstObservedAt;
+    }
+
+    public float lastObservedAt() {
+        return lastObservedAt;
+    }
+
+    public Float lastPositionAt() {
+        return lastPositionAt;
+    }
+
+    public Float removedAt() {
+        return removedAt;
+    }
+
+    public Float destroyedAt() {
+        return destroyedAt;
+    }
+
+    public int damageDealt() {
+        return damageDealt;
+    }
+
+    public int damageReceived() {
+        return damageReceived;
+    }
 
     // ---- Setters (package-private for reconstructor) ----
 
-    public void setAccountId(Long accountId) { this.accountId = accountId; }
-    public void setVehicleId(Integer vehicleId) { this.vehicleId = vehicleId; }
-    public void setTankId(Integer tankId) { this.tankId = tankId; }
-    public void setTeam(Integer team) { this.team = team; }
+    public void setAccountId(Long accountId) {
+        this.accountId = accountId;
+    }
+
+    public void setVehicleId(Integer vehicleId) {
+        this.vehicleId = vehicleId;
+    }
+
+    public void setTankId(Integer tankId) {
+        this.tankId = tankId;
+    }
+
+    public void setTeam(Integer team) {
+        this.team = team;
+    }
 
     public void setPosition(Vector3 position) {
         this.position = position;
         this.lastPositionAt = lastObservedAt;
     }
 
-    public void setRotation(Rotation rotation) { this.rotation = rotation; }
-    public void setPositionError(Vector3 positionError) { this.positionError = positionError; }
+    public void setRotation(Rotation rotation) {
+        this.rotation = rotation;
+    }
+
+    public void setPositionError(Vector3 positionError) {
+        this.positionError = positionError;
+    }
 
     public void setCurrentHealth(Integer currentHealth) {
         this.currentHealth = currentHealth;
@@ -86,7 +158,9 @@ public final class VehicleState {
         }
     }
 
-    public void setMaxHealth(Integer maxHealth) { this.maxHealth = maxHealth; }
+    public void setMaxHealth(Integer maxHealth) {
+        this.maxHealth = maxHealth;
+    }
 
     public void setLifeState(LifeState lifeState) {
         this.lifeState = lifeState;
@@ -108,8 +182,13 @@ public final class VehicleState {
         this.observationState = ObservationState.REMOVED;
     }
 
-    public void addDamageDealt(int damage) { this.damageDealt += damage; }
-    public void addDamageReceived(int damage) { this.damageReceived += damage; }
+    public void addDamageDealt(int damage) {
+        this.damageDealt += damage;
+    }
+
+    public void addDamageReceived(int damage) {
+        this.damageReceived += damage;
+    }
 
     /**
      * 创建此状态的深度拷贝。

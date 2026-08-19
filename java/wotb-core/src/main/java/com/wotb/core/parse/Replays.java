@@ -9,7 +9,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-/** 多回放: 按 arenaUniqueId 去重 */
+/**
+ * 多回放: 按 arenaUniqueId 去重
+ */
 public final class Replays {
 
     private Replays() {

@@ -30,7 +30,9 @@ public record PreBattleStrategicPrior(
                 || !hypotheses.isEmpty();
     }
 
-    /** 单方阵容战术画像。 */
+    /**
+     * 单方阵容战术画像。
+     */
     public record TeamProfile(
             Map<String, String> composition,
             List<String> strengths,
@@ -50,14 +52,18 @@ public record PreBattleStrategicPrior(
         }
     }
 
-    /** 关键区域对阵优劣势。area 在 V1 只能是 GRID_REGION_N 或抽象描述。 */
+    /**
+     * 关键区域对阵优劣势。area 在 V1 只能是 GRID_REGION_N 或抽象描述。
+     */
     public record KeyMatchup(String area, String advantage, String reason) {
     }
 
     public record StrategicWinCondition(String team, String condition) {
     }
 
-    /** 战略假设：团队复盘在 Call #2 中与实际情况对照（预期 vs 实际，考虑一波流等特殊战局）；随机战 harness 仍支持逐条状态判定。 */
+    /**
+     * 战略假设：团队复盘在 Call #2 中与实际情况对照（预期 vs 实际，考虑一波流等特殊战局）；随机战 harness 仍支持逐条状态判定。
+     */
     public record StrategicHypothesis(String id, String claim, String reason) {
     }
 }

@@ -11,7 +11,7 @@ final class TeamPromptLocalizer {
     }
 
     static final String TEAM_ANALYSIS_RULE = """
-
+            
             === 团队复盘规则（强制，仅训练房/联赛团队复盘） ===
             分析主体是 teamDisplayLabel 标识的整支队伍（无可靠军团标签时称「我方」），不是任何个人。
             对手称为「对方队伍」（opponentDisplayLabel 有值时用该标签，无值时称「对方」）。
@@ -26,9 +26,11 @@ final class TeamPromptLocalizer {
                因果判断或训练建议时，才按全局选择性 UNKNOWN 规则自然说明。
             """;
 
-    /** Team 专用：EN 团队规则（替换 TEAM_ANALYSIS_RULE）。 */
+    /**
+     * Team 专用：EN 团队规则（替换 TEAM_ANALYSIS_RULE）。
+     */
     static final String TEAM_ANALYSIS_RULE_EN = """
-
+            
                         === TEAM REVIEW RULES (mandatory, training room / clan battle team review only) ===
                         The subject of the review is the entire team identified by teamDisplayLabel (or "our team" when no reliable clan tag exists), not any individual player.
                         Refer to the opponents as "the opposing team" (use opponentDisplayLabel when provided, otherwise "the opposing team").
@@ -46,9 +48,11 @@ final class TeamPromptLocalizer {
                         judgment, or training advice, per the global selective-UNKNOWN rule.
             """;
 
-    /** Team 专用：RU 团队规则（替换 TEAM_ANALYSIS_RULE）。 */
+    /**
+     * Team 专用：RU 团队规则（替换 TEAM_ANALYSIS_RULE）。
+     */
     static final String TEAM_ANALYSIS_RULE_RU = """
-
+            
                         === ПРАВИЛА КОМАНДНОГО РАЗБОРА (обязательно, только командный разбор тренировочного боя или клановой игры) ===
                         Объект разбора — вся команда, обозначенная teamDisplayLabel (или «наша команда», если надёжного кланового тега нет), а не отдельный игрок.
                         Противников называйте «команда противника» (при наличии opponentDisplayLabel — этим тегом, иначе «команда противника»).
@@ -66,9 +70,11 @@ final class TeamPromptLocalizer {
                         селективного UNKNOWN.
             """;
 
-    /** Team 专用（PR #103 review BLOCKER B）：内部证据 ≠ 用户输出模板。 */
+    /**
+     * Team 专用（PR #103 review BLOCKER B）：内部证据 ≠ 用户输出模板。
+     */
     static final String TEAM_INTERNAL_VS_USER_FACING_RULE = """
-
+            
             === 内部证据与用户正文的关系（强制） ===
             输入中的 AUTHORITATIVE_*、OBSERVED_*、TACTICAL TIMELINE、TEAM REVIEW FOCUS WINDOWS、
             EVIDENCE LIMITATIONS、FACT、SUPPORTED INFERENCE、UNKNOWN、confidence、provenance、
@@ -82,7 +88,7 @@ final class TeamPromptLocalizer {
             """;
 
     static final String TEAM_INTERNAL_VS_USER_FACING_RULE_EN = """
-
+            
                         === INTERNAL EVIDENCE VS USER-FACING PROSE (mandatory) ===
                         The labels in the input — AUTHORITATIVE_*, OBSERVED_*, TACTICAL TIMELINE, TEAM REVIEW FOCUS WINDOWS,
                         EVIDENCE LIMITATIONS, FACT, SUPPORTED INFERENCE, UNKNOWN, confidence, provenance, canonical —
@@ -98,7 +104,7 @@ final class TeamPromptLocalizer {
             """;
 
     static final String TEAM_INTERNAL_VS_USER_FACING_RULE_RU = """
-
+            
                         === ВНУТРЕННИЕ СВИДЕТЕЛЬСТВА И ТЕКСТ ДЛЯ ПОЛЬЗОВАТЕЛЯ (обязательно) ===
                         Метки во входе — AUTHORITATIVE_*, OBSERVED_*, TACTICAL TIMELINE, TEAM REVIEW FOCUS WINDOWS,
                         EVIDENCE LIMITATIONS, FACT, SUPPORTED INFERENCE, UNKNOWN, confidence, provenance, canonical —
@@ -114,7 +120,7 @@ final class TeamPromptLocalizer {
             """;
 
     static final String TEAM_OUTPUT_STRUCTURE_RULE = """
-
+            
             === 团队复盘输出结构（强制） ===
             正文采用以下结构；证据不足的章节可以直接省略，禁止为了凑章节硬写内容：
             1. 核心结论：2-4 句，只回答——这局什么时候真正开始失控/建立优势；最大的、证据最强的团队问题是什么；哪些关键原因目前无法确认（只在该未知影响结论时才提）。
@@ -130,7 +136,7 @@ final class TeamPromptLocalizer {
             """;
 
     static final String TEAM_OUTPUT_STRUCTURE_RULE_EN = """
-
+            
                         === TEAM REVIEW OUTPUT STRUCTURE (mandatory) ===
                         Organize the review as follows; sections with insufficient evidence may be omitted — never pad sections just to fill a template:
                         1. Core conclusion: 2-4 sentences answering only: when did this battle really start to slip away / build an advantage; what is the largest, best-supported team problem; which key causes cannot currently be confirmed (mention an unknown only when it affects the conclusion).
@@ -146,7 +152,7 @@ final class TeamPromptLocalizer {
             """;
 
     static final String TEAM_OUTPUT_STRUCTURE_RULE_RU = """
-
+            
                         === СТРУКТУРА КОМАНДНОГО РАЗБОРА (обязательно) ===
                         Стройте разбор по следующей структуре; разделы с недостаточными доказательствами можно опустить — не заполняйте разделы лишь ради шаблона:
                         1. Ключевой вывод: 2–4 предложения, отвечающие только на: когда бой реально начал уходить из-под контроля / создавалось преимущество; какая самая крупная и лучше всего подтверждённая командная проблема; какие ключевые причины сейчас нельзя подтвердить (упоминайте неизвестное, только если оно влияет на вывод).
@@ -195,7 +201,7 @@ final class TeamPromptLocalizer {
             """;
 
     static final String TEAM_EVIDENCE_CONTRACT_RULE_EN = """
-
+            
                         === EVIDENCE CONTRACT (mandatory): FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN ===
                         1. FACT: only from the authoritative battle result, the authoritative roster/settlement, the validated canonical timeline, and backend-derived deterministic evidence.
                            Example: "From 1m 52s to 2m 12s, your team lost 3 tanks in a row while the opposing team lost 1."
@@ -225,7 +231,7 @@ final class TeamPromptLocalizer {
             """;
 
     static final String TEAM_EVIDENCE_CONTRACT_RULE_RU = """
-
+            
                         === КОНТРАКТ ДОКАЗАТЕЛЬСТВ (обязательно): FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN ===
                         1. FACT (факт): только из авторитетного результата боя, авторитетного состава, проверенного canonical таймлайна и детерминированных свидетельств бэкенда.
                            Пример: «С 1 мин 52 с по 2 мин 12 с ваша команда потеряла 3 машины подряд, а противник — 1».
@@ -254,9 +260,11 @@ final class TeamPromptLocalizer {
                         6. Не добирайте объём ради полноты структуры: нет 3 проблем — не пишите 3; нет 5 рекомендаций — не пишите 5; нет смысла разбирать 7 машин противника — не пишите про каждую; без достаточно сильных положительных доказательств не вставляйте раздел «что команда сделала хорошо».
             """;
 
-    /** Team 专用：Call #1 赛前战略基线的使用规则（强制；EN/RU 本地化时替换）。 */
+    /**
+     * Team 专用：Call #1 赛前战略基线的使用规则（强制；EN/RU 本地化时替换）。
+     */
     static final String TEAM_PRIOR_RULE = """
-
+            
             === 赛前战略基线（Call #1）使用规则（强制） ===
             输入可能包含 PRE-BATTLE STRATEGIC PRIOR：仅基于地图、双方阵容、双方总血量与坦克战术属性的
             赛前先验判断（含分阶段预期打法），未读取任何战斗结果。
@@ -266,7 +274,7 @@ final class TeamPromptLocalizer {
             一波流等特殊战局可能让任何阶段计划失效，必须基于实际事件判断，不得仅因胜负倒推。""";
 
     static final String TEAM_PRIOR_RULE_EN = """
-
+            
             === PRE-BATTLE STRATEGIC PRIOR (Call #1) USAGE RULE (mandatory) ===
             The input may include a PRE-BATTLE STRATEGIC PRIOR: a pre-battle judgment based only on the map,
             both lineups, total HP and tank tactical attributes (including staged expected play), with no battle results read.
@@ -278,7 +286,7 @@ final class TeamPromptLocalizer {
             staged plan, so judge from actual events, never reason backwards from the result alone.""";
 
     static final String TEAM_PRIOR_RULE_RU = """
-
+            
             === ПРАВИЛО ПРЕДБОЕВОЙ БАЗЫ (Call #1) (обязательно) ===
             Во входе может быть PRE-BATTLE STRATEGIC PRIOR — предбоевое суждение только по карте, составам,
             суммарному HP и тактическим атрибутам машин (включая поэтапный ожидаемый план), без чтения результатов боя.
@@ -289,16 +297,18 @@ final class TeamPromptLocalizer {
             ошибка; особые паттерны (например, рывок одной линией) могут обесценить любой поэтапный план,
             судите по фактическим событиям, а не только по счёту.""";
 
-    /** Team 专用：九宫格 region 与真实距离的关系规则（强制；EN/RU 本地化时替换）。 */
+    /**
+     * Team 专用：九宫格 region 与真实距离的关系规则（强制；EN/RU 本地化时替换）。
+     */
     static final String TEAM_REGION_RULE = """
-
+            
             === 九宫格 region 与距离规则（强制） ===
             九宫格 region（1-9）只用于描述方位，region 相邻或编号差不代表实际距离；
             脱节/距离/掩护判断必须使用后端提供的 canonical 距离（米，
             如 deathProximityMeters 阵亡时刻与主力质心距离），禁止用 region 编号差推断距离。""";
 
     static final String TEAM_REGION_RULE_EN = """
-
+            
             === NINE-GRID REGION VS DISTANCE RULE (mandatory) ===
             Nine-grid regions (1-9) describe direction only; adjacent regions or a region-number
             difference do NOT imply actual distance. Detachment/distance/cover judgments must use
@@ -306,7 +316,7 @@ final class TeamPromptLocalizer {
             distance to the main-body centroid at death); never infer distance from region numbers.""";
 
     static final String TEAM_REGION_RULE_RU = """
-
+            
             === ПРАВИЛО ОБЛАСТЕЙ СЕТКИ И РАССТОЯНИЙ (обязательно) ===
             Области сетки 1–9 описывают только направление; соседство областей или разница номеров
             НЕ означает реальное расстояние. Оценки отрыва/дистанции/прикрытия должны использовать
@@ -314,7 +324,9 @@ final class TeamPromptLocalizer {
             дистанция до центра масс своей группы в момент гибели); запрещено делать вывод о дистанции
             по номерам областей.""";
 
-    /** Team 专用：阵型深度（前后排）与区域覆盖测量规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。 */
+    /**
+     * Team 专用：阵型深度（前后排）与区域覆盖测量规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。
+     */
     static final String FORMATION_DEPTH_RULE = """
             === 阵型深度与区域覆盖测量规则（强制） ===
             FORMATION_DEPTH 段是确定性几何/测量证据，用于理解阵型、前后排与区域覆盖（哪些区域双方有位置存在与火力覆盖分数）：
@@ -325,7 +337,7 @@ final class TeamPromptLocalizer {
             4. 区域只能引用证据中的 GRID_REGION_1~9 编号，禁止用裸坐标重新划区。""";
 
     static final String FORMATION_DEPTH_RULE_EN = """
-
+            
             === FORMATION DEPTH AND REGION COVERAGE MEASUREMENTS RULE (mandatory) ===
             The FORMATION_DEPTH section is deterministic geometric/measurement evidence for understanding the formation, the front/mid/back lines and region coverage (which regions have positional presence and fire-coverage scores on each side):
             1. frontLine / midLine / backLine classify own-team members by depth terciles along the "own centroid → enemy centroid" axis; describe the formation in natural language (e.g. "forward, middle, rear") and do not re-judge member positions, and never turn the terciles into tactical-role assertions such as "front line holds, middle line outputs, back line supports".
@@ -334,7 +346,7 @@ final class TeamPromptLocalizer {
             4. Reference regions only by the GRID_REGION_1~9 ids in the evidence; never re-derive regions from raw coordinates.""";
 
     static final String FORMATION_DEPTH_RULE_RU = """
-
+            
             === ПРАВИЛО ГЛУБИНЫ СТРОЯ И ИЗМЕРЕНИЙ ПОКРЫТИЯ ОБЛАСТЕЙ (обязательно) ===
             Секция FORMATION_DEPTH — детерминированные геометрические/измерительные данные для понимания строя, передней/средней/задней линий и покрытия областей (в каких регионах есть позиционное присутствие и баллы огневого покрытия у каждой стороны):
             1. frontLine / midLine / backLine классифицируют участников своей команды по терцилям глубины вдоль оси «центроид своей команды → центроид противника»; описывайте строй естественным языком (например, «впереди, в середине, сзади») и не пересматривайте позиции участников, а также не превращайте терцили в утверждения о тактических ролях вроде «передняя линия держит, средняя наносит урон, задняя поддерживает».
@@ -342,7 +354,9 @@ final class TeamPromptLocalizer {
             3. Если секция FORMATION_DEPTH отсутствует (недостаточно наблюдений позиций), запрещено выдумывать переднюю/заднюю линию или покрытие областей.
             4. Зоны можно указывать только по идентификаторам GRID_REGION_1~9 из свидетельств; запрещено переопределять зоны по сырым координатам.""";
 
-    /** Team 专用：身后血量/位置优势（确定性测量）规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。 */
+    /**
+     * Team 专用：身后血量/位置优势（确定性测量）规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。
+     */
     static final String BEHIND_LINE_RULE = """
             === 身后血量/位置优势测量规则（强制·中性测量） ===
             BEHIND_LINE_HP_ADVANTAGE 段是确定性测量（位置/血量比率/距敌距离差/已观察攻击事件/覆盖率/tank profile）：
@@ -358,7 +372,7 @@ final class TeamPromptLocalizer {
             6. 未提供本段时（位置/血量观测不足）禁止编造。""";
 
     static final String BEHIND_LINE_RULE_EN = """
-
+            
             === BEHIND-LINE HP/POSITION MEASUREMENT RULE (mandatory · neutral measurements) ===
             The BEHIND_LINE_HP_ADVANTAGE section contains deterministic measurements (position/HP ratio/distance gap to the enemy/observed attack events/coverage/tank profile):
             1. The filter is computed server-side (salience filter): the carrier teammate is the own-team member with frontline capability (HEAVY/high armor) nearest to the enemy (nothing is emitted when no qualified carrier exists);
@@ -370,7 +384,7 @@ final class TeamPromptLocalizer {
             6. When this section is absent (insufficient position/HP observation), never fabricate it.""";
 
     static final String BEHIND_LINE_RULE_RU = """
-
+            
             === ПРАВИЛО ИЗМЕРЕНИЙ «ЗА СПИНОЙ / ОЗ / ПОЗИЦИЯ» (обязательное · нейтральные измерения) ===
             Секция BEHIND_LINE_HP_ADVANTAGE содержит детерминированные измерения (позиция/доля ОЗ/разница дистанций до противника/наблюдаемые события атаки/полнота покрытия/профиль танка):
             1. Фильтр вычисляется на сервере (salience filter): союзник на первой линии = член своей команды со способностью держать фронт (HEAVY/высокая броня), ближайший к противнику (при отсутствии такого союзника секция не выводится);
@@ -381,7 +395,9 @@ final class TeamPromptLocalizer {
             5. Высокий урон ≠ высокий вклад: оценивая вклад, взвешивайте урон / потерю ОЗ / позиционные измерения, но никогда не ссылайтесь на заранее вычисленную «степень игры за спиной» как на авторитетный ярлык — это ваше умозаключение.
             6. Если секция отсутствует (недостаточно наблюдений позиций/ОЗ), запрещено её выдумывать.""";
 
-    /** 数据不足时的输出措辞（PR #103 review BLOCKER B：UNKNOWN selective，不再 blanket 强制写明）。 */
+    /**
+     * 数据不足时的输出措辞（PR #103 review BLOCKER B：UNKNOWN selective，不再 blanket 强制写明）。
+     */
     static final String ZH_CANNOT_DETERMINE_RULE =
             "UNKNOWN 是合法内部状态：只有不说明会误写成确定因果、或该未知直接影响核心结论/训练建议、"
                     + "或用户自然会关心这个关键原因时，才自然说明「无法从当前回放数据确定」；其他未知静默，不要逐条列出。";
@@ -396,11 +412,13 @@ final class TeamPromptLocalizer {
                     + "или пользователь естественно захочет узнать эту ключевую причину, — естественно скажите, что "
                     + "«по данным реплея это определить нельзя»; остальные неизвестные не перечисляйте.";
 
-    /** Team 专用：空间分离证据使用规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。
-     *  <p>Backend Evidence Boundary：SPATIAL_SEPARATION_EVIDENCE 是观察事实与确定性派生测量，
-     *  不是战术 verdict；拖延/脱节/图控/有效牵制等判断由 LLM 完成。</p> */
+    /**
+     * Team 专用：空间分离证据使用规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。
+     * <p>Backend Evidence Boundary：SPATIAL_SEPARATION_EVIDENCE 是观察事实与确定性派生测量，
+     * 不是战术 verdict；拖延/脱节/图控/有效牵制等判断由 LLM 完成。</p>
+     */
     static final String SEPARATION_EVIDENCE_RULE = """
-
+            
             === 空间分离证据使用规则（强制） ===
             1. 后端 SPATIAL_SEPARATION_EVIDENCE 段提供的是【观察事实与确定性派生测量】（空间分离窗口、
                距离、距离增长、静止占比、移动覆盖、局部观察敌我数量、窗口内承伤/输出、阵亡、主力簇位移、
@@ -424,7 +442,7 @@ final class TeamPromptLocalizer {
                被接敌一侧的局部人数关系、另一侧支援能否及时赶到；分散获得的信息价值是否抵得上局部兵力不足的代价。
             """;
     static final String SEPARATION_EVIDENCE_RULE_EN = """
-
+            
             === SPATIAL SEPARATION EVIDENCE USAGE RULES (mandatory) ===
             1. The backend SPATIAL_SEPARATION_EVIDENCE section provides OBSERVATIONS and DETERMINISTIC DERIVED
                MEASUREMENTS (separation windows, distance, distance growth, stationary ratio, movement coverage,
@@ -462,7 +480,7 @@ final class TeamPromptLocalizer {
                the information value of the spread worth the cost of local force scarcity.
             """;
     static final String SEPARATION_EVIDENCE_RULE_RU = """
-
+            
             === ПРАВИЛА ИСПОЛЬЗОВАНИЯ ДОКАЗАТЕЛЬСТВ ПРОСТРАНСТВЕННОГО ОТДЕЛЕНИЯ (обязательно) ===
             1. Секция SPATIAL_SEPARATION_EVIDENCE на бэкенде предоставляет НАБЛЮДЕНИЯ и ДЕТЕРМИНИРОВАННЫЕ
                ПРОИЗВОДНЫЕ ИЗМЕРЕНИЯ (окна отделения, дистанция, рост дистанции, доля неподвижности,
@@ -504,9 +522,11 @@ final class TeamPromptLocalizer {
                поддержка с другой стороны; стоила ли информационная ценность рассредоточения цены нехватки
                локальных сил.
             """;
-    /** Team 专用（PR #103 review BLOCKER E）：重新集中/合流是本场具体结论，必须有证据。 */
+    /**
+     * Team 专用（PR #103 review BLOCKER E）：重新集中/合流是本场具体结论，必须有证据。
+     */
     static final String TEAM_REGROUP_INFERENCE_RULE = """
-
+            
             === 重新集中推断规则（强制：本场具体结论必须有证据） ===
             「对方主力方向确认后本方没有及时合流/重新集中」是本场具体结论，不是一般战术解释：
             只有同时满足以下条件才允许作为 supported inference 输出：
@@ -522,7 +542,7 @@ final class TeamPromptLocalizer {
             """;
 
     static final String TEAM_REGROUP_INFERENCE_RULE_EN = """
-
+            
                         === REGROUPING INFERENCE RULE (mandatory: battle-specific conclusions need evidence) ===
                         "After the enemy's main force direction was confirmed, the team did not regroup in time" is a
                         battle-specific conclusion, not a general tactical interpretation. It may only be written as a
@@ -539,7 +559,7 @@ final class TeamPromptLocalizer {
             """;
 
     static final String TEAM_REGROUP_INFERENCE_RULE_RU = """
-
+            
                         === ПРАВИЛО ВЫВОДА О ПЕРЕГРУППИРОВКЕ (обязательно: конкретные выводы по бою требуют доказательств) ===
                         «После подтверждения направления главных сил противника команда не перегруппировалась вовремя» —
                         конкретный вывод по этому бою, а не общая тактическая интерпретация. Его можно писать как подтверждённый
@@ -556,7 +576,7 @@ final class TeamPromptLocalizer {
             """;
 
     static final String CAPTURE_RULE = """
-
+            
             === 争霸赛占点规则（强制，训练房/联赛恒为争霸赛） ===
             1. 集中推进可能减少分散的地图覆盖；是否实际造成侦察/视野损失必须有对应 evidence（不得仅凭集中断言失去视野），复盘必须权衡集中与分散的代价。
             2. result 行的胜负来源以 resultSource 为准，只有三级证据，BATTLE_RESULTS 存在时最高优先级：
@@ -606,7 +626,7 @@ final class TeamPromptLocalizer {
                e. 信号不足或矛盾时不得硬下「落后/领先」结论，该判断保持内部 UNKNOWN——仅当符合全局选择性 UNKNOWN 条件时才自然说明。""";
 
     static final String CAPTURE_RULE_EN = """
-
+            
             === SUPREMACY CAPTURE RULES (mandatory; training room / clan battles are always supremacy) ===
             1. A concentrated push may reduce distributed map coverage; whether it actually caused spotting/vision loss must have corresponding evidence (never claim vision loss from concentration alone); always weigh the cost of concentrating vs spreading.
             2. The win/loss line must be read with resultSource; there are only three evidence levels, and BATTLE_RESULTS has the highest priority when present:
@@ -634,7 +654,7 @@ final class TeamPromptLocalizer {
                e. When signals are insufficient or contradictory, never force a "behind/ahead" conclusion — keep that judgment internal UNKNOWN and explain naturally only when the global selective-UNKNOWN condition applies.""";
 
     static final String CAPTURE_RULE_RU = """
-
+            
             === ПРАВИЛА ЗАХВАТА (обязательно; тренировочные бои и клановые бои — всегда supremacy) ===
             1. Концентрированное продвижение может уменьшить распределённое покрытие карты; действительно ли оно привело к потере обзора/разведки — должно подтверждаться evidence (нельзя утверждать потерю обзора только из-за концентрации); всегда взвешивайте цену концентрации против рассредоточения.
             2. Строку result следует читать вместе с resultSource; существует только три уровня доказательности, и при наличии BATTLE_RESULTS он имеет высший приоритет:

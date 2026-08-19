@@ -61,7 +61,9 @@ public class HallOfFameAdminService {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    /** 管理列表：nickname / accountId / arenaId / uploadedBy / battleType / tankId / replayAvailable 组合搜索。 */
+    /**
+     * 管理列表：nickname / accountId / arenaId / uploadedBy / battleType / tankId / replayAvailable 组合搜索。
+     */
     public HofAdminPageDto search(final String nickname, final Long accountId, final String arenaId,
                                   final String uploadedBy, final String battleType, final Long tankId,
                                   final Boolean replayAvailable, final String sort,
@@ -76,7 +78,9 @@ public class HallOfFameAdminService {
         return recordMapper.toAdminPageDto(records, page, size);
     }
 
-    /** 操作审计（只读，第一版 DELETE_ENTRY）。 */
+    /**
+     * 操作审计（只读，第一版 DELETE_ENTRY）。
+     */
     public HofAdminAuditPageDto audit(final int page, final int size) {
         final Pageable pageable = PageRequest.of(page - 1, clamp(size),
                 Sort.by(Sort.Direction.DESC, "createdAt", "id"));
@@ -163,7 +167,9 @@ public class HallOfFameAdminService {
         }
     }
 
-    /** 删除记录快照：audit 使用 + commit 后文件清理使用（原记录已删除）。 */
+    /**
+     * 删除记录快照：audit 使用 + commit 后文件清理使用（原记录已删除）。
+     */
     record DeletedEntry(long id, String arenaId, long accountId, String nickname, long tankId,
                         String tankName, String battleType, int arenaBonusType, int damageDealt,
                         String replayHash) {

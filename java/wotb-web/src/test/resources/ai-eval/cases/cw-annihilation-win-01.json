@@ -6,13 +6,34 @@
   "lessonRef": "docs/ai-lessons/cw-annihilation-win-01.md",
   "expectedJudgment": "全歼敌方获胜（对方全部阵亡，结算 winnerTeam 权威；双方点数均 <1000 仍是全歼，非时间耗尽点数判定）",
   "checks": [
-    { "kind": "prompt_contains", "text": "CAPTURE_AND_POINTS" },
-    { "kind": "prompt_contains", "text": "pointsDecided=false" },
-    { "kind": "prompt_contains", "text": "resultSource=BATTLE_RESULTS" },
-    { "kind": "prompt_contains", "text": "result=CHRD获胜（全歼敌方）" },
-    { "kind": "prompt_contains", "text": "survivors=0" },
-    { "kind": "prompt_contains", "text": "death=阵亡@" },
-    { "kind": "prompt_omits", "text": "result=CHRD获胜（时间耗尽点数判定）" }
+    {
+      "kind": "prompt_contains",
+      "text": "CAPTURE_AND_POINTS"
+    },
+    {
+      "kind": "prompt_contains",
+      "text": "pointsDecided=false"
+    },
+    {
+      "kind": "prompt_contains",
+      "text": "resultSource=BATTLE_RESULTS"
+    },
+    {
+      "kind": "prompt_contains",
+      "text": "result=CHRD获胜（全歼敌方）"
+    },
+    {
+      "kind": "prompt_contains",
+      "text": "survivors=0"
+    },
+    {
+      "kind": "prompt_contains",
+      "text": "death=阵亡@"
+    },
+    {
+      "kind": "prompt_omits",
+      "text": "result=CHRD获胜（时间耗尽点数判定）"
+    }
   ],
   "note": "对方 7 台全部阵亡（逐车 death=阵亡@、合计 survivors=0）、双方 victoryPointsEarned 均 <1000、结算 winnerTeam=我方：胜利方式必须判定为全歼（resultSource=BATTLE_RESULTS，result=CHRD获胜（全歼敌方）），不得写成时间耗尽点数判定。系统提示词规则由 AiEvalHarnessTest 另行断言。"
 }

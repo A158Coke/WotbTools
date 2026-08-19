@@ -33,7 +33,9 @@ public final class ReplayArchiveReader {
     private ReplayArchiveReader() {
     }
 
-    /** 读取整个归档，返回 条目名 → 字节。校验失败抛 {@link IOException}。 */
+    /**
+     * 读取整个归档，返回 条目名 → 字节。校验失败抛 {@link IOException}。
+     */
     public static Map<String, byte[]> read(final byte[] data) throws IOException {
         if (data == null) {
             throw new IOException("Replay archive is null");

@@ -5,7 +5,9 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 验证 ZH/EN/RU 新 CAPTURE_RULE 均完成替换，EN/RU 不残留中文规则（包内生产入口）。 */
+/**
+ * 验证 ZH/EN/RU 新 CAPTURE_RULE 均完成替换，EN/RU 不残留中文规则（包内生产入口）。
+ */
 class TeamPromptLocalizerTest {
 
     @Test

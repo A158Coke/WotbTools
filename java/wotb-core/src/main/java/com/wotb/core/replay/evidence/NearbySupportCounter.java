@@ -25,7 +25,9 @@ public final class NearbySupportCounter {
 
     public static final float SUPPORT_RADIUS_M = 150f;
 
-    /** 某时刻录像者附近的友军 / 敌军观察数量。 */
+    /**
+     * 某时刻录像者附近的友军 / 敌军观察数量。
+     */
     public record Counts(
             float battleRelSec,
             int friendlyCount,
@@ -37,27 +39,37 @@ public final class NearbySupportCounter {
             int recorderRegion,
             DecodeConfidence confidence
     ) {
-        /** 友军一侧是否全部被观察到（可表达完整数量）。 */
+        /**
+         * 友军一侧是否全部被观察到（可表达完整数量）。
+         */
         public boolean friendlyFullyObserved() {
             return friendlyTotal > 0 && observedFriendlyTotal == friendlyTotal;
         }
 
-        /** 敌军一侧是否全部被观察到（可表达完整数量）。 */
+        /**
+         * 敌军一侧是否全部被观察到（可表达完整数量）。
+         */
         public boolean enemyFullyObserved() {
             return enemyTotal > 0 && observedEnemyTotal == enemyTotal;
         }
 
-        /** 友军数量标签：完整覆盖时 "N"，否则 "≥N"（N=0 时 "?"）。 */
+        /**
+         * 友军数量标签：完整覆盖时 "N"，否则 "≥N"（N=0 时 "?"）。
+         */
         public String friendlyLabel() {
             return label(friendlyCount, friendlyFullyObserved());
         }
 
-        /** 敌军数量标签：完整覆盖时 "N"，否则 "≥N"（N=0 时 "?"）。 */
+        /**
+         * 敌军数量标签：完整覆盖时 "N"，否则 "≥N"（N=0 时 "?"）。
+         */
         public String enemyLabel() {
             return label(enemyCount, enemyFullyObserved());
         }
 
-        /** "友军v敌军" 形式标签，避免把观察子集伪装成全知兵力。 */
+        /**
+         * "友军v敌军" 形式标签，避免把观察子集伪装成全知兵力。
+         */
         public String numbersLabel() {
             return friendlyLabel() + "v" + enemyLabel();
         }
@@ -140,7 +152,9 @@ public final class NearbySupportCounter {
                 totals[0], totals[1], recorderRegion, confidence);
     }
 
-    /** 当前时间点存活队伍人数（来自 battle 结算）：[友军(不含录像者), 敌军]。 */
+    /**
+     * 当前时间点存活队伍人数（来自 battle 结算）：[友军(不含录像者), 敌军]。
+     */
     private static int[] sideTotals(final Battle battle, final int recorderTeam,
                                     final float battleRelSec) {
         int friendly = 0;
@@ -161,7 +175,9 @@ public final class NearbySupportCounter {
         return new int[]{Math.max(0, friendly - 1), enemy};
     }
 
-    /** 权威存活判定：survived，或阵亡时间晚于当前 battle-relative 时刻。 */
+    /**
+     * 权威存活判定：survived，或阵亡时间晚于当前 battle-relative 时刻。
+     */
     private static boolean aliveAt(final PlayerResult p, final float battleRelSec) {
         if (p.survived) {
             return true;

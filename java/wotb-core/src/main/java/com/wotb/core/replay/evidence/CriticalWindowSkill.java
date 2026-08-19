@@ -81,7 +81,9 @@ public final class CriticalWindowSkill {
                 && b.endSec() + MERGE_GAP_SEC >= a.startSec();
     }
 
-    /** 聚合窗口信号（数值全部来自确定性证据）。 */
+    /**
+     * 聚合窗口信号（数值全部来自确定性证据）。
+     */
     private record WindowSignal(
             float startSec,
             float endSec,

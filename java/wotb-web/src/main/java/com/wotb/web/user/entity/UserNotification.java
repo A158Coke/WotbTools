@@ -44,27 +44,67 @@ public class UserNotification {
         // JPA
     }
 
-    public Long getId() { return id; }
-    public void setId(final Long id) { this.id = id; }
+    public Long getId() {
+        return id;
+    }
 
-    public String getKeycloakUserId() { return keycloakUserId; }
-    public void setKeycloakUserId(final String keycloakUserId) { this.keycloakUserId = keycloakUserId; }
+    public void setId(final Long id) {
+        this.id = id;
+    }
 
-    public String getType() { return type; }
-    public void setType(final String type) { this.type = type; }
+    public String getKeycloakUserId() {
+        return keycloakUserId;
+    }
 
-    public String getSubjectType() { return subjectType; }
-    public void setSubjectType(final String subjectType) { this.subjectType = subjectType; }
+    public void setKeycloakUserId(final String keycloakUserId) {
+        this.keycloakUserId = keycloakUserId;
+    }
 
-    public Long getSubjectId() { return subjectId; }
-    public void setSubjectId(final Long subjectId) { this.subjectId = subjectId; }
+    public String getType() {
+        return type;
+    }
 
-    public String getPayload() { return payload; }
-    public void setPayload(final String payload) { this.payload = payload; }
+    public void setType(final String type) {
+        this.type = type;
+    }
 
-    public OffsetDateTime getReadAt() { return readAt; }
-    public void setReadAt(final OffsetDateTime readAt) { this.readAt = readAt; }
+    public String getSubjectType() {
+        return subjectType;
+    }
 
-    public OffsetDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(final OffsetDateTime createdAt) { this.createdAt = createdAt; }
+    public void setSubjectType(final String subjectType) {
+        this.subjectType = subjectType;
+    }
+
+    public Long getSubjectId() {
+        return subjectId;
+    }
+
+    public void setSubjectId(final Long subjectId) {
+        this.subjectId = subjectId;
+    }
+
+    public String getPayload() {
+        return payload;
+    }
+
+    public void setPayload(final String payload) {
+        this.payload = payload;
+    }
+
+    public OffsetDateTime getReadAt() {
+        return readAt;
+    }
+
+    public void setReadAt(final OffsetDateTime readAt) {
+        this.readAt = readAt;
+    }
+
+    public OffsetDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(final OffsetDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
 }

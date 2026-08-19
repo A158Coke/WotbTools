@@ -6,7 +6,8 @@ import com.wotb.core.replay.event.DecodeConfidence;
  * 解码置信度比较辅助。
  */
 final class DecodeConfidenceHelper {
-    private DecodeConfidenceHelper() {}
+    private DecodeConfidenceHelper() {
+    }
 
     static int ordinal(final DecodeConfidence c) {
         return switch (c) {
@@ -17,7 +18,9 @@ final class DecodeConfidenceHelper {
         };
     }
 
-    /** true if confidence is low enough that it should not override known state. */
+    /**
+     * true if confidence is low enough that it should not override known state.
+     */
     static boolean isLowConfidence(final DecodeConfidence c) {
         return c == null || ordinal(c) >= ordinal(DecodeConfidence.PARTIAL);
     }

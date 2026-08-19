@@ -8,11 +8,11 @@ package com.wotb.core.replay.event;
  * 不得直接将所有 Type 4 设置为 alive=false。
  * </p>
  *
- * @param sequence    事件顺序号
- * @param timestamp   时间戳
- * @param packetType  来源原始 packet type
- * @param confidence  解码置信度
- * @param entityId    被移除的实体 ID
+ * @param sequence   事件顺序号
+ * @param timestamp  时间戳
+ * @param packetType 来源原始 packet type
+ * @param confidence 解码置信度
+ * @param entityId   被移除的实体 ID
  */
 public record EntityRemovedEvent(
         int sequence,

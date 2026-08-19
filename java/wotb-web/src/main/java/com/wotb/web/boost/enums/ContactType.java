@@ -1,6 +1,8 @@
 package com.wotb.web.boost.enums;
 
-/** 联系方式类型。 */
+/**
+ * 联系方式类型。
+ */
 public enum ContactType {
     QQ,
     WECHAT;

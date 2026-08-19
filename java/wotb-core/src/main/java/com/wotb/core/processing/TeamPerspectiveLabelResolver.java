@@ -28,7 +28,8 @@ import java.util.stream.Collectors;
  */
 public final class TeamPerspectiveLabelResolver {
 
-    private TeamPerspectiveLabelResolver() {}
+    private TeamPerspectiveLabelResolver() {
+    }
 
     /**
      * 用户可见 display label：唯一 dominant 且严格多数（{@code count * 2 > roster.size()}）

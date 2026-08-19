@@ -30,11 +30,17 @@ import java.util.Map;
  */
 public final class BattleTimelineBuilder {
 
-    /** 位置流中断阈值（秒）：超过则位置转为 last-known；与 playback POSITION_GAP_SEC 对齐。 */
+    /**
+     * 位置流中断阈值（秒）：超过则位置转为 last-known；与 playback POSITION_GAP_SEC 对齐。
+     */
     static final double POSITION_GAP_SEC = 5.0;
-    /** 位置显著变化阈值（canonical 米）。 */
+    /**
+     * 位置显著变化阈值（canonical 米）。
+     */
     static final double POSITION_CHANGE_THRESHOLD_M = 5.0;
-    /** 防御性帧数上限（450s 战斗约 451 帧；超长异常拒绝而非 OOM）。 */
+    /**
+     * 防御性帧数上限（450s 战斗约 451 帧；超长异常拒绝而非 OOM）。
+     */
     static final int MAX_FRAMES = 2400;
 
     private BattleTimelineBuilder() {
@@ -305,7 +311,9 @@ public final class BattleTimelineBuilder {
         return max;
     }
 
-    /** 事件按 (battle-relative 时间, sequence) 排序；非有限时间戳的事件剔除并计数。 */
+    /**
+     * 事件按 (battle-relative 时间, sequence) 排序；非有限时间戳的事件剔除并计数。
+     */
     static List<ReplayEvent> orderedEvents(
             final List<ReplayEvent> events, final double startRawClockSec) {
         final List<ReplayEvent> ordered = new ArrayList<>();

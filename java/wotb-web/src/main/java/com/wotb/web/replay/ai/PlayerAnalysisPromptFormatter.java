@@ -21,7 +21,8 @@ import java.util.Map;
  */
 public final class PlayerAnalysisPromptFormatter {
 
-    private PlayerAnalysisPromptFormatter() {}
+    private PlayerAnalysisPromptFormatter() {
+    }
 
     /**
      * 阵营称呼。随机战个人复盘直接面向玩家本人，同队一律称「队友」而非「友方」，

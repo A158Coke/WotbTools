@@ -20,7 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** PointsSituationEvidence：轨迹采集与点数局势证据段渲染（holland 语义，5 区为占领点）。 */
+/**
+ * PointsSituationEvidence：轨迹采集与点数局势证据段渲染（holland 语义，5 区为占领点）。
+ */
 class PointsSituationEvidenceTest {
 
     private static final String MAP = "holland";

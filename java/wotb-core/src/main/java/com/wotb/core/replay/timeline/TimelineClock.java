@@ -10,7 +10,9 @@ public final class TimelineClock {
     private TimelineClock() {
     }
 
-    /** 事件在 battle-relative 时间轴上的时刻；无 battle start 时退回 raw（调用方必须保证 start 可用）。 */
+    /**
+     * 事件在 battle-relative 时间轴上的时刻；无 battle start 时退回 raw（调用方必须保证 start 可用）。
+     */
     public static double battleClockOf(final ReplayEvent event, final double battleStartRawClockSec) {
         // timestamp 为 null → NaN（invalid）：调用方必须过滤/计数，绝不把缺失时间戳塞进 frame 0
         if (event.timestamp() == null) {

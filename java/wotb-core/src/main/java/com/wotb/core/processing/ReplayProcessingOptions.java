@@ -10,12 +10,16 @@ public record ReplayProcessingOptions(
         boolean extractFeatures
 ) {
 
-    /** 仅解析战后数据（当前普通 preview 模式）。 */
+    /**
+     * 仅解析战后数据（当前普通 preview 模式）。
+     */
     public static ReplayProcessingOptions summaryOnly() {
         return new ReplayProcessingOptions(true, false, false);
     }
 
-    /** 战后数据 + 完整重建（AI 单场分析模式）。 */
+    /**
+     * 战后数据 + 完整重建（AI 单场分析模式）。
+     */
     public static ReplayProcessingOptions full() {
         return new ReplayProcessingOptions(true, true, false);
     }

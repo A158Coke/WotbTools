@@ -24,6 +24,6 @@ public record TeamEntityIdentity(
         return entityId > 0 && team > 0
                 && (accountId > 0 || StringUtils.hasText(nickname))
                 && (confidence == DecodeConfidence.EXACT
-                        || confidence == DecodeConfidence.INFERRED);
+                || confidence == DecodeConfidence.INFERRED);
     }
 }

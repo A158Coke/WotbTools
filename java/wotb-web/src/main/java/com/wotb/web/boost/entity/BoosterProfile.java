@@ -11,7 +11,9 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.OffsetDateTime;
 
-/** 打手档案。与 Flyway 迁移逐列对齐。 */
+/**
+ * 打手档案。与 Flyway 迁移逐列对齐。
+ */
 @Entity
 @Table(name = "booster_profile")
 public class BoosterProfile {
@@ -62,42 +64,107 @@ public class BoosterProfile {
         // JPA
     }
 
-    public Long getId() { return id; }
-    public void setId(final Long id) { this.id = id; }
+    public Long getId() {
+        return id;
+    }
 
-    public String getNickname() { return nickname; }
-    public void setNickname(final String nickname) { this.nickname = nickname; }
+    public void setId(final Long id) {
+        this.id = id;
+    }
 
-    public String getLevel() { return level; }
-    public void setLevel(final String level) { this.level = level; }
+    public String getNickname() {
+        return nickname;
+    }
 
-    public String getKeycloakUserId() { return keycloakUserId; }
-    public void setKeycloakUserId(final String keycloakUserId) { this.keycloakUserId = keycloakUserId; }
+    public void setNickname(final String nickname) {
+        this.nickname = nickname;
+    }
 
-    public String getWotbServer() { return wotbServer; }
-    public void setWotbServer(final String wotbServer) { this.wotbServer = wotbServer; }
+    public String getLevel() {
+        return level;
+    }
 
-    public Boolean getAvailable() { return available; }
-    public void setAvailable(final Boolean available) { this.available = available; }
+    public void setLevel(final String level) {
+        this.level = level;
+    }
 
-    public String getStatus() { return status; }
-    public void setStatus(final String status) { this.status = status; }
+    public String getKeycloakUserId() {
+        return keycloakUserId;
+    }
 
-    public String getContactType() { return contactType; }
-    public void setContactType(final String contactType) { this.contactType = contactType; }
+    public void setKeycloakUserId(final String keycloakUserId) {
+        this.keycloakUserId = keycloakUserId;
+    }
 
-    public String getContactValue() { return contactValue; }
-    public void setContactValue(final String contactValue) { this.contactValue = contactValue; }
+    public String getWotbServer() {
+        return wotbServer;
+    }
 
-    public String getSpecialties() { return specialties; }
-    public void setSpecialties(final String specialties) { this.specialties = specialties; }
+    public void setWotbServer(final String wotbServer) {
+        this.wotbServer = wotbServer;
+    }
 
-    public String getDescription() { return description; }
-    public void setDescription(final String description) { this.description = description; }
+    public Boolean getAvailable() {
+        return available;
+    }
 
-    public OffsetDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(final OffsetDateTime createdAt) { this.createdAt = createdAt; }
+    public void setAvailable(final Boolean available) {
+        this.available = available;
+    }
 
-    public OffsetDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(final OffsetDateTime updatedAt) { this.updatedAt = updatedAt; }
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(final String status) {
+        this.status = status;
+    }
+
+    public String getContactType() {
+        return contactType;
+    }
+
+    public void setContactType(final String contactType) {
+        this.contactType = contactType;
+    }
+
+    public String getContactValue() {
+        return contactValue;
+    }
+
+    public void setContactValue(final String contactValue) {
+        this.contactValue = contactValue;
+    }
+
+    public String getSpecialties() {
+        return specialties;
+    }
+
+    public void setSpecialties(final String specialties) {
+        this.specialties = specialties;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(final String description) {
+        this.description = description;
+    }
+
+    public OffsetDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(final OffsetDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public OffsetDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(final OffsetDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
 }

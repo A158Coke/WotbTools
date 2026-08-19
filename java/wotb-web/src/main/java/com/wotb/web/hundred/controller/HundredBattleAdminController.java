@@ -47,7 +47,9 @@ public class HundredBattleAdminController {
         this.evidenceService = evidenceService;
     }
 
-    /** 审核列表：status 过滤（PENDING / CURRENT / ...，缺省全部），submitted_at 倒序。 */
+    /**
+     * 审核列表：status 过滤（PENDING / CURRENT / ...，缺省全部），submitted_at 倒序。
+     */
     @GetMapping("/submissions")
     public HundredAdminPageDto list(
             @RequestParam(name = "status", required = false) final String status,
@@ -56,7 +58,9 @@ public class HundredBattleAdminController {
         return service.adminList(status, page, size);
     }
 
-    /** 审核详情：一屏数据（proofScreenshot 仅 PENDING 返回）。 */
+    /**
+     * 审核详情：一屏数据（proofScreenshot 仅 PENDING 返回）。
+     */
     @GetMapping("/submissions/{id}")
     public HundredAdminDetailDto detail(@PathVariable final long id) {
         return service.adminDetail(id);
@@ -88,7 +92,9 @@ public class HundredBattleAdminController {
                 .body(download.data());
     }
 
-    /** APPROVE：事务内重新读取 CURRENT 并比较 approvedAverageDamage；旧 CURRENT → SUPERSEDED。 */
+    /**
+     * APPROVE：事务内重新读取 CURRENT 并比较 approvedAverageDamage；旧 CURRENT → SUPERSEDED。
+     */
     @PostMapping("/submissions/{id}/approve")
     public HundredSubmissionSummaryDto approve(@PathVariable final long id,
                                                @RequestBody final HundredApproveRequest body) {
@@ -96,7 +102,9 @@ public class HundredBattleAdminController {
                 body.approvedAverageDamage(), body.approvedBattleCount());
     }
 
-    /** REJECT：原因强制（OTHER 必须填文本）。 */
+    /**
+     * REJECT：原因强制（OTHER 必须填文本）。
+     */
     @PostMapping("/submissions/{id}/reject")
     public HundredSubmissionSummaryDto reject(@PathVariable final long id,
                                               @RequestBody final HundredRejectRequest body) {
@@ -104,7 +112,9 @@ public class HundredBattleAdminController {
                 body.rejectReason(), body.rejectReasonText());
     }
 
-    /** 删除 CURRENT（管理员）：CURRENT → DELETED，不恢复 SUPERSEDED；原因强制。 */
+    /**
+     * 删除 CURRENT（管理员）：CURRENT → DELETED，不恢复 SUPERSEDED；原因强制。
+     */
     @PostMapping("/submissions/{id}/delete")
     public HundredSubmissionSummaryDto delete(@PathVariable final long id,
                                               @RequestBody final HundredDeleteRequest body) {

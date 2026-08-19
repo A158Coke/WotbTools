@@ -222,9 +222,9 @@ class DefaultTeamBattleFeatureExtractorTest {
                 .map(event -> event instanceof ParticipantMappingEvent participantMapping
                         && participantMapping.accountId() == 101L
                         ? mapping(
-                                participantMapping.sequence(),
-                                participantMapping.entityId(),
-                                999L)
+                        participantMapping.sequence(),
+                        participantMapping.entityId(),
+                        999L)
                         : event)
                 .toList();
         final Fixture fallbackFixture =
@@ -877,7 +877,9 @@ class DefaultTeamBattleFeatureExtractorTest {
                 .clusterCount();
     }
 
-    /** Two-position version with separate raw X coordinates. */
+    /**
+     * Two-position version with separate raw X coordinates.
+     */
     private int formationClusters(final Fixture fixture, final float rawX1, final float rawX2) {
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),

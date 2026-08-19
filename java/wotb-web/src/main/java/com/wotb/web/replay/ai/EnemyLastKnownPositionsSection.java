@@ -69,7 +69,9 @@ final class EnemyLastKnownPositionsSection {
         return sb.toString();
     }
 
-    /** 随机战行：以「敌方」标识，无 OBSERVED 记录时显式 UNKNOWN。 */
+    /**
+     * 随机战行：以「敌方」标识，无 OBSERVED 记录时显式 UNKNOWN。
+     */
     private static void appendPlayerRow(final StringBuilder sb, final EnemyLastKnownPosition v) {
         sb.append("敌方 ").append(PlayerResultFormat.quoteForPrompt(v.nickname()))
                 .append(" 坦克: ").append(PlayerResultFormat.quoteForPrompt(v.tankName()));
@@ -85,7 +87,9 @@ final class EnemyLastKnownPositionsSection {
                 .append('\n');
     }
 
-    /** 团队行：与 OPPOSING_TEAM_LINEUP 相同的 opponent 机器键风格。 */
+    /**
+     * 团队行：与 OPPOSING_TEAM_LINEUP 相同的 opponent 机器键风格。
+     */
     private static void appendTeamRow(final StringBuilder sb, final EnemyLastKnownPosition v) {
         sb.append("opponent accountId=").append(v.accountId())
                 .append(" nickname=").append(PlayerResultFormat.quoteForPrompt(v.nickname()))

@@ -41,7 +41,9 @@ class TeamResultSourceBoundaryTest {
         return b;
     }
 
-    /** 结算阵容完整（rosterComplete=true）的 battle；players 由调用方给出。 */
+    /**
+     * 结算阵容完整（rosterComplete=true）的 battle；players 由调用方给出。
+     */
     private static Battle completeBattle(final List<PlayerResult> players, final Integer winnerTeam) {
         final Battle b = battle(players, winnerTeam);
         b.rosterComplete = true;

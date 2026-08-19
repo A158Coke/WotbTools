@@ -50,7 +50,9 @@ public final class PreBattlePromptBuilder {
         return sb.toString();
     }
 
-    /** 渲染地图战术语义段；无语义数据时明确 UNKNOWN，禁止编造。 */
+    /**
+     * 渲染地图战术语义段；无语义数据时明确 UNKNOWN，禁止编造。
+     */
     static String buildMapSemanticsSection(final String mapCode,
                                            final MapTacticalSemantics mapSemantics) {
         final StringBuilder sb = new StringBuilder(3072);
@@ -141,7 +143,9 @@ public final class PreBattlePromptBuilder {
         return sb.toString();
     }
 
-    /** 聚合各区域置信度字段的众数，供全局一行展示（避免逐区域重复）。 */
+    /**
+     * 聚合各区域置信度字段的众数，供全局一行展示（避免逐区域重复）。
+     */
     private static Map<String, String> dominantConfidence(
             final Map<String, MapTacticalSemantics.TacticalArea> areas) {
         final String[] fields = {
@@ -180,7 +184,9 @@ public final class PreBattlePromptBuilder {
         return dominant;
     }
 
-    /** 仅标注与该图全局置信度不一致的区域字段，避免 30+ 区域逐行重复。 */
+    /**
+     * 仅标注与该图全局置信度不一致的区域字段，避免 30+ 区域逐行重复。
+     */
     private static void appendConfidenceDiff(
             final StringBuilder sb,
             final MapTacticalSemantics.TacticalArea area,
@@ -292,7 +298,9 @@ public final class PreBattlePromptBuilder {
         return max;
     }
 
-    /** 双方总血量：仅已证明的进场满血（OBSERVED_EXACT）用实测值，否则 tankopedia base 求和；均无按 0 计。 */
+    /**
+     * 双方总血量：仅已证明的进场满血（OBSERVED_EXACT）用实测值，否则 tankopedia base 求和；均无按 0 计。
+     */
     private static int totalHp(final Battle battle, final int team) {
         if (battle.players == null) {
             return 0;
@@ -324,7 +332,9 @@ public final class PreBattlePromptBuilder {
         return base.isBlank() ? "未知" : base + "（tankopedia base）";
     }
 
-    /** 满血量数值（无标注）：OBSERVED_EXACT → entryHp；否则 tankopedia base；均无 → null。 */
+    /**
+     * 满血量数值（无标注）：OBSERVED_EXACT → entryHp；否则 tankopedia base；均无 → null。
+     */
     private static Integer tankEntryMaxHpValue(final PlayerResult p) {
         if (p.entryHpSource == EntryHpSource.OBSERVED_EXACT
                 && p.entryHp != null && p.entryHp > 0) {

@@ -106,7 +106,9 @@ class DeathTimeReconcilerTest {
         return TeamEntityMapper.resolve(battle, reconstruction(List.of(), events));
     }
 
-    /** 直接构造空映射（如无任何实体解析成功时的降级）。 */
+    /**
+     * 直接构造空映射（如无任何实体解析成功时的降级）。
+     */
     private static TeamEntityMapping emptyMapping() {
         return new TeamEntityMapping(Map.of(), Map.of(), 0, List.of());
     }
@@ -118,7 +120,9 @@ class DeathTimeReconcilerTest {
 
     // ================= Blocker 1：身份复用权威 TeamEntityMapping =================
 
-    /** Test 1：conflicting entity reuse —— 同一 entity 归属多个账号 → 整体排除，绝不 last-write-wins。 */
+    /**
+     * Test 1：conflicting entity reuse —— 同一 entity 归属多个账号 → 整体排除，绝不 last-write-wins。
+     */
     @Test
     void conflictingEntityReuseIsNotCalibrated() {
         final PlayerResult a = deadPlayer(1001L, "A", 1, 40.0);
@@ -142,7 +146,9 @@ class DeathTimeReconcilerTest {
                 "冲突实体的死亡证据不得校准 B（绝不能 last-write-wins 判 B 死亡）");
     }
 
-    /** Test 2：低可信 mapping（PARTIAL/UNKNOWN）→ identity 不可用 → 证据被拒绝。 */
+    /**
+     * Test 2：低可信 mapping（PARTIAL/UNKNOWN）→ identity 不可用 → 证据被拒绝。
+     */
     @Test
     void lowConfidenceMappingIsNotUsed() {
         final PlayerResult p = deadPlayer(1001L, "A", 1, 40.0);
@@ -161,7 +167,9 @@ class DeathTimeReconcilerTest {
                 "低可信映射不得产出死亡时刻");
     }
 
-    /** Test 3：nickname fallback —— accountId=0 + 唯一昵称 → 权威 PlayerResult，直接复用。 */
+    /**
+     * Test 3：nickname fallback —— accountId=0 + 唯一昵称 → 权威 PlayerResult，直接复用。
+     */
     @Test
     void nicknameFallbackMappingIsReused() {
         final PlayerResult p = deadPlayer(100L, "Ally", 1, 20.0);
@@ -186,7 +194,9 @@ class DeathTimeReconcilerTest {
 
     // ================= Blocker 2：EXACT alive=true 否决更早的 legacy death =================
 
-    /** 96.9 的 legacy 死亡被 121.23s EXACT alive=true 证伪 → UNKNOWN（deathSec=0 → playback deathSec=null，无 X）。 */
+    /**
+     * 96.9 的 legacy 死亡被 121.23s EXACT alive=true 证伪 → UNKNOWN（deathSec=0 → playback deathSec=null，无 X）。
+     */
     @Test
     void laterExactAliveInvalidatesEarlierLegacyDeath() {
         final PlayerResult p = deadPlayer(3117015664L, "Fe1ix_k2x", 1, 96.9);
@@ -209,7 +219,9 @@ class DeathTimeReconcilerTest {
                 "被否决的 legacy 不得保留为死亡时刻，也不得伪造 121.23/121.23+ε");
     }
 
-    /** legacy 晚于最后一条 alive=true → 未被否决，保留 legacy。 */
+    /**
+     * legacy 晚于最后一条 alive=true → 未被否决，保留 legacy。
+     */
     @Test
     void aliveEvidenceBeforeLegacyKeepsLegacy() {
         final PlayerResult p = deadPlayer(1001L, "A", 1, 96.9);
@@ -227,7 +239,9 @@ class DeathTimeReconcilerTest {
 
     // ================= 最后权威 lifecycle state：旧 death 不能压过更晚的 alive =================
 
-    /** Test A：死亡 → 复生（60s dead EXACT → 70s alive EXACT），最终死亡证据缺失 → UNKNOWN，绝不能 60。 */
+    /**
+     * Test A：死亡 → 复生（60s dead EXACT → 70s alive EXACT），最终死亡证据缺失 → UNKNOWN，绝不能 60。
+     */
     @Test
     void earlyDeathRefutedByLaterAliveIsUnknown() {
         final PlayerResult p = deadPlayer(1001L, "A", 1, 0.0); // legacy 无估算
@@ -244,7 +258,9 @@ class DeathTimeReconcilerTest {
                 "60s 的旧死亡已被 70s 复生否决，不得作为最终 deathSec");
     }
 
-    /** Test C：同 timestamp，alive event sequence 更晚 → 最终权威状态 alive，60s dead 不得成为最终死亡证据。 */
+    /**
+     * Test C：同 timestamp，alive event sequence 更晚 → 最终权威状态 alive，60s dead 不得成为最终死亡证据。
+     */
     @Test
     void sameTimestampAliveLaterWins() {
         final PlayerResult p = deadPlayer(1001L, "A", 1, 0.0);
@@ -261,7 +277,9 @@ class DeathTimeReconcilerTest {
                 "同秒 sequence 更晚的 alive 是最后权威状态，60s dead 不得成为最终死亡证据");
     }
 
-    /** Test D：同 timestamp，dead event sequence 更晚 → 最终权威状态 dead → deathSec=60。 */
+    /**
+     * Test D：同 timestamp，dead event sequence 更晚 → 最终权威状态 dead → deathSec=60。
+     */
     @Test
     void sameTimestampDeadLaterWins() {
         final PlayerResult p = deadPlayer(1001L, "A", 1, 0.0);

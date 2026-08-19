@@ -6,7 +6,7 @@ import java.util.Map;
 /**
  * Conservative token estimator for DeepSeek models.
  * Uses character-based estimation as an approximation:
- *   estimatedTokens = ceil(codePoints * 1.25)
+ * estimatedTokens = ceil(codePoints * 1.25)
  * plus fixed per-message envelope overhead.
  * This is a CONSERVATIVE estimate, NOT exact token counting.
  * May overestimate for English/Latin text, near-accurate for CJK.

@@ -9,24 +9,24 @@ import java.util.Map;
  * {@code y} = 地图纵向 = 回放 z（同一原点同一米制）。前端将图片拉伸铺满
  * {@code playableBounds} 后即可直接映射像素。</p>
  *
- * @param mapCode       内部地图 code（meta.json 的 mapName，小写）
- * @param displayName   人类可读地图名（如 Desert Sands）
- * @param displayNames  三语显示名（zh/en/ru，来自 map_names.json；未收录时三语同 code，
- *                      前端按当前 locale 取 `displayNames[locale]`，缺失回退 displayName）
- * @param friendlyTeam  本方（录像者）队伍号（1/2；前端用于路线阵营配色与热力 Tab 映射）
- * @param playableBounds 可玩区边界
- * @param gridCells     6x6 分析格（36 个；id 如 F1/A6，带 nineGridRegion 与格子边界）
- * @param image         地图图片元信息（恒为 null——素材与尺寸由前端
- *                      {@code frontend/src/data/mapImages.js} 唯一维护，本字段仅为兼容保留）
- * @param spawnPoints   出生点（语义坐标）
- * @param phases        阶段切片（开局/中期/残局，按 battle-relative 秒）
- * @param heatmaps      热力：本方/敌方 × 驻留/伤害/阵亡（每层 36 个值，与 gridCells 同序；
- *                      驻留=位置采样计数、伤害=累计伤害、阵亡=事件计数；前端按 max 归一化）
- * @param routes        双方路线（每车 ≤200 点、2s 采样、观测区间与阵亡时刻）
- * @param arenaBonusType      战斗模式（meta.json#arenaBonusType 原值；1=随机战斗，其他=训练/联赛等；未知为 null）
- * @param recorderAccountId   录像者账号 id（经 {@link com.wotb.core.model.Battle#recorderResult()} 解析；
- *                             未解析为 null；前端用于路线「仅玩家」筛选）
- * @param playback      战局回放数据（可空；无观测/无名册时为 null；前端用于地图鸟瞰「战局回放」第三视图）
+ * @param mapCode           内部地图 code（meta.json 的 mapName，小写）
+ * @param displayName       人类可读地图名（如 Desert Sands）
+ * @param displayNames      三语显示名（zh/en/ru，来自 map_names.json；未收录时三语同 code，
+ *                          前端按当前 locale 取 `displayNames[locale]`，缺失回退 displayName）
+ * @param friendlyTeam      本方（录像者）队伍号（1/2；前端用于路线阵营配色与热力 Tab 映射）
+ * @param playableBounds    可玩区边界
+ * @param gridCells         6x6 分析格（36 个；id 如 F1/A6，带 nineGridRegion 与格子边界）
+ * @param image             地图图片元信息（恒为 null——素材与尺寸由前端
+ *                          {@code frontend/src/data/mapImages.js} 唯一维护，本字段仅为兼容保留）
+ * @param spawnPoints       出生点（语义坐标）
+ * @param phases            阶段切片（开局/中期/残局，按 battle-relative 秒）
+ * @param heatmaps          热力：本方/敌方 × 驻留/伤害/阵亡（每层 36 个值，与 gridCells 同序；
+ *                          驻留=位置采样计数、伤害=累计伤害、阵亡=事件计数；前端按 max 归一化）
+ * @param routes            双方路线（每车 ≤200 点、2s 采样、观测区间与阵亡时刻）
+ * @param arenaBonusType    战斗模式（meta.json#arenaBonusType 原值；1=随机战斗，其他=训练/联赛等；未知为 null）
+ * @param recorderAccountId 录像者账号 id（经 {@link com.wotb.core.model.Battle#recorderResult()} 解析；
+ *                          未解析为 null；前端用于路线「仅玩家」筛选）
+ * @param playback          战局回放数据（可空；无观测/无名册时为 null；前端用于地图鸟瞰「战局回放」第三视图）
  */
 public record MapOverview(
         String mapCode,
@@ -53,31 +53,45 @@ public record MapOverview(
         routes = routes == null ? List.of() : List.copyOf(routes);
     }
 
-    /** 平面边界（语义坐标；y 轴=回放 z）。 */
+    /**
+     * 平面边界（语义坐标；y 轴=回放 z）。
+     */
     public record Bounds(double xMin, double xMax, double yMin, double yMax) {
     }
 
-    /** 单个 6x6 分析格。 */
+    /**
+     * 单个 6x6 分析格。
+     */
     public record GridCell(String id, int nineGridRegion, Bounds bounds) {
     }
 
-    /** 地图图片元信息（前端素材开关在 mapImages.js；两者不一致时以前端为准）。 */
+    /**
+     * 地图图片元信息（前端素材开关在 mapImages.js；两者不一致时以前端为准）。
+     */
     public record ImageInfo(String file, int width, int height) {
     }
 
-    /** 出生点（语义坐标；team 1/2）。 */
+    /**
+     * 出生点（语义坐标；team 1/2）。
+     */
     public record SpawnPoint(String name, int team, double x, double y) {
     }
 
-    /** 阶段切片（battle-relative 秒）：opening / mid / late，覆盖 [0, battleEnd]。 */
+    /**
+     * 阶段切片（battle-relative 秒）：opening / mid / late，覆盖 [0, battleEnd]。
+     */
     public record Phase(String key, double startSec, double endSec) {
     }
 
-    /** 双阵营热力。 */
+    /**
+     * 双阵营热力。
+     */
     public record Heatmaps(Layer friendly, Layer enemy) {
     }
 
-    /** 单阵营三张热力（每层 36 个值，与 gridCells 同序）。 */
+    /**
+     * 单阵营三张热力（每层 36 个值，与 gridCells 同序）。
+     */
     public record Layer(List<Double> dwell, List<Double> damage, List<Double> deaths) {
         public Layer {
             dwell = dwell == null ? List.of() : List.copyOf(dwell);
@@ -86,7 +100,9 @@ public record MapOverview(
         }
     }
 
-    /** 单辆车路线（语义坐标；2s 采样；观测区间诚实标注）。 */
+    /**
+     * 单辆车路线（语义坐标；2s 采样；观测区间诚实标注）。
+     */
     public record Route(
             long accountId,
             String playerName,
@@ -103,7 +119,9 @@ public record MapOverview(
         }
     }
 
-    /** 路线点（语义坐标 + battle-relative 秒；连续点 gap > 5s 时前端断线）。 */
+    /**
+     * 路线点（语义坐标 + battle-relative 秒；连续点 gap > 5s 时前端断线）。
+     */
     public record Point(double x, double y, double timeSec) {
     }
 
@@ -127,7 +145,9 @@ public record MapOverview(
         }
     }
 
-    /** 争霸赛实时点数广播（battle-relative 秒升序；type-8 subtype48 root field12，PROVEN）。 */
+    /**
+     * 争霸赛实时点数广播（battle-relative 秒升序；type-8 subtype48 root field12，PROVEN）。
+     */
     public record PointsSample(double timeSec, int team, int points) {
     }
 
@@ -159,7 +179,9 @@ public record MapOverview(
         }
     }
 
-    /** 回放实测血量采样（battle-relative 秒；type-7 propId=3 当前血量，含装备加成，阵亡到 0）。 */
+    /**
+     * 回放实测血量采样（battle-relative 秒；type-7 propId=3 当前血量，含装备加成，阵亡到 0）。
+     */
     public record HpSample(double timeSec, int hp) {
     }
 
@@ -188,11 +210,11 @@ public record MapOverview(
     /**
      * 时间轴事件。
      *
-     * @param type           DAMAGE | DESTROYED | KILL | POSITION_REPORTED | POSITION_STALE（英文稳定码）
-     * @param timeSec        battle-relative 秒
-     * @param accountId      主体（攻击者 / 被击毁者 / 进入或离开观察的车辆）；无法解析为 null
+     * @param type            DAMAGE | DESTROYED | KILL | POSITION_REPORTED | POSITION_STALE（英文稳定码）
+     * @param timeSec         battle-relative 秒
+     * @param accountId       主体（攻击者 / 被击毁者 / 进入或离开观察的车辆）；无法解析为 null
      * @param targetAccountId 对象（DAMAGE/KILL 的受害者）；其余为 null
-     * @param damage         DAMAGE 的伤害值；其余为 null
+     * @param damage          DAMAGE 的伤害值；其余为 null
      */
     public record PlaybackEvent(
             String type,

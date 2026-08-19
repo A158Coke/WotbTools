@@ -19,7 +19,7 @@ public record BattleGroupingKey(
         String uniqueFallback
 ) {
 
-    public enum KeyType { ARENA, COMPOSITE, FALLBACK }
+    public enum KeyType {ARENA, COMPOSITE, FALLBACK}
 
     public static BattleGroupingKey from(final ReplayIdentity identity, final Battle battle, final String requestFallback) {
         final String arenaId = firstNonBlank(
@@ -50,7 +50,9 @@ public record BattleGroupingKey(
     }
 
     private static String firstNonBlank(final String... values) {
-        for (final String v : values) { if (v != null) return v; }
+        for (final String v : values) {
+            if (v != null) return v;
+        }
         return null;
     }
 

@@ -67,7 +67,7 @@ class DeathProximityTest {
         final PlayerResult survivor = player(1001L, 1, 0.0);
         survivor.survived = true;
         assertNull(extractorDeathProximity(recon(
-                snapshot(120f, vehicle(1, 1001L, 1, 0f, 0f, ObservationState.OBSERVED))),
+                        snapshot(120f, vehicle(1, 1001L, 1, 0f, 0f, ObservationState.OBSERVED))),
                 mapping(), survivor));
         assertNull(extractorDeathProximity(null, mapping(), player(1001L, 1, 60.0)));
     }

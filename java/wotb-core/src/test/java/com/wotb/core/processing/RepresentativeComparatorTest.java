@@ -87,7 +87,7 @@ class RepresentativeComparatorTest {
                 true, complete, recon, diag);
         var reconstruction = recon
                 ? new ReplayReconstruction(null, null, 300f, null,
-                        List.of(), List.of(), List.of(), null, coverage, diag)
+                List.of(), List.of(), List.of(), null, coverage, diag)
                 : null;
         var result = new ReplayProcessingResult(
                 name, ReplayProcessingStatus.SUCCESS, null, null,

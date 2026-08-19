@@ -15,7 +15,8 @@ public record KeyBattleEvent(
 ) {
 
     public KeyBattleEvent {
-        if (!Float.isFinite(clockSec) || clockSec < 0) throw new IllegalArgumentException("clockSec invalid: " + clockSec);
+        if (!Float.isFinite(clockSec) || clockSec < 0)
+            throw new IllegalArgumentException("clockSec invalid: " + clockSec);
         if (!StringUtils.hasText(type)) throw new IllegalArgumentException("type must not be null/blank");
         if (!StringUtils.hasText(label)) throw new IllegalArgumentException("label must not be null/blank");
         if (confidence == null) confidence = DecodeConfidence.UNKNOWN;

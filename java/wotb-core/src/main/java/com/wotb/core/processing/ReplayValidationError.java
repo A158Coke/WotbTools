@@ -1,6 +1,8 @@
 package com.wotb.core.processing;
 
-/** 文件级验证错误。 */
+/**
+ * 文件级验证错误。
+ */
 public record ReplayValidationError(
         String code,
         String message

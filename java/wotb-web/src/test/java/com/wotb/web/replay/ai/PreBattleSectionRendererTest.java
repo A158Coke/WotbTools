@@ -127,7 +127,7 @@ class PreBattleSectionRendererTest {
     void partialPriorRendersOnlyAvailableBlocks() {
         final PreBattleStrategicPrior hypothesesOnly = new PreBattleStrategicPrior(
                 null, null, List.of(), List.of(), List.of(
-                        new PreBattleStrategicPrior.StrategicHypothesis("H2", "蹲坑预期", "地图空旷")));
+                new PreBattleStrategicPrior.StrategicHypothesis("H2", "蹲坑预期", "地图空旷")));
         final String section = PreBattleSectionRenderer.render(hypothesesOnly);
         assertNotNull(section);
         assertTrue(section.contains("战略假设"));

@@ -8,7 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-/** ClusterTermSanitizer：「簇」字确定性兜底——每个组合词精确替换、输出不再含「簇」、普通文本不受影响。 */
+/**
+ * ClusterTermSanitizer：「簇」字确定性兜底——每个组合词精确替换、输出不再含「簇」、普通文本不受影响。
+ */
 class ClusterTermSanitizerTest {
 
     @Test

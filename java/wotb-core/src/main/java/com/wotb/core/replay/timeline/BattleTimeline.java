@@ -9,14 +9,14 @@ import java.util.List;
  * <p>时间轴事实的唯一入口：Battle Playback / Personal AI / Team AI 都消费此模型，
  * 禁止各模块自行重新解释 raw events 形成互相不同的事实模型（docs/current-plan.md §1）。</p>
  *
- * @param mapCode               地图内部 code（meta.json mapName，全小写）
- * @param durationSec           battle-relative 总时长（秒）
+ * @param mapCode                地图内部 code（meta.json mapName，全小写）
+ * @param durationSec            battle-relative 总时长（秒）
  * @param battleStartRawClockSec battle start 原始时钟（provenance/debug）
- * @param clockResolution       时钟解析来源（IDENTIFIED / ESTIMATED）
- * @param frames                second=0..maxSecond 的 BattleFrame 列表（frameAt 按 second 索引）
- * @param events                全部事件（battle-relative 时间升序，精确时间不丢失）
- * @param validation            构建期校验（有效时 valid=true）
- * @param limitations           数据限制（如 CLOCK_ESTIMATED / POSITION_GAPS 等）
+ * @param clockResolution        时钟解析来源（IDENTIFIED / ESTIMATED）
+ * @param frames                 second=0..maxSecond 的 BattleFrame 列表（frameAt 按 second 索引）
+ * @param events                 全部事件（battle-relative 时间升序，精确时间不丢失）
+ * @param validation             构建期校验（有效时 valid=true）
+ * @param limitations            数据限制（如 CLOCK_ESTIMATED / POSITION_GAPS 等）
  */
 public record BattleTimeline(
         String mapCode,

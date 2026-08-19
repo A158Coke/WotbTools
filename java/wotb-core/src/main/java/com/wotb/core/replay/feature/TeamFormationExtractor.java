@@ -38,11 +38,11 @@ final class TeamFormationExtractor {
                 return;
             }
             for (final DefaultTeamBattleFeatureExtractor.TimedTeamPosition timedPos : timedPositions) {
-                    final float activeClock = timedPos.battleRelativeSec();
-                    final int window = (int) Math.floor(activeClock / FORMATION_WINDOW_SEC);
-                    windows.computeIfAbsent(window, ignored -> new HashMap<>())
-                            .merge(DefaultTeamBattleFeatureExtractor.identityKey(identity), timedPos.event(),
-                                    (left, right) -> left.sequence() > right.sequence() ? left : right);
+                final float activeClock = timedPos.battleRelativeSec();
+                final int window = (int) Math.floor(activeClock / FORMATION_WINDOW_SEC);
+                windows.computeIfAbsent(window, ignored -> new HashMap<>())
+                        .merge(DefaultTeamBattleFeatureExtractor.identityKey(identity), timedPos.event(),
+                                (left, right) -> left.sequence() > right.sequence() ? left : right);
             }
         });
         return windows.entrySet().stream()

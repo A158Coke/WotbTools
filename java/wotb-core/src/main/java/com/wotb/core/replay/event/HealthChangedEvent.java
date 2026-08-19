@@ -3,14 +3,14 @@ package com.wotb.core.replay.event;
 /**
  * 实体血量变化事件（对应 Packet Type 7 EntityProperty 的血量相关属性）。
  *
- * @param sequence       事件顺序号
- * @param timestamp      时间戳
- * @param packetType     来源原始 packet type
- * @param confidence     解码置信度
- * @param entityId       实体 ID
- * @param currentHealth  当前血量；null 表示未知
- * @param maxHealth      最大血量；null 表示未知
- * @param alive          存活状态；true=存活, false=阵亡, null=未知
+ * @param sequence      事件顺序号
+ * @param timestamp     时间戳
+ * @param packetType    来源原始 packet type
+ * @param confidence    解码置信度
+ * @param entityId      实体 ID
+ * @param currentHealth 当前血量；null 表示未知
+ * @param maxHealth     最大血量；null 表示未知
+ * @param alive         存活状态；true=存活, false=阵亡, null=未知
  */
 public record HealthChangedEvent(
         int sequence,
@@ -23,7 +23,9 @@ public record HealthChangedEvent(
         Boolean alive
 ) implements ReplayEvent {
 
-    /** 已证明的 HP 未知 sentinel（原始 u16=0xFFFD，与争霸击毁 ±40 点事件重合；绝非 65533 HP）。 */
+    /**
+     * 已证明的 HP 未知 sentinel（原始 u16=0xFFFD，与争霸击毁 ±40 点事件重合；绝非 65533 HP）。
+     */
     public static final int SENTINEL_UNKNOWN_HP = 0xFFFD;
 
     /**

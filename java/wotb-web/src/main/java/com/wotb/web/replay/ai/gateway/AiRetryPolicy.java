@@ -74,8 +74,7 @@ public record AiRetryPolicy(
         }
         return switch (error.code()) {
             case "AI_RATE_LIMITED" -> true;
-            case "AI_UPSTREAM_UNAVAILABLE" ->
-                    error.providerStatus() == null || retryableStatus(error.providerStatus());
+            case "AI_UPSTREAM_UNAVAILABLE" -> error.providerStatus() == null || retryableStatus(error.providerStatus());
             default -> false;
         };
     }

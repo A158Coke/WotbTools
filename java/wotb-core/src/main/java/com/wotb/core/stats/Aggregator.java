@@ -10,7 +10,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 跨场次按账号ID汇总每位选手 (对应 Python aggregate_players)。 */
+/**
+ * 跨场次按账号ID汇总每位选手 (对应 Python aggregate_players)。
+ */
 public final class Aggregator {
 
     private Aggregator() {
