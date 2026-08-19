@@ -5,6 +5,31 @@
 ## [Unreleased]
 
 ### Fixed
+- **PR #103 第七轮——ActualCombatant 边界进入 Canonical BattleTimeline + FormationDepth partial CURRENT 完整 fail-close（最终 review）**：
+  ① **ActualCombatantEntitySet（Canonical BattleTimeline universe 源头）**——TeamEntityMapping 新增
+  actualCombatantEntityIds(#301 账号集)：只允许可靠映射到 battle.players（battle_results #301 actual
+  combatant，accountId > 0）账号的实体进入 tactical FrameVehicle 集合；BattleTimelineBuilder 帧循环
+  knownEntityIdsAt(t) ∩ actualCombatantEntityIds 才构造 FrameVehicle。
+  non-#301 spectator/camera/observer/静态实体即使被 broad roster / ParticipantMapping 赋予完整身份
+  （accountId/team/nickname/坦克元数据）也绝不进入 timeline——不再产生假的 FIRST_KNOWN / ENEMY_LOST /
+  ENEMY_REACQUIRED / POSITION_CHANGE / REGION_CHANGE / DESTROYED delta（team=null 不再被
+  BattleDeltaEngine 的 isEnemy = !friendly() 当成敌方）；WorldSummary 保持 #301 roster（2v2 不被观战撑成 3v2）；
+  raw timeline.events 保留原始事件供协议用途；无任何实体映射到 #301 时 fail-close TIMELINE_MAPPING_INSUFFICIENT。
+  WorldSummary / BattleDeltaEngine / EpisodeDetector / TimelineFocusWindowSelector / Team+PersonalAiContextCompiler
+  全部只消费过滤后的 universe（检查确认无其它 raw-event 泄漏路径）。
+  ② **FormationDepth partial CURRENT 完整 fail-close**——GEOMETRIC_*（enemy centroid / 三分位轴）与
+  ownWeightedCoverageScore / enemyWeightedCoverageScore / ratio 改为在任何 exact geometry 计算前先判定
+  ownRefComplete && enemyRefComplete，只有双方 CURRENT 完整才输出；partial CURRENT（如 enemyRef=1/2）
+  只输出 POSITION_COVERAGE_INSUFFICIENT + CURRENT presence + coverage counts + ENEMY_LAST_KNOWN_POSITION_REFERENCES
+  ——不再用 1 辆敌方 CURRENT 建立 whole-team geometric axis（与覆盖段 INSUFFICIENT 自相矛盾）。
+  RelativeDepthHp 的 enemyRefComplete fail-close 保持不变（未重设计）。
+  ③ **测试**——canonicalTimelineExcludesNonCombatantPositionEntity（无身份 spectator：连续位置流 + >5s gap
+  + region teleport + 阵亡，FrameVehicle/delta/WorldSummary 三层断言）/
+  nonCombatantWithUsableBroadRosterIdentityStillExcluded（participants 提供 accountId/team/nickname/坦克元数据，
+  仍被 #301 排除）/ compilersNeverRenderNonCombatantEntity（Team+Personal AI 输出不含 车辆#99 / 账号 9999）/
+  partialEnemyCurrentDoesNotProduceGeometricTerciles（enemyRef=1/2 → 无 GEOMETRIC_*/无 exact 分数）/
+  completeEnemyCurrentStillProducesGeometricTerciles（完整场景不 regression）。
+  文档：protocol.md / team-ai-review.md / current-plan.md 同步。
 - **PR #103 第六轮——Evidence 层知识状态契约：enemy LAST_KNOWN 永不升级为 CURRENT exact geometry（2026-08）**：
   ① **FormationDepthEvidence / RelativeDepthHpEvidence 引入带 provenance 的 PhasePositionReference
   （accountId/team/x/z/knowledge/observedAtSec/ageSec，knowledge 复用 canonical PositionKnowledge）**——

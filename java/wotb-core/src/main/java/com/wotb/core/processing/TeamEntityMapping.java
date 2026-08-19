@@ -1,8 +1,10 @@
 package com.wotb.core.processing;
 
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 单场回放的实体到参战玩家映射。
@@ -79,5 +81,29 @@ public record TeamEntityMapping(
                         : "nickname:" + identity.nickname())
                 .distinct()
                 .count();
+    }
+
+    /**
+     * ActualCombatantEntitySet：可靠映射到 #301 actual combatant account 的实体集合
+     * （tactical FrameVehicle universe 的唯一来源）。
+     * <p>即使 broad roster / ParticipantMapping 给实体提供了完整身份（accountId / team / nickname /
+     * 坦克元数据），只要 account 不在 #301（battle.players），该实体仍不是 actual combatant，
+     * 必须从 tactical timeline 排除（spectator ≠ combatant，battle_results #301 是权威边界）。</p>
+     *
+     * @param actualCombatantAccounts #301 actual combatant 账号集（battle.players 中 accountId > 0）
+     * @return 属于 ActualCombatantEntitySet 的实体 ID 集合
+     */
+    public Set<Integer> actualCombatantEntityIds(final Set<Long> actualCombatantAccounts) {
+        if (actualCombatantAccounts == null || actualCombatantAccounts.isEmpty()) {
+            return Set.of();
+        }
+        final Set<Integer> out = new LinkedHashSet<>();
+        entitiesById.forEach((entityId, identity) -> {
+            if (identity.usable() && identity.accountId() > 0
+                    && actualCombatantAccounts.contains(identity.accountId())) {
+                out.add(entityId);
+            }
+        });
+        return out;
     }
 }

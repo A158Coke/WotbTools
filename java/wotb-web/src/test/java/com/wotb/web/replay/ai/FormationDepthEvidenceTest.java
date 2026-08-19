@@ -561,4 +561,62 @@ class FormationDepthEvidenceTest {
         assertFalse(section.contains("account:9999"), "spectator 账号不得进入阵型/覆盖测量: " + section);
     }
 
+    @Test
+    void partialEnemyCurrentDoesNotProduceGeometricTerciles() {
+        // PR #103 最终 review B2：enemy CURRENT 不完整（2 存活、1 CURRENT + 1 LAST_KNOWN）时，
+        // 不得用 1 辆敌方 CURRENT 建立 whole-team enemy centroid 输出我方 GEOMETRIC_*
+        // （否则与覆盖段 POSITION_COVERAGE_INSUFFICIENT enemyRef=1/2 自相矛盾）；
+        // 只输出 fail-closed 段（INSUFFICIENT + CURRENT presence + coverage counts + LAST_KNOWN 独立信息）。
+        final Battle battle = battle();
+        battle.durationS = 40d;
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 10, 1001L));
+        events.add(new ParticipantMappingEvent(2, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 11, 1002L));
+        events.add(new ParticipantMappingEvent(3, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 20, 2001L));
+        events.add(new ParticipantMappingEvent(4, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 21, 2002L));
+        // 己方所有位置只在 opening（t=10）：mid [15.5,25] 内无新样本 → friendly carry-forward CURRENT
+        events.add(pos(10, 30f, 10, -100f, 0f));   // 1001 t=10
+        events.add(pos(11, 30f, 11, -200f, 0f));   // 1002 t=10
+        // 敌方 2001 保持新鲜（t=24 → mid CURRENT）；2002 只有 t=8（mid age=17 → LAST_KNOWN）
+        events.add(pos(12, 28f, 20, 200f, 0f));    // 2001 t=8
+        events.add(pos(13, 28f, 21, 230f, 50f));   // 2002 t=8
+        events.add(pos(14, 44f, 20, 200f, 0f));    // 2001 t=24
+        // 交火 t=0.5 → opening [0,15.5] / mid [15.5,25] / late [25,40]
+        events.add(new com.wotb.core.replay.event.DamageEvent(30, new ReplayTimestamp(20.5f, null), 8,
+                DecodeConfidence.EXACT, 11, 20, null, null, 200, false));
+        final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
+                events, List.of(), null, null, null);
+        final String section = FormationDepthEvidence.renderSection(battle, recon, 1, MAP);
+
+        assertTrue(section.contains("phase=mid"), section);
+        final String mid = midBlock(section);
+        assertTrue(mid.contains("POSITION_COVERAGE_INSUFFICIENT：ownRef=2/2 enemyRef=1/2"), mid);
+        assertTrue(mid.contains("ENEMY_LAST_KNOWN_POSITION_REFERENCES"), mid);
+        assertTrue(mid.contains("account:2002"), "LAST_KNOWN 独立信息必须包含 stale enemy 2002: " + mid);
+        // partial CURRENT 不得建立 whole-team geometric axis / exact 分数
+        assertFalse(mid.contains("GEOMETRIC_FORWARD="), "partial enemy CURRENT 不得输出 GEOMETRIC_FORWARD: " + mid);
+        assertFalse(mid.contains("GEOMETRIC_MIDDLE="), "partial enemy CURRENT 不得输出 GEOMETRIC_MIDDLE: " + mid);
+        assertFalse(mid.contains("GEOMETRIC_REAR="), "partial enemy CURRENT 不得输出 GEOMETRIC_REAR: " + mid);
+        assertFalse(mid.contains("ownWeightedCoverageScore="), "partial enemy CURRENT 不得输出 own 分数: " + mid);
+        assertFalse(mid.contains("enemyWeightedCoverageScore="), "partial enemy CURRENT 不得输出 enemy 分数: " + mid);
+    }
+
+    @Test
+    void completeEnemyCurrentStillProducesGeometricTerciles() {
+        // PR #103 最终 review B2 保留：双方 CURRENT 完整（ownRef=2/2 enemyRef=2/2）时，
+        // GEOMETRIC_* 三分位与距离加权覆盖分照常输出（fail-close gate 不得误伤完整场景）。
+        final String section = FormationDepthEvidence.renderSection(battle(), reconWithPositions(20f), 1, MAP);
+        assertTrue(section.contains("GEOMETRIC_FORWARD=account:1001"), section);
+        assertTrue(section.contains("GEOMETRIC_REAR=account:1002"), section);
+        assertTrue(section.contains("coverageCompleteness=ownRef=2/2 enemyRef=2/2"), section);
+        assertTrue(section.contains("ownWeightedCoverageScore="), section);
+        assertTrue(section.contains("enemyWeightedCoverageScore="), section);
+        assertFalse(section.contains("POSITION_COVERAGE_INSUFFICIENT"),
+                "双方 CURRENT 完整时不得 fail-close: " + section);
+    }
+
     }

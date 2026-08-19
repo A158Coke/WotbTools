@@ -5,12 +5,19 @@ import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.reconstruction.BattleParticipant;
+import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.LifeState;
+import com.wotb.core.replay.reconstruction.ReplayCoverage;
+import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
+import com.wotb.core.replay.stream.ReplayStreamHeader;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -242,6 +249,100 @@ class BattleTimelineBuilderTest {
         assertFalse(timeline.frameAt(10).events().stream()
                 .anyMatch(e -> e instanceof HealthChangedEvent
                         && ((HealthChangedEvent) e).entityId() == TimelineTestFixtures.ENEMY_EID));
+    }
+
+    @Test
+    void canonicalTimelineExcludesNonCombatantPositionEntity() {
+        // PR #103 最终 review B1：spectator/camera/静态实体（无任何 participant identity）即使拥有
+        // 连续 PositionChanged + >5s gap + region teleport + 阵亡事件，也不得进入 tactical
+        // FrameVehicle universe（Canonical BattleTimeline 的 ActualCombatantEntitySet 源头过滤）。
+        // 否则 BattleDeltaEngine 会把 team=null 的 spectator 当作 enemy（isEnemy = !friendly()），
+        // 产出假的 FIRST_KNOWN / ENEMY_LOST / ENEMY_REACQUIRED / POSITION_CHANGE / REGION_CHANGE / DESTROYED。
+        final Battle battle = TimelineTestFixtures.battle(60.0);
+        final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
+        // non-combatant entity 99：无 ParticipantMappingEvent（无身份），连续位置流 + 大 gap + 瞬移 + 阵亡
+        events.add(TimelineTestFixtures.created(99, 0));
+        events.add(TimelineTestFixtures.position(99, 5, 100f, 100f, 0f));
+        events.add(TimelineTestFixtures.position(99, 10, 105f, 100f, 0f));
+        events.add(TimelineTestFixtures.position(99, 25, 500f, 500f, 0f)); // >5s gap + region teleport
+        events.add(TimelineTestFixtures.position(99, 30, 505f, 500f, 0f));
+        events.add(TimelineTestFixtures.position(99, 50, 600f, 600f, 0f));
+        events.add(TimelineTestFixtures.health(99, 35, 0, false)); // spectator 阵亡信号
+        final ReplayReconstruction recon = TimelineTestFixtures.recon(60.0, events);
+        final BattleTimeline timeline = BattleTimelineBuilder
+                .build(battle, recon, TimelineTestFixtures.personalPerspective()).timeline();
+        assertNotNull(timeline);
+
+        // 任何帧的 tactical FrameVehicle universe 不得包含 entity 99
+        for (final BattleFrame frame : timeline.frames()) {
+            assertTrue(frame.vehicles().stream().noneMatch(v -> v.entityId() == 99),
+                    "spectator entity 99 不得进入 tactical FrameVehicle: frame " + frame.second());
+        }
+        // 不得产生 entity 99 的 tactical delta（FIRST_KNOWN/ENEMY_LOST/ENEMY_REACQUIRED/
+        // POSITION_CHANGE/REGION_CHANGE/DESTROYED 等）
+        for (final BattleFrame frame : timeline.frames()) {
+            assertTrue(frame.deltas().stream().noneMatch(d -> d.entityId() != null && d.entityId() == 99),
+                    "spectator entity 99 不得产生 tactical delta: frame " + frame.second());
+        }
+        // WorldSummary 永远保持 2v2 roster（non-combatant 不影响 tactical roster）
+        for (final BattleFrame frame : timeline.frames()) {
+            assertEquals(2, frame.world().friendlyTotal(), "frame " + frame.second());
+            assertEquals(2, frame.world().enemyTotal(), "frame " + frame.second());
+            assertEquals(2, frame.world().enemyAlive(),
+                    "spectator 阵亡不得减少 enemyAlive: frame " + frame.second());
+        }
+    }
+
+    @Test
+    void nonCombatantWithUsableBroadRosterIdentityStillExcluded() {
+        // PR #103 最终 review B1：即使 broad roster / ParticipantMapping 给 spectator 提供完整身份
+        // （accountId=9999 / team / nickname / tank-like metadata），只要 account 不在 #301
+        // （battle.players），仍必须从 tactical timeline 排除——防止未来 spectator metadata
+        // 更完整后重新污染（spectator ≠ combatant，#301 是权威边界）。
+        final Battle battle = TimelineTestFixtures.battle(60.0);
+        final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
+        // spectator 99：usable broad-roster identity（mapping 到 9999 + participants 提供 team/tank/nickname）
+        events.add(TimelineTestFixtures.mapping(99, 9999L));
+        events.add(TimelineTestFixtures.created(99, 0));
+        events.add(TimelineTestFixtures.position(99, 5, 100f, 100f, 0f));
+        events.add(TimelineTestFixtures.position(99, 10, 105f, 100f, 0f));
+        events.add(TimelineTestFixtures.position(99, 25, 500f, 500f, 0f)); // >5s gap + region teleport
+        events.add(TimelineTestFixtures.position(99, 50, 600f, 600f, 0f));
+        events.add(TimelineTestFixtures.health(99, 35, 0, false));
+        final ReplayReconstruction recon = reconWithParticipants(60.0, events,
+                List.of(new BattleParticipant(9999L, "SpectatorCam", 2, 9489, "E 100", false)));
+        final BattleTimeline timeline = BattleTimelineBuilder
+                .build(battle, recon, TimelineTestFixtures.personalPerspective()).timeline();
+        assertNotNull(timeline, "broad-roster spectator 必须被 #301 过滤，timeline 仍可用");
+
+        for (final BattleFrame frame : timeline.frames()) {
+            assertTrue(frame.vehicles().stream().noneMatch(v -> v.entityId() == 99),
+                    "usable broad-roster 身份的 spectator 仍不得进入 FrameVehicle: frame " + frame.second());
+            assertTrue(frame.deltas().stream().noneMatch(d -> d.entityId() != null && d.entityId() == 99),
+                    "usable broad-roster 身份的 spectator 不得产生 tactical delta: frame " + frame.second());
+            assertEquals(2, frame.world().friendlyTotal(), "frame " + frame.second());
+            assertEquals(2, frame.world().enemyTotal(),
+                    "broad-roster spectator(team=2) 不得把 enemyTotal 从 2 撑到 3: frame " + frame.second());
+        }
+    }
+
+    private static ReplayReconstruction reconWithParticipants(
+            final double durationSec,
+            final List<ReplayEvent> events,
+            final List<BattleParticipant> participants) {
+        final ReplayMetadata meta = new ReplayMetadata(
+                "arena", "middleburg", "1", "1", 1, "rec1", "", durationSec, 0L);
+        final ReplayStreamHeader header = new ReplayStreamHeader(
+                0x12345678L, new byte[8], "h", "v", 15);
+        final ReplayCoverage coverage = new ReplayCoverage(
+                true, 1, 1, 0, 0, 0, 1.0, Map.of());
+        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
+                0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(),
+                true, TimelineTestFixtures.START_RAW, true);
+        final BattleStateSnapshot finalState = BattleStateSnapshot.empty();
+        return new ReplayReconstruction(
+                meta, header, (float) durationSec, TimelineTestFixtures.START_RAW,
+                participants, List.copyOf(events), List.of(), finalState, coverage, diag);
     }
 
     private static FrameVehicle vehicleAt(final BattleTimeline timeline, final int eid, final int second) {
