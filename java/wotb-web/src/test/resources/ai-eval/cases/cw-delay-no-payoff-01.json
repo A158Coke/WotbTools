@@ -6,9 +6,18 @@
   "lessonRef": "docs/ai-lessons/cw-delay-no-payoff-01.md",
   "expectedJudgment": "不硬判拖延（静止但无目标点/敌情、队友未利用时间）",
   "checks": [
-    { "kind": "prompt_contains", "text": "type=静止" },
-    { "kind": "prompt_contains", "text": "=== FORMATION_PHASES ===" },
-    { "kind": "prompt_omits", "text": "SOLO_DELAY" }
+    {
+      "kind": "prompt_contains",
+      "text": "type=静止"
+    },
+    {
+      "kind": "prompt_contains",
+      "text": "=== FORMATION_PHASES ==="
+    },
+    {
+      "kind": "prompt_omits",
+      "text": "SOLO_DELAY"
+    }
   ],
   "note": "单走静止但无目标点/无敌情，队友未利用时间 → 按证据强度不判拖延。Step 2 将断言无 SOLO_DELAY 候选。"
 }

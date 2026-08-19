@@ -22,7 +22,9 @@ public record AiEvalCase(
         checks = checks == null ? List.of() : List.copyOf(checks);
     }
 
-    /** 检查项：kind 支持 prompt_contains / prompt_omits。 */
+    /**
+     * 检查项：kind 支持 prompt_contains / prompt_omits。
+     */
     public record Check(String kind, String text) {
     }
 }

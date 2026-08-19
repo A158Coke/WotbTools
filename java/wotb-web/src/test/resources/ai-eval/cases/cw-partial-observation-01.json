@@ -6,10 +6,22 @@
   "lessonRef": "docs/ai-lessons/cw-partial-observation-01.md",
   "expectedJudgment": "无候选（只观测到部分成员时不确定全局主力）",
   "checks": [
-    { "kind": "prompt_contains", "text": "=== FORMATION_PHASES ===" },
-    { "kind": "prompt_omits", "text": "SOLO_DELAY" },
-    { "kind": "prompt_omits", "text": "SOLO_DETACHED" },
-    { "kind": "prompt_omits", "text": "OPENING_SPREAD" }
+    {
+      "kind": "prompt_contains",
+      "text": "=== FORMATION_PHASES ==="
+    },
+    {
+      "kind": "prompt_omits",
+      "text": "SOLO_DELAY"
+    },
+    {
+      "kind": "prompt_omits",
+      "text": "SOLO_DETACHED"
+    },
+    {
+      "kind": "prompt_omits",
+      "text": "OPENING_SPREAD"
+    }
   ],
   "note": "7 名成员存活但每窗口只观测到 4 人（3+1 子集）：不得把子集最大簇当全局主力，窗口跳过。"
 }

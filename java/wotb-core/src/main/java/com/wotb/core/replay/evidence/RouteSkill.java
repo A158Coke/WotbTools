@@ -25,9 +25,13 @@ import java.util.Set;
 public final class RouteSkill {
 
     public static final float OPENING_END_SEC = 45f;
-    /** 与主要友军集群质心距离 ≥ 该值视为空间分离。 */
+    /**
+     * 与主要友军集群质心距离 ≥ 该值视为空间分离。
+     */
     public static final float SEPARATION_RADIUS_M = 150f;
-    /** 空间分离的最小持续时长（秒）。 */
+    /**
+     * 空间分离的最小持续时长（秒）。
+     */
     public static final float SEPARATION_MIN_DURATION_SEC = 15f;
     public static final int MAX_EVIDENCE = 6;
 
@@ -40,7 +44,9 @@ public final class RouteSkill {
         return result.size() <= MAX_EVIDENCE ? result : result.subList(0, MAX_EVIDENCE);
     }
 
-    /** 开局前 45 秒的区域序列（九宫格编号）。 */
+    /**
+     * 开局前 45 秒的区域序列（九宫格编号）。
+     */
     static List<AiEvidence> openingRoute(final EvidenceSkillContext ctx) {
         if (ctx.features() == null || ctx.features().movements() == null) {
             return List.of();
@@ -81,7 +87,9 @@ public final class RouteSkill {
                 summary));
     }
 
-    /** 录像者与主要友军集群距离 ≥ 150m 且持续 ≥ 15s 的空间分离窗口（中性事实，不判脱节）。 */
+    /**
+     * 录像者与主要友军集群距离 ≥ 150m 且持续 ≥ 15s 的空间分离窗口（中性事实，不判脱节）。
+     */
     static List<AiEvidence> separationWindows(final EvidenceSkillContext ctx) {
         if (ctx.recon() == null || ctx.recon().checkpoints() == null
                 || ctx.recorder() == null || ctx.recorder().entityId() == null
@@ -151,9 +159,11 @@ public final class RouteSkill {
         return result;
     }
 
-    /** 进入局部区域时观察到的双方数量（需友军侧完整覆盖：observedEnemy 是真实敌军下界；
+    /**
+     * 进入局部区域时观察到的双方数量（需友军侧完整覆盖：observedEnemy 是真实敌军下界；
      * 只有 observedEnemy ≥ 精确友军 + 2 才输出该局部数量事实）。只报数量，不判断是否构成
-     * 战术劣势（2v4 是否不利还取决于 HP/车型/位置/地形/射界，由 LLM 综合判断）。 */
+     * 战术劣势（2v4 是否不利还取决于 HP/车型/位置/地形/射界，由 LLM 综合判断）。
+     */
     static List<AiEvidence> localObservedNumbersEntries(final EvidenceSkillContext ctx) {
         if (ctx.features() == null || ctx.features().movements() == null
                 || ctx.recon() == null || ctx.recon().checkpoints() == null

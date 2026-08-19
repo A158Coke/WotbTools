@@ -9,7 +9,9 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-/** 打手档案仓库。 */
+/**
+ * 打手档案仓库。
+ */
 public interface BoosterProfileRepository extends JpaRepository<BoosterProfile, Long> {
 
     java.util.Optional<BoosterProfile> findByKeycloakUserId(String keycloakUserId);

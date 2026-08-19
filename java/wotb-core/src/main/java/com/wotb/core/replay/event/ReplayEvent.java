@@ -9,26 +9,34 @@ package com.wotb.core.replay.event;
  */
 public sealed interface ReplayEvent
         permits PositionChangedEvent,
-                HealthChangedEvent,
-                DamageEvent,
-                EntityCreatedEvent,
-                EntityRemovedEvent,
-                VehicleDestroyedEvent,
-                BattleEndedEvent,
-                UnknownReplayEvent,
-                ParticipantMappingEvent,
-                TurretDirectionChangedEvent,
-                SupremacyPointsChangedEvent {
+        HealthChangedEvent,
+        DamageEvent,
+        EntityCreatedEvent,
+        EntityRemovedEvent,
+        VehicleDestroyedEvent,
+        BattleEndedEvent,
+        UnknownReplayEvent,
+        ParticipantMappingEvent,
+        TurretDirectionChangedEvent,
+        SupremacyPointsChangedEvent {
 
-    /** 事件在原始流中的稳定顺序 */
+    /**
+     * 事件在原始流中的稳定顺序
+     */
     int sequence();
 
-    /** 事件的时间戳（原始时钟 + 战斗时钟） */
+    /**
+     * 事件的时间戳（原始时钟 + 战斗时钟）
+     */
     ReplayTimestamp timestamp();
 
-    /** 来源的原始 packet type */
+    /**
+     * 来源的原始 packet type
+     */
     int packetType();
 
-    /** 解码置信度 */
+    /**
+     * 解码置信度
+     */
     DecodeConfidence confidence();
 }

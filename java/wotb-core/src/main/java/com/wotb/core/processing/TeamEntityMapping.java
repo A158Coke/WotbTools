@@ -7,10 +7,10 @@ import java.util.Map;
 /**
  * 单场回放的实体到参战玩家映射。
  *
- * @param entitiesById entityId → 玩家身份
- * @param entityIdsByAccount accountId → 该账号在事件流出现过的实体 ID（支持 re-entry）
+ * @param entitiesById         entityId → 玩家身份
+ * @param entityIdsByAccount   accountId → 该账号在事件流出现过的实体 ID（支持 re-entry）
  * @param ambiguousEntityCount 因冲突而拒绝归因的实体数量
- * @param limitations 稳定英文限制码
+ * @param limitations          稳定英文限制码
  */
 public record TeamEntityMapping(
         Map<Integer, TeamEntityIdentity> entitiesById,

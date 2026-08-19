@@ -32,7 +32,9 @@ import java.util.List;
 public class EntityPropertyDecoder implements ReplayPacketDecoder {
 
     static final int TYPE_ENTITY_PROPERTY = 7;
-    /** propId=3：当前血量（u16 LE，含装备加成；受击时同步）。 */
+    /**
+     * propId=3：当前血量（u16 LE，含装备加成；受击时同步）。
+     */
     static final int PROP_CURRENT_HP = 3;
     /**
      * propId=2：炮塔相对车体偏航（valueLen=2 u16 LE；度 = raw*360/65536 - 180，[-180,180)）。

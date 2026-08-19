@@ -22,7 +22,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 内容寻址存储单元测试（真实文件系统，无 DB，任何环境可跑）。 */
+/**
+ * 内容寻址存储单元测试（真实文件系统，无 DB，任何环境可跑）。
+ */
 class HallOfFameReplayStorageTest {
 
     private static final String SHA = "c".repeat(64);

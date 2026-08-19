@@ -7,7 +7,9 @@ import org.springframework.stereotype.Component;
 
 import java.time.OffsetDateTime;
 
-/** 定期关闭超过客户确认期限的陪练订单。 */
+/**
+ * 定期关闭超过客户确认期限的陪练订单。
+ */
 @Component
 public class BoostCompletionScheduler {
 

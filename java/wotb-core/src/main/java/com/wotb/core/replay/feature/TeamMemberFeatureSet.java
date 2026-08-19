@@ -40,7 +40,9 @@ public record TeamMemberFeatureSet(
         limitations = limitations == null ? List.of() : List.copyOf(limitations);
     }
 
-    /** 旧签名便捷构造器：未计算阵亡质心距离时 deathProximity 为 null。 */
+    /**
+     * 旧签名便捷构造器：未计算阵亡质心距离时 deathProximity 为 null。
+     */
     public TeamMemberFeatureSet(
             List<Integer> entityIds,
             long accountId,

@@ -2,20 +2,23 @@ package com.wotb.web.boost.dto;
 
 import java.time.OffsetDateTime;
 
-/** 打手信息 DTO。 */
+/**
+ * 打手信息 DTO。
+ */
 public record BoosterDto(
-    Long id,
-    String nickname,
-    String level,
-    String keycloakUserId,
-    String wotbServer,
-    Boolean available,
-    String status,
-    String contactType,
-    String contactValue,
-    String specialties,
-    String description,
-    Integer activeAssignmentCount,
-    OffsetDateTime createdAt,
-    OffsetDateTime updatedAt
-) {}
+        Long id,
+        String nickname,
+        String level,
+        String keycloakUserId,
+        String wotbServer,
+        Boolean available,
+        String status,
+        String contactType,
+        String contactValue,
+        String specialties,
+        String description,
+        Integer activeAssignmentCount,
+        OffsetDateTime createdAt,
+        OffsetDateTime updatedAt
+) {
+}

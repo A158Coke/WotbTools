@@ -6,14 +6,19 @@ public final class MapRegionResolver {
 
     private static volatile MapCoordinateProfile activeProfile = MapCoordinateProfile.DEFAULT;
 
-    private MapRegionResolver() {}
+    private MapRegionResolver() {
+    }
 
-    /** Configure the active coordinate profile (called from web layer at startup). */
+    /**
+     * Configure the active coordinate profile (called from web layer at startup).
+     */
     public static void configure(final MapCoordinateProfile profile) {
         activeProfile = profile;
     }
 
-    /** Get the currently active coordinate profile. */
+    /**
+     * Get the currently active coordinate profile.
+     */
     public static MapCoordinateProfile activeProfile() {
         return activeProfile;
     }
@@ -61,7 +66,9 @@ public final class MapRegionResolver {
         return new CanonicalMapPosition(cx, cz);
     }
 
-    /** Resolve region from canonical (X, Z). */
+    /**
+     * Resolve region from canonical (X, Z).
+     */
     public static int resolveRegion(final float cx, final float cz) {
         final float mapSize = MapCoordinateProfile.MAP_SIZE;
         if (!Float.isFinite(cx) || !Float.isFinite(cz)) return 0;
@@ -82,23 +89,31 @@ public final class MapRegionResolver {
         return row * 3 + col + 1;
     }
 
-    /** Convenience using active profile. */
+    /**
+     * Convenience using active profile.
+     */
     public static MapCoordinateResolution resolve(final float rawX, final float rawZ) {
         return resolve(rawX, rawZ, activeProfile);
     }
 
-    /** Per-map resolution: profile selected by map code (falls back to DEFAULT). */
+    /**
+     * Per-map resolution: profile selected by map code (falls back to DEFAULT).
+     */
     public static MapCoordinateResolution resolve(final float rawX, final float rawZ,
                                                   final String mapCode) {
         return resolve(rawX, rawZ, MapCoordinateProfileRegistry.profileFor(mapCode));
     }
 
-    /** Convenience: raw replay coordinates → region using active profile. */
+    /**
+     * Convenience: raw replay coordinates → region using active profile.
+     */
     public static int resolveRegionFromRaw(final float rawX, final float rawZ) {
         return resolveRegionFromRaw(rawX, rawZ, activeProfile);
     }
 
-    /** Profile-aware: raw replay coordinates → region. */
+    /**
+     * Profile-aware: raw replay coordinates → region.
+     */
     public static int resolveRegionFromRaw(final float rawX, final float rawZ,
                                            final MapCoordinateProfile profile) {
         final MapCoordinateResolution res = resolve(rawX, rawZ, profile);
@@ -106,7 +121,9 @@ public final class MapRegionResolver {
         return res.region();
     }
 
-    /** Per-map convenience: raw replay coordinates → region. */
+    /**
+     * Per-map convenience: raw replay coordinates → region.
+     */
     public static int resolveRegionFromRaw(final float rawX, final float rawZ,
                                            final String mapCode) {
         return resolveRegionFromRaw(rawX, rawZ,
@@ -131,7 +148,9 @@ public final class MapRegionResolver {
         return (float) Math.sqrt(dx * dx + dz * dz);
     }
 
-    /** Per-map convenience: canonical distance using the map's profile. */
+    /**
+     * Per-map convenience: canonical distance using the map's profile.
+     */
     public static float canonicalDistanceMeters(
             final float rawX1, final float rawZ1,
             final float rawX2, final float rawZ2,
@@ -140,14 +159,18 @@ public final class MapRegionResolver {
                 MapCoordinateProfileRegistry.profileFor(mapCode));
     }
 
-    /** Convenience using active profile. */
+    /**
+     * Convenience using active profile.
+     */
     public static float canonicalDistanceMeters(
             final float rawX1, final float rawZ1,
             final float rawX2, final float rawZ2) {
         return canonicalDistanceMeters(rawX1, rawZ1, rawX2, rawZ2, activeProfile);
     }
 
-    /** Allowed raw coordinate limit for detection purposes (active profile clampUpper). */
+    /**
+     * Allowed raw coordinate limit for detection purposes (active profile clampUpper).
+     */
     public static float maxRawAllowed() {
         return activeProfile.clampUpper();
     }

@@ -32,7 +32,9 @@ import java.util.Set;
  */
 final class DamageWindowClusterer {
 
-    /** 同一窗口内相邻伤害事件的最大时间间隔（秒）；超过则新开窗口。 */
+    /**
+     * 同一窗口内相邻伤害事件的最大时间间隔（秒）；超过则新开窗口。
+     */
     static final double MAX_GAP_SEC = 10.0;
 
     /**
@@ -42,24 +44,28 @@ final class DamageWindowClusterer {
      */
     static final float SHORT_FOCUS_WINDOW_SEC = 15f;
 
-    /** 短窗高额伤害窗口的跨度上限（秒）：窗口跨度 ≤ 该阈值且累计伤害 ≥ {@link #CRITICAL_HP_PCT}% 进场满血量即标出。 */
+    /**
+     * 短窗高额伤害窗口的跨度上限（秒）：窗口跨度 ≤ 该阈值且累计伤害 ≥ {@link #CRITICAL_HP_PCT}% 进场满血量即标出。
+     */
     static final float CRITICAL_WINDOW_SPAN_SEC = 10f;
 
-    /** 短窗高额伤害窗口的伤害阈值：窗口累计伤害 ≥ 该比例的**已证明进场满血量**（EntryHpSource.OBSERVED_EXACT 才判定；BASE_FALLBACK 只允许 tankopedia base 作 baseline 且 fail closed 不判 critical）。 */
+    /**
+     * 短窗高额伤害窗口的伤害阈值：窗口累计伤害 ≥ 该比例的**已证明进场满血量**（EntryHpSource.OBSERVED_EXACT 才判定；BASE_FALLBACK 只允许 tankopedia base 作 baseline 且 fail closed 不判 critical）。
+     */
     static final double CRITICAL_HP_PCT = 75.0;
 
     /**
      * 一个掉血窗口（battle-relative 秒）。
      *
-     * @param uniqueAttackerCount 窗口内解析出的不同攻击者账号数
-     * @param attackersUnresolved 窗口内是否存在攻击者无法解析（true 时不得断言集火）
-     * @param focusFireCandidate  窗口总跨度 ≤ {@link #SHORT_FOCUS_WINDOW_SEC}、攻击者 ≥2 且无未解析
+     * @param uniqueAttackerCount   窗口内解析出的不同攻击者账号数
+     * @param attackersUnresolved   窗口内是否存在攻击者无法解析（true 时不得断言集火）
+     * @param focusFireCandidate    窗口总跨度 ≤ {@link #SHORT_FOCUS_WINDOW_SEC}、攻击者 ≥2 且无未解析
      * @param damageVsEntryMaxHpPct 窗口累计伤害占满血量基准百分比（OBSERVED_EXACT=已证明进场满血，
      *                              BASE_FALLBACK=tankopedia base baseline；只是计算基准，不是实际掉血比例；未知为 null）
-     * @param entryHpProven        满血量基准是否为已证明的进场满血（false = tankopedia base baseline）
-     * @param criticalWindow      仅当 entryHpProven 且窗口跨度 ≤ {@link #CRITICAL_WINDOW_SPAN_SEC}
-     *                            且伤害 ≥ {@link #CRITICAL_HP_PCT}% 已证明进场满血量（fail closed：
-     *                            base baseline 无法排除真实 entry 更高导致实际比例不足，不判定）
+     * @param entryHpProven         满血量基准是否为已证明的进场满血（false = tankopedia base baseline）
+     * @param criticalWindow        仅当 entryHpProven 且窗口跨度 ≤ {@link #CRITICAL_WINDOW_SPAN_SEC}
+     *                              且伤害 ≥ {@link #CRITICAL_HP_PCT}% 已证明进场满血量（fail closed：
+     *                              base baseline 无法排除真实 entry 更高导致实际比例不足，不判定）
      */
     record DamageWindow(
             float startSec,
@@ -73,7 +79,9 @@ final class DamageWindowClusterer {
             boolean entryHpProven,
             boolean criticalWindow) {
 
-        /** 窗口总跨度（秒）。 */
+        /**
+         * 窗口总跨度（秒）。
+         */
         float spanSec() {
             return endSec - startSec;
         }
@@ -181,7 +189,9 @@ final class DamageWindowClusterer {
                         && span <= CRITICAL_WINDOW_SPAN_SEC && pct >= CRITICAL_HP_PCT);
     }
 
-    /** 受击者满血量基准（含 provenance）；未知返回 0（不参与判定）。 */
+    /**
+     * 受击者满血量基准（含 provenance）；未知返回 0（不参与判定）。
+     */
     private static int victimEntryMaxHp(final Battle battle, final long accountId) {
         if (battle == null || battle.players == null) {
             return 0;

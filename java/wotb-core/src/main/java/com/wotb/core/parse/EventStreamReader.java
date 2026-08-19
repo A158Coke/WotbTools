@@ -18,12 +18,16 @@ public final class EventStreamReader {
     private EventStreamReader() {
     }
 
-    /** One direct HP damage event resolved from replay entity ids to account ids. */
+    /**
+     * One direct HP damage event resolved from replay entity ids to account ids.
+     */
     public record DirectDamageEvent(float clockSecs, long attackerAccountId,
                                     long victimAccountId, int damage) {
     }
 
-    /** Damage dealt by one killer to one victim before the victim is inferred dead. */
+    /**
+     * Damage dealt by one killer to one victim before the victim is inferred dead.
+     */
     public record KillVictimDamage(long killerAccountId, long victimAccountId,
                                    int damage, int penetrations) {
     }
@@ -62,7 +66,9 @@ public final class EventStreamReader {
         }
     }
 
-    /** Type 4 (EntityLeave) 事件: 实体离开竞技场。 */
+    /**
+     * Type 4 (EntityLeave) 事件: 实体离开竞技场。
+     */
     public static final class EntityLeaveEvent {
         public final float clockSecs;
         public final int entityId;
@@ -73,7 +79,9 @@ public final class EventStreamReader {
         }
     }
 
-    /** Type 10 (Position) 解码结果。 */
+    /**
+     * Type 10 (Position) 解码结果。
+     */
     public static final class PositionData {
         public final float clockSecs;
         public final int entityId;

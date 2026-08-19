@@ -17,8 +17,10 @@ public enum EvidenceType {
     DEATH_CASCADE,
     ROUTE,
     CRITICAL_WINDOW,
-    /** 空间分离证据：某成员与主要友军集群保持距离的结构事实（中性；无 intent 语义）。
+    /**
+     * 空间分离证据：某成员与主要友军集群保持距离的结构事实（中性；无 intent 语义）。
      * 由 TeamSeparationEvidenceSkill / PlayerSeparationEvidenceSkill 产出；
-     * 是否构成拖延/脱节/有效牵制由 LLM 判断。 */
+     * 是否构成拖延/脱节/有效牵制由 LLM 判断。
+     */
     SPATIAL_SEPARATION
 }

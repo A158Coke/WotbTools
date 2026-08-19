@@ -15,7 +15,9 @@ public record ReplayIdentity(
         Instant battleTime
 ) {
 
-    /** 仅基于内容 hash 的快速比较。 */
+    /**
+     * 仅基于内容 hash 的快速比较。
+     */
     public boolean sameContent(ReplayIdentity other) {
         return contentHash != null && contentHash.equals(other.contentHash);
     }

@@ -8,9 +8,9 @@ package com.wotb.web.replay.dto;
  * {@code null}，前端不显示该区块。{@code mapOverview} 为可空的「地图鸟瞰」数据
  * （未知地图/无观测/无名册时为 {@code null}），由前端在对应地图有图片素材时渲染。</p>
  *
- * @param analysis          AI 生成的战术复盘文本
- * @param preBattleSection  赛前预测区块（用户可见中文 Markdown；不可用时为 null）
- * @param mapOverview       地图鸟瞰（热力+路线；不可用时为 null）
+ * @param analysis         AI 生成的战术复盘文本
+ * @param preBattleSection 赛前预测区块（用户可见中文 Markdown；不可用时为 null）
+ * @param mapOverview      地图鸟瞰（热力+路线；不可用时为 null）
  */
 public record AnalyzeResponse(String analysis, String preBattleSection, MapOverview mapOverview) {
 

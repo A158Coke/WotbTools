@@ -4,11 +4,15 @@ import org.springframework.util.StringUtils;
 
 import java.util.List;
 
-/** 一场战斗的基本信息 + 全部玩家战绩。 */
+/**
+ * 一场战斗的基本信息 + 全部玩家战绩。
+ */
 public class Battle {
     public String arenaId;
     public Integer winnerTeam;
-    /** 模式类型 (meta.json#arenaBonusType): 1=随机战斗; 2=训练房; 其他=娱乐/联赛等; null=未知。 */
+    /**
+     * 模式类型 (meta.json#arenaBonusType): 1=随机战斗; 2=训练房; 其他=娱乐/联赛等; null=未知。
+     */
     public Integer arenaBonusType;
     public String version = "";
     public String mapName = "";

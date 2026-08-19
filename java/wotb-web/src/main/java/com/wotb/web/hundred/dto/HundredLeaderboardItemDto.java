@@ -8,13 +8,13 @@ import java.time.OffsetDateTime;
  * rank 为 query-time 派生的 competition ranking（1,2,2,4），不落库。
  */
 public record HundredLeaderboardItemDto(
-    Long id,
-    Integer rank,
-    long vehicleId,
-    String vehicleName,
-    String nickname,
-    int approvedAverageDamage,
-    int approvedBattleCount,
-    OffsetDateTime approvedAt
+        Long id,
+        Integer rank,
+        long vehicleId,
+        String vehicleName,
+        String nickname,
+        int approvedAverageDamage,
+        int approvedBattleCount,
+        OffsetDateTime approvedAt
 ) {
 }

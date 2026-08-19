@@ -179,7 +179,9 @@ public class BoostAssignmentService {
         return mapper.toDto(assignment, boosterService.getById(boosterId), req);
     }
 
-    /** 由需求提交者确认完成；重复确认已关闭订单时返回同一成功结果。 */
+    /**
+     * 由需求提交者确认完成；重复确认已关闭订单时返回同一成功结果。
+     */
     @Transactional
     public ConfirmBoostRequestResponse confirmByRequester(final Long requestId, final String requesterUserId) {
         final BoostRequest req = requestService.getByIdForRequesterForUpdate(requestId, requesterUserId);
@@ -195,7 +197,9 @@ public class BoostAssignmentService {
         return confirmationResponse(finalizeCompletion(req, OffsetDateTime.now(), null));
     }
 
-    /** 管理员关闭待确认或异常订单，作为客户确认链路的人工兜底。 */
+    /**
+     * 管理员关闭待确认或异常订单，作为客户确认链路的人工兜底。
+     */
     @Transactional
     public BoostRequest confirmByAdmin(final Long requestId, final String adminNote) {
         final BoostRequest req = requestService.getByIdForUpdate(requestId);
@@ -212,13 +216,17 @@ public class BoostAssignmentService {
         return finalizeCompletion(req, OffsetDateTime.now(), adminNote);
     }
 
-    /** 查询一批到期订单 ID；逐单完结由独立事务执行。 */
+    /**
+     * 查询一批到期订单 ID；逐单完结由独立事务执行。
+     */
     @Transactional(readOnly = true)
     public List<Long> findDueAutoConfirmRequestIds(final OffsetDateTime now) {
         return requestService.findDueAutoConfirmIds(now, PageRequest.of(0, AUTO_CONFIRM_BATCH_SIZE));
     }
 
-    /** 在独立事务中自动确认单个到期订单，锁定后再次校验状态和截止时间。 */
+    /**
+     * 在独立事务中自动确认单个到期订单，锁定后再次校验状态和截止时间。
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean autoConfirmExpiredRequest(final Long requestId, final OffsetDateTime now) {
         final BoostRequest req = requestService.getByIdForUpdate(requestId);
@@ -397,7 +405,8 @@ public class BoostAssignmentService {
                 || status == BoostRequestStatus.EXCEPTION;
     }
 
-    private record LockedAssignment(BoostRequest request, BoostRequestAssignment assignment) {}
+    private record LockedAssignment(BoostRequest request, BoostRequestAssignment assignment) {
+    }
 
     private void notifyRequester(final BoostRequest req,
                                  final UserNotificationType type,

@@ -21,7 +21,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 
-/** 管理员侧打手管理接口。 */
+/**
+ * 管理员侧打手管理接口。
+ */
 @RestController
 @RequestMapping(ApiPaths.ADMIN_BOOST_BOOSTERS)
 @CrossOrigin(origins = "*")

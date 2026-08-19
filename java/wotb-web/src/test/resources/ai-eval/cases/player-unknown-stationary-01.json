@@ -6,8 +6,14 @@
   "lessonRef": "docs/ai-lessons/player-unknown-stationary-01.md",
   "expectedJudgment": "无候选（移动覆盖不足 ≠ MOVING）",
   "checks": [
-    { "kind": "prompt_omits", "text": "单走脱节" },
-    { "kind": "prompt_omits", "text": "单走拖延" }
+    {
+      "kind": "prompt_omits",
+      "text": "单走脱节"
+    },
+    {
+      "kind": "prompt_omits",
+      "text": "单走拖延"
+    }
   ],
   "note": "窗口内移动段覆盖不足（stationaryRatio 未知）：不等于正在移动，不生成候选。"
 }

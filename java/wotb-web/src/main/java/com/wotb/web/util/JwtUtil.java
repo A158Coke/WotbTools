@@ -11,7 +11,8 @@ import org.springframework.web.server.ResponseStatusException;
  */
 public final class JwtUtil {
 
-    private JwtUtil() {}
+    private JwtUtil() {
+    }
 
     /**
      * 从当前 JWT 提取用户 Keycloak ID（sub claim）。

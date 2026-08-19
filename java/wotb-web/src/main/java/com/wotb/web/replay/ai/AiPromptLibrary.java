@@ -24,14 +24,18 @@ public final class AiPromptLibrary {
 
     private static final Map<String, String> CACHE = new ConcurrentHashMap<>();
 
-    /** 占位符语法：{{key}}，key 为 prompts/ 下相对 key（字母/数字/_/-//）。 */
+    /**
+     * 占位符语法：{{key}}，key 为 prompts/ 下相对 key（字母/数字/_/-//）。
+     */
     private static final Pattern INCLUDE =
             Pattern.compile("\\{\\{([a-zA-Z0-9_/-]+)\\}\\}");
 
     private AiPromptLibrary() {
     }
 
-    /** 读取 prompts/{key}.zh.md 的展开文本（缓存）。 */
+    /**
+     * 读取 prompts/{key}.zh.md 的展开文本（缓存）。
+     */
     public static String zh(final String key) {
         return CACHE.computeIfAbsent(key, k -> load(k, new LinkedHashSet<>()));
     }

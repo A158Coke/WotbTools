@@ -45,7 +45,9 @@ final class FormationDepthEvidence {
     private FormationDepthEvidence() {
     }
 
-    /** 阶段窗口（battle-relative 秒）。 */
+    /**
+     * 阶段窗口（battle-relative 秒）。
+     */
     record PhaseRange(String key, double start, double end) {
     }
 
@@ -130,7 +132,9 @@ final class FormationDepthEvidence {
         return sb.isEmpty() ? "" : "\n=== FORMATION_DEPTH（阵型深度·确定性） ===\n" + sb;
     }
 
-    /** 单阶段：前后排（深度三分位）+ 控制区域（九宫格计数优势）。 */
+    /**
+     * 单阶段：前后排（深度三分位）+ 控制区域（九宫格计数优势）。
+     */
     private static String renderPhase(
             final PhaseRange phase,
             final Map<Long, List<double[]>> tracks,
@@ -303,18 +307,20 @@ final class FormationDepthEvidence {
                     // 无前线型车辆：不产出 frontLine/midLine/backLine 名单，只给几何位置参考
                     sb.append("geometryFront=").append(geometryRef(depths, 0, 2)).append("\n");
                 }
-return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
-                ownCanonical, enemyCanonical, profiles, mapCode,
-                ownRefCount, enemyRefCount, ownAliveCount, enemyAliveCount);
+                return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
+                        ownCanonical, enemyCanonical, profiles, mapCode,
+                        ownRefCount, enemyRefCount, ownAliveCount, enemyAliveCount);
             }
         }
         sb.append(header);
-return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
+        return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
                 ownCanonical, enemyCanonical, profiles, mapCode,
                 ownRefCount, enemyRefCount, ownAliveCount, enemyAliveCount);
     }
 
-    /** 账号展示 key：附 tank profile 标注（如 account:1234(HEAVY,armor=HIGH)）；UNKNOWN 只标未知。 */
+    /**
+     * 账号展示 key：附 tank profile 标注（如 account:1234(HEAVY,armor=HIGH)）；UNKNOWN 只标未知。
+     */
     private static String annotate(final long accountId, final Map<Long, TankTacticalProfile> profiles) {
         final TankTacticalProfile profile = profiles.get(accountId);
         if (profile == null || "UNKNOWN".equals(profile.vehicleClass())) {
@@ -323,7 +329,9 @@ return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
         return "account:" + accountId + "(" + profile.vehicleClass() + ",armor=" + profile.armorReliability() + ")";
     }
 
-    /** 几何参考：depth 排序（降序=最靠前）中取 [from, from+count) 的账号列表。 */
+    /**
+     * 几何参考：depth 排序（降序=最靠前）中取 [from, from+count) 的账号列表。
+     */
     private static String geometryRef(final List<double[]> depths, final int from, final int count) {
         final int end = Math.min(depths.size(), from + count);
         final StringBuilder sb = new StringBuilder();
@@ -336,21 +344,27 @@ return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
         return sb.toString();
     }
 
-    /** 可扛线（前线型）：HEAVY 或装甲可靠性 HIGH（TankTacticalProfile 语义）。 */
+    /**
+     * 可扛线（前线型）：HEAVY 或装甲可靠性 HIGH（TankTacticalProfile 语义）。
+     */
     static boolean isFrontlineCapable(final TankTacticalProfile profile) {
         return profile != null
                 && ("HEAVY".equals(profile.vehicleClass())
                 || "HIGH".equals(profile.armorReliability()));
     }
 
-    /** 后排型：TANK_DESTROYER 或 LIGHT（远程支援/侦查车，天然后排；MEDIUM 为中性）。 */
+    /**
+     * 后排型：TANK_DESTROYER 或 LIGHT（远程支援/侦查车，天然后排；MEDIUM 为中性）。
+     */
     static boolean isBacklineCapable(final TankTacticalProfile profile) {
         return profile != null
                 && ("TANK_DESTROYER".equals(profile.vehicleClass())
                 || "LIGHT".equals(profile.vehicleClass()));
     }
 
-    /** TankTacticalProfileRegistry 惰性加载（classpath json，与 PreBattleStrategicService 同源）。 */
+    /**
+     * TankTacticalProfileRegistry 惰性加载（classpath json，与 PreBattleStrategicService 同源）。
+     */
     private static volatile TankTacticalProfileRegistry profileRegistryInstance;
 
     static TankTacticalProfileRegistry profileRegistry() {
@@ -368,7 +382,9 @@ return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
         return local;
     }
 
-    /** 权威死亡边界（秒）：结算存活或死亡时刻未知 → null（不猜）。复用 PlayerResultFormat 口径。 */
+    /**
+     * 权威死亡边界（秒）：结算存活或死亡时刻未知 → null（不猜）。复用 PlayerResultFormat 口径。
+     */
     static Double knownDeathSec(final PlayerResult p) {
         if (p == null || p.survived) {
             return null;
@@ -377,7 +393,9 @@ return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
         return sec > 0 ? sec : null;
     }
 
-    /** 该账号在 t 时刻是否存活：死亡边界未知时视为存活（不猜）；已知且 t 超过边界 → 已阵亡。 */
+    /**
+     * 该账号在 t 时刻是否存活：死亡边界未知时视为存活（不猜）；已知且 t 超过边界 → 已阵亡。
+     */
     static boolean isAliveAt(final Map<Long, PlayerResult> playersByAccount, final long accountId, final double t) {
         final PlayerResult p = playersByAccount == null ? null : playersByAccount.get(accountId);
         if (p == null) {
@@ -388,8 +406,8 @@ return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
     }
 
 
-
-    /** 区域覆盖测量：九宫格每区输出 own/enemy 位置存在数 + 双方距离加权火力覆盖分（F=Σ fireWeight/(1+d/100)）与 ratio。
+    /**
+     * 区域覆盖测量：九宫格每区输出 own/enemy 位置存在数 + 双方距离加权火力覆盖分（F=Σ fireWeight/(1+d/100)）与 ratio。
      * 只输出确定性测量（位置几何 + 火力权重近似），不输出 own/contested/enemy 权威控制权标签——
      * 哪方「实际控制/压制/放弃某区」由 LLM 综合交火、点数压力等自行判断（Backend Evidence Boundary）。
      */
@@ -444,7 +462,9 @@ return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
         return sb.toString();
     }
 
-    /** 双方分数比：一方为 0 时给 0（无对比意义）；两者皆 0 给 1（无信号）。 */
+    /**
+     * 双方分数比：一方为 0 时给 0（无对比意义）；两者皆 0 给 1（无信号）。
+     */
     private static double ratioOf(final double own, final double enemy) {
         if (own <= 0 && enemy <= 0) {
             return 1.0;
@@ -455,10 +475,14 @@ return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
         return own / enemy;
     }
 
-    /** 火力覆盖距离归一化（米，初值可标定）。 */
+    /**
+     * 火力覆盖距离归一化（米，初值可标定）。
+     */
     static final double FIRE_DISTANCE_NORM_M = 100.0;
 
-    /** 距离加权火力覆盖分：Σ fireWeight(v) / (1 + d/100)，d = 区域中心到车辆 canonical 位置距离。 */
+    /**
+     * 距离加权火力覆盖分：Σ fireWeight(v) / (1 + d/100)，d = 区域中心到车辆 canonical 位置距离。
+     */
     private static double fireCoverage(final int region, final Map<Long, double[]> positions,
                                        final Map<Long, TankTacticalProfile> profiles) {
         final double[] center = regionCenter(region);
@@ -470,7 +494,9 @@ return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
         return f;
     }
 
-    /** 火力权重（初值）：HEAVY/TD=2、MEDIUM=1.5、LIGHT=1；burst/sustained=HIGH 各 +0.5；可扛线 +0.5。 */
+    /**
+     * 火力权重（初值）：HEAVY/TD=2、MEDIUM=1.5、LIGHT=1；burst/sustained=HIGH 各 +0.5；可扛线 +0.5。
+     */
     private static double fireWeight(final long accountId, final Map<Long, TankTacticalProfile> profiles) {
         final TankTacticalProfile profile = profiles.get(accountId);
         final String cls = profile == null ? "" : profile.vehicleClass();
@@ -494,7 +520,9 @@ return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
         return w;
     }
 
-    /** 九宫格区域 canonical 几何中心（与 MapRegionResolver.resolveRegion 同网格）。 */
+    /**
+     * 九宫格区域 canonical 几何中心（与 MapRegionResolver.resolveRegion 同网格）。
+     */
     private static double[] regionCenter(final int region) {
         final float third = MapCoordinateProfile.MAP_SIZE / 3f;
         final int row = (region - 1) / 3;
@@ -503,7 +531,9 @@ return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
     }
 
 
-    /** 阶段：opening = [0, 首次交火+15s（无交火则整场）]；late = 末 15s；mid = 中间。 */
+    /**
+     * 阶段：opening = [0, 首次交火+15s（无交火则整场）]；late = 末 15s；mid = 中间。
+     */
     static List<PhaseRange> buildPhases(final double firstContact, final double battleEnd) {
         final List<PhaseRange> phases = new ArrayList<>();
         final double openingEnd = firstContact >= 0

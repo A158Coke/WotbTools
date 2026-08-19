@@ -135,7 +135,9 @@ public final class MapTacticalSemanticsRegistry {
                 text(node, "favorsAndRisks"));
     }
 
-    /** 语义化器按后端 MapRegionResolver 约定输出 1~9，渲染为 GRID_REGION_N。 */
+    /**
+     * 语义化器按后端 MapRegionResolver 约定输出 1~9，渲染为 GRID_REGION_N。
+     */
     private static List<String> nineGridRegions(final JsonNode node) {
         final List<String> result = new ArrayList<>();
         if (node != null && node.isArray()) {
@@ -148,7 +150,9 @@ public final class MapTacticalSemanticsRegistry {
         return result;
     }
 
-    /** 关系数组原样解析，保留 from/type/to/reason/confidence，不做分组或改名。 */
+    /**
+     * 关系数组原样解析，保留 from/type/to/reason/confidence，不做分组或改名。
+     */
     private static List<MapTacticalSemantics.TacticalRelationship> parseRelationships(
             final JsonNode node) {
         final List<MapTacticalSemantics.TacticalRelationship> result = new ArrayList<>();

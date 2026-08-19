@@ -8,7 +8,8 @@ import java.util.Objects;
 
 public final class ExactReplayDuplicateDetector {
 
-    private ExactReplayDuplicateDetector() {}
+    private ExactReplayDuplicateDetector() {
+    }
 
     public static ExactDuplicatePartition partition(final List<ReplayProcessingResult> results) {
         Objects.requireNonNull(results, "results");
@@ -50,7 +51,11 @@ public final class ExactReplayDuplicateDetector {
             uniqueResults = List.copyOf(Objects.requireNonNull(uniqueResults, "uniqueResults"));
             duplicates = List.copyOf(Objects.requireNonNull(duplicates, "duplicates"));
         }
-        public int count() { return duplicates.size(); }
+
+        public int count() {
+            return duplicates.size();
+        }
+
         public List<String> duplicateFileNames() {
             return duplicates.stream().map(d -> d.duplicate().fileName()).toList();
         }

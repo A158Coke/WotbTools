@@ -11,7 +11,9 @@ import java.util.function.Function;
  */
 public final class Columns {
 
-    /** 一列: 表头 / 键 / Excel宽 / 是否数值 / 取值函数。 */
+    /**
+     * 一列: 表头 / 键 / Excel宽 / 是否数值 / 取值函数。
+     */
     public record Column(String title, String key, int xlsx, boolean num,
                          Function<PlayerResult, Object> get) {
     }
@@ -59,10 +61,14 @@ public final class Columns {
             new Column("账号ID", "account_id", 12, true, p -> p.accountId)
     );
 
-    /** 单场「玩家数据」表完整列。 */
+    /**
+     * 单场「玩家数据」表完整列。
+     */
     public static final List<Column> PLAYER = concat(IDENTITY, STAT, TAIL);
 
-    /** 左对齐(文本)列。 */
+    /**
+     * 左对齐(文本)列。
+     */
     public static final Set<String> LEFT_ALIGN = Set.of(
             "nickname", "clan", "tank_name", "date", "map_name");
 
@@ -74,7 +80,9 @@ public final class Columns {
         return List.copyOf(out);
     }
 
-    /** 表头显示宽度: 中文算 2, 其余算 1。 */
+    /**
+     * 表头显示宽度: 中文算 2, 其余算 1。
+     */
     public static int displayWidth(final String text) {
         int w = 0;
         for (int i = 0; i < text.length(); i++) {

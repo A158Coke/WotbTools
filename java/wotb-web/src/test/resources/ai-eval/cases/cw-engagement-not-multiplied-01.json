@@ -6,8 +6,14 @@
   "lessonRef": "docs/ai-lessons/cw-engagement-not-multiplied-01.md",
   "expectedJudgment": "无候选（跨 4 窗口的交火按 span 去重：承伤 300、1 敌，不累计成 1200/4）",
   "checks": [
-    { "kind": "prompt_contains", "text": "=== FORMATION_PHASES ===" },
-    { "kind": "prompt_omits", "text": "SOLO_DETACHED" }
+    {
+      "kind": "prompt_contains",
+      "text": "=== FORMATION_PHASES ==="
+    },
+    {
+      "kind": "prompt_omits",
+      "text": "SOLO_DETACHED"
+    }
   ],
   "note": "同一 EngagementSummary 即使横跨多个 15s formation window 也只累计一次，避免误判白吃。"
 }

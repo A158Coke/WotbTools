@@ -10,7 +10,9 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 import java.util.Optional;
 
-/** 需求-打手分配仓库。 */
+/**
+ * 需求-打手分配仓库。
+ */
 public interface BoostRequestAssignmentRepository extends JpaRepository<BoostRequestAssignment, Long> {
 
     Optional<BoostRequestAssignment> findByRequestIdAndUnassignedAtIsNull(final Long requestId);

@@ -3,7 +3,9 @@ package com.wotb.web.boost.service;
 import com.wotb.web.boost.dto.BoostOptionsDto;
 import org.springframework.stereotype.Service;
 
-/** 前端下拉选项服务。 */
+/**
+ * 前端下拉选项服务。
+ */
 @Service
 public class BoostOptionsService {
 

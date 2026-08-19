@@ -21,7 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class ReplayParserFixtureTest {
 
-    /** 定位提交夹具目录（surefire 运行时 user.dir = wotb-core 模块目录）。 */
+    /**
+     * 定位提交夹具目录（surefire 运行时 user.dir = wotb-core 模块目录）。
+     */
     private static Path fixturesDir() {
         return Path.of(System.getProperty("user.dir"), "..", "..", "common", "fixtures", "replays")
                 .normalize();

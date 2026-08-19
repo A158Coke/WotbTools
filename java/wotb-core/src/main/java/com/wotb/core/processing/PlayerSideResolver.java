@@ -18,7 +18,8 @@ import java.util.stream.Collectors;
  */
 public final class PlayerSideResolver {
 
-    private PlayerSideResolver() {}
+    private PlayerSideResolver() {
+    }
 
     public enum Side {
         FRIENDLY,
@@ -26,7 +27,9 @@ public final class PlayerSideResolver {
         UNKNOWN
     }
 
-    /** WoT Blitz only uses raw team numbers 1 and 2. */
+    /**
+     * WoT Blitz only uses raw team numbers 1 and 2.
+     */
     public static boolean isValidRawTeam(final int team) {
         return team == 1 || team == 2;
     }

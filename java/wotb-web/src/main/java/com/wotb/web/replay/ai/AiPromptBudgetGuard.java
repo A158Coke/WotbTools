@@ -19,11 +19,11 @@ public final class AiPromptBudgetGuard {
     /**
      * 检查估算的输入 token 是否满足两层预算。
      *
-     * @param estimatedTokens           已估算的输入 token 数
+     * @param estimatedTokens            已估算的输入 token 数
      * @param singleReplayMaxInputTokens 单回放最大输入 token 上限
-     * @param contextWindowTokens       模型上下文窗口
-     * @param maxOutputTokens           最大输出 token 预留
-     * @param promptSafetyMarginTokens  安全余量
+     * @param contextWindowTokens        模型上下文窗口
+     * @param maxOutputTokens            最大输出 token 预留
+     * @param promptSafetyMarginTokens   安全余量
      */
     public static void enforce(final int estimatedTokens,
                                final int singleReplayMaxInputTokens,

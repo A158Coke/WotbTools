@@ -8,7 +8,9 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 公开选项接口 — 无需登录。 */
+/**
+ * 公开选项接口 — 无需登录。
+ */
 @RestController
 @RequestMapping(ApiPaths.BOOST)
 @CrossOrigin(origins = "*")

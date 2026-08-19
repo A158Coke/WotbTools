@@ -10,7 +10,9 @@ import org.springframework.stereotype.Service;
 import java.util.Arrays;
 import java.util.List;
 
-/** 将后端枚举映射为不含本地化文案的选项 DTO。 */
+/**
+ * 将后端枚举映射为不含本地化文案的选项 DTO。
+ */
 @Service
 public class BoostOptionsMapper {
 

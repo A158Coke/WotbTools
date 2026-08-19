@@ -1,6 +1,8 @@
 package com.wotb.core.processing;
 
-/** 单文件处理错误。 */
+/**
+ * 单文件处理错误。
+ */
 public record ReplayProcessingError(
         String code,
         String message

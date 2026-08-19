@@ -135,7 +135,9 @@ public final class EntityIdentityResolver {
         };
     }
 
-    /** 供 prompt 使用的实体对照表，例如 {@code E7=敌方 "EnemyAce" 坦克: "SPHT" 车种: 重坦}。 */
+    /**
+     * 供 prompt 使用的实体对照表，例如 {@code E7=敌方 "EnemyAce" 坦克: "SPHT" 车种: 重坦}。
+     */
     public static String legend(final Map<Integer, String> labels) {
         if (labels.isEmpty()) {
             return "";

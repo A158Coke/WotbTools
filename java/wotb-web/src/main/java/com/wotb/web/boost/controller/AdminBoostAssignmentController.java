@@ -18,7 +18,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
 
-/** 管理员侧分配接口。 */
+/**
+ * 管理员侧分配接口。
+ */
 @RestController
 @RequestMapping(ApiPaths.ADMIN_BOOST_REQUEST_ASSIGNMENTS)
 @CrossOrigin(origins = "*")
@@ -30,7 +32,9 @@ public class AdminBoostAssignmentController {
         this.assignmentService = assignmentService;
     }
 
-    /** 分配打手（含状态更新，同一事务）。 */
+    /**
+     * 分配打手（含状态更新，同一事务）。
+     */
     @PostMapping
     public BoostAssignmentDto assign(@PathVariable final Long id,
                                      @RequestBody final AssignBoosterRequest body) {
@@ -41,7 +45,9 @@ public class AdminBoostAssignmentController {
         }
     }
 
-    /** 取消当前分配（含状态回退，同一事务）。 */
+    /**
+     * 取消当前分配（含状态回退，同一事务）。
+     */
     @PatchMapping("/current/unassign")
     public Map<String, Object> unassign(@PathVariable final Long id,
                                         @RequestBody final UnassignBoosterRequest body) {

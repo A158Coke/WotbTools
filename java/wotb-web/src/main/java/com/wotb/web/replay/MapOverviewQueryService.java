@@ -30,7 +30,9 @@ public class MapOverviewQueryService {
         this.processingFacade = processingFacade;
     }
 
-    /** 解析第一个（也是唯一一个）文件并构建地图鸟瞰；不可构建返回 null。 */
+    /**
+     * 解析第一个（也是唯一一个）文件并构建地图鸟瞰；不可构建返回 null。
+     */
     public MapOverview buildOverview(final MultipartFile[] files) throws IOException {
         ReplayUploadValidator.validateAiReview(files);
         final MultipartFile file = files[0];

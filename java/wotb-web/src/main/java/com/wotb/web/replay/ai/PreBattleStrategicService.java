@@ -34,10 +34,14 @@ public class PreBattleStrategicService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(PreBattleStrategicService.class);
 
-    /** Call #1 是结构化 JSON，输出预算独立且远小于 Call #2。 */
+    /**
+     * Call #1 是结构化 JSON，输出预算独立且远小于 Call #2。
+     */
     static final int PRE_BATTLE_MAX_OUTPUT_TOKENS = 4096;
 
-    /** Call #1 是小型 roster/map JSON 分析，必须有独立、明显更短的调用预算。 */
+    /**
+     * Call #1 是小型 roster/map JSON 分析，必须有独立、明显更短的调用预算。
+     */
     static final int PRE_BATTLE_CALL_TIMEOUT_SEC = 45;
 
     private final AiChatGateway gateway;
@@ -144,7 +148,9 @@ public class PreBattleStrategicService {
         return prior;
     }
 
-    /** 可观测：记录 Call #1 输入覆盖（地图语义状态 + 车辆战术 Profile 覆盖率），供 Loki/Grafana 验证。 */
+    /**
+     * 可观测：记录 Call #1 输入覆盖（地图语义状态 + 车辆战术 Profile 覆盖率），供 Loki/Grafana 验证。
+     */
     private void logInputCoverage(final Battle battle,
                                   final MapTacticalSemantics semantics) {
         final boolean found = semantics != null && semantics.hasSemantics();

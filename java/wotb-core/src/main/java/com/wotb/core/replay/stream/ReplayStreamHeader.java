@@ -24,7 +24,9 @@ public record ReplayStreamHeader(
         int packetStreamOffset
 ) {
 
-    /** 标准魔数 */
+    /**
+     * 标准魔数
+     */
     public static final long EXPECTED_MAGIC = 0x12345678L;
 
     /**

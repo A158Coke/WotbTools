@@ -4,7 +4,8 @@ import com.wotb.core.model.Battle;
 
 public final class BattleEndResolver {
 
-    private BattleEndResolver() {}
+    private BattleEndResolver() {
+    }
 
     public enum BattleEndSource {
         BATTLE_RESULTS, REPLAY_EVENT, SCOPE_LOCAL_EVIDENCE, UNKNOWN

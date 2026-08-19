@@ -5,7 +5,9 @@ import com.wotb.web.boost.entity.BoostRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-/** 玩家视角需求 DTO 映射，不暴露管理员备注或完整联系方式。 */
+/**
+ * 玩家视角需求 DTO 映射，不暴露管理员备注或完整联系方式。
+ */
 @Service
 public class BoostRequestMapper {
 

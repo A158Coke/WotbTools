@@ -187,7 +187,9 @@ public final class BattlePlaybackAdapter {
         return clamped;
     }
 
-    /** 方向采样：每帧 orientation（hull + turret 世界角），约 1s 一次，≤deathSec，段末冻结。 */
+    /**
+     * 方向采样：每帧 orientation（hull + turret 世界角），约 1s 一次，≤deathSec，段末冻结。
+     */
     static List<MapOverview.DirectionSample> directionSamples(
             final BattleTimeline timeline,
             final List<Integer> entityIds,
@@ -254,7 +256,9 @@ public final class BattlePlaybackAdapter {
         return samples;
     }
 
-    /** 争霸赛实时点数：只消费 timeline 中保留的回放真实广播（type-8 subtype48 root field12）。 */
+    /**
+     * 争霸赛实时点数：只消费 timeline 中保留的回放真实广播（type-8 subtype48 root field12）。
+     */
     static List<MapOverview.PointsSample> pointsSamples(
             final BattleTimeline timeline, final double duration) {
         final List<MapOverview.PointsSample> samples = new ArrayList<>();

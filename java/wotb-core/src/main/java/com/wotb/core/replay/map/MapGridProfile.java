@@ -10,11 +10,11 @@ import java.util.List;
  * 坐标语义与语义文件一致：{@code x} = 地图横向 = 回放 x；{@code y} = 地图纵向 = 回放 z；
  * 同一原点同一米制，可直接与回放原始坐标互相换算（{@link #inBounds}）。</p>
  *
- * @param mapCode       内部地图 code（小写，如 desert_train）
- * @param displayName   人类可读地图名（map_names.json 的 en 名；未收录时回退 mapId）
+ * @param mapCode        内部地图 code（小写，如 desert_train）
+ * @param displayName    人类可读地图名（map_names.json 的 en 名；未收录时回退 mapId）
  * @param playableBounds 可玩区边界（语义坐标；y 轴=回放 z）
- * @param gridCells     6x6 分析格（36 个，id 如 F1/A6）
- * @param spawnPoints   出生点（sceneEvidence.battlePoints 中 type=spawnpoint 的条目）
+ * @param gridCells      6x6 分析格（36 个，id 如 F1/A6）
+ * @param spawnPoints    出生点（sceneEvidence.battlePoints 中 type=spawnpoint 的条目）
  */
 public record MapGridProfile(
         String mapCode,
@@ -50,7 +50,9 @@ public record MapGridProfile(
         return null;
     }
 
-    /** 平面边界（语义坐标；y 轴=回放 z）。 */
+    /**
+     * 平面边界（语义坐标；y 轴=回放 z）。
+     */
     public record Bounds(double xMin, double xMax, double yMin, double yMax) {
         public static final Bounds DEFAULT = new Bounds(-500, 500, -500, 500);
 
@@ -62,7 +64,9 @@ public record MapGridProfile(
         }
     }
 
-    /** 单个 6x6 分析格。 */
+    /**
+     * 单个 6x6 分析格。
+     */
     public record GridCell(String id, int nineGridRegion, Bounds bounds) {
         public GridCell {
             id = id == null ? "" : id;
@@ -70,7 +74,9 @@ public record MapGridProfile(
         }
     }
 
-    /** 出生点（语义坐标）。 */
+    /**
+     * 出生点（语义坐标）。
+     */
     public record SpawnPoint(String name, int team, double x, double y) {
         public SpawnPoint {
             name = name == null ? "" : name;

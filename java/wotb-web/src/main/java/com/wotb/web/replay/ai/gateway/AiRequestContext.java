@@ -53,7 +53,9 @@ public final class AiRequestContext {
         OVERALL_DEADLINE.remove();
     }
 
-    /** Overall deadline (nanos) or {@code null} when not set (e.g. direct service calls). */
+    /**
+     * Overall deadline (nanos) or {@code null} when not set (e.g. direct service calls).
+     */
     public static Long overallDeadlineNanos() {
         return OVERALL_DEADLINE.get();
     }

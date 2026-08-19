@@ -99,7 +99,9 @@ public class HallOfFameUploadService {
         );
     }
 
-    /** 解析失败 → 稳定 400 INVALID_REPLAY_FILE（区别于 storage 的 5xx）。 */
+    /**
+     * 解析失败 → 稳定 400 INVALID_REPLAY_FILE（区别于 storage 的 5xx）。
+     */
     private static Battle parse(final byte[] bytes) {
         try {
             return ReplayParser.parse(bytes);

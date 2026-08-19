@@ -6,9 +6,18 @@
   "lessonRef": "docs/ai-lessons/player-partial-overlap-strong-signals-01.md",
   "expectedJudgment": "无候选（部分重叠交火 + 承伤 1000 + 距离拉大：不得硬判脱节/拖延）",
   "checks": [
-    { "kind": "prompt_omits", "text": "单走脱节" },
-    { "kind": "prompt_omits", "text": "单走拖延" },
-    { "kind": "prompt_omits", "text": "开局图控" }
+    {
+      "kind": "prompt_omits",
+      "text": "单走脱节"
+    },
+    {
+      "kind": "prompt_omits",
+      "text": "单走拖延"
+    },
+    {
+      "kind": "prompt_omits",
+      "text": "开局图控"
+    }
   ],
   "note": "录像者交火 40-65s 与窗口 60-75s 部分重叠：交火压力/承伤无法可靠归属，不生成候选。"
 }

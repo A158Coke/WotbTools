@@ -6,7 +6,8 @@ import java.util.Locale;
 
 public final class PromptDataQuoter {
 
-    private PromptDataQuoter() {}
+    private PromptDataQuoter() {
+    }
 
     public static String quote(final String s, final String fallback) {
         if (!StringUtils.hasText(s)) {

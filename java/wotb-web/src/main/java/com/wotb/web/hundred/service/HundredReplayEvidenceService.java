@@ -42,7 +42,9 @@ public class HundredReplayEvidenceService {
 
     private static final Logger log = LoggerFactory.getLogger(HundredReplayEvidenceService.class);
 
-    /** APPROVE 前置校验要求的 evidence 行数（一个 PENDING 恰好 5 个原始回放）。 */
+    /**
+     * APPROVE 前置校验要求的 evidence 行数（一个 PENDING 恰好 5 个原始回放）。
+     */
     private static final int APPROVAL_EVIDENCE_COUNT = 5;
 
     private final HallOfFameReplayStorage storage;
@@ -66,7 +68,9 @@ public class HundredReplayEvidenceService {
         this.replayHashLock = replayHashLock;
     }
 
-    /** 待持久化的单个回放（createSubmission 解析阶段收集；bytes 为原始回放字节，内容寻址原样落盘）。 */
+    /**
+     * 待持久化的单个回放（createSubmission 解析阶段收集；bytes 为原始回放字节，内容寻址原样落盘）。
+     */
     public record PendingReplay(int slot, String originalFilename, String sha256, long fileSize,
                                 String arenaId, byte[] data) {
     }
@@ -139,7 +143,9 @@ public class HundredReplayEvidenceService {
         cleanupFilesUnlocked(sha256s);
     }
 
-    /** 管理后台 evidence 列表（admin-only；旧 PENDING 无 evidence → 空列表，不 500）。 */
+    /**
+     * 管理后台 evidence 列表（admin-only；旧 PENDING 无 evidence → 空列表，不 500）。
+     */
     @Transactional(readOnly = true)
     public List<HundredReplayEvidenceDto> adminListEvidence(final long submissionId) {
         requireSubmission(submissionId);
@@ -259,7 +265,9 @@ public class HundredReplayEvidenceService {
         }
     }
 
-    /** 事务 commit 后执行（终态文件清理）；无活动事务时立即执行（防御，如单元测试）。 */
+    /**
+     * 事务 commit 后执行（终态文件清理）；无活动事务时立即执行（防御，如单元测试）。
+     */
     private static void scheduleAfterCommit(final Runnable action) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {

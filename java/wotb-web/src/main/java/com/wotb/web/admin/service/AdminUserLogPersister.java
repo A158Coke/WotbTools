@@ -6,7 +6,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 管理员操作日志持久化。独立事务确保审计日志不回滚。 */
+/**
+ * 管理员操作日志持久化。独立事务确保审计日志不回滚。
+ */
 @Component
 public class AdminUserLogPersister {
 

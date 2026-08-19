@@ -79,7 +79,7 @@ public final class TeamEntityMapper {
             if (!ambiguousEntities.contains(mapping.entityId())) {
                 if (previous != null
                         && !Objects.equals(
-                                previous.nickname(), identity.nickname())) {
+                        previous.nickname(), identity.nickname())) {
                     removeEntityIndex(
                             entityIdsByNickname,
                             previous.nickname(),

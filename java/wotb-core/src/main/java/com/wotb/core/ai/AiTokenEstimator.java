@@ -9,9 +9,13 @@ import java.util.Map;
  */
 public interface AiTokenEstimator {
 
-    /** Estimate total tokens for a list of messages (system + user turns). */
+    /**
+     * Estimate total tokens for a list of messages (system + user turns).
+     */
     int estimateMessagesTokens(List<Map<String, Object>> messages);
 
-    /** Estimate tokens for a single text string. */
+    /**
+     * Estimate tokens for a single text string.
+     */
     int estimateTextTokens(String text);
 }

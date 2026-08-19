@@ -70,7 +70,9 @@ public class HallOfFameAdminLog {
         // JPA
     }
 
-    /** DELETE_ENTRY 审计快照（record 删除前完整拷贝 authoritative facts）。 */
+    /**
+     * DELETE_ENTRY 审计快照（record 删除前完整拷贝 authoritative facts）。
+     */
     public static HallOfFameAdminLog deleteEntry(final HallOfFameRecord r,
                                                  final String adminSub,
                                                  final String adminUsername) {

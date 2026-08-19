@@ -40,7 +40,9 @@ public class HallOfFameAdminController {
         this.hofService = hofService;
     }
 
-    /** 管理列表：nickname / accountId / arenaId / uploadedBy / battleType / tankId / replayAvailable / sort / 分页。 */
+    /**
+     * 管理列表：nickname / accountId / arenaId / uploadedBy / battleType / tankId / replayAvailable / sort / 分页。
+     */
     @GetMapping
     public HofAdminPageDto list(
             @RequestParam(name = "nickname", required = false) final String nickname,
@@ -57,7 +59,9 @@ public class HallOfFameAdminController {
                 tankId, replayAvailable, sort, page, size);
     }
 
-    /** 操作日志（只读）。 */
+    /**
+     * 操作日志（只读）。
+     */
     @GetMapping("/audit")
     public HofAdminAuditPageDto audit(
             @RequestParam(name = "page", defaultValue = "1") final int page,
@@ -65,7 +69,9 @@ public class HallOfFameAdminController {
         return adminService.audit(page, size);
     }
 
-    /** 管理后台下载 replay：复用统一 authenticated 下载机制（同一文件读取逻辑，不建第二套）。 */
+    /**
+     * 管理后台下载 replay：复用统一 authenticated 下载机制（同一文件读取逻辑，不建第二套）。
+     */
     @GetMapping("/{id}/replay")
     public ResponseEntity<byte[]> downloadReplay(@PathVariable final long id) {
         final ReplayDownload download = hofService.downloadReplay(id);
@@ -78,7 +84,9 @@ public class HallOfFameAdminController {
                 .body(download.data());
     }
 
-    /** Hard delete（二次确认在前端；audit + delete 单事务；最后引用清理物理文件；删除后可重新上传）。 */
+    /**
+     * Hard delete（二次确认在前端；audit + delete 单事务；最后引用清理物理文件；删除后可重新上传）。
+     */
     @DeleteMapping("/{id}")
     public Map<String, Object> delete(@PathVariable final long id) {
         adminService.deleteEntry(id);

@@ -3,7 +3,8 @@
 -- 仅放宽 CHECK 约束，不改任何现有列；UNIQUE (wotb_server, wotb_account_id) 自动覆盖新区服。
 
 alter table user_profile
-    drop constraint ck_user_profile_wotb_server;
+drop
+constraint ck_user_profile_wotb_server;
 
 alter table user_profile
     add constraint ck_user_profile_wotb_server

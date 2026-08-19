@@ -6,8 +6,14 @@
   "lessonRef": "docs/ai-lessons/player-opening-mapcontrol-01.md",
   "expectedJudgment": "开局分散（信息覆盖 trade-off，非脱节；不得声称拿视野/点亮）",
   "checks": [
-    { "kind": "prompt_contains", "text": "开局分散" },
-    { "kind": "prompt_omits", "text": "单走脱节" }
+    {
+      "kind": "prompt_contains",
+      "text": "开局分散"
+    },
+    {
+      "kind": "prompt_omits",
+      "text": "单走脱节"
+    }
   ],
   "note": "随机战开局分散：SoloPlayIntentSkill 抑制开局脱节候选，输出 OPENING_SPREAD 中性 signal（不声称拿视野/点亮）。"
 }

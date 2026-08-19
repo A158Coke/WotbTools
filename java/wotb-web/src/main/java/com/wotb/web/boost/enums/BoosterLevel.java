@@ -1,6 +1,8 @@
 package com.wotb.web.boost.enums;
 
-/** 打手等级。 */
+/**
+ * 打手等级。
+ */
 public enum BoosterLevel {
     CASUAL,
     SKILLED,
@@ -9,7 +11,9 @@ public enum BoosterLevel {
     MASTER,
     AVERAGE_GOD;
 
-    /** 殿堂级（界面英文 Mythic）只能由管理员编辑已有打手档案时授予。 */
+    /**
+     * 殿堂级（界面英文 Mythic）只能由管理员编辑已有打手档案时授予。
+     */
     public boolean canBeSelectedOnCreate() {
         return this != AVERAGE_GOD;
     }

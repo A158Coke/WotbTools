@@ -85,66 +85,171 @@ public class BoosterApplication {
         // JPA
     }
 
-    public Long getId() { return id; }
-    public void setId(final Long id) { this.id = id; }
+    public Long getId() {
+        return id;
+    }
 
-    public String getKeycloakUserId() { return keycloakUserId; }
-    public void setKeycloakUserId(final String keycloakUserId) { this.keycloakUserId = keycloakUserId; }
+    public void setId(final Long id) {
+        this.id = id;
+    }
 
-    public Long getUserProfileId() { return userProfileId; }
-    public void setUserProfileId(final Long userProfileId) { this.userProfileId = userProfileId; }
+    public String getKeycloakUserId() {
+        return keycloakUserId;
+    }
 
-    public Long getWotbAccountId() { return wotbAccountId; }
-    public void setWotbAccountId(final Long wotbAccountId) { this.wotbAccountId = wotbAccountId; }
+    public void setKeycloakUserId(final String keycloakUserId) {
+        this.keycloakUserId = keycloakUserId;
+    }
 
-    public String getWotbNickname() { return wotbNickname; }
-    public void setWotbNickname(final String wotbNickname) { this.wotbNickname = wotbNickname; }
+    public Long getUserProfileId() {
+        return userProfileId;
+    }
 
-    public String getWotbServer() { return wotbServer; }
-    public void setWotbServer(final String wotbServer) { this.wotbServer = wotbServer; }
+    public void setUserProfileId(final Long userProfileId) {
+        this.userProfileId = userProfileId;
+    }
 
-    public String getOverallStatsImage() { return overallStatsImage; }
-    public void setOverallStatsImage(final String overallStatsImage) { this.overallStatsImage = overallStatsImage; }
+    public Long getWotbAccountId() {
+        return wotbAccountId;
+    }
 
-    public String getVehicleStatsImage() { return vehicleStatsImage; }
-    public void setVehicleStatsImage(final String vehicleStatsImage) { this.vehicleStatsImage = vehicleStatsImage; }
+    public void setWotbAccountId(final Long wotbAccountId) {
+        this.wotbAccountId = wotbAccountId;
+    }
 
-    public String getRequestedLevel() { return requestedLevel; }
-    public void setRequestedLevel(final String requestedLevel) { this.requestedLevel = requestedLevel; }
+    public String getWotbNickname() {
+        return wotbNickname;
+    }
 
-    public String getQq() { return qq; }
-    public void setQq(final String qq) { this.qq = qq; }
+    public void setWotbNickname(final String wotbNickname) {
+        this.wotbNickname = wotbNickname;
+    }
 
-    public String getWechat() { return wechat; }
-    public void setWechat(final String wechat) { this.wechat = wechat; }
+    public String getWotbServer() {
+        return wotbServer;
+    }
 
-    public String getAvailabilityTier() { return availabilityTier; }
-    public void setAvailabilityTier(final String availabilityTier) { this.availabilityTier = availabilityTier; }
+    public void setWotbServer(final String wotbServer) {
+        this.wotbServer = wotbServer;
+    }
 
-    public String getDailyTimeWindow() { return dailyTimeWindow; }
-    public void setDailyTimeWindow(final String dailyTimeWindow) { this.dailyTimeWindow = dailyTimeWindow; }
+    public String getOverallStatsImage() {
+        return overallStatsImage;
+    }
 
-    public String getSelfAssessment() { return selfAssessment; }
-    public void setSelfAssessment(final String selfAssessment) { this.selfAssessment = selfAssessment; }
+    public void setOverallStatsImage(final String overallStatsImage) {
+        this.overallStatsImage = overallStatsImage;
+    }
 
-    public String getStatus() { return status; }
-    public void setStatus(final String status) { this.status = status; }
+    public String getVehicleStatsImage() {
+        return vehicleStatsImage;
+    }
 
-    public String getAdminNote() { return adminNote; }
-    public void setAdminNote(final String adminNote) { this.adminNote = adminNote; }
+    public void setVehicleStatsImage(final String vehicleStatsImage) {
+        this.vehicleStatsImage = vehicleStatsImage;
+    }
 
-    public Long getApprovedBoosterId() { return approvedBoosterId; }
-    public void setApprovedBoosterId(final Long approvedBoosterId) { this.approvedBoosterId = approvedBoosterId; }
+    public String getRequestedLevel() {
+        return requestedLevel;
+    }
 
-    public String getReviewedBy() { return reviewedBy; }
-    public void setReviewedBy(final String reviewedBy) { this.reviewedBy = reviewedBy; }
+    public void setRequestedLevel(final String requestedLevel) {
+        this.requestedLevel = requestedLevel;
+    }
 
-    public OffsetDateTime getReviewedAt() { return reviewedAt; }
-    public void setReviewedAt(final OffsetDateTime reviewedAt) { this.reviewedAt = reviewedAt; }
+    public String getQq() {
+        return qq;
+    }
 
-    public OffsetDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(final OffsetDateTime createdAt) { this.createdAt = createdAt; }
+    public void setQq(final String qq) {
+        this.qq = qq;
+    }
 
-    public OffsetDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(final OffsetDateTime updatedAt) { this.updatedAt = updatedAt; }
+    public String getWechat() {
+        return wechat;
+    }
+
+    public void setWechat(final String wechat) {
+        this.wechat = wechat;
+    }
+
+    public String getAvailabilityTier() {
+        return availabilityTier;
+    }
+
+    public void setAvailabilityTier(final String availabilityTier) {
+        this.availabilityTier = availabilityTier;
+    }
+
+    public String getDailyTimeWindow() {
+        return dailyTimeWindow;
+    }
+
+    public void setDailyTimeWindow(final String dailyTimeWindow) {
+        this.dailyTimeWindow = dailyTimeWindow;
+    }
+
+    public String getSelfAssessment() {
+        return selfAssessment;
+    }
+
+    public void setSelfAssessment(final String selfAssessment) {
+        this.selfAssessment = selfAssessment;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(final String status) {
+        this.status = status;
+    }
+
+    public String getAdminNote() {
+        return adminNote;
+    }
+
+    public void setAdminNote(final String adminNote) {
+        this.adminNote = adminNote;
+    }
+
+    public Long getApprovedBoosterId() {
+        return approvedBoosterId;
+    }
+
+    public void setApprovedBoosterId(final Long approvedBoosterId) {
+        this.approvedBoosterId = approvedBoosterId;
+    }
+
+    public String getReviewedBy() {
+        return reviewedBy;
+    }
+
+    public void setReviewedBy(final String reviewedBy) {
+        this.reviewedBy = reviewedBy;
+    }
+
+    public OffsetDateTime getReviewedAt() {
+        return reviewedAt;
+    }
+
+    public void setReviewedAt(final OffsetDateTime reviewedAt) {
+        this.reviewedAt = reviewedAt;
+    }
+
+    public OffsetDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(final OffsetDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public OffsetDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(final OffsetDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
 }

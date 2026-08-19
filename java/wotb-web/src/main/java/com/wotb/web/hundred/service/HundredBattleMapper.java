@@ -15,7 +15,9 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 
-/** 百场实体 ↔ DTO 集中转换（禁止 Service/Entity 手写 toXxx）。 */
+/**
+ * 百场实体 ↔ DTO 集中转换（禁止 Service/Entity 手写 toXxx）。
+ */
 @Service
 public class HundredBattleMapper implements Mapper<HundredBattleSubmission, HundredSubmissionSummaryDto> {
 
@@ -24,7 +26,9 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
         return toSummary(s);
     }
 
-    /** 个人中心摘要。 */
+    /**
+     * 个人中心摘要。
+     */
     public HundredSubmissionSummaryDto toSummary(final HundredBattleSubmission s) {
         return new HundredSubmissionSummaryDto(
                 s.getId(), s.getVehicleId(), s.getVehicleName(), s.getStatus(),
@@ -33,7 +37,9 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
                 s.getSubmittedAt(), s.getApprovedAt(), s.getRejectReason(), s.getRejectReasonText());
     }
 
-    /** 公开排行榜行；rank 为 query-time 派生的 competition ranking（无上下文时传 null）。 */
+    /**
+     * 公开排行榜行；rank 为 query-time 派生的 competition ranking（无上下文时传 null）。
+     */
     public HundredLeaderboardItemDto toLeaderboardItem(final HundredBattleSubmission s, final Integer rank) {
         return new HundredLeaderboardItemDto(
                 s.getId(), rank, s.getVehicleId(), s.getVehicleName(), s.getNicknameSnapshot(),
@@ -42,7 +48,9 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
                 s.getApprovedAt());
     }
 
-    /** 管理后台列表行（不含 proof 截图）。 */
+    /**
+     * 管理后台列表行（不含 proof 截图）。
+     */
     public HundredAdminListItemDto toAdminListItem(final HundredBattleSubmission s) {
         return new HundredAdminListItemDto(
                 s.getId(), s.getStatus(), s.getVehicleId(), s.getVehicleName(),
@@ -54,14 +62,18 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
                 s.getSubmittedAt(), s.getApprovedAt(), s.getRejectReason(), s.getDeleteReason());
     }
 
-    /** 管理后台回放证据 metadata（admin-only；不含文件内容）。 */
+    /**
+     * 管理后台回放证据 metadata（admin-only；不含文件内容）。
+     */
     public HundredReplayEvidenceDto toReplayEvidenceDto(final HundredBattleReplayEvidence e) {
         return new HundredReplayEvidenceDto(
                 e.getId(), e.getSlot(), e.getOriginalFilename(),
                 e.getFileSize(), e.getArenaId(), e.getSha256(), e.getCreatedAt());
     }
 
-    /** 管理后台详情；proofScreenshot 仅 PENDING 时对外（终态事务内已清空，双重保护）。 */
+    /**
+     * 管理后台详情；proofScreenshot 仅 PENDING 时对外（终态事务内已清空，双重保护）。
+     */
     public HundredAdminDetailDto toAdminDetail(final HundredBattleSubmission s) {
         final boolean pending = "PENDING".equals(s.getStatus());
         return new HundredAdminDetailDto(
