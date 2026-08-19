@@ -284,7 +284,6 @@ public final class TacticalReviewPromptBuilder {
                         .append(" 对方: ").append(opponentNames(e.enemyAccountIds(), battle))
                         .append(" | 你输出 ").append(e.damageDealt())
                         .append(" / 损失 ").append(e.damageReceived())
-                        .append(" | 结果: ").append(PlayerAnalysisTerms.outcomeLabel(e.outcome()))
                         .append(" | 置信度: ").append(PlayerAnalysisTerms.confidenceLabel(e.confidence()))
                         .append('\n');
             }

@@ -257,17 +257,11 @@ public class DefaultPlayerBattleFeatureExtractor {
             if (d.event().attackerEid() == recorderEid) dealt += d.event().damage();
             if (d.event().victimEid() == recorderEid) received += d.event().damage();
         }
-        final EngagementOutcome outcome = (dealt > received * 1.25)
-                ? EngagementOutcome.FAVORABLE
-                : (received > dealt * 1.25)
-                ? EngagementOutcome.UNFAVORABLE
-                : EngagementOutcome.EVEN;
-
         return new EngagementSummary(
                 events.getFirst().battleRelativeSec(),
                 events.getLast().battleRelativeSec(),
                 List.of(), List.of(), dealt, received,
-                null, null, outcome, com.wotb.core.replay.event.DecodeConfidence.INFERRED);
+                null, null, com.wotb.core.replay.event.DecodeConfidence.INFERRED);
     }
 
     static List<KeyBattleEvent> extractRecorderKeyEvents(

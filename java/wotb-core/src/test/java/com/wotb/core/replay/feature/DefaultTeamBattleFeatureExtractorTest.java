@@ -292,28 +292,6 @@ class DefaultTeamBattleFeatureExtractorTest {
     }
 
     @Test
-    void engagementOutcomeUsesOnePointTwoFiveAsAnExclusiveBoundary() {
-        final Fixture fixture = fixture();
-        final List<ReplayEvent> evenEvents = List.of(
-                mapping(1, 10, 100L),
-                mapping(2, 20, 200L),
-                damage(3, 20f, 10, 20, 125),
-                damage(4, 25f, 20, 10, 100));
-        final List<ReplayEvent> favorableEvents = List.of(
-                mapping(1, 10, 100L),
-                mapping(2, 20, 200L),
-                damage(3, 20f, 10, 20, 126),
-                damage(4, 25f, 20, 10, 100));
-
-        assertEquals(
-                EngagementOutcome.EVEN,
-                extract(fixture, evenEvents).engagements().getFirst().outcome());
-        assertEquals(
-                EngagementOutcome.FAVORABLE,
-                extract(fixture, favorableEvents).engagements().getFirst().outcome());
-    }
-
-    @Test
     void formationClusteringUsesOneHundredMetersAsAnInclusiveBoundary() {
         final Fixture fixture = fixture();
 

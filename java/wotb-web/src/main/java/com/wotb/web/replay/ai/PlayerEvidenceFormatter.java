@@ -699,7 +699,6 @@ final class PlayerEvidenceFormatter {
                             .append(PlayerAnalysisTerms.battleRange(e.startTime(), e.endTime()))
                             .append(" 事件流输出: ").append(e.damageDealt())
                             .append(" 事件流损失血量: ").append(e.damageReceived())
-                            .append(" 结果: ").append(PlayerAnalysisTerms.outcomeLabel(e.outcome()))
                             .append(" 置信度: ").append(PlayerAnalysisTerms.confidenceLabel(e.confidence()))
                             .append('\n');
                 }

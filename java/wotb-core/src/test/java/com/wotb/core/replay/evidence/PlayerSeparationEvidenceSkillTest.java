@@ -9,7 +9,6 @@ import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
-import com.wotb.core.replay.feature.EngagementOutcome;
 import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.MovementSegment;
@@ -292,6 +291,6 @@ class PlayerSeparationEvidenceSkillTest {
         // 生产形态：DefaultPlayerBattleFeatureExtractor 构造的 player engagement 敌我 account 列表为空
         return new EngagementSummary(start, end, List.of(), List.of(),
                 300, damageReceived, new Vector3(200f, 0f, 200f), new Vector3(200f, 0f, 200f),
-                EngagementOutcome.UNFAVORABLE, DecodeConfidence.PARTIAL);
+                DecodeConfidence.PARTIAL);
     }
 }
