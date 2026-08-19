@@ -13,7 +13,6 @@ import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.evidence.TeamSeparationEvidenceSkill;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.CanonicalMapPosition;
-import com.wotb.core.replay.feature.EngagementOutcome;
 import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.MapCoordinateResolution;
@@ -331,7 +330,7 @@ public final class AiEvalFixtures {
         // 生产形态：DefaultPlayerBattleFeatureExtractor 构造的 player engagement 敌我 account 列表为空
         return new EngagementSummary(start, end, List.of(), List.of(),
                 300, damageReceived, new Vector3(100f, 0f, 150f), new Vector3(100f, 0f, 150f),
-                EngagementOutcome.UNFAVORABLE, DecodeConfidence.PARTIAL);
+                DecodeConfidence.PARTIAL);
     }
 
     // ===== 场景一：开局分散（信息覆盖 trade-off，非脱节） =====
@@ -1075,7 +1074,7 @@ public final class AiEvalFixtures {
             final long allyAccountId, final List<Long> enemyAccountIds) {
         return new EngagementSummary(start, end, List.of(allyAccountId), enemyAccountIds,
                 300, 200, new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
-                EngagementOutcome.UNFAVORABLE, DecodeConfidence.PARTIAL);
+                DecodeConfidence.PARTIAL);
     }
 
     private static EngagementSummary engagement(
@@ -1084,14 +1083,14 @@ public final class AiEvalFixtures {
             final int damageReceived) {
         return new EngagementSummary(start, end, List.of(allyAccountId), enemyAccountIds,
                 300, damageReceived, new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
-                EngagementOutcome.UNFAVORABLE, DecodeConfidence.PARTIAL);
+                DecodeConfidence.PARTIAL);
     }
 
     private static EngagementSummary favorableEngagement(final float start, final float end,
                                                          final long allyAccountId) {
         return new EngagementSummary(start, end, List.of(allyAccountId), List.of(20_001L),
                 300, 50, new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
-                EngagementOutcome.FAVORABLE, DecodeConfidence.PARTIAL);
+                DecodeConfidence.PARTIAL);
     }
 
     private static KeyBattleEvent keyEvent(final float clock, final String type, final String label) {

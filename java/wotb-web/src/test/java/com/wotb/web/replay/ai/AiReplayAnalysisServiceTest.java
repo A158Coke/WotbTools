@@ -33,7 +33,6 @@ import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
 import com.wotb.core.replay.stream.ReplayStreamHeader;
-import com.wotb.core.replay.feature.EngagementOutcome;
 import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MovementType;
@@ -738,10 +737,10 @@ class AiReplayAnalysisServiceTest {
         final List<EngagementSummary> engagements = List.of(
                 new EngagementSummary(0f, 10f, List.of(), List.of(), 600, 0,
                         new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
-                        EngagementOutcome.FAVORABLE, DecodeConfidence.EXACT),
+                        DecodeConfidence.EXACT),
                 new EngagementSummary(10f, 20f, List.of(), List.of(), 600, 0,
                         new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
-                        EngagementOutcome.FAVORABLE, DecodeConfidence.EXACT));
+                        DecodeConfidence.EXACT));
         final var ctx = buildContextWithFeatures(battle,
                 new PlayerBattleFeatureSet(List.of(), engagements, List.of(), List.of(), List.of(), true));
         service.analyzePlayerContext(ctx);

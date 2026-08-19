@@ -718,7 +718,6 @@ final class TeamEvidenceFormatter {
                     + " receivedSubset=" + engagement.damageReceived()
                     + " focusedTargets=" + engagement.focusedTargetAccountIds()
                     + " targetSwitches=" + engagement.targetSwitchCount()
-                    + " outcome=" + PlayerAnalysisTerms.outcomeLabel(engagement.outcome())
                     + " confidence=" + PlayerAnalysisTerms.confidenceLabel(engagement.confidence())
                     + "\n");
         }

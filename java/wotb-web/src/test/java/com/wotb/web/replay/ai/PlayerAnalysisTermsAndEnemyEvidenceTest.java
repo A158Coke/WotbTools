@@ -9,7 +9,6 @@ import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.feature.BattlePhaseType;
-import com.wotb.core.replay.feature.EngagementOutcome;
 import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import org.junit.jupiter.api.Test;
@@ -236,10 +235,6 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         assertEquals("首次接敌", PlayerAnalysisTerms.phaseLabel(BattlePhaseType.FIRST_CONTACT));
         assertEquals("准备阶段", PlayerAnalysisTerms.phaseLabel(BattlePhaseType.PRE_BATTLE));
 
-        assertEquals("有利", PlayerAnalysisTerms.outcomeLabel(EngagementOutcome.FAVORABLE));
-        assertEquals("不利", PlayerAnalysisTerms.outcomeLabel(EngagementOutcome.UNFAVORABLE));
-        assertEquals("均势", PlayerAnalysisTerms.outcomeLabel(EngagementOutcome.EVEN));
-
         assertEquals("移动", PlayerAnalysisTerms.movementLabel(MovementType.MOVING));
         assertEquals("静止", PlayerAnalysisTerms.movementLabel(MovementType.STATIONARY));
 
@@ -255,10 +250,6 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         for (final BattlePhaseType type : BattlePhaseType.values()) {
             assertFalse(PlayerAnalysisTerms.phaseLabel(type).matches("[A-Z_]+"),
                     "phase 未中文化: " + type);
-        }
-        for (final EngagementOutcome outcome : EngagementOutcome.values()) {
-            assertFalse(PlayerAnalysisTerms.outcomeLabel(outcome).matches("[A-Z_]+"),
-                    "outcome 未中文化: " + outcome);
         }
         for (final MovementType type : MovementType.values()) {
             assertFalse(PlayerAnalysisTerms.movementLabel(type).matches("[A-Z_]+"),

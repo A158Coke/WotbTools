@@ -2,7 +2,6 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.BattlePhaseType;
-import com.wotb.core.replay.feature.EngagementOutcome;
 import com.wotb.core.replay.feature.MovementType;
 
 /**
@@ -62,17 +61,6 @@ public final class PlayerAnalysisTerms {
             case ENDGAME -> "残局";
             case POST_BATTLE -> "战斗结束后";
             case UNKNOWN -> "未知阶段";
-        };
-    }
-
-    /** 交火结果。 */
-    public static String outcomeLabel(final EngagementOutcome outcome) {
-        if (outcome == null) return "未知";
-        return switch (outcome) {
-            case FAVORABLE -> "有利";
-            case UNFAVORABLE -> "不利";
-            case EVEN -> "均势";
-            case UNKNOWN -> "未知";
         };
     }
 

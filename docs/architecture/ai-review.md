@@ -65,6 +65,8 @@ Backend Evidence 层不得直接输出：正确/错误打法、拖延、无效�
 
 禁止用 `if A && B && C → TACTICAL_VERDICT` 的规则引擎取代 LLM。
 
+> **第二轮（2026-08）**：feature 层 `EngagementOutcome`（`FAVORABLE/UNFAVORABLE/EVEN`，原 `dealt > received * 1.25 → 有利/不利/均势` 判定）已整体移除——`EngagementSummary`/`TeamEngagementSummary` 不再携带 `outcome` 字段，`DefaultPlayerBattleFeatureExtractor`/`TeamEngagementExtractor` 不再计算交换好坏（`ENGAGEMENT_OUTCOME_RATIO` 删除），三个渲染点（`PlayerEvidenceFormatter` 交火段 / `TacticalReviewPromptBuilder` 对炮明细 / `TeamEvidenceFormatter` TEAM_ENGAGEMENTS 段）不再输出「结果: 有利/不利/均势」。交火段只保留确定性数字（damageDealt / damageReceived / 存活变化 / 局部人数 / HP swing / 集火目标 / 目标切换），「交换是否值得」（bad trade / favorable trade）与拖延/脱节/图控一样由 LLM 综合多事实判断。
+
 ### Evidence 输出规范
 
 - 复用 `AiEvidence`（type / startSec / endSec / entities / numbers / labels / confidence / priority / provenance / summary）。

@@ -23,7 +23,6 @@ import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.feature.TeamAggregateResult;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamEngagementSummary;
-import com.wotb.core.replay.feature.EngagementOutcome;
 import com.wotb.core.replay.feature.TeamFeatureCoverage;
 import com.wotb.core.replay.feature.TeamFormationPhase;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
@@ -758,7 +757,7 @@ class TeamAiPromptBuilderTest {
         battle.players = List.of(ally);
         final TeamEngagementSummary engagement = new TeamEngagementSummary(
                 10f, 20f, List.of(10_001L), List.of(20_001L),
-                1200, 800, List.of(20_001L), 3, EngagementOutcome.FAVORABLE,
+                1200, 800, List.of(20_001L), 3,
                 DecodeConfidence.EXACT);
         final TeamAggregateResult aggregate = new TeamAggregateResult(
                 1, 1000, 800, 0, 0, 0, 1, 0, null, null, null, true);

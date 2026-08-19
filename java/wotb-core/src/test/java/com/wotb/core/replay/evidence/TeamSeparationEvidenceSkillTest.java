@@ -5,7 +5,6 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.CanonicalMapPosition;
-import com.wotb.core.replay.feature.EngagementOutcome;
 import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.replay.feature.MapCoordinateResolution;
 import com.wotb.core.replay.feature.MovementSegment;
@@ -504,7 +503,7 @@ class TeamSeparationEvidenceSkillTest {
                                                 final int damageReceived) {
         return new EngagementSummary(start, end, List.of(ally), enemies,
                 300, damageReceived, new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
-                EngagementOutcome.UNFAVORABLE, DecodeConfidence.PARTIAL);
+                DecodeConfidence.PARTIAL);
     }
 
     private static Battle battle(final int arenaBonusType, final double[] deathSecs,
