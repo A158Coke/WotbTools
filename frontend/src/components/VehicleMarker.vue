@@ -39,6 +39,16 @@ const props = defineProps({
     type: Object,
     default: () => ({ showPlayer: false, showTank: true, tankDy: 0, playerHidden: false, playerFading: false }),
   },
+  /** HP HUD 显示数据（hpDisplay 结果：{current,maxHp,pct,destroyed}|null；null=不渲染） */
+  hp: { type: Object, default: null },
+  /** HP HUD 开关（计划 §4.3：关闭后隐藏数字/bar/ghost，不影响其余 combat feedback） */
+  hpVisible: { type: Boolean, default: true },
+  /** lost-HP ghost：{prevPct,nextPct}|null（§11；同阵营色浅版，约 600ms 消退） */
+  hpGhost: { type: Object, default: null },
+  /** 受击 hit flash（§10.3；约 280ms 短暂亮起） */
+  hpFlash: { type: Boolean, default: false },
+  /** seek/恢复状态帧：禁用 HP bar 过渡动画（§20.1 seek 只恢复状态不补动画） */
+  hpNoTransition: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['select'])
@@ -145,6 +155,7 @@ const recorderBadgeStyle = computed(() => ({
   top: `calc(100% + ${5 * overlayInv.value}px)`,
 }))
 
+
 // 仅保留有 CSS 规则消费的状态类；Selected/Recorder 改由独立元素表达
 // （.pb-selected-mark / .pb-recorder-badge），不再产出无样式 class。
 const stateClasses = computed(() => ({
@@ -153,6 +164,46 @@ const stateClasses = computed(() => ({
   // team 语义 token（PR3 §19/§20：friendly green|blue / enemy red；generic + dedicated 都走）
   'pb-friendly': st.value.friendly === true,
   'pb-enemy': st.value.friendly === false,
+}))
+
+// ---- HP HUD（docs/current-plan.md §4/§5/§6/§7/§10/§11）----
+// 布局：HP 数字 + 定宽 bar 位于 marker 上方；标签块在有内容时让位（HP 优先级最高）。
+// offset（screen px，沿 labelsStyle 同款 inverse-scale 模式）：
+//   base 2px + 标签块屏幕高度 + 4px 间隙；标签全关时 = 2 + 0 + 4 = 6px。
+const HP_HUD_GAP_PX = 4
+const labelScreenHeight = computed(() => {
+  const inv = overlayInv.value
+  const lines = (props.label.showTank ? LABEL_TANK_LINE_H : 0)
+    + (props.label.showPlayer ? LABEL_PLAYER_LINE_H : 0)
+  return (lines + LABEL_PAD_Y) * inv
+})
+const hpHudStyle = computed(() => ({
+  transform: 'translateX(-50%) ' + st.value.overlayInverseScale,
+  bottom: 'calc(100% + ' + (LABEL_ANCHOR_PX + labelScreenHeight.value + HP_HUD_GAP_PX) + 'px)',
+}))
+// 填充：maxHp 已知 → 百分比；maxHp 未知（pct=null）→ UNKNOWN 语义（§5.2 不伪造百分比）
+const hpFillWidth = computed(() => {
+  const d = props.hp
+  if (!d) return '0%'
+  if (d.pct != null) return d.pct + '%'
+  return d.current != null ? '100%' : '0%'
+})
+const hpFillUnknown = computed(() => !!props.hp && props.hp.current != null && props.hp.pct == null)
+const hpGhostWidth = computed(() => {
+  const g = props.hpGhost
+  if (!g || !Number.isFinite(g.prevPct) || !Number.isFinite(g.nextPct)) return null
+  const w = g.prevPct - g.nextPct
+  return w > 0.5 ? w : null
+})
+const hpGhostLeft = computed(() => {
+  const g = props.hpGhost
+  return g && Number.isFinite(g.nextPct) ? g.nextPct + '%' : '0%'
+})
+const hpClasses = computed(() => ({
+  'pb-hp-lastknown': st.value.lastKnown && !st.value.destroyed,
+  'pb-hp-destroyed': st.value.destroyed,
+  'pb-hp-flash': props.hpFlash,
+  'pb-hp-no-transition': props.hpNoTransition,
 }))
 </script>
 
@@ -263,6 +314,32 @@ const stateClasses = computed(() => ({
       aria-hidden="true"
       :style="recorderBadgeStyle"
     ></span>
+
+    <!-- HP HUD（docs/current-plan.md §4/§5/§6/§7/§10/§11）：HP 数字 + 定宽 bar，
+         位于 marker 上方、标签块之上（HP 优先级最高）；last-known 弱化、destroyed 归零、
+         UNKNOWN 显示 —；ghost/flash 由外层 transient 状态驱动；hpVisible=false 整体隐藏 -->
+    <div
+      v-if="hpVisible && hp"
+      class="pb-hp-hud"
+      :class="hpClasses"
+      :style="hpHudStyle"
+      data-test="pb-hp-hud"
+      aria-hidden="true"
+    >
+      <span class="pb-hp-num" data-test="pb-hp-num">{{ hp.current != null ? hp.current : '—' }}</span>
+      <span class="pb-hp-bar" :class="{ 'pb-hp-unknown-track': hpFillUnknown }">
+        <span
+          class="pb-hp-fill"
+          :class="{ 'pb-hp-fill-unknown': hpFillUnknown }"
+          :style="{ width: hpFillWidth }"
+        ></span>
+        <span
+          v-if="hpGhostWidth != null"
+          class="pb-hp-ghost"
+          :style="{ left: hpGhostLeft, width: hpGhostWidth + '%' }"
+        ></span>
+      </span>
+    </div>
 
     <!-- PR4 §27/§28：PlayerName + TankName 共享背景 label 块（两行 centered；只显示一项时
          背景自动收缩到单行；tankDy 上移让位）；team 文字色见 CSS；
@@ -515,9 +592,92 @@ const stateClasses = computed(() => ({
   .pb-label-fading { animation: none; }
 }
 
+/* —— HP HUD（docs/current-plan.md §4/§5/§6/§7/§10/§11）：数字 + 定宽 bar，screen-space
+   恒定（overlayInverseScale 反缩放）；friendly/enemy 沿用 team token（§4.2 现有阵营色）——
+    friendly = --pb-team-text（地图 tone），enemy = --pb-enemy-text（red）——与整车 outline 同源。
+   UNKNOWN（maxHp 缺失）时 fill 进入斜纹 UNKNOWN 语义（§5.2：不伪造百分比、不隐藏 HP）。 */
+.pb-hp-hud {
+  position: absolute;
+  bottom: calc(100% + 6px); /* 1× 兜底；实际 offset 由 inline style 提供 */
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  z-index: 8;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.pb-hp-num {
+  font-size: 10px;
+  line-height: 1.1;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 0.9),
+    0 0 3px rgba(0, 0, 0, 0.9),
+    0 1px 2px rgba(0, 0, 0, 0.8);
+}
+.pb-hp-bar {
+  position: relative;
+  width: 46px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+.pb-hp-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  transition: width 0.2s linear; /* §10.3：150–300ms 快速缩短（seek 由 pb-hp-no-transition 禁用） */
+}
+.pb-friendly .pb-hp-fill { background: var(--pb-team-text, #4ade80); }
+.pb-enemy .pb-hp-fill { background: var(--pb-enemy-text, #f87171); }
+/* §5.2 UNKNOWN：maxHp 缺失 → 斜纹灰段，不伪造百分比 */
+.pb-hp-fill-unknown {
+  background: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.28) 0 3px, transparent 3px 6px) !important;
+}
+/* §11 lost-HP ghost：同阵营色浅版（低透明），约 GHOST_MS 线性消退 */
+.pb-hp-ghost {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  animation: pb-ghost-fade 0.6s ease forwards;
+}
+.pb-friendly .pb-hp-ghost { background: var(--pb-team-text, #4ade80); }
+.pb-enemy .pb-hp-ghost { background: var(--pb-enemy-text, #f87171); }
+@keyframes pb-ghost-fade {
+  from { opacity: 0.55; }
+  to { opacity: 0; }
+}
+/* §10.3 hit flash：短暂亮起（约 FLASH_MS） */
+.pb-hp-flash .pb-hp-fill {
+  animation: pb-hp-flash 0.28s ease-out;
+}
+@keyframes pb-hp-flash {
+  0% { filter: brightness(2.2); }
+  100% { filter: brightness(1); }
+}
+/* §7.1 last-known：HP 冻结为最后可信值，整体弱化/desaturate */
+.pb-hp-lastknown .pb-hp-num { opacity: 0.55; }
+.pb-hp-lastknown .pb-hp-fill { opacity: 0.45; }
+/* §12 destroyed：HP 归零，弱化表达 */
+.pb-hp-destroyed .pb-hp-num { opacity: 0.5; }
+.pb-hp-destroyed .pb-hp-fill { opacity: 0.5; }
+/* §20.1 seek/状态恢复帧：禁用 HP bar transition（不补动画） */
+.pb-hp-no-transition .pb-hp-fill { transition: none; }
+
 /* —— PR3 §22/§24 reduced motion：停止浮动动画、跳过 destroyed transition（直达终态） —— */
 @media (prefers-reduced-motion: reduce) {
   .pb-selected-mark { animation: none; }
   .pb-destroyed .pb-graphics { transition: none; }
+  /* §21 prefers-reduced-motion：取消 ghost/flash 动画（保留准确 HP/伤害事实） */
+  .pb-hp-ghost { animation: none; opacity: 0.3; }
+  .pb-hp-flash .pb-hp-fill { animation: none; }
 }
 </style>

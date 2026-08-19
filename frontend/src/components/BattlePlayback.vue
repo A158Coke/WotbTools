@@ -11,20 +11,32 @@ import enemyTurret from '../assets/tank-icons/tank-marker-enemy-turret.png'
 import friendlyHull from '../assets/tank-icons/tank-marker-friendly-hull.png'
 import friendlyTurret from '../assets/tank-icons/tank-marker-friendly-turret.png'
 import {
+  BURST_MS,
+  FLOAT_DMG_MS,
+  FLASH_MS,
+  GHOST_MS,
+  KILL_FEED_MS,
   aggregateEventsBySecond,
   clampViewPan,
+  cumulativeStatsAt,
+  eventsCrossed,
   formatClock,
+  ghostAround,
+  hpDisplay,
   interpolateDirection,
   lastKnownPosition,
   positionAt,
   positionCoveredAt,
+  pushFeed,
   recorderRelated,
   screenRotation,
   teamHp,
   teamPointsAt,
   teamRelated,
   tracerLines,
+  transientsActive,
   turretWorldYawDeg,
+  victimFeedbackAllowed,
   zoomViewAt
 } from '../utils/battlePlayback'
 import {
@@ -165,6 +177,182 @@ watch(labelPrefs, (p) => {
     // 隐私模式/配额满：静默（本次会话内仍生效）
   }
 }, { deep: true })
+
+// ---- PR5（docs/current-plan.md §4.3）：单车 HP HUD 显示开关（默认开启，localStorage 持久化）。
+// 关闭后隐藏地图 HP 数字/bar/ghost；floating damage / destroyed ✕ / sidebar HP / combat state /
+// kill feed / timeline 正确性均不受影响；重新开启立即按当前 timestamp 显示正确 HP（纯派生，不重头累计）。
+const HP_PREFS_KEY = 'wotb.pb.hp-prefs'
+function loadHpPrefs() {
+  try {
+    const raw = localStorage.getItem(HP_PREFS_KEY)
+    if (raw) {
+      const p = JSON.parse(raw)
+      return { showHp: p.showHp !== false }
+    }
+  } catch {
+    // 损坏/不可用 → 默认开启
+  }
+  return { showHp: true }
+}
+const hpPrefs = reactive(loadHpPrefs())
+watch(hpPrefs, (p) => {
+  try {
+    localStorage.setItem(HP_PREFS_KEY, JSON.stringify(p))
+  } catch {
+    // 隐私模式/配额满：静默（本次会话内仍生效）
+  }
+}, { deep: true })
+
+// ---- PR5（§1.3/§10/§16/§20）：deterministic state 与 transient feedback 分层。
+// transient 全部 wall-clock（performance.now）驱动，播放帧推进时消费新跨过的事件，
+// seek 清空（§20.1 不补播）、pause 自然完成（§20.2）、resume 不重复已消费事件（§20.3，
+// eventCursor 严格左开：恰在 cursor 上的事件不重复触发）。
+let transientSeq = 0
+const eventCursor = ref(0)
+const floatItems = ref([]) // [{ id, victimAccountId, damage, bornRealMs, durationMs }]
+const burstItems = ref([]) // [{ id, victimAccountId, bornRealMs, durationMs }]
+const feedItems = ref([]) // [{ id, victimAccountId, victimName, victimTeam, bornRealMs, durationMs }]
+const ghostByAccount = reactive(new Map()) // accountId -> { prevPct, nextPct, untilRealMs }
+const flashByAccount = reactive(new Map()) // accountId -> untilRealMs
+// seek/状态恢复帧：禁用 HP bar 过渡动画（§20.1 seek 只恢复状态不补动画）
+const hpNoTransition = ref(false)
+
+function realNowMs() {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now()
+}
+
+/** seek/恢复：清空全部 transient 并重置事件 cursor（§20.1 不补播历史动画）。 */
+function resetTransients(sec) {
+  eventCursor.value = sec
+  floatItems.value = []
+  burstItems.value = []
+  feedItems.value = []
+  ghostByAccount.clear()
+  flashByAccount.clear()
+}
+
+/** 播放时钟跨过 (fromSec, toSec] 的新事件 → 生成 transient feedback（§10/§12/§16）。 */
+function consumeEvents(fromSec, toSec) {
+  const crossed = eventsCrossed(filteredEvents.value, fromSec, toSec)
+  if (crossed.length === 0) return
+  const now = realNowMs()
+  const states = vehicleStates.value
+  const stateByAccount = new Map(states.map(s => [s.vehicle.accountId, s]))
+  for (const ev of crossed) {
+    if (ev.type === 'DAMAGE') {
+      const victim = vehiclesByAccount.value.get(ev.targetAccountId)
+      // §7.2/§10.1：只有事件时刻位置流覆盖（当前可见/可展示）才跳伤害——
+      // 失察期间受击不跳伤害、不更新 HP、不显示 attacker、不画炮线（HP 冻结为最后可信值）
+      if (!victim || !victimFeedbackAllowed(victim, ev.timeSec)) continue
+      if (!stateByAccount.has(ev.targetAccountId)) continue // 无 marker 锚点不显示
+      // ref 数组必须整体替换才能触发 reactivity（in-place push 不触发）
+      floatItems.value = [...floatItems.value, {
+        id: ++transientSeq,
+        victimAccountId: ev.targetAccountId,
+        damage: ev.damage,
+        bornRealMs: now,
+        durationMs: FLOAT_DMG_MS,
+      }]
+      // §10.3/§11：HP 数字立即切换（确定性），bar 快速缩短（CSS transition），
+      // hit flash + lost-HP ghost（同阵营色浅版，§11 连续受击重置消退计时）
+      const friendly = victim.team === friendlyTeam.value
+      const g = ghostAround(victim, ev.timeSec, { friendly })
+      if (g) ghostByAccount.set(ev.targetAccountId, { prevPct: g.prevPct, nextPct: g.nextPct, untilRealMs: now + GHOST_MS })
+      flashByAccount.set(ev.targetAccountId, now + FLASH_MS)
+    } else if (ev.type === 'DESTROYED') {
+      // §12：击毁 burst（轻量 2D，克制；仅受击方位置流覆盖时锚定）
+      const victim = vehiclesByAccount.value.get(ev.accountId)
+      if (!victim || !victimFeedbackAllowed(victim, ev.timeSec)) continue
+      if (!stateByAccount.has(ev.accountId)) continue
+      burstItems.value = [...burstItems.value, {
+        id: ++transientSeq,
+        victimAccountId: ev.accountId,
+        bornRealMs: now,
+        durationMs: BURST_MS,
+      }]
+    } else if (ev.type === 'KILL') {
+      // §16 kill feed：只显示受害者被击毁（§15.2——回放只能证明后端事后解析
+      // attackerAccountId，无法证明客户端当时可见击杀者身份，禁止伪造 "未知 ☠ IS-7"）。
+      const victim = vehiclesByAccount.value.get(ev.targetAccountId)
+      if (!victim) continue
+      feedItems.value = pushFeed(feedItems.value, {
+        id: ++transientSeq,
+        victimAccountId: ev.targetAccountId,
+        victimName: victim.tankName || String(victim.tankId),
+        victimTeam: victim.team,
+        bornRealMs: now,
+        durationMs: KILL_FEED_MS,
+      })
+    }
+  }
+}
+
+/** 暂停时 transient 是否仍有未决（驱动轻量时钟自然完成，§20.2）。 */
+function hasPendingTransients(now) {
+  if (transientsActive(floatItems.value, now).length) return true
+  if (transientsActive(burstItems.value, now).length) return true
+  if (transientsActive(feedItems.value, now).length) return true
+  for (const g of ghostByAccount.values()) if (g.untilRealMs > now) return true
+  for (const u of flashByAccount.values()) if (u > now) return true
+  return false
+}
+
+/** 过期 transient 清理（由 nowMs/currentTime 变化驱动，Map 不无限增长）。 */
+function pruneTransients(now) {
+  for (const [id, g] of ghostByAccount) if (g.untilRealMs <= now) ghostByAccount.delete(id)
+  for (const [id, u] of flashByAccount) if (u <= now) flashByAccount.delete(id)
+}
+
+// ---- 单车 HP HUD 数据（§4/§5/§6/§7）----
+function hpFor(vehicle) {
+  return hpDisplay(vehicle, currentTime.value, { friendly: vehicle.team === friendlyTeam.value })
+}
+function ghostFor(accountId) {
+  const g = ghostByAccount.get(accountId)
+  if (!g || g.untilRealMs <= nowMs.value) return null
+  return { prevPct: g.prevPct, nextPct: g.nextPct }
+}
+function flashFor(accountId) {
+  return (flashByAccount.get(accountId) || 0) > nowMs.value
+}
+
+// ---- transient 渲染视图（wall-clock 过滤 + 屏幕定位）----
+const visibleFloats = computed(() => {
+  const now = nowMs.value
+  const active = transientsActive(floatItems.value, now)
+  if (active.length === 0) return []
+  const byVictim = new Map()
+  for (const item of active) {
+    const list = byVictim.get(item.victimAccountId) || []
+    list.push(item)
+    byVictim.set(item.victimAccountId, list)
+  }
+  const out = []
+  for (const [victimId, list] of byVictim) {
+    const st = vehicleStates.value.find(s => s.vehicle.accountId === victimId)
+    if (!st) continue
+    const p = markerScreen(st)
+    if (!p) continue
+    // §10.1：连续快速受击纵向 stack/stagger，每条独立生命周期
+    list.forEach((item, idx) => {
+      out.push({ ...item, x: p.x, y: p.y - 34 - idx * 16, team: st.vehicle.team })
+    })
+  }
+  return out
+})
+const visibleBursts = computed(() => {
+  const now = nowMs.value
+  const active = transientsActive(burstItems.value, now)
+  if (active.length === 0) return []
+  return active.map(item => {
+    const st = vehicleStates.value.find(s => s.vehicle.accountId === item.victimAccountId)
+    if (!st) return null
+    const p = markerScreen(st)
+    if (!p) return null
+    return { ...item, x: p.x, y: p.y, team: st.vehicle.team }
+  }).filter(Boolean)
+})
+const visibleFeed = computed(() => transientsActive(feedItems.value, nowMs.value))
 const showAll = ref(false)
 const typeFilter = ref(new Set(['DAMAGE', 'DESTROYED', 'KILL', 'POSITION_REPORTED', 'POSITION_STALE']))
 const selectedAccountId = ref(null)
@@ -659,20 +847,24 @@ function frame(ts) {
   }
   const delta = lastFrameTs == null ? 0 : (ts - lastFrameTs)
   lastFrameTs = ts
-  currentTime.value = Math.min(duration.value, currentTime.value + (delta / 1000) * speed.value)
-  nowMs.value = typeof performance !== 'undefined' ? performance.now() : 0
+  const prev = currentTime.value
+  currentTime.value = Math.min(duration.value, prev + (delta / 1000) * speed.value)
+  nowMs.value = realNowMs()
   if (currentTime.value >= duration.value) {
     if (props.loop) {
       currentTime.value = 0
+      resetTransients(0) // 循环回绕 = seek 到 0：不补播历史动画
       rafId = requestAnimationFrame(frame)
       return
     }
     playing.value = false
     rafId = null
     // Blocker 1：播放到末尾自然停止 → 若有未决 transition，轻量 clock 接管
-    ensureHysteresisClock(typeof performance !== 'undefined' ? performance.now() : Date.now())
+    ensureHysteresisClock(realNowMs())
     return
   }
+  // §1.3/§20.3：正常播放跨过事件才触发 transient feedback（cursor 严格左开不重复）
+  consumeEvents(prev, currentTime.value)
   rafId = requestAnimationFrame(frame)
 }
 
@@ -705,13 +897,29 @@ watch(() => props.seekTo, (sec) => {
     pause() // 点击 AI 时间 → seek + 自动暂停（含取消 RAF）
     currentTime.value = Math.min(duration.value, Math.max(0, sec))
     eventPopupSec.value = Math.round(sec)
+    resetTransients(currentTime.value)
+    suppressHpTransition()
   }
 }, { immediate: true })
 
 function seek(sec) {
   currentTime.value = Math.min(duration.value, Math.max(0, sec))
   eventPopupSec.value = Math.round(sec)
-  nowMs.value = typeof performance !== 'undefined' ? performance.now() : 0
+  nowMs.value = realNowMs()
+  resetTransients(currentTime.value)
+  suppressHpTransition()
+}
+
+/** seek 后单帧禁用 HP bar transition（§20.1：只恢复状态，不补 150–300ms 缩短动画）。
+ * 用 setTimeout 而非 requestAnimationFrame 清旗标：不占用共享 RAF 槽位（播放/hysteresis
+ * 时钟仍由 rafCb 驱动，测试中 seek 后 rafCb 必须仍指向时钟回调）。 */
+function suppressHpTransition() {
+  hpNoTransition.value = true
+  if (typeof setTimeout === 'function') {
+    setTimeout(() => { hpNoTransition.value = false }, 0)
+  } else {
+    hpNoTransition.value = false
+  }
 }
 
 function togglePlay() {
@@ -732,6 +940,8 @@ function jumpTo(sec) {
 
 function step(delta) {
   currentTime.value = Math.min(duration.value, Math.max(0, currentTime.value + delta))
+  resetTransients(currentTime.value)
+  suppressHpTransition()
 }
 
 function toggleSpeed() {
@@ -934,6 +1144,8 @@ function nearestEvent(direction) {
     pause() // 上一/下一事件跳转后保持暂停
     currentTime.value = best.timeSec
     eventPopupSec.value = Math.round(best.timeSec)
+    resetTransients(currentTime.value)
+    suppressHpTransition()
   }
 }
 
@@ -1034,13 +1246,120 @@ function selectAt(accountId, clientX, clientY) {
       if (sel) return
     }
   }
-  selectedAccountId.value = selectedAccountId.value === best.vehicle.accountId ? null : best.vehicle.accountId
+  // PR5 §8.1：点击 marker 恒选中/直接切换（不 toggle-off）；点击空白不关闭；必须 × 显式关闭
+  selectedAccountId.value = best.vehicle.accountId
 }
 
 const selectedState = computed(() => {
   if (selectedAccountId.value == null) return null
   return vehicleStates.value.find(st => st.vehicle.accountId === selectedAccountId.value) || null
 })
+
+function closeSidebar() {
+  selectedAccountId.value = null
+}
+
+// ---- PR5 §8：detail sidebar（当前 playback 时间点的车辆战斗状态面板，非整场最终战绩面板）----
+const VEHICLE_CLASS_KEYS = {
+  'Heavy tank': 'recon.map.playback.vehicle_class_heavy',
+  'Medium tank': 'recon.map.playback.vehicle_class_medium',
+  'Light tank': 'recon.map.playback.vehicle_class_light',
+  'Tank destroyer': 'recon.map.playback.vehicle_class_td',
+  'SPG': 'recon.map.playback.vehicle_class_spg',
+}
+function vehicleTypeLabel(vehicle) {
+  const key = VEHICLE_CLASS_KEYS[vehicle.tankType]
+  return key ? t(key) : (vehicle.tankType || '—')
+}
+
+const selHp = computed(() => {
+  const st = selectedState.value
+  if (!st) return null
+  return hpDisplay(st.vehicle, currentTime.value, { friendly: st.vehicle.team === friendlyTeam.value })
+})
+const selHpText = computed(() => {
+  const d = selHp.value
+  if (!d || d.current == null) return '—'
+  return d.maxHp != null ? String(d.current) + ' / ' + d.maxHp : String(d.current)
+})
+const selHpPct = computed(() => {
+  const d = selHp.value
+  return d && d.pct != null ? Math.round(d.pct) + '%' : null
+})
+const selMaxHpText = computed(() => {
+  const d = selHp.value
+  return d && d.maxHp != null ? String(d.maxHp) : null
+})
+const selHpLabel = computed(() => {
+  const st = selectedState.value
+  if (!st) return ''
+  if (st.destroyed) return 'recon.map.playback.current_hp'
+  if (st.lastKnown) return 'recon.map.playback.last_known_hp'
+  return 'recon.map.playback.current_hp'
+})
+const selStateLabel = computed(() => {
+  const st = selectedState.value
+  if (!st) return ''
+  if (st.destroyed) return 'recon.map.playback.state_destroyed'
+  if (st.lastKnown) return 'recon.map.playback.state_last_known'
+  return 'recon.map.playback.state_detected'
+})
+const selLastKnownSec = computed(() => {
+  const st = selectedState.value
+  return st && st.lastKnown && Number.isFinite(st.pos.timeSec) ? st.pos.timeSec : null
+})
+const selCurStats = computed(() => {
+  const st = selectedState.value
+  if (!st) return { dealt: 0, received: 0, kills: 0 }
+  return cumulativeStatsAt(filteredEvents.value, st.vehicle.accountId, currentTime.value)
+})
+// §9：assist 无逐时间点可靠来源（只有最终 damageAssisted）→ 当前值恒 —（禁止从 0 秒显示最终值）
+const selAssistText = '—'
+const selFinalStats = computed(() => {
+  const st = selectedState.value
+  return (st && st.vehicle.finalStats) || null
+})
+const selHitRate = computed(() => {
+  const f = selFinalStats.value
+  if (!f || !(f.nShots > 0)) return null
+  return Math.round((f.nHitsDealt / f.nShots) * 100) + '%'
+})
+const selPenRate = computed(() => {
+  const f = selFinalStats.value
+  if (!f || !(f.nHitsDealt > 0)) return null
+  return Math.round((f.nPenetrationsDealt / f.nHitsDealt) * 100) + '%'
+})
+/** §13 伤害记录：选中车辆相关的最近 DAMAGE（受击/造成），attacker 未覆盖时显示「来源未知」。 */
+const selDamageLog = computed(() => {
+  const st = selectedState.value
+  if (!st) return []
+  const id = st.vehicle.accountId
+  const rows = []
+  for (const ev of filteredEvents.value) {
+    if (ev.type !== 'DAMAGE' || !Number.isFinite(ev.damage)) continue
+    if (ev.targetAccountId === id) {
+      const attacker = vehiclesByAccount.value.get(ev.accountId)
+      // §13：未点亮（事件时刻无位置流覆盖）的攻击者不得泄露身份
+      const attackerCovered = attacker && victimFeedbackAllowed(attacker, ev.timeSec)
+      const attackerLabel = attacker && attackerCovered
+        ? (attacker.playerName || '#' + attacker.accountId)
+        : t('recon.map.playback.source_unknown')
+      rows.push({ timeSec: ev.timeSec, dir: 'in', damage: ev.damage, label: attackerLabel })
+    } else if (ev.accountId === id) {
+      const victim = vehiclesByAccount.value.get(ev.targetAccountId)
+      rows.push({
+        timeSec: ev.timeSec,
+        dir: 'out',
+        damage: ev.damage,
+        label: victim ? (victim.tankName || '#' + victim.accountId) : '#' + ev.targetAccountId,
+      })
+    }
+  }
+  return rows.slice(-8)
+})
+function floatTeamClass(team) {
+  return team === friendlyTeam.value ? 'pb-float-friendly' : 'pb-float-enemy'
+}
 
 // ---- PR4 §32–§35：标签碰撞布局（纯函数；screen px）+ PlayerName hysteresis ----
 const labelLayout = computed(() => {
@@ -1075,6 +1394,9 @@ function hasPendingHysteresis(now) {
     if (!s.conflict && s.hidden && now - s.since < PLAYER_SHOW_MS) return true
   }
   for (const until of fadeUntil.values()) if (until > now) return true
+  // PR5：暂停时 transient feedback（floating damage/burst/kill feed/ghost/flash）
+  // 也需轻量时钟自然完成（§20.2）
+  if (hasPendingTransients(now)) return true
   return false
 }
 
@@ -1110,6 +1432,9 @@ watch([labelLayout, nowMs], () => {
   for (const [id, until] of fadeUntil) if (until <= now) fadeUntil.delete(id)
   ensureHysteresisClock(now)
 }, { immediate: true })
+
+// transient 过期清理（nowMs/currentTime 变化驱动；reactive Map 不无限增长）
+watch([nowMs, currentTime], () => pruneTransients(nowMs.value))
 
 /** VehicleMarker label prop（每 marker 一个：显示开关 + 碰撞位移 + player 显隐/fade）。 */
 function markerLabel(accountId) {
@@ -1180,6 +1505,11 @@ const mapStyle = computed(() => ({
         <label class="pb-check">
           <input type="checkbox" v-model="labelPrefs.showTankName" data-test="pb-show-tank" />
           {{ $t('recon.map.playback.show_tank_name') }}
+        </label>
+        <!-- PR5 §4.3：单车 HP HUD 开关（默认开启，localStorage 持久化；关闭隐藏地图 HP 数字/bar/ghost） -->
+        <label class="pb-check">
+          <input type="checkbox" v-model="hpPrefs.showHp" data-test="pb-show-hp" />
+          {{ $t('recon.map.playback.show_hp') }}
         </label>
       </span>
       <!-- 全屏（原生 Fullscreen API；不支持时按钮隐藏，不抛错） -->
@@ -1286,6 +1616,8 @@ const mapStyle = computed(() => ({
       ></span>
     </div>
 
+    <!-- 地图 + detail sidebar 主区（宽屏并排，窄屏上下堆叠；§8.2） -->
+    <div class="pb-main" data-test="pb-main">
     <!-- 地图 + 当前车辆状态（标记为 HTML overlay，固定像素尺寸，双层 hull/turret 独立旋转） -->
     <div class="pb-map" data-test="pb-map" ref="mapEl" @wheel.prevent="onWheel">
     <div
@@ -1442,6 +1774,11 @@ const mapStyle = computed(() => ({
         :marker="st"
         :selected="selectedAccountId === st.vehicle.accountId"
         :label="markerLabel(st.vehicle.accountId)"
+        :hp="hpFor(st.vehicle)"
+        :hp-visible="hpPrefs.showHp"
+        :hp-ghost="ghostFor(st.vehicle.accountId)"
+        :hp-flash="flashFor(st.vehicle.accountId)"
+        :hp-no-transition="hpNoTransition"
         @select="onMarkerSelect(st.vehicle, $event)"
       />
     </div>
@@ -1459,6 +1796,115 @@ const mapStyle = computed(() => ({
       @keydown.esc.prevent="cancelSession(textSession)"
       @blur="commitSession(textSession)"
     />
+
+    <!-- PR5 §10/§12/§16：transient feedback 层（floating damage / destruction burst / kill feed）。
+         wall-clock 生命周期（任意倍速可读时长一致）；seek 清空、pause 自然完成 -->
+    <div class="pb-feedback-layer" data-test="pb-feedback-layer" aria-hidden="true">
+      <span
+        v-for="f in visibleFloats"
+        :key="'dmg-' + f.id"
+        class="pb-float-dmg"
+        data-test="pb-float-dmg"
+        :class="floatTeamClass(f.team)"
+        :style="{ left: f.x + 'px', top: f.y + 'px' }"
+      >-{{ f.damage }}</span>
+      <span
+        v-for="b in visibleBursts"
+        :key="'burst-' + b.id"
+        class="pb-burst"
+        data-test="pb-burst"
+        :class="floatTeamClass(b.team)"
+        :style="{ left: b.x + 'px', top: b.y + 'px' }"
+      ></span>
+    </div>
+    <div v-if="visibleFeed.length" class="pb-kill-feed" data-test="pb-kill-feed" aria-hidden="true">
+      <div
+        v-for="f in visibleFeed"
+        :key="'feed-' + f.id"
+        class="pb-feed-item"
+        :class="f.victimTeam === friendlyTeam ? 'pb-feed-friendly' : 'pb-feed-enemy'"
+      >
+        <span class="pb-feed-skull" aria-hidden="true">☠</span>
+        <span class="pb-feed-victim">{{ f.victimName }}</span>
+        <span class="pb-feed-destroyed">{{ $t('recon.map.playback.feed_destroyed') }}</span>
+      </div>
+    </div>
+    </div>
+
+    <!-- PR5 §8：detail sidebar（宽屏右侧固定，窄屏置于地图下方；点击 marker 打开/切换，
+         点击空白不关闭，必须 × 显式关闭；destroyed 车可选；seek 保持同一 selected vehicle） -->
+    <aside v-if="selectedState" class="pb-sidebar" data-test="pb-info" :aria-label="$t('recon.map.playback.detail')">
+      <div class="pb-sb-head">
+        <div class="pb-sb-title">
+          <strong data-test="pb-sb-tank">{{ selectedState.vehicle.tankName || selectedState.vehicle.tankId }}</strong>
+          <span class="pb-sb-player" data-test="pb-sb-player">{{ selectedState.vehicle.playerName }}</span>
+        </div>
+        <button type="button" class="pb-close pb-sb-close" data-test="pb-sb-close" :aria-label="$t('recon.map.playback.close')" @click="closeSidebar">&times;</button>
+      </div>
+      <dl class="pb-sb-grid">
+        <dt>{{ $t('recon.map.playback.team') }}</dt>
+        <dd>{{ $t(selectedState.vehicle.team === friendlyTeam ? 'recon.map.playback.team_friendly' : 'recon.map.playback.team_enemy') }}</dd>
+        <dt>{{ $t('recon.map.playback.vehicle_type') }}</dt>
+        <dd>{{ vehicleTypeLabel(selectedState.vehicle) }}</dd>
+        <dt>{{ $t('recon.map.playback.state') }}</dt>
+        <dd>{{ $t(selStateLabel) }}</dd>
+        <template v-if="selLastKnownSec != null">
+          <dt>{{ $t('recon.map.playback.last_spotted') }}</dt>
+          <dd>{{ formatClock(selLastKnownSec) }}</dd>
+        </template>
+        <dt>{{ $t(selHpLabel) }}</dt>
+        <dd data-test="pb-sb-hp">{{ selHpText }}</dd>
+        <template v-if="selMaxHpText != null">
+          <dt>{{ $t('recon.map.playback.max_hp') }}</dt>
+          <dd>{{ selMaxHpText }}</dd>
+        </template>
+        <template v-if="selHpPct != null">
+          <dt>{{ $t('recon.map.playback.hp_pct') }}</dt>
+          <dd>{{ selHpPct }}</dd>
+        </template>
+        <template v-if="selectedState.destroyed && selectedState.vehicle.deathSec != null">
+          <dt>{{ $t('recon.map.playback.destroyed_at') }}</dt>
+          <dd>{{ formatClock(selectedState.vehicle.deathSec) }}</dd>
+        </template>
+        <dt>{{ $t('recon.map.playback.playback_time') }}</dt>
+        <dd>{{ formatClock(currentTime) }}</dd>
+        <dt>{{ $t('recon.map.playback.damage_dealt') }}</dt>
+        <dd>{{ selCurStats.dealt }}</dd>
+        <dt>{{ $t('recon.map.playback.damage_assist') }}</dt>
+        <dd data-test="pb-sb-assist">{{ selAssistText }}</dd>
+        <dt>{{ $t('recon.map.playback.damage_received') }}</dt>
+        <dd>{{ selCurStats.received }}</dd>
+        <dt>{{ $t('recon.map.playback.kills') }}</dt>
+        <dd>{{ selCurStats.kills }}</dd>
+      </dl>
+      <template v-if="selDamageLog.length">
+        <div class="pb-sb-section">{{ $t('recon.map.playback.damage_log') }}</div>
+        <ul class="pb-sb-log">
+          <li v-for="(d, i) in selDamageLog" :key="i">
+            <span class="pb-sb-log-time">{{ formatClock(d.timeSec) }}</span>
+            <span v-if="d.dir === 'in'" class="pb-sb-log-in">−{{ d.damage }} <em>{{ d.label }}</em></span>
+            <span v-else class="pb-sb-log-out">+{{ d.damage }} → {{ d.label }}</span>
+          </li>
+        </ul>
+      </template>
+      <template v-if="selFinalStats">
+        <div class="pb-sb-section">{{ $t('recon.map.playback.final_stats') }}</div>
+        <dl class="pb-sb-grid">
+          <dt>{{ $t('recon.map.playback.damage_dealt') }}</dt><dd>{{ selFinalStats.damageDealt }}</dd>
+          <dt>{{ $t('recon.map.playback.damage_assist') }}</dt><dd>{{ selFinalStats.damageAssisted }}</dd>
+          <dt>{{ $t('recon.map.playback.damage_received') }}</dt><dd>{{ selFinalStats.damageReceived }}</dd>
+          <dt>{{ $t('recon.map.playback.kills') }}</dt><dd>{{ selFinalStats.kills }}</dd>
+          <dt>{{ $t('recon.map.playback.shots') }}</dt><dd>{{ selFinalStats.nShots }}</dd>
+          <dt>{{ $t('recon.map.playback.hits') }}</dt><dd>{{ selFinalStats.nHitsDealt }}</dd>
+          <dt>{{ $t('recon.map.playback.pens') }}</dt><dd>{{ selFinalStats.nPenetrationsDealt }}</dd>
+          <dt>{{ $t('recon.map.playback.hit_rate') }}</dt><dd>{{ selHitRate || '—' }}</dd>
+          <dt>{{ $t('recon.map.playback.pen_rate') }}</dt><dd>{{ selPenRate || '—' }}</dd>
+          <dt>{{ $t('recon.map.playback.hits_received') }}</dt><dd>{{ selFinalStats.nHitsReceived }}</dd>
+          <dt>{{ $t('recon.map.playback.pens_received') }}</dt><dd>{{ selFinalStats.nPenetrationsReceived }}</dd>
+          <dt>{{ $t('recon.map.playback.damage_blocked') }}</dt><dd>{{ selFinalStats.damageBlocked }}</dd>
+        </dl>
+      </template>
+    </aside>
     </div>
 
     <!-- 双方总血量条 + 争霸赛实时点数（阵营色实段=已知剩余，灰段=未观测容量，空=已损失） -->
@@ -1483,22 +1929,6 @@ const mapStyle = computed(() => ({
         <span v-if="enemyHp.unknownMax > 0" class="pb-hp-unknown-text" data-test="pb-hp-unknown-enemy">{{ $t('recon.map.playback.hp_unknown') }} {{ enemyHp.unknownMax }}</span>
         <span v-if="showPoints && enemyPoints != null" class="pb-hp-points" data-test="pb-points-enemy">{{ $t('recon.map.playback.points') }}: {{ enemyPoints }}</span>
       </div>
-    </div>
-
-    <!-- 选中车辆信息 -->
-    <div v-if="selectedState" class="pb-info" data-test="pb-info">
-      <strong>{{ selectedState.vehicle.playerName }}</strong>
-      <span>{{ $t('recon.map.playback.tank') }}: {{ selectedState.vehicle.tankName || selectedState.vehicle.tankId }}</span>
-      <span>{{ $t('recon.map.playback.team') }}: {{ $t(`recon.map.playback.team_${selectedState.vehicle.team === friendlyTeam ? 'friendly' : 'enemy'}`) }}</span>
-      <span>
-        {{ $t('recon.map.playback.state') }}:
-        {{ selectedState.destroyed
-          ? $t('recon.map.playback.state_destroyed')
-          : (selectedState.covered ? $t('recon.map.playback.state_position_reported') : $t('recon.map.playback.state_position_stale')) }}
-      </span>
-      <span v-if="selectedState.lastKnown">
-        {{ $t('recon.map.playback.last_known') }} {{ formatClock(selectedState.pos.timeSec) }}
-      </span>
     </div>
 
     <!-- 事件弹层（点击进度条标记展示该秒事件） -->
@@ -1540,6 +1970,8 @@ const mapStyle = computed(() => ({
   max-width: calc(100vh - 190px); /* 全屏垂直预算：控制区/时间轴/血量条等固定 UI 约 190px */
   margin: auto; /* 垂直居中利用剩余空间；超高时滚动兜底 */
 }
+.battle-playback:fullscreen .pb-main { align-items: center; }
+.battle-playback:fullscreen .pb-main .pb-map { flex: 0 1 auto; }
 .pb-controls, .pb-filters {
   display: flex;
   align-items: center;
@@ -1574,6 +2006,9 @@ const mapStyle = computed(() => ({
   cursor: pointer;
   transform: translateX(-50%);
 }
+.pb-main { display: flex; align-items: flex-start; gap: 8px; }
+/* 地图自适应剩余宽度（§8.2 宽屏：右侧固定 sidebar，地图占剩余） */
+.pb-main .pb-map { width: auto; margin: 0; flex: 1 1 auto; min-width: 0; }
 .pb-map { position: relative; margin: 0 auto; width: 66.7%; overflow: hidden; }
 .pb-viewport {
   position: relative;
@@ -1590,6 +2025,10 @@ const mapStyle = computed(() => ({
 }
 @media (max-width: 768px) {
   .pb-map { width: 100%; }
+  /* §8.2 窄屏：sidebar 置于地图/播放器下方，不强行压缩成窄右侧栏 */
+  .pb-main { flex-direction: column; }
+  .pb-main .pb-map { width: 100%; }
+  .pb-sidebar { width: 100%; max-height: none; }
 }
 .pb-markers {
   position: absolute;
@@ -1636,16 +2075,111 @@ const mapStyle = computed(() => ({
 .pb-hp-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pb-hp-unknown-text { color: var(--text-muted, #999); white-space: nowrap; }
 .pb-hp-points { white-space: nowrap; }
-.pb-info {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+
+/* PR5 §8 detail sidebar：当前 playback 时间点的车辆战斗状态面板（非整场最终战绩面板）。
+   宽屏右侧固定；窄屏（≤768px）整行置于地图下方；× 显式关闭。 */
+.pb-sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  align-self: stretch;
   font-size: .8rem;
   color: var(--text-label);
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 4px 8px;
+  padding: 6px 8px;
+  overflow-y: auto;
+  max-height: 72vh;
+}
+.pb-sb-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
+.pb-sb-title { display: flex; flex-direction: column; min-width: 0; }
+.pb-sb-title strong { color: var(--text-heading); font-size: .85rem; line-height: 1.3; }
+.pb-sb-player { color: var(--text-muted); font-size: .75rem; word-break: break-all; }
+.pb-sb-close { font-size: 1.05rem; line-height: 1; padding: 0 3px; }
+.pb-sb-grid { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; }
+.pb-sb-grid dt { color: var(--text-muted); white-space: nowrap; }
+.pb-sb-grid dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.pb-sb-section {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-weight: 700;
+  color: var(--text-heading);
+}
+.pb-sb-log { margin: 4px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 1px; max-height: 120px; overflow-y: auto; }
+.pb-sb-log li { display: flex; gap: 6px; font-variant-numeric: tabular-nums; align-items: baseline; }
+.pb-sb-log-time { color: var(--text-muted); flex-shrink: 0; }
+.pb-sb-log-in { color: var(--pb-enemy-text, #f87171); }
+.pb-sb-log-out { color: var(--pb-team-text, #4ade80); }
+.pb-sb-log em { font-style: normal; opacity: .75; }
+
+/* PR5 §10/§12/§16 transient feedback 层（floating damage / destruction burst / kill feed）：
+   wall-clock 生命周期、任意倍速可读时长一致；seek 清空、pause 自然完成。 */
+.pb-feedback-layer { position: absolute; inset: 0; pointer-events: none; z-index: 9; overflow: hidden; }
+.pb-float-dmg {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 3px rgba(0, 0, 0, .9), 0 1px 2px rgba(0, 0, 0, .8);
+  animation: pb-float-rise 1s ease-out forwards;
+  white-space: nowrap;
+}
+.pb-float-friendly { color: var(--pb-team-text, #4ade80); }
+.pb-float-enemy { color: var(--pb-enemy-text, #f87171); }
+@keyframes pb-float-rise {
+  0% { opacity: 1; margin-top: 0; }
+  70% { opacity: 1; }
+  100% { opacity: 0; margin-top: -10px; }
+}
+.pb-burst {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  animation: pb-burst-ring .7s ease-out forwards;
+  pointer-events: none;
+}
+.pb-burst.pb-float-friendly { color: var(--pb-team-text, #4ade80); }
+.pb-burst.pb-float-enemy { color: var(--pb-enemy-text, #f87171); }
+@keyframes pb-burst-ring {
+  0% { opacity: .9; transform: translate(-50%, -50%) scale(.3); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(2.4); }
+}
+.pb-kill-feed {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  z-index: 10;
+  pointer-events: none;
+  max-width: 62%;
+}
+.pb-feed-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: .75rem;
+  background: rgba(0, 0, 0, .6);
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 3px;
+  padding: 2px 6px;
+  animation: pb-feed-in .25s ease-out;
+}
+.pb-feed-skull { color: #fff; }
+.pb-feed-friendly .pb-feed-victim { color: var(--pb-team-text, #4ade80); }
+.pb-feed-enemy .pb-feed-victim { color: var(--pb-enemy-text, #f87171); }
+.pb-feed-destroyed { color: var(--text-muted, #999); }
+@keyframes pb-feed-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pb-float-dmg, .pb-burst, .pb-feed-item { animation: none; }
 }
 .pb-popup {
   background: var(--bg-card);

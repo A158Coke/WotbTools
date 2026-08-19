@@ -5,6 +5,7 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.TeamEntityIdentity;
 import com.wotb.core.processing.TeamEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
+import com.wotb.core.replay.evidence.EntryHpSource;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
@@ -70,7 +71,11 @@ public final class BattlePlaybackAdapter {
                     intervals, deathSec, directions,
                     player.observedMaxHp != null ? player.observedMaxHp
                             : ReplayDisplayNames.tankMaxHpValue(player.tankId),
-                    hpSamples));
+                    hpSamples,
+                    player.tankType == null ? "" : player.tankType,
+                    player.entryHpSource == null ? null : player.entryHpSource.name(),
+                    player.entryHpSource == EntryHpSource.OBSERVED_EXACT ? player.entryHp : null,
+                    finalStats(player)));
         }
         if (vehicles.isEmpty()) {
             return null;
@@ -310,6 +315,14 @@ public final class BattlePlaybackAdapter {
     private static Double deathSec(final PlayerResult player) {
         final double deathSec = PlayerResultFormat.deathSec(player);
         return deathSec > 0 ? deathSec : null;
+    }
+
+    /** 整场最终战绩（结算口径；仅供「最终战绩」分区，不得冒充当前时间点状态）。 */
+    private static MapOverview.FinalStats finalStats(final PlayerResult p) {
+        return new MapOverview.FinalStats(
+                p.damageDealt, p.damageReceived, p.damageAssisted, p.kills,
+                p.nShots, p.nHitsDealt, p.nPenetrationsDealt,
+                p.nHitsReceived, p.nPenetrationsReceived, p.damageBlocked);
     }
 
     private static Long recorderAccountId(final Battle battle) {

@@ -135,6 +135,15 @@ public record MapOverview(
      * 一辆参战车辆（位置复用 {@link Route#points()}，这里只补充位置上报区间）。
      * <p>注意：{@code positionIntervals} 是服务器位置流上报覆盖（type-10 gap 聚类），
      * 不代表录像者客户端点亮——敌方静止时服务器不上报位置，位置中断≠失察。
+     *
+     * @param entryHpSource 进场满血 provenance（OBSERVED_EXACT | BASE_FALLBACK | UNKNOWN，
+     *                      来自 {@code ObservedMaxHp} 的权威判定；null=未回填）
+     * @param entryHp       已证明的进场满血（含装备/物资加成）；仅
+     *                      {@code entryHpSource == OBSERVED_EXACT} 时有效，否则为 null——
+     *                      前端「开局满血回退」只允许在该 provenance 下使用，禁止拿
+     *                      tankopedia base 冒充实际进场 HP
+     * @param finalStats    整场最终战绩（结算口径；仅供明确标识的「最终战绩」分区，
+     *                      不得冒充当前时间点可重建状态）
      */
     public record PlaybackVehicle(
             long accountId,
@@ -146,17 +155,37 @@ public record MapOverview(
             Double deathSec,
             List<DirectionSample> directionSamples,
             Integer maxHp,
-            List<HpSample> hpSamples
+            List<HpSample> hpSamples,
+            String tankType,
+            String entryHpSource,
+            Integer entryHp,
+            FinalStats finalStats
     ) {
         public PlaybackVehicle {
             playerName = playerName == null ? "" : playerName;
             tankName = tankName == null ? "" : tankName;
+            tankType = tankType == null ? "" : tankType;
             positionIntervals = positionIntervals == null
                     ? List.of() : List.copyOf(positionIntervals);
             directionSamples = directionSamples == null
                     ? List.of() : List.copyOf(directionSamples);
             hpSamples = hpSamples == null ? List.of() : List.copyOf(hpSamples);
         }
+    }
+
+    /** 单车最终战绩（整场结算口径；仅用于「最终战绩」分区，不得冒充当前时间点状态）。 */
+    public record FinalStats(
+            int damageDealt,
+            int damageReceived,
+            int damageAssisted,
+            int kills,
+            int nShots,
+            int nHitsDealt,
+            int nPenetrationsDealt,
+            int nHitsReceived,
+            int nPenetrationsReceived,
+            int damageBlocked
+    ) {
     }
 
     /** 回放实测血量采样（battle-relative 秒；type-7 propId=3 当前血量，含装备加成，阵亡到 0）。 */

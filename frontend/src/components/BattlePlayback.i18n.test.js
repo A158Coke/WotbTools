@@ -96,7 +96,8 @@ function makeOverview() {
 }
 
 const locales = { zh, en, ru }
-const lastKnownLabel = { zh: '最后已知位置：', en: 'Last known:', ru: 'Последняя известная позиция:' }
+// PR5 detail sidebar 文案（§8/§7.1）：最后发现 / 已击毁
+const lastSpottedLabel = { zh: '最后发现', en: 'Last spotted', ru: 'Последнее обнаружение' }
 const destroyedLabel = { zh: '已击毁', en: 'Destroyed', ru: 'Уничтожен' }
 
 describe('BattlePlayback with real vue-i18n (zh/en/ru)', () => {
@@ -118,7 +119,7 @@ describe('BattlePlayback with real vue-i18n (zh/en/ru)', () => {
       expect(wrapper.find('[data-test="pb-markers"]').exists()).toBe(true)
       const info = wrapper.find('[data-test="pb-info"]')
       expect(info.exists()).toBe(true)
-      expect(info.text()).toContain(lastKnownLabel[lang])
+      expect(info.text()).toContain(lastSpottedLabel[lang])
       expect(info.text()).toContain('00:14')
     })
 
@@ -138,7 +139,7 @@ describe('BattlePlayback with real vue-i18n (zh/en/ru)', () => {
       const info = wrapper.find('[data-test="pb-info"]')
       expect(info.exists()).toBe(true)
       expect(info.text()).toContain(destroyedLabel[lang])
-      expect(info.text()).toContain(lastKnownLabel[lang])
+      expect(info.text()).toContain(lastSpottedLabel[lang])
       expect(info.text()).toContain('00:30')
     })
   }

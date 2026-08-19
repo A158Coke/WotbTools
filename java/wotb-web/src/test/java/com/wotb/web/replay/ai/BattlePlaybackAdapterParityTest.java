@@ -88,6 +88,13 @@ class BattlePlaybackAdapterParityTest {
             assertEquals(lv.deathSec(), av.deathSec(), "deathSec 必须一致: " + e.getKey());
             assertEquals(lv.maxHp(), av.maxHp(), "maxHp 必须一致: " + e.getKey());
 
+            // 新字段（entry HP provenance / 车辆类型 / 最终战绩）双构建器同源一致
+            assertEquals(lv.tankType(), av.tankType(), "tankType 必须一致: " + e.getKey());
+            assertEquals(lv.entryHpSource(), av.entryHpSource(),
+                    "entryHpSource 必须一致: " + e.getKey());
+            assertEquals(lv.entryHp(), av.entryHp(), "entryHp 必须一致: " + e.getKey());
+            assertEquals(lv.finalStats(), av.finalStats(), "finalStats 必须一致: " + e.getKey());
+
             // HP 时间线：同一批事件，时间按 battle-relative 偏移对齐，值严格一致
             assertEquals(lv.hpSamples().size(), av.hpSamples().size(),
                     "HP 采样数必须一致: " + e.getKey());
@@ -131,6 +138,56 @@ class BattlePlaybackAdapterParityTest {
             assertCloseToShifted(legacy.pointsSamples().get(i).timeSec(),
                     adapted.pointsSamples().get(i).timeSec(), timeline, "点数时间必须一致");
         }
+
+        // ---- 真实回放 QA（docs/current-plan.md §24）：新字段在真实 fixture 上可用 ----
+        for (final MapOverview.PlaybackVehicle v : adapted.vehicles()) {
+            assertNotNull(v.finalStats(), "finalStats 不得为 null: " + v.accountId());
+            final PlayerResult player = playerOf(battle, v.accountId());
+            assertNotNull(player, "fixture 车辆必须能回查到 PlayerResult: " + v.accountId());
+            assertEquals(player.damageDealt, v.finalStats().damageDealt());
+            assertEquals(player.damageReceived, v.finalStats().damageReceived());
+            assertEquals(player.damageAssisted, v.finalStats().damageAssisted());
+            assertEquals(player.kills, v.finalStats().kills());
+            assertEquals(player.nShots, v.finalStats().nShots());
+            assertEquals(player.nHitsDealt, v.finalStats().nHitsDealt());
+            assertEquals(player.nPenetrationsDealt, v.finalStats().nPenetrationsDealt());
+            assertEquals(player.damageBlocked, v.finalStats().damageBlocked());
+            // entry HP provenance 契约：OBSERVED_EXACT 才有 entryHp，其余为 null
+            if ("OBSERVED_EXACT".equals(v.entryHpSource())) {
+                assertNotNull(v.entryHp(), "OBSERVED_EXACT 必须带 entryHp: " + v.accountId());
+                assertTrue(v.entryHp() > 0);
+            } else {
+                assertEquals(null, v.entryHp(), "非 OBSERVED_EXACT 不得冒充进场满血: " + v.accountId());
+            }
+            // 阵亡车辆必须有 0 血量采样（击毁 = 权威 0，前端不得靠猜测）
+            if (v.deathSec() != null) {
+                assertTrue(v.hpSamples().stream().anyMatch(s -> s.hp() == 0),
+                        "阵亡车辆必须有 0 采样: " + v.accountId());
+            }
+        }
+        // KILL 广播 provenance（docs/current-plan.md §15）：KILL 的 attacker/victim 必须来自
+        // 同一时刻（同炮窗口）的 DAMAGE 事件——击杀者身份只由客户端伤害通知证明，
+        // 前端 kill feed 不得超出该证据范围（未证明全局广播 → 只显示受害者被击毁）。
+        for (final MapOverview.PlaybackEvent kill : adapted.events()) {
+            if (!"KILL".equals(kill.type())) {
+                continue;
+            }
+            final boolean backed = adapted.events().stream().anyMatch(e ->
+                    "DAMAGE".equals(e.type())
+                            && Math.abs(e.timeSec() - kill.timeSec()) <= 0.25
+                            && java.util.Objects.equals(e.accountId(), kill.accountId())
+                            && java.util.Objects.equals(e.targetAccountId(), kill.targetAccountId()));
+            assertTrue(backed, "KILL 必须由同炮 DAMAGE 支撑: " + kill.timeSec());
+        }
+    }
+
+    private static PlayerResult playerOf(final Battle battle, final long accountId) {
+        for (final PlayerResult p : battle.players) {
+            if (p.accountId == accountId) {
+                return p;
+            }
+        }
+        return null;
     }
 
     /**
