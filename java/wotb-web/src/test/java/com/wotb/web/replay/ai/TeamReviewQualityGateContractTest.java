@@ -52,8 +52,8 @@ class TeamReviewQualityGateContractTest {
                 "不能仅凭分散判图控/拿视野");
         assertTrue(ZH.contains("只有专门且经过验证的 visibility/spotting evidence 才允许写「点亮了」「提供了视野」「侦察到了」等具体归因"),
                 "具体视野归因必须有专门 evidence");
-        assertTrue(ZH.contains("视野类收益统一视为 UNKNOWN"),
-                "无专门 evidence 时视野收益 UNKNOWN");
+        assertTrue(ZH.contains("具体视野收益保持内部 UNKNOWN"),
+                "无专门 evidence 时具体视野收益保持内部 UNKNOWN（不强制写「无法确认」）");
         // 响应分析：拿到信息后是否及时响应
         assertTrue(ZH.contains("开局分散的质量取决于拿到信息后是否及时响应"),
                 "必须分析信息获得后的响应（合流/收缩/转场）");

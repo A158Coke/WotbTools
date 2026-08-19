@@ -352,9 +352,10 @@ public class TeamReplayAnalysisService {
         if (outcome == null) {
             return reviewText;
         }
+        // PR #103 最终收尾 BLOCKER A：renderSection 不再接收胜负/队名参数——Autopsy 不重复胜负，
+        // 只渲染「重点复查/高贡献者」两块（无 standout 时为空串）；playerKey 仅作内部 lookup。
         return reviewText + TeamAutopsyPromptBuilder.renderSection(
-                outcome.result(), winner, outcome.roster(), teamLabel,
-                context.battle(), context.perspectiveTeam());
+                outcome.result(), outcome.roster());
     }
 
     /**

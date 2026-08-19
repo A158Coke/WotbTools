@@ -264,7 +264,26 @@ class AiReplayAnalysisServiceTest {
                         .getFirst());
         final var result = service.analyzeSingleTeamContext(context);
         assertTrue(result.analysis().startsWith("team review"));
-        assertTrue(result.analysis().contains("团队剖析"));
+        // PR #103 最终收尾 BLOCKER A（生产装配输出，测试 E）：最终 analysis 不得出现
+        // 逐人贡献 / P1（ / P2（ / P3（ / 置信度 / PARTIAL / 团队剖析 header / 重复胜负
+        assertTrue(result.analysis().contains("## 高贡献者"),
+                "有 MVP 时必须输出高贡献者块: " + result.analysis());
+        assertFalse(result.analysis().contains("逐人贡献"),
+                "最终 analysis 不得包含逐人贡献: " + result.analysis());
+        assertFalse(result.analysis().contains("P1（"),
+                "最终 analysis 不得暴露 P1（ internal key: " + result.analysis());
+        assertFalse(result.analysis().contains("P2（"),
+                "最终 analysis 不得暴露 P2（ internal key: " + result.analysis());
+        assertFalse(result.analysis().contains("P3（"),
+                "最终 analysis 不得暴露 P3（ internal key: " + result.analysis());
+        assertFalse(result.analysis().contains("置信度"),
+                "最终 analysis 不得暴露置信度: " + result.analysis());
+        assertFalse(result.analysis().contains("PARTIAL"),
+                "最终 analysis 不得暴露 PARTIAL: " + result.analysis());
+        assertFalse(result.analysis().contains("团队剖析"),
+                "最终 analysis 不得输出团队剖析 header: " + result.analysis());
+        assertFalse(result.analysis().contains("胜负:"),
+                "最终 analysis 不得重复胜负: " + result.analysis());
         final var autopsyRequest = gateway.requests.stream()
                 .filter(r -> "TEAM_AUTOPSY".equals(r.analysisMode()))
                 .findFirst().orElseThrow();
