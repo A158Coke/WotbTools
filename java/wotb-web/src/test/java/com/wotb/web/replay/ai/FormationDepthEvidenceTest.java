@@ -16,16 +16,12 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * FormationDepthEvidence：阵型深度（前后排）与控制区域确定性证据段渲染。
- */
+/** FormationDepthEvidence：阵型深度（前后排）与控制区域确定性证据段渲染。 */
 class FormationDepthEvidenceTest {
 
     private static final String MAP = "holland";
 
-    /**
-     * 真实 tankopedia id（tier10）：9489=E 100(HEAVY)、9297=FV215b 183(TD)、385=Progetto 65(MEDIUM)、19537=Vickers Light(LT)。
-     */
+    /** 真实 tankopedia id（tier10）：9489=E 100(HEAVY)、9297=FV215b 183(TD)、385=Progetto 65(MEDIUM)、19537=Vickers Light(LT)。 */
     private static PlayerResult player(final long accountId, final int team, final String nickname, final long tankId) {
         final PlayerResult p = new PlayerResult();
         p.accountId = accountId;
@@ -44,9 +40,7 @@ class FormationDepthEvidenceTest {
                 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0);
     }
 
-    /**
-     * 双方 4 车，各自集中在不同区域；本队 1001 更靠敌方、1002 靠后。
-     */
+    /** 双方 4 车，各自集中在不同区域；本队 1001 更靠敌方、1002 靠后。 */
     private static ReplayReconstruction reconWithPositions(final Float battleStart) {
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,
@@ -211,6 +205,7 @@ class FormationDepthEvidenceTest {
     }
 
 
+
     @Test
     void regionCoverageEmitsPresenceCountsNotControlTags() {
         // 本队 HEAVY+TD 在左侧区域有位置样本，敌方在右侧 → ownPositionPresence > 0
@@ -372,4 +367,4 @@ class FormationDepthEvidenceTest {
         assertTrue(section.contains("REGION_COVERAGE_MEASUREMENTS"), section);
     }
 
-}
+    }
