@@ -503,6 +503,40 @@ class DefaultTeamBattleFeatureExtractorTest {
     }
 
     @Test
+    void nicknameMappedCombatantEntityStillRaisesLimitation() {
+        // A 类变体：映射事件只有昵称（accountId=0），昵称指向 #301 成员但 TeamEntityMapper 无法归因
+        // （#301 内昵称重名 → uniquePlayersByNickname 剔除）→ 该实体位置仍应计入 unattributed combatant。
+        final PlayerResult allyOneA = player(100L, "AllyOne", 1, 400, 100, true, 0);
+        final PlayerResult allyOneB = player(105L, "AllyOne", 1, 400, 100, true, 0);
+ // 重名
+        final PlayerResult enemy = player(200L, "Enemy", 2, 600, 300, true, 0);
+        final Battle battle = new Battle();
+        battle.arenaId = "arena-team";
+        battle.arenaBonusType = 2;
+        battle.mapName = "test-map";
+        battle.durationS = 120.0;
+        battle.winnerTeam = 1;
+        battle.recorder = "Enemy";
+        // recorder 必须唯一（"AllyOne" 重名会触发 RECORDER_IDENTITY_CONFLICT）
+        battle.players = List.of(allyOneA, allyOneB, enemy);
+        final List<BattleParticipant> participants = List.of(
+                new BattleParticipant(100L, "AllyOne", 1, 1, "a", false),
+                new BattleParticipant(105L, "AllyOne", 1, 2, "b", false),
+                new BattleParticipant(200L, "Enemy", 2, 3, "c", true));
+        final List<ReplayEvent> events = List.of(
+                new ParticipantMappingEvent(1, new ReplayTimestamp(0f, null), 8,
+                        DecodeConfidence.EXACT, 10, 0L, "AllyOne", 1),
+ // nickname-only mapping
+                position(2, 5f, 10, 0f, 0f));
+
+        final TeamBattleFeatureSet features = extract(new Fixture(battle, participants, events), events);
+
+        assertEquals(1, features.coverage().unattributedPositionEventCount());
+        assertEquals(0, features.coverage().nonCombatantPositionEventCount());
+        assertTrue(features.limitations().contains("UNATTRIBUTED_POSITION_EVENTS_PRESENT"));
+    }
+
+    @Test
     void coverageToStringDoesNotLeakNonCombatantCounter() {
         // PR #103 §6：non-#301 实体位置计数是 internal-only；AI-visible 渲染（TeamEvidenceFormatter 的
         // coverage= 行 = record toString）不得包含 nonCombatantPositionEventCount，后端字段访问仍可用。
