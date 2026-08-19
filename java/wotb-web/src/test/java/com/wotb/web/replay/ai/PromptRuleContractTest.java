@@ -27,9 +27,9 @@ class PromptRuleContractTest {
                     PlayerPromptRules.COMMON_DAMAGE_SEMANTICS_RULE,
                     PlayerPromptRules.HP_LOSS_TIME_RULE,
                     PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE,
-                    PlayerPromptRules.SOLO_INTENT_RULE,
+                    PlayerPromptRules.SEPARATION_EVIDENCE_RULE,
                     PlayerPromptRules.POINTS_SITUATION_RULE,
-                    PlayerPromptRules.BEHIND_LINE_RULE),
+                    PlayerPromptRules.RELATIVE_DEPTH_HP_RULE),
             "player/fallback", List.of(
                     PlayerPromptRules.COMMON_TANK_PROPER_NOUN_RULE,
                     PlayerPromptRules.COMMON_CHINESE_LANGUAGE_RULE,
@@ -38,7 +38,7 @@ class PromptRuleContractTest {
                     PlayerPromptRules.COMMON_DAMAGE_SEMANTICS_RULE,
                     PlayerPromptRules.HP_LOSS_TIME_RULE,
                     PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE,
-                    PlayerPromptRules.SOLO_INTENT_RULE,
+                    PlayerPromptRules.SEPARATION_EVIDENCE_RULE,
                     PlayerPromptRules.POINTS_SITUATION_RULE),
             "player/tactical", List.of(
                     PlayerPromptRules.COMMON_TANK_PROPER_NOUN_RULE,
@@ -48,21 +48,25 @@ class PromptRuleContractTest {
                     PlayerPromptRules.COMMON_DAMAGE_SEMANTICS_RULE,
                     PlayerPromptRules.HP_LOSS_TIME_RULE,
                     PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE,
-                    PlayerPromptRules.SOLO_INTENT_RULE,
+                    PlayerPromptRules.SEPARATION_EVIDENCE_RULE,
                     PlayerPromptRules.POINTS_SITUATION_RULE),
             "team/single", List.of(
                     PlayerPromptRules.COMMON_TANK_PROPER_NOUN_RULE,
                     PlayerPromptRules.COMMON_CHINESE_LANGUAGE_RULE,
                     TeamPromptLocalizer.TEAM_ANALYSIS_RULE,
+                    TeamPromptLocalizer.TEAM_INTERNAL_VS_USER_FACING_RULE,
                     TeamPromptLocalizer.FORMATION_DEPTH_RULE,
                     PlayerPromptRules.COMMON_DAMAGE_SEMANTICS_RULE,
                     PlayerPromptRules.HP_LOSS_TIME_RULE,
                     PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE,
                     TeamPromptLocalizer.TEAM_PRIOR_RULE,
                     TeamPromptLocalizer.TEAM_REGION_RULE,
-                    TeamPromptLocalizer.SOLO_INTENT_RULE,
+                    TeamPromptLocalizer.SEPARATION_EVIDENCE_RULE,
+                    TeamPromptLocalizer.TEAM_REGROUP_INFERENCE_RULE,
                     TeamPromptLocalizer.CAPTURE_RULE,
-                    TeamPromptLocalizer.BEHIND_LINE_RULE));
+                    TeamPromptLocalizer.RELATIVE_DEPTH_HP_RULE,
+                    TeamPromptLocalizer.TEAM_OUTPUT_STRUCTURE_RULE,
+                    TeamPromptLocalizer.TEAM_EVIDENCE_CONTRACT_RULE));
 
     @Test
     void mdPromptsCarryRuleConstantsVerbatim() {

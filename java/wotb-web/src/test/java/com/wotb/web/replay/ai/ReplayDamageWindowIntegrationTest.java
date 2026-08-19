@@ -44,7 +44,7 @@ class ReplayDamageWindowIntegrationTest {
 
     private static AiReplayAnalysisConfig config() {
         return new AiReplayAnalysisConfig(
-                ESTIMATOR, "test-model", 100_000, 131_072, 8192, 1000, false, null, 315);
+                ESTIMATOR, "test-model", 100_000, 131_072, 8192, 1000, false, null, 315, 4096);
     }
 
     private static Path fixture() {

@@ -7,6 +7,7 @@ import com.wotb.core.processing.TeamEntityMapper;
 import com.wotb.core.processing.TeamEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.evidence.TankTacticalProfile;
@@ -15,27 +16,36 @@ import com.wotb.core.replay.feature.MapCoordinateProfile;
 import com.wotb.core.replay.feature.MapCoordinateResolution;
 import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.replay.timeline.BattleTimelineBuilder;
+import com.wotb.core.replay.timeline.PositionKnowledge;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 阵型深度（前后排）与地图控制区域（实际控制）确定性证据，仅供团队复盘（Team 路径）。
- * <p>口径（全确定性，只描述几何/计数事实，不裁决）：</p>
+ * 阵型纵深（纯几何深度三分位）与区域覆盖测量（REGION_COVERAGE_MEASUREMENTS）确定性证据，仅供团队复盘（Team 路径）。
+ * <p>口径（全确定性，只描述几何/测量事实，不裁决）：</p>
  * <ul>
  *   <li>阶段窗口按首次交火（首个 DamageEvent）与战斗时长切分 opening/mid/late
  *       （残局 = 战斗末 15s 窗口，与地图鸟瞰同口径）；</li>
- *   <li><b>前后排（profile-aware）</b>：某阶段内本队成员平均位置沿「本队质心 → 敌方质心」轴投影，
- *       按深度三分位分 前排/中排/后排（仅双方均有可用位置时输出）；阵容结构按 TankTacticalProfile
- *       判定（isFrontlineCapable=HEAVY/高装甲、isBacklineCapable=TD/LIGHT、MEDIUM 中性）——
- *       无前线型车辆时不产出前排名单（noFrontlineVehicle + 几何参考）、无后排型车辆时不产出后排名单（noBacklineVehicle）；</li>
- *   <li><b>地图控制权（controlRegions）</b>：九宫格区域按双方距离加权火力覆盖分（F=Σ 火力权重/(1+d/100)）对比——
- *       (presence)=区域内有本方位置样本、
- *       (firepower)=无位置样本但火力覆盖占优。这只是火力覆盖+位置几何的确定性近似，不等于真实占领/点亮/视野。</li>
+ *   <li><b>几何纵深（纯几何，不引用 tank profile）</b>：某阶段内本队成员平均位置沿「本队质心 → 敌方质心」轴投影，
+ *       按深度三分位输出 GEOMETRIC_FORWARD / GEOMETRIC_MIDDLE / GEOMETRIC_REAR（仅双方均有可用位置时输出）。
+ *       三分位只是几何分类，不是「前排抗线/后排支援」等战术角色；tank profile（车种/装甲等）作为成员静态事实附注，
+ *       该车处于这个纵深是否合理由 LLM 综合地图、阵容与战局判断。</li>
+ *   <li><b>区域覆盖测量（REGION_COVERAGE_MEASUREMENTS）</b>：九宫格每区输出双方位置存在数
+ *       （ownPositionPresence/enemyPositionPresence，基于 resolved 车辆位置 state，每辆 CURRENT 车辆 +1，
+ *       不是位置包数量）与双方距离加权火力覆盖分
+ *       （F=Σ 火力权重/(1+d/100)，ownWeightedCoverageScore/enemyWeightedCoverageScore）及 ratio；
+ *       exact 数学只消费 CURRENT 位置参考（knowledge 契约：friendly carry-forward=CURRENT；
+ *       enemy 最后观测 age ≤ canonical 当前阈值=CURRENT，否则 LAST_KNOWN）；CURRENT 不完整时 fail-closed
+ *       只输出 presence + coverage completeness + ENEMY_LAST_KNOWN_POSITION_REFERENCES（独立信息，
+ *       LAST_KNOWN 不得当作当前精确位置）；只给确定性测量，不输出 own/contested/enemy 权威控制权标签——
+ *       哪方「实际控制/压制某区」由 LLM 判断。</li>
  * </ul>
  * <p>成员用 {@code account:<accountId>}（与 FORMATION_PHASES 簇成员一致）供 AI 交叉引用。</p>
  */
@@ -83,6 +93,11 @@ final class FormationDepthEvidence {
             if (identity == null || !identity.usable() || identity.accountId() <= 0) {
                 continue;
             }
+            // ActualCombatantSet（battle_results #301）：spectator/observer/camera/静态实体等非 #301
+            // 位置不得进入战术位置覆盖（Actual Combatant/Spectator 边界契约）。
+            if (!playersByAccount.containsKey(identity.accountId())) {
+                continue;
+            }
             if (!Float.isFinite(pos.x()) || !Float.isFinite(pos.z())) {
                 continue;
             }
@@ -122,9 +137,18 @@ final class FormationDepthEvidence {
 
         final List<PhaseRange> phases = buildPhases(firstDamageTime(recon.events(), battleStart), battleEnd);
 
+        // entity -> 最后一次 EntityLeave（battle-relative）；carry-forward 位置 state 的终止边界
+        final Map<Integer, Double> lastLeaveByEntity = new HashMap<>();
+        for (final ReplayEvent event : recon.events()) {
+            if (event instanceof EntityRemovedEvent removed) {
+                final double t = relativeSec(removed, battleStart);
+                lastLeaveByEntity.merge(removed.entityId(), t, Math::max);
+            }
+        }
+
         final StringBuilder sb = new StringBuilder();
         for (final PhaseRange phase : phases) {
-            sb.append(renderPhase(phase, tracks, teamByAccount, perspectiveTeam, mapCode, playersByAccount, accountProfiles));
+            sb.append(renderPhase(phase, tracks, teamByAccount, perspectiveTeam, mapCode, playersByAccount, accountProfiles, mapping, lastLeaveByEntity));
         }
         return sb.isEmpty() ? "" : "\n=== FORMATION_DEPTH（阵型深度·确定性） ===\n" + sb;
     }
@@ -137,38 +161,63 @@ final class FormationDepthEvidence {
             final int perspectiveTeam,
             final String mapCode,
             final Map<Long, PlayerResult> playersByAccount,
-            final Map<Long, TankTacticalProfile> profiles
+            final Map<Long, TankTacticalProfile> profiles,
+            final TeamEntityMapping mapping,
+            final Map<Integer, Double> lastLeaveByEntity
     ) {
-        // 阶段内每账号平均位置 + 九宫格样本计数
-        final Map<Long, double[]> meanByAccount = new LinkedHashMap<>();
-        final Map<Integer, Integer> ownRegionCount = new LinkedHashMap<>();
-        final Map<Integer, Integer> enemyRegionCount = new LinkedHashMap<>();
+        // 阶段位置参考（带知识状态）：每个 eligible 车辆解析 phase 位置 + CURRENT/LAST_KNOWN。
+        // friendly actual combatant（有 last position、无 EntityLeave、未阵亡）→ CURRENT（canonical carry-forward）；
+        // enemy → 最后观测 age ≤ canonical 当前阈值（POSITION_GAP_SEC）→ CURRENT，否则 LAST_KNOWN。
+        // LAST_KNOWN 永不进入 exact 阵型/覆盖数学（fail-closed），只作为独立信息输出（不 future-leak）。
+        final Map<Long, PhasePositionReference> refsByAccount = new LinkedHashMap<>();
         for (final Map.Entry<Long, List<double[]>> entry : tracks.entrySet()) {
             final int team = teamByAccount.getOrDefault(entry.getKey(), 0);
-            double sx = 0, sz = 0;
-            int n = 0;
-            for (final double[] sample : entry.getValue()) {
-                if (sample[0] < phase.start() || sample[0] > phase.end()) {
-                    continue;
-                }
-                sx += sample[1];
-                sz += sample[2];
-                n++;
-                final MapCoordinateResolution res = MapRegionResolver.resolve(
-                        (float) sample[1], (float) sample[2], mapCode);
-                if (res != null && res.usable()) {
-                    final Map<Integer, Integer> counts = team == perspectiveTeam
-                            ? ownRegionCount : enemyRegionCount;
-                    counts.merge(res.region(), 1, Integer::sum);
-                }
-            }
-            if (n > 0) {
-                meanByAccount.put(entry.getKey(), new double[]{sx / n, sz / n});
+            final PhasePositionReference ref = resolvePhasePosition(
+                    entry.getKey(), team, entry.getValue(),
+                    phase.start(), phase.end(), playersByAccount,
+                    mapping, lastLeaveByEntity, perspectiveTeam);
+            if (ref != null) {
+                refsByAccount.put(entry.getKey(), ref);
             }
         }
-        // 位置参考完整性（fail-closed 门禁）：本阶段存活的双方成员中拥有位置参考（meanByAccount）的计数
         final int ownTeam = perspectiveTeam;
         final int enemyTeam = 3 - ownTeam;
+        // CURRENT / LAST_KNOWN 分流：exact 阵型/覆盖测量只消费 CURRENT；enemy LAST_KNOWN 独立列出
+        final Map<Long, PhasePositionReference> ownCurrent = new LinkedHashMap<>();
+        final Map<Long, PhasePositionReference> enemyCurrent = new LinkedHashMap<>();
+        final Map<Long, PhasePositionReference> enemyLastKnown = new LinkedHashMap<>();
+        for (final Map.Entry<Long, PhasePositionReference> entry : refsByAccount.entrySet()) {
+            final PhasePositionReference ref = entry.getValue();
+            if (!ref.current()) {
+                if (ref.team() == enemyTeam) {
+                    enemyLastKnown.put(entry.getKey(), ref);
+                }
+                continue;
+            }
+            if (ref.team() == ownTeam) {
+                ownCurrent.put(entry.getKey(), ref);
+            } else {
+                enemyCurrent.put(entry.getKey(), ref);
+            }
+        }
+        // 区域 presence：基于 resolved 车辆位置 state（每辆 CURRENT 车辆 +1），不是位置包数量。
+        // 移动更频繁的车不会因包更多而人为增加 presence（coverageCompleteness=7/7 时 presence/coverage 同源）。
+        final Map<Integer, Integer> ownRegionCount = new LinkedHashMap<>();
+        final Map<Integer, Integer> enemyRegionCount = new LinkedHashMap<>();
+        for (final Map.Entry<Long, PhasePositionReference> entry : ownCurrent.entrySet()) {
+            final int region = regionOf(entry.getValue(), mapCode);
+            if (region > 0) {
+                ownRegionCount.merge(region, 1, Integer::sum);
+            }
+        }
+        for (final Map.Entry<Long, PhasePositionReference> entry : enemyCurrent.entrySet()) {
+            final int region = regionOf(entry.getValue(), mapCode);
+            if (region > 0) {
+                enemyRegionCount.merge(region, 1, Integer::sum);
+            }
+        }
+        // 位置参考完整性（fail-closed 门禁）：本阶段存活的双方成员中拥有 CURRENT 位置参考的计数
+        // （enemy LAST_KNOWN 不得满足 current-position completeness）
         int ownRefCount = 0;
         int enemyRefCount = 0;
         int ownAliveCount = 0;
@@ -181,53 +230,60 @@ final class FormationDepthEvidence {
             if (!isAliveAt(playersByAccount, entry.getKey(), phase.end())) {
                 continue; // 本阶段已阵亡：不要求位置参考，也不计入 alive
             }
-            final boolean hasRef = meanByAccount.containsKey(entry.getKey());
+            final boolean hasCurrent = pl.team == ownTeam
+                    ? ownCurrent.containsKey(entry.getKey())
+                    : enemyCurrent.containsKey(entry.getKey());
             if (pl.team == ownTeam) {
                 ownAliveCount++;
-                if (hasRef) {
+                if (hasCurrent) {
                     ownRefCount++;
                 }
             } else {
                 enemyAliveCount++;
-                if (hasRef) {
+                if (hasCurrent) {
                     enemyRefCount++;
                 }
             }
         }
 
-        // 控制权：车辆阶段平均位置 → canonical（九宫格距离加权火力覆盖基准）
+        // 控制权：车辆 CURRENT 位置 → canonical（九宫格距离加权火力覆盖基准；LAST_KNOWN 不得作为当前坐标）
         final Map<Long, double[]> ownCanonical = new LinkedHashMap<>();
         final Map<Long, double[]> enemyCanonical = new LinkedHashMap<>();
-        for (final Map.Entry<Long, double[]> entry : meanByAccount.entrySet()) {
-            final MapCoordinateResolution res = MapRegionResolver.resolve(
-                    (float) entry.getValue()[0], (float) entry.getValue()[1], mapCode);
-            if (res == null || !res.usable() || res.position() == null) {
-                continue;
-            }
-            final double[] pos = {res.position().x(), res.position().z()};
-            if (teamByAccount.getOrDefault(entry.getKey(), 0) == perspectiveTeam) {
-                ownCanonical.put(entry.getKey(), pos);
-            } else {
-                enemyCanonical.put(entry.getKey(), pos);
+        for (final Map.Entry<Long, PhasePositionReference> entry : ownCurrent.entrySet()) {
+            final double[] canonical = canonicalOf(entry.getValue(), mapCode);
+            if (canonical != null) {
+                ownCanonical.put(entry.getKey(), canonical);
             }
         }
-        boolean hasFront = false;
-
+        for (final Map.Entry<Long, PhasePositionReference> entry : enemyCurrent.entrySet()) {
+            final double[] canonical = canonicalOf(entry.getValue(), mapCode);
+            if (canonical != null) {
+                enemyCanonical.put(entry.getKey(), canonical);
+            }
+        }
         final StringBuilder sb = new StringBuilder();
         final String header = "phase=" + phase.key()
                 + " [" + fmt(phase.start()) + "-" + fmt(phase.end()) + "s]\n";
 
-        // 前后排：本队成员沿本队质心→敌方质心轴投影，三分位（profile-aware）
+        // 几何纵深：本队成员沿本队质心→敌方质心轴投影，按深度三分位（纯几何，只消费 CURRENT 位置；
+        // enemy LAST_KNOWN 不得作为当前 enemy centroid / 轴参考）。
+        // fail-close gate（PR #103 最终 review）：任何依赖双方 current geometry 的 exact 计算
+        // （enemy centroid / GEOMETRIC_* / 距离加权覆盖分 / ratio）必须在 completeness gate 之前判定，
+        // 且只有 ownRefComplete && enemyRefComplete 才允许输出——enemyRef=1/2 时用 1 辆敌方 CURRENT
+        // 建立 whole-team enemy centroid 会与覆盖段 POSITION_COVERAGE_INSUFFICIENT 自相矛盾；
+        // partial CURRENT 只允许 INSUFFICIENT + CURRENT presence + coverage counts + LAST_KNOWN 独立信息。
+        final boolean ownRefComplete = ownRefCount >= ownAliveCount;
+        final boolean enemyRefComplete = enemyRefCount >= enemyAliveCount;
         final List<Map.Entry<Long, double[]>> own = new ArrayList<>();
         final List<double[]> enemyMeans = new ArrayList<>();
-        for (final Map.Entry<Long, double[]> entry : meanByAccount.entrySet()) {
-            if (teamByAccount.getOrDefault(entry.getKey(), 0) == perspectiveTeam) {
-                own.add(entry);
-            } else {
-                enemyMeans.add(entry.getValue());
-            }
+        for (final Map.Entry<Long, PhasePositionReference> entry : ownCurrent.entrySet()) {
+            own.add(new java.util.AbstractMap.SimpleImmutableEntry<>(entry.getKey(),
+                    new double[]{entry.getValue().x(), entry.getValue().z()}));
         }
-        if (own.size() >= 2 && !enemyMeans.isEmpty()) {
+        for (final Map.Entry<Long, PhasePositionReference> entry : enemyCurrent.entrySet()) {
+            enemyMeans.add(new double[]{entry.getValue().x(), entry.getValue().z()});
+        }
+        if (ownRefComplete && enemyRefComplete && own.size() >= 2 && !enemyMeans.isEmpty()) {
             final double[] ownCentroid = centroid(own.stream().map(Map.Entry::getValue).toList());
             final double[] enemyCentroid = centroid(enemyMeans);
             final double ax = enemyCentroid[0] - ownCentroid[0];
@@ -242,75 +298,200 @@ final class FormationDepthEvidence {
                     depths.add(new double[]{d, member.getKey()});
                 }
                 depths.sort(Comparator.comparingDouble(a -> -a[0]));
-                // 阵容结构（tank profile）：可扛线（前线型）与后排型计数
-                int frontline = 0;
-                int backline = 0;
-                int neutralOnly = 0;
-                for (final double[] d : depths) {
-                    final TankTacticalProfile profile = profiles.get(Math.round(d[1]));
-                    final boolean f = isFrontlineCapable(profile);
-                    final boolean b = isBacklineCapable(profile);
-                    if (f) {
-                        frontline++;
-                    }
-                    if (b) {
-                        backline++;
-                    }
-                    if (!f && !b) {
-                        // neutralOnly 逐车按 !frontline && !backline 计数，绝不用减法推导（capability 可重叠）
-                        neutralOnly++;
-                    }
-                }
-                hasFront = frontline > 0;
-                final boolean hasBack = backline > 0;
-                sb.append(header)
-                        .append("lineupStructure=totalVehicles=").append(own.size())
-                        .append("/frontlineCapable=").append(frontline)
-                        .append("/backlineCapable=").append(backline)
-                        .append("/neutralOnly=").append(neutralOnly).append("\n");
-                if (!hasFront) {
-                    sb.append("noFrontlineVehicle=本阶段阵容无前线型车辆\n");
-                }
-                if (!hasBack) {
-                    sb.append("noBacklineVehicle=本阶段阵容无后排型车辆（几何靠后成员仍为前线型车辆）\n");
-                }
+                // 纯几何深度三分位：不引用 tank profile 分类，任何车种都按几何位置归入三分位
                 final double minD = depths.get(depths.size() - 1)[0];
                 final double maxD = depths.get(0)[0];
                 final double span = maxD - minD;
                 final double frontThreshold = span > 1e-6 ? minD + span * 2.0 / 3.0 : maxD;
                 final double backThreshold = span > 1e-6 ? minD + span / 3.0 : maxD;
-                final List<String> front = new ArrayList<>();
-                final List<String> mid = new ArrayList<>();
-                final List<String> back = new ArrayList<>();
+                final List<String> geometricForward = new ArrayList<>();
+                final List<String> geometricMiddle = new ArrayList<>();
+                final List<String> geometricRear = new ArrayList<>();
                 for (final double[] d : depths) {
                     final String key = annotate(Math.round(d[1]), profiles);
                     if (d[0] >= frontThreshold - 1e-9) {
-                        front.add(key);
+                        geometricForward.add(key);
                     } else if (d[0] <= backThreshold + 1e-9) {
-                        back.add(key);
+                        geometricRear.add(key);
                     } else {
-                        mid.add(key);
+                        geometricMiddle.add(key);
                     }
                 }
-                if (hasFront) {
-                    sb.append("frontLine=").append(String.join(",", front)).append("\n");
-                    sb.append("midLine=").append(String.join(",", mid)).append("\n");
-                    if (hasBack) {
-                        sb.append("backLine=").append(String.join(",", back)).append("\n");
-                    }
-                } else {
-                    // 无前线型车辆：不产出 frontLine/midLine/backLine 名单，只给几何位置参考
-                    sb.append("geometryFront=").append(geometryRef(depths, 0, 2)).append("\n");
-                }
-return sb.toString() + renderControl(ownRegionCount, enemyRegionCount,
-                ownCanonical, enemyCanonical, profiles, hasFront, mapCode,
-                ownRefCount, enemyRefCount, ownAliveCount, enemyAliveCount);
+                sb.append(header)
+                        .append("GEOMETRIC_FORWARD=").append(String.join(",", geometricForward)).append("\n")
+                        .append("GEOMETRIC_MIDDLE=").append(String.join(",", geometricMiddle)).append("\n")
+                        .append("GEOMETRIC_REAR=").append(String.join(",", geometricRear)).append("\n");
+                return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
+                        ownCanonical, enemyCanonical, profiles, mapCode,
+                        ownRefCount, enemyRefCount, ownAliveCount, enemyAliveCount,
+                        enemyLastKnown);
             }
         }
         sb.append(header);
-return sb.toString() + renderControl(ownRegionCount, enemyRegionCount,
-                ownCanonical, enemyCanonical, profiles, hasFront, mapCode,
-                ownRefCount, enemyRefCount, ownAliveCount, enemyAliveCount);
+        return sb.toString() + renderCoverage(ownRegionCount, enemyRegionCount,
+                ownCanonical, enemyCanonical, profiles, mapCode,
+                ownRefCount, enemyRefCount, ownAliveCount, enemyAliveCount,
+                enemyLastKnown);
+    }
+
+    /**
+     * 阶段位置参考：带知识状态（CURRENT / LAST_KNOWN）与观测时间。
+     * <p>LAST_KNOWN 永不进入 exact 阵型/覆盖数学（fail-closed），只作为独立信息输出；
+     * 杜绝「LAST_KNOWN 被数学层重新升级为 CURRENT exact geometry」。</p>
+     */
+    record PhasePositionReference(
+            long accountId,
+            int team,
+            double x,
+            double z,
+            PositionKnowledge knowledge,
+            double observedAtSec,
+            double ageSec
+    ) {
+        /** 是否为 CURRENT 位置参考（exact 数学只允许消费 CURRENT）。 */
+        boolean current() {
+            return knowledge == PositionKnowledge.CURRENT;
+        }
+    }
+
+    /**
+     * 解析某账号在 [phaseStart, phaseEnd] 的阶段位置参考（canonical knowledge 同口径）：
+     * <ul>
+     *   <li>阶段内有观测样本 → 阶段均值（观测窗口事实），observedAt=最后阶段内样本时刻；</li>
+     *   <li>阶段内无样本 → carry-forward 最后位置（无 EntityLeave、未阵亡），observedAt=该样本时刻；</li>
+     *   <li>存活门禁：phase 末已阵亡 → 位置 state 终止 → null（不参与当前几何）；</li>
+     *   <li>knowledge：friendly actual combatant 无 EntityLeave 中断 → CURRENT（canonical carry-forward，
+     *       与 BattleTimelineBuilder 同口径）；enemy → 最后观测 age ≤ canonical 当前阈值
+     *       （{@link BattleTimelineBuilder#POSITION_GAP_SEC}）→ CURRENT，否则 LAST_KNOWN。</li>
+     * </ul>
+     */
+    static PhasePositionReference resolvePhasePosition(
+            final long accountId,
+            final int team,
+            final List<double[]> track,
+            final double phaseStart,
+            final double phaseEnd,
+            final Map<Long, PlayerResult> playersByAccount,
+            final TeamEntityMapping mapping,
+            final Map<Integer, Double> lastLeaveByEntity,
+            final int perspectiveTeam) {
+        double sx = 0, sz = 0;
+        int n = 0;
+        double lastInPhase = -1;
+        for (final double[] sample : track) {
+            if (sample[0] < phaseStart || sample[0] > phaseEnd) {
+                continue;
+            }
+            sx += sample[1];
+            sz += sample[2];
+            n++;
+            lastInPhase = Math.max(lastInPhase, sample[0]);
+        }
+        final double x;
+        final double z;
+        final double observedAt;
+        if (n > 0) {
+            x = sx / n;
+            z = sz / n;
+            observedAt = lastInPhase;
+        } else {
+            if (!isAliveAt(playersByAccount, accountId, phaseEnd)) {
+                return null;
+            }
+            final double[] carry = carriedForwardReference(
+                    track, phaseEnd, mapping, lastLeaveByEntity, accountId);
+            if (carry == null) {
+                return null;
+            }
+            x = carry[1];
+            z = carry[2];
+            observedAt = carry[0];
+        }
+        if (!isAliveAt(playersByAccount, accountId, phaseEnd)) {
+            return null; // phase 末已阵亡：位置 state 终止，不参与当前几何
+        }
+        // EntityLeave 中断当前位置 state（canonical 同口径：leave ≥ 最后观测 → 状态终止）
+        final boolean interrupted = hasLeaveOnOrAfter(
+                mapping, lastLeaveByEntity, accountId, observedAt, phaseEnd);
+        final boolean friendly = team == perspectiveTeam;
+        final PositionKnowledge knowledge;
+        if (friendly) {
+            knowledge = interrupted
+                    ? PositionKnowledge.LAST_KNOWN : PositionKnowledge.CURRENT;
+        } else {
+            final double age = phaseEnd - observedAt;
+            knowledge = !interrupted && age <= BattleTimelineBuilder.POSITION_GAP_SEC + 1e-6
+                    ? PositionKnowledge.CURRENT : PositionKnowledge.LAST_KNOWN;
+        }
+        return new PhasePositionReference(
+                accountId, team, x, z, knowledge, observedAt, phaseEnd - observedAt);
+    }
+
+    /** 该账号在 [observedAt, phaseEnd] 内是否有 EntityLeave（≥ observedAt 的中断）。 */
+    private static boolean hasLeaveOnOrAfter(
+            final TeamEntityMapping mapping,
+            final Map<Integer, Double> lastLeaveByEntity,
+            final long accountId,
+            final double observedAt,
+            final double phaseEnd) {
+        for (final int eid : mapping.entityIds(accountId)) {
+            final Double leave = lastLeaveByEntity.get(eid);
+            if (leave != null && leave >= observedAt - 1e-6 && leave <= phaseEnd + 1e-6) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 参考位置所属九宫格 region（0 = 不可用）。 */
+    private static int regionOf(final PhasePositionReference ref, final String mapCode) {
+        final MapCoordinateResolution res = MapRegionResolver.resolve(
+                (float) ref.x(), (float) ref.z(), mapCode);
+        if (res == null || !res.usable()) {
+            return 0;
+        }
+        return res.region();
+    }
+
+    /** 参考位置 → canonical 坐标（null = 不可用；供距离加权火力覆盖计算）。 */
+    private static double[] canonicalOf(final PhasePositionReference ref, final String mapCode) {
+        final MapCoordinateResolution res = MapRegionResolver.resolve(
+                (float) ref.x(), (float) ref.z(), mapCode);
+        if (res == null || !res.usable() || res.position() == null) {
+            return null;
+        }
+        return new double[]{res.position().x(), res.position().z()};
+    }
+
+    /**
+     * 该账号在 phaseEnd 时刻的 carry-forward 位置参考：取 ≤ phaseEnd 的最后位置样本；
+     * 若该样本之后有 EntityLeave 且 leave ≤ phaseEnd（位置 state 已终止）或从未有样本 → null。
+     */
+    static double[] carriedForwardReference(
+            final List<double[]> track,
+            final double phaseEnd,
+            final TeamEntityMapping mapping,
+            final Map<Integer, Double> lastLeaveByEntity,
+            final long accountId) {
+        double[] carry = null;
+        for (final double[] s : track) {
+            if (s[0] <= phaseEnd + 1e-6) {
+                carry = s;
+            } else {
+                break;
+            }
+        }
+        if (carry == null) {
+            return null;
+        }
+        final List<Integer> eids = mapping.entityIds(accountId);
+        for (final int eid : eids) {
+            final Double leave = lastLeaveByEntity.get(eid);
+            if (leave != null && leave >= carry[0] - 1e-6 && leave <= phaseEnd + 1e-6) {
+                return null;
+            }
+        }
+        return carry;
     }
 
     /** 账号展示 key：附 tank profile 标注（如 account:1234(HEAVY,armor=HIGH)）；UNKNOWN 只标未知。 */
@@ -322,32 +503,7 @@ return sb.toString() + renderControl(ownRegionCount, enemyRegionCount,
         return "account:" + accountId + "(" + profile.vehicleClass() + ",armor=" + profile.armorReliability() + ")";
     }
 
-    /** 几何参考：depth 排序（降序=最靠前）中取 [from, from+count) 的账号列表。 */
-    private static String geometryRef(final List<double[]> depths, final int from, final int count) {
-        final int end = Math.min(depths.size(), from + count);
-        final StringBuilder sb = new StringBuilder();
-        for (int i = from; i < end; i++) {
-            if (sb.length() > 0) {
-                sb.append(",");
-            }
-            sb.append("account:").append(Math.round(depths.get(i)[1]));
-        }
-        return sb.toString();
-    }
-
-    /** 可扛线（前线型）：HEAVY 或装甲可靠性 HIGH（TankTacticalProfile 语义）。 */
-    static boolean isFrontlineCapable(final TankTacticalProfile profile) {
-        return profile != null
-                && ("HEAVY".equals(profile.vehicleClass())
-                || "HIGH".equals(profile.armorReliability()));
-    }
-
-    /** 后排型：TANK_DESTROYER 或 LIGHT（远程支援/侦查车，天然后排；MEDIUM 为中性）。 */
-    static boolean isBacklineCapable(final TankTacticalProfile profile) {
-        return profile != null
-                && ("TANK_DESTROYER".equals(profile.vehicleClass())
-                || "LIGHT".equals(profile.vehicleClass()));
-    }
+    /** 坦克静态属性事实（车种/装甲）：只作成员标注，不参与几何三分位判定（Backend Evidence Boundary）。 */
 
     /** TankTacticalProfileRegistry 惰性加载（classpath json，与 PreBattleStrategicService 同源）。 */
     private static volatile TankTacticalProfileRegistry profileRegistryInstance;
@@ -388,79 +544,89 @@ return sb.toString() + renderControl(ownRegionCount, enemyRegionCount,
 
 
 
-    /** 区域控制权：九宫格双方距离加权火力覆盖分（F=Σ fireWeight/(1+d/100)），1.2 倍阈值判 own/contested/enemy。
-     * presence = 区域内有本方位置样本（位置存在，非视野/点亮）；无位置样本但火力覆盖占优 → 火力压制（firepower）。
-     * 确定性近似：火力覆盖（距离+profile 权重）与位置几何，不代表真实射界/地形 LOS，不等于真实占领/点亮，AI 不得断言「控制/占领」。
+    /** 区域覆盖测量：九宫格每区输出 own/enemy 位置存在数 + 双方距离加权火力覆盖分（F=Σ fireWeight/(1+d/100)）与 ratio。
+     * 只输出确定性测量（位置几何 + 火力权重近似），不输出 own/contested/enemy 权威控制权标签——
+     * 哪方「实际控制/压制/放弃某区」由 LLM 综合交火、点数压力等自行判断（Backend Evidence Boundary）。
      */
-    private static String renderControl(
+    private static String renderCoverage(
             final Map<Integer, Integer> own,
             final Map<Integer, Integer> enemy,
             final Map<Long, double[]> ownCanonical,
             final Map<Long, double[]> enemyCanonical,
             final Map<Long, TankTacticalProfile> profiles,
-            final boolean hasFront,
             final String mapCode,
             final int ownRefCount,
             final int enemyRefCount,
             final int ownAliveCount,
-            final int enemyAliveCount
+            final int enemyAliveCount,
+            final Map<Long, PhasePositionReference> enemyLastKnown
     ) {
         final boolean ownRefComplete = ownRefCount >= ownAliveCount;
         final boolean enemyRefComplete = enemyRefCount >= enemyAliveCount;
         if (!ownRefComplete || !enemyRefComplete) {
-            // 位置参考完整性门禁：任一方存活车辆缺少位置参考时，禁止输出 own/enemy/contested 强结论
-            // （缺失的敌方车辆 ≠ 不存在，也不得隐式当作 firepower=0）；只保留本方位置存在纯事实。
+            // 位置参考完整性门禁：任一方存活车辆缺少 CURRENT 位置参考时，禁止输出分数对比
+            // （缺失/LAST_KNOWN 的敌方车辆 ≠ 不存在）；只输出 CURRENT 位置存在纯事实 + coverage completeness
+            // + 敌方 LAST_KNOWN 独立信息（不得伪装成 current，不得 future-leak）。
             final StringBuilder fail = new StringBuilder();
             final List<String> presence = new ArrayList<>(own.keySet().stream()
                     .sorted().map(r -> "GRID_REGION_" + r).toList());
-            fail.append("controlRegions=UNKNOWN（POSITION_COVERAGE_INSUFFICIENT：")
+            fail.append("REGION_COVERAGE_MEASUREMENTS（POSITION_COVERAGE_INSUFFICIENT：")
                     .append("ownRef=").append(ownRefCount).append("/").append(ownAliveCount)
                     .append(" enemyRef=").append(enemyRefCount).append("/").append(enemyAliveCount).append("）\n");
             if (!presence.isEmpty()) {
-                fail.append("positionalPresence own=").append(String.join(",", presence)).append("\n");
+                fail.append("ownPositionPresence=").append(String.join(",", presence)).append("\n");
+            }
+            if (!enemyLastKnown.isEmpty()) {
+                fail.append("ENEMY_LAST_KNOWN_POSITION_REFERENCES（独立信息，不得当作当前精确位置）:\n");
+                final List<Map.Entry<Long, PhasePositionReference>> lastKnown =
+                        new ArrayList<>(enemyLastKnown.entrySet());
+                lastKnown.sort(java.util.Comparator.comparingLong(Map.Entry::getKey));
+                for (final Map.Entry<Long, PhasePositionReference> entry : lastKnown) {
+                    final PhasePositionReference ref = entry.getValue();
+                    final int region = regionOf(ref, mapCode);
+                    fail.append("  account:").append(entry.getKey())
+                            .append(" region=").append(region > 0 ? "GRID_REGION_" + region : "UNKNOWN")
+                            .append(" observedAtSec=").append(fmt(ref.observedAtSec()))
+                            .append(" ageSec=").append(fmt(ref.ageSec()))
+                            .append(" knowledge=LAST_KNOWN\n");
+                }
             }
             return fail.toString();
         }
         final java.util.Set<Integer> regions = new java.util.LinkedHashSet<>();
         regions.addAll(own.keySet());
         regions.addAll(enemy.keySet());
-        final List<String> ownList = new ArrayList<>();
-        final List<String> contested = new ArrayList<>();
-        final List<String> enemyList = new ArrayList<>();
+        final StringBuilder sb = new StringBuilder();
+        sb.append("REGION_COVERAGE_MEASUREMENTS（区域覆盖测量·确定性；LLM 自行判断含义）:\n");
         for (final int region : regions) {
             final double fOwn = fireCoverage(region, ownCanonical, profiles);
             final double fEnemy = fireCoverage(region, enemyCanonical, profiles);
-            final boolean presence = own.getOrDefault(region, 0) > 0;
-            final String tag = presence ? "(presence)" : "(firepower)";
-            if (fOwn >= fEnemy * CONTROL_RATIO && fOwn > 0) {
-                ownList.add("GRID_REGION_" + region + tag);
-            } else if (fEnemy >= fOwn * CONTROL_RATIO && fEnemy > 0) {
-                enemyList.add("GRID_REGION_" + region + tag);
-            } else if (fOwn > 0 || fEnemy > 0) {
-                contested.add("GRID_REGION_" + region + tag);
-            }
-        }
-        if (ownList.isEmpty() && contested.isEmpty() && enemyList.isEmpty()) {
-            return "";
-        }
-        final StringBuilder sb = new StringBuilder();
-        if (!ownList.isEmpty()) {
-            sb.append("controlRegions own=").append(String.join(",", ownList)).append("\n");
-        }
-        if (!contested.isEmpty()) {
-            sb.append("controlRegions contested=").append(String.join(",", contested)).append("\n");
-        }
-        if (!enemyList.isEmpty()) {
-            sb.append("controlRegions enemy=").append(String.join(",", enemyList)).append("\n");
-        }
-        if (!hasFront) {
-            sb.append("noArmorNote=本队无重甲车辆，控制权依赖火力投射\n");
+            final int ownPresence = own.getOrDefault(region, 0);
+            final int enemyPresence = enemy.getOrDefault(region, 0);
+            sb.append("  GRID_REGION_").append(region)
+                    .append(" ownPositionPresence=").append(ownPresence)
+                    .append(" enemyPositionPresence=").append(enemyPresence)
+                    .append(" ownWeightedCoverageScore=").append(fmt(fOwn))
+                    .append(" enemyWeightedCoverageScore=").append(fmt(fEnemy))
+                    .append(" ratio=").append(fmt(ratioOf(fOwn, fEnemy)))
+                    .append(" coverageCompleteness=ownRef=").append(ownRefCount).append("/").append(ownAliveCount)
+                    .append(" enemyRef=").append(enemyRefCount).append("/").append(enemyAliveCount)
+                    .append("\n");
         }
         return sb.toString();
     }
 
-    /** 控制权阈值（初值，探针标定后调）。 */
-    static final double CONTROL_RATIO = 1.2;
+    /** 双方分数比：一方为 0 时给 0（无对比意义）；两者皆 0 给 1（无信号）。 */
+    private static double ratioOf(final double own, final double enemy) {
+        if (own <= 0 && enemy <= 0) {
+            return 1.0;
+        }
+        if (own <= 0 || enemy <= 0) {
+            return 0.0;
+        }
+        return own / enemy;
+    }
+
     /** 火力覆盖距离归一化（米，初值可标定）。 */
     static final double FIRE_DISTANCE_NORM_M = 100.0;
 
@@ -476,7 +642,8 @@ return sb.toString() + renderControl(ownRegionCount, enemyRegionCount,
         return f;
     }
 
-    /** 火力权重（初值）：HEAVY/TD=2、MEDIUM=1.5、LIGHT=1；burst/sustained=HIGH 各 +0.5；可扛线 +0.5。 */
+    /** 火力权重（初值，纯静态 profile 事实）：HEAVY/TD=2、MEDIUM=1.5、LIGHT=1；burst/sustained=HIGH 各 +0.5。
+     * 不按任何战术角色调整权重（Backend Evidence Boundary：车种/火力属性只是静态事实，不是战术判定）。 */
     private static double fireWeight(final long accountId, final Map<Long, TankTacticalProfile> profiles) {
         final TankTacticalProfile profile = profiles.get(accountId);
         final String cls = profile == null ? "" : profile.vehicleClass();
@@ -491,9 +658,6 @@ return sb.toString() + renderControl(ownRegionCount, enemyRegionCount,
                 w += 0.5;
             }
             if ("HIGH".equals(profile.sustainedDpm())) {
-                w += 0.5;
-            }
-            if (isFrontlineCapable(profile)) {
                 w += 0.5;
             }
         }

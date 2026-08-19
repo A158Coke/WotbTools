@@ -5,6 +5,7 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
+import org.springframework.util.StringUtils;
 
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -111,7 +112,7 @@ public final class TeamAiPromptBuilder {
         final String priorBlock = TeamEvidenceFormatter.priorSection(
                 prior, context.perspectiveTeam(),
                 context.battle() != null
-                        ? TeamEvidenceFormatter.resolvePerspectiveLabel(context.battle().players, context.perspectiveTeam())
+                        ? TeamEvidenceFormatter.resolveDisplayLabel(context.battle().players, context.perspectiveTeam())
                         : "");
 
         // 构建 header
@@ -122,9 +123,18 @@ public final class TeamAiPromptBuilder {
         headerBuf.append("battleIdentity=").append(TeamEvidenceFormatter.quoteData(context.battleId())).append("\n");
         headerBuf.append("category=").append(context.battleCategory()).append("\n");
         if (context.battle() != null) {
-            final String teamLabel = TeamEvidenceFormatter.resolvePerspectiveLabel(
+            // PR #103 review BLOCKER A：user-facing 名称只使用 backend display labels；
+            // 无可靠 clan（无 clan / 平票 / 非多数）时为空串，prompt 规则要求 fallback「我方/对方」。
+            final String teamLabel = TeamEvidenceFormatter.resolveDisplayLabel(
                     context.battle().players, context.perspectiveTeam());
-            headerBuf.append("teamLabel=").append(TeamEvidenceFormatter.quoteData(teamLabel)).append("\n");
+            final String opponentLabel = TeamEvidenceFormatter.resolveOpponentDisplayLabel(
+                    context.battle().players, context.perspectiveTeam());
+            // display label：无可靠 clan 时输出 (none)，prompt 规则要求正文称「我方/对方」；
+            // 不使用 quoteData 的 UNKNOWN fallback（避免把机器标签当队名泄漏给 LLM/用户）
+            headerBuf.append("teamDisplayLabel=").append(
+                    StringUtils.hasText(teamLabel) ? TeamEvidenceFormatter.quoteData(teamLabel) : "(none)").append("\n");
+            headerBuf.append("opponentDisplayLabel=").append(
+                    StringUtils.hasText(opponentLabel) ? TeamEvidenceFormatter.quoteData(opponentLabel) : "(none)").append("\n");
             headerBuf.append("map=").append(TeamEvidenceFormatter.quoteData(TeamEvidenceFormatter.resolveMapName(context.battle().mapName))).append("\n");
             headerBuf.append("durationSec=").append(TeamEvidenceFormatter.formatNullable(context.battle().durationS)).append("\n");
             final String result = TeamEvidenceFormatter.resolveTeamResult(
@@ -194,7 +204,7 @@ public final class TeamAiPromptBuilder {
                 context.features() == null ? List.of() : context.features().members(),
                 context.reconstruction(),
                 limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
-        // 点数局势（击杀夺分时间线/占领点存在/推进窗口）：完整区块，超预算时整体移除
+        // 点数局势（击杀夺分时间线/占领点存在/进入控制点区域窗口）：完整区块，超预算时整体移除
         if (includePointsSituation) {
             TeamEvidenceFormatter.appendPointsSituation(
                     optTemp,
@@ -203,7 +213,7 @@ public final class TeamAiPromptBuilder {
                     context.perspectiveTeam(),
                     limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
         }
-        // 阵型深度（前后排）与实际控制区域（确定性，仅团队路径）：小段，随 optional 预算裁剪
+        // 阵型深度（前后排）与区域覆盖测量（确定性，仅团队路径）：小段，随 optional 预算裁剪
         final String formationDepth = FormationDepthEvidence.renderSection(
                 context.battle(),
                 context.reconstruction(),
@@ -211,15 +221,15 @@ public final class TeamAiPromptBuilder {
                 context.battle() == null ? null : context.battle().mapName);
         if (!formationDepth.isEmpty()) {
             optTemp.append(formationDepth);
-        // 身后输出/血量优势（吸血/避战候选·确定性）：小段，随 optional 预算裁剪
-        final String behindLine = BehindLineHpEvidence.renderTeamSection(
+        }
+        // 身后血量/位置优势测量（确定性）：小段，随 optional 预算裁剪
+        final String behindLine = RelativeDepthHpEvidence.renderTeamSection(
                 context.battle(),
                 context.reconstruction(),
                 context.perspectiveTeam(),
                 limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
         if (!behindLine.isEmpty()) {
             optTemp.append(behindLine);
-        }
         }
         return optTemp.content();
     }
@@ -241,7 +251,11 @@ public final class TeamAiPromptBuilder {
             throw new IllegalStateException(
                     "validated team timeline rendered blank TACTICAL TIMELINE: map=" + timeline.mapCode());
         }
-        return "\n=== TACTICAL TIMELINE（时间有序战局章节·battle-relative 确定性） ===\n" + section;
+        // Focus Window 段（确定性）：与 TACTICAL TIMELINE 同一已验证 timeline 渲染，
+        // 只输出 1-3 个信息密度最高的决策窗口；无窗口时省略该段。
+        final String focusWindows = TeamAiContextCompiler.renderFocusWindowsSection(timeline, perspectiveTeam);
+        return "\n=== TACTICAL TIMELINE（时间有序战局章节·battle-relative 确定性） ===\n" + section
+                + (focusWindows.isBlank() ? "" : "\n" + focusWindows);
     }
 
     private static Set<String> collectLimitations(

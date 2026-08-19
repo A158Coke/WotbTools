@@ -3,6 +3,7 @@ package com.wotb.web.replay.ai;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wotb.core.processing.FriendlyEnemyResult.Winner;
 import org.junit.jupiter.api.Test;
@@ -154,7 +155,7 @@ class TeamAutopsyParserTest {
     }
 
     @Test
-    void rejectsEmptyObjectAndMissingRequiredVerdicts() {
+    void rejectsEmptyObjectButAllowsEmptyVerdictLists() {
         assertNull(TeamAutopsyParser.parse("{}", ROSTER, Winner.ENEMY_WIN));
         assertNull(TeamAutopsyParser.parse(
                 lossBody("\"players\":[]",
@@ -163,11 +164,17 @@ class TeamAutopsyParserTest {
 
         final String winWithoutMvp = fullBody(allPlayers("HIGH", "PARTIAL"),
                 "\"mvps\":[],\"biggestLiabilities\":[" + verdictJson("P1", "r", "e", "PARTIAL") + "]");
-        assertNull(TeamAutopsyParser.parse(winWithoutMvp, ROSTER, Winner.FRIENDLY_WIN));
+        final TeamAutopsyResult winResult =
+                TeamAutopsyParser.parse(winWithoutMvp, ROSTER, Winner.FRIENDLY_WIN);
+        assertNotNull(winResult, "判胜允许 mvps 为空（Quality Gate）");
+        assertTrue(winResult.mvps().isEmpty());
 
         final String lossWithoutLiability = fullBody(allPlayers("HIGH", "PARTIAL"),
                 "\"mvps\":[" + verdictJson("P1", "r", "e", "PARTIAL") + "],\"biggestLiabilities\":[]");
-        assertNull(TeamAutopsyParser.parse(lossWithoutLiability, ROSTER, Winner.ENEMY_WIN));
+        final TeamAutopsyResult lossResult =
+                TeamAutopsyParser.parse(lossWithoutLiability, ROSTER, Winner.ENEMY_WIN);
+        assertNotNull(lossResult, "判负允许 biggestLiabilities 为空（无数据支持的异常时不强行挑人）");
+        assertTrue(lossResult.biggestLiabilities().isEmpty());
     }
 
     @Test

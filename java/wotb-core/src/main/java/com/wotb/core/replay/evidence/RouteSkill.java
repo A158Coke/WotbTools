@@ -17,22 +17,26 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 路线 Skill（文档 §19）：只描述开局路线、区域变化、与主力脱节、进入敌方人数优势区域。
- * <p>不做"盲目抢山 / 错误走重坦线"等战术裁决——那是 Call #2 的职责。</p>
+ * 路线 Skill（文档 §19）：只描述开局路线、区域变化、与主要友军集群的空间分离、
+ * 进入局部区域时观察到的双方数量。
+ * <p>只输出事实与确定性测量，不做"盲目抢山 / 错误走重坦线 / 脱节 / 敌方人数优势"等
+ * 战术裁决——那是 Call #2（LLM）的职责（Backend Evidence Boundary）。</p>
  */
 public final class RouteSkill {
 
     public static final float OPENING_END_SEC = 45f;
-    public static final float DETACHMENT_RADIUS_M = 150f;
-    public static final float DETACHMENT_MIN_DURATION_SEC = 15f;
+    /** 与主要友军集群质心距离 ≥ 该值视为空间分离。 */
+    public static final float SEPARATION_RADIUS_M = 150f;
+    /** 空间分离的最小持续时长（秒）。 */
+    public static final float SEPARATION_MIN_DURATION_SEC = 15f;
     public static final int MAX_EVIDENCE = 6;
 
     public List<AiEvidence> detect(final EvidenceSkillContext ctx) {
         final List<AiEvidence> result = new ArrayList<>();
         final List<AiEvidence> opening = openingRoute(ctx);
         result.addAll(opening);
-        result.addAll(detachmentWindows(ctx));
-        result.addAll(enemyMajorityEntries(ctx));
+        result.addAll(separationWindows(ctx));
+        result.addAll(localObservedNumbersEntries(ctx));
         return result.size() <= MAX_EVIDENCE ? result : result.subList(0, MAX_EVIDENCE);
     }
 
@@ -77,8 +81,8 @@ public final class RouteSkill {
                 summary));
     }
 
-    /** 录像者与友军主力距离 ≥ 150m 且持续 ≥ 15s 的脱节窗口。 */
-    static List<AiEvidence> detachmentWindows(final EvidenceSkillContext ctx) {
+    /** 录像者与主要友军集群距离 ≥ 150m 且持续 ≥ 15s 的空间分离窗口（中性事实，不判脱节）。 */
+    static List<AiEvidence> separationWindows(final EvidenceSkillContext ctx) {
         if (ctx.recon() == null || ctx.recon().checkpoints() == null
                 || ctx.recorder() == null || ctx.recorder().entityId() == null
                 || ctx.recon().battleStartRawClockSec() == null) {
@@ -91,8 +95,8 @@ public final class RouteSkill {
         final Map<Long, Integer> teamByAccountId = teamByAccountId(ctx.battle());
         final Integer recorderTeam = ctx.recorder().team();
 
-        final List<DetachedSpan> spans = new ArrayList<>();
-        DetachedSpan current = null;
+        final List<SeparationSpan> spans = new ArrayList<>();
+        SeparationSpan current = null;
         for (final BattleStateCheckpoint cp : sorted) {
             final VehicleState recorder = cp.stateSnapshot().vehicleByEntityId(recorderEntity);
             if (recorder == null || recorder.position() == null
@@ -107,49 +111,50 @@ public final class RouteSkill {
             final float distance = MapRegionResolver.canonicalDistanceMeters(
                     recorder.position().x(), recorder.position().z(),
                     centroid[0], centroid[1], ctx.battle().mapName);
-            if (distance >= DETACHMENT_RADIUS_M) {
+            if (distance >= SEPARATION_RADIUS_M) {
                 if (current == null) {
-                    current = new DetachedSpan(rel, rel);
+                    current = new SeparationSpan(rel, rel);
                 } else {
-                    current = new DetachedSpan(current.startSec(), rel);
+                    current = new SeparationSpan(current.startSec(), rel);
                 }
             } else {
-                if (current != null && current.duration() >= DETACHMENT_MIN_DURATION_SEC) {
+                if (current != null && current.duration() >= SEPARATION_MIN_DURATION_SEC) {
                     spans.add(current);
                 }
                 current = null;
             }
         }
-        if (current != null && current.duration() >= DETACHMENT_MIN_DURATION_SEC) {
+        if (current != null && current.duration() >= SEPARATION_MIN_DURATION_SEC) {
             spans.add(current);
         }
 
         final List<AiEvidence> result = new ArrayList<>();
         int index = 0;
-        for (final DetachedSpan span : spans) {
+        for (final SeparationSpan span : spans) {
             if (index >= MAX_EVIDENCE) {
                 break;
             }
             index++;
             result.add(new AiEvidence(
-                    String.format("RT_DET_%02d", index),
+                    String.format("RT_SEP_%02d", index),
                     EvidenceType.ROUTE,
                     span.startSec(),
                     span.endSec(),
                     List.of(),
-                    Map.of("distanceM", (double) DETACHMENT_RADIUS_M),
+                    Map.of("distanceM", (double) SEPARATION_RADIUS_M),
                     Map.of(),
                     DecodeConfidence.PARTIAL,
                     EvidencePriority.IMPORTANT,
                     EvidenceProvenance.RECONSTRUCTION_INFERRED,
-                    String.format("与友军主力脱节 %.0fs（距离 ≥ %.0fm）", span.duration(), DETACHMENT_RADIUS_M)));
+                    String.format("与主要友军集群保持空间分离 %.0fs（距离 ≥ %.0fm）", span.duration(), SEPARATION_RADIUS_M)));
         }
         return result;
     }
 
-    /** 进入敌方人数优势区域（需友军侧完整覆盖：observedEnemy 是真实敌军下界，
-     * 只有 observedEnemy ≥ 精确友军 + 2 才能证明敌方人数优势）的移动段。 */
-    static List<AiEvidence> enemyMajorityEntries(final EvidenceSkillContext ctx) {
+    /** 进入局部区域时观察到的双方数量（需友军侧完整覆盖：observedEnemy 是真实敌军下界；
+     * 只有 observedEnemy ≥ 精确友军 + 2 才输出该局部数量事实）。只报数量，不判断是否构成
+     * 战术劣势（2v4 是否不利还取决于 HP/车型/位置/地形/射界，由 LLM 综合判断）。 */
+    static List<AiEvidence> localObservedNumbersEntries(final EvidenceSkillContext ctx) {
         if (ctx.features() == null || ctx.features().movements() == null
                 || ctx.recon() == null || ctx.recon().checkpoints() == null
                 || ctx.recorder() == null || ctx.recorder().entityId() == null
@@ -175,7 +180,7 @@ public final class RouteSkill {
             }
             index++;
             result.add(new AiEvidence(
-                    String.format("RT_EM_%02d", index),
+                    String.format("RT_LN_%02d", index),
                     EvidenceType.ROUTE,
                     seg.startTime(),
                     seg.endTime(),
@@ -186,7 +191,7 @@ public final class RouteSkill {
                     counts.confidence(),
                     EvidencePriority.IMPORTANT,
                     EvidenceProvenance.BACKEND_SKILL,
-                    String.format("进入观察到敌方人数优势区域（友军 %s / 敌军 %s，%s）",
+                    String.format("进入该局部区域时，观察到附近友军 %s、敌军至少 %s（%s）",
                             counts.friendlyLabel(), counts.enemyLabel(),
                             "GRID_REGION_" + counts.recorderRegion())));
         }
@@ -241,7 +246,7 @@ public final class RouteSkill {
         return accountId == null ? null : teamByAccountId.get(accountId);
     }
 
-    private record DetachedSpan(float startSec, float endSec) {
+    private record SeparationSpan(float startSec, float endSec) {
         float duration() {
             return endSec - startSec;
         }

@@ -280,32 +280,96 @@ final class PlayerPromptRules {
             3. Заголовки оформляйте как «## » (пробел после решёток), каждый заголовок — на отдельной строке,
                между заголовком и следующим абзацем оставляйте пустую строку; абзацы разделяйте пустыми строками.""";
 
-    /** Player 专用：单走行为判定规则（ZH；与 prompts/player/*.zh.md 内文本逐字一致）。 */
-    static final String SOLO_INTENT_RULE = """
+    /** Player 专用：空间分离证据使用规则（ZH；与 prompts/player/*.zh.md 内文本逐字一致）。
+     *  <p>Backend Evidence Boundary：SPATIAL_SEPARATION_EVIDENCE 是观察事实与确定性派生测量，
+     *  不是战术 verdict；拖延/脱节/有效牵制等判断由 LLM 完成。</p> */
+    static final String SEPARATION_EVIDENCE_RULE = """
 
-            === 单走行为判定规则（强制，随机战个人复盘） ===
-            1. 开局散开（首次接敌前或开局 45 秒内、未接火未承伤未阵亡）是图控/拿视野，不是脱节。
-            2. 单走判「拖延」需要可观测行为：静止/卡点/守点 + 有敌情压力（不撤退）；只基于位置、移动、交火判定行为模式，不得把行为模式说成玩家心理意图；正文不得出现「簇/质心/候选/规则候选/PARTIAL」等内部术语，一律转成自然中文。
-            3. 判「脱节」需要持续拉大距离 + 无掩护/无收益 + 被白吃或阵亡。
-            4. 证据不足或信号矛盾时明确写「无法从当前回放数据确定」，禁止硬下标签。""";
+            === 空间分离证据使用规则（强制，随机战个人复盘） ===
+            1. 后端 SPATIAL_SEPARATION_EVIDENCE 段提供的是【观察事实与确定性派生测量】（与队友/主力保持
+               空间分离的窗口、距离、距离增长、静止占比、移动覆盖、窗口内输出/承伤、阵亡、目标点邻近关系），
+               不是战术 verdict。判断「拖延 / 脱节 / 有效牵制 / 局部兵力不足 / 交换是否值得」是你（LLM）的
+               职责：把这些事实组合起来，得出 supported tactical inference。
+            2. 开局分散（OPENING_SPREAD）只表示「开局阶段与队友/主力拉开距离形成空间分离结构」，是中性
+               结构分类；可以分析「地图信息覆盖 ↔ 局部兵力集中度」的 trade-off，但不得把「可能获得更多
+               地图信息」说成「已经点亮了谁/提供了具体侦察收益」；开局分散不是天然正确也不是天然错误。
+            3. 只有专门且经过验证的 visibility/spotting evidence 才允许写「你成功点亮了 X」「你提供了具体视野」
+               等具体归因；没有这种 evidence 时，具体视野收益保持内部 UNKNOWN，不得声称具体点亮/侦察收益。
+            4. 判断空间分离的战术含义时，综合：窗口的距离/距离增长/静止占比、局部观察敌我数量、敌方已知信息、
+               窗口内交换结果（输出/承伤/阵亡）、后续是否及时合流/收缩/转场。只基于可观测行为（位置、移动、
+               交火、占点）判定行为模式，不得把行为模式说成玩家心理意图；正文不得出现「簇/质心/候选/规则候选/
+               PARTIAL」等内部术语，一律转成自然中文。
+            5. 数据不足时不得猜测：移动覆盖不足 → movementState=UNKNOWN；部分重叠交火无法可靠归属时后端不输出
+               该窗口；OBSERVED_DAMAGE_IS_PARTIAL 时不得用「没有观察到」证明未接火/未承伤。缺失本身保持内部
+               UNKNOWN——仅当该未知直接影响核心判断、因果判断或训练建议时才自然说明。
+            6. 开局分散的质量取决于拿到信息后是否及时响应：敌方主力方向确认后你是否及时合流/收缩/转场，被接敌
+               一侧的局部人数关系，队友支援能否及时赶到。
+            """;
+    static final String SEPARATION_EVIDENCE_RULE_EN = """
 
-    static final String SOLO_INTENT_RULE_EN = """
+            === SPATIAL SEPARATION EVIDENCE USAGE RULES (mandatory, random-battle personal review) ===
+            1. The backend SPATIAL_SEPARATION_EVIDENCE section provides OBSERVATIONS and DETERMINISTIC DERIVED
+               MEASUREMENTS (windows where you stayed spatially separated from teammates/the main body, distance,
+               distance growth, stationary ratio, movement coverage, in-window damage dealt/received, deaths,
+               objective proximity) — NOT tactical verdicts. Judging "delay / detachment / effective holding /
+               local force shortage / whether a trade was worth it" is YOUR (the LLM's) job: combine these facts
+               into a supported tactical inference.
+            2. An opening spread (OPENING_SPREAD) only means "you formed a spatially separated structure from
+               teammates/the main body during the opening phase" — a neutral structural classification. You may
+               analyze the trade-off of "information/spatial coverage ↔ local force concentration", but you may
+               NOT present "possibly gaining more map information" as "already spotted someone / provided specific
+               recon benefit"; an opening spread is neither inherently correct nor inherently wrong.
+            3. Only dedicated, validated visibility/spotting evidence allows specific claims like "you successfully
+               spotted X", "you provided specific vision"; without such evidence, the specific vision benefit stays
+               internal UNKNOWN — never claim specific spotting/recon benefits.
+            4. When judging the tactical meaning of the separation, weigh together: the window's distance / distance
+               growth / stationary ratio, locally observed friendly/enemy counts, known enemy information, the
+               in-window trade result (damage dealt/received/deaths), and whether you regrouped/contracted/rotated
+               in time afterwards. Judge behavior patterns only from observable behavior (position, movement,
+               engagements, capture points); never describe a behavior pattern as the player's mental intent. Never
+               echo internal terms such as cluster/centroid/candidate/PARTIAL; use natural language.
+            5. Do not guess when data is insufficient: insufficient movement coverage → movementState=UNKNOWN; when
+               an engagement cannot be reliably attributed (partial overlap) the backend does not emit that window;
+               under OBSERVED_DAMAGE_IS_PARTIAL never use "not observed" to prove "no contact / no damage". Gaps
+               stay internal UNKNOWN — explain naturally only when a gap directly affects the core judgment, causal
+               judgment, or training advice.
+            6. The quality of an opening spread depends on how you responded once information arrived: after the
+               enemy's main force direction was confirmed, did you regroup/contract/rotate in time, what were the
+               local force relations on the contacted side, and could teammates support in time.
+            """;
+    static final String SEPARATION_EVIDENCE_RULE_RU = """
 
-            === SOLO-PLAY JUDGMENT RULES (mandatory, random-battle personal review) ===
-            1. An opening spread (before first contact or within the first 45 seconds, no damage dealt/received, no destruction) is map control / vision gathering, not detachment.
-            2. Calling a solo play "delay" requires observable behavior: holding/stationary at a key point + enemy pressure (no retreat); judge behavior patterns only from position, movement and engagements, never describe a behavior pattern as the player's mental intent. Never echo internal terms such as cluster/centroid/candidate/PARTIAL; use natural language.
-            3. "Detachment" requires continuously increasing distance + no cover/no payoff + being caught out or destroyed.
-            4. When signals are insufficient or contradictory, explicitly write "cannot be determined from the current replay data" and never force a label.""";
-
-    static final String SOLO_INTENT_RULE_RU = """
-
-            === ПРАВИЛА ОЦЕНКИ ДЕЙСТВИЙ В ОДИНОЧКУ (обязательно, личный разбор случайного боя) ===
-            1. Рассредоточение на старте (до первого контакта или в первые 45 секунд, без нанесённого/полученного урона, без уничтожения) — это контроль карты / сбор разведданных, а не отрыв.
-            2. Называть действие «задержкой» можно только на основе наблюдаемого поведения: удержание/неподвижность на ключевой позиции + давление противника (без отхода); оценивайте паттерны только по позиции, движению и перестрелкам, не выдавайте паттерн за психологические намерения игрока. Не используйте внутренние термины (кластер/центроид/кандидат/PARTIAL); излагайте естественно.
-            3. «Отрыв» требует непрерывного увеличения дистанции + отсутствия прикрытия/выгоды + размена без пользы или уничтожения.
-            4. При недостатке или противоречивости сигналов прямо пишите «невозможно определить по данным реплея» и не навешивайте ярлык.""";
-
-    /** Player 专用：点数局势与攻防姿态（ZH；与 prompts/player/*.zh.md 内文本逐字一致）。 */
+            === ПРАВИЛА ИСПОЛЬЗОВАНИЯ ДОКАЗАТЕЛЬСТВ ПРОСТРАНСТВЕННОГО ОТДЕЛЕНИЯ (обязательно, личный разбор случайного боя) ===
+            1. Секция SPATIAL_SEPARATION_EVIDENCE на бэкенде предоставляет НАБЛЮДЕНИЯ и ДЕТЕРМИНИРОВАННЫЕ
+               ПРОИЗВОДНЫЕ ИЗМЕРЕНИЯ (окна, где вы держали пространственное отделение от союзников/основной
+               группы, дистанция, рост дистанции, доля неподвижности, покрытие движения, нанесённый/полученный
+               урон в окне, гибель, близость к целям) — а НЕ тактические вердикты. Оценка «задержка / отрыв /
+               эффективное удержание / нехватка локальных сил / стоило ли размениваться» — это ВАША (LLM)
+               задача: объедините эти факты в подтверждённый тактический вывод.
+            2. Рассредоточение на старте (OPENING_SPREAD) означает лишь «в начальной фазе вы образовали
+               пространственно разделённую структуру относительно союзников/основной группы» — нейтральная
+               структурная классификация. Вы можете анализировать размен «покрытие информацией/пространством ↔
+               концентрация локальных сил», но НЕ можете выдавать «возможно, получили больше информации о карте»
+               за «уже засветил кого-то / дал конкретную разведывательную выгоду»; рассредоточение на старте не
+               является ни изначально правильным, ни изначально ошибочным.
+            3. Только специальные проверенные visibility/spotting evidence позволяют писать конкретные
+               утверждения вроде «вы успешно засветили X», «вы обеспечили конкретный обзор»; без таких evidence
+               конкретная обзорная выгода остаётся внутренним UNKNOWN — не утверждайте конкретный засвет/разведку.
+            4. Оценивая тактический смысл отделения, взвесьте вместе: дистанцию/рост дистанции/долю неподвижности
+               окна, локально наблюдаемое число союзников/противников, известную информацию о противнике, результат
+               размена в окне (нанесённый/полученный урон, гибель) и то, успели ли вы вовремя перегруппироваться/
+               сжаться/ротироваться. Оценивайте только наблюдаемые паттерны поведения (позиция, движение,
+               перестрелки, захват точек); не выдавайте паттерн поведения за психологические намерения игрока.
+               Не используйте внутренние термины (кластер/центроид/кандидат/PARTIAL); излагайте естественно.
+            5. Не угадывайте при нехватке данных: недостаточное покрытие движения → movementState=UNKNOWN; когда
+               перестрелку нельзя надёжно отнести к окну (частичное пересечение), бэкенд не выводит это окно; при
+               OBSERVED_DAMAGE_IS_PARTIAL не используйте «не наблюдалось» как доказательство «нет контакта / нет
+               урона». Пробелы остаются внутренним UNKNOWN — объясняйте естественно, только если пробел напрямую
+               влияет на ключевой вывод, причинно-следственный вывод или рекомендацию.
+            6. Качество рассредоточения зависит от реакции после получения информации: после подтверждения
+               направления главных сил противника успели ли вы вовремя перегруппироваться/сжаться/ротироваться,
+               каково локальное соотношение сил на стороне контакта и успела ли подойти поддержка союзников.
+            """;
     static final String POINTS_SITUATION_RULE = """
 
             === 点数局势与攻防姿态（强制，随机战个人复盘） ===
@@ -313,66 +377,71 @@ final class PlayerPromptRules {
                精确领先幅度或「此刻领先多少分」式断言。击杀夺分时间线只表达「击杀换分项」的累计净差值，
                是部分可证明信号，不是整体点数：禁止把击杀换分项净劣势/优势直接写成整体点数落后/领先；
                终局点数落败只能描述终局结果，禁止反推早期任意时刻的整体点数状态。判断点数压力只能用
-               POINTS_SITUATION 段的可证明信号（击杀夺分时间线、占领点区域位置存在、推进窗口）与终局结算/结束方式。
+               POINTS_SITUATION 段的可证明信号（击杀夺分时间线、占领点区域位置存在、进入控制点区域窗口）与终局结算/结束方式。
             2. 条件式分析（允许，须写明前提）：若双方未通过占点取得更大的点数积累（占点积累不可观测），
-               击杀换分项净劣势的一方进攻压力更大——需要进攻抢点；击杀换分项净优势的一方可以更从容地
-               防守拉交叉：评价你（与你的队伍）的进攻/抢点/防守行为时，必须先说明这是基于击杀换分项与
+               击杀换分项净劣势的一方通常承受更大点数压力，净优势的一方压力更小——这只提示「点数压力方向」，
+               是否应该抢点/防守拉交叉由你综合局势自行推断，不得把「净劣势 ⇒ 需要进攻抢点」写成固定结论；
+               评价你（与你的队伍）的进攻/抢点/防守行为时，必须先说明这是基于击杀换分项与
                占点存在信号的推断，不得说成整体比分领先/落后。
             3. 进攻推进大概率付出掉血代价：评价掉血必须结合点数压力情境——为抢点/进攻付出的掉血未必是失误；
                无点数压力时的无谓掉血、无交换的单方面掉血才是问题。
-            4. 过路费：对方进攻推进窗口（PUSH_WINDOWS）内，你方对推进方造成的伤害就是过路费；窗口内对方几乎
-               无伤完成推进或达成占点存在（过路费明显不足）时，必须指出你方防守失误；伤害数字不可用
+            4. 进入控制点区域窗口（CONTROL_REGION_ENTRY_WINDOWS）只表达「车辆从控制点区域外移动进入控制点区域」
+               这一结构事实，本身不证明进攻/抢点/防守/转场，也不证明战术正确/错误。窗口内你方对进入车辆造成的伤害
+               只是可观测的换血事实；是否构成「防守过路费不足 / 该防守失误」必须由你综合击杀换分信号、区域位置存在、
+               局部人数、战局时间、伤害、阵亡与后续移动自行形成 supported tactical inference，
+               不得把「进入窗口 + 低伤害」固定映射成「必须指出防守方失误」。伤害数字不可用
                （OBSERVED_DAMAGE_IS_PARTIAL）时只做定性描述，不得报数字。
             5. 信号不足或矛盾时写「无法从当前回放数据确定」，不得硬下「落后/领先」结论。""";
 
     static final String POINTS_SITUATION_RULE_EN = """
 
             === POINTS SITUATION AND ATTACK/DEFENSE POSTURE (mandatory, random-battle personal review) ===
-            1. The absolute score at any moment before the end is undecoded (live score, capture progress, and passive accumulation have no evidence); never invent any mid-match score, an exact lead margin, or claims like "currently behind by X points". The kill-steal timeline expresses only the cumulative net delta of the "kill-steal component" — a partial provable signal, not the overall score: never present a net kill-steal deficit/lead as an overall points disadvantage/advantage; a final points loss describes only the final result — never retro-infer the overall points state at any earlier moment. Judge points pressure only from the provable signals in the POINTS_SITUATION section (kill-steal timeline, capture-point area presence, push windows) and the final settlement / end condition.
-            2. Conditional analysis is allowed but must state its premise: if neither team accumulated more points through captures (capture accumulation is not observable), the team with a net kill-steal deficit faces greater attack pressure — it needs to attack and capture; the team with a net kill-steal lead can more comfortably defend with crossfire: when judging your (and your team's) attack/capture/defense play, always state first that this is an inference based on the kill-steal component and capture-presence signals — never present it as an overall score lead/deficit.
+            1. The absolute score at any moment before the end is undecoded (live score, capture progress, and passive accumulation have no evidence); never invent any mid-match score, an exact lead margin, or claims like "currently behind by X points". The kill-steal timeline expresses only the cumulative net delta of the "kill-steal component" — a partial provable signal, not the overall score: never present a net kill-steal deficit/lead as an overall points disadvantage/advantage; a final points loss describes only the final result — never retro-infer the overall points state at any earlier moment. Judge points pressure only from the provable signals in the POINTS_SITUATION section (kill-steal timeline, capture-point area presence, control-region entry windows) and the final settlement / end condition.
+            2. Conditional analysis is allowed but must state its premise: if neither team accumulated more points through captures (capture accumulation is not observable), the team with a net kill-steal deficit usually bears greater points pressure and the team with a net kill-steal lead bears less — this only hints at the direction of points pressure; whether to push and capture or defend with crossfire is your inference from the whole situation, never write "net deficit ⇒ must push to capture" as a fixed rule; when judging your (and your team's) attack/capture/defense play, always state first that this is an inference based on the kill-steal component and capture-presence signals — never present it as an overall score lead/deficit.
             3. Attacking pushes usually cost HP: judge HP loss together with the points-pressure context — HP paid for a capture/push is not necessarily a mistake; pointless HP loss under no pressure, or one-sided loss without any trade, is the problem.
-            4. Toll: inside the opposing team's push window (PUSH_WINDOWS), the damage your team deals to the pushing team is the toll; when the opposing team completed the push or established capture-point presence almost unharmed (the toll is clearly insufficient), you must call out your team's defensive mistake; when damage numbers are unavailable (OBSERVED_DAMAGE_IS_PARTIAL), describe qualitatively only and never report numbers.
+            4. The control-region entry window (CONTROL_REGION_ENTRY_WINDOWS) only expresses the structural fact that vehicles moved from outside a control-point area into it — it does not by itself prove attack, capture, defense, rotation, or tactical rightness/wrongness. The damage your team deals to the entering vehicles is only an observable HP-exchange fact; whether it means "defensive toll was insufficient / a defensive mistake" must be your supported tactical inference from the kill-steal signal, control-region presence, local numbers, battle time, damage, deaths and subsequent movement — never map "entry window + low damage" to a mandatory "defensive mistake" verdict. When damage numbers are unavailable (OBSERVED_DAMAGE_IS_PARTIAL), describe qualitatively only and never report numbers.
             5. When signals are insufficient or contradictory, write "cannot be determined from the current replay data"; never force a "behind/ahead" conclusion.""";
 
     static final String POINTS_SITUATION_RULE_RU = """
 
             === СИТУАЦИЯ ПО ОЧКАМ И СТОЙКА АТАКИ/ОБОРОНЫ (обязательно, личный разбор случайного боя) ===
-            1. Абсолютный счёт в любой момент до конца боя не декодирован (живой счёт, прогресс захвата и пассивное накопление не имеют доказательств); запрещено выдумывать любой промежуточный счёт, точный отрыв или утверждения вида «сейчас позади на X очков». Таймлайн очков за фраги выражает только накопленную чистую разницу «компоненты очков за фраги» — частичный доказуемый сигнал, а не общий счёт: запрещено выдавать чистый минус/плюс по очкам за фраги за общее отставание/преимущество по очкам; поражение по очкам описывает только итоговый результат — запрещено обратно выводить общее состояние по очкам на любой ранний момент. Оценивайте давление по очкам только по доказуемым сигналам секции POINTS_SITUATION (таймлайн очков за фраги, присутствие в зонах точек захвата, окна продвижения) и итогу расчёта / условию завершения.
-            2. Условный анализ разрешён, но обязан указывать предпосылку: если ни одна команда не накопила больше очков захватом (накопление за захват ненаблюдаемо), команда с чистым минусом по очкам за фраги испытывает большее атакующее давление — ей нужно атаковать и захватывать точки; команда с чистым плюсом по очкам за фраги может спокойнее обороняться с перекрёстным огнём: оценивая ваши (и вашей команды) атаку/захват/оборону, всегда сначала указывайте, что это вывод на основе компоненты очков за фраги и сигналов присутствия на точках, — не выдавайте его за общий счёт впереди/позади.
+            1. Абсолютный счёт в любой момент до конца боя не декодирован (живой счёт, прогресс захвата и пассивное накопление не имеют доказательств); запрещено выдумывать любой промежуточный счёт, точный отрыв или утверждения вида «сейчас позади на X очков». Таймлайн очков за фраги выражает только накопленную чистую разницу «компоненты очков за фраги» — частичный доказуемый сигнал, а не общий счёт: запрещено выдавать чистый минус/плюс по очкам за фраги за общее отставание/преимущество по очкам; поражение по очкам описывает только итоговый результат — запрещено обратно выводить общее состояние по очкам на любой ранний момент. Оценивайте давление по очкам только по доказуемым сигналам секции POINTS_SITUATION (таймлайн очков за фраги, присутствие в зонах точек захвата, окна входа в зоны контроля) и итогу расчёта / условию завершения.
+            2. Условный анализ разрешён, но обязан указывать предпосылку: если ни одна команда не накопила больше очков захватом (накопление за захват ненаблюдаемо), команда с чистым минусом по очкам за фраги обычно испытывает большее давление по очкам, а команда с плюсом — меньшее; это лишь указывает направление давления — нужно ли атаковать и захватывать точки или обороняться с перекрёстным огнём, выводите сами из всей обстановки, не превращайте «минус ⇒ обязательно атаковать и захватывать» в фиксированное правило: оценивая ваши (и вашей команды) атаку/захват/оборону, всегда сначала указывайте, что это вывод на основе компоненты очков за фраги и сигналов присутствия на точках, — не выдавайте его за общий счёт впереди/позади.
             3. Атакующее продвижение обычно стоит HP: оценивайте потерю HP вместе с давлением по очкам — HP, отданные ради захвата/атаки, не обязательно ошибка; бесполезная потеря HP без давления или односторонняя потеря без размена — настоящая проблема.
-            4. Плата за проезд: в окне продвижения противника (PUSH_WINDOWS) урон, который ваша команда наносит продвигающимся, и есть плата за проезд; когда противник почти без потерь завершил продвижение или занял точку захвата (плата явно недостаточна), обязательно укажите ошибку вашей обороны; когда цифры урона недоступны (OBSERVED_DAMAGE_IS_PARTIAL), описывайте только качественно и не называйте чисел.
+            4. Окно входа в зону контроля (CONTROL_REGION_ENTRY_WINDOWS) выражает лишь структурный факт — машины переместились извне зоны точки захвата внутрь неё; само по себе оно не доказывает атаку, захват, оборону, ротацию или тактическую правильность/ошибочность. Урон, который ваша команда наносит входящим машинам, — лишь наблюдаемый факт обмена HP; означает ли он «недостаточную плату за проезд / ошибку обороны» — ваше supported tactical inference из сигнала очков за фраги, присутствия в зонах контроля, локальных чисел, времени боя, урона, потерь и последующего движения — никогда не превращайте «окно входа + низкий урон» в обязательный вердикт «ошибка обороны». Когда цифры урона недоступны (OBSERVED_DAMAGE_IS_PARTIAL), описывайте только качественно и не называйте чисел.
             5. При недостаточных или противоречивых сигналах пишите «невозможно определить по данным реплея»; не навязывайте вывод «позади/впереди».""";
 
-    /** 身后输出/血量优势（个人路径·中性）规则（ZH；与 prompts/player/single.zh.md 内文本逐字一致）。 */
-    static final String BEHIND_LINE_RULE = """
-            === 身后输出/血量优势规则（强制·中性） ===
-            BEHIND_LINE_HP_ADVANTAGE 段是关于你本人的确定性事实（位置/血量/距离/已观察攻击事件/tank profile）：
-            1. 若你具备扛线能力却在扛线队友身后输出（血量比率 ≥ 扛线队友 × 1.2 且距敌更远），这是中性事实——
-               复盘时用中性措辞描述（如「利用队友掩护输出」），不得作负面自我评价，也不得据此断言「吸血」。
-            2. 输出分类受事件流观测覆盖约束：OBSERVED_DAMAGE_IS_PARTIAL 时 outputStatus=UNKNOWN 表示「已观察攻击事件=0」，
-               不得据此推断你「无输出/避战」；HP_ADVANTAGE_UNKNOWN（血量数据不足）只提供位置与已观察攻击事件事实，不得判定吸血/避战。
-            3. degree=轻/中/重（跨阶段三因子分级）仅作事实参考。
+    /** 相对纵深/血量（个人路径·中性测量）规则（ZH；与 prompts/player/single.zh.md 内文本逐字一致）。 */
+    static final String RELATIVE_DEPTH_HP_RULE = """
+            === 相对纵深/血量测量规则（强制·中性） ===
+            RELATIVE_DEPTH_HP_MEASUREMENT 段是关于你本人的确定性测量（位置/血量比率/距敌距离差/已观察攻击事件/覆盖率/tank profile 静态事实）：
+            1. 参考成员（reference）由后端按<b>纯几何算法</b>选择：本阶段距观测敌方最近的存活本方成员；若你血量比率 ≥ 参考成员 × 1.2、距敌比参考成员更远，这只是后端筛选出的测量组合——
+               它不构成任何战术判断；是否说明你避战/利用队友掩护/保持安全输出距离，由你综合位置、输出、掉血、战局自行推断，
+               不得把该段直接写成「吸血」或「避战」结论，也不得把 reference 理解成「扛线队友」之类的战术角色。
+            2. 输出观测受事件流覆盖约束：coverage=PARTIAL 时 observedAttackEvents=0 只表示「已观察攻击事件=0」，
+               不得据此推断你「无输出/避战」；HP_RATIO_UNKNOWN（血量数据不足）只提供位置与已观察攻击事件事实。
+            3. 跨阶段出现（salience）只表示该测量组合在多个阶段成立，是显著性提示，不是负面分级。
             4. 未提供本段时（位置/血量观测不足）禁止编造。""";
 
-    static final String BEHIND_LINE_RULE_EN = """
+    static final String RELATIVE_DEPTH_HP_RULE_EN = """
 
-            === BEHIND-LINE OUTPUT / HP ADVANTAGE RULE (mandatory · neutral) ===
-            The BEHIND_LINE_HP_ADVANTAGE section contains deterministic facts about you (position/HP/distance/observed attack events/tank profile):
-            1. If you are frontline-capable yet output from behind the carrier teammate (HP ratio ≥ the teammate × 1.2 and farther from the enemy), that is a neutral fact —
-               describe it neutrally (e.g. "used teammate cover to output"); do not judge yourself negatively and never assert "HP-hoarding" from it.
-            2. Output classification respects event-stream observation coverage: under OBSERVED_DAMAGE_IS_PARTIAL, outputStatus=UNKNOWN means "observed attack events = 0" — never infer that you had "no output / avoided engagement"; HP_ADVANTAGE_UNKNOWN (insufficient HP data) provides only positional and observed-attack-event facts, never a behind-line/HP-hoarding judgement.
-            3. degree=light/medium/heavy (cross-phase three-factor grade) is a factual reference only.
+            === RELATIVE DEPTH / HP MEASUREMENT RULE (mandatory · neutral) ===
+            The RELATIVE_DEPTH_HP_MEASUREMENT section contains deterministic measurements about you (position/HP ratio/distance gap to the enemy/observed attack events/coverage/static tank-profile facts):
+            1. The reference member is chosen by the backend with a pure geometric algorithm: the alive own-team member nearest to the observed enemy in this phase; if your HP ratio ≥ the reference member × 1.2 while being farther from the enemy, that is only a measurement combination the backend filtered for your attention —
+               it is not any tactical judgement; whether it means you avoided engagement, used teammate cover to output, or kept a safe output distance is your inference from position, output, HP loss and the battle — never turn this section into a direct "HP-hoarding" or "avoiding" verdict, and never read "reference" as a tactical role like "front-line carrier".
+            2. Output observation respects event-stream coverage: with coverage=PARTIAL, observedAttackEvents=0 only means "observed attack events = 0" — never infer "no output / avoidance"; HP_RATIO_UNKNOWN (insufficient HP data) provides only positional and observed-attack-event facts.
+            3. Cross-phase appearance (salience) only shows the measurement combination held across several phases — a salience hint, not a negative grade.
             4. When this section is absent (insufficient position/HP observation), never fabricate it.""";
 
-    static final String BEHIND_LINE_RULE_RU = """
+    static final String RELATIVE_DEPTH_HP_RULE_RU = """
 
-            === ПРАВИЛО «ИГРА ЗА СПИНОЙ / ПРЕИМУЩЕСТВО ПО ОЗ» (обязательное · нейтрально) ===
-            Секция BEHIND_LINE_HP_ADVANTAGE содержит детерминированные факты о вас (позиция/ОЗ/дистанция/наблюдаемые события атаки/профиль танка):
-            1. Если вы способны держать фронт, но стреляете из-за спины союзника на первой линии (доля ОЗ ≥ союзника × 1.2 и вы дальше от противника), это нейтральный факт —
-               описывайте его нейтрально (например, «использовал прикрытие союзника для стрельбы»); не давайте себе негативных оценок и не утверждайте «накопление ОЗ».
-            2. Классификация выхода уважает полноту наблюдения событий: при OBSERVED_DAMAGE_IS_PARTIAL outputStatus=UNKNOWN означает «наблюдаемых событий атаки = 0» —
-               не выводите из этого «нет выхода/избегание боя»; HP_ADVANTAGE_UNKNOWN (недостаточно данных об ОЗ) даёт только факты о позиции и наблюдаемых событиях атаки, не вывод об игре за спиной/накоплении ОЗ.
-            3. degree=лёгкая/средняя/тяжёлая (трёхфакторная оценка за фазы) — только справочный факт.
+            === ПРАВИЛО ИЗМЕРЕНИЙ ОТНОСИТЕЛЬНОЙ ГЛУБИНЫ / ОЗ (обязательное · нейтрально) ===
+            Секция RELATIVE_DEPTH_HP_MEASUREMENT содержит детерминированные измерения о вас (позиция/доля ОЗ/разница дистанций до противника/наблюдаемые события атаки/полнота покрытия/статические факты тактического профиля):
+            1. Эталонный член (reference) выбирается бэкендом по чисто геометрическому алгоритму: ближайший к наблюдаемому противнику живой член своей команды в этой фазе; если ваша доля ОЗ ≥ доли эталона × 1.2 и вы дальше от противника, — это лишь комбинация измерений, отобранная бэкендом для вашего внимания;
+               она не является тактическим суждением; означает ли она избегание боя, использование прикрытия союзника для стрельбы или безопасную дистанцию — выводите сами из позиции, выхода, потери ОЗ и хода боя; не превращайте секцию в прямой вердикт «накопление ОЗ» или «избегание» и не читайте «reference» как тактическую роль вроде «держащий фронт».
+            2. Наблюдение выхода уважает полноту событий: при coverage=PARTIAL значение observedAttackEvents=0 означает только «наблюдаемых событий атаки = 0» —
+               не выводите «нет выхода/избегание боя»; HP_RATIO_UNKNOWN (недостаточно данных об ОЗ) даёт только факты о позиции и наблюдаемых событиях атаки.
+            3. Появление за несколько фаз (salience) лишь показывает, что комбинация измерений сохранялась в нескольких фазах, — это подсказка значимости, а не негативная оценка.
             4. Если секция отсутствует (недостаточно наблюдений позиций/ОЗ), запрещено её выдумывать.""";    /**
      * 组装 system prompt：ZH 返回原样（字节级不变）；EN/RU 在中文基座上替换中文输出强制句
      * （输出语言、时间格式、车种与称谓规则），保留业务事实约束与注入防护。
@@ -402,10 +471,10 @@ final class PlayerPromptRules {
                         en ? HP_LOSS_TIME_RULE_EN : HP_LOSS_TIME_RULE_RU)
                 .replace(COMMON_EVIDENCE_LOGIC_RULE,
                         en ? COMMON_EVIDENCE_LOGIC_RULE_EN : COMMON_EVIDENCE_LOGIC_RULE_RU)
-                .replace(SOLO_INTENT_RULE,
-                        en ? SOLO_INTENT_RULE_EN : SOLO_INTENT_RULE_RU)
-                .replace(BEHIND_LINE_RULE,
-                        en ? BEHIND_LINE_RULE_EN : BEHIND_LINE_RULE_RU)
+                .replace(SEPARATION_EVIDENCE_RULE,
+                        en ? SEPARATION_EVIDENCE_RULE_EN : SEPARATION_EVIDENCE_RULE_RU)
+                .replace(RELATIVE_DEPTH_HP_RULE,
+                        en ? RELATIVE_DEPTH_HP_RULE_EN : RELATIVE_DEPTH_HP_RULE_RU)
                 .replace(POINTS_SITUATION_RULE,
                         en ? POINTS_SITUATION_RULE_EN : POINTS_SITUATION_RULE_RU);
         if (zhPrompt.contains(ZH_TIME_RULE)) {

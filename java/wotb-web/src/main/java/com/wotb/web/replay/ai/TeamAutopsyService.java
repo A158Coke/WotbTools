@@ -22,7 +22,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Team Autopsy（team perspective 结算级 TEAM_AUTOPSY）：判负 → 战犯（≥1），判胜 → MVP（≥1）。
+ * Team Autopsy（team perspective 结算级 TEAM_AUTOPSY）：判负 → 重点复查对象（允许为空），判胜 → 高贡献者（允许为空）。
  * <p>输入 = 权威逐人结算（无 Strategic Prior / Critical Window / Route 证据），
  * 使用结算级 system prompt，LLM 判断的 confidence 仅允许 PARTIAL/UNKNOWN；
  * 仅当 recorderTeam 恰好存在 7 名有效本方玩家时才生成 P1..P7 并调用 Gateway，

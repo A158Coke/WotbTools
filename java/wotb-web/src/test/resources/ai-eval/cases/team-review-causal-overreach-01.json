@@ -1,0 +1,23 @@
+{
+  "id": "team-review-causal-overreach-01",
+  "mode": "TEAM_PERSPECTIVE",
+  "arenaBonusType": 2,
+  "fixtureKey": "cw-annihilation-loss-01",
+  "lessonRef": "docs/ai-lessons/team-review-causal-overreach-01.md",
+  "expectedJudgment": "因果过度断言必须降级：只确认连续减员与交换恶化等 canonical facts，原因 UNKNOWN；禁止掩体/视野/车辆角色/精确数字/残局万能规则",
+  "checks": [
+    {
+      "kind": "prompt_contains",
+      "text": "OBSERVED_EVENT_SUBSET_NOT_AUTHORITATIVE"
+    },
+    {
+      "kind": "prompt_contains",
+      "text": "AUTHORITATIVE_TEAM_RESULT"
+    },
+    {
+      "kind": "prompt_omits",
+      "text": "主要战犯"
+    }
+  ],
+  "note": "真实失败案例（20260817 WildCat SPHT 回放）驱动的契约回归：team/single 证据契约 + 渲染边界。语义断言见 TeamReviewQualityGateContractTest / AiEvalHarnessTest。"
+}

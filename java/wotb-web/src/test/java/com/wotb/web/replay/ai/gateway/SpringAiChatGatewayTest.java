@@ -349,7 +349,7 @@ class SpringAiChatGatewayTest {
     private static AiModelProperties properties(final String apiKey, final String baseUrl, final String model) {
         return new AiModelProperties(
                 apiKey, baseUrl, model, 10, 300, 315, 3, 1000, 8000, 2.0,
-                1_000_000, 940_000, 32_768, 16_384, true, "max", false);
+                1_000_000, 940_000, 32_768, 16_384, true, "max", false, 4096);
     }
 
     private static ErrorObject error(final String message) {

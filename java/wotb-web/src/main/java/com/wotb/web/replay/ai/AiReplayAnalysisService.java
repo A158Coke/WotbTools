@@ -63,7 +63,7 @@ public class AiReplayAnalysisService {
                 tokenEstimator, model,
                 Math.max(1, singleReplayMaxInputTokens),
                 contextWindowTokens, maxOutputTokens, promptSafetyMarginTokens,
-                call2ThinkingEnabled, reasoningEffort, 315);
+                call2ThinkingEnabled, reasoningEffort, 315, 4096);
         this.playerService = new PlayerReplayAnalysisService(gateway, config);
         this.teamService = new TeamReplayAnalysisService(
                 gateway, config,

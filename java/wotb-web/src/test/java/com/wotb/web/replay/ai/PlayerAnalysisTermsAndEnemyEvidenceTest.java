@@ -9,7 +9,6 @@ import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.feature.BattlePhaseType;
-import com.wotb.core.replay.feature.EngagementOutcome;
 import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import org.junit.jupiter.api.Test;
@@ -141,13 +140,22 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
     }
 
     @Test
-    void promptsRequirePerVehicleEnemyAnalysis() {
-        allSystemPrompts().forEach(prompt -> assertTrue(
-                prompt.contains("必须逐车分析敌方阵容") || prompt.contains("必须逐车分析对方阵容"), prompt));
+    void promptsRequireEnemyAnalysisWithTeamCap() {
+        // player 路径仍强制逐车分析敌方阵容（个人复盘需要逐对手威胁）
         assertTrue(PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT
                 .contains("敌方阵容逐车分析"), PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT);
         assertTrue(PlayerReplayPromptBuilder.SYSTEM_PROMPT
                 .contains("逐车分析敌方阵容"), PlayerReplayPromptBuilder.SYSTEM_PROMPT);
+        assertTrue(PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT
+                .contains("必须逐车分析敌方阵容"), PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT);
+        // 团队路径（AI Review V2.1 + PR #103 最终收尾）：对方关键威胁是【可选】内容，
+        // 不再强制逐车作文，也不再无条件强制「指出对方主要威胁」
+        final String team = TeamReplayAnalysisService.SINGLE_TEAM_PROMPT;
+        assertTrue(team.contains("对方关键威胁是【可选】内容"), team);
+        assertTrue(team.contains("只有对核心复盘确有价值时才指出 1-3 辆对方关键威胁"), team);
+        assertFalse(team.contains("逐车分析对方阵容"), "团队复盘不得强制逐车作文");
+        assertFalse(team.contains("分析对方阵容并指出对方主要威胁车辆"),
+                "团队复盘不得保留无条件 mandatory 威胁规则");
     }
 
     // ---- 3. 双方对炮明细 ----
@@ -227,10 +235,6 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         assertEquals("首次接敌", PlayerAnalysisTerms.phaseLabel(BattlePhaseType.FIRST_CONTACT));
         assertEquals("准备阶段", PlayerAnalysisTerms.phaseLabel(BattlePhaseType.PRE_BATTLE));
 
-        assertEquals("有利", PlayerAnalysisTerms.outcomeLabel(EngagementOutcome.FAVORABLE));
-        assertEquals("不利", PlayerAnalysisTerms.outcomeLabel(EngagementOutcome.UNFAVORABLE));
-        assertEquals("均势", PlayerAnalysisTerms.outcomeLabel(EngagementOutcome.EVEN));
-
         assertEquals("移动", PlayerAnalysisTerms.movementLabel(MovementType.MOVING));
         assertEquals("静止", PlayerAnalysisTerms.movementLabel(MovementType.STATIONARY));
 
@@ -246,10 +250,6 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         for (final BattlePhaseType type : BattlePhaseType.values()) {
             assertFalse(PlayerAnalysisTerms.phaseLabel(type).matches("[A-Z_]+"),
                     "phase 未中文化: " + type);
-        }
-        for (final EngagementOutcome outcome : EngagementOutcome.values()) {
-            assertFalse(PlayerAnalysisTerms.outcomeLabel(outcome).matches("[A-Z_]+"),
-                    "outcome 未中文化: " + outcome);
         }
         for (final MovementType type : MovementType.values()) {
             assertFalse(PlayerAnalysisTerms.movementLabel(type).matches("[A-Z_]+"),

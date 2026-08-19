@@ -21,7 +21,6 @@ final class TeamEngagementExtractor {
     }
 
     static final int ENGAGEMENT_GAP_SEC = 10;
-    static final double ENGAGEMENT_OUTCOME_RATIO = 1.25;
     static final float FOCUS_FIRE_WINDOW_SEC = 5f;
     static final int MIN_FOCUS_FIRE_ATTACKERS = 2;
 
@@ -153,7 +152,6 @@ final class TeamEngagementExtractor {
                 base.damageReceived(),
                 focusedTargets,
                 targetSwitchCount,
-                base.outcome(),
                 base.confidence());
     }
 
@@ -215,11 +213,6 @@ final class TeamEngagementExtractor {
             confidence = DefaultTeamBattleFeatureExtractor.lowerConfidence(confidence, damage.attacker().confidence());
             confidence = DefaultTeamBattleFeatureExtractor.lowerConfidence(confidence, damage.victim().confidence());
         }
-        final EngagementOutcome outcome = dealt > received * ENGAGEMENT_OUTCOME_RATIO
-                ? EngagementOutcome.FAVORABLE
-                : received > dealt * ENGAGEMENT_OUTCOME_RATIO
-                ? EngagementOutcome.UNFAVORABLE
-                : EngagementOutcome.EVEN;
         return new EngagementSummary(
                 timedEvents.getFirst().battleRelativeSec(),
                 timedEvents.getLast().battleRelativeSec(),
@@ -229,7 +222,6 @@ final class TeamEngagementExtractor {
                 received,
                 null,
                 null,
-                outcome,
                 confidence);
     }
 
