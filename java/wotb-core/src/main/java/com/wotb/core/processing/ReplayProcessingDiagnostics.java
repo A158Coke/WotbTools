@@ -5,10 +5,10 @@ import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
 /**
  * 单个文件的处理诊断信息。
  *
- * @param summaryParseSuccess   战绩解析是否成功
- * @param streamScanSuccess     事件流扫描是否完整
+ * @param summaryParseSuccess 战绩解析是否成功
+ * @param streamScanSuccess   事件流扫描是否完整
  * @param reconstructionSuccess 状态重建是否完成
- * @param diagnostics           事件流诊断（如有扫描）
+ * @param diagnostics         事件流诊断（如有扫描）
  */
 public record ReplayProcessingDiagnostics(
         boolean summaryParseSuccess,

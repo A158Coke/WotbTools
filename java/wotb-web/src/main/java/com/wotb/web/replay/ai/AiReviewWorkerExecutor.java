@@ -45,7 +45,7 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
     static final int DEFAULT_QUEUE_CAPACITY = 4;
     static final long DEFAULT_OVERALL_DEADLINE_SEC = 1100;
 
-    private final ThreadPoolExecutor executor;
+private final ThreadPoolExecutor executor;
     private final long overallDeadlineNanos;
     private final MeterRegistry meterRegistry;
 
@@ -55,10 +55,10 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
      * {@code wotb.ai.review-worker.overall-deadline-sec} 读取配置（默认 4/4/1100）。
      * 测试可直接传字面值调用（{@code @Value} 仅 Spring 容器处理）。
      *
-     * @param maxConcurrent      worker 线程数（core = max，固定不弹性伸缩），必须 ≥ 1
-     * @param queueCapacity      有界队列容量，必须 ≥ 1
-     * @param overallDeadlineSec 请求整体 deadline（秒），必须 ≥ 1
-     * @param meterRegistry      可选 Micrometer 注册表（运行时缺失时为 {@code null}，跳过指标记录）
+     * @param maxConcurrent    worker 线程数（core = max，固定不弹性伸缩），必须 ≥ 1
+     * @param queueCapacity    有界队列容量，必须 ≥ 1
+     * @param overallDeadlineSec  请求整体 deadline（秒），必须 ≥ 1
+     * @param meterRegistry    可选 Micrometer 注册表（运行时缺失时为 {@code null}，跳过指标记录）
      */
     @Autowired
     public AiReviewWorkerExecutor(
@@ -90,16 +90,12 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
         this.meterRegistry = meterRegistry;
     }
 
-    /**
-     * 测试便利构造器：使用默认 4/4/1100。
-     */
+    /** 测试便利构造器：使用默认 4/4/1100。 */
     public AiReviewWorkerExecutor() {
         this(DEFAULT_MAX_CONCURRENT, DEFAULT_QUEUE_CAPACITY, DEFAULT_OVERALL_DEADLINE_SEC, null);
     }
 
-    /**
-     * 测试便利构造器：指定 workers/queue，整体 deadline 用默认 1100s。
-     */
+    /** 测试便利构造器：指定 workers/queue，整体 deadline 用默认 1100s。 */
     public AiReviewWorkerExecutor(final int maxConcurrent, final int queueCapacity) {
         this(maxConcurrent, queueCapacity, DEFAULT_OVERALL_DEADLINE_SEC, null);
     }

@@ -27,9 +27,7 @@ public final class TimelineMapEnricher {
         this.semantics = semanticsRegistry.semanticsFor(this.mapCode);
     }
 
-    /**
-     * 对位置采样 enrich；无位置时返回 UNKNOWN。
-     */
+    /** 对位置采样 enrich；无位置时返回 UNKNOWN。 */
     FrameMapState enrich(final EntityIndex.PosSample pos) {
         if (pos == null) {
             return FrameMapState.UNKNOWN;

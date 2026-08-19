@@ -7,9 +7,7 @@ import org.springframework.stereotype.Component;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Semaphore;
 
-/**
- * 以非阻塞信号量限制单实例内同时执行的回放解析任务。
- */
+/** 以非阻塞信号量限制单实例内同时执行的回放解析任务。 */
 @Component
 public class ReplayCapacityLimiter {
 

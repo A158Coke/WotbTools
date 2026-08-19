@@ -71,8 +71,8 @@ final class DeathTimeEstimator {
      * 用 Type 8 EntityMethod (subtype 8 = damage) 推算各玩家死亡时间秒。
      * body 25B 格式: len(4) + attackerEid(4) + victimEid(4) + type(1) + sub(1) + dmgBE(2) + data(6) + flag(1)
      * sub=3 = direct HP damage. 双遍扫描：
-     * 第 1 遍: 累计每个玩家的 sub3 总量 (sub3Total)。
-     * 第 2 遍: 按时间顺序推进, 当累计值 >= threshold (= min(accountToThreshold, sub3Total)) 时记录阵亡时刻。
+     *   第 1 遍: 累计每个玩家的 sub3 总量 (sub3Total)。
+     *   第 2 遍: 按时间顺序推进, 当累计值 >= threshold (= min(accountToThreshold, sub3Total)) 时记录阵亡时刻。
      * 返回 map: account_id → death_time_sec (0=未知).
      */
     public static Map<Long, Double> estimateDeathTimesByDamage(

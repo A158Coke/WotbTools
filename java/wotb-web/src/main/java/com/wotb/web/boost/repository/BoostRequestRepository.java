@@ -13,9 +13,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * 陪练需求仓库。
- */
+/** 陪练需求仓库。 */
 public interface BoostRequestRepository extends JpaRepository<BoostRequest, Long> {
 
     List<BoostRequest> findByRequesterUserIdOrderByCreatedAtDesc(final String requesterUserId);

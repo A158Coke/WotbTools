@@ -4,9 +4,10 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import org.junit.jupiter.api.Test;
 
 import java.util.List;
+
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -175,15 +176,9 @@ class BatchAnalyzerTest {
     @Test
     void mixedRecorderThrowsException() {
         final Battle b1 = new Battle();
-        b1.arenaId = "arena1";
-        b1.mapName = "map1";
-        b1.arenaBonusType = 1;
-        final PlayerResult p1 = new PlayerResult();
-        p1.accountId = 1000L;
-        p1.nickname = "PlayerA";
-        p1.team = 1;
-        b1.players = List.of(p1);
-        b1.recorder = "PlayerA";
+        b1.arenaId = "arena1"; b1.mapName = "map1"; b1.arenaBonusType = 1;
+        final PlayerResult p1 = new PlayerResult(); p1.accountId = 1000L; p1.nickname = "PlayerA"; p1.team = 1;
+        b1.players = List.of(p1); b1.recorder = "PlayerA";
         final ReplayReconstruction rec1 = new ReplayReconstruction(null, null, 300f, null,
                 List.of(new BattleParticipant(1000L, "PlayerA", 1, 0, "", true)),
                 List.of(), List.of(), null, null, null);
@@ -191,15 +186,9 @@ class BatchAnalyzerTest {
         final var r1 = new ReplayProcessingResult("a.wotbreplay", ReplayProcessingStatus.SUCCESS, null, b1, rec1, null, caps1, null, null);
 
         final Battle b2 = new Battle();
-        b2.arenaId = "arena2";
-        b2.mapName = "map2";
-        b2.arenaBonusType = 1;
-        final PlayerResult p2 = new PlayerResult();
-        p2.accountId = 2000L;
-        p2.nickname = "PlayerB";
-        p2.team = 1;
-        b2.players = List.of(p2);
-        b2.recorder = "PlayerB";
+        b2.arenaId = "arena2"; b2.mapName = "map2"; b2.arenaBonusType = 1;
+        final PlayerResult p2 = new PlayerResult(); p2.accountId = 2000L; p2.nickname = "PlayerB"; p2.team = 1;
+        b2.players = List.of(p2); b2.recorder = "PlayerB";
         final ReplayReconstruction rec2 = new ReplayReconstruction(null, null, 300f, null,
                 List.of(new BattleParticipant(2000L, "PlayerB", 1, 0, "", true)),
                 List.of(), List.of(), null, null, null);
@@ -215,28 +204,16 @@ class BatchAnalyzerTest {
     @Test
     void mixedRecorderNoReconstructionThrows() {
         final Battle b1 = new Battle();
-        b1.arenaId = "arena1";
-        b1.mapName = "map1";
-        b1.arenaBonusType = 1;
-        final PlayerResult p1 = new PlayerResult();
-        p1.accountId = 1000L;
-        p1.nickname = "PlayerA";
-        p1.team = 1;
-        b1.players = List.of(p1);
-        b1.recorder = "PlayerA";
+        b1.arenaId = "arena1"; b1.mapName = "map1"; b1.arenaBonusType = 1;
+        final PlayerResult p1 = new PlayerResult(); p1.accountId = 1000L; p1.nickname = "PlayerA"; p1.team = 1;
+        b1.players = List.of(p1); b1.recorder = "PlayerA";
         final var caps1 = new ReplayProcessingCapabilities(true, true, false, false, false, false, false, false);
         final var r1 = new ReplayProcessingResult("a.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS, null, b1, null, null, caps1, null, null);
 
         final Battle b2 = new Battle();
-        b2.arenaId = "arena2";
-        b2.mapName = "map2";
-        b2.arenaBonusType = 1;
-        final PlayerResult p2 = new PlayerResult();
-        p2.accountId = 2000L;
-        p2.nickname = "PlayerB";
-        p2.team = 1;
-        b2.players = List.of(p2);
-        b2.recorder = "PlayerB";
+        b2.arenaId = "arena2"; b2.mapName = "map2"; b2.arenaBonusType = 1;
+        final PlayerResult p2 = new PlayerResult(); p2.accountId = 2000L; p2.nickname = "PlayerB"; p2.team = 1;
+        b2.players = List.of(p2); b2.recorder = "PlayerB";
         final var caps2 = new ReplayProcessingCapabilities(true, true, false, false, false, false, false, false);
         final var r2 = new ReplayProcessingResult("b.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS, null, b2, null, null, caps2, null, null);
 
@@ -247,28 +224,16 @@ class BatchAnalyzerTest {
     @Test
     void sameRecorderNoReconstructionNoException() {
         final Battle b1 = new Battle();
-        b1.arenaId = "arena1";
-        b1.mapName = "map1";
-        b1.arenaBonusType = 1;
-        final PlayerResult p1 = new PlayerResult();
-        p1.accountId = 1000L;
-        p1.nickname = "PlayerA";
-        p1.team = 1;
-        b1.players = List.of(p1);
-        b1.recorder = "PlayerA";
+        b1.arenaId = "arena1"; b1.mapName = "map1"; b1.arenaBonusType = 1;
+        final PlayerResult p1 = new PlayerResult(); p1.accountId = 1000L; p1.nickname = "PlayerA"; p1.team = 1;
+        b1.players = List.of(p1); b1.recorder = "PlayerA";
         final var caps1 = new ReplayProcessingCapabilities(true, true, false, false, false, false, false, false);
         final var r1 = new ReplayProcessingResult("a.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS, null, b1, null, null, caps1, null, null);
 
         final Battle b2 = new Battle();
-        b2.arenaId = "arena2";
-        b2.mapName = "map2";
-        b2.arenaBonusType = 1;
-        final PlayerResult p2 = new PlayerResult();
-        p2.accountId = 1000L;
-        p2.nickname = "PlayerA";
-        p2.team = 1;
-        b2.players = List.of(p2);
-        b2.recorder = "PlayerA";
+        b2.arenaId = "arena2"; b2.mapName = "map2"; b2.arenaBonusType = 1;
+        final PlayerResult p2 = new PlayerResult(); p2.accountId = 1000L; p2.nickname = "PlayerA"; p2.team = 1;
+        b2.players = List.of(p2); b2.recorder = "PlayerA";
         final var caps2 = new ReplayProcessingCapabilities(true, true, false, false, false, false, false, false);
         final var r2 = new ReplayProcessingResult("b.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS, null, b2, null, null, caps2, null, null);
 
@@ -281,15 +246,9 @@ class BatchAnalyzerTest {
     void exactDuplicateContentIsDeduped() {
         final var identity = new ReplayIdentity("same-hash", null, null, null, null, null);
         final Battle b = new Battle();
-        b.arenaId = "arena1";
-        b.mapName = "map1";
-        b.arenaBonusType = 1;
-        final PlayerResult pr = new PlayerResult();
-        pr.accountId = 1000L;
-        pr.nickname = "PlayerA";
-        pr.team = 1;
-        b.players = List.of(pr);
-        b.recorder = "PlayerA";
+        b.arenaId = "arena1"; b.mapName = "map1"; b.arenaBonusType = 1;
+        final PlayerResult pr = new PlayerResult(); pr.accountId = 1000L; pr.nickname = "PlayerA"; pr.team = 1;
+        b.players = List.of(pr); b.recorder = "PlayerA";
         final var caps = new ReplayProcessingCapabilities(true, true, true, true, true, false, true, false);
 
         final var r1 = new ReplayProcessingResult("a.wotbreplay", ReplayProcessingStatus.SUCCESS, identity, b, null, null, caps, null, null);
@@ -307,15 +266,9 @@ class BatchAnalyzerTest {
         final var id1 = new ReplayIdentity("hash-1", null, null, null, null, null);
         final var id2 = new ReplayIdentity("hash-2", null, null, null, null, null);
         final Battle b = new Battle();
-        b.arenaId = "arena1";
-        b.mapName = "map1";
-        b.arenaBonusType = 1;
-        final PlayerResult pr = new PlayerResult();
-        pr.accountId = 1000L;
-        pr.nickname = "PlayerA";
-        pr.team = 1;
-        b.players = List.of(pr);
-        b.recorder = "PlayerA";
+        b.arenaId = "arena1"; b.mapName = "map1"; b.arenaBonusType = 1;
+        final PlayerResult pr = new PlayerResult(); pr.accountId = 1000L; pr.nickname = "PlayerA"; pr.team = 1;
+        b.players = List.of(pr); b.recorder = "PlayerA";
         final var caps = new ReplayProcessingCapabilities(true, true, true, true, true, false, true, false);
 
         final var r1 = new ReplayProcessingResult("p1.wotbreplay", ReplayProcessingStatus.SUCCESS, id1, b, null, null, caps, null, null);
@@ -331,15 +284,9 @@ class BatchAnalyzerTest {
     void exactDuplicateNotCountedAsTeamDuplicate() {
         final var identity = new ReplayIdentity("same-hash", null, null, null, null, null);
         final Battle b = new Battle();
-        b.arenaId = "arena1";
-        b.mapName = "map1";
-        b.arenaBonusType = 1;
-        final PlayerResult pr = new PlayerResult();
-        pr.accountId = 1000L;
-        pr.nickname = "PlayerA";
-        pr.team = 1;
-        b.players = List.of(pr);
-        b.recorder = "PlayerA";
+        b.arenaId = "arena1"; b.mapName = "map1"; b.arenaBonusType = 1;
+        final PlayerResult pr = new PlayerResult(); pr.accountId = 1000L; pr.nickname = "PlayerA"; pr.team = 1;
+        b.players = List.of(pr); b.recorder = "PlayerA";
         final var caps = new ReplayProcessingCapabilities(true, true, true, true, true, false, true, false);
 
         final var r1 = new ReplayProcessingResult("a.wotbreplay", ReplayProcessingStatus.SUCCESS, identity, b, null, null, caps, null, null);
@@ -357,15 +304,10 @@ class BatchAnalyzerTest {
     @Test
     void unknownCategoryResultIsExcluded() {
         final Battle b = new Battle();
-        b.arenaId = "arena1";
-        b.mapName = "map1";
+        b.arenaId = "arena1"; b.mapName = "map1";
         // arenaBonusType left null → UNKNOWN category
-        final PlayerResult pr = new PlayerResult();
-        pr.accountId = 1000L;
-        pr.nickname = "PlayerA";
-        pr.team = 1;
-        b.players = List.of(pr);
-        b.recorder = "PlayerA";
+        final PlayerResult pr = new PlayerResult(); pr.accountId = 1000L; pr.nickname = "PlayerA"; pr.team = 1;
+        b.players = List.of(pr); b.recorder = "PlayerA";
         final var caps = new ReplayProcessingCapabilities(true, true, false, false, false, false, false, false);
 
         final var r = new ReplayProcessingResult("unknown.wotbreplay", ReplayProcessingStatus.SUCCESS, null, b, null, null, caps, null, null);
@@ -379,28 +321,17 @@ class BatchAnalyzerTest {
     void unknownAndRandomMixedThrows() {
         // RANDOM result
         final Battle b1 = new Battle();
-        b1.arenaId = "arena1";
-        b1.mapName = "map1";
-        b1.arenaBonusType = 1;
-        final PlayerResult p1 = new PlayerResult();
-        p1.accountId = 1000L;
-        p1.nickname = "PlayerA";
-        p1.team = 1;
-        b1.players = List.of(p1);
-        b1.recorder = "PlayerA";
+        b1.arenaId = "arena1"; b1.mapName = "map1"; b1.arenaBonusType = 1;
+        final PlayerResult p1 = new PlayerResult(); p1.accountId = 1000L; p1.nickname = "PlayerA"; p1.team = 1;
+        b1.players = List.of(p1); b1.recorder = "PlayerA";
         final var caps1 = new ReplayProcessingCapabilities(true, true, true, true, true, false, true, false);
         final var r1 = new ReplayProcessingResult("random.wotbreplay", ReplayProcessingStatus.SUCCESS, null, b1, null, null, caps1, null, null);
 
         // UNKNOWN result
         final Battle b2 = new Battle();
-        b2.arenaId = "arena2";
-        b2.mapName = "map2";
-        final PlayerResult p2 = new PlayerResult();
-        p2.accountId = 2000L;
-        p2.nickname = "PlayerB";
-        p2.team = 2;
-        b2.players = List.of(p2);
-        b2.recorder = "PlayerB";
+        b2.arenaId = "arena2"; b2.mapName = "map2";
+        final PlayerResult p2 = new PlayerResult(); p2.accountId = 2000L; p2.nickname = "PlayerB"; p2.team = 2;
+        b2.players = List.of(p2); b2.recorder = "PlayerB";
         final var caps2 = new ReplayProcessingCapabilities(true, true, false, false, false, false, false, false);
         final var r2 = new ReplayProcessingResult("unknown.wotbreplay", ReplayProcessingStatus.SUCCESS, null, b2, null, null, caps2, null, null);
 
@@ -412,14 +343,9 @@ class BatchAnalyzerTest {
     void unknownCategoryDoesNotAffectExactDuplicateCount() {
         final var identity = new ReplayIdentity("hash-x", null, null, null, null, null);
         final Battle b = new Battle();
-        b.arenaId = "arena1";
-        b.mapName = "map1";
-        final PlayerResult pr = new PlayerResult();
-        pr.accountId = 1000L;
-        pr.nickname = "PlayerA";
-        pr.team = 1;
-        b.players = List.of(pr);
-        b.recorder = "PlayerA";
+        b.arenaId = "arena1"; b.mapName = "map1";
+        final PlayerResult pr = new PlayerResult(); pr.accountId = 1000L; pr.nickname = "PlayerA"; pr.team = 1;
+        b.players = List.of(pr); b.recorder = "PlayerA";
         final var caps = new ReplayProcessingCapabilities(true, true, false, false, false, false, false, false);
 
         final var r1 = new ReplayProcessingResult("a.wotbreplay", ReplayProcessingStatus.SUCCESS, identity, b, null, null, caps, null, null);
@@ -436,15 +362,9 @@ class BatchAnalyzerTest {
     void failedFileNotCountedInDuplicateOrGroup() {
         final var identity = new ReplayIdentity("hash-1", null, null, null, null, null);
         final Battle b = new Battle();
-        b.arenaId = "arena1";
-        b.mapName = "map1";
-        b.arenaBonusType = 1;
-        final PlayerResult pr = new PlayerResult();
-        pr.accountId = 1000L;
-        pr.nickname = "PlayerA";
-        pr.team = 1;
-        b.players = List.of(pr);
-        b.recorder = "PlayerA";
+        b.arenaId = "arena1"; b.mapName = "map1"; b.arenaBonusType = 1;
+        final PlayerResult pr = new PlayerResult(); pr.accountId = 1000L; pr.nickname = "PlayerA"; pr.team = 1;
+        b.players = List.of(pr); b.recorder = "PlayerA";
         final var caps = new ReplayProcessingCapabilities(true, true, true, true, true, false, true, false);
 
         final var valid = new ReplayProcessingResult("good.wotbreplay", ReplayProcessingStatus.SUCCESS, identity, b, null, null, caps, null, null);
@@ -463,16 +383,9 @@ class BatchAnalyzerTest {
     void sameArenaIdSameTeamGroupsTogether() {
         final var id1 = new ReplayIdentity("h1", "arena-1", null, null, null, null);
         final var id2 = new ReplayIdentity("h2", "arena-1", null, null, null, null);
-        final Battle b = new Battle();
-        b.arenaId = "arena-1";
-        b.mapName = "m";
-        b.arenaBonusType = 1;
-        final PlayerResult pr = new PlayerResult();
-        pr.accountId = 1000L;
-        pr.nickname = "P";
-        pr.team = 1;
-        b.players = List.of(pr);
-        b.recorder = "P";
+        final Battle b = new Battle(); b.arenaId = "arena-1"; b.mapName = "m"; b.arenaBonusType = 1;
+        final PlayerResult pr = new PlayerResult(); pr.accountId = 1000L; pr.nickname = "P"; pr.team = 1;
+        b.players = List.of(pr); b.recorder = "P";
         final var caps = new ReplayProcessingCapabilities(true, true, true, true, true, false, true, false);
         final var r1 = new ReplayProcessingResult("a.wotbreplay", ReplayProcessingStatus.SUCCESS, id1, b, null, null, caps, null, null);
         final var r2 = new ReplayProcessingResult("b.wotbreplay", ReplayProcessingStatus.SUCCESS, id2, b, null, null, caps, null, null);
@@ -483,22 +396,10 @@ class BatchAnalyzerTest {
     void differentArenaIdDifferentBattles() {
         final var id1 = new ReplayIdentity("h1", "arena-1", null, null, 1000L, null);
         final var id2 = new ReplayIdentity("h2", "arena-2", null, null, 1000L, null);
-        final Battle b1 = new Battle();
-        b1.arenaId = "arena-1";
-        b1.mapName = "m1";
-        b1.arenaBonusType = 1;
-        final Battle b2 = new Battle();
-        b2.arenaId = "arena-2";
-        b2.mapName = "m2";
-        b2.arenaBonusType = 1;
-        final PlayerResult pr = new PlayerResult();
-        pr.accountId = 1000L;
-        pr.nickname = "P";
-        pr.team = 1;
-        b1.players = List.of(pr);
-        b1.recorder = "P";
-        b2.players = List.of(pr);
-        b2.recorder = "P";
+        final Battle b1 = new Battle(); b1.arenaId = "arena-1"; b1.mapName = "m1"; b1.arenaBonusType = 1;
+        final Battle b2 = new Battle(); b2.arenaId = "arena-2"; b2.mapName = "m2"; b2.arenaBonusType = 1;
+        final PlayerResult pr = new PlayerResult(); pr.accountId = 1000L; pr.nickname = "P"; pr.team = 1;
+        b1.players = List.of(pr); b1.recorder = "P"; b2.players = List.of(pr); b2.recorder = "P";
         final var caps = new ReplayProcessingCapabilities(true, true, true, true, true, false, true, false);
         final var r1 = new ReplayProcessingResult("a.wotbreplay", ReplayProcessingStatus.SUCCESS, id1, b1, null, null, caps, null, null);
         final var r2 = new ReplayProcessingResult("b.wotbreplay", ReplayProcessingStatus.SUCCESS, id2, b2, null, null, caps, null, null);
@@ -510,22 +411,10 @@ class BatchAnalyzerTest {
         final var start = java.time.Instant.now();
         final var id1 = new ReplayIdentity("h1", null, "11.18", "lagoon", 1000L, start);
         final var id2 = new ReplayIdentity("h2", null, "11.18", "lagoon", 1000L, start);
-        final Battle b1 = new Battle();
-        b1.arenaId = "";
-        b1.mapName = "lagoon";
-        b1.arenaBonusType = 1;
-        final Battle b2 = new Battle();
-        b2.arenaId = "";
-        b2.mapName = "lagoon";
-        b2.arenaBonusType = 1;
-        final PlayerResult pr = new PlayerResult();
-        pr.accountId = 1000L;
-        pr.nickname = "P";
-        pr.team = 1;
-        b1.players = List.of(pr);
-        b1.recorder = "P";
-        b2.players = List.of(pr);
-        b2.recorder = "P";
+        final Battle b1 = new Battle(); b1.arenaId = ""; b1.mapName = "lagoon"; b1.arenaBonusType = 1;
+        final Battle b2 = new Battle(); b2.arenaId = ""; b2.mapName = "lagoon"; b2.arenaBonusType = 1;
+        final PlayerResult pr = new PlayerResult(); pr.accountId = 1000L; pr.nickname = "P"; pr.team = 1;
+        b1.players = List.of(pr); b1.recorder = "P"; b2.players = List.of(pr); b2.recorder = "P";
         final var caps = new ReplayProcessingCapabilities(true, true, true, true, true, false, true, false);
         final var r1 = new ReplayProcessingResult("a.wotbreplay", ReplayProcessingStatus.SUCCESS, id1, b1, null, null, caps, null, null);
         final var r2 = new ReplayProcessingResult("b.wotbreplay", ReplayProcessingStatus.SUCCESS, id2, b2, null, null, caps, null, null);
@@ -536,22 +425,10 @@ class BatchAnalyzerTest {
     void nullArenaIdDifferentTimeDifferentBattles() {
         final var id1 = new ReplayIdentity("h1", null, "11.18", "lagoon", 1000L, java.time.Instant.ofEpochSecond(1000));
         final var id2 = new ReplayIdentity("h2", null, "11.18", "lagoon", 1000L, java.time.Instant.ofEpochSecond(2000));
-        final Battle b1 = new Battle();
-        b1.arenaId = "";
-        b1.mapName = "lagoon";
-        b1.arenaBonusType = 1;
-        final Battle b2 = new Battle();
-        b2.arenaId = "";
-        b2.mapName = "lagoon";
-        b2.arenaBonusType = 1;
-        final PlayerResult pr = new PlayerResult();
-        pr.accountId = 1000L;
-        pr.nickname = "P";
-        pr.team = 1;
-        b1.players = List.of(pr);
-        b1.recorder = "P";
-        b2.players = List.of(pr);
-        b2.recorder = "P";
+        final Battle b1 = new Battle(); b1.arenaId = ""; b1.mapName = "lagoon"; b1.arenaBonusType = 1;
+        final Battle b2 = new Battle(); b2.arenaId = ""; b2.mapName = "lagoon"; b2.arenaBonusType = 1;
+        final PlayerResult pr = new PlayerResult(); pr.accountId = 1000L; pr.nickname = "P"; pr.team = 1;
+        b1.players = List.of(pr); b1.recorder = "P"; b2.players = List.of(pr); b2.recorder = "P";
         final var caps = new ReplayProcessingCapabilities(true, true, true, true, true, false, true, false);
         final var r1 = new ReplayProcessingResult("a.wotbreplay", ReplayProcessingStatus.SUCCESS, id1, b1, null, null, caps, null, null);
         final var r2 = new ReplayProcessingResult("b.wotbreplay", ReplayProcessingStatus.SUCCESS, id2, b2, null, null, caps, null, null);
@@ -562,22 +439,10 @@ class BatchAnalyzerTest {
     void missingMetadataDifferentHashesRemainDifferentBattles() {
         final var id1 = new ReplayIdentity("hash-a", null, null, null, 1000L, null);
         final var id2 = new ReplayIdentity("hash-b", null, null, null, 1000L, null);
-        final Battle b1 = new Battle();
-        b1.arenaId = "";
-        b1.mapName = "";
-        b1.arenaBonusType = 1;
-        final Battle b2 = new Battle();
-        b2.arenaId = "";
-        b2.mapName = "";
-        b2.arenaBonusType = 1;
-        final PlayerResult pr = new PlayerResult();
-        pr.accountId = 1000L;
-        pr.nickname = "P";
-        pr.team = 1;
-        b1.players = List.of(pr);
-        b1.recorder = "P";
-        b2.players = List.of(pr);
-        b2.recorder = "P";
+        final Battle b1 = new Battle(); b1.arenaId = ""; b1.mapName = ""; b1.arenaBonusType = 1;
+        final Battle b2 = new Battle(); b2.arenaId = ""; b2.mapName = ""; b2.arenaBonusType = 1;
+        final PlayerResult pr = new PlayerResult(); pr.accountId = 1000L; pr.nickname = "P"; pr.team = 1;
+        b1.players = List.of(pr); b1.recorder = "P"; b2.players = List.of(pr); b2.recorder = "P";
         final var caps = new ReplayProcessingCapabilities(true, true, false, false, false, false, false, false);
         final var r1 = new ReplayProcessingResult("a.wotbreplay", ReplayProcessingStatus.SUCCESS, id1, b1, null, null, caps, null, null);
         final var r2 = new ReplayProcessingResult("b.wotbreplay", ReplayProcessingStatus.SUCCESS, id2, b2, null, null, caps, null, null);
@@ -587,14 +452,9 @@ class BatchAnalyzerTest {
     @Test
     void analyzePartitionReusesPassedDuplicates() {
         var id = new ReplayIdentity("same-hash", null, null, null, null, null);
-        var b = new Battle();
-        b.arenaBonusType = 1;
-        var pr = new PlayerResult();
-        pr.accountId = 1L;
-        pr.nickname = "P";
-        pr.team = 1;
-        b.players = List.of(pr);
-        b.recorder = "P";
+        var b = new Battle(); b.arenaBonusType = 1;
+        var pr = new PlayerResult(); pr.accountId = 1L; pr.nickname = "P"; pr.team = 1;
+        b.players = List.of(pr); b.recorder = "P";
         var caps = new ReplayProcessingCapabilities(true, true, false, false, false, false, false, false);
         var r1 = new ReplayProcessingResult("a.wotbreplay", ReplayProcessingStatus.SUCCESS, id, b, null, null, caps, null, null);
         var r2 = new ReplayProcessingResult("b.wotbreplay", ReplayProcessingStatus.SUCCESS, id, b, null, null, caps, null, null);

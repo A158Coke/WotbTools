@@ -1,8 +1,7 @@
 <script setup>
-import {computed, onMounted, ref} from 'vue'
-import {useAuth} from '../composables/useAuth.js'
+import { computed, ref, onMounted } from 'vue'
+import { useAuth } from '../composables/useAuth.js'
 import * as api from '../utils/api.js'
-
 const { initPromise, tokenParsed } = useAuth()
 const isAdmin = ref(false)
 const isHofAdmin = ref(false)

@@ -36,9 +36,7 @@ class TeamReviewRealReplayProbeTest {
 
     private static final String SAMPLE = "data/20260817_2021____WildCat__A178_SPHT_1161423218062589123(2).wotbreplay";
 
-    /**
-     * Golden core 时间（真实 canonical facts，PR #103 已确认约 109–128s）；容差仅供时钟舍入/取帧。
-     */
+    /** Golden core 时间（真实 canonical facts，PR #103 已确认约 109–128s）；容差仅供时钟舍入/取帧。 */
     private static final double GOLDEN_START_SEC = 109.0;
     private static final double GOLDEN_END_SEC = 128.0;
     private static final double CORE_TIME_TOLERANCE_SEC = 8.0;
@@ -72,9 +70,9 @@ class TeamReviewRealReplayProbeTest {
         final double startRaw = timeline.battleStartRawClockSec();
         final List<PlayerResult> friendlyDeaths = battle.players == null ? List.of()
                 : battle.players.stream()
-                .filter(p -> p != null && p.team == perspectiveTeam && !p.survived)
-                .sorted(java.util.Comparator.comparingDouble(PlayerResultFormat::deathSec))
-                .toList();
+                        .filter(p -> p != null && p.team == perspectiveTeam && !p.survived)
+                        .sorted(java.util.Comparator.comparingDouble(PlayerResultFormat::deathSec))
+                        .toList();
         final List<Double> relativeDeaths = friendlyDeaths.stream()
                 .map(p -> {
                     final double raw = PlayerResultFormat.deathSec(p);

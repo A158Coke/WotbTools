@@ -1,29 +1,29 @@
 package com.wotb.web.replay.ai;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.wotb.core.processing.FriendlyEnemyResult.Winner;
+import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
+import com.wotb.core.processing.FriendlyEnemyResult.WinnerSource;
+import com.wotb.core.processing.FriendlyEnemyResult.PointsEndReason;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.processing.FriendlyEnemyResult.PointsEndReason;
-import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
-import com.wotb.core.processing.FriendlyEnemyResult.Winner;
-import com.wotb.core.processing.FriendlyEnemyResult.WinnerSource;
-import com.wotb.core.replay.event.DamageEvent;
-import com.wotb.core.replay.event.DecodeConfidence;
-import com.wotb.core.replay.event.HealthChangedEvent;
-import com.wotb.core.replay.event.ParticipantMappingEvent;
-import com.wotb.core.replay.event.PositionChangedEvent;
-import com.wotb.core.replay.event.ReplayEvent;
-import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.evidence.EntryHpSource;
-import com.wotb.core.replay.feature.TeamAutopsyStats;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.ParticipantMappingEvent;
+import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.HealthChangedEvent;
+import com.wotb.core.replay.event.PositionChangedEvent;
+import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.feature.TeamAutopsyStats;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TeamAutopsyPromptBuilderTest {
 
@@ -71,9 +71,7 @@ class TeamAutopsyPromptBuilderTest {
         return p;
     }
 
-    /**
-     * 完整 7v7 且双方均有存活的结算阵容（rosterComplete=true；不产生全歼后缀）。
-     */
+    /** 完整 7v7 且双方均有存活的结算阵容（rosterComplete=true；不产生全歼后缀）。 */
     private static Battle completeBothAlive() {
         final Battle b = new Battle();
         b.winnerTeam = 1;
@@ -154,9 +152,7 @@ class TeamAutopsyPromptBuilderTest {
                 "autopsy must ban window-level toll/attack-defense claims");
     }
 
-    /**
-     * BLOCKER A-1：empty verdict（players 完整但 mvps/biggestLiabilities 均为空）→ renderSection 返回空串。
-     */
+    /** BLOCKER A-1：empty verdict（players 完整但 mvps/biggestLiabilities 均为空）→ renderSection 返回空串。 */
     @Test
     void renderSectionIsEmptyWithoutStandout() {
         final TeamAutopsyResult empty = new TeamAutopsyResult(
@@ -174,9 +170,7 @@ class TeamAutopsyPromptBuilderTest {
         assertEquals("", TeamAutopsyPromptBuilder.renderSection(null, sevenStats()));
     }
 
-    /**
-     * BLOCKER A-2：只有 liability（重点复查）时，只显示 nickname/tank + reason，不暴露任何 internal。
-     */
+    /** BLOCKER A-2：只有 liability（重点复查）时，只显示 nickname/tank + reason，不暴露任何 internal。 */
     @Test
     void renderSectionLiabilityOnlyShowsNicknameTankAndReason() {
         final TeamAutopsyResult result = new TeamAutopsyResult(
@@ -201,9 +195,7 @@ class TeamAutopsyPromptBuilderTest {
         assertFalse(section.contains("高贡献者"), "无 MVP 时不得输出高贡献者块：" + section);
     }
 
-    /**
-     * BLOCKER A-3：只有 MVP（高贡献者）时，同上；不输出重点复查。
-     */
+    /** BLOCKER A-3：只有 MVP（高贡献者）时，同上；不输出重点复查。 */
     @Test
     void renderSectionMvpOnlyShowsNicknameTankAndReason() {
         final TeamAutopsyResult result = new TeamAutopsyResult(
@@ -226,9 +218,7 @@ class TeamAutopsyPromptBuilderTest {
         assertFalse(section.contains("重点复查"), "无 liability 时不得输出重点复查块：" + section);
     }
 
-    /**
-     * BLOCKER A-4：既有 liability 又有 MVP 时允许同时显示，但仍保持简洁、无 internal。
-     */
+    /** BLOCKER A-4：既有 liability 又有 MVP 时允许同时显示，但仍保持简洁、无 internal。 */
     @Test
     void renderSectionBothBlocksConciseWithoutInternalLeak() {
         final TeamAutopsyResult result = new TeamAutopsyResult(
@@ -404,6 +394,7 @@ class TeamAutopsyPromptBuilderTest {
         assertTrue(content.contains("coverage=COMPLETE"), content);
         assertFalse(content.contains("利用队友输出"), "Autopsy 不得输出利用队友输出 verdict");
     }
+
 
 
     @Test

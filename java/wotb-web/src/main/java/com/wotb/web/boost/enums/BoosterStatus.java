@@ -1,8 +1,6 @@
 package com.wotb.web.boost.enums;
 
-/**
- * 打手业务状态。
- */
+/** 打手业务状态。 */
 public enum BoosterStatus {
     ACTIVE,
     INACTIVE,

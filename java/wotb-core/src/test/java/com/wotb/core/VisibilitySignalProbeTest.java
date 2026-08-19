@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -56,9 +57,7 @@ class VisibilitySignalProbeTest {
 
     private static final double OBSERVED_GAP_SEC = 5.0;
 
-    /**
-     * 探针样本：原始 zip + 解出的 data.wotreplay + 权威结算 + 映射表。
-     */
+    /** 探针样本：原始 zip + 解出的 data.wotreplay + 权威结算 + 映射表。 */
     private record Sample(
             String name,
             byte[] eventData,
@@ -173,9 +172,7 @@ class VisibilitySignalProbeTest {
         return null;
     }
 
-    /**
-     * updateArena2（type 8 sub 48）→ eid→team。
-     */
+    /** updateArena2（type 8 sub 48）→ eid→team。 */
     private static void buildTeamMap(
             final List<EventStreamReader.ParsedPacket> packets,
             final Map<Integer, Integer> eidTeam) {
@@ -645,9 +642,7 @@ class VisibilitySignalProbeTest {
         return rec == null ? null : rec.team;
     }
 
-    /**
-     * 相机（type 39）是否在锚点时刻看向目标（yaw 夹角 < 40 度）。
-     */
+    /** 相机（type 39）是否在锚点时刻看向目标（yaw 夹角 < 40 度）。 */
     private record CamCheck(double yawDiff, boolean looking, double camYaw) {
     }
 
@@ -1086,9 +1081,7 @@ class VisibilitySignalProbeTest {
         return new float[]{f(best.payload, 8), f(best.payload, 16)};
     }
 
-    /**
-     * 事件时刻敌人是否在移动（前后 0.5s 位置位移 > 3m）。
-     */
+    /** 事件时刻敌人是否在移动（前后 0.5s 位置位移 > 3m）。 */
     private static boolean isMoving(final List<EventStreamReader.PositionData> pts, final float t) {
         if (pts == null || pts.isEmpty()) {
             return false;

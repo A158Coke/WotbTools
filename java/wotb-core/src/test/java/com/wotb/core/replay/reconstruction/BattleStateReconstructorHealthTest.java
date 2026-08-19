@@ -28,9 +28,7 @@ class BattleStateReconstructorHealthTest {
         return new HealthChangedEvent(seq, ts(sec), type, confidence, eid, health, maxHealth, alive);
     }
 
-    /**
-     * EXACT destroy with health=0, then attempt revive with given confidence/health.
-     */
+    /** EXACT destroy with health=0, then attempt revive with given confidence/health. */
     private BattleState destroyThenRevive(
             final DecodeConfidence reviveConfidence,
             final Integer reviveHealth) {
@@ -104,9 +102,7 @@ class BattleStateReconstructorHealthTest {
         assertEquals(2000, state.getVehicle(101).maxHealth().intValue());
     }
 
-    /**
-     * 残血但存活（alive=true 且 HP>0 持续更新）不得被误判死亡。
-     */
+    /** 残血但存活（alive=true 且 HP>0 持续更新）不得被误判死亡。 */
     @Test
     void lowHealthStaysAlive() {
         var e1 = event(1, 96.91f, 7, DecodeConfidence.EXACT, 101, 102, null, true);
@@ -117,9 +113,7 @@ class BattleStateReconstructorHealthTest {
         assertEquals(65, v.currentHealth().intValue());
     }
 
-    /**
-     * 跨实体状态隔离：A 的 UNKNOWN sentinel（alive=null）不得因 B 同刻阵亡而判死 A。
-     */
+    /** 跨实体状态隔离：A 的 UNKNOWN sentinel（alive=null）不得因 B 同刻阵亡而判死 A。 */
     @Test
     void unknownSentinelOnOneEntityDoesNotAffectAnother() {
         var a = event(1, 100f, 7, DecodeConfidence.PARTIAL, 101, null, null, null);

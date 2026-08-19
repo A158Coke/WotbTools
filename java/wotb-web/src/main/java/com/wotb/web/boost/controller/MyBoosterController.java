@@ -3,8 +3,8 @@ package com.wotb.web.boost.controller;
 import com.wotb.web.boost.dto.BoosterDto;
 import com.wotb.web.boost.dto.UpdateBoosterAvailabilityRequest;
 import com.wotb.web.boost.service.BoosterService;
-import com.wotb.web.config.ApiPaths;
 import com.wotb.web.util.JwtUtil;
+import com.wotb.web.config.ApiPaths;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,9 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
-/**
- * 玩家侧打手查询 — 需登录，返回当前用户的打手信息。
- */
+/** 玩家侧打手查询 — 需登录，返回当前用户的打手信息。 */
 @RestController
 @RequestMapping(ApiPaths.BOOST_BOOSTERS)
 @CrossOrigin(origins = "*")

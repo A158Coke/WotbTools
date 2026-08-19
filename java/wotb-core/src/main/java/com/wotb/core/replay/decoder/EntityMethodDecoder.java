@@ -245,17 +245,13 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
         }
     }
 
-    /**
-     * 供探针/诊断读取 subtype48 的 wrapper field_number（复用生产提取；-1=结构不完整）。
-     */
+    /** 供探针/诊断读取 subtype48 的 wrapper field_number（复用生产提取；-1=结构不完整）。 */
     public static long readWrapperFieldNumber(final byte[] payload) {
         final DecodedUpdateArena2 decoded = decodeUpdateArena2(payload);
         return decoded == null ? -1 : decoded.wrapperFieldNumber();
     }
 
-    /**
-     * 供探针/诊断读取 subtype48 的 root protobuf（复用生产提取；null=结构不完整）。
-     */
+    /** 供探针/诊断读取 subtype48 的 root protobuf（复用生产提取；null=结构不完整）。 */
     public static Map<Integer, List<Object>> readUpdateArena2Root(final byte[] payload) {
         final DecodedUpdateArena2 decoded = decodeUpdateArena2(payload);
         return decoded == null ? null : decoded.root();
@@ -268,18 +264,12 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
 
     // ---- 内部辅助类和工具方法 ----
 
-    /**
-     * subtype48 名册映射（wrapper field_number = 1）。
-     */
+    /** subtype48 名册映射（wrapper field_number = 1）。 */
     public static final long WRAPPER_ROSTER = 1L;
-    /**
-     * subtype48 实时争霸点数（wrapper field_number = 13 → root field 12）。
-     */
+    /** subtype48 实时争霸点数（wrapper field_number = 13 → root field 12）。 */
     public static final long WRAPPER_SUPREMACY_POINTS = 13L;
 
-    /**
-     * subtype48 解码结果：wrapper field_number + root protobuf（两层字段，不得混用）。
-     */
+    /** subtype48 解码结果：wrapper field_number + root protobuf（两层字段，不得混用）。 */
     private record DecodedUpdateArena2(
             long wrapperFieldNumber,
             Map<Integer, List<Object>> root

@@ -1,13 +1,12 @@
 package com.wotb.web.user.controller;
 
-import com.wotb.web.config.ApiPaths;
 import com.wotb.web.hof.dto.HallOfFameRecordDto;
 import com.wotb.web.hof.service.HallOfFameService;
 import com.wotb.web.user.dto.UpdateWotbAccountRequest;
 import com.wotb.web.user.dto.UserProfileDto;
 import com.wotb.web.user.service.UserProfileService;
 import com.wotb.web.util.JwtUtil;
-import org.springframework.web.bind.annotation.CrossOrigin;
+import com.wotb.web.config.ApiPaths;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -15,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -28,14 +28,12 @@ public class UserProfileController {
     private final HallOfFameService hallOfFameService;
 
     public UserProfileController(final UserProfileService service,
-                                 final HallOfFameService hallOfFameService) {
+                                  final HallOfFameService hallOfFameService) {
         this.service = service;
         this.hallOfFameService = hallOfFameService;
     }
 
-    /**
-     * 查询当前用户资料。未创建 → 404。
-     */
+    /** 查询当前用户资料。未创建 → 404。 */
     @GetMapping("/profile")
     public UserProfileDto getProfile() {
         final String uid = JwtUtil.requireUserId();
@@ -43,9 +41,7 @@ public class UserProfileController {
                 .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
     }
 
-    /**
-     * 创建当前用户资料（首次进入时调用）。username 和 displayName 来自 JWT，不可修改。
-     */
+    /** 创建当前用户资料（首次进入时调用）。username 和 displayName 来自 JWT，不可修改。 */
     @PostMapping("/profile")
     public UserProfileDto createProfile() {
         return service.create(JwtUtil.requireUserId(),
@@ -58,9 +54,7 @@ public class UserProfileController {
                 body.wotbAccountId(), body.wotbNickname(), body.wotbServer());
     }
 
-    /**
-     * WG 登录（ASIA/EU/NA）后的幂等同步（只读 JWT，不接受 body）。
-     */
+    /** WG 登录（ASIA/EU/NA）后的幂等同步（只读 JWT，不接受 body）。 */
     @PutMapping("/wotb-account/from-login")
     public UserProfileDto syncFromLogin() {
         return service.syncFromLogin(JwtUtil.requireUserId());
@@ -71,9 +65,7 @@ public class UserProfileController {
         return service.deleteWotbAccount(JwtUtil.requireUserId());
     }
 
-    /**
-     * 当前用户的个人名人堂战绩。
-     */
+    /** 当前用户的个人名人堂战绩。 */
     @GetMapping("/profile/records")
     public List<HallOfFameRecordDto> myRecords() {
         final var profileOpt = service.findByKeycloakUserId(JwtUtil.requireUserId());

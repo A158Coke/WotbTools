@@ -37,30 +37,22 @@ import java.util.regex.Pattern;
  */
 public final class TankNameCorrector {
 
-    /**
-     * roster 条目：昵称 -&gt; 权威坦克名（由调用方用 {@code ReplayDisplayNames.tankName} 解析）。
-     */
+    /** roster 条目：昵称 -&gt; 权威坦克名（由调用方用 {@code ReplayDisplayNames.tankName} 解析）。 */
     public record RosterEntry(String nickname, String tankName) {
     }
 
-    /**
-     * 一条处理记录。{@code reason}：CORRECTED（R1 纠正）/ PROPAGATED（共享映射传播）/ NORMALIZED（R2 归一化）/ DETECTED（R3 检测不改写）。
-     */
+    /** 一条处理记录。{@code reason}：CORRECTED（R1 纠正）/ PROPAGATED（共享映射传播）/ NORMALIZED（R2 归一化）/ DETECTED（R3 检测不改写）。 */
     public record Replacement(String original, String replacement, String reason) {
     }
 
-    /**
-     * 纠正结果：纠正后的正文 + 处理明细。
-     */
+    /** 纠正结果：纠正后的正文 + 处理明细。 */
     public record Result(String text, List<Replacement> replacements) {
     }
 
     private static final Tankopedia TANKOPEDIA = Tankopedia.load();
     private static final TankNameAliases ALIASES = TankNameAliases.load();
 
-    /**
-     * 已知车名（tier7-10 权威名）+ 别名的 小写文本 -&gt; 权威名。
-     */
+    /** 已知车名（tier7-10 权威名）+ 别名的 小写文本 -&gt; 权威名。 */
     private static final Map<String, String> CANONICAL_BY_LOWER = buildCanonicalIndex();
     private static final Set<String> ALIAS_KEYS_LOWER = buildAliasKeys();
     private static final Pattern TANK_PATTERN = buildPattern(CANONICAL_BY_LOWER.keySet());
@@ -173,21 +165,15 @@ public final class TankNameCorrector {
         return List.copyOf(results);
     }
 
-    /**
-     * 文本中的一个命中：坦克名或昵称。
-     */
+    /** 文本中的一个命中：坦克名或昵称。 */
     private record Span(int start, int end, String text, String canonical, boolean nickname) {
     }
 
-    /**
-     * 一段待处理文本及其扫描结果（blank/null 段 spans 为空，原样返回）。
-     */
+    /** 一段待处理文本及其扫描结果（blank/null 段 spans 为空，原样返回）。 */
     private record Section(String text, List<Span> spans) {
     }
 
-    /**
-     * 扫描正文，合并坦克名与昵称命中，重叠时保留更长者（如 Emil II 优先于其前缀 Emil I）。
-     */
+    /** 扫描正文，合并坦克名与昵称命中，重叠时保留更长者（如 Emil II 优先于其前缀 Emil I）。 */
     private static List<Span> scan(final String text,
                                    final Pattern tankPattern,
                                    final Pattern nickPattern,
@@ -227,9 +213,7 @@ public final class TankNameCorrector {
         return merged;
     }
 
-    /**
-     * 纯 ASCII 名称要求两侧不是 ASCII 字母/数字（避免把 KRV 匹配进 AKRV、把 Emil I 匹配进 Emil II 之外的字母）。
-     */
+    /** 纯 ASCII 名称要求两侧不是 ASCII 字母/数字（避免把 KRV 匹配进 AKRV、把 Emil I 匹配进 Emil II 之外的字母）。 */
     private static boolean hasAsciiBoundaryViolation(final String text, final int start, final int end) {
         if (start > 0 && isAsciiLetterOrDigit(text.charAt(start - 1))) {
             return true;
@@ -250,9 +234,7 @@ public final class TankNameCorrector {
         return true;
     }
 
-    /**
-     * R1 配对：返回该段内被昵称锚定的坦克 span.start -&gt; roster 权威坦克名。
-     */
+    /** R1 配对：返回该段内被昵称锚定的坦克 span.start -&gt; roster 权威坦克名。 */
     private static Map<Integer, String> buildPairedTankByStart(final String text, final List<Span> spans) {
         final Map<Integer, String> pairedTankByStart = new HashMap<>();
         for (final Span span : spans) {
@@ -302,9 +284,7 @@ public final class TankNameCorrector {
         }
     }
 
-    /**
-     * Pass 2：对一段应用 R1 局部纠正 + 共享传播 + R2/R3（替换从后往前，避免位移）。
-     */
+    /** Pass 2：对一段应用 R1 局部纠正 + 共享传播 + R2/R3（替换从后往前，避免位移）。 */
     private static Result applySection(final String text,
                                        final List<Span> spans,
                                        final Set<String> rosterTanksLower,
@@ -359,9 +339,7 @@ public final class TankNameCorrector {
         return new Result(out.toString(), List.copyOf(replacements));
     }
 
-    /**
-     * R1 配对：返回与该昵称配对的坦克 span；不存在返回 null。
-     */
+    /** R1 配对：返回与该昵称配对的坦克 span；不存在返回 null。 */
     private static Span findPairedTank(final String text, final List<Span> spans, final Span nick) {
         // 昵称在括号内：坦克名（昵称）——坦克在开括号前，或同括号内
         final int[] parens = findParens(text, nick.start, nick.end);
@@ -386,9 +364,7 @@ public final class TankNameCorrector {
         return tankAdjacentPossessive(text, spans, nick);
     }
 
-    /**
-     * 昵称结束后 ≤2 字符内紧跟的括号对 [open, close]；不存在返回 null。
-     */
+    /** 昵称结束后 ≤2 字符内紧跟的括号对 [open, close]；不存在返回 null。 */
     private static int[] findForwardParen(final String text, final int nickEnd) {
         for (int i = nickEnd; i < text.length() && i - nickEnd <= 2; i++) {
             final char c = text.charAt(i);
@@ -406,9 +382,7 @@ public final class TankNameCorrector {
         return null;
     }
 
-    /**
-     * 返回昵称所在括号对 [open, close]；不在任何括号内返回 null。
-     */
+    /** 返回昵称所在括号对 [open, close]；不在任何括号内返回 null。 */
     private static int[] findParens(final String text, final int nickStart, final int nickEnd) {
         for (int i = nickStart - 1; i >= 0 && nickStart - i <= 64; i--) {
             final char c = text.charAt(i);
@@ -434,9 +408,7 @@ public final class TankNameCorrector {
         return count;
     }
 
-    /**
-     * 开括号前 ≤2 字符内结束的坦克名（允许空白/「的」等间隔）。
-     */
+    /** 开括号前 ≤2 字符内结束的坦克名（允许空白/「的」等间隔）。 */
     private static Span tankEndingNear(final String text, final List<Span> spans, final int openParen) {
         for (final Span span : spans) {
             if (span.nickname || span.end > openParen) {
@@ -450,9 +422,7 @@ public final class TankNameCorrector {
         return null;
     }
 
-    /**
-     * 括号内、且不与该昵称重叠的坦克名；多个坦克名时返回 null 不判定。
-     */
+    /** 括号内、且不与该昵称重叠的坦克名；多个坦克名时返回 null 不判定。 */
     private static Span tankInsideParens(final List<Span> spans, final int open, final int close, final Span nick) {
         Span found = null;
         for (final Span span : spans) {
@@ -469,9 +439,7 @@ public final class TankNameCorrector {
         return found;
     }
 
-    /**
-     * 所属式：昵称与坦克名之间 ≤8 字符且仅空白与单个「的」。
-     */
+    /** 所属式：昵称与坦克名之间 ≤8 字符且仅空白与单个「的」。 */
     private static Span tankAdjacentPossessive(final String text, final List<Span> spans, final Span nick) {
         for (final Span span : spans) {
             if (span.nickname) {
@@ -497,9 +465,7 @@ public final class TankNameCorrector {
         return true;
     }
 
-    /**
-     * 间隔仅允许空白与单个「的」（所属式限定，避免把并列列举误配）。
-     */
+    /** 间隔仅允许空白与单个「的」（所属式限定，避免把并列列举误配）。 */
     private static boolean isPossessiveGap(final String text, final int from, final int to) {
         boolean seenDe = false;
         for (int i = from; i < to; i++) {

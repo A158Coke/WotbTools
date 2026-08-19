@@ -1,8 +1,9 @@
 package com.wotb.web.replay.ai;
 
+import org.springframework.util.StringUtils;
+
 import com.wotb.core.replay.map.MapTacticalSemantics;
 import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
-import org.springframework.util.StringUtils;
 
 import java.util.List;
 import java.util.Map;
@@ -30,9 +31,7 @@ public final class PreBattleSectionRenderer {
     private static final Pattern GRID_REGION = Pattern.compile("GRID_REGION_(\\d)");
     private static final MapTacticalSemanticsRegistry MAP_SEMANTICS = MapTacticalSemanticsRegistry.load();
 
-    /**
-     * composition 属性键的中文显示名（用户可见，不直出 mobility 等英文键）。
-     */
+    /** composition 属性键的中文显示名（用户可见，不直出 mobility 等英文键）。 */
     private static final Map<String, String> COMPOSITION_KEYS_ZH = Map.of(
             "mobility", "机动性",
             "closeRangeTrading", "近距离换血",
@@ -110,9 +109,7 @@ public final class PreBattleSectionRenderer {
         return renderRandomBattle(prior, recorderTeam, language, null);
     }
 
-    /**
-     * 随机战（语言跟随 + 地图语义，AREA ID → 中文名 + 九宫格编号）。
-     */
+    /** 随机战（语言跟随 + 地图语义，AREA ID → 中文名 + 九宫格编号）。 */
     public static String renderRandomBattle(final PreBattleStrategicPrior prior,
                                             final int recorderTeam,
                                             final AllowedLanguage language,
@@ -134,7 +131,7 @@ public final class PreBattleSectionRenderer {
         final boolean swapped = teamView && perspectiveTeam == 2;
         final String teamALabel = teamView
                 ? texts.ours() + (StringUtils.hasText(teamLabel)
-                ? texts.labelParens().formatted(teamLabel) : "")
+                        ? texts.labelParens().formatted(teamLabel) : "")
                 : texts.neutralOne();
         final String teamBLabel = teamView ? texts.theirs() : texts.neutralTwo();
         // TEAM_A/TEAM_B 是 LLM 输出的原始队伍 token：不 swap 时 TEAM_A=渲染首位；
@@ -171,7 +168,7 @@ public final class PreBattleSectionRenderer {
             for (final PreBattleStrategicPrior.StrategicWinCondition w
                     : prior.strategicWinConditions()) {
                 sb.append("- ").append(display(text(w.team(), texts.unknown()),
-                                tokenALabel, tokenBLabel, texts, mapCode, language))
+                        tokenALabel, tokenBLabel, texts, mapCode, language))
                         .append("：").append(display(text(w.condition(), ""),
                                 tokenALabel, tokenBLabel, texts, mapCode, language))
                         .append('\n');
@@ -212,7 +209,7 @@ public final class PreBattleSectionRenderer {
             sb.append(String.join("；", profile.composition().entrySet().stream()
                     .map(e -> compositionKey(e.getKey(), language) + "="
                             + compositionValue(display(e.getValue(),
-                            tokenALabel, tokenBLabel, texts, mapCode, language), language))
+                                    tokenALabel, tokenBLabel, texts, mapCode, language), language))
                     .toList()));
             sb.append('\n');
         }
@@ -313,9 +310,7 @@ public final class PreBattleSectionRenderer {
         return result;
     }
 
-    /**
-     * composition 属性键翻译（三语），用户可见不直出 mobility 等英文键。
-     */
+    /** composition 属性键翻译（三语），用户可见不直出 mobility 等英文键。 */
     private static String compositionKey(final String key, final AllowedLanguage language) {
         if (key == null) {
             return "";
@@ -328,9 +323,7 @@ public final class PreBattleSectionRenderer {
         return map.getOrDefault(key, key);
     }
 
-    /**
-     * composition 属性值翻译（HIGH/MEDIUM/LOW → 三语）。
-     */
+    /** composition 属性值翻译（HIGH/MEDIUM/LOW → 三语）。 */
     private static String compositionValue(final String value, final AllowedLanguage language) {
         if (value == null) {
             return "";
@@ -358,9 +351,7 @@ public final class PreBattleSectionRenderer {
         };
     }
 
-    /**
-     * 文案集合：按语言与展示形态（随机战 友军/敌军 vs 团队 我方/对方）选择。
-     */
+    /** 文案集合：按语言与展示形态（随机战 友军/敌军 vs 团队 我方/对方）选择。 */
     private record Texts(
             String title,
             String intro,
@@ -414,9 +405,7 @@ public final class PreBattleSectionRenderer {
             "Ключевые противостояния", "Регион", "Область $1", "Условия победы", "Стратегические гипотезы",
             "Причина: ", "Неизвестно");
 
-    /**
-     * 随机战形态的友军/敌军文案（EN/RU 随机战当前无 prior，防御性保留）。
-     */
+    /** 随机战形态的友军/敌军文案（EN/RU 随机战当前无 prior，防御性保留）。 */
     private static final Texts ZH_RANDOM = ZH.withFriendlyEnemy();
     private static final Texts EN_RANDOM = new Texts(
             "Pre-Battle Prediction",

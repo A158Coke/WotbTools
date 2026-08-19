@@ -12,9 +12,7 @@ package com.wotb.web.replay.ai;
  */
 public interface AiReviewStreamListener {
 
-    /**
-     * 空实现：同步路径（无需进度广播）时使用，行为与改造前完全一致。
-     */
+    /** 空实现：同步路径（无需进度广播）时使用，行为与改造前完全一致。 */
     AiReviewStreamListener NOOP = new AiReviewStreamListener() {
     };
 

@@ -1,8 +1,8 @@
 <script setup>
-import {computed, ref, watch} from 'vue'
-import {useI18n} from 'vue-i18n'
-import {RATING_DEFAULTS, RATING_TIERS, tierRange} from '../utils/helpers.js'
-import {replayValueLabel} from '../utils/display.js'
+import { ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { RATING_DEFAULTS, RATING_TIERS, tierRange } from '../utils/helpers.js'
+import { replayValueLabel } from '../utils/display.js'
 import * as api from '../utils/api.js'
 
 const emit = defineEmits(['close'])

@@ -17,9 +17,7 @@ final class TacticalEvidenceFormatter {
     private TacticalEvidenceFormatter() {
     }
 
-    /**
-     * 按给定证据列表渲染（调用方可先做 partial 过滤，避免把换血伤害数字送入 LLM）。
-     */
+    /** 按给定证据列表渲染（调用方可先做 partial 过滤，避免把换血伤害数字送入 LLM）。 */
     static String renderEvidenceSections(final List<AiEvidence> evidence) {
         final StringBuilder sb = new StringBuilder(2048);
         final List<AiEvidence> sorted = new ArrayList<>(evidence);

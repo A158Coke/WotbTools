@@ -16,41 +16,44 @@
  * production / Battle Playback / backend / CI 校验均只消费仓库内静态资产。
  * 缓存目录 gitignored：frontend/scripts/.vehicle-model-refs/
  */
-import {existsSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs'
-import {dirname, join} from 'node:path'
-import {fileURLToPath} from 'node:url'
-import {NodeIO} from '@gltf-transform/core'
-import tankopedia from '../../common/tankopedia-tier10.json' with {type: 'json'}
-import {MODEL_DEFINITIONS, TANK_ID_TO_MODEL} from '../src/vehicle-models/mapping.js'
-import {VIEWBOX} from '../src/vehicle-models/types.js'
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import protobuf from 'protobufjs'
+import { NodeIO } from '@gltf-transform/core'
+import tankopedia from '../../common/tankopedia-tier10.json' with { type: 'json' }
+import { MODEL_DEFINITIONS, TANK_ID_TO_MODEL } from '../src/vehicle-models/mapping.js'
+import { VIEWBOX } from '../src/vehicle-models/types.js'
 import {
-    BLITZKIT_MODELS_PROTO,
-    BLITZKIT_TANKS_MIN_PROTO,
-    bounds2D,
-    buildFeatureAudit,
-    buildMetadata,
-    classifyDetail,
-    clusterEdges,
-    computeFit,
-    correctZYTuple,
-    decodeBlitzkitPb,
-    edgesToSvgPath,
-    extractMajorEdges,
-    filterDegeneratePolys,
-    groupRenderNodes,
-    mergeVisualSurfaces,
-    projectTopDown,
-    projectTopFacingPolygons,
-    projectTriangles,
-    rasterVisibility,
-    selectDefaultModules,
-    silhouetteToSvgPaths,
-    simplifyRing,
-    surfacesToSvgPaths,
-    svgDocument,
-    trianglesFromGeometry,
-    unionTriangles,
-    visibilityPixel,
+  BLITZKIT_MODELS_PROTO,
+  BLITZKIT_TANKS_MIN_PROTO,
+  bounds2D,
+  buildFeatureAudit,
+  buildMetadata,
+  collectNodeTriangles,
+  groupRenderNodes,
+  classifyDetail,
+  clusterEdges,
+  computeFit,
+  correctZYTuple,
+  decodeBlitzkitPb,
+  edgesToSvgPath,
+  extractMajorEdges,
+  extractTopSurfaces,
+  filterDegeneratePolys,
+  mergeVisualSurfaces,
+  rasterVisibility,
+  projectTopDown,
+  projectTopFacingPolygons,
+  projectTriangles,
+  selectDefaultModules,
+  silhouetteToSvgPaths,
+  simplifyRing,
+  surfacesToSvgPaths,
+  svgDocument,
+  trianglesFromGeometry,
+  unionTriangles,
+  visibilityPixel,
 } from './extractor-lib.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')

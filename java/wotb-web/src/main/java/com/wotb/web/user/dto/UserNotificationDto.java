@@ -12,5 +12,4 @@ public record UserNotificationDto(
         boolean read,
         OffsetDateTime readAt,
         OffsetDateTime createdAt
-) {
-}
+) {}

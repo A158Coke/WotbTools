@@ -18,8 +18,8 @@ import com.wotb.core.replay.reconstruction.ObservationState;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.replay.reconstruction.VehicleState;
+import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
 import com.wotb.core.replay.stream.ReplayStreamHeader;
 
@@ -27,9 +27,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Evidence Skill 测试共享 fixture。
- */
+/** Evidence Skill 测试共享 fixture。 */
 final class EvidenceTestFixtures {
 
     static final float START_RAW = 1000f;
@@ -83,9 +81,7 @@ final class EvidenceTestFixtures {
         return vs;
     }
 
-    /**
-     * confirmed DESTROYED（LifeState.DESTROYED + REMOVED，0 HP）——可靠终态。
-     */
+    /** confirmed DESTROYED（LifeState.DESTROYED + REMOVED，0 HP）——可靠终态。 */
     static VehicleState destroyedVehicle(final int entityId, final long accountId, final int team) {
         final VehicleState vs = new VehicleState(entityId, 0f);
         vs.setAccountId(accountId);
@@ -151,7 +147,7 @@ final class EvidenceTestFixtures {
     }
 
     static EngagementSummary engagement(final float start, final float end,
-                                        final int dealt, final int received) {
+                                         final int dealt, final int received) {
         return new EngagementSummary(
                 start, end, List.of(), List.of(),
                 dealt, received,

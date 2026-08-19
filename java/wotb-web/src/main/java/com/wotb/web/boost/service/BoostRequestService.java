@@ -20,9 +20,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-/**
- * 玩家侧需求服务。
- */
+/** 玩家侧需求服务。 */
 @Service
 public class BoostRequestService {
 
@@ -42,9 +40,7 @@ public class BoostRequestService {
         this.mapper = mapper;
     }
 
-    /**
-     * 创建陪练需求。
-     */
+    /** 创建陪练需求。 */
     @Transactional
     public CreateBoostRequestResponse create(final String requesterUserId,
                                              final String region,
@@ -105,9 +101,7 @@ public class BoostRequestService {
         );
     }
 
-    /**
-     * 查询当前用户的需求列表。
-     */
+    /** 查询当前用户的需求列表。 */
     public List<BoostRequestDto> listMy(final String requesterUserId) {
         return repository.findByRequesterUserIdOrderByCreatedAtDesc(requesterUserId)
                 .stream()
@@ -115,17 +109,13 @@ public class BoostRequestService {
                 .toList();
     }
 
-    /**
-     * 查询当前用户单个需求。
-     */
+    /** 查询当前用户单个需求。 */
     public Optional<BoostRequestDto> getMy(final Long id, final String requesterUserId) {
         return repository.findByIdAndRequesterUserId(id, requesterUserId)
                 .map(request -> mapper.toDto(request, hasActiveAssignment(request)));
     }
 
-    /**
-     * 取消自己的需求。
-     */
+    /** 取消自己的需求。 */
     @Transactional
     public BoostRequestDto cancel(final Long id, final String requesterUserId) {
         final BoostRequest req = repository.findByIdAndRequesterUserIdForUpdate(id, requesterUserId)
@@ -177,9 +167,7 @@ public class BoostRequestService {
     }
 
     private static void checkSensitive(final String text) {
-        if (!StringUtils.hasText(text)) {
-            return;
-        }
+        if (!StringUtils.hasText(text)) { return; }
         final String lower = text.toLowerCase();
         for (final String kw : SENSITIVE_KEYWORDS) {
             if (lower.contains(kw)) {

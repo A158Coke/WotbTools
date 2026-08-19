@@ -1,14 +1,14 @@
 <script setup>
-import {nextTick, ref} from 'vue'
-import {useI18n} from 'vue-i18n'
-import {mapLabel} from '../utils/helpers.js'
-import {useReplay} from '../composables/useReplay.js'
-import {useColumns} from '../composables/useColumns.js'
+import { ref, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { mapLabel } from '../utils/helpers.js'
+import { useReplay } from '../composables/useReplay.js'
+import { useColumns } from '../composables/useColumns.js'
 import {
-  computeExportDimensions,
-  downloadBlob,
-  exportPngFilename,
   getExportTarget,
+  computeExportDimensions,
+  exportPngFilename,
+  downloadBlob,
   maxFiniteDimension
 } from '../utils/exportReplayPng.js'
 import FileUploader from './FileUploader.vue'

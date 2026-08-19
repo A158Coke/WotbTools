@@ -1,5 +1,5 @@
-import {describe, expect, it} from 'vitest'
-import {normalizeSpringPage} from './page.js'
+import { describe, expect, it } from 'vitest'
+import { normalizeSpringPage } from './page.js'
 
 describe('normalizeSpringPage', () => {
   it('reads the Spring Page number field', () => {

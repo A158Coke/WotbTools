@@ -7,9 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 一名玩家在一场战斗中的战绩 (对应 protobuf #301 -> #2)。
- */
+/** 一名玩家在一场战斗中的战绩 (对应 protobuf #301 -> #2)。 */
 public class PlayerResult {
     // 解析自 protobuf 的原始战绩
     public long accountId;
@@ -26,13 +24,9 @@ public class PlayerResult {
     public int nEnemiesDamaged;
     public int kills;
     public int damageBlocked;
-    /**
-     * 占点得分（protobuf #32，supremacy 争霸赛逐人统计）。
-     */
+    /** 占点得分（protobuf #32，supremacy 争霸赛逐人统计）。 */
     public int victoryPointsEarned;
-    /**
-     * 占点占领分（protobuf #33，supremacy 争霸赛逐人统计）。
-     */
+    /** 占点占领分（protobuf #33，supremacy 争霸赛逐人统计）。 */
     public int victoryPointsSeized;
     public boolean survived;
     public int xp;
@@ -52,21 +46,15 @@ public class PlayerResult {
 
     // 展示派生字段 (enrich)
     public String tankName = "";
-    /**
-     * 本场实测最大血量（type-7 propId=3 含装备加成，经 ObservedMaxHp.populate 回填；null=未解析）。
-     * 注意：这只是「整场观测到的最大当前 HP」，不是进场满血——不得直接当 entry full HP。
-     */
+    /** 本场实测最大血量（type-7 propId=3 含装备加成，经 ObservedMaxHp.populate 回填；null=未解析）。
+     * 注意：这只是「整场观测到的最大当前 HP」，不是进场满血——不得直接当 entry full HP。 */
     public Integer observedMaxHp;
 
-    /**
-     * 进场满血量 provenance（经 ObservedMaxHp.populate 回填；null=未回填，调用方按 BASE_FALLBACK 处理）。
-     * 仅 {@link EntryHpSource#OBSERVED_EXACT} 时 {@link #entryHp} 才是已证明的 actual entry full HP。
-     */
+    /** 进场满血量 provenance（经 ObservedMaxHp.populate 回填；null=未回填，调用方按 BASE_FALLBACK 处理）。
+     * 仅 {@link EntryHpSource#OBSERVED_EXACT} 时 {@link #entryHp} 才是已证明的 actual entry full HP。 */
     public EntryHpSource entryHpSource;
 
-    /**
-     * 已证明的进场满血量（含装备/物资加成）；仅 entryHpSource==OBSERVED_EXACT 时有效，否则为 null。
-     */
+    /** 已证明的进场满血量（含装备/物资加成）；仅 entryHpSource==OBSERVED_EXACT 时有效，否则为 null。 */
     public Integer entryHp;
     public Object tankTier = "";
     public String tankType = "";

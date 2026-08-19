@@ -18,6 +18,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
@@ -26,6 +27,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -123,9 +125,7 @@ class HundredBattleSubmissionServiceTest {
         return p;
     }
 
-    /**
-     * 构造一个 battle：唯一玩家 accountId=GAME_ID、tankId=TIER10_VEHICLE。
-     */
+    /** 构造一个 battle：唯一玩家 accountId=GAME_ID、tankId=TIER10_VEHICLE。 */
     private static Battle battle(final String arenaId) {
         return battle(arenaId, GAME_ID, TIER10_VEHICLE);
     }
@@ -154,9 +154,7 @@ class HundredBattleSubmissionServiceTest {
         return files;
     }
 
-    /**
-     * 默认 5 场不同 battle 的 replay 列表。
-     */
+    /** 默认 5 场不同 battle 的 replay 列表。 */
     private static List<MultipartFile> fiveReplays() {
         return replays(5, "a1", "a2", "a3", "a4", "a5");
     }
@@ -859,7 +857,8 @@ class HundredBattleSubmissionServiceTest {
         }
 
         // 锁协议：整段临界区在 sorted distinct hash locks 内（Blocker 2）
-        @SuppressWarnings("unchecked") final ArgumentCaptor<List<String>> hashCaptor = ArgumentCaptor.forClass(List.class);
+        @SuppressWarnings("unchecked")
+        final ArgumentCaptor<List<String>> hashCaptor = ArgumentCaptor.forClass(List.class);
         verify(replayHashLock).runWithLocksResult(hashCaptor.capture(), any());
         assertThat(hashCaptor.getValue()).hasSize(5);
         // 稳定顺序 + 去重（防 deadlock）
@@ -869,7 +868,8 @@ class HundredBattleSubmissionServiceTest {
         // 5 个 replay 全部落盘（锁内）
         verify(evidenceService).storeAll(anyList());
         // attach 收到恰好 5 行，slot 1..5、原始文件名、内容寻址 hash（SHA-256 of arena bytes）
-        @SuppressWarnings("unchecked") final ArgumentCaptor<List<HundredReplayEvidenceService.PendingReplay>> captor =
+        @SuppressWarnings("unchecked")
+        final ArgumentCaptor<List<HundredReplayEvidenceService.PendingReplay>> captor =
                 ArgumentCaptor.forClass(List.class);
         verify(evidenceService).attach(eq(10L), captor.capture());
         final List<HundredReplayEvidenceService.PendingReplay> pending = captor.getValue();

@@ -10,9 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
-/**
- * 通过 Keycloak Admin API 查询/删除用户并管理 realm role。
- */
+/** 通过 Keycloak Admin API 查询/删除用户并管理 realm role。 */
 @Service
 public class KeycloakAdminUserService {
 
@@ -25,9 +23,7 @@ public class KeycloakAdminUserService {
         this.realm = realm;
     }
 
-    /**
-     * 查询 Keycloak 用户详情，用户不存在时返回 null。
-     */
+    /** 查询 Keycloak 用户详情，用户不存在时返回 null。 */
     public UserRepresentation getUser(final String keycloakUserId) {
         try {
             return keycloak.realm(realm).users().get(keycloakUserId).toRepresentation();
@@ -36,9 +32,7 @@ public class KeycloakAdminUserService {
         }
     }
 
-    /**
-     * 获取 Keycloak 用户的联合身份（federated identities）。
-     */
+    /** 获取 Keycloak 用户的联合身份（federated identities）。 */
     public List<FederatedIdentityRepresentation> getFederatedIdentities(final String keycloakUserId) {
         try {
             return keycloak.realm(realm).users().get(keycloakUserId).getFederatedIdentity();
@@ -47,9 +41,7 @@ public class KeycloakAdminUserService {
         }
     }
 
-    /**
-     * 查询用户是否已分配指定 realm role。
-     */
+    /** 查询用户是否已分配指定 realm role。 */
     public boolean hasRealmRole(final String keycloakUserId, final String roleName) {
         try {
             final List<RoleRepresentation> roles = keycloak.realm(realm)
@@ -66,9 +58,7 @@ public class KeycloakAdminUserService {
         }
     }
 
-    /**
-     * 给 Keycloak 用户分配 realm role。
-     */
+    /** 给 Keycloak 用户分配 realm role。 */
     public void addRealmRole(final String keycloakUserId, final String roleName) {
         try {
             final RoleRepresentation role = keycloak.realm(realm).roles().get(roleName).toRepresentation();
@@ -78,9 +68,7 @@ public class KeycloakAdminUserService {
         }
     }
 
-    /**
-     * 移除 Keycloak 用户的 realm role。
-     */
+    /** 移除 Keycloak 用户的 realm role。 */
     public void removeRealmRole(final String keycloakUserId, final String roleName) {
         try {
             final RoleRepresentation role = keycloak.realm(realm).roles().get(roleName).toRepresentation();
@@ -90,9 +78,7 @@ public class KeycloakAdminUserService {
         }
     }
 
-    /**
-     * 删除 Keycloak 用户。用户不存在时不抛异常。
-     */
+    /** 删除 Keycloak 用户。用户不存在时不抛异常。 */
     public void deleteUser(final String keycloakUserId) {
         try (Response response = keycloak.realm(realm).users().delete(keycloakUserId)) {
             final int status = response.getStatus();

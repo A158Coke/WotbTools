@@ -1,5 +1,20 @@
 package com.wotb.web.replay.ai.gateway;
 
+import java.net.SocketTimeoutException;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.LongSupplier;
+
 import com.openai.core.JsonValue;
 import com.openai.core.Timeout;
 import com.openai.errors.OpenAIException;
@@ -7,8 +22,6 @@ import com.openai.errors.OpenAIInvalidDataException;
 import com.openai.errors.OpenAIIoException;
 import com.openai.errors.OpenAIServiceException;
 import com.openai.models.completions.CompletionUsage;
-import com.wotb.core.processing.AiNotConfiguredException;
-import com.wotb.web.config.AiModelProperties;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.observation.ObservationRegistry;
@@ -30,21 +43,8 @@ import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.http.okhttp.OpenAiHttpClientBuilderCustomizer;
 import org.springframework.util.StringUtils;
 
-import java.net.SocketTimeoutException;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.LongSupplier;
-
+import com.wotb.core.processing.AiNotConfiguredException;
+import com.wotb.web.config.AiModelProperties;
 /**
  * The only production AI transport adapter: maps {@link AiChatRequest} onto Spring AI
  * {@link OpenAiChatModel} (official OpenAI-compatible adapter) against
@@ -211,7 +211,7 @@ public class SpringAiChatGateway implements AiChatGateway {
         final String correlationId = StringUtils.hasText(request.correlationId())
                 ? request.correlationId()
                 : (StringUtils.hasText(AiRequestContext.correlationId())
-                ? AiRequestContext.correlationId() : UUID.randomUUID().toString());
+                        ? AiRequestContext.correlationId() : UUID.randomUUID().toString());
         // Optional external cancellation (client abort): cancels the in-flight
         // upstream call and stops the retry loop with AI_CANCELLED.
         final AiCancellationToken cancellation = AiRequestContext.cancellationToken();
@@ -350,7 +350,7 @@ public class SpringAiChatGateway implements AiChatGateway {
         final String correlationId = StringUtils.hasText(request.correlationId())
                 ? request.correlationId()
                 : (StringUtils.hasText(AiRequestContext.correlationId())
-                ? AiRequestContext.correlationId() : UUID.randomUUID().toString());
+                        ? AiRequestContext.correlationId() : UUID.randomUUID().toString());
         // Optional external cancellation (client abort): cancels the in-flight
         // upstream stream and ends the flow with AI_CANCELLED.
         final AiCancellationToken cancellation = AiRequestContext.cancellationToken();
@@ -481,7 +481,7 @@ public class SpringAiChatGateway implements AiChatGateway {
                             "AI_TIMEOUT", null, correlationId, e), retryCount, request, metrics);
                 }
                 throw finishFailure(new AiUpstreamException(
-                                "AI_UPSTREAM_UNAVAILABLE", null, correlationId, e),
+                        "AI_UPSTREAM_UNAVAILABLE", null, correlationId, e),
                         retryCount, request, metrics);
             } finally {
                 watchdog.cancel(false);
@@ -557,9 +557,7 @@ public class SpringAiChatGateway implements AiChatGateway {
         return pieces;
     }
 
-    /**
-     * 分块兜底时每片之间的轻量间隔（仅触发切分时调用；中断恢复标志后继续）。
-     */
+    /** 分块兜底时每片之间的轻量间隔（仅触发切分时调用；中断恢复标志后继续）。 */
     private static void pauseChunk() {
         try {
             Thread.sleep(CHUNK_PAUSE_MILLIS);

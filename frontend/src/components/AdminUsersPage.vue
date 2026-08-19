@@ -1,9 +1,9 @@
 <script setup>
-import {onBeforeUnmount, onMounted, ref} from 'vue'
-import {useI18n} from 'vue-i18n'
-import {useAuth} from '../composables/useAuth.js'
-import {useError} from '../composables/useError.js'
-import {apiErrorLabel} from '../utils/display.js'
+import { ref, onBeforeUnmount, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useAuth } from '../composables/useAuth.js'
+import { useError } from '../composables/useError.js'
+import { apiErrorLabel } from '../utils/display.js'
 import * as api from '../utils/api-boost.js'
 
 const { t, te } = useI18n()

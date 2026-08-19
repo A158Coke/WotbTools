@@ -26,9 +26,7 @@ public final class PlayerAnalysisTerms {
         return (total / 60) + "分" + String.format("%02d", total % 60) + "秒";
     }
 
-    /**
-     * 战斗时间范围，例如 {@code [0分10秒-0分25秒]}。
-     */
+    /** 战斗时间范围，例如 {@code [0分10秒-0分25秒]}。 */
     public static String battleRange(final float startSec, final float endSec) {
         return "[" + battleClock(startSec) + "-" + battleClock(endSec) + "]";
     }
@@ -51,9 +49,7 @@ public final class PlayerAnalysisTerms {
         return deathSec > 0 ? battleClock((float) deathSec) : "未知";
     }
 
-    /**
-     * 战斗阶段。
-     */
+    /** 战斗阶段。 */
     public static String phaseLabel(final BattlePhaseType type) {
         if (type == null) return "未知阶段";
         return switch (type) {
@@ -68,9 +64,7 @@ public final class PlayerAnalysisTerms {
         };
     }
 
-    /**
-     * 移动状态。
-     */
+    /** 移动状态。 */
     public static String movementLabel(final MovementType type) {
         if (type == null) return "未知";
         return switch (type) {
@@ -80,9 +74,7 @@ public final class PlayerAnalysisTerms {
         };
     }
 
-    /**
-     * 解码置信度。
-     */
+    /** 解码置信度。 */
     public static String confidenceLabel(final DecodeConfidence confidence) {
         if (confidence == null) return "未知";
         return switch (confidence) {

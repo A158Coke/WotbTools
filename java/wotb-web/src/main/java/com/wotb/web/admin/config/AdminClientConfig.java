@@ -6,9 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/**
- * Keycloak Admin Client 配置。使用服务账号（client_credentials）调 Admin API。
- */
+/** Keycloak Admin Client 配置。使用服务账号（client_credentials）调 Admin API。 */
 @Configuration
 public class AdminClientConfig {
 

@@ -20,17 +20,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
-/**
- * model -> 前端 DTO（复用 core 列 key；展示值转换为稳定英文码）。
- */
+/** model -> 前端 DTO（复用 core 列 key；展示值转换为稳定英文码）。 */
 public final class Mapper {
 
     private Mapper() {
     }
 
-    /**
-     * 玩家表列定义 (纯数据: key + 是否数值; 中文名由前端映射)。
-     */
+    /** 玩家表列定义 (纯数据: key + 是否数值; 中文名由前端映射)。 */
     public static List<ColumnDef> playerColumns() {
         final List<ColumnDef> out = new ArrayList<>();
         for (final Columns.Column c : Columns.PLAYER) {
@@ -39,9 +35,7 @@ public final class Mapper {
         return out;
     }
 
-    /**
-     * 汇总表列定义 (key + 是否数值 + 取值函数; 中文名由前端/导出层各自映射)。
-     */
+    /** 汇总表列定义 (key + 是否数值 + 取值函数; 中文名由前端/导出层各自映射)。 */
     record AggCol(String key, boolean num, Function<Agg, Object> get) {
     }
 

@@ -34,9 +34,7 @@ import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-/**
- * 回放业务编排 (无状态, 与 HTTP 解耦): 解析去重、评分、映射、导出。
- */
+/** 回放业务编排 (无状态, 与 HTTP 解耦): 解析去重、评分、映射、导出。 */
 @Service
 public class ReplayService {
 
@@ -59,9 +57,7 @@ public class ReplayService {
         this.usageMetrics = usageMetrics;
     }
 
-    /**
-     * 执行并统计回放解析使用指标（成功与异常都记录；无 ReplayUsageMetrics 时原样执行）。
-     */
+    /** 执行并统计回放解析使用指标（成功与异常都记录；无 ReplayUsageMetrics 时原样执行）。 */
     private <T> T timed(final String operation, final int fileCount, final ThrowingSupplier<T> body) throws Exception {
         if (usageMetrics == null) {
             return body.get();
@@ -74,9 +70,7 @@ public class ReplayService {
         T get() throws Exception;
     }
 
-    /**
-     * 列定义 (前端构建表头/列选择/排序)。
-     */
+    /** 列定义 (前端构建表头/列选择/排序)。 */
     public Map<String, List<ColumnDef>> columns() {
         return Map.of(
                 "player", Mapper.playerColumns(),
@@ -84,23 +78,17 @@ public class ReplayService {
                 "rating", Mapper.ratingColumns());
     }
 
-    /**
-     * 已加载车辆数 (健康检查用)。
-     */
+    /** 已加载车辆数 (健康检查用)。 */
     public int tankCount() {
         return tankopedia.size();
     }
 
-    /**
-     * 当前评分参数 (供前端「评分规则」展示算法与真实权重)。
-     */
+    /** 当前评分参数 (供前端「评分规则」展示算法与真实权重)。 */
     public RatingConfig ratingConfig() {
         return Rating.config();
     }
 
-    /**
-     * 解析(并去重), 返回预览: 每场玩家数据 + 跨场汇总 + 去重/失败信息。
-     */
+    /** 解析(并去重), 返回预览: 每场玩家数据 + 跨场汇总 + 去重/失败信息。 */
     public PreviewResponse preview(final MultipartFile[] files) throws Exception {
         return timed(ReplayUsageMetrics.OP_PREVIEW, files.length, () -> capacityLimiter.execute(() -> previewWithinPermit(files)));
     }
@@ -122,9 +110,7 @@ public class ReplayService {
                 Mapper.playerColumns(), Mapper.aggregateColumns());
     }
 
-    /**
-     * 实时 rating: 只基于本次上传回放计算，不落库、不读取历史记录。
-     */
+    /** 实时 rating: 只基于本次上传回放计算，不落库、不读取历史记录。 */
     public RatingResponse ratingLeaderboard(final MultipartFile[] files) throws Exception {
         return timed(ReplayUsageMetrics.OP_RATING, files.length, () -> capacityLimiter.execute(() -> ratingWithinPermit(files)));
     }

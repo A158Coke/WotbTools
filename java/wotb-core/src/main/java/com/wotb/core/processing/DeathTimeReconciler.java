@@ -54,23 +54,17 @@ public final class DeathTimeReconciler {
     private DeathTimeReconciler() {
     }
 
-    /**
-     * 一条 EXACT HP 证据（battle-relative 秒 + 事件 sequence）；同秒时 sequence 大者更晚。
-     */
+    /** 一条 EXACT HP 证据（battle-relative 秒 + 事件 sequence）；同秒时 sequence 大者更晚。 */
     private record HealthEvidence(double timeSec, int sequence) {
 
-        /**
-         * 是否严格晚于 other（null 视为最早）。
-         */
+        /** 是否严格晚于 other（null 视为最早）。 */
         boolean after(final HealthEvidence other) {
             return other == null || timeSec > other.timeSec
                     || (timeSec == other.timeSec && sequence > other.sequence);
         }
     }
 
-    /**
-     * 保留较晚的一条证据（同秒时 sequence 大者）。
-     */
+    /** 保留较晚的一条证据（同秒时 sequence 大者）。 */
     private static HealthEvidence later(final HealthEvidence a, final HealthEvidence b) {
         return a.after(b) ? a : b;
     }
@@ -78,11 +72,11 @@ public final class DeathTimeReconciler {
     /**
      * 校准 {@code battle.players} 中非存活且结算无死亡时刻玩家的 {@code survivalTimeSec}。
      *
-     * @param battle                 已解析战绩（players 会被原地校准）
-     * @param events                 重建事件流（可能为 null）
+     * @param battle                已解析战绩（players 会被原地校准）
+     * @param events                重建事件流（可能为 null）
      * @param battleStartRawClockSec 战斗开始原始时钟（可能为 null；null 时按 raw 时钟视为 battle-relative）
-     * @param mapping                权威实体映射（{@link TeamEntityMapper#resolve} 产出；
-     *                               身份不可用的实体证据被拒绝）
+     * @param mapping               权威实体映射（{@link TeamEntityMapper#resolve} 产出；
+     *                              身份不可用的实体证据被拒绝）
      */
     public static void reconcile(
             final Battle battle,
@@ -150,9 +144,7 @@ public final class DeathTimeReconciler {
         }
     }
 
-    /**
-     * 从权威身份解析到结算玩家：优先账号，其次唯一昵称（nickname fallback 的解析结果）。
-     */
+    /** 从权威身份解析到结算玩家：优先账号，其次唯一昵称（nickname fallback 的解析结果）。 */
     private static PlayerResult playerOf(final Battle battle, final TeamEntityIdentity identity) {
         if (identity.accountId() > 0) {
             for (final PlayerResult p : battle.players) {
@@ -172,9 +164,7 @@ public final class DeathTimeReconciler {
         return null;
     }
 
-    /**
-     * battle-relative 秒：与 MapOverviewBuilder.relativeSec 同语义（battleClock 优先，其次 raw-battleStart，最后 raw）。
-     */
+    /** battle-relative 秒：与 MapOverviewBuilder.relativeSec 同语义（battleClock 优先，其次 raw-battleStart，最后 raw）。 */
     private static double relativeSec(final HealthChangedEvent h, final Float battleStartRawClockSec) {
         if (h.timestamp() == null) {
             return 0;

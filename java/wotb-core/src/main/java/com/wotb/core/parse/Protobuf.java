@@ -20,9 +20,7 @@ public final class Protobuf {
     private Protobuf() {
     }
 
-    /**
-     * 解码一段 protobuf, 返回 field -> 值列表 (重复字段保留多值)。
-     */
+    /** 解码一段 protobuf, 返回 field -> 值列表 (重复字段保留多值)。 */
     public static Map<Integer, List<Object>> decode(final byte[] buffer) {
         if (buffer == null) {
             throw invalid("input is null", 0);
@@ -88,9 +86,7 @@ public final class Protobuf {
         return fields;
     }
 
-    /**
-     * 读取一个 varint, 返回 [值, 新位置]。
-     */
+    /** 读取一个 varint, 返回 [值, 新位置]。 */
     static long[] readVarint(final byte[] buffer, final int startIndex) {
         if (buffer == null) {
             throw invalid("input is null", startIndex);
@@ -153,17 +149,13 @@ public final class Protobuf {
 
     // ---- 取值辅助 (对应 Python 的 f1 / f_uint / as_str / as_message) ----
 
-    /**
-     * 取字段第一个值; 不存在返回 null。
-     */
+    /** 取字段第一个值; 不存在返回 null。 */
     public static Object first(final Map<Integer, List<Object>> fields, final int num) {
         final List<Object> values = fields.get(num);
         return values == null || values.isEmpty() ? null : values.getFirst();
     }
 
-    /**
-     * 取字段第一个值作为 long; 不存在返回 default。
-     */
+    /** 取字段第一个值作为 long; 不存在返回 default。 */
     public static long firstLong(final Map<Integer, List<Object>> fields, final int num, final long defaultValue) {
         final Object value = first(fields, num);
         if (value instanceof Number number) {
@@ -172,9 +164,7 @@ public final class Protobuf {
         return defaultValue;
     }
 
-    /**
-     * 取字段第一个值作为嵌套消息。
-     */
+    /** 取字段第一个值作为嵌套消息。 */
     public static Map<Integer, List<Object>> message(final Map<Integer, List<Object>> fields, final int num) {
         final Object value = first(fields, num);
         if (value instanceof byte[] bytes) {
@@ -183,9 +173,7 @@ public final class Protobuf {
         return new LinkedHashMap<>();
     }
 
-    /**
-     * 把 length-delimited 字段当作字符串 (UTF-8)。
-     */
+    /** 把 length-delimited 字段当作字符串 (UTF-8)。 */
     public static String string(final Map<Integer, List<Object>> fields, final int num) {
         final Object value = first(fields, num);
         if (value instanceof byte[] bytes) {

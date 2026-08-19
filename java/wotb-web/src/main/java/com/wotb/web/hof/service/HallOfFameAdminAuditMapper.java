@@ -1,8 +1,8 @@
 package com.wotb.web.hof.service;
 
+import com.wotb.web.util.Mapper;
 import com.wotb.web.hof.dto.HofAdminAuditDto;
 import com.wotb.web.hof.entity.HallOfFameAdminLog;
-import com.wotb.web.util.Mapper;
 import org.springframework.stereotype.Service;
 
 @Service

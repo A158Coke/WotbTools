@@ -3,9 +3,8 @@
  * App shell 最小回归测试（PR #94 P0）：merge 冲突不得破坏 defineAsyncComponent import。
  * 覆盖：module evaluate / mount；?view=playback-qa 解析 PlaybackQaPage；?view=vehicle-models 无效。
  */
-import {afterEach, describe, expect, it, vi} from 'vitest'
-import {flushPromises, mount} from '@vue/test-utils'
-import App from './App.vue'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 
 // 重视图 mock 为轻组件（本测试只验证 view 解析，不挂载重型页面）
 vi.mock('./components/ReplayPage.vue', () => ({ default: { name: 'ReplayPageMock', template: '<div data-test="view-replay" />' } }))
@@ -22,6 +21,8 @@ vi.mock('./composables/useAuth.js', () => ({
     login: vi.fn(),
   }),
 }))
+
+import App from './App.vue'
 
 function mountApp() {
   return mount(App, { global: { mocks: { $t: (key) => key, $i18n: { locale: { value: 'zh' } } } } })

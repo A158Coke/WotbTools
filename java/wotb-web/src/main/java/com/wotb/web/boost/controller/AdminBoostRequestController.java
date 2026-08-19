@@ -17,9 +17,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
 
-/**
- * 管理员侧需求审核 + 分配操作。只需要 boost-manager role。
- */
+/** 管理员侧需求审核 + 分配操作。只需要 boost-manager role。 */
 @RestController
 @RequestMapping(ApiPaths.ADMIN_BOOST_REQUESTS)
 public class AdminBoostRequestController {

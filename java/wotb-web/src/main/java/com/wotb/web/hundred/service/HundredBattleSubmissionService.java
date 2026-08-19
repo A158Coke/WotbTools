@@ -69,19 +69,13 @@ public class HundredBattleSubmissionService {
     private static final int MAX_PAGE_SIZE = 100;
     private static final int REPLAY_COUNT = 5;
 
-    /**
-     * 「百场」资格最低场次：管理员最终 approvedBattleCount 必须 ≥ 100（人工审核为最终资格判断）。
-     */
+    /** 「百场」资格最低场次：管理员最终 approvedBattleCount 必须 ≥ 100（人工审核为最终资格判断）。 */
     private static final int MIN_APPROVED_BATTLE_COUNT = 100;
 
-    /**
-     * 拒绝原因分类（docs/current-plan.md §32）。
-     */
+    /** 拒绝原因分类（docs/current-plan.md §32）。 */
     private static final Set<String> REJECT_CATEGORIES = Set.of(
             "SCREENSHOT_MISMATCH", "SCREENSHOT_UNREADABLE", "INSUFFICIENT_PROOF", "SUSPECTED_FRAUD", "OTHER");
-    /**
-     * 删除原因分类（docs/current-plan.md §34）。
-     */
+    /** 删除原因分类（docs/current-plan.md §34）。 */
     private static final Set<String> DELETE_CATEGORIES = Set.of(
             "CHEATING_FORGERY", "WRONG_REVIEW", "PLAYER_IDENTITY_ISSUE", "DATA_ERROR", "ADMIN_CORRECTION", "OTHER");
 
@@ -263,9 +257,7 @@ public class HundredBattleSubmissionService {
         return new HundredCreateResult(submissionId, HundredBattleStatus.PENDING.name());
     }
 
-    /**
-     * 用户取消自己的 PENDING（不影响 CURRENT；proof 截图同事务清空）。
-     */
+    /** 用户取消自己的 PENDING（不影响 CURRENT；proof 截图同事务清空）。 */
     @Transactional
     public HundredSubmissionSummaryDto cancelSubmission(final String userId, final long submissionId) {
         final HundredBattleSubmission submission = repository.findByIdForUpdate(submissionId)
@@ -302,9 +294,7 @@ public class HundredBattleSubmissionService {
         return mapper.toLeaderboardPage(rows, vehicleId, vehicle.name(), page, effectiveSize, rankMap(vehicleId));
     }
 
-    /**
-     * 全部 CURRENT 按伤害分组计数 → 前缀和 → damage → rank（跨页并列也全局正确）。
-     */
+    /** 全部 CURRENT 按伤害分组计数 → 前缀和 → damage → rank（跨页并列也全局正确）。 */
     private Map<Integer, Integer> rankMap(final long vehicleId) {
         final List<Object[]> groups = repository.countCurrentGroupedByDamage(vehicleId);
         final List<int[]> sorted = groups.stream()
@@ -322,9 +312,7 @@ public class HundredBattleSubmissionService {
 
     // ── Phase 6：Profile ──────────────────────────────────────────────────
 
-    /**
-     * 个人中心百场状态：CURRENT 纪录 + PENDING 申请 + 最近拒绝反馈。
-     */
+    /** 个人中心百场状态：CURRENT 纪录 + PENDING 申请 + 最近拒绝反馈。 */
     @Transactional(readOnly = true)
     public HundredUserStatusDto userStatus(final String userId) {
         return new HundredUserStatusDto(
@@ -341,9 +329,7 @@ public class HundredBattleSubmissionService {
 
     // ── Phase 4：Admin moderation ─────────────────────────────────────────
 
-    /**
-     * 管理后台列表：status 过滤（null = 全部）。
-     */
+    /** 管理后台列表：status 过滤（null = 全部）。 */
     @Transactional(readOnly = true)
     public HundredAdminPageDto adminList(final String status, final int page, final int size) {
         final String normalized = StringUtils.hasText(status) ? HundredBattleStatus.from(status).name() : null;
@@ -355,9 +341,7 @@ public class HundredBattleSubmissionService {
                 page, effectiveSize, rows.getTotalElements(), rows.getTotalPages());
     }
 
-    /**
-     * 管理后台详情（审核页一屏；proofScreenshot 仅 PENDING 返回）。
-     */
+    /** 管理后台详情（审核页一屏；proofScreenshot 仅 PENDING 返回）。 */
     @Transactional(readOnly = true)
     public HundredAdminDetailDto adminDetail(final long submissionId) {
         final HundredBattleSubmission submission = repository.findById(submissionId)
@@ -417,9 +401,7 @@ public class HundredBattleSubmissionService {
         return result;
     }
 
-    /**
-     * REJECT：原因强制（OTHER 必须填文本）；proof 截图同事务清空；CURRENT 不变。
-     */
+    /** REJECT：原因强制（OTHER 必须填文本）；proof 截图同事务清空；CURRENT 不变。 */
     @Transactional
     public HundredSubmissionSummaryDto reject(final String adminUserId,
                                               final long submissionId,
@@ -444,9 +426,7 @@ public class HundredBattleSubmissionService {
         return result;
     }
 
-    /**
-     * 删除 CURRENT（管理员）：CURRENT → DELETED，不恢复 SUPERSEDED；原因强制。
-     */
+    /** 删除 CURRENT（管理员）：CURRENT → DELETED，不恢复 SUPERSEDED；原因强制。 */
     @Transactional
     public HundredSubmissionSummaryDto deleteCurrent(final String adminUserId,
                                                      final long submissionId,
@@ -501,9 +481,7 @@ public class HundredBattleSubmissionService {
         return normalized;
     }
 
-    /**
-     * 读取 MultipartFile 原始字节（读取失败 → 稳定 400 INVALID_REPLAY_FILE，非 500）。
-     */
+    /** 读取 MultipartFile 原始字节（读取失败 → 稳定 400 INVALID_REPLAY_FILE，非 500）。 */
     private static byte[] readBytes(final MultipartFile file) {
         try {
             return file.getBytes();
@@ -512,9 +490,7 @@ public class HundredBattleSubmissionService {
         }
     }
 
-    /**
-     * 解析失败 → 稳定 400 INVALID_REPLAY_FILE。
-     */
+    /** 解析失败 → 稳定 400 INVALID_REPLAY_FILE。 */
     private static Battle parse(final byte[] bytes) {
         try {
             return ReplayParser.parse(bytes);
@@ -532,9 +508,7 @@ public class HundredBattleSubmissionService {
         }
     }
 
-    /**
-     * 在 battle 名册中按 accountId 找玩家（gameId 匹配证据）。
-     */
+    /** 在 battle 名册中按 accountId 找玩家（gameId 匹配证据）。 */
     private static PlayerResult findPlayerByAccountId(final Battle battle, final long gameId) {
         if (battle.players == null) {
             return null;

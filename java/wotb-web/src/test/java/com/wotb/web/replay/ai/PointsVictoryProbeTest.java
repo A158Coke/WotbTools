@@ -28,9 +28,7 @@ import java.util.Map;
  */
 class PointsVictoryProbeTest {
 
-    /**
-     * surefire 工作目录为 wotb-web 模块目录，回退样本相对它指向仓库 common/data。
-     */
+    /** surefire 工作目录为 wotb-web 模块目录，回退样本相对它指向仓库 common/data。 */
     private static final String LOCAL_MAUS_SAMPLE =
             "../../common/data/20260808_1608__CHRD-A158布丁_Maus_13102443767740493.wotbreplay";
 

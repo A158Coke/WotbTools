@@ -9,9 +9,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 写 target/ai-eval-report/report.md + report.json（每例 PASS/FAIL + 期望判断）。
- */
+/** 写 target/ai-eval-report/report.md + report.json（每例 PASS/FAIL + 期望判断）。 */
 public final class AiEvalReportWriter {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();

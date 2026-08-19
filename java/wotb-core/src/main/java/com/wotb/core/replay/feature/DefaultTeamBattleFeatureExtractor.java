@@ -51,8 +51,8 @@ public class DefaultTeamBattleFeatureExtractor {
                 battle);
         final List<ReplayEvent> events = reconstruction != null && reconstruction.events() != null
                 ? reconstruction.events().stream()
-                .sorted(Comparator.comparingInt(ReplayEvent::sequence))
-                .toList()
+                        .sorted(Comparator.comparingInt(ReplayEvent::sequence))
+                        .toList()
                 : List.of();
         final TeamEntityMapping entityMapping = TeamEntityMapper.resolve(battle, reconstruction);
         final List<PlayerResult> authoritativeMembers = TeamAggregateExtractor.authoritativeMembers(battle, perspectiveTeam);
@@ -152,8 +152,8 @@ public class DefaultTeamBattleFeatureExtractor {
                 ? battleEndResolved.battleEndRelativeSec() : Float.NaN;
         final List<BattlePhaseSummary> battlePhases = hasUsableTimedEvent
                 ? BattlePhaseSummary.buildRelativePhasesWithSurvival(
-                firstContactTime, phaseEndClock,
-                BattlePhaseSummary.SurvivalTimeline.fromBattleResults(battle, perspectiveTeam))
+                        firstContactTime, phaseEndClock,
+                        BattlePhaseSummary.SurvivalTimeline.fromBattleResults(battle, perspectiveTeam))
                 : List.of();
         final DecodeConfidence eventEndConfidence = TeamKeyEventsExtractor.findEventEndConfidence(events, resolutionByEvent);
         final List<KeyBattleEvent> keyEvents = TeamKeyEventsExtractor.buildKeyEvents(
@@ -210,10 +210,10 @@ public class DefaultTeamBattleFeatureExtractor {
         final boolean observedMatchesAuthoritative = authoritativeAggregate != null
                 && observedAggregate != null
                 && ObservedDamageCoverage.matches(
-                observedAggregate.damageDealt(),
-                observedAggregate.damageReceived(),
-                authoritativeAggregate.totalDamageDealt(),
-                authoritativeAggregate.totalDamageReceived());
+                        observedAggregate.damageDealt(),
+                        observedAggregate.damageReceived(),
+                        authoritativeAggregate.totalDamageDealt(),
+                        authoritativeAggregate.totalDamageReceived());
         if (!observedMatchesAuthoritative) {
             limitations.add("OBSERVED_DAMAGE_IS_PARTIAL");
         }
@@ -357,8 +357,8 @@ public class DefaultTeamBattleFeatureExtractor {
         final List<MovementSegment> movements = entityIds.stream()
                 .map(entityId -> timedPositionsByEntity.getOrDefault(entityId, List.of()))
                 .flatMap(timedPositions ->
-                        DefaultPlayerBattleFeatureExtractor
-                                .compressMovements(convertTimedPositions(timedPositions), mapCode).stream())
+                    DefaultPlayerBattleFeatureExtractor
+                            .compressMovements(convertTimedPositions(timedPositions), mapCode).stream())
                 .sorted(Comparator.comparingDouble(MovementSegment::startTime)
                         .thenComparingDouble(MovementSegment::endTime))
                 .toList();
@@ -384,12 +384,12 @@ public class DefaultTeamBattleFeatureExtractor {
         final List<KeyBattleEvent> keyEvents = deathTime == null
                 ? List.of()
                 : List.of(new KeyBattleEvent(
-                deathTime.floatValue(),
-                "TEAM_MEMBER_DESTROYED",
-                "accountId=" + player.accountId,
-                DecodeConfidence.EXACT,
-                "BATTLE_RESULTS",
-                entityIds));
+                        deathTime.floatValue(),
+                        "TEAM_MEMBER_DESTROYED",
+                        "accountId=" + player.accountId,
+                        DecodeConfidence.EXACT,
+                        "BATTLE_RESULTS",
+                        entityIds));
         return new TeamMemberFeatureSet(
                 entityIds,
                 player.accountId,
@@ -412,9 +412,7 @@ public class DefaultTeamBattleFeatureExtractor {
                 limitations);
     }
 
-    /**
-     * 包内 forwarder：新逻辑在 TeamKeyEventsExtractor，此入口供 DeathProximityTest 直接调用。
-     */
+    /** 包内 forwarder：新逻辑在 TeamKeyEventsExtractor，此入口供 DeathProximityTest 直接调用。 */
     static TeamMemberFeatureSet.DeathProximity resolveDeathProximity(
             final ReplayReconstruction recon,
             final TeamEntityMapping mapping,
@@ -469,14 +467,11 @@ public class DefaultTeamBattleFeatureExtractor {
     ) {
     }
 
-    record ResolvedEvent(ReplayEvent event, TacticalTimeResolution resolution) {
-    }
+    record ResolvedEvent(ReplayEvent event, TacticalTimeResolution resolution) {}
 
-    record TimedTeamDamage(AttributedDamage event, float battleRelativeSec) {
-    }
+    record TimedTeamDamage(AttributedDamage event, float battleRelativeSec) {}
 
-    record TimedTeamPosition(PositionChangedEvent event, float battleRelativeSec) {
-    }
+    record TimedTeamPosition(PositionChangedEvent event, float battleRelativeSec) {}
 
     private static List<DefaultPlayerBattleFeatureExtractor.TimedPosition> convertTimedPositions(
             final List<TimedTeamPosition> timedPositions) {

@@ -1,9 +1,7 @@
 package com.wotb.core.processing;
 
 import org.junit.jupiter.api.Test;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 18.1: BattleCategory + Scope 测试。

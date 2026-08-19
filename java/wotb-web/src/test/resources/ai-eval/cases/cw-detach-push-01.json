@@ -1,43 +1,43 @@
 {
-  "id": "cw-detach-push-01",
-  "mode": "TEAM_PERSPECTIVE",
-  "arenaBonusType": 3,
-  "fixtureKey": "cw-detach-push-01",
-  "lessonRef": "docs/ai-lessons/cw-detach-push-01.md",
-  "expectedJudgment": "空间分离（移动+承伤+阵亡；是否脱节由 LLM 判断）",
-  "checks": [
-    {
-      "kind": "prompt_contains",
-      "text": "SPATIAL_SEPARATION_EVIDENCE"
-    },
-    {
-      "kind": "prompt_contains",
-      "text": "kind=SEPARATION_WINDOW"
-    },
-    {
-      "kind": "prompt_contains",
-      "text": "movementState=MOVING"
-    },
-    {
-      "kind": "prompt_contains",
-      "text": "damageReceivedDuringSpan"
-    },
-    {
-      "kind": "prompt_contains",
-      "text": "deathDuringSpan"
-    },
-    {
-      "kind": "prompt_omits",
-      "text": "SOLO_DETACHED"
-    },
-    {
-      "kind": "prompt_omits",
-      "text": "单走脱节"
-    },
-    {
-      "kind": "prompt_omits",
-      "text": "无掩护"
-    }
-  ],
-  "note": "MT 移动分离、远离目标点、被集火阵亡。Backend 只输出中性空间分离事实（kind=SEPARATION_WINDOW / movementState=MOVING / 窗口内承伤/阵亡），是否脱节由 LLM 综合判断（Backend Evidence Boundary）。"
+ "id": "cw-detach-push-01",
+ "mode": "TEAM_PERSPECTIVE",
+ "arenaBonusType": 3,
+ "fixtureKey": "cw-detach-push-01",
+ "lessonRef": "docs/ai-lessons/cw-detach-push-01.md",
+ "expectedJudgment": "空间分离（移动+承伤+阵亡；是否脱节由 LLM 判断）",
+ "checks": [
+  {
+   "kind": "prompt_contains",
+   "text": "SPATIAL_SEPARATION_EVIDENCE"
+  },
+  {
+   "kind": "prompt_contains",
+   "text": "kind=SEPARATION_WINDOW"
+  },
+  {
+   "kind": "prompt_contains",
+   "text": "movementState=MOVING"
+  },
+  {
+   "kind": "prompt_contains",
+   "text": "damageReceivedDuringSpan"
+  },
+  {
+   "kind": "prompt_contains",
+   "text": "deathDuringSpan"
+  },
+  {
+   "kind": "prompt_omits",
+   "text": "SOLO_DETACHED"
+  },
+  {
+   "kind": "prompt_omits",
+   "text": "单走脱节"
+  },
+  {
+   "kind": "prompt_omits",
+   "text": "无掩护"
+  }
+ ],
+ "note": "MT 移动分离、远离目标点、被集火阵亡。Backend 只输出中性空间分离事实（kind=SEPARATION_WINDOW / movementState=MOVING / 窗口内承伤/阵亡），是否脱节由 LLM 综合判断（Backend Evidence Boundary）。"
 }

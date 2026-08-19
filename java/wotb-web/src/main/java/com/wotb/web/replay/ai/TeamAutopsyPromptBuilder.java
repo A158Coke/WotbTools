@@ -1,11 +1,11 @@
 package com.wotb.web.replay.ai;
 
-import com.wotb.core.model.Battle;
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.processing.FriendlyEnemyResult.Winner;
+import com.wotb.core.model.Battle;
 import com.wotb.core.replay.evidence.AiEvidence;
 import com.wotb.core.replay.feature.TeamAutopsyStats;
-import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.util.PromptDataQuoter;
 
 import java.util.List;
@@ -152,7 +152,7 @@ public final class TeamAutopsyPromptBuilder {
         }
         final Map<String, TeamAutopsyStats> byKey = roster == null ? Map.of()
                 : roster.stream().collect(Collectors.toMap(
-                TeamAutopsyStats::playerKey, Function.identity()));
+                        TeamAutopsyStats::playerKey, Function.identity()));
         final StringBuilder sb = new StringBuilder(512);
         if (!result.biggestLiabilities().isEmpty()) {
             sb.append("\n\n## 重点复查\n\n");
@@ -171,9 +171,7 @@ public final class TeamAutopsyPromptBuilder {
         return sb.toString();
     }
 
-    /**
-     * 按 playerKey 回查后端 roster 的权威昵称/坦克名；playerKey 仅作内部 lookup，绝不进入用户正文。
-     */
+    /** 按 playerKey 回查后端 roster 的权威昵称/坦克名；playerKey 仅作内部 lookup，绝不进入用户正文。 */
     private static String renderPlayer(final String playerKey,
                                        final Map<String, TeamAutopsyStats> byKey) {
         final TeamAutopsyStats stat = byKey.get(playerKey);
@@ -189,9 +187,7 @@ public final class TeamAutopsyPromptBuilder {
         return label.replaceAll("[\\r\\n]", " ");
     }
 
-    /**
-     * 团队赛胜负标签（battle 可用时附加全歼双向语义）：全歼敌方获胜 / 被敌方全歼落败。
-     */
+    /** 团队赛胜负标签（battle 可用时附加全歼双向语义）：全歼敌方获胜 / 被敌方全歼落败。 */
     static String winnerLabel(final TeamBattleWinner winner, final String teamLabel,
                               final Battle battle, final int perspectiveTeam) {
         if (winner == null) {
@@ -223,9 +219,7 @@ public final class TeamAutopsyPromptBuilder {
         };
     }
 
-    /**
-     * 点数胜利的结束方式说明（供 prompt 使用；禁止 AI 把点数胜负写成常规胜利）。
-     */
+    /** 点数胜利的结束方式说明（供 prompt 使用；禁止 AI 把点数胜负写成常规胜利）。 */
     private static String pointsDecidedNote(final TeamBattleWinner winner) {
         return switch (winner.pointsEndReason()) {
             case TIME_EXPIRED -> "本局为时间耗尽点数判定（结束时刻双方均未全员阵亡，时长达到 7 分钟），"

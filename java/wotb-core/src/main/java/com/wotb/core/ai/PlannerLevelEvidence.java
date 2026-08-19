@@ -314,7 +314,7 @@ final class PlannerLevelEvidence {
                     if (vs.position() == null) continue;
 
                     final Vector3 pos = vs.position();
-                    final MapCoordinateResolution coordRes = MapRegionResolver.resolve(pos.x(), pos.z(), mapCode);
+                final MapCoordinateResolution coordRes = MapRegionResolver.resolve(pos.x(), pos.z(), mapCode);
                     if (!coordRes.usable()) continue;
 
                     // 覆盖旧值，保证最后已知位置取到的是最后一次而不是第一次 OBSERVED

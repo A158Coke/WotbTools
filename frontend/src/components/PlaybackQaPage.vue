@@ -5,9 +5,9 @@
  * 场景固定（非随机）：双密集簇制造 PlayerName/TankName 碰撞压力 + 阵亡/失察/录像者/选中状态混合，
  * 时间线 90s 循环（loop），Play/Pause/Reset + 0.5×/1×/2×/4×。
  */
-import {computed, onMounted, ref} from 'vue'
-import {useI18n} from 'vue-i18n'
-import {useAuth} from '../composables/useAuth.js'
+import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useAuth } from '../composables/useAuth.js'
 import BattlePlayback from './BattlePlayback.vue'
 
 const { t } = useI18n()

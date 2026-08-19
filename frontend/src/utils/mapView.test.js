@@ -1,5 +1,5 @@
-import {describe, expect, it} from 'vitest'
-import {createMapView} from './mapView.js'
+import { describe, expect, it } from 'vitest'
+import { createMapView } from './mapView.js'
 
 const image = {
   width: 1000,

@@ -6,20 +6,14 @@ import com.wotb.core.ref.Tankopedia;
 
 import java.util.List;
 
-/**
- * Computes potential damage from per-victim kill damage details.
- */
+/** Computes potential damage from per-victim kill damage details. */
 public final class PotentialDamage {
 
-    /**
-     * Damage details against one victim killed by the attacker.
-     */
+    /** Damage details against one victim killed by the attacker. */
     public record KillVictim(long victimAccountId, int damage, int penetrations) {
     }
 
-    /**
-     * One battle's potential damage result for a player.
-     */
+    /** One battle's potential damage result for a player. */
     public record BattlePotential(int actualDamage, int potentialDamage, int supplementDamage) {
     }
 
@@ -54,9 +48,7 @@ public final class PotentialDamage {
         return (double) total / battles.size();
     }
 
-    /**
-     * Applies the current potential-damage rule to every player in a replay batch.
-     */
+    /** Applies the current potential-damage rule to every player in a replay batch. */
     public static void apply(final List<Battle> battles, final Tankopedia tp) {
         if (battles == null) {
             return;

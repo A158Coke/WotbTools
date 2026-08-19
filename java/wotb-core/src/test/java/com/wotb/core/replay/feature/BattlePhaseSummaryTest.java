@@ -1,12 +1,11 @@
 package com.wotb.core.replay.feature;
 
-import org.junit.jupiter.api.Test;
-
-import java.util.List;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import org.junit.jupiter.api.Test;
+import java.util.List;
 
 class BattlePhaseSummaryTest {
 
@@ -29,178 +28,154 @@ class BattlePhaseSummaryTest {
         }
     }
 
-    @Test
-    void unknownFirstContact() {
+    @Test void unknownFirstContact() {
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(-1f, 120f);
         assertValidPhases(phases, 120f);
         assertFalse(phases.isEmpty());
         assertTrue(phases.stream().noneMatch(p -> p.type() == BattlePhaseType.FIRST_CONTACT));
     }
 
-    @Test
-    void firstContactIsZero() {
+    @Test void firstContactIsZero() {
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(0f, 120f);
         assertValidPhases(phases, 120f);
         assertTrue(phases.stream().anyMatch(p -> p.type() == BattlePhaseType.FIRST_CONTACT));
     }
 
-    @Test
-    void firstContactAtForty() {
+    @Test void firstContactAtForty() {
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(40f, 120f);
         assertValidPhases(phases, 120f);
         assertTrue(phases.stream().anyMatch(p -> p.type() == BattlePhaseType.FIRST_CONTACT && p.startTime() == 40f));
     }
 
-    @Test
-    void firstContactAtFifty() {
+    @Test void firstContactAtFifty() {
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(50f, 120f);
         assertValidPhases(phases, 120f);
         assertTrue(phases.stream().anyMatch(p -> p.type() == BattlePhaseType.FIRST_CONTACT && p.startTime() == 50f));
     }
 
-    @Test
-    void firstContactNearBattleEnd() {
+    @Test void firstContactNearBattleEnd() {
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(115f, 120f);
         assertValidPhases(phases, 120f);
         assertTrue(phases.stream().anyMatch(p -> p.type() == BattlePhaseType.FIRST_CONTACT));
     }
 
-    @Test
-    void firstContactEqualsBattleEnd() {
+    @Test void firstContactEqualsBattleEnd() {
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(120f, 120f);
         assertValidPhases(phases, 120f);
         assertFalse(phases.stream().anyMatch(p -> p.type() == BattlePhaseType.FIRST_CONTACT));
     }
 
-    @Test
-    void firstContactExceedsBattleEnd() {
+    @Test void firstContactExceedsBattleEnd() {
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(130f, 120f);
         assertValidPhases(phases, 120f);
         assertFalse(phases.stream().anyMatch(p -> p.type() == BattlePhaseType.FIRST_CONTACT));
     }
 
-    @Test
-    void negativeFirstContact() {
+    @Test void negativeFirstContact() {
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(-5f, 120f);
         assertValidPhases(phases, 120f);
         assertFalse(phases.stream().anyMatch(p -> p.type() == BattlePhaseType.FIRST_CONTACT));
     }
 
-    @Test
-    void battleEndIsZero() {
+    @Test void battleEndIsZero() {
         assertTrue(BattlePhaseSummary.buildRelativePhases(-1f, 0f).isEmpty());
     }
 
-    @Test
-    void shortBattle() {
+    @Test void shortBattle() {
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(5f, 20f);
         assertValidPhases(phases, 20f);
         assertTrue(phases.stream().anyMatch(p -> p.type() == BattlePhaseType.FIRST_CONTACT));
     }
 
-    @Test
-    void nanBattleEnd() {
+    @Test void nanBattleEnd() {
         assertTrue(BattlePhaseSummary.buildRelativePhases(-1f, Float.NaN).isEmpty());
     }
 
-    @Test
-    void nonZeroPhasesDoNotOverlap() {
+    @Test void nonZeroPhasesDoNotOverlap() {
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(40f, 120f);
         assertValidPhases(phases, 120f);
     }
 
-    @Test
-    void firstContactNotOverlappedByMidGame() {
+    @Test void firstContactNotOverlappedByMidGame() {
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(30f, 200f);
         assertValidPhases(phases, 200f);
         final List<BattlePhaseSummary> fcPhases = phases.stream()
-                .filter(p -> p.type() == BattlePhaseType.FIRST_CONTACT).toList();
+            .filter(p -> p.type() == BattlePhaseType.FIRST_CONTACT).toList();
         for (final BattlePhaseSummary fc : fcPhases) {
             phases.stream()
-                    .filter(p -> p.type() == BattlePhaseType.MID_GAME)
-                    .forEach(mg -> assertTrue(mg.startTime() >= fc.endTime()));
+                .filter(p -> p.type() == BattlePhaseType.MID_GAME)
+                .forEach(mg -> assertTrue(mg.startTime() >= fc.endTime()));
         }
     }
 
-    @Test
-    void openingEndAtFortyFiveWhenLateContact() {
+    @Test void openingEndAtFortyFiveWhenLateContact() {
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(50f, 120f);
         assertValidPhases(phases, 120f);
         final BattlePhaseSummary opening = phases.stream()
-                .filter(p -> p.type() == BattlePhaseType.OPENING).findFirst().orElseThrow();
+            .filter(p -> p.type() == BattlePhaseType.OPENING).findFirst().orElseThrow();
         assertEquals(45f, opening.endTime(), 0.01f, "OPENING must end at 45 when contact > 45");
     }
 
-    @Test
-    void openingEndAtContactWhenEarly() {
+    @Test void openingEndAtContactWhenEarly() {
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(40f, 120f);
         final BattlePhaseSummary opening = phases.stream()
-                .filter(p -> p.type() == BattlePhaseType.OPENING).findFirst().orElseThrow();
+            .filter(p -> p.type() == BattlePhaseType.OPENING).findFirst().orElseThrow();
         assertEquals(40f, opening.endTime(), 0.01f, "OPENING must end at contact when contact < 45");
     }
 
-    @Test
-    void openingEndAtFortyFiveWhenContactAtFortyFive() {
+    @Test void openingEndAtFortyFiveWhenContactAtFortyFive() {
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(45f, 120f);
         final BattlePhaseSummary opening = phases.stream()
-                .filter(p -> p.type() == BattlePhaseType.OPENING).findFirst().orElseThrow();
+            .filter(p -> p.type() == BattlePhaseType.OPENING).findFirst().orElseThrow();
         assertEquals(45f, opening.endTime(), 0.01f, "OPENING must end at 45 when contact = 45");
     }
 
-    @Test
-    void openingEndAtFortyFiveWhenContactAtFiftyOne() {
+    @Test void openingEndAtFortyFiveWhenContactAtFiftyOne() {
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(51f, 120f);
         assertValidPhases(phases, 120f);
         final BattlePhaseSummary opening = phases.stream()
-                .filter(p -> p.type() == BattlePhaseType.OPENING).findFirst().orElseThrow();
+            .filter(p -> p.type() == BattlePhaseType.OPENING).findFirst().orElseThrow();
         assertEquals(45f, opening.endTime(), 0.01f, "OPENING must end at 45 when contact > 45");
         assertTrue(phases.stream().anyMatch(p -> p.type() == BattlePhaseType.FIRST_CONTACT && p.startTime() == 51f),
-                "Late first contact must still be recorded");
+            "Late first contact must still be recorded");
     }
 
-    @Test
-    void openingEndAtFortyFiveWhenContactAtNinety() {
+    @Test void openingEndAtFortyFiveWhenContactAtNinety() {
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(90f, 120f);
         assertValidPhases(phases, 120f);
         final BattlePhaseSummary opening = phases.stream()
-                .filter(p -> p.type() == BattlePhaseType.OPENING).findFirst().orElseThrow();
+            .filter(p -> p.type() == BattlePhaseType.OPENING).findFirst().orElseThrow();
         assertEquals(45f, opening.endTime(), 0.01f);
         assertTrue(phases.stream().anyMatch(p -> p.type() == BattlePhaseType.FIRST_CONTACT && p.startTime() == 90f));
     }
 
-    @Test
-    void nanFirstContact() {
+    @Test void nanFirstContact() {
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(Float.NaN, 120f);
         assertValidPhases(phases, 120f);
         assertFalse(phases.stream().anyMatch(p -> p.type() == BattlePhaseType.FIRST_CONTACT));
     }
 
-    @Test
-    void positiveInfinityFirstContact() {
+    @Test void positiveInfinityFirstContact() {
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(Float.POSITIVE_INFINITY, 120f);
         assertValidPhases(phases, 120f);
         assertFalse(phases.stream().anyMatch(p -> p.type() == BattlePhaseType.FIRST_CONTACT));
     }
 
-    @Test
-    void negativeInfinityFirstContact() {
+    @Test void negativeInfinityFirstContact() {
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(Float.NEGATIVE_INFINITY, 120f);
         assertValidPhases(phases, 120f);
         assertFalse(phases.stream().anyMatch(p -> p.type() == BattlePhaseType.FIRST_CONTACT));
     }
 
-    @Test
-    void negativeBattleEnd() {
+    @Test void negativeBattleEnd() {
         assertTrue(BattlePhaseSummary.buildRelativePhases(-1f, -10f).isEmpty());
     }
 
-    @Test
-    void positiveInfinityBattleEnd() {
+    @Test void positiveInfinityBattleEnd() {
         assertTrue(BattlePhaseSummary.buildRelativePhases(50f, Float.POSITIVE_INFINITY).isEmpty());
     }
 
-    @Test
-    void negativeInfinityBattleEnd() {
+    @Test void negativeInfinityBattleEnd() {
         assertTrue(BattlePhaseSummary.buildRelativePhases(-1f, Float.NEGATIVE_INFINITY).isEmpty());
     }
 }

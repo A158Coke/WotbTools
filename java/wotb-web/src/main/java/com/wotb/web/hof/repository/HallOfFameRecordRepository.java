@@ -17,9 +17,7 @@ import java.util.Optional;
  */
 public interface HallOfFameRecordRepository extends JpaRepository<HallOfFameRecord, Long> {
 
-    /**
-     * 去重查询: 同一场 + 同一玩家最多一条。
-     */
+    /** 去重查询: 同一场 + 同一玩家最多一条。 */
     Optional<HallOfFameRecord> findByArenaIdAndAccountId(String arenaId, long accountId);
 
     /**
@@ -64,9 +62,7 @@ public interface HallOfFameRecordRepository extends JpaRepository<HallOfFameReco
                                   @Param("nickname") String nicknamePattern,
                                   Pageable pageable);
 
-    /**
-     * 管理后台搜索：nickname / accountId / arenaId / uploadedBy / battleType / tankId / replayAvailable。
-     */
+    /** 管理后台搜索：nickname / accountId / arenaId / uploadedBy / battleType / tankId / replayAvailable。 */
     @Query("""
             select r from HallOfFameRecord r
             where (:nickname is null or lower(r.nickname) like :nickname)
@@ -88,13 +84,9 @@ public interface HallOfFameRecordRepository extends JpaRepository<HallOfFameReco
                                        @Param("replayAvailable") Boolean replayAvailable,
                                        Pageable pageable);
 
-    /**
-     * 引用计数：物理文件清理前确认是否仍有记录引用该 hash。
-     */
+    /** 引用计数：物理文件清理前确认是否仍有记录引用该 hash。 */
     long countByReplayHash(String replayHash);
 
-    /**
-     * 指定玩家的伤害记录 (降序，个人中心 flat 列表)。
-     */
+    /** 指定玩家的伤害记录 (降序，个人中心 flat 列表)。 */
     List<HallOfFameRecord> findByAccountIdOrderByDamageDealtDesc(long accountId, Pageable pageable);
 }

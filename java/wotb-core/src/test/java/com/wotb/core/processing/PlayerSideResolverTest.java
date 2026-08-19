@@ -1,5 +1,10 @@
 package com.wotb.core.processing;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.FriendlyEnemyResult.PointsEndReason;
@@ -12,11 +17,6 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 /**
  * Tests for PlayerSideResolver and FriendlyEnemyResult covering sections 8.1–8.5.
  * Does NOT modify PlayerResult.team (the raw number is preserved).
@@ -26,34 +26,22 @@ class PlayerSideResolverTest {
     // ========== isValidRawTeam ==========
 
     @Test
-    void isValidRawTeam_1() {
-        assertTrue(PlayerSideResolver.isValidRawTeam(1));
-    }
+    void isValidRawTeam_1() { assertTrue(PlayerSideResolver.isValidRawTeam(1)); }
 
     @Test
-    void isValidRawTeam_2() {
-        assertTrue(PlayerSideResolver.isValidRawTeam(2));
-    }
+    void isValidRawTeam_2() { assertTrue(PlayerSideResolver.isValidRawTeam(2)); }
 
     @Test
-    void isValidRawTeam_negative1() {
-        assertFalse(PlayerSideResolver.isValidRawTeam(-1));
-    }
+    void isValidRawTeam_negative1() { assertFalse(PlayerSideResolver.isValidRawTeam(-1)); }
 
     @Test
-    void isValidRawTeam_zero() {
-        assertFalse(PlayerSideResolver.isValidRawTeam(0));
-    }
+    void isValidRawTeam_zero() { assertFalse(PlayerSideResolver.isValidRawTeam(0)); }
 
     @Test
-    void isValidRawTeam_3() {
-        assertFalse(PlayerSideResolver.isValidRawTeam(3));
-    }
+    void isValidRawTeam_3() { assertFalse(PlayerSideResolver.isValidRawTeam(3)); }
 
     @Test
-    void isValidRawTeam_maxInt() {
-        assertFalse(PlayerSideResolver.isValidRawTeam(Integer.MAX_VALUE));
-    }
+    void isValidRawTeam_maxInt() { assertFalse(PlayerSideResolver.isValidRawTeam(Integer.MAX_VALUE)); }
 
     // ========== 8.1 Recorder in raw team 1 ==========
 

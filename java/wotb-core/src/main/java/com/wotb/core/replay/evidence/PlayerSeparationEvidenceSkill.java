@@ -10,11 +10,12 @@ import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
-import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
 import com.wotb.core.replay.reconstruction.ObservationState;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.VehicleState;
+import com.wotb.core.replay.map.MapTacticalSemantics;
+import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -38,9 +39,7 @@ public final class PlayerSeparationEvidenceSkill {
     private static final MapTacticalSemanticsRegistry SEMANTICS = MapTacticalSemanticsRegistry.load();
 
     private static final int MAX_EVIDENCE = 6;
-    /**
-     * 移动覆盖门控：窗口内被移动证据覆盖时长占比低于该值时移动状态视为 UNKNOWN。
-     */
+    /** 移动覆盖门控：窗口内被移动证据覆盖时长占比低于该值时移动状态视为 UNKNOWN。 */
     public static final float MIN_MOVEMENT_COVERAGE_RATIO = 0.5f;
 
     private PlayerSeparationEvidenceSkill() {
@@ -178,9 +177,7 @@ public final class PlayerSeparationEvidenceSkill {
         };
     }
 
-    /**
-     * battle-relative 秒 → X分XX秒。
-     */
+    /** battle-relative 秒 → X分XX秒。 */
     private static String battleRange(final float startSec, final float endSec) {
         return battleClock(startSec) + "-" + battleClock(endSec);
     }
@@ -268,9 +265,7 @@ public final class PlayerSeparationEvidenceSkill {
         return damage;
     }
 
-    /**
-     * 是否存在与窗口相交但不完全包含的交火：无法可靠归属，禁止据此下结论。
-     */
+    /** 是否存在与窗口相交但不完全包含的交火：无法可靠归属，禁止据此下结论。 */
     private static boolean hasPartialOverlapEngagement(final PlayerBattleFeatureSet features,
                                                        final float start, final float end) {
         for (final EngagementSummary engagement : features.engagements()) {
@@ -288,17 +283,13 @@ public final class PlayerSeparationEvidenceSkill {
                 && engagement.endTime() <= end + 0.01f;
     }
 
-    /**
-     * 事件流观测伤害覆盖不完整时，否定判断（“窗口内未接火”）不可靠。
-     */
+    /** 事件流观测伤害覆盖不完整时，否定判断（“窗口内未接火”）不可靠。 */
     private static boolean observedDamageIsPartial(final PlayerBattleFeatureSet features) {
         return features.limitations() != null
                 && features.limitations().contains(TeamSeparationEvidenceSkill.OBSERVED_DAMAGE_IS_PARTIAL);
     }
 
-    /**
-     * 窗口内距离增长：由 checkpoints 的录像者-友军质心距离序列首尾差得出；不足 2 点返回 null。
-     */
+    /** 窗口内距离增长：由 checkpoints 的录像者-友军质心距离序列首尾差得出；不足 2 点返回 null。 */
     private static Float distanceGrowthMeters(final EvidenceSkillContext ctx,
                                               final float start, final float end) {
         final ReplayReconstruction recon = ctx.recon();
@@ -378,9 +369,7 @@ public final class PlayerSeparationEvidenceSkill {
         return region > 0 ? region : null;
     }
 
-    /**
-     * 目标点关系三态：1=邻近 / 0=已知不在 / -1=未知（region 缺失或无语义，不等于远离）。
-     */
+    /** 目标点关系三态：1=邻近 / 0=已知不在 / -1=未知（region 缺失或无语义，不等于远离）。 */
     private static int objectiveProximity(final Integer region, final Set<String> controlPointRegions) {
         if (region == null || controlPointRegions.isEmpty()) {
             return -1;

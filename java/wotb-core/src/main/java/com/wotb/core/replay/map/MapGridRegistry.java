@@ -27,9 +27,7 @@ public final class MapGridRegistry {
     private MapGridRegistry() {
     }
 
-    /**
-     * 按地图 code 取档案；未收录/无有效网格时返回 null。
-     */
+    /** 按地图 code 取档案；未收录/无有效网格时返回 null。 */
     public static MapGridProfile profileFor(final String mapCode) {
         if (mapCode == null || mapCode.isBlank()) {
             return null;
@@ -38,9 +36,7 @@ public final class MapGridRegistry {
         return profile != null && profile.hasGrid() ? profile : null;
     }
 
-    /**
-     * 全量加载（懒加载 + 缓存）。
-     */
+    /** 全量加载（懒加载 + 缓存）。 */
     public static Map<String, MapGridProfile> load() {
         Map<String, MapGridProfile> local = cache;
         if (local != null) {

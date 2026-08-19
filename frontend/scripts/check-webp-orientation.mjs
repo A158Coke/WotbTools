@@ -13,11 +13,11 @@
  *   node scripts/check-webp-orientation.mjs                # 全部 78 资产
  *   node scripts/check-webp-orientation.mjs grille-15 maus # 指定 modelKey
  */
-import {existsSync, readdirSync, readFileSync, rmSync} from 'node:fs'
-import {dirname, join} from 'node:path'
-import {tmpdir} from 'node:os'
-import {fileURLToPath} from 'node:url'
-import {spawnSync} from 'node:child_process'
+import { readFileSync, readdirSync, existsSync, rmSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
+import { spawnSync } from 'node:child_process'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const ASSETS = join(ROOT, 'frontend', 'src', 'vehicle-models', 'assets')

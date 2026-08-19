@@ -2,9 +2,9 @@
 
 // 战局回放地图标注回归测试：工具栏渲染（三语）、画笔绘制/撤回/重做/清空、
 // 橡皮擦点擦、文字标注、overview 切换重置。
-import {describe, expect, it, vi} from 'vitest'
-import {flushPromises, mount} from '@vue/test-utils'
-import {createI18n} from 'vue-i18n'
+import { describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { createI18n } from 'vue-i18n'
 import zh from '../locales/zh.json'
 import en from '../locales/en.json'
 import ru from '../locales/ru.json'

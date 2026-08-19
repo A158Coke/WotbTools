@@ -1,5 +1,8 @@
 package com.wotb.web.replay.ai;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
@@ -26,9 +29,6 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TacticalReviewPromptBuilderTest {
 
@@ -236,13 +236,13 @@ class TacticalReviewPromptBuilderTest {
                         > content.indexOf("======================== CRITICAL DECISION WINDOWS"),
                 "TASK 必须位于 CRITICAL DECISION WINDOWS 之后");
         assertTrue(content.lastIndexOf("======================== TASK")
-                > content.lastIndexOf("======================== TOP PIVOTAL WINDOWS"));
+                        > content.lastIndexOf("======================== TOP PIVOTAL WINDOWS"));
         assertTrue(content.lastIndexOf("======================== TASK")
-                > content.lastIndexOf("======================== BATTLE PHASE SUMMARY"));
+                        > content.lastIndexOf("======================== BATTLE PHASE SUMMARY"));
         assertTrue(content.lastIndexOf("======================== TASK")
-                > content.lastIndexOf("======================== TACTICAL EVIDENCE"));
+                        > content.lastIndexOf("======================== TACTICAL EVIDENCE"));
         assertTrue(content.lastIndexOf("======================== TASK")
-                > content.lastIndexOf("======================== CRITICAL DECISION WINDOWS"));
+                        > content.lastIndexOf("======================== CRITICAL DECISION WINDOWS"));
     }
 
     @Test

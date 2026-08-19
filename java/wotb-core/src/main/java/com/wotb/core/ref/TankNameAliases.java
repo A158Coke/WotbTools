@@ -24,9 +24,7 @@ public final class TankNameAliases {
         this.aliases = aliases;
     }
 
-    /**
-     * 从 classpath 加载别名表（与 {@link Tankopedia} 同模式）。
-     */
+    /** 从 classpath 加载别名表（与 {@link Tankopedia} 同模式）。 */
     public static TankNameAliases load() {
         final Map<String, String> map = new LinkedHashMap<>();
         try (InputStream in = TankNameAliases.class.getResourceAsStream(RESOURCE)) {
@@ -49,16 +47,12 @@ public final class TankNameAliases {
         return new TankNameAliases(map);
     }
 
-    /**
-     * 别名 -&gt; 权威坦克名；非别名返回 {@code null}。
-     */
+    /** 别名 -&gt; 权威坦克名；非别名返回 {@code null}。 */
     public String canonical(final String alias) {
         return aliases.get(alias);
     }
 
-    /**
-     * 全部别名键（用于正文扫描）。
-     */
+    /** 全部别名键（用于正文扫描）。 */
     public Set<String> aliases() {
         return aliases.keySet();
     }

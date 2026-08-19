@@ -62,34 +62,34 @@ final class TeamRosterResolver {
     }
 
     record RosterEvidence(
-            int expectedMemberCount,
-            Set<Long> distinctValidAccountIds,
-            double coverageRatio,
-            boolean sufficientCoverage,
-            List<String> limitations
+        int expectedMemberCount,
+        Set<Long> distinctValidAccountIds,
+        double coverageRatio,
+        boolean sufficientCoverage,
+        List<String> limitations
     ) {
         static RosterEvidence from(final SingleTeamBattleAnalysisContext ctx) {
             final TeamBattleFeatureSet features = ctx.features();
             if (features == null) return empty();
             final int expected = features.authoritativeAggregate() != null
-                    ? features.authoritativeAggregate().memberCount()
-                    : features.members().size();
+                ? features.authoritativeAggregate().memberCount()
+                : features.members().size();
             if (expected <= 0) return empty();
             final Set<Long> distinctValid = features.members().stream()
-                    .map(TeamMemberFeatureSet::accountId)
-                    .filter(id -> id > 0)
-                    .collect(Collectors.toCollection(LinkedHashSet::new));
+                .map(TeamMemberFeatureSet::accountId)
+                .filter(id -> id > 0)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
             final long totalPositive = features.members().stream()
-                    .map(TeamMemberFeatureSet::accountId)
-                    .filter(id -> id > 0)
-                    .count();
+                .map(TeamMemberFeatureSet::accountId)
+                .filter(id -> id > 0)
+                .count();
             final List<String> limits = new ArrayList<>();
             if (totalPositive > distinctValid.size()) {
                 limits.add("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
             }
             final double ratio = Math.min((double) distinctValid.size() / expected, 1.0);
             return new RosterEvidence(expected, Collections.unmodifiableSet(distinctValid),
-                    ratio, ratio >= MIN_ROSTER_ACCOUNT_COVERAGE, Collections.unmodifiableList(limits));
+                ratio, ratio >= MIN_ROSTER_ACCOUNT_COVERAGE, Collections.unmodifiableList(limits));
         }
 
         static RosterEvidence empty() {

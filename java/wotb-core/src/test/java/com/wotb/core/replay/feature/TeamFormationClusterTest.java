@@ -1,12 +1,12 @@
 package com.wotb.core.replay.feature;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
 import com.wotb.core.replay.event.DecodeConfidence;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class TeamFormationClusterTest {
 
@@ -20,8 +20,8 @@ class TeamFormationClusterTest {
     }
 
     private static TeamFormationCluster fullCluster(final float sx, final float ex, final CanonicalMapPosition p,
-                                                    final MapCoordinateResolution.Status status, final int region, final int clampedCount,
-                                                    final List<String> ids, final DecodeConfidence conf) {
+            final MapCoordinateResolution.Status status, final int region, final int clampedCount,
+            final List<String> ids, final DecodeConfidence conf) {
         return new TeamFormationCluster(sx, ex, p, status, region, clampedCount, ids, conf);
     }
 

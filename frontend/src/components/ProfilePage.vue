@@ -1,25 +1,27 @@
 <script setup>
-import {computed, onMounted, ref} from 'vue'
-import {useI18n} from 'vue-i18n'
-import {useAuth} from '../composables/useAuth.js'
+import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useAuth } from '../composables/useAuth.js'
 import {
   createUserProfile,
   deleteUserWotbAccount,
   getMyBoosterAssignments,
   getMyBoosterProfile,
-  getUnreadNotificationCount,
   getUserHofRecords,
   getUserProfile,
-  listNotifications,
-  markAllNotificationsRead,
-  markNotificationRead,
-  syncUserWotbAccountFromLogin,
   updateMyBoosterAvailability,
   updateUserWotbAccount
 } from '../utils/api-boost.js'
-import {hofHundredCancel, hofHundredMyStatus} from '../utils/api.js'
-import {mapLabel} from '../utils/helpers.js'
-import {apiErrorLabel, enumLabel} from '../utils/display.js'
+import {
+  getUnreadNotificationCount,
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  syncUserWotbAccountFromLogin
+} from '../utils/api-boost.js'
+import { hofHundredCancel, hofHundredMyStatus } from '../utils/api.js'
+import { mapLabel } from '../utils/helpers.js'
+import { apiErrorLabel, enumLabel } from '../utils/display.js'
 
 const { locale, t, te } = useI18n()
 const { initPromise, login, logout, isAuthenticated, initError, tokenParsed } = useAuth()

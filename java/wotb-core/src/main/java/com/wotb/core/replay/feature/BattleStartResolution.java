@@ -2,7 +2,6 @@ package com.wotb.core.replay.feature;
 
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
-
 public record BattleStartResolution(Status status, Float battleStartRawClockSec, String limitation) {
 
     public enum Status {
@@ -66,9 +65,7 @@ public record BattleStartResolution(Status status, Float battleStartRawClockSec,
         return battleStartRawClockSec != null;
     }
 
-    /**
-     * Tolerance for raw vs battle clock consistency check (in seconds).
-     */
+    /** Tolerance for raw vs battle clock consistency check (in seconds). */
     static final float CLOCK_CONSISTENCY_TOLERANCE_SEC = 0.1f;
 
     public TacticalTimeResolution tryRelative(final ReplayTimestamp timestamp) {

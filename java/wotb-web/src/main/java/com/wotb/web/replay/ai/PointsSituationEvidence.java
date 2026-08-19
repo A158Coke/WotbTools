@@ -43,9 +43,7 @@ final class PointsSituationEvidence {
     private PointsSituationEvidence() {
     }
 
-    /**
-     * 采集双方车辆位置轨迹（按 accountId 合并 re-entry 实体，样本按时间升序）。
-     */
+    /** 采集双方车辆位置轨迹（按 accountId 合并 re-entry 实体，样本按时间升序）。 */
     static List<PointsSituationSkill.VehicleTrack> collectTracks(
             final Battle battle,
             final ReplayReconstruction recon
@@ -100,9 +98,7 @@ final class PointsSituationEvidence {
         return List.copyOf(tracks);
     }
 
-    /**
-     * battle-relative 秒：优先事件流 battleClock，回退 battleStart 差值（与 MapOverviewBuilder 同口径）。
-     */
+    /** battle-relative 秒：优先事件流 battleClock，回退 battleStart 差值（与 MapOverviewBuilder 同口径）。 */
     static double relativeSec(final ReplayEvent event, final Float battleStartRawClockSec) {
         if (event.timestamp() == null) {
             return 0;
@@ -146,8 +142,8 @@ final class PointsSituationEvidence {
         final List<PointsSituationSkill.CapturePresence> presence = controlRegions.isEmpty()
                 ? List.of()
                 : PointsSituationSkill.capturePresence(
-                tracks, controlRegions, battle.mapName,
-                PointsSituationSkill.PRESENCE_BIN_SEC);
+                        tracks, controlRegions, battle.mapName,
+                        PointsSituationSkill.PRESENCE_BIN_SEC);
         final List<PointsSituationSkill.ControlRegionEntryWindow> entries = controlRegions.isEmpty()
                 ? List.of()
                 : PointsSituationSkill.controlRegionEntryWindows(tracks, controlRegions, battle.mapName);
@@ -222,11 +218,9 @@ final class PointsSituationEvidence {
         return sb.toString();
     }
 
-    /**
-     * 进入控制点区域窗口内车辆承受的伤害（观测子集；事件时间严格在窗口范围内）。
-     * 仅当攻击者与受击者身份均解析、攻击者属于对面队伍（队伍可信）时计入。
-     * 环境伤害/自伤/攻击者未解析或队伍不可信的事件一律不计入，并通过 {@code excludedCount} 输出 limitation。
-     */
+    /** 进入控制点区域窗口内车辆承受的伤害（观测子集；事件时间严格在窗口范围内）。
+     *  仅当攻击者与受击者身份均解析、攻击者属于对面队伍（队伍可信）时计入。
+     *  环境伤害/自伤/攻击者未解析或队伍不可信的事件一律不计入，并通过 {@code excludedCount} 输出 limitation。 */
     private static Toll tollDuring(
             final PointsSituationSkill.ControlRegionEntryWindow entry,
             final Battle battle,
@@ -271,9 +265,7 @@ final class PointsSituationEvidence {
         return new Toll(total, excluded);
     }
 
-    /**
-     * 玩家队伍查询：名册中不存在 → null（不可信）。
-     */
+    /** 玩家队伍查询：名册中不存在 → null（不可信）。 */
     private static Integer teamOf(final Battle battle, final long accountId) {
         for (final PlayerResult player : battle.players) {
             if (player != null && player.accountId == accountId) {
@@ -283,9 +275,7 @@ final class PointsSituationEvidence {
         return null;
     }
 
-    /**
-     * 窗口内承受伤害结果：damage 计入额，excludedCount 被排除事件数（limitation 输出用）。
-     */
+    /** 窗口内承受伤害结果：damage 计入额，excludedCount 被排除事件数（limitation 输出用）。 */
     private record Toll(int damage, int excludedCount) {
     }
 }

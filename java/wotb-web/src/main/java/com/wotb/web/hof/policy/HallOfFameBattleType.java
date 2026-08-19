@@ -15,16 +15,12 @@ public enum HallOfFameBattleType {
         this.arenaBonusType = arenaBonusType;
     }
 
-    /**
-     * replay 中解析出的 authoritative raw integer。
-     */
+    /** replay 中解析出的 authoritative raw integer。 */
     public int arenaBonusType() {
         return arenaBonusType;
     }
 
-    /**
-     * raw arenaBonusType → 归一模式；未知/null/不支持 → empty。
-     */
+    /** raw arenaBonusType → 归一模式；未知/null/不支持 → empty。 */
     public static java.util.Optional<HallOfFameBattleType> resolve(final Integer raw) {
         if (raw == null) {
             return java.util.Optional.empty();

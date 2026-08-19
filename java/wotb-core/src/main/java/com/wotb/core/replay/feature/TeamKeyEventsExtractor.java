@@ -3,6 +3,7 @@ package com.wotb.core.replay.feature;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.FriendlyEnemyResult;
+import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.TeamEntityMapping;
 import com.wotb.core.replay.event.BattleEndedEvent;
@@ -117,9 +118,7 @@ final class TeamKeyEventsExtractor {
         return new TeamMemberFeatureSet.DeathProximity((double) distance, deltaSec, confidence);
     }
 
-    /**
-     * 某时刻本队其它 OBSERVED 车辆的原始坐标质心。
-     */
+    /** 某时刻本队其它 OBSERVED 车辆的原始坐标质心。 */
     static float[] friendlyCentroidAt(
             final BattleStateCheckpoint cp,
             final int perspectiveTeam,
@@ -198,12 +197,12 @@ final class TeamKeyEventsExtractor {
         };
         final Stream<KeyBattleEvent> battleEndEvent = battleEndResolved.resolved() && endConfidence != null
                 ? Stream.of(new KeyBattleEvent(
-                battleEndResolved.battleEndRelativeSec(),
-                "BATTLE_END",
-                buildResultLabel(battle, perspectiveTeam),
-                endConfidence,
-                battleEndResolved.source().name(),
-                List.of()))
+                        battleEndResolved.battleEndRelativeSec(),
+                        "BATTLE_END",
+                        buildResultLabel(battle, perspectiveTeam),
+                        endConfidence,
+                        battleEndResolved.source().name(),
+                        List.of()))
                 : Stream.empty();
         return Stream.of(deathEvents, firstContact, formationSplit, battleEndEvent)
                 .flatMap(s -> s)

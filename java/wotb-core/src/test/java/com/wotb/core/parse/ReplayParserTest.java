@@ -122,9 +122,7 @@ class ReplayParserTest {
         assertNotNull(battle.recorderResult());
     }
 
-    /**
-     * roster #201（nickname=A158布丁 / clan=CHRD）+ 成绩 #301（account=1001, team=1）的 protobuf 根消息。
-     */
+    /** roster #201（nickname=A158布丁 / clan=CHRD）+ 成绩 #301（account=1001, team=1）的 protobuf 根消息。 */
     private static byte[] clanPrefixedFixtureRoot() {
         final ByteArrayOutputStream rosterInfo = new ByteArrayOutputStream();
         writeStringField(rosterInfo, 1, "A158布丁");

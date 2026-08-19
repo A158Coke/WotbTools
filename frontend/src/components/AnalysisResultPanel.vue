@@ -1,6 +1,6 @@
 <script setup>
-import {onBeforeUnmount, ref} from 'vue'
-import {useI18n} from 'vue-i18n'
+import { onBeforeUnmount, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import MarkdownContent from './MarkdownContent.vue'
 
 // 普通用户页面只展示 AI 复盘正文 + 可折叠的「赛前预测」区块。

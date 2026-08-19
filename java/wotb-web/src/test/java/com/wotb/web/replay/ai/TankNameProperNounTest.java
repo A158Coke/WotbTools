@@ -1,8 +1,10 @@
 package com.wotb.web.replay.ai;
+import com.wotb.web.replay.ai.TeamReplayAnalysisService;
+import com.wotb.web.replay.ai.PlayerReplayPromptBuilder;
 
-import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.processing.BatchAnalyzer;
 import com.wotb.core.processing.ReplayIdentity;
 import com.wotb.core.processing.ReplayProcessingCapabilities;
@@ -30,13 +32,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class TankNameProperNounTest {
 
-    /**
-     * tankopedia-tier10.json: {"name":"SPHT","tier":10,"class":"Heavy tank","nation":"USA"}
-     */
+    /** tankopedia-tier10.json: {"name":"SPHT","tier":10,"class":"Heavy tank","nation":"USA"} */
     private static final long SPHT_TANK_ID = 29985L;
-    /**
-     * tankopedia 中不存在的 tankId，用于验证「无类型数据」路径。
-     */
+    /** tankopedia 中不存在的 tankId，用于验证「无类型数据」路径。 */
     private static final long UNKNOWN_TANK_ID = 999_999_999L;
 
     private static Stream<String> allSystemPrompts() {
@@ -267,9 +265,7 @@ class TankNameProperNounTest {
         return count;
     }
 
-    /**
-     * 走真实管线构造 team 上下文（与 TeamAiPromptBuilderTest 相同的方式）。
-     */
+    /** 走真实管线构造 team 上下文（与 TeamAiPromptBuilderTest 相同的方式）。 */
     private static SingleTeamBattleAnalysisContext teamContextWithTank(final long tankId) {
         final PlayerResult player = new PlayerResult();
         player.accountId = 10_001L;
@@ -302,15 +298,8 @@ class TankNameProperNounTest {
                 .getFirst();
         return new AiReplayAnalysisService(
                 new AiChatGateway() {
-                    @Override
-                    public AiChatResponse chat(final AiChatRequest r) {
-                        return null;
-                    }
-
-                    @Override
-                    public boolean isConfigured() {
-                        return false;
-                    }
+                    @Override public AiChatResponse chat(final AiChatRequest r) { return null; }
+                    @Override public boolean isConfigured() { return false; }
                 }, "", 30000, new ConservativeDeepSeekTokenEstimator())
                 .buildSingleTeamContext(group);
     }

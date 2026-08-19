@@ -7,8 +7,8 @@ import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.UserModel;
 
-import java.io.IOException;
 import java.net.URLEncoder;
+import java.io.IOException;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -102,9 +102,9 @@ class WargamingIdentityProviderTest {
         WargamingIdentityProvider.applicationIdOverride = "app-123";
         final WargamingApiClient failingClient = new WargamingApiClient(
                 WargamingRegion.ASIA.authBase(), WargamingRegion.ASIA.accountBase(), request -> {
-            throw new WargamingApiClient.WargamingApiException(
-                    "WG API rejected request: code=404, message=METHOD_NOT_FOUND");
-        });
+                    throw new WargamingApiClient.WargamingApiException(
+                            "WG API rejected request: code=404, message=METHOD_NOT_FOUND");
+                });
 
         final Response response = providerWithClient(failingClient)
                 .buildLoginResponseSafely("app-123", "state-42");
@@ -117,8 +117,8 @@ class WargamingIdentityProviderTest {
         WargamingIdentityProvider.applicationIdOverride = "app-123";
         final WargamingApiClient failingClient = new WargamingApiClient(
                 WargamingRegion.ASIA.authBase(), WargamingRegion.ASIA.accountBase(), request -> {
-            throw new IOException("boom");
-        });
+                    throw new IOException("boom");
+                });
 
         final Response response = providerWithClient(failingClient)
                 .buildLoginResponseSafely("app-123", "state-42");
@@ -132,8 +132,8 @@ class WargamingIdentityProviderTest {
         WargamingIdentityProvider.applicationIdOverride = "app-123";
         final WargamingApiClient failingClient = new WargamingApiClient(
                 WargamingRegion.ASIA.authBase(), WargamingRegion.ASIA.accountBase(), request -> {
-            throw new InterruptedException("boom");
-        });
+                    throw new InterruptedException("boom");
+                });
         final Thread thread = Thread.currentThread();
         try {
             final Response response = providerWithClient(failingClient)

@@ -1,6 +1,7 @@
 package com.wotb.core.processing;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
 
 /**
  * Converts winner team into FRIENDLY_WIN / ENEMY_WIN / DRAW_OR_UNKNOWN
@@ -11,24 +12,17 @@ import com.wotb.core.model.Battle;
  */
 public final class FriendlyEnemyResult {
 
-    /**
-     * 胜利点数上限 1000 分（项目所有者确认的业务规则；达到上限即提前结束，不是从回放字段解码）。
-     */
+    /** 胜利点数上限 1000 分（项目所有者确认的业务规则；达到上限即提前结束，不是从回放字段解码）。 */
     public static final long SUPREMACY_WIN_POINTS = 1000;
 
-    /**
-     * 击杀夺分业务规则（项目所有者确认）：每击杀夺取对方 40 分、本方掉人损失 40 分。
-     * <p>仅作叙述口径，不用于计算——结算字段 victoryPointsEarned 是否已含该调整未经证明。
-     */
+    /** 击杀夺分业务规则（项目所有者确认）：每击杀夺取对方 40 分、本方掉人损失 40 分。
+     *  <p>仅作叙述口径，不用于计算——结算字段 victoryPointsEarned 是否已含该调整未经证明。 */
     public static final long KILL_STEAL_POINTS = 40;
 
-    /**
-     * 争霸赛固定战斗时长 420 秒（项目所有者确认的业务规则；游戏不提供时长调整）。
-     */
+    /** 争霸赛固定战斗时长 420 秒（项目所有者确认的业务规则；游戏不提供时长调整）。 */
     public static final double SUPREMACY_TIME_LIMIT_SEC = 420;
 
-    private FriendlyEnemyResult() {
-    }
+    private FriendlyEnemyResult() {}
 
     public enum Winner {
         FRIENDLY_WIN,
@@ -36,22 +30,14 @@ public final class FriendlyEnemyResult {
         DRAW_OR_UNKNOWN
     }
 
-    /**
-     * 团队赛胜负来源（supremacy 场景的推导链路）。
-     */
+    /** 团队赛胜负来源（supremacy 场景的推导链路）。 */
     public enum WinnerSource {
-        /**
-         * 结算字段 battle_results#winnerTeam 直接给出。
-         */
+        /** 结算字段 battle_results#winnerTeam 直接给出。 */
         BATTLE_RESULTS,
-        /**
-         * 结算存活标记：一方全员阵亡，另一方获胜（结算级事实推导；仅当结算阵容完整时）。
-         */
+        /** 结算存活标记：一方全员阵亡，另一方获胜（结算级事实推导；仅当结算阵容完整时）。 */
         SURVIVOR_SETTLEMENT,
-        /**
-         * 已停用的争霸赛点数推断：victoryPointsEarned 的精确定义及是否包含被动增长/击杀夺分仍未证明，
-         * 直接比较会推出错误胜方，不再产出（fail closed）。
-         */
+        /** 已停用的争霸赛点数推断：victoryPointsEarned 的精确定义及是否包含被动增长/击杀夺分仍未证明，
+         *  直接比较会推出错误胜方，不再产出（fail closed）。 */
         POINTS_INFERENCE,
         UNKNOWN
     }
@@ -66,32 +52,24 @@ public final class FriendlyEnemyResult {
      * （时间耗尽，双方终局比分未知）；其余（类别未知/rosterComplete=false/时长未知）→ UNKNOWN。</p>
      */
     public enum PointsEndReason {
-        /**
-         * 非点数胜负（全歼 / 未知）。
-         */
+        /** 非点数胜负（全歼 / 未知）。 */
         NOT_APPLICABLE,
-        /**
-         * 双方均有存活且时长未到 420 秒（标准业务规则）：某一方达到 1000 分上限导致提前结束。
-         * 本判定只依据标准规则与时长，不使用任何点数字段；具体胜方由 winnerTeam 决定，缺失时未知。
-         */
+        /** 双方均有存活且时长未到 420 秒（标准业务规则）：某一方达到 1000 分上限导致提前结束。
+         *  本判定只依据标准规则与时长，不使用任何点数字段；具体胜方由 winnerTeam 决定，缺失时未知。 */
         REACHED_1000,
-        /**
-         * 双方均有存活且时长达到 420 秒（标准业务规则）：时间耗尽，按点数优势分出胜负。
-         * 双方终局比分未解码（UNKNOWN）；原始点数字段不能证明任一方是否曾达 1000 分，不得断言。
-         */
+        /** 双方均有存活且时长达到 420 秒（标准业务规则）：时间耗尽，按点数优势分出胜负。
+         *  双方终局比分未解码（UNKNOWN）；原始点数字段不能证明任一方是否曾达 1000 分，不得断言。 */
         TIME_EXPIRED,
-        /**
-         * 点数决胜但无法证明标准规则或时长（类别未知 / rosterComplete=false / 时长缺失），结束方式无法确定。
-         */
+        /** 点数决胜但无法证明标准规则或时长（类别未知 / rosterComplete=false / 时长缺失），结束方式无法确定。 */
         UNKNOWN
     }
 
     /**
      * 团队赛（训练房/联赛，恒为争霸赛 supremacy）的胜负解析结果。
      *
-     * @param winner          相对 recorderTeam 的胜负
-     * @param source          胜负来源（权威结算 / 结算推导 / 点数推断）
-     * @param pointsDecided   结束时刻双方均未全员阵亡，说明是点数胜利（supremacy 规则）
+     * @param winner       相对 recorderTeam 的胜负
+     * @param source       胜负来源（权威结算 / 结算推导 / 点数推断）
+     * @param pointsDecided 结束时刻双方均未全员阵亡，说明是点数胜利（supremacy 规则）
      * @param pointsEndReason 点数胜利的结束方式（1000 分提前 / 时间耗尽 / 未知）
      */
     public record TeamBattleWinner(
@@ -161,8 +139,8 @@ public final class FriendlyEnemyResult {
         if (battle.winnerTeam != null && PlayerSideResolver.isValidRawTeam(battle.winnerTeam)) {
             final PointsEndReason endReason = pointsDecided
                     ? (rosterComplete(battle)
-                    ? pointsEndReason(battle, recorderTeam)
-                    : PointsEndReason.UNKNOWN)
+                            ? pointsEndReason(battle, recorderTeam)
+                            : PointsEndReason.UNKNOWN)
                     : PointsEndReason.NOT_APPLICABLE;
             return new TeamBattleWinner(
                     resolve(battle.winnerTeam, recorderTeam),
@@ -193,8 +171,8 @@ public final class FriendlyEnemyResult {
         }
         final PointsEndReason endReason = pointsDecided
                 ? (rosterComplete(battle)
-                ? pointsEndReason(battle, recorderTeam)
-                : PointsEndReason.UNKNOWN)
+                        ? pointsEndReason(battle, recorderTeam)
+                        : PointsEndReason.UNKNOWN)
                 : PointsEndReason.NOT_APPLICABLE;
         return new TeamBattleWinner(
                 Winner.DRAW_OR_UNKNOWN,
@@ -213,14 +191,12 @@ public final class FriendlyEnemyResult {
         return survivors(battle, team);
     }
 
-    /**
-     * 指定团队的结算存活车辆数（团队 1/2）；battle/players 缺失时返回 0。
-     */
+    /** 指定团队的结算存活车辆数（团队 1/2）；battle/players 缺失时返回 0。 */
     private static long survivors(final Battle battle, final int team) {
         return battle == null || battle.players == null ? 0L
                 : battle.players.stream()
-                .filter(p -> p != null && p.team == team && p.survived)
-                .count();
+                        .filter(p -> p != null && p.team == team && p.survived)
+                        .count();
     }
 
     /**
@@ -266,9 +242,7 @@ public final class FriendlyEnemyResult {
         return battle != null && Boolean.TRUE.equals(battle.rosterComplete);
     }
 
-    /**
-     * 按 battle 推导 recorder 所在队与其对手的点数胜负结束方式（团队 1/2）。
-     */
+    /** 按 battle 推导 recorder 所在队与其对手的点数胜负结束方式（团队 1/2）。 */
     public static PointsEndReason pointsEndReason(final Battle battle, final int recorderTeam) {
         if (battle == null || battle.players == null
                 || !PlayerSideResolver.isValidRawTeam(recorderTeam)) {
@@ -289,25 +263,21 @@ public final class FriendlyEnemyResult {
         return PointsEndReason.UNKNOWN;
     }
 
-    /**
-     * 指定团队的结算击杀总数（battle/players 缺失返回 0）。
-     */
+    /** 指定团队的结算击杀总数（battle/players 缺失返回 0）。 */
     public static long teamKills(final Battle battle, final int team) {
         return battle == null || battle.players == null ? 0L
                 : battle.players.stream()
-                .filter(p -> p != null && p.team == team)
-                .mapToLong(p -> p.kills)
-                .sum();
+                        .filter(p -> p != null && p.team == team)
+                        .mapToLong(p -> p.kills)
+                        .sum();
     }
 
-    /**
-     * 指定团队的结算阵亡数（survived=false 计数；名册不完整时仅作口径参考）。
-     */
+    /** 指定团队的结算阵亡数（survived=false 计数；名册不完整时仅作口径参考）。 */
     public static long teamDeaths(final Battle battle, final int team) {
         return battle == null || battle.players == null ? 0L
                 : battle.players.stream()
-                .filter(p -> p != null && p.team == team && !p.survived)
-                .count();
+                        .filter(p -> p != null && p.team == team && !p.survived)
+                        .count();
     }
 
     /**
@@ -332,9 +302,7 @@ public final class FriendlyEnemyResult {
                 && battle.durationS != null && battle.durationS < SUPREMACY_TIME_LIMIT_SEC;
     }
 
-    /**
-     * Short Chinese label for each winner value.
-     */
+    /** Short Chinese label for each winner value. */
     public static String label(final Winner w) {
         return switch (w) {
             case FRIENDLY_WIN -> "友方获胜";

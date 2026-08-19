@@ -11,9 +11,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/**
- * 玩家记录的展示派生 / 排序 / 排号工具 (对应 Python 的 enrich_display / sort_players)。
- */
+/** 玩家记录的展示派生 / 排序 / 排号工具 (对应 Python 的 enrich_display / sort_players)。 */
 public final class Players {
 
     public static final Map<Integer, String> TEAM_NAME = Map.of(1, "队伍A", 2, "队伍B");
@@ -21,9 +19,7 @@ public final class Players {
     private Players() {
     }
 
-    /**
-     * 补上展示用派生字段 (车名/车种/国家)。
-     */
+    /** 补上展示用派生字段 (车名/车种/国家)。 */
     public static void enrich(final PlayerResult p, final Tankopedia tp) {
         final TankInfo ti = tp.info(p.tankId);
         p.tankName = ti.name();
@@ -33,9 +29,7 @@ public final class Players {
         p.alphaDamage = ti.alphaDamage() == null ? "" : ti.alphaDamage();
     }
 
-    /**
-     * 统一排序: 先队伍, 同队按伤害降序。
-     */
+    /** 统一排序: 先队伍, 同队按伤害降序。 */
     public static List<PlayerResult> sorted(final List<PlayerResult> players) {
         return players.stream()
                 .sorted(Comparator.<PlayerResult>comparingInt(p -> p.team)
@@ -43,9 +37,7 @@ public final class Players {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * 返回一个把 platoonId 映射成 A/B/C… 的函数 (每次调用独立计数)。
-     */
+    /** 返回一个把 platoonId 映射成 A/B/C… 的函数 (每次调用独立计数)。 */
     public static Function<Long, String> platoonLabeler() {
         final Map<Long, String> letters = new HashMap<>();
         return pid -> {

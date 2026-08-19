@@ -1,14 +1,16 @@
 package com.wotb.web.replay.ai;
 
-import com.wotb.core.processing.FriendlyEnemyResult.Winner;
-import org.junit.jupiter.api.Test;
-
-import java.util.Set;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.wotb.core.processing.FriendlyEnemyResult.Winner;
+import org.junit.jupiter.api.Test;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 
 class TeamAutopsyParserTest {
 
@@ -28,9 +30,7 @@ class TeamAutopsyParserTest {
         return sb.append(']').toString();
     }
 
-    /**
-     * 完整 7 人数组（P1 用自定义 contribution/confidence，P2..P7 用 HIGH/PARTIAL）。
-     */
+    /** 完整 7 人数组（P1 用自定义 contribution/confidence，P2..P7 用 HIGH/PARTIAL）。 */
     private static String playersWithCustomP1(final String contribution,
                                               final String confidence) {
         final StringBuilder sb = new StringBuilder("\"players\":[{\"playerKey\":\"P1\"")

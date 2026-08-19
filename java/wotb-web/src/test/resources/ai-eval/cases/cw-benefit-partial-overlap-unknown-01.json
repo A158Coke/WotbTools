@@ -6,18 +6,9 @@
   "lessonRef": "docs/ai-lessons/cw-benefit-partial-overlap-unknown-01.md",
   "expectedJudgment": "无候选（队友部分重叠交火使获利为 UNKNOWN，不把 UNKNOWN 当 false 判脱节）",
   "checks": [
-    {
-      "kind": "prompt_contains",
-      "text": "=== FORMATION_PHASES ==="
-    },
-    {
-      "kind": "prompt_omits",
-      "text": "SOLO_DELAY"
-    },
-    {
-      "kind": "prompt_omits",
-      "text": "SOLO_DETACHED"
-    }
+    { "kind": "prompt_contains", "text": "=== FORMATION_PHASES ===" },
+    { "kind": "prompt_omits", "text": "SOLO_DELAY" },
+    { "kind": "prompt_omits", "text": "SOLO_DETACHED" }
   ],
   "note": "单走 span 60-90s，队友 FAVORABLE 交火 40-65s 部分重叠：teammateBenefit=UNKNOWN，即使单走成员窗口内承伤 1000 也不得判脱节。"
 }

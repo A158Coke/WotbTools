@@ -1,9 +1,9 @@
 <script setup>
-import {computed} from 'vue'
+import { computed } from 'vue'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
-import {normalizeHeadings} from '../utils/markdownHeadingNormalize'
-import {parseAiTime} from '../utils/battlePlayback'
+import { normalizeHeadings } from '../utils/markdownHeadingNormalize'
+import { parseAiTime } from '../utils/battlePlayback'
 
 const md = new MarkdownIt({
   html: false,

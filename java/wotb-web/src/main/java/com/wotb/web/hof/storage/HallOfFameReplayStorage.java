@@ -47,9 +47,7 @@ public class HallOfFameReplayStorage {
         this.minFreeBytes = minFreeBytes;
     }
 
-    /**
-     * 存储结果：created=false 表示目标已存在（幂等复用，未写新文件）。
-     */
+    /** 存储结果：created=false 表示目标已存在（幂等复用，未写新文件）。 */
     public record StoreResult(boolean created, Path path) {
     }
 
@@ -115,9 +113,7 @@ public class HallOfFameReplayStorage {
         Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE);
     }
 
-    /**
-     * 按 hash 定位文件；不存在返回 empty。路径由服务端 hash 拼成并校验仍位于 baseDir。
-     */
+    /** 按 hash 定位文件；不存在返回 empty。路径由服务端 hash 拼成并校验仍位于 baseDir。 */
     public Optional<Path> load(final String sha256) {
         final Path target = resolveTarget(sha256);
         if (!Files.exists(target)) {
@@ -126,9 +122,7 @@ public class HallOfFameReplayStorage {
         return Optional.of(target);
     }
 
-    /**
-     * Best-effort 删除（admin delete 最后引用清理；失败抛异常由调用方 WARN 处理，保留 orphan）。
-     */
+    /** Best-effort 删除（admin delete 最后引用清理；失败抛异常由调用方 WARN 处理，保留 orphan）。 */
     public boolean delete(final String sha256) {
         try {
             return Files.deleteIfExists(resolveTarget(sha256));

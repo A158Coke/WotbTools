@@ -2,6 +2,7 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.replay.evidence.EntryHpSource;
 import com.wotb.core.processing.TeamEntityIdentity;
 import com.wotb.core.processing.TeamEntityMapper;
 import com.wotb.core.processing.TeamEntityMapping;
@@ -10,10 +11,10 @@ import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
-import com.wotb.core.replay.evidence.EntryHpSource;
 import com.wotb.core.replay.evidence.TankTacticalProfile;
 import com.wotb.core.replay.evidence.TankTacticalProfileRegistry;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -43,28 +44,18 @@ final class BehindLineHpEvidence {
     private BehindLineHpEvidence() {
     }
 
-    /**
-     * 血量优势倍数（默认多 20%，salience/filter heuristic；不解释为「吸血」判定）。
-     */
+    /** 血量优势倍数（默认多 20%，salience/filter heuristic；不解释为「吸血」判定）。 */
     static final double HP_ADVANTAGE_RATIO = 1.2;
-    /**
-     * 有输出 = 阶段内作为攻击者的伤害事件 ≥ 1（仅完整覆盖时可用作「有输出」事实）。
-     */
+    /** 有输出 = 阶段内作为攻击者的伤害事件 ≥ 1（仅完整覆盖时可用作「有输出」事实）。 */
     static final int ATTACKER_DAMAGE_MIN = 1;
-    /**
-     * 躲后距离差档位（米，聚合 salience 用）。
-     */
+    /** 躲后距离差档位（米，聚合 salience 用）。 */
     static final double DIST_BAND_M = 50.0;
     static final double DIST_BAND_FAR_M = 150.0;
-    /**
-     * 血量差档位（血量比率倍率，聚合 salience 用）。
-     */
+    /** 血量差档位（血量比率倍率，聚合 salience 用）。 */
     static final double HP_BAND_1 = 1.5;
     static final double HP_BAND_2 = 2.0;
 
-    /**
-     * 阶段命中记录：X 满足「血量优势 + 距敌更远 + 可扛线」筛选的测量（供跨阶段聚合次数）。
-     */
+    /** 阶段命中记录：X 满足「血量优势 + 距敌更远 + 可扛线」筛选的测量（供跨阶段聚合次数）。 */
     private record PhaseHit(
             long accountId,
             double bloodRatio,
@@ -72,9 +63,7 @@ final class BehindLineHpEvidence {
     ) {
     }
 
-    /**
-     * 团队路径：本队全体成员的身后血量/位置优势测量段。
-     */
+    /** 团队路径：本队全体成员的身后血量/位置优势测量段。 */
     static String renderTeamSection(
             final Battle battle,
             final ReplayReconstruction recon,
@@ -84,9 +73,7 @@ final class BehindLineHpEvidence {
         return render(battle, recon, perspectiveTeam, null, observedDamagePartial);
     }
 
-    /**
-     * 个人路径：仅录像者自己；录像者不在册或非本队成员时返回空。
-     */
+    /** 个人路径：仅录像者自己；录像者不在册或非本队成员时返回空。 */
     static String renderPlayerSection(
             final Battle battle,
             final ReplayReconstruction recon,
@@ -241,9 +228,7 @@ final class BehindLineHpEvidence {
         return out.toString();
     }
 
-    /**
-     * 单阶段渲染结果：文本 + 命中记录。
-     */
+    /** 单阶段渲染结果：文本 + 命中记录。 */
     private record PhaseResult(String text, List<PhaseHit> hits) {
     }
 
@@ -394,8 +379,8 @@ final class BehindLineHpEvidence {
                         .append(" ").append(outputStatus(observedAttackEvents, observedDamagePartial)).append("\n");
                 // outputStatus=UNKNOWN（partial 且 0 个已观测攻击事件）时禁止进入跨阶段聚合
                 if (!(observedDamagePartial && observedAttackEvents == 0)) {
-                    hits.add(new PhaseHit(accountId,
-                            hpRatioX / teammateHpRatio, distX - teammateDist));
+                hits.add(new PhaseHit(accountId,
+                        hpRatioX / teammateHpRatio, distX - teammateDist));
                 }
             } else if (!hpKnown) {
                 // HP 优势未知：只输出中性事实（位置关系 + 已观察攻击事件）
@@ -423,9 +408,7 @@ final class BehindLineHpEvidence {
         return new PhaseResult(out.toString(), hits);
     }
 
-    /**
-     * 阶段末最后已知血量比率（hp/maxHp）；无采样或 maxHp 未知 → ≤0（不可用）。
-     */
+    /** 阶段末最后已知血量比率（hp/maxHp）；无采样或 maxHp 未知 → ≤0（不可用）。 */
     private static double hpRatioAt(final long accountId,
                                     final FormationDepthEvidence.PhaseRange phase,
                                     final Map<Long, List<double[]>> hpSamples,
@@ -480,9 +463,7 @@ final class BehindLineHpEvidence {
         return n;
     }
 
-    /**
-     * opening 附加几何事实：可扛线账号阶段平均位置在本方后排分位（只报几何，不判「未上前线」）。
-     */
+    /** opening 附加几何事实：可扛线账号阶段平均位置在本方后排分位（只报几何，不判「未上前线」）。 */
     private static String renderOpeningBackline(
             final Map<Long, double[]> meanByAccount,
             final Map<Long, Integer> teamByAccount,
@@ -545,9 +526,7 @@ final class BehindLineHpEvidence {
         return sb.length() == 0 ? null : sb.toString();
     }
 
-    /**
-     * 跨阶段聚合：只报「该测量组合在 N 个阶段成立」的中性次数（salience），不输出战术分级。
-     */
+    /** 跨阶段聚合：只报「该测量组合在 N 个阶段成立」的中性次数（salience），不输出战术分级。 */
     private static String renderAggregate(final List<PhaseHit> hits, final boolean playerPath) {
         if (hits.isEmpty()) {
             return "";

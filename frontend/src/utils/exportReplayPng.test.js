@@ -1,15 +1,15 @@
 // @vitest-environment happy-dom
 
-import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import {
-    computeExportDimensions,
-    downloadBlob,
-    exportPngFilename,
-    getExportTarget,
-    MAX_CANVAS_DIMENSION,
-    MAX_SCALE,
-    maxFiniteDimension,
-    sanitizeFilename
+  getExportTarget,
+  computeExportDimensions,
+  maxFiniteDimension,
+  exportPngFilename,
+  sanitizeFilename,
+  downloadBlob,
+  MAX_CANVAS_DIMENSION,
+  MAX_SCALE
 } from './exportReplayPng.js'
 
 describe('maxFiniteDimension', () => {

@@ -24,9 +24,7 @@ public final class ReplayUploadValidator {
     private ReplayUploadValidator() {
     }
 
-    /**
-     * 通用上传校验：文件数组非空、每个文件非空/类型合法/单文件 ≤ 20MiB、累计 ≤ 200MiB。不限制文件数量。
-     */
+    /** 通用上传校验：文件数组非空、每个文件非空/类型合法/单文件 ≤ 20MiB、累计 ≤ 200MiB。不限制文件数量。 */
     public static void validate(final MultipartFile[] files) {
         if (files == null || files.length == 0) {
             throw new IllegalArgumentException("NO_REPLAY_FILES");
@@ -51,9 +49,7 @@ public final class ReplayUploadValidator {
         }
     }
 
-    /**
-     * AI Review 上传校验：通用校验 + 单文件限制（{@link AiReplayBatchPolicy#MAX_FILES}）。
-     */
+    /** AI Review 上传校验：通用校验 + 单文件限制（{@link AiReplayBatchPolicy#MAX_FILES}）。 */
     public static void validateAiReview(final MultipartFile[] files) {
         validate(files);
         if (files.length > AiReplayBatchPolicy.MAX_FILES) {

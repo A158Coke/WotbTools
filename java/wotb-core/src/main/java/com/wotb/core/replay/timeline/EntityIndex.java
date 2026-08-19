@@ -23,39 +23,27 @@ import java.util.Map;
  */
 final class EntityIndex {
 
-    /**
-     * 位置采样（battle-relative 秒 + 原始 XYZ + 车体 yaw 度）。
-     */
+    /** 位置采样（battle-relative 秒 + 原始 XYZ + 车体 yaw 度）。 */
     record PosSample(double clock, float x, float y, float z, Float yawDeg, DecodeConfidence confidence) {
     }
 
-    /**
-     * 血量采样：currentHp 仅保留可信正 HP 或 0（sentinel 绝不进入）；alive 来自事件字段。
-     */
+    /** 血量采样：currentHp 仅保留可信正 HP 或 0（sentinel 绝不进入）；alive 来自事件字段。 */
     record HpSample(double clock, Integer currentHp, Boolean alive, DecodeConfidence confidence, int seq) {
     }
 
-    /**
-     * 阵亡采样（事件已可靠证明）。
-     */
+    /** 阵亡采样（事件已可靠证明）。 */
     record DestroySample(double clock, int seq) {
     }
 
-    /**
-     * 炮塔相对偏航采样（type-7 propId=2，PROVEN）。
-     */
+    /** 炮塔相对偏航采样（type-7 propId=2，PROVEN）。 */
     record TurretSample(double clock, double relYawDeg) {
     }
 
-    /**
-     * 伤害采样（累计用）。
-     */
+    /** 伤害采样（累计用）。 */
     record DmgSample(double clock, int amount) {
     }
 
-    /**
-     * 争霸赛点数采样。
-     */
+    /** 争霸赛点数采样。 */
     record PointsSample(double clock, int team, int points) {
     }
 
@@ -188,9 +176,7 @@ final class EntityIndex {
         return invalidTimestampEvents;
     }
 
-    /**
-     * 在 t 时已存在的实体（first observed ≤ t）。
-     */
+    /** 在 t 时已存在的实体（first observed ≤ t）。 */
     List<Integer> knownEntityIdsAt(final double t) {
         final List<Integer> out = new ArrayList<>();
         for (final Map.Entry<Integer, Double> e : firstObserved.entrySet()) {
@@ -221,17 +207,13 @@ final class EntityIndex {
         return sumUpTo(damageReceived.get(entityId), t, DmgSample::clock, DmgSample::amount);
     }
 
-    /**
-     * 截至 t 的最后一次 EntityLeave（位置流硬中断；无则 null）。
-     */
+    /** 截至 t 的最后一次 EntityLeave（位置流硬中断；无则 null）。 */
     Double lastLeaveAtOrBefore(final int entityId, final double t) {
         final List<Double> list = leaves.get(entityId);
         return lastAtOrBefore(list, t, Double::doubleValue);
     }
 
-    /**
-     * 截至 t 的阵亡信息：取最新生命采样（按 clock/seq）。
-     */
+    /** 截至 t 的阵亡信息：取最新生命采样（按 clock/seq）。 */
     DestroyedInfo destroyedInfoAt(final int entityId, final double t) {
         final List<DestroySample> list = destroys.get(entityId);
         if (list == null || list.isEmpty()) {

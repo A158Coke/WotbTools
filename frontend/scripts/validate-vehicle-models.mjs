@@ -9,10 +9,15 @@
  * validate.js 逻辑；输出 PASS/FAIL，存在任何 error 时退出码 1。
  */
 import path from 'node:path'
-import {fileURLToPath} from 'node:url'
-import tankopedia from '../../common/tankopedia-tier10.json' with {type: 'json'}
-import {MODEL_DEFINITIONS, TANK_ID_TO_MODEL} from '../src/vehicle-models/mapping.js'
-import {listModelKeys, readModelDir, validateCoverage, validateModelEntry,} from '../src/vehicle-models/validate.js'
+import { fileURLToPath } from 'node:url'
+import tankopedia from '../../common/tankopedia-tier10.json' with { type: 'json' }
+import { MODEL_DEFINITIONS, TANK_ID_TO_MODEL } from '../src/vehicle-models/mapping.js'
+import {
+  listModelKeys,
+  readModelDir,
+  validateCoverage,
+  validateModelEntry,
+} from '../src/vehicle-models/validate.js'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 

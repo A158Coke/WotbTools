@@ -22,9 +22,12 @@
  *   pivot rotate(T-H)）——数学见 vehicle-models/pivot.js（marker*Transform）；
  * - dedicated turretless：仅 hull（gun/mantlet 已 bake 进 hull；无 fake turret layer）。
  */
-import {computed, nextTick, ref, watch} from 'vue'
-import {markerTurretAssemblyTransform, markerTurretImageTransform,} from '../vehicle-models/pivot.js'
-import {LABEL_LINE_H, LABEL_PAD_Y} from '../utils/labelLayout'
+import { computed, nextTick, ref, watch } from 'vue'
+import {
+  markerTurretAssemblyTransform,
+  markerTurretImageTransform,
+} from '../vehicle-models/pivot.js'
+import { LABEL_LINE_H, LABEL_PAD_Y } from '../utils/labelLayout'
 
 const props = defineProps({
   /** vehicleState 视图模型（BattlePlayback 构建；含 model / hullScreenDeg / turretScreenDeg / 状态） */

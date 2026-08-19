@@ -34,35 +34,21 @@ import java.util.Set;
  */
 public final class TeamSeparationEvidenceSkill {
 
-    /**
-     * 与主力簇质心距离 ≥ 该值视为空间分离（与 RouteSkill 分离窗口同口径）。
-     */
+    /** 与主力簇质心距离 ≥ 该值视为空间分离（与 RouteSkill 分离窗口同口径）。 */
     public static final float SEPARATION_DISTANCE_M = 150f;
-    /**
-     * 静止判定速度上限（canonical 米/秒）。
-     */
+    /** 静止判定速度上限（canonical 米/秒）。 */
     public static final float STATIONARY_SPEED_MPS = 1.0f;
-    /**
-     * 移动覆盖门控：窗口内被移动证据覆盖时长占比低于该值时移动状态视为 UNKNOWN。
-     */
+    /** 移动覆盖门控：窗口内被移动证据覆盖时长占比低于该值时移动状态视为 UNKNOWN。 */
     public static final float MIN_MOVEMENT_COVERAGE_RATIO = 0.5f;
-    /**
-     * 距离增长阈值（canonical 米），作为「持续拉大」信号（仅事实，非判定）。
-     */
+    /** 距离增长阈值（canonical 米），作为「持续拉大」信号（仅事实，非判定）。 */
     public static final float DISTANCE_GROWTH_M = 20f;
-    /**
-     * 非主力簇相对主力簇的最小人数差（明显小于才算分离）。
-     */
+    /** 非主力簇相对主力簇的最小人数差（明显小于才算分离）。 */
     public static final int MAIN_CLUSTER_DOMINANCE = 2;
-    /**
-     * 事件流观测伤害与权威结算不一致：伤害/交火事件覆盖不完整，否定判断（“没有观察到事件”）不可靠。
-     */
+    /** 事件流观测伤害与权威结算不一致：伤害/交火事件覆盖不完整，否定判断（“没有观察到事件”）不可靠。 */
     public static final String OBSERVED_DAMAGE_IS_PARTIAL = "OBSERVED_DAMAGE_IS_PARTIAL";
 
     private static final int MAX_EVIDENCE = 6;
-    /**
-     * span 连续性容差：相邻 formation window 间隔超过该值视为缺窗口，禁止跨缺口合并。
-     */
+    /** span 连续性容差：相邻 formation window 间隔超过该值视为缺窗口，禁止跨缺口合并。 */
     static final float SPAN_CONTINUITY_EPSILON_SEC = 0.01f;
 
     private TeamSeparationEvidenceSkill() {
@@ -124,9 +110,7 @@ public final class TeamSeparationEvidenceSkill {
         return List.copyOf(result);
     }
 
-    /**
-     * 确定性测量：全部是事实，不包含任何战术结论。
-     */
+    /** 确定性测量：全部是事实，不包含任何战术结论。 */
     private static java.util.Map<String, Double> numbers(
             final TeamMemberFeatureSet member,
             final SeparationSpan span,
@@ -207,9 +191,7 @@ public final class TeamSeparationEvidenceSkill {
         };
     }
 
-    /**
-     * battle-relative 秒 → X分XX秒（与 PlayerAnalysisTerms 同口径的本地格式化）。
-     */
+    /** battle-relative 秒 → X分XX秒（与 PlayerAnalysisTerms 同口径的本地格式化）。 */
     private static String battleRange(final float startSec, final float endSec) {
         return battleClock(startSec) + "-" + battleClock(endSec);
     }
@@ -225,12 +207,10 @@ public final class TeamSeparationEvidenceSkill {
                 && member.deathTimeSec() <= span.endSec();
     }
 
-    /**
-     * 每名成员：把连续「非主力簇且距离 ≥150m」的 15s 窗口合并为分离时段。
-     */
+    /** 每名成员：把连续「非主力簇且距离 ≥150m」的 15s 窗口合并为分离时段。 */
     private static List<SeparationSpan> separationSpans(final TeamMemberFeatureSet member,
-                                                        final List<TeamFormationPhase> phases,
-                                                        final List<TeamMemberFeatureSet> allMembers) {
+                                                       final List<TeamFormationPhase> phases,
+                                                       final List<TeamMemberFeatureSet> allMembers) {
         final List<SeparationSpan> spans = new ArrayList<>();
         SeparationSpan current = null;
         for (final TeamFormationPhase phase : phases) {
@@ -256,9 +236,7 @@ public final class TeamSeparationEvidenceSkill {
         return spans;
     }
 
-    /**
-     * 全局主力簇：窗口内人数最多的簇；平票返回 null（不硬判）。
-     */
+    /** 全局主力簇：窗口内人数最多的簇；平票返回 null（不硬判）。 */
     static TeamFormationCluster mainClusterOf(final TeamFormationPhase phase) {
         if (phase == null || phase.clusters() == null || phase.clusters().isEmpty()) {
             return null;
@@ -280,9 +258,7 @@ public final class TeamSeparationEvidenceSkill {
         return main;
     }
 
-    /**
-     * 全局主力簇（观测门控版）：只有观测成员数达到该时刻应存活成员数时才承认全局主力。
-     */
+    /** 全局主力簇（观测门控版）：只有观测成员数达到该时刻应存活成员数时才承认全局主力。 */
     static TeamFormationCluster mainClusterOf(final TeamFormationPhase phase,
                                               final int expectedAliveMembers) {
         if (expectedAliveMembers <= 0 || phase == null
@@ -330,9 +306,7 @@ public final class TeamSeparationEvidenceSkill {
                 main.centroidZ());
     }
 
-    /**
-     * 该 phase 开始时应当存活的成员数（死亡时刻未知或晚于 phase 开始视为存活）。
-     */
+    /** 该 phase 开始时应当存活的成员数（死亡时刻未知或晚于 phase 开始视为存活）。 */
     private static int expectedAliveMembers(final List<TeamMemberFeatureSet> members,
                                             final TeamFormationPhase phase) {
         int alive = 0;
@@ -346,9 +320,7 @@ public final class TeamSeparationEvidenceSkill {
         return alive;
     }
 
-    /**
-     * 静止占比：时段内移动段重叠部分中「静止/低速」的占比；无覆盖返回 null。
-     */
+    /** 静止占比：时段内移动段重叠部分中「静止/低速」的占比；无覆盖返回 null。 */
     private static Double stationaryRatio(final TeamMemberFeatureSet member,
                                           final SeparationSpan span) {
         float covered = 0f;
@@ -406,9 +378,7 @@ public final class TeamSeparationEvidenceSkill {
         return new int[]{deaths, engagements, (int) dealt, (int) received};
     }
 
-    /**
-     * 事件流观测伤害覆盖不完整时，否定判断（“没有观察到队友活动/交火”）不可靠。
-     */
+    /** 事件流观测伤害覆盖不完整时，否定判断（“没有观察到队友活动/交火”）不可靠。 */
     private static boolean observedDamageIsPartial(final TeamBattleFeatureSet features) {
         return features.limitations() != null
                 && features.limitations().contains(OBSERVED_DAMAGE_IS_PARTIAL);
@@ -426,9 +396,7 @@ public final class TeamSeparationEvidenceSkill {
         return null;
     }
 
-    /**
-     * 阶段标签（OPENING / MID_GAME / END_GAME / UNKNOWN）：按窗口起点所属阶段。
-     */
+    /** 阶段标签（OPENING / MID_GAME / END_GAME / UNKNOWN）：按窗口起点所属阶段。 */
     private static String phaseOf(final List<BattlePhaseSummary> battlePhases, final float sec) {
         if (battlePhases == null) {
             return "UNKNOWN";
@@ -448,9 +416,7 @@ public final class TeamSeparationEvidenceSkill {
         return stationaryRatio >= 0.6 ? "STATIONARY" : "MOVING";
     }
 
-    /**
-     * 地图语义中占领点/战略点覆盖的九宫格区域（GRID_REGION_N 的数字部分）。
-     */
+    /** 地图语义中占领点/战略点覆盖的九宫格区域（GRID_REGION_N 的数字部分）。 */
     public static Set<String> controlPointRegions(final MapTacticalSemantics semantics) {
         final Set<String> regions = new LinkedHashSet<>();
         if (semantics == null || !semantics.hasSemantics()) {
@@ -474,9 +440,7 @@ public final class TeamSeparationEvidenceSkill {
         return regions;
     }
 
-    /**
-     * 目标点关系三态：1=邻近 / 0=已知不在 / -1=未知（region 缺失或无语义）。
-     */
+    /** 目标点关系三态：1=邻近 / 0=已知不在 / -1=未知（region 缺失或无语义）。 */
     private static int objectiveProximity(final int region,
                                           final Set<String> controlPointRegions,
                                           final MapTacticalSemantics semantics) {
@@ -499,18 +463,14 @@ public final class TeamSeparationEvidenceSkill {
         return (float) Math.sqrt(dx * dx + dz * dz);
     }
 
-    /**
-     * 交火段是否完全位于 [startSec, endSec] 内：只有完全包含才允许把整段总量归属到局部窗口。
-     */
+    /** 交火段是否完全位于 [startSec, endSec] 内：只有完全包含才允许把整段总量归属到局部窗口。 */
     private static boolean fullyContained(final EngagementSummary engagement,
                                           final float startSec, final float endSec) {
         return engagement.startTime() >= startSec - SPAN_CONTINUITY_EPSILON_SEC
                 && engagement.endTime() <= endSec + SPAN_CONTINUITY_EPSILON_SEC;
     }
 
-    /**
-     * 分离时段聚合：窗口序列 + 距离趋势 + 主力质心位移。
-     */
+    /** 分离时段聚合：窗口序列 + 距离趋势 + 主力质心位移。 */
     private static final class SeparationSpan {
         private final TeamMemberFeatureSet member;
         private final float startSec;
@@ -576,9 +536,7 @@ public final class TeamSeparationEvidenceSkill {
             return windows.getLast();
         }
 
-        /**
-         * 窗口内敌情数量：只统计完全位于 span 内的 engagements（部分重叠不可可靠归属，禁止整段计入）。
-         */
+        /** 窗口内敌情数量：只统计完全位于 span 内的 engagements（部分重叠不可可靠归属，禁止整段计入）。 */
         int enemyPressureCount() {
             final Set<Long> enemies = new LinkedHashSet<>();
             for (final EngagementSummary engagement : member.engagements()) {
@@ -589,9 +547,7 @@ public final class TeamSeparationEvidenceSkill {
             return enemies.size();
         }
 
-        /**
-         * 窗口内承伤：只统计完全位于 span 内的 engagements（部分重叠禁止整段计入）。
-         */
+        /** 窗口内承伤：只统计完全位于 span 内的 engagements（部分重叠禁止整段计入）。 */
         float damageReceived() {
             float damage = 0f;
             for (final EngagementSummary engagement : member.engagements()) {
@@ -602,9 +558,7 @@ public final class TeamSeparationEvidenceSkill {
             return damage;
         }
 
-        /**
-         * 窗口内输出：只统计完全位于 span 内的 engagements（部分重叠禁止整段计入）。
-         */
+        /** 窗口内输出：只统计完全位于 span 内的 engagements（部分重叠禁止整段计入）。 */
         float damageDealt() {
             float damage = 0f;
             for (final EngagementSummary engagement : member.engagements()) {
@@ -615,9 +569,7 @@ public final class TeamSeparationEvidenceSkill {
             return damage;
         }
 
-        /**
-         * 是否存在与 span 相交但不完全包含的交火：无法可靠归属，禁止据此下结论。
-         */
+        /** 是否存在与 span 相交但不完全包含的交火：无法可靠归属，禁止据此下结论。 */
         boolean hasPartialOverlapEngagement() {
             for (final EngagementSummary engagement : member.engagements()) {
                 if (intersects(engagement, startSec, endSec)
@@ -630,9 +582,7 @@ public final class TeamSeparationEvidenceSkill {
 
     }
 
-    /**
-     * 交火段是否与 [startSec, endSec] 相交（含端点）。
-     */
+    /** 交火段是否与 [startSec, endSec] 相交（含端点）。 */
     private static boolean intersects(final EngagementSummary engagement,
                                       final float startSec, final float endSec) {
         return engagement.startTime() <= endSec && engagement.endTime() >= startSec;

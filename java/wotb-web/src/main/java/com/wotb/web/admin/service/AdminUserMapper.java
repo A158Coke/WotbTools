@@ -10,9 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
-/**
- * 管理端用户列表与详情 DTO 映射。
- */
+/** 管理端用户列表与详情 DTO 映射。 */
 @Service
 public class AdminUserMapper implements Mapper<UserProfile, AdminUserDto> {
 

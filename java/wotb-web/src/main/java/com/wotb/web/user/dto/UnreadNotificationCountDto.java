@@ -1,4 +1,3 @@
 package com.wotb.web.user.dto;
 
-public record UnreadNotificationCountDto(long count) {
-}
+public record UnreadNotificationCountDto(long count) {}

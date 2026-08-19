@@ -6,14 +6,8 @@
   "lessonRef": "docs/ai-lessons/cw-gap-no-merge-01.md",
   "expectedJudgment": "无候选（单走窗口中间缺 phase，禁止跨缺口合并计算距离增长）",
   "checks": [
-    {
-      "kind": "prompt_contains",
-      "text": "=== FORMATION_PHASES ==="
-    },
-    {
-      "kind": "prompt_omits",
-      "text": "SOLO_DETACHED"
-    }
+    { "kind": "prompt_contains", "text": "=== FORMATION_PHASES ===" },
+    { "kind": "prompt_omits", "text": "SOLO_DETACHED" }
   ],
   "note": "[60,75] 与 [90,105] 中间缺失 75-90 phase：span 拆分后各自无距离增长，不判脱节。"
 }

@@ -1,6 +1,6 @@
-import {describe, expect, it} from 'vitest'
+import { describe, expect, it } from 'vitest'
 import MarkdownIt from 'markdown-it'
-import {normalizeHeadings} from './markdownHeadingNormalize'
+import { normalizeHeadings } from './markdownHeadingNormalize'
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 

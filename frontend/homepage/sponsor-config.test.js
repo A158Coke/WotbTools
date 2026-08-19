@@ -1,5 +1,5 @@
-import {describe, expect, it, vi} from 'vitest'
-import {loadSponsorMethods, normalizeSponsorConfig} from './sponsor-config.js'
+import { describe, expect, it, vi } from 'vitest'
+import { loadSponsorMethods, normalizeSponsorConfig } from './sponsor-config.js'
 
 describe('normalizeSponsorConfig', () => {
   it('accepts supported methods with server-relative image paths', () => {

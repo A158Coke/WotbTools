@@ -177,9 +177,7 @@ public final class TeamAiPromptBuilder {
                 Map.of(context.analysisUnitId(), List.copyOf(limitations)));
     }
 
-    /**
-     * 构建 optional 证据正文：includePointsSituation=false 时点数局势段整体不输出（预算裁剪用）。
-     */
+    /** 构建 optional 证据正文：includePointsSituation=false 时点数局势段整体不输出（预算裁剪用）。 */
     private static String buildOptionalBlock(
             final SingleTeamBattleAnalysisContext context,
             final Set<String> limitations,
