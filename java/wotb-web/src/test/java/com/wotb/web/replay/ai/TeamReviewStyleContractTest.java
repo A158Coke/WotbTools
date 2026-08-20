@@ -7,9 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * PR #103 review §9：Team 输出风格契约（prompt 主体，不需要 runtime regex sanitizer）。
- * <p>验证 Team prompt 明确：internal evidence ≠ user-facing output；中文默认 600–1200 字
+ * <p>验证 Team prompt 明确：internal evidence ≠ user-facing output；中文默认 400–1200 字
  * （简单局更短、复杂局约 1500 上限）；UNKNOWN selective；不单独建立「数据完整性/证据限制」章节；
- * Focus 五项只是 internal reasoning frame、正文不机械输出；数字只保留支撑核心判断的。</p>
+ * Focus Window 只是内部 attention 提示、正文不机械输出；数字只保留支撑核心判断的。</p>
  */
 class TeamReviewStyleContractTest {
 
@@ -30,11 +30,13 @@ class TeamReviewStyleContractTest {
 
     @Test
     void lengthGuidanceIsExplicit() {
-        assertTrue(ZH.contains("600–1200"), "必须给出中文默认长度 600–1200 字");
-        assertTrue(ZH.contains("400–700"), "简单一边倒 400–700 字");
+        assertTrue(ZH.contains("400–1200"), "必须给出中文默认长度 400–1200 字");
+        assertTrue(ZH.contains("300–700"), "简单一边倒 300–700 字");
         assertTrue(ZH.contains("1500"), "复杂比赛最多约 1500 字");
         assertTrue(ZH.contains("禁止为了达到字数填充"), "禁止凑字数");
         assertTrue(ZH.contains("能一句说完，不写三句"), "简洁原则");
+        assertTrue(ZH.contains("简单局可以只写 2-3 段"), "简单局 2-3 段");
+        assertTrue(ZH.contains("复杂局可以写 5 段左右"), "复杂局约 5 段");
     }
 
     @Test
@@ -49,12 +51,15 @@ class TeamReviewStyleContractTest {
     }
 
     @Test
-    void focusFiveItemsAreInternalFrameNotMechanicalOutput() {
-        assertTrue(ZH.contains("组织思考"), "Focus 五项必须标注为内部思考框架");
-        assertTrue(ZH.contains("禁止机械输出「发生了什么：/为什么重要：/能够确认的问题：/无法确认：/更好的处理：」小标题"),
-                "正文不得机械输出五项小标题");
-        assertTrue(ZH.contains("自然 1-3 段"), "窗口正文用自然段落");
-        assertTrue(ZH.contains("backend 给 3 个不强制全写"), "backend 给 3 个窗口不强制全写");
+    void focusWindowIsInternalAttentionPrimitiveNotSectionTemplate() {
+        // Natural Coach Mode：Focus Window 只是「这里最值得集中分析」的 attention 提示，
+        // 不是用户看到的标题结构；不要求逐窗口输出小标题
+        assertTrue(ZH.contains("内部 attention 提示"), "Focus Window 必须标注为内部 attention 提示");
+        assertTrue(ZH.contains("不要求逐窗口输出标题"), "不得强制逐窗口输出标题");
+        assertTrue(ZH.contains("这局真正崩掉是在1分52秒后面那二十秒"), "自然语言直接引用窗口示例");
+        assertFalse(ZH.contains("发生了什么：/为什么重要：/能够确认的问题：/无法确认：/更好的处理："),
+                "旧的五项机械小标题框架不得保留");
+        assertFalse(ZH.contains("每个窗口在内部按"), "旧窗口内部框架不得保留");
     }
 
     @Test

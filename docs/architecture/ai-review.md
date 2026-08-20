@@ -127,6 +127,114 @@ AI 提示词正文维护在 `java/wotb-web/src/main/resources/prompts/` 下的 `
 
 - **新增共享资源**：`common/tank_tactical_profiles.json`（精选 Tier X + 车型级默认 fallback），`wotb-core/pom.xml` 与 `docker/Dockerfile.backend` 已同步复制。
 
+## Natural Coach Mode + Factual Consistency Guard（PR #103 之上，2026-08）
+
+> 核心原则：**Backend 负责「不许瞎说」，LLM 负责「必须有看法」**。Backend 把事实整理到
+> LLM 能可靠理解的程度，但停在战术判断之前；LLM 负责主判断/战术解释/优先级/训练建议；
+> Validator 只检查 LLM 有没有改写 Backend 事实；Renderer 只负责展示。
+
+### 数据流（Team Call #2）
+
+```
+Replay → Parser → Canonical BattleTimeline → 确定性 Grounding Facts（证据编号 E1xx）
+  → TeamAiPromptBuilder（TACTICAL TIMELINE + FOCUS WINDOWS + 全部确定性证据）
+  → Call #2（system prompt 要求 JSON envelope）→ TeamReviewEnvelopeParser
+  → TeamFactualConsistencyValidator（V1–V6）→ PASS → 流式输出 reviewMarkdown
+                                              → FAIL → 反馈 LLM 自修（targeted → full → fail-safe）
+```
+
+### Team Call #2 structured envelope（内部 grounding 契约）
+
+```json
+{
+  "primaryDiagnosis": {"title": "...", "reasoning": "...", "supportingEvidenceIds": ["E1xx"]},
+  "reviewMarkdown": "完整自然语言复盘（用户最终看到的全部内容，主标题 ## 团队复盘）",
+  "claims": [{"text": "涉及数值/时间/位置/玩家事件的陈述", "evidenceIds": ["E1xx"]}]
+}
+```
+
+- `reviewMarkdown` 由 LLM 自由写出，Backend 绝不拼接主体；`evidenceIds` 只出现在 structured
+  字段，validator 拦截其泄漏进用户正文（INTERNAL 检查）。
+- Natural Coach Mode：主正文为 3-5 个自然段（简单 2-3、复杂约 5），无固定章节模板；
+  Focus Window 是内部 attention primitive（「这里最值得集中分析」），不是用户标题结构；
+  必须有唯一 PRIMARY DIAGNOSIS（禁止「无法判断/可能性枚举」）；「教练不是司法鉴定员」——
+  事实必须准确，战术判断不要求数学证明。
+
+### TeamFactualConsistencyValidator（wotb-core `com.wotb.core.replay.evidence`，确定性）
+
+只检查「LLM 有没有改写 Backend 事实」，**绝不判断战术观点**（「这局主要问题是第一次正面交换」
+「应该先回收」等 coaching judgment 一律放行）：
+
+| 检查 | 内容 |
+|---|---|
+| V1 temporal ownership | 声称的时间窗口必须包含其引用的阵亡/存活变化事件（含正文窗口内点名阵亡） |
+| V2 player event correctness | 玩家阵亡时间与后端事实一致（容差 2s；紧邻 ±20 字符窗口，避免把句内时间范围误判） |
+| V3 alive transition | 存活变化（如 7v7→4v6）必须存在于后端 step 或 FOCUS_WINDOW 聚合前后（正文三语 + structured value 机器格式） |
+| V4 position temporal grounding | 某时刻位置数量不得超出该时刻区域快照（±6s 最近快照）；**structured region+count 为精确语义（exact == actual，B2-2）**，at-least/subset 标记放行下界/子集陈述 |
+| V5 CURRENT / LAST_KNOWN | 敌方 LAST_KNOWN 不得写成「此时就在这里/正在某区」/ "is right here now" / "прямо здесь"（structured + 正文双路径，ZH/EN/RU 短语覆盖） |
+| V6 unsupported hard facts | 无 LOS/spotting 证据的硬事实化表达（进入所有炮线/LOS/掩体/点亮/瞄准，ZH/EN/RU 短语覆盖），除非已降级为「更可能/从交换结果看/如果当时」/ more likely / более вероятно 级别；structured claimType 声明 LOS/SPOTTING/VISION → 一律 FAIL（无 evidence kind） |
+| EVIDENCE / OUTPUT / INTERNAL | 引用不存在证据编号 / 空输出 / 证据编号泄漏进正文 / 缺主判断 |
+
+> **三语契约（Review B1-2）**：validator 优先按 structured claims 的**机器字段**做语言无关校验
+> （`timeSec` battle-relative 秒 / `region` 1-9 / `count` / `subject` / `value` 存活变化机器格式 /
+> `claimType`），正文自然语言仅作兜底（时间解析支持 `X分Y秒` / `1:49` / `109s` / `1m49s` /
+> `1 мин 49 сек` / `109 seconds` / `109 секунд` 等三语常见格式；位置/LAST_KNOWN/LOS 短语列表
+> ZH/EN/RU 三语覆盖）。纯战术观点 claim 可无机器字段。
+>
+> **Structured Factual Contract（Review Blocker B1，fail-close）**：`TeamReviewEnvelopeParser` 对
+> claims 强制 machine schema——`claimType` 必填且 ∈ {DEATH, ALIVE_TRANSITION, POSITION_REGION,
+> ENEMY_POSITION, TACTICAL}（LOS/SPOTTING/VISION/LINE_OF_SIGHT 及未知类型 → reject/rewrite）；
+> 每种 factual claimType 的 required fields 强制（DEATH=subject+timeSec+evidenceIds；
+> ALIVE_TRANSITION=value 机器格式+evidenceIds；POSITION_REGION=timeSec+region+count+side
+> +countSemantics+evidenceIds；ENEMY_POSITION=subject+timeSec+region+knowledge+evidenceIds；
+> TACTICAL 无机器字段要求）；机器字段类型错误（如 `region="six"`、`timeSec="112"`）→ reject/rewrite，
+> 不静默 null。validator 对应 machine 校验：V2m（DEATH subject+timeSec）、V3m（value 存活变化）、
+> V4m（POSITION_REGION side 感知 friendlyCounts/enemyCurrentCounts + countSemantics EXACT/AT_LEAST/SUBSET
+> 机器语义）、V5m（ENEMY_POSITION knowledge CURRENT/LAST_KNOWN 与后端 exact 校验，不靠正文短语）、
+> V6m（claimType=LOS/SPOTTING 一律 FAIL）。
+>
+> **Evidence Binding（Review Blocker B1，最终）**：claims 的 evidenceIds 必须**真正绑定**支撑它的
+> evidence fact，不能只靠「全局恰好存在该值/该变化」通过——`requiredEvidenceType(claimType)` 统一映射：
+> DEATH→PLAYER_DESTROYED、ALIVE_TRANSITION→ALIVE_COUNT_TRANSITION 或 FOCUS_WINDOW（窗口级聚合，
+> 明确允许）、POSITION_REGION→POSITION_REGION、ENEMY_POSITION→ENEMY_POSITION_KNOWN；每个引用必须
+> 存在且属于允许类型（借用无关编号/类型不匹配 → `BINDING` FAIL），且至少一个引用 evidence 必须完整支撑
+> 该 claim：DEATH=身份（subjectAccountId 优先，其次昵称/坦克名）+时间容差；ALIVE_TRANSITION=value 与
+> 引用证据 before/after 一致；POSITION_REGION=引用证据的 side 感知快照（FRIENDLY→friendly、ENEMY→
+> enemyCurrent）校验 region/count/countSemantics，证据无该区域数据 → FAIL；ENEMY_POSITION=身份+时间+
+> 区域+knowledge 全部一致（只因为 CURRENT==CURRENT 就 PASS 是漏洞）。重复坦克名（如两辆 IS-7）时
+> 仅凭 tankName 无法唯一绑定身份 → 必须用 subjectAccountId 或昵称（`BINDING` 歧义 FAIL）。有 evidenceIds
+> 时引用证据是 primary source，nearest-snapshot/全局列表只作为无直接 evidence mapping 的 defense-in-depth。
+> 正文自然语言短语列表（`就在这里` / "is right here now" / `прямо здесь` 等）仍只作为 defense-in-depth，
+> 不是 correctness boundary。claims coverage 最低契约：Grounding Facts 非空且主判断引用
+> 证据编号或正文出现可验证事实锚点时，claims 不允许无条件为空（CONTRACT 冲突）。
+
+### 校验失败 → LLM 自修循环（§13/§14）
+
+```
+Draft → validate → PASS → 流式输出
+                  → FAIL #1 → targeted rewrite（携带 [V1]…[V6] 冲突反馈，LLM 自行改写）
+                  → FAIL #2 → full rewrite
+                  → 仍 FAIL → fail-safe：AI_REVIEW_GROUNDING_FAILED 业务错误（绝不静默输出矛盾）
+```
+
+- Backend 绝不代改句子；校验通过后才把 reviewMarkdown 转给前端（不暴露待改写草稿）。
+- 上限：`TeamReplayAnalysisService.MAX_VALIDATION_ATTEMPTS = 3`（draft + 2 次 rewrite）。
+- **authoritative response source（Review B1-1）**：`callRaw()` 以 `AiChatResponse.completionText()`
+  为唯一权威完整响应（Gateway 契约：callback 是流式增量 progress，正常结束时 completionText 为
+  聚合后的完整文本；失败一律抛 `AiUpstreamException`，绝不返回 partial）；每轮 attempt 独立
+  `stream()` 调用，不共享 buffer（无「前一轮 buffer 串扰」）。
+
+### Grounding Facts（TeamGroundingFacts，wotb-core）
+
+- **死亡时刻时钟契约（Review B2-1）**：`PlayerResultFormat.deathSec()` 数值域不统一
+  （`deathTimeMillis`/legacy 估算为原始时钟域，`DeathTimeReconciler` 校准的 `survivalTimeSec`
+  为 battle-relative）；`TeamGroundingFacts.build` 统一按 `raw > startRaw → raw − startRaw`
+  转 battle-relative——compat 入口（无 timeline）必须传 `reconstruction.battleStartRawClockSec()`。
+- 从权威结算 + 已验证 canonical BattleTimeline 提取带稳定证据编号（E1xx，确定性顺序：
+  阵亡→存活变化→关注窗口→位置快照→敌方位置知识）的事实清单；timeline 为 null（兼容入口）
+  时只输出结算可推导事实（阵亡/存活变化），位置/窗口类校验自动 no-op。
+- 渲染为 prompt 的 `=== GROUNDING FACTS ===` 段；时间一律「XX分XX秒」。
+
 ## AI 分析范围边界
 
 AI 复盘区分两种 scope，互不混用：

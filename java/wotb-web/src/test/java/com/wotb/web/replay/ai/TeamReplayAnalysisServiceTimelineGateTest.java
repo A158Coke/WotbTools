@@ -119,6 +119,8 @@ class TeamReplayAnalysisServiceTimelineGateTest {
         assertTrue(body.contains("TACTICAL TIMELINE"), body);
         assertTrue(body.contains("EPISODE 1"), body);
         assertTrue(body.contains("战斗总时长: "), body);
+        // Natural Coach 轮：Call #2 输入必须携带确定性 GROUNDING FACTS（供 structured claims 引用）
+        assertTrue(body.contains("=== GROUNDING FACTS"), "Call #2 输入必须注入 GROUNDING FACTS: " + body);
         // valid path 不 gate 拒绝：Call #1 与 Call #2 都真实发生
         assertTrue(gateway.requests.stream()
                 .anyMatch(r -> "PRE_BATTLE_STRATEGIC_PRIOR".equals(r.analysisMode())),
@@ -260,7 +262,10 @@ class TeamReplayAnalysisServiceTimelineGateTest {
         @Override
         public AiChatResponse chat(final AiChatRequest request) {
             requests.add(request);
-            return new AiChatResponse("team review", "DeepSeek", "test-model",
+            return new AiChatResponse(
+                    "{\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
+                            + "\"reviewMarkdown\":\"## 团队复盘\\n\\n这是一段复盘。\",\"claims\":[]}",
+                    "DeepSeek", "test-model",
                     0, 0, 0, 0, 0, 0, "stop");
         }
     }

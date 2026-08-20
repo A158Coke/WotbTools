@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.5",
+    "date": "2026-08-20",
+    "tag": "chg",
+    "zh": "团队 AI 复盘升级为「自然教练模式」：正文不再按固定章节模板输出，而是像看完录像的教练一样用 3-5 个自然段落讲清整场最值得复盘的事（只有一个决定性问题就只讲一个）；每场复盘必须有且只有一个明确主判断（这局最主要的问题是什么、为什么、下次改什么），不再出现「可能是A也可能是B」的模糊列举；后台还会先校验 AI 输出的时间、人数、位置、阵亡等事实再展示——时间窗口内引用的阵亡必须真实发生、7v7→4v6 不会被写成 3v5、「敌方最后已知位置」不会被说成「此时就在这里」、没有视野/射界证据时不再出现「进入所有炮线」「具备完整LOS」等硬断言（可写成「更可能/从交换结果看」级别的判断）；校验不通过时 AI 会带着具体冲突自行改写，仍失败则明确提示无法通过事实校验，绝不悄悄输出事实矛盾。",
+    "en": "Team AI review is now a natural-coach mode: the body is no longer a fixed-section template - it reads like a coach who watched the replay, using 3-5 natural paragraphs to cover what is most worth reviewing (if there is only one decisive problem, it writes about that one only); every review must commit to exactly one primary diagnosis (the main problem, why, and what to change next) instead of listing vague possibilities; the backend now fact-checks the AI output before showing it - deaths cited in a time window must really fall inside it, 7v7→4v6 cannot be written as 3v5, an enemy last-known position cannot be stated as \"the enemy is right here now\", and hard claims like \"inside every enemy firing line\" or \"full LOS\" are disallowed without vision/line-of-sight evidence (hedged phrasing such as \"more likely\" or \"judging from the exchange\" is allowed); when the check fails, the AI rewrites with the specific conflicts, and if it still fails the review is explicitly rejected rather than silently showing contradictions.",
+    "ru": "Командный ИИ-разбор переведён в режим «естественного тренера»: текст больше не строится по фиксированным разделам — он читается как разбор тренера, посмотревшего реплей, в 3–5 естественных абзацах о самом важном (если решающая проблема одна — пишется только о ней); каждый разбор обязан выбрать ровно один основной диагноз (главная проблема боя, почему, что менять в следующий раз) вместо перечисления смутных вариантов; бэкенд теперь проверяет факты в выводе ИИ перед показом — гибели, названные внутри временного окна, должны действительно попадать в него, 7v7→4v6 нельзя написать как 3v5, «последняя известная позиция» противника не может быть подана как «противник сейчас прямо здесь», а жёсткие утверждения вроде «внутри всех линий огня противника» или «полная линия огня» запрещены без свидетельств обзора/линии огня (допустимы смягчённые формулировки «более вероятно» или «судя по обмену»); при неудаче проверки ИИ переписывает текст с конкретными противоречиями, а если и это не помогает — разбор явно отклоняется, а не показывает противоречия молча."
+  },
+  {
     "v": "2.12.4",
     "date": "2026-08-20",
     "tag": "add",
