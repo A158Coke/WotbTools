@@ -2,19 +2,26 @@ import { describe, expect, it } from 'vitest'
 import {
   aggregateEventsBySecond,
   clampViewPan,
+  cumulativeStatsAt,
+  eventsCrossed,
   formatClock,
+  ghostAround,
+  hpDisplay,
   interpolateDirection,
   lastKnownPosition,
   normalizeDeg,
   parseAiTime,
   positionAt,
   positionCoveredAt,
+  pushFeed,
   recorderRelated,
   screenRotation,
   shortestArcDeg,
   teamHp,
   teamPointsAt,
+  transientsActive,
   vehicleHpAt,
+  victimFeedbackAllowed,
   tracerLines,
   trustedPositionAt,
   turretWorldYawDeg,
@@ -503,5 +510,137 @@ describe('zoomViewAt / clampViewPan', () => {
     expect(clampViewPan({ scale: 2, tx: -500, ty: 0 }, 400, 300).tx).toBe(-400)
     // 尺寸未知（无布局环境）不钳制
     expect(clampViewPan({ scale: 2, tx: 50, ty: 20 }, 0, 0)).toEqual({ scale: 2, tx: 50, ty: 20 })
+  })
+})
+
+describe('hpDisplay / ghostAround / cumulativeStatsAt / eventsCrossed / transients', () => {
+  const base = { team: 1, maxHp: 3000, deathSec: null, entryHpSource: null, entryHp: null, hpSamples: [] }
+
+  it('hpDisplay: authoritative samples > destroyed=0 > friendly proven entry fallback > UNKNOWN', () => {
+    // 采样优先
+    const sampled = { ...base, hpSamples: [{ timeSec: 0, hp: 3000 }, { timeSec: 10, hp: 2000 }, { timeSec: 20, hp: 0 }] }
+    expect(hpDisplay(sampled, 5)).toMatchObject({ current: 3000, maxHp: 3000, pct: 100, destroyed: false })
+    expect(hpDisplay(sampled, 15)).toMatchObject({ current: 2000, pct: 2000 / 3000 * 100 })
+    // 0 采样 = 已知归零；destroyed 状态由 deathSec 判定（无 deathSec 不冒充击毁标记）
+    expect(hpDisplay(sampled, 25)).toMatchObject({ current: 0, pct: 0, destroyed: false })
+    // 已阵亡但无 0 采样 → 权威 0（不冒充满血/残血）
+    const deadNoZero = { ...base, deathSec: 12, hpSamples: [{ timeSec: 0, hp: 3000 }, { timeSec: 10, hp: 2000 }] }
+    expect(hpDisplay(deadNoZero, 15)).toMatchObject({ current: 0, pct: 0, destroyed: true })
+    expect(hpDisplay(deadNoZero, 10)).toMatchObject({ current: 2000, destroyed: false })
+    // 敌方存活无采样 → UNKNOWN（null），不是 0
+    expect(hpDisplay({ ...base, hpSamples: [] }, 50).current).toBeNull()
+    // 本方存活无采样 + OBSERVED_EXACT → entryHp 满血回退
+    const proven = { ...base, entryHpSource: 'OBSERVED_EXACT', entryHp: 3200, hpSamples: [] }
+    expect(hpDisplay(proven, 50, { friendly: true })).toMatchObject({ current: 3200 })
+    // 本方存活无采样但未证明（BASE_FALLBACK/UNKNOWN）→ 禁止拿 maxHp/tankopedia 冒充
+    const unproven = { ...base, entryHpSource: 'BASE_FALLBACK', entryHp: null, hpSamples: [] }
+    expect(hpDisplay(unproven, 50, { friendly: true }).current).toBeNull()
+    expect(hpDisplay(unproven, 50).current).toBeNull()
+    // maxHp 缺失 → 显示 current，pct 不伪造（null）
+    const noMax = { ...base, maxHp: null, hpSamples: [{ timeSec: 0, hp: 1520 }] }
+    expect(hpDisplay(noMax, 5)).toMatchObject({ current: 1520, maxHp: null, pct: null })
+    expect(hpDisplay(null, 5)).toBeNull()
+  })
+
+  it('ghostAround: only when HP actually drops across the event; null otherwise', () => {
+    const v = { ...base, hpSamples: [{ timeSec: 0, hp: 3000 }, { timeSec: 10, hp: 2100 }] }
+    const g = ghostAround(v, 10)
+    expect(g).toEqual({ prevPct: 100, nextPct: 70 })
+    // 无变化 / 数据缺失 → null（不伪造 ghost）
+    expect(ghostAround({ ...base, hpSamples: [{ timeSec: 0, hp: 3000 }] }, 10)).toBeNull()
+    expect(ghostAround(v, 5)).toBeNull()
+    expect(ghostAround(null, 10)).toBeNull()
+  })
+
+  it('cumulativeStatsAt: deterministic dealt/received/kills at arbitrary t', () => {
+    const events = [
+      { type: 'DAMAGE', timeSec: 10, accountId: 1, targetAccountId: 2, damage: 400 },
+      { type: 'DAMAGE', timeSec: 12, accountId: 2, targetAccountId: 1, damage: 540 },
+      { type: 'KILL', timeSec: 30, accountId: 1, targetAccountId: 2, damage: null },
+      { type: 'DESTROYED', timeSec: 30, accountId: 2, targetAccountId: null, damage: null }
+    ]
+    expect(cumulativeStatsAt(events, 1, 5)).toEqual({ dealt: 0, received: 0, kills: 0 })
+    expect(cumulativeStatsAt(events, 1, 11)).toEqual({ dealt: 400, received: 0, kills: 0 }) // 12s 伤害尚未发生
+    expect(cumulativeStatsAt(events, 1, 12)).toEqual({ dealt: 400, received: 540, kills: 0 })
+    expect(cumulativeStatsAt(events, 1, 40)).toEqual({ dealt: 400, received: 540, kills: 1 })
+    expect(cumulativeStatsAt(events, 2, 40)).toEqual({ dealt: 540, received: 400, kills: 0 })
+    // backward seek 恢复旧值（不依赖单向累减）
+    expect(cumulativeStatsAt(events, 1, 12)).toEqual({ dealt: 400, received: 540, kills: 0 })
+    expect(cumulativeStatsAt(null, 1, 10)).toEqual({ dealt: 0, received: 0, kills: 0 })
+  })
+
+  it('eventsCrossed: strict left-open, inclusive right; no re-trigger at cursor', () => {
+    const events = [
+      { type: 'DAMAGE', timeSec: 10, accountId: 1, targetAccountId: 2, damage: 100 },
+      { type: 'DAMAGE', timeSec: 10.5, accountId: 2, targetAccountId: 1, damage: 200 },
+      { type: 'KILL', timeSec: 20, accountId: 1, targetAccountId: 2, damage: null }
+    ]
+    expect(eventsCrossed(events, 0, 10)).toHaveLength(1) // 10 恰在 to：消费
+    expect(eventsCrossed(events, 10, 10.5)).toHaveLength(1) // 10 在 from 上：不重复
+    expect(eventsCrossed(events, 10.5, 11)).toHaveLength(0)
+    expect(eventsCrossed(events, 11, 21)).toHaveLength(1) // KILL 20
+    expect(eventsCrossed(events, 20, 21)).toHaveLength(0) // seek 到事件时刻：不补播
+    expect(eventsCrossed(null, 0, 5)).toEqual([])
+  })
+
+  it('transientsActive / pushFeed: wall-clock lifecycle + queue eviction', () => {
+    const a = { id: 1, bornRealMs: 1000, durationMs: 1000 }
+    const b = { id: 2, bornRealMs: 1500, durationMs: 1000 }
+    expect(transientsActive([a, b], 1999)).toHaveLength(2)
+    expect(transientsActive([a, b], 2000)).toHaveLength(1) // a 到期
+    expect(transientsActive([a, b], 2501)).toHaveLength(0)
+    expect(transientsActive(null, 0)).toEqual([])
+    // kill feed 队列：最多 3 条、新进挤最旧、不合并
+    let feed = []
+    feed = pushFeed(feed, { victimAccountId: 1 })
+    feed = pushFeed(feed, { victimAccountId: 2 })
+    feed = pushFeed(feed, { victimAccountId: 3 })
+    feed = pushFeed(feed, { victimAccountId: 4 })
+    expect(feed.map(i => i.victimAccountId)).toEqual([2, 3, 4])
+    expect(pushFeed([], { victimAccountId: 5 }, 0)).toHaveLength(0)
+  })
+
+  it('victimFeedbackAllowed: covered at event time only (last-known 期间受击不跳伤害)', () => {
+    const v = { positionIntervals: [{ startSec: 10, endSec: 20 }, { startSec: 40, endSec: 60 }] }
+    expect(victimFeedbackAllowed(v, 15)).toBe(true)
+    expect(victimFeedbackAllowed(v, 45)).toBe(true)
+    expect(victimFeedbackAllowed(v, 30)).toBe(false) // 失察期间受击：不跳伤害
+    expect(victimFeedbackAllowed(v, 20)).toBe(true)
+    expect(victimFeedbackAllowed(null, 15)).toBe(false)
+  })
+
+  it('hpDisplay (review Blocker 3): enemy HP 冻结在 last-known，恢复 coverage 后跳到最新可信值；friendly 不受影响', () => {
+    const intervals = [{ startSec: 0, endSec: 20 }, { startSec: 40, endSec: 60 }]
+    const enemy = {
+      ...base, team: 2, maxHp: 3000,
+      positionIntervals: intervals,
+      hpSamples: [
+        { timeSec: 10, hp: 3000 },
+        { timeSec: 30, hp: 2200 },
+        { timeSec: 35, hp: 1800 },
+        { timeSec: 42, hp: 1700 }
+      ]
+    }
+    // 覆盖期内正常更新
+    expect(hpDisplay(enemy, 15)).toMatchObject({ current: 3000 })
+    // 失察期（20–40）：冻结在进入 last-known 前最后可信 HP——hidden interval 内
+    // 的后续采样（2200@30 / 1800@35）不得提前泄漏
+    for (const t of [25, 30, 35, 39.9]) {
+      expect(hpDisplay(enemy, t)).toMatchObject({ current: 3000 })
+    }
+    // 恢复 coverage（40+）：直接跳到届时最新可信值（不补播 hidden interval 历史动画）
+    expect(hpDisplay(enemy, 40)).toMatchObject({ current: 1800 })
+    expect(hpDisplay(enemy, 42)).toMatchObject({ current: 1700 })
+    // backward seek 确定性：回到失察期仍冻结
+    expect(hpDisplay(enemy, 30)).toMatchObject({ current: 3000 })
+    // friendly 不受敌方冻结规则误伤：同一 gap 结构下 HP 正常更新
+    const friendly = { ...enemy, team: 1 }
+    expect(hpDisplay(friendly, 30, { friendly: true })).toMatchObject({ current: 2200 })
+    // 无 positionIntervals 的车辆不建模覆盖（旧语义：直接使用 t）
+    const noIntervals = { ...base, hpSamples: [{ timeSec: 0, hp: 3000 }, { timeSec: 30, hp: 2200 }] }
+    expect(hpDisplay(noIntervals, 30)).toMatchObject({ current: 2200 })
+    // 从未覆盖（无 last-known 可冻结）→ UNKNOWN（不得把 hidden 采样当已知血量）
+    const neverSeen = { ...base, positionIntervals: [{ startSec: 40, endSec: 60 }], hpSamples: [{ timeSec: 10, hp: 3000 }] }
+    expect(hpDisplay(neverSeen, 30).current).toBeNull()
   })
 })
