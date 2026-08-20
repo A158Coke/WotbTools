@@ -207,6 +207,8 @@ watch(hpPrefs, (p) => {
 // transient 全部 wall-clock（performance.now）驱动，播放帧推进时消费新跨过的事件，
 // seek 清空（§20.1 不补播）、pause 自然完成（§20.2）、resume 不重复已消费事件（§20.3，
 // eventCursor 严格左开：恰在 cursor 上的事件不重复触发）。
+// Blocker 1：consumption 源 = authoritativeEvents（原始 playback events），
+// 不受事件列表 UI 过滤（typeFilter/showAll/recorder/team scope）影响。
 let transientSeq = 0
 const eventCursor = ref(0)
 const floatItems = ref([]) // [{ id, victimAccountId, damage, bornRealMs, durationMs }]
@@ -233,8 +235,15 @@ function resetTransients(sec) {
 
 /** 播放时钟跨过 (fromSec, toSec] 的新事件 → 生成 transient feedback（§10/§12/§16）。 */
 function consumeEvents(fromSec, toSec) {
-  const crossed = eventsCrossed(filteredEvents.value, fromSec, toSec)
-  if (crossed.length === 0) return
+  // Blocker 1：combat feedback 消费 authoritative playback events（不依赖事件列表 UI 过滤——
+  // 「战斗事实有没有发生」不取决于 DAMAGE/KILL checkbox 是否显示）。
+  // 左界 = max(fromSec, eventCursor)（严格左开 cursor：seek/回绕把 cursor 重置到新时间点后，
+  // prev 滞后不会把旧时间点事件重复消费——Blocker 2 loop 下一轮不重复上一轮末尾事件）。
+  const crossed = eventsCrossed(authoritativeEvents.value, Math.max(fromSec, eventCursor.value), toSec)
+  if (crossed.length === 0) {
+    eventCursor.value = Math.max(eventCursor.value, toSec)
+    return
+  }
   const now = realNowMs()
   const states = vehicleStates.value
   const stateByAccount = new Map(states.map(s => [s.vehicle.accountId, s]))
@@ -285,6 +294,7 @@ function consumeEvents(fromSec, toSec) {
       })
     }
   }
+  eventCursor.value = Math.max(eventCursor.value, toSec)
 }
 
 /** 暂停时 transient 是否仍有未决（驱动轻量时钟自然完成，§20.2）。 */
@@ -848,23 +858,28 @@ function frame(ts) {
   const delta = lastFrameTs == null ? 0 : (ts - lastFrameTs)
   lastFrameTs = ts
   const prev = currentTime.value
-  currentTime.value = Math.min(duration.value, prev + (delta / 1000) * speed.value)
+  const next = Math.min(duration.value, prev + (delta / 1000) * speed.value)
+  currentTime.value = next
   nowMs.value = realNowMs()
+  // §1.3/§20.3/Blocker 2：先消费 (prev, next]（next 可 == duration——到达末尾前最后一段事件
+  // 必须在停止/回绕前消费，exactly-once，不因到达 duration 丢失）；cursor 严格左开不重复。
+  consumeEvents(prev, next)
   if (currentTime.value >= duration.value) {
     if (props.loop) {
       currentTime.value = 0
-      resetTransients(0) // 循环回绕 = seek 到 0：不补播历史动画
+      // 循环回绕：只重置播放时间与严格左开 cursor。上一轮末尾刚消费的 transient 继续按
+      // wall-clock 自然完成（「末尾消费一次」可见且不重复）；不重置 eventCursor 会把下一轮
+      // (0, t] 的事件误判为已消费而静默跳过。
+      eventCursor.value = 0
       rafId = requestAnimationFrame(frame)
       return
     }
     playing.value = false
     rafId = null
-    // Blocker 1：播放到末尾自然停止 → 若有未决 transition，轻量 clock 接管
+    // 播放到末尾自然停止 → 若有未决 transition，轻量 clock 接管
     ensureHysteresisClock(realNowMs())
     return
   }
-  // §1.3/§20.3：正常播放跨过事件才触发 transient feedback（cursor 严格左开不重复）
-  consumeEvents(prev, currentTime.value)
   rafId = requestAnimationFrame(frame)
 }
 
@@ -1118,6 +1133,15 @@ const filteredEvents = computed(() => {
   return events
 })
 
+/**
+ * authoritative playback events：全部回放事件（无 typeFilter / showAll / recorder / team scope 过滤）。
+ * deterministic state（当前累计伤害/击杀）与 combat feedback（floating damage / hit flash / ghost /
+ * destruction burst / kill feed / damage log）必须消费本源——「战斗事实有没有发生」不取决于事件列表
+ * UI 是否显示（review Blocker 1）。presentation 过滤（filteredEvents）只用于 timeline markers /
+ * popup / prev-next 事件跳转 / 受 filter 控制的 visual overlay（炮线）。
+ */
+const authoritativeEvents = computed(() => (playback.value ? playback.value.events : []))
+
 const eventMarkers = computed(() => aggregateEventsBySecond(filteredEvents.value))
 
 // 炮线：仅来自过滤后事件流中的已知射击（DAMAGE/KILL），两端可信位置，随播放时间与倍速确定性呈现
@@ -1311,7 +1335,7 @@ const selLastKnownSec = computed(() => {
 const selCurStats = computed(() => {
   const st = selectedState.value
   if (!st) return { dealt: 0, received: 0, kills: 0 }
-  return cumulativeStatsAt(filteredEvents.value, st.vehicle.accountId, currentTime.value)
+  return cumulativeStatsAt(authoritativeEvents.value, st.vehicle.accountId, currentTime.value)
 })
 // §9：assist 无逐时间点可靠来源（只有最终 damageAssisted）→ 当前值恒 —（禁止从 0 秒显示最终值）
 const selAssistText = '—'
@@ -1329,14 +1353,18 @@ const selPenRate = computed(() => {
   if (!f || !(f.nHitsDealt > 0)) return null
   return Math.round((f.nPenetrationsDealt / f.nHitsDealt) * 100) + '%'
 })
-/** §13 伤害记录：选中车辆相关的最近 DAMAGE（受击/造成），attacker 未覆盖时显示「来源未知」。 */
+/** §13 伤害记录：选中车辆相关的最近 DAMAGE（受击/造成），attacker 未覆盖时显示「来源未知」。
+ *  Blocker 2：damage log = 当前 playback timestamp 的确定性状态——只消费 timeSec <= currentTime
+ *  的事件（forward/backward seek 与任意 timestamp 重建天然正确，未来事件绝不泄漏）；
+ *  取「当前时刻之前最近的 8 条」（事件按 timeSec 升序，slice(-8) = 最近 8 条）。 */
 const selDamageLog = computed(() => {
   const st = selectedState.value
   if (!st) return []
   const id = st.vehicle.accountId
   const rows = []
-  for (const ev of filteredEvents.value) {
+  for (const ev of authoritativeEvents.value) {
     if (ev.type !== 'DAMAGE' || !Number.isFinite(ev.damage)) continue
+    if (ev.timeSec > currentTime.value + 1e-6) continue
     if (ev.targetAccountId === id) {
       const attacker = vehiclesByAccount.value.get(ev.accountId)
       // §13：未点亮（事件时刻无位置流覆盖）的攻击者不得泄露身份

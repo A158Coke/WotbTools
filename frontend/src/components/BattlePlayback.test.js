@@ -1875,3 +1875,299 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
   })
 })
 
+describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
+  afterEach(() => {
+    localStorage.clear()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
+  /** performance.now 受控时钟（驱动 wall-clock transient）。 */
+  function fakeClock() {
+    const clock = { now: 0 }
+    vi.spyOn(performance, 'now').mockImplementation(() => clock.now)
+    return clock
+  }
+
+  function clickChip(wrapper, labelFragment) {
+    const chip = wrapper.findAll('.pb-chip').find((b) => b.text().includes(labelFragment))
+    if (!chip) throw new Error('chip not found: ' + labelFragment)
+    return chip.trigger('click')
+  }
+
+  /** 从当前状态 dl 读 dt 对应 dd 文本（finalStats 分区不渲染时唯一）。 */
+  function sidebarValue(wrapper, dtKey) {
+    const dts = wrapper.findAll('.pb-sb-grid dt')
+    const idx = dts.findIndex((d) => d.text() === dtKey)
+    if (idx === -1) return null
+    const dds = wrapper.findAll('.pb-sb-grid dd')
+    return dds[idx] ? dds[idx].text() : null
+  }
+
+  function logTimes(wrapper) {
+    return wrapper.findAll('.pb-sb-log li').map((li) => li.find('.pb-sb-log-time').text())
+  }
+
+  function enemyHudNum(wrapper) {
+    return wrapper.find('[data-test="pb-marker-2001"]').find('[data-test="pb-hp-num"]').text()
+  }
+
+  it('B1-1 typeFilter：关闭 DAMAGE/KILL checkbox 后 deterministic stats 完全不变', async () => {
+    stubRaf()
+    const overview = makeOverview()
+    overview.playback.events.push(
+      { type: 'DAMAGE', timeSec: 14, accountId: 2001, targetAccountId: 1001, damage: 200 },
+      { type: 'KILL', timeSec: 16, accountId: 1001, targetAccountId: 2001, damage: null }
+    )
+    const wrapper = mountPlayback(overview, 18)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
+    let info = wrapper.find('[data-test="pb-info"]')
+    expect(info.exists()).toBe(true)
+    // t=18 的 current stats：dealt 400（DAMAGE@12）+ received 200（DAMAGE@14）+ kills 1（KILL@16）
+    expect(sidebarValue(info, 'recon.map.playback.damage_dealt')).toBe('400')
+    expect(sidebarValue(info, 'recon.map.playback.damage_received')).toBe('200')
+    expect(sidebarValue(info, 'recon.map.playback.kills')).toBe('1')
+    // 关闭 DAMAGE checkbox → presentation 变化（事件标记减少），stats 完全不变
+    const markersBefore = wrapper.findAll('.pb-marker').length
+    await clickChip(wrapper, 'event_DAMAGE')
+    await flushPromises()
+    expect(wrapper.findAll('.pb-marker').length).toBeLessThan(markersBefore)
+    info = wrapper.find('[data-test="pb-info"]')
+    expect(sidebarValue(info, 'recon.map.playback.damage_dealt')).toBe('400')
+    expect(sidebarValue(info, 'recon.map.playback.damage_received')).toBe('200')
+    expect(sidebarValue(info, 'recon.map.playback.kills')).toBe('1')
+    // 关闭 KILL checkbox → kills 仍不变
+    await clickChip(wrapper, 'event_KILL')
+    await flushPromises()
+    info = wrapper.find('[data-test="pb-info"]')
+    expect(sidebarValue(info, 'recon.map.playback.kills')).toBe('1')
+  })
+
+  it('B1-1 recorder/team scope：presentation scope 不截断 sidebar 当前统计（authoritative 全量）', async () => {
+    stubRaf()
+    // recorder scope（arenaBonusType=1 + recorderAccountId=1001）：2001→2002 双方均非 recorder
+    // → presentation 过滤；但选中 2001 的 dealt 必须计入（authoritative 全量事件）
+    const overview = makeOverview()
+    overview.playback.events.push({ type: 'DAMAGE', timeSec: 15, accountId: 2001, targetAccountId: 2002, damage: 300 })
+    const wrapper = mountPlayback(overview, 16)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-marker-2001"]').trigger('click')
+    let info = wrapper.find('[data-test="pb-info"]')
+    expect(sidebarValue(info, 'recon.map.playback.damage_dealt')).toBe('300')
+    // 该事件同时被 presentation scope 隐藏（无 15s 事件标记）——证明 stats 未被 scope 截断
+    const titles = wrapper.findAll('.pb-marker').map((m) => m.attributes('title') || '')
+    expect(titles.some((s) => s.includes('00:15'))).toBe(false)
+    // team scope（arenaBonusType=2）：2001→2002 双方均非 friendly team → presentation 过滤，stats 仍计入
+    const overview2 = makeOverview()
+    overview2.arenaBonusType = 2
+    overview2.playback.events.push({ type: 'DAMAGE', timeSec: 15, accountId: 2001, targetAccountId: 2002, damage: 300 })
+    const w2 = mountPlayback(overview2, 16)
+    await flushPromises()
+    await w2.find('[data-test="pb-marker-2001"]').trigger('click')
+    info = w2.find('[data-test="pb-info"]')
+    expect(sidebarValue(info, 'recon.map.playback.damage_dealt')).toBe('300')
+    const titles2 = w2.findAll('.pb-marker').map((m) => m.attributes('title') || '')
+    expect(titles2.some((s) => s.includes('00:15'))).toBe(false)
+  })
+
+  it('B1-1 combat feedback 不依赖列表过滤器：DAMAGE/KILL checkbox 关闭时播放跨过仍触发', async () => {
+    stubRaf()
+    const clock = fakeClock()
+    const overview = makeOverview()
+    overview.playback.events.push({ type: 'KILL', timeSec: 16, accountId: 1001, targetAccountId: 2001, damage: null })
+    const wrapper = mountPlayback(overview, 11)
+    await flushPromises()
+    Object.defineProperty(wrapper.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
+    // 关闭 DAMAGE 与 KILL 的事件列表 checkbox
+    await clickChip(wrapper, 'event_DAMAGE')
+    await clickChip(wrapper, 'event_KILL')
+    await flushPromises()
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
+    clock.now = 100
+    rafCb(0)
+    clock.now = 6000
+    rafCb(6000) // +6s → t=17：跨过 DAMAGE@12 与 KILL@16
+    await flushPromises()
+    // 即使事件列表 UI 不显示，combat feedback 仍按需求触发
+    expect(wrapper.find('[data-test="pb-float-dmg"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-float-dmg"]').text()).toBe('-400')
+    expect(wrapper.find('[data-test="pb-kill-feed"]').exists()).toBe(true)
+  })
+
+  it('B1-2 damage log 无 future leak：只显示 <= currentTime 的事件，backward seek 后未来事件消失', async () => {
+    stubRaf()
+    const overview = makeOverview()
+    overview.playback.durationSec = 140
+    overview.playback.events = overview.playback.events.filter((e) => e.type !== 'DAMAGE')
+    overview.playback.vehicles[0].positionIntervals = [{ startSec: 0, endSec: 140 }]
+    overview.playback.vehicles[1].positionIntervals = [{ startSec: 0, endSec: 140 }]
+    overview.routes[1].points.push({ x: -100, y: -100, timeSec: 130 })
+    for (const t of [20, 60, 120]) {
+      overview.playback.events.push({ type: 'DAMAGE', timeSec: t, accountId: 1001, targetAccountId: 2001, damage: 300 })
+    }
+    const wrapper = mountPlayback(overview, 30)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
+    let info = wrapper.find('[data-test="pb-info"]')
+    // t=30：只见 20s
+    expect(logTimes(info)).toEqual(['00:20'])
+    expect(sidebarValue(info, 'recon.map.playback.damage_dealt')).toBe('300')
+    // forward seek t=90：20/60
+    await wrapper.find('.pb-range').setValue(90)
+    await flushPromises()
+    info = wrapper.find('[data-test="pb-info"]')
+    expect(logTimes(info)).toEqual(['00:20', '01:00'])
+    expect(sidebarValue(info, 'recon.map.playback.damage_dealt')).toBe('600')
+    // forward seek t=130：20/60/120
+    await wrapper.find('.pb-range').setValue(130)
+    await flushPromises()
+    info = wrapper.find('[data-test="pb-info"]')
+    expect(logTimes(info)).toEqual(['00:20', '01:00', '02:00'])
+    expect(sidebarValue(info, 'recon.map.playback.damage_dealt')).toBe('900')
+    // backward seek 130 → 30：120/60 均消失（未来事件绝不泄漏，无单向 append/history cache）
+    await wrapper.find('.pb-range').setValue(30)
+    await flushPromises()
+    info = wrapper.find('[data-test="pb-info"]')
+    expect(logTimes(info)).toEqual(['00:20'])
+    expect(sidebarValue(info, 'recon.map.playback.damage_dealt')).toBe('300')
+  })
+
+  it('B1-3 enemy last-known HP 冻结：HUD 与 sidebar 一致；恢复 coverage 跳到最新可信值；friendly 不受影响', async () => {
+    stubRaf()
+    const overview = makeOverview()
+    const enemy = overview.playback.vehicles[1]
+    enemy.maxHp = 3000
+    enemy.positionIntervals = [{ startSec: 0, endSec: 20 }, { startSec: 40, endSec: 60 }]
+    enemy.hpSamples = [
+      { timeSec: 10, hp: 3000 },
+      { timeSec: 30, hp: 2200 },
+      { timeSec: 35, hp: 1800 },
+      { timeSec: 42, hp: 1700 }
+    ]
+    // friendly 同样处于 gap：证明 friendly 不被敌方冻结规则误伤（HP 正常更新）
+    const friendly = overview.playback.vehicles[0]
+    friendly.maxHp = 3000
+    friendly.positionIntervals = [{ startSec: 0, endSec: 20 }, { startSec: 40, endSec: 60 }]
+    friendly.hpSamples = [
+      { timeSec: 0, hp: 3000 },
+      { timeSec: 30, hp: 2200 },
+      { timeSec: 42, hp: 1700 }
+    ]
+    const wrapper = mountPlayback(overview, 15)
+    await flushPromises()
+    // t=15：覆盖期内正常
+    expect(enemyHudNum(wrapper)).toBe('3000')
+    // t=25/30/35：失察期冻结 3000——hidden interval 采样（2200/1800）不得提前泄漏
+    for (const t of [25, 30, 35]) {
+      await wrapper.find('.pb-range').setValue(t)
+      await flushPromises()
+      expect(enemyHudNum(wrapper)).toBe('3000')
+    }
+    // 恢复 coverage（40/42）：跳到届时最新可信值（不补播 hidden interval 历史伤害动画）
+    await wrapper.find('.pb-range').setValue(40)
+    await flushPromises()
+    expect(enemyHudNum(wrapper)).toBe('1800')
+    await wrapper.find('.pb-range').setValue(42)
+    await flushPromises()
+    expect(enemyHudNum(wrapper)).toBe('1700')
+    // backward seek 确定性：42 → 25 重新冻结回 3000
+    await wrapper.find('.pb-range').setValue(25)
+    await flushPromises()
+    expect(enemyHudNum(wrapper)).toBe('3000')
+    // friendly 不受影响：t=30 正常显示 2200（同 gap 结构）
+    await wrapper.find('.pb-range').setValue(30)
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-marker-1001"]').find('[data-test="pb-hp-num"]').text()).toBe('2200')
+    // sidebar 与 marker HUD 完全一致（冻结值与恢复值都一致）
+    await wrapper.find('[data-test="pb-marker-2001"]').trigger('click')
+    let info = wrapper.find('[data-test="pb-info"]')
+    expect(info.find('[data-test="pb-sb-hp"]').text()).toBe('3000 / 3000')
+    await wrapper.find('.pb-range').setValue(35)
+    await flushPromises()
+    expect(enemyHudNum(wrapper)).toBe('3000')
+    expect(wrapper.find('[data-test="pb-info"]').find('[data-test="pb-sb-hp"]').text()).toBe('3000 / 3000')
+    await wrapper.find('.pb-range').setValue(42)
+    await flushPromises()
+    expect(enemyHudNum(wrapper)).toBe('1700')
+    expect(wrapper.find('[data-test="pb-info"]').find('[data-test="pb-sb-hp"]').text()).toBe('1700 / 3000')
+  })
+
+  it('B2 末尾事件消费：播放跨到 duration 时 (prev, duration] 内事件 exactly-once；seek 到末尾不补播', async () => {
+    stubRaf()
+    const clock = fakeClock()
+    const overview = makeOverview()
+    overview.playback.durationSec = 20
+    overview.routes[1].points.unshift({ x: -50, y: -50, timeSec: 0 })
+    overview.playback.events.push(
+      { type: 'DAMAGE', timeSec: 19.8, accountId: 1001, targetAccountId: 2001, damage: 400 },
+      { type: 'DESTROYED', timeSec: 20, accountId: 2001, targetAccountId: null, damage: null },
+      { type: 'KILL', timeSec: 20, accountId: 1001, targetAccountId: 2001, damage: null }
+    )
+    const wrapper = mountPlayback(overview, 19)
+    await flushPromises()
+    Object.defineProperty(wrapper.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
+    clock.now = 100
+    rafCb(0)
+    clock.now = 1300
+    rafCb(1300) // +1.3s → t=20（duration）：先消费 (19, 20] 再停止
+    await flushPromises()
+    // 末尾最后一段事件全部消费一次：floating damage + burst + kill feed
+    expect(wrapper.findAll('[data-test="pb-float-dmg"]')).toHaveLength(1)
+    expect(wrapper.find('[data-test="pb-float-dmg"]').text()).toBe('-400')
+    expect(wrapper.find('[data-test="pb-burst"]').exists()).toBe(true)
+    expect(wrapper.findAll('.pb-feed-item')).toHaveLength(1)
+    // 到达 duration 后停止；后续仅轻量时钟推进（wall-clock 自然完成），不产生重复消费
+    clock.now = 2500
+    rafCb(2500)
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-float-dmg"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-burst"]').exists()).toBe(false)
+    expect(wrapper.findAll('.pb-feed-item')).toHaveLength(1) // feed 未重复，仍在自然存活
+    // seek 直接到 20s：不补播（无 feedback）
+    const w2 = mountPlayback(overview, 20)
+    await flushPromises()
+    Object.defineProperty(w2.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
+    expect(w2.find('[data-test="pb-float-dmg"]').exists()).toBe(false)
+    expect(w2.find('[data-test="pb-burst"]').exists()).toBe(false)
+    expect(w2.find('[data-test="pb-kill-feed"]').exists()).toBe(false)
+  })
+
+  it('B2 loop：末尾事件消费一次后回绕 0；下一轮不重复上一轮末尾事件', async () => {
+    stubRaf()
+    const clock = fakeClock()
+    const overview = makeOverview()
+    overview.playback.durationSec = 20
+    overview.routes[1].points.unshift({ x: -50, y: -50, timeSec: 0 })
+    overview.playback.events.push(
+      { type: 'DAMAGE', timeSec: 19.8, accountId: 1001, targetAccountId: 2001, damage: 400 },
+      { type: 'DESTROYED', timeSec: 20, accountId: 2001, targetAccountId: null, damage: null },
+      { type: 'KILL', timeSec: 20, accountId: 1001, targetAccountId: 2001, damage: null }
+    )
+    const wrapper = mount(BattlePlayback, {
+      props: { overview, seekTo: 19, loop: true },
+      global: { mocks: { $t: i18n.t } }
+    })
+    await flushPromises()
+    Object.defineProperty(wrapper.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
+    clock.now = 100
+    rafCb(0)
+    clock.now = 1300
+    rafCb(1300) // t=20：先消费 (19, 20] 再回绕到 0（仍在播放）
+    await flushPromises()
+    // 回绕：时间归 0；末尾事件已被消费（kill feed 可见，恰好 1 条；float 已生成）
+    expect(wrapper.find('.pb-time').text()).toBe('00:00 / 00:20')
+    expect(wrapper.findAll('.pb-feed-item')).toHaveLength(1)
+    expect(wrapper.find('[data-test="pb-float-dmg"]').exists()).toBe(true)
+    // 下一轮前段（无事件）：上一轮末尾事件不重复（feed 仍 1 条、float 按 wall-clock 到期）
+    clock.now = 2600
+    rafCb(2600) // +1.3s → t=1.3（round 2）
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-float-dmg"]').exists()).toBe(false) // 上一轮 float 到期，未重复
+    expect(wrapper.findAll('.pb-feed-item')).toHaveLength(1) // 上一轮 feed 仍在自然存活，未重复
+  })
+})
+

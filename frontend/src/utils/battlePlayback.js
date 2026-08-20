@@ -418,12 +418,34 @@ export function clampViewPan(view, viewW, viewH) {
   }
 }
 /**
+ * HP 显示时刻的 knowledge projection（review Blocker 3 / docs/current-plan.md §7.3/§10.1）：
+ * 敌方在位置流未覆盖（last-known）期间，HP 冻结在「进入 last-known 前最后一个允许知道的值」——
+ * 即最后一个在 t 之前（含）结束的覆盖区间端点时刻的采样（区间端点 = 失察前最后可信时刻）；
+ * 恢复覆盖后直接用 t（届时最新可信 HP，不补播 hidden interval 的历史伤害动画）。
+ * 本方恒返回 t（authoritative HP 正常更新，不被敌方冻结规则误伤）；无 positionIntervals 数据的
+ * 车辆不建模覆盖（保持旧语义，直接使用 t）。
+ */
+function hpKnowledgeTime(vehicle, t, friendly) {
+  if (friendly) return t
+  const intervals = vehicle && vehicle.positionIntervals
+  if (!Array.isArray(intervals) || intervals.length === 0) return t
+  if (positionCoveredAt(intervals, t)) return t
+  let lastEnd = null
+  for (const iv of intervals) {
+    if (!iv || !Number.isFinite(iv.startSec) || !Number.isFinite(iv.endSec)) continue
+    if (iv.endSec <= t + 1e-6 && (lastEnd == null || iv.endSec > lastEnd)) lastEnd = iv.endSec
+  }
+  return lastEnd // null = 从未覆盖：无 last-known 可冻结 → UNKNOWN
+}
+
+/**
  * 单车 HP HUD 显示语义（docs/current-plan.md §4/§5/§6/§7）：
  * - 已阵亡（t ≥ deathSec）→ 0（权威事实：即使无 0 采样也不冒充）；
  * - 存活 → 最近可信 HP 采样（vehicleHpAt，不带回退，样本优先）；
  * - 存活无采样且「本方 + 进场满血已证明（entryHpSource=OBSERVED_EXACT）」→ entryHp
  *   （已含装备/物资加成；tankopedia base 永不冒充进场满血）；
  * - 其余 → UNKNOWN（current=null，前端显示 —，绝不显示 0）。
+ * 敌方 last-known 期间 HP 经 hpKnowledgeTime 冻结（hidden interval 采样不得提前泄漏）。
  * maxHp 缺失时百分比不伪造（pct=null，bar 进入 UNKNOWN 语义，不隐藏 HP 信息）。
  *
  * @returns {{ current:number|null, maxHp:number|null, pct:number|null, destroyed:boolean }|null}
@@ -435,7 +457,7 @@ export function hpDisplay(vehicle, t, { friendly = false } = {}) {
   if (destroyed) {
     current = 0
   } else {
-    current = vehicleHpAt(vehicle, t, false)
+    current = vehicleHpAt(vehicle, hpKnowledgeTime(vehicle, t, friendly), false)
     if (current == null && friendly && vehicle.entryHpSource === 'OBSERVED_EXACT'
         && Number.isFinite(vehicle.entryHp) && vehicle.entryHp > 0) {
       current = vehicle.entryHp

@@ -608,4 +608,39 @@ describe('hpDisplay / ghostAround / cumulativeStatsAt / eventsCrossed / transien
     expect(victimFeedbackAllowed(v, 20)).toBe(true)
     expect(victimFeedbackAllowed(null, 15)).toBe(false)
   })
+
+  it('hpDisplay (review Blocker 3): enemy HP 冻结在 last-known，恢复 coverage 后跳到最新可信值；friendly 不受影响', () => {
+    const intervals = [{ startSec: 0, endSec: 20 }, { startSec: 40, endSec: 60 }]
+    const enemy = {
+      ...base, team: 2, maxHp: 3000,
+      positionIntervals: intervals,
+      hpSamples: [
+        { timeSec: 10, hp: 3000 },
+        { timeSec: 30, hp: 2200 },
+        { timeSec: 35, hp: 1800 },
+        { timeSec: 42, hp: 1700 }
+      ]
+    }
+    // 覆盖期内正常更新
+    expect(hpDisplay(enemy, 15)).toMatchObject({ current: 3000 })
+    // 失察期（20–40）：冻结在进入 last-known 前最后可信 HP——hidden interval 内
+    // 的后续采样（2200@30 / 1800@35）不得提前泄漏
+    for (const t of [25, 30, 35, 39.9]) {
+      expect(hpDisplay(enemy, t)).toMatchObject({ current: 3000 })
+    }
+    // 恢复 coverage（40+）：直接跳到届时最新可信值（不补播 hidden interval 历史动画）
+    expect(hpDisplay(enemy, 40)).toMatchObject({ current: 1800 })
+    expect(hpDisplay(enemy, 42)).toMatchObject({ current: 1700 })
+    // backward seek 确定性：回到失察期仍冻结
+    expect(hpDisplay(enemy, 30)).toMatchObject({ current: 3000 })
+    // friendly 不受敌方冻结规则误伤：同一 gap 结构下 HP 正常更新
+    const friendly = { ...enemy, team: 1 }
+    expect(hpDisplay(friendly, 30, { friendly: true })).toMatchObject({ current: 2200 })
+    // 无 positionIntervals 的车辆不建模覆盖（旧语义：直接使用 t）
+    const noIntervals = { ...base, hpSamples: [{ timeSec: 0, hp: 3000 }, { timeSec: 30, hp: 2200 }] }
+    expect(hpDisplay(noIntervals, 30)).toMatchObject({ current: 2200 })
+    // 从未覆盖（无 last-known 可冻结）→ UNKNOWN（不得把 hidden 采样当已知血量）
+    const neverSeen = { ...base, positionIntervals: [{ startSec: 40, endSec: 60 }], hpSamples: [{ timeSec: 10, hp: 3000 }] }
+    expect(hpDisplay(neverSeen, 30).current).toBeNull()
+  })
 })
