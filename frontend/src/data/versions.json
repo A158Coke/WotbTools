@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.4",
+    "date": "2026-08-20",
+    "tag": "add",
+    "zh": "战局回放新增单车血量 HUD 与战斗反馈：地图上每辆坦克常驻显示当前血量数字与血条（可一键关闭并记住选择）；受击显示伤害飘字、血条快速缩短并闪亮、残血幽灵条，击毁有克制的爆点动画；右上角击杀播报只显示「XXX 被击毁」（最多 3 条）；点击任意坦克（含已阵亡）打开右侧车辆详情——当前/最后已知血量、最大血量与百分比、当前播放时间、当前累计造成/承受伤害与击杀、最近伤害记录（攻击者未点亮显示「来源未知」），另有明确标注的「最终战绩」分区展示整场开火/命中/穿透/格挡等数据；血量随时间轴确定性重建，快进/后退/拖动都不伪造动画，敌人失察后血量冻结为最后已知值、重新点亮直接更新；协助伤害因回放缺少逐时间点来源，当前值显示「—」。",
+    "en": "Battle playback gains per-vehicle HP HUD and combat feedback: every tank on the map now shows its current HP number and bar persistently (toggleable and remembered); hits show floating damage numbers, a quick bar shrink with flash and a lost-HP ghost bar, and destructions get a restrained burst effect; a lightweight kill feed in the top-right shows only \"XXX destroyed\" (max 3 entries); clicking any tank (including destroyed ones) opens a detail sidebar with current/last-known HP, max HP and percentage, current playback time, current cumulative damage dealt/received and kills, a recent damage log (unknown-source attackers are not leaked), and a clearly-marked final-stats section with the whole-battle shots/hits/penetrations/blocked data; HP is reconstructed deterministically from the timeline - seeking never fakes animations, enemies freeze HP at the last observed value while unobserved and update directly when re-observed; assist damage shows \"—\" at the current time because the replay lacks a per-moment source.",
+    "ru": "В повторе боя добавлены HUD запаса прочности и боевые эффекты: у каждого танка на карте постоянно отображаются текущее число HP и полоса (можно скрыть и запомнить выбор); при попадании показывается всплывающий урон, полоса быстро укорачивается с вспышкой и появляется призрачная полоса потерянного HP, при уничтожении — сдержанная вспышка; в правом верхнем углу лента убийств показывает только «XXX уничтожен» (не более 3 записей); по клику на любой танк (включая уничтоженные) открывается боковая панель — текущий/последний известный HP, максимальный HP и процент, текущее время воспроизведения, текущий нанесённый/полученный урон и фраги, журнал недавнего урона (источник неизвестен, если атакующий не был засвечен), а также явно помеченный раздел «Итоговая статистика» с выстрелами/попаданиями/пробитиями/заблокированным уроном за весь бой; HP детерминированно восстанавливается по таймлайну — перемотка не подделывает анимации, у врагов HP замораживается на последнем известном значении при потере видимости и обновляется сразу при повторном обнаружении; урон при содействии показывается как «—» на текущий момент, так как в реплее нет поточечного источника."
+  },
+  {
     "v": "2.12.3",
     "date": "2026-08-19",
     "tag": "chg",

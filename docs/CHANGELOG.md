@@ -97,6 +97,24 @@
   ② Episode BEFORE/EVENTS/AFTER 因果修复——`BattleFrame(second=N)` 已消费 ≤N 事件，新 Episode 起始秒 delta 属于本段，BEFORE 改为 `frameWorld(max(0, seg[0]−1))`（首段钳制 0），不再提前包含同秒阵亡/点数变化效果；半开段 delta ownership 不变（flatten 仍恰好一次）；新增 DESTROYED 与 POINTS_CHANGE 两类 boundary 回归测试。
 
 ### Added
+- **战局回放 Vehicle HP & Combat Feedback（feat/playback-hp-combat-feedback）**：
+  ① 后端 `MapOverview.PlaybackVehicle` 新增 `tankType` / `entryHpSource` / `entryHp` / `finalStats`（整场结算字段集），
+  `MapOverviewBuilder` 与 `BattlePlaybackAdapter` 双构建器同源填充；`entryHp` 仅在
+  `ObservedMaxHp` 判定 `OBSERVED_EXACT`（受击覆盖完整 + 严格早于首次受击的 positive 样本 >= tankopedia base）
+  时输出——前端「开局满血回退」只允许该 provenance，tankopedia base 永不冒充进场满血（docs/current-plan.md §5.1）。
+  ② 前端 `battlePlayback.js` 新增纯函数：`hpDisplay`（样本优先 → 击毁 0 → 本方已证明进场满血回退 → UNKNOWN，
+  maxHp 缺失不伪造百分比）、`cumulativeStatsAt`（当前时间点 dealt/received/kills 确定性重建）、
+  `eventsCrossed`（严格左开事件 cursor，seek/pause/resume 不重复触发）、`transientsActive` / `pushFeed`
+  （wall-clock transient 生命周期 + kill feed 队列）、`victimFeedbackAllowed`（失察期间受击不跳伤害，§7.2）。
+  ③ `VehicleMarker` 新增 HP HUD（数字 + 定宽 bar + lost-HP ghost + hit flash；last-known 弱化、destroyed 归零、
+  UNKNOWN 显示 —；screen-space 恒定；开关由 `wotb.pb.hp-prefs` 持久化）。
+  ④ `BattlePlayback` 新增：floating damage / destruction burst / kill feed（victim-only，§15.2 未证明全局击杀
+  广播不伪造攻击者）、detail sidebar（当前状态面板 + 最终战绩分区 + 伤害记录，攻击者未点亮显示「来源未知」）、
+  event cursor 驱动的 transient feedback（seek 清空、pause 自然完成、prefers-reduced-motion 降动画）、
+  宽屏右侧/窄屏下方响应式布局。
+  ⑤ 真实 fixture QA（BattlePlaybackAdapterParityTest 扩展）：finalStats 与权威结算逐字段一致、entryHp provenance
+  契约、阵亡车辆必有 0 采样、每条 KILL 由同炮 DAMAGE 支撑（KILL broadcast provenance 验证）。
+
 - **AI Review V2.1 — Team Review Quality Gate（ai-review-v2.1-team-quality-gate）**：Team AI 复盘推理质量重构（FACT → TACTICAL INFERENCE → RECOMMENDATION 契约收敛），根因来自真实失败回放（20260817 WildCat SPHT，见 docs/ai-lessons/team-review-causal-overreach-01.md）：
   ① Team Prompt 重构（prompts/team/single.zh.md + TeamPromptLocalizer 三语常量）——删除强制 10 章节与「开局散开=图控/拿视野」危险规则（改为中性行为，证据不足 UNKNOWN）；新增「团队复盘输出结构」（核心结论 / 关键决策窗口 1-3 / 可确认问题 1-3 / 训练建议 1-3 且必须对应可确认问题 / 对方关键威胁可选）与「证据契约」（FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN：禁止 unsupported 掩体/射界/视野/位置感/必然性/结算→时间线因果/自创精确阈值/残局万能规则/自创车辆角色；禁止硬写「做得好的行为」与凑数量）。
   ② TimelineFocusWindowSelector（wotb-core timeline 域）——从已验证 canonical BattleTimeline 选出 1-3 个信息密度最高的 Focus Window：短时间连续减员（≤20s 合并、>40s 长链按最大间隔拆分）优先，HP swing/点数/首次接敌/交火/存活变化兜底；每个窗口确定性输出 BEFORE/EVENTS/AFTER/OBSERVED FACTS/EVIDENCE LIMITATIONS，不重复 delta、不 future leak；TeamAiContextCompiler.renderFocusWindowsSection 注入 TEAM REVIEW FOCUS WINDOWS 段（与 TACTICAL TIMELINE 同一已验证 timeline）。

@@ -223,3 +223,35 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
   -300..300，即完整世界坐标截图；新图以各自语义 JSON 为准，逐图校准）。渲染统一用
   `coordinateBounds`，不得用 `playableBounds` 铺满图片（会越靠近边缘偏移越大）。无
   `coordinateBounds` 的旧配置按兼容策略回退 `playableBounds`。
+### 单车血量 HUD / 战斗反馈 / 车辆详情面板（PR5，docs/current-plan.md §4–§16）
+
+- **HP 数据优先级（确定性重建）**：`hpDisplay`（`utils/battlePlayback.js`）= ① 最近可信 HP 采样
+  （type-7 propId=3 EXACT，含装备加成，阵亡 0 采样）→ ② 已阵亡（deathSec ≤ t）权威 0 → ③ 本方存活且
+  `entryHpSource == OBSERVED_EXACT` 的已证明进场满血 `entryHp`（含装备/物资加成；`ObservedMaxHp` 判定：
+  受击覆盖完整 + 严格早于首次受击的 positive 样本 ≥ tankopedia base）→ ④ UNKNOWN（显示 —，绝不显示 0）。
+  tankopedia base 永不冒充进场满血；maxHp 缺失时百分比不伪造（bar 进入斜纹 UNKNOWN 语义，不隐藏 HP）。
+  任意 timestamp 确定性重建，backward/forward seek 均直接恢复状态。
+- **HP HUD**：每辆可显示车辆常驻「HP 数字 + 定宽 bar」（screen-space 恒定，friendly=地图 tone、
+  enemy=red 与整车 team token 同源）；last-known 冻结最后可信值并弱化、destroyed 归零；
+  开关「显示血量」（默认开，`wotb.pb.hp-prefs` localStorage 持久化）隐藏数字/bar/ghost，
+  不影响 floating damage / destroyed ✕ / sidebar HP / combat state / kill feed / timeline 正确性；
+  重新开启立即按当前 timestamp 显示正确 HP（纯派生，不重头累计）。
+- **战斗反馈（wall-clock transient，seek 清空 / pause 自然完成 / resume 不重复）**：
+  播放时钟跨过事件由 `eventsCrossed`（严格左开 cursor）消费——DAMAGE → 伤害飘字
+  （-N，受击方阵营色，约 1s 可读时长，同车连续受击纵向 stack）+ HP 数字立即切换 +
+  bar 150–300ms 缩短（CSS transition，seek 单帧禁用）+ hit flash + lost-HP ghost
+  （同阵营色浅版，约 600ms 消退）；DESTROYED → 克制 2D burst；KILL → kill feed
+  （只显示「受害者被击毁」，victim-only，最多 3 条队列、约 5s 生命周期，§15.2）。
+  失察期间受击（事件时刻无位置流覆盖）不跳伤害、不更新 HP、不显示 attacker（§7.2）；
+  prefers-reduced-motion 取消 ghost/flash/burst/feed 动画（事实保留）。
+- **Detail Sidebar（§8）**：点击 marker 打开/切换（不 toggle-off）、点击空白不关闭、× 显式关闭、
+  destroyed 车可选、seek 保持同一 selected vehicle；宽屏右侧固定、窄屏（≤768px）置于地图下方。
+  当前状态分区（当前 playback 时间点重建）：阵营/车辆类型/状态（已发现/最后已知/已击毁）/
+  当前或最后已知 HP/max HP/HP %/当前播放时间/当前累计造成伤害/协助伤害（恒 —，§9 无逐时间点
+  来源）/承受伤害/击杀数 + 最近伤害记录（攻击者事件时刻无位置流覆盖显示「来源未知」，§13）；
+  「最终战绩」分区（明确标注，结算口径）：造成/协助/承受伤害、击杀、开火/命中/穿透/命中率/
+  穿透率/受到命中/受到穿透/格挡伤害（`PlaybackVehicle.finalStats`）。
+- **KILL 广播 provenance（§15 验证结论）**：KILL 事件派生自 lethal DamageEvent（type-8 直接伤害
+  通知），只能证明录像者客户端收到该伤害通知、不能证明客户端当时可见全局击杀广播中的击杀者身份
+  → kill feed 不显示攻击者（victim-only）；每 KILL 由同炮 DAMAGE 支撑的断言在
+  `BattlePlaybackAdapterParityTest` 真实 fixture 上强制执行。
