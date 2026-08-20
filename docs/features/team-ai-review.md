@@ -194,6 +194,17 @@ content 末尾一次性到达会破坏逐段流式；`SpringAiChatGateway` 另�
 按句切分（≤128 字符/片、间隔 ~20ms、上限 512 片）兜底，保证前端 `stream-text` 在 `done`
 前持续出字。
 
+**Natural Coach Mode + Factual Consistency Guard（PR #103 之上，2026-08）**：
+- Team Call #2 输出改为 JSON envelope（`primaryDiagnosis` / `reviewMarkdown` / `claims`，
+  由 `TeamReviewEnvelopeParser` 解析）；`done.analysis` 仍为 `reviewMarkdown`（用户看到的
+  完整自然语言复盘，主标题 `## 团队复盘`），structured 字段为内部 grounding 契约，不进正文。
+- 输入注入确定性 `GROUNDING FACTS` 段（证据编号 E1xx）；`TeamFactualConsistencyValidator`
+  （V1–V6）校验通过后才把 `reviewMarkdown` 以 `call2_token` 增量流式转给前端——
+  **Call #2 在通过校验前不流式输出**（避免把待改写的草稿暴露给用户，代价是 draft 阶段
+  前端保持「战术复盘生成中…」）。
+- 校验失败 → LLM 自修循环（targeted rewrite → full rewrite → fail-safe），Backend 绝不
+  代改句子；重试耗尽 → `error` 事件 `AI_REVIEW_GROUNDING_FAILED`（HTTP 已 200）。
+
 历史上响应的四类计数（`analysisUnitCount` / `analyzedUnitCount` /
 `omittedAnalysisUnitCount` / `unavailableAnalysisUnitCount`）、`files`、
 `analyses`、`keyEvents`、`limitations` 等统计/诊断字段均无消费者

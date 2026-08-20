@@ -198,7 +198,8 @@ class AllowedLanguagePromptTest {
             @Override
             public AiChatResponse chat(final AiChatRequest request) {
                 captured.set(request);
-                return new AiChatResponse("ok", "DeepSeek", "test-model",
+                // Natural Coach 轮：Call #2 必须返回合法 JSON envelope
+                return new AiChatResponse("{\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},\"reviewMarkdown\":\"ok\",\"claims\":[]}", "DeepSeek", "test-model",
                         0, 0, 0, 0, 0, 0, "stop");
             }
 

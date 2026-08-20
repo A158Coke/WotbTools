@@ -4,6 +4,36 @@
 
 ## [Unreleased]
 
+### Added
+- **Team AI Review Natural Coach Mode + Factual Consistency Guard（PR #103 之上）**：
+  ① **Natural Coach Mode 输出契约**——团队复盘主正文改为【自由组织的自然复盘】：
+  以「## 团队复盘」为主标题、3-5 个自然段（简单局 2-3 段、复杂局约 5 段），
+  删除「核心结论 / 关键决策窗口 / 可确认的团队问题 / 训练建议」固定章节模板与固定数量要求；
+  先判断整场最值得讲的 1-2 件事，只有一个决定性问题就只讲一个；
+  TEAM REVIEW FOCUS WINDOWS 改为内部 attention 提示（「这里最值得集中分析」），不要求逐窗口输出标题；
+  新增「主判断（Primary Diagnosis）」契约：必须选出且只选出一个 PRIMARY DIAGNOSIS，
+  禁止「无法判断/可能性枚举」，多个解释时选最符合全部证据且最有训练价值的那一个；
+  新增「教练不是司法鉴定员」原则：事实必须准确，战术判断不要求数学证明；
+  中文默认长度 400–1200 字（简单 300–700、复杂 ≤1500）。
+  ② **GROUNDING FACTS + structured envelope**——Team Call #2 输出改为 JSON envelope
+  （primaryDiagnosis / reviewMarkdown / claims），输入注入确定性 GROUNDING FACTS 段
+  （每条带稳定证据编号 E1xx：PLAYER_DESTROYED / ALIVE_COUNT_TRANSITION / FOCUS_WINDOW /
+  POSITION_REGION / ENEMY_POSITION_KNOWN(CURRENT|LAST_KNOWN)）；evidenceIds 只进 structured 字段，
+  绝不进用户正文（validator 拦截泄漏）；Backend 不拼接复盘主体，reviewMarkdown 由 LLM 自由写出。
+  ③ **TeamFactualConsistencyValidator（确定性，wotb-core）**——只检查「LLM 有没有改写 Backend 事实」，
+  绝不判断战术观点：V1 temporal ownership（声称窗口必须包含其引用事件）、V2 玩家阵亡时间（容差 2s）、
+  V3 存活变化（7v7→4v6 不得写成 3v5）、V4 位置时间归属（某时刻「7辆全部在6区」不得超出区域快照）、
+  V5 CURRENT/LAST_KNOWN（敌方 LAST_KNOWN 不得写成「此时就在这里」）、V6 无 LOS/spotting 证据的
+  硬事实化表达（「进入所有炮线/具备完整LOS/被掩体卡住/已经点亮」等除非降级为「更可能/从交换结果看」级别）、
+  引用不存在证据编号 / 空输出 / 证据编号泄漏进正文。
+  ④ **校验失败 → LLM 自修循环（Backend 绝不代改句子）**——Draft → validate；FAIL → targeted rewrite；
+  FAIL → full rewrite；仍 FAIL → fail-safe 业务错误 AI_REVIEW_GROUNDING_FAILED（最多 3 次尝试）；
+  校验通过后才把 reviewMarkdown 流式转给前端（不暴露待改写草稿）。
+  ⑤ **Golden 回归**——TeamFactualConsistencyValidatorTest（G1–G5 / V1–V6 / 战术观点放行 /
+  BackendEvidenceBoundary）、TeamGroundingFactsTest（证据编号确定性 + 渲染）、TeamReviewEnvelopeParserTest、
+  TeamReviewRetryContractTest（retry / 耗尽 fail-safe / parse 失败重写）、TeamReviewNaturalCoachContractTest
+  （三语契约）、TeamReviewRealReplayProbeTest 增加真实 canonical facts 上的 validator golden 断言。
+
 ### Fixed
 - **PR #103 第七轮——ActualCombatant 边界进入 Canonical BattleTimeline + FormationDepth partial CURRENT 完整 fail-close（最终 review）**：
   ① **ActualCombatantEntitySet（Canonical BattleTimeline universe 源头）**——TeamEntityMapping 新增

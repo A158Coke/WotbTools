@@ -2,6 +2,7 @@ package com.wotb.web.replay.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
@@ -31,6 +32,7 @@ import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
+import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -39,59 +41,85 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * PR #103 review BLOCKER C：Team Call #2 独立输出上限。
- * <p>effective = min(globalMaxOutputTokens, teamReviewMaxOutputTokens)，且同时用于
- * AiPromptBudgetGuard 与 AiChatRequest；Player Call #2（TacticalReviewHarness）不受 Team cap 影响
- * （Player 隔离断言见 TacticalReviewHarnessTest.playerCall2IsNotLimitedByTeamReviewCap）。</p>
+ * Natural Coach 轮：Team Call #2 事实一致性校验 + LLM 自修循环编排契约。
+ * <p>流程（docs/current-plan.md §13/§14）：Draft → validate；FAIL → targeted rewrite；
+ * FAIL → full rewrite；仍 FAIL → fail-safe（AI_REVIEW_GROUNDING_FAILED）。Backend 绝不代改句子。</p>
  */
-class TeamReviewOutputCapTest {
+class TeamReviewRetryContractTest {
 
     private static final float START_RAW = 1000f;
 
+    private static final String GOOD_ENVELOPE = "{"
+            + "\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
+            + "\"reviewMarkdown\":\"## 团队复盘\\n\\n这是一段复盘。\",\"claims\":[]}";
+    /** V6 冲突：无 LOS 证据的硬事实断言（this draft must fail validation）。 */
+    private static final String BAD_ENVELOPE = "{"
+            + "\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
+            + "\"reviewMarkdown\":\"这波对方所有车辆都拥有直接炮线。\",\"claims\":[]}";
+
     @Test
-    void teamCall2UsesTeamCapWhenGlobalIsHigher() {
-        // global=32768, team=4096 → Team Call #2 maxOutputTokens = 4096
-        final CapGateway gateway = new CapGateway();
-        final TeamReplayAnalysisService service = service(gateway, 32_768, 4_096);
+    void passOnFirstDraftUsesSingleCall2Request() {
+        final RetryGateway gateway = new RetryGateway(List.of(GOOD_ENVELOPE));
+        final TeamReplayAnalysisService service = service(gateway);
         final AnalyzeResult result = service.analyzeSingleTeamContext(
                 context(gateway, service), AllowedLanguage.ZH);
         assertNotNull(result);
-        final AiChatRequest call2 = gateway.teamRequests().getLast();
-        assertEquals(4_096, call2.maxOutputTokens(),
-                "Team Call #2 must use the dedicated team cap when it is below the global cap");
+        assertEquals("## 团队复盘\n\n这是一段复盘。", result.analysis());
+        assertEquals(1, gateway.teamCall2Requests(),
+                "首次通过只允许 1 次 Call #2 请求");
     }
 
     @Test
-    void teamCall2RespectsLowerGlobalCap() {
-        // global=2048, team=4096 → effective = min(2048, 4096) = 2048
-        final CapGateway gateway = new CapGateway();
-        final TeamReplayAnalysisService service = service(gateway, 2_048, 4_096);
+    void conflictTriggersTargetedRewriteThenPasses() {
+        // Draft FAIL（V6）→ 反馈后重写 PASS
+        final RetryGateway gateway = new RetryGateway(List.of(BAD_ENVELOPE, GOOD_ENVELOPE));
+        final TeamReplayAnalysisService service = service(gateway);
         final AnalyzeResult result = service.analyzeSingleTeamContext(
                 context(gateway, service), AllowedLanguage.ZH);
         assertNotNull(result);
-        final AiChatRequest call2 = gateway.teamRequests().getLast();
-        assertEquals(2_048, call2.maxOutputTokens(),
-                "Team Call #2 effective cap must be min(global, team) = global when global is lower");
+        assertEquals("## 团队复盘\n\n这是一段复盘。", result.analysis());
+        assertEquals(2, gateway.teamCall2Requests(),
+                "Draft FAIL 后必须有一次 LLM 自修重写");
+        // 第二次请求的用户输入必须包含 validator 反馈（LLM 自行改写，Backend 不代改）
+        final AiChatRequest rewrite = gateway.requests().stream()
+                .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode()))
+                .reduce((a, b) -> b).orElseThrow();
+        assertTrue(rewrite.userPrompt().contains("事实一致性校验反馈"),
+                "重写请求必须携带 validator 反馈: " + rewrite.userPrompt());
+        assertTrue(rewrite.userPrompt().contains("[V6]"),
+                "重写请求反馈必须包含具体冲突 checkId: " + rewrite.userPrompt());
     }
 
     @Test
-    void teamCapBelowGlobalStillBudgetGuarded() {
-        // 预算守卫与 request 使用同一 effective 值：构造超预算输入会抛 AI_TOKEN_BUDGET_EXCEEDED
-        // （这里只验证 effective 计算被 request 承接；budget guard 的 min 语义由上述两测试覆盖）。
-        final CapGateway gateway = new CapGateway();
-        final TeamReplayAnalysisService service = service(gateway, 32_768, 4_096);
-        final SingleTeamBattleAnalysisContext ctx = context(gateway, service);
-        assertTrue(ctx.battle() != null, "fixture battle must be present");
+    void repeatedConflictsExhaustRetriesAndFailSafe() {
+        final RetryGateway gateway = new RetryGateway(List.of(BAD_ENVELOPE, BAD_ENVELOPE, BAD_ENVELOPE));
+        final TeamReplayAnalysisService service = service(gateway);
+        final AiUpstreamException e = assertThrows(AiUpstreamException.class,
+                () -> service.analyzeSingleTeamContext(context(gateway, service), AllowedLanguage.ZH));
+        assertEquals("AI_REVIEW_GROUNDING_FAILED", e.code(),
+                "重试耗尽必须 fail-safe 为 AI_REVIEW_GROUNDING_FAILED");
+        assertEquals(TeamReplayAnalysisService.MAX_VALIDATION_ATTEMPTS, gateway.teamCall2Requests(),
+                "必须恰好 3 次尝试（draft + targeted + full）后 fail-safe");
+    }
+
+    @Test
+    void parseFailureAlsoTriggersRewrite() {
+        // 非 JSON 输出（旧自由文本）→ parse FAIL → 反馈重写
+        final RetryGateway gateway = new RetryGateway(List.of("team review 自由文本", GOOD_ENVELOPE));
+        final TeamReplayAnalysisService service = service(gateway);
+        final AnalyzeResult result = service.analyzeSingleTeamContext(
+                context(gateway, service), AllowedLanguage.ZH);
+        assertNotNull(result);
+        assertEquals("## 团队复盘\n\n这是一段复盘。", result.analysis());
+        assertEquals(2, gateway.teamCall2Requests());
     }
 
     // ---- fixture ----
 
-    private static TeamReplayAnalysisService service(final CapGateway gateway,
-                                                     final int globalMaxOutput,
-                                                     final int teamMaxOutput) {
+    private static TeamReplayAnalysisService service(final RetryGateway gateway) {
         final AiReplayAnalysisConfig config = new AiReplayAnalysisConfig(
                 new ConservativeDeepSeekTokenEstimator(), "test-model",
-                200_000, 131_072, globalMaxOutput, 1000, true, "high", 315, teamMaxOutput);
+                200_000, 131_072, 8192, 1000, true, "high", 315, 4096);
         return new TeamReplayAnalysisService(
                 gateway, config,
                 new PreBattleStrategicService(gateway, config, null),
@@ -99,10 +127,10 @@ class TeamReviewOutputCapTest {
                 System::nanoTime, null);
     }
 
-    private static SingleTeamBattleAnalysisContext context(final CapGateway gateway,
+    private static SingleTeamBattleAnalysisContext context(final RetryGateway gateway,
                                                            final TeamReplayAnalysisService service) {
         final List<ReplayPerspectiveGroup> groups = new BatchAnalyzer().analyze(
-                List.of(teamResult("cap.wotbreplay", "arena-cap", "Ally", 1001L, 1, validRecon())))
+                List.of(teamResult("retry.wotbreplay", "arena-retry", "Ally", 1001L, 1, validRecon())))
                 .groups();
         return service.buildSingleTeamContext(groups.getFirst());
     }
@@ -196,9 +224,15 @@ class TeamReviewOutputCapTest {
                 DecodeConfidence.EXACT, eid, hp, null, alive);
     }
 
-    /** 记录全部 gateway 请求的替身；从不发起真实 HTTP。 */
-    private static final class CapGateway implements AiChatGateway {
+    /** 按调用顺序返回预设响应的替身；从不发起真实 HTTP。 */
+    private static final class RetryGateway implements AiChatGateway {
+        final List<String> responses;
         final List<AiChatRequest> requests = new CopyOnWriteArrayList<>();
+        int index;
+
+        RetryGateway(final List<String> responses) {
+            this.responses = responses;
+        }
 
         @Override
         public boolean isConfigured() {
@@ -208,17 +242,27 @@ class TeamReviewOutputCapTest {
         @Override
         public AiChatResponse chat(final AiChatRequest request) {
             requests.add(request);
-            return new AiChatResponse(
-                    "{\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
-                            + "\"reviewMarkdown\":\"## 团队复盘\\n\\n这是一段复盘。\",\"claims\":[]}",
-                    "DeepSeek", "test-model",
+            // 预设响应序列只供 Team Call #2（SINGLE_TEAM_BATTLE）消费；
+            // Call #1 / Autopsy 的解析器不消费该序列（返回不可解析空对象即可）。
+            final String response;
+            if ("SINGLE_TEAM_BATTLE".equals(request.analysisMode())) {
+                response = responses.get(Math.min(index, responses.size() - 1));
+                index++;
+            } else {
+                response = "{}";
+            }
+            return new AiChatResponse(response, "DeepSeek", "test-model",
                     0, 0, 0, 0, 0, 0, "stop");
         }
 
-        List<AiChatRequest> teamRequests() {
-            return requests.stream()
+        List<AiChatRequest> requests() {
+            return requests;
+        }
+
+        int teamCall2Requests() {
+            return (int) requests.stream()
                     .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode()))
-                    .toList();
+                    .count();
         }
     }
 }

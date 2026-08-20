@@ -1,5 +1,6 @@
 package com.wotb.web.replay.ai;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -11,6 +12,9 @@ import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.core.processing.FriendlyEnemyResult;
 import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
+import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator;
+import com.wotb.core.replay.evidence.TeamGroundingFacts;
+import com.wotb.core.replay.evidence.TeamReviewEnvelope;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
@@ -128,20 +132,25 @@ public class TeamReplayAnalysisService {
         final List<String> extraLimitations = evidence != null ? evidence.limitations() : List.of();
         final TeamAiPromptBuilder.PromptInput input = TeamAiPromptBuilder.single(
                 context, extraLimitations, prior, config.estimator(), config.singleReplayMaxInputTokens());
-        return callSingleTeamContext(context, input, language, startNanos, listener);
+        // 兼容入口无已验证 timeline：Grounding Facts 只含结算可推导事实（§28 稳定模块不动）。
+        return callSingleTeamContext(context, input, language, startNanos, listener, null);
     }
 
+    /**
+     * 单团队 Call #2（Team Call #2 唯一入口）：envelope 解析 + 事实一致性校验 + LLM 自修循环。
+     * <p>{@code timeline} 为已验证 canonical timeline（production 路径必传；兼容/测试入口传 null，
+     * 此时 Grounding Facts 只含结算可推导事实，位置/窗口类校验自动 no-op）。校验通过后
+     * 只把 {@code reviewMarkdown} 流式转给前端；校验失败由 LLM 自行改写，Backend 绝不代改句子。</p>
+     */
     private AnalyzeResult callSingleTeamContext(
             final SingleTeamBattleAnalysisContext context,
             final TeamAiPromptBuilder.PromptInput input,
             final AllowedLanguage language,
             final long startNanos,
-            final AiReviewStreamListener listener
+            final AiReviewStreamListener listener,
+            final BattleTimeline timeline
     ) {
-        final String content = call(
-                TeamPromptLocalizer.localizeTeamSystemPrompt(TeamPromptLocalizer.SINGLE_TEAM_PROMPT, language),
-                input.content(), "SINGLE_TEAM_BATTLE",
-                remainingBudget(startNanos), listener);
+        final String content = callValidatedTeamReview(context, input, language, startNanos, listener, timeline);
         return new AnalyzeResult(appendTeamAutopsy(context, content, language, startNanos, listener));
     }
 
@@ -215,7 +224,9 @@ public class TeamReplayAnalysisService {
                             config.estimator(),
                             config.singleReplayMaxInputTokens(),
                             timelinesByUnitId.get(ctx.analysisUnitId()));
-            final AnalyzeResult result = callSingleTeamContext(ctx, input, language, startNanos, listener);
+            final AnalyzeResult result = callSingleTeamContext(
+                    ctx, input, language, startNanos, listener,
+                    timelinesByUnitId.get(ctx.analysisUnitId()));
             if (firstAnalysis == null) {
                 firstAnalysis = result;
                 firstContext = ctx;
@@ -278,12 +289,116 @@ public class TeamReplayAnalysisService {
         return TeamContextBuilder.buildSingleTeamContext(group);
     }
 
-    private String call(
+    /** Team Call #2 事实一致性校验的最大尝试次数（draft → targeted rewrite → full rewrite → fail-safe）。 */
+    static final int MAX_VALIDATION_ATTEMPTS = 3;
+
+    /**
+     * Team Call #2 编排（Natural Coach 轮）：envelope 解析 + 事实一致性校验 + LLM 自修循环。
+     * <p>流程（docs/current-plan.md §13/§14）：Draft → validate；FAIL → targeted rewrite；
+     * FAIL → full rewrite；仍 FAIL → fail-safe（{@code AI_REVIEW_GROUNDING_FAILED}）。
+     * Backend 绝不代改句子；校验通过后才把 {@code reviewMarkdown} 以 token 增量转给前端
+     * （避免把待改写的草稿暴露给用户）。</p>
+     */
+    private String callValidatedTeamReview(
+            final SingleTeamBattleAnalysisContext context,
+            final TeamAiPromptBuilder.PromptInput input,
+            final AllowedLanguage language,
+            final long startNanos,
+            final AiReviewStreamListener listener,
+            final BattleTimeline timeline
+    ) {
+        final String systemPrompt = TeamPromptLocalizer.localizeTeamSystemPrompt(
+                TeamPromptLocalizer.SINGLE_TEAM_PROMPT, language);
+        final TeamGroundingFacts.GroundingFacts facts = TeamGroundingFacts.build(
+                context.battle(), timeline, context.perspectiveTeam());
+        final String groundingSection = TeamGroundingFacts.renderGroundingSection(facts);
+        final String baseUser = input.content()
+                + (groundingSection.isEmpty() ? "" : "\n" + groundingSection);
+        String userContent = baseUser;
+        String feedback = "";
+        boolean fullRewrite = false;
+        for (int attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt++) {
+            if (attempt > 1) {
+                final StringBuilder fb = new StringBuilder();
+                fb.append("上一轮输出未通过事实一致性校验。请修改后重新输出完整的 JSON envelope；")
+                        .append("不要改变你的主判断（除非事实不允许），只修正与 GROUNDING FACTS 冲突的表述。\n");
+                fb.append(feedback);
+                if (fullRewrite) {
+                    fb.append("\n要求：请整体重写完整的 JSON envelope（不是局部修补）；"
+                            + "每条数值/时间/位置/玩家事件表述都必须与 GROUNDING FACTS 一致，"
+                            + "无法满足时降级为「更可能/从交换结果看」级别的表达或删除该句。");
+                }
+                userContent = baseUser + "\n\n=== 事实一致性校验反馈 ===\n" + fb;
+            }
+            final String raw = callRaw(systemPrompt, userContent, "SINGLE_TEAM_BATTLE",
+                    remainingBudget(startNanos));
+            final TeamReviewEnvelope envelope = TeamReviewEnvelopeParser.parse(raw);
+            if (envelope == null) {
+                feedback = "输出不是合法 JSON envelope：必须包含 primaryDiagnosis（title + reasoning 非空）"
+                        + "与 reviewMarkdown，且不要输出其它文本。";
+                fullRewrite = attempt >= 2;
+                continue;
+            }
+            final List<TeamFactualConsistencyValidator.FactConflict> conflicts =
+                    TeamFactualConsistencyValidator.validate(envelope, facts);
+            if (conflicts.isEmpty()) {
+                forwardTokens(listener, envelope.reviewMarkdown());
+                return envelope.reviewMarkdown();
+            }
+            if (attempt >= MAX_VALIDATION_ATTEMPTS) {
+                LOGGER.warn("Team Call #2 grounding validation exhausted after {} attempts ({} conflicts)",
+                        MAX_VALIDATION_ATTEMPTS, conflicts.size());
+                throw new AiUpstreamException("AI_REVIEW_GROUNDING_FAILED", 502,
+                        AiRequestContext.correlationId());
+            }
+            feedback = formatConflicts(conflicts);
+            fullRewrite = attempt >= 2;
+        }
+        throw new AiUpstreamException("AI_REVIEW_GROUNDING_FAILED", 502, AiRequestContext.correlationId());
+    }
+
+    private static String formatConflicts(
+            final List<TeamFactualConsistencyValidator.FactConflict> conflicts) {
+        final StringBuilder sb = new StringBuilder();
+        for (final TeamFactualConsistencyValidator.FactConflict c : conflicts) {
+            sb.append('[').append(c.checkId()).append("] ").append(c.message()).append('\n');
+        }
+        return sb.toString();
+    }
+
+    /** 把最终 reviewMarkdown 按段落/句子边界切成 ≤400 字符增量转给前端（单线程顺序）。 */
+    private static void forwardTokens(final AiReviewStreamListener listener, final String markdown) {
+        if (listener == null || markdown == null || markdown.isEmpty()) {
+            return;
+        }
+        final List<String> chunks = new ArrayList<>();
+        final StringBuilder cur = new StringBuilder();
+        for (int i = 0; i < markdown.length(); i++) {
+            cur.append(markdown.charAt(i));
+            final char ch = markdown.charAt(i);
+            final boolean boundary = ch == '\n' || ch == '。';
+            if ((boundary && cur.length() >= 60) || cur.length() >= 400) {
+                chunks.add(cur.toString());
+                cur.setLength(0);
+            }
+        }
+        if (!cur.isEmpty()) {
+            chunks.add(cur.toString());
+        }
+        for (final String chunk : chunks) {
+            listener.onToken(chunk);
+        }
+    }
+
+    /**
+     * 原始传输调用（缓冲，不转发 token）：校验通过前不向用户暴露草稿。
+     * PR #103 review BLOCKER C 的 Team Call #2 独立输出上限保持不变。
+     */
+    private String callRaw(
             final String systemPrompt,
             final String userContent,
             final String analysisMode,
-            final long callTimeoutSec,
-            final AiReviewStreamListener listener
+            final long callTimeoutSec
     ) {
         final List<Map<String, Object>> messages = List.of(
                 Map.<String, Object>of("role", "system", "content", systemPrompt),
@@ -308,7 +423,8 @@ public class TeamReplayAnalysisService {
                 null,
                 analysisMode,
                 (int) Math.min(Math.max(1L, callTimeoutSec), Integer.MAX_VALUE));
-        return gateway.stream(request, listener::onToken).completionText();
+        final StringBuilder collected = new StringBuilder();
+        return gateway.stream(request, collected::append).completionText();
     }
 
 

@@ -63,15 +63,24 @@ class AiEvalHarnessTest {
                 "old 'opening spread = map control' rule must be gone");
         assertFalse(zh.contains("10) 3-5 条可执行训练建议"),
                 "old ten-chapter structure must be gone");
-        // 输出结构
-        assertTrue(zh.contains("1. 核心结论：2-4 句"), "must carry the core-conclusion section");
-        assertTrue(zh.contains("2. 关键决策窗口"), "must carry the key-decision-window section");
-        assertTrue(zh.contains("3. 可确认的团队问题"), "must carry the confirmed-problems section");
-        assertTrue(zh.contains("4. 训练建议"), "must carry the training-recommendation section");
+        // Natural Coach Mode 输出结构：自由组织的自然复盘，禁止固定章节模板
+        assertTrue(zh.contains("自由组织的自然复盘"), "must carry the free-form natural review");
+        assertTrue(zh.contains("不是固定章节模板"), "must not be a fixed-section template");
+        assertTrue(zh.contains("## 团队复盘"), "main heading must be ## 团队复盘");
+        assertTrue(zh.contains("3-5 个自然段"), "must be 3-5 natural paragraphs");
+        assertTrue(zh.contains("先判断整场最值得讲的 1-2 件事"), "must decide the 1-2 things worth talking about");
+        assertTrue(zh.contains("如果实际上只有一个决定性问题，就只讲一个"), "one decisive problem -> write one only");
+        assertFalse(zh.contains("1. 核心结论：2-4 句"), "old core-conclusion section must be gone");
+        assertFalse(zh.contains("2. 关键决策窗口：只输出"), "old key-decision-window section must be gone");
         assertTrue(zh.contains("每一条必须明确对应前面的一个「可确认问题」"),
                 "training recommendations must map to confirmed issues");
         assertTrue(zh.contains("没有足够强的 positive 证据时不得硬写「做得好的团队行为」"),
                 "must not force a positive section");
+        assertTrue(zh.contains("必须选出且只选出一个 PRIMARY DIAGNOSIS"),
+                "must carry the primary-diagnosis contract");
+        assertTrue(zh.contains("GROUNDING FACTS 与结构化输出"),
+                "must carry the GROUNDING FACTS structured-output contract");
+        assertTrue(zh.contains("reviewMarkdown"), "must carry the reviewMarkdown field of the JSON envelope");
     }
 
     @Test

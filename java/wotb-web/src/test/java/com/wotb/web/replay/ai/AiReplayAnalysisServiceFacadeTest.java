@@ -19,7 +19,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -81,7 +80,7 @@ class AiReplayAnalysisServiceFacadeTest {
         final AnalyzeResult r = facade().analyzeSingleTeamContext(ctx);
         // 团队流程 = Call #1（PRE_BATTLE）+ 团队复盘（SINGLE_TEAM_BATTLE）
         assertEquals(2, gateway.calls.get());
-        assertSame("ok", r.analysis());
+        assertEquals("ok", r.analysis());
     }
 
     @Test
@@ -134,6 +133,13 @@ class AiReplayAnalysisServiceFacadeTest {
         @Override
         public AiChatResponse chat(final AiChatRequest request) {
             calls.incrementAndGet();
+            // Natural Coach 轮：Team Call #2 必须返回合法 JSON envelope；player 路径不解析 envelope
+            if ("SINGLE_TEAM_BATTLE".equals(request.analysisMode())) {
+                return new AiChatResponse(
+                        "{\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
+                                + "\"reviewMarkdown\":\"ok\",\"claims\":[]}",
+                        "DeepSeek", "test-model", 0, 0, 0, 0, 0, 0, "stop");
+            }
             return new AiChatResponse("ok", "DeepSeek", "test-model",
                     0, 0, 0, 0, 0, 0, "stop");
         }
