@@ -180,6 +180,21 @@ Replay → Parser → Canonical BattleTimeline → 确定性 Grounding Facts（�
 > `claimType`），正文自然语言仅作兜底（时间解析支持 `X分Y秒` / `1:49` / `109s` / `1m49s` /
 > `1 мин 49 сек` / `109 seconds` / `109 секунд` 等三语常见格式；位置/LAST_KNOWN/LOS 短语列表
 > ZH/EN/RU 三语覆盖）。纯战术观点 claim 可无机器字段。
+>
+> **Structured Factual Contract（Review Blocker B1，fail-close）**：`TeamReviewEnvelopeParser` 对
+> claims 强制 machine schema——`claimType` 必填且 ∈ {DEATH, ALIVE_TRANSITION, POSITION_REGION,
+> ENEMY_POSITION, TACTICAL}（LOS/SPOTTING/VISION/LINE_OF_SIGHT 及未知类型 → reject/rewrite）；
+> 每种 factual claimType 的 required fields 强制（DEATH=subject+timeSec+evidenceIds；
+> ALIVE_TRANSITION=value 机器格式+evidenceIds；POSITION_REGION=timeSec+region+count+side
+> +countSemantics+evidenceIds；ENEMY_POSITION=subject+timeSec+region+knowledge+evidenceIds；
+> TACTICAL 无机器字段要求）；机器字段类型错误（如 `region="six"`、`timeSec="112"`）→ reject/rewrite，
+> 不静默 null。validator 对应 machine 校验：V2m（DEATH subject+timeSec）、V3m（value 存活变化）、
+> V4m（POSITION_REGION side 感知 friendlyCounts/enemyCurrentCounts + countSemantics EXACT/AT_LEAST/SUBSET
+> 机器语义）、V5m（ENEMY_POSITION knowledge CURRENT/LAST_KNOWN 与后端 exact 校验，不靠正文短语）、
+> V6m（claimType=LOS/SPOTTING 一律 FAIL）。claims coverage 最低契约：Grounding Facts 非空且主判断引用
+> 证据编号或正文出现可验证事实锚点时，claims 不允许无条件为空（CONTRACT 冲突）。正文自然语言短语
+> 列表（`就在这里` / "is right here now" / `прямо здесь` 等）降级为 defense-in-depth，不是 correctness
+> boundary。
 
 ### 校验失败 → LLM 自修循环（§13/§14）
 

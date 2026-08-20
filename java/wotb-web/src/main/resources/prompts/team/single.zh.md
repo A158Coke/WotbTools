@@ -68,22 +68,24 @@ evidence 选择最符合证据、同时最有训练价值的主解释，不要�
 要求：
 1. reviewMarkdown 是用户看到的完整复盘，由你自由写出，不是 Backend 模板句的拼接；
    不得在其中出现「E1xx」「evidenceIds」「GROUNDING FACTS」「primaryDiagnosis」等内部标识。
-2. claims 是 machine-readable grounding 元数据：数值类、时间类、位置类、明确玩家事件类
-   与支撑主判断的事实类陈述必须进 claims 并引用对应证据编号；纯战术观点可以不进 claims，
-   也不需要证据编号。
-   机器字段（三语通用，language-neutral）：涉及数值/时间/位置/玩家事件的 claim 应携带
-   timeSec（battle-relative 秒，数值）、region（九宫格 1-9）、count（车辆数，整数）、
-   subject（玩家昵称或坦克名）、value（存活变化机器格式，如 "7v7 -> 4v6"）、
-   claimType（DEATH / ALIVE_TRANSITION / POSITION_REGION / LAST_KNOWN / TACTICAL）。
-   region + count 表示【精确数量】：声称该区恰好 count 辆；若只是「至少 N 辆」
-   （at least / не менее）或「其中 N 辆」（among / of them / 其中 / среди），
-   必须在 text 中写出对应标记词。无论输出语言（中文/English/Русский），机器字段格式一致。
+2. claims 是同一批 factual assertions 的 machine projection，不是可选装饰：
+   正文中每个可验证事实陈述（时间/人数/玩家阵亡/区域位置/敌方位置知识）必须有一个对应
+   structured claim；纯战术观点可以没有 claim。claims 为空只允许在正文不含可验证事实陈述时。
+   机器字段（三语通用，language-neutral）：每条 claim 必须携带合法 claimType 及对应必填字段——
+   DEATH：subject（玩家昵称或坦克名）+ timeSec（battle-relative 秒，数字）+ evidenceIds；
+   ALIVE_TRANSITION：value（机器格式 "7v7 -> 4v6"）+ evidenceIds（timeSec 可选）；
+   POSITION_REGION：timeSec + region（1-9）+ count（车辆数，数字）+ side（FRIENDLY/ENEMY）
+     + countSemantics（EXACT/AT_LEAST/SUBSET）+ evidenceIds；
+   ENEMY_POSITION：subject + timeSec + region + knowledge（CURRENT/LAST_KNOWN）+ evidenceIds；
+   TACTICAL：纯战术观点，不要求 factual machine 字段。
+   countSemantics 用机器字段声明（EXACT=恰好 count 辆 / AT_LEAST=至少 count 辆 / SUBSET=其中 count 辆），
+   不要依赖自然语言标记词；机器字段类型必须正确（数字字段必须是 JSON number，不能用字符串）。
+   无论输出语言（中文/English/Русский），机器字段与格式一致。
 3. 证据编号只能出现在结构化字段（primaryDiagnosis.supportingEvidenceIds / claims[].evidenceIds），
    绝不进入 reviewMarkdown 正文。
 4. 敌方 ENEMY_POSITION_KNOWN 的 LAST_KNOWN 只是「最后一次被观测到的位置」，绝不能写成
-   「敌方此时就在这里/正在某区」/ "is right here now" / "прямо здесь"；引用 LAST_KNOWN
-   编号的 claim 必须使用「最后一次观测在…」「上次看到在…」/ "last observed at…" /
-   "в последний раз видели в…" 级别的措辞。
+   「敌方此时就在这里/正在某区」/ "is right here now" / "прямо здесь"；ENEMY_POSITION claim
+   的 knowledge 必须如实声明 CURRENT/LAST_KNOWN，与后端一致。
 5. 正文时间一律用本地化格式（中文「XX分XX秒」/ English "Xm Xs" / Русский "X мин X с"），
    禁止「1:15」或累计秒数；claims 的 timeSec 使用 battle-relative 秒（机器格式，如 112.4）。
 6. LOS / spotting / 视野类内容禁止作为事实 claim：claimType 不得为 LOS / SPOTTING / VISION /

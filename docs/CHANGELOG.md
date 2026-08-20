@@ -5,6 +5,27 @@
 ## [Unreleased]
 
 ### Fixed
+- **PR #105 Final Blocker——Structured Factual Claims fail-close 契约**：
+  ① **claimType schema**——TeamReviewEnvelopeParser 强制 claimType ∈ {DEATH / ALIVE_TRANSITION /
+  POSITION_REGION / ENEMY_POSITION / TACTICAL}（LOS/SPOTTING/VISION/LINE_OF_SIGHT 及未知类型 → reject/rewrite）；
+  每种 factual claimType 的 required machine 字段强制（DEATH=subject+timeSec+evidenceIds；
+  ALIVE_TRANSITION=value 机器格式+evidenceIds；POSITION_REGION=timeSec+region+count+side+countSemantics
+  +evidenceIds；ENEMY_POSITION=subject+timeSec+region+knowledge+evidenceIds；TACTICAL 无机器字段要求）；
+  机器字段类型错误（region="six"、timeSec="112"）→ reject/rewrite，不再静默 null。
+  ② **机器校验补全**——V2m（DEATH subject+timeSec）、V3m（ALIVE_TRANSITION value）、V4m（POSITION_REGION
+  side 感知 friendlyCounts/enemyCurrentCounts，ENEMY 不拿 friendly 数比较；countSemantics EXACT/AT_LEAST/SUBSET
+  机器语义，不再依赖自然语言标记词）、V5m（ENEMY_POSITION knowledge CURRENT/LAST_KNOWN 与后端 exact 校验）、
+  V6m（LOS/SPOTTING claimType 一律 FAIL）。
+  ③ **claims coverage 最低契约**——Grounding Facts 非空且主判断引用证据编号或正文含可验证事实锚点
+  （时间范围/存活变化/位置数量/玩家阵亡+时间）时，claims 不允许无条件为空（CONTRACT 冲突）。
+  ④ prompt（md + TeamPromptLocalizer ZH/EN/RU）——claims 是 factual assertions 的 machine projection
+  非可选装饰；每 claimType required fields；countSemantics/side/knowledge 机器字段；数字字段必须是 JSON number。
+  ⑤ 测试——Parser fail-close 8 项（DEATH 缺 timeSec/subject、POSITION_REGION 缺 region、count 字符串、
+  ENEMY_POSITION 缺 knowledge、未知/LOS claimType、缺 claimType、timeSec 字符串）；V4 countSemantics 全套
+  （EXACT 3 FAIL/5 PASS、AT_LEAST 3 PASS/6 FAIL、SUBSET 3 PASS/6 FAIL）+ ENEMY side；V5m CURRENT/LAST_KNOWN；
+  claims coverage 3 项（诊断引用证据 FAIL / 正文事实锚点 FAIL / 纯战术 PASS）；NaturalCoach 三语 schema 契约。
+
+### Added
 - **PR #105 Review Blocker 修复——Natural Coach / Factual Consistency Guard（Review B1-1 / B1-2 / B2-1 / B2-2）**：
   ① **B1-1 authoritative response source**——`TeamReplayAnalysisService.callRaw()` 删除无意义的
   `collected` 缓冲，明确以 `AiChatResponse.completionText()` 为唯一权威完整响应（Gateway 契约：

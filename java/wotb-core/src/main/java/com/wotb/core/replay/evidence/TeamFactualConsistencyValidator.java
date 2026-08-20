@@ -128,14 +128,6 @@ public final class TeamFactualConsistencyValidator {
             "более вероятно", "вероятно", "возможно", "по обмену", "судя по",
             "если бы", "похоже", "наверное", "нельзя подтвердить", "неопределённо");
 
-    /** V4 语义标记：at-least（≥ 语义，count 为下界）。 */
-    static final List<String> AT_LEAST_MARKERS = List.of(
-            "至少", "at least", "не менее", "как минимум");
-
-    /** V4 语义标记：subset（部分/其中语义，count 为子集大小）。 */
-    static final List<String> SUBSET_MARKERS = List.of(
-            "其中", "of them", "of the", "among", "среди", "из них");
-
     private TeamFactualConsistencyValidator() {
     }
 
@@ -185,9 +177,11 @@ public final class TeamFactualConsistencyValidator {
     private static void checkStructuredMachineClaims(final TeamReviewEnvelope envelope,
                                                      final GroundingFacts facts,
                                                      final List<FactConflict> conflicts) {
+        checkClaimsCoverage(envelope, facts, conflicts);
         for (final TeamReviewEnvelope.Claim c : envelope.claims()) {
-            // V2m：subject + timeSec → 玩家阵亡时间（EN/RU 无需解析自然语言时间）
-            if (c.hasTime() && c.subject() != null && !c.subject().isBlank()) {
+            final String type = c.claimType() == null ? "" : c.claimType().toUpperCase(java.util.Locale.ROOT);
+            // V2m：DEATH subject + timeSec → 玩家阵亡时间（语言无关；ZH/EN/RU 共用 machine fields）
+            if ("DEATH".equals(type) && c.hasTime() && c.subject() != null && !c.subject().isBlank()) {
                 for (final EvidenceFact death : deathFacts(facts)) {
                     if (!sameName(c.subject(), death.nickname())
                             && !sameName(c.subject(), death.tankName())) {
@@ -201,8 +195,8 @@ public final class TeamFactualConsistencyValidator {
                     }
                 }
             }
-            // V3m：value 机器存活变化（如 "7v7 -> 4v6"，三语共用 machine format）
-            if (c.value() != null && !c.value().isBlank()) {
+            // V3m：ALIVE_TRANSITION value 机器格式（"7v7 -> 4v6"）三语共用
+            if ("ALIVE_TRANSITION".equals(type) && c.value() != null && !c.value().isBlank()) {
                 final Matcher m = TRANSITION.matcher(c.value());
                 if (m.find()) {
                     final int a = Integer.parseInt(m.group(1));
@@ -216,30 +210,22 @@ public final class TeamFactualConsistencyValidator {
                     }
                 }
             }
-            // V4m：region + count（机器精确语义，B2-2）：
-            //   默认 exact（count == actual）；text 带 at-least / subset 标记时 count ≤ actual 即可
-            if (c.region() != null && c.count() != null && c.hasTime()) {
-                final Integer actual = regionCountAt(facts, c.timeSec(), c.region());
+            // V4m：POSITION_REGION region + count + side + countSemantics（机器语义，三语无关）
+            if ("POSITION_REGION".equals(type)
+                    && c.region() != null && c.count() != null && c.hasTime()
+                    && c.side() != null && c.countSemantics() != null) {
+                final Integer actual = regionCountAt(facts, c.timeSec(), c.region(), c.side());
                 if (actual != null) {
-                    final boolean atLeast = hasAny(c.text(), AT_LEAST_MARKERS);
-                    final boolean subset = hasAny(c.text(), SUBSET_MARKERS);
-                    if (c.count() > actual) {
-                        conflicts.add(new FactConflict("V4",
-                                "位置数量错误（structured over-count）：claim 称 GRID" + c.region()
-                                        + " 有 " + c.count() + " 辆，后端该时刻快照为 " + actual
-                                        + " 辆（" + TeamGroundingFacts.formatClock(c.timeSec()) + "）。"));
-                    } else if (!atLeast && !subset && c.count() != actual) {
-                        // 精确语义下的少报同样是事实不一致（B2-2：不能把 3 说成当时 5 辆所在的区）
-                        conflicts.add(new FactConflict("V4",
-                                "位置数量错误（structured under-count exact）：claim 称 GRID" + c.region()
-                                        + " 有 " + c.count() + " 辆，后端该时刻快照为 " + actual
-                                        + " 辆（" + TeamGroundingFacts.formatClock(c.timeSec()) + "）。"));
-                    }
+                    checkV4CountSemantics(c, actual, conflicts);
                 }
             }
+            // V5m：ENEMY_POSITION subject + timeSec + region + knowledge（machine CURRENT/LAST_KNOWN）
+            if ("ENEMY_POSITION".equals(type)
+                    && c.hasTime() && c.subject() != null && !c.subject().isBlank()
+                    && c.region() != null && c.knowledge() != null) {
+                checkV5Knowledge(c, facts, conflicts);
+            }
             // V6m：claim 显式声明 LOS/SPOTTING 事实类型 → 后端没有对应 evidence kind，一律 FAIL
-            final String type = c.claimType() == null ? ""
-                    : c.claimType().toUpperCase(java.util.Locale.ROOT);
             if ("LOS".equals(type) || "SPOTTING".equals(type)
                     || "LINE_OF_SIGHT".equals(type) || "VISION".equals(type)) {
                 conflicts.add(new FactConflict("V6",
@@ -249,8 +235,144 @@ public final class TeamFactualConsistencyValidator {
         }
     }
 
-    /** 某时刻某区域的本方车辆数（机器结构化校验用）：最近快照（±6s）兜底；无数据返回 null。 */
-    private static Integer regionCountAt(final GroundingFacts facts, final double timeSec, final int region) {
+    /** V4m 数量校验：EXACT（count == actual）/ AT_LEAST / SUBSET（actual >= count）。 */
+    private static void checkV4CountSemantics(final TeamReviewEnvelope.Claim c,
+                                              final int actual,
+                                              final List<FactConflict> conflicts) {
+        final String semantics = c.countSemantics().toUpperCase(java.util.Locale.ROOT);
+        final boolean fail;
+        final String reason;
+        switch (semantics) {
+            case "AT_LEAST", "SUBSET" -> {
+                fail = c.count() > actual;
+                reason = semantics + "（claim " + c.count() + " > 后端快照 " + actual + "）";
+            }
+            default -> { // EXACT
+                fail = c.count() != actual;
+                reason = "EXACT（claim " + c.count() + " != 后端快照 " + actual + "）";
+            }
+        }
+        if (fail) {
+            conflicts.add(new FactConflict("V4",
+                    "位置数量错误（structured " + c.countSemantics() + "）：claim 称 " + sideLabel(c.side())
+                            + " GRID" + c.region() + " 有 " + c.count() + " 辆，后端该时刻快照为 "
+                            + actual + " 辆（" + TeamGroundingFacts.formatClock(c.timeSec()) + "）；" + reason));
+        }
+    }
+
+    /** V5m：ENEMY_POSITION knowledge（CURRENT/LAST_KNOWN）与后端 exact 校验。 */
+    private static void checkV5Knowledge(final TeamReviewEnvelope.Claim c,
+                                         final GroundingFacts facts,
+                                         final List<FactConflict> conflicts) {
+        final String claimKnowledge = c.knowledge().toUpperCase(java.util.Locale.ROOT);
+        // 1) 引用 ENEMY_POSITION 证据事实：knowledge 必须与后端 exact 一致
+        for (final String id : c.evidenceIds()) {
+            final EvidenceFact fact = facts.byId().get(id);
+            if (fact == null || !TeamGroundingFacts.TYPE_ENEMY_POSITION.equals(fact.type())) {
+                continue;
+            }
+            final String backend = fact.attrs().getOrDefault("knowledge", "");
+            if (!backend.equals(claimKnowledge)) {
+                conflicts.add(new FactConflict("V5",
+                        "敌方位置知识错误（structured）：claim 称 " + c.subject() + " @" + timeText(c.timeSec())
+                                + " GRID" + c.region() + " 为 " + claimKnowledge
+                                + "，但引用的证据 " + id + " 是 " + backend
+                                + "（最后一次观测于 " + TeamGroundingFacts.formatClockSafe(
+                                        fact.attrs().get("observedAtSec")) + "）。"));
+            }
+            return;
+        }
+        // 2) 无引用证据：按最近 enemy position 样本（±6s）比较
+        final TeamGroundingFacts.EnemyPositionSample sample =
+                nearestEnemySampleBySubject(facts, c.subject(), c.timeSec());
+        if (sample != null && !sample.knowledge().equals(claimKnowledge)) {
+            conflicts.add(new FactConflict("V5",
+                    "敌方位置知识错误（structured）：claim 称 " + c.subject() + " @" + timeText(c.timeSec())
+                            + " GRID" + c.region() + " 为 " + claimKnowledge
+                            + "，后端该时刻样本为 " + sample.knowledge()
+                            + "（GRID" + sample.region() + "，上次观测 "
+                            + TeamGroundingFacts.formatClockSafe(sample.observedAtSec() == null
+                                    ? "" : String.valueOf(sample.observedAtSec())) + "）。"));
+        }
+    }
+
+    /** 按 subject（昵称/坦克名）找最近的 enemy position 样本（±6s）。 */
+    private static TeamGroundingFacts.EnemyPositionSample nearestEnemySampleBySubject(
+            final GroundingFacts facts, final String subject, final double timeSec) {
+        TeamGroundingFacts.EnemyPositionSample best = null;
+        double bestDelta = Double.MAX_VALUE;
+        for (final TeamGroundingFacts.EnemyPositionSample s : facts.enemyPositions()) {
+            if (!sameName(s.nickname(), subject) && !sameName(s.tankName(), subject)) {
+                continue;
+            }
+            final double delta = Math.abs(s.sec() - timeSec);
+            if (delta < bestDelta) {
+                bestDelta = delta;
+                best = s;
+            }
+        }
+        return best != null && bestDelta <= SNAPSHOT_TIME_TOLERANCE_SEC ? best : null;
+    }
+
+    private static boolean hasTransitionAnchor(final String text) {
+        return TRANSITION.matcher(text).find();
+    }
+
+    /** 正文是否出现「玩家名 + 紧邻时间」的阵亡锚点（defense-in-depth coverage）。 */
+    private static boolean hasDeathTimeAnchor(final String markdown, final GroundingFacts facts) {
+        for (final EvidenceFact death : deathFacts(facts)) {
+            for (final String key : mentionKeys(death)) {
+                int idx = markdown.indexOf(key);
+                while (idx >= 0) {
+                    final int from = Math.max(0, idx - 20);
+                    final int to = Math.min(markdown.length(), idx + key.length() + 20);
+                    if (firstTime(markdown.substring(from, to)) != null) {
+                        return true;
+                    }
+                    idx = markdown.indexOf(key, idx + key.length());
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * claims coverage 最低契约（Review Blocker B1 §7）：Grounding Facts 非空且主判断引用证据编号，
+     * 或正文出现可验证事实锚点（玩家阵亡+时间 / 存活变化 / 位置数量）时，claims 不允许无条件为空。
+     */
+    private static void checkClaimsCoverage(final TeamReviewEnvelope envelope,
+                                            final GroundingFacts facts,
+                                            final List<FactConflict> conflicts) {
+        if (!envelope.claims().isEmpty() || facts.facts().isEmpty()) {
+            return;
+        }
+        final boolean diagnosisCitesEvidence = envelope.primaryDiagnosis() != null
+                && envelope.primaryDiagnosis().supportingEvidenceIds() != null
+                && !envelope.primaryDiagnosis().supportingEvidenceIds().isEmpty();
+        final String markdown = nonNull(envelope.reviewMarkdown());
+        final boolean factualAnchorInBody = !findRanges(markdown).isEmpty()
+                || hasTransitionAnchor(markdown)
+                || !parseRegionClaims(markdown).isEmpty()
+                || hasDeathTimeAnchor(markdown, facts);
+        if (diagnosisCitesEvidence || factualAnchorInBody) {
+            conflicts.add(new FactConflict("CONTRACT",
+                    "正文/主判断包含可验证事实陈述（时间/人数/位置/阵亡），但 claims 为空："
+                            + "每个可验证 factual statement 必须有对应 structured claim（DEATH / "
+                            + "ALIVE_TRANSITION / POSITION_REGION / ENEMY_POSITION），claims 不是可选装饰。"));
+        }
+    }
+
+    private static String sideLabel(final String side) {
+        return "ENEMY".equalsIgnoreCase(side) ? "对方" : "本方";
+    }
+
+    /**
+     * 某时刻某区域某阵营的车辆数（机器结构化校验用）：最近快照（±6s）兜底；无数据返回 null。
+     * <p>FRIENDLY 读 friendlyCounts；ENEMY 读 enemyCurrentCounts（只含 CURRENT 位置知识——
+     * enemy LAST_KNOWN 不得当作当前数量，V5 边界）。</p>
+     */
+    private static Integer regionCountAt(final GroundingFacts facts, final double timeSec,
+                                         final int region, final String side) {
         final String key = "GRID" + region;
         RegionSnapshot best = null;
         double bestDelta = Double.MAX_VALUE;
@@ -263,6 +385,10 @@ public final class TeamFactualConsistencyValidator {
         }
         if (best == null || bestDelta > SNAPSHOT_TIME_TOLERANCE_SEC) {
             return null;
+        }
+        if ("ENEMY".equalsIgnoreCase(side)) {
+            // 缺失 key = 该区 0 辆 CURRENT 敌车
+            return best.enemyCurrentCounts().getOrDefault(key, 0);
         }
         return best.friendlyCounts().get(key);
     }
