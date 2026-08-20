@@ -39,17 +39,31 @@ public record TeamReviewEnvelope(
     }
 
     /**
-     * 一条 grounded 陈述。
+     * 一条 grounded 陈述（Review Blocker B1：structured factual contract，fail-close）。
+     * <p><b>claimType schema</b>（由 {@code TeamReviewEnvelopeParser} 强制）：</p>
+     * <ul>
+     *   <li>{@code DEATH}：subject + timeSec + evidenceIds；</li>
+     *   <li>{@code ALIVE_TRANSITION}：value（机器格式 {@code 7v7 -> 4v6}）+ evidenceIds（timeSec 可选）；</li>
+     *   <li>{@code POSITION_REGION}：timeSec + region + count + side（FRIENDLY/ENEMY）+
+     *       countSemantics（EXACT/AT_LEAST/SUBSET）+ evidenceIds；</li>
+     *   <li>{@code ENEMY_POSITION}：subject + timeSec + region + knowledge（CURRENT/LAST_KNOWN）+
+     *       evidenceIds；</li>
+     *   <li>{@code TACTICAL}：纯战术观点，不要求 factual machine 字段（Backend 不判断战术观点）。</li>
+     * </ul>
+     * LOS / SPOTTING / VISION / LINE_OF_SIGHT 禁止作为 claimType（无后端 evidence kind）。
      *
-     * @param text        自然语言描述（用户正文同义，ZH/EN/RU 皆可；不与正文重复出现内部标识）
-     * @param evidenceIds 引用 GROUNDING FACTS 的证据编号（E1xx）
-     * @param claimType   机器语义类型（Review B1-2）：DEATH / ALIVE_TRANSITION /
-     *                    POSITION_REGION / LAST_KNOWN / TACTICAL（纯战术观点）等；可为 null
-     * @param timeSec     battle-relative 秒（机器时间格式，三语通用）；可为 null
-     * @param region      九宫格区域 1-9；可为 null
-     * @param count       车辆数（位置/存活类）；可为 null
-     * @param subject     玩家昵称或坦克名（死亡/位置类归属）；可为 null
-     * @param value       机器值（如存活变化 "7v7 -> 4v6"）；可为 null
+     * @param text           自然语言描述（用户正文同义，ZH/EN/RU 皆可；不与正文重复出现内部标识）
+     * @param evidenceIds    引用 GROUNDING FACTS 的证据编号（E1xx）
+     * @param claimType      机器语义类型（必填；DEATH / ALIVE_TRANSITION / POSITION_REGION /
+     *                       ENEMY_POSITION / TACTICAL）
+     * @param timeSec        battle-relative 秒（JSON number；schema 要求时必填）
+     * @param region         九宫格区域 1-9（JSON number）
+     * @param count          车辆数（JSON number；POSITION_REGION 必填）
+     * @param subject        玩家昵称或坦克名（DEATH / ENEMY_POSITION 必填）
+     * @param value          机器值（ALIVE_TRANSITION 必填，如 "7v7 -> 4v6"）
+     * @param side           阵营（POSITION_REGION 必填：FRIENDLY / ENEMY）
+     * @param countSemantics 数量语义（POSITION_REGION 必填：EXACT / AT_LEAST / SUBSET）
+     * @param knowledge      敌方位置知识（ENEMY_POSITION 必填：CURRENT / LAST_KNOWN）
      */
     public record Claim(
             String text,
@@ -59,15 +73,18 @@ public record TeamReviewEnvelope(
             Integer region,
             Integer count,
             String subject,
-            String value
+            String value,
+            String side,
+            String countSemantics,
+            String knowledge
     ) {
         public Claim {
             evidenceIds = evidenceIds == null ? List.of() : List.copyOf(evidenceIds);
         }
 
-        /** 兼容旧契约（无机器字段；validator 仍按文本兜底校验）。 */
+        /** 兼容旧契约（无机器字段；仅测试/文本兜底路径使用，parser 不再产出）。 */
         public Claim(final String text, final List<String> evidenceIds) {
-            this(text, evidenceIds, null, null, null, null, null, null);
+            this(text, evidenceIds, null, null, null, null, null, null, null, null, null);
         }
 
         /** 机器时间是否可用（非 null 且有限）。 */

@@ -280,22 +280,24 @@ final class TeamPromptLocalizer {
             要求：
             1. reviewMarkdown 是用户看到的完整复盘，由你自由写出，不是 Backend 模板句的拼接；
                不得在其中出现「E1xx」「evidenceIds」「GROUNDING FACTS」「primaryDiagnosis」等内部标识。
-            2. claims 是 machine-readable grounding 元数据：数值类、时间类、位置类、明确玩家事件类
-               与支撑主判断的事实类陈述必须进 claims 并引用对应证据编号；纯战术观点可以不进 claims，
-               也不需要证据编号。
-               机器字段（三语通用，language-neutral）：涉及数值/时间/位置/玩家事件的 claim 应携带
-               timeSec（battle-relative 秒，数值）、region（九宫格 1-9）、count（车辆数，整数）、
-               subject（玩家昵称或坦克名）、value（存活变化机器格式，如 "7v7 -> 4v6"）、
-               claimType（DEATH / ALIVE_TRANSITION / POSITION_REGION / LAST_KNOWN / TACTICAL）。
-               region + count 表示【精确数量】：声称该区恰好 count 辆；若只是「至少 N 辆」
-               （at least / не менее）或「其中 N 辆」（among / of them / 其中 / среди），
-               必须在 text 中写出对应标记词。无论输出语言（中文/English/Русский），机器字段格式一致。
+            2. claims 是同一批 factual assertions 的 machine projection，不是可选装饰：
+               正文中每个可验证事实陈述（时间/人数/玩家阵亡/区域位置/敌方位置知识）必须有一个对应
+               structured claim；纯战术观点可以没有 claim。claims 为空只允许在正文不含可验证事实陈述时。
+               机器字段（三语通用，language-neutral）：每条 claim 必须携带合法 claimType 及对应必填字段——
+               DEATH：subject（玩家昵称或坦克名）+ timeSec（battle-relative 秒，数字）+ evidenceIds；
+               ALIVE_TRANSITION：value（机器格式 "7v7 -> 4v6"）+ evidenceIds（timeSec 可选）；
+               POSITION_REGION：timeSec + region（1-9）+ count（车辆数，数字）+ side（FRIENDLY/ENEMY）
+                 + countSemantics（EXACT/AT_LEAST/SUBSET）+ evidenceIds；
+               ENEMY_POSITION：subject + timeSec + region + knowledge（CURRENT/LAST_KNOWN）+ evidenceIds；
+               TACTICAL：纯战术观点，不要求 factual machine 字段。
+               countSemantics 用机器字段声明（EXACT=恰好 count 辆 / AT_LEAST=至少 count 辆 / SUBSET=其中 count 辆），
+               不要依赖自然语言标记词；机器字段类型必须正确（数字字段必须是 JSON number，不能用字符串）。
+               无论输出语言（中文/English/Русский），机器字段与格式一致。
             3. 证据编号只能出现在结构化字段（primaryDiagnosis.supportingEvidenceIds / claims[].evidenceIds），
                绝不进入 reviewMarkdown 正文。
             4. 敌方 ENEMY_POSITION_KNOWN 的 LAST_KNOWN 只是「最后一次被观测到的位置」，绝不能写成
-               「敌方此时就在这里/正在某区」/ "is right here now" / "прямо здесь"；引用 LAST_KNOWN
-               编号的 claim 必须使用「最后一次观测在…」「上次看到在…」/ "last observed at…" /
-               "в последний раз видели в…" 级别的措辞。
+               「敌方此时就在这里/正在某区」/ "is right here now" / "прямо здесь"；ENEMY_POSITION claim
+               的 knowledge 必须如实声明 CURRENT/LAST_KNOWN，与后端一致。
             5. 正文时间一律用本地化格式（中文「XX分XX秒」/ English "Xm Xs" / Русский "X мин X с"），
                禁止「1:15」或累计秒数；claims 的 timeSec 使用 battle-relative 秒（机器格式，如 112.4）。
             6. LOS / spotting / 视野类内容禁止作为事实 claim：claimType 不得为 LOS / SPOTTING / VISION /
@@ -332,19 +334,27 @@ final class TeamPromptLocalizer {
                         2. claims are machine-readable grounding metadata: numeric, temporal, positional, explicit player-event
                            and main-diagnosis-supporting factual statements must go into claims with the corresponding evidence
                            ids; pure tactical opinions may omit claims and evidence ids.
-                           Machine fields (language-neutral, identical in every output language): claims involving numbers,
-                           times, positions or player events should carry timeSec (battle-relative seconds, numeric),
-                           region (nine-grid 1-9), count (number of vehicles, integer), subject (player nickname or tank
-                           name), value (alive-transition machine format, e.g. "7v7 -> 4v6") and claimType
-                           (DEATH / ALIVE_TRANSITION / POSITION_REGION / LAST_KNOWN / TACTICAL).
-                           region + count mean EXACT count: the claim states that exactly count vehicles were in that
-                           region; if you only mean "at least N" (не менее) or "N of them" (among / of them / среди),
-                           you must write the corresponding marker word in the text.
+                           claims are the MACHINE PROJECTION of the same factual assertions — not optional decoration:
+                           every verifiable factual statement in the body (time / counts / player deaths / region
+                           positions / enemy position knowledge) must have a corresponding structured claim; claims may
+                           be empty only when the body contains no verifiable factual statement.
+                           Machine fields (language-neutral, identical in every output language): every claim must carry a
+                           valid claimType and its required fields —
+                           DEATH: subject (player nickname or tank name) + timeSec (battle-relative seconds, JSON number)
+                             + evidenceIds;
+                           ALIVE_TRANSITION: value (machine format "7v7 -> 4v6") + evidenceIds (timeSec optional);
+                           POSITION_REGION: timeSec + region (1-9) + count (number of vehicles, JSON number)
+                             + side (FRIENDLY/ENEMY) + countSemantics (EXACT/AT_LEAST/SUBSET) + evidenceIds;
+                           ENEMY_POSITION: subject + timeSec + region + knowledge (CURRENT/LAST_KNOWN) + evidenceIds;
+                           TACTICAL: pure tactical opinion, no factual machine fields required.
+                           Declare countSemantics as a machine field (EXACT = exactly count vehicles / AT_LEAST = at least
+                           count / SUBSET = count of them); do not rely on natural-language marker words; machine field
+                           types must be correct (numeric fields must be JSON numbers, not strings).
                         3. Evidence ids may only appear in structured fields (primaryDiagnosis.supportingEvidenceIds /
                            claims[].evidenceIds); never in the reviewMarkdown body.
                         4. An enemy ENEMY_POSITION_KNOWN of LAST_KNOWN is only "the last observed position" — never write
-                           "the enemy is right here now / is in region N" / "прямо здесь"; claims citing LAST_KNOWN ids must
-                           use wording such as "last observed at...", "last seen in..." / "в последний раз видели в...".
+                           "the enemy is right here now / is in region N" / "прямо здесь"; an ENEMY_POSITION claim must
+                           truthfully declare knowledge CURRENT/LAST_KNOWN consistent with the backend.
                         5. Body times must use the localized format (Chinese "X分XX秒" / English "Xm Xs" / Russian "X мин X с");
                            never "1:15" or cumulative seconds; claim timeSec uses battle-relative seconds (machine format,
                            e.g. 112.4).
@@ -383,20 +393,27 @@ final class TeamPromptLocalizer {
                            события игроков и фактические утверждения, поддерживающие основной диагноз, должны попадать в claims
                            с соответствующими идентификаторами доказательств; чистые тактические мнения могут обходиться без claims
                            и идентификаторов.
-                           Машинные поля (language-neutral, одинаковые на любом языке вывода): claims, затрагивающие числа,
-                           время, позиции или события игроков, должны нести timeSec (battle-relative секунды, число),
-                           region (сетка 1-9), count (число машин, целое), subject (ник игрока или название машины),
-                           value (машинный формат перехода числа живых, например "7v7 -> 4v6") и claimType
-                           (DEATH / ALIVE_TRANSITION / POSITION_REGION / LAST_KNOWN / TACTICAL).
-                           region + count означают ТОЧНОЕ число: утверждение говорит, что в этой области ровно count машин;
-                           если вы имеете в виду лишь «не менее N» (at least) или «N из них» (among / of them / из них),
-                           обязательно укажите соответствующий маркер в тексте.
+                           Машинные поля (language-neutral, одинаковые на любом языке вывода): claims — это
+                           МАШИННАЯ ПРОЕКЦИЯ тех же фактических утверждений, а не опциональное украшение:
+                           каждое проверяемое фактическое утверждение в тексте (время / числа / гибели игроков /
+                           позиции в областях / знание о позиции противника) должно иметь соответствующий structured claim;
+                           claims могут быть пустыми, только если текст не содержит проверяемых фактических утверждений.
+                           Каждый claim обязан нести валидный claimType и свои обязательные поля —
+                           DEATH: subject (ник игрока или название машины) + timeSec (battle-relative секунды, JSON number)
+                             + evidenceIds;
+                           ALIVE_TRANSITION: value (машинный формат "7v7 -> 4v6") + evidenceIds (timeSec опционально);
+                           POSITION_REGION: timeSec + region (1-9) + count (число машин, JSON number)
+                             + side (FRIENDLY/ENEMY) + countSemantics (EXACT/AT_LEAST/SUBSET) + evidenceIds;
+                           ENEMY_POSITION: subject + timeSec + region + knowledge (CURRENT/LAST_KNOWN) + evidenceIds;
+                           TACTICAL: чисто тактическое мнение, машинные поля не требуются.
+                           countSemantics объявляйте машинным полем (EXACT = ровно count машин / AT_LEAST = не менее count /
+                           SUBSET = count из них); не полагайтесь на слова-маркеры в естественном языке; типы машинных полей
+                           должны быть корректными (числовые поля — JSON number, а не строка).
                         3. Идентификаторы доказательств могут появляться только в структурированных полях
                            (primaryDiagnosis.supportingEvidenceIds / claims[].evidenceIds); никогда в теле reviewMarkdown.
                         4. ENEMY_POSITION_KNOWN со значением LAST_KNOWN — лишь «последняя наблюдаемая позиция»; нельзя писать
-                           «противник сейчас прямо здесь / находится в области N» / "is right here now"; claims, ссылающиеся
-                           на LAST_KNOWN, должны использовать формулировки «последнее наблюдение в…»,
-                           «в последний раз видели в…» / "last observed at...".
+                           «противник сейчас прямо здесь / находится в области N» / "is right here now"; claim ENEMY_POSITION
+                           обязан честно объявлять knowledge CURRENT/LAST_KNOWN в соответствии с бэкендом.
                         5. Время в тексте — только в локализованном формате (китайский «X分XX秒» / английский "Xm Xs" /
                            русский «X мин X с»); нельзя «1:15» или только суммарные секунды; timeSec в claims —
                            battle-relative секунды (машинный формат, например 112.4).

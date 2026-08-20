@@ -345,8 +345,19 @@ public class TeamReplayAnalysisService {
                     remainingBudget(startNanos));
             final TeamReviewEnvelope envelope = TeamReviewEnvelopeParser.parse(raw);
             if (envelope == null) {
-                feedback = "输出不是合法 JSON envelope：必须包含 primaryDiagnosis（title + reasoning 非空）"
-                        + "与 reviewMarkdown，且不要输出其它文本。";
+                // Review Blocker B1：envelope / structured claims schema 违反（fail-close）——
+                // 给 LLM 明确 schema 提示，让它自修，而非静默降级为 text-only
+                feedback = "输出不是合法 JSON envelope 或 claims 违反 machine schema："
+                        + "必须包含 primaryDiagnosis（title + reasoning 非空）与 reviewMarkdown；"
+                        + "每条 claim 必须携带合法 claimType（DEATH / ALIVE_TRANSITION / "
+                        + "POSITION_REGION / ENEMY_POSITION / TACTICAL）及对应机器字段："
+                        + "DEATH=subject+timeSec(数字)+evidenceIds；"
+                        + "ALIVE_TRANSITION=value(机器格式 7v7 -> 4v6)+evidenceIds；"
+                        + "POSITION_REGION=timeSec+region(1-9)+count(数字)+side(FRIENDLY/ENEMY)"
+                        + "+countSemantics(EXACT/AT_LEAST/SUBSET)+evidenceIds；"
+                        + "ENEMY_POSITION=subject+timeSec+region+knowledge(CURRENT/LAST_KNOWN)+evidenceIds；"
+                        + "TACTICAL 无机器字段要求；机器字段类型必须正确（数字字段不能用字符串），"
+                        + "禁止 LOS/SPOTTING/VISION/LINE_OF_SIGHT claimType。";
                 fullRewrite = attempt >= 2;
                 continue;
             }

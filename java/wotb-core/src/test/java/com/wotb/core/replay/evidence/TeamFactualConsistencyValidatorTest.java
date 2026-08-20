@@ -74,8 +74,10 @@ class TeamFactualConsistencyValidatorTest {
         friendly.put("GRID6", 5);
         friendly.put("GRID5", 1);
         friendly.put("GRID3", 1);
+        final Map<String, Integer> enemyCurrent = new LinkedHashMap<>();
+        enemyCurrent.put("GRID4", 2);
         final List<RegionSnapshot> snapshots = List.of(
-                new RegionSnapshot(112.0, Map.copyOf(friendly), Map.of()));
+                new RegionSnapshot(112.0, Map.copyOf(friendly), Map.copyOf(enemyCurrent)));
         final List<TeamGroundingFacts.EnemyPositionSample> enemy = List.of(
                 new TeamGroundingFacts.EnemyPositionSample(
                         120.0, 5L, "Maus", "Maus", "5", "LAST_KNOWN", 117.0, 3.0));
@@ -296,7 +298,20 @@ class TeamFactualConsistencyValidatorTest {
                                                          final Double timeSec, final Integer region,
                                                          final Integer count, final String subject,
                                                          final String value, final String... ids) {
-        return new TeamReviewEnvelope.Claim(text, List.of(ids), claimType, timeSec, region, count, subject, value);
+        return new TeamReviewEnvelope.Claim(
+                text, List.of(ids), claimType, timeSec, region, count, subject, value,
+                null, null, null);
+    }
+
+    /** 完整机器字段 helper（Review Blocker B1）：side / countSemantics / knowledge。 */
+    private static TeamReviewEnvelope.Claim machineClaimFull(
+            final String text, final String claimType,
+            final Double timeSec, final Integer region, final Integer count,
+            final String subject, final String value, final String side,
+            final String countSemantics, final String knowledge, final String... ids) {
+        return new TeamReviewEnvelope.Claim(
+                text, List.of(ids), claimType, timeSec, region, count, subject, value,
+                side, countSemantics, knowledge);
     }
 
     private static TeamReviewEnvelope envWith(final TeamReviewEnvelope.Claim... claims) {
@@ -344,47 +359,102 @@ class TeamFactualConsistencyValidatorTest {
     // ---- B2-2：V4 精确语义（exact == actual；at-least/subset ≤ actual） ----
 
     @Test
-    void machinePositionExactOverCountFails() {
-        final TeamReviewEnvelope env = envWith(machineClaim(
-                "7 vehicles in region 6", "POSITION_REGION", 112.0, 6, 7, null, null, "E106"));
+    void v4ExactOverCountFails() {
+        final TeamReviewEnvelope env = envWith(machineClaimFull(
+                "7 vehicles in region 6", "POSITION_REGION", 112.0, 6, 7, null, null,
+                "FRIENDLY", "EXACT", null, "E106"));
         assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V4"),
-                "structured over-count 必须 FAIL（快照 GRID6=5）");
+                "EXACT over-count 必须 FAIL（快照 GRID6=5）");
     }
 
     @Test
-    void machinePositionExactUnderCountFails() {
-        // B2-2：精确语义下的少报（3 != 5）同样是事实不一致
-        final TeamReviewEnvelope env = envWith(machineClaim(
-                "3 vehicles in region 6", "POSITION_REGION", 112.0, 6, 3, null, null, "E106"));
+    void v4ExactUnderCountFails() {
+        // B2-2：EXACT 语义下少报（3 != 5）同样是事实不一致
+        final TeamReviewEnvelope env = envWith(machineClaimFull(
+                "3 vehicles in region 6", "POSITION_REGION", 112.0, 6, 3, null, null,
+                "FRIENDLY", "EXACT", null, "E106"));
         final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
         assertTrue(hasCheck(conflicts, "V4"),
-                "structured under-count exact 必须 FAIL（快照 GRID6=5，claim=3）: " + conflicts);
+                "EXACT under-count 必须 FAIL（快照 GRID6=5，claim=3）: " + conflicts);
     }
 
     @Test
-    void machinePositionSubsetPasses() {
-        // 「其中 3 辆」（subset）是合法部分陈述
-        final TeamReviewEnvelope env = envWith(machineClaim(
-                "3 of them in region 6", "POSITION_REGION", 112.0, 6, 3, null, null, "E106"));
+    void v4ExactEqualPasses() {
+        final TeamReviewEnvelope env = envWith(machineClaimFull(
+                "5 vehicles in region 6", "POSITION_REGION", 112.0, 6, 5, null, null,
+                "FRIENDLY", "EXACT", null, "E106"));
         assertFalse(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V4"),
-                "subset 陈述必须 PASS");
+                "EXACT count == 快照 必须 PASS");
     }
 
     @Test
-    void machinePositionAtLeastPasses() {
-        // 「至少 3 辆」（at least）是合法下界陈述
-        final TeamReviewEnvelope env = envWith(machineClaim(
-                "at least 3 vehicles in region 6", "POSITION_REGION", 112.0, 6, 3, null, null, "E106"));
+    void v4AtLeastUnderPasses() {
+        final TeamReviewEnvelope env = envWith(machineClaimFull(
+                "at least 3 vehicles in region 6", "POSITION_REGION", 112.0, 6, 3, null, null,
+                "FRIENDLY", "AT_LEAST", null, "E106"));
         assertFalse(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V4"),
-                "at-least 陈述必须 PASS");
+                "AT_LEAST 3 ≤ actual 5 必须 PASS");
     }
 
     @Test
-    void machinePositionExactEqualPasses() {
-        final TeamReviewEnvelope env = envWith(machineClaim(
-                "5 vehicles in region 6", "POSITION_REGION", 112.0, 6, 5, null, null, "E106"));
+    void v4AtLeastOverFails() {
+        final TeamReviewEnvelope env = envWith(machineClaimFull(
+                "at least 6 vehicles in region 6", "POSITION_REGION", 112.0, 6, 6, null, null,
+                "FRIENDLY", "AT_LEAST", null, "E106"));
+        assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V4"),
+                "AT_LEAST 6 > actual 5 必须 FAIL");
+    }
+
+    @Test
+    void v4SubsetUnderPasses() {
+        final TeamReviewEnvelope env = envWith(machineClaimFull(
+                "3 of them in region 6", "POSITION_REGION", 112.0, 6, 3, null, null,
+                "FRIENDLY", "SUBSET", null, "E106"));
         assertFalse(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V4"),
-                "exact count == 快照 必须 PASS");
+                "SUBSET 3 ≤ actual 5 必须 PASS");
+    }
+
+    @Test
+    void v4SubsetOverFails() {
+        final TeamReviewEnvelope env = envWith(machineClaimFull(
+                "6 of them in region 6", "POSITION_REGION", 112.0, 6, 6, null, null,
+                "FRIENDLY", "SUBSET", null, "E106"));
+        assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V4"),
+                "SUBSET 6 > actual 5 必须 FAIL");
+    }
+
+    @Test
+    void v4EnemySideUsesEnemyCurrentCountsNotFriendly() {
+        // 后端 enemy current：GRID4=2（fixture snapshot）；FRIENDLY 数不得拿去校验 enemy claim
+        final TeamReviewEnvelope enemyExact = envWith(machineClaimFull(
+                "2 enemy vehicles in region 4", "POSITION_REGION", 112.0, 4, 2, null, null,
+                "ENEMY", "EXACT", null, "E106"));
+        assertFalse(hasCheck(TeamFactualConsistencyValidator.validate(enemyExact, facts()), "V4"),
+                "ENEMY EXACT 2 == enemyCurrent GRID4=2 必须 PASS");
+        final TeamReviewEnvelope enemyOver = envWith(machineClaimFull(
+                "3 enemy vehicles in region 4", "POSITION_REGION", 112.0, 4, 3, null, null,
+                "ENEMY", "EXACT", null, "E106"));
+        assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(enemyOver, facts()), "V4"),
+                "ENEMY EXACT 3 > enemyCurrent GRID4=2 必须 FAIL（不能用 friendly 数比较）");
+    }
+
+    @Test
+    void v5MachineKnowledgeCurrentVsLastKnownFails() {
+        // 后端 Maus @120 LAST_KNOWN（E107）：claim 写 CURRENT → 必须 FAIL（machine，不靠正文短语）
+        final TeamReviewEnvelope env = envWith(machineClaimFull(
+                "The Maus is in region 5 right now", "ENEMY_POSITION", 120.0, 5, null, "Maus",
+                null, null, null, "CURRENT", "E107"));
+        assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V5"),
+                "ENEMY_POSITION knowledge=CURRENT vs 后端 LAST_KNOWN 必须 FAIL（V5m）");
+    }
+
+    @Test
+    void v5MachineKnowledgeLastKnownPasses() {
+        final TeamReviewEnvelope env = envWith(machineClaimFull(
+                "Maus was last observed in region 5", "ENEMY_POSITION", 120.0, 5, null, "Maus",
+                null, null, null, "LAST_KNOWN", "E107"));
+        assertFalse(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V5"),
+                "ENEMY_POSITION knowledge=LAST_KNOWN 与后端一致必须 PASS（V5m）");
     }
 
     // ---- V6m：claim 显式声明 LOS/SPOTTING 事实类型 ----
@@ -459,16 +529,19 @@ class TeamFactualConsistencyValidatorTest {
 
     @Test
     void enLastKnownAsCurrentFails() {
-        final TeamReviewEnvelope env = envWith(machineClaim(
-                "The Maus is right here now", "LAST_KNOWN", null, null, null, "Maus", null, "E107"));
+        // V5a 正文短语兜底：ENEMY_POSITION claim 声称当前但引用 LAST_KNOWN 证据（E107）
+        final TeamReviewEnvelope env = envWith(machineClaimFull(
+                "The Maus is right here now", "ENEMY_POSITION", 120.0, 5, null, "Maus",
+                null, null, null, "LAST_KNOWN", "E107"));
         assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V5"),
                 "EN LAST_KNOWN 写成当前必须 FAIL（V5）");
     }
 
     @Test
     void ruLastKnownAsCurrentFails() {
-        final TeamReviewEnvelope env = envWith(machineClaim(
-                "Maus сейчас находится в 5-й зоне", "LAST_KNOWN", null, null, null, "Maus", null, "E107"));
+        final TeamReviewEnvelope env = envWith(machineClaimFull(
+                "Maus сейчас находится в 5-й зоне", "ENEMY_POSITION", 120.0, 5, null, "Maus",
+                null, null, null, "LAST_KNOWN", "E107"));
         assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V5"),
                 "RU LAST_KNOWN 写成当前必须 FAIL（V5）");
     }
@@ -503,6 +576,36 @@ class TeamFactualConsistencyValidatorTest {
                         + "Нужно было перераспределить следующий обмен после потери первой машины.");
         assertEquals(List.of(), TeamFactualConsistencyValidator.validate(env, facts()),
                 "RU 合法战术观点/建议必须 PASS");
+    }
+
+    // ===== Review Blocker B1 §7：claims coverage 最低契约 =====
+
+    @Test
+    void emptyClaimsWithDiagnosisEvidenceFails() {
+        final TeamReviewEnvelope env = new TeamReviewEnvelope(
+                new TeamReviewEnvelope.PrimaryDiagnosis("主判断", "理由", List.of("E101")),
+                "## 团队复盘\n\n这是一段复盘。", List.of());
+        assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "CONTRACT"),
+                "主判断引用证据编号但 claims 为空必须 FAIL（CONTRACT）");
+    }
+
+    @Test
+    void emptyClaimsWithFactualBodyFails() {
+        final TeamReviewEnvelope env = new TeamReviewEnvelope(
+                new TeamReviewEnvelope.PrimaryDiagnosis("主判断", "理由", List.of()),
+                "1分52秒 WildCat 阵亡，随后本队7辆全部在6区。", List.of());
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertTrue(hasCheck(conflicts, "CONTRACT"),
+                "正文含可验证事实锚点但 claims 为空必须 FAIL（CONTRACT）: " + conflicts);
+    }
+
+    @Test
+    void emptyClaimsPureTacticalPasses() {
+        final TeamReviewEnvelope env = new TeamReviewEnvelope(
+                new TeamReviewEnvelope.PrimaryDiagnosis("主判断", "理由", List.of()),
+                "我认为这局主要问题是第一次正面交换。", List.of());
+        assertFalse(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "CONTRACT"),
+                "纯战术观点正文无事实锚点 + claims 为空必须 PASS（CONTRACT）");
     }
 
     @Test

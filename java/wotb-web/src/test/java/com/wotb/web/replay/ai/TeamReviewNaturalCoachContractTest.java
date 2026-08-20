@@ -82,10 +82,21 @@ class TeamReviewNaturalCoachContractTest {
         assertTrue(ZH.contains("subject"), "必须有 subject 机器字段");
         assertTrue(ZH.contains("value"), "必须有 value 机器字段");
         assertTrue(ZH.contains("claimType"), "必须有 claimType 机器字段");
-        assertTrue(ZH.contains("region + count 表示【精确数量】"),
-                "region+count 必须声明精确数量语义（B2-2）");
-        assertTrue(ZH.contains("至少 N 辆"), "必须给出 at-least 标记示例");
-        assertTrue(ZH.contains("其中 N 辆"), "必须给出 subset 标记示例");
+        assertTrue(ZH.contains("countSemantics 用机器字段声明"),
+                "countSemantics 必须用机器字段声明（不依赖自然语言标记）");
+        assertTrue(ZH.contains("EXACT=恰好 count 辆"), "必须给出 EXACT 机器语义");
+        assertTrue(ZH.contains("AT_LEAST=至少 count 辆"), "必须给出 AT_LEAST 机器语义");
+        assertTrue(ZH.contains("SUBSET=其中 count 辆"), "必须给出 SUBSET 机器语义");
+        assertTrue(ZH.contains("DEATH：subject"), "必须给出 DEATH required fields（fail-close schema）");
+        assertTrue(ZH.contains("POSITION_REGION：timeSec + region"), "必须给出 POSITION_REGION required fields");
+        assertTrue(ZH.contains("ENEMY_POSITION：subject + timeSec + region + knowledge"),
+                "必须给出 ENEMY_POSITION required fields（knowledge）");
+        assertTrue(ZH.contains("TACTICAL：纯战术观点，不要求 factual machine 字段"),
+                "TACTICAL 必须声明不要求机器字段");
+        assertTrue(ZH.contains("claims 是同一批 factual assertions 的 machine projection，不是可选装饰"),
+                "claims 不得设计成可选装饰（coverage 契约）");
+        assertTrue(ZH.contains("数字字段必须是 JSON number，不能用字符串"),
+                "机器字段类型必须正确（fail-close）");
         assertTrue(ZH.contains("claimType 不得为 LOS / SPOTTING / VISION"),
                 "必须禁止 LOS/spotting 事实 claim（V6m）");
         for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
@@ -95,10 +106,17 @@ class TeamReviewNaturalCoachContractTest {
                     lang + " 残留中文机器字段规则");
         }
         final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
-        assertTrue(en.contains("region + count mean EXACT count"), "EN 必须声明精确数量语义");
+        assertTrue(en.contains("MACHINE PROJECTION of the same factual assertions"),
+                "EN 必须声明 claims 是 machine projection（非可选装饰）");
+        assertTrue(en.contains("POSITION_REGION: timeSec + region (1-9) + count"),
+                "EN 必须声明 POSITION_REGION required fields");
+        assertTrue(en.contains("countSemantics as a machine field"), "EN 必须声明 countSemantics 机器字段");
         assertTrue(en.contains("claimType must not be"), "EN 必须禁止 LOS/spotting 事实 claim");
         final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
-        assertTrue(ru.contains("region + count означают ТОЧНОЕ число"), "RU 必须声明精确数量语义");
+        assertTrue(ru.contains("МАШИННАЯ ПРОЕКЦИЯ тех же фактических утверждений"),
+                "RU 必须声明 claims 是 machine projection");
+        assertTrue(ru.contains("POSITION_REGION: timeSec + region (1-9) + count"),
+                "RU 必须声明 POSITION_REGION required fields");
         assertTrue(ru.contains("claimType не может быть"), "RU 必须禁止 LOS/spotting 事实 claim");
     }
 
