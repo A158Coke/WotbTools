@@ -47,6 +47,11 @@ public final class TeamFactualConsistencyValidator {
     private static final Pattern CN_SEC = Pattern.compile("(\\d+)秒");
     private static final Pattern COLON_TIME = Pattern.compile("(\\d+):(\\d+)");
     private static final Pattern DECIMAL_SEC = Pattern.compile("(\\d+(?:\\.\\d+)?)s");
+    // 三语机器/常见时间格式（Review B1-2）：109s / 1m49s / 1 мин 49 сек / 109 seconds / 109 секунд
+    private static final Pattern EN_MIN_SEC = Pattern.compile("(\\d+)\\s*m\\s*(\\d+)\\s*s");
+    private static final Pattern RU_MIN_SEC = Pattern.compile("(\\d+)\\s*мин\\s*(\\d+)\\s*сек");
+    private static final Pattern EN_SEC = Pattern.compile("(\\d+)\\s*(?:sec|seconds)(?![\\p{L}\\p{N}])");
+    private static final Pattern RU_SEC = Pattern.compile("(\\d+)\\s*(?:сек|секунд)(?![\\p{L}\\p{N}])");
     // 范围：1分49秒-2分08秒 / 109-128秒 / 1:49–2:08 / 1分52秒后面那二十秒
     private static final Pattern RANGE_CN = Pattern.compile(
             "(\\d+)分(\\d+)秒\\s*[-–~至到]\\s*(\\d+)分(\\d+)秒");
@@ -58,7 +63,7 @@ public final class TeamFactualConsistencyValidator {
             "(\\d+)分(\\d+)秒后面那(\\d+)秒");
     // 存活变化：7v7→4v6 / 7对7变成4对6 / 7比7变4比6
     private static final Pattern TRANSITION = Pattern.compile(
-            "(\\d+)\\s*[vV对比]\\s*(\\d+)\\s*(?:变成|变为|变作|→|->|至|到)\\s*"
+            "(\\d+)\\s*[vV对比]\\s*(\\d+)\\s*(?:变成|变为|变作|→|->|至|到|to|стало)\\s*"
                     + "(\\d+)\\s*[vV对比]\\s*(\\d+)");
     // 位置断言：7辆全部在6区 / 7辆集中6区 / 全部在GRID6
     private static final Pattern REGION_WITH_COUNT = Pattern.compile(
@@ -66,25 +71,70 @@ public final class TeamFactualConsistencyValidator {
                     + "(?:GRID)?(\\d+)\\s*区");
     private static final Pattern REGION_ALL = Pattern.compile(
             "全部\\s*(?:在|位于|集中到|压进)?\\s*(?:GRID)?(\\d+)\\s*区");
+    // EN/RU 位置断言（Review B1-2）：7 vehicles in region 6 / 7 машин в 6-й зоне
+    private static final Pattern REGION_WITH_COUNT_EN = Pattern.compile(
+            "(\\d+)\\s*(?:vehicles|tanks|units)?\\s*(?:in|at|on|near)?\\s*(?:GRID|region|sector|zone|area)\\s*(\\d+)");
+    private static final Pattern REGION_WITH_COUNT_RU = Pattern.compile(
+            "(\\d+)\\s*(?:машин|танков|техники|единиц)?\\s*(?:в|на)\\s*(?:GRID)?\\s*(\\d+)(?:-?\\s*(?:зоне|области|регионе|секторе))?");
+    private static final Pattern REGION_ALL_EN = Pattern.compile(
+            "all\\s*(?:in|at|on|near)?\\s*(?:GRID|region|sector|zone|area)\\s*(\\d+)");
+    private static final Pattern REGION_ALL_RU = Pattern.compile(
+            "все\\s*(?:в|на)\\s*(?:GRID)?\\s*(\\d+)(?:-?\\s*(?:зоне|области|регионе|секторе))?");
     private static final Pattern GRID_COUNT = Pattern.compile("GRID(\\d+)=(\\d+)");
 
-    /** V6 无证据硬事实化表达（命中即需降级表达，否则 FAIL）。 */
+    /** V5 当前断言短语（把 LAST_KNOWN 说成当前位置；ZH + EN + RU 三语覆盖，Review B1-2）。 */
+    static final List<String> CURRENT_ASSERTION_PHRASES = List.of(
+            // ZH
+            "就在这里", "正在这里", "就在原地", "现在还在", "此刻在", "此时在", "现在还在这里", "正在原地",
+            // EN
+            "is right here", "is right here now", "is currently in", "is still in",
+            "is now at", "is still at", "remains in", "is here now", "is standing here",
+            // RU
+            "прямо здесь", "сейчас находится", "до сих пор находится", "всё ещё на",
+            "стоит здесь", "здесь сейчас", "находится прямо сейчас");
+
+    /** V6 无证据硬事实化表达（ZH + EN + RU；命中即需降级表达，否则 FAIL）。 */
     static final List<String> BANNED_HARD_FACT_PHRASES = List.of(
+            // ZH（原清单）
             "进入对方所有炮线", "进入所有炮线", "所有炮线", "具备完整LOS", "完整LOS",
             "拥有直接炮线", "直接炮线", "被掩体卡住", "卡住掩体", "掩体卡住",
             "已经点亮", "点亮了", "提供了视野", "提供视野", "侦察到了", "获得侦察收益",
             "获得了视野", "拿到了视野", "拿到视野", "对方正在瞄准", "正在瞄准",
             "无遮挡射界", "遮挡射界", "卖头", "hull-down", "HULL-DOWN", "Hull-down",
-            "掩体切割", "没有掩体");
+            "掩体切割", "没有掩体",
+            // EN
+            "full LOS", "complete line of sight", "clear line of sight", "direct line of fire",
+            "inside every enemy firing line", "inside all enemy firing lines",
+            "all enemy firing lines", "has direct fire line", "direct fire line",
+            "blocked by cover", "stuck behind cover", "behind cover", "has no cover",
+            "has spotted", "spotted the", "provides vision", "provides spotting",
+            "gained spotting", "is aiming at", "was aiming at", "unobstructed firing angle",
+            "hull-down", "hull down", "no cover",
+            // RU
+            "полная линия огня", "прямая линия огня", "внутри всех линий огня противника",
+            "все линии огня противника", "закрыт укрытием", "застрял за укрытием", "за укрытием",
+            "без укрытия", "засветил", "обеспечивает обзор", "получил засвет",
+            "прицеливается в", "целится в", "свободный угол обстрела", "hull-down");
 
-    /** 降级表达标记：同一句出现任一标记则硬事实化表达可降级放行。 */
+    /** 降级表达标记（ZH + EN + RU）：同一句出现任一标记则硬事实化表达可降级放行。 */
     static final List<String> DOWNGRADE_MARKERS = List.of(
+            // ZH
             "更可能", "从交换结果看", "如果当时", "推测", "可能", "或许", "大概",
-            "射界关系确实如此", "无法确认", "不确定", "看来", "像是", "疑似");
+            "射界关系确实如此", "无法确认", "不确定", "看来", "像是", "疑似",
+            // EN
+            "more likely", "probably", "perhaps", "maybe", "based on the exchange",
+            "if the", "seems", "likely", "cannot be confirmed", "uncertain",
+            // RU
+            "более вероятно", "вероятно", "возможно", "по обмену", "судя по",
+            "если бы", "похоже", "наверное", "нельзя подтвердить", "неопределённо");
 
-    /** V5 当前断言短语（把 LAST_KNOWN 说成当前位置）。 */
-    static final List<String> CURRENT_ASSERTION_PHRASES = List.of(
-            "就在这里", "正在这里", "就在原地", "现在还在", "此刻在", "此时在", "现在还在这里", "正在原地");
+    /** V4 语义标记：at-least（≥ 语义，count 为下界）。 */
+    static final List<String> AT_LEAST_MARKERS = List.of(
+            "至少", "at least", "не менее", "как минимум");
+
+    /** V4 语义标记：subset（部分/其中语义，count 为子集大小）。 */
+    static final List<String> SUBSET_MARKERS = List.of(
+            "其中", "of them", "of the", "among", "среди", "из них");
 
     private TeamFactualConsistencyValidator() {
     }
@@ -118,6 +168,8 @@ public final class TeamFactualConsistencyValidator {
             units.add(nonNull(c.text()));
         }
 
+        // Review B1-2：机器结构化校验（语言无关，三语通用）优先于正文文本兜底
+        checkStructuredMachineClaims(envelope, facts, conflicts);
         checkTemporalOwnership(envelope, facts, conflicts);
         checkPlayerEventTimes(units, facts, conflicts);
         checkAliveTransitions(units, facts, conflicts);
@@ -126,6 +178,93 @@ public final class TeamFactualConsistencyValidator {
         checkUnsupportedHardFacts(units, conflicts);
         checkInternalLabelLeak(envelope, conflicts);
         return conflicts;
+    }
+
+    // ===== 机器结构化校验（Review B1-2：语言无关，三语通用） =====
+
+    private static void checkStructuredMachineClaims(final TeamReviewEnvelope envelope,
+                                                     final GroundingFacts facts,
+                                                     final List<FactConflict> conflicts) {
+        for (final TeamReviewEnvelope.Claim c : envelope.claims()) {
+            // V2m：subject + timeSec → 玩家阵亡时间（EN/RU 无需解析自然语言时间）
+            if (c.hasTime() && c.subject() != null && !c.subject().isBlank()) {
+                for (final EvidenceFact death : deathFacts(facts)) {
+                    if (!sameName(c.subject(), death.nickname())
+                            && !sameName(c.subject(), death.tankName())) {
+                        continue;
+                    }
+                    if (Math.abs(c.timeSec() - death.timeSec()) > DEATH_TIME_TOLERANCE_SEC) {
+                        conflicts.add(new FactConflict("V2",
+                                "玩家事件时间错误（structured）：" + playerBrief(death) + " 后端事实为 "
+                                        + TeamGroundingFacts.formatClock(death.timeSec())
+                                        + "，claim timeSec=" + timeText(c.timeSec()) + "。"));
+                    }
+                }
+            }
+            // V3m：value 机器存活变化（如 "7v7 -> 4v6"，三语共用 machine format）
+            if (c.value() != null && !c.value().isBlank()) {
+                final Matcher m = TRANSITION.matcher(c.value());
+                if (m.find()) {
+                    final int a = Integer.parseInt(m.group(1));
+                    final int b = Integer.parseInt(m.group(2));
+                    final int cc = Integer.parseInt(m.group(3));
+                    final int d = Integer.parseInt(m.group(4));
+                    if (!matchesTransition(facts, a, b, cc, d)) {
+                        conflicts.add(new FactConflict("V3",
+                                "存活变化错误（structured value）：" + c.value()
+                                        + "，后端事实中没有该变化（可用：" + transitionSummary(facts) + "）。"));
+                    }
+                }
+            }
+            // V4m：region + count（机器精确语义，B2-2）：
+            //   默认 exact（count == actual）；text 带 at-least / subset 标记时 count ≤ actual 即可
+            if (c.region() != null && c.count() != null && c.hasTime()) {
+                final Integer actual = regionCountAt(facts, c.timeSec(), c.region());
+                if (actual != null) {
+                    final boolean atLeast = hasAny(c.text(), AT_LEAST_MARKERS);
+                    final boolean subset = hasAny(c.text(), SUBSET_MARKERS);
+                    if (c.count() > actual) {
+                        conflicts.add(new FactConflict("V4",
+                                "位置数量错误（structured over-count）：claim 称 GRID" + c.region()
+                                        + " 有 " + c.count() + " 辆，后端该时刻快照为 " + actual
+                                        + " 辆（" + TeamGroundingFacts.formatClock(c.timeSec()) + "）。"));
+                    } else if (!atLeast && !subset && c.count() != actual) {
+                        // 精确语义下的少报同样是事实不一致（B2-2：不能把 3 说成当时 5 辆所在的区）
+                        conflicts.add(new FactConflict("V4",
+                                "位置数量错误（structured under-count exact）：claim 称 GRID" + c.region()
+                                        + " 有 " + c.count() + " 辆，后端该时刻快照为 " + actual
+                                        + " 辆（" + TeamGroundingFacts.formatClock(c.timeSec()) + "）。"));
+                    }
+                }
+            }
+            // V6m：claim 显式声明 LOS/SPOTTING 事实类型 → 后端没有对应 evidence kind，一律 FAIL
+            final String type = c.claimType() == null ? ""
+                    : c.claimType().toUpperCase(java.util.Locale.ROOT);
+            if ("LOS".equals(type) || "SPOTTING".equals(type)
+                    || "LINE_OF_SIGHT".equals(type) || "VISION".equals(type)) {
+                conflicts.add(new FactConflict("V6",
+                        "声明了 " + c.claimType() + " 事实类型，但当前后端没有 LOS / spotting / 视野 evidence；"
+                                + "这类内容只能作为战术判断（TACTICAL claimType）+ 降级表达输出。"));
+            }
+        }
+    }
+
+    /** 某时刻某区域的本方车辆数（机器结构化校验用）：最近快照（±6s）兜底；无数据返回 null。 */
+    private static Integer regionCountAt(final GroundingFacts facts, final double timeSec, final int region) {
+        final String key = "GRID" + region;
+        RegionSnapshot best = null;
+        double bestDelta = Double.MAX_VALUE;
+        for (final RegionSnapshot s : facts.regionSnapshots()) {
+            final double delta = Math.abs(s.sec() - timeSec);
+            if (delta < bestDelta) {
+                bestDelta = delta;
+                best = s;
+            }
+        }
+        if (best == null || bestDelta > SNAPSHOT_TIME_TOLERANCE_SEC) {
+            return null;
+        }
+        return best.friendlyCounts().get(key);
     }
 
     // ===== V1 =====
@@ -205,8 +344,12 @@ public final class TeamFactualConsistencyValidator {
                         // 紧邻窗口（±15 字符）：只抓「WildCat 121s阵亡」这类直接挂在玩家名上的时间；
                         // 若紧邻出现的是时间范围（如「1分49秒至2分08秒那段阵亡」），
                         // 阵亡时间落在该范围内即视为正确归属（范围外引用由 V1 拦截）
-                        final int from = Math.max(0, idx - 15);
-                        final int to = Math.min(unit.length(), idx + key.length() + 15);
+                        // 紧邻窗口（±20 字符）：抓「WildCat 121s阵亡」/ "WildCat died at 121 sec"
+                        // 这类直接挂在玩家名上的时间（EN/RU 词形需要更宽窗口）；
+                        // 若紧邻出现的是时间范围（如「1分49秒至2分08秒那段阵亡」），
+                        // 阵亡时间落在该范围内即视为正确归属（范围外引用由 V1 拦截）
+                        final int from = Math.max(0, idx - 20);
+                        final int to = Math.min(unit.length(), idx + key.length() + 20);
                         final String window = unit.substring(from, to);
                         final List<double[]> ranges = parseRanges(window);
                         if (!ranges.isEmpty()) {
@@ -334,22 +477,21 @@ public final class TeamFactualConsistencyValidator {
                                         + actual + " 辆（" + TeamGroundingFacts.formatClock(snap.sec()) + "）。"));
                     }
                 }
-                // 「全部在N区」无数量断言：区域数必须等于该时刻本方存活总数
-                final Matcher all = REGION_ALL.matcher(seg.text);
-                while (all.find()) {
+                // 「全部在N区」无数量断言（三语）：区域数必须等于该时刻本方存活总数
+                final int allRegion = parseRegionAll(seg.text);
+                if (allRegion > 0) {
                     final RegionSnapshot snap = nearestSnapshot(facts, seg.time);
-                    if (snap == null) {
-                        continue;
-                    }
-                    final String region = "GRID" + all.group(1);
-                    final int total = snap.friendlyCounts().values().stream()
-                            .mapToInt(Integer::intValue).sum();
-                    final Integer actual = snap.friendlyCounts().get(region);
-                    if (actual != null && total > 0 && actual < total) {
-                        conflicts.add(new FactConflict("V4",
-                                "位置时间归属错误：正文称「" + timeText(seg.time) + "左右全部在 GRID"
-                                        + all.group(1) + "」，后端该时刻快照该区只有 " + actual + " 辆（共 "
-                                        + total + " 辆存活，其余在别区）。"));
+                    if (snap != null) {
+                        final String region = "GRID" + allRegion;
+                        final int total = snap.friendlyCounts().values().stream()
+                                .mapToInt(Integer::intValue).sum();
+                        final Integer actual = snap.friendlyCounts().get(region);
+                        if (actual != null && total > 0 && actual < total) {
+                            conflicts.add(new FactConflict("V4",
+                                    "位置时间归属错误：正文称「" + timeText(seg.time) + "左右全部在 GRID"
+                                            + allRegion + "」，后端该时刻快照该区只有 " + actual + " 辆（共 "
+                                            + total + " 辆存活，其余在别区）。"));
+                        }
                     }
                 }
             }
@@ -519,6 +661,14 @@ public final class TeamFactualConsistencyValidator {
         if (ms.find()) {
             return parseMinSec(ms.group(1), ms.group(2));
         }
+        final Matcher ems = EN_MIN_SEC.matcher(text);
+        if (ems.find()) {
+            return parseMinSec(ems.group(1), ems.group(2));
+        }
+        final Matcher rms = RU_MIN_SEC.matcher(text);
+        if (rms.find()) {
+            return parseMinSec(rms.group(1), rms.group(2));
+        }
         final Matcher m = CN_MIN.matcher(text);
         if (m.find()) {
             return Double.parseDouble(m.group(1)) * 60.0;
@@ -530,6 +680,14 @@ public final class TeamFactualConsistencyValidator {
         final Matcher s = CN_SEC.matcher(text);
         if (s.find()) {
             return Double.parseDouble(s.group(1));
+        }
+        final Matcher es = EN_SEC.matcher(text);
+        if (es.find()) {
+            return Double.parseDouble(es.group(1));
+        }
+        final Matcher rs = RU_SEC.matcher(text);
+        if (rs.find()) {
+            return Double.parseDouble(rs.group(1));
         }
         final Matcher ds = DECIMAL_SEC.matcher(text);
         if (ds.find()) {
@@ -581,7 +739,32 @@ public final class TeamFactualConsistencyValidator {
         while (m.find()) {
             out.add(new RegionClaim(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2))));
         }
+        final Matcher en = REGION_WITH_COUNT_EN.matcher(text);
+        while (en.find()) {
+            out.add(new RegionClaim(Integer.parseInt(en.group(1)), Integer.parseInt(en.group(2))));
+        }
+        final Matcher ru = REGION_WITH_COUNT_RU.matcher(text);
+        while (ru.find()) {
+            out.add(new RegionClaim(Integer.parseInt(ru.group(1)), Integer.parseInt(ru.group(2))));
+        }
         return out;
+    }
+
+    /** 三语「全部在N区」断言：命中返回区域号；无匹配返回 -1。 */
+    private static int parseRegionAll(final String text) {
+        final Matcher zh = REGION_ALL.matcher(text);
+        if (zh.find()) {
+            return Integer.parseInt(zh.group(1));
+        }
+        final Matcher en = REGION_ALL_EN.matcher(text);
+        if (en.find()) {
+            return Integer.parseInt(en.group(1));
+        }
+        final Matcher ru = REGION_ALL_RU.matcher(text);
+        if (ru.find()) {
+            return Integer.parseInt(ru.group(1));
+        }
+        return -1;
     }
 
     private static Map<String, Integer> parseRegionCounts(final String text) {

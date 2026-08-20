@@ -23,6 +23,7 @@ import com.wotb.core.replay.timeline.TimelinePerspective;
 
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
+import com.wotb.web.replay.ai.gateway.StreamConsumer;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.exception.AiTimelineUnusableException;
@@ -309,8 +310,18 @@ public class TeamReplayAnalysisService {
     ) {
         final String systemPrompt = TeamPromptLocalizer.localizeTeamSystemPrompt(
                 TeamPromptLocalizer.SINGLE_TEAM_PROMPT, language);
-        final TeamGroundingFacts.GroundingFacts facts = TeamGroundingFacts.build(
-                context.battle(), timeline, context.perspectiveTeam());
+        // Review B2-1：死亡时刻时钟契约——production（timeline 非 null）用 timeline 全量构建
+        // （关注窗口/位置快照/敌方位置知识）并转 battle-relative；兼容入口（timeline 为 null）
+        // 用 reconstruction 的 battleStartRawClockSec 转 battle-relative，避免结算 deathTimeMillis
+        // （原始时钟域）以原始值进入 Grounding Facts。
+        final TeamGroundingFacts.GroundingFacts facts = timeline != null
+                ? TeamGroundingFacts.build(context.battle(), timeline, context.perspectiveTeam())
+                : TeamGroundingFacts.build(context.battle(),
+                        context.reconstruction() == null
+                                || context.reconstruction().battleStartRawClockSec() == null
+                                ? null
+                                : context.reconstruction().battleStartRawClockSec().doubleValue(),
+                        context.perspectiveTeam());
         final String groundingSection = TeamGroundingFacts.renderGroundingSection(facts);
         final String baseUser = input.content()
                 + (groundingSection.isEmpty() ? "" : "\n" + groundingSection);
@@ -391,7 +402,15 @@ public class TeamReplayAnalysisService {
     }
 
     /**
-     * 原始传输调用（缓冲，不转发 token）：校验通过前不向用户暴露草稿。
+     * 原始传输调用：<b>authoritative response source = {@code completionText()}</b>
+     * （Review B1-1）。
+     * <p>Gateway 契约（{@link AiChatGateway#stream} + {@code SpringAiChatGateway}）：
+     * callback 是流式增量（progress），{@code completionText()} 是聚合后的完整响应——
+     * 正常结束时 {@code SpringAiChatGateway} 用内部累加的全部 delta 构造返回响应；
+     * 失败（timeout / cancel / 上游错误 / 空响应）一律抛 {@link AiUpstreamException}，
+     * <b>绝不返回 partial completion</b>。因此这里传 no-op consumer（校验通过前不向用户
+     * 暴露草稿 token），只以 {@code completionText()} 作为 envelope parser 输入；
+     * 每轮 attempt 都是独立的一次 {@code stream()} 调用，不共享任何 buffer。</p>
      * PR #103 review BLOCKER C 的 Team Call #2 独立输出上限保持不变。
      */
     private String callRaw(
@@ -423,9 +442,12 @@ public class TeamReplayAnalysisService {
                 null,
                 analysisMode,
                 (int) Math.min(Math.max(1L, callTimeoutSec), Integer.MAX_VALUE));
-        final StringBuilder collected = new StringBuilder();
-        return gateway.stream(request, collected::append).completionText();
+        return gateway.stream(request, IGNORED_STREAM).completionText();
     }
+
+    /** no-op consumer：draft token 不转发给用户（校验通过后由 {@link #forwardTokens} 转发）。 */
+    private static final StreamConsumer IGNORED_STREAM = delta -> {
+    };
 
 
     private String appendTeamAutopsy(final SingleTeamBattleAnalysisContext context,

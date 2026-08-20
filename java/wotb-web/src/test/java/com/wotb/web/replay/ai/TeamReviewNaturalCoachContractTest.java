@@ -72,6 +72,37 @@ class TeamReviewNaturalCoachContractTest {
     }
 
     @Test
+    void groundingMachineFieldsContractTrilingual() {
+        // Review B1-2：structured claims 必须支持机器可校验字段（语言无关）
+        assertTrue(ZH.contains("机器字段（三语通用，language-neutral）"),
+                "必须声明机器字段三语通用");
+        assertTrue(ZH.contains("timeSec"), "必须有 timeSec 机器字段");
+        assertTrue(ZH.contains("region"), "必须有 region 机器字段");
+        assertTrue(ZH.contains("count"), "必须有 count 机器字段");
+        assertTrue(ZH.contains("subject"), "必须有 subject 机器字段");
+        assertTrue(ZH.contains("value"), "必须有 value 机器字段");
+        assertTrue(ZH.contains("claimType"), "必须有 claimType 机器字段");
+        assertTrue(ZH.contains("region + count 表示【精确数量】"),
+                "region+count 必须声明精确数量语义（B2-2）");
+        assertTrue(ZH.contains("至少 N 辆"), "必须给出 at-least 标记示例");
+        assertTrue(ZH.contains("其中 N 辆"), "必须给出 subset 标记示例");
+        assertTrue(ZH.contains("claimType 不得为 LOS / SPOTTING / VISION"),
+                "必须禁止 LOS/spotting 事实 claim（V6m）");
+        for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
+            final String localized = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, lang);
+            assertTrue(localized.contains("language-neutral"), lang + " 必须携带 language-neutral 机器字段说明");
+            assertFalse(localized.contains("机器字段（三语通用，language-neutral）"),
+                    lang + " 残留中文机器字段规则");
+        }
+        final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.EN);
+        assertTrue(en.contains("region + count mean EXACT count"), "EN 必须声明精确数量语义");
+        assertTrue(en.contains("claimType must not be"), "EN 必须禁止 LOS/spotting 事实 claim");
+        final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, AllowedLanguage.RU);
+        assertTrue(ru.contains("region + count означают ТОЧНОЕ число"), "RU 必须声明精确数量语义");
+        assertTrue(ru.contains("claimType не может быть"), "RU 必须禁止 LOS/spotting 事实 claim");
+    }
+
+    @Test
     void naturalToneAndLength() {
         assertTrue(ZH.contains("400–1200"), "默认长度 400–1200 字");
         assertTrue(ZH.contains("300–700"), "简单局 300–700 字");

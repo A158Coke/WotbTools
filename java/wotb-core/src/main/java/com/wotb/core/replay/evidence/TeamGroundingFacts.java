@@ -127,7 +127,7 @@ public final class TeamGroundingFacts {
     // ===== build =====
 
     /**
-     * 构建 Grounding Facts。
+     * 构建 Grounding Facts（production 路径：timeline 提供 battle start raw clock）。
      *
      * @param battle          权威结算（必选；阵亡/存活变化来源）
      * @param timeline        已验证 canonical timeline（可为 null：兼容入口只给结算级事实）
@@ -136,11 +136,43 @@ public final class TeamGroundingFacts {
     public static GroundingFacts build(final Battle battle,
                                        final BattleTimeline timeline,
                                        final int perspectiveTeam) {
+        return buildInternal(battle, timeline,
+                timeline == null ? null : timeline.battleStartRawClockSec(),
+                perspectiveTeam);
+    }
+
+    /**
+     * 构建 Grounding Facts（compat 入口：无已验证 timeline）。
+     * <p><b>死亡时刻时钟契约（Review B2-1）</b>：{@code PlayerResultFormat.deathSec()} 的
+     * 数值域不统一——{@code deathTimeMillis}（结算权威）与 legacy 估算都是<b>原始时钟域</b>，
+     * 而 {@code DeathTimeReconciler} 校准的 {@code survivalTimeSec} 是 <b>battle-relative</b>。
+     * 本方法统一按 {@code raw > startRaw → raw − startRaw} 转 battle-relative（与
+     * {@code TeamReviewRealReplayProbeTest} 同口径）：compat 入口必须传入
+     * {@code reconstruction.battleStartRawClockSec()}（可为 null：原始时钟缺失时按
+     * battle-relative 原样使用），否则结算死亡时刻会以原始时钟值进入 Grounding Facts，
+     * V2 校验与 claim 的 battle-relative timeSec 对不上。</p>
+     *
+     * @param battle                  权威结算（必选；阵亡/存活变化来源）
+     * @param battleStartRawClockSec  battle start 原始时钟（可为 null：按 battle-relative 原样）
+     * @param perspectiveTeam         视角队伍（TEAM_A/1 或 TEAM_B/2）
+     */
+    public static GroundingFacts build(final Battle battle,
+                                       final Double battleStartRawClockSec,
+                                       final int perspectiveTeam) {
+        return buildInternal(battle, null, battleStartRawClockSec, perspectiveTeam);
+    }
+
+    /** 内部构建（shared）：production（timeline 非 null）与 compat（timeline null + 显式 startRaw）。 */
+    private static GroundingFacts buildInternal(final Battle battle,
+                                                final BattleTimeline timeline,
+                                                final Double battleStartRawClockSec,
+                                                final int perspectiveTeam) {
         final List<EvidenceFact> facts = new ArrayList<>();
         final List<AliveTransition> transitions = new ArrayList<>();
         final List<RegionSnapshot> snapshots = new ArrayList<>();
         final List<EnemyPositionSample> enemyPositions = new ArrayList<>();
-        final double startRaw = timeline == null ? Double.NaN : timeline.battleStartRawClockSec();
+        final double startRaw = battleStartRawClockSec == null
+                ? Double.NaN : battleStartRawClockSec;
 
         // 1) 阵亡（PLAYER_DESTROYED）：权威结算死亡时刻 → battle-relative
         final List<PlayerResult> players = battle == null || battle.players == null

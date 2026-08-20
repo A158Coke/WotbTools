@@ -290,6 +290,221 @@ class TeamFactualConsistencyValidatorTest {
                 "证据编号不得进入用户正文: " + conflicts);
     }
 
+    // ===== Review B1-2：机器结构化校验（语言无关，三语通用） =====
+
+    private static TeamReviewEnvelope.Claim machineClaim(final String text, final String claimType,
+                                                         final Double timeSec, final Integer region,
+                                                         final Integer count, final String subject,
+                                                         final String value, final String... ids) {
+        return new TeamReviewEnvelope.Claim(text, List.of(ids), claimType, timeSec, region, count, subject, value);
+    }
+
+    private static TeamReviewEnvelope envWith(final TeamReviewEnvelope.Claim... claims) {
+        return new TeamReviewEnvelope(
+                new TeamReviewEnvelope.PrimaryDiagnosis("主判断", "理由", List.of()),
+                "## 团队复盘\n\n这波交换后人数从7v7变成4v6。",
+                List.of(claims));
+    }
+
+    @Test
+    void machineDeathTimeClaimWrongFails() {
+        final TeamReviewEnvelope env = envWith(machineClaim(
+                "WildCat died at 121 seconds", "DEATH", 121.0, null, null, "WildCat", null, "E101"));
+        assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V2"),
+                "structured timeSec 与后端阵亡时间不符必须 FAIL（V2）: "
+                        + TeamFactualConsistencyValidator.validate(env, facts()));
+    }
+
+    @Test
+    void machineDeathTimeClaimCorrectPasses() {
+        final TeamReviewEnvelope env = envWith(machineClaim(
+                "WildCat died around 112 seconds", "DEATH", 112.4, null, null, "WildCat", null, "E101"));
+        assertFalse(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V2"),
+                "structured timeSec 与后端一致必须 PASS");
+    }
+
+    @Test
+    void machineTransitionValueWrongFails() {
+        final TeamReviewEnvelope env = envWith(machineClaim(
+                "The exchange left us at a disadvantage", "ALIVE_TRANSITION",
+                null, null, null, null, "7v7 -> 3v5"));
+        assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V3"),
+                "machine value 7v7 -> 3v5 与后端 7v7→4v6 冲突必须 FAIL（V3）");
+    }
+
+    @Test
+    void machineTransitionValueCorrectPasses() {
+        final TeamReviewEnvelope env = envWith(machineClaim(
+                "The exchange changed the numbers", "ALIVE_TRANSITION",
+                null, null, null, null, "7v7 -> 4v6"));
+        assertFalse(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V3"),
+                "machine value 7v7 -> 4v6 必须 PASS");
+    }
+
+    // ---- B2-2：V4 精确语义（exact == actual；at-least/subset ≤ actual） ----
+
+    @Test
+    void machinePositionExactOverCountFails() {
+        final TeamReviewEnvelope env = envWith(machineClaim(
+                "7 vehicles in region 6", "POSITION_REGION", 112.0, 6, 7, null, null, "E106"));
+        assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V4"),
+                "structured over-count 必须 FAIL（快照 GRID6=5）");
+    }
+
+    @Test
+    void machinePositionExactUnderCountFails() {
+        // B2-2：精确语义下的少报（3 != 5）同样是事实不一致
+        final TeamReviewEnvelope env = envWith(machineClaim(
+                "3 vehicles in region 6", "POSITION_REGION", 112.0, 6, 3, null, null, "E106"));
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertTrue(hasCheck(conflicts, "V4"),
+                "structured under-count exact 必须 FAIL（快照 GRID6=5，claim=3）: " + conflicts);
+    }
+
+    @Test
+    void machinePositionSubsetPasses() {
+        // 「其中 3 辆」（subset）是合法部分陈述
+        final TeamReviewEnvelope env = envWith(machineClaim(
+                "3 of them in region 6", "POSITION_REGION", 112.0, 6, 3, null, null, "E106"));
+        assertFalse(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V4"),
+                "subset 陈述必须 PASS");
+    }
+
+    @Test
+    void machinePositionAtLeastPasses() {
+        // 「至少 3 辆」（at least）是合法下界陈述
+        final TeamReviewEnvelope env = envWith(machineClaim(
+                "at least 3 vehicles in region 6", "POSITION_REGION", 112.0, 6, 3, null, null, "E106"));
+        assertFalse(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V4"),
+                "at-least 陈述必须 PASS");
+    }
+
+    @Test
+    void machinePositionExactEqualPasses() {
+        final TeamReviewEnvelope env = envWith(machineClaim(
+                "5 vehicles in region 6", "POSITION_REGION", 112.0, 6, 5, null, null, "E106"));
+        assertFalse(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V4"),
+                "exact count == 快照 必须 PASS");
+    }
+
+    // ---- V6m：claim 显式声明 LOS/SPOTTING 事实类型 ----
+
+    @Test
+    void machineClaimTypeLosFails() {
+        final TeamReviewEnvelope env = envWith(machineClaim(
+                "The enemy had full LOS", "LOS", null, null, null, null, null));
+        assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V6"),
+                "claimType=LOS（后端无 evidence kind）必须 FAIL");
+    }
+
+    @Test
+    void machineClaimTypeTacticalWithHedgePasses() {
+        final TeamReviewEnvelope env = envWith(machineClaim(
+                "full LOS was likely, judging from the exchange", "TACTICAL",
+                null, null, null, null, null));
+        assertFalse(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V6"),
+                "TACTICAL + 降级表达必须 PASS");
+    }
+
+    // ===== Review B1-2：EN / RU 正文回归（三语 factual guard） =====
+
+    @Test
+    void enWrongDeathTimeFails() {
+        final TeamReviewEnvelope env = envelope("WildCat died at 121 sec.");
+        assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V2"),
+                "EN 错误阵亡时间必须 FAIL（V2）");
+    }
+
+    @Test
+    void ruWrongDeathTimeFails() {
+        final TeamReviewEnvelope env = envelope("WildCat погиб на 121 сек.");
+        assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V2"),
+                "RU 错误阵亡时间必须 FAIL（V2）");
+    }
+
+    @Test
+    void enMachineTimeFormatFails() {
+        final TeamReviewEnvelope env = envelope("WildCat died at 1m49s.");
+        assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V2"),
+                "EN 1m49s 与后端 112.4s 不符必须 FAIL（V2）");
+    }
+
+    @Test
+    void enWrongTransitionFails() {
+        final TeamReviewEnvelope env = envelope("The team went from 7v7 to 3v5.");
+        assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V3"),
+                "EN 错误存活变化必须 FAIL（V3）");
+    }
+
+    @Test
+    void enCorrectTransitionPasses() {
+        final TeamReviewEnvelope env = envelope("The team went from 7v7 to 4v6.");
+        assertFalse(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V3"),
+                "EN 正确存活变化必须 PASS");
+    }
+
+    @Test
+    void enWrongRegionCountFails() {
+        final TeamReviewEnvelope env = envelope("At 112 seconds, 7 vehicles in region 6.");
+        assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V4"),
+                "EN 位置数量超过快照必须 FAIL（V4）");
+    }
+
+    @Test
+    void ruWrongRegionCountFails() {
+        final TeamReviewEnvelope env = envelope("На 112 сек 7 машин в 6-й зоне.");
+        assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V4"),
+                "RU 位置数量超过快照必须 FAIL（V4）");
+    }
+
+    @Test
+    void enLastKnownAsCurrentFails() {
+        final TeamReviewEnvelope env = envWith(machineClaim(
+                "The Maus is right here now", "LAST_KNOWN", null, null, null, "Maus", null, "E107"));
+        assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V5"),
+                "EN LAST_KNOWN 写成当前必须 FAIL（V5）");
+    }
+
+    @Test
+    void ruLastKnownAsCurrentFails() {
+        final TeamReviewEnvelope env = envWith(machineClaim(
+                "Maus сейчас находится в 5-й зоне", "LAST_KNOWN", null, null, null, "Maus", null, "E107"));
+        assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V5"),
+                "RU LAST_KNOWN 写成当前必须 FAIL（V5）");
+    }
+
+    @Test
+    void enLosHardFactFails() {
+        final TeamReviewEnvelope env = envelope("The enemy had full LOS on that push.");
+        assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V6"),
+                "EN 无证据 LOS 硬断言必须 FAIL（V6）");
+    }
+
+    @Test
+    void ruLosHardFactFails() {
+        final TeamReviewEnvelope env = envelope("У противника была полная линия огня.");
+        assertTrue(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V6"),
+                "RU 无证据 LOS 硬断言必须 FAIL（V6）");
+    }
+
+    @Test
+    void enLegalCoachingPasses() {
+        final TeamReviewEnvelope env = envelope(
+                "I think the main problem was the first engagement. "
+                        + "We should have redistributed the next trade after the first tank dropped.");
+        assertEquals(List.of(), TeamFactualConsistencyValidator.validate(env, facts()),
+                "EN 合法战术观点/建议必须 PASS");
+    }
+
+    @Test
+    void ruLegalCoachingPasses() {
+        final TeamReviewEnvelope env = envelope(
+                "Я считаю, главная проблема — первый обмен. "
+                        + "Нужно было перераспределить следующий обмен после потери первой машины.");
+        assertEquals(List.of(), TeamFactualConsistencyValidator.validate(env, facts()),
+                "RU 合法战术观点/建议必须 PASS");
+    }
+
     @Test
     void emptyReviewMarkdownFails() {
         final TeamReviewEnvelope env = new TeamReviewEnvelope(
