@@ -219,6 +219,9 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 | `AiCancellationRegistry` | `wotb-web/.../ai/gateway/AiCancellationRegistry.java` | in-flight AI 请求取消注册表（客户端取消 → 中断上游调用，稳定错误码 `AI_CANCELLED`） |
 | `ApiPaths` | `wotb-web/.../config/ApiPaths.java` | API URL 常量单一来源（SecurityConfig 匹配器与 Controller 映射共用） |
 | `TeamAiPromptBuilder` | `wotb-web/.../ai/TeamAiPromptBuilder.java` | 确定性团队输入压缩和 token 估算预算（`BudgetWriter` + `AiTokenEstimator`） |
+| `TeamGroundingFacts` | `wotb-core/.../replay/evidence/TeamGroundingFacts.java` | Team Call #2 确定性 Grounding Facts（证据编号 E1xx：阵亡/存活变化/关注窗口/位置快照/敌方位置知识 + prompt 渲染段） |
+| `TeamFactualConsistencyValidator` | `wotb-core/.../replay/evidence/TeamFactualConsistencyValidator.java` | 事实一致性校验（V1 时间归属 / V2 阵亡时间 / V3 存活变化 / V4 位置时间归属·exact 语义 / V5 CURRENT·LAST_KNOWN / V6 无证据硬事实；structured machine 校验优先（三语通用），正文文本兜底 ZH/EN/RU；不判断战术观点）。B1 evidence binding：claims 的 evidenceIds 必须引用真正支撑它的证据（类型映射 DEATH→PLAYER_DESTROYED / ALIVE_TRANSITION→ALIVE_COUNT_TRANSITION·FOCUS_WINDOW / POSITION_REGION→POSITION_REGION / ENEMY_POSITION→ENEMY_POSITION_KNOWN；身份/时间/数值/区域/knowledge 一致性；借用无关编号或「全局恰好存在该变化」式 PASS → BINDING FAIL） |
+| `TeamReviewEnvelopeParser` | `wotb-web/.../ai/TeamReviewEnvelopeParser.java` | Team Call #2 structured envelope（primaryDiagnosis / reviewMarkdown / claims）JSON 解析，契约不成立返回 null 触发重写；B1 起支持可选 `subjectAccountId` 稳定身份字段（类型错误 fail-close） |
 | `PlayerSideResolver` | `wotb-core/.../processing/PlayerSideResolver.java` | 随机战斗友方/敌方/未知解析（FRIENDLY/ENEMY/UNKNOWN），基于录像者权威 team |
 | `FriendlyEnemyResult` | `wotb-core/.../processing/FriendlyEnemyResult.java` | 三态胜负转换（FRIENDLY_WIN/ENEMY_WIN/DRAW_OR_UNKNOWN） |
 | `PlayerAnalysisPromptFormatter` | `wotb-web/.../ai/PlayerAnalysisPromptFormatter.java` | AI Prompt 格式化（友方/敌方标签，独立于 Excel 导出的 PlayerResultFormat） |

@@ -208,7 +208,10 @@ class TeamReviewOutputCapTest {
         @Override
         public AiChatResponse chat(final AiChatRequest request) {
             requests.add(request);
-            return new AiChatResponse("team review", "DeepSeek", "test-model",
+            return new AiChatResponse(
+                    "{\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
+                            + "\"reviewMarkdown\":\"## 团队复盘\\n\\n这是一段复盘。\",\"claims\":[]}",
+                    "DeepSeek", "test-model",
                     0, 0, 0, 0, 0, 0, "stop");
         }
 

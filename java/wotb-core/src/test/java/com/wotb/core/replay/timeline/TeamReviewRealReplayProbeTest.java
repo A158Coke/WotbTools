@@ -2,6 +2,10 @@ package com.wotb.core.replay.timeline;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator;
+import com.wotb.core.replay.evidence.TeamGroundingFacts;
+import com.wotb.core.replay.evidence.TeamReviewEnvelope;
+import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator.FactConflict;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
@@ -135,6 +139,71 @@ class TeamReviewRealReplayProbeTest {
                     "窗口事件不得超出窗口终点: " + d.timeSec());
             assertTrue(d.timeSec() >= collapse.startSec() - 1e-6,
                     "窗口事件不得早于窗口起点: " + d.timeSec());
+        }
+
+        // ===== Natural Coach 轮（§25/§26）：真实 canonical facts 上的 validator golden cases =====
+        final TeamGroundingFacts.GroundingFacts grounding =
+                TeamGroundingFacts.build(battle, timeline, perspectiveTeam);
+        // G3/G5：战术判断与 coaching 建议必须 PASS（Validator 不判断战术观点）
+        final TeamReviewEnvelope good = new TeamReviewEnvelope(
+                new TeamReviewEnvelope.PrimaryDiagnosis("主判断", "理由", List.of()),
+                "第一轮交换节奏是这局最大的团队问题。"
+                        + "如果让我只改一件事，我会要求第一辆车被压血后马上重新分配下一轮交换。",
+                List.of());
+        final List<FactConflict> goodConflicts =
+                TeamFactualConsistencyValidator.validate(good, grounding);
+        assertTrue(goodConflicts.isEmpty(),
+                "Golden: 战术判断/coaching 建议必须 PASS（Validator 不判断战术观点）: " + goodConflicts);
+        // G4：无 LOS 证据的硬事实断言必须 FAIL
+        final TeamReviewEnvelope losDraft = new TeamReviewEnvelope(
+                new TeamReviewEnvelope.PrimaryDiagnosis("主判断", "理由", List.of()),
+                "这波对方所有车辆都拥有直接炮线。", List.of());
+        assertTrue(TeamFactualConsistencyValidator.validate(losDraft, grounding).stream()
+                        .anyMatch(c -> "V6".equals(c.checkId())),
+                "Golden: 无 LOS 证据的「直接炮线」断言必须 FAIL（V6）");
+        // V3：存活变化错误必须 FAIL（窗口级 7v7→4v6 是已确认 canonical fact）
+        final TeamReviewEnvelope badTransition = new TeamReviewEnvelope(
+                new TeamReviewEnvelope.PrimaryDiagnosis("主判断", "理由", List.of()),
+                "人数直接从7v7变成3v5。", List.of());
+        assertTrue(TeamFactualConsistencyValidator.validate(badTransition, grounding).stream()
+                        .anyMatch(c -> "V3".equals(c.checkId())),
+                "Golden: 7v7→3v5 与后端 7v7→4v6 冲突必须 FAIL（V3）");
+        // V3 正向：窗口级 7v7→4v6 必须 PASS
+        final TeamReviewEnvelope correctTransition = new TeamReviewEnvelope(
+                new TeamReviewEnvelope.PrimaryDiagnosis("主判断", "理由", List.of()),
+                "人数直接从7v7变成4v6。", List.of());
+        assertTrue(TeamFactualConsistencyValidator.validate(correctTransition, grounding).stream()
+                        .noneMatch(c -> "V3".equals(c.checkId())),
+                "Golden: 7v7→4v6 与后端窗口级事实一致必须 PASS（V3）");
+        // G1（动态构建）：把窗口外的一辆本方阵亡写进「该窗口内阵亡」→ V1 必须 FAIL
+        final List<TeamGroundingFacts.EvidenceFact> friendlyDeathsInWindow =
+                grounding.facts().stream()
+                        .filter(TeamGroundingFacts.EvidenceFact::isDeath)
+                        .filter(f -> TeamGroundingFacts.Side.FRIENDLY.equals(f.side()))
+                        .filter(f -> f.timeSec() >= collapse.startSec() - 1e-6
+                                && f.timeSec() <= collapse.endSec() + 1e-6)
+                        .toList();
+        final TeamGroundingFacts.EvidenceFact outsideDeath =
+                grounding.facts().stream()
+                        .filter(TeamGroundingFacts.EvidenceFact::isDeath)
+                        .filter(f -> TeamGroundingFacts.Side.FRIENDLY.equals(f.side()))
+                        .filter(f -> f.timeSec() < collapse.startSec() - 1e-6
+                                || f.timeSec() > collapse.endSec() + 1e-6)
+                        .findFirst().orElse(null);
+        if (!friendlyDeathsInWindow.isEmpty() && outsideDeath != null) {
+            final String range = TeamGroundingFacts.formatClock(collapse.startSec())
+                    + "至" + TeamGroundingFacts.formatClock(collapse.endSec());
+            final String names = friendlyDeathsInWindow.stream()
+                    .limit(2)
+                    .map(TeamGroundingFacts.EvidenceFact::nickname)
+                    .reduce((a, b) -> a + "、" + b).orElse("") + "、" + outsideDeath.nickname();
+            final TeamReviewEnvelope g1 = new TeamReviewEnvelope(
+                    new TeamReviewEnvelope.PrimaryDiagnosis("主判断", "理由", List.of()),
+                    range + "这段本队死了" + names + "。", List.of());
+            assertTrue(TeamFactualConsistencyValidator.validate(g1, grounding).stream()
+                            .anyMatch(c -> "V1".equals(c.checkId())),
+                    "Golden: 把窗口外阵亡写进该窗口必须 FAIL（V1）: "
+                            + TeamFactualConsistencyValidator.validate(g1, grounding));
         }
     }
 }

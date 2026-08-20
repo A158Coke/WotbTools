@@ -89,13 +89,19 @@ class AiReplayAnalysisServiceTest {
             + "\"mvps\":[{\"playerKey\":\"P1\",\"reason\":\"r\",\"evidence\":[\"e\"],"
             + "\"confidence\":\"PARTIAL\"}],\"limitations\":[\"l\"]}";
 
+    /** Natural Coach 轮：Call #2 必须返回合法 JSON envelope（reviewMarkdown 为断言文本）。 */
+    private static String envelope(final String markdown) {
+        return "{\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
+                + "\"reviewMarkdown\":\"" + markdown + "\",\"claims\":[]}";
+    }
+
     /**
      * 契约测试用 Gateway 替身：捕获传给 Gateway 的完整 {@link AiChatRequest}，
      * 返回可配置的 {@link AiChatResponse}；从不发起真实 HTTP。
      */
     static final class FakeAiChatGateway implements AiChatGateway {
         final List<AiChatRequest> requests = new CopyOnWriteArrayList<>();
-        volatile String nextCompletionText = "team review";
+        volatile String nextCompletionText = envelope("team review");
         volatile String preBattleCompletionText;
         volatile String autopsyCompletionText;
         volatile RuntimeException nextError;
@@ -254,7 +260,7 @@ class AiReplayAnalysisServiceTest {
 
     @Test
     void teamPerspectiveAppendsSettlementAutopsySection() {
-        gateway.nextCompletionText = "team review";
+        gateway.nextCompletionText = envelope("team review");
         gateway.autopsyCompletionText = AUTOPSY_JSON;
         final var service = startService();
         final var context = service.buildSingleTeamContext(
@@ -294,7 +300,7 @@ class AiReplayAnalysisServiceTest {
 
     @Test
     void teamPerspectiveInjectsCall1Prior() {
-        gateway.nextCompletionText = "team review";
+        gateway.nextCompletionText = envelope("team review");
         gateway.preBattleCompletionText = PRIOR_JSON;
         final var service = startService();
         final var context = service.buildSingleTeamContext(
@@ -316,7 +322,7 @@ class AiReplayAnalysisServiceTest {
 
     @Test
     void teamPerspectivePriorFailureStillReturnsReview() {
-        gateway.nextCompletionText = "team review";
+        gateway.nextCompletionText = envelope("team review");
         gateway.preBattleCompletionText = "not a json object";
         final var service = startService();
         final var context = service.buildSingleTeamContext(
@@ -434,7 +440,7 @@ class AiReplayAnalysisServiceTest {
 
     @Test
     void singletonDuplicateLimitationAppearsInRequestBody() {
-        gateway.nextCompletionText = "test analysis";
+        gateway.nextCompletionText = envelope("test analysis");
         final var service = startService();
         final var features = new TeamBattleFeatureSet(
                 1,
@@ -465,7 +471,7 @@ class AiReplayAnalysisServiceTest {
 
     @Test
     void opposingPerspectivesProduceTwoRequests() {
-        gateway.nextCompletionText = "opposing review";
+        gateway.nextCompletionText = envelope("opposing review");
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
                 teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1),
@@ -510,7 +516,7 @@ class AiReplayAnalysisServiceTest {
 
     @Test
     void directEntryUsesSameEvidenceContract() {
-        gateway.nextCompletionText = "test";
+        gateway.nextCompletionText = envelope("test");
         final var service = startService();
         final var features = new TeamBattleFeatureSet(
                 1,
@@ -541,7 +547,7 @@ class AiReplayAnalysisServiceTest {
 
     @Test
     void directSingleDuplicateLimitationInBody() {
-        gateway.nextCompletionText = "test";
+        gateway.nextCompletionText = envelope("test");
         final var service = startService();
         final var features = new TeamBattleFeatureSet(
                 1,

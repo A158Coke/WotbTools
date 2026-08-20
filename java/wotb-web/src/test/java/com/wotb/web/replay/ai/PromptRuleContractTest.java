@@ -66,6 +66,8 @@ class PromptRuleContractTest {
                     TeamPromptLocalizer.CAPTURE_RULE,
                     TeamPromptLocalizer.RELATIVE_DEPTH_HP_RULE,
                     TeamPromptLocalizer.TEAM_OUTPUT_STRUCTURE_RULE,
+                    TeamPromptLocalizer.TEAM_PRIMARY_DIAGNOSIS_RULE,
+                    TeamPromptLocalizer.TEAM_GROUNDING_RULE,
                     TeamPromptLocalizer.TEAM_EVIDENCE_CONTRACT_RULE));
 
     @Test

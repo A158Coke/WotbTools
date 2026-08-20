@@ -5,6 +5,103 @@
 ## [Unreleased]
 
 ### Fixed
+- **PR #105 Final Blocker——Evidence Binding（claim 必须与其 evidenceIds 真正绑定）**：
+  ① **绑定契约**——`TeamFactualConsistencyValidator` 新增 `checkStructuredEvidenceBinding`：
+  `requiredEvidenceType(claimType)` 统一映射 DEATH→PLAYER_DESTROYED / ALIVE_TRANSITION→
+  ALIVE_COUNT_TRANSITION·FOCUS_WINDOW（窗口级聚合明确允许）/ POSITION_REGION→POSITION_REGION /
+  ENEMY_POSITION→ENEMY_POSITION_KNOWN；每个引用必须存在且属于允许类型（借用无关编号 / 类型不匹配
+  → BINDING FAIL），且至少一个引用 evidence 必须完整支撑该 claim：DEATH=身份+时间容差（subject 在
+  后端无阵亡事实 → FAIL，GhostPlayer 不再静默 PASS）、ALIVE_TRANSITION=value 与引用证据 before/after
+  一致（不能因全局恰好存在该变化而 PASS）、POSITION_REGION=引用证据的 side 感知快照校验
+  region/count/countSemantics（证据无该区域数据 → FAIL）、ENEMY_POSITION=身份+时间+区域+knowledge
+  全部一致（只因为 CURRENT==CURRENT 就 PASS 是漏洞）。
+  ② **稳定身份**——Claim 新增可选 `subjectAccountId`（parser 类型错误 fail-close）；重复坦克名
+  （如两辆 IS-7）时仅凭 tankName 无法唯一绑定 → BINDING 歧义 FAIL，必须用 subjectAccountId 或昵称。
+  ③ **primary source 语义**——有 evidenceIds 时引用证据是 primary source，nearest-snapshot / 全局
+  存活变化列表只作为无直接 evidence mapping 的 defense-in-depth。
+  ④ prompt（md + TeamPromptLocalizer ZH/EN/RU）——evidence binding 规则 + subjectAccountId 身份字段说明。
+  ⑤ 测试——DEATH（正确 PASS / GhostPlayer FAIL / wrong entity FAIL / 无关类型 FAIL）、ALIVE_TRANSITION
+  （正确 PASS / 无关证据 FAIL / 错误值 FAIL）、POSITION_REGION（正确 PASS / 区域缺失 FAIL / 数量不符
+  FAIL / ENEMY side FAIL）、ENEMY_POSITION（同身份+时间+区域+knowledge PASS / CURRENT FAIL / GRID3 FAIL /
+  different vehicle FAIL / 无关证据 FAIL / 重复坦克名需 accountId）、三语 machine 结果一致性。
+
+- **PR #105 Final Blocker——Structured Factual Claims fail-close 契约**：
+  ① **claimType schema**——TeamReviewEnvelopeParser 强制 claimType ∈ {DEATH / ALIVE_TRANSITION /
+  POSITION_REGION / ENEMY_POSITION / TACTICAL}（LOS/SPOTTING/VISION/LINE_OF_SIGHT 及未知类型 → reject/rewrite）；
+  每种 factual claimType 的 required machine 字段强制（DEATH=subject+timeSec+evidenceIds；
+  ALIVE_TRANSITION=value 机器格式+evidenceIds；POSITION_REGION=timeSec+region+count+side+countSemantics
+  +evidenceIds；ENEMY_POSITION=subject+timeSec+region+knowledge+evidenceIds；TACTICAL 无机器字段要求）；
+  机器字段类型错误（region="six"、timeSec="112"）→ reject/rewrite，不再静默 null。
+  ② **机器校验补全**——V2m（DEATH subject+timeSec）、V3m（ALIVE_TRANSITION value）、V4m（POSITION_REGION
+  side 感知 friendlyCounts/enemyCurrentCounts，ENEMY 不拿 friendly 数比较；countSemantics EXACT/AT_LEAST/SUBSET
+  机器语义，不再依赖自然语言标记词）、V5m（ENEMY_POSITION knowledge CURRENT/LAST_KNOWN 与后端 exact 校验）、
+  V6m（LOS/SPOTTING claimType 一律 FAIL）。
+  ③ **claims coverage 最低契约**——Grounding Facts 非空且主判断引用证据编号或正文含可验证事实锚点
+  （时间范围/存活变化/位置数量/玩家阵亡+时间）时，claims 不允许无条件为空（CONTRACT 冲突）。
+  ④ prompt（md + TeamPromptLocalizer ZH/EN/RU）——claims 是 factual assertions 的 machine projection
+  非可选装饰；每 claimType required fields；countSemantics/side/knowledge 机器字段；数字字段必须是 JSON number。
+  ⑤ 测试——Parser fail-close 8 项（DEATH 缺 timeSec/subject、POSITION_REGION 缺 region、count 字符串、
+  ENEMY_POSITION 缺 knowledge、未知/LOS claimType、缺 claimType、timeSec 字符串）；V4 countSemantics 全套
+  （EXACT 3 FAIL/5 PASS、AT_LEAST 3 PASS/6 FAIL、SUBSET 3 PASS/6 FAIL）+ ENEMY side；V5m CURRENT/LAST_KNOWN；
+  claims coverage 3 项（诊断引用证据 FAIL / 正文事实锚点 FAIL / 纯战术 PASS）；NaturalCoach 三语 schema 契约。
+
+### Added
+- **PR #105 Review Blocker 修复——Natural Coach / Factual Consistency Guard（Review B1-1 / B1-2 / B2-1 / B2-2）**：
+  ① **B1-1 authoritative response source**——`TeamReplayAnalysisService.callRaw()` 删除无意义的
+  `collected` 缓冲，明确以 `AiChatResponse.completionText()` 为唯一权威完整响应（Gateway 契约：
+  callback 是流式 progress、正常结束 completionText 为聚合完整文本、失败一律抛 AiUpstreamException
+  绝不返回 partial）；新增 StreamingGateway 契约测试（多 chunk envelope / 垃圾 callback 不污染 /
+  upstream error 不产出部分结果 / retry 每轮独立响应无 buffer 串扰）。
+  ② **B1-2 三语 factual guard**——TeamReviewEnvelope.Claim 扩展机器可校验字段
+  （claimType / timeSec / region / count / subject / value），validator 优先做语言无关的
+  structured 校验（V2m 阵亡时间、V3m 存活变化 value、V4m 位置精确数量、V6m claimType=LOS/SPOTTING
+  一律 FAIL）；正文兜底文本解析与短语列表三语覆盖（ZH/EN/RU）：时间格式支持
+  `X分Y秒 / 1:49 / 109s / 1m49s / 1 мин 49 сек / 109 seconds / 109 секунд`，位置/LAST_KNOWN/LOS
+  短语列表三语；structured claims 要求机器时间格式（timeSec battle-relative 秒）与存活变化
+  机器格式（`7v7 -> 4v6`）；prompt（md + TeamPromptLocalizer ZH/EN/RU）同步。
+  ③ **B2-1 死亡时刻时钟契约**——`TeamGroundingFacts.build` 增加显式 battleStartRawClockSec 入口，
+  compat 路径（无 timeline）用 `reconstruction.battleStartRawClockSec()` 按
+  `raw > startRaw → raw − startRaw` 转 battle-relative（`deathTimeMillis`/legacy 估算为原始时钟域，
+  `survivalTimeSec` 校准后为 battle-relative）；补测试 + 注释明确契约。
+  ④ **B2-2 V4 精确语义**——structured region+count 默认 exact（claim == actual，少报同样 FAIL），
+  at-least/subset 标记（至少/at least/не менее；其中/of them/среди）放行下界/子集陈述；
+  正文自然语言无法区分时只防 over-count（不假装能判断）。
+  ⑤ 测试——TeamFactualConsistencyValidatorTest 新增 EN/RU 回归（V2/V3/V4/V5/V6 + 合法战术观点
+  三语 PASS）+ 机器字段用例 + B2-2 exact/subset/at-least；TeamGroundingFactsTest 新增死亡时钟
+  契约；TeamReviewEnvelopeParserTest 新增机器字段解析；TeamReviewRetryContractTest 新增 B1-1
+  gateway stream 契约；TeamReviewNaturalCoachContractTest 新增三语机器字段契约。
+
+### Added
+- **Team AI Review Natural Coach Mode + Factual Consistency Guard（PR #103 之上）**：
+  ① **Natural Coach Mode 输出契约**——团队复盘主正文改为【自由组织的自然复盘】：
+  以「## 团队复盘」为主标题、3-5 个自然段（简单局 2-3 段、复杂局约 5 段），
+  删除「核心结论 / 关键决策窗口 / 可确认的团队问题 / 训练建议」固定章节模板与固定数量要求；
+  先判断整场最值得讲的 1-2 件事，只有一个决定性问题就只讲一个；
+  TEAM REVIEW FOCUS WINDOWS 改为内部 attention 提示（「这里最值得集中分析」），不要求逐窗口输出标题；
+  新增「主判断（Primary Diagnosis）」契约：必须选出且只选出一个 PRIMARY DIAGNOSIS，
+  禁止「无法判断/可能性枚举」，多个解释时选最符合全部证据且最有训练价值的那一个；
+  新增「教练不是司法鉴定员」原则：事实必须准确，战术判断不要求数学证明；
+  中文默认长度 400–1200 字（简单 300–700、复杂 ≤1500）。
+  ② **GROUNDING FACTS + structured envelope**——Team Call #2 输出改为 JSON envelope
+  （primaryDiagnosis / reviewMarkdown / claims），输入注入确定性 GROUNDING FACTS 段
+  （每条带稳定证据编号 E1xx：PLAYER_DESTROYED / ALIVE_COUNT_TRANSITION / FOCUS_WINDOW /
+  POSITION_REGION / ENEMY_POSITION_KNOWN(CURRENT|LAST_KNOWN)）；evidenceIds 只进 structured 字段，
+  绝不进用户正文（validator 拦截泄漏）；Backend 不拼接复盘主体，reviewMarkdown 由 LLM 自由写出。
+  ③ **TeamFactualConsistencyValidator（确定性，wotb-core）**——只检查「LLM 有没有改写 Backend 事实」，
+  绝不判断战术观点：V1 temporal ownership（声称窗口必须包含其引用事件）、V2 玩家阵亡时间（容差 2s）、
+  V3 存活变化（7v7→4v6 不得写成 3v5）、V4 位置时间归属（某时刻「7辆全部在6区」不得超出区域快照）、
+  V5 CURRENT/LAST_KNOWN（敌方 LAST_KNOWN 不得写成「此时就在这里」）、V6 无 LOS/spotting 证据的
+  硬事实化表达（「进入所有炮线/具备完整LOS/被掩体卡住/已经点亮」等除非降级为「更可能/从交换结果看」级别）、
+  引用不存在证据编号 / 空输出 / 证据编号泄漏进正文。
+  ④ **校验失败 → LLM 自修循环（Backend 绝不代改句子）**——Draft → validate；FAIL → targeted rewrite；
+  FAIL → full rewrite；仍 FAIL → fail-safe 业务错误 AI_REVIEW_GROUNDING_FAILED（最多 3 次尝试）；
+  校验通过后才把 reviewMarkdown 流式转给前端（不暴露待改写草稿）。
+  ⑤ **Golden 回归**——TeamFactualConsistencyValidatorTest（G1–G5 / V1–V6 / 战术观点放行 /
+  BackendEvidenceBoundary）、TeamGroundingFactsTest（证据编号确定性 + 渲染）、TeamReviewEnvelopeParserTest、
+  TeamReviewRetryContractTest（retry / 耗尽 fail-safe / parse 失败重写）、TeamReviewNaturalCoachContractTest
+  （三语契约）、TeamReviewRealReplayProbeTest 增加真实 canonical facts 上的 validator golden 断言。
+
+### Fixed
 - **PR #103 第七轮——ActualCombatant 边界进入 Canonical BattleTimeline + FormationDepth partial CURRENT 完整 fail-close（最终 review）**：
   ① **ActualCombatantEntitySet（Canonical BattleTimeline universe 源头）**——TeamEntityMapping 新增
   actualCombatantEntityIds(#301 账号集)：只允许可靠映射到 battle.players（battle_results #301 actual
