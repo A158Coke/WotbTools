@@ -191,10 +191,22 @@ Replay → Parser → Canonical BattleTimeline → 确定性 Grounding Facts（�
 > 不静默 null。validator 对应 machine 校验：V2m（DEATH subject+timeSec）、V3m（value 存活变化）、
 > V4m（POSITION_REGION side 感知 friendlyCounts/enemyCurrentCounts + countSemantics EXACT/AT_LEAST/SUBSET
 > 机器语义）、V5m（ENEMY_POSITION knowledge CURRENT/LAST_KNOWN 与后端 exact 校验，不靠正文短语）、
-> V6m（claimType=LOS/SPOTTING 一律 FAIL）。claims coverage 最低契约：Grounding Facts 非空且主判断引用
-> 证据编号或正文出现可验证事实锚点时，claims 不允许无条件为空（CONTRACT 冲突）。正文自然语言短语
-> 列表（`就在这里` / "is right here now" / `прямо здесь` 等）降级为 defense-in-depth，不是 correctness
-> boundary。
+> V6m（claimType=LOS/SPOTTING 一律 FAIL）。
+>
+> **Evidence Binding（Review Blocker B1，最终）**：claims 的 evidenceIds 必须**真正绑定**支撑它的
+> evidence fact，不能只靠「全局恰好存在该值/该变化」通过——`requiredEvidenceType(claimType)` 统一映射：
+> DEATH→PLAYER_DESTROYED、ALIVE_TRANSITION→ALIVE_COUNT_TRANSITION 或 FOCUS_WINDOW（窗口级聚合，
+> 明确允许）、POSITION_REGION→POSITION_REGION、ENEMY_POSITION→ENEMY_POSITION_KNOWN；每个引用必须
+> 存在且属于允许类型（借用无关编号/类型不匹配 → `BINDING` FAIL），且至少一个引用 evidence 必须完整支撑
+> 该 claim：DEATH=身份（subjectAccountId 优先，其次昵称/坦克名）+时间容差；ALIVE_TRANSITION=value 与
+> 引用证据 before/after 一致；POSITION_REGION=引用证据的 side 感知快照（FRIENDLY→friendly、ENEMY→
+> enemyCurrent）校验 region/count/countSemantics，证据无该区域数据 → FAIL；ENEMY_POSITION=身份+时间+
+> 区域+knowledge 全部一致（只因为 CURRENT==CURRENT 就 PASS 是漏洞）。重复坦克名（如两辆 IS-7）时
+> 仅凭 tankName 无法唯一绑定身份 → 必须用 subjectAccountId 或昵称（`BINDING` 歧义 FAIL）。有 evidenceIds
+> 时引用证据是 primary source，nearest-snapshot/全局列表只作为无直接 evidence mapping 的 defense-in-depth。
+> 正文自然语言短语列表（`就在这里` / "is right here now" / `прямо здесь` 等）仍只作为 defense-in-depth，
+> 不是 correctness boundary。claims coverage 最低契约：Grounding Facts 非空且主判断引用
+> 证据编号或正文出现可验证事实锚点时，claims 不允许无条件为空（CONTRACT 冲突）。
 
 ### 校验失败 → LLM 自修循环（§13/§14）
 

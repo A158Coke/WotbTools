@@ -50,7 +50,7 @@ class TeamFactualConsistencyValidatorTest {
 
         final Map<String, String> regionAttrs = new LinkedHashMap<>();
         regionAttrs.put("friendly", "GRID6=5 GRID5=1 GRID3=1");
-        regionAttrs.put("enemyCurrent", "");
+        regionAttrs.put("enemyCurrent", "GRID4=2");
         final EvidenceFact region = new EvidenceFact("E106",
                 TeamGroundingFacts.TYPE_POSITION_REGION, Side.FRIENDLY, 112.0, 112.0,
                 null, null, null, regionAttrs);
@@ -64,7 +64,32 @@ class TeamFactualConsistencyValidatorTest {
                 TeamGroundingFacts.TYPE_ENEMY_POSITION, Side.ENEMY, 120.0, 120.0,
                 5L, "Maus", "Maus", lastKnownAttrs);
 
-        final List<EvidenceFact> facts = List.of(E101, E102, E103, E104, window, region, lastKnown);
+        final Map<String, String> transitionAttrs = new LinkedHashMap<>();
+        transitionAttrs.put("before", "6v7");
+        transitionAttrs.put("after", "5v7");
+        final EvidenceFact transition = new EvidenceFact("E108",
+                TeamGroundingFacts.TYPE_ALIVE_TRANSITION, Side.FRIENDLY, 121.3, 121.3,
+                null, null, null, transitionAttrs);
+
+        final Map<String, String> sphtAttrs = new LinkedHashMap<>();
+        sphtAttrs.put("region", "6");
+        sphtAttrs.put("knowledge", "LAST_KNOWN");
+        sphtAttrs.put("observedAtSec", "106.0");
+        sphtAttrs.put("ageSec", "6.0");
+        final EvidenceFact sphtPos = new EvidenceFact("E109",
+                TeamGroundingFacts.TYPE_ENEMY_POSITION, Side.ENEMY, 112.0, 112.0,
+                2001L, "SPHT", "IS-7", sphtAttrs);
+        final Map<String, String> spht2Attrs = new LinkedHashMap<>();
+        spht2Attrs.put("region", "6");
+        spht2Attrs.put("knowledge", "LAST_KNOWN");
+        spht2Attrs.put("observedAtSec", "106.0");
+        spht2Attrs.put("ageSec", "6.0");
+        final EvidenceFact spht2Pos = new EvidenceFact("E110",
+                TeamGroundingFacts.TYPE_ENEMY_POSITION, Side.ENEMY, 112.0, 112.0,
+                2002L, "SPHT2", "IS-7", spht2Attrs);
+
+        final List<EvidenceFact> facts = List.of(E101, E102, E103, E104, window, region,
+                lastKnown, transition, sphtPos, spht2Pos);
         final List<AliveTransition> transitions = List.of(
                 new AliveTransition(112.4, 7, 7, 6, 7),
                 new AliveTransition(121.3, 6, 7, 5, 7),
@@ -80,7 +105,11 @@ class TeamFactualConsistencyValidatorTest {
                 new RegionSnapshot(112.0, Map.copyOf(friendly), Map.copyOf(enemyCurrent)));
         final List<TeamGroundingFacts.EnemyPositionSample> enemy = List.of(
                 new TeamGroundingFacts.EnemyPositionSample(
-                        120.0, 5L, "Maus", "Maus", "5", "LAST_KNOWN", 117.0, 3.0));
+                        120.0, 5L, "Maus", "Maus", "5", "LAST_KNOWN", 117.0, 3.0),
+                new TeamGroundingFacts.EnemyPositionSample(
+                        112.0, 2001L, "SPHT", "IS-7", "6", "LAST_KNOWN", 106.0, 6.0),
+                new TeamGroundingFacts.EnemyPositionSample(
+                        112.0, 2002L, "SPHT2", "IS-7", "6", "LAST_KNOWN", 106.0, 6.0));
         return new GroundingFacts(facts, Map.of(), transitions, snapshots, enemy);
     }
 
@@ -300,7 +329,7 @@ class TeamFactualConsistencyValidatorTest {
                                                          final String value, final String... ids) {
         return new TeamReviewEnvelope.Claim(
                 text, List.of(ids), claimType, timeSec, region, count, subject, value,
-                null, null, null);
+                null, null, null, null);
     }
 
     /** 完整机器字段 helper（Review Blocker B1）：side / countSemantics / knowledge。 */
@@ -311,7 +340,19 @@ class TeamFactualConsistencyValidatorTest {
             final String countSemantics, final String knowledge, final String... ids) {
         return new TeamReviewEnvelope.Claim(
                 text, List.of(ids), claimType, timeSec, region, count, subject, value,
-                side, countSemantics, knowledge);
+                side, countSemantics, knowledge, null);
+    }
+
+    /** 完整机器字段 + 稳定身份 helper（Review Blocker B1）：subjectAccountId。 */
+    private static TeamReviewEnvelope.Claim machineClaimFullAcc(
+            final String text, final String claimType,
+            final Double timeSec, final Integer region, final Integer count,
+            final String subject, final String value, final String side,
+            final String countSemantics, final String knowledge, final Long accountId,
+            final String... ids) {
+        return new TeamReviewEnvelope.Claim(
+                text, List.of(ids), claimType, timeSec, region, count, subject, value,
+                side, countSemantics, knowledge, accountId);
     }
 
     private static TeamReviewEnvelope envWith(final TeamReviewEnvelope.Claim... claims) {
@@ -474,6 +515,228 @@ class TeamFactualConsistencyValidatorTest {
                 null, null, null, null, null));
         assertFalse(hasCheck(TeamFactualConsistencyValidator.validate(env, facts()), "V6"),
                 "TACTICAL + 降级表达必须 PASS");
+    }
+
+
+    // ===== Review Blocker B1：Evidence Binding（claim 必须与其 evidenceIds 真正绑定） =====
+
+    @Test
+    void b1DeathValidBindingPasses() {
+        // E101 = WildCat death @112.4；claim DEATH subject=WildCat timeSec=112.4 → PASS
+        final TeamReviewEnvelope env = envWith(machineClaim(
+                "WildCat died around 112 seconds", "DEATH", 112.4, null, null, "WildCat", null, "E101"));
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertFalse(hasCheck(conflicts, "BINDING"), "DEATH 正确绑定必须 PASS: " + conflicts);
+        assertFalse(hasCheck(conflicts, "V2"), "DEATH 正确时间必须 PASS: " + conflicts);
+    }
+
+    @Test
+    void b1DeathNonexistentSubjectFails() {
+        // subject=GhostPlayer：后端没有该玩家的死亡 → 必须 FAIL（不能静默 PASS）
+        final TeamReviewEnvelope env = envWith(machineClaim(
+                "GhostPlayer died at 112 seconds", "DEATH", 112.4, null, null, "GhostPlayer", null, "E101"));
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertTrue(hasCheck(conflicts, "BINDING"),
+                "DEATH 不存在的 subject（GhostPlayer）必须 FAIL（BINDING）: " + conflicts);
+    }
+
+    @Test
+    void b1DeathWrongEntityFails() {
+        // E101 = WildCat death；claim subject=AnotherPlayer 借用 E101 → wrong entity FAIL
+        final TeamReviewEnvelope env = envWith(machineClaim(
+                "AnotherPlayer died at 112 seconds", "DEATH", 112.4, null, null, "AnotherPlayer", null, "E101"));
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertTrue(hasCheck(conflicts, "BINDING"),
+                "DEATH 错误主体（wrong entity）必须 FAIL（BINDING）: " + conflicts);
+    }
+
+    @Test
+    void b1DeathUnrelatedEvidenceTypeFails() {
+        // E106 = POSITION_REGION；DEATH claim 借用 E106 → evidence type 不匹配 FAIL
+        final TeamReviewEnvelope env = envWith(machineClaim(
+                "WildCat died at 112 seconds", "DEATH", 112.4, null, null, "WildCat", null, "E106"));
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertTrue(hasCheck(conflicts, "BINDING"),
+                "DEATH 引用无关类型证据必须 FAIL（BINDING）: " + conflicts);
+    }
+
+    @Test
+    void b1TransitionCorrectValueCorrectEvidencePasses() {
+        // E105 = FOCUS_WINDOW 7v7→4v6；claim value 一致 → PASS（focus-window aggregate 明确允许）
+        final TeamReviewEnvelope env = envWith(machineClaim(
+                "The exchange left us at a disadvantage", "ALIVE_TRANSITION",
+                null, null, null, null, "7v7 -> 4v6", "E105"));
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertFalse(hasCheck(conflicts, "BINDING"), "ALIVE_TRANSITION 正确证据必须 PASS: " + conflicts);
+        assertFalse(hasCheck(conflicts, "V3"), "ALIVE_TRANSITION 正确值必须 PASS: " + conflicts);
+    }
+
+    @Test
+    void b1TransitionCorrectValueUnrelatedEvidenceFails() {
+        // E101 = DEATH；claim value 与全局一致也不能 PASS——必须引用真正的变化证据
+        final TeamReviewEnvelope env = envWith(machineClaim(
+                "The exchange changed the numbers", "ALIVE_TRANSITION",
+                null, null, null, null, "7v7 -> 4v6", "E101"));
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertTrue(hasCheck(conflicts, "BINDING"),
+                "ALIVE_TRANSITION 引用无关证据类型必须 FAIL（BINDING）: " + conflicts);
+    }
+
+    @Test
+    void b1TransitionWrongValueCorrectEvidenceFails() {
+        // E105 = FOCUS_WINDOW 7v7→4v6；claim value 错误 → 必须 FAIL（不能因全局存在就 PASS）
+        final TeamReviewEnvelope env = envWith(machineClaim(
+                "The exchange changed the numbers", "ALIVE_TRANSITION",
+                null, null, null, null, "7v7 -> 3v5", "E105"));
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertTrue(hasCheck(conflicts, "V3"),
+                "ALIVE_TRANSITION 错误值与正确证据必须 FAIL（V3）: " + conflicts);
+    }
+
+    @Test
+    void b1PositionRegionCorrectEvidencePasses() {
+        // E106 = POSITION_REGION @112 friendly GRID6=5；claim exact GRID6=5 → PASS
+        final TeamReviewEnvelope env = envWith(machineClaimFull(
+                "5 vehicles in region 6", "POSITION_REGION", 112.0, 6, 5, null, null,
+                "FRIENDLY", "EXACT", null, "E106"));
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertFalse(hasCheck(conflicts, "BINDING"), "POSITION_REGION 正确绑定必须 PASS: " + conflicts);
+        assertFalse(hasCheck(conflicts, "V4"), "POSITION_REGION 正确数量必须 PASS: " + conflicts);
+    }
+
+    @Test
+    void b1PositionRegionWrongRegionFails() {
+        // E106 friendly 无 GRID2 数据；claim GRID2=5 → 引用证据不支撑该区域 → FAIL
+        final TeamReviewEnvelope env = envWith(machineClaimFull(
+                "5 vehicles in region 2", "POSITION_REGION", 112.0, 2, 5, null, null,
+                "FRIENDLY", "EXACT", null, "E106"));
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertTrue(hasCheck(conflicts, "BINDING"),
+                "POSITION_REGION 引用证据无该区域数据必须 FAIL（BINDING）: " + conflicts);
+    }
+
+    @Test
+    void b1PositionRegionWrongCountFails() {
+        // E106 friendly GRID6=5；claim exact GRID6=3 → count 不匹配 FAIL
+        final TeamReviewEnvelope env = envWith(machineClaimFull(
+                "3 vehicles in region 6", "POSITION_REGION", 112.0, 6, 3, null, null,
+                "FRIENDLY", "EXACT", null, "E106"));
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertTrue(hasCheck(conflicts, "V4"),
+                "POSITION_REGION 数量与引用证据不符必须 FAIL（V4）: " + conflicts);
+    }
+
+    @Test
+    void b1PositionRegionWrongSideFails() {
+        // E106 enemyCurrent = GRID4=2；claim ENEMY GRID6=5 → 引用证据 ENEMY 侧无该区域 → FAIL
+        final TeamReviewEnvelope env = envWith(machineClaimFull(
+                "5 enemy vehicles in region 6", "POSITION_REGION", 112.0, 6, 5, null, null,
+                "ENEMY", "EXACT", null, "E106"));
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertTrue(hasCheck(conflicts, "BINDING"),
+                "POSITION_REGION ENEMY 侧无该区域必须 FAIL（BINDING）: " + conflicts);
+    }
+
+    @Test
+    void b1EnemyPositionValidBindingPasses() {
+        // E109 = SPHT(acc 2001) @112 GRID6 LAST_KNOWN；同身份+112+GRID6+LAST_KNOWN → PASS
+        final TeamReviewEnvelope env = envWith(machineClaimFull(
+                "SPHT was last observed in region 6", "ENEMY_POSITION", 112.0, 6, null, "SPHT",
+                null, null, null, "LAST_KNOWN", "E109"));
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertFalse(hasCheck(conflicts, "BINDING"), "ENEMY_POSITION 正确绑定必须 PASS: " + conflicts);
+        assertFalse(hasCheck(conflicts, "V5"), "ENEMY_POSITION 正确 knowledge 必须 PASS: " + conflicts);
+    }
+
+    @Test
+    void b1EnemyPositionKnowledgeMismatchFails() {
+        // E109 LAST_KNOWN；claim CURRENT → knowledge 不匹配 FAIL（V5）
+        final TeamReviewEnvelope env = envWith(machineClaimFull(
+                "SPHT is in region 6 right now", "ENEMY_POSITION", 112.0, 6, null, "SPHT",
+                null, null, null, "CURRENT", "E109"));
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertTrue(hasCheck(conflicts, "V5"),
+                "ENEMY_POSITION knowledge 与证据不符必须 FAIL（V5）: " + conflicts);
+    }
+
+    @Test
+    void b1EnemyPositionRegionMismatchFails() {
+        // E109 GRID6；claim GRID3 → 区域不匹配 FAIL（不能只因为 CURRENT==CURRENT 就 PASS）
+        final TeamReviewEnvelope env = envWith(machineClaimFull(
+                "SPHT was last observed in region 3", "ENEMY_POSITION", 112.0, 3, null, "SPHT",
+                null, null, null, "LAST_KNOWN", "E109"));
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertTrue(hasCheck(conflicts, "BINDING"),
+                "ENEMY_POSITION 区域与证据不符必须 FAIL（BINDING）: " + conflicts);
+    }
+
+    @Test
+    void b1EnemyPositionDifferentVehicleFails() {
+        // E109 = SPHT(IS-7)；claim subject=OtherVehicle → 身份不匹配 FAIL
+        final TeamReviewEnvelope env = envWith(machineClaimFull(
+                "OtherVehicle was last observed in region 6", "ENEMY_POSITION", 112.0, 6, null, "OtherVehicle",
+                null, null, null, "LAST_KNOWN", "E109"));
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertTrue(hasCheck(conflicts, "BINDING"),
+                "ENEMY_POSITION 身份与证据不符必须 FAIL（BINDING）: " + conflicts);
+    }
+
+    @Test
+    void b1EnemyPositionUnrelatedEvidenceFails() {
+        // E101 = DEATH；ENEMY_POSITION claim 引用死亡证据 → evidence type 不匹配 FAIL
+        final TeamReviewEnvelope env = envWith(machineClaimFull(
+                "SPHT was last observed in region 6", "ENEMY_POSITION", 112.0, 6, null, "SPHT",
+                null, null, null, "LAST_KNOWN", "E101"));
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertTrue(hasCheck(conflicts, "BINDING"),
+                "ENEMY_POSITION 引用无关类型证据必须 FAIL（BINDING）: " + conflicts);
+    }
+
+    @Test
+    void b1EnemyPositionDuplicateTankNameNeedsAccountId() {
+        // E109 与 E110 都是 IS-7（不同账号）；仅凭 tankName 无法绑定 → FAIL
+        final TeamReviewEnvelope tankOnly = envWith(machineClaimFull(
+                "IS-7 was last observed in region 6", "ENEMY_POSITION", 112.0, 6, null, "IS-7",
+                null, null, null, "LAST_KNOWN", "E109"));
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(tankOnly, facts());
+        assertTrue(hasCheck(conflicts, "BINDING"),
+                "同车型敌车多辆时仅凭 tankName 必须 FAIL（BINDING 身份歧义）: " + conflicts);
+        // 使用 subjectAccountId 稳定身份 → PASS
+        final TeamReviewEnvelope accBound = envWith(machineClaimFullAcc(
+                "SPHT was last observed in region 6", "ENEMY_POSITION", 112.0, 6, null, "SPHT",
+                null, null, null, "LAST_KNOWN", 2001L, "E109"));
+        final List<FactConflict> accConflicts = TeamFactualConsistencyValidator.validate(accBound, facts());
+        assertFalse(hasCheck(accConflicts, "BINDING"),
+                "subjectAccountId 稳定身份必须 PASS: " + accConflicts);
+    }
+
+    @Test
+    void b1TrilingualMachineResultIdentical() {
+        // 同一个 structured claim（ENEMY_POSITION GRID 不匹配）：ZH/EN/RU reviewMarkdown → machine 结果一致
+        final TeamReviewEnvelope.Claim claim = machineClaimFull(
+                "SPHT was last observed in region 3", "ENEMY_POSITION", 112.0, 3, null, "SPHT",
+                null, null, null, "LAST_KNOWN", "E109");
+        final String zh = "我认为这局主要问题是第一次正面交换。";
+        final String en = "I think the main problem was the first engagement.";
+        final String ru = "Я считаю, главная проблема — первый обмен.";
+        final List<FactConflict> zhConflicts = TeamFactualConsistencyValidator.validate(
+                new TeamReviewEnvelope(
+                        new TeamReviewEnvelope.PrimaryDiagnosis("主判断", "理由", List.of()), zh, List.of(claim)), facts());
+        final List<FactConflict> enConflicts = TeamFactualConsistencyValidator.validate(
+                new TeamReviewEnvelope(
+                        new TeamReviewEnvelope.PrimaryDiagnosis("主判断", "理由", List.of()), en, List.of(claim)), facts());
+        final List<FactConflict> ruConflicts = TeamFactualConsistencyValidator.validate(
+                new TeamReviewEnvelope(
+                        new TeamReviewEnvelope.PrimaryDiagnosis("主判断", "理由", List.of()), ru, List.of(claim)), facts());
+        final java.util.function.Predicate<FactConflict> machine = c ->
+                java.util.Set.of("BINDING", "V2", "V3", "V4", "V5", "V6").contains(c.checkId());
+        assertEquals(zhConflicts.stream().filter(machine).toList(),
+                enConflicts.stream().filter(machine).toList(),
+                "ZH/EN structured machine 结果必须一致");
+        assertEquals(zhConflicts.stream().filter(machine).toList(),
+                ruConflicts.stream().filter(machine).toList(),
+                "ZH/RU structured machine 结果必须一致");
+        assertTrue(hasCheck(zhConflicts, "BINDING"), "三语共用同一 machine claim 必须 FAIL（BINDING）");
     }
 
     // ===== Review B1-2：EN / RU 正文回归（三语 factual guard） =====

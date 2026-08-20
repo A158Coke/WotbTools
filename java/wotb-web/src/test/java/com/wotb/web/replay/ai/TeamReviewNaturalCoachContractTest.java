@@ -99,6 +99,10 @@ class TeamReviewNaturalCoachContractTest {
                 "机器字段类型必须正确（fail-close）");
         assertTrue(ZH.contains("claimType 不得为 LOS / SPOTTING / VISION"),
                 "必须禁止 LOS/spotting 事实 claim（V6m）");
+        assertTrue(ZH.contains("subjectAccountId"), "必须声明 subjectAccountId 稳定身份字段（B1）");
+        assertTrue(ZH.contains("evidence binding（强制）"), "必须声明 evidence binding 契约（B1）");
+        assertTrue(ZH.contains("至少一个 evidenceIds 必须完整支撑该 claim"),
+                "必须声明至少一个引用证据完整支撑（B1）");
         for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
             final String localized = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, lang);
             assertTrue(localized.contains("language-neutral"), lang + " 必须携带 language-neutral 机器字段说明");

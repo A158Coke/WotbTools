@@ -355,9 +355,12 @@ public class TeamReplayAnalysisService {
                         + "ALIVE_TRANSITION=value(机器格式 7v7 -> 4v6)+evidenceIds；"
                         + "POSITION_REGION=timeSec+region(1-9)+count(数字)+side(FRIENDLY/ENEMY)"
                         + "+countSemantics(EXACT/AT_LEAST/SUBSET)+evidenceIds；"
-                        + "ENEMY_POSITION=subject+timeSec+region+knowledge(CURRENT/LAST_KNOWN)+evidenceIds；"
+                        + "ENEMY_POSITION=subject(+可选subjectAccountId账号ID稳定身份)+timeSec+region"
+                        + "+knowledge(CURRENT/LAST_KNOWN)+evidenceIds；"
                         + "TACTICAL 无机器字段要求；机器字段类型必须正确（数字字段不能用字符串），"
-                        + "禁止 LOS/SPOTTING/VISION/LINE_OF_SIGHT claimType。";
+                        + "禁止 LOS/SPOTTING/VISION/LINE_OF_SIGHT claimType。"
+                        + "evidenceIds 必须引用真正支撑该 claim 的证据（类型/身份/时间/数值/区域/knowledge 一致），"
+                        + "不能借用无关编号。";
                 fullRewrite = attempt >= 2;
                 continue;
             }

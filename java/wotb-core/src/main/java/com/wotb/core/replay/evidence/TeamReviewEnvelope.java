@@ -46,7 +46,8 @@ public record TeamReviewEnvelope(
      *   <li>{@code ALIVE_TRANSITION}：value（机器格式 {@code 7v7 -> 4v6}）+ evidenceIds（timeSec 可选）；</li>
      *   <li>{@code POSITION_REGION}：timeSec + region + count + side（FRIENDLY/ENEMY）+
      *       countSemantics（EXACT/AT_LEAST/SUBSET）+ evidenceIds；</li>
-     *   <li>{@code ENEMY_POSITION}：subject + timeSec + region + knowledge（CURRENT/LAST_KNOWN）+
+     *   <li>{@code ENEMY_POSITION}：subject（昵称或坦克名；重复坦克名时须用
+     *       {@code subjectAccountId} 稳定身份）+ timeSec + region + knowledge（CURRENT/LAST_KNOWN）+
      *       evidenceIds；</li>
      *   <li>{@code TACTICAL}：纯战术观点，不要求 factual machine 字段（Backend 不判断战术观点）。</li>
      * </ul>
@@ -64,6 +65,8 @@ public record TeamReviewEnvelope(
      * @param side           阵营（POSITION_REGION 必填：FRIENDLY / ENEMY）
      * @param countSemantics 数量语义（POSITION_REGION 必填：EXACT / AT_LEAST / SUBSET）
      * @param knowledge      敌方位置知识（ENEMY_POSITION 必填：CURRENT / LAST_KNOWN）
+     * @param subjectAccountId 后端稳定账号 ID（可选；DEATH / ENEMY_POSITION 身份绑定优先使用，
+     *                       同车型敌车多辆时禁止只用坦克名作为唯一身份）
      */
     public record Claim(
             String text,
@@ -76,7 +79,8 @@ public record TeamReviewEnvelope(
             String value,
             String side,
             String countSemantics,
-            String knowledge
+            String knowledge,
+            Long subjectAccountId
     ) {
         public Claim {
             evidenceIds = evidenceIds == null ? List.of() : List.copyOf(evidenceIds);
@@ -84,7 +88,7 @@ public record TeamReviewEnvelope(
 
         /** 兼容旧契约（无机器字段；仅测试/文本兜底路径使用，parser 不再产出）。 */
         public Claim(final String text, final List<String> evidenceIds) {
-            this(text, evidenceIds, null, null, null, null, null, null, null, null, null);
+            this(text, evidenceIds, null, null, null, null, null, null, null, null, null, null);
         }
 
         /** 机器时间是否可用（非 null 且有限）。 */

@@ -5,6 +5,26 @@
 ## [Unreleased]
 
 ### Fixed
+- **PR #105 Final Blocker——Evidence Binding（claim 必须与其 evidenceIds 真正绑定）**：
+  ① **绑定契约**——`TeamFactualConsistencyValidator` 新增 `checkStructuredEvidenceBinding`：
+  `requiredEvidenceType(claimType)` 统一映射 DEATH→PLAYER_DESTROYED / ALIVE_TRANSITION→
+  ALIVE_COUNT_TRANSITION·FOCUS_WINDOW（窗口级聚合明确允许）/ POSITION_REGION→POSITION_REGION /
+  ENEMY_POSITION→ENEMY_POSITION_KNOWN；每个引用必须存在且属于允许类型（借用无关编号 / 类型不匹配
+  → BINDING FAIL），且至少一个引用 evidence 必须完整支撑该 claim：DEATH=身份+时间容差（subject 在
+  后端无阵亡事实 → FAIL，GhostPlayer 不再静默 PASS）、ALIVE_TRANSITION=value 与引用证据 before/after
+  一致（不能因全局恰好存在该变化而 PASS）、POSITION_REGION=引用证据的 side 感知快照校验
+  region/count/countSemantics（证据无该区域数据 → FAIL）、ENEMY_POSITION=身份+时间+区域+knowledge
+  全部一致（只因为 CURRENT==CURRENT 就 PASS 是漏洞）。
+  ② **稳定身份**——Claim 新增可选 `subjectAccountId`（parser 类型错误 fail-close）；重复坦克名
+  （如两辆 IS-7）时仅凭 tankName 无法唯一绑定 → BINDING 歧义 FAIL，必须用 subjectAccountId 或昵称。
+  ③ **primary source 语义**——有 evidenceIds 时引用证据是 primary source，nearest-snapshot / 全局
+  存活变化列表只作为无直接 evidence mapping 的 defense-in-depth。
+  ④ prompt（md + TeamPromptLocalizer ZH/EN/RU）——evidence binding 规则 + subjectAccountId 身份字段说明。
+  ⑤ 测试——DEATH（正确 PASS / GhostPlayer FAIL / wrong entity FAIL / 无关类型 FAIL）、ALIVE_TRANSITION
+  （正确 PASS / 无关证据 FAIL / 错误值 FAIL）、POSITION_REGION（正确 PASS / 区域缺失 FAIL / 数量不符
+  FAIL / ENEMY side FAIL）、ENEMY_POSITION（同身份+时间+区域+knowledge PASS / CURRENT FAIL / GRID3 FAIL /
+  different vehicle FAIL / 无关证据 FAIL / 重复坦克名需 accountId）、三语 machine 结果一致性。
+
 - **PR #105 Final Blocker——Structured Factual Claims fail-close 契约**：
   ① **claimType schema**——TeamReviewEnvelopeParser 强制 claimType ∈ {DEATH / ALIVE_TRANSITION /
   POSITION_REGION / ENEMY_POSITION / TACTICAL}（LOS/SPOTTING/VISION/LINE_OF_SIGHT 及未知类型 → reject/rewrite）；

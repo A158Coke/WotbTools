@@ -290,6 +290,9 @@ final class TeamPromptLocalizer {
                  + countSemantics（EXACT/AT_LEAST/SUBSET）+ evidenceIds；
                ENEMY_POSITION：subject + timeSec + region + knowledge（CURRENT/LAST_KNOWN）+ evidenceIds；
                TACTICAL：纯战术观点，不要求 factual machine 字段。
+               身份字段：DEATH / ENEMY_POSITION 的 subject 可使用 subjectAccountId（后端账号ID，JSON number
+               正整数）作为稳定身份；同车型敌车多辆时（如两辆 IS-7）禁止只用坦克名绑定身份，必须用
+               subjectAccountId 或玩家昵称。
                countSemantics 用机器字段声明（EXACT=恰好 count 辆 / AT_LEAST=至少 count 辆 / SUBSET=其中 count 辆），
                不要依赖自然语言标记词；机器字段类型必须正确（数字字段必须是 JSON number，不能用字符串）。
                无论输出语言（中文/English/Русский），机器字段与格式一致。
@@ -303,6 +306,12 @@ final class TeamPromptLocalizer {
             6. LOS / spotting / 视野类内容禁止作为事实 claim：claimType 不得为 LOS / SPOTTING / VISION /
                LINE_OF_SIGHT（后端没有对应 evidence kind）；只能作为战术判断（claimType=TACTICAL）并
                使用降级表达（更可能 / more likely / более вероятно）。
+            7. evidence binding（强制）：claims 的 evidenceIds 必须引用真正支撑该 claim 的事实，不能借用无关编号——
+               DEATH 必须引用对应玩家的 PLAYER_DESTROYED 阵亡证据（身份+时间一致）；ALIVE_TRANSITION 必须引用
+               before/after 一致的 ALIVE_COUNT_TRANSITION 或 FOCUS_WINDOW 窗口级聚合证据；POSITION_REGION 必须
+               引用对应时刻 side/region/count/countSemantics 一致的位置快照证据；ENEMY_POSITION 必须引用
+               身份+时间+区域+knowledge 全部一致的 ENEMY_POSITION_KNOWN 证据；「全局恰好存在该变化/该数值」
+               不能替代「引用的证据确实支撑该 claim」；至少一个 evidenceIds 必须完整支撑该 claim。
             """;
 
     static final String TEAM_GROUNDING_RULE_EN = """
@@ -347,6 +356,9 @@ final class TeamPromptLocalizer {
                              + side (FRIENDLY/ENEMY) + countSemantics (EXACT/AT_LEAST/SUBSET) + evidenceIds;
                            ENEMY_POSITION: subject + timeSec + region + knowledge (CURRENT/LAST_KNOWN) + evidenceIds;
                            TACTICAL: pure tactical opinion, no factual machine fields required.
+                           Identity field: DEATH / ENEMY_POSITION subject may use subjectAccountId (backend account id,
+                           positive JSON number) as the stable identity; when several enemy vehicles share one tank name
+                           (e.g. two IS-7), NEVER bind identity by tank name alone — use subjectAccountId or the nickname.
                            Declare countSemantics as a machine field (EXACT = exactly count vehicles / AT_LEAST = at least
                            count / SUBSET = count of them); do not rely on natural-language marker words; machine field
                            types must be correct (numeric fields must be JSON numbers, not strings).
@@ -361,6 +373,14 @@ final class TeamPromptLocalizer {
                         6. LOS / spotting / vision content is forbidden as a factual claim: claimType must not be
                            LOS / SPOTTING / VISION / LINE_OF_SIGHT (the backend has no such evidence kind); such content may
                            only be a tactical judgment (claimType=TACTICAL) with hedged wording (more likely / более вероятно).
+                        7. Evidence binding (mandatory): the evidenceIds of a claim must cite the facts that actually
+                           support it — never borrow unrelated ids. DEATH must cite the PLAYER_DESTROYED death fact of
+                           that player (identity + time consistent); ALIVE_TRANSITION must cite an ALIVE_COUNT_TRANSITION
+                           or FOCUS_WINDOW aggregate whose before/after match the value; POSITION_REGION must cite the
+                           position snapshot whose side/region/count/countSemantics match at that time; ENEMY_POSITION
+                           must cite an ENEMY_POSITION_KNOWN matching identity + time + region + knowledge. "The global
+                           transition/value happens to exist" does NOT replace "the cited evidence actually supports this
+                           claim"; at least one evidenceIds entry must fully support the claim.
             """;
 
     static final String TEAM_GROUNDING_RULE_RU = """
@@ -406,6 +426,11 @@ final class TeamPromptLocalizer {
                              + side (FRIENDLY/ENEMY) + countSemantics (EXACT/AT_LEAST/SUBSET) + evidenceIds;
                            ENEMY_POSITION: subject + timeSec + region + knowledge (CURRENT/LAST_KNOWN) + evidenceIds;
                            TACTICAL: чисто тактическое мнение, машинные поля не требуются.
+                           Поле идентичности: subject у DEATH / ENEMY_POSITION может использовать subjectAccountId
+                           (идентификатор аккаунта бэкенда, положительное целое JSON number) как стабильную
+                           идентичность; если несколько машин противника имеют одно и то же название (например,
+                           две IS-7), ЗАПРЕЩЕНО связывать идентичность только по названию машины — используйте
+                           subjectAccountId или ник игрока.
                            countSemantics объявляйте машинным полем (EXACT = ровно count машин / AT_LEAST = не менее count /
                            SUBSET = count из них); не полагайтесь на слова-маркеры в естественном языке; типы машинных полей
                            должны быть корректными (числовые поля — JSON number, а не строка).
@@ -421,6 +446,16 @@ final class TeamPromptLocalizer {
                            LOS / SPOTTING / VISION / LINE_OF_SIGHT (у бэкенда нет такого evidence kind); такой контент может
                            быть только тактическим суждением (claimType=TACTICAL) со смягчённой формулировкой
                            (более вероятно / more likely).
+                        7. Привязка доказательств (обязательно): evidenceIds в claim должны ссылаться на факты,
+                           которые действительно его подтверждают, — нельзя заимствовать посторонние номера.
+                           DEATH обязан ссылаться на PLAYER_DESTROYED данного игрока (идентичность + время совпадают);
+                           ALIVE_TRANSITION обязан ссылаться на ALIVE_COUNT_TRANSITION или агрегат FOCUS_WINDOW,
+                           чьи before/after совпадают со значением; POSITION_REGION обязан ссылаться на снимок
+                           позиций, чьи side/region/count/countSemantics совпадают в этот момент; ENEMY_POSITION
+                           обязан ссылаться на ENEMY_POSITION_KNOWN с совпадением идентичности + времени + области +
+                           knowledge. «Это изменение/число глобально существует» НЕ заменяет «приведённое
+                           доказательство действительно подтверждает claim»; как минимум один evidenceIds
+                           должен полностью подтверждать claim.
             """;
 
     static final String TEAM_EVIDENCE_CONTRACT_RULE = """

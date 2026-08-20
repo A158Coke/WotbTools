@@ -78,6 +78,9 @@ evidence 选择最符合证据、同时最有训练价值的主解释，不要�
      + countSemantics（EXACT/AT_LEAST/SUBSET）+ evidenceIds；
    ENEMY_POSITION：subject + timeSec + region + knowledge（CURRENT/LAST_KNOWN）+ evidenceIds；
    TACTICAL：纯战术观点，不要求 factual machine 字段。
+   身份字段：DEATH / ENEMY_POSITION 的 subject 可使用 subjectAccountId（后端账号ID，JSON number
+   正整数）作为稳定身份；同车型敌车多辆时（如两辆 IS-7）禁止只用坦克名绑定身份，必须用
+   subjectAccountId 或玩家昵称。
    countSemantics 用机器字段声明（EXACT=恰好 count 辆 / AT_LEAST=至少 count 辆 / SUBSET=其中 count 辆），
    不要依赖自然语言标记词；机器字段类型必须正确（数字字段必须是 JSON number，不能用字符串）。
    无论输出语言（中文/English/Русский），机器字段与格式一致。
@@ -91,6 +94,12 @@ evidence 选择最符合证据、同时最有训练价值的主解释，不要�
 6. LOS / spotting / 视野类内容禁止作为事实 claim：claimType 不得为 LOS / SPOTTING / VISION /
    LINE_OF_SIGHT（后端没有对应 evidence kind）；只能作为战术判断（claimType=TACTICAL）并
    使用降级表达（更可能 / more likely / более вероятно）。
+7. evidence binding（强制）：claims 的 evidenceIds 必须引用真正支撑该 claim 的事实，不能借用无关编号——
+   DEATH 必须引用对应玩家的 PLAYER_DESTROYED 阵亡证据（身份+时间一致）；ALIVE_TRANSITION 必须引用
+   before/after 一致的 ALIVE_COUNT_TRANSITION 或 FOCUS_WINDOW 窗口级聚合证据；POSITION_REGION 必须
+   引用对应时刻 side/region/count/countSemantics 一致的位置快照证据；ENEMY_POSITION 必须引用
+   身份+时间+区域+knowledge 全部一致的 ENEMY_POSITION_KNOWN 证据；「全局恰好存在该变化/该数值」
+   不能替代「引用的证据确实支撑该 claim」；至少一个 evidenceIds 必须完整支撑该 claim。
 === 证据契约（强制）：FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN ===
 1. FACT（事实）：只能来自权威结算、权威阵容、已验证的 canonical timeline 与后端确定性证据。
    例如「1分52秒至2分12秒，本方连续损失3辆，对方同期损失1辆」。
