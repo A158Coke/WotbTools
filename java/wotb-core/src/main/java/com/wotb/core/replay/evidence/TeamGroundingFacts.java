@@ -368,7 +368,8 @@ public final class TeamGroundingFacts {
         return switch (f.type()) {
             case TYPE_PLAYER_DESTROYED -> "["
                     + (f.side() == Side.FRIENDLY ? "本方阵亡" : "对方阵亡") + "] "
-                    + formatClock(f.timeSec()) + " " + displayName(f) + "（" + displayTank(f) + "）";
+                    + formatClock(f.timeSec()) + " " + displayName(f) + "（" + displayTank(f) + "）"
+                    + (f.accountId() == null ? "" : " acc=" + f.accountId());
             case TYPE_ALIVE_TRANSITION -> "[存活变化] "
                     + f.attrs().getOrDefault("before", "?") + " → "
                     + f.attrs().getOrDefault("after", "?") + "（" + formatClock(f.timeSec()) + " 前后）";
@@ -382,6 +383,7 @@ public final class TeamGroundingFacts {
             case TYPE_ENEMY_POSITION -> "[敌方位置 @" + formatClock(f.timeSec()) + "] "
                     + displayTank(f) + " " + f.attrs().getOrDefault("knowledge", "UNKNOWN")
                     + " GRID" + f.attrs().getOrDefault("region", "?")
+                    + (f.accountId() == null ? "" : " acc=" + f.accountId())
                     + ("LAST_KNOWN".equals(f.attrs().get("knowledge"))
                             ? "（上次观测 " + formatClockSafe(f.attrs().get("observedAtSec"))
                                     + "，age " + f.attrs().getOrDefault("ageSec", "?") + "秒）" : "");

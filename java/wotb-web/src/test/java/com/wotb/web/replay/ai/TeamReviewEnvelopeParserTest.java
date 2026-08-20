@@ -221,5 +221,29 @@ class TeamReviewEnvelopeParserTest {
         final TeamReviewEnvelope envelope = TeamReviewEnvelopeParser.parse(json);
         assertNotNull(envelope);
         assertEquals("LAST_KNOWN", envelope.claims().get(0).knowledge());
+        assertNull(envelope.claims().get(0).subjectAccountId());
+    }
+
+    @Test
+    void parsesSubjectAccountIdStableIdentity() {
+        // Review Blocker B1：subjectAccountId（可选稳定身份，JSON number）
+        final String json = claimJson(
+                "\"claimType\":\"ENEMY_POSITION\",\"subject\":\"SPHT\",\"timeSec\":112.0,"
+                        + "\"region\":6,\"knowledge\":\"LAST_KNOWN\",\"subjectAccountId\":2001,"
+                        + "\"evidenceIds\":[\"E109\"],\"text\":\"SPHT last seen in region 6\"");
+        final TeamReviewEnvelope envelope = TeamReviewEnvelopeParser.parse(json);
+        assertNotNull(envelope);
+        assertEquals(Long.valueOf(2001L), envelope.claims().get(0).subjectAccountId());
+    }
+
+    @Test
+    void failCloseSubjectAccountIdAsString() {
+        // Review Blocker B1：subjectAccountId 为字符串 → reject/rewrite（fail-close）
+        final String json = claimJson(
+                "\"claimType\":\"ENEMY_POSITION\",\"subject\":\"SPHT\",\"timeSec\":112.0,"
+                        + "\"region\":6,\"knowledge\":\"LAST_KNOWN\",\"subjectAccountId\":\"2001\","
+                        + "\"evidenceIds\":[\"E109\"],\"text\":\"SPHT last seen in region 6\"");
+        assertNull(TeamReviewEnvelopeParser.parse(json),
+                "subjectAccountId 为字符串必须 reject（JSON number）");
     }
 }

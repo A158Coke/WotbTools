@@ -85,12 +85,14 @@ public final class TeamReviewEnvelopeParser {
                     final NumField regionF = intField(item.get("region"), 1, 9);
                     final NumField countF = intField(item.get("count"), 0, 99);
                     final String subject = text(item.get("subject"));
+                    // Review Blocker B1：稳定身份 subjectAccountId（可选；JSON number 正整数，类型错误 fail-close）
+                    final NumField accF = longField(item.get("subjectAccountId"));
                     final String value = text(item.get("value"));
                     final String side = text(item.get("side")).toUpperCase(java.util.Locale.ROOT);
                     final String countSemantics = text(item.get("countSemantics")).toUpperCase(java.util.Locale.ROOT);
                     final String knowledge = text(item.get("knowledge")).toUpperCase(java.util.Locale.ROOT);
                     // fail-close：任何声明字段类型非法 → 拒绝（不静默 null）
-                    if (timeSecF.invalid() || regionF.invalid() || countF.invalid()) {
+                    if (timeSecF.invalid() || regionF.invalid() || countF.invalid() || accF.invalid()) {
                         return null;
                     }
                     // 枚举字段：出现但非法 → 拒绝
@@ -143,7 +145,8 @@ public final class TeamReviewEnvelopeParser {
                             value.isBlank() ? null : value,
                             side.isEmpty() ? null : side,
                             countSemantics.isEmpty() ? null : countSemantics,
-                            knowledge.isEmpty() ? null : knowledge));
+                            knowledge.isEmpty() ? null : knowledge,
+                            accF.missing() ? null : (long) Math.round(accF.value())));
                 }
             }
             final TeamReviewEnvelope envelope =
@@ -204,6 +207,18 @@ public final class TeamReviewEnvelopeParser {
             return NumField.INVALID;
         }
         return NumField.of(v);
+    }
+
+    /** 长整数字段（fail-close）：正整数 JSON number；类型错误 → INVALID。 */
+    private static NumField longField(final JsonNode node) {
+        final NumField d = doubleField(node);
+        if (d != NumField.MISSING && d != NumField.INVALID) {
+            final double v = d.value();
+            if (v != Math.floor(v)) {
+                return NumField.INVALID;
+            }
+        }
+        return d;
     }
 
     /** 整数字段（fail-close）：同 {@link #doubleField}，必须为整数，且按范围校验。 */

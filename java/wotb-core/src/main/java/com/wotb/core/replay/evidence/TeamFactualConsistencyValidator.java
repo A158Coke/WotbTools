@@ -24,6 +24,13 @@ import java.util.regex.Pattern;
  *   <li>V5 CURRENT / LAST_KNOWN：敌方 LAST_KNOWN 不得被写成「此时就在这里」；</li>
  *   <li>V6 unsupported hard facts：无 LOS/spotting 证据时禁止硬事实化表达（除非已降级为
  *       「更可能/从交换结果看/如果当时」级别）；</li>
+ *   <li>B1 evidence binding（Review Blocker B1）：有 {@code evidenceIds} 时引用证据是 primary
+     *       source——每个引用必须存在且属于该 claimType 允许的 evidence 类型，且至少一个必须
+     *       完整支撑该 claim（身份/时间/数值/区域/knowledge 一致）；DEATH 必须引用该玩家的
+     *       PLAYER_DESTROYED，ALIVE_TRANSITION 必须引用 before/after 一致的 ALIVE_COUNT_TRANSITION
+     *       或 FOCUS_WINDOW，POSITION_REGION 必须引用对应快照的 POSITION_REGION，ENEMY_POSITION
+     *       必须引用身份+时间+区域+knowledge 全部一致的 ENEMY_POSITION_KNOWN；借用无关编号 /
+     *       「全局恰好存在该变化」式 PASS 一律 FAIL（checkId=BINDING）。</li>
  *   <li>引用不存在的证据编号 / 空输出。</li>
  * </ul>
  * <p>Validator 失败时不修改任何句子：由编排层把 {@link FactConflict} 反馈给 LLM 自行改写
@@ -178,53 +185,10 @@ public final class TeamFactualConsistencyValidator {
                                                      final GroundingFacts facts,
                                                      final List<FactConflict> conflicts) {
         checkClaimsCoverage(envelope, facts, conflicts);
+        // Review Blocker B1：structured evidence binding——有 evidenceIds 时引用证据是 primary source
+        checkStructuredEvidenceBinding(envelope, facts, conflicts);
         for (final TeamReviewEnvelope.Claim c : envelope.claims()) {
             final String type = c.claimType() == null ? "" : c.claimType().toUpperCase(java.util.Locale.ROOT);
-            // V2m：DEATH subject + timeSec → 玩家阵亡时间（语言无关；ZH/EN/RU 共用 machine fields）
-            if ("DEATH".equals(type) && c.hasTime() && c.subject() != null && !c.subject().isBlank()) {
-                for (final EvidenceFact death : deathFacts(facts)) {
-                    if (!sameName(c.subject(), death.nickname())
-                            && !sameName(c.subject(), death.tankName())) {
-                        continue;
-                    }
-                    if (Math.abs(c.timeSec() - death.timeSec()) > DEATH_TIME_TOLERANCE_SEC) {
-                        conflicts.add(new FactConflict("V2",
-                                "玩家事件时间错误（structured）：" + playerBrief(death) + " 后端事实为 "
-                                        + TeamGroundingFacts.formatClock(death.timeSec())
-                                        + "，claim timeSec=" + timeText(c.timeSec()) + "。"));
-                    }
-                }
-            }
-            // V3m：ALIVE_TRANSITION value 机器格式（"7v7 -> 4v6"）三语共用
-            if ("ALIVE_TRANSITION".equals(type) && c.value() != null && !c.value().isBlank()) {
-                final Matcher m = TRANSITION.matcher(c.value());
-                if (m.find()) {
-                    final int a = Integer.parseInt(m.group(1));
-                    final int b = Integer.parseInt(m.group(2));
-                    final int cc = Integer.parseInt(m.group(3));
-                    final int d = Integer.parseInt(m.group(4));
-                    if (!matchesTransition(facts, a, b, cc, d)) {
-                        conflicts.add(new FactConflict("V3",
-                                "存活变化错误（structured value）：" + c.value()
-                                        + "，后端事实中没有该变化（可用：" + transitionSummary(facts) + "）。"));
-                    }
-                }
-            }
-            // V4m：POSITION_REGION region + count + side + countSemantics（机器语义，三语无关）
-            if ("POSITION_REGION".equals(type)
-                    && c.region() != null && c.count() != null && c.hasTime()
-                    && c.side() != null && c.countSemantics() != null) {
-                final Integer actual = regionCountAt(facts, c.timeSec(), c.region(), c.side());
-                if (actual != null) {
-                    checkV4CountSemantics(c, actual, conflicts);
-                }
-            }
-            // V5m：ENEMY_POSITION subject + timeSec + region + knowledge（machine CURRENT/LAST_KNOWN）
-            if ("ENEMY_POSITION".equals(type)
-                    && c.hasTime() && c.subject() != null && !c.subject().isBlank()
-                    && c.region() != null && c.knowledge() != null) {
-                checkV5Knowledge(c, facts, conflicts);
-            }
             // V6m：claim 显式声明 LOS/SPOTTING 事实类型 → 后端没有对应 evidence kind，一律 FAIL
             if ("LOS".equals(type) || "SPOTTING".equals(type)
                     || "LINE_OF_SIGHT".equals(type) || "VISION".equals(type)) {
@@ -232,6 +196,341 @@ public final class TeamFactualConsistencyValidator {
                         "声明了 " + c.claimType() + " 事实类型，但当前后端没有 LOS / spotting / 视野 evidence；"
                                 + "这类内容只能作为战术判断（TACTICAL claimType）+ 降级表达输出。"));
             }
+            // 无 evidenceIds 时的全局兜底（defense-in-depth；parser fail-close 下 factual claim 必有 ids）
+            if (c.evidenceIds().isEmpty()) {
+                checkMachineFallback(c, type, facts, conflicts);
+            }
+        }
+    }
+
+    // ===== Review Blocker B1：Evidence Binding Contract（claim ↔ evidenceFact 必须真正绑定） =====
+
+    /** claimType → 允许引用的 evidence 类型（TACTICAL/未知 = 无要求）。 */
+    private static java.util.Set<String> requiredEvidenceType(final String claimType) {
+        return switch (claimType) {
+            case "DEATH" -> java.util.Set.of(TeamGroundingFacts.TYPE_PLAYER_DESTROYED);
+            case "ALIVE_TRANSITION" -> java.util.Set.of(TeamGroundingFacts.TYPE_ALIVE_TRANSITION,
+                    TeamGroundingFacts.TYPE_FOCUS_WINDOW);
+            case "POSITION_REGION" -> java.util.Set.of(TeamGroundingFacts.TYPE_POSITION_REGION);
+            case "ENEMY_POSITION" -> java.util.Set.of(TeamGroundingFacts.TYPE_ENEMY_POSITION);
+            default -> java.util.Set.of();
+        };
+    }
+
+    /**
+     * B1 evidence binding：每个引用必须存在且属于该 claimType 允许的 evidence 类型；再按 claimType
+     * 做身份/时间/数值绑定。错误事实借用无关 evidenceId、或「全局恰好存在该变化」式 PASS 一律 FAIL。
+     */
+    private static void checkStructuredEvidenceBinding(final TeamReviewEnvelope envelope,
+                                                       final GroundingFacts facts,
+                                                       final List<FactConflict> conflicts) {
+        for (final TeamReviewEnvelope.Claim c : envelope.claims()) {
+            if (c.evidenceIds().isEmpty()) {
+                continue; // 无引用证据：走全局兜底（defense-in-depth）
+            }
+            final String type = c.claimType() == null ? "" : c.claimType().toUpperCase(java.util.Locale.ROOT);
+            final java.util.Set<String> allowed = requiredEvidenceType(type);
+            if (allowed.isEmpty()) {
+                continue; // TACTICAL / 未知
+            }
+            // 1) 存在性 + 类型：每个引用都必须存在且属于允许类型（不能借用无关证据编号）
+            boolean typeOk = true;
+            for (final String id : c.evidenceIds()) {
+                final EvidenceFact fact = facts.byId().get(id);
+                if (fact == null) {
+                    conflicts.add(new FactConflict("BINDING",
+                            "引用了不存在的证据编号 " + id + "（GROUNDING FACTS 中没有该编号，无法绑定）。"));
+                    typeOk = false;
+                    continue;
+                }
+                if (!allowed.contains(fact.type())) {
+                    conflicts.add(new FactConflict("BINDING",
+                            "证据类型不匹配（" + type + "）：claim 引用了 " + fact.type() + " 证据 " + id
+                                    + "，必须引用 " + String.join("/", allowed) + " 类型证据。"));
+                    typeOk = false;
+                }
+            }
+            if (!typeOk) {
+                continue; // 类型/存在性已 FAIL，不再做值绑定（避免噪音）
+            }
+            // 2) per-claimType 完整支撑绑定
+            switch (type) {
+                case "DEATH" -> checkDeathBinding(c, facts, conflicts);
+                case "ALIVE_TRANSITION" -> checkTransitionBinding(c, facts, conflicts);
+                case "POSITION_REGION" -> checkPositionRegionBinding(c, facts, conflicts);
+                case "ENEMY_POSITION" -> checkEnemyPositionBinding(c, facts, conflicts);
+                default -> { }
+            }
+        }
+    }
+
+    /** B1 DEATH：subject 必须真实存在于后端阵亡事实；至少一个引用 PLAYER_DESTROYED 证据身份+时间完整支撑。 */
+    private static void checkDeathBinding(final TeamReviewEnvelope.Claim c,
+                                          final GroundingFacts facts,
+                                          final List<FactConflict> conflicts) {
+        final boolean subjectHasDeath = deathFacts(facts).stream()
+                .anyMatch(d -> identityMatches(c, d));
+        if (!subjectHasDeath) {
+            conflicts.add(new FactConflict("BINDING",
+                    "DEATH claim 的 subject「" + c.subject() + "」在后端没有对应的阵亡事实"
+                            + "（不能因为循环没有找到 matching death 就静默 PASS）。"));
+            return;
+        }
+        boolean fullSupport = false;
+        boolean identityMatch = false;
+        for (final String id : c.evidenceIds()) {
+            final EvidenceFact fact = facts.byId().get(id);
+            if (fact == null || !TeamGroundingFacts.TYPE_PLAYER_DESTROYED.equals(fact.type())) {
+                continue; // 类型/存在性已报
+            }
+            if (!identityMatches(c, fact)) {
+                continue;
+            }
+            identityMatch = true;
+            if (c.hasTime() && Math.abs(c.timeSec() - fact.timeSec()) > DEATH_TIME_TOLERANCE_SEC) {
+                conflicts.add(new FactConflict("V2",
+                        "玩家事件时间错误（structured binding）：" + playerBrief(fact) + " 后端事实为 "
+                                + TeamGroundingFacts.formatClock(fact.timeSec())
+                                + "，claim timeSec=" + timeText(c.timeSec()) + "。"));
+                continue;
+            }
+            fullSupport = true;
+        }
+        if (!fullSupport && !identityMatch) {
+            conflicts.add(new FactConflict("BINDING",
+                    "DEATH claim 引用的证据身份与 subject「" + c.subject()
+                            + "」不符（wrong entity：引用的阵亡证据属于其他玩家）。"));
+        }
+    }
+
+    /** B1 ALIVE_TRANSITION：value 必须与引用的 ALIVE_COUNT_TRANSITION / FOCUS_WINDOW 证据 before/after 一致。 */
+    private static void checkTransitionBinding(final TeamReviewEnvelope.Claim c,
+                                               final GroundingFacts facts,
+                                               final List<FactConflict> conflicts) {
+        final Matcher m = TRANSITION.matcher(c.value());
+        if (!m.find()) {
+            return; // value 格式非法由 parser fail-close / V3 兜底
+        }
+        final int a = Integer.parseInt(m.group(1));
+        final int b = Integer.parseInt(m.group(2));
+        final int cc = Integer.parseInt(m.group(3));
+        final int d = Integer.parseInt(m.group(4));
+        boolean fullSupport = false;
+        for (final String id : c.evidenceIds()) {
+            final EvidenceFact fact = facts.byId().get(id);
+            if (fact == null) {
+                continue;
+            }
+            if (TeamGroundingFacts.TYPE_ALIVE_TRANSITION.equals(fact.type())) {
+                final int[] before = parseVCount(fact.attrs().get("before"));
+                final int[] after = parseVCount(fact.attrs().get("after"));
+                if (before != null && after != null
+                        && before[0] == a && before[1] == b
+                        && after[0] == cc && after[1] == d) {
+                    fullSupport = true;
+                }
+            } else if (TeamGroundingFacts.TYPE_FOCUS_WINDOW.equals(fact.type())) {
+                final int bf = intAttr(fact, "beforeFriendly");
+                final int be = intAttr(fact, "beforeEnemy");
+                final int af = intAttr(fact, "afterFriendly");
+                final int ae = intAttr(fact, "afterEnemy");
+                if (bf == a && be == b && af == cc && ae == d) {
+                    fullSupport = true;
+                }
+            }
+        }
+        if (!fullSupport) {
+            conflicts.add(new FactConflict("V3",
+                    "存活变化错误（structured value binding）：claim " + c.value()
+                            + " 与引用的证据（" + citedIds(c) + "）不一致；"
+                            + "不能因为全局存活变化中恰好存在该变化就 PASS。"));
+        }
+    }
+
+    /** B1 POSITION_REGION：引用的 POSITION_REGION 证据是 primary source（side/region/count/countSemantics）。 */
+    private static void checkPositionRegionBinding(final TeamReviewEnvelope.Claim c,
+                                                   final GroundingFacts facts,
+                                                   final List<FactConflict> conflicts) {
+        for (final String id : c.evidenceIds()) {
+            final EvidenceFact fact = facts.byId().get(id);
+            if (fact == null || !TeamGroundingFacts.TYPE_POSITION_REGION.equals(fact.type())) {
+                continue;
+            }
+            if (c.hasTime() && Math.abs(c.timeSec() - fact.timeSec()) > SNAPSHOT_TIME_TOLERANCE_SEC) {
+                conflicts.add(new FactConflict("BINDING",
+                        "位置时间不匹配（structured binding）：claim timeSec=" + timeText(c.timeSec())
+                                + " 与引用的证据 " + id + "（" + TeamGroundingFacts.formatClock(fact.timeSec())
+                                + "）不一致。"));
+                continue;
+            }
+            final Map<String, Integer> counts = sideCounts(fact, c.side());
+            final Integer actual = counts.get("GRID" + c.region());
+            if (actual == null) {
+                conflicts.add(new FactConflict("BINDING",
+                        "位置区域不匹配（structured binding）：引用的证据 " + id
+                                + "（" + TeamGroundingFacts.formatClock(fact.timeSec()) + "）"
+                                + sideLabel(c.side()) + " 侧没有 GRID" + c.region() + " 的快照数据（"
+                                + countsText(counts) + "）。"));
+                continue;
+            }
+            checkV4CountSemantics(c, actual, conflicts);
+        }
+    }
+
+    /** B1 ENEMY_POSITION：引用的 ENEMY_POSITION_KNOWN 证据必须身份 + 时间 + 区域 + knowledge 全部一致。 */
+    private static void checkEnemyPositionBinding(final TeamReviewEnvelope.Claim c,
+                                                  final GroundingFacts facts,
+                                                  final List<FactConflict> conflicts) {
+        // 重复坦克名歧义防护：仅凭 tankName 无法唯一确定身份 → FAIL（要求 subjectAccountId / 昵称）
+        if (c.subjectAccountId() == null && c.subject() != null && !c.subject().isBlank()) {
+            final long distinctAccounts = enemyPositionFacts(facts).stream()
+                    .filter(f -> sameName(f.tankName(), c.subject()))
+                    .map(EvidenceFact::accountId)
+                    .filter(java.util.Objects::nonNull)
+                    .distinct()
+                    .count();
+            if (distinctAccounts > 1) {
+                conflicts.add(new FactConflict("BINDING",
+                        "敌方位置身份歧义（structured binding）：tankName「" + c.subject()
+                                + "」对应 " + distinctAccounts + " 辆不同账号的敌车，不能仅凭坦克名绑定；"
+                                + "请使用 subjectAccountId 或玩家昵称作为稳定身份。"));
+                return;
+            }
+        }
+        for (final String id : c.evidenceIds()) {
+            final EvidenceFact fact = facts.byId().get(id);
+            if (fact == null || !TeamGroundingFacts.TYPE_ENEMY_POSITION.equals(fact.type())) {
+                continue;
+            }
+            if (!identityMatches(c, fact)) {
+                conflicts.add(new FactConflict("BINDING",
+                        "敌方位置身份不匹配（structured binding）：claim subject「" + c.subject()
+                                + "」与引用的证据 " + id + "（" + tankBrief(fact) + "，acc "
+                                + fact.accountId() + "）不符（different vehicle）。"));
+                continue;
+            }
+            if (c.hasTime() && Math.abs(c.timeSec() - fact.timeSec()) > SNAPSHOT_TIME_TOLERANCE_SEC) {
+                conflicts.add(new FactConflict("BINDING",
+                        "敌方位置时间不匹配（structured binding）：claim " + timeText(c.timeSec())
+                                + " 与引用的证据 " + id + "（" + TeamGroundingFacts.formatClock(fact.timeSec())
+                                + "）不一致。"));
+                continue;
+            }
+            if (c.region() != null && !String.valueOf(c.region()).equals(fact.attrs().get("region"))) {
+                conflicts.add(new FactConflict("BINDING",
+                        "敌方位置区域不匹配（structured binding）：claim 称 GRID" + c.region()
+                                + "，引用的证据 " + id + " 是 GRID" + fact.attrs().get("region")
+                                + "（" + TeamGroundingFacts.formatClock(fact.timeSec()) + "）。"));
+                continue;
+            }
+            if (c.knowledge() != null
+                    && !c.knowledge().equalsIgnoreCase(fact.attrs().getOrDefault("knowledge", ""))) {
+                conflicts.add(new FactConflict("V5",
+                        "敌方位置知识错误（structured binding）：claim 称 " + c.subject() + " @" + timeText(c.timeSec())
+                                + " GRID" + c.region() + " 为 " + c.knowledge()
+                                + "，引用的证据 " + id + " 是 " + fact.attrs().get("knowledge")
+                                + "（" + TeamGroundingFacts.formatClock(fact.timeSec()) + "）。"));
+                continue;
+            }
+            return; // 已找到完整支撑
+        }
+    }
+
+    /** 无 evidenceIds 时的全局兜底（defense-in-depth；B1 后仅用于无引用证据的 claim）。 */
+    private static void checkMachineFallback(final TeamReviewEnvelope.Claim c, final String type,
+                                             final GroundingFacts facts,
+                                             final List<FactConflict> conflicts) {
+        // V2m fallback：DEATH subject + timeSec → 全局玩家阵亡时间
+        if ("DEATH".equals(type) && c.hasTime() && c.subject() != null && !c.subject().isBlank()) {
+            for (final EvidenceFact death : deathFacts(facts)) {
+                if (!sameName(c.subject(), death.nickname())
+                        && !sameName(c.subject(), death.tankName())) {
+                    continue;
+                }
+                if (Math.abs(c.timeSec() - death.timeSec()) > DEATH_TIME_TOLERANCE_SEC) {
+                    conflicts.add(new FactConflict("V2",
+                            "玩家事件时间错误（structured）：" + playerBrief(death) + " 后端事实为 "
+                                    + TeamGroundingFacts.formatClock(death.timeSec())
+                                    + "，claim timeSec=" + timeText(c.timeSec()) + "。"));
+                }
+            }
+        }
+        // V3m fallback：ALIVE_TRANSITION value → 全局存活变化
+        if ("ALIVE_TRANSITION".equals(type) && c.value() != null && !c.value().isBlank()) {
+            final Matcher m = TRANSITION.matcher(c.value());
+            if (m.find()) {
+                final int a = Integer.parseInt(m.group(1));
+                final int b = Integer.parseInt(m.group(2));
+                final int cc = Integer.parseInt(m.group(3));
+                final int d = Integer.parseInt(m.group(4));
+                if (!matchesTransition(facts, a, b, cc, d)) {
+                    conflicts.add(new FactConflict("V3",
+                            "存活变化错误（structured value）：" + c.value()
+                                    + "，后端事实中没有该变化（可用：" + transitionSummary(facts) + "）。"));
+                }
+            }
+        }
+        // V4m fallback：POSITION_REGION → 最近快照
+        if ("POSITION_REGION".equals(type)
+                && c.region() != null && c.count() != null && c.hasTime()
+                && c.side() != null && c.countSemantics() != null) {
+            final Integer actual = regionCountAt(facts, c.timeSec(), c.region(), c.side());
+            if (actual != null) {
+                checkV4CountSemantics(c, actual, conflicts);
+            }
+        }
+        // V5m fallback：ENEMY_POSITION → 最近样本
+        if ("ENEMY_POSITION".equals(type)
+                && c.hasTime() && c.subject() != null && !c.subject().isBlank()
+                && c.region() != null && c.knowledge() != null) {
+            checkV5Knowledge(c, facts, conflicts);
+        }
+    }
+
+    /** claim.subjectAccountId（稳定身份）优先；否则昵称/坦克名。 */
+    private static boolean identityMatches(final TeamReviewEnvelope.Claim c, final EvidenceFact fact) {
+        if (c.subjectAccountId() != null) {
+            return c.subjectAccountId().equals(fact.accountId());
+        }
+        if (c.subject() == null || c.subject().isBlank()) {
+            return false;
+        }
+        return sameName(c.subject(), fact.nickname()) || sameName(c.subject(), fact.tankName());
+    }
+
+    /** 引用证据的 side 侧区域计数（FRIENDLY→friendly；ENEMY→enemyCurrent）。 */
+    private static Map<String, Integer> sideCounts(final EvidenceFact fact, final String side) {
+        final String key = "ENEMY".equalsIgnoreCase(side) ? "enemyCurrent" : "friendly";
+        return parseRegionCounts(fact.attrs().getOrDefault(key, ""));
+    }
+
+    private static String countsText(final Map<String, Integer> counts) {
+        if (counts.isEmpty()) {
+            return "无";
+        }
+        return counts.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(e -> e.getKey() + "=" + e.getValue())
+                .collect(java.util.stream.Collectors.joining(" "));
+    }
+
+    private static String citedIds(final TeamReviewEnvelope.Claim c) {
+        return String.join(",", c.evidenceIds());
+    }
+
+    /** 解析 "7v7" → [7,7]；格式非法返回 null。 */
+    private static int[] parseVCount(final String s) {
+        if (s == null) {
+            return null;
+        }
+        final String[] parts = s.split("v");
+        if (parts.length != 2) {
+            return null;
+        }
+        try {
+            return new int[]{Integer.parseInt(parts[0].trim()), Integer.parseInt(parts[1].trim())};
+        } catch (final NumberFormatException e) {
+            return null;
         }
     }
 
