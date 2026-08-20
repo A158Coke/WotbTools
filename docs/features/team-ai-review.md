@@ -198,6 +198,10 @@ content 末尾一次性到达会破坏逐段流式；`SpringAiChatGateway` 另�
 - Team Call #2 输出改为 JSON envelope（`primaryDiagnosis` / `reviewMarkdown` / `claims`，
   由 `TeamReviewEnvelopeParser` 解析）；`done.analysis` 仍为 `reviewMarkdown`（用户看到的
   完整自然语言复盘，主标题 `## 团队复盘`），structured 字段为内部 grounding 契约，不进正文。
+- **claims 机器字段（Review B1-2，三语通用）**：涉及数值/时间/位置/玩家事件的 claim 携带
+  `timeSec`（battle-relative 秒）/ `region`（1-9）/ `count`（车辆数）/ `subject`（玩家昵称或坦克名）/
+  `value`（存活变化机器格式如 `7v7 -> 4v6`）/ `claimType`；validator 优先按机器字段做语言无关校验，
+  正文自然语言（ZH/EN/RU）仅作兜底；`region + count` 为精确语义（exact），at-least/subset 标记放行下界/子集。
 - 输入注入确定性 `GROUNDING FACTS` 段（证据编号 E1xx）；`TeamFactualConsistencyValidator`
   （V1–V6）校验通过后才把 `reviewMarkdown` 以 `call2_token` 增量流式转给前端——
   **Call #2 在通过校验前不流式输出**（避免把待改写的草稿暴露给用户，代价是 draft 阶段
