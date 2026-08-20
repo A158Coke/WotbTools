@@ -127,6 +127,73 @@ AI 提示词正文维护在 `java/wotb-web/src/main/resources/prompts/` 下的 `
 
 - **新增共享资源**：`common/tank_tactical_profiles.json`（精选 Tier X + 车型级默认 fallback），`wotb-core/pom.xml` 与 `docker/Dockerfile.backend` 已同步复制。
 
+## Natural Coach Mode + Factual Consistency Guard（PR #103 之上，2026-08）
+
+> 核心原则：**Backend 负责「不许瞎说」，LLM 负责「必须有看法」**。Backend 把事实整理到
+> LLM 能可靠理解的程度，但停在战术判断之前；LLM 负责主判断/战术解释/优先级/训练建议；
+> Validator 只检查 LLM 有没有改写 Backend 事实；Renderer 只负责展示。
+
+### 数据流（Team Call #2）
+
+```
+Replay → Parser → Canonical BattleTimeline → 确定性 Grounding Facts（证据编号 E1xx）
+  → TeamAiPromptBuilder（TACTICAL TIMELINE + FOCUS WINDOWS + 全部确定性证据）
+  → Call #2（system prompt 要求 JSON envelope）→ TeamReviewEnvelopeParser
+  → TeamFactualConsistencyValidator（V1–V6）→ PASS → 流式输出 reviewMarkdown
+                                              → FAIL → 反馈 LLM 自修（targeted → full → fail-safe）
+```
+
+### Team Call #2 structured envelope（内部 grounding 契约）
+
+```json
+{
+  "primaryDiagnosis": {"title": "...", "reasoning": "...", "supportingEvidenceIds": ["E1xx"]},
+  "reviewMarkdown": "完整自然语言复盘（用户最终看到的全部内容，主标题 ## 团队复盘）",
+  "claims": [{"text": "涉及数值/时间/位置/玩家事件的陈述", "evidenceIds": ["E1xx"]}]
+}
+```
+
+- `reviewMarkdown` 由 LLM 自由写出，Backend 绝不拼接主体；`evidenceIds` 只出现在 structured
+  字段，validator 拦截其泄漏进用户正文（INTERNAL 检查）。
+- Natural Coach Mode：主正文为 3-5 个自然段（简单 2-3、复杂约 5），无固定章节模板；
+  Focus Window 是内部 attention primitive（「这里最值得集中分析」），不是用户标题结构；
+  必须有唯一 PRIMARY DIAGNOSIS（禁止「无法判断/可能性枚举」）；「教练不是司法鉴定员」——
+  事实必须准确，战术判断不要求数学证明。
+
+### TeamFactualConsistencyValidator（wotb-core `com.wotb.core.replay.evidence`，确定性）
+
+只检查「LLM 有没有改写 Backend 事实」，**绝不判断战术观点**（「这局主要问题是第一次正面交换」
+「应该先回收」等 coaching judgment 一律放行）：
+
+| 检查 | 内容 |
+|---|---|
+| V1 temporal ownership | 声称的时间窗口必须包含其引用的阵亡/存活变化事件（含正文窗口内点名阵亡） |
+| V2 player event correctness | 玩家阵亡时间与后端事实一致（容差 2s；紧邻 ±15 字符窗口，避免把句内时间范围误判） |
+| V3 alive transition | 正文存活变化（如 7v7→4v6）必须存在于后端 step 或 FOCUS_WINDOW 聚合前后 |
+| V4 position temporal grounding | 某时刻「X辆全部在N区」不得超出该时刻区域快照（±6s 最近快照） |
+| V5 CURRENT / LAST_KNOWN | 敌方 LAST_KNOWN 不得写成「此时就在这里/正在某区」（structured + 正文双路径） |
+| V6 unsupported hard facts | 无 LOS/spotting 证据的硬事实化表达（进入所有炮线/LOS/掩体/点亮/瞄准），除非已降级为「更可能/从交换结果看/如果当时」级别 |
+| EVIDENCE / OUTPUT / INTERNAL | 引用不存在证据编号 / 空输出 / 证据编号泄漏进正文 / 缺主判断 |
+
+### 校验失败 → LLM 自修循环（§13/§14）
+
+```
+Draft → validate → PASS → 流式输出
+                  → FAIL #1 → targeted rewrite（携带 [V1]…[V6] 冲突反馈，LLM 自行改写）
+                  → FAIL #2 → full rewrite
+                  → 仍 FAIL → fail-safe：AI_REVIEW_GROUNDING_FAILED 业务错误（绝不静默输出矛盾）
+```
+
+- Backend 绝不代改句子；校验通过后才把 reviewMarkdown 转给前端（不暴露待改写草稿）。
+- 上限：`TeamReplayAnalysisService.MAX_VALIDATION_ATTEMPTS = 3`（draft + 2 次 rewrite）。
+
+### Grounding Facts（TeamGroundingFacts，wotb-core）
+
+- 从权威结算 + 已验证 canonical BattleTimeline 提取带稳定证据编号（E1xx，确定性顺序：
+  阵亡→存活变化→关注窗口→位置快照→敌方位置知识）的事实清单；timeline 为 null（兼容入口）
+  时只输出结算可推导事实（阵亡/存活变化），位置/窗口类校验自动 no-op。
+- 渲染为 prompt 的 `=== GROUNDING FACTS ===` 段；时间一律「XX分XX秒」。
+
 ## AI 分析范围边界
 
 AI 复盘区分两种 scope，互不混用：

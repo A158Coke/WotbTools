@@ -24,12 +24,20 @@ class TeamReviewQualityGateContractTest {
                 "旧的强制章节不得保留");
         assertFalse(ZH.contains("2) 对方阵容逐车分析"),
                 "旧的逐车作文章节不得保留");
-        // 新结构
-        assertTrue(ZH.contains("1. 核心结论：2-4 句"), "必须携带新输出结构（核心结论）");
-        assertTrue(ZH.contains("2. 关键决策窗口"), "必须携带新输出结构（关键决策窗口）");
-        assertTrue(ZH.contains("3. 可确认的团队问题"), "必须携带新输出结构（可确认问题）");
-        assertTrue(ZH.contains("4. 训练建议"), "必须携带新输出结构（训练建议）");
-        assertTrue(ZH.contains("5. 对方关键威胁（可选）"), "必须携带新输出结构（对方关键威胁可选）");
+        // Natural Coach Mode：自由组织的自然复盘，禁止固定章节模板
+        assertFalse(ZH.contains("1. 核心结论：2-4 句"), "不得再强制核心结论章节");
+        assertFalse(ZH.contains("2. 关键决策窗口：只输出"), "不得再强制关键决策窗口章节");
+        assertFalse(ZH.contains("3. 可确认的团队问题：只写"), "不得再强制可确认问题章节");
+        assertFalse(ZH.contains("4. 训练建议：只写"), "不得再强制训练建议章节");
+        assertTrue(ZH.contains("自由组织的自然复盘"), "必须声明自由组织的自然复盘");
+        assertTrue(ZH.contains("不是固定章节模板"), "必须声明不是固定章节模板");
+        assertTrue(ZH.contains("## 团队复盘"), "主标题为 ## 团队复盘");
+        assertTrue(ZH.contains("3-5 个自然段"), "默认 3-5 个自然段");
+        assertTrue(ZH.contains("先判断整场最值得讲的 1-2 件事"), "先判断最值得讲的 1-2 件事");
+        assertTrue(ZH.contains("如果实际上只有一个决定性问题，就只讲一个"), "只有一个问题就只讲一个");
+        assertTrue(ZH.contains("内部 attention 提示"), "Focus Window 是内部 attention primitive");
+        assertTrue(ZH.contains("这局真正崩掉是在1分52秒后面那二十秒"), "自然语言引用窗口示例");
+        assertTrue(ZH.contains("对方关键威胁（可选）"), "对方关键威胁保持可选");
     }
 
     @Test
