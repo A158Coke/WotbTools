@@ -4,6 +4,32 @@
 
 ## [Unreleased]
 
+### Fixed
+- **PR #105 Review Blocker 修复——Natural Coach / Factual Consistency Guard（Review B1-1 / B1-2 / B2-1 / B2-2）**：
+  ① **B1-1 authoritative response source**——`TeamReplayAnalysisService.callRaw()` 删除无意义的
+  `collected` 缓冲，明确以 `AiChatResponse.completionText()` 为唯一权威完整响应（Gateway 契约：
+  callback 是流式 progress、正常结束 completionText 为聚合完整文本、失败一律抛 AiUpstreamException
+  绝不返回 partial）；新增 StreamingGateway 契约测试（多 chunk envelope / 垃圾 callback 不污染 /
+  upstream error 不产出部分结果 / retry 每轮独立响应无 buffer 串扰）。
+  ② **B1-2 三语 factual guard**——TeamReviewEnvelope.Claim 扩展机器可校验字段
+  （claimType / timeSec / region / count / subject / value），validator 优先做语言无关的
+  structured 校验（V2m 阵亡时间、V3m 存活变化 value、V4m 位置精确数量、V6m claimType=LOS/SPOTTING
+  一律 FAIL）；正文兜底文本解析与短语列表三语覆盖（ZH/EN/RU）：时间格式支持
+  `X分Y秒 / 1:49 / 109s / 1m49s / 1 мин 49 сек / 109 seconds / 109 секунд`，位置/LAST_KNOWN/LOS
+  短语列表三语；structured claims 要求机器时间格式（timeSec battle-relative 秒）与存活变化
+  机器格式（`7v7 -> 4v6`）；prompt（md + TeamPromptLocalizer ZH/EN/RU）同步。
+  ③ **B2-1 死亡时刻时钟契约**——`TeamGroundingFacts.build` 增加显式 battleStartRawClockSec 入口，
+  compat 路径（无 timeline）用 `reconstruction.battleStartRawClockSec()` 按
+  `raw > startRaw → raw − startRaw` 转 battle-relative（`deathTimeMillis`/legacy 估算为原始时钟域，
+  `survivalTimeSec` 校准后为 battle-relative）；补测试 + 注释明确契约。
+  ④ **B2-2 V4 精确语义**——structured region+count 默认 exact（claim == actual，少报同样 FAIL），
+  at-least/subset 标记（至少/at least/не менее；其中/of them/среди）放行下界/子集陈述；
+  正文自然语言无法区分时只防 over-count（不假装能判断）。
+  ⑤ 测试——TeamFactualConsistencyValidatorTest 新增 EN/RU 回归（V2/V3/V4/V5/V6 + 合法战术观点
+  三语 PASS）+ 机器字段用例 + B2-2 exact/subset/at-least；TeamGroundingFactsTest 新增死亡时钟
+  契约；TeamReviewEnvelopeParserTest 新增机器字段解析；TeamReviewRetryContractTest 新增 B1-1
+  gateway stream 契约；TeamReviewNaturalCoachContractTest 新增三语机器字段契约。
+
 ### Added
 - **Team AI Review Natural Coach Mode + Factual Consistency Guard（PR #103 之上）**：
   ① **Natural Coach Mode 输出契约**——团队复盘主正文改为【自由组织的自然复盘】：

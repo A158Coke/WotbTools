@@ -220,7 +220,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 | `ApiPaths` | `wotb-web/.../config/ApiPaths.java` | API URL 常量单一来源（SecurityConfig 匹配器与 Controller 映射共用） |
 | `TeamAiPromptBuilder` | `wotb-web/.../ai/TeamAiPromptBuilder.java` | 确定性团队输入压缩和 token 估算预算（`BudgetWriter` + `AiTokenEstimator`） |
 | `TeamGroundingFacts` | `wotb-core/.../replay/evidence/TeamGroundingFacts.java` | Team Call #2 确定性 Grounding Facts（证据编号 E1xx：阵亡/存活变化/关注窗口/位置快照/敌方位置知识 + prompt 渲染段） |
-| `TeamFactualConsistencyValidator` | `wotb-core/.../replay/evidence/TeamFactualConsistencyValidator.java` | 事实一致性校验（V1 时间归属 / V2 阵亡时间 / V3 存活变化 / V4 位置时间归属 / V5 CURRENT·LAST_KNOWN / V6 无证据硬事实；不判断战术观点） |
+| `TeamFactualConsistencyValidator` | `wotb-core/.../replay/evidence/TeamFactualConsistencyValidator.java` | 事实一致性校验（V1 时间归属 / V2 阵亡时间 / V3 存活变化 / V4 位置时间归属·exact 语义 / V5 CURRENT·LAST_KNOWN / V6 无证据硬事实；structured machine 校验优先（三语通用），正文文本兜底 ZH/EN/RU；不判断战术观点） |
 | `TeamReviewEnvelopeParser` | `wotb-web/.../ai/TeamReviewEnvelopeParser.java` | Team Call #2 structured envelope（primaryDiagnosis / reviewMarkdown / claims）JSON 解析，契约不成立返回 null 触发重写 |
 | `PlayerSideResolver` | `wotb-core/.../processing/PlayerSideResolver.java` | 随机战斗友方/敌方/未知解析（FRIENDLY/ENEMY/UNKNOWN），基于录像者权威 team |
 | `FriendlyEnemyResult` | `wotb-core/.../processing/FriendlyEnemyResult.java` | 三态胜负转换（FRIENDLY_WIN/ENEMY_WIN/DRAW_OR_UNKNOWN） |

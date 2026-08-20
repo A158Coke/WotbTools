@@ -72,7 +72,20 @@ public final class TeamReviewEnvelopeParser {
                     if (ids.size() > MAX_IDS_PER_CLAIM) {
                         return null;
                     }
-                    claims.add(new TeamReviewEnvelope.Claim(claimText, ids));
+                    // Review B1-2：可选机器校验字段（timeSec/region/count/subject/value/claimType）
+                    // 容忍缺失（纯战术观点可无机器字段）；类型不符时按缺失处理而非整体拒绝。
+                    final Double timeSec = doubleOrNull(item.get("timeSec"));
+                    final Integer region = intOrNull(item.get("region"));
+                    final Integer count = intOrNull(item.get("count"));
+                    final String subject = text(item.get("subject"));
+                    final String value = text(item.get("value"));
+                    final String claimType = text(item.get("claimType"));
+                    claims.add(new TeamReviewEnvelope.Claim(
+                            claimText, ids,
+                            claimType.isBlank() ? null : claimType,
+                            timeSec, region, count,
+                            subject.isBlank() ? null : subject,
+                            value.isBlank() ? null : value));
                 }
             }
             final TeamReviewEnvelope envelope =
@@ -103,6 +116,24 @@ public final class TeamReviewEnvelopeParser {
 
     private static String text(final JsonNode node) {
         return node == null || node.isNull() ? "" : node.asText("");
+    }
+
+    /** 数值字段（机器格式）；缺失/非数值 → null（容忍，不拒绝整个 claim）。 */
+    private static Double doubleOrNull(final JsonNode node) {
+        if (node == null || node.isNull() || !node.isNumber()) {
+            return null;
+        }
+        final double v = node.asDouble();
+        return Double.isFinite(v) && v > 0 ? v : null;
+    }
+
+    /** 整数字段（机器格式）；缺失/非整数 → null（容忍）。 */
+    private static Integer intOrNull(final JsonNode node) {
+        if (node == null || node.isNull() || !node.isNumber()) {
+            return null;
+        }
+        final int v = node.asInt();
+        return v > 0 ? v : null;
     }
 
     private static List<String> stringList(final JsonNode node) {

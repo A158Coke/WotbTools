@@ -71,12 +71,24 @@ evidence 选择最符合证据、同时最有训练价值的主解释，不要�
 2. claims 是 machine-readable grounding 元数据：数值类、时间类、位置类、明确玩家事件类
    与支撑主判断的事实类陈述必须进 claims 并引用对应证据编号；纯战术观点可以不进 claims，
    也不需要证据编号。
+   机器字段（三语通用，language-neutral）：涉及数值/时间/位置/玩家事件的 claim 应携带
+   timeSec（battle-relative 秒，数值）、region（九宫格 1-9）、count（车辆数，整数）、
+   subject（玩家昵称或坦克名）、value（存活变化机器格式，如 "7v7 -> 4v6"）、
+   claimType（DEATH / ALIVE_TRANSITION / POSITION_REGION / LAST_KNOWN / TACTICAL）。
+   region + count 表示【精确数量】：声称该区恰好 count 辆；若只是「至少 N 辆」
+   （at least / не менее）或「其中 N 辆」（among / of them / 其中 / среди），
+   必须在 text 中写出对应标记词。无论输出语言（中文/English/Русский），机器字段格式一致。
 3. 证据编号只能出现在结构化字段（primaryDiagnosis.supportingEvidenceIds / claims[].evidenceIds），
    绝不进入 reviewMarkdown 正文。
 4. 敌方 ENEMY_POSITION_KNOWN 的 LAST_KNOWN 只是「最后一次被观测到的位置」，绝不能写成
-   「敌方此时就在这里/正在某区」；引用 LAST_KNOWN 编号的 claim 必须使用
-   「最后一次观测在…」「上次看到在…」级别的措辞。
-5. 时间一律用「XX分XX秒」格式（如 75 秒写作 1分15秒），禁止「1:15」或累计秒数。
+   「敌方此时就在这里/正在某区」/ "is right here now" / "прямо здесь"；引用 LAST_KNOWN
+   编号的 claim 必须使用「最后一次观测在…」「上次看到在…」/ "last observed at…" /
+   "в последний раз видели в…" 级别的措辞。
+5. 正文时间一律用本地化格式（中文「XX分XX秒」/ English "Xm Xs" / Русский "X мин X с"），
+   禁止「1:15」或累计秒数；claims 的 timeSec 使用 battle-relative 秒（机器格式，如 112.4）。
+6. LOS / spotting / 视野类内容禁止作为事实 claim：claimType 不得为 LOS / SPOTTING / VISION /
+   LINE_OF_SIGHT（后端没有对应 evidence kind）；只能作为战术判断（claimType=TACTICAL）并
+   使用降级表达（更可能 / more likely / более вероятно）。
 === 证据契约（强制）：FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN ===
 1. FACT（事实）：只能来自权威结算、权威阵容、已验证的 canonical timeline 与后端确定性证据。
    例如「1分52秒至2分12秒，本方连续损失3辆，对方同期损失1辆」。

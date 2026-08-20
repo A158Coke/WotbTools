@@ -77,6 +77,46 @@ class TeamReviewEnvelopeParserTest {
     }
 
     @Test
+    void parsesMachineClaimFields() {
+        // Review B1-2：机器可校验字段（timeSec/region/count/subject/value/claimType）三语通用
+        final String json = "{"
+                + "\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
+                + "\"reviewMarkdown\":\"## 团队复盘\\n\\n内容\","
+                + "\"claims\":[{"
+                + "\"text\":\"WildCat died at 112 seconds\",\"evidenceIds\":[\"E101\"],"
+                + "\"claimType\":\"DEATH\",\"timeSec\":112.4,\"subject\":\"WildCat\","
+                + "\"region\":6,\"count\":5,\"value\":\"7v7 -> 4v6\"}]}";
+        final TeamReviewEnvelope envelope = TeamReviewEnvelopeParser.parse(json);
+        assertNotNull(envelope);
+        final TeamReviewEnvelope.Claim claim = envelope.claims().get(0);
+        assertEquals("DEATH", claim.claimType());
+        assertEquals(112.4, claim.timeSec(), 0.001);
+        assertEquals(6, claim.region());
+        assertEquals(5, claim.count());
+        assertEquals("WildCat", claim.subject());
+        assertEquals("7v7 -> 4v6", claim.value());
+        assertEquals(List.of("E101"), claim.evidenceIds());
+    }
+
+    @Test
+    void toleratesMissingMachineFields() {
+        // 纯战术观点 claim 可无机器字段（Review B1-2：容忍缺失）
+        final String json = "{"
+                + "\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
+                + "\"reviewMarkdown\":\"## 团队复盘\\n\\n内容\","
+                + "\"claims\":[{\"text\":\"I think the first engagement was the main issue.\"}]}";
+        final TeamReviewEnvelope envelope = TeamReviewEnvelopeParser.parse(json);
+        assertNotNull(envelope);
+        final TeamReviewEnvelope.Claim claim = envelope.claims().get(0);
+        assertNull(claim.claimType());
+        assertNull(claim.timeSec());
+        assertNull(claim.region());
+        assertNull(claim.count());
+        assertNull(claim.subject());
+        assertNull(claim.value());
+    }
+
+    @Test
     void rejectsNullAndBlank() {
         assertNull(TeamReviewEnvelopeParser.parse(null));
         assertNull(TeamReviewEnvelopeParser.parse("   "));

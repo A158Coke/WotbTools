@@ -32,6 +32,7 @@ import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
+import com.wotb.web.replay.ai.gateway.StreamConsumer;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import org.junit.jupiter.api.Test;
 
@@ -114,9 +115,60 @@ class TeamReviewRetryContractTest {
         assertEquals(2, gateway.teamCall2Requests());
     }
 
+    // ===== Review B1-1：callRaw authoritative response source = completionText() =====
+
+    @Test
+    void completionTextIsAuthoritativeOverPartialCallbackChunks() {
+        // stream() 回调只给零散 chunk（{ / "primary / Diagnosis...），completionText 是完整 envelope
+        final StreamingGateway gateway = new StreamingGateway(
+                List.of(GOOD_ENVELOPE), List.of("{", "\"primary", "Diagnosis\"..."), null);
+        final TeamReplayAnalysisService service = service(gateway);
+        final AnalyzeResult result = service.analyzeSingleTeamContext(
+                context(gateway, service), AllowedLanguage.ZH);
+        assertEquals("## 团队复盘\n\n这是一段复盘。", result.analysis(),
+                "envelope parser 必须以 completionText() 为唯一 authoritative source（非 callback 拼接）");
+    }
+
+    @Test
+    void garbageCallbackDoesNotPolluteParse() {
+        // 回调发出非 JSON 垃圾，completionText 是合法 envelope → 仍正确解析
+        final StreamingGateway gateway = new StreamingGateway(
+                List.of(GOOD_ENVELOPE), List.of("garbage chunk not json"), null);
+        final TeamReplayAnalysisService service = service(gateway);
+        final AnalyzeResult result = service.analyzeSingleTeamContext(
+                context(gateway, service), AllowedLanguage.ZH);
+        assertEquals("## 团队复盘\n\n这是一段复盘。", result.analysis(),
+                "callback 内容不得影响 completionText 的解析");
+    }
+
+    @Test
+    void upstreamErrorNeverYieldsPartialEnvelope() {
+        // 上游失败（AI_TIMEOUT）→ 直接抛 AiUpstreamException，绝不返回 partial envelope
+        final StreamingGateway gateway = new StreamingGateway(
+                List.of(GOOD_ENVELOPE), List.of(), new AiUpstreamException("AI_TIMEOUT", 504, "corr-1"));
+        final TeamReplayAnalysisService service = service(gateway);
+        final AiUpstreamException e = assertThrows(AiUpstreamException.class,
+                () -> service.analyzeSingleTeamContext(context(gateway, service), AllowedLanguage.ZH));
+        assertEquals("AI_TIMEOUT", e.code(),
+                "upstream error 必须原样传播（不是 AI_REVIEW_GROUNDING_FAILED，也不产出部分结果）");
+    }
+
+    @Test
+    void retryUsesFreshIndependentResponsesNoBufferCarry() {
+        // 每轮 attempt 独立 stream()：attempt1 冲突 → attempt2 全新 GOOD envelope（无前一轮 buffer 串扰）
+        final StreamingGateway gateway = new StreamingGateway(
+                List.of(BAD_ENVELOPE, GOOD_ENVELOPE), List.of("{", "\"primary", "Diagnosis\"..."), null);
+        final TeamReplayAnalysisService service = service(gateway);
+        final AnalyzeResult result = service.analyzeSingleTeamContext(
+                context(gateway, service), AllowedLanguage.ZH);
+        assertEquals("## 团队复盘\n\n这是一段复盘。", result.analysis());
+        assertEquals(2, gateway.teamCall2Requests(),
+                "Draft FAIL 后必须用全新响应重写，不串前一轮 buffer");
+    }
+
     // ---- fixture ----
 
-    private static TeamReplayAnalysisService service(final RetryGateway gateway) {
+    private static TeamReplayAnalysisService service(final AiChatGateway gateway) {
         final AiReplayAnalysisConfig config = new AiReplayAnalysisConfig(
                 new ConservativeDeepSeekTokenEstimator(), "test-model",
                 200_000, 131_072, 8192, 1000, true, "high", 315, 4096);
@@ -127,7 +179,7 @@ class TeamReviewRetryContractTest {
                 System::nanoTime, null);
     }
 
-    private static SingleTeamBattleAnalysisContext context(final RetryGateway gateway,
+    private static SingleTeamBattleAnalysisContext context(final AiChatGateway gateway,
                                                            final TeamReplayAnalysisService service) {
         final List<ReplayPerspectiveGroup> groups = new BatchAnalyzer().analyze(
                 List.of(teamResult("retry.wotbreplay", "arena-retry", "Ally", 1001L, 1, validRecon())))
@@ -222,6 +274,63 @@ class TeamReviewRetryContractTest {
                                              final int hp, final boolean alive) {
         return new HealthChangedEvent(seq, new ReplayTimestamp(START_RAW + battleSec, null), 7,
                 DecodeConfidence.EXACT, eid, hp, null, alive);
+    }
+
+    /**
+     * Review B1-1 流式替身：{@code stream()} 按调用顺序返回预设 completionText，
+     * 并先向 callback 发出预设 chunk（可为零散 JSON / 垃圾）——验证 callRaw 只用
+     * completionText()（authoritative），callback 仅为 progress。
+     */
+    private static final class StreamingGateway implements AiChatGateway {
+        final List<String> completions;
+        final List<String> callbackChunks;
+        final RuntimeException upstreamError;
+        final List<AiChatRequest> requests = new CopyOnWriteArrayList<>();
+        int index;
+
+        StreamingGateway(final List<String> completions,
+                         final List<String> callbackChunks,
+                         final RuntimeException upstreamError) {
+            this.completions = completions;
+            this.callbackChunks = callbackChunks;
+            this.upstreamError = upstreamError;
+        }
+
+        @Override
+        public boolean isConfigured() {
+            return true;
+        }
+
+        @Override
+        public AiChatResponse stream(final AiChatRequest request, final StreamConsumer consumer) {
+            requests.add(request);
+            if (upstreamError != null) {
+                throw upstreamError;
+            }
+            if (!"SINGLE_TEAM_BATTLE".equals(request.analysisMode())) {
+                return new AiChatResponse("{}", "DeepSeek", "test-model",
+                        0, 0, 0, 0, 0, 0, "stop");
+            }
+            for (final String chunk : callbackChunks) {
+                consumer.onDelta(chunk);
+            }
+            final String completion = completions.get(Math.min(index, completions.size() - 1));
+            index++;
+            return new AiChatResponse(completion, "DeepSeek", "test-model",
+                    0, 0, 0, 0, 0, 0, "stop");
+        }
+
+        @Override
+        public AiChatResponse chat(final AiChatRequest request) {
+            return stream(request, delta -> {
+            });
+        }
+
+        int teamCall2Requests() {
+            return (int) requests.stream()
+                    .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode()))
+                    .count();
+        }
     }
 
     /** 按调用顺序返回预设响应的替身；从不发起真实 HTTP。 */
