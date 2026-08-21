@@ -6,7 +6,7 @@ import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
-import com.wotb.core.replay.event.VehicleDestroyedEvent;
+import com.wotb.core.replay.event.UnsupportedDamageEvent;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.springframework.util.StringUtils;
 
@@ -58,19 +58,23 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
         switch (subType) {
             case SUBTYPE_ENTITY_METHOD_DAMAGE -> {
                 // damage event
-                final DamageResult damageResult = parseDamage(payload, entityId, packet, ts);
-                if (damageResult != null) {
-                    events.add(damageResult.damageEvent());
-                    if (damageResult.destroyedEvent() != null) {
-                        events.add(damageResult.destroyedEvent());
-                    }
-                } else {
-                    // 结构合法但语义未解码的伤害方法变体（非 direct/零伤害/短体变体）：
-                    // 可能对应跳弹/履带/模块/其他通知，未经证明；不产出事件、不进入生产时间线，
-                    // 也不算解析失败（区别于真正的 MALFORMED/TRUNCATED）。
+                final List<ReplayEvent> damageEvents = parseDamage(payload, packet, ts);
+                if (damageEvents.isEmpty()) {
+                    // 结构不足以解析身份 / direct 零伤害通知：保持既有 warning（不产出事件、
+                    // 不算解析失败，区别于真正的 MALFORMED/TRUNCATED）。
                     warnings.add(new ReplayDecodeWarning("UNSUPPORTED_DAMAGE_VARIANT",
                             "Undecoded damage-method variant at seq " + packet.sequence()
                                     + " (payloadLen=" + payload.length + ")"));
+                } else {
+                    // direct damage → DamageEvent；非 direct 变体 → UnsupportedDamageEvent
+                    // （结构合法但语义未解码的证据事件，不产生精确伤害数字，供 killer fail-closed）
+                    events.addAll(damageEvents);
+                    if (damageEvents.size() == 1
+                            && damageEvents.get(0) instanceof UnsupportedDamageEvent) {
+                        warnings.add(new ReplayDecodeWarning("UNSUPPORTED_DAMAGE_VARIANT",
+                                "Unsupported damage-method variant at seq " + packet.sequence()
+                                        + " (payloadLen=" + payload.length + ")"));
+                    }
                 }
             }
             case SUBTYPE_UPDATE_ARENA2 -> {
@@ -97,30 +101,47 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
         return new ReplayDecodeResult(status, events, warnings);
     }
 
-    private DamageResult parseDamage(byte[] payload, int entityId, RawReplayPacket packet, ReplayTimestamp ts) {
+    /**
+     * 解析 subtype 8 伤害方法包。
+     *
+     * <p>返回值：</p>
+     * <ul>
+     *   <li>direct 变体（body[13]=={@link #DAMAGE_SUB_DIRECT}）且伤害 &gt; 0 →
+     *       单个 {@link DamageEvent}（EXACT）；</li>
+     *   <li>结构合法但语义未解码的伤害方法变体（body.length ≥ 18 且 body[13] ≠ direct）→
+     *       单个 {@link UnsupportedDamageEvent}（PARTIAL）——保留时间 + 攻击者/受击者 eid 证据，
+     *       不产生精确伤害数字；用于 killer attribution fail-closed（致死窗口内存在无法排除的
+     *       unsupported 变体 → 击杀者必须为 null），绝不进入生产伤害统计；</li>
+     *   <li>其余（payload &lt; 25 / body &lt; 18 / direct 零伤害）→ 空表（调用方记 warning）。</li>
+     * </ul>
+     */
+    private List<ReplayEvent> parseDamage(byte[] payload, RawReplayPacket packet, ReplayTimestamp ts) {
         if (payload.length < 25) {
-            return null;
+            return List.of();
         }
         final byte[] body = new byte[payload.length - 8];
         System.arraycopy(payload, 8, body, 0, body.length);
 
-        if (body.length < 18 || (body[13] & 0xFF) != DAMAGE_SUB_DIRECT) {
-            return null;
+        if (body.length < 18) {
+            return List.of();
         }
-
         final int attackerEid = readI32LE(body, 4);
         final int victimEid = readI32LE(body, 8);
+        if ((body[13] & 0xFF) != DAMAGE_SUB_DIRECT) {
+            // 结构合法但语义未解码的伤害方法变体（火灾/撞击/其他）→ 证据事件（无精确伤害数字）
+            return List.of(new UnsupportedDamageEvent(
+                    packet.sequence(), ts, packet.type(), DecodeConfidence.PARTIAL,
+                    attackerEid, victimEid, null, null, "DAMAGE_METHOD_VARIANT"));
+        }
 
         final int damage = (body[14] & 0xFF) << 8 | (body[15] & 0xFF);
         if (damage <= 0) {
-            return null;
+            return List.of();
         }
 
-        final DamageEvent damageEvent = new DamageEvent(
+        return List.of(new DamageEvent(
                 packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
-                attackerEid, victimEid, null, null, damage, false);
-
-        return new DamageResult(damageEvent, null);
+                attackerEid, victimEid, null, null, damage, false));
     }
 
     /**
@@ -274,9 +295,6 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
             long wrapperFieldNumber,
             Map<Integer, List<Object>> root
     ) {
-    }
-
-    private record DamageResult(DamageEvent damageEvent, VehicleDestroyedEvent destroyedEvent) {
     }
 
     private record ParticipantMappingResult(List<ParticipantMappingEvent> mappingEvents) {

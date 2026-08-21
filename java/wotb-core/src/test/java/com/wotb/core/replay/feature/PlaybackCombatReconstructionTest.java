@@ -6,6 +6,7 @@ import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.event.UnsupportedDamageEvent;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -49,6 +50,13 @@ class PlaybackCombatReconstructionTest {
                                    final int victim, final int rawDamage) {
         return new DamageEvent(seq, new ReplayTimestamp((float) rawSec, null), 8,
                 DecodeConfidence.EXACT, attacker, victim, null, null, rawDamage, false);
+    }
+
+    /** 结构合法但语义未解码的伤害方法变体（火灾/撞击等；attacker=0 → 身份无法解析）。 */
+    private static UnsupportedDamageEvent unsup(final int seq, final double rawSec,
+                                                final int attacker, final int victim) {
+        return new UnsupportedDamageEvent(seq, new ReplayTimestamp((float) rawSec, null), 8,
+                DecodeConfidence.PARTIAL, attacker, victim, null, null, "DAMAGE_METHOD_VARIANT");
     }
 
     private PlaybackCombatReconstruction.Result derive(final List<com.wotb.core.replay.event.ReplayEvent> events) {
@@ -302,5 +310,77 @@ class PlaybackCombatReconstructionTest {
         assertEquals(1, result.destroyed().size());
         assertEquals(2002L, result.destroyed().get(0).killerAccountId(),
                 "窗口外未来 DAMAGE 不得泄漏为 killer");
+    }
+
+    // ---- PR #107 Blocker 5：unsupported damage variant fail-closed + 权威致死窗口 ----
+
+    @Test
+    void killedWithUnsupportedVariantAndDirectDamageInWindowHasNoKiller() {
+        // 致死窗口内：direct DAMAGE（entity2）+ 同一 victim 的 unsupported 变体（entity2）
+        // → 无法排除 unsupported 是真实致死源 → killer 必须 null
+        final var result = derive(List.of(
+                hp(1, START + 30.0f, 1, 242, true, DecodeConfidence.EXACT),
+                hp(2, START + 31.0f, 1, 0, false, DecodeConfidence.EXACT),
+                dmg(3, START + 30.8f, 2, 1, 500),
+                unsup(4, START + 30.9f, 2, 1)));
+        assertEquals(1, result.destroyed().size());
+        assertNull(result.destroyed().get(0).killerAccountId(),
+                "窗口内存在 unsupported 变体 → killer 必须 fail-closed 为 null");
+    }
+
+    @Test
+    void killedByUnsupportedLethalVariantWithStaleDirectDamageHasNoKiller() {
+        // 真实致死源 = unsupported 变体（火灾/撞击 @30.9，攻击者无法解析）；窗口内还有一条
+        // 更早的无关 direct DAMAGE（entity2 @30.7）——不得把该 direct attacker 错判为 killer
+        final var result = derive(List.of(
+                hp(1, START + 30.0f, 1, 242, true, DecodeConfidence.EXACT),
+                hp(2, START + 31.0f, 1, 0, false, DecodeConfidence.EXACT),
+                dmg(3, START + 30.7f, 2, 1, 300),
+                unsup(4, START + 30.9f, 0, 1)));
+        assertEquals(1, result.destroyed().size());
+        assertNull(result.destroyed().get(0).killerAccountId(),
+                "unsupported lethal 变体 + 前一条无关 direct DAMAGE → killer 必须 null");
+    }
+
+    @Test
+    void killerBoundToAuthoritativeLethalLossWindowNotFixedQuarterSecond() {
+        // 致死 HP-loss 窗口 = (30.0, 31.0]（242 → 0）；direct DAMAGE @30.6 距死亡 0.4s，
+        // 超过固定 0.25s 回退窗口但仍在权威致死窗口内 → 唯一可信攻击者 → killer 正确归属
+        final var result = derive(List.of(
+                hp(1, START + 30.0f, 1, 242, true, DecodeConfidence.EXACT),
+                hp(2, START + 31.0f, 1, 0, false, DecodeConfidence.EXACT),
+                dmg(3, START + 30.6f, 2, 1, 767)));
+        assertEquals(1, result.destroyed().size());
+        assertEquals(2002L, result.destroyed().get(0).killerAccountId(),
+                "killer 绑定权威致死 HP-loss 窗口而非固定 0.25s 最近通知");
+    }
+
+    @Test
+    void unsupportedVariantOutsideLethalWindowDoesNotBlockKiller() {
+        // unsupported 变体在致死窗口 (30.0, 31.0] 之前（29.5）→ 不在窗口内 → 不构成冲突，
+        // 窗口内唯一可信 direct attacker 仍可归属 killer（窗口有界，不过度保守）
+        final var result = derive(List.of(
+                hp(1, START + 30.0f, 1, 242, true, DecodeConfidence.EXACT),
+                hp(2, START + 31.0f, 1, 0, false, DecodeConfidence.EXACT),
+                dmg(3, START + 30.8f, 2, 1, 767),
+                unsup(4, START + 29.5f, 2, 1)));
+        assertEquals(1, result.destroyed().size());
+        assertEquals(2002L, result.destroyed().get(0).killerAccountId(),
+                "窗口外的 unsupported 变体不得误伤窗口内唯一可信 killer");
+    }
+
+    @Test
+    void unsupportedVariantDoesNotAffectLossAttribution() {
+        // unsupported 变体不产生精确伤害数字：不得进入 Loss（掉血窗口仍由 Type-7 sample 推导）
+        final var result = derive(List.of(
+                hp(1, START + 10.2f, 1, 3189, true, DecodeConfidence.EXACT),
+                hp(2, START + 12.0f, 1, 2812, true, DecodeConfidence.EXACT),
+                unsup(3, START + 11.5f, 2, 1)));
+        final PlaybackCombatReconstruction.Loss loss = result.lossesOf(1001L).get(0);
+        assertEquals(377, loss.hpLoss());
+        assertEquals(0, loss.damageEventCount(), "unsupported 变体不计入 damageEventCount");
+        assertNull(loss.attackerAccountId(), "unsupported 变体不能 attribution 掉血");
+        assertFalse(loss.attackerReliable());
+        assertTrue(result.destroyed().isEmpty());
     }
 }

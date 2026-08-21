@@ -128,7 +128,8 @@ watch(
 )
 
 // 双方总血量（实时剩余，随播放时间/进度条变化；争霸赛附终局点数）
-// 本方：存活车辆尚无血量变化采样时按 maxHp 回退（开局满血）；敌方：无可信采样恒 UNKNOWN 灰段（不把理论 maxHp 当已知血量）
+// 本方：存活车辆无采样 → RULE_DERIVED_FULL_AT_SPAWN 相对满血（FULL_RELATIVE 100% 实心条，
+// 不伪造具体数字）；敌方：无可信采样恒 UNKNOWN 灰段（不把 tankopedia base 当已知血量）
 const friendlyHp = computed(() => teamHp(playback.value?.vehicles, friendlyTeam.value, currentTime.value, true))
 const enemyHp = computed(() => teamHp(playback.value?.vehicles, friendlyTeam.value === 1 ? 2 : 1, currentTime.value, false))
 // 争霸赛实时点数：来自回放广播 pointsSamples（随 currentTime 变化）；非争霸赛/无广播 → null 不显示
@@ -137,12 +138,38 @@ const friendlyPoints = computed(() =>
 const enemyPoints = computed(() =>
   teamPointsAt(playback.value?.pointsSamples, friendlyTeam.value === 1 ? 2 : 1, currentTime.value))
 const showPoints = computed(() => friendlyPoints.value != null || enemyPoints.value != null)
-/** HP bar 填充宽度：kind='known' 阵营色实段（已知剩余）、'unknown' 灰色弱化段（未观测容量）。 */
+/**
+ * HP bar 填充宽度（PR #107 Blocker 2 aggregate state）：
+ * - FULL_RELATIVE（本方开局相对满血）→ known 段固定 100% 阵营色实心条（相对状态，无具体数字）；
+ * - EXACT（totalMax>0）→ known = knownRemaining/totalMax、unknown = unknownMax/totalMax（灰段参考）；
+ * - PARTIAL（有真实已知剩余但无已证明分母）→ known 段 100% + indeterminate 斜纹
+ *   （无法算真实比例，绝不按 tankopedia base 伪造分母）；
+ * - UNKNOWN → 0%（灰段也不渲染——无任何数据）。
+ * 禁止出现「totalMax=0、knownRemaining>0 却仍 0%」的空条。
+ */
 function hpBarFill(hp, kind) {
+  if (hp.state === 'FULL_RELATIVE') return kind === 'known' ? '100%' : '0%'
   const total = hp.totalMax || 0
-  if (total <= 0) return '0%'
+  if (total <= 0) {
+    if (kind === 'known') return hp.state === 'PARTIAL' ? '100%' : '0%'
+    return '0%'
+  }
   const val = kind === 'known' ? hp.knownRemaining : hp.unknownMax
   return `${Math.max(0, Math.min(100, (val / total) * 100)).toFixed(1)}%`
+}
+
+/**
+ * HP 数值区显示文本（绝不显示虚假的 knownRemaining / totalMax）：
+ * - FULL_RELATIVE → 「100%」（相对满血状态，非具体 HP 数字）；
+ * - UNKNOWN → —（无任何数据）；
+ * - EXACT → 「knownRemaining / totalMax」（真实已证明总数）；
+ * - PARTIAL → 「knownRemaining」（有真实已知剩余，不伪造分母）。
+ */
+function hpValueText(hp) {
+  if (hp.state === 'FULL_RELATIVE') return '100%'
+  if (hp.state === 'UNKNOWN') return '—'
+  if (hp.totalMax > 0) return `${hp.knownRemaining} / ${hp.totalMax}`
+  return String(hp.knownRemaining)
 }
 
 // ---- 播放状态 ----
@@ -321,6 +348,11 @@ function pruneTransients(now) {
 // ---- 单车 HP HUD 数据（§4/§5/§6/§7）----
 function hpFor(vehicle) {
   return hpDisplay(vehicle, currentTime.value, { friendly: vehicle.team === friendlyTeam.value })
+}
+/** marker HP HUD 数字区实际渲染文本（VehicleMarker .pb-hp-num 同款：current 有值→数字，否则 —）。
+ *  labelLayout 碰撞用：数字文本可能影响 HUD 盒宽（不同状态不同文本），必须按实际文本估算。 */
+function hpDisplayNumText(hp) {
+  return hp.current != null ? String(hp.current) : '—'
 }
 function ghostFor(accountId) {
   const g = ghostByAccount.get(accountId)
@@ -1331,12 +1363,21 @@ const selHp = computed(() => {
   if (!st) return null
   return hpDisplay(st.vehicle, currentTime.value, { friendly: st.vehicle.team === friendlyTeam.value })
 })
-// §6/§41：Details Panel 只显示当前实际 HP——tankopedia base HP 是车辆静态 metadata，
-// 不是本局最大/实际进场 HP，不得包装成「最大 HP」展示；百分比 denominator 不可靠也不展示。
+// §6/§41 + PR #107 Blocker 1：Details Panel 当前 HP 按 provenance 显示：
+// - DESTROYED → 0（权威阵亡）；
+// - RULE_DERIVED_FULL_AT_SPAWN → 「100%」——这是「开局相对满血状态」的 UI 投影，
+//   不是具体 HP 数值、也不是从 tankopedia base 推导的百分比（只做 display projection，
+//   绝不写入 currentHp 数值字段）；
+// - OBSERVED_EXACT / CURRENT_HP_EXACT_MAX_UNKNOWN 且 current 有值 → 真实 current 数字；
+// - UNKNOWN → —。
+// tankopedia base HP 是车辆静态 metadata，不是本局最大/实际进场 HP，不得包装成「最大 HP」展示。
 const selHpText = computed(() => {
   const d = selHp.value
-  if (!d || d.current == null) return '—'
-  return String(d.current)
+  if (!d) return '—'
+  if (d.destroyed) return '0'
+  if (d.state === 'RULE_DERIVED_FULL_AT_SPAWN') return '100%'
+  if (d.current != null) return String(d.current)
+  return '—'
 })
 const selHpLabel = computed(() => {
   const st = selectedState.value
@@ -1416,7 +1457,9 @@ const labelLayout = computed(() => {
   const markerCssSize = Number(mapEl.value?.querySelector('.pb-vehicle')?.offsetWidth) || MARKER_CORE_PX
   // 真实屏幕尺寸：随 viewport scale 缩放（Blocker 1：4× zoom → 144px 视觉、144px 碰撞）
   const coreSize = markerCssSize * view.scale
-  // HP HUD 真实渲染尺寸（.pb-hp-hud 屏幕恒定；测试环境无布局 → 回退 null 走 CSS 常量）
+  // HP HUD 真实渲染尺寸（.pb-hp-hud 屏幕恒定；测试环境无布局 → 回退 null 走 CSS 常量）。
+  // PR #107 Blocker 4：querySelector 第一辆车的 HUD 只作测量基准——不同车辆的显示文本不同
+  //（数字 vs —）可能影响宽度，labelLayout 侧再按每车 hpDisplayText 估算并取 max（保守覆盖全部状态）。
   const hpHudEl = mapEl.value?.querySelector('.pb-hp-hud')
   const hpBoxW = hpHudEl ? Number(hpHudEl.offsetWidth) : null
   const hpBoxH = hpHudEl ? Number(hpHudEl.offsetHeight) : null
@@ -1430,8 +1473,13 @@ const labelLayout = computed(() => {
       y: p.y,
       tankName: st.tankName,
       playerName: st.playerName,
-      hpVisible: hpPrefs.showHp && hp != null,
-      hpValue: hp ? hp.current : null,
+      // PR #107 Blocker 4：HP footprint 是否存在 = DOM 是否实际渲染 HUD（showHp 开且
+      // hpDisplay 有结果），不是 current 是否为 null——RULE_DERIVED_FULL_AT_SPAWN（current=null）
+      // 与 UNKNOWN 都会渲染 HUD（数字 — + bar），碰撞系统必须为它们建模真实盒。
+      hpRendered: hpPrefs.showHp && hp != null,
+      // 实际渲染的数字文本（VehicleMarker .pb-hp-num 同款：current 有值→数字，否则 —）；
+      // labelLayout 用它做「覆盖所有状态的保守盒宽」估算（与第一辆车实测宽取 max）
+      hpDisplayText: hp ? hpDisplayNumText(hp) : '',
       hpBoxW,
       hpBoxH,
       selected: selectedAccountId.value === st.vehicle.accountId,
@@ -1954,15 +2002,22 @@ const mapStyle = computed(() => ({
     </aside>
     </div>
 
-    <!-- 双方总血量条 + 争霸赛实时点数（阵营色实段=已知剩余，灰段=未观测容量，空=已损失） -->
+    <!-- 双方总血量条 + 争霸赛实时点数（PR #107 Blocker 2 aggregate state）：
+         FULL_RELATIVE=100% 阵营色实心（相对满血）；EXACT=真实分数（known/totalMax）；
+         PARTIAL=100% 斜纹 indeterminate（有真实已知剩余、无已证明分母）；UNKNOWN=空/— -->
     <div class="pb-hp-bars" data-test="pb-hp-bars">
       <div class="pb-hp-row">
         <span class="pb-hp-label">{{ $t('recon.map.playback.team_friendly') }}</span>
         <div class="pb-hp-track">
-          <div class="pb-hp-fill pb-hp-friendly" :style="{ width: hpBarFill(friendlyHp, 'known') }"></div>
+          <div
+            class="pb-hp-fill pb-hp-friendly"
+            :class="{ 'pb-hp-partial': friendlyHp.state === 'PARTIAL' }"
+            :style="{ width: hpBarFill(friendlyHp, 'known') }"
+            data-test="pb-hp-fill-friendly"
+          ></div>
           <div class="pb-hp-fill pb-hp-unknown" :style="{ width: hpBarFill(friendlyHp, 'unknown') }"></div>
         </div>
-        <span class="pb-hp-value">{{ friendlyHp.knownRemaining }}<template v-if="friendlyHp.totalMax > 0"> / {{ friendlyHp.totalMax }}</template></span>
+        <span class="pb-hp-value" data-test="pb-hp-value-friendly">{{ hpValueText(friendlyHp) }}</span>
         <span v-if="friendlyHp.spawnFullCount > 0" class="pb-hp-unknown-text" data-test="pb-hp-spawn-full-friendly">{{ $t('recon.map.playback.hp_full_spawn') }} ({{ friendlyHp.spawnFullCount }})</span>
         <span v-if="friendlyHp.unknownMax > 0" class="pb-hp-unknown-text" data-test="pb-hp-unknown-friendly">{{ $t('recon.map.playback.hp_unknown') }} {{ friendlyHp.unknownMax }}</span>
         <span v-if="showPoints && friendlyPoints != null" class="pb-hp-points" data-test="pb-points-friendly">{{ $t('recon.map.playback.points') }}: {{ friendlyPoints }}</span>
@@ -1970,10 +2025,15 @@ const mapStyle = computed(() => ({
       <div class="pb-hp-row">
         <span class="pb-hp-label">{{ $t('recon.map.playback.team_enemy') }}</span>
         <div class="pb-hp-track">
-          <div class="pb-hp-fill pb-hp-enemy" :style="{ width: hpBarFill(enemyHp, 'known') }"></div>
+          <div
+            class="pb-hp-fill pb-hp-enemy"
+            :class="{ 'pb-hp-partial': enemyHp.state === 'PARTIAL' }"
+            :style="{ width: hpBarFill(enemyHp, 'known') }"
+            data-test="pb-hp-fill-enemy"
+          ></div>
           <div class="pb-hp-fill pb-hp-unknown" :style="{ width: hpBarFill(enemyHp, 'unknown') }"></div>
         </div>
-        <span class="pb-hp-value">{{ enemyHp.knownRemaining }} / {{ enemyHp.totalMax }}</span>
+        <span class="pb-hp-value" data-test="pb-hp-value-enemy">{{ hpValueText(enemyHp) }}</span>
         <span v-if="enemyHp.unknownMax > 0" class="pb-hp-unknown-text" data-test="pb-hp-unknown-enemy">{{ $t('recon.map.playback.hp_unknown') }} {{ enemyHp.unknownMax }}</span>
         <span v-if="showPoints && enemyPoints != null" class="pb-hp-points" data-test="pb-points-enemy">{{ $t('recon.map.playback.points') }}: {{ enemyPoints }}</span>
       </div>
@@ -2120,6 +2180,12 @@ const mapStyle = computed(() => ({
 .pb-hp-friendly { background: var(--map-spawn-friendly, #8ef7b0); }
 .pb-hp-enemy { background: var(--map-spawn-enemy, #ff8d8d); }
 .pb-hp-unknown { background: rgba(128,128,128,.45); }
+/* PARTIAL（有真实已知剩余、无已证明分母）：阵营色底 + indeterminate 斜纹——
+   不是开局 fallback 条纹（开局用 FULL_RELATIVE 纯实心阵营色），只是「已知部分不完整」的表达 */
+.pb-hp-friendly.pb-hp-partial,
+.pb-hp-enemy.pb-hp-partial {
+  background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.35) 0 3px, transparent 3px 6px);
+}
 .pb-hp-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pb-hp-unknown-text { color: var(--text-muted, #999); white-space: nowrap; }
 .pb-hp-points { white-space: nowrap; }

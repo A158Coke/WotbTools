@@ -6,6 +6,7 @@ import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.UnsupportedDamageEvent;
 import com.wotb.core.replay.timeline.TimelineClock;
 
 import java.util.ArrayList;
@@ -25,10 +26,13 @@ import java.util.Map;
  *       attribution（§12/§13：单通知=精确 attribution；同攻击者多通知=整体 attribution；
  *       0 通知或混合攻击者=不 attribution，受害者掉血事实保留但不得伪造攻击者）。</li>
  *   <li><b>击毁事件</b>：HealthChangedEvent alive=false / HP=0（EXACT）为权威击毁时刻；
- *       destroyed 事实与 killer attribution 完全分离——killer 仅在致死窗口
- *       (timeSec − KILL_BACKING_WINDOW_SEC, timeSec] 内存在**唯一可信攻击者**时产生：
- *       窗口内全部该受害者的 DAMAGE 通知攻击者身份均可解析、候选一致、且攻击者 ≠ 受害者；
- *       任一条件不满足（无通知 / 多个不同攻击者 / 含未解析攻击者 / 自伤候选）→ killer = null，
+ *       destroyed 事实与 killer attribution 完全分离——killer 仅在致死窗口内存在
+ *       <b>唯一可信攻击者</b>时产生：致死窗口优先 = 权威致死 HP-loss 窗口 (prevT, timeSec]
+ *       （HP 掉到 0 的最后一档；无前序样本时回退 (timeSec − KILL_BACKING_WINDOW_SEC, timeSec]）；
+ *       窗口内全部该受害者的 DAMAGE 通知攻击者身份均可解析、候选一致、且攻击者 ≠ 受害者，
+ *       <b>且窗口内不存在任何无法排除的 unsupported damage 变体</b>（
+ *       {@link UnsupportedDamageEvent}——火灾/撞击等未解码伤害方法可能就是真实致死源，不得把
+ *       窗口内无关 direct DAMAGE 错判为 killer）。任一条件不满足 → killer = null，
  *       保留 destroyed 事实但绝不伪造 KILL。同一 victim 重复 alive=false/HP=0 事件去重，
  *       每车最多一个 destroyed 事实（保留最早可信击毁时刻）。</li>
  * </ul>
@@ -97,6 +101,10 @@ public final class PlaybackCombatReconstruction {
         final Map<Long, List<double[]>> samples = new HashMap<>();
         // 每账号 damage 通知（battle-relative 秒升序；{timeSec, attackerAccountId}）
         final Map<Long, List<double[]>> damagesByVictim = new HashMap<>();
+        // 每账号 unsupported damage 变体（battle-relative 秒升序；{timeSec, attackerAccountId}，
+        // attacker 仅可靠时 >0、否则 0）——结构合法但语义未解码的伤害（火灾/撞击等），
+        // 不产生精确伤害数字，但必须在 killer attribution 中 fail-closed。
+        final Map<Long, List<double[]>> unsupportedByVictim = new HashMap<>();
         for (final ReplayEvent event : events) {
             if (event instanceof HealthChangedEvent hp) {
                 if (hp.confidence() != DecodeConfidence.EXACT || hp.currentHealth() == null) {
@@ -137,12 +145,34 @@ public final class PlaybackCombatReconstruction {
                 final double attacker = attackerL == null ? 0.0 : attackerL;
                 damagesByVictim.computeIfAbsent(victim, k -> new ArrayList<>())
                         .add(new double[]{t, attacker});
+            } else if (event instanceof UnsupportedDamageEvent unsupported) {
+                // 结构合法但语义未解码的伤害方法变体：victim 能证明时记录（attacker 仅可靠时解析）
+                final Long victim = unsupported.victimAccountId() != null && unsupported.victimAccountId() > 0
+                        ? unsupported.victimAccountId()
+                        : accountOf(unsupported.victimEid(), mapping);
+                if (victim == null || victim <= 0) {
+                    continue;
+                }
+                final double t = battleClockOf(unsupported, battleStartRawClockSec);
+                if (!Double.isFinite(t) || t < 0 || t > duration + 1e-6) {
+                    continue;
+                }
+                final Long attackerL = unsupported.attackerAccountId() != null
+                        && unsupported.attackerAccountId() > 0
+                        ? unsupported.attackerAccountId()
+                        : accountOf(unsupported.attackerEid(), mapping);
+                final double attacker = attackerL == null ? 0.0 : attackerL;
+                unsupportedByVictim.computeIfAbsent(victim, k -> new ArrayList<>())
+                        .add(new double[]{t, attacker});
             }
         }
         for (final List<double[]> list : samples.values()) {
             list.sort(Comparator.comparingDouble(a -> a[0]));
         }
         for (final List<double[]> list : damagesByVictim.values()) {
+            list.sort(Comparator.comparingDouble(a -> a[0]));
+        }
+        for (final List<double[]> list : unsupportedByVictim.values()) {
             list.sort(Comparator.comparingDouble(a -> a[0]));
         }
 
@@ -189,11 +219,13 @@ public final class PlaybackCombatReconstruction {
 
         // 3) 击毁：alive=false / HP=0（EXACT）→ Destroyed 事实（每 victim 去重，保留最早时刻）。
         //    killer 仅在致死窗口内存在**唯一可信攻击者**时产生（fail-closed）：
-        //    - 窗口 (t − KILL_BACKING_WINDOW_SEC, t] 内该 victim 的全部 DAMAGE 通知（damagesByVictim
-        //      已按 victim 分组，天然满足「全部指向同一 victim」）；
-        //    - 每条通知的攻击者身份均可解析（attacker > 0）；
-        //    - 所有候选攻击者一致（无冲突候选）；
-        //    - 攻击者 ≠ 受害者（自伤候选不得作 killer）；
+        //    - 致死窗口优先 = 权威致死 HP-loss 窗口 (prevT, t]（HP 从 prevHp>0 掉到 0 的最后一档），
+        //      无该窗口（单一 HP=0 无前序样本）→ 回退固定 (t − KILL_BACKING_WINDOW_SEC, t]；
+        //    - 窗口内该 victim 的全部 DAMAGE 通知（damagesByVictim 已按 victim 分组）——
+        //      每条通知攻击者身份均可解析（attacker > 0）、候选一致、攻击者 ≠ 受害者；
+        //    - **窗口内存在任何无法排除的 unsupported damage 变体（火灾/撞击等未解码伤害方法）
+        //      → killer = null**——未解码变体可能就是真实致死源，不得把窗口内无关 direct DAMAGE
+        //      错判为 killer；
         //    任一不满足 → killer = null（保留 destroyed，不生成伪造 KILL）。
         final Map<Long, Destroyed> destroyedByVictim = new HashMap<>();
         for (final ReplayEvent event : events) {
@@ -217,18 +249,19 @@ public final class PlaybackCombatReconstruction {
             if (existing != null && existing.timeSec() <= t) {
                 continue;
             }
-            Long killer = null;
+            // 致死窗口起点：权威致死 HP-loss 窗口 (prevT, t]；无 → 固定回退 (t − 0.25, t]
+            double winStart = t - KILL_BACKING_WINDOW_SEC;
+            final double[] lethal = lethalLossWindow(samples, victim, t);
+            if (lethal != null) {
+                winStart = lethal[0];
+            }
+            boolean unique = true;
+            Long sole = null;
+            int inWindow = 0;
             final List<double[]> dmg = damagesByVictim.get(victim);
             if (dmg != null) {
-                boolean unique = true;
-                Long sole = null;
-                int inWindow = 0;
                 for (final double[] d : dmg) {
-                    final double dt = t - d[0];
-                    if (dt > KILL_BACKING_WINDOW_SEC + 1e-6) {
-                        continue; // 更早的通知不在窗口内
-                    }
-                    if (d[0] <= t + 1e-6) {
+                    if (d[0] > winStart + 1e-6 && d[0] <= t + 1e-6) {
                         inWindow++;
                         final long a = (long) d[1];
                         if (a <= 0) {
@@ -242,9 +275,20 @@ public final class PlaybackCombatReconstruction {
                         }
                     }
                 }
-                if (unique && inWindow >= 1 && sole != null) {
-                    killer = sole;
+            }
+            // 窗口内存在无法排除的 unsupported damage 变体 → 无法证明唯一归属
+            final List<double[]> unsupported = unsupportedByVictim.get(victim);
+            if (unsupported != null) {
+                for (final double[] u : unsupported) {
+                    if (u[0] > winStart + 1e-6 && u[0] <= t + 1e-6) {
+                        unique = false;
+                        break;
+                    }
                 }
+            }
+            Long killer = null;
+            if (unique && inWindow >= 1 && sole != null) {
+                killer = sole;
             }
             destroyedByVictim.put(victim, new Destroyed(t, victim, killer));
         }
@@ -271,6 +315,31 @@ public final class PlaybackCombatReconstruction {
             }
             if (timeSec > l.fromSec() + 1e-6 && timeSec <= l.toSec() + 1e-6) {
                 return l.hpLoss();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 权威致死 HP-loss 窗口：(prevT, t] 内 HP 从 prevHp &gt; 0 掉到 0（与 destroyed 时刻一致）。
+     * 有该窗口 → killer 扫描窗口用它（而非固定 0.25s「最近通知」）；无（单一 HP=0 无前序样本）→ null。
+     */
+    private static double[] lethalLossWindow(
+            final Map<Long, List<double[]>> samples,
+            final long victim,
+            final double destroyedT) {
+        final List<double[]> list = samples.get(victim);
+        if (list == null) {
+            return null;
+        }
+        for (int i = list.size() - 1; i >= 1; i--) {
+            final double[] cur = list.get(i);
+            if (Math.abs(cur[0] - destroyedT) > 1e-6) {
+                continue;
+            }
+            final double[] prev = list.get(i - 1);
+            if ((int) cur[1] == 0 && (int) prev[1] > 0) {
+                return new double[]{prev[0], destroyedT};
             }
         }
         return null;

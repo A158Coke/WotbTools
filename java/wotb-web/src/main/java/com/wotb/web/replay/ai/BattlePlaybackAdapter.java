@@ -73,8 +73,10 @@ public final class BattlePlaybackAdapter {
                     player.accountId, player.nickname, player.tankId,
                     ReplayDisplayNames.tankName(player.tankId, player.tankName), player.team,
                     intervals, deathSec, directions,
-                    player.observedMaxHp != null ? player.observedMaxHp
-                            : ReplayDisplayNames.tankMaxHpValue(player.tankId),
+                    // baseHp = Tankopedia 静态参考（metadata，不进本局百分比）；
+                    // observedCapacityHp = 回放观测容量（整场观测最大 current HP，下界 base）
+                    ReplayDisplayNames.tankMaxHpValue(player.tankId),
+                    player.observedMaxHp,
                     hpSamples,
                     tankTypeOf(player),
                     player.entryHpSource == null ? null : player.entryHpSource.name(),
