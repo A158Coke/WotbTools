@@ -225,12 +225,18 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
   `coordinateBounds` 的旧配置按兼容策略回退 `playableBounds`。
 ### 单车血量 HUD / 战斗反馈 / 车辆详情面板（PR5，docs/current-plan.md §4–§16）
 
-- **HP 数据优先级（确定性重建）**：`hpDisplay`（`utils/battlePlayback.js`）= ① 最近可信 HP 采样
-  （type-7 propId=3 EXACT，含装备加成，阵亡 0 采样）→ ② 已阵亡（deathSec ≤ t）权威 0 → ③ 本方存活且
-  `entryHpSource == OBSERVED_EXACT` 的已证明进场满血 `entryHp`（含装备/物资加成；`ObservedMaxHp` 判定：
-  受击覆盖完整 + 严格早于首次受击的 positive 样本 ≥ tankopedia base）→ ④ UNKNOWN（显示 —，绝不显示 0）。
-  tankopedia base 永不冒充进场满血；maxHp 缺失时百分比不伪造（bar 进入斜纹 UNKNOWN 语义，不隐藏 HP）。
-  任意 timestamp 确定性重建，backward/forward seek 均直接恢复状态。
+- **HP 数据优先级与 provenance 状态（确定性重建，PR #107 扩展）**：`hpDisplay`
+  （`utils/battlePlayback.js`）按状态机输出（`state` 字段，替代单一黑条/UNKNOWN 语义）：
+  ① 已阵亡（deathSec ≤ t）→ `DESTROYED`（权威 0）；② 最近可信 HP 采样 + `entryHpSource==OBSERVED_EXACT`
+  （受击覆盖完整 + 严格早于首次受击的 positive 样本 ≥ tankopedia base）→ `OBSERVED_EXACT`
+  （精确 current/max/pct）；③ 有真实 Type-7 current 采样但进场 max 未证明 →
+  `CURRENT_HP_EXACT_MAX_UNKNOWN`（current 精确；maxHp 用观测最大容量 observedMaxHp 作分母，
+  标注为观测分母、非进场满血证明；tooltip「当前 HP 已观测，进场最大 HP 未知」）；
+  ④ 本方存活 + 无采样 + 无战前掉血证据 → `RULE_DERIVED_FULL_AT_SPAWN`
+  （开局相对满血：前端 100% 阵营色完整血条，数字显示 —，不伪造具体数字，
+  tankopedia base 永不冒充本局 max/current/entry；三语 tooltip「开局满血，具体 HP 尚未从回放确认」）；
+  ⑤ 敌方/无依据 → `UNKNOWN`（灰段未知样式，不因己方 fallback 泄漏）。
+  任意 timestamp 确定性重建，backward/forward seek 均直接恢复状态；不把未来 sample 泄漏到过去。
 - **HP HUD**：每辆可显示车辆常驻「HP 数字 + 定宽 bar」（screen-space 恒定，friendly=地图 tone、
   enemy=red 与整车 team token 同源）；last-known 冻结最后可信值并弱化、destroyed 归零；
   开关「显示血量」（默认开，`wotb.pb.hp-prefs` localStorage 持久化）隐藏数字/bar/ghost，
