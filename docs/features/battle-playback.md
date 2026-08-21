@@ -234,7 +234,8 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
   ③ 有真实 Type-7 current 采样但进场 max 未证明 →
   `CURRENT_HP_EXACT_MAX_UNKNOWN`（**current 精确、maxHp=null、pct=null**——绝不使用
   tankopedia base/观测容量计算百分比；DTO 已把 `maxHp` 拆分为 `baseHp`（Tankopedia 静态参考）+
-  `observedCapacityHp`（回放观测容量）+ `entryHp`（已证明进场满血），三者独立 provenance；
+  `observedCapacityHp`（= 纯回放观测：真实可信 Type-7 positive HP 采样的最大值，无可信 sample 为
+  null，绝不 max(观测, base)/fallback base）+ `entryHp`（已证明进场满血），三者独立 provenance；
   tooltip「当前 HP 已观测，进场最大 HP 未知」，渲染阵营色 indeterminate 斜纹、不渲染黑条）；
   ④ 本方存活 + 无采样 + 无战前掉血证据 → `RULE_DERIVED_FULL_AT_SPAWN`
   （开局相对满血：marker 100% 阵营色完整血条**无条纹**，Details Panel 显示 **「100%」**——
@@ -246,11 +247,16 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
   （`utils/battlePlayback.js`）输出 `state`（确定性、可测试）：
   - `FULL_RELATIVE`：本方所有存活车辆均开局相对满血（无任何数字）→ 填充固定 100%
     阵营色实心条，数值区显示「100%」（相对状态）或本地化「开局满血」，绝不显示 0；
-  - `EXACT`：totalMax &gt; 0（有已证明实际总容量）→ 真实分数 knownRemaining/totalMax；
-  - `PARTIAL`：有真实已知剩余但无已证明分母 → 无法算真实比例，100% 斜纹 indeterminate
-    + 只显示已知数字（不伪造分母）；禁止「totalMax=0、knownRemaining&gt;0 却仍 0%」的空条；
+  - `EXACT`：**仅当该队所有参战车辆（含已阵亡、含无采样）的实际 entryHp 都已证明**
+    → 真实分数 knownRemaining/totalMax（已证明车辆 current 钳制 ≤ entryHp，known 绝不大于 total）；
+  - `PARTIAL`/MIXED：部分证明或混合 provenance（OBSERVED_EXACT + RULE_DERIVED_FULL_AT_SPAWN /
+    + CURRENT_HP_EXACT_MAX_UNKNOWN / + UNKNOWN、已阵亡但 entryHp 未证明等）→
+    有真实已知剩余但无「全队已证明分母」：100% 斜纹 indeterminate + 只显示真实已知剩余数字
+    （totalMax 归零，绝不显示 knownRemaining / partialTotalMax 分数、不伪造分母）；
+    禁止「totalMax=0、knownRemaining&gt;0 却仍 0%」的空条；
   - `UNKNOWN`：无任何数据（敌方无采样）→ 空条 + —，不显示虚假的「0 / 0」。
-  阵亡是权威事实（HP=0），dead 车容量不进未知灰段；Tankopedia base 相加不得冒充总 HP。
+  阵亡是权威事实（HP=0），dead 车容量不进未知灰段；Tankopedia base 相加不得冒充总 HP；
+  混合 provenance 一律不得冒充精确队伍总血量。
 - **HP HUD**：每辆可显示车辆常驻「HP 数字 + 定宽 bar」（screen-space 恒定，friendly=地图 tone、
   enemy=red 与整车 team token 同源）；last-known 冻结最后可信值并弱化、destroyed 归零；
   开关「显示血量」（默认开，`wotb.pb.hp-prefs` localStorage 持久化）隐藏数字/bar/ghost，
@@ -285,5 +291,9 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
   候选一致、非自伤）且**不含任何无法排除的 unsupported damage 变体**——结构合法但语义未解码的
   伤害方法变体（火灾/撞击等，type-8 解码层产出 `UnsupportedDamageEvent` 证据事件，无精确伤害数字）
   可能就是真实致死源，窗口内存在即 killer=null，绝不把窗口内无关 direct DAMAGE 错判为击杀者；
+  **unsupported 变体同时阻止 HP-loss attribution**：掉血窗口 (prevT, curT] 内存在该受害者的
+  unsupported 变体、或 victim 无法解析的 unsupported 证据（解码层已用可靠 outer entityId 回退，
+  仍无法解析的不得静默视为「无冲突」）→ 掉血数值事实保留、attacker=null、attackerReliable=false、
+  observedHpLoss=null（cumulative dealt / 伤害日志 / 事件级掉血均不得归给窗口内 direct DAMAGE）；
   destroyed 事实保留并去重，不因 killer 未知删除 HP=0/击毁。每 KILL 由同炮 DAMAGE 支撑的断言在
   `BattlePlaybackAdapterParityTest` 真实 fixture 上强制执行。

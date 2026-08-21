@@ -80,43 +80,54 @@ export function vehicleHpAt(vehicle, t, assumeFullWhenUnobserved = false) {
  * 队伍总血量聚合（t 时刻）——PR #107 HP provenance + Blocker 2 aggregate display state：
  * <ul>
  *   <li>totalMax = Σ已证明的实际最大 HP（entryHpSource=OBSERVED_EXACT 的 entryHp；无则 0，
- *       绝不含 tankopedia base 相加冒充本局总血量）；</li>
+ *       绝不含 tankopedia base 相加冒充本局总血量）；<b>仅在全队 entryHp 都证明时非 0</b>
+ *       （部分证明 → 0：不得用 partial total 冒充「全队已证明总容量」作分数分母）；</li>
  *   <li>knownRemaining = Σ真实已知当前剩余 HP（真实 Type-7 采样；阵亡=0；
- *       OBSERVED_EXACT 无采样按 entryHp 计 100%）；</li>
+ *       OBSERVED_EXACT 无采样按 entryHp 计 100%；已证明车辆的 current 钳制 ≤ entryHp——
+ *       EXACT 状态下 knownRemaining 绝不大于 totalMax）；</li>
  *   <li>unknownMax = Σ未证明容量的参考值（observedCapacityHp ?? baseHp；仅灰段/参考展示，
  *       绝不冒充本局总 HP）；</li>
  *   <li>spawnFullCount = 处于「开局相对满血」（RULE_DERIVED_FULL_AT_SPAWN）的存活本方车辆数；</li>
  *   <li>state = 聚合显示状态（deterministic、可测试）：
- *       EXACT（totalMax>0，有已证明实际总容量 → 真实分数可算）
- *       | PARTIAL（totalMax=0 但 knownRemaining>0，有真实已知剩余但无已证明分母 → 无法算分数）
+ *       EXACT（该队<b>所有参战车辆的实际 entryHp 均已证明</b>（含已阵亡车辆）→ 真实分数可算）
+ *       | PARTIAL/MIXED（部分证明或混合 provenance——OBSERVED_EXACT + RULE_DERIVED_FULL_AT_SPAWN
+ *         / + CURRENT_HP_EXACT_MAX_UNKNOWN / + UNKNOWN、已阵亡但 entryHp 未证明等：
+ *         有真实已知剩余但无「全队已证明分母」→ 只显示真实已知剩余数字或明确相对状态，
+ *         绝不显示 knownRemaining / partialTotalMax 分数）
  *       | FULL_RELATIVE（本方所有存活车辆均开局相对满血、无任何数字 → 100% 实心条，相对状态）
  *       | UNKNOWN（无任何数据——敌方无采样等）。</li>
  * </ul>
  * <p>阵亡是权威事实：当前 HP=0（绝不把 dead 车的容量计入未知灰段、也不残留旧采样）。
  * 敌方/未知路径无采样恒 UNKNOWN（不进入 FULL_RELATIVE）；本方路径仅在存活且无战前掉血证据时
- * 进入 RULE_DERIVED_FULL_AT_SPAWN（spawnFullCount），knownRemaining 不增加（不伪造数字）。</p>
+ * 进入 RULE_DERIVED_FULL_AT_SPAWN（spawnFullCount），knownRemaining 不增加（不伪造数字）。
+ * 混合 provenance 一律不得冒充精确队伍总血量（EXACT 门槛 = 全队 entryHp 证明）。</p>
  */
 export function teamHp(vehicles, team, t, assumeFullWhenUnobserved = false) {
+  const teamVehicles = (vehicles || []).filter(v => v && v.team === team)
   let totalMax = 0
   let knownRemaining = 0
   let unknownMax = 0
   let spawnFullCount = 0
   let aliveCount = 0
-  for (const v of vehicles || []) {
-    if (v.team !== team) continue
+  let entryProvenCount = 0
+  for (const v of teamVehicles) {
     const destroyed = v.deathSec != null && t >= v.deathSec - 1e-6
     const entryProven = v.entryHpSource === 'OBSERVED_EXACT'
       && Number.isFinite(v.entryHp) && v.entryHp > 0
-    if (entryProven) totalMax += v.entryHp
+    if (entryProven) {
+      entryProvenCount++
+      totalMax += v.entryHp
+    }
     if (destroyed) {
-      // 阵亡 = 已知 0：不把 dead 车容量计入未知灰段
+      // 阵亡 = 已知 0：不把 dead 车容量计入未知灰段（但 destroyed 且 entryHp 未证明仍阻止全队 EXACT）
       knownRemaining += 0
       continue
     }
     aliveCount++
     const cur = vehicleHpAt(v, t, false)
     if (cur != null) {
-      knownRemaining += cur
+      // 已证明车辆 current 钳制 ≤ entryHp：保证 EXACT 状态 knownRemaining ≤ totalMax
+      knownRemaining += entryProven ? Math.min(cur, v.entryHp) : cur
       continue
     }
     if (entryProven) {
@@ -133,8 +144,11 @@ export function teamHp(vehicles, team, t, assumeFullWhenUnobserved = false) {
       unknownMax += referenceCapacity(v)
     }
   }
+  // EXACT 只在该队所有参战车辆（含已阵亡、含无采样）的实际 entryHp 都已证明时成立；
+  // 部分证明（混合 provenance）→ PARTIAL/MIXED，禁止 known/total 分数、禁止 partial 分母
+  const allEntryProven = teamVehicles.length > 0 && entryProvenCount === teamVehicles.length
   let state
-  if (totalMax > 0) {
+  if (allEntryProven) {
     state = 'EXACT'
   } else if (knownRemaining > 0) {
     state = 'PARTIAL'
@@ -143,7 +157,9 @@ export function teamHp(vehicles, team, t, assumeFullWhenUnobserved = false) {
   } else {
     state = 'UNKNOWN'
   }
-  return { totalMax, knownRemaining, unknownMax, spawnFullCount, state }
+  // 非 EXACT 时 totalMax 归零：partial 证明的总容量不得冒充「全队已证明总容量」做分母
+  const effectiveTotalMax = state === 'EXACT' ? totalMax : 0
+  return { totalMax: effectiveTotalMax, knownRemaining, unknownMax, spawnFullCount, state }
 }
 
 /**

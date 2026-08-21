@@ -387,6 +387,66 @@ describe('BattlePlayback', () => {
     expect(wrapper3.find('[data-test="pb-hp-bars"]').text()).toContain('2000')
   })
 
+  it('PR #107 第 4 轮: 混合 provenance → PARTIAL（不显示 known/partialTotalMax 分数）', async () => {
+    stubRaf()
+    const overview = makeOverview()
+    // 两辆己方：A entryHp=3000 已证明（无采样=满血）；B current=2800 但 max 未证明
+    overview.playback.vehicles = [
+      { accountId: 1001, playerName: 'A', tankId: 1, tankName: 'Maus', team: 1,
+        positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null, directionSamples: [],
+        entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [], hpLosses: [] },
+      { accountId: 1002, playerName: 'B', tankId: 1, tankName: 'Maus', team: 1,
+        positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null, directionSamples: [],
+        entryHpSource: null, baseHp: 3000, observedCapacityHp: 2800, hpSamples: [{ timeSec: 0, hp: 2800 }], hpLosses: [] },
+    ]
+    overview.routes = [
+      { accountId: 1001, playerName: 'A', tankId: 1, team: 1, points: [{ x: 0, y: 0, timeSec: 0 }, { x: 5, y: 5, timeSec: 10 }], firstObservedSec: 0, lastObservedSec: 10, deathSec: null },
+      { accountId: 1002, playerName: 'B', tankId: 1, team: 1, points: [{ x: 10, y: 0, timeSec: 0 }, { x: 15, y: 5, timeSec: 10 }], firstObservedSec: 0, lastObservedSec: 10, deathSec: null },
+    ]
+    const wrapper = mountPlayback(overview, 12)
+    await flushPromises()
+    // 混合 provenance → PARTIAL：只显示真实已知剩余（5800），绝不显示 5800 / 3000 分数
+    expect(wrapper.find('[data-test="pb-hp-value-friendly"]').text()).toBe('5800')
+    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).not.toContain(' / 3000')
+    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).not.toContain('5800 /')
+    // PARTIAL → 斜纹 class（无已证明分母的 indeterminate 状态）
+    expect(wrapper.find('[data-test="pb-hp-fill-friendly"]').classes()).toContain('pb-hp-partial')
+  })
+
+  it('PR #107 第 4 轮: 全队 entryHp 证明 → EXACT 才显示 known / total 分数；已阵亡未证明阻止', async () => {
+    stubRaf()
+    const overview = makeOverview()
+    // 全队（2 辆）entryHp 均已证明 → EXACT：真实分数 5800 / 6000
+    overview.playback.vehicles = [
+      { accountId: 1001, playerName: 'A', tankId: 1, tankName: 'Maus', team: 1,
+        positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null, directionSamples: [],
+        entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [{ timeSec: 0, hp: 2800 }], hpLosses: [] },
+      { accountId: 1002, playerName: 'B', tankId: 1, tankName: 'Maus', team: 1,
+        positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null, directionSamples: [],
+        entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [], hpLosses: [] },
+    ]
+    overview.routes = [
+      { accountId: 1001, playerName: 'A', tankId: 1, team: 1, points: [{ x: 0, y: 0, timeSec: 0 }, { x: 5, y: 5, timeSec: 10 }], firstObservedSec: 0, lastObservedSec: 10, deathSec: null },
+      { accountId: 1002, playerName: 'B', tankId: 1, team: 1, points: [{ x: 10, y: 0, timeSec: 0 }, { x: 15, y: 5, timeSec: 10 }], firstObservedSec: 0, lastObservedSec: 10, deathSec: null },
+    ]
+    const wrapper = mountPlayback(overview, 12)
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-hp-value-friendly"]').text()).toBe('5800 / 6000')
+    expect(wrapper.find('[data-test="pb-hp-fill-friendly"]').classes()).not.toContain('pb-hp-partial')
+    // 加一辆已阵亡但 entryHp 未证明的队友 → 全队不得再 EXACT（PARTIAL，无分数）
+    overview.playback.vehicles.push({
+      accountId: 1003, playerName: 'C', tankId: 1, tankName: 'Maus', team: 1,
+      positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: 10, directionSamples: [],
+      entryHpSource: null, baseHp: 2000, observedCapacityHp: 2000, hpSamples: [], hpLosses: [],
+    })
+    overview.routes.push({ accountId: 1003, playerName: 'C', tankId: 1, team: 1, points: [{ x: 20, y: 0, timeSec: 0 }, { x: 25, y: 5, timeSec: 10 }], firstObservedSec: 0, lastObservedSec: 10, deathSec: 10 })
+    const wrapper2 = mountPlayback(overview, 12)
+    await flushPromises()
+    expect(wrapper2.find('[data-test="pb-hp-value-friendly"]').text()).toBe('5800')
+    expect(wrapper2.find('[data-test="pb-hp-bars"]').text()).not.toContain(' / ')
+    expect(wrapper2.find('[data-test="pb-hp-fill-friendly"]').classes()).toContain('pb-hp-partial')
+  })
+
   it('death does not jump the team HP bar to 65533 (0xFFFD sentinel excluded)', async () => {
     stubRaf()
     const overview = makeOverview()

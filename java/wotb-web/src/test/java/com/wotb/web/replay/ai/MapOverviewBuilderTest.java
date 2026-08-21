@@ -92,23 +92,20 @@ class MapOverviewBuilderTest {
             assertFalse(v.tankName().isBlank(), "坦克名应权威解析，非空: " + v.playerName());
             assertFalse(v.tankName().matches("\\d+"), "坦克名不应是纯数字 tankId: " + v.playerName());
         }
-        // 回放实测血量（#2）：maxHp 非空且 ≥ tankopedia base；fixture 至少录像者有血量采样
+        // 回放实测血量（#2）：fixture 至少录像者有血量采样
         assertTrue(overview.playback().vehicles().stream()
                         .anyMatch(v -> !v.hpSamples().isEmpty()),
                 "fixture 应至少有一辆车（录像者）有回放实测血量采样");
         // 争霸赛实时点数时间线契约（随机战 fixture 无 field12 广播 → 空列表而非 null）
         assertNotNull(overview.playback().pointsSamples(), "pointsSamples 契约：非 null");
         for (final MapOverview.PlaybackVehicle v : overview.playback().vehicles()) {
-            // PR #107 Blocker 3：maxHp 拆分为 baseHp（Tankopedia 静态参考）+ observedCapacityHp
-            //（回放观测容量，下界 base）——观测容量应由回放实测/兜底解析，且不得低于 tankopedia base
-            assertNotNull(v.observedCapacityHp(),
-                    "observedCapacityHp 应由回放实测/兜底解析，非空: " + v.playerName());
+            // PR #107 Blocker 3：baseHp 只来自 Tankopedia；observedCapacityHp 只来自真实可信
+            // Type-7 positive HP 采样最大值（纯回放观测；无可信 sample → null；绝不 max(观测, base)）
             final Integer base = ReplayDisplayNames.tankMaxHpValue(v.tankId());
             assertEquals(base, v.baseHp(), "baseHp 应为 tankopedia 静态参考: " + v.playerName());
-            if (base != null) {
-                assertTrue(v.observedCapacityHp() >= base,
-                        "observedCapacityHp 不得低于 tankopedia base: " + v.playerName());
-            }
+            assertEquals(MapOverview.observedCapacityHpOf(v.hpSamples()), v.observedCapacityHp(),
+                    "observedCapacityHp 必须与 hpSamples 纯观测最大值一致（无样本为 null）: "
+                            + v.playerName());
         }
         assertFalse(overview.playback().events().isEmpty());
         assertTrue(overview.playback().events().stream()

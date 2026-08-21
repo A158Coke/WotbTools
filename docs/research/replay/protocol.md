@@ -36,7 +36,7 @@
 - **权威 HP 变化**只来自 Type-7 propId=3 signed i16 绝对当前 HP（EXACT，含装备加成，单调非增无治疗）：连续可信 sample 的 previousHp − currentHp = 该窗口 (prevT, curT] 内真实掉血。
 - **attribution** 只信任窗口内全部 DAMAGE 通知同属一个攻击者（0 通知 / 混合攻击者 / 身份无法解析 → 不 attribution，受害者掉血事实保留）。
 - Type-8 raw 值不再作为用户可见精确伤害；playback DTO 字段更名 rawProtocolValue（保留研究用），权威掉血经 observedHpLoss（单通知精确 attribution）与车辆级 hpLosses 暴露。
-- 解码器限制：parseDamage 只解 body[13]==3 direct 变体且 damage > 0（u16）；跳弹/履带/模块/火灾/撞击等变体不产出事件（UNSUPPORTED_DAMAGE_VARIANT），掉血窗口内无通知时无法 attribution。
+- 解码器：direct 变体（body[13]==3 且 damage > 0）→ DamageEvent（EXACT；raw 数值不是权威伤害，见上）；结构足够（body.length ≥ 18）的非 direct 变体（body[13]≠3）→ UnsupportedDamageEvent（PARTIAL 证据事件：保留时间 + 攻击者/受击者 eid，不产生精确伤害数字；受击者 eid 缺失时用可靠 outer entityId（方法调用目标实体 = 受击者）作 victim 证据）——它使对应 HP-loss attribution 与 killer attribution 都 fail-closed（掉血事实保留、attacker=null、attackerReliable=false、observedHpLoss=null、致死窗口 killer=null；victim 仍无法解析的证据不得静默视为「无冲突」）；身份字段分别标记真实证据等级（EXACT/PARTIAL），未通过真实样本证明的字段不得写 PROVEN；结构不足的变体（payload<25 / body<18 / direct 零伤害）仍只产生 UNSUPPORTED_DAMAGE_VARIANT warning，不得假装 canonical identity 已解析。
 
 **证据**：BattlePlaybackHpDamageProbeTest（非 CI 手动探针，-Dprobe.replay=<file>）输出逐车 hpSamples / hpLosses / DAMAGE raw / DESTROYED / KILL；PlaybackCombatReconstructionTest 覆盖 attribution 边界（单攻击者/混合/无通知/窗口左右开闭/击毁击杀推导）。
 

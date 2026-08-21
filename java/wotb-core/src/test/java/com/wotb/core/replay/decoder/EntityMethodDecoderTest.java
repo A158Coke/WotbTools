@@ -124,6 +124,20 @@ class EntityMethodDecoderTest {
     }
 
     @Test
+    void nonDirectVariantWithMissingVictimEidFallsBackToOuterEntityId() {
+        // 结构合法但 body 内 victim eid 缺失（0）的 unsupported 变体：不得静默丢弃——
+        // 用可靠 outer entityId（方法调用目标实体 = 受击者）作 victim 证据
+        final ReplayDecodeResult result = decoder.decode(context,
+                damageMethodPacket(1, 10f, 0xFC6017, 0xFC6018, 0, 0, 0));
+        assertEquals(DecodeStatus.PARTIAL, result.status());
+        assertEquals(1, result.events().size());
+        final UnsupportedDamageEvent ev = (UnsupportedDamageEvent) result.events().getFirst();
+        assertEquals(0xFC6017, ev.victimEid(), "victim eid 缺失时用 outer entityId 作 victim 证据");
+        assertEquals(0xFC6018, ev.attackerEid());
+        assertEquals("DAMAGE_METHOD_VARIANT", ev.variant());
+    }
+
+    @Test
     void directSubWithZeroDamageProducesNoEventAndVariantWarning() {
         // direct 变体零伤害：语义已解码（direct），只是无伤害 → 保持 warning、不产出证据事件
         final ReplayDecodeResult result = decoder.decode(context,

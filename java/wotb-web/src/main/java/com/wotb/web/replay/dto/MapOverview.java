@@ -141,8 +141,8 @@ public record MapOverview(
      * current/max/entry HP：</p>
      * <ul>
      *   <li>{@code baseHp} = Tankopedia 静态参考（metadata；允许作为灰段/参考展示，禁止进本局百分比）；</li>
-     *   <li>{@code observedCapacityHp} = 回放观测容量（= 整场观测最大 current HP，下界 tankopedia base；
-     *       仅「观测分母」参考，不是进场满血证明）；</li>
+     *   <li>{@code observedCapacityHp} = 回放观测容量（= 真实可信 Type-7 positive HP 采样的最大值，
+     *       纯回放观测；无可信 sample 为 null；绝不 max(观测, base)/fallback base）；</li>
      *   <li>{@code entryHp} = 已证明的进场满血（仅 entryHpSource==OBSERVED_EXACT 有效，否则 null）。</li>
      * </ul>
      *
@@ -225,6 +225,24 @@ public record MapOverview(
     }
 
     /**
+     * observedCapacityHp 推导（PR #107 Blocker 3）：真实可信 Type-7 positive HP 采样的最大值
+     * （纯回放观测；与前端收到的 hpSamples 同源同值）。无可信 positive sample → null——
+     * 绝不用 max(观测, tankopedia base) 钳制、也不 fallback 到 base（base 只是静态参考）。
+     */
+    public static Integer observedCapacityHpOf(final List<HpSample> samples) {
+        if (samples == null) {
+            return null;
+        }
+        int max = 0;
+        for (final HpSample s : samples) {
+            if (s != null && s.hp() > max) {
+                max = s.hp();
+            }
+        }
+        return max > 0 ? max : null;
+    }
+
+    /**
      * 车辆方向采样（battle-relative 秒升序）。
      * <p>单位均为度：{@code hullYawDeg} 来自 type-10 yaw（弧度→度，[-180,180)）；
      * {@code turretRelativeYawDeg} 来自 type-7 propId=2（u16*360/65536-180，[-180,180)，
@@ -255,8 +273,9 @@ public record MapOverview(
      * @param targetAccountId 对象（DAMAGE/KILL 的受害者）；其余为 null
      * @param rawProtocolValue DAMAGE 的 Type-8 raw 协议值（语义未证明——不得当权威伤害展示；
      *                        权威掉血见 {@link HpLoss} 与 {@link #observedHpLoss}）；其余为 null
-     * @param observedHpLoss DAMAGE 可证明的掉血值（仅当该窗口内唯一伤害通知且可 attribution 时
-     *                       非 null；其余为 null——前端不得显示伪造的精确伤害）
+     * @param observedHpLoss DAMAGE 可证明的掉血值（仅当该窗口内唯一伤害通知且可 attribution——
+     *                       attackerReliable、窗口内无 unsupported 变体时非 null；其余为 null——
+     *                       前端不得显示伪造的精确伤害、也不得把 unsupported 冲突窗口的掉血挂到单条通知）
      */
     public record PlaybackEvent(
             String type,

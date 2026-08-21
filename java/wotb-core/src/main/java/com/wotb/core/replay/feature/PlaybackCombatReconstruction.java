@@ -24,7 +24,12 @@ import java.util.Map;
  *   <li><b>HP loss 记录</b>：同一车辆连续可信 HP sample 的 drop（previousHp − newHp，HP 单调非增无治疗），
  *       带时间窗口与攻击者 attribution——窗口 (prevT, curT] 内的 DAMAGE 通知全部来自同一攻击者才可
  *       attribution（§12/§13：单通知=精确 attribution；同攻击者多通知=整体 attribution；
- *       0 通知或混合攻击者=不 attribution，受害者掉血事实保留但不得伪造攻击者）。</li>
+ *       0 通知或混合攻击者=不 attribution，受害者掉血事实保留但不得伪造攻击者）。
+ *       <b>unsupported damage 变体（{@link UnsupportedDamageEvent}）同时阻止 attribution</b>：
+ *       窗口 (prevT, curT] 内只要存在该受害者的 unsupported 变体、或任何 victim 无法解析的
+ *       unsupported 证据（无法排除它就是该掉血来源）→ 掉血数值事实保留、attackerAccountId=null、
+ *       attackerReliable=false（{@link #observedHpLossAt} 也不把该掉血挂到某条 direct DAMAGE）；
+ *       绝不把 unsupported 的 raw 字段当伤害数字。</li>
  *   <li><b>击毁事件</b>：HealthChangedEvent alive=false / HP=0（EXACT）为权威击毁时刻；
  *       destroyed 事实与 killer attribution 完全分离——killer 仅在致死窗口内存在
  *       <b>唯一可信攻击者</b>时产生：致死窗口优先 = 权威致死 HP-loss 窗口 (prevT, timeSec]
@@ -103,8 +108,12 @@ public final class PlaybackCombatReconstruction {
         final Map<Long, List<double[]>> damagesByVictim = new HashMap<>();
         // 每账号 unsupported damage 变体（battle-relative 秒升序；{timeSec, attackerAccountId}，
         // attacker 仅可靠时 >0、否则 0）——结构合法但语义未解码的伤害（火灾/撞击等），
-        // 不产生精确伤害数字，但必须在 killer attribution 中 fail-closed。
+        // 不产生精确伤害数字，但必须在 killer attribution 与 HP-loss attribution 中 fail-closed。
         final Map<Long, List<double[]>> unsupportedByVictim = new HashMap<>();
+        // victim 无法解析的 unsupported 证据（{timeSec, attackerAccountId}）——绝不得静默丢弃：
+        // 任何掉血/致死窗口内存在它 = 无法排除的潜在掉血/致死源 → 该窗口 fail-closed（不 attribution、
+        // 不判 killer）。解码层已尽量用可靠 outer entityId 填充 victim；仍无法映射的在此保守兜底。
+        final List<double[]> unsupportedUnresolved = new ArrayList<>();
         for (final ReplayEvent event : events) {
             if (event instanceof HealthChangedEvent hp) {
                 if (hp.confidence() != DecodeConfidence.EXACT || hp.currentHealth() == null) {
@@ -146,13 +155,7 @@ public final class PlaybackCombatReconstruction {
                 damagesByVictim.computeIfAbsent(victim, k -> new ArrayList<>())
                         .add(new double[]{t, attacker});
             } else if (event instanceof UnsupportedDamageEvent unsupported) {
-                // 结构合法但语义未解码的伤害方法变体：victim 能证明时记录（attacker 仅可靠时解析）
-                final Long victim = unsupported.victimAccountId() != null && unsupported.victimAccountId() > 0
-                        ? unsupported.victimAccountId()
-                        : accountOf(unsupported.victimEid(), mapping);
-                if (victim == null || victim <= 0) {
-                    continue;
-                }
+                // 结构合法但语义未解码的伤害方法变体（attacker 仅可靠时解析；raw 字段无伤害数字）
                 final double t = battleClockOf(unsupported, battleStartRawClockSec);
                 if (!Double.isFinite(t) || t < 0 || t > duration + 1e-6) {
                     continue;
@@ -162,6 +165,14 @@ public final class PlaybackCombatReconstruction {
                         ? unsupported.attackerAccountId()
                         : accountOf(unsupported.attackerEid(), mapping);
                 final double attacker = attackerL == null ? 0.0 : attackerL;
+                final Long victim = unsupported.victimAccountId() != null && unsupported.victimAccountId() > 0
+                        ? unsupported.victimAccountId()
+                        : accountOf(unsupported.victimEid(), mapping);
+                if (victim == null || victim <= 0) {
+                    // victim 无法解析：不得静默丢弃——任何窗口内存在它即 fail-closed
+                    unsupportedUnresolved.add(new double[]{t, attacker});
+                    continue;
+                }
                 unsupportedByVictim.computeIfAbsent(victim, k -> new ArrayList<>())
                         .add(new double[]{t, attacker});
             }
@@ -208,7 +219,11 @@ public final class PlaybackCombatReconstruction {
                         }
                     }
                 }
-                final boolean reliable = !mixed && inWindow >= 1 && soleAttacker != null;
+                // unsupported 冲突：窗口内存在该受害者的 unsupported 变体、或 victim 无法解析的
+                // unsupported 证据（无法排除它就是掉血来源）→ 掉血事实保留、attribution fail-closed
+                final boolean unsupportedConflict = anyInWindow(unsupportedByVictim.get(victim), prevT, curT)
+                        || anyInWindow(unsupportedUnresolved, prevT, curT);
+                final boolean reliable = !mixed && !unsupportedConflict && inWindow >= 1 && soleAttacker != null;
                 losses.computeIfAbsent(victim, k -> new ArrayList<>()).add(new Loss(
                         prevT, curT, hpLoss,
                         reliable ? soleAttacker : null,
@@ -223,9 +238,9 @@ public final class PlaybackCombatReconstruction {
         //      无该窗口（单一 HP=0 无前序样本）→ 回退固定 (t − KILL_BACKING_WINDOW_SEC, t]；
         //    - 窗口内该 victim 的全部 DAMAGE 通知（damagesByVictim 已按 victim 分组）——
         //      每条通知攻击者身份均可解析（attacker > 0）、候选一致、攻击者 ≠ 受害者；
-        //    - **窗口内存在任何无法排除的 unsupported damage 变体（火灾/撞击等未解码伤害方法）
-        //      → killer = null**——未解码变体可能就是真实致死源，不得把窗口内无关 direct DAMAGE
-        //      错判为 killer；
+        //    - **窗口内存在任何无法排除的 unsupported damage 变体（火灾/撞击等未解码伤害方法，
+        //      含 victim 无法解析的证据）→ killer = null**——未解码变体可能就是真实致死源，
+        //      不得把窗口内无关 direct DAMAGE 错判为 killer；同规则也阻止该窗口的 HP-loss attribution；
         //    任一不满足 → killer = null（保留 destroyed，不生成伪造 KILL）。
         final Map<Long, Destroyed> destroyedByVictim = new HashMap<>();
         for (final ReplayEvent event : events) {
@@ -276,15 +291,11 @@ public final class PlaybackCombatReconstruction {
                     }
                 }
             }
-            // 窗口内存在无法排除的 unsupported damage 变体 → 无法证明唯一归属
-            final List<double[]> unsupported = unsupportedByVictim.get(victim);
-            if (unsupported != null) {
-                for (final double[] u : unsupported) {
-                    if (u[0] > winStart + 1e-6 && u[0] <= t + 1e-6) {
-                        unique = false;
-                        break;
-                    }
-                }
+            // 窗口内存在无法排除的 unsupported damage 变体（该受害者的，或 victim 无法解析的）→
+            // 无法证明唯一归属（unsupported 可能就是真实致死源）
+            if (anyInWindow(unsupportedByVictim.get(victim), winStart, t)
+                    || anyInWindow(unsupportedUnresolved, winStart, t)) {
+                unique = false;
             }
             Long killer = null;
             if (unique && inWindow >= 1 && sole != null) {
@@ -313,11 +324,29 @@ public final class PlaybackCombatReconstruction {
             if (l.damageEventCount() != 1) {
                 continue;
             }
+            // 只有可 attribution 的掉血才能挂到单条 direct DAMAGE：窗口内存在 unsupported 变体 /
+            // 混合攻击者 / 身份无法解析 → attackerReliable=false → 不得把掉血归给该 direct 通知
+            if (!l.attackerReliable()) {
+                continue;
+            }
             if (timeSec > l.fromSec() + 1e-6 && timeSec <= l.toSec() + 1e-6) {
                 return l.hpLoss();
             }
         }
         return null;
+    }
+
+    /** {timeSec, attackerAccountId} 列表内是否有事件落在 (fromT, toT]（左开右闭，与 Loss 窗口同口径）。 */
+    private static boolean anyInWindow(final List<double[]> events, final double fromT, final double toT) {
+        if (events == null) {
+            return false;
+        }
+        for (final double[] e : events) {
+            if (e[0] > fromT + 1e-6 && e[0] <= toT + 1e-6) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
