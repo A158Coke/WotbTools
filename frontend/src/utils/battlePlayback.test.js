@@ -3,6 +3,7 @@ import {
   aggregateEventsBySecond,
   clampViewPan,
   cumulativeStatsAt,
+  damageLogAt,
   eventsCrossed,
   formatClock,
   ghostAround,
@@ -552,21 +553,60 @@ describe('hpDisplay / ghostAround / cumulativeStatsAt / eventsCrossed / transien
     expect(ghostAround(null, 10)).toBeNull()
   })
 
-  it('cumulativeStatsAt: deterministic dealt/received/kills at arbitrary t', () => {
-    const events = [
-      { type: 'DAMAGE', timeSec: 10, accountId: 1, targetAccountId: 2, damage: 400 },
-      { type: 'DAMAGE', timeSec: 12, accountId: 2, targetAccountId: 1, damage: 540 },
-      { type: 'KILL', timeSec: 30, accountId: 1, targetAccountId: 2, damage: null },
-      { type: 'DESTROYED', timeSec: 30, accountId: 2, targetAccountId: null, damage: null }
+  it('cumulativeStatsAt: deterministic dealt/received/kills at arbitrary t（hpLosses 口径，§16/§17）', () => {
+    // vehicles：车辆 1 是受害者（received），车辆 2 是攻击者（dealt attribution）
+    const vehicles = [
+      { accountId: 1, hpLosses: [
+        { fromSec: 0, toSec: 10, hpLoss: 400, attackerAccountId: 2, attackerReliable: true },
+        { fromSec: 10, toSec: 12, hpLoss: 540, attackerAccountId: null, attackerReliable: false }, // 不可归属
+      ] },
+      { accountId: 2, hpLosses: [
+        { fromSec: 12, toSec: 30, hpLoss: 320, attackerAccountId: 1, attackerReliable: true },     // 车辆 1 造成的
+      ] },
     ]
-    expect(cumulativeStatsAt(events, 1, 5)).toEqual({ dealt: 0, received: 0, kills: 0 })
-    expect(cumulativeStatsAt(events, 1, 11)).toEqual({ dealt: 400, received: 0, kills: 0 }) // 12s 伤害尚未发生
-    expect(cumulativeStatsAt(events, 1, 12)).toEqual({ dealt: 400, received: 540, kills: 0 })
-    expect(cumulativeStatsAt(events, 1, 40)).toEqual({ dealt: 400, received: 540, kills: 1 })
-    expect(cumulativeStatsAt(events, 2, 40)).toEqual({ dealt: 540, received: 400, kills: 0 })
+    const events = [
+      { type: 'KILL', timeSec: 30, accountId: 1, targetAccountId: 2 },
+    ]
+    expect(cumulativeStatsAt(events, 1, 5, vehicles)).toEqual({ dealt: 0, received: 0, kills: 0 })
+    expect(cumulativeStatsAt(events, 1, 11, vehicles)).toEqual({ dealt: 0, received: 400, kills: 0 })
+    expect(cumulativeStatsAt(events, 1, 12, vehicles)).toEqual({ dealt: 0, received: 940, kills: 0 })
+    expect(cumulativeStatsAt(events, 1, 40, vehicles)).toEqual({ dealt: 320, received: 940, kills: 1 })
+    expect(cumulativeStatsAt(events, 2, 40, vehicles)).toEqual({ dealt: 400, received: 320, kills: 0 })
     // backward seek 恢复旧值（不依赖单向累减）
-    expect(cumulativeStatsAt(events, 1, 12)).toEqual({ dealt: 400, received: 540, kills: 0 })
+    expect(cumulativeStatsAt(events, 1, 12, vehicles)).toEqual({ dealt: 0, received: 940, kills: 0 })
     expect(cumulativeStatsAt(null, 1, 10)).toEqual({ dealt: 0, received: 0, kills: 0 })
+    // raw Type-8 协议值不参与统计（即使出现在 events 里）
+    const rawEvents = [{ type: 'DAMAGE', timeSec: 5, accountId: 1, targetAccountId: 2, rawProtocolValue: 9999 }]
+    expect(cumulativeStatsAt(rawEvents, 1, 10, vehicles)).toEqual({ dealt: 0, received: 400, kills: 0 })
+  })
+
+  it('damageLogAt: 最近伤害记录（§19）——in/out + 不可归属 + anti-future-leak + 最近 N 条', () => {
+    const vehicles = [
+      { accountId: 1, hpLosses: [
+        { fromSec: 0, toSec: 10, hpLoss: 400, attackerAccountId: 2, attackerReliable: true },
+        { fromSec: 10, toSec: 12, hpLoss: 540, attackerAccountId: null, attackerReliable: false },
+      ] },
+      { accountId: 2, hpLosses: [
+        { fromSec: 5, toSec: 15, hpLoss: 300, attackerAccountId: 1, attackerReliable: true },
+        { fromSec: 15, toSec: 50, hpLoss: 700, attackerAccountId: 1, attackerReliable: true },
+      ] },
+      { accountId: 3, hpLosses: [] },
+    ]
+    // t=20：future（50s）不泄漏
+    let log = damageLogAt(vehicles, 1, 20)
+    expect(log.map(r => [r.dir, r.hpLoss])).toEqual([
+      ['in', 400], ['in', 540], ['out', 300],
+    ])
+    expect(log[0].attackerAccountId).toBe(2)
+    expect(log[0].attackerReliable).toBe(true)
+    expect(log[1].attackerReliable).toBe(false) // 不可归属
+    expect(log[2].victimAccountId).toBe(2)
+    // t=60：全部可见；最近 2 条（时间升序的末 2 条）
+    const last2 = damageLogAt(vehicles, 1, 60, 2)
+    expect(last2.map(r => r.hpLoss)).toEqual([300, 700])
+    // 无效输入
+    expect(damageLogAt(null, 1, 60)).toEqual([])
+    expect(damageLogAt(vehicles, 99, 60)).toEqual([])
   })
 
   it('eventsCrossed: strict left-open, inclusive right; no re-trigger at cursor', () => {

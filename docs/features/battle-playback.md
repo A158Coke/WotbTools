@@ -244,13 +244,14 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
   （只显示「受害者被击毁」，victim-only，最多 3 条队列、约 5s 生命周期，§15.2）。
   失察期间受击（事件时刻无位置流覆盖）不跳伤害、不更新 HP、不显示 attacker（§7.2）；
   prefers-reduced-motion 取消 ghost/flash/burst/feed 动画（事实保留）。
-- **Detail Sidebar（§8）**：点击 marker 打开/切换（不 toggle-off）、点击空白不关闭、× 显式关闭、
-  destroyed 车可选、seek 保持同一 selected vehicle；宽屏右侧固定、窄屏（≤768px）置于地图下方。
-  当前状态分区（当前 playback 时间点重建）：阵营/车辆类型/状态（已发现/最后已知/已击毁）/
-  当前或最后已知 HP/max HP/HP %/当前播放时间/当前累计造成伤害/协助伤害（恒 —，§9 无逐时间点
-  来源）/承受伤害/击杀数 + 最近伤害记录（攻击者事件时刻无位置流覆盖显示「来源未知」，§13）；
-  「最终战绩」分区（明确标注，结算口径）：造成/协助/承受伤害、击杀、开火/命中/穿透/命中率/
-  穿透率/受到命中/受到穿透/格挡伤害（`PlaybackVehicle.finalStats`）。
+- **Detail Sidebar（§8，2026-08 收敛为 current-state only）**：点击 marker 打开/切换（不 toggle-off）、
+  点击空白不关闭、× 显式关闭、destroyed 车可选、seek 保持同一 selected vehicle；宽屏右侧固定、
+  窄屏（≤768px）置于地图下方。面板只含**当前 playback 时间点**状态：阵营/车辆类型（replay →
+  tankopedia fallback，全部 metadata 缺失才 —，§8）/状态（已发现/最后已知/已击毁）/当前或最后已知
+  HP（**只显示实际值**——tankopedia base HP 是静态 metadata 不是本局最大 HP，不再展示「最大 HP/
+  HP %」，§6/§41）/当前播放时间/已记录伤害（Σ 可 attribution 的权威掉血，§17）/承受伤害（Σ 该车全部
+  掉血）/击杀数 + 最近伤害记录（权威掉血，攻击者不可证明或未点亮显示「来源未知」，§12/§13）。
+  「最终战绩」分区与协助伤害行已**删除**（整场结算不混入当前时间点面板，§18/§20）。
 - **KILL 广播 provenance（§15 验证结论）**：KILL 事件派生自 lethal DamageEvent（type-8 直接伤害
   通知），只能证明录像者客户端收到该伤害通知、不能证明客户端当时可见全局击杀广播中的击杀者身份
   → kill feed 不显示攻击者（victim-only）；每 KILL 由同炮 DAMAGE 支撑的断言在

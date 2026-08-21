@@ -159,6 +159,7 @@ public record MapOverview(
             String tankType,
             String entryHpSource,
             Integer entryHp,
+            List<HpLoss> hpLosses,
             FinalStats finalStats
     ) {
         public PlaybackVehicle {
@@ -170,7 +171,27 @@ public record MapOverview(
             directionSamples = directionSamples == null
                     ? List.of() : List.copyOf(directionSamples);
             hpSamples = hpSamples == null ? List.of() : List.copyOf(hpSamples);
+            hpLosses = hpLosses == null ? List.of() : List.copyOf(hpLosses);
         }
+    }
+
+    /**
+     * 单车一次权威 HP 变化（docs/current-plan.md §12/§13）。
+     *
+     * @param fromSec           窗口起点（前一可信 HP sample，battle-relative 秒）
+     * @param toSec             窗口终点（后一可信 HP sample；掉血发生在 (fromSec, toSec]）
+     * @param hpLoss            掉血值 = previousHp - currentHp（HP 单调非增，无治疗）
+     * @param attackerAccountId 可证明的攻击者账号；null = 无法可靠 attribution
+     *                          （0 通知 / 混合攻击者 / 身份无法解析）——不得伪造攻击者
+     * @param attackerReliable  是否可 attribution（= attackerAccountId != null）
+     */
+    public record HpLoss(
+            double fromSec,
+            double toSec,
+            int hpLoss,
+            Long attackerAccountId,
+            boolean attackerReliable
+    ) {
     }
 
     /** 单车最终战绩（整场结算口径；仅用于「最终战绩」分区，不得冒充当前时间点状态）。 */
@@ -221,14 +242,18 @@ public record MapOverview(
      * @param timeSec        battle-relative 秒
      * @param accountId      主体（攻击者 / 被击毁者 / 进入或离开观察的车辆）；无法解析为 null
      * @param targetAccountId 对象（DAMAGE/KILL 的受害者）；其余为 null
-     * @param damage         DAMAGE 的伤害值；其余为 null
+     * @param rawProtocolValue DAMAGE 的 Type-8 raw 协议值（语义未证明——不得当权威伤害展示；
+     *                        权威掉血见 {@link HpLoss} 与 {@link #observedHpLoss}）；其余为 null
+     * @param observedHpLoss DAMAGE 可证明的掉血值（仅当该窗口内唯一伤害通知且可 attribution 时
+     *                       非 null；其余为 null——前端不得显示伪造的精确伤害）
      */
     public record PlaybackEvent(
             String type,
             double timeSec,
             Long accountId,
             Long targetAccountId,
-            Integer damage
+            Integer rawProtocolValue,
+            Integer observedHpLoss
     ) {
     }
 }

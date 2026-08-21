@@ -6,6 +6,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   CHAR_WIDTH_FACTOR,
+  HP_HUD_GAP_PX,
+  HP_HUD_H_PX,
   LABEL_GAP_PX,
   LABEL_PAD_X,
   LABEL_PAD_Y,
@@ -42,23 +44,35 @@ describe('estimateLabelWidth', () => {
   })
 })
 
-describe('computeLabelLayout', () => {
+describe('computeLabelLayout（§21–§28：真实 visual footprint 碰撞）', () => {
   const vw = 800
   const vh = 600
+  const CORE = 36
+  const HALF = CORE / 2
 
-  it('基础盒：TankName 居中于车上方，PlayerName 在其上；两行/单行自适应', () => {
+  function item(accountId, x, y, tankName = 'Maus', playerName = 'Player' + accountId, extra = {}) {
+    return { accountId, x, y, tankName, playerName, ...extra }
+  }
+
+  it('基础盒：marker core + TankName + PlayerName 垂直堆叠（screen px，core 之上）；单行/双行自适应', () => {
     const res = computeLabelLayout([item(1, 100, 200)], { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh })
     const r = res.get(1)
     const tankW = estimateLabelWidth('Maus', 10)
-    expect(r.tankBox).toEqual({ x: 100 - tankW / 2, y: 200 - LABEL_GAP_PX - tankH, w: tankW, h: tankH })
+    // core 盒参与碰撞（§22）
+    expect(r.coreBox).toEqual({ x: 100 - HALF, y: 200 - HALF, w: CORE, h: CORE })
+    // 标签在 core 上方：tank 底边 = core 顶 - gap
+    expect(r.tankBox).toEqual({ x: 100 - tankW / 2, y: 200 - HALF - LABEL_GAP_PX - tankH, w: tankW, h: tankH })
     expect(r.playerBox).toEqual({
       x: 100 - estimateLabelWidth('Player1', 9) / 2,
-      y: 200 - LABEL_GAP_PX - tankH - playerH,
+      y: 200 - HALF - LABEL_GAP_PX - tankH - playerH,
       w: estimateLabelWidth('Player1', 9),
       h: playerH,
     })
     expect(r.tankDy).toBe(0)
     expect(r.playerConflict).toBe(false)
+    expect(r.blockHidden).toBe(false)
+    expect(r.hpBox).toBeNull()
+    expect(r.hpHidden).toBe(false)
     // 只显示 TankName：无 player 盒；只显示 PlayerName：无 tank 盒
     const onlyTank = computeLabelLayout([item(1, 100, 200)], { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh }).get(1)
     expect(onlyTank.playerBox).toBeNull()
@@ -66,6 +80,23 @@ describe('computeLabelLayout', () => {
     const onlyPlayer = computeLabelLayout([item(1, 100, 200)], { showTank: false, showPlayer: true, viewportW: vw, viewportH: vh }).get(1)
     expect(onlyPlayer.tankBox).toBeNull()
     expect(onlyPlayer.playerBox).not.toBeNull()
+  })
+
+  it('HP HUD 盒：hpVisible 时位于 label 块之上（§22 HP 参与碰撞；数字+bar 宽度）', () => {
+    const res = computeLabelLayout(
+      [item(1, 100, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3189 })],
+      { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh })
+    const r = res.get(1)
+    const labelBlockH = tankH + playerH
+    expect(r.hpBox).not.toBeNull()
+    expect(r.hpBox.w).toBe(48) // bar 定宽（数字 3189 估算宽度 < 48）
+    expect(r.hpBox.y).toBe(200 - HALF - LABEL_GAP_PX - labelBlockH - HP_HUD_GAP_PX - HP_HUD_H_PX)
+    expect(r.hpHidden).toBe(false)
+    // hpVisible=false → 无 HP 盒（§28：不可见 HP UI 不占位）
+    const off = computeLabelLayout(
+      [item(1, 100, 200, 'Maus', 'P1', { hpVisible: false })],
+      { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh }).get(1)
+    expect(off.hpBox).toBeNull()
   })
 
   it('viewport 裁剪（§35）：越界 marker 不参与碰撞', () => {
@@ -76,36 +107,44 @@ describe('computeLabelLayout', () => {
     expect(res.get(1).tankBox).not.toBeNull()
     expect(res.get(2).tankBox).toBeNull()
     expect(res.get(3).tankBox).toBeNull()
-    // 越界者不参与冲突（越界 3 的 player 不报冲突）
     expect(res.get(2).playerConflict).toBe(false)
   })
 
-  it('§34 TankName 冲突：上方的标签上移让位，上限一行高度', () => {
-    // 两车水平重叠、垂直间距小（200 vs 212）→ 标签重叠 2px → 上方标签上移 2px 让位
+  it('§34 TankName 冲突：上方标签上移让位（含下方 marker core 障碍），上限一行高度', () => {
+    // 两车水平重叠、垂直间距小（200 vs 212）：B(下方) 标签与 A core 重叠 10px → B 上移 10；
+    // A 标签与 B 位移后标签重叠 12px → A 上移 12。最终无残留 overlap。
     const res = computeLabelLayout(
       [item(1, 200, 200, 'WZ-111 model 5A'), item(2, 200, 212, 'T57 Heavy Tank')],
       { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh }
     )
     const r1 = res.get(1)
     const r2 = res.get(2)
-    expect(r1.tankDy).toBe(-2)
+    expect(r2.tankDy).toBe(-10) // 让开 A 的 marker core（§22）
+    expect(r1.tankDy).toBe(-12) // 让开 B 位移后的标签
     expect(r1.tankDy).toBeGreaterThanOrEqual(-TANK_SHIFT_MAX_PX)
+    expect(r2.tankDy).toBeGreaterThanOrEqual(-TANK_SHIFT_MAX_PX)
+    // 最终无重叠：A 底边 <= B 顶边 <= A core 顶边
     expect(r1.tankBox.y + r1.tankBox.h).toBeLessThanOrEqual(r2.tankBox.y)
-    expect(r2.tankDy).toBe(0) // 下方的标签不动
+    expect(r2.tankBox.y + r2.tankBox.h).toBeLessThanOrEqual(res.get(1).coreBox.y)
+    // 无不可分离冲突 → 不隐藏
+    expect(r1.blockHidden).toBe(false)
+    expect(r2.blockHidden).toBe(false)
   })
 
-  it('§34 位移上限：深重叠时只允许一行高度，接受剩余 overlap', () => {
-    // 同位重叠 14px → 位移被钳制在 -TANK_SHIFT_MAX_PX，接受剩余 overlap
+  it('§34 位移上限：深重叠时只允许一行高度（上者让位，达到上限）', () => {
     const res = computeLabelLayout(
       [item(1, 200, 200, 'Maus'), item(2, 200, 200, 'Maus')],
       { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh }
     )
+    // 同位：上方标签（accountId 小，y 相同决胜）让开下方同位标签 → 达上限；下方不动
     expect(res.get(1).tankDy).toBe(-TANK_SHIFT_MAX_PX)
+    expect(res.get(2).tankDy).toBe(0)
+    expect(res.get(1).tankDy).toBeGreaterThanOrEqual(-TANK_SHIFT_MAX_PX)
+    // 上移后不再压任何 marker core（§22）
+    expect(res.get(1).tankBox.y + tankH).toBeLessThanOrEqual(res.get(2).coreBox.y)
   })
 
   it('§34 B1：3 label 连锁碰撞——从下往上 greedy，后处理标签不再撞回已处理标签', () => {
-    // 同 X，y=200/212/224（h=14）：基础盒 184-198 / 196-210 / 208-222
-    // 旧算法（从上往下）会得到 A 182-196 / B 194-208 / C 208-222（A/B 仍 overlap 2px）
     const res = computeLabelLayout(
       [
         item(1, 200, 200, 'WZ-111 model 5A'),
@@ -114,45 +153,16 @@ describe('computeLabelLayout', () => {
       ],
       { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh }
     )
-    expect(res.get(1).tankDy).toBe(-4)
-    expect(res.get(2).tankDy).toBe(-2)
-    expect(res.get(3).tankDy).toBe(0)
-    // final boxes：A 180-194 / B 194-208 / C 208-222，无残留 overlap
-    expect(res.get(1).tankBox.y).toBe(180)
-    expect(res.get(2).tankBox.y).toBe(194)
-    expect(res.get(3).tankBox.y).toBe(208)
+    // 手工推导：C(224) 让 B(212) core 10px → -10；B 让 C 位移后标签 12px → -12；
+    // A(200) 让 B 位移后标签 14px → -14。最终无残留重叠。
+    expect(res.get(3).tankDy).toBe(-10)
+    expect(res.get(2).tankDy).toBe(-12)
+    expect(res.get(1).tankDy).toBe(-14)
+    // 无残留重叠
     expect(res.get(1).tankBox.y + tankH).toBeLessThanOrEqual(res.get(2).tankBox.y)
     expect(res.get(2).tankBox.y + tankH).toBeLessThanOrEqual(res.get(3).tankBox.y)
-  })
-
-  it('§34 B1：4/5 label 密集链——未达上限时无残留 overlap', () => {
-    // 4 label：y=200/210/220/230 → final tops 172/186/200/214
-    const r4 = computeLabelLayout(
-      [1, 2, 3, 4].map((i) => item(i, 200, 200 + (i - 1) * 10, 'WZ-111 model 5A')),
-      { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh }
-    )
-    expect([1, 2, 3, 4].map((id) => r4.get(id).tankBox.y)).toEqual([172, 186, 200, 214])
-    for (let i = 1; i <= 3; i++) expect(r4.get(i).tankBox.y + tankH).toBeLessThanOrEqual(r4.get(i + 1).tankBox.y)
-    // 5 label：y=200/212/224/236/248 → final tops 176/190/204/218/232
-    const r5 = computeLabelLayout(
-      [1, 2, 3, 4, 5].map((i) => item(i, 200, 200 + (i - 1) * 12, 'WZ-111 model 5A')),
-      { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh }
-    )
-    expect([1, 2, 3, 4, 5].map((id) => r5.get(id).tankBox.y)).toEqual([176, 190, 204, 218, 232])
-    for (let i = 1; i <= 4; i++) expect(r5.get(i).tankBox.y + tankH).toBeLessThanOrEqual(r5.get(i + 1).tankBox.y)
-  })
-
-  it('§34 B1：达到位移上限后允许剩余 overlap（不无限移动）', () => {
-    // 三标签同位：最下方不动，上两个各到 -TANK_SHIFT_MAX_PX 上限 → 1/2 接受剩余 overlap
-    const res = computeLabelLayout(
-      [item(1, 200, 200, 'Maus'), item(2, 200, 200, 'Maus'), item(3, 200, 200, 'Maus')],
-      { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh }
-    )
-    expect(res.get(3).tankDy).toBe(0)
-    expect(res.get(2).tankDy).toBe(-TANK_SHIFT_MAX_PX)
-    expect(res.get(1).tankDy).toBe(-TANK_SHIFT_MAX_PX)
-    expect(res.get(1).tankBox.y + tankH).toBeGreaterThan(res.get(2).tankBox.y) // 剩余 overlap 被接受
-    expect(res.get(2).tankBox.y + tankH).toBeLessThanOrEqual(res.get(3).tankBox.y)
+    expect(res.get(2).tankBox.y + tankH).toBeLessThanOrEqual(res.get(1).coreBox.y)
+    expect(res.get(3).tankBox.y + tankH).toBeLessThanOrEqual(res.get(2).coreBox.y)
   })
 
   it('§34 B1：输入顺序变化 → 结果 deterministic（y 排序 + accountId 决胜）', () => {
@@ -167,6 +177,7 @@ describe('computeLabelLayout', () => {
     for (const id of [1, 2, 3]) {
       expect(rev.get(id).tankDy).toBe(fwd.get(id).tankDy)
       expect(rev.get(id).tankBox.y).toBe(fwd.get(id).tankBox.y)
+      expect(rev.get(id).blockHidden).toBe(fwd.get(id).blockHidden)
     }
     // 同位（同 y）输入顺序翻转同样 deterministic（accountId 决胜）
     const a = computeLabelLayout([item(1, 200, 200, 'Maus'), item(2, 200, 200, 'Maus')], { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh })
@@ -184,44 +195,23 @@ describe('computeLabelLayout', () => {
     expect(res.get(2).tankDy).toBe(0)
   })
 
-  it('§32 B2：playerBox 从 final tankBox 推导——共享块整体位移（tankDy=0 / -2 / -MAX）', () => {
-    // tankDy=0：相距远，无位移
-    const r0 = computeLabelLayout(
-      [item(1, 100, 100, 'Maus', 'P1'), item(2, 600, 500, 'Maus', 'P2')],
-      { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh }
-    )
-    expect(r0.get(1).tankDy).toBe(0)
-    expect(r0.get(1).playerBox.y).toBe(r0.get(1).tankBox.y - playerH)
-    // tankDy=-2：上方车被下方车顶起 → player 盒跟随 final tankBox（不分离）
-    const r2 = computeLabelLayout(
-      [item(1, 200, 200, 'WZ-111 model 5A', 'P1'), item(2, 200, 212, 'T57 Heavy Tank', 'P2')],
-      { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh }
-    )
-    expect(r2.get(1).tankDy).toBe(-2)
-    expect(r2.get(1).playerBox.y).toBe(r2.get(1).tankBox.y - playerH)
-    // tankDy=-TANK_SHIFT_MAX_PX：同位深重叠 → player 仍跟随 final tankBox
-    const rMax = computeLabelLayout(
-      [item(1, 200, 200, 'Maus', 'P1'), item(2, 200, 200, 'Maus', 'P2')],
-      { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh }
-    )
-    expect(rMax.get(1).tankDy).toBe(-TANK_SHIFT_MAX_PX)
-    expect(rMax.get(1).playerBox.y).toBe(rMax.get(1).tankBox.y - playerH)
-    expect(rMax.get(2).playerBox.y).toBe(rMax.get(2).tankBox.y - playerH)
-  })
-
-  it('§32 B2：PlayerName 与自家 TankName 共享块关系下不误判 conflict', () => {
+  it('§25/§31 blockHidden：标签与上方不可移位 core 重叠 → 整块隐藏（不伪造分离）', () => {
+    // B(230) 的标签 [196,210] 与 A(200) 的 core [182,218] 重叠（core 顶在标签顶之上 → 不可上移让开）
     const res = computeLabelLayout(
-      [item(1, 200, 200, 'Maus', 'P1')],
-      { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh }
+      [item(1, 200, 200, 'Maus'), item(2, 200, 230, 'Maus')],
+      { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh }
     )
-    // player 行底边与 tank 行顶边恰好相接（同一 flex column），不是 overlap
-    expect(res.get(1).playerBox.y + res.get(1).playerBox.h).toBe(res.get(1).tankBox.y)
-    expect(res.get(1).playerConflict).toBe(false)
+    expect(res.get(2).blockHidden).toBe(true)
+    expect(res.get(1).blockHidden).toBe(false)
+    // 相距足够远（>52px）→ 不隐藏
+    const far = computeLabelLayout(
+      [item(1, 200, 200, 'Maus'), item(2, 200, 300, 'Maus')],
+      { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh }
+    )
+    expect(far.get(2).blockHidden).toBe(false)
   })
 
-  it('§32 B2：PlayerName 与另一辆车 **final** TankName 真正重叠 → conflict（确定性断言）', () => {
-    // 下方车（2001）的 player 盒压到上方车（1001）位移后的 final tank 盒：
-    // 1001 被 2001 顶起（dy=-2）→ 1001 final tank [182..196]；2001 player [183..196] 重叠
+  it('§32 PlayerName 与 he 车 final 元素（含 core）真正重叠 → conflict（hysteresis 输入）', () => {
     const res = computeLabelLayout(
       [
         item(1001, 200, 200, 'Maus', 'P1'),
@@ -229,16 +219,62 @@ describe('computeLabelLayout', () => {
       ],
       { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh }
     )
-    expect(res.get(1001).tankDy).toBe(-2)
-    expect(res.get(2001).playerConflict).toBe(true) // 下方车 player 与上方 final tank 冲突
-    expect(res.get(1001).playerConflict).toBe(false) // 上方车 player 更高，不与下方 tank 冲突
-    // 相距足够远 → 无冲突
+    expect(res.get(2001).playerConflict).toBe(true) // 下方车 player 与上方 final tank 重叠
+    expect(res.get(1001).playerConflict).toBe(false)
     const far = computeLabelLayout(
       [item(1, 100, 100, 'Maus', 'P1'), item(2, 600, 500, 'Maus', 'P2')],
       { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh }
     )
     expect(far.get(1).playerConflict).toBe(false)
     expect(far.get(2).playerConflict).toBe(false)
+  })
+
+  it('§25/§26 HP HUD：与 he 车 core 重叠 → 隐藏（selected 车辆 HP 不被挤掉）', () => {
+    // B(240) 的 hp [171,189] 与 A(200) core [182,218] 重叠 → B hp 隐藏；A hp 不与 B core 冲突
+    const items = [
+      item(1, 200, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3000 }),
+      item(2, 200, 240, 'Maus', 'P2', { hpVisible: true, hpValue: 2800 }),
+    ]
+    const res = computeLabelLayout(items, { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh })
+    expect(res.get(1).hpHidden).toBe(false)
+    expect(res.get(2).hpHidden).toBe(true)
+    // selected 车辆 HP 恒不被普通 marker 挤掉（§26）
+    const sel = computeLabelLayout(
+      [item(1, 200, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3000, selected: true }),
+       item(2, 200, 240, 'Maus', 'P2', { hpVisible: true, hpValue: 2800 })],
+      { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh })
+    expect(sel.get(1).hpHidden).toBe(false)
+    expect(sel.get(2).hpHidden).toBe(true) // 非 selected 的 B 仍让位
+  })
+
+  it('§28 HP 开关：HP HUD 开启 → footprint 增大（标签让位）；关闭 → 缩小', () => {
+    // B(230) hp 开启：其 hp [174,192] 位于 A 标签 [166,180] 下方 → A 上移让开 hp（§22）
+    const on = computeLabelLayout(
+      [item(1, 200, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3000 }),
+       item(2, 200, 230, 'Maus', 'P2', { hpVisible: true, hpValue: 2800 })],
+      { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh })
+    // A.tank [166,180] vs B.hp [174,192]（labelBlockH=14 → B.hp.y=230-18-2-14-4-18=174）→ 重叠 6px → A 上移 6
+    expect(on.get(1).tankDy).toBe(-6)
+    // 关闭 B 的 HP → 无 hp 盒 → A 无需让位
+    const off = computeLabelLayout(
+      [item(1, 200, 200, 'Maus', 'P1'),
+       item(2, 200, 230, 'Maus', 'P2', { hpVisible: false })],
+      { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh })
+    expect(off.get(1).tankDy).toBe(0)
+  })
+
+  it('§24 zoom 一致性：coreSize 变化（mobile 28）时碰撞仍按 screen px 计算', () => {
+    const desktop = computeLabelLayout(
+      [item(1, 200, 200, 'Maus'), item(2, 200, 212, 'Maus')],
+      { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh, coreSize: 36 })
+    const mobile = computeLabelLayout(
+      [item(1, 200, 200, 'Maus'), item(2, 200, 212, 'Maus')],
+      { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh, coreSize: 28 })
+    // core 变小 → 标签起点更低（离 marker 更近）→ 位移量相应变化，但均为有限 screen px
+    expect(mobile.get(2).tankDy).toBeLessThanOrEqual(0)
+    expect(mobile.get(1).tankDy).toBeLessThanOrEqual(0)
+    expect(Number.isFinite(mobile.get(2).tankDy)).toBe(true)
+    expect(Number.isFinite(desktop.get(2).tankDy)).toBe(true)
   })
 })
 

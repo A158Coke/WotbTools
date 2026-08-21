@@ -47,6 +47,10 @@ public final class BattlePlaybackAdapter {
             return null;
         }
         final Long recorderAccount = recorderAccountId(battle);
+        // 战斗事实重建（§11–§17 共享推导，MapOverviewBuilder 同源）：权威 HP loss + 击毁
+        final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
+                com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
+                        timeline.events(), mapping, timeline.battleStartRawClockSec(), duration);
         final List<MapOverview.PlaybackVehicle> vehicles = new ArrayList<>();
         for (final PlayerResult player : battle.players) {
             if (player.team <= 0 || player.accountId <= 0) {
@@ -72,9 +76,10 @@ public final class BattlePlaybackAdapter {
                     player.observedMaxHp != null ? player.observedMaxHp
                             : ReplayDisplayNames.tankMaxHpValue(player.tankId),
                     hpSamples,
-                    player.tankType == null ? "" : player.tankType,
+                    tankTypeOf(player),
                     player.entryHpSource == null ? null : player.entryHpSource.name(),
                     player.entryHpSource == EntryHpSource.OBSERVED_EXACT ? player.entryHp : null,
+                    hpLossesOf(player.accountId, combat),
                     finalStats(player)));
         }
         if (vehicles.isEmpty()) {
@@ -82,6 +87,7 @@ public final class BattlePlaybackAdapter {
         }
 
         final List<MapOverview.PlaybackEvent> events = new ArrayList<>();
+        final java.util.Set<Long> destroyedVictims = new java.util.HashSet<>();
         for (final ReplayEvent event : timeline.events()) {
             if (event instanceof DamageEvent damage) {
                 final long victim = accountOf(damage.victimEid(), mapping);
@@ -89,22 +95,37 @@ public final class BattlePlaybackAdapter {
                     continue;
                 }
                 final long attacker = accountOf(damage.attackerEid(), mapping);
+                final double t = battleClockOf(event, timeline);
                 events.add(new MapOverview.PlaybackEvent(
-                        "DAMAGE", battleClockOf(event, timeline), attacker > 0 ? attacker : null,
-                        victim, damage.damage()));
+                        "DAMAGE", t, attacker > 0 ? attacker : null,
+                        victim, damage.damage(), observedHpLossOf(victim, t, combat)));
             } else if (event instanceof VehicleDestroyedEvent destroyed) {
                 final long victim = accountOf(destroyed.entityId(), mapping);
                 if (victim <= 0) {
                     continue;
                 }
+                destroyedVictims.add(victim);
                 events.add(new MapOverview.PlaybackEvent(
-                        "DESTROYED", battleClockOf(event, timeline), victim, null, null));
+                        "DESTROYED", battleClockOf(event, timeline), victim, null, null, null));
                 final Integer killerEid = destroyed.killerEid();
                 final long killer = killerEid != null ? accountOf(killerEid, mapping) : 0L;
                 if (killer > 0 && killer != victim) {
                     events.add(new MapOverview.PlaybackEvent(
-                            "KILL", battleClockOf(event, timeline), killer, victim, null));
+                            "KILL", battleClockOf(event, timeline), killer, victim, null, null));
                 }
+            }
+        }
+        // 权威击毁推导（type-7 alive=false/HP=0）：不被显式 VehicleDestroyedEvent 覆盖的受害者
+        for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Destroyed d
+                : combat.destroyed()) {
+            if (destroyedVictims.contains(d.victimAccountId())) {
+                continue;
+            }
+            events.add(new MapOverview.PlaybackEvent(
+                    "DESTROYED", d.timeSec(), d.victimAccountId(), null, null, null));
+            if (d.killerAccountId() != null && d.killerAccountId() != d.victimAccountId()) {
+                events.add(new MapOverview.PlaybackEvent(
+                        "KILL", d.timeSec(), d.killerAccountId(), d.victimAccountId(), null, null));
             }
         }
         for (final MapOverview.PlaybackVehicle vehicle : vehicles) {
@@ -113,9 +134,9 @@ public final class BattlePlaybackAdapter {
             }
             for (final MapOverview.PositionInterval interval : vehicle.positionIntervals()) {
                 events.add(new MapOverview.PlaybackEvent(
-                        "POSITION_REPORTED", interval.startSec(), vehicle.accountId(), null, null));
+                        "POSITION_REPORTED", interval.startSec(), vehicle.accountId(), null, null, null));
                 events.add(new MapOverview.PlaybackEvent(
-                        "POSITION_STALE", interval.endSec(), vehicle.accountId(), null, null));
+                        "POSITION_STALE", interval.endSec(), vehicle.accountId(), null, null, null));
             }
         }
         events.removeIf(e -> !Double.isFinite(e.timeSec())
@@ -315,6 +336,54 @@ public final class BattlePlaybackAdapter {
     private static Double deathSec(final PlayerResult player) {
         final double deathSec = PlayerResultFormat.deathSec(player);
         return deathSec > 0 ? deathSec : null;
+    }
+
+    /**
+     * 车辆类型统一 fallback（docs/current-plan.md §8）：replay/player 权威 tankType →
+     * tankopedia class（英文，API 纯英文契约）→ 空串（前端展示 —）。
+     */
+    private static String tankTypeOf(final PlayerResult player) {
+        if (player.tankType != null && !player.tankType.isBlank()) {
+            return player.tankType;
+        }
+        return ReplayDisplayNames.tankClassEn(player.tankId);
+    }
+
+    /** 车辆 HP loss 记录（共享推导 → DTO；attacker 仅在同攻击者可证明时填充）。 */
+    private static List<MapOverview.HpLoss> hpLossesOf(
+            final long accountId,
+            final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat) {
+        final List<com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss> losses =
+                combat.lossesOf(accountId);
+        if (losses.isEmpty()) {
+            return List.of();
+        }
+        final List<MapOverview.HpLoss> out = new ArrayList<>(losses.size());
+        for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss l : losses) {
+            out.add(new MapOverview.HpLoss(l.fromSec(), l.toSec(), l.hpLoss(),
+                    l.attackerAccountId(), l.attackerReliable()));
+        }
+        return out;
+    }
+
+    /**
+     * DAMAGE 事件可证明的掉血值（§11/§12）：仅当该受害者掉血窗口内恰好一条伤害通知
+     * （= 唯一攻击者 + 精确 attribution）时非 null；否则 null（前端不得显示伪造精确伤害）。
+     */
+    private static Integer observedHpLossOf(
+            final long victimAccountId,
+            final double damageTimeSec,
+            final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat) {
+        for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss l
+                : combat.lossesOf(victimAccountId)) {
+            if (l.damageEventCount() != 1) {
+                continue;
+            }
+            if (damageTimeSec > l.fromSec() + 1e-6 && damageTimeSec <= l.toSec() + 1e-6) {
+                return l.hpLoss();
+            }
+        }
+        return null;
     }
 
     /** 整场最终战绩（结算口径；仅供「最终战绩」分区，不得冒充当前时间点状态）。 */

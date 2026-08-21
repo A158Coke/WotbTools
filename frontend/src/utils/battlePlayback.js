@@ -471,27 +471,62 @@ export function hpDisplay(vehicle, t, { friendly = false } = {}) {
 }
 
 /**
- * 某账号 t 时刻的累计战斗统计（确定性重建，纯事件驱动）：
- * - dealt = Σ DAMAGE（该账号为攻击者，damage 值求和）；
- * - received = Σ DAMAGE（该账号为受害者）；
+ * 某账号 t 时刻的累计战斗统计（确定性重建，docs/current-plan.md §16/§17）：
+ * - dealt = Σ 可 attribution 的权威 HP loss（该账号为攻击者，来自车辆 hpLosses）；
+ * - received = Σ 该车辆全部权威 HP loss（受害者侧，HP 采样推导，含无法 attribution 的掉血）；
  * - kills = Σ KILL（该账号为攻击者；KILL 只在击杀者身份可解析时产生）。
- * 只反映事件流中可解析的伤害通知（受击覆盖可能 PARTIAL——见 docs/research/replay/visibility.md），
- * 与整场结算（finalStats）允许存在差异：本函数只用于「当前时间点」重建，不冒充最终战绩。
+ * 语义：只反映回放可可靠重建的掉血事实（Type-7 propId=3 推导），
+ * 与整场结算（finalStats）允许存在差异——本函数只用于「当前时间点」重建，不冒充最终战绩。
+ * raw Type-8 协议值（rawProtocolValue）语义未证明，不得参与统计。
+ * @param vehicles 全部 playback 车辆（dealt 需要其它车辆的 hpLosses attribution，
+ *                 received 用本车 hpLosses；两者都只消费 toSec ≤ t 的记录）
  */
-export function cumulativeStatsAt(events, accountId, t) {
+export function cumulativeStatsAt(events, accountId, t, vehicles = []) {
   let dealt = 0
   let received = 0
   let kills = 0
   for (const ev of events || []) {
     if (!ev || !Number.isFinite(ev.timeSec) || ev.timeSec > t + 1e-6) continue
-    if (ev.type === 'DAMAGE' && Number.isFinite(ev.damage)) {
-      if (ev.accountId === accountId) dealt += ev.damage
-      if (ev.targetAccountId === accountId) received += ev.damage
-    } else if (ev.type === 'KILL' && ev.accountId === accountId) {
-      kills += 1
+    if (ev.type === 'KILL' && ev.accountId === accountId) kills += 1
+  }
+  for (const v of vehicles || []) {
+    for (const l of v.hpLosses || []) {
+      if (!l || !Number.isFinite(l.toSec) || l.toSec > t + 1e-6) continue
+      if (v.accountId === accountId) received += l.hpLoss
+      if (l.attackerReliable && l.attackerAccountId === accountId) dealt += l.hpLoss
     }
   }
   return { dealt, received, kills }
+}
+
+/**
+ * 最近伤害记录（docs/current-plan.md §19「最近伤害记录」）：全部车辆的权威 HP loss，
+ * 只消费 toSec ≤ t 的记录（backward seek 后未来伤害记录不泄漏）。
+ * - in：该车为受害者（attacker 不可证明时 label 走「来源未知」）；
+ * - out：该车为攻击者（仅 attackerReliable 可归属时产生）。
+ * 按时间升序返回最近 maxRows 条。
+ */
+export function damageLogAt(vehicles, selectedAccountId, t, maxRows = 8) {
+  const rows = []
+  for (const v of vehicles || []) {
+    for (const l of v.hpLosses || []) {
+      if (!l || !Number.isFinite(l.toSec) || l.toSec > t + 1e-6) continue
+      if (v.accountId === selectedAccountId) {
+        rows.push({
+          timeSec: l.toSec,
+          dir: 'in',
+          hpLoss: l.hpLoss,
+          attackerAccountId: l.attackerAccountId,
+          attackerReliable: l.attackerReliable,
+        })
+      } else if (l.attackerReliable && l.attackerAccountId === selectedAccountId) {
+        rows.push({ timeSec: l.toSec, dir: 'out', hpLoss: l.hpLoss, victimAccountId: v.accountId })
+      }
+    }
+  }
+  rows.sort((a, b) => a.timeSec - b.timeSec)
+  const limit = Number.isFinite(maxRows) && maxRows > 0 ? Math.floor(maxRows) : 8
+  return rows.slice(-limit)
 }
 
 /**

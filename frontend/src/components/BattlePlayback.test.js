@@ -81,14 +81,15 @@ function makeOverview() {
           directionSamples: [
             { timeSec: 10, hullYawDeg: 10, turretRelativeYawDeg: 5 },
             { timeSec: 14, hullYawDeg: 30, turretRelativeYawDeg: 20 }
-          ]
+          ],
+          hpLosses: [{ fromSec: 0, toSec: 12, hpLoss: 400, attackerAccountId: 1001, attackerReliable: true }]
         },
         { accountId: 2002, playerName: 'NeverSeen', tankId: 3, team: 2, positionIntervals: [], deathSec: null, directionSamples: [] }
       ],
       events: [
-        { type: 'POSITION_REPORTED', timeSec: 10, accountId: 2001, targetAccountId: null, damage: null },
-        { type: 'DAMAGE', timeSec: 12, accountId: 1001, targetAccountId: 2001, damage: 400 },
-        { type: 'POSITION_STALE', timeSec: 20, accountId: 2001, targetAccountId: null, damage: null }
+        { type: 'POSITION_REPORTED', timeSec: 10, accountId: 2001, targetAccountId: null, rawProtocolValue: null, observedHpLoss: null },
+        { type: 'DAMAGE', timeSec: 12, accountId: 1001, targetAccountId: 2001, rawProtocolValue: 400, observedHpLoss: 400 },
+        { type: 'POSITION_STALE', timeSec: 20, accountId: 2001, targetAccountId: null, rawProtocolValue: null, observedHpLoss: null }
       ]
     }
   }
@@ -409,7 +410,7 @@ describe('tracer shots', () => {
   it('dedupes a same-shot DAMAGE+KILL pair into one tracer', async () => {
     stubRaf()
     const overview = makeOverview()
-    overview.playback.events.push({ type: 'KILL', timeSec: 12.1, accountId: 1001, targetAccountId: 2001, damage: null })
+    overview.playback.events.push({ type: 'KILL', timeSec: 12.1, accountId: 1001, targetAccountId: 2001, rawProtocolValue: null })
     const wrapper = mountPlayback(overview, 12.05)
     await flushPromises()
     expect(wrapper.findAll('.pb-tracer')).toHaveLength(1)
@@ -1745,7 +1746,7 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     // 失察期间受击不跳伤害（事件时刻无位置流覆盖）
     const overview2 = makeOverview()
     overview2.playback.vehicles[1].positionIntervals = [{ startSec: 10, endSec: 12 }]
-    overview2.playback.events.push({ type: 'DAMAGE', timeSec: 14, accountId: 1001, targetAccountId: 2001, damage: 500 })
+    overview2.playback.events.push({ type: 'DAMAGE', timeSec: 14, accountId: 1001, targetAccountId: 2001, rawProtocolValue: 500 })
     const w2 = mountPlayback(overview2, 13)
     await flushPromises()
     Object.defineProperty(w2.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
@@ -1780,7 +1781,7 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     fakeClock()
     const overview = makeOverview()
     for (let i = 0; i < 4; i++) {
-      overview.playback.events.push({ type: 'KILL', timeSec: 13 + i, accountId: 1001, targetAccountId: 2001, damage: null })
+      overview.playback.events.push({ type: 'KILL', timeSec: 13 + i, accountId: 1001, targetAccountId: 2001, rawProtocolValue: null })
     }
     const wrapper = mountPlayback(overview, 12)
     await flushPromises()
@@ -1806,7 +1807,7 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     v.maxHp = 2600
     v.deathSec = 12
     v.hpSamples = [{ timeSec: 0, hp: 2600 }, { timeSec: 12, hp: 0 }]
-    overview.playback.events.push({ type: 'DESTROYED', timeSec: 12, accountId: 2001, targetAccountId: null, damage: null })
+    overview.playback.events.push({ type: 'DESTROYED', timeSec: 12, accountId: 2001, targetAccountId: null, rawProtocolValue: null })
     const wrapper = mountPlayback(overview, 15)
     await flushPromises()
     // destroyed 车仍可选中
@@ -1814,7 +1815,7 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     let info = wrapper.find('[data-test="pb-info"]')
     expect(info.exists()).toBe(true)
     expect(info.find('[data-test="pb-sb-tank"]').text()).toBe('T49')
-    expect(info.find('[data-test="pb-sb-hp"]').text()).toBe('0 / 2600')
+    expect(info.find('[data-test="pb-sb-hp"]').text()).toBe('0')
     expect(info.text()).toContain('00:12') // destroyed at / last spotted
     // 点击另一辆切换
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
@@ -1829,7 +1830,7 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(false)
   })
 
-  it('§8.4/§8.5/§9 sidebar：current-time stats + 最终战绩分区；协助伤害当前值 —', async () => {
+  it('§8.4/§8.5/§9/§18/§20 sidebar：current-state only——无最终战绩分区、无协助伤害行、无最大HP/百分比', async () => {
     stubRaf()
     const overview = makeOverview()
     overview.playback.vehicles[0].finalStats = {
@@ -1843,22 +1844,28 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     await flushPromises()
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
     const info = wrapper.find('[data-test="pb-info"]')
-    expect(info.find('[data-test="pb-sb-hp"]').text()).toBe('2600 / 3000')
-    expect(info.find('[data-test="pb-sb-assist"]').text()).toBe('—') // §9：无逐时间点来源
-    // 当前伤害（t=12：1001 造成的 400 已发生）
+    expect(info.find('[data-test="pb-sb-hp"]').text()).toBe('2600')
+    // §41：tankopedia base HP 不得包装成「最大 HP」展示
+    expect(info.text()).not.toContain('recon.map.playback.max_hp')
+    expect(info.text()).not.toContain('recon.map.playback.hp_pct')
+    // §20：assist 行删除（无逐时间点来源）
+    expect(info.find('[data-test="pb-sb-assist"]').exists()).toBe(false)
+    // §18/BUG-5：最终战绩分区整体删除（整场结算值不得混入 current-state 面板）
+    expect(info.text()).not.toContain('recon.map.playback.final_stats')
+    expect(info.text()).not.toContain('1000')
+    expect(info.text()).not.toContain('980')
+    expect(info.text()).not.toContain('70%')
+    // 当前统计（t=12：1001 造成的 400 已发生，来自 2001 的 hpLosses attribution）
     expect(info.text()).toContain('400')
-    // 最终战绩分区：整场结算值
-    expect(info.text()).toContain('1000')
-    expect(info.text()).toContain('980')
-    expect(info.text()).toContain('70%') // 命中率 7/10
-    expect(info.text()).toContain('300')
   })
 
-  it('§13 伤害记录：未点亮攻击者显示「来源未知」，不泄露身份', async () => {
+  it('§12/§13 伤害记录：hpLoss 驱动；未点亮攻击者显示「来源未知」，不泄露身份', async () => {
     stubRaf()
     const overview = makeOverview()
-    // 2002 攻击 1001，但 2002 无位置流覆盖 → 来源未知
-    overview.playback.events.push({ type: 'DAMAGE', timeSec: 15, accountId: 2002, targetAccountId: 1001, damage: 540 })
+    // 2002 攻击 1001（hpLoss 540），但 2002 无位置流覆盖 → 来源未知
+    overview.playback.vehicles[0].hpLosses = [
+      { fromSec: 14, toSec: 15, hpLoss: 540, attackerAccountId: 2002, attackerReliable: true },
+    ]
     const wrapper = mountPlayback(overview, 16)
     await flushPromises()
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
@@ -1867,11 +1874,14 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     expect(info.text()).toContain('540')
     // 可见攻击者（2001 覆盖）→ 显示玩家名
     const overview2 = makeOverview()
-    overview2.playback.events.push({ type: 'DAMAGE', timeSec: 15, accountId: 2001, targetAccountId: 1001, damage: 200 })
+    overview2.playback.vehicles[0].hpLosses = [
+      { fromSec: 14, toSec: 15, hpLoss: 200, attackerAccountId: 2001, attackerReliable: true },
+    ]
     const w2 = mountPlayback(overview2, 16)
     await flushPromises()
     await w2.find('[data-test="pb-marker-1001"]').trigger('click')
     expect(w2.find('[data-test="pb-info"]').text()).toContain('EnemyA')
+    expect(w2.find('[data-test="pb-info"]').text()).toContain('200')
   })
 })
 
@@ -1917,16 +1927,20 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     stubRaf()
     const overview = makeOverview()
     overview.playback.events.push(
-      { type: 'DAMAGE', timeSec: 14, accountId: 2001, targetAccountId: 1001, damage: 200 },
-      { type: 'KILL', timeSec: 16, accountId: 1001, targetAccountId: 2001, damage: null }
+      { type: 'DAMAGE', timeSec: 14, accountId: 2001, targetAccountId: 1001, rawProtocolValue: 200, observedHpLoss: 200 },
+      { type: 'KILL', timeSec: 16, accountId: 1001, targetAccountId: 2001, rawProtocolValue: null, observedHpLoss: null }
     )
+    // 1001 受击 hpLoss（received）；2001 的 400（fixture dealt）保持
+    overview.playback.vehicles[0].hpLosses = [
+      { fromSec: 12, toSec: 14, hpLoss: 200, attackerAccountId: 2001, attackerReliable: true },
+    ]
     const wrapper = mountPlayback(overview, 18)
     await flushPromises()
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
     let info = wrapper.find('[data-test="pb-info"]')
     expect(info.exists()).toBe(true)
     // t=18 的 current stats：dealt 400（DAMAGE@12）+ received 200（DAMAGE@14）+ kills 1（KILL@16）
-    expect(sidebarValue(info, 'recon.map.playback.damage_dealt')).toBe('400')
+    expect(sidebarValue(info, 'recon.map.playback.damage_recorded')).toBe('400')
     expect(sidebarValue(info, 'recon.map.playback.damage_received')).toBe('200')
     expect(sidebarValue(info, 'recon.map.playback.kills')).toBe('1')
     // 关闭 DAMAGE checkbox → presentation 变化（事件标记减少），stats 完全不变
@@ -1935,7 +1949,7 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     await flushPromises()
     expect(wrapper.findAll('.pb-marker').length).toBeLessThan(markersBefore)
     info = wrapper.find('[data-test="pb-info"]')
-    expect(sidebarValue(info, 'recon.map.playback.damage_dealt')).toBe('400')
+    expect(sidebarValue(info, 'recon.map.playback.damage_recorded')).toBe('400')
     expect(sidebarValue(info, 'recon.map.playback.damage_received')).toBe('200')
     expect(sidebarValue(info, 'recon.map.playback.kills')).toBe('1')
     // 关闭 KILL checkbox → kills 仍不变
@@ -1950,24 +1964,30 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     // recorder scope（arenaBonusType=1 + recorderAccountId=1001）：2001→2002 双方均非 recorder
     // → presentation 过滤；但选中 2001 的 dealt 必须计入（authoritative 全量事件）
     const overview = makeOverview()
-    overview.playback.events.push({ type: 'DAMAGE', timeSec: 15, accountId: 2001, targetAccountId: 2002, damage: 300 })
+    overview.playback.events.push({ type: 'DAMAGE', timeSec: 15, accountId: 2001, targetAccountId: 2002, rawProtocolValue: 300 })
+    overview.playback.vehicles[2].hpLosses = [
+      { fromSec: 14, toSec: 15, hpLoss: 300, attackerAccountId: 2001, attackerReliable: true },
+    ]
     const wrapper = mountPlayback(overview, 16)
     await flushPromises()
     await wrapper.find('[data-test="pb-marker-2001"]').trigger('click')
     let info = wrapper.find('[data-test="pb-info"]')
-    expect(sidebarValue(info, 'recon.map.playback.damage_dealt')).toBe('300')
+    expect(sidebarValue(info, 'recon.map.playback.damage_recorded')).toBe('300')
     // 该事件同时被 presentation scope 隐藏（无 15s 事件标记）——证明 stats 未被 scope 截断
     const titles = wrapper.findAll('.pb-marker').map((m) => m.attributes('title') || '')
     expect(titles.some((s) => s.includes('00:15'))).toBe(false)
     // team scope（arenaBonusType=2）：2001→2002 双方均非 friendly team → presentation 过滤，stats 仍计入
     const overview2 = makeOverview()
     overview2.arenaBonusType = 2
-    overview2.playback.events.push({ type: 'DAMAGE', timeSec: 15, accountId: 2001, targetAccountId: 2002, damage: 300 })
+    overview2.playback.events.push({ type: 'DAMAGE', timeSec: 15, accountId: 2001, targetAccountId: 2002, rawProtocolValue: 300 })
+    overview2.playback.vehicles[2].hpLosses = [
+      { fromSec: 14, toSec: 15, hpLoss: 300, attackerAccountId: 2001, attackerReliable: true },
+    ]
     const w2 = mountPlayback(overview2, 16)
     await flushPromises()
     await w2.find('[data-test="pb-marker-2001"]').trigger('click')
     info = w2.find('[data-test="pb-info"]')
-    expect(sidebarValue(info, 'recon.map.playback.damage_dealt')).toBe('300')
+    expect(sidebarValue(info, 'recon.map.playback.damage_recorded')).toBe('300')
     const titles2 = w2.findAll('.pb-marker').map((m) => m.attributes('title') || '')
     expect(titles2.some((s) => s.includes('00:15'))).toBe(false)
   })
@@ -1976,7 +1996,7 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     stubRaf()
     const clock = fakeClock()
     const overview = makeOverview()
-    overview.playback.events.push({ type: 'KILL', timeSec: 16, accountId: 1001, targetAccountId: 2001, damage: null })
+    overview.playback.events.push({ type: 'KILL', timeSec: 16, accountId: 1001, targetAccountId: 2001, rawProtocolValue: null })
     const wrapper = mountPlayback(overview, 11)
     await flushPromises()
     Object.defineProperty(wrapper.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
@@ -2005,33 +2025,37 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     overview.playback.vehicles[1].positionIntervals = [{ startSec: 0, endSec: 140 }]
     overview.routes[1].points.push({ x: -100, y: -100, timeSec: 130 })
     for (const t of [20, 60, 120]) {
-      overview.playback.events.push({ type: 'DAMAGE', timeSec: t, accountId: 1001, targetAccountId: 2001, damage: 300 })
+      overview.playback.events.push({ type: 'DAMAGE', timeSec: t, accountId: 1001, targetAccountId: 2001, rawProtocolValue: 300, observedHpLoss: 300 })
     }
+    // 2001 的 hpLosses（1001 造成）：伤害记录与 dealt 统计的权威来源
+    overview.playback.vehicles[1].hpLosses = [20, 60, 120].map((t) => ({
+      fromSec: t - 1, toSec: t, hpLoss: 300, attackerAccountId: 1001, attackerReliable: true,
+    }))
     const wrapper = mountPlayback(overview, 30)
     await flushPromises()
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
     let info = wrapper.find('[data-test="pb-info"]')
     // t=30：只见 20s
     expect(logTimes(info)).toEqual(['00:20'])
-    expect(sidebarValue(info, 'recon.map.playback.damage_dealt')).toBe('300')
+    expect(sidebarValue(info, 'recon.map.playback.damage_recorded')).toBe('300')
     // forward seek t=90：20/60
     await wrapper.find('.pb-range').setValue(90)
     await flushPromises()
     info = wrapper.find('[data-test="pb-info"]')
     expect(logTimes(info)).toEqual(['00:20', '01:00'])
-    expect(sidebarValue(info, 'recon.map.playback.damage_dealt')).toBe('600')
+    expect(sidebarValue(info, 'recon.map.playback.damage_recorded')).toBe('600')
     // forward seek t=130：20/60/120
     await wrapper.find('.pb-range').setValue(130)
     await flushPromises()
     info = wrapper.find('[data-test="pb-info"]')
     expect(logTimes(info)).toEqual(['00:20', '01:00', '02:00'])
-    expect(sidebarValue(info, 'recon.map.playback.damage_dealt')).toBe('900')
+    expect(sidebarValue(info, 'recon.map.playback.damage_recorded')).toBe('900')
     // backward seek 130 → 30：120/60 均消失（未来事件绝不泄漏，无单向 append/history cache）
     await wrapper.find('.pb-range').setValue(30)
     await flushPromises()
     info = wrapper.find('[data-test="pb-info"]')
     expect(logTimes(info)).toEqual(['00:20'])
-    expect(sidebarValue(info, 'recon.map.playback.damage_dealt')).toBe('300')
+    expect(sidebarValue(info, 'recon.map.playback.damage_recorded')).toBe('300')
   })
 
   it('B1-3 enemy last-known HP 冻结：HUD 与 sidebar 一致；恢复 coverage 跳到最新可信值；friendly 不受影响', async () => {
@@ -2083,15 +2107,15 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     // sidebar 与 marker HUD 完全一致（冻结值与恢复值都一致）
     await wrapper.find('[data-test="pb-marker-2001"]').trigger('click')
     let info = wrapper.find('[data-test="pb-info"]')
-    expect(info.find('[data-test="pb-sb-hp"]').text()).toBe('3000 / 3000')
+    expect(info.find('[data-test="pb-sb-hp"]').text()).toBe('3000')
     await wrapper.find('.pb-range').setValue(35)
     await flushPromises()
     expect(enemyHudNum(wrapper)).toBe('3000')
-    expect(wrapper.find('[data-test="pb-info"]').find('[data-test="pb-sb-hp"]').text()).toBe('3000 / 3000')
+    expect(wrapper.find('[data-test="pb-info"]').find('[data-test="pb-sb-hp"]').text()).toBe('3000')
     await wrapper.find('.pb-range').setValue(42)
     await flushPromises()
     expect(enemyHudNum(wrapper)).toBe('1700')
-    expect(wrapper.find('[data-test="pb-info"]').find('[data-test="pb-sb-hp"]').text()).toBe('1700 / 3000')
+    expect(wrapper.find('[data-test="pb-info"]').find('[data-test="pb-sb-hp"]').text()).toBe('1700')
   })
 
   it('B2 末尾事件消费：播放跨到 duration 时 (prev, duration] 内事件 exactly-once；seek 到末尾不补播', async () => {
@@ -2101,9 +2125,9 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     overview.playback.durationSec = 20
     overview.routes[1].points.unshift({ x: -50, y: -50, timeSec: 0 })
     overview.playback.events.push(
-      { type: 'DAMAGE', timeSec: 19.8, accountId: 1001, targetAccountId: 2001, damage: 400 },
-      { type: 'DESTROYED', timeSec: 20, accountId: 2001, targetAccountId: null, damage: null },
-      { type: 'KILL', timeSec: 20, accountId: 1001, targetAccountId: 2001, damage: null }
+      { type: 'DAMAGE', timeSec: 19.8, accountId: 1001, targetAccountId: 2001, rawProtocolValue: 400, observedHpLoss: 400 },
+      { type: 'DESTROYED', timeSec: 20, accountId: 2001, targetAccountId: null, rawProtocolValue: null },
+      { type: 'KILL', timeSec: 20, accountId: 1001, targetAccountId: 2001, rawProtocolValue: null }
     )
     const wrapper = mountPlayback(overview, 19)
     await flushPromises()
@@ -2142,9 +2166,9 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     overview.playback.durationSec = 20
     overview.routes[1].points.unshift({ x: -50, y: -50, timeSec: 0 })
     overview.playback.events.push(
-      { type: 'DAMAGE', timeSec: 19.8, accountId: 1001, targetAccountId: 2001, damage: 400 },
-      { type: 'DESTROYED', timeSec: 20, accountId: 2001, targetAccountId: null, damage: null },
-      { type: 'KILL', timeSec: 20, accountId: 1001, targetAccountId: 2001, damage: null }
+      { type: 'DAMAGE', timeSec: 19.8, accountId: 1001, targetAccountId: 2001, rawProtocolValue: 400, observedHpLoss: 400 },
+      { type: 'DESTROYED', timeSec: 20, accountId: 2001, targetAccountId: null, rawProtocolValue: null },
+      { type: 'KILL', timeSec: 20, accountId: 1001, targetAccountId: 2001, rawProtocolValue: null }
     )
     const wrapper = mount(BattlePlayback, {
       props: { overview, seekTo: 19, loop: true },
