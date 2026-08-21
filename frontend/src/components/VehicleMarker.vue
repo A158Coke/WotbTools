@@ -37,7 +37,10 @@ const props = defineProps({
   /** PR4 §26–§35：标签显示/碰撞结果（BattlePlayback 计算，本组件只渲染） */
   label: {
     type: Object,
-    default: () => ({ showPlayer: false, showTank: true, tankDy: 0, playerHidden: false, playerFading: false }),
+    default: () => ({
+      showPlayer: false, showTank: true, tankDy: 0, blockHidden: false, hpHidden: false,
+      playerHidden: false, playerFading: false,
+    }),
   },
   /** HP HUD 显示数据（hpDisplay 结果：{current,maxHp,pct,destroyed}|null；null=不渲染） */
   hp: { type: Object, default: null },
@@ -179,7 +182,8 @@ const labelScreenHeight = computed(() => {
 })
 const hpHudStyle = computed(() => ({
   transform: 'translateX(-50%) ' + st.value.overlayInverseScale,
-  bottom: 'calc(100% + ' + (LABEL_ANCHOR_PX + labelScreenHeight.value + HP_HUD_GAP_PX) + 'px)',
+  // §22：HP HUD 与 label 块同源位移（labelLayout tankDy 联动；碰撞位移只作用于堆叠，不影响车体）
+  bottom: 'calc(100% + ' + (LABEL_ANCHOR_PX + labelScreenHeight.value + HP_HUD_GAP_PX + props.label.tankDy * overlayInv.value) + 'px)',
 }))
 // 填充：maxHp 已知 → 百分比；maxHp 未知（pct=null）→ UNKNOWN 语义（§5.2 不伪造百分比）
 const hpFillWidth = computed(() => {
@@ -319,7 +323,7 @@ const hpClasses = computed(() => ({
          位于 marker 上方、标签块之上（HP 优先级最高）；last-known 弱化、destroyed 归零、
          UNKNOWN 显示 —；ghost/flash 由外层 transient 状态驱动；hpVisible=false 整体隐藏 -->
     <div
-      v-if="hpVisible && hp"
+      v-if="hpVisible && hp && !label.hpHidden"
       class="pb-hp-hud"
       :class="hpClasses"
       :style="hpHudStyle"
@@ -346,6 +350,7 @@ const hpClasses = computed(() => ({
          destroyed/last-known 只弱化文字、background 保持正常 -->
     <div
       class="pb-labels"
+      v-show="!label.blockHidden"
       aria-hidden="true"
       :style="labelsStyle"
     >

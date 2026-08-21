@@ -12,7 +12,7 @@
 | 4 EntityLeave | 实体离开（i32） | PROVEN |
 | 5 enterWorld | 实体进入世界 | UNKNOWN |
 | 7 EntityProperty | 属性包；propId 2=炮塔相对偏航、3=当前血量 | PROVEN（propId 0/4/8/9 语义 UNKNOWN） |
-| 8 EntityMethod | sub 47/48 updateArena、sub 8 伤害 | PROVEN |
+| 8 EntityMethod | sub 47/48 updateArena（名册/点数/配置）、sub 8 伤害**通知**（attacker/victim 身份 PROVEN；damage 字段值语义未证明，见 TYPE8_SUBTYPE8_DAMAGE_FIELD） | PROVEN（值 UNKNOWN） |
 | 10 Position | 49B 位置（含 space_id） | PROVEN |
 | 11 空间信息 | 含 `spaces/neptune` 字符串 | PARTIAL |
 | 13 赛后结算 dump | 与 `battle_results.dat` 字节级相同 | PROVEN |
@@ -27,6 +27,18 @@
 | 39 相机/瞄准流 | 7 floats × 120Hz | PARTIAL（f0/f1 已定，f5/f6 待第三样本确认） |
 
 > 状态词约定：PROVEN / PARTIAL / UNKNOWN / SUPERSEDED / DEPRECATED。历史实验按日期归档（见下文各「20xx-xx-xx」节），早期相反结论标 SUPERSEDED。
+
+## TYPE8_SUBTYPE8_DAMAGE_FIELD（raw 值语义未证明 · 2026-08-21，WildCat 样本）
+
+**结论**：Type-8 subtype-8 direct damage 通知的 attacker/victim **身份**可证明（与相邻 Type-7 propId=3 HP sample 的掉血窗口对齐验证），但其 `body[14..15]` 的 u16 raw **值不是权威伤害**——真实回放（20260817_2021 WildCat A178_SPHT，neptune，14 人）逐车交叉验证：**每个连续可信 HP sample 的掉血 delta 与附近 raw 值全部不符**（例：录像者 SPHT 掉血 377/368/333/316/368/408/358/419/242 vs 附近 raw 767/767/516/653/256/306/306/722/767；raw 求和 1418 ≠ 结算 dealt 1242）。
+
+**规则**：
+- **权威 HP 变化**只来自 Type-7 propId=3 signed i16 绝对当前 HP（EXACT，含装备加成，单调非增无治疗）：连续可信 sample 的 previousHp − currentHp = 该窗口 (prevT, curT] 内真实掉血。
+- **attribution** 只信任窗口内全部 DAMAGE 通知同属一个攻击者（0 通知 / 混合攻击者 / 身份无法解析 → 不 attribution，受害者掉血事实保留）。
+- Type-8 raw 值不再作为用户可见精确伤害；playback DTO 字段更名 rawProtocolValue（保留研究用），权威掉血经 observedHpLoss（单通知精确 attribution）与车辆级 hpLosses 暴露。
+- 解码器限制：parseDamage 只解 body[13]==3 direct 变体且 damage > 0（u16）；跳弹/履带/模块/火灾/撞击等变体不产出事件（UNSUPPORTED_DAMAGE_VARIANT），掉血窗口内无通知时无法 attribution。
+
+**证据**：BattlePlaybackHpDamageProbeTest（非 CI 手动探针，-Dprobe.replay=<file>）输出逐车 hpSamples / hpLosses / DAMAGE raw / DESTROYED / KILL；PlaybackCombatReconstructionTest 覆盖 attribution 边界（单攻击者/混合/无通知/窗口左右开闭/击毁击杀推导）。
 
 ## 包格式
 
