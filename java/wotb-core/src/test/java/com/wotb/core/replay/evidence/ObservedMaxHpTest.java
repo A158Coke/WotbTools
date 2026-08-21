@@ -98,10 +98,12 @@ class ObservedMaxHpTest {
                 DecodeConfidence.EXACT, 10, 1001L));
         events.add(new HealthChangedEvent(2, new ReplayTimestamp(10f, null), 7,
                 DecodeConfidence.EXACT, 10, 3600, null, true));
-        events.add(new DamageEvent(3, new ReplayTimestamp(20f, null), 8,
+        events.add(new HealthChangedEvent(3, new ReplayTimestamp(20f, null), 7,
+                DecodeConfidence.EXACT, 10, 3200, null, true));
+        events.add(new DamageEvent(4, new ReplayTimestamp(20f, null), 8,
                 DecodeConfidence.EXACT, 20, 10, null, null, 400, false));
         final Battle battle = battle();
-        battle.players.getFirst().damageReceived = 400; // 覆盖完整
+        battle.players.getFirst().damageReceived = 400; // 覆盖完整（掉血 400 与结算一致）
         ObservedMaxHp.populate(battle, events,
                 TeamEntityMapper.resolve(battle, recon(events)));
         final PlayerResult p = battle.players.getFirst();
@@ -117,7 +119,9 @@ class ObservedMaxHpTest {
                 DecodeConfidence.EXACT, 10, 1001L));
         events.add(new HealthChangedEvent(2, new ReplayTimestamp(10f, null), 7,
                 DecodeConfidence.EXACT, 10, 3000, null, true));
-        events.add(new DamageEvent(3, new ReplayTimestamp(20f, null), 8,
+        events.add(new HealthChangedEvent(3, new ReplayTimestamp(20f, null), 7,
+                DecodeConfidence.EXACT, 10, 2600, null, true));
+        events.add(new DamageEvent(4, new ReplayTimestamp(20f, null), 8,
                 DecodeConfidence.EXACT, 20, 10, null, null, 400, false));
         final Battle battle = battle();
         battle.players.getFirst().damageReceived = 400;
@@ -141,7 +145,9 @@ class ObservedMaxHpTest {
                 DecodeConfidence.EXACT, 10, 1001L));
         events.add(new HealthChangedEvent(2, new ReplayTimestamp(10f, null), 7,
                 DecodeConfidence.EXACT, 10, 2500, null, true));
-        events.add(new DamageEvent(3, new ReplayTimestamp(20f, null), 8,
+        events.add(new HealthChangedEvent(3, new ReplayTimestamp(20f, null), 7,
+                DecodeConfidence.EXACT, 10, 2400, null, true));
+        events.add(new DamageEvent(4, new ReplayTimestamp(20f, null), 8,
                 DecodeConfidence.EXACT, 20, 10, null, null, 100, false));
         ObservedMaxHp.populate(battle, events,
                 TeamEntityMapper.resolve(battle, recon(events)));

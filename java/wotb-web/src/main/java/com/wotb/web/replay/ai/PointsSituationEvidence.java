@@ -27,9 +27,9 @@ import java.util.Set;
  * 点数局势证据采集与渲染（Team / Player 两条复盘线共用）：
  * 从重建事件流采集双方车辆位置轨迹（服务器位置流，battle-relative 秒），
  * 调用 {@link PointsSituationSkill} 产出击杀夺分时间线 / 占领点区域位置存在 /
- * 控制点区域进入窗口；进入窗口内承受伤害按原始 {@link DamageEvent} 计算——事件时间严格限制在窗口内，
- * 攻击者/受击者身份经 {@link DamageEventIdentityResolver} 解析，只有攻击者属于对面队伍（队伍可信）
- * 对面队伍（队伍可信）的伤害才计入，环境伤害/自伤/未解析攻击者一律排除并输出 limitation。
+ * 控制点区域进入窗口；进入窗口内承受伤害按权威 HP loss（§12）计算——掉血时刻严格限制在窗口内，
+ * 仅攻击者身份可证明（attackerReliable）且属于对面队伍（队伍可信）的掉血计入，
+ * 不可归属掉血/自伤/未解析攻击者一律排除并输出 limitation（Type-8 raw 不得作为窗口承受伤害）。
  * <p>口径约束（与 team/single、player 三 prompt 的点数局势规则一致）：
  * 实时比分/占点进度未解码——本段只给可证明信号，禁止据此编造任何中间比分；
  * 击杀夺分时间线只是击杀换分项，不代表整体点数；位置存在 ≠ 占点产分；
@@ -218,9 +218,10 @@ final class PointsSituationEvidence {
         return sb.toString();
     }
 
-    /** 进入控制点区域窗口内车辆承受的伤害（观测子集；事件时间严格在窗口范围内）。
-     *  仅当攻击者与受击者身份均解析、攻击者属于对面队伍（队伍可信）时计入。
-     *  环境伤害/自伤/攻击者未解析或队伍不可信的事件一律不计入，并通过 {@code excludedCount} 输出 limitation。 */
+    /** 进入控制点区域窗口内车辆承受的伤害（§12/§13 权威掉血观测；掉血时刻严格在窗口范围内）。
+     *  仅当攻击者身份可证明（attackerReliable）且属于对面队伍（队伍可信）时计入。
+     *  不可归属掉血 / 自伤 / 队伍不可信的掉血一律不计入，并通过 {@code excludedCount} 输出 limitation；
+     *  Type-8 rawProtocolValue 语义未证明，不得作为窗口承受伤害。 */
     private static Toll tollDuring(
             final PointsSituationSkill.ControlRegionEntryWindow entry,
             final Battle battle,
@@ -233,34 +234,41 @@ final class PointsSituationEvidence {
         }
         final TeamEntityMapping mapping = DamageEventIdentityResolver.mapping(battle, recon);
         final Float battleStart = recon.battleStartRawClockSec();
+        final double duration = recon.replayDurationSec() > 0
+                ? recon.replayDurationSec()
+                : (battle.durationS != null && battle.durationS > 0 ? battle.durationS : 0.0);
+        final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
+                com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
+                        recon.events(), mapping,
+                        battleStart == null ? 0.0 : battleStart.doubleValue(), duration);
         final Set<Long> pusherIds = new HashSet<>(entry.accountIds());
-        for (final ReplayEvent event : recon.events()) {
-            if (!(event instanceof DamageEvent damage) || damage.damage() <= 0) {
+        for (final java.util.Map.Entry<Long,
+                List<com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss>> e
+                : combat.lossesByVictim().entrySet()) {
+            final long victim = e.getKey();
+            if (!pusherIds.contains(victim)) {
                 continue;
             }
-            final double t = relativeSec(event, battleStart);
-            if (t < entry.startSec() || t > entry.endSec()) {
-                continue;
+            for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss loss : e.getValue()) {
+                if (loss.toSec() < entry.startSec() || loss.toSec() > entry.endSec()) {
+                    continue;
+                }
+                final Long attacker = loss.attackerAccountId();
+                if (!loss.attackerReliable() || attacker == null || attacker <= 0) {
+                    excluded++; // 攻击者不可证明（环境伤害/盲区）：不计入
+                    continue;
+                }
+                if (attacker == victim) {
+                    excluded++; // 自伤：不计入
+                    continue;
+                }
+                final Integer attackerTeam = teamOf(battle, attacker);
+                if (attackerTeam == null || attackerTeam == entry.team()) {
+                    excluded++; // 队伍不可信或非对面队伍：不计入
+                    continue;
+                }
+                total += loss.hpLoss();
             }
-            final long victim = DamageEventIdentityResolver.victimAccount(damage, mapping);
-            if (victim <= 0 || !pusherIds.contains(victim)) {
-                continue;
-            }
-            final long attacker = DamageEventIdentityResolver.attackerAccount(damage, mapping);
-            if (attacker <= 0) {
-                excluded++; // 攻击者未解析（环境伤害/盲区）：不计入
-                continue;
-            }
-            if (attacker == victim) {
-                excluded++; // 自伤：不计入
-                continue;
-            }
-            final Integer attackerTeam = teamOf(battle, attacker);
-            if (attackerTeam == null || attackerTeam == entry.team()) {
-                excluded++; // 队伍不可信或非对面队伍：不计入
-                continue;
-            }
-            total += damage.damage();
         }
         return new Toll(total, excluded);
     }

@@ -115,7 +115,7 @@ class BattlePlaybackHpDamageProbeTest {
                         break;
                     }
                     losses.append(String.format(Locale.ROOT,
-                            " [%.1f->%.1f -%d attacker=%s reliable=%s]",
+                            " [%.1f->%.1f -%d attacker=%s attributed=%s]",
                             l.fromSec(), l.toSec(), l.hpLoss(),
                             l.attackerAccountId() == null ? "null" : l.attackerAccountId(),
                             l.attackerReliable()));

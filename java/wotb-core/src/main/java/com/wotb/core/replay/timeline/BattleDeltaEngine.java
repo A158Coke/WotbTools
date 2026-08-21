@@ -25,6 +25,7 @@ final class BattleDeltaEngine {
             final Map<Integer, FrameVehicle> prev,
             final Map<Integer, FrameVehicle> cur,
             final List<ReplayEvent> windowEvents,
+            final int trustedDamageInWindow,
             final boolean firstContactSeen,
             final int prevFriendlyAlive,
             final int prevEnemyAlive,
@@ -186,14 +187,11 @@ final class BattleDeltaEngine {
                     Map.of("side", "enemy")));
         }
 
-        // 帧内交火活动
-        final int damageInWindow = windowEvents.stream()
-                .filter(DamageEvent.class::isInstance)
-                .mapToInt(e -> ((DamageEvent) e).damage())
-                .sum();
-        if (damageInWindow > 0) {
+        // 帧内交火活动（§11–§17：只使用权威 HP loss——Type-8 rawProtocolValue 语义未证明，
+        // 不得作为交火活动强度；由 BattleTimelineBuilder 预计算本帧可信掉血传入）
+        if (trustedDamageInWindow > 0) {
             out.add(new BattleDelta(DeltaKind.ENGAGEMENT_ACTIVITY, second, t, null,
-                    Map.of("damageInWindow", (double) damageInWindow),
+                    Map.of("damageInWindow", (double) trustedDamageInWindow),
                     Map.of()));
         }
 

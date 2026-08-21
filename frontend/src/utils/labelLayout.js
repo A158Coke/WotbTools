@@ -53,6 +53,9 @@ export const HP_BAR_W_PX = 48
 export const HP_HUD_H_PX = 18
 /** HP HUD ↔ label 块 screen gap（与 VehicleMarker HP_HUD_GAP_PX 同值）。 */
 export const HP_HUD_GAP_PX = 4
+/** Recorder 空心菱形（7×7px）位于 marker 下方 5px（VehicleMarker .pb-recorder-badge）；
+ *  参与碰撞时 core 底部向下扩展 12px（5 gap + 7 badge），§22 真实 visual footprint。 */
+export const RECORDER_EXTRA_PX = 12
 
 /**
  * 文本宽度估算（screen px）：逐字符（宽字符整字宽，其余 fontSize × 系数）+ 水平 padding。
@@ -110,7 +113,9 @@ export function computeLabelLayout(items, opts = {}) {
       })
       continue
     }
-    const coreBox = { x: it.x - coreHalf, y: it.y - coreHalf, w: coreSize, h: coreSize }
+    // §22：真实 visual footprint——recorder 菱形位于 marker 下方（bottom 扩展，§24 屏幕恒定）
+    const recorderBottom = it.recorder === true ? RECORDER_EXTRA_PX : 0
+    const coreBox = { x: it.x - coreHalf, y: it.y - coreHalf, w: coreSize, h: coreSize + recorderBottom }
     const markerTop = it.y - coreHalf
     const tankW = showTank ? estimateLabelWidth(it.tankName, 10, TANK_MAX_WIDTH_PX) : 0
     const tankBox = showTank && tankW > 0
@@ -124,9 +129,13 @@ export function computeLabelLayout(items, opts = {}) {
     // HP HUD 位于 label 块之上（§22：HP 参与碰撞；hpVisible=false 时无盒 → footprint 缩小，§28）
     const hpValue = it.hpValue
     const hpVisible = it.hpVisible === true && hpValue != null && String(hpValue).length > 0
-    const hpW = hpVisible ? Math.max(HP_BAR_W_PX, estimateLabelWidth(String(hpValue), 10, 80)) : 0
+    // HP 盒尺寸：调用方可传真实渲染尺寸（it.hpBoxW/it.hpBoxH，与 .pb-hp-hud 实际 CSS pixel 一致，
+    // 含 HP 数字 + 定宽 bar）；缺省按 CSS 常量估算（bar 46px+border 2px，数字 10px）。
+    const hpW = hpVisible ? Math.max(it.hpBoxW ?? HP_BAR_W_PX,
+      estimateLabelWidth(String(hpValue), 10, 80)) : 0
+    const hpH = hpVisible ? (it.hpBoxH ?? HP_HUD_H_PX) : 0
     const hpBox = hpVisible && hpW > 0
-      ? { x: it.x - hpW / 2, y: markerTop - LABEL_GAP_PX - labelBlockH - HP_HUD_GAP_PX - HP_HUD_H_PX, w: hpW, h: HP_HUD_H_PX }
+      ? { x: it.x - hpW / 2, y: markerTop - LABEL_GAP_PX - labelBlockH - HP_HUD_GAP_PX - hpH, w: hpW, h: hpH }
       : null
     result.set(it.accountId, {
       accountId: it.accountId, x: it.x, y: it.y, selected: it.selected === true,

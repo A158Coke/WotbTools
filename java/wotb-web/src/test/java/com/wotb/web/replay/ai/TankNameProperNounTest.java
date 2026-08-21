@@ -11,6 +11,7 @@ import com.wotb.core.processing.ReplayProcessingCapabilities;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.core.ref.ReplayDisplayNames;
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
@@ -31,6 +32,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 规则和实现都必须是通用的。</p>
  */
 class TankNameProperNounTest {
+
+    /** §12/§13 权威掉血 fixture：recorder(1) 对 victim(2) 掉 780（Type-7 推导 + 单通知归属）。 */
+    private static ReplayReconstruction dealtRecon() {
+        return new ReplayReconstruction(null, null, 120f, 0f, List.of(),
+                List.of(
+                        new com.wotb.core.replay.event.ParticipantMappingEvent(1, new com.wotb.core.replay.event.ReplayTimestamp(1f, null), 8, com.wotb.core.replay.event.DecodeConfidence.EXACT, 1, 1L),
+                        new com.wotb.core.replay.event.ParticipantMappingEvent(2, new com.wotb.core.replay.event.ReplayTimestamp(2f, null), 8, com.wotb.core.replay.event.DecodeConfidence.EXACT, 2, 2L),
+                        new com.wotb.core.replay.event.DamageEvent(3, new com.wotb.core.replay.event.ReplayTimestamp(10f, null), 8, com.wotb.core.replay.event.DecodeConfidence.EXACT, 1, 2, null, null, 999, false),
+                        new com.wotb.core.replay.event.HealthChangedEvent(4, new com.wotb.core.replay.event.ReplayTimestamp(9f, null), 7, com.wotb.core.replay.event.DecodeConfidence.EXACT, 2, 2000, null, true),
+                        new com.wotb.core.replay.event.HealthChangedEvent(5, new com.wotb.core.replay.event.ReplayTimestamp(10f, null), 7, com.wotb.core.replay.event.DecodeConfidence.EXACT, 2, 1220, null, true)),
+                List.of(), null, null, null);
+    }
 
     /** tankopedia-tier10.json: {"name":"SPHT","tier":10,"class":"Heavy tank","nation":"USA"} */
     private static final long SPHT_TANK_ID = 29985L;
@@ -156,7 +169,7 @@ class TankNameProperNounTest {
         recorder.killVictims.add(new com.wotb.core.stats.PotentialDamage.KillVictim(2L, 780, 2));
 
         final StringBuilder sb = new StringBuilder();
-        PlayerReplayPromptBuilder.appendRecorderDamageExchange(sb, battle, recorder);
+        PlayerReplayPromptBuilder.appendRecorderDamageExchange(sb, battle, dealtRecon(), recorder);
         final String evidence = sb.toString();
 
         assertTrue(evidence.contains("DAMAGE_EXCHANGE_AGGREGATED_OBSERVED"), evidence);
@@ -175,7 +188,7 @@ class TankNameProperNounTest {
         battle.players = List.of(recorder);
 
         final StringBuilder sb = new StringBuilder();
-        PlayerReplayPromptBuilder.appendRecorderDamageExchange(sb, battle, recorder);
+        PlayerReplayPromptBuilder.appendRecorderDamageExchange(sb, battle, null, recorder);
 
         assertEquals("", sb.toString());
     }
