@@ -1401,13 +1401,25 @@ function floatTeamClass(team) {
 }
 
 // ---- PR4 §32–§35：标签碰撞布局（纯函数；screen px）+ PlayerName hysteresis ----
-// §21–§28：碰撞基于真实 screen-space visual footprint——marker core + HP HUD + 标签盒。
-// 每车传入 HP HUD 实际渲染状态（hpPrefs.showHp && hp 数据存在）与 selected；
-// coreSize 与 .pb-vehicle CSS media query 同源（desktop 36 / mobile 28）。
+// §21–§28 + PR #107 Blocker 1：碰撞基于真实 screen-space visual footprint。
+// 坐标空间（统一约定）：
+//   - marker core 本体在 viewport 内随地图缩放：屏幕尺寸 = CSS size（offsetWidth，36/28）
+//     × view.scale；coreSize 必须传这个**真实屏幕尺寸**，不得传 transform 前值。
+//   - inverse-scaled 叠加层（selected 三角 / destroyed ✕ / recorder 菱形 / 名称 / HP HUD）
+//     用 scale(1/view.scale) 保持屏幕恒定，labelLayout 用屏幕恒定常量描述其盒。
+//   - viewport resize / fullscreen / mobile media query / zoom / 显示开关变化都会经
+//     view.scale / mapWidth / prefs 触发本 computed 重算。
 const labelLayout = computed(() => {
   const W = mapWidth()
   if (!W || mapView.value.W <= 0) return new Map()
-  const coreSize = Number(mapEl.value?.querySelector('.pb-vehicle')?.offsetWidth) || MARKER_CORE_PX
+  // marker CSS layout size（transform 前；media query desktop 36 / mobile 28）
+  const markerCssSize = Number(mapEl.value?.querySelector('.pb-vehicle')?.offsetWidth) || MARKER_CORE_PX
+  // 真实屏幕尺寸：随 viewport scale 缩放（Blocker 1：4× zoom → 144px 视觉、144px 碰撞）
+  const coreSize = markerCssSize * view.scale
+  // HP HUD 真实渲染尺寸（.pb-hp-hud 屏幕恒定；测试环境无布局 → 回退 null 走 CSS 常量）
+  const hpHudEl = mapEl.value?.querySelector('.pb-hp-hud')
+  const hpBoxW = hpHudEl ? Number(hpHudEl.offsetWidth) : null
+  const hpBoxH = hpHudEl ? Number(hpHudEl.offsetHeight) : null
   const items = vehicleStates.value.map((st) => {
     const p = markerScreen(st)
     if (!p) return null
@@ -1420,7 +1432,10 @@ const labelLayout = computed(() => {
       playerName: st.playerName,
       hpVisible: hpPrefs.showHp && hp != null,
       hpValue: hp ? hp.current : null,
+      hpBoxW,
+      hpBoxH,
       selected: selectedAccountId.value === st.vehicle.accountId,
+      destroyed: st.destroyed === true,
       recorder: st.recorder === true,
     }
   }).filter(Boolean)
@@ -1828,6 +1843,7 @@ const mapStyle = computed(() => ({
         :label="markerLabel(st.vehicle.accountId)"
         :hp="hpFor(st.vehicle)"
         :hp-visible="hpPrefs.showHp"
+        :t="t"
         :hp-ghost="ghostFor(st.vehicle.accountId)"
         :hp-flash="flashFor(st.vehicle.accountId)"
         :hp-no-transition="hpNoTransition"
@@ -1946,7 +1962,8 @@ const mapStyle = computed(() => ({
           <div class="pb-hp-fill pb-hp-friendly" :style="{ width: hpBarFill(friendlyHp, 'known') }"></div>
           <div class="pb-hp-fill pb-hp-unknown" :style="{ width: hpBarFill(friendlyHp, 'unknown') }"></div>
         </div>
-        <span class="pb-hp-value">{{ friendlyHp.knownRemaining }} / {{ friendlyHp.totalMax }}</span>
+        <span class="pb-hp-value">{{ friendlyHp.knownRemaining }}<template v-if="friendlyHp.totalMax > 0"> / {{ friendlyHp.totalMax }}</template></span>
+        <span v-if="friendlyHp.spawnFullCount > 0" class="pb-hp-unknown-text" data-test="pb-hp-spawn-full-friendly">{{ $t('recon.map.playback.hp_full_spawn') }} ({{ friendlyHp.spawnFullCount }})</span>
         <span v-if="friendlyHp.unknownMax > 0" class="pb-hp-unknown-text" data-test="pb-hp-unknown-friendly">{{ $t('recon.map.playback.hp_unknown') }} {{ friendlyHp.unknownMax }}</span>
         <span v-if="showPoints && friendlyPoints != null" class="pb-hp-points" data-test="pb-points-friendly">{{ $t('recon.map.playback.points') }}: {{ friendlyPoints }}</span>
       </div>

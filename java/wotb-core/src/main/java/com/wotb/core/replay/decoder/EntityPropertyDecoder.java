@@ -26,8 +26,10 @@ import java.util.List;
  *
  * <p>已逆向（2026-08-09，4 个训练房样本交叉验证）：payload = entityId(u32) +
  * propId(u32) + valueLen(u32) + value；propId=3 的 value 为当前血量（u16 LE，
- * 含装备加成；受击时同步、阵亡到 0、存活不到 0）。其它 propId 语义未确认，
- * 仍输出 UnknownReplayEvent。</p>
+ * 含装备加成；受击时同步、阵亡到 0、存活不到 0）。其它 propId 语义：
+ * 0（len=1，{0,1} 布尔）、4（len=2，256×n+(0|1) 模式）、9（len=1..4，float 类 ~1e9）
+ * 均经 7 真实样本统计排除为 HP（2026-08-21 InitialHpProtocolProbeTest）；
+ * 其余未确认，仍输出 UnknownReplayEvent。</p>
  */
 public class EntityPropertyDecoder implements ReplayPacketDecoder {
 

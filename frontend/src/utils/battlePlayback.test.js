@@ -105,47 +105,53 @@ describe('vehicleHpAt / teamHp', () => {
     { team: 2, maxHp: 4000, hpSamples: [{ timeSec: 5, hp: 4000 }, { timeSec: 15, hp: 1000 }] }
   ]
 
-  it('vehicleHpAt: sample priority; full-HP fallback only when assumeFullWhenUnobserved and alive', () => {
+  it('vehicleHpAt: sample priority; no fake fallback from theoretical maxHp (PR #107)', () => {
     expect(vehicleHpAt(vehicles[0], 5)).toBe(3000)
     expect(vehicleHpAt(vehicles[0], 10)).toBe(2000)
     expect(vehicleHpAt(vehicles[0], 25)).toBe(0) // 阵亡 0 采样
-    // 敌方/未知路径（默认 false）：存活无采样 → UNKNOWN，禁止把理论 maxHp 当已知血量
+    // 存活无采样 → UNKNOWN（null），禁止把理论 maxHp/tankopedia base 当已知血量
     expect(vehicleHpAt(vehicles[1], 50)).toBeNull()
     expect(vehicleHpAt({ team: 1, maxHp: 100 }, 0)).toBeNull()
-    // 本方路径（assumeFullWhenUnobserved=true）：存活无采样 → 满血回退
-    expect(vehicleHpAt(vehicles[1], 50, true)).toBe(2600)
-    expect(vehicleHpAt({ team: 1, maxHp: 100 }, 0, true)).toBe(100)
-    // 已阵亡且无采样 → UNKNOWN（即使本方路径也不冒充满血/0）
+    // PR #107：assumeFullWhenUnobserved 参数保留但不再伪造数字——任何路径无采样都返回 null
+    // （相对满血状态由 hpDisplay 状态机 RULE_DERIVED_FULL_AT_SPAWN 表达）
+    expect(vehicleHpAt(vehicles[1], 50, true)).toBeNull()
+    expect(vehicleHpAt({ team: 1, maxHp: 100 }, 0, true)).toBeNull()
+    // 已阵亡且无采样 → UNKNOWN
     expect(vehicleHpAt({ team: 1, maxHp: 2600, deathSec: 10 }, 50, true)).toBeNull()
-    expect(vehicleHpAt({ team: 1, maxHp: 2600, deathSec: 10 }, 5, true)).toBe(2600) // 阵亡前未受击=满血
+    expect(vehicleHpAt({ team: 1, maxHp: 2600, deathSec: 10 }, 5, true)).toBeNull()
     expect(vehicleHpAt(null, 0)).toBeNull()
-    // sentinel（0xFFFD=65533 / 0xFFFF=65535）绝不作为 HP：忽略后按调用方策略
+    // sentinel（0xFFFD=65533 / 0xFFFF=65535）绝不作为 HP
     const sentinel = { team: 1, maxHp: 2600, hpSamples: [{ timeSec: 0, hp: 65533 }, { timeSec: 1, hp: 65535 }] }
-    expect(vehicleHpAt(sentinel, 5)).toBeNull() // 敌方路径 → UNKNOWN
-    expect(vehicleHpAt(sentinel, 5, true)).toBe(2600) // 本方路径存活 → 满血回退
+    expect(vehicleHpAt(sentinel, 5)).toBeNull()
+    expect(vehicleHpAt(sentinel, 5, true)).toBeNull()
   })
 
-  it('teamHp: friendly assumeFullWhenUnobserved; enemy keeps UNKNOWN without samples', () => {
-    // 本方（assumeFull=true）：无采样存活车按满血回退
-    expect(teamHp(vehicles, 1, 5, true)).toEqual({ totalMax: 5600, knownRemaining: 5600, unknownMax: 0 })
-    expect(teamHp(vehicles, 1, 15, true)).toEqual({ totalMax: 5600, knownRemaining: 4600, unknownMax: 0 }) // 2000 + 满血回退 2600
+  it('teamHp: friendly assumeFullWhenUnobserved → spawnFull 相对满血；enemy keeps UNKNOWN', () => {
+    // PR #107：totalMax 只含已证明的实际最大 HP（OBSERVED_EXACT entryHp）；
+    // 无证明时 maxHp/entryHp 均为 null → totalMax=0（不把 tankopedia base 相加冒充本局总血量）。
+    // assumeFullWhenUnobserved=true（仅本方）→ 无采样存活车进入 spawnFullCount（相对满血状态，
+    // knownRemaining 不增加——不伪造具体数字）。
+    // vehicles[0]（t=5: 3000、t=15: 2000）、vehicles[1]（无采样）、vehicles[2]（敌方）
+    expect(teamHp(vehicles, 1, 5, true)).toEqual({ totalMax: 0, knownRemaining: 3000, unknownMax: 0, spawnFullCount: 1 })
+    expect(teamHp(vehicles, 1, 15, true)).toEqual({ totalMax: 0, knownRemaining: 2000, unknownMax: 0, spawnFullCount: 1 })
     // 敌方（assumeFull=false）：无采样存活车恒 UNKNOWN 灰段，不得 maxHp fallback
-    expect(teamHp(vehicles, 1, 5)).toEqual({ totalMax: 5600, knownRemaining: 3000, unknownMax: 2600 })
-    expect(teamHp(vehicles, 1, 15)).toEqual({ totalMax: 5600, knownRemaining: 2000, unknownMax: 2600 })
+    expect(teamHp(vehicles, 1, 5)).toEqual({ totalMax: 0, knownRemaining: 3000, unknownMax: 2600, spawnFullCount: 0 })
+    expect(teamHp(vehicles, 1, 15)).toEqual({ totalMax: 0, knownRemaining: 2000, unknownMax: 2600, spawnFullCount: 0 })
     // 敌方有第一条真实 HP sample（vehicles[2] 首采样 t=5）→ 使用真实 sample，不再 UNKNOWN
-    expect(teamHp(vehicles, 2, 5)).toEqual({ totalMax: 4000, knownRemaining: 4000, unknownMax: 0 })
-    expect(teamHp(vehicles, 2, 4)).toEqual({ totalMax: 4000, knownRemaining: 0, unknownMax: 4000 }) // 首采样前仍 UNKNOWN
-    expect(teamHp(vehicles, 2, 15)).toEqual({ totalMax: 4000, knownRemaining: 1000, unknownMax: 0 })
-    // 阵亡且无采样 → 双方路径都 UNKNOWN
+    expect(teamHp(vehicles, 2, 5)).toEqual({ totalMax: 0, knownRemaining: 4000, unknownMax: 0, spawnFullCount: 0 })
+    expect(teamHp(vehicles, 2, 4)).toEqual({ totalMax: 0, knownRemaining: 0, unknownMax: 4000, spawnFullCount: 0 })
+    //   首采样前仍 UNKNOWN（敌方不进入 spawnFull；unknownMax 用理论容量 reference）
+    expect(teamHp(vehicles, 2, 15)).toEqual({ totalMax: 0, knownRemaining: 1000, unknownMax: 0, spawnFullCount: 0 })
+    // 阵亡且无采样 → 双方路径都 UNKNOWN（不冒充满血/0；unknownMax 用理论容量 reference）
     expect(teamHp([{ team: 1, maxHp: 2000, deathSec: 5 }], 1, 50, true))
-      .toEqual({ totalMax: 2000, knownRemaining: 0, unknownMax: 2000 })
+      .toEqual({ totalMax: 0, knownRemaining: 0, unknownMax: 2000, spawnFullCount: 0 })
     expect(teamHp([{ team: 1, maxHp: 2000, deathSec: 5 }], 1, 50))
-      .toEqual({ totalMax: 2000, knownRemaining: 0, unknownMax: 2000 })
+      .toEqual({ totalMax: 0, knownRemaining: 0, unknownMax: 2000, spawnFullCount: 0 })
     // perspectiveTeam=2 场景：team2 用 friendly fallback、team1 保持 enemy UNKNOWN（不写死 team1=本方）
     const mirror = vehicles.map(v => ({ ...v, team: v.team === 1 ? 2 : 1 }))
-    expect(teamHp(mirror, 2, 5, true)).toEqual({ totalMax: 5600, knownRemaining: 5600, unknownMax: 0 })
-    expect(teamHp(mirror, 1, 5)).toEqual({ totalMax: 4000, knownRemaining: 4000, unknownMax: 0 })
-    expect(teamHp([], 1, 0)).toEqual({ totalMax: 0, knownRemaining: 0, unknownMax: 0 })
+    expect(teamHp(mirror, 2, 5, true)).toEqual({ totalMax: 0, knownRemaining: 3000, unknownMax: 0, spawnFullCount: 1 })
+    expect(teamHp(mirror, 1, 5)).toEqual({ totalMax: 0, knownRemaining: 4000, unknownMax: 0, spawnFullCount: 0 })
+    expect(teamHp([], 1, 0)).toEqual({ totalMax: 0, knownRemaining: 0, unknownMax: 0, spawnFullCount: 0 })
   })
 
   it('teamPointsAt returns the latest broadcast <= t per team, null when absent', () => {
@@ -682,5 +688,106 @@ describe('hpDisplay / ghostAround / cumulativeStatsAt / eventsCrossed / transien
     // 从未覆盖（无 last-known 可冻结）→ UNKNOWN（不得把 hidden 采样当已知血量）
     const neverSeen = { ...base, positionIntervals: [{ startSec: 40, endSec: 60 }], hpSamples: [{ timeSec: 10, hp: 3000 }] }
     expect(hpDisplay(neverSeen, 30).current).toBeNull()
+  })
+  // ---- PR #107 HP provenance：开局相对满血 / max 未知 / 不伪造 ----
+
+  it('hpDisplay: 己方开局无 sample 且无战前掉血 → RULE_DERIVED_FULL_AT_SPAWN（fullState，不伪造数字）', () => {
+    const v = { ...base, hpSamples: [], hpLosses: [], team: 1 }
+    const r = hpDisplay(v, 0, { friendly: true })
+    expect(r.current).toBeNull() // 不伪造具体数字
+    expect(r.maxHp).toBeNull()   // 不用 tankopedia base 冒充 max
+    expect(r.pct).toBeNull()     // 不伪造百分比
+    expect(r.state).toBe('RULE_DERIVED_FULL_AT_SPAWN')
+    expect(r.fullState).toBe(true) // 前端渲染 100% 阵营色条
+  })
+
+  it('hpDisplay: 己方开局无 sample 但有战前掉血 → UNKNOWN（不误判满血）', () => {
+    const v = { ...base, hpSamples: [], hpLosses: [{ fromSec: 0, toSec: 2, hpLoss: 100, attackerAccountId: null, attackerReliable: false }], team: 1 }
+    const r = hpDisplay(v, 5, { friendly: true })
+    expect(r.current).toBeNull()
+    expect(r.state).toBe('UNKNOWN')
+    expect(r.fullState).toBe(false)
+  })
+
+  it('hpDisplay: 首个 sample 在首次受击后 → 真实 current；max 未证明 → 不伪造百分比', () => {
+    // 首个 sample 已是受击后 HP（如 2000@10s，首次受击 10s）→ 只解释为 current，不反推 entry
+    const v = { ...base, hpSamples: [{ timeSec: 10, hp: 2000 }] }
+    const before = hpDisplay(v, 5)
+    expect(before.current).toBeNull() // sample 前无依据（敌方/无 fullState）
+    const after = hpDisplay(v, 15)
+    expect(after.current).toBe(2000) // 真实 current
+    expect(after.state).toBe('CURRENT_HP_EXACT_MAX_UNKNOWN') // 进场 max 未证明
+    expect(after.maxHp).toBe(3000) // 观测最大容量分母（observedMaxHp），非进场满血证明
+    expect(after.pct).toBe(2000 / 3000 * 100)
+  })
+
+  it('hpDisplay: OBSERVED_EXACT 已证明 → 精确 current/max/pct', () => {
+    const v = { ...base, entryHpSource: 'OBSERVED_EXACT', entryHp: 3200, hpSamples: [{ timeSec: 0, hp: 3200 }, { timeSec: 10, hp: 2800 }] }
+    const r = hpDisplay(v, 5)
+    expect(r.current).toBe(3200)
+    expect(r.maxHp).toBe(3200)
+    expect(r.pct).toBe(100)
+    expect(r.state).toBe('OBSERVED_EXACT')
+  })
+
+  it('hpDisplay: 敌方无 sample 恒 UNKNOWN（不因己方 fallback 泄漏满血）', () => {
+    const enemy = { ...base, team: 2, hpSamples: [] }
+    const r = hpDisplay(enemy, 0, { friendly: false })
+    expect(r.current).toBeNull()
+    expect(r.state).toBe('UNKNOWN')
+    expect(r.fullState).toBe(false)
+    // 即使 friendly=true 也不得把敌方当本方（team 语义由调用方决定；此处显式敌方路径）
+    const alsoEnemy = hpDisplay(enemy, 0)
+    expect(alsoEnemy.state).toBe('UNKNOWN')
+  })
+
+  it('hpDisplay: 敌方 last-known 冻结，hidden interval 不泄漏', () => {
+    const intervals = [{ startSec: 0, endSec: 20 }, { startSec: 40, endSec: 60 }]
+    const enemy = {
+      ...base, team: 2,
+      positionIntervals: intervals,
+      hpSamples: [{ timeSec: 10, hp: 3000 }, { timeSec: 30, hp: 2200 }, { timeSec: 42, hp: 1700 }]
+    }
+    // 覆盖期（10）→ 3000
+    expect(hpDisplay(enemy, 15).current).toBe(3000)
+    // 失察期（25-39）→ 冻结 3000，hidden 采样 2200@30 不泄漏
+    for (const t of [25, 30, 35, 39]) {
+      expect(hpDisplay(enemy, t).current).toBe(3000)
+    }
+    // 恢复覆盖（42）→ 1700
+    expect(hpDisplay(enemy, 42).current).toBe(1700)
+  })
+
+  it('hpDisplay: seek 0s → 开局相对满血（己方）；首个 sample 后 → 真实 current；阵亡 → 0', () => {
+    const v = { ...base, team: 1, deathSec: 30, hpSamples: [{ timeSec: 10, hp: 2500 }, { timeSec: 30, hp: 0 }] }
+    // seek 到 0s：首个 sample（10s）之前 → 己方相对满血
+    const t0 = hpDisplay(v, 0, { friendly: true })
+    expect(t0.state).toBe('RULE_DERIVED_FULL_AT_SPAWN')
+    expect(t0.current).toBeNull()
+    // seek 到 15s：sample 后 → 真实 current
+    const t15 = hpDisplay(v, 15, { friendly: true })
+    expect(t15.current).toBe(2500)
+    expect(t15.state).toBe('CURRENT_HP_EXACT_MAX_UNKNOWN')
+    // backward seek 回 0s：确定性重建（又回到相对满血）
+    expect(hpDisplay(v, 0, { friendly: true }).state).toBe('RULE_DERIVED_FULL_AT_SPAWN')
+    // seek 到阵亡后 → 0
+    const t31 = hpDisplay(v, 31, { friendly: true })
+    expect(t31.current).toBe(0)
+    expect(t31.destroyed).toBe(true)
+  })
+
+  it('hpDisplay: Tankopedia base 不冒充 actual——base=3000 真实 entry=3189 时只显示 3189', () => {
+    // fixture maxHp=3000（base/observed 容量）；真实 entry=3189 已证明
+    const v = { ...base, maxHp: 3000, entryHpSource: 'OBSERVED_EXACT', entryHp: 3189, hpSamples: [] }
+    const r = hpDisplay(v, 0, { friendly: true })
+    expect(r.current).toBe(3189)
+    expect(r.maxHp).toBe(3189)
+    expect(r.current).not.toBe(3000)
+    // 未证明时 maxHp 不得显示具体 base
+    const unproven = { ...base, maxHp: 3000, entryHpSource: null, hpSamples: [] }
+    const r2 = hpDisplay(unproven, 0, { friendly: true })
+    expect(r2.current).toBeNull()
+    expect(r2.maxHp).toBeNull()
+    expect(r2.fullState).toBe(true) // 相对满血状态，无具体数字
   })
 })

@@ -205,32 +205,44 @@ final class PointsSituationEvidence {
                     sb.append("    进入窗口车辆承受伤害不可用（OBSERVED_DAMAGE_IS_PARTIAL）\n");
                 } else {
                     final Toll toll = tollDuring(entry, battle, recon);
-                    sb.append("    进入窗口车辆承受伤害 ").append(toll.damage())
-                            .append("（仅计入攻击者属对面队伍且双方身份已解析的伤害；")
-                            .append("0 表示窗口内无此类伤害记录）\n");
-                    if (toll.excludedCount() > 0) {
-                        sb.append("    排除 ").append(toll.excludedCount())
-                                .append(" 笔事件（环境伤害/自伤/攻击者未解析或队伍不可信，不计入）\n");
-                    }
+                    sb.append("    进入窗口车辆承受伤害（权威掉血口径，§12/§13）：")
+                            .append(" 总实际掉血 ").append(toll.totalDamage())
+                            .append(" / 可归属敌方 ").append(toll.enemyDamage())
+                            .append(" / 来源未知 ").append(toll.unknownDamage())
+                            .append("\n");
+                    sb.append("      其中来源未知掉血（无法归属攻击者/自伤/队伍未知）")
+                            .append(toll.unknownLossCount())
+                            .append(" 笔，" + "仅计入总掉血、不计入任何具体攻击者或敌方玩家\n");
                 }
             }
         }
         return sb.toString();
     }
 
-    /** 进入控制点区域窗口内车辆承受的伤害（§12/§13 权威掉血观测；掉血时刻严格在窗口范围内）。
-     *  仅当攻击者身份可证明（attackerReliable）且属于对面队伍（队伍可信）时计入。
-     *  不可归属掉血 / 自伤 / 队伍不可信的掉血一律不计入，并通过 {@code excludedCount} 输出 limitation；
-     *  Type-8 rawProtocolValue 语义未证明，不得作为窗口承受伤害。 */
+    /**
+     * 进入控制点区域窗口内车辆承受的伤害（§12/§13 权威掉血观测；掉血时刻严格在窗口范围内）。
+     *
+     * <p>PR #107 Blocker 3 语义（HP loss 是否真实与攻击者是否可归属是两条独立维度）：
+     * <ul>
+     *   <li><b>总实际掉血</b>（totalDamage）：窗口内该车辆<b>全部</b>可信 Type-7 HP loss——
+     *       无论攻击者是否可归属、是否自伤、队伍是否可信，掉血事实由 HP sample 证明就计入总量；</li>
+     *   <li><b>可归属敌方掉血</b>（enemyDamage）：仅当攻击者身份可证明（attackerReliable）且
+     *       攻击者属于对面队伍（队伍可信）时计入——这是「敌方造成的伤害」分量；</li>
+     *   <li><b>来源未知掉血</b>（unknownDamage）：总掉血 − 可归属敌方掉血——无法归属攻击者 /
+     *       自伤 / 队伍未知的掉血，保持来源未知，绝不错误归给某支敌队或某个玩家。</li>
+     * </ul>
+     * 不得再次读取 Type-8 rawProtocolValue 补齐数字。</p>
+     */
     private static Toll tollDuring(
             final PointsSituationSkill.ControlRegionEntryWindow entry,
             final Battle battle,
             final ReplayReconstruction recon
     ) {
         int total = 0;
-        int excluded = 0;
+        int enemy = 0;
+        int unknownLosses = 0;
         if (recon == null || recon.events() == null || battle == null || battle.players == null) {
-            return new Toll(0, 0);
+            return new Toll(0, 0, 0, 0);
         }
         final TeamEntityMapping mapping = DamageEventIdentityResolver.mapping(battle, recon);
         final Float battleStart = recon.battleStartRawClockSec();
@@ -251,26 +263,28 @@ final class PointsSituationEvidence {
             }
             for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss loss : e.getValue()) {
                 if (loss.toSec() < entry.startSec() || loss.toSec() > entry.endSec()) {
-                    continue;
+                    continue; // 窗口外掉血不计入
                 }
+                // 掉血事实：连续可信 Type-7 HP sample 已证明 → 计入总实际掉血（不因归属问题删除）
+                total += loss.hpLoss();
                 final Long attacker = loss.attackerAccountId();
-                if (!loss.attackerReliable() || attacker == null || attacker <= 0) {
-                    excluded++; // 攻击者不可证明（环境伤害/盲区）：不计入
-                    continue;
-                }
-                if (attacker == victim) {
-                    excluded++; // 自伤：不计入
+                final boolean attributable = loss.attackerReliable()
+                        && attacker != null && attacker > 0 && attacker != victim;
+                if (!attributable) {
+                    // 攻击者不可证明（环境/盲区）/ 自伤 / 身份未解析 → 来源未知分量
+                    unknownLosses++;
                     continue;
                 }
                 final Integer attackerTeam = teamOf(battle, attacker);
                 if (attackerTeam == null || attackerTeam == entry.team()) {
-                    excluded++; // 队伍不可信或非对面队伍：不计入
+                    // 队伍不可信或非对面队伍 → 来源未知分量（掉血已计入 total）
+                    unknownLosses++;
                     continue;
                 }
-                total += loss.hpLoss();
+                enemy += loss.hpLoss();
             }
         }
-        return new Toll(total, excluded);
+        return new Toll(total, enemy, total - enemy, unknownLosses);
     }
 
     /** 玩家队伍查询：名册中不存在 → null（不可信）。 */
@@ -283,7 +297,12 @@ final class PointsSituationEvidence {
         return null;
     }
 
-    /** 窗口内承受伤害结果：damage 计入额，excludedCount 被排除事件数（limitation 输出用）。 */
-    private record Toll(int damage, int excludedCount) {
+    /**
+     * 窗口内承受伤害结果（PR #107 Blocker 3）：
+     * totalDamage 总实际掉血（全部可信 HP loss）；enemyDamage 可归属敌方掉血；
+     * unknownDamage 来源未知掉血（= total − enemy，不归于任何攻击者/敌队）；
+     * unknownLossCount 来源未知掉血笔数（limitation 输出用）。
+     */
+    private record Toll(int totalDamage, int enemyDamage, int unknownDamage, int unknownLossCount) {
     }
 }

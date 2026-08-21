@@ -52,6 +52,8 @@ const props = defineProps({
   hpFlash: { type: Boolean, default: false },
   /** seek/恢复状态帧：禁用 HP bar 过渡动画（§20.1 seek 只恢复状态不补动画） */
   hpNoTransition: { type: Boolean, default: false },
+  /** i18n t() 函数（父组件传入，HP 状态 tooltip 文案） */
+  t: { type: Function, default: null },
 })
 
 const emit = defineEmits(['select'])
@@ -185,13 +187,19 @@ const hpHudStyle = computed(() => ({
   // §22：HP HUD 与 label 块同源位移（labelLayout tankDy 联动；碰撞位移只作用于堆叠，不影响车体）
   bottom: 'calc(100% + ' + (LABEL_ANCHOR_PX + labelScreenHeight.value + HP_HUD_GAP_PX + props.label.tankDy * overlayInv.value) + 'px)',
 }))
-// 填充：maxHp 已知 → 百分比；maxHp 未知（pct=null）→ UNKNOWN 语义（§5.2 不伪造百分比）
+// 填充（PR #107 HP provenance）：
+// - pct 已知 → 精确百分比；
+// - RULE_DERIVED_FULL_AT_SPAWN（fullState=true，仅本方开局）→ 完整阵营色条（相对满血，无具体数字）；
+// - CURRENT_HP_EXACT_MAX_UNKNOWN（current 有值、max 未证明）→ 100% 宽 + 阵营色 indeterminate 斜纹；
+// - UNKNOWN（敌方可未知）→ 空条（灰色/未知）。
 const hpFillWidth = computed(() => {
   const d = props.hp
   if (!d) return '0%'
   if (d.pct != null) return d.pct + '%'
+  if (d.fullState === true) return '100%' // 相对满血状态：完整阵营色条
   return d.current != null ? '100%' : '0%'
 })
+// indeterminate = 有当前 HP 但最大值未知（不允许按 tankopedia base 算百分比）
 const hpFillUnknown = computed(() => !!props.hp && props.hp.current != null && props.hp.pct == null)
 const hpGhostWidth = computed(() => {
   const g = props.hpGhost
@@ -203,11 +211,20 @@ const hpGhostLeft = computed(() => {
   const g = props.hpGhost
   return g && Number.isFinite(g.nextPct) ? g.nextPct + '%' : '0%'
 })
+const hpTitle = computed(() => {
+  const d = props.hp
+  if (!d) return ''
+  if (d.state === 'RULE_DERIVED_FULL_AT_SPAWN') return props.t ? props.t('recon.map.playback.hp_full_spawn') : ''
+  if (d.state === 'CURRENT_HP_EXACT_MAX_UNKNOWN') return props.t ? props.t('recon.map.playback.hp_current_max_unknown') : ''
+  return ''
+})
 const hpClasses = computed(() => ({
   'pb-hp-lastknown': st.value.lastKnown && !st.value.destroyed,
   'pb-hp-destroyed': st.value.destroyed,
   'pb-hp-flash': props.hpFlash,
   'pb-hp-no-transition': props.hpNoTransition,
+  // PR #107：相对满血（fullState）或 max 未知但有当前值（indeterminate）→ 阵营色填充
+  'pb-hp-full-spawn': props.hp && props.hp.fullState === true,
 }))
 </script>
 
@@ -329,6 +346,7 @@ const hpClasses = computed(() => ({
       :style="hpHudStyle"
       data-test="pb-hp-hud"
       aria-hidden="true"
+      :title="hpTitle"
     >
       <span class="pb-hp-num" data-test="pb-hp-num">{{ hp.current != null ? hp.current : '—' }}</span>
       <span class="pb-hp-bar" :class="{ 'pb-hp-unknown-track': hpFillUnknown }">

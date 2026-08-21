@@ -25,8 +25,12 @@ import java.util.Map;
  *       attribution（§12/§13：单通知=精确 attribution；同攻击者多通知=整体 attribution；
  *       0 通知或混合攻击者=不 attribution，受害者掉血事实保留但不得伪造攻击者）。</li>
  *   <li><b>击毁事件</b>：HealthChangedEvent alive=false / HP=0（EXACT）为权威击毁时刻；
- *       击杀者 = 击毁时刻前最近一次该受害者的 DAMAGE 通知攻击者（仅当与击毁时间差 ≤
- *       KILL_BACKING_WINDOW_SEC 且攻击者 ≠ 受害者时可解析）。</li>
+ *       destroyed 事实与 killer attribution 完全分离——killer 仅在致死窗口
+ *       (timeSec − KILL_BACKING_WINDOW_SEC, timeSec] 内存在**唯一可信攻击者**时产生：
+ *       窗口内全部该受害者的 DAMAGE 通知攻击者身份均可解析、候选一致、且攻击者 ≠ 受害者；
+ *       任一条件不满足（无通知 / 多个不同攻击者 / 含未解析攻击者 / 自伤候选）→ killer = null，
+ *       保留 destroyed 事实但绝不伪造 KILL。同一 victim 重复 alive=false/HP=0 事件去重，
+ *       每车最多一个 destroyed 事实（保留最早可信击毁时刻）。</li>
  * </ul>
  *
  * <p>本类只消费 canonical 事件流 + 实体映射，不触碰 raw packets；供
@@ -183,7 +187,15 @@ public final class PlaybackCombatReconstruction {
             }
         }
 
-        // 3) 击毁：alive=false / HP=0（EXACT）→ Destroyed；击杀者 = 击毁前最近 DAMAGE 通知
+        // 3) 击毁：alive=false / HP=0（EXACT）→ Destroyed 事实（每 victim 去重，保留最早时刻）。
+        //    killer 仅在致死窗口内存在**唯一可信攻击者**时产生（fail-closed）：
+        //    - 窗口 (t − KILL_BACKING_WINDOW_SEC, t] 内该 victim 的全部 DAMAGE 通知（damagesByVictim
+        //      已按 victim 分组，天然满足「全部指向同一 victim」）；
+        //    - 每条通知的攻击者身份均可解析（attacker > 0）；
+        //    - 所有候选攻击者一致（无冲突候选）；
+        //    - 攻击者 ≠ 受害者（自伤候选不得作 killer）；
+        //    任一不满足 → killer = null（保留 destroyed，不生成伪造 KILL）。
+        final Map<Long, Destroyed> destroyedByVictim = new HashMap<>();
         for (final ReplayEvent event : events) {
             if (!(event instanceof HealthChangedEvent hp)
                     || hp.confidence() != DecodeConfidence.EXACT
@@ -200,25 +212,43 @@ public final class PlaybackCombatReconstruction {
             if (!Double.isFinite(t) || t < 0 || t > duration + 1e-6) {
                 continue;
             }
+            // 去重：每车最多一个 destroyed 事实；重复事件保留最早可信击毁时刻
+            final Destroyed existing = destroyedByVictim.get(victim);
+            if (existing != null && existing.timeSec() <= t) {
+                continue;
+            }
             Long killer = null;
             final List<double[]> dmg = damagesByVictim.get(victim);
             if (dmg != null) {
-                for (int i = dmg.size() - 1; i >= 0; i--) {
-                    final double[] d = dmg.get(i);
-                    if (t - d[0] > KILL_BACKING_WINDOW_SEC + 1e-6) {
-                        break; // 更早的通知都不在窗口内
+                boolean unique = true;
+                Long sole = null;
+                int inWindow = 0;
+                for (final double[] d : dmg) {
+                    final double dt = t - d[0];
+                    if (dt > KILL_BACKING_WINDOW_SEC + 1e-6) {
+                        continue; // 更早的通知不在窗口内
                     }
                     if (d[0] <= t + 1e-6) {
+                        inWindow++;
                         final long a = (long) d[1];
-                        if (a > 0 && a != victim) {
-                            killer = a;
+                        if (a <= 0) {
+                            unique = false; // 攻击者身份无法解析 → 无法证明归属
+                        } else if (a == victim) {
+                            unique = false; // 自伤候选 → 不得作 killer
+                        } else if (sole == null) {
+                            sole = a;
+                        } else if (sole != a) {
+                            unique = false; // 多个不同攻击者 → 冲突候选
                         }
-                        break; // 取最近一次通知；身份无法解析则保持 null
                     }
                 }
+                if (unique && inWindow >= 1 && sole != null) {
+                    killer = sole;
+                }
             }
-            destroyed.add(new Destroyed(t, victim, killer));
+            destroyedByVictim.put(victim, new Destroyed(t, victim, killer));
         }
+        destroyed.addAll(destroyedByVictim.values());
         destroyed.sort(Comparator.comparingDouble(Destroyed::timeSec));
 
         final Map<Long, List<Loss>> immutable = new HashMap<>();

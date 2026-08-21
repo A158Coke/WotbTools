@@ -1,14 +1,24 @@
 /**
- * PR4（§26–§35）+ 本任务（docs/current-plan.md §21–§28）——Battle Playback 标签布局与碰撞纯函数。
+ * PR4（§26–§35）+ 本任务（docs/current-plan.md §21–§28）+ PR #107 Blocker 1 —— Battle Playback 标签布局与碰撞纯函数。
  *
- * 坐标系：全部为**屏幕像素**（相对地图容器，y 向下）。调用方把 marker 的地图坐标
- * 换算成屏幕坐标后传入；标签盒尺寸为屏幕恒定（不随地图 zoom 缩放）。
+ * 坐标系：全部为**屏幕像素**（相对地图容器，y 向下）。调用方把 marker 的地图坐标经
+ * viewport 变换（translate + scale(view.scale)）换算成屏幕坐标后传入。
+ *
+ * 坐标空间约定（PR #107 Blocker 1）：
+ * - marker core 本体位于 viewport 内，随地图整体缩放 → 屏幕尺寸 = CSS size × view.scale；
+ *   调用方必须把 coreSize 传为**真实屏幕尺寸**（markerCssSize × view.scale），不得传 transform 前值。
+ * - inverse-scaled 叠加层（selected 三角 / destroyed ✕ / recorder 菱形 / 名称标签 / HP HUD）
+ *   用 scale(1/view.scale) 反缩放 → **屏幕恒定尺寸**，不随 zoom 变化；
+ *   本函数用屏幕恒定常量描述它们的盒（SELECTED_MARK_W/H、DESTROYED_X_PX、RECORDER_BADGE_PX 等）。
  *
  * 碰撞几何（§22/§23）基于**真实 screen-space visual footprint**：
- * - Marker core 盒（车辆图标本体，§24 屏幕恒定：desktop 36px / mobile 28px，opts.coreSize）；
- * - HP HUD 盒（数字 + 定宽 bar，§22 HP number/HP bar 参与碰撞；hpVisible 关闭时 footprint 缩小，§28）；
- * - TankName 盒（§31 永远完整，不截断）；
- * - PlayerName 盒（§30 截断 110px）。
+ * - Marker core 盒（车辆图标本体，屏幕尺寸 = coreSize，随 zoom）；
+ * - Selected 倒三角盒（§25 优先级 2；屏幕恒定 10×9px，位于 label 块上方）；
+ * - Destroyed ✕ 盒（阵亡 30px 红叉，屏幕恒定，覆盖车体中心）；
+ * - Recorder 菱形盒（7×7px，屏幕恒定，位于 marker 下方）；
+ * - HP HUD 盒（数字 + 定宽 bar，屏幕恒定；hpVisible 关闭时 footprint 缩小，§28）；
+ * - TankName 盒（§31 永远完整，不截断；屏幕恒定）；
+ * - PlayerName 盒（§30 截断 110px；屏幕恒定）。
  *
  * 优先级（§25）：Marker core(1) > Selected vehicle(2) > HP(3) > Tank name(4) > Player name(5)。
  * 解决重叠不是通过让所有东西一起隐藏：可移位元素优先位移（TankName 上移让位，上限一行），
@@ -16,10 +26,10 @@
  *
  * 契约：
  * - TankName 与 TankName 冲突只做轻量垂直位移（§34，上限约一行）；达到上限接受剩余 overlap；
- * - TankName 与下方车辆 core/HP HUD 冲突 → 上移让位；与上方不可移位障碍冲突 → 整块隐藏
- *   （§31 完整性与 §25 优先级：blockHidden 隐藏整块 tank+player）；
+ * - TankName 与下方车辆 core/HP HUD/selected/destroyed/recorder 冲突 → 上移让位；
+ *   与上方不可移位障碍冲突 → 整块隐藏（§31 完整性与 §25 优先级：blockHidden 隐藏整块 tank+player）；
  * - PlayerName 与任何他车元素冲突 → 隐藏候选（§32），resolvePlayerVisibility 施加时间稳定阈值；
- * - HP HUD 与任何 he 车 core 冲突 → 隐藏（§25 core 优先；selected 车辆 HP 不被挤掉，§26）；
+ * - HP HUD 与 he 车 core/selected/destroyed 冲突 → 隐藏（§25 core 优先；selected 车辆 HP 不被挤掉，§26）；
  * - 只检测 viewport 内 marker（§35），越界裁剪。
  */
 
@@ -45,7 +55,8 @@ const WIDE_CHAR_RE = /[\u2E80-\u2EFF\u3000-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF90
 /** 文本左右 padding 合计（.pb-labels padding 4px×2）。 */
 export const LABEL_PAD_X = 8
 
-/** Marker core 盒尺寸（desktop screen px；与 .pb-vehicle CSS 36px 同源；mobile 28 经 opts.coreSize）。 */
+/** Marker core 盒尺寸（screen px；调用方传 coreSize = 实际屏幕尺寸，此处仅作缺省）。
+ * 与 .pb-vehicle CSS 36px 同源；mobile 28 经调用方换算。 */
 export const MARKER_CORE_PX = 36
 /** HP bar 定宽（.pb-hp-bar width 46px + border 2px）。 */
 export const HP_BAR_W_PX = 48
@@ -53,9 +64,19 @@ export const HP_BAR_W_PX = 48
 export const HP_HUD_H_PX = 18
 /** HP HUD ↔ label 块 screen gap（与 VehicleMarker HP_HUD_GAP_PX 同值）。 */
 export const HP_HUD_GAP_PX = 4
-/** Recorder 空心菱形（7×7px）位于 marker 下方 5px（VehicleMarker .pb-recorder-badge）；
- *  参与碰撞时 core 底部向下扩展 12px（5 gap + 7 badge），§22 真实 visual footprint。 */
-export const RECORDER_EXTRA_PX = 12
+/** Recorder 空心菱形（7×7px，inverse-scaled 屏幕恒定）位于 marker 下方 5px
+ * （VehicleMarker .pb-recorder-badge：top calc(100% + 5×inv px)）。 */
+export const RECORDER_BADGE_PX = 7
+/** Recorder 菱形 ↔ marker 底部 screen gap（5px）。 */
+export const RECORDER_GAP_PX = 5
+/** Selected 红色倒三角 bounding box（VehicleMarker .pb-selected-mark：border-top 9px，
+ * 屏幕恒定 inverse-scaled；宽 ≈ 2×9×tan(30°) ≈ 10.4 → 10）。 */
+export const SELECTED_MARK_W_PX = 10
+export const SELECTED_MARK_H_PX = 9
+/** Selected 三角底边 ↔ label 块顶边 screen gap（VehicleMarker NAME_GAP_SCREEN_PX）。 */
+export const SELECTED_NAME_GAP_PX = 3
+/** Destroyed ✕ 覆盖盒（30px 红叉，屏幕恒定 inverse-scaled，覆盖车体中心）。 */
+export const DESTROYED_X_PX = 30
 
 /**
  * 文本宽度估算（screen px）：逐字符（宽字符整字宽，其余 fontSize × 系数）+ 水平 padding。
@@ -73,11 +94,17 @@ export function estimateLabelWidth(text, fontSizePx, maxWidthPx = Infinity) {
 /**
  * 计算全部 marker 的标签碰撞几何（纯函数，无时间状态）。
  *
- * @param items [{ accountId, x, y, tankName, playerName, hpVisible, hpValue, selected }]
- *   屏幕 px 中心（调用方已换算）；hpVisible = 该车 HP HUD 实际渲染（hpPrefs.showHp && hp 数据存在）
+ * @param items [{ accountId, x, y, tankName, playerName, hpVisible, hpValue,
+ *                selected, destroyed, recorder, hpBoxW, hpBoxH }]
+ *   x/y = marker 中心（屏幕 px，viewport 变换后）；selected/destroyed/recorder 为状态标志；
+ *   hpBoxW/hpBoxH = HP HUD 真实渲染宽高（screen px，调用方测量；缺省按 CSS 常量）。
  * @param opts { showTank, showPlayer, viewportW, viewportH, coreSize }
+ *   coreSize = marker core **真实屏幕尺寸**（= CSS size × view.scale，调用方换算）。
  * @returns Map<accountId, {
- *   coreBox: {x,y,w,h} | null,         // marker core 盒（§22 参与碰撞；恒可见）
+ *   coreBox: {x,y,w,h} | null,         // marker core 盒（§22 参与碰撞；恒可见；随 zoom）
+ *   selectedBox: {x,y,w,h} | null,     // selected 三角盒（§25 优先级 2；屏幕恒定）
+ *   destroyedBox: {x,y,w,h} | null,    // destroyed ✕ 盒（阵亡覆盖；屏幕恒定）
+ *   recorderBox: {x,y,w,h} | null,     // recorder 菱形盒（marker 下方；屏幕恒定）
  *   tankBox: { x, y, w, h } | null,     // 位移后的 TankName 盒（含 dy）
  *   tankDy: number,                     // §34 垂直位移（≤0 = 上移，screen px）
  *   blockHidden: boolean,               // §25/§31：TankName 与不可移位障碍重叠 → 整块隐藏
@@ -103,20 +130,28 @@ export function computeLabelLayout(items, opts = {}) {
   // label 块总高（按显示偏好；与 VehicleMarker labelScreenHeight 同源——HP HUD 偏移基于偏好而非实际隐藏）
   const labelBlockH = (showTank ? tankH : 0) + (showPlayer ? playerH : 0)
 
-  // 1) 基础盒（screen px，含 marker core / HP HUD / label 块）
+  // 1) 基础盒（screen px，含 marker core / selected / destroyed / recorder / HP HUD / label 块）
   for (const it of items) {
     if (!it || it.accountId == null || !Number.isFinite(it.x) || !Number.isFinite(it.y)) continue
     if (it.x < -margin || it.x > vw + margin || it.y < -margin || it.y > vh + margin) {
       result.set(it.accountId, {
-        coreBox: null, tankBox: null, tankDy: 0, blockHidden: false,
+        coreBox: null, selectedBox: null, destroyedBox: null, recorderBox: null,
+        tankBox: null, tankDy: 0, blockHidden: false,
         playerBox: null, playerConflict: false, hpBox: null, hpHidden: false,
       })
       continue
     }
-    // §22：真实 visual footprint——recorder 菱形位于 marker 下方（bottom 扩展，§24 屏幕恒定）
-    const recorderBottom = it.recorder === true ? RECORDER_EXTRA_PX : 0
-    const coreBox = { x: it.x - coreHalf, y: it.y - coreHalf, w: coreSize, h: coreSize + recorderBottom }
+    const coreBox = { x: it.x - coreHalf, y: it.y - coreHalf, w: coreSize, h: coreSize }
     const markerTop = it.y - coreHalf
+    const markerBottom = it.y + coreHalf
+    // §22 destroyed ✕：屏幕恒定 30px，覆盖 marker 中心（inverse-scaled）
+    const destroyedBox = it.destroyed === true
+      ? { x: it.x - DESTROYED_X_PX / 2, y: it.y - DESTROYED_X_PX / 2, w: DESTROYED_X_PX, h: DESTROYED_X_PX }
+      : null
+    // §22 recorder 菱形：屏幕恒定 7×7px，位于 marker 底部下方 5px（inverse-scaled）
+    const recorderBox = it.recorder === true
+      ? { x: it.x - RECORDER_BADGE_PX / 2, y: markerBottom + RECORDER_GAP_PX, w: RECORDER_BADGE_PX, h: RECORDER_BADGE_PX }
+      : null
     const tankW = showTank ? estimateLabelWidth(it.tankName, 10, TANK_MAX_WIDTH_PX) : 0
     const tankBox = showTank && tankW > 0
       ? { x: it.x - tankW / 2, y: markerTop - LABEL_GAP_PX - tankH, w: tankW, h: tankH }
@@ -130,25 +165,30 @@ export function computeLabelLayout(items, opts = {}) {
     const hpValue = it.hpValue
     const hpVisible = it.hpVisible === true && hpValue != null && String(hpValue).length > 0
     // HP 盒尺寸：调用方可传真实渲染尺寸（it.hpBoxW/it.hpBoxH，与 .pb-hp-hud 实际 CSS pixel 一致，
-    // 含 HP 数字 + 定宽 bar）；缺省按 CSS 常量估算（bar 46px+border 2px，数字 10px）。
+    // 含 HP 数字 + 定宽 bar；屏幕恒定 inverse-scaled）；缺省按 CSS 常量估算（bar 46px+border 2px，数字 10px）。
     const hpW = hpVisible ? Math.max(it.hpBoxW ?? HP_BAR_W_PX,
       estimateLabelWidth(String(hpValue), 10, 80)) : 0
     const hpH = hpVisible ? (it.hpBoxH ?? HP_HUD_H_PX) : 0
     const hpBox = hpVisible && hpW > 0
       ? { x: it.x - hpW / 2, y: markerTop - LABEL_GAP_PX - labelBlockH - HP_HUD_GAP_PX - hpH, w: hpW, h: hpH }
       : null
+    // §25 selected 三角：位于 label 块上方（屏幕恒定；随 label 块整体位移 tankDy 同步上移）
+    const selectedBox = it.selected === true
+      ? { x: it.x - SELECTED_MARK_W_PX / 2, y: markerTop - LABEL_GAP_PX - labelBlockH - SELECTED_NAME_GAP_PX - SELECTED_MARK_H_PX, w: SELECTED_MARK_W_PX, h: SELECTED_MARK_H_PX }
+      : null
     result.set(it.accountId, {
       accountId: it.accountId, x: it.x, y: it.y, selected: it.selected === true,
-      coreBox, tankBox, tankDy: 0, blockHidden: false,
+      coreBox, selectedBox, destroyedBox, recorderBox,
+      tankBox, tankDy: 0, blockHidden: false,
       playerBox, playerConflict: false, hpBox, hpHidden: false,
     })
   }
 
-  // 2) §34 TankName 位移（**从下往上** greedy）+ §22 下方 core/HP HUD 障碍：
+  // 2) §34 TankName 位移（**从下往上** greedy）+ §22 下方障碍：
   //    - TankName vs TankName（同级）：保留既有语义——只对「下方已 finalized」标签位移
   //      （上限一行，3+ 连锁不重新产生 overlap；达到上限接受剩余 overlap）；
-  //    - TankName vs he 车 core/HP（更高优先级，§25）：只对「障碍起点位于标签起点及以下」
-  //      （上移能离开）的障碍位移；上方不可移位障碍留给 blockHidden 处理。
+  //    - TankName vs he 车 core/HP/selected/destroyed（更高优先级，§25）：只对「障碍起点位于
+  //      标签起点及以下」（上移能离开）的障碍位移；上方不可移位障碍留给 blockHidden 处理。
   const entries = [...result.values()].filter((e) => e.tankBox != null)
   const ordered = [...entries].sort(
     (a, b) => a.y - b.y || String(a.accountId).localeCompare(String(b.accountId)),
@@ -165,11 +205,11 @@ export function computeLabelLayout(items, opts = {}) {
       const overlap = aBottom - o.y
       if (overlap > 0) dy = Math.max(-TANK_SHIFT_MAX_PX, dy - overlap)
     }
-    // (b) 更高优先级障碍：he 车 core / HP HUD（§22/§25：player 是更低优先级，由 player 自行隐藏）
+    // (b) 更高优先级障碍：he 车 core / HP HUD / selected 三角 / destroyed ✕ / recorder 菱形（§22/§25）
     for (let j = 0; j < ordered.length; j++) {
       if (j === i) continue
       const b = ordered[j]
-      const obstacles = [b.coreBox]
+      const obstacles = [b.coreBox, b.destroyedBox, b.selectedBox, b.recorderBox]
       if (b.hpBox && !b.hpHidden) obstacles.push(b.hpBox)
       for (const o of obstacles) {
         if (!o) continue
@@ -184,8 +224,9 @@ export function computeLabelLayout(items, opts = {}) {
     }
     a.tankDy = dy
     a.tankBox.y += dy
-    // HP HUD 与 label 块同源位移（§22：HP 数字/bar 是同一视觉堆叠，位移后保持贴合；
-    // 与 VehicleMarker hpHudStyle bottom += tankDy 同源）
+    // selected 三角与 HP HUD 与 label 块同源位移（§22/§25：同一视觉堆叠，位移后保持贴合；
+    // 与 VehicleMarker selectedMarkStyle/hpHudStyle bottom += tankDy 同源）
+    if (a.selectedBox) a.selectedBox.y += dy
     if (a.hpBox) a.hpBox.y += dy
   }
 
@@ -197,8 +238,8 @@ export function computeLabelLayout(items, opts = {}) {
       : entry.y - coreHalf - LABEL_GAP_PX - playerH
   }
 
-  // 4) §25/§31 blockHidden：位移后 TankName 仍与不可移位障碍（他车 core / hp / selected 元素）重叠
-  //    → 整块（tank+player）隐藏。TankName 间残留 overlap（位移上限）按 §34 契约接受，不触发隐藏。
+  // 4) §25/§31 blockHidden：位移后 TankName 仍与不可移位障碍（他车 core / hp / selected / destroyed /
+  //    recorder 元素）重叠 → 整块（tank+player）隐藏。TankName 间残留 overlap（位移上限）按 §34 契约接受。
   for (const entry of result.values()) {
     if (!entry.tankBox) {
       entry.blockHidden = false
@@ -206,9 +247,9 @@ export function computeLabelLayout(items, opts = {}) {
     }
     entry.blockHidden = [...result.values()].some((o) => {
       if (o === entry || o.coreBox == null) return false
-      // §25：不可分离冲突只来自更高优先级元素（he 车 core / HP HUD）——
+      // §25：不可分离冲突只来自更高优先级元素（he 车 core / HP HUD / selected / destroyed / recorder）——
       // 同级 TankName 残留 overlap 按 §34 契约接受，不触发隐藏
-      const obstacles = [o.coreBox]
+      const obstacles = [o.coreBox, o.destroyedBox, o.selectedBox, o.recorderBox]
       if (o.hpBox && !o.hpHidden) obstacles.push(o.hpBox)
       return obstacles.some((b) =>
         b
@@ -217,12 +258,13 @@ export function computeLabelLayout(items, opts = {}) {
     })
   }
 
-  // 5) §32 PlayerName 冲突：final playerBox vs 他车全部元素（含 core / hp / tank / player）
+  // 5) §32 PlayerName 冲突：final playerBox vs 他车全部元素（含 core / hp / tank / player /
+  //    selected / destroyed / recorder）
   for (const entry of result.values()) {
     if (!entry.playerBox) continue
     entry.playerConflict = [...result.values()].some((o) => {
       if (o === entry) return false
-      const obstacles = [o.coreBox]
+      const obstacles = [o.coreBox, o.destroyedBox, o.selectedBox, o.recorderBox]
       if (o.hpBox && !o.hpHidden) obstacles.push(o.hpBox)
       if (o.tankBox) obstacles.push(o.tankBox)
       if (o.playerBox) obstacles.push(o.playerBox)
@@ -233,7 +275,7 @@ export function computeLabelLayout(items, opts = {}) {
     })
   }
 
-  // 6) §25/§26 HP HUD：与 he 车 core（或 selected 车辆元素）重叠 → 隐藏；
+  // 6) §25/§26 HP HUD：与 he 车 core（或 selected/destroyed/recorder 元素）重叠 → 隐藏；
   //    HP 间重叠 → 非 selected 且 accountId 大者隐藏（deterministic，输入顺序无关）。
   for (const entry of result.values()) {
     if (!entry.hpBox) {
@@ -241,9 +283,10 @@ export function computeLabelLayout(items, opts = {}) {
       continue
     }
     const blockedByCore = [...result.values()].some((o) =>
-      o !== entry && o.coreBox
-      && entry.hpBox.x < o.coreBox.x + o.coreBox.w && entry.hpBox.x + entry.hpBox.w > o.coreBox.x
-      && entry.hpBox.y < o.coreBox.y + o.coreBox.h && entry.hpBox.y + entry.hpBox.h > o.coreBox.y)
+      o !== entry && [o.coreBox, o.destroyedBox, o.selectedBox, o.recorderBox].some((b) =>
+        b
+        && entry.hpBox.x < b.x + b.w && entry.hpBox.x + entry.hpBox.w > b.x
+        && entry.hpBox.y < b.y + b.h && entry.hpBox.y + entry.hpBox.h > b.y))
     const blockedByHp = [...result.values()].some((o) =>
       o !== entry && o.hpBox && !o.hpHidden
       && !o.selected && String(o.accountId).localeCompare(String(entry.accountId)) > 0

@@ -302,8 +302,8 @@ describe('BattlePlayback', () => {
     const wrapper = mountPlayback(overview, 12)
     await flushPromises()
     expect(wrapper.find('[data-test="pb-hp-bars"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('2600 / 3000') // 本方 t=12
-    expect(wrapper.text()).toContain('2200 / 2600') // 敌方 t=12
+    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).toContain('2600') // 本方 t=12 knownRemaining
+    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).toContain('2200') // 敌方 t=12 knownRemaining
   })
 
   it('supremacy points come from the realtime broadcast timeline and change with seek time', async () => {
@@ -340,8 +340,10 @@ describe('BattlePlayback', () => {
     await flushPromises()
     expect(wrapper.find('[data-test="pb-hp-unknown-enemy"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-hp-unknown-enemy"]').text()).toContain('2600')
-    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).toContain('3000 / 3000') // friendly 满血回退
-    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).toContain('0 / 2600') // enemy 无采样 → known=0
+    // PR #107：friendly 无采样 → 相对满血状态（spawnFull 标记），不显示 base 总血量
+    expect(wrapper.find('[data-test="pb-hp-spawn-full-friendly"]').exists()).toBe(true)
+    // enemy 无采样 → known=0（unknownMax 灰段）
+    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).not.toContain(' / 2600')
     // 已阵亡且无采样 → 双方路径都 UNKNOWN
     const overview2 = makeOverview()
     overview2.playback.vehicles[0].maxHp = 3000
@@ -364,7 +366,7 @@ describe('BattlePlayback', () => {
     const wrapper3 = mountPlayback(overview3, 12)
     await flushPromises()
     expect(wrapper3.find('[data-test="pb-hp-unknown-enemy"]').exists()).toBe(false)
-    expect(wrapper3.find('[data-test="pb-hp-bars"]').text()).toContain('2000 / 2600')
+    expect(wrapper3.find('[data-test="pb-hp-bars"]').text()).toContain('2000')
   })
 
   it('death does not jump the team HP bar to 65533 (0xFFFD sentinel excluded)', async () => {
@@ -378,9 +380,49 @@ describe('BattlePlayback', () => {
     ]
     const wrapper = mountPlayback(overview, 11)
     await flushPromises()
-    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).toContain('0 / 3000') // 阵亡 → 0
+    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).toContain('0') // 阵亡 → knownRemaining 0
     expect(wrapper.text()).not.toContain('65533')
   })
+  it('PR #107: 己方开局无 HP 采样 → marker 血条 100% 阵营色（fullState），不黑条不伪造数字', async () => {
+    stubRaf()
+    const overview = makeOverview()
+    // 己方车辆无采样无战前掉血
+    overview.playback.vehicles[0].maxHp = 3000
+    overview.playback.vehicles[0].hpSamples = []
+    overview.playback.vehicles[0].hpLosses = []
+    const wrapper = mountPlayback(overview, 12)
+    await flushPromises()
+    // 己方 marker 的 HP HUD 存在且 fullState（非 hpHidden）
+    const hud = wrapper.find('[data-test="pb-marker-1001"]').find('[data-test="pb-hp-hud"]')
+    expect(hud.exists()).toBe(true)
+    // 数字为 —（不伪造具体数字）
+    expect(hud.find('[data-test="pb-hp-num"]').text()).toBe('—')
+    // 血条 100% 宽（阵营色 fill；无 unknown 斜纹 class）
+    const fill = hud.find('.pb-hp-fill')
+    expect(fill.exists()).toBe(true)
+    expect(fill.attributes('style') || '').toContain('100%')
+    expect(fill.classes()).not.toContain('pb-hp-fill-unknown')
+    // 己方 marker 带 friendly class（阵营色）
+    expect(wrapper.find('[data-test="pb-marker-1001"]').classes()).toContain('pb-friendly')
+  })
+
+  it('PR #107: 己方有 sample 但 max 未证明 → 真实数字 + indeterminate 斜纹（非黑条）', async () => {
+    stubRaf()
+    const overview = makeOverview()
+    overview.playback.vehicles[0].maxHp = null // 无观测容量也无 entryHp → max 未证明
+    overview.playback.vehicles[0].hpSamples = [{ timeSec: 0, hp: 2600 }]
+    overview.playback.vehicles[0].entryHpSource = null
+    const wrapper = mountPlayback(overview, 12)
+    await flushPromises()
+    const hud = wrapper.find('[data-test="pb-marker-1001"]').find('[data-test="pb-hp-hud"]')
+    expect(hud.find('[data-test="pb-hp-num"]').text()).toBe('2600')
+    const fill = hud.find('.pb-hp-fill')
+    expect(fill.exists()).toBe(true)
+    // indeterminate：100% 宽 + 斜纹（max 未知）
+    expect(fill.classes()).toContain('pb-hp-fill-unknown')
+    expect(fill.attributes('style') || '').toContain('100%')
+  })
+
 
   it('tank marker scales with the map (no counter-scale) while name/death overlays stay constant', async () => {
     stubRaf()

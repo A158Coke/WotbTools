@@ -246,6 +246,37 @@ no PositionChanged != missing position（静止同坐标 gap 已证实，见下�
 - `eigenein/wotbreplay-parser`（Rust，v0.4.2）为 Blitz 回放公开实现：仅解 **type 0（BasePlayerCreate）与 type 8（EntityMethod）**，其余全部 `Unknown`；type 0 用 `serde_pickle` 解 arguments（与我们的 PickleDecoder 思路一致），字段 schema 与我们解出的 dict 吻合且我们的字段更全（clanTags/teamTitles/wins/webEmitterID 等社区未覆盖）。
 - 结论：type 7/31/35/39 在全球公开资料中均未破解，本分支的成果（type 7 结构 + propId 部分语义、type 23/26/31 射击与散布时间线、type 35 tick、type 13 容器、type 39 相机流与排除性结论）为新增贡献。
 
+## INITIAL_HP_PROBE（开局/最大 HP 调查 · 2026-08-21，PR #107 附加任务，7 样本 + WildCat）
+
+**结论：进场 max HP 无法从现有协议可靠证明（NOT_PROVEN）**——但已排除一批候选并确立安全 UX 语义。
+探针：`InitialHpProtocolProbeTest`（非 CI 手动探针，覆盖 common/data 全部 6 样本 + fixtures 夹具，无样本自动跳过）。
+
+| 候选来源 | 证据 | 分级 |
+|---|---|---|
+| Type-7 propId=3（当前 HP）开局满血广播 | 全部 7 样本首个 positive sample 与首次受击同刻或更晚（11.1s~93.1s），无一在开战广播初始满血 | REJECTED（作为开局满血来源） |
+| Type-7 propId=4（len=2） | 值域 0/1/258/259/514/515/1026/1027/...（256×n+(0|1) 模式）——高字节步进+低位标志，非连续 HP | REJECTED |
+| Type-7 propId=0（len=1） | 值域 {0,1} 布尔 | REJECTED |
+| Type-7 propId=9（len=1..4） | 值域 ~1e9（float 类），非 HP | REJECTED |
+| Type 0/1/2 EntityCreate | 全样本仅 1-2 个 create 包且未映射玩家（系统/相机实体），不覆盖车辆 | REJECTED |
+| Type 5 / Type 33 | type33=12B（eid+8B零）；type5 无 payload；均不含 HP | REJECTED |
+| Type-8 subtype48 wrapper=18（赛前配置） | 每样本仅 1 次；root field17=初始点数/胜利阈值（PROVEN）；**无 HP 字段证据** | CANDIDATE（待深挖） |
+| battle_results root field150 | 逐队统计（f21/f23 打包曲线）；含 f1=tankId 等，**无明确 max HP 字段** | CANDIDATE |
+| battle_results root field184/185/186 | 锦标赛/战队统计 | REJECTED |
+
+**循环门禁确认（任务 C）**：真实回放中所有受击车辆 `observedReceived < damageReceived`
+（差 446~675，如 SPHT 结算 3536 vs 观测 3067）→ `coverageExact=false` → `entryHpSource`
+恒为 BASE_FALLBACK → 前端旧逻辑显示 UNKNOWN/黑条。根因：首个 prop3 sample 缺失 →
+首个 HP loss 无法推导 → 事件流 received 恒小于结算 → 覆盖永不完全。**这是真实数据限制，
+不是门禁 bug**；不得放宽真实性门禁，由前端「相对满血状态」解决 UX（见 docs/features/battle-playback.md）。
+
+**HP provenance 语义（前端，docs/current-plan.md §4 扩展）**：
+- `OBSERVED_EXACT`：进场满血已证明（entryHpSource=OBSERVED_EXACT）→ 精确 current/max/pct；
+- `CURRENT_HP_EXACT_MAX_UNKNOWN`：有真实 Type-7 current 采样但进场 max 未证明 →
+  current 精确、maxHp 用观测最大容量（observedMaxHp，含 base 下界兜底，标注观测分母）、
+  pct 相对观测容量；tooltip「当前 HP 已观测，进场最大 HP 未知」；
+- `RULE_DERIVED_FULL_AT_SPAWN`：仅本方存活 + 无采样 + 无战前掉血证据 → 开局相对满血
+  （前端 100% 阵营色条，不伪造具体数字，tankopedia base 永不冒充 max/current）；
+- `UNKNOWN`：敌方/无依据 → 灰段未知样式。
 ## 下一步
 
 1. type 39 字段映射：收集第三个真实回放（最好录像者阵亡时间明确），验证冻结时刻与 f2/f3/f4 贴车规律；或游戏内录屏对照 FOV 档位/瞄准动作。

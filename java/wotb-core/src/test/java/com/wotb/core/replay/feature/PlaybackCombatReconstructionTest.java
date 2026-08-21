@@ -185,4 +185,122 @@ class PlaybackCombatReconstructionTest {
                 hp(2, START + 510.0f, 1, 2812, true, DecodeConfidence.EXACT)));
         assertTrue(result.lossesOf(1001L).isEmpty());
     }
+    // ---- PR #107 Blocker 2：killer attribution fail-closed + 去重 ----
+
+    @Test
+    void killedWithTwoDifferentAttackersInWindowHasNoKiller() {
+        // entity1 归零；致死窗口内两个不同攻击者（entity2 @30.8、entity3 @30.9）
+        // → destroyed 保留、killer null（不得选"最后一个"）
+        final var result = derive(List.of(
+                hp(1, START + 30.0f, 1, 242, true, DecodeConfidence.EXACT),
+                hp(2, START + 31.0f, 1, 0, false, DecodeConfidence.EXACT),
+                dmg(3, START + 30.8f, 2, 1, 500),
+                dmg(4, START + 30.9f, 3, 1, 500)));
+        assertEquals(1, result.destroyed().size());
+        final PlaybackCombatReconstruction.Destroyed d = result.destroyed().get(0);
+        assertEquals(1001L, d.victimAccountId());
+        assertNull(d.killerAccountId(), "窗口内多个不同攻击者 → killer 必须 fail-closed 为 null");
+    }
+
+    @Test
+    void killedWithUnresolvedAttackerHasNoKiller() {
+        // 致死窗口内一条攻击者身份无法解析（attacker entity=999 无映射 → account 0）
+        // → destroyed 保留、killer null
+        final var result = derive(List.of(
+                hp(1, START + 30.0f, 1, 242, true, DecodeConfidence.EXACT),
+                hp(2, START + 31.0f, 1, 0, false, DecodeConfidence.EXACT),
+                dmg(3, START + 30.8f, 999, 1, 500)));
+        assertEquals(1, result.destroyed().size());
+        assertNull(result.destroyed().get(0).killerAccountId(),
+                "攻击者身份无法解析 → killer 必须为 null");
+    }
+
+    @Test
+    void killedBySelfCandidateHasNoKiller() {
+        // 致死窗口内唯一通知是自伤（attacker == victim）→ killer null
+        final var result = derive(List.of(
+                hp(1, START + 30.0f, 1, 242, true, DecodeConfidence.EXACT),
+                hp(2, START + 31.0f, 1, 0, false, DecodeConfidence.EXACT),
+                dmg(3, START + 30.8f, 1, 1, 242)));
+        assertEquals(1, result.destroyed().size());
+        assertNull(result.destroyed().get(0).killerAccountId(),
+                "自伤候选不得作 killer");
+    }
+
+    @Test
+    void killedWithMixedResolvedAndUnresolvedHasNoKiller() {
+        // 窗口内一条已解析（entity2）+ 一条未解析（999）→ 无法证明唯一归属 → killer null
+        final var result = derive(List.of(
+                hp(1, START + 30.0f, 1, 242, true, DecodeConfidence.EXACT),
+                hp(2, START + 31.0f, 1, 0, false, DecodeConfidence.EXACT),
+                dmg(3, START + 30.8f, 2, 1, 300),
+                dmg(4, START + 30.9f, 999, 1, 300)));
+        assertEquals(1, result.destroyed().size());
+        assertNull(result.destroyed().get(0).killerAccountId(),
+                "存在未解析攻击者 → 无法证明唯一归属 → killer null");
+    }
+
+    @Test
+    void killedWithSameAttackerMultipleNotificationsResolvesKiller() {
+        // 窗口内两条通知均来自同一攻击者（entity2）→ 唯一可信攻击者 → killer 正确
+        // （同一攻击者多条一致通知视为可信，契约固定）
+        final var result = derive(List.of(
+                hp(1, START + 30.0f, 1, 242, true, DecodeConfidence.EXACT),
+                hp(2, START + 31.0f, 1, 0, false, DecodeConfidence.EXACT),
+                dmg(3, START + 30.75f, 2, 1, 200),
+                dmg(4, START + 30.85f, 2, 1, 200)));
+        assertEquals(1, result.destroyed().size());
+        assertEquals(2002L, result.destroyed().get(0).killerAccountId(),
+                "同一攻击者多条一致通知 → 唯一可信 killer");
+    }
+
+    @Test
+    void killedNoDamageButHpZeroStillDestroyed() {
+        // 只有 HP=0（alive=false），无任何 DAMAGE → destroyed 存在、killer null
+        final var result = derive(List.of(
+                hp(1, START + 30.0f, 1, 242, true, DecodeConfidence.EXACT),
+                hp(2, START + 31.0f, 1, 0, false, DecodeConfidence.EXACT)));
+        assertEquals(1, result.destroyed().size());
+        assertNull(result.destroyed().get(0).killerAccountId());
+        assertEquals(31.0, result.destroyed().get(0).timeSec(), 1e-6);
+    }
+
+    @Test
+    void duplicateHpZeroEventsProduceSingleDestroyed() {
+        // 同一 victim 重复 alive=false/HP=0 → 只生成一次 destroyed（保留最早时刻）
+        final var result = derive(List.of(
+                hp(1, START + 30.0f, 1, 242, true, DecodeConfidence.EXACT),
+                hp(2, START + 31.0f, 1, 0, false, DecodeConfidence.EXACT),
+                hp(3, START + 31.2f, 1, 0, false, DecodeConfidence.EXACT),
+                dmg(4, START + 30.9f, 2, 1, 500)));
+        assertEquals(1, result.destroyed().size());
+        final PlaybackCombatReconstruction.Destroyed d = result.destroyed().get(0);
+        assertEquals(31.0, d.timeSec(), 1e-6);
+        assertEquals(2002L, d.killerAccountId());
+    }
+
+    @Test
+    void duplicateHpZeroLaterEventKeepsEarliestTime() {
+        // 事件顺序：先出现较晚的 HP=0，再出现较早的 → 保留最早可信击毁时刻
+        final var result = derive(List.of(
+                hp(1, START + 31.2f, 1, 0, false, DecodeConfidence.EXACT),
+                hp(2, START + 30.0f, 1, 242, true, DecodeConfidence.EXACT),
+                hp(3, START + 31.0f, 1, 0, false, DecodeConfidence.EXACT)));
+        assertEquals(1, result.destroyed().size());
+        assertEquals(31.0, result.destroyed().get(0).timeSec(), 1e-6);
+    }
+
+    @Test
+    void killerNeverLeaksFromFutureDamage() {
+        // 击毁时刻 31.0；另一辆车的 DAMAGE 在 31.0 后（32.0）不得被当作 killer——
+        // 且未来事件不得影响该 destroyed 的 killer 归属
+        final var result = derive(List.of(
+                hp(1, START + 30.0f, 1, 242, true, DecodeConfidence.EXACT),
+                hp(2, START + 31.0f, 1, 0, false, DecodeConfidence.EXACT),
+                dmg(3, START + 30.8f, 2, 1, 500),
+                dmg(4, START + 32.0f, 3, 1, 500)));
+        assertEquals(1, result.destroyed().size());
+        assertEquals(2002L, result.destroyed().get(0).killerAccountId(),
+                "窗口外未来 DAMAGE 不得泄漏为 killer");
+    }
 }
