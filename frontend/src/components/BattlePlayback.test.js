@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import BattlePlayback from './BattlePlayback.vue'
 import { preloadBattleModels } from '../vehicle-models/runtime.js'
+import { loadVehiclePortrait } from '../vehicle-portraits/runtime.js'
 import { PLAYER_FADE_MS, PLAYER_HIDE_MS, PLAYER_SHOW_MS } from '../utils/labelLayout'
 
 const i18n = vi.hoisted(() => ({
@@ -39,6 +40,10 @@ vi.mock('../vehicle-models/runtime.js', () => ({
     failed: new Set(),
     byTank: new Map(),
   })),
+}))
+
+vi.mock('../vehicle-portraits/runtime.js', () => ({
+  loadVehiclePortrait: vi.fn(async (tankId) => tankId === 2 ? '/portraits/2.webp' : null),
 }))
 
 function makeOverview() {
@@ -1830,6 +1835,25 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(false)
   })
 
+  it('Details Panel 按 tankId 懒加载 BlitzKit 车型图；缺图时静默降级', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+
+    await wrapper.find('[data-test="pb-marker-2001"]').trigger('click')
+    await flushPromises()
+    expect(loadVehiclePortrait).toHaveBeenCalledWith(2)
+    const portrait = wrapper.find('[data-test="pb-sb-portrait"] img')
+    expect(portrait.exists()).toBe(true)
+    expect(portrait.attributes('src')).toBe('/portraits/2.webp')
+    expect(portrait.attributes('alt')).toBe('T49')
+
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
+    await flushPromises()
+    expect(loadVehiclePortrait).toHaveBeenCalledWith(1)
+    expect(wrapper.find('[data-test="pb-sb-portrait"]').exists()).toBe(false)
+  })
+
   it('§8.4/§8.5/§9/§18/§20 sidebar：current-state only——无最终战绩分区、无协助伤害行、无最大HP/百分比', async () => {
     stubRaf()
     const overview = makeOverview()
@@ -2194,4 +2218,3 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     expect(wrapper.findAll('.pb-feed-item')).toHaveLength(1) // 上一轮 feed 仍在自然存活，未重复
   })
 })
-

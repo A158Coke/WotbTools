@@ -1286,6 +1286,26 @@ const selectedState = computed(() => {
   return vehicleStates.value.find(st => st.vehicle.accountId === selectedAccountId.value) || null
 })
 
+// Details Panel 车型图：仅在选中车辆后按 tankId 懒加载；图片随站点发布，production 不访问 BlitzKit。
+// token 防止快速切换车辆时旧请求覆盖新选择；非 Tier X / 缺图 / chunk 失败均静默降级为无图。
+const selectedPortraitUrl = ref(null)
+let portraitLoadToken = 0
+watch(
+  () => selectedState.value?.vehicle?.tankId,
+  async (tankId) => {
+    const token = ++portraitLoadToken
+    selectedPortraitUrl.value = null
+    if (tankId == null) return
+    try {
+      const { loadVehiclePortrait } = await import('../vehicle-portraits/runtime.js')
+      const url = await loadVehiclePortrait(tankId)
+      if (token === portraitLoadToken) selectedPortraitUrl.value = url
+    } catch {
+      if (token === portraitLoadToken) selectedPortraitUrl.value = null
+    }
+  },
+)
+
 function closeSidebar() {
   selectedAccountId.value = null
 }
@@ -1872,6 +1892,12 @@ const mapStyle = computed(() => ({
         </div>
         <button type="button" class="pb-close pb-sb-close" data-test="pb-sb-close" :aria-label="$t('recon.map.playback.close')" @click="closeSidebar">&times;</button>
       </div>
+      <div v-if="selectedPortraitUrl" class="pb-sb-portrait" data-test="pb-sb-portrait">
+        <img
+          :src="selectedPortraitUrl"
+          :alt="selectedState.vehicle.tankName || String(selectedState.vehicle.tankId)"
+        />
+      </div>
       <dl class="pb-sb-grid">
         <dt>{{ $t('recon.map.playback.team') }}</dt>
         <dd>{{ $t(selectedState.vehicle.team === friendlyTeam ? 'recon.map.playback.team_friendly' : 'recon.map.playback.team_enemy') }}</dd>
@@ -2100,6 +2126,22 @@ const mapStyle = computed(() => ({
 .pb-sb-title strong { color: var(--text-heading); font-size: .85rem; line-height: 1.3; }
 .pb-sb-player { color: var(--text-muted); font-size: .75rem; word-break: break-all; }
 .pb-sb-close { font-size: 1.05rem; line-height: 1; padding: 0 3px; }
+.pb-sb-portrait {
+  display: grid;
+  place-items: center;
+  min-height: 92px;
+  margin: 2px 0 6px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-chip, rgba(128, 128, 128, .2)) 68%, transparent), transparent);
+  overflow: hidden;
+}
+.pb-sb-portrait img {
+  display: block;
+  width: min(100%, 190px);
+  height: 96px;
+  object-fit: contain;
+  filter: drop-shadow(0 5px 7px rgba(0, 0, 0, .28));
+}
 .pb-sb-grid { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; }
 .pb-sb-grid dt { color: var(--text-muted); white-space: nowrap; }
 .pb-sb-grid dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
