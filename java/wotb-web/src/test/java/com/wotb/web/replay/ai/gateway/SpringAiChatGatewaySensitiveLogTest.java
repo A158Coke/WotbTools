@@ -73,7 +73,7 @@ class SpringAiChatGatewaySensitiveLogTest {
         startServer(200, completionJson());
         final SpringAiChatGateway gateway = gateway();
         gateway.chat(new AiChatRequest(
-                SYSTEM_PROMPT, USER_PROMPT, "deepseek-v4-pro",
+                SYSTEM_PROMPT, USER_PROMPT, "deepseek-v4-flash",
                 null, 4096, true, "max", "corr-sensitive", "SINGLE_TEAM_BATTLE", 315,
                 AiResponseFormat.JSON_OBJECT));
 
@@ -95,7 +95,7 @@ class SpringAiChatGatewaySensitiveLogTest {
         final SpringAiChatGateway gateway = gateway(1);
         try {
             gateway.chat(new AiChatRequest(
-                    SYSTEM_PROMPT, USER_PROMPT, "deepseek-v4-pro",
+                    SYSTEM_PROMPT, USER_PROMPT, "deepseek-v4-flash",
                     null, 4096, true, "max", "corr-sensitive-fail", "SINGLE_PLAYER_BATTLE", 315,
                     AiResponseFormat.TEXT));
         } catch (final AiUpstreamException expected) {
@@ -131,14 +131,14 @@ class SpringAiChatGatewaySensitiveLogTest {
     private SpringAiChatGateway gateway(final int retryMaxAttempts) {
         final String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
         return SpringAiChatGateway.fromProperties(new AiModelProperties(
-                FAKE_API_KEY, baseUrl, "deepseek-v4-pro",
+                FAKE_API_KEY, baseUrl, "deepseek-v4-flash",
                 10, 300, 315, retryMaxAttempts, 0, 0, 2.0,
                 1_000_000, 940_000, 32_768, 16_384, true, "max", false, 4096), null);
     }
 
     private static String completionJson() {
         return "{\"id\":\"chatcmpl-sensitive\",\"object\":\"chat.completion\","
-                + "\"created\":1,\"model\":\"deepseek-v4-pro\",\"choices\":[{\"index\":0,"
+                + "\"created\":1,\"model\":\"deepseek-v4-flash\",\"choices\":[{\"index\":0,"
                 + "\"message\":{\"role\":\"assistant\",\"content\":\"" + COMPLETION + "\"},"
                 + "\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":11,"
                 + "\"completion_tokens\":22,\"total_tokens\":33}}";

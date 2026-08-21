@@ -277,7 +277,7 @@ AI 复盘区分两种 scope，互不混用：
 |------|---------|--------|------|
 | `apiKey` | `AI_API_KEY` | 空 | DeepSeek API Key；为空时应用正常启动，AI 调用返回 `AI_NOT_CONFIGURED` |
 | `baseUrl` | `AI_BASE_URL` | `https://api.deepseek.com` | Provider Base URL |
-| `model` | `AI_MODEL` | `deepseek-v4-pro` | 模型字符串，原样传递给 Provider |
+| `model` | `AI_MODEL` | `deepseek-v4-flash` | 模型字符串，原样传递给 Provider |
 | `connectTimeoutSec` | `AI_CONNECT_TIMEOUT_SEC` | 10 | 连接超时（秒） |
 | `timeoutSec` | `AI_TIMEOUT_SEC` | 300 | 单次 read/response 超时（秒） |
 | `callTimeoutSec` | `AI_CALL_TIMEOUT_SEC` | 315 | **整个 `AiChatGateway.chat()` 的总时间预算**（首次请求 + 全部 retry + 全部 backoff + 响应解析），必须 ≥ connect + read |

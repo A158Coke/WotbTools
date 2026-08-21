@@ -69,7 +69,7 @@ class AiSecretRedactorTest {
 
     private static Stream<Arguments> plainTextCases() {
         return Stream.of(
-                Arguments.of("model=deepseek-v4-pro"),
+                Arguments.of("model=deepseek-v4-flash"),
                 Arguments.of("the quick brown fox"),
                 Arguments.of("reasoning_effort=max"));
     }

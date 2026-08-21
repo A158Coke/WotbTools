@@ -99,12 +99,12 @@ class AiUpstreamConfigTest {
         // call2 开启但 effort 非法 → 拒绝
         assertThrows(IllegalArgumentException.class,
                 () -> new AiModelProperties(
-                        "sk-test", "https://api.deepseek.com", "deepseek-v4-pro",
+                        "sk-test", "https://api.deepseek.com", "deepseek-v4-flash",
                         10, 300, 315, 3, 1000, 8000, 2.0,
                         1_000_000, 940_000, 32_768, 16_384, false, null, true, 4096));
         // 开启 + high → 合法且透传
         final AiModelProperties enabled = new AiModelProperties(
-                "sk-test", "https://api.deepseek.com", "deepseek-v4-pro",
+                "sk-test", "https://api.deepseek.com", "deepseek-v4-flash",
                 10, 300, 315, 3, 1000, 8000, 2.0,
                 1_000_000, 940_000, 32_768, 16_384, false, "high", true, 4096);
         assertTrue(enabled.call2ThinkingEnabled(), "call2ThinkingEnabled must be forwarded");
@@ -115,7 +115,7 @@ class AiUpstreamConfigTest {
             final int retryMax, final long initialBackoff, final long maxBackoff,
             final double multiplier) {
         return new AiModelProperties(
-                "sk-test", "https://api.deepseek.com", "deepseek-v4-pro",
+                "sk-test", "https://api.deepseek.com", "deepseek-v4-flash",
                 connect, read, call, retryMax, initialBackoff, maxBackoff, multiplier,
                 1_000_000, 940_000, 32_768, 16_384, true, "max", false, 4096);
     }
