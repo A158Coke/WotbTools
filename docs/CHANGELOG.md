@@ -39,6 +39,32 @@
       InitialHpProtocolProbeTest（非 CI）对 7 真实样本完成进场 HP 调查：结论 NOT_PROVEN
       （Type-7 无开局满血广播、propId 0/4/9 排除为 HP）；循环门禁经真实数据确认存在且不得放宽。
 
+
+  - **PR #107 第二轮审查修复（Blocker 1-5：详情面板/总血量条/HP 字段拆分/碰撞 footprint/killer fail-closed）**：
+    - Blocker 1（Details Panel 显示规则）：己方开局无实际证据时（RULE_DERIVED_FULL_AT_SPAWN）当前 HP
+      显示「100%」——这是「开局相对满血状态」的 UI 投影，不是具体 HP 数值、也不证明 actual max HP，
+      绝不写入 currentHp 数值字段；首个可信 sample 出现后改为显示精确 HP 数字，backward seek 恢复 100%，
+      敌方无可信观测继续 —，阵亡显示 0。
+    - Blocker 2（底部己方总血量条）：teamHp 输出确定性 aggregate state（FULL_RELATIVE / EXACT /
+      PARTIAL / UNKNOWN）——本方全部存活车无采样 → FULL_RELATIVE：填充固定 100% 阵营色实心条、
+      数值区显示「100%」（相对状态）绝不显示 0；有真实已知剩余但无已证明分母 → PARTIAL（100% 斜纹，
+      不伪造分母）；禁止 totalMax=0、knownRemaining>0 却仍 0% 的空条与虚假「0 / 0」；
+      Tankopedia base 相加不得冒充总 HP；阵亡是权威事实（HP=0），dead 车容量不进未知灰段。
+    - Blocker 3（HP 字段拆分）：MapOverview.PlaybackVehicle 删除语义混合的 maxHp，拆为
+      baseHp（Tankopedia 静态参考，仅 metadata）+ observedCapacityHp（回放观测容量，仅观测分母参考）+
+      entryHp（已证明进场满血）；CURRENT_HP_EXACT_MAX_UNKNOWN 的 maxHp/pct 恒为 null——
+      绝不使用 baseHp/observedCapacityHp 计算真实百分比（禁止 2500/3000 类结果）；
+      OBSERVED_EXACT 才允许 pct = current/entryHp。
+    - Blocker 4（碰撞 footprint 按 DOM 实际渲染）：labelLayout 改用 hpRendered + hpDisplayText——
+      fullState（current=null）与 UNKNOWN（数字 —）都渲染 HP HUD、必须有盒；关闭「显示血量」
+      （hpRendered=false）才无盒；盒宽按每车实际文本估算取 max（不单靠第一辆车测量复用）；
+      保留 coreSize×view.scale 与 selected/destroyed/recorder 独立盒。
+    - Blocker 5（killer attribution fail-closed）：type-8 结构合法但语义未解码的伤害方法变体
+      （火灾/撞击等）由 EntityMethodDecoder 产出 canonical UnsupportedDamageEvent 证据事件
+      （保留 time + victim/attacker eid + variant，无精确伤害数字）；PlaybackCombatReconstruction 的
+      killer 致死窗口优先绑定权威致死 HP-loss 窗口（HP 掉到 0 的最后一档，无前序样本回退 0.25s），
+      窗口内存在任何无法排除的 unsupported 变体 → killer=null（不得把窗口内无关 direct DAMAGE
+      错判为击杀者）；destroyed 事实保留并去重，不因 killer 未知删除 HP=0/击毁。
 ### Changed
 - **AI 模型切回 deepseek-v4-flash（官方稳定别名）**：`AI_MODEL` 默认值从
   `deepseek-v4-pro` 统一切回 `deepseek-v4-flash`——官方稳定别名直接调用最新 Flash 版本，

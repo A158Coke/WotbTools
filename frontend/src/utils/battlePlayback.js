@@ -77,42 +77,83 @@ export function vehicleHpAt(vehicle, t, assumeFullWhenUnobserved = false) {
 
 
 /**
- * 队伍总血量（t 时刻）——PR #107 HP provenance 语义：
- * totalMax = Σ已证明的实际最大 HP（entryHpSource=OBSERVED_EXACT 的 entryHp；无则 0，
- * 绝不含 tankopedia base 冒充实际本局总血量）、knownRemaining = Σ已知当前剩余 HP、
- * unknownMax = Σ血量 UNKNOWN 的理论容量（灰段，Tankopedia baseline 仅作 reference）、
- * spawnFullCount = 处于「开局相对满血」状态的存活己方车辆数（无具体数字，
- * 用于 UI 表达「开局全员满血状态」，不换算成具体总 HP）。
- *
- * <p>敌方/未知路径无采样恒 UNKNOWN；本方路径仅在存活且无战前掉血证据时进入
- * RULE_DERIVED_FULL_AT_SPAWN（fullState），knownRemaining 不增加（不伪造数字）。</p>
+ * 队伍总血量聚合（t 时刻）——PR #107 HP provenance + Blocker 2 aggregate display state：
+ * <ul>
+ *   <li>totalMax = Σ已证明的实际最大 HP（entryHpSource=OBSERVED_EXACT 的 entryHp；无则 0，
+ *       绝不含 tankopedia base 相加冒充本局总血量）；</li>
+ *   <li>knownRemaining = Σ真实已知当前剩余 HP（真实 Type-7 采样；阵亡=0；
+ *       OBSERVED_EXACT 无采样按 entryHp 计 100%）；</li>
+ *   <li>unknownMax = Σ未证明容量的参考值（observedCapacityHp ?? baseHp；仅灰段/参考展示，
+ *       绝不冒充本局总 HP）；</li>
+ *   <li>spawnFullCount = 处于「开局相对满血」（RULE_DERIVED_FULL_AT_SPAWN）的存活本方车辆数；</li>
+ *   <li>state = 聚合显示状态（deterministic、可测试）：
+ *       EXACT（totalMax>0，有已证明实际总容量 → 真实分数可算）
+ *       | PARTIAL（totalMax=0 但 knownRemaining>0，有真实已知剩余但无已证明分母 → 无法算分数）
+ *       | FULL_RELATIVE（本方所有存活车辆均开局相对满血、无任何数字 → 100% 实心条，相对状态）
+ *       | UNKNOWN（无任何数据——敌方无采样等）。</li>
+ * </ul>
+ * <p>阵亡是权威事实：当前 HP=0（绝不把 dead 车的容量计入未知灰段、也不残留旧采样）。
+ * 敌方/未知路径无采样恒 UNKNOWN（不进入 FULL_RELATIVE）；本方路径仅在存活且无战前掉血证据时
+ * 进入 RULE_DERIVED_FULL_AT_SPAWN（spawnFullCount），knownRemaining 不增加（不伪造数字）。</p>
  */
 export function teamHp(vehicles, team, t, assumeFullWhenUnobserved = false) {
   let totalMax = 0
   let knownRemaining = 0
   let unknownMax = 0
   let spawnFullCount = 0
+  let aliveCount = 0
   for (const v of vehicles || []) {
     if (v.team !== team) continue
+    const destroyed = v.deathSec != null && t >= v.deathSec - 1e-6
     const entryProven = v.entryHpSource === 'OBSERVED_EXACT'
       && Number.isFinite(v.entryHp) && v.entryHp > 0
-    const maxHp = entryProven ? v.entryHp : (Number.isFinite(v.maxHp) && v.maxHp > 0 ? v.maxHp : 0)
     if (entryProven) totalMax += v.entryHp
+    if (destroyed) {
+      // 阵亡 = 已知 0：不把 dead 车容量计入未知灰段
+      knownRemaining += 0
+      continue
+    }
+    aliveCount++
     const cur = vehicleHpAt(v, t, false)
     if (cur != null) {
       knownRemaining += cur
       continue
     }
-    // 无采样：assumeFullWhenUnobserved 仅本方路径（兼容旧调用），进入相对满血状态
-    const death = v.deathSec
-    const alive = death == null || t < death - 1e-6
-    if (assumeFullWhenUnobserved && alive) {
+    if (entryProven) {
+      // 已证明进场满血且无采样 → 相对满血（100% of entryHp）
+      knownRemaining += v.entryHp
+      continue
+    }
+    // 无采样、未证明：本方存活且无战前掉血证据 → 开局相对满血；否则灰段参考容量
+    const hasPreBattleDamage = Array.isArray(v.hpLosses)
+      && v.hpLosses.some(l => Number.isFinite(l.toSec) && l.toSec <= t + 1e-6)
+    if (assumeFullWhenUnobserved && !hasPreBattleDamage) {
       spawnFullCount++
     } else {
-      unknownMax += maxHp
+      unknownMax += referenceCapacity(v)
     }
   }
-  return { totalMax, knownRemaining, unknownMax, spawnFullCount }
+  let state
+  if (totalMax > 0) {
+    state = 'EXACT'
+  } else if (knownRemaining > 0) {
+    state = 'PARTIAL'
+  } else if (spawnFullCount > 0 && spawnFullCount === aliveCount && aliveCount > 0) {
+    state = 'FULL_RELATIVE'
+  } else {
+    state = 'UNKNOWN'
+  }
+  return { totalMax, knownRemaining, unknownMax, spawnFullCount, state }
+}
+
+/**
+ * 未证明容量的参考值（observedCapacityHp ?? baseHp；Tankopedia base 仅作静态参考/灰段展示，
+ * 绝不进入本局 current/max/entry HP 或百分比）。
+ */
+function referenceCapacity(v) {
+  if (Number.isFinite(v.observedCapacityHp) && v.observedCapacityHp > 0) return v.observedCapacityHp
+  if (Number.isFinite(v.baseHp) && v.baseHp > 0) return v.baseHp
+  return 0
 }
 
 /**
@@ -494,9 +535,9 @@ export function hpDisplay(vehicle, t, { friendly = false } = {}) {
   if (current != null) {
     // 有真实采样：
     // - OBSERVED_EXACT（进场满血已证明）→ current + 精确 maxHp/entryHp + pct；
-    // - 否则 CURRENT_HP_EXACT_MAX_UNKNOWN → 真实 current；maxHp 用观测最大容量
-    //   （observedMaxHp = 回放实测最大，tankopedia base 仅作下界兜底；标注为观测分母、
-    //   非进场满血证明——绝不把 base 冒充本局实际 max），pct 是相对该观测容量的值；
+    // - 否则 CURRENT_HP_EXACT_MAX_UNKNOWN → 真实 current；**maxHp=null、pct=null**
+    //   （Blocker 3：不得用 baseHp 或 observedCapacityHp 计算真实百分比——它们只是
+    //   Tankopedia 静态参考/回放观测容量 metadata，不是本局进场最大 HP）；
     //   前端对该状态渲染阵营色 indeterminate 提示「当前 HP 已观测，进场最大 HP 未知」。
     const entryProven = vehicle.entryHpSource === 'OBSERVED_EXACT'
       && Number.isFinite(vehicle.entryHp) && vehicle.entryHp > 0
@@ -506,10 +547,8 @@ export function hpDisplay(vehicle, t, { friendly = false } = {}) {
         destroyed: false, state: 'OBSERVED_EXACT', fullState: false,
       }
     }
-    const maxHp = Number.isFinite(vehicle.maxHp) && vehicle.maxHp > 0 ? vehicle.maxHp : null
-    const pct = maxHp != null ? Math.max(0, Math.min(100, (current / maxHp) * 100)) : null
     return {
-      current, maxHp, pct, destroyed: false,
+      current, maxHp: null, pct: null, destroyed: false,
       state: 'CURRENT_HP_EXACT_MAX_UNKNOWN', fullState: false,
     }
   }

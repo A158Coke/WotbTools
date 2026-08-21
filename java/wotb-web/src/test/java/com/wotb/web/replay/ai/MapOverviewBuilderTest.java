@@ -99,10 +99,15 @@ class MapOverviewBuilderTest {
         // 争霸赛实时点数时间线契约（随机战 fixture 无 field12 广播 → 空列表而非 null）
         assertNotNull(overview.playback().pointsSamples(), "pointsSamples 契约：非 null");
         for (final MapOverview.PlaybackVehicle v : overview.playback().vehicles()) {
-            assertNotNull(v.maxHp(), "maxHp 应由回放实测/兜底解析，非空: " + v.playerName());
+            // PR #107 Blocker 3：maxHp 拆分为 baseHp（Tankopedia 静态参考）+ observedCapacityHp
+            //（回放观测容量，下界 base）——观测容量应由回放实测/兜底解析，且不得低于 tankopedia base
+            assertNotNull(v.observedCapacityHp(),
+                    "observedCapacityHp 应由回放实测/兜底解析，非空: " + v.playerName());
             final Integer base = ReplayDisplayNames.tankMaxHpValue(v.tankId());
+            assertEquals(base, v.baseHp(), "baseHp 应为 tankopedia 静态参考: " + v.playerName());
             if (base != null) {
-                assertTrue(v.maxHp() >= base, "maxHp 不得低于 tankopedia base: " + v.playerName());
+                assertTrue(v.observedCapacityHp() >= base,
+                        "observedCapacityHp 不得低于 tankopedia base: " + v.playerName());
             }
         }
         assertFalse(overview.playback().events().isEmpty());

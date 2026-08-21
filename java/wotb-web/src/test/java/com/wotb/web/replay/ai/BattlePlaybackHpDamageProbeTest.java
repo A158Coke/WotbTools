@@ -87,12 +87,14 @@ class BattlePlaybackHpDamageProbeTest {
                 byAccount.put(v.accountId(), v);
                 System.out.printf(Locale.ROOT,
                         "VEHICLE acc=%d tankId=%d tank=%-20s player=%-16s team=%d%n"
-                                + "  tankType(player)=%s tankopediaClass=%s maxHp=%s entrySrc=%s entryHp=%s%n"
+                                + "  tankType(player)=%s tankopediaClass=%s baseHp=%s observedCap=%s"
+                                + " entrySrc=%s entryHp=%s%n"
                                 + "  hpSamples=%d death=%s finalStats=dealt%d recv%d assist%d kills%d shots%d hits%d pens%d%n",
                         v.accountId(), v.tankId(), v.tankName(), v.playerName(), v.team(),
                         quote(v.tankType()),
                         com.wotb.core.ref.ReplayDisplayNames.tankClass(v.tankId()),
-                        v.maxHp(), v.entryHpSource(), v.entryHp(),
+                        v.baseHp(), v.observedCapacityHp(),
+                        v.entryHpSource(), v.entryHp(),
                         v.hpSamples().size(), v.deathSec(),
                         v.finalStats().damageDealt(), v.finalStats().damageReceived(),
                         v.finalStats().damageAssisted(), v.finalStats().kills(),

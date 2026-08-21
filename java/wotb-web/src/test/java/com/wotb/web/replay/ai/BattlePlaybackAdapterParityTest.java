@@ -84,9 +84,11 @@ class BattlePlaybackAdapterParityTest {
             final MapOverview.PlaybackVehicle av = adaptedByAccount.get(e.getKey());
             assertNotNull(av, "adapter 缺车 " + e.getKey());
 
-            // deathSec / maxHp 严格一致（来源同为结算 + tankopedia）
+            // deathSec 严格一致（来源同为结算）；HP 字段（baseHp/observedCapacityHp）双构建器同源一致
             assertEquals(lv.deathSec(), av.deathSec(), "deathSec 必须一致: " + e.getKey());
-            assertEquals(lv.maxHp(), av.maxHp(), "maxHp 必须一致: " + e.getKey());
+            assertEquals(lv.baseHp(), av.baseHp(), "baseHp 必须一致: " + e.getKey());
+            assertEquals(lv.observedCapacityHp(), av.observedCapacityHp(),
+                    "observedCapacityHp 必须一致: " + e.getKey());
 
             // 新字段（entry HP provenance / 车辆类型 / 最终战绩）双构建器同源一致
             assertEquals(lv.tankType(), av.tankType(), "tankType 必须一致: " + e.getKey());

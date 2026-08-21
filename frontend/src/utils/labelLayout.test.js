@@ -89,9 +89,9 @@ describe('computeLabelLayout（§21–§28：真实 visual footprint 碰撞）',
     expect(onlyPlayer.playerBox).not.toBeNull()
   })
 
-  it('HP HUD 盒：hpVisible 时位于 label 块之上（§22 HP 参与碰撞；数字+bar 宽度）', () => {
+  it('HP HUD 盒：hpRendered 时位于 label 块之上（§22 HP 参与碰撞；数字+bar 宽度）', () => {
     const res = computeLabelLayout(
-      [item(1, 100, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3189 })],
+      [item(1, 100, 200, 'Maus', 'P1', { hpRendered: true, hpDisplayText: '3189' })],
       { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh })
     const r = res.get(1)
     const labelBlockH = tankH + playerH
@@ -99,11 +99,34 @@ describe('computeLabelLayout（§21–§28：真实 visual footprint 碰撞）',
     expect(r.hpBox.w).toBe(48) // bar 定宽（数字 3189 估算宽度 < 48）
     expect(r.hpBox.y).toBe(200 - HALF - LABEL_GAP_PX - labelBlockH - HP_HUD_GAP_PX - HP_HUD_H_PX)
     expect(r.hpHidden).toBe(false)
-    // hpVisible=false → 无 HP 盒（§28：不可见 HP UI 不占位）
+    // hpRendered=false → 无 HP 盒（§28：关闭「显示血量」不可见 HP UI 不占位）
     const off = computeLabelLayout(
-      [item(1, 100, 200, 'Maus', 'P1', { hpVisible: false })],
+      [item(1, 100, 200, 'Maus', 'P1', { hpRendered: false })],
       { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh }).get(1)
     expect(off.hpBox).toBeNull()
+  })
+
+  it('PR #107 Blocker 4: fullState（current=null）与 UNKNOWN（—）仍渲染 HUD → 必须有 hpBox；文本影响盒宽', () => {
+    // RULE_DERIVED_FULL_AT_SPAWN：current=null、fullState=true，但 DOM 渲染 HUD（100% 血条 + —）→ footprint 非 null
+    const fullState = computeLabelLayout(
+      [item(1, 100, 200, 'Maus', 'P1', { hpRendered: true, hpDisplayText: '—' })],
+      { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh }).get(1)
+    expect(fullState.hpBox).not.toBeNull()
+    // UNKNOWN：DOM 渲染 HUD（— + 空条）→ footprint 非 null（不能按 current==null 漏掉）
+    const unknown = computeLabelLayout(
+      [item(1, 100, 200, 'Maus', 'P1', { hpRendered: true, hpDisplayText: '—' })],
+      { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh }).get(1)
+    expect(unknown.hpBox).not.toBeNull()
+    // 关闭「显示血量」→ hpRendered=false → hpBox null
+    const off = computeLabelLayout(
+      [item(1, 100, 200, 'Maus', 'P1', { hpRendered: false, hpDisplayText: '—' })],
+      { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh }).get(1)
+    expect(off.hpBox).toBeNull()
+    // 不同显示文本影响盒宽：宽数字（如 5 位）估算宽度应纳入盒宽（max(bar 48, 文本估算)）
+    const wide = computeLabelLayout(
+      [item(1, 100, 200, 'Maus', 'P1', { hpRendered: true, hpDisplayText: '31890' })],
+      { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh }).get(1)
+    expect(wide.hpBox.w).toBeGreaterThanOrEqual(estimateLabelWidth('31890', 10))
   })
 
   it('viewport 裁剪（§35）：越界 marker 不参与碰撞', () => {
@@ -239,16 +262,16 @@ describe('computeLabelLayout（§21–§28：真实 visual footprint 碰撞）',
   it('§25/§26 HP HUD：与 he 车 core 重叠 → 隐藏（selected 车辆 HP 不被挤掉）', () => {
     // B(240) 的 hp [171,189] 与 A(200) core [182,218] 重叠 → B hp 隐藏；A hp 不与 B core 冲突
     const items = [
-      item(1, 200, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3000 }),
-      item(2, 200, 240, 'Maus', 'P2', { hpVisible: true, hpValue: 2800 }),
+      item(1, 200, 200, 'Maus', 'P1', { hpRendered: true, hpDisplayText: '3000' }),
+      item(2, 200, 240, 'Maus', 'P2', { hpRendered: true, hpDisplayText: '2800' }),
     ]
     const res = computeLabelLayout(items, { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh })
     expect(res.get(1).hpHidden).toBe(false)
     expect(res.get(2).hpHidden).toBe(true)
     // selected 车辆 HP 恒不被普通 marker 挤掉（§26）
     const sel = computeLabelLayout(
-      [item(1, 200, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3000, selected: true }),
-       item(2, 200, 240, 'Maus', 'P2', { hpVisible: true, hpValue: 2800 })],
+      [item(1, 200, 200, 'Maus', 'P1', { hpRendered: true, hpDisplayText: '3000', selected: true }),
+       item(2, 200, 240, 'Maus', 'P2', { hpRendered: true, hpDisplayText: '2800' })],
       { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh })
     expect(sel.get(1).hpHidden).toBe(false)
     expect(sel.get(2).hpHidden).toBe(true) // 非 selected 的 B 仍让位
@@ -257,15 +280,15 @@ describe('computeLabelLayout（§21–§28：真实 visual footprint 碰撞）',
   it('§28 HP 开关：HP HUD 开启 → footprint 增大（标签让位）；关闭 → 缩小', () => {
     // B(230) hp 开启：其 hp [174,192] 位于 A 标签 [166,180] 下方 → A 上移让开 hp（§22）
     const on = computeLabelLayout(
-      [item(1, 200, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3000 }),
-       item(2, 200, 230, 'Maus', 'P2', { hpVisible: true, hpValue: 2800 })],
+      [item(1, 200, 200, 'Maus', 'P1', { hpRendered: true, hpDisplayText: '3000' }),
+       item(2, 200, 230, 'Maus', 'P2', { hpRendered: true, hpDisplayText: '2800' })],
       { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh })
     // A.tank [166,180] vs B.hp [174,192]（labelBlockH=14 → B.hp.y=230-18-2-14-4-18=174）→ 重叠 6px → A 上移 6
     expect(on.get(1).tankDy).toBe(-6)
     // 关闭 B 的 HP → 无 hp 盒 → A 无需让位
     const off = computeLabelLayout(
       [item(1, 200, 200, 'Maus', 'P1'),
-       item(2, 200, 230, 'Maus', 'P2', { hpVisible: false })],
+       item(2, 200, 230, 'Maus', 'P2', { hpRendered: false })],
       { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh })
     expect(off.get(1).tankDy).toBe(0)
   })
@@ -286,10 +309,10 @@ describe('computeLabelLayout（§21–§28：真实 visual footprint 碰撞）',
 
   it('§22 recorder 菱形：marker 下方独立 screen-space 盒参与 footprint（Blocker 1 精确几何）', () => {
     const plain = computeLabelLayout(
-      [item(1, 200, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3000 })],
+      [item(1, 200, 200, 'Maus', 'P1', { hpRendered: true, hpDisplayText: '3000' })],
       { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh, coreSize: 36 })
     const withRecorder = computeLabelLayout(
-      [item(1, 200, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3000, recorder: true })],
+      [item(1, 200, 200, 'Maus', 'P1', { hpRendered: true, hpDisplayText: '3000', recorder: true })],
       { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh, coreSize: 36 })
     // core 盒保持纯 core 尺寸（不被 recorder 污染）
     expect(withRecorder.get(1).coreBox.h).toBe(36)
@@ -318,16 +341,40 @@ describe('computeLabelLayout（§21–§28：真实 visual footprint 碰撞）',
 
   it('§22 HP 盒尺寸参数化：调用方传真实渲染宽高（it.hpBoxW/hpBoxH）', () => {
     const custom = computeLabelLayout(
-      [item(1, 100, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3189, hpBoxW: 60, hpBoxH: 20 })],
+      [item(1, 100, 200, 'Maus', 'P1', { hpRendered: true, hpDisplayText: '3189', hpBoxW: 60, hpBoxH: 20 })],
       { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh })
     expect(custom.get(1).hpBox.w).toBe(60)
     expect(custom.get(1).hpBox.h).toBe(20)
     // 默认（无传参）回退 CSS 常量（bar 46+border 2，高 18）
     const dflt = computeLabelLayout(
-      [item(1, 100, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3189 })],
+      [item(1, 100, 200, 'Maus', 'P1', { hpRendered: true, hpDisplayText: '3189' })],
       { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh })
     expect(dflt.get(1).hpBox.h).toBe(HP_HUD_H_PX)
     expect(dflt.get(1).hpBox.w).toBe(HP_BAR_W_PX)
+  })
+
+  it('PR #107 Blocker 4: 1x/2x/4x zoom 下 opening full-state HUD（current=null）有 screen-constant hpBox 且参与碰撞', () => {
+    // fullState（RULE_DERIVED_FULL_AT_SPAWN，current=null）DOM 仍渲染 HUD → hpRendered=true；
+    // coreSize 随 zoom（36/72/144）由调用方传入，HUD 盒屏幕恒定并参与 §25 优先级碰撞
+    const mk = (coreSize) => computeLabelLayout(
+      [item(1, 200, 200, 'Maus', 'P1', { hpRendered: true, hpDisplayText: '—' }),
+       item(2, 200, 240, 'Maus', 'P2', { hpRendered: true, hpDisplayText: '—' })],
+      { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh, coreSize })
+    const z1 = mk(36)
+    const z2 = mk(72)
+    const z4 = mk(144)
+    for (const z of [z1, z2, z4]) {
+      expect(z.get(1).hpBox).not.toBeNull() // fullState HUD footprint 存在（不因 current=null 漏掉）
+      expect(z.get(2).hpBox).not.toBeNull()
+      expect(z.get(1).hpBox.w).toBe(48) // 屏幕恒定（不随 zoom 二次缩放）
+      expect(z.get(2).hpHidden).toBe(true) // fullState HUD 参与碰撞：被 he 车 core 隐藏（§25 优先级）
+    }
+    // 关闭「显示血量」（hpRendered=false）→ 任意 zoom 都无 hpBox（§28 不占位）
+    const off = computeLabelLayout(
+      [item(1, 200, 200, 'Maus', 'P1', { hpRendered: false }), item(2, 200, 240, 'Maus', 'P2', { hpRendered: false })],
+      { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh, coreSize: 144 })
+    expect(off.get(1).hpBox).toBeNull()
+    expect(off.get(2).hpBox).toBeNull()
   })
 
   it('§24 zoom 一致：视觉 screen-space 恒定 → footprint 不被 map scale 二次缩放（纯函数不乘 scale）', () => {
@@ -344,8 +391,8 @@ describe('computeLabelLayout（§21–§28：真实 visual footprint 碰撞）',
 
   it('§26 selected 车辆 HP 不被普通 marker 挤掉（Blocker 2 回归）', () => {
     const sel = computeLabelLayout(
-      [item(1, 200, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3000, selected: true }),
-       item(2, 200, 240, 'Maus', 'P2', { hpVisible: true, hpValue: 2800 })],
+      [item(1, 200, 200, 'Maus', 'P1', { hpRendered: true, hpDisplayText: '3000', selected: true }),
+       item(2, 200, 240, 'Maus', 'P2', { hpRendered: true, hpDisplayText: '2800' })],
       { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh })
     expect(sel.get(1).hpHidden).toBe(false)
     expect(sel.get(2).hpHidden).toBe(true)
@@ -364,9 +411,9 @@ describe('computeLabelLayout（§21–§28：真实 visual footprint 碰撞）',
   })
 
   it('Blocker1 名称/HP 保持 inverse-scaled 屏幕尺寸（不随 core zoom 放大）', () => {
-    const z1 = computeLabelLayout([item(1, 200, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3000 })],
+    const z1 = computeLabelLayout([item(1, 200, 200, 'Maus', 'P1', { hpRendered: true, hpDisplayText: '3000' })],
       { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh, coreSize: 36 })
-    const z4 = computeLabelLayout([item(1, 200, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3000 })],
+    const z4 = computeLabelLayout([item(1, 200, 200, 'Maus', 'P1', { hpRendered: true, hpDisplayText: '3000' })],
       { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh, coreSize: 144 })
     // 名称/HP 盒尺寸不变（屏幕恒定 inverse-scaled）
     expect(z4.get(1).tankBox.w).toBe(z1.get(1).tankBox.w)
@@ -442,8 +489,8 @@ describe('computeLabelLayout（§21–§28：真实 visual footprint 碰撞）',
     // B 的 core 顶部(400-72=328) 不重叠，但 B 的 tank 锚定在 B core 顶(328) 上方，
     // A 的 HP 锚定在 A core 顶(128) 上方——都不重叠；验证 core 用 144 时盒正确
     const res = computeLabelLayout(
-      [item(1, 100, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3000 }),
-       item(2, 100, 400, 'Maus', 'P2', { hpVisible: true, hpValue: 3000 })],
+      [item(1, 100, 200, 'Maus', 'P1', { hpRendered: true, hpDisplayText: '3000' }),
+       item(2, 100, 400, 'Maus', 'P2', { hpRendered: true, hpDisplayText: '3000' })],
       { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh, coreSize: 144 })
     expect(res.get(1).coreBox.h).toBe(144)
     expect(res.get(2).coreBox.h).toBe(144)

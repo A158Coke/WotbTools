@@ -225,18 +225,32 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
   `coordinateBounds` 的旧配置按兼容策略回退 `playableBounds`。
 ### 单车血量 HUD / 战斗反馈 / 车辆详情面板（PR5，docs/current-plan.md §4–§16）
 
-- **HP 数据优先级与 provenance 状态（确定性重建，PR #107 扩展）**：`hpDisplay`
+- **HP 数据优先级与 provenance 状态（确定性重建，PR #107 扩展 + Blocker 3 收口）**：`hpDisplay`
   （`utils/battlePlayback.js`）按状态机输出（`state` 字段，替代单一黑条/UNKNOWN 语义）：
-  ① 已阵亡（deathSec ≤ t）→ `DESTROYED`（权威 0）；② 最近可信 HP 采样 + `entryHpSource==OBSERVED_EXACT`
+  ① 已阵亡（deathSec ≤ t）→ `DESTROYED`（权威 0，Details Panel 显示 0）；
+  ② 最近可信 HP 采样 + `entryHpSource==OBSERVED_EXACT`
   （受击覆盖完整 + 严格早于首次受击的 positive 样本 ≥ tankopedia base）→ `OBSERVED_EXACT`
-  （精确 current/max/pct）；③ 有真实 Type-7 current 采样但进场 max 未证明 →
-  `CURRENT_HP_EXACT_MAX_UNKNOWN`（current 精确；maxHp 用观测最大容量 observedMaxHp 作分母，
-  标注为观测分母、非进场满血证明；tooltip「当前 HP 已观测，进场最大 HP 未知」）；
+  （精确 current/entryHp/pct——只有实际进场 max 已被可靠证明时才允许计算真实 HP 百分比）；
+  ③ 有真实 Type-7 current 采样但进场 max 未证明 →
+  `CURRENT_HP_EXACT_MAX_UNKNOWN`（**current 精确、maxHp=null、pct=null**——绝不使用
+  tankopedia base/观测容量计算百分比；DTO 已把 `maxHp` 拆分为 `baseHp`（Tankopedia 静态参考）+
+  `observedCapacityHp`（回放观测容量）+ `entryHp`（已证明进场满血），三者独立 provenance；
+  tooltip「当前 HP 已观测，进场最大 HP 未知」，渲染阵营色 indeterminate 斜纹、不渲染黑条）；
   ④ 本方存活 + 无采样 + 无战前掉血证据 → `RULE_DERIVED_FULL_AT_SPAWN`
-  （开局相对满血：前端 100% 阵营色完整血条，数字显示 —，不伪造具体数字，
+  （开局相对满血：marker 100% 阵营色完整血条**无条纹**，Details Panel 显示 **「100%」**——
+  **100% 是「开局相对满血状态」的 UI 投影，不是具体 HP 数值、也不证明 actual max HP**；
   tankopedia base 永不冒充本局 max/current/entry；三语 tooltip「开局满血，具体 HP 尚未从回放确认」）；
-  ⑤ 敌方/无依据 → `UNKNOWN`（灰段未知样式，不因己方 fallback 泄漏）。
+  ⑤ 敌方/无依据 → `UNKNOWN`（灰段未知样式、Details Panel —，不因己方 fallback 泄漏）。
   任意 timestamp 确定性重建，backward/forward seek 均直接恢复状态；不把未来 sample 泄漏到过去。
+- **底部双方总血量条（PR #107 Blocker 2 aggregate display state）**：`teamHp`
+  （`utils/battlePlayback.js`）输出 `state`（确定性、可测试）：
+  - `FULL_RELATIVE`：本方所有存活车辆均开局相对满血（无任何数字）→ 填充固定 100%
+    阵营色实心条，数值区显示「100%」（相对状态）或本地化「开局满血」，绝不显示 0；
+  - `EXACT`：totalMax &gt; 0（有已证明实际总容量）→ 真实分数 knownRemaining/totalMax；
+  - `PARTIAL`：有真实已知剩余但无已证明分母 → 无法算真实比例，100% 斜纹 indeterminate
+    + 只显示已知数字（不伪造分母）；禁止「totalMax=0、knownRemaining&gt;0 却仍 0%」的空条；
+  - `UNKNOWN`：无任何数据（敌方无采样）→ 空条 + —，不显示虚假的「0 / 0」。
+  阵亡是权威事实（HP=0），dead 车容量不进未知灰段；Tankopedia base 相加不得冒充总 HP。
 - **HP HUD**：每辆可显示车辆常驻「HP 数字 + 定宽 bar」（screen-space 恒定，friendly=地图 tone、
   enemy=red 与整车 team token 同源）；last-known 冻结最后可信值并弱化、destroyed 归零；
   开关「显示血量」（默认开，`wotb.pb.hp-prefs` localStorage 持久化）隐藏数字/bar/ghost，
@@ -256,11 +270,20 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
   非 Tier X、缺图或单图加载失败时静默省略图片，production 不访问第三方 CDN。面板只含
   **当前 playback 时间点**状态：阵营/车辆类型（replay →
   tankopedia fallback，全部 metadata 缺失才 —，§8）/状态（已发现/最后已知/已击毁）/当前或最后已知
-  HP（**只显示实际值**——tankopedia base HP 是静态 metadata 不是本局最大 HP，不再展示「最大 HP/
-  HP %」，§6/§41）/当前播放时间/已记录伤害（Σ 可 attribution 的权威掉血，§17）/承受伤害（Σ 该车全部
+  HP（按 provenance 显示，PR #107 Blocker 1：已阵亡 → 0；己方开局相对满血
+  （RULE_DERIVED_FULL_AT_SPAWN）→ **「100%」**（相对 UI 状态，不是具体 HP、也不证明 actual max）；
+  有真实 sample → 精确 current 数字；敌方无依据 → —。tankopedia base HP 是静态 metadata 不是本局
+  最大 HP，不再展示「最大 HP / HP %」（除已证明 OBSERVED_EXACT 的 pct），§6/§41）/
+  当前播放时间/已记录伤害（Σ 可 attribution 的权威掉血，§17）/承受伤害（Σ 该车全部
   掉血）/击杀数 + 最近伤害记录（权威掉血，攻击者不可证明或未点亮显示「来源未知」，§12/§13）。
   「最终战绩」分区与协助伤害行已**删除**（整场结算不混入当前时间点面板，§18/§20）。
-- **KILL 广播 provenance（§15 验证结论）**：KILL 事件派生自 lethal DamageEvent（type-8 直接伤害
-  通知），只能证明录像者客户端收到该伤害通知、不能证明客户端当时可见全局击杀广播中的击杀者身份
-  → kill feed 不显示攻击者（victim-only）；每 KILL 由同炮 DAMAGE 支撑的断言在
+- **KILL 广播 provenance（§15 验证结论 + PR #107 Blocker 5 扩展）**：KILL 事件派生自 lethal
+  DamageEvent（type-8 直接伤害通知），只能证明录像者客户端收到该伤害通知、不能证明客户端当时可见
+  全局击杀广播中的击杀者身份 → kill feed 不显示攻击者（victim-only）。killer attribution 由
+  `PlaybackCombatReconstruction` fail-closed 推导：致死窗口优先 = 权威致死 HP-loss 窗口
+  （HP 掉到 0 的最后一档，无前序样本回退 0.25s）；窗口内必须存在**唯一可信攻击者**（身份可解析、
+  候选一致、非自伤）且**不含任何无法排除的 unsupported damage 变体**——结构合法但语义未解码的
+  伤害方法变体（火灾/撞击等，type-8 解码层产出 `UnsupportedDamageEvent` 证据事件，无精确伤害数字）
+  可能就是真实致死源，窗口内存在即 killer=null，绝不把窗口内无关 direct DAMAGE 错判为击杀者；
+  destroyed 事实保留并去重，不因 killer 未知删除 HP=0/击毁。每 KILL 由同炮 DAMAGE 支撑的断言在
   `BattlePlaybackAdapterParityTest` 真实 fixture 上强制执行。

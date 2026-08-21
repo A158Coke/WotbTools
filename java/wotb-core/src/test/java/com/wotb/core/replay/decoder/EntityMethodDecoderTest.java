@@ -4,6 +4,7 @@ import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
+import com.wotb.core.replay.event.UnsupportedDamageEvent;
 import com.wotb.core.replay.stream.PacketReadStatus;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
@@ -17,8 +18,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * type 8（EntityMethod）解码回归：
  * - direct damage（subtype 8、body[13]=3、damage>0）必须精确解码为单个 DamageEvent（LE/BE 字节序验证）；
- * - 结构合法但未解码的伤害变体（非 direct / 零伤害 / 短体）→ UNSUPPORTED_DAMAGE_VARIANT（PARTIAL），
- *   不产出事件、不算解析失败（PARSE_FAILED 不得出现）；
+ * - 结构合法但未解码的伤害方法变体（body[13] ≠ direct）→ 产出 {@link UnsupportedDamageEvent}
+ *   （PARTIAL 证据事件：保留时间 + 攻击者/受击者 eid，不产生精确伤害数字），
+ *   同时记 UNSUPPORTED_DAMAGE_VARIANT warning——供 killer attribution fail-closed，
+ *   不算解析失败（PARSE_FAILED 不得出现）；
+ * - direct 零伤害 / 短体（payload<25 或 body<18）→ 保持既有 warning、不产出事件；
  * - 真正截断（payload<8）→ MALFORMED + TRUNCATED_PAYLOAD。
  * 撤回 ShotEvent 后，direct damage 解码不得退化。
  */
@@ -102,11 +106,18 @@ class EntityMethodDecoderTest {
     }
 
     @Test
-    void nonDirectDamageSubProducesNoEventAndVariantWarning() {
+    void nonDirectDamageSubProducesUnsupportedEvidenceEvent() {
+        // 结构合法但语义未解码的伤害方法变体（body[13]≠3，如火灾/撞击）→ 证据事件
         final ReplayDecodeResult result = decoder.decode(context,
                 damageMethodPacket(1, 10f, 0xFC6017, 0xFC6018, 0xFC6017, 0, 0));
         assertEquals(DecodeStatus.PARTIAL, result.status());
-        assertTrue(result.events().isEmpty(), "非 direct 变体不得产出事件（无 DamageEvent、无 ShotEvent）");
+        assertEquals(1, result.events().size(), "非 direct 变体必须产出 UnsupportedDamageEvent 证据事件");
+        final UnsupportedDamageEvent ev = (UnsupportedDamageEvent) result.events().getFirst();
+        assertEquals(0xFC6018, ev.attackerEid(), "攻击者 eid 按 LE u32 解码（结构可解析）");
+        assertEquals(0xFC6017, ev.victimEid(), "受击者 eid 按 LE u32 解码");
+        assertEquals(DecodeConfidence.PARTIAL, ev.confidence());
+        assertEquals("DAMAGE_METHOD_VARIANT", ev.variant());
+        assertEquals(10f, ev.timestamp().rawClockSec(), 1e-6);
         assertEquals(1, result.warnings().size());
         assertEquals("UNSUPPORTED_DAMAGE_VARIANT", result.warnings().getFirst().code());
         assertFalse(result.warnings().getFirst().code().equals("PARSE_FAILED"));
@@ -114,6 +125,7 @@ class EntityMethodDecoderTest {
 
     @Test
     void directSubWithZeroDamageProducesNoEventAndVariantWarning() {
+        // direct 变体零伤害：语义已解码（direct），只是无伤害 → 保持 warning、不产出证据事件
         final ReplayDecodeResult result = decoder.decode(context,
                 damageMethodPacket(1, 10f, 0xFC6017, 0xFC6018, 0xFC6017,
                         EntityMethodDecoder.DAMAGE_SUB_DIRECT, 0));
@@ -150,13 +162,17 @@ class EntityMethodDecoderTest {
     @Test
     void manyUndecodedVariantsAreNotCountedAsParseFailures() {
         // coverage 回归：大量合法未知 variant 不得被统计为 malformed/parse failure，
-        // 同时诚实保持 PARTIAL（不计为完整解码）
+        // 同时诚实保持 PARTIAL（不计为完整解码）；每个变体产出 UnsupportedDamageEvent 证据事件
         final int[] variants = {0, 1, 2, 4, 5, 7, 25, 36, 44, 64};
         for (final int sub : variants) {
             final ReplayDecodeResult result = decoder.decode(context,
                     damageMethodPacket(1, 10f, 0xFC6017, 0xFC6018, 0xFC6017, sub, 0));
             assertEquals(DecodeStatus.PARTIAL, result.status(), "sub=" + sub);
-            assertTrue(result.events().isEmpty(), "sub=" + sub);
+            assertEquals(1, result.events().size(), "sub=" + sub);
+            assertTrue(result.events().getFirst() instanceof UnsupportedDamageEvent, "sub=" + sub);
+            final UnsupportedDamageEvent ev = (UnsupportedDamageEvent) result.events().getFirst();
+            assertEquals(0xFC6018, ev.attackerEid(), "sub=" + sub);
+            assertEquals(0xFC6017, ev.victimEid(), "sub=" + sub);
             assertEquals("UNSUPPORTED_DAMAGE_VARIANT", result.warnings().getFirst().code(),
                     "sub=" + sub);
         }

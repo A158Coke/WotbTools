@@ -136,6 +136,16 @@ public record MapOverview(
      * <p>注意：{@code positionIntervals} 是服务器位置流上报覆盖（type-10 gap 聚类），
      * 不代表录像者客户端点亮——敌方静止时服务器不上报位置，位置中断≠失察。
      *
+     * <p>HP 字段拆分（PR #107 Blocker 3）：{@code maxHp} 语义混合（观测 vs tankopedia）已删除，
+     * 拆为三个独立 provenance 字段，前端<b>不得</b>把 baseHp/observedCapacityHp 冒充本局
+     * current/max/entry HP：</p>
+     * <ul>
+     *   <li>{@code baseHp} = Tankopedia 静态参考（metadata；允许作为灰段/参考展示，禁止进本局百分比）；</li>
+     *   <li>{@code observedCapacityHp} = 回放观测容量（= 整场观测最大 current HP，下界 tankopedia base；
+     *       仅「观测分母」参考，不是进场满血证明）；</li>
+     *   <li>{@code entryHp} = 已证明的进场满血（仅 entryHpSource==OBSERVED_EXACT 有效，否则 null）。</li>
+     * </ul>
+     *
      * @param entryHpSource 进场满血 provenance（OBSERVED_EXACT | BASE_FALLBACK | UNKNOWN，
      *                      来自 {@code ObservedMaxHp} 的权威判定；null=未回填）
      * @param entryHp       已证明的进场满血（含装备/物资加成）；仅
@@ -154,7 +164,8 @@ public record MapOverview(
             List<PositionInterval> positionIntervals,
             Double deathSec,
             List<DirectionSample> directionSamples,
-            Integer maxHp,
+            Integer baseHp,
+            Integer observedCapacityHp,
             List<HpSample> hpSamples,
             String tankType,
             String entryHpSource,
