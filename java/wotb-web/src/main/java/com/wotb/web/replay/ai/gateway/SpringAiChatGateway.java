@@ -45,6 +45,7 @@ import org.springframework.util.StringUtils;
 
 import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.web.config.AiModelProperties;
+import com.wotb.web.replay.ai.AiReviewEventLog;
 /**
  * The only production AI transport adapter: maps {@link AiChatRequest} onto Spring AI
  * {@link OpenAiChatModel} (official OpenAI-compatible adapter) against
@@ -255,6 +256,9 @@ public class SpringAiChatGateway implements AiChatGateway {
                 AiUpstreamException failure = null;
                 try {
                     attemptStartHook.beforeAttempt(context);
+                    logUpstreamStarted(request, model, correlationId, retryCount + 1,
+                            Math.max(0L, deadlineNanos - nanoTimeSource.getAsLong()));
+                    final long attemptStartNanos = nanoTimeSource.getAsLong();
                     final ChatResponse response = chatModel.call(prompt);
                     final AiChatResponse result = toResponse(response, request, model, correlationId);
                     if (context.isExpired() || nanoTimeSource.getAsLong() >= deadlineNanos) {
@@ -272,6 +276,7 @@ public class SpringAiChatGateway implements AiChatGateway {
                             recordRetryOutcome(request.analysisMode(),
                                     retryCount == 0 ? "no_retry" : "success_after_retry");
                         }
+                        logUpstreamCompleted(correlationId, retryCount + 1, attemptStartNanos, result);
                         return result;
                     }
                 } catch (final AiUpstreamException e) {
@@ -322,6 +327,8 @@ public class SpringAiChatGateway implements AiChatGateway {
                         failure = new AiUpstreamException("AI_TIMEOUT", null, correlationId, failure);
                     } else {
                         retryCount++;
+                        // retryCount 已自增：第一次重试 → retryNumber=1，下一次上游调用 attempt=2。
+                        logTransportRetry(request, correlationId, retryCount, failure, backoffMillis);
                         try {
                             sleepQuietly(backoffMillis, failure);
                         } catch (final AiUpstreamException interruptAbort) {
@@ -391,6 +398,9 @@ public class SpringAiChatGateway implements AiChatGateway {
                     scheduleBudgetWatchdog(context, remainingNanos);
             try {
                 attemptStartHook.beforeAttempt(context);
+                logUpstreamStarted(request, model, correlationId, 1,
+                        Math.max(0L, deadlineNanos - nanoTimeSource.getAsLong()));
+                final long attemptStartNanos = nanoTimeSource.getAsLong();
                 final StringBuilder text = new StringBuilder();
                 final AtomicReference<ChatResponse> lastResponse = new AtomicReference<>();
                 chatModel.stream(prompt)
@@ -455,7 +465,9 @@ public class SpringAiChatGateway implements AiChatGateway {
                     recordUsageMetrics(aggregated, request.analysisMode());
                     recordRetryOutcome(request.analysisMode(), "no_retry");
                 }
-                return toResponse(aggregated, request, model, correlationId);
+                final AiChatResponse streamResult = toResponse(aggregated, request, model, correlationId);
+                logUpstreamCompleted(correlationId, 1, attemptStartNanos, streamResult);
+                return streamResult;
             } catch (final AiUpstreamException e) {
                 throw finishFailure(e, retryCount, request, metrics);
             } catch (final StreamInterruptedMarker marker) {
@@ -599,6 +611,8 @@ public class SpringAiChatGateway implements AiChatGateway {
             recordRetryOutcome(request.analysisMode(),
                     retryCount == 0 ? "no_retry" : "failure_after_retry");
         }
+        // 终态失败事件（docs/current-plan.md §42）：attempt 为该请求已执行的尝试数。
+        logUpstreamFailed(request, failure, retryCount + 1);
         return failure;
     }
 
@@ -672,6 +686,14 @@ public class SpringAiChatGateway implements AiChatGateway {
         options.model(model);
         options.maxTokens(request.maxOutputTokens());
         options.extraBody(extraBody);
+        // Per-request output format（docs/current-plan.md §8/§10）：JSON_OBJECT → 原生
+        // response_format=json_object；TEXT 不发送 response_format（最小 provider surface，
+        // 绝不全局污染连接级 model options，§9）。
+        if (request.responseFormat() == AiResponseFormat.JSON_OBJECT) {
+            options.responseFormat(OpenAiChatModel.ResponseFormat.builder()
+                    .type(OpenAiChatModel.ResponseFormat.Type.JSON_OBJECT)
+                    .build());
+        }
         if (request.temperature() != null) {
             options.temperature(request.temperature());
         }
@@ -923,6 +945,88 @@ public class SpringAiChatGateway implements AiChatGateway {
                 reasoningTokens(usage),
                 cacheHitTokens(usage),
                 cacheMissTokens(usage));
+    }
+
+
+    // ===== AI Review 全链路事件日志（docs/current-plan.md §42/§43） =====
+
+    private void logUpstreamStarted(final AiChatRequest request, final String model,
+                                    final String correlationId, final int attempt,
+                                    final long remainingNanos) {
+        LOGGER.info(AiReviewEventLog.line("ai_upstream_call_started", correlationId,
+                "stage", stageOf(request.analysisMode()),
+                "mode", request.analysisMode(),
+                "attempt", attempt,
+                "model", model,
+                "responseFormat", request.responseFormat(),
+                "thinking", request.thinkingEnabled(),
+                "maxOutputTokens", request.maxOutputTokens(),
+                "remainingBudgetSec", nanosToSec(remainingNanos)));
+    }
+
+    /**
+     * 上游调用成功（PR #106 review）：不记录 providerStatus=200 这类硬编码常量——Spring AI
+     * 成功响应不暴露 HTTP status metadata，伪 observation 会误导排障；真实 provider status
+     * 只在失败事件（ai_upstream_call_failed）从异常元数据中提取。
+     */
+    private void logUpstreamCompleted(final String correlationId, final int attempt,
+                                      final long attemptStartNanos,
+                                      final AiChatResponse result) {
+        LOGGER.info(AiReviewEventLog.line("ai_upstream_call_completed", correlationId,
+                "attempt", attempt,
+                "durationMs", Math.max(0L,
+                        (nanoTimeSource.getAsLong() - attemptStartNanos) / NANOS_PER_MILLI),
+                "promptTokens", result.inputTokens(),
+                "completionTokens", result.outputTokens(),
+                "totalTokens", result.totalTokens()));
+    }
+
+    /**
+     * Transport retry（§43 与 validation retry 区分）：上游 429/5xx/连接失败后的退避重试。
+     * 由 Gateway 单点执行；业务层的 validation retry 用 ai_validation_retry 事件。
+     * <p>字段语义（PR #106 review）：{@code retryNumber} = 本次退避重试的 1 基序号
+     * （retryNumber=1 表示第一次重试，其后的下一次上游调用是 {@code attempt=2}）；
+     * 不使用易歧义的 {@code transportAttempt}（该值常被误读为刚失败的 attempt 号）。</p>
+     */
+    private void logTransportRetry(final AiChatRequest request, final String correlationId,
+                                   final int retryNumber,
+                                   final AiUpstreamException failure,
+                                   final long backoffMillis) {
+        LOGGER.warn(AiReviewEventLog.line("ai_transport_retry", correlationId,
+                "stage", stageOf(request.analysisMode()),
+                "mode", request.analysisMode(),
+                "retryNumber", retryNumber,
+                "reason", failure.code(),
+                "backoffMs", backoffMillis));
+    }
+
+    /** 终态失败事件：attempt 为已执行的尝试数（含失败这一次）。 */
+    private void logUpstreamFailed(final AiChatRequest request,
+                                   final AiUpstreamException failure,
+                                   final int attempt) {
+        LOGGER.warn(AiReviewEventLog.line("ai_upstream_call_failed", failure.correlationId(),
+                "stage", stageOf(request.analysisMode()),
+                "mode", request.analysisMode(),
+                "attempt", attempt,
+                "errorCode", failure.code(),
+                "providerStatus", failure.providerStatus() == null
+                        ? "N/A" : String.valueOf(failure.providerStatus()),
+                "retryable", retryPolicy.isRetryable(failure)));
+    }
+
+    /** analysisMode → 稳定 stage 标签（§42 口径，低基数）。 */
+    private static String stageOf(final String analysisMode) {
+        return switch (analysisMode == null ? "" : analysisMode) {
+            case "SINGLE_TEAM_BATTLE" -> "TEAM_CALL_2";
+            case "PRE_BATTLE_STRATEGIC_PRIOR" -> "PRE_BATTLE";
+            case "TACTICAL_REVIEW_HARNESS" -> "TACTICAL_HARNESS";
+            case "TEAM_AUTOPSY" -> "AUTOPSY";
+            default -> "PLAYER";
+        };
+    }
+
+    private static long nanosToSec(final long nanos) {
+        return Math.max(0L, nanos / 1_000_000_000L);
     }
 
     static String safeProviderSummary(final String raw) {

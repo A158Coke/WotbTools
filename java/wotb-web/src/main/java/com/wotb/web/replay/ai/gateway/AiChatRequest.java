@@ -17,6 +17,8 @@ package com.wotb.web.replay.ai.gateway;
  * @param callTimeoutSec   本请求的调用总预算（秒，含重试与退避）；{@code null} 时使用
  *                         Gateway 配置的 {@code AI_CALL_TIMEOUT_SEC}；非空时取
  *                         {@code min(本值, 配置值)}，用于两 Call Harness 的 stage budget
+ * @param responseFormat   期望的输出格式（{@code null} 视同 {@link AiResponseFormat#TEXT}）；
+ *                         {@code JSON_OBJECT} 由 Gateway 映射为 provider 的 response_format=json_object
  */
 public record AiChatRequest(
         String systemPrompt,
@@ -28,7 +30,8 @@ public record AiChatRequest(
         String reasoningEffort,
         String correlationId,
         String analysisMode,
-        Integer callTimeoutSec
+        Integer callTimeoutSec,
+        AiResponseFormat responseFormat
 ) {
     public AiChatRequest {
         if (systemPrompt == null) throw new IllegalArgumentException("systemPrompt must not be null");
@@ -36,10 +39,33 @@ public record AiChatRequest(
         if (callTimeoutSec != null && callTimeoutSec <= 0) {
             throw new IllegalArgumentException("callTimeoutSec must be positive when provided");
         }
+        // 输出格式契约（docs/current-plan.md §6）：未显式指定一律 TEXT，
+        // 保证存量请求（Player/Pre-battle/Harness/Autopsy）行为等价，绝不静默进入 JSON mode。
+        responseFormat = responseFormat == null ? AiResponseFormat.TEXT : responseFormat;
     }
 
     /**
-     * 兼容旧签名：{@code callTimeoutSec} 为 {@code null}（使用 Gateway 配置值）。
+     * 兼容旧签名：{@code responseFormat} 默认为 {@link AiResponseFormat#TEXT}。
+     */
+    public AiChatRequest(
+            final String systemPrompt,
+            final String userPrompt,
+            final String model,
+            final Double temperature,
+            final int maxOutputTokens,
+            final boolean thinkingEnabled,
+            final String reasoningEffort,
+            final String correlationId,
+            final String analysisMode,
+            final Integer callTimeoutSec) {
+        this(systemPrompt, userPrompt, model, temperature, maxOutputTokens,
+                thinkingEnabled, reasoningEffort, correlationId, analysisMode,
+                callTimeoutSec, AiResponseFormat.TEXT);
+    }
+
+    /**
+     * 兼容旧签名：{@code callTimeoutSec} 为 {@code null}（使用 Gateway 配置值）、
+     * {@code responseFormat} 默认为 {@link AiResponseFormat#TEXT}。
      */
     public AiChatRequest(
             final String systemPrompt,
@@ -52,6 +78,7 @@ public record AiChatRequest(
             final String correlationId,
             final String analysisMode) {
         this(systemPrompt, userPrompt, model, temperature, maxOutputTokens,
-                thinkingEnabled, reasoningEffort, correlationId, analysisMode, null);
+                thinkingEnabled, reasoningEffort, correlationId, analysisMode,
+                null, AiResponseFormat.TEXT);
     }
 }

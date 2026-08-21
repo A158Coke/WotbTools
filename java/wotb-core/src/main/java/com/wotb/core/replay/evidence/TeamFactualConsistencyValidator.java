@@ -45,8 +45,37 @@ public final class TeamFactualConsistencyValidator {
     /** V4 位置快照时间匹配容差（秒）。 */
     public static final double SNAPSHOT_TIME_TOLERANCE_SEC = 6.0;
 
-    /** 一条校验冲突（checkId = V1..V6 / EVIDENCE / OUTPUT；message 面向 LLM 反馈，自然中文）。 */
-    public record FactConflict(String checkId, String message) {
+    /**
+     * 一条校验冲突（checkId = V1..V6 / BINDING / EVIDENCE / OUTPUT / DIAGNOSIS / CONTRACT / INTERNAL；
+     * message 面向 LLM 反馈，自然中文）。
+     * <p>reasonCode（docs/current-plan.md §47）：机器可分类的冲突原因（UNKNOWN_EVIDENCE /
+     * EVIDENCE_TYPE_MISMATCH / SUBJECT_MISMATCH / TIME_MISMATCH / REGION_MISMATCH /
+     * KNOWLEDGE_MISMATCH / COUNT_MISMATCH / UNSUPPORTED_HARD_FACT / TEMPORAL_OWNERSHIP 等），
+     * 供 production 直接判断 validator 为什么失败；2 参构造器按 checkId 推断（BINDING 类冲突
+     * 必须显式传具体原因，见各 binding 校验点）。</p>
+     */
+    public record FactConflict(String checkId, String message, String reasonCode) {
+
+        /** 兼容旧契约：按 checkId 推断 reasonCode（BINDING 建议显式传入具体原因）。 */
+        public FactConflict(final String checkId, final String message) {
+            this(checkId, message, inferReason(checkId));
+        }
+
+        private static String inferReason(final String checkId) {
+            return switch (checkId) {
+                case "V1" -> "TEMPORAL_OWNERSHIP";
+                case "V2" -> "TIME_MISMATCH";
+                case "V3", "V4" -> "COUNT_MISMATCH";
+                case "V5" -> "KNOWLEDGE_MISMATCH";
+                case "V6" -> "UNSUPPORTED_HARD_FACT";
+                case "EVIDENCE" -> "UNKNOWN_EVIDENCE";
+                case "OUTPUT" -> "EMPTY_OUTPUT";
+                case "DIAGNOSIS" -> "MISSING_DIAGNOSIS";
+                case "CONTRACT" -> "CLAIMS_COVERAGE";
+                case "INTERNAL" -> "INTERNAL_LABEL_LEAK";
+                default -> "UNCLASSIFIED";
+            };
+        }
     }
 
     private static final Pattern CN_MIN_SEC = Pattern.compile("(\\d+)分(\\d+)秒");
@@ -239,14 +268,16 @@ public final class TeamFactualConsistencyValidator {
                 final EvidenceFact fact = facts.byId().get(id);
                 if (fact == null) {
                     conflicts.add(new FactConflict("BINDING",
-                            "引用了不存在的证据编号 " + id + "（GROUNDING FACTS 中没有该编号，无法绑定）。"));
+                            "引用了不存在的证据编号 " + id + "（GROUNDING FACTS 中没有该编号，无法绑定）。",
+                            "UNKNOWN_EVIDENCE"));
                     typeOk = false;
                     continue;
                 }
                 if (!allowed.contains(fact.type())) {
                     conflicts.add(new FactConflict("BINDING",
                             "证据类型不匹配（" + type + "）：claim 引用了 " + fact.type() + " 证据 " + id
-                                    + "，必须引用 " + String.join("/", allowed) + " 类型证据。"));
+                                    + "，必须引用 " + String.join("/", allowed) + " 类型证据。",
+                            "EVIDENCE_TYPE_MISMATCH"));
                     typeOk = false;
                 }
             }
@@ -273,7 +304,8 @@ public final class TeamFactualConsistencyValidator {
         if (!subjectHasDeath) {
             conflicts.add(new FactConflict("BINDING",
                     "DEATH claim 的 subject「" + c.subject() + "」在后端没有对应的阵亡事实"
-                            + "（不能因为循环没有找到 matching death 就静默 PASS）。"));
+                            + "（不能因为循环没有找到 matching death 就静默 PASS）。",
+                    "SUBJECT_MISMATCH"));
             return;
         }
         boolean fullSupport = false;
@@ -299,7 +331,8 @@ public final class TeamFactualConsistencyValidator {
         if (!fullSupport && !identityMatch) {
             conflicts.add(new FactConflict("BINDING",
                     "DEATH claim 引用的证据身份与 subject「" + c.subject()
-                            + "」不符（wrong entity：引用的阵亡证据属于其他玩家）。"));
+                            + "」不符（wrong entity：引用的阵亡证据属于其他玩家）。",
+                    "SUBJECT_MISMATCH"));
         }
     }
 
@@ -360,7 +393,8 @@ public final class TeamFactualConsistencyValidator {
                 conflicts.add(new FactConflict("BINDING",
                         "位置时间不匹配（structured binding）：claim timeSec=" + timeText(c.timeSec())
                                 + " 与引用的证据 " + id + "（" + TeamGroundingFacts.formatClock(fact.timeSec())
-                                + "）不一致。"));
+                                + "）不一致。",
+                        "TIME_MISMATCH"));
                 continue;
             }
             final Map<String, Integer> counts = sideCounts(fact, c.side());
@@ -370,7 +404,8 @@ public final class TeamFactualConsistencyValidator {
                         "位置区域不匹配（structured binding）：引用的证据 " + id
                                 + "（" + TeamGroundingFacts.formatClock(fact.timeSec()) + "）"
                                 + sideLabel(c.side()) + " 侧没有 GRID" + c.region() + " 的快照数据（"
-                                + countsText(counts) + "）。"));
+                                + countsText(counts) + "）。",
+                        "REGION_MISMATCH"));
                 continue;
             }
             checkV4CountSemantics(c, actual, conflicts);
@@ -393,7 +428,8 @@ public final class TeamFactualConsistencyValidator {
                 conflicts.add(new FactConflict("BINDING",
                         "敌方位置身份歧义（structured binding）：tankName「" + c.subject()
                                 + "」对应 " + distinctAccounts + " 辆不同账号的敌车，不能仅凭坦克名绑定；"
-                                + "请使用 subjectAccountId 或玩家昵称作为稳定身份。"));
+                                + "请使用 subjectAccountId 或玩家昵称作为稳定身份。",
+                        "IDENTITY_AMBIGUITY"));
                 return;
             }
         }
@@ -406,21 +442,24 @@ public final class TeamFactualConsistencyValidator {
                 conflicts.add(new FactConflict("BINDING",
                         "敌方位置身份不匹配（structured binding）：claim subject「" + c.subject()
                                 + "」与引用的证据 " + id + "（" + tankBrief(fact) + "，acc "
-                                + fact.accountId() + "）不符（different vehicle）。"));
+                                + fact.accountId() + "）不符（different vehicle）。",
+                        "SUBJECT_MISMATCH"));
                 continue;
             }
             if (c.hasTime() && Math.abs(c.timeSec() - fact.timeSec()) > SNAPSHOT_TIME_TOLERANCE_SEC) {
                 conflicts.add(new FactConflict("BINDING",
                         "敌方位置时间不匹配（structured binding）：claim " + timeText(c.timeSec())
                                 + " 与引用的证据 " + id + "（" + TeamGroundingFacts.formatClock(fact.timeSec())
-                                + "）不一致。"));
+                                + "）不一致。",
+                        "TIME_MISMATCH"));
                 continue;
             }
             if (c.region() != null && !String.valueOf(c.region()).equals(fact.attrs().get("region"))) {
                 conflicts.add(new FactConflict("BINDING",
                         "敌方位置区域不匹配（structured binding）：claim 称 GRID" + c.region()
                                 + "，引用的证据 " + id + " 是 GRID" + fact.attrs().get("region")
-                                + "（" + TeamGroundingFacts.formatClock(fact.timeSec()) + "）。"));
+                                + "（" + TeamGroundingFacts.formatClock(fact.timeSec()) + "）。",
+                        "REGION_MISMATCH"));
                 continue;
             }
             if (c.knowledge() != null
