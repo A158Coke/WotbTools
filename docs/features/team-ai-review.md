@@ -215,6 +215,17 @@ content 末尾一次性到达会破坏逐段流式；`SpringAiChatGateway` 另�
   前端保持「战术复盘生成中…」）。
 - 校验失败 → LLM 自修循环（targeted rewrite → full rewrite → fail-safe），Backend 绝不
   代改句子；重试耗尽 → `error` 事件 `AI_REVIEW_GROUNDING_FAILED`（HTTP 已 200）。
+**DeepSeek 官方 JSON Output（2026-08，JSON 语法层加固）**：Team Call #2 已启用 provider
+`response_format=json_object`（`AiChatRequest.responseFormat=JSON_OBJECT`，仅此调用；Player /
+Pre-battle / Harness / Autopsy 保持 TEXT）。目的：消灭「非法 JSON / JSON 前后多余文本 → parser fail →
+昂贵完整 LLM retry」这一类 syntax 层失败。**职责三层不混用**：provider JSON mode = syntax guarantee，
+`TeamReviewEnvelopeParser` = business schema guarantee（合法 JSON 但 schema 违反仍 FAIL），
+`TeamFactualConsistencyValidator` = truth guarantee。Parser 失败现在可按稳定枚举分类
+（`EMPTY_OUTPUT` / `INVALID_JSON` / `MISSING_PRIMARY_DIAGNOSIS` / `INVALID_CLAIMS` /
+`UNKNOWN_CLAIM_TYPE` / `INVALID_MACHINE_FIELD_TYPE` / `MISSING_REQUIRED_MACHINE_FIELD` 等，
+经 `event=team_review_parse_result` 记录）；每轮 attempt 的校验结果（`conflictCount` / `checks` /
+conflict `reasonCode`）经 `event=team_review_validation` 记录，Loki 按 correlationId 可重建完整时间线
+（见 `docs/operations/observability.md`）。
 
 历史上响应的四类计数（`analysisUnitCount` / `analyzedUnitCount` /
 `omittedAnalysisUnitCount` / `unavailableAnalysisUnitCount`）、`files`、

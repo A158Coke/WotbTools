@@ -325,6 +325,35 @@ AI 复盘区分两种 scope，互不混用：
 - **Call #1 覆盖可观测性**：`PreBattleStrategicService` 每次调用前输出 `Pre-battle Call #1 input`（map、mapSemantics=found/UNKNOWN、verified、areas/relationships/spawnSemantics 数量、source、displayName、team1/team2 人数、curatedProfiles/fallbackProfiles 车辆 Profile 覆盖），成功后输出 `Pre-battle Call #1 success`（hypotheses/matchups/winConditions/双方 strengths·plans 数量）；`TacticalReviewHarness` 输出 `Harness prior obtained`（prior 已注入 Call #2）与 `Harness fell back to old path: <reason>`；`TeamAutopsyService` 成功输出 `Team autopsy success`（liabilities/mvps 数量）。新增指标 `wotb_ai_review_map_semantics_total{status=found|unknown}`。按 requestId 可在 Loki 逐请求验证地图/车辆语义是否进入 Call #1 并注入 Call #2。
 - **回放解析覆盖率可观测**：`AiReplayReviewService` 对每个回放输出 `Replay event-stream parsed`（file/map/packets/decoded/partial/unknown/failed/decodedRatio），可在 Loki 按回放查看事件流解码覆盖率；真实样本 `decodedRatio≈0.31–0.35`，type 39/31/35/7 为主要未知/未解桶（逆向推进的量化基线）。
 - 测试不调用真实 AI API：`SpringAiChatGatewayTest`/`SpringAiChatGatewayMetricsTest` 使用 mock `ChatModel`。
+#### DeepSeek 官方 JSON Output（Team Call #2）
+
+- **目的**：消灭「非法 JSON / JSON 外多余文本 / JSON 格式漂移 → parser fail → 昂贵完整 LLM retry」这一类
+  syntax 层失败（docs/current-plan.md 方案 1）。**不是** Strict Function Calling / JSON Schema constrained generation
+  （§32 明确不宣传为 strict schema output）。
+- **职责三层（§33，不混用）**：
+  - Provider JSON mode（`response_format=json_object`）= **syntax guarantee**（合法 JSON）；
+  - `TeamReviewEnvelopeParser` = **WotBTools business schema guarantee**（合法 JSON 但 `claims` 类型错误等仍 FAIL）；
+  - `TeamFactualConsistencyValidator` = **truth guarantee**（事实一致性，JSON mode 只解决 syntax 不解决 truth）。
+- **contract**：`AiChatRequest` 新增 `AiResponseFormat`（`TEXT` / `JSON_OBJECT`，默认 `TEXT`，兼容构造器回退 TEXT）。
+  只有 Team Call #2（`SINGLE_TEAM_BATTLE` Natural Coach Call #2，`TeamReplayAnalysisService.callRaw`）显式传
+  `JSON_OBJECT`（输出格式属于 request contract，不由 analysisMode 隐式推断）；Player / Pre-battle / Harness /
+  Autopsy 全部保持 `TEXT`，不进入 JSON mode。
+- **mapping（§8/§10）**：Spring AI 2.0.0 `OpenAiChatOptions` 原生支持 `responseFormat`（javap 实证），
+  `SpringAiChatGateway.buildPrompt` 在 **per-request options** 上设置
+  `OpenAiChatModel.ResponseFormat.builder().type(Type.JSON_OBJECT).build()`；`TEXT` 不发送 response_format。
+  绝不写进连接级/全局 model options（§9），否则所有调用都会变 JSON。
+- **streaming（§21/§22）**：Team Call #2 继续走 `gateway.stream(request, IGNORED_STREAM)`（draft 不推给用户，
+  校验 PASS 后由 `forwardTokens` 模拟 SSE 增量）；JSON Output 与 stream 的兼容性在生产 smoke 实测确认；
+  若实测不可靠，按 §22 允许改 `chat()`（用户不可见契约不变）。
+- **thinking（§20）**：`call2ThinkingEnabled` 默认 false；启用时需在生产实测 JSON Output + thinking 兼容性，
+  不静默关闭 thinking（官方明确不兼容 + 测试 + 文档三者齐备才处理）。
+- **observability（§15-§17）**：每次 Team Call #2 attempt 记录 `event=team_review_parse_result`（result/
+  reason=低基数枚举）、`event=team_review_validation`（conflictCount/checks）、`event=team_review_validation_conflict`
+  （DEBUG，check/reasonCode）、`event=ai_validation_retry`、`event=team_review_validation_attempt_completed`
+  （token 累计）、`event=ai_prompt_budget`（发送前预算）；指标 `wotb_ai_team_review_validation_attempt_total`
+  （result=pass/parser_invalid/validation_failed）。详见 `docs/operations/observability.md`「AI Review 全链路事件日志」。
+
+---
 - **AI 输出语言跟随前端 locale**：`/api/replay/analyze` 的 multipart 表单字段 `lang`（必填，白名单 `zh`/`en`/`ru`）控制 AI 复盘输出语言；缺失时由 Spring 返回 `400`，空白或未知值返回 `400 UNKNOWN_LOCALE`。语言穿透 ReviewService → facade → Player/Team Service → Prompt Builder：ZH 直接使用原有中文 system prompt（字节级不变）；EN/RU 在中文基座上替换互斥的中文输出强制句（输出语言、称谓、车种、时间格式、未知字段与无法确定措辞），业务事实约束（不编造、坦克专有名词原样、perspective/friendly-enemy、权威结算与观测子集、注入防护、数据限制）不变。en 时间格式统一为 `Xm Xs`（如 `1m 15s`、`3m 0s`、`3m 12s`），ru 为 `X мин X с`（如 `1 мин 15 с`、`3 мин 0 с`、`3 мин 12 с`）。覆盖 player full/fallback/multi 与 team single/multi 全部路径；地图/坦克/clan/昵称等专有名词不翻译；`limitations` 与错误码仍为英文稳定码、由前端本地化。前端由 vue-i18n 当前 locale 携带 `lang`。
 
 ---

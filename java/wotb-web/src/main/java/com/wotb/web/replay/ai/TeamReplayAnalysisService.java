@@ -22,6 +22,8 @@ import com.wotb.core.replay.timeline.BattleTimelineResult;
 import com.wotb.core.replay.timeline.TimelinePerspective;
 
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
+import com.wotb.web.replay.ai.gateway.AiChatResponse;
+import com.wotb.web.replay.ai.gateway.AiResponseFormat;
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
 import com.wotb.web.replay.ai.gateway.StreamConsumer;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
@@ -322,12 +324,18 @@ public class TeamReplayAnalysisService {
                                 ? null
                                 : context.reconstruction().battleStartRawClockSec().doubleValue(),
                         context.perspectiveTeam());
+        final String correlationId = AiRequestContext.correlationId();
+        final long reviewStartNanos = nanoTimeSource.getAsLong();
+        // docs/current-plan.md §48：只记录低基数 grounding facts 计数（不打印事实内容）。
+        logGroundingReady(facts, correlationId);
         final String groundingSection = TeamGroundingFacts.renderGroundingSection(facts);
         final String baseUser = input.content()
                 + (groundingSection.isEmpty() ? "" : "\n" + groundingSection);
         String userContent = baseUser;
         String feedback = "";
         boolean fullRewrite = false;
+        long cumulativePromptTokens = 0L;
+        long cumulativeCompletionTokens = 0L;
         for (int attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt++) {
             if (attempt > 1) {
                 final StringBuilder fb = new StringBuilder();
@@ -341,10 +349,27 @@ public class TeamReplayAnalysisService {
                 }
                 userContent = baseUser + "\n\n=== 事实一致性校验反馈 ===\n" + fb;
             }
-            final String raw = callRaw(systemPrompt, userContent, "SINGLE_TEAM_BATTLE",
-                    remainingBudget(startNanos));
-            final TeamReviewEnvelope envelope = TeamReviewEnvelopeParser.parse(raw);
-            if (envelope == null) {
+            final AiChatResponse response = callRaw(systemPrompt, userContent,
+                    "SINGLE_TEAM_BATTLE", remainingBudget(startNanos), attempt);
+            final String raw = response.completionText();
+            cumulativePromptTokens += response.inputTokens();
+            cumulativeCompletionTokens += response.outputTokens();
+            // §50：每个 validation attempt 完成后记录累计 token（先记录每次调用，不重构 Gateway 聚合）。
+            LOGGER.info(AiReviewEventLog.line("team_review_validation_attempt_completed", correlationId,
+                    "attempt", attempt,
+                    "promptTokens", response.inputTokens(),
+                    "completionTokens", response.outputTokens(),
+                    "cumulativePromptTokens", cumulativePromptTokens,
+                    "cumulativeCompletionTokens", cumulativeCompletionTokens));
+            final TeamReviewEnvelopeParser.ParseResult parseResult =
+                    TeamReviewEnvelopeParser.parseDetailed(raw);
+            if (parseResult.failed()) {
+                LOGGER.info(AiReviewEventLog.line("team_review_parse_result", correlationId,
+                        "attempt", attempt,
+                        "responseFormat", AiResponseFormat.JSON_OBJECT,
+                        "result", "FAIL",
+                        "reason", parseResult.failureReason()));
+                countValidationAttempt("parser_invalid");
                 // Review Blocker B1：envelope / structured claims schema 违反（fail-close）——
                 // 给 LLM 明确 schema 提示，让它自修，而非静默降级为 text-only
                 feedback = "输出不是合法 JSON envelope 或 claims 违反 machine schema："
@@ -364,22 +389,63 @@ public class TeamReplayAnalysisService {
                 fullRewrite = attempt >= 2;
                 continue;
             }
+            LOGGER.info(AiReviewEventLog.line("team_review_parse_result", correlationId,
+                    "attempt", attempt,
+                    "responseFormat", AiResponseFormat.JSON_OBJECT,
+                    "result", "PASS"));
+            final TeamReviewEnvelope envelope = parseResult.envelope();
+            final long validationStartNanos = nanoTimeSource.getAsLong();
             final List<TeamFactualConsistencyValidator.FactConflict> conflicts =
                     TeamFactualConsistencyValidator.validate(envelope, facts);
             if (conflicts.isEmpty()) {
+                LOGGER.info(AiReviewEventLog.line("team_review_validation", correlationId,
+                        "attempt", attempt,
+                        "result", "PASS",
+                        "conflictCount", 0,
+                        "durationMs", elapsedMillis(validationStartNanos)));
+                countValidationAttempt("pass");
+                logTeamReviewCompleted(correlationId, attempt, cumulativePromptTokens,
+                        cumulativeCompletionTokens, "PASS", reviewStartNanos);
                 forwardTokens(listener, envelope.reviewMarkdown());
                 return envelope.reviewMarkdown();
+            }
+            final String checks = conflicts.stream()
+                    .map(TeamFactualConsistencyValidator.FactConflict::checkId)
+                    .distinct().sorted()
+                    .collect(java.util.stream.Collectors.joining(","));
+            LOGGER.info(AiReviewEventLog.line("team_review_validation", correlationId,
+                    "attempt", attempt,
+                    "result", "FAIL",
+                    "conflictCount", conflicts.size(),
+                    "checks", checks,
+                    "durationMs", elapsedMillis(validationStartNanos)));
+            countValidationAttempt("validation_failed");
+            // docs/current-plan.md §47：DEBUG 级安全化冲突明细（只记录 check/reasonCode 低基数
+            // 分类，不记录完整冲突 message / AI 原句 / Grounding Fact 内容）。
+            if (LOGGER.isDebugEnabled()) {
+                for (final TeamFactualConsistencyValidator.FactConflict c : conflicts) {
+                    LOGGER.debug(AiReviewEventLog.line("team_review_validation_conflict", correlationId,
+                            "attempt", attempt,
+                            "check", c.checkId(),
+                            "reasonCode", c.reasonCode() == null ? "UNCLASSIFIED" : c.reasonCode()));
+                }
             }
             if (attempt >= MAX_VALIDATION_ATTEMPTS) {
                 LOGGER.warn("Team Call #2 grounding validation exhausted after {} attempts ({} conflicts)",
                         MAX_VALIDATION_ATTEMPTS, conflicts.size());
-                throw new AiUpstreamException("AI_REVIEW_GROUNDING_FAILED", 502,
-                        AiRequestContext.correlationId());
+                logTeamReviewCompleted(correlationId, attempt, cumulativePromptTokens,
+                        cumulativeCompletionTokens, "GROUNDING_FAILED", reviewStartNanos);
+                throw new AiUpstreamException("AI_REVIEW_GROUNDING_FAILED", 502, correlationId);
             }
+            // docs/current-plan.md §43：validation retry（业务返工）与 transport retry（网关退避）区分记录。
+            LOGGER.warn(AiReviewEventLog.line("ai_validation_retry", correlationId,
+                    "stage", "TEAM_CALL_2",
+                    "validationAttempt", attempt + 1,
+                    "reason", "VALIDATION_FAILED"));
             feedback = formatConflicts(conflicts);
             fullRewrite = attempt >= 2;
         }
-        throw new AiUpstreamException("AI_REVIEW_GROUNDING_FAILED", 502, AiRequestContext.correlationId());
+        throw new AiUpstreamException("AI_REVIEW_GROUNDING_FAILED", 502, correlationId);
     }
 
     private static String formatConflicts(
@@ -427,11 +493,12 @@ public class TeamReplayAnalysisService {
      * 每轮 attempt 都是独立的一次 {@code stream()} 调用，不共享任何 buffer。</p>
      * PR #103 review BLOCKER C 的 Team Call #2 独立输出上限保持不变。
      */
-    private String callRaw(
+    private AiChatResponse callRaw(
             final String systemPrompt,
             final String userContent,
             final String analysisMode,
-            final long callTimeoutSec
+            final long callTimeoutSec,
+            final int attempt
     ) {
         final List<Map<String, Object>> messages = List.of(
                 Map.<String, Object>of("role", "system", "content", systemPrompt),
@@ -439,12 +506,23 @@ public class TeamReplayAnalysisService {
         // PR #103 review BLOCKER C：Team Call #2 独立输出上限——effective = min(global, teamReview)，
         // 同时用于 AiPromptBudgetGuard（input + output 预算）与 AiChatRequest；Player Call #2 保持 global。
         final int maxOutput = Math.min(config.maxOutputTokens(), config.teamReviewMaxOutputTokens());
+        final int estimatedInputTokens = config.estimator().estimateMessagesTokens(messages);
         AiPromptBudgetGuard.enforce(
-                config.estimator().estimateMessagesTokens(messages),
+                estimatedInputTokens,
                 config.singleReplayMaxInputTokens(),
                 config.contextWindowTokens(),
                 maxOutput,
                 config.promptSafetyMarginTokens());
+        // docs/current-plan.md §49：发送前记录 prompt 预算（~234k×3 的 token amplification 必须可观测）。
+        LOGGER.info(AiReviewEventLog.line("ai_prompt_budget", AiRequestContext.correlationId(),
+                "stage", "TEAM_CALL_2",
+                "attempt", attempt,
+                "estimatedInputTokens", estimatedInputTokens,
+                "maxOutputTokens", maxOutput,
+                "contextWindowTokens", config.contextWindowTokens(),
+                "remainingBudgetSec", callTimeoutSec));
+        // docs/current-plan.md §7：仅 Team Call #2（SINGLE_TEAM_BATTLE Natural Coach Call #2）
+        // 显式使用 JSON_OBJECT；输出格式属于 request contract，不由 analysisMode 隐式推断。
         final AiChatRequest request = new AiChatRequest(
                 systemPrompt,
                 userContent,
@@ -455,8 +533,9 @@ public class TeamReplayAnalysisService {
                 config.call2ThinkingEnabled() ? config.reasoningEffort() : null,
                 null,
                 analysisMode,
-                (int) Math.min(Math.max(1L, callTimeoutSec), Integer.MAX_VALUE));
-        return gateway.stream(request, IGNORED_STREAM).completionText();
+                (int) Math.min(Math.max(1L, callTimeoutSec), Integer.MAX_VALUE),
+                AiResponseFormat.JSON_OBJECT);
+        return gateway.stream(request, IGNORED_STREAM);
     }
 
     /** no-op consumer：draft token 不转发给用户（校验通过后由 {@link #forwardTokens} 转发）。 */
@@ -537,6 +616,51 @@ public class TeamReplayAnalysisService {
                     .increment();
         }
     }
+
+    // ===== AI Review 全链路事件日志与指标（docs/current-plan.md §44-§50、§16/§59） =====
+
+    /** §48：只记录低基数 grounding facts 计数（不打印事实内容）。 */
+    private void logGroundingReady(final TeamGroundingFacts.GroundingFacts facts,
+                                   final String correlationId) {
+        LOGGER.info(AiReviewEventLog.line("team_review_grounding_ready", correlationId,
+                "factsTotal", facts.facts().size(),
+                "deathFacts", facts.facts().stream()
+                        .filter(TeamGroundingFacts.EvidenceFact::isDeath).count(),
+                "aliveTransitions", facts.aliveTransitions().size(),
+                "focusWindows", facts.facts().stream()
+                        .filter(f -> TeamGroundingFacts.TYPE_FOCUS_WINDOW.equals(f.type())).count(),
+                "positionSnapshots", facts.regionSnapshots().size(),
+                "enemyPositionFacts", facts.facts().stream()
+                        .filter(f -> TeamGroundingFacts.TYPE_ENEMY_POSITION.equals(f.type())).count()));
+    }
+
+    /** §50/§54：Team Call #2 阶段汇总（终态以 controller 的 ai_review_finished 为准，exactly once）。 */
+    private void logTeamReviewCompleted(final String correlationId,
+                                        final int validationAttempts,
+                                        final long cumulativePromptTokens,
+                                        final long cumulativeCompletionTokens,
+                                        final String result,
+                                        final long reviewStartNanos) {
+        LOGGER.info(AiReviewEventLog.line("team_review_completed", correlationId,
+                "validationAttempts", validationAttempts,
+                "totalPromptTokens", cumulativePromptTokens,
+                "totalCompletionTokens", cumulativeCompletionTokens,
+                "durationMs", elapsedMillis(reviewStartNanos),
+                "result", result));
+    }
+
+    /** §16/§59：Team Call #2 validation attempt 低基数指标（result=pass/parser_invalid/validation_failed）。 */
+    private void countValidationAttempt(final String result) {
+        if (meterRegistry != null) {
+            meterRegistry.counter("wotb_ai_team_review_validation_attempt_total", "result", result)
+                    .increment();
+        }
+    }
+
+    private long elapsedMillis(final long startNanos) {
+        return Math.max(0L, (nanoTimeSource.getAsLong() - startNanos) / 1_000_000L);
+    }
+
 
     /** OBSERVED_DAMAGE_IS_PARTIAL：上下文或特征集任一命中即抑制观测伤害数字（与 Team/Player 一致口径）。 */
     private static boolean hasObservedDamagePartial(final SingleTeamBattleAnalysisContext context) {

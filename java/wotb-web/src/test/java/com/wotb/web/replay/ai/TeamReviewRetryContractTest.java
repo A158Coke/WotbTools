@@ -31,6 +31,7 @@ import com.wotb.core.replay.stream.ReplayStreamHeader;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
+import com.wotb.web.replay.ai.gateway.AiResponseFormat;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import com.wotb.web.replay.ai.gateway.StreamConsumer;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
@@ -373,5 +374,26 @@ class TeamReviewRetryContractTest {
                     .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode()))
                     .count();
         }
+    }
+    // ===== docs/current-plan.md §7/§25：只有 Team Call #2 使用 JSON_OBJECT =====
+
+    @Test
+    void teamCall2ExplicitlyUsesJsonObjectWhilePreBattleStaysText() {
+        final RetryGateway gateway = new RetryGateway(List.of(GOOD_ENVELOPE));
+        final TeamReplayAnalysisService service = service(gateway);
+        service.analyzeSingleTeamContext(context(gateway, service), AllowedLanguage.ZH);
+
+        final AiChatRequest teamCall2 = gateway.requests().stream()
+                .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode()))
+                .findFirst().orElseThrow();
+        assertEquals(AiResponseFormat.JSON_OBJECT, teamCall2.responseFormat(),
+                "Team Call #2 必须显式请求 JSON_OBJECT（§7）");
+
+        // Call #1（Pre-Battle Strategic Prior）保持 TEXT，不得因本任务进入 JSON mode（§6/§25）。
+        final AiChatRequest preBattle = gateway.requests().stream()
+                .filter(r -> "PRE_BATTLE_STRATEGIC_PRIOR".equals(r.analysisMode()))
+                .findFirst().orElseThrow();
+        assertEquals(AiResponseFormat.TEXT, preBattle.responseFormat(),
+                "PRE_BATTLE_STRATEGIC_PRIOR 必须保持 TEXT（§25）");
     }
 }
