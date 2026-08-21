@@ -65,6 +65,34 @@
       killer 致死窗口优先绑定权威致死 HP-loss 窗口（HP 掉到 0 的最后一档，无前序样本回退 0.25s），
       窗口内存在任何无法排除的 unsupported 变体 → killer=null（不得把窗口内无关 direct DAMAGE
       错判为击杀者）；destroyed 事实保留并去重，不因 killer 未知删除 HP=0/击毁。
+  - **PR #107 第三轮审查修复（Blocker 1-4：混合 provenance 不冒充 EXACT / unsupported 阻止 HP-loss attribution / observedCapacityHp 纯观测 / 文档收口）**：
+    - Blocker 1（teamHp 混合 provenance 不得冒充 EXACT）：EXACT 仅在该队**所有参战车辆的实际
+      entryHp 都已证明**（含已阵亡、含无采样）时成立；部分证明/混合 provenance
+      （OBSERVED_EXACT + RULE_DERIVED_FULL_AT_SPAWN / + CURRENT_HP_EXACT_MAX_UNKNOWN / + UNKNOWN、
+      已阵亡但 entryHp 未证明）一律 PARTIAL/MIXED——totalMax 归零，只显示真实已知剩余数字或明确
+      相对状态，绝不显示 knownRemaining / partialTotalMax 分数、不伪造分母；已证明车辆 current
+      钳制 ≤ entryHp，EXACT 状态 knownRemaining 永不大于 totalMax；全队无采样 → FULL_RELATIVE
+      100% 实心条保留；Tankopedia base 相加仍禁止。
+    - Blocker 2（unsupported 变体同时阻止 HP-loss attribution）：PlaybackCombatReconstruction 对
+      每个掉血窗口 (prevT, curT] 同时扫描 direct DAMAGE 与 UnsupportedDamageEvent——窗口内存在
+      该受害者的 unsupported 变体、或 victim 无法解析的 unsupported 证据 → 掉血数值事实保留、
+      attackerAccountId=null、attackerReliable=false；observedHpLossAt 要求 attackerReliable
+      （direct+unsupported 冲突窗口返回 null，不把掉血挂到单条 direct）；cumulative dealt / 伤害日志 /
+      事件级掉血均不得归给窗口内 direct DAMAGE；killer 现有 fail-closed 行为保留并扩展（victim 无法
+      解析的 unsupported 证据也阻止 killer）。EntityMethodDecoder 对 unsupported 变体在 victim eid
+      缺失（≤0）时用可靠 outer entityId（方法调用目标实体 = 受击者）作 victim 证据——无法解析 victim
+      的 unsupported 证据不得静默丢弃；结构不足的变体仍只产生 warning。
+    - Blocker 3（observedCapacityHp 纯回放观测）：Playback DTO 的 observedCapacityHp 不再使用
+      ObservedMaxHp.resolve()（max(观测, tankopedia base) 钳制/fallback）——改为从真实可信
+      Type-7 positive HP 采样（各 builder 自己的 hpSamples）独立取最大值
+      （MapOverview.observedCapacityHpOf），无可信 sample 为 null；baseHp 只来自 Tankopedia；
+      entryHp 仅 OBSERVED_EXACT 时存在；legacy player.observedMaxHp（resolve 语义）保留供 AI 证据
+      消费；前端仍不得用 baseHp/observedCapacityHp 计算实际百分比。
+    - Blocker 4（文档收口）：protocol.md 更新为「direct → DamageEvent（raw 非权威）；结构足够的
+      非 direct 变体 → UnsupportedDamageEvent（无精确伤害数字，使 HP-loss 与 killer attribution
+      fail-closed；身份字段按真实证据等级标记，未证明字段不写 PROVEN）；结构不足仍只 warning」；
+      battle-playback.md 同步（observedCapacityHp 纯观测语义、EXACT 全队证明门槛、PARTIAL/MIXED、
+      unsupported 阻止掉血归属）。
 ### Changed
 - **AI 模型切回 deepseek-v4-flash（官方稳定别名）**：`AI_MODEL` 默认值从
   `deepseek-v4-pro` 统一切回 `deepseek-v4-flash`——官方稳定别名直接调用最新 Flash 版本，

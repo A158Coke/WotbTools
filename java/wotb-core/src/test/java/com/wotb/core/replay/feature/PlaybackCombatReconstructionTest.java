@@ -371,7 +371,8 @@ class PlaybackCombatReconstructionTest {
 
     @Test
     void unsupportedVariantDoesNotAffectLossAttribution() {
-        // unsupported 变体不产生精确伤害数字：不得进入 Loss（掉血窗口仍由 Type-7 sample 推导）
+        // unsupported 变体不产生精确伤害数字：不计入 damageEventCount、并阻止该窗口 attribution
+        // （掉血窗口仍由 Type-7 sample 推导；无 direct DAMAGE 时 inWindow=0、attacker 必为 null）
         final var result = derive(List.of(
                 hp(1, START + 10.2f, 1, 3189, true, DecodeConfidence.EXACT),
                 hp(2, START + 12.0f, 1, 2812, true, DecodeConfidence.EXACT),
@@ -382,5 +383,90 @@ class PlaybackCombatReconstructionTest {
         assertNull(loss.attackerAccountId(), "unsupported 变体不能 attribution 掉血");
         assertFalse(loss.attackerReliable());
         assertTrue(result.destroyed().isEmpty());
+    }
+
+    // ---- PR #107 第 4 轮：unsupported 变体同时阻止 HP-loss attribution（不只在 killer 阶段）----
+
+    @Test
+    void unsupportedVariantInLossWindowBlocksAttribution() {
+        // 掉血窗口 (10.2, 12.0] 内：direct DAMAGE（entity2）+ 同一受害者的 unsupported 变体
+        // → 掉血数值事实保留、attacker=null、attackerReliable=false（不得把该掉血归给 direct）
+        final var result = derive(List.of(
+                hp(1, START + 10.2f, 1, 3189, true, DecodeConfidence.EXACT),
+                hp(2, START + 12.0f, 1, 2812, true, DecodeConfidence.EXACT),
+                dmg(3, START + 11.5f, 2, 1, 767),
+                unsup(4, START + 11.7f, 3, 1)));
+        final PlaybackCombatReconstruction.Loss loss = result.lossesOf(1001L).get(0);
+        assertEquals(377, loss.hpLoss(), "unsupported 冲突不影响掉血数值事实");
+        assertEquals(1, loss.damageEventCount(), "direct DAMAGE 仍计入 damageEventCount");
+        assertNull(loss.attackerAccountId(), "窗口内 unsupported 变体 → 不得归属给 direct 攻击者");
+        assertFalse(loss.attackerReliable());
+    }
+
+    @Test
+    void unsupportedVariantWithUnresolvedVictimBlocksAttribution() {
+        // unsupported 证据 victim 无法解析（entity 0 → 无映射）→ 任何窗口内存在它即 fail-closed：
+        // 掉血保留、attacker=null（不得静默当成「没有冲突」）
+        final var result = derive(List.of(
+                hp(1, START + 10.2f, 1, 3189, true, DecodeConfidence.EXACT),
+                hp(2, START + 12.0f, 1, 2812, true, DecodeConfidence.EXACT),
+                dmg(3, START + 11.5f, 2, 1, 767),
+                unsup(4, START + 11.7f, 3, 0)));
+        final PlaybackCombatReconstruction.Loss loss = result.lossesOf(1001L).get(0);
+        assertEquals(377, loss.hpLoss());
+        assertNull(loss.attackerAccountId(), "victim 无法解析的 unsupported 证据 → 归属 fail-closed");
+        assertFalse(loss.attackerReliable());
+    }
+
+    @Test
+    void unsupportedOutsideLossWindowDoesNotBlockAttribution() {
+        // unsupported 变体在掉血窗口之前（9.0）→ 不构成冲突；窗口内唯一 direct attacker 仍可归属
+        final var result = derive(List.of(
+                hp(1, START + 10.2f, 1, 3189, true, DecodeConfidence.EXACT),
+                hp(2, START + 12.0f, 1, 2812, true, DecodeConfidence.EXACT),
+                dmg(3, START + 11.5f, 2, 1, 767),
+                unsup(4, START + 9.0f, 3, 1)));
+        final PlaybackCombatReconstruction.Loss loss = result.lossesOf(1001L).get(0);
+        assertEquals(2002L, loss.attackerAccountId(), "窗口外 unsupported 不得误伤窗口内唯一可信攻击者");
+        assertTrue(loss.attackerReliable());
+    }
+
+    @Test
+    void observedHpLossAtIsNullInDirectPlusUnsupportedWindow() {
+        // 窗口内恰好一条 direct DAMAGE 但存在 unsupported 变体 → damageEventCount==1 但
+        // attackerReliable=false → observedHpLossAt 必须 null（不得把掉血挂到该 direct 通知）
+        final var result = derive(List.of(
+                hp(1, START + 10.2f, 1, 3189, true, DecodeConfidence.EXACT),
+                hp(2, START + 12.0f, 1, 2812, true, DecodeConfidence.EXACT),
+                dmg(3, START + 11.5f, 2, 1, 767),
+                unsup(4, START + 11.7f, 3, 1)));
+        assertNull(PlaybackCombatReconstruction.observedHpLossAt(result, 1001L, 11.5),
+                "direct+unsupported 冲突窗口：不得把掉血归给单条 direct DAMAGE");
+    }
+
+    @Test
+    void observedHpLossAtReturnsValueForSingleReliableNotification() {
+        // 对照：窗口内唯一 direct DAMAGE、无 unsupported、attacker 可解析 → 精确归属可暴露
+        final var result = derive(List.of(
+                hp(1, START + 10.2f, 1, 3189, true, DecodeConfidence.EXACT),
+                hp(2, START + 12.0f, 1, 2812, true, DecodeConfidence.EXACT),
+                dmg(3, START + 11.5f, 2, 1, 767)));
+        // Loss 窗口是 battle-relative 时间（START 已由 derive 减掉）；dmg@11.5 在 (10.2, 12.0] 内
+        assertEquals(377, PlaybackCombatReconstruction.observedHpLossAt(result, 1001L, 11.5));
+        assertNull(PlaybackCombatReconstruction.observedHpLossAt(result, 1001L, 9.0),
+                "窗口外事件不得暴露掉血");
+    }
+
+    @Test
+    void killedWithUnresolvedVictimUnsupportedInWindowHasNoKiller() {
+        // 致死窗口 (30.0, 31.0] 内存在 victim 无法解析的 unsupported 证据 → 无法排除 → killer null
+        final var result = derive(List.of(
+                hp(1, START + 30.0f, 1, 242, true, DecodeConfidence.EXACT),
+                hp(2, START + 31.0f, 1, 0, false, DecodeConfidence.EXACT),
+                dmg(3, START + 30.8f, 2, 1, 500),
+                unsup(4, START + 30.9f, 3, 0)));
+        assertEquals(1, result.destroyed().size());
+        assertNull(result.destroyed().get(0).killerAccountId(),
+                "victim 无法解析的 unsupported 证据 → killer 必须 fail-closed 为 null");
     }
 }

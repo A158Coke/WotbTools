@@ -57,8 +57,8 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
 
         switch (subType) {
             case SUBTYPE_ENTITY_METHOD_DAMAGE -> {
-                // damage event
-                final List<ReplayEvent> damageEvents = parseDamage(payload, packet, ts);
+                // damage event（outer entityId = 方法调用目标实体，供 victim 证据回退）
+                final List<ReplayEvent> damageEvents = parseDamage(payload, entityId, packet, ts);
                 if (damageEvents.isEmpty()) {
                     // 结构不足以解析身份 / direct 零伤害通知：保持既有 warning（不产出事件、
                     // 不算解析失败，区别于真正的 MALFORMED/TRUNCATED）。
@@ -107,15 +107,23 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
      * <p>返回值：</p>
      * <ul>
      *   <li>direct 变体（body[13]=={@link #DAMAGE_SUB_DIRECT}）且伤害 &gt; 0 →
-     *       单个 {@link DamageEvent}（EXACT）；</li>
+     *       单个 {@link DamageEvent}（EXACT）；raw 数值不是权威伤害（见 protocol.md），
+     *       权威掉血由 Type-7 propId=3 连续 sample 推导；</li>
      *   <li>结构合法但语义未解码的伤害方法变体（body.length ≥ 18 且 body[13] ≠ direct）→
      *       单个 {@link UnsupportedDamageEvent}（PARTIAL）——保留时间 + 攻击者/受击者 eid 证据，
-     *       不产生精确伤害数字；用于 killer attribution fail-closed（致死窗口内存在无法排除的
-     *       unsupported 变体 → 击杀者必须为 null），绝不进入生产伤害统计；</li>
-     *   <li>其余（payload &lt; 25 / body &lt; 18 / direct 零伤害）→ 空表（调用方记 warning）。</li>
+     *       不产生精确伤害数字；受击者 eid 缺失（≤0）时用可靠 <b>outer entityId</b>
+     *       （方法调用目标实体 = 受击者）作 victim 证据——无法解析 victim 的 unsupported 证据
+     *       绝不得被静默丢弃（否则掉血/致死窗口会错误地视为「无冲突」）；用于 killer / HP-loss
+     *       attribution fail-closed（窗口内存在无法排除的 unsupported 变体 → 击杀者/归属必须
+     *       fail-closed），绝不进入生产伤害统计；</li>
+     *   <li>其余（payload &lt; 25 / body &lt; 18 / direct 零伤害）→ 空表（调用方记 warning）——
+     *       结构不足的变体不得假装 canonical identity 已解析。</li>
      * </ul>
+     *
+     * @param outerEntityId 包外层 entityId（方法调用目标实体；victim eid 缺失时的可靠回退证据）
      */
-    private List<ReplayEvent> parseDamage(byte[] payload, RawReplayPacket packet, ReplayTimestamp ts) {
+    private List<ReplayEvent> parseDamage(byte[] payload, int outerEntityId,
+                                          RawReplayPacket packet, ReplayTimestamp ts) {
         if (payload.length < 25) {
             return List.of();
         }
@@ -128,10 +136,13 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
         final int attackerEid = readI32LE(body, 4);
         final int victimEid = readI32LE(body, 8);
         if ((body[13] & 0xFF) != DAMAGE_SUB_DIRECT) {
-            // 结构合法但语义未解码的伤害方法变体（火灾/撞击/其他）→ 证据事件（无精确伤害数字）
+            // 结构合法但语义未解码的伤害方法变体（火灾/撞击/其他）→ 证据事件（无精确伤害数字）。
+            // victim eid 缺失（≤0）时用可靠 outer entityId（方法调用目标 = 受击实体）作 victim 证据，
+            // 绝不静默丢弃无法从 body 解析 victim 的 unsupported 变体（否则窗口会错误地「无冲突」）。
+            final int effectiveVictim = victimEid > 0 ? victimEid : outerEntityId;
             return List.of(new UnsupportedDamageEvent(
                     packet.sequence(), ts, packet.type(), DecodeConfidence.PARTIAL,
-                    attackerEid, victimEid, null, null, "DAMAGE_METHOD_VARIANT"));
+                    attackerEid, effectiveVictim, null, null, "DAMAGE_METHOD_VARIANT"));
         }
 
         final int damage = (body[14] & 0xFF) << 8 | (body[15] & 0xFF);

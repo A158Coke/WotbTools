@@ -189,9 +189,10 @@ public final class MapOverviewBuilder {
                     ReplayDisplayNames.tankName(player.tankId, player.tankName), player.team,
                     intervals, deathSec, directionSamples,
                     // baseHp = Tankopedia 静态参考（metadata，不进本局百分比）；
-                    // observedCapacityHp = 回放观测容量（整场观测最大 current HP，下界 base）
+                    // observedCapacityHp = 纯回放观测（真实可信 Type-7 positive sample 最大值；
+                    //   无可信 sample 为 null；绝不 max(观测, base)/fallback base）
                     ReplayDisplayNames.tankMaxHpValue(player.tankId),
-                    player.observedMaxHp,
+                    MapOverview.observedCapacityHpOf(hpSamples),
                     hpSamples,
                     tankTypeOf(player),
                     player.entryHpSource == null ? null : player.entryHpSource.name(),
@@ -216,7 +217,8 @@ public final class MapOverviewBuilder {
                 playbackEvents.add(new MapOverview.PlaybackEvent(
                         "DAMAGE", t,
                         attacker > 0 ? attacker : null, victim, damage.damage(),
-                        observedHpLossOf(victim, t, combat)));
+                        com.wotb.core.replay.feature.PlaybackCombatReconstruction
+                                .observedHpLossAt(combat, victim, t)));
             } else if (event instanceof VehicleDestroyedEvent destroyed) {
                 final long victim = accountOf(destroyed.entityId(), mapping);
                 if (victim <= 0) {
@@ -891,26 +893,6 @@ public final class MapOverviewBuilder {
                     l.attackerAccountId(), l.attackerReliable()));
         }
         return out;
-    }
-
-    /**
-     * DAMAGE 事件可证明的掉血值（§11/§12）：仅当该受害者掉血窗口内恰好一条伤害通知
-     * （= 唯一攻击者 + 精确 attribution）时非 null；否则 null（前端不得显示伪造精确伤害）。
-     */
-    private static Integer observedHpLossOf(
-            final long victimAccountId,
-            final double damageTimeSec,
-            final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat) {
-        for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss l
-                : combat.lossesOf(victimAccountId)) {
-            if (l.damageEventCount() != 1) {
-                continue;
-            }
-            if (damageTimeSec > l.fromSec() + 1e-6 && damageTimeSec <= l.toSec() + 1e-6) {
-                return l.hpLoss();
-            }
-        }
-        return null;
     }
 
     /** 阵亡时刻（battle-relative 秒）：仅未存活玩家；优先结算，回退事件流估算；未知为 null。 */

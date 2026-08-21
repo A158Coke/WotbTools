@@ -141,9 +141,9 @@ const showPoints = computed(() => friendlyPoints.value != null || enemyPoints.va
 /**
  * HP bar 填充宽度（PR #107 Blocker 2 aggregate state）：
  * - FULL_RELATIVE（本方开局相对满血）→ known 段固定 100% 阵营色实心条（相对状态，无具体数字）；
- * - EXACT（totalMax>0）→ known = knownRemaining/totalMax、unknown = unknownMax/totalMax（灰段参考）；
- * - PARTIAL（有真实已知剩余但无已证明分母）→ known 段 100% + indeterminate 斜纹
- *   （无法算真实比例，绝不按 tankopedia base 伪造分母）；
+ * - EXACT（全队 entryHp 均已证明）→ known = knownRemaining/totalMax、unknown = unknownMax/totalMax（灰段参考）；
+ * - PARTIAL/MIXED（部分证明/混合 provenance：有真实已知剩余但无「全队已证明分母」）→
+ *   known 段 100% + indeterminate 斜纹（无法算真实比例，绝不显示 known/partialTotalMax 分数）；
  * - UNKNOWN → 0%（灰段也不渲染——无任何数据）。
  * 禁止出现「totalMax=0、knownRemaining>0 却仍 0%」的空条。
  */
@@ -159,16 +159,17 @@ function hpBarFill(hp, kind) {
 }
 
 /**
- * HP 数值区显示文本（绝不显示虚假的 knownRemaining / totalMax）：
+ * HP 数值区显示文本（绝不显示虚假的 knownRemaining / totalMax 分数）：
  * - FULL_RELATIVE → 「100%」（相对满血状态，非具体 HP 数字）；
  * - UNKNOWN → —（无任何数据）；
- * - EXACT → 「knownRemaining / totalMax」（真实已证明总数）；
- * - PARTIAL → 「knownRemaining」（有真实已知剩余，不伪造分母）。
+ * - EXACT（全队 entryHp 均已证明）→ 「knownRemaining / totalMax」（真实已证明总数）；
+ * - PARTIAL/MIXED（部分证明/混合 provenance）→ 只显示真实已知剩余数字（不伪造分母——
+ *   totalMax 已被 teamHp 归零，绝不显示 knownRemaining / partialTotalMax）。
  */
 function hpValueText(hp) {
   if (hp.state === 'FULL_RELATIVE') return '100%'
   if (hp.state === 'UNKNOWN') return '—'
-  if (hp.totalMax > 0) return `${hp.knownRemaining} / ${hp.totalMax}`
+  if (hp.state === 'EXACT') return `${hp.knownRemaining} / ${hp.totalMax}`
   return String(hp.knownRemaining)
 }
 

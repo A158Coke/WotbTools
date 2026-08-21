@@ -213,6 +213,69 @@ describe('vehicleHpAt / teamHp', () => {
     expect(up.state).toBe('FULL_RELATIVE')
   })
 
+  it('teamHp: 混合 provenance 不得冒充 EXACT——部分证明 → PARTIAL（不显示 known/partialTotalMax 分数）', () => {
+    // 一辆 entryHp=3000 已证明（无采样=满血），另一辆 current=2800 但 max 未证明：
+    // state 不能是 EXACT；totalMax=0（partial 证明不得作分母）；不得显示 5800 / 3000
+    const mixed = [
+      { team: 1, entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [], deathSec: null },
+      { team: 1, entryHpSource: null, baseHp: 3000, observedCapacityHp: 2800, hpSamples: [{ timeSec: 0, hp: 2800 }], deathSec: null },
+    ]
+    const hp = teamHp(mixed, 1, 5, true)
+    expect(hp.state).not.toBe('EXACT')
+    expect(hp.state).toBe('PARTIAL')
+    expect(hp.totalMax).toBe(0) // 部分证明：不得用 partial 总量作分母
+    expect(hp.knownRemaining).toBe(5800) // 真实已知剩余（3000 满血 + 2800 current）可显示
+  })
+
+  it('teamHp: 一辆已证明 + 一辆开局相对满血 → PARTIAL（不显示虚假分母）', () => {
+    const mixed = [
+      { team: 1, entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [], deathSec: null },
+      { team: 1, entryHpSource: null, baseHp: 2600, observedCapacityHp: 2600, hpSamples: [], hpLosses: [], deathSec: null },
+    ]
+    const hp = teamHp(mixed, 1, 5, true)
+    expect(hp.state).toBe('PARTIAL')
+    expect(hp.totalMax).toBe(0) // 不显示 3000 / 3000 的虚假分母（还有一辆未证明）
+    expect(hp.knownRemaining).toBe(3000)
+  })
+
+  it('teamHp: OBSERVED_EXACT + CURRENT_HP_EXACT_MAX_UNKNOWN 混合 → PARTIAL（不得 EXACT）', () => {
+    const mixed = [
+      { team: 1, entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [{ timeSec: 0, hp: 2800 }], deathSec: null },
+      { team: 1, entryHpSource: null, baseHp: 3000, observedCapacityHp: 2800, hpSamples: [{ timeSec: 0, hp: 2800 }], deathSec: null },
+    ]
+    const hp = teamHp(mixed, 1, 5, true)
+    expect(hp.state).toBe('PARTIAL')
+    expect(hp.totalMax).toBe(0)
+    expect(hp.knownRemaining).toBe(5600) // 2800 + 2800 均为真实已知剩余
+  })
+
+  it('teamHp: 已阵亡但 entryHp 未证明仍阻止全队成为 EXACT', () => {
+    const mixed = [
+      { team: 1, entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [], deathSec: null },
+      { team: 1, entryHpSource: null, baseHp: 2000, observedCapacityHp: 2000, deathSec: 10 },
+    ]
+    // t=50：A 存活满血、B 已阵亡且 entryHp 未证明 → 全队不得 EXACT
+    const hp = teamHp(mixed, 1, 50, true)
+    expect(hp.state).not.toBe('EXACT')
+    expect(hp.state).toBe('PARTIAL')
+    expect(hp.totalMax).toBe(0)
+    expect(hp.unknownMax).toBe(0) // B 阵亡 = 权威 0，不进灰段
+    expect(hp.knownRemaining).toBe(3000)
+  })
+
+  it('teamHp: EXACT 状态 knownRemaining 永不大于 totalMax（current 钳制 ≤ entryHp）', () => {
+    // 全部已证明，但一辆 current 采样异常高于 entryHp（矛盾证据）→ 钳制，known ≤ total
+    const proven = [
+      { team: 1, entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [{ timeSec: 0, hp: 5000 }], deathSec: null },
+      { team: 1, entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [], deathSec: null },
+    ]
+    const hp = teamHp(proven, 1, 5, true)
+    expect(hp.state).toBe('EXACT')
+    expect(hp.totalMax).toBe(6000)
+    expect(hp.knownRemaining).toBe(6000) // 5000 钳制到 3000 + 3000
+    expect(hp.knownRemaining).toBeLessThanOrEqual(hp.totalMax)
+  })
+
   it('teamPointsAt returns the latest broadcast <= t per team, null when absent', () => {
     const samples = [
       { timeSec: 56.233, team: 1, points: 303 },
