@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+### Added
+- **战局回放 Details Panel 增加 Tier X 车型图**：从 BlitzKit 公开 CDN 确定性下载 Tankopedia
+  全部 84 辆十级车的透明 WebP 车型图并随前端发布；选中车辆时按 tankId 懒加载，非十级车、
+  缺图或加载失败静默降级，production 不访问 BlitzKit。新增 Tier X 100% 图片覆盖测试与
+  `blitzkit-references.mjs --emit-portraits` 可重复生成入口。
+
 ### Fixed
 - **战局回放（Battle Playback）当前状态面板与伤害/碰撞语义修复（docs/current-plan.md 1-28）**：
   - Details Panel 收敛为 current-state 面板：删除「最大 HP」「HP %」「协助伤害」「最终战绩」分区。

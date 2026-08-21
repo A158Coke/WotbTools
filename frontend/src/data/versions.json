@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.7",
+    "date": "2026-08-21",
+    "tag": "add",
+    "zh": "战局回放车辆详情新增真实车型图：点击十级车后，详情面板会按需显示该车辆对应的 BlitzKit 透明车型图；非十级车或图片加载失败时会保持原有详情布局，不显示破图，也不会影响回放。",
+    "en": "Battle playback vehicle details now include real vehicle artwork: selecting a Tier X vehicle lazily displays its matching transparent BlitzKit vehicle image; non-Tier-X vehicles and image-load failures keep the existing detail layout without broken images or playback disruption.",
+    "ru": "В деталях техники повтора боя появились реальные изображения: при выборе техники X уровня по запросу загружается соответствующее прозрачное изображение BlitzKit; для техники других уровней и при ошибке загрузки сохраняется прежняя панель без сломанной картинки и без влияния на воспроизведение."
+  },
+  {
     "v": "2.12.6",
     "date": "2026-08-21",
     "tag": "fix",

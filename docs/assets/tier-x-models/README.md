@@ -53,6 +53,8 @@ AI 只做 visual QA；发现错误 → 修 baker → 重新生成，禁止人工
 | `frontend/scripts/check-bundle-separation.mjs` | 构建后 bundle 分离检查（CI 强制） |
 | `frontend/scripts/check-webp-orientation.mjs` | 正式 WebP 方向校验（developer-only，python + PIL） |
 | `frontend/scripts/blitzkit-references.mjs` | inventory + 参考图下载（kind 核验依据） |
+| `frontend/src/assets/tank-portraits/tier-x/<tankId>.webp` | Details Panel 车型透视图（84 辆 Tier X，BlitzKit big icon） |
+| `frontend/src/vehicle-portraits/runtime.js` | Details Panel 按 tankId 懒加载 + 缺图静默降级 |
 | `frontend/scripts/validate-vehicle-models.mjs` | CLI validator（资产自检） |
 | `frontend/scripts/.vehicle-model-refs/` | BlitzKit 数据缓存（gitignored：model.glb / models.pb / tanks.pb / 参考图 / debug PNG） |
 | `docs/assets/tier-x-models/svg-generation-spec.md` | 全局资产生成规范（正式 WebP 契约 + Legacy/debug extractor） |
@@ -142,6 +144,10 @@ contract，turret.webp 画布 = turret+mantlet+完整 gun 的 logical bounds）�
 - 模型：`https://api.blitzkit.app/tanks/{tankId}/model.glb`（baker 下载缓存）。
 - 定义：`https://api.blitzkit.app/definitions/models.pb` + `tanks.pb`（缓存）。
 - 参考图：`https://api.blitzkit.app/tanks/{tankId}/icons/big.webp`（缓存已下载 84 张，QA 用）。
+
+Details Panel 的车型图由
+`node frontend/scripts/blitzkit-references.mjs --emit-portraits` 从同一 `big.webp` 端点确定性生成到
+`frontend/src/assets/tank-portraits/tier-x/` 并提交；production 不访问 BlitzKit。
 
 ### G. Validation commands（资产生成后）
 

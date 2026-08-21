@@ -246,7 +246,9 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
   prefers-reduced-motion 取消 ghost/flash/burst/feed 动画（事实保留）。
 - **Detail Sidebar（§8，2026-08 收敛为 current-state only）**：点击 marker 打开/切换（不 toggle-off）、
   点击空白不关闭、× 显式关闭、destroyed 车可选、seek 保持同一 selected vehicle；宽屏右侧固定、
-  窄屏（≤768px）置于地图下方。面板只含**当前 playback 时间点**状态：阵营/车辆类型（replay →
+  窄屏（≤768px）置于地图下方。Tier X 车辆按 tankId 懒加载随站点发布的 BlitzKit 车型图；
+  非 Tier X、缺图或单图加载失败时静默省略图片，production 不访问第三方 CDN。面板只含
+  **当前 playback 时间点**状态：阵营/车辆类型（replay →
   tankopedia fallback，全部 metadata 缺失才 —，§8）/状态（已发现/最后已知/已击毁）/当前或最后已知
   HP（**只显示实际值**——tankopedia base HP 是静态 metadata 不是本局最大 HP，不再展示「最大 HP/
   HP %」，§6/§41）/当前播放时间/已记录伤害（Σ 可 attribution 的权威掉血，§17）/承受伤害（Σ 该车全部
