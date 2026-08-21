@@ -365,4 +365,110 @@ class TeamReviewEnvelopeParserTest {
         assertFalse(result.failed());
         assertNotNull(result.envelope());
     }
+
+    // ===== PR #106 review：字符串数组字段三态（MISSING / INVALID / VALID-empty）=====
+
+    private static String diagnosisJson(final String diagnosisBody) {
+        return "{\"primaryDiagnosis\":{" + diagnosisBody + "},"
+                + "\"reviewMarkdown\":\"## 团队复盘\\n\\n内容\",\"claims\":[]}";
+    }
+
+    @Test
+    void evidenceIdsAsWholeStringIsSchemaTypeFailure() {
+        // malformed evidenceIds（字符串整体）→ 明确的 schema/type failure，不得误报 MISSING_REQUIRED_MACHINE_FIELD
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(claimJson(
+                "\"claimType\":\"DEATH\",\"subject\":\"WildCat\",\"timeSec\":112.4,"
+                        + "\"evidenceIds\":\"E101\",\"text\":\"WildCat died at 112 seconds\""));
+        assertTrue(result.failed());
+        assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.INVALID_MACHINE_FIELD_TYPE,
+                result.failureReason(), "evidenceIds 非数组必须是 schema/type failure 而非 missing");
+    }
+
+    @Test
+    void evidenceIdsWithObjectElementIsSchemaTypeFailure() {
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(claimJson(
+                "\"claimType\":\"DEATH\",\"subject\":\"WildCat\",\"timeSec\":112.4,"
+                        + "\"evidenceIds\":[{}],\"text\":\"WildCat died at 112 seconds\""));
+        assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.INVALID_MACHINE_FIELD_TYPE,
+                result.failureReason(), "array 内 object 元素属于 schema/type failure");
+    }
+
+    @Test
+    void evidenceIdsWithNullElementIsSchemaTypeFailure() {
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(claimJson(
+                "\"claimType\":\"DEATH\",\"subject\":\"WildCat\",\"timeSec\":112.4,"
+                        + "\"evidenceIds\":[null],\"text\":\"WildCat died at 112 seconds\""));
+        assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.INVALID_MACHINE_FIELD_TYPE,
+                result.failureReason(), "array 内 null 元素属于 schema/type failure");
+    }
+
+    @Test
+    void evidenceIdsWithNonStringScalarElementIsSchemaTypeFailure() {
+        // 字符串数组契约：number/boolean 元素也属于非允许类型（原实现经 asText 静默接受，已收紧）
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(claimJson(
+                "\"claimType\":\"DEATH\",\"subject\":\"WildCat\",\"timeSec\":112.4,"
+                        + "\"evidenceIds\":[123],\"text\":\"WildCat died at 112 seconds\""));
+        assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.INVALID_MACHINE_FIELD_TYPE,
+                result.failureReason(), "array 内 number 元素属于 schema/type failure");
+    }
+
+    @Test
+    void missingEvidenceIdsOnFactualClaimIsMissingRequiredMachineField() {
+        // 字段缺失 → MISSING_REQUIRED_MACHINE_FIELD（factual claim 必须引用证据）
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(claimJson(
+                "\"claimType\":\"DEATH\",\"subject\":\"WildCat\",\"timeSec\":112.4,"
+                        + "\"text\":\"WildCat died at 112 seconds\""));
+        assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.MISSING_REQUIRED_MACHINE_FIELD,
+                result.failureReason());
+    }
+
+    @Test
+    void emptyEvidenceIdsOnFactualClaimIsMissingRequiredMachineField() {
+        // 合法 [] 仍是合法空数组：factual claim 要求非空 evidenceIds 时才进入 MISSING_REQUIRED_MACHINE_FIELD
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(claimJson(
+                "\"claimType\":\"DEATH\",\"subject\":\"WildCat\",\"timeSec\":112.4,"
+                        + "\"evidenceIds\":[],\"text\":\"WildCat died at 112 seconds\""));
+        assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.MISSING_REQUIRED_MACHINE_FIELD,
+                result.failureReason(), "DEATH 要求非空 evidenceIds：合法空数组也必须 MISSING_REQUIRED_MACHINE_FIELD");
+    }
+
+    @Test
+    void emptyEvidenceIdsOnTacticalClaimPasses() {
+        // 合法 [] 是合法空数组：TACTICAL 不要求 evidenceIds → PASS
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(claimJson(
+                "\"claimType\":\"TACTICAL\",\"evidenceIds\":[],\"text\":\"战术观点\""));
+        assertFalse(result.failed(), "TACTICAL 的合法空 evidenceIds 必须 PASS");
+        assertNotNull(result.envelope());
+        assertTrue(result.envelope().claims().getFirst().evidenceIds().isEmpty());
+    }
+
+    @Test
+    void supportingEvidenceIdsAsWholeStringIsSchemaTypeFailure() {
+        // primaryDiagnosis.supportingEvidenceIds 存在但不是合法字符串数组 → 不允许静默 PASS
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(
+                diagnosisJson("\"title\":\"主判断\",\"reasoning\":\"理由\",\"supportingEvidenceIds\":\"E101\""));
+        assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.INVALID_MACHINE_FIELD_TYPE,
+                result.failureReason(), "supportingEvidenceIds 类型非法必须 fail-close");
+    }
+
+    @Test
+    void supportingEvidenceIdsWithIllegalElementIsSchemaTypeFailure() {
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(
+                diagnosisJson("\"title\":\"主判断\",\"reasoning\":\"理由\",\"supportingEvidenceIds\":[{}]"));
+        assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.INVALID_MACHINE_FIELD_TYPE,
+                result.failureReason(), "supportingEvidenceIds 含非法元素必须 fail-close");
+        final TeamReviewEnvelopeParser.ParseResult nullElem = TeamReviewEnvelopeParser.parseDetailed(
+                diagnosisJson("\"title\":\"主判断\",\"reasoning\":\"理由\",\"supportingEvidenceIds\":[null]"));
+        assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.INVALID_MACHINE_FIELD_TYPE,
+                nullElem.failureReason(), "supportingEvidenceIds 含 null 元素必须 fail-close");
+    }
+
+    @Test
+    void legalSupportingEvidenceIdsParsesWithValues() {
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(
+                diagnosisJson("\"title\":\"主判断\",\"reasoning\":\"理由\","
+                        + "\"supportingEvidenceIds\":[\"E101\",\"E102\"]"));
+        assertFalse(result.failed());
+        assertEquals(List.of("E101", "E102"), result.envelope().primaryDiagnosis().supportingEvidenceIds());
+    }
 }

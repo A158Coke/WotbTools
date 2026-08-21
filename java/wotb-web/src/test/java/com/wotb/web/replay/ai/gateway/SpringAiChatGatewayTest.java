@@ -16,6 +16,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.openai.core.JsonValue;
 import com.openai.core.http.Headers;
 import com.openai.errors.BadRequestException;
@@ -30,6 +33,8 @@ import com.openai.models.completions.CompletionUsage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.LoggerFactory;
+import java.util.stream.Collectors;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -294,6 +299,42 @@ class SpringAiChatGatewayTest {
         final AiChatResponse result = gateway.chat(request());
         assertEquals("hello", result.completionText());
         verify(chatModel, times(2)).call(any(Prompt.class));
+    }
+
+    /** PR #106 review（非 blocker A/B）：transport retry 用无歧义 retryNumber；completed 不记录伪 providerStatus。 */
+    @Test
+    void transportRetryLogUsesRetryNumberAndCompletedOmitsFakeProviderStatus() {
+        when(chatModel.call(any(Prompt.class)))
+                .thenThrow(RateLimitException.builder()
+                        .headers(Headers.builder().build())
+                        .error(error("slow down"))
+                        .build())
+                .thenReturn(okResponse("hello"));
+        final Logger gatewayLogger = (Logger) LoggerFactory.getLogger(SpringAiChatGateway.class);
+        final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        gatewayLogger.addAppender(appender);
+        try {
+            final AiChatResponse result = gateway.chat(request());
+            assertEquals("hello", result.completionText());
+            verify(chatModel, times(2)).call(any(Prompt.class));
+
+            final String all = appender.list.stream()
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .collect(Collectors.joining("\n"));
+            // 第一次退避重试 = retryNumber=1；其后的下一次上游调用是 attempt=2。
+            assertTrue(all.contains("event=ai_transport_retry"), "必须记录 transport retry 事件: " + all);
+            assertTrue(all.contains("retryNumber=1"),
+                    "第一次重试必须记录 retryNumber=1（而非歧义的 transportAttempt）: " + all);
+            assertTrue(all.contains("event=ai_upstream_call_started") && all.contains("attempt=2"),
+                    "重试后的下一次上游调用必须是 attempt=2: " + all);
+            assertFalse(all.contains("transportAttempt"), "不得再使用歧义的 transportAttempt 字段: " + all);
+            // completed 不得记录硬编码 providerStatus=200（伪 observation，非真实 transport metadata）。
+            assertFalse(all.contains("providerStatus=200"),
+                    "ai_upstream_call_completed 不得记录伪 providerStatus=200: " + all);
+        } finally {
+            gatewayLogger.detachAppender(appender);
+        }
     }
 
     @Test

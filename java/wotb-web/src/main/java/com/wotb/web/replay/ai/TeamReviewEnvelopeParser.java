@@ -18,7 +18,11 @@ import java.util.regex.Pattern;
  * 「输出必须是合法 JSON envelope」反馈给 LLM 重写（targeted rewrite → full rewrite → fail-safe）。</p>
  * <p>Observability（docs/current-plan.md §44/§45）：{@link #parseDetailed(String)} 返回
  * 可诊断的 {@link ParseResult}，携带稳定低基数 {@link ParseFailureReason}——启用 DeepSeek
- * JSON Output 后剩余的 parser failure 类型必须可机器分类，不能只看到笼统的 null。</p>
+ * JSON Output 后剩余的 parser failure 类型必须可机器分类，不能只看到笼统的 null。
+ * 字符串数组字段（evidenceIds / supportingEvidenceIds）区分 MISSING（缺失）/ INVALID（存在但
+ * 类型或元素非法，如字符串整体、{@code [{}]}、{@code [null]}）/ VALID（合法，可为空数组）三态，
+ * malformed 字段进入 INVALID_MACHINE_FIELD_TYPE 而非误报 MISSING_REQUIRED_MACHINE_FIELD；
+ * 合法 {@code []} 仍是合法空引用列表（factual claim 要求非空时才 → MISSING_REQUIRED_MACHINE_FIELD）。</p>
  */
 public final class TeamReviewEnvelopeParser {
 
@@ -57,9 +61,15 @@ public final class TeamReviewEnvelopeParser {
             if (title.isBlank() || reasoning.isBlank()) {
                 return ParseResult.fail(ParseFailureReason.MISSING_PRIMARY_DIAGNOSIS);
             }
+            // PR #106 review：supportingEvidenceIds 存在但不是合法字符串数组 → schema/type failure，
+            // 不允许静默退化为空数组并 PASS（missing 仍合法——该字段可选）。
+            final StringListField supportingIds = stringListField(diagnosis.get("supportingEvidenceIds"));
+            if (supportingIds.invalid()) {
+                return ParseResult.fail(ParseFailureReason.INVALID_MACHINE_FIELD_TYPE);
+            }
             final TeamReviewEnvelope.PrimaryDiagnosis primary =
                     new TeamReviewEnvelope.PrimaryDiagnosis(
-                            title, reasoning, stringList(diagnosis.get("supportingEvidenceIds")));
+                            title, reasoning, supportingIds.missing() ? List.of() : supportingIds.value());
             final String reviewMarkdown = text(root.get("reviewMarkdown"));
             if (reviewMarkdown.isBlank()) {
                 return ParseResult.fail(ParseFailureReason.MISSING_REVIEW_MARKDOWN);
@@ -81,7 +91,15 @@ public final class TeamReviewEnvelopeParser {
                     if (claimText.isBlank()) {
                         return ParseResult.fail(ParseFailureReason.INVALID_CLAIMS);
                     }
-                    final List<String> ids = stringList(item.get("evidenceIds"));
+                    // PR #106 review：evidenceIds 必须区分缺失 / 类型非法 / 合法（含空数组）。
+                    // malformed（字符串整体 / [{}] / [null] / number/boolean 元素）→ schema/type
+                    // failure（INVALID_MACHINE_FIELD_TYPE），绝不静默视为「空」或误报
+                    // MISSING_REQUIRED_MACHINE_FIELD；合法 [] 仍按空引用列表处理。
+                    final StringListField evidenceIdsField = stringListField(item.get("evidenceIds"));
+                    if (evidenceIdsField.invalid()) {
+                        return ParseResult.fail(ParseFailureReason.INVALID_MACHINE_FIELD_TYPE);
+                    }
+                    final List<String> ids = evidenceIdsField.missing() ? List.of() : evidenceIdsField.value();
                     if (ids.size() > MAX_IDS_PER_CLAIM) {
                         return ParseResult.fail(ParseFailureReason.TOO_MANY_EVIDENCE_IDS);
                     }
@@ -281,18 +299,66 @@ public final class TeamReviewEnvelopeParser {
         }
     }
 
-    private static List<String> stringList(final JsonNode node) {
-        final List<String> out = new ArrayList<>();
-        if (node == null || !node.isArray()) {
-            return out;
+    /**
+     * 字符串数组字段（evidenceIds / supportingEvidenceIds）解析（PR #106 review）：
+     * <ul>
+     *   <li>字段缺失 / JSON null → {@link StringListField#MISSING}（与 {@link NumField} 的 null 语义一致）；</li>
+     *   <li>字段存在但不是 array，或 array 元素不是 JSON string（object/null/number/boolean）→
+     *       {@link StringListField#INVALID}（schema/type failure，调用方按 INVALID_MACHINE_FIELD_TYPE 拒绝）；</li>
+     *   <li>合法 array（可为空 {@code []}）→ {@link StringListField#VALID}。</li>
+     * </ul>
+     * 不再用空 List 同时表达 missing / invalid / valid-empty——否则 malformed evidenceIds 会被误报为
+     * MISSING_REQUIRED_MACHINE_FIELD，或 supportingEvidenceIds 类型错误静默 PASS。
+     */
+    private static StringListField stringListField(final JsonNode node) {
+        if (node == null || node.isNull()) {
+            return StringListField.MISSING;
         }
+        if (!node.isArray()) {
+            return StringListField.INVALID;
+        }
+        final List<String> out = new ArrayList<>(node.size());
         for (final JsonNode item : node) {
-            if (item == null || !item.isValueNode() || item.isNull()) {
-                return List.of(); // 非字符串数组 → 整体视为不可用
+            if (item == null || !item.isTextual()) {
+                return StringListField.INVALID;
             }
             out.add(item.asText(""));
         }
-        return out;
+        return StringListField.valid(out);
+    }
+
+    /**
+     * 字符串数组字段解析状态（PR #106 review）：MISSING（缺失）/ INVALID（存在但类型或元素非法）/
+     * VALID（合法，可为空数组）。与 {@link NumField} 同构，保证 missing 与 malformed 可区分。
+     */
+    private static final class StringListField {
+        static final StringListField MISSING = new StringListField(false, false, List.of());
+        static final StringListField INVALID = new StringListField(false, true, List.of());
+        private final boolean present;
+        private final boolean invalid;
+        private final List<String> value;
+
+        private StringListField(final boolean present, final boolean invalid, final List<String> value) {
+            this.present = present;
+            this.invalid = invalid;
+            this.value = value;
+        }
+
+        static StringListField valid(final List<String> value) {
+            return new StringListField(true, false, value);
+        }
+
+        boolean missing() {
+            return !present && !invalid;
+        }
+
+        boolean invalid() {
+            return invalid;
+        }
+
+        List<String> value() {
+            return value;
+        }
     }
 
     /**

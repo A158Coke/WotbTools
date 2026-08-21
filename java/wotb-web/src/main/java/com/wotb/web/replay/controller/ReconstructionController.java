@@ -177,6 +177,12 @@ public class ReconstructionController {
             if (cancellation.isCancelled()) {
                 LOGGER.info(AiReviewEventLog.line("ai_review_cancelled", requestId,
                         "source", "CANCELLED_WHILE_QUEUED"));
+                // §54（PR #106 review）：统一终态 exactly once——queued cancellation 也是
+                // worker 生命周期的一部分，必须与 success/failure 一样恰好记录一次 ai_review_finished。
+                LOGGER.info(AiReviewEventLog.line("ai_review_finished", requestId,
+                        "result", "CANCELLED",
+                        "source", "CANCELLED_WHILE_QUEUED",
+                        "durationMs", elapsedMillis(workerStartNanos)));
                 quietComplete(emitter);
                 return;
             }
@@ -207,7 +213,9 @@ public class ReconstructionController {
                     });
             writer.done(response);
             emitter.complete();
-            // docs/current-plan.md §53/§54：SSE 完成 + 终态（exactly once）。
+            // docs/current-plan.md §53/§54：SSE 完成 + 统一终态 ai_review_finished（exactly once）。
+            // 成功路径 result=SUCCESS；失败/取消路径见下方 catch——try / catch(ClientDisconnected) /
+            // catch(RuntimeException|IOException) 三分支互斥，每分支各自恰好记录一次终态。
             LOGGER.info(AiReviewEventLog.line("ai_review_sse_completed", requestId,
                     "durationMs", elapsedMillis(workerStartNanos)));
             LOGGER.info(AiReviewEventLog.line("ai_review_finished", requestId,
@@ -219,6 +227,11 @@ public class ReconstructionController {
             cancellationRegistry.cancel(requestId);
             LOGGER.info(AiReviewEventLog.line("ai_review_cancelled", requestId,
                     "source", "SSE_DISCONNECT"));
+            // §54（PR #106 review）：终态 exactly once——SSE 断开 = CANCELLED 终态。
+            LOGGER.info(AiReviewEventLog.line("ai_review_finished", requestId,
+                    "result", "CANCELLED",
+                    "source", "SSE_DISCONNECT",
+                    "durationMs", elapsedMillis(workerStartNanos)));
         } catch (final RuntimeException | IOException e) {
             // 流中途失败（含流尚未开始的数据校验失败）：一律以 error 事件传达
             // 稳定错误码（客户端断开时静默），HTTP 层面已返回 200 + SseEmitter。
@@ -229,10 +242,19 @@ public class ReconstructionController {
                     "elapsedMs", elapsedMillis(workerStartNanos)));
             try {
                 writer.error(errorCode);
-            } catch (final IOException | IllegalStateException ignored) {
-                // 客户端同时断开（写入失败 / emitter 已终止）：无意义，静默。
+            } catch (final RuntimeException | IOException ignored) {
+                // 客户端同时断开（写入失败 / emitter 已终止）：无意义，静默。兜住 IOException 与
+                // 一切 RuntimeException（含 IllegalStateException）——否则 writer.error 自身失败
+                // 会让本分支逃逸，导致下方 ai_review_finished 终态缺失（exactly once 契约破坏）。
             }
             quietComplete(emitter);
+            // §54（PR #106 review）：终态 exactly once——任何失败都恰好记录一次
+            // ai_review_finished result=FAILED；稳定 errorCode 保留失败细节
+            // （AI_REVIEW_GROUNDING_FAILED / AI_TIMEOUT / AI_RATE_LIMITED 等）。
+            LOGGER.info(AiReviewEventLog.line("ai_review_finished", requestId,
+                    "result", "FAILED",
+                    "errorCode", errorCode,
+                    "durationMs", elapsedMillis(workerStartNanos)));
         } finally {
             // AiRequestContext 是 ThreadLocal：必须在真正执行 AI 的 worker 线程
             // 内清理，绝不能在 request 线程执行（否则一 return 就失效）。

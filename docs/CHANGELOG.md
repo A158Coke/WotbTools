@@ -39,6 +39,26 @@
   `docs/operations/observability.md`（按 correlationId 追一单 + 事件清单 + 错误码排障）、`docs/CHANGELOG-PRODUCT.md`。
 
 ### Fixed
+- **PR #106 review——parser 失败分类三态化 + AI Review 终态 exactly once + 日志字段语义修正**：
+  ① **Parser 字符串数组字段三态**——`TeamReviewEnvelopeParser` 不再用空 List 同时表达 evidenceIds /
+  supportingEvidenceIds 的「缺失 / 类型非法 / 合法空数组」：新增 `StringListField`（MISSING / INVALID / VALID），
+  malformed（`"E101"` 字符串整体、`[{}]`、`[null]`、number/boolean 元素）→ `INVALID_MACHINE_FIELD_TYPE`
+  （不再误报 `MISSING_REQUIRED_MACHINE_FIELD`，也不静默 PASS）；`primaryDiagnosis.supportingEvidenceIds`
+  存在但非法时 fail-close；合法 `[]` 仍是合法空数组，factual claim 要求非空时才进入
+  `MISSING_REQUIRED_MACHINE_FIELD`。
+  ② **终态 exactly once**——`ReconstructionController.runAnalysis` 每个真正开始执行的 worker 请求
+  恰好记录一次 `event=ai_review_finished`，result ∈ {SUCCESS, FAILED, CANCELLED}（FAILED 带稳定
+  errorCode、CANCELLED 带稳定 source），覆盖 success / RuntimeException / SSE disconnect / queued
+  cancellation 四路径（三分支互斥 + writer.error 二次失败兜底，杜绝重复或缺失终态）；新增 controller
+  生命周期日志测试用 ListAppender 计数断言 exactly once，而非仅断言某条日志存在。
+  ③ **transport retry 字段语义**——`ai_transport_retry` 的 `transportAttempt` 改为无歧义的
+  `retryNumber`（1 基重试序号：retryNumber=1 → 下一次上游调用 attempt=2）。
+  ④ **completed 事件去伪字段**——`ai_upstream_call_completed` 不再记录硬编码 `providerStatus=200`
+  （成功响应无真实 transport status metadata，属伪 observation；真实 status 只在失败事件从异常提取）。
+  ⑤ **回归保证**——Team Call #2=JSON_OBJECT / 其余=TEXT / `response_format` 仅存在于 JSON_OBJECT 请求
+  / 不碰全局 model options / parser 与 validator 继续 fail-close / validation failure 仍触发 LLM 返工
+  / 敏感数据（API key、prompt、completion、reviewMarkdown、replay 原始内容）不入日志 / correlationId
+  贯穿 Controller → Team service → Gateway / metric tag 保持低基数；全量 1052 tests 通过。
 - **PR #105 Final Blocker——Evidence Binding（claim 必须与其 evidenceIds 真正绑定）**：
   ① **绑定契约**——`TeamFactualConsistencyValidator` 新增 `checkStructuredEvidenceBinding`：
   `requiredEvidenceType(claimType)` 统一映射 DEATH→PLAYER_DESTROYED / ALIVE_TRANSITION→
