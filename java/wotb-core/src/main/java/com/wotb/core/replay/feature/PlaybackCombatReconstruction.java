@@ -116,7 +116,10 @@ public final class PlaybackCombatReconstruction {
                 if (damage.damage() <= 0) {
                     continue;
                 }
-                final Long victim = accountOf(damage.victimEid(), mapping);
+                // 直填账号优先（合成 fixture/直填事件），否则按 entityId 解析（真实 decoder 直填恒 null）
+                final Long victim = damage.victimAccountId() != null && damage.victimAccountId() > 0
+                        ? damage.victimAccountId()
+                        : accountOf(damage.victimEid(), mapping);
                 if (victim == null || victim <= 0) {
                     continue;
                 }
@@ -124,7 +127,10 @@ public final class PlaybackCombatReconstruction {
                 if (!Double.isFinite(t) || t < 0 || t > duration + 1e-6) {
                     continue;
                 }
-                final long attacker = accountOf(damage.attackerEid(), mapping);
+                final Long attackerL = damage.attackerAccountId() != null && damage.attackerAccountId() > 0
+                        ? damage.attackerAccountId()
+                        : accountOf(damage.attackerEid(), mapping);
+                final double attacker = attackerL == null ? 0.0 : attackerL;
                 damagesByVictim.computeIfAbsent(victim, k -> new ArrayList<>())
                         .add(new double[]{t, attacker});
             }
@@ -221,6 +227,23 @@ public final class PlaybackCombatReconstruction {
             immutable.put(k, List.copyOf(v));
         });
         return new Result(immutable, destroyed);
+    }
+
+    /**
+     * 事件级可归属掉血（§12/§13）：仅当该受害者掉血窗口内**恰好一条**伤害通知
+     * （= 唯一攻击者 + 精确 attribution）且事件时刻位于窗口 (fromSec, toSec] 时返回掉血值；
+     * 多通知窗口 / 无通知 / 窗口外 → null（不得把窗口掉血拆到单个事件）。
+     */
+    public static Integer observedHpLossAt(final Result result, final long victimAccountId, final double timeSec) {
+        for (final Loss l : result.lossesOf(victimAccountId)) {
+            if (l.damageEventCount() != 1) {
+                continue;
+            }
+            if (timeSec > l.fromSec() + 1e-6 && timeSec <= l.toSec() + 1e-6) {
+                return l.hpLoss();
+            }
+        }
+        return null;
     }
 
     private static Long accountOf(final int entityId, final TeamEntityMapping mapping) {

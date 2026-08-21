@@ -6,9 +6,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   CHAR_WIDTH_FACTOR,
+  HP_BAR_W_PX,
   HP_HUD_GAP_PX,
   HP_HUD_H_PX,
   LABEL_GAP_PX,
+  RECORDER_EXTRA_PX,
   LABEL_PAD_X,
   LABEL_PAD_Y,
   PLAYER_HIDE_MS,
@@ -275,6 +277,64 @@ describe('computeLabelLayout（§21–§28：真实 visual footprint 碰撞）',
     expect(mobile.get(1).tankDy).toBeLessThanOrEqual(0)
     expect(Number.isFinite(mobile.get(2).tankDy)).toBe(true)
     expect(Number.isFinite(desktop.get(2).tankDy)).toBe(true)
+  })
+
+  it('§22 recorder 菱形：marker 下方视觉占用参与 footprint（core 底部扩展，非固定 36×28 假设）', () => {
+    const plain = computeLabelLayout(
+      [item(1, 200, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3000 })],
+      { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh, coreSize: 36 })
+    const withRecorder = computeLabelLayout(
+      [item(1, 200, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3000, recorder: true })],
+      { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh, coreSize: 36 })
+    expect(withRecorder.get(1).coreBox.h).toBe(plain.get(1).coreBox.h + RECORDER_EXTRA_PX)
+    expect(plain.get(1).coreBox.h).toBe(36)
+  })
+
+  it('§24 coreSize 参数化：footprint 使用调用方传入的真实渲染尺寸（不写死 36/28）', () => {
+    const s32 = computeLabelLayout([item(1, 200, 200, 'Maus')],
+      { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh, coreSize: 32 })
+    const s36 = computeLabelLayout([item(1, 200, 200, 'Maus')],
+      { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh, coreSize: 36 })
+    expect(s32.get(1).coreBox.h).toBe(32)
+    expect(s36.get(1).coreBox.h).toBe(36)
+    // 标签在 core 之上：core 尺寸变化 → 标签基线随真实 core 高度移动
+    expect(s32.get(1).tankBox.y).toBe(200 - 16 - LABEL_GAP_PX - tankH)
+    expect(s36.get(1).tankBox.y).toBe(200 - 18 - LABEL_GAP_PX - tankH)
+  })
+
+  it('§22 HP 盒尺寸参数化：调用方传真实渲染宽高（it.hpBoxW/hpBoxH）', () => {
+    const custom = computeLabelLayout(
+      [item(1, 100, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3189, hpBoxW: 60, hpBoxH: 20 })],
+      { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh })
+    expect(custom.get(1).hpBox.w).toBe(60)
+    expect(custom.get(1).hpBox.h).toBe(20)
+    // 默认（无传参）回退 CSS 常量（bar 46+border 2，高 18）
+    const dflt = computeLabelLayout(
+      [item(1, 100, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3189 })],
+      { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh })
+    expect(dflt.get(1).hpBox.h).toBe(HP_HUD_H_PX)
+    expect(dflt.get(1).hpBox.w).toBe(HP_BAR_W_PX)
+  })
+
+  it('§24 zoom 一致：视觉 screen-space 恒定 → footprint 不被 map scale 二次缩放（纯函数不乘 scale）', () => {
+    // coreSize=36 的 footprint 与缩放前完全一致（碰撞在 screen px 域；调用方负责把
+    // 屏幕恒定元素传同一 coreSize，缩放只改位置不改尺寸）
+    const a = computeLabelLayout([item(1, 200, 200, 'Maus')],
+      { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh, coreSize: 36 })
+    const b = computeLabelLayout([item(1, 300, 300, 'Maus')],
+      { showTank: true, showPlayer: false, viewportW: vw, viewportH: vh, coreSize: 36 })
+    expect(a.get(1).coreBox.w).toBe(b.get(1).coreBox.w)
+    expect(a.get(1).coreBox.h).toBe(b.get(1).coreBox.h)
+    expect(a.get(1).tankBox.w).toBe(b.get(1).tankBox.w)
+  })
+
+  it('§26 selected 车辆 HP 不被普通 marker 挤掉（Blocker 2 回归）', () => {
+    const sel = computeLabelLayout(
+      [item(1, 200, 200, 'Maus', 'P1', { hpVisible: true, hpValue: 3000, selected: true }),
+       item(2, 200, 240, 'Maus', 'P2', { hpVisible: true, hpValue: 2800 })],
+      { showTank: true, showPlayer: true, viewportW: vw, viewportH: vh })
+    expect(sel.get(1).hpHidden).toBe(false)
+    expect(sel.get(2).hpHidden).toBe(true)
   })
 })
 

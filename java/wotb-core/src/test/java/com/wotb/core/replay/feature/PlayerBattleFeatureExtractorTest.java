@@ -38,6 +38,16 @@ class PlayerBattleFeatureExtractorTest {
                 attacker, victim, null, null, damage, false);
     }
 
+    private static com.wotb.core.replay.event.ParticipantMappingEvent map(int seq, int eid, long aid) {
+        return new com.wotb.core.replay.event.ParticipantMappingEvent(seq, new ReplayTimestamp(seq, null), 8,
+                DecodeConfidence.EXACT, eid, aid);
+    }
+
+    private static com.wotb.core.replay.event.HealthChangedEvent hp(int seq, float time, int eid, int hp) {
+        return new com.wotb.core.replay.event.HealthChangedEvent(seq, new ReplayTimestamp(time, null), 7,
+                DecodeConfidence.EXACT, eid, hp, null, true);
+    }
+
     @Test
     void onlyProcessesRecorderEntity() {
         final int RECORDER_EID = 10;
@@ -62,9 +72,15 @@ class PlayerBattleFeatureExtractorTest {
         final int RECORDER_EID = 10;
         final int ENEMY_EID = 20;
         final var events = List.of(
+                map(0, RECORDER_EID, 1000L),
+                map(0, ENEMY_EID, 2000L),
+                map(0, 99, 999L),
                 dmg(1, 20f, RECORDER_EID, ENEMY_EID, 200),  // recorder 造成 200
                 dmg(2, 25f, ENEMY_EID, RECORDER_EID, 150),  // recorder 承受 150
-                dmg(3, 30f, RECORDER_EID, 99, 100)          // recorder 造成 100
+                dmg(3, 30f, RECORDER_EID, 99, 100),         // recorder 造成 100
+                hp(4, 19f, ENEMY_EID, 500), hp(5, 20f, ENEMY_EID, 300),       // 掉血 200
+                hp(6, 24f, RECORDER_EID, 500), hp(7, 25f, RECORDER_EID, 350), // 掉血 150
+                hp(8, 29f, 99, 400), hp(9, 30f, 99, 300)                      // 掉血 100
         );
         final var recon = buildRecon(events, RECORDER_EID);
         final var mapping = new RecorderEntityMapping(1000L, 1, RECORDER_EID, "Recorder", 1, 0, DecodeConfidence.EXACT);
@@ -113,7 +129,10 @@ class PlayerBattleFeatureExtractorTest {
     private static ReplayReconstruction buildRecon(List<? extends com.wotb.core.replay.event.ReplayEvent> events, int recorderEid) {
         final var state = BattleStateSnapshot.empty();
         return new ReplayReconstruction(null, null, 60f, 5f,
-                List.of(new BattleParticipant(1000L, "Recorder", 1, 0, "T-34", true)),
+                List.of(
+                        new BattleParticipant(1000L, "Recorder", 1, 0, "T-34", true),
+                        new BattleParticipant(2000L, "Enemy", 2, 20, "T-49", false),
+                        new BattleParticipant(999L, "Other", 2, 99, "T-44", false)),
                 List.copyOf(events), List.of(), state, null, null);
     }
 }

@@ -26,6 +26,7 @@ final class TeamEngagementExtractor {
 
     static List<TeamEngagementSummary> buildTeamEngagements(
             final List<DefaultTeamBattleFeatureExtractor.TimedTeamDamage> timedDamages,
+            final List<DefaultTeamBattleFeatureExtractor.AttributedHpLoss> teamLosses,
             final int perspectiveTeam
     ) {
         final List<DefaultTeamBattleFeatureExtractor.TimedTeamDamage> teamDamages = sortedDamageEvents(
@@ -41,21 +42,23 @@ final class TeamEngagementExtractor {
             if (damageGap(teamDamages.get(index - 1), teamDamages.get(index))
                     > ENGAGEMENT_GAP_SEC) {
                 result.add(buildTeamEngagementSegment(
-                        teamDamages.subList(segmentStart, index), perspectiveTeam));
+                        teamDamages.subList(segmentStart, index), teamLosses, perspectiveTeam));
                 segmentStart = index;
             }
         }
         result.add(buildTeamEngagementSegment(
-                teamDamages.subList(segmentStart, teamDamages.size()), perspectiveTeam));
+                teamDamages.subList(segmentStart, teamDamages.size()), teamLosses, perspectiveTeam));
         return List.copyOf(result);
     }
 
     static List<EngagementSummary> buildMemberEngagements(
             final List<DefaultTeamBattleFeatureExtractor.TimedTeamDamage> timedDamages,
+            final List<DefaultTeamBattleFeatureExtractor.AttributedHpLoss> teamLosses,
             final MemberIdentity memberId
     ) {
         final List<DefaultTeamBattleFeatureExtractor.TimedTeamDamage> memberDamage = timedDamages.stream()
-                .filter(td -> td.event().attacker().team() != td.event().victim().team())
+                .filter(td -> td.event().attacker() != null
+                        && td.event().attacker().team() != td.event().victim().team())
                 .filter(td -> memberId.matches(td.event().attacker())
                         || memberId.matches(td.event().victim()))
                 .toList();
@@ -66,11 +69,12 @@ final class TeamEngagementExtractor {
                 .orElse(0);
         return memberTeam == 0
                 ? List.of()
-                : buildEngagements(memberDamage, memberTeam, memberId);
+                : buildEngagements(memberDamage, teamLosses, memberTeam, memberId);
     }
 
     static List<EngagementSummary> buildEngagements(
             final List<DefaultTeamBattleFeatureExtractor.TimedTeamDamage> timedDamages,
+            final List<DefaultTeamBattleFeatureExtractor.AttributedHpLoss> teamLosses,
             final int perspectiveTeam,
             final MemberIdentity memberId
     ) {
@@ -84,12 +88,14 @@ final class TeamEngagementExtractor {
             if (damageGap(sorted.get(index - 1), sorted.get(index))
                     > ENGAGEMENT_GAP_SEC) {
                 result.add(buildEngagementSegment(
-                        sorted.subList(segmentStart, index), perspectiveTeam, memberId.accountId(), memberId));
+                        sorted.subList(segmentStart, index), teamLosses,
+                        perspectiveTeam, memberId.accountId(), memberId));
                 segmentStart = index;
             }
         }
         result.add(buildEngagementSegment(
-                sorted.subList(segmentStart, sorted.size()), perspectiveTeam, memberId.accountId(), memberId));
+                sorted.subList(segmentStart, sorted.size()), teamLosses,
+                perspectiveTeam, memberId.accountId(), memberId));
         return List.copyOf(result);
     }
 
@@ -112,10 +118,11 @@ final class TeamEngagementExtractor {
 
     static TeamEngagementSummary buildTeamEngagementSegment(
             final List<DefaultTeamBattleFeatureExtractor.TimedTeamDamage> timedEvents,
+            final List<DefaultTeamBattleFeatureExtractor.AttributedHpLoss> teamLosses,
             final int perspectiveTeam
     ) {
         final EngagementSummary base =
-                buildEngagementSegment(timedEvents, perspectiveTeam, null, null);
+                buildEngagementSegment(timedEvents, teamLosses, perspectiveTeam, null, null);
         final Map<Long, List<DefaultTeamBattleFeatureExtractor.TimedTeamDamage>> damageByTarget = new HashMap<>();
         final List<String> orderedTargets = new ArrayList<>();
         for (final DefaultTeamBattleFeatureExtractor.TimedTeamDamage td : timedEvents) {
@@ -179,6 +186,7 @@ final class TeamEngagementExtractor {
 
     static EngagementSummary buildEngagementSegment(
             final List<DefaultTeamBattleFeatureExtractor.TimedTeamDamage> timedEvents,
+            final List<DefaultTeamBattleFeatureExtractor.AttributedHpLoss> teamLosses,
             final int perspectiveTeam,
             final Long memberAccountId,
             final MemberIdentity memberIdentity
@@ -188,20 +196,9 @@ final class TeamEngagementExtractor {
         int dealt = 0;
         int received = 0;
         DecodeConfidence confidence = DecodeConfidence.EXACT;
+        // allies/enemies/confidence 来自事件级结构（时间/方向/身份）；dealt/received 用 loss 级聚合（§13）
         for (final DefaultTeamBattleFeatureExtractor.TimedTeamDamage td : timedEvents) {
             final DefaultTeamBattleFeatureExtractor.AttributedDamage damage = td.event();
-            final boolean attackerIsSubject = memberIdentity == null
-                    ? damage.attacker().team() == perspectiveTeam
-                    : memberIdentity.matches(damage.attacker());
-            final boolean victimIsSubject = memberIdentity == null
-                    ? damage.victim().team() == perspectiveTeam
-                    : memberIdentity.matches(damage.victim());
-            if (attackerIsSubject && damage.attacker().team() != damage.victim().team()) {
-                dealt += damage.event().damage();
-            }
-            if (victimIsSubject && damage.attacker().team() != damage.victim().team()) {
-                received += damage.event().damage();
-            }
             if (damage.attacker().team() == perspectiveTeam) {
                 allies.add(damage.attacker().accountId());
                 enemies.add(damage.victim().accountId());
@@ -213,9 +210,32 @@ final class TeamEngagementExtractor {
             confidence = DefaultTeamBattleFeatureExtractor.lowerConfidence(confidence, damage.attacker().confidence());
             confidence = DefaultTeamBattleFeatureExtractor.lowerConfidence(confidence, damage.victim().confidence());
         }
+        final double from = timedEvents.getFirst().battleRelativeSec();
+        final double to = timedEvents.getLast().battleRelativeSec();
+        for (final DefaultTeamBattleFeatureExtractor.AttributedHpLoss l : teamLosses) {
+            if (l.loss().toSec() < from - 1e-6 || l.loss().toSec() > to + 1e-6) {
+                continue;
+            }
+            final boolean attackerIsSubject = memberIdentity == null
+                    ? l.attacker() != null && l.attacker().team() == perspectiveTeam
+                    : memberIdentity.matches(l.attacker());
+            final boolean victimIsSubject = memberIdentity == null
+                    ? l.victim() != null && l.victim().team() == perspectiveTeam
+                    : memberIdentity.matches(l.victim());
+            final boolean crossTeam = l.attacker() == null
+                    || l.victim() == null
+                    || l.attacker().team() != l.victim().team();
+            if (attackerIsSubject && l.attacker() != null && l.victim() != null
+                    && l.attacker().team() != l.victim().team()) {
+                dealt += l.loss().hpLoss();
+            }
+            if (victimIsSubject && crossTeam) {
+                received += l.loss().hpLoss();
+            }
+        }
         return new EngagementSummary(
-                timedEvents.getFirst().battleRelativeSec(),
-                timedEvents.getLast().battleRelativeSec(),
+                (float) from,
+                (float) to,
                 allies.stream().sorted().toList(),
                 enemies.stream().sorted().toList(),
                 dealt,

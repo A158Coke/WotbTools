@@ -5,6 +5,7 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.TeamEntityMapper;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
@@ -139,6 +140,13 @@ class PointsSituationEvidenceTest {
         events.add(dmg(9, 43f, 999, 10, 300));    // 攻击者未映射（环境伤害）：排除
         events.add(dmg(10, 43.5f, 10, 10, 250));  // 自伤（进入车辆打自己）：排除
         events.add(dmg(11, 50f, 20, 10, 200));    // t=20 窗口外：不计入
+        // 权威 HP 链（victim eid=10 → 1001，从 2000 逐条递减），使每条 dmg 成为可 attribution 的掉血窗口
+        events.add(hp(12, 42.0f, 10, 2000));
+        events.add(hp(13, 42.5f, 10, 1600));   // 窗口内 2001→1001 400：计入
+        events.add(hp(14, 43.0f, 10, 1300));   // 窗口内 999→1001 300：攻击者未解析→排除
+        events.add(hp(15, 43.5f, 10, 1050));   // 窗口内 1001 自伤 250：排除
+        events.add(hp(16, 49.5f, 10, 1050));
+        events.add(hp(17, 50.0f, 10, 850));    // 窗口外（t=20）2001→1001 200：不计入
         final ReplayReconstruction recon = new ReplayReconstruction(null, null, 600f, 30f,
                 List.of(), events, List.of(), null, null, null);
 
@@ -155,6 +163,12 @@ class PointsSituationEvidenceTest {
                                    final int attackerEid, final int victimEid, final int amount) {
         return new DamageEvent(sequence, new ReplayTimestamp(rawClock, null), 8,
                 DecodeConfidence.EXACT, attackerEid, victimEid, null, null, amount, false);
+    }
+
+    private static HealthChangedEvent hp(final int sequence, final float rawClock,
+                                         final int entityId, final int currentHp) {
+        return new HealthChangedEvent(sequence, new ReplayTimestamp(rawClock, null), 7,
+                DecodeConfidence.EXACT, entityId, currentHp, null, true);
     }
 
     @Test

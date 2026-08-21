@@ -169,7 +169,11 @@ public final class ObservedMaxHp {
         player.entryHpSource = base != null ? EntryHpSource.BASE_FALLBACK : EntryHpSource.UNKNOWN;
     }
 
-    /** 每账号事件流受击总量（DamageEvent victim 聚合，用于覆盖判定）。 */
+    /**
+     * 每账号受击总量（§12/§13 权威 HP loss 口径，用于覆盖判定）：
+     * Type-8 rawProtocolValue 语义未证明，不得作为「事件流 received」与结算比较；
+     * 只有连续可信 Type-7 propId=3 掉血（含阵亡到 0）才反映真实承受伤害。
+     */
     private static Map<Long, Integer> observedReceivedByAccount(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping
@@ -178,15 +182,18 @@ public final class ObservedMaxHp {
         if (events == null || mapping == null) {
             return out;
         }
-        for (final ReplayEvent event : events) {
-            if (!(event instanceof DamageEvent damage) || damage.damage() <= 0) {
-                continue;
+        final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
+                com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
+                        events, mapping, 0.0, Double.MAX_VALUE);
+        for (final java.util.Map.Entry<Long,
+                List<com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss>> entry
+                : combat.lossesByVictim().entrySet()) {
+            int total = 0;
+            for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss l
+                    : entry.getValue()) {
+                total += l.hpLoss();
             }
-            final TeamEntityIdentity identity = mapping.identity(damage.victimEid());
-            if (identity == null || identity.accountId() <= 0) {
-                continue;
-            }
-            out.merge(identity.accountId(), damage.damage(), Integer::sum);
+            out.put(entry.getKey(), total);
         }
         return out;
     }

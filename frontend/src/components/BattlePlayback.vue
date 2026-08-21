@@ -41,6 +41,7 @@ import {
   zoomViewAt
 } from '../utils/battlePlayback'
 import {
+  MARKER_CORE_PX,
   PLAYER_FADE_MS,
   PLAYER_HIDE_MS,
   PLAYER_SHOW_MS,
@@ -1406,8 +1407,7 @@ function floatTeamClass(team) {
 const labelLayout = computed(() => {
   const W = mapWidth()
   if (!W || mapView.value.W <= 0) return new Map()
-  const coreSize = (typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-    && window.matchMedia('(max-width: 768px)').matches) ? 28 : 36
+  const coreSize = Number(mapEl.value?.querySelector('.pb-vehicle')?.offsetWidth) || MARKER_CORE_PX
   const items = vehicleStates.value.map((st) => {
     const p = markerScreen(st)
     if (!p) return null
@@ -1421,6 +1421,7 @@ const labelLayout = computed(() => {
       hpVisible: hpPrefs.showHp && hp != null,
       hpValue: hp ? hp.current : null,
       selected: selectedAccountId.value === st.vehicle.accountId,
+      recorder: st.recorder === true,
     }
   }).filter(Boolean)
   return computeLabelLayout(items, {

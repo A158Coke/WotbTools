@@ -10,7 +10,6 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
-import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.evidence.AiEvidence;
 import com.wotb.core.replay.evidence.EvidencePriority;
@@ -263,14 +262,11 @@ class TacticalReviewPromptBuilderTest {
 
     @Test
     void harnessPromptIncludesRecorderDamageWindowsFromEventStream() {
-        final ReplayReconstruction recon = new ReplayReconstruction(
-                null, null, 600f, 30f, List.of(),
-                List.<ReplayEvent>of(
-                        new DamageEvent(0, new ReplayTimestamp(35f, null), 8,
-                                DecodeConfidence.EXACT, 0, 0, 2001L, 1001L, 400, false),
-                        new DamageEvent(1, new ReplayTimestamp(38f, null), 8,
-                                DecodeConfidence.EXACT, 0, 0, 2002L, 1001L, 300, false)),
-                List.of(), null, null, null);
+        final ReplayReconstruction recon = DamageWindowFixture.recon(30f,
+                new DamageEvent(0, new ReplayTimestamp(35f, null), 8,
+                        DecodeConfidence.EXACT, 0, 0, 2001L, 1001L, 400, false),
+                new DamageEvent(1, new ReplayTimestamp(38f, null), 8,
+                        DecodeConfidence.EXACT, 0, 0, 2002L, 1001L, 300, false));
         final var prepared = TacticalReviewPromptBuilder.prepare(
                 prior(),
                 evidence(),
@@ -294,12 +290,9 @@ class TacticalReviewPromptBuilderTest {
 
     @Test
     void harnessPromptSuppressesDamageWindowNumbersWhenPartial() {
-        final ReplayReconstruction recon = new ReplayReconstruction(
-                null, null, 600f, 30f, List.of(),
-                List.<ReplayEvent>of(
-                        new DamageEvent(0, new ReplayTimestamp(35f, null), 8,
-                                DecodeConfidence.EXACT, 0, 0, 2001L, 1001L, 400, false)),
-                List.of(), null, null, null);
+        final ReplayReconstruction recon = DamageWindowFixture.recon(30f,
+                new DamageEvent(0, new ReplayTimestamp(35f, null), 8,
+                        DecodeConfidence.EXACT, 0, 0, 2001L, 1001L, 400, false));
         final PlayerBattleFeatureSet partial = new PlayerBattleFeatureSet(
                 List.of(),
                 List.of(new EngagementSummary(

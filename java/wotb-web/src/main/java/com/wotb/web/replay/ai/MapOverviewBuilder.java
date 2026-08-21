@@ -91,8 +91,16 @@ public final class MapOverviewBuilder {
                 .filter(DamageEvent.class::isInstance)
                 .map(DamageEvent.class::cast)
                 .toList();
+        // 战斗事实重建（§11–§17 唯一可信伤害源）：热力图伤害用权威 HP loss，不用 Type-8 raw
+        final double duration = battle.durationS != null && battle.durationS > 0
+                ? battle.durationS.doubleValue()
+                : Math.max(0.0, reconstruction.replayDurationSec());
+        final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
+                com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
+                        events, mapping,
+                        battleStart == null ? 0.0 : battleStart.doubleValue(), duration);
         final MapOverview.Heatmaps heatmaps = buildHeatmaps(
-                battle, mapping, positions, damages, friendlyTeam, profile, battleStart);
+                battle, mapping, positions, damages, friendlyTeam, profile, battleStart, combat);
         final List<MapOverview.Phase> phases = buildPhases(
                 damages, positions, battle, battleStart);
         final MapOverview.Playback playback = buildPlayback(
@@ -672,7 +680,8 @@ public final class MapOverviewBuilder {
             final List<DamageEvent> damages,
             final int friendlyTeam,
             final MapGridProfile profile,
-            final Float battleStartRawClockSec
+            final Float battleStartRawClockSec,
+            final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat
     ) {
         final int cells = profile.gridCells().size();
         final double[] friendlyDwell = new double[cells];
@@ -697,22 +706,33 @@ public final class MapOverviewBuilder {
             }
         }
 
-        for (final DamageEvent damage : damages) {
-            final TeamEntityIdentity victim = mapping.entitiesById().get(damage.victimEid());
-            if (victim == null || !victim.usable() || victim.team() <= 0) {
+        // 伤害热力按受击方位置落格（§12）：值 = 权威 HP loss（Type-7 推导，含无法归属的掉血——
+        // 掉血真实发生在 victim 身上，热力按 victim 位置刻画实际承受的伤害）；
+        // Type-8 rawProtocolValue 语义未证明，不得进热力。
+        for (final Map.Entry<Long, List<com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss>> entry
+                : combat.lossesByVictim().entrySet()) {
+            final List<Integer> entityIds = mapping.entityIdsByAccount()
+                    .getOrDefault(entry.getKey(), List.of());
+            if (entityIds.isEmpty()) {
                 continue;
             }
-            final Position pos = positions.nearest(
-                    damage.victimEid(), relativeSec(damage, battleStartRawClockSec));
-            if (pos == null) {
+            final Integer victimTeam = teamOfEntityIds(entityIds, mapping);
+            if (victimTeam == null || victimTeam <= 0) {
                 continue;
             }
-            final MapGridProfile.GridCell cell = profile.cellAt(pos.x, pos.z);
-            if (cell == null) {
-                continue;
+            final double[] damageArr = victimTeam == friendlyTeam ? friendlyDamage : enemyDamage;
+            for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss loss
+                    : entry.getValue()) {
+                final Position pos = nearestPosition(entityIds, positions, loss.toSec());
+                if (pos == null) {
+                    continue;
+                }
+                final MapGridProfile.GridCell cell = profile.cellAt(pos.x, pos.z);
+                if (cell == null) {
+                    continue;
+                }
+                damageArr[profile.gridCells().indexOf(cell)] += loss.hpLoss();
             }
-            final double[] damageArr = victim.team() == friendlyTeam ? friendlyDamage : enemyDamage;
-            damageArr[profile.gridCells().indexOf(cell)] += damage.damage();
         }
 
         final Map<Long, Double> deathSecByAccount = new HashMap<>();
@@ -795,6 +815,34 @@ public final class MapOverviewBuilder {
         }
         phases.add(new MapOverview.Phase("late", lateStart, battleEnd));
         return phases;
+    }
+
+    /** 账号 → 阵营（任一已解析实体）；无 → null。 */
+    private static Integer teamOfEntityIds(final List<Integer> entityIds,
+                                           final TeamEntityMapping mapping) {
+        for (final int eid : entityIds) {
+            final TeamEntityIdentity identity = mapping.identity(eid);
+            if (identity != null && identity.team() > 0) {
+                return identity.team();
+            }
+        }
+        return null;
+    }
+
+    /** 账号在 t 时刻最近可信位置（跨实体 re-entry 取最近）。 */
+    private static Position nearestPosition(final List<Integer> entityIds,
+                                            final Positions positions, final double t) {
+        Position best = null;
+        for (final int eid : entityIds) {
+            final Position p = positions.nearest(eid, t);
+            if (p == null) {
+                continue;
+            }
+            if (best == null || Math.abs(p.timeSec - t) < Math.abs(best.timeSec - t)) {
+                best = p;
+            }
+        }
+        return best;
     }
 
     private static List<Double> toList(final double[] values) {
