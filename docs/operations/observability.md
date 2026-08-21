@@ -393,13 +393,13 @@ event=ai_review_finished correlationId=... result=SUCCESS durationMs=...
 |---|---|---|
 | `ai_review_sse_opened` / `ai_review_sse_completed` | durationMs | SSE 生命周期（§53） |
 | `ai_review_started` | language, fileCount | 请求开始（§40） |
-| `ai_review_finished` | result=SUCCESS, durationMs | **唯一终态**（§54，exactly once） |
-| `ai_review_failed` | errorCode, exceptionClass, elapsedMs | 失败终态（§56） |
-| `ai_review_cancelled` | source=CANCELLED_WHILE_QUEUED / SSE_DISCONNECT | 取消（§52，INFO 非 ERROR） |
+| `ai_review_finished` | result=SUCCESS/FAILED/CANCELLED, errorCode（FAILED）, source（CANCELLED）, durationMs | **唯一终态，exactly once**（§54；PR #106 review：每个真正开始执行的 worker 请求恰好一次；FAILED 带稳定 errorCode，CANCELLED 带稳定 source） |
+| `ai_review_failed` | errorCode, exceptionClass, elapsedMs | 失败诊断事件（§56，随 FAILED 终态一起出现，非终态本身） |
+| `ai_review_cancelled` | source=CANCELLED_WHILE_QUEUED / SSE_DISCONNECT | 取消诊断事件（§52，INFO 非 ERROR，随 CANCELLED 终态一起出现） |
 | `ai_upstream_call_started` | stage, mode, attempt, model, responseFormat, thinking, maxOutputTokens, remainingBudgetSec | 每次上游调用（§42） |
-| `ai_upstream_call_completed` | attempt, durationMs, promptTokens, completionTokens, totalTokens, providerStatus | 上游成功（§42） |
-| `ai_upstream_call_failed` | attempt, errorCode, providerStatus, retryable | 上游终态失败（§42/§56） |
-| `ai_transport_retry` | stage, transportAttempt, reason, backoffMs | 传输层退避重试（§43，与 validation retry 区分） |
+| `ai_upstream_call_completed` | attempt, durationMs, promptTokens, completionTokens, totalTokens | 上游成功（§42；PR #106 review：不记录硬编码 providerStatus——成功响应无真实 transport status metadata，真实 status 只在失败事件） |
+| `ai_upstream_call_failed` | attempt, errorCode, providerStatus, retryable | 上游终态失败（§42/§56；providerStatus 为异常携带的真实 status） |
+| `ai_transport_retry` | stage, retryNumber, reason, backoffMs | 传输层退避重试（§43，与 validation retry 区分；PR #106 review：retryNumber 为 1 基重试序号，retryNumber=1 → 下一次上游调用 attempt=2） |
 | `ai_prompt_budget` | stage, attempt, estimatedInputTokens, maxOutputTokens, contextWindowTokens, remainingBudgetSec | 发送前预算（§49，token amplification 观测） |
 | `team_review_grounding_ready` | factsTotal, deathFacts, aliveTransitions, focusWindows, positionSnapshots, enemyPositionFacts | grounding 事实计数（§48） |
 | `team_review_validation_attempt_completed` | attempt, promptTokens, completionTokens, cumulativePromptTokens, cumulativeCompletionTokens | 每轮 token 累计（§50） |

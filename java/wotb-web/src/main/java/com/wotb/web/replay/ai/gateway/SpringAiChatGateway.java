@@ -327,6 +327,7 @@ public class SpringAiChatGateway implements AiChatGateway {
                         failure = new AiUpstreamException("AI_TIMEOUT", null, correlationId, failure);
                     } else {
                         retryCount++;
+                        // retryCount 已自增：第一次重试 → retryNumber=1，下一次上游调用 attempt=2。
                         logTransportRetry(request, correlationId, retryCount, failure, backoffMillis);
                         try {
                             sleepQuietly(backoffMillis, failure);
@@ -963,6 +964,11 @@ public class SpringAiChatGateway implements AiChatGateway {
                 "remainingBudgetSec", nanosToSec(remainingNanos)));
     }
 
+    /**
+     * 上游调用成功（PR #106 review）：不记录 providerStatus=200 这类硬编码常量——Spring AI
+     * 成功响应不暴露 HTTP status metadata，伪 observation 会误导排障；真实 provider status
+     * 只在失败事件（ai_upstream_call_failed）从异常元数据中提取。
+     */
     private void logUpstreamCompleted(final String correlationId, final int attempt,
                                       final long attemptStartNanos,
                                       final AiChatResponse result) {
@@ -972,22 +978,24 @@ public class SpringAiChatGateway implements AiChatGateway {
                         (nanoTimeSource.getAsLong() - attemptStartNanos) / NANOS_PER_MILLI),
                 "promptTokens", result.inputTokens(),
                 "completionTokens", result.outputTokens(),
-                "totalTokens", result.totalTokens(),
-                "providerStatus", 200));
+                "totalTokens", result.totalTokens()));
     }
 
     /**
      * Transport retry（§43 与 validation retry 区分）：上游 429/5xx/连接失败后的退避重试。
      * 由 Gateway 单点执行；业务层的 validation retry 用 ai_validation_retry 事件。
+     * <p>字段语义（PR #106 review）：{@code retryNumber} = 本次退避重试的 1 基序号
+     * （retryNumber=1 表示第一次重试，其后的下一次上游调用是 {@code attempt=2}）；
+     * 不使用易歧义的 {@code transportAttempt}（该值常被误读为刚失败的 attempt 号）。</p>
      */
     private void logTransportRetry(final AiChatRequest request, final String correlationId,
-                                   final int transportAttempt,
+                                   final int retryNumber,
                                    final AiUpstreamException failure,
                                    final long backoffMillis) {
         LOGGER.warn(AiReviewEventLog.line("ai_transport_retry", correlationId,
                 "stage", stageOf(request.analysisMode()),
                 "mode", request.analysisMode(),
-                "transportAttempt", transportAttempt,
+                "retryNumber", retryNumber,
                 "reason", failure.code(),
                 "backoffMs", backoffMillis));
     }
