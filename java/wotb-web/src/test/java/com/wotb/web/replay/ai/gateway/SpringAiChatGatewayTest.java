@@ -66,7 +66,7 @@ class SpringAiChatGatewayTest {
     @BeforeEach
     void setUp() {
         chatModel = mock(ChatModel.class);
-        gateway = new SpringAiChatGateway(chatModel, "deepseek-v4-pro", null,
+        gateway = new SpringAiChatGateway(chatModel, "deepseek-v4-flash", null,
                 new AiRetryPolicy(3, 0, 0, 2.0));
     }
 
@@ -84,7 +84,7 @@ class SpringAiChatGatewayTest {
         when(chatModel.call(any(Prompt.class))).thenReturn(okResponse("hello"));
         gateway.chat(request());
         final OpenAiChatOptions options = capturedOptions();
-        assertEquals("deepseek-v4-pro", options.getModel());
+        assertEquals("deepseek-v4-flash", options.getModel());
         assertEquals(Double.valueOf(0.7), options.getTemperature());
         assertEquals(Integer.valueOf(4096), options.getMaxTokens());
         assertEquals(Map.of("type", "enabled"), options.getExtraBody().get("thinking"));
@@ -103,12 +103,12 @@ class SpringAiChatGatewayTest {
     @Test
     void returnsNormalResponseWithUsageAndFinishReason() {
         when(chatModel.call(any(Prompt.class))).thenReturn(
-                response("tactical review", "deepseek-v4-pro",
+                response("tactical review", "deepseek-v4-flash",
                         new DefaultUsage(11, 22, 33), "stop"));
         final AiChatResponse result = gateway.chat(request());
         assertEquals("tactical review", result.completionText());
         assertEquals("DeepSeek", result.provider());
-        assertEquals("deepseek-v4-pro", result.model());
+        assertEquals("deepseek-v4-flash", result.model());
         assertEquals(11, result.inputTokens());
         assertEquals(22, result.outputTokens());
         assertEquals(33, result.totalTokens());
@@ -126,7 +126,7 @@ class SpringAiChatGatewayTest {
                 "prompt_cache_hit_tokens", JsonValue.from(3),
                 "prompt_cache_miss_tokens", JsonValue.from(5)));
         when(chatModel.call(any(Prompt.class))).thenReturn(
-                response("hello", "deepseek-v4-pro",
+                response("hello", "deepseek-v4-flash",
                         new DefaultUsage(11, 22, 33, nativeUsage), "stop"));
         final AiChatResponse result = gateway.chat(request());
         assertEquals(7, result.reasoningTokens());
@@ -145,7 +145,7 @@ class SpringAiChatGatewayTest {
     @Test
     void mapsBlankContentToAiEmptyResponse() {
         when(chatModel.call(any(Prompt.class))).thenReturn(
-                response(" ", "deepseek-v4-pro", null, "stop"));
+                response(" ", "deepseek-v4-flash", null, "stop"));
         final AiUpstreamException e = assertThrows(
                 AiUpstreamException.class, () -> gateway.chat(request()));
         assertEquals("AI_EMPTY_RESPONSE", e.code());
@@ -340,7 +340,7 @@ class SpringAiChatGatewayTest {
     @Test
     void doesNotRetryEmptyOrInvalidCompletion() {
         when(chatModel.call(any(Prompt.class)))
-                .thenReturn(response(" ", "deepseek-v4-pro", null, "stop"));
+                .thenReturn(response(" ", "deepseek-v4-flash", null, "stop"));
         final AiUpstreamException e = assertThrows(
                 AiUpstreamException.class, () -> gateway.chat(request()));
         assertEquals("AI_EMPTY_RESPONSE", e.code());
@@ -350,7 +350,7 @@ class SpringAiChatGatewayTest {
     @Test
     void missingApiKeyProducesUnconfiguredGateway() {
         final SpringAiChatGateway unconfigured = SpringAiChatGateway.fromProperties(
-                properties("", "https://api.deepseek.com", "deepseek-v4-pro"), null);
+                properties("", "https://api.deepseek.com", "deepseek-v4-flash"), null);
         assertFalse(unconfigured.isConfigured());
         assertThrows(AiNotConfiguredException.class,
                 () -> unconfigured.chat(request()));
@@ -359,12 +359,12 @@ class SpringAiChatGatewayTest {
     @Test
     void customModelAndBaseUrlAreAppliedFromProperties() {
         final SpringAiChatGateway configured = SpringAiChatGateway.fromProperties(
-                properties("sk-test", "https://custom.example.com", "deepseek-v4-pro"), null);
+                properties("sk-test", "https://custom.example.com", "deepseek-v4-flash"), null);
         assertTrue(configured.isConfigured());
         final OpenAiChatModel model = (OpenAiChatModel) configured.chatModel();
         assertEquals("https://custom.example.com", model.getOptions().getBaseUrl());
         assertEquals("sk-test", model.getOptions().getApiKey());
-        assertEquals("deepseek-v4-pro", model.getOptions().getModel());
+        assertEquals("deepseek-v4-flash", model.getOptions().getModel());
         assertEquals(0, model.getOptions().getMaxRetries());
     }
 
@@ -372,9 +372,9 @@ class SpringAiChatGatewayTest {
     void customModelStringIsForwardedPerCall() {
         when(chatModel.call(any(Prompt.class))).thenReturn(okResponse("hello"));
         gateway.chat(new AiChatRequest("system-prompt", "user-prompt",
-                "deepseek-v4-pro", null, 4096, true, "max",
+                "deepseek-v4-flash", null, 4096, true, "max",
                 "corr-1", "SINGLE_PLAYER_BATTLE"));
-        assertEquals("deepseek-v4-pro", capturedOptions().getModel());
+        assertEquals("deepseek-v4-flash", capturedOptions().getModel());
     }
 
     private static AiChatRequest request() {
@@ -383,7 +383,7 @@ class SpringAiChatGatewayTest {
 
     private static AiChatRequest request(final boolean thinkingEnabled, final String reasoningEffort) {
         return new AiChatRequest("system-prompt", "user-prompt",
-                "deepseek-v4-pro", 0.7, 4096, thinkingEnabled, reasoningEffort,
+                "deepseek-v4-flash", 0.7, 4096, thinkingEnabled, reasoningEffort,
                 "corr-1", "SINGLE_PLAYER_BATTLE");
     }
 
@@ -413,7 +413,7 @@ class SpringAiChatGatewayTest {
     }
 
     private static ChatResponse okResponse(final String text) {
-        return response(text, "deepseek-v4-pro", new DefaultUsage(11, 22, 33), "stop");
+        return response(text, "deepseek-v4-flash", new DefaultUsage(11, 22, 33), "stop");
     }
 
     private static ChatResponse response(final String text, final String model,

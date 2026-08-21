@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+### Changed
+- **AI 模型切回 deepseek-v4-flash（官方稳定别名）**：`AI_MODEL` 默认值从
+  `deepseek-v4-pro` 统一切回 `deepseek-v4-flash`——官方稳定别名直接调用最新 Flash 版本，
+  调用方式不变，不使用带日期的显示名（`application.yml` / `.env.example` /
+  `docker-compose.prod.yml` / `docker/online/docker-compose.yml` / `deploy.yml` workflow /
+  `docs/architecture/ai-review.md` / gateway 测试字面量同步）；已显式设置 `AI_MODEL` 的
+  环境以环境值为准（GitHub Repository Variable 优先级最高，若仍为 `deepseek-v4-pro` 需人工
+  改为 `deepseek-v4-flash` 或删除该 Variable，代码无法覆盖）。
+
 ### Added
 - **Team AI Review 启用 DeepSeek 官方 JSON Output（Team Call #2）**：
   ① **输出格式契约**——`AiChatRequest` 新增 `AiResponseFormat`（TEXT/JSON_OBJECT，默认 TEXT，
