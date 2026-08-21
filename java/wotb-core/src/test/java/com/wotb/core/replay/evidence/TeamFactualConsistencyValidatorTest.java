@@ -879,4 +879,42 @@ class TeamFactualConsistencyValidatorTest {
         final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
         assertTrue(hasCheck(conflicts, "OUTPUT"), "空正文必须 FAIL: " + conflicts);
     }
+    // ===== docs/current-plan.md §47：conflict reasonCode 机器分类 =====
+
+    @Test
+    void unknownEvidenceConflictCarriesReasonCode() {
+        // DEATH claim 引用不存在的证据 E999 → BINDING/UNKNOWN_EVIDENCE（§47 首要排障信号）
+        final TeamReviewEnvelope env = envelope(
+                new TeamReviewEnvelope.PrimaryDiagnosis("主判断", "理由", List.of()),
+                "## 团队复盘\n\nWildCat 在1分52秒阵亡。",
+                List.of(new TeamReviewEnvelope.Claim(
+                        "WildCat 在1分52秒阵亡", List.of("E999"), "DEATH", 112.0, null, null,
+                        "WildCat", null, null, null, null, 1L)));
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertTrue(conflicts.stream().anyMatch(c -> "BINDING".equals(c.checkId())
+                        && "UNKNOWN_EVIDENCE".equals(c.reasonCode())),
+                "引用不存在证据必须携带 reasonCode=UNKNOWN_EVIDENCE: " + conflicts);
+    }
+
+    @Test
+    void hardFactConflictCarriesUnsupportedHardFactReason() {
+        // V6 无证据硬事实 → reasonCode=UNSUPPORTED_HARD_FACT
+        final TeamReviewEnvelope env = envelope(
+                "这波对方所有车辆都拥有直接炮线。");
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertTrue(conflicts.stream().anyMatch(c -> "V6".equals(c.checkId())
+                        && "UNSUPPORTED_HARD_FACT".equals(c.reasonCode())),
+                "V6 硬事实必须携带 reasonCode=UNSUPPORTED_HARD_FACT: " + conflicts);
+    }
+
+    @Test
+    void temporalOwnershipConflictCarriesTemporalOwnershipReason() {
+        // V1 时间归属（2 参构造推断）→ reasonCode=TEMPORAL_OWNERSHIP
+        final TeamReviewEnvelope env = envelope(
+                "1分49秒至2分08秒这段本队死了WildCat、Azusa、FFFNuit。");
+        final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
+        assertTrue(conflicts.stream().anyMatch(c -> "V1".equals(c.checkId())
+                        && "TEMPORAL_OWNERSHIP".equals(c.reasonCode())),
+                "V1 必须携带 reasonCode=TEMPORAL_OWNERSHIP: " + conflicts);
+    }
 }

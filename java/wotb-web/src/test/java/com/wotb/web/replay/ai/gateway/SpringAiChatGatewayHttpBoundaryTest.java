@@ -266,4 +266,44 @@ class SpringAiChatGatewayHttpBoundaryTest {
 
     private record CapturedRequest(String path, String authorization, String body) {
     }
+    // ===== docs/current-plan.md §24：response_format 请求体边界契约 =====
+
+    @Test
+    void jsonObjectResponseFormatSendsResponseFormatInRequestBody() throws Exception {
+        final SpringAiChatGateway gateway = gateway();
+        gateway.chat(new AiChatRequest(
+                "system-instructions", "player-evidence", "deepseek-v4-pro",
+                null, 4096, true, "max", "corr-json", "SINGLE_TEAM_BATTLE", 315,
+                AiResponseFormat.JSON_OBJECT));
+
+        final CapturedRequest captured = requests.getFirst();
+        final JsonNode body = new ObjectMapper().readTree(captured.body());
+        assertTrue(body.has("response_format"),
+                "JSON_OBJECT 请求必须携带 response_format: " + captured.body());
+        assertEquals("json_object", body.get("response_format").get("type").asText(),
+                "response_format.type 必须为 json_object");
+    }
+
+    @Test
+    void textResponseFormatOmitsResponseFormatFromRequestBody() throws Exception {
+        final SpringAiChatGateway gateway = gateway();
+        gateway.chat(new AiChatRequest(
+                "system-instructions", "player-evidence", "deepseek-v4-pro",
+                null, 4096, true, "max", "corr-text", "SINGLE_PLAYER_BATTLE", 315,
+                AiResponseFormat.TEXT));
+
+        final CapturedRequest captured = requests.getFirst();
+        final JsonNode body = new ObjectMapper().readTree(captured.body());
+        assertFalse(body.has("response_format"),
+                "TEXT 请求不得携带 response_format: " + captured.body());
+    }
+
+    @Test
+    void defaultResponseFormatIsText() {
+        // 兼容构造器（无 responseFormat 参数）必须保持 TEXT：存量请求不进入 JSON mode（§6/§23）。
+        final AiChatRequest legacy = new AiChatRequest(
+                "system-instructions", "player-evidence", "deepseek-v4-pro",
+                null, 4096, true, "max", "corr-legacy", "SINGLE_PLAYER_BATTLE");
+        assertEquals(AiResponseFormat.TEXT, legacy.responseFormat());
+    }
 }

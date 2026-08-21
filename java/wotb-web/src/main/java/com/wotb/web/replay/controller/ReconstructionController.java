@@ -10,6 +10,7 @@ import com.wotb.core.processing.ReplayBatchProcessingResult;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.web.replay.ai.AiReplayReviewService;
+import com.wotb.web.replay.ai.AiReviewEventLog;
 import com.wotb.web.replay.ai.AiReviewStreamListener;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
 import com.wotb.web.replay.ai.AllowedLanguage;
@@ -27,6 +28,8 @@ import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import com.wotb.web.replay.exception.AiReviewBusyException;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import com.wotb.web.replay.metrics.ReplayUsageMetrics;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -57,6 +60,8 @@ import java.util.concurrent.RejectedExecutionException;
 @RestController
 @CrossOrigin(origins = "*")
 public class ReconstructionController {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ReconstructionController.class);
 
     private final DefaultReplayProcessingFacade processingFacade;
     private final AiReplayReviewService reviewService;
@@ -135,6 +140,8 @@ public class ReconstructionController {
         // CAS 一次性翻转，重复 cancel 无副作用）。
         emitter.onTimeout(() -> cancellationRegistry.cancel(requestId));
         emitter.onError(error -> cancellationRegistry.cancel(requestId));
+        // docs/current-plan.md §53：SSE 生命周期。
+        LOGGER.info(AiReviewEventLog.line("ai_review_sse_opened", requestId));
         try {
             workerExecutor.execute(() -> runAnalysis(requestId, cancellation, emitter, writer, files, allowedLanguage));
         } catch (final RejectedExecutionException e) {
@@ -162,14 +169,22 @@ public class ReconstructionController {
                              final MultipartFile[] files,
                              final AllowedLanguage language) {
         AiRequestContext.set(requestId, cancellation);
+        final long workerStartNanos = System.nanoTime();
         try {
             // queued cancellation check：任务在队列中等待期间被取消（客户端断开 /
             // cancel 端点）后获取 worker 时，不调 Replay processing、不调 AI Gateway、
             // 不向已断开的客户端输出 error，直接 complete 并清理。
             if (cancellation.isCancelled()) {
+                LOGGER.info(AiReviewEventLog.line("ai_review_cancelled", requestId,
+                        "source", "CANCELLED_WHILE_QUEUED"));
                 quietComplete(emitter);
                 return;
             }
+            // docs/current-plan.md §40：AI Review 生命周期开始（只记录低基数 metadata，
+            // 不记录文件名/上传内容；workerQueueWaitMs 见 worker executor 的 debug 日志）。
+            LOGGER.info(AiReviewEventLog.line("ai_review_started", requestId,
+                    "language", language == null ? "N/A" : language.code(),
+                    "fileCount", files == null ? 0 : files.length));
             final AnalyzeResponse response = reviewService.analyzeStreaming(
                     files, language, new AiReviewStreamListener() {
                         @Override
@@ -192,15 +207,28 @@ public class ReconstructionController {
                     });
             writer.done(response);
             emitter.complete();
+            // docs/current-plan.md §53/§54：SSE 完成 + 终态（exactly once）。
+            LOGGER.info(AiReviewEventLog.line("ai_review_sse_completed", requestId,
+                    "durationMs", elapsedMillis(workerStartNanos)));
+            LOGGER.info(AiReviewEventLog.line("ai_review_finished", requestId,
+                    "result", "SUCCESS",
+                    "durationMs", elapsedMillis(workerStartNanos)));
         } catch (final ClientDisconnectedException e) {
             // 客户端已断开：终止上游调用（cancel 端点语义）；emitter 已由容器以
             // error 终止，无需再主动 complete（finally 完成上下文与 registry 清理）。
             cancellationRegistry.cancel(requestId);
+            LOGGER.info(AiReviewEventLog.line("ai_review_cancelled", requestId,
+                    "source", "SSE_DISCONNECT"));
         } catch (final RuntimeException | IOException e) {
             // 流中途失败（含流尚未开始的数据校验失败）：一律以 error 事件传达
             // 稳定错误码（客户端断开时静默），HTTP 层面已返回 200 + SseEmitter。
+            final String errorCode = errorCodeOf(e);
+            LOGGER.warn(AiReviewEventLog.line("ai_review_failed", requestId,
+                    "errorCode", errorCode,
+                    "exceptionClass", e.getClass().getSimpleName(),
+                    "elapsedMs", elapsedMillis(workerStartNanos)));
             try {
-                writer.error(errorCodeOf(e));
+                writer.error(errorCode);
             } catch (final IOException | IllegalStateException ignored) {
                 // 客户端同时断开（写入失败 / emitter 已终止）：无意义，静默。
             }
@@ -273,6 +301,10 @@ public class ReconstructionController {
             return message != null && !message.isBlank() ? message : "BAD_REQUEST";
         }
         return "AI_UPSTREAM_UNAVAILABLE";
+    }
+
+    private static long elapsedMillis(final long startNanos) {
+        return Math.max(0L, (System.nanoTime() - startNanos) / 1_000_000L);
     }
 
     /**

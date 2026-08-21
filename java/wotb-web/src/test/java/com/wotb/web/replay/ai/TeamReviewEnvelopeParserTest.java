@@ -4,8 +4,10 @@ import com.wotb.core.replay.evidence.TeamReviewEnvelope;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 
@@ -245,5 +247,122 @@ class TeamReviewEnvelopeParserTest {
                         + "\"evidenceIds\":[\"E109\"],\"text\":\"SPHT last seen in region 6\"");
         assertNull(TeamReviewEnvelopeParser.parse(json),
                 "subjectAccountId 为字符串必须 reject（JSON number）");
+    }
+    // ===== docs/current-plan.md §44/§45：可诊断 ParseResult + 稳定失败分类 =====
+
+    @Test
+    void parseDetailedReturnsOkWithEnvelope() {
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(VALID);
+        assertFalse(result.failed());
+        assertNotNull(result.envelope());
+        assertNull(result.failureReason());
+    }
+
+    @Test
+    void parseDetailedClassifiesEmptyOutput() {
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed("   ");
+        assertTrue(result.failed());
+        assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.EMPTY_OUTPUT, result.failureReason());
+    }
+
+    @Test
+    void parseDetailedClassifiesNotJson() {
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed("team review 自由文本");
+        assertTrue(result.failed());
+        assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.INVALID_JSON, result.failureReason());
+    }
+
+    @Test
+    void parseDetailedClassifiesMissingDiagnosis() {
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(
+                "{\"reviewMarkdown\":\"## 团队复盘\\n\\n内容\"}");
+        assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.MISSING_PRIMARY_DIAGNOSIS, result.failureReason());
+    }
+
+    @Test
+    void parseDetailedClassifiesMissingReviewMarkdown() {
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(
+                "{\"primaryDiagnosis\":{\"title\":\"t\",\"reasoning\":\"r\"}}");
+        assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.MISSING_REVIEW_MARKDOWN, result.failureReason());
+    }
+
+    @Test
+    void parseDetailedClassifiesInvalidClaimsShape() {
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(
+                "{\"primaryDiagnosis\":{\"title\":\"t\",\"reasoning\":\"r\"},"
+                        + "\"reviewMarkdown\":\"## 团队复盘\\n\\n内容\",\"claims\":{}}");
+        assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.INVALID_CLAIMS, result.failureReason());
+    }
+
+    @Test
+    void parseDetailedClassifiesUnknownClaimType() {
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(
+                "{\"primaryDiagnosis\":{\"title\":\"t\",\"reasoning\":\"r\"},"
+                        + "\"reviewMarkdown\":\"## 团队复盘\\n\\n内容\","
+                        + "\"claims\":[{\"text\":\"x\",\"claimType\":\"LOS\"}]}");
+        assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.UNKNOWN_CLAIM_TYPE, result.failureReason());
+    }
+
+    @Test
+    void parseDetailedClassifiesInvalidMachineFieldType() {
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(claimJson(
+                "\"claimType\":\"DEATH\",\"subject\":\"WildCat\",\"timeSec\":\"112\","
+                        + "\"evidenceIds\":[\"E101\"],\"text\":\"died at 112\""));
+        assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.INVALID_MACHINE_FIELD_TYPE, result.failureReason());
+    }
+
+    @Test
+    void parseDetailedClassifiesMissingRequiredMachineField() {
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(claimJson(
+                "\"claimType\":\"DEATH\",\"subject\":\"WildCat\",\"evidenceIds\":[\"E101\"],"
+                        + "\"text\":\"WildCat died\""));
+        assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.MISSING_REQUIRED_MACHINE_FIELD, result.failureReason());
+    }
+
+    @Test
+    void parseDetailedClassifiesTooManyClaims() {
+        final StringBuilder sb = new StringBuilder();
+        sb.append("{\"primaryDiagnosis\":{\"title\":\"t\",\"reasoning\":\"r\"},")
+                .append("\"reviewMarkdown\":\"## 团队复盘\\n\\n内容\",\"claims\":[");
+        for (int i = 0; i < TeamReviewEnvelopeParser.MAX_CLAIMS + 1; i++) {
+            if (i > 0) sb.append(',');
+            sb.append("{\"text\":\"c").append(i).append("\",\"claimType\":\"TACTICAL\"}");
+        }
+        sb.append("]}");
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(sb.toString());
+        assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.TOO_MANY_CLAIMS, result.failureReason());
+    }
+
+    @Test
+    void parseDetailedClassifiesTooManyEvidenceIds() {
+        final StringBuilder ids = new StringBuilder();
+        for (int i = 0; i <= TeamReviewEnvelopeParser.MAX_IDS_PER_CLAIM; i++) {
+            if (i > 0) ids.append(',');
+            ids.append("\"E").append(100 + i).append("\"");
+        }
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(claimJson(
+                "\"claimType\":\"DEATH\",\"subject\":\"WildCat\",\"timeSec\":112.4,"
+                        + "\"evidenceIds\":[" + ids + "],\"text\":\"WildCat died at 112 seconds\""));
+        assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.TOO_MANY_EVIDENCE_IDS, result.failureReason());
+    }
+
+    /** docs/current-plan.md §26：合法 JSON 但业务 schema 违反 → parser 仍 FAIL（JSON syntax ≠ business schema）。 */
+    @Test
+    void jsonModeTypicalResponseWithWrongClaimsTypeFails() {
+        final String wrong = "{\"primaryDiagnosis\": {\"title\": \"t\", \"reasoning\": \"r\"},"
+                + "\"reviewMarkdown\": \"...\",\"claims\": \"wrong\"}";
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(wrong);
+        assertTrue(result.failed(), "合法 JSON 但 claims 类型错误仍必须 FAIL（fail-close）");
+        assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.INVALID_CLAIMS, result.failureReason());
+    }
+
+    /** docs/current-plan.md §26：官方 JSON mode 典型响应正常解析 PASS。 */
+    @Test
+    void jsonModeTypicalResponseParsesPass() {
+        final String typical = "{\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
+                + "\"reviewMarkdown\":\"## 团队复盘\\n\\n这是一段复盘。\",\"claims\":[]}";
+        final TeamReviewEnvelopeParser.ParseResult result = TeamReviewEnvelopeParser.parseDetailed(typical);
+        assertFalse(result.failed());
+        assertNotNull(result.envelope());
     }
 }

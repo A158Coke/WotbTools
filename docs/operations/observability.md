@@ -345,6 +345,91 @@ sum by (type) (rate(wotb_ai_review_errors_total[5m]))
 `AI_TIMEOUT`、`AI_CANCELLED`（客户端取消，上游调用被中断，不产生新请求）、`AI_UPSTREAM_UNAVAILABLE`、`AI_INVALID_REQUEST`、`AI_AUTHENTICATION_ERROR`、`AI_RATE_LIMITED`、`AI_CONTEXT_TOO_LARGE`、`AI_RESPONSE_INVALID`、`AI_EMPTY_RESPONSE`。
 
 > **AI 全链路超时与无效消耗**：整体 deadline 默认 1100s（团队 3 次 AI 调用 + 余量，`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）→ 前端 analyze 安全超时 1100s → 容器 nginx `/api/replay/analyze` 1120s → 后端 AI 单次预算 `AI_CALL_TIMEOUT_SEC=315s` + 解析余量。**host 级 Caddy/Nginx 反代必须允许 ≥1120s**（Nginx 默认 60s 会提前 504，用户重试即产生重复 API 消耗）。取消语义：**应用内路由切换因 `App.vue` 的 `<KeepAlive>` 缓存 AI 复盘页而不会取消进行中的复盘**（SSE 流继续）；只有**手动取消按钮、关闭/刷新浏览器页面（`beforeunload`）或前端安全超时**才会经 `POST /api/replay/analyze/cancel` 中断 in-flight 上游调用。`AI_TIMEOUT` 不再自动重试（上游可能已计费）。Broken pipe 已在 `GlobalExceptionHandler` 降级为 WARN，不再产生 Unhandled exception 堆栈。
+### AI Review 全链路事件日志（按 correlationId 追踪）
+
+> 随 AI Review JSON Output 任务（docs/current-plan.md §38-§60）落地：AI Review 全链路结构化事件日志，
+> 统一格式 `event=<eventName> correlationId=<id> key=value key=value`，与 logstash structured logging 兼容，
+> Loki 可直接按字段过滤。**一次 AI Review 从进入 backend 到结束可用单个 correlationId 重建完整时间线**
+>（correlationId 即前端 cancel 用的请求 id，见 `ReconstructionController`）。
+>
+> 日志纪律（§57）：只记录低基数 metadata——严禁 prompt / completion / reviewMarkdown / API key /
+> Authorization / 回放原始内容 / 用户上传文件内容 / 明文昵称（身份用 account hash / vehicle id）。
+
+#### 追一单
+
+```bash
+docker compose logs wotb-backend --since 30m 2>&1 | grep "correlationId=<id>"
+```
+
+或 Loki：
+
+```logql
+{container_name="wotb-backend"} | json | message=~"correlationId=<id>.*"
+```
+
+典型一条成功时间线（team 模式）：
+
+```text
+event=ai_review_sse_opened correlationId=...
+event=ai_review_started correlationId=... language=ZH fileCount=1
+event=ai_upstream_call_started correlationId=... stage=PRE_BATTLE mode=PRE_BATTLE_STRATEGIC_PRIOR attempt=1 responseFormat=TEXT
+event=ai_upstream_call_completed correlationId=... attempt=1 promptTokens=... completionTokens=...
+event=team_review_grounding_ready correlationId=... factsTotal=... deathFacts=...
+event=ai_prompt_budget correlationId=... stage=TEAM_CALL_2 attempt=1 estimatedInputTokens=... maxOutputTokens=...
+event=ai_upstream_call_started correlationId=... stage=TEAM_CALL_2 attempt=1 responseFormat=JSON_OBJECT
+event=team_review_validation_attempt_completed correlationId=... attempt=1 promptTokens=... cumulativePromptTokens=...
+event=team_review_parse_result correlationId=... attempt=1 responseFormat=JSON_OBJECT result=PASS
+event=team_review_validation correlationId=... attempt=1 result=FAIL conflictCount=2 checks=BINDING,V5
+event=ai_validation_retry correlationId=... stage=TEAM_CALL_2 validationAttempt=2 reason=VALIDATION_FAILED
+event=team_review_validation correlationId=... attempt=2 result=PASS conflictCount=0
+event=team_review_completed correlationId=... validationAttempts=2 totalPromptTokens=... result=PASS
+event=ai_review_sse_completed correlationId=... durationMs=...
+event=ai_review_finished correlationId=... result=SUCCESS durationMs=...
+```
+
+#### 事件清单（低基数，禁止高基数字段）
+
+| event | 关键字段 | 含义 |
+|---|---|---|
+| `ai_review_sse_opened` / `ai_review_sse_completed` | durationMs | SSE 生命周期（§53） |
+| `ai_review_started` | language, fileCount | 请求开始（§40） |
+| `ai_review_finished` | result=SUCCESS, durationMs | **唯一终态**（§54，exactly once） |
+| `ai_review_failed` | errorCode, exceptionClass, elapsedMs | 失败终态（§56） |
+| `ai_review_cancelled` | source=CANCELLED_WHILE_QUEUED / SSE_DISCONNECT | 取消（§52，INFO 非 ERROR） |
+| `ai_upstream_call_started` | stage, mode, attempt, model, responseFormat, thinking, maxOutputTokens, remainingBudgetSec | 每次上游调用（§42） |
+| `ai_upstream_call_completed` | attempt, durationMs, promptTokens, completionTokens, totalTokens, providerStatus | 上游成功（§42） |
+| `ai_upstream_call_failed` | attempt, errorCode, providerStatus, retryable | 上游终态失败（§42/§56） |
+| `ai_transport_retry` | stage, transportAttempt, reason, backoffMs | 传输层退避重试（§43，与 validation retry 区分） |
+| `ai_prompt_budget` | stage, attempt, estimatedInputTokens, maxOutputTokens, contextWindowTokens, remainingBudgetSec | 发送前预算（§49，token amplification 观测） |
+| `team_review_grounding_ready` | factsTotal, deathFacts, aliveTransitions, focusWindows, positionSnapshots, enemyPositionFacts | grounding 事实计数（§48） |
+| `team_review_validation_attempt_completed` | attempt, promptTokens, completionTokens, cumulativePromptTokens, cumulativeCompletionTokens | 每轮 token 累计（§50） |
+| `team_review_parse_result` | attempt, responseFormat, result=PASS/FAIL, reason | parser 结果分类（§44） |
+| `team_review_validation` | attempt, result=PASS/FAIL, conflictCount, checks, durationMs | validator 结果（§46） |
+| `team_review_validation_conflict`（DEBUG） | attempt, check, reasonCode | 冲突机器分类明细（§47） |
+| `ai_validation_retry` | stage, validationAttempt, reason | 业务返工重试（§43） |
+| `team_review_completed` | validationAttempts, totalPromptTokens, totalCompletionTokens, durationMs, result | Team Call #2 阶段汇总（§50） |
+
+#### parser 失败分类（§44，低基数枚举）
+
+`EMPTY_OUTPUT` · `INVALID_JSON` · `MISSING_PRIMARY_DIAGNOSIS` · `MISSING_REVIEW_MARKDOWN` · `INVALID_CLAIMS` ·
+`UNKNOWN_CLAIM_TYPE` · `INVALID_MACHINE_FIELD_TYPE` · `MISSING_REQUIRED_MACHINE_FIELD` · `TOO_MANY_CLAIMS` · `TOO_MANY_EVIDENCE_IDS`
+
+#### validator conflict reasonCode（§47，机器分类）
+
+`UNKNOWN_EVIDENCE` · `EVIDENCE_TYPE_MISMATCH` · `SUBJECT_MISMATCH` · `TIME_MISMATCH` · `REGION_MISMATCH` ·
+`KNOWLEDGE_MISMATCH` · `COUNT_MISMATCH` · `UNSUPPORTED_HARD_FACT` · `TEMPORAL_OWNERSHIP` · `IDENTITY_AMBIGUITY` ·
+`CLAIMS_COVERAGE` · `INTERNAL_LABEL_LEAK` · `EMPTY_OUTPUT` · `MISSING_DIAGNOSIS`（其余按 checkId 推断为 `UNCLASSIFIED`）
+
+#### 常见错误码排障
+
+- **`AI_REVIEW_GROUNDING_FAILED`**（502）：Team Call #2 三次 validation attempt 全部 FAIL 后 fail-safe（本轮行为保持不变）。
+  查 `event=team_review_validation` 的 `checks` 与 `event=team_review_validation_conflict` 的 `reasonCode` 判断是哪个 check 反复失败；
+  `event=team_review_validation_attempt_completed` 看 token 放大（`cumulativePromptTokens`）。
+- **`AI_TIMEOUT`**：分 provider read timeout / 整体预算耗尽 / SSE timeout 三种；查 `event=ai_upstream_call_failed` 与调用耗时、remainingBudgetSec。
+- **`AI_UPSTREAM_UNAVAILABLE`**：上游 5xx / 连接失败；`event=ai_transport_retry` 记录退避重试。
+- **`AI_CANCELLED`**：客户端取消（cancel 端点 / SSE 断开）；查 `event=ai_review_cancelled` 的 `source`。
+
+---
 
 ---
 

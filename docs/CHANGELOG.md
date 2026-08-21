@@ -4,6 +4,40 @@
 
 ## [Unreleased]
 
+### Added
+- **Team AI Review 启用 DeepSeek 官方 JSON Output（Team Call #2）**：
+  ① **输出格式契约**——`AiChatRequest` 新增 `AiResponseFormat`（TEXT/JSON_OBJECT，默认 TEXT，
+  兼容构造器回退 TEXT）；`SpringAiChatGateway.buildPrompt` 在 per-request `OpenAiChatOptions` 上
+  映射 `response_format=json_object`（Spring AI 2.0.0 原生 `responseFormat` API），TEXT 不发送该参数，
+  绝不写入连接级/全局 model options。
+  ② **仅 Team Call #2 启用**——`TeamReplayAnalysisService.callRaw` 显式传 JSON_OBJECT（输出格式
+  属于 request contract，不由 analysisMode 隐式推断）；Player / Pre-battle / Harness / Autopsy 保持 TEXT，
+  存量请求行为等价。
+  ③ **职责三层不变**——provider JSON mode = syntax guarantee；`TeamReviewEnvelopeParser` = business
+  schema guarantee（合法 JSON 但 schema 违反仍 fail-close）；`TeamFactualConsistencyValidator` = truth
+  guarantee（V1–V6/BINDING 全部保留，不因 JSON mode 放宽）。
+  ④ **Parser 可诊断化**——新增 `parseDetailed()` 返回 `ParseResult`（envelope + 稳定 `ParseFailureReason`
+  枚举：EMPTY_OUTPUT/INVALID_JSON/MISSING_PRIMARY_DIAGNOSIS/MISSING_REVIEW_MARKDOWN/INVALID_CLAIMS/
+  UNKNOWN_CLAIM_TYPE/INVALID_MACHINE_FIELD_TYPE/MISSING_REQUIRED_MACHINE_FIELD/TOO_MANY_CLAIMS/
+  TOO_MANY_EVIDENCE_IDS）；`parse()` 保持兼容委托。
+  ⑤ **Validator reasonCode**——`FactConflict` 新增 `reasonCode`（UNKNOWN_EVIDENCE/EVIDENCE_TYPE_MISMATCH/
+  SUBJECT_MISMATCH/TIME_MISMATCH/REGION_MISMATCH/KNOWLEDGE_MISMATCH/COUNT_MISMATCH/UNSUPPORTED_HARD_FACT/
+  TEMPORAL_OWNERSHIP/IDENTITY_AMBIGUITY 等，2 参构造按 checkId 推断），production 可直接判断 validator 为什么失败。
+  ⑥ **全链路结构化日志**——统一 `event=... correlationId=...` 事件日志（ai_review_started/finished/failed/
+  cancelled、ai_upstream_call_started/completed/failed、ai_transport_retry、ai_prompt_budget、
+  team_review_grounding_ready、team_review_validation_attempt_completed、team_review_parse_result、
+  team_review_validation（conflictCount/checks）、team_review_validation_conflict（DEBUG，check/reasonCode）、
+  ai_validation_retry、team_review_completed、ai_review_sse_opened/completed）；一次请求可用单个
+  correlationId 在 Loki 重建完整时间线；敏感数据（API key/prompt/completion/回放内容）严禁入日志，
+  新增回归测试断言。
+  ⑦ **指标**——新增 `wotb_ai_team_review_validation_attempt_total{result=pass|parser_invalid|validation_failed}`
+  （低基数，仅 result tag）；请求/错误/耗时沿用现有 `wotb_ai_review_*` / `wotb_ai_upstream_*`，不重复造指标。
+  ⑧ **测试**——HTTP boundary（JSON_OBJECT 请求体含 `response_format={"type":"json_object"}`、TEXT 不含）、
+  Team Call #2 契约（SINGLE_TEAM_BATTLE=JSON_OBJECT、PRE_BATTLE=TEXT）、parser fail-close + 失败原因分类、
+  validator reasonCode、日志敏感数据回归、retry 契约保持。
+  ⑨ **文档**——`docs/architecture/ai-review.md`（JSON Output 小节 + 三层职责）、`docs/features/team-ai-review.md`、
+  `docs/operations/observability.md`（按 correlationId 追一单 + 事件清单 + 错误码排障）、`docs/CHANGELOG-PRODUCT.md`。
+
 ### Fixed
 - **PR #105 Final Blocker——Evidence Binding（claim 必须与其 evidenceIds 真正绑定）**：
   ① **绑定契约**——`TeamFactualConsistencyValidator` 新增 `checkStructuredEvidenceBinding`：
