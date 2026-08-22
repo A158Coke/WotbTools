@@ -14,6 +14,7 @@
  *   node frontend/scripts/blitzkit-references.mjs --dry-run  # 只看清单，不下载
  *   node frontend/scripts/blitzkit-references.mjs --limit 5  # 只处理前 5 辆（调试）
  *   node frontend/scripts/blitzkit-references.mjs --emit-docs# 生成 tier-x-inventory.md
+ *   node frontend/scripts/blitzkit-references.mjs --emit-portraits # 下载并发布 Details Panel 车型图
  *
  * BlitzKit 不是 production/CI 依赖：脚本只在本机手动运行。
  * 参考图 URL 已验证：https://api.blitzkit.app/tanks/{tankId}/icons/big.webp
@@ -28,6 +29,7 @@ import { blitzkitIconUrl } from '../src/vehicle-models/types.js'
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const CACHE_DIR = path.join(ROOT, 'frontend', 'scripts', '.vehicle-model-refs')
 const REFS_DIR = path.join(CACHE_DIR, 'references')
+const PORTRAITS_DIR = path.join(ROOT, 'frontend', 'src', 'assets', 'tank-portraits', 'tier-x')
 const DOCS_MD = path.join(ROOT, 'docs', 'assets', 'tier-x-models', 'tier-x-inventory.md')
 
 const args = process.argv.slice(2)
@@ -35,6 +37,13 @@ const dryRun = args.includes('--dry-run')
 const limitIdx = args.indexOf('--limit')
 const limit = limitIdx >= 0 ? Number(args[limitIdx + 1]) : Infinity
 const emitDocs = args.includes('--emit-docs')
+const emitPortraits = args.includes('--emit-portraits')
+
+function isWebp(bytes) {
+  return bytes.length >= 12
+    && bytes.subarray(0, 4).toString('ascii') === 'RIFF'
+    && bytes.subarray(8, 12).toString('ascii') === 'WEBP'
+}
 
 /**
  * kind 核验依据（2026-08-17，全 81 modelKey 逐组核验）。
@@ -169,20 +178,25 @@ async function main() {
   }
 
   fs.mkdirSync(REFS_DIR, { recursive: true })
+  if (emitPortraits) fs.mkdirSync(PORTRAITS_DIR, { recursive: true })
   let ok = 0
   let failed = 0
   for (const item of rows) {
     const target = path.join(REFS_DIR, `${item.tankId}.webp`)
-    if (fs.existsSync(target) && fs.statSync(target).size > 0) {
-      ok += 1
-      continue
-    }
     try {
-      const res = await fetch(item.iconUrl)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      fs.writeFileSync(target, Buffer.from(await res.arrayBuffer()))
+      let bytes = fs.existsSync(target) ? fs.readFileSync(target) : null
+      if (!bytes || !isWebp(bytes)) {
+        const res = await fetch(item.iconUrl)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        bytes = Buffer.from(await res.arrayBuffer())
+        if (!isWebp(bytes)) throw new Error('response is not WebP')
+        fs.writeFileSync(target, bytes)
+      }
+      if (emitPortraits) {
+        fs.writeFileSync(path.join(PORTRAITS_DIR, `${item.tankId}.webp`), bytes)
+      }
       ok += 1
-      console.log(`  ok   ${item.tankId} ${item.name}`)
+      console.log(`  ok   ${item.tankId} ${item.name}${emitPortraits ? ' → portrait' : ''}`)
     } catch (e) {
       failed += 1
       console.error(`  FAIL ${item.tankId} ${item.name}: ${e.message}`)
@@ -193,6 +207,9 @@ async function main() {
     JSON.stringify({ generated_at: new Date().toISOString(), vehicles: inventory }, null, 2),
   )
   console.log(`downloads: ok=${ok} failed=${failed}（缓存 ${path.relative(ROOT, CACHE_DIR)}）`)
+  if (emitPortraits && failed === 0) {
+    console.log(`portraits: ${rows.length} → ${path.relative(ROOT, PORTRAITS_DIR)}`)
+  }
   if (failed > 0) process.exitCode = 1
 }
 

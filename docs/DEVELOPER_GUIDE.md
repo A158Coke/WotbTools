@@ -311,6 +311,9 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 - `utils/helpers.js` — 常量（DEFAULT_VISIBLE / EXTENDED_ONLY_PLAYER_KEYS / RATING_TIERS）+ 工具函数（按 locale 取地图名的 `mapLabel` / ratingTier / medal 等）
 - UI 组件在 `components/`：FileUploader / ColumnPicker / AggregateTable / BattleTable / RatingModal / RemoveConfirmModal / HoFPage / HoFAdminPage / LoginPage（QQ + Wargaming 登录选择页）/ ProfilePage（含站内通知面板）/ BoostPage / AdminUsersPage / HomePage / ExtendedPage / ReplayPage
 - AI 复盘页组件：`ReconstructionPage`（登录门控 + 编排）→ `ReplayInputPanel`（`ReplayFilePicker` 选文件 + `ReplayAnalysisAction` 触发分析）→ 独立「地图鸟瞰」区块（`MapOverview` 三视图：热力/路线/战局回放，经 `POST /api/replay/map-overview` 只解析回放、不调 AI——不跑 AI 复盘也能看图；`AnalysisResultPanel` 不再渲染地图块，其 AI 报告时间链接把 `seek` 事件上抛给页面加载/跳转并自动滚动回地图区块）→ `AnalysisResultPanel`（Markdown 正文常驻展示，`MarkdownContent` 渲染）；赛前预测/复盘正文/地图鸟瞰三板块均可独立展开/收起（默认展开）；战局回放坦克标记随地图缩放（坦克名/阵亡 ✕ 叠加层屏幕恒定），地图下方显示双方总血量条（实时剩余，含装备/物资加成）与争霸赛点数；战局回放内置临时地图标注工具栏（画笔/形状/文字，纯本地不持久化，契约见 `docs/features/battle-playback.md`「地图标注」）
+- 战局回放 Details Panel 的 Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，
+  由 `scripts/blitzkit-references.mjs --emit-portraits` 从 BlitzKit 确定性生成并随站点发布；
+  `src/vehicle-portraits/runtime.js` 按 tankId 懒加载，production 不访问 BlitzKit。
 - 回放解析上传页由 `FileUploader.vue` 负责交互，`App.vue` 提供全局上传区样式；空态、拖拽态、已选文件态共用 `upload.*` 三语文案。
 - 开发时 Vite 代理 `/api → localhost:8087`。
 - 语言持久化 `localStorage('wotb-lang')`，主题持久化 Cookie `wotbtools-theme`（domain `.wotbtools.com`）+ localStorage 回退。

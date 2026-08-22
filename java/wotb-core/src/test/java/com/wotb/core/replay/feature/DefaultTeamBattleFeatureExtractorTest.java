@@ -7,6 +7,7 @@ import com.wotb.core.processing.TeamPerspectiveResolver;
 import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
@@ -55,7 +56,7 @@ class DefaultTeamBattleFeatureExtractorTest {
         final TeamBattleFeatureSet features = extract(fixture, fixture.events());
 
         assertEquals(200, features.observedAggregate().damageDealt());
-        assertEquals(150, features.observedAggregate().damageReceived());
+        assertEquals(550, features.observedAggregate().damageReceived());
         assertEquals(2, features.observedAggregate().attributedDamageEventCount());
         assertEquals(1, features.observedAggregate().unattributedDamageEventCount());
         assertTrue(features.limitations().contains(
@@ -164,7 +165,11 @@ class DefaultTeamBattleFeatureExtractorTest {
                 damage(9, 20f, 10, 20, 400),
                 damage(10, 25f, 11, 20, 300),
                 damage(11, 30f, 20, 10, 100),
-                damage(12, 35f, 20, 11, 200));
+                damage(12, 35f, 20, 11, 200),
+                health(13, 19f, 20, 900), health(14, 20f, 20, 500),
+                health(15, 24f, 20, 500), health(16, 25f, 20, 200),
+                health(17, 29f, 10, 900), health(18, 30f, 10, 800),
+                health(19, 34f, 11, 900), health(20, 35f, 11, 700));
         final TeamBattleFeatureSet features = extract(
                 new Fixture(battle, participants, events), events);
 
@@ -253,7 +258,8 @@ class DefaultTeamBattleFeatureExtractorTest {
                 mapping(2, 20, 200L),
                 position(3, 5f, 10, 0f, 0f),
                 position(4, 8f, 10, 10f, 0f),
-                damage(5, 20f, 10, 20, 100));
+                damage(5, 20f, 10, 20, 100),
+                health(6, 19f, 20, 500), health(7, 20f, 20, 400));
         final ReplayReconstruction reconstruction = new ReplayReconstruction(
                 null, null, 60f, 0f, participants, events,
                 List.of(), null,
@@ -647,7 +653,8 @@ class DefaultTeamBattleFeatureExtractorTest {
                 mapping(1, 10, 100L),
                 mapping(2, 20, 200L),
                 damage(3, 5f, 10, 20, 100),    // pre-battle -> excluded everywhere
-                damage(4, 12f, 10, 20, 200));  // in-battle -> exactly this counts
+                damage(4, 12f, 10, 20, 200),   // in-battle -> exactly this counts
+                health(5, 11f, 20, 500), health(6, 12f, 20, 300));
 
         final TeamBattleFeatureSet features = extractWithStart(fixture, events, 10f);
 
@@ -678,7 +685,8 @@ class DefaultTeamBattleFeatureExtractorTest {
                 mapping(1, 10, 100L),
                 mapping(2, 20, 200L),
                 damage(3, 50f, 98, 99, 100),    // pre-battle + unmapped -> excluded, NOT unattributed
-                damage(4, 150f, 10, 20, 200));
+                damage(4, 150f, 10, 20, 200),
+                health(5, 149f, 20, 500), health(6, 150f, 20, 300));
 
         final TeamBattleFeatureSet features = extractWithStart(fixture, events, 100f);
 
@@ -1074,7 +1082,10 @@ class DefaultTeamBattleFeatureExtractorTest {
                 position(8, 5f, 20, 250f, 250f),
                 damage(9, 20f, 10, 20, 200),
                 damage(10, 25f, 20, 11, 150),
-                damage(11, 30f, 99, 98, 400));
+                damage(11, 30f, 99, 11, 400),
+                health(12, 19f, 20, 900), health(13, 20f, 20, 700),
+                health(14, 24f, 11, 800), health(15, 25f, 11, 650),
+                health(16, 29f, 11, 650), health(17, 30f, 11, 250));
         return new Fixture(battle, participants, events);
     }
 
@@ -1174,6 +1185,18 @@ class DefaultTeamBattleFeatureExtractorTest {
                 sequence, new ReplayTimestamp(time, null), 8,
                 DecodeConfidence.EXACT, attacker, victim,
                 null, null, damage, false);
+    }
+
+    /** Type-7 propId=3 当前血量（EXACT；§12 掉血推导的数据源）。 */
+    private static HealthChangedEvent health(
+            final int sequence,
+            final float time,
+            final int entityId,
+            final int hp
+    ) {
+        return new HealthChangedEvent(
+                sequence, new ReplayTimestamp(time, null), 7,
+                DecodeConfidence.EXACT, entityId, hp, null, true);
     }
 
     private static ReplayReconstruction reconstruction(

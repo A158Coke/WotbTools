@@ -91,8 +91,16 @@ public final class MapOverviewBuilder {
                 .filter(DamageEvent.class::isInstance)
                 .map(DamageEvent.class::cast)
                 .toList();
+        // 战斗事实重建（§11–§17 唯一可信伤害源）：热力图伤害用权威 HP loss，不用 Type-8 raw
+        final double duration = battle.durationS != null && battle.durationS > 0
+                ? battle.durationS.doubleValue()
+                : Math.max(0.0, reconstruction.replayDurationSec());
+        final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
+                com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
+                        events, mapping,
+                        battleStart == null ? 0.0 : battleStart.doubleValue(), duration);
         final MapOverview.Heatmaps heatmaps = buildHeatmaps(
-                battle, mapping, positions, damages, friendlyTeam, profile, battleStart);
+                battle, mapping, positions, damages, friendlyTeam, profile, battleStart, combat);
         final List<MapOverview.Phase> phases = buildPhases(
                 damages, positions, battle, battleStart);
         final MapOverview.Playback playback = buildPlayback(
@@ -152,6 +160,12 @@ public final class MapOverviewBuilder {
         // 时长契约：所有 playback 数据（event/interval/direction/deathSec）都必须落在 [0, durationSec]。
         final double duration = resolveDurationSec(battle, positions, events, battleStartRawClockSec);
         final Long recorderAccount = resolveRecorderAccountId(battle);
+        // 战斗事实重建（§11–§17 共享推导，BattlePlaybackAdapter 同源）：权威 HP loss + 击毁
+        final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
+                com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
+                        events, mapping,
+                        battleStartRawClockSec == null ? 0.0 : battleStartRawClockSec.doubleValue(),
+                        duration);
         final List<MapOverview.PlaybackVehicle> vehicles = new ArrayList<>();
         for (final PlayerResult player : battle.players) {
             if (player.team <= 0 || player.accountId <= 0) {
@@ -174,12 +188,16 @@ public final class MapOverviewBuilder {
                     player.accountId, player.nickname, player.tankId,
                     ReplayDisplayNames.tankName(player.tankId, player.tankName), player.team,
                     intervals, deathSec, directionSamples,
-                    player.observedMaxHp != null ? player.observedMaxHp
-                            : ReplayDisplayNames.tankMaxHpValue(player.tankId),
+                    // baseHp = Tankopedia 静态参考（metadata，不进本局百分比）；
+                    // observedCapacityHp = 纯回放观测（真实可信 Type-7 positive sample 最大值；
+                    //   无可信 sample 为 null；绝不 max(观测, base)/fallback base）
+                    ReplayDisplayNames.tankMaxHpValue(player.tankId),
+                    MapOverview.observedCapacityHpOf(hpSamples),
                     hpSamples,
-                    player.tankType == null ? "" : player.tankType,
+                    tankTypeOf(player),
                     player.entryHpSource == null ? null : player.entryHpSource.name(),
                     player.entryHpSource == EntryHpSource.OBSERVED_EXACT ? player.entryHp : null,
+                    hpLossesOf(player.accountId, combat),
                     finalStats(player)));
         }
         if (vehicles.isEmpty()) {
@@ -187,6 +205,7 @@ public final class MapOverviewBuilder {
         }
 
         final List<MapOverview.PlaybackEvent> playbackEvents = new ArrayList<>();
+        final java.util.Set<Long> destroyedVictims = new java.util.HashSet<>();
         for (final ReplayEvent event : events) {
             if (event instanceof DamageEvent damage) {
                 final long victim = accountOf(damage.victimEid(), mapping);
@@ -194,24 +213,41 @@ public final class MapOverviewBuilder {
                     continue;
                 }
                 final long attacker = accountOf(damage.attackerEid(), mapping);
+                final double t = relativeSec(damage, battleStartRawClockSec);
                 playbackEvents.add(new MapOverview.PlaybackEvent(
-                        "DAMAGE", relativeSec(damage, battleStartRawClockSec),
-                        attacker > 0 ? attacker : null, victim, damage.damage()));
+                        "DAMAGE", t,
+                        attacker > 0 ? attacker : null, victim, damage.damage(),
+                        com.wotb.core.replay.feature.PlaybackCombatReconstruction
+                                .observedHpLossAt(combat, victim, t)));
             } else if (event instanceof VehicleDestroyedEvent destroyed) {
                 final long victim = accountOf(destroyed.entityId(), mapping);
                 if (victim <= 0) {
                     continue;
                 }
+                destroyedVictims.add(victim);
                 playbackEvents.add(new MapOverview.PlaybackEvent(
                         "DESTROYED", relativeSec(destroyed, battleStartRawClockSec),
-                        victim, null, null));
+                        victim, null, null, null));
                 final Integer killerEid = destroyed.killerEid();
                 final long killer = killerEid != null ? accountOf(killerEid, mapping) : 0L;
                 if (killer > 0 && killer != victim) {
                     playbackEvents.add(new MapOverview.PlaybackEvent(
                             "KILL", relativeSec(destroyed, battleStartRawClockSec),
-                            killer, victim, null));
+                            killer, victim, null, null));
                 }
+            }
+        }
+        // 权威击毁推导（type-7 alive=false/HP=0）：不被显式 VehicleDestroyedEvent 覆盖的受害者
+        for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Destroyed d
+                : combat.destroyed()) {
+            if (destroyedVictims.contains(d.victimAccountId())) {
+                continue;
+            }
+            playbackEvents.add(new MapOverview.PlaybackEvent(
+                    "DESTROYED", d.timeSec(), d.victimAccountId(), null, null, null));
+            if (d.killerAccountId() != null && d.killerAccountId() != d.victimAccountId()) {
+                playbackEvents.add(new MapOverview.PlaybackEvent(
+                        "KILL", d.timeSec(), d.killerAccountId(), d.victimAccountId(), null, null));
             }
         }
         for (final MapOverview.PlaybackVehicle vehicle : vehicles) {
@@ -220,9 +256,9 @@ public final class MapOverviewBuilder {
             }
             for (final MapOverview.PositionInterval interval : vehicle.positionIntervals()) {
                 playbackEvents.add(new MapOverview.PlaybackEvent(
-                        "POSITION_REPORTED", interval.startSec(), vehicle.accountId(), null, null));
+                        "POSITION_REPORTED", interval.startSec(), vehicle.accountId(), null, null, null));
                 playbackEvents.add(new MapOverview.PlaybackEvent(
-                        "POSITION_STALE", interval.endSec(), vehicle.accountId(), null, null));
+                        "POSITION_STALE", interval.endSec(), vehicle.accountId(), null, null, null));
             }
         }
         // 时间契约兜底：非法/越界事件一律不进入 DTO（绝不因单个事件突破 duration）。
@@ -648,7 +684,8 @@ public final class MapOverviewBuilder {
             final List<DamageEvent> damages,
             final int friendlyTeam,
             final MapGridProfile profile,
-            final Float battleStartRawClockSec
+            final Float battleStartRawClockSec,
+            final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat
     ) {
         final int cells = profile.gridCells().size();
         final double[] friendlyDwell = new double[cells];
@@ -673,22 +710,33 @@ public final class MapOverviewBuilder {
             }
         }
 
-        for (final DamageEvent damage : damages) {
-            final TeamEntityIdentity victim = mapping.entitiesById().get(damage.victimEid());
-            if (victim == null || !victim.usable() || victim.team() <= 0) {
+        // 伤害热力按受击方位置落格（§12）：值 = 权威 HP loss（Type-7 推导，含无法归属的掉血——
+        // 掉血真实发生在 victim 身上，热力按 victim 位置刻画实际承受的伤害）；
+        // Type-8 rawProtocolValue 语义未证明，不得进热力。
+        for (final Map.Entry<Long, List<com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss>> entry
+                : combat.lossesByVictim().entrySet()) {
+            final List<Integer> entityIds = mapping.entityIdsByAccount()
+                    .getOrDefault(entry.getKey(), List.of());
+            if (entityIds.isEmpty()) {
                 continue;
             }
-            final Position pos = positions.nearest(
-                    damage.victimEid(), relativeSec(damage, battleStartRawClockSec));
-            if (pos == null) {
+            final Integer victimTeam = teamOfEntityIds(entityIds, mapping);
+            if (victimTeam == null || victimTeam <= 0) {
                 continue;
             }
-            final MapGridProfile.GridCell cell = profile.cellAt(pos.x, pos.z);
-            if (cell == null) {
-                continue;
+            final double[] damageArr = victimTeam == friendlyTeam ? friendlyDamage : enemyDamage;
+            for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss loss
+                    : entry.getValue()) {
+                final Position pos = nearestPosition(entityIds, positions, loss.toSec());
+                if (pos == null) {
+                    continue;
+                }
+                final MapGridProfile.GridCell cell = profile.cellAt(pos.x, pos.z);
+                if (cell == null) {
+                    continue;
+                }
+                damageArr[profile.gridCells().indexOf(cell)] += loss.hpLoss();
             }
-            final double[] damageArr = victim.team() == friendlyTeam ? friendlyDamage : enemyDamage;
-            damageArr[profile.gridCells().indexOf(cell)] += damage.damage();
         }
 
         final Map<Long, Double> deathSecByAccount = new HashMap<>();
@@ -773,6 +821,34 @@ public final class MapOverviewBuilder {
         return phases;
     }
 
+    /** 账号 → 阵营（任一已解析实体）；无 → null。 */
+    private static Integer teamOfEntityIds(final List<Integer> entityIds,
+                                           final TeamEntityMapping mapping) {
+        for (final int eid : entityIds) {
+            final TeamEntityIdentity identity = mapping.identity(eid);
+            if (identity != null && identity.team() > 0) {
+                return identity.team();
+            }
+        }
+        return null;
+    }
+
+    /** 账号在 t 时刻最近可信位置（跨实体 re-entry 取最近）。 */
+    private static Position nearestPosition(final List<Integer> entityIds,
+                                            final Positions positions, final double t) {
+        Position best = null;
+        for (final int eid : entityIds) {
+            final Position p = positions.nearest(eid, t);
+            if (p == null) {
+                continue;
+            }
+            if (best == null || Math.abs(p.timeSec - t) < Math.abs(best.timeSec - t)) {
+                best = p;
+            }
+        }
+        return best;
+    }
+
     private static List<Double> toList(final double[] values) {
         final List<Double> out = new ArrayList<>(values.length);
         for (final double v : values) {
@@ -788,6 +864,34 @@ public final class MapOverviewBuilder {
         out.put("zh", names.zh() != null && !names.zh().isBlank() ? names.zh() : en);
         out.put("en", en);
         out.put("ru", names.ru() != null && !names.ru().isBlank() ? names.ru() : en);
+        return out;
+    }
+
+    /**
+     * 车辆类型统一 fallback（docs/current-plan.md §8）：replay/player 权威 tankType →
+     * tankopedia class（英文，API 纯英文契约）→ 空串（前端展示 —）。
+     */
+    private static String tankTypeOf(final PlayerResult player) {
+        if (player.tankType != null && !player.tankType.isBlank()) {
+            return player.tankType;
+        }
+        return ReplayDisplayNames.tankClassEn(player.tankId);
+    }
+
+    /** 车辆 HP loss 记录（共享推导 → DTO；attacker 仅在同攻击者可证明时填充）。 */
+    private static List<MapOverview.HpLoss> hpLossesOf(
+            final long accountId,
+            final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat) {
+        final List<com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss> losses =
+                combat.lossesOf(accountId);
+        if (losses.isEmpty()) {
+            return List.of();
+        }
+        final List<MapOverview.HpLoss> out = new ArrayList<>(losses.size());
+        for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss l : losses) {
+            out.add(new MapOverview.HpLoss(l.fromSec(), l.toSec(), l.hpLoss(),
+                    l.attackerAccountId(), l.attackerReliable()));
+        }
         return out;
     }
 

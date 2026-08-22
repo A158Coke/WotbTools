@@ -106,8 +106,9 @@ public final class PlayerReplayPromptBuilder {
 
     static boolean appendRecorderDamageExchange(final StringBuilder sb,
                                                 final Battle battle,
+                                                final ReplayReconstruction recon,
                                                 final PlayerResult rec) {
-        return PlayerEvidenceFormatter.appendRecorderDamageExchange(sb, battle, rec);
+        return PlayerEvidenceFormatter.appendRecorderDamageExchange(sb, battle, recon, rec);
     }
 
     static boolean appendDamageExchangeByOpponent(final StringBuilder sb,
@@ -135,8 +136,9 @@ public final class PlayerReplayPromptBuilder {
 
     static boolean appendKillAttribution(final StringBuilder sb,
                                          final Battle battle,
+                                         final ReplayReconstruction recon,
                                          final PlayerResult rec) {
-        return PlayerEvidenceFormatter.appendKillAttribution(sb, battle, rec);
+        return PlayerEvidenceFormatter.appendKillAttribution(sb, battle, recon, rec);
     }
 
     static void appendPlayerLine(final StringBuilder sb, final PlayerResult p, final boolean isFriendly) {

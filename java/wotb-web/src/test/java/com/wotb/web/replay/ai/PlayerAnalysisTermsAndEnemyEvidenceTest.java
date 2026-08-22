@@ -6,7 +6,6 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
-import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.feature.BattlePhaseType;
 import com.wotb.core.replay.feature.MovementType;
@@ -35,6 +34,20 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
     private static final long RECORDER_ACCOUNT = 1L;
     private static final long ENEMY_ACCOUNT = 2L;
 
+    /** §12/§13 权威掉血 fixture：recorder 对 enemy 掉 900、enemy 对 recorder 掉 640（Type-7 推导 + 单通知归属）。 */
+    private static ReplayReconstruction killRecon() {
+        return new ReplayReconstruction(null, null, 120f, 0f, List.of(),
+                List.of(
+                        new com.wotb.core.replay.event.ParticipantMappingEvent(1, new ReplayTimestamp(1f, null), 8, DecodeConfidence.EXACT, 1, 1L),
+                        new com.wotb.core.replay.event.ParticipantMappingEvent(2, new ReplayTimestamp(2f, null), 8, DecodeConfidence.EXACT, 2, 2L),
+                        new DamageEvent(3, new ReplayTimestamp(10f, null), 8, DecodeConfidence.EXACT, 1, 2, null, null, 999, false),
+                        new com.wotb.core.replay.event.HealthChangedEvent(4, new ReplayTimestamp(9f, null), 7, DecodeConfidence.EXACT, 2, 2000, null, true),
+                        new com.wotb.core.replay.event.HealthChangedEvent(5, new ReplayTimestamp(10f, null), 7, DecodeConfidence.EXACT, 2, 1100, null, true),
+                        new DamageEvent(6, new ReplayTimestamp(12f, null), 8, DecodeConfidence.EXACT, 2, 1, null, null, 999, false),
+                        new com.wotb.core.replay.event.HealthChangedEvent(7, new ReplayTimestamp(11f, null), 7, DecodeConfidence.EXACT, 1, 2000, null, true),
+                        new com.wotb.core.replay.event.HealthChangedEvent(8, new ReplayTimestamp(12f, null), 7, DecodeConfidence.EXACT, 1, 1360, null, true)),
+                List.of(), null, null, null);
+    }
     private static Stream<String> allSystemPrompts() {
         return Stream.of(
                 PlayerReplayPromptBuilder.SYSTEM_PROMPT,
@@ -118,7 +131,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         enemyPlayer.killVictims.add(new com.wotb.core.stats.PotentialDamage.KillVictim(RECORDER_ACCOUNT, 640, 2));
 
         final StringBuilder sb = new StringBuilder();
-        final boolean written = PlayerReplayPromptBuilder.appendKillAttribution(sb, battle, recorder);
+        final boolean written = PlayerReplayPromptBuilder.appendKillAttribution(sb, battle, killRecon(), recorder);
         final String evidence = sb.toString();
 
         assertTrue(written);
@@ -135,7 +148,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         final Battle battle = battleWithRecorderAndEnemy();
         final StringBuilder sb = new StringBuilder();
 
-        assertFalse(PlayerReplayPromptBuilder.appendKillAttribution(sb, battle, battle.players.get(0)));
+        assertFalse(PlayerReplayPromptBuilder.appendKillAttribution(sb, battle, killRecon(), battle.players.get(0)));
         assertEquals("", sb.toString());
     }
 
@@ -321,8 +334,6 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
 
     private static ReplayReconstruction reconWith(final Float battleStart,
                                                   final DamageEvent... events) {
-        return new ReplayReconstruction(
-                null, null, 300f, battleStart, List.of(),
-                List.<ReplayEvent>of(events), List.of(), null, null, null);
+        return DamageWindowFixture.recon(battleStart, events);
     }
 }

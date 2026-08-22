@@ -88,15 +88,24 @@ class ReplayDamageWindowIntegrationTest {
         assertFalse(windows.isEmpty(), "录像者必须经实体映射得到非空掉血窗口");
         final float duration = battle.durationS == null
                 ? Float.MAX_VALUE : battle.durationS.floatValue();
+        // hpLoss 语义：掉血事实来自 Type-7 权威采样（真实数字保留）；攻击者 attribution 在存在
+        // 无法排除的 unsupported 变体（短体/zero-raw/非 direct 冲突证据）时 fail-closed（部分未解析
+        // 是合法且必须的输出）。任何窗口都不得把同一攻击者算多个、不得在未解析时断言集火。
         for (final DamageWindowClusterer.DamageWindow window : windows) {
             assertTrue(window.startSec() >= 0f, "battle-relative 时间不得为负: " + window);
             assertTrue(window.endSec() >= window.startSec());
             assertTrue(window.endSec() <= duration + 5f, "窗口不得超出战斗时长: " + window);
             assertTrue(window.totalDamage() > 0 && window.hitCount() > 0);
-            // 本夹具录像者两次受击均为单一攻击者：不得当作集火
-            assertEquals(1, window.uniqueAttackerCount(), "单一攻击者只能算 1 个攻击者: " + window);
-            assertFalse(window.attackersUnresolved());
+            assertTrue(window.uniqueAttackerCount() <= 1,
+                    "单一攻击者只能算 1 个攻击者（不得把同一攻击者算多个）: " + window);
+            assertFalse(window.focusFireCandidate() && window.attackersUnresolved(),
+                    "攻击者未解析时不得断言集火: " + window);
         }
+        // PR #107 第 5 轮回归：短体/zero-raw damage-method 变体现在产出冲突证据事件并真正参与
+        // attribution fail-closed——本夹具（含短体/zero-raw 变体）必须存在诚实标记「攻击者部分未解析」
+        // 的窗口（若有人回退成「warning 不产出事件」，此断言失败）；不得伪造攻击者。
+        assertTrue(windows.stream().anyMatch(w -> w.attackersUnresolved()),
+                "至少一个窗口必须诚实标记攻击者未解析（冲突证据 fail-closed）: " + windows);
 
         // Player 证据段：覆盖完整时输出真实数字；partial 时抑制并输出 UNAVAILABLE
         final StringBuilder full = new StringBuilder();
@@ -104,8 +113,10 @@ class ReplayDamageWindowIntegrationTest {
                 full, battle, result.reconstruction(), recorderAccount, false);
         final String fullEvidence = full.toString();
         assertTrue(fullEvidence.contains("RECORDER_DAMAGE_RECEIVED_WINDOWS（你掉血时间窗口"), fullEvidence);
-        assertTrue(fullEvidence.contains("掉血488"), fullEvidence);
-        assertTrue(fullEvidence.contains("攻击者1"), fullEvidence);
+        assertTrue(fullEvidence.contains("掉血524"), fullEvidence);
+        // 夹具含短体/zero-raw 冲突证据 → 窗口攻击者 fail-closed：诚实输出「攻击者0（攻击者部分未解析）」
+        assertTrue(fullEvidence.contains("攻击者0"), fullEvidence);
+        assertTrue(fullEvidence.contains("（攻击者部分未解析）"), fullEvidence);
         assertTrue(fullEvidence.contains("攻击者=1 → 短时间集中掉血/高压掉血窗口（不是集火）"), fullEvidence);
         assertFalse(fullEvidence.contains("致死"), "不得输出生产中恒为 false 的致死宣称");
 
@@ -138,8 +149,9 @@ class ReplayDamageWindowIntegrationTest {
                 ESTIMATOR, 100_000, 131_072, 8192, 1000);
         final String harnessContent = harnessPrepared.userContent();
         assertTrue(harnessContent.contains("RECORDER_DAMAGE_RECEIVED_WINDOWS（你掉血时间窗口"), harnessContent);
-        assertTrue(harnessContent.contains("掉血488"), harnessContent);
-        assertTrue(harnessContent.contains("攻击者1"), harnessContent);
+        assertTrue(harnessContent.contains("掉血524"), harnessContent);
+        assertTrue(harnessContent.contains("攻击者0"), harnessContent);
+        assertTrue(harnessContent.contains("（攻击者部分未解析）"), harnessContent);
         assertFalse(harnessContent.contains("UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)"), harnessContent);
         assertTrue(harnessContent.indexOf("======================== TASK")
                         > harnessContent.indexOf("RECORDER_DAMAGE_RECEIVED_WINDOWS"),
@@ -172,7 +184,7 @@ class ReplayDamageWindowIntegrationTest {
                 com.wotb.web.replay.ai.AllowedLanguage.ZH);
         assertTrue(fallback.userPrompt().contains("RECORDER_DAMAGE_RECEIVED_WINDOWS（你掉血时间窗口"),
                 fallback.userPrompt());
-        assertTrue(fallback.userPrompt().contains("掉血488"), fallback.userPrompt());
+        assertTrue(fallback.userPrompt().contains("掉血524"), fallback.userPrompt());
         // 同根因修复：逐次伤害与逐对手对炮段在真实事件（直填账号为 null）下也必须非空
         assertTrue(fallback.userPrompt().contains("PER_HIT_DAMAGE_EVENTS_OBSERVED"),
                 fallback.userPrompt());
@@ -180,8 +192,9 @@ class ReplayDamageWindowIntegrationTest {
                 fallback.userPrompt());
         assertTrue(fallback.userPrompt().contains("DAMAGE_EXCHANGE_BY_OPPONENT_OBSERVED"),
                 fallback.userPrompt());
-        assertTrue(fallback.userPrompt().contains("对 你驾驶的"),
-                "逐次伤害必须包含录像者受击行: " + fallback.userPrompt());
+        assertTrue(fallback.userPrompt().contains("对你造成了"),
+                "逐次伤害必须包含录像者受击行（hpLoss 语义: 「…对你造成了N点伤害」）: "
+                        + fallback.userPrompt());
     }
 
     @Test
@@ -217,7 +230,7 @@ class ReplayDamageWindowIntegrationTest {
         assertFalse(prompt.contains("PER_HIT_DAMAGE_EVENTS_OBSERVED"), prompt);
         assertFalse(prompt.contains("你对其造成"), prompt);
         assertFalse(prompt.contains("造成了"), prompt);
-        assertFalse(prompt.contains("掉血488"), prompt);
+        assertFalse(prompt.contains("掉血524"), prompt);
         assertFalse(prompt.contains("攻击者1"), prompt);
         assertFalse(prompt.contains("事件流输出:"), prompt);
         assertFalse(prompt.contains("事件流损失血量:"), prompt);
@@ -276,10 +289,14 @@ class ReplayDamageWindowIntegrationTest {
                 completeCtx, result.reconstruction(), ESTIMATOR, 100_000, 131_072, 8192, 1000,
                 AllowedLanguage.ZH);
         final String completePrompt = complete.userPrompt();
-        assertTrue(completePrompt.contains("累计直接伤害780"), completePrompt);
-        assertTrue(completePrompt.contains("击穿2"), completePrompt);
-        assertTrue(completePrompt.contains("致死前累计承受你780"), completePrompt);
-        assertTrue(completePrompt.contains("致死前对你累计造成650"), completePrompt);
+        // hpLoss 语义：数字来自权威掉血推导（本夹具录像者对击杀目标未造成可证明掉血 → 0），
+        // 身份线索来自 killVictims；不得再输出 raw 或 killVictims 构造数字。
+        assertTrue(completePrompt.contains("累计直接伤害"), completePrompt);
+        assertTrue(completePrompt.contains("致死前累计承受你"), completePrompt);
+        assertTrue(completePrompt.contains("致死前对你累计造成"), completePrompt);
+        assertFalse(completePrompt.contains("累计直接伤害780"), "构造的 killVictims 数字不得进入 prompt: " + completePrompt);
+        assertFalse(completePrompt.contains("致死前累计承受你780"), completePrompt);
+        assertFalse(completePrompt.contains("致死前对你累计造成650"), completePrompt);
     }
 
     private static void assertKillVictimNumbersSuppressed(final String prompt) {

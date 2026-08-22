@@ -196,6 +196,14 @@ final class PlayerSummaryBuilder {
         }
         PlayerEvidenceFormatter.appendRecorderDamageReceivedWindows(
                 summaryBuilder, ctx.battle(), recon, recorderAccountId, observedDamagePartial);
+        // 7b/7c：逐目标伤害交换与击杀归因需要事件流（recon）——仅在含重建路径输出
+        final PlayerResult rec = ctx.battle() == null ? null : ctx.battle().recorderResult();
+        if (rec != null) {
+            PlayerEvidenceFormatter.appendRecorderDamageExchange(
+                    summaryBuilder, ctx.battle(), recon, rec, observedDamagePartial);
+            PlayerEvidenceFormatter.appendKillAttribution(
+                    summaryBuilder, ctx.battle(), recon, rec, observedDamagePartial);
+        }
         PlayerEvidenceFormatter.appendEnemyLastKnownPositions(summaryBuilder, ctx.battle(), recon);
         // 身后血量/位置优势测量：仅录像者自己，中性测量（个人路径不评价队友）
         final String behindLine = RelativeDepthHpEvidence.renderPlayerSection(
@@ -328,14 +336,6 @@ final class PlayerSummaryBuilder {
             PlayerEvidenceFormatter.appendRecorderRanking(sb, rec, friendlies, battle);
         }
 
-        // ====== 7b. Recorder per-target damage exchange (observed subset) ======
-        final boolean damageExchangeAvailable = PlayerEvidenceFormatter.appendRecorderDamageExchange(
-                sb, battle, rec, observedDamagePartial);
-
-        // ====== 7c. Kill attribution: 谁击杀录像者 / 录像者击杀谁 ======
-        final boolean killAttributionAvailable = PlayerEvidenceFormatter.appendKillAttribution(
-                sb, battle, rec, observedDamagePartial);
-
         // ====== 8. Death timeline (authoritative) ======
         sb.append("\n=== DEATH_TIMELINE_AUTHORITATIVE（阵亡时间线·权威结算） ===\n");
         PlayerEvidenceFormatter.appendDeathTimeline(sb, battle);
@@ -344,13 +344,6 @@ final class PlayerSummaryBuilder {
         PlayerEvidenceFormatter.appendEventStreamEvidence(sb, ctx, battle);
 
         // ====== 10. Side-based limitations ======
-        // prompt 要求逐对手对炮与击杀归因；数据缺失时必须显式告知，避免 AI 跳过或编造
-        if (!damageExchangeAvailable) {
-            sb.append("- DAMAGE_EXCHANGE_UNAVAILABLE\n");
-        }
-        if (!killAttributionAvailable) {
-            sb.append("- KILL_ATTRIBUTION_UNAVAILABLE\n");
-        }
         if (!unknowns.isEmpty()) {
             final boolean recUnresolved = rec == null || allSides.getOrDefault(rec, Side.UNKNOWN) == Side.UNKNOWN;
             if (recUnresolved) {

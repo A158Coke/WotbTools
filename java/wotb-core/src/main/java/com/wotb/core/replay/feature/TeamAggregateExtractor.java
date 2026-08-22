@@ -98,22 +98,27 @@ final class TeamAggregateExtractor {
 
     static TeamObservedAggregate buildObservedAggregate(
             final List<DefaultTeamBattleFeatureExtractor.TimedTeamDamage> timedDamages,
+            final List<DefaultTeamBattleFeatureExtractor.AttributedHpLoss> teamLosses,
             final int perspectiveTeam,
             final int unattributedCount
     ) {
-        final int dealt = timedDamages.stream()
-                .filter(td -> td.event().attacker().team() == perspectiveTeam
-                        && td.event().victim().team() != perspectiveTeam)
-                .mapToInt(td -> td.event().event().damage())
-                .sum();
-        final int received = timedDamages.stream()
-                .filter(td -> td.event().victim().team() == perspectiveTeam
-                        && td.event().attacker().team() != perspectiveTeam)
-                .mapToInt(td -> td.event().event().damage())
-                .sum();
-        final int attributed = (int) timedDamages.stream()
-                .filter(td -> DefaultTeamBattleFeatureExtractor.involvesTeam(td.event(), perspectiveTeam))
-                .count();
+        // §12/§13：dealt 只计有支持证据且攻击者属本队的掉血；received 计本队车辆全部掉血
+        // （含不可归属——掉血真实发生，不计入任何攻击者即可）。Type-8 raw 不得参与。
+        int dealt = 0;
+        int received = 0;
+        int attributed = 0;
+        for (final DefaultTeamBattleFeatureExtractor.AttributedHpLoss l : teamLosses) {
+            if (l.attacker() != null && l.attacker().team() == perspectiveTeam
+                    && l.victim() != null && l.victim().team() != perspectiveTeam) {
+                dealt += l.loss().hpLoss();
+                attributed++;
+            } else if (l.victim() != null && l.victim().team() == perspectiveTeam) {
+                received += l.loss().hpLoss();
+                if (l.attacker() != null && l.attacker().team() != perspectiveTeam) {
+                    attributed++;
+                }
+            }
+        }
         return new TeamObservedAggregate(dealt, received, attributed, unattributedCount);
     }
 

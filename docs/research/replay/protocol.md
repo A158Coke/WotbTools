@@ -12,7 +12,7 @@
 | 4 EntityLeave | 实体离开（i32） | PROVEN |
 | 5 enterWorld | 实体进入世界 | UNKNOWN |
 | 7 EntityProperty | 属性包；propId 2=炮塔相对偏航、3=当前血量 | PROVEN（propId 0/4/8/9 语义 UNKNOWN） |
-| 8 EntityMethod | sub 47/48 updateArena、sub 8 伤害 | PROVEN |
+| 8 EntityMethod | sub 47/48 updateArena（名册/点数/配置）、sub 8 伤害**通知**（attacker/victim 身份 PROVEN；damage 字段值语义未证明，见 TYPE8_SUBTYPE8_DAMAGE_FIELD） | PROVEN（值 UNKNOWN） |
 | 10 Position | 49B 位置（含 space_id） | PROVEN |
 | 11 空间信息 | 含 `spaces/neptune` 字符串 | PARTIAL |
 | 13 赛后结算 dump | 与 `battle_results.dat` 字节级相同 | PROVEN |
@@ -27,6 +27,24 @@
 | 39 相机/瞄准流 | 7 floats × 120Hz | PARTIAL（f0/f1 已定，f5/f6 待第三样本确认） |
 
 > 状态词约定：PROVEN / PARTIAL / UNKNOWN / SUPERSEDED / DEPRECATED。历史实验按日期归档（见下文各「20xx-xx-xx」节），早期相反结论标 SUPERSEDED。
+
+## TYPE8_SUBTYPE8_DAMAGE_FIELD（raw 值语义未证明 · 2026-08-21，WildCat 样本）
+
+**结论**：Type-8 subtype-8 direct damage 通知的 attacker/victim **身份**可证明（与相邻 Type-7 propId=3 HP sample 的掉血窗口对齐验证），但其 `body[14..15]` 的 u16 raw **值不是权威伤害**——真实回放（20260817_2021 WildCat A178_SPHT，neptune，14 人）逐车交叉验证：**每个连续可信 HP sample 的掉血 delta 与附近 raw 值全部不符**（例：录像者 SPHT 掉血 377/368/333/316/368/408/358/419/242 vs 附近 raw 767/767/516/653/256/306/306/722/767；raw 求和 1418 ≠ 结算 dealt 1242）。
+
+**规则**：
+- **权威 HP 变化**只来自 Type-7 propId=3 signed i16 绝对当前 HP（EXACT，含装备加成，单调非增无治疗）：连续可信 sample 的 previousHp − currentHp = 该窗口 (prevT, curT] 内真实掉血。
+- **attribution** 只信任窗口内全部 DAMAGE 通知同属一个攻击者（0 通知 / 混合攻击者 / 身份无法解析 → 不 attribution，受害者掉血事实保留）。
+- Type-8 raw 值不再作为用户可见精确伤害；playback DTO 字段更名 rawProtocolValue（保留研究用），权威掉血经 observedHpLoss（单通知精确 attribution）与车辆级 hpLosses 暴露。
+- 解码器：只要包头已确认是 damage-method 调用（payload ≥ 8 且 subtype == 8）就必须产出**带时间戳的冲突证据事件**（warning 只作诊断、绝不能是唯一输出——否则 PlaybackCombatReconstruction 只消费 canonical 事件流、看不到冲突证据，掉血/致死窗口会错误地「无冲突」，把窗口内另一条 direct DAMAGE 错判为攻击者/击杀者）：
+  - direct 变体（body[13]==3 且 raw damage > 0）→ DamageEvent（EXACT；raw 数值不是权威伤害，见上）；
+  - 结构不足（body < 18，如真实流 len=17 短体变体）→ UnsupportedDamageEvent（PARTIAL，SHORT_DAMAGE_VARIANT）：victim 用可靠 outer entityId（方法调用目标实体 = 受击者）、attacker 未知（0）、无伤害数字；
+  - 结构足够（body.length ≥ 18）的非 direct 变体（body[13]≠3）→ UnsupportedDamageEvent（PARTIAL，DAMAGE_METHOD_VARIANT）：保留时间 + 攻击者/受击者 eid，不产生精确伤害数字；受击者 eid 缺失时用可靠 outer entityId 作 victim 证据；
+  - direct 变体但 raw == 0 → UnsupportedDamageEvent（PARTIAL，ZERO_RAW_DAMAGE）：raw 数值不是权威 HP delta（见上），不得仅凭 raw=0 判定「无伤害」，身份可解析则填写、victim 缺失回退 outer entityId；
+  - 以上 unsupported 证据均使对应 HP-loss attribution 与 killer attribution 都 fail-closed（掉血事实保留、attacker=null、attackerReliable=false、observedHpLoss=null、致死窗口 killer=null；victim 仍无法解析的证据不得静默视为「无冲突」）；身份字段只填确实能够解析的部分、confidence 恒 PARTIAL（不得标 EXACT/PROVEN），绝不进入生产伤害统计；
+  - 真正截断（payload < 8，无法确认 damage method）→ MALFORMED + TRUNCATED_PAYLOAD，不产出事件。
+
+**证据**：BattlePlaybackHpDamageProbeTest（非 CI 手动探针，-Dprobe.replay=<file>）输出逐车 hpSamples / hpLosses / DAMAGE raw / DESTROYED / KILL；PlaybackCombatReconstructionTest 覆盖 attribution 边界（单攻击者/混合/无通知/窗口左右开闭/击毁击杀推导）。
 
 ## 包格式
 
@@ -234,6 +252,40 @@ no PositionChanged != missing position（静止同坐标 gap 已证实，见下�
 - `eigenein/wotbreplay-parser`（Rust，v0.4.2）为 Blitz 回放公开实现：仅解 **type 0（BasePlayerCreate）与 type 8（EntityMethod）**，其余全部 `Unknown`；type 0 用 `serde_pickle` 解 arguments（与我们的 PickleDecoder 思路一致），字段 schema 与我们解出的 dict 吻合且我们的字段更全（clanTags/teamTitles/wins/webEmitterID 等社区未覆盖）。
 - 结论：type 7/31/35/39 在全球公开资料中均未破解，本分支的成果（type 7 结构 + propId 部分语义、type 23/26/31 射击与散布时间线、type 35 tick、type 13 容器、type 39 相机流与排除性结论）为新增贡献。
 
+## INITIAL_HP_PROBE（开局/最大 HP 调查 · 2026-08-21，PR #107 附加任务，7 样本 + WildCat）
+
+**结论：进场 max HP 无法从现有协议可靠证明（NOT_PROVEN）**——但已排除一批候选并确立安全 UX 语义。
+探针：`InitialHpProtocolProbeTest`（非 CI 手动探针，覆盖 common/data 全部 6 样本 + fixtures 夹具，无样本自动跳过）。
+
+| 候选来源 | 证据 | 分级 |
+|---|---|---|
+| Type-7 propId=3（当前 HP）开局满血广播 | 全部 7 样本首个 positive sample 与首次受击同刻或更晚（11.1s~93.1s），无一在开战广播初始满血 | REJECTED（作为开局满血来源） |
+| Type-7 propId=4（len=2） | 值域 0/1/258/259/514/515/1026/1027/...（256×n+(0|1) 模式）——高字节步进+低位标志，非连续 HP | REJECTED |
+| Type-7 propId=0（len=1） | 值域 {0,1} 布尔 | REJECTED |
+| Type-7 propId=9（len=1..4） | 值域 ~1e9（float 类），非 HP | REJECTED |
+| Type 0/1/2 EntityCreate | 全样本仅 1-2 个 create 包且未映射玩家（系统/相机实体），不覆盖车辆 | REJECTED |
+| Type 5 / Type 33 | type33=12B（eid+8B零）；type5 无 payload；均不含 HP | REJECTED |
+| Type-8 subtype48 wrapper=18（赛前配置） | 每样本仅 1 次；root field17=初始点数/胜利阈值（PROVEN）；**无 HP 字段证据** | CANDIDATE（待深挖） |
+| battle_results root field150 | 逐队统计（f21/f23 打包曲线）；含 f1=tankId 等，**无明确 max HP 字段** | CANDIDATE |
+| battle_results root field184/185/186 | 锦标赛/战队统计 | REJECTED |
+
+**循环门禁确认（任务 C）**：真实回放中所有受击车辆 `observedReceived < damageReceived`
+（差 446~675，如 SPHT 结算 3536 vs 观测 3067）→ `coverageExact=false` → `entryHpSource`
+恒为 BASE_FALLBACK → 前端旧逻辑显示 UNKNOWN/黑条。根因：首个 prop3 sample 缺失 →
+首个 HP loss 无法推导 → 事件流 received 恒小于结算 → 覆盖永不完全。**这是真实数据限制，
+不是门禁 bug**；不得放宽真实性门禁，由前端「相对满血状态」解决 UX（见 docs/features/battle-playback.md）。
+
+**HP provenance 语义（前端，docs/current-plan.md §4 扩展 + PR #107 Blocker 3 收口）**：
+- `OBSERVED_EXACT`：进场满血已证明（entryHpSource=OBSERVED_EXACT）→ 精确 current/entryHp/pct
+  （pct = current/entryHp；只有实际进场 max 已被可靠证明时才允许计算真实 HP 百分比）；
+- `CURRENT_HP_EXACT_MAX_UNKNOWN`：有真实 Type-7 current 采样但进场 max 未证明 →
+  **current 精确、maxHp=null、pct=null**——绝不使用 tankopedia base 或观测容量计算百分比
+  （baseHp/observedCapacityHp 只是 metadata）；前端渲染阵营色 indeterminate 斜纹
+  （「当前 HP 已观测，进场最大 HP 未知」），不渲染黑条；
+- `RULE_DERIVED_FULL_AT_SPAWN`：仅本方存活 + 无采样 + 无战前掉血证据 → 开局相对满血
+  （marker 100% 阵营色完整血条无条纹，Details Panel 显示「100%」——100% 是相对 UI 状态、
+  不是具体 HP、也不证明 actual max HP；tankopedia base 永不冒充 max/current）；
+- `UNKNOWN`：敌方/无依据 → 灰段未知样式（Details Panel —），不因己方 fallback 泄漏。
 ## 下一步
 
 1. type 39 字段映射：收集第三个真实回放（最好录像者阵亡时间明确），验证冻结时刻与 f2/f3/f4 贴车规律；或游戏内录屏对照 FOV 档位/瞄准动作。

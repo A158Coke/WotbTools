@@ -136,6 +136,16 @@ public record MapOverview(
      * <p>注意：{@code positionIntervals} 是服务器位置流上报覆盖（type-10 gap 聚类），
      * 不代表录像者客户端点亮——敌方静止时服务器不上报位置，位置中断≠失察。
      *
+     * <p>HP 字段拆分（PR #107 Blocker 3）：{@code maxHp} 语义混合（观测 vs tankopedia）已删除，
+     * 拆为三个独立 provenance 字段，前端<b>不得</b>把 baseHp/observedCapacityHp 冒充本局
+     * current/max/entry HP：</p>
+     * <ul>
+     *   <li>{@code baseHp} = Tankopedia 静态参考（metadata；允许作为灰段/参考展示，禁止进本局百分比）；</li>
+     *   <li>{@code observedCapacityHp} = 回放观测容量（= 真实可信 Type-7 positive HP 采样的最大值，
+     *       纯回放观测；无可信 sample 为 null；绝不 max(观测, base)/fallback base）；</li>
+     *   <li>{@code entryHp} = 已证明的进场满血（仅 entryHpSource==OBSERVED_EXACT 有效，否则 null）。</li>
+     * </ul>
+     *
      * @param entryHpSource 进场满血 provenance（OBSERVED_EXACT | BASE_FALLBACK | UNKNOWN，
      *                      来自 {@code ObservedMaxHp} 的权威判定；null=未回填）
      * @param entryHp       已证明的进场满血（含装备/物资加成）；仅
@@ -154,11 +164,13 @@ public record MapOverview(
             List<PositionInterval> positionIntervals,
             Double deathSec,
             List<DirectionSample> directionSamples,
-            Integer maxHp,
+            Integer baseHp,
+            Integer observedCapacityHp,
             List<HpSample> hpSamples,
             String tankType,
             String entryHpSource,
             Integer entryHp,
+            List<HpLoss> hpLosses,
             FinalStats finalStats
     ) {
         public PlaybackVehicle {
@@ -170,7 +182,27 @@ public record MapOverview(
             directionSamples = directionSamples == null
                     ? List.of() : List.copyOf(directionSamples);
             hpSamples = hpSamples == null ? List.of() : List.copyOf(hpSamples);
+            hpLosses = hpLosses == null ? List.of() : List.copyOf(hpLosses);
         }
+    }
+
+    /**
+     * 单车一次权威 HP 变化（docs/current-plan.md §12/§13）。
+     *
+     * @param fromSec           窗口起点（前一可信 HP sample，battle-relative 秒）
+     * @param toSec             窗口终点（后一可信 HP sample；掉血发生在 (fromSec, toSec]）
+     * @param hpLoss            掉血值 = previousHp - currentHp（HP 单调非增，无治疗）
+     * @param attackerAccountId 可证明的攻击者账号；null = 无法可靠 attribution
+     *                          （0 通知 / 混合攻击者 / 身份无法解析）——不得伪造攻击者
+     * @param attackerReliable  是否可 attribution（= attackerAccountId != null）
+     */
+    public record HpLoss(
+            double fromSec,
+            double toSec,
+            int hpLoss,
+            Long attackerAccountId,
+            boolean attackerReliable
+    ) {
     }
 
     /** 单车最终战绩（整场结算口径；仅用于「最终战绩」分区，不得冒充当前时间点状态）。 */
@@ -190,6 +222,24 @@ public record MapOverview(
 
     /** 回放实测血量采样（battle-relative 秒；type-7 propId=3 当前血量，含装备加成，阵亡到 0）。 */
     public record HpSample(double timeSec, int hp) {
+    }
+
+    /**
+     * observedCapacityHp 推导（PR #107 Blocker 3）：真实可信 Type-7 positive HP 采样的最大值
+     * （纯回放观测；与前端收到的 hpSamples 同源同值）。无可信 positive sample → null——
+     * 绝不用 max(观测, tankopedia base) 钳制、也不 fallback 到 base（base 只是静态参考）。
+     */
+    public static Integer observedCapacityHpOf(final List<HpSample> samples) {
+        if (samples == null) {
+            return null;
+        }
+        int max = 0;
+        for (final HpSample s : samples) {
+            if (s != null && s.hp() > max) {
+                max = s.hp();
+            }
+        }
+        return max > 0 ? max : null;
     }
 
     /**
@@ -221,14 +271,19 @@ public record MapOverview(
      * @param timeSec        battle-relative 秒
      * @param accountId      主体（攻击者 / 被击毁者 / 进入或离开观察的车辆）；无法解析为 null
      * @param targetAccountId 对象（DAMAGE/KILL 的受害者）；其余为 null
-     * @param damage         DAMAGE 的伤害值；其余为 null
+     * @param rawProtocolValue DAMAGE 的 Type-8 raw 协议值（语义未证明——不得当权威伤害展示；
+     *                        权威掉血见 {@link HpLoss} 与 {@link #observedHpLoss}）；其余为 null
+     * @param observedHpLoss DAMAGE 可证明的掉血值（仅当该窗口内唯一伤害通知且可 attribution——
+     *                       attackerReliable、窗口内无 unsupported 变体时非 null；其余为 null——
+     *                       前端不得显示伪造的精确伤害、也不得把 unsupported 冲突窗口的掉血挂到单条通知）
      */
     public record PlaybackEvent(
             String type,
             double timeSec,
             Long accountId,
             Long targetAccountId,
-            Integer damage
+            Integer rawProtocolValue,
+            Integer observedHpLoss
     ) {
     }
 }
