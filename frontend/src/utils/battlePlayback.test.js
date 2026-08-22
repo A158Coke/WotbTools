@@ -102,9 +102,11 @@ describe('vehicleHpAt / teamHp', () => {
   // PR #107 Blocker 3：maxHp 语义混合已拆分为 baseHp（Tankopedia 静态参考）+
   // observedCapacityHp（回放观测容量）——两者都是 metadata，不得冒充本局 current/max/entry
   const vehicles = [
-    { team: 1, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [{ timeSec: 0, hp: 3000 }, { timeSec: 10, hp: 2000 }, { timeSec: 20, hp: 0 }] },
+    { team: 1, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [{ timeSec: 0, hp: 3000 }, { timeSec: 10, hp: 2000 }, { timeSec: 20, hp: 0 }],
+      hpLosses: [{ fromSec: 0, toSec: 10, hpLoss: 1000 }, { fromSec: 10, toSec: 20, hpLoss: 2000 }] },
     { team: 1, baseHp: 2600, observedCapacityHp: 2600, hpSamples: [] },
-    { team: 2, baseHp: 4000, observedCapacityHp: 4000, hpSamples: [{ timeSec: 5, hp: 4000 }, { timeSec: 15, hp: 1000 }] }
+    { team: 2, baseHp: 4000, observedCapacityHp: 4000, hpSamples: [{ timeSec: 5, hp: 4000 }, { timeSec: 15, hp: 1000 }],
+      hpLosses: [{ fromSec: 5, toSec: 15, hpLoss: 3000 }] }
   ]
 
   it('vehicleHpAt: sample priority; no fake fallback from theoretical maxHp (PR #107)', () => {
@@ -134,7 +136,10 @@ describe('vehicleHpAt / teamHp', () => {
     // EXACT（totalMax>0）| PARTIAL（有真实已知剩余、无已证明分母）| FULL_RELATIVE（本方全部
     // 存活车开局相对满血、无任何数字）| UNKNOWN（无任何数据）。
     // vehicles[0]（t=5: 3000、t=15: 2000）、vehicles[1]（无采样）、vehicles[2]（敌方）
-    expect(teamHp(vehicles, 1, 5, true)).toEqual({ totalMax: 0, knownRemaining: 3000, unknownMax: 0, spawnFullCount: 1, state: 'PARTIAL' })
+    // Blocker 2：t=5 全队无权威掉血（v0 首次 hpLoss 在 toSec=10）→ FULL_RELATIVE 100% 实心条
+    // （即使 v0 已有 current sample、全队 entry/max 未全部证明，开局也不显示斜纹）
+    expect(teamHp(vehicles, 1, 5, true)).toEqual({ totalMax: 0, knownRemaining: 3000, unknownMax: 0, spawnFullCount: 1, state: 'FULL_RELATIVE' })
+    // t=15：v0 已有权威掉血（toSec=10）→ 不再是开局 → PARTIAL（真实已知剩余 + 斜纹）
     expect(teamHp(vehicles, 1, 15, true)).toEqual({ totalMax: 0, knownRemaining: 2000, unknownMax: 0, spawnFullCount: 1, state: 'PARTIAL' })
     // 敌方（assumeFull=false）：无采样存活车恒 UNKNOWN 灰段，不得 base fallback
     expect(teamHp(vehicles, 1, 5)).toEqual({ totalMax: 0, knownRemaining: 3000, unknownMax: 2600, spawnFullCount: 0, state: 'PARTIAL' })
@@ -150,8 +155,9 @@ describe('vehicleHpAt / teamHp', () => {
     expect(teamHp([{ team: 1, baseHp: 2000, observedCapacityHp: 2000, deathSec: 5 }], 1, 50))
       .toEqual({ totalMax: 0, knownRemaining: 0, unknownMax: 0, spawnFullCount: 0, state: 'UNKNOWN' })
     // perspectiveTeam=2 场景：team2 用 friendly fallback、team1 保持 enemy UNKNOWN（不写死 team1=本方）
+    // perspectiveTeam=2 场景：team2 用 friendly fallback、team1 保持 enemy UNKNOWN（不写死 team1=本方）
     const mirror = vehicles.map(v => ({ ...v, team: v.team === 1 ? 2 : 1 }))
-    expect(teamHp(mirror, 2, 5, true)).toEqual({ totalMax: 0, knownRemaining: 3000, unknownMax: 0, spawnFullCount: 1, state: 'PARTIAL' })
+    expect(teamHp(mirror, 2, 5, true)).toEqual({ totalMax: 0, knownRemaining: 3000, unknownMax: 0, spawnFullCount: 1, state: 'FULL_RELATIVE' })
     expect(teamHp(mirror, 1, 5)).toEqual({ totalMax: 0, knownRemaining: 4000, unknownMax: 0, spawnFullCount: 0, state: 'PARTIAL' })
     expect(teamHp([], 1, 0)).toEqual({ totalMax: 0, knownRemaining: 0, unknownMax: 0, spawnFullCount: 0, state: 'UNKNOWN' })
   })
@@ -164,13 +170,16 @@ describe('vehicleHpAt / teamHp', () => {
     expect(teamHp(sevenFull, 1, 0, true)).toEqual({
       totalMax: 0, knownRemaining: 0, unknownMax: 0, spawnFullCount: 7, state: 'FULL_RELATIVE',
     })
-    // seek 后出现可信 sample → 状态确定性更新（PARTIAL：有真实已知剩余、无已证明分母）
+    // seek 后出现可信 sample + 首次权威掉血 → 状态确定性更新（PARTIAL：有真实已知剩余、无已证明分母）；
+    // 只有 sample 没有掉血时仍是开局（FULL_RELATIVE 100% 实心条，不显示斜纹——Blocker 2）
     const oneSampled = sevenFull.map((v, i) => i === 0
-      ? { ...v, hpSamples: [{ timeSec: 10, hp: 2500 }] }
+      ? { ...v, hpSamples: [{ timeSec: 10, hp: 2500 }, { timeSec: 12, hp: 2000 }], hpLosses: [{ fromSec: 10, toSec: 12, hpLoss: 500 }] }
       : v)
     expect(teamHp(oneSampled, 1, 12, true)).toEqual({
-      totalMax: 0, knownRemaining: 2500, unknownMax: 0, spawnFullCount: 6, state: 'PARTIAL',
+      totalMax: 0, knownRemaining: 2000, unknownMax: 0, spawnFullCount: 6, state: 'PARTIAL',
     })
+    // sample 已出现但首次掉血尚未发生（t=10.5）→ 仍是开局 FULL_RELATIVE（100% 实心条）
+    expect(teamHp(oneSampled, 1, 10.5, true).state).toBe('FULL_RELATIVE')
     // backward seek 回开局（sample 之前）→ 恢复 FULL_RELATIVE
     expect(teamHp(oneSampled, 1, 5, true).state).toBe('FULL_RELATIVE')
     // 敌方无 sample 不获得 FULL_RELATIVE（组件里敌方路径 assumeFull=false → UNKNOWN；
@@ -183,7 +192,7 @@ describe('vehicleHpAt / teamHp', () => {
   it('teamHp: totalMax=0 时绝不渲染虚假 knownRemaining / totalMax（Blocker 2 防 0/0）', () => {
     // 有真实已知剩余（2500）但无已证明分母 → PARTIAL：value 显示已知剩余，不显示「/ 0」
     const sampled = [
-      { team: 1, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [{ timeSec: 0, hp: 2500 }], deathSec: null },
+      { team: 1, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [{ timeSec: 0, hp: 3000 }, { timeSec: 5, hp: 2500 }], hpLosses: [{ fromSec: 0, toSec: 5, hpLoss: 500 }], deathSec: null },
     ]
     const hp = teamHp(sampled, 1, 5, true)
     expect(hp.totalMax).toBe(0)
@@ -218,12 +227,17 @@ describe('vehicleHpAt / teamHp', () => {
     // state 不能是 EXACT；totalMax=0（partial 证明不得作分母）；不得显示 5800 / 3000
     const mixed = [
       { team: 1, entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [], deathSec: null },
-      { team: 1, entryHpSource: null, baseHp: 3000, observedCapacityHp: 2800, hpSamples: [{ timeSec: 0, hp: 2800 }], deathSec: null },
+      { team: 1, entryHpSource: null, baseHp: 3000, observedCapacityHp: 2800, hpSamples: [{ timeSec: 0, hp: 2800 }], hpLosses: [{ fromSec: 0, toSec: 10, hpLoss: 200 }], deathSec: null },
     ]
-    const hp = teamHp(mixed, 1, 5, true)
-    expect(hp.state).not.toBe('EXACT')
+    // Blocker 2：开局（首次掉血前）→ FULL_RELATIVE 100% 实心条（不显示斜纹/分数）
+    const opening = teamHp(mixed, 1, 5, true)
+    expect(opening.state).not.toBe('EXACT')
+    expect(opening.state).toBe('FULL_RELATIVE')
+    expect(opening.totalMax).toBe(0)
+    // 首次掉血后 → PARTIAL：不得用 partial 总量作分母，只显示真实已知剩余（不显示 5800 / 3000）
+    const hp = teamHp(mixed, 1, 12, true)
     expect(hp.state).toBe('PARTIAL')
-    expect(hp.totalMax).toBe(0) // 部分证明：不得用 partial 总量作分母
+    expect(hp.totalMax).toBe(0)
     expect(hp.knownRemaining).toBe(5800) // 真实已知剩余（3000 满血 + 2800 current）可显示
   })
 
@@ -232,21 +246,25 @@ describe('vehicleHpAt / teamHp', () => {
       { team: 1, entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [], deathSec: null },
       { team: 1, entryHpSource: null, baseHp: 2600, observedCapacityHp: 2600, hpSamples: [], hpLosses: [], deathSec: null },
     ]
+    // Blocker 2：两辆都无权威掉血 → 开局 FULL_RELATIVE（100% 实心条；不显示 3000 / 3000 虚假分母）
     const hp = teamHp(mixed, 1, 5, true)
-    expect(hp.state).toBe('PARTIAL')
-    expect(hp.totalMax).toBe(0) // 不显示 3000 / 3000 的虚假分母（还有一辆未证明）
+    expect(hp.state).toBe('FULL_RELATIVE')
+    expect(hp.totalMax).toBe(0)
     expect(hp.knownRemaining).toBe(3000)
   })
 
   it('teamHp: OBSERVED_EXACT + CURRENT_HP_EXACT_MAX_UNKNOWN 混合 → PARTIAL（不得 EXACT）', () => {
     const mixed = [
       { team: 1, entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [{ timeSec: 0, hp: 2800 }], deathSec: null },
-      { team: 1, entryHpSource: null, baseHp: 3000, observedCapacityHp: 2800, hpSamples: [{ timeSec: 0, hp: 2800 }], deathSec: null },
+      { team: 1, entryHpSource: null, baseHp: 3000, observedCapacityHp: 2800, hpSamples: [{ timeSec: 0, hp: 2800 }], hpLosses: [{ fromSec: 0, toSec: 10, hpLoss: 100 }], deathSec: null },
     ]
-    const hp = teamHp(mixed, 1, 5, true)
+    // Blocker 2：开局（B 首次掉血前）→ FULL_RELATIVE（不显示斜纹）
+    expect(teamHp(mixed, 1, 5, true).state).toBe('FULL_RELATIVE')
+    // B 掉血后 → PARTIAL（2800 + 2800 均为真实已知剩余，无已证明分母）
+    const hp = teamHp(mixed, 1, 12, true)
     expect(hp.state).toBe('PARTIAL')
     expect(hp.totalMax).toBe(0)
-    expect(hp.knownRemaining).toBe(5600) // 2800 + 2800 均为真实已知剩余
+    expect(hp.knownRemaining).toBe(5600)
   })
 
   it('teamHp: 已阵亡但 entryHp 未证明仍阻止全队成为 EXACT', () => {
@@ -263,17 +281,19 @@ describe('vehicleHpAt / teamHp', () => {
     expect(hp.knownRemaining).toBe(3000)
   })
 
-  it('teamHp: EXACT 状态 knownRemaining 永不大于 totalMax（current 钳制 ≤ entryHp）', () => {
-    // 全部已证明，但一辆 current 采样异常高于 entryHp（矛盾证据）→ 钳制，known ≤ total
+  it('teamHp: 矛盾证据（current > entryHp）→ 保留真实 current、整队降级 PARTIAL（不钳制、不 EXACT）', () => {
+    // 全部已证明，但一辆 current 采样异常高于 entryHp（5000 > 3000，矛盾证据）：
+    // 绝不 Math.min 钳制真实采样——current=5000 原样保留、knownRemaining=8000；
+    // 状态降级为 PARTIAL（不得 EXACT、不得 100% 实心条），totalMax=0（不得作精确分母）
     const proven = [
       { team: 1, entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [{ timeSec: 0, hp: 5000 }], deathSec: null },
       { team: 1, entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [], deathSec: null },
     ]
     const hp = teamHp(proven, 1, 5, true)
-    expect(hp.state).toBe('EXACT')
-    expect(hp.totalMax).toBe(6000)
-    expect(hp.knownRemaining).toBe(6000) // 5000 钳制到 3000 + 3000
-    expect(hp.knownRemaining).toBeLessThanOrEqual(hp.totalMax)
+    expect(hp.state).not.toBe('EXACT')
+    expect(hp.state).toBe('PARTIAL')
+    expect(hp.totalMax).toBe(0) // 矛盾证据：totalMax 不得作为精确比例分母
+    expect(hp.knownRemaining).toBe(8000) // 5000 真实采样原样保留 + 3000
   })
 
   it('teamPointsAt returns the latest broadcast <= t per team, null when absent', () => {
@@ -888,16 +908,20 @@ describe('hpDisplay / ghostAround / cumulativeStatsAt / eventsCrossed / transien
     expect(hpDisplay(enemy, 42).current).toBe(1700)
   })
 
-  it('hpDisplay: seek 0s → 开局相对满血（己方）；首个 sample 后 → 真实 current；阵亡 → 0', () => {
-    const v = { ...base, team: 1, deathSec: 30, hpSamples: [{ timeSec: 10, hp: 2500 }, { timeSec: 30, hp: 0 }] }
+  it('hpDisplay: seek 0s → 开局相对满血（己方）；首个 sample 后 → 真实 current（仍 100% 实心条）；首次掉血后 → 斜纹；阵亡 → 0', () => {
+    const v = { ...base, team: 1, deathSec: 30, hpSamples: [{ timeSec: 10, hp: 2500 }, { timeSec: 30, hp: 0 }],
+      hpLosses: [{ fromSec: 10, toSec: 30, hpLoss: 2500 }] }
     // seek 到 0s：首个 sample（10s）之前 → 己方相对满血
     const t0 = hpDisplay(v, 0, { friendly: true })
     expect(t0.state).toBe('RULE_DERIVED_FULL_AT_SPAWN')
     expect(t0.current).toBeNull()
-    // seek 到 15s：sample 后 → 真实 current
+    // seek 到 15s：sample 后 → 真实 current，但首次权威掉血（toSec=30）尚未发生 →
+    // OPENING_RELATIVE_FULL：100% 实心条（fullState）、无斜纹（Blocker 2）、真实 current 可显示
     const t15 = hpDisplay(v, 15, { friendly: true })
     expect(t15.current).toBe(2500)
-    expect(t15.state).toBe('CURRENT_HP_EXACT_MAX_UNKNOWN')
+    expect(t15.state).toBe('OPENING_RELATIVE_FULL')
+    expect(t15.fullState).toBe(true)
+    expect(t15.pct).toBeNull()
     // backward seek 回 0s：确定性重建（又回到相对满血）
     expect(hpDisplay(v, 0, { friendly: true }).state).toBe('RULE_DERIVED_FULL_AT_SPAWN')
     // seek 到阵亡后 → 0
@@ -921,5 +945,45 @@ describe('hpDisplay / ghostAround / cumulativeStatsAt / eventsCrossed / transien
     expect(r2.current).toBeNull()
     expect(r2.maxHp).toBeNull()
     expect(r2.fullState).toBe(true) // 相对满血状态，无具体数字
+  })
+
+  it('hpDisplay: 己方开局有 current sample 但 max 未证明 → OPENING_RELATIVE_FULL（100% 实心条、无斜纹、真实 current）；首次掉血后 → CURRENT_HP_EXACT_MAX_UNKNOWN 斜纹', () => {
+    const v = { ...base, team: 1, hpSamples: [{ timeSec: 0, hp: 2600 }], hpLosses: [{ fromSec: 5, toSec: 6, hpLoss: 100 }] }
+    // 开局（首次掉血前）：即使已有 current sample、entry/max 未证明 → 100% 实心条（无斜纹）
+    const opening = hpDisplay(v, 4, { friendly: true })
+    expect(opening.current).toBe(2600) // 真实采样保留（Details/数字可显示）
+    expect(opening.state).toBe('OPENING_RELATIVE_FULL')
+    expect(opening.fullState).toBe(true)
+    expect(opening.pct).toBeNull()
+    expect(opening.maxHp).toBeNull()
+    // 首次权威掉血后 → 真实 current + indeterminate 斜纹（max 未证明）
+    const after = hpDisplay(v, 7, { friendly: true })
+    expect(after.current).toBe(2600)
+    expect(after.state).toBe('CURRENT_HP_EXACT_MAX_UNKNOWN')
+    expect(after.fullState).toBe(false)
+  })
+
+  it('hpDisplay: INCONSISTENT——current > entryHp 矛盾 → 保留真实 current、pct=null、不返回 OBSERVED_EXACT 百分比', () => {
+    const v = { ...base, team: 1, entryHpSource: 'OBSERVED_EXACT', entryHp: 3000,
+      hpSamples: [{ timeSec: 0, hp: 5000 }] }
+    const r = hpDisplay(v, 5, { friendly: true })
+    expect(r.current).toBe(5000) // 真实采样绝不钳制/改写
+    expect(r.state).toBe('INCONSISTENT')
+    expect(r.maxHp).toBeNull()
+    expect(r.pct).toBeNull() // 不得返回语义上的 OBSERVED_EXACT 百分比
+    expect(r.fullState).toBe(false)
+    // 全队聚合同口径：整队降级 PARTIAL（不得 EXACT、不得 100% 实心条）
+    const hp = teamHp([v], 1, 5, true)
+    expect(hp.state).toBe('PARTIAL')
+    expect(hp.totalMax).toBe(0)
+    expect(hp.knownRemaining).toBe(5000)
+  })
+
+  it('hpDisplay: 敌方有 sample 不套用己方开局规则（仍 CURRENT_HP_EXACT_MAX_UNKNOWN 斜纹）', () => {
+    const v = { ...base, team: 2, hpSamples: [{ timeSec: 0, hp: 2600 }] }
+    const r = hpDisplay(v, 5, { friendly: false })
+    expect(r.state).toBe('CURRENT_HP_EXACT_MAX_UNKNOWN')
+    expect(r.fullState).toBe(false)
+    expect(r.current).toBe(2600)
   })
 })

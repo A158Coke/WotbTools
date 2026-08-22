@@ -189,8 +189,10 @@ const hpHudStyle = computed(() => ({
 }))
 // 填充（PR #107 HP provenance）：
 // - pct 已知 → 精确百分比；
-// - RULE_DERIVED_FULL_AT_SPAWN（fullState=true，仅本方开局）→ 完整阵营色条（相对满血，无具体数字）；
-// - CURRENT_HP_EXACT_MAX_UNKNOWN（current 有值、max 未证明）→ 100% 宽 + 阵营色 indeterminate 斜纹；
+// - RULE_DERIVED_FULL_AT_SPAWN / OPENING_RELATIVE_FULL（fullState=true，仅本方开局）→
+//   100% 阵营色实心条（相对满血；开局即使有 current sample、全队 entry/max 未全部证明也无斜纹）；
+// - CURRENT_HP_EXACT_MAX_UNKNOWN / INCONSISTENT（current 有值、max 未证明/矛盾）→
+//   100% 宽 + 阵营色 indeterminate 斜纹（INCONSISTENT：比例不可信，保留真实 current）；
 // - UNKNOWN（敌方可未知）→ 空条（灰色/未知）。
 const hpFillWidth = computed(() => {
   const d = props.hp
@@ -199,8 +201,10 @@ const hpFillWidth = computed(() => {
   if (d.fullState === true) return '100%' // 相对满血状态：完整阵营色条
   return d.current != null ? '100%' : '0%'
 })
-// indeterminate = 有当前 HP 但最大值未知（不允许按 tankopedia base 算百分比）
-const hpFillUnknown = computed(() => !!props.hp && props.hp.current != null && props.hp.pct == null)
+// indeterminate = 有当前 HP 但最大值未知（不允许按 tankopedia base 算百分比）；
+// fullState（RULE_DERIVED_FULL_AT_SPAWN / OPENING_RELATIVE_FULL，己方开局相对满血）除外——
+// 开局即使有 current sample、全队 entry/max 尚未全部证明，也渲染 100% 阵营色实心条（无斜纹）
+const hpFillUnknown = computed(() => !!props.hp && props.hp.current != null && props.hp.pct == null && props.hp.fullState !== true)
 const hpGhostWidth = computed(() => {
   const g = props.hpGhost
   if (!g || !Number.isFinite(g.prevPct) || !Number.isFinite(g.nextPct)) return null
@@ -214,8 +218,12 @@ const hpGhostLeft = computed(() => {
 const hpTitle = computed(() => {
   const d = props.hp
   if (!d) return ''
-  if (d.state === 'RULE_DERIVED_FULL_AT_SPAWN') return props.t ? props.t('recon.map.playback.hp_full_spawn') : ''
-  if (d.state === 'CURRENT_HP_EXACT_MAX_UNKNOWN') return props.t ? props.t('recon.map.playback.hp_current_max_unknown') : ''
+  if (d.state === 'RULE_DERIVED_FULL_AT_SPAWN' || d.state === 'OPENING_RELATIVE_FULL') {
+    return props.t ? props.t('recon.map.playback.hp_full_spawn') : ''
+  }
+  if (d.state === 'CURRENT_HP_EXACT_MAX_UNKNOWN' || d.state === 'INCONSISTENT') {
+    return props.t ? props.t('recon.map.playback.hp_current_max_unknown') : ''
+  }
   return ''
 })
 const hpClasses = computed(() => ({

@@ -93,6 +93,33 @@
       fail-closed；身份字段按真实证据等级标记，未证明字段不写 PROVEN）；结构不足仍只 warning」；
       battle-playback.md 同步（observedCapacityHp 纯观测语义、EXACT 全队证明门槛、PARTIAL/MIXED、
       unsupported 阻止掉血归属）。
+  - **PR #107 第五轮审查修复（Blocker 1-3：全部无法排除的 damage-method 变体参与 attribution fail-closed / 己方开局视觉规则严格化 / 矛盾 HP 证据 fail-closed）**：
+    - Blocker 1（短体与 zero-raw damage-method 变体参与 fail-closed）：EntityMethodDecoder 只要包头确认
+      damage-method 调用（payload ≥ 8 且 subtype == 8）就必产出带时间戳的冲突证据事件，warning 只作诊断、
+      不再是唯一输出——结构不足短体（body<18，SHORT_DAMAGE_VARIANT：victim 用可靠 outer entityId、
+      attacker 未知、无伤害数字）、非 direct 变体（DAMAGE_METHOD_VARIANT）、direct raw=0
+      （ZERO_RAW_DAMAGE：raw 不是权威 HP delta，不得仅凭 0 判定「无伤害」，身份可解析则填写、
+      victim 缺失回退 outer entityId）→ 全部进入 PlaybackCombatReconstruction 的 unsupported 冲突路径，
+      使对应 HP-loss attribution 与 killer attribution fail-closed（掉血事实保留、attacker=null、
+      attackerReliable=false、observedHpLoss=null、致死窗口 killer=null；victim 仍无法解析的进
+      unresolved 全局 fail-closed 列表）；confidence 恒 PARTIAL（不标 EXACT/PROVEN）；真正截断
+      （payload<8）仍是 MALFORMED。新增解码器 2 项与重建 E2E 5 项测试（含窗口左右边界确定性）。
+    - Blocker 2（己方开局视觉规则：满血实心条、禁止条纹 fallback）：hpDisplay 新增
+      OPENING_RELATIVE_FULL 状态——己方存活 + 有可信 current 采样但进场 max 未证明 + 当前时间之前
+      无权威 hpLoss / 无 destroyed 证据（含 0 采样）→ 100% 阵营色实心条（fullState=true、无
+      pb-hp-fill-unknown 斜纹），真实 current 仍供 Details/数字展示；RULE_DERIVED_FULL_AT_SPAWN
+      （无采样）保持；teamHp 的 FULL_RELATIVE 改为「全部存活车辆（无阵亡）均开局相对满血」——
+      即使部分车辆已有 current sample、但全队 entry/max 尚未全部证明，开局总条也不显示斜纹；
+      首次权威掉血/阵亡后才切到精确或不确定状态；backward seek 回首次掉血前自动恢复 100% 实心条；
+      敌方不套用（无采样仍 UNKNOWN）。改 4 处既有测试 + 新增单车 marker / 队伍总条 / Details /
+      seek-backward / 镜像 perspectiveTeam=2 组件测试。
+    - Blocker 3（矛盾 HP 证据 fail-closed，禁止 Math.min 改写真实采样）：teamHp 删除
+      Math.min(cur, entryHp) 钳制——current 超过 entryHp 的矛盾证据保留原值；EXACT 除全队 entryHp
+      已证明外还要求所有当前证据与 entryHp 一致（每个 ≤t 可信采样都在 [0, entryHp]，hpEvidenceConsistent
+      检查）；矛盾 → 整队降级 PARTIAL（totalMax=0，不做精确比例分母）；hpDisplay 的 OBSERVED_EXACT
+      分支在矛盾时返回新 INCONSISTENT 状态（真实 current、maxHp=null、pct=null，渲染 indeterminate
+      斜纹、不显示伪造比例）；Details 与队伍聚合同一事实口径。重写原「5000 钳制 3000」测试为
+      「5000 保留、非 EXACT、无 6000/6000、无 NaN/负宽/>100% CSS」。
 ### Changed
 - **AI 模型切回 deepseek-v4-flash（官方稳定别名）**：`AI_MODEL` 默认值从
   `deepseek-v4-pro` 统一切回 `deepseek-v4-flash`——官方稳定别名直接调用最新 Flash 版本，

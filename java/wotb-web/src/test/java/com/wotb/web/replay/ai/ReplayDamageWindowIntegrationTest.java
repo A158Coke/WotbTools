@@ -88,8 +88,9 @@ class ReplayDamageWindowIntegrationTest {
         assertFalse(windows.isEmpty(), "录像者必须经实体映射得到非空掉血窗口");
         final float duration = battle.durationS == null
                 ? Float.MAX_VALUE : battle.durationS.floatValue();
-        // hpLoss 语义：部分窗口无对应 DAMAGE 通知（环境/盲区）→ 攻击者部分未解析是合法输出；
-        // 但任何窗口都不得把同一攻击者算多个，且至少一个窗口可证明为单一攻击者。
+        // hpLoss 语义：掉血事实来自 Type-7 权威采样（真实数字保留）；攻击者 attribution 在存在
+        // 无法排除的 unsupported 变体（短体/zero-raw/非 direct 冲突证据）时 fail-closed（部分未解析
+        // 是合法且必须的输出）。任何窗口都不得把同一攻击者算多个、不得在未解析时断言集火。
         for (final DamageWindowClusterer.DamageWindow window : windows) {
             assertTrue(window.startSec() >= 0f, "battle-relative 时间不得为负: " + window);
             assertTrue(window.endSec() >= window.startSec());
@@ -97,10 +98,14 @@ class ReplayDamageWindowIntegrationTest {
             assertTrue(window.totalDamage() > 0 && window.hitCount() > 0);
             assertTrue(window.uniqueAttackerCount() <= 1,
                     "单一攻击者只能算 1 个攻击者（不得把同一攻击者算多个）: " + window);
+            assertFalse(window.focusFireCandidate() && window.attackersUnresolved(),
+                    "攻击者未解析时不得断言集火: " + window);
         }
-        assertTrue(windows.stream().anyMatch(w ->
-                        w.uniqueAttackerCount() == 1 && !w.attackersUnresolved()),
-                "至少一个窗口的攻击者可证明为单一攻击者: " + windows);
+        // PR #107 第 5 轮回归：短体/zero-raw damage-method 变体现在产出冲突证据事件并真正参与
+        // attribution fail-closed——本夹具（含短体/zero-raw 变体）必须存在诚实标记「攻击者部分未解析」
+        // 的窗口（若有人回退成「warning 不产出事件」，此断言失败）；不得伪造攻击者。
+        assertTrue(windows.stream().anyMatch(w -> w.attackersUnresolved()),
+                "至少一个窗口必须诚实标记攻击者未解析（冲突证据 fail-closed）: " + windows);
 
         // Player 证据段：覆盖完整时输出真实数字；partial 时抑制并输出 UNAVAILABLE
         final StringBuilder full = new StringBuilder();
@@ -109,7 +114,9 @@ class ReplayDamageWindowIntegrationTest {
         final String fullEvidence = full.toString();
         assertTrue(fullEvidence.contains("RECORDER_DAMAGE_RECEIVED_WINDOWS（你掉血时间窗口"), fullEvidence);
         assertTrue(fullEvidence.contains("掉血524"), fullEvidence);
-        assertTrue(fullEvidence.contains("攻击者1"), fullEvidence);
+        // 夹具含短体/zero-raw 冲突证据 → 窗口攻击者 fail-closed：诚实输出「攻击者0（攻击者部分未解析）」
+        assertTrue(fullEvidence.contains("攻击者0"), fullEvidence);
+        assertTrue(fullEvidence.contains("（攻击者部分未解析）"), fullEvidence);
         assertTrue(fullEvidence.contains("攻击者=1 → 短时间集中掉血/高压掉血窗口（不是集火）"), fullEvidence);
         assertFalse(fullEvidence.contains("致死"), "不得输出生产中恒为 false 的致死宣称");
 
@@ -143,7 +150,8 @@ class ReplayDamageWindowIntegrationTest {
         final String harnessContent = harnessPrepared.userContent();
         assertTrue(harnessContent.contains("RECORDER_DAMAGE_RECEIVED_WINDOWS（你掉血时间窗口"), harnessContent);
         assertTrue(harnessContent.contains("掉血524"), harnessContent);
-        assertTrue(harnessContent.contains("攻击者1"), harnessContent);
+        assertTrue(harnessContent.contains("攻击者0"), harnessContent);
+        assertTrue(harnessContent.contains("（攻击者部分未解析）"), harnessContent);
         assertFalse(harnessContent.contains("UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)"), harnessContent);
         assertTrue(harnessContent.indexOf("======================== TASK")
                         > harnessContent.indexOf("RECORDER_DAMAGE_RECEIVED_WINDOWS"),
