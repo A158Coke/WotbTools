@@ -120,6 +120,25 @@
       分支在矛盾时返回新 INCONSISTENT 状态（真实 current、maxHp=null、pct=null，渲染 indeterminate
       斜纹、不显示伪造比例）；Details 与队伍聚合同一事实口径。重写原「5000 钳制 3000」测试为
       「5000 保留、非 EXACT、无 6000/6000、无 NaN/负宽/>100% CSS」。
+  - **PR #107 第六轮审查修复（Blocker 1-2：direct victim 缺失不再 attribution fail-open / HP 证据一致性含阵亡车辆与单调性）**：
+    - Blocker 1（direct raw>0 且 victimEid 缺失 → fail-open）：EntityMethodDecoder 对 direct raw>0 但
+      body 内 victim eid 缺失/无效（≤0）的变体不再产出 victim=0 的 EXACT DamageEvent——降级为
+      UnsupportedDamageEvent（PARTIAL，DIRECT_VICTIM_UNKNOWN：victim 用可靠 outer entityId、无精确
+      伤害数字），保证完整 direct identity 才产 DamageEvent；PlaybackCombatReconstruction 对 victim
+      无法映射（victimEid=0 / 映射缺失）的 DAMAGE 通知从「静默 continue」改为进入 unresolved conflict
+      （任何掉血/致死窗口内存在它即 fail-closed，另一条 direct DAMAGE 不得被错判为攻击者/击杀者）。
+      审计全部 DamageEvent 消费者（playback 双 builder / FormationDepthEvidence / RelativeDepthHpEvidence）：
+      victim≤0 一律跳过，不创建 phantom vehicle、不绕过 coverage/fail-closed。新增解码器 1 项 + 重建
+      E2E 3 项（victimEid=0 阻断归属、victim 映射缺失阻断归属、致死窗口 killer null）；正常 direct
+      有效 victim 既有路径不回归。
+    - Blocker 2（HP 证据一致性跳过阵亡车辆、缺单调性）：teamHp 的一致性检查移到 entryProven 块——
+      **含已阵亡车辆**（destroyed continue 不再跳过历史矛盾，阵亡事实仍显示 current=0）；hpEvidenceConsistent
+      重写为完整一致性：所有 ≤t 可信采样在 [0, entryHp] + 按 battle-relative time 单调非增（HP 不得
+      先降后升）+ 0 之后不得再次 positive + sentinel 不参与也不改写；未来 sample 不参与当前判断
+      （seek/backward 确定性：矛盾前不降级、跨过后降级、回退恢复）。任一矛盾 → 单车 INCONSISTENT
+      （保留真实 current、pct/maxHp 不作精确值）、队伍不得 EXACT/FULL_RELATIVE、totalMax=0。新增
+      util 测试 4 项（已阵亡历史矛盾、先降后升、0 后回正、未来矛盾 seek 确定性）+ 组件测试 1 项
+      （矛盾状态不显示虚假比例、无 NaN/负宽/>100% CSS）；正常单调下降/阵亡/开局 100%/敌方 UNKNOWN 不回归。
 ### Changed
 - **AI 模型切回 deepseek-v4-flash（官方稳定别名）**：`AI_MODEL` 默认值从
   `deepseek-v4-pro` 统一切回 `deepseek-v4-flash`——官方稳定别名直接调用最新 Flash 版本，

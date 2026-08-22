@@ -25,6 +25,8 @@ import java.util.Map;
  *       带时间窗口与攻击者 attribution——窗口 (prevT, curT] 内的 DAMAGE 通知全部来自同一攻击者才可
  *       attribution（§12/§13：单通知=精确 attribution；同攻击者多通知=整体 attribution；
  *       0 通知或混合攻击者=不 attribution，受害者掉血事实保留但不得伪造攻击者）。
+ *       victim 无法解析（victimEid=0 / 映射缺失）的 DAMAGE 通知同样进入 unresolved 冲突证据
+ *       （不得静默丢弃——否则窗口会错误地「无冲突」，把窗口内另一条 direct DAMAGE 错判）。
  *       <b>unsupported damage 变体（{@link UnsupportedDamageEvent}）同时阻止 attribution</b>：
  *       窗口 (prevT, curT] 内只要存在该受害者的 unsupported 变体、或任何 victim 无法解析的
  *       unsupported 证据（无法排除它就是该掉血来源）→ 掉血数值事实保留、attackerAccountId=null、
@@ -140,13 +142,6 @@ public final class PlaybackCombatReconstruction {
                 if (damage.damage() <= 0) {
                     continue;
                 }
-                // 直填账号优先（合成 fixture/直填事件），否则按 entityId 解析（真实 decoder 直填恒 null）
-                final Long victim = damage.victimAccountId() != null && damage.victimAccountId() > 0
-                        ? damage.victimAccountId()
-                        : accountOf(damage.victimEid(), mapping);
-                if (victim == null || victim <= 0) {
-                    continue;
-                }
                 final double t = battleClockOf(damage, battleStartRawClockSec);
                 if (!Double.isFinite(t) || t < 0 || t > duration + 1e-6) {
                     continue;
@@ -155,6 +150,16 @@ public final class PlaybackCombatReconstruction {
                         ? damage.attackerAccountId()
                         : accountOf(damage.attackerEid(), mapping);
                 final double attacker = attackerL == null ? 0.0 : attackerL;
+                // 直填账号优先（合成 fixture/直填事件），否则按 entityId 解析（真实 decoder 直填恒 null）
+                final Long victim = damage.victimAccountId() != null && damage.victimAccountId() > 0
+                        ? damage.victimAccountId()
+                        : accountOf(damage.victimEid(), mapping);
+                if (victim == null || victim <= 0) {
+                    // victim 无法解析（victimEid=0 / 映射缺失）：不得静默 continue——该 DAMAGE 通知
+                    // 就是窗口内无法排除的潜在掉血来源，进 unresolved conflict 使掉血/致死窗口 fail-closed
+                    unsupportedUnresolved.add(new double[]{t, attacker});
+                    continue;
+                }
                 damagesByVictim.computeIfAbsent(victim, k -> new ArrayList<>())
                         .add(new double[]{t, attacker});
             } else if (event instanceof UnsupportedDamageEvent unsupported) {

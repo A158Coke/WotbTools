@@ -243,7 +243,8 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
   current=**真实采样**（Details/数字可显示）、maxHp=null、pct=null、fullState=true
   （100% 阵营色实心条，**无 indeterminate 斜纹**——即使部分车辆已有 current sample、但全队
   entry/max 尚未全部证明，开局也不显示斜纹）；
-  ⑤ 已证明 entryHp 但存在矛盾证据（≤t 可信采样 > entryHp，PR #107 第 5 轮 Blocker 3）→
+  ⑤ 已证明 entryHp 但存在矛盾证据（PR #107 第 5/6 轮 Blocker 3/2：≤t 可信采样超出 [0, entryHp]、
+  HP 先降后升（违反单调非增）、0 之后再次 positive；**含已阵亡车辆的历史矛盾**）→
   `INCONSISTENT`：current=**真实采样（绝不钳制/改写）**、maxHp=null、pct=null（不产出语义上的
   OBSERVED_EXACT 百分比），渲染 indeterminate 斜纹（当前值已知、比例不可信）；
   ⑥ 本方存活 + 无采样 + 无战前掉血证据 → `RULE_DERIVED_FULL_AT_SPAWN`
@@ -259,12 +260,15 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
     尚未全部证明，开局也不显示斜纹）→ 填充固定 100% 阵营色实心条，数值区显示「100%」
     （相对状态）或本地化「开局满血」，绝不显示 0；
   - `EXACT`：**仅当该队所有参战车辆（含已阵亡、含无采样）的实际 entryHp 都已证明**
-    **且所有当前证据与 entryHp 一致**（每个 ≤t 的可信采样都在 [0, entryHp]）→
+    **且所有当前证据一致**——对**全部已证明车辆（含已阵亡）**检查每个 ≤t 可信采样都在 [0, entryHp]、
+    按 battle-relative time 单调非增（HP 不得先降后升）、0 之后不得再次 positive
+    （sentinel 不参与、也不改写；未来 sample 不参与当前判断，seek/backward 确定性）→
     真实分数 knownRemaining/totalMax（known ≤ total 由「全部采样 ≤ entryHp」的一致性门槛保证，
     绝不 Math.min 钳制真实采样）；
   - `PARTIAL`/MIXED：部分证明或混合 provenance（OBSERVED_EXACT + RULE_DERIVED_FULL_AT_SPAWN /
     + CURRENT_HP_EXACT_MAX_UNKNOWN / + UNKNOWN、已阵亡但 entryHp 未证明、或**证据矛盾**
-    （current > entryHp 等：真实 current 保留但整队不得 EXACT / 100% 实心条））→
+    （current > entryHp / HP 回升 / 0 后回正、含已阵亡车辆历史矛盾：真实 current 保留但整队
+    不得 EXACT / 100% 实心条））→
     有真实已知剩余但无「全队已证明分母」：100% 斜纹 indeterminate + 只显示真实已知剩余数字
     （totalMax 归零，绝不显示 knownRemaining / partialTotalMax 分数、不伪造分母）；
     禁止「totalMax=0、knownRemaining&gt;0 却仍 0%」的空条；

@@ -561,4 +561,50 @@ class PlaybackCombatReconstructionTest {
         assertNull(right.attackerAccountId(), "右闭边界上的 unsupported 属于本窗口 → 冲突 fail-closed");
         assertFalse(right.attackerReliable());
     }
+
+    // ---- PR #107 第 6 轮：victim 无法解析的 direct DAMAGE 进入 unresolved conflict（不得静默 continue） ----
+
+    @Test
+    void directDamageWithUnresolvedVictimInLossWindowBlocksAttribution() {
+        // direct DAMAGE victimEid=0（无法映射）落入掉血窗口 + 另一条正常 direct DAMAGE →
+        // 掉血事实保留、attacker=null、attackerReliable=false、observedHpLoss=null
+        final var result = derive(List.of(
+                hp(1, START + 10.2f, 1, 3189, true, DecodeConfidence.EXACT),
+                hp(2, START + 12.0f, 1, 2812, true, DecodeConfidence.EXACT),
+                dmg(3, START + 11.5f, 2, 1, 767),
+                dmg(4, START + 11.7f, 3, 0, 500)));
+        final PlaybackCombatReconstruction.Loss loss = result.lossesOf(1001L).get(0);
+        assertEquals(377, loss.hpLoss(), "unresolved-victim DAMAGE 不影响掉血数值事实");
+        assertNull(loss.attackerAccountId(), "victim 无法解析的 direct DAMAGE → 不得归属给另一条 direct");
+        assertFalse(loss.attackerReliable());
+        assertNull(PlaybackCombatReconstruction.observedHpLossAt(result, 1001L, 11.5),
+                "冲突窗口：不得把掉血挂到单条 direct DAMAGE");
+    }
+
+    @Test
+    void directDamageWithUnmappedVictimInLossWindowBlocksAttribution() {
+        // direct DAMAGE victimEid=999（实体存在但无映射，最终无法解析）→ 同样进 unresolved conflict
+        final var result = derive(List.of(
+                hp(1, START + 10.2f, 1, 3189, true, DecodeConfidence.EXACT),
+                hp(2, START + 12.0f, 1, 2812, true, DecodeConfidence.EXACT),
+                dmg(3, START + 11.5f, 2, 1, 767),
+                dmg(4, START + 11.7f, 3, 999, 500)));
+        final PlaybackCombatReconstruction.Loss loss = result.lossesOf(1001L).get(0);
+        assertEquals(377, loss.hpLoss());
+        assertNull(loss.attackerAccountId(), "victim 最终无法映射的 direct DAMAGE → 归属 fail-closed");
+        assertFalse(loss.attackerReliable());
+    }
+
+    @Test
+    void directDamageMissingVictimInLethalWindowBlocksKiller() {
+        // 致死窗口内：正常 direct DAMAGE + victim 无法解析的 direct DAMAGE → destroyed 保留、killer null
+        final var result = derive(List.of(
+                hp(1, START + 30.0f, 1, 242, true, DecodeConfidence.EXACT),
+                hp(2, START + 31.0f, 1, 0, false, DecodeConfidence.EXACT),
+                dmg(3, START + 30.8f, 2, 1, 500),
+                dmg(4, START + 30.85f, 3, 0, 500)));
+        assertEquals(1, result.destroyed().size());
+        assertNull(result.destroyed().get(0).killerAccountId(),
+                "victim 无法解析的 direct DAMAGE → killer 必须 fail-closed 为 null");
+    }
 }

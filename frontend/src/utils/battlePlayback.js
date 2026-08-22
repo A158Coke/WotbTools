@@ -123,6 +123,10 @@ export function teamHp(vehicles, team, t, assumeFullWhenUnobserved = false) {
     if (entryProven) {
       entryProvenCount++
       totalMax += v.entryHp
+      // Blocker 3 + 第 6 轮：一致性检查对<b>全部已证明车辆</b>执行（**含已阵亡**——destroyed
+      // continue 不得跳过历史矛盾；阵亡事实仍显示 current=0，但历史矛盾继续阻止全队 EXACT /
+      // FULL_RELATIVE）。只消费 ≤t 采样（seek 确定性）；矛盾 → 整队降级，不钳制/改写真实采样
+      if (!hpEvidenceConsistent(v, t)) anyInconsistent = true
     }
     if (destroyed) {
       // 阵亡 = 已知 0：不把 dead 车容量计入未知灰段（但 destroyed 且 entryHp 未证明仍阻止全队 EXACT）
@@ -130,10 +134,9 @@ export function teamHp(vehicles, team, t, assumeFullWhenUnobserved = false) {
       continue
     }
     const cur = vehicleHpAt(v, t, false)
-    // Blocker 3：绝不钳制/丢弃真实 current 采样——矛盾证据（采样 > 已证明 entryHp）保留原值，
+    // Blocker 3：绝不钳制/丢弃真实 current 采样——矛盾证据（采样 > entryHp / 回升）保留原值，
     // 只把整队状态降级（不得继续 EXACT、不得 100% 实心条）
     if (cur != null) {
-      if (entryProven && !hpEvidenceConsistent(v, t)) anyInconsistent = true
       knownRemaining += cur
     } else if (entryProven) {
       // 已证明进场满血且无采样 → 相对满血（100% of entryHp）
@@ -531,22 +534,30 @@ function vehicleOpeningFull(vehicle, t, cur) {
 }
 
 /**
- * 已证明进场 max（OBSERVED_EXACT entryHp）车辆的全部当前证据一致性检查（Blocker 3）：
- * 所有 ≤t 的可信采样必须满足 0 ≤ hp ≤ entryHp（HP 不得超过已证明进场最大 HP；sentinel 已由
- * hpSamples 构建层过滤，此处防御性跳过）。任一采样超界 → 证据矛盾：保留真实 current、
- * 单车/整队状态降级（不得继续 OBSERVED_EXACT 百分比 / 不得继续 EXACT），
- * 绝不用 Math.min 钳制真实采样。
+ * 已证明进场 max（OBSERVED_EXACT entryHp）车辆的全部当前证据一致性检查（Blocker 3 + 第 6 轮）：
+ * 对<b>所有</b> entryHpSource=OBSERVED_EXACT 车辆执行（<b>含已阵亡车辆</b>——历史矛盾同样阻止
+ * 全队 EXACT/FULL_RELATIVE；调用方 teamHp 在 destroyed-continue 之前调用，不得跳过），
+ * 只消费 ≤t 的可信采样（seek/backward 确定性：矛盾发生前不降级、跨过后降级、回退恢复）：
+ * - 每个可信采样都在 [0, entryHp]（HP 不得超过已证明进场最大 HP）；
+ * - 按 battle-relative time 升序 HP 单调非增（协议：HP 单调非增、无治疗）——先降后升即矛盾；
+ * - 0 之后不得重新出现 positive HP（归零后再回升即矛盾）；
+ * - 非法/sentinel（<0 或 ≥0xFF00）不参与真实 HP，也不被改写成其他数字（防御性跳过）。
+ * 任一矛盾 → 证据不一致：保留真实 current、单车/整队状态降级（不得 OBSERVED_EXACT 百分比 /
+ * 不得 EXACT / 不得 100% 实心条），绝不钳制、排序覆盖、删除或修改真实采样。
  */
 function hpEvidenceConsistent(vehicle, t) {
   if (!vehicle) return true
   const entry = vehicle.entryHp
   if (!(vehicle.entryHpSource === 'OBSERVED_EXACT' && Number.isFinite(entry) && entry > 0)) return true
   const samples = vehicle.hpSamples || []
+  let prev = null
   for (const s of samples) {
     if (!s || !Number.isFinite(s.timeSec) || !Number.isFinite(s.hp)) continue
-    if (s.timeSec > t + 1e-6) break
-    if (s.hp < 0 || s.hp >= 0xFF00) continue
-    if (s.hp > entry) return false
+    if (s.timeSec > t + 1e-6) break // 未来 sample 不参与当前判断（seek 确定性）
+    if (s.hp < 0 || s.hp >= 0xFF00) continue // sentinel 不参与、不改写
+    if (s.hp > entry) return false // 范围：超过已证明进场 max
+    if (prev != null && s.hp > prev + 1e-9) return false // 单调非增（含 0 后回升）
+    prev = s.hp
   }
   return true
 }

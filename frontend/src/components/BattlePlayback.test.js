@@ -686,6 +686,52 @@ describe('BattlePlayback', () => {
     expect(wrapper.find('[data-test="pb-hp-fill-enemy"]').attributes('style') || '').toContain('0%')
   })
 
+  it('PR #107 第 6 轮 Blocker 2: 矛盾证据（current=5000 > entryHp=3000）→ 单车 INCONSISTENT 斜纹保留真实数字、队伍总条 PARTIAL 无虚假比例、无 NaN/负宽/>100% CSS', async () => {
+    stubRaf()
+    const overview = makeOverview()
+    overview.playback.vehicles = [
+      { accountId: 1001, playerName: 'A', tankId: 1, tankName: 'Maus', team: 1,
+        positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null, directionSamples: [],
+        entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000,
+        hpSamples: [{ timeSec: 0, hp: 5000 }], hpLosses: [] },
+      { accountId: 1002, playerName: 'B', tankId: 1, tankName: 'Maus', team: 1,
+        positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null, directionSamples: [],
+        entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000,
+        hpSamples: [], hpLosses: [] },
+    ]
+    overview.routes = [
+      { accountId: 1001, playerName: 'A', tankId: 1, team: 1, points: [{ x: 0, y: 0, timeSec: 0 }, { x: 5, y: 5, timeSec: 10 }], firstObservedSec: 0, lastObservedSec: 10, deathSec: null },
+      { accountId: 1002, playerName: 'B', tankId: 1, team: 1, points: [{ x: 10, y: 0, timeSec: 0 }, { x: 15, y: 5, timeSec: 10 }], firstObservedSec: 0, lastObservedSec: 10, deathSec: null },
+    ]
+    const wrapper = mountPlayback(overview, 5)
+    await flushPromises()
+    // 单车 marker：INCONSISTENT（保留真实 current=5000、斜纹、宽度 100%——不伪造 5000/3000 比例）
+    const hud = wrapper.find('[data-test="pb-marker-1001"]').find('[data-test="pb-hp-hud"]')
+    expect(hud.find('[data-test="pb-hp-num"]').text()).toBe('5000')
+    const fill = hud.find('.pb-hp-fill')
+    expect(fill.classes()).toContain('pb-hp-fill-unknown')
+    const fillStyle = fill.attributes('style') || ''
+    expect(fillStyle).toContain('100%')
+    expect(fillStyle).not.toContain('NaN')
+    expect(fillStyle).not.toContain('Infinity')
+    expect(fillStyle).not.toContain('-')
+    // 队伍总条：矛盾 → PARTIAL（只显示真实已知剩余数字，无 / 分数、无 6000/6000、无 100% 精确比例）
+    expect(wrapper.find('[data-test="pb-hp-value-friendly"]').text()).toBe('8000')
+    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).not.toContain(' / ')
+    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).not.toContain('6000')
+    const teamFill = wrapper.find('[data-test="pb-hp-fill-friendly"]')
+    expect(teamFill.classes()).toContain('pb-hp-partial')
+    const teamStyle = teamFill.attributes('style') || ''
+    expect(teamStyle).toContain('100%')
+    expect(teamStyle).not.toContain('NaN')
+    expect(teamStyle).not.toContain('Infinity')
+    expect(teamStyle).not.toContain('-')
+    // Details 同口径：真实 current 数字（不显示 5000 / 3000 比例）
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-info"]').find('[data-test="pb-sb-hp"]').text()).toBe('5000')
+  })
+
 
   it('tank marker scales with the map (no counter-scale) while name/death overlays stay constant', async () => {
     stubRaf()
