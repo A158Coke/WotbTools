@@ -144,6 +144,11 @@ public final class BattleTimelineBuilder {
         final TimelineMapEnricher enricher = new TimelineMapEnricher(
                 battle == null ? "" : battle.mapName);
 
+        // §11–§17：交火活动强度只使用权威 HP loss（Type-8 raw 语义未证明）
+        final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
+                com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
+                        orderedEvents, mapping, clock.startRawClockSec(), duration);
+
         for (int second = 0; second <= maxSecond; second++) {
             final double t = second;
             final List<FrameVehicle> vehicles = new ArrayList<>();
@@ -164,8 +169,19 @@ public final class BattleTimelineBuilder {
             for (final FrameVehicle v : vehicles) {
                 byId.put(v.entityId(), v);
             }
+            int trustedDamageInWindow = 0;
+            for (final java.util.Map.Entry<Long,
+                    List<com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss>> entry
+                    : combat.lossesByVictim().entrySet()) {
+                for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss loss
+                        : entry.getValue()) {
+                    if (loss.toSec() > t - 1.0 - 1e-6 && loss.toSec() <= t + 1e-6) {
+                        trustedDamageInWindow += loss.hpLoss();
+                    }
+                }
+            }
             final List<BattleDelta> deltas = BattleDeltaEngine.compute(
-                    second, t, prevVehicles, byId, windowEvents,
+                    second, t, prevVehicles, byId, windowEvents, trustedDamageInWindow,
                     firstContactSeen, prevFriendlyAlive, prevEnemyAlive,
                     prevFriendlyPoints, prevEnemyPoints, prevEnemyKnown,
                     prevEnemyLastKnown, prevEnemyUnknown, world,

@@ -67,6 +67,19 @@ public final class ReplayDisplayNames {
         return type;
     }
 
+    /**
+     * 结构化车辆类型（英文，如 {@code Heavy tank}），仅取自 tankopedia 的 {@code class} 字段。
+     * 供 API/前端映射用（API 纯英文契约）：replay 自带 tankType 缺失时的统一 fallback；
+     * 缺失返回空串（前端展示 —），不得由名称推断。
+     */
+    public static String tankClassEn(final long tankId) {
+        if (tankId <= 0) {
+            return "";
+        }
+        final String type = TANKOPEDIA.info(tankId).type();
+        return StringUtils.hasText(type) ? type : "";
+    }
+
     /** 结构化车辆等级，仅取自 tankopedia 的 {@code tier}；缺失返回空串，不得由名称推断。 */
     public static String tankTier(final long tankId) {
         if (tankId <= 0) {

@@ -7,6 +7,8 @@ import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 
 import com.wotb.core.processing.RecorderEntityMapping;
+import com.wotb.core.processing.TeamEntityMapper;
+import com.wotb.core.processing.TeamEntityMapping;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.Vector3;
 
@@ -47,10 +49,41 @@ public class DefaultPlayerBattleFeatureExtractor {
 
         // 过滤 recorder 的位置事件（排除准备阶段）
         final List<TimedPosition> positions = new ArrayList<>();
-        final List<TimedDamage> damages = new ArrayList<>();
+        final List<TimedHpLoss> damages = new ArrayList<>();
         final LinkedHashSet<String> limitationSet = new LinkedHashSet<>();
         float firstContactTime = -1f;
         float battleEndClock = Float.NaN;
+
+        // §11–§17：伤害/掉血事实只消费权威 HP loss（Type-7 推导 + attacker attribution）。
+        // Type-8 rawProtocolValue 语义未证明，不得作为 dealt/received/关键事件伤害。
+        final TeamEntityMapping mapping = TeamEntityMapper.resolve(battle, reconstruction);
+        final Float battleStartRaw = reconstruction.battleStartRawClockSec();
+        final double duration = reconstruction.replayDurationSec() > 0
+                ? reconstruction.replayDurationSec()
+                : (battle != null && battle.durationS != null && battle.durationS > 0
+                        ? battle.durationS : 0.0);
+        final PlaybackCombatReconstruction.Result combat = PlaybackCombatReconstruction.derive(
+                events, mapping,
+                battleStartRaw == null ? 0.0 : battleStartRaw.doubleValue(), duration);
+        final Long recorderAccount = recorder.accountId();
+        // recorder 相关的权威掉血记录（dealt 仅计 attackerReliable；received 含全部掉血）
+        if (recorderAccount != null && recorderAccount > 0) {
+            for (final java.util.Map.Entry<Long, List<PlaybackCombatReconstruction.Loss>> entry
+                    : combat.lossesByVictim().entrySet()) {
+                final long victim = entry.getKey();
+                for (final PlaybackCombatReconstruction.Loss loss : entry.getValue()) {
+                    final Long attacker = loss.attackerAccountId();
+                    final boolean recorderIsAttacker = loss.attackerReliable()
+                            && attacker != null && attacker.longValue() == recorderAccount;
+                    final boolean recorderIsVictim = victim == recorderAccount;
+                    if (recorderIsAttacker || recorderIsVictim) {
+                        damages.add(new TimedHpLoss(loss,
+                                recorderIsAttacker ? attacker : 0L,
+                                victim, (float) loss.toSec()));
+                    }
+                }
+            }
+        }
 
         for (final ReplayEvent event : events) {
             final var res = battleStartRes.tryRelative(event.timestamp());
@@ -65,18 +98,12 @@ public class DefaultPlayerBattleFeatureExtractor {
                     }
                 }
                 case DamageEvent d -> {
-                    // 只有当 recorder 是攻击者或受害者时才记录
+                    // 仅用于「首次接敌」判定（存在性，不涉伤害值）；掉血量走 hpLoss
                     final boolean recorderIsAttacker = d.attackerEid() == recorderEid;
                     final boolean recorderIsVictim = d.victimEid() == recorderEid;
-                    if (recorderIsAttacker || recorderIsVictim) {
-                        if (res.isUsable()) {
-                            damages.add(new TimedDamage(d, res.battleRelativeSec()));
-                            if (firstContactTime < 0) {
-                                firstContactTime = res.battleRelativeSec();
-                            }
-                        } else if (res.limitation() != null) {
-                            limitationSet.add(res.limitation());
-                        }
+                    if ((recorderIsAttacker || recorderIsVictim) && res.isUsable()
+                            && firstContactTime < 0) {
+                        firstContactTime = res.battleRelativeSec();
                     }
                 }
                 case com.wotb.core.replay.event.BattleEndedEvent b -> {
@@ -111,7 +138,7 @@ public class DefaultPlayerBattleFeatureExtractor {
                 positions, battle == null ? null : battle.mapName);
 
         // 交火段
-        final List<EngagementSummary> engagements = buildEngagements(damages, recorder.entityId());
+        final List<EngagementSummary> engagements = buildEngagements(damages, recorderAccount);
 
         // Phases (battle-relative) + 双方存活人数（battle_results deathTimeMillis，缺失时事件流估算）
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhasesWithSurvival(
@@ -119,7 +146,7 @@ public class DefaultPlayerBattleFeatureExtractor {
                         BattlePhaseSummary.SurvivalTimeline.fromBattleResults(battle, recorder.team()));
 
         // 关键事件
-        final List<KeyBattleEvent> keyEvents = extractRecorderKeyEvents(damages, recorder);
+        final List<KeyBattleEvent> keyEvents = extractRecorderKeyEvents(damages, recorderAccount);
 
         final boolean hasRealFeatures = !movements.isEmpty()
                 || !engagements.isEmpty()
@@ -232,30 +259,31 @@ public class DefaultPlayerBattleFeatureExtractor {
         };
     }
 
-    static List<EngagementSummary> buildEngagements(final List<TimedDamage> damages, final int recorderEid) {
+    static List<EngagementSummary> buildEngagements(final List<TimedHpLoss> damages, final Long recorderAccount) {
         if (damages.isEmpty()) return List.of();
-        final List<TimedDamage> sorted = damages.stream()
+        final List<TimedHpLoss> sorted = damages.stream()
                 .sorted(Comparator.comparingDouble(d -> d.battleRelativeSec()))
                 .toList();
         final List<EngagementSummary> result = new ArrayList<>();
         int segStart = 0;
         for (int i = 1; i < sorted.size(); i++) {
             if (sorted.get(i).battleRelativeSec() - sorted.get(i - 1).battleRelativeSec() > ENGAGEMENT_GAP_SEC) {
-                result.add(buildEngagementSegment(sorted.subList(segStart, i), recorderEid));
+                result.add(buildEngagementSegment(sorted.subList(segStart, i), recorderAccount));
                 segStart = i;
             }
         }
         if (segStart < sorted.size()) {
-            result.add(buildEngagementSegment(sorted.subList(segStart, sorted.size()), recorderEid));
+            result.add(buildEngagementSegment(sorted.subList(segStart, sorted.size()), recorderAccount));
         }
         return result;
     }
 
-    private static EngagementSummary buildEngagementSegment(final List<TimedDamage> events, final int recorderEid) {
+    /** §13：dealt 只计有支持证据的掉血（attackerReliable 已在收集时保证）；received 为该车全部掉血。 */
+    private static EngagementSummary buildEngagementSegment(final List<TimedHpLoss> events, final Long recorderAccount) {
         int dealt = 0, received = 0;
-        for (final TimedDamage d : events) {
-            if (d.event().attackerEid() == recorderEid) dealt += d.event().damage();
-            if (d.event().victimEid() == recorderEid) received += d.event().damage();
+        for (final TimedHpLoss d : events) {
+            if (d.attackerAccountId() == recorderAccount) dealt += d.loss().hpLoss();
+            if (d.victimAccountId() == recorderAccount) received += d.loss().hpLoss();
         }
         return new EngagementSummary(
                 events.getFirst().battleRelativeSec(),
@@ -265,20 +293,21 @@ public class DefaultPlayerBattleFeatureExtractor {
     }
 
     static List<KeyBattleEvent> extractRecorderKeyEvents(
-            final List<TimedDamage> damages, final RecorderEntityMapping recorder) {
+            final List<TimedHpLoss> damages, final Long recorderAccount) {
         final List<KeyBattleEvent> keyEvents = new ArrayList<>();
         boolean firstBlood = false;
         int totalEvents = 0;
 
-        for (final TimedDamage d : damages) {
+        for (final TimedHpLoss d : damages) {
             if (!firstBlood) {
                 firstBlood = true;
                 keyEvents.add(new KeyBattleEvent(d.battleRelativeSec(), "RECORDER_FIRST_BLOOD",
-                        "首次命中 " + d.event().damage()));
+                        "首次命中 " + d.loss().hpLoss()));
             } else {
                 keyEvents.add(new KeyBattleEvent(d.battleRelativeSec(),
-                        d.event().attackerEid() == recorder.entityId() ? "RECORDER_DAMAGE_DEALT" : "RECORDER_DAMAGE_RECEIVED",
-                        "录像者 " + d.event().damage()));
+                        d.attackerAccountId() != 0 && d.attackerAccountId() == recorderAccount
+                                ? "RECORDER_DAMAGE_DEALT" : "RECORDER_DAMAGE_RECEIVED",
+                        "录像者 " + d.loss().hpLoss()));
             }
             totalEvents++;
         }
@@ -287,6 +316,11 @@ public class DefaultPlayerBattleFeatureExtractor {
 
     record TimedPosition(PositionChangedEvent event, float battleRelativeSec) {}
 
-    private record TimedDamage(DamageEvent event, float battleRelativeSec) {}
+    /** recorder 相关的权威掉血记录（§12/§13；attackerAccountId=0 表示不可归属——不参与 dealt）。 */
+    private record TimedHpLoss(
+            PlaybackCombatReconstruction.Loss loss,
+            long attackerAccountId,
+            long victimAccountId,
+            float battleRelativeSec) {}
 
 }

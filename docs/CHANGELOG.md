@@ -4,6 +4,141 @@
 
 ## [Unreleased]
 
+### Added
+- **战局回放 Details Panel 增加 Tier X 车型图**：从 BlitzKit 公开 CDN 确定性下载 Tankopedia
+  全部 84 辆十级车的透明 WebP 车型图并随前端发布；选中车辆时按 tankId 懒加载，非十级车、
+  缺图或加载失败静默降级，production 不访问 BlitzKit。新增 Tier X 100% 图片覆盖测试与
+  `blitzkit-references.mjs --emit-portraits` 可重复生成入口。
+
+### Fixed
+- **战局回放（Battle Playback）当前状态面板与伤害/碰撞语义修复（docs/current-plan.md 1-28）**：
+  - Details Panel 收敛为 current-state 面板：删除「最大 HP」「HP %」「协助伤害」「最终战绩」分区。
+  - 车辆类型 fallback：replay tankType → tankopedia class（英文）→ 空串。
+  - 伤害语义：核心推导 PlaybackCombatReconstruction（Type-7 HP sample 权威掉血 + attribution）；
+    playback DAMAGE 字段 damage 更名 rawProtocolValue，新增 observedHpLoss；飘字/记录/统计改用权威掉血；
+    「造成伤害」改为「已记录伤害」。
+  - DESTROYED/KILL 事件恢复（type-7 alive=false 推导击毁 + 同炮 DAMAGE 支撑击杀）。
+  - Marker 碰撞几何：真实 screen-space footprint（core + HP HUD + 标签盒），优先级 marker > selected > HP > tank > player。
+  - **PR #107 审查修复（Blocker 1/2/3）**：
+    - Blocker 1：Type-8 rawProtocolValue 不再作为任何生产消费者的真实伤害——热力图、
+      掉血窗口聚类（DamageWindowClusterer）、玩家对炮/逐次伤害/击杀归因（PlayerEvidenceFormatter）、
+      占点窗口承受伤害（PointsSituationEvidence）、Player/Team 特征抽取与 ObservedMaxHp 全部改走
+      §12/§13 权威 HP loss；剩余 raw 用法逐项审计合法（parse-layer 结算、DTO labeled raw 字段）。
+    - Blocker 2：marker 碰撞 footprint 不再假设固定 36×28——BattlePlayback 实测
+      `.pb-vehicle` offsetWidth 作为 coreSize（MARKER_CORE_PX fallback），labelLayout 支持
+      hpBoxW/hpBoxH 真实渲染尺寸参数。
+    - Blocker 3：attacker/killer 归属措辞收敛为「有支持证据的归属」，不再声称权威；
+      probe 输出 attribution 措辞同步。
+    - **HP provenance 状态机（PR #107 附加：己方开局不再黑条）**：新增
+      `RULE_DERIVED_FULL_AT_SPAWN`（本方存活无采样且无战前掉血 → 开局相对满血，
+      前端 100% 阵营色完整血条、数字 —、不伪造具体数字，tankopedia base 永不冒充
+      本局 max/current/entry）、`CURRENT_HP_EXACT_MAX_UNKNOWN`（有真实 Type-7 current
+      采样但进场 max 未证明 → 真实 current + 观测容量分母 + 阵营色 indeterminate、
+      tooltip「当前 HP 已观测，进场最大 HP 未知」）、`OBSERVED_EXACT`（精确
+      current/max/pct）；敌方信息边界不变（无采样恒 UNKNOWN，不因己方 fallback 泄漏）。
+      InitialHpProtocolProbeTest（非 CI）对 7 真实样本完成进场 HP 调查：结论 NOT_PROVEN
+      （Type-7 无开局满血广播、propId 0/4/9 排除为 HP）；循环门禁经真实数据确认存在且不得放宽。
+
+
+  - **PR #107 第二轮审查修复（Blocker 1-5：详情面板/总血量条/HP 字段拆分/碰撞 footprint/killer fail-closed）**：
+    - Blocker 1（Details Panel 显示规则）：己方开局无实际证据时（RULE_DERIVED_FULL_AT_SPAWN）当前 HP
+      显示「100%」——这是「开局相对满血状态」的 UI 投影，不是具体 HP 数值、也不证明 actual max HP，
+      绝不写入 currentHp 数值字段；首个可信 sample 出现后改为显示精确 HP 数字，backward seek 恢复 100%，
+      敌方无可信观测继续 —，阵亡显示 0。
+    - Blocker 2（底部己方总血量条）：teamHp 输出确定性 aggregate state（FULL_RELATIVE / EXACT /
+      PARTIAL / UNKNOWN）——本方全部存活车无采样 → FULL_RELATIVE：填充固定 100% 阵营色实心条、
+      数值区显示「100%」（相对状态）绝不显示 0；有真实已知剩余但无已证明分母 → PARTIAL（100% 斜纹，
+      不伪造分母）；禁止 totalMax=0、knownRemaining>0 却仍 0% 的空条与虚假「0 / 0」；
+      Tankopedia base 相加不得冒充总 HP；阵亡是权威事实（HP=0），dead 车容量不进未知灰段。
+    - Blocker 3（HP 字段拆分）：MapOverview.PlaybackVehicle 删除语义混合的 maxHp，拆为
+      baseHp（Tankopedia 静态参考，仅 metadata）+ observedCapacityHp（回放观测容量，仅观测分母参考）+
+      entryHp（已证明进场满血）；CURRENT_HP_EXACT_MAX_UNKNOWN 的 maxHp/pct 恒为 null——
+      绝不使用 baseHp/observedCapacityHp 计算真实百分比（禁止 2500/3000 类结果）；
+      OBSERVED_EXACT 才允许 pct = current/entryHp。
+    - Blocker 4（碰撞 footprint 按 DOM 实际渲染）：labelLayout 改用 hpRendered + hpDisplayText——
+      fullState（current=null）与 UNKNOWN（数字 —）都渲染 HP HUD、必须有盒；关闭「显示血量」
+      （hpRendered=false）才无盒；盒宽按每车实际文本估算取 max（不单靠第一辆车测量复用）；
+      保留 coreSize×view.scale 与 selected/destroyed/recorder 独立盒。
+    - Blocker 5（killer attribution fail-closed）：type-8 结构合法但语义未解码的伤害方法变体
+      （火灾/撞击等）由 EntityMethodDecoder 产出 canonical UnsupportedDamageEvent 证据事件
+      （保留 time + victim/attacker eid + variant，无精确伤害数字）；PlaybackCombatReconstruction 的
+      killer 致死窗口优先绑定权威致死 HP-loss 窗口（HP 掉到 0 的最后一档，无前序样本回退 0.25s），
+      窗口内存在任何无法排除的 unsupported 变体 → killer=null（不得把窗口内无关 direct DAMAGE
+      错判为击杀者）；destroyed 事实保留并去重，不因 killer 未知删除 HP=0/击毁。
+  - **PR #107 第三轮审查修复（Blocker 1-4：混合 provenance 不冒充 EXACT / unsupported 阻止 HP-loss attribution / observedCapacityHp 纯观测 / 文档收口）**：
+    - Blocker 1（teamHp 混合 provenance 不得冒充 EXACT）：EXACT 仅在该队**所有参战车辆的实际
+      entryHp 都已证明**（含已阵亡、含无采样）时成立；部分证明/混合 provenance
+      （OBSERVED_EXACT + RULE_DERIVED_FULL_AT_SPAWN / + CURRENT_HP_EXACT_MAX_UNKNOWN / + UNKNOWN、
+      已阵亡但 entryHp 未证明）一律 PARTIAL/MIXED——totalMax 归零，只显示真实已知剩余数字或明确
+      相对状态，绝不显示 knownRemaining / partialTotalMax 分数、不伪造分母；已证明车辆 current
+      钳制 ≤ entryHp，EXACT 状态 knownRemaining 永不大于 totalMax；全队无采样 → FULL_RELATIVE
+      100% 实心条保留；Tankopedia base 相加仍禁止。
+    - Blocker 2（unsupported 变体同时阻止 HP-loss attribution）：PlaybackCombatReconstruction 对
+      每个掉血窗口 (prevT, curT] 同时扫描 direct DAMAGE 与 UnsupportedDamageEvent——窗口内存在
+      该受害者的 unsupported 变体、或 victim 无法解析的 unsupported 证据 → 掉血数值事实保留、
+      attackerAccountId=null、attackerReliable=false；observedHpLossAt 要求 attackerReliable
+      （direct+unsupported 冲突窗口返回 null，不把掉血挂到单条 direct）；cumulative dealt / 伤害日志 /
+      事件级掉血均不得归给窗口内 direct DAMAGE；killer 现有 fail-closed 行为保留并扩展（victim 无法
+      解析的 unsupported 证据也阻止 killer）。EntityMethodDecoder 对 unsupported 变体在 victim eid
+      缺失（≤0）时用可靠 outer entityId（方法调用目标实体 = 受击者）作 victim 证据——无法解析 victim
+      的 unsupported 证据不得静默丢弃；结构不足的变体仍只产生 warning。
+    - Blocker 3（observedCapacityHp 纯回放观测）：Playback DTO 的 observedCapacityHp 不再使用
+      ObservedMaxHp.resolve()（max(观测, tankopedia base) 钳制/fallback）——改为从真实可信
+      Type-7 positive HP 采样（各 builder 自己的 hpSamples）独立取最大值
+      （MapOverview.observedCapacityHpOf），无可信 sample 为 null；baseHp 只来自 Tankopedia；
+      entryHp 仅 OBSERVED_EXACT 时存在；legacy player.observedMaxHp（resolve 语义）保留供 AI 证据
+      消费；前端仍不得用 baseHp/observedCapacityHp 计算实际百分比。
+    - Blocker 4（文档收口）：protocol.md 更新为「direct → DamageEvent（raw 非权威）；结构足够的
+      非 direct 变体 → UnsupportedDamageEvent（无精确伤害数字，使 HP-loss 与 killer attribution
+      fail-closed；身份字段按真实证据等级标记，未证明字段不写 PROVEN）；结构不足仍只 warning」；
+      battle-playback.md 同步（observedCapacityHp 纯观测语义、EXACT 全队证明门槛、PARTIAL/MIXED、
+      unsupported 阻止掉血归属）。
+  - **PR #107 第五轮审查修复（Blocker 1-3：全部无法排除的 damage-method 变体参与 attribution fail-closed / 己方开局视觉规则严格化 / 矛盾 HP 证据 fail-closed）**：
+    - Blocker 1（短体与 zero-raw damage-method 变体参与 fail-closed）：EntityMethodDecoder 只要包头确认
+      damage-method 调用（payload ≥ 8 且 subtype == 8）就必产出带时间戳的冲突证据事件，warning 只作诊断、
+      不再是唯一输出——结构不足短体（body<18，SHORT_DAMAGE_VARIANT：victim 用可靠 outer entityId、
+      attacker 未知、无伤害数字）、非 direct 变体（DAMAGE_METHOD_VARIANT）、direct raw=0
+      （ZERO_RAW_DAMAGE：raw 不是权威 HP delta，不得仅凭 0 判定「无伤害」，身份可解析则填写、
+      victim 缺失回退 outer entityId）→ 全部进入 PlaybackCombatReconstruction 的 unsupported 冲突路径，
+      使对应 HP-loss attribution 与 killer attribution fail-closed（掉血事实保留、attacker=null、
+      attackerReliable=false、observedHpLoss=null、致死窗口 killer=null；victim 仍无法解析的进
+      unresolved 全局 fail-closed 列表）；confidence 恒 PARTIAL（不标 EXACT/PROVEN）；真正截断
+      （payload<8）仍是 MALFORMED。新增解码器 2 项与重建 E2E 5 项测试（含窗口左右边界确定性）。
+    - Blocker 2（己方开局视觉规则：满血实心条、禁止条纹 fallback）：hpDisplay 新增
+      OPENING_RELATIVE_FULL 状态——己方存活 + 有可信 current 采样但进场 max 未证明 + 当前时间之前
+      无权威 hpLoss / 无 destroyed 证据（含 0 采样）→ 100% 阵营色实心条（fullState=true、无
+      pb-hp-fill-unknown 斜纹），真实 current 仍供 Details/数字展示；RULE_DERIVED_FULL_AT_SPAWN
+      （无采样）保持；teamHp 的 FULL_RELATIVE 改为「全部存活车辆（无阵亡）均开局相对满血」——
+      即使部分车辆已有 current sample、但全队 entry/max 尚未全部证明，开局总条也不显示斜纹；
+      首次权威掉血/阵亡后才切到精确或不确定状态；backward seek 回首次掉血前自动恢复 100% 实心条；
+      敌方不套用（无采样仍 UNKNOWN）。改 4 处既有测试 + 新增单车 marker / 队伍总条 / Details /
+      seek-backward / 镜像 perspectiveTeam=2 组件测试。
+    - Blocker 3（矛盾 HP 证据 fail-closed，禁止 Math.min 改写真实采样）：teamHp 删除
+      Math.min(cur, entryHp) 钳制——current 超过 entryHp 的矛盾证据保留原值；EXACT 除全队 entryHp
+      已证明外还要求所有当前证据与 entryHp 一致（每个 ≤t 可信采样都在 [0, entryHp]，hpEvidenceConsistent
+      检查）；矛盾 → 整队降级 PARTIAL（totalMax=0，不做精确比例分母）；hpDisplay 的 OBSERVED_EXACT
+      分支在矛盾时返回新 INCONSISTENT 状态（真实 current、maxHp=null、pct=null，渲染 indeterminate
+      斜纹、不显示伪造比例）；Details 与队伍聚合同一事实口径。重写原「5000 钳制 3000」测试为
+      「5000 保留、非 EXACT、无 6000/6000、无 NaN/负宽/>100% CSS」。
+  - **PR #107 第六轮审查修复（Blocker 1-2：direct victim 缺失不再 attribution fail-open / HP 证据一致性含阵亡车辆与单调性）**：
+    - Blocker 1（direct raw>0 且 victimEid 缺失 → fail-open）：EntityMethodDecoder 对 direct raw>0 但
+      body 内 victim eid 缺失/无效（≤0）的变体不再产出 victim=0 的 EXACT DamageEvent——降级为
+      UnsupportedDamageEvent（PARTIAL，DIRECT_VICTIM_UNKNOWN：victim 用可靠 outer entityId、无精确
+      伤害数字），保证完整 direct identity 才产 DamageEvent；PlaybackCombatReconstruction 对 victim
+      无法映射（victimEid=0 / 映射缺失）的 DAMAGE 通知从「静默 continue」改为进入 unresolved conflict
+      （任何掉血/致死窗口内存在它即 fail-closed，另一条 direct DAMAGE 不得被错判为攻击者/击杀者）。
+      审计全部 DamageEvent 消费者（playback 双 builder / FormationDepthEvidence / RelativeDepthHpEvidence）：
+      victim≤0 一律跳过，不创建 phantom vehicle、不绕过 coverage/fail-closed。新增解码器 1 项 + 重建
+      E2E 3 项（victimEid=0 阻断归属、victim 映射缺失阻断归属、致死窗口 killer null）；正常 direct
+      有效 victim 既有路径不回归。
+    - Blocker 2（HP 证据一致性跳过阵亡车辆、缺单调性）：teamHp 的一致性检查移到 entryProven 块——
+      **含已阵亡车辆**（destroyed continue 不再跳过历史矛盾，阵亡事实仍显示 current=0）；hpEvidenceConsistent
+      重写为完整一致性：所有 ≤t 可信采样在 [0, entryHp] + 按 battle-relative time 单调非增（HP 不得
+      先降后升）+ 0 之后不得再次 positive + sentinel 不参与也不改写；未来 sample 不参与当前判断
+      （seek/backward 确定性：矛盾前不降级、跨过后降级、回退恢复）。任一矛盾 → 单车 INCONSISTENT
+      （保留真实 current、pct/maxHp 不作精确值）、队伍不得 EXACT/FULL_RELATIVE、totalMax=0。新增
+      util 测试 4 项（已阵亡历史矛盾、先降后升、0 后回正、未来矛盾 seek 确定性）+ 组件测试 1 项
+      （矛盾状态不显示虚假比例、无 NaN/负宽/>100% CSS）；正常单调下降/阵亡/开局 100%/敌方 UNKNOWN 不回归。
 ### Changed
 - **AI 模型切回 deepseek-v4-flash（官方稳定别名）**：`AI_MODEL` 默认值从
   `deepseek-v4-pro` 统一切回 `deepseek-v4-flash`——官方稳定别名直接调用最新 Flash 版本，

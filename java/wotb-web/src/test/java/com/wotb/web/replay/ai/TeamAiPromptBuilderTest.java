@@ -185,14 +185,11 @@ class TeamAiPromptBuilderTest {
                 1, List.of(member), aggregate, TeamObservedAggregate.empty(),
                 List.of(), List.of(), List.of(), List.of(),
                 TeamFeatureCoverage.empty(), List.of(), true);
-        final ReplayReconstruction recon = new ReplayReconstruction(
-                null, null, 600f, 30f, List.of(),
-                List.<ReplayEvent>of(
-                        new DamageEvent(0, new ReplayTimestamp(35f, null), 8,
-                                DecodeConfidence.EXACT, 0, 0, 20_001L, 10_001L, 400, false),
-                        new DamageEvent(1, new ReplayTimestamp(43f, null), 8,
-                                DecodeConfidence.EXACT, 0, 0, 20_001L, 10_001L, 300, false)),
-                List.of(), null, null, null);
+        final ReplayReconstruction recon = DamageWindowFixture.recon(30f,
+                new DamageEvent(0, new ReplayTimestamp(35f, null), 8,
+                        DecodeConfidence.EXACT, 0, 0, 20_001L, 10_001L, 400, false),
+                new DamageEvent(1, new ReplayTimestamp(43f, null), 8,
+                        DecodeConfidence.EXACT, 0, 0, 20_001L, 10_001L, 300, false));
         final SingleTeamBattleAnalysisContext context = new SingleTeamBattleAnalysisContext(
                 "unit-A", null, "f.wotbreplay", null, battle, 1, features,
                 new ReplayCoverage(false, 0, 0, 0, 0, 0, 0.0, Map.of()),

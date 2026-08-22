@@ -52,14 +52,15 @@ export function positionCoveredAt(intervals, t) {
 }
 
 /**
- * 车辆 t 时刻剩余血量：
+ * 车辆 t 时刻剩余血量（PR #107：只返回**真实可信采样**，绝不用理论 maxHp 伪造数字）：
  * - 有可信采样（≤t）→ 最近一次值（含阵亡 0 采样）；
- * - 无可信采样且存活：仅当调用方允许（assumeFullWhenUnobserved=true，仅本方路径）→ 满血回退 maxHp；
- *   敌方/未知路径禁止把理论 maxHp 当作已知当前血量（maxHp 可能回退 tankopedia，非观测事实）；
- *   本方可信采样优先，回退仅用于尚无任何血量变化的存活车辆；
- * - 无可信采样且已阵亡（t ≥ deathSec）→ null（UNKNOWN：死亡但无采样，不冒充 0/满血）；
+ * - 无可信采样 → null（无论本方/敌方/存活/阵亡——「相对满血/未知」由 hpDisplay 状态机表达，
+ *   本函数不把 vehicle.maxHp（含 tankopedia base 下界）赋给 current）；
  * - 高位/负 sentinel（<0 或 ≥0xFF00，如 0xFFFD/-3、0xFFFF/-1）一律忽略，防 65533/65535 污染。
  * hpSamples 契约：{ timeSec, hp }（battle-relative 秒升序，type-7 propId=3 signed i16 含装备加成）。
+ *
+ * @param assumeFullWhenUnobserved 兼容参数（保留签名；一律忽略——旧「满血回退 maxHp」已移除，
+ *                                  防止把 tankopedia base 冒充本局当前 HP）。
  */
 export function vehicleHpAt(vehicle, t, assumeFullWhenUnobserved = false) {
   if (!vehicle || !Number.isFinite(t)) return null
@@ -71,35 +72,114 @@ export function vehicleHpAt(vehicle, t, assumeFullWhenUnobserved = false) {
     if (s.timeSec <= t + 1e-6) hp = s.hp
     else break
   }
-  // 满血回退仅限本方路径（assumeFullWhenUnobserved=true）且车辆存活：未受击=满血；
-  // 敌方/未知路径与阵亡车辆一律 UNKNOWN（不得把理论 maxHp 当作已知当前血量）
-  if (hp == null && assumeFullWhenUnobserved) {
-    const death = vehicle.deathSec
-    if (death == null || t < death - 1e-6) hp = vehicle.maxHp || 0
-  }
   return hp
 }
 
 
 /**
- * 队伍总血量（t 时刻）：
- * totalMax = ΣmaxHp（理论容量）、knownRemaining = Σ已知当前剩余 HP、
- * unknownMax = Σ血量 UNKNOWN 的理论容量（灰段）——敌方/未知路径无采样恒 UNKNOWN；本方路径仅在存活且
- * assumeFullWhenUnobserved=true 时对尚无血量变化的车辆按满血回退。
+ * 队伍总血量聚合（t 时刻）——PR #107 HP provenance + Blocker 2 aggregate display state：
+ * <ul>
+ *   <li>totalMax = Σ已证明的实际最大 HP（entryHpSource=OBSERVED_EXACT 的 entryHp；无则 0，
+ *       绝不含 tankopedia base 相加冒充本局总血量）；<b>仅在全队 entryHp 都证明且证据一致时非 0</b>
+ *       （部分证明/证据矛盾 → 0：不得用 partial total 冒充「全队已证明总容量」作分数分母）；</li>
+ *   <li>knownRemaining = Σ真实已知当前剩余 HP（真实 Type-7 采样；阵亡=0；
+ *       OBSERVED_EXACT 无采样按 entryHp 计 100%；<b>绝不钳制/改写真实采样</b>——current 超过
+ *       entryHp 的矛盾证据保留原值、整队降级（EXACT 状态 knownRemaining 不大于 totalMax 由
+ *       「全部采样 ≤ entryHp」的一致性门槛保证，而非 Math.min 改写采样）；</li>
+ *   <li>unknownMax = Σ未证明容量的参考值（observedCapacityHp ?? baseHp；仅灰段/参考展示，
+ *       绝不冒充本局总 HP）；</li>
+ *   <li>spawnFullCount = 处于「开局相对满血」（RULE_DERIVED_FULL_AT_SPAWN，无采样）的存活本方车辆数；</li>
+ *   <li>state = 聚合显示状态（deterministic、可测试）：
+ *       EXACT（该队<b>所有参战车辆的实际 entryHp 均已证明</b>（含已阵亡、含无采样）
+ *         <b>且所有当前证据与 entryHp 一致</b>（每个 ≤t 的可信采样都在 [0, entryHp]）→ 真实分数可算）
+ *       | FULL_RELATIVE（本方<b>全部存活车辆</b>（无阵亡）都处于开局相对满血展示判定
+ *         （存活、当前时间之前无权威 hpLoss、无 destroyed 证据）→ 100% 阵营色实心条，相对状态；
+ *         即使部分车辆已有 current sample、但全队 entry/max 尚未全部证明，开局也不显示斜纹）
+ *       | PARTIAL/MIXED（部分证明或混合 provenance——OBSERVED_EXACT + RULE_DERIVED_FULL_AT_SPAWN
+ *         / + CURRENT_HP_EXACT_MAX_UNKNOWN / + UNKNOWN、已阵亡但 entryHp 未证明、
+ *         或<b>证据矛盾</b>（current > entryHp 等：真实 current 保留但整队不得 EXACT/FULL_RELATIVE）：
+ *         有真实已知剩余但无「全队已证明且一致的分母」→ 只显示真实已知剩余数字或明确相对状态，
+ *         绝不显示 knownRemaining / partialTotalMax 分数）
+ *       | UNKNOWN（无任何数据——敌方无采样等）。</li>
+ * </ul>
+ * <p>阵亡是权威事实：当前 HP=0（绝不把 dead 车的容量计入未知灰段、也不残留旧采样）。
+ * 敌方/未知路径无采样恒 UNKNOWN（不进入 FULL_RELATIVE）；本方路径仅在存活且无战前掉血证据时
+ * 进入开局相对满血（spawnFullCount / openingFullCount），knownRemaining 不增加（不伪造数字）。
+ * 混合 provenance 一律不得冒充精确队伍总血量（EXACT 门槛 = 全队 entryHp 证明 + 证据一致）。</p>
  */
 export function teamHp(vehicles, team, t, assumeFullWhenUnobserved = false) {
+  const teamVehicles = (vehicles || []).filter(v => v && v.team === team)
   let totalMax = 0
   let knownRemaining = 0
   let unknownMax = 0
-  for (const v of vehicles || []) {
-    if (v.team !== team) continue
-    const maxHp = v.maxHp || 0
-    totalMax += maxHp
-    const cur = vehicleHpAt(v, t, assumeFullWhenUnobserved)
-    if (cur == null) unknownMax += maxHp
-    else knownRemaining += cur
+  let spawnFullCount = 0
+  let openingFullCount = 0
+  let entryProvenCount = 0
+  let anyInconsistent = false
+  for (const v of teamVehicles) {
+    const destroyed = v.deathSec != null && t >= v.deathSec - 1e-6
+    const entryProven = v.entryHpSource === 'OBSERVED_EXACT'
+      && Number.isFinite(v.entryHp) && v.entryHp > 0
+    if (entryProven) {
+      entryProvenCount++
+      totalMax += v.entryHp
+      // Blocker 3 + 第 6 轮：一致性检查对<b>全部已证明车辆</b>执行（**含已阵亡**——destroyed
+      // continue 不得跳过历史矛盾；阵亡事实仍显示 current=0，但历史矛盾继续阻止全队 EXACT /
+      // FULL_RELATIVE）。只消费 ≤t 采样（seek 确定性）；矛盾 → 整队降级，不钳制/改写真实采样
+      if (!hpEvidenceConsistent(v, t)) anyInconsistent = true
+    }
+    if (destroyed) {
+      // 阵亡 = 已知 0：不把 dead 车容量计入未知灰段（但 destroyed 且 entryHp 未证明仍阻止全队 EXACT）
+      knownRemaining += 0
+      continue
+    }
+    const cur = vehicleHpAt(v, t, false)
+    // Blocker 3：绝不钳制/丢弃真实 current 采样——矛盾证据（采样 > entryHp / 回升）保留原值，
+    // 只把整队状态降级（不得继续 EXACT、不得 100% 实心条）
+    if (cur != null) {
+      knownRemaining += cur
+    } else if (entryProven) {
+      // 已证明进场满血且无采样 → 相对满血（100% of entryHp）
+      knownRemaining += v.entryHp
+    } else if (assumeFullWhenUnobserved && vehicleOpeningFull(v, t, null)) {
+      // 本方存活、无采样、无战前掉血证据 → 开局相对满血（spawnFull 标记）
+      spawnFullCount++
+    } else {
+      unknownMax += referenceCapacity(v)
+    }
+    // Blocker 2：本方开局相对满血展示判定（存活 + 当前时间之前无权威 hpLoss + 无 destroyed
+    // 证据；0 采样 = 归零证据不算）——即使部分车辆已有 current sample、但全队 entry/max 尚未
+    // 全部证明，开局也不显示斜纹
+    if (assumeFullWhenUnobserved && vehicleOpeningFull(v, t, cur)) openingFullCount++
   }
-  return { totalMax, knownRemaining, unknownMax }
+  // EXACT 只在该队所有参战车辆（含已阵亡、含无采样）的实际 entryHp 都已证明、且所有当前证据
+  // 与 entryHp 一致时成立；部分证明/证据矛盾 → PARTIAL/MIXED，禁止 known/total 分数
+  const allEntryProven = teamVehicles.length > 0 && entryProvenCount === teamVehicles.length
+  let state
+  if (allEntryProven && !anyInconsistent) {
+    state = 'EXACT'
+  } else if (assumeFullWhenUnobserved && openingFullCount === teamVehicles.length
+      && teamVehicles.length > 0 && !anyInconsistent) {
+    // 本方开局：全部存活车辆均无权威掉血/阵亡证据 → 100% 阵营色实心条（相对状态，无斜纹）
+    state = 'FULL_RELATIVE'
+  } else if (knownRemaining > 0) {
+    state = 'PARTIAL'
+  } else {
+    state = 'UNKNOWN'
+  }
+  // 非 EXACT 时 totalMax 归零：partial 证明/矛盾的总容量不得冒充「全队已证明总容量」做分母
+  const effectiveTotalMax = state === 'EXACT' ? totalMax : 0
+  return { totalMax: effectiveTotalMax, knownRemaining, unknownMax, spawnFullCount, state }
+}
+
+/**
+ * 未证明容量的参考值（observedCapacityHp ?? baseHp；Tankopedia base 仅作静态参考/灰段展示，
+ * 绝不进入本局 current/max/entry HP 或百分比）。
+ */
+function referenceCapacity(v) {
+  if (Number.isFinite(v.observedCapacityHp) && v.observedCapacityHp > 0) return v.observedCapacityHp
+  if (Number.isFinite(v.baseHp) && v.baseHp > 0) return v.baseHp
+  return 0
 }
 
 /**
@@ -439,59 +519,209 @@ function hpKnowledgeTime(vehicle, t, friendly) {
 }
 
 /**
- * 单车 HP HUD 显示语义（docs/current-plan.md §4/§5/§6/§7）：
- * - 已阵亡（t ≥ deathSec）→ 0（权威事实：即使无 0 采样也不冒充）；
- * - 存活 → 最近可信 HP 采样（vehicleHpAt，不带回退，样本优先）；
- * - 存活无采样且「本方 + 进场满血已证明（entryHpSource=OBSERVED_EXACT）」→ entryHp
- *   （已含装备/物资加成；tankopedia base 永不冒充进场满血）；
- * - 其余 → UNKNOWN（current=null，前端显示 —，绝不显示 0）。
- * 敌方 last-known 期间 HP 经 hpKnowledgeTime 冻结（hidden interval 采样不得提前泄漏）。
- * maxHp 缺失时百分比不伪造（pct=null，bar 进入 UNKNOWN 语义，不隐藏 HP 信息）。
+ * 己方开局相对满血展示判定（PR #107 第 5 轮 Blocker 2）：车辆存活、当前时间之前没有权威 hpLoss、
+ * 没有 destroyed 证据（含 0 采样 = 归零证据）。仅本方使用；敌方不套用（避免泄漏敌方开局状态）。
+ * 「即使部分车辆已有 current sample、但全队 entry/max 尚未全部证明，也不能因此在开局显示斜纹」
+ * ——本判定不因有无采样/是否已证明而改变，只认权威掉血/阵亡证据。
+ */
+function vehicleOpeningFull(vehicle, t, cur) {
+  if (!vehicle) return false
+  if (vehicle.deathSec != null && t >= vehicle.deathSec - 1e-6) return false
+  if (cur != null && cur <= 0) return false // 0 采样 = 归零证据，不算开局满血
+  if (Array.isArray(vehicle.hpLosses)
+    && vehicle.hpLosses.some(l => Number.isFinite(l.toSec) && l.toSec <= t + 1e-6)) return false
+  return true
+}
+
+/**
+ * 已证明进场 max（OBSERVED_EXACT entryHp）车辆的全部当前证据一致性检查（Blocker 3 + 第 6 轮）：
+ * 对<b>所有</b> entryHpSource=OBSERVED_EXACT 车辆执行（<b>含已阵亡车辆</b>——历史矛盾同样阻止
+ * 全队 EXACT/FULL_RELATIVE；调用方 teamHp 在 destroyed-continue 之前调用，不得跳过），
+ * 只消费 ≤t 的可信采样（seek/backward 确定性：矛盾发生前不降级、跨过后降级、回退恢复）：
+ * - 每个可信采样都在 [0, entryHp]（HP 不得超过已证明进场最大 HP）；
+ * - 按 battle-relative time 升序 HP 单调非增（协议：HP 单调非增、无治疗）——先降后升即矛盾；
+ * - 0 之后不得重新出现 positive HP（归零后再回升即矛盾）；
+ * - 非法/sentinel（<0 或 ≥0xFF00）不参与真实 HP，也不被改写成其他数字（防御性跳过）。
+ * 任一矛盾 → 证据不一致：保留真实 current、单车/整队状态降级（不得 OBSERVED_EXACT 百分比 /
+ * 不得 EXACT / 不得 100% 实心条），绝不钳制、排序覆盖、删除或修改真实采样。
+ */
+function hpEvidenceConsistent(vehicle, t) {
+  if (!vehicle) return true
+  const entry = vehicle.entryHp
+  if (!(vehicle.entryHpSource === 'OBSERVED_EXACT' && Number.isFinite(entry) && entry > 0)) return true
+  const samples = vehicle.hpSamples || []
+  let prev = null
+  for (const s of samples) {
+    if (!s || !Number.isFinite(s.timeSec) || !Number.isFinite(s.hp)) continue
+    if (s.timeSec > t + 1e-6) break // 未来 sample 不参与当前判断（seek 确定性）
+    if (s.hp < 0 || s.hp >= 0xFF00) continue // sentinel 不参与、不改写
+    if (s.hp > entry) return false // 范围：超过已证明进场 max
+    if (prev != null && s.hp > prev + 1e-9) return false // 单调非增（含 0 后回升）
+    prev = s.hp
+  }
+  return true
+}
+
+/**
+ * 单车 HP HUD 显示语义（docs/current-plan.md §4/§5/§6/§7 + PR #107 HP provenance）：
  *
- * @returns {{ current:number|null, maxHp:number|null, pct:number|null, destroyed:boolean }|null}
+ * <p>状态机（state 字段，替代把多种语义压进一个布尔/黑条）：</p>
+ * <ul>
+ *   <li>DESTROYED：已阵亡（t ≥ deathSec）→ current=0（权威事实，即使无 0 采样）；</li>
+ *   <li>OBSERVED_EXACT：存活 + 最近可信采样 + 进场满血已证明（entryHpSource=OBSERVED_EXACT）
+ *       → current=采样值、maxHp=entryHp、pct 准确；</li>
+ *   <li>CURRENT_HP_EXACT_MAX_UNKNOWN：存活 + 有可信当前 HP 采样，但实际进场 max HP 未证明
+ *       → current=真实采样、maxHp=null、pct=null（不按 tankopedia base 伪造百分比），
+ *       前端渲染阵营色 indeterminate/斜纹（最大值未知），不显示黑色空条；
+ *       （己方开局——当前时间之前无权威 hpLoss、无 destroyed 证据——被
+ *       {@code OPENING_RELATIVE_FULL} 覆盖，不显示斜纹）；</li>
+ *   <li>OPENING_RELATIVE_FULL：**仅本方**存活、有可信 current 采样但进场 max 未证明、
+ *       且当前时间之前无权威 hpLoss / 无 destroyed 证据（开局相对满血展示判定，
+ *       PR #107 第 5 轮 Blocker 2）→ current=真实采样（Details/数字可显示）、maxHp=null、
+ *       pct=null、fullState=true（100% 阵营色实心条，**无 indeterminate 斜纹**——即使部分车辆
+ *       已有 current sample、但全队 entry/max 尚未全部证明，开局也不显示斜纹）；</li>
+ *   <li>INCONSISTENT：已证明 entryHp 但存在矛盾证据（≤t 可信采样 &gt; entryHp，
+ *       PR #107 第 5 轮 Blocker 3）→ current=真实采样（**绝不钳制/改写**）、maxHp=null、
+ *       pct=null（不产出语义上的 OBSERVED_EXACT 百分比），渲染 indeterminate 斜纹
+ *       （当前值已知、比例不可信）；</li>
+ *   <li>RULE_DERIVED_FULL_AT_SPAWN：**仅本方**存活、当前时间早于首个可信 HP 采样、
+ *       无 destroyed 证据、无战前掉血证据 → 表达「开局满血相对状态」：
+ *       current=null（不伪造具体数字）、fullState=true（前端渲染完整阵营色条）、
+ *       maxHp=null（绝不用 tankopedia base 冒充本局最大 HP）；
+ *       数字显示 —，tooltip 明确「开局满血，具体 HP 尚未从回放确认」；</li>
+ *   <li>BASELINE_ONLY：tankopedia base 仅作静态参考下界（不进入 current/maxHp 数字）——
+ *       本函数不产出此状态，由调用方/DTO 标注 provenance；</li>
+ *   <li>UNKNOWN：当前值与相对状态均无可靠依据（敌方从未有允许知道的采样等）
+ *       → current=null、fullState=false（保持灰色/未知样式）。</li>
+ * </ul>
+ *
+ * <p>约束：</p>
+ * - 敌方禁止 RULE_DERIVED_FULL_AT_SPAWN（不因改善己方 UX 泄漏敌方开局状态）；
+ * - 首个可用 sample 若已是受击后 HP，只解释为该时刻 current，绝不反推为 entry/max；
+ * - 敌方 last-known 期间 HP 经 hpKnowledgeTime 冻结（hidden interval 采样不得提前泄漏）；
+ * - 已阵亡显示 0/阵亡状态；seek 确定性重建，不把未来 sample 泄漏到过去；
+ * - 不把 vehicle.maxHp（含 tankopedia fallback）赋给 current 实现满血。
+ *
+ * @returns {{ current:number|null, maxHp:number|null, pct:number|null, destroyed:boolean,
+ *             state:string, fullState:boolean }|null}
  */
 export function hpDisplay(vehicle, t, { friendly = false } = {}) {
   if (!vehicle || !Number.isFinite(t)) return null
   const destroyed = vehicle.deathSec != null && t >= vehicle.deathSec - 1e-6
-  let current = null
   if (destroyed) {
-    current = 0
-  } else {
-    current = vehicleHpAt(vehicle, hpKnowledgeTime(vehicle, t, friendly), false)
-    if (current == null && friendly && vehicle.entryHpSource === 'OBSERVED_EXACT'
-        && Number.isFinite(vehicle.entryHp) && vehicle.entryHp > 0) {
-      current = vehicle.entryHp
+    return { current: 0, maxHp: null, pct: 0, destroyed: true, state: 'DESTROYED', fullState: false }
+  }
+  const knownT = hpKnowledgeTime(vehicle, t, friendly)
+  const current = vehicleHpAt(vehicle, knownT, false)
+  if (current != null) {
+    // 有真实采样：
+    // - OBSERVED_EXACT（进场满血已证明）→ current + 精确 maxHp/entryHp + pct；
+    //   Blocker 3：任何 ≤t 可信采样超过 entryHp（矛盾证据）→ INCONSISTENT（保留真实 current、
+    //   maxHp=null、pct=null），绝不返回语义上的 OBSERVED_EXACT 百分比（也不钳制采样）；
+    // - 进场 max 未证明：己方开局相对满血判定（存活、当前时间之前无权威 hpLoss、无 destroyed
+    //   证据）→ OPENING_RELATIVE_FULL（100% 阵营色实心条、无斜纹；current 保留真实采样供
+    //   Details/数字展示）；否则 CURRENT_HP_EXACT_MAX_UNKNOWN（真实 current、maxHp=null、
+    //   pct=null——不得用 baseHp/observedCapacityHp 计算真实百分比）。
+    const entryProven = vehicle.entryHpSource === 'OBSERVED_EXACT'
+      && Number.isFinite(vehicle.entryHp) && vehicle.entryHp > 0
+    if (entryProven) {
+      if (!hpEvidenceConsistent(vehicle, t)) {
+        return {
+          current, maxHp: null, pct: null, destroyed: false, state: 'INCONSISTENT', fullState: false,
+        }
+      }
+      return {
+        current, maxHp: vehicle.entryHp, pct: Math.max(0, Math.min(100, (current / vehicle.entryHp) * 100)),
+        destroyed: false, state: 'OBSERVED_EXACT', fullState: false,
+      }
+    }
+    if (friendly && vehicleOpeningFull(vehicle, t, current)) {
+      return {
+        current, maxHp: null, pct: null, destroyed: false,
+        state: 'OPENING_RELATIVE_FULL', fullState: true,
+      }
+    }
+    return {
+      current, maxHp: null, pct: null, destroyed: false,
+      state: 'CURRENT_HP_EXACT_MAX_UNKNOWN', fullState: false,
     }
   }
-  const maxHp = Number.isFinite(vehicle.maxHp) && vehicle.maxHp > 0 ? vehicle.maxHp : null
-  const pct = current != null && maxHp != null
-    ? Math.max(0, Math.min(100, (current / maxHp) * 100))
-    : null
-  return { current, maxHp, pct, destroyed }
+  // 无采样：已证明的进场满血（OBSERVED_EXACT，精确值，含装备加成）→ 直接作为 current
+  if (vehicle.entryHpSource === 'OBSERVED_EXACT'
+      && Number.isFinite(vehicle.entryHp) && vehicle.entryHp > 0) {
+    return {
+      current: vehicle.entryHp, maxHp: vehicle.entryHp, pct: 100,
+      destroyed: false, state: 'OBSERVED_EXACT', fullState: false,
+    }
+  }
+  // 无采样且未证明：仅本方存活且无战前掉血证据 → 相对满血状态（100% 阵营色条，
+  // 不伪造具体数字；tankopedia base 永不冒充本局 max/current）
+  if (friendly && vehicleOpeningFull(vehicle, t, null)) {
+    return {
+      current: null, maxHp: null, pct: null, destroyed: false,
+      state: 'RULE_DERIVED_FULL_AT_SPAWN', fullState: true,
+    }
+  }
+  return { current: null, maxHp: null, pct: null, destroyed: false, state: 'UNKNOWN', fullState: false }
 }
 
 /**
- * 某账号 t 时刻的累计战斗统计（确定性重建，纯事件驱动）：
- * - dealt = Σ DAMAGE（该账号为攻击者，damage 值求和）；
- * - received = Σ DAMAGE（该账号为受害者）；
+ * 某账号 t 时刻的累计战斗统计（确定性重建，docs/current-plan.md §16/§17）：
+ * - dealt = Σ 可 attribution 的权威 HP loss（该账号为攻击者，来自车辆 hpLosses）；
+ * - received = Σ 该车辆全部权威 HP loss（受害者侧，HP 采样推导，含无法 attribution 的掉血）；
  * - kills = Σ KILL（该账号为攻击者；KILL 只在击杀者身份可解析时产生）。
- * 只反映事件流中可解析的伤害通知（受击覆盖可能 PARTIAL——见 docs/research/replay/visibility.md），
- * 与整场结算（finalStats）允许存在差异：本函数只用于「当前时间点」重建，不冒充最终战绩。
+ * 语义：只反映回放可可靠重建的掉血事实（Type-7 propId=3 推导），
+ * 与整场结算（finalStats）允许存在差异——本函数只用于「当前时间点」重建，不冒充最终战绩。
+ * raw Type-8 协议值（rawProtocolValue）语义未证明，不得参与统计。
+ * @param vehicles 全部 playback 车辆（dealt 需要其它车辆的 hpLosses attribution，
+ *                 received 用本车 hpLosses；两者都只消费 toSec ≤ t 的记录）
  */
-export function cumulativeStatsAt(events, accountId, t) {
+export function cumulativeStatsAt(events, accountId, t, vehicles = []) {
   let dealt = 0
   let received = 0
   let kills = 0
   for (const ev of events || []) {
     if (!ev || !Number.isFinite(ev.timeSec) || ev.timeSec > t + 1e-6) continue
-    if (ev.type === 'DAMAGE' && Number.isFinite(ev.damage)) {
-      if (ev.accountId === accountId) dealt += ev.damage
-      if (ev.targetAccountId === accountId) received += ev.damage
-    } else if (ev.type === 'KILL' && ev.accountId === accountId) {
-      kills += 1
+    if (ev.type === 'KILL' && ev.accountId === accountId) kills += 1
+  }
+  for (const v of vehicles || []) {
+    for (const l of v.hpLosses || []) {
+      if (!l || !Number.isFinite(l.toSec) || l.toSec > t + 1e-6) continue
+      if (v.accountId === accountId) received += l.hpLoss
+      if (l.attackerReliable && l.attackerAccountId === accountId) dealt += l.hpLoss
     }
   }
   return { dealt, received, kills }
+}
+
+/**
+ * 最近伤害记录（docs/current-plan.md §19「最近伤害记录」）：全部车辆的权威 HP loss，
+ * 只消费 toSec ≤ t 的记录（backward seek 后未来伤害记录不泄漏）。
+ * - in：该车为受害者（attacker 不可证明时 label 走「来源未知」）；
+ * - out：该车为攻击者（仅 attackerReliable 可归属时产生）。
+ * 按时间升序返回最近 maxRows 条。
+ */
+export function damageLogAt(vehicles, selectedAccountId, t, maxRows = 8) {
+  const rows = []
+  for (const v of vehicles || []) {
+    for (const l of v.hpLosses || []) {
+      if (!l || !Number.isFinite(l.toSec) || l.toSec > t + 1e-6) continue
+      if (v.accountId === selectedAccountId) {
+        rows.push({
+          timeSec: l.toSec,
+          dir: 'in',
+          hpLoss: l.hpLoss,
+          attackerAccountId: l.attackerAccountId,
+          attackerReliable: l.attackerReliable,
+        })
+      } else if (l.attackerReliable && l.attackerAccountId === selectedAccountId) {
+        rows.push({ timeSec: l.toSec, dir: 'out', hpLoss: l.hpLoss, victimAccountId: v.accountId })
+      }
+    }
+  }
+  rows.sort((a, b) => a.timeSec - b.timeSec)
+  const limit = Number.isFinite(maxRows) && maxRows > 0 ? Math.floor(maxRows) : 8
+  return rows.slice(-limit)
 }
 
 /**
@@ -552,4 +782,3 @@ export function ghostAround(vehicle, t, { friendly = false } = {}) {
   if (!has(prev) || !has(next) || !(prev.pct > next.pct + 1e-9)) return null
   return { prevPct: prev.pct, nextPct: next.pct }
 }
-

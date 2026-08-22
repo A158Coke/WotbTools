@@ -33,7 +33,10 @@ import java.util.Map;
  * positive 样本且 ≥ tankopedia base。条件不满足一律 fail closed 到
  * {@link EntryHpSource#BASE_FALLBACK}（只允许 tankopedia base 作 baseline）或
  * {@link EntryHpSource#UNKNOWN}。{@link PlayerResult#observedMaxHp} 保留为
- * 「整场观测最大 current HP」事实（供总血量条/血量优势证据），不得当 entry full。</p>
+ * 「整场观测最大 current HP（下界 tankopedia base）」的 legacy 语义（供 AI 证据保守使用），
+ * 不得当 entry full；<b>Playback DTO 的 observedCapacityHp 不得使用
+ * {@link #resolve(Integer, long)}（max(观测, base) 钳制/fallback），必须从真实可信 Type-7
+ * positive HP 采样（hpSamples/纯观测结果）独立取最大值，无可信 sample 为 null</b>。</p>
  * <p>注意：{@code first observed DamageEvent} 只能帮助<b>证伪</b>「整场 max current HP ==
  * entry HP」（见 {@code EntryHpProbeTest}），不能独立证明「sample before first observed
  * damage == authoritative initial full HP」。</p>
@@ -89,8 +92,10 @@ public final class ObservedMaxHp {
             if (player == null) {
                 continue;
             }
-            // observedMaxHp 保留「观测最大 current HP，下界 tankopedia base」语义：
-            // 供总血量条/血量优势证据保守使用（≥ base，不得低于基础值）。
+            // observedMaxHp 保留「观测最大 current HP，下界 tankopedia base」legacy 语义：
+            // 供 AI 证据保守使用（≥ base，不得低于基础值）。
+            // 注意：Playback DTO 的 observedCapacityHp 必须从真实 hpSamples/纯观测结果独立产生
+            // （MapOverview.observedCapacityHpOf），绝不使用本字段的 resolve() 钳制/fallback。
             player.observedMaxHp = resolve(observed.get(player.accountId), player.tankId);
             final boolean coverageExact = receivedCoverageExact(player, observedReceived.get(player.accountId));
             resolveEntryHp(player, hpTimeline.get(player.accountId),
@@ -121,7 +126,9 @@ public final class ObservedMaxHp {
         return observedReceived != null && observedReceived == authoritative;
     }
 
-    /** 观测最大血量解析：max(回放实测, tankopedia base)；均无 → null（调用方回退 tankopedia 语义）。 */
+    /** 观测最大血量解析（legacy AI 语义，保留）：max(回放实测, tankopedia base)；均无 → null。
+     * 仅供 AI 证据保守使用；Playback DTO 的 observedCapacityHp 禁止使用本方法
+     * （须从真实 Type-7 positive sample 纯观测最大值独立产生，见 MapOverview.observedCapacityHpOf）。 */
     public static Integer resolve(final Integer observed, final long tankId) {
         final Integer base = ReplayDisplayNames.tankMaxHpValue(tankId);
         if (observed == null) {
@@ -169,7 +176,11 @@ public final class ObservedMaxHp {
         player.entryHpSource = base != null ? EntryHpSource.BASE_FALLBACK : EntryHpSource.UNKNOWN;
     }
 
-    /** 每账号事件流受击总量（DamageEvent victim 聚合，用于覆盖判定）。 */
+    /**
+     * 每账号受击总量（§12/§13 权威 HP loss 口径，用于覆盖判定）：
+     * Type-8 rawProtocolValue 语义未证明，不得作为「事件流 received」与结算比较；
+     * 只有连续可信 Type-7 propId=3 掉血（含阵亡到 0）才反映真实承受伤害。
+     */
     private static Map<Long, Integer> observedReceivedByAccount(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping
@@ -178,15 +189,18 @@ public final class ObservedMaxHp {
         if (events == null || mapping == null) {
             return out;
         }
-        for (final ReplayEvent event : events) {
-            if (!(event instanceof DamageEvent damage) || damage.damage() <= 0) {
-                continue;
+        final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
+                com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
+                        events, mapping, 0.0, Double.MAX_VALUE);
+        for (final java.util.Map.Entry<Long,
+                List<com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss>> entry
+                : combat.lossesByVictim().entrySet()) {
+            int total = 0;
+            for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss l
+                    : entry.getValue()) {
+                total += l.hpLoss();
             }
-            final TeamEntityIdentity identity = mapping.identity(damage.victimEid());
-            if (identity == null || identity.accountId() <= 0) {
-                continue;
-            }
-            out.merge(identity.accountId(), damage.damage(), Integer::sum);
+            out.put(entry.getKey(), total);
         }
         return out;
     }

@@ -4,8 +4,6 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.TeamEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
-import com.wotb.core.replay.event.DamageEvent;
-import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.evidence.EntryHpSource;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 
@@ -16,7 +14,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 把受击者视角的逐次伤害事件按时间间隙聚类成「掉血窗口」，供 Player/Team 证据复用。
+ * 把受击者视角的权威 HP loss（Type-7 推导，§12）按时间间隙聚类成「掉血窗口」，供 Player/Team 证据复用。
  *
  * <p>真实 {@link com.wotb.core.replay.decoder.EntityMethodDecoder} 生成的 {@link DamageEvent} 中
  * {@code attackerAccountId/victimAccountId} 恒为 null，必须沿
@@ -96,31 +94,25 @@ final class DamageWindowClusterer {
         if (recon == null || recon.events() == null || accountId <= 0) {
             return List.of();
         }
+        // §11–§17：掉血窗口只消费权威 HP loss（Type-7 推导，含无法归属攻击者的掉血——
+        // 掉血真实发生在 victim 身上；攻击者仅在同攻击者可证明时计入 uniqueAttackerCount）。
+        // Type-8 rawProtocolValue 语义未证明，不得作为窗口掉血量。
         final TeamEntityMapping mapping = DamageEventIdentityResolver.mapping(battle, recon);
         final Float battleStart = recon.battleStartRawClockSec();
-        final List<DamageEvent> received = new ArrayList<>();
-        for (final ReplayEvent event : recon.events()) {
-            if (!(event instanceof DamageEvent damage)) {
-                continue;
-            }
-            if (damage.damage() <= 0) {
-                continue;
-            }
-            if (DamageEventIdentityResolver.victimAccount(damage, mapping) != accountId) {
-                continue;
-            }
-            if (battleStart != null && damage.timestamp() != null
-                    && damage.timestamp().rawClockSec() < battleStart) {
-                continue; // 准备阶段不计（与其它证据同口径）
-            }
-            received.add(damage);
-        }
-        if (received.isEmpty()) {
+        final double duration = recon.replayDurationSec() > 0
+                ? recon.replayDurationSec()
+                : (battle != null && battle.durationS != null && battle.durationS > 0
+                        ? battle.durationS : 0.0);
+        final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
+                com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
+                        recon.events(), mapping,
+                        battleStart == null ? 0.0 : battleStart.doubleValue(), duration);
+        final List<com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss> losses =
+                combat.lossesOf(accountId);
+        if (losses.isEmpty()) {
             return List.of();
         }
-        received.sort(Comparator.comparingDouble(
-                d -> d.timestamp() == null ? 0.0 : d.timestamp().rawClockSec()));
-
+        // hpLoss 已 battle-relative 升序（derive 保证），按 toSec 间隙聚类
         final int victimEntryMaxHp = victimEntryMaxHp(battle, accountId);
         final boolean entryHpProven = entryHpProven(battle, accountId);
         final List<DamageWindow> windows = new ArrayList<>();
@@ -130,8 +122,8 @@ final class DamageWindowClusterer {
         int hits = 0;
         final Set<Long> attackers = new LinkedHashSet<>();
         boolean attackersUnresolved = false;
-        for (final DamageEvent damage : received) {
-            final float relative = relativeSec(damage, battleStart);
+        for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss loss : losses) {
+            final float relative = (float) loss.toSec();
             if (windowStart < 0f || relative - windowEnd > MAX_GAP_SEC) {
                 if (windowStart >= 0f) {
                     windows.add(window(victimEntryMaxHp,
@@ -145,10 +137,10 @@ final class DamageWindowClusterer {
                 attackersUnresolved = false;
             }
             windowEnd = relative;
-            total += damage.damage();
+            total += loss.hpLoss();
             hits++;
-            final long attacker = DamageEventIdentityResolver.attackerAccount(damage, mapping);
-            if (attacker > 0) {
+            final Long attacker = loss.attackerAccountId();
+            if (loss.attackerReliable() && attacker != null && attacker > 0) {
                 attackers.add(attacker);
             } else {
                 attackersUnresolved = true;
@@ -217,8 +209,4 @@ final class DamageWindowClusterer {
         return ReplayDisplayNames.tankMaxHpValue(p.tankId);
     }
 
-    private static float relativeSec(final DamageEvent damage, final Float battleStart) {
-        final float raw = damage.timestamp() == null ? 0f : damage.timestamp().rawClockSec();
-        return battleStart != null ? raw - battleStart : raw;
-    }
 }

@@ -4,6 +4,7 @@ import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
+import com.wotb.core.replay.event.UnsupportedDamageEvent;
 import com.wotb.core.replay.stream.PacketReadStatus;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
@@ -17,9 +18,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * type 8（EntityMethod）解码回归：
  * - direct damage（subtype 8、body[13]=3、damage>0）必须精确解码为单个 DamageEvent（LE/BE 字节序验证）；
- * - 结构合法但未解码的伤害变体（非 direct / 零伤害 / 短体）→ UNSUPPORTED_DAMAGE_VARIANT（PARTIAL），
- *   不产出事件、不算解析失败（PARSE_FAILED 不得出现）；
- * - 真正截断（payload<8）→ MALFORMED + TRUNCATED_PAYLOAD。
+ * - 结构合法但未解码的伤害方法变体（body[13] ≠ direct）→ 产出 {@link UnsupportedDamageEvent}
+ *   （PARTIAL 证据事件：保留时间 + 攻击者/受击者 eid，不产生精确伤害数字），
+ *   同时记 UNSUPPORTED_DAMAGE_VARIANT warning——供 killer/HP-loss attribution fail-closed，
+ *   不算解析失败（PARSE_FAILED 不得出现）；
+ * - 短体（body<18 / payload<25，如真实流 len=17 变体）→ 同样产出 {@link UnsupportedDamageEvent}
+ *   （SHORT_DAMAGE_VARIANT：victim 用可靠 outer entityId、attacker 未知、无伤害数字）+ warning——
+ *   warning 绝不能是唯一输出（否则 PlaybackCombatReconstruction 只消费 canonical 事件、
+ *   看不到冲突证据，掉血/致死窗口会错误地「无冲突」）；
+ * - direct 变体但 raw 伤害 == 0 → 产出 {@link UnsupportedDamageEvent}
+ *   （ZERO_RAW_DAMAGE）——raw 值不是权威 HP delta，不得仅凭 0 判定「无伤害」；
+ * - 真正截断（payload<8）→ MALFORMED + TRUNCATED_PAYLOAD（无法确认 damage method）。
  * 撤回 ShotEvent 后，direct damage 解码不得退化。
  */
 class EntityMethodDecoderTest {
@@ -102,38 +111,116 @@ class EntityMethodDecoderTest {
     }
 
     @Test
-    void nonDirectDamageSubProducesNoEventAndVariantWarning() {
+    void nonDirectDamageSubProducesUnsupportedEvidenceEvent() {
+        // 结构合法但语义未解码的伤害方法变体（body[13]≠3，如火灾/撞击）→ 证据事件
         final ReplayDecodeResult result = decoder.decode(context,
                 damageMethodPacket(1, 10f, 0xFC6017, 0xFC6018, 0xFC6017, 0, 0));
         assertEquals(DecodeStatus.PARTIAL, result.status());
-        assertTrue(result.events().isEmpty(), "非 direct 变体不得产出事件（无 DamageEvent、无 ShotEvent）");
+        assertEquals(1, result.events().size(), "非 direct 变体必须产出 UnsupportedDamageEvent 证据事件");
+        final UnsupportedDamageEvent ev = (UnsupportedDamageEvent) result.events().getFirst();
+        assertEquals(0xFC6018, ev.attackerEid(), "攻击者 eid 按 LE u32 解码（结构可解析）");
+        assertEquals(0xFC6017, ev.victimEid(), "受击者 eid 按 LE u32 解码");
+        assertEquals(DecodeConfidence.PARTIAL, ev.confidence());
+        assertEquals("DAMAGE_METHOD_VARIANT", ev.variant());
+        assertEquals(10f, ev.timestamp().rawClockSec(), 1e-6);
         assertEquals(1, result.warnings().size());
         assertEquals("UNSUPPORTED_DAMAGE_VARIANT", result.warnings().getFirst().code());
         assertFalse(result.warnings().getFirst().code().equals("PARSE_FAILED"));
     }
 
     @Test
-    void directSubWithZeroDamageProducesNoEventAndVariantWarning() {
+    void nonDirectVariantWithMissingVictimEidFallsBackToOuterEntityId() {
+        // 结构合法但 body 内 victim eid 缺失（0）的 unsupported 变体：不得静默丢弃——
+        // 用可靠 outer entityId（方法调用目标实体 = 受击者）作 victim 证据
+        final ReplayDecodeResult result = decoder.decode(context,
+                damageMethodPacket(1, 10f, 0xFC6017, 0xFC6018, 0, 0, 0));
+        assertEquals(DecodeStatus.PARTIAL, result.status());
+        assertEquals(1, result.events().size());
+        final UnsupportedDamageEvent ev = (UnsupportedDamageEvent) result.events().getFirst();
+        assertEquals(0xFC6017, ev.victimEid(), "victim eid 缺失时用 outer entityId 作 victim 证据");
+        assertEquals(0xFC6018, ev.attackerEid());
+        assertEquals("DAMAGE_METHOD_VARIANT", ev.variant());
+    }
+
+    @Test
+    void directSubWithZeroRawDamageProducesConflictEvidence() {
+        // direct 变体但 raw == 0：raw 不是权威 HP delta（protocol.md），不得仅凭 0 判定
+        // 「无伤害」→ 作为 unsupported/conflict 证据保留（身份可解析则填写；供 attribution fail-closed）
         final ReplayDecodeResult result = decoder.decode(context,
                 damageMethodPacket(1, 10f, 0xFC6017, 0xFC6018, 0xFC6017,
                         EntityMethodDecoder.DAMAGE_SUB_DIRECT, 0));
         assertEquals(DecodeStatus.PARTIAL, result.status());
-        assertTrue(result.events().isEmpty());
-        assertEquals("UNSUPPORTED_DAMAGE_VARIANT", result.warnings().getFirst().code());
+        assertEquals(1, result.events().size(), "direct raw=0 必须产出冲突证据事件（不能只有 warning）");
+        final UnsupportedDamageEvent ev = (UnsupportedDamageEvent) result.events().getFirst();
+        assertEquals(0xFC6018, ev.attackerEid(), "身份可解析则填写");
+        assertEquals(0xFC6017, ev.victimEid());
+        assertEquals(DecodeConfidence.PARTIAL, ev.confidence(), "不得标 EXACT/PROVEN");
+        assertEquals("ZERO_RAW_DAMAGE", ev.variant());
+        assertEquals(10f, ev.timestamp().rawClockSec(), 1e-6);
+        assertEquals("UNSUPPORTED_DAMAGE_VARIANT", result.warnings().getFirst().code(),
+                "warning 保留作诊断（但不是唯一输出）");
     }
 
     @Test
-    void shortDamageMethodPayloadIsAVariantNotAFailure() {
-        // 真实流中的 len=17 短体变体：结构合法但语义未解码
+    void zeroRawDamageWithMissingVictimEidFallsBackToOuterEntityId() {
+        // direct raw=0 且 body 内 victim eid 缺失（0）：victim 用可靠 outer entityId 回退
+        final ReplayDecodeResult result = decoder.decode(context,
+                damageMethodPacket(1, 10f, 0xFC6017, 0xFC6018, 0,
+                        EntityMethodDecoder.DAMAGE_SUB_DIRECT, 0));
+        assertEquals(DecodeStatus.PARTIAL, result.status());
+        assertEquals(1, result.events().size());
+        final UnsupportedDamageEvent ev = (UnsupportedDamageEvent) result.events().getFirst();
+        assertEquals(0xFC6017, ev.victimEid(), "victim eid 缺失时用 outer entityId 作 victim 证据");
+        assertEquals(0xFC6018, ev.attackerEid());
+        assertEquals("ZERO_RAW_DAMAGE", ev.variant());
+    }
+
+    @Test
+    void directDamageWithMissingVictimEidFallsBackToUnsupported() {
+        // direct raw>0 但 body 内 victim eid 缺失（0）：不能保证完整 direct identity——
+        // 降级为 UnsupportedDamageEvent（PARTIAL，victim 用可靠 outer entityId），
+        // 绝不产出 victim=0 的 EXACT DamageEvent（否则重建无法映射 victim 会静默丢弃 → 窗口「无冲突」）
+        final ReplayDecodeResult result = decoder.decode(context,
+                damageMethodPacket(1, 10f, 0xFC6017, 0xFC6018, 0,
+                        EntityMethodDecoder.DAMAGE_SUB_DIRECT, 500));
+        assertEquals(DecodeStatus.PARTIAL, result.status());
+        assertEquals(1, result.events().size());
+        assertTrue(result.events().getFirst() instanceof UnsupportedDamageEvent,
+                "direct raw>0 且 victim eid 缺失必须降级为冲突证据事件（不是 victim=0 的 EXACT DamageEvent）");
+        final UnsupportedDamageEvent ev = (UnsupportedDamageEvent) result.events().getFirst();
+        assertEquals(0xFC6018, ev.attackerEid(), "攻击者 eid 仍可解析则填写");
+        assertEquals(0xFC6017, ev.victimEid(), "victim 用可靠 outer entityId（方法调用目标实体）");
+        assertEquals(DecodeConfidence.PARTIAL, ev.confidence(), "不得标 EXACT/PROVEN");
+        assertEquals("DIRECT_VICTIM_UNKNOWN", ev.variant());
+        assertEquals(10f, ev.timestamp().rawClockSec(), 1e-6);
+        assertEquals("UNSUPPORTED_DAMAGE_VARIANT", result.warnings().getFirst().code(),
+                "warning 保留作诊断（但不是唯一输出）");
+    }
+
+    @Test
+    void shortDamageMethodPayloadProducesConflictEvidenceWithOuterVictim() {
+        // 真实流中的 len=17 短体变体：结构不足以解析身份字段，但包头已确认 damage method——
+        // 必须保留带时间戳的冲突证据事件（victim=可靠 outer entityId、attacker 未知、无伤害数字）
         final byte[] payload = new byte[17];
+        payload[0] = (byte) 0x17;
+        payload[1] = (byte) 0x60;
+        payload[2] = (byte) 0xFC;
+        payload[3] = 0;
         payload[4] = EntityMethodDecoder.SUBTYPE_ENTITY_METHOD_DAMAGE;
         payload[8] = 0x05;
         final RawReplayPacket packet = new RawReplayPacket(1, 0, payload.length,
                 EntityMethodDecoder.TYPE_ENTITY_METHOD, 10f, PacketReadStatus.NORMAL, payload, 0);
         final ReplayDecodeResult result = decoder.decode(context, packet);
         assertEquals(DecodeStatus.PARTIAL, result.status());
-        assertTrue(result.events().isEmpty());
-        assertEquals("UNSUPPORTED_DAMAGE_VARIANT", result.warnings().getFirst().code());
+        assertEquals(1, result.events().size(), "短体变体必须产出冲突证据事件（不能只有 warning）");
+        final UnsupportedDamageEvent ev = (UnsupportedDamageEvent) result.events().getFirst();
+        assertEquals(0, ev.attackerEid(), "attacker 无法解析 → 保持未知");
+        assertEquals(0xFC6017, ev.victimEid(), "victim 用可靠 outer entityId（方法调用目标实体）");
+        assertEquals(DecodeConfidence.PARTIAL, ev.confidence());
+        assertEquals("SHORT_DAMAGE_VARIANT", ev.variant());
+        assertEquals(10f, ev.timestamp().rawClockSec(), 1e-6);
+        assertEquals("UNSUPPORTED_DAMAGE_VARIANT", result.warnings().getFirst().code(),
+                "warning 保留作诊断（但不是唯一输出）");
     }
 
     @Test
@@ -150,13 +237,17 @@ class EntityMethodDecoderTest {
     @Test
     void manyUndecodedVariantsAreNotCountedAsParseFailures() {
         // coverage 回归：大量合法未知 variant 不得被统计为 malformed/parse failure，
-        // 同时诚实保持 PARTIAL（不计为完整解码）
+        // 同时诚实保持 PARTIAL（不计为完整解码）；每个变体产出 UnsupportedDamageEvent 证据事件
         final int[] variants = {0, 1, 2, 4, 5, 7, 25, 36, 44, 64};
         for (final int sub : variants) {
             final ReplayDecodeResult result = decoder.decode(context,
                     damageMethodPacket(1, 10f, 0xFC6017, 0xFC6018, 0xFC6017, sub, 0));
             assertEquals(DecodeStatus.PARTIAL, result.status(), "sub=" + sub);
-            assertTrue(result.events().isEmpty(), "sub=" + sub);
+            assertEquals(1, result.events().size(), "sub=" + sub);
+            assertTrue(result.events().getFirst() instanceof UnsupportedDamageEvent, "sub=" + sub);
+            final UnsupportedDamageEvent ev = (UnsupportedDamageEvent) result.events().getFirst();
+            assertEquals(0xFC6018, ev.attackerEid(), "sub=" + sub);
+            assertEquals(0xFC6017, ev.victimEid(), "sub=" + sub);
             assertEquals("UNSUPPORTED_DAMAGE_VARIANT", result.warnings().getFirst().code(),
                     "sub=" + sub);
         }

@@ -37,7 +37,10 @@ const props = defineProps({
   /** PR4 §26–§35：标签显示/碰撞结果（BattlePlayback 计算，本组件只渲染） */
   label: {
     type: Object,
-    default: () => ({ showPlayer: false, showTank: true, tankDy: 0, playerHidden: false, playerFading: false }),
+    default: () => ({
+      showPlayer: false, showTank: true, tankDy: 0, blockHidden: false, hpHidden: false,
+      playerHidden: false, playerFading: false,
+    }),
   },
   /** HP HUD 显示数据（hpDisplay 结果：{current,maxHp,pct,destroyed}|null；null=不渲染） */
   hp: { type: Object, default: null },
@@ -49,6 +52,8 @@ const props = defineProps({
   hpFlash: { type: Boolean, default: false },
   /** seek/恢复状态帧：禁用 HP bar 过渡动画（§20.1 seek 只恢复状态不补动画） */
   hpNoTransition: { type: Boolean, default: false },
+  /** i18n t() 函数（父组件传入，HP 状态 tooltip 文案） */
+  t: { type: Function, default: null },
 })
 
 const emit = defineEmits(['select'])
@@ -179,16 +184,27 @@ const labelScreenHeight = computed(() => {
 })
 const hpHudStyle = computed(() => ({
   transform: 'translateX(-50%) ' + st.value.overlayInverseScale,
-  bottom: 'calc(100% + ' + (LABEL_ANCHOR_PX + labelScreenHeight.value + HP_HUD_GAP_PX) + 'px)',
+  // §22：HP HUD 与 label 块同源位移（labelLayout tankDy 联动；碰撞位移只作用于堆叠，不影响车体）
+  bottom: 'calc(100% + ' + (LABEL_ANCHOR_PX + labelScreenHeight.value + HP_HUD_GAP_PX + props.label.tankDy * overlayInv.value) + 'px)',
 }))
-// 填充：maxHp 已知 → 百分比；maxHp 未知（pct=null）→ UNKNOWN 语义（§5.2 不伪造百分比）
+// 填充（PR #107 HP provenance）：
+// - pct 已知 → 精确百分比；
+// - RULE_DERIVED_FULL_AT_SPAWN / OPENING_RELATIVE_FULL（fullState=true，仅本方开局）→
+//   100% 阵营色实心条（相对满血；开局即使有 current sample、全队 entry/max 未全部证明也无斜纹）；
+// - CURRENT_HP_EXACT_MAX_UNKNOWN / INCONSISTENT（current 有值、max 未证明/矛盾）→
+//   100% 宽 + 阵营色 indeterminate 斜纹（INCONSISTENT：比例不可信，保留真实 current）；
+// - UNKNOWN（敌方可未知）→ 空条（灰色/未知）。
 const hpFillWidth = computed(() => {
   const d = props.hp
   if (!d) return '0%'
   if (d.pct != null) return d.pct + '%'
+  if (d.fullState === true) return '100%' // 相对满血状态：完整阵营色条
   return d.current != null ? '100%' : '0%'
 })
-const hpFillUnknown = computed(() => !!props.hp && props.hp.current != null && props.hp.pct == null)
+// indeterminate = 有当前 HP 但最大值未知（不允许按 tankopedia base 算百分比）；
+// fullState（RULE_DERIVED_FULL_AT_SPAWN / OPENING_RELATIVE_FULL，己方开局相对满血）除外——
+// 开局即使有 current sample、全队 entry/max 尚未全部证明，也渲染 100% 阵营色实心条（无斜纹）
+const hpFillUnknown = computed(() => !!props.hp && props.hp.current != null && props.hp.pct == null && props.hp.fullState !== true)
 const hpGhostWidth = computed(() => {
   const g = props.hpGhost
   if (!g || !Number.isFinite(g.prevPct) || !Number.isFinite(g.nextPct)) return null
@@ -199,11 +215,24 @@ const hpGhostLeft = computed(() => {
   const g = props.hpGhost
   return g && Number.isFinite(g.nextPct) ? g.nextPct + '%' : '0%'
 })
+const hpTitle = computed(() => {
+  const d = props.hp
+  if (!d) return ''
+  if (d.state === 'RULE_DERIVED_FULL_AT_SPAWN' || d.state === 'OPENING_RELATIVE_FULL') {
+    return props.t ? props.t('recon.map.playback.hp_full_spawn') : ''
+  }
+  if (d.state === 'CURRENT_HP_EXACT_MAX_UNKNOWN' || d.state === 'INCONSISTENT') {
+    return props.t ? props.t('recon.map.playback.hp_current_max_unknown') : ''
+  }
+  return ''
+})
 const hpClasses = computed(() => ({
   'pb-hp-lastknown': st.value.lastKnown && !st.value.destroyed,
   'pb-hp-destroyed': st.value.destroyed,
   'pb-hp-flash': props.hpFlash,
   'pb-hp-no-transition': props.hpNoTransition,
+  // PR #107：相对满血（fullState）或 max 未知但有当前值（indeterminate）→ 阵营色填充
+  'pb-hp-full-spawn': props.hp && props.hp.fullState === true,
 }))
 </script>
 
@@ -319,12 +348,13 @@ const hpClasses = computed(() => ({
          位于 marker 上方、标签块之上（HP 优先级最高）；last-known 弱化、destroyed 归零、
          UNKNOWN 显示 —；ghost/flash 由外层 transient 状态驱动；hpVisible=false 整体隐藏 -->
     <div
-      v-if="hpVisible && hp"
+      v-if="hpVisible && hp && !label.hpHidden"
       class="pb-hp-hud"
       :class="hpClasses"
       :style="hpHudStyle"
       data-test="pb-hp-hud"
       aria-hidden="true"
+      :title="hpTitle"
     >
       <span class="pb-hp-num" data-test="pb-hp-num">{{ hp.current != null ? hp.current : '—' }}</span>
       <span class="pb-hp-bar" :class="{ 'pb-hp-unknown-track': hpFillUnknown }">
@@ -346,6 +376,7 @@ const hpClasses = computed(() => ({
          destroyed/last-known 只弱化文字、background 保持正常 -->
     <div
       class="pb-labels"
+      v-show="!label.blockHidden"
       aria-hidden="true"
       :style="labelsStyle"
     >
