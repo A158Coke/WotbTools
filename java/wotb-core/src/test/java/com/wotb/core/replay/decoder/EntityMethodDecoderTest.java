@@ -176,6 +176,28 @@ class EntityMethodDecoderTest {
     }
 
     @Test
+    void directDamageWithMissingVictimEidFallsBackToUnsupported() {
+        // direct raw>0 但 body 内 victim eid 缺失（0）：不能保证完整 direct identity——
+        // 降级为 UnsupportedDamageEvent（PARTIAL，victim 用可靠 outer entityId），
+        // 绝不产出 victim=0 的 EXACT DamageEvent（否则重建无法映射 victim 会静默丢弃 → 窗口「无冲突」）
+        final ReplayDecodeResult result = decoder.decode(context,
+                damageMethodPacket(1, 10f, 0xFC6017, 0xFC6018, 0,
+                        EntityMethodDecoder.DAMAGE_SUB_DIRECT, 500));
+        assertEquals(DecodeStatus.PARTIAL, result.status());
+        assertEquals(1, result.events().size());
+        assertTrue(result.events().getFirst() instanceof UnsupportedDamageEvent,
+                "direct raw>0 且 victim eid 缺失必须降级为冲突证据事件（不是 victim=0 的 EXACT DamageEvent）");
+        final UnsupportedDamageEvent ev = (UnsupportedDamageEvent) result.events().getFirst();
+        assertEquals(0xFC6018, ev.attackerEid(), "攻击者 eid 仍可解析则填写");
+        assertEquals(0xFC6017, ev.victimEid(), "victim 用可靠 outer entityId（方法调用目标实体）");
+        assertEquals(DecodeConfidence.PARTIAL, ev.confidence(), "不得标 EXACT/PROVEN");
+        assertEquals("DIRECT_VICTIM_UNKNOWN", ev.variant());
+        assertEquals(10f, ev.timestamp().rawClockSec(), 1e-6);
+        assertEquals("UNSUPPORTED_DAMAGE_VARIANT", result.warnings().getFirst().code(),
+                "warning 保留作诊断（但不是唯一输出）");
+    }
+
+    @Test
     void shortDamageMethodPayloadProducesConflictEvidenceWithOuterVictim() {
         // 真实流中的 len=17 短体变体：结构不足以解析身份字段，但包头已确认 damage method——
         // 必须保留带时间戳的冲突证据事件（victim=可靠 outer entityId、attacker 未知、无伤害数字）

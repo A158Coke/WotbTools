@@ -115,9 +115,15 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
      *
      * <p>返回值：</p>
      * <ul>
-     *   <li>direct 变体（body[13]=={@link #DAMAGE_SUB_DIRECT}）且 raw 伤害 &gt; 0 →
-     *       单个 {@link DamageEvent}（EXACT）；raw 数值不是权威伤害（见 protocol.md），
-     *       权威掉血由 Type-7 propId=3 连续 sample 推导；</li>
+     *   <li>direct 变体（body[13]=={@link #DAMAGE_SUB_DIRECT}）且 raw 伤害 &gt; 0 且 body 内
+     *       victim eid 有效（&gt; 0）→ 单个 {@link DamageEvent}（EXACT）；raw 数值不是权威伤害
+     *       （见 protocol.md），权威掉血由 Type-7 propId=3 连续 sample 推导；</li>
+     *   <li>direct 变体（body[13]=={@link #DAMAGE_SUB_DIRECT}）且 raw 伤害 &gt; 0 但 body 内
+     *       victim eid 缺失/无效（≤ 0）→ 单个 {@link UnsupportedDamageEvent}
+     *       （PARTIAL，variant=DIRECT_VICTIM_UNKNOWN）——不能保证完整 direct identity，
+     *       降级为冲突证据（victim 用可靠 outer entityId、无精确伤害数字），
+     *       绝不产出 victim=0 的 EXACT DamageEvent（否则 PlaybackCombatReconstruction 无法映射
+     *       victim 会静默 continue，窗口被当作「无冲突」→ 错误归属/错误 killer）；</li>
      *   <li>结构不足（body &lt; 18，如真实流 len=17 短体变体）→
      *       单个 {@link UnsupportedDamageEvent}（PARTIAL，variant=SHORT_DAMAGE_VARIANT）——
      *       victim 用可靠 <b>outer entityId</b>（方法调用目标实体 = 受击者）、attacker 未知（0）、
@@ -172,6 +178,15 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
             return List.of(new UnsupportedDamageEvent(
                     packet.sequence(), ts, packet.type(), DecodeConfidence.PARTIAL,
                     attackerEid, effectiveVictim, null, null, "ZERO_RAW_DAMAGE"));
+        }
+        if (victimEid <= 0) {
+            // direct raw>0 但 body 内 victim eid 缺失/无效：不能保证完整 direct identity——
+            // 降级为 UnsupportedDamageEvent（PARTIAL，victim 用可靠 outer entityId），
+            // 绝不产出 victim=0 的 EXACT DamageEvent（否则 PlaybackCombatReconstruction 无法
+            // 映射 victim 会静默 continue，窗口被当作「无冲突」→ 错误归属/错误 killer）。
+            return List.of(new UnsupportedDamageEvent(
+                    packet.sequence(), ts, packet.type(), DecodeConfidence.PARTIAL,
+                    attackerEid, outerEntityId, null, null, "DIRECT_VICTIM_UNKNOWN"));
         }
 
         return List.of(new DamageEvent(

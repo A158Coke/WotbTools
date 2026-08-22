@@ -979,6 +979,71 @@ describe('hpDisplay / ghostAround / cumulativeStatsAt / eventsCrossed / transien
     expect(hp.knownRemaining).toBe(5000)
   })
 
+  it('teamHp: 已阵亡车辆历史矛盾（sample > entryHp）→ 仍阻止全队 EXACT（阵亡事实 current=0 保留）', () => {
+    // 已阵亡车 entryHp=3000 已证明，但历史采样 5000 > entryHp（矛盾）——destroyed continue
+    // 不得跳过一致性检查：历史矛盾继续阻止全队 EXACT/FULL_RELATIVE
+    const mixed = [
+      { team: 1, entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000,
+        hpSamples: [{ timeSec: 0, hp: 5000 }, { timeSec: 10, hp: 0 }], deathSec: 10 },
+      { team: 1, entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000,
+        hpSamples: [], deathSec: null },
+    ]
+    const hp = teamHp(mixed, 1, 50, true)
+    expect(hp.state).not.toBe('EXACT')
+    expect(hp.state).toBe('PARTIAL') // 历史矛盾 → 降级（不得 100% 实心条、不得 EXACT）
+    expect(hp.totalMax).toBe(0) // 矛盾证据：不得作精确分母
+    expect(hp.knownRemaining).toBe(3000) // 阵亡车 current=0 + 存活已证明满血 3000
+    // 阵亡事实本身仍显示 current=0（DESTROYED 不被矛盾覆盖）
+    const d = hpDisplay(mixed[0], 50, { friendly: true })
+    expect(d.destroyed).toBe(true)
+    expect(d.current).toBe(0)
+  })
+
+  it('hpDisplay/teamHp: HP 先降后升（单调性矛盾）→ INCONSISTENT / 整队降级（不显示伪造比例）', () => {
+    const v = { team: 1, entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000,
+      observedCapacityHp: 3000, hpSamples: [{ timeSec: 0, hp: 3000 }, { timeSec: 5, hp: 2000 }, { timeSec: 10, hp: 2500 }], deathSec: null }
+    const r = hpDisplay(v, 10, { friendly: true })
+    expect(r.current).toBe(2500) // 真实采样保留
+    expect(r.state).toBe('INCONSISTENT') // 2000 → 2500 回升 = 单调性矛盾
+    expect(r.maxHp).toBeNull()
+    expect(r.pct).toBeNull()
+    const hp = teamHp([v], 1, 10, true)
+    expect(hp.state).toBe('PARTIAL')
+    expect(hp.totalMax).toBe(0)
+    expect(hp.knownRemaining).toBe(2500)
+  })
+
+  it('hpDisplay/teamHp: HP=0 后再次 positive → 矛盾（归零后不得回升）', () => {
+    const v = { team: 1, entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000,
+      observedCapacityHp: 3000, hpSamples: [{ timeSec: 0, hp: 3000 }, { timeSec: 5, hp: 0 }, { timeSec: 10, hp: 2000 }], deathSec: null }
+    const r = hpDisplay(v, 10, { friendly: true })
+    expect(r.current).toBe(2000)
+    expect(r.state).toBe('INCONSISTENT') // 0 后再现 positive = 矛盾
+    expect(r.pct).toBeNull()
+    expect(teamHp([v], 1, 10, true).state).toBe('PARTIAL')
+  })
+
+  it('teamHp: 矛盾 sample 位于未来 → seek 确定性（当前不降级、跨过后降级、backward 恢复）', () => {
+    const vehicles = [
+      { team: 1, entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000,
+        hpSamples: [{ timeSec: 0, hp: 3000 }, { timeSec: 5, hp: 2000 }, { timeSec: 20, hp: 5000 }], deathSec: null },
+      { team: 1, entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000,
+        hpSamples: [], deathSec: null },
+    ]
+    // t=10：矛盾 sample（5000@20）尚在未来 → 不读取未来 → 全队一致 → EXACT
+    const before = teamHp(vehicles, 1, 10, true)
+    expect(before.state).toBe('EXACT')
+    expect(before.totalMax).toBe(6000)
+    expect(before.knownRemaining).toBe(5000) // 2000 + 3000
+    // t=25：跨过矛盾 sample → 降级 PARTIAL（保留真实 current，totalMax=0）
+    const after = teamHp(vehicles, 1, 25, true)
+    expect(after.state).toBe('PARTIAL')
+    expect(after.totalMax).toBe(0)
+    expect(after.knownRemaining).toBe(8000) // 5000 原样保留 + 3000
+    // backward seek 回 t=10 → 恢复 EXACT（确定性重建）
+    expect(teamHp(vehicles, 1, 10, true).state).toBe('EXACT')
+  })
+
   it('hpDisplay: 敌方有 sample 不套用己方开局规则（仍 CURRENT_HP_EXACT_MAX_UNKNOWN 斜纹）', () => {
     const v = { ...base, team: 2, hpSamples: [{ timeSec: 0, hp: 2600 }] }
     const r = hpDisplay(v, 5, { friendly: false })
