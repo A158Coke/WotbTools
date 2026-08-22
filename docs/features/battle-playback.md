@@ -236,21 +236,35 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
   tankopedia base/观测容量计算百分比；DTO 已把 `maxHp` 拆分为 `baseHp`（Tankopedia 静态参考）+
   `observedCapacityHp`（= 纯回放观测：真实可信 Type-7 positive HP 采样的最大值，无可信 sample 为
   null，绝不 max(观测, base)/fallback base）+ `entryHp`（已证明进场满血），三者独立 provenance；
-  tooltip「当前 HP 已观测，进场最大 HP 未知」，渲染阵营色 indeterminate 斜纹、不渲染黑条）；
-  ④ 本方存活 + 无采样 + 无战前掉血证据 → `RULE_DERIVED_FULL_AT_SPAWN`
+  tooltip「当前 HP 已观测，进场最大 HP 未知」，渲染阵营色 indeterminate 斜纹、不渲染黑条；
+  **己方开局（当前时间之前无权威 hpLoss、无 destroyed 证据）被 `OPENING_RELATIVE_FULL` 覆盖**）；
+  ④ 本方存活 + 有可信 current 采样但进场 max 未证明 + 当前时间之前无权威 hpLoss /
+  无 destroyed 证据 → `OPENING_RELATIVE_FULL`（开局相对满血展示判定，PR #107 第 5 轮 Blocker 2）：
+  current=**真实采样**（Details/数字可显示）、maxHp=null、pct=null、fullState=true
+  （100% 阵营色实心条，**无 indeterminate 斜纹**——即使部分车辆已有 current sample、但全队
+  entry/max 尚未全部证明，开局也不显示斜纹）；
+  ⑤ 已证明 entryHp 但存在矛盾证据（≤t 可信采样 > entryHp，PR #107 第 5 轮 Blocker 3）→
+  `INCONSISTENT`：current=**真实采样（绝不钳制/改写）**、maxHp=null、pct=null（不产出语义上的
+  OBSERVED_EXACT 百分比），渲染 indeterminate 斜纹（当前值已知、比例不可信）；
+  ⑥ 本方存活 + 无采样 + 无战前掉血证据 → `RULE_DERIVED_FULL_AT_SPAWN`
   （开局相对满血：marker 100% 阵营色完整血条**无条纹**，Details Panel 显示 **「100%」**——
   **100% 是「开局相对满血状态」的 UI 投影，不是具体 HP 数值、也不证明 actual max HP**；
   tankopedia base 永不冒充本局 max/current/entry；三语 tooltip「开局满血，具体 HP 尚未从回放确认」）；
-  ⑤ 敌方/无依据 → `UNKNOWN`（灰段未知样式、Details Panel —，不因己方 fallback 泄漏）。
+  ⑦ 敌方/无依据 → `UNKNOWN`（灰段未知样式、Details Panel —，不因己方 fallback 泄漏）。
   任意 timestamp 确定性重建，backward/forward seek 均直接恢复状态；不把未来 sample 泄漏到过去。
 - **底部双方总血量条（PR #107 Blocker 2 aggregate display state）**：`teamHp`
   （`utils/battlePlayback.js`）输出 `state`（确定性、可测试）：
-  - `FULL_RELATIVE`：本方所有存活车辆均开局相对满血（无任何数字）→ 填充固定 100%
-    阵营色实心条，数值区显示「100%」（相对状态）或本地化「开局满血」，绝不显示 0；
+  - `FULL_RELATIVE`：本方**全部存活车辆（无阵亡）**都处于开局相对满血展示判定（存活、当前时间
+    之前无权威 hpLoss、无 destroyed 证据——即使部分车辆已有 current sample、但全队 entry/max
+    尚未全部证明，开局也不显示斜纹）→ 填充固定 100% 阵营色实心条，数值区显示「100%」
+    （相对状态）或本地化「开局满血」，绝不显示 0；
   - `EXACT`：**仅当该队所有参战车辆（含已阵亡、含无采样）的实际 entryHp 都已证明**
-    → 真实分数 knownRemaining/totalMax（已证明车辆 current 钳制 ≤ entryHp，known 绝不大于 total）；
+    **且所有当前证据与 entryHp 一致**（每个 ≤t 的可信采样都在 [0, entryHp]）→
+    真实分数 knownRemaining/totalMax（known ≤ total 由「全部采样 ≤ entryHp」的一致性门槛保证，
+    绝不 Math.min 钳制真实采样）；
   - `PARTIAL`/MIXED：部分证明或混合 provenance（OBSERVED_EXACT + RULE_DERIVED_FULL_AT_SPAWN /
-    + CURRENT_HP_EXACT_MAX_UNKNOWN / + UNKNOWN、已阵亡但 entryHp 未证明等）→
+    + CURRENT_HP_EXACT_MAX_UNKNOWN / + UNKNOWN、已阵亡但 entryHp 未证明、或**证据矛盾**
+    （current > entryHp 等：真实 current 保留但整队不得 EXACT / 100% 实心条））→
     有真实已知剩余但无「全队已证明分母」：100% 斜纹 indeterminate + 只显示真实已知剩余数字
     （totalMax 归零，绝不显示 knownRemaining / partialTotalMax 分数、不伪造分母）；
     禁止「totalMax=0、knownRemaining&gt;0 却仍 0%」的空条；
@@ -278,6 +292,7 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
   tankopedia fallback，全部 metadata 缺失才 —，§8）/状态（已发现/最后已知/已击毁）/当前或最后已知
   HP（按 provenance 显示，PR #107 Blocker 1：已阵亡 → 0；己方开局相对满血
   （RULE_DERIVED_FULL_AT_SPAWN）→ **「100%」**（相对 UI 状态，不是具体 HP、也不证明 actual max）；
+  己方开局有真实 current 采样（OPENING_RELATIVE_FULL）→ 真实 current 数字（bar 仍 100% 实心、无斜纹）；
   有真实 sample → 精确 current 数字；敌方无依据 → —。tankopedia base HP 是静态 metadata 不是本局
   最大 HP，不再展示「最大 HP / HP %」（除已证明 OBSERVED_EXACT 的 pct），§6/§41）/
   当前播放时间/已记录伤害（Σ 可 attribution 的权威掉血，§17）/承受伤害（Σ 该车全部
@@ -289,7 +304,10 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
   `PlaybackCombatReconstruction` fail-closed 推导：致死窗口优先 = 权威致死 HP-loss 窗口
   （HP 掉到 0 的最后一档，无前序样本回退 0.25s）；窗口内必须存在**唯一可信攻击者**（身份可解析、
   候选一致、非自伤）且**不含任何无法排除的 unsupported damage 变体**——结构合法但语义未解码的
-  伤害方法变体（火灾/撞击等，type-8 解码层产出 `UnsupportedDamageEvent` 证据事件，无精确伤害数字）
+  伤害方法变体（火灾/撞击等，type-8 解码层产出 `UnsupportedDamageEvent` 证据事件，无精确伤害数字；
+  只要包头确认 damage method 就必产出带时间戳的冲突证据——结构不足短体（SHORT_DAMAGE_VARIANT，
+  victim 用 outer entityId）与 direct raw=0（ZERO_RAW_DAMAGE，raw 非权威不得当「无伤害」）
+  同样作为冲突证据，warning 只作诊断、不是唯一输出）
   可能就是真实致死源，窗口内存在即 killer=null，绝不把窗口内无关 direct DAMAGE 错判为击杀者；
   **unsupported 变体同时阻止 HP-loss attribution**：掉血窗口 (prevT, curT] 内存在该受害者的
   unsupported 变体、或 victim 无法解析的 unsupported 证据（解码层已用可靠 outer entityId 回退，

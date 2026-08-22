@@ -55,8 +55,15 @@ class PlaybackCombatReconstructionTest {
     /** 结构合法但语义未解码的伤害方法变体（火灾/撞击等；attacker=0 → 身份无法解析）。 */
     private static UnsupportedDamageEvent unsup(final int seq, final double rawSec,
                                                 final int attacker, final int victim) {
+        return unsupV(seq, rawSec, attacker, victim, "DAMAGE_METHOD_VARIANT");
+    }
+
+    /** 带 variant 的 unsupported 证据事件（短体 / 非 direct / zero-raw 变体同构消费）。 */
+    private static UnsupportedDamageEvent unsupV(final int seq, final double rawSec,
+                                                 final int attacker, final int victim,
+                                                 final String variant) {
         return new UnsupportedDamageEvent(seq, new ReplayTimestamp((float) rawSec, null), 8,
-                DecodeConfidence.PARTIAL, attacker, victim, null, null, "DAMAGE_METHOD_VARIANT");
+                DecodeConfidence.PARTIAL, attacker, victim, null, null, variant);
     }
 
     private PlaybackCombatReconstruction.Result derive(final List<com.wotb.core.replay.event.ReplayEvent> events) {
@@ -468,5 +475,90 @@ class PlaybackCombatReconstructionTest {
         assertEquals(1, result.destroyed().size());
         assertNull(result.destroyed().get(0).killerAccountId(),
                 "victim 无法解析的 unsupported 证据 → killer 必须 fail-closed 为 null");
+    }
+
+    // ---- PR #107 第 5 轮：短体 / zero-raw damage-method 变体参与 attribution fail-closed ----
+
+    @Test
+    void shortVariantInLossWindowBlocksAttribution() {
+        // 短体变体（SHORT_DAMAGE_VARIANT：解码层 victim=outer entityId、attacker 未知）+
+        // direct DAMAGE 落入同一掉血窗口 → 掉血事实保留、attacker=null、attackerReliable=false、
+        // observedHpLoss=null（不得把掉血挂到单条 direct DAMAGE）
+        final var result = derive(List.of(
+                hp(1, START + 10.2f, 1, 3189, true, DecodeConfidence.EXACT),
+                hp(2, START + 12.0f, 1, 2812, true, DecodeConfidence.EXACT),
+                dmg(3, START + 11.5f, 2, 1, 767),
+                unsupV(4, START + 11.7f, 0, 1, "SHORT_DAMAGE_VARIANT")));
+        final PlaybackCombatReconstruction.Loss loss = result.lossesOf(1001L).get(0);
+        assertEquals(377, loss.hpLoss(), "unsupported 冲突不影响掉血数值事实");
+        assertNull(loss.attackerAccountId(), "窗口内短体变体 → 不得归属给 direct 攻击者");
+        assertFalse(loss.attackerReliable());
+        assertNull(PlaybackCombatReconstruction.observedHpLossAt(result, 1001L, 11.5),
+                "short+direct 冲突窗口：不得把掉血挂到单条 direct DAMAGE");
+    }
+
+    @Test
+    void shortVariantInLethalWindowBlocksKiller() {
+        // 致死窗口 (30.0, 31.0] 内 short 变体（victim 可解析）→ destroyed 保留、killer null
+        final var result = derive(List.of(
+                hp(1, START + 30.0f, 1, 242, true, DecodeConfidence.EXACT),
+                hp(2, START + 31.0f, 1, 0, false, DecodeConfidence.EXACT),
+                dmg(3, START + 30.8f, 2, 1, 500),
+                unsupV(4, START + 30.9f, 0, 1, "SHORT_DAMAGE_VARIANT")));
+        assertEquals(1, result.destroyed().size());
+        assertNull(result.destroyed().get(0).killerAccountId(),
+                "窗口内 short 变体（无法排除是真实致死源）→ killer 必须 null");
+    }
+
+    @Test
+    void zeroRawDamageInLossWindowBlocksAttribution() {
+        // direct raw=0（ZERO_RAW_DAMAGE 冲突证据）+ direct DAMAGE 同一掉血窗口 →
+        // 掉血保留、attacker=null、observedHpLoss=null（raw=0 不得当「无伤害」）
+        final var result = derive(List.of(
+                hp(1, START + 10.2f, 1, 3189, true, DecodeConfidence.EXACT),
+                hp(2, START + 12.0f, 1, 2812, true, DecodeConfidence.EXACT),
+                dmg(3, START + 11.5f, 2, 1, 767),
+                unsupV(4, START + 11.6f, 3, 1, "ZERO_RAW_DAMAGE")));
+        final PlaybackCombatReconstruction.Loss loss = result.lossesOf(1001L).get(0);
+        assertEquals(377, loss.hpLoss());
+        assertNull(loss.attackerAccountId(), "窗口内 zero-raw 冲突证据 → 归属 fail-closed");
+        assertFalse(loss.attackerReliable());
+        assertNull(PlaybackCombatReconstruction.observedHpLossAt(result, 1001L, 11.5),
+                "zero-raw+direct 冲突窗口：不得把掉血挂到单条 direct DAMAGE");
+    }
+
+    @Test
+    void zeroRawDamageInLethalWindowBlocksKiller() {
+        // 致死窗口内 zero-raw 冲突证据 → destroyed 保留、killer null
+        final var result = derive(List.of(
+                hp(1, START + 30.0f, 1, 242, true, DecodeConfidence.EXACT),
+                hp(2, START + 31.0f, 1, 0, false, DecodeConfidence.EXACT),
+                dmg(3, START + 30.8f, 2, 1, 500),
+                unsupV(4, START + 30.85f, 2, 1, "ZERO_RAW_DAMAGE")));
+        assertEquals(1, result.destroyed().size());
+        assertNull(result.destroyed().get(0).killerAccountId(),
+                "窗口内 zero-raw 冲突证据 → killer 必须 null");
+    }
+
+    @Test
+    void unsupportedAtWindowBoundaryLeftOpenDoesNotBlockRightClosedBlocks() {
+        // 窗口 (10.2, 12.0] 左开右闭：unsupported 恰在 fromSec（10.2，左开排除）→ 不冲突、
+        // 唯一 direct attacker 仍可归属；恰在 toSec（12.0，右闭包含）→ 冲突 → 归属 fail-closed
+        final var atLeft = derive(List.of(
+                hp(1, START + 10.2f, 1, 3189, true, DecodeConfidence.EXACT),
+                hp(2, START + 12.0f, 1, 2812, true, DecodeConfidence.EXACT),
+                dmg(3, START + 11.5f, 2, 1, 767),
+                unsupV(4, START + 10.2f, 0, 1, "SHORT_DAMAGE_VARIANT")));
+        final PlaybackCombatReconstruction.Loss left = atLeft.lossesOf(1001L).get(0);
+        assertEquals(2002L, left.attackerAccountId(), "左开边界上的 unsupported 不属于本窗口 → 不冲突");
+        assertTrue(left.attackerReliable());
+        final var atRight = derive(List.of(
+                hp(1, START + 10.2f, 1, 3189, true, DecodeConfidence.EXACT),
+                hp(2, START + 12.0f, 1, 2812, true, DecodeConfidence.EXACT),
+                dmg(3, START + 11.5f, 2, 1, 767),
+                unsupV(4, START + 12.0f, 0, 1, "ZERO_RAW_DAMAGE")));
+        final PlaybackCombatReconstruction.Loss right = atRight.lossesOf(1001L).get(0);
+        assertNull(right.attackerAccountId(), "右闭边界上的 unsupported 属于本窗口 → 冲突 fail-closed");
+        assertFalse(right.attackerReliable());
     }
 }

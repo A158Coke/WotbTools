@@ -29,7 +29,10 @@ import java.util.Map;
  *       窗口 (prevT, curT] 内只要存在该受害者的 unsupported 变体、或任何 victim 无法解析的
  *       unsupported 证据（无法排除它就是该掉血来源）→ 掉血数值事实保留、attackerAccountId=null、
  *       attackerReliable=false（{@link #observedHpLossAt} 也不把该掉血挂到某条 direct DAMAGE）；
- *       绝不把 unsupported 的 raw 字段当伤害数字。</li>
+ *       绝不把 unsupported 的 raw 字段当伤害数字。解码层（EntityMethodDecoder）只要包头确认
+ *       damage-method 调用就必产出带时间戳的冲突证据事件（含结构不足短体 SHORT_DAMAGE_VARIANT 与
+ *       direct raw=0 ZERO_RAW_DAMAGE——raw 不是权威 HP delta 不得当「无伤害」），warning 只作诊断、
+ *       不是唯一输出（否则本类只消费 canonical 事件、看不到这些冲突证据，窗口会错误地「无冲突」）。</li>
  *   <li><b>击毁事件</b>：HealthChangedEvent alive=false / HP=0（EXACT）为权威击毁时刻；
  *       destroyed 事实与 killer attribution 完全分离——killer 仅在致死窗口内存在
  *       <b>唯一可信攻击者</b>时产生：致死窗口优先 = 权威致死 HP-loss 窗口 (prevT, timeSec]

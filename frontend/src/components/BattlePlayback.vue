@@ -128,8 +128,10 @@ watch(
 )
 
 // 双方总血量（实时剩余，随播放时间/进度条变化；争霸赛附终局点数）
-// 本方：存活车辆无采样 → RULE_DERIVED_FULL_AT_SPAWN 相对满血（FULL_RELATIVE 100% 实心条，
-// 不伪造具体数字）；敌方：无可信采样恒 UNKNOWN 灰段（不把 tankopedia base 当已知血量）
+// 本方：开局相对满血展示判定（存活 + 当前时间之前无权威 hpLoss + 无 destroyed 证据）→
+// FULL_RELATIVE 100% 阵营色实心条（即使部分车辆已有 current sample、但全队 entry/max 尚未
+// 全部证明，开局也不显示斜纹；不伪造具体数字）；敌方：无可信采样恒 UNKNOWN 灰段
+// （不把 tankopedia base 当已知血量）
 const friendlyHp = computed(() => teamHp(playback.value?.vehicles, friendlyTeam.value, currentTime.value, true))
 const enemyHp = computed(() => teamHp(playback.value?.vehicles, friendlyTeam.value === 1 ? 2 : 1, currentTime.value, false))
 // 争霸赛实时点数：来自回放广播 pointsSamples（随 currentTime 变化）；非争霸赛/无广播 → null 不显示
@@ -140,9 +142,11 @@ const enemyPoints = computed(() =>
 const showPoints = computed(() => friendlyPoints.value != null || enemyPoints.value != null)
 /**
  * HP bar 填充宽度（PR #107 Blocker 2 aggregate state）：
- * - FULL_RELATIVE（本方开局相对满血）→ known 段固定 100% 阵营色实心条（相对状态，无具体数字）；
- * - EXACT（全队 entryHp 均已证明）→ known = knownRemaining/totalMax、unknown = unknownMax/totalMax（灰段参考）；
- * - PARTIAL/MIXED（部分证明/混合 provenance：有真实已知剩余但无「全队已证明分母」）→
+ * - FULL_RELATIVE（本方开局相对满血：全部存活车辆无权威掉血/阵亡证据，即使有 current sample
+ *   也 100% 实心条）→ known 段固定 100% 阵营色实心条（相对状态，无具体数字、无斜纹）；
+ * - EXACT（全队 entryHp 均已证明且证据一致）→ known = knownRemaining/totalMax、
+ *   unknown = unknownMax/totalMax（灰段参考）；
+ * - PARTIAL/MIXED（部分证明/混合 provenance/证据矛盾：有真实已知剩余但无「全队已证明且一致的分母」）→
  *   known 段 100% + indeterminate 斜纹（无法算真实比例，绝不显示 known/partialTotalMax 分数）；
  * - UNKNOWN → 0%（灰段也不渲染——无任何数据）。
  * 禁止出现「totalMax=0、knownRemaining>0 却仍 0%」的空条。
@@ -160,10 +164,10 @@ function hpBarFill(hp, kind) {
 
 /**
  * HP 数值区显示文本（绝不显示虚假的 knownRemaining / totalMax 分数）：
- * - FULL_RELATIVE → 「100%」（相对满血状态，非具体 HP 数字）；
+ * - FULL_RELATIVE → 「100%」（开局相对满血状态，非具体 HP 数字）；
  * - UNKNOWN → —（无任何数据）；
- * - EXACT（全队 entryHp 均已证明）→ 「knownRemaining / totalMax」（真实已证明总数）；
- * - PARTIAL/MIXED（部分证明/混合 provenance）→ 只显示真实已知剩余数字（不伪造分母——
+ * - EXACT（全队 entryHp 均已证明且证据一致）→ 「knownRemaining / totalMax」（真实已证明总数）；
+ * - PARTIAL/MIXED（部分证明/混合 provenance/证据矛盾）→ 只显示真实已知剩余数字（不伪造分母——
  *   totalMax 已被 teamHp 归零，绝不显示 knownRemaining / partialTotalMax）。
  */
 function hpValueText(hp) {
@@ -1369,7 +1373,9 @@ const selHp = computed(() => {
 // - RULE_DERIVED_FULL_AT_SPAWN → 「100%」——这是「开局相对满血状态」的 UI 投影，
 //   不是具体 HP 数值、也不是从 tankopedia base 推导的百分比（只做 display projection，
 //   绝不写入 currentHp 数值字段）；
-// - OBSERVED_EXACT / CURRENT_HP_EXACT_MAX_UNKNOWN 且 current 有值 → 真实 current 数字；
+// - OPENING_RELATIVE_FULL（己方开局有 current sample、max 未证明）→ 真实 current 数字
+//   （bar 仍 100% 实心、无斜纹；数字是真实采样，不伪造）；
+// - OBSERVED_EXACT / CURRENT_HP_EXACT_MAX_UNKNOWN / INCONSISTENT 且 current 有值 → 真实 current 数字；
 // - UNKNOWN → —。
 // tankopedia base HP 是车辆静态 metadata，不是本局最大/实际进场 HP，不得包装成「最大 HP」展示。
 const selHpText = computed(() => {
