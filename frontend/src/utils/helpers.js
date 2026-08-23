@@ -2,8 +2,9 @@ import MAP_NAMES from '../../../common/map_names.json'
 
 export const DEFAULT_VISIBLE = [
   'nickname', 'clan', 'tank_name', 'tank_type', 'survived_label',
-  'kills', 'damage_dealt', 'damage_assisted', 'damage_received',
-  'damage_blocked', 'n_shots', 'n_hits_dealt', 'n_penetrations_dealt',
+  'kills', 'damage_dealt', 'damage_assisted',
+  'contribution', 'kast', 'impact',
+  'damage_received', 'damage_blocked', 'n_shots', 'n_hits_dealt', 'n_penetrations_dealt',
   'hit_rate', 'pen_rate', 'n_enemies_damaged'
 ]
 
@@ -21,6 +22,8 @@ const COL_GROUP_CAT = {
   damage_assisted: 'battle', damage_received: 'battle', damage_blocked: 'battle',
   n_shots: 'battle', n_hits_dealt: 'battle', n_penetrations_dealt: 'battle',
   n_hits_received: 'battle', n_penetrations_received: 'battle', n_enemies_damaged: 'battle',
+  contribution: 'battle', kast: 'battle', impact: 'battle',
+  multi_damage_rate: 'battle', traded_deaths: 'battle',
   platoon_label: 'extra', rank: 'extra',
   battles: 'overview', wins: 'overview', win_rate: 'overview', survival_rate: 'overview',
   kills_avg: 'battle', damage: 'battle', damage_avg: 'battle', assisted: 'battle', assisted_avg: 'battle',
