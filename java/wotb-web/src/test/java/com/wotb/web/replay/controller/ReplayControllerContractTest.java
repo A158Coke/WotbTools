@@ -48,7 +48,11 @@ class ReplayControllerContractTest {
         assertTrue(stream(response.get("player")).anyMatch(column -> "rank".equals(key(column))));
         assertTrue(stream(response.get("aggregate"))
                 .anyMatch(column -> "potential_damage_avg".equals(key(column))));
-        // 战斗表现列不再经 /api/columns 暴露（随 /api/preview 的 performanceColumns 下发）
+        // 单场/汇总列已直接包含表现派生列（contribution/kast/impact 等）；不再有任何独立 performance 概念
+        assertTrue(stream(response.get("player")).anyMatch(column -> "contribution".equals(key(column))));
+        assertTrue(stream(response.get("player")).anyMatch(column -> "kast".equals(key(column))));
+        assertTrue(stream(response.get("player")).anyMatch(column -> "impact".equals(key(column))));
+        assertTrue(stream(response.get("aggregate")).anyMatch(column -> "contribution".equals(key(column))));
         assertFalse(response.has("performance"));
     }
 

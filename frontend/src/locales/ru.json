@@ -44,7 +44,6 @@
     },
     "result": {
         "aggregate_tab": "Сводка ({count} игроков)",
-        "performance_tab": "Эффективность",
         "scroll_hint": "← Листайте вправо для полных данных →",
         "duplicates": "Пропущено {count} дубликатов:",
         "failures": "{count} файл(ов) не удалось разобрать:"
@@ -417,6 +416,9 @@
         "kills": "Убийств",
         "damage_dealt": "Урон",
         "damage_assisted": "Помощь",
+        "contribution": "Вклад",
+        "kast": "KAST",
+        "impact": "Impact",
         "damage_received": "Получено",
         "damage_blocked": "Заблокировано",
         "n_shots": "Выстрелы",
@@ -462,31 +464,17 @@
         "account_id": "ID аккаунта",
         "potential_damage": "Всего потенциального урона",
         "potential_damage_avg": "Средний потенциальный урон",
-        "potential_damage_supplement_avg": "Средний добавленный урон"
+        "potential_damage_supplement_avg": "Средний добавленный урон",
+        "contribution": "Вклад",
+        "kast": "KAST",
+        "impact": "Impact",
+        "multi_damage_rate": "Мульти-урон",
+        "traded_deaths": "Размены"
     },
     "theme": {
         "auto": "Авто",
         "light": "Светлая",
         "dark": "Тёмная"
-    },
-    "performance_labels": {
-        "nickname": "Игрок",
-        "clan": "Клан",
-        "battles": "Бои",
-        "wins": "Победы",
-        "win_rate": "Победы %",
-        "contribution": "Вклад %",
-        "kast": "KAST %",
-        "impact": "Impact %",
-        "damage_avg": "Средний урон",
-        "potential_damage_avg": "Потенциальный DPB",
-        "potential_damage_supplement_avg": "Среднее добавление",
-        "assist_avg": "Средняя помощь",
-        "multi_damage_rate": "Мульти-урон %",
-        "survival_rate": "% Выживания",
-        "traded_deaths": "Размены",
-        "kills": "Фраги",
-        "kills_avg": "Средние фраги"
     },
     "profile": {
         "home": "Главная",

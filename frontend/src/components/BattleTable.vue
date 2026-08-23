@@ -6,7 +6,14 @@ import { replayValueLabel } from '../utils/display.js'
 
 const { locale, t, te } = useI18n()
 const LOCALIZED_VALUE_KEYS = new Set(['tank_type', 'tank_nation', 'potential_damage_detail'])
+// 单场表现派生列：HP unknown 时为 null（显示 "--"，不冒充 0）；有值时统一百分比展示
+const PERCENT_KEYS = new Set(['contribution', 'kast', 'impact'])
 const props = defineProps({ battle: Object, shownCols: Array })
+
+function percentCell(value) {
+  if (value == null || value === '') return '--'
+  return (Math.round(value * 10) / 10) + '%'
+}
 const sortKey = ref('')
 const sortReverse = ref(false)
 
@@ -64,6 +71,7 @@ function survivalLabel(value) {
               <span v-if="c.key === 'survived_label'" :class="survivalClass(row.cells[c.key])">{{ survivalLabel(row.cells[c.key]) }}</span>
               <span v-else-if="c.key === 'survival_time'">{{ fmtDuration(row.cells[c.key], t) }}</span>
               <span v-else-if="LOCALIZED_VALUE_KEYS.has(c.key)">{{ replayValueLabel(t, te, row.cells[c.key]) }}</span>
+              <span v-else-if="PERCENT_KEYS.has(c.key)">{{ percentCell(row.cells[c.key]) }}</span>
               <span v-else>{{ row.cells[c.key] }}</span>
             </td>
           </tr>

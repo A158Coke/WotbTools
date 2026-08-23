@@ -81,8 +81,8 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 未显式声明的 `/api/**` 默认拒绝；`boost-manager` 仅能访问 `/api/admin/boost/**`。
 
 
-列定义由后端 `/api/preview` 响应中的 `playerColumns`/`aggregateColumns` 字段和 `/api/columns` 提供（纯英文 key）；战斗表现使用 `performanceColumns`。
-前端用 `vue-i18n` 三语 locale（`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels` / `performance_labels`）映射显示名，
+列定义由后端 `/api/preview` 响应中的 `playerColumns`/`aggregateColumns` 字段和 `/api/columns` 提供（纯英文 key）。
+前端用 `vue-i18n` 三语 locale（`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`）映射显示名，
 导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx 表头。回放页列选择器会把单场/汇总两套列顺序与可见性记到 `localStorage`，
 并在后端新增列时自动补齐缺失键。详见 [DEVELOPER_GUIDE.md](../docs/DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
 
@@ -91,8 +91,9 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 
 战斗表现（Performance Metrics）已并入 `POST /api/preview`：一次上传、一次完整回放处理
-（parse + reconstruction + `ObservedMaxHp` + `DeathTimeReconciler`）同时产出基础战绩、汇总与战斗表现，
-不存在独立 `/extended` 页面或 `/api/performance` 端点。
+（parse + reconstruction + `ObservedMaxHp` + `DeathTimeReconciler`）同时产出基础战绩与汇总，
+单场玩家表直接包含 `contribution`/`kast`/`impact` 列，汇总表包含跨场 `contribution`/`kast`/`impact`/`multi_damage_rate`/`traded_deaths`，
+不存在独立 `/extended` 页面、`/api/performance` 端点或「战斗表现」tab。
 
 ### `POST /api/preview`
 
@@ -104,11 +105,10 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 返回：
 
-- `battles`：每场玩家基础战绩 + 扩展字段（`alpha_damage`、`rank`、`potential_damage`、`potential_damage_supplement`、`potential_damage_detail`）。
-- `aggregate`：跨场汇总（>1 场时）。
-- `performance`：每名选手的 `contribution`、`kast`、`impact`、`assist_avg`、`multi_damage_rate`、`survival_rate`、`traded_deaths`、`damage_avg`、`potential_damage_avg`、`kills` 等（无综合评分）。
+- `battles`：每场玩家基础战绩 + 扩展字段（`alpha_damage`、`rank`、`potential_damage`、`potential_damage_supplement`、`potential_damage_detail`），玩家 cells 直接包含 `contribution`/`kast`/`impact`（HP UNKNOWN 时为 null，UI 显示 `--`）。
+- `aggregate`：跨场汇总（>1 场时），含跨场 `contribution`/`kast`/`impact`/`multi_damage_rate`/`traded_deaths`。
 - `duplicates` / `failures`：去重和失败信息。
-- `playerColumns` / `aggregateColumns` / `performanceColumns`：纯英文 key + 是否数值，前端由三语 `player_labels` / `agg_labels` / `performance_labels` 显示。
+- `playerColumns` / `aggregateColumns`：纯英文 key + 是否数值，前端由三语 `player_labels` / `agg_labels` 显示。
 
 ### `POST /api/preview`
 

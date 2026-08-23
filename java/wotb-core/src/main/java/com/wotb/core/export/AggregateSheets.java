@@ -7,6 +7,7 @@ import com.wotb.core.Columns;
 import com.wotb.core.ref.MapNames;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.Aggregator;
+import com.wotb.core.stats.PerformanceMetricsCalculator;
 import com.wotb.core.stats.Players;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
@@ -19,6 +20,7 @@ import org.apache.poi.ss.util.CellRangeAddress;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -36,13 +38,22 @@ final class AggregateSheets {
     static void write(final ExcelStyles styles, final List<Battle> battles, final List<String> sourceNames,
                       final List<String[]> duplicates, final Tankopedia tp) {
         final Map<Long, Agg> agg = Aggregator.aggregate(battles, tp);
-        summary(styles, agg);
+        final Map<Long, PerformanceMetricsCalculator.Row> perfById = new HashMap<>();
+        for (final PerformanceMetricsCalculator.Row row : PerformanceMetricsCalculator.compute(battles)) {
+            perfById.put(row.accountId, row);
+        }
+        summary(styles, agg, perfById);
         detail(styles, battles, tp);
         battleList(styles, battles, sourceNames, duplicates);
     }
 
-    private static void summary(final ExcelStyles styles, final Map<Long, Agg> aggMap) {
+    private static void summary(final ExcelStyles styles, final Map<Long, Agg> aggMap,
+                                final Map<Long, PerformanceMetricsCalculator.Row> perfById) {
         final Sheet ws = styles.workbook().createSheet("汇总");
+        // 与 API Mapper.toAggregate 同一契约（Excel 空单元格 = API null）：
+        //   contribution/kast/多伤率 依赖 HP（hpEligible=false 时 unavailable）
+        //   impact/tradedDeaths 不依赖 HP（仅要求该账号存在 performance row）
+        final Function<Long, PerformanceMetricsCalculator.Row> perfOf = perfById::get;
         final List<AggregateColumn> cols = List.of(
                 new AggregateColumn("玩家", 18, false, a -> a.nickname),
                 new AggregateColumn("战队", 10, false, a -> a.clan),
@@ -50,6 +61,14 @@ final class AggregateSheets {
                 new AggregateColumn("胜场", 6, true, a -> a.wins),
                 new AggregateColumn("胜率%", 8, true, a -> ExcelStyles.r1(a.winRate())),
                 new AggregateColumn("存活率%", 9, true, a -> ExcelStyles.r1(a.survivalRate())),
+                new AggregateColumn("贡献度%", 9, true, a -> perfVal(perfOf.apply(a.accountId), p -> p.hpEligible
+                        ? ExcelStyles.r1(p.contribution) : null)),
+                new AggregateColumn("KAST%", 8, true, a -> perfVal(perfOf.apply(a.accountId), p -> p.hpEligible
+                        ? ExcelStyles.r1(p.kast) : null)),
+                new AggregateColumn("Impact%", 9, true, a -> perfVal(perfOf.apply(a.accountId), p -> ExcelStyles.r1(p.impactValue))),
+                new AggregateColumn("多伤率%", 9, true, a -> perfVal(perfOf.apply(a.accountId), p -> p.hpEligible
+                        ? ExcelStyles.r1(p.multiDamageRate) : null)),
+                new AggregateColumn("互换击杀", 8, true, a -> perfVal(perfOf.apply(a.accountId), p -> (double) p.tradedDeaths)),
                 new AggregateColumn("平均存活时间", 12, false, a -> ExcelStyles.duration(a.avg(a.survivalSum))),
                 new AggregateColumn("总击杀", 7, true, a -> a.kills),
                 new AggregateColumn("场均击杀", 7, true, a -> ExcelStyles.r2(a.avg(a.kills))),
@@ -80,6 +99,12 @@ final class AggregateSheets {
         }
         ws.createFreezePane(1, 1);
         ws.setAutoFilter(new CellRangeAddress(0, rows.size(), 0, cols.size() - 1));
+    }
+
+    /** 跨场表现派生列取值：HP 全部 UNKNOWN 时 unavailable（null → Excel 空单元格，不冒充 0）。 */
+    private static Object perfVal(final PerformanceMetricsCalculator.Row row,
+                                  final Function<PerformanceMetricsCalculator.Row, Object> getter) {
+        return row == null ? null : getter.apply(row);
     }
 
     private static void detail(final ExcelStyles styles, final List<Battle> battles, final Tankopedia tp) {

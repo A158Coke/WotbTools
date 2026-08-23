@@ -44,7 +44,6 @@
     },
     "result": {
         "aggregate_tab": "汇总 ({count} 名选手)",
-        "performance_tab": "战斗表现",
         "scroll_hint": "← 左右滑动查看更多数据 →",
         "duplicates": "已跳过 {count} 个重复上传：",
         "failures": "{count} 个文件解析失败："
@@ -417,6 +416,9 @@
         "kills": "击杀",
         "damage_dealt": "伤害",
         "damage_assisted": "协助伤害",
+        "contribution": "贡献度",
+        "kast": "KAST",
+        "impact": "Impact",
         "damage_received": "损失血量",
         "damage_blocked": "格挡",
         "n_shots": "射击次数",
@@ -462,31 +464,17 @@
         "account_id": "账号ID",
         "potential_damage": "总潜在伤害",
         "potential_damage_avg": "场均潜在伤害",
-        "potential_damage_supplement_avg": "场均补增伤害"
+        "potential_damage_supplement_avg": "场均补增伤害",
+        "contribution": "贡献度",
+        "kast": "KAST",
+        "impact": "Impact",
+        "multi_damage_rate": "多伤率",
+        "traded_deaths": "互换击杀"
     },
     "theme": {
         "auto": "跟随系统",
         "light": "亮色",
         "dark": "暗色"
-    },
-    "performance_labels": {
-        "nickname": "玩家",
-        "clan": "战队",
-        "battles": "场次",
-        "wins": "胜场",
-        "win_rate": "胜率%",
-        "contribution": "贡献率%",
-        "kast": "KAST%",
-        "impact": "Impact%",
-        "damage_avg": "均伤",
-        "potential_damage_avg": "潜在均伤",
-        "potential_damage_supplement_avg": "场均补增",
-        "assist_avg": "场均协助",
-        "multi_damage_rate": "多伤率%",
-        "survival_rate": "存活率%",
-        "traded_deaths": "互换击杀",
-        "kills": "人头",
-        "kills_avg": "场均人头"
     },
     "profile": {
         "home": "首页",

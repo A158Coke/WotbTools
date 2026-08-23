@@ -1,11 +1,19 @@
 [
   {
-    "v": "2.12.12",
+    "v": "2.12.13",
     "date": "2026-08-23",
     "tag": "add",
     "zh": "百场成绩提交新增当前页面会话草稿：关闭弹窗不会丢失填写内容、截图或回放；5 个回放可分多次逐个或批量追加，并能查看和单独移除。提交失败保留草稿，提交成功或主动清空后才移除；刷新或关闭网页后不保留文件。",
     "en": "The 100-battle submission dialog now keeps a page-session draft: closing it no longer loses entered values, the screenshot, or replay files. The 5 replays can be added one at a time or in multiple batches, reviewed in a list, and removed individually. Failed submissions keep the draft; successful submission or an explicit clear removes it. Files are not retained after refreshing or closing the page.",
     "ru": "В форме результата за 100 боёв появился черновик текущего сеанса страницы: закрытие окна больше не удаляет введённые данные, скриншот и реплеи. Пять реплеев можно добавлять по одному или несколькими партиями, просматривать в списке и удалять отдельно. После ошибки черновик сохраняется, а после успешной отправки или явной очистки удаляется; при обновлении или закрытии страницы файлы не сохраняются."
+  },
+  {
+    "v": "2.12.12",
+    "date": "2026-08-23",
+    "tag": "chg",
+    "zh": "贡献度 / KAST / Impact 直接显示在回放解析结果里：单场玩家表新增「贡献度 / KAST / Impact」三列（与原来的「战斗表现」同一套算法、同一份回放数据，无需进入任何额外页面）；多场上传时「汇总」表显示跨场贡献度 / KAST / Impact / 多伤率 / 互换击杀；删除独立的「战斗表现」标签页。回放无法确定车辆血量时贡献度与 KAST 显示「—」而不是假的 0%（Impact 不依赖血量，仍显示数值）；Excel 导出的单场/汇总表同步包含这些列。",
+    "en": "Contribution / KAST / Impact now appear directly in the replay results: the single-battle player table has new Contribution, KAST and Impact columns (same formulas and same replay data as the former Performance view, no extra page needed); with multiple replays the aggregate table shows cross-battle Contribution / KAST / Impact / multi-damage rate / trades, and the standalone Performance tab is removed. When a replay cannot determine vehicle HP, Contribution and KAST show a dash instead of a misleading 0% (Impact does not depend on HP and keeps its value); the Excel single-battle and aggregate sheets include the same columns.",
+    "ru": "Вклад / KAST / Impact теперь отображаются прямо в результатах разбора реплея: в таблице игроков одного боя появились столбцы «Вклад», «KAST» и «Impact» (те же формулы и те же данные реплея, что и в прежнем разделе эффективности, без дополнительных страниц); при нескольких реплеях сводная таблица показывает межбоевые Вклад / KAST / Impact / мульти-урон / размены, а отдельная вкладка «Эффективность» удалена. Когда реплей не может определить HP машин, Вклад и KAST показываются как «—» вместо вводящего в заблуждение 0% (Impact не зависит от HP и сохраняет значение); листы Excel для одного боя и сводки включают те же столбцы."
   },
   {
     "v": "2.12.11",
