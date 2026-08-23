@@ -3,9 +3,9 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { mapLabel } from '../utils/helpers.js'
-import { apiErrorLabel } from '../utils/display.js'
+import { apiErrorLabel, formatDateTimeMinute, replayValueLabel } from '../utils/display.js'
+import { HUNDRED_VEHICLES } from '../utils/hundredVehicles.js'
 import * as api from '../utils/api.js'
-import TANKOPEDIA from '../../../common/tankopedia-tier10.json'
 
 const { locale, t, te } = useI18n()
 const rows = ref([])
@@ -34,17 +34,41 @@ const battleType = ref('')
 const selectedTankId = ref(null)
 const selectedTankName = ref('')
 const nickname = ref('')
+const singleVehicleOptions = ref([])
+const singleVehicleOptionsLoading = ref(false)
+const singleVehicleOptionsError = ref('')
+const singleNation = ref('')
+const singleVehicleType = ref('')
+const singleVehicleTier = ref('')
 let loadGeneration = 0
+
+const singleVehicleNations = computed(() => uniqueValues(singleVehicleOptions.value.map(vehicle => vehicle.nation)))
+const singleVehicleTypes = computed(() => uniqueValues(singleVehicleOptions.value.map(vehicle => vehicle.type)))
+const singleVehicleTiers = computed(() => uniqueValues(singleVehicleOptions.value
+  .map(vehicle => vehicle.tier)
+  .filter(tier => tier != null))
+  .sort((a, b) => a - b))
+const filteredSingleVehicles = computed(() => singleVehicleOptions.value
+  .filter(vehicle => (!singleNation.value || vehicle.nation === singleNation.value)
+    && (!singleVehicleType.value || vehicle.type === singleVehicleType.value)
+    && (!singleVehicleTier.value || String(vehicle.tier) === singleVehicleTier.value))
+  .sort((a, b) => (a.tankName || '').localeCompare(b.tankName || '')))
 
 async function load() {
   const generation = ++loadGeneration
   loading.value = true
   error.value = ''
   try {
-    const params = { page: page.value, size: limit.value }
-    if (battleType.value) params.battleType = battleType.value
-    if (selectedTankId.value) params.tankId = selectedTankId.value
-    if (nickname.value.trim()) params.nickname = nickname.value.trim()
+    const params = {
+      page: page.value,
+      size: limit.value,
+      battleType: battleType.value,
+      tankId: selectedTankId.value,
+      nation: singleNation.value,
+      vehicleType: singleVehicleType.value,
+      tier: singleVehicleTier.value,
+      nickname: nickname.value.trim(),
+    }
     const res = await api.hofList(params)
     if (generation !== loadGeneration) return
     rows.value = res.items || []
@@ -62,10 +86,55 @@ function onBattleTypeChange() {
 }
 
 function filterByTank(tankId, tankName) {
+  singleNation.value = ''
+  singleVehicleType.value = ''
+  singleVehicleTier.value = ''
   selectedTankId.value = tankId
   selectedTankName.value = tankName
   page.value = 1
   load()
+}
+
+async function loadSingleVehicleOptions() {
+  singleVehicleOptionsLoading.value = true
+  singleVehicleOptionsError.value = ''
+  try {
+    singleVehicleOptions.value = (await api.hofVehicleOptions()) || []
+  } catch (e) {
+    singleVehicleOptionsError.value = apiErrorLabel(t, te, e)
+  } finally {
+    singleVehicleOptionsLoading.value = false
+  }
+}
+
+function onSingleVehicleConditionChange() {
+  if (selectedTankId.value
+      && !filteredSingleVehicles.value.some(vehicle => vehicle.tankId === Number(selectedTankId.value))) {
+    selectedTankId.value = null
+    selectedTankName.value = ''
+  }
+  page.value = 1
+  load()
+}
+
+function onSingleVehicleChange() {
+  const vehicle = singleVehicleOptions.value.find(option => option.tankId === Number(selectedTankId.value))
+  selectedTankName.value = vehicle?.tankName || ''
+  page.value = 1
+  load()
+}
+
+function vehicleOptionLabel(vehicle) {
+  const name = vehicle.tankName || t('hof.unknownVehicle')
+  return vehicle.tier == null ? name : `${name} · T${vehicle.tier}`
+}
+
+function vehicleValueLabel(value) {
+  return replayValueLabel(t, te, value)
+}
+
+function uniqueValues(values) {
+  return [...new Set(values.filter(Boolean))].sort()
 }
 
 function clearFilter() {
@@ -150,15 +219,12 @@ function onDrop(e) {
   if (f) upload(f)
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadSingleVehicleOptions()
+})
 
-function fmtTime(s) {
-  if (!s) return ''
-  const d = new Date(s)
-  if (Number.isNaN(d.getTime()) || d.getFullYear() < 2014) return ''
-  const p = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
-}
+const fmtTime = value => formatDateTimeMinute(value, 2014)
 
 function battleTypeLabel(tp) {
   if (tp === 'RATING') return t('hof.battleType.rating')
@@ -182,16 +248,13 @@ function switchTab(tab) {
 }
 
 // ── 百场：车辆 / 排行榜 ─────────────────────────────────────────
-// common/tankopedia-tier10.json 本身即 Tier X 全集（84 辆）。
-const tier10Vehicles = TANKOPEDIA.vehicles
-  .map(v => ({ id: v.id, name: v.name, nation: v.nation, vehicleClass: v.class }))
-  .sort((a, b) => a.name.localeCompare(b.name))
+// common/tankopedia-tier10.json 的稳定分类映射由公开页与管理页共用。
+const tier10Vehicles = HUNDRED_VEHICLES
 
 const h100VehicleId = ref(null)
 const h100VehicleName = ref('')
-const h100VehicleSearch = ref('')
 const h100Nation = ref('')
-const h100VehicleClass = ref('')
+const h100VehicleType = ref('')
 const h100Rows = ref([])
 const h100Loading = ref(false)
 const h100Error = ref('')
@@ -205,40 +268,11 @@ const withdrawingId = ref(null)
 const h100Msg = ref('')
 const h100MsgErr = ref(false)
 
-const NATION_VALUE_KEYS = {
-  China: 'CHINA', European: 'EUROPE', France: 'FRANCE', Germany: 'GERMANY',
-  Japan: 'JAPAN', Other: 'OTHER', UK: 'UK', USA: 'USA', USSR: 'USSR',
-}
-const VEHICLE_CLASS_VALUE_KEYS = {
-  'Heavy tank': 'HEAVY_TANK', 'Medium tank': 'MEDIUM_TANK',
-  'Light tank': 'LIGHT_TANK', 'Tank destroyer': 'TANK_DESTROYER',
-}
-
-const h100Nations = [...new Set(tier10Vehicles.map(v => v.nation))].sort()
-const h100VehicleClasses = [...new Set(tier10Vehicles.map(v => v.vehicleClass))].sort()
-
-function vehicleMetaLabel(value, keyMap) {
-  const key = keyMap[value]
-  const localeKey = key ? `replay_values.${key}` : ''
-  return localeKey && te(localeKey) ? t(localeKey) : value
-}
-
-function h100NationLabel(nation) {
-  return vehicleMetaLabel(nation, NATION_VALUE_KEYS)
-}
-
-function h100VehicleClassLabel(vehicleClass) {
-  return vehicleMetaLabel(vehicleClass, VEHICLE_CLASS_VALUE_KEYS)
-}
-
-const filteredVehicles = computed(() => {
-  const q = h100VehicleSearch.value.trim().toLowerCase()
-  return tier10Vehicles.filter(v =>
-    (!h100Nation.value || v.nation === h100Nation.value) &&
-    (!h100VehicleClass.value || v.vehicleClass === h100VehicleClass.value) &&
-    (!q || v.name.toLowerCase().includes(q))
-  )
-})
+const h100Nations = uniqueValues(tier10Vehicles.map(vehicle => vehicle.nation))
+const h100VehicleTypes = uniqueValues(tier10Vehicles.map(vehicle => vehicle.vehicleType))
+const filteredHundredVehicles = computed(() => tier10Vehicles.filter(vehicle =>
+  (!h100Nation.value || vehicle.nation === h100Nation.value)
+    && (!h100VehicleType.value || vehicle.vehicleType === h100VehicleType.value)))
 
 const currentPending = computed(() => {
   if (!h100VehicleId.value) return null
@@ -251,8 +285,13 @@ async function loadHundredList() {
   h100Loading.value = true
   h100Error.value = ''
   try {
-    const params = { page: h100Page.value, size: h100Size }
-    if (h100VehicleId.value) params.vehicleId = h100VehicleId.value
+    const params = {
+      page: h100Page.value,
+      size: h100Size,
+      nation: h100Nation.value,
+      vehicleType: h100VehicleType.value,
+      vehicleId: h100VehicleId.value,
+    }
     const res = await api.hofHundredList(params)
     if (generation !== h100LoadGeneration) return
     h100Rows.value = res.items || []
@@ -274,8 +313,11 @@ function onHundredVehicleChange() {
 }
 
 function onHundredVehicleFilterChange() {
-  h100VehicleId.value = null
-  h100VehicleName.value = ''
+  if (h100VehicleId.value
+      && !filteredHundredVehicles.value.some(vehicle => vehicle.id === Number(h100VehicleId.value))) {
+    h100VehicleId.value = null
+    h100VehicleName.value = ''
+  }
   h100Msg.value = ''
   h100Page.value = 1
   loadHundredList()
@@ -486,6 +528,30 @@ function fmtDate(s) {
       </section>
 
       <div class="lb-toolbar">
+        <label class="lb-limit">{{ $t('hof.nation') }}
+          <select v-model="singleNation" :disabled="singleVehicleOptionsLoading" @change="onSingleVehicleConditionChange">
+            <option value="">{{ $t('hof.allNations') }}</option>
+            <option v-for="nation in singleVehicleNations" :key="nation" :value="nation">{{ vehicleValueLabel(nation) }}</option>
+          </select>
+        </label>
+        <label class="lb-limit">{{ $t('hof.vehicleType') }}
+          <select v-model="singleVehicleType" :disabled="singleVehicleOptionsLoading" @change="onSingleVehicleConditionChange">
+            <option value="">{{ $t('hof.allVehicleTypes') }}</option>
+            <option v-for="type in singleVehicleTypes" :key="type" :value="type">{{ vehicleValueLabel(type) }}</option>
+          </select>
+        </label>
+        <label class="lb-limit">{{ $t('hof.vehicleTier') }}
+          <select v-model="singleVehicleTier" :disabled="singleVehicleOptionsLoading" @change="onSingleVehicleConditionChange">
+            <option value="">{{ $t('hof.allVehicleTiers') }}</option>
+            <option v-for="tier in singleVehicleTiers" :key="tier" :value="String(tier)">T{{ tier }}</option>
+          </select>
+        </label>
+        <label class="lb-limit">{{ $t('hof.selectVehicle') }}
+          <select v-model="selectedTankId" class="hof-vehicle-select" :disabled="singleVehicleOptionsLoading" @change="onSingleVehicleChange">
+            <option :value="null">{{ $t('hof.all_tanks') }}</option>
+            <option v-for="vehicle in filteredSingleVehicles" :key="vehicle.tankId" :value="vehicle.tankId">{{ vehicleOptionLabel(vehicle) }}</option>
+          </select>
+        </label>
         <label class="lb-limit">{{ $t('hof.battleTypeLabel') }}
           <select v-model="battleType" @change="onBattleTypeChange">
             <option value="">{{ $t('hof.battleType.all') }}</option>
@@ -511,6 +577,8 @@ function fmtDate(s) {
           <svg class="ic" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v6h-6" /></svg>{{ $t('hof.refresh') }}
         </button>
       </div>
+
+      <p v-if="singleVehicleOptionsError" class="error">{{ singleVehicleOptionsError }}</p>
 
       <p v-if="selectedTankId" class="lb-filter-hint">
         {{ $t('hof.filter_tank') }}: <strong>{{ selectedTankName }}</strong>
@@ -592,20 +660,19 @@ function fmtDate(s) {
         <label class="lb-limit h100-filter">{{ $t('hundred.nation') }}
           <select v-model="h100Nation" @change="onHundredVehicleFilterChange">
             <option value="">{{ $t('hundred.allNations') }}</option>
-            <option v-for="nation in h100Nations" :key="nation" :value="nation">{{ h100NationLabel(nation) }}</option>
+            <option v-for="nation in h100Nations" :key="nation" :value="nation">{{ vehicleValueLabel(nation) }}</option>
           </select>
         </label>
         <label class="lb-limit h100-filter">{{ $t('hundred.vehicleType') }}
-          <select v-model="h100VehicleClass" @change="onHundredVehicleFilterChange">
+          <select v-model="h100VehicleType" @change="onHundredVehicleFilterChange">
             <option value="">{{ $t('hundred.allVehicleTypes') }}</option>
-            <option v-for="vehicleClass in h100VehicleClasses" :key="vehicleClass" :value="vehicleClass">{{ h100VehicleClassLabel(vehicleClass) }}</option>
+            <option v-for="vehicleType in h100VehicleTypes" :key="vehicleType" :value="vehicleType">{{ vehicleValueLabel(vehicleType) }}</option>
           </select>
         </label>
         <label class="lb-limit h100-vehicle-filter">{{ $t('hundred.selectVehicle') }}
-          <input v-model="h100VehicleSearch" class="lb-nick-input h100-search-input" :placeholder="$t('hundred.vehiclePlaceholder')" />
           <select v-model="h100VehicleId" class="h100-vehicle-select" @change="onHundredVehicleChange">
             <option :value="null">{{ $t('hundred.default') }}</option>
-            <option v-for="v in filteredVehicles" :key="v.id" :value="v.id">{{ v.name }}</option>
+            <option v-for="vehicle in filteredHundredVehicles" :key="vehicle.id" :value="vehicle.id">{{ vehicle.name }}</option>
           </select>
         </label>
         <button type="button" class="ghost sm" :disabled="h100Loading" @click="loadHundredList">
@@ -679,7 +746,7 @@ function fmtDate(s) {
           <label class="h100-field-label" for="h100-submit-vehicle">{{ $t('hundred.selectVehicle') }}</label>
           <select id="h100-submit-vehicle" v-model="submitForm.vehicleId">
             <option :value="null" disabled>{{ $t('hundred.chooseVehicle') }}</option>
-            <option v-for="v in filteredVehicles" :key="v.id" :value="v.id">{{ v.name }}</option>
+            <option v-for="vehicle in filteredHundredVehicles" :key="vehicle.id" :value="vehicle.id">{{ vehicle.name }}</option>
           </select>
         </div>
 
@@ -735,7 +802,7 @@ function fmtDate(s) {
 .lb-head p { margin: 0; color: var(--text-label); line-height: 1.65; }
 .lb-toolbar { display: flex; align-items: center; gap: 12px; margin: 16px 0 12px; flex-wrap: wrap; }
 .lb-limit { font-size: 13px; color: var(--text-label); display: inline-flex; align-items: center; gap: 6px; }
-.lb-limit select { appearance: none; -webkit-appearance: none; border: 1px solid var(--border-ghost);
+.lb-limit select { border: 1px solid var(--border-ghost);
   background: var(--bg-card2); color: var(--text-label); padding: 5px 10px; border-radius: 7px;
   font-size: 13px; cursor: pointer; font-family: inherit; }
 .lb-nick-input { border: 1px solid var(--border-ghost); background: var(--bg-card2); color: var(--text-label);
@@ -813,8 +880,7 @@ function fmtDate(s) {
 
 /* ── 百场 Tab ─────────────────────────────────── */
 .h100-vehicle-filter { flex-wrap: wrap; }
-.h100-vehicle-select { min-width: 200px; }
-.h100-search-input { width: 130px; }
+.hof-vehicle-select, .h100-vehicle-select { min-width: 200px; }
 .h100-pending-card {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   margin: 12px 0; padding: 12px 14px;

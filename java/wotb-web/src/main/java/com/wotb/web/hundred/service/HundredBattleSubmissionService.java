@@ -5,6 +5,7 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.TankInfo;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.ref.Tankopedia;
+import com.wotb.core.ref.VehicleCodes;
 import com.wotb.web.hof.service.HallOfFameUploadService;
 import com.wotb.web.hof.service.ReplayHashLock;
 import com.wotb.web.hundred.dto.HundredAdminDetailDto;
@@ -41,6 +42,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -55,11 +57,9 @@ import java.util.Set;
  *   <li>身份/成绩快照创建瞬间冻结；排行榜只读 approved*</li>
  * </ul>
  *
- * <p>proof 生命周期：截图以 base64 data URL 存 DB（同 Boost Apply 模式），审核终态事务内清空，
- * 与业务状态原子提交——不存在「文件删除失败回滚业务状态」问题；5 个原始 {@code .wotbreplay}
- * 由 {@link HundredReplayEvidenceService} 内容寻址持久化（{@code hundred_battle_replay_evidence} 元数据
- * + 物理文件，PENDING 全程可审核），审核终态（APPROVE/REJECT/CANCEL）同事务删元数据行并在
- * commit 后 best-effort 清理物理文件（跨表引用计数，失败仅 WARN 保留 orphan）。</p>
+ * <p>proof 生命周期：截图以 base64 data URL 存 DB，5 个原始 {@code .wotbreplay} 由
+ * {@link HundredReplayEvidenceService} 内容寻址持久化。APPROVE/REJECT/CANCEL/DELETE 终态事务内
+ * 清空截图并删除 evidence 元数据，commit 后 best-effort 清理无引用物理文件，避免长期占用空间。</p>
  */
 @Service
 public class HundredBattleSubmissionService {
@@ -67,7 +67,7 @@ public class HundredBattleSubmissionService {
     private static final int MAX_IMAGE_CHARS = 5_500_000;
     private static final int DEFAULT_PAGE_SIZE = 50;
     private static final int MAX_PAGE_SIZE = 100;
-    private static final int DEFAULT_GLOBAL_LEADERBOARD_SIZE = 10;
+    private static final int TOP_LEADERBOARD_SIZE = 10;
     private static final int REPLAY_COUNT = 5;
 
     /** 「百场」资格最低场次：管理员最终 approvedBattleCount 必须 ≥ 100（人工审核为最终资格判断）。 */
@@ -258,7 +258,7 @@ public class HundredBattleSubmissionService {
         return new HundredCreateResult(submissionId, HundredBattleStatus.PENDING.name());
     }
 
-    /** 用户取消自己的 PENDING（不影响 CURRENT；proof 截图同事务清空）。 */
+    /** 用户取消自己的 PENDING（不影响 CURRENT；终态清理截图与回放证据）。 */
     @Transactional
     public HundredSubmissionSummaryDto cancelSubmission(final String userId, final long submissionId) {
         final HundredBattleSubmission submission = repository.findByIdForUpdate(submissionId)
@@ -271,7 +271,6 @@ public class HundredBattleSubmissionService {
         submission.setCancelledAt(OffsetDateTime.now());
         submission.setProofScreenshot(null);
         final HundredSubmissionSummaryDto result = mapper.toSummary(repository.save(submission));
-        // 终态：同事务删 evidence 行 + commit 后引用计数清理物理文件（失败仅 WARN，不回滚 CANCEL）。
         evidenceService.discardForSubmission(submission.getId());
         return result;
     }
@@ -279,23 +278,52 @@ public class HundredBattleSubmissionService {
     // ── Phase 5：Public leaderboard ───────────────────────────────────────
 
     /**
-     * 公开排行榜：未选择车辆时返回全站最高 10 条；选择车辆时返回该车独立排行。
-     * rank query-time 派生不落库，排序均为 approvedAverageDamage DESC → approvedAt ASC → id ASC。
+     * 公开排行榜：vehicleId / nation / vehicleType 按交集处理。
+     * 全部为空走全站 Top 10；仅分类条件走候选车辆集合内 Top 10；具体车辆保持独立分页。
+     * rank query-time 派生不落库，且始终基于与结果集完全相同的筛选上下文。
      */
     @Transactional(readOnly = true)
-    public HundredLeaderboardPageDto leaderboard(final Long vehicleId, final int page, final int size) {
-        if (vehicleId == null) {
+    public HundredLeaderboardPageDto leaderboard(final Long vehicleId,
+                                                  final String nation,
+                                                  final String vehicleType,
+                                                  final int page,
+                                                  final int size) {
+        final String nationFilter = normalizeCategoryFilter(nation);
+        final String typeFilter = normalizeCategoryFilter(vehicleType);
+        if (vehicleId == null && nationFilter == null && typeFilter == null) {
             return defaultLeaderboard();
         }
+        if (vehicleId == null) {
+            return categoryLeaderboard(nationFilter, typeFilter);
+        }
         final TankInfo vehicle = tankopedia.info(vehicleId);
-        if (!(vehicle.tier() instanceof final Integer tier) || tier != 10) {
+        if (!isTierTen(vehicle)) {
             throw new IllegalArgumentException("HUNDRED_NON_TIER_X");
         }
         final int effectiveSize = clamp(size);
+        if (!matchesCategory(vehicle, nationFilter, typeFilter)) {
+            final Page<HundredBattleSubmission> empty = Page.empty(
+                    PageRequest.of(Math.max(0, page - 1), effectiveSize));
+            return mapper.toLeaderboardPage(empty, vehicleId, vehicle.name(), page, effectiveSize, Map.of());
+        }
         final Page<HundredBattleSubmission> rows = repository
                 .findByVehicleIdAndStatusOrderByApprovedAverageDamageDescApprovedAtAscIdAsc(
                         vehicleId, "CURRENT", PageRequest.of(Math.max(0, page - 1), effectiveSize));
         return mapper.toLeaderboardPage(rows, vehicleId, vehicle.name(), page, effectiveSize, rankMap(vehicleId));
+    }
+
+    /** 分类筛选视图：由 CURRENT 的权威 Tier X vehicleId 派生候选集合，固定返回该上下文 Top 10。 */
+    private HundredLeaderboardPageDto categoryLeaderboard(final String nation, final String vehicleType) {
+        final List<Long> vehicleIds = repository.findDistinctCurrentVehicleIds().stream()
+                .filter(id -> matchesCategory(tankopedia.info(id), nation, vehicleType))
+                .toList();
+        if (vehicleIds.isEmpty()) {
+            return mapper.toTopLeaderboardPage(List.of(), TOP_LEADERBOARD_SIZE, Map.of());
+        }
+        final List<HundredBattleSubmission> rows = repository.findTopCurrentByVehicleIds(
+                vehicleIds, PageRequest.of(0, TOP_LEADERBOARD_SIZE));
+        return mapper.toTopLeaderboardPage(rows, TOP_LEADERBOARD_SIZE,
+                rankMap(repository.countCurrentGroupedByDamageForVehicles(vehicleIds)));
     }
 
     /** 未筛选车辆时的默认视图：全站 CURRENT 伤害最高十条，固定首屏且不翻页。 */
@@ -303,7 +331,7 @@ public class HundredBattleSubmissionService {
         final List<HundredBattleSubmission> rows = repository
                 .findTop10ByStatusAndApprovedAverageDamageIsNotNullOrderByApprovedAverageDamageDescApprovedAtAscIdAsc(
                         "CURRENT");
-        return mapper.toDefaultLeaderboardPage(rows, DEFAULT_GLOBAL_LEADERBOARD_SIZE,
+        return mapper.toTopLeaderboardPage(rows, TOP_LEADERBOARD_SIZE,
                 rankMap(repository.countAllCurrentGroupedByDamage()));
     }
 
@@ -345,19 +373,45 @@ public class HundredBattleSubmissionService {
 
     // ── Phase 4：Admin moderation ─────────────────────────────────────────
 
-    /** 管理后台列表：status 过滤（null = 全部）。 */
+    /** 向后兼容的管理列表入口（仅 status）。 */
     @Transactional(readOnly = true)
     public HundredAdminPageDto adminList(final String status, final int page, final int size) {
+        return adminList(status, null, null, null, page, size);
+    }
+
+    /** 管理后台列表：status 与 nation ∩ vehicleType ∩ vehicleId 均可独立使用。 */
+    @Transactional(readOnly = true)
+    public HundredAdminPageDto adminList(final String status,
+                                         final String nation,
+                                         final String vehicleType,
+                                         final Long vehicleId,
+                                         final int page,
+                                         final int size) {
         final String normalized = StringUtils.hasText(status) ? HundredBattleStatus.from(status).name() : null;
         final int effectiveSize = clamp(size);
-        final Page<HundredBattleSubmission> rows = repository.searchAdmin(
-                normalized, PageRequest.of(Math.max(0, page - 1), effectiveSize));
+        final PageRequest pageable = PageRequest.of(Math.max(0, page - 1), effectiveSize);
+        final String nationFilter = normalizeCategoryFilter(nation);
+        final String typeFilter = normalizeCategoryFilter(vehicleType);
+        final Page<HundredBattleSubmission> rows;
+        if (vehicleId == null && nationFilter == null && typeFilter == null) {
+            rows = repository.searchAdmin(normalized, pageable);
+        } else {
+            final List<Long> vehicleIds = vehicleId == null
+                    ? repository.findDistinctVehicleIds().stream()
+                            .filter(id -> matchesCategory(tankopedia.info(id), nationFilter, typeFilter))
+                            .toList()
+                    : matchesCategory(tankopedia.info(vehicleId), nationFilter, typeFilter)
+                            ? List.of(vehicleId) : List.of();
+            rows = vehicleIds.isEmpty()
+                    ? Page.empty(pageable)
+                    : repository.searchAdminByVehicleIds(normalized, vehicleIds, pageable);
+        }
         return new HundredAdminPageDto(
                 rows.getContent().stream().map(mapper::toAdminListItem).toList(),
                 page, effectiveSize, rows.getTotalElements(), rows.getTotalPages());
     }
 
-    /** 管理后台详情（审核页一屏；proofScreenshot 仅 PENDING 返回）。 */
+    /** 管理后台详情（proofScreenshot 仅 PENDING 返回，终态已清理）。 */
     @Transactional(readOnly = true)
     public HundredAdminDetailDto adminDetail(final long submissionId) {
         final HundredBattleSubmission submission = repository.findById(submissionId)
@@ -412,12 +466,11 @@ public class HundredBattleSubmissionService {
         submission.setApprovedBy(adminUserId);
         submission.setProofScreenshot(null);
         final HundredSubmissionSummaryDto result = mapper.toSummary(repository.saveAndFlush(submission));
-        // 终态：同事务删 evidence 行 + commit 后引用计数清理物理文件（失败仅 WARN，不回滚 APPROVE）。
         evidenceService.discardForSubmission(submission.getId());
         return result;
     }
 
-    /** REJECT：原因强制（OTHER 必须填文本）；proof 截图同事务清空；CURRENT 不变。 */
+    /** REJECT：原因强制（OTHER 必须填文本）；终态清理截图与回放证据；CURRENT 不变。 */
     @Transactional
     public HundredSubmissionSummaryDto reject(final String adminUserId,
                                               final long submissionId,
@@ -437,7 +490,6 @@ public class HundredBattleSubmissionService {
         submission.setRejectReasonText(StringUtils.hasText(rejectReasonText) ? rejectReasonText.trim() : null);
         submission.setProofScreenshot(null);
         final HundredSubmissionSummaryDto result = mapper.toSummary(repository.save(submission));
-        // 终态：同事务删 evidence 行 + commit 后引用计数清理物理文件（失败仅 WARN，不回滚 REJECT）。
         evidenceService.discardForSubmission(submission.getId());
         return result;
     }
@@ -462,7 +514,10 @@ public class HundredBattleSubmissionService {
         submission.setDeletedBy(adminUserId);
         submission.setDeleteReason(reason);
         submission.setDeleteReasonText(StringUtils.hasText(deleteReasonText) ? deleteReasonText.trim() : null);
-        return mapper.toSummary(repository.save(submission));
+        submission.setProofScreenshot(null);
+        final HundredSubmissionSummaryDto result = mapper.toSummary(repository.save(submission));
+        evidenceService.discardForSubmission(submission.getId());
+        return result;
     }
 
     // ── 辅助 ──────────────────────────────────────────────────────────────
@@ -495,6 +550,22 @@ public class HundredBattleSubmissionService {
             throw new IllegalArgumentException(errorCode);
         }
         return normalized;
+    }
+
+    private static String normalizeCategoryFilter(final String value) {
+        return StringUtils.hasText(value) ? value.trim().toUpperCase(Locale.ROOT) : null;
+    }
+
+    private static boolean isTierTen(final TankInfo vehicle) {
+        return vehicle.tier() instanceof final Number tier && tier.intValue() == 10;
+    }
+
+    private static boolean matchesCategory(final TankInfo vehicle,
+                                           final String nation,
+                                           final String vehicleType) {
+        return isTierTen(vehicle)
+                && (nation == null || nation.equals(VehicleCodes.nationCode(vehicle.nation())))
+                && (vehicleType == null || vehicleType.equals(VehicleCodes.classCode(vehicle.type())));
     }
 
     /** 读取 MultipartFile 原始字节（读取失败 → 稳定 400 INVALID_REPLAY_FILE，非 500）。 */

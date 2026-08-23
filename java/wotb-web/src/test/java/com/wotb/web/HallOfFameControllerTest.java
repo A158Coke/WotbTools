@@ -3,6 +3,7 @@ package com.wotb.web;
 import com.wotb.web.hof.controller.HallOfFameController;
 import com.wotb.web.hof.dto.HallOfFamePageDto;
 import com.wotb.web.hof.dto.HallOfFameRecordDto;
+import com.wotb.web.hof.dto.HofVehicleOptionDto;
 import com.wotb.web.hof.dto.ReplayDownload;
 import com.wotb.web.controller.GlobalExceptionHandler;
 import com.wotb.web.hof.service.HallOfFameService;
@@ -60,23 +61,27 @@ class HallOfFameControllerTest {
     @Test
     void listDefaultAndExplicitFilterParams() throws Exception {
         final HallOfFameService svc = mock(HallOfFameService.class);
-        when(svc.search(any(), any(), any(), anyInt(), anyInt())).thenReturn(PAGE);
+        when(svc.search(any(), any(), any(), any(), any(), any(), anyInt(), anyInt())).thenReturn(PAGE);
         final MockMvc mvc = mvc(svc);
         mvc.perform(get("/api/hof")).andExpect(status().isOk());
         mvc.perform(get("/api/hof")
                         .param("battleType", "RATING")
                         .param("tankId", "6481")
+                        .param("nation", "UK")
+                        .param("vehicleType", "TANK_DESTROYER")
+                        .param("tier", "10")
                         .param("nickname", "Coke")
                         .param("page", "2")
                         .param("size", "20"))
                 .andExpect(status().isOk());
-        verify(svc).search(eq("RATING"), eq(6481L), eq("Coke"), eq(2), eq(20));
+        verify(svc).search(eq("RATING"), eq(6481L), eq("UK"), eq("TANK_DESTROYER"),
+                eq(10), eq("Coke"), eq(2), eq(20));
     }
 
     @Test
     void listReturnsDtoList() throws Exception {
         final HallOfFameService svc = mock(HallOfFameService.class);
-        when(svc.search(any(), any(), any(), anyInt(), anyInt())).thenReturn(pageOf(dto()));
+        when(svc.search(any(), any(), any(), any(), any(), any(), anyInt(), anyInt())).thenReturn(pageOf(dto()));
         final String json = mvc(svc).perform(get("/api/hof"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
@@ -85,6 +90,24 @@ class HallOfFameControllerTest {
         Assertions.assertThat(json).contains("\"FV4005\"");
         Assertions.assertThat(json).contains("\"RANDOM\"");
         Assertions.assertThat(json).contains("\"rank\":1");
+    }
+
+    @Test
+    void vehicleOptionsDelegateAndReturnStableEnglishMetadata() throws Exception {
+        final HallOfFameService service = mock(HallOfFameService.class);
+        when(service.vehicleOptions()).thenReturn(List.of(
+                new HofVehicleOptionDto(385L, "Progetto 65", "EUROPE", "MEDIUM_TANK", 10),
+                new HofVehicleOptionDto(999_999L, "Legacy Tank", "OTHER", "OTHER", null)));
+
+        final String json = mvc(service).perform(get("/api/hof/vehicle-options"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        Assertions.assertThat(json).contains("\"tankId\":385");
+        Assertions.assertThat(json).contains("\"nation\":\"EUROPE\"");
+        Assertions.assertThat(json).contains("\"type\":\"MEDIUM_TANK\"");
+        Assertions.assertThat(json).contains("\"tier\":null");
+        verify(service).vehicleOptions();
     }
 
     @Test

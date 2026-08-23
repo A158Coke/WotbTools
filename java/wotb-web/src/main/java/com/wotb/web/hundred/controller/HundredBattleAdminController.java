@@ -47,16 +47,19 @@ public class HundredBattleAdminController {
         this.evidenceService = evidenceService;
     }
 
-    /** 审核列表：status 过滤（PENDING / CURRENT / ...，缺省全部），submitted_at 倒序。 */
+    /** 审核列表：status、国家、车种、车辆均可独立使用并按交集处理。 */
     @GetMapping("/submissions")
     public HundredAdminPageDto list(
             @RequestParam(name = "status", required = false) final String status,
+            @RequestParam(name = "nation", required = false) final String nation,
+            @RequestParam(name = "vehicleType", required = false) final String vehicleType,
+            @RequestParam(name = "vehicleId", required = false) final Long vehicleId,
             @RequestParam(name = "page", defaultValue = "1") final int page,
             @RequestParam(name = "size", defaultValue = "50") final int size) {
-        return service.adminList(status, page, size);
+        return service.adminList(status, nation, vehicleType, vehicleId, page, size);
     }
 
-    /** 审核详情：一屏数据（proofScreenshot 仅 PENDING 返回）。 */
+    /** 审核详情：proofScreenshot 仅 PENDING 返回；终态只保留结果与原因等文字数据。 */
     @GetMapping("/submissions/{id}")
     public HundredAdminDetailDto detail(@PathVariable final long id) {
         return service.adminDetail(id);
@@ -64,7 +67,7 @@ public class HundredBattleAdminController {
 
     /**
      * 审核证据列表：该 submission 的 replay metadata（slot / originalFilename / size / arenaId / sha256）。
-     * 旧 PENDING（证据持久化功能上线前创建）→ 空列表；不包含文件内容，下载走下方独立端点。
+     * 终态或证据功能上线前的旧 PENDING → 空列表；不包含文件内容，下载走下方独立端点。
      */
     @GetMapping("/submissions/{id}/replays")
     public List<HundredReplayEvidenceDto> replays(@PathVariable final long id) {
