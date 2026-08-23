@@ -11,6 +11,15 @@
   --showcase-surface: color-mix(in srgb, var(--bg-card) 94%, #111 6%);
   --showcase-surface-2: color-mix(in srgb, var(--bg-card2) 92%, #111 8%);
   --showcase-line: color-mix(in srgb, var(--border) 76%, var(--accent) 24%);
+  /* Tactical smoked surfaces — same dark graphite in both themes so content
+     panels belong to the Operations Console instead of re-whitening the page. */
+  --showcase-tactical: linear-gradient(160deg, rgba(28, 34, 38, .95) 0%, rgba(17, 22, 25, .97) 100%);
+  --showcase-tactical-2: linear-gradient(165deg, rgba(22, 28, 31, .93) 0%, rgba(14, 19, 22, .96) 100%);
+  --showcase-tactical-border: rgba(66, 77, 84, .55);
+  --showcase-tactical-border-strong: rgba(217, 143, 24, .38);
+  --showcase-tactical-heading: #f2ede3;
+  --showcase-tactical-text: #c9c5bb;
+  --showcase-tactical-muted: #8f948d;
 }
 
 [data-theme="dark"] {
@@ -258,12 +267,18 @@ body {
 .admin-hint { margin-bottom: 18px !important; }
 .admin-search {
   padding: 12px;
-  border: 1px solid var(--border);
+  border: 1px solid #39444a;
   border-radius: 8px;
-  background: var(--bg-card);
-  box-shadow: var(--surface-shadow);
+  background: rgba(13, 18, 22, .92);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .22);
+  backdrop-filter: blur(10px);
 }
-.admin-search input { min-height: 40px; }
+.admin-search input {
+  min-height: 40px;
+  border-color: #39444a !important;
+  background: #0f1518 !important;
+  color: #e4e1d9 !important;
+}
 .admin-search button {
   min-width: 96px;
   background: linear-gradient(180deg, var(--accent-light), var(--accent)) !important;
@@ -273,7 +288,8 @@ body {
   max-height: calc(100vh - 250px);
   overflow: auto !important;
   border-color: #354047 !important;
-  box-shadow: 0 18px 44px rgba(0,0,0,.22) !important;
+  background: rgba(13, 18, 22, .94) !important;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .22) !important;
 }
 .admin-table { min-width: 1160px; font-variant-numeric: tabular-nums; }
 .admin-table th {
@@ -283,7 +299,11 @@ body {
   background: #171e22 !important;
   color: #aaa79f !important;
 }
-.admin-table td { height: 48px; }
+.admin-table td {
+  height: 48px;
+  border-bottom-color: #263136 !important;
+  color: #d8d5cd !important;
+}
 .admin-table tbody tr:hover { background: #172025 !important; }
 .admin-table .cell-short { max-width: 190px !important; }
 .admin-table .btn-danger { background: transparent !important; opacity: .72; }

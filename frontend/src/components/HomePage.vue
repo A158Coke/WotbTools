@@ -22,7 +22,7 @@ async function loadTopDamageRecord() {
     topRecord.value = null
   }
 }
-function formatDamage(value) { return String(Math.round(value)).replace(/B(?=(d{3})+(?!d))/g, ' ') }
+function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') }
 </script>
 
 <template>
@@ -171,28 +171,28 @@ function formatDamage(value) { return String(Math.round(value)).replace(/B(?=(d{
 .feature-card {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 1px solid var(--showcase-tactical-border);
   border-radius: 9px;
-  background: var(--bg-card);
-  color: inherit;
+  background: var(--showcase-tactical);
+  color: var(--showcase-tactical-text);
   text-decoration: none;
   box-shadow: var(--surface-shadow);
   transition: .18s;
 }
-.feature-card:hover { transform: translateY(-2px); border-color: #d99a25; box-shadow: 0 18px 36px rgba(190, 120, 12, .14); text-decoration: none; }
-.feature-primary { border-color: color-mix(in srgb, #d99a25 40%, var(--border)); }
+.feature-card:hover { transform: translateY(-2px); border-color: #d99a25; box-shadow: 0 18px 36px rgba(190, 120, 12, .22); text-decoration: none; }
+.feature-primary { border-color: color-mix(in srgb, #d99a25 45%, var(--showcase-tactical-border)); }
 .feature-visual {
   position: relative;
   height: 132px;
   overflow: hidden;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-card2);
+  border-bottom: 1px solid rgba(66, 77, 84, .45);
+  background: #0f1417;
 }
 .feature-visual:after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, transparent 28%, color-mix(in srgb, var(--bg-card) 88%, transparent));
+  background: linear-gradient(180deg, transparent 30%, rgba(10, 14, 17, .78));
 }
 .feature-visual img { width: 100%; height: 100%; object-fit: cover; object-position: center; }
 .feature-index {
@@ -206,12 +206,12 @@ function formatDamage(value) { return String(Math.round(value)).replace(/B(?=(d{
   letter-spacing: .08em;
 }
 .feature-copy { padding: 16px 18px 18px; }
-.feature-copy h2 { margin: 0 0 7px; font-size: 1.12rem; }
-.feature-copy p { min-height: 42px; margin: 0; color: var(--text-muted); font-size: .82rem; line-height: 1.55; }
-.feature-action { display: inline-block; margin-top: 12px; color: #d58b19; font-size: .8rem; font-weight: 800; }
+.feature-copy h2 { margin: 0 0 7px; font-size: 1.12rem; color: var(--showcase-tactical-heading); }
+.feature-copy p { min-height: 42px; margin: 0; color: var(--showcase-tactical-muted); font-size: .82rem; line-height: 1.55; }
+.feature-action { display: inline-block; margin-top: 12px; color: #f0a42b; font-size: .8rem; font-weight: 800; }
 
 .home-bottom { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(270px, .65fr); gap: 14px; margin-top: 14px; }
-.bottom-panel { border: 1px solid var(--border); border-radius: 9px; background: var(--bg-card); box-shadow: var(--surface-shadow); }
+.bottom-panel { border: 1px solid var(--showcase-tactical-border); border-radius: 9px; background: var(--showcase-tactical-2); box-shadow: var(--surface-shadow); }
 .replay-panel { position: relative; overflow: hidden; min-height: 170px; padding: 22px; }
 .replay-panel:after {
   content: '';
@@ -222,19 +222,19 @@ function formatDamage(value) { return String(Math.round(value)).replace(/B(?=(d{
   pointer-events: none;
 }
 .bottom-copy { position: relative; z-index: 2; max-width: 640px; }
-.panel-kicker { color: #d58b19; font-size: .72rem; font-weight: 900; letter-spacing: .08em; }
-.bottom-copy h2 { margin: 7px 0 6px; font-size: 1.2rem; }
-.bottom-copy p { margin: 0; color: var(--text-muted); font-size: .84rem; line-height: 1.55; }
+.panel-kicker { color: #f0a42b; font-size: .72rem; font-weight: 900; letter-spacing: .08em; }
+.bottom-copy h2 { margin: 7px 0 6px; font-size: 1.2rem; color: var(--showcase-tactical-heading); }
+.bottom-copy p { margin: 0; color: var(--showcase-tactical-muted); font-size: .84rem; line-height: 1.55; }
 .panel-actions { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 15px; }
 .mini-action {
   display: inline-flex;
   min-height: 34px;
   align-items: center;
   padding: 0 12px;
-  border: 1px solid var(--border);
+  border: 1px solid rgba(80, 92, 100, .55);
   border-radius: 6px;
-  background: var(--bg-card2);
-  color: var(--text);
+  background: rgba(20, 26, 30, .9);
+  color: var(--showcase-tactical-text);
   font-size: .78rem;
   font-weight: 700;
   text-decoration: none;
@@ -246,25 +246,25 @@ function formatDamage(value) { return String(Math.round(value)).replace(/B(?=(d{
 .replay-decoration span:nth-child(2) { margin-left: 28px; }
 .replay-decoration span:nth-child(3) { margin-left: 58px; }
 .quick-panel { padding: 16px 18px; }
-.quick-panel h2 { margin: 0 0 8px; font-size: .95rem; }
+.quick-panel h2 { margin: 0 0 8px; font-size: .95rem; color: var(--showcase-tactical-heading); }
 .quick-panel a {
   display: flex;
   align-items: center;
   min-height: 32px;
-  border-top: 1px solid var(--border);
-  color: var(--text-muted);
+  border-top: 1px solid rgba(66, 77, 84, .45);
+  color: var(--showcase-tactical-muted);
   font-size: .78rem;
   text-decoration: none;
 }
-.quick-panel a:hover { color: #d58b19; text-decoration: none; }
+.quick-panel a:hover { color: #f0a42b; text-decoration: none; }
 .quick-panel a span { margin-left: auto; }
 .home-footer {
   margin-top: 24px;
   padding: 14px 0 0;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid rgba(66, 77, 84, .45);
   text-align: center;
   font-size: .72rem;
-  color: var(--text-muted);
+  color: var(--showcase-tactical-muted);
 }
 
 @media (max-width: 1199px) {

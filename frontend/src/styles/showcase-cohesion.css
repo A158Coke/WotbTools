@@ -131,13 +131,15 @@
 .lb-wrap .lb-head p { color: #aaa79f !important; }
 
 /* The filter bar is a dense operations toolbar. CSS Grid gives every field real
- * width instead of squeezing labels into one narrow flex line: each label stays on
- * one line, the vehicle selector gets enough width, the nickname input is usable,
- * and the limit/refresh controls align. Tablet wraps to two rows, mobile is
- * task-first two columns with the wide fields spanning full width. */
+ * width instead of squeezing labels into one narrow flex line:
+ *   row 1: Nation | Vehicle Type | Tier | Vehicle (spans 2 → widest field)
+ *   row 2: Battle Type | Player Search (spans 2) | Limit | Refresh
+ * Each label stays on one line, the nickname input is usable, limit/refresh align.
+ * Tablet wraps to two columns, mobile is task-first with the wide fields spanning
+ * the full row. */
 .lb-wrap .lb-toolbar {
   display: grid !important;
-  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
   gap: 10px 14px !important;
   align-items: end !important;
   padding: 12px 14px !important;
@@ -146,6 +148,10 @@
   color: #c9c5bb !important;
   box-shadow: 0 18px 42px rgba(0,0,0,.30) !important;
   backdrop-filter: blur(12px);
+}
+.lb-wrap .lb-toolbar .lb-limit:has(.hof-vehicle-select),
+.lb-wrap .lb-toolbar .lb-limit:has(.lb-nick-input) {
+  grid-column: span 2;
 }
 .lb-wrap .lb-toolbar > * {
   min-width: 0;
@@ -204,6 +210,18 @@
   color: #f0aa30 !important;
 }
 
+.lb-wrap .lb-submit-row {
+  display: flex !important;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 4px 0 14px !important;
+  padding: 10px 12px !important;
+  border: 1px solid rgba(57,68,74,.5) !important;
+  border-radius: 8px !important;
+  background: rgba(10,16,19,.50) !important;
+  backdrop-filter: blur(8px);
+}
 .lb-wrap .lb-submit-row button,
 .lb-wrap .submit-btn {
   border-color: #d98f18 !important;
@@ -227,9 +245,13 @@
 
 /* Error/warning states should integrate with the dark workspace instead of becoming
  * huge pastel strips that visually reset the page back to the old light UI. */
+.lb-wrap .lb-upload-msg.err {
+  color: #ff8f86 !important;
+}
 .lb-wrap .error,
 .layout-data-workspace .error {
   border: 1px solid rgba(225,87,78,.46) !important;
+  border-left: 3px solid rgba(225,87,78,.85) !important;
   border-radius: 7px;
   background: rgba(105,28,24,.62) !important;
   color: #ffb6ae !important;
@@ -267,9 +289,7 @@
     gap: 8px 10px !important;
     overflow: visible !important;
   }
-  .lb-wrap .lb-toolbar .lb-limit:has(.hof-vehicle-select),
-  .lb-wrap .lb-toolbar .lb-limit:has(.h100-vehicle-select),
-  .lb-wrap .lb-toolbar .lb-limit:has(.lb-nick-input) {
+  .lb-wrap .lb-toolbar .lb-limit:has(.h100-vehicle-select) {
     grid-column: 1 / -1 !important;
   }
 }
