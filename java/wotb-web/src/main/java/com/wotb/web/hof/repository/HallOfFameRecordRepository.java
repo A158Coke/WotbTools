@@ -62,6 +62,28 @@ public interface HallOfFameRecordRepository extends JpaRepository<HallOfFameReco
                                   @Param("nickname") String nicknamePattern,
                                   Pageable pageable);
 
+    /**
+     * 公开分类交集查询：vehicleIds 已由服务层根据国家/车种/等级解析，只包含当前名人堂实际车辆。
+     * exact tankId 若同时存在，仍与 vehicleIds 取交集。
+     */
+    @Query("""
+            select r from HallOfFameRecord r
+            where (:battleType is null or r.battleType = :battleType)
+              and (:tankId is null or r.tankId = :tankId)
+              and r.tankId in :vehicleIds
+              and (:nickname is null or lower(r.nickname) like :nickname)
+            order by r.damageDealt desc,
+                     case r.battleType when 'RATING' then 0 else 1 end asc,
+                     r.battleTime asc nulls last,
+                     r.createdAt asc,
+                     r.id asc
+            """)
+    Page<HallOfFameRecord> searchByVehicleIds(@Param("battleType") String battleType,
+                                              @Param("tankId") Long tankId,
+                                              @Param("vehicleIds") List<Long> vehicleIds,
+                                              @Param("nickname") String nicknamePattern,
+                                              Pageable pageable);
+
     /** 管理后台搜索：nickname / accountId / uploadedBy / battleType / tankId / replayAvailable。 */
     @Query("""
             select r from HallOfFameRecord r
@@ -82,14 +104,36 @@ public interface HallOfFameRecordRepository extends JpaRepository<HallOfFameReco
                                        @Param("replayAvailable") Boolean replayAvailable,
                                        Pageable pageable);
 
-    /** 管理筛选车辆：只返回当前名人堂实际存在的车辆，避免无结果选项。 */
+    /** 管理分类交集搜索：其余治理条件保持不变，vehicleIds 由服务层解析。 */
+    @Query("""
+            select r from HallOfFameRecord r
+            where (:nickname is null or lower(r.nickname) like :nickname)
+              and (:accountId is null or r.accountId = :accountId)
+              and (:uploadedBy is null or r.replayUploadedBy = :uploadedBy)
+              and (:battleType is null or r.battleType = :battleType)
+              and (:tankId is null or r.tankId = :tankId)
+              and r.tankId in :vehicleIds
+              and (:replayAvailable is null
+                   or (:replayAvailable = true and r.replayHash is not null)
+                   or (:replayAvailable = false and r.replayHash is null))
+            """)
+    Page<HallOfFameRecord> adminSearchByVehicleIds(@Param("nickname") String nickname,
+                                                   @Param("accountId") Long accountId,
+                                                   @Param("uploadedBy") String uploadedBy,
+                                                   @Param("battleType") String battleType,
+                                                   @Param("tankId") Long tankId,
+                                                   @Param("vehicleIds") List<Long> vehicleIds,
+                                                   @Param("replayAvailable") Boolean replayAvailable,
+                                                   Pageable pageable);
+
+    /** 车辆筛选选项：只返回当前名人堂实际存在的车辆，避免无结果选项。 */
     @Query("""
             select r.tankId as tankId, min(r.tankName) as tankName
             from HallOfFameRecord r
             group by r.tankId
             order by min(r.tankName), r.tankId
             """)
-    List<HofAdminVehicleProjection> findAdminVehicleOptions();
+    List<HofVehicleProjection> findVehicleOptions();
 
     /** 引用计数：物理文件清理前确认是否仍有记录引用该 hash。 */
     long countByReplayHash(String replayHash);

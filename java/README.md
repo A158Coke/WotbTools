@@ -162,18 +162,19 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 
 每条记录 = 录像者本人在一场**随机战斗**（`arenaBonusType==1`）或**评级战斗**（`==7`）中用某辆车打出的单场伤害（战斗模式判断集中在 `HallOfFameBattleTypePolicy`，其余模式 → 400 `UNSUPPORTED_BATTLE_TYPE`，零持久化）；通过名人堂上传入口写入（去重键 `arena_id + account_id`）。
 
-- `GET /api/hof?battleType=RANDOM|RATING&tankId=&nickname=&page=&size=` — 统一公开查询（匿名；排序 damage DESC → RATING 优先 → battleTime ASC NULLS LAST → createdAt → id；rank = 当前 filter 上下文位置排名）。
+- `GET /api/hof?battleType=RANDOM|RATING&nation=&vehicleType=&tier=&tankId=&nickname=&page=&size=` — 统一公开查询（匿名；国家/车种/等级无需先选车辆即可独立过滤，所有非空车辆条件与 `tankId` 取交集；排序 damage DESC → RATING 优先 → battleTime ASC NULLS LAST → createdAt → id；rank = 完整 filter 上下文位置排名）。
+- `GET /api/hof/vehicle-options` — 匿名车辆选项（当前单场名人堂实际存在车辆的名称、国家/系别、车种、等级），供公开页与管理页无序交集筛选复用。
 - `POST /api/hof/upload` — 上传单场回放（**需登录**）；不支持战斗模式 → 400 `UNSUPPORTED_BATTLE_TYPE`；其余跳过时返回英文 `reasonCode`（`DUPLICATE_OR_UNKNOWN_RECORDER` / `REPLAY_HASH_CONFLICT`），由前端本地化。
 - `GET /api/hof/{id}/replay` — 下载该记录原始回放文件（**需登录**，任意已登录用户；无文件 → 404 `REPLAY_FILE_NOT_FOUND`）。
-- 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof`（搜索/筛选/排序/分页，不暴露 Arena ID 或原始 `arenaBonusType`）、`GET /api/admin/hof/vehicle-options`（当前已有车辆的名称 + 国家/系别 + 车种 + 等级，供可选级联筛选）、`GET /api/admin/hof/audit`（操作日志，只读）、`GET /api/admin/hof/{id}/replay`（下载）、`DELETE /api/admin/hof/{id}`（hard delete，audit+delete 单事务，最后引用清理物理文件；删除后同一回放可重新上传）。
+- 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof`（国家/车种/等级可独立真实筛选并与具体车辆取交集，另支持搜索/排序/分页；不暴露 Arena ID 或原始 `arenaBonusType`）、`GET /api/admin/hof/vehicle-options`（复用公开车辆选项实现）、`GET /api/admin/hof/audit`（操作日志，只读）、`GET /api/admin/hof/{id}/replay`（下载）、`DELETE /api/admin/hof/{id}`（hard delete，audit+delete 单事务，最后引用清理物理文件；删除后同一回放可重新上传）。
 - 原始 .wotbreplay 以 SHA-256 内容寻址存 `HOF_REPLAY_DIR`（默认 `data/replays`，生产 volume `/data/replays`）；老记录无文件不显示下载按钮。
 - **百场（Hundred Battles）**：Tier X 车辆独立的生涯场均伤害排行榜，成绩需管理员人工审核（`com.wotb.web.hundred` 域）：
-  - `GET /api/hof/hundred?vehicleId=&page=&size=` — 公开排行榜（匿名；vehicleId 可选：未传时固定返回全站 CURRENT 最高 10 条，传入时为单车辆独立排行；competition ranking 1,2,2,4 由分组计数前缀和 query-time 派生，不落库；只输出 approved* 快照）。
+  - `GET /api/hof/hundred?nation=&vehicleType=&vehicleId=&page=&size=` — 公开排行榜（匿名；三项交集：全空为全站 CURRENT Top 10，仅分类为分类交集 Top 10，具体车辆为该车独立分页；competition ranking 与筛选上下文一致）。
   - `POST /api/hof/hundred/submissions` — 提交百场成绩（**需登录** + Profile gameId/nickname 已配置；multipart：vehicleId/averageDamage/battleCount/screenshot(base64)/replays×5）。硬门禁：Tier X authoritative 校验、5 个 replay 全部解析成功且 gameId/vehicleId 匹配、5 场不同 battle；任一失败整单拒绝不进入 PENDING。同车已有 PENDING → 409 `HUNDRED_PENDING_EXISTS`；新成绩未严格高于 CURRENT → 409 `HUNDRED_NOT_HIGHER`。
   - `POST /api/hof/hundred/submissions/{id}/cancel` — 用户撤销自己的 PENDING（**需登录**）。
   - `GET /api/users/hundred/status` — 个人中心百场状态（CURRENT / PENDING / 最近拒绝；**需登录**）。
-  - 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof/hundred/submissions`（status 过滤）、`GET .../submissions/{id}`（详情，proofScreenshot 仅 PENDING 返回）、`GET .../submissions/{id}/replays`（回放审核证据 metadata 列表，旧 PENDING → 空）、`GET .../submissions/{submissionId}/replays/{replayId}`（下载原始 .wotbreplay，ownership 校验 + UTF-8 filename）、`POST .../{id}/approve`（事务内重读 CURRENT 按 approvedAverageDamage 严格比较，旧 CURRENT→SUPERSEDED）、`POST .../{id}/reject`（原因强制）、`POST .../{id}/delete`（仅 CURRENT，原因强制，不恢复 SUPERSEDED）。
-  - 数据模型：`hundred_battle_submission` 单表生命周期（Flyway `V18`），partial unique index 保证 user+vehicle 最多一个 PENDING/CURRENT；身份/成绩快照创建瞬间冻结；proof 截图终态事务内清空（不永久保存）；5 个原始 replay 由 `hundred_battle_replay_evidence`（Flyway `V19`）内容寻址持久化（复用 `HallOfFameReplayStorage`），终态（APPROVE/REJECT/CANCEL）同事务删 evidence 行 + commit 后跨表引用计数清理物理文件（失败仅 WARN 保留 orphan）。
+  - 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof/hundred/submissions?status=&nation=&vehicleType=&vehicleId=`（状态/国家/车种/车辆可独立筛选并取交集）、`GET .../submissions/{id}`（所有状态详情，proof 仅 PENDING 返回）、`GET .../submissions/{id}/replays`（PENDING 回放证据 metadata）、`GET .../submissions/{submissionId}/replays/{replayId}`（下载原始 .wotbreplay，ownership 校验 + UTF-8 filename）、`POST .../{id}/approve`（事务内重读 CURRENT 按 approvedAverageDamage 严格比较，旧 CURRENT→SUPERSEDED）、`POST .../{id}/reject`（原因强制）、`POST .../{id}/delete`（仅 CURRENT，原因强制，不恢复 SUPERSEDED）。
+  - 数据模型：`hundred_battle_submission` 单表生命周期（Flyway `V18`），partial unique index 保证 user+vehicle 最多一个 PENDING/CURRENT；身份/成绩快照创建瞬间冻结；proof 截图和 5 个原始 replay 仅 PENDING admin-only 保留，终态立即清理；replay 由 `hundred_battle_replay_evidence`（Flyway `V19`）内容寻址持久化并复用 `HallOfFameReplayStorage`。
 
 ### 陪练与打手（仅在线版）
 

@@ -3,8 +3,8 @@ package com.wotb.web.hundred.dto;
 import java.time.OffsetDateTime;
 
 /**
- * 管理后台百场详情（审核页一屏数据）。proofScreenshot 只在 PENDING 时返回
- * （终态事务内已清空；即便历史残留也不对外，普通用户无任何读取入口）。
+ * 管理后台百场详情（审核页一屏数据）。proofScreenshot 仅 PENDING 返回；终态已清理且
+ * mapper 再次屏蔽，普通用户无任何读取入口。
  */
 public record HundredAdminDetailDto(
     Long id,

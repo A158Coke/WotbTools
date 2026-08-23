@@ -3,7 +3,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { mapLabel } from '../utils/helpers.js'
-import { apiErrorLabel, replayValueLabel } from '../utils/display.js'
+import { apiErrorLabel, formatDateTimeMinute, replayValueLabel } from '../utils/display.js'
+import { HUNDRED_VEHICLES } from '../utils/hundredVehicles.js'
 import * as api from '../utils/api.js'
 
 const { t, te, tm, locale } = useI18n()
@@ -45,13 +46,9 @@ const fTankType = ref('')
 const fTankTier = ref('')
 let gen = 0
 
-const filteredVehicleTypes = computed(() => uniqueValues(vehicleOptions.value
-  .filter(v => !fNation.value || v.nation === fNation.value)
-  .map(v => v.type)))
 const vehicleNations = computed(() => uniqueValues(vehicleOptions.value.map(v => v.nation)))
-const filteredVehicleTiers = computed(() => uniqueValues(vehicleOptions.value
-  .filter(v => (!fNation.value || v.nation === fNation.value)
-    && (!fTankType.value || v.type === fTankType.value))
+const vehicleTypes = computed(() => uniqueValues(vehicleOptions.value.map(v => v.type)))
+const vehicleTiers = computed(() => uniqueValues(vehicleOptions.value
   .map(v => v.tier)
   .filter(v => v != null))
   .sort((a, b) => a - b))
@@ -76,7 +73,17 @@ const hundredPage = ref(1)
 const hundredTotalPages = ref(0)
 const hundredTotalItems = ref(0)
 const hundredStatus = ref('') // '' | PENDING | CURRENT | REJECTED | SUPERSEDED | CANCELLED | DELETED
+const hundredNation = ref('')
+const hundredVehicleType = ref('')
+const hundredVehicleId = ref(null)
 let hundredGen = 0
+
+const hundredVehicleOptions = HUNDRED_VEHICLES
+const hundredNations = uniqueValues(hundredVehicleOptions.map(vehicle => vehicle.nation))
+const hundredVehicleTypes = uniqueValues(hundredVehicleOptions.map(vehicle => vehicle.vehicleType))
+const filteredHundredAdminVehicles = computed(() => hundredVehicleOptions.filter(vehicle =>
+  (!hundredNation.value || vehicle.nation === hundredNation.value)
+    && (!hundredVehicleType.value || vehicle.vehicleType === hundredVehicleType.value)))
 
 // ── 百场详情弹窗（所有状态共用；只有详情内才可执行状态操作）──
 const reviewTarget = ref(null)
@@ -94,7 +101,7 @@ const actionBusy = ref(false)
 // 详情请求与证据请求分别防止旧响应覆盖当前打开的记录。
 let reviewGen = 0
 
-// ── 审核证据（PENDING：截图 + 5 replay metadata）──
+// ── 管理员证据（仅 PENDING：终态会清理截图与 replay metadata）──
 const replayEvidence = ref([])
 const evidenceLoading = ref(false)
 const evidenceError = ref('')
@@ -134,14 +141,20 @@ async function loadRecords() {
   loading.value = true
   error.value = ''
   try {
-    const params = { page: page.value, size: size.value }
-    if (fNickname.value.trim()) params.nickname = fNickname.value.trim()
-    if (fAccountId.value.trim()) params.accountId = fAccountId.value.trim()
-    if (fUploadedBy.value.trim()) params.uploadedBy = fUploadedBy.value.trim()
-    if (fBattleType.value) params.battleType = fBattleType.value
-    if (fTankId.value.trim()) params.tankId = fTankId.value.trim()
-    if (fReplayAvailable.value !== '') params.replayAvailable = fReplayAvailable.value === 'true'
-    if (fSort.value) params.sort = fSort.value
+    const params = {
+      page: page.value,
+      size: size.value,
+      nickname: fNickname.value.trim(),
+      accountId: fAccountId.value.trim(),
+      uploadedBy: fUploadedBy.value.trim(),
+      battleType: fBattleType.value,
+      tankId: fTankId.value.trim(),
+      nation: fNation.value,
+      vehicleType: fTankType.value,
+      tier: fTankTier.value,
+      replayAvailable: fReplayAvailable.value === '' ? '' : fReplayAvailable.value === 'true',
+      sort: fSort.value,
+    }
     const res = await api.hofAdminList(params)
     if (g !== gen) return
     rows.value = res.items || []
@@ -165,25 +178,14 @@ async function loadVehicleOptions() {
   }
 }
 
-function onNationChange() {
-  const hadTankFilter = Boolean(fTankId.value)
-  fTankType.value = ''
-  fTankTier.value = ''
-  fTankId.value = ''
-  if (hadTankFilter) search()
-}
-
-function onTankTypeChange() {
-  const hadTankFilter = Boolean(fTankId.value)
-  fTankTier.value = ''
-  fTankId.value = ''
-  if (hadTankFilter) search()
-}
-
-function onTankTierChange() {
-  const hadTankFilter = Boolean(fTankId.value)
-  fTankId.value = ''
-  if (hadTankFilter) search()
+function onVehicleConditionChange() {
+  if (fTankId.value) {
+    const selectedTankId = Number(fTankId.value)
+    if (!filteredVehicles.value.some(vehicle => vehicle.tankId === selectedTankId)) {
+      fTankId.value = ''
+    }
+  }
+  search()
 }
 
 function onVehicleChange() {
@@ -286,8 +288,14 @@ async function loadHundred() {
   hundredLoading.value = true
   error.value = ''
   try {
-    const params = { page: hundredPage.value, size: size.value }
-    if (hundredStatus.value) params.status = hundredStatus.value
+    const params = {
+      page: hundredPage.value,
+      size: size.value,
+      status: hundredStatus.value,
+      nation: hundredNation.value,
+      vehicleType: hundredVehicleType.value,
+      vehicleId: hundredVehicleId.value,
+    }
     const res = await api.hofAdminHundredList(params)
     if (g !== hundredGen) return
     hundredRows.value = res.items || []
@@ -301,6 +309,20 @@ async function loadHundred() {
 }
 
 function onHundredStatusChange() {
+  hundredPage.value = 1
+  loadHundred()
+}
+
+function onHundredVehicleFilterChange() {
+  if (hundredVehicleId.value
+      && !filteredHundredAdminVehicles.value.some(vehicle => vehicle.id === Number(hundredVehicleId.value))) {
+    hundredVehicleId.value = null
+  }
+  hundredPage.value = 1
+  loadHundred()
+}
+
+function onHundredVehicleChange() {
   hundredPage.value = 1
   loadHundred()
 }
@@ -345,7 +367,7 @@ async function openReview(row) {
   }
 }
 
-/** 加载该 submission 的 replay evidence 元数据（旧 PENDING → 空列表，UI 显示 legacy 提示）。 */
+/** 加载 PENDING submission 的 replay evidence 元数据（旧记录可能为空）。 */
 async function loadEvidence(submissionId) {
   const g = ++evidenceGen
   evidenceLoading.value = true
@@ -523,13 +545,7 @@ function reasonLabel(kind, reason) {
   return options && typeof options === 'object' && options[reason] ? options[reason] : reason
 }
 
-function fmtTime(s) {
-  if (!s) return ''
-  const d = new Date(s)
-  if (Number.isNaN(d.getTime())) return ''
-  const p = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
-}
+const fmtTime = formatDateTimeMinute
 
 function battleTypeLabel(tp) {
   if (tp === 'RATING') return t('hof.battleType.rating')
@@ -562,17 +578,17 @@ function battleTypeLabel(tp) {
             <input v-model="fNickname" :placeholder="$t('hofAdmin.fNickname')" @keyup.enter="search" />
             <input v-model="fAccountId" :placeholder="$t('hofAdmin.fAccountId')" @keyup.enter="search" />
             <input v-model="fUploadedBy" :placeholder="$t('hofAdmin.fUploadedBy')" @keyup.enter="search" />
-            <select v-model="fNation" :disabled="vehicleOptionsLoading" @change="onNationChange">
+            <select v-model="fNation" :disabled="vehicleOptionsLoading" @change="onVehicleConditionChange">
               <option value="">{{ $t('hofAdmin.allNations') }}</option>
               <option v-for="nation in vehicleNations" :key="nation" :value="nation">{{ vehicleEnumLabel(nation) }}</option>
             </select>
-            <select v-model="fTankType" :disabled="vehicleOptionsLoading" @change="onTankTypeChange">
+            <select v-model="fTankType" :disabled="vehicleOptionsLoading" @change="onVehicleConditionChange">
               <option value="">{{ $t('hofAdmin.allVehicleTypes') }}</option>
-              <option v-for="type in filteredVehicleTypes" :key="type" :value="type">{{ vehicleEnumLabel(type) }}</option>
+              <option v-for="type in vehicleTypes" :key="type" :value="type">{{ vehicleEnumLabel(type) }}</option>
             </select>
-            <select v-model="fTankTier" :disabled="vehicleOptionsLoading" @change="onTankTierChange">
+            <select v-model="fTankTier" :disabled="vehicleOptionsLoading" @change="onVehicleConditionChange">
               <option value="">{{ $t('hofAdmin.allVehicleTiers') }}</option>
-              <option v-for="tier in filteredVehicleTiers" :key="tier" :value="String(tier)">T{{ tier }}</option>
+              <option v-for="tier in vehicleTiers" :key="tier" :value="String(tier)">T{{ tier }}</option>
             </select>
             <select v-model="fTankId" :disabled="vehicleOptionsLoading" @change="onVehicleChange">
               <option value="">{{ $t('hofAdmin.allVehicles') }}</option>
@@ -704,6 +720,18 @@ function battleTypeLabel(tp) {
       <!-- ── 百场审核 ── -->
       <div v-else class="hof-hundred">
         <div class="hof-admin-filters">
+          <select v-model="hundredNation" @change="onHundredVehicleFilterChange">
+            <option value="">{{ $t('hundred.allNations') }}</option>
+            <option v-for="nation in hundredNations" :key="nation" :value="nation">{{ vehicleEnumLabel(nation) }}</option>
+          </select>
+          <select v-model="hundredVehicleType" @change="onHundredVehicleFilterChange">
+            <option value="">{{ $t('hundred.allVehicleTypes') }}</option>
+            <option v-for="vehicleType in hundredVehicleTypes" :key="vehicleType" :value="vehicleType">{{ vehicleEnumLabel(vehicleType) }}</option>
+          </select>
+          <select v-model="hundredVehicleId" @change="onHundredVehicleChange">
+            <option :value="null">{{ $t('hundred.allVehicles') }}</option>
+            <option v-for="vehicle in filteredHundredAdminVehicles" :key="vehicle.id" :value="vehicle.id">{{ vehicle.name }}</option>
+          </select>
           <select v-model="hundredStatus" @change="onHundredStatusChange">
             <option value="">{{ $t('hundredAdmin.statusAll') }}</option>
             <option value="PENDING">{{ $t('hundredAdmin.status.PENDING') }}</option>
@@ -825,16 +853,22 @@ function battleTypeLabel(tp) {
               <p v-if="evidenceLoading" class="muted">{{ $t('hundredAdmin.loading') }}</p>
               <p v-else-if="evidenceError" class="error">{{ evidenceError }}</p>
               <template v-else>
-                <p v-if="!replayEvidence.length" class="hundred-legacy-warn">{{ $t('hundredAdmin.legacyNoReplays') }}</p>
-                <p v-else-if="replayEvidence.length !== 5" class="hundred-legacy-warn">{{ $t('hundredAdmin.evidenceIncomplete') }}</p>
-                <ul v-else class="replay-evidence-list">
-                  <li v-for="ev in replayEvidence" :key="ev.id" class="replay-evidence-item">
-                    <span class="replay-slot">#{{ ev.slot }}</span>
-                    <span class="replay-name" :title="ev.originalFilename">{{ ev.originalFilename }}</span>
-                    <span class="replay-size">{{ fmtSize(ev.fileSize) }}</span>
-                    <button class="btn-sm" :title="$t('hundredAdmin.replayDownload')" @click="downloadReplay(ev)">⬇</button>
-                  </li>
-                </ul>
+                <p v-if="!replayEvidence.length" class="hundred-legacy-warn">
+                  {{ $t('hundredAdmin.legacyNoReplays') }}
+                </p>
+                <template v-else>
+                  <p v-if="replayEvidence.length !== 5" class="hundred-legacy-warn">
+                    {{ $t('hundredAdmin.evidenceIncomplete') }}
+                  </p>
+                  <ul class="replay-evidence-list">
+                    <li v-for="ev in replayEvidence" :key="ev.id" class="replay-evidence-item">
+                      <span class="replay-slot">#{{ ev.slot }}</span>
+                      <span class="replay-name" :title="ev.originalFilename">{{ ev.originalFilename }}</span>
+                      <span class="replay-size">{{ fmtSize(ev.fileSize) }}</span>
+                      <button class="btn-sm" :title="$t('hundredAdmin.replayDownload')" @click="downloadReplay(ev)">⬇</button>
+                    </li>
+                  </ul>
+                </template>
               </template>
             </div>
 
