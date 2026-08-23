@@ -583,7 +583,7 @@ function onPageLeave() {
 .recon-page :deep(.sub-hint) { color: var(--text-sub); font-size: .88rem; margin: 6px 0 16px; }
 .recon-page :deep(.fb-chips) { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 12px; }
 .recon-page :deep(.chip) { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 3px 8px; border-radius: 5px; background: var(--bg-chip); color: var(--text-label); }
-.error { color: var(--error); font-size: .88rem; }
+.error { font-size: .88rem; }
 .recon-auth { text-align: center; padding: 40px; color: var(--text-secondary); }
 
 .recon-page :deep(.panel) {

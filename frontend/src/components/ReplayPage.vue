@@ -186,6 +186,8 @@ async function downloadResultPng() {
 /** Battle context actions（plan §13/§21）：具体 battle 才出现「战局回放 / AI 复盘」。
  * Summary context 不渲染这些入口。文件经 replayTransfer 单例跨视图传给 ReconstructionPage。 */
 const navigate = inject('navigate', null)
+const isAuthenticated = inject('isAuthenticated', () => false)
+const login = inject('login', null)
 
 function currentBattleFile() {
   if (activeTab.value === 'aggregate') return null
@@ -195,9 +197,23 @@ function currentBattleFile() {
   return files.value.find(f => displayName(f) === battle.sourceName) || null
 }
 
+/**
+ * Battle context actions 需登录（/api/replay/analyze 与 /api/replay/map-overview 均走
+ * authedFetch）。未登录点击不静默跳转：文件只存在内存，Keycloak 整页跳转会清空——
+ * 先在当前页明确告知（登录后需重新选择回放），确认后再去登录；已登录走 replayTransfer
+ * SPA 内跨视图交接（文件不落 localStorage，仅内存 + 服务端不保存回放）。
+ */
+function requireLoginForBattleAction() {
+  if (isAuthenticated()) return true
+  const ok = window.confirm(t('replay.login_required_for_battle'))
+  if (ok && login) login('replay')
+  return false
+}
+
 function openBattlePlayback() {
   const f = currentBattleFile()
   if (!f || !navigate) return
+  if (!requireLoginForBattleAction()) return
   setPendingReplayFiles([f], 'playback')
   navigate('reconstruction')
 }
@@ -205,6 +221,7 @@ function openBattlePlayback() {
 function openAiReview() {
   const f = currentBattleFile()
   if (!f || !navigate) return
+  if (!requireLoginForBattleAction()) return
   setPendingReplayFiles([f], 'ai')
   navigate('reconstruction')
 }

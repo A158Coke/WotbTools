@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineAsyncComponent, onMounted, provide, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, provide, ref } from 'vue'
 import { useTheme } from './composables/useTheme.js'
 import { useAuth } from './composables/useAuth.js'
 import { useError } from './composables/useError.js'
@@ -78,12 +78,18 @@ function navigate(view) {
   else url.searchParams.set('view', view)
   window.history.replaceState({}, '', url.toString())
 }
-// 子页面（ReplayPage Battle context）注入 navigate，实现 SPA 内跨视图跳转（战局回放/AI 复盘）
+// 子页面（ReplayPage Battle context）注入 navigate，实现 SPA 内跨视图跳转（战局回放/AI 复盘）；
+// 同时注入登录态与 login：Battle action 需登录，ReplayPage 在未登录时明确提示而非静默跳转。
 provide('navigate', navigate)
+provide('isAuthenticated', isAuthenticated)
+provide('login', login)
 
 function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
 
 const userMenuOpen = ref(false)
+const userMenuPos = ref({ top: 0, right: 16 })
+const userMenuTrigger = ref(null)
+const userMenuPanelEl = ref(null)
 const isAdmin = computed(() => {
   const roles = tokenParsed.value?.realm_access?.roles || []
   return roles.includes('wotbtools-admin')
@@ -92,12 +98,43 @@ const isHofAdmin = computed(() => {
   const roles = tokenParsed.value?.realm_access?.roles || []
   return roles.includes('HoF-admin') || roles.includes('wotbtools-admin')
 })
-function toggleUserMenu() { userMenuOpen.value = !userMenuOpen.value }
+// 菜单面板经 Teleport 挂到 body，用 fixed 定位对齐触发按钮下方：
+// 不受 .topbar overflow-x:auto 裁切，也不撑高顶栏（移动端横向滚动保留）。
+function toggleUserMenu() {
+  if (userMenuOpen.value) { closeUserMenu(); return }
+  const el = userMenuTrigger.value
+  if (el) {
+    const rect = el.getBoundingClientRect()
+    userMenuPos.value = {
+      top: rect.bottom + 6,
+      right: Math.max(8, window.innerWidth - rect.right)
+    }
+  }
+  userMenuOpen.value = true
+}
 function closeUserMenu() { userMenuOpen.value = false }
+// 点击面板内部不关闭（go/handleLogin 等自行关闭）；点击外部关闭。
+function onDocClick(e) {
+  if (!userMenuOpen.value) return
+  if (userMenuTrigger.value?.contains(e.target)) return
+  if (userMenuPanelEl.value?.contains(e.target)) return
+  closeUserMenu()
+}
+function onDocKeydown(e) {
+  if (e.key === 'Escape' && userMenuOpen.value) closeUserMenu()
+}
 function handleLogin() { closeUserMenu(); login('profile') }
 function handleLogout() { closeUserMenu(); logout() }
 function go(view) { closeUserMenu(); navigate(view) }
-onMounted(() => { initPromise.catch(() => {}) })
+onMounted(() => {
+  initPromise.catch(() => {})
+  document.addEventListener('click', onDocClick)
+  document.addEventListener('keydown', onDocKeydown)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocClick)
+  document.removeEventListener('keydown', onDocKeydown)
+})
 </script>
 
 <template>
@@ -107,7 +144,7 @@ onMounted(() => { initPromise.catch(() => {}) })
     </a>
     <nav>
       <button v-if="isHomeHost" :class="{ active: activeTool === 'home' }" @click="navigate('home')">{{ $t('profile.home') }}</button>
-      <button :class="{ active: activeTool === 'replay' }" @click="navigate('replay')">{{ $t('app.replay_tab') }}</button>
+      <button :class="{ active: activeTool === 'replay' }" @click="navigate('replay')">{{ $t('app.analysis_tab') }}</button>
       <button :class="{ active: activeTool === 'hof' }" @click="navigate('hof')">{{ $t('hof.btn') }}</button>
       <button :class="{ active: activeTool === 'boost' }" @click="navigate('boost')">{{ $t('app.boost_tab') }}</button>
     </nav>
@@ -120,28 +157,31 @@ onMounted(() => { initPromise.catch(() => {}) })
       <button :class="{ active: theme === 'light' }" @click="handleTheme('light')">{{ $t('theme.light') }}</button>
       <button :class="{ active: theme === 'dark' }" @click="handleTheme('dark')">{{ $t('theme.dark') }}</button>
     </div>
-    <div class="dropdown user-menu" @click.stop>
-      <button class="auth-btn ghost user-menu-trigger" @click="toggleUserMenu">
+    <div class="dropdown user-menu">
+      <button ref="userMenuTrigger" class="auth-btn ghost user-menu-trigger" @click="toggleUserMenu" :aria-expanded="userMenuOpen" :aria-haspopup="true">
         {{ isAuthenticated() ? userName() : $t('app.login') }}
         <span class="caret">▼</span>
       </button>
-      <div v-if="userMenuOpen" class="user-menu-panel" @click="closeUserMenu">
-        <template v-if="isAuthenticated()">
-          <button class="user-menu-item" @click="go('profile')">{{ $t('app.profile') }}</button>
-          <button v-if="isAdmin" class="user-menu-item" @click="go('admin-users')">{{ $t('admin.title') }}</button>
-          <button v-if="isHofAdmin" class="user-menu-item" @click="go('hof-admin')">{{ $t('hofAdmin.cardTitle') }}</button>
-          <button class="user-menu-item" @click="go('version')">{{ $t('version.btn') }}</button>
-          <button class="user-menu-item" @click="go('contact')">{{ $t('contact.nav') }}</button>
-          <a class="user-menu-item" href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }}</a>
-          <button class="user-menu-item danger" @click="handleLogout">{{ $t('profile.logout') }}</button>
-        </template>
-        <template v-else>
-          <button class="user-menu-item" @click="handleLogin">{{ $t('app.login') }}</button>
-          <button class="user-menu-item" @click="go('version')">{{ $t('version.btn') }}</button>
-          <button class="user-menu-item" @click="go('contact')">{{ $t('contact.nav') }}</button>
-          <a class="user-menu-item" href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }}</a>
-        </template>
-      </div>
+      <!-- Teleport 到 body：fixed 定位在触发按钮下方，脱离 .topbar overflow 裁切 -->
+      <Teleport to="body">
+        <div v-if="userMenuOpen" ref="userMenuPanelEl" class="user-menu-panel" :style="{ top: userMenuPos.top + 'px', right: userMenuPos.right + 'px' }" role="menu">
+          <template v-if="isAuthenticated()">
+            <button class="user-menu-item" role="menuitem" @click="go('profile')">{{ $t('app.profile') }}</button>
+            <button v-if="isAdmin" class="user-menu-item" role="menuitem" @click="go('admin-users')">{{ $t('admin.title') }}</button>
+            <button v-if="isHofAdmin" class="user-menu-item" role="menuitem" @click="go('hof-admin')">{{ $t('hofAdmin.cardTitle') }}</button>
+            <button class="user-menu-item" role="menuitem" @click="go('version')">{{ $t('version.btn') }}</button>
+            <button class="user-menu-item" role="menuitem" @click="go('contact')">{{ $t('contact.nav') }}</button>
+            <a class="user-menu-item" role="menuitem" href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }}</a>
+            <button class="user-menu-item danger" role="menuitem" @click="handleLogout">{{ $t('profile.logout') }}</button>
+          </template>
+          <template v-else>
+            <button class="user-menu-item" role="menuitem" @click="handleLogin">{{ $t('app.login') }}</button>
+            <button class="user-menu-item" role="menuitem" @click="go('version')">{{ $t('version.btn') }}</button>
+            <button class="user-menu-item" role="menuitem" @click="go('contact')">{{ $t('contact.nav') }}</button>
+            <a class="user-menu-item" role="menuitem" href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }}</a>
+          </template>
+        </div>
+      </Teleport>
     </div>
   </div>
 
@@ -215,9 +255,7 @@ h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
 .user-menu-trigger { display: inline-flex; align-items: center; gap: 6px; }
 .user-menu-trigger .caret { font-size: 10px; opacity: .7; }
 .user-menu-panel {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
+  position: fixed;
   z-index: 220;
   min-width: 200px;
   padding: 6px;
@@ -276,9 +314,11 @@ tr:hover td { background: var(--bg-list-hover); }
 .mc { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; text-align: center; box-shadow: var(--surface-shadow); }
 .mc .k { font-size: .78rem; color: var(--text-sub); margin-bottom: 4px; }
 .mc .v { font-size: 1.4rem; font-weight: 700; color: var(--text-heading); font-variant-numeric: tabular-nums; }
-.wrap .warn, .wrap .error { padding: 10px 16px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; }
-.wrap .warn { background: var(--warn-bg); border: 1px solid var(--border-warn); color: var(--warn-text); }
-.wrap .error { background: var(--status-err-bg); border: 1px solid color-mix(in srgb, var(--error) 34%, var(--border)); color: var(--status-err-fg); }
+/* 页面级提示条（V2）：不依赖 .wrap 容器，任何 Layout Primitive 下均可复用。
+   亮/暗主题由 token（--warn-bg/--border-warn/--warn-text、--status-err-*）自动切换。 */
+.warn, .error { display: block; padding: 10px 16px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; line-height: 1.55; }
+.warn { background: var(--warn-bg); border: 1px solid var(--border-warn); color: var(--warn-text); }
+.error { background: var(--status-err-bg); border: 1px solid color-mix(in srgb, var(--error) 34%, var(--border)); color: var(--status-err-fg); }
 .up-area { border: 2px dashed var(--border-dashed); border-radius: 8px; padding: 28px 16px; text-align: center;
   background: var(--bg-upload); cursor: pointer; margin-bottom: 12px; transition: background .15s, border-color .15s; }
 .up-area:hover { border-color: var(--accent); background: var(--bg-blue-light); box-shadow: 0 14px 34px var(--accent-shadow); }

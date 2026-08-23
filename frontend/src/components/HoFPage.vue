@@ -989,7 +989,6 @@ function fmtDate(s) {
 .lb-upload-card .filebtn.lb-uploading { opacity: .6; pointer-events: none; }
 .lb-upload-msg { margin-top: 10px; font-size: 13px; text-align: center; }
 .lb-upload-msg.err { color: var(--error); }
-.lb-wrap .error { display: inline-block; padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--error) 35%, var(--border)); border-radius: 8px; background: color-mix(in srgb, var(--error) 8%, var(--bg-card)); color: var(--error); }
 .pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 16px 0; font-size: .85rem; }
 .pagination button { padding: 6px 14px; border: 1px solid var(--border-ghost); border-radius: 7px; background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-family: inherit; font-size: .82rem; }
 .pagination button:disabled { opacity: .4; cursor: not-allowed; }

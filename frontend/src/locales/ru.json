@@ -3,6 +3,7 @@
         "title": "WoTBTools",
         "subtitle": "Парсинг реплеев · Рейтинги · Рейтинг в реальном времени · AI-разбор",
         "replay_tab": "Реплей",
+        "analysis_tab": "Анализ боя",
         "theme": "Тема",
         "login": "Войти",
         "profile": "Профиль",
@@ -546,6 +547,7 @@
         "export_failed": "Ошибка экспорта",
         "png_export_failed": "Ошибка экспорта PNG",
         "png_exporting": "Экспорт PNG…",
+        "login_required_for_battle": "Повтор боя / AI-разбор требуют входа. После входа выберите реплей заново.",
         "export_job": {
             "title": "Экспорт данных боя",
             "queued": "Подготовка экспорта…",
