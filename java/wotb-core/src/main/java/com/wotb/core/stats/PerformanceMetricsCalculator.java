@@ -3,6 +3,7 @@ package com.wotb.core.stats;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.facts.BattleHpFacts;
+import com.wotb.core.replay.facts.BattleHpFacts.BattleAverageHp;
 import com.wotb.core.replay.facts.TradeFacts;
 import org.springframework.util.StringUtils;
 
@@ -18,6 +19,11 @@ import java.util.Map;
  * <p>只消费统一 replay authoritative facts（{@link Battle} / {@link PlayerResult} +
  * {@code com.wotb.core.replay.facts} 包），做纯数学推导；不解析回放、不查询 Tankopedia、
  * 不改写任何 battle/player 字段（PotentialDamage 已在回放管线完成，trade/HP 均来自事实层）。</p>
+ *
+ * <p><b>HP fail-closed</b>：场均 HP 为 {@link BattleAverageHp#complete()}=false（存在 UNKNOWN）
+ * 的场次，依赖 HP 的衍生指标（贡献度击杀项 / KAST / 多伤率 / 场均 HP）不累计，绝不产出伪精确
+ * 结果；不依赖 HP 的原始权威数据（damage / assist / kills / survival / traded / impact）
+ * 仍正常计算。各衍生指标按「HP 已知场次」做分母。</p>
  *
  * <p>原 Rating V2 的综合评分（{@code rating} / {@code finalRating} / 各权重）已移除——
  * 本类不再输出任何总分，仅保留有业务价值的派生指标：贡献度 / KAST / Impact /
@@ -53,13 +59,16 @@ public final class PerformanceMetricsCalculator {
         public double survivalRate;
         public int tradedDeaths;
         double kastSum;
+        int kastBattles;
         double roundContribution;
         double teamRoundContribution;
         double impactSum;
         double averageHpSum;
+        int averageHpBattles;
         long lastTime = Long.MIN_VALUE;
         int impactBattles;
         int multiDamageBattles;
+        int multiDamageEligible;
         int survivalBattles;
 
         public double winRate() {
@@ -75,13 +84,14 @@ public final class PerformanceMetricsCalculator {
             potentialDamageAvg = (double) potentialDamage / battles;
             potentialDamageSupplementAvg = (double) potentialDamageSupplement / battles;
             killsAvg = (double) kills / battles;
-            averageHp = averageHpSum / battles;
-            kast = cap(100.0 * kastSum / battles, 100.0);
+            averageHp = averageHpBattles == 0 ? 0 : averageHpSum / averageHpBattles;
+            kast = kastBattles == 0 ? 0 : cap(100.0 * kastSum / kastBattles, 100.0);
             contribution = teamRoundContribution == 0
                     ? 0 : 100.0 * roundContribution / teamRoundContribution;
             impactValue = impactBattles == 0 ? 0 : impactSum / impactBattles;
             impact = percent(impactValue);
-            multiDamageRate = 100.0 * multiDamageBattles / battles;
+            multiDamageRate = multiDamageEligible == 0
+                    ? 0 : 100.0 * multiDamageBattles / multiDamageEligible;
             survivalRate = 100.0 * survivalBattles / battles;
         }
     }
@@ -125,13 +135,11 @@ public final class PerformanceMetricsCalculator {
         final int team = safeTeam(player.team);
         final Integer winner = battle.winnerTeam;
         final boolean win = winner != null && winner != 0 && player.team == winner;
-        final double averageHp = ctx.averageHp();
-        final double contributionValue = roundContribution(player, averageHp);
-        final double teamContribution = ctx.teamContribution[team];
+        final BattleAverageHp avg = ctx.averageHp();
         final int traded = TradeFacts.tradedDeaths(player, battle.players);
-        final double kastBattle = singleBattleKast(player, win, traded, averageHp);
         final double impactValue = singleBattleImpact(player, ctx);
 
+        // 原始权威数据（不依赖 HP）：始终累计
         row.battles++;
         if (win) {
             row.wins++;
@@ -141,18 +149,31 @@ public final class PerformanceMetricsCalculator {
         row.assistDamage += player.damageAssisted;
         row.potentialDamage += player.potentialDamage;
         row.potentialDamageSupplement += player.potentialDamageSupplement;
-        row.roundContribution += contributionValue;
-        row.teamRoundContribution += teamContribution;
         row.impactSum += impactValue;
         row.impactBattles++;
-        row.averageHpSum += averageHp;
-        row.kastSum += kastBattle;
         if (player.survived) {
             row.survivalBattles++;
         }
         if (!player.survived && traded > 0) {
             row.tradedDeaths++;
         }
+
+        // 依赖 HP 的衍生指标：场均 HP UNKNOWN 时 fail-closed（不产生伪精确结果）
+        if (!avg.complete()) {
+            return;
+        }
+        final double averageHp = avg.value();
+        final double contributionValue = roundContribution(player, averageHp);
+        final double teamContribution = ctx.teamContribution[team];
+        final double kastBattle = singleBattleKast(player, win, traded, averageHp);
+
+        row.roundContribution += contributionValue;
+        row.teamRoundContribution += teamContribution;
+        row.averageHpSum += averageHp;
+        row.averageHpBattles++;
+        row.kastSum += kastBattle;
+        row.kastBattles++;
+        row.multiDamageEligible++;
         if (isMultiDamage(player, averageHp)) {
             row.multiDamageBattles++;
         }
@@ -181,7 +202,7 @@ public final class PerformanceMetricsCalculator {
     }
 
     private static boolean isMultiDamage(final PlayerResult player, final double averageHp) {
-        // 场均 HP 未知（facts 层 fail-closed 为 0）时无法判定多伤，不得猜测。
+        // 场均 HP 未知（facts 层 fail-closed）时无法判定多伤，不得猜测。
         if (averageHp <= 0) {
             return false;
         }
@@ -225,7 +246,7 @@ public final class PerformanceMetricsCalculator {
     private static final class BattleContext {
         final double[] teamContribution = new double[3];
         double battleDamageAssist;
-        double battleAverageHp;
+        BattleAverageHp battleAverageHp;
 
         static BattleContext of(final Battle battle) {
             final BattleContext ctx = new BattleContext();
@@ -233,14 +254,16 @@ public final class PerformanceMetricsCalculator {
             for (final PlayerResult player : battle.players) {
                 ctx.battleDamageAssist += player.damageDealt + player.damageAssisted;
             }
-            for (final PlayerResult player : battle.players) {
-                final int team = safeTeam(player.team);
-                ctx.teamContribution[team] += roundContribution(player, ctx.battleAverageHp);
+            if (ctx.battleAverageHp.complete()) {
+                for (final PlayerResult player : battle.players) {
+                    final int team = safeTeam(player.team);
+                    ctx.teamContribution[team] += roundContribution(player, ctx.battleAverageHp.value());
+                }
             }
             return ctx;
         }
 
-        double averageHp() {
+        BattleAverageHp averageHp() {
             return battleAverageHp;
         }
     }

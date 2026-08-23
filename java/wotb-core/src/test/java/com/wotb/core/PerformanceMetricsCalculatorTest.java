@@ -105,7 +105,7 @@ class PerformanceMetricsCalculatorTest {
     }
 
     @Test
-    void unknownHpFailsClosedToZeroAverageAndNoMultiDamage() {
+    void hpUnknownBattleFailsClosedDerivedMetricsButKeepsRawFacts() {
         final Battle battle = new Battle();
         battle.winnerTeam = 1;
         battle.players = List.of(
@@ -113,15 +113,59 @@ class PerformanceMetricsCalculatorTest {
                 player(2, 2, 600, 0, 0, false, 120, 1000)
         );
         for (final PlayerResult p : battle.players) {
-            p.tankId = -1; // 无 tankopedia base、无 entryHp → HP unknown
+            p.tankId = -1; // 无 tankopedia base、无 entryHp → HP UNKNOWN
         }
 
         final List<PerformanceMetricsCalculator.Row> rows =
                 PerformanceMetricsCalculator.compute(List.of(battle));
 
         final PerformanceMetricsCalculator.Row carry = row(rows, 1);
-        assertEquals(0.0, carry.averageHp, 0.01);
+        // 依赖 HP 的衍生指标 fail-closed（不产生伪精确结果）
+        assertEquals(0.0, carry.averageHp, 0.01, "HP unknown 时场均 HP unavailable");
+        assertEquals(0.0, carry.kast, 0.01, "HP unknown 时 KAST 不得伪精确");
+        assertEquals(0.0, carry.contribution, 0.01, "HP unknown 时贡献度不得伪精确");
         assertEquals(0.0, carry.multiDamageRate, 0.01, "HP 未知时不得猜测多伤");
+        // 不依赖 HP 的原始权威数据仍正常
+        assertEquals(2600, carry.damage, "原始 damage 不受影响");
+        assertEquals(2, carry.kills, "原始 kills 不受影响");
+        assertEquals(1, carry.battles, "场次仍计入");
+        assertTrue(carry.impactValue > 0, "Impact 不依赖 HP，仍正常计算");
+    }
+
+    @Test
+    void mixedHpKnownAndUnknownBattlesDeriveMetricsOnlyFromKnown() {
+        final Battle known = new Battle();
+        known.winnerTeam = 1;
+        final List<PlayerResult> knownPlayers = new ArrayList<>();
+        for (int i = 0; i < 14; i++) {
+            knownPlayers.add(player(i + 1L, i < 7 ? 1 : 2, 2600, 400, 2, true, 0, 0));
+        }
+        known.players = knownPlayers;
+
+        final Battle unknown = new Battle();
+        unknown.winnerTeam = 1;
+        final List<PlayerResult> unknownPlayers = new ArrayList<>();
+        for (int i = 0; i < 14; i++) {
+            final PlayerResult p = player(i + 1L, i < 7 ? 1 : 2, 1000, 200, 1, true, 0, 0);
+            p.tankId = -1; // 该场全部 UNKNOWN → 场均 HP unavailable
+            unknownPlayers.add(p);
+        }
+        unknown.players = unknownPlayers;
+
+        final List<PerformanceMetricsCalculator.Row> rows =
+                PerformanceMetricsCalculator.compute(List.of(known, unknown));
+
+        final PerformanceMetricsCalculator.Row row = row(rows, 1L);
+        // 原始权威数据跨两场累计
+        assertEquals(2, row.battles);
+        assertEquals(3600, row.damage, "damage 跨场累计（含 UNKNOWN 场）");
+        assertEquals(3, row.kills, "kills 跨场累计（含 UNKNOWN 场）");
+        // 衍生指标只按 HP 已知场次计算（分母=1 场），不得被 UNKNOWN 场稀释或伪造
+        assertEquals(2400.0, row.averageHp, 0.01, "场均 HP 只来自 HP 已知场");
+        assertEquals(100.0, row.kast, 0.01, "KAST 只按 HP 已知场判定");
+        assertEquals(100.0, row.multiDamageRate, 0.01, "多伤率分母 = HP 已知场数");
+        assertEquals(100.0 * 3685.714 / (7 * 3685.714), row.contribution, 0.1, "贡献度只按 HP 已知场计算");
+        assertEquals(112.5, row.impactValue, 0.01, "Impact 不依赖 HP，两场均计入（known 场 kills=2 → 125；unknown 场 kills=1 → 100）");
     }
 
     private static PerformanceMetricsCalculator.Row row(

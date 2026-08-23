@@ -44,6 +44,7 @@
     },
     "result": {
         "aggregate_tab": "汇总 ({count} 名选手)",
+        "performance_tab": "战斗表现",
         "scroll_hint": "← 左右滑动查看更多数据 →",
         "duplicates": "已跳过 {count} 个重复上传：",
         "failures": "{count} 个文件解析失败："
@@ -541,18 +542,6 @@
         "png_export_failed": "PNG 导出失败",
         "png_exporting": "正在导出 PNG…"
     },
-    "extended": {
-        "nav": "战斗表现",
-        "title": "扩展分析",
-        "preview": "扩展字段解析",
-        "performance": "战斗表现分析",
-        "performance_title": "实时战斗表现",
-        "fields_title": "扩展字段",
-        "empty": "未选择文件",
-        "no_files": "请先选择回放文件或文件夹",
-        "scope_preview": "扩展字段",
-        "scope_performance": "战斗表现"
-    },
     "boost": {
         "submitTab": "提交需求",
         "myTab": "我的需求",
@@ -980,8 +969,6 @@
         "replayDesc": "上传 .wotbreplay 回放文件，提取战斗数据并导出 Excel。",
         "highestDamageRecord": "最高伤害记录",
         "hofDesc": "随机战斗与评级战斗的单场伤害排行 — 上传回放即可进入名人堂。",
-        "performanceTitle": "战斗表现分析",
-        "performanceDesc": "基于统一回放事实计算的战斗表现指标：贡献度、KAST、Impact、潜在伤害、协助与击杀等，不再有综合评分。",
         "aiReviewDesc": "上传单场回放，AI Review 生成战术复盘与改进建议。需登录。",
         "available": "可用",
         "sponsorTitle": "支持项目",

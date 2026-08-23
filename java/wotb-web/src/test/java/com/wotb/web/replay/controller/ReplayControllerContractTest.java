@@ -31,8 +31,7 @@ class ReplayControllerContractTest {
         final ReplayService service = mock(ReplayService.class);
         when(service.columns()).thenReturn(java.util.Map.of(
                 "player", Mapper.playerColumns(),
-                "aggregate", Mapper.aggregateColumns(),
-                "performance", Mapper.performanceColumns()));
+                "aggregate", Mapper.aggregateColumns()));
         mvc = MockMvcBuilders.standaloneSetup(new ReplayController(service)).build();
     }
 
@@ -49,17 +48,8 @@ class ReplayControllerContractTest {
         assertTrue(stream(response.get("player")).anyMatch(column -> "rank".equals(key(column))));
         assertTrue(stream(response.get("aggregate"))
                 .anyMatch(column -> "potential_damage_avg".equals(key(column))));
-        assertTrue(stream(response.get("performance")).anyMatch(column -> "kast".equals(key(column))));
-        assertTrue(stream(response.get("performance")).anyMatch(column -> "impact".equals(key(column))));
-        assertTrue(stream(response.get("performance")).anyMatch(column -> "assist_avg".equals(key(column))));
-        assertTrue(stream(response.get("performance"))
-                .anyMatch(column -> "multi_damage_rate".equals(key(column))));
-        assertTrue(stream(response.get("performance")).anyMatch(column -> "survival_rate".equals(key(column))));
-        assertTrue(stream(response.get("performance")).anyMatch(column -> "traded_deaths".equals(key(column))));
-        assertFalse(stream(response.get("performance")).anyMatch(column -> "rating".equals(key(column))));
-        assertFalse(stream(response.get("performance")).anyMatch(column -> "influence".equals(key(column))));
-        assertFalse(stream(response.get("performance")).anyMatch(column -> "average_hp".equals(key(column))));
-        assertFalse(stream(response.get("performance")).anyMatch(column -> "account_id".equals(key(column))));
+        // 战斗表现列不再经 /api/columns 暴露（随 /api/preview 的 performanceColumns 下发）
+        assertFalse(response.has("performance"));
     }
 
     private static Stream<JsonNode> stream(final JsonNode node) {

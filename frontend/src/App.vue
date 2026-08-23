@@ -9,7 +9,6 @@ import HoFAdminPage from './components/HoFAdminPage.vue'
 import ProfilePage from './components/ProfilePage.vue'
 import BoostPage from './components/BoostPage.vue'
 import AdminUsersPage from './components/AdminUsersPage.vue'
-import ExtendedPage from './components/ExtendedPage.vue'
 import ReconstructionPage from './components/ReconstructionPage.vue'
 import VersionPage from './components/VersionPage.vue'
 import ContactPage from './components/ContactPage.vue'
@@ -36,11 +35,18 @@ if (rawViewParam === 'leaderboard') {
   url.searchParams.set('view', 'hof')
   window.history.replaceState({}, '', url.toString())
 }
-const viewParam = rawViewParam === 'leaderboard' ? 'hof' : rawViewParam
+// 旧书签兼容：?view=extended → ?view=replay（战斗表现已并入回放解析，不再有独立页面/第二套 pipeline）
+if (rawViewParam === 'extended') {
+  const url = new URL(window.location.href)
+  url.searchParams.set('view', 'replay')
+  window.history.replaceState({}, '', url.toString())
+}
+const viewParam = rawViewParam === 'leaderboard' ? 'hof'
+  : (rawViewParam === 'extended' ? 'replay' : rawViewParam)
 // AI 复盘入口随时可见：视图列表不再依赖鉴权，未登录也能进入（含深链），
 // 由 ReconstructionPage 自行检查登录状态并跳转登录页。
 const ALLOWED_VIEWS = [
-  'home', 'replay', 'hof', 'hof-admin', 'extended',
+  'home', 'replay', 'hof', 'hof-admin',
   'profile', 'boost', 'admin-users', 'reconstruction', 'version', 'contact',
   'playback-qa',
 ]
@@ -53,7 +59,6 @@ const VIEW_COMPONENTS = {
   replay: ReplayPage,
   hof: HoFPage,
   'hof-admin': HoFAdminPage,
-  extended: ExtendedPage,
   profile: ProfilePage,
   boost: BoostPage,
   'admin-users': AdminUsersPage,
@@ -83,7 +88,6 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button v-if="isHomeHost" :class="{ active: activeTool === 'home' }" @click="navigate('home')">{{ $t('profile.home') }}</button>
       <button :class="{ active: activeTool === 'replay' }" @click="navigate('replay')">{{ $t('app.replay_tab') }}</button>
       <button :class="{ active: activeTool === 'hof' }" @click="navigate('hof')">{{ $t('hof.btn') }}</button>
-      <button :class="{ active: activeTool === 'extended' }" @click="navigate('extended')">{{ $t('extended.nav') }}</button>
       <button :class="{ active: activeTool === 'boost' }" @click="navigate('boost')">{{ $t('app.boost_tab') }}</button>
       <button data-testid="ai-review-nav-button" :class="{ active: activeTool === 'reconstruction' }" @click="navigate('reconstruction')">{{ $t('recon.nav') }}</button>
     </nav>

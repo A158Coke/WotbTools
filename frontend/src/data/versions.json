@@ -3,9 +3,9 @@
     "v": "2.12.10",
     "date": "2026-08-23",
     "tag": "chg",
-    "zh": "移除 Rating V2 综合评分：战斗表现指标（贡献度 / KAST / Impact / 潜在伤害 / 协助 / 击杀 / 多伤率 / 存活率 / 互换击杀）统一由回放事实管线计算，回放解析、战局回放与 AI 复盘共用同一权威事实源；不再输出任何评分总分，页面更名为「战斗表现」。",
-    "en": "Rating V2 composite score removed: battle performance metrics (contribution / KAST / Impact / potential damage / assist / kills / multi-damage rate / survival rate / trades) are now derived from a single authoritative replay-facts pipeline shared with battle playback and AI review; no composite rating is produced anymore, and the page is renamed to \"Performance\".",
-    "ru": "Убран композитный рейтинг Rating V2: показатели эффективности боя (вклад / KAST / Impact / потенциальный урон / содействие / фраги / мульти-урон / выживаемость / размены) теперь считаются единым конвейером фактов реплея, общим с повтором боя и AI-разбором; никакого итогового рейтинга больше нет, страница переименована в «Эффективность»."
+    "zh": "移除 Rating V2 综合评分：战斗表现（贡献度 / KAST / Impact / 潜在伤害 / 协助 / 击杀 / 多伤率 / 存活率 / 互换击杀）并入回放解析——上传一次回放即可在结果页查看，与战局回放、AI 复盘共用同一权威事实源；不再输出任何评分总分，也不再有独立的 Rating V2 / 战斗表现页面。",
+    "en": "Rating V2 composite score removed: battle performance metrics (contribution / KAST / Impact / potential damage / assist / kills / multi-damage rate / survival rate / trades) are now part of the replay analysis results — upload replays once and view them on the results page; battle playback and AI review share the same authoritative replay-facts pipeline, and the standalone Rating V2 / performance page is gone.",
+    "ru": "Убран композитный рейтинг Rating V2: показатели эффективности боя (вклад / KAST / Impact / потенциальный урон / содействие / фраги / мульти-урон / выживаемость / размены) теперь встроены в анализ реплея — загрузите реплей один раз и смотрите их на странице результатов; повтор боя и AI-разбор используют единый конвейер фактов, а отдельная страница Rating V2 / эффективности удалена."
   },
   {
     "v": "2.12.9",
