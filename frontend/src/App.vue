@@ -1,6 +1,7 @@
 <script setup>
-import { computed, defineAsyncComponent, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, provide, ref } from 'vue'
 import { useTheme } from './composables/useTheme.js'
+import { useAuth } from './composables/useAuth.js'
 import { useError } from './composables/useError.js'
 import HomePage from './components/HomePage.vue'
 import ReplayPage from './components/ReplayPage.vue'
@@ -17,6 +18,7 @@ import ContactPage from './components/ContactPage.vue'
 const PlaybackQaPage = defineAsyncComponent(() => import('./components/PlaybackQaPage.vue'))
 
 const { theme, handleTheme } = useTheme()
+const { initPromise, login, logout, isAuthenticated, userName, tokenParsed } = useAuth()
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
 
 const languageOptions = [
@@ -76,7 +78,26 @@ function navigate(view) {
   else url.searchParams.set('view', view)
   window.history.replaceState({}, '', url.toString())
 }
+// 子页面（ReplayPage Battle context）注入 navigate，实现 SPA 内跨视图跳转（战局回放/AI 复盘）
+provide('navigate', navigate)
+
 function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
+
+const userMenuOpen = ref(false)
+const isAdmin = computed(() => {
+  const roles = tokenParsed.value?.realm_access?.roles || []
+  return roles.includes('wotbtools-admin')
+})
+const isHofAdmin = computed(() => {
+  const roles = tokenParsed.value?.realm_access?.roles || []
+  return roles.includes('HoF-admin') || roles.includes('wotbtools-admin')
+})
+function toggleUserMenu() { userMenuOpen.value = !userMenuOpen.value }
+function closeUserMenu() { userMenuOpen.value = false }
+function handleLogin() { closeUserMenu(); login('profile') }
+function handleLogout() { closeUserMenu(); logout() }
+function go(view) { closeUserMenu(); navigate(view) }
+onMounted(() => { initPromise.catch(() => {}) })
 </script>
 
 <template>
@@ -89,7 +110,6 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button :class="{ active: activeTool === 'replay' }" @click="navigate('replay')">{{ $t('app.replay_tab') }}</button>
       <button :class="{ active: activeTool === 'hof' }" @click="navigate('hof')">{{ $t('hof.btn') }}</button>
       <button :class="{ active: activeTool === 'boost' }" @click="navigate('boost')">{{ $t('app.boost_tab') }}</button>
-      <button data-testid="ai-review-nav-button" :class="{ active: activeTool === 'reconstruction' }" @click="navigate('reconstruction')">{{ $t('recon.nav') }}</button>
     </nav>
     <div class="tb-spacer"></div>
     <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
@@ -100,10 +120,29 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button :class="{ active: theme === 'light' }" @click="handleTheme('light')">{{ $t('theme.light') }}</button>
       <button :class="{ active: theme === 'dark' }" @click="handleTheme('dark')">{{ $t('theme.dark') }}</button>
     </div>
-    <button class="auth-btn ghost" :class="{ active: activeTool === 'version' }" @click="navigate('version')">{{ $t('version.btn') }}</button>
-    <button class="auth-btn ghost" :class="{ active: activeTool === 'contact' }" @click="navigate('contact')">{{ $t('contact.nav') }}</button>
-    <a class="auth-btn ghost" href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }}</a>
-    <a class="auth-btn ghost" @click.prevent="navigate('profile')" href="/?view=profile">{{$t('app.profile')}}</a>
+    <div class="dropdown user-menu" @click.stop>
+      <button class="auth-btn ghost user-menu-trigger" @click="toggleUserMenu">
+        {{ isAuthenticated() ? userName() : $t('app.login') }}
+        <span class="caret">▼</span>
+      </button>
+      <div v-if="userMenuOpen" class="user-menu-panel" @click="closeUserMenu">
+        <template v-if="isAuthenticated()">
+          <button class="user-menu-item" @click="go('profile')">{{ $t('app.profile') }}</button>
+          <button v-if="isAdmin" class="user-menu-item" @click="go('admin-users')">{{ $t('admin.title') }}</button>
+          <button v-if="isHofAdmin" class="user-menu-item" @click="go('hof-admin')">{{ $t('hofAdmin.cardTitle') }}</button>
+          <button class="user-menu-item" @click="go('version')">{{ $t('version.btn') }}</button>
+          <button class="user-menu-item" @click="go('contact')">{{ $t('contact.nav') }}</button>
+          <a class="user-menu-item" href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }}</a>
+          <button class="user-menu-item danger" @click="handleLogout">{{ $t('profile.logout') }}</button>
+        </template>
+        <template v-else>
+          <button class="user-menu-item" @click="handleLogin">{{ $t('app.login') }}</button>
+          <button class="user-menu-item" @click="go('version')">{{ $t('version.btn') }}</button>
+          <button class="user-menu-item" @click="go('contact')">{{ $t('contact.nav') }}</button>
+          <a class="user-menu-item" href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }}</a>
+        </template>
+      </div>
+    </div>
   </div>
 
   <div class="tb-content">
@@ -125,153 +164,7 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
 </template>
 
 <style>
-:root {
-  --bg: #f1f3f0;
-  --bg-card: #ffffff;
-  --bg-card2: #eef1eb;
-  --bg-card-hover: #e4e8de;
-  --bg-blue: #e7efe1;
-  --bg-blue-light: #f1f6ec;
-  --bg-upload: #fbfcf7;
-  --bg-elevated: #ffffff;
-  --bg-chip: #ece8dd;
-  --bg-list-hover: #f6f4ec;
-  --bg-rating: #f5efe0;
-  --bg-t1: #eef5e8;
-  --bg-t2: #f8eee6;
-  --tag-bg: #edf4e5;
-  --text: #1e231f;
-  --text-heading: #171b18;
-  --text-sub: #72796f;
-  --text-secondary: #72796f;
-  --text-muted: #6a7067;
-  --text-label: #3e473f;
-  --text-upload: #252d27;
-  --text-upload-sub: #747d71;
-  --text-modal: #2c332d;
-  --text-rating: #50574f;
-  --text-code: #28312b;
-  --border: #d9ded2;
-  --border-header: #ced6c7;
-  --border-ghost: #cbd3c4;
-  --border-dashed: #aeb99f;
-  --border-chip: #d3c9b7;
-  --border-col: #bdc8b2;
-  --border-light: #ecefe7;
-  --border-heavy: #b9c3ad;
-  --border-warn: #d8aa45;
-  --border-tab-active: #d2a43c;
-  --border-rating: #e3d5b6;
-  --accent: #c98d20;
-  --accent-hover: #ad7514;
-  --accent-dark: #745014;
-  --accent-light: #e4b351;
-  --accent-icon: #9c6e18;
-  --accent-shadow: rgba(201, 141, 32, .16);
-  --accent-text: #17130b;
-  --hero-fg-rgb: 247 240 223;
-  --surface-shadow: 0 14px 34px rgba(34, 38, 30, .07);
-  --hard-shadow: 0 22px 70px rgba(22, 26, 18, .16);
-  --error: #b6362e;
-  --warn-text: #6f4700;
-  --warn-bg: #fff6dc;
-  --delete: #a83b34;
-  --scroll-fade: #f1f3f0;
-  --rating-elite-bg: #7a4b0f;
-  --rating-elite-fg: #fff7df;
-  --rating-great-bg: #b87818;
-  --rating-great-fg: #17130b;
-  --rating-good-bg: #e4b351;
-  --rating-good-fg: #17130b;
-  --rating-mid-bg: #e9dfca;
-  --rating-mid-fg: #544121;
-  --rating-poor-bg: #eadfce;
-  --rating-poor-fg: #716351;
-  --status-info-bg: #dceff5;
-  --status-info-fg: #155364;
-  --status-warn-bg: #fff2ca;
-  --status-warn-fg: #724c08;
-  --status-ok-bg: #dff2de;
-  --status-ok-fg: #1e5b2d;
-  --status-err-bg: #f9dcdc;
-  --status-err-fg: #8c2d2b;
-  --danger-solid-fg: #ffffff;
-  --focus-ring: rgba(201, 141, 32, .28);
-}
-
-[data-theme="dark"] {
-  --bg: #0f1412;
-  --bg-card: #171d1a;
-  --bg-card2: #202821;
-  --bg-card-hover: #293329;
-  --bg-blue: #28311f;
-  --bg-blue-light: #202a1d;
-  --bg-upload: #141a17;
-  --bg-elevated: #1a211c;
-  --bg-chip: #28251d;
-  --bg-list-hover: #21291f;
-  --bg-rating: #2a2417;
-  --bg-t1: #1d2a1d;
-  --bg-t2: #2d2119;
-  --tag-bg: #24321f;
-  --text: #e7ebe2;
-  --text-heading: #f4f2e8;
-  --text-sub: #98a193;
-  --text-secondary: #98a193;
-  --text-muted: #858f81;
-  --text-label: #c7d0c0;
-  --text-upload: #e0e6da;
-  --text-upload-sub: #9aa493;
-  --text-modal: #dce3d8;
-  --text-rating: #c2cbbd;
-  --text-code: #e3e8dc;
-  --border: #2d352b;
-  --border-header: #37402f;
-  --border-ghost: #3b4436;
-  --border-dashed: #566246;
-  --border-chip: #4a402c;
-  --border-col: #4b5742;
-  --border-light: #242b24;
-  --border-heavy: #566246;
-  --border-warn: #9b7626;
-  --border-tab-active: #b48224;
-  --border-rating: #443923;
-  --accent: #d99a25;
-  --accent-hover: #f0b33e;
-  --accent-dark: #ffd27a;
-  --accent-light: #f0b33e;
-  --accent-icon: #e5a946;
-  --accent-shadow: rgba(217, 154, 37, .22);
-  --accent-text: #17130b;
-  --hero-fg-rgb: 247 240 223;
-  --surface-shadow: 0 14px 34px rgba(0, 0, 0, .24);
-  --hard-shadow: 0 22px 70px rgba(0, 0, 0, .42);
-  --error: #f06a5f;
-  --warn-text: #f5ca76;
-  --warn-bg: #2b2110;
-  --delete: #d5685f;
-  --scroll-fade: #0f1412;
-  --rating-elite-bg: #f0b33e;
-  --rating-elite-fg: #17130b;
-  --rating-great-bg: #b48224;
-  --rating-great-fg: #fff4db;
-  --rating-good-bg: #6f5d26;
-  --rating-good-fg: #f6df9b;
-  --rating-mid-bg: #403827;
-  --rating-mid-fg: #d9c8a9;
-  --rating-poor-bg: #302d27;
-  --rating-poor-fg: #aaa091;
-  --status-info-bg: #17313a;
-  --status-info-fg: #a8dcea;
-  --status-warn-bg: #332712;
-  --status-warn-fg: #f5ca76;
-  --status-ok-bg: #18351f;
-  --status-ok-fg: #a8e2b1;
-  --status-err-bg: #3a1f1f;
-  --status-err-fg: #f1aaa6;
-  --danger-solid-fg: #ffffff;
-  --focus-ring: rgba(217, 154, 37, .34);
-}
+/* V2: Design Tokens 已外移至 src/styles/tokens.css（单一事实源）；此处仅保留组件/全局样式。 */
 
 * { box-sizing: border-box; }
 body { margin: 0; font: 14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans', Helvetica, Arial, sans-serif;
@@ -318,6 +211,42 @@ h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
   background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-size: .82rem; font-family: inherit; white-space: nowrap; }
 .auth-btn:hover { background: var(--bg-blue-light); border-color: var(--accent); color: var(--accent-dark); text-decoration: none; }
 .auth-btn.active { background: var(--bg-blue); border-color: var(--accent); color: var(--accent-dark); font-weight: 700; }
+.user-menu { display: flex; align-items: center; }
+.user-menu-trigger { display: inline-flex; align-items: center; gap: 6px; }
+.user-menu-trigger .caret { font-size: 10px; opacity: .7; }
+.user-menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 220;
+  min-width: 200px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-elevated);
+  box-shadow: var(--hard-shadow);
+}
+.user-menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-label);
+  text-align: left;
+  font-size: .85rem;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.user-menu-item:hover { background: var(--bg-list-hover); color: var(--text-heading); text-decoration: none; }
+.user-menu-item.danger { color: var(--error); }
+.user-menu-item.danger:hover { background: var(--status-err-bg); color: var(--status-err-fg); }
 .tabs { display: flex; gap: 4px; margin-bottom: 12px; background: var(--bg-card2); border-radius: 9px; padding: 3px; }
 .tabs button { flex: 1; padding: 8px 0; border: none; border-radius: 7px;
   background: transparent; color: var(--text-sub); cursor: pointer; font-size: .85rem; font-family: inherit; font-weight: 500; }

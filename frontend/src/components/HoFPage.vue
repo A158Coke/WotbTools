@@ -18,6 +18,7 @@ const uploading = ref(false)
 const uploadMsg = ref('')
 const uploadOk = ref(false)
 const dragging = ref(false)
+const showUploadModal = ref(false)
 const fileInput = ref(null)
 const downloadingId = ref(null)
 const downloadErr = ref('')
@@ -588,22 +589,38 @@ function fmtDate(s) {
         <p>{{ $t('hof.subtitle') }}</p>
       </header>
 
-      <section class="lb-upload-section"
-               @dragover.prevent="dragging = true"
-               @dragleave.prevent="dragging = false"
-               @drop.prevent="dragging = false; onDrop($event)">
-        <div class="lb-upload-card" :class="{ dragging }">
-          <span class="up-icon"><svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg></span>
-          <div class="up-title">{{ $t('hof.upload_title') }}</div>
-          <div class="up-sub">{{ $t('hof.upload_hint') }}</div>
-          <input ref="fileInput" type="file" accept=".wotbreplay" class="lb-hidden-input" @change="onFileChange" :disabled="uploading" />
-          <button type="button" class="filebtn" :class="{ 'lb-uploading': uploading }" @click="onUploadButtonClick">
-            <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
-            {{ uploading ? $t('hof.uploading') : $t('hof.upload_btn') }}
-          </button>
+      <div class="lb-submit-row">
+        <button type="button" class="filebtn" @click="showUploadModal = true">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg>{{ $t('hof.submit_entry') }}
+        </button>
+        <span v-if="uploadMsg" class="lb-upload-msg" :class="{ err: !uploadOk }">{{ uploadMsg }}</span>
+      </div>
+
+      <!-- 提交记录 Modal（§29：上传入口不再长期占据首屏，Ranking 成为核心） -->
+      <div v-if="showUploadModal" class="modal-overlay" @click.self="showUploadModal = false">
+        <div class="modal hof-upload-modal" role="dialog" aria-modal="true" :aria-label="$t('hof.upload_title')">
+          <div class="modal-head">
+            <h2>{{ $t('hof.upload_title') }}</h2>
+            <button type="button" class="modal-x" :aria-label="$t('app.close')" @click="showUploadModal = false">&times;</button>
+          </div>
+          <section class="lb-upload-section"
+                   @dragover.prevent="dragging = true"
+                   @dragleave.prevent="dragging = false"
+                   @drop.prevent="dragging = false; onDrop($event)">
+            <div class="lb-upload-card" :class="{ dragging }">
+              <span class="up-icon"><svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg></span>
+              <div class="up-title">{{ $t('hof.upload_title') }}</div>
+              <div class="up-sub">{{ $t('hof.upload_hint') }}</div>
+              <input ref="fileInput" type="file" accept=".wotbreplay" class="lb-hidden-input" @change="onFileChange" :disabled="uploading" />
+              <button type="button" class="filebtn" :class="{ 'lb-uploading': uploading }" @click="onUploadButtonClick">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
+                {{ uploading ? $t('hof.uploading') : $t('hof.upload_btn') }}
+              </button>
+            </div>
+            <p v-if="uploadMsg" class="lb-upload-msg" :class="{ err: !uploadOk }">{{ uploadMsg }}</p>
+          </section>
         </div>
-        <p v-if="uploadMsg" class="lb-upload-msg" :class="{ err: !uploadOk }">{{ uploadMsg }}</p>
-      </section>
+      </div>
 
       <div class="lb-toolbar">
         <label class="lb-limit">{{ $t('hof.nation') }}
@@ -887,7 +904,7 @@ function fmtDate(s) {
 </template>
 
 <style scoped>
-.lb-wrap { max-width: 1080px; margin: 0 auto; padding: 24px 20px 56px; }
+.lb-wrap { max-width: var(--wide-max, 1600px); margin: 0 auto; padding: 24px 20px 56px; }
 .lb-head { margin: 0 0 14px; }
 .lb-kicker { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 6px; background: var(--bg-rating); color: var(--accent-dark); font-size: 12px; font-weight: 800; }
 .lb-head h1 { margin: 10px 0 6px; color: var(--text-heading); font-size: 1.7rem; line-height: 1.15; letter-spacing: 0; }
@@ -931,6 +948,14 @@ function fmtDate(s) {
 .rk-bronze { background: var(--rating-great-bg); color: var(--rating-great-fg); }
 .muted { padding: 28px 4px; color: var(--text-muted); }
 
+.lb-submit-row { display: flex; align-items: center; gap: 12px; margin: 14px 0 16px; flex-wrap: wrap; }
+.lb-submit-row .lb-upload-msg { margin: 0; }
+.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.modal-head h2 { margin: 0; }
+.modal-x { border: none; background: transparent; color: var(--text-sub); font-size: 1.4rem; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+.modal-x:hover { background: var(--bg-card-hover); color: var(--text-heading); }
+.hof-upload-modal { max-width: 560px; }
+.hof-upload-modal .lb-upload-card { padding: 26px 18px; }
 .lb-upload-section { margin: 16px 0; }
 .lb-upload-card {
   position: relative;

@@ -1,27 +1,10 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue'
-import { useAuth } from '../composables/useAuth.js'
 import * as api from '../utils/api.js'
-const { initPromise, tokenParsed } = useAuth()
-const isAdmin = ref(false)
-const isHofAdmin = ref(false)
 const topDamage = ref(null)
 const topDamageDisplay = computed(() => topDamage.value == null ? '--' : formatDamage(topDamage.value))
 
 onMounted(() => {
-  initPromise
-    .then(() => {
-      const tp = tokenParsed.value
-      const roles = [
-        ...(tp?.realm_access?.roles || []),
-      ]
-      isAdmin.value = roles.includes('wotbtools-admin')
-      isHofAdmin.value = roles.includes('HoF-admin') || roles.includes('wotbtools-admin')
-    })
-    .catch(() => {
-      isAdmin.value = false
-      isHofAdmin.value = false
-    })
   loadTopDamageRecord()
 })
 
@@ -48,8 +31,8 @@ function formatDamage(value) {
         <h1>{{ $t('app.title') }}</h1>
         <p class="subtitle">{{ $t('app.subtitle') }}</p>
         <div class="hero-actions">
-          <a class="hero-btn" href="/?view=replay">{{ $t('home.replayTitle') }}</a>
-          <a class="hero-link" href="/?view=hof">{{ $t('hof.btn') }}</a>
+          <a class="hero-btn" href="/?view=replay">{{ $t('home.uploadReplay') }}</a>
+          <a class="hero-link" href="/?view=replay">{{ $t('home.analysisTitle') }}</a>
         </div>
       </div>
       <div class="hero-panel" aria-hidden="true">
@@ -66,8 +49,8 @@ function formatDamage(value) {
     <div class="tools">
       <a class="card primary" href="/?view=replay">
         <span class="card-mark">01</span>
-        <h2>{{ $t('home.replayTitle') }}</h2>
-        <p>{{ $t('home.replayDesc') }}</p>
+        <h2>{{ $t('home.analysisTitle') }}</h2>
+        <p>{{ $t('home.analysisDesc') }}</p>
         <span class="tag avail">{{ $t('home.available') }}</span>
       </a>
 
@@ -76,27 +59,6 @@ function formatDamage(value) {
         <h2>{{ $t('hof.btn') }}</h2>
         <p>{{ $t('home.hofDesc') }}</p>
         <span class="tag avail">{{ $t('home.available') }}</span>
-      </a>
-
-      <a class="card" href="/?view=reconstruction">
-        <span class="card-mark">04</span>
-        <h2>{{ $t('recon.nav') }}</h2>
-        <p>{{ $t('home.aiReviewDesc') }}</p>
-        <span class="tag avail">{{ $t('home.available') }}</span>
-      </a>
-
-      <a v-if="isAdmin" class="card" href="/?view=admin-users">
-        <span class="card-mark">05</span>
-        <h2>{{ $t('admin.cardTitle') }}</h2>
-        <p>{{ $t('admin.cardDesc') }}</p>
-        <span class="tag avail">{{ $t('admin.cardBadge') }}</span>
-      </a>
-
-      <a v-if="isHofAdmin" class="card" href="/?view=hof-admin">
-        <span class="card-mark">06</span>
-        <h2>{{ $t('hofAdmin.cardTitle') }}</h2>
-        <p>{{ $t('hofAdmin.cardDesc') }}</p>
-        <span class="tag avail">{{ $t('hofAdmin.cardBadge') }}</span>
       </a>
 
       <a class="card" href="/sponsor.html">

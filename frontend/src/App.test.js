@@ -19,6 +19,9 @@ vi.mock('./composables/useAuth.js', () => ({
     tokenParsed: { value: null },
     authenticated: { value: false },
     login: vi.fn(),
+    logout: vi.fn(),
+    isAuthenticated: () => false,
+    userName: () => '',
   }),
 }))
 
