@@ -2,7 +2,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import ExportTaskCard from './ExportTaskCard.vue'
+import ReplayTaskCard from './ReplayTaskCard.vue'
 
 const i18n = vi.hoisted(() => ({
   t: vi.fn((key) => key)
@@ -19,26 +19,28 @@ function makeJob(overrides = {}) {
     phase: 'PROCESSING_REPLAYS',
     total: 34,
     processed: 18,
+    valid: 16,
     duplicates: 2,
     failures: 1,
     errorCode: null,
     filename: null,
     contentType: null,
+    currentFile: null,
     ...overrides
   }
 }
 
-function mountCard(job, error = '') {
-  return mount(ExportTaskCard, {
-    props: { job, error },
+function mountCard(job, error = '', kind = 'export') {
+  return mount(ReplayTaskCard, {
+    props: { job, error, kind },
     global: { mocks: { $t: i18n.t } }
   })
 }
 
-describe('ExportTaskCard', () => {
+describe('ReplayTaskCard (export kind)', () => {
   it('renders nothing when no job', () => {
     const wrapper = mountCard(null)
-    expect(wrapper.find('[data-testid="export-task-card"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="replay-task-card"]').exists()).toBe(false)
   })
 
   it('QUEUED shows preparing state and cancel button', async () => {
@@ -103,5 +105,50 @@ describe('ExportTaskCard', () => {
     const wrapper = mountCard(makeJob({ processed: 99, total: 10 }))
     const fill = wrapper.get('[data-testid="etc-bar-fill"]')
     expect(fill.attributes('style')).toContain('width: 100%')
+  })
+})
+
+describe('ReplayTaskCard (processing kind, plan §13/§64)', () => {
+  it('PROCESSING shows real 18/34 + current file + valid/dup/fail counts', () => {
+    const wrapper = mountCard(makeJob({ currentFile: '20260725_1600__CHRD-A158.wotbreplay' }), '', 'processing')
+    expect(wrapper.text()).toContain('replay.processing_job.title')
+    expect(wrapper.text()).toContain('replay.processing_job.progress')
+    expect(wrapper.text()).toContain('replay.processing_job.current_file')
+    expect(wrapper.text()).toContain('replay.processing_job.counts')
+    const fill = wrapper.get('[data-testid="etc-bar-fill"]')
+    expect(fill.attributes('style')).toContain('width: 53%')
+  })
+
+  it('QUEUED shows processing preparing + cancel', () => {
+    const wrapper = mountCard(makeJob({ status: 'QUEUED', processed: 0 }), '', 'processing')
+    expect(wrapper.text()).toContain('replay.processing_job.queued')
+  })
+
+  it('READY shows parse-complete summary and dismiss (auto result shown by page)', async () => {
+    const wrapper = mountCard(makeJob({ status: 'READY', phase: null, processed: 34, valid: 31, duplicates: 2, failures: 1 }), '', 'processing')
+    expect(wrapper.text()).toContain('replay.processing_job.ready')
+    expect(wrapper.text()).toContain('replay.processing_job.counts')
+    const buttons = wrapper.findAll('button')
+    await buttons[0].trigger('click')
+    expect(wrapper.emitted('dismiss')).toBeTruthy()
+    // processing READY 不显示 download（结果已在页面自动展示，plan §20）
+    expect(wrapper.emitted('download')).toBeFalsy()
+  })
+
+  it('FAILED NO_VALID_REPLAYS shows processing-specific message', () => {
+    const wrapper = mountCard(makeJob({ status: 'FAILED', phase: null, errorCode: 'NO_VALID_REPLAYS' }), '', 'processing')
+    expect(wrapper.text()).toContain('replay.processing_job.failed')
+    expect(wrapper.text()).toContain('replay.processing_job.no_valid_replays')
+  })
+
+  it('CANCELLED shows processing cancelled', () => {
+    const wrapper = mountCard(makeJob({ status: 'CANCELLED', phase: null }), '', 'processing')
+    expect(wrapper.text()).toContain('replay.processing_job.cancelled')
+  })
+
+  it('cancel button emits cancel', async () => {
+    const wrapper = mountCard(makeJob(), '', 'processing')
+    await wrapper.find('button').trigger('click')
+    expect(wrapper.emitted('cancel')).toBeTruthy()
   })
 })
