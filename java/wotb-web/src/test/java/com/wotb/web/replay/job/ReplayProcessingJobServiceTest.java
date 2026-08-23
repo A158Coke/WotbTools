@@ -125,6 +125,59 @@ class ReplayProcessingJobServiceTest {
     }
 
     @Test
+    void leagueBattleReadyCarriesLeagueDataset() throws Exception {
+        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
+            final Source s = inv.getArgument(0);
+            final Battle b = new Battle();
+            b.arenaId = "arena-" + s.name();
+            b.arenaBonusType = 2;
+            b.winnerTeam = 1;
+            b.rosterComplete = true;
+            b.players = new ArrayList<>();
+            for (int i = 0; i < 14; i++) {
+                final PlayerResult p = new PlayerResult();
+                p.accountId = i + 1L;
+                p.nickname = "p" + (i + 1);
+                p.team = i < 7 ? 1 : 2;
+                p.tankId = 4481L;
+                p.survived = true;
+                p.survivalTimeSec = 300;
+                b.players.add(p);
+            }
+            return new ReplayProcessingResult(s.name(), ReplayProcessingStatus.SUCCESS, null, b,
+                    null, null, ReplayProcessingCapabilities.summaryOnly(false), null, null);
+        });
+        final String jobId = service.createJob(new MultipartFile[]{file("league.wotbreplay")});
+
+        final ReplayProcessingJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+        assertEquals(ReplayProcessingJob.Status.READY, snap.status());
+        final ProcessedDataset ds = store.get(jobId).result();
+        assertNotNull(ds.league(), "League 模式 dataset 必须携带 LeagueRatingBatch");
+        assertEquals(1, ds.league().battleResults().size());
+        assertTrue(ds.league().battleResults().getFirst().rated());
+    }
+
+    @Test
+    void mixedLeagueAndStandardFailsWithStableErrorCode() throws Exception {
+        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
+            final Source s = inv.getArgument(0);
+            final Battle b = new Battle();
+            b.arenaId = "arena-" + s.name();
+            b.arenaBonusType = s.name().startsWith("t") ? 2 : 1;
+            b.players = List.of();
+            return new ReplayProcessingResult(s.name(), ReplayProcessingStatus.SUCCESS, null, b,
+                    null, null, ReplayProcessingCapabilities.summaryOnly(false), null, null);
+        });
+        final String jobId = service.createJob(new MultipartFile[]{
+                file("t-training.wotbreplay"), file("r-random.wotbreplay")});
+
+        final ReplayProcessingJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+        assertEquals(ReplayProcessingJob.Status.FAILED, snap.status());
+        assertEquals("MIXED_LEAGUE_AND_STANDARD_REPLAYS", snap.errorCode(),
+                "混合批次必须整体拒绝并返回稳定错误码");
+    }
+
+    @Test
     void noValidReplaysFailsWithStableErrorCode() throws Exception {
         when(facade.process(any(), eq(ReplayProcessingOptions.full())))
                 .thenThrow(new IllegalArgumentException("REPLAY_PROCESSING_FAILED"));
