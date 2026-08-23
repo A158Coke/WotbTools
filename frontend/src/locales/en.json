@@ -40,7 +40,9 @@
         "picker_locked": "Column picker is open — click Done to switch tables",
         "export_aggregate": "Merge & Export",
         "export_each": "Export Each",
-        "download_png": "Download as PNG"
+        "download_png": "Download as PNG",
+        "battle_playback": "Battle Replay",
+        "ai_review": "AI Review"
     },
     "result": {
         "aggregate_tab": "Aggregate ({count} players)",
@@ -165,6 +167,7 @@
         "upload_hint": "Only Random and Rating battle replays are supported",
         "upload_success": "Uploaded! Entered the Hall of Fame",
         "upload_title": "Upload a replay to enter the Hall of Fame",
+        "submit_entry": "Submit Entry",
         "upload_btn": "Select Replay",
         "uploading": "Uploading...",
         "invalid_file": "Please select a .wotbreplay file",
@@ -987,6 +990,9 @@
     },
     "home": {
         "replayTitle": "Replay Extractor",
+        "uploadReplay": "Upload Replay",
+        "analysisTitle": "Battle Analysis",
+        "analysisDesc": "Batch-parse replays and inspect battle data; pick a battle for reconstruction and AI review.",
         "replayDesc": "Upload .wotbreplay files, extract battle data and export to Excel.",
         "highestDamageRecord": "Highest Damage Record",
         "hofDesc": "Damage Hall of Fame for Random and Rating battles — upload a replay to enter.",

@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.15",
+    "date": "2026-08-23",
+    "tag": "chg",
+    "zh": "界面整体重构（V2）：统一顶部导航——「回放解析」与「AI 复盘」合并为「战局分析」一级入口，更新历史 / 联系我 / 反馈 / 个人中心 / 管理后台收进右上角用户菜单（登录后显示用户名）；回放解析结果页改用近全宽数据工作区，选择具体单场后可直接进入「战局回放」或「AI 复盘」；名人堂改用更宽布局，上传入口改为「提交记录」按钮（弹窗内上传），排行榜成为页面核心；个人中心放宽到 1280px；战局回放/地图分析获得更宽工作区。",
+    "en": "Overall UI refresh (V2): unified top navigation - Replay and AI Review merge into a single Battle Analysis entry; Changelog / Contact / Feedback / Profile / Admin move into the user menu in the top-right (shows username when signed in); the replay results page uses a near-full-width data workspace, and picking a specific battle gives direct access to Battle Replay and AI Review; the Hall of Fame uses a wider layout with upload moved into a Submit Entry dialog and the leaderboard as the core; the profile page widens to 1280px; battle playback / map analysis get a wider workspace.",
+    "ru": "Общий редизайн интерфейса (V2): единая верхняя навигация — «Реплей» и «AI-разбор» объединены во «Анализ боя»; История версий / Контакты / Обратная связь / Профиль / Администрирование перенесены в меню пользователя справа вверху (показывает имя при входе); страница результатов реплея использует рабочую область почти на всю ширину, а выбор конкретного боя даёт прямой доступ к «Повтору боя» и «AI-разбору»; Зал славы получил более широкий макет с загрузкой в диалоге «Отправить запись» и таблицей рекордов как ядром страницы; профиль расширен до 1280px; повтор боя / анализ карты получили более широкую область."
+  },
+  {
     "v": "2.12.14",
     "date": "2026-08-23",
     "tag": "chg",
