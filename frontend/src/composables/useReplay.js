@@ -341,6 +341,8 @@ export function useReplay() {
 
   return {
     files, loading, error, resp, playerCols, aggCols, activeTab, aggStats, pendingRemove,
+    /** 文件集合版本号：任何 selection 变化（updateFiles）都会自增；team overrides 等 selection-bound 状态以此失效（PR #123 Blocker 2）。 */
+    selectionRevision,
     updateFiles,
     processingJob, processingError, processingActive, processingJobId,
     exportJob, exportError, exportActive,

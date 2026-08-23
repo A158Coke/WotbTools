@@ -152,6 +152,7 @@ vi.mock('../composables/useReplay.js', async () => {
   const { ref, computed } = await import('vue')
   const resp = ref(null)
   const activeTab = ref('aggregate')
+  const selectionRevision = ref(0)
   const error = ref('')
   const files = ref([])
   const loading = ref(false)
@@ -185,11 +186,13 @@ vi.mock('../composables/useReplay.js', async () => {
       pJobState.capture(processingJobRef, processingActiveRef, processingJobIdRef)
       const startExportJob = vi.fn()
       const startProcessingJob = vi.fn()
-      state.captureFns({ startExportJob, startProcessingJob })
+      const updateFiles = vi.fn(() => { selectionRevision.value++ })
+      state.captureFns({ startExportJob, startProcessingJob, updateFiles })
       return {
         files, loading, error, resp, activeTab,
         aggStats: computed(() => null),
-        pendingRemove, updateFiles: vi.fn(), playerCols, aggCols,
+        selectionRevision,
+        pendingRemove, updateFiles, playerCols, aggCols,
         exportJob: exportJobRef, exportError: ref(''), exportActive: exportActiveRef,
         processingJob: processingJobRef, processingError: ref(''), processingActive: processingActiveRef,
         processingJobId: processingJobIdRef,
@@ -1002,5 +1005,45 @@ describe('ReplayPage League Rating', () => {
       battle: { '111:1': 'CHRD' },
       summary: { 'clan:CHRD': 'CHRD A队' }
     })
+  })
+
+  it('clears both overrides when replay selection changes (PR #123 Blocker 2)', async () => {
+    state.init.resp = makeResp({ league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
+    const wrapper = mountPage()
+    await flushPromises()
+    wrapper.vm.battleTeamNames['arenaA:1'] = 'CHRD'
+    wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
+    expect(wrapper.vm.battleTeamNames).not.toEqual({})
+    // 触发真实 selection 变化（统一 updateFiles 入口 → selectionRevision++）
+    wrapper.vm.updateFiles(['b.wotbreplay'])
+    await nextTick()
+    expect(wrapper.vm.battleTeamNames).toEqual({})
+    expect(wrapper.vm.summaryTeamNames).toEqual({})
+  })
+
+  it('removing a single replay also clears overrides (PR #123 Blocker 2)', async () => {
+    state.init.resp = makeResp({ league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
+    const wrapper = mountPage()
+    await flushPromises()
+    wrapper.vm.battleTeamNames['arenaA:1'] = 'CHRD'
+    wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
+    // 删除单个 replay：同样走 updateFiles → selection 变化
+    wrapper.vm.updateFiles(['a.wotbreplay'])
+    await nextTick()
+    expect(wrapper.vm.battleTeamNames).toEqual({})
+    expect(wrapper.vm.summaryTeamNames).toEqual({})
+  })
+
+  it('re-processing same selection does NOT clear overrides (PR #123 Blocker 2)', async () => {
+    state.init.resp = makeResp({ league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
+    const wrapper = mountPage()
+    await flushPromises()
+    wrapper.vm.battleTeamNames['arenaA:1'] = 'CHRD'
+    wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
+    // 同一 selection 重新解析：selectionRevision 不变 → overrides 保留
+    wrapper.vm.startProcessingJob()
+    await nextTick()
+    expect(wrapper.vm.battleTeamNames['arenaA:1']).toBe('CHRD')
+    expect(wrapper.vm.summaryTeamNames['clan:CHRD']).toBe('CHRD A队')
   })
 })
