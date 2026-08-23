@@ -24,7 +24,7 @@ import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel, enumLabel } from '../utils/display.js'
 
 const { locale, t, te } = useI18n()
-const { initPromise, login, logout, isAuthenticated, initError, tokenParsed } = useAuth()
+const { initPromise, login, isAuthenticated, initError, tokenParsed } = useAuth()
 
 const phase = ref('init')
 const profile = ref(null)
@@ -202,10 +202,6 @@ function doLogin() {
     loginStarted.value = true
     login()
   }
-}
-
-function doLogout() {
-  logout()
 }
 
 function startEditAccount() {
@@ -398,7 +394,6 @@ function notificationMessage(notification) {
             <p class="hero-subtitle">{{ heroSubtitle }}</p>
           </div>
         </div>
-        <button class="btn-ghost" @click="doLogout">{{ $t('profile.logout') }}</button>
       </div>
 
       <div class="profile-body">
@@ -685,7 +680,7 @@ function notificationMessage(notification) {
 </template>
 
 <style scoped>
-.profile-page { max-width: 1040px; margin: 0 auto; padding: 24px 20px 64px; }
+.profile-page { max-width: 1280px; margin: 0 auto; padding: 24px 20px 64px; }
 .profile-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--surface-shadow); }
 .profile-message { max-width: 400px; margin: 60px auto; padding: 40px; text-align: center; }
 .profile-empty { padding: 24px 0; text-align: center; color: var(--text-sub); font-size: .9rem; }

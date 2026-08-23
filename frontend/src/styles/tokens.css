@@ -1,3 +1,12 @@
+/* ============================================================
+ * WotBTools Design Tokens — 单一事实源（V2 Frontend Foundation）
+ *
+ * 原变量定义迁移自 App.vue 内联 <style>（App.vue 不再重复定义）。
+ * 新增 V2 tokens：Layout / Spacing / Radius / Z-index / Typography /
+ * Tactical Friendly-Enemy 色（plan §44–§46）。
+ * 主题切换机制不变：index.html head no-flash 脚本 + useTheme.js。
+ * ============================================================ */
+
 :root {
   --bg: #f1f3f0;
   --bg-card: #ffffff;
@@ -70,6 +79,44 @@
   --status-err-fg: #8c2d2b;
   --danger-solid-fg: #ffffff;
   --focus-ring: rgba(201, 141, 32, .28);
+
+/* ── V2 Layout tokens（plan §16）────────────────────────────── */
+  --topbar-h: 52px;
+  --layout-gutter: 24px;
+  --content-max: 1280px;
+  --wide-max: 1600px;
+  --workspace-gutter: 24px;
+  /* Spacing scale（plan §44） */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  /* Z-index 层级（对齐现有 .topbar:100 / .modal-overlay:200 / .colpanel:260） */
+  --z-topbar: 100;
+  --z-modal: 200;
+  --z-panel: 260;
+  --z-fullscreen: 300;
+  /* Typography 字号（对齐现有 12/13/14px 体系） */
+  --font-xs: 11px;
+  --font-sm: 12px;
+  --font-md: 13px;
+  --font-body: 14px;
+  --font-lg: 16px;
+  --font-xl: 20px;
+  /* Tactical 阵营色（plan §46）：Friendly=warm amber，Enemy=cool cyan。
+   * 与普通 UI Success/Error 语义色分离，仅用于战术地图领域。 */
+  --friendly: #c98d20;
+  --friendly-strong: #d99a25;
+  --friendly-fg: #17130b;
+  --enemy: #3f8fb8;
+  --enemy-strong: #4aa8c4;
+  --enemy-fg: #f0f6fa;
 }
 
 [data-theme="dark"] {
@@ -146,32 +193,31 @@
   --focus-ring: rgba(217, 154, 37, .34);
 }
 
-* { box-sizing: border-box; }
-
-body {
-  margin: 0;
-  font: 14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans', Helvetica, Arial, sans-serif;
-  background:
-    linear-gradient(180deg, rgba(38, 49, 34, .10), transparent 260px),
-    var(--bg);
-  color: var(--text);
+/* ── V2 Layout Primitives（plan §16.1–§16.4）────────────────
+ * 页面必须从以下四种布局原语中选择，禁止页面自行定义随机 max-width。
+ *   layout-content         → Profile / Settings / 普通内容页（1200–1280px）
+ *   layout-wide            → 名人堂 / Rating / 数据页（1440–1600px）
+ *   layout-data-workspace  → Replay Parser / 大型统计表（近全宽）
+ *   layout-full-workspace  → Battle Reconstruction / Map / Strategy（100%）
+ * ------------------------------------------------------------ */
+.layout-content {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 24px 20px 64px;
+}
+.layout-wide {
+  max-width: var(--wide-max);
+  margin: 0 auto;
+  padding: 24px 20px 64px;
+}
+.layout-data-workspace {
+  width: calc(100vw - var(--workspace-gutter) * 2);
+  margin: 0 auto;
+  padding: 24px 0 64px;
+}
+.layout-full-workspace {
+  width: 100%;
+  height: calc(100vh - var(--topbar-h));
+  overflow: hidden;
 }
 
-a { color: var(--accent); text-decoration: none; }
-a:hover { color: var(--accent-hover); text-decoration: underline; }
-
-button,
-input,
-select,
-textarea {
-  font-family: inherit;
-}
-
-button:focus-visible,
-a:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible {
-  outline: 3px solid var(--focus-ring);
-  outline-offset: 2px;
-}

@@ -142,6 +142,9 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
 <style scoped>
 .analysis-panel {
   margin-top: 16px;
+  max-width: 1100px;
+  margin-left: auto;
+  margin-right: auto;
 }
 .panel-head {
   display: flex;

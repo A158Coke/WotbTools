@@ -1,7 +1,8 @@
 <script setup>
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { mapLabel } from '../utils/helpers.js'
+import { mapLabel, displayName } from '../utils/helpers.js'
+import { setPendingReplayFiles } from '../utils/replayTransfer.js'
 import { useReplay } from '../composables/useReplay.js'
 import { useColumns } from '../composables/useColumns.js'
 import {
@@ -181,12 +182,57 @@ async function downloadResultPng() {
   }
 }
 
+
+/** Battle context actions（plan §13/§21）：具体 battle 才出现「战局回放 / AI 复盘」。
+ * Summary context 不渲染这些入口。文件经 replayTransfer 单例跨视图传给 ReconstructionPage。 */
+const navigate = inject('navigate', null)
+const isAuthenticated = inject('isAuthenticated', () => false)
+const login = inject('login', null)
+
+function currentBattleFile() {
+  if (activeTab.value === 'aggregate') return null
+  const idx = parseInt(activeTab.value.replace('b', ''), 10)
+  const battle = resp.value?.battles?.[idx]
+  if (!battle) return null
+  return files.value.find(f => displayName(f) === battle.sourceName) || null
+}
+
+/**
+ * Battle context actions 需登录（/api/replay/analyze 与 /api/replay/map-overview 均走
+ * authedFetch）。未登录点击不静默跳转：文件只存在内存，Keycloak 整页跳转会清空——
+ * 先在当前页明确告知（登录后需重新选择回放），确认后再去登录；已登录走 replayTransfer
+ * SPA 内跨视图交接（文件不落 localStorage，仅内存 + 服务端不保存回放）。
+ */
+function requireLoginForBattleAction() {
+  if (isAuthenticated()) return true
+  const ok = window.confirm(t('replay.login_required_for_battle'))
+  if (ok && login) login('replay')
+  return false
+}
+
+function openBattlePlayback() {
+  const f = currentBattleFile()
+  if (!f || !navigate) return
+  if (!requireLoginForBattleAction()) return
+  setPendingReplayFiles([f], 'playback')
+  navigate('reconstruction')
+}
+
+function openAiReview() {
+  const f = currentBattleFile()
+  if (!f || !navigate) return
+  if (!requireLoginForBattleAction()) return
+  setPendingReplayFiles([f], 'ai')
+  navigate('reconstruction')
+}
+
 async function preview() { await replay.doPreview(cols.initFromResponse) }
+
 function onFileRemoveRequest(f) { askRemoveFile(f) }
 </script>
 
 <template>
-  <div class="wrap">
+  <div class="layout-data-workspace">
     <FileUploader :files="files" :loading="loading" :confirm-remove="!!resp"
       @update:files="files = $event" @preview="preview" @remove-request="onFileRemoveRequest" />
 
@@ -215,6 +261,14 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
           </button>
         </div>
         <div class="resactions">
+          <template v-if="activeTab !== 'aggregate'">
+            <button class="battle-action" data-testid="battle-playback-btn" @click="openBattlePlayback">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M3 5l6 3-6 3zM15 5l6 3-6 3zM9 8h6M9 8v8M9 16l6-3M9 13l6-3" /></svg>{{ $t('action.battle_playback') }}
+            </button>
+            <button class="battle-action primary" data-testid="battle-ai-btn" @click="openAiReview">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 7.7l5.4-.8z" /></svg>{{ $t('action.ai_review') }}
+            </button>
+          </template>
           <span class="dropdown">
             <button class="ghost sm" @click="toggleColPicker">
               <svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" /></svg>{{ $t('action.select_cols') }} v
@@ -255,6 +309,29 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
 </template>
 
 <style>
+.battle-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 14px;
+  border: 1px solid var(--border-ghost);
+  border-radius: 7px;
+  background: var(--bg-card);
+  color: var(--text-label);
+  cursor: pointer;
+  font-size: .82rem;
+  font-family: inherit;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.battle-action:hover { border-color: var(--accent); color: var(--accent-dark); background: var(--bg-blue-light); }
+.battle-action.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.battle-action.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-text); }
 .replay-export-root.replay-export-light {
   --exp-bg: #ffffff;
   --exp-card-bg: #f8f9fa;
