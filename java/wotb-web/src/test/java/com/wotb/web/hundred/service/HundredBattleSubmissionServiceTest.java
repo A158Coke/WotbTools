@@ -6,7 +6,9 @@ import com.wotb.core.parse.ReplayParser;
 import com.wotb.web.hof.exception.HallOfFameStorageException;
 import com.wotb.web.hundred.dto.HundredLeaderboardPageDto;
 import com.wotb.web.hundred.dto.HundredSubmissionSummaryDto;
+import com.wotb.web.hundred.dto.HundredWargamingSubmissionResult;
 import com.wotb.web.hundred.entity.HundredBattleSubmission;
+import com.wotb.web.hundred.gateway.WargamingOfficialStats;
 import com.wotb.web.hundred.repository.HundredBattleSubmissionRepository;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
@@ -774,6 +776,119 @@ class HundredBattleSubmissionServiceTest {
         verify(repository).save(s);
         verify(repository, never()).save(superseded);
         assertThat(superseded.getStatus()).isEqualTo("SUPERSEDED");
+    }
+
+    // ── WG official submission / source-aware approval ──────────────────
+
+    @Test
+    void wargamingExact3900CreatesCurrentFromOfficialNotClaimedValues() {
+        final OffsetDateTime verifiedAt = OffsetDateTime.parse("2026-08-23T10:00:00Z");
+
+        final HundredWargamingSubmissionResult result = service.createWargamingSubmission(
+                USER, 100, 1, wgStats(390_000), verifiedAt);
+
+        assertThat(result.status()).isEqualTo("CURRENT");
+        assertThat(result.decision()).isEqualTo("AUTO_APPROVED");
+        assertThat(result.verifiedAverageDamage()).isEqualTo(3900);
+        final ArgumentCaptor<HundredBattleSubmission> captor =
+                ArgumentCaptor.forClass(HundredBattleSubmission.class);
+        verify(repository).saveAndFlush(captor.capture());
+        final HundredBattleSubmission saved = captor.getValue();
+        assertThat(saved.getClaimedAverageDamage()).isEqualTo(100);
+        assertThat(saved.getClaimedBattleCount()).isEqualTo(1);
+        assertThat(saved.getApprovedAverageDamage()).isEqualTo(3900);
+        assertThat(saved.getApprovedBattleCount()).isEqualTo(100);
+        assertThat(saved.getVerificationSource()).isEqualTo("WARGAMING_API");
+        assertThat(saved.getOfficialTankDamageDealt()).isEqualTo(390_000);
+        assertThat(saved.getVerifiedAt()).isEqualTo(verifiedAt);
+        assertThat(saved.getApprovedBy()).isNull();
+        assertThat(saved.getProofScreenshot()).isNull();
+        assertThat(saved.isReplayParseOk()).isFalse();
+        verify(evidenceService, never()).attach(anyLong(), anyList());
+    }
+
+    @Test
+    void wargamingExactDamageAbove3900CreatesFilelessPendingEvenWhenRoundedTo3900() {
+        final HundredWargamingSubmissionResult result = service.createWargamingSubmission(
+                USER, 1, 1, wgStats(390_001), OffsetDateTime.parse("2026-08-23T10:00:00Z"));
+
+        assertThat(result.status()).isEqualTo("PENDING");
+        assertThat(result.decision()).isEqualTo("MANUAL_REVIEW");
+        assertThat(result.verifiedAverageDamage()).isEqualTo(3900);
+        final ArgumentCaptor<HundredBattleSubmission> captor =
+                ArgumentCaptor.forClass(HundredBattleSubmission.class);
+        verify(repository).saveAndFlush(captor.capture());
+        final HundredBattleSubmission saved = captor.getValue();
+        assertThat(saved.getStatus()).isEqualTo("PENDING");
+        assertThat(saved.getApprovedAverageDamage()).isNull();
+        assertThat(saved.getProofScreenshot()).isNull();
+        verify(evidenceService, never()).storeAll(anyList());
+        verify(evidenceService, never()).attach(anyLong(), anyList());
+    }
+
+    @Test
+    void wargamingAutoCurrentStrictlySupersedesLowerCurrentAndRejectsEqual() {
+        final HundredBattleSubmission lower = currentSubmission(3800);
+        when(repository.findCurrentForUpdate(USER, TIER10_VEHICLE)).thenReturn(Optional.of(lower));
+
+        service.createWargamingSubmission(USER, 1, 1, wgStats(390_000), OffsetDateTime.now());
+
+        assertThat(lower.getStatus()).isEqualTo("SUPERSEDED");
+        verify(repository).saveAndFlush(lower);
+
+        final HundredBattleSubmission equal = currentSubmission(3900);
+        when(repository.findCurrentForUpdate(USER, TIER10_VEHICLE)).thenReturn(Optional.of(equal));
+        assertThatThrownBy(() -> service.createWargamingSubmission(
+                USER, 9999, 9999, wgStats(390_000), OffsetDateTime.now()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("HUNDRED_NOT_HIGHER");
+    }
+
+    @Test
+    void wargamingPendingApprovalUsesOfficialSnapshotWithoutReplayEvidence() {
+        final HundredBattleSubmission pending = pendingSubmission();
+        pending.setProofScreenshot(null);
+        pending.setVerificationSource("WARGAMING_API");
+        pending.setVerifiedAt(OffsetDateTime.parse("2026-08-23T10:00:00Z"));
+        pending.setVerifiedServer("EU");
+        pending.setOfficialAccountBattleCount(5_000L);
+        pending.setOfficialTankBattleCount(100L);
+        pending.setOfficialTankDamageDealt(390_001L);
+        pending.setOfficialAverageDamage(3900);
+        when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(pending));
+
+        final HundredSubmissionSummaryDto result = service.approve(ADMIN, 10L, 3900, 100);
+
+        assertThat(result.status()).isEqualTo("CURRENT");
+        assertThat(result.verificationSource()).isEqualTo("WARGAMING_API");
+        verify(evidenceService, never()).requireCompleteEvidenceForApproval(anyLong(), any());
+        verify(evidenceService).discardForSubmission(10L);
+    }
+
+    @Test
+    void wargamingPendingApprovalRejectsIncompleteOrInconsistentSnapshot() {
+        final HundredBattleSubmission pending = pendingSubmission();
+        pending.setProofScreenshot(null);
+        pending.setVerificationSource("WARGAMING_API");
+        pending.setVerifiedAt(OffsetDateTime.parse("2026-08-23T10:00:00Z"));
+        pending.setVerifiedServer("NA");
+        pending.setOfficialAccountBattleCount(5_000L);
+        pending.setOfficialTankBattleCount(100L);
+        pending.setOfficialTankDamageDealt(390_000L);
+        pending.setOfficialAverageDamage(3899); // 与 totals 四舍五入结果不一致
+        when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(pending));
+
+        assertThatThrownBy(() -> service.approve(ADMIN, 10L, 3900, 100))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("HUNDRED_WARGAMING_SNAPSHOT_INVALID");
+        verify(repository, never()).findCurrentForUpdate(anyString(), anyLong());
+        verify(evidenceService, never()).requireCompleteEvidenceForApproval(anyLong(), any());
+    }
+
+    private static WargamingOfficialStats wgStats(final long damage) {
+        return new WargamingOfficialStats(
+                "ASIA", GAME_ID, "PlayerOne", 5_000,
+                TIER10_VEHICLE, 100, damage);
     }
 
     // ── Rank：competition ranking ────────────────────────────────────────

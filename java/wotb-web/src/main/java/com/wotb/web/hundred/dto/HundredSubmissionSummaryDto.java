@@ -15,6 +15,9 @@ public record HundredSubmissionSummaryDto(
     OffsetDateTime submittedAt,
     OffsetDateTime approvedAt,
     String rejectReason,
-    String rejectReasonText
+    String rejectReasonText,
+    String verificationSource,
+    Long officialTankBattleCount,
+    Integer officialAverageDamage
 ) {
 }

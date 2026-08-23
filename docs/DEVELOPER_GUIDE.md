@@ -55,7 +55,7 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
 ```
 
 后端没有无数据库 profile。若要测试本地 Keycloak 管理员写操作，需在本地 realm 配置 `wotbtools-admin-api` 服务账号，并在启动 compose 前设置 `KEYCLOAK_ADMIN_CLIENT_SECRET`；普通回放解析可留空。
-Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT Blitz 应用 ID，GitHub Secrets 或 `docker/online/.env`）；缺失时 Keycloak 正常启动、仅 WG 登录返回"未配置"。
+Wargaming ASIA/EU/NA 登录与百场 WG 自动认证需要给 Keycloak、backend 两个容器注入同一个 `WG_APPLICATION_ID`（WoT Blitz 应用 ID，GitHub Secrets 或 `docker/online/.env`）；缺失时服务仍可启动，但 WG 登录和百场自动认证不可用，原人工链路不受影响。
 
 > **测试夹具**：提交版真实回放夹具在 `common/fixtures/replays/*.wotbreplay`（CI 无条件执行，`ReplayParserFixtureTest` / `ParityTest` / `WebApiTest` 均加载；随机战斗样例 `random-battle-example.wotbreplay` 按用户指示原样提交、不脱敏）；本地可用 gitignored 的 `common/data/*.wotbreplay` 扩展样本，缺失时跳过仅本地样本的精确值断言。`WebApiTest` 的 PostgreSQL 集成路径在无 Docker 时条件跳过。
 
@@ -333,7 +333,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 - **JWT claims**：`wotbtools-web` client 的 4 个只读 protocol mapper（realm JSON 已含）：`region→wotb_region`、`wotb.account_id→wotb_account_id`、`wotb.nickname→wotb_nickname`、`wotb.verified→wotb_verified`（`jsonType=boolean`）。后端缺失 `wotb_region` / `wotb_verified` 一律按 CN 兜底。
 - **数据库**：V12 扩展 `CHECK (wotb_server IN ('CN','ASIA'))` 并新增 `wotb_account_source`（默认 `MANUAL`）与 `wotb_account_verified_at`（可空）；V13 再扩展 `CHECK IN ('CN','ASIA','EU','NA')`；存量 CN 数据默认 `MANUAL` / NULL，平滑迁移。
 - **API**：`POST /api/users/profile` 按可信 WG claims 自动创建对应区服资料（ASIA/EU/NA）；`PUT /api/users/wotb-account/from-login` 在 Profile 不存在时原子创建 WARGAMING、空 Profile 升级为 WARGAMING、同 (region, account_id) 幂等刷新昵称（不刷新 verified_at）、已绑定 MANUAL 返回 409；`PATCH/DELETE /api/users/wotb-account` 在 JWT 明确为 WG 身份时（即使 DB 仍未同步）返回只读错误（ASIA 为 `ASIA_PROFILE_READONLY`，EU/NA 或 DB 未同步场景为 `WARGAMING_PROFILE_READONLY`）。错误码 `PROFILE_REGION_MISMATCH` / `WOTB_ACCOUNT_MISMATCH` / `WOTB_ACCOUNT_ALREADY_USED` 为 409，`WOTB_CLAIMS_INVALID` / `ASIA_PROFILE_READONLY` / `WARGAMING_PROFILE_READONLY` 为 400。
-- **环境变量**：`WG_APPLICATION_ID`（WoT Blitz 应用 ID）注入 Keycloak 容器；缺失时 Keycloak 正常启动，仅 WG 登录返回"未配置"。
+- **环境变量**：`WG_APPLICATION_ID`（WoT Blitz 应用 ID）同时注入 Keycloak 与 backend；Keycloak 用于 WG IdP，backend 用于百场 account/info + tanks/stats 自动认证。缺失时容器仍可启动，相应 WG 功能返回稳定不可用错误，人工提交不受影响。
 - **IdP 载体（决策 D18）**：`wargaming` 类型 IdP（Provider ID `wargaming`）的 ASIA / EU / NA 三个实例（alias `wargaming-asia` / `wargaming-eu` / `wargaming-na`）不进 realm JSON（避免密钥进导入配置），共用 `WG_APPLICATION_ID` 与 `wotbtools-web` client，dev/prod 均在 Admin Console 手工创建；步骤见 `docs/auth/wargaming-asia-deployment.md`。
 - **测试**：WG Provider 用 JUnit 5 + JDK `HttpServer` stub（`keycloak-wargaming-provider/src/test`），CI 新增 `keycloak-providers` job 跑两个 provider 模块的 `mvn test`；后端用 Mockito 单测覆盖 create/syncFromLogin 的 CN/ASIA/EU/NA 分支与错误码。
 
@@ -356,7 +356,7 @@ API 层为**纯英文**：`/api/columns` 与各 DTO 只回 `key`(snake_case) + �
 - **存活时间**：3 层 fallback（#104 → Damage → hybrid EntityLeave/Position），详见 `docs/reference/replay-data.md`。
 - **战斗表现**：纯派生指标（贡献度 / KAST / Impact / 潜在伤害 / 协助 / 击杀 / 多伤率 / 存活率 / 互换击杀），消费统一回放事实，不再输出任何综合评分；单场玩家表直接含 contribution/kast/impact 列、汇总表含跨场指标列，无独立 tab/端点/字段。细节见 `docs/features/performance.md`。
 - **数据库**：PostgreSQL 18，JPA/Flyway（`ddl-auto: validate`）；Flyway 自动配置依赖 `spring-boot-flyway`。
-- **百场（Hundred Battles）**：`wotb-web/.../hundred/` 域（`HundredBattleSubmission` 单表生命周期 PENDING/CURRENT/SUPERSEDED/REJECTED/CANCELLED/DELETED；Flyway `V18` partial unique index 保证 user+vehicle 最多一个 PENDING/CURRENT）；公开 `GET /api/hof/hundred?nation=&vehicleType=&vehicleId=` 支持分类/车辆交集 Top 10 与单车独立排行，competition ranking 仅 query-time 派生；管理员列表 `GET /api/admin/hof/hundred/submissions?status=&nation=&vehicleType=&vehicleId=` 使用同样可独立生效的交集筛选。提交 `POST /api/hof/hundred/submissions`（登录 + Profile gameId/nickname + Tier X + 截图 + 5 replay 硬门禁）；个人中心 `GET /api/users/hundred/status`。审核证据严格 admin-only 且只在 PENDING 期间保留；APPROVE/REJECT/CANCEL/DELETE 后清空截图、删除 evidence metadata，并清理无引用物理文件。见 `docs/features/hall-of-fame.md`「百场」章节。
+- **百场（Hundred Battles）**：`wotb-web/.../hundred/` 域（`HundredBattleSubmission` 单表生命周期 PENDING/CURRENT/SUPERSEDED/REJECTED/CANCELLED/DELETED；partial unique index 保证 user+vehicle 最多一个 PENDING/CURRENT）。原 `POST /api/hof/hundred/submissions` 人工链路继续强制截图 + 5 replay；新增 `POST /api/hof/hundred/submissions/wargaming` 只接受可信 ASIA/EU/NA WG 身份，以官方账号/单车 totals 判定账号总场次 >=5000、单车 >=100，精确场均 <=3900 自动 CURRENT、>3900 自动创建无文件 PENDING。`verification_source` 区分 MANUAL 文件证据和 WARGAMING_API 官方快照证据，claimed 值不参与分流或排名。公开分类/车辆交集排行、个人状态与管理员详情/审核继续复用同一状态机。见 `docs/features/hall-of-fame.md`「百场」章节。
 - **名人堂（Hall of Fame）**：schema 由 Flyway 管理；只记录录像者本人随机战斗（`arenaBonusType==1`）与评级战斗（`==7`）单场伤害（`HallOfFameBattleTypePolicy` 单一事实源，其余模式 400 `UNSUPPORTED_BATTLE_TYPE` 零持久化）；统一公开查询 `GET /api/hof`（battleType/nation/vehicleType/tier/tank/nickname 交集过滤 + 位置排名，同伤害 RATING 优先），匿名 `GET /api/hof/vehicle-options` 返回实际已有车辆分类；公开页和管理页的国家/车种/等级无需先选车辆即可真实筛榜。上传/下载需登录；管理后台 `GET/DELETE /api/admin/hof/**`（HoF-admin 或 wotbtools-admin；audit + delete 单事务，ReplayHashLock 保证文件引用不变量）；原始 .wotbreplay 以 SHA-256 内容寻址存 `HOF_REPLAY_DIR`（生产 volume `/data/replays`，best-effort 可丢、不纳入 DB 备份）。见 `docs/features/hall-of-fame.md`。
 - **i18n**：vue-i18n 三语（zh/en/ru），`locales/*.json`；地图名 `common/map_names.json`，网页按当前语言显示，导出固定中文。
 - **API 端点**：`GET /api/health`、`POST /api/preview`（单场 cells 含 contribution/kast/impact，汇总含跨场指标）、`POST /api/export?mode=aggregate|each`；排行榜 / 站内通知端点见 `java/README.md`。

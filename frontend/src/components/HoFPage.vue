@@ -22,7 +22,23 @@ const fileInput = ref(null)
 const downloadingId = ref(null)
 const downloadErr = ref('')
 
-const { isAuthenticated, login } = useAuth()
+const { isAuthenticated, login, logout, tokenParsed } = useAuth()
+
+const SUBMIT_MODE_MANUAL = 'MANUAL'
+const SUBMIT_MODE_WARGAMING = 'WARGAMING_API'
+const WARGAMING_REGIONS = new Set(['ASIA', 'EU', 'NA'])
+
+const wargamingRegion = computed(() => String(tokenParsed.value?.wotb_region || '').trim())
+const wargamingAccountId = computed(() => Number(tokenParsed.value?.wotb_account_id))
+const wargamingNickname = computed(() => String(tokenParsed.value?.wotb_nickname || '').trim())
+const wargamingEligible = computed(() => {
+  const verified = tokenParsed.value?.wotb_verified
+  return WARGAMING_REGIONS.has(wargamingRegion.value)
+    && (verified === true || verified === 'true')
+    && Number.isSafeInteger(wargamingAccountId.value)
+    && wargamingAccountId.value > 0
+    && Boolean(wargamingNickname.value)
+})
 
 function requireLogin() {
   if (isAuthenticated()) return true
@@ -279,6 +295,10 @@ const currentPending = computed(() => {
   const id = Number(h100VehicleId.value)
   return pendingList.value.find(p => Number(p.vehicleId) === id) || null
 })
+const currentPendingDamage = computed(() => currentPending.value?.verificationSource === SUBMIT_MODE_WARGAMING
+  ? currentPending.value?.officialAverageDamage : currentPending.value?.claimedAverageDamage)
+const currentPendingBattles = computed(() => currentPending.value?.verificationSource === SUBMIT_MODE_WARGAMING
+  ? currentPending.value?.officialTankBattleCount : currentPending.value?.claimedBattleCount)
 
 async function loadHundredList() {
   const generation = ++h100LoadGeneration
@@ -346,6 +366,7 @@ function goHundredPage(p) {
 // ── 百场：提交弹窗 ──────────────────────────────────────────────
 const showSubmit = ref(false)
 const submitting = ref(false)
+const submitMode = ref(SUBMIT_MODE_MANUAL)
 const submitError = ref('')
 const needProfile = ref(false)
 const screenshotErr = ref('')
@@ -363,13 +384,14 @@ const submitForm = reactive({
   replays: []
 })
 
-const hasSubmitDraft = computed(() => Boolean(
+const hasSharedSubmitDraft = computed(() => Boolean(
   submitForm.vehicleId ||
   submitForm.averageDamage !== '' ||
-  submitForm.battleCount !== '' ||
-  submitForm.screenshot ||
-  submitForm.replays.length
+  submitForm.battleCount !== ''
 ))
+const hasManualEvidenceDraft = computed(() => Boolean(submitForm.screenshot || submitForm.replays.length))
+const hasSubmitDraft = computed(() => hasSharedSubmitDraft.value
+  || (submitMode.value === SUBMIT_MODE_MANUAL && hasManualEvidenceDraft.value))
 
 const submitHundredVehicles = computed(() => {
   const candidates = filteredHundredVehicles.value
@@ -380,6 +402,9 @@ const submitHundredVehicles = computed(() => {
 
 function openSubmit() {
   if (!requireLogin()) return
+  if (submitMode.value === SUBMIT_MODE_WARGAMING && !wargamingEligible.value) {
+    submitMode.value = SUBMIT_MODE_MANUAL
+  }
   showSubmit.value = true
   submitting.value = false
   needProfile.value = false
@@ -396,26 +421,47 @@ function closeSubmit() {
   showSubmit.value = false
 }
 
-function resetSubmitDraft() {
-  ++screenshotReadGeneration
-  screenshotReading.value = false
+function selectSubmitMode(mode) {
+  if (mode === SUBMIT_MODE_WARGAMING && !wargamingEligible.value) return
+  submitMode.value = mode
+  submitError.value = ''
+  needProfile.value = false
+}
+
+function logoutForWargaming() {
+  logout()
+}
+
+function resetSharedSubmitDraft() {
   submitForm.vehicleId = null
   submitForm.averageDamage = ''
   submitForm.battleCount = ''
+}
+
+function resetManualEvidenceDraft() {
+  ++screenshotReadGeneration
+  screenshotReading.value = false
   submitForm.screenshot = ''
   submitForm.replays = []
   screenshotName.value = ''
   screenshotErr.value = ''
   replayErr.value = ''
-  submitError.value = ''
-  needProfile.value = false
   if (screenshotInput.value) screenshotInput.value.value = ''
   if (replaysInput.value) replaysInput.value.value = ''
 }
 
+function resetSubmitDraft(mode = submitMode.value) {
+  resetSharedSubmitDraft()
+  if (mode === SUBMIT_MODE_MANUAL) resetManualEvidenceDraft()
+  submitError.value = ''
+  needProfile.value = false
+}
+
 function clearSubmitDraft() {
   if (!hasSubmitDraft.value || submitting.value) return
-  if (!window.confirm(t('hundred.clearDraftConfirm'))) return
+  const confirmKey = submitMode.value === SUBMIT_MODE_WARGAMING
+    ? 'hundred.wgClearDraftConfirm' : 'hundred.clearDraftConfirm'
+  if (!window.confirm(t(confirmKey))) return
   resetSubmitDraft()
 }
 
@@ -502,13 +548,20 @@ async function submitHundred() {
   if (submitting.value) return
   const damage = Number(submitForm.averageDamage)
   const battles = Number(submitForm.battleCount)
-  if (
-    !submitForm.vehicleId ||
-    !Number.isInteger(damage) || damage <= 0 ||
-    !Number.isInteger(battles) || battles <= 0 ||
-    !submitForm.screenshot || screenshotReading.value ||
-    submitForm.replays.length !== 5
-  ) {
+  const commonInvalid = !submitForm.vehicleId
+    || !Number.isInteger(damage) || damage <= 0
+    || !Number.isInteger(battles) || battles <= 0
+  if (submitMode.value === SUBMIT_MODE_WARGAMING && !wargamingEligible.value) {
+    submitError.value = t('hundred.wgNotEligible')
+    return
+  }
+  if (commonInvalid) {
+    submitError.value = t(submitMode.value === SUBMIT_MODE_WARGAMING
+      ? 'hundred.wgFillRequired' : 'hundred.fillRequired')
+    return
+  }
+  if (submitMode.value === SUBMIT_MODE_MANUAL
+      && (!submitForm.screenshot || screenshotReading.value || submitForm.replays.length !== 5)) {
     submitError.value = t('hundred.fillRequired')
     return
   }
@@ -521,16 +574,35 @@ async function submitHundred() {
   submitError.value = ''
   needProfile.value = false
   try {
-    const fd = new FormData()
-    fd.append('vehicleId', String(submitForm.vehicleId))
-    fd.append('averageDamage', String(damage))
-    fd.append('battleCount', String(battles))
-    fd.append('screenshot', submitForm.screenshot)
-    for (const r of submitForm.replays) fd.append('replays', r)
-    await api.hofHundredSubmit(fd)
-    resetSubmitDraft()
+    let result
+    const completedMode = submitMode.value
+    if (completedMode === SUBMIT_MODE_WARGAMING) {
+      result = await api.hofHundredSubmitWargaming({
+        vehicleId: Number(submitForm.vehicleId),
+        averageDamage: damage,
+        battleCount: battles,
+      })
+    } else {
+      const fd = new FormData()
+      fd.append('vehicleId', String(submitForm.vehicleId))
+      fd.append('averageDamage', String(damage))
+      fd.append('battleCount', String(battles))
+      fd.append('screenshot', submitForm.screenshot)
+      for (const r of submitForm.replays) fd.append('replays', r)
+      result = await api.hofHundredSubmit(fd)
+    }
+    resetSubmitDraft(completedMode)
     showSubmit.value = false
-    h100Msg.value = t('hundred.submitSuccess')
+    if (completedMode === SUBMIT_MODE_WARGAMING) {
+      const key = result?.decision === 'AUTO_APPROVED'
+        ? 'hundred.wgAutoApproved' : 'hundred.wgManualReview'
+      h100Msg.value = t(key, {
+        damage: result?.verifiedAverageDamage ?? '-',
+        battles: result?.verifiedBattleCount ?? '-',
+      })
+    } else {
+      h100Msg.value = t('hundred.submitSuccess')
+    }
     h100MsgErr.value = false
     await loadHundredList()
     await loadPending()
@@ -769,8 +841,8 @@ function fmtDate(s) {
         <div class="h100-pending-body">
           <div class="h100-pending-title">{{ $t('hundred.pendingTitle', { vehicle: currentPending.vehicleName || h100VehicleName }) }}</div>
           <div class="h100-pending-meta">
-            <span>{{ $t('hundred.pendingDamage') }}: <strong>{{ currentPending.claimedAverageDamage.toLocaleString() }}</strong></span>
-            <span>{{ $t('hundred.pendingBattles') }}: <strong>{{ currentPending.claimedBattleCount }}</strong></span>
+            <span>{{ $t('hundred.pendingDamage') }}: <strong>{{ currentPendingDamage != null ? currentPendingDamage.toLocaleString() : '—' }}</strong></span>
+            <span>{{ $t('hundred.pendingBattles') }}: <strong>{{ currentPendingBattles != null ? currentPendingBattles.toLocaleString() : '—' }}</strong></span>
             <span class="h100-pending-time">{{ $t('hundred.pendingTime') }}: {{ fmtDate(currentPending.submittedAt) || '-' }}</span>
           </div>
         </div>
@@ -818,8 +890,39 @@ function fmtDate(s) {
     <div v-if="showSubmit" class="modal-overlay" @click.self="closeSubmit">
       <div class="modal h100-modal">
         <h2>{{ $t('hundred.submitTitle') }}</h2>
-        <p>{{ $t('hundred.submitDesc') }}</p>
+        <p>{{ $t(submitMode === SUBMIT_MODE_WARGAMING ? 'hundred.wgSubmitDesc' : 'hundred.submitDesc') }}</p>
         <p class="h100-draft-hint">{{ $t('hundred.draftHint') }}</p>
+
+        <div class="h100-submit-modes" role="group" :aria-label="$t('hundred.verificationMode')">
+          <button type="button" class="h100-mode h100-mode-manual"
+                  :class="{ active: submitMode === SUBMIT_MODE_MANUAL }"
+                  :aria-pressed="submitMode === SUBMIT_MODE_MANUAL"
+                  :disabled="submitting"
+                  @click="selectSubmitMode(SUBMIT_MODE_MANUAL)">
+            {{ $t('hundred.manualMode') }}
+          </button>
+          <button type="button" class="h100-mode h100-mode-wg"
+                  :class="{ active: submitMode === SUBMIT_MODE_WARGAMING }"
+                  :aria-pressed="submitMode === SUBMIT_MODE_WARGAMING"
+                  :disabled="submitting || !wargamingEligible"
+                  :title="wargamingEligible ? '' : $t('hundred.wgNotEligible')"
+                  @click="selectSubmitMode(SUBMIT_MODE_WARGAMING)">
+            {{ $t('hundred.wgMode') }}
+          </button>
+        </div>
+
+        <div v-if="!wargamingEligible" class="h100-wg-state h100-wg-locked">
+          <strong>{{ $t('hundred.wgLockedTitle') }}</strong>
+          <p>{{ $t('hundred.wgLockedHint') }}</p>
+          <div class="h100-wg-actions">
+            <button type="button" class="ghost" :disabled="submitting" @click="logoutForWargaming">{{ $t('hundred.logoutForWg') }}</button>
+            <button type="button" class="ghost" :disabled="submitting" @click="selectSubmitMode(SUBMIT_MODE_MANUAL)">{{ $t('hundred.continueManual') }}</button>
+          </div>
+        </div>
+        <div v-else-if="submitMode === SUBMIT_MODE_WARGAMING" class="h100-wg-state h100-wg-ready">
+          <strong>{{ $t('hundred.wgReadyTitle') }}</strong>
+          <p>{{ $t('hundred.wgReadyHint', { region: wargamingRegion, nickname: wargamingNickname || '—' }) }}</p>
+        </div>
 
         <div class="h100-field">
           <label class="h100-field-label" for="h100-submit-vehicle">{{ $t('hundred.selectVehicle') }}</label>
@@ -832,42 +935,44 @@ function fmtDate(s) {
         <div class="h100-field">
           <label class="h100-field-label" for="h100-submit-damage">{{ $t('hundred.claimedDamage') }}</label>
           <input id="h100-submit-damage" v-model.number="submitForm.averageDamage" type="number" min="1" step="1" />
-          <small>{{ $t('hundred.claimedDamageHint') }}</small>
+          <small>{{ $t(submitMode === SUBMIT_MODE_WARGAMING ? 'hundred.wgClaimedDamageHint' : 'hundred.claimedDamageHint') }}</small>
         </div>
 
         <div class="h100-field">
           <label class="h100-field-label" for="h100-submit-battles">{{ $t('hundred.claimedBattles') }}</label>
           <input id="h100-submit-battles" v-model.number="submitForm.battleCount" type="number" min="1" step="1" />
-          <small>{{ $t('hundred.claimedBattlesHint') }}</small>
+          <small>{{ $t(submitMode === SUBMIT_MODE_WARGAMING ? 'hundred.wgClaimedBattlesHint' : 'hundred.claimedBattlesHint') }}</small>
         </div>
 
-        <div class="h100-field">
-          <span class="h100-field-label">{{ $t('hundred.screenshotLabel') }}</span>
-          <input ref="screenshotInput" type="file" accept="image/*" @change="onScreenshotChange" />
-          <small>{{ $t('hundred.screenshotHint') }}</small>
-          <p v-if="screenshotReading" class="h100-file-reading">{{ $t('hundred.readingScreenshot') }}</p>
-          <div v-else-if="screenshotName" class="h100-selected-file">
-            <span class="h100-selected-name" :title="screenshotName">{{ screenshotName }}</span>
-            <button type="button" class="h100-remove-file" :aria-label="$t('hundred.removeFile', { name: screenshotName })" @click="removeScreenshot">×</button>
+        <template v-if="submitMode === SUBMIT_MODE_MANUAL">
+          <div class="h100-field">
+            <span class="h100-field-label">{{ $t('hundred.screenshotLabel') }}</span>
+            <input ref="screenshotInput" type="file" accept="image/*" @change="onScreenshotChange" />
+            <small>{{ $t('hundred.screenshotHint') }}</small>
+            <p v-if="screenshotReading" class="h100-file-reading">{{ $t('hundred.readingScreenshot') }}</p>
+            <div v-else-if="screenshotName" class="h100-selected-file">
+              <span class="h100-selected-name" :title="screenshotName">{{ screenshotName }}</span>
+              <button type="button" class="h100-remove-file" :aria-label="$t('hundred.removeFile', { name: screenshotName })" @click="removeScreenshot">×</button>
+            </div>
+            <p v-if="screenshotErr" class="h100-err">{{ screenshotErr }}</p>
           </div>
-          <p v-if="screenshotErr" class="h100-err">{{ screenshotErr }}</p>
-        </div>
 
-        <div class="h100-field">
-          <span class="h100-field-label">{{ $t('hundred.replaysLabel') }}
-            <span class="h100-counter">{{ $t('hundred.replayCounter', { current: submitForm.replays.length }) }}</span>
-          </span>
-          <input ref="replaysInput" type="file" accept=".wotbreplay" multiple @change="onReplaysChange" />
-          <small>{{ $t('hundred.replaysHint') }}</small>
-          <ul v-if="submitForm.replays.length" class="h100-selected-files">
-            <li v-for="(replay, index) in submitForm.replays" :key="replayFileKey(replay)" class="h100-selected-file">
-              <span class="h100-file-index">{{ index + 1 }}</span>
-              <span class="h100-selected-name" :title="replay.name">{{ replay.name }}</span>
-              <button type="button" class="h100-remove-file" :aria-label="$t('hundred.removeFile', { name: replay.name })" @click="removeReplay(index)">×</button>
-            </li>
-          </ul>
-          <p v-if="replayErr" class="h100-err">{{ replayErr }}</p>
-        </div>
+          <div class="h100-field">
+            <span class="h100-field-label">{{ $t('hundred.replaysLabel') }}
+              <span class="h100-counter">{{ $t('hundred.replayCounter', { current: submitForm.replays.length }) }}</span>
+            </span>
+            <input ref="replaysInput" type="file" accept=".wotbreplay" multiple @change="onReplaysChange" />
+            <small>{{ $t('hundred.replaysHint') }}</small>
+            <ul v-if="submitForm.replays.length" class="h100-selected-files">
+              <li v-for="(replay, index) in submitForm.replays" :key="replayFileKey(replay)" class="h100-selected-file">
+                <span class="h100-file-index">{{ index + 1 }}</span>
+                <span class="h100-selected-name" :title="replay.name">{{ replay.name }}</span>
+                <button type="button" class="h100-remove-file" :aria-label="$t('hundred.removeFile', { name: replay.name })" @click="removeReplay(index)">×</button>
+              </li>
+            </ul>
+            <p v-if="replayErr" class="h100-err">{{ replayErr }}</p>
+          </div>
+        </template>
 
         <p v-if="needProfile" class="h100-need-profile">
           {{ submitError }} <a href="/?view=profile">{{ $t('hundred.goProfile') }}</a>
@@ -877,8 +982,9 @@ function fmtDate(s) {
         <div class="modal-actions">
           <button type="button" class="ghost danger h100-clear-draft" :disabled="submitting || !hasSubmitDraft" @click="clearSubmitDraft">{{ $t('hundred.clearDraft') }}</button>
           <button type="button" class="ghost" :disabled="submitting" @click="closeSubmit">{{ $t('app.close') }}</button>
-          <button type="button" class="filebtn h100-modal-submit" :disabled="submitting || screenshotReading" @click="submitHundred">
-            {{ submitting ? $t('hundred.submitting') : $t('hundred.submit') }}
+          <button type="button" class="filebtn h100-modal-submit"
+                  :disabled="submitting || (submitMode === SUBMIT_MODE_MANUAL && screenshotReading)" @click="submitHundred">
+            {{ submitting ? $t('hundred.submitting') : $t(submitMode === SUBMIT_MODE_WARGAMING ? 'hundred.wgSubmit' : 'hundred.submit') }}
           </button>
         </div>
       </div>
@@ -993,6 +1099,25 @@ function fmtDate(s) {
   background: var(--bg-card2); color: var(--text-muted);
   font-size: 12px; line-height: 1.5;
 }
+.h100-submit-modes {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 10px 0;
+}
+.h100-mode {
+  padding: 9px 12px; border: 1px solid var(--border-ghost); border-radius: 8px;
+  background: var(--bg-card2); color: var(--text-label); cursor: pointer; font: inherit; font-weight: 650;
+}
+.h100-mode.active { border-color: var(--accent); background: var(--bg-rating); color: var(--accent-dark); }
+.h100-mode:disabled { opacity: .5; cursor: not-allowed; }
+.h100-wg-state {
+  margin: 10px 0 14px; padding: 10px 12px; border: 1px solid var(--border-ghost); border-radius: 8px;
+  background: var(--bg-card2); color: var(--text-label); font-size: 12px; line-height: 1.55;
+}
+.h100-wg-state strong { color: var(--text-heading); }
+.h100-wg-state p { margin: 4px 0 0; }
+.h100-wg-locked { border-color: color-mix(in srgb, var(--warn-text) 35%, var(--border-ghost)); }
+.h100-wg-ready { border-color: color-mix(in srgb, var(--rating-good-fg) 35%, var(--border-ghost)); }
+.h100-wg-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.h100-wg-actions .ghost { padding: 5px 10px; }
 .h100-field { margin: 12px 0; }
 .h100-field-label { display: block; font-size: 13px; color: var(--text-label); font-weight: 600; margin-bottom: 4px; }
 .h100-field select, .h100-field input[type="number"] {

@@ -14,8 +14,11 @@ import com.wotb.web.hundred.dto.HundredCreateResult;
 import com.wotb.web.hundred.dto.HundredLeaderboardPageDto;
 import com.wotb.web.hundred.dto.HundredSubmissionSummaryDto;
 import com.wotb.web.hundred.dto.HundredUserStatusDto;
+import com.wotb.web.hundred.dto.HundredWargamingSubmissionResult;
 import com.wotb.web.hundred.entity.HundredBattleSubmission;
 import com.wotb.web.hundred.enums.HundredBattleStatus;
+import com.wotb.web.hundred.gateway.WargamingOfficialStats;
+import com.wotb.web.hundred.gateway.WargamingServer;
 import com.wotb.web.hundred.repository.HundredBattleSubmissionRepository;
 import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.user.entity.UserProfile;
@@ -33,6 +36,8 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
@@ -57,9 +62,9 @@ import java.util.Set;
  *   <li>身份/成绩快照创建瞬间冻结；排行榜只读 approved*</li>
  * </ul>
  *
- * <p>proof 生命周期：截图以 base64 data URL 存 DB，5 个原始 {@code .wotbreplay} 由
- * {@link HundredReplayEvidenceService} 内容寻址持久化。APPROVE/REJECT/CANCEL/DELETE 终态事务内
- * 清空截图并删除 evidence 元数据，commit 后 best-effort 清理无引用物理文件，避免长期占用空间。</p>
+ * <p>proof 生命周期：MANUAL 来源的截图与 5 个原始 {@code .wotbreplay} 只在 PENDING 保留，
+ * 终态事务内清空并在 commit 后 best-effort 清理无引用物理文件；WARGAMING_API 来源从不创建
+ * 文件证据，审批读取创建时冻结的官方 totals 快照。</p>
  */
 @Service
 public class HundredBattleSubmissionService {
@@ -69,8 +74,13 @@ public class HundredBattleSubmissionService {
     private static final int MAX_PAGE_SIZE = 100;
     private static final int TOP_LEADERBOARD_SIZE = 10;
     private static final int REPLAY_COUNT = 5;
+    private static final long MIN_WARGAMING_ACCOUNT_BATTLES = 5_000L;
+    private static final long MIN_WARGAMING_TANK_BATTLES = 100L;
+    private static final long WARGAMING_MANUAL_REVIEW_DAMAGE = 3_900L;
+    private static final String VERIFICATION_MANUAL = "MANUAL";
+    private static final String VERIFICATION_WARGAMING = "WARGAMING_API";
 
-    /** 「百场」资格最低场次：管理员最终 approvedBattleCount 必须 ≥ 100（人工审核为最终资格判断）。 */
+    /** 「百场」资格最低场次：管理员最终 approvedBattleCount 必须 ≥ 100。 */
     private static final int MIN_APPROVED_BATTLE_COUNT = 100;
 
     /** 拒绝原因分类（docs/current-plan.md §32）。 */
@@ -143,10 +153,7 @@ public class HundredBattleSubmissionService {
             throw new IllegalArgumentException("HUNDRED_INVALID_CLAIM");
         }
 
-        final TankInfo vehicle = tankopedia.info(vehicleId);
-        if (!(vehicle.tier() instanceof final Integer tier) || tier != 10) {
-            throw new IllegalArgumentException("HUNDRED_NON_TIER_X");
-        }
+        final TankInfo vehicle = requireTierTenVehicle(vehicleId);
         validateScreenshot(proofScreenshot);
         if (replays == null || replays.size() != REPLAY_COUNT) {
             throw new IllegalArgumentException("HUNDRED_REPLAY_COUNT");
@@ -155,9 +162,7 @@ public class HundredBattleSubmissionService {
 
         // PENDING 唯一性 cheap check：明知已有同车 PENDING 时不再解析 5 个 replay；
         // 并发竞态仍由 DB partial unique index 兜底（见 createLocked 内 saveAndFlush 的 catch）。
-        if (repository.existsByUserKeycloakIdAndVehicleIdAndStatus(userId, vehicleId, "PENDING")) {
-            throw new IllegalStateException("HUNDRED_PENDING_EXISTS");
-        }
+        requireNoPending(userId, vehicleId);
 
         // 硬门禁：5 个 replay 全部解析成功 + gameId/vehicleId 匹配 + 5 场不同 battle。
         // 解析循环同时收集证据持久化所需数据（每文件只读一次字节；originalFilename 仅用于展示）。
@@ -239,6 +244,7 @@ public class HundredBattleSubmissionService {
                 submission.setClaimedAverageDamage(claimedAverageDamage);
                 submission.setClaimedBattleCount(claimedBattleCount);
                 submission.setStatus(HundredBattleStatus.PENDING.name());
+                submission.setVerificationSource(VERIFICATION_MANUAL);
                 submission.setProofScreenshot(proofScreenshot.trim());
                 repository.saveAndFlush(submission);
                 // submission 与 5 行 evidence 同事务原子写入；attach 失败 → 事务回滚 submission。
@@ -256,6 +262,79 @@ public class HundredBattleSubmissionService {
             throw e;
         }
         return new HundredCreateResult(submissionId, HundredBattleStatus.PENDING.name());
+    }
+
+    /** WG 外部调用前的只读 cheap check；写事务会再次校验，避免 TOCTOU 放宽。 */
+    @Transactional(readOnly = true)
+    public void validateWargamingPreflight(final String userId, final long vehicleId) {
+        requireTierTenVehicle(vehicleId);
+        requireNoPending(userId, vehicleId);
+    }
+
+    /**
+     * 外部 WG 查询完成后的唯一写入口。claimed 只冻结审计；资格、分流、approved 均使用官方 totals。
+     * 精确伤害严格大于 3900 时写 PENDING，否则原子提升为 CURRENT。
+     */
+    @Transactional
+    public HundredWargamingSubmissionResult createWargamingSubmission(
+            final String userId,
+            final int claimedAverageDamage,
+            final int claimedBattleCount,
+            final WargamingOfficialStats stats,
+            final OffsetDateTime verifiedAt) {
+        if (claimedAverageDamage <= 0 || claimedBattleCount <= 0) {
+            throw new IllegalArgumentException("HUNDRED_INVALID_CLAIM");
+        }
+        requireWargamingSnapshot(stats, verifiedAt);
+        final TankInfo vehicle = requireTierTenVehicle(stats.vehicleId());
+        requireNoPending(userId, stats.vehicleId());
+
+        final int officialAverageDamage = roundedOfficialAverage(
+                stats.tankDamageDealt(), stats.tankBattleCount());
+        final boolean manualReview = stats.tankDamageDealt()
+                > Math.multiplyExact(WARGAMING_MANUAL_REVIEW_DAMAGE, stats.tankBattleCount());
+
+        final HundredBattleSubmission submission = new HundredBattleSubmission();
+        submission.setUserKeycloakId(userId);
+        submission.setVehicleId(stats.vehicleId());
+        submission.setVehicleName(vehicle.name());
+        submission.setGameAccountIdSnapshot(stats.accountId());
+        submission.setNicknameSnapshot(stats.nickname());
+        submission.setClaimedAverageDamage(claimedAverageDamage);
+        submission.setClaimedBattleCount(claimedBattleCount);
+        submission.setVerificationSource(VERIFICATION_WARGAMING);
+        submission.setVerifiedAt(verifiedAt);
+        submission.setVerifiedServer(stats.server());
+        submission.setOfficialAccountBattleCount(stats.accountBattleCount());
+        submission.setOfficialTankBattleCount(stats.tankBattleCount());
+        submission.setOfficialTankDamageDealt(stats.tankDamageDealt());
+        submission.setOfficialAverageDamage(officialAverageDamage);
+        // WG 链路没有 replay 文件；四个 replay 校验位不冒充为 true。
+        submission.setReplayParseOk(false);
+        submission.setReplayGameIdMatch(false);
+        submission.setReplayVehicleMatch(false);
+        submission.setReplayDistinctBattles(false);
+
+        final HundredBattleSubmission saved;
+        try {
+            if (manualReview) {
+                requireHigherThanCurrentForUpdate(submission, officialAverageDamage, "HUNDRED_NOT_HIGHER");
+                submission.setStatus(HundredBattleStatus.PENDING.name());
+                saved = repository.saveAndFlush(submission);
+            } else {
+                saved = promoteToCurrent(submission, officialAverageDamage,
+                        Math.toIntExact(stats.tankBattleCount()), null, verifiedAt,
+                        "HUNDRED_NOT_HIGHER", false);
+            }
+        } catch (final DataIntegrityViolationException e) {
+            // partial unique index 处理同车双提交竞态；不回显约束/SQL 细节。
+            throw new IllegalStateException(manualReview
+                    ? "HUNDRED_PENDING_EXISTS" : "HUNDRED_NOT_HIGHER");
+        }
+        return new HundredWargamingSubmissionResult(
+                saved.getId(), saved.getStatus(),
+                manualReview ? "MANUAL_REVIEW" : "AUTO_APPROVED",
+                officialAverageDamage, stats.tankBattleCount());
     }
 
     /** 用户取消自己的 PENDING（不影响 CURRENT；终态清理截图与回放证据）。 */
@@ -411,7 +490,7 @@ public class HundredBattleSubmissionService {
                 page, effectiveSize, rows.getTotalElements(), rows.getTotalPages());
     }
 
-    /** 管理后台详情（proofScreenshot 仅 PENDING 返回，终态已清理）。 */
+    /** 管理后台详情（proofScreenshot 仅 MANUAL PENDING 可能返回；WG 来源返回官方快照）。 */
     @Transactional(readOnly = true)
     public HundredAdminDetailDto adminDetail(final long submissionId) {
         final HundredBattleSubmission submission = repository.findById(submissionId)
@@ -440,32 +519,11 @@ public class HundredBattleSubmissionService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "HUNDRED_SUBMISSION_NOT_FOUND"));
         requirePending(submission);
 
-        // APPROVE 前置：完整审核证据校验（backend authoritative，非前端 UX）。
-        // 必须在任何业务状态改变之前——旧 CURRENT → SUPERSEDED 之前；失败时 submission 保持
-        // PENDING、CURRENT 不变、evidence 与 screenshot 不清理。legacy PENDING（0 evidence）必然被拒。
-        evidenceService.requireCompleteEvidenceForApproval(submission.getId(), submission.getProofScreenshot());
-
-        // 重新读取 CURRENT（行锁），最终判断：approvedAverageDamage > current.approvedAverageDamage。
-        final HundredBattleSubmission current = repository.findCurrentForUpdate(
-                submission.getUserKeycloakId(), submission.getVehicleId()).orElse(null);
-        if (current != null && current.getApprovedAverageDamage() != null
-                && approvedAverageDamage <= current.getApprovedAverageDamage()) {
-            throw new IllegalStateException("HUNDRED_APPROVE_STALE");
-        }
-        if (current != null) {
-            current.setStatus(HundredBattleStatus.SUPERSEDED.name());
-            // 显式 flush：让旧行先退出 CURRENT partial unique index（不能依赖 Hibernate
-            // flush 顺序等于调用顺序）；整个 approve 仍是一个 @Transactional，后半段失败
-            // 时本 UPDATE 随事务一并 rollback。
-            repository.saveAndFlush(current);
-        }
-        submission.setApprovedAverageDamage(approvedAverageDamage);
-        submission.setApprovedBattleCount(approvedBattleCount);
-        submission.setStatus(HundredBattleStatus.CURRENT.name());
-        submission.setApprovedAt(OffsetDateTime.now());
-        submission.setApprovedBy(adminUserId);
-        submission.setProofScreenshot(null);
-        final HundredSubmissionSummaryDto result = mapper.toSummary(repository.saveAndFlush(submission));
+        requireApprovalEvidence(submission);
+        final HundredBattleSubmission saved = promoteToCurrent(
+                submission, approvedAverageDamage, approvedBattleCount, adminUserId,
+                OffsetDateTime.now(), "HUNDRED_APPROVE_STALE", true);
+        final HundredSubmissionSummaryDto result = mapper.toSummary(saved);
         evidenceService.discardForSubmission(submission.getId());
         return result;
     }
@@ -525,6 +583,119 @@ public class HundredBattleSubmissionService {
     private static void requirePending(final HundredBattleSubmission submission) {
         if (!"PENDING".equals(submission.getStatus())) {
             throw new IllegalStateException("HUNDRED_SUBMISSION_NOT_PENDING");
+        }
+    }
+
+    private TankInfo requireTierTenVehicle(final long vehicleId) {
+        final TankInfo vehicle = tankopedia.info(vehicleId);
+        if (!isTierTen(vehicle)) {
+            throw new IllegalArgumentException("HUNDRED_NON_TIER_X");
+        }
+        return vehicle;
+    }
+
+    private void requireNoPending(final String userId, final long vehicleId) {
+        if (repository.existsByUserKeycloakIdAndVehicleIdAndStatus(userId, vehicleId, "PENDING")) {
+            throw new IllegalStateException("HUNDRED_PENDING_EXISTS");
+        }
+    }
+
+    /** 两来源审批门禁：人工必须有截图+5文件；WG 必须有完整且内部一致的官方快照。 */
+    private void requireApprovalEvidence(final HundredBattleSubmission submission) {
+        if (VERIFICATION_MANUAL.equals(submission.getVerificationSource())) {
+            evidenceService.requireCompleteEvidenceForApproval(
+                    submission.getId(), submission.getProofScreenshot());
+            return;
+        }
+        if (VERIFICATION_WARGAMING.equals(submission.getVerificationSource())) {
+            requireWargamingSnapshot(submission);
+            return;
+        }
+        throw new IllegalStateException("HUNDRED_WARGAMING_SNAPSHOT_INVALID");
+    }
+
+    /** 统一 CURRENT 状态机：严格递增、锁当前行、先 flush SUPERSEDED、再写新 CURRENT。 */
+    private HundredBattleSubmission promoteToCurrent(
+            final HundredBattleSubmission submission,
+            final int approvedAverageDamage,
+            final int approvedBattleCount,
+            final String approvedBy,
+            final OffsetDateTime approvedAt,
+            final String staleError,
+            final boolean clearProof) {
+        final HundredBattleSubmission current = requireHigherThanCurrentForUpdate(
+                submission, approvedAverageDamage, staleError);
+        if (current != null) {
+            current.setStatus(HundredBattleStatus.SUPERSEDED.name());
+            repository.saveAndFlush(current);
+        }
+        submission.setApprovedAverageDamage(approvedAverageDamage);
+        submission.setApprovedBattleCount(approvedBattleCount);
+        submission.setStatus(HundredBattleStatus.CURRENT.name());
+        submission.setApprovedAt(approvedAt);
+        submission.setApprovedBy(approvedBy);
+        if (clearProof) {
+            submission.setProofScreenshot(null);
+        }
+        return repository.saveAndFlush(submission);
+    }
+
+    private HundredBattleSubmission requireHigherThanCurrentForUpdate(
+            final HundredBattleSubmission submission,
+            final int averageDamage,
+            final String staleError) {
+        final HundredBattleSubmission current = repository.findCurrentForUpdate(
+                submission.getUserKeycloakId(), submission.getVehicleId()).orElse(null);
+        if (current != null && current.getApprovedAverageDamage() != null
+                && averageDamage <= current.getApprovedAverageDamage()) {
+            throw new IllegalStateException(staleError);
+        }
+        return current;
+    }
+
+    private static void requireWargamingSnapshot(final WargamingOfficialStats stats,
+                                                 final OffsetDateTime verifiedAt) {
+        if (stats == null || verifiedAt == null
+                || WargamingServer.fromCode(stats.server()) == null
+                || stats.accountId() <= 0 || !StringUtils.hasText(stats.nickname())
+                || stats.accountBattleCount() < MIN_WARGAMING_ACCOUNT_BATTLES
+                || stats.tankBattleCount() < MIN_WARGAMING_TANK_BATTLES
+                || stats.tankBattleCount() > Integer.MAX_VALUE
+                || stats.tankBattleCount() > stats.accountBattleCount()
+                || stats.tankDamageDealt() < 0) {
+            throw new IllegalArgumentException("HUNDRED_WARGAMING_INVALID_RESPONSE");
+        }
+    }
+
+    private static void requireWargamingSnapshot(final HundredBattleSubmission submission) {
+        final Long accountBattles = submission.getOfficialAccountBattleCount();
+        final Long tankBattles = submission.getOfficialTankBattleCount();
+        final Long damage = submission.getOfficialTankDamageDealt();
+        final Integer average = submission.getOfficialAverageDamage();
+        if (submission.getVerifiedAt() == null
+                || WargamingServer.fromCode(submission.getVerifiedServer()) == null
+                || submission.getGameAccountIdSnapshot() <= 0
+                || !StringUtils.hasText(submission.getNicknameSnapshot())
+                || accountBattles == null || accountBattles < MIN_WARGAMING_ACCOUNT_BATTLES
+                || tankBattles == null || tankBattles < MIN_WARGAMING_TANK_BATTLES
+                || tankBattles > Integer.MAX_VALUE
+                || tankBattles > accountBattles
+                || damage == null || damage < 0
+                || average == null || average != roundedOfficialAverage(damage, tankBattles)) {
+            throw new IllegalStateException("HUNDRED_WARGAMING_SNAPSHOT_INVALID");
+        }
+    }
+
+    private static int roundedOfficialAverage(final long damage, final long battles) {
+        if (damage < 0 || battles <= 0) {
+            throw new IllegalArgumentException("HUNDRED_WARGAMING_INVALID_RESPONSE");
+        }
+        try {
+            return BigDecimal.valueOf(damage)
+                    .divide(BigDecimal.valueOf(battles), 0, RoundingMode.HALF_UP)
+                    .intValueExact();
+        } catch (final ArithmeticException e) {
+            throw new IllegalArgumentException("HUNDRED_WARGAMING_INVALID_RESPONSE");
         }
     }
 
