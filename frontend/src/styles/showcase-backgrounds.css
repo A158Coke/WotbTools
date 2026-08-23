@@ -1,0 +1,180 @@
+/* WotBTools Showcase — visual atmosphere layer
+ * Uses repository game/map/tank assets only. Decorative backgrounds never represent data truth.
+ */
+
+/* Shared subtle battlefield backplates */
+.layout-content,
+.layout-wide,
+.layout-data-workspace,
+.admin-page,
+.profile-page,
+.boost-page,
+.version-page,
+.contact-page,
+.hof-page,
+.hof-wrap,
+.hall-page {
+  position: relative;
+  isolation: isolate;
+}
+
+.layout-content::after,
+.layout-wide::after,
+.layout-data-workspace::after,
+.admin-page::after,
+.profile-page::after,
+.boost-page::after,
+.version-page::after,
+.contact-page::after,
+.hof-page::after,
+.hof-wrap::after,
+.hall-page::after {
+  content: '';
+  position: absolute;
+  z-index: -2;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg) 35%, transparent), var(--bg) 320px),
+    url('../assets/maps/himmelsdorf.png') center top / 100% auto no-repeat;
+  opacity: .11;
+  mask-image: linear-gradient(to bottom, #000 0, #000 210px, transparent 620px);
+}
+
+/* Replay: actual game map texture behind the high-priority upload task. */
+.layout-data-workspace .uploadwrap {
+  background:
+    linear-gradient(96deg, color-mix(in srgb, var(--bg-card) 98%, transparent) 0%, color-mix(in srgb, var(--bg-card) 91%, transparent) 48%, color-mix(in srgb, var(--bg-card) 80%, transparent) 100%),
+    url('../assets/maps/desert-sands.png') 82% 48% / 720px auto no-repeat !important;
+}
+.layout-data-workspace .uploadcard {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent), color-mix(in srgb, var(--bg-upload) 92%, transparent) 46%),
+    url('../assets/maps/castilla.png') center / cover no-repeat !important;
+  background-blend-mode: normal, soft-light;
+}
+
+/* Hall of Fame / rankings: warmer, competition-oriented backplate. */
+.hof-page::after,
+.hof-wrap::after,
+.hall-page::after {
+  background:
+    linear-gradient(180deg, rgba(8,11,13,.18), var(--bg) 380px),
+    url('../assets/maps/black-goldville.png') center top / 100% auto no-repeat;
+  opacity: .15;
+}
+
+/* Profile: identity header gets a real tank silhouette instead of an avatar. */
+.profile-page .profile-hero {
+  background:
+    linear-gradient(95deg, color-mix(in srgb, var(--accent) 10%, var(--bg-card)) 0%, color-mix(in srgb, var(--bg-card) 96%, transparent) 52%, color-mix(in srgb, var(--bg-card) 72%, transparent) 100%),
+    url('../assets/tank-portraits/tier-x/14609.webp') 92% 66% / 460px auto no-repeat !important;
+}
+
+/* Boost/coaching: tactical route/map mood without claiming real session data. */
+.boost-page::after {
+  background:
+    linear-gradient(180deg, rgba(8,11,13,.20), var(--bg) 360px),
+    url('../assets/maps/canal.png') center top / 100% auto no-repeat;
+  opacity: .13;
+}
+
+/* Admin: restrained operations-console battlefield context. */
+.admin-page::after,
+.hof-admin-page::after,
+.hofadmin-page::after,
+.admin-hof-page::after {
+  content: '';
+  position: absolute;
+  z-index: -2;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(8,11,13,.08), var(--bg) 300px),
+    url('../assets/maps/ghost-factory.png') center top / 100% auto no-repeat;
+  opacity: .09;
+  mask-image: linear-gradient(to bottom, #000 0, #000 170px, transparent 520px);
+}
+
+/* Contact / changelog: lower-contrast visual layer so utility pages still belong to the same product. */
+.version-page::after {
+  background:
+    linear-gradient(180deg, rgba(8,11,13,.14), var(--bg) 330px),
+    url('../assets/maps/dead-rail.png') center top / 100% auto no-repeat;
+  opacity: .10;
+}
+.contact-page::after {
+  background:
+    linear-gradient(180deg, rgba(8,11,13,.14), var(--bg) 330px),
+    url('../assets/maps/hellas.png') center top / 100% auto no-repeat;
+  opacity: .10;
+}
+
+/* Reconstruction already renders the authoritative map. Keep atmosphere outside the map panel only. */
+.recon-page {
+  position: relative;
+  isolation: isolate;
+}
+.recon-page::before {
+  content: '';
+  position: absolute;
+  z-index: -2;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(8,11,13,.24), #080c0e 420px),
+    url('../assets/maps/faust.png') center top / 100% auto no-repeat;
+  opacity: .09;
+  pointer-events: none;
+  mask-image: linear-gradient(to bottom, #000 0, #000 190px, transparent 560px);
+}
+
+@media (max-width: 1199px) {
+  .layout-content::after,
+  .layout-wide::after,
+  .layout-data-workspace::after,
+  .admin-page::after,
+  .profile-page::after,
+  .boost-page::after,
+  .version-page::after,
+  .contact-page::after,
+  .hof-page::after,
+  .hof-wrap::after,
+  .hall-page::after { background-size: auto 430px; }
+
+  .layout-data-workspace .uploadwrap {
+    background:
+      linear-gradient(96deg, color-mix(in srgb, var(--bg-card) 98%, transparent), color-mix(in srgb, var(--bg-card) 88%, transparent)),
+      url('../assets/maps/desert-sands.png') 96% 50% / 520px auto no-repeat !important;
+  }
+  .profile-page .profile-hero {
+    background:
+      linear-gradient(95deg, color-mix(in srgb, var(--accent) 10%, var(--bg-card)), color-mix(in srgb, var(--bg-card) 89%, transparent)),
+      url('../assets/tank-portraits/tier-x/14609.webp') 98% 70% / 350px auto no-repeat !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .layout-content::after,
+  .layout-wide::after,
+  .layout-data-workspace::after,
+  .admin-page::after,
+  .profile-page::after,
+  .boost-page::after,
+  .version-page::after,
+  .contact-page::after,
+  .hof-page::after,
+  .hof-wrap::after,
+  .hall-page::after,
+  .recon-page::before { opacity: .07; background-size: auto 340px; }
+
+  .layout-data-workspace .uploadwrap {
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 96%, transparent), color-mix(in srgb, var(--bg-card) 90%, transparent)),
+      url('../assets/maps/desert-sands.png') center / cover no-repeat !important;
+  }
+  .profile-page .profile-hero {
+    background:
+      linear-gradient(90deg, color-mix(in srgb, var(--bg-card) 95%, transparent), color-mix(in srgb, var(--bg-card) 82%, transparent)),
+      url('../assets/tank-portraits/tier-x/14609.webp') 115% 74% / 280px auto no-repeat !important;
+  }
+}
