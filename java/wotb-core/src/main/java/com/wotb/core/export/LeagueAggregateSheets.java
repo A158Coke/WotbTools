@@ -26,11 +26,15 @@ final class LeagueAggregateSheets {
     /** 批次战队 identity override：teamKey → 显示名（PR #123 Blocker 2：aggregate rename 不得反向改单场）。 */
     private final Map<String, String> summaryOverrides;
 
+    /** 单场战队 override：{arenaId}:{team} → 显示名（PR #123 Blocker 1：每场明细必须消费，不得丢弃）。 */
+    private final Map<String, String> battleOverrides;
+
     LeagueAggregateSheets() {
-        this(Map.of());
+        this(Map.of(), Map.of());
     }
 
-    LeagueAggregateSheets(final Map<String, String> summaryOverrides) {
+    LeagueAggregateSheets(final Map<String, String> battleOverrides, final Map<String, String> summaryOverrides) {
+        this.battleOverrides = battleOverrides == null ? Map.of() : battleOverrides;
         this.summaryOverrides = summaryOverrides == null ? Map.of() : summaryOverrides;
     }
 
@@ -143,7 +147,8 @@ final class LeagueAggregateSheets {
                 int c = 0;
                 styles.setCell(row.createCell(c++), sourceName, styles.plain(), "nickname");
                 styles.setCell(row.createCell(c++), battle.arenaId, styles.plain(), "clan");
-                styles.setCell(row.createCell(c++), "Team " + p.team(), styles.plain(), "battles");
+                styles.setCell(row.createCell(c++), battleTeamName(battle, result, p.team()),
+                        styles.plain(), "team_name");
                 styles.setCell(row.createCell(c++), p.nickname(), styles.plain(), "nickname");
                 styles.setCell(row.createCell(c++), tp.info(tankId(battle, p)).name(), styles.plain(), "tank_name");
                 styles.setCell(row.createCell(c++), p.damageDealt(), styles.plain(), "damage_dealt");
@@ -168,6 +173,23 @@ final class LeagueAggregateSheets {
             }
         }
         return 0;
+    }
+
+    /**
+     * 每场明细的队伍名（PR #123 Blocker 1）：battleOverride[arenaId:team] → 该场 TeamLeagueRating.autoName
+     * → 现有 fallback（Team 1/Team 2）。只读 battleOverrides，绝不消费 summaryOverrides（批次 identity 不反向
+     * 写回单场明细）；autoName 复用评分 core 的 LeagueTeamNamer 单一事实源，不重新扫描 clan。
+     */
+    private String battleTeamName(final Battle battle, final LeagueRatingResult result, final int team) {
+        final String override = battleOverrides.get(battle.arenaId + ":" + team);
+        if (override != null && !override.isBlank()) {
+            return override;
+        }
+        final TeamLeagueRating teamRating = result == null ? null : result.team(team);
+        if (teamRating != null && teamRating.autoName() != null && !teamRating.autoName().isBlank()) {
+            return teamRating.autoName();
+        }
+        return "Team " + team;
     }
 
     private void battleList(final ExcelStyles styles, final List<Battle> battles,

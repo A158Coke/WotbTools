@@ -148,4 +148,96 @@ class LeagueExcelExportTest {
         }
     }
 
+
+    /** 两场 7v7 数据集（team1 clan=AAA → teamKey clan:AAA，team2 clan=BBB）。 */
+    private static LeagueRatingBatch twoBattleBatch(final LeagueRatingResult r1, final LeagueRatingResult r2,
+                                                    final Battle b1, final Battle b2) {
+        return LeagueRatingBatchAggregator.aggregate(List.of(b1, b2), List.of(r1, r2), List.of());
+    }
+
+    /** 收集 sheet 全部单元格字符串（含数值）。 */
+    private static String sheetTextAll(final Sheet sheet) {
+        final StringBuilder sb = new StringBuilder();
+        for (int rr = 0; rr <= sheet.getLastRowNum(); rr++) {
+            final var row = sheet.getRow(rr);
+            if (row == null) continue;
+            for (int c = 0; c < row.getLastCellNum(); c++) {
+                sb.append(row.getCell(c));
+            }
+        }
+        return sb.toString();
+    }
+
+
+    @Test
+    void aggregateDetailSheetAppliesBattleTeamOverrides() throws Exception {
+        // PR #123 Blocker 1（Test 1）：battle override 必须进入「每场明细」，不得仍是 Team 1/Team 2
+        final Battle b1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        b1.arenaId = "arena-1";
+        final Battle b2 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        b2.arenaId = "arena-2";
+        final LeagueRatingResult r1 = LeagueRatingCalculator.calculate(b1);
+        final LeagueRatingResult r2 = LeagueRatingCalculator.calculate(b2);
+        final LeagueRatingBatch batch = twoBattleBatch(r1, r2, b1, b2);
+
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ExcelExporter.writeAggregateLeague(List.of(b1, b2), List.of("one.wotbreplay", "two.wotbreplay"),
+                List.of(), batch, Tankopedia.load(),
+                Map.of("arena-1:1", "CHRD A", "arena-1:2", "KSR"),
+                Map.of(), out);
+
+        try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()))) {
+            final Sheet detail = wb.getSheet("每场明细");
+            assertNotNull(detail);
+            final String text = sheetTextAll(detail);
+            assertTrue(text.contains("CHRD A"), "每场明细必须用 battle override，实际：" + text);
+            assertTrue(text.contains("KSR"), "每场明细必须用 battle override，实际：" + text);
+        }
+    }
+
+    @Test
+    void aggregateDetailBattleOverrideDoesNotChangeTeamSummaryIdentity() throws Exception {
+        // PR #123 Blocker 1（Test 2）：battle override 只改单场明细；战队汇总仍走 autoName（AAA）
+        final Battle b1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        b1.arenaId = "arena-1";
+        final LeagueRatingResult r1 = LeagueRatingCalculator.calculate(b1);
+        final LeagueRatingBatch batch = twoBattleBatch(r1, r1, b1, b1);
+
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ExcelExporter.writeAggregateLeague(List.of(b1, b1), List.of("one.wotbreplay", "two.wotbreplay"),
+                List.of(), batch, Tankopedia.load(),
+                Map.of("arena-1:1", "临时阵容名"),
+                Map.of(), out);
+
+        try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()))) {
+            final String detailText = sheetTextAll(wb.getSheet("每场明细"));
+            assertTrue(detailText.contains("临时阵容名"), "每场明细应显示 battle override");
+            final String teamText = sheetTextAll(wb.getSheet("战队汇总"));
+            assertTrue(teamText.contains("AAA"), "战队汇总必须保持 autoName，不得被 battle override 污染，实际：" + teamText);
+            assertTrue(!teamText.contains("临时阵容名"), "战队汇总不得显示单场 override");
+        }
+    }
+
+    @Test
+    void aggregateSummaryOverrideDoesNotLeakIntoDetailSheet() throws Exception {
+        // PR #123 Blocker 1（Test 3）：summary override 只改战队汇总；每场明细仍用 autoName（AAA）
+        final Battle b1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        b1.arenaId = "arena-1";
+        final LeagueRatingResult r1 = LeagueRatingCalculator.calculate(b1);
+        final LeagueRatingBatch batch = twoBattleBatch(r1, r1, b1, b1);
+
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ExcelExporter.writeAggregateLeague(List.of(b1, b1), List.of("one.wotbreplay", "two.wotbreplay"),
+                List.of(), batch, Tankopedia.load(),
+                Map.of(), Map.of("clan:AAA", "AAA 一队"), out);
+
+        try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()))) {
+            final String teamText = sheetTextAll(wb.getSheet("战队汇总"));
+            assertTrue(teamText.contains("AAA 一队"), "战队汇总应显示 summary override");
+            final String detailText = sheetTextAll(wb.getSheet("每场明细"));
+            assertTrue(detailText.contains("AAA"), "每场明细应使用该场 autoName");
+            assertTrue(!detailText.contains("AAA 一队"), "summary override 不得反向写入每场明细");
+        }
+    }
+
 }

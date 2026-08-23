@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, nextTick, inject } from 'vue'
+import { ref, computed, watch, nextTick, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { mapLabel, displayName } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
@@ -23,7 +23,7 @@ import ReplayTaskCard from './ReplayTaskCard.vue'
 
 const { locale, t, te } = useI18n()
 const replay = useReplay()
-const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateFiles,
+const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateFiles, selectionRevision,
   processingJob, processingError, processingActive,
   exportJob, exportError, exportActive,
   startProcessingJob, cancelProcessingJob, dismissProcessingJob,
@@ -71,6 +71,17 @@ function teamNamesPayload() {
   if (!Object.keys(battle).length && !Object.keys(summary).length) return null
   return { battle, summary }
 }
+
+/**
+ * Team override 属于当前 replay selection（PR #123 Blocker 2）：任何 selection 变化
+ * （add/remove/replace/clear/remove battle/folder，全部经 updateFiles → selectionRevision++）
+ * 都使两组 override 同时失效；同一 selection 单纯重新 Processing 不清空（不依赖
+ * startProcessingJob / Processing lifecycle）。
+ */
+watch(selectionRevision, () => {
+  battleTeamNames.value = {}
+  summaryTeamNames.value = {}
+})
 
 /** PNG 导出用：League 模式全列表格（不受当前可见列限制）。 */
 function leagueExportTable(battle) {

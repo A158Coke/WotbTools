@@ -71,7 +71,8 @@ public final class ExcelExporter {
                                             final Map<String, String> summaryOverrides,
                                             final OutputStream out) throws IOException {
         final ExcelStyles styles = new ExcelStyles();
-        new LeagueAggregateSheets(summaryOverrides).write(styles, battles, sourceNames, duplicates, batch, tp);
+        new LeagueAggregateSheets(battleOverrides, summaryOverrides)
+                .write(styles, battles, sourceNames, duplicates, batch, tp);
         styles.writeTo(out);
     }
 }
