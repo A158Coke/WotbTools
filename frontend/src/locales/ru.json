@@ -542,7 +542,26 @@
         "preview_failed": "Ошибка предпросмотра",
         "export_failed": "Ошибка экспорта",
         "png_export_failed": "Ошибка экспорта PNG",
-        "png_exporting": "Экспорт PNG…"
+        "png_exporting": "Экспорт PNG…",
+        "export_job": {
+            "title": "Экспорт данных боя",
+            "queued": "Подготовка экспорта…",
+            "preparing": "Задача создана · файлов: {total}",
+            "progress": "Обработано {processed}/{total}",
+            "phase_processing": "Анализ реплеев…",
+            "phase_excel": "Формирование Excel…",
+            "phase_archive": "Формирование ZIP по реплеям…",
+            "duplicates_failures": "дублей {d} · ошибок {f}",
+            "valid_summary": "годных {v} · дублей {d} · ошибок {f}",
+            "ready": "Excel готов",
+            "download": "Скачать файл",
+            "cancel": "Отмена",
+            "dismiss": "Закрыть",
+            "failed": "Ошибка экспорта",
+            "failed_no_valid": "Нет годных реплеев для экспорта.",
+            "failed_generic": "Ошибка экспорта, повторите попытку.",
+            "cancelled": "Отменено"
+        }
     },
     "boost": {
         "submitTab": "Заявка",

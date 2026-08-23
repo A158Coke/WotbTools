@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.14",
+    "date": "2026-08-23",
+    "tag": "chg",
+    "zh": "导出大批量回放不再像页面卡死：点击导出后右下角出现任务卡片，实时显示已处理场数/总场数进度、当前阶段（解析回放 / 生成 Excel / 打包 ZIP）和重复/失败数量，可随时取消，完成后一键下载；导出期间页面照常使用。单场 Excel 打开后默认显示「玩家数据」表。",
+    "en": "Exporting many replays no longer looks frozen: after clicking export a task card appears in the bottom-right corner with a live progress bar (processed/total), the current phase (parsing replays / building Excel / building ZIP), duplicate and failure counts, and a cancel button; when ready you download right from the card and the page stays usable during the whole export. Single-battle Excel files now open on the Players sheet.",
+    "ru": "Экспорт многих реплеев больше не выглядит как зависание: после нажатия экспорта в правом нижнем углу появляется карточка задачи с живым прогрессом (обработано/всего), текущей фазой (анализ реплеев / формирование Excel / формирование ZIP), счётчиком дублей и ошибок и кнопкой отмены; по готовности файл скачивается из карточки, а страница остаётся рабочей во время всего экспорта. Одиночный Excel теперь открывается на листе «Игроки»."
+  },
+  {
     "v": "2.12.13",
     "date": "2026-08-23",
     "tag": "add",
