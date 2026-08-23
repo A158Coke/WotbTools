@@ -58,6 +58,8 @@ public final class PerformanceMetricsCalculator {
         public double multiDamageRate;
         public double survivalRate;
         public int tradedDeaths;
+        /** 是否存在 HP 已知场次（false = 所有场次 HP UNKNOWN，contribution/kast/多伤率 unavailable）。 */
+        public boolean hpEligible;
         double kastSum;
         int kastBattles;
         double roundContribution;
@@ -93,6 +95,7 @@ public final class PerformanceMetricsCalculator {
             multiDamageRate = multiDamageEligible == 0
                     ? 0 : 100.0 * multiDamageBattles / multiDamageEligible;
             survivalRate = 100.0 * survivalBattles / battles;
+            hpEligible = kastBattles > 0;
         }
     }
 
@@ -120,6 +123,55 @@ public final class PerformanceMetricsCalculator {
         }
         out.sort((a, b) -> Double.compare(b.contribution, a.contribution));
         return out;
+    }
+
+    /** 单场逐玩家表现指标（contribution/kast 在 HP unknown 时为 null；impact 恒有值）。 */
+    public record PlayerMetrics(Double contribution, Double kast, double impact) {
+    }
+
+    /**
+     * 单场逐玩家指标（纯派生，无副作用）：与 {@link #compute} 共用同一批私有公式
+     * （roundContribution / singleBattleKast / singleBattleImpact / BattleContext），
+     * 保证单场表与跨场聚合是同一事实源、同一算法。
+     *
+     * <p>HP fail-closed：场均 HP UNKNOWN 时 contribution/kast 为 null（UI 显示 "--"，
+     * 不冒充 0）；impact 不依赖 HP 恒有值。</p>
+     */
+    public static Map<Long, PlayerMetrics> battleMetrics(final Battle battle) {
+        final BattleContext ctx = BattleContext.of(battle);
+        final Map<Long, PlayerMetrics> out = new LinkedHashMap<>();
+        for (final PlayerResult player : battle.players) {
+            final BattleAverageHp avg = ctx.averageHp();
+            Double contribution = null;
+            Double kast = null;
+            if (avg.complete()) {
+                final int team = safeTeam(player.team);
+                final double teamC = ctx.teamContribution[team];
+                final Integer winner = battle.winnerTeam;
+                final boolean win = winner != null && winner != 0 && player.team == winner;
+                final int traded = TradeFacts.tradedDeaths(player, battle.players);
+                contribution = teamC == 0 ? 0 : 100.0 * roundContribution(player, avg.value()) / teamC;
+                kast = 100.0 * singleBattleKast(player, win, traded, avg.value());
+            }
+            out.put(player.accountId, new PlayerMetrics(contribution, kast, singleBattleImpact(player, ctx)));
+        }
+        return out;
+    }
+
+    /**
+     * 把单场逐玩家指标回填到 {@link PlayerResult#contribution} / {@link PlayerResult#kast} /
+     * {@link PlayerResult#impact}（供 Columns.PLAYER / Excel 单场表共用；幂等，重复调用覆盖）。
+     */
+    public static void populateBattle(final Battle battle) {
+        final Map<Long, PlayerMetrics> metrics = battleMetrics(battle);
+        for (final PlayerResult player : battle.players) {
+            final PlayerMetrics m = metrics.get(player.accountId);
+            if (m != null) {
+                player.contribution = m.contribution();
+                player.kast = m.kast();
+                player.impact = m.impact();
+            }
+        }
     }
 
     private static void applyPlayer(final Row row, final Battle battle, final PlayerResult player,

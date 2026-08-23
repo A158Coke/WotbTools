@@ -28,33 +28,48 @@ mutate 任何字段，也不再自行解析回放或查询 Tankopedia。
 
 ## 集成方式
 
-战斗表现不再有独立页面/独立端点：**并入 `POST /api/preview`**。用户上传一次回放，同一请求
-生命周期内每个 replay 只做一次完整处理（`DefaultReplayProcessingFacade` full：
-parse + reconstruction + `ObservedMaxHp` + `DeathTimeReconciler`），同时产出：
+战斗表现不再有独立页面/独立端点，也没有独立 tab：**指标直接成为回放解析结果的一部分**。
+用户上传一次回放，同一请求生命周期内每个 replay 只做一次完整处理
+（`DefaultReplayProcessingFacade` full：parse + reconstruction + `ObservedMaxHp` +
+`DeathTimeReconciler`），随后一次计算同时映射到：
 
-- `battles`：基础战绩（authoritative Battle/PlayerResult facts）
-- `aggregate`：跨场汇总
-- `performance`：战斗表现（同一 facts 的 pure derived metrics）
+- `battles[].players[].cells`：单场玩家表直接包含 `contribution` / `kast` / `impact`
+  （`PerformanceMetricsCalculator.battleMetrics` → `populateBattle` 写入 PlayerResult，
+  `Columns.PLAYER` 直接消费；与跨场聚合共用同一公式，绝不二次解析/二次计算）
+- `aggregate[].cells`：跨场汇总包含 `contribution` / `kast` / `impact` /
+  `multi_damage_rate` / `traded_deaths`（`Mapper.toAggregate` 按 accountId 合并
+  `PerformanceMetricsCalculator.compute` 结果）
 
-前端 ReplayPage 上传一次即可通过「战斗表现」tab 查看，无独立入口、无重复上传、无第二套 pipeline。
+**不再存在** `performance` 数组 / `performanceColumns` / `PerformanceRow` /
+`PerformanceTable` 组件——用户上传一次即可在单场表与汇总表直接看到这些指标。
+Excel 单场「玩家数据」与汇总「汇总」表同步包含对应列（导出路径先 `populateBattle` 再写表）。
 
-## 输出列（preview 内嵌 `performance`）
+## 输出列
+
+单场玩家表（`Columns.PLAYER`，Excel 玩家数据表同步）新增：
 
 | key | 含义 |
 | --- | --- |
-| `contribution` | 贡献率百分比 |
-| `kast` | 不白给率百分比 |
-| `impact` | 全场 Impact 百分比 |
-| `damage_avg` | 均伤 |
-| `potential_damage_avg` | 潜在均伤 |
-| `potential_damage_supplement_avg` | 场均补增伤害 |
-| `assist_avg` | AST，场均协助伤害 |
-| `multi_damage_rate` | 多伤率百分比 |
-| `survival_rate` | 存活率百分比 |
-| `traded_deaths` | 互换击杀场次数 |
-| `kills` / `kills_avg` | 总人头 / 场均人头 |
+| `contribution` | 贡献率（数值，前端格式化为 `%`） |
+| `kast` | 不白给率（数值，前端格式化为 `%`） |
+| `impact` | 全场 Impact（数值，前端格式化为 `%`） |
 
-不再输出任何综合评分（`rating` / `finalRating` / 权重均删除）。
+跨场汇总表（`Mapper.aggregateColumns`，Excel 汇总表同步）新增：
+
+| key | 含义 |
+| --- | --- |
+| `contribution` | 跨场贡献率 |
+| `kast` | 跨场 KAST |
+| `impact` | 跨场 Impact |
+| `multi_damage_rate` | 多伤率 |
+| `traded_deaths` | 互换击杀场次数 |
+
+**HP unavailable 语义**：依赖 HP 的指标（contribution / kast / 多伤率）在 HP 全部 UNKNOWN
+时输出 `null`（单场 `battleMetrics` 直接 null；跨场 `Row.hpEligible=false` 时 null），
+前端统一显示 `--`，绝不冒充真实的 `0`；`impact` 不依赖 HP，恒有数值。
+
+不再输出任何综合评分（`rating` / `finalRating` / 权重均删除），也不再有独立
+「战斗表现」输出块。
 
 ## 场均 HP（BattleHpFacts）
 
@@ -129,10 +144,12 @@ killer 级 trade 语义应在事实层扩展，不在 metrics 层重推。
 ## API
 
 - `POST /api/preview`：唯一入口。同一请求内每个 replay 只做一次完整处理，同时返回
-  `battles`（基础战绩 + 扩展字段）+ `aggregate` + `performance`（含 `performanceColumns`）
-  + `duplicates` / `failures`；重建不可用时保留结算战绩并回退车辆库基础 HP。
-- 已删除独立 `POST /api/performance` 端点与 `/extended` 页面（不再存在第二套 pipeline）。
-- `performance` 列 key 纯英文 + 是否数值，显示名由前端三语 `performance_labels` 映射。
+  `battles`（单场玩家 cells 含 contribution/kast/impact）+ `aggregate`（含跨场
+  contribution/kast/impact/multi_damage_rate/traded_deaths）+ `playerColumns` /
+  `aggregateColumns` + `duplicates` / `failures`；重建不可用时保留结算战绩并回退车辆库基础 HP。
+- 已删除独立 `POST /api/performance` 端点与 `/extended` 页面（不再存在第二套 pipeline），
+  也**不再有独立的 `performance` 数组 / `performanceColumns` 字段**。
+- 列 key 纯英文 + 是否数值，显示名由前端三语 `player_labels` / `agg_labels` 映射。
 
 ## 潜在伤害（Potential Damage）链路
 
@@ -149,8 +166,12 @@ killer 级 trade 语义应在事实层扩展，不在 metrics 层重推。
 ## 测试
 
 - `PerformanceMetricsCalculatorTest` 覆盖 Trade death KAST、多伤率、协助、Impact、
-  OBSERVED_EXACT 进场满血 ÷ 14，以及 HP 未知 fail-closed（多伤率不猜测）。
-- `ReplayServiceTest` 覆盖 `preview` 走完整回放处理并内嵌 `performance`；`WebApiTest` 覆盖
-  `POST /api/preview` 的 `performance` 字段（不含 `rating`）。
+  OBSERVED_EXACT 进场满血 ÷ 14、HP 未知 fail-closed（多伤率不猜测），以及 `battleMetrics`
+  单场值 == `compute(List.of(battle))` 聚合值（单一事实源回归）、HP UNKNOWN → contribution/kast null、
+  accountId 映射不受排序影响。
+- `ReplayServiceTest` 覆盖 `preview` 走完整回放处理并把指标映射进单场 cells / 汇总；
+  `ReplayMapperTest` 覆盖 cells 含 contribution/kast/impact 与汇总合并、HP unknown → null；
+  `WebApiTest` 覆盖 `POST /api/preview` 的单场 cells 含三列且 impact 为数值（不含 `rating`，
+  无 `performance` 字段）。
 - `docs/current-plan.md` 要求单一事实源回归：Playback 伤害 == Performance Metrics 输入
   伤害（同一 `PlayerResult.damageDealt`）。

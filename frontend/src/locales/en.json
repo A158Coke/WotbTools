@@ -44,7 +44,6 @@
     },
     "result": {
         "aggregate_tab": "Aggregate ({count} players)",
-        "performance_tab": "Performance",
         "scroll_hint": "← Scroll horizontally for more data →",
         "duplicates": "Skipped {count} duplicate upload(s):",
         "failures": "{count} file(s) failed to parse:"
@@ -403,6 +402,9 @@
         "kills": "Kills",
         "damage_dealt": "Damage",
         "damage_assisted": "Assisted",
+        "contribution": "Contribution",
+        "kast": "KAST",
+        "impact": "Impact",
         "damage_received": "Received",
         "damage_blocked": "Blocked",
         "n_shots": "Shots",
@@ -448,31 +450,17 @@
         "account_id": "Account ID",
         "potential_damage": "Total potential damage",
         "potential_damage_avg": "Avg potential damage",
-        "potential_damage_supplement_avg": "Avg supplement damage"
+        "potential_damage_supplement_avg": "Avg supplement damage",
+        "contribution": "Contribution",
+        "kast": "KAST",
+        "impact": "Impact",
+        "multi_damage_rate": "Multi-damage rate",
+        "traded_deaths": "Trades"
     },
     "theme": {
         "auto": "Auto",
         "light": "Light",
         "dark": "Dark"
-    },
-    "performance_labels": {
-        "nickname": "Player",
-        "clan": "Clan",
-        "battles": "Battles",
-        "wins": "Wins",
-        "win_rate": "Win rate %",
-        "contribution": "Contribution %",
-        "kast": "KAST %",
-        "impact": "Impact %",
-        "damage_avg": "Avg damage",
-        "potential_damage_avg": "Potential DPB",
-        "potential_damage_supplement_avg": "Avg supplement",
-        "assist_avg": "Avg assist",
-        "multi_damage_rate": "Multi-damage %",
-        "survival_rate": "Survival %",
-        "traded_deaths": "Trades",
-        "kills": "Kills",
-        "kills_avg": "Avg kills"
     },
     "profile": {
         "home": "Home",

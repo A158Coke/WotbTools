@@ -46,6 +46,11 @@ public class PlayerResult {
 
     // 展示派生字段 (enrich)
     public String tankName = "";
+
+    // 单场表现派生字段 (PerformanceMetricsCalculator.populateBattle 回填; null = HP unknown 时 unavailable)
+    public Double contribution;
+    public Double kast;
+    public Double impact;
     /** 本场实测最大血量（type-7 propId=3 含装备加成，经 ObservedMaxHp.populate 回填；null=未解析）。
      * 注意：这只是「整场观测到的最大当前 HP」，不是进场满血——不得直接当 entry full HP。 */
     public Integer observedMaxHp;
