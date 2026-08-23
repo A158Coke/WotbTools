@@ -126,13 +126,6 @@
     linear-gradient(90deg, rgba(5,8,10,.97) 0%, rgba(5,8,10,.88) 35%, rgba(5,8,10,.22) 67%, rgba(5,8,10,.58) 100%),
     url('../assets/showcase/home/hero-v2.svg') center 48% / cover no-repeat !important;
 }
-.homepage-showcase .showcase-hero .hero-map,
-.homepage-showcase .showcase-hero .hero-tank { display: none !important; }
-.homepage-showcase .hero-atmosphere {
-  background:
-    linear-gradient(180deg, rgba(0,0,0,.02), transparent 50%, rgba(0,0,0,.55)),
-    radial-gradient(circle at 72% 43%, rgba(231,151,24,.12), transparent 30%) !important;
-}
 
 /* ---------- Replay: cold ruined battlefield / forensic review ---------- */
 .layout-data-workspace::after {
