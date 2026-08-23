@@ -166,37 +166,6 @@ public class WebApiTest {
     }
 
     @Test
-    void ratingEndpointReturnsRealtimeLeaderboard() throws Exception {
-        final List<Path> files = replays();
-        var req = multipart("/api/rating");
-        for (final Path p : files) {
-            req = req.file(file(p));
-        }
-        req = req.file(new MockMultipartFile("files", "dup.wotbreplay",
-                "application/octet-stream", Files.readAllBytes(files.getFirst())));
-
-        final String json = mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-        final JsonNode n = om.readTree(json);
-        assertEquals(1, n.get("duplicates").size());
-        assertTrue(n.get("rows").size() >= 14);
-        final JsonNode cells = n.get("rows").get(0).get("cells");
-        assertTrue(cells.has("rating"));
-        assertTrue(cells.has("kast"));
-        assertTrue(cells.has("contribution"));
-        assertTrue(cells.has("impact"));
-        assertTrue(cells.get("impact").asText().endsWith("%"));
-        assertFalse(cells.has("influence"));
-        assertTrue(cells.has("damage_avg"));
-        assertTrue(cells.has("potential_damage_avg"));
-        assertTrue(cells.has("potential_damage_supplement_avg"));
-        assertTrue(cells.has("kills"));
-        assertFalse(cells.has("average_hp"));
-        assertFalse(cells.has("account_id"));
-    }
-
-    @Test
     void previewMultipleWithDuplicate() throws Exception {
         final List<Path> files = replays();
         var req = multipart("/api/preview");
@@ -221,6 +190,37 @@ public class WebApiTest {
         assertTrue(b0.get("players").get(0).get("cells").has("damage_dealt"));
         assertTrue(b0.get("players").get(0).get("cells").has("potential_damage"));
         assertTrue(b0.get("players").get(0).get("cells").has("potential_damage_supplement"));
+    }
+
+    @Test
+    void previewEmbedsPerformanceFromSameProcessing() throws Exception {
+        final List<Path> files = replays();
+        var req = multipart("/api/preview");
+        for (final Path p : files) {
+            req = req.file(file(p));
+        }
+
+        final String json = mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        final JsonNode n = om.readTree(json);
+        assertTrue(n.get("performance").size() >= 14, "preview 必须内嵌战斗表现（复用同一 authoritative facts）");
+        final JsonNode cells = n.get("performance").get(0).get("cells");
+        assertFalse(cells.has("rating"), "不得再输出 Rating 综合评分");
+        assertTrue(cells.has("kast"));
+        assertTrue(cells.has("contribution"));
+        assertTrue(cells.has("impact"));
+        assertTrue(cells.get("impact").asText().endsWith("%"));
+        assertFalse(cells.has("influence"));
+        assertTrue(cells.has("damage_avg"));
+        assertTrue(cells.has("potential_damage_avg"));
+        assertTrue(cells.has("potential_damage_supplement_avg"));
+        assertTrue(cells.has("survival_rate"));
+        assertTrue(cells.has("traded_deaths"));
+        assertTrue(cells.has("kills"));
+        assertFalse(cells.has("average_hp"));
+        assertFalse(cells.has("account_id"));
+        assertTrue(n.get("performanceColumns").isArray());
     }
 
     @Test

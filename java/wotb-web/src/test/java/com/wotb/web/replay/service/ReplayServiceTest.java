@@ -7,7 +7,7 @@ import com.wotb.core.processing.ReplayProcessingCapabilities;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
-import com.wotb.web.replay.dto.RatingResponse;
+import com.wotb.web.replay.dto.PreviewResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -15,6 +15,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -67,20 +68,22 @@ class ReplayServiceTest {
     }
 
     @Test
-    void ratingUsesFullProcessingToPopulateEntryHp() throws Exception {
+    void previewRunsFullProcessingAndEmbedsPerformance() throws Exception {
         final DefaultReplayProcessingFacade processingFacade = mock(DefaultReplayProcessingFacade.class);
         final Battle battle = new Battle();
-        battle.arenaId = "rating-battle";
+        battle.arenaId = "preview-battle";
         battle.players = List.of(player(1L, 1), player(2L, 2));
         when(processingFacade.process(any(), eq(ReplayProcessingOptions.full()))).thenReturn(
-                new ReplayProcessingResult("rating.wotbreplay", ReplayProcessingStatus.SUCCESS,
+                new ReplayProcessingResult("preview.wotbreplay", ReplayProcessingStatus.SUCCESS,
                         null, battle, null, null,
                         ReplayProcessingCapabilities.summaryOnly(false), null, null));
         final ReplayService service = new ReplayService(new ReplayCapacityLimiter(1), processingFacade, null);
 
-        final RatingResponse response = service.ratingLeaderboard(new MultipartFile[]{ratingFile()});
+        final PreviewResponse response = service.preview(new MultipartFile[]{ratingFile()});
 
-        assertEquals(2, response.rows().size());
+        // preview 与战斗表现同一次完整处理：不重复解析、不要求二次上传
+        assertEquals(2, response.performance().size());
+        assertFalse(response.performanceColumns().isEmpty());
         verify(processingFacade).process(any(), eq(ReplayProcessingOptions.full()));
     }
 

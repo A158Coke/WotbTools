@@ -39,7 +39,6 @@ import static com.wotb.web.config.ApiPaths.HOF_PATTERN;
 import static com.wotb.web.config.ApiPaths.HOF_REPLAY_PATTERN;
 import static com.wotb.web.config.ApiPaths.HOF_UPLOAD;
 import static com.wotb.web.config.ApiPaths.PREVIEW;
-import static com.wotb.web.config.ApiPaths.RATING;
 import static com.wotb.web.config.ApiPaths.REPLAY_ANALYZE;
 import static com.wotb.web.config.ApiPaths.REPLAY_ANALYZE_CANCEL;
 import static com.wotb.web.config.ApiPaths.REPLAY_MAP_OVERVIEW;
@@ -71,7 +70,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // --- 公开接口 ---
                 .requestMatchers(BOOST_OPTIONS).permitAll()
-                .requestMatchers(HEALTH, COLUMNS, RATING,
+                .requestMatchers(HEALTH, COLUMNS,
                         PREVIEW, EXPORT).permitAll()
                 // 名人堂查询公开；上传/下载需登录（必须置于 HOF_PATTERN permitAll 之前）
                 .requestMatchers(HOF_UPLOAD, HOF_REPLAY_PATTERN).authenticated()

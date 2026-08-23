@@ -81,8 +81,8 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 未显式声明的 `/api/**` 默认拒绝；`boost-manager` 仅能访问 `/api/admin/boost/**`。
 
 
-列定义由后端 `/api/preview` 响应中的 `playerColumns`/`aggregateColumns` 字段和 `/api/columns` 提供（纯英文 key）；实时 rating 使用 `ratingColumns`。
-前端用 `vue-i18n` 三语 locale（`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels` / `rating_labels`）映射显示名，
+列定义由后端 `/api/preview` 响应中的 `playerColumns`/`aggregateColumns` 字段和 `/api/columns` 提供（纯英文 key）；战斗表现使用 `performanceColumns`。
+前端用 `vue-i18n` 三语 locale（`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels` / `performance_labels`）映射显示名，
 导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx 表头。回放页列选择器会把单场/汇总两套列顺序与可见性记到 `localStorage`，
 并在后端新增列时自动补齐缺失键。详见 [DEVELOPER_GUIDE.md](../docs/DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
 
@@ -90,35 +90,25 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 地图名由共享字典 `common/map_names.json` 提供 `zh/en/ru` 三语映射；前端 `mapLabel()` 按当前 locale 取值，导出层 `MapNames.cn()` 继续固定使用中文。
 
 
-扩展页 `/extended` 可展示原回放页隐藏的扩展字段：`alpha_damage`、`rank`、`potential_damage`、`potential_damage_supplement`、`potential_damage_detail`。
-这些字段仍会出现在 API 与导出列定义中，原回放页面的列选择器会过滤扩展专用字段。`xp`、`credits` 仅在 parser/model 保留，不作为战绩字段展示。
+战斗表现（Performance Metrics）已并入 `POST /api/preview`：一次上传、一次完整回放处理
+（parse + reconstruction + `ObservedMaxHp` + `DeathTimeReconciler`）同时产出基础战绩、汇总与战斗表现，
+不存在独立 `/extended` 页面或 `/api/performance` 端点。
 
+### `POST /api/preview`
 
-### `GET /api/rating`
-
-返回当前生效的评分参数（取自 `common/rating.json`），供前端「评分规则」弹窗实时展示算法与真实权重：
-
-```json
-{ "assist": 0.6, "block": 0.35, "killValue": 200, "winBonus": 0.05,
-  "minSamples": 5, "scale": 1000,
-  "classFactor": { "HEAVY_TANK": 1.0, "MEDIUM_TANK": 0.9, "TANK_DESTROYER": 1.0, "LIGHT_TANK": 0.7, "OTHER": 0.9 } }
-```
-
-
-
-### `POST /api/rating`
-
-`multipart/form-data`，字段名为 `files`。只基于本次上传回放实时计算，不落库、不读取历史记录。
-为取得已证明的进场满血，评分请求会执行完整回放处理：`OBSERVED_EXACT` 使用回放实测进场满血，
-其余车辆使用 Tankopedia 基础 HP，再按本局 14 辆参战车辆总血量 ÷ 14 计算平均血量。
+`multipart/form-data`，字段名为 `files`，可上传一个或多个 `.wotbreplay`。
+每个文件走统一完整处理链（`DefaultReplayProcessingFacade` full），同一请求生命周期内只解析一次：
+为取得已证明的进场满血，`OBSERVED_EXACT` 使用回放实测进场满血，其余车辆使用 Tankopedia 基础 HP
+（车辆库也缺失时 fail-closed，不再硬编码 2400；存在 UNKNOWN 时场均 HP unavailable，依赖 HP 的
+衍生指标 fail-closed，见 `BattleHpFacts`）。
 
 返回：
 
-- `rows`：每名选手的 `rating`、`kast`、`contribution`、`impact`、`assist_avg`、`multi_damage_rate`、`damage_avg`、`potential_damage_avg`、`kills` 等。
-- `duplicates` / `failures`：与 `/api/preview` 相同的去重和失败信息。
-- `ratingColumns`：纯英文 key + 是否数值，前端由三语 `rating_labels` 显示。
-
-前端可从 SPA 的 `?view=extended` 或独立 `/extended` 入口进入。
+- `battles`：每场玩家基础战绩 + 扩展字段（`alpha_damage`、`rank`、`potential_damage`、`potential_damage_supplement`、`potential_damage_detail`）。
+- `aggregate`：跨场汇总（>1 场时）。
+- `performance`：每名选手的 `contribution`、`kast`、`impact`、`assist_avg`、`multi_damage_rate`、`survival_rate`、`traded_deaths`、`damage_avg`、`potential_damage_avg`、`kills` 等（无综合评分）。
+- `duplicates` / `failures`：去重和失败信息。
+- `playerColumns` / `aggregateColumns` / `performanceColumns`：纯英文 key + 是否数值，前端由三语 `player_labels` / `agg_labels` / `performance_labels` 显示。
 
 ### `POST /api/preview`
 

@@ -2,13 +2,11 @@ package com.wotb.web.replay.controller;
 
 import com.wotb.web.replay.dto.ExportResult;
 import com.wotb.web.replay.dto.PreviewResponse;
-import com.wotb.web.replay.dto.RatingResponse;
 import com.wotb.web.replay.service.ReplayService;
 import com.wotb.web.config.ApiPaths;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -36,17 +34,6 @@ public class ReplayController {
     @GetMapping(ApiPaths.COLUMNS)
     public Object columns() {
         return service.columns();
-    }
-
-    @GetMapping(ApiPaths.RATING)
-    public Object rating() {
-        return service.ratingConfig();
-    }
-
-    @PostMapping(value = ApiPaths.RATING, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public RatingResponse ratingLeaderboard(@RequestParam(name = "files") final MultipartFile[] files)
-            throws Exception {
-        return service.ratingLeaderboard(files);
     }
 
     @GetMapping(ApiPaths.HEALTH)

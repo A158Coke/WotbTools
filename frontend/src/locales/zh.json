@@ -44,10 +44,10 @@
     },
     "result": {
         "aggregate_tab": "汇总 ({count} 名选手)",
+        "performance_tab": "战斗表现",
         "scroll_hint": "← 左右滑动查看更多数据 →",
         "duplicates": "已跳过 {count} 个重复上传：",
-        "failures": "{count} 个文件解析失败：",
-        "lowest_rating_alt": "最低评分"
+        "failures": "{count} 个文件解析失败："
     },
     "col_picker": {
         "title_player": "单场表",
@@ -61,7 +61,6 @@
     "metric": {
         "battles": "战斗场次",
         "players": "选手",
-        "max_rating": "最高场均评分",
         "max_damage": "最高单场伤害",
         "map": "地图",
         "duration": "时长",
@@ -74,32 +73,6 @@
         "remove_hint": "将从列表删除对应回放文件并重新汇总。可重新选择文件再解析。",
         "confirm": "确认移除",
         "cancel": "取消"
-    },
-    "rating_help": {
-        "btn": "评分规则",
-        "title": "评分规则",
-        "intro": "自包含的表现评分（类 WN8），但「期望值」来自当前这批战斗，不依赖外部表。下列参数为服务器实时配置。",
-        "ec_title": "1. 有效贡献 EC",
-        "dmg": "伤害",
-        "assist": "协助",
-        "block": "格挡",
-        "kills": "击杀",
-        "baseline_title": "2. 车型基准",
-        "baseline_desc": "按车型（轻/中/重/TD）统计 EC 均值为基准：样本数 ≥ {n} 用本车型均值，否则用全体均值 × 车型系数。",
-        "score_title": "3. 最终评分",
-        "score_word": "评分",
-        "baseline_word": "基准",
-        "if_win": "若获胜",
-        "tier_title": "分级",
-        "tiers": {
-            "elite": "卓越",
-            "great": "优秀",
-            "good": "良好",
-            "mid": "中等",
-            "poor": "较差"
-        },
-        "note": "基准来自一同计算的这批战斗，因此是相对评分，不是绝对天梯分；单场样本少、波动更大。",
-        "close": "关闭"
     },
     "duration": "{min}分{sec}秒",
     "team": {
@@ -424,7 +397,6 @@
         "tank_type": "坦克类型",
         "tank_nation": "国家",
         "alpha_damage": "炮伤",
-        "rating": "评分",
         "survived_label": "存活",
         "survival_time": "存活时间",
         "survival_time_tip": "基于伤害事件的秒级估算；阵亡=累计受伤达到阈值，存活=战斗时长",
@@ -458,7 +430,6 @@
         "survival_rate": "存活率%",
         "survival_avg": "平均存活时间",
         "survival_avg_tip": "基于伤害事件的秒级估算；阵亡=累计受伤达到阈值，存活=战斗时长",
-        "rating_avg": "场均评分",
         "kills": "总击杀",
         "kills_avg": "场均击杀",
         "damage": "总伤害",
@@ -484,25 +455,24 @@
         "light": "亮色",
         "dark": "暗色"
     },
-    "rating_labels": {
+    "performance_labels": {
         "nickname": "玩家",
         "clan": "战队",
         "battles": "场次",
         "wins": "胜场",
         "win_rate": "胜率%",
-        "rating": "Rating",
-        "kast": "KAST%",
         "contribution": "贡献率%",
+        "kast": "KAST%",
         "impact": "Impact%",
         "damage_avg": "均伤",
         "potential_damage_avg": "潜在均伤",
         "potential_damage_supplement_avg": "场均补增",
         "assist_avg": "场均协助",
-        "average_hp": "平均血量",
         "multi_damage_rate": "多伤率%",
+        "survival_rate": "存活率%",
+        "traded_deaths": "互换击杀",
         "kills": "人头",
-        "kills_avg": "场均人头",
-        "account_id": "账号ID"
+        "kills_avg": "场均人头"
     },
     "profile": {
         "home": "首页",
@@ -571,18 +541,6 @@
         "export_failed": "导出失败",
         "png_export_failed": "PNG 导出失败",
         "png_exporting": "正在导出 PNG…"
-    },
-    "extended": {
-        "nav": "Rating V2",
-        "title": "扩展分析",
-        "preview": "扩展字段解析",
-        "rating": "Rating 分析",
-        "rating_title": "实时 Rating",
-        "fields_title": "扩展字段",
-        "empty": "未选择文件",
-        "no_files": "请先选择回放文件或文件夹",
-        "scope_preview": "扩展字段",
-        "scope_rating": "Rating"
     },
     "boost": {
         "submitTab": "提交需求",
@@ -1011,8 +969,6 @@
         "replayDesc": "上传 .wotbreplay 回放文件，提取战斗数据并导出 Excel。",
         "highestDamageRecord": "最高伤害记录",
         "hofDesc": "随机战斗与评级战斗的单场伤害排行 — 上传回放即可进入名人堂。",
-        "ratingV2Title": "Rating V2 解析",
-        "ratingV2Desc": "基于潜在均伤、协助、KAST、Impact、多伤率与人头表现的复合评分解析。",
         "aiReviewDesc": "上传单场回放，AI Review 生成战术复盘与改进建议。需登录。",
         "available": "可用",
         "sponsorTitle": "支持项目",
