@@ -2,7 +2,6 @@ package com.wotb.core.export;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.ref.Tankopedia;
-import com.wotb.core.stats.Rating;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -19,7 +18,6 @@ public final class ExcelExporter {
 
     /** 单场工作簿: 战斗信息 / 玩家数据 / 原始字段。 */
     public static void writeSingle(final Battle battle, final Tankopedia tp, final OutputStream out) throws IOException {
-        Rating.compute(List.of(battle), tp);   // 基准=该场内
         final ExcelStyles styles = new ExcelStyles();
         SingleBattleSheets.write(styles, battle, tp);
         styles.writeTo(out);
@@ -29,7 +27,6 @@ public final class ExcelExporter {
     public static void writeAggregate(final List<Battle> battles, final List<String> sourceNames,
                                       final List<String[]> duplicates, final Tankopedia tp,
                                       final OutputStream out) throws IOException {
-        Rating.compute(battles, tp);   // 基准=这批战斗
         final ExcelStyles styles = new ExcelStyles();
         AggregateSheets.write(styles, battles, sourceNames, duplicates, tp);
         styles.writeTo(out);

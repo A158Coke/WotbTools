@@ -15,8 +15,8 @@ import FileUploader from './FileUploader.vue'
 import ColumnPicker from './ColumnPicker.vue'
 import AggregateTable from './AggregateTable.vue'
 import BattleTable from './BattleTable.vue'
+import PerformanceTable from './PerformanceTable.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
-import RatingModal from './RatingModal.vue'
 
 const { locale, t } = useI18n()
 const replay = useReplay()
@@ -27,7 +27,6 @@ const { visibleKeys, aggVisibleKeys, showColPicker, pickerScope,
   currentOrder, shownCols, shownAggCols,
   toggleColPicker, toggleCol, selectAllCols, resetCols, handleReorder } = cols
 
-const showRating = ref(false)
 const exportingPng = ref(false)
 const aggregateRef = ref(null)
 const battleRefs = ref([])
@@ -205,6 +204,9 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
       <div class="restoolbar">
         <div class="tabs" :class="{ locked: showColPicker }"
              :title="showColPicker ? $t('action.picker_locked') : ''">
+          <button v-if="resp.performance?.length" :disabled="showColPicker"
+                  :class="{ active: activeTab === 'performance' }"
+                  @click="activeTab = 'performance'">{{ $t('result.performance_tab') }}</button>
           <button v-if="resp.aggregate.length" :disabled="showColPicker"
                   :class="{ active: activeTab === 'aggregate' }"
                   @click="activeTab = 'aggregate'">{{ $t('result.aggregate_tab', { count: resp.aggregate.length }) }}</button>
@@ -215,9 +217,6 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
           </button>
         </div>
         <div class="resactions">
-          <button class="ghost sm" @click="showRating = true">
-            <svg class="ic" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M9.6 9.4a2.4 2.4 0 0 1 4.4 1.3c0 1.6-2 1.9-2 3.3M12 17h.01" /></svg>{{ $t('rating_help.btn') }}
-          </button>
           <span class="dropdown">
             <button class="ghost sm" @click="toggleColPicker">
               <svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" /></svg>{{ $t('action.select_cols') }} v
@@ -240,6 +239,10 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
         </div>
       </div>
 
+      <div v-show="activeTab === 'performance' && resp.performance?.length">
+        <PerformanceTable :rows="resp.performance" :columns="resp.performanceColumns || []" />
+      </div>
+
       <div v-show="activeTab === 'aggregate' && resp.aggregate.length" ref="aggregateRef">
         <AggregateTable :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
       </div>
@@ -251,7 +254,6 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
     </template>
 
     <RemoveConfirmModal :pending="pendingRemove" @confirm="confirmRemove" @cancel="cancelRemove" />
-    <RatingModal :show="showRating" @close="showRating = false" />
   </div>
 </template>
 
@@ -265,8 +267,6 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
   --exp-header-bg: #e9ecef;
   --exp-t1-bg: #e3f2fd;
   --exp-t2-bg: #fce4ec;
-  --exp-badge-bg: #fff3cd;
-  --exp-badge-text: #856404;
   --exp-alive: #28a745;
   --exp-destroyed: #dc3545;
 }
@@ -280,8 +280,6 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
   --exp-header-bg: #333333;
   --exp-t1-bg: #1a3a5c;
   --exp-t2-bg: #5c2a3a;
-  --exp-badge-bg: #5a4a10;
-  --exp-badge-text: #ffd700;
   --exp-alive: #4caf50;
   --exp-destroyed: #ef5350;
 }
@@ -347,22 +345,6 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
 }
 .replay-export-root tbody tr.t2 td {
   background: var(--exp-t2-bg);
-}
-.replay-export-root .rbadge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  min-width: 44px;
-  min-height: 22px;
-  text-align: center;
-  padding: 2px 6px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 800;
-  background: var(--exp-badge-bg);
-  color: var(--exp-badge-text);
-  font-variant-numeric: tabular-nums;
 }
 .replay-export-root .alive {
   display: inline-flex;

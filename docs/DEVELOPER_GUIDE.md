@@ -68,7 +68,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 - **显示名分两类出口**（改列名要全改）：
   - 前端：`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`（**三语都改**）。
   - 导出：`Columns.java`（单场 xlsx）、`AggregateSheets.java`（汇总 xlsx，仅中文）。
-- **单一数据源**：`common/tankopedia-tier{7,8,9,10}.json`（车辆库，按等级拆分 4 个文件）、`common/rating.json`（评分参数）、`common/map_names.json`（地图三语名）。构建时由 `wotb-core/pom.xml` 复制到 classpath；**勿在模块内放副本**。
+- **单一数据源**：`common/tankopedia-tier{7,8,9,10}.json`（车辆库，按等级拆分 4 个文件）、`common/map_names.json`（地图三语名）。构建时由 `wotb-core/pom.xml` 复制到 classpath；**勿在模块内放副本**。
 - **车辆库更新（blitzkit 单一来源）**：推荐手动触发 GitHub Actions **`Update Tankopedia`**——runner 直接从 `assets.blitzkit.app/definitions/tanks.pb` + `consumables.pb` + `provisions.pb` + `equipment.pb`（游戏客户端数据，公开 CDN，无 IP 白名单，无需任何 secret）同步并自动提交回 main。本地跑 `cd common/python && python update_tankopedia.py` 即可。数据源为什么不用 WG 百科：WG 滞后于游戏版本（11.19 的 SPHT / AC Atlas 等缺失）且 application_id 有 IP 白名单限制。脚本旧数据只从 `--existing-dir` 目录读取（`tankopedia-tier*.json`，用于保留 extraInfo）、新数据只写 `--output-dir`（workflow 两者路径分离，输入输出互不覆盖）；流程为 `parse_tanks → 过滤业务范围 tier 7–10 → apply 物资/装备 → merge_extraInfo → 完整性门禁 → 写 4 个 tier 文件`（真实 tanks.pb 含 1–10 级，1–6 级不参与校验与输出）。写入前有**完整性门禁**（解析为空 / 总量或单 tier 数量下降超 20% / tank ID 重复 / tier 不在 7–10 / 缺 id·name·hp·gun 均失败，失败不写文件不提交）。每个文件为 `meta` + `vehicles` 数组（全部字段与值均为英文/数字）：每辆车一条记录 `name/id/tier/class/nation/hp/forwardSpeed/reverseSpeed/turretRotationSpeed/hullRotationSpeed/powerToWeightRatio/guns/alphaDamage/allowedProvision/allowedConsumables/allowedEquipment/extraInfo`。`guns` 数组含该车顶配炮塔的**全部炮**（7–9 级也可能多把，如 T-34-2 有 5 把），每把带 `gunId/isDefault/alphaDamage/shells`（shells 每发 `{type, damage, penetration}`，type 归一化 ap/apcr/heat/he，顺序即游戏内弹序）；vehicle 级 `alphaDamage` 只在有唯一权威依据时输出——单炮车 / 7–9 级顶配炮（最高 tier，同 tier 取最高 alpha，如 T-34-2=400），**10 级多终局炮车省略**（回放无可靠实际炮，AI 不输出虚假唯一炮伤）。`allowedProvision`/`allowedConsumables` 由 blitzkit 的 include/exclude 过滤器（tier/ids/clip/nations）判定后映射为 `common/wotb-item-catalog-json` 的逻辑 id / code；`allowedEquipment` 由车辆 `equipment_preset` 槽位装备映射为 catalog 装备 code（含 VK 72.01 俯角/履带齿、Type 71 改进悬挂等专属装备）；手工维护的 `extraInfo`（个人知识点）按 tank_id 保留合并，仍存在车辆的知识点丢失会直接失败。AI prompt 会注入结构化事实（车种/等级/国家/炮伤/血量/知识），Team 路径（TEAM_MEMBERS / OPPOSING_TEAM_LINEUP_AUTHORITATIVE）额外注入 alphaDamage/hp/extraInfo，prompt 规则白名单已放行这些字段。
 - **代码风格**：不可变模型用 `record`；可变模型用公有字段 POJO（**不引入 Lombok**）；局部变量/参数尽量 `final`。
 - **分层**：controller 只做 HTTP；业务在 service；core 按功能分包。新 endpoint 的逻辑写进 service。
@@ -115,7 +115,6 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 │   │   ├── index.html
 │   │   ├── sponsor.html
 │   │   └── sponsor-config.js
-│   ├── extended.html             #   Rating V2 独立入口
 ├── .github/
 │   ├── workflows/deploy.yml      # 测试门禁 + 每次统一构建三镜像/部署
 │   ├── workflows/database-backup.yml # 每日生产双库备份
@@ -125,7 +124,6 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 │   ├── tankopedia-tier8.json     #   车辆库（8 级）
 │   ├── tankopedia-tier9.json     #   车辆库（9 级）
 │   ├── tankopedia-tier10.json    #   车辆库（10 级）
-│   ├── rating.json               #   评分参数
 │   ├── map_names.json            #   地图名三语映射
 │   ├── assets/                   #   图标/logo 单一来源
 │   │   ├── wotbtoolslogo.png  icon.ico  icon.png   #   Dockerfile 构建时 → homepage + frontend/public
@@ -192,8 +190,8 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 | `ReplayEventExtractors` | `wotb-core/.../ReplayEventExtractors.java` | EntityLeave/Position/updateArena/EntityMethod 提取（B3） |
 | `DeathTimeEstimator` | `wotb-core/.../DeathTimeEstimator.java` | 三条证据链死亡时间估算（B3） |
 | `DeathTimeReconciler` | `wotb-core/.../processing/DeathTimeReconciler.java` | 死亡时刻校准：结算缺失死亡时刻时用重建事件流 EXACT alive=false（HP=0，同实体→账号映射，取最后一条=最终阵亡）覆盖 `survivalTimeSec`（优先级：结算 > HP 死亡证据 > legacy 启发式） |
-| `Rating` | `wotb-core/.../Rating.java` | 评分引擎 |
-| `RatingAnalyzer` | `wotb-core/.../RatingAnalyzer.java` | 实时 rating V2（扩展页使用） |
+| `PerformanceMetricsCalculator` | `wotb-core/.../stats/PerformanceMetricsCalculator.java` | 战斗表现指标（纯派生计算，只读；原 Rating V2 已移除综合评分） |
+| `BattleHpFacts` / `TradeFacts` | `wotb-core/.../replay/facts/` | 场均 HP / 互换击杀事实（replay 管线权威口径） |
 | `Tankopedia` | `wotb-core/.../Tankopedia.java` | 车辆库查表（via common/tankopedia-tier{7,8,9,10}.json） |
 | `MapNames` | `wotb-core/.../MapNames.java` | 地图名中文表（via common/map_names.json） |
 | `Columns` | `wotb-core/.../Columns.java` | 列定义（单数据源，export 与 API 共用） |
@@ -273,7 +271,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 ### Frontend Layout Note
 
 - `App.vue` 顶栏样式为全局样式：桌面端固定在顶部，≤1080px 时切换为 sticky + flex-wrap（导航换行到第二行并自带横向滚动），任意宽度下顶栏自身可横向滚动，保证语言选择、主题切换、反馈入口、版本历史、联系入口和个人中心入口都不会被挤出屏幕。顶栏反馈按钮为外链 `https://github.com/A158Coke/WotbTools/issues/new`（`target="_blank"`，三语文案 `app.feedback`）；版本历史（`version.btn`）与联系页（`contact.nav`）为 SPA 内导航。
-- Vue SPA 主入口视觉变量集中在 `App.vue` 的 `:root` / `[data-theme="dark"]`；独立 `/extended` 入口通过 `frontend/src/styles/theme.css` 复用同一套变量。首页、上传区、排行榜和表格应优先复用这些变量，避免局部硬编码色板。
+- Vue SPA 主入口视觉变量集中在 `App.vue` 的 `:root` / `[data-theme="dark"]`；`frontend/src/styles/theme.css` 复用同一套变量。首页、上传区、排行榜和表格应优先复用这些变量，避免局部硬编码色板。
 - 评分徽章样式使用 `r-elite` / `r-great` / `r-good` / `r-mid` / `r-poor`；最高/最低标记由 `utils/helpers.js` 的 `medal(...)` 统一计算，最低评分允许为 `0`，全员同分不显示奖惩。
 - 公共首页可通过 `?view=home` 本地预览；线上 `wotbtools.com` / `www.wotbtools.com` 无参数仍默认进入首页。
 - 首页首屏「最高伤害记录」读取 `/api/hof?page=1&size=1`，只展示当前全局第一条 `damageDealt`，接口失败或无数据时显示 `--`。
@@ -286,7 +284,6 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 - `?view=replay`：进入回放提取器。
 - `?view=hof`：进入名人堂（旧书签 `?view=leaderboard` 自动 canonicalize 到 `hof`）。
 - `?view=hof-admin`：进入名人堂管理（仅 `HoF-admin` 或 `wotbtools-admin` 角色；无权限显示明确无权限状态）。
-- `?view=extended`：进入 Rating V2 扩展分析页。
 - `?view=boost`：进入陪练、打手申请与管理员资格审批页。
 - `?view=profile`：进入个人中心。
 - `?view=admin-users`：进入管理员用户管理（仅 `wotbtools-admin` 角色可见）。
@@ -308,8 +305,8 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
   - `utils/latest-debounce.js` — 丢弃过期异步搜索结果
   - `utils/page.js` — Spring `Page.number` 响应归一化与分页默认值
   - `utils/theme.js` — 纯函数（readTheme / saveTheme / resolveTheme / applyTheme），Cookie `.wotbtools.com` 域共享 + localStorage 回退
-- `utils/helpers.js` — 常量（DEFAULT_VISIBLE / EXTENDED_ONLY_PLAYER_KEYS / RATING_TIERS）+ 工具函数（按 locale 取地图名的 `mapLabel` / ratingTier / medal 等）
-- UI 组件在 `components/`：FileUploader / ColumnPicker / AggregateTable / BattleTable / RatingModal / RemoveConfirmModal / HoFPage / HoFAdminPage / LoginPage（QQ + Wargaming 登录选择页）/ ProfilePage（含站内通知面板）/ BoostPage / AdminUsersPage / HomePage / ExtendedPage / ReplayPage
+- `utils/helpers.js` — 常量（DEFAULT_VISIBLE / EXTENDED_ONLY_PLAYER_KEYS）+ 工具函数（按 locale 取地图名的 `mapLabel` 等）
+- UI 组件在 `components/`：FileUploader / ColumnPicker / AggregateTable / BattleTable / PerformanceTable / RemoveConfirmModal / HoFPage / HoFAdminPage / LoginPage（QQ + Wargaming 登录选择页）/ ProfilePage（含站内通知面板）/ BoostPage / AdminUsersPage / HomePage / ReplayPage
 - AI 复盘页组件：`ReconstructionPage`（登录门控 + 编排）→ `ReplayInputPanel`（`ReplayFilePicker` 选文件 + `ReplayAnalysisAction` 触发分析）→ 独立「地图鸟瞰」区块（`MapOverview` 三视图：热力/路线/战局回放，经 `POST /api/replay/map-overview` 只解析回放、不调 AI——不跑 AI 复盘也能看图；`AnalysisResultPanel` 不再渲染地图块，其 AI 报告时间链接把 `seek` 事件上抛给页面加载/跳转并自动滚动回地图区块）→ `AnalysisResultPanel`（Markdown 正文常驻展示，`MarkdownContent` 渲染）；赛前预测/复盘正文/地图鸟瞰三板块均可独立展开/收起（默认展开）；战局回放坦克标记随地图缩放（坦克名/阵亡 ✕ 叠加层屏幕恒定），地图下方显示双方总血量条（实时剩余，含装备/物资加成）与争霸赛点数；战局回放内置临时地图标注工具栏（画笔/形状/文字，纯本地不持久化，契约见 `docs/features/battle-playback.md`「地图标注」）
 - 战局回放 Details Panel 的 Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，
   由 `scripts/blitzkit-references.mjs --emit-portraits` 从 BlitzKit 确定性生成并随站点发布；
@@ -325,7 +322,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 - 客户提交陪练需求的区服由 `BoostRegion` 统一校验，规范值为 `CN / ASIA / EU / NA`；`GET /api/boost/options` 从该枚举动态返回四服选项，前端通过 `boost.regionValue` 三语展示。空值保持向后兼容并默认 `CN`，未知区服以 `UNSUPPORTED_BOOST_REGION` 拒绝。需求区服在客户、管理员列表和 `BoostAssignmentDto` 打手工作台中可见；当前仍由管理员人工选择打手，不做区服自动匹配。
 - 站内通知由 `user_notification` 保存，boost domain 只调用 `UserNotificationService` 写事件；API 返回 `type + payload` 英文 key，前端 `frontend/src/locales/{zh,en,ru}.json` 负责渲染文案。
 - Boost DTO 不返回 `*Label`、`message` 或本地化 `warning`；选项只返回 `value + enabled`，状态使用 raw enum，成功/失败/警告分别使用 `code`、`error`、`warningCode`。新增任何 code 必须同步三语 `api_codes` / `api_errors`。
-- 回放 DTO 的 `tank_type`、`tank_nation`、`survived_label`、`potential_damage_detail` 与 `/api/rating.classFactor` 只返回稳定英文码；车型、国家、潜在解析状态和评分车型通过 `replay_values` 映射，存活状态通过 `survived.alive/dead` 映射；Excel 导出继续使用中文。
+- 回放 DTO 的 `tank_type`、`tank_nation`、`survived_label`、`potential_damage_detail` 只返回稳定英文码；车型、国家、潜在解析状态通过 `replay_values` 映射，存活状态通过 `survived.alive/dead` 映射；Excel 导出继续使用中文。
 - 权限采用 allowlist：公开端点、登录端点和后台端点必须显式列入 `SecurityConfig`；末尾 `/api/**` 为 `denyAll()`。`boost-manager` 仅允许 `/api/admin/boost/**`，其他 `/api/admin/**` 只允许 `wotbtools-admin`。
 - Keycloak realm role 不是数据库事务资源：`BoosterService` 先 `saveAndFlush` 验证唯一键/外键，再增删 role，并注册 transaction rollback compensation。删除打手前只查活跃分配依赖（`assignmentRepository.existsByBoosterId`），已审批申请的 `approved_booster_id` 引用会在删除时自动解除并保持 APPROVED 状态，不阻塞二次申请；不要在 Controller 或申请 Service 中重复直接改 role。
 
@@ -344,7 +341,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 
 API 层为**纯英文**：`/api/columns` 与各 DTO 只回 `key`(snake_case) + 数据，**不含中文**。显示名由各输出通道**各自映射**：
 
-- 前端：`vue-i18n` 三语 locale `frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels` / `rating_labels`（多套 key，因 `kills` 在单场=「击杀」、汇总=「总击杀」、rating=「人头」），模板用 `$t(...)` 渲染，语言可切换、`localStorage` 记忆（`wotb-lang`）。
+- 前端：`vue-i18n` 三语 locale `frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels` / `performance_labels`（多套 key，因 `kills` 在单场=「击杀」、汇总=「总击杀」、战斗表现=「人头」），模板用 `$t(...)` 渲染，语言可切换、`localStorage` 记忆（`wotb-lang`）。
 - 导出层：`Columns.java`（单场 xlsx 表头）、`AggregateSheets.java` 的汇总列（导出仅中文）。
 
 > 这是有意的取舍：API 干净、可多语言，但显示名存在多份（前端三语 locale + 导出）。**改/增任一列名，务必同步三语 locale 的相关 key（缺 key 会回退 `en`，再缺则显示原始 key）与导出标签。**
@@ -357,12 +354,12 @@ API 层为**纯英文**：`/api/columns` 与各 DTO 只回 `key`(snake_case) + �
 
 - **回放格式**：zip 含 3 文件 —— `meta.json` + `battle_results.dat`（pickle + protobuf 战绩）+ `data.wotreplay`（BigWorld 事件流）。字段表见 `docs/reference/replay-data.md`。**不要轻易重命名/删字段**，新字段先进「原始字段」表交叉验证。
 - **存活时间**：3 层 fallback（#104 → Damage → hybrid EntityLeave/Position），详见 `docs/reference/replay-data.md`。
-- **评分**：自包含、类 WN8，基准来自「一同计算的这批战斗」（相对分，非绝对天梯）。参数在 `common/rating.json`。细节见 `docs/features/rating.md`。
+- **战斗表现**：纯派生指标（贡献度 / KAST / Impact / 潜在伤害 / 协助 / 击杀 / 多伤率 / 存活率 / 互换击杀），消费统一回放事实，不再输出任何综合评分。细节见 `docs/features/performance.md`。
 - **数据库**：PostgreSQL 18，JPA/Flyway（`ddl-auto: validate`）；Flyway 自动配置依赖 `spring-boot-flyway`。
 - **百场（Hundred Battles）**：`wotb-web/.../hundred/` 域（`HundredBattleSubmission` 单表生命周期 PENDING/CURRENT/SUPERSEDED/REJECTED/CANCELLED/DELETED；Flyway `V18` partial unique index 保证 user+vehicle 最多一个 PENDING/CURRENT）；公开 `GET /api/hof/hundred?nation=&vehicleType=&vehicleId=` 支持分类/车辆交集 Top 10 与单车独立排行，competition ranking 仅 query-time 派生；管理员列表 `GET /api/admin/hof/hundred/submissions?status=&nation=&vehicleType=&vehicleId=` 使用同样可独立生效的交集筛选。提交 `POST /api/hof/hundred/submissions`（登录 + Profile gameId/nickname + Tier X + 截图 + 5 replay 硬门禁）；个人中心 `GET /api/users/hundred/status`。审核证据严格 admin-only 且只在 PENDING 期间保留；APPROVE/REJECT/CANCEL/DELETE 后清空截图、删除 evidence metadata，并清理无引用物理文件。见 `docs/features/hall-of-fame.md`「百场」章节。
 - **名人堂（Hall of Fame）**：schema 由 Flyway 管理；只记录录像者本人随机战斗（`arenaBonusType==1`）与评级战斗（`==7`）单场伤害（`HallOfFameBattleTypePolicy` 单一事实源，其余模式 400 `UNSUPPORTED_BATTLE_TYPE` 零持久化）；统一公开查询 `GET /api/hof`（battleType/nation/vehicleType/tier/tank/nickname 交集过滤 + 位置排名，同伤害 RATING 优先），匿名 `GET /api/hof/vehicle-options` 返回实际已有车辆分类；公开页和管理页的国家/车种/等级无需先选车辆即可真实筛榜。上传/下载需登录；管理后台 `GET/DELETE /api/admin/hof/**`（HoF-admin 或 wotbtools-admin；audit + delete 单事务，ReplayHashLock 保证文件引用不变量）；原始 .wotbreplay 以 SHA-256 内容寻址存 `HOF_REPLAY_DIR`（生产 volume `/data/replays`，best-effort 可丢、不纳入 DB 备份）。见 `docs/features/hall-of-fame.md`。
 - **i18n**：vue-i18n 三语（zh/en/ru），`locales/*.json`；地图名 `common/map_names.json`，网页按当前语言显示，导出固定中文。
-- **API 端点**：`GET /api/health`、`GET/POST /api/rating`、`POST /api/preview`、`POST /api/export?mode=aggregate|each`；排行榜 / 站内通知端点见 `java/README.md`。
+- **API 端点**：`GET /api/health`、`POST /api/preview`（含战斗表现）、`POST /api/export?mode=aggregate|each`；排行榜 / 站内通知端点见 `java/README.md`。
 - **公开解析边界**：最多 100 个回放、单文件 20 MiB、总请求 200 MiB；单实例默认同时处理 2 个任务；容量满 503 `REPLAY_BUSY`。
 
 ---
@@ -443,7 +440,7 @@ cd frontend && npm test
 | AI 复盘架构（双 Call / 团队复盘 / Autopsy / 范围边界 / 预算） | `docs/architecture/ai-review.md` | 改 AI 复盘 / 证据链 / prompt 时 |
 | 完整回放重建流水线 | `docs/architecture/replay-pipeline.md` | 改重建 / decoder 时 |
 | 地图鸟瞰与战局回放 | `docs/features/battle-playback.md` | 改地图鸟瞰 / 战局回放 / 坦克标记时 |
-| 评分（Rating）与潜在伤害 | `docs/features/rating.md` | 改评分 / 潜在伤害时 |
+| 战斗表现与潜在伤害 | `docs/features/performance.md` | 改战斗表现指标 / 潜在伤害时 |
 | 名人堂 | `docs/features/hall-of-fame.md` | 改名人堂时 |
 | Team AI 复盘设计 | `docs/features/team-ai-review.md` | 改团队复盘产品语义时 |
 | 回放数据字典 | `docs/reference/replay-data.md` | 深入回放格式 / 字段时 |

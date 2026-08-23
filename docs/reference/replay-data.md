@@ -462,7 +462,6 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `tank_tier`                   | 整数  | `Tankopedia.info(tankId).tier()`         | 等级    | 车辆等级（查表）                                                                        |
 | `tank_type`                   | 文本  | `Tankopedia.info(tankId).type()`         | —     | API 稳定码：`HEAVY_TANK`/`MEDIUM_TANK`/`LIGHT_TANK`/`TANK_DESTROYER`/`OTHER`；导出使用中文 |
 | `tank_nation`                 | 文本  | `Tankopedia.info(tankId).nation()`       | —     | API 稳定国家码；导出使用中文                                                                |
-| `rating`                      | 整数  | `PlayerResult.rating`                    | 评分    | EC 标准化评分（Rating 计算）                                                             |
 | `survived_label`              | 文本  | `PlayerResult.survived`                  | —     | API 返回 `SURVIVED`/`DESTROYED`，前端映射存活/阵亡（#105==-1 → 存活）                          |
 | `kills`                       | 整数  | `PlayerResult.kills`                     | 人数    | #18                                                                             |
 | `damage_dealt`                | 整数  | `PlayerResult.damageDealt`               | HP    | #8                                                                              |
@@ -494,7 +493,6 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `win_rate`            | 浮点数 | `wins/battles * 100`     | %    |
 | `survival_rate`       | 浮点数 | `survived/battles * 100` | %    |
 | `survival_avg`        | 浮点数 | `survivalSum/battles`    | 秒    |
-| `rating_avg`          | 浮点数 | `ratingSum/battles`      | 评分/场 |
 | `kills`               | 整数  | Sum                      | 人数   |
 | `kills_avg`           | 浮点数 | `kills/battles`          | 人数/场 |
 | `damage`              | 整数  | Sum                      | HP   |
@@ -524,7 +522,6 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | 时间戳   | **Unix 秒** | 自 1970-01-01 起的秒数                                     |
 | 次数/计数 | **次**      | 射击/命中/击杀/人数                                           |
 | 百分比   | **%**      | `0.0-100.0`                                           |
-| 评分    | **rating** | EC 归一化评分（≈200-1500）                                   |
 | 银币    | **银币**     | 字段 #106（未使用）                                          |
 | 经验    | **经验**     | 字段 #23（未使用）                                           |
 

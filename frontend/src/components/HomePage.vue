@@ -78,13 +78,6 @@ function formatDamage(value) {
         <span class="tag avail">{{ $t('home.available') }}</span>
       </a>
 
-      <a class="card" href="/?view=extended">
-        <span class="card-mark">03</span>
-        <h2>{{ $t('home.ratingV2Title') }}</h2>
-        <p>{{ $t('home.ratingV2Desc') }}</p>
-        <span class="tag avail">{{ $t('extended.nav') }}</span>
-      </a>
-
       <a class="card" href="/?view=reconstruction">
         <span class="card-mark">04</span>
         <h2>{{ $t('recon.nav') }}</h2>
