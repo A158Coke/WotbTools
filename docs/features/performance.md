@@ -26,7 +26,19 @@ Battle Playback / AI Review / Performance Metrics 全部消费同一 `Battle` / 
 事实；`PotentialDamage.apply` 由编排层（`ReplayService`）在 metrics 之前执行，metrics 不再
 mutate 任何字段，也不再自行解析回放或查询 Tankopedia。
 
-## 输出列（`POST /api/performance`）
+## 集成方式
+
+战斗表现不再有独立页面/独立端点：**并入 `POST /api/preview`**。用户上传一次回放，同一请求
+生命周期内每个 replay 只做一次完整处理（`DefaultReplayProcessingFacade` full：
+parse + reconstruction + `ObservedMaxHp` + `DeathTimeReconciler`），同时产出：
+
+- `battles`：基础战绩（authoritative Battle/PlayerResult facts）
+- `aggregate`：跨场汇总
+- `performance`：战斗表现（同一 facts 的 pure derived metrics）
+
+前端 ReplayPage 上传一次即可通过「战斗表现」tab 查看，无独立入口、无重复上传、无第二套 pipeline。
+
+## 输出列（preview 内嵌 `performance`）
 
 | key | 含义 |
 | --- | --- |
@@ -54,8 +66,14 @@ average_hp = 参战玩家（provenance-aware 满血）之和 ÷ 14
 
 逐车满血取 `ObservedMaxHp.fullMaxHp(player)`：`entryHpSource == OBSERVED_EXACT` 用回放
 已证明的进场满血（含装备/物资加成）；否则用 Tankopedia 基础 HP（BASE_FALLBACK baseline）。
-车辆库也没有时该车贡献 0——**禁止硬编码 2400 兜底冒充权威**（历史 Rating V2 曾固定 2400，
-已移除）。HP 完全未知时 `average_hp = 0`，指标按 unknown fail-closed（如多伤率不再猜测）。
+**禁止硬编码 2400 兜底冒充权威**（历史 Rating V2 曾固定 2400，已移除）。
+
+**Provenance 语义（fail-closed）**：`BattleHpFacts.averageHp(battle)` 返回
+`BattleAverageHp(value, complete)`——标准 14 人战斗中存在需要计入平均值的玩家 HP UNKNOWN
+（无 OBSERVED_EXACT 且无 tankopedia base）时，场均 HP 为 **unavailable（complete=false）**，
+**禁止 UNKNOWN 按 0 参与均值**。依赖 averageHp 的衍生指标（贡献度击杀项 / KAST / 多伤率 /
+场均 HP）在 unavailable 场次 fail-closed（按「HP 已知场次」做分母，不产生伪精确结果）；
+不依赖 HP 的原始权威数据（damage / assist / kills / survival / traded / impact）仍正常显示。
 
 ## KAST
 
@@ -108,11 +126,11 @@ killer 级 trade 语义应在事实层扩展，不在 metrics 层重推。
 
 ## API
 
-- `POST /api/performance`：上传本次回放，完整处理以回填 `OBSERVED_EXACT` 进场满血，
-  返回战斗表现表、重复文件、解析失败文件和 `performanceColumns`；重建不可用时保留结算
-  战绩并回退车辆库基础 HP。
-- `/api/columns.performance`：只返回英文 key + 是否数值，显示名由前端三语
-  `performance_labels` 映射。
+- `POST /api/preview`：唯一入口。同一请求内每个 replay 只做一次完整处理，同时返回
+  `battles`（基础战绩 + 扩展字段）+ `aggregate` + `performance`（含 `performanceColumns`）
+  + `duplicates` / `failures`；重建不可用时保留结算战绩并回退车辆库基础 HP。
+- 已删除独立 `POST /api/performance` 端点与 `/extended` 页面（不再存在第二套 pipeline）。
+- `performance` 列 key 纯英文 + 是否数值，显示名由前端三语 `performance_labels` 映射。
 
 ## 潜在伤害（Potential Damage）链路
 
@@ -120,8 +138,8 @@ killer 级 trade 语义应在事实层扩展，不在 metrics 层重推。
   解析攻击者、受害者和伤害值；阵亡玩家累计 direct damage 达到 `damageReceived` 阈值时，
   推断当前攻击者为击杀者，并把累计 direct damage / penetrations 写入
   `PlayerResult.killVictims`。
-- `PotentialDamage.apply(battles, tankopedia)` 在编排层（`ReplayService.preview` /
-  `performanceLeaderboard`）执行：读 `killVictims` 与 `Tankopedia.alphaDamage`，按
+- `PotentialDamage.apply(battles, tankopedia)` 在编排层（`ReplayService.preview`）执行：
+  读 `killVictims` 与 `Tankopedia.alphaDamage`，按
   `0.9 * alphaDamage * penetrations` 补增潜在伤害；事件缺失 / entity 无法映射 / 特殊伤害
   未覆盖时保守回退 `potential_damage == damage_dealt`、`potential_damage_supplement == 0`、
   `potential_damage_detail == 未解析`。
@@ -130,7 +148,7 @@ killer 级 trade 语义应在事实层扩展，不在 metrics 层重推。
 
 - `PerformanceMetricsCalculatorTest` 覆盖 Trade death KAST、多伤率、协助、Impact、
   OBSERVED_EXACT 进场满血 ÷ 14，以及 HP 未知 fail-closed（多伤率不猜测）。
-- `ReplayServiceTest` 覆盖 `performanceLeaderboard` 走完整回放处理；`WebApiTest` 覆盖
-  `POST /api/performance` 返回字段（不含 `rating`）。
+- `ReplayServiceTest` 覆盖 `preview` 走完整回放处理并内嵌 `performance`；`WebApiTest` 覆盖
+  `POST /api/preview` 的 `performance` 字段（不含 `rating`）。
 - `docs/current-plan.md` 要求单一事实源回归：Playback 伤害 == Performance Metrics 输入
   伤害（同一 `PlayerResult.damageDealt`）。

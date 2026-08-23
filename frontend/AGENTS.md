@@ -10,7 +10,7 @@
 
 ## 结构与约定
 
-- 入口 `index.html`（工具集主页，单文件 `App.vue`）；`extended.html` = 战斗表现独立入口；`homepage/` = 工具集主页 + 赞助页。
+- 入口 `index.html`（工具集主页，单文件 `App.vue`）；`homepage/` = 工具集主页 + 赞助页。
 - `src/composables/`（useTheme/useReplay/useColumns/useAuth 等）、`src/utils/`、`src/components/`、`src/styles/`、`src/data/`。
 - **i18n**：所有文案在 `src/locales/{zh,en,ru}.json` 三语同步；显示名在 `player_labels`/`agg_labels`；稳定错误码走 `api_errors.*`；禁止硬编码文案。
 - **跨站偏好**：主题/语言偏好写 `domain=.wotbtools.com` cookie（`utils/theme.js` 同款写法），localStorage 仅本地开发回退。

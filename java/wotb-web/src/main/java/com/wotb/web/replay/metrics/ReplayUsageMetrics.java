@@ -28,7 +28,6 @@ public class ReplayUsageMetrics {
 
     public static final String OP_PREVIEW = "preview";
     public static final String OP_EXPORT = "export";
-    public static final String OP_PERFORMANCE = "performance";
     public static final String OP_PROCESS = "process";
     public static final String OP_RECONSTRUCT = "reconstruct";
     public static final String OP_AI_REVIEW = "ai_review";

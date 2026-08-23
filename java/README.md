@@ -90,24 +90,25 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 地图名由共享字典 `common/map_names.json` 提供 `zh/en/ru` 三语映射；前端 `mapLabel()` 按当前 locale 取值，导出层 `MapNames.cn()` 继续固定使用中文。
 
 
-扩展页 `/extended` 可展示原回放页隐藏的扩展字段：`alpha_damage`、`rank`、`potential_damage`、`potential_damage_supplement`、`potential_damage_detail`。
-这些字段仍会出现在 API 与导出列定义中，原回放页面的列选择器会过滤扩展专用字段。`xp`、`credits` 仅在 parser/model 保留，不作为战绩字段展示。
+战斗表现（Performance Metrics）已并入 `POST /api/preview`：一次上传、一次完整回放处理
+（parse + reconstruction + `ObservedMaxHp` + `DeathTimeReconciler`）同时产出基础战绩、汇总与战斗表现，
+不存在独立 `/extended` 页面或 `/api/performance` 端点。
 
+### `POST /api/preview`
 
-### `POST /api/performance`
-
-`multipart/form-data`，字段名为 `files`。只基于本次上传回放实时计算，不落库、不读取历史记录。
-为取得已证明的进场满血，请求会执行完整回放处理：`OBSERVED_EXACT` 使用回放实测进场满血，
-其余车辆使用 Tankopedia 基础 HP（车辆库也缺失时 fail-closed，不再硬编码 2400），再按本局
-14 辆参战车辆总血量 ÷ 14 计算平均血量（`BattleHpFacts` 权威口径）。
+`multipart/form-data`，字段名为 `files`，可上传一个或多个 `.wotbreplay`。
+每个文件走统一完整处理链（`DefaultReplayProcessingFacade` full），同一请求生命周期内只解析一次：
+为取得已证明的进场满血，`OBSERVED_EXACT` 使用回放实测进场满血，其余车辆使用 Tankopedia 基础 HP
+（车辆库也缺失时 fail-closed，不再硬编码 2400；存在 UNKNOWN 时场均 HP unavailable，依赖 HP 的
+衍生指标 fail-closed，见 `BattleHpFacts`）。
 
 返回：
 
-- `rows`：每名选手的 `contribution`、`kast`、`impact`、`assist_avg`、`multi_damage_rate`、`survival_rate`、`traded_deaths`、`damage_avg`、`potential_damage_avg`、`kills` 等（无综合评分）。
-- `duplicates` / `failures`：与 `/api/preview` 相同的去重和失败信息。
-- `performanceColumns`：纯英文 key + 是否数值，前端由三语 `performance_labels` 显示。
-
-前端可从 SPA 的 `?view=extended` 或独立 `/extended` 入口进入。
+- `battles`：每场玩家基础战绩 + 扩展字段（`alpha_damage`、`rank`、`potential_damage`、`potential_damage_supplement`、`potential_damage_detail`）。
+- `aggregate`：跨场汇总（>1 场时）。
+- `performance`：每名选手的 `contribution`、`kast`、`impact`、`assist_avg`、`multi_damage_rate`、`survival_rate`、`traded_deaths`、`damage_avg`、`potential_damage_avg`、`kills` 等（无综合评分）。
+- `duplicates` / `failures`：去重和失败信息。
+- `playerColumns` / `aggregateColumns` / `performanceColumns`：纯英文 key + 是否数值，前端由三语 `player_labels` / `agg_labels` / `performance_labels` 显示。
 
 ### `POST /api/preview`
 

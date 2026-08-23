@@ -2,7 +2,6 @@ package com.wotb.web.replay.controller;
 
 import com.wotb.web.replay.dto.ExportResult;
 import com.wotb.web.replay.dto.PreviewResponse;
-import com.wotb.web.replay.dto.PerformanceResponse;
 import com.wotb.web.replay.service.ReplayService;
 import com.wotb.web.config.ApiPaths;
 import org.springframework.core.io.ByteArrayResource;
@@ -35,12 +34,6 @@ public class ReplayController {
     @GetMapping(ApiPaths.COLUMNS)
     public Object columns() {
         return service.columns();
-    }
-
-    @PostMapping(value = ApiPaths.PERFORMANCE, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public PerformanceResponse performanceLeaderboard(@RequestParam(name = "files") final MultipartFile[] files)
-            throws Exception {
-        return service.performanceLeaderboard(files);
     }
 
     @GetMapping(ApiPaths.HEALTH)

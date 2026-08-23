@@ -17,8 +17,8 @@ import com.wotb.web.replay.dto.AggRow;
 import com.wotb.web.replay.dto.BattleDto;
 import com.wotb.web.replay.dto.ColumnDef;
 import com.wotb.web.replay.dto.ExportResult;
+import com.wotb.web.replay.dto.PerformanceRow;
 import com.wotb.web.replay.dto.PreviewResponse;
-import com.wotb.web.replay.dto.PerformanceResponse;
 import com.wotb.web.replay.mapper.Mapper;
 import com.wotb.web.replay.metrics.ReplayUsageMetrics;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -79,8 +79,7 @@ public class ReplayService {
     public Map<String, List<ColumnDef>> columns() {
         return Map.of(
                 "player", Mapper.playerColumns(),
-                "aggregate", Mapper.aggregateColumns(),
-                "performance", Mapper.performanceColumns());
+                "aggregate", Mapper.aggregateColumns());
     }
 
     /** 已加载车辆数 (健康检查用)。 */
@@ -94,7 +93,9 @@ public class ReplayService {
     }
 
     private PreviewResponse previewWithinPermit(final MultipartFile[] files) throws Exception {
-        final Collected c = Replays.collect(toSources(files), null);
+        // 统一完整处理链：parse + reconstruction + ObservedMaxHp + DeathTimeReconciler
+        // （同一请求生命周期内每个 replay 只解析一次，战斗表现复用同一 authoritative facts）
+        final Collected c = Replays.collect(toSources(files), this::processFull, null);
         PotentialDamage.apply(c.battles, tankopedia);   // 事实层 enrich（metrics 只读）
 
         final List<BattleDto> battles = new ArrayList<>();
@@ -104,26 +105,14 @@ public class ReplayService {
         final List<AggRow> aggregate = c.battles.size() > 1
                 ? Mapper.toAggregate(Aggregator.aggregate(c.battles, tankopedia))
                 : List.of();
+        final List<PerformanceRow> performance = Mapper.toPerformance(PerformanceMetricsCalculator.compute(c.battles));
 
-        return new PreviewResponse(battles, aggregate, c.duplicates, c.failures,
-                Mapper.playerColumns(), Mapper.aggregateColumns());
-    }
-
-    /** 战斗表现（Performance Metrics）: 只基于本次上传回放计算，不落库、不读取历史记录。 */
-    public PerformanceResponse performanceLeaderboard(final MultipartFile[] files) throws Exception {
-        return timed(ReplayUsageMetrics.OP_PERFORMANCE, files.length,
-                () -> capacityLimiter.execute(() -> performanceWithinPermit(files)));
-    }
-
-    private PerformanceResponse performanceWithinPermit(final MultipartFile[] files) throws Exception {
-        final Collected c = Replays.collect(toSources(files), this::processPerformanceSource, null);
-        PotentialDamage.apply(c.battles, tankopedia);   // 事实层 enrich（metrics 只读，不再 mutate battle）
-        return new PerformanceResponse(Mapper.toPerformance(PerformanceMetricsCalculator.compute(c.battles)),
-                c.duplicates, c.failures, Mapper.performanceColumns());
+        return new PreviewResponse(battles, aggregate, performance, c.duplicates, c.failures,
+                Mapper.playerColumns(), Mapper.aggregateColumns(), Mapper.performanceColumns());
     }
 
     /** 完整处理回填已证明的进场满血；重建不可用时仍返回结算战绩并使用车辆库兜底。 */
-    private Battle processPerformanceSource(final Source source) {
+    private Battle processFull(final Source source) {
         final ReplayProcessingResult result = processingFacade.process(source, ReplayProcessingOptions.full());
         if (result.battle() != null) {
             return result.battle();
@@ -132,6 +121,7 @@ public class ReplayService {
                 ? result.error().message() : "REPLAY_PROCESSING_FAILED";
         throw new IllegalArgumentException(message);
     }
+
 
     /**
      * 导出 xlsx/zip: 单场 -> 单场工作簿; 多场 -> 去重后的汇总工作簿; mode=each -> 每场一个 xlsx 打包 zip。

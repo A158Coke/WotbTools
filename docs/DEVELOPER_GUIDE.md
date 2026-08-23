@@ -115,7 +115,6 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 │   │   ├── index.html
 │   │   ├── sponsor.html
 │   │   └── sponsor-config.js
-│   ├── extended.html             #   战斗表现独立入口
 ├── .github/
 │   ├── workflows/deploy.yml      # 测试门禁 + 每次统一构建三镜像/部署
 │   ├── workflows/database-backup.yml # 每日生产双库备份
@@ -272,7 +271,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 ### Frontend Layout Note
 
 - `App.vue` 顶栏样式为全局样式：桌面端固定在顶部，≤1080px 时切换为 sticky + flex-wrap（导航换行到第二行并自带横向滚动），任意宽度下顶栏自身可横向滚动，保证语言选择、主题切换、反馈入口、版本历史、联系入口和个人中心入口都不会被挤出屏幕。顶栏反馈按钮为外链 `https://github.com/A158Coke/WotbTools/issues/new`（`target="_blank"`，三语文案 `app.feedback`）；版本历史（`version.btn`）与联系页（`contact.nav`）为 SPA 内导航。
-- Vue SPA 主入口视觉变量集中在 `App.vue` 的 `:root` / `[data-theme="dark"]`；独立 `/extended` 入口通过 `frontend/src/styles/theme.css` 复用同一套变量。首页、上传区、排行榜和表格应优先复用这些变量，避免局部硬编码色板。
+- Vue SPA 主入口视觉变量集中在 `App.vue` 的 `:root` / `[data-theme="dark"]`；`frontend/src/styles/theme.css` 复用同一套变量。首页、上传区、排行榜和表格应优先复用这些变量，避免局部硬编码色板。
 - 评分徽章样式使用 `r-elite` / `r-great` / `r-good` / `r-mid` / `r-poor`；最高/最低标记由 `utils/helpers.js` 的 `medal(...)` 统一计算，最低评分允许为 `0`，全员同分不显示奖惩。
 - 公共首页可通过 `?view=home` 本地预览；线上 `wotbtools.com` / `www.wotbtools.com` 无参数仍默认进入首页。
 - 首页首屏「最高伤害记录」读取 `/api/hof?page=1&size=1`，只展示当前全局第一条 `damageDealt`，接口失败或无数据时显示 `--`。
@@ -285,7 +284,6 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 - `?view=replay`：进入回放提取器。
 - `?view=hof`：进入名人堂（旧书签 `?view=leaderboard` 自动 canonicalize 到 `hof`）。
 - `?view=hof-admin`：进入名人堂管理（仅 `HoF-admin` 或 `wotbtools-admin` 角色；无权限显示明确无权限状态）。
-- `?view=extended`：进入战斗表现扩展分析页。
 - `?view=boost`：进入陪练、打手申请与管理员资格审批页。
 - `?view=profile`：进入个人中心。
 - `?view=admin-users`：进入管理员用户管理（仅 `wotbtools-admin` 角色可见）。
@@ -308,7 +306,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
   - `utils/page.js` — Spring `Page.number` 响应归一化与分页默认值
   - `utils/theme.js` — 纯函数（readTheme / saveTheme / resolveTheme / applyTheme），Cookie `.wotbtools.com` 域共享 + localStorage 回退
 - `utils/helpers.js` — 常量（DEFAULT_VISIBLE / EXTENDED_ONLY_PLAYER_KEYS）+ 工具函数（按 locale 取地图名的 `mapLabel` 等）
-- UI 组件在 `components/`：FileUploader / ColumnPicker / AggregateTable / BattleTable / RemoveConfirmModal / HoFPage / HoFAdminPage / LoginPage（QQ + Wargaming 登录选择页）/ ProfilePage（含站内通知面板）/ BoostPage / AdminUsersPage / HomePage / ExtendedPage / ReplayPage
+- UI 组件在 `components/`：FileUploader / ColumnPicker / AggregateTable / BattleTable / PerformanceTable / RemoveConfirmModal / HoFPage / HoFAdminPage / LoginPage（QQ + Wargaming 登录选择页）/ ProfilePage（含站内通知面板）/ BoostPage / AdminUsersPage / HomePage / ReplayPage
 - AI 复盘页组件：`ReconstructionPage`（登录门控 + 编排）→ `ReplayInputPanel`（`ReplayFilePicker` 选文件 + `ReplayAnalysisAction` 触发分析）→ 独立「地图鸟瞰」区块（`MapOverview` 三视图：热力/路线/战局回放，经 `POST /api/replay/map-overview` 只解析回放、不调 AI——不跑 AI 复盘也能看图；`AnalysisResultPanel` 不再渲染地图块，其 AI 报告时间链接把 `seek` 事件上抛给页面加载/跳转并自动滚动回地图区块）→ `AnalysisResultPanel`（Markdown 正文常驻展示，`MarkdownContent` 渲染）；赛前预测/复盘正文/地图鸟瞰三板块均可独立展开/收起（默认展开）；战局回放坦克标记随地图缩放（坦克名/阵亡 ✕ 叠加层屏幕恒定），地图下方显示双方总血量条（实时剩余，含装备/物资加成）与争霸赛点数；战局回放内置临时地图标注工具栏（画笔/形状/文字，纯本地不持久化，契约见 `docs/features/battle-playback.md`「地图标注」）
 - 战局回放 Details Panel 的 Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，
   由 `scripts/blitzkit-references.mjs --emit-portraits` 从 BlitzKit 确定性生成并随站点发布；
@@ -361,7 +359,7 @@ API 层为**纯英文**：`/api/columns` 与各 DTO 只回 `key`(snake_case) + �
 - **百场（Hundred Battles）**：`wotb-web/.../hundred/` 域（`HundredBattleSubmission` 单表生命周期 PENDING/CURRENT/SUPERSEDED/REJECTED/CANCELLED/DELETED；Flyway `V18` partial unique index 保证 user+vehicle 最多一个 PENDING/CURRENT）；公开 `GET /api/hof/hundred?vehicleId=`（Tier X 单车辆独立排行，competition ranking query-time 派生不落库）；提交 `POST /api/hof/hundred/submissions`（登录 + Profile gameId/nickname 前置校验 + Tier X 后端校验 + 1 张 base64 截图 + 5 replay 硬门禁：解析成功/gameId/vehicleId 匹配/5 场不同 battle）；用户取消 `POST .../submissions/{id}/cancel`；个人中心 `GET /api/users/hundred/status`；管理后台 `/api/admin/hof/hundred/**`（approve 事务内行锁重读 CURRENT 按 approvedAverageDamage 严格比较；reject/delete 原因强制；proof 截图终态事务内清空不永久保存；5 个原始 replay 由 `hundred_battle_replay_evidence`（Flyway V19）内容寻址持久化，终态同事务删行 + commit 后引用计数清理物理文件，admin-only 列表/下载端点）。见 `docs/features/hall-of-fame.md`「百场」章节。
 - **名人堂（Hall of Fame）**：schema 由 Flyway 管理；只记录录像者本人随机战斗（`arenaBonusType==1`）与评级战斗（`==7`）单场伤害（`HallOfFameBattleTypePolicy` 单一事实源，其余模式 400 `UNSUPPORTED_BATTLE_TYPE` 零持久化）；统一公开查询 `GET /api/hof`（battleType/tank/nickname 过滤 + 位置排名，同伤害 RATING 优先）；上传/下载需登录；管理后台 `GET/DELETE /api/admin/hof/**`（HoF-admin 或 wotbtools-admin；audit + delete 单事务，ReplayHashLock 保证文件引用不变量）；原始 .wotbreplay 以 SHA-256 内容寻址存 `HOF_REPLAY_DIR`（生产 volume `/data/replays`，best-effort 可丢、不纳入 DB 备份）。见 `docs/features/hall-of-fame.md`。
 - **i18n**：vue-i18n 三语（zh/en/ru），`locales/*.json`；地图名 `common/map_names.json`，网页按当前语言显示，导出固定中文。
-- **API 端点**：`GET /api/health`、`POST /api/performance`、`POST /api/preview`、`POST /api/export?mode=aggregate|each`；排行榜 / 站内通知端点见 `java/README.md`。
+- **API 端点**：`GET /api/health`、`POST /api/preview`（含战斗表现）、`POST /api/export?mode=aggregate|each`；排行榜 / 站内通知端点见 `java/README.md`。
 - **公开解析边界**：最多 100 个回放、单文件 20 MiB、总请求 200 MiB；单实例默认同时处理 2 个任务；容量满 503 `REPLAY_BUSY`。
 
 ---

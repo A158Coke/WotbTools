@@ -44,6 +44,7 @@
     },
     "result": {
         "aggregate_tab": "Aggregate ({count} players)",
+        "performance_tab": "Performance",
         "scroll_hint": "← Scroll horizontally for more data →",
         "duplicates": "Skipped {count} duplicate upload(s):",
         "failures": "{count} file(s) failed to parse:"
@@ -541,18 +542,6 @@
         "png_export_failed": "PNG export failed",
         "png_exporting": "Exporting PNG…"
     },
-    "extended": {
-        "nav": "Performance",
-        "title": "Extended analysis",
-        "preview": "Parse extended fields",
-        "performance": "Performance analysis",
-        "performance_title": "Realtime performance",
-        "fields_title": "Extended fields",
-        "empty": "No files selected",
-        "no_files": "Select replay files or a folder first",
-        "scope_preview": "Extended fields",
-        "scope_performance": "Performance"
-    },
     "boost": {
         "submitTab": "Submit",
         "myTab": "My",
@@ -980,8 +969,6 @@
         "replayDesc": "Upload .wotbreplay files, extract battle data and export to Excel.",
         "highestDamageRecord": "Highest Damage Record",
         "hofDesc": "Damage Hall of Fame for Random and Rating battles — upload a replay to enter.",
-        "performanceTitle": "Performance Metrics",
-        "performanceDesc": "Battle performance metrics derived from unified replay facts: contribution, KAST, Impact, potential damage, assist and kills — no more composite rating.",
         "aiReviewDesc": "Upload a single replay and AI Review returns a tactical debrief with improvement tips. Sign-in required.",
         "available": "Available",
         "sponsorTitle": "Sponsor",
