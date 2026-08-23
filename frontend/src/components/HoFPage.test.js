@@ -55,6 +55,7 @@ describe('HoFPage', () => {
     authenticated = true
     vi.clearAllMocks()
     lbApi.hofVehicleOptions.mockResolvedValue([])
+    lbApi.hofHundredSubmit.mockResolvedValue({ id: 1, status: 'PENDING' })
   })
 
   function mountPage() {
@@ -79,6 +80,19 @@ describe('HoFPage', () => {
       replayAvailable: false,
       ...overrides
     }
+  }
+
+  async function setFiles(input, files) {
+    Object.defineProperty(input.element, 'files', { value: files, configurable: true })
+    await input.trigger('change')
+    await flushPromises()
+  }
+
+  async function openHundredSubmit(wrapper) {
+    await wrapper.findAll('.tabs button')[1].trigger('click')
+    await flushPromises()
+    await wrapper.find('.h100-submit-btn').trigger('click')
+    await flushPromises()
   }
 
   it('renders download button only for rows with replayAvailable', async () => {
@@ -357,5 +371,174 @@ describe('HoFPage', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('hundred.fillRequired')
     expect(lbApi.hofHundredSubmit).not.toHaveBeenCalled()
+  })
+
+  it('keeps the current-page draft and selected files after closing by the backdrop', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    await openHundredSubmit(wrapper)
+
+    const modal = wrapper.find('.h100-modal')
+    await modal.find('select').setValue('385')
+    await modal.find('#h100-submit-damage').setValue('4200')
+    await modal.find('#h100-submit-battles').setValue('120')
+    const proof = new File(['proof'], 'proof.png', { type: 'image/png', lastModified: 1 })
+    const replay = new File(['r1'], 'battle-1.wotbreplay', { lastModified: 11 })
+    const fileInputs = modal.findAll('input[type="file"]')
+    await setFiles(fileInputs[0], [proof])
+    await vi.waitFor(() => expect(modal.text()).toContain('proof.png'))
+    await setFiles(fileInputs[1], [replay])
+
+    expect(modal.text()).toContain('battle-1.wotbreplay')
+    await wrapper.find('.modal-overlay').trigger('click')
+    expect(wrapper.find('.h100-modal').exists()).toBe(false)
+
+    const filters = wrapper.findAll('.h100-filter select')
+    await filters[0].setValue('UK')
+    await filters[1].setValue('TANK_DESTROYER')
+    await flushPromises()
+
+    await wrapper.find('.h100-submit-btn').trigger('click')
+    await flushPromises()
+    const reopened = wrapper.find('.h100-modal')
+    expect(reopened.find('select').element.value).toBe('385')
+    expect(reopened.find('#h100-submit-damage').element.value).toBe('4200')
+    expect(reopened.find('#h100-submit-battles').element.value).toBe('120')
+    expect(reopened.find('select').findAll('option').map(option => option.text())).toContain('Progetto 65')
+    expect(reopened.text()).toContain('proof.png')
+    expect(reopened.text()).toContain('battle-1.wotbreplay')
+  })
+
+  it('appends replay selections in batches, ignores duplicates, and preserves old files on overflow', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    await openHundredSubmit(wrapper)
+
+    const replayInput = () => wrapper.find('.h100-modal').findAll('input[type="file"]')[1]
+    const replay = (number) => new File(
+      [`r${number}`], `battle-${number}.wotbreplay`, { lastModified: number }
+    )
+    const r1 = replay(1)
+    await setFiles(replayInput(), [r1])
+    await setFiles(replayInput(), [replay(2), replay(3)])
+    expect(wrapper.findAll('.h100-selected-files li').map(item => item.text()))
+      .toEqual(expect.arrayContaining(['1battle-1.wotbreplay×', '2battle-2.wotbreplay×', '3battle-3.wotbreplay×']))
+
+    await setFiles(replayInput(), [new File(['bad'], 'not-a-replay.txt', { lastModified: 99 })])
+    expect(wrapper.findAll('.h100-selected-files li')).toHaveLength(3)
+    expect(wrapper.find('.h100-err').text()).toContain('hundred.invalidReplayType')
+
+    await setFiles(replayInput(), [r1, replay(4)])
+    expect(wrapper.findAll('.h100-selected-files li')).toHaveLength(4)
+    expect(wrapper.find('.h100-err').text()).toContain('hundred.replayDuplicateIgnored')
+
+    await setFiles(replayInput(), [replay(5), replay(6)])
+    expect(wrapper.findAll('.h100-selected-files li')).toHaveLength(4)
+    expect(wrapper.find('.h100-err').text()).toContain('hundred.replayLimit')
+
+    await wrapper.findAll('.h100-selected-files .h100-remove-file')[1].trigger('click')
+    expect(wrapper.findAll('.h100-selected-files li')).toHaveLength(3)
+    expect(wrapper.find('.h100-selected-files').text()).not.toContain('battle-2.wotbreplay')
+  })
+
+  it('clears the draft only after explicit confirmation', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    await openHundredSubmit(wrapper)
+    await wrapper.find('#h100-submit-damage').setValue('4200')
+    await setFiles(
+      wrapper.find('.h100-modal').findAll('input[type="file"]')[1],
+      [new File(['r1'], 'battle-1.wotbreplay', { lastModified: 1 })]
+    )
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    await wrapper.find('.h100-clear-draft').trigger('click')
+
+    expect(confirm).toHaveBeenCalledWith('hundred.clearDraftConfirm')
+    expect(wrapper.find('#h100-submit-damage').element.value).toBe('')
+    expect(wrapper.find('.h100-selected-files').exists()).toBe(false)
+    confirm.mockRestore()
+  })
+
+  it('invalidates an older pending screenshot read when a later invalid file is selected', async () => {
+    const readers = []
+    class DeferredFileReader {
+      constructor() {
+        this.onload = null
+        this.onerror = null
+        this.result = null
+        readers.push(this)
+      }
+
+      readAsDataURL() {}
+    }
+    vi.stubGlobal('FileReader', DeferredFileReader)
+    try {
+      const wrapper = mountPage()
+      await flushPromises()
+      await openHundredSubmit(wrapper)
+      const screenshotInput = () => wrapper.find('.h100-modal').findAll('input[type="file"]')[0]
+
+      await setFiles(screenshotInput(), [
+        new File(['valid'], 'first.png', { type: 'image/png', lastModified: 1 })
+      ])
+      expect(readers).toHaveLength(1)
+      expect(wrapper.find('.h100-file-reading').exists()).toBe(true)
+
+      await setFiles(screenshotInput(), [
+        new File(['invalid'], 'second.txt', { type: 'text/plain', lastModified: 2 })
+      ])
+      readers[0].result = 'data:image/png;base64,AAAA'
+      readers[0].onload()
+      await flushPromises()
+
+      expect(wrapper.find('.h100-file-reading').exists()).toBe(false)
+      expect(wrapper.find('.h100-selected-file').exists()).toBe(false)
+      expect(wrapper.find('.h100-err').text()).toContain('hundred.invalidImageType')
+      expect(wrapper.text()).not.toContain('first.png')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('keeps the draft after submit failure and clears it after successful submit', async () => {
+    lbApi.hofHundredSubmit
+      .mockRejectedValueOnce(new ApiError('UPLOAD_FAILED', 500))
+      .mockResolvedValueOnce({ id: 1, status: 'PENDING' })
+    const wrapper = mountPage()
+    await flushPromises()
+    await openHundredSubmit(wrapper)
+
+    const modal = wrapper.find('.h100-modal')
+    await modal.find('select').setValue('385')
+    await modal.find('#h100-submit-damage').setValue('4200')
+    await modal.find('#h100-submit-battles').setValue('120')
+    await setFiles(
+      modal.findAll('input[type="file"]')[0],
+      [new File(['proof'], 'proof.png', { type: 'image/png', lastModified: 1 })]
+    )
+    await vi.waitFor(() => expect(modal.text()).toContain('proof.png'))
+    await setFiles(
+      modal.findAll('input[type="file"]')[1],
+      [1, 2, 3, 4, 5].map(number => new File(
+        [`r${number}`], `battle-${number}.wotbreplay`, { lastModified: number }
+      ))
+    )
+
+    await wrapper.find('.h100-modal-submit').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.h100-modal').exists()).toBe(true)
+    expect(wrapper.findAll('.h100-selected-files li')).toHaveLength(5)
+    expect(wrapper.find('#h100-submit-damage').element.value).toBe('4200')
+
+    await wrapper.find('.h100-modal-submit').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.h100-modal').exists()).toBe(false)
+
+    await wrapper.find('.h100-submit-btn').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('#h100-submit-damage').element.value).toBe('')
+    expect(wrapper.find('.h100-selected-files').exists()).toBe(false)
+    expect(wrapper.find('.h100-selected-file').exists()).toBe(false)
   })
 })

@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.13",
+    "date": "2026-08-23",
+    "tag": "add",
+    "zh": "百场成绩提交新增当前页面会话草稿：关闭弹窗不会丢失填写内容、截图或回放；5 个回放可分多次逐个或批量追加，并能查看和单独移除。提交失败保留草稿，提交成功或主动清空后才移除；刷新或关闭网页后不保留文件。",
+    "en": "The 100-battle submission dialog now keeps a page-session draft: closing it no longer loses entered values, the screenshot, or replay files. The 5 replays can be added one at a time or in multiple batches, reviewed in a list, and removed individually. Failed submissions keep the draft; successful submission or an explicit clear removes it. Files are not retained after refreshing or closing the page.",
+    "ru": "В форме результата за 100 боёв появился черновик текущего сеанса страницы: закрытие окна больше не удаляет введённые данные, скриншот и реплеи. Пять реплеев можно добавлять по одному или несколькими партиями, просматривать в списке и удалять отдельно. После ошибки черновик сохраняется, а после успешной отправки или явной очистки удаляется; при обновлении или закрытии страницы файлы не сохраняются."
+  },
+  {
     "v": "2.12.12",
     "date": "2026-08-23",
     "tag": "chg",

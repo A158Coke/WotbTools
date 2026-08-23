@@ -352,12 +352,30 @@ const screenshotErr = ref('')
 const replayErr = ref('')
 const screenshotInput = ref(null)
 const replaysInput = ref(null)
+const screenshotName = ref('')
+const screenshotReading = ref(false)
+let screenshotReadGeneration = 0
 const submitForm = reactive({
   vehicleId: null,
   averageDamage: '',
   battleCount: '',
   screenshot: '',
   replays: []
+})
+
+const hasSubmitDraft = computed(() => Boolean(
+  submitForm.vehicleId ||
+  submitForm.averageDamage !== '' ||
+  submitForm.battleCount !== '' ||
+  submitForm.screenshot ||
+  submitForm.replays.length
+))
+
+const submitHundredVehicles = computed(() => {
+  const candidates = filteredHundredVehicles.value
+  const draftVehicle = tier10Vehicles.find(vehicle => vehicle.id === Number(submitForm.vehicleId))
+  if (!draftVehicle || candidates.some(vehicle => vehicle.id === draftVehicle.id)) return candidates
+  return [draftVehicle, ...candidates].sort((a, b) => a.name.localeCompare(b.name))
 })
 
 function openSubmit() {
@@ -368,13 +386,9 @@ function openSubmit() {
   submitError.value = ''
   screenshotErr.value = ''
   replayErr.value = ''
-  submitForm.vehicleId = h100VehicleId.value || null
-  submitForm.averageDamage = ''
-  submitForm.battleCount = ''
-  submitForm.screenshot = ''
-  submitForm.replays = []
-  if (screenshotInput.value) screenshotInput.value.value = ''
-  if (replaysInput.value) replaysInput.value.value = ''
+  if (!submitForm.vehicleId && h100VehicleId.value) {
+    submitForm.vehicleId = h100VehicleId.value
+  }
 }
 
 function closeSubmit() {
@@ -382,11 +396,37 @@ function closeSubmit() {
   showSubmit.value = false
 }
 
-function onScreenshotChange(e) {
-  const f = e.target.files?.[0]
-  if (!f) return
-  screenshotErr.value = ''
+function resetSubmitDraft() {
+  ++screenshotReadGeneration
+  screenshotReading.value = false
+  submitForm.vehicleId = null
+  submitForm.averageDamage = ''
+  submitForm.battleCount = ''
   submitForm.screenshot = ''
+  submitForm.replays = []
+  screenshotName.value = ''
+  screenshotErr.value = ''
+  replayErr.value = ''
+  submitError.value = ''
+  needProfile.value = false
+  if (screenshotInput.value) screenshotInput.value.value = ''
+  if (replaysInput.value) replaysInput.value.value = ''
+}
+
+function clearSubmitDraft() {
+  if (!hasSubmitDraft.value || submitting.value) return
+  if (!window.confirm(t('hundred.clearDraftConfirm'))) return
+  resetSubmitDraft()
+}
+
+function onScreenshotChange(e) {
+  const input = e.target
+  const f = input.files?.[0]
+  input.value = ''
+  if (!f) return
+  const generation = ++screenshotReadGeneration
+  screenshotReading.value = false
+  screenshotErr.value = ''
   if (!f.type.startsWith('image/')) {
     screenshotErr.value = t('hundred.invalidImageType')
     return
@@ -395,30 +435,67 @@ function onScreenshotChange(e) {
     screenshotErr.value = t('hundred.invalidImageSize')
     return
   }
+  screenshotReading.value = true
   const reader = new FileReader()
   reader.onload = () => {
+    if (generation !== screenshotReadGeneration) return
     submitForm.screenshot = String(reader.result || '')
+    screenshotName.value = f.name
+    screenshotReading.value = false
   }
   reader.onerror = () => {
+    if (generation !== screenshotReadGeneration) return
     screenshotErr.value = t('hundred.imageReadError')
+    screenshotReading.value = false
   }
   reader.readAsDataURL(f)
 }
 
+function removeScreenshot() {
+  ++screenshotReadGeneration
+  screenshotReading.value = false
+  submitForm.screenshot = ''
+  screenshotName.value = ''
+  screenshotErr.value = ''
+  if (screenshotInput.value) screenshotInput.value.value = ''
+}
+
+function replayFileKey(file) {
+  return `${file.name}\u0000${file.size}\u0000${file.lastModified}`
+}
+
 function onReplaysChange(e) {
-  const files = Array.from(e.target.files || [])
-  const valid = []
-  for (const f of files) {
-    if (!f.name.toLowerCase().endsWith('.wotbreplay')) {
-      replayErr.value = t('hundred.invalidReplayType')
-      submitForm.replays = []
-      if (replaysInput.value) replaysInput.value.value = ''
-      return
-    }
-    valid.push(f)
+  const input = e.target
+  const files = Array.from(input.files || [])
+  input.value = ''
+  if (!files.length) return
+  if (files.some(file => !file.name.toLowerCase().endsWith('.wotbreplay'))) {
+    replayErr.value = t('hundred.invalidReplayType')
+    return
   }
+  const knownKeys = new Set(submitForm.replays.map(replayFileKey))
+  const additions = []
+  let duplicateCount = 0
+  for (const file of files) {
+    const key = replayFileKey(file)
+    if (knownKeys.has(key)) {
+      duplicateCount++
+      continue
+    }
+    knownKeys.add(key)
+    additions.push(file)
+  }
+  if (submitForm.replays.length + additions.length > 5) {
+    replayErr.value = t('hundred.replayLimit')
+    return
+  }
+  submitForm.replays.push(...additions)
+  replayErr.value = duplicateCount ? t('hundred.replayDuplicateIgnored') : ''
+}
+
+function removeReplay(index) {
+  submitForm.replays.splice(index, 1)
   replayErr.value = ''
-  submitForm.replays = valid
 }
 
 async function submitHundred() {
@@ -429,7 +506,7 @@ async function submitHundred() {
     !submitForm.vehicleId ||
     !Number.isInteger(damage) || damage <= 0 ||
     !Number.isInteger(battles) || battles <= 0 ||
-    !submitForm.screenshot ||
+    !submitForm.screenshot || screenshotReading.value ||
     submitForm.replays.length !== 5
   ) {
     submitError.value = t('hundred.fillRequired')
@@ -451,6 +528,7 @@ async function submitHundred() {
     fd.append('screenshot', submitForm.screenshot)
     for (const r of submitForm.replays) fd.append('replays', r)
     await api.hofHundredSubmit(fd)
+    resetSubmitDraft()
     showSubmit.value = false
     h100Msg.value = t('hundred.submitSuccess')
     h100MsgErr.value = false
@@ -741,12 +819,13 @@ function fmtDate(s) {
       <div class="modal h100-modal">
         <h2>{{ $t('hundred.submitTitle') }}</h2>
         <p>{{ $t('hundred.submitDesc') }}</p>
+        <p class="h100-draft-hint">{{ $t('hundred.draftHint') }}</p>
 
         <div class="h100-field">
           <label class="h100-field-label" for="h100-submit-vehicle">{{ $t('hundred.selectVehicle') }}</label>
           <select id="h100-submit-vehicle" v-model="submitForm.vehicleId">
             <option :value="null" disabled>{{ $t('hundred.chooseVehicle') }}</option>
-            <option v-for="vehicle in filteredHundredVehicles" :key="vehicle.id" :value="vehicle.id">{{ vehicle.name }}</option>
+            <option v-for="vehicle in submitHundredVehicles" :key="vehicle.id" :value="vehicle.id">{{ vehicle.name }}</option>
           </select>
         </div>
 
@@ -766,6 +845,11 @@ function fmtDate(s) {
           <span class="h100-field-label">{{ $t('hundred.screenshotLabel') }}</span>
           <input ref="screenshotInput" type="file" accept="image/*" @change="onScreenshotChange" />
           <small>{{ $t('hundred.screenshotHint') }}</small>
+          <p v-if="screenshotReading" class="h100-file-reading">{{ $t('hundred.readingScreenshot') }}</p>
+          <div v-else-if="screenshotName" class="h100-selected-file">
+            <span class="h100-selected-name" :title="screenshotName">{{ screenshotName }}</span>
+            <button type="button" class="h100-remove-file" :aria-label="$t('hundred.removeFile', { name: screenshotName })" @click="removeScreenshot">×</button>
+          </div>
           <p v-if="screenshotErr" class="h100-err">{{ screenshotErr }}</p>
         </div>
 
@@ -775,6 +859,13 @@ function fmtDate(s) {
           </span>
           <input ref="replaysInput" type="file" accept=".wotbreplay" multiple @change="onReplaysChange" />
           <small>{{ $t('hundred.replaysHint') }}</small>
+          <ul v-if="submitForm.replays.length" class="h100-selected-files">
+            <li v-for="(replay, index) in submitForm.replays" :key="replayFileKey(replay)" class="h100-selected-file">
+              <span class="h100-file-index">{{ index + 1 }}</span>
+              <span class="h100-selected-name" :title="replay.name">{{ replay.name }}</span>
+              <button type="button" class="h100-remove-file" :aria-label="$t('hundred.removeFile', { name: replay.name })" @click="removeReplay(index)">×</button>
+            </li>
+          </ul>
           <p v-if="replayErr" class="h100-err">{{ replayErr }}</p>
         </div>
 
@@ -784,8 +875,9 @@ function fmtDate(s) {
         <p v-else-if="submitError" class="h100-err">{{ submitError }}</p>
 
         <div class="modal-actions">
+          <button type="button" class="ghost danger h100-clear-draft" :disabled="submitting || !hasSubmitDraft" @click="clearSubmitDraft">{{ $t('hundred.clearDraft') }}</button>
           <button type="button" class="ghost" :disabled="submitting" @click="closeSubmit">{{ $t('app.close') }}</button>
-          <button type="button" class="filebtn h100-modal-submit" :disabled="submitting" @click="submitHundred">
+          <button type="button" class="filebtn h100-modal-submit" :disabled="submitting || screenshotReading" @click="submitHundred">
             {{ submitting ? $t('hundred.submitting') : $t('hundred.submit') }}
           </button>
         </div>
@@ -895,6 +987,12 @@ function fmtDate(s) {
 .h100-pending-card .ghost { margin-left: auto; }
 
 /* 提交弹窗 */
+.h100-draft-hint {
+  margin: 8px 0 12px; padding: 8px 10px;
+  border: 1px solid var(--border-ghost); border-radius: 7px;
+  background: var(--bg-card2); color: var(--text-muted);
+  font-size: 12px; line-height: 1.5;
+}
 .h100-field { margin: 12px 0; }
 .h100-field-label { display: block; font-size: 13px; color: var(--text-label); font-weight: 600; margin-bottom: 4px; }
 .h100-field select, .h100-field input[type="number"] {
@@ -905,6 +1003,29 @@ function fmtDate(s) {
 .h100-field small { display: block; color: var(--text-muted); font-size: 12px; margin-top: 3px; line-height: 1.5; }
 .h100-field input[type="file"] { font-size: 12px; color: var(--text-label); margin-top: 2px; }
 .h100-counter { font-size: 12px; font-weight: 700; color: var(--accent-dark); margin-left: 8px; }
+.h100-file-reading { margin: 6px 0 0; color: var(--text-muted); font-size: 12px; }
+.h100-selected-files { display: grid; gap: 5px; margin: 8px 0 0; padding: 0; list-style: none; }
+.h100-selected-file {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  margin-top: 6px; padding: 6px 8px;
+  border: 1px solid var(--border-ghost); border-radius: 7px;
+  background: var(--bg-card2); color: var(--text-label); font-size: 12px;
+}
+.h100-selected-files .h100-selected-file { margin-top: 0; }
+.h100-file-index {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--bg-rating); color: var(--accent-dark); font-weight: 700;
+}
+.h100-selected-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.h100-remove-file {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 24px; height: 24px; padding: 0;
+  border: 1px solid var(--border-ghost); border-radius: 6px;
+  background: transparent; color: var(--error); cursor: pointer; font: inherit;
+}
+.h100-remove-file:hover { background: color-mix(in srgb, var(--error) 10%, transparent); }
+.h100-clear-draft { margin-right: auto; }
 .h100-err { color: var(--error); font-size: 13px; margin: 6px 0 0; }
 .h100-need-profile { color: var(--error); font-size: 13px; margin: 8px 0 0; line-height: 1.6; }
 .h100-need-profile a { color: var(--accent); font-weight: 600; }
