@@ -34,6 +34,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.AbstractList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -136,7 +137,12 @@ public class ReplayExportJobService {
         final ExportJob job = requireJob(jobId);
         final boolean changed = job.requestCancel();
         if (changed) {
-            workerExecutor.removeQueued(jobId);
+            final boolean removed = workerExecutor.removeQueued(jobId);
+            if (removed) {
+                // QUEUED 任务已被从 executor queue 移除、Runnable 永不执行 → worker 不会调用
+                // finishTerminal；在请求线程直接记录终态 observability（exactly once）。
+                finishTerminalQueuedCancel(job);
+            }
         }
         return changed;
     }
@@ -213,6 +219,27 @@ public class ReplayExportJobService {
         if (snap.status() != ExportJob.Status.READY) {
             deleteArtifact(job);
         }
+        logTerminal(snap);
+        recordTerminal(snap, System.nanoTime() - startNanos, snap.mode());
+        // 终态（含 FAILED/CANCELLED）统一保留到 TTL，让前端能读到终态错误码；
+        // 物理清理（输入 + artifact）由 ExportJobStore 的 TTL sweeper 完成（§18）。
+    }
+
+    /**
+     * QUEUED 取消的终态收尾：任务已被 {@code removeQueued} 移除、Runnable 永不执行，
+     * worker 不会走到 {@link #finishTerminal}，因此由请求线程直接记录 terminal
+     * observability。exactly once：{@code requestCancel} 成功且 {@code removeQueued}
+     * 为 true 的组合恰好发生一次，PROCESSING 协作取消仍由 worker 的 finishTerminal 记录，
+     * 不会重复。duration 按「创建 → 取消」计（无 worker 运行时长）。
+     */
+    private void finishTerminalQueuedCancel(final ExportJob job) {
+        final ExportJob.Snapshot snap = job.snapshot();
+        logTerminal(snap);
+        recordTerminal(snap,
+                TimeUnit.MILLISECONDS.toNanos(System.currentTimeMillis() - job.createdAtMillis()), snap.mode());
+    }
+
+    private void logTerminal(final ExportJob.Snapshot snap) {
         switch (snap.status()) {
             case READY -> LOGGER.info(logLine("export_job_ready", snap.jobId(),
                     "mode", snap.mode(), "filename", snap.filename(), "duplicates", snap.duplicates(),
@@ -223,20 +250,40 @@ public class ReplayExportJobService {
                     "processed", snap.processed(), "total", snap.total()));
             default -> { }
         }
-        recordTerminal(snap, startNanos, snap.mode());
-        // 终态（含 FAILED/CANCELLED）统一保留到 TTL，让前端能读到终态错误码；
-        // 物理清理（输入 + artifact）由 ExportJobStore 的 TTL sweeper 完成（§18）。
     }
 
     private void processJob(final ExportJob job, final Path inputDir, final boolean each) throws Exception {
-        final List<Path> inputs;
-        try (var stream = Files.list(inputDir)) {
-            inputs = stream.sorted().toList();
-        }
+        final List<Path> inputs = listInputsInOrder(inputDir);
         if (each) {
             processEach(job, inputs);
         } else {
             processAggregate(job, inputs);
+        }
+    }
+
+    /**
+     * 按上传序号前缀（{@code 0__name}、{@code 1__name}、… {@code 10__name}）整数排序，
+     * 严格保持 {@code MultipartFile[]} 原始上传顺序（PR #118 Blocker 1：不得依赖 filename
+     * 字典序，否则 10+ 时 0,1,10,11,…,19,2,20… 乱序）。无法解析数字前缀的文件排最后
+     * （防御性，不插入有效顺序中间）。
+     */
+    private static List<Path> listInputsInOrder(final Path inputDir) throws IOException {
+        try (var stream = Files.list(inputDir)) {
+            return stream.sorted(Comparator.comparingInt(ReplayExportJobService::inputOrder)).toList();
+        }
+    }
+
+    /** 解析 {@code N__rest} 的数字前缀；无法解析时返回 {@link Integer#MAX_VALUE}。 */
+    private static int inputOrder(final Path p) {
+        final String file = p.getFileName().toString();
+        final int sep = file.indexOf("__");
+        if (sep <= 0) {
+            return Integer.MAX_VALUE;
+        }
+        try {
+            return Integer.parseInt(file.substring(0, sep));
+        } catch (final NumberFormatException e) {
+            return Integer.MAX_VALUE;
         }
     }
 
@@ -293,7 +340,16 @@ public class ReplayExportJobService {
      * input replay → processFull → enrich → metrics → write xlsx into zip → release Battle → next replay
      * </pre>
      * 全程 phase = BUILDING_ARCHIVE（从第一场起就在写 ZIP，UI 不显示假的「全部解析完才开始生成」）。
-     * 无效 replay 跳过并 failures++；取消时 partial zip 由 finishTerminal 删除，不暴露半包。
+     *
+     * <p><b>异常边界（PR #118 Blocker 2）</b>：两个边界严格分离——
+     * <ul>
+     * <li><b>replay processing failure</b>（processFull / reconstruction / NO_BATTLE_DATA /
+     *     单场 enrichment）：只说明「该场无效」→ {@code failures++} 并跳过，继续后续 replay；</li>
+     * <li><b>artifact generation failure</b>（Battle 已成功，后续 zip entry / POI /
+     *     filesystem / OutputStream 任何失败）：意味着 ZIP 可能已损坏 → 整个 job FAILED，
+     *     绝不继续写、绝不 READY；partial artifact 由 finishTerminal 删除（§11）。</li>
+     * </ul></p>
+     * 取消时 partial zip 同样由 finishTerminal 删除，不暴露半包。
      */
     private void processEach(final ExportJob job, final List<Path> inputs) throws Exception {
         job.advancePhase(ExportJob.Phase.BUILDING_ARCHIVE);
@@ -309,28 +365,28 @@ public class ReplayExportJobService {
                     throw new JobCancelledException();
                 }
                 processed++;
+                final Battle battle;
                 try {
-                    final Battle battle = processFull(new Source(inputName(p), Files.readAllBytes(p)));
+                    // 边界 1（replay processing failure）：该 replay 无效 → skip + failures++。
+                    battle = processFull(new Source(inputName(p), Files.readAllBytes(p)));
                     if (battle == null) {
                         throw new IllegalArgumentException("NO_BATTLE_DATA");
                     }
                     PotentialDamage.apply(List.of(battle), tankopedia);
                     PerformanceMetricsCalculator.populateBattle(battle);
-                    // POI 直接写入 zip entry 流，避免每个 xlsx 的 byte[] 副本；battle 在 closeEntry 后即可释放。
-                    final ZipEntry entry = new ZipEntry(uniqueName(stripExt(inputName(p)) + ".xlsx", usedNames));
-                    zip.putNextEntry(entry);
-                    ExcelExporter.writeSingle(battle, tankopedia, zip);
-                    zip.closeEntry();
                 } catch (final Exception e) {
                     failures++;
+                    LOGGER.debug(logLine("export_job_replay_failed", job.jobId(),
+                            "replay", inputName(p), "error", String.valueOf(e.getMessage())));
+                    progressCheckpoint(job, processed, failures);
+                    continue;
                 }
-                job.updateProgress(processed, 0, failures);
-                LOGGER.debug(logLine("export_job_progress", job.jobId(), "processed", processed,
-                        "duplicates", 0, "failures", failures, "total", job.total()));
-                // 安全 checkpoint：每个 replay 完成后（§11）。
-                if (job.isCancelled()) {
-                    throw new JobCancelledException();
-                }
+                // 边界 2（artifact generation failure）：Battle 已成功，任何写入失败 → 整个 job FAILED。
+                final ZipEntry entry = new ZipEntry(uniqueName(stripExt(inputName(p)) + ".xlsx", usedNames));
+                zip.putNextEntry(entry);
+                writeSingleExcel(battle, zip);
+                zip.closeEntry();
+                progressCheckpoint(job, processed, failures);
             }
         }
         if (job.isCancelled()) {
@@ -340,6 +396,25 @@ public class ReplayExportJobService {
             throw new NoValidReplaysException();
         }
         job.markReady("逐场导出.zip", ZIP_MIME, artifact);
+    }
+
+    /** 进度推进 + 协作取消 checkpoint（每个 replay 成功/失败后各恰好一次）。 */
+    private void progressCheckpoint(final ExportJob job, final int processed, final int failures) {
+        job.updateProgress(processed, 0, failures);
+        LOGGER.debug(logLine("export_job_progress", job.jobId(), "processed", processed,
+                "duplicates", 0, "failures", failures, "total", job.total()));
+        if (job.isCancelled()) {
+            throw new JobCancelledException();
+        }
+    }
+
+    /**
+     * 单场 XLSX 写入输出流（ZIP entry 流）。
+     * 独立方法 = 最小测试 seam（PR #118 Blocker 2 回归：测试子类可注入 artifact 写失败，
+     * 无需为静态 {@link ExcelExporter} 建立大型抽象）。
+     */
+    void writeSingleExcel(final Battle battle, final OutputStream out) throws IOException {
+        ExcelExporter.writeSingle(battle, tankopedia, out);
     }
 
     /** 与 preview/export 完全相同的 authoritative full processing 链（§31，禁止 raw parse 回归）。 */
@@ -394,14 +469,14 @@ public class ReplayExportJobService {
         }
     }
 
-    private void recordTerminal(final ExportJob.Snapshot snap, final long startNanos, final String mode) {
+    private void recordTerminal(final ExportJob.Snapshot snap, final long durationNanos, final String mode) {
         if (meterRegistry == null) {
             return;
         }
         meterRegistry.counter("wotb_replay_export_job_result_total",
                         "result", snap.status().name().toLowerCase(java.util.Locale.ROOT))
                 .increment();
-        timer("wotb_replay_export_job_duration_seconds", mode).record(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+        timer("wotb_replay_export_job_duration_seconds", mode).record(durationNanos, TimeUnit.NANOSECONDS);
     }
 
     private Timer timer(final String name, final String mode) {
