@@ -193,7 +193,7 @@ public class WebApiTest {
     }
 
     @Test
-    void previewEmbedsPerformanceFromSameProcessing() throws Exception {
+    void previewEmbedsMetricsInBattleAndAggregateFromSameProcessing() throws Exception {
         final List<Path> files = replays();
         var req = multipart("/api/preview");
         for (final Path p : files) {
@@ -204,23 +204,27 @@ public class WebApiTest {
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         final JsonNode n = om.readTree(json);
-        assertTrue(n.get("performance").size() >= 14, "preview 必须内嵌战斗表现（复用同一 authoritative facts）");
-        final JsonNode cells = n.get("performance").get(0).get("cells");
-        assertFalse(cells.has("rating"), "不得再输出 Rating 综合评分");
-        assertTrue(cells.has("kast"));
-        assertTrue(cells.has("contribution"));
-        assertTrue(cells.has("impact"));
-        assertTrue(cells.get("impact").asText().endsWith("%"));
-        assertFalse(cells.has("influence"));
-        assertTrue(cells.has("damage_avg"));
-        assertTrue(cells.has("potential_damage_avg"));
-        assertTrue(cells.has("potential_damage_supplement_avg"));
-        assertTrue(cells.has("survival_rate"));
-        assertTrue(cells.has("traded_deaths"));
-        assertTrue(cells.has("kills"));
-        assertFalse(cells.has("average_hp"));
-        assertFalse(cells.has("account_id"));
-        assertTrue(n.get("performanceColumns").isArray());
+        // 单场玩家表直接内嵌 Contribution/KAST/Impact（复用同一 authoritative facts）
+        final JsonNode battleCells = n.get("battles").get(0).get("players").get(0).get("cells");
+        assertTrue(battleCells.has("kast"));
+        assertTrue(battleCells.has("contribution"));
+        assertTrue(battleCells.has("impact"));
+        assertFalse(battleCells.has("rating"), "不得再输出 Rating 综合评分");
+        // impact 统一为数值契约，前端负责格式化 %（不再是带 % 的字符串）
+        assertTrue(battleCells.get("impact").isNumber(), "impact 必须为数值（前端格式化 %）");
+        // 汇总列定义同样内嵌跨场表现派生列
+        final JsonNode aggCols = n.get("aggregateColumns");
+        assertTrue(aggCols.isArray());
+        boolean hasContribution = false;
+        for (final JsonNode c : aggCols) {
+            if ("contribution".equals(c.get("key").asText())) {
+                hasContribution = true;
+            }
+        }
+        assertTrue(hasContribution, "汇总表列定义必须包含 contribution");
+        // 不再有独立 performance 数组 / performanceColumns
+        assertFalse(n.has("performance"));
+        assertFalse(n.has("performanceColumns"));
     }
 
     @Test

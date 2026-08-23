@@ -2,7 +2,10 @@ package com.wotb.web.replay.mapper;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.model.Agg;
 import com.wotb.core.ref.Tankopedia;
+import com.wotb.core.stats.PerformanceMetricsCalculator;
+import com.wotb.web.replay.dto.AggRow;
 import com.wotb.web.replay.dto.BattleDto;
 import org.junit.jupiter.api.Test;
 
@@ -12,6 +15,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ReplayMapperTest {
 
@@ -42,6 +47,114 @@ class ReplayMapperTest {
         assertEquals("LIGHT_TANK", cellsByAccount.get(2L).get("tank_type"));
         assertEquals("USSR", cellsByAccount.get(2L).get("tank_nation"));
         assertEquals("UNPARSED", cellsByAccount.get(2L).get("potential_damage_detail"));
+    }
+
+    @Test
+    void battleCellsIncludeContributionKastImpactAfterPopulate() {
+        final Battle battle = new Battle();
+        battle.winnerTeam = 1;
+        final List<PlayerResult> players = new java.util.ArrayList<>();
+        for (int i = 0; i < 14; i++) {
+            final PlayerResult p = player(i + 1L, true);
+            p.team = i < 7 ? 1 : 2;
+            p.nickname = "p" + (i + 1);
+            p.tankId = 4481L;
+            p.damageDealt = 2600 - i * 100;
+            p.kills = 2;
+            players.add(p);
+        }
+        battle.players = players;
+        PerformanceMetricsCalculator.populateBattle(battle);
+
+        final BattleDto dto = Mapper.toBattle(battle, "sample.wotbreplay", Tankopedia.load());
+
+        final Map<String, Object> firstCells = dto.players().stream()
+                .filter(row -> ((Number) row.cells().get("account_id")).longValue() == 1L)
+                .findFirst().orElseThrow().cells();
+        assertTrue(firstCells.containsKey("contribution"));
+        assertTrue(firstCells.containsKey("kast"));
+        assertTrue(firstCells.containsKey("impact"));
+        assertNotNull(firstCells.get("impact"), "HP 已知场 impact 应有值");
+        assertNotNull(firstCells.get("contribution"), "HP 已知场 contribution 应有值");
+        // 与跨场聚合（单场）同一事实源：impact/contribution/kast 数值一致
+        final PerformanceMetricsCalculator.Row aggregate = PerformanceMetricsCalculator.compute(List.of(battle)).stream()
+                .filter(r -> r.accountId == 1L)
+                .findFirst().orElseThrow();
+        assertEquals(aggregate.impactValue, ((Number) firstCells.get("impact")).doubleValue(), 0.01);
+        assertEquals(aggregate.contribution, ((Number) firstCells.get("contribution")).doubleValue(), 0.01);
+        assertEquals(aggregate.kast, ((Number) firstCells.get("kast")).doubleValue(), 0.01);
+    }
+
+    @Test
+    void aggregateCellsMergeCrossBattleMetricsByAccountId() {
+        final Battle battle = new Battle();
+        battle.winnerTeam = 1;
+        final List<PlayerResult> players = new java.util.ArrayList<>();
+        for (int i = 0; i < 14; i++) {
+            final PlayerResult p = player(i + 1L, true);
+            p.team = i < 7 ? 1 : 2;
+            p.nickname = "p" + (i + 1);
+            p.tankId = 4481L;
+            p.damageDealt = 2600 - i * 100;
+            players.add(p);
+        }
+        battle.players = players;
+        final Map<Long, Agg> agg = new java.util.HashMap<>();
+        for (final PlayerResult p : players) {
+            final Agg a = new Agg();
+            a.accountId = p.accountId;
+            a.nickname = p.nickname;
+            a.team = p.team;
+            a.battles = 1;
+            a.damage = p.damageDealt;
+            agg.put(a.accountId, a);
+        }
+        final Map<Long, PerformanceMetricsCalculator.Row> perfById = new java.util.HashMap<>();
+        for (final PerformanceMetricsCalculator.Row r : PerformanceMetricsCalculator.compute(List.of(battle))) {
+            perfById.put(r.accountId, r);
+        }
+
+        final List<AggRow> rows = Mapper.toAggregate(agg, perfById);
+
+        final AggRow first = rows.getFirst();
+        assertTrue(first.cells().containsKey("contribution"));
+        assertTrue(first.cells().containsKey("kast"));
+        assertTrue(first.cells().containsKey("impact"));
+        assertTrue(first.cells().containsKey("multi_damage_rate"));
+        assertTrue(first.cells().containsKey("traded_deaths"));
+        assertNotNull(first.cells().get("impact"));
+        assertNotNull(first.cells().get("contribution"));
+    }
+
+    @Test
+    void aggregateCellsNullWhenHpUnknown() {
+        final Battle battle = new Battle();
+        battle.winnerTeam = 1;
+        final PlayerResult p = player(1L, true);
+        p.team = 1;
+        p.nickname = "p1";
+        p.tankId = -1; // HP UNKNOWN
+        battle.players = List.of(p);
+        final Map<Long, Agg> agg = new java.util.HashMap<>();
+        final Agg a = new Agg();
+        a.accountId = 1L;
+        a.nickname = "p1";
+        a.team = 1;
+        a.battles = 1;
+        agg.put(1L, a);
+        final Map<Long, PerformanceMetricsCalculator.Row> perfById = new java.util.HashMap<>();
+        for (final PerformanceMetricsCalculator.Row r : PerformanceMetricsCalculator.compute(List.of(battle))) {
+            perfById.put(r.accountId, r);
+        }
+
+        final List<AggRow> rows = Mapper.toAggregate(agg, perfById);
+
+        // HP 全 UNKNOWN → contribution/kast/多伤率 unavailable（null），impact 仍有值
+        final Map<String, Object> cells = rows.getFirst().cells();
+        assertEquals(null, cells.get("contribution"));
+        assertEquals(null, cells.get("kast"));
+        assertEquals(null, cells.get("multi_damage_rate"));
+        assertNotNull(cells.get("impact"));
     }
 
     private static PlayerResult player(final long accountId, final boolean survived) {
