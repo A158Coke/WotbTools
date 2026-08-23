@@ -48,6 +48,10 @@ public final class ApiPaths {
     public static final String REPLAY_MAP_OVERVIEW = "/api/replay/map-overview";
     public static final String REPLAY_RECONSTRUCT_BATCH = "/api/replay/reconstruct-batch";
     public static final String REPLAY_PROCESS = "/api/replay/process";
+    public static final String REPLAY_EXPORT_JOBS = "/api/replay/export-jobs";
+    public static final String REPLAY_EXPORT_JOB_STATUS = "/api/replay/export-jobs/{jobId}";
+    public static final String REPLAY_EXPORT_JOB_DOWNLOAD = "/api/replay/export-jobs/{jobId}/download";
+    public static final String REPLAY_EXPORT_JOBS_PATTERN = "/api/replay/export-jobs/**";
 
     // ---- 安全匹配模式（/** 通配，仅 SecurityConfig 使用） ----
     public static final String API_PATTERN = "/api/**";

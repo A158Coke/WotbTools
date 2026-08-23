@@ -20,6 +20,54 @@ const h2c = vi.hoisted(() => {
     resetCalls: () => { calls.length = 0 },
     call: (...args) => { calls.push(args); if (!impl) throw new Error('html2canvas not initialized'); return impl(...args) },
   }
+describe('ReplayPage export job flow', () => {
+  function exportButtons(wrapper) {
+    return wrapper.findAll('button').filter(b => b.text().includes('action.export_aggregate') || b.text().includes('action.export_each'))
+  }
+
+  it('export aggregate button calls startExportJob with aggregate', async () => {
+    state.init.resp = makeResp()
+    const wrapper = mountPage()
+    await exportButtons(wrapper)[0].trigger('click')
+    expect(state.replay.startExportJob).toHaveBeenCalledWith('aggregate')
+  })
+
+  it('export each button calls startExportJob with each', async () => {
+    state.init.resp = makeResp()
+    const wrapper = mountPage()
+    await exportButtons(wrapper)[1].trigger('click')
+    expect(state.replay.startExportJob).toHaveBeenCalledWith('each')
+  })
+
+  it('renders ExportTaskCard when export job exists', async () => {
+    state.init.resp = makeResp()
+    const wrapper = mountPage()
+    expect(wrapper.find('[data-testid="export-task-card"]').exists()).toBe(false)
+    jobState.setJob({ jobId: 'j1', status: 'PROCESSING', phase: 'PROCESSING_REPLAYS', total: 2, processed: 1, duplicates: 0, failures: 0 })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="export-task-card"]').exists()).toBe(true)
+  })
+
+  it('disables export buttons while a job is active', async () => {
+    state.init.resp = makeResp()
+    const wrapper = mountPage()
+    jobState.setActive(true)
+    await flushPromises()
+    for (const btn of exportButtons(wrapper)) {
+      expect(btn.attributes('disabled')).toBeDefined()
+    }
+  })
+
+  it('does not create export job when active (guard in page)', async () => {
+    state.init.resp = makeResp()
+    const wrapper = mountPage()
+    jobState.setActive(true)
+    await flushPromises()
+    await exportButtons(wrapper)[0].trigger('click')
+    expect(state.replay.startExportJob).not.toHaveBeenCalled()
+  })
+})
+
 })
 
 vi.mock('html2canvas', () => ({
@@ -33,6 +81,7 @@ const state = vi.hoisted(() => {
   let _error
   let _loading
   let _locale
+  let _fns
 
   function setActiveTab(val) {
     if (_activeTab) _activeTab.value = val
@@ -53,6 +102,8 @@ const state = vi.hoisted(() => {
   return {
     // Store ref once created
     capture: (r) => { _activeTab = r.activeTab; _resp = r.resp; _error = r.error; _loading = r.loading; _locale = r.locale },
+    captureFns: (fns) => { _fns = fns },
+    get replay() { return _fns || {} },
     clear: () => { _activeTab = null; _resp = null; _error = null; _loading = null; _locale = null },
     setActiveTab, setResp, setError, setLoading, setLocale,
     // Default initial values
@@ -60,6 +111,17 @@ const state = vi.hoisted(() => {
   }
 })
 
+
+const jobState = vi.hoisted(() => {
+  let _exportJob
+  let _exportActive
+  return {
+    capture: (job, active) => { _exportJob = job; _exportActive = active },
+    clear: () => { _exportJob = null; _exportActive = null },
+    setJob: (v) => { if (_exportJob) _exportJob.value = v },
+    setActive: (v) => { if (_exportActive) _exportActive.value = v },
+  }
+})
 vi.mock('vue-i18n', async () => {
   const { ref } = await import('vue')
   const locale = ref('en')
@@ -98,11 +160,18 @@ vi.mock('../composables/useReplay.js', async () => {
       }
       state.capture({ activeTab, resp, error, loading, locale: localeRef })
       state.init = null
+      const exportJobRef = ref(null)
+      const exportActiveRef = ref(false)
+      jobState.capture(exportJobRef, exportActiveRef)
+      const startExportJob = vi.fn()
+      state.captureFns({ startExportJob })
       return {
         files, loading, error, resp, activeTab,
         aggStats: computed(() => null),
         pendingRemove, playerCols, aggCols,
-        doPreview: vi.fn(), doExport: vi.fn(),
+        exportJob: exportJobRef, exportError: ref(''), exportActive: exportActiveRef,
+        doPreview: vi.fn(), startExportJob, cancelExportJob: vi.fn(),
+        downloadExportResult: vi.fn(), dismissExportJob: vi.fn(),
         askRemoveBattle: vi.fn(), askRemoveFile: vi.fn(),
         cancelRemove: vi.fn(), confirmRemove: vi.fn(),
       }

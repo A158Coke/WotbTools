@@ -542,7 +542,26 @@
         "preview_failed": "Preview failed",
         "export_failed": "Export failed",
         "png_export_failed": "PNG export failed",
-        "png_exporting": "Exporting PNG…"
+        "png_exporting": "Exporting PNG…",
+        "export_job": {
+            "title": "Exporting battle data",
+            "queued": "Preparing export…",
+            "preparing": "Export job created · {total} files",
+            "progress": "{processed}/{total} processed",
+            "phase_processing": "Parsing replays…",
+            "phase_excel": "Building Excel…",
+            "phase_archive": "Building ZIP…",
+            "duplicates_failures": "{d} duplicate · {f} failed",
+            "valid_summary": "{v} valid · {d} duplicate · {f} failed",
+            "ready": "Excel ready",
+            "download": "Download file",
+            "cancel": "Cancel",
+            "dismiss": "Dismiss",
+            "failed": "Export failed",
+            "failed_no_valid": "No valid replays to export.",
+            "failed_generic": "Export failed, please try again.",
+            "cancelled": "Cancelled"
+        }
     },
     "boost": {
         "submitTab": "Submit",

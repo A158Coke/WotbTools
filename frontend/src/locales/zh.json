@@ -542,7 +542,26 @@
         "preview_failed": "预览失败",
         "export_failed": "导出失败",
         "png_export_failed": "PNG 导出失败",
-        "png_exporting": "正在导出 PNG…"
+        "png_exporting": "正在导出 PNG…",
+        "export_job": {
+            "title": "正在导出战斗数据",
+            "queued": "正在准备导出…",
+            "preparing": "已创建导出任务，共 {total} 场",
+            "progress": "已处理 {processed}/{total} 场",
+            "phase_processing": "正在解析回放…",
+            "phase_excel": "正在生成 Excel…",
+            "phase_archive": "正在打包 ZIP…",
+            "duplicates_failures": "重复 {d} · 失败 {f}",
+            "valid_summary": "有效 {v} 场 · 重复 {d} · 失败 {f}",
+            "ready": "Excel 已生成",
+            "download": "下载文件",
+            "cancel": "取消",
+            "dismiss": "关闭",
+            "failed": "导出失败",
+            "failed_no_valid": "没有可导出的有效回放。",
+            "failed_generic": "导出失败，请重试。",
+            "cancelled": "已取消"
+        }
     },
     "boost": {
         "submitTab": "提交需求",
