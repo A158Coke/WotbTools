@@ -837,6 +837,174 @@ class ReplayExportJobServiceTest {
         }
     }
 
+    // ---- review BLOCKER 2：acquire Processing result 后的 refcount ownership lifecycle ----
+
+    @Test
+    void storageFailureAfterAcquireReleasesProcessingRefcount() throws Exception {
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-b2-storagefail"), 60);
+        // 最小 test seam：inputDir 指向一个已存在文件 → Files.createDirectories 抛 IOException
+        final Path blockerFile = Files.createTempFile(tmpDir, "blocker-", ".tmp");
+        final ExportJobStore failingStore = new ExportJobStore(tmpDir, 60) {
+            @Override
+            public Path inputDir(final String jobId) {
+                return blockerFile;
+            }
+        };
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, failingStore,
+                    executor, processingStore, meterRegistry);
+            final String pJobId = readyProcessingJobNoAcquire(processingStore, "proc-storagefail",
+                    List.of(battle("arena-1")), List.of("one.wotbreplay"),
+                    List.<String[]>of(), List.<String[]>of());
+
+            // acquire 成功（refcount +1）→ Export job 目录创建失败 → 必须 throw
+            final IllegalStateException error = assertThrows(IllegalStateException.class,
+                    () -> service.createJob(null, "aggregate", pJobId));
+            assertEquals("EXPORT_JOB_STORAGE_UNAVAILABLE", error.getMessage());
+
+            // refcount 已释放：aged + TTL sweep 后 Processing Job 可被清理（不永久 pin 在 heap）
+            ageProcessingJob(processingStore.get(pJobId));
+            processingStore.sweepExpired();
+            assertNull(processingStore.get(pJobId),
+                    "storage failure 后 acquire 的引用必须 release，TTL 不得被泄漏 refcount 永久阻止");
+        } finally {
+            deleteDir(processingStore.jobDir("proc-storagefail").getParent());
+        }
+    }
+
+    @Test
+    void successfulFromResultExportReleasesProcessingRefcountForTtlCleanup() throws Exception {
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-b2-success"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            final String pJobId = readyProcessingJobNoAcquire(processingStore, "proc-success",
+                    List.of(battle("arena-1")), List.of("one.wotbreplay"),
+                    List.<String[]>of(), List.<String[]>of());
+
+            final String jobId = service.createJob(null, "aggregate", pJobId);
+            assertEquals(ExportJob.Status.READY, awaitTerminal(jobId, 10_000).status());
+
+            // worker 终态 finally release → TTL 可清理
+            ageProcessingJob(processingStore.get(pJobId));
+            processingStore.sweepExpired();
+            assertNull(processingStore.get(pJobId), "worker 终态后引用必须 release，TTL 可清理");
+        } finally {
+            deleteDir(processingStore.jobDir("proc-success").getParent());
+        }
+    }
+
+    @Test
+    void queuedCancelFromResultReleasesProcessingRefcountForTtlCleanup() throws Exception {
+        executor.close();
+        executor = new ReplayExportWorkerExecutor(1, 1);
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-b2-queuedcancel"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            final String pJobId = readyProcessingJobNoAcquire(processingStore, "proc-queuedcancel",
+                    List.of(battle("arena-1")), List.of("one.wotbreplay"),
+                    List.<String[]>of(), List.<String[]>of());
+
+            // jobA 占住唯一 worker（multipart，facade 阻塞）
+            final CountDownLatch started = new CountDownLatch(1);
+            final CountDownLatch releaseA = new CountDownLatch(1);
+            when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
+                started.countDown();
+                releaseA.await(10, TimeUnit.SECONDS);
+                throw new IllegalArgumentException("NO_BATTLE_DATA");
+            });
+            final String jobA = service.createJob(new MultipartFile[]{file("a.wotbreplay")}, "aggregate");
+            assertTrue(started.await(5, TimeUnit.SECONDS), "job A 应占用唯一 worker");
+
+            // jobB：from-result → QUEUED（acquire +1，等 worker）
+            final String jobB = service.createJob(null, "aggregate", pJobId);
+            // QUEUED 取消 → removeQueued → 请求线程 release（review BLOCKER 2 语义保留）
+            assertTrue(service.cancel(jobB));
+            assertEquals(ExportJob.Status.CANCELLED, service.status(jobB).status());
+
+            ageProcessingJob(processingStore.get(pJobId));
+            processingStore.sweepExpired();
+            assertNull(processingStore.get(pJobId), "QUEUED 取消后引用必须 release，TTL 可清理");
+
+            // 清理 jobA（PROCESSING 协作取消）
+            service.cancel(jobA);
+            releaseA.countDown();
+            awaitTerminal(jobA, 10_000);
+        } finally {
+            deleteDir(processingStore.jobDir("proc-queuedcancel").getParent());
+        }
+    }
+
+    @Test
+    void submitRejectedFromResultReleasesProcessingRefcountForTtlCleanup() throws Exception {
+        executor.close();
+        executor = new ReplayExportWorkerExecutor(1, 1);
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-b2-submitreject"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            final String pJobId = readyProcessingJobNoAcquire(processingStore, "proc-submitreject",
+                    List.of(battle("arena-1")), List.of("one.wotbreplay"),
+                    List.<String[]>of(), List.<String[]>of());
+
+            // jobA 占住唯一 worker，jobB 占满 queue
+            final CountDownLatch started = new CountDownLatch(1);
+            final CountDownLatch releaseA = new CountDownLatch(1);
+            when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
+                started.countDown();
+                releaseA.await(10, TimeUnit.SECONDS);
+                throw new IllegalArgumentException("NO_BATTLE_DATA");
+            });
+            final String jobA = service.createJob(new MultipartFile[]{file("a.wotbreplay")}, "aggregate");
+            assertTrue(started.await(5, TimeUnit.SECONDS), "job A 应占用唯一 worker");
+            final String jobB = service.createJob(new MultipartFile[]{file("b.wotbreplay")}, "aggregate");
+
+            // jobC：from-result → acquire +1 → submit rejection → finally 必须 release
+            assertThrows(ExportQueueFullException.class,
+                    () -> service.createJob(null, "aggregate", pJobId));
+
+            ageProcessingJob(processingStore.get(pJobId));
+            processingStore.sweepExpired();
+            assertNull(processingStore.get(pJobId), "submit rejection 后引用必须 release，TTL 可清理");
+
+            // 清理 jobA / jobB
+            service.cancel(jobB);
+            service.cancel(jobA);
+            releaseA.countDown();
+            awaitTerminal(jobA, 10_000);
+            awaitTerminal(jobB, 10_000);
+        } finally {
+            deleteDir(processingStore.jobDir("proc-submitreject").getParent());
+        }
+    }
+
+    /** 构造并注册一个已 READY 的 Processing Job（不 acquire——让 createJob 成为唯一引用来源，便于断言 refcount balance）。 */
+    private String readyProcessingJobNoAcquire(final ReplayProcessingJobStore processingStore, final String id,
+                                              final List<Battle> battles, final List<String> names,
+                                              final List<String[]> duplicates, final List<String[]> failures) {
+        final int total = battles.size() + duplicates.size() + failures.size();
+        final ReplayProcessingJob pJob = new ReplayProcessingJob(id, total);
+        pJob.startProcessing();
+        pJob.updateProgress(total, duplicates.size(), failures.size());
+        pJob.markReady(new ProcessedDataset(battles, names, duplicates, failures));
+        processingStore.register(pJob);
+        return id;
+    }
+
+    /** 把 Processing Job 的 finishedAt 拨旧，模拟 TTL 过期（反射，与 ReplayProcessingJobServiceTest.ageJob 相同）。 */
+    private static void ageProcessingJob(final ReplayProcessingJob job) throws Exception {
+        final java.lang.reflect.Field stateField = ReplayProcessingJob.class.getDeclaredField("state");
+        stateField.setAccessible(true);
+        final Object state = stateField.get(job);
+        final java.lang.reflect.Field finishedField = state.getClass().getDeclaredField("finishedAtMillis");
+        finishedField.setAccessible(true);
+        finishedField.setLong(state, System.currentTimeMillis() - 61 * 60 * 1000L);
+    }
     /** 构造并注册一个已 READY 的 Processing Job（from-result 复用路径测试用；调用方负责 release）。 */
     private String readyProcessingJob(final ReplayProcessingJobStore processingStore, final String id,
                                       final List<Battle> battles, final List<String> names,

@@ -359,4 +359,45 @@ describe('useReplay file-selection invalidation (review BLOCKER 1)', () => {
     expect(api.createProcessingJob).toHaveBeenCalledTimes(2)
     expect(replay.processingJobId.value).toBe('p2')
   })
+  it('Case: stale P1 reject 不停止 P2 polling（review BLOCKER 1 stale error race）', async () => {
+    replay.files.value = [new File(['x'], 'a.wotbreplay')]
+    let rejectP1
+    api.createProcessingJob.mockResolvedValueOnce({ jobId: 'p1', status: 'QUEUED', total: 1 })
+    // P1 第一次轮询挂起（pending promise，模拟 P1 request 在途）
+    api.getProcessingJob.mockReturnValueOnce(new Promise((_, rej) => { rejectP1 = rej }))
+    await replay.startProcessingJob()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(replay.processingJob.value.status).toBe('QUEUED')
+
+    // files 改变 → P1 invalidated + 后台取消 + 停止 P1 polling
+    replay.updateFiles([new File(['y'], 'b.wotbreplay')])
+
+    // P2 建立 polling（状态化 mock：第 1 次 PROCESSING，之后 READY）
+    api.createProcessingJob.mockReset()
+    api.createProcessingJob.mockResolvedValue({ jobId: 'p2', status: 'QUEUED', total: 1 })
+    api.getProcessingJob.mockReset()
+    api.getProcessingJob.mockImplementation(() => {
+      const n = api.getProcessingJob.mock.calls.length
+      return Promise.resolve(n === 1
+        ? { jobId: 'p2', status: 'PROCESSING', phase: 'PROCESSING_REPLAYS', total: 1, processed: 0, valid: 0, duplicates: 0, failures: 0, errorCode: null, currentFile: 'b.wotbreplay' }
+        : { jobId: 'p2', status: 'READY', phase: null, total: 1, processed: 1, valid: 1, duplicates: 0, failures: 0, errorCode: null, currentFile: null })
+    })
+    api.getProcessingJobResult.mockReset()
+    api.getProcessingJobResult.mockResolvedValue({ battles: [{ mapName: 'Lagoon', sourceName: 'b.wotbreplay' }], aggregate: [], duplicates: [], failures: [], playerColumns: [], aggregateColumns: [] })
+    await replay.startProcessingJob()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(replay.processingJob.value.status).toBe('PROCESSING')
+
+    // 旧 P1 request 迟到 reject → 不得清掉 P2 timer/token、不得覆盖 P2 processingError
+    rejectP1(new Error('network'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(replay.processingError.value).toBe('')
+
+    // P2 后续轮询不受影响：READY → 自动加载 result
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(replay.processingJob.value.status).toBe('READY')
+    expect(replay.processingJobId.value).toBe('p2')
+    expect(replay.resp.value.battles[0].sourceName).toBe('b.wotbreplay')
+    expect(replay.processingError.value).toBe('')
+  })
 })

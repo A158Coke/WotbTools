@@ -142,6 +142,12 @@ export function useReplay() {
         }
       }
     } catch (e) {
+      // review BLOCKER 1（stale error race）：旧 job 的迟到失败（网络 reject / 404 / timeout）
+      // 同样不得影响已更新的 Processing Job——token 已变（updateFiles 停止 / 新 job 已启动）则
+      // 直接丢弃，绝不清掉新 job 的 timer/token（否则 P2 后端继续跑但前端永远停止轮询）。
+      if (processingPollJobId !== pollJobId) {
+        return
+      }
       // job 已过期/网络错误：停止轮询，提示重新解析（不阻塞页面）
       stopProcessingPolling()
       processingJob.value = null
