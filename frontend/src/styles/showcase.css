@@ -50,7 +50,6 @@ body {
   background-size: auto, 36px 36px, 36px 36px, auto;
 }
 
-/* ---------- Global app shell ---------- */
 .topbar {
   min-height: 60px !important;
   height: 60px !important;
@@ -90,7 +89,6 @@ body {
   box-shadow: 0 22px 54px rgba(0,0,0,.44) !important;
 }
 
-/* ---------- Layout width system ---------- */
 .wrap {
   max-width: var(--showcase-wide-max) !important;
   width: calc(100vw - var(--showcase-gutter) * 2) !important;
@@ -123,7 +121,6 @@ body {
   padding: 26px 0 64px !important;
 }
 
-/* ---------- Shared page hierarchy ---------- */
 .layout-content > h1,
 .layout-content > h2,
 .layout-wide > h1,
@@ -131,11 +128,8 @@ body {
 .layout-data-workspace > h1,
 .layout-data-workspace > h2,
 .admin-page > h1,
-.admin-page > h2 {
-  letter-spacing: -.015em;
-}
+.admin-page > h2 { letter-spacing: -.015em; }
 
-/* Cards/panels keep existing semantics, but share the same material language. */
 .layout-content :is(.card,.panel,.section-card,.profile-card,.account-card),
 .layout-wide :is(.card,.panel,.section-card),
 .layout-data-workspace :is(.card,.panel),
@@ -145,7 +139,6 @@ body {
   box-shadow: var(--surface-shadow);
 }
 
-/* Inputs/buttons across tool pages */
 .layout-content :is(input,select,textarea),
 .layout-wide :is(input,select,textarea),
 .layout-data-workspace :is(input,select,textarea),
@@ -161,10 +154,8 @@ body {
   box-shadow: 0 0 0 3px var(--accent-shadow);
 }
 
-/* ---------- Replay parser ---------- */
-.layout-data-workspace > :first-child {
-  border-color: color-mix(in srgb, var(--accent) 30%, var(--border)) !important;
-}
+/* Replay parser */
+.layout-data-workspace > :first-child { border-color: color-mix(in srgb, var(--accent) 30%, var(--border)) !important; }
 .restoolbar {
   position: sticky;
   top: 66px;
@@ -181,50 +172,88 @@ body {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border)) !important;
   background: color-mix(in srgb, var(--accent) 12%, var(--bg-card)) !important;
 }
-.battle-action {
-  border-color: #495158 !important;
-  background: #151c20 !important;
-}
+.battle-action { border-color: #495158 !important; background: #151c20 !important; }
 .battle-action.primary {
   border-color: var(--accent) !important;
   background: linear-gradient(180deg, var(--accent-light), var(--accent)) !important;
   color: var(--accent-text) !important;
 }
-.tablewrap,
-.layout-data-workspace table {
-  scrollbar-color: var(--accent) var(--bg-card2);
-}
-.layout-data-workspace table thead th {
-  background: color-mix(in srgb, var(--bg-card2) 94%, #050607) !important;
-}
+.tablewrap, .layout-data-workspace table { scrollbar-color: var(--accent) var(--bg-card2); }
+.layout-data-workspace table thead th { background: color-mix(in srgb, var(--bg-card2) 94%, #050607) !important; }
 
-/* ---------- Hall of Fame / dense rankings ---------- */
-.layout-wide table {
-  width: 100%;
-  font-variant-numeric: tabular-nums;
-}
-.layout-wide table thead th {
-  background: color-mix(in srgb, var(--bg-card2) 94%, #050607) !important;
-}
+/* Hall of Fame / rankings */
+.layout-wide table { width: 100%; font-variant-numeric: tabular-nums; }
+.layout-wide table thead th { background: color-mix(in srgb, var(--bg-card2) 94%, #050607) !important; }
 .layout-wide table tbody tr:hover { background: var(--bg-list-hover) !important; }
-
-/* ---------- Profile ---------- */
-.layout-content {
-  position: relative;
+.hof-page,
+.hof-wrap,
+.hall-page {
+  width: min(var(--showcase-wide-max), calc(100vw - var(--showcase-gutter) * 2)) !important;
+  max-width: none !important;
+  margin-inline: auto !important;
 }
-.layout-content::before {
+.hof-page :is(.tabs,.filters,.filterbar,.hof-filters),
+.hof-wrap :is(.tabs,.filters,.filterbar,.hof-filters) {
+  border-color: var(--showcase-line) !important;
+}
+.hof-page table,
+.hof-wrap table { font-variant-numeric: tabular-nums; }
+.hof-page thead th,
+.hof-wrap thead th {
+  position: sticky;
+  top: 60px;
+  z-index: 4;
+  background: #171e22 !important;
+}
+.hof-page tbody tr:hover,
+.hof-wrap tbody tr:hover { background: #172025 !important; }
+
+/* Profile: no avatar; identity reads like a tactical account header. */
+.profile-page {
+  width: min(var(--showcase-content-max), calc(100vw - var(--showcase-gutter) * 2)) !important;
+  max-width: none !important;
+  margin-inline: auto !important;
+  padding: 26px 0 64px !important;
+}
+.profile-page .hero-avatar { display: none !important; }
+.profile-page .profile-main { display: grid; gap: 14px; }
+.profile-page .profile-hero {
+  position: relative;
+  overflow: hidden;
+  min-height: 118px;
+  padding: 24px 28px !important;
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border)) !important;
+  background:
+    linear-gradient(100deg, color-mix(in srgb, var(--accent) 9%, var(--bg-card)), var(--bg-card) 48%),
+    var(--bg-card) !important;
+}
+.profile-page .profile-hero::after {
   content: '';
   position: absolute;
-  z-index: -1;
-  inset: 0 auto auto 50%;
-  width: 68%;
-  height: 210px;
-  transform: translateX(-50%);
-  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%);
+  right: -60px;
+  top: -130px;
+  width: 340px;
+  height: 340px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 54px color-mix(in srgb, var(--accent) 3%, transparent);
   pointer-events: none;
 }
+.profile-page .hero-left { gap: 0 !important; }
+.profile-page .hero-name { font-size: 1.65rem !important; letter-spacing: -.02em; }
+.profile-page .hero-subtitle { color: var(--text-sub) !important; }
+.profile-page .profile-body { gap: 14px !important; }
+.profile-page .profile-card {
+  border-color: var(--showcase-line) !important;
+  background: var(--bg-card) !important;
+  box-shadow: var(--surface-shadow) !important;
+}
+.profile-page .section-head {
+  border-bottom-color: color-mix(in srgb, var(--accent) 18%, var(--border)) !important;
+}
+.profile-page .card-title { letter-spacing: -.01em; }
 
-/* ---------- Admin operations console ---------- */
+/* Admin operations console */
 .admin-page > h2 { font-size: 1.55rem !important; margin-bottom: 5px !important; }
 .admin-hint { margin-bottom: 18px !important; }
 .admin-search {
@@ -257,40 +286,31 @@ body {
 .admin-table td { height: 48px; }
 .admin-table tbody tr:hover { background: #172025 !important; }
 .admin-table .cell-short { max-width: 190px !important; }
-.admin-table .btn-danger {
-  background: transparent !important;
-  opacity: .72;
-}
+.admin-table .btn-danger { background: transparent !important; opacity: .72; }
 .admin-modal {
   border: 1px solid #394247;
   background: #11171a !important;
   box-shadow: 0 30px 80px rgba(0,0,0,.46);
 }
 
-/* ---------- Reconstruction / tactical workspaces ---------- */
+/* Tactical workspaces */
 .layout-full-workspace,
 .reconstruction-page,
-.playback-page {
-  background: #080c0e;
-}
-.layout-full-workspace :is(.panel,.sidebar,.details-panel,.timeline,.toolbar) {
-  border-color: #303a40 !important;
-}
+.playback-page { background: #080c0e; }
+.layout-full-workspace :is(.panel,.sidebar,.details-panel,.timeline,.toolbar) { border-color: #303a40 !important; }
 
-/* ---------- Responsive contract ---------- */
 @media (max-width: 1199px) {
   :root { --showcase-gutter: 14px; }
-  .topbar {
-    padding-inline: 12px !important;
-    overflow-x: auto !important;
-  }
+  .topbar { padding-inline: 12px !important; overflow-x: auto !important; }
   .topbar nav button { padding-inline: 10px !important; }
   .layout-content,
   .layout-wide,
   .layout-data-workspace,
-  .admin-page { padding-top: 18px !important; }
+  .admin-page,
+  .profile-page { padding-top: 18px !important; }
   .restoolbar { top: 64px; }
   .admin-table-wrap { max-height: none; }
+  .profile-page .profile-body { grid-template-columns: minmax(0,1fr) minmax(260px,.6fr) !important; }
 }
 
 @media (max-width: 767px) {
@@ -307,7 +327,10 @@ body {
   .layout-content,
   .layout-wide,
   .layout-data-workspace,
-  .admin-page {
+  .admin-page,
+  .profile-page,
+  .hof-page,
+  .hof-wrap {
     width: calc(100vw - 16px) !important;
     padding: 12px 0 42px !important;
   }
@@ -318,4 +341,11 @@ body {
   .admin-search button { min-height: 40px; }
   .admin-table-wrap { width: 100%; }
   .admin-modal { width: calc(100vw - 22px) !important; padding: 18px !important; }
+  .profile-page .profile-body { display: block !important; }
+  .profile-page .profile-left,
+  .profile-page .profile-right { display: grid; gap: 12px; }
+  .profile-page .profile-hero { padding: 20px !important; min-height: 100px; }
+  .profile-page .hero-name { font-size: 1.35rem !important; }
+  .hof-page thead th,
+  .hof-wrap thead th { top: 56px; }
 }
