@@ -169,8 +169,7 @@ function mountPage() {
             '</tbody></table></div>' +
             '<p class="scroll-hint">Scroll</p></div>'
         },
-        RemoveConfirmModal: { template: '<div class="remove-modal-stub" />' },
-        RatingModal: { template: '<div class="rating-modal-stub" />' }
+        RemoveConfirmModal: { template: '<div class="remove-modal-stub" />' }
       }
     }
   })

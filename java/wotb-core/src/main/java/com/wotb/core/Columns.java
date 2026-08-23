@@ -30,7 +30,6 @@ public final class Columns {
     );
 
     public static final List<Column> STAT = List.of(
-            new Column("评分", "rating", 6, true, p -> p.rating),
             new Column("存活", "survived_label", 6, false, p -> p.survived ? "存活" : "阵亡"),
             new Column("击杀", "kills", 6, true, p -> p.kills),
             new Column("伤害", "damage_dealt", 8, true, p -> p.damageDealt),

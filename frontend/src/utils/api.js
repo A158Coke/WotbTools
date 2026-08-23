@@ -18,16 +18,6 @@ export async function downloadBlob(mode, body) {
   return { blob, disposition: cd }
 }
 
-export async function ratingLeaderboard(body) {
-  const r = await requireOk(await fetch('/api/rating', { method: 'POST', body }))
-  return r.json()
-}
-
-export async function ratingConfig() {
-  const r = await requireOk(await fetch('/api/rating'))
-  return r.json()
-}
-
 /** 名人堂统一公开查询：battleType(RANDOM|RATING|缺省 All) / tankId / nickname / page / size。 */
 export async function hofList(params = {}) {
   const qs = new URLSearchParams()

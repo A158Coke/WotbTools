@@ -44,10 +44,10 @@
     },
     "result": {
         "aggregate_tab": "Сводка ({count} игроков)",
+        "performance_tab": "Эффективность",
         "scroll_hint": "← Листайте вправо для полных данных →",
         "duplicates": "Пропущено {count} дубликатов:",
-        "failures": "{count} файл(ов) не удалось разобрать:",
-        "lowest_rating_alt": "Самый низкий рейтинг"
+        "failures": "{count} файл(ов) не удалось разобрать:"
     },
     "col_picker": {
         "title_player": "Таблица боя",
@@ -61,7 +61,6 @@
     "metric": {
         "battles": "Боёв",
         "players": "Игроков",
-        "max_rating": "Макс. ср. рейтинг",
         "max_damage": "Макс. урон за бой",
         "map": "Карта",
         "duration": "Длительность",
@@ -74,32 +73,6 @@
         "remove_hint": "Файл реплея будет удалён, сводка обновится.",
         "confirm": "Удалить",
         "cancel": "Отмена"
-    },
-    "rating_help": {
-        "btn": "Формула рейтинга",
-        "title": "Как считается рейтинг",
-        "intro": "Автономная оценка эффективности (похоже на WN8), но базовое значение берётся из текущего набора боёв.",
-        "ec_title": "1. Полезный вклад (EC)",
-        "dmg": "урон",
-        "assist": "содействие",
-        "block": "заброневой",
-        "kills": "фраги",
-        "baseline_title": "2. База по классу",
-        "baseline_desc": "EC усредняется по классу техники (ЛТ/СТ/ТТ/ПТ): при ≥ {n} образцах берётся среднее класса.",
-        "score_title": "3. Итоговый рейтинг",
-        "score_word": "рейтинг",
-        "baseline_word": "база",
-        "if_win": "при победе",
-        "tier_title": "Уровни",
-        "tiers": {
-            "elite": "Элита",
-            "great": "Отлично",
-            "good": "Хорошо",
-            "mid": "Средне",
-            "poor": "Слабо"
-        },
-        "note": "База — это совместно рассчитанный набор боёв, поэтому это относительная оценка.",
-        "close": "Закрыть"
     },
     "duration": "{min} мин {sec} сек",
     "team": {
@@ -424,7 +397,6 @@
         "tank_type": "Тип",
         "tank_nation": "Нация",
         "alpha_damage": "Альфа-урон",
-        "rating": "Рейтинг",
         "survived_label": "Статус",
         "survival_time": "Время жизни",
         "survival_time_tip": "Оценка на основе событий урона (секунды)",
@@ -458,7 +430,6 @@
         "survival_rate": "% Выживания",
         "survival_avg": "Ср. время жизни",
         "survival_avg_tip": "Оценка на основе событий урона (секунды)",
-        "rating_avg": "Ср. рейтинг",
         "kills": "Всего убийств",
         "kills_avg": "Ср. убийств",
         "damage": "Всего урона",
@@ -484,25 +455,24 @@
         "light": "Светлая",
         "dark": "Тёмная"
     },
-    "rating_labels": {
+    "performance_labels": {
         "nickname": "Игрок",
         "clan": "Клан",
         "battles": "Бои",
         "wins": "Победы",
         "win_rate": "Победы %",
-        "rating": "Rating",
-        "kast": "KAST %",
         "contribution": "Вклад %",
+        "kast": "KAST %",
         "impact": "Impact %",
         "damage_avg": "Средний урон",
         "potential_damage_avg": "Потенциальный DPB",
         "potential_damage_supplement_avg": "Среднее добавление",
         "assist_avg": "Средняя помощь",
-        "average_hp": "Средний HP",
         "multi_damage_rate": "Мульти-урон %",
+        "survival_rate": "% Выживания",
+        "traded_deaths": "Размены",
         "kills": "Фраги",
-        "kills_avg": "Средние фраги",
-        "account_id": "ID аккаунта"
+        "kills_avg": "Средние фраги"
     },
     "profile": {
         "home": "Главная",
@@ -571,18 +541,6 @@
         "export_failed": "Ошибка экспорта",
         "png_export_failed": "Ошибка экспорта PNG",
         "png_exporting": "Экспорт PNG…"
-    },
-    "extended": {
-        "nav": "Rating V2",
-        "title": "Расширенный анализ",
-        "preview": "Разобрать поля",
-        "rating": "Анализ Rating",
-        "rating_title": "Rating в реальном времени",
-        "fields_title": "Расширенные поля",
-        "empty": "Файлы не выбраны",
-        "no_files": "Сначала выберите реплеи или папку",
-        "scope_preview": "Расширенные поля",
-        "scope_rating": "Rating"
     },
     "boost": {
         "submitTab": "Заявка",
@@ -1011,8 +969,6 @@
         "replayDesc": "Загружайте .wotbreplay файлы и экспортируйте данные в Excel.",
         "highestDamageRecord": "Рекорд урона",
         "hofDesc": "Зал славы по урону за случайные и рейтинговые бои — загрузите реплей, чтобы попасть.",
-        "ratingV2Title": "Анализ Rating V2",
-        "ratingV2Desc": "Композитный рейтинг по потенциальному урону, содействию, KAST, Impact, мульти-урону и фрагам.",
         "aiReviewDesc": "Загрузите один реплей — AI Review составит тактический разбор и советы. Нужен вход.",
         "available": "Доступно",
         "sponsorTitle": "Поддержать",

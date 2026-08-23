@@ -53,9 +53,6 @@ public final class Aggregator {
                 a.hits += p.nHitsDealt;
                 a.pens += p.nPenetrationsDealt;
                 a.enemiesDamaged += p.nEnemiesDamaged;
-                if (p.rating != null) {
-                    a.ratingSum += p.rating;
-                }
                 final String tn = tp.info(p.tankId).name();
                 a.tanks.merge(tn, 1, Integer::sum);
             }

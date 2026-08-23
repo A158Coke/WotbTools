@@ -9,7 +9,6 @@ import HoFAdminPage from './components/HoFAdminPage.vue'
 import ProfilePage from './components/ProfilePage.vue'
 import BoostPage from './components/BoostPage.vue'
 import AdminUsersPage from './components/AdminUsersPage.vue'
-import ExtendedPage from './components/ExtendedPage.vue'
 import ReconstructionPage from './components/ReconstructionPage.vue'
 import VersionPage from './components/VersionPage.vue'
 import ContactPage from './components/ContactPage.vue'
@@ -36,11 +35,18 @@ if (rawViewParam === 'leaderboard') {
   url.searchParams.set('view', 'hof')
   window.history.replaceState({}, '', url.toString())
 }
-const viewParam = rawViewParam === 'leaderboard' ? 'hof' : rawViewParam
+// 旧书签兼容：?view=extended → ?view=replay（战斗表现已并入回放解析，不再有独立页面/第二套 pipeline）
+if (rawViewParam === 'extended') {
+  const url = new URL(window.location.href)
+  url.searchParams.set('view', 'replay')
+  window.history.replaceState({}, '', url.toString())
+}
+const viewParam = rawViewParam === 'leaderboard' ? 'hof'
+  : (rawViewParam === 'extended' ? 'replay' : rawViewParam)
 // AI 复盘入口随时可见：视图列表不再依赖鉴权，未登录也能进入（含深链），
 // 由 ReconstructionPage 自行检查登录状态并跳转登录页。
 const ALLOWED_VIEWS = [
-  'home', 'replay', 'hof', 'hof-admin', 'extended',
+  'home', 'replay', 'hof', 'hof-admin',
   'profile', 'boost', 'admin-users', 'reconstruction', 'version', 'contact',
   'playback-qa',
 ]
@@ -53,7 +59,6 @@ const VIEW_COMPONENTS = {
   replay: ReplayPage,
   hof: HoFPage,
   'hof-admin': HoFAdminPage,
-  extended: ExtendedPage,
   profile: ProfilePage,
   boost: BoostPage,
   'admin-users': AdminUsersPage,
@@ -83,7 +88,6 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button v-if="isHomeHost" :class="{ active: activeTool === 'home' }" @click="navigate('home')">{{ $t('profile.home') }}</button>
       <button :class="{ active: activeTool === 'replay' }" @click="navigate('replay')">{{ $t('app.replay_tab') }}</button>
       <button :class="{ active: activeTool === 'hof' }" @click="navigate('hof')">{{ $t('hof.btn') }}</button>
-      <button :class="{ active: activeTool === 'extended' }" @click="navigate('extended')">{{ $t('extended.nav') }}</button>
       <button :class="{ active: activeTool === 'boost' }" @click="navigate('boost')">{{ $t('app.boost_tab') }}</button>
       <button data-testid="ai-review-nav-button" :class="{ active: activeTool === 'reconstruction' }" @click="navigate('reconstruction')">{{ $t('recon.nav') }}</button>
     </nav>
@@ -328,15 +332,6 @@ td { border-bottom: 1px solid var(--border-light); }
 tbody tr.t1 td { background: color-mix(in srgb, var(--bg-t1) 64%, var(--bg-card)); }
 tbody tr.t2 td { background: color-mix(in srgb, var(--bg-t2) 64%, var(--bg-card)); }
 tr:hover td { background: var(--bg-list-hover); }
-.rbadge { display: inline-flex; align-items: center; justify-content: center; gap: 2px; min-width: 44px; min-height: 22px; text-align: center; padding: 2px 6px; border-radius: 6px; font-size: 12px; font-weight: 800; background: var(--bg-chip); color: var(--text-sub); font-variant-numeric: tabular-nums; }
-.rbadge.cls1 { background: var(--bg-rating); color: var(--text-code); }
-.r-elite, .r1 { background: var(--rating-elite-bg) !important; color: var(--rating-elite-fg) !important; }
-.r-great, .r2 { background: var(--rating-great-bg) !important; color: var(--rating-great-fg) !important; }
-.r-good, .r3 { background: var(--rating-good-bg) !important; color: var(--rating-good-fg) !important; }
-.r-mid, .r4 { background: var(--rating-mid-bg) !important; color: var(--rating-mid-fg) !important; }
-.r-poor { background: var(--rating-poor-bg) !important; color: var(--rating-poor-fg) !important; }
-.medal { display: inline-flex; align-items: center; justify-content: center; margin-left: 2px; line-height: 1; }
-.poop { width: 14px; height: 14px; object-fit: contain; vertical-align: -2px; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .18)); }
 .alive, .dead { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; }
 .alive { background: var(--status-ok-bg); color: var(--status-ok-fg); }
 .dead { background: var(--status-err-bg); color: var(--status-err-fg); }
@@ -419,15 +414,6 @@ tr:hover td { background: var(--bg-list-hover); }
 .modal h2 { margin: 0 0 4px; font-size: 1.1rem; }
 .modal p { color: var(--text-muted); margin: 6px 0; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-.modal-rating { width: 460px; }
-.rh-block { margin-top: 12px; }
-.rh-h { font-size: 12px; font-weight: 600; color: var(--text-modal); margin-bottom: 5px; }
-.rh-p { font-size: 12px; color: var(--text-rating); margin: 0 0 6px; line-height: 1.5; }
-.rh-f { display: block; background: var(--bg-rating); border: 1px solid var(--border-rating); border-radius: 6px;
-  padding: 8px 10px; font-size: 12px; color: var(--text-code); line-height: 1.5; word-break: break-word; }
-.rh-factors, .rh-tiers { display: flex; flex-wrap: wrap; gap: 6px; }
-.rh-tag { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: var(--bg-chip); color: var(--text-label); }
-.rh-tiers .rbadge { font-size: 11px; }
 .lang-select { appearance: none; -webkit-appearance: none; border: 1px solid var(--border-ghost); background: var(--bg-card2);
   color: var(--text-label); padding: 6px 28px 6px 10px; border-radius: 7px; font-size: 13px; cursor: pointer;
   font-family: inherit; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' stroke='%2346566f' stroke-width='2' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
@@ -475,7 +461,6 @@ tr:hover td { background: var(--bg-list-hover); }
   .mcards { grid-template-columns: repeat(2, 1fr); }
   .filebar { flex-wrap: wrap; }
   th, td { padding: 5px 8px; font-size: 12px; }
-  .rbadge { min-width: 36px; padding: 1px 5px; font-size: 11px; }
   .tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .tabs::-webkit-scrollbar { display: none; }
   .tabs button { flex: none; white-space: nowrap; }
@@ -507,7 +492,6 @@ tr:hover td { background: var(--bg-list-hover); }
   .restoolbar .resactions button { flex: 1; min-width: 0; }
   .modal { width: calc(100vw - 32px); }
   th, td { padding: 4px 5px; font-size: 11px; }
-  .rbadge { min-width: 28px; padding: 1px 4px; font-size: 10px; }
   .chip { font-size: 11px; padding: 2px 4px; }
 }
 .scroll-hint { display: none; }
