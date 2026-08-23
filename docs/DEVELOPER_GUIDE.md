@@ -558,7 +558,7 @@ API 层为**纯英文**：`/api/columns` 与各 DTO 只回 `key`(snake_case) + �
 
 `ReplayParser` 仍解析 `xp`、`credits` 到 `PlayerResult`，但这两个值受经济/加成/首胜等因素影响，不作为玩家战绩展示字段、导出列或 rating 输入。
 
-`Tankopedia` 读取车辆库（`common/tankopedia-tier{7,8,9,10}.json`，blitzkit 生成，全部英文/数字）：`name` / `tier` / `class`（英文） / `nation`（英文） / `hp` / vehicle 级 `alphaDamage` / 手工 `extraInfo`。vehicle 级 `alphaDamage` 只在数据层有唯一权威依据时由生成器输出（单炮车 / 7–9 级顶配炮 = 最高 tier 同 tier 最高 alpha，如 T-34-2=400），**10 级多终局炮车不输出**——`Tankopedia.info(...).alphaDamage()` 返回 null，AI structured facts 省略炮伤，不会把数组第一把炮的伤害伪装成本场实际炮伤；`alphaDamage` 取标准弹（`shells[0]`，已用真实数据验证；HE 往往伤害更高故禁止 `max`）。`hp` = 车体 + 顶配炮塔；`forwardSpeed`/`reverseSpeed` 来自 `speed_forwards`/`speed_backwards`，`turretRotationSpeed` 取顶配炮塔 traverse，`hullRotationSpeed` 取顶配履带 traverse，`powerToWeightRatio` = 顶配引擎功率 / 车重。10 级多炮车（如 E 100 的 12,8cm/15cm、AC Atlas 的 V1/V2）在 `guns` 数组中保留全部炮（`isDefault` 均为 false）。刷新时旧数据只从 `--existing-dir` 读取、新数据只写 `--output-dir`（Workflow 两者路径分离），并按 tank_id 保留合并旧文件中的 `extraInfo`（兼容旧 `extraKnowledge`），若仍存在的车辆知识点丢失会直接失败。`average_hp` 的目标口径是"敌方 7 台车实际进场总血量 / 7"，但回放里的每台车实际进场血量 / 双方总血量字段尚未确认解析；当前实现为：车辆库有 HP 时用车辆库，否则未知单车 HP 暂定 2400。
+`Tankopedia` 读取车辆库（`common/tankopedia-tier{7,8,9,10}.json`，blitzkit 生成，全部英文/数字）：`name` / `tier` / `class`（英文） / `nation`（英文） / `hp` / vehicle 级 `alphaDamage` / 手工 `extraInfo`。vehicle 级 `alphaDamage` 只在数据层有唯一权威依据时由生成器输出（单炮车 / 7–9 级顶配炮 = 最高 tier 同 tier 最高 alpha，如 T-34-2=400），**10 级多终局炮车不输出**——`Tankopedia.info(...).alphaDamage()` 返回 null，AI structured facts 省略炮伤，不会把数组第一把炮的伤害伪装成本场实际炮伤；`alphaDamage` 取标准弹（`shells[0]`，已用真实数据验证；HE 往往伤害更高故禁止 `max`）。`hp` = 车体 + 顶配炮塔；`forwardSpeed`/`reverseSpeed` 来自 `speed_forwards`/`speed_backwards`，`turretRotationSpeed` 取顶配炮塔 traverse，`hullRotationSpeed` 取顶配履带 traverse，`powerToWeightRatio` = 顶配引擎功率 / 车重。10 级多炮车（如 E 100 的 12,8cm/15cm、AC Atlas 的 V1/V2）在 `guns` 数组中保留全部炮（`isDefault` 均为 false）。刷新时旧数据只从 `--existing-dir` 读取、新数据只写 `--output-dir`（Workflow 两者路径分离），并按 tank_id 保留合并旧文件中的 `extraInfo`（兼容旧 `extraKnowledge`），若仍存在的车辆知识点丢失会直接失败。`RatingAnalyzer` 的 `average_hp` 取本局双方 14 辆参战车辆的 `hp` 总和 ÷ 14；车辆库缺少 HP 时，只有该单车按 2400 兜底，不再把 2400 当作整场平均血量。
 
 `ReplayParser` 会从 `data.wotreplay` 的 Type 8 / subtype 8 / sub=3 direct HP damage 事件解析攻击者、受害者和伤害值；当阵亡玩家的累计 direct damage 达到 `damageReceived` 阈值时，当前攻击者被推断为击杀者，并把该击杀者对受害者的累计 direct damage / penetrations 写入 `PlayerResult.killVictims`。
 
@@ -567,7 +567,7 @@ API 层为**纯英文**：`/api/columns` 与各 DTO 只回 `key`(snake_case) + �
 `POST /api/rating` 只基于本次上传的 multipart 回放实时计算，不落库、不读取历史记录；`GET /api/rating` 仍保留为旧评分参数接口。扩展页的实时 rating 由 `RatingAnalyzer` 独立计算，不替换原解析页/导出的旧 `Rating.compute(...)` 字段。
 
 实时 rating 公式：
-- `average_hp`：目标口径为敌方 7 台车实际进场总血量 / 7；当前真实进场血量字段尚未解析，车辆库无 HP 时未知单车 HP 暂定 2400。
+- `average_hp`：本局双方 14 辆参战车辆的 Tankopedia `hp` 总和 / 14；同场所有玩家使用该均值。车辆库无 HP 时仅该单车暂定 2400。
 - `KAST`：参考 CS2/CS:GO 的 Kill / Assist / Survive / Traded 思路，单场取 `damage/(average_hp*1.15)`、`assist/(average_hp*1.25)`、`win && survived ? 1 : 0`、`traded_death ? 1 : 0`、`(damage+assist)/(average_hp*1.20)` 的最大值，再跨场平均并封顶 100。
 - `impact`：统计全部场次，按 `damage + assist` 在双方总池中的占比（期望份额 `1/14`）和人头折算成 Impact 百分比。
 - `contribution`：全场 `damage + assist + kills * average_hp / 7` 在本方队伍中的占比。
