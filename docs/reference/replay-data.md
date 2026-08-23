@@ -469,6 +469,9 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `potential_damage_supplement` | 整数  | `PlayerResult.potentialDamageSupplement` | HP    | 补增伤害                                                                            |
 | `potential_damage_detail`     | 文本  | `PlayerResult.potentialDamageDetailed`   | —     | API 返回 `PARSED`/`UNPARSED`，前端三语映射；导出使用中文                                        |
 | `damage_assisted`             | 整数  | `PlayerResult.damageAssisted`            | HP    | #9 + #10                                                                        |
+| `contribution`               | 浮点数 | `PerformanceMetricsCalculator.battleMetrics` → `PlayerResult.contribution` | %  | 单场贡献率（派生；HP 全 UNKNOWN 时为 null → 前端 `--`）                                     |
+| `kast`                       | 浮点数 | `PerformanceMetricsCalculator.battleMetrics` → `PlayerResult.kast`          | %  | 单场 KAST（派生；HP 全 UNKNOWN 时为 null → 前端 `--`）                                    |
+| `impact`                     | 浮点数 | `PerformanceMetricsCalculator.battleMetrics` → `PlayerResult.impact`        | %  | 单场 Impact（派生，不依赖 HP，恒有值）                                                     |
 | `damage_received`             | 整数  | `PlayerResult.damageReceived`            | HP    | #11                                                                             |
 | `damage_blocked`              | 整数  | `PlayerResult.damageBlocked`             | HP    | #117                                                                            |
 | `survival_time`               | 浮点数 | `PlayerResult.survivalTimeSec`           | 秒     | 存活者=durationS，阵亡者=#104>Damage>hybrid EntityLeave/Position                       |
@@ -507,6 +510,11 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `hits`                | 整数  | Sum                      | 次数   |
 | `pens`                | 整数  | Sum                      | 次数   |
 | `enemies_damaged_avg` | 浮点数 | `enemiesDamaged/battles` | 人数/场 |
+| `contribution`        | 浮点数 | `PerformanceMetricsCalculator.compute` 按 accountId 合并 | %  | 跨场贡献率（无 HP 已知场次时 null → 前端 `--`） |
+| `kast`                | 浮点数 | `PerformanceMetricsCalculator.compute` 按 accountId 合并 | %  | 跨场 KAST（无 HP 已知场次时 null → 前端 `--`）   |
+| `impact`              | 浮点数 | `PerformanceMetricsCalculator.compute` 按 accountId 合并 | %  | 跨场 Impact（不依赖 HP）                          |
+| `multi_damage_rate`   | 浮点数 | `PerformanceMetricsCalculator.compute` 按 accountId 合并 | %  | 多伤率（无 HP 已知场次时 null → 前端 `--`）      |
+| `traded_deaths`       | 整数  | `PerformanceMetricsCalculator.compute` 按 accountId 合并 | 场次 | 互换击杀                                        |
 | `tanks`               | 文本  | `Map<车辆名, 场次>`           | —    |
 | `account_id`          | 长整数 | —                        | —    |
 

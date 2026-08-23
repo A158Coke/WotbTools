@@ -4,7 +4,6 @@ import com.wotb.core.export.ExcelExporter;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.Collected;
 import com.wotb.core.model.Source;
-import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.parse.Replays;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.ReplayProcessingOptions;
@@ -17,7 +16,6 @@ import com.wotb.web.replay.dto.AggRow;
 import com.wotb.web.replay.dto.BattleDto;
 import com.wotb.web.replay.dto.ColumnDef;
 import com.wotb.web.replay.dto.ExportResult;
-import com.wotb.web.replay.dto.PerformanceRow;
 import com.wotb.web.replay.dto.PreviewResponse;
 import com.wotb.web.replay.mapper.Mapper;
 import com.wotb.web.replay.metrics.ReplayUsageMetrics;
@@ -29,6 +27,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -100,15 +99,21 @@ public class ReplayService {
 
         final List<BattleDto> battles = new ArrayList<>();
         for (int i = 0; i < c.battles.size(); i++) {
-            battles.add(Mapper.toBattle(c.battles.get(i), c.battleSourceNames.get(i), tankopedia));
+            final Battle battle = c.battles.get(i);
+            PerformanceMetricsCalculator.populateBattle(battle);   // 单场指标写入 PlayerResult（Columns.PLAYER 直接消费）
+            battles.add(Mapper.toBattle(battle, c.battleSourceNames.get(i), tankopedia));
+        }
+        final List<PerformanceMetricsCalculator.Row> perfRows = PerformanceMetricsCalculator.compute(c.battles);
+        final Map<Long, PerformanceMetricsCalculator.Row> perfById = new HashMap<>();
+        for (final PerformanceMetricsCalculator.Row row : perfRows) {
+            perfById.put(row.accountId, row);
         }
         final List<AggRow> aggregate = c.battles.size() > 1
-                ? Mapper.toAggregate(Aggregator.aggregate(c.battles, tankopedia))
+                ? Mapper.toAggregate(Aggregator.aggregate(c.battles, tankopedia), perfById)
                 : List.of();
-        final List<PerformanceRow> performance = Mapper.toPerformance(PerformanceMetricsCalculator.compute(c.battles));
 
-        return new PreviewResponse(battles, aggregate, performance, c.duplicates, c.failures,
-                Mapper.playerColumns(), Mapper.aggregateColumns(), Mapper.performanceColumns());
+        return new PreviewResponse(battles, aggregate, c.duplicates, c.failures,
+                Mapper.playerColumns(), Mapper.aggregateColumns());
     }
 
     /** 完整处理回填已证明的进场满血；重建不可用时仍返回结算战绩并使用车辆库兜底。 */
@@ -135,9 +140,15 @@ public class ReplayService {
         if ("each".equalsIgnoreCase(mode)) {
             return exportEach(files);
         }
-        final Collected c = Replays.collect(toSources(files), null);
+        // 与 preview 完全同一条 authoritative full processing 链（reconstruction + ObservedMaxHp + DeathTimeReconciler），
+        // 保证 Excel 与网页的 Contribution/KAST/Impact 使用同一 Battle facts；同一份 replay 只 full process 一次。
+        final Collected c = Replays.collect(toSources(files), this::processFull, null);
         if (c.battles.isEmpty()) {
             return null;
+        }
+        PotentialDamage.apply(c.battles, tankopedia);   // 与 preview 相同的事实层 enrich
+        for (final Battle battle : c.battles) {
+            PerformanceMetricsCalculator.populateBattle(battle);   // 单场指标进 Excel 列
         }
         final ByteArrayOutputStream out = new ByteArrayOutputStream();
         final String filename;
@@ -159,7 +170,10 @@ public class ReplayService {
         try (ZipOutputStream zip = new ZipOutputStream(zipBytes, StandardCharsets.UTF_8)) {
             for (final Source source : sources) {
                 try {
-                    final Battle battle = ReplayParser.parse(source.bytes());
+                    // 与 preview 同一条 authoritative full processing 链（每份 replay 只 full process 一次）
+                    final Battle battle = processFull(source);
+                    PotentialDamage.apply(List.of(battle), tankopedia);   // 与 preview 相同的事实层 enrich
+                    PerformanceMetricsCalculator.populateBattle(battle);   // 单场指标进 Excel 列
                     final ByteArrayOutputStream xlsx = new ByteArrayOutputStream();
                     ExcelExporter.writeSingle(battle, tankopedia, xlsx);
                     final ZipEntry entry = new ZipEntry(uniqueName(stripExt(source.name()) + ".xlsx", usedNames));

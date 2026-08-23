@@ -15,7 +15,6 @@ import FileUploader from './FileUploader.vue'
 import ColumnPicker from './ColumnPicker.vue'
 import AggregateTable from './AggregateTable.vue'
 import BattleTable from './BattleTable.vue'
-import PerformanceTable from './PerformanceTable.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 
 const { locale, t } = useI18n()
@@ -204,9 +203,6 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
       <div class="restoolbar">
         <div class="tabs" :class="{ locked: showColPicker }"
              :title="showColPicker ? $t('action.picker_locked') : ''">
-          <button v-if="resp.performance?.length" :disabled="showColPicker"
-                  :class="{ active: activeTab === 'performance' }"
-                  @click="activeTab = 'performance'">{{ $t('result.performance_tab') }}</button>
           <button v-if="resp.aggregate.length" :disabled="showColPicker"
                   :class="{ active: activeTab === 'aggregate' }"
                   @click="activeTab = 'aggregate'">{{ $t('result.aggregate_tab', { count: resp.aggregate.length }) }}</button>
@@ -237,10 +233,6 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
             {{ exportingPng ? $t('replay.png_exporting') : $t('action.download_png') }}
           </button>
         </div>
-      </div>
-
-      <div v-show="activeTab === 'performance' && resp.performance?.length">
-        <PerformanceTable :rows="resp.performance" :columns="resp.performanceColumns || []" />
       </div>
 
       <div v-show="activeTab === 'aggregate' && resp.aggregate.length" ref="aggregateRef">
