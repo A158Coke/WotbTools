@@ -52,9 +52,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.IntFunction;
-import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
 import java.util.zip.ZipInputStream;
@@ -835,7 +833,7 @@ public class WebApiTest {
     }
 
     @Test
-    void hofAdminListExposesInternalMetadataAndFilters() throws Exception {
+    void hofAdminListHidesBattleInternalKeysAndKeepsBusinessFilters() throws Exception {
         loginAs(ADMIN_SUB, "admin-user");
         final HallOfFameRecord r = hofRecord("adm-list-1", 111L, "CokeAdmin", 6481L, "FV4005",
                 "RATING", 7, 7000);
@@ -844,18 +842,47 @@ public class WebApiTest {
         try {
             // uploadedBy 搜索定位本测试记录（避免其他测试残留数据干扰第一条）
             final String filtered = mvc().perform(get("/api/admin/hof").param("uploadedBy", "up-sub-1")
+                            .param("arenaId", "not-used-as-a-business-filter")
                             .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_HoF-admin"))))
                     .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
             final JsonNode n = om.readTree(filtered);
             assertEquals(1, n.get("totalItems").asInt());
             final JsonNode item = n.get("items").get(0);
-            // admin 内部字段暴露（DTO key：replayHash / replayUploadedBy / arenaBonusType / accountId）
+            // 管理页面仍保留必要的治理字段，但不暴露内部战斗唯一键/原始战斗模式码。
             assertTrue(item.has("replayHash"));
             assertTrue(item.has("replayUploadedBy"));
-            assertTrue(item.has("arenaBonusType"));
             assertTrue(item.has("accountId"));
+            assertFalse(item.has("arenaId"));
+            assertFalse(item.has("arenaBonusType"));
         } finally {
             SecurityContextHolder.clearContext();
+            hallOfFameRecordRepository.delete(r);
+            hallOfFameRecordRepository.flush();
+        }
+    }
+
+    @Test
+    void hofAdminVehicleOptionsExposeReadableVehicleMetadata() throws Exception {
+        final HallOfFameRecord r = hofRecord("adm-vehicle-options", 111L, "CokeAdmin", 385L, "Progetto 65",
+                "RANDOM", 1, 7000);
+        hallOfFameRecordRepository.saveAndFlush(r);
+        try {
+            final JsonNode options = om.readTree(mvc().perform(get("/api/admin/hof/vehicle-options")
+                            .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_HoF-admin"))))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+            JsonNode option = null;
+            for (final JsonNode candidate : options) {
+                if (candidate.get("tankId").asLong() == 385L) {
+                    option = candidate;
+                    break;
+                }
+            }
+            assertTrue(option != null, "当前名人堂存在的车辆必须出现在可选列表");
+            assertEquals("Progetto 65", option.get("tankName").asText());
+            assertEquals("EUROPE", option.get("nation").asText());
+            assertEquals("MEDIUM_TANK", option.get("type").asText());
+            assertEquals(10, option.get("tier").asInt());
+        } finally {
             hallOfFameRecordRepository.delete(r);
             hallOfFameRecordRepository.flush();
         }

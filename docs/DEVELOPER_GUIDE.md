@@ -246,7 +246,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 | `HallOfFameReplayStorage` | `wotb-web/.../hof/storage/HallOfFameReplayStorage.java` | SHA-256 内容寻址文件存储（原子 move、磁盘 reserve、幂等不覆盖、delete） |
 | `HallOfFameRecord` | `wotb-web/.../hof/entity/HallOfFameRecord.java` | JPA 实体（列与 Flyway 迁移逐列对齐，含 battle_type/arena_bonus_type + V15 replay 元数据列） |
 | `HallOfFameRecordRepository` | `wotb-web/.../hof/repository/HallOfFameRecordRepository.java` | Spring Data JPA 仓库 |
-| `HallOfFameAdminController` / `HallOfFameAdminService` | `wotb-web/.../hof/controller|service/` | 名人堂管理后台：搜索/审计/hard delete（audit+delete 单事务 + ReplayHashLock 文件清理） |
+| `HallOfFameAdminController` / `HallOfFameAdminService` | `wotb-web/.../hof/controller|service/` | 名人堂管理后台：搜索、可读车辆选项、审计、hard delete（audit+delete 单事务 + ReplayHashLock 文件清理） |
 | `HallOfFameBattleTypePolicy` | `wotb-web/.../hof/policy/HallOfFameBattleTypePolicy.java` | 战斗模式单一事实源：raw arenaBonusType → RANDOM/RATING/UNSUPPORTED |
 | `ReplayHashLock` | `wotb-web/.../hof/service/ReplayHashLock.java` | hash 级 PostgreSQL advisory lock（upload 落盘+入库 与 admin delete+文件清理串行化） |
 | `GlobalExceptionHandler` | `wotb-web/.../controller/GlobalExceptionHandler.java` | 统一异常处理 → `error + timestamp`；客户端/代理断连（Broken pipe、Connection reset，含 cause-chain 包装）仅记 WARN、不写错误 JSON |

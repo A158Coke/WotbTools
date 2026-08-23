@@ -30,12 +30,14 @@
   - `GET /api/hof`（统一公开查询，匿名）
   - `POST /api/hof/upload`（上传回放，需登录）
   - `GET /api/hof/{id}/replay`（下载回放，需登录）
-  - `GET /api/admin/hof`（admin 列表：nickname/accountId/arenaId/uploadedBy/battleType/tankId/replayAvailable/sort=damage|battle_time|upload_time/分页 20/50/100）
+  - `GET /api/admin/hof`（admin 列表：nickname/accountId/uploadedBy/battleType/tankId/replayAvailable/sort=damage|battle_time|upload_time/分页 20/50/100；不返回 `arenaId` 或原始 `arenaBonusType`）
+  - `GET /api/admin/hof/vehicle-options`（当前名人堂已有车辆的 `tankId`、名称、国家/系别、车种、等级；国家/车种为稳定英文枚举）
   - `GET /api/admin/hof/audit`（admin 操作日志，只读）
   - `GET /api/admin/hof/{id}/replay`（admin 下载，复用统一机制）
   - `DELETE /api/admin/hof/{id}`（hard delete，需二次确认）
   - 旧 `/api/leaderboard/**` 全部移除；前端 `?view=leaderboard` → canonicalize 为 `?view=hof`。
 - **Admin 安全**：`/api/admin/hof/**` 要求 `HoF-admin` 或 `wotbtools-admin`（`SecurityConfig` 中置于 `ADMIN_PATTERN` 之前；HoF-admin 只管理名人堂，不能访问 `/api/admin/users/**`、`/api/admin/boost/**` 等其他 admin 域）。角色由 Keycloak Admin Console 授予（本仓库仅 realm JSON provision，无授予 UI）。wotbtools-admin 自动拥有全部 HoF admin 权限。
+- **单场管理筛选**：`arena_id` 与 raw `arena_bonus_type` 继续保留在记录和审计快照中，供去重与追溯，但不作为业务管理页面的展示或筛选项。国家/系别、车种、等级都是可选条件，只用于收窄车辆名称候选；未选择时仍列出全部已有车辆，最终查询只提交选中的 `tankId`。
 - **Admin hard delete**：真实 hard delete（无 soft delete / tombstone / blocklist）。**audit + record delete 单事务**（`BEGIN → validate → audit snapshot(DELETE_ENTRY) → delete record → COMMIT`；audit 失败 → 记录不删；删除失败 → 无假审计）。commit 后：`replay_hash` 非空且无其他记录引用 → 删除 `{sha256}.wotbreplay`；仍有引用 → 保留；清理失败 → 仅 WARN（orphan 保留，不回滚已 commit 的删除）。删除后同一回放未来可重新上传（正常校验后重新 SAVED）。审计快照保存 timestamp / admin sub+username / action / recordId / arenaId / accountId / nickname / tankId / tankName / damage / battleType / arenaBonusType / replayHash（record 删除后原记录已不存在，不能只存 record_id FK）。第一版无 audit retention / cleanup scheduler。
 - **备份决策**：回放文件为 **best-effort 可丢数据**——数据库备份（`postgres-backup.sh`）只备份 metadata，不备份文件；VPS 损坏/迁移后可能出现下载 404（tolerance 设计）。
 - **解析边界**：最多 100 个回放、单文件 20 MiB、总请求 200 MiB；单实例默认同时处理 2 个任务。容量满返回 503 `REPLAY_BUSY`。

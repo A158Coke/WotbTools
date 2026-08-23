@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.9",
+    "date": "2026-08-23",
+    "tag": "chg",
+    "zh": "名人堂单场记录管理页不再要求填写 Arena ID 或车辆 ID，也不再展示原始战斗模式数字；可按国家/系别、车种、等级（均可不选）逐步缩小车辆名称，或直接从全部已有车辆中选择后查询。",
+    "en": "The Hall of Fame single-battle admin page no longer asks for an Arena ID or tank ID and no longer shows the raw battle-mode number. Nation/line, vehicle type and tier are all optional ways to narrow the vehicle-name list, while every existing vehicle remains directly selectable.",
+    "ru": "На странице управления одиночными боями Зала славы больше не нужно вводить Arena ID или ID техники, а исходный номер режима боя не показывается. Нация/ветка, тип техники и уровень — необязательные фильтры для сужения списка техники, при этом любую уже имеющуюся технику можно выбрать напрямую."
+  },
+  {
     "v": "2.12.8",
     "date": "2026-08-23",
     "tag": "fix",
