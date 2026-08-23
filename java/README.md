@@ -109,6 +109,8 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 ### `POST /api/rating`
 
 `multipart/form-data`，字段名为 `files`。只基于本次上传回放实时计算，不落库、不读取历史记录。
+为取得已证明的进场满血，评分请求会执行完整回放处理：`OBSERVED_EXACT` 使用回放实测进场满血，
+其余车辆使用 Tankopedia 基础 HP，再按本局 14 辆参战车辆总血量 ÷ 14 计算平均血量。
 
 返回：
 
