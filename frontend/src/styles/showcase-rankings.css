@@ -1,0 +1,169 @@
+/* Hall of Fame public ranking + HoF admin review console */
+
+.lb-wrap {
+  width: min(1720px, calc(100vw - var(--showcase-gutter) * 2)) !important;
+  max-width: none !important;
+  margin: 0 auto !important;
+  padding: 22px 0 64px !important;
+}
+.lb-wrap > .tabs {
+  position: sticky;
+  top: 66px;
+  z-index: 22;
+  display: flex;
+  gap: 5px;
+  margin-bottom: 14px !important;
+  padding: 7px !important;
+  border: 1px solid #303a40 !important;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 84%, transparent) !important;
+  box-shadow: 0 12px 30px rgba(0,0,0,.18);
+  backdrop-filter: blur(12px);
+}
+.lb-wrap > .tabs button {
+  min-height: 35px;
+  padding: 0 18px !important;
+  border-radius: 6px !important;
+}
+.lb-wrap .lb-head {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 12px;
+  padding: 24px 26px !important;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 9px;
+  background: linear-gradient(110deg, color-mix(in srgb, var(--accent) 7%, var(--bg-card)), var(--bg-card) 46%);
+  box-shadow: var(--surface-shadow);
+}
+.lb-wrap .lb-head::after {
+  content: '';
+  position: absolute;
+  right: -50px;
+  top: -125px;
+  width: 320px;
+  height: 320px;
+  border: 1px solid rgba(217,143,24,.14);
+  border-radius: 50%;
+  box-shadow: 0 0 0 54px rgba(217,143,24,.025);
+}
+.lb-wrap .lb-kicker { color: var(--accent-light) !important; font-weight: 900; letter-spacing: .1em; }
+.lb-wrap .lb-head h1 { margin: 5px 0 5px !important; font-size: 1.7rem !important; letter-spacing: -.025em; }
+.lb-wrap .lb-head p { max-width: 760px; color: var(--text-sub) !important; }
+.lb-wrap .lb-submit-row { margin-bottom: 10px !important; }
+.lb-wrap .lb-toolbar {
+  position: sticky;
+  top: 119px;
+  z-index: 18;
+  gap: 8px !important;
+  padding: 10px !important;
+  border: 1px solid #303a40 !important;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-card) 94%, transparent) !important;
+  box-shadow: 0 9px 24px rgba(0,0,0,.14);
+  backdrop-filter: blur(10px);
+}
+.lb-wrap .lb-toolbar :is(select,input) { border-color: #3a454b !important; background: #0f1518 !important; }
+.lb-wrap .tablewrap {
+  margin-top: 12px;
+  overflow: auto !important;
+  border: 1px solid #303a40 !important;
+  border-radius: 8px;
+  background: var(--bg-card);
+  box-shadow: 0 16px 38px rgba(0,0,0,.16);
+}
+.lb-wrap table { width: max-content !important; min-width: 100% !important; font-variant-numeric: tabular-nums; }
+.lb-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  height: 42px;
+  background: #171e22 !important;
+  color: var(--text-sub) !important;
+}
+.lb-wrap tbody td { height: 45px; }
+.lb-wrap tbody tr:hover { background: var(--bg-list-hover) !important; }
+.lb-wrap .lb-dmg { color: var(--accent-dark) !important; font-weight: 900; }
+.lb-wrap .rk { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent); }
+.lb-wrap .hof-upload-modal { border-color: #3b454b !important; background: #11171a !important; box-shadow: 0 30px 80px rgba(0,0,0,.5) !important; }
+
+.hof-admin {
+  width: min(1760px, calc(100vw - var(--showcase-gutter) * 2)) !important;
+  max-width: none !important;
+  margin: 0 auto !important;
+  padding: 22px 0 64px !important;
+}
+.hof-admin-tabs {
+  position: sticky;
+  top: 66px;
+  z-index: 22;
+  display: flex !important;
+  gap: 5px !important;
+  overflow-x: auto;
+  margin-bottom: 14px !important;
+  padding: 8px !important;
+  border: 1px solid #303a40 !important;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 84%, transparent) !important;
+  box-shadow: 0 12px 30px rgba(0,0,0,.18);
+  backdrop-filter: blur(12px);
+}
+.hof-admin-tabs button { flex: 0 0 auto; min-height: 36px; border-radius: 6px !important; }
+.hof-admin-tabs button.active {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border)) !important;
+  background: color-mix(in srgb, var(--accent) 11%, var(--bg-card)) !important;
+  color: var(--accent-dark) !important;
+}
+.hof-admin-filters {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(150px,1fr));
+  gap: 8px !important;
+  padding: 12px !important;
+  border: 1px solid #303a40 !important;
+  border-radius: 8px;
+  background: var(--bg-card) !important;
+  box-shadow: var(--surface-shadow);
+}
+.hof-admin-filters :is(input,select) { width: 100%; min-width: 0; border-color: #394349 !important; background: #0f1518 !important; }
+.hof-admin .tablewrap {
+  margin-top: 12px;
+  overflow: auto !important;
+  border: 1px solid #303a40 !important;
+  border-radius: 8px;
+  background: var(--bg-card);
+  box-shadow: 0 16px 40px rgba(0,0,0,.18);
+}
+.hof-admin-table { width: max-content !important; min-width: 100% !important; font-variant-numeric: tabular-nums; }
+.hof-admin-table th {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  height: 42px;
+  background: #171e22 !important;
+  color: var(--text-sub) !important;
+}
+.hof-admin-table td { height: 45px; }
+.hof-admin-table tbody tr:hover { background: var(--bg-list-hover) !important; }
+.hof-admin .dmg { color: var(--accent-dark) !important; font-weight: 800; }
+.hof-admin .actions { white-space: nowrap; }
+.hof-admin .actions .danger { opacity: .72; background: transparent !important; }
+.hof-admin .actions .danger:hover { opacity: 1; }
+
+@media(max-width:1199px) {
+  .lb-wrap,
+  .hof-admin { width: calc(100vw - 24px) !important; padding-top: 16px !important; }
+  .lb-wrap > .tabs,
+  .hof-admin-tabs { top: 64px; }
+  .lb-wrap .lb-toolbar { position: static; }
+}
+
+@media(max-width:767px) {
+  .lb-wrap,
+  .hof-admin { width: calc(100vw - 16px) !important; padding: 10px 0 42px !important; }
+  .lb-wrap > .tabs,
+  .hof-admin-tabs { position: static; }
+  .lb-wrap .lb-head { padding: 18px !important; }
+  .lb-wrap .lb-toolbar { display: flex !important; overflow-x: auto; flex-wrap: nowrap !important; }
+  .lb-wrap .lb-toolbar > * { flex: 0 0 auto; }
+  .hof-admin-filters { grid-template-columns: 1fr 1fr !important; }
+  .hof-admin-table th { top: 56px; }
+}
