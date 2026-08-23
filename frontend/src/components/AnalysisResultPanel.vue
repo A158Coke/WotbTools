@@ -150,6 +150,7 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
   background: rgba(13, 18, 22, .94);
   box-shadow: 0 20px 52px rgba(0, 0, 0, .26);
   overflow: hidden;
+  color: #d8d5cd;
 }
 .panel-head {
   display: flex;
@@ -229,9 +230,9 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
   background: none;
   cursor: pointer;
   font-size: .9rem;
-  color: var(--text-heading);
+  color: #f2ede3;
 }
-.prebattle-title { font-weight: 700; }
-.prebattle-state { font-size: .78rem; color: var(--text-label); }
+.prebattle-title { font-weight: 700; color: #f2ede3; }
+.prebattle-state { font-size: .78rem; color: #9aa09c; }
 .prebattle-content { margin: 8px 0 0; }
 </style>

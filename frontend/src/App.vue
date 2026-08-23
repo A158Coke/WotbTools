@@ -402,9 +402,9 @@ tr:hover td { background: var(--bg-list-hover); }
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--border-heavy);
+  border: 1px solid #39444a;
   border-radius: 8px;
-  background: var(--bg-elevated);
+  background: rgba(15, 21, 25, .98);
   box-shadow: var(--hard-shadow);
 }
 .colpanel-head {
@@ -413,19 +413,19 @@ tr:hover td { background: var(--bg-list-hover); }
   gap: 8px;
   align-items: center;
   padding: 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-card2);
+  border-bottom: 1px solid #263136;
+  background: #171e22;
 }
-.cph-title { min-width: 0; color: var(--text-heading); font-size: 13px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.linkbtn { border: 1px solid var(--border-ghost); border-radius: 6px; background: var(--bg-card); color: var(--text-label); padding: 5px 9px; cursor: pointer; font: inherit; font-size: 12px; }
-.linkbtn:hover { border-color: var(--accent); color: var(--accent-dark); }
+.cph-title { min-width: 0; color: #f2ede3; font-size: 13px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.linkbtn { border: 1px solid #39444a; border-radius: 6px; background: #151d21; color: #d7d3ca; padding: 5px 9px; cursor: pointer; font: inherit; font-size: 12px; }
+.linkbtn:hover { border-color: var(--accent); color: #f0a42b; }
 .collist { list-style: none; margin: 0; padding: 8px; overflow-y: auto; max-height: calc(100vh - 166px); }
-.collist li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px; border-radius: 6px; color: var(--text-label); }
-.collist li:hover { background: var(--bg-list-hover); }
+.collist li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px; border-radius: 6px; color: #c9c5bb; }
+.collist li:hover { background: #1c262b; }
 .collist li.dragging { opacity: .5; }
 .grip { color: var(--text-sub); cursor: grab; font-size: 13px; }
 .colitem { min-width: 0; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cat { color: var(--text-sub); font-size: 11px; }
+.cat { color: #9aa09c; font-size: 11px; }
 @media (max-width: 768px) {
   .mcards { grid-template-columns: repeat(2, 1fr); }
   .filebar { flex-wrap: wrap; }

@@ -222,6 +222,27 @@
   background: rgba(10,16,19,.50) !important;
   backdrop-filter: blur(8px);
 }
+.lb-wrap .h100-pending-card {
+  border-color: var(--showcase-tactical-border) !important;
+  background: var(--showcase-tactical-soft) !important;
+  box-shadow: none !important;
+}
+.lb-wrap .h100-pending-title { color: #f0a42b !important; }
+.lb-wrap .h100-pending-meta { color: #9aa09c !important; }
+.lb-wrap .h100-pending-meta strong { color: #f0a42b !important; }
+.lb-wrap .h100-pending-time { color: #8f948d !important; }
+.lb-wrap .lb-download {
+  border-color: #39444a !important;
+  background: rgba(15, 21, 25, .9) !important;
+  color: #c9c5bb !important;
+}
+.lb-wrap .lb-download:hover:not(:disabled) { background: #1c262b !important; color: #f0a42b !important; }
+.lb-wrap .pagination button {
+  border-color: #39444a !important;
+  background: #151d21 !important;
+  color: #d7d3ca !important;
+}
+.lb-wrap .pagination button:hover:not(:disabled) { background: #1c262b !important; }
 .lb-wrap .lb-submit-row button,
 .lb-wrap .submit-btn {
   border-color: #d98f18 !important;

@@ -2094,9 +2094,9 @@ const mapStyle = computed(() => ({
   flex-wrap: wrap;
 }
 .pb-btn, .pb-chip {
-  border: 1px solid var(--border);
-  background: var(--bg-card);
-  color: var(--text-label);
+  border: 1px solid #39444a;
+  background: rgba(15, 21, 25, .92);
+  color: #c9c5bb;
   border-radius: 4px;
   padding: 2px 8px;
   font-size: .78rem;
@@ -2204,9 +2204,9 @@ const mapStyle = computed(() => ({
   flex-shrink: 0;
   align-self: stretch;
   font-size: .8rem;
-  color: var(--text-label);
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  color: #c9c5bb;
+  background: rgba(13, 18, 22, .94);
+  border: 1px solid #303a40;
   border-radius: 4px;
   padding: 6px 8px;
   overflow-y: auto;
@@ -2214,7 +2214,7 @@ const mapStyle = computed(() => ({
 }
 .pb-sb-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
 .pb-sb-title { display: flex; flex-direction: column; min-width: 0; }
-.pb-sb-title strong { color: var(--text-heading); font-size: .85rem; line-height: 1.3; }
+.pb-sb-title strong { color: #f2ede3; font-size: .85rem; line-height: 1.3; }
 .pb-sb-player { color: var(--text-muted); font-size: .75rem; word-break: break-all; }
 .pb-sb-close { font-size: 1.05rem; line-height: 1; padding: 0 3px; }
 .pb-sb-portrait {
@@ -2319,11 +2319,12 @@ const mapStyle = computed(() => ({
   .pb-float-dmg, .pb-burst, .pb-feed-item { animation: none; }
 }
 .pb-popup {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: rgba(13, 18, 22, .97);
+  border: 1px solid #303a40;
   border-radius: 4px;
   padding: 6px 8px;
   font-size: .8rem;
+  color: #d8d5cd;
 }
 .pb-popup-head { display: flex; justify-content: space-between; font-weight: 700; }
 .pb-popup ul { margin: 4px 0 0; padding-left: 16px; }
@@ -2338,9 +2339,9 @@ const mapStyle = computed(() => ({
   flex-wrap: wrap;
 }
 .pb-annot-btn {
-  border: 1px solid var(--border);
-  background: var(--bg-card);
-  color: var(--text-label);
+  border: 1px solid #39444a;
+  background: rgba(15, 21, 25, .92);
+  color: #c9c5bb;
   border-radius: 4px;
   padding: 2px 8px;
   font-size: .78rem;
