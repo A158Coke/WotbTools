@@ -6,6 +6,7 @@ import com.wotb.core.ref.Tankopedia;
 import com.wotb.web.hof.dto.ReplayFileMeta;
 import com.wotb.web.hof.entity.HallOfFameRecord;
 import com.wotb.web.hof.repository.HallOfFameRecordRepository;
+import com.wotb.web.hof.repository.HofVehicleProjection;
 import com.wotb.web.hof.service.HallOfFameRecordMapper;
 import com.wotb.web.hof.service.HallOfFameService;
 import com.wotb.web.hof.policy.HallOfFameBattleTypePolicy;
@@ -13,6 +14,8 @@ import com.wotb.web.hof.service.RecordOutcome;
 import com.wotb.web.hof.storage.HallOfFameReplayStorage;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -79,6 +82,50 @@ class HallOfFameServiceTest {
 
     private static ReplayFileMeta meta(final String sha) {
         return new ReplayFileMeta(sha, "battle.wotbreplay", 128L, "kc-user");
+    }
+
+    @Test
+    void vehicleOptionsUseReadableMetadataAndKeepUnknownLegacyVehicles() {
+        final HallOfFameRecordRepository repo = mock(HallOfFameRecordRepository.class);
+        final HofVehicleProjection known = mock(HofVehicleProjection.class);
+        when(known.getTankId()).thenReturn(385L); // Progetto 65, Tier X European medium
+        when(known.getTankName()).thenReturn("Progetto 65");
+        final HofVehicleProjection unknown = mock(HofVehicleProjection.class);
+        when(unknown.getTankId()).thenReturn(999_999L);
+        when(unknown.getTankName()).thenReturn("Legacy Tank");
+        when(repo.findVehicleOptions()).thenReturn(List.of(known, unknown));
+
+        final var options = service(repo).vehicleOptions();
+
+        assertEquals(2, options.size());
+        assertEquals("Progetto 65", options.get(0).tankName());
+        assertEquals("EUROPE", options.get(0).nation());
+        assertEquals("MEDIUM_TANK", options.get(0).type());
+        assertEquals(Integer.valueOf(10), options.get(0).tier());
+        assertEquals("Legacy Tank", options.get(1).tankName());
+        assertEquals("OTHER", options.get(1).nation());
+        assertEquals("OTHER", options.get(1).type());
+        assertNull(options.get(1).tier());
+    }
+
+    @Test
+    void categoryFiltersIndependentlyQueryMatchingVehicleIntersection() {
+        final HallOfFameRecordRepository repo = mock(HallOfFameRecordRepository.class);
+        final HofVehicleProjection europeMedium = mock(HofVehicleProjection.class);
+        when(europeMedium.getTankId()).thenReturn(385L);
+        when(europeMedium.getTankName()).thenReturn("Progetto 65");
+        final HofVehicleProjection franceLight = mock(HofVehicleProjection.class);
+        when(franceLight.getTankId()).thenReturn(3649L);
+        when(franceLight.getTankName()).thenReturn("B-C 25 t");
+        when(repo.findVehicleOptions()).thenReturn(List.of(europeMedium, franceLight));
+        when(repo.searchByVehicleIds(any(), any(), any(), any(), any(Pageable.class)))
+                .thenReturn(Page.empty());
+
+        service(repo).search(null, null, " europe ", "medium_tank", 10,
+                null, 1, 50);
+
+        verify(repo).searchByVehicleIds(any(), any(), eq(List.of(385L)), any(), any(Pageable.class));
+        verify(repo, never()).search(any(), any(), any(), any(Pageable.class));
     }
 
     // ── eligibility / preflight（P1：写文件前确定 SKIPPED）────────────────────

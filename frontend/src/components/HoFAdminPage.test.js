@@ -39,7 +39,8 @@ vi.mock('../utils/api.js', () => hofAdminApi)
 vi.mock('../utils/helpers.js', () => ({ mapLabel: () => '' }))
 vi.mock('../utils/display.js', () => ({
   apiErrorLabel: (t, te, e) => (e?.code ? 'err:' + e.code : 'api-error'),
-  replayValueLabel: (t, te, value) => value
+  replayValueLabel: (t, te, value) => value,
+  formatDateTimeMinute: value => value || ''
 }))
 // 三语 reason options（object message：tm/$tm 才返回 object；$t 只用于字符串 key）
 const REJECT_OPTIONS = {
@@ -147,11 +148,12 @@ describe('HoFAdminPage', () => {
     expect(hofAdminApi.hofAdminVehicleOptions).toHaveBeenCalled()
   })
 
-  it('uses optional readable vehicle filters and sends only the selected tank ID', async () => {
+  it('uses optional readable vehicle filters as real search conditions and intersects the selected tank', async () => {
     hofAdminApi.hofAdminVehicleOptions.mockResolvedValue([
       { tankId: 385, tankName: 'Progetto 65', nation: 'EUROPE', type: 'MEDIUM_TANK', tier: 10 },
       { tankId: 6481, tankName: 'FV4005', nation: 'UK', type: 'TANK_DESTROYER', tier: 10 },
-      { tankId: 999, tankName: 'Kranvagn', nation: 'EUROPE', type: 'HEAVY_TANK', tier: 10 }
+      { tankId: 999, tankName: 'Kranvagn', nation: 'EUROPE', type: 'HEAVY_TANK', tier: 10 },
+      { tankId: 1000, tankName: 'European IX', nation: 'EUROPE', type: 'MEDIUM_TANK', tier: 9 }
     ])
     const wrapper = mountPage()
     await flushPromises()
@@ -162,26 +164,39 @@ describe('HoFAdminPage', () => {
 
     let selects = wrapper.find('.hof-admin-filters').findAll('select')
     // 三项都未选择时，车辆下拉直接提供全量候选。
-    expect(selects[3].findAll('option')).toHaveLength(4)
+    expect(selects[3].findAll('option')).toHaveLength(5)
 
+    await selects[2].setValue('10')
     await selects[0].setValue('EUROPE')
-    await flushPromises()
-    selects = wrapper.find('.hof-admin-filters').findAll('select')
-    expect(selects[1].findAll('option').map(option => option.attributes('value')))
-      .toEqual(['', 'HEAVY_TANK', 'MEDIUM_TANK'])
-
     await selects[1].setValue('MEDIUM_TANK')
     await flushPromises()
     selects = wrapper.find('.hof-admin-filters').findAll('select')
+    expect(selects[0].element.value).toBe('EUROPE')
+    expect(selects[1].element.value).toBe('MEDIUM_TANK')
+    expect(selects[2].element.value).toBe('10')
+    expect(selects[1].findAll('option').map(option => option.attributes('value')))
+      .toEqual(['', 'HEAVY_TANK', 'MEDIUM_TANK', 'TANK_DESTROYER'])
     expect(selects[3].findAll('option').map(option => option.text()))
       .toEqual(['hofAdmin.allVehicles', 'Progetto 65 · T10'])
+    expect(hofAdminApi.hofAdminList).toHaveBeenLastCalledWith(expect.objectContaining({
+      nation: 'EUROPE', vehicleType: 'MEDIUM_TANK', tier: '10'
+    }))
+    expect(hofAdminApi.hofAdminList.mock.calls.at(-1)[0].tankId).toBe('')
 
     await selects[3].setValue('385')
     await flushPromises()
     expect(hofAdminApi.hofAdminList).toHaveBeenLastCalledWith(
-      expect.objectContaining({ tankId: '385' })
+      expect.objectContaining({
+        nation: 'EUROPE', vehicleType: 'MEDIUM_TANK', tier: '10', tankId: '385'
+      })
     )
     expect(hofAdminApi.hofAdminList.mock.calls.at(-1)[0]).not.toHaveProperty('arenaId')
+
+    await selects[2].setValue('9')
+    await flushPromises()
+    expect(selects[0].element.value).toBe('EUROPE')
+    expect(selects[1].element.value).toBe('MEDIUM_TANK')
+    expect(hofAdminApi.hofAdminList.mock.calls.at(-1)[0].tankId).toBe('')
   })
 
   it('wotbtools-admin sees admin content', async () => {
@@ -240,7 +255,9 @@ describe('HoFAdminPage', () => {
     await flushPromises()
     await switchToHundred(wrapper)
 
-    expect(hofAdminApi.hofAdminHundredList).toHaveBeenCalledWith({ page: 1, size: 50 })
+    expect(hofAdminApi.hofAdminHundredList).toHaveBeenCalledWith({
+      page: 1, size: 50, status: '', nation: '', vehicleType: '', vehicleId: null
+    })
     const table = wrapper.find('.hof-hundred .hof-admin-table')
     expect(table.exists()).toBe(true)
     expect(table.text()).toContain('FV4005')
@@ -257,10 +274,21 @@ describe('HoFAdminPage', () => {
       'hundredAdmin.details', 'hundredAdmin.details', 'hundredAdmin.details'
     ])
     expect(wrapper.find('.hof-hundred .actions .btn-sm.danger').exists()).toBe(false)
-    // 状态筛选联动刷新
-    await wrapper.find('.hof-hundred .hof-admin-filters select').setValue('CURRENT')
+    // 国家/车种无需先选车辆即可真实筛选；车辆与状态继续取交集。
+    const filters = wrapper.findAll('.hof-hundred .hof-admin-filters select')
+    expect(filters).toHaveLength(4)
+    await filters[0].setValue('EUROPE')
     await flushPromises()
-    expect(hofAdminApi.hofAdminHundredList).toHaveBeenLastCalledWith({ page: 1, size: 50, status: 'CURRENT' })
+    expect(hofAdminApi.hofAdminHundredList).toHaveBeenLastCalledWith({
+      page: 1, size: 50, status: '', nation: 'EUROPE', vehicleType: '', vehicleId: null
+    })
+    await filters[1].setValue('MEDIUM_TANK')
+    await filters[2].setValue('385')
+    await filters[3].setValue('CURRENT')
+    await flushPromises()
+    expect(hofAdminApi.hofAdminHundredList).toHaveBeenLastCalledWith({
+      page: 1, size: 50, status: 'CURRENT', nation: 'EUROPE', vehicleType: 'MEDIUM_TANK', vehicleId: 385
+    })
   })
 
   it('PENDING row opens review modal with screenshot and validation items', async () => {
@@ -393,6 +421,8 @@ describe('HoFAdminPage', () => {
     await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
     await flushPromises()
     expect(hofAdminApi.hofAdminHundredDetail).toHaveBeenCalledWith(12)
+    expect(hofAdminApi.hofAdminHundredReplays).not.toHaveBeenCalled()
+    expect(wrapper.find('.hof-review-modal .replay-evidence-list').exists()).toBe(false)
     expect(hofAdminApi.hofAdminHundredDelete).not.toHaveBeenCalled()
 
     await wrapper.findAll('.hof-review-modal button').find(b => b.text() === 'hundredAdmin.delete').trigger('click')
@@ -405,7 +435,7 @@ describe('HoFAdminPage', () => {
     expect(hofAdminApi.hofAdminHundredDelete).toHaveBeenCalledWith(12, { deleteReason: 'DATA_ERROR' })
   })
 
-  it('rejected submission opens details with the rejection reason and no review action', async () => {
+  it('rejected submission keeps reason text but no longer requests or exposes evidence', async () => {
     hofAdminApi.hofAdminHundredList.mockResolvedValue({
       items: [rejectedItem], page: 1, size: 50, totalItems: 1, totalPages: 1
     })
@@ -420,6 +450,8 @@ describe('HoFAdminPage', () => {
     const modal = wrapper.find('.hof-review-modal')
     expect(hofAdminApi.hofAdminHundredDetail).toHaveBeenCalledWith(13)
     expect(hofAdminApi.hofAdminHundredReplays).not.toHaveBeenCalled()
+    expect(modal.find('.hundred-proof').exists()).toBe(false)
+    expect(modal.findAll('.replay-evidence-item')).toHaveLength(0)
     expect(modal.text()).toContain('截图不足以证明百场成绩')
     expect(modal.text()).toContain('截图只显示总伤害，无法证明场均。')
     expect(modal.findAll('button').map(button => button.text())).not.toContain('hundredAdmin.approve')

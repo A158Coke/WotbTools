@@ -34,7 +34,7 @@ import java.util.List;
  * 「DB 引用 H ⇒ 物理 H 存在」不变量。</p>
  *
  * <p>生命周期：创建时 {@link #storeAll} 落盘 → 单事务 {@link #attach} 写 5 行；
- * 终态（APPROVE/REJECT/CANCEL）由 {@link #discardForSubmission} 同事务删行并在 commit 后
+ * 终态（APPROVE/REJECT/CANCEL/DELETE）由 {@link #discardForSubmission} 同事务删行并在 commit 后
  * best-effort 清理物理文件（失败仅 WARN，orphan 保留，与 HoF admin delete 同语义）。</p>
  */
 @Service
@@ -111,11 +111,8 @@ public class HundredReplayEvidenceService {
     }
 
     /**
-     * 终态迁移（APPROVE/REJECT/CANCEL）同事务调用：删除该 submission 全部 evidence 行，
-     * 并在事务 commit 后 best-effort 清理物理文件（跨表引用计数，失败仅 WARN 保留 orphan；
-     * 文件删除失败<b>不</b>回滚已完成的业务状态迁移）。
-     * {@code @Transactional}：被 approve/reject/cancel 的事务内调用时加入其事务（删除随业务
-     * 状态原子回滚）；独立调用（如集成测试）时自建事务，派生 delete 不抛 TransactionRequiredException。
+     * 终态迁移同事务调用：删除该 submission 全部 evidence 行，并在事务 commit 后 best-effort
+     * 清理物理文件。跨表引用计数与 advisory lock 防止误删共享文件；物理删除失败不回滚业务终态。
      */
     @Transactional
     public void discardForSubmission(final long submissionId) {
@@ -139,7 +136,7 @@ public class HundredReplayEvidenceService {
         cleanupFilesUnlocked(sha256s);
     }
 
-    /** 管理后台 evidence 列表（admin-only；旧 PENDING 无 evidence → 空列表，不 500）。 */
+    /** 管理后台 evidence 列表（admin-only；终态或旧 PENDING 无 evidence → 空列表，不 500）。 */
     @Transactional(readOnly = true)
     public List<HundredReplayEvidenceDto> adminListEvidence(final long submissionId) {
         requireSubmission(submissionId);
@@ -220,17 +217,6 @@ public class HundredReplayEvidenceService {
     }
 
     /**
-     * 每个 hash 在 {@link ReplayHashLock}（PostgreSQL advisory lock）内清理。
-     * 用于终态（APPROVE/REJECT/CANCEL）commit 后路径——此时无外层锁，必须逐 hash 取锁，
-     * 与 HoF 上传/删除串行化，防止「检查后、删除前」并发引用该文件破坏不变量。
-     */
-    private void cleanupFilesLocked(final List<String> sha256s) {
-        for (final String hash : sha256s) {
-            replayHashLock.runWithLock(hash, () -> cleanupSingle(hash));
-        }
-    }
-
-    /**
      * 不取锁的清理（调用方必须已持有对应 hash 的 advisory lock）。
      * 用于 createSubmission 失败路径——其整个 store + DB 事务都在外层
      * {@code runWithLocksResult(hashes)} 内，外层锁已覆盖本表与 HoF 的并发删除/引用。
@@ -239,6 +225,13 @@ public class HundredReplayEvidenceService {
     private void cleanupFilesUnlocked(final List<String> sha256s) {
         for (final String hash : sha256s) {
             cleanupSingle(hash);
+        }
+    }
+
+    /** 终态 commit 后逐 hash 获取 advisory lock，再检查引用并清理物理文件。 */
+    private void cleanupFilesLocked(final List<String> sha256s) {
+        for (final String hash : sha256s) {
+            replayHashLock.runWithLock(hash, () -> cleanupSingle(hash));
         }
     }
 
@@ -259,7 +252,7 @@ public class HundredReplayEvidenceService {
         }
     }
 
-    /** 事务 commit 后执行（终态文件清理）；无活动事务时立即执行（防御，如单元测试）。 */
+    /** 事务 commit 后执行；无活动事务时立即执行（防御，也便于单元测试）。 */
     private static void scheduleAfterCommit(final Runnable action) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
