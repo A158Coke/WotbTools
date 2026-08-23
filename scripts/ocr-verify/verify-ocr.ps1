@@ -1,3 +1,9 @@
+# deterministic OCR pipeline tests only — NO LLM involved.
+# Scope: merge-base range (Case 5), project-rule resolution (Case 1 deterministic part),
+# no-diff reviewable=0 (Case 6), OCR failure exit codes (Case 4 deterministic part).
+# Agent-level scenarios (full bug-detection closure, plan-audit, reconciler severity,
+# false-positive rejection) are performed by the main agent per review-with-docs SKILL.md
+# and documented in README.md — they are NOT asserted here.
 $ErrorActionPreference = 'Stop'
 $origDir = Get-Location
 $scratch = Join-Path ([System.IO.Path]::GetFullPath($env:TEMP)) ('ocr-verify-' + [guid]::NewGuid().ToString('N'))
