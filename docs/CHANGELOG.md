@@ -8,14 +8,15 @@
 - **统一 Replay Authoritative Facts，移除 Rating V2 综合评分**：回放事实（HP / 潜在伤害 / trade / 场均 HP）全部收敛到 replay 管线（新增 `replay/facts/BattleHpFacts` + `TradeFacts`，复用 `ObservedMaxHp`/权威 `survivalTimeSec`）；`RatingAnalyzer` 重命名为 `PerformanceMetricsCalculator`（纯派生计算、只读，删除 `finalRating`/权重/`estimatedHp`/2400 fallback）。旧 WN8 式 `Rating`/`RatingConfig`/`PlayerResult.rating`/`rating_avg`/`common/rating.json`/`GET /api/rating` 与 Excel「评分」列全部删除；`POST /api/rating` → `POST /api/performance`，返回贡献度 / KAST / Impact / 潜在伤害 / 协助 / 击杀 / 多伤率 / 存活率 / 互换击杀。前端删除 RatingModal / 评分 badge / 最高评分统计，扩展页重构为「战斗表现」。
 - **战斗表现并入回放解析，HP unknown fail-closed**：删除独立 `POST /api/performance` 端点与 `/extended` 页面/路由/导航；`/api/preview` 统一完整处理链一次产出基础战绩 + 汇总 + 战斗表现，前端 ReplayPage 新增「战斗表现」tab，`?view=extended` 旧深链 canonical redirect 到 `?view=replay`。`BattleHpFacts.averageHp` 改为返回 provenance-aware `BattleAverageHp(value, complete)`：存在 HP UNKNOWN 时场均 HP unavailable（禁止按 0 参与），依赖 HP 的衍生指标（贡献度击杀项/KAST/多伤率/场均 HP）按 HP 已知场次 fail-closed，原始权威数据照常。
 - **BattleHpFacts 要求完整 14 名参战玩家才 complete**：场均 HP 的 `complete=true` 仅当有效参战玩家（team 1/2）数量 == 14 且全部 HP known；不足 14 人（如 4 人/13 人）一律 unavailable，禁止部分玩家 total/14 冒充权威均值。测试 fixture 全部改为完整 14 人（新增 13/14、4/14、0 玩家、null battle 用例）。
-- **名人堂单场管理筛选可读化**：`GET /api/admin/hof` 移除 Arena ID 筛选并不再返回 `arenaId`/原始 `arenaBonusType`；新增受 HoF-admin 保护的 `GET /api/admin/hof/vehicle-options`，从当前名人堂已有车辆生成名称、国家/系别、车种、等级的稳定英文枚举选项。管理页以可选的国家/系别 → 车种 → 等级收窄车辆名称，只在最终选择车辆时提交 `tankId`；车辆库无法识别的旧记录保留其原始名称并归为 `OTHER`，不会丢失筛选入口。
+- **名人堂单场管理筛选可读化**：`GET /api/admin/hof` 移除 Arena ID 筛选并不再返回 `arenaId`/原始 `arenaBonusType`；新增受 HoF-admin 保护的 `GET /api/admin/hof/vehicle-options`，从当前名人堂已有车辆生成名称、国家/系别、车种、等级的稳定英文枚举选项。国家/系别、车种、等级可按任意顺序独立真实筛榜，并共同收窄车辆名称；选择车辆后再与 `tankId` 取交集。车辆库无法识别的旧记录保留其原始名称并归为 `OTHER`，不会丢失筛选入口。
 - **战局回放 Details Panel 增加 Tier X 车型图**：从 BlitzKit 公开 CDN 确定性下载 Tankopedia
   全部 84 辆十级车的透明 WebP 车型图并随前端发布；选中车辆时按 tankId 懒加载，非十级车、
   缺图或加载失败静默降级，production 不访问 BlitzKit。新增 Tier X 100% 图片覆盖测试与
   `blitzkit-references.mjs --emit-portraits` 可重复生成入口。
 
 ### Fixed
-- **名人堂百场审核与默认榜修复**：百场审核列表所有状态统一只显示“详情”，待审核申请只能在详情内通过/拒绝，CURRENT 只能在详情内删除；REJECTED 详情现在展示拒绝原因、补充说明与时间，CANCELLED/DELETED 终态也可查看。公开 `GET /api/hof/hundred` 的 `vehicleId` 改为可选，未传时固定返回全站 CURRENT 最高 10 条；前端国家/系别、车种筛选仅收窄 Tier X 车辆候选，不强制选择。
+- **名人堂筛选交集与百场证据清理**：单场公开/管理查询新增稳定码 `nation`/`vehicleType`/`tier`，国家、车种、等级无需先选具体车辆即可独立真实筛榜，多个非空条件与 `tankId` 取交集；新增匿名 `GET /api/hof/vehicle-options` 供两页复用实际已有车辆。公开百场分类 Top 10 与 competition rank 使用同一 vehicleId 集合，管理员百场列表也支持 status/nation/vehicleType/vehicleId 独立交集筛选。百场证据维持 PENDING 临时审核资产语义：APPROVE/REJECT/CANCEL/DELETE 后清空截图、删除 evidence 行，并在 commit 后清理无引用物理文件。
+- **名人堂百场审核与默认榜修复**：百场审核列表所有状态统一只显示“详情”，待审核申请只能在详情内通过/拒绝，CURRENT 只能在详情内删除；REJECTED 详情现在展示拒绝原因、补充说明与时间，CANCELLED/DELETED 终态也可查看。公开 `GET /api/hof/hundred` 的 `vehicleId` 改为可选，全部条件为空时固定返回全站 CURRENT 最高 10 条；国家/系别、车种无需选择具体车辆即可直接筛选对应分类榜。
 - **战局回放（Battle Playback）当前状态面板与伤害/碰撞语义修复（docs/current-plan.md 1-28）**：
   - Details Panel 收敛为 current-state 面板：删除「最大 HP」「HP %」「协助伤害」「最终战绩」分区。
   - 车辆类型 fallback：replay tankType → tankopedia class（英文）→ 空串。

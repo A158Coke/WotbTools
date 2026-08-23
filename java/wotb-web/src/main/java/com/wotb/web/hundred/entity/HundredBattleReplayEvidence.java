@@ -18,9 +18,9 @@ import java.time.OffsetDateTime;
  * sha256 即存储 key（服务端生成）。submission + slot 唯一（一个 submission 恰好 5 行由
  * {@code HundredBattleSubmissionService.createSubmission} 单事务保证）。</p>
  *
- * <p>生命周期：submission 终态（APPROVE/REJECT/CANCEL）同事务删除本表行，commit 后 best-effort
- * 清理物理文件（跨表引用计数：hall_of_fame_record + 本表均无引用才删；失败仅 WARN 保留 orphan）。
- * 旧 PENDING（本功能上线前创建）无本表行 → 审核 UI 明确提示原始回放不可用。</p>
+ * <p>生命周期：submission 终态（APPROVE/REJECT/CANCEL/DELETE）同事务删除本表行，commit 后
+ * best-effort 清理物理文件（跨表引用计数：hall_of_fame_record + 本表均无引用才删；失败仅 WARN
+ * 保留 orphan）。旧 PENDING（本功能上线前创建）无本表行 → 审核 UI 明确提示原始回放不可用。</p>
  *
  * <p>列结构与 Flyway V19__create_hundred_battle_replay_evidence.sql 逐列对齐（ddl-auto=validate）。
  * 不使用 @ManyToOne：本实体以 submission_id 标量 + 显式查询与 submission 保持独立生命周期，

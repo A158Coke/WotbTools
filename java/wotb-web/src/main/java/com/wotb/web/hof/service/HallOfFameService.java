@@ -2,15 +2,19 @@ package com.wotb.web.hof.service;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.model.TankInfo;
 import com.wotb.core.ref.Tankopedia;
+import com.wotb.core.ref.VehicleCodes;
 import com.wotb.web.hof.dto.HallOfFamePageDto;
 import com.wotb.web.hof.dto.HallOfFameRecordDto;
+import com.wotb.web.hof.dto.HofVehicleOptionDto;
 import com.wotb.web.hof.dto.ReplayDownload;
 import com.wotb.web.hof.dto.ReplayFileMeta;
 import com.wotb.web.hof.entity.HallOfFameRecord;
 import com.wotb.web.hof.policy.HallOfFameBattleType;
 import com.wotb.web.hof.policy.HallOfFameBattleTypePolicy;
 import com.wotb.web.hof.repository.HallOfFameRecordRepository;
+import com.wotb.web.hof.repository.HofVehicleProjection;
 import com.wotb.web.hof.storage.HallOfFameReplayStorage;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -18,6 +22,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -28,6 +33,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -44,6 +50,7 @@ public class HallOfFameService {
     private final HallOfFameRecordRepository repository;
     private final HallOfFameRecordMapper mapper;
     private final HallOfFameReplayStorage storage;
+    private final Tankopedia tankopedia = Tankopedia.load();
 
     public HallOfFameService(final HallOfFameRecordRepository repository,
                              final HallOfFameRecordMapper mapper,
@@ -204,20 +211,83 @@ public class HallOfFameService {
         record.setReplayUploadedBy(meta.uploadedBy());
     }
 
-    /**
-     * 统一公开查询：battleType（RANDOM / RATING / null=All）× tankId × nickname 模糊 × 分页。
-     * 排序 deterministic（见 repository.search）；rank 为当前 filter 上下文位置排名（不落库）。
-     */
+    /** 向后兼容的公开查询入口（无车辆分类条件）。 */
     public HallOfFamePageDto search(final String battleType, final Long tankId, final String nickname,
                                     final int page, final int size) {
+        return search(battleType, tankId, null, null, null, nickname, page, size);
+    }
+
+    /**
+     * 统一公开查询：battleType ×（nation ∩ vehicleType ∩ tier ∩ tankId）× nickname × 分页。
+     * 国家/车种/等级均可独立生效；排序 deterministic，rank 基于完整交集上下文。
+     */
+    @Transactional(readOnly = true)
+    public HallOfFamePageDto search(final String battleType,
+                                    final Long tankId,
+                                    final String nation,
+                                    final String vehicleType,
+                                    final Integer tier,
+                                    final String nickname,
+                                    final int page,
+                                    final int size) {
         final String normalizedType = normalizeBattleTypeFilter(battleType);
         // 昵称模糊匹配：服务端预计算小写 pattern（含 %），避免 JPQL lower(concat(...)) 的 PG 类型推断问题
         final String nicknamePattern = StringUtils.hasText(nickname)
                 ? "%" + nickname.trim().toLowerCase() + "%" : null;
         final Pageable pageable = PageRequest.of(page - 1, clamp(size));
-        final Page<HallOfFameRecord> records =
-                repository.search(normalizedType, tankId, nicknamePattern, pageable);
+        final Page<HallOfFameRecord> records;
+        if (hasVehicleCategoryFilter(nation, vehicleType, tier)) {
+            final List<Long> vehicleIds = matchingVehicleIds(nation, vehicleType, tier);
+            records = vehicleIds.isEmpty()
+                    ? Page.empty(pageable)
+                    : repository.searchByVehicleIds(
+                            normalizedType, tankId, vehicleIds, nicknamePattern, pageable);
+        } else {
+            records = repository.search(normalizedType, tankId, nicknamePattern, pageable);
+        }
         return mapper.toPageDtoWithRank(records, page, size);
+    }
+
+    /** 当前名人堂实际存在的车辆选项，车辆属性统一为 API 稳定英文码。 */
+    @Transactional(readOnly = true)
+    public List<HofVehicleOptionDto> vehicleOptions() {
+        return repository.findVehicleOptions().stream()
+                .map(this::toVehicleOption)
+                .toList();
+    }
+
+    /** 按任意非空国家/车种/等级条件取交集，只返回当前名人堂实际存在的车辆 ID。 */
+    @Transactional(readOnly = true)
+    public List<Long> matchingVehicleIds(final String nation,
+                                         final String vehicleType,
+                                         final Integer tier) {
+        final String normalizedNation = normalizeVehicleCode(nation);
+        final String normalizedType = normalizeVehicleCode(vehicleType);
+        return vehicleOptions().stream()
+                .filter(vehicle -> normalizedNation == null || normalizedNation.equals(vehicle.nation()))
+                .filter(vehicle -> normalizedType == null || normalizedType.equals(vehicle.type()))
+                .filter(vehicle -> tier == null || tier.equals(vehicle.tier()))
+                .map(HofVehicleOptionDto::tankId)
+                .toList();
+    }
+
+    private HofVehicleOptionDto toVehicleOption(final HofVehicleProjection row) {
+        final TankInfo info = tankopedia.info(row.getTankId());
+        final String name = info.name().startsWith("#") && StringUtils.hasText(row.getTankName())
+                ? row.getTankName() : info.name();
+        final Integer tier = info.tier() instanceof Number value ? value.intValue() : null;
+        return new HofVehicleOptionDto(row.getTankId(), name,
+                VehicleCodes.nationCode(info.nation()), VehicleCodes.classCode(info.type()), tier);
+    }
+
+    private static boolean hasVehicleCategoryFilter(final String nation,
+                                                    final String vehicleType,
+                                                    final Integer tier) {
+        return StringUtils.hasText(nation) || StringUtils.hasText(vehicleType) || tier != null;
+    }
+
+    private static String normalizeVehicleCode(final String value) {
+        return StringUtils.hasText(value) ? value.trim().toUpperCase(Locale.ROOT) : null;
     }
 
     /** 过滤参数只接受 RANDOM / RATING（缺省 All）；其余 → 400。 */

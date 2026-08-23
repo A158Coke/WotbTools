@@ -4,10 +4,11 @@ import com.wotb.web.hof.entity.HallOfFameAdminLog;
 import com.wotb.web.hof.entity.HallOfFameRecord;
 import com.wotb.web.hof.repository.HallOfFameAdminLogRepository;
 import com.wotb.web.hof.repository.HallOfFameRecordRepository;
-import com.wotb.web.hof.repository.HofAdminVehicleProjection;
 import com.wotb.web.hof.storage.HallOfFameReplayStorage;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -19,7 +20,6 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -43,6 +43,7 @@ class HallOfFameAdminServiceTest {
     private final HallOfFameAdminAuditMapper auditMapper = mock(HallOfFameAdminAuditMapper.class);
     private final HallOfFameReplayStorage storage = mock(HallOfFameReplayStorage.class);
     private final ReplayHashLock replayHashLock = mock(ReplayHashLock.class);
+    private final HallOfFameService hallOfFameService = mock(HallOfFameService.class);
     private final com.wotb.web.hundred.service.HundredReplayEvidenceService hundredEvidenceService =
             mock(com.wotb.web.hundred.service.HundredReplayEvidenceService.class);
     private final PlatformTransactionManager txManager = mock(PlatformTransactionManager.class);
@@ -51,7 +52,7 @@ class HallOfFameAdminServiceTest {
         // mock txManager.getTransaction → null：TransactionTemplate.execute 仍会执行回调（单事务语义由真实 Spring 管理，
         // 单元测试只验证回调内的业务编排：audit+delete 顺序与失败传播）。
         return new HallOfFameAdminService(repository, recordMapper, auditRepository,
-                auditMapper, storage, replayHashLock, hundredEvidenceService, txManager);
+                auditMapper, storage, replayHashLock, hallOfFameService, hundredEvidenceService, txManager);
     }
 
     @AfterEach
@@ -257,25 +258,18 @@ class HallOfFameAdminServiceTest {
     }
 
     @Test
-    void vehicleOptionsUseReadableMetadataAndKeepUnknownLegacyVehicles() {
-        final HofAdminVehicleProjection known = mock(HofAdminVehicleProjection.class);
-        when(known.getTankId()).thenReturn(385L); // Progetto 65, Tier X European medium
-        when(known.getTankName()).thenReturn("Progetto 65");
-        final HofAdminVehicleProjection unknown = mock(HofAdminVehicleProjection.class);
-        when(unknown.getTankId()).thenReturn(999_999L);
-        when(unknown.getTankName()).thenReturn("Legacy Tank");
-        when(repository.findAdminVehicleOptions()).thenReturn(List.of(known, unknown));
+    void categoryFiltersIndependentlyReachAdminRepositoryIntersection() {
+        when(hallOfFameService.matchingVehicleIds("EUROPE", "MEDIUM_TANK", 10))
+                .thenReturn(List.of(385L));
+        when(repository.adminSearchByVehicleIds(any(), any(), any(), any(), any(), any(), any(),
+                any(Pageable.class))).thenReturn(Page.empty());
 
-        final var options = service().vehicleOptions();
+        service().search(null, null, null, null, null,
+                "EUROPE", "MEDIUM_TANK", 10, null, null, 1, 50);
 
-        assertEquals(2, options.size());
-        assertEquals("Progetto 65", options.get(0).tankName());
-        assertEquals("EUROPE", options.get(0).nation());
-        assertEquals("MEDIUM_TANK", options.get(0).type());
-        assertEquals(Integer.valueOf(10), options.get(0).tier());
-        assertEquals("Legacy Tank", options.get(1).tankName());
-        assertEquals("OTHER", options.get(1).nation());
-        assertEquals("OTHER", options.get(1).type());
-        assertNull(options.get(1).tier());
+        verify(repository).adminSearchByVehicleIds(any(), any(), any(), any(), any(),
+                org.mockito.ArgumentMatchers.eq(List.of(385L)), any(), any(Pageable.class));
+        verify(repository, never()).adminSearch(any(), any(), any(), any(), any(), any(), any(Pageable.class));
     }
+
 }

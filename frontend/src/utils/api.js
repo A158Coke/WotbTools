@@ -6,6 +6,28 @@ async function requireOk(response) {
   return response
 }
 
+function withQuery(path, params = {}) {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') query.set(key, value)
+  }
+  const serialized = query.toString()
+  return serialized ? `${path}?${serialized}` : path
+}
+
+async function downloadResponse(response, fallbackName) {
+  const blob = await response.blob()
+  const disposition = response.headers.get('Content-Disposition') || ''
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filenameFromDisposition(disposition) || fallbackName
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
 export async function preview(body) {
   const r = await requireOk(await fetch('/api/preview', { method: 'POST', body }))
   return r.json()
@@ -18,14 +40,15 @@ export async function downloadBlob(mode, body) {
   return { blob, disposition: cd }
 }
 
-/** 名人堂统一公开查询：battleType(RANDOM|RATING|缺省 All) / tankId / nickname / page / size。 */
+/** 名人堂统一公开查询：nation / vehicleType / tier / tankId 可独立使用并取交集。 */
 export async function hofList(params = {}) {
-  const qs = new URLSearchParams()
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null && v !== '') qs.set(k, v)
-  }
-  const q = qs.toString()
-  const r = await requireOk(await fetch(`/api/hof${q ? '?' + q : ''}`))
+  const r = await requireOk(await fetch(withQuery('/api/hof', params)))
+  return r.json()
+}
+
+/** 公开单场车辆选项：当前名人堂实际存在的车辆及稳定分类码。 */
+export async function hofVehicleOptions() {
+  const r = await requireOk(await fetch('/api/hof/vehicle-options'))
   return r.json()
 }
 
@@ -66,17 +89,7 @@ export async function hofDownload(id) {
     throw new ApiError('AUTH_REQUIRED', 401)
   }
   if (!r.ok) throw await apiErrorFromResponse(r)
-  const blob = await r.blob()
-  const cd = r.headers.get('Content-Disposition') || ''
-  const name = filenameFromDisposition(cd) || `replay-${id}.wotbreplay`
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = name
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
+  await downloadResponse(r, `replay-${id}.wotbreplay`)
 }
 
 // ── 名人堂管理后台（/api/admin/hof/**，需 HoF-admin 或 wotbtools-admin）────────────────
@@ -95,14 +108,9 @@ async function hofAdminRequest(url, options = {}) {
   return r
 }
 
-/** 管理列表：nickname / accountId / uploadedBy / battleType / tankId / replayAvailable / sort / 分页。 */
+/** 管理列表：nation / vehicleType / tier / tankId 与其他治理条件组合搜索。 */
 export async function hofAdminList(params = {}) {
-  const qs = new URLSearchParams()
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null && v !== '') qs.set(k, v)
-  }
-  const q = qs.toString()
-  const r = await hofAdminRequest(`/api/admin/hof${q ? '?' + q : ''}`)
+  const r = await hofAdminRequest(withQuery('/api/admin/hof', params))
   return r.json()
 }
 
@@ -114,12 +122,7 @@ export async function hofAdminVehicleOptions() {
 
 /** 管理操作日志（只读）。 */
 export async function hofAdminAudit(params = {}) {
-  const qs = new URLSearchParams()
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null && v !== '') qs.set(k, v)
-  }
-  const q = qs.toString()
-  const r = await hofAdminRequest(`/api/admin/hof/audit${q ? '?' + q : ''}`)
+  const r = await hofAdminRequest(withQuery('/api/admin/hof/audit', params))
   return r.json()
 }
 
@@ -131,17 +134,7 @@ export async function hofAdminDelete(id) {
 /** 管理后台下载 replay（复用统一下载机制）。 */
 export async function hofAdminDownload(id) {
   const r = await hofAdminRequest(`/api/admin/hof/${encodeURIComponent(id)}/replay`)
-  const blob = await r.blob()
-  const cd = r.headers.get('Content-Disposition') || ''
-  const name = filenameFromDisposition(cd) || `replay-${id}.wotbreplay`
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = name
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
+  await downloadResponse(r, `replay-${id}.wotbreplay`)
 }
 
 /** 解析 Content-Disposition 的 filename*=UTF-8''...（RFC 5987）；退化回 filename="..."。 */
@@ -175,14 +168,9 @@ async function hofAuthRequest(url, options = {}) {
   return r
 }
 
-/** 百场公开排行榜（匿名）：vehicleId 可选；缺省时返回全站当前最高 10 条。 */
+/** 百场公开排行榜（匿名）：nation / vehicleType / vehicleId 可选并取交集。 */
 export async function hofHundredList(params = {}) {
-  const qs = new URLSearchParams()
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null && v !== '') qs.set(k, v)
-  }
-  const q = qs.toString()
-  const r = await requireOk(await fetch(`/api/hof/hundred${q ? '?' + q : ''}`))
+  const r = await requireOk(await fetch(withQuery('/api/hof/hundred', params)))
   return r.json()
 }
 
@@ -220,24 +208,19 @@ export async function hofHundredMyStatus() {
 
 // ── 百场管理后台（/api/admin/hof/hundred/**，HoF-admin / wotbtools-admin）──
 
-/** 百场审核列表：status 过滤（PENDING/CURRENT/...）。 */
+/** 百场审核列表：status / nation / vehicleType / vehicleId 可独立使用并取交集。 */
 export async function hofAdminHundredList(params = {}) {
-  const qs = new URLSearchParams()
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null && v !== '') qs.set(k, v)
-  }
-  const q = qs.toString()
-  const r = await hofAdminRequest(`/api/admin/hof/hundred/submissions${q ? '?' + q : ''}`)
+  const r = await hofAdminRequest(withQuery('/api/admin/hof/hundred/submissions', params))
   return r.json()
 }
 
-/** 百场审核详情（PENDING 时含 proofScreenshot）。 */
+/** 百场审核详情（proofScreenshot 仅 PENDING 返回；终态已清理）。 */
 export async function hofAdminHundredDetail(id) {
   const r = await hofAdminRequest(`/api/admin/hof/hundred/submissions/${encodeURIComponent(id)}`)
   return r.json()
 }
 
-/** 百场审核证据列表（admin-only）：slot/originalFilename/fileSize/arenaId/sha256。旧 PENDING → 空数组。 */
+/** 百场审核证据列表（admin-only）：slot/originalFilename/fileSize/arenaId/sha256。旧记录可能为空。 */
 export async function hofAdminHundredReplays(submissionId) {
   const r = await hofAdminRequest(`/api/admin/hof/hundred/submissions/${encodeURIComponent(submissionId)}/replays`)
   return r.json()
@@ -251,17 +234,7 @@ export async function hofAdminHundredReplayDownload(submissionId, replayId) {
   const r = await hofAdminRequest(
     `/api/admin/hof/hundred/submissions/${encodeURIComponent(submissionId)}/replays/${encodeURIComponent(replayId)}`
   )
-  const blob = await r.blob()
-  const cd = r.headers.get('Content-Disposition') || ''
-  const name = filenameFromDisposition(cd) || `replay-${replayId}.wotbreplay`
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = name
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
+  await downloadResponse(r, `replay-${replayId}.wotbreplay`)
 }
 
 /** APPROVE：{approvedAverageDamage, approvedBattleCount}。 */
