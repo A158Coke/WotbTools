@@ -393,12 +393,18 @@ describe('HoFPage', () => {
     await wrapper.find('.modal-overlay').trigger('click')
     expect(wrapper.find('.h100-modal').exists()).toBe(false)
 
+    const filters = wrapper.findAll('.h100-filter select')
+    await filters[0].setValue('UK')
+    await filters[1].setValue('TANK_DESTROYER')
+    await flushPromises()
+
     await wrapper.find('.h100-submit-btn').trigger('click')
     await flushPromises()
     const reopened = wrapper.find('.h100-modal')
     expect(reopened.find('select').element.value).toBe('385')
     expect(reopened.find('#h100-submit-damage').element.value).toBe('4200')
     expect(reopened.find('#h100-submit-battles').element.value).toBe('120')
+    expect(reopened.find('select').findAll('option').map(option => option.text())).toContain('Progetto 65')
     expect(reopened.text()).toContain('proof.png')
     expect(reopened.text()).toContain('battle-1.wotbreplay')
   })
@@ -452,6 +458,47 @@ describe('HoFPage', () => {
     expect(wrapper.find('#h100-submit-damage').element.value).toBe('')
     expect(wrapper.find('.h100-selected-files').exists()).toBe(false)
     confirm.mockRestore()
+  })
+
+  it('invalidates an older pending screenshot read when a later invalid file is selected', async () => {
+    const readers = []
+    class DeferredFileReader {
+      constructor() {
+        this.onload = null
+        this.onerror = null
+        this.result = null
+        readers.push(this)
+      }
+
+      readAsDataURL() {}
+    }
+    vi.stubGlobal('FileReader', DeferredFileReader)
+    try {
+      const wrapper = mountPage()
+      await flushPromises()
+      await openHundredSubmit(wrapper)
+      const screenshotInput = () => wrapper.find('.h100-modal').findAll('input[type="file"]')[0]
+
+      await setFiles(screenshotInput(), [
+        new File(['valid'], 'first.png', { type: 'image/png', lastModified: 1 })
+      ])
+      expect(readers).toHaveLength(1)
+      expect(wrapper.find('.h100-file-reading').exists()).toBe(true)
+
+      await setFiles(screenshotInput(), [
+        new File(['invalid'], 'second.txt', { type: 'text/plain', lastModified: 2 })
+      ])
+      readers[0].result = 'data:image/png;base64,AAAA'
+      readers[0].onload()
+      await flushPromises()
+
+      expect(wrapper.find('.h100-file-reading').exists()).toBe(false)
+      expect(wrapper.find('.h100-selected-file').exists()).toBe(false)
+      expect(wrapper.find('.h100-err').text()).toContain('hundred.invalidImageType')
+      expect(wrapper.text()).not.toContain('first.png')
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('keeps the draft after submit failure and clears it after successful submit', async () => {
