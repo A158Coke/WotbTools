@@ -95,8 +95,8 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
                 pageNumber, pageSize, page.getTotalElements(), page.getTotalPages());
     }
 
-    /** 默认视图始终只展示全站最高 10 条，不提供翻页。 */
-    public HundredLeaderboardPageDto toDefaultLeaderboardPage(
+    /** 未选择具体车辆时的 Top 10（全站或分类交集），固定首屏且不提供翻页。 */
+    public HundredLeaderboardPageDto toTopLeaderboardPage(
             final List<HundredBattleSubmission> submissions,
             final int displaySize,
             final Map<Integer, Integer> rankByDamage) {

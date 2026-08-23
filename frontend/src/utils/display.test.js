@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { apiCodeLabel, apiErrorLabel, enumLabel, replayValueLabel } from './display.js'
+import { apiCodeLabel, apiErrorLabel, enumLabel, formatDateTimeMinute, replayValueLabel } from './display.js'
 
 const values = {
   'boost.level.ELITE': 'Elite',
@@ -27,5 +27,11 @@ describe('display helpers', () => {
     expect(apiErrorLabel(t, te, { code: 'PROFILE_NOT_FOUND' })).toBe('Profile missing')
     expect(apiErrorLabel(t, te, new TypeError('Failed to fetch'))).toBe('Network failed')
     expect(apiCodeLabel(t, te, 'BOOST_REQUEST_SUBMITTED', 'fallback')).toBe('Submitted')
+  })
+
+  it('formats local date-time to minutes and rejects invalid or pre-boundary values', () => {
+    expect(formatDateTimeMinute('2024-01-02T03:04:00')).toBe('2024-01-02 03:04')
+    expect(formatDateTimeMinute('invalid')).toBe('')
+    expect(formatDateTimeMinute('2013-01-01T00:00:00', 2014)).toBe('')
   })
 })
