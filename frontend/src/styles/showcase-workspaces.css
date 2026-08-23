@@ -1,0 +1,282 @@
+/* WotBTools Showcase — high-value tool pages
+ * Replay parser + battle reconstruction. Visual/UX composition only.
+ */
+
+/* ========== Replay parser ========== */
+.layout-data-workspace .uploadwrap {
+  position: relative;
+  overflow: hidden;
+  padding: 24px 26px !important;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border)) !important;
+  border-radius: 10px !important;
+  background:
+    linear-gradient(110deg, color-mix(in srgb, var(--accent) 7%, var(--bg-card)) 0%, var(--bg-card) 44%),
+    var(--bg-card) !important;
+  box-shadow: 0 18px 44px rgba(0,0,0,.18) !important;
+}
+.layout-data-workspace .uploadwrap::after {
+  content: '';
+  position: absolute;
+  right: -110px;
+  top: -180px;
+  width: 420px;
+  height: 420px;
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 72px color-mix(in srgb, var(--accent) 3%, transparent);
+  pointer-events: none;
+}
+.layout-data-workspace .uploadhead,
+.layout-data-workspace .filebar,
+.layout-data-workspace .uploadcard,
+.layout-data-workspace .actionrow { position: relative; z-index: 1; }
+.layout-data-workspace .uploadhead h1 {
+  margin: 4px 0 5px !important;
+  font-size: clamp(1.5rem, 2vw, 2rem) !important;
+  letter-spacing: -.025em;
+}
+.layout-data-workspace .upload-kicker {
+  color: var(--accent) !important;
+  font-size: .72rem !important;
+  font-weight: 900 !important;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.layout-data-workspace .uploadhead p { max-width: 760px; color: var(--text-sub) !important; }
+.layout-data-workspace .upload-points { gap: 8px !important; }
+.layout-data-workspace .upload-points span {
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-card2));
+  padding: 5px 8px;
+}
+.layout-data-workspace .uploadcard {
+  min-height: 150px !important;
+  margin-top: 16px;
+  border-color: #4a555b !important;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.018), transparent 42%),
+    var(--bg-upload) !important;
+}
+.layout-data-workspace .uploadcard.dragging {
+  border-color: var(--accent) !important;
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-upload)) !important;
+}
+.layout-data-workspace .filebar {
+  margin-top: 16px;
+  padding: 12px !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  background: var(--bg-upload) !important;
+}
+.layout-data-workspace .fb-summary { min-width: 148px; }
+.layout-data-workspace .fb-chips { max-height: 82px; overflow-y: auto; }
+.layout-data-workspace .chip {
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border));
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-chip)) !important;
+}
+.layout-data-workspace .actionrow {
+  margin-top: 14px !important;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-light);
+}
+.layout-data-workspace .actionrow .lg {
+  min-height: 42px;
+  padding-inline: 18px !important;
+  background: linear-gradient(180deg, var(--accent-light), var(--accent)) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent-text) !important;
+  box-shadow: 0 12px 28px var(--accent-shadow);
+}
+
+.layout-data-workspace .restoolbar {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  margin: 14px 0 !important;
+}
+.layout-data-workspace .tabs {
+  display: flex;
+  gap: 5px !important;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.layout-data-workspace .tabs button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  border-radius: 6px !important;
+}
+.layout-data-workspace .resactions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.layout-data-workspace .battle-action {
+  min-height: 35px;
+  padding-inline: 13px !important;
+}
+.layout-data-workspace .battle-action.primary {
+  box-shadow: 0 9px 24px var(--accent-shadow);
+}
+
+.layout-data-workspace .tablewrap {
+  border: 1px solid #303a40 !important;
+  border-radius: 8px !important;
+  background: var(--bg-card) !important;
+  box-shadow: 0 16px 38px rgba(0,0,0,.16);
+}
+.layout-data-workspace table {
+  width: max-content;
+  min-width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.layout-data-workspace table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  height: 42px;
+  color: var(--text-sub) !important;
+  border-bottom-color: #3a444a !important;
+}
+.layout-data-workspace table tbody td { height: 44px; }
+.layout-data-workspace table tbody tr:hover { background: var(--bg-list-hover) !important; }
+.layout-data-workspace table th:first-child,
+.layout-data-workspace table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: inherit;
+}
+.layout-data-workspace table thead th:first-child { z-index: 7; background: #171e22 !important; }
+
+/* ========== Reconstruction / AI + map ========== */
+.recon-page {
+  width: min(1820px, calc(100vw - 24px)) !important;
+  max-width: none !important;
+  padding-top: 14px !important;
+}
+.recon-page > .uploadwrap {
+  position: relative;
+  overflow: hidden;
+  min-height: 142px;
+  padding: 22px 24px !important;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border)) !important;
+  border-radius: 9px !important;
+  background:
+    linear-gradient(105deg, color-mix(in srgb, var(--accent) 8%, #11171a), #11171a 42%),
+    #11171a !important;
+  box-shadow: 0 18px 42px rgba(0,0,0,.22);
+}
+.recon-page > .uploadwrap::after {
+  content: '';
+  position: absolute;
+  right: 5%;
+  top: -145px;
+  width: 360px;
+  height: 360px;
+  border: 1px solid rgba(217,143,24,.14);
+  border-radius: 50%;
+  box-shadow: 0 0 0 58px rgba(217,143,24,.025);
+  pointer-events: none;
+}
+.recon-page > .uploadwrap > * { position: relative; z-index: 1; }
+.recon-page > .uploadwrap .up-icon {
+  float: left;
+  margin: 0 15px 8px 0;
+  color: var(--accent-light) !important;
+}
+.recon-page > .uploadwrap h2 {
+  margin: 0 0 4px !important;
+  font-size: 1.35rem !important;
+  letter-spacing: -.02em;
+}
+.recon-page > .uploadwrap .sub-hint { margin-bottom: 12px !important; }
+
+.recon-page .map-panel {
+  overflow: hidden;
+  margin-top: 14px !important;
+  padding: 0 !important;
+  border-color: #344047 !important;
+  border-radius: 9px !important;
+  background: #0d1215 !important;
+  box-shadow: 0 20px 52px rgba(0,0,0,.26);
+}
+.recon-page .map-panel-head {
+  min-height: 52px;
+  padding: 0 16px;
+  border-bottom: 1px solid #2d373c;
+  background: linear-gradient(180deg, #151c20, #11171a);
+}
+.recon-page .map-panel-head h2 {
+  margin: 0 !important;
+  font-size: .96rem !important;
+  letter-spacing: .01em;
+}
+.recon-page .map-load-btn {
+  margin: 0 !important;
+  min-height: 32px;
+  padding: 0 12px !important;
+  border-color: #465159 !important;
+  background: #171f23 !important;
+}
+.recon-page .map-panel > [data-test="map-body"] { padding: 12px; }
+.recon-page .map-panel :is(canvas, svg, img) { max-width: 100%; }
+
+.recon-page .streaming-panel {
+  margin-top: 14px !important;
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border)) !important;
+  background: linear-gradient(110deg, color-mix(in srgb, var(--accent) 5%, var(--bg-card)), var(--bg-card)) !important;
+}
+.recon-page .stream-status {
+  min-height: 32px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-light);
+}
+.recon-page .stream-text {
+  max-height: 430px !important;
+  padding: 12px 2px 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .84rem !important;
+}
+
+.recon-page > :deep(.panel),
+.recon-page .panel {
+  border-radius: 9px !important;
+}
+
+@media (min-width: 1200px) {
+  .recon-page .map-panel > [data-test="map-body"] { padding: 14px; }
+}
+
+@media (max-width: 1199px) {
+  .layout-data-workspace .restoolbar { grid-template-columns: 1fr; }
+  .layout-data-workspace .resactions { justify-content: flex-start; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 3px; }
+  .layout-data-workspace .uploadwrap { padding: 20px !important; }
+  .recon-page { width: calc(100vw - 18px) !important; }
+}
+
+@media (max-width: 767px) {
+  .layout-data-workspace .uploadwrap { padding: 16px !important; }
+  .layout-data-workspace .uploadwrap::after { display: none; }
+  .layout-data-workspace .uploadhead h1 { font-size: 1.35rem !important; }
+  .layout-data-workspace .upload-points { overflow-x: auto; flex-wrap: nowrap !important; }
+  .layout-data-workspace .upload-points span { flex: 0 0 auto; }
+  .layout-data-workspace .filebar { align-items: flex-start !important; }
+  .layout-data-workspace .fb-chips { width: 100%; max-height: 96px; }
+  .layout-data-workspace .actionrow { align-items: flex-start !important; }
+  .layout-data-workspace .actionrow .lg { width: 100%; justify-content: center; }
+  .layout-data-workspace .tabs { width: 100%; }
+  .layout-data-workspace .resactions { width: 100%; }
+  .layout-data-workspace table th:first-child,
+  .layout-data-workspace table td:first-child { min-width: 126px; }
+
+  .recon-page { width: calc(100vw - 12px) !important; padding-top: 8px !important; }
+  .recon-page > .uploadwrap { min-height: 0; padding: 17px !important; }
+  .recon-page > .uploadwrap::after { display: none; }
+  .recon-page > .uploadwrap .up-icon { float: none; margin-bottom: 9px; }
+  .recon-page .map-panel-head { min-height: 48px; padding-inline: 12px; }
+  .recon-page .map-panel > [data-test="map-body"] { padding: 6px; }
+}
