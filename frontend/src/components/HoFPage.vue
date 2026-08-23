@@ -371,6 +371,13 @@ const hasSubmitDraft = computed(() => Boolean(
   submitForm.replays.length
 ))
 
+const submitHundredVehicles = computed(() => {
+  const candidates = filteredHundredVehicles.value
+  const draftVehicle = tier10Vehicles.find(vehicle => vehicle.id === Number(submitForm.vehicleId))
+  if (!draftVehicle || candidates.some(vehicle => vehicle.id === draftVehicle.id)) return candidates
+  return [draftVehicle, ...candidates].sort((a, b) => a.name.localeCompare(b.name))
+})
+
 function openSubmit() {
   if (!requireLogin()) return
   showSubmit.value = true
@@ -417,6 +424,8 @@ function onScreenshotChange(e) {
   const f = input.files?.[0]
   input.value = ''
   if (!f) return
+  const generation = ++screenshotReadGeneration
+  screenshotReading.value = false
   screenshotErr.value = ''
   if (!f.type.startsWith('image/')) {
     screenshotErr.value = t('hundred.invalidImageType')
@@ -426,7 +435,6 @@ function onScreenshotChange(e) {
     screenshotErr.value = t('hundred.invalidImageSize')
     return
   }
-  const generation = ++screenshotReadGeneration
   screenshotReading.value = true
   const reader = new FileReader()
   reader.onload = () => {
@@ -817,7 +825,7 @@ function fmtDate(s) {
           <label class="h100-field-label" for="h100-submit-vehicle">{{ $t('hundred.selectVehicle') }}</label>
           <select id="h100-submit-vehicle" v-model="submitForm.vehicleId">
             <option :value="null" disabled>{{ $t('hundred.chooseVehicle') }}</option>
-            <option v-for="vehicle in filteredHundredVehicles" :key="vehicle.id" :value="vehicle.id">{{ vehicle.name }}</option>
+            <option v-for="vehicle in submitHundredVehicles" :key="vehicle.id" :value="vehicle.id">{{ vehicle.name }}</option>
           </select>
         </div>
 
