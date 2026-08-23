@@ -34,7 +34,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.AbstractList;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -113,7 +112,7 @@ public class ReplayExportJobService {
         store.register(job);
         final long submittedNanos = System.nanoTime();
         try {
-            workerExecutor.execute(() -> runJob(job, inputDir, each, submittedNanos));
+            workerExecutor.submit(jobId, () -> runJob(job, inputDir, each, submittedNanos));
         } catch (final RejectedExecutionException e) {
             store.removeAndCleanup(jobId);
             throw new ExportQueueFullException();
@@ -127,10 +126,19 @@ public class ReplayExportJobService {
         return job.snapshot();
     }
 
-    /** 取消：QUEUED 立即终态；PROCESSING 协作取消（worker checkpoint 后终态）。 */
+    /**
+     * 取消：QUEUED 立即终态并真正释放 executor queue slot（{@code removeQueued} 把尚未执行
+     * 的任务从有界队列移除，新 job 可立即使用该容量）；PROCESSING 协作取消（worker checkpoint
+     * 后终态）。dequeue/cancel 竞争：任务已 dequeue/开始执行时 remove 返回 false，worker 经
+     * checkpoint 识别 cancelRequested 后终态，绝不再执行已取消的 queued 任务。
+     */
     public boolean cancel(final String jobId) {
         final ExportJob job = requireJob(jobId);
-        return job.requestCancel();
+        final boolean changed = job.requestCancel();
+        if (changed) {
+            workerExecutor.removeQueued(jobId);
+        }
+        return changed;
     }
 
     /** READY 后返回 artifact 资源（streaming 下载，不 readAllBytes）。 */
@@ -199,9 +207,12 @@ public class ReplayExportJobService {
         }
     }
 
-    /** 终态收尾（exactly once 由 job 状态机保证）：日志 + 指标 + 无 artifact 即清理。 */
+    /** 终态收尾（exactly once 由 job 状态机保证）：日志 + 指标；FAILED/CANCELLED 删除 partial artifact（§11 不暴露半包）。 */
     private void finishTerminal(final ExportJob job, final long startNanos) {
         final ExportJob.Snapshot snap = job.snapshot();
+        if (snap.status() != ExportJob.Status.READY) {
+            deleteArtifact(job);
+        }
         switch (snap.status()) {
             case READY -> LOGGER.info(logLine("export_job_ready", snap.jobId(),
                     "mode", snap.mode(), "filename", snap.filename(), "duplicates", snap.duplicates(),
@@ -264,6 +275,7 @@ public class ReplayExportJobService {
                 ? stripExt(c.battleSourceNames.getFirst()) + ".xlsx"
                 : "联赛汇总.xlsx";
         final Path artifact = store.jobDir(job.jobId()).resolve("result.xlsx");
+        job.trackArtifact(artifact);
         try (OutputStream out = Files.newOutputStream(artifact)) {
             if (c.battles.size() == 1) {
                 ExcelExporter.writeSingle(c.battles.getFirst(), tankopedia, out);
@@ -274,50 +286,58 @@ public class ReplayExportJobService {
         job.markReady(filename, XLSX_MIME, artifact);
     }
 
-    /** each：逐场独立 full processing + 流式写 ZIP（与既有同步 exportEach 语义一致，不去重）。 */
+    /**
+     * each：逐场独立 full processing，每场立即把 XLSX 写入 ZIP entry 后释放该 Battle——
+     * working set 为 O(1)（PR #118 Blocker B，不再全批次保留 {@code List<Battle>}）：
+     * <pre>
+     * input replay → processFull → enrich → metrics → write xlsx into zip → release Battle → next replay
+     * </pre>
+     * 全程 phase = BUILDING_ARCHIVE（从第一场起就在写 ZIP，UI 不显示假的「全部解析完才开始生成」）。
+     * 无效 replay 跳过并 failures++；取消时 partial zip 由 finishTerminal 删除，不暴露半包。
+     */
     private void processEach(final ExportJob job, final List<Path> inputs) throws Exception {
-        int processed = 0;
-        int failures = 0;
-        final List<Battle> battles = new ArrayList<>();
-        final List<String> names = new ArrayList<>();
-        for (final Path p : inputs) {
-            if (job.isCancelled()) {
-                throw new JobCancelledException();
-            }
-            processed++;
-            try {
-                final Battle battle = processFull(new Source(inputName(p), Files.readAllBytes(p)));
-                if (battle == null) {
-                    throw new IllegalArgumentException("NO_BATTLE_DATA");
-                }
-                PotentialDamage.apply(List.of(battle), tankopedia);
-                PerformanceMetricsCalculator.populateBattle(battle);
-                battles.add(battle);
-                names.add(inputName(p));
-            } catch (final Exception e) {
-                failures++;
-            }
-            job.updateProgress(processed, 0, failures);
-            LOGGER.debug(logLine("export_job_progress", job.jobId(), "processed", processed,
-                    "duplicates", 0, "failures", failures, "total", job.total()));
-            if (job.isCancelled()) {
-                throw new JobCancelledException();
-            }
-        }
-        if (battles.isEmpty()) {
-            throw new NoValidReplaysException();
-        }
         job.advancePhase(ExportJob.Phase.BUILDING_ARCHIVE);
         final Path artifact = store.jobDir(job.jobId()).resolve("result.zip");
+        job.trackArtifact(artifact);
         final Set<String> usedNames = new HashSet<>();
+        int processed = 0;
+        int failures = 0;
         try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(artifact), StandardCharsets.UTF_8)) {
-            for (int i = 0; i < battles.size(); i++) {
-                final ZipEntry entry = new ZipEntry(uniqueName(stripExt(names.get(i)) + ".xlsx", usedNames));
-                zip.putNextEntry(entry);
-                // POI 直接写入 zip entry 流，避免每个 xlsx 的 byte[] 副本。
-                ExcelExporter.writeSingle(battles.get(i), tankopedia, zip);
-                zip.closeEntry();
+            for (final Path p : inputs) {
+                // 安全 checkpoint：每个 replay 开始前（§11）。
+                if (job.isCancelled()) {
+                    throw new JobCancelledException();
+                }
+                processed++;
+                try {
+                    final Battle battle = processFull(new Source(inputName(p), Files.readAllBytes(p)));
+                    if (battle == null) {
+                        throw new IllegalArgumentException("NO_BATTLE_DATA");
+                    }
+                    PotentialDamage.apply(List.of(battle), tankopedia);
+                    PerformanceMetricsCalculator.populateBattle(battle);
+                    // POI 直接写入 zip entry 流，避免每个 xlsx 的 byte[] 副本；battle 在 closeEntry 后即可释放。
+                    final ZipEntry entry = new ZipEntry(uniqueName(stripExt(inputName(p)) + ".xlsx", usedNames));
+                    zip.putNextEntry(entry);
+                    ExcelExporter.writeSingle(battle, tankopedia, zip);
+                    zip.closeEntry();
+                } catch (final Exception e) {
+                    failures++;
+                }
+                job.updateProgress(processed, 0, failures);
+                LOGGER.debug(logLine("export_job_progress", job.jobId(), "processed", processed,
+                        "duplicates", 0, "failures", failures, "total", job.total()));
+                // 安全 checkpoint：每个 replay 完成后（§11）。
+                if (job.isCancelled()) {
+                    throw new JobCancelledException();
+                }
             }
+        }
+        if (job.isCancelled()) {
+            throw new JobCancelledException();
+        }
+        if (processed - failures <= 0) {
+            throw new NoValidReplaysException();
         }
         job.markReady("逐场导出.zip", ZIP_MIME, artifact);
     }
@@ -388,6 +408,19 @@ public class ReplayExportJobService {
         return Timer.builder(name)
                 .tag("mode", mode)
                 .register(meterRegistry);
+    }
+
+    /** 删除 job artifact（partial zip / 未完成 xlsx 不得变成可下载 READY 产物）。 */
+    private static void deleteArtifact(final ExportJob job) {
+        final Path artifact = job.artifactPath();
+        if (artifact != null) {
+            try {
+                Files.deleteIfExists(artifact);
+            } catch (final IOException e) {
+                LOGGER.warn("export_job_artifact_delete_failed jobId={} path={} error={}",
+                        job.jobId(), artifact, e.getMessage());
+            }
+        }
     }
 
     private static String logLine(final String event, final String jobId, final Object... kv) {

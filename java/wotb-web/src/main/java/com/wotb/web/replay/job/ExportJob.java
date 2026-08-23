@@ -96,6 +96,11 @@ public final class ExportJob {
         this.failures = failures;
     }
 
+    /** 登记 artifact 目标路径（不改变状态；供 FAILED/CANCELLED 清理 partial artifact）。 */
+    public synchronized void trackArtifact(final Path artifact) {
+        this.artifactPath = artifact;
+    }
+
     /** PROCESSING 期间切换 phase；非 PROCESSING 返回 false。 */
     public synchronized boolean advancePhase(final Phase next) {
         if (status != Status.PROCESSING) {

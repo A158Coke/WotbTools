@@ -58,7 +58,7 @@ export async function cancelExportJob(jobId) {
   await requireOk(await fetch(`/api/replay/export-jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }))
 }
 
-/** READY 后流式下载 artifact（fetch → blob → 触发下载）。 */
+/** READY 后下载 artifact（后端 FileSystemResource server-side streaming；前端 blob 缓冲后触发下载）。 */
 export async function downloadExportJob(jobId, fallbackName) {
   const r = await requireOk(await fetch(`/api/replay/export-jobs/${encodeURIComponent(jobId)}/download`))
   await downloadResponse(r, fallbackName)
