@@ -183,6 +183,19 @@ describe('useReplay processing job flow (plan §13/§20/§30/§63)', () => {
     expect(replay.loading.value).toBe(false)
   })
 
+  it('processing FAILED with MIXED league/standard shows specific message', async () => {
+    api.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 2 })
+    api.getProcessingJob.mockResolvedValue(pJob({
+      status: 'FAILED', phase: null, errorCode: 'MIXED_LEAGUE_AND_STANDARD_REPLAYS', failures: 2
+    }))
+
+    await replay.startProcessingJob()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(replay.processingJob.value.status).toBe('FAILED')
+    expect(replay.processingError.value).toContain('replay.processing_job.mixed_league_standard')
+    expect(replay.loading.value).toBe(false)
+  })
+
   it('cancelProcessingJob stops polling and marks CANCELLED', async () => {
     api.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 34 })
     api.getProcessingJob.mockResolvedValue(pJob({ status: 'PROCESSING', processed: 5 }))
@@ -218,10 +231,31 @@ describe('useReplay processing job flow (plan §13/§20/§30/§63)', () => {
     api.createExportJob.mockResolvedValue({ jobId: 'e1', status: 'QUEUED', total: 2 })
     api.getExportJob.mockResolvedValue({ jobId: 'e1', status: 'READY', phase: null, total: 2, processed: 2, duplicates: 0, failures: 0, filename: 'x.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     await replay.startExportJob('aggregate')
-    // 关键：不重新上传（body=null）、带 processingJobId
-    expect(api.createExportJob).toHaveBeenCalledWith(null, 'aggregate', 'p1')
+    // 关键：不重新上传（body=null）、带 processingJobId；无覆盖时 teamNamesJson=null
+    expect(api.createExportJob).toHaveBeenCalledWith(null, 'aggregate', 'p1', null)
     await vi.advanceTimersByTimeAsync(0)
     expect(replay.exportJob.value.status).toBe('READY')
+  })
+
+  it('startExportJob passes league team name overrides to api (PR #123 Blocker 1)', async () => {
+    replay.processingJobId.value = 'p1'
+    replay.resp.value = { battles: [], aggregate: [], duplicates: [], failures: [], playerColumns: [], aggregateColumns: [] }
+    api.createExportJob.mockResolvedValue({ jobId: 'e1', status: 'QUEUED', total: 2 })
+    api.getExportJob.mockResolvedValue({ jobId: 'e1', status: 'READY', phase: null, total: 2, processed: 2, duplicates: 0, failures: 0, filename: 'x.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+
+    await replay.startExportJob('aggregate', {
+      battle: { 'arena-1:1': 'CHRD' },
+      summary: { 'clan:CHRD': 'CHRD A队' }
+    })
+    expect(api.createExportJob).toHaveBeenCalledTimes(1)
+    const [body, mode, jobId, teamNamesJson] = api.createExportJob.mock.calls[0]
+    expect(body).toBeNull() // 复用 processingJobId：不重新上传
+    expect(mode).toBe('aggregate')
+    expect(jobId).toBe('p1')
+    expect(JSON.parse(teamNamesJson)).toEqual({
+      battle: { 'arena-1:1': 'CHRD' },
+      summary: { 'clan:CHRD': 'CHRD A队' }
+    })
   })
 
   it('export without processing result still uploads (legacy path)', async () => {

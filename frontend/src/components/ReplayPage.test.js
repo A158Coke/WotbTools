@@ -29,14 +29,15 @@ describe('ReplayPage export job flow', () => {
     state.init.resp = makeResp()
     const wrapper = mountPage()
     await exportButtons(wrapper)[0].trigger('click')
-    expect(state.replay.startExportJob).toHaveBeenCalledWith('aggregate')
+    // 无覆盖时 teamNamesPayload() = null（PR #123 Blocker 1：名称必须经 payload 传递）
+    expect(state.replay.startExportJob).toHaveBeenCalledWith('aggregate', null)
   })
 
   it('export each button calls startExportJob with each', async () => {
     state.init.resp = makeResp()
     const wrapper = mountPage()
     await exportButtons(wrapper)[1].trigger('click')
-    expect(state.replay.startExportJob).toHaveBeenCalledWith('each')
+    expect(state.replay.startExportJob).toHaveBeenCalledWith('each', null)
   })
 
   it('renders ReplayTaskCard when export job exists', async () => {
@@ -140,7 +141,7 @@ vi.mock('vue-i18n', async () => {
   const { ref } = await import('vue')
   const locale = ref('en')
   return {
-    useI18n: () => ({ locale, t: i18n.t })
+    useI18n: () => ({ locale, t: i18n.t, te: key => i18n.t.mock.calls.some(c => c[0] === key) })
   }
 })
 
@@ -151,6 +152,7 @@ vi.mock('../composables/useReplay.js', async () => {
   const { ref, computed } = await import('vue')
   const resp = ref(null)
   const activeTab = ref('aggregate')
+  const selectionRevision = ref(0)
   const error = ref('')
   const files = ref([])
   const loading = ref(false)
@@ -184,11 +186,13 @@ vi.mock('../composables/useReplay.js', async () => {
       pJobState.capture(processingJobRef, processingActiveRef, processingJobIdRef)
       const startExportJob = vi.fn()
       const startProcessingJob = vi.fn()
-      state.captureFns({ startExportJob, startProcessingJob })
+      const updateFiles = vi.fn(() => { selectionRevision.value++ })
+      state.captureFns({ startExportJob, startProcessingJob, updateFiles })
       return {
         files, loading, error, resp, activeTab,
         aggStats: computed(() => null),
-        pendingRemove, updateFiles: vi.fn(), playerCols, aggCols,
+        selectionRevision,
+        pendingRemove, updateFiles, playerCols, aggCols,
         exportJob: exportJobRef, exportError: ref(''), exportActive: exportActiveRef,
         processingJob: processingJobRef, processingError: ref(''), processingActive: processingActiveRef,
         processingJobId: processingJobIdRef,
@@ -212,6 +216,8 @@ vi.mock('../composables/useColumns.js', async () => {
       showColPicker: ref(false), pickerScope: ref('player'),
       currentOrder: computed(() => []),
       shownCols: computed(() => []), shownAggCols: computed(() => []),
+      // 测试 seam：window.__testLeagueMode 控制 league 模式渲染
+      leagueMode: computed(() => !!window.__testLeagueMode),
       toggleColPicker: vi.fn(), toggleCol: vi.fn(),
       selectAllCols: vi.fn(), resetCols: vi.fn(),
       handleReorder: vi.fn(), initFromResponse: vi.fn(),
@@ -921,5 +927,123 @@ describe('ReplayPage Battle context actions（V2：登录门控 + 跨视图文�
     await wrapper.find('[data-testid="battle-playback-btn"]').trigger('click')
     await flushPromises()
     expect(navigate).not.toHaveBeenCalled()
+  })
+})
+describe('ReplayPage League Rating', () => {
+  beforeEach(() => {
+    state.clear()
+    state.init = { activeTab: 'b0', resp: null, error: '', loading: false, locale: 'zh', files: [] }
+  })
+
+  it('renders league validation failures with code and arenaId', async () => {
+    state.init.resp = makeResp({
+      league: {
+        failures: [
+          { fileName: 'bad.wotbreplay', arenaId: '111', code: 'LEAGUE_NOT_SEVEN_VS_SEVEN' }
+        ]
+      }
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    const text = wrapper.text()
+    expect(text).toContain('bad.wotbreplay')
+    expect(text).toContain('LEAGUE_NOT_SEVEN_VS_SEVEN')
+    expect(text).toContain('111')
+  })
+
+  it('shows aggregate tab in league mode', async () => {
+    window.__testLeagueMode = true
+    try {
+      state.init.resp = makeResp({
+        aggregate: [],
+        league: {
+          mode: 'LEAGUE_RATING',
+          columns: [],
+          playerSummaries: [],
+          playerSummaryColumns: [],
+          teamSummaries: [],
+          teamSummaryColumns: [],
+          failures: []
+        }
+      })
+      const wrapper = mountPage()
+      await flushPromises()
+      const tabs = wrapper.findAll('button')
+      expect(tabs.some(b => b.text().includes('result.aggregate_tab'))).toBe(true)
+    } finally {
+      delete window.__testLeagueMode
+    }
+  })
+
+  it('battle rename only updates battle overrides (no summary pollution)', async () => {
+    state.init.resp = makeResp({ league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
+    const wrapper = mountPage()
+    await flushPromises()
+    wrapper.vm.battleTeamNames['111:1'] = 'CHRD'
+    expect(wrapper.vm.battleTeamNames['111:1']).toBe('CHRD')
+    expect(wrapper.vm.summaryTeamNames).toEqual({})
+  })
+
+  it('summary rename only updates teamKey overrides (no battle pollution)', async () => {
+    state.init.resp = makeResp({ league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
+    const wrapper = mountPage()
+    await flushPromises()
+    wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
+    expect(wrapper.vm.summaryTeamNames['clan:CHRD']).toBe('CHRD A队')
+    expect(wrapper.vm.battleTeamNames).toEqual({})
+  })
+
+  it('export passes battle + summary overrides payload (PR #123 Blocker 1)', async () => {
+    state.init.resp = makeResp({ league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
+    const wrapper = mountPage()
+    await flushPromises()
+    wrapper.vm.battleTeamNames['111:1'] = 'CHRD'
+    wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
+    const exportBtn = wrapper.findAll('button').find(b => b.text().includes('action.export_aggregate'))
+    await exportBtn.trigger('click')
+    expect(state.replay.startExportJob).toHaveBeenCalledWith('aggregate', {
+      battle: { '111:1': 'CHRD' },
+      summary: { 'clan:CHRD': 'CHRD A队' }
+    })
+  })
+
+  it('clears both overrides when replay selection changes (PR #123 Blocker 2)', async () => {
+    state.init.resp = makeResp({ league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
+    const wrapper = mountPage()
+    await flushPromises()
+    wrapper.vm.battleTeamNames['arenaA:1'] = 'CHRD'
+    wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
+    expect(wrapper.vm.battleTeamNames).not.toEqual({})
+    // 触发真实 selection 变化（统一 updateFiles 入口 → selectionRevision++）
+    wrapper.vm.updateFiles(['b.wotbreplay'])
+    await nextTick()
+    expect(wrapper.vm.battleTeamNames).toEqual({})
+    expect(wrapper.vm.summaryTeamNames).toEqual({})
+  })
+
+  it('removing a single replay also clears overrides (PR #123 Blocker 2)', async () => {
+    state.init.resp = makeResp({ league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
+    const wrapper = mountPage()
+    await flushPromises()
+    wrapper.vm.battleTeamNames['arenaA:1'] = 'CHRD'
+    wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
+    // 删除单个 replay：同样走 updateFiles → selection 变化
+    wrapper.vm.updateFiles(['a.wotbreplay'])
+    await nextTick()
+    expect(wrapper.vm.battleTeamNames).toEqual({})
+    expect(wrapper.vm.summaryTeamNames).toEqual({})
+  })
+
+  it('re-processing same selection does NOT clear overrides (PR #123 Blocker 2)', async () => {
+    state.init.resp = makeResp({ league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
+    const wrapper = mountPage()
+    await flushPromises()
+    wrapper.vm.battleTeamNames['arenaA:1'] = 'CHRD'
+    wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
+    // 同一 selection 重新解析：selectionRevision 不变 → overrides 保留
+    wrapper.vm.startProcessingJob()
+    await nextTick()
+    expect(wrapper.vm.battleTeamNames['arenaA:1']).toBe('CHRD')
+    expect(wrapper.vm.summaryTeamNames['clan:CHRD']).toBe('CHRD A队')
   })
 })

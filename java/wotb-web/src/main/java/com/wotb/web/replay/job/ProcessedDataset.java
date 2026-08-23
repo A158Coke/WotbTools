@@ -1,5 +1,6 @@
 package com.wotb.web.replay.job;
 
+import com.wotb.core.league.LeagueRatingBatch;
 import com.wotb.core.model.Battle;
 
 import java.util.List;
@@ -20,7 +21,8 @@ import java.util.List;
 public record ProcessedDataset(List<Battle> battles,
                                List<String> battleSourceNames,
                                List<String[]> duplicates,
-                               List<String[]> failures) {
+                               List<String[]> failures,
+                               LeagueRatingBatch league) {
 
     /**
      * 防御性拷贝（shallow）：READY 后消费者（Preview / Aggregate Export / Each Export）
@@ -33,6 +35,11 @@ public record ProcessedDataset(List<Battle> battles,
         battleSourceNames = battleSourceNames == null ? List.of() : List.copyOf(battleSourceNames);
         duplicates = duplicates == null ? List.of() : List.copyOf(duplicates);
         failures = failures == null ? List.of() : List.copyOf(failures);
+    }
+
+    /** 是否为 League Rating 批次。 */
+    public boolean isLeague() {
+        return league != null;
     }
 
     /** 有效场数（= 去重后进入结果集的场次；READY dataset 恒 >= 1）。 */
