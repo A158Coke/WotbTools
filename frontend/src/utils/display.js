@@ -25,3 +25,12 @@ export function replayValueLabel(t, te, value, fallback = '--') {
   const key = `replay_values.${value}`
   return te(key) ? t(key) : String(value)
 }
+
+/** 页面统一的本地分钟级时间格式；可选 minYear 用于过滤回放中的无效纪元时间。 */
+export function formatDateTimeMinute(value, minYear = null) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime()) || (minYear != null && date.getFullYear() < minYear)) return ''
+  const pad = number => String(number).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}

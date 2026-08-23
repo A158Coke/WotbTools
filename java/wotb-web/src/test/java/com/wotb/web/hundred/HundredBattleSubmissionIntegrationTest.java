@@ -33,6 +33,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -153,17 +154,21 @@ class HundredBattleSubmissionIntegrationTest {
         assertEquals("PENDING", pendingRow.getStatus(), "事务回滚后 PENDING 不得留下半完成状态");
         assertEquals(1, currentCount(), "rollback 后 CURRENT 数量不变");
         assertTrue(pendingRow.getApprovedAverageDamage() == null, "PENDING 不得残留 approved 值");
+        assertEquals("data:image/png;base64,AAAA", pendingRow.getProofScreenshot());
+        assertEquals(5, evidenceRepository.findBySubmissionIdOrderBySlotAsc(pending.getId()).size());
     }
 
     /**
      * Evidence 全生命周期（真实 PG + 真实文件系统，storage 目录 data/replays-it）：
      * storeAll 落盘 5 文件 → attach 恰好 5 行（slot 1..5）→ admin list/download 可读 →
-     * discard 终态清理：行删除 + 物理文件删除（无其他引用）。
+     * REJECT 后清空截图、删除 metadata，并清理无引用物理文件。
      * createSubmission 的解析/校验部分由单元测试（mock ReplayParser）覆盖。
      */
     @Test
-    void evidencePersistenceRoundTripWithRealStorage() throws Exception {
+    void evidencePersistenceRoundTripAndRejectCleanup() throws Exception {
         final HundredBattleSubmission s = insertRow("PENDING", 4200, 150);
+        s.setProofScreenshot("data:image/png;base64,AAAA");
+        repository.saveAndFlush(s);
         final Path storageDir = Path.of("data/replays-it");
 
         final List<HundredReplayEvidenceService.PendingReplay> replays = new ArrayList<>();
@@ -193,12 +198,16 @@ class HundredBattleSubmissionIntegrationTest {
         final ReplayDownload download = evidenceService.downloadEvidence(s.getId(), rows.get(2).getId());
         assertArrayEquals(replays.get(2).data(), download.data(), "下载必须是用户原始字节");
 
-        // 终态清理：行删除 + 物理文件删除（本表与 HoF 均无引用）
-        final String firstHash = rows.get(0).getSha256();
-        evidenceService.discardForSubmission(s.getId());
-        assertTrue(evidenceRepository.findBySubmissionId(s.getId()).isEmpty());
-        assertFalse(Files.exists(storageDir.resolve(firstHash + ".wotbreplay")),
-                "无引用后物理文件应被清理");
+        service.reject("admin-sub", s.getId(), "SCREENSHOT_MISMATCH", null);
+
+        final HundredBattleSubmission rejected = repository.findById(s.getId()).orElseThrow();
+        assertEquals("REJECTED", rejected.getStatus());
+        assertNull(rejected.getProofScreenshot());
+        assertTrue(evidenceRepository.findBySubmissionIdOrderBySlotAsc(s.getId()).isEmpty());
+        for (final HundredBattleReplayEvidence row : rows) {
+            assertFalse(Files.exists(storageDir.resolve(row.getSha256() + ".wotbreplay")),
+                    "reject 后无引用物理证据应清理: " + row.getSha256());
+        }
     }
 
     /** 给 PENDING 附 exactly 5 行 evidence + 物理文件（通过 APPROVE 前置校验用）。 */
@@ -237,12 +246,12 @@ class HundredBattleSubmissionIntegrationTest {
         assertEquals("HUNDRED_INCOMPLETE_REVIEW_EVIDENCE", ex.getMessage());
         assertEquals("PENDING", repository.findById(s.getId()).orElseThrow().getStatus());
         assertEquals(0, currentCount(), "approve 失败不得产生 CURRENT");
-        assertTrue(evidenceRepository.findBySubmissionId(s.getId()).isEmpty());
+        assertTrue(evidenceRepository.findBySubmissionIdOrderBySlotAsc(s.getId()).isEmpty());
     }
 
     /**
      * Blocker：完整审核证据（screenshot + exactly 5 evidence + 5 物理文件）才允许 APPROVE；
-     * 成功后按 terminal lifecycle 清理 evidence 行与物理文件。
+     * 成功后清空截图、删除 evidence 行，并清理无引用物理文件。
      */
     @Test
     void approveWithCompleteEvidenceSucceedsAndCleansEvidence() throws Exception {
@@ -259,16 +268,17 @@ class HundredBattleSubmissionIntegrationTest {
         }
         evidenceService.storeAll(replays);
         evidenceService.attach(s.getId(), replays);
-        assertEquals(5, evidenceRepository.findBySubmissionId(s.getId()).size());
+        assertEquals(5, evidenceRepository.findBySubmissionIdOrderBySlotAsc(s.getId()).size());
 
         service.approve("admin-sub", s.getId(), 4200, 150);
 
-        assertEquals("CURRENT", repository.findById(s.getId()).orElseThrow().getStatus());
-        // 终态：evidence 行同事务删除 + commit 后物理文件清理
-        assertTrue(evidenceRepository.findBySubmissionId(s.getId()).isEmpty());
+        final HundredBattleSubmission approved = repository.findById(s.getId()).orElseThrow();
+        assertEquals("CURRENT", approved.getStatus());
+        assertNull(approved.getProofScreenshot());
+        assertTrue(evidenceRepository.findBySubmissionIdOrderBySlotAsc(s.getId()).isEmpty());
         for (final HundredReplayEvidenceService.PendingReplay r : replays) {
             assertFalse(Files.exists(storageDir.resolve(r.sha256() + ".wotbreplay")),
-                    "approve 后物理文件应清理: " + r.sha256());
+                    "approve 后无引用物理证据应清理: " + r.sha256());
         }
     }
 }
