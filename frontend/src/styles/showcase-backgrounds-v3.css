@@ -1,9 +1,18 @@
-/* WotBTools Showcase V3 — aggressive battlefield art overrides.
- * Loaded after showcase-backgrounds.css. V2 remains a safe fallback; every real page
- * gets its own replaceable V3 asset under assets/showcase/<page>/.
+/* WotBTools Showcase — canonical PNG page backgrounds.
+ * Loaded after showcase-backgrounds.css. V1/V2/V3 SVGs stay in the repo as
+ * fallback/history, but the current showcase layer is the replaceable high-quality
+ * PNG set under assets/showcase/<page>/ (see assets/showcase/README.md).
+ *
+ * Background contract (inherited from showcase-backgrounds.css):
+ *  - artwork = fixed pseudo-element below the topbar, full viewport width,
+ *    cover / no-repeat / centered — it never scrolls away and never lives
+ *    inside the 1420/1720/1760px content container;
+ *  - the ::before veil is a separate readability layer, so light/dark theming
+ *    is done with the overlay/surface only, never with a second image.
+ *  - background-attachment: fixed is intentionally NOT used (mobile/Safari).
  */
 
-/* Let the artwork read as a true full-screen backdrop rather than a faint watermark. */
+/* Page-wide readability veil — independent from the artwork. */
 .layout-content::before,
 .layout-wide::before,
 .layout-data-workspace::before,
@@ -46,101 +55,101 @@
   background: linear-gradient(180deg, rgba(5,8,10,.17), rgba(5,8,10,.42)) !important;
 }
 
-/* Home — burning sunset battlefield, tank visual anchor on right. */
+/* ---------- Home — hero-v4: burning sunset battlefield, tank anchor on the right ---------- */
 .homepage-showcase::before {
   background-image:
     linear-gradient(180deg, rgba(4,7,9,.10), rgba(4,7,9,.40)),
-    url('../assets/showcase/home/hero-v3.svg') !important;
+    url('../assets/showcase/home/hero-v4.png') !important;
   opacity: .96 !important;
 }
 .homepage-showcase .showcase-hero {
   background:
     linear-gradient(90deg, rgba(5,8,10,.94) 0%, rgba(5,8,10,.79) 34%, rgba(5,8,10,.10) 67%, rgba(5,8,10,.40) 100%),
-    url('../assets/showcase/home/hero-v3.svg') 62% 50% / cover no-repeat !important;
+    url('../assets/showcase/home/hero-v4.png') 62% 50% / cover no-repeat !important;
 }
 
-/* Replay — cold destroyed city + fire pockets. */
+/* ---------- Replay — cold ruined battlefield; upload/toolbar/results share one tactical surface ---------- */
 .layout-data-workspace::after {
-  background-image: url('../assets/showcase/replay/replay-bg-v3.svg') !important;
+  background-image: url('../assets/showcase/replay/replay-hero-battlefield-v1.png') !important;
   opacity: .88 !important;
 }
 .layout-data-workspace .uploadwrap {
   background:
-    linear-gradient(96deg, color-mix(in srgb, var(--bg-card) 94%, transparent) 0%, color-mix(in srgb, var(--bg-card) 82%, transparent) 55%, color-mix(in srgb, var(--bg-card) 56%, transparent) 100%),
-    url('../assets/showcase/replay/replay-bg-v3.svg') 72% 50% / cover no-repeat !important;
+    linear-gradient(96deg, rgba(10,16,19,.96) 0%, rgba(11,17,20,.90) 55%, rgba(13,18,21,.78) 100%),
+    url('../assets/showcase/replay/replay-hero-battlefield-v1.png') 72% 50% / cover no-repeat !important;
 }
 .layout-data-workspace .uploadcard {
   background:
-    linear-gradient(135deg, rgba(7,16,20,.70), rgba(8,12,14,.76)),
-    url('../assets/showcase/reconstruction/reconstruction-bg-v3.svg') center / cover no-repeat !important;
+    linear-gradient(135deg, rgba(5,11,14,.88), rgba(7,12,14,.92)),
+    url('../assets/showcase/replay/replay-hero-battlefield-v1.png') center / cover no-repeat !important;
 }
 
-/* Reconstruction — live command map with hot/cold routes and battlefield fires. */
+/* ---------- Reconstruction — tactical atmosphere; the real replay map stays authoritative ---------- */
 .recon-page::after {
-  background-image: url('../assets/showcase/reconstruction/reconstruction-bg-v3.svg') !important;
+  background-image: url('../assets/showcase/reconstruction/reconstruction-hero-tactical-v1.png') !important;
   opacity: .90 !important;
 }
 .recon-page::before {
   background: linear-gradient(180deg, rgba(4,10,12,.14), rgba(4,10,12,.40)) !important;
 }
 
-/* Hall of Fame — ceremonial hall under fire, strong gold focal point. */
+/* ---------- Hall of Fame — ceremonial hall, strong gold focal point ---------- */
 .hof-page::after,
 .hof-wrap::after,
 .hall-page::after {
-  background-image: url('../assets/showcase/hof/hof-bg-v3.svg') !important;
+  background-image: url('../assets/showcase/hof/hof-hero-hall-v1.png') !important;
   opacity: .90 !important;
 }
 
-/* Rating — competitive analytics arena, cyan vs orange tension. */
+/* ---------- Rating — atmosphere only; real rating data always renders on its own surface ---------- */
 .rating-page::after,
 .rating-section::after,
 .rating-workspace::after {
-  background-image: url('../assets/showcase/rating/rating-bg-v3.svg') !important;
-  opacity: .88 !important;
+  background-image: url('../assets/showcase/rating/rating-hero-analysis-v1.png') !important;
+  opacity: .80 !important;
 }
 
-/* Profile — personal armored hangar with service-bay firelight. */
+/* ---------- Profile — armored camp / hangar; no avatar dependency ---------- */
 .profile-page::after {
-  background-image: url('../assets/showcase/profile/profile-bg-v3.svg') !important;
-  opacity: .86 !important;
+  background-image: url('../assets/showcase/profile/profile-hero-camp-v1.png') !important;
+  opacity: .84 !important;
 }
 .profile-page .profile-hero {
   background:
-    linear-gradient(95deg, color-mix(in srgb, var(--bg-card) 93%, transparent) 0%, color-mix(in srgb, var(--bg-card) 80%, transparent) 52%, color-mix(in srgb, var(--bg-card) 48%, transparent) 100%),
-    url('../assets/showcase/profile/profile-bg-v3.svg') 72% 55% / cover no-repeat !important;
+    linear-gradient(95deg, rgba(12,17,20,.93) 0%, rgba(14,19,21,.80) 52%, rgba(15,20,22,.55) 100%),
+    url('../assets/showcase/profile/profile-hero-camp-v1.png') 72% 55% / cover no-repeat !important;
 }
 
-/* Boost — alpine combat training range, fires at the edges. */
+/* ---------- Boost — alpine combat training range ---------- */
 .boost-page::after {
-  background-image: url('../assets/showcase/boost/boost-bg-v3.svg') !important;
-  opacity: .88 !important;
+  background-image: url('../assets/showcase/boost/boost-hero-training-v1.png') !important;
+  opacity: .86 !important;
 }
 
-/* User admin — wartime command center; dramatic but still CRUD-safe. */
+/* ---------- User admin — command center, deliberately weaker: operations console first ---------- */
 .admin-page::after {
-  background-image: url('../assets/showcase/admin/admin-bg-v3.svg') !important;
-  opacity: .72 !important;
+  background-image: url('../assets/showcase/admin/admin-hero-command-v1.png') !important;
+  opacity: .50 !important;
 }
 
-/* Hall-of-Fame admin — adjudication archive with medal focus + peripheral fires. */
+/* ---------- Hall-of-Fame admin — review console stays readable ---------- */
 .hof-admin-page::after,
 .hofadmin-page::after,
 .admin-hof-page::after {
-  background-image: url('../assets/showcase/hof-admin/hof-admin-bg-v3.svg') !important;
-  opacity: .78 !important;
+  background-image: url('../assets/showcase/hof-admin/hof-admin-hero-command-v1.png') !important;
+  opacity: .60 !important;
 }
 
-/* Version history — battle telemetry/timeline instead of a plain blueprint wash. */
+/* ---------- Version history — workshop / changelog ---------- */
 .version-page::after {
-  background-image: url('../assets/showcase/version/updates-bg-v3.svg') !important;
-  opacity: .84 !important;
+  background-image: url('../assets/showcase/version/version-hero-workshop-v1.png') !important;
+  opacity: .82 !important;
 }
 
-/* Contact — field communications tower with burning perimeter. */
+/* ---------- Contact — field communications radio link ---------- */
 .contact-page::after {
-  background-image: url('../assets/showcase/contact/contact-bg-v3.svg') !important;
-  opacity: .84 !important;
+  background-image: url('../assets/showcase/contact/contact-hero-radio-v1.png') !important;
+  opacity: .82 !important;
 }
 
 @media (max-width: 767px) {

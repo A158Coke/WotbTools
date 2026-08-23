@@ -13,7 +13,7 @@
   border-color: rgba(218, 151, 37, .42) !important;
   background:
     linear-gradient(100deg, rgba(12,17,20,.97) 0%, rgba(13,19,22,.94) 52%, rgba(17,20,21,.82) 100%),
-    url('../assets/showcase/replay/replay-bg-v3.svg') 82% center / cover no-repeat !important;
+    url('../assets/showcase/replay/replay-hero-battlefield-v1.png') 82% center / cover no-repeat !important;
   color: #e9e7e0 !important;
   box-shadow: 0 24px 60px rgba(0,0,0,.38) !important;
   backdrop-filter: blur(12px);
@@ -36,7 +36,7 @@
   border: 1px solid rgba(102,118,127,.60) !important;
   background:
     linear-gradient(105deg, rgba(5,11,14,.91), rgba(6,13,16,.77)),
-    url('../assets/showcase/replay/replay-bg-v3.svg') center 58% / cover no-repeat !important;
+    url('../assets/showcase/replay/replay-hero-battlefield-v1.png') center 58% / cover no-repeat !important;
   color: #ece9e0 !important;
   box-shadow: inset 0 0 45px rgba(0,0,0,.32);
 }
@@ -130,12 +130,16 @@
 .lb-wrap .lb-head h1 { color: #f6f1e7 !important; }
 .lb-wrap .lb-head p { color: #aaa79f !important; }
 
-/* The filter bar is a compact operations toolbar, not a white form card. */
+/* The filter bar is a dense operations toolbar. CSS Grid gives every field real
+ * width instead of squeezing labels into one narrow flex line: each label stays on
+ * one line, the vehicle selector gets enough width, the nickname input is usable,
+ * and the limit/refresh controls align. Tablet wraps to two rows, mobile is
+ * task-first two columns with the wide fields spanning full width. */
 .lb-wrap .lb-toolbar {
-  display: flex !important;
-  align-items: flex-end !important;
-  gap: 10px !important;
-  flex-wrap: wrap !important;
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 10px 14px !important;
+  align-items: end !important;
   padding: 12px 14px !important;
   border: 1px solid #39444a !important;
   background: rgba(10,16,19,.92) !important;
@@ -146,20 +150,41 @@
 .lb-wrap .lb-toolbar > * {
   min-width: 0;
 }
-.lb-wrap .lb-toolbar label,
+.lb-wrap .lb-toolbar .lb-limit {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.lb-wrap .lb-toolbar .lb-label,
 .lb-wrap .lb-toolbar .label,
 .lb-wrap .lb-toolbar span:not(.dropdown) {
   color: #a8aaa5 !important;
 }
+.lb-wrap .lb-toolbar .lb-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .lb-wrap .lb-toolbar :is(select,input) {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
   height: 38px !important;
-  min-width: 118px;
-  max-width: 240px;
   border: 1px solid #445057 !important;
   border-radius: 6px !important;
   background: #11191d !important;
   color: #e4e1d9 !important;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.02);
+}
+.lb-wrap .lb-toolbar .lb-nick-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  min-width: 0;
+}
+.lb-wrap .lb-toolbar .lb-nick-input {
+  width: 100% !important;
+  min-width: 0 !important;
 }
 .lb-wrap .lb-toolbar select:disabled,
 .lb-wrap .lb-toolbar input:disabled {
@@ -168,6 +193,7 @@
 .lb-wrap .lb-toolbar input::placeholder { color: #737b7c !important; }
 .lb-wrap .lb-toolbar button {
   min-height: 38px;
+  justify-self: start;
   border: 1px solid #445057 !important;
   border-radius: 6px !important;
   background: #151d21 !important;
@@ -222,35 +248,28 @@
     width: min(1040px, 72vw);
     margin-inline: auto;
   }
-  .lb-wrap .lb-toolbar :is(select,input) {
-    flex: 1 1 130px;
-  }
-  .lb-wrap .lb-toolbar select:nth-of-type(4) {
-    flex-basis: 220px;
+  .lb-wrap .lb-toolbar.h100-toolbar {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
   }
 }
 
 @media (max-width: 1199px) {
   .layout-data-workspace .uploadwrap { width: 100%; }
   .lb-wrap .lb-toolbar {
-    align-items: center !important;
-  }
-  .lb-wrap .lb-toolbar :is(select,input) {
-    flex: 1 1 140px;
-    max-width: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
 
 @media (max-width: 767px) {
   .layout-data-workspace .uploadwrap { padding: 16px !important; }
   .lb-wrap .lb-toolbar {
-    display: grid !important;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px 10px !important;
     overflow: visible !important;
   }
-  .lb-wrap .lb-toolbar :is(select,input),
-  .lb-wrap .lb-toolbar button {
-    width: 100% !important;
-    max-width: none !important;
+  .lb-wrap .lb-toolbar .lb-limit:has(.hof-vehicle-select),
+  .lb-wrap .lb-toolbar .lb-limit:has(.h100-vehicle-select),
+  .lb-wrap .lb-toolbar .lb-limit:has(.lb-nick-input) {
+    grid-column: 1 / -1 !important;
   }
 }
