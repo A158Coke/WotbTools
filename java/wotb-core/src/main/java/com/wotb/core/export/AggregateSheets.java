@@ -50,11 +50,10 @@ final class AggregateSheets {
     private static void summary(final ExcelStyles styles, final Map<Long, Agg> aggMap,
                                 final Map<Long, PerformanceMetricsCalculator.Row> perfById) {
         final Sheet ws = styles.workbook().createSheet("汇总");
-        final Function<Long, PerformanceMetricsCalculator.Row> perfOf = accountId -> {
-            final PerformanceMetricsCalculator.Row row = perfById.get(accountId);
-            // HP 全部 UNKNOWN 时 unavailable（null → Excel 空单元格，不冒充 0）
-            return row != null && row.hpEligible ? row : null;
-        };
+        // 与 API Mapper.toAggregate 同一契约（Excel 空单元格 = API null）：
+        //   contribution/kast/多伤率 依赖 HP（hpEligible=false 时 unavailable）
+        //   impact/tradedDeaths 不依赖 HP（仅要求该账号存在 performance row）
+        final Function<Long, PerformanceMetricsCalculator.Row> perfOf = perfById::get;
         final List<AggregateColumn> cols = List.of(
                 new AggregateColumn("玩家", 18, false, a -> a.nickname),
                 new AggregateColumn("战队", 10, false, a -> a.clan),
@@ -62,10 +61,13 @@ final class AggregateSheets {
                 new AggregateColumn("胜场", 6, true, a -> a.wins),
                 new AggregateColumn("胜率%", 8, true, a -> ExcelStyles.r1(a.winRate())),
                 new AggregateColumn("存活率%", 9, true, a -> ExcelStyles.r1(a.survivalRate())),
-                new AggregateColumn("贡献度%", 9, true, a -> perfVal(perfOf.apply(a.accountId), p -> ExcelStyles.r1(p.contribution))),
-                new AggregateColumn("KAST%", 8, true, a -> perfVal(perfOf.apply(a.accountId), p -> ExcelStyles.r1(p.kast))),
+                new AggregateColumn("贡献度%", 9, true, a -> perfVal(perfOf.apply(a.accountId), p -> p.hpEligible
+                        ? ExcelStyles.r1(p.contribution) : null)),
+                new AggregateColumn("KAST%", 8, true, a -> perfVal(perfOf.apply(a.accountId), p -> p.hpEligible
+                        ? ExcelStyles.r1(p.kast) : null)),
                 new AggregateColumn("Impact%", 9, true, a -> perfVal(perfOf.apply(a.accountId), p -> ExcelStyles.r1(p.impactValue))),
-                new AggregateColumn("多伤率%", 9, true, a -> perfVal(perfOf.apply(a.accountId), p -> ExcelStyles.r1(p.multiDamageRate))),
+                new AggregateColumn("多伤率%", 9, true, a -> perfVal(perfOf.apply(a.accountId), p -> p.hpEligible
+                        ? ExcelStyles.r1(p.multiDamageRate) : null)),
                 new AggregateColumn("互换击杀", 8, true, a -> perfVal(perfOf.apply(a.accountId), p -> (double) p.tradedDeaths)),
                 new AggregateColumn("平均存活时间", 12, false, a -> ExcelStyles.duration(a.avg(a.survivalSum))),
                 new AggregateColumn("总击杀", 7, true, a -> a.kills),
