@@ -138,12 +138,23 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 大文件量导出（如 34+ 个回放）走异步 Job，页面不再阻塞等待同步 HTTP 响应：
 
-- `POST /api/replay/export-jobs`（multipart `files` + `?mode=aggregate|each`）— 校验并立即把上传输入持久化到 job 临时目录，返回 `202 {jobId, status, total}`。
+- `POST /api/replay/export-jobs`（multipart `files` + `?mode=aggregate|each`；或 `?processingJobId=<解析任务>` 复用已解析 result，**不再重新上传 replay / 重新 processFull**）— 校验并立即把上传输入持久化到 job 临时目录（复用路径无上传输入，直接从 Processing Job 的 ProcessedDataset 生成 artifact），返回 `202 {jobId, status, total}`。引用不存在的解析任务 → 404 `PROCESSING_JOB_NOT_FOUND`，未 READY → 409 `PROCESSING_JOB_NOT_READY`。
 - `GET /api/replay/export-jobs/{jobId}` — 轮询真实进度：`{jobId, status, phase, total, processed, duplicates, failures, errorCode, filename, contentType}`。`status` ∈ QUEUED / PROCESSING / READY / FAILED / CANCELLED（终态 exactly once）；`phase` ∈ PROCESSING_REPLAYS / BUILDING_EXCEL / BUILDING_ARCHIVE。0 场有效 → FAILED `NO_VALID_REPLAYS`（不生成空 Excel）。
 - `DELETE /api/replay/export-jobs/{jobId}` — 取消（QUEUED 立即终态；PROCESSING 协作取消，安全 checkpoint 后终态）。
 - `GET /api/replay/export-jobs/{jobId}/download` — READY 后流式下载 artifact（单场/汇总 xlsx 或 each zip；`FileSystemResource` streaming，不 `readAllBytes`）。
 
 容量：内存态 job store（单实例部署）+ 有界 worker 池（`REPLAY_EXPORT_JOB_MAX_CONCURRENT=2` / `REPLAY_EXPORT_JOB_QUEUE_CAPACITY=4`，满载 503 `EXPORT_QUEUE_FULL`）；worker 仍获取全局 `ReplayCapacityLimiter` 许可（`REPLAY_MAX_CONCURRENT_JOBS=2` 不变），batch 内 replay 串行。终态 job 与临时目录由 TTL（`REPLAY_EXPORT_JOB_TTL_MINUTES=30`）清理，启动清理孤儿目录。旧同步 `POST /api/export` 保留（向后兼容）。
+
+### Replay Processing Job（匿名公开，解析预览异步化）
+
+「上传多个回放 → 解析预览」从长同步 HTTP 改为异步 Processing Job：HTTP request 立即返回 202 + jobId，worker 在全局 replay 容量内串行 `processFull`（每个 replay 恰好一次），产出**共享的 ProcessedDataset** 供 Preview / Export / 战局回放复用（同一批 34 个回放不再 Preview ×34 后又 Export ×34，总 `processFull` 调用数 = 文件数）。
+
+- `POST /api/replay/processing-jobs`（multipart `files`）— 校验并立即持久化上传输入，返回 `202 {jobId, status, total}`。
+- `GET /api/replay/processing-jobs/{jobId}` — 轮询真实进度：`{jobId, status, phase, total, processed, valid, duplicates, failures, errorCode, currentFile}`。`status` ∈ QUEUED / PROCESSING / READY / FAILED / CANCELLED（终态 exactly once）；`phase` = PROCESSING_REPLAYS（真实 processed/total，不为无观察价值的阶段造假 phase）；`valid` = 去重后有效场数；`currentFile` 为当前处理中的输入文件名（前端截断显示，不作为 metric tag）。0 场有效 → FAILED `NO_VALID_REPLAYS`。
+- `DELETE /api/replay/processing-jobs/{jobId}` — 取消（QUEUED 立即终态并释放 executor queue slot；PROCESSING 协作取消，安全 checkpoint 后终态）。
+- `GET /api/replay/processing-jobs/{jobId}/result` — READY 后返回 Preview 数据（battles / aggregate / duplicates / failures / playerColumns / aggregateColumns；**不再重新 process replay**）；未 READY → 409 `JOB_NOT_READY`。
+
+容量与生命周期：与 Export Job **共用同一有界 worker 池**（`REPLAY_EXPORT_JOB_MAX_CONCURRENT=2` / `REPLAY_EXPORT_JOB_QUEUE_CAPACITY=4`，满载 503 `PROCESSING_QUEUE_FULL`）；worker 仍获取全局 `ReplayCapacityLimiter` 许可（`REPLAY_MAX_CONCURRENT_JOBS=2` 不提高），batch 内 replay 串行。ProcessedDataset 为**内存态短生命周期缓存**（Strategy A，TTL `REPLAY_PROCESSING_JOB_TTL_MINUTES=30`，默认与 Export 一致）：只缓存已 enrich 的 Battle 结算战绩（不携带 reconstruction 事件流），34/50 场 heap 成本可接受；Export 创建时对 result `acquire` 引用计数（plan §52），活跃 Export 期间 TTL 清理跳过，Export 终态 `release` 后才允许清理。临时输入目录由 `REPLAY_PROCESSING_JOB_DIR` 管理（TTL 清理 + 启动孤儿清理）。旧同步 `POST /api/preview` 保留（向后兼容，deprecated）。
 
 ### AI 复盘与批量处理（wotbtools-user / wotbtools-admin）
 

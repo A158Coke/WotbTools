@@ -48,6 +48,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /** Export Job 编排回归（plan §40–§43）：lifecycle / progress / artifact / 失败 / 取消。 */
@@ -515,6 +517,134 @@ class ReplayExportJobServiceTest {
     void unknownJobIsNotFound() {
         final ResponseStatusException error = assertThrows(ResponseStatusException.class, () -> service.status("nope"));
         assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
+    }
+
+    // ---- plan §28–§30 / §61：Export 复用 Processing Job result（不重新上传 / 不 processFull）----
+
+    @Test
+    void createFromProcessingResultAggregateReusesDatasetWithoutReprocessing() throws Exception {
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-processing-reuse-test"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+
+            // 构造一个已 READY 的 Processing Job（含已解析 dataset）
+            final String pJobId = "proc-1";
+            final ReplayProcessingJob pJob = new ReplayProcessingJob(pJobId, 3);
+            pJob.startProcessing();
+            pJob.updateProgress(3, 1, 1);
+            pJob.markReady(new ProcessedDataset(
+                    List.of(battle("arena-1")), List.of("one.wotbreplay"),
+                    List.<String[]>of(new String[]{"dup.wotbreplay", "arena-1"}),
+                    List.<String[]>of(new String[]{"bad.wotbreplay", "REPLAY_PROCESSING_FAILED"})));
+            processingStore.register(pJob);
+            // Export acquire 引用（plan §52）
+            processingStore.acquireForExport(pJobId);
+
+            final String jobId = service.createJob(null, "aggregate", pJobId);
+            final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+            assertEquals(ExportJob.Status.READY, snap.status());
+            assertEquals(3, snap.total(), "total 与 Processing 输入总数一致");
+            assertEquals(3, snap.processed(), "复用路径 processed 必须 == total");
+            assertEquals(1, snap.duplicates());
+            assertEquals(1, snap.failures());
+
+            // 关键验收：facade.processFull 必须零次调用（plan §56/§61：Export 不再 processFull）
+            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
+
+            // artifact 可打开、filename 正确
+            final Path artifact = store.get(jobId).artifactPath();
+            assertTrue(Files.exists(artifact));
+            assertEquals("one.xlsx", snap.filename(), "1 场有效时按单场命名（与上传路径一致）");
+            try (Workbook wb = new XSSFWorkbook(Files.newInputStream(artifact))) {
+                assertEquals("玩家数据", wb.getSheetName(0));
+            }
+            processingStore.release(pJobId);
+        } finally {
+            deleteDir(processingStore.jobDir(""));
+            // jobDir("") 不是临时目录本身；直接删临时目录
+            deleteDir(processingStore.jobDir("proc-1").getParent());
+        }
+    }
+
+    @Test
+    void createFromProcessingResultEachProducesZipWithoutReprocessing() throws Exception {
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-processing-reuse-each"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            final String pJobId = "proc-2";
+            final ReplayProcessingJob pJob = new ReplayProcessingJob(pJobId, 2);
+            pJob.startProcessing();
+            pJob.updateProgress(2, 0, 0);
+            pJob.markReady(new ProcessedDataset(
+                    List.of(battle("arena-1"), battle("arena-2")),
+                    List.of("one.wotbreplay", "two.wotbreplay"),
+                    List.<String[]>of(), List.<String[]>of()));
+            processingStore.register(pJob);
+            processingStore.acquireForExport(pJobId);
+
+            final String jobId = service.createJob(null, "each", pJobId);
+            final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+            assertEquals(ExportJob.Status.READY, snap.status());
+            assertEquals("application/zip", snap.contentType());
+            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
+            assertEquals(List.of("one.xlsx", "two.xlsx"), zipEntryNames(jobId));
+            processingStore.release(pJobId);
+        } finally {
+            deleteDir(processingStore.jobDir("proc-2").getParent());
+        }
+    }
+
+    @Test
+    void createFromUnknownProcessingJobIsNotFound() throws Exception {
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-processing-missing"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            final ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                    () -> service.createJob(null, "aggregate", "no-such-job"));
+            assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode(), "引用不存在的 Processing Job 必须 404");
+        } finally {
+            deleteDir(processingStore.jobDir("x").getParent());
+        }
+    }
+
+    @Test
+    void createFromNotReadyProcessingJobIsConflict() throws Exception {
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-processing-notready"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            final ReplayProcessingJob pJob = new ReplayProcessingJob("proc-3", 1);
+            pJob.startProcessing();  // PROCESSING，未 READY
+            processingStore.register(pJob);
+            final ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                    () -> service.createJob(null, "aggregate", "proc-3"));
+            assertEquals(HttpStatus.CONFLICT, error.getStatusCode(), "引用未 READY 的 Processing Job 必须 409");
+        } finally {
+            deleteDir(processingStore.jobDir("proc-3").getParent());
+        }
+    }
+
+    private static Battle battle(final String arenaId) {
+        final Battle b = new Battle();
+        b.arenaId = arenaId;
+        b.winnerTeam = 1;
+        b.players = new ArrayList<>();
+        for (int i = 0; i < 14; i++) {
+            final PlayerResult p = new PlayerResult();
+            p.accountId = i + 1L;
+            p.nickname = "p" + (i + 1);
+            p.team = i < 7 ? 1 : 2;
+            p.tankId = 4481L;
+            b.players.add(p);
+        }
+        return b;
     }
 
     // ---- helpers ----

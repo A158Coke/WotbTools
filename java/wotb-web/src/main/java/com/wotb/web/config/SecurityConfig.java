@@ -44,6 +44,7 @@ import static com.wotb.web.config.ApiPaths.REPLAY_ANALYZE_CANCEL;
 import static com.wotb.web.config.ApiPaths.REPLAY_MAP_OVERVIEW;
 import static com.wotb.web.config.ApiPaths.REPLAY_EXPORT_JOBS_PATTERN;
 import static com.wotb.web.config.ApiPaths.REPLAY_PROCESS;
+import static com.wotb.web.config.ApiPaths.REPLAY_PROCESSING_JOBS_PATTERN;
 import static com.wotb.web.config.ApiPaths.REPLAY_RECONSTRUCT_BATCH;
 import static com.wotb.web.config.ApiPaths.USERS_PATTERN;
 
@@ -81,6 +82,9 @@ public class SecurityConfig {
 
                 // --- Replay Export Job（匿名公开，与 /api/export 权限一致；含 status/cancel/download） ---
                 .requestMatchers(REPLAY_EXPORT_JOBS_PATTERN).permitAll()
+
+                // --- Replay Processing Job（匿名公开，与 /api/preview 权限一致；含 status/cancel/result） ---
+                .requestMatchers(REPLAY_PROCESSING_JOBS_PATTERN).permitAll()
 
                 // --- AI 复盘与批量处理 (wotbtools-user / wotbtools-admin) ---
                 .requestMatchers(REPLAY_RECONSTRUCT_BATCH,

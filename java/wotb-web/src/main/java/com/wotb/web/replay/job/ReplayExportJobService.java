@@ -29,12 +29,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.io.OutputStream;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.AbstractList;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -68,6 +65,8 @@ public class ReplayExportJobService {
     private final ExportJobStore store;
     private final ReplayExportWorkerExecutor workerExecutor;
     private final MeterRegistry meterRegistry;
+    /** Processing Job result 提供方（复用路径：Export 直接消费已解析 result，plan §28；null = 传统上传路径）。 */
+    private final ReplayProcessingJobStore processingStore;
     private final Tankopedia tankopedia = Tankopedia.load();
 
     @Autowired
@@ -75,12 +74,23 @@ public class ReplayExportJobService {
                                   final DefaultReplayProcessingFacade processingFacade,
                                   final ExportJobStore store,
                                   final ReplayExportWorkerExecutor workerExecutor,
+                                  final ReplayProcessingJobStore processingStore,
                                   @Autowired(required = false) final MeterRegistry meterRegistry) {
         this.capacityLimiter = capacityLimiter;
         this.processingFacade = processingFacade;
         this.store = store;
         this.workerExecutor = workerExecutor;
+        this.processingStore = processingStore;
         this.meterRegistry = meterRegistry;
+    }
+
+    /** 测试便利构造器（无 Processing result 复用能力）。 */
+    public ReplayExportJobService(final ReplayCapacityLimiter capacityLimiter,
+                                  final DefaultReplayProcessingFacade processingFacade,
+                                  final ExportJobStore store,
+                                  final ReplayExportWorkerExecutor workerExecutor,
+                                  @Autowired(required = false) final MeterRegistry meterRegistry) {
+        this(capacityLimiter, processingFacade, store, workerExecutor, null, meterRegistry);
     }
 
     // ---- create / status / cancel / download ----
@@ -90,35 +100,92 @@ public class ReplayExportJobService {
      * 队列满载抛 {@link ExportQueueFullException}（503 EXPORT_QUEUE_FULL）。
      */
     public String createJob(final MultipartFile[] files, final String mode) {
-        ReplayUploadValidator.validate(files);
-        if (files.length > ReplayService.MAX_REPLAY_FILES) {
-            throw new IllegalArgumentException("TOO_MANY_REPLAY_FILES");
-        }
+        return createJob(files, mode, null);
+    }
+
+    /**
+     * 创建 Export Job。
+     *
+     * <p>{@code processingJobId} 非 null = <b>复用 Replay Processing Job result</b>
+     * （plan §28–§30）：不再重新上传 replay、不再 processFull，worker 直接从已解析的
+     * {@link ProcessedDataset} 生成 XLSX/ZIP；Export 创建时对 Processing result
+     * acquire 引用（plan §52），阻止其被 TTL 清理。null = 传统 multipart 上传路径。</p>
+     *
+     * @throws ResponseStatusException 404 PROCESSING_JOB_NOT_FOUND / 409 PROCESSING_JOB_NOT_READY
+     *         （复用路径引用不存在的 / 未 READY 的 Processing Job）
+     */
+    public String createJob(final MultipartFile[] files, final String mode, final String processingJobId) {
         final boolean each = "each".equalsIgnoreCase(mode);
-        final String jobId = UUID.randomUUID().toString();
-        final Path inputDir = store.inputDir(jobId);
-        try {
-            Files.createDirectories(inputDir);
-            int i = 0;
-            for (final MultipartFile f : files) {
-                final String name = f.getOriginalFilename() == null ? "replay.wotbreplay" : f.getOriginalFilename();
-                f.transferTo(inputDir.resolve(i + "__" + sanitizeFileName(name)));
-                i++;
+        final ReplayProcessingJob processingJob;
+        if (StringUtils.hasText(processingJobId)) {
+            if (processingStore == null) {
+                throw new IllegalStateException("PROCESSING_STORE_UNAVAILABLE");
             }
-        } catch (final IOException e) {
-            store.removeAndCleanup(jobId);
-            throw new IllegalStateException("EXPORT_JOB_STORAGE_UNAVAILABLE");
+            processingJob = processingStore.acquireForExport(processingJobId);
+            if (processingJob == null) {
+                final ReplayProcessingJob existing = processingStore.get(processingJobId);
+                if (existing == null) {
+                    throw new ResponseStatusException(HttpStatus.NOT_FOUND, "PROCESSING_JOB_NOT_FOUND");
+                }
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "PROCESSING_JOB_NOT_READY");
+            }
+        } else {
+            processingJob = null;
+            ReplayUploadValidator.validate(files);
+            if (files.length > ReplayService.MAX_REPLAY_FILES) {
+                throw new IllegalArgumentException("TOO_MANY_REPLAY_FILES");
+            }
         }
-        final ExportJob job = new ExportJob(jobId, each ? "each" : "aggregate", files.length);
+        final String jobId = UUID.randomUUID().toString();
+        final int total;
+        if (processingJob != null) {
+            final ProcessedDataset ds = processingJob.result();
+            // total = Processing 输入总数（valid + duplicates + failures），保持与解析时一致。
+            total = ds.validCount() + ds.duplicates().size() + ds.failures().size();
+        } else {
+            total = files.length;
+        }
+        final Path inputDir = store.inputDir(jobId);
+        if (processingJob == null) {
+            try {
+                Files.createDirectories(inputDir);
+                int i = 0;
+                for (final MultipartFile f : files) {
+                    final String name = f.getOriginalFilename() == null ? "replay.wotbreplay" : f.getOriginalFilename();
+                    f.transferTo(inputDir.resolve(i + "__" + ReplayJobFiles.sanitizeFileName(name)));
+                    i++;
+                }
+            } catch (final IOException e) {
+                store.removeAndCleanup(jobId);
+                throw new IllegalStateException("EXPORT_JOB_STORAGE_UNAVAILABLE");
+            }
+        } else {
+            // 复用路径无上传输入，但 job 目录需要存在（artifact 写入目标）。
+            try {
+                Files.createDirectories(inputDir);
+            } catch (final IOException e) {
+                store.removeAndCleanup(jobId);
+                throw new IllegalStateException("EXPORT_JOB_STORAGE_UNAVAILABLE");
+            }
+        }
+        final ExportJob job = new ExportJob(jobId, each ? "each" : "aggregate", total, processingJobId);
         store.register(job);
         final long submittedNanos = System.nanoTime();
         try {
-            workerExecutor.submit(jobId, () -> runJob(job, inputDir, each, submittedNanos));
+            if (processingJob != null) {
+                workerExecutor.submit(jobId, () -> runJobFromResult(job, processingJob, each, submittedNanos));
+            } else {
+                workerExecutor.submit(jobId, () -> runJob(job, inputDir, each, submittedNanos));
+            }
         } catch (final RejectedExecutionException e) {
             store.removeAndCleanup(jobId);
+            if (processingJob != null) {
+                processingStore.release(processingJobId);
+            }
             throw new ExportQueueFullException();
         }
-        LOGGER.info(logLine("export_job_created", jobId, "files", files.length, "mode", job.mode()));
+        LOGGER.info(logLine("export_job_created", jobId, "mode", job.mode(), "total", total,
+                "processingJobId", processingJobId));
         return jobId;
     }
 
@@ -140,7 +207,11 @@ public class ReplayExportJobService {
             final boolean removed = workerExecutor.removeQueued(jobId);
             if (removed) {
                 // QUEUED 任务已被从 executor queue 移除、Runnable 永不执行 → worker 不会调用
-                // finishTerminal；在请求线程直接记录终态 observability（exactly once）。
+                // finishTerminal；在请求线程直接记录终态 observability（exactly once），
+                // 并释放对 Processing result 的引用（plan §52，worker 不会运行来 release）。
+                if (job.processingJobId() != null && processingStore != null) {
+                    processingStore.release(job.processingJobId());
+                }
                 finishTerminalQueuedCancel(job);
             }
         }
@@ -213,6 +284,138 @@ public class ReplayExportJobService {
         }
     }
 
+    /**
+     * 复用 Processing Job result 的 Export worker（plan §28/§30）：不重新上传、
+     * 不 processFull，直接从已解析的 {@link ProcessedDataset} 生成 artifact；
+     * 无 replay processing，故不获取全局 replay 容量许可。终态后 release
+     * Processing result 引用（plan §52）。
+     */
+    private void runJobFromResult(final ExportJob job, final ReplayProcessingJob processingJob,
+                                   final boolean each, final long submittedNanos) {
+        final long startNanos = System.nanoTime();
+        recordQueueWait(submittedNanos, startNanos, job.mode());
+        try {
+            if (!job.startProcessing()) {
+                // QUEUED 期间被取消 → 已终态 CANCELLED；worker 负责终态统计。
+                finishTerminal(job, startNanos);
+                return;
+            }
+            if (job.isCancelled()) {
+                job.markCancelled();
+                finishTerminal(job, startNanos);
+                return;
+            }
+            LOGGER.info(logLine("export_job_started", job.jobId(), "mode", job.mode(), "total", job.total(),
+                    "reuse_processing_job", processingJob.jobId()));
+            final ProcessedDataset ds = processingJob.result();
+            if (each) {
+                processEachFromResult(job, ds);
+            } else {
+                processAggregateFromResult(job, ds);
+            }
+            finishTerminal(job, startNanos);
+        } catch (final JobCancelledException e) {
+            job.markCancelled();
+            finishTerminal(job, startNanos);
+        } catch (final Exception e) {
+            if (job.isCancelled()) {
+                job.markCancelled();
+            } else {
+                LOGGER.warn(logLine("export_job_failed_detail", job.jobId(),
+                        "error", e.getClass().getSimpleName(), "message", String.valueOf(e.getMessage())), e);
+                job.markFailed(errorCodeOf(e));
+            }
+            finishTerminal(job, startNanos);
+        } catch (final Error e) {
+            LOGGER.error(logLine("export_job_aborted", job.jobId(), "error", e.getClass().getSimpleName()), e);
+            if (job.isCancelled()) {
+                job.markCancelled();
+            } else {
+                job.markFailed("EXPORT_JOB_FAILED");
+            }
+            finishTerminal(job, startNanos);
+        } finally {
+            // Export 终态（含取消/失败）后释放引用，允许 Processing result 被 TTL 清理。
+            if (processingStore != null) {
+                processingStore.release(processingJob.jobId());
+            }
+        }
+    }
+
+    /** aggregate：直接复用已 enrich 的 battles 生成汇总 XLSX（无任何 replay processing 步骤，plan §42）。 */
+    private void processAggregateFromResult(final ExportJob job, final ProcessedDataset ds) throws Exception {
+        final List<Battle> battles = ds.battles();
+        enrichFacts(battles);   // 幂等防御：Processing 已 enrich 时无副作用，保证任何来源的 result 都含权威 facts
+        if (battles.isEmpty()) {
+            throw new NoValidReplaysException();
+        }
+        job.updateProgress(ds.validCount() + ds.duplicates().size() + ds.failures().size(),
+                ds.duplicates().size(), ds.failures().size());
+        if (job.isCancelled()) {
+            throw new JobCancelledException();
+        }
+        job.advancePhase(ExportJob.Phase.BUILDING_EXCEL);
+        final String filename = battles.size() == 1
+                ? ReplayJobFiles.stripExt(ds.battleSourceNames().getFirst()) + ".xlsx"
+                : "联赛汇总.xlsx";
+        final Path artifact = store.jobDir(job.jobId()).resolve("result.xlsx");
+        job.trackArtifact(artifact);
+        try (OutputStream out = Files.newOutputStream(artifact)) {
+            if (battles.size() == 1) {
+                ExcelExporter.writeSingle(battles.getFirst(), tankopedia, out);
+            } else {
+                ExcelExporter.writeAggregate(battles, ds.battleSourceNames(), ds.duplicates(), tankopedia, out);
+            }
+        }
+        if (job.isCancelled()) {
+            throw new JobCancelledException();
+        }
+        job.markReady(filename, XLSX_MIME, artifact);
+    }
+
+    /**
+     * each：逐场把已解析 XLSX 写入 ZIP entry（Battle 来自 Processing result，已 enrich）。
+     * progress 逐场推进（processed 最终 = valid + duplicates + failures = total，plan §10）。
+     */
+    private void processEachFromResult(final ExportJob job, final ProcessedDataset ds) throws Exception {
+        final List<Battle> allBattles = ds.battles();
+        enrichFacts(allBattles);   // 幂等防御（见 processAggregateFromResult）
+        job.advancePhase(ExportJob.Phase.BUILDING_ARCHIVE);
+        final Path artifact = store.jobDir(job.jobId()).resolve("result.zip");
+        job.trackArtifact(artifact);
+        final Set<String> usedNames = new HashSet<>();
+        final List<Battle> battles = ds.battles();
+        final int duplicates = ds.duplicates().size();
+        final int failures = ds.failures().size();
+        int processed = 0;
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(artifact), StandardCharsets.UTF_8)) {
+            for (int i = 0; i < battles.size(); i++) {
+                // 安全 checkpoint：每个 replay 开始前。
+                if (job.isCancelled()) {
+                    throw new JobCancelledException();
+                }
+                processed++;
+                // Battle 已成功（Processing 阶段完成）；此处任何写入失败 → 整个 job FAILED
+                // （PR #118 Blocker 2 边界：artifact generation failure 不得误判为单场失败）。
+                final ZipEntry entry = new ZipEntry(uniqueName(
+                        ReplayJobFiles.stripExt(ds.battleSourceNames().get(i)) + ".xlsx", usedNames));
+                zip.putNextEntry(entry);
+                writeSingleExcel(battles.get(i), zip);
+                zip.closeEntry();
+                job.updateProgress(processed, duplicates, failures);
+            }
+        }
+        if (job.isCancelled()) {
+            throw new JobCancelledException();
+        }
+        if (processed - failures <= 0) {
+            throw new NoValidReplaysException();
+        }
+        // duplicates/failures 已在 Processing 阶段处理，此处计入最终 processed（保证 processed == total）。
+        job.updateProgress(processed + duplicates + failures, duplicates, failures);
+        job.markReady("逐场导出.zip", ZIP_MIME, artifact);
+    }
+
     /** 终态收尾（exactly once 由 job 状态机保证）：日志 + 指标；FAILED/CANCELLED 删除 partial artifact（§11 不暴露半包）。 */
     private void finishTerminal(final ExportJob job, final long startNanos) {
         final ExportJob.Snapshot snap = job.snapshot();
@@ -253,37 +456,11 @@ public class ReplayExportJobService {
     }
 
     private void processJob(final ExportJob job, final Path inputDir, final boolean each) throws Exception {
-        final List<Path> inputs = listInputsInOrder(inputDir);
+        final List<Path> inputs = ReplayJobFiles.listInputsInOrder(inputDir);
         if (each) {
             processEach(job, inputs);
         } else {
             processAggregate(job, inputs);
-        }
-    }
-
-    /**
-     * 按上传序号前缀（{@code 0__name}、{@code 1__name}、… {@code 10__name}）整数排序，
-     * 严格保持 {@code MultipartFile[]} 原始上传顺序（PR #118 Blocker 1：不得依赖 filename
-     * 字典序，否则 10+ 时 0,1,10,11,…,19,2,20… 乱序）。无法解析数字前缀的文件排最后
-     * （防御性，不插入有效顺序中间）。
-     */
-    private static List<Path> listInputsInOrder(final Path inputDir) throws IOException {
-        try (var stream = Files.list(inputDir)) {
-            return stream.sorted(Comparator.comparingInt(ReplayExportJobService::inputOrder)).toList();
-        }
-    }
-
-    /** 解析 {@code N__rest} 的数字前缀；无法解析时返回 {@link Integer#MAX_VALUE}。 */
-    private static int inputOrder(final Path p) {
-        final String file = p.getFileName().toString();
-        final int sep = file.indexOf("__");
-        if (sep <= 0) {
-            return Integer.MAX_VALUE;
-        }
-        try {
-            return Integer.parseInt(file.substring(0, sep));
-        } catch (final NumberFormatException e) {
-            return Integer.MAX_VALUE;
         }
     }
 
@@ -306,7 +483,7 @@ public class ReplayExportJobService {
                 throw new JobCancelledException();
             }
         };
-        final Collected c = Replays.collect(lazySources(inputs), this::processFull, null, progress);
+        final Collected c = Replays.collect(ReplayJobFiles.lazySources(inputs), this::processFull, null, progress);
         if (job.isCancelled()) {
             throw new JobCancelledException();
         }
@@ -319,7 +496,7 @@ public class ReplayExportJobService {
         }
         job.advancePhase(ExportJob.Phase.BUILDING_EXCEL);
         final String filename = c.battles.size() == 1
-                ? stripExt(c.battleSourceNames.getFirst()) + ".xlsx"
+                ? ReplayJobFiles.stripExt(c.battleSourceNames.getFirst()) + ".xlsx"
                 : "联赛汇总.xlsx";
         final Path artifact = store.jobDir(job.jobId()).resolve("result.xlsx");
         job.trackArtifact(artifact);
@@ -368,7 +545,7 @@ public class ReplayExportJobService {
                 final Battle battle;
                 try {
                     // 边界 1（replay processing failure）：该 replay 无效 → skip + failures++。
-                    battle = processFull(new Source(inputName(p), Files.readAllBytes(p)));
+                    battle = processFull(new Source(ReplayJobFiles.inputName(p), Files.readAllBytes(p)));
                     if (battle == null) {
                         throw new IllegalArgumentException("NO_BATTLE_DATA");
                     }
@@ -377,12 +554,12 @@ public class ReplayExportJobService {
                 } catch (final Exception e) {
                     failures++;
                     LOGGER.debug(logLine("export_job_replay_failed", job.jobId(),
-                            "replay", inputName(p), "error", String.valueOf(e.getMessage())));
+                            "replay", ReplayJobFiles.inputName(p), "error", String.valueOf(e.getMessage())));
                     progressCheckpoint(job, processed, failures);
                     continue;
                 }
                 // 边界 2（artifact generation failure）：Battle 已成功，任何写入失败 → 整个 job FAILED。
-                final ZipEntry entry = new ZipEntry(uniqueName(stripExt(inputName(p)) + ".xlsx", usedNames));
+                final ZipEntry entry = new ZipEntry(uniqueName(ReplayJobFiles.stripExt(ReplayJobFiles.inputName(p)) + ".xlsx", usedNames));
                 zip.putNextEntry(entry);
                 writeSingleExcel(battle, zip);
                 zip.closeEntry();
@@ -417,6 +594,18 @@ public class ReplayExportJobService {
         ExcelExporter.writeSingle(battle, tankopedia, out);
     }
 
+    /**
+     * 幂等 enrich：PotentialDamage + 单场表现指标（覆盖式写入）。Processing Job 完成时已
+     * enrich（plan §21/§27）；复用路径再跑一次保证任何来源的 ProcessedDataset 都含权威
+     * facts（Excel 单场/汇总列直接消费），不改变结果。
+     */
+    private void enrichFacts(final List<Battle> battles) {
+        PotentialDamage.apply(battles, tankopedia);
+        for (final Battle battle : battles) {
+            PerformanceMetricsCalculator.populateBattle(battle);
+        }
+    }
+
     /** 与 preview/export 完全相同的 authoritative full processing 链（§31，禁止 raw parse 回归）。 */
     private Battle processFull(final Source source) {
         final ReplayProcessingResult result = processingFacade.process(source, ReplayProcessingOptions.full());
@@ -426,26 +615,6 @@ public class ReplayExportJobService {
         final String message = result.error() != null && StringUtils.hasText(result.error().message())
                 ? result.error().message() : "REPLAY_PROCESSING_FAILED";
         throw new IllegalArgumentException(message);
-    }
-
-    /** 惰性 Source 列表：逐文件从磁盘读取（不在堆内一次性持有全部上传字节，§36）。 */
-    private List<Source> lazySources(final List<Path> inputs) {
-        return new AbstractList<>() {
-            @Override
-            public Source get(final int index) {
-                final Path p = inputs.get(index);
-                try {
-                    return new Source(inputName(p), Files.readAllBytes(p));
-                } catch (final IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            }
-
-            @Override
-            public int size() {
-                return inputs.size();
-            }
-        };
     }
 
     // ---- helpers ----
@@ -504,23 +673,6 @@ public class ReplayExportJobService {
             sb.append(' ').append(kv[i]).append('=').append(kv[i + 1]);
         }
         return sb.toString();
-    }
-
-    /** 输入文件名安全化（防路径分隔符/异常字符）。 */
-    static String sanitizeFileName(final String name) {
-        final String safe = name.replace('\\', '_').replace('/', '_');
-        return safe.isBlank() ? "replay.wotbreplay" : safe;
-    }
-
-    static String inputName(final Path p) {
-        final String file = p.getFileName().toString();
-        final int sep = file.indexOf("__");
-        return sep >= 0 ? file.substring(sep + 2) : file;
-    }
-
-    private static String stripExt(final String name) {
-        final int dot = name.lastIndexOf('.');
-        return dot > 0 ? name.substring(0, dot) : name;
     }
 
     private static String uniqueName(final String preferred, final Set<String> usedNames) {

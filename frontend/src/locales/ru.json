@@ -31,7 +31,10 @@
         "remove_title": "Удалить этот реплей",
         "add_files_title": "Добавить файлы реплеев",
         "add_folder_title": "Добавить папку",
-        "remove_file_aria": "Удалить файл реплея {name}"
+        "remove_file_aria": "Удалить файл реплея {name}",
+        "files_size": "файлов: {count} · {size}",
+        "view_list": "Показать список",
+        "hide_list": "Скрыть список"
     },
     "action": {
         "preview": "Разобрать",
@@ -565,6 +568,18 @@
             "failed": "Ошибка экспорта",
             "failed_no_valid": "Нет годных реплеев для экспорта.",
             "failed_generic": "Ошибка экспорта, повторите попытку.",
+            "cancelled": "Отменено"
+        },
+        "processing_job": {
+            "title": "Разбор реплеев",
+            "queued": "Подготовка разбора…",
+            "preparing": "Задача создана · файлов: {total}",
+            "progress": "Разобрано {processed}/{total}",
+            "current_file": "Обработка {file}",
+            "counts": "годных {v} · дублей {d} · ошибок {f}",
+            "ready": "Реплеи разобраны",
+            "failed": "Ошибка разбора",
+            "no_valid_replays": "Нет годных реплеев для разбора.",
             "cancelled": "Отменено"
         }
     },

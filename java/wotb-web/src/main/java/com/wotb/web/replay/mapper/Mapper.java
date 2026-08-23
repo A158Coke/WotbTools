@@ -6,9 +6,12 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.ref.VehicleCodes;
-import com.wotb.core.stats.Players;
+import com.wotb.core.stats.Aggregator;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
+import com.wotb.core.stats.Players;
+import com.wotb.core.stats.PotentialDamage;
 import com.wotb.web.replay.dto.AggRow;
+import com.wotb.web.replay.dto.PreviewResponse;
 import com.wotb.web.replay.dto.BattleDto;
 import com.wotb.web.replay.dto.ColumnDef;
 import com.wotb.web.replay.dto.PlayerRow;
@@ -147,5 +150,36 @@ public final class Mapper {
             case "potential_damage_detail" -> player.potentialDamageDetailed ? "PARSED" : "UNPARSED";
             default -> column.get().apply(player);
         };
+    }
+
+    /**
+     * 由已处理的 authoritative Battle 列表构建完整 Preview 响应（Preview 与
+     * Replay Processing Job result 共用同一 DTO 构建，plan §21）。
+     *
+     * <p>battles 应来自统一 full processing 链（Replays.collect + processFull）；
+     * 此处幂等重跑 PotentialDamage + populateBattle（覆盖式写入），保证独立调用路径
+     * （同步 preview / processing job result）产出完全一致的事实层与派生指标。</p>
+     */
+    public static PreviewResponse toPreviewResponse(final List<Battle> battles,
+                                                    final List<String> battleSourceNames,
+                                                    final List<String[]> duplicates,
+                                                    final List<String[]> failures,
+                                                    final Tankopedia tp) {
+        PotentialDamage.apply(battles, tp);   // 事实层 enrich（metrics 只读；幂等覆盖）
+        final List<BattleDto> battlesDto = new ArrayList<>();
+        for (int i = 0; i < battles.size(); i++) {
+            final Battle battle = battles.get(i);
+            PerformanceMetricsCalculator.populateBattle(battle);   // 单场指标写入 PlayerResult（Columns.PLAYER 直接消费）
+            battlesDto.add(toBattle(battle, battleSourceNames.get(i), tp));
+        }
+        final Map<Long, PerformanceMetricsCalculator.Row> perfById = new LinkedHashMap<>();
+        for (final PerformanceMetricsCalculator.Row row : PerformanceMetricsCalculator.compute(battles)) {
+            perfById.put(row.accountId, row);
+        }
+        final List<AggRow> aggregate = battles.size() > 1
+                ? toAggregate(Aggregator.aggregate(battles, tp), perfById)
+                : List.of();
+        return new PreviewResponse(battlesDto, aggregate, duplicates, failures,
+                playerColumns(), aggregateColumns());
     }
 }
