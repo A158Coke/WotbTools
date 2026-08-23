@@ -42,6 +42,7 @@ import static com.wotb.web.config.ApiPaths.PREVIEW;
 import static com.wotb.web.config.ApiPaths.REPLAY_ANALYZE;
 import static com.wotb.web.config.ApiPaths.REPLAY_ANALYZE_CANCEL;
 import static com.wotb.web.config.ApiPaths.REPLAY_MAP_OVERVIEW;
+import static com.wotb.web.config.ApiPaths.REPLAY_EXPORT_JOBS_PATTERN;
 import static com.wotb.web.config.ApiPaths.REPLAY_PROCESS;
 import static com.wotb.web.config.ApiPaths.REPLAY_RECONSTRUCT_BATCH;
 import static com.wotb.web.config.ApiPaths.USERS_PATTERN;
@@ -77,6 +78,9 @@ public class SecurityConfig {
                 // 百场：排行榜公开；提交/取消需登录（必须置于 HOF_PATTERN permitAll 之前）
                 .requestMatchers(HOF_HUNDRED_SUBMISSIONS_PATTERN).authenticated()
                 .requestMatchers(HOF_PATTERN).permitAll()
+
+                // --- Replay Export Job（匿名公开，与 /api/export 权限一致；含 status/cancel/download） ---
+                .requestMatchers(REPLAY_EXPORT_JOBS_PATTERN).permitAll()
 
                 // --- AI 复盘与批量处理 (wotbtools-user / wotbtools-admin) ---
                 .requestMatchers(REPLAY_RECONSTRUCT_BATCH,

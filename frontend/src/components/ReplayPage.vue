@@ -16,10 +16,13 @@ import ColumnPicker from './ColumnPicker.vue'
 import AggregateTable from './AggregateTable.vue'
 import BattleTable from './BattleTable.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
+import ExportTaskCard from './ExportTaskCard.vue'
 
 const { locale, t } = useI18n()
 const replay = useReplay()
 const { files, loading, error, resp, activeTab, aggStats, pendingRemove,
+  exportJob, exportError, exportActive,
+  startExportJob, cancelExportJob, downloadExportResult, dismissExportJob,
   askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove } = replay
 const cols = useColumns(replay.playerCols, replay.aggCols, replay.activeTab)
 const { visibleKeys, aggVisibleKeys, showColPicker, pickerScope,
@@ -179,7 +182,6 @@ async function downloadResultPng() {
 }
 
 async function preview() { await replay.doPreview(cols.initFromResponse) }
-async function exportXlsx(mode) { await replay.doExport(mode) }
 function onFileRemoveRequest(f) { askRemoveFile(f) }
 </script>
 
@@ -222,10 +224,10 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
               @close="showColPicker = false" @toggle="toggleCol"
               @select-all="selectAllCols" @reset="resetCols" @reorder="handleReorder" />
           </span>
-          <button class="sm" :disabled="loading || exportingPng" @click="exportXlsx('aggregate')">
+          <button class="sm" :disabled="loading || exportingPng || exportActive" @click="startExportJob('aggregate')">
             <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_aggregate') }}
           </button>
-          <button class="ghost sm" :disabled="loading || exportingPng" @click="exportXlsx('each')">
+          <button class="ghost sm" :disabled="loading || exportingPng || exportActive" @click="startExportJob('each')">
             <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_each') }}
           </button>
           <button class="ghost sm" :disabled="loading || exportingPng" @click="downloadResultPng">
@@ -244,6 +246,9 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
         <BattleTable :battle="b" :shown-cols="shownCols" />
       </div>
     </template>
+
+    <ExportTaskCard :job="exportJob" :error="exportError"
+      @cancel="cancelExportJob" @download="downloadExportResult" @dismiss="dismissExportJob" />
 
     <RemoveConfirmModal :pending="pendingRemove" @confirm="confirmRemove" @cancel="cancelRemove" />
   </div>

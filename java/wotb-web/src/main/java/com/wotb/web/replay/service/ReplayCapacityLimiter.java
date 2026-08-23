@@ -21,6 +21,17 @@ public class ReplayCapacityLimiter {
         permits = new Semaphore(maxConcurrentJobs);
     }
 
+
+    /** 阻塞获取许可（Export Job worker 在队列出队后等待全局容量；可被中断）。 */
+    public void acquire() throws InterruptedException {
+        permits.acquire();
+    }
+
+    /** 释放许可（与 {@link #acquire()} 配对；重复释放由 Semaphore 自行处理）。 */
+    public void release() {
+        permits.release();
+    }
+
     public <T> T execute(final Callable<T> task) throws Exception {
         if (!permits.tryAcquire()) {
             throw new ReplayBusyException();

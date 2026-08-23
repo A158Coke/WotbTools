@@ -26,9 +26,12 @@ final class SingleBattleSheets {
     }
 
     static void write(final ExcelStyles styles, final Battle battle, final Tankopedia tp) {
-        battleInfo(styles, battle);
+        // 玩家数据在前（用户最关心的数据，Excel 打开即见，不再是大片空白的信息表）；
+        // 战斗信息 / 原始字段 保留在后续 sheet。显式指定 active sheet 保证默认打开「玩家数据」。
         players(styles, battle, tp);
+        battleInfo(styles, battle);
         raw(styles, battle);
+        styles.workbook().setActiveSheet(0);
     }
 
     private static void battleInfo(final ExcelStyles styles, final Battle b) {
