@@ -1,24 +1,9 @@
-/* WotBTools Showcase — replaceable presentation asset layer.
- * Every image below lives under assets/showcase and is documented in its README.
- * They are atmosphere only: never treat them as battle/map/tank facts.
+/* WotBTools V2 — per-page showcase backgrounds.
+ * Presentation-only assets. Never use these images as replay/map/tank facts.
+ * Each product page owns a dedicated replaceable asset under assets/showcase/<page>/.
  */
 
-/* Homepage: generated showcase Hero. Existing project map/tank art is hidden here so
- * replacing one stable asset swaps the entire visual without touching HomePage.vue. */
-.homepage-showcase .showcase-hero {
-  background:
-    linear-gradient(90deg, rgba(5,8,10,.97) 0%, rgba(5,8,10,.88) 36%, rgba(5,8,10,.24) 68%, rgba(5,8,10,.62) 100%),
-    url('../assets/showcase/home/hero-v1.webp') center 48% / cover no-repeat !important;
-}
-.homepage-showcase .showcase-hero .hero-map,
-.homepage-showcase .showcase-hero .hero-tank { display: none !important; }
-.homepage-showcase .hero-atmosphere {
-  background:
-    linear-gradient(180deg, rgba(0,0,0,.04), transparent 52%, rgba(0,0,0,.52)),
-    radial-gradient(circle at 72% 43%, rgba(231,151,24,.12), transparent 30%) !important;
-}
-
-/* Shared page backdrop contract. */
+/* ---------- common backdrop contract ---------- */
 .layout-content,
 .layout-wide,
 .layout-data-workspace,
@@ -30,7 +15,13 @@
 .hof-page,
 .hof-wrap,
 .hall-page,
-.recon-page {
+.hof-admin-page,
+.hofadmin-page,
+.admin-hof-page,
+.recon-page,
+.rating-page,
+.rating-section,
+.rating-workspace {
   position: relative;
   isolation: isolate;
 }
@@ -45,40 +36,10 @@
 .contact-page::after,
 .hof-page::after,
 .hof-wrap::after,
-.hall-page::after {
-  content: '';
-  position: absolute;
-  z-index: -2;
-  inset: 0;
-  pointer-events: none;
-  opacity: .12;
-  background: url('../assets/showcase/shared/utility-bg-v1.svg') center top / 100% auto no-repeat;
-  mask-image: linear-gradient(to bottom, #000 0, #000 240px, transparent 700px);
-}
-
-/* Replay Parser: tactical replay visual in outer page and upload task. */
-.layout-data-workspace::after {
-  background-image: url('../assets/showcase/replay/replay-bg-v1.svg');
-  opacity: .17;
-}
-.layout-data-workspace .uploadwrap {
-  background:
-    linear-gradient(96deg, color-mix(in srgb, var(--bg-card) 98%, transparent) 0%, color-mix(in srgb, var(--bg-card) 91%, transparent) 56%, color-mix(in srgb, var(--bg-card) 72%, transparent) 100%),
-    url('../assets/showcase/replay/replay-bg-v1.svg') 92% 48% / cover no-repeat !important;
-}
-.layout-data-workspace .uploadcard {
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent) 7%, transparent), color-mix(in srgb, var(--bg-upload) 93%, transparent) 48%),
-    url('../assets/showcase/reconstruction/tactical-bg-v1.svg') center / cover no-repeat !important;
-}
-
-/* Rankings / Rating: distinct competition/data identities. */
-.hof-page::after,
-.hof-wrap::after,
-.hall-page::after {
-  background-image: url('../assets/showcase/hof/hof-bg-v1.svg');
-  opacity: .18;
-}
+.hall-page::after,
+.hof-admin-page::after,
+.hofadmin-page::after,
+.admin-hof-page::after,
 .rating-page::after,
 .rating-section::after,
 .rating-workspace::after {
@@ -87,64 +48,119 @@
   z-index: -2;
   inset: 0;
   pointer-events: none;
-  background: url('../assets/showcase/rating/rating-bg-v1.svg') center top / 100% auto no-repeat;
-  opacity: .16;
-  mask-image: linear-gradient(to bottom, #000 0, #000 240px, transparent 700px);
+  background-position: center top;
+  background-size: 100% auto;
+  background-repeat: no-repeat;
+  mask-image: linear-gradient(to bottom, #000 0, #000 260px, rgba(0,0,0,.7) 480px, transparent 820px);
 }
 
-/* Profile: no avatar. Generated tank silhouette remains presentation-only. */
-.profile-page::after { background-image: url('../assets/showcase/profile/profile-bg-v1.svg'); opacity: .15; }
-.profile-page .profile-hero {
+/* ---------- Home: sunset battlefield / product showcase ---------- */
+.homepage-showcase .showcase-hero {
   background:
-    linear-gradient(95deg, color-mix(in srgb, var(--accent) 10%, var(--bg-card)) 0%, color-mix(in srgb, var(--bg-card) 96%, transparent) 55%, color-mix(in srgb, var(--bg-card) 70%, transparent) 100%),
-    url('../assets/showcase/profile/profile-bg-v1.svg') 100% 52% / cover no-repeat !important;
+    linear-gradient(90deg, rgba(5,8,10,.97) 0%, rgba(5,8,10,.88) 35%, rgba(5,8,10,.22) 67%, rgba(5,8,10,.58) 100%),
+    url('../assets/showcase/home/hero-v2.svg') center 48% / cover no-repeat !important;
+}
+.homepage-showcase .showcase-hero .hero-map,
+.homepage-showcase .showcase-hero .hero-tank { display: none !important; }
+.homepage-showcase .hero-atmosphere {
+  background:
+    linear-gradient(180deg, rgba(0,0,0,.02), transparent 50%, rgba(0,0,0,.55)),
+    radial-gradient(circle at 72% 43%, rgba(231,151,24,.12), transparent 30%) !important;
 }
 
-/* Coaching / booster. */
-.boost-page::after { background-image: url('../assets/showcase/boost/boost-bg-v1.svg'); opacity: .16; }
-
-/* Admin operations console: deliberately restrained. */
-.admin-page::after,
-.hof-admin-page::after,
-.hofadmin-page::after,
-.admin-hof-page::after {
-  content: '';
-  position: absolute;
-  z-index: -2;
-  inset: 0;
-  pointer-events: none;
-  background: url('../assets/showcase/admin/admin-bg-v1.svg') center top / 100% auto no-repeat;
-  opacity: .10;
-  mask-image: linear-gradient(to bottom, #000 0, #000 220px, transparent 620px);
+/* ---------- Replay: cold ruined battlefield / forensic review ---------- */
+.layout-data-workspace::after {
+  background-image: url('../assets/showcase/replay/replay-bg-v2.svg');
+  opacity: .19;
+}
+.layout-data-workspace .uploadwrap {
+  background:
+    linear-gradient(96deg, color-mix(in srgb, var(--bg-card) 98%, transparent) 0%, color-mix(in srgb, var(--bg-card) 91%, transparent) 56%, color-mix(in srgb, var(--bg-card) 74%, transparent) 100%),
+    url('../assets/showcase/replay/replay-bg-v2.svg') 92% 48% / cover no-repeat !important;
+}
+.layout-data-workspace .uploadcard {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 5%, transparent), color-mix(in srgb, var(--bg-upload) 94%, transparent) 48%),
+    url('../assets/showcase/reconstruction/reconstruction-bg-v2.svg') center / cover no-repeat !important;
 }
 
-/* Changelog/contact utility surfaces share a quiet documented asset. */
-.version-page::after,
-.contact-page::after {
-  background-image: url('../assets/showcase/shared/utility-bg-v1.svg');
-  opacity: .13;
-}
-
-/* Reconstruction keeps its authoritative map untouched; visual only exists outside map panel. */
+/* ---------- Reconstruction / AI Review: tactical command map ---------- */
 .recon-page::before {
   content: '';
   position: absolute;
   z-index: -2;
   inset: 0;
   pointer-events: none;
-  background: url('../assets/showcase/reconstruction/tactical-bg-v1.svg') center top / 100% auto no-repeat;
-  opacity: .15;
-  mask-image: linear-gradient(to bottom, #000 0, #000 220px, transparent 700px);
+  background: url('../assets/showcase/reconstruction/reconstruction-bg-v2.svg') center top / 100% auto no-repeat;
+  opacity: .18;
+  mask-image: linear-gradient(to bottom, #000 0, #000 260px, rgba(0,0,0,.65) 500px, transparent 820px);
 }
 
-/* User menu stays readable regardless of light/dark page token combination. */
+/* ---------- Hall of Fame: ceremonial gold hall ---------- */
+.hof-page::after,
+.hof-wrap::after,
+.hall-page::after {
+  background-image: url('../assets/showcase/hof/hof-bg-v2.svg');
+  opacity: .20;
+}
+
+/* ---------- Rating: blue competitive analytics / radar ---------- */
+.rating-page::after,
+.rating-section::after,
+.rating-workspace::after {
+  background-image: url('../assets/showcase/rating/rating-bg-v2.svg');
+  opacity: .19;
+}
+
+/* ---------- Profile: personal armored hangar; no avatar dependency ---------- */
+.profile-page::after {
+  background-image: url('../assets/showcase/profile/profile-bg-v2.svg');
+  opacity: .17;
+}
+.profile-page .profile-hero {
+  background:
+    linear-gradient(95deg, color-mix(in srgb, var(--accent) 9%, var(--bg-card)) 0%, color-mix(in srgb, var(--bg-card) 96%, transparent) 54%, color-mix(in srgb, var(--bg-card) 70%, transparent) 100%),
+    url('../assets/showcase/profile/profile-bg-v2.svg') 100% 52% / cover no-repeat !important;
+}
+
+/* ---------- Boost: alpine training range ---------- */
+.boost-page::after {
+  background-image: url('../assets/showcase/boost/boost-bg-v2.svg');
+  opacity: .18;
+}
+
+/* ---------- User Admin: restrained command center ---------- */
+.admin-page::after {
+  background-image: url('../assets/showcase/admin/admin-bg-v2.svg');
+  opacity: .12;
+}
+
+/* ---------- HoF Admin: evidence review / adjudication archive ---------- */
+.hof-admin-page::after,
+.hofadmin-page::after,
+.admin-hof-page::after {
+  background-image: url('../assets/showcase/hof-admin/hof-admin-bg-v2.svg');
+  opacity: .14;
+}
+
+/* ---------- Changelog: blueprint + release timeline ---------- */
+.version-page::after {
+  background-image: url('../assets/showcase/version/updates-bg-v2.svg');
+  opacity: .16;
+}
+
+/* ---------- Contact: communications tower / radio link ---------- */
+.contact-page::after {
+  background-image: url('../assets/showcase/contact/contact-bg-v2.svg');
+  opacity: .16;
+}
+
+/* User menu stays readable regardless of page background. */
 .user-menu-panel {
   background: #0f161a !important;
   border-color: #354148 !important;
 }
-.user-menu-panel .user-menu-item {
-  color: #d8d6cf !important;
-}
+.user-menu-panel .user-menu-item { color: #d8d6cf !important; }
 .user-menu-panel .user-menu-item:hover {
   color: #fff !important;
   background: #1a2429 !important;
@@ -164,12 +180,18 @@
   .hof-page::after,
   .hof-wrap::after,
   .hall-page::after,
-  .recon-page::before { background-size: auto 470px; }
+  .hof-admin-page::after,
+  .hofadmin-page::after,
+  .admin-hof-page::after,
+  .rating-page::after,
+  .rating-section::after,
+  .rating-workspace::after,
+  .recon-page::before { background-size: auto 490px; }
 }
 
 @media (max-width: 767px) {
   .homepage-showcase .showcase-hero {
-    background-position: 67% center !important;
+    background-position: 68% center !important;
     background-size: auto 100% !important;
   }
   .layout-content::after,
@@ -183,7 +205,19 @@
   .hof-page::after,
   .hof-wrap::after,
   .hall-page::after,
-  .recon-page::before { opacity: .08; background-size: auto 360px; }
+  .hof-admin-page::after,
+  .hofadmin-page::after,
+  .admin-hof-page::after,
+  .rating-page::after,
+  .rating-section::after,
+  .rating-workspace::after,
+  .recon-page::before {
+    opacity: .08;
+    background-size: auto 370px;
+  }
   .layout-data-workspace .uploadwrap,
-  .profile-page .profile-hero { background-size: auto 100% !important; background-position: 78% center !important; }
+  .profile-page .profile-hero {
+    background-size: auto 100% !important;
+    background-position: 78% center !important;
+  }
 }
