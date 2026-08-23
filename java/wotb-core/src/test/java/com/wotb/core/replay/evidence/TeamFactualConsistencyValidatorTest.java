@@ -917,4 +917,131 @@ class TeamFactualConsistencyValidatorTest {
                         && "TEMPORAL_OWNERSHIP".equals(c.reasonCode())),
                 "V1 必须携带 reasonCode=TEMPORAL_OWNERSHIP: " + conflicts);
     }
+
+
+    // ===== P0-8 ALIVE_TRANSITION evidence chain（纯 deterministic，不调 AI）=====
+
+    /**
+     * 构建带指定存活变化证据的 GroundingFacts（含 ALIVE_TRANSITION + FOCUS_WINDOW）。
+     * attrs: [timeSec, beforeF, beforeE, afterF, afterE]，type 可混 ALIVE_TRANSITION / FOCUS_WINDOW。
+     */
+    private static GroundingFacts chainFacts(final List<Object[]> steps) {
+        final List<EvidenceFact> facts = new java.util.ArrayList<>();
+        int id = 200;
+        for (final Object[] s : steps) {
+            final double timeSec = (Double) s[0];
+            final String type = (String) s[1];
+            final int bf = (Integer) s[2];
+            final int be = (Integer) s[3];
+            final int af = (Integer) s[4];
+            final int ae = (Integer) s[5];
+            final Map<String, String> attrs = new LinkedHashMap<>();
+            if (TeamGroundingFacts.TYPE_ALIVE_TRANSITION.equals(type)) {
+                attrs.put("before", bf + "v" + be);
+                attrs.put("after", af + "v" + ae);
+            } else {
+                attrs.put("beforeFriendly", String.valueOf(bf));
+                attrs.put("beforeEnemy", String.valueOf(be));
+                attrs.put("afterFriendly", String.valueOf(af));
+                attrs.put("afterEnemy", String.valueOf(ae));
+            }
+            facts.add(new EvidenceFact("E" + (id++), type, Side.FRIENDLY,
+                    timeSec, timeSec, null, null, null, attrs));
+        }
+        return new GroundingFacts(List.copyOf(facts), Map.of(), List.of(), List.of(), List.of());
+    }
+
+    /** claim value "7v7 -> 4v6"，引用指定证据链 → 断言是否 FAIL（V3 HARD / BINDING）。 */
+    private static List<FactConflict> chainConflicts(final GroundingFacts facts,
+                                                     final List<String> evidenceIds) {
+        final TeamReviewEnvelope env = envelope(
+                new TeamReviewEnvelope.PrimaryDiagnosis("主判断", "理由", List.of()),
+                "## 团队复盘\n\n这是一段复盘。",
+                List.of(new TeamReviewEnvelope.Claim(
+                        "存活变化", evidenceIds, "ALIVE_TRANSITION", null, null, null,
+                        null, "7v7 -> 4v6", null, null, null, null)));
+        return TeamFactualConsistencyValidator.validate(env, facts);
+    }
+
+    @Test
+    void chainContinuousEvidencePasses() {
+        // 场景 1：连续证据链 7v7→6v7→5v7→5v6→4v6 => PASS（无 V3 / BINDING 冲突）
+        final GroundingFacts facts = chainFacts(List.of(
+                new Object[]{112.4, TeamGroundingFacts.TYPE_ALIVE_TRANSITION, 7, 7, 6, 7},
+                new Object[]{121.3, TeamGroundingFacts.TYPE_ALIVE_TRANSITION, 6, 7, 5, 7},
+                new Object[]{128.1, TeamGroundingFacts.TYPE_ALIVE_TRANSITION, 5, 7, 5, 6},
+                new Object[]{131.8, TeamGroundingFacts.TYPE_ALIVE_TRANSITION, 5, 6, 4, 6}));
+        final List<FactConflict> conflicts = chainConflicts(facts,
+                List.of("E200", "E201", "E202", "E203"));
+        assertFalse(hasCheck(conflicts, "V3"), "连续证据链必须 PASS: " + conflicts);
+        assertFalse(hasCheck(conflicts, "BINDING"), "连续证据链必须 PASS（无 binding）: " + conflicts);
+    }
+
+    @Test
+    void chainFirstLastMatchButGapFails() {
+        // 场景 2：首尾匹配（E200: 7v7→6v7，E203: 5v6→4v6）但中间断链（缺 6v7→...→5v6）
+        // => 不得 PASS：E201 after(5v7) != E203 before(5v6)
+        final GroundingFacts facts = chainFacts(List.of(
+                new Object[]{112.4, TeamGroundingFacts.TYPE_ALIVE_TRANSITION, 7, 7, 6, 7},
+                new Object[]{128.1, TeamGroundingFacts.TYPE_ALIVE_TRANSITION, 6, 7, 5, 7},
+                new Object[]{131.8, TeamGroundingFacts.TYPE_ALIVE_TRANSITION, 5, 6, 4, 6}));
+        final List<FactConflict> conflicts = chainConflicts(facts,
+                List.of("E200", "E201", "E202"));
+        assertTrue(hasCheck(conflicts, "V3") || hasCheck(conflicts, "BINDING"),
+                "首尾匹配但中间断链不得 PASS: " + conflicts);
+    }
+
+    @Test
+    void chainIdsOutOfOrderButTimeOrderedPasses() {
+        // 场景 3：evidence ID 乱序（E203 先于 E200），但真实 timeSec 连续 => PASS
+        final GroundingFacts facts = chainFacts(List.of(
+                new Object[]{112.4, TeamGroundingFacts.TYPE_ALIVE_TRANSITION, 7, 7, 6, 7},
+                new Object[]{121.3, TeamGroundingFacts.TYPE_ALIVE_TRANSITION, 6, 7, 5, 7},
+                new Object[]{128.1, TeamGroundingFacts.TYPE_ALIVE_TRANSITION, 5, 7, 5, 6},
+                new Object[]{131.8, TeamGroundingFacts.TYPE_ALIVE_TRANSITION, 5, 6, 4, 6}));
+        final List<FactConflict> conflicts = chainConflicts(facts,
+                List.of("E203", "E201", "E200", "E202"));
+        assertFalse(hasCheck(conflicts, "V3"), "ID 乱序但 timeSec 连续必须 PASS: " + conflicts);
+        assertFalse(hasCheck(conflicts, "BINDING"), "ID 乱序但 timeSec 连续必须 PASS: " + conflicts);
+    }
+
+    @Test
+    void chainTimeReversedFails() {
+        // 场景 4：时间顺序错误/反向——存活数倒退链（7v7→6v7 后接 6v7→7v7 回升）
+        // 排序后 E200.after(6v7) == E201.before(6v7) 看似连续，但 E201.after(7v7)
+        // 与 claim after(4v6) 不符且全局不存在该变化 → 不得 PASS
+        final GroundingFacts facts = chainFacts(List.of(
+                new Object[]{112.4, TeamGroundingFacts.TYPE_ALIVE_TRANSITION, 7, 7, 6, 7},
+                new Object[]{121.3, TeamGroundingFacts.TYPE_ALIVE_TRANSITION, 6, 7, 7, 7}));
+        final List<FactConflict> conflicts = chainConflicts(facts,
+                List.of("E200", "E201"));
+        assertTrue(hasCheck(conflicts, "V3") || hasCheck(conflicts, "BINDING"),
+                "时间反向/倒退链不得 PASS: " + conflicts);
+    }
+
+    @Test
+    void chainMixedTransitionAndFocusWindowPasses() {
+        // 场景 5：ALIVE_TRANSITION + FOCUS_WINDOW 混合链，timeSec 连续 => PASS
+        final GroundingFacts facts = chainFacts(List.of(
+                new Object[]{109.0, TeamGroundingFacts.TYPE_ALIVE_TRANSITION, 7, 7, 6, 7},
+                new Object[]{118.0, TeamGroundingFacts.TYPE_FOCUS_WINDOW, 6, 7, 5, 7},
+                new Object[]{125.0, TeamGroundingFacts.TYPE_ALIVE_TRANSITION, 5, 7, 4, 6}));
+        final List<FactConflict> conflicts = chainConflicts(facts,
+                List.of("E200", "E201", "E202"));
+        assertFalse(hasCheck(conflicts, "V3"), "混合链（ALIVE_TRANSITION+FOCUS_WINDOW）必须 PASS: " + conflicts);
+        assertFalse(hasCheck(conflicts, "BINDING"), "混合链必须 PASS: " + conflicts);
+    }
+
+    @Test
+    void chainMixedWindowGapFails() {
+        // 场景 5b：混合链中间断链（FOCUS_WINDOW 5v7→5v6 后接 ALIVE_TRANSITION 4v7→4v6）=> 不得 PASS
+        final GroundingFacts facts = chainFacts(List.of(
+                new Object[]{109.0, TeamGroundingFacts.TYPE_ALIVE_TRANSITION, 7, 7, 6, 7},
+                new Object[]{118.0, TeamGroundingFacts.TYPE_FOCUS_WINDOW, 6, 7, 5, 6},
+                new Object[]{125.0, TeamGroundingFacts.TYPE_ALIVE_TRANSITION, 4, 7, 4, 6}));
+        final List<FactConflict> conflicts = chainConflicts(facts,
+                List.of("E200", "E201", "E202"));
+        assertTrue(hasCheck(conflicts, "V3") || hasCheck(conflicts, "BINDING"),
+                "混合链断链不得 PASS: " + conflicts);
+    }
 }

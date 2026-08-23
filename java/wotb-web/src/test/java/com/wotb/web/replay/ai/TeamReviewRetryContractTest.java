@@ -375,6 +375,75 @@ class TeamReviewRetryContractTest {
                     .count();
         }
     }
+    // ===== P0-2/P0-6：structured metadata 冲突不阻塞输出（production availability） =====
+
+    /** 仅 metadata 冲突（引用不存在的证据编号，正文无事实错误）→ 直接放行，不发起 LLM retry。 */
+    @Test
+    void metadataOnlyConflictsPassWithoutRetry() {
+        // claim 引用不存在的证据编号 → EVIDENCE（STRUCTURED_METADATA）；正文无 V2/V3/V4/V5/V6 硬事实。
+        final String metadataEnvelope = "{"
+                + "\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
+                + "\"reviewMarkdown\":\"## 团队复盘\\n\\n这是一段复盘。\","
+                + "\"claims\":[{"
+                + "\"text\":\"1分20秒-1分40秒这段时间是转折。\","
+                + "\"evidenceIds\":[\"E999\"]"
+                + "}]}";
+        final RetryGateway gateway = new RetryGateway(List.of(metadataEnvelope));
+        final TeamReplayAnalysisService service = service(gateway);
+        final AnalyzeResult result = service.analyzeSingleTeamContext(
+                context(gateway, service), AllowedLanguage.ZH);
+        assertNotNull(result);
+        assertEquals("## 团队复盘\n\n这是一段复盘。", result.analysis());
+        assertEquals(1, gateway.teamCall2Requests(),
+                "P0-2: metadata-only 冲突必须 1 次 Call #2 直接放行（不触发 LLM retry）");
+    }
+
+    /** 连续多次 metadata-only 冲突也不得 fail-safe 502（旧行为 3 次全量重写后 502）。 */
+    @Test
+    void repeatedMetadataConflictsNeverFailSafe() {
+        final String metadataEnvelope = "{"
+                + "\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
+                + "\"reviewMarkdown\":\"## 团队复盘\\n\\n这是一段复盘。\","
+                + "\"claims\":[{"
+                + "\"text\":\"1分20秒-1分40秒这段时间是转折。\","
+                + "\"evidenceIds\":[\"E999\"]"
+                + "}]}";
+        final RetryGateway gateway = new RetryGateway(
+                List.of(metadataEnvelope, metadataEnvelope, metadataEnvelope));
+        final TeamReplayAnalysisService service = service(gateway);
+        final AnalyzeResult result = service.analyzeSingleTeamContext(
+                context(gateway, service), AllowedLanguage.ZH);
+        assertNotNull(result);
+        assertEquals(1, gateway.teamCall2Requests(),
+                "P0-6: 多次 metadata-only 冲突必须 1 次调用放行，绝不 3 次重写后 502");
+    }
+
+    /** HARD 事实冲突仍必须 retry（V6 无 LOS 证据硬事实），不得被 metadata 放行吞掉。 */
+    @Test
+    void hardFactConflictStillRetries() {
+        final RetryGateway gateway = new RetryGateway(List.of(BAD_ENVELOPE, GOOD_ENVELOPE));
+        final TeamReplayAnalysisService service = service(gateway);
+        final AnalyzeResult result = service.analyzeSingleTeamContext(
+                context(gateway, service), AllowedLanguage.ZH);
+        assertNotNull(result);
+        assertEquals(2, gateway.teamCall2Requests(),
+                "P0-2: HARD 事实冲突（V6）仍必须触发 LLM retry");
+    }
+
+    /** HARD 事实冲突连续 3 次 → 仍 fail-safe 502（保留）。 */
+    @Test
+    void hardFactConflictsStillFailSafeAfterExhaustion() {
+        final RetryGateway gateway = new RetryGateway(
+                List.of(BAD_ENVELOPE, BAD_ENVELOPE, BAD_ENVELOPE));
+        final TeamReplayAnalysisService service = service(gateway);
+        final AiUpstreamException e = assertThrows(AiUpstreamException.class,
+                () -> service.analyzeSingleTeamContext(context(gateway, service), AllowedLanguage.ZH));
+        assertEquals("AI_REVIEW_GROUNDING_FAILED", e.code(),
+                "HARD 事实冲突重试耗尽仍必须 fail-safe（不静默输出矛盾）");
+        assertEquals(TeamReplayAnalysisService.MAX_VALIDATION_ATTEMPTS, gateway.teamCall2Requests(),
+                "HARD 冲突仍恰好 3 次尝试后 fail-safe");
+    }
+
     // ===== docs/current-plan.md §7/§25：只有 Team Call #2 使用 JSON_OBJECT =====
 
     @Test

@@ -183,7 +183,10 @@ Replay → Parser → Canonical BattleTimeline → 确定性 Grounding Facts（�
 >
 > **Structured Factual Contract（Review Blocker B1，fail-close）**：`TeamReviewEnvelopeParser` 对
 > claims 强制 machine schema——`claimType` 必填且 ∈ {DEATH, ALIVE_TRANSITION, POSITION_REGION,
-> ENEMY_POSITION, TACTICAL}（LOS/SPOTTING/VISION/LINE_OF_SIGHT 及未知类型 → reject/rewrite）；
+> ENEMY_POSITION, TACTICAL}（LOS/SPOTTING/VISION/LINE_OF_SIGHT 显式禁止类型 → reject/rewrite；
+> **P0-4 容错**：claimType 缺失/未知变体按机器字段 deterministic 推断——knowledge→ENEMY_POSITION、
+> region+count+side+countSemantics→POSITION_REGION、value 机器存活变化→ALIVE_TRANSITION、
+> subject+timeSec→DEATH、纯文本陈述→TACTICAL（正文由 validator 文本检查兜底，不浪费 LLM retry））；
 > 每种 factual claimType 的 required fields 强制（DEATH=subject+timeSec+evidenceIds；
 > ALIVE_TRANSITION=value 机器格式+evidenceIds；POSITION_REGION=timeSec+region+count+side
 > +countSemantics+evidenceIds；ENEMY_POSITION=subject+timeSec+region+knowledge+evidenceIds；
@@ -208,14 +211,29 @@ Replay → Parser → Canonical BattleTimeline → 确定性 Grounding Facts（�
 > 不是 correctness boundary。claims coverage 最低契约：Grounding Facts 非空且主判断引用
 > 证据编号或正文出现可验证事实锚点时，claims 不允许无条件为空（CONTRACT 冲突）。
 
-### 校验失败 → LLM 自修循环（§13/§14）
+### 校验失败 → LLM 自修循环（§13/§14，P0 修复后：severity 分级）
 
 ```
 Draft → validate → PASS → 流式输出
-                  → FAIL #1 → targeted rewrite（携带 [V1]…[V6] 冲突反馈，LLM 自行改写）
-                  → FAIL #2 → full rewrite
-                  → 仍 FAIL → fail-safe：AI_REVIEW_GROUNDING_FAILED 业务错误（绝不静默输出矛盾）
+                  → 仅 metadata 冲突（STRUCTURED_METADATA / FORMAT）→ PASS_METADATA 直接输出
+                    （正文事实正确时不浪费 LLM retry；P0-2/P0-6）
+                  → HARD_FACT 冲突 #1 → targeted rewrite（携带 [V1]…[V6] 冲突反馈，LLM 自行改写）
+                  → HARD_FACT 冲突 #2 → full rewrite
+                  → 仍 HARD_FACT 冲突 → fail-safe：AI_REVIEW_GROUNDING_FAILED 业务错误（绝不静默输出矛盾）
 ```
+
+- **severity 分级（P0-2/P0-6）**：validator 把每条冲突分为 `HARD_FACT`（用户可见事实错误：
+  阵亡时间/存活变化/位置数量/knowledge/身份/unsupported hard fact——必须阻止输出，可 retry，
+  最终 fail-safe）/ `STRUCTURED_METADATA`（evidence binding 类型/时间细节、coverage 缺失、
+  非关键 machine 字段——正文事实正确时不阻塞输出）/ `FORMAT`（可 deterministic normalize 的
+  格式问题——由 parser 容错处理）。生产已证明旧行为「任何 structured 小错误都 3 次 140k prompt
+  全量重写后 502」导致 AI Review 连续不可用，本轮修复后 metadata-only 冲突 0 次额外 LLM 调用。
+- Backend 绝不代改句子；校验通过后才把 reviewMarkdown 转给前端（不暴露待改写草稿）。
+- 上限：`TeamReplayAnalysisService.MAX_VALIDATION_ATTEMPTS = 3`（draft + 2 次 rewrite，仅 HARD 冲突）。
+- **authoritative response source（Review B1-1）**：`callRaw()` 以 `AiChatResponse.completionText()`
+  为唯一权威完整响应（Gateway 契约：callback 是流式增量 progress，正常结束时 completionText 为
+  聚合后的完整文本；失败一律抛 `AiUpstreamException`，绝不返回 partial）；每轮 attempt 独立
+  `stream()` 调用，不共享 buffer（无「前一轮 buffer 串扰」）。
 
 - Backend 绝不代改句子；校验通过后才把 reviewMarkdown 转给前端（不暴露待改写草稿）。
 - 上限：`TeamReplayAnalysisService.MAX_VALIDATION_ATTEMPTS = 3`（draft + 2 次 rewrite）。

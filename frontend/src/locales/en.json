@@ -1108,6 +1108,7 @@
             "AI_CONTEXT_TOO_LARGE": "The replay analysis exceeds the AI context limit. Upload fewer files.",
             "AI_UPSTREAM_UNAVAILABLE": "The AI provider is temporarily unavailable. Please try again later.",
             "AI_TIMEOUT": "The AI provider timed out. Please try again later.",
+            "AI_REVIEW_GROUNDING_FAILED": "The AI review failed factual consistency checks. Please try again.",
             "AI_EMPTY_RESPONSE": "The AI provider returned an empty result. Please retry.",
             "AI_RESPONSE_INVALID": "The AI provider returned an invalid result. Please retry.",
             "AI_TIMELINE_UNUSABLE": "This replay lacks enough battle-timeline data for an AI review.",
