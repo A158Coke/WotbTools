@@ -305,7 +305,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 ### 前端组件
 
 - 根组件 `App.vue`（编排层），无 Vue Router、无组件库。逻辑全在 **composables** 和 **utils** 中：
-  - `composables/useReplay.js` — 文件/解析（Processing Job：创建→轮询真实进度→READY 自动展示 result）/导出（READY 后复用 processingJobId，不重新上传）/战斗移除状态管理
+  - `composables/useReplay.js` — 文件/解析（Processing Job：创建→轮询真实进度→READY 自动展示 result）/导出（READY 后且 `resultMatchesSelection` 时复用 processingJobId，不重新上传）/战斗移除状态管理；所有 files 变化统一走 `updateFiles`（立即失效旧 processingJobId/resp + 停止旧轮询 + 后台取消，`processingPollJobId` token + `selectionRevision` 防过期 READY 覆盖）
   - `composables/useColumns.js` — 列可见性/排序/选择器状态；`localStorage` 持久化单场/汇总两套列配置，并在后端新增列时自动补齐顺序
   - `composables/useTheme.js` — 主题切换（auto/light/dark），数据持久化调用 `utils/theme.js`
   - `composables/useAuth.js` — Keycloak 认证适配器（check-sso 游客模式；未登录时 `login(view)` 直接跳转 Keycloak 托管登录页，IdP 选择（QQ + 三个 WG 区服）由 Keycloak 页面提供，前端不硬编码 idpHint）

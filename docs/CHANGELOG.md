@@ -33,6 +33,10 @@
   `blitzkit-references.mjs --emit-portraits` 可重复生成入口。
 
 ### Fixed
+- **Replay Processing Job review 闭环修复（PR #121 correctness/concurrency 3 项 blocker）**：
+  - **文件集合变化立即失效旧解析结果（Blocker 1）**：前端新增统一 `updateFiles` 入口（FileUploader 任意 add / folder-add / remove / clear / replace 事件都走它），任何 files 变化立即置空 `processingJobId` 与已展示的 `resp`（防止「UI 显示 dataset A、files 是 dataset B、Export 复用 A」）；正在处理的旧 Job 停止轮询并后台协作取消（释放 queue slot / 容量）；`pollProcessingJob` 以 `processingPollJobId` 作 request token + `selectionRevision` 作 revision，丢弃迟到/过期的 READY 响应（P1 处理中 files 改变 → P1 随后 READY 不得覆盖当前 selection）；Export 复用仅当 `resultMatchesSelection`（processingJobId 与 resp 成对存在），否则走 legacy 上传当前 files，绝不静默导出旧 dataset。
+  - **from-result each 的 valid 语义修复（Blocker 2）**：`processEachFromResult` 的 NO_VALID_REPLAYS 判定由 `processed - failures <= 0` 改为 `ds.validCount() <= 0`——`ds.battles()` 本身就是 Processing 阶段排除 duplicates/failures 后的有效场，failures 不得再与其相减（否则 1 valid + 1 failure 会被误判为 NO_VALID_REPLAYS）；duplicates/failures 只用于进度与终态统计。新增测试：1v1f / 1v2f / 2v5f / 0v（each + aggregate）全路径。
+  - **ProcessedDataset READY 后消费者只读（Blocker 3）**：移除 from-result Export path 的重复 `enrichFacts`（PotentialDamage.apply + populateBattle）——共享 Battle 不再被 Preview/Export 消费者二次 mutate（并发 GET result / aggregate Export / each Export 同一 Battle 不再有 shared mutable write）；`ProcessedDataset` record 构造器加 `List.copyOf` 防御性拷贝（collection structure 不可变，Battle 本体仍 mutable，不重写整个 model）；facts 层 enrich 只由数据集创建方保证（`ReplayProcessingJobService.processJob` 与同步 preview 的 `ReplayService.previewWithinPermit`），`Mapper.toPreviewResponse` 改为只读消费。新增无-mutation 回归测试（未 enrich dataset 导出后 potentialDamage/contribution 仍为初始值）。
 - **Replay 批量导出：34+ 回放保持上传顺序、ZIP 写失败不再产出损坏包（PR #118 correctness）**：
   - **输入顺序修复（Blocker 1）**：createJob 把上传持久化为 `N__name`，原 `Files.list().sorted()`
     是整名字符串字典序，10+ 时顺序变成 `0,1,10,11,…,19,2,20…`；现改为按 `__` 前数字前缀整数

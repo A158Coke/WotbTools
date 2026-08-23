@@ -342,11 +342,15 @@ public class ReplayExportJobService {
         }
     }
 
-    /** aggregate：直接复用已 enrich 的 battles 生成汇总 XLSX（无任何 replay processing 步骤，plan §42）。 */
+    /**
+     * aggregate：直接复用已 enrich 的 battles 生成汇总 XLSX（无任何 replay processing 步骤，
+     * plan §42）。只读消费 {@link ProcessedDataset}：不再次 PotentialDamage / populateBattle
+     * / 任何会 mutate 共享 Battle 的 enrichment（review BLOCKER 3）——enrich 由 Processing Job
+     * 创建 dataset 前保证（ReplayProcessingJobService.processJob）。
+     */
     private void processAggregateFromResult(final ExportJob job, final ProcessedDataset ds) throws Exception {
         final List<Battle> battles = ds.battles();
-        enrichFacts(battles);   // 幂等防御：Processing 已 enrich 时无副作用，保证任何来源的 result 都含权威 facts
-        if (battles.isEmpty()) {
+        if (ds.validCount() <= 0) {
             throw new NoValidReplaysException();
         }
         job.updateProgress(ds.validCount() + ds.duplicates().size() + ds.failures().size(),
@@ -375,11 +379,15 @@ public class ReplayExportJobService {
 
     /**
      * each：逐场把已解析 XLSX 写入 ZIP entry（Battle 来自 Processing result，已 enrich）。
+     * 只读消费 {@link ProcessedDataset}，不再次 enrichment（review BLOCKER 3）。
      * progress 逐场推进（processed 最终 = valid + duplicates + failures = total，plan §10）。
+     *
+     * <p><b>valid 语义（review BLOCKER 2）</b>：{@code ds.battles()} 本身就是 Processing 阶段
+     * 已排除 duplicates/failures 后的有效场；只要 validCount &gt; 0 就允许生成 ZIP。
+     * failures 只用于进度与终态统计，绝不能再与 processed 相减（否则 1 valid + 1 failure
+     * 会被误判为 NO_VALID_REPLAYS）。</p>
      */
     private void processEachFromResult(final ExportJob job, final ProcessedDataset ds) throws Exception {
-        final List<Battle> allBattles = ds.battles();
-        enrichFacts(allBattles);   // 幂等防御（见 processAggregateFromResult）
         job.advancePhase(ExportJob.Phase.BUILDING_ARCHIVE);
         final Path artifact = store.jobDir(job.jobId()).resolve("result.zip");
         job.trackArtifact(artifact);
@@ -408,7 +416,7 @@ public class ReplayExportJobService {
         if (job.isCancelled()) {
             throw new JobCancelledException();
         }
-        if (processed - failures <= 0) {
+        if (ds.validCount() <= 0) {
             throw new NoValidReplaysException();
         }
         // duplicates/failures 已在 Processing 阶段处理，此处计入最终 processed（保证 processed == total）。
@@ -592,18 +600,6 @@ public class ReplayExportJobService {
      */
     void writeSingleExcel(final Battle battle, final OutputStream out) throws IOException {
         ExcelExporter.writeSingle(battle, tankopedia, out);
-    }
-
-    /**
-     * 幂等 enrich：PotentialDamage + 单场表现指标（覆盖式写入）。Processing Job 完成时已
-     * enrich（plan §21/§27）；复用路径再跑一次保证任何来源的 ProcessedDataset 都含权威
-     * facts（Excel 单场/汇总列直接消费），不改变结果。
-     */
-    private void enrichFacts(final List<Battle> battles) {
-        PotentialDamage.apply(battles, tankopedia);
-        for (final Battle battle : battles) {
-            PerformanceMetricsCalculator.populateBattle(battle);
-        }
     }
 
     /** 与 preview/export 完全相同的 authoritative full processing 链（§31，禁止 raw parse 回归）。 */

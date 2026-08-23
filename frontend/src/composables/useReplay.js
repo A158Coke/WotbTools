@@ -17,6 +17,12 @@ const JOB_POLL_MS = 1500
 export function useReplay() {
   const { locale, t, te } = useI18n()
   const files = ref([])
+  /**
+   * 文件选择版本号（review BLOCKER 1）：任何 files 集合变化（add / folder-add / remove /
+   * clear / replace）都会经 updateFiles 自增并失效旧 processingJobId / resp，防止旧 dataset
+   * 被当前 selection 复用；迟到的 READY 轮询响应经 processingPollJobId token 丢弃。
+   */
+  const selectionRevision = ref(0)
   const loading = ref(false)
   const error = ref('')
   const resp = ref(null)
@@ -51,11 +57,43 @@ export function useReplay() {
 
   const processingActive = computed(() => processingJob.value && JOB_ACTIVE.has(processingJob.value.status))
   const exportActive = computed(() => exportJob.value && JOB_ACTIVE.has(exportJob.value.status))
+  /**
+   * 当前展示的 result 是否与当前 files selection 一致（review BLOCKER 1 / export eligibility）：
+   * processingJobId 与 resp 只会在「READY 自动加载」时成对设置、在 updateFiles 时成对清除，
+   * 因此非 null 即代表「当前结果 = 当前文件选择」，可安全复用该 dataset 导出；
+   * 否则 Export 必须走 legacy 上传当前 files 路径，绝不静默导出旧 dataset。
+   */
+  const resultMatchesSelection = computed(() => !!processingJobId.value && !!resp.value)
 
   function buildFormData() {
     const fd = new FormData()
     files.value.forEach(f => fd.append('files', f, displayName(f)))
     return fd
+  }
+
+  /**
+   * 统一的文件集合更新入口（review BLOCKER 1）：任何 files 变化都会使旧解析结果失效——
+   * processingJobId（已 READY 的 dataset）与 resp（已展示的结果）与当前 selection 不再一致，
+   * 必须立即清除，避免「UI 显示 dataset A、files 是 dataset B、Export 复用 A」的静默错数据。
+   *
+   * <p>还在跑的旧 Processing Job 对当前 selection 无意义：停止轮询（token 置 null，迟到
+   * 的 READY/FAILED 响应被丢弃，不覆盖当前 selection）并后台请求协作取消（释放 queue slot / 容量）。</p>
+   *
+   * <p>Export Job 不受影响：它是对用户已确认选择的一次导出快照，继续完成。</p>
+   */
+  function updateFiles(next) {
+    files.value = next
+    selectionRevision.value++
+    processingJobId.value = null
+    resp.value = null
+    activeTab.value = 'aggregate'
+    processingError.value = ''
+    stopProcessingPolling()
+    const job = processingJob.value
+    processingJob.value = null
+    if (job && JOB_ACTIVE.has(job.status)) {
+      api.cancelProcessingJob(job.jobId).catch(() => {})
+    }
   }
 
   // ---- Processing Job 流程 ----
@@ -66,14 +104,28 @@ export function useReplay() {
   }
 
   async function pollProcessingJob(onColumnsInit) {
-    if (!processingPollJobId) return
+    const pollJobId = processingPollJobId
+    if (!pollJobId) return
     try {
-      const data = await api.getProcessingJob(processingPollJobId)
+      const data = await api.getProcessingJob(pollJobId)
+      // review BLOCKER 1 Case B：轮询期间 selection 已变化 / 新 job 已启动
+      // （updateFiles / startProcessingJob 已替换 processingPollJobId）→ 丢弃过期响应，
+      // 绝不让旧 job 的 READY result 覆盖当前 selection。
+      if (processingPollJobId !== pollJobId) {
+        loading.value = false
+        return
+      }
       processingJob.value = data
       if (data.status === 'READY') {
-        const readyJobId = processingPollJobId
+        const readyJobId = pollJobId
+        const revisionAtReady = selectionRevision.value
         stopProcessingPolling()
         const result = await api.getProcessingJobResult(readyJobId)
+        if (selectionRevision.value !== revisionAtReady) {
+          // 拉取 result 期间 files 已变化：丢弃（不展示、不复用），当前 selection 无结果。
+          loading.value = false
+          return
+        }
         // result 与 files 是同一批次（READY 后不再变化）；直接替换 resp。
         resp.value = result
         processingJobId.value = readyJobId
@@ -105,11 +157,19 @@ export function useReplay() {
   async function startProcessingJob(onColumnsInit) {
     if (!files.value.length) { error.value = t('replay.no_files'); return }
     if (processingActive.value) return
+    const revisionAtCreate = selectionRevision.value
     loading.value = true
     error.value = ''
     processingError.value = ''
     try {
       const created = await api.createProcessingJob(buildFormData())
+      if (selectionRevision.value !== revisionAtCreate) {
+        // 创建请求期间 files 已变化：该 job 的输入不再匹配当前 selection——不注册到状态，
+        // 后台取消（其输入由后端 TTL 清理）。
+        api.cancelProcessingJob(created.jobId).catch(() => {})
+        loading.value = false
+        return
+      }
       processingJob.value = {
         jobId: created.jobId,
         status: created.status || 'QUEUED',
@@ -182,8 +242,9 @@ export function useReplay() {
     error.value = ''
     exportError.value = ''
     try {
-      const body = processingJobId.value ? null : buildFormData()
-      const created = await api.createExportJob(body, mode, processingJobId.value || undefined)
+      const reuse = resultMatchesSelection.value
+      const body = reuse ? null : buildFormData()
+      const created = await api.createExportJob(body, mode, reuse ? processingJobId.value : undefined)
       exportJob.value = {
         jobId: created.jobId,
         status: created.status || 'QUEUED',
@@ -252,13 +313,11 @@ export function useReplay() {
     const p = pendingRemove.value
     pendingRemove.value = null
     if (!p) return
-    if (p.type === 'battle') {
-      files.value = files.value.filter(f => displayName(f) !== p.battle.sourceName)
-    } else if (p.type === 'file') {
-      files.value = files.value.filter(f => fileKey(f) !== fileKey(p.file))
-    }
-    if (files.value.length) startProcessingJob(onColumnsInit)
-    else { resp.value = null; activeTab.value = 'aggregate'; processingJobId.value = null }
+    const next = p.type === 'battle'
+      ? files.value.filter(f => displayName(f) !== p.battle.sourceName)
+      : files.value.filter(f => fileKey(f) !== fileKey(p.file))
+    updateFiles(next)
+    if (next.length) startProcessingJob(onColumnsInit)
   }
 
   function confirmRemoveBattle(onColumnsInit) {
@@ -268,6 +327,7 @@ export function useReplay() {
 
   return {
     files, loading, error, resp, playerCols, aggCols, activeTab, aggStats, pendingRemove,
+    updateFiles,
     processingJob, processingError, processingActive, processingJobId,
     exportJob, exportError, exportActive,
     startProcessingJob, cancelProcessingJob, dismissProcessingJob,

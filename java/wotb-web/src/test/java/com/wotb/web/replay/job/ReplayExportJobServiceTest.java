@@ -8,6 +8,9 @@ import com.wotb.core.processing.ReplayProcessingCapabilities;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
+import com.wotb.core.ref.Tankopedia;
+import com.wotb.core.stats.PerformanceMetricsCalculator;
+import com.wotb.core.stats.PotentialDamage;
 import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
@@ -631,6 +634,222 @@ class ReplayExportJobServiceTest {
         }
     }
 
+    // ---- review BLOCKER 2：from-result each 的 valid 语义（processed 与 failures 不得相减）----
+
+    @Test
+    void fromResultEachWithOneValidOneFailureProducesZip() throws Exception {
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-b2-1v1f"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            final String pJobId = readyProcessingJob(processingStore, "proc-1v1f",
+                    List.of(battle("arena-1")), List.of("one.wotbreplay"),
+                    List.<String[]>of(),
+                    List.<String[]>of(new String[]{"bad.wotbreplay", "REPLAY_PROCESSING_FAILED"}));
+
+            final String jobId = service.createJob(null, "each", pJobId);
+            final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+            assertEquals(ExportJob.Status.READY, snap.status(),
+                    "1 valid + 1 failure 必须 READY（validCount > 0 即允许生成 ZIP）");
+            assertEquals(2, snap.processed(), "processed 最终 = valid + failures = 2（不得减 failures）");
+            assertEquals(1, snap.failures(), "failures 只用于终态统计，不影响 valid 判断");
+            assertEquals(List.of("one.xlsx"), zipEntryNames(jobId), "ZIP 只含 1 个有效场 entry");
+            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
+            processingStore.release(pJobId);
+        } finally {
+            deleteDir(processingStore.jobDir("proc-1v1f").getParent());
+        }
+    }
+
+    @Test
+    void fromResultEachWithOneValidTwoFailuresProducesZip() throws Exception {
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-b2-1v2f"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            final String pJobId = readyProcessingJob(processingStore, "proc-1v2f",
+                    List.of(battle("arena-1")), List.of("one.wotbreplay"),
+                    List.<String[]>of(),
+                    List.<String[]>of(new String[]{"b1.wotbreplay", "REPLAY_PROCESSING_FAILED"},
+                            new String[]{"b2.wotbreplay", "REPLAY_PROCESSING_FAILED"}));
+
+            final String jobId = service.createJob(null, "each", pJobId);
+            final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+            assertEquals(ExportJob.Status.READY, snap.status());
+            assertEquals(3, snap.processed());
+            assertEquals(2, snap.failures());
+            assertEquals(List.of("one.xlsx"), zipEntryNames(jobId));
+            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
+            processingStore.release(pJobId);
+        } finally {
+            deleteDir(processingStore.jobDir("proc-1v2f").getParent());
+        }
+    }
+
+    @Test
+    void fromResultEachWithTwoValidFiveFailuresProducesZip() throws Exception {
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-b2-2v5f"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            final String pJobId = readyProcessingJob(processingStore, "proc-2v5f",
+                    List.of(battle("arena-1"), battle("arena-2")),
+                    List.of("one.wotbreplay", "two.wotbreplay"),
+                    List.<String[]>of(),
+                    List.<String[]>of(new String[]{"f1.wotbreplay", "E1"}, new String[]{"f2.wotbreplay", "E2"},
+                            new String[]{"f3.wotbreplay", "E3"}, new String[]{"f4.wotbreplay", "E4"},
+                            new String[]{"f5.wotbreplay", "E5"}));
+
+            final String jobId = service.createJob(null, "each", pJobId);
+            final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+            assertEquals(ExportJob.Status.READY, snap.status());
+            assertEquals(7, snap.processed(), "processed 最终 = 2 valid + 5 failures = 7");
+            assertEquals(5, snap.failures());
+            assertEquals(List.of("one.xlsx", "two.xlsx"), zipEntryNames(jobId), "ZIP 含全部有效场");
+            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
+            processingStore.release(pJobId);
+        } finally {
+            deleteDir(processingStore.jobDir("proc-2v5f").getParent());
+        }
+    }
+
+    @Test
+    void fromResultEachWithZeroValidFailsNoValidReplays() throws Exception {
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-b2-0v"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            final String pJobId = readyProcessingJob(processingStore, "proc-0v",
+                    List.of(), List.of(),
+                    List.<String[]>of(),
+                    List.<String[]>of(new String[]{"bad.wotbreplay", "REPLAY_PROCESSING_FAILED"}));
+
+            final String jobId = service.createJob(null, "each", pJobId);
+            final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+            assertEquals(ExportJob.Status.FAILED, snap.status(), "validCount == 0 必须 NO_VALID_REPLAYS");
+            assertEquals("NO_VALID_REPLAYS", snap.errorCode());
+            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
+            processingStore.release(pJobId);
+        } finally {
+            deleteDir(processingStore.jobDir("proc-0v").getParent());
+        }
+    }
+
+    @Test
+    void fromResultAggregateWithZeroValidFailsNoValidReplays() throws Exception {
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-b2-0v-agg"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            final String pJobId = readyProcessingJob(processingStore, "proc-0v-agg",
+                    List.of(), List.of(),
+                    List.<String[]>of(),
+                    List.<String[]>of(new String[]{"bad.wotbreplay", "REPLAY_PROCESSING_FAILED"}));
+
+            final String jobId = service.createJob(null, "aggregate", pJobId);
+            final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+            assertEquals(ExportJob.Status.FAILED, snap.status());
+            assertEquals("NO_VALID_REPLAYS", snap.errorCode());
+            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
+            processingStore.release(pJobId);
+        } finally {
+            deleteDir(processingStore.jobDir("proc-0v-agg").getParent());
+        }
+    }
+
+    // ---- review BLOCKER 3：from-result Export 只读消费 ProcessedDataset（不再 mutate 共享 Battle）----
+
+    @Test
+    void fromResultExportsDoNotMutateProcessedDataset() throws Exception {
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-b3-nomutate"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            // 未 enrich 的 dataset（模拟创建时 invariant 被满足前的原始 battle）
+            final Battle b = battle("arena-1");
+            b.players.getFirst().damageDealt = 5000;
+            b.players.getFirst().kills = 2;
+            final String pJobId = readyProcessingJob(processingStore, "proc-nomutate",
+                    List.of(b), List.of("one.wotbreplay"),
+                    List.<String[]>of(), List.<String[]>of());
+
+            // aggregate 复用导出 → READY
+            final String aggJob = service.createJob(null, "aggregate", pJobId);
+            assertEquals(ExportJob.Status.READY, awaitTerminal(aggJob, 10_000).status());
+            // each 复用导出 → READY
+            final String eachJob = service.createJob(null, "each", pJobId);
+            assertEquals(ExportJob.Status.READY, awaitTerminal(eachJob, 10_000).status());
+
+            // 关键：共享 Battle 未被 PotentialDamage.apply / populateBattle 修改
+            assertEquals(0, b.players.getFirst().potentialDamage,
+                    "PotentialDamage.apply 不得在 from-result 路径再次执行（damageDealt=5000 会被改写）");
+            assertEquals(null, b.players.getFirst().contribution,
+                    "populateBattle 不得在 from-result 路径再次执行（HP 已知场会回填 contribution）");
+            assertEquals(null, b.players.getFirst().kast);
+            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
+            processingStore.release(pJobId);
+        } finally {
+            deleteDir(processingStore.jobDir("proc-nomutate").getParent());
+        }
+    }
+
+    @Test
+    void fromResultExportPreservesPreEnrichedMetrics() throws Exception {
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-b3-parity"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            // 模拟 Processing Job 创建 dataset 前的 enrich invariant（plan §21/§27）
+            final Battle b = battle("arena-1");
+            b.players.getFirst().damageDealt = 5000;
+            final List<Battle> battles = List.of(b);
+            PotentialDamage.apply(battles, Tankopedia.load());
+            for (final Battle battle : battles) {
+                PerformanceMetricsCalculator.populateBattle(battle);
+            }
+            final int expectedPotential = b.players.getFirst().potentialDamage;
+            assertTrue(expectedPotential == 5000, "测试前置：PotentialDamage 应把 potentialDamage 置为 damageDealt");
+            assertNotNull(b.players.getFirst().contribution, "测试前置：HP 已知场 populateBattle 应回填 contribution");
+            final String pJobId = readyProcessingJob(processingStore, "proc-parity",
+                    battles, List.of("one.wotbreplay"),
+                    List.<String[]>of(), List.<String[]>of());
+
+            final String aggJob = service.createJob(null, "aggregate", pJobId);
+            assertEquals(ExportJob.Status.READY, awaitTerminal(aggJob, 10_000).status());
+            assertEquals(expectedPotential, b.players.getFirst().potentialDamage,
+                    "from-result 导出不得改动已 enrich 的权威 metrics（Preview/Export parity）");
+            assertNotNull(b.players.getFirst().contribution);
+            final String eachJob = service.createJob(null, "each", pJobId);
+            assertEquals(ExportJob.Status.READY, awaitTerminal(eachJob, 10_000).status());
+            assertEquals(expectedPotential, b.players.getFirst().potentialDamage);
+            assertNotNull(b.players.getFirst().contribution);
+            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
+            processingStore.release(pJobId);
+        } finally {
+            deleteDir(processingStore.jobDir("proc-parity").getParent());
+        }
+    }
+
+    /** 构造并注册一个已 READY 的 Processing Job（from-result 复用路径测试用；调用方负责 release）。 */
+    private String readyProcessingJob(final ReplayProcessingJobStore processingStore, final String id,
+                                      final List<Battle> battles, final List<String> names,
+                                      final List<String[]> duplicates, final List<String[]> failures) {
+        final int total = battles.size() + duplicates.size() + failures.size();
+        final ReplayProcessingJob pJob = new ReplayProcessingJob(id, total);
+        pJob.startProcessing();
+        pJob.updateProgress(total, duplicates.size(), failures.size());
+        pJob.markReady(new ProcessedDataset(battles, names, duplicates, failures));
+        processingStore.register(pJob);
+        processingStore.acquireForExport(id);
+        return id;
+    }
     private static Battle battle(final String arenaId) {
         final Battle b = new Battle();
         b.arenaId = arenaId;

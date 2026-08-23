@@ -188,7 +188,7 @@ vi.mock('../composables/useReplay.js', async () => {
       return {
         files, loading, error, resp, activeTab,
         aggStats: computed(() => null),
-        pendingRemove, playerCols, aggCols,
+        pendingRemove, updateFiles: vi.fn(), playerCols, aggCols,
         exportJob: exportJobRef, exportError: ref(''), exportActive: exportActiveRef,
         processingJob: processingJobRef, processingError: ref(''), processingActive: processingActiveRef,
         processingJobId: processingJobIdRef,

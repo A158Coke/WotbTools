@@ -21,7 +21,7 @@ import ReplayTaskCard from './ReplayTaskCard.vue'
 
 const { locale, t } = useI18n()
 const replay = useReplay()
-const { files, loading, error, resp, activeTab, aggStats, pendingRemove,
+const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateFiles,
   processingJob, processingError, processingActive,
   exportJob, exportError, exportActive,
   startProcessingJob, cancelProcessingJob, dismissProcessingJob,
@@ -236,7 +236,7 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
 <template>
   <div class="layout-data-workspace">
     <FileUploader :files="files" :loading="loading" :confirm-remove="!!resp"
-      @update:files="files = $event" @preview="preview" @remove-request="onFileRemoveRequest" />
+      @update:files="updateFiles" @preview="preview" @remove-request="onFileRemoveRequest" />
 
     <p v-if="error" class="error">{{ error }}</p>
 
