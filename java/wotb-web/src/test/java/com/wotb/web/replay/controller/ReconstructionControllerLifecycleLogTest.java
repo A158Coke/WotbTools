@@ -23,6 +23,7 @@ import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -69,6 +70,11 @@ class ReconstructionControllerLifecycleLogTest {
                 workerExecutor, new MapOverviewQueryService(processingFacade), null);
         controllerLogger = (Logger) LoggerFactory.getLogger(ReconstructionController.class);
         appender = new ListAppender<>();
+        // ListAppender.list 默认是普通 ArrayList，append() 无同步：worker 线程并发写
+        // （runAnalysis 在 wotb-ai-review-worker-N 上运行）而测试线程 awaitLogContaining()
+        // 轮询 stream() 时会抛 ConcurrentModificationException。本测试写入量小、轮询读多，
+        // CopyOnWriteArrayList 使并发 add 与迭代都安全，且不改变 lifecycle 语义。
+        appender.list = new CopyOnWriteArrayList<>();
         appender.start();
         controllerLogger.addAppender(appender);
     }
@@ -233,7 +239,11 @@ class ReconstructionControllerLifecycleLogTest {
         final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         while (System.nanoTime() < deadline) {
             final String all = logs();
-            if (all.contains("correlationId=" + correlationId) && all.contains(marker)) {
+            // marker 必须与 correlationId 出现在同一行：全局 contains 会被其他请求的
+            // 同 marker 日志提前满足（如 c1 的 ai_review_finished SUCCESS 抢先 c2），
+            // 导致 countFinished(c2) == 0 的偶发失败。
+            if (all.lines().anyMatch(line ->
+                    line.contains("correlationId=" + correlationId) && line.contains(marker))) {
                 return all;
             }
             Thread.sleep(20);

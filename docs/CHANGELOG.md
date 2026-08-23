@@ -17,6 +17,11 @@
   `blitzkit-references.mjs --emit-portraits` 可重复生成入口。
 
 ### Fixed
+- **ReconstructionControllerLifecycleLogTest 并发稳定性修复（CI deploy test-backend flaky）**：
+  ListAppender.list 默认是普通 ArrayList（append 无同步），runAnalysis 在 AiReviewWorkerExecutor worker 线程并发写日志而测试线程
+awaitLogContaining() 轮询 stream() 时抛 ConcurrentModificationException。改为 CopyOnWriteArrayList（写入量小、轮询读多，适合 COW），
+并把 awaitLogContaining 的等待条件收紧为「marker 与 correlationId 必须同一行」——消除 c1 的 ai_review_finished SUCCESS 行抢先满足
+c2 等待导致的 countFinished(c2)==0 偶发失败。仅改测试基础设施，不改 lifecycle 语义、不吞异常、不加 sleep。
 - **AI Review Grounding Validation 502 修复（P0 production bug，PR #105 回归）**：真实生产复现
   （neptune+SPHT 团队 replay + 真实 DeepSeek）确认「3 次 attempt 全部失败 → AI_REVIEW_GROUNDING_FAILED
   (502)」的根因是 structured envelope 内部 metadata 问题被 validator 当作整次 review 致命错误：
