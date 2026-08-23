@@ -550,7 +550,7 @@
             "progress": "{processed}/{total} processed",
             "phase_processing": "Parsing replays…",
             "phase_excel": "Building Excel…",
-            "phase_archive": "Building ZIP…",
+            "phase_archive": "Exporting per-replay files into ZIP…",
             "duplicates_failures": "{d} duplicate · {f} failed",
             "valid_summary": "{v} valid · {d} duplicate · {f} failed",
             "ready": "Excel ready",

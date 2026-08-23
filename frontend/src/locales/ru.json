@@ -550,7 +550,7 @@
             "progress": "Обработано {processed}/{total}",
             "phase_processing": "Анализ реплеев…",
             "phase_excel": "Формирование Excel…",
-            "phase_archive": "Формирование ZIP…",
+            "phase_archive": "Формирование ZIP по реплеям…",
             "duplicates_failures": "дублей {d} · ошибок {f}",
             "valid_summary": "годных {v} · дублей {d} · ошибок {f}",
             "ready": "Excel готов",

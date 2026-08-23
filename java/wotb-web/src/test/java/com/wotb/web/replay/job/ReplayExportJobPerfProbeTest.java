@@ -32,21 +32,27 @@ class ReplayExportJobPerfProbeTest {
             return;
         }
         System.out.println("\n===== Replay Export Job 性能探针（样本数=" + samples.size() + "）=====");
-        System.out.printf("%-6s %-12s %-14s %-12s %-12s %-10s%n",
-                "N", "totalMs", "replayMs", "xlsxMs", "artifactKB", "perReplayMs");
+        System.out.printf("%-8s %-6s %-12s %-14s %-12s %-12s %-10s%n",
+                "mode", "N", "totalMs", "replayMs", "xlsxMs", "artifactKB", "perReplayMs");
         for (final int n : new int[]{1, 10, 34, 50}) {
-            final Result r = run(n, samples);
-            if (r != null) {
-                System.out.printf("%-6d %-12d %-14d %-12d %-12d %-10.1f%n",
-                        n, r.totalMs, r.replayMs, r.xlsxMs, r.artifactKB, r.perReplayMs);
-            }
+            print(run(n, samples, "aggregate"));
+        }
+        for (final int n : new int[]{34, 50}) {
+            print(run(n, samples, "each"));
         }
     }
 
-    private record Result(long totalMs, long replayMs, long xlsxMs, long artifactKB, double perReplayMs) {
+    private static void print(final Result r) {
+        if (r != null) {
+            System.out.printf("%-8s %-6d %-12d %-14d %-12d %-12d %-10.1f%n",
+                    r.mode, r.n, r.totalMs, r.replayMs, r.xlsxMs, r.artifactKB, r.perReplayMs);
+        }
     }
 
-    private Result run(final int n, final List<byte[]> samples) throws Exception {
+    private record Result(String mode, int n, long totalMs, long replayMs, long xlsxMs, long artifactKB, double perReplayMs) {
+    }
+
+    private Result run(final int n, final List<byte[]> samples, final String mode) throws Exception {
         final Path tmpDir = Files.createTempDirectory("wotb-export-job-perf");
         try (ReplayExportWorkerExecutor executor = new ReplayExportWorkerExecutor(2, 4)) {
             final ExportJobStore store = new ExportJobStore(tmpDir.toString(), 60);
@@ -58,7 +64,7 @@ class ReplayExportJobPerfProbeTest {
                         "application/octet-stream", samples.get(i % samples.size()));
             }
             final long tCreated = System.nanoTime();
-            final String jobId = service.createJob(files, "aggregate");
+            final String jobId = service.createJob(files, mode);
             final long tStarted = tCreated;
             long tExcel = -1;
             long tReady = -1;
@@ -94,7 +100,7 @@ class ReplayExportJobPerfProbeTest {
             final long xlsxMs = (tReady - (tExcel > 0 ? tExcel : tReady)) / 1_000_000;
             final double perReplayMs = (double) totalMs / n;
             store.close();
-            return new Result(totalMs, replayMs, xlsxMs, artifactBytes / 1024, perReplayMs);
+            return new Result(mode, n, totalMs, replayMs, xlsxMs, artifactBytes / 1024, perReplayMs);
         } finally {
             deleteDir(tmpDir);
         }
