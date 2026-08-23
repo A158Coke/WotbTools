@@ -19,10 +19,13 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -146,6 +149,138 @@ class ReplayExportPipelineParityTest {
                         "Excel impact == populateBattle 值 (acc " + accountId + ")");
             }
         }
+    }
+
+    @Test
+    void excelAggregateSummaryMetricsMatchComputeRowsHpKnown() throws Exception {
+        // Case A（aggregate）：HP known 时，「汇总」sheet 的 5 列必须 == compute() 对应 Row 值
+        // （与 API Mapper.toAggregate 同一契约；用真实 fixture 的 full processing Battle）。
+        final byte[] bytes = Files.readAllBytes(fixture());
+        final DefaultReplayProcessingFacade facade = new DefaultReplayProcessingFacade();
+        final Battle b1 = facade.process(new Source("a.wotbreplay", bytes), ReplayProcessingOptions.full()).battle();
+        final Battle b2 = facade.process(new Source("b.wotbreplay", bytes), ReplayProcessingOptions.full()).battle();
+        b2.arenaId = b1.arenaId + "-dup-arena";   // 避免外部去重假设；AggregateSheets 按传入列表直接聚合
+
+        final List<Battle> battles = List.of(b1, b2);
+        final List<PerformanceMetricsCalculator.Row> rows = PerformanceMetricsCalculator.compute(battles);
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ExcelExporter.writeAggregate(battles, List.of("a.wotbreplay", "b.wotbreplay"),
+                List.of(), Tankopedia.load(), out);
+
+        try (Workbook wb = new XSSFWorkbook(new java.io.ByteArrayInputStream(out.toByteArray()))) {
+            final Sheet sheet = wb.getSheet("汇总");
+            assertTrue(sheet != null, "汇总工作簿必须含「汇总」sheet");
+            final int[] idx = aggregateColumnIndexes(sheet.getRow(0));
+            for (int r = 1; r <= sheet.getLastRowNum(); r++) {
+                final Row row = sheet.getRow(r);
+                if (row == null) continue;
+                final long accountId = (long) row.getCell(idx[4]).getNumericCellValue();
+                final PerformanceMetricsCalculator.Row perf = rows.stream()
+                        .filter(x -> x.accountId == accountId).findFirst().orElseThrow();
+                assertEquals(round1(perf.contribution), row.getCell(idx[0]).getNumericCellValue(), 0.001,
+                        "Excel aggregate contribution == compute (acc " + accountId + ")");
+                assertEquals(round1(perf.kast), row.getCell(idx[1]).getNumericCellValue(), 0.001,
+                        "Excel aggregate kast == compute (acc " + accountId + ")");
+                assertEquals(round1(perf.impactValue), row.getCell(idx[2]).getNumericCellValue(), 0.001,
+                        "Excel aggregate impact == compute (acc " + accountId + ")");
+                assertEquals(round1(perf.multiDamageRate), row.getCell(idx[3]).getNumericCellValue(), 0.001,
+                        "Excel aggregate multi_damage_rate == compute (acc " + accountId + ")");
+                assertEquals(perf.tradedDeaths, (int) row.getCell(idx[5]).getNumericCellValue(),
+                        "Excel aggregate traded_deaths == compute (acc " + accountId + ")");
+            }
+        }
+    }
+
+    @Test
+    void excelAggregateSummaryHpUnknownKeepsImpactAndTradedDeaths() throws Exception {
+        // Case B（aggregate）：HP UNKNOWN（hpEligible=false）时，贡献度/KAST/多伤率必须为空单元格，
+        // 但 Impact / 互换击杀 仍必须为数值——防止再次出现「hpEligible=false => 全部 blank」回归。
+        final Battle b1 = battleUnknownHp(1);
+        final Battle b2 = battleUnknownHp(2);
+        final List<Battle> battles = List.of(b1, b2);
+        final List<PerformanceMetricsCalculator.Row> rows = PerformanceMetricsCalculator.compute(battles);
+        assertTrue(rows.stream().allMatch(r -> !r.hpEligible), "夹具必须为 hpEligible=false");
+
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ExcelExporter.writeAggregate(battles, List.of("u1.wotbreplay", "u2.wotbreplay"),
+                List.of(), Tankopedia.load(), out);
+
+        try (Workbook wb = new XSSFWorkbook(new java.io.ByteArrayInputStream(out.toByteArray()))) {
+            final Sheet sheet = wb.getSheet("汇总");
+            final int[] idx = aggregateColumnIndexes(sheet.getRow(0));
+            for (int r = 1; r <= sheet.getLastRowNum(); r++) {
+                final Row row = sheet.getRow(r);
+                if (row == null) continue;
+                // contribution / kast / multi_damage_rate：空单元格（unavailable，不冒充 0）
+                assertNull(cellValue(row, idx[0]), "HP unknown 时贡献度必须为空");
+                assertNull(cellValue(row, idx[1]), "HP unknown 时 KAST 必须为空");
+                assertNull(cellValue(row, idx[3]), "HP unknown 时多伤率必须为空");
+                // impact / traded_deaths：不依赖 HP，仍为数值
+                assertTrue(row.getCell(idx[2]) != null && row.getCell(idx[2]).getCellType() != org.apache.poi.ss.usermodel.CellType.BLANK,
+                        "HP unknown 时 Impact 必须仍为数值");
+                assertTrue(row.getCell(idx[5]) != null && row.getCell(idx[5]).getCellType() != org.apache.poi.ss.usermodel.CellType.BLANK,
+                        "HP unknown 时互换击杀必须仍为数值");
+                assertEquals(round1(rows.stream().filter(x -> x.accountId == (long) row.getCell(idx[4]).getNumericCellValue())
+                                .findFirst().orElseThrow().impactValue),
+                        row.getCell(idx[2]).getNumericCellValue(), 0.001,
+                        "HP unknown 时 Excel impact 必须 == compute 值");
+            }
+        }
+    }
+
+    /** 14 人但 tankId=-1（tankopedia 无 base HP、无 entryHp）→ BattleHpFacts.averageHp incomplete。 */
+    private static Battle battleUnknownHp(final int arenaSuffix) {
+        final Battle battle = new Battle();
+        battle.arenaId = "unknown-hp-" + arenaSuffix;
+        battle.winnerTeam = 1;
+        final List<PlayerResult> players = new ArrayList<>();
+        for (int i = 0; i < 14; i++) {
+            final PlayerResult p = new PlayerResult();
+            p.accountId = i + 1L + arenaSuffix * 100L;
+            p.nickname = "p" + p.accountId;
+            p.team = i < 7 ? 1 : 2;
+            p.tankId = -1;
+            p.damageDealt = 2600 - i * 100;
+            p.kills = 2;
+            players.add(p);
+        }
+        battle.players = players;
+        return battle;
+    }
+
+    /** 汇总表 5 个派生列 + 账号ID 的列 index：[0]=贡献度 [1]=KAST [2]=Impact [3]=多伤率 [4]=账号ID [5]=互换击杀。 */
+    private static int[] aggregateColumnIndexes(final Row header) {
+        final int[] idx = new int[6];
+        java.util.Arrays.fill(idx, -1);
+        for (int c = 0; c < header.getLastCellNum(); c++) {
+            final String title = header.getCell(c).getStringCellValue();
+            if ("贡献度%".equals(title)) idx[0] = c;
+            else if ("KAST%".equals(title)) idx[1] = c;
+            else if ("Impact%".equals(title)) idx[2] = c;
+            else if ("多伤率%".equals(title)) idx[3] = c;
+            else if ("账号ID".equals(title)) idx[4] = c;
+            else if ("互换击杀".equals(title)) idx[5] = c;
+        }
+        for (int i = 0; i < idx.length; i++) {
+            assertTrue(idx[i] >= 0, "汇总表缺少列 index " + i);
+        }
+        return idx;
+    }
+
+    /** 空单元格/空字符串返回 null（ExcelStyles.setCell 对 null 写 ""，等价 API null 语义）。 */
+    private static Object cellValue(final Row row, final int c) {
+        final org.apache.poi.ss.usermodel.Cell cell = row.getCell(c);
+        if (cell == null) return null;
+        return switch (cell.getCellType()) {
+            case BLANK -> null;
+            case NUMERIC -> cell.getNumericCellValue();
+            case STRING -> cell.getStringCellValue().isEmpty() ? null : cell.getStringCellValue();
+            default -> cell.toString();
+        };
+    }
+
+    private static double round1(final double v) {
+        return Math.round(v * 10) / 10.0;
     }
 
 }

@@ -72,7 +72,9 @@ Contribution/KAST/Impact 数值一致（不允许 export 走 raw parse 造成 pr
 
 **HP unavailable 语义**：依赖 HP 的指标（contribution / kast / 多伤率）在 HP 全部 UNKNOWN
 时输出 `null`（单场 `battleMetrics` 直接 null；跨场 `Row.hpEligible=false` 时 null），
-前端统一显示 `--`，绝不冒充真实的 `0`；`impact` 不依赖 HP，恒有数值。
+前端统一显示 `--`，绝不冒充真实的 `0`；`impact` 与 `traded_deaths` 不依赖 HP
+（Impact 公式不使用平均 HP；互换击杀在 `applyPlayer` 的 HP fail-closed early return 之前
+累计），HP UNKNOWN 时仍为数值——API 与 Excel 汇总契约一致。
 
 不再输出任何综合评分（`rating` / `finalRating` / 权重均删除），也不再有独立
 「战斗表现」输出块。
