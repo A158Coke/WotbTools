@@ -67,6 +67,7 @@ public class HundredBattleSubmissionService {
     private static final int MAX_IMAGE_CHARS = 5_500_000;
     private static final int DEFAULT_PAGE_SIZE = 50;
     private static final int MAX_PAGE_SIZE = 100;
+    private static final int DEFAULT_GLOBAL_LEADERBOARD_SIZE = 10;
     private static final int REPLAY_COUNT = 5;
 
     /** 「百场」资格最低场次：管理员最终 approvedBattleCount 必须 ≥ 100（人工审核为最终资格判断）。 */
@@ -278,11 +279,14 @@ public class HundredBattleSubmissionService {
     // ── Phase 5：Public leaderboard ───────────────────────────────────────
 
     /**
-     * 公开排行榜：单车辆独立排行（vehicleId 必传），competition ranking（1,2,2,4），
-     * rank query-time 派生不落库。排序 approvedAverageDamage DESC → approvedAt ASC → id ASC。
+     * 公开排行榜：未选择车辆时返回全站最高 10 条；选择车辆时返回该车独立排行。
+     * rank query-time 派生不落库，排序均为 approvedAverageDamage DESC → approvedAt ASC → id ASC。
      */
     @Transactional(readOnly = true)
-    public HundredLeaderboardPageDto leaderboard(final long vehicleId, final int page, final int size) {
+    public HundredLeaderboardPageDto leaderboard(final Long vehicleId, final int page, final int size) {
+        if (vehicleId == null) {
+            return defaultLeaderboard();
+        }
         final TankInfo vehicle = tankopedia.info(vehicleId);
         if (!(vehicle.tier() instanceof final Integer tier) || tier != 10) {
             throw new IllegalArgumentException("HUNDRED_NON_TIER_X");
@@ -294,9 +298,21 @@ public class HundredBattleSubmissionService {
         return mapper.toLeaderboardPage(rows, vehicleId, vehicle.name(), page, effectiveSize, rankMap(vehicleId));
     }
 
+    /** 未筛选车辆时的默认视图：全站 CURRENT 伤害最高十条，固定首屏且不翻页。 */
+    private HundredLeaderboardPageDto defaultLeaderboard() {
+        final List<HundredBattleSubmission> rows = repository
+                .findTop10ByStatusAndApprovedAverageDamageIsNotNullOrderByApprovedAverageDamageDescApprovedAtAscIdAsc(
+                        "CURRENT");
+        return mapper.toDefaultLeaderboardPage(rows, DEFAULT_GLOBAL_LEADERBOARD_SIZE,
+                rankMap(repository.countAllCurrentGroupedByDamage()));
+    }
+
     /** 全部 CURRENT 按伤害分组计数 → 前缀和 → damage → rank（跨页并列也全局正确）。 */
     private Map<Integer, Integer> rankMap(final long vehicleId) {
-        final List<Object[]> groups = repository.countCurrentGroupedByDamage(vehicleId);
+        return rankMap(repository.countCurrentGroupedByDamage(vehicleId));
+    }
+
+    private static Map<Integer, Integer> rankMap(final List<Object[]> groups) {
         final List<int[]> sorted = groups.stream()
                 .map(g -> new int[]{((Number) g[0]).intValue(), ((Number) g[1]).intValue()})
                 .sorted(Comparator.comparingInt((int[] g) -> g[0]).reversed())

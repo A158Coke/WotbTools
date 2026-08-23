@@ -62,12 +62,11 @@ public interface HallOfFameRecordRepository extends JpaRepository<HallOfFameReco
                                   @Param("nickname") String nicknamePattern,
                                   Pageable pageable);
 
-    /** 管理后台搜索：nickname / accountId / arenaId / uploadedBy / battleType / tankId / replayAvailable。 */
+    /** 管理后台搜索：nickname / accountId / uploadedBy / battleType / tankId / replayAvailable。 */
     @Query("""
             select r from HallOfFameRecord r
             where (:nickname is null or lower(r.nickname) like :nickname)
               and (:accountId is null or r.accountId = :accountId)
-              and (:arenaId is null or r.arenaId = :arenaId)
               and (:uploadedBy is null or r.replayUploadedBy = :uploadedBy)
               and (:battleType is null or r.battleType = :battleType)
               and (:tankId is null or r.tankId = :tankId)
@@ -77,12 +76,20 @@ public interface HallOfFameRecordRepository extends JpaRepository<HallOfFameReco
             """)
     Page<HallOfFameRecord> adminSearch(@Param("nickname") String nickname,
                                        @Param("accountId") Long accountId,
-                                       @Param("arenaId") String arenaId,
                                        @Param("uploadedBy") String uploadedBy,
                                        @Param("battleType") String battleType,
                                        @Param("tankId") Long tankId,
                                        @Param("replayAvailable") Boolean replayAvailable,
                                        Pageable pageable);
+
+    /** 管理筛选车辆：只返回当前名人堂实际存在的车辆，避免无结果选项。 */
+    @Query("""
+            select r.tankId as tankId, min(r.tankName) as tankName
+            from HallOfFameRecord r
+            group by r.tankId
+            order by min(r.tankName), r.tankId
+            """)
+    List<HofAdminVehicleProjection> findAdminVehicleOptions();
 
     /** 引用计数：物理文件清理前确认是否仍有记录引用该 hash。 */
     long countByReplayHash(String replayHash);

@@ -822,6 +822,33 @@ class HundredBattleSubmissionServiceTest {
         assertThat(dto.items()).extracting("rank").containsExactly(2, 2);
     }
 
+    @Test
+    void defaultLeaderboardReturnsGlobalTopTenWithoutVehicleFilter() {
+        final HundredBattleSubmission s4300 = currentSubmission(4300);
+        s4300.setId(1L);
+        final HundredBattleSubmission s4200 = currentSubmission(4200);
+        s4200.setId(2L);
+        s4200.setVehicleId(TIER10_VEHICLE_2);
+        s4200.setVehicleName("B-C 25 t");
+
+        when(repository.findTop10ByStatusAndApprovedAverageDamageIsNotNullOrderByApprovedAverageDamageDescApprovedAtAscIdAsc(
+                eq("CURRENT")))
+                .thenReturn(List.of(s4300, s4200));
+        when(repository.countAllCurrentGroupedByDamage())
+                .thenReturn(List.of(new Object[]{4300, 1L}, new Object[]{4200, 1L}));
+
+        final HundredLeaderboardPageDto dto = service.leaderboard(null, 9, 100);
+
+        assertThat(dto.vehicleId()).isNull();
+        assertThat(dto.vehicleName()).isNull();
+        assertThat(dto.page()).isEqualTo(1);
+        assertThat(dto.size()).isEqualTo(10);
+        assertThat(dto.totalItems()).isEqualTo(2);
+        assertThat(dto.totalPages()).isEqualTo(1);
+        assertThat(dto.items()).extracting("vehicleName").containsExactly("Progetto 65", "B-C 25 t");
+        assertThat(dto.items()).extracting("rank").containsExactly(1, 2);
+    }
+
     // ── Files：创建失败不持久化 ──────────────────────────────────────────
 
     @Test

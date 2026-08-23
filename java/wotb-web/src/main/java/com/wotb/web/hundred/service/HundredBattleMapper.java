@@ -74,6 +74,7 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
                 s.isReplayVehicleMatch(), s.isReplayDistinctBattles(),
                 s.getSubmittedAt(), s.getApprovedAt(), s.getApprovedBy(),
                 s.getRejectedAt(), s.getRejectedBy(), s.getRejectReason(), s.getRejectReasonText(),
+                s.getCancelledAt(),
                 s.getDeletedAt(), s.getDeletedBy(), s.getDeleteReason(), s.getDeleteReasonText());
     }
 
@@ -84,18 +85,34 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
      */
     public HundredLeaderboardPageDto toLeaderboardPage(
             final Page<HundredBattleSubmission> page,
-            final long vehicleId,
+            final Long vehicleId,
             final String vehicleName,
             final int pageNumber,
             final int pageSize,
             final Map<Integer, Integer> rankByDamage) {
-        final List<HundredLeaderboardItemDto> items = page.getContent().stream()
+        final List<HundredLeaderboardItemDto> items = toLeaderboardItems(page.getContent(), rankByDamage);
+        return new HundredLeaderboardPageDto(vehicleId, vehicleName, items,
+                pageNumber, pageSize, page.getTotalElements(), page.getTotalPages());
+    }
+
+    /** 默认视图始终只展示全站最高 10 条，不提供翻页。 */
+    public HundredLeaderboardPageDto toDefaultLeaderboardPage(
+            final List<HundredBattleSubmission> submissions,
+            final int displaySize,
+            final Map<Integer, Integer> rankByDamage) {
+        final List<HundredLeaderboardItemDto> items = toLeaderboardItems(submissions, rankByDamage);
+        return new HundredLeaderboardPageDto(null, null, items,
+                1, displaySize, items.size(), items.isEmpty() ? 0 : 1);
+    }
+
+    private List<HundredLeaderboardItemDto> toLeaderboardItems(
+            final List<HundredBattleSubmission> submissions,
+            final Map<Integer, Integer> rankByDamage) {
+        return submissions.stream()
                 .map(s -> {
                     final int damage = s.getApprovedAverageDamage() == null ? 0 : s.getApprovedAverageDamage();
                     return toLeaderboardItem(s, rankByDamage.get(damage));
                 })
                 .toList();
-        return new HundredLeaderboardPageDto(vehicleId, vehicleName, items,
-                pageNumber, pageSize, page.getTotalElements(), page.getTotalPages());
     }
 }

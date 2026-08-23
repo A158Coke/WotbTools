@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.9",
+    "date": "2026-08-23",
+    "tag": "fix",
+    "zh": "名人堂管理体验完善：单场记录管理页不再要求填写 Arena ID 或车辆 ID，可按国家/系别、车种、等级（均可不选）筛选车辆；百场审核统一先查看详情，被拒绝申请可查看原因和说明，百场默认展示全站最高 10 条。",
+    "en": "Hall of Fame management is easier to use: the single-battle admin page no longer asks for Arena ID or tank ID and offers optional nation/line, vehicle-type and tier filters; 100-battle moderation now opens details first, rejected submissions show their reason and notes, and the default view shows the global top 10.",
+    "ru": "Управление Залом славы стало удобнее: на странице одиночных боёв больше не нужно вводить Arena ID или ID техники, а нация/ветка, тип и уровень техники служат необязательными фильтрами; проверка результатов за 100 боёв сначала открывает подробности, для отклонённых заявок видны причина и пояснение, а по умолчанию показан глобальный топ-10."
+  },
+  {
     "v": "2.12.8",
     "date": "2026-08-23",
     "tag": "fix",

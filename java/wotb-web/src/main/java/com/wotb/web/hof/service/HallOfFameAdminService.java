@@ -1,11 +1,16 @@
 package com.wotb.web.hof.service;
 
+import com.wotb.core.model.TankInfo;
+import com.wotb.core.ref.Tankopedia;
+import com.wotb.core.ref.VehicleCodes;
 import com.wotb.web.hof.dto.HofAdminAuditPageDto;
 import com.wotb.web.hof.dto.HofAdminPageDto;
+import com.wotb.web.hof.dto.HofAdminVehicleOptionDto;
 import com.wotb.web.hof.entity.HallOfFameAdminLog;
 import com.wotb.web.hof.entity.HallOfFameRecord;
 import com.wotb.web.hof.repository.HallOfFameAdminLogRepository;
 import com.wotb.web.hof.repository.HallOfFameRecordRepository;
+import com.wotb.web.hof.repository.HofAdminVehicleProjection;
 import com.wotb.web.hof.storage.HallOfFameReplayStorage;
 import com.wotb.web.hundred.service.HundredReplayEvidenceService;
 import com.wotb.web.util.JwtUtil;
@@ -18,9 +23,12 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.util.List;
 
 /**
  * 名人堂管理后台（HoF-admin / wotbtools-admin）。
@@ -42,6 +50,7 @@ public class HallOfFameAdminService {
     private final ReplayHashLock replayHashLock;
     private final HundredReplayEvidenceService hundredEvidenceService;
     private final TransactionTemplate transactionTemplate;
+    private final Tankopedia tankopedia = Tankopedia.load();
 
     public HallOfFameAdminService(final HallOfFameRecordRepository repository,
                                   final HallOfFameRecordMapper recordMapper,
@@ -61,8 +70,8 @@ public class HallOfFameAdminService {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    /** 管理列表：nickname / accountId / arenaId / uploadedBy / battleType / tankId / replayAvailable 组合搜索。 */
-    public HofAdminPageDto search(final String nickname, final Long accountId, final String arenaId,
+    /** 管理列表：nickname / accountId / uploadedBy / battleType / tankId / replayAvailable 组合搜索。 */
+    public HofAdminPageDto search(final String nickname, final Long accountId,
                                   final String uploadedBy, final String battleType, final Long tankId,
                                   final Boolean replayAvailable, final String sort,
                                   final int page, final int size) {
@@ -71,9 +80,26 @@ public class HallOfFameAdminService {
         final String nicknamePattern = StringUtils.hasText(nickname)
                 ? "%" + nickname.trim().toLowerCase() + "%" : null;
         final Page<HallOfFameRecord> records = repository.adminSearch(
-                nicknamePattern, accountId, normalize(arenaId), normalize(uploadedBy),
+                nicknamePattern, accountId, normalize(uploadedBy),
                 normalizeBattleType(battleType), tankId, replayAvailable, pageable);
         return recordMapper.toAdminPageDto(records, page, size);
+    }
+
+    /** 当前名人堂实际存在的车辆选项，车辆属性统一为 API 稳定英文码。 */
+    @Transactional(readOnly = true)
+    public List<HofAdminVehicleOptionDto> vehicleOptions() {
+        return repository.findAdminVehicleOptions().stream()
+                .map(this::toVehicleOption)
+                .toList();
+    }
+
+    private HofAdminVehicleOptionDto toVehicleOption(final HofAdminVehicleProjection row) {
+        final TankInfo info = tankopedia.info(row.getTankId());
+        final String name = info.name().startsWith("#") && StringUtils.hasText(row.getTankName())
+                ? row.getTankName() : info.name();
+        final Integer tier = info.tier() instanceof Number value ? value.intValue() : null;
+        return new HofAdminVehicleOptionDto(row.getTankId(), name,
+                VehicleCodes.nationCode(info.nation()), VehicleCodes.classCode(info.type()), tier);
     }
 
     /** 操作审计（只读，第一版 DELETE_ENTRY）。 */

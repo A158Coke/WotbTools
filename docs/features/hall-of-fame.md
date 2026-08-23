@@ -30,12 +30,14 @@
   - `GET /api/hof`（统一公开查询，匿名）
   - `POST /api/hof/upload`（上传回放，需登录）
   - `GET /api/hof/{id}/replay`（下载回放，需登录）
-  - `GET /api/admin/hof`（admin 列表：nickname/accountId/arenaId/uploadedBy/battleType/tankId/replayAvailable/sort=damage|battle_time|upload_time/分页 20/50/100）
+  - `GET /api/admin/hof`（admin 列表：nickname/accountId/uploadedBy/battleType/tankId/replayAvailable/sort=damage|battle_time|upload_time/分页 20/50/100；不返回 `arenaId` 或原始 `arenaBonusType`）
+  - `GET /api/admin/hof/vehicle-options`（当前名人堂已有车辆的 `tankId`、名称、国家/系别、车种、等级；国家/车种为稳定英文枚举）
   - `GET /api/admin/hof/audit`（admin 操作日志，只读）
   - `GET /api/admin/hof/{id}/replay`（admin 下载，复用统一机制）
   - `DELETE /api/admin/hof/{id}`（hard delete，需二次确认）
   - 旧 `/api/leaderboard/**` 全部移除；前端 `?view=leaderboard` → canonicalize 为 `?view=hof`。
 - **Admin 安全**：`/api/admin/hof/**` 要求 `HoF-admin` 或 `wotbtools-admin`（`SecurityConfig` 中置于 `ADMIN_PATTERN` 之前；HoF-admin 只管理名人堂，不能访问 `/api/admin/users/**`、`/api/admin/boost/**` 等其他 admin 域）。角色由 Keycloak Admin Console 授予（本仓库仅 realm JSON provision，无授予 UI）。wotbtools-admin 自动拥有全部 HoF admin 权限。
+- **单场管理筛选**：`arena_id` 与 raw `arena_bonus_type` 继续保留在记录和审计快照中，供去重与追溯，但不作为业务管理页面的展示或筛选项。国家/系别、车种、等级都是可选条件，只用于收窄车辆名称候选；未选择时仍列出全部已有车辆，最终查询只提交选中的 `tankId`。
 - **Admin hard delete**：真实 hard delete（无 soft delete / tombstone / blocklist）。**audit + record delete 单事务**（`BEGIN → validate → audit snapshot(DELETE_ENTRY) → delete record → COMMIT`；audit 失败 → 记录不删；删除失败 → 无假审计）。commit 后：`replay_hash` 非空且无其他记录引用 → 删除 `{sha256}.wotbreplay`；仍有引用 → 保留；清理失败 → 仅 WARN（orphan 保留，不回滚已 commit 的删除）。删除后同一回放未来可重新上传（正常校验后重新 SAVED）。审计快照保存 timestamp / admin sub+username / action / recordId / arenaId / accountId / nickname / tankId / tankName / damage / battleType / arenaBonusType / replayHash（record 删除后原记录已不存在，不能只存 record_id FK）。第一版无 audit retention / cleanup scheduler。
 - **备份决策**：回放文件为 **best-effort 可丢数据**——数据库备份（`postgres-backup.sh`）只备份 metadata，不备份文件；VPS 损坏/迁移后可能出现下载 404（tolerance 设计）。
 - **解析边界**：最多 100 个回放、单文件 20 MiB、总请求 200 MiB；单实例默认同时处理 2 个任务。容量满返回 503 `REPLAY_BUSY`。
@@ -81,7 +83,7 @@
 
 | 端点 | 权限 | 说明 |
 |---|---|---|
-| `GET /api/hof/hundred?vehicleId=&page=&size=` | 匿名 | 单车辆独立排行榜（competition ranking 1,2,2,4，query-time 派生） |
+| `GET /api/hof/hundred?vehicleId=&page=&size=` | 匿名 | `vehicleId` 可选：缺省为全站 CURRENT 最高 10 条（固定不翻页）；传入时为单车辆独立排行榜（competition ranking 1,2,2,4，query-time 派生） |
 | `POST /api/hof/hundred/submissions` | 登录 | multipart 提交（vehicleId/averageDamage/battleCount/screenshot/replays×5） |
 | `POST /api/hof/hundred/submissions/{id}/cancel` | 登录（本人） | 用户撤销 PENDING |
 | `GET /api/users/hundred/status` | 登录 | 个人中心：CURRENT / PENDING / 最近拒绝 |
@@ -92,3 +94,9 @@
 | `POST /api/admin/hof/hundred/submissions/{id}/approve` | 同上 | 通过（approved 值可修正） |
 | `POST /api/admin/hof/hundred/submissions/{id}/reject` | 同上 | 拒绝（原因强制） |
 | `POST /api/admin/hof/hundred/submissions/{id}/delete` | 同上 | 删除 CURRENT（原因强制，不恢复 SUPERSEDED） |
+
+## 页面交互约定
+
+- 公开「百场」页默认不选车辆，标签为“默认”，展示全站当前最高 10 条并显示车辆名；选择具体车辆后才进入该车的独立分页排行榜。
+- 国家/系别与车种是**可选的车辆候选筛选**，仅缩小随后可选的 Tier X 车辆；未选它们时仍可直接从完整 Tier X 车辆列表选择。百场仅支持 Tier X，因此不另设等级筛选。
+- 管理后台列表对 PENDING / CURRENT / REJECTED / SUPERSEDED / CANCELLED / DELETED 一律只提供“详情”入口。通过、拒绝、删除只能在详情内触发；REJECTED 详情必须展示拒绝分类、说明和时间，CANCELLED / DELETED 也保留可审计的终态信息。

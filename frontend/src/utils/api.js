@@ -105,7 +105,7 @@ async function hofAdminRequest(url, options = {}) {
   return r
 }
 
-/** 管理列表：nickname / accountId / arenaId / uploadedBy / battleType / tankId / replayAvailable / sort / 分页。 */
+/** 管理列表：nickname / accountId / uploadedBy / battleType / tankId / replayAvailable / sort / 分页。 */
 export async function hofAdminList(params = {}) {
   const qs = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {
@@ -113,6 +113,12 @@ export async function hofAdminList(params = {}) {
   }
   const q = qs.toString()
   const r = await hofAdminRequest(`/api/admin/hof${q ? '?' + q : ''}`)
+  return r.json()
+}
+
+/** 管理筛选车辆：只返回当前名人堂已有车辆的业务可读属性。 */
+export async function hofAdminVehicleOptions() {
+  const r = await hofAdminRequest('/api/admin/hof/vehicle-options')
   return r.json()
 }
 
@@ -179,7 +185,7 @@ async function hofAuthRequest(url, options = {}) {
   return r
 }
 
-/** 百场公开排行榜（匿名）：vehicleId 必传，单车辆独立排行。 */
+/** 百场公开排行榜（匿名）：vehicleId 可选；缺省时返回全站当前最高 10 条。 */
 export async function hofHundredList(params = {}) {
   const qs = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {

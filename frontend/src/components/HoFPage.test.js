@@ -243,6 +243,44 @@ describe('HoFPage', () => {
     expect(wrapper.text()).toContain('Player2')
   })
 
+  it('loads the global top-ten default view without a vehicle filter', async () => {
+    lbApi.hofHundredList.mockResolvedValue({
+      vehicleId: null,
+      vehicleName: null,
+      items: [{
+        id: 21, rank: 1, vehicleId: 385, vehicleName: 'Progetto 65', nickname: 'GlobalTop',
+        approvedAverageDamage: 4800, approvedBattleCount: 200, approvedAt: '2024-07-01T00:00:00Z'
+      }],
+      page: 1, size: 10, totalItems: 1, totalPages: 1
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    await wrapper.findAll('.tabs button')[1].trigger('click')
+    await flushPromises()
+
+    expect(lbApi.hofHundredList).toHaveBeenLastCalledWith({ page: 1, size: 50 })
+    expect(wrapper.find('.h100-vehicle-select option').text()).toBe('hundred.default')
+    expect(wrapper.text()).toContain('Progetto 65')
+    expect(wrapper.text()).toContain('GlobalTop')
+  })
+
+  it('keeps nation and vehicle-type filters optional while narrowing vehicle choices', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    await wrapper.findAll('.tabs button')[1].trigger('click')
+    await flushPromises()
+
+    const filters = wrapper.findAll('.h100-filter select')
+    expect(filters).toHaveLength(2)
+    expect(filters[0].find('option').text()).toBe('hundred.allNations')
+    expect(filters[1].find('option').text()).toBe('hundred.allVehicleTypes')
+
+    await filters[0].setValue('European')
+    await flushPromises()
+    expect(lbApi.hofHundredList).toHaveBeenLastCalledWith({ page: 1, size: 50 })
+    expect(wrapper.find('.h100-vehicle-select').findAll('option').length).toBeGreaterThan(1)
+  })
+
   it('submit modal blocks empty form with required-field error', async () => {
     const wrapper = mountPage()
     await flushPromises()
