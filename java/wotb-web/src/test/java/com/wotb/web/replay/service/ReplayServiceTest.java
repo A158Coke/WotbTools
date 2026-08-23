@@ -7,7 +7,7 @@ import com.wotb.core.processing.ReplayProcessingCapabilities;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
-import com.wotb.web.replay.dto.RatingResponse;
+import com.wotb.web.replay.dto.PerformanceResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -67,18 +67,18 @@ class ReplayServiceTest {
     }
 
     @Test
-    void ratingUsesFullProcessingToPopulateEntryHp() throws Exception {
+    void performanceUsesFullProcessingToPopulateEntryHp() throws Exception {
         final DefaultReplayProcessingFacade processingFacade = mock(DefaultReplayProcessingFacade.class);
         final Battle battle = new Battle();
-        battle.arenaId = "rating-battle";
+        battle.arenaId = "performance-battle";
         battle.players = List.of(player(1L, 1), player(2L, 2));
         when(processingFacade.process(any(), eq(ReplayProcessingOptions.full()))).thenReturn(
-                new ReplayProcessingResult("rating.wotbreplay", ReplayProcessingStatus.SUCCESS,
+                new ReplayProcessingResult("performance.wotbreplay", ReplayProcessingStatus.SUCCESS,
                         null, battle, null, null,
                         ReplayProcessingCapabilities.summaryOnly(false), null, null));
         final ReplayService service = new ReplayService(new ReplayCapacityLimiter(1), processingFacade, null);
 
-        final RatingResponse response = service.ratingLeaderboard(new MultipartFile[]{ratingFile()});
+        final PerformanceResponse response = service.performanceLeaderboard(new MultipartFile[]{ratingFile()});
 
         assertEquals(2, response.rows().size());
         verify(processingFacade).process(any(), eq(ReplayProcessingOptions.full()));

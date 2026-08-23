@@ -4,7 +4,7 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.replay.evidence.EntryHpSource;
-import com.wotb.core.stats.RatingAnalyzer;
+import com.wotb.core.stats.PerformanceMetricsCalculator;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -13,7 +13,10 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class RatingAnalyzerTest {
+class PerformanceMetricsCalculatorTest {
+
+    /** 测试默认用真实车辆（Kranvagn 4481，tankopedia base 2400），保证场均 HP 可判定。 */
+    private static final long DEFAULT_TANK_ID = 4481L;
 
     @Test
     void kastUsesBestSingleBattleContribution() {
@@ -26,14 +29,15 @@ class RatingAnalyzerTest {
                 player(4, 2, 0, 0, 0, false, 103, 1000)
         );
 
-        final List<RatingAnalyzer.Row> rows = RatingAnalyzer.compute(List.of(battle), Tankopedia.load());
-        final RatingAnalyzer.Row traded = row(rows, 1);
+        final List<PerformanceMetricsCalculator.Row> rows =
+                PerformanceMetricsCalculator.compute(List.of(battle));
+        final PerformanceMetricsCalculator.Row traded = row(rows, 1);
 
         assertEquals(100.0, traded.kast, 0.01);
     }
 
     @Test
-    void ratingUsesPotentialAssistInfluenceMultiDamageAndKills() {
+    void metricsExposePotentialAssistImpactAndMultiDamageWithoutCompositeRating() {
         final Battle battle = new Battle();
         battle.winnerTeam = 1;
         battle.players = List.of(
@@ -43,16 +47,17 @@ class RatingAnalyzerTest {
                 player(4, 2, 200, 0, 0, true, 0, 0)
         );
 
-        final List<RatingAnalyzer.Row> rows = RatingAnalyzer.compute(List.of(battle), Tankopedia.load());
-        final RatingAnalyzer.Row carry = row(rows, 1);
-        final RatingAnalyzer.Row low = row(rows, 2);
+        final List<PerformanceMetricsCalculator.Row> rows =
+                PerformanceMetricsCalculator.compute(List.of(battle));
+        final PerformanceMetricsCalculator.Row carry = row(rows, 1);
+        final PerformanceMetricsCalculator.Row low = row(rows, 2);
 
         assertEquals(400.0, carry.assistAvg, 0.01);
         assertEquals(100.0, carry.kast, 0.1);
         assertTrue(carry.impact.endsWith("%"));
         assertEquals(100.0, carry.multiDamageRate, 0.01);
         assertTrue(carry.impactValue > low.impactValue);
-        assertTrue(carry.rating > low.rating);
+        assertTrue(carry.contribution > low.contribution);
     }
 
     @Test
@@ -68,7 +73,8 @@ class RatingAnalyzerTest {
                 player(4, 2, 200, 0, 0, true, 0, 0)
         );
 
-        final List<RatingAnalyzer.Row> rows = RatingAnalyzer.compute(List.of(battle), Tankopedia.load());
+        final List<PerformanceMetricsCalculator.Row> rows =
+                PerformanceMetricsCalculator.compute(List.of(battle));
 
         assertEquals("1", row(rows, 1).nickname);
     }
@@ -91,13 +97,35 @@ class RatingAnalyzerTest {
 
         final double expected = (2600.0 + 6.0 * tankopedia.info(4481L).maxHp()
                 + 7.0 * tankopedia.info(19217L).maxHp()) / 14.0;
-        final List<RatingAnalyzer.Row> rows = RatingAnalyzer.compute(List.of(battle), tankopedia);
+        final List<PerformanceMetricsCalculator.Row> rows =
+                PerformanceMetricsCalculator.compute(List.of(battle));
 
         assertEquals(expected, row(rows, 1L).averageHp, 0.01);
         assertEquals(expected, row(rows, 8L).averageHp, 0.01);
     }
 
-    private static RatingAnalyzer.Row row(final List<RatingAnalyzer.Row> rows, final long accountId) {
+    @Test
+    void unknownHpFailsClosedToZeroAverageAndNoMultiDamage() {
+        final Battle battle = new Battle();
+        battle.winnerTeam = 1;
+        battle.players = List.of(
+                player(1, 1, 2600, 400, 2, true, 0, 0),
+                player(2, 2, 600, 0, 0, false, 120, 1000)
+        );
+        for (final PlayerResult p : battle.players) {
+            p.tankId = -1; // 无 tankopedia base、无 entryHp → HP unknown
+        }
+
+        final List<PerformanceMetricsCalculator.Row> rows =
+                PerformanceMetricsCalculator.compute(List.of(battle));
+
+        final PerformanceMetricsCalculator.Row carry = row(rows, 1);
+        assertEquals(0.0, carry.averageHp, 0.01);
+        assertEquals(0.0, carry.multiDamageRate, 0.01, "HP 未知时不得猜测多伤");
+    }
+
+    private static PerformanceMetricsCalculator.Row row(
+            final List<PerformanceMetricsCalculator.Row> rows, final long accountId) {
         return rows.stream().filter(r -> r.accountId == accountId).findFirst().orElseThrow();
     }
 
@@ -114,7 +142,7 @@ class RatingAnalyzerTest {
         player.accountId = accountId;
         player.nickname = "p" + accountId;
         player.team = team;
-        player.tankId = -1;
+        player.tankId = DEFAULT_TANK_ID;
         player.damageDealt = damage;
         player.damageAssisted = assist;
         player.kills = kills;

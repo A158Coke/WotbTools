@@ -18,13 +18,8 @@ export async function downloadBlob(mode, body) {
   return { blob, disposition: cd }
 }
 
-export async function ratingLeaderboard(body) {
-  const r = await requireOk(await fetch('/api/rating', { method: 'POST', body }))
-  return r.json()
-}
-
-export async function ratingConfig() {
-  const r = await requireOk(await fetch('/api/rating'))
+export async function performanceLeaderboard(body) {
+  const r = await requireOk(await fetch('/api/performance', { method: 'POST', body }))
   return r.json()
 }
 

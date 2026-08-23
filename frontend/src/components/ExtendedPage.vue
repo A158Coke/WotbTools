@@ -12,16 +12,16 @@ const loading = ref(false)
 const LOCALIZED_VALUE_KEYS = new Set(['tank_type', 'tank_nation', 'potential_damage_detail'])
 const error = ref('')
 const previewResp = ref(null)
-const ratingResp = ref(null)
+const performanceResp = ref(null)
 const activeBattle = ref(0)
 const sortState = ref({})
 
 const battles = computed(() => previewResp.value?.battles || [])
 const currentBattle = computed(() => battles.value[activeBattle.value] || null)
 const playerCols = computed(() => previewResp.value?.playerColumns || [])
-const ratingCols = computed(() => ratingResp.value?.ratingColumns || [])
-const duplicateRows = computed(() => [...tagRows('preview', previewResp.value?.duplicates), ...tagRows('rating', ratingResp.value?.duplicates)])
-const failureRows = computed(() => [...tagRows('preview', previewResp.value?.failures), ...tagRows('rating', ratingResp.value?.failures)])
+const performanceCols = computed(() => performanceResp.value?.performanceColumns || [])
+const duplicateRows = computed(() => [...tagRows('preview', previewResp.value?.duplicates), ...tagRows('performance', performanceResp.value?.duplicates)])
+const failureRows = computed(() => [...tagRows('preview', previewResp.value?.failures), ...tagRows('performance', performanceResp.value?.failures)])
 
 function tagRows(scope, rows) {
   return (rows || []).map(r => ({ scope, name: r[0], detail: r[1] }))
@@ -33,7 +33,7 @@ function addFiles(list) {
   picked.forEach(f => byKey.set(fileKey(f), f))
   files.value = Array.from(byKey.values()).sort((a, b) => displayName(a).localeCompare(displayName(b)))
   previewResp.value = null
-  ratingResp.value = null
+  performanceResp.value = null
   activeBattle.value = 0
   error.value = ''
 }
@@ -55,7 +55,7 @@ function formData() {
 function clearFiles() {
   files.value = []
   previewResp.value = null
-  ratingResp.value = null
+  performanceResp.value = null
   activeBattle.value = 0
   error.value = ''
 }
@@ -77,7 +77,7 @@ async function runPreview() {
   }
 }
 
-async function runRating() {
+async function runPerformance() {
   if (!files.value.length) {
     error.value = t('extended.no_files')
     return
@@ -85,7 +85,7 @@ async function runRating() {
   loading.value = true
   error.value = ''
   try {
-    ratingResp.value = await api.ratingLeaderboard(formData())
+    performanceResp.value = await api.performanceLeaderboard(formData())
   } catch (e) {
     error.value = apiErrorLabel(t, te, e)
   } finally {
@@ -151,7 +151,7 @@ function arrow(scope, key) {
       </label>
       <button class="ghost" :disabled="loading || !files.length" @click="clearFiles">{{ $t('upload.clear') }}</button>
       <button :disabled="loading || !files.length" @click="runPreview">{{ $t('extended.preview') }}</button>
-      <button :disabled="loading || !files.length" @click="runRating">{{ $t('extended.rating') }}</button>
+      <button :disabled="loading || !files.length" @click="runPerformance">{{ $t('extended.performance') }}</button>
       <span class="muted">{{ files.length ? $t('upload.files_count', { count: files.length }) : $t('extended.empty') }}</span>
       <span v-if="loading" class="muted">{{ $t('action.processing') }}</span>
     </section>
@@ -172,18 +172,18 @@ function arrow(scope, key) {
       <span v-for="(f, i) in failureRows" :key="`fail-${i}`">[{{ $t(`extended.scope_${f.scope}`) }}] {{ f.name }}<template v-if="f.detail"> — {{ f.detail }}</template></span>
     </section>
 
-    <section v-if="ratingResp?.rows?.length" class="panel">
-      <h2>{{ $t('extended.rating_title') }}</h2>
+    <section v-if="performanceResp?.rows?.length" class="panel">
+      <h2>{{ $t('extended.performance_title') }}</h2>
       <div class="tablewrap">
         <table>
           <thead><tr>
-            <th v-for="c in ratingCols" :key="c.key" @click="setSort('rating', c.key, c.num)">
-              {{ label('rating_labels', c.key) }}{{ arrow('rating', c.key) }}
+            <th v-for="c in performanceCols" :key="c.key" @click="setSort('performance', c.key, c.num)">
+              {{ label('performance_labels', c.key) }}{{ arrow('performance', c.key) }}
             </th>
           </tr></thead>
           <tbody>
-            <tr v-for="(row, i) in sorted(ratingResp.rows, 'rating')" :key="i">
-              <td v-for="c in ratingCols" :key="c.key" :class="{ num: c.num }">{{ row.cells[c.key] }}</td>
+            <tr v-for="(row, i) in sorted(performanceResp.rows, 'performance')" :key="i">
+              <td v-for="c in performanceCols" :key="c.key" :class="{ num: c.num }">{{ row.cells[c.key] }}</td>
             </tr>
           </tbody>
         </table>

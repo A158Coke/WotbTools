@@ -166,9 +166,9 @@ public class WebApiTest {
     }
 
     @Test
-    void ratingEndpointReturnsRealtimeLeaderboard() throws Exception {
+    void performanceEndpointReturnsRealtimeLeaderboard() throws Exception {
         final List<Path> files = replays();
-        var req = multipart("/api/rating");
+        var req = multipart("/api/performance");
         for (final Path p : files) {
             req = req.file(file(p));
         }
@@ -182,7 +182,7 @@ public class WebApiTest {
         assertEquals(1, n.get("duplicates").size());
         assertTrue(n.get("rows").size() >= 14);
         final JsonNode cells = n.get("rows").get(0).get("cells");
-        assertTrue(cells.has("rating"));
+        assertFalse(cells.has("rating"), "不得再输出 Rating 综合评分");
         assertTrue(cells.has("kast"));
         assertTrue(cells.has("contribution"));
         assertTrue(cells.has("impact"));
@@ -191,6 +191,8 @@ public class WebApiTest {
         assertTrue(cells.has("damage_avg"));
         assertTrue(cells.has("potential_damage_avg"));
         assertTrue(cells.has("potential_damage_supplement_avg"));
+        assertTrue(cells.has("survival_rate"));
+        assertTrue(cells.has("traded_deaths"));
         assertTrue(cells.has("kills"));
         assertFalse(cells.has("average_hp"));
         assertFalse(cells.has("account_id"));

@@ -1,8 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RATING_KEYS, ratingTier, medal, fmtDuration } from '../utils/helpers.js'
-import poopUrl from '../assets/poop.png'
+import { fmtDuration } from '../utils/helpers.js'
 
 const { t } = useI18n()
 const props = defineProps({ aggregate: Array, shownCols: Array, aggStats: Object })
@@ -37,7 +36,6 @@ function arrow(key) {
     <div v-if="aggStats" class="mcards">
       <div class="mc"><div class="k">{{ $t('metric.battles') }}</div><div class="v">{{ aggStats.battles }}</div></div>
       <div class="mc"><div class="k">{{ $t('metric.players') }}</div><div class="v">{{ aggStats.players }}</div></div>
-      <div class="mc"><div class="k">{{ $t('metric.max_rating') }}</div><div class="v">{{ aggStats.maxRating }}</div></div>
       <div class="mc"><div class="k">{{ $t('metric.max_damage') }}</div><div class="v">{{ aggStats.maxDmg }}</div></div>
     </div>
     <div class="tablewrap">
@@ -48,8 +46,7 @@ function arrow(key) {
         <tbody>
           <tr v-for="(row, i) in sorted" :key="i" :class="row.team === 1 ? 't1' : 't2'">
             <td v-for="c in shownCols" :key="c.key">
-              <span v-if="RATING_KEYS.has(c.key)" class="rbadge" :class="ratingTier(row.cells[c.key])">{{ row.cells[c.key] }}<span class="medal"><template v-if="medal(aggregate, c.key, row.cells[c.key]) === 'first'"> 🥇</template><img v-else-if="medal(aggregate, c.key, row.cells[c.key]) === 'last'" class="poop" :src="poopUrl" alt="倒数"></span></span>
-              <span v-else-if="c.key === 'survival_avg'">{{ fmtDuration(row.cells[c.key], t) }}</span>
+              <span v-if="c.key === 'survival_avg'">{{ fmtDuration(row.cells[c.key], t) }}</span>
               <span v-else>{{ row.cells[c.key] }}</span>
             </td>
           </tr>
