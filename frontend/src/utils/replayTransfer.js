@@ -9,6 +9,11 @@ export function setPendingReplayFiles(files, mode) {
   pending = { files, mode }
 }
 
+/** 只读窥视（未登录回跳前不消费，登录后仍可接管）。 */
+export function peekPendingReplayFiles() {
+  return pending
+}
+
 /** 取走并清空（消费语义，防止 onActivated 重复接管）。 */
 export function takePendingReplayFiles() {
   const p = pending

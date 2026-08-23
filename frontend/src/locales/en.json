@@ -3,6 +3,7 @@
         "title": "WoTBTools",
         "subtitle": "Replay parsing · Hall of Fame · Live rating · AI tactical review",
         "replay_tab": "Replay",
+        "analysis_tab": "Battle Analysis",
         "theme": "Theme",
         "login": "Login",
         "profile": "Profile",
@@ -546,6 +547,7 @@
         "export_failed": "Export failed",
         "png_export_failed": "PNG export failed",
         "png_exporting": "Exporting PNG…",
+        "login_required_for_battle": "Battle Replay / AI Review require sign-in. Please re-select your replay after signing in.",
         "export_job": {
             "title": "Exporting battle data",
             "queued": "Preparing export…",

@@ -81,6 +81,7 @@ const state = vi.hoisted(() => {
   let _error
   let _loading
   let _locale
+  let _files
   let _fns
 
   function setActiveTab(val) {
@@ -101,13 +102,13 @@ const state = vi.hoisted(() => {
 
   return {
     // Store ref once created
-    capture: (r) => { _activeTab = r.activeTab; _resp = r.resp; _error = r.error; _loading = r.loading; _locale = r.locale },
+    capture: (r) => { _activeTab = r.activeTab; _resp = r.resp; _error = r.error; _loading = r.loading; _locale = r.locale; _files = r.files },
     captureFns: (fns) => { _fns = fns },
     get replay() { return _fns || {} },
     clear: () => { _activeTab = null; _resp = null; _error = null; _loading = null; _locale = null },
     setActiveTab, setResp, setError, setLoading, setLocale,
     // Default initial values
-    init: { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en' },
+    init: { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en', files: [] },
   }
 })
 
@@ -157,6 +158,7 @@ vi.mock('../composables/useReplay.js', async () => {
         error.value = state.init.error
         loading.value = state.init.loading
         localeRef.value = state.init.locale
+        files.value = state.init.files || []
       }
       state.capture({ activeTab, resp, error, loading, locale: localeRef })
       state.init = null
@@ -212,10 +214,17 @@ function makeResp(overrides = {}) {
   }
 }
 
-function mountPage() {
+function mountPage(overrides = {}) {
+  const auth = overrides.auth || { authenticated: true, login: vi.fn() }
+  const navigate = overrides.navigate || vi.fn()
   return mount(ReplayPage, {
     global: {
       mocks: { $t: i18n.t },
+      provide: {
+        navigate,
+        isAuthenticated: () => auth.authenticated,
+        login: auth.login,
+      },
       stubs: {
         FileUploader: { template: '<div class="file-uploader-stub" />' },
         ColumnPicker: { template: '<div class="col-picker-stub" />' },
@@ -741,5 +750,113 @@ describe('ReplayPage PNG export', () => {
       await flushPromises()
       expect(URL.revokeObjectURL).toHaveBeenCalled()
     })
+  })
+})
+
+
+describe('ReplayPage Battle context actions（V2：登录门控 + 跨视图文件传递）', () => {
+  function makeRespWithSource() {
+    return {
+      aggregate: [{ cells: { nickname: 'Player1', damage_dealt: 5000 } }],
+      battles: [
+        { mapName: 'Lagoon', sourceName: 'lagoon.wotbreplay', players: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }] }
+      ],
+      duplicates: [], failures: [],
+      playerColumns: [{ key: 'nickname', label: '昵称' }],
+      aggregateColumns: [{ key: 'nickname', label: '昵称' }]
+    }
+  }
+
+  afterEach(async () => {
+    state.clear()
+    state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en' }
+    // 清空模块级 replayTransfer 单例，避免跨测试污染
+    const transferModule = await import('../utils/replayTransfer.js')
+    transferModule.takePendingReplayFiles()
+    vi.restoreAllMocks()
+  })
+
+  function mountWithBattle(resp, auth, nav) {
+    const files = resp.battles.map(b => {
+      const f = new File(['replay'], b.sourceName, { type: 'application/octet-stream' })
+      return f
+    })
+    state.init = { activeTab: 'b0', resp, error: '', loading: false, locale: 'en', files }
+    return mountPage({ auth, navigate: nav || vi.fn() })
+  }
+
+  it('Summary（aggregate）context 不渲染战局回放 / AI 复盘按钮', () => {
+    state.init = { activeTab: 'aggregate', resp: makeRespWithSource(), error: '', loading: false, locale: 'en' }
+    const wrapper = mountPage()
+    expect(wrapper.find('[data-testid="battle-playback-btn"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="battle-ai-btn"]').exists()).toBe(false)
+  })
+
+  it('已登录点击「战局回放」→ setPendingReplayFiles(playback) + navigate(reconstruction)', async () => {
+    const navigate = vi.fn()
+    const setPending = vi.fn()
+    const transferModule = await import('../utils/replayTransfer.js')
+    const spy = vi.spyOn(transferModule, 'setPendingReplayFiles')
+    const wrapper = mountWithBattle(makeRespWithSource(), { authenticated: true, login: vi.fn() }, navigate)
+    await wrapper.find('[data-testid="battle-playback-btn"]').trigger('click')
+    await flushPromises()
+    expect(spy).toHaveBeenCalledWith([expect.any(Object)], 'playback')
+    expect(navigate).toHaveBeenCalledWith('reconstruction')
+    expect(transferModule.takePendingReplayFiles()).toBeTruthy()
+    spy.mockRestore()
+  })
+
+  it('已登录点击「AI 复盘」→ setPendingReplayFiles(ai) + navigate(reconstruction)，不自动发起 AI', async () => {
+    const navigate = vi.fn()
+    const transferModule = await import('../utils/replayTransfer.js')
+    const spy = vi.spyOn(transferModule, 'setPendingReplayFiles')
+    const wrapper = mountWithBattle(makeRespWithSource(), { authenticated: true, login: vi.fn() }, navigate)
+    await wrapper.find('[data-testid="battle-ai-btn"]').trigger('click')
+    await flushPromises()
+    expect(spy).toHaveBeenCalledWith([expect.any(Object)], 'ai')
+    expect(navigate).toHaveBeenCalledWith('reconstruction')
+    spy.mockRestore()
+  })
+
+  it('未登录点击「战局回放」→ confirm 提示 + login，不 navigate、不 setPending（不静默丢文件）', async () => {
+    const navigate = vi.fn()
+    const login = vi.fn()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const transferModule = await import('../utils/replayTransfer.js')
+    const spy = vi.spyOn(transferModule, 'setPendingReplayFiles')
+    const wrapper = mountWithBattle(makeRespWithSource(), { authenticated: false, login }, navigate)
+    await wrapper.find('[data-testid="battle-playback-btn"]').trigger('click')
+    await flushPromises()
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(login).toHaveBeenCalledWith('replay')
+    expect(navigate).not.toHaveBeenCalled()
+    expect(spy).not.toHaveBeenCalled()
+    expect(transferModule.takePendingReplayFiles()).toBeNull()
+    confirmSpy.mockRestore()
+    spy.mockRestore()
+  })
+
+  it('未登录取消 confirm → 不 login 不 navigate', async () => {
+    const navigate = vi.fn()
+    const login = vi.fn()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const wrapper = mountWithBattle(makeRespWithSource(), { authenticated: false, login }, navigate)
+    await wrapper.find('[data-testid="battle-ai-btn"]').trigger('click')
+    await flushPromises()
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(login).not.toHaveBeenCalled()
+    expect(navigate).not.toHaveBeenCalled()
+    confirmSpy.mockRestore()
+  })
+
+  it('battle 无对应文件（files 中无匹配 sourceName）→ 点击无操作', async () => {
+    const navigate = vi.fn()
+    const resp = makeRespWithSource()
+    // files 为空：currentBattleFile 找不到 battle.sourceName 对应文件
+    state.init = { activeTab: 'b0', resp, error: '', loading: false, locale: 'en', files: [] }
+    const wrapper = mountPage({ auth: { authenticated: true, login: vi.fn() }, navigate })
+    await wrapper.find('[data-testid="battle-playback-btn"]').trigger('click')
+    await flushPromises()
+    expect(navigate).not.toHaveBeenCalled()
   })
 })

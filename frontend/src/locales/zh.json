@@ -3,6 +3,7 @@
         "title": "WoTBTools",
         "subtitle": "回放解析 · 在线排行榜 · 实时评分 · AI 战术复盘",
         "replay_tab": "回放解析",
+        "analysis_tab": "战局分析",
         "theme": "主题",
         "login": "登入",
         "profile": "个人中心",
@@ -546,6 +547,7 @@
         "export_failed": "导出失败",
         "png_export_failed": "PNG 导出失败",
         "png_exporting": "正在导出 PNG…",
+        "login_required_for_battle": "战局回放 / AI 复盘需要登录。登录后请重新选择回放文件。",
         "export_job": {
             "title": "正在导出战斗数据",
             "queued": "正在准备导出…",
