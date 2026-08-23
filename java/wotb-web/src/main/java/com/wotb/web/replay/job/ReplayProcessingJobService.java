@@ -1,7 +1,8 @@
 package com.wotb.web.replay.job;
 
+import com.wotb.core.league.LeagueRatingMode;
+import com.wotb.core.league.LeagueReplays;
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.Collected;
 import com.wotb.core.model.Source;
 import com.wotb.core.parse.Replays;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
@@ -151,7 +152,8 @@ public class ReplayProcessingJobService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "JOB_NOT_READY");
         }
         final ProcessedDataset ds = job.result();
-        return Mapper.toPreviewResponse(ds.battles(), ds.battleSourceNames(), ds.duplicates(), ds.failures(), tankopedia);
+        return Mapper.toPreviewResponse(ds.battles(), ds.battleSourceNames(),
+                ds.duplicates(), ds.failures(), tankopedia, ds.league());
     }
 
     private ReplayProcessingJob requireJob(final String jobId) {
@@ -234,23 +236,35 @@ public class ReplayProcessingJobService {
                 throw new JobCancelledException();
             }
         };
-        final Collected c = Replays.collect(ReplayJobFiles.lazySources(inputs), source -> {
-            // 当前处理文件（前端截断显示；不作为 metric tag，plan §12/§47）。
-            job.setCurrentFile(source.name());
-            return processFullTracked(source);
-        }, null, progress);
+        final LeagueReplays.LeagueCollectResult c = LeagueReplays.collect(
+                ReplayJobFiles.lazySources(inputs), source -> {
+                    // 当前处理文件（前端截断显示；不作为 metric tag，plan §12/§47）。
+                    job.setCurrentFile(source.name());
+                    return processFullTracked(source);
+                }, null, progress);
         if (job.isCancelled()) {
             throw new JobCancelledException();
         }
-        if (c.battles.isEmpty()) {
+        if (c.mode() == LeagueRatingMode.MIXED_UNSUPPORTED) {
+            // 混合批次：整个请求拒绝（不返回部分预览）；job 终态错误码供前端三语展示。
+            throw new IllegalArgumentException("MIXED_LEAGUE_AND_STANDARD_REPLAYS");
+        }
+        if (c.battles().isEmpty()) {
             throw new NoValidReplaysException();
         }
         // 事实层 enrich 一次：Preview / Export 直接消费已 enrich 的 authoritative Battle（plan §21/§27）。
-        PotentialDamage.apply(c.battles, tankopedia);
-        for (final Battle battle : c.battles) {
+        // League 模式不调用 PerformanceMetricsCalculator（旧 contribution/kast/impact 完全移除）。
+        PotentialDamage.apply(c.battles(), tankopedia);
+        if (c.mode() == LeagueRatingMode.LEAGUE_RATING) {
+            job.markReady(new ProcessedDataset(c.battles(), c.battleSourceNames(),
+                    c.duplicates(), c.failures(), c.leagueBatch()));
+            return;
+        }
+        for (final Battle battle : c.battles()) {
             PerformanceMetricsCalculator.populateBattle(battle);
         }
-        job.markReady(new ProcessedDataset(c.battles, c.battleSourceNames, c.duplicates, c.failures));
+        job.markReady(new ProcessedDataset(c.battles(), c.battleSourceNames(),
+                c.duplicates(), c.failures(), null));
     }
 
     /** 与 preview/export 完全相同的 authoritative full processing 链（plan §26，禁止 raw parse 回归）。 */

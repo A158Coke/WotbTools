@@ -1,6 +1,7 @@
 package com.wotb.web.replay.job;
 
 import java.nio.file.Path;
+import java.util.Map;
 
 /**
  * Replay Export Job 运行态（内存态，单实例部署；见 docs/current-plan.md §38）。
@@ -43,19 +44,28 @@ public final class ExportJob {
     private final String mode;
     /** 来源 Processing Job（null = 传统 multipart 上传路径；非 null = 复用已解析 result，plan §28）。 */
     private final String processingJobId;
+    /** 战队名称覆盖（{arenaId}:{team} → 显示名；仅本次导出调用内使用，不保存；plan §12）。 */
+    private final Map<String, String> teamNames;
     private String filename;
     private String contentType;
     private Path artifactPath;
 
     public ExportJob(final String jobId, final String mode, final int total) {
-        this(jobId, mode, total, null);
+        this(jobId, mode, total, null, Map.of());
     }
 
     /** 复用 Processing Job result 创建导出（total 为 Processing 输入总数）。 */
     public ExportJob(final String jobId, final String mode, final int total, final String processingJobId) {
+        this(jobId, mode, total, processingJobId, Map.of());
+    }
+
+    /** 创建导出（带战队名称覆盖；League Rating 导出用，仅本次调用内使用）。 */
+    public ExportJob(final String jobId, final String mode, final int total,
+                     final String processingJobId, final Map<String, String> teamNames) {
         this.state = new ReplayJobState(jobId, total);
         this.mode = mode;
         this.processingJobId = processingJobId;
+        this.teamNames = teamNames == null ? Map.of() : Map.copyOf(teamNames);
     }
 
     public String jobId() {
@@ -69,6 +79,11 @@ public final class ExportJob {
     /** 来源 Processing Job id（null = 传统上传路径）。 */
     public String processingJobId() {
         return processingJobId;
+    }
+
+    /** 战队名称覆盖（{arenaId}:{team} → 显示名；仅本次导出调用内使用）。 */
+    public Map<String, String> teamNames() {
+        return teamNames;
     }
 
     public int total() {

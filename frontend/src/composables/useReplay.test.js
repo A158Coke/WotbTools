@@ -183,6 +183,19 @@ describe('useReplay processing job flow (plan §13/§20/§30/§63)', () => {
     expect(replay.loading.value).toBe(false)
   })
 
+  it('processing FAILED with MIXED league/standard shows specific message', async () => {
+    api.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 2 })
+    api.getProcessingJob.mockResolvedValue(pJob({
+      status: 'FAILED', phase: null, errorCode: 'MIXED_LEAGUE_AND_STANDARD_REPLAYS', failures: 2
+    }))
+
+    await replay.startProcessingJob()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(replay.processingJob.value.status).toBe('FAILED')
+    expect(replay.processingError.value).toContain('replay.processing_job.mixed_league_standard')
+    expect(replay.loading.value).toBe(false)
+  })
+
   it('cancelProcessingJob stops polling and marks CANCELLED', async () => {
     api.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 34 })
     api.getProcessingJob.mockResolvedValue(pJob({ status: 'PROCESSING', processed: 5 }))

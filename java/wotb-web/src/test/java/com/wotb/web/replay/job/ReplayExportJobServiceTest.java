@@ -540,7 +540,8 @@ class ReplayExportJobServiceTest {
             pJob.markReady(new ProcessedDataset(
                     List.of(battle("arena-1")), List.of("one.wotbreplay"),
                     List.<String[]>of(new String[]{"dup.wotbreplay", "arena-1"}),
-                    List.<String[]>of(new String[]{"bad.wotbreplay", "REPLAY_PROCESSING_FAILED"})));
+                    List.<String[]>of(new String[]{"bad.wotbreplay", "REPLAY_PROCESSING_FAILED"}),
+                    null));
             processingStore.register(pJob);
             // Export acquire 引用（plan §52）
             processingStore.acquireForExport(pJobId);
@@ -585,7 +586,7 @@ class ReplayExportJobServiceTest {
             pJob.markReady(new ProcessedDataset(
                     List.of(battle("arena-1"), battle("arena-2")),
                     List.of("one.wotbreplay", "two.wotbreplay"),
-                    List.<String[]>of(), List.<String[]>of()));
+                    List.<String[]>of(), List.<String[]>of(), null));
             processingStore.register(pJob);
             processingStore.acquireForExport(pJobId);
 
@@ -991,7 +992,7 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJob pJob = new ReplayProcessingJob(id, total);
         pJob.startProcessing();
         pJob.updateProgress(total, duplicates.size(), failures.size());
-        pJob.markReady(new ProcessedDataset(battles, names, duplicates, failures));
+        pJob.markReady(new ProcessedDataset(battles, names, duplicates, failures, null));
         processingStore.register(pJob);
         return id;
     }
@@ -1013,7 +1014,7 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJob pJob = new ReplayProcessingJob(id, total);
         pJob.startProcessing();
         pJob.updateProgress(total, duplicates.size(), failures.size());
-        pJob.markReady(new ProcessedDataset(battles, names, duplicates, failures));
+        pJob.markReady(new ProcessedDataset(battles, names, duplicates, failures, null));
         processingStore.register(pJob);
         processingStore.acquireForExport(id);
         return id;
