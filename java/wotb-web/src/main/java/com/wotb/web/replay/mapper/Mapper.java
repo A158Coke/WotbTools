@@ -12,7 +12,6 @@ import com.wotb.web.replay.dto.AggRow;
 import com.wotb.web.replay.dto.BattleDto;
 import com.wotb.web.replay.dto.ColumnDef;
 import com.wotb.web.replay.dto.PlayerRow;
-import com.wotb.web.replay.dto.PerformanceRow;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -68,36 +67,22 @@ public final class Mapper {
             new AggCol("account_id", true, a -> a.accountId)
     );
 
+    /** 汇总表追加的跨场表现派生列（与 AGG_COLS 并列；值由 PerformanceMetricsCalculator 行按 accountId 合并）。 */
+    static final List<ColumnDef> AGG_PERF_COLS = List.of(
+            new ColumnDef("contribution", true),
+            new ColumnDef("kast", true),
+            new ColumnDef("impact", true),
+            new ColumnDef("multi_damage_rate", true),
+            new ColumnDef("traded_deaths", true)
+    );
+
     public static List<ColumnDef> aggregateColumns() {
         final List<ColumnDef> out = new ArrayList<>();
         for (final AggCol c : AGG_COLS) {
             out.add(new ColumnDef(c.key(), c.num()));
         }
+        out.addAll(AGG_PERF_COLS);
         return out;
-    }
-
-    static final List<ColumnDef> PERFORMANCE_COLS = List.of(
-            new ColumnDef("nickname", false),
-            new ColumnDef("clan", false),
-            new ColumnDef("battles", true),
-            new ColumnDef("wins", true),
-            new ColumnDef("win_rate", true),
-            new ColumnDef("contribution", true),
-            new ColumnDef("kast", true),
-            new ColumnDef("impact", true),
-            new ColumnDef("damage_avg", true),
-            new ColumnDef("potential_damage_avg", true),
-            new ColumnDef("potential_damage_supplement_avg", true),
-            new ColumnDef("assist_avg", true),
-            new ColumnDef("multi_damage_rate", true),
-            new ColumnDef("survival_rate", true),
-            new ColumnDef("traded_deaths", true),
-            new ColumnDef("kills", true),
-            new ColumnDef("kills_avg", true)
-    );
-
-    public static List<ColumnDef> performanceColumns() {
-        return PERFORMANCE_COLS;
     }
 
     public static BattleDto toBattle(final Battle b, final String sourceName, final Tankopedia tp) {
@@ -116,7 +101,8 @@ public final class Mapper {
                 b.startTime, b.winnerTeam, sourceName, rows);
     }
 
-    public static List<AggRow> toAggregate(final Map<Long, Agg> aggMap) {
+    public static List<AggRow> toAggregate(final Map<Long, Agg> aggMap,
+                                        final Map<Long, PerformanceMetricsCalculator.Row> perfById) {
         final List<Agg> list = new ArrayList<>(aggMap.values());
         list.sort((x, y) -> Double.compare(y.avg(y.damage), x.avg(x.damage)));
         final List<AggRow> out = new ArrayList<>();
@@ -125,33 +111,22 @@ public final class Mapper {
             for (final AggCol c : AGG_COLS) {
                 cells.put(c.key(), c.get().apply(a));
             }
+            final PerformanceMetricsCalculator.Row perf = perfById.get(a.accountId);
+            if (perf != null) {
+                // 跨场表现派生列：HP 全部 UNKNOWN 时 contribution/kast/多伤率 unavailable（null，UI 显示 "--"）
+                cells.put("contribution", perf.hpEligible ? r1(perf.contribution) : null);
+                cells.put("kast", perf.hpEligible ? r1(perf.kast) : null);
+                cells.put("impact", r1(perf.impactValue));
+                cells.put("multi_damage_rate", perf.hpEligible ? r1(perf.multiDamageRate) : null);
+                cells.put("traded_deaths", perf.tradedDeaths);
+            } else {
+                cells.put("contribution", null);
+                cells.put("kast", null);
+                cells.put("impact", null);
+                cells.put("multi_damage_rate", null);
+                cells.put("traded_deaths", 0);
+            }
             out.add(new AggRow(cells, a.team));
-        }
-        return out;
-    }
-
-    public static List<PerformanceRow> toPerformance(final List<PerformanceMetricsCalculator.Row> rows) {
-        final List<PerformanceRow> out = new ArrayList<>();
-        for (final PerformanceMetricsCalculator.Row row : rows) {
-            final Map<String, Object> cells = new LinkedHashMap<>();
-            cells.put("nickname", row.nickname);
-            cells.put("clan", row.clan);
-            cells.put("battles", row.battles);
-            cells.put("wins", row.wins);
-            cells.put("win_rate", r1(row.winRate()));
-            cells.put("contribution", r1(row.contribution));
-            cells.put("kast", r1(row.kast));
-            cells.put("impact", row.impact);
-            cells.put("damage_avg", r1(row.damageAvg));
-            cells.put("potential_damage_avg", r1(row.potentialDamageAvg));
-            cells.put("potential_damage_supplement_avg", r1(row.potentialDamageSupplementAvg));
-            cells.put("assist_avg", r1(row.assistAvg));
-            cells.put("multi_damage_rate", r1(row.multiDamageRate));
-            cells.put("survival_rate", r1(row.survivalRate));
-            cells.put("traded_deaths", row.tradedDeaths);
-            cells.put("kills", row.kills);
-            cells.put("kills_avg", r2(row.killsAvg));
-            out.add(new PerformanceRow(cells));
         }
         return out;
     }

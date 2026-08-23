@@ -9,8 +9,11 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PerformanceMetricsCalculatorTest {
@@ -188,6 +191,100 @@ class PerformanceMetricsCalculatorTest {
         assertEquals(100.0, row.multiDamageRate, 0.01, "多伤率分母 = HP 已知场数");
         assertEquals(100.0 * 3685.714 / (7 * 3685.714), row.contribution, 0.1, "贡献度只按 HP 已知场计算");
         assertEquals(112.5, row.impactValue, 0.01, "Impact 不依赖 HP，两场均计入（known 场 kills=2 → 125；unknown 场 kills=1 → 100）");
+    }
+
+    @Test
+    void battleMetricsMatchesAggregateForSingleBattle() {
+        // 单场 battleMetrics 必须与 compute(List.of(battle)) 同一公式、同一值（计划 §19 单一事实源）
+        final Battle battle = new Battle();
+        battle.winnerTeam = 1;
+        battle.players = List.of(
+                player(1, 1, 2600, 400, 2, true, 0, 0),
+                player(2, 1, 100, 0, 0, true, 0, 0),
+                player(3, 1, 100, 0, 0, true, 0, 0),
+                player(4, 1, 100, 0, 0, true, 0, 0),
+                player(5, 1, 100, 0, 0, true, 0, 0),
+                player(6, 1, 100, 0, 0, true, 0, 0),
+                player(7, 1, 100, 0, 0, true, 0, 0),
+                player(8, 2, 600, 0, 0, false, 120, 1000),
+                player(9, 2, 200, 0, 0, true, 0, 0),
+                player(10, 2, 200, 0, 0, true, 0, 0),
+                player(11, 2, 200, 0, 0, true, 0, 0),
+                player(12, 2, 200, 0, 0, true, 0, 0),
+                player(13, 2, 200, 0, 0, true, 0, 0),
+                player(14, 2, 200, 0, 0, true, 0, 0)
+        );
+
+        final Map<Long, PerformanceMetricsCalculator.PlayerMetrics> battleMetrics =
+                PerformanceMetricsCalculator.battleMetrics(battle);
+        final PerformanceMetricsCalculator.Row aggregate = row(
+                PerformanceMetricsCalculator.compute(List.of(battle)), 1);
+
+        final PerformanceMetricsCalculator.PlayerMetrics m = battleMetrics.get(1L);
+        assertNotNull(m, "battleMetrics 必须含账号 1");
+        assertEquals(100.0, m.kast(), 0.01, "单场 KAST == 聚合单场 KAST");
+        assertEquals(aggregate.kast, m.kast(), 0.01);
+        assertEquals(aggregate.contribution, m.contribution(), 0.01);
+        assertEquals(aggregate.impactValue, m.impact(), 0.01);
+        // populateBattle 回填 PlayerResult，供 Columns.PLAYER 直接消费
+        PerformanceMetricsCalculator.populateBattle(battle);
+        final PlayerResult p1 = battle.players.stream().filter(p -> p.accountId == 1L).findFirst().orElseThrow();
+        assertEquals(100.0, p1.kast, 0.01);
+        assertEquals(aggregate.contribution, p1.contribution, 0.01);
+        assertEquals(aggregate.impactValue, p1.impact, 0.01);
+    }
+
+    @Test
+    void battleMetricsNullWhenHpUnknownButImpactComputed() {
+        final Battle battle = new Battle();
+        battle.winnerTeam = 1;
+        battle.players = List.of(player(1, 1, 2600, 400, 2, true, 0, 0));
+        for (final PlayerResult p : battle.players) {
+            p.tankId = -1; // HP UNKNOWN
+        }
+
+        final Map<Long, PerformanceMetricsCalculator.PlayerMetrics> metrics =
+                PerformanceMetricsCalculator.battleMetrics(battle);
+
+        final PerformanceMetricsCalculator.PlayerMetrics m = metrics.get(1L);
+        assertNotNull(m);
+        assertNull(m.contribution(), "HP UNKNOWN 时 contribution 必须 null（不冒充 0）");
+        assertNull(m.kast(), "HP UNKNOWN 时 kast 必须 null（不冒充 0）");
+        assertNotNull(m.impact(), "Impact 不依赖 HP，恒有值");
+        assertTrue(m.impact() > 0);
+    }
+
+    @Test
+    void battleMetricsKeyedByAccountIdUnaffectedByPlayerOrder() {
+        final Battle battle = new Battle();
+        battle.winnerTeam = 1;
+        final List<PlayerResult> players = new ArrayList<>();
+        for (int i = 0; i < 14; i++) {
+            players.add(player(i + 1L, i < 7 ? 1 : 2, 2600 - i * 100, 400, 2, true, 0, 0));
+        }
+        battle.players = players;
+
+        final Map<Long, PerformanceMetricsCalculator.PlayerMetrics> metrics =
+                PerformanceMetricsCalculator.battleMetrics(battle);
+
+        // 正序取值作为基准，逆序遍历仍能按 accountId 取到同一账号的同一值（不受排序/昵称影响）
+        final double[] kastBaseline = new double[14];
+        final double[] contributionBaseline = new double[14];
+        final double[] impactBaseline = new double[14];
+        for (int i = 0; i < 14; i++) {
+            final PerformanceMetricsCalculator.PlayerMetrics m = metrics.get(i + 1L);
+            assertNotNull(m, "accountId " + (i + 1) + " 必须存在");
+            assertTrue(m.contribution() != null, "HP 已知场 contribution 不应为 null");
+            kastBaseline[i] = m.kast();
+            contributionBaseline[i] = m.contribution();
+            impactBaseline[i] = m.impact();
+        }
+        for (int i = 13; i >= 0; i--) {
+            final PerformanceMetricsCalculator.PlayerMetrics m = metrics.get(i + 1L);
+            assertEquals(kastBaseline[i], m.kast(), 0.01);
+            assertEquals(contributionBaseline[i], m.contribution(), 0.01);
+            assertEquals(impactBaseline[i], m.impact(), 0.01);
+        }
     }
 
     private static PerformanceMetricsCalculator.Row row(
