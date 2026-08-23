@@ -29,14 +29,15 @@ describe('ReplayPage export job flow', () => {
     state.init.resp = makeResp()
     const wrapper = mountPage()
     await exportButtons(wrapper)[0].trigger('click')
-    expect(state.replay.startExportJob).toHaveBeenCalledWith('aggregate')
+    // 无覆盖时 teamNamesPayload() = null（PR #123 Blocker 1：名称必须经 payload 传递）
+    expect(state.replay.startExportJob).toHaveBeenCalledWith('aggregate', null)
   })
 
   it('export each button calls startExportJob with each', async () => {
     state.init.resp = makeResp()
     const wrapper = mountPage()
     await exportButtons(wrapper)[1].trigger('click')
-    expect(state.replay.startExportJob).toHaveBeenCalledWith('each')
+    expect(state.replay.startExportJob).toHaveBeenCalledWith('each', null)
   })
 
   it('renders ReplayTaskCard when export job exists', async () => {
@@ -969,5 +970,37 @@ describe('ReplayPage League Rating', () => {
     } finally {
       delete window.__testLeagueMode
     }
+  })
+
+  it('battle rename only updates battle overrides (no summary pollution)', async () => {
+    state.init.resp = makeResp({ league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
+    const wrapper = mountPage()
+    await flushPromises()
+    wrapper.vm.battleTeamNames['111:1'] = 'CHRD'
+    expect(wrapper.vm.battleTeamNames['111:1']).toBe('CHRD')
+    expect(wrapper.vm.summaryTeamNames).toEqual({})
+  })
+
+  it('summary rename only updates teamKey overrides (no battle pollution)', async () => {
+    state.init.resp = makeResp({ league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
+    const wrapper = mountPage()
+    await flushPromises()
+    wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
+    expect(wrapper.vm.summaryTeamNames['clan:CHRD']).toBe('CHRD A队')
+    expect(wrapper.vm.battleTeamNames).toEqual({})
+  })
+
+  it('export passes battle + summary overrides payload (PR #123 Blocker 1)', async () => {
+    state.init.resp = makeResp({ league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
+    const wrapper = mountPage()
+    await flushPromises()
+    wrapper.vm.battleTeamNames['111:1'] = 'CHRD'
+    wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
+    const exportBtn = wrapper.findAll('button').find(b => b.text().includes('action.export_aggregate'))
+    await exportBtn.trigger('click')
+    expect(state.replay.startExportJob).toHaveBeenCalledWith('aggregate', {
+      battle: { '111:1': 'CHRD' },
+      summary: { 'clan:CHRD': 'CHRD A队' }
+    })
   })
 })

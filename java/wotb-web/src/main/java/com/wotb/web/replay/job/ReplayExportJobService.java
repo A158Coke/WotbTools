@@ -106,31 +106,57 @@ public class ReplayExportJobService {
         return createJob(files, mode, null);
     }
 
-    /** 创建 Export Job（带战队名称覆盖 JSON：{arenaId}:{team} → 显示名，仅本次调用内使用）。 */
+    /** 创建 Export Job（带战队名称覆盖 JSON：{battle:{arenaId:team:名}, summary:{teamKey:名}}，仅本次调用内使用）。 */
     public String createJob(final MultipartFile[] files, final String mode,
                             final String processingJobId, final String teamNamesJson) {
         return createJob(files, mode, processingJobId, parseTeamNames(teamNamesJson));
     }
 
-    /** 解析战队名称覆盖 JSON（非法 JSON → 空 Map；覆盖不影响 Rating 数值，只改显示名）。 */
-    static Map<String, String> parseTeamNames(final String json) {
+    /**
+     * 解析战队名称覆盖 JSON（PR #123 Blocker 1/2）：
+     * <pre>
+     * {"battle":  {"arenaId:team": "名", ...}, "summary": {"teamKey": "名", ...}}
+     * </pre>
+     * 结构化格式优先；扁平 {@code {arenaId:team: 名}} 向后兼容视为 battle override。
+     * 非法/缺失 → 空（null safe，不 500）；覆盖只影响显示名，不影响 Rating 数值，不持久化。
+     */
+    static TeamNameOverrides parseTeamNames(final String json) {
         if (json == null || json.isBlank()) {
-            return Map.of();
+            return TeamNameOverrides.empty();
         }
         try {
             final tools.jackson.databind.ObjectMapper om = tools.jackson.databind.json.JsonMapper.builder().build();
-            final Map<String, String> out = new java.util.LinkedHashMap<>();
             final tools.jackson.databind.JsonNode node = om.readTree(json);
-            if (node != null && node.isObject()) {
-                for (final var e : node.properties()) {
-                    if (e.getValue().isTextual()) {
-                        out.put(e.getKey(), e.getValue().asText());
-                    }
-                }
+            if (node == null || !node.isObject()) {
+                return TeamNameOverrides.empty();
             }
-            return out;
+            final Map<String, String> battle = new java.util.LinkedHashMap<>();
+            final Map<String, String> summary = new java.util.LinkedHashMap<>();
+            final tools.jackson.databind.JsonNode battleNode = node.get("battle");
+            final tools.jackson.databind.JsonNode summaryNode = node.get("summary");
+            if ((battleNode != null && battleNode.isObject())
+                    || (summaryNode != null && summaryNode.isObject())) {
+                collectText(battleNode, battle);
+                collectText(summaryNode, summary);
+                return new TeamNameOverrides(battle, summary);
+            }
+            // 向后兼容：扁平 {arenaId:team: name} → battle override
+            collectText(node, battle);
+            return new TeamNameOverrides(battle, Map.of());
         } catch (final Exception e) {
-            return Map.of();
+            return TeamNameOverrides.empty();
+        }
+    }
+
+    private static void collectText(final tools.jackson.databind.JsonNode node,
+                                    final Map<String, String> out) {
+        if (node == null || !node.isObject()) {
+            return;
+        }
+        for (final var e : node.properties()) {
+            if (e.getValue().isTextual()) {
+                out.put(e.getKey(), e.getValue().asText());
+            }
         }
     }
 
@@ -146,11 +172,11 @@ public class ReplayExportJobService {
      *         （复用路径引用不存在的 / 未 READY 的 Processing Job）
      */
     public String createJob(final MultipartFile[] files, final String mode, final String processingJobId) {
-        return createJob(files, mode, processingJobId, (Map<String, String>) null);
+        return createJob(files, mode, processingJobId, (TeamNameOverrides) null);
     }
 
     private String createJob(final MultipartFile[] files, final String mode, final String processingJobId,
-                             final Map<String, String> teamNames) {
+                             final TeamNameOverrides teamNames) {
         final boolean each = "each".equalsIgnoreCase(mode);
         final ReplayProcessingJob processingJob;
         // acquire 成功后为 true（Processing result 引用 +1，review BLOCKER 2 ownership lifecycle）。
@@ -422,10 +448,12 @@ public class ReplayExportJobService {
                 // League Rating：与 preview 同一 core；战队名称覆盖仅本次调用内使用
                 if (battles.size() == 1) {
                     ExcelExporter.writeSingleLeague(battles.getFirst(),
-                            ds.league().battleResults().getFirst(), tankopedia, job.teamNames(), out);
+                            ds.league().battleResults().getFirst(), tankopedia,
+                            job.teamNames().battle(), out);
                 } else {
                     ExcelExporter.writeAggregateLeague(battles, ds.battleSourceNames(),
-                            ds.duplicates(), ds.league(), tankopedia, job.teamNames(), out);
+                            ds.duplicates(), ds.league(), tankopedia,
+                            job.teamNames().battle(), job.teamNames().summary(), out);
                 }
             } else if (battles.size() == 1) {
                 ExcelExporter.writeSingle(battles.getFirst(), tankopedia, out);
@@ -472,7 +500,7 @@ public class ReplayExportJobService {
                 zip.putNextEntry(entry);
                 if (ds.isLeague()) {
                     writeSingleLeagueExcel(battles.get(i),
-                            ds.league().battleResults().get(i), job.teamNames(), zip);
+                            ds.league().battleResults().get(i), job.teamNames().battle(), zip);
                 } else {
                     writeSingleExcel(battles.get(i), zip);
                 }
@@ -581,10 +609,12 @@ public class ReplayExportJobService {
                 // League Rating：不计算旧 contribution/kast/impact；复用同一评分 core
                 if (c.battles().size() == 1) {
                     ExcelExporter.writeSingleLeague(c.battles().getFirst(),
-                            c.leagueBatch().battleResults().getFirst(), tankopedia, job.teamNames(), out);
+                            c.leagueBatch().battleResults().getFirst(), tankopedia,
+                            job.teamNames().battle(), out);
                 } else {
                     ExcelExporter.writeAggregateLeague(c.battles(), c.battleSourceNames(),
-                            c.duplicates(), c.leagueBatch(), tankopedia, job.teamNames(), out);
+                            c.duplicates(), c.leagueBatch(), tankopedia,
+                            job.teamNames().battle(), job.teamNames().summary(), out);
                 }
             } else {
                 for (final Battle battle : c.battles()) {
@@ -714,7 +744,7 @@ public class ReplayExportJobService {
                         ReplayJobFiles.stripExt(c.battleSourceNames().get(i)) + ".xlsx", usedNames));
                 zip.putNextEntry(entry);
                 writeSingleLeagueExcel(c.battles().get(i),
-                        c.leagueBatch().battleResults().get(i), job.teamNames(), zip);
+                        c.leagueBatch().battleResults().get(i), job.teamNames().battle(), zip);
                 zip.closeEntry();
                 progressCheckpoint(job, processed, 0);
             }

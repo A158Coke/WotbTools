@@ -114,4 +114,38 @@ class LeagueExcelExportTest {
             assertNotNull(wb.getSheet("战队汇总").getRow(1), "战队汇总应有数据行");
         }
     }
+
+    @Test
+    void aggregateLeagueWorkbookAppliesTeamKeyOverride() throws Exception {
+        // 两场 team1 均 clan=AAA → 批次 teamKey = clan:AAA（PR #123 Blocker 2：批次 identity override）
+        final Battle b1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        b1.arenaId = "arena-1";
+        final Battle b2 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        b2.arenaId = "arena-2";
+        final LeagueRatingResult r1 = LeagueRatingCalculator.calculate(b1);
+        final LeagueRatingResult r2 = LeagueRatingCalculator.calculate(b2);
+        final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(
+                List.of(b1, b2), List.of(r1, r2), List.of());
+        assertTrue(batch.teamSummaries().stream().anyMatch(t -> t.teamKey().equals("clan:AAA")));
+
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ExcelExporter.writeAggregateLeague(List.of(b1, b2), List.of("one.wotbreplay", "two.wotbreplay"),
+                List.of(), batch, Tankopedia.load(), Map.of(), Map.of("clan:AAA", "CHRD A队"), out);
+
+        try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()))) {
+            final Sheet sheet = wb.getSheet("战队汇总");
+            assertNotNull(sheet);
+            final StringBuilder text = new StringBuilder();
+            for (int rr = 0; rr <= sheet.getLastRowNum(); rr++) {
+                final var row = sheet.getRow(rr);
+                if (row == null) continue;
+                for (int c = 0; c < row.getLastCellNum(); c++) {
+                    text.append(row.getCell(c));
+                }
+            }
+            assertTrue(text.toString().contains("CHRD A队"),
+                    "批次 teamKey override 必须进入 aggregate Excel 战队汇总，实际：" + text);
+        }
+    }
+
 }

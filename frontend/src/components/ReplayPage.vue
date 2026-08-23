@@ -36,17 +36,40 @@ const { visibleKeys, aggVisibleKeys, showColPicker, pickerScope,
 
 /** League Rating 模式元数据（resp.league；普通模式 null）。 */
 const leagueData = computed(() => resp.value?.league || null)
-/** 战队名称覆盖 {arenaId:team: name}（仅当前页面内存；plan §12）。 */
-const teamNames = ref({})
+/**
+ * 两种独立的战队名称 override（PR #123 Blocker 2，禁止扁平混合）：
+ * - battleTeamNames：{arenaId:team} → 名（单场显示 / 单场 PNG / 单场与 each Excel）
+ * - summaryTeamNames：{teamKey} → 名（批次战队汇总显示 / aggregate Excel 战队汇总）
+ * 仅当前页面内存（plan §12）；批次 rename 不得反向写入所有 {arenaId:team}。
+ */
+const battleTeamNames = ref({})
+const summaryTeamNames = ref({})
 
-function updateTeamName(payload) {
+function updateBattleTeamName(payload) {
   if (!payload || !payload.arenaId) return
   const key = payload.arenaId + ':' + payload.team
   const name = (payload.name || '').trim()
-  const next = { ...teamNames.value }
+  const next = { ...battleTeamNames.value }
   if (name) next[key] = name
   else delete next[key]
-  teamNames.value = next
+  battleTeamNames.value = next
+}
+
+function updateSummaryTeamName(payload) {
+  if (!payload || !payload.teamKey) return
+  const name = (payload.name || '').trim()
+  const next = { ...summaryTeamNames.value }
+  if (name) next[payload.teamKey] = name
+  else delete next[payload.teamKey]
+  summaryTeamNames.value = next
+}
+
+/** Export Job 的战队名称覆盖 payload（无覆盖 → null；multipart field 传递，不拼 URL query）。 */
+function teamNamesPayload() {
+  const battle = battleTeamNames.value
+  const summary = summaryTeamNames.value
+  if (!Object.keys(battle).length && !Object.keys(summary).length) return null
+  return { battle, summary }
 }
 
 /** PNG 导出用：League 模式全列表格（不受当前可见列限制）。 */
@@ -339,10 +362,10 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
               @close="showColPicker = false" @toggle="toggleCol"
               @select-all="selectAllCols" @reset="resetCols" @reorder="handleReorder" />
           </span>
-          <button class="sm" :disabled="loading || exportingPng || exportActive" @click="startExportJob('aggregate')">
+          <button class="sm" :disabled="loading || exportingPng || exportActive" @click="startExportJob('aggregate', teamNamesPayload())">
             <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_aggregate') }}
           </button>
-          <button class="ghost sm" :disabled="loading || exportingPng || exportActive" @click="startExportJob('each')">
+          <button class="ghost sm" :disabled="loading || exportingPng || exportActive" @click="startExportJob('each', teamNamesPayload())">
             <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_each') }}
           </button>
           <button class="ghost sm" :disabled="loading || exportingPng" @click="downloadResultPng">
@@ -356,10 +379,10 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
         <template v-if="leagueMode">
           <LeagueSummaryTable :title="$t('league.summary.title_player')" type="player"
             :rows="leagueData?.playerSummaries || []" :columns="leagueData?.playerSummaryColumns || []"
-            :team-names="teamNames" @update-team-name="updateTeamName" />
+            :team-names="summaryTeamNames" @update-summary-team-name="updateSummaryTeamName" />
           <LeagueSummaryTable :title="$t('league.summary.title_team')" type="team"
             :rows="leagueData?.teamSummaries || []" :columns="leagueData?.teamSummaryColumns || []"
-            :team-names="teamNames" @update-team-name="updateTeamName" />
+            :team-names="summaryTeamNames" @update-summary-team-name="updateSummaryTeamName" />
         </template>
         <AggregateTable v-else :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
       </div>
@@ -368,7 +391,7 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
            :ref="(el) => setBattleRef(el, i)">
         <BattleTable :battle="b" :shown-cols="shownCols"
           :league="b.league" :league-columns="leagueData?.columns || []"
-          :team-names="teamNames" @update-team-name="updateTeamName" />
+          :team-names="battleTeamNames" @update-team-name="updateBattleTeamName" />
       </div>
     </template>
 

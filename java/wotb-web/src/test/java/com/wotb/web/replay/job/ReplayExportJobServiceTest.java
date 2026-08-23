@@ -1,5 +1,9 @@
 package com.wotb.web.replay.job;
 
+import com.wotb.core.league.LeagueRatingBatch;
+import com.wotb.core.league.LeagueRatingBatchAggregator;
+import com.wotb.core.league.LeagueRatingCalculator;
+import com.wotb.core.league.LeagueRatingResult;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
@@ -35,6 +39,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -1033,6 +1038,206 @@ class ReplayExportJobServiceTest {
             b.players.add(p);
         }
         return b;
+    }
+
+
+    // ---- League Rating 战队名称覆盖（PR #123 Blocker 1/2：单场 battle / 批次 teamKey 分离） ----
+
+    @Test
+    void leagueExportFromResultAppliesBattleTeamNameOverrideWithoutReprocessing() throws Exception {
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-league-reuse"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            final String pJobId = readyLeagueProcessingJob(processingStore, "proc-l1", "arena-1");
+
+            // 复用 processingJobId + 单场 battle override（PR #123 Blocker 1：名称必须进入 Excel）
+            final String jobId = service.createJob(null, "aggregate", pJobId,
+                    "{\"battle\":{\"arena-1:1\":\"CHRD Test\"}}");
+            final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+            assertEquals(ExportJob.Status.READY, snap.status());
+            // Test 2：复用路径不重新 process replay
+            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
+            try (Workbook wb = new XSSFWorkbook(Files.newInputStream(store.get(jobId).artifactPath()))) {
+                final String text = workbookText(wb);
+                assertTrue(text.contains("CHRD Test"),
+                        "用户编辑的单场队名必须进入 Excel，实际：" + text);
+            }
+            processingStore.release(pJobId);
+        } finally {
+            deleteDir(processingStore.jobDir("").getParent());
+        }
+    }
+
+    @Test
+    void leagueAggregateExportAppliesTeamKeyOverride() throws Exception {
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-league-agg"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            // 两场 team1 均 clan=AAA → 批次 teamKey = clan:AAA（跨场聚合为一行）
+            final String pJobId = readyLeagueProcessingJob(processingStore, "proc-l2", "arena-1", "arena-2");
+
+            // Test 5：批次 teamKey override 进入 aggregate Excel 战队汇总
+            final String jobId = service.createJob(null, "aggregate", pJobId,
+                    "{\"summary\":{\"clan:AAA\":\"CHRD A队\"}}");
+            final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+            assertEquals(ExportJob.Status.READY, snap.status());
+            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
+            try (Workbook wb = new XSSFWorkbook(Files.newInputStream(store.get(jobId).artifactPath()))) {
+                final Sheet sheet = wb.getSheet("战队汇总");
+                assertNotNull(sheet, "aggregate League 必须含战队汇总表");
+                assertTrue(sheetText(sheet).contains("CHRD A队"),
+                        "批次 teamKey override 必须进入战队汇总，实际：" + sheetText(sheet));
+            }
+            processingStore.release(pJobId);
+        } finally {
+            deleteDir(processingStore.jobDir("").getParent());
+        }
+    }
+
+    @Test
+    void leagueEachExportAppliesPerBattleTeamNames() throws Exception {
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-league-each"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            final String pJobId = readyLeagueProcessingJob(processingStore, "proc-l3", "arena-1", "arena-2");
+
+            // Test 6：each ZIP 中每场使用各自 battle override，不得串队名
+            final String jobId = service.createJob(null, "each", pJobId,
+                    "{\"battle\":{\"arena-1:1\":\"CHRD A\",\"arena-2:1\":\"CHRD B\"}}");
+            final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+            assertEquals(ExportJob.Status.READY, snap.status());
+            final List<String> entryNames = new ArrayList<>();
+            final List<String> texts = new ArrayList<>();
+            try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(store.get(jobId).artifactPath()))) {
+                ZipEntry entry;
+                while ((entry = zip.getNextEntry()) != null) {
+                    final byte[] entryBytes = zip.readAllBytes();
+                    try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(entryBytes))) {
+                        texts.add(workbookText(wb));
+                    }
+                    entryNames.add(entry.getName());
+                }
+            }
+            assertEquals(List.of("arena-1.xlsx", "arena-2.xlsx"), entryNames);
+            assertEquals(2, texts.size());
+            assertTrue(texts.get(0).contains("CHRD A"), "arena-1 单场应显示 CHRD A");
+            assertTrue(texts.get(1).contains("CHRD B"), "arena-2 单场应显示 CHRD B");
+            assertFalse(texts.get(0).contains("CHRD B"), "不得串队名");
+            assertFalse(texts.get(1).contains("CHRD A"), "不得串队名");
+            processingStore.release(pJobId);
+        } finally {
+            deleteDir(processingStore.jobDir("").getParent());
+        }
+    }
+
+    @Test
+    void parseTeamNamesToleratesMalformedAndSplitsScopes() {
+        // Test 7：非法/缺失 → 空（null safe，不 500）
+        assertEquals(TeamNameOverrides.empty(), ReplayExportJobService.parseTeamNames(null));
+        assertEquals(TeamNameOverrides.empty(), ReplayExportJobService.parseTeamNames(""));
+        assertEquals(TeamNameOverrides.empty(), ReplayExportJobService.parseTeamNames("not-json{"));
+        assertEquals(TeamNameOverrides.empty(), ReplayExportJobService.parseTeamNames("42"));
+        // 结构化：battle + summary 分离（PR #123 Blocker 2）
+        final TeamNameOverrides structured = ReplayExportJobService.parseTeamNames(
+                "{\"battle\":{\"a:1\":\"X\"},\"summary\":{\"clan:CHRD\":\"Y\"}}");
+        assertEquals("X", structured.battle().get("a:1"));
+        assertEquals("Y", structured.summary().get("clan:CHRD"));
+        // 扁平 {arenaId:team: name} 向后兼容 → battle
+        final TeamNameOverrides flat = ReplayExportJobService.parseTeamNames("{\"a:1\":\"X\"}");
+        assertEquals("X", flat.battle().get("a:1"));
+        assertTrue(flat.summary().isEmpty());
+        // 只传 summary 也可
+        final TeamNameOverrides onlySummary = ReplayExportJobService.parseTeamNames(
+                "{\"summary\":{\"clan:CHRD\":\"Z\"}}");
+        assertTrue(onlySummary.battle().isEmpty());
+        assertEquals("Z", onlySummary.summary().get("clan:CHRD"));
+    }
+
+    /** League 7v7 数据集（team1 clan=AAA、team2 clan=BBB；已评分并聚合）。 */
+    private static ProcessedDataset leagueDataset(final String... arenaIds) {
+        final List<Battle> battles = new ArrayList<>();
+        final List<String> names = new ArrayList<>();
+        for (final String aid : arenaIds) {
+            final Battle b = new Battle();
+            b.arenaId = aid;
+            b.arenaBonusType = 2;
+            b.winnerTeam = 1;
+            b.rosterComplete = true;
+            b.durationS = 300.0;
+            b.players = new ArrayList<>();
+            for (int i = 0; i < 14; i++) {
+                final PlayerResult p = new PlayerResult();
+                p.accountId = i + 1L;
+                p.nickname = "p" + (i + 1);
+                p.team = i < 7 ? 1 : 2;
+                p.tankId = 4481L;
+                p.survived = true;
+                p.survivalTimeSec = 300;
+                p.damageDealt = 1000;
+                p.damageAssisted = 100;
+                p.damageReceived = 800;
+                p.damageBlocked = 200;
+                p.kills = 2;
+                p.nShots = 10;
+                p.nHitsDealt = 8;
+                p.nPenetrationsDealt = 6;
+                p.clan = i < 7 ? "AAA" : "BBB";
+                b.players.add(p);
+            }
+            battles.add(b);
+            names.add(aid + ".wotbreplay");
+        }
+        final List<LeagueRatingResult> results = new ArrayList<>();
+        for (final Battle b : battles) {
+            results.add(LeagueRatingCalculator.calculate(b));
+        }
+        final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(battles, results, List.of());
+        return new ProcessedDataset(battles, names, List.of(), List.of(), batch);
+    }
+
+    /** 构造并注册一个已 READY 的 League Processing Job（from-result 复用路径测试用；调用方负责 release）。 */
+    private String readyLeagueProcessingJob(final ReplayProcessingJobStore processingStore, final String id,
+                                            final String... arenaIds) throws Exception {
+        final ProcessedDataset ds = leagueDataset(arenaIds);
+        final ReplayProcessingJob pJob = new ReplayProcessingJob(id, ds.validCount());
+        pJob.startProcessing();
+        pJob.updateProgress(ds.validCount(), 0, 0);
+        pJob.markReady(ds);
+        processingStore.register(pJob);
+        processingStore.acquireForExport(id);
+        return id;
+    }
+
+    /** 汇总整个 workbook 的字符串单元格（查找显示名用）。 */
+    private static String workbookText(final Workbook wb) {
+        final StringBuilder sb = new StringBuilder();
+        for (int s = 0; s < wb.getNumberOfSheets(); s++) {
+            sb.append(sheetText(wb.getSheetAt(s)));
+        }
+        return sb.toString();
+    }
+
+    private static String sheetText(final Sheet sheet) {
+        final StringBuilder sb = new StringBuilder();
+        for (int rr = 0; rr <= sheet.getLastRowNum(); rr++) {
+            final var row = sheet.getRow(rr);
+            if (row == null) {
+                continue;
+            }
+            for (int c = 0; c < row.getLastCellNum(); c++) {
+                final Cell cell = row.getCell(c);
+                if (cell != null && cell.getCellType() == CellType.STRING) {
+                    sb.append(cell.getStringCellValue());
+                }
+            }
+        }
+        return sb.toString();
     }
 
     // ---- helpers ----

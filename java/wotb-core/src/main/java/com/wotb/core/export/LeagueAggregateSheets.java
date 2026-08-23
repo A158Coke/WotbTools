@@ -23,14 +23,15 @@ import java.util.Map;
  */
 final class LeagueAggregateSheets {
 
-    private final Map<String, String> teamNameOverrides;
+    /** 批次战队 identity override：teamKey → 显示名（PR #123 Blocker 2：aggregate rename 不得反向改单场）。 */
+    private final Map<String, String> summaryOverrides;
 
     LeagueAggregateSheets() {
         this(Map.of());
     }
 
-    LeagueAggregateSheets(final Map<String, String> teamNameOverrides) {
-        this.teamNameOverrides = teamNameOverrides == null ? Map.of() : teamNameOverrides;
+    LeagueAggregateSheets(final Map<String, String> summaryOverrides) {
+        this.summaryOverrides = summaryOverrides == null ? Map.of() : summaryOverrides;
     }
 
     void write(final ExcelStyles styles, final List<Battle> battles, final List<String> sourceNames,
@@ -104,13 +105,11 @@ final class LeagueAggregateSheets {
         ws.createFreezePane(1, 1);
     }
 
-    /** 战队汇总显示名：任一成员场的用户覆盖优先，否则自动名称，否则待命名。 */
+    /** 战队汇总显示名：批次 teamKey override 优先，否则自动名称，否则待命名。 */
     private String teamDisplayName(final TeamLeagueSummary s) {
-        for (final String arenaTeam : s.arenaTeams()) {
-            final String override = teamNameOverrides.get(arenaTeam);
-            if (override != null && !override.isBlank()) {
-                return override;
-            }
+        final String override = summaryOverrides.get(s.teamKey());
+        if (override != null && !override.isBlank()) {
+            return override;
         }
         if (s.autoName() != null && !s.autoName().isBlank()) {
             return s.autoName();

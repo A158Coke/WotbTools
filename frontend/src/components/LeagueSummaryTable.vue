@@ -8,10 +8,10 @@ const props = defineProps({
   rows: { type: Array, default: () => [] },
   /** ColumnDef 列表（key + num） */
   columns: { type: Array, default: () => [] },
-  /** 战队名称覆盖 {arenaId:team: name} */
+  /** 批次战队 identity 覆盖 {teamKey: name}（PR #123 Blocker 2：不得反向改单场 {arenaId:team}）。 */
   teamNames: { type: Object, default: () => ({}) },
 })
-const emit = defineEmits(['update-team-name'])
+const emit = defineEmits(['update-summary-team-name'])
 const { t } = useI18n()
 
 const DIM_KEYS = ['league_damage_score', 'league_assist_score', 'league_kill_score',
@@ -52,20 +52,14 @@ function ratingText(value) {
 }
 
 function teamDisplayName(row) {
-  for (const at of row.arenaTeams || []) {
-    const o = props.teamNames ? props.teamNames[at] : undefined
-    if (o) return o
-  }
+  const override = props.teamNames ? props.teamNames[row.teamKey] : undefined
+  if (override) return override
   return row.autoName || t('league.team_name_pending')
 }
 
+/** 批次战队名称编辑：只改 {teamKey} → 名，绝不批量覆盖所有 {arenaId:team}（PR #123 Blocker 2）。 */
 function onTeamNameInput(row, event) {
-  const name = event.target.value
-  for (const at of row.arenaTeams || []) {
-    const parts = String(at).split(':')
-    if (parts.length < 2) continue
-    emit('update-team-name', { arenaId: parts[0], team: Number(parts[1]), name })
-  }
+  emit('update-summary-team-name', { teamKey: row.teamKey, name: event.target.value })
 }
 </script>
 

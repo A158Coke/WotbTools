@@ -243,8 +243,12 @@ export function useReplay() {
   /**
    * 创建导出任务并开始轮询真实进度。Processing READY 后（processingJobId 存在）直接复用
    * 已解析 result，不再重新上传 replay / 重新解析（plan §30/§42）。防重复：已有活跃 job 时忽略。
+   *
+   * @param {object|null} teamNamesOverrides League 战队名称覆盖
+   *        {battle:{arenaId:team:名}, summary:{teamKey:名}}（PR #123 Blocker 1：必须完整传给 Export Job）；
+   *        创建时快照进 Export Job，后续编辑不影响已创建的异步任务。
    */
-  async function startExportJob(mode) {
+  async function startExportJob(mode, teamNamesOverrides = null) {
     if (!files.value.length) { error.value = t('replay.no_files'); return }
     if (exportActive.value) return
     error.value = ''
@@ -252,7 +256,9 @@ export function useReplay() {
     try {
       const reuse = resultMatchesSelection.value
       const body = reuse ? null : buildFormData()
-      const created = await api.createExportJob(body, mode, reuse ? processingJobId.value : undefined)
+      const teamNamesJson = teamNamesOverrides ? JSON.stringify(teamNamesOverrides) : null
+      const created = await api.createExportJob(body, mode,
+        reuse ? processingJobId.value : undefined, teamNamesJson)
       exportJob.value = {
         jobId: created.jobId,
         status: created.status || 'QUEUED',
