@@ -29,8 +29,9 @@ description: >
 1. **OCR 就绪检查** — 确认 `ocr` CLI 可用（缺失则按固定版本安装），见「OCR 就绪检查」
 2. **Layer B — OpenCodeReview Code Audit** — OCR delegate mode 产出审查范围 + 规则，
    主代理逐文件按规则审查 diff，产出结构化 finding
-3. **Layer A — Requirement/Plan Auditor** — 主代理对照 `docs/current-plan.md` /
-   显式 requirements / acceptance criteria 逐条审计完成度，产出 Plan compliance
+3. **Layer A — Requirement/Plan Auditor** — 主代理按 A0 解析 plan source
+   （发现不到计划文件则 fallback 用户显式 requirements / acceptance criteria），
+   逐条审计完成度，产出 Plan compliance
 4. **Layer A 补充审计** — DI 注入审计 + AI 死代码清理 + 文档自检（按下方检查单，OCR 不覆盖的领域）
 5. **Layer C — Reconciler** — 合并 Layer A + Layer B finding，去重、验证、重定级，输出 blocker count
 6. **修复 → 重审** — 对 BLOCKER/MAJOR 逐项修复并重审，循环直到零 blocker
@@ -128,13 +129,32 @@ ocr delegate rule --format json <path1> <path2> ...
 > **核心原则**："没有实现的代码"通常不会出现在 diff 中 —— OCR 报告 `no findings`
 > **绝不代表 plan 完成**。本层保留 review-with-docs 对 plan/document completion 的审计能力。
 
+### A0. Plan Source Discovery（不硬编码路径）
+
+> **禁止假设**计划文件路径固定。`docs/current-plan.md` 只是本仓库既有约定，
+> 不是所有环境都成立；先发现，再 fallback。
+
+按以下顺序解析本次 review 的 plan source：
+
+1. **仓库约定位置**：`docs/current-plan.md`（存在且与本次变更相关时使用）
+2. **其他常见位置**（约定位置缺失时按序探测）：`docs/plan*.md` / `PLAN.md` /
+   `docs/current-plan*.md` / 仓库根 `current-plan.md` / `plan.md`，取内容最完整、
+   与本次变更最相关的一份
+3. **fallback — 用户显式 requirements**：无任何计划文件时，以用户本次 review 请求中
+   显式给出的 requirements / acceptance criteria 为 plan source
+4. **仍为空**：明确报告「no plan source found」，不臆造；按 reviewer inference 标记
+   待确认项，不静默跳过 Layer A
+
+> 判定「plan 完成/未完成」必须基于实际解析到的 plan source（含 fallback 的显式
+> requirements）；找不到文件 ≠ plan 不存在或已完成。
+
 ### A1. Plan compliance 审计
 
 输入：
 
-- `docs/current-plan.md`
-- 用户显式 requirements
-- acceptance criteria
+- plan source（A0 解析结果：`docs/current-plan.md` 或探测到的计划文件，
+  或 fallback 的用户显式 requirements）
+- acceptance criteria（plan source 内或用户请求中）
 - repository 当前实现
 - tests
 - 必要的相关 documentation
@@ -223,7 +243,8 @@ requirement 未完成 → **即使 OCR 无 finding 也必须成为 BLOCKER**。
 ### C4. Source of Truth 顺序（冲突时按此裁决）
 
 1. 用户当前显式 requirement
-2. `docs/current-plan.md`
+2. plan source（A0 解析结果；`docs/current-plan.md` 为仓库约定位置，
+   无文件时此处即用户显式 requirements）
 3. 已确认的 acceptance criteria
 4. repository 当前真实 architecture / contract
 5. tests 和运行结果
@@ -377,9 +398,9 @@ Blocker count: N   （0 才允许判定完成）
 - [ ] 环境变量变更是否同步到 `application.yml` 注释
 - [ ] Docker 构建变更是否同步到相关 Dockerfile 注释
 
-### 7. current-plan（计划文件同步）
-- [ ] `docs/current-plan.md` 中是否有与本变更相关的进行中任务；有则任务状态是否与实际一致（IN PROGRESS → COMPLETED / BLOCKED）
-- [ ] 计划的业务目标/范围/验收标准是否与本次变更一致（grill-me / plan-designer 产出的确认单与方案单已落入计划文件）
+### 7. plan source（计划文件同步，按 A0 发现）
+- [ ] plan source（A0 解析结果，仓库约定 `docs/current-plan.md`）中是否有与本变更相关的进行中任务；有则任务状态是否与实际一致（IN PROGRESS → COMPLETED / BLOCKED）
+- [ ] 计划的业务目标/范围/验收标准是否与本次变更一致（grill-me / plan-designer 产出的确认单与方案单已落入计划文件；无计划文件时以用户显式 requirements 为准）
 
 ### 8. frontend 版本历史 (`frontend/src/data/versions.json`)
 > 面向用户的版本历史卡片（首页入口读取）。**仅用户可见变更需新增条目**；纯技术/构建/CI/重构变更不写。
