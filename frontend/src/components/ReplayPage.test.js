@@ -140,7 +140,7 @@ vi.mock('vue-i18n', async () => {
   const { ref } = await import('vue')
   const locale = ref('en')
   return {
-    useI18n: () => ({ locale, t: i18n.t })
+    useI18n: () => ({ locale, t: i18n.t, te: key => i18n.t.mock.calls.some(c => c[0] === key) })
   }
 })
 
@@ -212,6 +212,8 @@ vi.mock('../composables/useColumns.js', async () => {
       showColPicker: ref(false), pickerScope: ref('player'),
       currentOrder: computed(() => []),
       shownCols: computed(() => []), shownAggCols: computed(() => []),
+      // 测试 seam：window.__testLeagueMode 控制 league 模式渲染
+      leagueMode: computed(() => !!window.__testLeagueMode),
       toggleColPicker: vi.fn(), toggleCol: vi.fn(),
       selectAllCols: vi.fn(), resetCols: vi.fn(),
       handleReorder: vi.fn(), initFromResponse: vi.fn(),
@@ -921,5 +923,51 @@ describe('ReplayPage Battle context actions（V2：登录门控 + 跨视图文�
     await wrapper.find('[data-testid="battle-playback-btn"]').trigger('click')
     await flushPromises()
     expect(navigate).not.toHaveBeenCalled()
+  })
+})
+describe('ReplayPage League Rating', () => {
+  beforeEach(() => {
+    state.clear()
+    state.init = { activeTab: 'b0', resp: null, error: '', loading: false, locale: 'zh', files: [] }
+  })
+
+  it('renders league validation failures with code and arenaId', async () => {
+    state.init.resp = makeResp({
+      league: {
+        failures: [
+          { fileName: 'bad.wotbreplay', arenaId: '111', code: 'LEAGUE_NOT_SEVEN_VS_SEVEN' }
+        ]
+      }
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    const text = wrapper.text()
+    expect(text).toContain('bad.wotbreplay')
+    expect(text).toContain('LEAGUE_NOT_SEVEN_VS_SEVEN')
+    expect(text).toContain('111')
+  })
+
+  it('shows aggregate tab in league mode', async () => {
+    window.__testLeagueMode = true
+    try {
+      state.init.resp = makeResp({
+        aggregate: [],
+        league: {
+          mode: 'LEAGUE_RATING',
+          columns: [],
+          playerSummaries: [],
+          playerSummaryColumns: [],
+          teamSummaries: [],
+          teamSummaryColumns: [],
+          failures: []
+        }
+      })
+      const wrapper = mountPage()
+      await flushPromises()
+      const tabs = wrapper.findAll('button')
+      expect(tabs.some(b => b.text().includes('result.aggregate_tab'))).toBe(true)
+    } finally {
+      delete window.__testLeagueMode
+    }
   })
 })

@@ -1,9 +1,11 @@
 package com.wotb.web.replay.job;
 
 import com.wotb.core.export.ExcelExporter;
+import com.wotb.core.league.LeagueRatingMode;
+import com.wotb.core.league.LeagueReplays;
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.Collected;
 import com.wotb.core.model.Source;
+import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.parse.Replays;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.ReplayProcessingOptions;
@@ -34,6 +36,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.RejectedExecutionException;
@@ -103,6 +106,34 @@ public class ReplayExportJobService {
         return createJob(files, mode, null);
     }
 
+    /** 创建 Export Job（带战队名称覆盖 JSON：{arenaId}:{team} → 显示名，仅本次调用内使用）。 */
+    public String createJob(final MultipartFile[] files, final String mode,
+                            final String processingJobId, final String teamNamesJson) {
+        return createJob(files, mode, processingJobId, parseTeamNames(teamNamesJson));
+    }
+
+    /** 解析战队名称覆盖 JSON（非法 JSON → 空 Map；覆盖不影响 Rating 数值，只改显示名）。 */
+    static Map<String, String> parseTeamNames(final String json) {
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            final tools.jackson.databind.ObjectMapper om = tools.jackson.databind.json.JsonMapper.builder().build();
+            final Map<String, String> out = new java.util.LinkedHashMap<>();
+            final tools.jackson.databind.JsonNode node = om.readTree(json);
+            if (node != null && node.isObject()) {
+                for (final var e : node.properties()) {
+                    if (e.getValue().isTextual()) {
+                        out.put(e.getKey(), e.getValue().asText());
+                    }
+                }
+            }
+            return out;
+        } catch (final Exception e) {
+            return Map.of();
+        }
+    }
+
     /**
      * 创建 Export Job。
      *
@@ -115,6 +146,11 @@ public class ReplayExportJobService {
      *         （复用路径引用不存在的 / 未 READY 的 Processing Job）
      */
     public String createJob(final MultipartFile[] files, final String mode, final String processingJobId) {
+        return createJob(files, mode, processingJobId, (Map<String, String>) null);
+    }
+
+    private String createJob(final MultipartFile[] files, final String mode, final String processingJobId,
+                             final Map<String, String> teamNames) {
         final boolean each = "each".equalsIgnoreCase(mode);
         final ReplayProcessingJob processingJob;
         // acquire 成功后为 true（Processing result 引用 +1，review BLOCKER 2 ownership lifecycle）。
@@ -180,7 +216,7 @@ public class ReplayExportJobService {
                     throw new IllegalStateException("EXPORT_JOB_STORAGE_UNAVAILABLE");
                 }
             }
-            final ExportJob job = new ExportJob(jobId, each ? "each" : "aggregate", total, processingJobId);
+            final ExportJob job = new ExportJob(jobId, each ? "each" : "aggregate", total, processingJobId, teamNames);
             store.register(job);
             final long submittedNanos = System.nanoTime();
             try {
@@ -382,7 +418,16 @@ public class ReplayExportJobService {
         final Path artifact = store.jobDir(job.jobId()).resolve("result.xlsx");
         job.trackArtifact(artifact);
         try (OutputStream out = Files.newOutputStream(artifact)) {
-            if (battles.size() == 1) {
+            if (ds.isLeague()) {
+                // League Rating：与 preview 同一 core；战队名称覆盖仅本次调用内使用
+                if (battles.size() == 1) {
+                    ExcelExporter.writeSingleLeague(battles.getFirst(),
+                            ds.league().battleResults().getFirst(), tankopedia, job.teamNames(), out);
+                } else {
+                    ExcelExporter.writeAggregateLeague(battles, ds.battleSourceNames(),
+                            ds.duplicates(), ds.league(), tankopedia, job.teamNames(), out);
+                }
+            } else if (battles.size() == 1) {
                 ExcelExporter.writeSingle(battles.getFirst(), tankopedia, out);
             } else {
                 ExcelExporter.writeAggregate(battles, ds.battleSourceNames(), ds.duplicates(), tankopedia, out);
@@ -425,7 +470,12 @@ public class ReplayExportJobService {
                 final ZipEntry entry = new ZipEntry(uniqueName(
                         ReplayJobFiles.stripExt(ds.battleSourceNames().get(i)) + ".xlsx", usedNames));
                 zip.putNextEntry(entry);
-                writeSingleExcel(battles.get(i), zip);
+                if (ds.isLeague()) {
+                    writeSingleLeagueExcel(battles.get(i),
+                            ds.league().battleResults().get(i), job.teamNames(), zip);
+                } else {
+                    writeSingleExcel(battles.get(i), zip);
+                }
                 zip.closeEntry();
                 job.updateProgress(processed, duplicates, failures);
             }
@@ -489,7 +539,7 @@ public class ReplayExportJobService {
         }
     }
 
-    /** aggregate：Replays.collect 去重 + 逐文件进度（§11/§12/§13），串行（§23）。 */
+    /** aggregate：LeagueReplays.collect 去重/模式判定 + 逐文件进度（§11/§12/§13），串行（§23）。 */
     private void processAggregate(final ExportJob job, final List<Path> inputs) throws Exception {
         final int[] counters = new int[3]; // processed / duplicates / failures
         final Replays.ReplayProgressListener progress = (source, outcome) -> {
@@ -508,28 +558,43 @@ public class ReplayExportJobService {
                 throw new JobCancelledException();
             }
         };
-        final Collected c = Replays.collect(ReplayJobFiles.lazySources(inputs), this::processFull, null, progress);
+        final LeagueReplays.LeagueCollectResult c = LeagueReplays.collect(
+                ReplayJobFiles.lazySources(inputs), this::processFull, null, progress);
         if (job.isCancelled()) {
             throw new JobCancelledException();
         }
-        if (c.battles.isEmpty()) {
+        if (c.mode() == LeagueRatingMode.MIXED_UNSUPPORTED) {
+            throw new IllegalArgumentException("MIXED_LEAGUE_AND_STANDARD_REPLAYS");
+        }
+        if (c.battles().isEmpty()) {
             throw new NoValidReplaysException();
         }
-        PotentialDamage.apply(c.battles, tankopedia);
-        for (final Battle battle : c.battles) {
-            PerformanceMetricsCalculator.populateBattle(battle);
-        }
+        PotentialDamage.apply(c.battles(), tankopedia);
         job.advancePhase(ExportJob.Phase.BUILDING_EXCEL);
-        final String filename = c.battles.size() == 1
-                ? ReplayJobFiles.stripExt(c.battleSourceNames.getFirst()) + ".xlsx"
+        final String filename = c.battles().size() == 1
+                ? ReplayJobFiles.stripExt(c.battleSourceNames().getFirst()) + ".xlsx"
                 : "联赛汇总.xlsx";
         final Path artifact = store.jobDir(job.jobId()).resolve("result.xlsx");
         job.trackArtifact(artifact);
         try (OutputStream out = Files.newOutputStream(artifact)) {
-            if (c.battles.size() == 1) {
-                ExcelExporter.writeSingle(c.battles.getFirst(), tankopedia, out);
+            if (c.mode() == LeagueRatingMode.LEAGUE_RATING) {
+                // League Rating：不计算旧 contribution/kast/impact；复用同一评分 core
+                if (c.battles().size() == 1) {
+                    ExcelExporter.writeSingleLeague(c.battles().getFirst(),
+                            c.leagueBatch().battleResults().getFirst(), tankopedia, job.teamNames(), out);
+                } else {
+                    ExcelExporter.writeAggregateLeague(c.battles(), c.battleSourceNames(),
+                            c.duplicates(), c.leagueBatch(), tankopedia, job.teamNames(), out);
+                }
             } else {
-                ExcelExporter.writeAggregate(c.battles, c.battleSourceNames, c.duplicates, tankopedia, out);
+                for (final Battle battle : c.battles()) {
+                    PerformanceMetricsCalculator.populateBattle(battle);
+                }
+                if (c.battles().size() == 1) {
+                    ExcelExporter.writeSingle(c.battles().getFirst(), tankopedia, out);
+                } else {
+                    ExcelExporter.writeAggregate(c.battles(), c.battleSourceNames(), c.duplicates(), tankopedia, out);
+                }
             }
         }
         job.markReady(filename, XLSX_MIME, artifact);
@@ -558,6 +623,11 @@ public class ReplayExportJobService {
         final Path artifact = store.jobDir(job.jobId()).resolve("result.zip");
         job.trackArtifact(artifact);
         final Set<String> usedNames = new HashSet<>();
+        final LeagueReplays.LeagueCollectResult league = eachLeagueResult(inputs);
+        if (league != null) {
+            processEachLeague(job, league, artifact, usedNames);
+            return;
+        }
         int processed = 0;
         int failures = 0;
         try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(artifact), StandardCharsets.UTF_8)) {
@@ -600,6 +670,64 @@ public class ReplayExportJobService {
         job.markReady("逐场导出.zip", ZIP_MIME, artifact);
     }
 
+    /**
+     * mode=each 的模式预扫描：读取每个文件 meta.json#arenaBonusType 判定批次模式。
+     * 返回 null = 普通模式（沿用逐文件流式路径）；League 模式返回收集结果；混合批次抛
+     * MIXED_LEAGUE_AND_STANDARD_REPLAYS（与 preview 一致，不静默生成无 Rating 的联赛工作簿）。
+     */
+    private LeagueReplays.LeagueCollectResult eachLeagueResult(final List<Path> inputs) throws Exception {
+        boolean anyLeague = false;
+        boolean anyStandard = false;
+        for (final Path p : inputs) {
+            final Integer abt;
+            try {
+                abt = ReplayParser.peekArenaBonusType(Files.readAllBytes(p));
+            } catch (final Exception e) {
+                continue; // 解析失败文件不参与模式判定（按既有失败策略跳过）
+            }
+            if (LeagueRatingMode.isLeague(abt)) {
+                anyLeague = true;
+            } else if (abt != null) {
+                anyStandard = true;
+            }
+        }
+        if (anyLeague && anyStandard) {
+            throw new IllegalArgumentException("MIXED_LEAGUE_AND_STANDARD_REPLAYS");
+        }
+        if (!anyLeague) {
+            return null;
+        }
+        return LeagueReplays.collect(ReplayJobFiles.lazySources(inputs), this::processFull, null, null);
+    }
+
+    /** League mode=each：只导出通过 7v7 校验并完成评分的场次（冲突/不合格场次按失败策略跳过）。 */
+    private void processEachLeague(final ExportJob job, final LeagueReplays.LeagueCollectResult c,
+                                   final Path artifact, final Set<String> usedNames) throws Exception {
+        int processed = 0;
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(artifact), StandardCharsets.UTF_8)) {
+            for (int i = 0; i < c.battles().size(); i++) {
+                if (job.isCancelled()) {
+                    throw new JobCancelledException();
+                }
+                processed++;
+                final ZipEntry entry = new ZipEntry(uniqueName(
+                        ReplayJobFiles.stripExt(c.battleSourceNames().get(i)) + ".xlsx", usedNames));
+                zip.putNextEntry(entry);
+                writeSingleLeagueExcel(c.battles().get(i),
+                        c.leagueBatch().battleResults().get(i), job.teamNames(), zip);
+                zip.closeEntry();
+                progressCheckpoint(job, processed, 0);
+            }
+        }
+        if (job.isCancelled()) {
+            throw new JobCancelledException();
+        }
+        if (processed <= 0) {
+            throw new NoValidReplaysException();
+        }
+        job.markReady("逐场导出.zip", ZIP_MIME, artifact);
+    }
+
     /** 进度推进 + 协作取消 checkpoint（每个 replay 成功/失败后各恰好一次）。 */
     private void progressCheckpoint(final ExportJob job, final int processed, final int failures) {
         job.updateProgress(processed, 0, failures);
@@ -617,6 +745,14 @@ public class ReplayExportJobService {
      */
     void writeSingleExcel(final Battle battle, final OutputStream out) throws IOException {
         ExcelExporter.writeSingle(battle, tankopedia, out);
+    }
+
+    /** League Rating 单场 XLSX 写入（战队名称覆盖仅本次调用内使用）。 */
+    void writeSingleLeagueExcel(final Battle battle,
+                                final com.wotb.core.league.LeagueRatingResult result,
+                                final Map<String, String> teamNames,
+                                final OutputStream out) throws IOException {
+        ExcelExporter.writeSingleLeague(battle, result, tankopedia, teamNames, out);
     }
 
     /** 与 preview/export 完全相同的 authoritative full processing 链（§31，禁止 raw parse 回归）。 */

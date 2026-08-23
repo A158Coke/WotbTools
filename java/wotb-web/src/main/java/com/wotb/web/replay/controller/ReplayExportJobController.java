@@ -50,8 +50,9 @@ public class ReplayExportJobController {
     public ResponseEntity<Map<String, Object>> create(
             @RequestParam(name = "files", required = false) final MultipartFile[] files,
             @RequestParam(name = "mode", defaultValue = "aggregate") final String mode,
-            @RequestParam(name = "processingJobId", required = false) final String processingJobId) {
-        final String jobId = service.createJob(files, mode, processingJobId);
+            @RequestParam(name = "processingJobId", required = false) final String processingJobId,
+            @RequestParam(name = "teamNames", required = false) final String teamNames) {
+        final String jobId = service.createJob(files, mode, processingJobId, teamNames);
         final ExportJob.Snapshot snap = service.status(jobId);
         return ResponseEntity.accepted().body(Map.of(
                 "jobId", snap.jobId(),

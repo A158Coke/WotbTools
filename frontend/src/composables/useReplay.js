@@ -138,7 +138,9 @@ export function useReplay() {
         if (data.status === 'FAILED') {
           processingError.value = data.errorCode === 'NO_VALID_REPLAYS'
             ? t('replay.processing_job.no_valid_replays')
-            : t('replay.processing_job.failed')
+            : data.errorCode === 'MIXED_LEAGUE_AND_STANDARD_REPLAYS'
+              ? t('replay.processing_job.mixed_league_standard')
+              : t('replay.processing_job.failed')
         }
       }
     } catch (e) {

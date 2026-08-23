@@ -1,6 +1,14 @@
 package com.wotb.web.replay.mapper;
 
 import com.wotb.core.Columns;
+import com.wotb.core.league.LeagueColumns;
+import com.wotb.core.league.LeagueRatingBatch;
+import com.wotb.core.league.LeagueRatingBatchAggregator;
+import com.wotb.core.league.LeagueRatingResult;
+import com.wotb.core.league.PlayerLeagueRating;
+import com.wotb.core.league.PlayerLeagueSummary;
+import com.wotb.core.league.TeamLeagueRating;
+import com.wotb.core.league.TeamLeagueSummary;
 import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
@@ -10,6 +18,13 @@ import com.wotb.core.stats.Aggregator;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
 import com.wotb.core.stats.Players;
 import com.wotb.web.replay.dto.AggRow;
+import com.wotb.web.replay.dto.LeagueBattleDto;
+import com.wotb.web.replay.dto.LeagueColumnDef;
+import com.wotb.web.replay.dto.LeagueFailureDto;
+import com.wotb.web.replay.dto.LeaguePlayerSummaryDto;
+import com.wotb.web.replay.dto.LeagueRatingDto;
+import com.wotb.web.replay.dto.LeagueTeamDto;
+import com.wotb.web.replay.dto.LeagueTeamSummaryDto;
 import com.wotb.web.replay.dto.PreviewResponse;
 import com.wotb.web.replay.dto.BattleDto;
 import com.wotb.web.replay.dto.ColumnDef;
@@ -87,21 +102,162 @@ public final class Mapper {
         return out;
     }
 
+    // ---- League Rating 列定义（key 单一来源 LeagueColumns；显示名前端三语 / 导出中文） ----
+
+    /** League 模式单场玩家列：标准列（移除 contribution/kast/impact）+ Rating 维度 + 占点原始字段。 */
+    public static List<ColumnDef> leaguePlayerColumns() {
+        final List<ColumnDef> out = new ArrayList<>();
+        out.add(new ColumnDef("nickname", false));
+        out.add(new ColumnDef(LeagueColumns.RATING, true));
+        for (final Columns.Column c : Columns.PLAYER) {
+            if (LeagueColumns.REMOVED_LEGACY_KEYS.contains(c.key()) || c.key().equals("nickname")) {
+                continue;
+            }
+            out.add(new ColumnDef(c.key(), c.num()));
+        }
+        for (final String key : LeagueColumns.DIM_KEYS) {
+            out.add(new ColumnDef(key, true));
+        }
+        out.add(new ColumnDef(LeagueColumns.VICTORY_POINTS_EARNED, true));
+        out.add(new ColumnDef(LeagueColumns.VICTORY_POINTS_SEIZED, true));
+        return out;
+    }
+
+    /** Rating 列元数据（固定/满分/默认可见/分组）。 */
+    public static List<LeagueColumnDef> leagueColumnDefs() {
+        final List<LeagueColumnDef> out = new ArrayList<>();
+        out.add(new LeagueColumnDef(LeagueColumns.RATING, true,
+                PlayerLeagueRating.MAX_FINAL, true, true, "rating"));
+        for (int d = 0; d < LeagueColumns.DIM_KEYS.size(); d++) {
+            out.add(new LeagueColumnDef(LeagueColumns.dimKey(d), true,
+                    LeagueColumns.dimMax(d), false, false, "rating"));
+        }
+        out.add(new LeagueColumnDef(LeagueColumns.VICTORY_POINTS_EARNED, true, 0, false, false, "battle"));
+        out.add(new LeagueColumnDef(LeagueColumns.VICTORY_POINTS_SEIZED, true, 0, false, false, "battle"));
+        return out;
+    }
+
+    /** League 模式汇总列：标准汇总列（移除 contribution/kast/impact；旧指标在 League 模式完全移除）。 */
+    public static List<ColumnDef> leagueAggregateColumns() {
+        return aggregateColumns().stream()
+                .filter(c -> !LeagueColumns.REMOVED_LEGACY_KEYS.contains(c.key()))
+                .toList();
+    }
+
+    /** League 批次选手汇总列。 */
+    public static List<ColumnDef> leaguePlayerSummaryColumns() {
+        final List<ColumnDef> out = new ArrayList<>();
+        out.add(new ColumnDef("nickname", false));
+        out.add(new ColumnDef("clan", false));
+        out.add(new ColumnDef("battles", true));
+        out.add(new ColumnDef(LeagueColumns.RATING, true));
+        for (final String key : LeagueColumns.DIM_KEYS) {
+            out.add(new ColumnDef(key, true));
+        }
+        out.add(new ColumnDef("mvp_count", true));
+        out.add(new ColumnDef("wins", true));
+        out.add(new ColumnDef("damage_total", true));
+        out.add(new ColumnDef("assist_total", true));
+        out.add(new ColumnDef("kills_total", true));
+        return out;
+    }
+
+    /** League 批次战队汇总列。 */
+    public static List<ColumnDef> leagueTeamSummaryColumns() {
+        final List<ColumnDef> out = new ArrayList<>();
+        out.add(new ColumnDef("team_name", false));
+        out.add(new ColumnDef("battles", true));
+        out.add(new ColumnDef(LeagueColumns.RATING, true));
+        for (final String key : LeagueColumns.DIM_KEYS) {
+            out.add(new ColumnDef(key, true));
+        }
+        out.add(new ColumnDef("wins", true));
+        return out;
+    }
+
+    // ---- Battle / 单场 ----
+
     public static BattleDto toBattle(final Battle b, final String sourceName, final Tankopedia tp) {
+        return toBattle(b, sourceName, tp, null);
+    }
+
+    /** League 模式时注入 Rating 单元格与单场元数据（普通模式 league 参数为 null）。 */
+    public static BattleDto toBattle(final Battle b, final String sourceName, final Tankopedia tp,
+                                     final LeagueRatingResult league) {
         final Function<Long, String> platoon = Players.platoonLabeler();
         final List<PlayerRow> rows = new ArrayList<>();
+        final Map<Long, PlayerLeagueRating> leagueByAccount = new LinkedHashMap<>();
+        if (league != null) {
+            for (final PlayerLeagueRating plr : league.players()) {
+                leagueByAccount.put(plr.accountId(), plr);
+            }
+        }
         for (final PlayerResult p : Players.sorted(b.players)) {
             Players.enrich(p, tp);
             p.platoonLabel = platoon.apply(p.platoonId);
             final Map<String, Object> cells = new LinkedHashMap<>();
             for (final Columns.Column c : Columns.PLAYER) {
+                // League 模式完全移除旧 contribution/kast/impact（plan §14）；普通模式保留
+                if (league != null && LeagueColumns.REMOVED_LEGACY_KEYS.contains(c.key())) {
+                    continue;
+                }
                 cells.put(c.key(), playerValue(c, p));
+            }
+            if (league != null) {
+                final PlayerLeagueRating plr = leagueByAccount.get(p.accountId);
+                if (plr != null) {
+                    cells.put(LeagueColumns.RATING, r1(plr.finalRating()));
+                    final double[] dims = {
+                            plr.damageScore(), plr.assistScore(), plr.killScore(), plr.exchangeScore(),
+                            plr.blockedScore(), plr.survivalTradeScore(), plr.shootingScore(), plr.objectiveScore()};
+                    for (int d = 0; d < LeagueColumns.DIM_KEYS.size(); d++) {
+                        cells.put(LeagueColumns.dimKey(d), r1(dims[d]));
+                    }
+                }
+                cells.put(LeagueColumns.VICTORY_POINTS_EARNED, p.victoryPointsEarned);
+                cells.put(LeagueColumns.VICTORY_POINTS_SEIZED, p.victoryPointsSeized);
             }
             rows.add(new PlayerRow(cells, p.team));
         }
         return new BattleDto(b.arenaId, b.mapName, b.version, b.durationS,
-                b.startTime, b.winnerTeam, sourceName, rows);
+                b.startTime, b.winnerTeam, sourceName, rows, leagueBattleDto(league, b));
     }
+
+    private static LeagueBattleDto leagueBattleDto(final LeagueRatingResult league, final Battle battle) {
+        if (league == null) {
+            return null;
+        }
+        return new LeagueBattleDto(
+                league.mvp() == null ? "" : league.mvp().nickname(),
+                league.mvp() == null ? 0 : league.mvp().accountId(),
+                league.team1() == null || league.team1().teamBest() == null
+                        ? "" : league.team1().teamBest().nickname(),
+                league.team1() == null || league.team1().teamBest() == null
+                        ? 0 : league.team1().teamBest().accountId(),
+                league.team2() == null || league.team2().teamBest() == null
+                        ? "" : league.team2().teamBest().nickname(),
+                league.team2() == null || league.team2().teamBest() == null
+                        ? 0 : league.team2().teamBest().accountId(),
+                leagueTeamDto(league.team1(), battle),
+                leagueTeamDto(league.team2(), battle));
+    }
+
+    private static LeagueTeamDto leagueTeamDto(final TeamLeagueRating team, final Battle battle) {
+        if (team == null) {
+            return null;
+        }
+        return new LeagueTeamDto(
+                team.team(),
+                LeagueRatingBatchAggregator.teamKey(battle, team),
+                r1(team.teamRating()),
+                team.dimensionAverages().stream().map(Mapper::r1).toList(),
+                team.autoName(),
+                team.nameSource(),
+                team.teamBest() == null ? "" : team.teamBest().nickname(),
+                team.teamBest() == null ? 0 : team.teamBest().accountId());
+    }
+
+    // ---- 汇总 ----
 
     public static List<AggRow> toAggregate(final Map<Long, Agg> aggMap,
                                         final Map<Long, PerformanceMetricsCalculator.Row> perfById) {
@@ -168,10 +324,28 @@ public final class Mapper {
                                                     final List<String[]> duplicates,
                                                     final List<String[]> failures,
                                                     final Tankopedia tp) {
+        return toPreviewResponse(battles, battleSourceNames, duplicates, failures, tp, null);
+    }
+
+    /** League 模式：battles 与 league.battleResults() 按下标对齐（同一 ProcessedDataset 产出）。 */
+    public static PreviewResponse toPreviewResponse(final List<Battle> battles,
+                                                    final List<String> battleSourceNames,
+                                                    final List<String[]> duplicates,
+                                                    final List<String[]> failures,
+                                                    final Tankopedia tp,
+                                                    final LeagueRatingBatch league) {
         final List<BattleDto> battlesDto = new ArrayList<>();
         for (int i = 0; i < battles.size(); i++) {
             final Battle battle = battles.get(i);
-            battlesDto.add(toBattle(battle, battleSourceNames.get(i), tp));
+            final LeagueRatingResult battleLeague = league == null || league.battleResults().size() <= i
+                    ? null : league.battleResults().get(i);
+            battlesDto.add(toBattle(battle, battleSourceNames.get(i), tp, battleLeague));
+        }
+        if (league != null) {
+            // League 模式：不输出旧汇总表（选手/战队中位数汇总走 league.*）；
+            // aggregateColumns 不含 contribution/kast/impact（plan §14）
+            return new PreviewResponse(battlesDto, List.of(), duplicates, failures,
+                    leaguePlayerColumns(), leagueAggregateColumns(), leagueDto(league));
         }
         final Map<Long, PerformanceMetricsCalculator.Row> perfById = new LinkedHashMap<>();
         for (final PerformanceMetricsCalculator.Row row : PerformanceMetricsCalculator.compute(battles)) {
@@ -181,6 +355,31 @@ public final class Mapper {
                 ? toAggregate(Aggregator.aggregate(battles, tp), perfById)
                 : List.of();
         return new PreviewResponse(battlesDto, aggregate, duplicates, failures,
-                playerColumns(), aggregateColumns());
+                playerColumns(), aggregateColumns(), null);
+    }
+
+    private static LeagueRatingDto leagueDto(final LeagueRatingBatch league) {
+        final List<LeaguePlayerSummaryDto> players = new ArrayList<>();
+        for (final PlayerLeagueSummary s : league.playerSummaries()) {
+            players.add(new LeaguePlayerSummaryDto(
+                    s.accountId(), s.nickname(), s.clan(), s.battles(),
+                    r1(s.ratingMedian()),
+                    s.dimensionMedians().stream().map(Mapper::r1).toList(),
+                    s.mvpCount(), s.wins(), s.damageTotal(), s.assistTotal(), s.killsTotal()));
+        }
+        final List<LeagueTeamSummaryDto> teams = new ArrayList<>();
+        for (final TeamLeagueSummary s : league.teamSummaries()) {
+            teams.add(new LeagueTeamSummaryDto(
+                    s.teamKey(), s.autoName(), s.nameSource(), s.battles(),
+                    r1(s.ratingMedian()),
+                    s.dimensionMedians().stream().map(Mapper::r1).toList(),
+                    s.wins(), s.arenaTeams()));
+        }
+        final List<LeagueFailureDto> failures = new ArrayList<>();
+        for (final com.wotb.core.league.LeagueFailure f : league.failures()) {
+            failures.add(new LeagueFailureDto(f.fileName(), f.arenaId(), f.code()));
+        }
+        return new LeagueRatingDto("LEAGUE_RATING", leagueColumnDefs(), players, teams,
+                leaguePlayerSummaryColumns(), leagueTeamSummaryColumns(), failures);
     }
 }
