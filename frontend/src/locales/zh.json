@@ -3,6 +3,7 @@
         "title": "WoTBTools",
         "subtitle": "回放解析 · 在线排行榜 · 实时评分 · AI 战术复盘",
         "replay_tab": "回放解析",
+        "analysis_tab": "战局分析",
         "theme": "主题",
         "login": "登入",
         "profile": "个人中心",
@@ -40,7 +41,9 @@
         "picker_locked": "列选择器打开时不可切换表格，请先点「完成」",
         "export_aggregate": "合并汇总",
         "export_each": "每场导出",
-        "download_png": "下载为 PNG"
+        "download_png": "下载为 PNG",
+        "battle_playback": "战局回放",
+        "ai_review": "AI 复盘"
     },
     "result": {
         "aggregate_tab": "汇总 ({count} 名选手)",
@@ -165,6 +168,7 @@
         "upload_hint": "仅支持随机战斗和评级战斗回放",
         "upload_success": "上传成功！已进入名人堂",
         "upload_title": "上传回放以进入名人堂",
+        "submit_entry": "提交记录",
         "upload_btn": "选择回放文件",
         "uploading": "上传中...",
         "invalid_file": "请选择 .wotbreplay 文件",
@@ -543,6 +547,7 @@
         "export_failed": "导出失败",
         "png_export_failed": "PNG 导出失败",
         "png_exporting": "正在导出 PNG…",
+        "login_required_for_battle": "战局回放 / AI 复盘需要登录。登录后请重新选择回放文件。",
         "export_job": {
             "title": "正在导出战斗数据",
             "queued": "正在准备导出…",
@@ -987,6 +992,9 @@
     },
     "home": {
         "replayTitle": "回放提取器",
+        "uploadReplay": "上传回放",
+        "analysisTitle": "战局分析",
+        "analysisDesc": "批量解析回放、查看战局数据；选择单场可进入战局回放与 AI 复盘。",
         "replayDesc": "上传 .wotbreplay 回放文件，提取战斗数据并导出 Excel。",
         "highestDamageRecord": "最高伤害记录",
         "hofDesc": "随机战斗与评级战斗的单场伤害排行 — 上传回放即可进入名人堂。",
