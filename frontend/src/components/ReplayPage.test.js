@@ -39,13 +39,13 @@ describe('ReplayPage export job flow', () => {
     expect(state.replay.startExportJob).toHaveBeenCalledWith('each')
   })
 
-  it('renders ExportTaskCard when export job exists', async () => {
+  it('renders ReplayTaskCard when export job exists', async () => {
     state.init.resp = makeResp()
     const wrapper = mountPage()
-    expect(wrapper.find('[data-testid="export-task-card"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="replay-task-card"]').exists()).toBe(false)
     jobState.setJob({ jobId: 'j1', status: 'PROCESSING', phase: 'PROCESSING_REPLAYS', total: 2, processed: 1, duplicates: 0, failures: 0 })
     await flushPromises()
-    expect(wrapper.find('[data-testid="export-task-card"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="replay-task-card"]').exists()).toBe(true)
   })
 
   it('disables export buttons while a job is active', async () => {
@@ -123,6 +123,19 @@ const jobState = vi.hoisted(() => {
     setActive: (v) => { if (_exportActive) _exportActive.value = v },
   }
 })
+
+const pJobState = vi.hoisted(() => {
+  let _processingJob
+  let _processingActive
+  let _processingJobId
+  return {
+    capture: (job, active, id) => { _processingJob = job; _processingActive = active; _processingJobId = id },
+    clear: () => { _processingJob = null; _processingActive = null; _processingJobId = null },
+    setJob: (v) => { if (_processingJob) _processingJob.value = v },
+    setActive: (v) => { if (_processingActive) _processingActive.value = v },
+    setId: (v) => { if (_processingJobId) _processingJobId.value = v },
+  }
+})
 vi.mock('vue-i18n', async () => {
   const { ref } = await import('vue')
   const locale = ref('en')
@@ -164,15 +177,24 @@ vi.mock('../composables/useReplay.js', async () => {
       state.init = null
       const exportJobRef = ref(null)
       const exportActiveRef = ref(false)
+      const processingJobRef = ref(null)
+      const processingActiveRef = ref(false)
+      const processingJobIdRef = ref(null)
       jobState.capture(exportJobRef, exportActiveRef)
+      pJobState.capture(processingJobRef, processingActiveRef, processingJobIdRef)
       const startExportJob = vi.fn()
-      state.captureFns({ startExportJob })
+      const startProcessingJob = vi.fn()
+      state.captureFns({ startExportJob, startProcessingJob })
       return {
         files, loading, error, resp, activeTab,
         aggStats: computed(() => null),
-        pendingRemove, playerCols, aggCols,
+        pendingRemove, updateFiles: vi.fn(), playerCols, aggCols,
         exportJob: exportJobRef, exportError: ref(''), exportActive: exportActiveRef,
-        doPreview: vi.fn(), startExportJob, cancelExportJob: vi.fn(),
+        processingJob: processingJobRef, processingError: ref(''), processingActive: processingActiveRef,
+        processingJobId: processingJobIdRef,
+        startProcessingJob, cancelProcessingJob: vi.fn(),
+        dismissProcessingJob: vi.fn(),
+        startExportJob, cancelExportJob: vi.fn(),
         downloadExportResult: vi.fn(), dismissExportJob: vi.fn(),
         askRemoveBattle: vi.fn(), askRemoveFile: vi.fn(),
         cancelRemove: vi.fn(), confirmRemove: vi.fn(),
@@ -226,7 +248,7 @@ function mountPage(overrides = {}) {
         login: auth.login,
       },
       stubs: {
-        FileUploader: { template: '<div class="file-uploader-stub" />' },
+        FileUploader: { template: '<div class="file-uploader-stub"><button class="preview-stub" @click="$emit(&quot;preview&quot;)">action.preview</button></div>' },
         ColumnPicker: { template: '<div class="col-picker-stub" />' },
         AggregateTable: {
           template: '<div class="agg-table-stub" data-export-role="aggregate">' +
@@ -284,6 +306,47 @@ function interceptAppendChild(configFn) {
 function stripOffscreen() {
   for (const el of document.querySelectorAll('[style*="left: -9999px"]')) el.parentNode?.removeChild(el)
 }
+
+describe('ReplayPage processing job flow', () => {
+  beforeEach(() => {
+    state.clear()
+    state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en', files: [] }
+  })
+
+  it('renders processing task card with real 18/34 progress (plan §64)', async () => {
+    state.init.resp = null
+    const wrapper = mountPage()
+    expect(wrapper.find('[data-testid="replay-task-card"]').exists()).toBe(false)
+    pJobState.setJob({ jobId: 'p1', status: 'PROCESSING', phase: 'PROCESSING_REPLAYS', total: 34, processed: 18, valid: 16, duplicates: 2, failures: 1, currentFile: 'x.wotbreplay' })
+    await flushPromises()
+    const card = wrapper.find('[data-testid="replay-task-card"]')
+    expect(card.exists()).toBe(true)
+    expect(card.text()).toContain('replay.processing_job.title')
+    expect(card.text()).toContain('replay.processing_job.progress')
+  })
+
+  it('processing READY hides processing card when export card present (export takes the slot)', async () => {
+    state.init.resp = null
+    const wrapper = mountPage()
+    pJobState.setJob({ jobId: 'p1', status: 'READY', phase: null, total: 34, processed: 34, valid: 31, duplicates: 2, failures: 1 })
+    jobState.setJob({ jobId: 'e1', status: 'PROCESSING', phase: 'BUILDING_EXCEL', total: 34, processed: 34, duplicates: 0, failures: 0 })
+    await flushPromises()
+    const cards = wrapper.findAll('[data-testid="replay-task-card"]')
+    expect(cards.length).toBe(1)
+    expect(cards[0].text()).toContain('replay.export_job.title')
+  })
+
+  it('preview button triggers startProcessingJob', async () => {
+    state.init.resp = null
+    state.init.files = [new File(['x'], 'a.wotbreplay')]
+    const wrapper = mountPage()
+    const previewBtn = wrapper.findAll('button').find(b => b.text().includes('action.preview'))
+    expect(previewBtn).toBeDefined()
+    await previewBtn.trigger('click')
+    await flushPromises()
+    expect(state.replay.startProcessingJob).toHaveBeenCalled()
+  })
+})
 
 describe('ReplayPage PNG export', () => {
   let origCreateObjectURL, origRevokeObjectURL, mockCanvas, wrapper, h2cDefaultImpl

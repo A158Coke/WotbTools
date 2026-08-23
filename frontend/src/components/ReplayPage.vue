@@ -17,12 +17,14 @@ import ColumnPicker from './ColumnPicker.vue'
 import AggregateTable from './AggregateTable.vue'
 import BattleTable from './BattleTable.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
-import ExportTaskCard from './ExportTaskCard.vue'
+import ReplayTaskCard from './ReplayTaskCard.vue'
 
 const { locale, t } = useI18n()
 const replay = useReplay()
-const { files, loading, error, resp, activeTab, aggStats, pendingRemove,
+const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateFiles,
+  processingJob, processingError, processingActive,
   exportJob, exportError, exportActive,
+  startProcessingJob, cancelProcessingJob, dismissProcessingJob,
   startExportJob, cancelExportJob, downloadExportResult, dismissExportJob,
   askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove } = replay
 const cols = useColumns(replay.playerCols, replay.aggCols, replay.activeTab)
@@ -226,7 +228,7 @@ function openAiReview() {
   navigate('reconstruction')
 }
 
-async function preview() { await replay.doPreview(cols.initFromResponse) }
+async function preview() { await startProcessingJob(cols.initFromResponse) }
 
 function onFileRemoveRequest(f) { askRemoveFile(f) }
 </script>
@@ -234,7 +236,7 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
 <template>
   <div class="layout-data-workspace">
     <FileUploader :files="files" :loading="loading" :confirm-remove="!!resp"
-      @update:files="files = $event" @preview="preview" @remove-request="onFileRemoveRequest" />
+      @update:files="updateFiles" @preview="preview" @remove-request="onFileRemoveRequest" />
 
     <p v-if="error" class="error">{{ error }}</p>
 
@@ -301,7 +303,11 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
       </div>
     </template>
 
-    <ExportTaskCard :job="exportJob" :error="exportError"
+    <ReplayTaskCard v-if="processingJob && !exportJob" :job="processingJob" :error="processingError"
+      kind="processing"
+      @cancel="cancelProcessingJob" @dismiss="dismissProcessingJob" />
+    <ReplayTaskCard v-if="exportJob" :job="exportJob" :error="exportError"
+      kind="export"
       @cancel="cancelExportJob" @download="downloadExportResult" @dismiss="dismissExportJob" />
 
     <RemoveConfirmModal :pending="pendingRemove" @confirm="confirmRemove" @cancel="cancelRemove" />

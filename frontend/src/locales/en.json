@@ -31,7 +31,10 @@
         "remove_title": "Remove this replay",
         "add_files_title": "Add replay files",
         "add_folder_title": "Add folder",
-        "remove_file_aria": "Remove replay file {name}"
+        "remove_file_aria": "Remove replay file {name}",
+        "files_size": "{count} files · {size}",
+        "view_list": "View file list",
+        "hide_list": "Hide file list"
     },
     "action": {
         "preview": "Parse & Preview",
@@ -565,6 +568,18 @@
             "failed": "Export failed",
             "failed_no_valid": "No valid replays to export.",
             "failed_generic": "Export failed, please try again.",
+            "cancelled": "Cancelled"
+        },
+        "processing_job": {
+            "title": "Parsing replays",
+            "queued": "Preparing parse…",
+            "preparing": "Processing job created · {total} files",
+            "progress": "{processed}/{total} parsed",
+            "current_file": "Processing {file}",
+            "counts": "{v} valid · {d} duplicate · {f} failed",
+            "ready": "Replays parsed",
+            "failed": "Parse failed",
+            "no_valid_replays": "No valid replays to parse.",
             "cancelled": "Cancelled"
         }
     },
