@@ -73,19 +73,19 @@ async function copyText(text) {
   align-items: flex-start;
   gap: 8px;
   padding: 20px;
-  background: linear-gradient(180deg, var(--bg-card), color-mix(in srgb, var(--bg-card2) 42%, var(--bg-card)));
-  border: 1px solid var(--border);
+  background: var(--showcase-tactical);
+  border: 1px solid var(--showcase-tactical-border);
   border-radius: 8px;
 }
 .contact-card:hover { border-color: var(--accent); }
 .contact-icon { font-size: 1.7rem; line-height: 1; }
-.contact-card h2 { font-size: 1rem; color: var(--text-heading); margin: 0; }
+.contact-card h2 { font-size: 1rem; color: var(--showcase-tactical-heading); margin: 0; }
 .contact-value {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: .92rem;
-  color: var(--text-label);
-  background: var(--bg-card2);
-  border: 1px solid var(--border-ghost);
+  color: #d8d5cd;
+  background: var(--showcase-tactical-soft-2);
+  border: 1px solid rgba(80, 92, 100, .5);
   border-radius: 6px;
   padding: 6px 10px;
   margin: 0;
@@ -93,16 +93,16 @@ async function copyText(text) {
 }
 .copy-btn {
   margin-top: 4px;
-  border: 1px solid var(--border-ghost);
-  background: var(--bg-card2);
-  color: var(--text-label);
+  border: 1px solid rgba(80, 92, 100, .55);
+  background: rgba(20, 26, 30, .9);
+  color: var(--showcase-tactical-text);
   border-radius: 7px;
   padding: 6px 14px;
   cursor: pointer;
   font-size: .82rem;
   font-family: inherit;
 }
-.copy-btn:hover { background: var(--bg-card-hover); border-color: var(--accent); color: var(--accent-dark); }
-.contact-hint { margin-top: 18px; font-size: .78rem; color: var(--text-muted); }
+.copy-btn:hover { background: rgba(30, 38, 43, .9); border-color: var(--accent); color: #f0a42b; }
+.contact-hint { margin-top: 18px; font-size: .78rem; color: var(--showcase-tactical-muted); }
 @media (max-width: 560px) { .contact-page { padding: 14px 12px 44px; } }
 </style>

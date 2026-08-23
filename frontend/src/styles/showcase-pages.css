@@ -24,6 +24,10 @@
   gap: 5px !important;
   overflow-x: auto;
   scrollbar-width: thin;
+  padding: 6px !important;
+  border: 1px solid rgba(57, 68, 74, .55) !important;
+  border-radius: 8px !important;
+  background: rgba(13, 18, 22, .92) !important;
 }
 .boost-tabs button {
   flex: 0 0 auto;
@@ -32,27 +36,33 @@
   border: 1px solid transparent !important;
   border-radius: 6px !important;
   background: transparent !important;
-  color: var(--text-sub) !important;
+  color: #b5b2aa !important;
 }
-.boost-tabs button:hover { background: var(--bg-card-hover) !important; color: var(--text-heading) !important; }
+.boost-tabs button:hover { background: rgba(28, 37, 42, .9) !important; color: #f2ede3 !important; }
 .boost-tabs button.active {
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--border)) !important;
-  background: color-mix(in srgb, var(--accent) 11%, var(--bg-card)) !important;
-  color: var(--accent-dark) !important;
+  border-color: rgba(217, 143, 24, .42) !important;
+  background: rgba(217, 143, 24, .16) !important;
+  color: #f0a42b !important;
 }
 .boost-card {
   margin-bottom: 14px !important;
   padding: 22px 24px !important;
-  border: 1px solid var(--showcase-line) !important;
+  border: 1px solid var(--showcase-tactical-border) !important;
   border-radius: 9px !important;
-  background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 3%, var(--bg-card)), var(--bg-card)) !important;
+  background: var(--showcase-tactical) !important;
   box-shadow: var(--surface-shadow) !important;
 }
 .boost-card .card-title {
   margin-bottom: 16px !important;
   padding-bottom: 10px;
-  border-bottom: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+  border-bottom: 1px solid rgba(66, 77, 84, .45);
   font-size: 1.12rem !important;
+  color: var(--showcase-tactical-heading) !important;
+}
+.boost-warning {
+  border-color: rgba(224, 160, 45, .42) !important;
+  background: rgba(90, 61, 14, .58) !important;
+  color: #f5cf83 !important;
 }
 .boost-form {
   display: grid !important;
@@ -130,15 +140,17 @@
   max-width: none !important;
   padding: 28px 0 64px !important;
 }
-.contact-title { font-size: 1.55rem !important; letter-spacing: -.02em; }
+.contact-title { font-size: 1.55rem !important; letter-spacing: -.02em; color: #f2ede3 !important; }
+.contact-subtitle { color: #a3a6a0 !important; }
 .contact-grid { gap: 14px !important; }
 .contact-card {
   min-height: 190px;
   padding: 22px !important;
-  border-color: var(--showcase-line) !important;
-  background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 5%, var(--bg-card)), var(--bg-card)) !important;
+  border-color: var(--showcase-tactical-border) !important;
+  background: var(--showcase-tactical) !important;
   box-shadow: var(--surface-shadow);
 }
+.contact-hint { color: #8f948d !important; }
 .contact-card:hover { transform: translateY(-2px); box-shadow: 0 20px 42px var(--accent-shadow); }
 .contact-icon { filter: saturate(.75); }
 .copy-btn { margin-top: auto !important; }

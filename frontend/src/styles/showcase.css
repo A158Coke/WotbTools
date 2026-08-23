@@ -20,6 +20,9 @@
   --showcase-tactical-heading: #f2ede3;
   --showcase-tactical-text: #c9c5bb;
   --showcase-tactical-muted: #8f948d;
+  /* Nested/soft panels (item rows, summary strips, dropdowns) inside tactical cards. */
+  --showcase-tactical-soft: rgba(10, 15, 18, .55);
+  --showcase-tactical-soft-2: rgba(9, 14, 17, .8);
 }
 
 [data-theme="dark"] {
@@ -152,8 +155,9 @@ body {
 .layout-wide :is(input,select,textarea),
 .layout-data-workspace :is(input,select,textarea),
 .admin-page :is(input,select,textarea) {
-  border-color: var(--border-ghost) !important;
-  background: var(--bg-card) !important;
+  border-color: #39444a !important;
+  background: #0f1518 !important;
+  color: #e4e1d9 !important;
 }
 .layout-content :is(input,select,textarea):focus,
 .layout-wide :is(input,select,textarea):focus,
@@ -253,8 +257,8 @@ body {
 .profile-page .hero-subtitle { color: var(--text-sub) !important; }
 .profile-page .profile-body { gap: 14px !important; }
 .profile-page .profile-card {
-  border-color: var(--showcase-line) !important;
-  background: var(--bg-card) !important;
+  border-color: var(--showcase-tactical-border) !important;
+  background: var(--showcase-tactical) !important;
   box-shadow: var(--surface-shadow) !important;
 }
 .profile-page .section-head {

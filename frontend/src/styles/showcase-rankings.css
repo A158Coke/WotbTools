@@ -107,11 +107,18 @@
   box-shadow: 0 12px 30px rgba(0,0,0,.18);
   backdrop-filter: blur(12px);
 }
-.hof-admin-tabs button { flex: 0 0 auto; min-height: 36px; border-radius: 6px !important; }
+.hof-admin-tabs button {
+  flex: 0 0 auto;
+  min-height: 36px;
+  border-radius: 6px !important;
+  background: transparent !important;
+  color: #b5b2aa !important;
+}
+.hof-admin-tabs button:hover { color: #f2ede3 !important; }
 .hof-admin-tabs button.active {
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--border)) !important;
-  background: color-mix(in srgb, var(--accent) 11%, var(--bg-card)) !important;
-  color: var(--accent-dark) !important;
+  border-color: rgba(217, 143, 24, .42) !important;
+  background: rgba(217, 143, 24, .16) !important;
+  color: #f0a42b !important;
 }
 .hof-admin-filters {
   display: grid !important;
@@ -120,7 +127,7 @@
   padding: 12px !important;
   border: 1px solid #303a40 !important;
   border-radius: 8px;
-  background: var(--bg-card) !important;
+  background: rgba(11, 17, 20, .94) !important;
   box-shadow: var(--surface-shadow);
 }
 .hof-admin-filters :is(input,select) { width: 100%; min-width: 0; border-color: #394349 !important; background: #0f1518 !important; }
@@ -129,7 +136,7 @@
   overflow: auto !important;
   border: 1px solid #303a40 !important;
   border-radius: 8px;
-  background: var(--bg-card);
+  background: rgba(11, 17, 20, .94);
   box-shadow: 0 16px 40px rgba(0,0,0,.18);
 }
 .hof-admin-table { width: max-content !important; min-width: 100% !important; font-variant-numeric: tabular-nums; }
@@ -139,11 +146,34 @@
   z-index: 4;
   height: 42px;
   background: #171e22 !important;
-  color: var(--text-sub) !important;
+  color: #aaa79f !important;
 }
-.hof-admin-table td { height: 45px; }
-.hof-admin-table tbody tr:hover { background: var(--bg-list-hover) !important; }
-.hof-admin .dmg { color: var(--accent-dark) !important; font-weight: 800; }
+.hof-admin-table td {
+  height: 45px;
+  color: #d8d5cd !important;
+  border-bottom-color: #263136 !important;
+}
+.hof-admin-table tbody tr { background: rgba(13, 19, 22, .86); }
+.hof-admin-table tbody tr:hover { background: #172025 !important; }
+.hof-admin .dmg { color: #f0a42b !important; font-weight: 800; }
+.hof-admin .btn-sm,
+.hof-admin .pagination button {
+  border-color: #39444a !important;
+  background: #151d21 !important;
+  color: #d7d3ca !important;
+}
+.hof-admin .btn-sm:hover:not(:disabled),
+.hof-admin .pagination button:hover:not(:disabled) { background: #1c262b !important; }
+.hof-admin .btn-sm.danger,
+.hof-admin .actions .danger { color: #ff8f86 !important; border-color: rgba(225, 87, 78, .5) !important; }
+.hof-admin .page-size select {
+  border-color: #39444a !important;
+  background: #0f1518 !important;
+  color: #e4e1d9 !important;
+}
+.hof-admin .hof-admin-login,
+.hof-admin .hof-admin-denied p { color: #9aa09c !important; }
+.hof-admin .hof-admin-denied h2 { color: #f2ede3 !important; }
 .hof-admin .actions { white-space: nowrap; }
 .hof-admin .actions .danger { opacity: .72; background: transparent !important; }
 .hof-admin .actions .danger:hover { opacity: 1; }
