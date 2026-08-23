@@ -12,6 +12,7 @@
   `blitzkit-references.mjs --emit-portraits` 可重复生成入口。
 
 ### Fixed
+- **名人堂百场审核与默认榜修复**：百场审核列表所有状态统一只显示“详情”，待审核申请只能在详情内通过/拒绝，CURRENT 只能在详情内删除；REJECTED 详情现在展示拒绝原因、补充说明与时间，CANCELLED/DELETED 终态也可查看。公开 `GET /api/hof/hundred` 的 `vehicleId` 改为可选，未传时固定返回全站 CURRENT 最高 10 条；前端国家/系别、车种筛选仅收窄 Tier X 车辆候选，不强制选择。
 - **战局回放（Battle Playback）当前状态面板与伤害/碰撞语义修复（docs/current-plan.md 1-28）**：
   - Details Panel 收敛为 current-state 面板：删除「最大 HP」「HP %」「协助伤害」「最终战绩」分区。
   - 车辆类型 fallback：replay tankType → tankopedia class（英文）→ 空串。

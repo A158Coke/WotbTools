@@ -176,7 +176,7 @@ const activeTab = ref('single')
 function switchTab(tab) {
   activeTab.value = tab
   if (tab === 'hundred') {
-    if (h100VehicleId.value) loadHundredList()
+    loadHundredList()
     loadPending()
   }
 }
@@ -184,12 +184,14 @@ function switchTab(tab) {
 // ── 百场：车辆 / 排行榜 ─────────────────────────────────────────
 // common/tankopedia-tier10.json 本身即 Tier X 全集（84 辆）。
 const tier10Vehicles = TANKOPEDIA.vehicles
-  .map(v => ({ id: v.id, name: v.name }))
+  .map(v => ({ id: v.id, name: v.name, nation: v.nation, vehicleClass: v.class }))
   .sort((a, b) => a.name.localeCompare(b.name))
 
 const h100VehicleId = ref(null)
 const h100VehicleName = ref('')
 const h100VehicleSearch = ref('')
+const h100Nation = ref('')
+const h100VehicleClass = ref('')
 const h100Rows = ref([])
 const h100Loading = ref(false)
 const h100Error = ref('')
@@ -203,10 +205,39 @@ const withdrawingId = ref(null)
 const h100Msg = ref('')
 const h100MsgErr = ref(false)
 
+const NATION_VALUE_KEYS = {
+  China: 'CHINA', European: 'EUROPE', France: 'FRANCE', Germany: 'GERMANY',
+  Japan: 'JAPAN', Other: 'OTHER', UK: 'UK', USA: 'USA', USSR: 'USSR',
+}
+const VEHICLE_CLASS_VALUE_KEYS = {
+  'Heavy tank': 'HEAVY_TANK', 'Medium tank': 'MEDIUM_TANK',
+  'Light tank': 'LIGHT_TANK', 'Tank destroyer': 'TANK_DESTROYER',
+}
+
+const h100Nations = [...new Set(tier10Vehicles.map(v => v.nation))].sort()
+const h100VehicleClasses = [...new Set(tier10Vehicles.map(v => v.vehicleClass))].sort()
+
+function vehicleMetaLabel(value, keyMap) {
+  const key = keyMap[value]
+  const localeKey = key ? `replay_values.${key}` : ''
+  return localeKey && te(localeKey) ? t(localeKey) : value
+}
+
+function h100NationLabel(nation) {
+  return vehicleMetaLabel(nation, NATION_VALUE_KEYS)
+}
+
+function h100VehicleClassLabel(vehicleClass) {
+  return vehicleMetaLabel(vehicleClass, VEHICLE_CLASS_VALUE_KEYS)
+}
+
 const filteredVehicles = computed(() => {
   const q = h100VehicleSearch.value.trim().toLowerCase()
-  if (!q) return tier10Vehicles
-  return tier10Vehicles.filter(v => v.name.toLowerCase().includes(q))
+  return tier10Vehicles.filter(v =>
+    (!h100Nation.value || v.nation === h100Nation.value) &&
+    (!h100VehicleClass.value || v.vehicleClass === h100VehicleClass.value) &&
+    (!q || v.name.toLowerCase().includes(q))
+  )
 })
 
 const currentPending = computed(() => {
@@ -216,16 +247,13 @@ const currentPending = computed(() => {
 })
 
 async function loadHundredList() {
-  if (!h100VehicleId.value) {
-    h100Rows.value = []
-    h100TotalPages.value = 0
-    return
-  }
   const generation = ++h100LoadGeneration
   h100Loading.value = true
   h100Error.value = ''
   try {
-    const res = await api.hofHundredList({ vehicleId: h100VehicleId.value, page: h100Page.value, size: h100Size })
+    const params = { page: h100Page.value, size: h100Size }
+    if (h100VehicleId.value) params.vehicleId = h100VehicleId.value
+    const res = await api.hofHundredList(params)
     if (generation !== h100LoadGeneration) return
     h100Rows.value = res.items || []
     h100TotalPages.value = res.totalPages || 0
@@ -239,6 +267,15 @@ async function loadHundredList() {
 function onHundredVehicleChange() {
   const v = tier10Vehicles.find(x => x.id === Number(h100VehicleId.value))
   h100VehicleName.value = v ? v.name : ''
+  h100Msg.value = ''
+  h100Page.value = 1
+  loadHundredList()
+  loadPending()
+}
+
+function onHundredVehicleFilterChange() {
+  h100VehicleId.value = null
+  h100VehicleName.value = ''
   h100Msg.value = ''
   h100Page.value = 1
   loadHundredList()
@@ -552,10 +589,22 @@ function fmtDate(s) {
       </header>
 
       <div class="lb-toolbar h100-toolbar">
+        <label class="lb-limit h100-filter">{{ $t('hundred.nation') }}
+          <select v-model="h100Nation" @change="onHundredVehicleFilterChange">
+            <option value="">{{ $t('hundred.allNations') }}</option>
+            <option v-for="nation in h100Nations" :key="nation" :value="nation">{{ h100NationLabel(nation) }}</option>
+          </select>
+        </label>
+        <label class="lb-limit h100-filter">{{ $t('hundred.vehicleType') }}
+          <select v-model="h100VehicleClass" @change="onHundredVehicleFilterChange">
+            <option value="">{{ $t('hundred.allVehicleTypes') }}</option>
+            <option v-for="vehicleClass in h100VehicleClasses" :key="vehicleClass" :value="vehicleClass">{{ h100VehicleClassLabel(vehicleClass) }}</option>
+          </select>
+        </label>
         <label class="lb-limit h100-vehicle-filter">{{ $t('hundred.selectVehicle') }}
           <input v-model="h100VehicleSearch" class="lb-nick-input h100-search-input" :placeholder="$t('hundred.vehiclePlaceholder')" />
           <select v-model="h100VehicleId" class="h100-vehicle-select" @change="onHundredVehicleChange">
-            <option :value="null" disabled>{{ $t('hundred.allVehicles') }}</option>
+            <option :value="null">{{ $t('hundred.default') }}</option>
             <option v-for="v in filteredVehicles" :key="v.id" :value="v.id">{{ v.name }}</option>
           </select>
         </label>
@@ -589,13 +638,13 @@ function fmtDate(s) {
 
       <p v-if="h100Error" class="error">{{ h100Error }}</p>
       <p v-else-if="h100Loading" class="muted">{{ $t('hundred.loading') }}</p>
-      <p v-else-if="!h100VehicleId" class="muted">{{ $t('hundred.selectVehicle') }}</p>
-      <p v-else-if="!h100Rows.length" class="muted">{{ $t('hundred.empty') }}</p>
+      <p v-else-if="!h100Rows.length" class="muted">{{ $t(h100VehicleId ? 'hundred.empty' : 'hundred.emptyDefault') }}</p>
       <div v-else class="tablewrap">
         <table>
           <thead>
             <tr>
               <th>{{ $t('hundred.rank') }}</th>
+              <th>{{ $t('hundred.vehicle') }}</th>
               <th>{{ $t('hundred.nickname') }}</th>
               <th>{{ $t('hundred.avgDamage') }}</th>
               <th>{{ $t('hundred.battleCount') }}</th>
@@ -605,6 +654,7 @@ function fmtDate(s) {
           <tbody>
             <tr v-for="r in h100Rows" :key="r.id">
               <td><span class="rk" :class="rankClass(r.rank)">{{ r.rank }}</span></td>
+              <td>{{ r.vehicleName }}</td>
               <td>{{ r.nickname }}</td>
               <td class="lb-dmg">{{ r.approvedAverageDamage.toLocaleString() }}</td>
               <td>{{ r.approvedBattleCount }}</td>
@@ -628,8 +678,8 @@ function fmtDate(s) {
         <div class="h100-field">
           <label class="h100-field-label" for="h100-submit-vehicle">{{ $t('hundred.selectVehicle') }}</label>
           <select id="h100-submit-vehicle" v-model="submitForm.vehicleId">
-            <option :value="null" disabled>{{ $t('hundred.allVehicles') }}</option>
-            <option v-for="v in tier10Vehicles" :key="v.id" :value="v.id">{{ v.name }}</option>
+            <option :value="null" disabled>{{ $t('hundred.chooseVehicle') }}</option>
+            <option v-for="v in filteredVehicles" :key="v.id" :value="v.id">{{ v.name }}</option>
           </select>
         </div>
 

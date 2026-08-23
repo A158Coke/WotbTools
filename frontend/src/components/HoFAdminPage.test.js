@@ -82,10 +82,44 @@ const currentItem = {
   submittedAt: '2023-12-01T00:00:00Z', approvedAt: '2023-12-02T00:00:00Z', rejectReason: null, deleteReason: null
 }
 
+const rejectedItem = {
+  id: 13, status: 'REJECTED', vehicleId: 113, vehicleName: 'Vindicator UM',
+  gameAccountIdSnapshot: 'game-789', nicknameSnapshot: 'RejectedUser',
+  claimedAverageDamage: 3600, claimedBattleCount: 100,
+  approvedAverageDamage: null, approvedBattleCount: null,
+  replayParseOk: true, replayGameIdMatch: true, replayVehicleMatch: true, replayDistinctBattles: true,
+  submittedAt: '2023-11-01T00:00:00Z', approvedAt: null,
+  rejectReason: 'INSUFFICIENT_PROOF', deleteReason: null
+}
+
 const pendingDetail = {
   ...pendingItem,
   proofScreenshot: '/api/screenshots/11.png',
   replayParseOk: true, replayGameIdMatch: false, replayVehicleMatch: true, replayDistinctBattles: true
+}
+
+const currentDetail = {
+  ...currentItem,
+  proofScreenshot: null,
+  rejectedAt: null,
+  rejectedBy: null,
+  rejectReasonText: null,
+  cancelledAt: null,
+  deletedAt: null,
+  deletedBy: null,
+  deleteReasonText: null,
+}
+
+const rejectedDetail = {
+  ...rejectedItem,
+  proofScreenshot: null,
+  rejectedAt: '2023-11-02T00:00:00Z',
+  rejectedBy: 'admin-1',
+  rejectReasonText: '截图只显示总伤害，无法证明场均。',
+  cancelledAt: null,
+  deletedAt: null,
+  deletedBy: null,
+  deleteReasonText: null,
 }
 
 describe('HoFAdminPage', () => {
@@ -199,8 +233,8 @@ describe('HoFAdminPage', () => {
 
   it('hundred tab renders submission list with status filter', async () => {
     hofAdminApi.hofAdminHundredList.mockResolvedValue({
-      items: [pendingItem, currentItem],
-      page: 1, size: 50, totalItems: 2, totalPages: 1
+      items: [pendingItem, currentItem, rejectedItem],
+      page: 1, size: 50, totalItems: 3, totalPages: 1
     })
     const wrapper = mountPage()
     await flushPromises()
@@ -215,9 +249,14 @@ describe('HoFAdminPage', () => {
     // 状态列渲染
     expect(table.text()).toContain('hundredAdmin.status.PENDING')
     expect(table.text()).toContain('hundredAdmin.status.CURRENT')
-    // PENDING 行有审核按钮，CURRENT 行有删除按钮
-    expect(wrapper.find('.hof-hundred .actions .btn-sm').exists()).toBe(true)
-    expect(wrapper.find('.hof-hundred .actions .btn-sm.danger').exists()).toBe(true)
+    expect(table.text()).toContain('RejectedUser')
+    // 所有状态只保留详情入口，列表不得直接审核或删除。
+    const actionButtons = wrapper.findAll('.hof-hundred .actions .btn-sm')
+    expect(actionButtons).toHaveLength(3)
+    expect(actionButtons.map(button => button.text())).toEqual([
+      'hundredAdmin.details', 'hundredAdmin.details', 'hundredAdmin.details'
+    ])
+    expect(wrapper.find('.hof-hundred .actions .btn-sm.danger').exists()).toBe(false)
     // 状态筛选联动刷新
     await wrapper.find('.hof-hundred .hof-admin-filters select').setValue('CURRENT')
     await flushPromises()
@@ -345,18 +384,47 @@ describe('HoFAdminPage', () => {
     hofAdminApi.hofAdminHundredList.mockResolvedValue({
       items: [currentItem], page: 1, size: 50, totalItems: 1, totalPages: 1
     })
+    hofAdminApi.hofAdminHundredDetail.mockResolvedValue(currentDetail)
     const wrapper = mountPage()
     await flushPromises()
     await switchToHundred(wrapper)
 
-    await wrapper.find('.hof-hundred .actions .btn-sm.danger').trigger('click')
-    const select = wrapper.find('.hof-delete-modal select')
+    // 先打开详情，列表里没有直接删除入口。
+    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
+    await flushPromises()
+    expect(hofAdminApi.hofAdminHundredDetail).toHaveBeenCalledWith(12)
+    expect(hofAdminApi.hofAdminHundredDelete).not.toHaveBeenCalled()
+
+    await wrapper.findAll('.hof-review-modal button').find(b => b.text() === 'hundredAdmin.delete').trigger('click')
+    const select = wrapper.find('.hof-review-modal select')
     const values = select.findAll('option').map(o => o.attributes('value'))
     expect(values).toEqual(['', 'CHEATING_FORGERY', 'WRONG_REVIEW', 'PLAYER_IDENTITY_ISSUE', 'DATA_ERROR', 'ADMIN_CORRECTION', 'OTHER'])
     await select.setValue('DATA_ERROR')
-    await wrapper.findAll('.hof-delete-modal .modal-actions button').find(b => b.text() === 'hundredAdmin.delete').trigger('click')
+    await wrapper.findAll('.hof-review-modal .modal-actions button').find(b => b.text() === 'hundredAdmin.delete').trigger('click')
     await flushPromises()
     expect(hofAdminApi.hofAdminHundredDelete).toHaveBeenCalledWith(12, { deleteReason: 'DATA_ERROR' })
+  })
+
+  it('rejected submission opens details with the rejection reason and no review action', async () => {
+    hofAdminApi.hofAdminHundredList.mockResolvedValue({
+      items: [rejectedItem], page: 1, size: 50, totalItems: 1, totalPages: 1
+    })
+    hofAdminApi.hofAdminHundredDetail.mockResolvedValue(rejectedDetail)
+    const wrapper = mountPage()
+    await flushPromises()
+    await switchToHundred(wrapper)
+
+    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
+    await flushPromises()
+
+    const modal = wrapper.find('.hof-review-modal')
+    expect(hofAdminApi.hofAdminHundredDetail).toHaveBeenCalledWith(13)
+    expect(hofAdminApi.hofAdminHundredReplays).not.toHaveBeenCalled()
+    expect(modal.text()).toContain('截图不足以证明百场成绩')
+    expect(modal.text()).toContain('截图只显示总伤害，无法证明场均。')
+    expect(modal.findAll('button').map(button => button.text())).not.toContain('hundredAdmin.approve')
+    expect(modal.findAll('button').map(button => button.text())).not.toContain('hundredAdmin.reject')
+    expect(modal.findAll('button').map(button => button.text())).not.toContain('hundredAdmin.delete')
   })
 
   it('approve rejects battle count below 100 with local UX hint (backend still authoritative)', async () => {

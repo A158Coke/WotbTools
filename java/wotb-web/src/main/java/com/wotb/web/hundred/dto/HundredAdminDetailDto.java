@@ -29,6 +29,7 @@ public record HundredAdminDetailDto(
     String rejectedBy,
     String rejectReason,
     String rejectReasonText,
+    OffsetDateTime cancelledAt,
     OffsetDateTime deletedAt,
     String deletedBy,
     String deleteReason,

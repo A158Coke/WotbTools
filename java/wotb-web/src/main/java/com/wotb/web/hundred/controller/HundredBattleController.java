@@ -32,10 +32,13 @@ public class HundredBattleController {
         this.service = service;
     }
 
-    /** 公开排行榜：单车辆独立排行（vehicleId 必传），competition ranking。 */
+    /**
+     * 公开排行榜：未传 vehicleId 时返回全站当前最高 10 条；传入时返回该 Tier X 车辆的独立排行。
+     * 两种视图的 rank 都是 query-time 计算的 competition ranking。
+     */
     @GetMapping
     public HundredLeaderboardPageDto leaderboard(
-            @RequestParam(name = "vehicleId") final long vehicleId,
+            @RequestParam(name = "vehicleId", required = false) final Long vehicleId,
             @RequestParam(name = "page", defaultValue = "1") final int page,
             @RequestParam(name = "size", defaultValue = "50") final int size) {
         return service.leaderboard(vehicleId, page, size);

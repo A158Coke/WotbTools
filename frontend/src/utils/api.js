@@ -185,7 +185,7 @@ async function hofAuthRequest(url, options = {}) {
   return r
 }
 
-/** 百场公开排行榜（匿名）：vehicleId 必传，单车辆独立排行。 */
+/** 百场公开排行榜（匿名）：vehicleId 可选；缺省时返回全站当前最高 10 条。 */
 export async function hofHundredList(params = {}) {
   const qs = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {
