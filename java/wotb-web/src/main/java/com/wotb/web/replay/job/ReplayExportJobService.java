@@ -117,20 +117,25 @@ public class ReplayExportJobService {
     public String createJob(final MultipartFile[] files, final String mode, final String processingJobId) {
         final boolean each = "each".equalsIgnoreCase(mode);
         final ReplayProcessingJob processingJob;
+        // acquire 成功后为 true（Processing result 引用 +1，review BLOCKER 2 ownership lifecycle）。
+        final boolean acquired;
         if (StringUtils.hasText(processingJobId)) {
             if (processingStore == null) {
                 throw new IllegalStateException("PROCESSING_STORE_UNAVAILABLE");
             }
-            processingJob = processingStore.acquireForExport(processingJobId);
-            if (processingJob == null) {
+            final ReplayProcessingJob acquiredJob = processingStore.acquireForExport(processingJobId);
+            if (acquiredJob == null) {
                 final ReplayProcessingJob existing = processingStore.get(processingJobId);
                 if (existing == null) {
                     throw new ResponseStatusException(HttpStatus.NOT_FOUND, "PROCESSING_JOB_NOT_FOUND");
                 }
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "PROCESSING_JOB_NOT_READY");
             }
+            processingJob = acquiredJob;
+            acquired = true;
         } else {
             processingJob = null;
+            acquired = false;
             ReplayUploadValidator.validate(files);
             if (files.length > ReplayService.MAX_REPLAY_FILES) {
                 throw new IllegalArgumentException("TOO_MANY_REPLAY_FILES");
@@ -146,47 +151,59 @@ public class ReplayExportJobService {
             total = files.length;
         }
         final Path inputDir = store.inputDir(jobId);
-        if (processingJob == null) {
-            try {
-                Files.createDirectories(inputDir);
-                int i = 0;
-                for (final MultipartFile f : files) {
-                    final String name = f.getOriginalFilename() == null ? "replay.wotbreplay" : f.getOriginalFilename();
-                    f.transferTo(inputDir.resolve(i + "__" + ReplayJobFiles.sanitizeFileName(name)));
-                    i++;
-                }
-            } catch (final IOException e) {
-                store.removeAndCleanup(jobId);
-                throw new IllegalStateException("EXPORT_JOB_STORAGE_UNAVAILABLE");
-            }
-        } else {
-            // 复用路径无上传输入，但 job 目录需要存在（artifact 写入目标）。
-            try {
-                Files.createDirectories(inputDir);
-            } catch (final IOException e) {
-                store.removeAndCleanup(jobId);
-                throw new IllegalStateException("EXPORT_JOB_STORAGE_UNAVAILABLE");
-            }
-        }
-        final ExportJob job = new ExportJob(jobId, each ? "each" : "aggregate", total, processingJobId);
-        store.register(job);
-        final long submittedNanos = System.nanoTime();
+        // Processing result 引用所有权（review BLOCKER 2）：acquire 成功后，任何在 worker 正式
+        // 接手前的失败（job 目录创建 / register / submit rejection）都必须 release——否则 refcount
+        // 永久泄漏，ReplayProcessingJobStore TTL sweeper 永远跳过该 dataset（heap 永久驻留）。
+        // worker submit 成功即 ownershipTransferred=true，此后 release 由 worker 终态
+        // （runJobFromResult finally）或 QUEUED remove 取消（cancel 请求线程）负责，exactly once。
+        boolean ownershipTransferred = false;
         try {
-            if (processingJob != null) {
-                workerExecutor.submit(jobId, () -> runJobFromResult(job, processingJob, each, submittedNanos));
+            if (processingJob == null) {
+                try {
+                    Files.createDirectories(inputDir);
+                    int i = 0;
+                    for (final MultipartFile f : files) {
+                        final String name = f.getOriginalFilename() == null ? "replay.wotbreplay" : f.getOriginalFilename();
+                        f.transferTo(inputDir.resolve(i + "__" + ReplayJobFiles.sanitizeFileName(name)));
+                        i++;
+                    }
+                } catch (final IOException e) {
+                    store.removeAndCleanup(jobId);
+                    throw new IllegalStateException("EXPORT_JOB_STORAGE_UNAVAILABLE");
+                }
             } else {
-                workerExecutor.submit(jobId, () -> runJob(job, inputDir, each, submittedNanos));
+                // 复用路径无上传输入，但 job 目录需要存在（artifact 写入目标）。
+                try {
+                    Files.createDirectories(inputDir);
+                } catch (final IOException e) {
+                    store.removeAndCleanup(jobId);
+                    throw new IllegalStateException("EXPORT_JOB_STORAGE_UNAVAILABLE");
+                }
             }
-        } catch (final RejectedExecutionException e) {
-            store.removeAndCleanup(jobId);
-            if (processingJob != null) {
+            final ExportJob job = new ExportJob(jobId, each ? "each" : "aggregate", total, processingJobId);
+            store.register(job);
+            final long submittedNanos = System.nanoTime();
+            try {
+                if (processingJob != null) {
+                    workerExecutor.submit(jobId, () -> runJobFromResult(job, processingJob, each, submittedNanos));
+                } else {
+                    workerExecutor.submit(jobId, () -> runJob(job, inputDir, each, submittedNanos));
+                }
+            } catch (final RejectedExecutionException e) {
+                store.removeAndCleanup(jobId);
+                throw new ExportQueueFullException();
+            }
+            ownershipTransferred = true;
+            LOGGER.info(logLine("export_job_created", jobId, "mode", job.mode(), "total", total,
+                    "processingJobId", processingJobId));
+            return jobId;
+        } finally {
+            if (acquired && !ownershipTransferred) {
+                // worker 未接手：本线程仍持有引用，必须释放（exactly once——worker 成功接手后
+                // 本分支不再执行，release 由 worker 终态 / QUEUED 取消路径负责，不 double-release）。
                 processingStore.release(processingJobId);
             }
-            throw new ExportQueueFullException();
         }
-        LOGGER.info(logLine("export_job_created", jobId, "mode", job.mode(), "total", total,
-                "processingJobId", processingJobId));
-        return jobId;
     }
 
     public ExportJob.Snapshot status(final String jobId) {
