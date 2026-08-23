@@ -6,6 +6,7 @@ import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.RatingAnalyzer;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -45,7 +46,6 @@ class RatingAnalyzerTest {
         final RatingAnalyzer.Row carry = row(rows, 1);
         final RatingAnalyzer.Row low = row(rows, 2);
 
-        assertEquals(2400.0, carry.averageHp, 0.01);
         assertEquals(400.0, carry.assistAvg, 0.01);
         assertEquals(100.0, carry.kast, 0.1);
         assertTrue(carry.impact.endsWith("%"));
@@ -72,8 +72,33 @@ class RatingAnalyzerTest {
         assertEquals("1", row(rows, 1).nickname);
     }
 
+    @Test
+    void averageHpUsesBattleTotalDividedByFourteen() {
+        final Tankopedia tankopedia = Tankopedia.load();
+        final List<PlayerResult> players = new ArrayList<>();
+        for (int index = 0; index < 7; index++) {
+            players.add(playerWithTank(index + 1L, 1, 4481L));
+            players.add(playerWithTank(index + 8L, 2, 19217L));
+        }
+        final Battle battle = new Battle();
+        battle.players = players;
+
+        final double expected = (7.0 * tankopedia.info(4481L).maxHp()
+                + 7.0 * tankopedia.info(19217L).maxHp()) / 14.0;
+        final List<RatingAnalyzer.Row> rows = RatingAnalyzer.compute(List.of(battle), tankopedia);
+
+        assertEquals(expected, row(rows, 1L).averageHp, 0.01);
+        assertEquals(expected, row(rows, 8L).averageHp, 0.01);
+    }
+
     private static RatingAnalyzer.Row row(final List<RatingAnalyzer.Row> rows, final long accountId) {
         return rows.stream().filter(r -> r.accountId == accountId).findFirst().orElseThrow();
+    }
+
+    private static PlayerResult playerWithTank(final long accountId, final int team, final long tankId) {
+        final PlayerResult player = player(accountId, team, 0, 0, 0, true, 0, 0);
+        player.tankId = tankId;
+        return player;
     }
 
     private static PlayerResult player(final long accountId, final int team, final int damage,
