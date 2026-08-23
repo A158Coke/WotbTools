@@ -19,9 +19,11 @@
 .hof-page,
 .hof-wrap,
 .hall-page,
+.lb-wrap,
 .hof-admin-page,
 .hofadmin-page,
 .admin-hof-page,
+.hof-admin,
 .recon-page,
 .rating-page,
 .rating-section,
@@ -42,9 +44,11 @@
 .hof-page::after,
 .hof-wrap::after,
 .hall-page::after,
+.lb-wrap::after,
 .hof-admin-page::after,
 .hofadmin-page::after,
 .admin-hof-page::after,
+.hof-admin::after,
 .rating-page::after,
 .rating-section::after,
 .rating-workspace::after,
@@ -75,9 +79,11 @@
 .hof-page::before,
 .hof-wrap::before,
 .hall-page::before,
+.lb-wrap::before,
 .hof-admin-page::before,
 .hofadmin-page::before,
 .admin-hof-page::before,
+.hof-admin::before,
 .rating-page::before,
 .rating-section::before,
 .rating-workspace::before {
@@ -104,9 +110,11 @@
   .hof-page,
   .hof-wrap,
   .hall-page,
+  .lb-wrap,
   .hof-admin-page,
   .hofadmin-page,
   .admin-hof-page,
+  .hof-admin,
   .rating-page,
   .rating-section,
   .rating-workspace
@@ -171,7 +179,8 @@
 /* ---------- Hall of Fame: ceremonial gold hall ---------- */
 .hof-page::after,
 .hof-wrap::after,
-.hall-page::after {
+.hall-page::after,
+.lb-wrap::after {
   background-image: url('../assets/showcase/hof/hof-bg-v2.svg');
   opacity: .70;
 }
@@ -210,7 +219,8 @@
 /* ---------- HoF Admin: evidence review / adjudication archive ---------- */
 .hof-admin-page::after,
 .hofadmin-page::after,
-.admin-hof-page::after {
+.admin-hof-page::after,
+.hof-admin::after {
   background-image: url('../assets/showcase/hof-admin/hof-admin-bg-v2.svg');
   opacity: .60;
 }
@@ -230,7 +240,7 @@
 /* Content surfaces should sit above the artwork. We do NOT force every individual
  * card translucent; only the page-level panels that previously painted giant flat
  * blocks are softened enough for the full-screen backdrop to remain perceptible. */
-:is(.layout-content,.layout-wide,.layout-data-workspace,.admin-page,.profile-page,.boost-page,.version-page,.contact-page,.hof-page,.hof-wrap,.hall-page) {
+:is(.layout-content,.layout-wide,.layout-data-workspace,.admin-page,.profile-page,.boost-page,.version-page,.contact-page,.hof-page,.hof-wrap,.hall-page,.lb-wrap,.hof-admin-page,.hofadmin-page,.admin-hof-page,.hof-admin) {
   background-color: transparent !important;
 }
 
@@ -263,9 +273,11 @@
   .hof-page::after,
   .hof-wrap::after,
   .hall-page::after,
+  .lb-wrap::after,
   .hof-admin-page::after,
   .hofadmin-page::after,
   .admin-hof-page::after,
+  .hof-admin::after,
   .rating-page::after,
   .rating-section::after,
   .rating-workspace::after,
@@ -285,9 +297,11 @@
   .hof-page::before,
   .hof-wrap::before,
   .hall-page::before,
+  .lb-wrap::before,
   .hof-admin-page::before,
   .hofadmin-page::before,
   .admin-hof-page::before,
+  .hof-admin::before,
   .rating-page::before,
   .rating-section::before,
   .rating-workspace::before,

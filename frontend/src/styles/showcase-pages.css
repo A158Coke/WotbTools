@@ -110,7 +110,8 @@
   padding: 15px 18px 15px 84px;
   border-left: 1px solid #374148;
   border-bottom: 1px solid #222b30;
-  background: color-mix(in srgb, var(--bg-card) 92%, transparent);
+  background: rgba(13, 18, 22, .88);
+  backdrop-filter: blur(6px);
 }
 .version-page .ver:first-of-type { border-top: 1px solid #374148; border-radius: 8px 8px 0 0; }
 .version-page .ver:last-child { border-radius: 0 0 8px 8px; }
@@ -120,7 +121,8 @@
   top: 16px;
   color: var(--accent-light) !important;
 }
-.version-page .ver p { color: var(--text-sub) !important; }
+.version-page .ver-date { color: #8f948d !important; }
+.version-page .ver p { color: #a3a6a0 !important; }
 
 /* Contact */
 .contact-page {

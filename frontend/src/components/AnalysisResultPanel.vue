@@ -145,6 +145,11 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
   max-width: 1100px;
   margin-left: auto;
   margin-right: auto;
+  border: 1px solid #303a40;
+  border-radius: 9px;
+  background: rgba(13, 18, 22, .94);
+  box-shadow: 0 20px 52px rgba(0, 0, 0, .26);
+  overflow: hidden;
 }
 .panel-head {
   display: flex;
@@ -157,7 +162,7 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
   position: sticky;
   top: 52px;
   z-index: 20;
-  background: var(--bg-card);
+  background: rgba(13, 18, 22, .97);
   padding: 8px 0;
   margin: -8px 0 0;
 }
@@ -175,42 +180,42 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
 .panel-head-actions .copy-btn, .panel-head-actions .toggle-btn { margin: 0; }
 .toggle-btn {
   padding: 4px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid #465159;
   border-radius: 5px;
-  background: var(--bg-card2);
-  color: var(--text-label);
+  background: #151d21;
+  color: #c9c5bb;
   font-size: .8rem;
   cursor: pointer;
   white-space: nowrap;
   transition: border-color .15s, color .15s;
 }
-.toggle-btn:hover { border-color: var(--accent); color: var(--accent-dark); }
+.toggle-btn:hover { border-color: var(--accent); color: #f0aa30; }
 .copy-btn {
   margin: 0 0 12px;
   padding: 4px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid #465159;
   border-radius: 5px;
-  background: var(--bg-card2);
-  color: var(--text-label);
+  background: #151d21;
+  color: #c9c5bb;
   font-size: .8rem;
   cursor: pointer;
   white-space: nowrap;
   transition: border-color .15s, color .15s;
 }
-.copy-btn:hover { border-color: var(--accent); color: var(--accent-dark); }
-.copy-btn.copied { border-color: var(--accent); color: var(--accent-dark); }
+.copy-btn:hover { border-color: var(--accent); color: #f0aa30; }
+.copy-btn.copied { border-color: var(--accent); color: #f0aa30; }
 .analysis-text {
   white-space: pre-wrap;
   line-height: 1.6;
   font-size: .9rem;
-  color: var(--text);
+  color: #d8d5cd;
   margin: 0 0 8px;
 }
 .prebattle-block {
   margin: 0 0 12px;
-  border: 1px solid var(--border);
+  border: 1px solid #303a40;
   border-radius: 6px;
-  background: var(--bg-card2);
+  background: rgba(17, 23, 26, .92);
   padding: 8px 12px;
 }
 .prebattle-toggle {

@@ -24,9 +24,11 @@
 .hof-page::before,
 .hof-wrap::before,
 .hall-page::before,
+.lb-wrap::before,
 .hof-admin-page::before,
 .hofadmin-page::before,
 .admin-hof-page::before,
+.hof-admin::before,
 .rating-page::before,
 .rating-section::before,
 .rating-workspace::before {
@@ -45,9 +47,11 @@
   .hof-page,
   .hof-wrap,
   .hall-page,
+  .lb-wrap,
   .hof-admin-page,
   .hofadmin-page,
   .admin-hof-page,
+  .hof-admin,
   .rating-page,
   .rating-section,
   .rating-workspace
@@ -96,7 +100,8 @@
 /* ---------- Hall of Fame — ceremonial hall, strong gold focal point ---------- */
 .hof-page::after,
 .hof-wrap::after,
-.hall-page::after {
+.hall-page::after,
+.lb-wrap::after {
   background-image: url('../assets/showcase/hof/hof-hero-hall-v1.png') !important;
   opacity: .90 !important;
 }
@@ -135,7 +140,8 @@
 /* ---------- Hall-of-Fame admin — review console stays readable ---------- */
 .hof-admin-page::after,
 .hofadmin-page::after,
-.admin-hof-page::after {
+.admin-hof-page::after,
+.hof-admin::after {
   background-image: url('../assets/showcase/hof-admin/hof-admin-hero-command-v1.png') !important;
   opacity: .60 !important;
 }
@@ -160,6 +166,7 @@
   .hof-page::after,
   .hof-wrap::after,
   .hall-page::after,
+  .lb-wrap::after,
   .rating-page::after,
   .rating-section::after,
   .rating-workspace::after,
@@ -169,6 +176,7 @@
   .hof-admin-page::after,
   .hofadmin-page::after,
   .admin-hof-page::after,
+  .hof-admin::after,
   .version-page::after,
   .contact-page::after {
     background-position: 68% center !important;
