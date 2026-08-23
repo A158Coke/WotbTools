@@ -4,6 +4,7 @@ import { useAuth } from '../composables/useAuth.js'
 import * as api from '../utils/api.js'
 const { initPromise, tokenParsed } = useAuth()
 const isAdmin = ref(false)
+const isHofAdmin = ref(false)
 const topDamage = ref(null)
 const topDamageDisplay = computed(() => topDamage.value == null ? '--' : formatDamage(topDamage.value))
 
@@ -15,16 +16,18 @@ onMounted(() => {
         ...(tp?.realm_access?.roles || []),
       ]
       isAdmin.value = roles.includes('wotbtools-admin')
+      isHofAdmin.value = roles.includes('HoF-admin') || roles.includes('wotbtools-admin')
     })
     .catch(() => {
       isAdmin.value = false
+      isHofAdmin.value = false
     })
   loadTopDamageRecord()
 })
 
 async function loadTopDamageRecord() {
   try {
-    const res = await api.leaderboardTopDamage(1, 1)
+    const res = await api.hofList({ page: 1, size: 1 })
     const damage = Number(res?.items?.[0]?.damageDealt)
     topDamage.value = Number.isFinite(damage) ? damage : null
   } catch {
@@ -46,7 +49,7 @@ function formatDamage(value) {
         <p class="subtitle">{{ $t('app.subtitle') }}</p>
         <div class="hero-actions">
           <a class="hero-btn" href="/?view=replay">{{ $t('home.replayTitle') }}</a>
-          <a class="hero-link" href="/?view=leaderboard">{{ $t('leaderboard.btn') }}</a>
+          <a class="hero-link" href="/?view=hof">{{ $t('hof.btn') }}</a>
         </div>
       </div>
       <div class="hero-panel" aria-hidden="true">
@@ -68,10 +71,10 @@ function formatDamage(value) {
         <span class="tag avail">{{ $t('home.available') }}</span>
       </a>
 
-      <a class="card" href="/?view=leaderboard">
+      <a class="card" href="/?view=hof">
         <span class="card-mark">02</span>
-        <h2>{{ $t('leaderboard.btn') }}</h2>
-        <p>{{ $t('home.leaderboardDesc') }}</p>
+        <h2>{{ $t('hof.btn') }}</h2>
+        <p>{{ $t('home.hofDesc') }}</p>
         <span class="tag avail">{{ $t('home.available') }}</span>
       </a>
 
@@ -94,6 +97,13 @@ function formatDamage(value) {
         <h2>{{ $t('admin.cardTitle') }}</h2>
         <p>{{ $t('admin.cardDesc') }}</p>
         <span class="tag avail">{{ $t('admin.cardBadge') }}</span>
+      </a>
+
+      <a v-if="isHofAdmin" class="card" href="/?view=hof-admin">
+        <span class="card-mark">06</span>
+        <h2>{{ $t('hofAdmin.cardTitle') }}</h2>
+        <p>{{ $t('hofAdmin.cardDesc') }}</p>
+        <span class="tag avail">{{ $t('hofAdmin.cardBadge') }}</span>
       </a>
 
       <a class="card" href="/sponsor.html">

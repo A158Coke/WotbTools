@@ -100,9 +100,15 @@ class TeamOpposingLineupEvidenceTest {
     @Test
     void teamPromptRequiresOpposingLineupAnalysis() {
         final String prompt = TeamReplayAnalysisService.SINGLE_TEAM_PROMPT;
-        assertTrue(prompt.contains("对方阵容逐车分析"), prompt);
+        assertTrue(prompt.contains("对方关键威胁是【可选】内容"), prompt);
+        assertTrue(prompt.contains("只有对核心复盘确有价值时才指出 1-3 辆对方关键威胁"), prompt);
         assertTrue(prompt.contains("OPPOSING_TEAM_LINEUP_AUTHORITATIVE"), prompt);
-        assertTrue(prompt.contains("指出对方主要威胁车辆及依据"), prompt);
+        assertTrue(prompt.contains("对方关键威胁（可选）"), prompt);
+        assertFalse(prompt.contains("分析对方阵容并指出对方主要威胁车辆"),
+                "团队复盘不得保留无条件 mandatory 威胁规则");
+        assertFalse(prompt.contains("对方数据缺失时明确说明"),
+                "团队复盘不得强制缺失数据 disclaimer");
+        assertFalse(prompt.contains("对方阵容逐车分析"), "团队复盘不得强制逐车作文");
     }
 
     // ---- fixture：走真实管线构造单队上下文 ----

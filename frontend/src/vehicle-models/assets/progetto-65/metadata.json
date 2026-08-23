@@ -1,0 +1,82 @@
+{
+  "modelKey": "progetto-65",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 385,
+    "modelGlb": "https://api.blitzkit.app/tanks/385/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160.01,
+    "y": 144.85
+  },
+  "turretRaster": {
+    "logicalMinX": 113.45,
+    "logicalMinY": -56.01,
+    "logicalMaxX": 207.87,
+    "logicalMaxY": 268.38,
+    "pixelWidth": 189,
+    "pixelHeight": 649,
+    "pivotX": 46.56,
+    "pivotY": 200.86
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.7168999910354614,
+        -3.5954999923706055
+      ],
+      "max": [
+        1.7162998914718628,
+        3.671200752258301
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.2013999223709106,
+        -2.834699869155884
+      ],
+      "max": [
+        1.234984040260315,
+        1.4507001638412476
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.12475201487541199,
+        1.8645000457763672
+      ],
+      "max": [
+        0.16180041432380676,
+        5.536399841308594
+      ]
+    },
+    "selectedModules": {
+      "turretId": 385,
+      "gunId": 385,
+      "trackId": 129,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "It08_Progetto_M40_mod_65_mtr",
+      "It08_Progetto_M40_mod_65_mtr",
+      "It08_Progetto_M40_mod_65_mtr",
+      "It08_Progetto_M40_mod_65_track_mtr",
+      "It08_Progetto_M40_mod_65_track_mtr",
+      "It08_Progetto_M40_mod_65_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

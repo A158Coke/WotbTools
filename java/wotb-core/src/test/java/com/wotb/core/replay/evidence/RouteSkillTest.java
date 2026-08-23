@@ -1,6 +1,7 @@
 package com.wotb.core.replay.evidence;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wotb.core.model.Battle;
@@ -63,14 +64,16 @@ class RouteSkillTest {
                                 EvidenceTestFixtures.vehicle(3, 1003, 1, 4481, 220f, 50f, 1000))),
                 features,
                 EvidenceTestFixtures.recorder());
-        final List<AiEvidence> detachments = RouteSkill.detachmentWindows(ctx);
-        assertEquals(1, detachments.size());
-        assertEquals(0f, detachments.getFirst().startSec());
-        assertEquals(30f, detachments.getFirst().endSec());
+        final List<AiEvidence> separations = RouteSkill.separationWindows(ctx);
+        assertEquals(1, separations.size());
+        assertEquals(0f, separations.getFirst().startSec());
+        assertEquals(30f, separations.getFirst().endSec());
+        assertTrue(separations.getFirst().summary().contains("空间分离"),
+                "summary 必须是中性空间分离表述: " + separations.getFirst().summary());
     }
 
     @Test
-    void flagsEntryIntoEnemyMajorityArea() {
+    void reportsLocalObservedNumbersOnEntry() {
         final PlayerBattleFeatureSet features = new PlayerBattleFeatureSet(
                 List.of(EvidenceTestFixtures.movement(0f, 10f, new Vector3(0, 0, 0), new Vector3(50, 0, 0))),
                 List.of(), List.of(), List.of(), List.of(), true);
@@ -92,13 +95,19 @@ class RouteSkillTest {
                                 EvidenceTestFixtures.vehicle(5, 2002, 2, 10785, 100f, 0f, 1000))),
                 features,
                 EvidenceTestFixtures.recorder());
-        final List<AiEvidence> entries = RouteSkill.enemyMajorityEntries(ctx);
+        final List<AiEvidence> entries = RouteSkill.localObservedNumbersEntries(ctx);
         assertEquals(1, entries.size());
-        assertTrue(entries.getFirst().summary().contains("敌方人数优势"));
+        // 只报数量事实，不得声称「敌方人数优势」（战术判断由 LLM 负责）
+        assertTrue(entries.getFirst().summary().contains("观察到附近友军"),
+                "summary 必须只报观察数量: " + entries.getFirst().summary());
+        assertTrue(entries.getFirst().summary().contains("敌军至少"),
+                "summary 必须用「至少观察到 N 辆敌军」口径: " + entries.getFirst().summary());
+        assertFalse(entries.getFirst().summary().contains("人数优势"),
+                "不得输出「敌方人数优势」战术结论: " + entries.getFirst().summary());
     }
 
     @Test
-    void friendlyPartialCoverageNeverClaimsEnemyMajority() {
+    void friendlyPartialCoverageNeverReportsLocalNumbers() {
         final PlayerBattleFeatureSet features = new PlayerBattleFeatureSet(
                 List.of(EvidenceTestFixtures.movement(0f, 10f, new Vector3(0, 0, 0), new Vector3(50, 0, 0))),
                 List.of(), List.of(), List.of(), List.of(), true);
@@ -116,7 +125,7 @@ class RouteSkillTest {
                                 EvidenceTestFixtures.vehicle(5, 2002, 2, 10785, 100f, 0f, 1000))),
                 features,
                 EvidenceTestFixtures.recorder());
-        assertTrue(RouteSkill.enemyMajorityEntries(ctx).isEmpty(),
-                "友军侧未完整覆盖时不得断言敌方人数优势");
+        assertTrue(RouteSkill.localObservedNumbersEntries(ctx).isEmpty(),
+                "友军侧未完整覆盖时不得输出局部数量（敌军数量非真实下界）");
     }
 }

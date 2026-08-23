@@ -15,6 +15,9 @@ import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.replay.timeline.BattleTimelineBuilder;
+import com.wotb.core.replay.timeline.BattleTimelineResult;
+import com.wotb.core.replay.timeline.TimelinePerspective;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
@@ -55,12 +58,49 @@ final class PlayerSummaryBuilder {
         final String phaseSection = BattlePhaseTimelineSection.renderPlayerSection(
                 buildFallbackPhases(battle),
                 BattlePhaseSummary.deathSourceLabel(battle));
+        // 点数局势：fallback 无覆盖口径信号，伤害数字抑制（定性）；recon 缺失时仅击杀夺分时间线
+        final Integer recorderTeam = battle == null
+                ? null : PlayerSideResolver.resolveRecorderTeam(battle);
+        final String pointsSection = recorderTeam == null ? ""
+                : PointsSituationEvidence.renderSection(
+                        battle, recon, recorderTeam, true, "你的队伍", "敌方");
+        // Canonical Timeline 段：fallback 不再是 settlement-only——时间线化主叙事注入
+        // （docs/current-plan.md §3/§33；recon 或 recorder 缺失时自动省略）
+        final String timelineSection = timelineSection(battle, recon);
         final String summary = buildSummary(battle, recon, keyEvents)
                 + (phaseSection.isEmpty() ? "" : "\n" + phaseSection)
-                + (enemySection.isEmpty() ? "" : "\n" + enemySection);
+                + (enemySection.isEmpty() ? "" : "\n" + enemySection)
+                + (pointsSection.isEmpty() ? "" : "\n" + pointsSection)
+                + (timelineSection.isEmpty() ? "" : "\n" + timelineSection);
         final String systemPrompt = PlayerPromptRules.localizePlayerSystemPrompt(PlayerPromptRules.SYSTEM_PROMPT, language);
         return new PreparedAiPrompt(systemPrompt, summary, "SINGLE_PLAYER_SUMMARY",
                 EvidenceDensity.LEVEL_1_COMPRESSED, 0);
+    }
+
+    /**
+     * 构建 fallback 的个人 canonical timeline 段（不抛错：不可用时省略）。
+     */
+    static String timelineSection(final Battle battle, final ReplayReconstruction recon) {
+        if (battle == null || recon == null) {
+            return "";
+        }
+        try {
+            final PlayerResult recorder = battle.recorderResult();
+            if (recorder == null || recorder.accountId <= 0 || recorder.team <= 0) {
+                return "";
+            }
+            final BattleTimelineResult result = BattleTimelineBuilder.build(
+                    battle, recon, TimelinePerspective.personal(
+                            recorder.accountId, recorder.team));
+            if (!result.usable()) {
+                return "";
+            }
+            return "\n======================== TACTICAL TIMELINE（时间有序战局章节·battle-relative 确定性） ========================\n"
+                    + PersonalAiContextCompiler.renderTimelineSection(result.timeline(), recorder.accountId);
+        } catch (final RuntimeException e) {
+            // Timeline 构建失败不阻断 fallback（上游门禁已拦截不可用 replay）
+            return "";
+        }
     }
 
     /**
@@ -98,7 +138,14 @@ final class PlayerSummaryBuilder {
             final int maxOutputTokens,
             final int promptSafetyMarginTokens,
             final AllowedLanguage language) {
-        final String summary = buildPlayerContextSummary(ctx);
+        // 无重建路径：仅击杀夺分时间线（结算可证）；存在/进入控制点区域窗口需重建，不输出
+        final Integer recorderTeam = ctx.battle() == null
+                ? null : PlayerSideResolver.resolveRecorderTeam(ctx.battle());
+        final String pointsSection = recorderTeam == null ? ""
+                : PointsSituationEvidence.renderSection(
+                        ctx.battle(), null, recorderTeam, true, "你的队伍", "敌方");
+        final String summary = buildPlayerContextSummary(ctx)
+                + (pointsSection.isEmpty() ? "" : "\n" + pointsSection);
         final String systemPrompt = PlayerPromptRules.localizePlayerSystemPrompt(PlayerPromptRules.SINGLE_PLAYER_PROMPT, language);
         final List<Map<String, Object>> messages = List.of(
                 Map.<String, Object>of("role", "system", "content", systemPrompt),
@@ -149,7 +196,32 @@ final class PlayerSummaryBuilder {
         }
         PlayerEvidenceFormatter.appendRecorderDamageReceivedWindows(
                 summaryBuilder, ctx.battle(), recon, recorderAccountId, observedDamagePartial);
+        // 7b/7c：逐目标伤害交换与击杀归因需要事件流（recon）——仅在含重建路径输出
+        final PlayerResult rec = ctx.battle() == null ? null : ctx.battle().recorderResult();
+        if (rec != null) {
+            PlayerEvidenceFormatter.appendRecorderDamageExchange(
+                    summaryBuilder, ctx.battle(), recon, rec, observedDamagePartial);
+            PlayerEvidenceFormatter.appendKillAttribution(
+                    summaryBuilder, ctx.battle(), recon, rec, observedDamagePartial);
+        }
         PlayerEvidenceFormatter.appendEnemyLastKnownPositions(summaryBuilder, ctx.battle(), recon);
+        // 身后血量/位置优势测量：仅录像者自己，中性测量（个人路径不评价队友）
+        final String behindLine = RelativeDepthHpEvidence.renderPlayerSection(
+                ctx.battle(), recon, recorderAccountId, observedDamagePartial);
+        if (!behindLine.isEmpty()) {
+            summaryBuilder.append(behindLine);
+        }
+
+        final Integer recorderTeam = ctx.battle() == null
+                ? null : PlayerSideResolver.resolveRecorderTeam(ctx.battle());
+        if (recorderTeam != null) {
+            final String pointsSection = PointsSituationEvidence.renderSection(
+                    ctx.battle(), recon, recorderTeam, observedDamagePartial,
+                    "你的队伍", "敌方");
+            if (!pointsSection.isEmpty()) {
+                summaryBuilder.append(pointsSection);
+            }
+        }
         final String baseSummary = summaryBuilder.toString();
         final String systemPrompt = PlayerPromptRules.localizePlayerSystemPrompt(PlayerPromptRules.SINGLE_PLAYER_PROMPT, language);
         final SingleReplayPromptPlanner planner = new SingleReplayPromptPlanner(
@@ -264,14 +336,6 @@ final class PlayerSummaryBuilder {
             PlayerEvidenceFormatter.appendRecorderRanking(sb, rec, friendlies, battle);
         }
 
-        // ====== 7b. Recorder per-target damage exchange (observed subset) ======
-        final boolean damageExchangeAvailable = PlayerEvidenceFormatter.appendRecorderDamageExchange(
-                sb, battle, rec, observedDamagePartial);
-
-        // ====== 7c. Kill attribution: 谁击杀录像者 / 录像者击杀谁 ======
-        final boolean killAttributionAvailable = PlayerEvidenceFormatter.appendKillAttribution(
-                sb, battle, rec, observedDamagePartial);
-
         // ====== 8. Death timeline (authoritative) ======
         sb.append("\n=== DEATH_TIMELINE_AUTHORITATIVE（阵亡时间线·权威结算） ===\n");
         PlayerEvidenceFormatter.appendDeathTimeline(sb, battle);
@@ -280,13 +344,6 @@ final class PlayerSummaryBuilder {
         PlayerEvidenceFormatter.appendEventStreamEvidence(sb, ctx, battle);
 
         // ====== 10. Side-based limitations ======
-        // prompt 要求逐对手对炮与击杀归因；数据缺失时必须显式告知，避免 AI 跳过或编造
-        if (!damageExchangeAvailable) {
-            sb.append("- DAMAGE_EXCHANGE_UNAVAILABLE\n");
-        }
-        if (!killAttributionAvailable) {
-            sb.append("- KILL_ATTRIBUTION_UNAVAILABLE\n");
-        }
         if (!unknowns.isEmpty()) {
             final boolean recUnresolved = rec == null || allSides.getOrDefault(rec, Side.UNKNOWN) == Side.UNKNOWN;
             if (recUnresolved) {

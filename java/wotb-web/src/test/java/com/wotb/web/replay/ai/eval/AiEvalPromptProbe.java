@@ -24,7 +24,7 @@ public final class AiEvalPromptProbe {
         return TeamAiPromptBuilder.single(context, List.of(), null, null, Integer.MAX_VALUE).content();
     }
 
-    /** player 路径：真实证据链（EvidenceSkillEngine 含 SoloPlayIntentSkill）→ TacticalReviewPromptBuilder。 */
+    /** player 路径：真实证据链（EvidenceSkillEngine 含 PlayerSeparationEvidenceSkill）→ TacticalReviewPromptBuilder。 */
     private static String playerPrompt(final AiEvalCase caze) {
         final AiEvalFixtures.PlayerFixture fixture = AiEvalFixtures.playerFixture(caze.fixtureKey());
         final EvidenceSkillResult evidence = new EvidenceSkillEngine().run(new EvidenceSkillContext(

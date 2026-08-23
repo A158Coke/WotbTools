@@ -4,11 +4,12 @@ import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.FriendlyEnemyResult;
+import com.wotb.core.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.evidence.AiEvidence;
-import com.wotb.core.replay.evidence.TeamSoloIntentSkill;
+import com.wotb.core.replay.evidence.TeamSeparationEvidenceSkill;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.CanonicalMapPosition;
 import com.wotb.core.replay.feature.KeyBattleEvent;
@@ -16,6 +17,7 @@ import com.wotb.core.replay.feature.MapCoordinateResolution;
 import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.TeamAggregateResult;
+import com.wotb.core.replay.evidence.ObservedMaxHp;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamEngagementSummary;
 import com.wotb.core.replay.feature.TeamFormationCluster;
@@ -135,7 +137,8 @@ final class TeamEvidenceFormatter {
             final BudgetWriter writer,
             final TeamBattleFeatureSet features,
             final String analysisUnitId,
-            final List<String> limitations
+            final List<String> limitations,
+            final Map<Long, PlayerResult> playersByAccount
     ) {
         writer.append("\n=== PERSPECTIVE_FACTS ===\n");
         writer.append("analysisUnitId=" + quoteData(analysisUnitId) + "\n");
@@ -146,7 +149,7 @@ final class TeamEvidenceFormatter {
         appendAuthoritative(writer, features.authoritativeAggregate());
         // 使用合并后的 limitations（context + features + extra），不能只检查 features.limitations
         appendObserved(writer, features.observedAggregate(), limitations);
-        appendMemberFacts(writer, features.members());
+        appendMemberFacts(writer, features.members(), playersByAccount);
         writer.append("coverage=" + features.coverage() + "\n");
     }
 
@@ -177,7 +180,7 @@ final class TeamEvidenceFormatter {
                     + " nickname=" + quoteData(p.nickname)
                     + " tank=" + quoteData(resolveTankName(p.tankId, p.tankName))
                     + " vehicleClass=" + resolveTankClass(p.tankId)
-                    + structuredTankFacts(p.tankId)
+                    + structuredTankFacts(p.tankId, p)
                     + " finalDamage=" + p.damageDealt
                     + " damageReceived=" + p.damageReceived
                     + " assisted=" + p.damageAssisted
@@ -209,11 +212,19 @@ final class TeamEvidenceFormatter {
     }
 
     static String structuredTankFacts(final long tankId) {
+        return structuredTankFacts(tankId, null);
+    }
+
+    /** 同上；hp 按 provenance 口径（OBSERVED_EXACT → 已证明进场满血；否则 tankopedia base）。 */
+    static String structuredTankFacts(final long tankId, final PlayerResult player) {
         final StringBuilder sb = new StringBuilder(80);
         appendFact(sb, "tier", ReplayDisplayNames.tankTier(tankId));
         appendFact(sb, "nation", ReplayDisplayNames.tankNation(tankId));
         appendFact(sb, "alphaDamage", ReplayDisplayNames.tankAlphaDamage(tankId));
-        appendFact(sb, "hp", ReplayDisplayNames.tankMaxHp(tankId));
+        final Integer maxHp = player == null
+                ? ReplayDisplayNames.tankMaxHpValue(tankId) : ObservedMaxHp.fullMaxHp(player);
+        appendFact(sb, "hp", maxHp != null && maxHp > 0
+                ? String.valueOf(maxHp) : ReplayDisplayNames.tankMaxHp(tankId));
         sb.append(extraInfoFact(ReplayDisplayNames.tankExtraInfo(tankId)));
         return sb.toString();
     }
@@ -250,7 +261,7 @@ final class TeamEvidenceFormatter {
                 limitations != null && limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
         appendKeyEvents(writer, features.keyEvents());
         appendCaptureAndPoints(writer, battle, perspectiveTeam, mapCode);
-        appendSoloIntentCandidates(writer, features, battle, mapCode);
+        appendSpatialSeparationEvidence(writer, features, battle, mapCode);
     }
 
     /** 争霸赛占点证据段（权威结算 + 静态占领点区域；P3 optional）。 */
@@ -277,56 +288,157 @@ final class TeamEvidenceFormatter {
                 .sum();
         final FriendlyEnemyResult.TeamBattleWinner winner =
                 FriendlyEnemyResult.resolveTeamBattle(battle, perspectiveTeam);
+        final boolean rosterComplete = FriendlyEnemyResult.rosterComplete(battle);
         writer.append("\n=== CAPTURE_AND_POINTS（争霸赛占点·权威结算） ===\n");
         writer.append("pointsDecided=" + winner.pointsDecided() + "\n");
+        if (!rosterComplete) {
+            // 结算阵容不完整：逐人/双方占点分只是部分数据，不得当作权威总量或推断点数结束方式。
+            // mandatory header 的 result 行同步降级为 UNKNOWN/「点数判定」，口径保持一致。
+            writer.append("SETTLEMENT_ROSTER_INCOMPLETE=true\n");
+            writer.append("pointsTotalsUnavailable=true\n");
+            writer.append("directive=结算阵容不完整：占点分总量不可用，禁止用残缺点数推断胜方或「时间耗尽/达到 1000 分」结束方式\n");
+        }
         if (winner.pointsDecided()) {
             writer.append("winnerSource=" + winner.source().name() + "\n");
-            // 点数胜负只可能发生在：任一方达到 1000 分提前结束，或时间耗尽后比较点数。
-            // 双方 victoryPointsEarned 均 <1000 时必然是时间耗尽（REACHED_1000 / TIME_EXPIRED / UNKNOWN）。
+            // pointsDecided=true 表示结束时刻双方均未全员阵亡（非全歼）：结束方式只按
+            // 「标准业务规则 + 时长」判定，不使用任何点数字段——时长<420s → REACHED_1000，
+            // 时长≥420s → TIME_EXPIRED；类别未知/结算阵容不完整（rosterComplete=false）→ UNKNOWN，
+            // 只写通用「点数判定」。全歼获胜（一方全员阵亡）时 pointsDecided=false，不写点数结束方式。
             writer.append("pointsEndReason=" + winner.pointsEndReason().name() + "\n");
         }
-        writer.append("team victoryPointsEarned=" + earned
-                + " victoryPointsSeized=" + seized + "\n");
-        writer.append("opposing victoryPointsEarned=" + opposingEarned + "\n");
-        for (final PlayerResult player : battle.players) {
-            if (player != null && player.team == perspectiveTeam
-                    && (player.victoryPointsEarned > 0 || player.victoryPointsSeized > 0)) {
-                writer.append("member accountId=" + player.accountId
-                        + " nickname=" + quoteData(player.nickname)
-                        + " victoryPointsEarned=" + player.victoryPointsEarned
-                        + " victoryPointsSeized=" + player.victoryPointsSeized + "\n");
+        if (rosterComplete) {
+            final int opposingTeam = perspectiveTeam == 1 ? 2 : 1;
+            final long opposingSeized = battle.players.stream()
+                    .filter(player -> player != null && player.team == opposingTeam)
+                    .mapToLong(player -> player.victoryPointsSeized)
+                    .sum();
+            final long teamKills = FriendlyEnemyResult.teamKills(battle, perspectiveTeam);
+            final long teamDeaths = FriendlyEnemyResult.teamDeaths(battle, perspectiveTeam);
+            final long opposingKills = FriendlyEnemyResult.teamKills(battle, opposingTeam);
+            final long opposingDeaths = FriendlyEnemyResult.teamDeaths(battle, opposingTeam);
+            writer.append("team victoryPointsEarned=" + earned
+                    + " victoryPointsSeized=" + seized
+                    + " kills=" + teamKills + " deaths=" + teamDeaths + "\n");
+            writer.append("opposing victoryPointsEarned=" + opposingEarned
+                    + " victoryPointsSeized=" + opposingSeized
+                    + " kills=" + opposingKills + " deaths=" + opposingDeaths + "\n");
+            for (final PlayerResult player : battle.players) {
+                if (player != null && player.team == perspectiveTeam
+                        && (player.victoryPointsEarned > 0 || player.victoryPointsSeized > 0
+                        || player.kills > 0)) {
+                    writer.append("member accountId=" + player.accountId
+                            + " nickname=" + quoteData(player.nickname)
+                            + " victoryPointsEarned=" + player.victoryPointsEarned
+                            + " victoryPointsSeized=" + player.victoryPointsSeized
+                            + " kills=" + player.kills + "\n");
+                }
             }
+            if (winner.pointsDecided()) {
+                // 终局比分：回放无已验证的实时点数/终局比分解码。唯一可分配的是业务规则可证明的
+                // 提前结束（标准规则 + 双方均有存活 + 时长<420s → REACHED_1000）：
+                // 权威胜方（winnerTeam）已知时，胜方终局比分=1000（1000 分上限业务约定），失败方 UNKNOWN；
+                // winnerTeam 缺失时只写「某一方达到 1000 分导致提前结束，具体胜方未知」，
+                // 双方终局比分一律 UNKNOWN（结束原因 REACHED_1000 与胜方/比分三者解耦）。
+                final boolean reached1000 =
+                        winner.pointsEndReason() == FriendlyEnemyResult.PointsEndReason.REACHED_1000;
+                if (reached1000 && winner.winner() != Winner.DRAW_OR_UNKNOWN) {
+                    writer.append("finalScore: team="
+                            + (winner.winner() == Winner.FRIENDLY_WIN
+                                    ? FriendlyEnemyResult.SUPREMACY_WIN_POINTS
+                                            + "（达到1000分上限提前结束, 业务规则）" : "UNKNOWN")
+                            + " opposing="
+                            + (winner.winner() == Winner.ENEMY_WIN
+                                    ? FriendlyEnemyResult.SUPREMACY_WIN_POINTS
+                                            + "（达到1000分上限提前结束, 业务规则）" : "UNKNOWN")
+                            + "\n");
+                } else if (reached1000) {
+                    writer.append("finalScore: team=UNKNOWN opposing=UNKNOWN "
+                            + "(某一方达到 1000 分导致提前结束, 具体胜方未知, 终局比分未知)\n");
+                } else {
+                    writer.append("finalScore: team=UNKNOWN opposing=UNKNOWN "
+                            + "(无已验证的实时点数/终局比分证据, 不可计算)\n");
+                }
+                writer.append("directive=争霸赛业务规则(项目所有者确认): 战斗时长固定7分钟(420s)、"
+                        + "胜利点数上限1000分(达到上限即提前结束), "
+                        + "游戏不提供时长调整; arenaBonusType 只证明战斗类别, 420s/1000不是从该字段解码出来的; "
+                        + "每据点每tick产分与tick间隔均未解码(无任何已验证的tick产分规则), "
+                        + "禁止用tick数或占点分计算终局比分; 击毁车辆通常会改变双方点数"
+                        + "(每击杀夺取对方40分、本方掉人损失40分), 但结算字段 victoryPointsEarned 是否已含该调整"
+                        + "未经证明, 禁止用「占点分+40×击杀−40×阵亡」等公式计算结果冒充终局比分; "
+                        + "无权威胜方(winnerTeam缺失)时: 仅当 rosterComplete=true 且一方全员阵亡才可用"
+                        + "SURVIVOR_SETTLEMENT 按完整结算存活状态推导全歼胜方, 双方均有存活时胜方未知, "
+                        + "禁止比较占点字段推断胜方; REACHED_1000 是结束原因(某一方达到1000分导致提前结束), "
+                        + "与胜方解耦: winnerTeam 缺失时仍写「某一方达到 1000 分导致提前结束, 具体胜方未知」, "
+                        + "双方终局比分一律 UNKNOWN; 只有 winnerTeam 已知时才把胜方"
+                        + "finalScore=1000(1000分上限业务约定), 失败方终局比分一律 UNKNOWN, 禁止编造双方精确比分\n");
+            }
+        } else {
+            writer.append("team victoryPointsEarned=UNKNOWN victoryPointsSeized=UNKNOWN\n");
+            writer.append("opposing victoryPointsEarned=UNKNOWN\n");
         }
         final List<String> regions = new ArrayList<>(
-                TeamSoloIntentSkill.controlPointRegions(SEMANTICS_REGISTRY.semanticsFor(mapCode)));
+                TeamSeparationEvidenceSkill.controlPointRegions(SEMANTICS_REGISTRY.semanticsFor(mapCode)));
         regions.sort(String::compareTo);
         writer.append("controlPointRegions="
                 + (regions.isEmpty() ? "UNKNOWN" : regions) + "\n");
     }
 
-    /** 单走行为候选段（TeamSoloIntentSkill 规则候选，PARTIAL；P3 optional）。 */
-    static void appendSoloIntentCandidates(
+    /**
+     * 点数局势证据段（P3 optional）：击杀夺分时间线 + 占领点区域位置存在 +
+     * 进入控制点区域窗口（含窗口内进入车辆承受伤害 = 可观测换血事实）。
+     * 口径：实时比分未解码，只给可证明信号；OBSERVED_DAMAGE_IS_PARTIAL 时抑制伤害数字。
+     */
+    static void appendPointsSituation(
+            final BudgetWriter writer,
+            final Battle battle,
+            final ReplayReconstruction recon,
+            final int perspectiveTeam,
+            final boolean damagePartial
+    ) {
+        final String section = PointsSituationEvidence.renderSection(
+                battle, recon, perspectiveTeam, damagePartial, "本队", "对方");
+        if (!section.isEmpty()) {
+            writer.append(section);
+        }
+    }
+
+    /**
+     * 空间分离证据段（TeamSeparationEvidenceSkill 确定性派生证据，PARTIAL；P3 optional）。
+     * <p>Backend Evidence Boundary：只输出中性空间结构事实（kind/distance/静止占比/局部敌情/
+     * 承伤/输出/主力簇位移/其他队友活动），不输出拖延/脱节/图控等战术 verdict——由 LLM 判断。</p>
+     */
+    static void appendSpatialSeparationEvidence(
             final BudgetWriter writer,
             final TeamBattleFeatureSet features,
             final Battle battle,
             final String mapCode
     ) {
-        final List<AiEvidence> candidates = TeamSoloIntentSkill.detect(
+        final List<AiEvidence> evidence = TeamSeparationEvidenceSkill.detect(
                 features, battle, features.battlePhases(),
                 SEMANTICS_REGISTRY.semanticsFor(mapCode));
-        if (candidates.isEmpty()) {
+        if (evidence.isEmpty()) {
             return;
         }
-        writer.append("\n=== SOLO_INTENT_SIGNALS（单走行为信号） ===\n");
-        for (final AiEvidence candidate : candidates) {
+        writer.append("\n=== SPATIAL_SEPARATION_EVIDENCE（空间分离证据·中性结构事实） ===\n");
+        for (final AiEvidence candidate : evidence) {
             writer.append("[" + format(candidate.startSec()) + "-" + format(candidate.endSec()) + "] "
                     + candidate.summary() + "\n");
-            writer.append("  intent=" + candidate.labels().get("intent")
+            writer.append("  kind=" + candidate.labels().get("kind")
+                    + " phase=" + candidate.labels().get("phase")
+                    + " movementState=" + candidate.labels().get("movementState")
                     + " distanceM=" + format(candidate.numbers().get("distanceM"))
+                    + " distanceGrowthM=" + format(candidate.numbers().get("distanceGrowthM"))
                     + " stationaryRatio=" + format(candidate.numbers().get("stationaryRatio"))
-                    + " teammateBenefit=" + format(candidate.numbers().get("teammateBenefit"))
+                    + " mainClusterDisplacementM=" + format(candidate.numbers().get("mainClusterDisplacementM"))
+                    + " observedEnemyNearby=" + format(candidate.numbers().get("observedEnemyNearby"))
+                    + " damageReceivedDuringSpan=" + format(candidate.numbers().get("damageReceivedDuringSpan"))
+                    + " damageDealtDuringSpan=" + format(candidate.numbers().get("damageDealtDuringSpan"))
+                    + " deathDuringSpan=" + format(candidate.numbers().get("deathDuringSpan"))
+                    + " otherFriendlyDeathsDuringSpan=" + format(candidate.numbers().get("otherFriendlyDeathsDuringSpan"))
+                    + " otherFriendlyEngagementCountDuringSpan=" + format(candidate.numbers().get("otherFriendlyEngagementCountDuringSpan"))
+                    + " otherFriendlyDamageDealtDuringSpan=" + format(candidate.numbers().get("otherFriendlyDamageDealtDuringSpan"))
+                    + " otherFriendlyDamageReceivedDuringSpan=" + format(candidate.numbers().get("otherFriendlyDamageReceivedDuringSpan"))
                     + " objectiveProximity=" + format(candidate.numbers().get("objectiveProximity"))
-                    + " nearbyEnemy=" + format(candidate.numbers().get("nearbyEnemy"))
                     + " region=" + candidate.labels().get("region")
                     + " confidence=部分\n");
         }
@@ -423,7 +535,11 @@ final class TeamEvidenceFormatter {
                         .append('/').append(window.hitCount()).append("次")
                         .append("攻击者").append(window.uniqueAttackerCount())
                         .append(window.attackersUnresolved() ? "（部分未解析）" : "")
-                        .append(window.focusFireCandidate() ? "（短时多车集火证据）" : "");
+                        .append(window.focusFireCandidate() ? "（短时多车集火证据）" : "")
+                        .append(window.entryHpProven() ? "伤害/进场满血pct=" : "伤害/base满血pct=")
+                        .append(window.damageVsEntryMaxHpPct() == null
+                                ? "未知" : Math.round(window.damageVsEntryMaxHpPct()) + "%")
+                        .append(window.criticalWindow() ? "（短窗高额伤害窗口）" : "");
             }
             rows.append('\n');
         }
@@ -436,13 +552,28 @@ final class TeamEvidenceFormatter {
                 + " 秒、攻击者≥2 且无未解析攻击者时才标注「（短时多车集火证据）」; "
                 + "攻击者=1 → 短时间集中掉血/高压掉血窗口（不是集火）; "
                 + "标注「（部分未解析）」时攻击者数不完整, 不得断言集火; "
-                + "链式聚类形成的大跨度窗口不得当作短时集火.\n");
+                + "链式聚类形成的大跨度窗口不得当作短时集火; "
+                + "伤害/进场满血pct=窗口累计伤害/已证明进场满血量(回放受击前样本证明, 含装备/物资加成)的百分比; "
+                + "伤害/base满血pct=窗口累计伤害/tankopedia 基础血量的百分比(进场满血未被证明时的 base baseline, "
+                + "只是计算基准, 不是实际掉血比例; 未知则为「未知」); "
+                + "仅当进场满血被证明且窗口跨度≤" + (int) DamageWindowClusterer.CRITICAL_WINDOW_SPAN_SEC
+                + " 秒、伤害≥" + (int) DamageWindowClusterer.CRITICAL_HP_PCT
+                + "% 已证明进场满血量才标注「（短窗高额伤害窗口）」; "
+                + "数据无法证明窗口起始血量/窗口内阵亡/装备加成后的实际最大血量, 不得判定「从满血被秒杀」.\n");
         writer.append(rows.toString());
     }
 
     static void appendMemberFacts(
             final BudgetWriter writer,
             final List<TeamMemberFeatureSet> members
+    ) {
+        appendMemberFacts(writer, members, null);
+    }
+
+    static void appendMemberFacts(
+            final BudgetWriter writer,
+            final List<TeamMemberFeatureSet> members,
+            final Map<Long, PlayerResult> playersByAccount
     ) {
         writer.append("\n=== TEAM_MEMBERS ===\n");
         for (final TeamMemberFeatureSet member : members) {
@@ -451,7 +582,8 @@ final class TeamEvidenceFormatter {
                     + " tank=" + quoteData(resolveTankName(member.tankId(), member.tankName()))
                     // vehicleClass / tier / nation 只来自 tankopedia 的结构化字段，不得由 tank 名称推断
                     + " vehicleClass=" + resolveTankClass(member.tankId())
-                    + structuredTankFacts(member.tankId())
+                    + structuredTankFacts(member.tankId(),
+                            playersByAccount == null ? null : playersByAccount.get(member.accountId()))
                     + " entityIds=" + member.entityIds()
                     + " mapping=" + PlayerAnalysisTerms.confidenceLabel(member.mappingConfidence())
                     + " finalDamage=" + member.finalDamage()
@@ -586,7 +718,6 @@ final class TeamEvidenceFormatter {
                     + " receivedSubset=" + engagement.damageReceived()
                     + " focusedTargets=" + engagement.focusedTargetAccountIds()
                     + " targetSwitches=" + engagement.targetSwitchCount()
-                    + " outcome=" + PlayerAnalysisTerms.outcomeLabel(engagement.outcome())
                     + " confidence=" + PlayerAnalysisTerms.confidenceLabel(engagement.confidence())
                     + "\n");
         }
@@ -631,13 +762,26 @@ final class TeamEvidenceFormatter {
                                             final String teamLabel) {
         final var winner = FriendlyEnemyResult.resolveTeamBattle(battle, perspectiveTeam);
         final String label = StringUtils.hasText(teamLabel) ? teamLabel : "本队";
-        return switch (winner.winner()) {
-            case FRIENDLY_WIN -> winner.pointsDecided()
-                    ? label + "获胜" + pointsSuffix(winner) : label + "获胜";
-            case ENEMY_WIN -> winner.pointsDecided()
-                    ? label + "落败" + pointsSuffix(winner) : label + "落败";
+        final String base = switch (winner.winner()) {
+            case FRIENDLY_WIN -> label + "获胜";
+            case ENEMY_WIN -> label + "落败";
             case DRAW_OR_UNKNOWN -> "平局或未知";
         };
+        if (winner.winner() == Winner.DRAW_OR_UNKNOWN) {
+            return base;
+        }
+        // 全歼双向语义（结算存活状态，与 resultSource 无关）：获胜且对方无存活 / 落败且本方无存活。
+        final String annihilation = FriendlyEnemyResult.annihilationSuffix(
+                battle, perspectiveTeam, winner.winner());
+        if (!annihilation.isEmpty()) {
+            return base + annihilation;
+        }
+        return winner.pointsDecided() ? base + pointsSuffix(winner) : base;
+    }
+
+    /** result 行的胜负来源（BATTLE_RESULTS / SURVIVOR_SETTLEMENT / UNKNOWN；无权威胜方时不再做点数推断）。 */
+    static String resolveTeamResultSource(final Battle battle, final int perspectiveTeam) {
+        return FriendlyEnemyResult.resolveTeamBattle(battle, perspectiveTeam).source().name();
     }
 
     /** 点数胜负的结束方式后缀：时间耗尽 / 1000 分提前 / 未知。 */
@@ -726,14 +870,29 @@ final class TeamEvidenceFormatter {
         return region > 0 ? String.valueOf(region) : null;
     }
 
-    static String resolvePerspectiveLabel(
+    /**
+     * 视角队伍的用户可见 display label（PR #103 review BLOCKER A）：唯一 dominant 且严格多数
+     * 的 clan tag，否则空串（上层 fallback「我方」）；绝不返回 {@code 队伍-XXXX}。
+     */
+    static String resolveDisplayLabel(
             final List<PlayerResult> players, final int perspectiveTeam) {
-        if (players == null) return "未知队伍";
+        if (players == null) return "";
         final List<PlayerResult> perspectivePlayers = players.stream()
                 .filter(p -> p.team == perspectiveTeam)
                 .toList();
-        if (perspectivePlayers.isEmpty()) return "未知队伍";
-        return TeamPerspectiveLabelResolver.resolve(perspectivePlayers);
+        if (perspectivePlayers.isEmpty()) return "";
+        return TeamPerspectiveLabelResolver.resolveDisplayLabel(perspectivePlayers);
+    }
+
+    /** 对方队伍的用户可见 display label（独立解析；无可靠 clan → 空串，上层 fallback「对方」）。 */
+    static String resolveOpponentDisplayLabel(
+            final List<PlayerResult> players, final int perspectiveTeam) {
+        if (players == null) return "";
+        final List<PlayerResult> opponents = players.stream()
+                .filter(p -> PlayerSideResolver.isValidRawTeam(p.team) && p.team != perspectiveTeam)
+                .toList();
+        if (opponents.isEmpty()) return "";
+        return TeamPerspectiveLabelResolver.resolveDisplayLabel(opponents);
     }
 
     static String resolveTankName(final long tankId, final String existingTankName) {

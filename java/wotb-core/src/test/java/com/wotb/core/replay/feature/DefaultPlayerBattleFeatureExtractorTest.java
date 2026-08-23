@@ -11,6 +11,7 @@ import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
@@ -42,6 +43,15 @@ class DefaultPlayerBattleFeatureExtractorTest {
         return new DamageEvent(seq, ts(time), 8, DecodeConfidence.EXACT, att, vic, null, null, dmg, false);
     }
 
+    /** Type-7 propId=3 当前血量（EXACT；§12 掉血推导的数据源）。 */
+    private static HealthChangedEvent health(final int seq, final float time, final int eid, final int hp) {
+        return new HealthChangedEvent(seq, ts(time), 7, DecodeConfidence.EXACT, eid, hp, null, true);
+    }
+    /** dual-clock 血量样本。 */
+    private static HealthChangedEvent health(final int seq, final float raw, final Float battle, final int eid, final int hp) {
+        return new HealthChangedEvent(seq, ts(raw, battle), 7, DecodeConfidence.EXACT, eid, hp, null, true);
+    }
+
     private static BattleEndedEvent battleEnd(final int seq, final float time) {
         return new BattleEndedEvent(seq, ts(time), 14, DecodeConfidence.EXACT, 1);
     }
@@ -52,7 +62,11 @@ class DefaultPlayerBattleFeatureExtractorTest {
 
     private static ReplayReconstruction recon(final Float battleStartRaw, final List<ReplayEvent> events) {
         final ReplayCoverage coverage = new ReplayCoverage(true, events.size(), events.size(), 0, 0, 0, 1.0, Map.of());
-        return new ReplayReconstruction(null, null, 120f, battleStartRaw, List.of(), List.copyOf(events), List.of(), null, coverage, null);
+        return new ReplayReconstruction(null, null, 120f, battleStartRaw,
+                List.of(
+                        new com.wotb.core.replay.reconstruction.BattleParticipant(1001L, "Recorder", 1, 1, "T-34", true),
+                        new com.wotb.core.replay.reconstruction.BattleParticipant(2001L, "Enemy", 2, 2, "T-49", false)),
+                List.copyOf(events), List.of(), null, coverage, null);
     }
 
     private static RecorderEntityMapping recorderMapping() {
@@ -77,9 +91,11 @@ class DefaultPlayerBattleFeatureExtractorTest {
                         mapping(1, 1, 1001L),
                         mapping(2, 2, 2001L),
                         damage(3, 5f, 1, 2, 100),
-                        damage(4, BATTLE_START_RAW, 1, 2, 200))), recorderMapping(), null);
+                        damage(4, BATTLE_START_RAW + 2f, 1, 2, 200),
+                        health(5, BATTLE_START_RAW, 2, 300),
+                        health(6, BATTLE_START_RAW + 2f, 2, 100))), recorderMapping(), null);
         assertEquals(1, features.engagements().size());
-        assertEquals(0f, features.engagements().getFirst().startTime(), 0.01f);
+        assertEquals(2f, features.engagements().getFirst().startTime(), 0.01f);
         assertEquals(200, features.engagements().getFirst().damageDealt());
         assertFalse(features.engagements().getFirst().damageDealt() == 100);
     }
@@ -103,7 +119,11 @@ class DefaultPlayerBattleFeatureExtractorTest {
                         mapping(1, 1, 1001L),
                         mapping(2, 2, 2001L),
                         damage(3, BATTLE_START_RAW + 5f, 1, 2, 100),
-                        damage(4, BATTLE_START_RAW + 8f, 1, 2, 150))), recorderMapping(), null);
+                        damage(4, BATTLE_START_RAW + 8f, 1, 2, 150),
+                        health(5, BATTLE_START_RAW + 4f, 2, 300),
+                        health(6, BATTLE_START_RAW + 5f, 2, 200),
+                        health(7, BATTLE_START_RAW + 7f, 2, 200),
+                        health(8, BATTLE_START_RAW + 8f, 2, 50))), recorderMapping(), null);
         assertEquals(1, features.engagements().size());
         assertEquals(5f, features.engagements().getFirst().startTime(), 0.01f);
         assertEquals(8f, features.engagements().getFirst().endTime(), 0.01f);
@@ -115,7 +135,9 @@ class DefaultPlayerBattleFeatureExtractorTest {
                 .extract(recon(BATTLE_START_RAW, List.of(
                         mapping(1, 1, 1001L),
                         mapping(2, 2, 2001L),
-                        damage(3, BATTLE_START_RAW + 3f, 1, 2, 100))), recorderMapping(), null);
+                        damage(3, BATTLE_START_RAW + 3f, 1, 2, 100),
+                        health(4, BATTLE_START_RAW + 2f, 2, 200),
+                        health(5, BATTLE_START_RAW + 3f, 2, 100))), recorderMapping(), null);
         assertFalse(features.keyEvents().isEmpty());
         assertEquals(3f, features.keyEvents().getFirst().clockSec(), 0.01f);
     }
@@ -157,11 +179,13 @@ class DefaultPlayerBattleFeatureExtractorTest {
         final Battle battle = new Battle();
         battle.recorder = "Recorder";
         final PlayerResult rec = new PlayerResult();
+        rec.accountId = 1001L;
         rec.nickname = "Recorder";
         rec.team = 1;
         rec.damageDealt = 100;
         rec.damageReceived = 50;
         final PlayerResult foe = new PlayerResult();
+        foe.accountId = 2001L;
         foe.nickname = "Foe";
         foe.team = 2;
         battle.players = List.of(rec, foe);
@@ -171,7 +195,11 @@ class DefaultPlayerBattleFeatureExtractorTest {
                         mapping(2, 2, 2001L),
                         damage(3, BATTLE_START_RAW + 2f, 1, 2, 100),
                         damage(4, BATTLE_START_RAW + 3f, 2, 1, 50),
-                        battleEnd(5, BATTLE_START_RAW + 30f))), recorderMapping(), battle);
+                        health(5, BATTLE_START_RAW + 1f, 2, 200),
+                        health(6, BATTLE_START_RAW + 2f, 2, 100),
+                        health(7, BATTLE_START_RAW + 2f, 1, 150),
+                        health(8, BATTLE_START_RAW + 3f, 1, 100),
+                        battleEnd(9, BATTLE_START_RAW + 30f))), recorderMapping(), battle);
         assertFalse(features.limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL"),
                 "观测=权威时不得标记 PARTIAL：" + features.limitations());
     }
@@ -183,7 +211,9 @@ class DefaultPlayerBattleFeatureExtractorTest {
                         mapping(1, 1, 1001L),
                         mapping(2, 2, 2001L),
                         position(3, BATTLE_START_RAW, 1, 0f, 0f),
-                        damage(4, BATTLE_START_RAW + 2f, 1, 2, 100))), recorderMapping(), null);
+                        damage(4, BATTLE_START_RAW + 2f, 1, 2, 100),
+                        health(5, BATTLE_START_RAW + 1f, 2, 200),
+                        health(6, BATTLE_START_RAW + 2f, 2, 100))), recorderMapping(), null);
         assertFalse(features.keyEvents().isEmpty());
         assertEquals(2f, features.keyEvents().getFirst().clockSec(), 0.01f);
     }
@@ -195,7 +225,9 @@ class DefaultPlayerBattleFeatureExtractorTest {
                         mapping(1, 1, 1001L),
                         mapping(2, 2, 2001L),
                         damage(3, 5f, 1, 2, 100),
-                        damage(4, BATTLE_START_RAW + 2f, 1, 2, 200))), recorderMapping(), null);
+                        damage(4, BATTLE_START_RAW + 2f, 1, 2, 200),
+                        health(5, BATTLE_START_RAW + 1f, 2, 300),
+                        health(6, BATTLE_START_RAW + 2f, 2, 100))), recorderMapping(), null);
         assertFalse(features.keyEvents().isEmpty());
         assertEquals(2f, features.keyEvents().getFirst().clockSec(), 0.01f);
     }
@@ -306,7 +338,9 @@ class DefaultPlayerBattleFeatureExtractorTest {
                 .extract(recon(60f, List.of(
                         mapping(1, 1, 1001L),
                         mapping(2, 2, 2001L),
-                        damage(3, 65f, 5f, 1, 2, 100))), recorderMapping(), null);
+                        damage(3, 65f, 5f, 1, 2, 100),
+                        health(4, 64f, 4f, 2, 200),
+                        health(5, 65f, 5f, 2, 100))), recorderMapping(), null);
         assertEquals(1, features.engagements().size());
         assertEquals(5f, features.engagements().getFirst().startTime(), 0.01f);
     }
@@ -317,7 +351,9 @@ class DefaultPlayerBattleFeatureExtractorTest {
                 .extract(recon(60f, List.of(
                         mapping(1, 1, 1001L),
                         mapping(2, 2, 2001L),
-                        damage(3, 65f, 5f, 1, 2, 100))), recorderMapping(), null);
+                        damage(3, 65f, 5f, 1, 2, 100),
+                        health(4, 64f, 4f, 2, 200),
+                        health(5, 65f, 5f, 2, 100))), recorderMapping(), null);
         assertFalse(features.keyEvents().isEmpty());
         assertEquals(5f, features.keyEvents().getFirst().clockSec(), 0.01f);
     }
@@ -423,7 +459,9 @@ class DefaultPlayerBattleFeatureExtractorTest {
                         position(3, BATTLE_START_RAW, 1, 0f, 0f),
                         position(4, BATTLE_START_RAW + 5f, 1, 10f, 0f),
                         position(5, BATTLE_START_RAW + 10f, 1, 20f, 0f),
-                        damage(6, BATTLE_START_RAW + 90f, 1, 2, 100))), recorderMapping(), battle);
+                        damage(6, BATTLE_START_RAW + 90f, 1, 2, 100),
+                        health(7, BATTLE_START_RAW + 89f, 2, 200),
+                        health(8, BATTLE_START_RAW + 90f, 2, 100))), recorderMapping(), battle);
         assertFalse(features.phases().isEmpty());
         assertEquals(90f, features.phases().getLast().endTime(), 0.01f);
     }
@@ -463,7 +501,9 @@ class DefaultPlayerBattleFeatureExtractorTest {
                 .extract(recon(BATTLE_START_RAW, List.of(
                         mapping(1, 1, 1001L),
                         mapping(2, 2, 2001L),
-                        damage(3, BATTLE_START_RAW + 50f, 1, 2, 100))), recorderMapping(), battle);
+                        damage(3, BATTLE_START_RAW + 50f, 1, 2, 100),
+                        health(4, BATTLE_START_RAW + 49f, 2, 200),
+                        health(5, BATTLE_START_RAW + 50f, 2, 100))), recorderMapping(), battle);
         assertFalse(features.phases().isEmpty());
         assertEquals(50f, features.phases().getLast().endTime(), 0.01f);
     }

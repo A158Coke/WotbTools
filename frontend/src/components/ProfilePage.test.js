@@ -34,11 +34,21 @@ vi.mock('../utils/api-boost.js', () => ({
   getMyBoosterProfile: () => Promise.reject(new Error('no-booster')),
   updateMyBoosterAvailability: () => Promise.resolve({}),
   getMyBoosterAssignments: () => Promise.resolve([]),
-  getUserLeaderboardRecords: () => Promise.resolve([]),
+  getUserHofRecords: () => Promise.resolve([]),
   getUnreadNotificationCount: () => Promise.resolve({ count: 0 }),
   listNotifications: () => Promise.resolve([]),
   markAllNotificationsRead: () => Promise.resolve(),
   markNotificationRead: () => Promise.resolve()
+}))
+
+const hundredApi = vi.hoisted(() => ({
+  hofHundredMyStatus: vi.fn(),
+  hofHundredCancel: vi.fn()
+}))
+
+vi.mock('../utils/api.js', () => ({
+  hofHundredMyStatus: hundredApi.hofHundredMyStatus,
+  hofHundredCancel: hundredApi.hofHundredCancel
 }))
 
 vi.mock('../utils/helpers.js', () => ({
@@ -79,6 +89,8 @@ describe('ProfilePage Wargaming regions', () => {
     currentProfile = null
     tokenRef.value = null
     syncImpl = () => Promise.resolve(null)
+    hundredApi.hofHundredMyStatus.mockReset().mockResolvedValue({ current: [], pending: [], rejected: [] })
+    hundredApi.hofHundredCancel.mockReset()
   })
 
   it('ASIA WARGAMING profile shows Asia server and is read-only', async () => {
@@ -253,5 +265,68 @@ describe('ProfilePage Wargaming regions', () => {
       expect(wrapper.text()).toContain('profile.wgSyncFailed')
       wrapper.unmount()
     }
+  })
+
+  it('shows hundred current/pending/rejected sections and withdraw calls the cancel API', async () => {
+    currentProfile = wargamingProfile('ASIA', 123)
+    hundredApi.hofHundredMyStatus.mockResolvedValue({
+      current: [{
+        id: 1,
+        vehicleId: 777,
+        vehicleName: 'Object 277',
+        status: 'CURRENT',
+        approvedAverageDamage: 3200,
+        approvedBattleCount: 100,
+        submittedAt: '2024-01-01T00:00:00Z',
+        approvedAt: '2024-01-10T00:00:00Z'
+      }],
+      pending: [{
+        id: 2,
+        vehicleId: 268,
+        vehicleName: 'Jagdpanzer E 100',
+        status: 'PENDING',
+        claimedAverageDamage: 3400,
+        claimedBattleCount: 100,
+        submittedAt: '2024-02-01T00:00:00Z'
+      }],
+      rejected: [{
+        id: 3,
+        vehicleId: 62,
+        vehicleName: 'T110E5',
+        status: 'REJECTED',
+        claimedAverageDamage: 2999,
+        claimedBattleCount: 100,
+        submittedAt: '2024-03-01T00:00:00Z',
+        rejectReason: 'INSUFFICIENT_PROOF',
+        rejectReasonText: 'Screenshot unclear'
+      }]
+    })
+    hundredApi.hofHundredCancel.mockResolvedValue({ id: 2, status: 'CANCELLED' })
+
+    const wrapper = mountProfile()
+    await flushPromises()
+
+    // current + pending + rejected sections render
+    expect(wrapper.text()).toContain('hundred.profileTitle')
+    expect(wrapper.text()).toContain('hundred.currentRecords')
+    expect(wrapper.text()).toContain('Object 277')
+    expect(wrapper.text()).toContain('hundred.currentPending')
+    expect(wrapper.text()).toContain('Jagdpanzer E 100')
+    expect(wrapper.text()).toContain('hundred.reviewStatus')
+    expect(wrapper.text()).toContain('hundred.recentRejected')
+    expect(wrapper.text()).toContain('INSUFFICIENT_PROOF')
+    expect(wrapper.text()).toContain('Screenshot unclear')
+
+    // withdraw triggers cancel API and refreshes status
+    const withdrawButton = wrapper.findAll('button').find(b => b.text().includes('hundred.withdraw'))
+    expect(withdrawButton).toBeTruthy()
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    await withdrawButton.trigger('click')
+    await flushPromises()
+
+    expect(hundredApi.hofHundredCancel).toHaveBeenCalledWith(2)
+    expect(hundredApi.hofHundredMyStatus).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('hundred.withdrawSuccess')
+    vi.unstubAllGlobals()
   })
 })

@@ -1,0 +1,50 @@
+{
+  "modelKey": "ho-ri",
+  "kind": "turretless",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 3937,
+    "modelGlb": "https://api.blitzkit.app/tanks/3937/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.5437512397766113,
+        -4.271461486816406
+      ],
+      "max": [
+        1.5437524318695068,
+        6.103540420532227
+      ]
+    },
+    "turretBounds": null,
+    "gunBounds": null,
+    "selectedModules": {
+      "turretId": 7265,
+      "gunId": 6753,
+      "trackId": 7777,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "J20_Ho_Ri_type3_mtr",
+      "J20_Ho_Ri_type3_mtr",
+      "J20_Ho_Ri_type3_mtr",
+      "J20_Ho_Ri_type3_track_mtr",
+      "J20_Ho_Ri_type3_track_mtr",
+      "J20_Ho_Ri_type3_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

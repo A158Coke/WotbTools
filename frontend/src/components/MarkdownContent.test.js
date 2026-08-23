@@ -66,6 +66,32 @@ describe('MarkdownContent semantic rendering', () => {
   })
 })
 
+describe('MarkdownContent time seek links', () => {
+  it('linkifies explicit battle times to #seek links', () => {
+    const wrapper = render('在 03:20 被集火；3分20秒 前；3m 20s 时；3 мин 20 с 结束')
+    const links = wrapper.findAll('a[href^="#seek="]')
+    expect(links.length).toBe(4)
+    for (const link of links) {
+      expect(link.attributes('href')).toBe('#seek=200')
+    }
+  })
+
+  it('does not linkify scores or bare numbers', () => {
+    const wrapper = render('比分 854:275，战斗时长约 120 秒')
+    expect(wrapper.findAll('a[href^="#seek="]')).toHaveLength(0)
+    expect(wrapper.text()).toContain('854:275')
+  })
+
+  it('emits seek with seconds on click', async () => {
+    const wrapper = render('03:20 阵亡')
+    const link = wrapper.find('a[href="#seek=200"]')
+    expect(link.exists()).toBe(true)
+    await link.trigger('click')
+    expect(wrapper.emitted('seek')).toBeTruthy()
+    expect(wrapper.emitted('seek')[0]).toEqual([200])
+  })
+})
+
 describe('MarkdownContent XSS safety', () => {
   it('removes script tags', () => {
     const wrapper = render('<script>alert(1)</script>')

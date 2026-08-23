@@ -5,12 +5,17 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.evidence.EvidenceSkillContext;
 import com.wotb.core.replay.evidence.EvidenceSkillEngine;
 import com.wotb.core.replay.evidence.EvidenceSkillResult;
+import com.wotb.core.replay.timeline.BattleTimeline;
+import com.wotb.core.replay.timeline.BattleTimelineBuilder;
+import com.wotb.core.replay.timeline.BattleTimelineResult;
+import com.wotb.core.replay.timeline.TimelinePerspective;
 import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
+import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -26,16 +31,17 @@ import java.util.function.LongSupplier;
  * <p>随机战斗个人复盘不评判 MVP/战犯；Team Autopsy（战犯/MVP）只应用于
  * team perspective（训练房/联赛团队复盘），由 {@link TeamReplayAnalysisService}
  * 以结算级独立 TEAM_AUTOPSY 调用执行。</p>
- * <p>降级阶梯（保持现有单 Call 路径为兜底，用户可感知行为不倒退）：
- * 非 ZH / 无重建 / 录像者未解析 / 特征不可用 / Call #1 失败 / 无证据 → 旧路径。</p>
+ * <p>降级阶梯：非 ZH / 特征不可用 / Call #1 失败 / 无证据 → 旧路径（保持现有单 Call
+ * 路径为兜底，用户可感知行为不倒退）。</p>
+ * <p><b>hard reject（docs/current-plan.md §3，PR #102 review 已确认）</b>：无重建 /
+ * 录像者未解析 / canonical timeline 不可用 → 抛 {@code AiTimelineUnusableException}，
+ * <b>不</b>走旧路径、<b>不</b>调用 LLM（禁止 settlement-only fallback）。</p>
  */
 @Service
 public class TacticalReviewHarness {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TacticalReviewHarness.class);
 
-    /** Call #1 的硬 stage budget（秒）：小型 roster/map JSON 分析，独立且远短于整体。 */
-    static final int CALL_1_BUDGET_SEC = 45;
     /** Call #2 前保留的安全余量（秒），避免恰好在 endpoint deadline 边缘结束。 */
     static final int SAFETY_MARGIN_SEC = 10;
     /** Call #1 失败后进入旧路径 fallback 所需的最小剩余预算（秒）。 */
@@ -112,13 +118,25 @@ public class TacticalReviewHarness {
         if (!preBattleService.isConfigured()) {
             return new HarnessOutcome(fallback(result, language, "AI_NOT_CONFIGURED", listener), null);
         }
+        // docs/current-plan.md §3：无 canonical timeline 可用 → 拒绝 AI Review（不走 settlement-only fallback）
         if (result.reconstruction() == null) {
-            return new HarnessOutcome(fallback(result, language, "NO_RECONSTRUCTION", listener), null);
+            LOGGER.info("Harness rejecting AI review: NO_RECONSTRUCTION (timeline unusable)");
+            throw new AiTimelineUnusableException("NO_RECONSTRUCTION");
         }
         final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(result);
         if (!recorder.resolved()) {
-            return new HarnessOutcome(fallback(result, language, "RECORDER_UNRESOLVED", listener), null);
+            LOGGER.info("Harness rejecting AI review: RECORDER_UNRESOLVED (timeline unusable)");
+            throw new AiTimelineUnusableException("RECORDER_UNRESOLVED");
         }
+        final BattleTimelineResult timelineResult = BattleTimelineBuilder.build(
+                result.battle(), result.reconstruction(),
+                TimelinePerspective.personal(recorder.accountId(), recorder.team()));
+        if (!timelineResult.usable()) {
+            LOGGER.info("Harness rejecting AI review: timeline unusable: {}",
+                    timelineResult.validation().errors());
+            throw new AiTimelineUnusableException(timelineResult.validation().errors());
+        }
+        final BattleTimeline timeline = timelineResult.timeline();
         final PlayerBattleFeatureSet features;
         try {
             features = new DefaultPlayerBattleFeatureExtractor().extract(
@@ -158,6 +176,7 @@ public class TacticalReviewHarness {
                         evidence,
                         result.battle(),
                         result.reconstruction(),
+                        timeline,
                         features,
                         recorder,
                         config.estimator(),
@@ -171,6 +190,13 @@ public class TacticalReviewHarness {
                 config.contextWindowTokens(),
                 config.maxOutputTokens(),
                 config.promptSafetyMarginTokens());
+        // Context 可观测性（docs/current-plan.md 38/39）：低基数 section token 估算 + 完成计数
+        if (meterRegistry != null && prepared.sectionTokens() != null) {
+            prepared.sectionTokens().forEach((section, tokens) ->
+                    meterRegistry.counter(
+                            "wotb_ai_review_context_section_tokens", "section", section)
+                            .increment(tokens));
+        }
         final AiChatRequest request = new AiChatRequest(
                 prepared.systemPrompt(),
                 prepared.userContent(),

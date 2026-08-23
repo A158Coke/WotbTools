@@ -35,6 +35,7 @@ public class AiGatewayConfig {
                 properties.promptSafetyMarginTokens(),
                 properties.call2ThinkingEnabled(),
                 properties.reasoningEffort(),
-                properties.callTimeoutSec());
+                properties.callTimeoutSec(),
+                properties.teamReviewMaxOutputTokens());
     }
 }

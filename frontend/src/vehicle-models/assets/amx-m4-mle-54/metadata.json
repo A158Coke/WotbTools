@@ -1,0 +1,82 @@
+{
+  "modelKey": "amx-m4-mle-54",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 4417,
+    "modelGlb": "https://api.blitzkit.app/tanks/4417/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160,
+    "y": 151.62
+  },
+  "turretRaster": {
+    "logicalMinX": 103.63,
+    "logicalMinY": -140.63,
+    "logicalMaxX": 216.34,
+    "logicalMaxY": 286.59,
+    "pixelWidth": 226,
+    "pixelHeight": 855,
+    "pivotX": 56.37,
+    "pivotY": 292.25
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.717570424079895,
+        -4.037191390991211
+      ],
+      "max": [
+        1.717570424079895,
+        3.570087194442749
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.5227409601211548,
+        -3.186232566833496
+      ],
+      "max": [
+        1.521939992904663,
+        2.0176749229431152
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.2271369993686676,
+        2.9720964431762695
+      ],
+      "max": [
+        0.23498700559139252,
+        8.355046272277832
+      ]
+    },
+    "selectedModules": {
+      "turretId": 3137,
+      "gunId": 20033,
+      "trackId": 8257,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "F82_AMX_M4_Mle1949_Ter_mtr",
+      "F82_AMX_M4_Mle1949_Ter_mtr",
+      "F82_AMX_M4_Mle1949_Ter_mtr",
+      "F82_AMX_M4_Mle1949_Ter_track_mtr",
+      "F82_AMX_M4_Mle1949_Ter_track_mtr",
+      "F82_AMX_M4_Mle1949_Ter_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

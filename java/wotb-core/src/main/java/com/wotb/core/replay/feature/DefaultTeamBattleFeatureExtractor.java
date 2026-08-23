@@ -8,10 +8,12 @@ import com.wotb.core.processing.TeamEntityMapping;
 import com.wotb.core.processing.TeamPerspectiveResolution;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import org.springframework.util.StringUtils;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
@@ -82,12 +84,46 @@ public class DefaultTeamBattleFeatureExtractor {
         final Map<Integer, List<PositionChangedEvent>> positionsByEntity =
                 teamPositionsByEntity(events, entityMapping, perspectiveTeam, resolutionByEvent, mapCode);
         final PositionEvidenceAudit positionAudit =
-                auditPositionEvidence(events, entityMapping, perspectiveTeam, resolutionByEvent, mapCode);
+                auditPositionEvidence(events, entityMapping, perspectiveTeam, resolutionByEvent, mapCode, battle);
         final int invalidTimestampEventCount = (int) resolvedEvents.stream()
                 .filter(re -> re.resolution().status() == TacticalTimeResolution.Status.INVALID_TIMESTAMP)
                 .count();
+        // §11–§17：伤害/掉血事实只消费权威 HP loss（Type-7 推导 + attacker attribution）。
+        // Type-8 rawProtocolValue 语义未证明，不得作为 dealt/received/关键事件伤害。
+        final Float battleStartRaw = reconstruction == null ? null
+                : reconstruction.battleStartRawClockSec();
+        final double duration = reconstruction != null && reconstruction.replayDurationSec() > 0
+                ? reconstruction.replayDurationSec()
+                : (battle != null && battle.durationS != null && battle.durationS > 0
+                        ? battle.durationS : 0.0);
+        final PlaybackCombatReconstruction.Result combat = PlaybackCombatReconstruction.derive(
+                events, entityMapping,
+                battleStartRaw == null ? 0.0 : battleStartRaw.doubleValue(), duration);
+        // 涉及本队视角的掉血记录（victim 属本队，或 reliable attacker 属本队）；
+        // attacker 可能为 null = 不可归属（掉血真实发生但不得计入任何攻击者）
+        final List<AttributedHpLoss> teamLosses = new ArrayList<>();
+        for (final java.util.Map.Entry<Long,
+                List<PlaybackCombatReconstruction.Loss>> entry
+                : combat.lossesByVictim().entrySet()) {
+            final TeamEntityIdentity victimId = identityOfAccount(entityMapping, entry.getKey());
+            for (final PlaybackCombatReconstruction.Loss loss : entry.getValue()) {
+                final Long attackerAccount = loss.attackerAccountId();
+                final TeamEntityIdentity attackerId = loss.attackerReliable()
+                        && attackerAccount != null
+                        ? identityOfAccount(entityMapping, attackerAccount) : null;
+                final boolean victimInTeam = victimId != null && victimId.team() == perspectiveTeam;
+                final boolean attackerInTeam = attackerId != null
+                        && attackerId.team() == perspectiveTeam;
+                if (victimInTeam || attackerInTeam) {
+                    teamLosses.add(new AttributedHpLoss(loss, attackerId, victimId));
+                }
+            }
+        }
+        int unattributedDamageCount = (int) teamLosses.stream()
+                .filter(loss -> loss.attacker() == null || !loss.loss().attackerReliable())
+                .count();
+
         final List<TimedTeamDamage> timedDamages = new ArrayList<>();
-        int unattributedDamageCount = 0;
         for (final ReplayEvent event : events) {
             if (!(event instanceof DamageEvent damage) || damage.damage() <= 0) {
                 continue;
@@ -99,11 +135,16 @@ public class DefaultTeamBattleFeatureExtractor {
             final TeamEntityIdentity attacker = entityMapping.identity(damage.attackerEid());
             final TeamEntityIdentity victim = entityMapping.identity(damage.victimEid());
             if (!TeamAggregateExtractor.usableDamageEvidence(damage, attacker, victim)) {
-                unattributedDamageCount++;
                 continue;
             }
+            // 事件级可信掉血：仅单通知窗口归属（多通知/无通知 → null，聚合走 loss 级）
+            final long victimAccount = victim != null ? victim.accountId() : 0L;
+            final Integer trustedHpLoss = victimAccount > 0
+                    ? PlaybackCombatReconstruction.observedHpLossAt(
+                            combat, victimAccount, res.battleRelativeSec())
+                    : null;
             final AttributedDamage ad = new AttributedDamage(damage, attacker, victim);
-            timedDamages.add(new TimedTeamDamage(ad, res.battleRelativeSec()));
+            timedDamages.add(new TimedTeamDamage(ad, res.battleRelativeSec(), trustedHpLoss));
         }
 
         final Map<Integer, List<TimedTeamPosition>> timedPositionsByEntity = new LinkedHashMap<>();
@@ -123,7 +164,7 @@ public class DefaultTeamBattleFeatureExtractor {
 
         final List<TeamMemberFeatureSet> members = authoritativeMembers.stream()
                 .map(player -> buildMember(
-                        player, entityMapping, timedPositionsByEntity, timedDamages,
+                        player, entityMapping, timedPositionsByEntity, timedDamages, teamLosses,
                         authoritativeMembers, mapCode,
                         deathProxByAcc.getOrDefault(player.accountId, null)))
                 .sorted(Comparator.comparingLong(TeamMemberFeatureSet::accountId)
@@ -131,9 +172,9 @@ public class DefaultTeamBattleFeatureExtractor {
                                 Comparator.nullsLast(String::compareTo)))
                 .toList();
         final List<TeamEngagementSummary> engagements = TeamEngagementExtractor.buildTeamEngagements(
-                timedDamages, perspectiveTeam);
+                timedDamages, teamLosses, perspectiveTeam);
         final TeamObservedAggregate observedAggregate = TeamAggregateExtractor.buildObservedAggregate(
-                timedDamages, perspectiveTeam, unattributedDamageCount);
+                timedDamages, teamLosses, perspectiveTeam, unattributedDamageCount);
         final List<TeamFormationPhase> formationPhases = TeamFormationExtractor.buildFormationPhases(
                 timedPositionsByEntity, entityMapping, perspectiveTeam, mapCode);
         final float firstContactTime = timedDamages.stream()
@@ -192,7 +233,8 @@ public class DefaultTeamBattleFeatureExtractor {
                 observedPositionEventCount,
                 timedDamages.size(),
                 unattributedDamageCount,
-                positionAudit.unattributedCount(),
+                positionAudit.unattributedCombatantCount(),
+                positionAudit.nonCombatantPositionCount(),
                 clampedPositionEventCount,
                 positionAudit.outOfBoundsCount(),
                 invalidTimestampEventCount,
@@ -229,7 +271,7 @@ public class DefaultTeamBattleFeatureExtractor {
         if (unattributedDamageCount > 0) {
             limitations.add("UNATTRIBUTED_DAMAGE_EVENTS_PRESENT");
         }
-        if (positionAudit.unattributedCount() > 0) {
+        if (positionAudit.unattributedCombatantCount() > 0) {
             limitations.add("UNATTRIBUTED_POSITION_EVENTS_PRESENT");
         }
         if (positionAudit.outOfBoundsCount() > 0) {
@@ -313,9 +355,42 @@ public class DefaultTeamBattleFeatureExtractor {
             final TeamEntityMapping mapping,
             final int perspectiveTeam,
             final Map<ReplayEvent, TacticalTimeResolution> resolutionByEvent,
-            final String mapCode
+            final String mapCode,
+            final Battle battle
     ) {
-        int unattributedCount = 0;
+        // 实际参战账号权威集合 = battle_results #301（actual combatant source，唯一权威）；
+        // 观战/辅助实体只出现在 #201/updateArena2/event stream，不属于 #301。
+        final Set<Long> combatantAccounts = new LinkedHashSet<>();
+        final Set<String> combatantNicknames = new LinkedHashSet<>();
+        if (battle != null && battle.players != null) {
+            for (final PlayerResult player : battle.players) {
+                if (player == null) {
+                    continue;
+                }
+                if (player.accountId > 0) {
+                    combatantAccounts.add(player.accountId);
+                }
+                if (StringUtils.hasText(player.nickname)) {
+                    combatantNicknames.add(player.nickname);
+                }
+            }
+        }
+        // entity -> 映射账号/昵称（来自 updateArena2 roster 映射事件；未映射实体（观战镜头/场景对象）不在其中）。
+        // 昵称映射（accountId=0）也可能指向 #301 成员（如昵称重名导致 TeamEntityMapper 无法归因），
+        // 需一并纳入 A/B 分类，避免把 #301 成员实体的位置误判为非参战。
+        final Map<Integer, Long> accountByEntity = new HashMap<>();
+        final Map<Integer, String> nicknameByEntity = new HashMap<>();
+        for (final ReplayEvent event : events) {
+            if (event instanceof ParticipantMappingEvent pm) {
+                if (pm.accountId() > 0) {
+                    accountByEntity.putIfAbsent(pm.entityId(), pm.accountId());
+                } else if (StringUtils.hasText(pm.nickname())) {
+                    nicknameByEntity.putIfAbsent(pm.entityId(), pm.nickname());
+                }
+            }
+        }
+        int unattributedCombatantCount = 0;
+        int nonCombatantPositionCount = 0;
         int outOfBoundsCount = 0;
         for (final ReplayEvent event : events) {
             if (!(event instanceof PositionChangedEvent position)) {
@@ -327,7 +402,18 @@ public class DefaultTeamBattleFeatureExtractor {
             }
             final TeamEntityIdentity identity = mapping.identity(position.entityId());
             if (identity == null || !identity.usable()) {
-                unattributedCount++;
+                // A. actual combatant（#301）实体无法归因 -> 真实数据质量问题
+                final Long mappedAccount = accountByEntity.get(position.entityId());
+                final String mappedNickname = nicknameByEntity.get(position.entityId());
+                final boolean combatantEntity = mappedAccount != null
+                        && combatantAccounts.contains(mappedAccount)
+                        || mappedNickname != null && combatantNicknames.contains(mappedNickname);
+                if (combatantEntity) {
+                    unattributedCombatantCount++;
+                } else {
+                    // B. 非参战实体（观战玩家/镜头/场景对象）-> 战术证据忽略，仅 internal diagnostic
+                    nonCombatantPositionCount++;
+                }
                 continue;
             }
             if (identity.team() != perspectiveTeam) {
@@ -337,7 +423,8 @@ public class DefaultTeamBattleFeatureExtractor {
                 outOfBoundsCount++;
             }
         }
-        return new PositionEvidenceAudit(unattributedCount, outOfBoundsCount);
+        return new PositionEvidenceAudit(
+                unattributedCombatantCount, nonCombatantPositionCount, outOfBoundsCount);
     }
 
     private static TeamMemberFeatureSet buildMember(
@@ -345,6 +432,7 @@ public class DefaultTeamBattleFeatureExtractor {
             final TeamEntityMapping mapping,
             final Map<Integer, List<TimedTeamPosition>> timedPositionsByEntity,
             final List<TimedTeamDamage> damageEvents,
+            final List<AttributedHpLoss> teamLosses,
             final List<PlayerResult> authoritativeMembers,
             final String mapCode,
             final TeamMemberFeatureSet.DeathProximity deathProximity
@@ -368,16 +456,17 @@ public class DefaultTeamBattleFeatureExtractor {
                 .map(TeamEntityIdentity::confidence)
                 .reduce(DecodeConfidence.EXACT, DefaultTeamBattleFeatureExtractor::lowerConfidence);
         final List<EngagementSummary> engagements = TeamEngagementExtractor.buildMemberEngagements(
-                damageEvents, memberId);
+                damageEvents, teamLosses, memberId);
         final List<String> limitations = new ArrayList<>();
         if (memberId.ambiguousNickname()) {
             limitations.add("TEAM_MEMBER_IDENTITY_UNRESOLVED");
         }
+        // mapping 根本不存在 → mapping failure；mapping 存在但没有 usable position → position failure。
+        // 避免对同一个完全 unmapped 成员重复披露两个派生 limitation（P2 cleanup）。
         if (entityIds.isEmpty()) {
             limitations.add("TEAM_MEMBER_ENTITY_UNMAPPED");
-        }
-        if (movements.isEmpty()) {
-            limitations.add("TEAM_MEMBER_MOVEMENT_UNAVAILABLE");
+        } else if (movements.isEmpty()) {
+            limitations.add("TEAM_MEMBER_POSITION_UNAVAILABLE");
         }
         final Double deathTime = player.survived || PlayerResultFormat.deathSec(player) <= 0
                 ? null : PlayerResultFormat.deathSec(player);
@@ -461,15 +550,37 @@ public class DefaultTeamBattleFeatureExtractor {
     ) {
     }
 
+    /** 账号 → 身份（re-entry 取首个实体）；无 → null。 */
+    static TeamEntityIdentity identityOfAccount(final TeamEntityMapping mapping, final long accountId) {
+        final List<Integer> entityIds = mapping.entityIdsByAccount().getOrDefault(accountId, List.of());
+        for (final int eid : entityIds) {
+            final TeamEntityIdentity identity = mapping.identity(eid);
+            if (identity != null) {
+                return identity;
+            }
+        }
+        return null;
+    }
+
     private record PositionEvidenceAudit(
-            int unattributedCount,
+            int unattributedCombatantCount,
+            int nonCombatantPositionCount,
             int outOfBoundsCount
     ) {
     }
 
     record ResolvedEvent(ReplayEvent event, TacticalTimeResolution resolution) {}
 
-    record TimedTeamDamage(AttributedDamage event, float battleRelativeSec) {}
+    /** 事件级掉血记录：trustedHpLoss = 该事件可证明的掉血（单通知窗口归属；null = 无法归属到单事件）。 */
+    record TimedTeamDamage(AttributedDamage event, float battleRelativeSec, Integer trustedHpLoss) {}
+
+    /** 掉血记录（loss 级，聚合用）：attacker 可为 null（不可归属——不得计入任何攻击者）。 */
+    record AttributedHpLoss(
+            PlaybackCombatReconstruction.Loss loss,
+            TeamEntityIdentity attacker,
+            TeamEntityIdentity victim
+    ) {
+    }
 
     record TimedTeamPosition(PositionChangedEvent event, float battleRelativeSec) {}
 

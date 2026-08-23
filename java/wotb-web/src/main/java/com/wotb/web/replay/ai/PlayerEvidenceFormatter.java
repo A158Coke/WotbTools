@@ -50,22 +50,78 @@ final class PlayerEvidenceFormatter {
     }
 
     /**
-     * 录像者对每个目标的直接伤害（来自事件流累计的 {@code killVictims}，属观测子集）。
+     * 权威掉血重建（§11–§17 唯一可信伤害源）：连续可信 Type-7 HP sample 推导 + 攻击者 attribution。
+     * 所有「造成/承受伤害、逐次伤害、窗口掉血」证据一律从这里取，不得再读 Type-8 raw 值。
+     */
+    private static com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat(
+            final Battle battle, final ReplayReconstruction recon) {
+        if (recon == null || recon.events() == null) {
+            return new com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result(
+                    java.util.Map.of(), java.util.List.of());
+        }
+        final TeamEntityMapping mapping = DamageEventIdentityResolver.mapping(battle, recon);
+        final Float start = recon.battleStartRawClockSec();
+        final double duration = recon.replayDurationSec() > 0 ? recon.replayDurationSec()
+                : (battle != null && battle.durationS != null && battle.durationS > 0
+                        ? battle.durationS : 0.0);
+        return com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
+                recon.events(), mapping, start == null ? 0.0 : start.doubleValue(), duration);
+    }
+
+    /** 攻击者 A 对目标 V 在 t 之前（含）发生的、有支持证据的掉血（dealt 口径，§13）。 */
+    private static int dealtTo(
+            final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat,
+            final long attacker, final long victim, final double t) {
+        int total = 0;
+        for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss l
+                : combat.lossesOf(victim)) {
+            if (!l.attackerReliable() || l.attackerAccountId() == null
+                    || l.attackerAccountId() != attacker || l.toSec() > t + 1e-6) {
+                continue;
+            }
+            total += l.hpLoss();
+        }
+        return total;
+    }
+
+    /** 目标阵亡时刻（battle-relative 秒；存活/未知 → 战斗时长）。 */
+    private static double deathSecOrEnd(final PlayerResult target,
+                                        final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat) {
+        if (target != null) {
+            final double death = PlayerResultFormat.deathSec(target);
+            if (death > 0) {
+                return death;
+            }
+        }
+        double last = 0;
+        for (final java.util.Map.Entry<Long, List<com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss>> e
+                : combat.lossesByVictim().entrySet()) {
+            for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss l : e.getValue()) {
+                last = Math.max(last, l.toSec());
+            }
+        }
+        return last;
+    }
+
+    /**
+     * 录像者对每个目标的直接伤害（§12/§13 权威掉血口径：attributed HP loss，属观测子集）。
      * <p>目标只用「昵称 + 权威坦克名称 + 结构化车种」标识，不附加任何由名称推断的属性，
      * 使 AI 能写出「你对敌方 &lt;坦克名称&gt; 造成了 N 点伤害」而无需猜测车辆类型。</p>
      */
     static boolean appendRecorderDamageExchange(final StringBuilder sb,
                                                 final Battle battle,
+                                                final ReplayReconstruction recon,
                                                 final PlayerResult rec) {
-        return appendRecorderDamageExchange(sb, battle, rec, false);
+        return appendRecorderDamageExchange(sb, battle, recon, rec, false);
     }
 
     /**
-     * 录像者逐目标累计伤害（事件流观测子集，来自 killVictims）：
-     * {@code OBSERVED_DAMAGE_IS_PARTIAL} 时抑制全部累计伤害/击穿数字，输出稳定 UNAVAILABLE 标记。
+     * 录像者逐目标累计伤害（权威掉血观测子集，仅含可证明攻击者归属的部分）：
+     * {@code OBSERVED_DAMAGE_IS_PARTIAL} 时抑制全部累计伤害数字，输出稳定 UNAVAILABLE 标记。
      */
     static boolean appendRecorderDamageExchange(final StringBuilder sb,
                                                 final Battle battle,
+                                                final ReplayReconstruction recon,
                                                 final PlayerResult rec,
                                                 final boolean suppressObservedNumbers) {
         if (suppressObservedNumbers) {
@@ -73,7 +129,7 @@ final class PlayerEvidenceFormatter {
                     .append("UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)\n");
             return true;
         }
-        if (battle == null || rec == null || rec.killVictims.isEmpty()) {
+        if (battle == null || rec == null) {
             return false;
         }
         final Map<Long, PlayerResult> byAccount = new LinkedHashMap<>();
@@ -82,10 +138,26 @@ final class PlayerEvidenceFormatter {
                 byAccount.putIfAbsent(p.accountId, p);
             }
         }
+        final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat = combat(battle, recon);
+        // 逐目标聚合：有支持证据的掉血（attacker==recorder 且 attackerReliable）
+        final Map<Long, Integer> dealtByTarget = new LinkedHashMap<>();
+        for (final java.util.Map.Entry<Long, List<com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss>> e
+                : combat.lossesByVictim().entrySet()) {
+            for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss l : e.getValue()) {
+                if (l.attackerReliable() && l.attackerAccountId() != null
+                        && l.attackerAccountId() == rec.accountId) {
+                    dealtByTarget.merge(e.getKey(), l.hpLoss(), Integer::sum);
+                }
+            }
+        }
+        if (dealtByTarget.isEmpty()) {
+            return false;
+        }
         sb.append("\n=== DAMAGE_EXCHANGE_AGGREGATED_OBSERVED（逐对手聚合观测子集） ===\n");
-        sb.append("注意: 以下为整场累计的观测子集, 不是单次伤害, 也不是权威总伤害.\n");
-        for (final PotentialDamage.KillVictim victim : rec.killVictims) {
-            final PlayerResult target = byAccount.get(victim.victimAccountId());
+        sb.append("注意: 以下为整场累计的观测子集（权威掉血口径, 仅含可证明攻击者归属的部分）, "
+                + "不是单次伤害, 也不是权威总伤害.\n");
+        for (final java.util.Map.Entry<Long, Integer> entry : dealtByTarget.entrySet()) {
+            final PlayerResult target = byAccount.get(entry.getKey());
             final Side side = target != null ? PlayerSideResolver.resolve(battle, target) : Side.UNKNOWN;
             final long targetTankId = target != null ? target.tankId : 0L;
             sb.append("你 -> ").append(PlayerAnalysisPromptFormatter.sideLabel(side)).append(' ')
@@ -93,8 +165,7 @@ final class PlayerEvidenceFormatter {
                     .append(" 坦克: ").append(PlayerResultFormat.quoteForPrompt(
                             ReplayDisplayNames.tankName(targetTankId, target != null ? target.tankName : null)))
                     .append(" 车种: ").append(ReplayDisplayNames.tankClass(targetTankId))
-                    .append(" 累计直接伤害").append(victim.damage())
-                    .append(" 击穿").append(victim.penetrations())
+                    .append(" 累计直接伤害").append(entry.getValue())
                     .append('\n');
         }
         return true;
@@ -131,27 +202,25 @@ final class PlayerEvidenceFormatter {
         if (battle == null || recorderAccountId <= 0 || recon == null || recon.events() == null) {
             return false;
         }
-        final Float battleStart = recon.battleStartRawClockSec();
-        final TeamEntityMapping mapping = DamageEventIdentityResolver.mapping(battle, recon);
-        final Map<Long, int[]> dealt = new LinkedHashMap<>();   // [伤害合计, 命中次数]
+        final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat = combat(battle, recon);
+        final Map<Long, int[]> dealt = new LinkedHashMap<>();   // [伤害合计, 掉血次数]
         final Map<Long, int[]> received = new LinkedHashMap<>();
-        for (final ReplayEvent event : recon.events()) {
-            if (!(event instanceof DamageEvent damage)) continue;
-            if (damage.damage() <= 0) continue;
-            // 排除准备阶段：与其他证据保持同一时间域纪律
-            if (battleStart != null && damage.timestamp() != null
-                    && damage.timestamp().rawClockSec() < battleStart) {
-                continue;
-            }
-            final long attacker = DamageEventIdentityResolver.attackerAccount(damage, mapping);
-            final long victim = DamageEventIdentityResolver.victimAccount(damage, mapping);
-            if (attacker <= 0 || victim <= 0) {
-                continue; // 身份无法解析（真实 decoder 直填账号为 null，必须经 entity 映射）
-            }
-            if (attacker == recorderAccountId) {
-                accumulate(dealt, victim, damage.damage());
-            } else if (victim == recorderAccountId) {
-                accumulate(received, attacker, damage.damage());
+        // §12/§13：只消费权威掉血。dealt 仅计 attackerReliable 且有支持证据的掉血；
+        // received 仅计可归属到具体攻击者的掉血（无法归属的受击掉血在掉血窗口段体现，
+        // 不得伪造攻击者）。Type-8 rawProtocolValue 不得作为对炮伤害。
+        for (final java.util.Map.Entry<Long,
+                List<com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss>> entry
+                : combat.lossesByVictim().entrySet()) {
+            final long victim = entry.getKey();
+            for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss l : entry.getValue()) {
+                final Long attacker = l.attackerAccountId();
+                if (l.attackerReliable() && attacker != null && attacker > 0) {
+                    if (attacker == recorderAccountId) {
+                        accumulate(dealt, victim, l.hpLoss());
+                    } else if (victim == recorderAccountId) {
+                        accumulate(received, attacker, l.hpLoss());
+                    }
+                }
             }
         }
         if (dealt.isEmpty() && received.isEmpty()) {
@@ -226,42 +295,53 @@ final class PlayerEvidenceFormatter {
         if (battle == null || recorderAccountId <= 0 || recon == null || recon.events() == null) {
             return false;
         }
-        final TeamEntityMapping mapping = DamageEventIdentityResolver.mapping(battle, recon);
         final Map<Long, PlayerResult> byAccount = new LinkedHashMap<>();
         if (battle.players != null) {
             for (final PlayerResult p : battle.players) {
                 byAccount.putIfAbsent(p.accountId, p);
             }
         }
-        final Float battleStart = recon.battleStartRawClockSec();
-        final List<String> rows = new ArrayList<>();
-        for (final ReplayEvent event : recon.events()) {
-            if (!(event instanceof DamageEvent damage)) continue;
-            if (damage.damage() <= 0) continue;
-            if (damage.timestamp() == null) continue;
-            final float raw = damage.timestamp().rawClockSec();
-            if (battleStart != null && raw < battleStart) continue;   // 准备阶段不计
-            final long attacker = DamageEventIdentityResolver.attackerAccount(damage, mapping);
-            final long victim = DamageEventIdentityResolver.victimAccount(damage, mapping);
-            if (attacker <= 0 || victim <= 0) continue;   // 身份无法解析（真实事件必须经 entity 映射）
-            final boolean recorderIsAttacker = attacker == recorderAccountId;
-            final boolean recorderIsVictim = victim == recorderAccountId;
-            if (!recorderIsAttacker && !recorderIsVictim) continue;
-
-            final float relative = battleStart != null ? raw - battleStart : raw;
-            final String clock = PlayerAnalysisTerms.battleClock(relative);
-            final String attackerText = damageActorText(battle, byAccount.get(attacker), recorderAccountId);
-            final String victimText = damageActorText(battle, byAccount.get(victim), recorderAccountId);
-            rows.add(clock + "：" + attackerText + " 对 " + victimText
-                    + " 造成了" + damage.damage() + "点伤害");
+        final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat = combat(battle, recon);
+        final List<double[]> rows = new ArrayList<>();   // {toSec, index into texts}
+        final List<String> texts = new ArrayList<>();
+        // §12/§13：逐条 = 一条权威掉血记录（Type-7 推导）。方向：attackerReliable 才写「造成」；
+        // recorder 受击的掉血（无论是否可归属）写「承受」，来源不可证明时写「来源未知」。
+        // Type-8 rawProtocolValue 语义未证明，不得作为单次伤害展示。
+        for (final java.util.Map.Entry<Long,
+                List<com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss>> entry
+                : combat.lossesByVictim().entrySet()) {
+            final long victim = entry.getKey();
+            for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss loss : entry.getValue()) {
+                final Long attacker = loss.attackerAccountId();
+                final boolean recorderIsAttacker = loss.attackerReliable()
+                        && attacker != null && attacker == recorderAccountId;
+                final boolean recorderIsVictim = victim == recorderAccountId;
+                if (!recorderIsAttacker && !recorderIsVictim) continue;
+                final String clock = PlayerAnalysisTerms.battleClock((float) loss.toSec());
+                final String row;
+                if (recorderIsAttacker) {
+                    final String victimText = damageActorText(battle, byAccount.get(victim), recorderAccountId);
+                    row = clock + "：你 对 " + victimText
+                            + " 造成了" + loss.hpLoss() + "点伤害";
+                } else {
+                    final String attackerText = (loss.attackerReliable() && attacker != null)
+                            ? damageActorText(battle, byAccount.get(attacker), recorderAccountId)
+                            : "来源未知";
+                    row = clock + "：" + attackerText + " 对你造成了" + loss.hpLoss() + "点伤害";
+                }
+                rows.add(new double[]{loss.toSec(), texts.size()});
+                texts.add(row);
+            }
         }
         if (rows.isEmpty()) {
             return false;
         }
+        // 跨 victim 的 lossesByVictim 遍历无序，逐条行按时间升序输出
+        rows.sort(java.util.Comparator.comparingDouble(r -> r[0]));
         sb.append("\n=== PER_HIT_DAMAGE_EVENTS_OBSERVED（逐次伤害事件·事件流观测） ===\n");
         sb.append("注意: 每条都是单次伤害事件, 不是累计值; 方向由事件的攻击方/受击方账号确定.\n");
-        for (final String row : rows) {
-            sb.append(row).append('\n');
+        for (final double[] row : rows) {
+            sb.append(texts.get((int) row[1])).append('\n');
         }
         return true;
     }
@@ -307,7 +387,14 @@ final class PlayerEvidenceFormatter {
                 + " 秒、攻击者≥2 且无未解析攻击者时才标注「（短时多车集火证据）」; "
                 + "攻击者=1 → 短时间集中掉血/高压掉血窗口（不是集火）; "
                 + "标注「（攻击者部分未解析）」时攻击者数不完整, 不得断言集火; "
-                + "链式聚类形成的大跨度窗口（相邻间隔虽小但总跨度超阈值）不得当作短时集火.\n");
+                + "链式聚类形成的大跨度窗口（相邻间隔虽小但总跨度超阈值）不得当作短时集火; "
+                + "伤害/进场满血pct=窗口累计伤害/已证明进场满血量(回放受击前样本证明, 含装备/物资加成)的百分比; "
+                + "伤害/base满血pct=窗口累计伤害/tankopedia 基础血量的百分比(进场满血未被证明时的 base baseline, "
+                + "只是计算基准, 不是实际掉血比例(未知则为「未知」); "
+                + "仅当进场满血被证明且窗口跨度≤" + (int) DamageWindowClusterer.CRITICAL_WINDOW_SPAN_SEC
+                + " 秒、伤害≥" + (int) DamageWindowClusterer.CRITICAL_HP_PCT
+                + "% 已证明进场满血量才标注「（短窗高额伤害窗口）」; "
+                + "数据无法证明窗口起始血量/窗口内阵亡/装备加成后的实际最大血量, 不得判定「从满血被秒杀」.\n");
         for (final DamageWindowClusterer.DamageWindow window : windows) {
             sb.append("  ").append(PlayerAnalysisTerms.battleRange(window.startSec(), window.endSec()))
                     .append(" 掉血").append(window.totalDamage())
@@ -315,6 +402,10 @@ final class PlayerEvidenceFormatter {
                     .append(" 攻击者").append(window.uniqueAttackerCount())
                     .append(window.attackersUnresolved() ? "（攻击者部分未解析）" : "")
                     .append(window.focusFireCandidate() ? "（短时多车集火证据）" : "")
+                    .append(window.entryHpProven() ? " 伤害/进场满血pct=" : " 伤害/base满血pct=")
+                    .append(window.damageVsEntryMaxHpPct() == null
+                            ? "未知" : Math.round(window.damageVsEntryMaxHpPct()) + "%")
+                    .append(window.criticalWindow() ? "（短窗高额伤害窗口）" : "")
                     .append('\n');
         }
         return sb.toString();
@@ -357,8 +448,13 @@ final class PlayerEvidenceFormatter {
 
     /** tankopedia 提供的结构化车辆事实（等级/国家）；缺失即为空串，绝不由名称推断。 */
     private static String structuredTankFacts(final long tankId) {
+        return structuredTankFacts(tankId, null);
+    }
+
+    /** 同上；血量按 provenance 口径（OBSERVED_EXACT → 已证明进场满血；否则 tankopedia base）。 */
+    private static String structuredTankFacts(final long tankId, final PlayerResult player) {
         final StringBuilder sb = new StringBuilder(24);
-        EntityIdentityResolver.appendStructuredTankFacts(sb, tankId);
+        EntityIdentityResolver.appendStructuredTankFacts(sb, tankId, player);
         return sb.toString();
     }
 
@@ -371,17 +467,20 @@ final class PlayerEvidenceFormatter {
      */
     static boolean appendKillAttribution(final StringBuilder sb,
                                          final Battle battle,
+                                         final ReplayReconstruction recon,
                                          final PlayerResult rec) {
-        return appendKillAttribution(sb, battle, rec, false);
+        return appendKillAttribution(sb, battle, recon, rec, false);
     }
 
     /**
-     * 击杀归因（事件流观测）：{@code OBSERVED_DAMAGE_IS_PARTIAL} 时仅保留已正向观察到的
-     * 「你击杀了谁 / 谁击杀了你」身份信息，抑制 victim.damage / penetrations 与
-     * 「致死前累计 N 点伤害」等事件流伤害数字。
+     * 击杀归因（权威掉血观测）：{@code OBSERVED_DAMAGE_IS_PARTIAL} 时仅保留已正向观察到的
+     * 「你击杀了谁 / 谁击杀了你」身份信息，抑制「致死前累计 N 点伤害」等伤害数字。
+     * 致死前累计 = 击杀者对该目标有支持证据的掉血（§13 attributed HP loss，toSec ≤ 目标阵亡时刻）；
+     * 身份线索（谁杀谁）仍来自 killVictims，伤害数字不再使用 Type-8 raw。
      */
     static boolean appendKillAttribution(final StringBuilder sb,
                                          final Battle battle,
+                                         final ReplayReconstruction recon,
                                          final PlayerResult rec,
                                          final boolean suppressObservedNumbers) {
         if (battle == null || battle.players == null || rec == null) {
@@ -393,18 +492,23 @@ final class PlayerEvidenceFormatter {
         for (final PlayerResult p : battle.players) {
             byAccount.putIfAbsent(p.accountId, p);
         }
+        final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat = combat(battle, recon);
         for (final PotentialDamage.KillVictim victim : rec.killVictims) {
             final PlayerResult target = byAccount.get(victim.victimAccountId());
             if (target == null) continue;
+            final int lethalTotal = dealtTo(combat, rec.accountId,
+                    victim.victimAccountId(), deathSecOrEnd(target, combat));
             recorderKills.add(EntityIdentityResolver.label(battle, target, rec.accountId)
-                    + (suppressObservedNumbers ? "" : " 致死前累计承受你" + victim.damage() + "点伤害"));
+                    + (suppressObservedNumbers ? "" : " 致死前累计承受你" + lethalTotal + "点伤害"));
         }
         for (final PlayerResult other : battle.players) {
             if (PlayerAnalysisPromptFormatter.isSamePlayer(other, rec)) continue;
             for (final PotentialDamage.KillVictim victim : other.killVictims) {
                 if (victim.victimAccountId() != rec.accountId) continue;
+                final int lethalTotal = dealtTo(combat, other.accountId,
+                        rec.accountId, deathSecOrEnd(rec, combat));
                 killersOfRecorder.add(EntityIdentityResolver.label(battle, other, rec.accountId)
-                        + (suppressObservedNumbers ? "" : " 致死前对你累计造成" + victim.damage() + "点伤害"));
+                        + (suppressObservedNumbers ? "" : " 致死前对你累计造成" + lethalTotal + "点伤害"));
             }
         }
         if (recorderKills.isEmpty() && killersOfRecorder.isEmpty()) {
@@ -443,7 +547,7 @@ final class PlayerEvidenceFormatter {
                 .append(" 坦克: ").append(PlayerResultFormat.quoteForPrompt(tankDisplay))
                 // 车种只来自 tankopedia 的结构化 class 字段，未提供时为「未知」；不得由名称推断
                 .append(" 车种: ").append(ReplayDisplayNames.tankClass(p.tankId))
-                .append(structuredTankFacts(p.tankId))
+                .append(structuredTankFacts(p.tankId, p))
                 .append(" 输出").append(p.damageDealt)
                 .append(" 损失血量").append(p.damageReceived)
                 .append(" 助攻").append(p.damageAssisted)
@@ -683,7 +787,6 @@ final class PlayerEvidenceFormatter {
                             .append(PlayerAnalysisTerms.battleRange(e.startTime(), e.endTime()))
                             .append(" 事件流输出: ").append(e.damageDealt())
                             .append(" 事件流损失血量: ").append(e.damageReceived())
-                            .append(" 结果: ").append(PlayerAnalysisTerms.outcomeLabel(e.outcome()))
                             .append(" 置信度: ").append(PlayerAnalysisTerms.confidenceLabel(e.confidence()))
                             .append('\n');
                 }

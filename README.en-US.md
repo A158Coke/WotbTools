@@ -1,15 +1,15 @@
 # WoTBTools
 
-A toolset for World of Tanks Blitz: parse `.wotbreplay` replays and export battle data to Excel, online damage leaderboard, real-time rating (Rating V2), AI tactical review (player / team), and Keycloak authentication.
+A toolset for World of Tanks Blitz: parse `.wotbreplay` replays and export battle data to Excel, the Hall of Fame (damage board for Random & Rating battles), real-time rating (Rating V2), AI tactical review (player / team), and Keycloak authentication.
 
 Entry: [https://wotbtools.com](https://wotbtools.com) · Repository: [https://github.com/A158Coke/WotbTools](https://github.com/A158Coke/WotbTools)
 
 ## What it does
 
 - **Replay parsing & Excel export**: upload a `.wotbreplay` in the browser, extract authoritative settlement (damage / received / assisted / blocked / kills / death times) plus event-stream features (movement / engagements / 3x3 grid regions).
-- **Online damage leaderboard**: per-battle damage ranking for random battles.
+- **Hall of Fame**: per-battle damage ranking for Random and Rating battles with battle-type/tank/nickname filters.
 - **Real-time rating (Rating V2)**: composite score based on potential damage, assistance, KAST, impact.
-- **AI tactical review**: pre-battle prediction + evidence-chain review + liabilities / MVP, streamed token-by-token over SSE; the review keeps running while you switch pages or background the tab (including long team reviews with an ~1100s budget, with results or progress ready on return); points victories state how they ended (time expired / reached 1000 points early) and HP-loss descriptions include time ranges with resolved attacker counts (a single attacker is never called focus fire; only 2+ resolved attackers within a short window (total span ≤ 15s) may be cited as multi-vehicle focus fire); results include a "Map Overview" (friendly/enemy heatmaps + routes, 28 maps with assets).
+- **AI tactical review**: pre-battle prediction + evidence-chain review + liabilities / MVP, streamed token-by-token over SSE; the review keeps running while you switch pages or background the tab (including long team reviews with an ~1100s budget, with results or progress ready on return); points victories state how they ended (time expired / reached 1000 points early) and HP-loss descriptions include time ranges with resolved attacker counts (a single attacker is never called focus fire; only 2+ resolved attackers within a short window (total span ≤ 15s) may be cited as multi-vehicle focus fire); results include a "Map Overview" (friendly/enemy heatmaps + routes + battle playback with progress bar / event jumps / clickable AI-report times / two-layer hull-turret markers rotating by heading and gun direction + brightness-adaptive colors, 28 maps with assets) and a one-click "Copy" button for the final review body (excluding the pre-battle prediction and map overview).
 - **Auth & business**: Keycloak (QQ + Wargaming.net ASIA / EU / NA), booster & pilot management.
 
 ## Architecture
@@ -37,28 +37,17 @@ Replay → **authoritative settlement** (`battle_results.dat`: damage / received
 
 ## Key engineering trade-offs
 
-1. **Authoritative settlement > observed event stream**: damage / deaths come from `battle_results`; the event stream is only an observed subset, and its numbers are suppressed when coverage is partial (`OBSERVED_DAMAGE_IS_PARTIAL`) — never show two conflicting totals side by side.
-2. **SSE streaming, single attempt**: `/api/replay/analyze` is `text/event-stream`; no in-stream retry, failures keep already-emitted output; oversized deltas are split sentence-wise so text always appears incrementally.
-3. **Call #2 thinking off by default**: DeepSeek reasoning mode delivers content in one final burst and breaks streaming; enable it only when deeper reasoning is worth it (the chunk fallback still guarantees streaming).
-4. **3x3 grid + map semantics**: canonical 500×500 grid regions 1-9; AREA semantics are decoded from client SC2 / heightmap and are not treated as verified facts before manual review.
-5. **Structured JSON calls disable thinking**: Call #1 pre-battle and Team Autopsy avoid blank completions (reasoning consuming the output budget).
-6. **Bounded worker pool (4+4) + AbortPolicy**: long SSE requests never block servlet threads; saturation returns 503.
-7. **Same-server backups with 7-day retention + verification**: single-server infrastructure constraint; no off-site backup yet.
+1. **Authoritative settlement > observed event stream**: damage / deaths come from `battle_results`; the event stream is only an observed subset, and its numbers are suppressed when coverage is partial (`OBSERVED_DAMAGE_IS_PARTIAL`).
+2. **SSE streaming, single attempt**: `/api/replay/analyze` is `text/event-stream`; no in-stream retry; a bounded worker pool (4+4) prevents blocking and returns 503 on saturation.
+3. **3x3 grid + map semantics**: canonical 500×500 grid regions 1-9; AREA semantics are decoded from client SC2 / heightmap and are not treated as verified facts before manual review.
+
+> More architecture and trade-offs: `docs/DEVELOPER_GUIDE.md` and `docs/architecture/`.
 
 ## Documentation
 
-- [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) — architecture, repository layout, routes, i18n, testing, and deployment conventions (must-read for maintainers)
+- [docs/README.md](docs/README.md) — documentation index (when to read each doc)
+- [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) — developer entry (env / build / layout / conventions)
 - [java/README.md](java/README.md) — running, APIs, and deployment of the Java / Web version
-- [CHANGELOG.md](docs/CHANGELOG.md) — technical version history
-- [CHANGELOG-PRODUCT.md](docs/CHANGELOG-PRODUCT.md) — product version history
-- [TODO.md](docs/TODO.md) — task list
-- [replay-data.md](docs/replay-data.md) — `data.wotreplay` event stream format and fields
-- [rating-system.md](docs/rating-system.md) — rating algorithm and parameters
-- [observability.md](docs/observability.md) — monitoring / logging / backups
-- [team-ai-review-feature.md](docs/team-ai-review-feature.md) — AI team review feature notes
-- [auth/wargaming-asia-login.md](docs/auth/wargaming-asia-login.md) — Wargaming.net ASIA / EU / NA login requirements & implementation
-- [auth/wargaming-asia-deployment.md](docs/auth/wargaming-asia-deployment.md) — Wargaming login deployment & manual config (ops guide)
-- [auth/keycloak-mapper-guide.md](docs/auth/keycloak-mapper-guide.md) — Keycloak Protocol Mapper / Client Scope and production mapper guide
 
 ## Quick Start
 
@@ -68,4 +57,4 @@ Replay → **authoritative settlement** (`battle_results.dat`: damage / received
 
 ## Live Tools
 
-Replay parsing & Excel export · Online leaderboard · Real-time rating (Rating V2) · AI tactical review (player / team) · Keycloak authentication · Booster & pilot management
+Replay parsing & Excel export · Hall of Fame · Real-time rating (Rating V2) · AI tactical review (player / team) · Keycloak authentication · Booster & pilot management

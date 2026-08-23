@@ -1,0 +1,82 @@
+{
+  "modelKey": "vz-55",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 13185,
+    "modelGlb": "https://api.blitzkit.app/tanks/13185/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160,
+    "y": 155.66
+  },
+  "turretRaster": {
+    "logicalMinX": 102.66,
+    "logicalMinY": -74.54,
+    "logicalMaxX": 216.92,
+    "logicalMaxY": 249.35,
+    "pixelWidth": 229,
+    "pixelHeight": 648,
+    "pivotX": 57.34,
+    "pivotY": 230.2
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.7713090181350708,
+        -4.247812271118164
+      ],
+      "max": [
+        1.7713090181350708,
+        3.639613151550293
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.6059870719909668,
+        -2.1986243724823
+      ],
+      "max": [
+        1.5943173170089722,
+        2.110299587249756
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.10811162739992142,
+        2.44867205619812
+      ],
+      "max": [
+        0.10027787834405899,
+        6.8735270500183105
+      ]
+    },
+    "selectedModules": {
+      "turretId": 19073,
+      "gunId": 19841,
+      "trackId": 19329,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "Cz17_Vz_55_mtr",
+      "Cz17_Vz_55_mtr",
+      "Cz17_Vz_55_mtr",
+      "Cz17_Vz_55_track_mtr",
+      "Cz17_Vz_55_track_mtr",
+      "Cz17_Vz_55_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

@@ -4,11 +4,1181 @@
 
 ## [Unreleased]
 
+### Added
+- **战局回放 Details Panel 增加 Tier X 车型图**：从 BlitzKit 公开 CDN 确定性下载 Tankopedia
+  全部 84 辆十级车的透明 WebP 车型图并随前端发布；选中车辆时按 tankId 懒加载，非十级车、
+  缺图或加载失败静默降级，production 不访问 BlitzKit。新增 Tier X 100% 图片覆盖测试与
+  `blitzkit-references.mjs --emit-portraits` 可重复生成入口。
+
+### Fixed
+- **战局回放（Battle Playback）当前状态面板与伤害/碰撞语义修复（docs/current-plan.md 1-28）**：
+  - Details Panel 收敛为 current-state 面板：删除「最大 HP」「HP %」「协助伤害」「最终战绩」分区。
+  - 车辆类型 fallback：replay tankType → tankopedia class（英文）→ 空串。
+  - 伤害语义：核心推导 PlaybackCombatReconstruction（Type-7 HP sample 权威掉血 + attribution）；
+    playback DAMAGE 字段 damage 更名 rawProtocolValue，新增 observedHpLoss；飘字/记录/统计改用权威掉血；
+    「造成伤害」改为「已记录伤害」。
+  - DESTROYED/KILL 事件恢复（type-7 alive=false 推导击毁 + 同炮 DAMAGE 支撑击杀）。
+  - Marker 碰撞几何：真实 screen-space footprint（core + HP HUD + 标签盒），优先级 marker > selected > HP > tank > player。
+  - **PR #107 审查修复（Blocker 1/2/3）**：
+    - Blocker 1：Type-8 rawProtocolValue 不再作为任何生产消费者的真实伤害——热力图、
+      掉血窗口聚类（DamageWindowClusterer）、玩家对炮/逐次伤害/击杀归因（PlayerEvidenceFormatter）、
+      占点窗口承受伤害（PointsSituationEvidence）、Player/Team 特征抽取与 ObservedMaxHp 全部改走
+      §12/§13 权威 HP loss；剩余 raw 用法逐项审计合法（parse-layer 结算、DTO labeled raw 字段）。
+    - Blocker 2：marker 碰撞 footprint 不再假设固定 36×28——BattlePlayback 实测
+      `.pb-vehicle` offsetWidth 作为 coreSize（MARKER_CORE_PX fallback），labelLayout 支持
+      hpBoxW/hpBoxH 真实渲染尺寸参数。
+    - Blocker 3：attacker/killer 归属措辞收敛为「有支持证据的归属」，不再声称权威；
+      probe 输出 attribution 措辞同步。
+    - **HP provenance 状态机（PR #107 附加：己方开局不再黑条）**：新增
+      `RULE_DERIVED_FULL_AT_SPAWN`（本方存活无采样且无战前掉血 → 开局相对满血，
+      前端 100% 阵营色完整血条、数字 —、不伪造具体数字，tankopedia base 永不冒充
+      本局 max/current/entry）、`CURRENT_HP_EXACT_MAX_UNKNOWN`（有真实 Type-7 current
+      采样但进场 max 未证明 → 真实 current + 观测容量分母 + 阵营色 indeterminate、
+      tooltip「当前 HP 已观测，进场最大 HP 未知」）、`OBSERVED_EXACT`（精确
+      current/max/pct）；敌方信息边界不变（无采样恒 UNKNOWN，不因己方 fallback 泄漏）。
+      InitialHpProtocolProbeTest（非 CI）对 7 真实样本完成进场 HP 调查：结论 NOT_PROVEN
+      （Type-7 无开局满血广播、propId 0/4/9 排除为 HP）；循环门禁经真实数据确认存在且不得放宽。
+
+
+  - **PR #107 第二轮审查修复（Blocker 1-5：详情面板/总血量条/HP 字段拆分/碰撞 footprint/killer fail-closed）**：
+    - Blocker 1（Details Panel 显示规则）：己方开局无实际证据时（RULE_DERIVED_FULL_AT_SPAWN）当前 HP
+      显示「100%」——这是「开局相对满血状态」的 UI 投影，不是具体 HP 数值、也不证明 actual max HP，
+      绝不写入 currentHp 数值字段；首个可信 sample 出现后改为显示精确 HP 数字，backward seek 恢复 100%，
+      敌方无可信观测继续 —，阵亡显示 0。
+    - Blocker 2（底部己方总血量条）：teamHp 输出确定性 aggregate state（FULL_RELATIVE / EXACT /
+      PARTIAL / UNKNOWN）——本方全部存活车无采样 → FULL_RELATIVE：填充固定 100% 阵营色实心条、
+      数值区显示「100%」（相对状态）绝不显示 0；有真实已知剩余但无已证明分母 → PARTIAL（100% 斜纹，
+      不伪造分母）；禁止 totalMax=0、knownRemaining>0 却仍 0% 的空条与虚假「0 / 0」；
+      Tankopedia base 相加不得冒充总 HP；阵亡是权威事实（HP=0），dead 车容量不进未知灰段。
+    - Blocker 3（HP 字段拆分）：MapOverview.PlaybackVehicle 删除语义混合的 maxHp，拆为
+      baseHp（Tankopedia 静态参考，仅 metadata）+ observedCapacityHp（回放观测容量，仅观测分母参考）+
+      entryHp（已证明进场满血）；CURRENT_HP_EXACT_MAX_UNKNOWN 的 maxHp/pct 恒为 null——
+      绝不使用 baseHp/observedCapacityHp 计算真实百分比（禁止 2500/3000 类结果）；
+      OBSERVED_EXACT 才允许 pct = current/entryHp。
+    - Blocker 4（碰撞 footprint 按 DOM 实际渲染）：labelLayout 改用 hpRendered + hpDisplayText——
+      fullState（current=null）与 UNKNOWN（数字 —）都渲染 HP HUD、必须有盒；关闭「显示血量」
+      （hpRendered=false）才无盒；盒宽按每车实际文本估算取 max（不单靠第一辆车测量复用）；
+      保留 coreSize×view.scale 与 selected/destroyed/recorder 独立盒。
+    - Blocker 5（killer attribution fail-closed）：type-8 结构合法但语义未解码的伤害方法变体
+      （火灾/撞击等）由 EntityMethodDecoder 产出 canonical UnsupportedDamageEvent 证据事件
+      （保留 time + victim/attacker eid + variant，无精确伤害数字）；PlaybackCombatReconstruction 的
+      killer 致死窗口优先绑定权威致死 HP-loss 窗口（HP 掉到 0 的最后一档，无前序样本回退 0.25s），
+      窗口内存在任何无法排除的 unsupported 变体 → killer=null（不得把窗口内无关 direct DAMAGE
+      错判为击杀者）；destroyed 事实保留并去重，不因 killer 未知删除 HP=0/击毁。
+  - **PR #107 第三轮审查修复（Blocker 1-4：混合 provenance 不冒充 EXACT / unsupported 阻止 HP-loss attribution / observedCapacityHp 纯观测 / 文档收口）**：
+    - Blocker 1（teamHp 混合 provenance 不得冒充 EXACT）：EXACT 仅在该队**所有参战车辆的实际
+      entryHp 都已证明**（含已阵亡、含无采样）时成立；部分证明/混合 provenance
+      （OBSERVED_EXACT + RULE_DERIVED_FULL_AT_SPAWN / + CURRENT_HP_EXACT_MAX_UNKNOWN / + UNKNOWN、
+      已阵亡但 entryHp 未证明）一律 PARTIAL/MIXED——totalMax 归零，只显示真实已知剩余数字或明确
+      相对状态，绝不显示 knownRemaining / partialTotalMax 分数、不伪造分母；已证明车辆 current
+      钳制 ≤ entryHp，EXACT 状态 knownRemaining 永不大于 totalMax；全队无采样 → FULL_RELATIVE
+      100% 实心条保留；Tankopedia base 相加仍禁止。
+    - Blocker 2（unsupported 变体同时阻止 HP-loss attribution）：PlaybackCombatReconstruction 对
+      每个掉血窗口 (prevT, curT] 同时扫描 direct DAMAGE 与 UnsupportedDamageEvent——窗口内存在
+      该受害者的 unsupported 变体、或 victim 无法解析的 unsupported 证据 → 掉血数值事实保留、
+      attackerAccountId=null、attackerReliable=false；observedHpLossAt 要求 attackerReliable
+      （direct+unsupported 冲突窗口返回 null，不把掉血挂到单条 direct）；cumulative dealt / 伤害日志 /
+      事件级掉血均不得归给窗口内 direct DAMAGE；killer 现有 fail-closed 行为保留并扩展（victim 无法
+      解析的 unsupported 证据也阻止 killer）。EntityMethodDecoder 对 unsupported 变体在 victim eid
+      缺失（≤0）时用可靠 outer entityId（方法调用目标实体 = 受击者）作 victim 证据——无法解析 victim
+      的 unsupported 证据不得静默丢弃；结构不足的变体仍只产生 warning。
+    - Blocker 3（observedCapacityHp 纯回放观测）：Playback DTO 的 observedCapacityHp 不再使用
+      ObservedMaxHp.resolve()（max(观测, tankopedia base) 钳制/fallback）——改为从真实可信
+      Type-7 positive HP 采样（各 builder 自己的 hpSamples）独立取最大值
+      （MapOverview.observedCapacityHpOf），无可信 sample 为 null；baseHp 只来自 Tankopedia；
+      entryHp 仅 OBSERVED_EXACT 时存在；legacy player.observedMaxHp（resolve 语义）保留供 AI 证据
+      消费；前端仍不得用 baseHp/observedCapacityHp 计算实际百分比。
+    - Blocker 4（文档收口）：protocol.md 更新为「direct → DamageEvent（raw 非权威）；结构足够的
+      非 direct 变体 → UnsupportedDamageEvent（无精确伤害数字，使 HP-loss 与 killer attribution
+      fail-closed；身份字段按真实证据等级标记，未证明字段不写 PROVEN）；结构不足仍只 warning」；
+      battle-playback.md 同步（observedCapacityHp 纯观测语义、EXACT 全队证明门槛、PARTIAL/MIXED、
+      unsupported 阻止掉血归属）。
+  - **PR #107 第五轮审查修复（Blocker 1-3：全部无法排除的 damage-method 变体参与 attribution fail-closed / 己方开局视觉规则严格化 / 矛盾 HP 证据 fail-closed）**：
+    - Blocker 1（短体与 zero-raw damage-method 变体参与 fail-closed）：EntityMethodDecoder 只要包头确认
+      damage-method 调用（payload ≥ 8 且 subtype == 8）就必产出带时间戳的冲突证据事件，warning 只作诊断、
+      不再是唯一输出——结构不足短体（body<18，SHORT_DAMAGE_VARIANT：victim 用可靠 outer entityId、
+      attacker 未知、无伤害数字）、非 direct 变体（DAMAGE_METHOD_VARIANT）、direct raw=0
+      （ZERO_RAW_DAMAGE：raw 不是权威 HP delta，不得仅凭 0 判定「无伤害」，身份可解析则填写、
+      victim 缺失回退 outer entityId）→ 全部进入 PlaybackCombatReconstruction 的 unsupported 冲突路径，
+      使对应 HP-loss attribution 与 killer attribution fail-closed（掉血事实保留、attacker=null、
+      attackerReliable=false、observedHpLoss=null、致死窗口 killer=null；victim 仍无法解析的进
+      unresolved 全局 fail-closed 列表）；confidence 恒 PARTIAL（不标 EXACT/PROVEN）；真正截断
+      （payload<8）仍是 MALFORMED。新增解码器 2 项与重建 E2E 5 项测试（含窗口左右边界确定性）。
+    - Blocker 2（己方开局视觉规则：满血实心条、禁止条纹 fallback）：hpDisplay 新增
+      OPENING_RELATIVE_FULL 状态——己方存活 + 有可信 current 采样但进场 max 未证明 + 当前时间之前
+      无权威 hpLoss / 无 destroyed 证据（含 0 采样）→ 100% 阵营色实心条（fullState=true、无
+      pb-hp-fill-unknown 斜纹），真实 current 仍供 Details/数字展示；RULE_DERIVED_FULL_AT_SPAWN
+      （无采样）保持；teamHp 的 FULL_RELATIVE 改为「全部存活车辆（无阵亡）均开局相对满血」——
+      即使部分车辆已有 current sample、但全队 entry/max 尚未全部证明，开局总条也不显示斜纹；
+      首次权威掉血/阵亡后才切到精确或不确定状态；backward seek 回首次掉血前自动恢复 100% 实心条；
+      敌方不套用（无采样仍 UNKNOWN）。改 4 处既有测试 + 新增单车 marker / 队伍总条 / Details /
+      seek-backward / 镜像 perspectiveTeam=2 组件测试。
+    - Blocker 3（矛盾 HP 证据 fail-closed，禁止 Math.min 改写真实采样）：teamHp 删除
+      Math.min(cur, entryHp) 钳制——current 超过 entryHp 的矛盾证据保留原值；EXACT 除全队 entryHp
+      已证明外还要求所有当前证据与 entryHp 一致（每个 ≤t 可信采样都在 [0, entryHp]，hpEvidenceConsistent
+      检查）；矛盾 → 整队降级 PARTIAL（totalMax=0，不做精确比例分母）；hpDisplay 的 OBSERVED_EXACT
+      分支在矛盾时返回新 INCONSISTENT 状态（真实 current、maxHp=null、pct=null，渲染 indeterminate
+      斜纹、不显示伪造比例）；Details 与队伍聚合同一事实口径。重写原「5000 钳制 3000」测试为
+      「5000 保留、非 EXACT、无 6000/6000、无 NaN/负宽/>100% CSS」。
+  - **PR #107 第六轮审查修复（Blocker 1-2：direct victim 缺失不再 attribution fail-open / HP 证据一致性含阵亡车辆与单调性）**：
+    - Blocker 1（direct raw>0 且 victimEid 缺失 → fail-open）：EntityMethodDecoder 对 direct raw>0 但
+      body 内 victim eid 缺失/无效（≤0）的变体不再产出 victim=0 的 EXACT DamageEvent——降级为
+      UnsupportedDamageEvent（PARTIAL，DIRECT_VICTIM_UNKNOWN：victim 用可靠 outer entityId、无精确
+      伤害数字），保证完整 direct identity 才产 DamageEvent；PlaybackCombatReconstruction 对 victim
+      无法映射（victimEid=0 / 映射缺失）的 DAMAGE 通知从「静默 continue」改为进入 unresolved conflict
+      （任何掉血/致死窗口内存在它即 fail-closed，另一条 direct DAMAGE 不得被错判为攻击者/击杀者）。
+      审计全部 DamageEvent 消费者（playback 双 builder / FormationDepthEvidence / RelativeDepthHpEvidence）：
+      victim≤0 一律跳过，不创建 phantom vehicle、不绕过 coverage/fail-closed。新增解码器 1 项 + 重建
+      E2E 3 项（victimEid=0 阻断归属、victim 映射缺失阻断归属、致死窗口 killer null）；正常 direct
+      有效 victim 既有路径不回归。
+    - Blocker 2（HP 证据一致性跳过阵亡车辆、缺单调性）：teamHp 的一致性检查移到 entryProven 块——
+      **含已阵亡车辆**（destroyed continue 不再跳过历史矛盾，阵亡事实仍显示 current=0）；hpEvidenceConsistent
+      重写为完整一致性：所有 ≤t 可信采样在 [0, entryHp] + 按 battle-relative time 单调非增（HP 不得
+      先降后升）+ 0 之后不得再次 positive + sentinel 不参与也不改写；未来 sample 不参与当前判断
+      （seek/backward 确定性：矛盾前不降级、跨过后降级、回退恢复）。任一矛盾 → 单车 INCONSISTENT
+      （保留真实 current、pct/maxHp 不作精确值）、队伍不得 EXACT/FULL_RELATIVE、totalMax=0。新增
+      util 测试 4 项（已阵亡历史矛盾、先降后升、0 后回正、未来矛盾 seek 确定性）+ 组件测试 1 项
+      （矛盾状态不显示虚假比例、无 NaN/负宽/>100% CSS）；正常单调下降/阵亡/开局 100%/敌方 UNKNOWN 不回归。
 ### Changed
-- **Rating V2 平均血量改为本局总血量均分**：`RatingAnalyzer` 汇总本局双方 14 名有效参战车辆在
-  Tankopedia 中的 HP 后除以 14，所有玩家使用同一个本局平均值；不再按敌队人数或固定平均值计算。
-  车辆库缺少 HP 时，仅该单车以 2400 兜底。
+- **AI 模型切回 deepseek-v4-flash（官方稳定别名）**：`AI_MODEL` 默认值从
+  `deepseek-v4-pro` 统一切回 `deepseek-v4-flash`——官方稳定别名直接调用最新 Flash 版本，
+  调用方式不变，不使用带日期的显示名（`application.yml` / `.env.example` /
+  `docker-compose.prod.yml` / `docker/online/docker-compose.yml` / `deploy.yml` workflow /
+  `docs/architecture/ai-review.md` / gateway 测试字面量同步）；已显式设置 `AI_MODEL` 的
+  环境以环境值为准（GitHub Repository Variable 优先级最高，若仍为 `deepseek-v4-pro` 需人工
+  改为 `deepseek-v4-flash` 或删除该 Variable，代码无法覆盖）。
+
+### Added
+- **Team AI Review 启用 DeepSeek 官方 JSON Output（Team Call #2）**：
+  ① **输出格式契约**——`AiChatRequest` 新增 `AiResponseFormat`（TEXT/JSON_OBJECT，默认 TEXT，
+  兼容构造器回退 TEXT）；`SpringAiChatGateway.buildPrompt` 在 per-request `OpenAiChatOptions` 上
+  映射 `response_format=json_object`（Spring AI 2.0.0 原生 `responseFormat` API），TEXT 不发送该参数，
+  绝不写入连接级/全局 model options。
+  ② **仅 Team Call #2 启用**——`TeamReplayAnalysisService.callRaw` 显式传 JSON_OBJECT（输出格式
+  属于 request contract，不由 analysisMode 隐式推断）；Player / Pre-battle / Harness / Autopsy 保持 TEXT，
+  存量请求行为等价。
+  ③ **职责三层不变**——provider JSON mode = syntax guarantee；`TeamReviewEnvelopeParser` = business
+  schema guarantee（合法 JSON 但 schema 违反仍 fail-close）；`TeamFactualConsistencyValidator` = truth
+  guarantee（V1–V6/BINDING 全部保留，不因 JSON mode 放宽）。
+  ④ **Parser 可诊断化**——新增 `parseDetailed()` 返回 `ParseResult`（envelope + 稳定 `ParseFailureReason`
+  枚举：EMPTY_OUTPUT/INVALID_JSON/MISSING_PRIMARY_DIAGNOSIS/MISSING_REVIEW_MARKDOWN/INVALID_CLAIMS/
+  UNKNOWN_CLAIM_TYPE/INVALID_MACHINE_FIELD_TYPE/MISSING_REQUIRED_MACHINE_FIELD/TOO_MANY_CLAIMS/
+  TOO_MANY_EVIDENCE_IDS）；`parse()` 保持兼容委托。
+  ⑤ **Validator reasonCode**——`FactConflict` 新增 `reasonCode`（UNKNOWN_EVIDENCE/EVIDENCE_TYPE_MISMATCH/
+  SUBJECT_MISMATCH/TIME_MISMATCH/REGION_MISMATCH/KNOWLEDGE_MISMATCH/COUNT_MISMATCH/UNSUPPORTED_HARD_FACT/
+  TEMPORAL_OWNERSHIP/IDENTITY_AMBIGUITY 等，2 参构造按 checkId 推断），production 可直接判断 validator 为什么失败。
+  ⑥ **全链路结构化日志**——统一 `event=... correlationId=...` 事件日志（ai_review_started/finished/failed/
+  cancelled、ai_upstream_call_started/completed/failed、ai_transport_retry、ai_prompt_budget、
+  team_review_grounding_ready、team_review_validation_attempt_completed、team_review_parse_result、
+  team_review_validation（conflictCount/checks）、team_review_validation_conflict（DEBUG，check/reasonCode）、
+  ai_validation_retry、team_review_completed、ai_review_sse_opened/completed）；一次请求可用单个
+  correlationId 在 Loki 重建完整时间线；敏感数据（API key/prompt/completion/回放内容）严禁入日志，
+  新增回归测试断言。
+  ⑦ **指标**——新增 `wotb_ai_team_review_validation_attempt_total{result=pass|parser_invalid|validation_failed}`
+  （低基数，仅 result tag）；请求/错误/耗时沿用现有 `wotb_ai_review_*` / `wotb_ai_upstream_*`，不重复造指标。
+  ⑧ **测试**——HTTP boundary（JSON_OBJECT 请求体含 `response_format={"type":"json_object"}`、TEXT 不含）、
+  Team Call #2 契约（SINGLE_TEAM_BATTLE=JSON_OBJECT、PRE_BATTLE=TEXT）、parser fail-close + 失败原因分类、
+  validator reasonCode、日志敏感数据回归、retry 契约保持。
+  ⑨ **文档**——`docs/architecture/ai-review.md`（JSON Output 小节 + 三层职责）、`docs/features/team-ai-review.md`、
+  `docs/operations/observability.md`（按 correlationId 追一单 + 事件清单 + 错误码排障）、`docs/CHANGELOG-PRODUCT.md`。
+
+### Fixed
+- **PR #106 review——parser 失败分类三态化 + AI Review 终态 exactly once + 日志字段语义修正**：
+  ① **Parser 字符串数组字段三态**——`TeamReviewEnvelopeParser` 不再用空 List 同时表达 evidenceIds /
+  supportingEvidenceIds 的「缺失 / 类型非法 / 合法空数组」：新增 `StringListField`（MISSING / INVALID / VALID），
+  malformed（`"E101"` 字符串整体、`[{}]`、`[null]`、number/boolean 元素）→ `INVALID_MACHINE_FIELD_TYPE`
+  （不再误报 `MISSING_REQUIRED_MACHINE_FIELD`，也不静默 PASS）；`primaryDiagnosis.supportingEvidenceIds`
+  存在但非法时 fail-close；合法 `[]` 仍是合法空数组，factual claim 要求非空时才进入
+  `MISSING_REQUIRED_MACHINE_FIELD`。
+  ② **终态 exactly once**——`ReconstructionController.runAnalysis` 每个真正开始执行的 worker 请求
+  恰好记录一次 `event=ai_review_finished`，result ∈ {SUCCESS, FAILED, CANCELLED}（FAILED 带稳定
+  errorCode、CANCELLED 带稳定 source），覆盖 success / RuntimeException / SSE disconnect / queued
+  cancellation 四路径（三分支互斥 + writer.error 二次失败兜底，杜绝重复或缺失终态）；新增 controller
+  生命周期日志测试用 ListAppender 计数断言 exactly once，而非仅断言某条日志存在。
+  ③ **transport retry 字段语义**——`ai_transport_retry` 的 `transportAttempt` 改为无歧义的
+  `retryNumber`（1 基重试序号：retryNumber=1 → 下一次上游调用 attempt=2）。
+  ④ **completed 事件去伪字段**——`ai_upstream_call_completed` 不再记录硬编码 `providerStatus=200`
+  （成功响应无真实 transport status metadata，属伪 observation；真实 status 只在失败事件从异常提取）。
+  ⑤ **回归保证**——Team Call #2=JSON_OBJECT / 其余=TEXT / `response_format` 仅存在于 JSON_OBJECT 请求
+  / 不碰全局 model options / parser 与 validator 继续 fail-close / validation failure 仍触发 LLM 返工
+  / 敏感数据（API key、prompt、completion、reviewMarkdown、replay 原始内容）不入日志 / correlationId
+  贯穿 Controller → Team service → Gateway / metric tag 保持低基数；全量 1052 tests 通过。
+- **PR #105 Final Blocker——Evidence Binding（claim 必须与其 evidenceIds 真正绑定）**：
+  ① **绑定契约**——`TeamFactualConsistencyValidator` 新增 `checkStructuredEvidenceBinding`：
+  `requiredEvidenceType(claimType)` 统一映射 DEATH→PLAYER_DESTROYED / ALIVE_TRANSITION→
+  ALIVE_COUNT_TRANSITION·FOCUS_WINDOW（窗口级聚合明确允许）/ POSITION_REGION→POSITION_REGION /
+  ENEMY_POSITION→ENEMY_POSITION_KNOWN；每个引用必须存在且属于允许类型（借用无关编号 / 类型不匹配
+  → BINDING FAIL），且至少一个引用 evidence 必须完整支撑该 claim：DEATH=身份+时间容差（subject 在
+  后端无阵亡事实 → FAIL，GhostPlayer 不再静默 PASS）、ALIVE_TRANSITION=value 与引用证据 before/after
+  一致（不能因全局恰好存在该变化而 PASS）、POSITION_REGION=引用证据的 side 感知快照校验
+  region/count/countSemantics（证据无该区域数据 → FAIL）、ENEMY_POSITION=身份+时间+区域+knowledge
+  全部一致（只因为 CURRENT==CURRENT 就 PASS 是漏洞）。
+  ② **稳定身份**——Claim 新增可选 `subjectAccountId`（parser 类型错误 fail-close）；重复坦克名
+  （如两辆 IS-7）时仅凭 tankName 无法唯一绑定 → BINDING 歧义 FAIL，必须用 subjectAccountId 或昵称。
+  ③ **primary source 语义**——有 evidenceIds 时引用证据是 primary source，nearest-snapshot / 全局
+  存活变化列表只作为无直接 evidence mapping 的 defense-in-depth。
+  ④ prompt（md + TeamPromptLocalizer ZH/EN/RU）——evidence binding 规则 + subjectAccountId 身份字段说明。
+  ⑤ 测试——DEATH（正确 PASS / GhostPlayer FAIL / wrong entity FAIL / 无关类型 FAIL）、ALIVE_TRANSITION
+  （正确 PASS / 无关证据 FAIL / 错误值 FAIL）、POSITION_REGION（正确 PASS / 区域缺失 FAIL / 数量不符
+  FAIL / ENEMY side FAIL）、ENEMY_POSITION（同身份+时间+区域+knowledge PASS / CURRENT FAIL / GRID3 FAIL /
+  different vehicle FAIL / 无关证据 FAIL / 重复坦克名需 accountId）、三语 machine 结果一致性。
+
+- **PR #105 Final Blocker——Structured Factual Claims fail-close 契约**：
+  ① **claimType schema**——TeamReviewEnvelopeParser 强制 claimType ∈ {DEATH / ALIVE_TRANSITION /
+  POSITION_REGION / ENEMY_POSITION / TACTICAL}（LOS/SPOTTING/VISION/LINE_OF_SIGHT 及未知类型 → reject/rewrite）；
+  每种 factual claimType 的 required machine 字段强制（DEATH=subject+timeSec+evidenceIds；
+  ALIVE_TRANSITION=value 机器格式+evidenceIds；POSITION_REGION=timeSec+region+count+side+countSemantics
+  +evidenceIds；ENEMY_POSITION=subject+timeSec+region+knowledge+evidenceIds；TACTICAL 无机器字段要求）；
+  机器字段类型错误（region="six"、timeSec="112"）→ reject/rewrite，不再静默 null。
+  ② **机器校验补全**——V2m（DEATH subject+timeSec）、V3m（ALIVE_TRANSITION value）、V4m（POSITION_REGION
+  side 感知 friendlyCounts/enemyCurrentCounts，ENEMY 不拿 friendly 数比较；countSemantics EXACT/AT_LEAST/SUBSET
+  机器语义，不再依赖自然语言标记词）、V5m（ENEMY_POSITION knowledge CURRENT/LAST_KNOWN 与后端 exact 校验）、
+  V6m（LOS/SPOTTING claimType 一律 FAIL）。
+  ③ **claims coverage 最低契约**——Grounding Facts 非空且主判断引用证据编号或正文含可验证事实锚点
+  （时间范围/存活变化/位置数量/玩家阵亡+时间）时，claims 不允许无条件为空（CONTRACT 冲突）。
+  ④ prompt（md + TeamPromptLocalizer ZH/EN/RU）——claims 是 factual assertions 的 machine projection
+  非可选装饰；每 claimType required fields；countSemantics/side/knowledge 机器字段；数字字段必须是 JSON number。
+  ⑤ 测试——Parser fail-close 8 项（DEATH 缺 timeSec/subject、POSITION_REGION 缺 region、count 字符串、
+  ENEMY_POSITION 缺 knowledge、未知/LOS claimType、缺 claimType、timeSec 字符串）；V4 countSemantics 全套
+  （EXACT 3 FAIL/5 PASS、AT_LEAST 3 PASS/6 FAIL、SUBSET 3 PASS/6 FAIL）+ ENEMY side；V5m CURRENT/LAST_KNOWN；
+  claims coverage 3 项（诊断引用证据 FAIL / 正文事实锚点 FAIL / 纯战术 PASS）；NaturalCoach 三语 schema 契约。
+
+### Added
+- **PR #105 Review Blocker 修复——Natural Coach / Factual Consistency Guard（Review B1-1 / B1-2 / B2-1 / B2-2）**：
+  ① **B1-1 authoritative response source**——`TeamReplayAnalysisService.callRaw()` 删除无意义的
+  `collected` 缓冲，明确以 `AiChatResponse.completionText()` 为唯一权威完整响应（Gateway 契约：
+  callback 是流式 progress、正常结束 completionText 为聚合完整文本、失败一律抛 AiUpstreamException
+  绝不返回 partial）；新增 StreamingGateway 契约测试（多 chunk envelope / 垃圾 callback 不污染 /
+  upstream error 不产出部分结果 / retry 每轮独立响应无 buffer 串扰）。
+  ② **B1-2 三语 factual guard**——TeamReviewEnvelope.Claim 扩展机器可校验字段
+  （claimType / timeSec / region / count / subject / value），validator 优先做语言无关的
+  structured 校验（V2m 阵亡时间、V3m 存活变化 value、V4m 位置精确数量、V6m claimType=LOS/SPOTTING
+  一律 FAIL）；正文兜底文本解析与短语列表三语覆盖（ZH/EN/RU）：时间格式支持
+  `X分Y秒 / 1:49 / 109s / 1m49s / 1 мин 49 сек / 109 seconds / 109 секунд`，位置/LAST_KNOWN/LOS
+  短语列表三语；structured claims 要求机器时间格式（timeSec battle-relative 秒）与存活变化
+  机器格式（`7v7 -> 4v6`）；prompt（md + TeamPromptLocalizer ZH/EN/RU）同步。
+  ③ **B2-1 死亡时刻时钟契约**——`TeamGroundingFacts.build` 增加显式 battleStartRawClockSec 入口，
+  compat 路径（无 timeline）用 `reconstruction.battleStartRawClockSec()` 按
+  `raw > startRaw → raw − startRaw` 转 battle-relative（`deathTimeMillis`/legacy 估算为原始时钟域，
+  `survivalTimeSec` 校准后为 battle-relative）；补测试 + 注释明确契约。
+  ④ **B2-2 V4 精确语义**——structured region+count 默认 exact（claim == actual，少报同样 FAIL），
+  at-least/subset 标记（至少/at least/не менее；其中/of them/среди）放行下界/子集陈述；
+  正文自然语言无法区分时只防 over-count（不假装能判断）。
+  ⑤ 测试——TeamFactualConsistencyValidatorTest 新增 EN/RU 回归（V2/V3/V4/V5/V6 + 合法战术观点
+  三语 PASS）+ 机器字段用例 + B2-2 exact/subset/at-least；TeamGroundingFactsTest 新增死亡时钟
+  契约；TeamReviewEnvelopeParserTest 新增机器字段解析；TeamReviewRetryContractTest 新增 B1-1
+  gateway stream 契约；TeamReviewNaturalCoachContractTest 新增三语机器字段契约。
+
+### Added
+- **Team AI Review Natural Coach Mode + Factual Consistency Guard（PR #103 之上）**：
+  ① **Natural Coach Mode 输出契约**——团队复盘主正文改为【自由组织的自然复盘】：
+  以「## 团队复盘」为主标题、3-5 个自然段（简单局 2-3 段、复杂局约 5 段），
+  删除「核心结论 / 关键决策窗口 / 可确认的团队问题 / 训练建议」固定章节模板与固定数量要求；
+  先判断整场最值得讲的 1-2 件事，只有一个决定性问题就只讲一个；
+  TEAM REVIEW FOCUS WINDOWS 改为内部 attention 提示（「这里最值得集中分析」），不要求逐窗口输出标题；
+  新增「主判断（Primary Diagnosis）」契约：必须选出且只选出一个 PRIMARY DIAGNOSIS，
+  禁止「无法判断/可能性枚举」，多个解释时选最符合全部证据且最有训练价值的那一个；
+  新增「教练不是司法鉴定员」原则：事实必须准确，战术判断不要求数学证明；
+  中文默认长度 400–1200 字（简单 300–700、复杂 ≤1500）。
+  ② **GROUNDING FACTS + structured envelope**——Team Call #2 输出改为 JSON envelope
+  （primaryDiagnosis / reviewMarkdown / claims），输入注入确定性 GROUNDING FACTS 段
+  （每条带稳定证据编号 E1xx：PLAYER_DESTROYED / ALIVE_COUNT_TRANSITION / FOCUS_WINDOW /
+  POSITION_REGION / ENEMY_POSITION_KNOWN(CURRENT|LAST_KNOWN)）；evidenceIds 只进 structured 字段，
+  绝不进用户正文（validator 拦截泄漏）；Backend 不拼接复盘主体，reviewMarkdown 由 LLM 自由写出。
+  ③ **TeamFactualConsistencyValidator（确定性，wotb-core）**——只检查「LLM 有没有改写 Backend 事实」，
+  绝不判断战术观点：V1 temporal ownership（声称窗口必须包含其引用事件）、V2 玩家阵亡时间（容差 2s）、
+  V3 存活变化（7v7→4v6 不得写成 3v5）、V4 位置时间归属（某时刻「7辆全部在6区」不得超出区域快照）、
+  V5 CURRENT/LAST_KNOWN（敌方 LAST_KNOWN 不得写成「此时就在这里」）、V6 无 LOS/spotting 证据的
+  硬事实化表达（「进入所有炮线/具备完整LOS/被掩体卡住/已经点亮」等除非降级为「更可能/从交换结果看」级别）、
+  引用不存在证据编号 / 空输出 / 证据编号泄漏进正文。
+  ④ **校验失败 → LLM 自修循环（Backend 绝不代改句子）**——Draft → validate；FAIL → targeted rewrite；
+  FAIL → full rewrite；仍 FAIL → fail-safe 业务错误 AI_REVIEW_GROUNDING_FAILED（最多 3 次尝试）；
+  校验通过后才把 reviewMarkdown 流式转给前端（不暴露待改写草稿）。
+  ⑤ **Golden 回归**——TeamFactualConsistencyValidatorTest（G1–G5 / V1–V6 / 战术观点放行 /
+  BackendEvidenceBoundary）、TeamGroundingFactsTest（证据编号确定性 + 渲染）、TeamReviewEnvelopeParserTest、
+  TeamReviewRetryContractTest（retry / 耗尽 fail-safe / parse 失败重写）、TeamReviewNaturalCoachContractTest
+  （三语契约）、TeamReviewRealReplayProbeTest 增加真实 canonical facts 上的 validator golden 断言。
+
+### Fixed
+- **PR #103 第七轮——ActualCombatant 边界进入 Canonical BattleTimeline + FormationDepth partial CURRENT 完整 fail-close（最终 review）**：
+  ① **ActualCombatantEntitySet（Canonical BattleTimeline universe 源头）**——TeamEntityMapping 新增
+  actualCombatantEntityIds(#301 账号集)：只允许可靠映射到 battle.players（battle_results #301 actual
+  combatant，accountId > 0）账号的实体进入 tactical FrameVehicle 集合；BattleTimelineBuilder 帧循环
+  knownEntityIdsAt(t) ∩ actualCombatantEntityIds 才构造 FrameVehicle。
+  non-#301 spectator/camera/observer/静态实体即使被 broad roster / ParticipantMapping 赋予完整身份
+  （accountId/team/nickname/坦克元数据）也绝不进入 timeline——不再产生假的 FIRST_KNOWN / ENEMY_LOST /
+  ENEMY_REACQUIRED / POSITION_CHANGE / REGION_CHANGE / DESTROYED delta（team=null 不再被
+  BattleDeltaEngine 的 isEnemy = !friendly() 当成敌方）；WorldSummary 保持 #301 roster（2v2 不被观战撑成 3v2）；
+  raw timeline.events 保留原始事件供协议用途；无任何实体映射到 #301 时 fail-close TIMELINE_MAPPING_INSUFFICIENT。
+  WorldSummary / BattleDeltaEngine / EpisodeDetector / TimelineFocusWindowSelector / Team+PersonalAiContextCompiler
+  全部只消费过滤后的 universe（检查确认无其它 raw-event 泄漏路径）。
+  ② **FormationDepth partial CURRENT 完整 fail-close**——GEOMETRIC_*（enemy centroid / 三分位轴）与
+  ownWeightedCoverageScore / enemyWeightedCoverageScore / ratio 改为在任何 exact geometry 计算前先判定
+  ownRefComplete && enemyRefComplete，只有双方 CURRENT 完整才输出；partial CURRENT（如 enemyRef=1/2）
+  只输出 POSITION_COVERAGE_INSUFFICIENT + CURRENT presence + coverage counts + ENEMY_LAST_KNOWN_POSITION_REFERENCES
+  ——不再用 1 辆敌方 CURRENT 建立 whole-team geometric axis（与覆盖段 INSUFFICIENT 自相矛盾）。
+  RelativeDepthHp 的 enemyRefComplete fail-close 保持不变（未重设计）。
+  ③ **测试**——canonicalTimelineExcludesNonCombatantPositionEntity（无身份 spectator：连续位置流 + >5s gap
+  + region teleport + 阵亡，FrameVehicle/delta/WorldSummary 三层断言）/
+  nonCombatantWithUsableBroadRosterIdentityStillExcluded（participants 提供 accountId/team/nickname/坦克元数据，
+  仍被 #301 排除）/ compilersNeverRenderNonCombatantEntity（Team+Personal AI 输出不含 车辆#99 / 账号 9999）/
+  partialEnemyCurrentDoesNotProduceGeometricTerciles（enemyRef=1/2 → 无 GEOMETRIC_*/无 exact 分数）/
+  completeEnemyCurrentStillProducesGeometricTerciles（完整场景不 regression）。
+  文档：protocol.md / team-ai-review.md / current-plan.md 同步。
+- **PR #103 第六轮——Evidence 层知识状态契约：enemy LAST_KNOWN 永不升级为 CURRENT exact geometry（2026-08）**：
+  ① **FormationDepthEvidence / RelativeDepthHpEvidence 引入带 provenance 的 PhasePositionReference
+  （accountId/team/x/z/knowledge/observedAtSec/ageSec，knowledge 复用 canonical PositionKnowledge）**——
+  「无 provenance 的 meanByAccount 同时表示 friendly CURRENT / enemy CURRENT / enemy LAST_KNOWN」结构删除；
+  exact 阵型/覆盖/距离数学只消费 CURRENT 参考：friendly actual combatant carry-forward
+  （last position + 无 EntityLeave + 未阵亡）→ CURRENT（canonical 同口径）；enemy 最后观测
+  age ≤ canonical 当前阈值（BattleTimelineBuilder.POSITION_GAP_SEC=5s，本条目改为 public 供证据层复用）
+  → CURRENT，否则 LAST_KNOWN。
+  ② **FormationDepth fail-close**——enemy LAST_KNOWN 不得满足 current-position completeness、不得作为
+  当前 enemy centroid / enemyPositionPresence / enemyWeightedCoverageScore 坐标；CURRENT 不完整时只输出
+  POSITION_COVERAGE_INSUFFICIENT + CURRENT presence + 新增独立信息段 ENEMY_LAST_KNOWN_POSITION_REFERENCES
+  （account + region + observedAtSec + ageSec + knowledge=LAST_KNOWN，独立信息不伪装 current，不 future-leak）；
+  GEOMETRIC_* 三分位轴只消费 CURRENT enemy refs。
+  ③ **RelativeDepthHp 更严格 fail-close**——enemy 只有 LAST_KNOWN 时该 phase 不生成
+  memberDist/referenceDist/relativeDepthM exact 距离测量（禁止「LAST_KNOWN → 当前精确距离」）。
+  ④ **Region presence 统一为 resolved 车辆位置 state**——ownPositionPresence/enemyPositionPresence 从
+  「位置包数量」改为「每辆 CURRENT 车辆 +1」（同一车辆 phase 内 100 个包 presence 仍 1），
+  与 coverageCompleteness 同一套 resolved position state。
+  ⑤ **Actual Combatant 边界加固**——证据层 tracks 增加 #301（battle.players）成员过滤：
+  spectator/observer/camera/静态实体位置绝不进入战术位置覆盖；TEAM_MEMBER_ENTITY_UNMAPPED 与
+  TEAM_MEMBER_POSITION_UNAVAILABLE 改为互斥（完全 unmapped → 只报 mapping failure，P2 cleanup）。
+  ⑥ **Prompt 三语 FORMATION_DEPTH_RULE 同步**——presence=基于 resolved 状态的车辆数（非包数）、
+  CURRENT/LAST_KNOWN 语义、ENEMY_LAST_KNOWN_POSITION_REFERENCES 不得当作当前精确位置。
+  ⑦ **测试**——friendlyStationaryCarryForwardRemainsCurrent / enemyStalePositionRemainsLastKnown
+  （knowledge=LAST_KNOWN + observedAtSec/ageSec 断言）/ staleEnemyDoesNotProduceExactRelativeDepthDistance /
+  carriedFriendlyCountsInRegionPresence / regionPresenceCountsVehiclesNotPositionPackets /
+  spectatorDoesNotAffectCoverage / mapped 零位置 → 仅 TEAM_MEMBER_POSITION_UNAVAILABLE（P2）；
+  回归 fixture 更新为真实连续位置流语义（enemy phase 末保持 CURRENT）。
+  文档：protocol.md 证据层知识契约；team-ai-review.md CURRENT-only exact math + LAST_KNOWN 独立信息段。
+- **PR #103 第五轮——Actual Combatant / Spectator 边界 + 己方位置 state 语义（2026-08-19）**：
+  基于 6 个真实 replay 的协议调查（`ActualCombatantPositionProbeTest`，见 `docs/research/replay/protocol.md`
+  SPECTATOR/NON-COMBATANT 节）：
+  ① **`UNATTRIBUTED_POSITION_EVENTS_PRESENT` 重分类**——`DefaultTeamBattleFeatureExtractor.auditPositionEvidence`
+  按 #301 成员资格区分 A（#301 实际参战实体无法归因 → 保留该 limitation）与 B（non-#301 实体：
+  观战玩家/镜头/场景对象 → 只记 `coverage.nonCombatantPositionEventCount`，不进 AI prompt）。
+  真实样本证明该 limitation 此前 6/6 场 100% 由 non-#301 实体触发（观战玩家 结城凛音 1611 位置、
+  观战镜头 13185652、场景静态物 12558633/34/49/59/60/78 等）。
+  ② **`TEAM_MEMBER_MOVEMENT_UNAVAILABLE` 改名 `TEAM_MEMBER_POSITION_UNAVAILABLE`**——语义收敛为
+  「#301 成员 mapped 但整个可分析期无任何 usable position state」，不再暗示 movement 缺失=位置缺失。
+  ③ **己方位置 carry-forward（`BattleTimelineBuilder.frameVehicle`）**——己方 actual combatant 在
+  last position + 无 EntityLeave + 未 destroyed 时保持 `POSITION_STREAM_ACTIVE/CURRENT`，
+  不因 age > `POSITION_GAP_SEC=5` 降级 LAST_KNOWN（真实样本：存活己方开局静止 10.8s 同坐标无新位置）；
+  敌方保持 UNKNOWN/LAST_KNOWN anti-future-leak。
+  ④ **FormationDepthEvidence / RelativeDepthHpEvidence carry-forward 参考**——phase 内无新样本但
+  phase 前有最后位置（存活、无 EntityLeave）的车辆计入 position reference/几何（friendly=authoritative；
+  enemy=LAST_KNOWN），不再用 phase-local event existence 当 position coverage 代理，消除静止车辆造成的
+  `POSITION_COVERAGE_INSUFFICIENT` 误报。
+  ⑤ **回归测试**——R1（spectator 不产生 team limitation）、R2（friendly stationary carry-forward）、
+  R3（#301 成员零映射 → `TEAM_MEMBER_ENTITY_UNMAPPED`）、R4（mapped 零位置 →
+  `TEAM_MEMBER_POSITION_UNAVAILABLE`）、R7（friendly >5s 静止不 unknown）＋ A 类（#301 实体冲突无法归因
+  仍触发 limitation）；既有 enemy anti-future-leak 测试保持通过。
+  文档：protocol.md 新增 SPECTATOR/NON-COMBATANT ENTITY + PositionChanged change-driven 验证；
+  battle-timeline.md knowledge-world 分层补己方 carry-forward；team-ai-review.md limitation 清单改名。
+  测试：wotb-core 84 + wotb-web targeted 全绿（11.19 两个样本缺失时 probe 自动跳过，放入 common/data/ 自动回归）。
+- **PR #103 Backend Evidence Boundary 第四轮——GPT review 剩余 3 个 Blocker + PR scope 收口（2026-08）**：① **Team EN Points 规则语义对齐**——`TeamPromptLocalizer.CAPTURE_RULE_EN` 8.b 移除旧 deterministic Rule Engine 措辞（"it needs to attack and capture" / "can more comfortably defend with crossfire"），与 ZH/RU/Player 一致：击杀换分项净劣势/优势只提示「点数压力方向」，是否抢点/防守拉交叉由 LLM 综合推断，禁止固定映射。② **FormationDepthEvidence 拆分几何 vs 战术角色**——删除 `lineupStructure=frontlineCapable/backlineCapable/neutralOnly`、`noFrontlineVehicle/noBacklineVehicle`、`isFrontlineCapable/isBacklineCapable`（HEAVY⇒前线、TD/LIGHT⇒后排的确定性分类）与 fireWeight 的前线加成；frontLine/midLine/backLine 改名为中性 `GEOMETRIC_FORWARD/GEOMETRIC_MIDDLE/GEOMETRIC_REAR`（沿本队质心→敌方质心轴的纯几何深度三分位，恒输出，不引用 tank profile 分类）；tank profile 只作为成员静态事实附注，该车位于该纵深是否合理由 LLM 判断；清理「地图控制区域（实际控制）」stale comment。③ **BehindLineHpEvidence → RelativeDepthHpEvidence 中性化**——段名 `BEHIND_LINE_HP_ADVANTAGE` → `RELATIVE_DEPTH_HP_MEASUREMENT`、`HP_ADVANTAGE_UNKNOWN` → `HP_RATIO_UNKNOWN`；reference 由纯几何算法选择（本阶段距观测敌方最近的存活本方成员，不再要求「可扛线 HEAVY/高装甲」），输出 member/reference accountId + 静态 profile 事实 + hpRatio/hpRatio差 + memberDist/referenceDist/relativeDepthM + observedAttackEvents + coverage；opening 最靠后三分位几何事实不再按坦克类型排除；保留 partial coverage fail-closed（observedAttackEvents=0 ≠ 无输出/避战）。④ **ai-lessons 全量迁移**——`cw-delay-hold-01.md` 重写为 Backend expected evidence vs LLM interpretation expectation 分离结构；清除其余 lesson 的「Step 2 SEPARATION_EVIDENCE_RULE（拖延=行为模式+队友获利）」等 stale 公式。⑤ **PR scope 收口**——revert 4530a8e5/722afe3f 两个「format imports」commit 带来的 644 个文件非 AI-Review 改动（恢复 601dc427 内容）：其中 17 个 Flyway migration 被重排导致已应用迁移 checksum 漂移（validate-on-migrate 默认开启，生产启动校验风险）、V14 E'\n' 语法被改坏；prompt 逐字契约文件此前已由 a24b30e6 恢复；revert 后 PR diff 只含 AI Review 语义改动。⑥ **Boundary regression tests**——BackendEvidenceBoundaryTest 新增 R14（Team EN points 三语一致）、R15（Formation 无 tactical-role 标签）、R16（RelativeDepthHp prompt 中性 + partial fail-closed 保留）、R17（docs lesson 不再把 Backend verdict 公式当 expectation）；RelativeDepthHpEvidenceTest 重写（纯几何 reference、TD/LT 纳入测量、中性命名断言）；PromptRuleContractTest 三语逐字契约同步。
+- **PR #103 Backend Evidence Boundary 第三轮——剩余 3 个 Blocker（2026-08）**：① **BehindLineHpEvidence 中性化**——吸血/避战/利用队友输出/利用队友扛伤/「前线型车辆未上前线」/degree 轻中重 全部移除，改为确定性测量（phase、血量比率、血量比、距敌距离差、observedAttackEvents、coverage=COMPLETE/PARTIAL、HP_ADVANTAGE_UNKNOWN、opening 后排分位几何事实、跨阶段出现次数=中性 salience）；×1.2 阈值保留为 salience/filter heuristic，不再解释为「满足 ⇒ 吸血/避战」；prompt 三语（Player/Team BEHIND_LINE_RULE + player/team/autopsy md）同步为中性测量指导。② **FormationDepthEvidence 去权威控制权**——删除 controlRegions own/contested/enemy 标签（含 (presence)/(firepower)、noArmorNote），改为 REGION_COVERAGE_MEASUREMENTS 每区输出 ownPositionPresence/enemyPositionPresence、ownWeightedCoverageScore/enemyWeightedCoverageScore、ratio、coverageCompleteness（位置参考不完整时只输出 ownPositionPresence，不输出分数对比）；prompt 三语 FORMATION_DEPTH_RULE 同步（不再有「前排抗线/中排输出/后排支援」战术角色断言）。③ **Points Prompt 去 Rule Engine + PUSH_WINDOWS 清零**——全局统一 CONTROL_REGION_ENTRY_WINDOWS（player×3 md、team/single md、TeamPromptLocalizer ZH/EN/RU、PlayerPromptRules ZH/EN/RU、Java 注释全清）；删除「必须指出防守方失误」evidence→verdict 固定映射与「净劣势 ⇒ 需要进攻抢点」固定结论，改为「LLM 综合击杀换分信号/区域位置存在/局部人数/战局时间/伤害/阵亡/后续移动自行形成 supported tactical inference」。④ **PlayerSeparation 0/0 bug 修复**——`PlayerSeparationEvidenceSkill` 先构建最终 numbers map（inWindowDealt/inWindowDamage），summary 与 AiEvidence.numbers 同一数据源生成，不再从 RouteSkill 原 window.numbers() 读 damageDealtDuringSpan（恒 0）；新增 regression（player-detach-push-01：dealt=300/received=1800 时 numbers 与 summary 一致）。⑤ **BackendEvidenceBoundaryTest 扩展**——R9 BehindLine 无战术 verdict、R10 Formation 无 controlRegions 权威标签、R11 Prompt 无 PUSH_WINDOWS、R12 无 evidence→mandatory mistake 固定映射、R13 Player separation numeric consistency；R8 fake assertTrue(true) 删除（真实 Golden 由 TeamReviewRealReplayProbeTest 负责）。⑥ **ai-lessons 清理**——cw-benefit-partial-overlap/cw-cap-defense/cw-damage-partial-benefit/player-no-growth 全部改写为 Backend expected evidence（distance/stationary ratio/damage/local numbers/activity/coverage）vs LLM interpretation expectation（脱节/拖延/合理分兵）分离表述，teammateBenefit/SOLO_DELAY/SOLO_DETACHED/FAVORABLE 作为 Backend tactical label 清零。⑦ 修复 `TeamAiPromptBuilder` behindLine 段误嵌套在 formationDepth if 块内的结构问题。测试：全量 Java 通过；frontend tests/build + git diff --check 验证；CI 全绿。
+清除 feature 层残留的「交换是否值得」旁路判断——删除 `EngagementOutcome` 枚举（`FAVORABLE/UNFAVORABLE/EVEN`，原 `dealt > received * 1.25 → 有利/不利/均势` 判定）及其在 `EngagementSummary`/`TeamEngagementSummary` 的 `outcome` 字段；`DefaultPlayerBattleFeatureExtractor`/`TeamEngagementExtractor` 不再计算 outcome（删除 `ENGAGEMENT_OUTCOME_RATIO` 常量），只保留确定性数字（damageDealt/damageReceived/存活变化/局部人数/HP swing/集火目标/目标切换）；`PlayerAnalysisTerms.outcomeLabel`（有利/不利/均势）删除，三个渲染点（`PlayerEvidenceFormatter` 交火段「结果:」、`TacticalReviewPromptBuilder` 对炮明细「| 结果:」、`TeamEvidenceFormatter` TEAM_ENGAGEMENTS 段「outcome=」）不再输出交换好坏标签——「交换是否值得」与拖延/脱节/图控一样归 LLM 综合多事实判断（Backend MUST NOT encode tactical benefit）。测试：删除 `DefaultTeamBattleFeatureExtractorTest.engagementOutcomeUsesOnePointTwoFiveAsAnExclusiveBoundary`（被测旁路逻辑已移除），全部 EngagementSummary/TeamEngagementSummary 构造适配，PlayerAnalysisTermsAndEnemyEvidenceTest 移除 outcomeLabel 断言；全量 1888 tests / 0 failures / 0 errors 通过；golden cases 与前端 API 契约均不依赖 outcome 标签（已核验零引用）。
+① **Autopsy 不再逐人作文**——`TeamAutopsyPromptBuilder.renderSection` 删除「团队剖析」header、重复胜负、`逐人贡献` 全部 P1~P7 分类表与 `P1（"nickname / tank"）` 式 playerKey 暴露；`mvps` 与 `biggestLiabilities` 均为空（无 standout，合法结果）时整段返回空串（UI/主复盘已知胜负，不重复）；有 standout 时只渲染 `## 重点复查` / `## 高贡献者` 两块，每行 `nickname / tank：reason`（playerKey 仅作内部 lookup，绝不进入用户正文；evidence 保持 structured contract 内部）；`renderSection` 签名简化为 `(result, roster)`，删除不再使用的 `contributionLabel/confidenceLabel` 死代码。② **彻底统一 UNKNOWN selective**——删除局部规则重新强制披露：Opening Spread 不再写「统一视为 UNKNOWN（写『无法确认其实际视野收益』）」、Solo 规则不再「信号不足或矛盾时明确写『无法从当前回放数据确定』」、争霸赛点数 8e 不再「信号不足或矛盾时写『无法从当前回放数据确定』」；三语（ZH/EN/RU）统一改为「证据不足 → 保持内部 UNKNOWN；仅当符合全局选择性 UNKNOWN 条件时才自然说明」；single.zh.md 同步。测试：TeamAutopsyPromptBuilderTest 重写（空 standout / liability-only / MVP-only / both）、AiReplayAnalysisServiceTest 生产装配输出断言（无逐人贡献/P1（/置信度/PARTIAL）、TeamReviewStyleContractTest 新增防回归（局部规则不得重新强制 UNKNOWN，ZH/EN/RU 同步）。
+- **PR #103 Backend Evidence Boundary 架构收口（2026-08）**：确立「Backend 只负责事实与确定性派生证据，战术判断归 LLM」原则。① 删除战术 verdict——`EvidenceType.SOLO_INTENT` → `SPATIAL_SEPARATION`；`TeamSoloIntentSkill` → `TeamSeparationEvidenceSkill`、`SoloPlayIntentSkill` → `PlayerSeparationEvidenceSkill`（git mv 保留历史），只输出中性空间分离结构事实（`kind=OPENING_SPREAD/SEPARATION_WINDOW` + distance/distanceGrowth/stationaryRatio/movementState/observedEnemyNearby/damageReceived/Dealt/death/mainClusterDisplacement/otherFriendly*）；删除 `SOLO_DELAY`/`SOLO_DETACHED`/`teammateBenefit`/`EngagementOutcome.FAVORABLE→获利→拖延` 链路（`EngagementTradeSkill` 输出数据的正确模式保留）。② 词汇中性化——`RouteSkill`：detachmentWindows→separationWindows、enemyMajorityEntries→localObservedNumbersEntries（只报「观察到附近友军 N/敌军至少 M」）；`PointsSituationSkill`：PushWindow→ControlRegionEntryWindow、pushWindows→controlRegionEntryWindows（不声称进攻/抢点/防守）；`PointsSituationEvidence` 生产段 PUSH_WINDOWS→CONTROL_REGION_ENTRY_WINDOWS。③ Prompt 三语（Team/Player + md）`SOLO_INTENT_RULE`→`SEPARATION_EVIDENCE_RULE`：声明 SPATIAL_SEPARATION_EVIDENCE 是 OBSERVATIONS/DERIVED MEASUREMENTS 不是 tactical verdict，拖延/脱节/图控等判断由 LLM 综合多事实得出 supported tactical inference（原则+证据边界，不做规则引擎）。④ 测试——TeamSeparationEvidenceSkillTest/PlayerSeparationEvidenceSkillTest 重写为中性契约（旧 SOLO_DELAY/SOLO_DETACHED 场景只输出事实）、RouteSkillTest/PointsSituationSkillTest/PointsSituationEvidenceTest 适配、golden cases 重构（backend 事实断言 + 战术标签 omits）、新增 BackendEvidenceBoundaryTest（R1–R8：Team/Player 生产链路无 verdict、OPENING_SPREAD 中性、partial coverage 不硬判、prompt 三语声明、Golden 3:1 不回归）。⑤ 文档——docs/architecture/ai-review.md 新增「Backend Evidence Boundary」三层架构章节（Canonical Facts / Deterministic Derived Evidence / Tactical Interpretation + 判断标准）；ai-lessons 全量迁移到中性词汇。
+- **PR #103 对方关键威胁 optional contract 统一（2026-08）**：修复 Team Prompt 直接冲突——输出结构「5. 对方关键威胁（可选）」与团队复盘规则「分析对方阵容并指出对方主要威胁车辆（最多 3 辆）；对方数据缺失时明确说明」互相矛盾。统一为单条规则：对方关键威胁是【可选】内容，只有对核心结论、关键决策窗口、已确认团队问题或对应训练建议确有价值时才指出 1-3 辆；没有明显关键威胁或对核心复盘没有帮助时直接省略，不得为了结构完整强行选一个；删除「对方数据缺失时明确说明」无条件披露，改为「对方数据不足时不得猜测，缺失本身保持内部 UNKNOWN——只有该缺失直接影响核心判断、因果判断或训练建议时，才按全局选择性 UNKNOWN 规则自然说明」。ZH/EN/RU 三语同步（`TeamPromptLocalizer.TEAM_ANALYSIS_RULE` + `single.zh.md`）。测试：TeamReviewQualityGateContractTest 新增 4 项（optional threat / 无 mandatory contradiction / 无强制缺失 disclaimer / 三语 parity），更新 TeamOpposingLineupEvidenceTest 与 PlayerAnalysisTermsAndEnemyEvidenceTest 断言。
+- **PR #103 Final Quality Gate（2026-08）**：① Team 用户可见名称——`TeamPerspectiveLabelResolver` 拆分 `resolveDisplayLabel`（唯一 dominant 且严格多数 → clan tag 最常见 casing；否则空串，绝不返回 `队伍-XXXX`）与 `resolveStableKey`（internal-only）；web 层 `TeamRosterResolver.resolveDisplayLabel/resolveOpponentDisplayLabel` 独立解析双方，TeamAiPromptBuilder header 输出 `teamDisplayLabel/opponentDisplayLabel`（无可靠 clan → `(none)`），PreBattleSectionRenderer 无 clan 只显示「我方画像/对方画像」，Team Autopsy 渲染侧 fallback「本方」；prompt 移除「主要军团」proper noun（禁止自创「X 对阵 Y」标题）。② 真人教练风格——新增「内部证据与用户正文的关系」规则（AUTHORITATIVE_*/OBSERVED_*/FACT/UNKNOWN/canonical 等是内部推理材料，正文不复述/不解释证据体系）；删除 blanket UNKNOWN 输出要求，改 selective（4 条件）；Focus 五项改为内部思考框架、正文自然 1-3 段不机械输出小标题；中文默认 600–1200 字（简单 400–700、复杂 ≤1500）；数字只保留支撑核心判断的。③ Team Call #2 独立输出上限 `wotb.ai.team-review-max-output-tokens`（默认 4096，effective = min(global, team)，同时用于 AiPromptBudgetGuard 与 AiChatRequest；Player 保持 global）。④ Team Autopsy 用户可见渲染隐藏 confidence/PARTIAL/UNKNOWN/settlement-only/规则候选/provenance；`mvps`/`biggestLiabilities` 允许为空（javadoc 同步）。⑤ Opening Spread battle-specific inference——「敌方主力确认后本方没有及时合流」是本场具体结论，需「重新集中推断规则」4 证据门；known=4/unknown=3 只能说「至少观察到 4 辆，其余 3 辆位置不明确」，禁止「7 辆主力已集中在这一侧」；anti-future-leak。⑥ 真实回放 Golden probe 硬断言（样本存在时 friendlyDeaths==3、enemyDeaths==1、BEFORE 7v7、AFTER 4v6、core 109–128s ±8s），删除 print-only matchesNarrative。
+- **AI Review V2 PR #102 第三轮 review 修复（B1）——Team AI Canonical Timeline hard gate**：`TeamReplayAnalysisService.analyzeTeamGroups`（Team AI 唯一 production 编排入口）在**任何 LLM 调用之前**（Call #1 prior / Call #2 / Team Autopsy）为每个 context 构建并验证 canonical `BattleTimeline`（一次 build、一次 validation）：reconstruction 缺失 / timeline 不可用 / timeline 为 null → 立即抛 `AiTimelineUnusableException`（AI Gateway requests = 0，禁止 settlement-only fallback）；验证通过后同一 validated timeline 下传 `TeamAiPromptBuilder`（新增带 `BattleTimeline` 的 `single(...)` 重载）渲染 TACTICAL TIMELINE 段——PromptBuilder 不再内部 build / 不再 `catch (RuntimeException) { return "" }` 静默降级，validated timeline 渲染为空 → fail loud；`analyzeSingleTeamContext` / `analyzePlayerContext` 明确标注为兼容/测试入口（非 production AI Review entrypoint，避免 hard-gate bypass）；TacticalReviewHarness javadoc 修正为 hard reject 语义；测试：TeamReplayAnalysisServiceTimelineGateTest（timeline invalid → zero LLM calls、reconstruction==null → zero calls、valid timeline → Call #2 必含 TACTICAL TIMELINE、PromptBuilder 不引用 BattleTimelineBuilder 结构断言）。
+- **AI Review V2 PR #102 第二轮 review 修复**：
+  ① `AiTimelineUnusableException` SSE error 契约——`ReconstructionController.errorCodeOf` 对任何该异常只输出稳定码 `AI_TIMELINE_UNUSABLE`（validation detail `TIMELINE_*` / `NO_RECONSTRUCTION` 仅留后端日志，绝不进入 SSE error 事件/客户端协议）；异常新增单一来源 `STABLE_ERROR_CODE` 常量（与同步 HTTP 冒号前缀提取契约一致）；`AiReplayReviewService` 错误类型指标按稳定码记录 `AI_TIMELINE_UNUSABLE`（低基数，不带 detail）；frontend `LOCALIZED_ERROR_CODES` + zh/en/ru 三语文案「缺少足够的战局时间线数据」；新增真实 SSE/controller boundary 测试（非 Mockito：真实 emitter 捕获 error 事件，断言 code 严格等于稳定码、无 `:`、无 `TIMELINE_*`）。
+  ② Episode BEFORE/EVENTS/AFTER 因果修复——`BattleFrame(second=N)` 已消费 ≤N 事件，新 Episode 起始秒 delta 属于本段，BEFORE 改为 `frameWorld(max(0, seg[0]−1))`（首段钳制 0），不再提前包含同秒阵亡/点数变化效果；半开段 delta ownership 不变（flatten 仍恰好一次）；新增 DESTROYED 与 POINTS_CHANGE 两类 boundary 回归测试。
+
+### Added
+- **战局回放 Vehicle HP & Combat Feedback（feat/playback-hp-combat-feedback）**：
+  ① 后端 `MapOverview.PlaybackVehicle` 新增 `tankType` / `entryHpSource` / `entryHp` / `finalStats`（整场结算字段集），
+  `MapOverviewBuilder` 与 `BattlePlaybackAdapter` 双构建器同源填充；`entryHp` 仅在
+  `ObservedMaxHp` 判定 `OBSERVED_EXACT`（受击覆盖完整 + 严格早于首次受击的 positive 样本 >= tankopedia base）
+  时输出——前端「开局满血回退」只允许该 provenance，tankopedia base 永不冒充进场满血（docs/current-plan.md §5.1）。
+  ② 前端 `battlePlayback.js` 新增纯函数：`hpDisplay`（样本优先 → 击毁 0 → 本方已证明进场满血回退 → UNKNOWN，
+  maxHp 缺失不伪造百分比）、`cumulativeStatsAt`（当前时间点 dealt/received/kills 确定性重建）、
+  `eventsCrossed`（严格左开事件 cursor，seek/pause/resume 不重复触发）、`transientsActive` / `pushFeed`
+  （wall-clock transient 生命周期 + kill feed 队列）、`victimFeedbackAllowed`（失察期间受击不跳伤害，§7.2）。
+  ③ `VehicleMarker` 新增 HP HUD（数字 + 定宽 bar + lost-HP ghost + hit flash；last-known 弱化、destroyed 归零、
+  UNKNOWN 显示 —；screen-space 恒定；开关由 `wotb.pb.hp-prefs` 持久化）。
+  ④ `BattlePlayback` 新增：floating damage / destruction burst / kill feed（victim-only，§15.2 未证明全局击杀
+  广播不伪造攻击者）、detail sidebar（当前状态面板 + 最终战绩分区 + 伤害记录，攻击者未点亮显示「来源未知」）、
+  event cursor 驱动的 transient feedback（seek 清空、pause 自然完成、prefers-reduced-motion 降动画）、
+  宽屏右侧/窄屏下方响应式布局。
+  ⑤ 真实 fixture QA（BattlePlaybackAdapterParityTest 扩展）：finalStats 与权威结算逐字段一致、entryHp provenance
+  契约、阵亡车辆必有 0 采样、每条 KILL 由同炮 DAMAGE 支撑（KILL broadcast provenance 验证）。
+
+- **AI Review V2.1 — Team Review Quality Gate（ai-review-v2.1-team-quality-gate）**：Team AI 复盘推理质量重构（FACT → TACTICAL INFERENCE → RECOMMENDATION 契约收敛），根因来自真实失败回放（20260817 WildCat SPHT，见 docs/ai-lessons/team-review-causal-overreach-01.md）：
+  ① Team Prompt 重构（prompts/team/single.zh.md + TeamPromptLocalizer 三语常量）——删除强制 10 章节与「开局散开=图控/拿视野」危险规则（改为中性行为，证据不足 UNKNOWN）；新增「团队复盘输出结构」（核心结论 / 关键决策窗口 1-3 / 可确认问题 1-3 / 训练建议 1-3 且必须对应可确认问题 / 对方关键威胁可选）与「证据契约」（FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN：禁止 unsupported 掩体/射界/视野/位置感/必然性/结算→时间线因果/自创精确阈值/残局万能规则/自创车辆角色；禁止硬写「做得好的行为」与凑数量）。
+  ② TimelineFocusWindowSelector（wotb-core timeline 域）——从已验证 canonical BattleTimeline 选出 1-3 个信息密度最高的 Focus Window：短时间连续减员（≤20s 合并、>40s 长链按最大间隔拆分）优先，HP swing/点数/首次接敌/交火/存活变化兜底；每个窗口确定性输出 BEFORE/EVENTS/AFTER/OBSERVED FACTS/EVIDENCE LIMITATIONS，不重复 delta、不 future leak；TeamAiContextCompiler.renderFocusWindowsSection 注入 TEAM REVIEW FOCUS WINDOWS 段（与 TACTICAL TIMELINE 同一已验证 timeline）。
+  ③ Team Autopsy 归因降级——结算级输出标签「主要战犯/MVP」→「重点复查对象/高贡献者」（prompt + renderSection），新增归因降级规则：仅凭结算与死亡时间不得写成确定战术过错（earlyDeath/weakOutput 只是规则候选）。
+  ④ 车辆角色统一来自 backend——prompt 禁止自创「薄皮输出型/前排/肉盾/狙击车」等角色；tankName/vehicleClass/tier 三路径（主复盘/Autopsy/赛前）同源 ReplayDisplayNames，角色语义唯一来源 TankTacticalProfileRegistry。
+  ⑤ 测试与回归——TimelineFocusWindowSelectorTest（连续减员窗口/BEFORE-AFTER/正常交火/稀疏证据/确定性/不重叠）、TeamReviewQualityGateContractTest（§13-A 全项 + 三语一致）、TeamFocusWindowsRenderTest、TeamTankRoleConsistencyTest（§13-F）、TeamAutopsyPromptBuilderTest 更新（重点复查对象/高贡献者/归因降级）、AiEvalHarnessTest 新增证据契约断言、golden case team-review-causal-overreach-01.json、真实回放 probe TeamReviewRealReplayProbeTest（common/data 样本自动回归，CI 无样本跳过）；真实回放验证 collapse 窗口 3:1（109–128s，本方 3 死对方 1 死）被选中为 Top Window。
+- **AI Review V2.1 追加修复（PR #103 review B1/B2）**：① 开局分散语义收敛——OPENING_MAP_CONTROL 重命名为 OPENING_SPREAD（TeamSoloIntentSkill / SoloPlayIntentSkill + summary 中性化，TeamEvidenceFormatter 输出 intent=OPENING_SPREAD，不再向 LLM 暴露「图控/拿视野」标签）；Team/Player Prompt 同步：开局分散定义为「地图信息覆盖 ↔ 局部兵力集中度」的战术交换（允许 general tactical interpretation，禁止无专门 visibility evidence 的具体点亮/侦察归因），CAPTURE_RULE「失去高视野」改为「减少分散的地图覆盖（是否实际损失需 evidence）」；新增生产链路集成测试（TeamEvidenceFormatter→TeamAiPromptBuilder user content / player TacticalReviewPromptBuilder 均无拿视野/点亮/侦察收益、无 OPENING_MAP_CONTROL）。② Focus Window 改 bounded core window：阵亡子窗口 ≤20s 有界（sliding），窗口外阵亡不污染核心事实（真实回放验证 collapse core = 109–128s，本方 3 死对方 1 死，BEFORE 7v7 → AFTER 4v6）；评分改为 swing 优先（|fd−ed|×800 + 总死亡×200 + 支撑信号），单边 collapse 不被 balanced massacre 靠总死亡压掉；新增 112/121/128/132/136 回归（136s 对方阵亡不得把 3:1 改成 3:2）与 balanced-vs-collapse 排序测试；TeamReviewRealReplayProbeTest 更新为 bounded-core 断言（真实样本验证 3:1 core，无样本 CI 自动跳过）。③ Team Autopsy 允许 mvps / biggestLiabilities 为空（结算级无数据支持异常时不强行挑人/评选）。
+- **AI Review V2 — Canonical BattleTimeline（ai-review-v2-canonical-timeline）**：wotb-core 新增 `com.wotb.core.replay.timeline` 唯一权威时间线域——`BattleTimelineBuilder`（1 秒 `BattleFrame`，battle-relative 时钟硬门禁：IDENTIFIED / ESTIMATED（`BattleEnded.raw − duration`）/ UNRESOLVED→拒绝；`frameAt(t)` 确定性查询；精确事件按 (N-1, N] 保留不丢失）；`FrameVehicle`（identity + lifeState + `FrameHealth`（currentHp 与 baseHp/effectiveMaxHp 严格分开，tankopedia base 不冒充本场 maxHp）+ `FramePosition`（CURRENT/LAST_KNOWN + age + source）+ orientation + `FrameMapState`（九宫格/区域/语义标签，复用 map-semantics）+ `VehicleKnowledgeState`（POSITION_STREAM_ACTIVE/LAST_KNOWN/UNKNOWN/DESTROYED_KNOWN 保守语义，Type-5 未证明不声称点亮）+ 累计伤害 + destroyedKnownAtSec）；anti-future-leak invariant（帧状态只用 ≤t 事件；battle_results 最终状态不反写历史；重亮后仅 bounded retrospective HP_GAP_DELTA）；`BattleTimelineValidation` 错误码（TIMELINE_*，§4）——无法构建 → 拒绝 AI Review，**移除 settlement-only fallback（§3，`AI_TIMELINE_UNUSABLE` 业务错误，不调用 LLM）**；`BattleDeltaEngine`（帧间确定性 delta：FIRST_KNOWN/ENEMY_LOST/ENEMY_REACQUIRED/HP_CHANGE/HP_GAP_DELTA/DESTROYED/ALIVE_COUNT_CHANGE/LOCAL_FORCE_CHANGE/POINTS_CHANGE/ENGAGEMENT_ACTIVITY）；`EpisodeDetector`（确定性章节：强信号优先、首选 15–45s、硬最小 8s、覆盖整场无重叠，禁止固定 30s 切块）；`TimelineMapEnricher`（gridRegion/areaId/semanticTags/elevation，禁止 exact LOS 断言）。wotb-web：`PersonalAiContextCompiler` + `TeamAiContextCompiler`（Episode 化 compact 上下文：BEFORE/EVENTS/AFTER/TACTICAL_CHANGE + 双方世界状态 + 敌方已知/未知分布），Call #2 prompt 注入 `TACTICAL TIMELINE` 段（SNAPSHOT→PRIOR→TIMELINE→CRITICAL WINDOWS→TASK，§33）；`TacticalReviewHarness` 在录像者解析后立即构建 timeline、无效即拒绝；`PlayerReplayAnalysisService.analyzePlayerOrFallback` 无重建/录像者未解析即拒绝（不再 settlement-only）；团队 prompt 注入双方对称 timeline 段；`BattlePlaybackAdapter` 从 timeline 派生 `MapOverview.Playback`（parity 测试证明与 MapOverviewBuilder 同一事实，battle-relative 时钟修正了 legacy raw-clock 隐含 start=0 的开战前偏移）；Context 可观测性 `wotb_ai_review_context_section_tokens{section}`（低基数，§38）。测试：timeline builder/validation/anti-future-leak/episode/structural-eval（事件无丢失无重复、deterministic、Episode 覆盖完整）+ 真实夹具端到端（random-bat... (line truncated to 2000 chars)
+- **百场回放审核证据持久化（hundred-replay-evidence）**：新增 Flyway `V19__create_hundred_battle_replay_evidence.sql`（`hundred_battle_replay_evidence`：submission_id FK RESTRICT + slot(1..5) + original_filename + sha256 + file_size + arena_id + created_at，`unique(submission_id, slot)`）；`createSubmission` 在全部硬门禁通过后把 5 个原始 `.wotbreplay` 内容寻址落盘（复用 `HallOfFameReplayStorage`，同 `HOF_REPLAY_DIR`，幂等/原子/防路径穿越）→ 单事务写 submission + 恰好 5 行 evidence，文件存储失败 / DB 失败 → 整单失败 + 已存文件 best-effort 清理（引用计数保护），不再出现「校验后即丢弃、管理员无证据」；新增 `HundredReplayEvidenceService`（storeAll/attach/discardForSubmission/adminListEvidence/downloadEvidence，跨表引用计数：hall_of_fame_record + 本表均无引用才删物理文件，失败仅 WARN 保留 orphan）；终态（APPROVE/REJECT/CANCEL）同事务删 evidence 行 + commit 后清理物理文件；新增 admin-only 端点 `GET /api/admin/hof/hundred/submissions/{id}/replays`（metadata 列表）与 `GET .../submissions/{submissionId}/replays/{replayId}`（原始字节下载，ownership 校验 + UTF-8 filename + octet-stream + 明确 404），SecurityConfig 零改动（`HOF_ADMIN_PATTERN` 已覆盖）；前端 `HoFAdminPage.vue` 审核弹窗新增 Evidence 区（截图点击放大 + 下载截图 + 5 replay 逐个下载 + legacy 空态提示「原始回放不可用」）；旧 PENDING（无 evidence 行）replay 列表返回空数组、不报错、不伪造 replayAvailable。
+- **名人堂「百场」排行榜（hundred-battle）**：新增后端域 `com.wotb.web.hundred`（`HundredBattleSubmission` 单表承载完整生命周期 PENDING/CURRENT/SUPERSEDED/REJECTED/CANCELLED/DELETED；Flyway `V18__create_hundred_battle_submission.sql`，partial unique index 在 DB 层保证 user+vehicle 最多一个 PENDING / 最多一个 CURRENT）；公开 `GET /api/hof/hundred?vehicleId=&page=&size=`（单车辆独立排行，competition ranking 1,2,2,4 由分组计数前缀和 query-time 派生、不落库，跨页并列全局正确，只输出 approved* 快照）；提交 `POST /api/hof/hundred/submissions`（登录 + Profile gameId/nickname 前置校验、后端 Tier X authoritative 校验、固定 1 张 base64 截图（复用 Boost data:image 校验模式）、正好 5 个 replay 硬门禁：全部解析成功 + gameId/vehicleId 匹配 + 5 场不同 battle，任一失败整单拒绝不进入 PENDING）；用户取消 `POST /api/hof/hundred/submissions/{id}/cancel`；个人中心 `GET /api/users/hundred/status`（CURRENT/PENDING/最近拒绝）；管理后台 `/api/admin/hof/hundred/**`（列表/详情/approve/reject/delete，`@Lock(PESSIMISTIC_WRITE)` 行锁 + 状态复核使终态迁移仅 PENDING→terminal 一次成功；approve 事务内重新读取 CURRENT 并按管理员 approvedAverageDamage 严格比较，旧 CURRENT→SUPERSEDED；reject/delete 原因强制）；SecurityConfig 为 `/api/hof/hundred/submissions/**` 增加登录门禁（置于 HOF_PATTERN permitAll 之前）；proof 截图在审核终态事务内清空（不永久保存）。
+- **排行榜 → 名人堂（Hall of Fame）全技术域迁移**：后端包 `com.wotb.web.leaderboard` → `com.wotb.web.hof`（`HallOfFameController/Service/UploadService/Record/Repository/Mapper/ReplayStorage/StorageException`）；旧 REST `/api/leaderboard/**` 全部移除，新 API `/api/hof/**`（统一公开查询 `GET /api/hof?battleType=&tankId=&nickname=&page=&size=`，排序 damage DESC → RATING 优先 RANDOM → battleTime ASC NULLS LAST → createdAt → id，rank = 当前 filter 上下文位置排名）；前端 `?view=hof`（`HoFPage.vue`），旧书签 `?view=leaderboard` canonicalize 到 `?view=hof`；三语文案 排行榜→名人堂（`hof.*` / `hofAdmin.*`）。
+- **战斗模式数据模型**：`hall_of_fame_record` 新增 `battle_type`（VARCHAR+CHECK：RANDOM/RATING）与 `arena_bonus_type`（raw integer）；`HallOfFameBattleTypePolicy` 集中 raw → 归一映射（1=RANDOM、7=RATING，训练房/联赛/娱乐/未知 → UNSUPPORTED，上传 400 `UNSUPPORTED_BATTLE_TYPE` 零持久化）；Flyway `V16__rename_leaderboard_to_hall_of_fame.sql`（rename-in-place + backfill RANDOM/1）与 `V17__create_hall_of_fame_admin_log.sql`（admin 审计表）。
+- **名人堂管理后台**：`GET/DELETE /api/admin/hof/**`（需 `HoF-admin` 或 `wotbtools-admin`；HoF-admin 只管理名人堂，不可访问其他 admin 域）；搜索 nickname/accountId/arenaId/uploadedBy/battleType/tankId/replayAvailable，排序 damage/battle_time/upload_time，分页 20/50/100；hard delete（audit+record delete 单事务，失败回滚；commit 后最后引用清理物理文件，失败仅 WARN；删除后同一回放可重新上传）；操作审计（DELETE_ENTRY 完整快照，只读）；前端 `?view=hof-admin`（`HoFAdminPage.vue`，角色门禁 + 删除二次确认 + 记录/日志双 tab）。
+- **并发安全**：`ReplayHashLock`（PostgreSQL advisory lock，hash 前 16 hex 为 key）串行化「upload：store+recordRecorder」与「admin delete：事务+引用计数+文件清理」，保证不变量「DB 引用 H ⇒ H.wotbreplay 存在」（多实例安全）；WebApiTest 真实 PG+FS 并发测试覆盖。
+- **配置迁移**：`LEADERBOARD_REPLAY_DIR` / `LEADERBOARD_REPLAY_MIN_FREE_BYTES` → `HOF_REPLAY_DIR` / `HOF_REPLAY_MIN_FREE_BYTES`（application.yml / prod+online compose / .env.example 同步，无旧变量 fallback）；Keycloak realm 增加 `HoF-admin` 角色（provision，无授予 UI）。
+- **测试**：WebApiTest 新增公开查询/排名/过滤器、安全矩阵（anonymous/wotbtools-user/HoF-admin/wotbtools-admin）、admin delete 全矩阵（audit/共享 hash/最后引用/404/hash null/文件缺失）、delete+upload 并发 invariant；新增 `HallOfFameMigrationTest`（V1..V15 旧 schema → V16/V17 迁移验证 rename/backfill/数据保留）、`HallOfFameBattleTypePolicyTest`、`HallOfFameAdminServiceTest`；SecurityConfigTest 补 HoF-admin 角色矩阵。
+
+- **排行榜回放文件存储与下载**：/api/leaderboard/upload 改为需登录（JwtUtil.requireUserId，
+  未登录 401 AUTHENTICATION_REQUIRED）；上传流程接入 ReplayUploadValidator（类型+20MB，复用既有
+  错误码）+ ReplayParser.parse 失败 → 400 INVALID_REPLAY_FILE（原 500）；新增
+  LeaderboardReplayStorage（SHA-256 内容寻址，临时文件 .tmp/ + 同目录原子 move 幂等落盘，
+  FileAlreadyExistsException 并发复用，不覆盖已有文件；磁盘 reserve 计入 incoming 大小
+  usable - incoming < minFreeBytes → 507 REPLAY_STORAGE_FULL；文件系统失败 → 500 REPLAY_STORAGE_ERROR）；
+  DB 更新失败不删除已入存储文件（保留安全 orphan，同 hash 未来上传复用；孤儿清理由未来 maintenance job 处理）；
+  LeaderboardService.recordRecorder 状态机 SAVED/ATTACHED/IDEMPOTENT/SKIPPED_*（历史记录 hash NULL →
+  ATTACHED 补写；同 hash → IDEMPOTENT；异 hash → SKIPPED_HASH_CONFLICT 绝不覆盖）；新端点
+  GET /api/leaderboard/{id}/replay（需登录，任意已登录用户可下载；无文件/文件丢失 → 404
+  REPLAY_FILE_NOT_FOUND；ContentDisposition UTF-8 安全编码原始文件名，不参与路径）；Flyway
+  V15__add_leaderboard_replay_file.sql（replay_hash/file_name/size/uploaded_by 可空，不 backfill）；
+  DTO 新增 replayAvailable（由 metadata 推导）；前端下载走 authenticated fetch → blob →
+  createObjectURL（禁止裸 href）；生产/本地 compose 挂 replay_data volume（/data/replays）。
+  配置：LEADERBOARD_REPLAY_DIR（默认 data/replays）、LEADERBOARD_REPLAY_MIN_FREE_BYTES（默认 512MiB）。
+  Replay 为 best-effort 可丢数据（不纳入 DB 备份；文件丢失下载 404 容错）。
+
+- **PR4 — Player/Tank Labels & Collision UX（§26–§37 + QA 场景）**：
+  - **显示开关（§26）**：Battle Playback 控制栏新增「显示玩家名 / 显示坦克名」checkbox
+    （默认 玩家名关 / 坦克名开），localStorage 持久化（`wotb.pb.label-prefs`），刷新/再次进入保留。
+  - **两行共享背景 label 块（§27/§28/§29）**：PlayerName + TankName 共用一个半透明深色背景
+    （自适应宽度、小圆角、细边框、轻阴影）；只显示一行时背景自动收缩；文字色跟随 team token
+    （friendly green|blue / enemy red，`--pb-team-text`/`--pb-enemy-text`）；
+    destroyed/last-known 只弱化文字、background 保持正常。
+  - **PlayerName 截断 + tooltip（§30）**：按实际像素宽度截断（max-width + ellipsis，非字符数），
+    只有截断才显示完整名 tooltip；被碰撞隐藏时 tooltip 随行一起消失。
+  - **标签碰撞（§32/§33/§34/§35）**：新增纯函数 `utils/labelLayout.js`——viewport 内
+    marker 才参与（越界裁剪）；TankName 冲突 → 上方标签**从下往上** greedy 轻量上移（下方先
+    finalized、上限一行，接受剩余 overlap，3+ 连锁不重新产生 overlap，禁止复杂 solver）；
+    PlayerName 与任一 TankName 冲突 → 隐藏候选，经**时间稳定阈值**（hide 250ms / show 300ms，
+    `performance.now` **UI wall clock**——播放由 frame 刷新、暂停由轻量 RAF 继续推进，
+    不依赖播放状态）后 hide/show，恢复带 ~120ms opacity fade-in（类保持完整生命周期不被
+    下一次 resolve 取消）；PlayerName 盒从 final TankName 盒推导（与共享 label 块整体位移
+    一致）；zoom 由 computed 依赖 view.scale 天然在缩放结束重算。
+  - **hull hitbox + 重叠选中（§36/§37）**：点击命中从整盒改为车体视觉范围 + 小 padding
+    （dedicated 90%、generic 58%×90%，随 marker 缩放；不含 gun overflow/label/三角/菱形/✕，
+    destroyed/last-known 仍可点）；多个 hitbox 重叠 → 取指针距离最近车辆，距离几乎一致且已有
+    selected → 保持，否则 render order tie-break。
+  - **倍速与循环**：倍速循环加入 0.5×（0.5→1→2→4，§49 QA 场景需要）；BattlePlayback 新增
+    `loop` prop（时间线到末尾自动回绕，QA 场景用）。
+  - **隐藏 QA 页 `?view=playback-qa`（§48/§49）**：仅 wotbtools-admin；固定 14 车移动场景
+    （双密集簇碰撞压力 + 阵亡/失察/录像者状态混合），直接复用生产 BattlePlayback
+    （loop + Play/Pause/Reset + 0.5×–4×），不引入第二套渲染。
+  - **全屏模式（原生 Fullscreen API）**：控制栏「⛶ 全屏 / 退出全屏」按钮（zh/en/ru 三语）；
+    全屏对象 = 整个 Battle Playback 容器（地图 + 全部 controls + 标注），不含页面 header/nav；
+    状态事实源 = `document.fullscreenElement` + `fullscreenchange`（ESC/浏览器 UI 退出立即同步，
+    不维护手工翻转）；不支持 Fullscreen API 的浏览器隐藏按钮不抛错；进入/退出不 reset
+    currentTime / playing / speed / selected / zoom / pan / filters / label 偏好 / annotations。
+    尺寸响应：新增 ResizeObserver 驱动的 `mapSize` reactive（无 RO 环境回退 clientWidth），
+    markerScreen / labelLayout / selectAt / textInput / annotation 换算全部改用新尺寸——
+    fullscreen enter/exit 后 collision / hitbox / 标注坐标立即按真实容器尺寸重算（无 magic delay）；
+    zoom/pan 保持不 reset（无 auto-fit，Reset View 由用户使用）。
+  - **hysteresis 时钟接管（Review Blocker 1）**：播放中若有未决 hide/show/fade transition，
+    Pause 或播放自然结束时由轻量 hysteresis RAF 接管 wall clock（无 pending 不启动轮询）；
+    play() 作废残留 hystRAF（frame 驱动接管），避免 pause 时误判已有时钟。
+- **PR3 — Tactical Marker State Visual Redesign（§19–§25）**：
+  - **Team Color System（§19/§20）**：新增 frontend/src/data/mapTeamColors.js——28 张地图
+    全部显式配置 friendly tone（green|blue，与地图主基色避免混淆；初值可视觉 QA 调整）；
+    enemy 固定 red；semantic tokens（TEAM_TOKENS：green/blue/red × text/outline/glow，
+    Battle Playback 局部 CSS vars --pb-team-*/--pb-enemy-*，根元素按 mapCode 注入）；
+    **新增完整性测试（CI 门禁）：mapImages 每 key 必须显式配置 tone，值域合法，
+    无多余 key——新增地图未配置 → CI FAIL，禁止默认色 silent fallback**。
+  - **整车 team outline + glow（§21）**：VehicleMarker .pb-graphics 容器双层 drop-shadow
+    （近扩散 outline + 远扩散 glow），generic 与 dedicated 同构；PR2 B3 过渡色
+    （暖橙/冷青，仅 dedicated）被正式 team token 取代（friendly green|blue / enemy red）。
+  - **Selected 红色倒三角（§22）**：生产 marker 旧白色圆环 → label 上方红色倒三角
+    （#e5484d，永远朝下、screen-space 恒定经 overlayInverseScale 反缩放、轻微上下浮动
+    1.6s 循环、深色阴影对比边）；prefers-reduced-motion 停止浮动。
+  - **Recorder 空心菱形（§23）**：黄色圆环 → tank 下方居中空心菱形（地图 friendly 色
+    var(--pb-team-outline)、静态、screen-space 恒定）。
+  - **Destroyed（§24）**：极端透明 0.35 → 中度变暗 0.55 + grayscale；team outline 弱化保留
+    （drop-shadow 在 grayscale 后绘制不灰化）；一次性 transition 0.45s（reduced-motion 直达
+    终态）；红色 ✕（PR2 用户要求通过项）保持完整强度（容器外）。
+  - **Last-known（§25）**：root opacity 0.3（会连带淡化 ✕/label）→ .pb-graphics 容器淡化
+    0.35 + 仅弱 outline（无 glow）；label 仅文字弱化（background 保持正常）；
+    Selected/Recorder 不受影响（容器外、正常强度）。
+  - **QA 页**：新增阵营预览切换（friendly-green / friendly-blue / enemy-red，i18n 三语 +
+    测试），canvas 注入 team CSS vars + team class，hull/turret outline/glow 与生产同构；
+    destroyed 预览同步 PR3 语义（0.55 + grayscale + 弱 outline）。
+  - **车辆视觉尺寸上调（PR3 增补，人工 QA 全局地图视角辨识度不足）**：marker box
+    desktop 28 → 36px、mobile 22 → 28px（约 +28%）；generic img scale 131% → **134%**
+    （重新校准：generic 素材车体长边占 65.6%、dedicated hull.webp 占 88.1%，
+    134% = 0.881/0.656 使 generic 车体长边视觉与 dedicated 对齐，36px 下均 ≈31.7px；
+    不保持历史 131% 而引入比例差）；zoom 契约不变（viewport 整体 scale，车辆随地图缩放，
+    name/✕/selected/recorder 继续 inverse-scale 屏幕恒定）；Selected 三角 bottom +15 → +19px
+    （避免与 name label 3px 重叠）；halo 固定 px 不随模型放大（不过度扩散）。
+  - **阵亡主状态 + 炮线短生命周期（PR3 增补 2，人工 QA 阵亡/炮线 UX）**：
+    - destroyed ✕ 22 → **30px** 并从名字旁移到**车体中心**（top/left 50% + translate(-50%,-50%)，
+      覆盖车辆主体、高对比、不随 .pb-graphics grayscale/opacity 变淡、overlayInverseScale
+      screen-space 恒定）——第一眼看出"这辆车死了"，不再像名字旁的状态角标；
+    - destroyed + selected 时 selected 红色倒三角切换**克制变体**（线性缩小 67% + 透明度 0.55，
+      destroyed > selected，仍可辨认被选中；存活 selected 保持完整强度）；
+    - 炮线由"挂地图整秒"改为**短 shot effect**：可见窗口 1.0 → **0.4s 真实时间**
+      （1×/2×/4× 一致，`TRACER_BASE_SEC=0.4`），保持期 0.4 → 0.15s 后快速线性淡出；
+      命中端闪光改**峰值曲线**（`flashOpacity`：0 → 0.1s 达峰值 0.9 → 0.35s 归零，
+      `TRACER_FLASH_PEAK_REAL_SEC=0.1`），闪光结束不再渲染圆点（不残留孤立端点）；
+    - 炮线端点仍为**事件时刻可信位置**（trustedPositionAt），绝不绑定车辆后来的位置——
+      历史射击几何不变，移动目标不再出现"炮线穿过坦克"的假象。
+  - **overlay 屏幕间距恒定（PR3 增补 2 Review B2）**：selected 倒三角 / recorder 菱形的
+    layout offset（bottom/top calc）此前处于 viewport 整体 scale 空间——1×/2×/4× 下间距
+    按 19/38/76px、5/10/20px 增长；现按 `overlayInverse`（=1/view.scale，BattlePlayback
+    view model 新增数值字段）反缩放：recorder→vehicle 恒 5px；selected bottom 按
+    X = 4.5 + 14.5×inv px 推导使三角底边跟随 name 顶边、selected→name 屏幕 gap 恒 3px
+    （1× 仍 19px 车辆契约）；浮动幅度 calc(2px * var(--pb-overlay-inv)) 恒 ≈2px；
+    name/✕ 既有语义与 zoom/pan 算法未动。
+- **Tier X 专属俯视车型系统（PR1：ASSET_GENERATION_READY）**：新增 frontend/src/vehicle-models/ 集中静态 mapping（common/tankopedia-tier10.json 84 辆 Tier X → 81 个 baseModelKey，skin/特殊版本复用基础模型：sheridan / kpz-70 / type-5-heavy 三组合并）与 discriminated union 类型契约（turreted 必配 turret + turretPivot，turretless 禁止）；统一 SVG viewBox 320×320 技术契约 + metadata.json schema（8 键）；validator（validate.js，CI 与 CLI 共用）与 Tier X 100% 覆盖门禁（coverage.test.js：新增 Tier X 无 mapping → CI FAIL、mapping 孤儿/未知引用/半成品资产目录均 FAIL）；契约样例资产 assets/sample/；BlitzKit 辅助脚本（frontend/scripts/blitzkit-references.mjs，参考图 URL 已验证并缓存 84 张，gitignored）与 CLI 自检（validate-vehicle-models.mjs）；隐藏 admin QA 页 ?view=vehicle-models（仅 wotbtools-admin，车体/炮塔旋转 + pivot + 状态叠加预览，复用生产 BattlePlayback 渲染方式）；文档 docs/assets/tier-x-models/（README 交接清单 + 全局 SVG 生成规范 + 生成的 84 辆 inventory）。正式车型 SVG 由 ChatGPT 按规范生成，到达 ASSET_GENERATION_READY Gate 后暂停（本 PR 不含正式车型资产）。
+
+### Fixed
+- **战局回放死亡时刻校准（`DeathTimeReconciler`）**：死亡时刻优先级链改为「结算 `deathTimeMillis`
+  （游戏权威）> 重建事件流 EXACT `alive=false`（HP=0，同实体→账号映射，取最后一条=最终阵亡）>
+  legacy 启发式（damage-threshold / EntityLeave / Position 停止，且不得早于最后一条 EXACT
+  `alive=true`——被 alive 证据证伪的 legacy 置 UNKNOWN=0，不保留也不伪造新时刻）」。实体身份
+  只复用 `TeamEntityMapper` 的权威 `TeamEntityMapping`（冲突/低置信实体证据拒绝，nickname
+  fallback 复用）。修复结算缺失死亡时刻（如 11.19 回放 proto #104=0）时 legacy damage-threshold
+  启发式只看累计伤害越阈、无视同实体 EXACT HP 观测，把「残血仍存活」提前误判为阵亡的问题——
+  真实样本 IS-4 在 96.9s 被误标（实际 HP=102 alive），校准后死亡时刻 128.12s。
+  `DefaultReplayProcessingFacade` 重建成功后对非存活且结算无死亡时刻的玩家校准 `survivalTimeSec`；
+  **覆盖范围为重建路径（playback 与 AI 复盘，`full()`）**，`summaryOnly()` 预览/导出路径无重建
+  事件源保留 legacy。前端死亡 ✕ 仍只消费 `deathSec` 单源，无前端改动。
+
+### Removed
+- **隐藏 admin QA 页 `?view=vehicle-models`（车型预览）**：删除 VehicleModelPreviewPage.vue 及其测试、
+  App.vue 的异步入口/视图注册/注释、仅其使用的 i18n `adminPreview.*` 文案（`loading`/`denied` 保留，
+  PlaybackQaPage 共用）；`?view=vehicle-models` 不再是合法视图，输入该 query 回退默认视图。
+  正式 Tier X WebP 资产 / mapping / types / pivot / validator / coverage / texture-bake / extractor /
+  baker / runtime loader（Battle Playback 生产路径）全部保留；`check-bundle-separation.mjs` 门禁改为
+  以生产 runtime.js 动态 import chunk 为资产分离判据（主入口不得含车型资产标记）。
+
+### Changed
+- **PR1 资产生成路线切换：BlitzKit 确定性提取（替代 AI 手绘）**：
+  - 新增 `frontend/scripts/extract-tier-x-model.mjs`（extractor）+ `extractor-lib.mjs`（纯函数库）+
+    `protos/models.proto`（BlitzKit 官方 schema，字段号一致）：tankId → model.glb + models.pb +
+    tanks.pb → 节点分组（复刻 TankModel.tsx 契约：`hull`/chassis_track_*/turret_{id:02d}/
+    gun_{id:02d}(+_mask)，排除 *_hide_elements*）→ 俯视投影 → 分组凸包 silhouette → 统一 fit
+    320×320 → hull.svg/turret.svg/metadata.json；turretPivot 由 turret_origin 经 correctZYTuple
+    自动投影（同一 fit 变换）；网络仅存在于 developer CLI（缓存 gitignored，失败显式报错不 fallback）。
+  - **坐标语义（源码+实测确认）**：GLB 顶点 = 模型坐标（x宽/y长 forward=+y/z高）；models.pb origin =
+    引擎坐标（x宽/y高/z长）；correctZYTuple(x,y,z)=(x,z,y)；默认配置 = turrets/tracks/guns 数组最后
+    （BlitzKit tankToDuelMember）。差异报告：collision.glb 是装甲碰撞网格（{part}_armor_{N}），
+    分层车型模型是 model.glb（Maus 实测 77 节点）。
+  - **metadata schema 切换 geometry-source**：顶层 5 键 modelKey/kind/source/turretPivot/generation；
+    正式资产强制 source.provider=blitzkit + generation.method=blitzkit-model-topdown-extraction
+    （validator 强制）；sample 更新为新 schema。
+  - **extractor 2D geometry 修复（Blocker 1-4，Maus 真实 silhouette）**：
+    - Blocker 1：禁用全局 convex hull（会把 Maus 压成矩形）；改为 projected triangle polygon union
+      （polygon-clipping）——POSITION+INDEX 读取、节点/世界矩阵应用、top-down 投影、退化三角形过滤、
+      精确 union（保留全部凹轮廓与洞）、轻量共线简化、evenodd SVG path；Maus hull 轮廓 64 顶点
+      （含履带裙板阶梯与首上装甲细节，非矩形）。
+    - Blocker 2：collectTriangles 递归过滤 *_hide_elements*（此前 turret_01_hide_elements 细长条
+      被错误并入炮塔）；方向自洽证据：炮盾（gun_01_mask）在座圈前方 → 车头=+y，炮管从炮塔前端伸出；
+      turret 证据输出（raw bbox/center/origin/final SVG 顶点数）。
+    - Blocker 3：gun_{id}_mask（mantlet 炮盾）归入 turret 层（TankModel.tsx 源码确认 mask 与 gun 同层
+      渲染，但静态 0° 它是炮塔正面轮廓）——gun 层仅炮管（Maus gun tris 70，silhouette 细管不扩大）。
+    - Blocker 4：generation.method 更名 blitzkit-model-topdown-extraction（schema/validator/sample/docs/tests 同步）。
+- **extractor 视觉信息密度（Layer B 结构细节，Maus Visual Detail）**：
+  - 在真实 silhouette（Layer A）之上新增 deterministic 结构细节：top-facing major surfaces
+    （三角形法线 z>0.35 + 高度层聚类 zTolerance=0.5 → 区域色块：主甲板/屋顶/裙板层）与
+    major structural edges（surface-edge 平台边缘 / height 高度差 / normal 辅助；
+    minEdgeLenM=1.5 + 屏幕空间过滤 minDetailPx=0.8 ≈ 1px@28px）。
+  - Maus hull.svg：履带独立深色区域、主甲板层（含真实炮塔座圈凹口）、前装甲带、车尾结构孔洞、
+    28 条结构边（≥1.5m，非 wireframe）；turret.svg：屋顶层色块、炮盾（mantlet）独立区域、8 条结构边、
+    细炮管——320px 一眼可辨 Maus（宽履带/宽车体/座圈位置），28px 主色块可读不糊噪。
+  - extractor-lib 新增：triangleNormal / extractTopSurfaces / extractMajorEdges（含 multi-owner 边修复）
+    / minSvgUnits / surfacesToSvgPaths / edgesToSvgPath；svgDocument 支持 stroke/strokeWidth/fill-rule。
+  - metadata.generation 增加 detailMethod=top-surface-and-major-edge-extraction + detailThresholds；
+    debug artifacts（silhouette/top-surfaces/major-edges/final/extraction-report）输出到 gitignored 缓存。
+  - 新增 14 用例（top-facing 判定/高度层聚类/碎片过滤/平台边缘/共享边去重/短边过滤/格栅过滤/
+    确定性/分层正确性/wireframe 上限/pivot 稳定）。
+  - **Layer B V2「少而强」修复（2026-08-18，Maus Visual Gate 第二轮）**：
+    - simplifyRing 退化修复：polygon-clipping 的 ring 含相邻/闭合重复点，重复点使叉积退化 → 真实角点
+      被误删（Maus glacis 全宽带塌成细条、turret 环带塌成发丝线）——先按坐标去重再简化，bbox 不变；
+      屏幕空间过滤改用简化后的 ring（与实际渲染一致），发丝状退化 polygon 正确剔除。
+    - 凸起显著性过滤（bumpSignificanceRatio=0.1）：层内凸起面积占比过低的碎块 = 粗糙网格面片伪影
+      （Maus turret 屋顶 16 个 0.6m 面片块 + 2 条退化长条）→ 丢弃；只保留有语义的大特征
+      （hatch / cupola / 甲板条带）——turret 凸起从 20 个噪块收敛为 4 个真实特征。
+    - 结构边聚类去重（clusterEdges）：角度差 ≤5° 且中点距离 ≤0.5m 视为同一条结构线只留最长一条
+      （Maus 前甲板 4 条交叉斜线 X 形噪纹 → 1 条）；先聚类再按投影长度截断（hull ≤8 / turret ≤6）。
+    - hull 绘制顺序调整：主面 → 履带（深色侧带覆盖在主面之上可见）→ 凸起 → 结构边。
+    - Maus 资产更新：glacis 带恢复全宽 109×60px、turret 环带 20×133px、履带侧带可见；
+    - Maus 资产更新：glacis 带恢复全宽 109×60px、turret 环带 20×133px、履带侧带可见；
+      新增 8 用例（simplifyRing 去重回归/bbox 不变、bump 显著性、clusterEdges 聚类/保留）。
+  - **HIGH-FIDELITY ASSET 方向调整（2026-08-18，PR1 资产生成最终策略）**：
+    - 目标从"为 20-30px marker 主动简化"改为"高保真俯视资产 + 未来 runtime LOD"：
+      asset 保存真实比例与可见结构（retention target ≥ 90%），小尺寸显示交给后续 runtime LOD；
+      本 PR 不实现 runtime LOD，但 SVG 已按 detail-level grouping 输出结构准备。
+    - **删除 aggressive 过滤**：bumpSignificanceRatio（相对占比过滤）、edges 数量上限
+      （hull ≤8 / turret ≤6）、按 28px marker 的 minDetailPx 过滤——全部移除；
+      保留 clusterEdges（duplicate/overlapping 去重，收紧 angleDeg 5°/maxDistM 0.2m）与 simplifyRing 修复。
+    - **凸起判据改为局部不连续**（bumpHeightDeltaM=0.06）：层内凸起面经共享边连通成分量，
+      分量与外界无共享边（隔离：cupola/hatch 隔垂直壁）或共享边高度差显著（台阶带）→ 保留；
+      连续斜面面片（tessellation）剔除。真实 hatch 即使只占屋顶 3-5% 也保留
+      （Maus 甲板 2 个侧舱盖 + 中央舱盖 + turret cupola 全部恢复）。
+    - **feature edge 判据收紧**：normalDeltaCos 0.92 → 0.995（~5.7°，剔除同一平滑曲面内
+      tessellation 对角线）；surface-edge 要求显著壁高（> heightDeltaM，用壁面顶点 z 跨度而非重心）；
+      minEdgeLenM 1.5 → 1.0（保留 hatch/panel 级边缘）；无数量上限
+      （Maus hull 18-20 条、turret 6-7 条全为真实结构边）。
+    - **detail-level grouping**：SVG 输出 <g class="vehicle-primary / vehicle-secondary /
+      vehicle-micro-detail">（classifyDetail：silhouette/tracks/mantlet/gun/大型 deck-roof → primary；
+      hatch/cupola/vents/engine deck plates/≥3m 边界 → secondary；小 hatch/小屋顶结构 → micro）。
+    - **asset-space 微噪声过滤**：minDetailUnits=0.3（320 viewBox units）+ sliver 判定
+      （宽高比 >12 且窄边 <0.15m 的退化狭长 polygon 剔除，如 turret 68×2.5 units 细条）。
+    - **fidelity 契约**：metadata.generation 增加 fidelity='high' / geometryScale='faithful' /
+      visibleDetailRetentionTarget=0.9（contract target，非测量值）；validator 对正式资产强制。
+    - **debug evidence 扩展**：all-visible-surfaces / retained-surfaces / removed-tiny-details /
+      feature-edges / final-high-fidelity + extraction-report 统计
+      （visible/retained/removed regions、edges、primary/secondary/micro path 数）。
+    - Maus 资产：hull.svg 11.1KB 82 paths（primary 48 / secondary 33 / micro 1）、
+      turret.svg 4.8KB 35 paths（primary 10 / secondary 24 / micro 1）；
+      甲板/glacis/后带/裙板 + 舱盖×3 + 前带 + 后带 + 履带 + 20 结构边；
+      turret 主体/环带/台阶带/cupola/16 屋顶面片块（真实模型凸起，归 secondary/micro）/mantlet/gun + 6 边。
+    - 测试：删除 edges 上限 / bump 显著性 / minDetailPx 相关用例，新增 tessellation 边剔除、
+      surface-edge 壁高、bump 分量判据、classifyDetail 分级、faithful scale（gun 宽度无夸大）、
+      fidelity 契约等 14 类用例——extractor 59 用例，全套 447 全绿。
+    - 32 行 spec 重写为 "Asset fidelity first. Runtime readability handled later."。
+  - **视觉表面合并 + 遮挡过滤（2026-08-18，Maus High-Fidelity Gate Blocker 1/2/4）**：
+    - mergeVisualSurfaces：model.glb 的 triangle tessellation / low-poly topology 按共享 3D 边 +
+      法线差 ≤20° + 高度差 ≤0.4m 合并为视觉连续表面——连续 roof/deck/环带斜面是一个/少量
+      polygon，绝不输出三角马赛克（Maus turret ring 61→6 表面、roof 297→34、deck 205→79）；
+      真实结构分离（height step / vertical wall / gap / strong normal break / isolated feature）
+      保持独立表面——hatch/cupola/台阶带/面板自然成为独立表面，删除 zMean 切斜面机制；
+    - filterOccludedSurfaces：俯视可见性顶层优先，被高处表面完全覆盖的 hidden geometry
+      （甲板下方的裙板固定件等）剔除（Maus hull 122→31 表面、turret 22→19）；
+    - Maus 资产：hull.svg 6.4KB 36 paths（primary 6 / secondary 6 / micro 24）、
+      turret.svg 7.2KB 24 paths（primary 7 / secondary 9 / micro 8）——
+      turret 屋顶单一连续区域（无面片块马赛克）、环带合并为两条、甲板/glacis/后带/舱盖/
+      cupola/侧裙板条等真实结构保留；
+    - extraction-report 增加 merge 统计（rawProjectedRegions / mergedVisualSurfaces /
+      tessellationRegionsMerged / retainedRegions / removedTinyRegions）；
+      小凸起保留/遮挡过滤/确定性/无旧 bump 色）——extractor 61 用例，全套 449 全绿。
+  - **fidelity correctness audit（2026-08-18，Blocker 1/2/3/4）**：
+    - turret 比例审计：models.pb turret bounding_box（引擎坐标 ±1.534 / -2.374..2.149 / -0.034..1.497）
+      与 turret_01 mesh bbox（模型坐标 ±1.534 / -3.519..1.004 / 2.106..3.638）长度一致（4.523m），
+      差 = turretOrigin；最终 SVG turret 主体 bbox 比例 1.469 vs source 1.474（误差 0.4%）——
+      纵向长度真实，无异常拉长（新增 bbox projection fidelity 测试锁定）；
+    - over-merge 审计：merge 边连续性统计（每 large surface 的合并边 maxDz/maxAng、
+      dz>0.15/ang>10° 计数）——Maus 主甲板平坦（z 2.12 恒定）、前/后带与环带均为连续斜面，
+      无跨真实结构边界合并（真实台阶隔垂直壁 → 顶面不共享边 → 天然分离）；
+    - feature-fidelity-report.json（developer-only）：按 z 带/相对位置/面积自动分类
+      top-view 结构类别（upper-deck/glacis/engine-deck/hatch/roof/ring 等），每类标记
+      detected/retained/面积/mergedInto/sourceBBox——glacis 7→3、engine 4→3、roof 1→1、
+      ring 6→3（被 roof 遮挡的面片块正确剔除），无大结构消失；
+    - source-vs-output debug：source-top-projection.svg（raw top-facing triangle projection，无 merge/无过滤——显示 source 三角化结构）/
+      merged-surfaces.svg / final-hull.svg / final-turret.svg；
+    - 新增测试：独立组件不合并、低噪声高度差合并、真实 deck step 不合并、
+      bbox projection fidelity、feature report 确定性——extractor 66 用例，全套 454 全绿。
+  - **fidelity audit 循环论证 / 硬编码修复（2026-08-18，Review Blocker 1/2）**：
+    - source-top-projection.svg 改为真正的 raw ground truth：每个 top-facing 三角形独立投影
+      （projectTopFacingPolygons，无 merge / 无遮挡 / 无过滤——显示 source 三角化结构，
+      Maus 808 个三角形 path）；旧实现误用 mergeVisualSurfaces 输出（循环论证）已修正；
+    - feature-fidelity-report 移除 Maus 专属硬编码 bounds：hull/turret bounds 由真实投影
+      计算（bounds2D(polyPoints)）传入；buildFeatureAudit fallback 从 source 几何推断
+      （无车型专属数值）；
+    - 新增 projectTopFacingPolygons 测试（top-facing 过滤/每三角形一 polygon/确定性）——
+      extractor 68 用例，全套 456 全绿。
+  - **Information-Loss Audit（2026-08-19，VISUAL_DETAIL_FIDELITY_INSUFFICIENT 取证）**：
+    - 从实际缓存 GLB（6929.glb）解析：37 mesh / 2 材质 / **8 张内嵌 WEBP 纹理**
+      （Maus_mtr：baseColor 2048² + normal 1024² + metallicRoughness 2048² + occlusion 2048²；
+      Maus_track_mtr：256²×4，baseColor 带 alpha）；全部 primitive 有 TEXCOORD_0/1、无顶点色；
+      整车 6,513 三角（BlitzKit 渲染 5,835；mask_01 为 mantlet 重复 mesh 且不在渲染层）；
+    - **几何 vs 纹理分辨率**：实测 texel 密度 hull 5.6mm / turret 3.7mm / tracks 1.8mm，
+      几何顶面中位 5-8cm（hull 最大单面 12.46 m²）——纹理携带 ~15-40× 更细信息；
+      grille/vent/panel line/engine-deck pattern/roof 刻线/机械件阴影 = 纹理独有；
+    - **真值渲染**：从 GLB 重建 320px 正交俯视（z-buffer + baseColor×AO×normal 着色）——
+      silhouette 宽高比 0.418 vs 真实 0.412；正上方可见 = hull 19.44 m² + turret 13.07 m² +
+      hull hide 0.24 m²（1.2%）+ turret hide 0.06 m²；**tracks 可见面积 0（完全被甲板遮挡）**；
+    - **320px 结构分解**：gt 边缘 3,041 px = silhouette 303（SVG 命中 71%）+ 部件色界 532（46.1%）+
+      内部细节 2,377（41.8%）；stage recall：raw 18.7% → merged 18.7% → occlusion 后 30.8%
+      → final 42.2%；纹理独有边缘占 69.2%（几何驱动仅 30.8%）；
+    - **可恢复几何损失定位**：① hide_elements 被收集阶段跳过（BlitzKit TankModel.tsx 源码确认
+      渲染整个子树，无 hide 过滤）——但贡献仅 1.7% 边缘；② tiny/sliver 过滤删除 41+ 条
+      真实长条（110.87×2.77 units ≈ 3.5m×8.7cm 甲板缘条，占车辆面积 13%，内含 15.5% gt 边缘）
+      ——最大可恢复项；③ 2D union 过绘（履带条顶视不可见、mantlet 区域 recall 0%）；
+    - **结论 GEOMETRY_ONLY_FIDELITY_LIMIT_REACHED**：几何-only 现实上限 ≈55-65%
+      （当前 42.2% + 全部可恢复项），无法达到 90% 目标；按指令不再用 geometry heuristics
+      假装恢复纹理信息，本轮不改 pipeline/不调 threshold；审计文档
+      docs/assets/tier-x-models/information-loss-audit.md + debug 渲染产物
+      （_textured-topview-320.png / _svg-raster-320.png / _audit-composite.png 供视觉复核）。
+  - **Phase A — geometry correctness cleanup（2026-08-19，A1/A2/A3）**：
+    - **A1 hide_elements 纳入**：collectTriangles 不再跳过 *_hide_elements* 子树（BlitzKit
+      TankModel.tsx 渲染整个子树）——collectNodeTriangles/groupRenderNodes 移入 extractor-lib
+      （可测试）；mask_01 等无关顶层节点仍由顶层名匹配天然排除（无名字黑名单）；
+      Maus hull 原始 top-facing 450→571、turret 358→383；
+    - **A2 sliver 规则替换为几何退化判定**：filterDegeneratePolys（自交 ring / near-zero 面积 /
+      bbox 窄边 <5mm 数值 sliver / 完全重合重复）——3.5m×8.7cm 真实甲板缘条保留
+      （旧规则按纵横比误删，审计 15.5% gt 边缘所在）；removedTinyRegions 0；
+    - **A3 视觉层改真实 z-buffer 可见性**：rasterVisibility（逐像素 z-buffer + 面内 z 插值 +
+      surface 级分组累计赢家像素）；tracks 顶视可见 0 → 不再画 2D union 深色条；mantlet/gun
+      只画顶视可见表面（mantlet 区域 recall 0%→40.9%）；结构边按沿线多点采样可见比例过滤；
+      silhouette 契约仍由完整几何 union 提供（metadata bounds 不变，pivot 不变）；
+    - **recall 重新评估**：旧 42.2% 含水分（track 条 +6.2pp + 过绘小件碰巧命中 ~9pp）——
+      无水分真实几何 recall ≈26.6% = 几何驱动 gt 边缘（937）的 86% 覆盖；旧值 42.2% 中
+      的过绘区域在 gt 中确认为被遮挡结构（z-buffer 赢家均为 hullMain/turretMain）；
+    - 测试：collectNodeTriangles/groupRenderNodes（hide 采集/mask 排除）、filterDegeneratePolys
+      （长条保留/数值 sliver/自交/重复/面积）、rasterVisibility（完全遮挡/部分可见/对齐/
+      groups/确定性）——extractor 82 用例，全套 470 全绿；Maus 资产重生成（hull.svg 78 paths
+      无 track 色、turret.svg 40 paths）。
+  - **Phase B — Maus-only texture-baked prototype（2026-08-19，Texture-Baked High-Fidelity）**：
+    - **texture-bake-lib.mjs**（新，纯函数）：bakeTopView（1280² 确定性正交俯视 z-buffer +
+      barycentric UV + wrap bilinear 采样 + MASK alpha test + baseColor×occlusion×normal-z
+      起伏 + 0.75 中性化）+ encodePng（手写 PNG，zlib）；无 dynamic light/shadow/gloss/
+      outline——所有视觉信息来自 GLB 真实几何+材质+纹理；
+    - **bake-tier-x-topview.mjs**（新 CLI）+ decode-webp.py（PIL 解码 WEBP，developer-only）：
+      GLB → 分组（含 hide）→ 6 张内嵌纹理 → hull/turret 独立 bake（640×640 physical /
+      320×320 logical，fit 与 extractor 严格一致 scale=31.1729 → turretPivot 不变）→
+      RGBA WebP + bake-report.json + debug 通道图（source-color/normal/ao）；
+    - **结果**：hull 30KB / turret 14KB（640² WebP，q90）；**bake recall 81.0%@thr18 /
+      93.7%@thr12 vs geometry-only 26.6%**（同阈值同 gt）——明显突破 geometry ceiling；
+      区域：hull 86.2% / turret 64.8% / mantlet 80.3%；
+    - **装饰检查 STRUCTURAL_TEXTURE**：Maus baseColor 中性基础贴图（饱和度 mean 0.071、
+      >0.25 像素仅 0.4%、无迷彩/徽章/文字）——可直接使用，bake 仍 0.75 去色双保险；
+    - **prototypes/maus/**（入库小文件）：hull-high-fidelity.webp / turret-high-fidelity.webp /
+      reference-topview.webp / bake-report.json（含 recall/装饰分析/资产大小）；
+    - **QA 页对比区**：admin preview 增加 A(geometry SVG) / B(texture bake) / C(reference)
+      三列对比 + 320/128/64/28/24/20 尺寸档（仅 maus 显示；主包不受影响）；
+    - 测试：UV 插值/采样确定性/alpha cutoff/z-buffer topmost/hull-turret 分离/pivot 不变/
+      透明背景/稳定 hash/纹理缺失受控/无网络——texture-bake 13 用例，全套 483 全绿；
+    - **Gate 判据待 ChatGPT review**：fidelity 81-94% 达 >=85% 目标区间，但 turret 区域
+      （64.8%）与 precision（65-68%）仍需视觉复核；prototype 未冻结为正式资产契约。
+  - **bake pipeline 泛化 + 正式契约迁移（2026-08-19，TEXTURE_BAKE_PIPELINE_NOT_GENERALIZED）**：
+    - **产品契约更新**：正式定义为 "Source-faithful PBR top-view asset"——geometry proportions
+      faithful、geometry detail 上限 = BlitzKit/WoTB LOD0 source、visual fidelity 由 source PBR
+      （baseColor/normal/occlusion/alpha）恢复；删除"恢复高精度 geometry / ≥90% geometric
+      retention"等误导表述（90% 仅作 visual comparison QA，不再描述为 geometric detail retention）；
+    - **泛化 bake CLI**：移除 hardcoded root/节点推断——数据驱动（tanks.pb + models.pb +
+      mapping.js）：selectDefaultModules（turrets/tracks/guns 数组最后，BlitzKit tankToDuelMember
+      语义，不假设 turret_01/gun_01）、resolveBakeScenes（turreted/turretless contract）；
+      decodePb/mapGet/proto 共享到 extractor-lib（extractor CLI 与 bake CLI 复用）；
+    - **turreted contract**：hull.webp（hull+tracks）+ turret.webp（selected turret+mantlet+gun）
+      独立 z-buffer/bake；turretPivot 由 models.pb turretOrigin 投影（与 extractor 同公式）；
+    - **turretless contract**：ho-ri 单 hull.webp（casemate，gun 全部 bake 进 hull），无 turret
+      layer/pivot；grille-15 为 limited-traverse 炮塔 TD（BlitzKit models.pb turret yaw ±65°
+      权威数据）→ turreted visual layer（同 minotauro/xm66f ±45°）；kind 判定以 BlitzKit 数据
+      为 source of truth（yaw 无限制/null=全旋转、±45°~±65°=limited turret、±7°=casemate）；
+    - **PBR 检查**：metallic/roughness 纹理存在但顶视中性 bake 无 specular → 报告后不加入（§5）；
+      输出保持 0.75 去色 + 保留纹理结构（grille/panel/vent/AO/relief）；
+    - **正式资产契约迁移**：assets/<modelKey>/{hull,turret}.webp + metadata.json + bake-report.json
+      （640×640 physical / 320×320 logical）；types/validator/preview/tests 全部同步；旧 SVG 仅
+      debug（extractor CLI 默认输出 gitignored 缓存）；sample/prototypes 目录删除；
+    - **representative batch（8 辆）**：Maus/Leopard 1/Grille 15/Ho-Ri/Minotauro/XM66F/FV4005/
+      Sheridan 全部生成并通过 validator——turretless 无 turret.webp/pivot；pivot 各异（含非中心
+      160.28,163.22）；hull 15-35KB / turret 11-25KB；全部 6 张纹理采样；
+    - 测试：selectDefaultModules（数组最后/缺 model_id 报错）、resolveBakeScenes（alternate
+      模块排除/turretless gun 进 hull/无 display name 依赖）、webp 契约、turretBounds 排除
+      mantlet——全套 487 全绿；build/分离/validator ALL PASS。
+  - **contract cleanup + bulk generation（2026-08-19，TEXTURE_BAKE_PIPELINE_GENERALIZED = PASS 后）**：
+    - **source 字段语义修正**：`source.collisionModel` → `source.modelGlb`（该 URL 是视觉
+      model.glb，非 collision.glb）——schema/types/validator/baker/tests/docs 全部同步；
+      不保留 compatibility alias（PR 未发布）；
+    - **过时 wording 清理**：types.js / validator / README / spec 中 "geometry-source schema"、
+      "所有正式车型 SVG" 等已过时描述修正为 Source-faithful PBR top-view WebP asset 契约；
+      `visibleDetailRetentionTarget=0.9` 保留但明确为 visual QA target（非
+      geometric-detail-retention guarantee——几何上限 = BlitzKit/WoTB LOD0 source）；
+    - **bulk generation**：全部非 confirmPending baseModelKey（78 辆）确定性生成正式资产
+      （data-driven：tanks.pb + models.pb + mapping.js → selected modules → model_id → GLB nodes）；
+      失败逐辆记录（modelKey/tankId/modules/nodes/stage），修通用 pipeline 不跳过；
+    - **pending 保留**：spht / ac-teichos / nc-70-blyskawica 维持 confirmPending=true 不生成。
+  - **raster overflow contract（2026-08-19，RASTER_GUN_CLIPPING 修复）**：
+    - 根因：baker 沿用 SVG 时代 "fit = hull + turret body、gun allowed overflow"——SVG 可
+      overflow visible，但 WebP/raster 不存在 overflow，长炮管超出固定 640×640 后被永久裁切；
+    - 实测（representative 8 辆）：gun 超出 logical canvas——maus top+19.6u（39px）、
+      leopard-1 +75.5u（151px）、grille-15 +211.9u（424px）、minotauro +129.6u、xm66f +199.3u、
+      fv4005 +48.7u（sheridan 无 clip；ho-ri turretless 单 hull fit 已含 gun）；
+    - **修复**：hull.webp 固定 640×640（320 logical）；turret.webp 画布 = turret+mantlet+完整
+      gun 的 logical bounds（同一 fit.scale，主体不缩放；透明 canvas 向 320 画布外扩展）；
+      metadata 新增 `turretRaster`（logicalMinX/Y、logicalMaxX/Y、pixelWidth/Height、
+      pivotX/pivotY——pivot 相对 turret.webp 原点的逻辑坐标）；types/validator/preview 同步
+      （turret 层按 raster 原点定位 + raster 内 pivot 旋转）；
+    - 验证：grille-15 turret.webp 160×1010（原 640 裁掉 424px 炮管）、xm66f 325×846、
+      minotauro 230×757——全部含完整炮管；hull 保持 640×640；validator/tests/build PASS。
+  - **turretRaster schema 去重（2026-08-19，PR2 runtime contract）**：
+    - 删除 `generation.turretRaster`（重复内容）——authoritative runtime geometry contract
+      只保留顶层 `metadata.turretRaster`（PR2 用顶层做 asset positioning / transform-origin；
+      generation 只保存生成审计数据）；baker/types/validator/69 辆 turreted metadata/tests/docs
+      全部同步（deterministic regeneration）；
+    - validator 新增：generation 内出现 turretRaster → FAIL（防 schema 漂移）；
+      turretRaster.pixelWidth/pixelHeight 与实际 turret.webp 尺寸一致（解析 WebP 头）；
+      pivotX/pivotY 落在 image-local raster bounds 内；turretPivot 与 raster 数学映射一致
+      （pivot = logicalMin + image-local pivot，容差 0.11）；
+    - 验证：69 turreted 全部迁移成功（top-level turretRaster=69、generation 残留=0）、
+      9 turretless 未受影响；validator ALL PASS；490 tests PASS（+3 schema 漂移用例）；
+      build + bundle separation PASS；CI（7047ebd）6/6 PASS。
+  - **review-with-docs 清理（2026-08-19）**：
+    - 删除真死代码：extractor-lib `bumpsToSvgPaths` / `minSvgUnits`（bump 概念删除后残留、
+      全仓零引用）、types.js `GENERATION_METHOD_EXTRACTION`（lib 硬编码字符串，常量零引用）；
+      保留假死项：convexHull2D / hullToPath / filterOccludedSurfaces / toSvg（extractor.test 锁定语义）；
+    - preview QA 区 A 列 hull 旋转 origin 修正为画布中心（原误用 turret pivot）；
+    - i18n：adminPreview 补 `protoSize` 三语、删除死 key `sample`/`sampleNote`、hint 更新为
+      Source-faithful PBR WebP 描述（zh/en/ru 同步）；
+    - DEVELOPER_GUIDE：QA 页描述与文档索引更新（SVG 全局规范 → 车型资产全局规范）；
+    - current-plan 状态更新为 PR1_NON_PENDING_ASSET_MILESTONE_READY。
+  - **kind 全量核验**：遍历全部 81 baseModelKey，不采用 BlitzKit TURRET module / turretRotationSpeed（casemate 也有 turret module 且转速非零，不可判）；以官方 tankopedia 描述 / fandom wiki / 结构知识逐组核验并修正 3 项——minotauro → turreted（fandom：有炮塔约 45° 限位）、foch-155 → turretless（fandom specs turret=no）、xm66f → turreted（官方：non-fully-rotating turret 前置炮塔）；无法可靠确认的 3 辆（spht / ac-teichos / nc-70-blyskawica）标记 confirmPending（contract 未冻结，第一批不生成）；tier-x-inventory.md 增加全量 kind 核验依据列与修正记录。
+  - **turretPivot 旋转数学修正**：预览页不再用 translate 平移近似（旧实现旋转轴实际在 pivot 的镜像点 2C−P）；新增 frontend/src/vehicle-models/pivot.js——img 与 320×320 viewBox 1:1 对齐，transform-origin 直接用 pivot × renderScale，rotate 以 origin 为不动点；pivot.test.js 数学断言非中心 pivot 在 0°/90°/180°/270° 下不动（7 用例）；sample 改非中心 pivot (160,150) 证明实现支持任意 pivot；pivot debug marker 与旋转轴同源坐标。
+  - **admin preview 懒加载**：App.vue 静态 import 改为 defineAsyncComponent 动态 import → preview 与全部车型 QA 资产（import.meta.glob）进入独立 chunk，普通用户主 bundle 不含车型资产；新增 scripts/check-bundle-separation.mjs 构建后检查（主入口无 vehicle-models/assets 标记 + 存在独立 preview chunk）。
+  - **预览溢出 QA**：.vmp-canvas overflow:hidden → visible（长炮管可超出统一 viewBox 可见；仅视觉显示，不影响后续 collision/hitbox contract）。
+
+### Changed
+- **战局回放地图标注（纯前端临时标注）**：新增 `frontend/src/utils/annotation.js` 纯函数模块
+  （8 色色板/粗细范围常量、`screenToSemantic` 屏幕→语义坐标、`rectFromCorners`/`circleFromCorners`/
+  `arrowHeadPoints`/`polylinePoints` 几何归一与渲染换算、`applyEraser` 橡皮擦点擦（pen 删点拆段、
+  形状/文字整件擦）、`commit/undo/redo` 全量快照 undo/redo（`UNDO_LIMIT=100`））；`mapView.js`
+  `createMapView` 新增 `fromX/fromY` 逆映射；`BattlePlayback.vue` 新增标注工具栏与 SVG 标注层
+  （语义坐标锚定，随 viewport transform 缩放/平移），绘制走 `onPointerDown/Move/Up` 门控
+  （选工具时单指绘制、未选工具保持原浏览交互；绘制中车标 pointer-events 关闭、双指捏合保留），
+  文字标注用临时输入框（Enter/blur 提交、Esc 取消、committed 幂等）；切文件 `watch(overview)`
+  重置、切视图 v-if 卸载清空。新增 `utils/mapView.test.js`（往返映射）、
+  `utils/annotation.test.js`（20 用例）与 `components/BattlePlayback.annot.test.js`
+  （8 用例，真实 vue-i18n 三语）。三语文案 `recon.map.playback.annot.*`。
+- **AI 复盘复制按钮随视角固定 + 复制内容带网站宣传**：`AnalysisResultPanel` 面板头部 `position: sticky` 吸顶（滚动页面时复制按钮保持在右上角可视区）；复制内容末尾追加一行 `recon.copy_footer`（三语，默认「由 WotBTools 生成 · https://wotbtools.com」）。
+- **AI 复盘提示词去重与契约（prompts 重构）**：AiPromptLibrary 支持 {{key}} 占位包含（递归展开、循环包含 fail loud），player×3 + team/single 中逐字重复的五块公共规则抽到 prompts/common/{tank-noun,language,damage-semantics,hp-loss,evidence-logic}.zh.md 复用，展开后提示词与重构前字节一致；修复两处 md 与 Java 常量漂移（COMMON_EVIDENCE_LOGIC_RULE 机器标签清单缺「簇/候选/规则候选」、team 身后输出规则 **禁止** vs <b>禁止</b>）——此前 EN/RU .replace 锚点静默失效，EN/RU 复盘会残留中文规则段；新增 PromptRuleContractTest 强制「展开后 ZH 片段与常量逐字一致 + EN/RU 无中文残留」契约。
+- **AI 复盘血量口径：进场满血 provenance + fail closed**：真实回放 probe（EntryHpProbeTest，7 样本）证伪「整场 max current HP = 初始满血」——绝大多数车辆首个 positive 样本与首次受击同刻且低于 tankopedia base。新增 EntryHpSource（OBSERVED_EXACT / BASE_FALLBACK / UNKNOWN）与 PlayerResult.entryHp/entryHpSource：仅「严格早于首次受击且 ≥ base 的样本」证明进场满血；掉血窗口分母 damageVsEntryMaxHpPct 只允许已证明进场满血或 tankopedia base（BASE baseline），短窗高额伤害窗口判定 fail closed（base baseline 不判 critical，避免 1900 / 观测2500 / 真实2600 误报）；Call #1 赛前血量同样只输出已证明进场满血或 base（战斗中观测的 currentHp 不得冒充赛前进场满血）；HP_LOSS_TIME_RULE（ZH/EN/RU）与 prompts/common/hp-loss.zh.md 措辞同步；observedMaxHp 保留为「观测最大 current（下界 base）」供总血量条/血量优势证据。
+- **文档信息架构归一化重构（docs IA）**：docs/ 从平铺 16 个 md 重构为 architecture / features / research / operations / reference 分层；新建 `docs/README.md` 索引与 `docs/ROADMAP.md`，删除 TODO.md / rating-progress.md（完成项归 CHANGELOG，未完成工程项转 GitHub Issues #78–#81，产品方向转 ROADMAP）；DEVELOPER_GUIDE 拆分为开发入口 + 专题文档（AI 复盘 / 回放重建 / 地图鸟瞰 / 评分 / 排行榜）；research/replay 逆向文档 verdict 置顶、状态词统一 PROVEN/PARTIAL/UNKNOWN/SUPERSEDED/DEPRECATED；全仓库旧路径链接与代码注释同步修正。纯文档变更，不影响代码与构建。
+- **Agent 指令体系分层（AGENTS.md hierarchy）**：新增根 `AGENTS.md`（自动发现入口）与 8 个按作用域
+  继承的目录级 `AGENTS.md`（java/frontend/common/deploy/.github/两个 keycloak provider/map-semanticizer），
+  内容全部经真实代码/构建/CI 核对；`.agents/AGENTS.md` 收敛为 repository-wide 硬约定（115→39 行），
+  修正与代码漂移的条目（tankopedia tier 四文件、八服务开发环境、AiReplayAnalysisService 为兼容 facade、
+  remote 命名等）；`.agents/wotb-sync.md` 收敛为指向 `skills/wotb-sync/SKILL.md` 的指针（单一事实源）；
+  DEVELOPER_GUIDE 文档地图补充层级说明。纯文档变更，不影响代码与构建。
+
+### Fixed
+- **turretPivot 独立验证 matrix traversal 修复（PR92 Review B1 第三轮）**：
+  verify-pivot-independent.mjs 曾各自实现一套 collectVerts，且**漏乘 node 自身 TRS**
+  （mesh 只应用 parent matrix；nodeMatrix 只乘给 children）——与
+  extractor-lib.mjs::collectNodeTriangles 语义不一致（真实 GLB 节点 TRS 全为 identity，
+  未暴露，但语义错误）。修复：**extractor-lib.mjs 新增 collectNodeVerts**（与
+  collectNodeTriangles **同一 hierarchy 语义**：worldMatrix = parentMatrix · nodeLocalMatrix，
+  node 自身 TRS 乘入后作用于自己的 mesh，children 递归传 worldMatrix），verify 脚本改用
+  单源函数，删除本地两套 traversal；新增 **synthetic 非 identity TRS 测试**（4 用例）：
+  parent T(1,2,3)·Rz90°·S(2,1,1) 自带 mesh 单点 [1,0,0] → 期望 (1,4,3)（自身 TRS 作用于
+  自己 mesh）；child 再乘 T(0.5,0,0)·S(1,2,1) → (0.5,2,0)→(-1,3,3)（parent+child 合成）；
+  三级嵌套 P·C·G → (-1,7,4)；与 collectNodeTriangles 同树顶点一致。
+  **bottom turret-ring anchor 落地（方案 A）**：verifier 新增可复现输出——turret_01 子树
+  底部带（z∈[minZ, minZ+0.2]）顶视质心 vs pivot 模型坐标距离（68/72 台可计算；grille-15/
+  nc-70 战斗室底部顶点不足、e-50-m/felice 同理为 n/a）：median 0.217m（t57-heavy 0.019m /
+  m-vi-yoh 0.010m / fv215b-183 0.004m / ac-teichos 0.073m / minotauro 0.075m / xm66f 0.079m），
+  个别大偏差（bzt-70 1.27m / carro-45t 1.07m）由底部带含 *_hide_elements_switch* 替代网格
+  （nc/skin 网格位于车尾，属渲染子树的一部分）拉偏——ring anchor 仅作几何佐证不作为判据，
+  pivot 正确性由 scene-graph 反推（err≤0.0002m）+ turret_origin.y ≈ GLB 炮塔底部 z 保证。
+  6 台代表车重新执行：全 PASS（TRS 全 identity；yaw 0/90、grille 0/65、nc-70 0/10、
+  minotauro 0/45 含 initial pitch=3° err=0.0291m）。
+- **turretPivot 参考系反推验证（PR92 Review B1 第一轮，真实几何证据）**：新增
+  frontend/scripts/verify-turret-pivot.mjs（developer-only，CI 不执行）——对每个 turreted 车型
+  用 GLB 真实旋转层几何（= bake 的 turret 场景：turret + mantlet + gun，这才是 marker 里实际绕
+  turretPivot 旋转的视觉层）复刻 BlitzKit useTankTransform 运行时公式，构造 yaw=0°/90° 两个姿态，
+  垂直平分线最小二乘反求唯一 2D rotation center，与 metadata.turretPivot 比对：
+  **全 72 turreted 车型 err=0.0000m**（含 3 辆 confirmPending 新确认车；minotauro 含
+  initial_turret_rotation pitch=3° 完整复刻 err=0.0249m < 0.1m 阈值）。
+  ⚠️ 评审指出该验证是数学 tautology：待验证的 c 被用作生成 yaw 样本的旋转中心，反推必然
+  得 c——只能证明 transform 自洽，不能证明 pivot 正确；且"偏后"被归因于测量脚本轴映射 bug
+  而未复现视觉差异。**第一轮脚本已删除，由第二轮独立验证取代（见下条）**。
+- **turretPivot 独立几何验证（PR92 Review B1 第二轮，修复循环证明）**：新增
+  frontend/scripts/verify-pivot-independent.mjs——**待验证的 metadata.turretPivot /
+  computeTurretModelPivot 结果不参与生成 yaw 样本**；数据流为：GLB 原始旋转层顶点（模型坐标，
+  yaw=0 装配姿态）→ 逐行复刻 BlitzKit useTankTransform.ts scene graph（turretContainer.position =
+  R_z(yaw)(-(hullOrigin+turretOrigin)) [+initial axis-angle] + hullOrigin+turretOrigin；
+  rotation = Euler(initialPitch, initialRoll, yaw+initialYaw)，XYZ 序；origins 直接取自
+  models.pb 原始数据）→ 构造 yaw=0° 与 yaw=限位内角度两批 world positions → 只根据
+  world positions 垂直平分线最小二乘反推 rotation center → 最后才经 bake-report.fit 反投影
+  与 metadata.turretPivot 比对：**全 72 turreted 车型 err≤0.0002m**（grille-15 用 0°/65°、
+  nc-70 0°/10°、fv215b-183/xm66f/minotauro 0°/45°——yaw 限位自动读取）；**minotauro 真实包含
+  initial_turret_rotation（pitch=3°）完整复刻，err=0.0291m 原值报告**（pitch 使顶视投影非纯
+  2D 旋转，属物理效应非 pivot 偏差，不放宽阈值）。
+  **B1 视觉"偏后"根因（独立证据链）**：① pivot 数值正确——scene-graph 独立反推 err≤0.0002m，
+  且 GLB 炮塔底部环带中心与 pivot 吻合（bottom turret-ring anchor 已由 verifier 实现并输出，
+  见第三轮条目；Maus 0.218m / fv4005 0.110m / t57-heavy 0.019m / m-vi-yoh 0.010m）；② 视觉偏差来自
+  **turret.webp 的 raster
+  overflow contract**：图像包含完整炮管（Grille 15 炮管占图像上部 60%+），turret.webp 非透明
+  像素质心被炮管拉前，而座圈（红圈）在炮管根部、位于图像中下部（Maus 74.2% / Grille 15 85.6%）——
+  **红圈相对炮塔图像视觉质心偏"下"（后方）0.3m（Maus）~ 2.4m（Grille 15）**，炮管越长的车越
+  明显，"有些车没问题"（t57-heavy 0.02m / fv4005 0.04m / nc-70 图像仅炮盾+炮管、座圈居中）——
+  与人工 QA 反馈完全吻合；③ **QA 页 proto cell 真 bug**：bakeHullLayerStyle 的 transform-origin
+  写死 160px 未随 protoSize 缩放（protoSize≠320 时 hull 绕盒外点旋转，车体视觉漂移被误读为
+  pivot 偏后）——已修复（随 protoSize 缩放，与 turret assembly 同构）；④ QA 页新增"炮塔视觉
+  质心"青色参照标记（checkbox 开关，i18n 三语），人工 QA 对照红圈即可确认座圈落在炮塔主体上
+  = 正确，偏后量 ≈ 炮管占比效应。
+  **结论：pivot 数值不变（独立验证证明正确），修复 QA 页 proto cell 旋转中心 bug + 增加视觉
+  质心参照；全部 81 资产无需重新生成。**
+- **AC Teichos / NC 70 Błyskawica kind 确认 + 解除 confirmPending（PR92 Review B2）**：
+  经 BlitzKit 真实模型数据逐车确认 turreted——AC Teichos（22129）：GLB turret_01（631+1540
+  顶点）+ gun_01 + gun_01_mask、models.pb turret 模块无 yaw 限位；NC 70 Błyskawica（19585）：
+  GLB turret_01 为 1-triangle stub（casemate 主体在 hull_nc_01，属 hull 层；旋转层实际 =
+  gun_01 + gun_01_mask）、models.pb turret 模块 yaw ±10° limited-traverse（同 grille-15 处理）。
+  mapping 移除 confirmPending → **81/81 正式资产齐备（confirmPending=0）**；两车已 bake 并
+  通过 pivot 反推（err=0.0000m）；inventory/README/runtime 测试同步（runtime 不再有
+  confirmPending 分支）。
+- **dedicated 车型阵营视觉（PR92 Review B3）**：VehicleMarker 增加稳定 team token——
+  dedicated 渲染时 .pb-graphics 容器加 pb-graphics-dedicated 类，配合 marker 级
+  pb-friendly / pb-enemy 状态类输出友军暖橙（rgba(255,166,77)）/敌军冷青（rgba(64,192,255)）
+  双层 drop-shadow halo；纯 CSS 视觉层——不改纹理/不增第二资产集，不影响旋转、阵亡灰阶、
+  红 ✕、selected、recorder 与 generic 路径；新增 4 个组件测试（友/敌类名 + halo filter + generic
+  无 halo）。
+- **turretPivot source-of-truth（PR92 Review，BlitzKit useTankTransform 契约）**：baker 此前只用
+  tankModelDefinition.turret_origin 计算 pivot；官方运行时（packages/website/src/hooks/useTankTransform.ts，
+  已核对源码）的炮塔 yaw 旋转中心 = correctZYTuple(trackModelDefinition.origin) +
+  correctZYTuple(tankModelDefinition.turret_origin)。修复：selectDefaultModules 同时取得选中
+  track 的 origin（hullOrigin），baker 用 computeTurretModelPivot（向量和）计算 pivot；
+  bake-report 记录 pivotSource（engine origins + modelPivot）供不变量测试与审计。当前 BlitzKit
+  数据中 81 组 track origin 均为空（已与 live API 核对），hullOrigin=0 → 数值不变，但契约已
+  显式建模并有测试守护（B21：Maus/Grille 15/Leopard 1/FV4005/前置炮塔 type-71/后置炮塔 fv215b
+  + 全量 turreted 回归：metadata.turretPivot === fit(project(hullOrigin+turretOrigin))）。
+  initial_turret_rotation（仅 minotauro pitch=3 度）只影响初始朝向角与小幅修正，
+  不影响顶视 pivot——单测证明公式不消费该字段。
+- **SPHT（29985）kind 确认 + 解除 confirmPending**：经 BlitzKit 数据确认 turreted（GLB
+  turret_01 + gun_01 + gun_01_mask；models.pb turret 模块无 yaw 限位、turret_origin 存在）→
+  mapping 移除 confirmPending、生成正式资产（第 79 个）、inventory/README 同步；
+  runtime 测试更新（spht resolve 出正式资产；confirmPending 仅剩 ac-teichos / nc-70-blyskawica）。
+- **PR #92 Review 修复（2026-08-19）**：
+  - **marker transform-origin 坐标系修正（Blocker 1）**：markerTurretImageTransform 此前把
+    turretRaster.pivotX/pivotY（image-local pivot）错误除以 VIEWBOX=320 当 marker-global
+    坐标；改为相对 turret image 自身盒（origin% = pivot / (pixelWidth/2|pixelHeight/2)），
+    与 PR91 QA 页 px 数学同构；新增数学不变量测试（Maus + Grille 15 × H=0/90/180/270 ×
+    T≠H：复合位置 = turretRingPosition）。
+  - **runtime module-lifetime cache（Blocker 2）**：preloadBattleModels 增加 modelKey 级
+    cache（成功复用 / 失败页面生命周期内不重试 / 并发共享 in-flight Promise / 异常按失败
+    缓存）；测试重构为 vi.resetModules 隔离 + cache 1–8 用例。
+  - **阵亡 ✕ 视觉（追加需求 A）**：pb-death 白色 16px → 红色 #ff4d4f 22px/800、z-index 6、
+    多层描边——深/亮背景可读，与 last-known（淡化无 ✕）区分明显；三渲染路径一致。
+  - **QA 页 selected 指示器（追加需求 B）**：白色圆环绕画布边缘 → 红色 #e5484d 倒三角
+    （车辆正上方、z-index 6、drop-shadow），任意背景/车型/旋转角可见，不被图层遮挡。
+- **PR2 — Dedicated Tier X Models in Battle Playback（2026-08-19）**：
+  - **VehicleMarker 正式组件**（frontend/src/components/VehicleMarker.vue，计划 §17）：从
+    BattlePlayback.vue 抽出正式单车 marker（generic / dedicated turreted / dedicated turretless
+    三条渲染路径）；dedicated turreted = hull 满盒绕中心旋转 + turret assembly 嵌套 transform
+    （父层 rotate(H) around 盒中心、子层按 turretRaster 百分比定位绕 image-local pivot 旋转
+    T-H，数学统一在 pivot.js marker*Transform，含单测）；generic 保持原双层 PNG 行为不变；
+    marker 内部样式随组件迁移（父组件 scoped 不作用于子元素）。
+  - **生产 runtime 资产解析**（frontend/src/vehicle-models/runtime.js，计划 §12/§13/§18）：
+    tankId → modelKey → 正式资产（Vite 静态 URL + metadata）；战局级 preload——只预加载本场
+    实际出现的 Tier X（dedupe 同 modelKey 一次），3s 超时/失败 → 单车 generic fallback
+    （confirmPending/未知 tankId 直接 generic）；current-page cache（模块生命周期）；
+    动态 import 保持主 bundle 分离（check-bundle-separation 门禁通过）。
+  - **BattlePlayback 集成**（计划 §14/§15/§16）：view model 扩展（model/markerStyle/ariaLabel）；
+    preload 完成前不渲染车辆（禁止 generic 闪现后替换）；turretless 无 fake turret layer；
+    方向/阵亡冻结/最后已知沿用现有可信数据与插值（不伪造朝向）；非 Tier X 继续 generic。
+  - **i18n/版本**：versions.json v2.11.18 + CHANGELOG-PRODUCT（用户可见：Tier X 专属模型）。
+- **Tier X 车型资产 PR91 Review 修复（2026-08-18，5 blockers + 1 engineering gate）**：
+  - **RASTER_Y_AXIS_CONTRACT（raster 方向契约）**：`texture-bake-lib.mjs::bakeTopView` 投影
+    此前用 `pixelY = (modelY - minY) * scale`（model +Y → 图片下方），与 logical 契约
+    （`logicalY = -modelY * scale + ty`，model +Y → screen up）不一致；turretRaster.pivotY
+    指向的像素与 WebP 内真实座圈行镜像偏差（Grille 15：metadata pivot 像素 alpha=0 为空，
+    真实座圈行有覆盖）。修复：raster projection 层做 Y flip（`pixelY = (bounds.maxY - modelY) * scale`）
+    ——正式 WebP 与 logical 坐标同一坐标系，hull/turret 同一 orientation，0° = 车头/炮管朝 12 点，
+    turretRaster.pivotX/pivotY 指向 WebP 内真实座圈像素；bake-report 新增 `rasterOrientation`
+    指纹（topModelY/topRowCovered/topWidthMean 等，从实际 baked rgba 计算）；新增方向测试
+    （非对称三角形 +Y 在上方、Grille 15 炮口 +8.04 贴 turret.webp top、Maus/Leopard/Grille/FV4005
+    orientation regression、全部资产 hull top = forward 端）；新增 developer 工具
+    `scripts/check-webp-orientation.mjs`（PIL 解码真实 WebP 与 bake 指纹逐项比对 + pivot 像素覆盖）；
+    78 个正式 WebP + metadata/bake-report 全部确定性重新生成（禁止人工 patch 单车）。
+  - **OFF_CENTER_TURRET_HULL_COMPOSITION（偏心炮塔合成）**：`pivot.js` / QA 页此前把 turretPivot
+    当作 hull 旋转后固定不动的 screen point（仅 transform-origin 单层旋转），非中心炮塔
+    （Grille 15 P=(160.1,220.36) 等）hull 旋转时座圈脱离车体。修复：嵌套 transform——turret
+    assembly 父层 `rotate(hullWorldDeg)` around 车辆中心 C（座圈 P' = C + rotate(P-C, H)），
+    turret image 子层 `rotate(turretWorldDeg - hullWorldDeg)` around image-local pivot
+    （raster.pivotX/pivotY），最终 world yaw = authoritative turretWorldDeg；QA 页红色 pivot
+    marker 显示旋转后真实座圈位置；pivot.test.js 重写（H/T = 0/0、90/0、90/90、180/45、270/10
+    × Grille 15/Maus/FV4005/Leopard-1：座圈移动 + world yaw 合成断言）。
+  - **desaturate 参数语义反向（Blocker 3）**：`neutralize` 文档声称 amount=去色强度（0=原色，1=纯灰）
+    但实现为 `luma*(1-amount) + rgb*amount`（amount=1 反而保留全部原色）。修复：公式改为
+    `rgb*(1-amount) + luma*amount`，`DESATURATE` 0.75 → 0.25——视觉数学等价
+    （仍是 75% 原色 + 25% luma，像素不变），字段名与文档不再撒谎；tests/metadata/bake-report/docs 同步。
+  - **authoritative docs 收敛（Blocker 4）**：`docs/assets/tier-x-models/README.md` 与
+    `svg-generation-spec.md` 正式契约只描述 WebP asset（hull.webp/turret.webp/metadata.json/
+    bake-report.json，顶层键 modelKey/kind/source/turretPivot/turretRaster/generation，
+    method=blitzkit-model-topdown-texture-bake）；旧 hull.svg/turret.svg/extraction method/
+    SVG detail grouping/顶层 5 键/_hide_elements 排除 等旧说法全部移入「Legacy/debug extractor」
+    章节，不再称为正式资产契约。
+  - **bundle separation 进 CI（Engineering Gate 5）**：`ci.yml` frontend job 在 `npm run build`
+    后新增 `node scripts/check-bundle-separation.mjs`（主入口不含 vehicle assets + QA 资产在
+    独立 async chunk）。
+- **PR91 review-with-docs 闭环（2026-08-19）**：隐藏 QA 页 QA 对比区全部文案 i18n 化
+  （adminPreview.qaTitle/qaLabelA-C/qaDevOnly/qaReport，三语同步 28 keys）；validate.js 头部
+  设计注释更新为正式 WebP 资产契约（旧 hull.svg 说法移除）；docs/README 索引措辞改为
+  WebP bake；current-plan 执行状态更新为两轮 Review 闭环；check-webp-orientation 临时文件
+  清理 + decode-webp.py usage 修正；bake 指纹 alpha 阈值注释。纯代码质量/文档层变更，
+  无用户可见行为变化（versions.json 不新增条目）。
+- **AI 回复「簇」字确定性兜底全链路（权威 proper noun 保护）**：复盘正文（analysis）此前没有字符级兜底，LLM 输出「簇」会原样透传；新增 wotb-core `ClusterTermSanitizer`（簇拥→聚集、簇状→集群状、一簇→一批、同簇/成簇→集群、分簇→分散、主力簇→主力集群、多簇→多股、剩余「簇」→「群」，复用 `PreBattleSectionRenderer` 原有替换表），`AiReplayReviewService` 在 `correctTankNames` 后对 analysis + preBattleSection 两段统一应用，并保护权威 proper noun（roster 昵称 / 权威坦克名）原样保留（合法昵称如「星簇」不会被改写成「星群」）；赛前预测渲染路径同步改调共享 helper；新增 `ClusterTermSanitizerTest` + 服务层集成测试。契约：AI 生成的内部术语「簇」确定性转换，权威玩家昵称/车辆名称保持原样。
+- **战局回放敌方车标「位置流中断后重新上报不恢复」根因修复（后端区间生产）**：MapOverviewBuilder.positionIntervals 把 EntityLeave(type-4) 当作单个硬截断点导致漏洞——同一实体位置流中断后重新上报（gap ≤ 5s）会被 gap 聚类吞掉、整个 run 被 leave 截断，前端 positionCoveredAt 永假、车标一直淡化；改为「每次 EntityLeave 都是 coverage 的 hard segment boundary」——leave 强制关段、leave 后第一条 position 无论 gap 大小都开启新 interval，deathSec 最后 clamp。新增 MapOverviewBuilderPositionIntervalsTest（2s/10s 重新上报、多次 leave 周期、leave 早于首点、无 leave gap 分段、deathSec 前/后重新上报共 7 用例）+ 前端「两段区间重新上报恢复不透明」回归；此前 2.11.11（positionAt 精确采样点）/ 2.11.12（lastKnown=!covered）均为前端修复，本修复补齐后端。
+- **AI 复盘坦克名幻觉（Kranvagn 被写成「埃米尔1951」）**：生成侧 LLM 幻觉把玩家坦克名写成
+  中文译名/相似车（EMIL 1951 与 Kranvagn 共用原型底盘）且保持全文；证据/结算层无 bug（tankId →
+  tankopedia 权威映射未变）。修复：① wotb-core 新增确定性后校验 TankNameCorrector——R1 昵称
+  锚定纠正（坦克名（昵称）/ 昵称（坦克名）/ 「的」所属式，与 roster 权威名不一致即替换）、
+  R1+ package 级两阶段传播（同一 AI Review 的 analysis 与 preBattleSection 视为一个
+  correction package，Pass 1 跨全部段收集昵称锚点已证明的「错名 → roster 车」唯一共享映射，
+  Pass 2 逐段传播到同一 canonical 的 standalone 提及——含别名/英文原文，与出现顺序无关，
+  任一段锚点证明可传播到其它段；跨段映射冲突或 source 本身在 roster 时 fail closed 不传播、
+  不猜测）、R2 别名与大小写归一化（新增单一来源
+  common/tank-name-aliases.json，KRV/克朗瓦根/埃米尔1951 → 权威名）、R3 无锚定/有歧义的非 roster
+  车名只记 DETECTED 日志不改写；AiReplayReviewService 在 done.analysis 前对正文与
+  preBattleSection 应用；② prompt 硬约束升级（禁止中文翻译/原型·后续·同级相似车替代），
+  PlayerPromptRules.COMMON_TANK_PROPER_NOUN_RULE 与 4 个 prompts/*.zh.md 逐字一致、
+  prebattle/system.zh.md 第 4 条同步（并修复 text block 一处缩进不一致）；③ 零容忍回归
+  TankNameCorrectorTest（含生产案例、段内/跨段传播、锚点前/后 standalone 传播、无锚点
+  fail-closed、source-in-roster、映射冲突、null 段场景）+ 服务级 fallback/team 两条链路 +
+  5 个 package 跨段传播用例 + TankNameProperNounTest/AllowedLanguagePromptTest 三语契约断言。
+- **地图鸟瞰换文件竞态**：loadMapOverview 为每次请求建立唯一 generation（递增序号 + AbortController）；选择/删除/清空文件（resetMap）与组件真正卸载时递增序号并 abort 旧请求；响应在成功/失败/finally 写状态前校验 generation——旧请求不得覆盖新文件的 mapOverview/mapError/mapLoaded/mapLoading、其 finally 不得提前解除新请求的 loading；KeepAlive deactivate 不触发卸载钩子，有效状态不受影响。新增 4 个 deferred-promise 竞态测试（A 后到不显示 / 任意返回顺序只显示 B / 旧 finally 不解除 B loading / 真实卸载 abort）。
+- **战局回放选中 last-known/已击毁车辆后整图消失**：三语 locale `recon.map.playback.last_known`
+  文案末尾裸 `@` 被 Vue I18n 11 当作 linked-message 语法，首次渲染该文案（选中位置中断/已击毁
+  车辆时）抛 SyntaxError 导致 BattlePlayback 子树整体卸载；改为冒号文案，并新增真实
+  `createI18n` 三语回归测试 `BattlePlayback.i18n.test.js`（不 mock `$t`，zh/en/ru 选车路径）。
+- **战局回放 review 修复（4 项）**：① 炮塔方向证据文档 source-of-truth 统一为受控旋转实验定案
+  PROVEN（历史 NOT_PROVEN 标 SUPERSEDED）；② `directionSamples` 只接受落在该车同一可信
+  position-interval 内的 prop2 样本、hull yaw 仅从同区间位置配对（跨 gap 不取对侧、段末样本恒保留
+  保证冻结）；③ playback 时长三优先级（`battle.durationS` → `BattleEndedEvent` → 位置流最后时刻）
+  并对全部 event/interval/direction/deathSec 施加 `[0,durationSec]` 契约；④ 前端同一 AI 时间戳重复
+  点击可再次 seek、单点 last-known 时间保持真实采样时间。
+- **战局回放坦克名权威解析**：MapOverviewBuilder.buildPlayback 的 PlaybackVehicle.tankName 由空串改为 ReplayDisplayNames.tankName(tankId, tankName) 权威解析（与 AI 证据路径同源，如 29985 → "SPHT"），前端不再回退显示纯数字 tankId；新增 MapOverviewBuilderTest 坦克名非空/非数字断言。
+- **positionAt 重新上报首点边界修复**：修复 t 恰为采样点（gap > 5s 后的重新上报首点）被误判为「gap 内」返回 null 的问题——该点应直接返回，否则 vehicleState.lastKnown=true 使敌方图标残留「最后已知位置」淡化；新增 battlePlayback.test.js 回归用例。
+- **敌方位置流覆盖中仍半透明（lastKnown 语义）**：vehicleState.lastKnown 由 `!live || !covered` 改为 `!covered`——route 采样间隔（max(2s, duration/200)，长局可 >5s）导致 live=null 不代表位置中断；只有位置流未覆盖（最后已知位置）才淡化。**语义修正**：covered 只是「服务器位置流覆盖」，不等于录像者客户端点亮/失察（无 authoritative spotting signal），注释/docs/UI 一律用「位置流覆盖/位置中断/最后已知位置」诚实表述，不声称「已点亮」。原「gap 淡化」测试改为覆盖=false 场景，新增「covered=true 且采样 gap>5s 不淡化」回归。
+- **propId=3 血量 sentinel 修复（0xFFFD/-3、0xFFFF/-1）**：propId=3 改 signed i16 语义——正数=真实 HP；0xFFFD(-3)=与击毁 ±40 点同刻的死亡 sentinel（11/11）→ 归一化为死亡 HP=0；0xFFFF(-1) 及其它 ≤0 高位值 = UNKNOWN sentinel（不臆测、不当作 65535）。`HealthChangedEvent.isPlausibleHp`（>0 且 <0xFF00）兜底：sentinel 永不进入 `ObservedMaxHp`/`hpSamples`/AI HP facts/team HP bar。新增 decoder/ObservedMaxHp 回归测试。
+- **AI 事实血量改用回放实测值**：新增 wotb-core `ObservedMaxHp`（type-7 propId=3 当前血量含装备/物资加成 → 每账号观测最大 hp，`max(观测, tankopedia base)` 兜底），`DefaultReplayProcessingFacade` 回填 `PlayerResult.observedMaxHp`；`EntityIdentityResolver.appendStructuredTankFacts` / `PlayerEvidenceFormatter` / `TeamEvidenceFormatter`（阵容行、TEAM_MEMBERS、对方阵容）血量事实改用实测值（null 回退 tankopedia）；Call #1 赛前基线（roster-only）不变。
+
+### Added
+- **AI Review V2.1 — Team Review Quality Gate（ai-review-v2.1-team-quality-gate）**：Team AI 复盘推理质量重构（FACT → TACTICAL INFERENCE → RECOMMENDATION 契约收敛），根因来自真实失败回放（20260817 WildCat SPHT，见 docs/ai-lessons/team-review-causal-overreach-01.md）：
+  ① Team Prompt 重构（prompts/team/single.zh.md + TeamPromptLocalizer 三语常量）——删除强制 10 章节与「开局散开=图控/拿视野」危险规则（改为中性行为，证据不足 UNKNOWN）；新增「团队复盘输出结构」（核心结论 / 关键决策窗口 1-3 / 可确认问题 1-3 / 训练建议 1-3 且必须对应可确认问题 / 对方关键威胁可选）与「证据契约」（FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN：禁止 unsupported 掩体/射界/视野/位置感/必然性/结算→时间线因果/自创精确阈值/残局万能规则/自创车辆角色；禁止硬写「做得好的行为」与凑数量）。
+  ② TimelineFocusWindowSelector（wotb-core timeline 域）——从已验证 canonical BattleTimeline 选出 1-3 个信息密度最高的 Focus Window：短时间连续减员（≤20s 合并、>40s 长链按最大间隔拆分）优先，HP swing/点数/首次接敌/交火/存活变化兜底；每个窗口确定性输出 BEFORE/EVENTS/AFTER/OBSERVED FACTS/EVIDENCE LIMITATIONS，不重复 delta、不 future leak；TeamAiContextCompiler.renderFocusWindowsSection 注入 TEAM REVIEW FOCUS WINDOWS 段（与 TACTICAL TIMELINE 同一已验证 timeline）。
+  ③ Team Autopsy 归因降级——结算级输出标签「主要战犯/MVP」→「重点复查对象/高贡献者」（prompt + renderSection），新增归因降级规则：仅凭结算与死亡时间不得写成确定战术过错（earlyDeath/weakOutput 只是规则候选）。
+  ④ 车辆角色统一来自 backend——prompt 禁止自创「薄皮输出型/前排/肉盾/狙击车」等角色；tankName/vehicleClass/tier 三路径（主复盘/Autopsy/赛前）同源 ReplayDisplayNames，角色语义唯一来源 TankTacticalProfileRegistry。
+  ⑤ 测试与回归——TimelineFocusWindowSelectorTest（连续减员窗口/BEFORE-AFTER/正常交火/稀疏证据/确定性/不重叠）、TeamReviewQualityGateContractTest（§13-A 全项 + 三语一致）、TeamFocusWindowsRenderTest、TeamTankRoleConsistencyTest（§13-F）、TeamAutopsyPromptBuilderTest 更新（重点复查对象/高贡献者/归因降级）、AiEvalHarnessTest 新增证据契约断言、golden case team-review-causal-overreach-01.json、真实回放 probe TeamReviewRealReplayProbeTest（common/data 样本自动回归，CI 无样本跳过）；真实回放验证 collapse 窗口 3:1（109–128s，本方 3 死对方 1 死）被选中为 Top Window。
+- **AI 复盘三板块折叠 + 时间链接跳回地图**：AnalysisResultPanel 复盘正文（call2）与 ReconstructionPage 地图区块新增独立折叠开关（默认展开，复用通用 recon.collapse/expand 三语）；点击 AI 报告时间链接（onAiSeek）改为 async，seek 后 scrollIntoView 回滚到地图区块。
+- **双方总血量条 + 争霸赛实时点数（playback）**：`MapOverviewBuilder.buildPlayback` 消费 HealthChangedEvent（propId=3 **signed i16**，0xFFFD/-3 死亡 sentinel 归一化为 0、0xFFFF/-1 等 UNKNOWN sentinel 置 null）→ `PlaybackVehicle.maxHp`（`ObservedMaxHp` 解析，sentinel 永不进入）+ `hpSamples`（battle-relative 秒升序）；`MapOverview.Playback` 增 `pointsSamples`（type-8 subtype48 root field12 实时点数，PROVEN；删除原 `friendlyPoints/enemyPoints`=ΣvictoryPointsEarned 的结算口径）；前端 `teamHp` 拆 `{totalMax, knownRemaining, unknownMax}`（灰段=未观测容量，不冒充满血）、`teamPointsAt` 随 currentTime 取最近广播；locale `recon.map.playback.points/hp_unknown` 三语。
+
+- **战局回放总血量条本方满血回退（敌方保持 UNKNOWN）**：`battlePlayback.vehicleHpAt(vehicle, t, assumeFullWhenUnobserved)`——本方路径（`BattlePlayback.vue` friendlyHp 传 true）在存活车辆尚无血量变化采样时按 `maxHp` 回退（开局满血）；**敌方路径不传该开关**：无 ≤t 可信采样时恒为 UNKNOWN 灰段，禁止把理论 maxHp（可能回退 tankopedia）当作敌方已知当前血量。阵亡且无采样双方均 UNKNOWN。前端测试覆盖：本方/敌方无采样差异、敌方首采样后转已知、阵亡无采样灰段、sentinel 忽略、perspectiveTeam=2 镜像（不写死 team1=本方）。
+- **战局回放坦克随地图缩放**：markerTransform 去掉 `1/view.scale` 反缩放（坦克随 viewport 同比放大）；坦克名/阵亡 ✕ 叠加层单独 `scale(1/view.scale)` 保持屏幕恒定；更新过时测试（reset/缩放/标签断言）。
+- **团队 AI 阵型深度与地图控制区域（FormationDepthEvidence）**：wotb-web 新增确定性证据（按 opening/mid/late 阶段：本队成员沿「本队质心→敌方质心」轴深度三分位 → frontLine/midLine/backLine；九宫格驻留计数优势 → controlledRegions own/contested/enemy），接入 `TeamAiPromptBuilder.buildOptionalBlock`；`team/single.zh.md` 与 `TeamPromptLocalizer.FORMATION_DEPTH_RULE`（ZH/EN/RU）同步规则；新增 `FormationDepthEvidenceTest`（前后排/控制区域/无敌方观测降级）。
+- **AI 阵型前后排 profile-aware + 地图控制权（controlRegions）**：FormationDepthEvidence 前后排感知 tank profile——`isFrontlineCapable`（HEAVY/高装甲）与 `isBacklineCapable`（TD/LT）判定阵容结构：无前排型车辆 → `noFrontlineVehicle`（不产出 frontLine 名单，只给几何参考）；无后排型车辆 → `noBacklineVehicle`（几何靠后成员仍为前线型车辆）；全 MEDIUM → 无明确结构；frontLine/backLine 名单附 profile 标注（account:xxxx(HEAVY,armor=HIGH)）。九宫格驻留计数 `dwellRegions` 升级为**地图控制权 `controlRegions`**：双方距离加权火力覆盖分（F=Σ 火力权重/(1+d/100)，HEAVY/TD=2、MEDIUM=1.5、LIGHT=1 + profile 火力修正），1.2 倍阈值判 own/contested/enemy；(presence)=区域内有本方位置样本（位置存在）、(firepower)=无位置样本但火力覆盖占优；无重甲阵容输出 noArmorNote（控制权依赖火力投射）。prompt 规则三语同步（不得断言真实占领/点亮）。
+- **AI 身后输出/血量优势甄别（吸血/避战候选，BehindLineHpEvidence）**：团队+个人双路径确定性证据——判据：可扛线（profile）+ 血量比率 ≥ 扛线队友 × 1.2 + 距敌比扛线队友更远；有输出（阶段内攻击 damage ≥ 1）→「有输出（利用队友输出）」、无输出 →「无输出（避战）」；**吸血程度分级（轻/中/重）**：血量差幅度 + 持续阶段数 + 躲后距离差三因子合成；opening 附加「前线型车辆未上前线」（后排分位）；血量数据不足降级为仅位置+输出事实。团队路径遍历本队全体（负面语境由 prompt 规则给出）；个人路径仅录像者自己、中性措辞（不评价队友）。接入 `TeamAiPromptBuilder`（团队）与 `PlayerSummaryBuilder`（个人）。
+- **Team Autopsy 战犯/MVP 纳入吸血程度**：`TeamAutopsyPromptBuilder.buildUserContent` 注入 BEHIND_LINE_HP_ADVANTAGE 段（`TeamAutopsyService.analyze` 增加 recon 参数）；`prompts/team/autopsy.zh.md` 规则更新：输出高但吸血程度重 → 团队贡献打折（高输出不能全额抵销），输出非常非常高（显著高于本队均值）才可部分抵消。
+- **地图鸟瞰独立端点 /api/replay/map-overview（不调 AI）**：ReconstructionController 新增同步端点（与 analyze 同角色/校验/稳定错误码，ReplayUsageMetrics.OP_MAP_OVERVIEW 计费）；新 MapOverviewQueryService 只解析回放并复用 MapOverviewBuilder 确定性聚合，地图不可构建返回 204（前端显示不可用提示）；analyze SSE done.mapOverview 字段保留兼容、前端不再消费。AI 复盘页新增独立「地图鸟瞰」区块（热力/路线/战局回放三视图，ReconstructionPage 手动按钮加载；AnalysisResultPanel 移除地图折叠块并把 AI 报告时间链接 seek 事件上抛给页面加载/跳转）；locale 新增 recon.map.{load,loading,unavailable} 三语。
+- **战局回放视觉调整**：回放视图移除车辆路线渲染（pb-routes/routeSegments/.pb-route 删除，路线数据仍供位置插值与炮线端点复用；「路线」视图不受影响）；坦克图标上方常显坦克型号名标签（PlaybackVehicle.tankName 回退 tankId，位于反缩放按钮内 → 任意缩放下可见、字号恒定，不再限 ≥2× 且从下方移到上方）；炮线可见窗口 TRACER_BASE_SEC 0.5 → 1.0（1×/2×/4× 各约 1s 真实时间）。
+- **AI 用词「簇 → 自然中文」确定性兜底**：prebattle/system.zh.md 强制规则新增禁「簇」条款（兵力/阵型集中一律「集群」）；PreBattleSectionRenderer.display() 对 LLM 自由文本做三层卫生——① 特殊自然表达（簇拥→聚集、簇状→集群状）→ ② 短语级替换（一簇→一批 / 同簇→集群 / 成簇→集群 / 分簇→分散 / 主力簇→主力集群 / 多簇→多股）→ ③ 剩余「簇」字符兜底为「群」（单字替换，不会把已替换出的「集群」二次污染），保证全部用户可见自由文本字段（队伍画像/对阵/胜机/假设）最终不含该字；team/single.zh.md 与 TeamPromptLocalizer.CAPTURE_RULE「多车同簇推进」→「多车集群推进」（md 与常量逐字一致）。
+- **炮线激光化视觉**：tracerLines 输出扩展（纯函数，无定时器）——opacity 改「先亮后淡」（TRACER_HOLD_REAL_SEC=0.4，保持期后线性淡出到窗口结束）、新增 flashProgress（TRACER_FLASH_REAL_SEC=0.35，命中闪光进度）；BattlePlayback 每炮线渲染三层（外层阵营色光晕 6/view.scale×0.35 透明度 + 内芯亮白 1.75/view.scale + 命中端扩散淡出圆点），线宽从组级移到逐元素（屏幕宽度恒定语义不变）；1×/2×/4× 真实时长与保持期一致。
+- **Grafana 使用统计 Dashboard 新增 AI 平均 Token 面板**：`wotbtools-usage` 新增「AI 平均每次调用 Token」stat 面板（`wotb_ai_upstream_tokens_total{token_type="total"}` 增量 ÷ `wotb_ai_upstream_requests_total` 增量，分母含失败调用、失败计 0 token）与「按模式平均每次调用 Token」timeseries 面板（按 `mode` 分维，分母 `clamp_min(...,1)` 避免无流量 mode 显示 NaN，可区分单机复盘 `PRE_BATTLE_STRATEGIC_PRIOR`+`TACTICAL_REVIEW_HARNESS` 与团队复盘 `SINGLE_TEAM_BATTLE`+`TEAM_AUTOPSY`）；`docs/operations/observability.md` 同步面板清单与统计口径。
+- **AI 复盘点数局势证据与规则（PointsSituationSkill）**：wotb-core 新增纯函数 `PointsSituationSkill`
+  （击杀夺分时间线——±40/击杀业务规则按双方阵亡时刻对齐、叙述口径非实时比分、只表达击杀换分项净差值而非整体点数；占领点区域位置存在——
+  服务器位置流在 CONTAINS_CONTROL_POINT 九宫格的存在、位置存在≠占点产分；进攻推进窗口——车辆从
+  非占领点区域移动进入占领点区域，同队窗口按 8s 合并）与 `PointsSituationSkillTest`（9 例）；
+  wotb-web 新增 `PointsSituationEvidence`（复用 TeamEntityMapper 从重建事件流采集双方位置轨迹，
+  推进窗口与 `DamageWindowClusterer` 掉血窗口联接成「推进方窗口内承受伤害=防守方过路费」，
+  OBSERVED_DAMAGE_IS_PARTIAL 时抑制伤害数字）并接入团队复盘（`TeamEvidenceFormatter.appendPointsSituation`，
+  P3 optional 预算内）与随机战个人复盘（Harness Call #2 裁剪阶梯 + fallback/full/fullNoRecon 三条旧路径）；
+  prompt 三语规则同步：team/single.zh.md 占点规则 8 + `TeamPromptLocalizer` zh/en/ru 常量（逐字契约）、
+  player/tactical/single/fallback.zh.md + `PlayerPromptRules` POINTS_SITUATION_RULE zh/en/ru 替换链、
+  team/autopsy.zh.md 结算级点数规则（禁止编造比分与窗口级判断）；契约测试 `TeamPromptLocalizerTest`/
+  `PlayerPointsSituationRuleTest`/`TeamAutopsyPromptBuilderTest`/`PointsSituationEvidenceTest` 扩展。
+  数据边界不变：终局前绝对比分未解码，所有信号禁止冒充实时比分（PointsEvidenceProbeTest 结论继续有效）。
+- **战局回放标记有效尺寸与固定屏幕线宽**：`BattlePlayback.vue` 标记 hull/turret 素材放大到按钮
+  131% 并以共同 pivot 居中旋转（`translate(-50%,-50%) rotate(...)`；素材 512×512 有效车体 bbox
+  实测 ≈210×336 → 桌面 28px 容器下有效车体 ≈15×24px，不随缩放变小）；路线 `<g>` 绑定
+  `stroke-width=2/view.scale`、炮线 `1.5/view.scale`（屏幕宽度恒定，长度随地图坐标）；缩放 ≥2×
+  时标记显示车名小标签（反缩放按钮内，字号恒定）；CSS 移除 `.pb-route/.pb-tracer` 的静态
+  stroke-width（否则覆盖属性绑定）；组件测试新增固定线宽/居中旋转/车名标签 3 例（npm 288 全绿）。
+- **战局回放炮线动画 + 地图缩放平移 + 敌我阵亡统一**：DAMAGE/KILL 已知射击的炮线
+  （`utils/battlePlayback.js` 新增 `trustedPositionAt` 严格事件时刻可信位置——末点后/gap 内/
+  首点前/非有限坐标拒绝，不用最后已知位置伪造射击位置；`tracerLines` 纯函数按 now/speed 推导 →
+  seek 与 1×/2×/4× 天然正确、无一次性定时器；同刻 DAMAGE+KILL 去重为一条；未命中/盲射/弹道/
+  瞄准线无数据依据不渲染）；`.pb-viewport` 单层 transform 缩放平移（滚轮/双指捏合 1×–4× 锚点
+  缩放、>5px 阈值拖动平移、拖动后吞 click 防误选车、重置按钮、全图层严格对齐、卸载清理监听）；
+  `pb-destroyed` 显式阵亡状态（敌我同款 opacity .35 + grayscale(1) 双层 + ✕，方向冻结最后可信
+  样本，无样本以素材默认 0° 渲染，不并入 `pb-last-known`）。
+- **AI 复盘点数口径与掉血窗口口径**：`FriendlyEnemyResult` 新增 `teamKills`/`teamDeaths`
+  （原始结算事实）与 `standardSupremacyRules`/`provableEarlyPointsWin`（420s/1000 为
+  **项目所有者确认的业务规则**，arenaBonusType 只证明战斗类别、不解码出 420s/1000；仅类别未知
+  fail closed）；**撤回 `knownPointsSubtotal`/`killPointsDelta` 公式**（victoryPointsEarned 是否
+  含击杀夺分未经证明，现有样本双方击杀净值为 0 无法区分）；结束方式只按「标准规则+时长+双方
+  存活」判定，不使用任何点数公式；无权威胜方时不按占点分推断胜方（POINTS_INFERENCE 停止产出）；
+  `TeamEvidenceFormatter` 只输出原始结算字段（victoryPointsEarned/Seized、kills、deaths），
+  终局比分除业务规则可证明的胜方=1000 上限（1000 分上限业务约定）外一律 UNKNOWN；
+  REACHED_1000 是结束原因（某一方达到 1000 分导致提前结束）而非胜方：winnerTeam 缺失时只写
+  「某一方达到 1000 分导致提前结束、具体胜方未知」，双方终局比分一律 UNKNOWN；每据点每 tick 产分
+  与 tick 间隔均未解码（无任何已验证的 tick 产分规则），不写入口径；
+  `DamageWindowClusterer.DamageWindow` 新增 `damageVsBaseMaxHpPct`（累计伤害/基础满血量，
+  tankopedia 基础值，只是计算基准不是实际掉血比例）/ `criticalWindow`（跨度 ≤10s 且伤害 ≥75%
+  基础满血量）；不产出无法证明的「被秒杀」判定；type 8/sub 8 非直接伤害结果与 type 5 Spotting
+  均为未解码候选（`ShotSpottingStreamProbeTest`/`PointsEvidenceProbeTest` 探针记录，不进入
+  生产时间线）；prompt 规则三语同步（player×3 + team/single + PlayerPromptRules/
+  TeamPromptLocalizer：短窗高额伤害窗口强制定性 + 禁止任何公式结果冒充终局比分 +
+  禁止阵亡掉血 100% 废话）；`PointsVictoryProbeTest` 本地样本探针（CI 无样本自动跳过）。
+- **战局回放炮塔方向契约与双层坦克标记（门禁 B 破解）**：type-7 propId=2 定案为
+  炮塔相对车体偏航（u16 LE：`raw*360/65536-180` 度，完整 360° 且 ±180 回绕）——车体静止
+  炮塔转一圈的旋转实验回放证明满圈 + wrap；开火命中锚点拟合（41 锚点残差 9.5°）+
+  独立受击集交叉验证（34 锚点残差 2.3°）证明 `炮口世界方向 = normalize(hullYaw + turretRelativeYaw)`；
+  新增 `TurretDirectionChangedEvent`（`EntityPropertyDecoder` propId=2）与
+  `MapOverview.PlaybackVehicle.directionSamples`（`{timeSec, hullYawDeg, turretRelativeYawDeg}`，
+  约 1s 降采样 + ≥10° 变化保点、finite、≤deathSec、时间升序）；`ReplayEvent` permits 扩展。
+  前端 `BattlePlayback.vue` 圆点标记替换为 PR #72 四张运行时 PNG 的 HTML overlay 双层标记
+  （hull 按 `hullYawDeg`、turret 按 `turretWorldYawDeg=normalize(hull+rel)` 独立旋转，
+  共同 pivot，炮管不脱离炮塔；约 28px/移动端 22px；阵营色只来自素材；录像者 halo/选中 ring/
+  最后已知淡化/阵亡 ✕ 为独立 overlay）；`utils/battlePlayback.js` 新增 `normalizeDeg`/
+  `shortestArcDeg`/`interpolateDirection`（最短圆弧插值、跨 gap 冻结）/`screenRotation`
+  （地图 yaw→屏幕 rotate，0=朝上/90=朝右/180=朝下/270=朝左）与四基准方向单测。
+  `TurretDirectionProbeTest` 新增检查项 12（旋转实验时序 dump）与检查项 11（炮口模型拟合+
+  交叉验证）；证据笔记与逆向文档同步。
+- **AI 复盘结果页「地图鸟瞰」新增「战局回放」第三视图**：后端 `MapOverview` 扩展 `playback`
+  （`durationSec` / `vehicles`（含 `positionIntervals` 位置上报区间与 `deathSec`）/ `events`：
+  `DAMAGE` / `DESTROYED` / `KILL` / `POSITION_REPORTED` / `POSITION_STALE`，身份经
+  `TeamEntityMapper` 实体映射解析，无法可靠解析不输出；`POSITION_REPORTED/STALE` 只表达
+  服务器位置流覆盖变化——type-10 是服务器完整实体流、与点亮无关，敌方静止时不上报位置，
+  故不得把位置中断当「失察」）；前端新增 `BattlePlayback.vue` 与 `utils/battlePlayback.js`
+  （RAF 播放、仅在同一可信连续点 gap≤5s 间插值、gap 内淡化最后已知位置而不消失、从未上报
+  位置不显示、阵亡切换 ✕、进度条事件按秒聚合标记、播放/暂停/±5s/上一/下一事件/1×2×4×/
+  拖动 seek（拖动即暂停）、随机战默认录像者相关事件过滤、`formatClock` 先取整杜绝 00:60）；
+  `MarkdownContent` 把 AI 报告中的明确时间文本（`03:20` / `3分20秒` / `3m 20s` /
+  `3 мин 20 с`，不识别普通数字/比分）转成 `#seek=` 链接，点击后展开鸟瞰、自动切换战局回放
+  并 seek 暂停；三语 locale 与文档同步。
+
+### Changed
+- **Rating V2 平均血量改为本局总血量均分**：`POST /api/rating` 走完整回放处理，优先汇总本局
+  14 名有效参战车辆中已证明的进场满血（`OBSERVED_EXACT`），其余使用 Tankopedia 基础 HP 后除以 14；
+  所有玩家使用同一个本局平均值，不再按敌队人数或固定平均值计算。车辆库缺少 HP 时，仅该单车以 2400 兜底。
 - **打手最高等级显示名调整**：保留数据库/API 内部兼容值 `AVERAGE_GOD`，仅把界面中文名改为“殿堂级”、英文名改为 `Mythic`，俄文同步对应译名；管理员编辑授予、普通申请禁用及每服最多一名的规则不变。
+- **AI 复盘胜负来源证据层级与全歼双向语义（battle result 权威）**：`CAPTURE_RULE`（ZH/EN/RU）
+  不再宣称所有 result 行都来自权威 winnerTeam，改为按 `resultSource` 三级证据描述——
+  BATTLE_RESULTS（battle_results#winnerTeam 权威，最高优先级，LLM 不得用事件流/存活数/点数
+  覆盖胜方）/ SURVIVOR_SETTLEMENT（结算存活状态推导，非权威不得伪装）/ POINTS_INFERENCE
+  （双方存活时占点分推断，非权威规则候选）；`TeamAiPromptBuilder` mandatory header 同时输出
+  `result` 与 `resultSource`（不再只放在可能被 token 预算裁掉的 CAPTURE_AND_POINTS）。
+  全歼语义双向：本方获胜且对方 survivors=0 → 「全歼敌方获胜」；本方落败且本方 survivors=0 →
+  「被敌方全歼落败」；双方均有存活才进入点数结束方式（≥1000 提前获胜 / 双方 <1000 时间耗尽
+  点数判定，pointsEndReason 前置条件=双方均未全员阵亡）；`autopsy` 提示词规则 9 同步。
+  `annihilationSuffix` fail-closed 升级为**结算阵容完整前提**（`Battle.rosterComplete`）：
+  ReplayParser 解析名册 `#201→#2→#3`（名册来源队伍）并与战绩 `#301` 对比——账号集合完全一致且
+  每个账号队伍一致才标记完整；非法 perspectiveTeam、players 缺失/为空、阵容不完整或任一方队伍
+  不在 roster 时一律不输出全歼后缀，winnerTeam 缺失时也不得推导 SURVIVOR_SETTLEMENT 胜方，
+  不得把未知当成零存活；不写死每队 7 人，完整名册的非 7v7 训练房同样生效。新增
+  `TeamResultSourceBoundaryTest` 覆盖部分缺失敌方/本方、winnerTeam 存在与缺失、主 result 行与
+  Autopsy 结果行、完整 7v7 与合法非 7v7 场景。
+  **点数推断同步 fail-closed**：`resolveTeamBattle` 的 POINTS_INFERENCE 仅在 rosterComplete=true
+  时可用（winnerTeam 缺失 + 阵容不完整 → DRAW_OR_UNKNOWN/UNKNOWN，残缺点数不推断胜方）；
+  winnerTeam 存在时胜方仍为 BATTLE_RESULTS，但 rosterComplete!=true 时 pointsEndReason 降级
+  UNKNOWN，result 只写通用「点数判定」，不得写「时间耗尽/达到 1000 分」；
+  `CAPTURE_AND_POINTS` 在阵容不完整时输出 `SETTLEMENT_ROSTER_INCOMPLETE=true` /
+  `pointsTotalsUnavailable=true` 并抑制逐人/双方占点分总量（写 UNKNOWN），与 mandatory header
+  和 `CAPTURE_RULE`（ZH/EN/RU 新增 2d 条）口径一致。新增 ReplayParser 解析级负向测试
+  （#201/#301 账号不一致、队伍不一致 → rosterComplete=false）。
+  新增 golden case `cw-annihilation-win-01` / `cw-annihilation-loss-01` + fixtures + lessons；
+  `cw-cap-win-01` / `cw-cap-points-decided-01` 断言 mandatory header `resultSource=POINTS_INFERENCE`
+  且不出现 BATTLE_RESULTS；`AiEvalHarnessTest` 断言 ZH 规则含全歼双向语义与三级证据、
+   EN/RU 本地化后不残留中文规则。
+- **AI 复盘结果一键复制正文**：`AnalysisResultPanel` 面板头部（右上角）新增「复制」按钮，一键复制
+  `result.analysis`（最终复盘正文，可能包含团队剖析与免责声明；不含独立的
+  preBattleSection/mapOverview）。Clipboard 降级链：`navigator.clipboard.writeText` 优先，
+  writeText 缺失或 reject 时降级 `execCommand('copy')`（textarea 经 try/finally 保证移除；
+  execCommand 返回 false 或抛异常时不显示「已复制」）；复制后按钮显示「已复制」1.5s 后复位，
+  组件卸载清理定时器。新增三语 locale `recon.copy` / `recon.copied` 与组件测试
+  （仅复制最终正文、排除赛前预测/地图鸟瞰、Clipboard 成功/缺失/reject、execCommand false/抛异常、
+  textarea 清理、卸载清理定时器）。
+- **战局回放坦克标记素材定稿（PR #72）**：最终方案为通用半立体 MT 双层模型；新增车体与炮塔同图生成的
+  authoritative master，并由该单一基材拆出友军暖金/敌军青蓝四张 `512×512` RGBA 运行时素材；
+  两阵营共用完全一致的 alpha 蒙版，敌军色为确定性换色，不依赖运行时 CSS filter。重新生成可正常解码的
+  状态规范表和运行时验收板，覆盖双层叠加、0°/90°/180°/270° 旋转、28px 深浅背景、录像者/选中/
+  最后已知/阵亡 overlay；删除早期废弃的四车型 SVG 与两张非同源旧 PNG。素材 README 与
+  `.agents/AGENTS.md` 固化 `(256,256)` 旋转中心、`hullYaw` / `turretRelativeYaw` /
+  `turretWorldYaw = hullYaw + turretRelativeYaw`、轨迹≠朝向及未来播放器接入边界（PR #71 不变）。
 - **技能更名：grill-with-docs → plan-designer（开发方案设计）**：开发前方案 grill 技能更名为
   `plan-designer`，调用时**自动前置 grill-me**（需求澄清：复述理解 → 逐层提问 ≤3 个/轮 →
   输出《需求确认单》），需求已明确时跳过并注明；随后进入方案设计流程（可落地性核对 →
@@ -83,6 +1253,12 @@
 - **地图鸟瞰标题三语化**：`MapOverview` 新增 `displayNames{zh,en,ru}`（`MapNames.localized`，来自 map_names.json，未收录时三语同 code），前端按 vue-i18n 当前 locale 显示标题（中文界面显示「黄沙荒漠」等中文名，缺失回退英文 `displayName`）；`map-catalog.md` 注明语义 JSON 手工调整后勿重跑语义化器（会整份覆盖）。
 
 ### Added
+- **AI Review V2.1 — Team Review Quality Gate（ai-review-v2.1-team-quality-gate）**：Team AI 复盘推理质量重构（FACT → TACTICAL INFERENCE → RECOMMENDATION 契约收敛），根因来自真实失败回放（20260817 WildCat SPHT，见 docs/ai-lessons/team-review-causal-overreach-01.md）：
+  ① Team Prompt 重构（prompts/team/single.zh.md + TeamPromptLocalizer 三语常量）——删除强制 10 章节与「开局散开=图控/拿视野」危险规则（改为中性行为，证据不足 UNKNOWN）；新增「团队复盘输出结构」（核心结论 / 关键决策窗口 1-3 / 可确认问题 1-3 / 训练建议 1-3 且必须对应可确认问题 / 对方关键威胁可选）与「证据契约」（FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN：禁止 unsupported 掩体/射界/视野/位置感/必然性/结算→时间线因果/自创精确阈值/残局万能规则/自创车辆角色；禁止硬写「做得好的行为」与凑数量）。
+  ② TimelineFocusWindowSelector（wotb-core timeline 域）——从已验证 canonical BattleTimeline 选出 1-3 个信息密度最高的 Focus Window：短时间连续减员（≤20s 合并、>40s 长链按最大间隔拆分）优先，HP swing/点数/首次接敌/交火/存活变化兜底；每个窗口确定性输出 BEFORE/EVENTS/AFTER/OBSERVED FACTS/EVIDENCE LIMITATIONS，不重复 delta、不 future leak；TeamAiContextCompiler.renderFocusWindowsSection 注入 TEAM REVIEW FOCUS WINDOWS 段（与 TACTICAL TIMELINE 同一已验证 timeline）。
+  ③ Team Autopsy 归因降级——结算级输出标签「主要战犯/MVP」→「重点复查对象/高贡献者」（prompt + renderSection），新增归因降级规则：仅凭结算与死亡时间不得写成确定战术过错（earlyDeath/weakOutput 只是规则候选）。
+  ④ 车辆角色统一来自 backend——prompt 禁止自创「薄皮输出型/前排/肉盾/狙击车」等角色；tankName/vehicleClass/tier 三路径（主复盘/Autopsy/赛前）同源 ReplayDisplayNames，角色语义唯一来源 TankTacticalProfileRegistry。
+  ⑤ 测试与回归——TimelineFocusWindowSelectorTest（连续减员窗口/BEFORE-AFTER/正常交火/稀疏证据/确定性/不重叠）、TeamReviewQualityGateContractTest（§13-A 全项 + 三语一致）、TeamFocusWindowsRenderTest、TeamTankRoleConsistencyTest（§13-F）、TeamAutopsyPromptBuilderTest 更新（重点复查对象/高贡献者/归因降级）、AiEvalHarnessTest 新增证据契约断言、golden case team-review-causal-overreach-01.json、真实回放 probe TeamReviewRealReplayProbeTest（common/data 样本自动回归，CI 无样本跳过）；真实回放验证 collapse 窗口 3:1（109–128s，本方 3 死对方 1 死）被选中为 Top Window。
 - **AI 复盘结果页「地图鸟瞰」（热力 + 路线，双阵营）**：后端 SSE `done` 载荷新增可空 `mapOverview`（`AnalyzeResponse` 第三字段，向后兼容 null）——`MapGridRegistry` 从 `map-semantics/*.semantic.json` 读取 `playableBoundsMeters` / `analysisGrid.cells`(6x6) / `sceneEvidence.battlePoints`(出生点)；`MapOverviewBuilder` 聚合：路线（双方 14 车，2s 均匀采样 ≤200 点 + `firstObservedSec/lastObservedSec` 观测区间 + 阵亡时刻，坐标与 playableBounds 同系 x=回放x、y=回放z）、六张热力（本方/敌方 × 驻留/伤害/阵亡，36 格；伤害按受击方位置落格、驻留/阵亡为事件计数，前端归一化）、阶段切片（开局/中期/残局，残局=战斗末 15s 窗口）、出生点；未知地图/无观测/无名册/视角未解析 → null。随机战（SINGLE_PLAYER）与团队战（SINGLE/MULTI_TEAM）路径均接入；`MapImageCatalog` 登记 17 张已提供素材的图片元信息（前端 mapImages.js 为渲染门控）。新增 `MapOverviewBuilderTest`（真实 rift 夹具完整输出 + 降级 null），后端全量 621 测试全绿。
 - **前端「地图鸟瞰」区块**：`MapOverview.vue` 纯 SVG 渲染——底图拉伸铺满 playableBounds + 6x6 网格 + 九宫格线/编号 + 出生点；热力视图（阵营 Tab 本方/敌方 × 类型 Tab 驻留/伤害/阵亡，36 格半透明着色 + legend）；路线视图（阵营 Tab 本方/敌方/全部 × 阶段 Tab 全部/开局/中期/残局，本方暖色系/敌方冷色系各 7 色、起点圆点、阵亡 ✕、gap>5s 断线、悬停 tooltip、迟观测「位置观测自 X 秒起」提示）；`AnalysisResultPanel` 在 `done.mapOverview` 非 null 且 `mapImages` 有该地图素材时渲染可展开/收起区块（无素材整块跳过）。`frontend/src/assets/maps/` 入库 18 张素材（17 张已映射，alpen 待对应地图语义）。i18n 三语 key；vitest 169 全绿、vite build 通过。
 
@@ -157,6 +1333,12 @@
 - **AI Replay 测试重构**：`AiReplayAnalysisServiceTest` 由本地 HttpServer 切换为 `FakeAiChatGateway` 契约断言；HTTP/脱敏/metrics 测试移入 `gateway` 子包新增的 `DeepSeekRestAiChatGatewayTest`/`DeepSeekRestAiChatGatewayMetricsTest`；新增 `PlayerGatewayPromptContractTest` 捕获 `AiChatRequest` 的 system/user/model/analysisMode。
 
 ### Added
+- **AI Review V2.1 — Team Review Quality Gate（ai-review-v2.1-team-quality-gate）**：Team AI 复盘推理质量重构（FACT → TACTICAL INFERENCE → RECOMMENDATION 契约收敛），根因来自真实失败回放（20260817 WildCat SPHT，见 docs/ai-lessons/team-review-causal-overreach-01.md）：
+  ① Team Prompt 重构（prompts/team/single.zh.md + TeamPromptLocalizer 三语常量）——删除强制 10 章节与「开局散开=图控/拿视野」危险规则（改为中性行为，证据不足 UNKNOWN）；新增「团队复盘输出结构」（核心结论 / 关键决策窗口 1-3 / 可确认问题 1-3 / 训练建议 1-3 且必须对应可确认问题 / 对方关键威胁可选）与「证据契约」（FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN：禁止 unsupported 掩体/射界/视野/位置感/必然性/结算→时间线因果/自创精确阈值/残局万能规则/自创车辆角色；禁止硬写「做得好的行为」与凑数量）。
+  ② TimelineFocusWindowSelector（wotb-core timeline 域）——从已验证 canonical BattleTimeline 选出 1-3 个信息密度最高的 Focus Window：短时间连续减员（≤20s 合并、>40s 长链按最大间隔拆分）优先，HP swing/点数/首次接敌/交火/存活变化兜底；每个窗口确定性输出 BEFORE/EVENTS/AFTER/OBSERVED FACTS/EVIDENCE LIMITATIONS，不重复 delta、不 future leak；TeamAiContextCompiler.renderFocusWindowsSection 注入 TEAM REVIEW FOCUS WINDOWS 段（与 TACTICAL TIMELINE 同一已验证 timeline）。
+  ③ Team Autopsy 归因降级——结算级输出标签「主要战犯/MVP」→「重点复查对象/高贡献者」（prompt + renderSection），新增归因降级规则：仅凭结算与死亡时间不得写成确定战术过错（earlyDeath/weakOutput 只是规则候选）。
+  ④ 车辆角色统一来自 backend——prompt 禁止自创「薄皮输出型/前排/肉盾/狙击车」等角色；tankName/vehicleClass/tier 三路径（主复盘/Autopsy/赛前）同源 ReplayDisplayNames，角色语义唯一来源 TankTacticalProfileRegistry。
+  ⑤ 测试与回归——TimelineFocusWindowSelectorTest（连续减员窗口/BEFORE-AFTER/正常交火/稀疏证据/确定性/不重叠）、TeamReviewQualityGateContractTest（§13-A 全项 + 三语一致）、TeamFocusWindowsRenderTest、TeamTankRoleConsistencyTest（§13-F）、TeamAutopsyPromptBuilderTest 更新（重点复查对象/高贡献者/归因降级）、AiEvalHarnessTest 新增证据契约断言、golden case team-review-causal-overreach-01.json、真实回放 probe TeamReviewRealReplayProbeTest（common/data 样本自动回归，CI 无样本跳过）；真实回放验证 collapse 窗口 3:1（109–128s，本方 3 死对方 1 死）被选中为 Top Window。
 - **公开回放接口 nginx 限流（C）**：`/api/preview` `/api/export` `/api/rating` 应用 `limit_req`（单 IP 1r/s + burst 10 nodelay）与 `limit_conn`（单 IP 并发 5），超频 429 / 超并发 503；仅 nginx 层，后端 100 文件/20MiB/200MiB 额度契约不变（`nginx -t` 校验通过）。
 - **AI 取消 correlationId 加固（D）**：`AiCancellationRegistry` 仅接受 canonical UUID（格式+长度），重复活跃 id 拒绝（不复用 token），`unregister(id, token)` 改为 compare-and-remove；analyze 与 cancel 端点校验客户端 correlationId 为 UUID，非法/重复返回 400。
 - **AI Review 整体 deadline 对齐（E）**：请求提交时刻计算 `now + overall-deadline-sec`（`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`，默认 400s，对齐前端 400s / nginx 420s），经 `AiRequestContext` 暴露给 worker；团队与随机战预算起点回溯到提交时刻（排队计入预算），启动时预算耗尽直接干净失败 `AI_TIMEOUT`；排队等待记日志与 Micrometer timer（`wotb_ai_review_queue_wait`）。
@@ -344,6 +1526,19 @@
 - 硬编码的 `thinking=enabled` 和 `reasoning_effort=high`
 
 ### Fixed
+- **排行榜上传：不支持战斗模式改为 HTTP 400 UNSUPPORTED_BATTLE_TYPE**：原先
+  arenaBonusType 不属于 `LeaderboardService.SUPPORTED_BATTLE_TYPES` 的回放以 200 skipped 响应（前端显示"已跳过"），现改为在 SHA-256 / preflight /
+  storage / DB 任何持久化之前直接拒绝 → 400 `UNSUPPORTED_BATTLE_TYPE`（复用 GlobalExceptionHandler 统一
+  错误格式 `{error, timestamp}`），不落盘、不入库、不产生 orphan 文件；仅无录像者 / 已确定 hash 冲突
+  保持 skipped（200）。战斗模式判断收敛为单一事实源 `isLeaderboardSupportedBattleType`（eligibility 与
+  recordRecorder 共用），支持 RANDOM(1) + RATING(7)（Rating=7 依据 Jylpah/blitz-tools 外部 replay tooling
+  证据 `analyze_wotb_replays.py` `BattleCategorizationList._battle_modes`，`"Rating": 7`；与 1/2/4 真实样本映射一致）。前端 `leaderboardUpload()` 修复 `requireOk(r).json()` Promise bug（先 await
+  再读 body，否则 Promise 无 .json 抛 TypeError，被误显示为"网络连接失败"）；新增
+  `api_errors.UNSUPPORTED_BATTLE_TYPE` 三语文案（zh/en/ru）。测试：service 层真实 parser + 真实训练房夹具
+  （400、storage/DB 零写入）、controller 400 映射、WebApiTest 集成（400 + DB 行数不变 + 无
+  .wotbreplay 文件生成）、前端 api.js 回归（200 解析 / UNSUPPORTED_BATTLE_TYPE / 401 上传+下载）与
+  LeaderboardPage UX（业务错误文案、uploadOk=false、失败不刷新排行榜；未登录点上传按钮先登录再开文件选择器）。
+  生产/本地 compose 显式传入 LEADERBOARD_REPLAY_DIR / LEADERBOARD_REPLAY_MIN_FREE_BYTES（默认保持 /data/replays 与 512MiB）。
 - **顶栏响应式修复**：`App.vue` 顶栏增加横向滚动兜底，并在 ≤1080px 时切换为 sticky + flex-wrap（导航换行第二行），屏幕不够宽时不再丢失右侧按钮。
 - **赞助页返回入口**：`frontend/homepage/sponsor.html` 顶栏新增「返回」按钮（`history.back()`，无历史时回首页），三语 `back` 文案随页面 i18n 切换。
 
@@ -377,6 +1572,12 @@
 ## [1.8.0] - 2026-06-27
 
 ### Added
+- **AI Review V2.1 — Team Review Quality Gate（ai-review-v2.1-team-quality-gate）**：Team AI 复盘推理质量重构（FACT → TACTICAL INFERENCE → RECOMMENDATION 契约收敛），根因来自真实失败回放（20260817 WildCat SPHT，见 docs/ai-lessons/team-review-causal-overreach-01.md）：
+  ① Team Prompt 重构（prompts/team/single.zh.md + TeamPromptLocalizer 三语常量）——删除强制 10 章节与「开局散开=图控/拿视野」危险规则（改为中性行为，证据不足 UNKNOWN）；新增「团队复盘输出结构」（核心结论 / 关键决策窗口 1-3 / 可确认问题 1-3 / 训练建议 1-3 且必须对应可确认问题 / 对方关键威胁可选）与「证据契约」（FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN：禁止 unsupported 掩体/射界/视野/位置感/必然性/结算→时间线因果/自创精确阈值/残局万能规则/自创车辆角色；禁止硬写「做得好的行为」与凑数量）。
+  ② TimelineFocusWindowSelector（wotb-core timeline 域）——从已验证 canonical BattleTimeline 选出 1-3 个信息密度最高的 Focus Window：短时间连续减员（≤20s 合并、>40s 长链按最大间隔拆分）优先，HP swing/点数/首次接敌/交火/存活变化兜底；每个窗口确定性输出 BEFORE/EVENTS/AFTER/OBSERVED FACTS/EVIDENCE LIMITATIONS，不重复 delta、不 future leak；TeamAiContextCompiler.renderFocusWindowsSection 注入 TEAM REVIEW FOCUS WINDOWS 段（与 TACTICAL TIMELINE 同一已验证 timeline）。
+  ③ Team Autopsy 归因降级——结算级输出标签「主要战犯/MVP」→「重点复查对象/高贡献者」（prompt + renderSection），新增归因降级规则：仅凭结算与死亡时间不得写成确定战术过错（earlyDeath/weakOutput 只是规则候选）。
+  ④ 车辆角色统一来自 backend——prompt 禁止自创「薄皮输出型/前排/肉盾/狙击车」等角色；tankName/vehicleClass/tier 三路径（主复盘/Autopsy/赛前）同源 ReplayDisplayNames，角色语义唯一来源 TankTacticalProfileRegistry。
+  ⑤ 测试与回归——TimelineFocusWindowSelectorTest（连续减员窗口/BEFORE-AFTER/正常交火/稀疏证据/确定性/不重叠）、TeamReviewQualityGateContractTest（§13-A 全项 + 三语一致）、TeamFocusWindowsRenderTest、TeamTankRoleConsistencyTest（§13-F）、TeamAutopsyPromptBuilderTest 更新（重点复查对象/高贡献者/归因降级）、AiEvalHarnessTest 新增证据契约断言、golden case team-review-causal-overreach-01.json、真实回放 probe TeamReviewRealReplayProbeTest（common/data 样本自动回归，CI 无样本跳过）；真实回放验证 collapse 窗口 3:1（109–128s，本方 3 死对方 1 死）被选中为 Top Window。
 - nginx 单 server block，wotbtools.com/replay 合并
 
 ### Changed
@@ -385,6 +1586,12 @@
 ## [1.7.0] - 2026-06-27
 
 ### Added
+- **AI Review V2.1 — Team Review Quality Gate（ai-review-v2.1-team-quality-gate）**：Team AI 复盘推理质量重构（FACT → TACTICAL INFERENCE → RECOMMENDATION 契约收敛），根因来自真实失败回放（20260817 WildCat SPHT，见 docs/ai-lessons/team-review-causal-overreach-01.md）：
+  ① Team Prompt 重构（prompts/team/single.zh.md + TeamPromptLocalizer 三语常量）——删除强制 10 章节与「开局散开=图控/拿视野」危险规则（改为中性行为，证据不足 UNKNOWN）；新增「团队复盘输出结构」（核心结论 / 关键决策窗口 1-3 / 可确认问题 1-3 / 训练建议 1-3 且必须对应可确认问题 / 对方关键威胁可选）与「证据契约」（FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN：禁止 unsupported 掩体/射界/视野/位置感/必然性/结算→时间线因果/自创精确阈值/残局万能规则/自创车辆角色；禁止硬写「做得好的行为」与凑数量）。
+  ② TimelineFocusWindowSelector（wotb-core timeline 域）——从已验证 canonical BattleTimeline 选出 1-3 个信息密度最高的 Focus Window：短时间连续减员（≤20s 合并、>40s 长链按最大间隔拆分）优先，HP swing/点数/首次接敌/交火/存活变化兜底；每个窗口确定性输出 BEFORE/EVENTS/AFTER/OBSERVED FACTS/EVIDENCE LIMITATIONS，不重复 delta、不 future leak；TeamAiContextCompiler.renderFocusWindowsSection 注入 TEAM REVIEW FOCUS WINDOWS 段（与 TACTICAL TIMELINE 同一已验证 timeline）。
+  ③ Team Autopsy 归因降级——结算级输出标签「主要战犯/MVP」→「重点复查对象/高贡献者」（prompt + renderSection），新增归因降级规则：仅凭结算与死亡时间不得写成确定战术过错（earlyDeath/weakOutput 只是规则候选）。
+  ④ 车辆角色统一来自 backend——prompt 禁止自创「薄皮输出型/前排/肉盾/狙击车」等角色；tankName/vehicleClass/tier 三路径（主复盘/Autopsy/赛前）同源 ReplayDisplayNames，角色语义唯一来源 TankTacticalProfileRegistry。
+  ⑤ 测试与回归——TimelineFocusWindowSelectorTest（连续减员窗口/BEFORE-AFTER/正常交火/稀疏证据/确定性/不重叠）、TeamReviewQualityGateContractTest（§13-A 全项 + 三语一致）、TeamFocusWindowsRenderTest、TeamTankRoleConsistencyTest（§13-F）、TeamAutopsyPromptBuilderTest 更新（重点复查对象/高贡献者/归因降级）、AiEvalHarnessTest 新增证据契约断言、golden case team-review-causal-overreach-01.json、真实回放 probe TeamReviewRealReplayProbeTest（common/data 样本自动回归，CI 无样本跳过）；真实回放验证 collapse 窗口 3:1（109–128s，本方 3 死对方 1 死）被选中为 Top Window。
 - `common/assets/` 单一来源（logo + favicon）。
 - AGENTS.md 新增规则：三语 i18n、数据库迁移、安全、Java final。
 - Java 全量 final 审计：局部变量、方法入参一律 `final`。
@@ -401,6 +1608,12 @@
 ## [1.5.0] - 2026-06-26
 
 ### Added
+- **AI Review V2.1 — Team Review Quality Gate（ai-review-v2.1-team-quality-gate）**：Team AI 复盘推理质量重构（FACT → TACTICAL INFERENCE → RECOMMENDATION 契约收敛），根因来自真实失败回放（20260817 WildCat SPHT，见 docs/ai-lessons/team-review-causal-overreach-01.md）：
+  ① Team Prompt 重构（prompts/team/single.zh.md + TeamPromptLocalizer 三语常量）——删除强制 10 章节与「开局散开=图控/拿视野」危险规则（改为中性行为，证据不足 UNKNOWN）；新增「团队复盘输出结构」（核心结论 / 关键决策窗口 1-3 / 可确认问题 1-3 / 训练建议 1-3 且必须对应可确认问题 / 对方关键威胁可选）与「证据契约」（FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN：禁止 unsupported 掩体/射界/视野/位置感/必然性/结算→时间线因果/自创精确阈值/残局万能规则/自创车辆角色；禁止硬写「做得好的行为」与凑数量）。
+  ② TimelineFocusWindowSelector（wotb-core timeline 域）——从已验证 canonical BattleTimeline 选出 1-3 个信息密度最高的 Focus Window：短时间连续减员（≤20s 合并、>40s 长链按最大间隔拆分）优先，HP swing/点数/首次接敌/交火/存活变化兜底；每个窗口确定性输出 BEFORE/EVENTS/AFTER/OBSERVED FACTS/EVIDENCE LIMITATIONS，不重复 delta、不 future leak；TeamAiContextCompiler.renderFocusWindowsSection 注入 TEAM REVIEW FOCUS WINDOWS 段（与 TACTICAL TIMELINE 同一已验证 timeline）。
+  ③ Team Autopsy 归因降级——结算级输出标签「主要战犯/MVP」→「重点复查对象/高贡献者」（prompt + renderSection），新增归因降级规则：仅凭结算与死亡时间不得写成确定战术过错（earlyDeath/weakOutput 只是规则候选）。
+  ④ 车辆角色统一来自 backend——prompt 禁止自创「薄皮输出型/前排/肉盾/狙击车」等角色；tankName/vehicleClass/tier 三路径（主复盘/Autopsy/赛前）同源 ReplayDisplayNames，角色语义唯一来源 TankTacticalProfileRegistry。
+  ⑤ 测试与回归——TimelineFocusWindowSelectorTest（连续减员窗口/BEFORE-AFTER/正常交火/稀疏证据/确定性/不重叠）、TeamReviewQualityGateContractTest（§13-A 全项 + 三语一致）、TeamFocusWindowsRenderTest、TeamTankRoleConsistencyTest（§13-F）、TeamAutopsyPromptBuilderTest 更新（重点复查对象/高贡献者/归因降级）、AiEvalHarnessTest 新增证据契约断言、golden case team-review-causal-overreach-01.json、真实回放 probe TeamReviewRealReplayProbeTest（common/data 样本自动回归，CI 无样本跳过）；真实回放验证 collapse 窗口 3:1（109–128s，本方 3 死对方 1 死）被选中为 Top Window。
 - PostgreSQL 数据库：`postgres:18-alpine`，Flyway 管理 schema 迁移。
 - `GlobalExceptionHandler`：统一异常 → JSON 错误响应。
 - 部署健康检查：workflow 容器状态轮询。

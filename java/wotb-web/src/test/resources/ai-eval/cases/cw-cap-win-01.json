@@ -4,12 +4,32 @@
   "arenaBonusType": 3,
   "fixtureKey": "cw-cap-win-01",
   "lessonRef": "docs/ai-lessons/cw-cap-win-01.md",
-  "expectedJudgment": "占点致胜（双方未全灭，点数推断 POINTS_INFERENCE）",
+  "expectedJudgment": "占点致胜（双方未全灭，无权威胜方：fail closed，胜方未知）",
   "checks": [
-    { "kind": "prompt_contains", "text": "CAPTURE_AND_POINTS" },
-    { "kind": "prompt_contains", "text": "victoryPointsEarned" },
-    { "kind": "prompt_contains", "text": "pointsDecided=true" },
-    { "kind": "prompt_contains", "text": "winnerSource=POINTS_INFERENCE" }
+    {
+      "kind": "prompt_contains",
+      "text": "CAPTURE_AND_POINTS"
+    },
+    {
+      "kind": "prompt_contains",
+      "text": "victoryPointsEarned"
+    },
+    {
+      "kind": "prompt_contains",
+      "text": "pointsDecided=true"
+    },
+    {
+      "kind": "prompt_contains",
+      "text": "winnerSource=UNKNOWN"
+    },
+    {
+      "kind": "prompt_contains",
+      "text": "resultSource=UNKNOWN"
+    },
+    {
+      "kind": "prompt_omits",
+      "text": "resultSource=BATTLE_RESULTS"
+    }
   ],
-  "note": "争霸赛点数胜利：双方未全灭、我方占点分更高（规则候选推断，非权威结算 winnerTeam）。"
+  "note": "争霸赛点数胜利：双方未全灭、结算无权威胜方，fail closed：胜方未知，不按占点分推断。"
 }

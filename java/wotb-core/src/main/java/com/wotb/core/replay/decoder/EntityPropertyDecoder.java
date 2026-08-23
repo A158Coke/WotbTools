@@ -3,6 +3,7 @@ package com.wotb.core.replay.decoder;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.event.TurretDirectionChangedEvent;
 import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.stream.RawReplayPacket;
 
@@ -25,14 +26,24 @@ import java.util.List;
  *
  * <p>已逆向（2026-08-09，4 个训练房样本交叉验证）：payload = entityId(u32) +
  * propId(u32) + valueLen(u32) + value；propId=3 的 value 为当前血量（u16 LE，
- * 含装备加成；受击时同步、阵亡到 0、存活不到 0）。其它 propId 语义未确认，
- * 仍输出 UnknownReplayEvent。</p>
+ * 含装备加成；受击时同步、阵亡到 0、存活不到 0）。其它 propId 语义：
+ * 0（len=1，{0,1} 布尔）、4（len=2，256×n+(0|1) 模式）、9（len=1..4，float 类 ~1e9）
+ * 均经 7 真实样本统计排除为 HP（2026-08-21 InitialHpProtocolProbeTest）；
+ * 其余未确认，仍输出 UnknownReplayEvent。</p>
  */
 public class EntityPropertyDecoder implements ReplayPacketDecoder {
 
     static final int TYPE_ENTITY_PROPERTY = 7;
     /** propId=3：当前血量（u16 LE，含装备加成；受击时同步）。 */
     static final int PROP_CURRENT_HP = 3;
+    /**
+     * propId=2：炮塔相对车体偏航（valueLen=2 u16 LE；度 = raw*360/65536 - 180，[-180,180)）。
+     * 2026-08-13 旋转实验证明：车体静止炮塔转一圈 prop2 恰好扫过 360° 且带 wrap；
+     * 开火锚点拟合证明：炮口世界方向 = normalize(hullYaw + prop2)（交叉验证残差 2.3°）。
+     */
+    static final int PROP_TURRET_RELATIVE_YAW = 2;
+    static final double TURRET_YAW_SCALE_DEG = 360.0 / 65536.0;
+    static final double TURRET_YAW_OFFSET_DEG = -180.0;
 
     @Override
     public boolean supports(ReplayDecodeContext context, RawReplayPacket packet) {
@@ -66,15 +77,46 @@ public class EntityPropertyDecoder implements ReplayPacketDecoder {
 
         final List<com.wotb.core.replay.event.ReplayEvent> events = new ArrayList<>();
         if (propId == PROP_CURRENT_HP && valueLen >= 2 && 12 + 2 <= payload.length) {
-            // 当前血量：u16 LE（含装备加成）。受击时客户端同步，阵亡到 0、存活不到 0。
-            final int currentHp = (payload[12] & 0xFF) | ((payload[13] & 0xFF) << 8);
-            events.add(new HealthChangedEvent(
+            // 当前血量：u16 LE 但按 **signed i16** 解释（真实正 HP 恒小，signed 无歧义）。
+            // 受击时客户端同步；阵亡到 0；0xFFFD(signed -3)=已证明的死亡关联 sentinel（11/11 与击毁 ±40 点同刻），
+            // 归一化为死亡 HP=0（alive=false）；0xFFFF(signed -1) 及其它 ≤0 高位值 = UNKNOWN sentinel
+            // （-1 时刻无死亡证据，不得臆测为死亡或 65535），currentHealth 记 null、alive 记 null。
+            final int raw = (payload[12] & 0xFF) | ((payload[13] & 0xFF) << 8);
+            final short signed = (short) raw;
+            if (raw == 0 || raw == HealthChangedEvent.SENTINEL_UNKNOWN_HP) {
+                // 0 = 阵亡到 0；0xFFFD(-3) = 已证明死亡 sentinel → 死亡 HP=0
+                events.add(new HealthChangedEvent(
+                        packet.sequence(), ts, packet.type(),
+                        DecodeConfidence.EXACT,
+                        entityId, 0, null, false));
+            } else if (signed > 0) {
+                // 真实正 HP（含装备加成）
+                events.add(new HealthChangedEvent(
+                        packet.sequence(), ts, packet.type(),
+                        DecodeConfidence.EXACT,
+                        entityId, (int) signed, null, true));
+            } else {
+                // 其它 ≤0 sentinel（如 0xFFFF=-1）：UNKNOWN，不臆测语义；血量记 null
+                warnings.add(new ReplayDecodeWarning("HP_SENTINEL",
+                        "propId=3 raw=0x" + Integer.toHexString(raw)
+                                + " (signed " + signed + ") treated as UNKNOWN HP sentinel at entity "
+                                + entityId));
+                events.add(new HealthChangedEvent(
+                        packet.sequence(), ts, packet.type(),
+                        DecodeConfidence.PARTIAL,
+                        entityId, null, null, null));
+            }
+            return new ReplayDecodeResult(
+                    warnings.isEmpty() ? DecodeStatus.SUCCESS : DecodeStatus.PARTIAL,
+                    events, warnings);
+        }
+        if (propId == PROP_TURRET_RELATIVE_YAW && valueLen >= 2 && 12 + 2 <= payload.length) {
+            // 炮塔相对车体偏航（u16 LE）：度 = raw*360/65536 - 180（完整 360°，±180 回绕）。
+            final int raw = (payload[12] & 0xFF) | ((payload[13] & 0xFF) << 8);
+            final double deg = raw * TURRET_YAW_SCALE_DEG + TURRET_YAW_OFFSET_DEG;
+            events.add(new TurretDirectionChangedEvent(
                     packet.sequence(), ts, packet.type(),
-                    DecodeConfidence.EXACT,
-                    entityId,
-                    currentHp,
-                    null,
-                    currentHp > 0));
+                    DecodeConfidence.EXACT, entityId, deg));
             return new ReplayDecodeResult(
                     warnings.isEmpty() ? DecodeStatus.SUCCESS : DecodeStatus.PARTIAL,
                     events, warnings);

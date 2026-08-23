@@ -10,5 +10,5 @@
     { "kind": "prompt_omits", "text": "单走脱节" },
     { "kind": "prompt_omits", "text": "单走拖延" }
   ],
-  "note": "OBSERVED_DAMAGE_IS_PARTIAL：开局窗口未观察到交火不等于确定未接火，不生成 OPENING_MAP_CONTROL。"
+  "note": "OBSERVED_DAMAGE_IS_PARTIAL：开局窗口未观察到交火不等于确定未接火，不生成 OPENING_SPREAD。"
 }

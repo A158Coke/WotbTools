@@ -1,0 +1,82 @@
+{
+  "modelKey": "leopard-1",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 14609,
+    "modelGlb": "https://api.blitzkit.app/tanks/14609/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160,
+    "y": 143.61
+  },
+  "turretRaster": {
+    "logicalMinX": 104.23,
+    "logicalMinY": -75.49,
+    "logicalMaxX": 215.77,
+    "logicalMaxY": 244.92,
+    "pixelWidth": 223,
+    "pixelHeight": 641,
+    "pivotX": 55.77,
+    "pivotY": 219.1
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.6549224853515625,
+        -3.594482421875
+      ],
+      "max": [
+        1.6549224853515625,
+        3.3264358043670654
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.370707631111145,
+        -1.9531086683273315
+      ],
+      "max": [
+        1.3707075119018555,
+        1.9684340953826904
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.14310531318187714,
+        2.051478624343872
+      ],
+      "max": [
+        0.14310622215270996,
+        5.921646595001221
+      ]
+    },
+    "selectedModules": {
+      "turretId": 30737,
+      "gunId": 20241,
+      "trackId": 36625,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "G89_Leopard1_mtr",
+      "G89_Leopard1_mtr",
+      "G89_Leopard1_mtr",
+      "G89_Leopard1_track_mtr",
+      "G89_Leopard1_track_mtr",
+      "G89_Leopard1_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

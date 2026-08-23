@@ -4,7 +4,7 @@
 
 - **Web 版**：Spring Boot 4 后端，Vue 3 前端，支持浏览器上传、预览、下载。
 
-当前 Web 版已实现。路线图见 [../TODO.md]。
+当前 Web 版已实现。路线图见 [docs/ROADMAP.md](../docs/ROADMAP.md)。
 
 ## 模块
 
@@ -109,6 +109,8 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 ### `POST /api/rating`
 
 `multipart/form-data`，字段名为 `files`。只基于本次上传回放实时计算，不落库、不读取历史记录。
+为取得已证明的进场满血，评分请求会执行完整回放处理：`OBSERVED_EXACT` 使用回放实测进场满血，
+其余车辆使用 Tankopedia 基础 HP，再按本局 14 辆参战车辆总血量 ÷ 14 计算平均血量。
 
 返回：
 
@@ -148,7 +150,7 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 - `POST /api/replay/reconstruct-batch` — 批量重建（单文件 ≤ 20 MiB、请求合计 ≤ 200 MiB），返回 `ReplayBatchProcessingResult`（含 `suggestedAnalysisMode`、逐文件 `ReplayProcessingResult`）。
 - `POST /api/replay/process?reconstruct=false` — 通用批量处理，可选开启重建。
-- `POST /api/replay/analyze` — 上传 `files[]` 生成 AI 战术复盘；**单文件限制（`AiReplayBatchPolicy.MAX_FILES=1`）**，仅 `SINGLE_PLAYER_BATTLE` / `SINGLE_TEAM_BATTLE` 模式（多文件 AI 复盘已移除，2026-08-12）。表单字段 `lang`（必填，白名单 `zh`/`en`/`ru`）控制 AI 复盘输出语言；缺失时返回 `400`，空白或未知值返回 `400 UNKNOWN_LOCALE`。可选表单字段 `correlationId` 用于客户端取消；`POST /api/replay/analyze/cancel?correlationId=...` 中断 in-flight 上游调用（返回 `204`，未注册返回 `404`），被取消请求稳定返回 `AI_CANCELLED`。**响应为 SSE 流式（breaking change，旧同步 JSON 端点不保留）**：事件 `call1_start` / `call1_done` / `evidence_done` / `call2_token`（`{"delta"}`）/ `autopsy_start` / `autopsy_done` / `done`（`{"analysis","preBattleSection","mapOverview"}`，`mapOverview` 可空，字段见 DEVELOPER_GUIDE「地图鸟瞰」节）/ `error`（`{"code"}`，worker 启动后的失败经 SSE 传达）；request-envelope 校验与 worker 池饱和在返回 `SseEmitter` 前由 HTTP 状态码 + 稳定错误码文本返回（400/503）。完整协议见 `docs/team-ai-review-feature.md` §8。
+- `POST /api/replay/analyze` — 上传 `files[]` 生成 AI 战术复盘；**单文件限制（`AiReplayBatchPolicy.MAX_FILES=1`）**，仅 `SINGLE_PLAYER_BATTLE` / `SINGLE_TEAM_BATTLE` 模式（多文件 AI 复盘已移除，2026-08-12）。表单字段 `lang`（必填，白名单 `zh`/`en`/`ru`）控制 AI 复盘输出语言；缺失时返回 `400`，空白或未知值返回 `400 UNKNOWN_LOCALE`。可选表单字段 `correlationId` 用于客户端取消；`POST /api/replay/analyze/cancel?correlationId=...` 中断 in-flight 上游调用（返回 `204`，未注册返回 `404`），被取消请求稳定返回 `AI_CANCELLED`。`POST /api/replay/map-overview` — 上传 `files[]` 只解析回放并确定性生成 `MapOverview`（热力/路线/战局回放，**不调 AI**），同步 JSON 返回；地图不可构建（未知地图/无观测/无名册/视角未解析）返回 `204`；校验与错误码与 analyze 一致。**响应为 SSE 流式（breaking change，旧同步 JSON 端点不保留）**：事件 `call1_start` / `call1_done` / `evidence_done` / `call2_token`（`{"delta"}`）/ `autopsy_start` / `autopsy_done` / `done`（`{"analysis","preBattleSection","mapOverview"}`，`mapOverview` 可空，字段见 `docs/features/battle-playback.md`）/ `error`（`{"code"}`，worker 启动后的失败经 SSE 传达）；request-envelope 校验与 worker 池饱和在返回 `SseEmitter` 前由 HTTP 状态码 + 稳定错误码文本返回（400/503）。完整协议见 `docs/features/team-ai-review.md` §8。
 
 **策略**：上传文件先统一校验扩展名、空文件和单文件大小；通过预校验后，解析/重建错误才按文件隔离。系统执行 SHA-256 精确去重，并按 battle + perspective 分组。随机战斗分析录像者个人；训练房/联赛分析录像者所在整队，录像者只用于解析 `perspectiveTeam`。同场同队回放只选一个代表，同场双方保持独立；未点亮敌人仍未知，不能跨录像补全视野。
 
@@ -156,13 +158,22 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`AI_CANCELLED`、`AI_UPSTREAM_UNAVAILABLE` 等），前端以 zh/en/ru 本地化。`/api/replay/**` 需要 `wotbtools-user` 或 `wotbtools-admin` 角色；未配置 `AI_API_KEY` 时 `/analyze` 返回 `AI_NOT_CONFIGURED`，应用其余功能不受影响。全链路超时对齐：整体 deadline 默认 1100s（团队 3 次 AI 调用 + 余量，`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）→ 前端 analyze 安全超时 1100s < 容器 nginx `/api/replay/analyze` 1120s，后端 AI 单次预算 `AI_CALL_TIMEOUT_SEC=315s` + 解析余量；`AI_TIMEOUT` 不再自动重试（上游可能已计费）。
 
-### 排行榜
+### 名人堂（Hall of Fame）
 
-每条记录 = 录像者本人在一场**随机战斗**（`arenaBonusType==1`，训练房/娱乐/联赛拒绝）中用某辆车打出的单场伤害；通过排行榜上传入口写入（去重键 `arena_id + account_id`）。
+每条记录 = 录像者本人在一场**随机战斗**（`arenaBonusType==1`）或**评级战斗**（`==7`）中用某辆车打出的单场伤害（战斗模式判断集中在 `HallOfFameBattleTypePolicy`，其余模式 → 400 `UNSUPPORTED_BATTLE_TYPE`，零持久化）；通过名人堂上传入口写入（去重键 `arena_id + account_id`）。
 
-- `GET /api/leaderboard/top-damage?page=1&size=50` — 全局伤害榜（降序，`size` 最大 200）。
-- `GET /api/leaderboard/tanks/{tankId}/top-damage?page=1&size=50` — 指定车辆伤害榜。
-- `POST /api/leaderboard/upload` — 上传单场回放；跳过时返回英文 `reasonCode`，由前端本地化。
+- `GET /api/hof?battleType=RANDOM|RATING&tankId=&nickname=&page=&size=` — 统一公开查询（匿名；排序 damage DESC → RATING 优先 → battleTime ASC NULLS LAST → createdAt → id；rank = 当前 filter 上下文位置排名）。
+- `POST /api/hof/upload` — 上传单场回放（**需登录**）；不支持战斗模式 → 400 `UNSUPPORTED_BATTLE_TYPE`；其余跳过时返回英文 `reasonCode`（`DUPLICATE_OR_UNKNOWN_RECORDER` / `REPLAY_HASH_CONFLICT`），由前端本地化。
+- `GET /api/hof/{id}/replay` — 下载该记录原始回放文件（**需登录**，任意已登录用户；无文件 → 404 `REPLAY_FILE_NOT_FOUND`）。
+- 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof`（搜索/筛选/排序/分页）、`GET /api/admin/hof/audit`（操作日志，只读）、`GET /api/admin/hof/{id}/replay`（下载）、`DELETE /api/admin/hof/{id}`（hard delete，audit+delete 单事务，最后引用清理物理文件；删除后同一回放可重新上传）。
+- 原始 .wotbreplay 以 SHA-256 内容寻址存 `HOF_REPLAY_DIR`（默认 `data/replays`，生产 volume `/data/replays`）；老记录无文件不显示下载按钮。
+- **百场（Hundred Battles）**：Tier X 车辆独立的生涯场均伤害排行榜，成绩需管理员人工审核（`com.wotb.web.hundred` 域）：
+  - `GET /api/hof/hundred?vehicleId=&page=&size=` — 公开排行榜（匿名；competition ranking 1,2,2,4 由分组计数前缀和 query-time 派生，不落库；只输出 approved* 快照）。
+  - `POST /api/hof/hundred/submissions` — 提交百场成绩（**需登录** + Profile gameId/nickname 已配置；multipart：vehicleId/averageDamage/battleCount/screenshot(base64)/replays×5）。硬门禁：Tier X authoritative 校验、5 个 replay 全部解析成功且 gameId/vehicleId 匹配、5 场不同 battle；任一失败整单拒绝不进入 PENDING。同车已有 PENDING → 409 `HUNDRED_PENDING_EXISTS`；新成绩未严格高于 CURRENT → 409 `HUNDRED_NOT_HIGHER`。
+  - `POST /api/hof/hundred/submissions/{id}/cancel` — 用户撤销自己的 PENDING（**需登录**）。
+  - `GET /api/users/hundred/status` — 个人中心百场状态（CURRENT / PENDING / 最近拒绝；**需登录**）。
+  - 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof/hundred/submissions`（status 过滤）、`GET .../submissions/{id}`（详情，proofScreenshot 仅 PENDING 返回）、`GET .../submissions/{id}/replays`（回放审核证据 metadata 列表，旧 PENDING → 空）、`GET .../submissions/{submissionId}/replays/{replayId}`（下载原始 .wotbreplay，ownership 校验 + UTF-8 filename）、`POST .../{id}/approve`（事务内重读 CURRENT 按 approvedAverageDamage 严格比较，旧 CURRENT→SUPERSEDED）、`POST .../{id}/reject`（原因强制）、`POST .../{id}/delete`（仅 CURRENT，原因强制，不恢复 SUPERSEDED）。
+  - 数据模型：`hundred_battle_submission` 单表生命周期（Flyway `V18`），partial unique index 保证 user+vehicle 最多一个 PENDING/CURRENT；身份/成绩快照创建瞬间冻结；proof 截图终态事务内清空（不永久保存）；5 个原始 replay 由 `hundred_battle_replay_evidence`（Flyway `V19`）内容寻址持久化（复用 `HallOfFameReplayStorage`），终态（APPROVE/REJECT/CANCEL）同事务删 evidence 行 + commit 后跨表引用计数清理物理文件（失败仅 WARN 保留 orphan）。
 
 ### 陪练与打手（仅在线版）
 
@@ -197,7 +208,7 @@ mvn -s settings.xml test
 测试覆盖：
 
 - `wotb-core` 的 `ParityTest`：集成测试，覆盖解析、字段不变量、去重、汇总、xlsx 导出。
-- `wotb-web` 的 boost / leaderboard / security / API 契约单元测试都会执行；无需数据库的 controller 契约已拆出，始终运行。
+- `wotb-web` 的 boost / hof / security / API 契约单元测试都会执行；无需数据库的 controller 契约已拆出，始终运行。
 - `WebApiTest` 只保留 PostgreSQL/真实回放集成路径；无 Docker 或无 `common/data` 时按条件跳过。
 
 测试样本来自仓库根目录的 `common/data/`。

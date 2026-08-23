@@ -220,4 +220,79 @@ class PreBattleSectionRendererTest {
         assertTrue(section.contains("Mobility=High"),
                 "composition key/value must follow requested language: " + section);
     }
+
+    @Test
+    void rendererKeepsClusterTermsForFinalSanitizeBoundary() {
+        // renderer 无 authoritative Battle context（nickname/tankName/clan 可能合法含「簇」），
+        // 不得提前裸替换——「簇」字兜底由最终输出边界（AiReplayReviewService.sanitizeClusterTerms
+        // 带 protected literals）统一处理；此处守护 renderer 不破坏 proper noun。
+        final PreBattleStrategicPrior clusterPrior = new PreBattleStrategicPrior(
+                new PreBattleStrategicPrior.TeamProfile(
+                        Map.of(),
+                        List.of("多车同簇推进"),
+                        List.of("主力簇分簇行动"),
+                        List.of("一簇强攻")),
+                null, List.of(), List.of(), List.of());
+        final String section = PreBattleSectionRenderer.render(clusterPrior);
+        assertTrue(section.contains("多车同簇推进"), "同簇 必须原样保留（最终边界处理）: " + section);
+        assertTrue(section.contains("主力簇分簇行动"), "主力簇/分簇 必须原样保留: " + section);
+        assertTrue(section.contains("一簇强攻"), "一簇 必须原样保留: " + section);
+        assertFalse(section.contains("集群推进"), "renderer 不得提前替换成集群: " + section);
+    }
+
+    @Test
+    void rendererKeepsAllClusterVariantsVerbatim() {
+        final PreBattleStrategicPrior clusterPrior = new PreBattleStrategicPrior(
+                new PreBattleStrategicPrior.TeamProfile(
+                        Map.of("mobility", "高簇"),
+                        List.of("小簇袭扰", "车辆簇集中"),
+                        List.of("簇状推进"),
+                        List.of("簇拥出击")),
+                null,
+                List.of(new PreBattleStrategicPrior.KeyMatchup(
+                        "GRID_REGION_5", "TEAM_A", "主力簇并进")),
+                List.of(new PreBattleStrategicPrior.StrategicWinCondition(
+                        "TEAM_A", "多簇拉扯")),
+                List.of(new PreBattleStrategicPrior.StrategicHypothesis(
+                        "H1", "簇", "一簇")));
+        final String section = PreBattleSectionRenderer.render(clusterPrior);
+        assertTrue(section.contains("小簇袭扰"), section);
+        assertTrue(section.contains("车辆簇集中"), section);
+        assertTrue(section.contains("簇状推进"), section);
+        assertTrue(section.contains("簇拥出击"), section);
+        assertTrue(section.contains("机动性=高簇"), section);
+        assertTrue(section.contains("主力簇并进"), section);
+        assertTrue(section.contains("多簇拉扯"), section);
+        assertTrue(section.contains("H1：簇"), section);
+    }
+
+    @Test
+    void rendererKeepsEveryClusterVariantAcrossAllFieldsVerbatim() {
+        // 每个用户可见自由文本字段都塞入不同「簇」形态：strengths/weaknesses/plans/
+        // composition 值/keyMatchups area+advantage+reason/winConditions/hypotheses。
+        // renderer 不做「簇」替换（无 authoritative context），全部原样保留给最终边界。
+        final PreBattleStrategicPrior dirty = new PreBattleStrategicPrior(
+                new PreBattleStrategicPrior.TeamProfile(
+                        Map.of("mobility", "高簇", "burstPotential", "MEDIUM"),
+                        List.of("小簇袭扰"),
+                        List.of("车辆簇集中"),
+                        List.of("簇状推进")),
+                new PreBattleStrategicPrior.TeamProfile(
+                        Map.of(),
+                        List.of("簇拥集火"),
+                        List.of("多簇分散"),
+                        List.of("主力簇并进")),
+                List.of(new PreBattleStrategicPrior.KeyMatchup(
+                        "GRID_REGION_5", "TEAM_A", "一簇强攻")),
+                List.of(new PreBattleStrategicPrior.StrategicWinCondition(
+                        "TEAM_A", "成簇集结")),
+                List.of(new PreBattleStrategicPrior.StrategicHypothesis(
+                        "H1", "分簇行动", "同簇换线")));
+        final String section = PreBattleSectionRenderer.render(dirty);
+        for (final String verbatim : List.of("高簇", "小簇袭扰", "车辆簇集中", "簇状推进",
+                "簇拥集火", "多簇分散", "主力簇并进", "一簇强攻", "成簇集结", "分簇行动", "同簇换线")) {
+            assertTrue(section.contains(verbatim),
+                    "renderer 必须原样保留「" + verbatim + "」（最终边界统一 sanitize）: " + section);
+        }
+    }
 }

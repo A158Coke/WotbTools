@@ -1,10 +1,15 @@
 package com.wotb.web.replay.ai;
 
+import com.wotb.core.ai.ClusterTermSanitizer;
+import com.wotb.core.ai.TankNameCorrector;
+import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
 import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.core.processing.BatchAnalyzer;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.PerspectiveTeamNotResolvedException;
+import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.ReplayAnalysisScope;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.ReplayProcessingOptions;
@@ -13,6 +18,7 @@ import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.processing.TeamPerspectiveResolver;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
+import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.web.replay.metrics.ReplayUsageMetrics;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -24,6 +30,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
+import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import org.springframework.stereotype.Service;
@@ -34,6 +41,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.Locale;
+import java.util.stream.Collectors;
 
 @Service
 public class AiReplayReviewService {
@@ -115,6 +123,12 @@ public class AiReplayReviewService {
         } catch (final ReplayFileCountExceededException e) {
             result = "rejected";
             errorType = "REPLAY_FILE_COUNT_EXCEEDED";
+            throw e;
+        } catch (final AiTimelineUnusableException e) {
+            // Timeline 不可用（PR #102 review）：拒绝且按稳定码记录错误类型指标
+            // （固定低基数值，不引入高基数 label；detail 只留日志不进指标）。
+            result = "rejected";
+            errorType = AiTimelineUnusableException.STABLE_ERROR_CODE;
             throw e;
         } catch (final IllegalArgumentException e) {
             // 文件校验 / NO_BATTLE_DATA / token budget 拒绝：均计入 rejected
@@ -215,26 +229,108 @@ public class AiReplayReviewService {
                         analyzableGroups.getFirst().representative();
                 final TacticalReviewHarness.HarnessOutcome outcome = harnessOrFallback(
                         representative, language, listener);
+                final Battle battle = representative.battle();
+                final List<String> corrected = sanitizeClusterTerms(correctTankNames(packageSections(
+                        outcome.result().analysis(),
+                        renderRandomBattleSection(representative, outcome.preBattlePrior(), language)),
+                        battle), battle);
                 yield new AnalyzeResponse(
-                        withDisclaimerFooter(outcome.result().analysis(), language),
-                        renderRandomBattleSection(
-                                representative,
-                                outcome.preBattlePrior(), language),
-                        MapOverviewBuilder.build(
-                                representative.battle(), representative.reconstruction()));
+                        withDisclaimerFooter(corrected.get(0), language),
+                        corrected.get(1),
+                        MapOverviewBuilder.build(battle, representative.reconstruction()));
             }
             case SINGLE_TEAM_BATTLE -> {
                 final TeamAnalyzeResult teamResult = aiAnalysisService
                         .analyzeTeamGroups(analyzableGroups, language, listener);
                 final ReplayProcessingResult first = analyzableGroups.getFirst().representative();
+                final Battle battle = first.battle();
+                final List<String> corrected = sanitizeClusterTerms(correctTankNames(packageSections(
+                        teamResult.analysis().analysis(), teamResult.preBattleSection()), battle), battle);
                 yield new AnalyzeResponse(
-                        withDisclaimerFooter(teamResult.analysis().analysis(), language),
-                        teamResult.preBattleSection(),
-                        MapOverviewBuilder.build(first.battle(), first.reconstruction()));
+                        withDisclaimerFooter(corrected.get(0), language),
+                        corrected.get(1),
+                        MapOverviewBuilder.build(battle, first.reconstruction()));
             }
             case NONE -> throw new IllegalArgumentException("NO_BATTLE_DATA");
             default -> throw new UnsupportedReplayAnalysisModeException("UNSUPPORTED_BATTLE_CATEGORY");
         };
+    }
+
+    /**
+     * 坦克名称确定性校验/纠正：把同一 AI Review 的多个文本（analysis + preBattleSection）
+     * 视为一个 correction package，跨文本共享昵称锚点已证明的传播映射后再逐文本纠正
+     * （见 {@link TankNameCorrector#correctAll(List, Collection)}）。
+     * 只做文本级纠正，不改任何解析/结算数据；有处理明细时记日志（含 R3 独立检测）。
+     * null 输入段原样返回 null；返回列表与输入一一对应。
+     */
+    private static List<String> correctTankNames(final List<String> texts, final Battle battle) {
+        if (texts == null || texts.isEmpty()
+                || battle == null || battle.players == null || battle.players.isEmpty()) {
+            return texts;
+        }
+        final List<TankNameCorrector.RosterEntry> roster = battle.players.stream()
+                .filter(p -> PlayerSideResolver.isValidRawTeam(p.team))
+                .filter(p -> p.tankId > 0)
+                .map(p -> new TankNameCorrector.RosterEntry(
+                        p.nickname == null ? "" : p.nickname,
+                        ReplayDisplayNames.tankName(p.tankId, p.tankName)))
+                .toList();
+        if (roster.isEmpty()) {
+            return texts;
+        }
+        final List<TankNameCorrector.Result> results = TankNameCorrector.correctAll(texts, roster);
+        final List<String> corrected = new ArrayList<>(texts.size());
+        for (int i = 0; i < texts.size(); i++) {
+            corrected.add(texts.get(i) == null ? null : results.get(i).text());
+        }
+        final String detail = results.stream()
+                .flatMap(r -> r.replacements().stream())
+                .map(r -> r.original() + " -> " + r.replacement() + "[" + r.reason() + "]")
+                .collect(Collectors.joining("; "));
+        if (!detail.isEmpty()) {
+            LOGGER.info("AI tank-name correction applied: {}", detail);
+        }
+        return corrected;
+    }
+
+    /**
+     * 「簇」字确定性兜底（{@link ClusterTermSanitizer}）：对 correction package 各段统一应用，
+     * 消除 AI 生成的内部术语「簇」；同时保护权威 proper noun（roster 昵称 / 权威坦克名，
+     * 可能合法含「簇」）原样保留。null 段原样保留。
+     */
+    static List<String> sanitizeClusterTerms(final List<String> texts, final Battle battle) {
+        final List<String> protectedLiterals = new ArrayList<>();
+        if (battle != null && battle.players != null) {
+            for (final PlayerResult p : battle.players) {
+                if (p == null) {
+                    continue;
+                }
+                if (p.nickname != null && !p.nickname.isBlank()) {
+                    protectedLiterals.add(p.nickname);
+                }
+                if (p.clan != null && !p.clan.isBlank()) {
+                    // teamLabel（TeamPerspectiveLabelResolver 从 clan 聚合）可能含「簇」
+                    protectedLiterals.add(p.clan);
+                }
+                final String tankName = ReplayDisplayNames.tankName(p.tankId, p.tankName);
+                if (tankName != null && !tankName.isBlank()) {
+                    protectedLiterals.add(tankName);
+                }
+            }
+        }
+        final List<String> out = new ArrayList<>(texts.size());
+        for (final String t : texts) {
+            out.add(t == null ? null : ClusterTermSanitizer.sanitize(t, protectedLiterals));
+        }
+        return out;
+    }
+
+    /** 组装 correction package 的各段（允许 null 元素，null 段原样保留）。 */
+    private static List<String> packageSections(final String analysis, final String preBattleSection) {
+        final List<String> sections = new ArrayList<>(2);
+        sections.add(analysis);
+        sections.add(preBattleSection);
+        return sections;
     }
 
     /** 复盘固定结尾免责句（三语），追加在 analysis 末尾。 */

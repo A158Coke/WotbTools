@@ -1,0 +1,82 @@
+{
+  "modelKey": "t-62a",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 13825,
+    "modelGlb": "https://api.blitzkit.app/tanks/13825/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160,
+    "y": 153.57
+  },
+  "turretRaster": {
+    "logicalMinX": 105.31,
+    "logicalMinY": -86.2,
+    "logicalMaxX": 214.68,
+    "logicalMaxY": 219.63,
+    "pixelWidth": 219,
+    "pixelHeight": 612,
+    "pivotX": 54.69,
+    "pivotY": 239.77
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.6908177137374878,
+        -3.4156274795532227
+      ],
+      "max": [
+        1.6908177137374878,
+        3.2900428771972656
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.3024343252182007,
+        -1.3571016788482666
+      ],
+      "max": [
+        1.3021084070205688,
+        1.7134760618209839
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.14323334395885468,
+        1.8581119775772095
+      ],
+      "max": [
+        0.14323334395885468,
+        5.92548942565918
+      ]
+    },
+    "selectedModules": {
+      "turretId": 26113,
+      "gunId": 26881,
+      "trackId": 31489,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "R87_T62A_mtr",
+      "R87_T62A_mtr",
+      "R87_T62A_mtr",
+      "R87_T62A_track_mtr",
+      "R87_T62A_track_mtr",
+      "R87_T62A_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

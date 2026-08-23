@@ -1,0 +1,82 @@
+{
+  "modelKey": "maus",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 6929,
+    "modelGlb": "https://api.blitzkit.app/tanks/6929/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160,
+    "y": 193.23
+  },
+  "turretRaster": {
+    "logicalMinX": 112.19,
+    "logicalMinY": -19.64,
+    "logicalMaxX": 207.81,
+    "logicalMaxY": 267.24,
+    "pixelWidth": 191,
+    "pixelHeight": 574,
+    "pivotX": 47.81,
+    "pivotY": 212.87
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.8600600957870483,
+        -4.437963962554932
+      ],
+      "max": [
+        1.8600600957870483,
+        4.595536231994629
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.5337796211242676,
+        -3.5188093185424805
+      ],
+      "max": [
+        1.5337797403335571,
+        1.0040172338485718
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.2543160319328308,
+        1.031419277191162
+      ],
+      "max": [
+        0.24294689297676086,
+        5.683868408203125
+      ]
+    },
+    "selectedModules": {
+      "turretId": 11537,
+      "gunId": 266513,
+      "trackId": 14609,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "Maus_mtr",
+      "Maus_mtr",
+      "Maus_mtr",
+      "Maus_track_mtr",
+      "Maus_track_mtr",
+      "Maus_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

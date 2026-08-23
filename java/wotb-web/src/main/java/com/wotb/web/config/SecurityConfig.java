@@ -33,11 +33,16 @@ import static com.wotb.web.config.ApiPaths.BOOST_REQUESTS_PATTERN;
 import static com.wotb.web.config.ApiPaths.COLUMNS;
 import static com.wotb.web.config.ApiPaths.EXPORT;
 import static com.wotb.web.config.ApiPaths.HEALTH;
-import static com.wotb.web.config.ApiPaths.LEADERBOARD_PATTERN;
+import static com.wotb.web.config.ApiPaths.HOF_ADMIN_PATTERN;
+import static com.wotb.web.config.ApiPaths.HOF_HUNDRED_SUBMISSIONS_PATTERN;
+import static com.wotb.web.config.ApiPaths.HOF_PATTERN;
+import static com.wotb.web.config.ApiPaths.HOF_REPLAY_PATTERN;
+import static com.wotb.web.config.ApiPaths.HOF_UPLOAD;
 import static com.wotb.web.config.ApiPaths.PREVIEW;
 import static com.wotb.web.config.ApiPaths.RATING;
 import static com.wotb.web.config.ApiPaths.REPLAY_ANALYZE;
 import static com.wotb.web.config.ApiPaths.REPLAY_ANALYZE_CANCEL;
+import static com.wotb.web.config.ApiPaths.REPLAY_MAP_OVERVIEW;
 import static com.wotb.web.config.ApiPaths.REPLAY_PROCESS;
 import static com.wotb.web.config.ApiPaths.REPLAY_RECONSTRUCT_BATCH;
 import static com.wotb.web.config.ApiPaths.USERS_PATTERN;
@@ -68,13 +73,18 @@ public class SecurityConfig {
                 .requestMatchers(BOOST_OPTIONS).permitAll()
                 .requestMatchers(HEALTH, COLUMNS, RATING,
                         PREVIEW, EXPORT).permitAll()
-                .requestMatchers(LEADERBOARD_PATTERN).permitAll()
+                // 名人堂查询公开；上传/下载需登录（必须置于 HOF_PATTERN permitAll 之前）
+                .requestMatchers(HOF_UPLOAD, HOF_REPLAY_PATTERN).authenticated()
+                // 百场：排行榜公开；提交/取消需登录（必须置于 HOF_PATTERN permitAll 之前）
+                .requestMatchers(HOF_HUNDRED_SUBMISSIONS_PATTERN).authenticated()
+                .requestMatchers(HOF_PATTERN).permitAll()
 
                 // --- AI 复盘与批量处理 (wotbtools-user / wotbtools-admin) ---
                 .requestMatchers(REPLAY_RECONSTRUCT_BATCH,
                         REPLAY_PROCESS,
                         REPLAY_ANALYZE,
-                        REPLAY_ANALYZE_CANCEL)
+                        REPLAY_ANALYZE_CANCEL,
+                        REPLAY_MAP_OVERVIEW)
                     .hasAnyRole("wotbtools-user", "wotbtools-admin")
 
                 // --- 管理员用户管理 (仅 wotbtools-admin) ---
@@ -84,6 +94,10 @@ public class SecurityConfig {
                 // --- 打手管理（boost-manager 仅可访问该域） ---
                 .requestMatchers(ADMIN_BOOST_PATTERN)
                     .hasAnyRole("wotbtools-admin", "boost-manager")
+
+                // --- 名人堂管理（HoF-admin 或 wotbtools-admin；必须置于 ADMIN_PATTERN 之前） ---
+                .requestMatchers(HOF_ADMIN_PATTERN)
+                    .hasAnyRole("HoF-admin", "wotbtools-admin")
 
                 // --- 其他管理员接口仅超级管理员 ---
                 .requestMatchers(ADMIN_PATTERN)

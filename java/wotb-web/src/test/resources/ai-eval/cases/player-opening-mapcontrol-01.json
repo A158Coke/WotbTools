@@ -4,10 +4,10 @@
   "arenaBonusType": 1,
   "fixtureKey": "player-opening-mapcontrol-01",
   "lessonRef": "docs/ai-lessons/player-opening-mapcontrol-01.md",
-  "expectedJudgment": "开局图控（散开拿视野，非脱节）",
+  "expectedJudgment": "开局分散（信息覆盖 trade-off，非脱节；不得声称拿视野/点亮）",
   "checks": [
-    { "kind": "prompt_contains", "text": "开局图控" },
+    { "kind": "prompt_contains", "text": "开局分散" },
     { "kind": "prompt_omits", "text": "单走脱节" }
   ],
-  "note": "随机战开局散开：SoloPlayIntentSkill 抑制开局脱节候选，标注图控。"
+  "note": "随机战开局分散：SoloPlayIntentSkill 抑制开局脱节候选，输出 OPENING_SPREAD 中性 signal（不声称拿视野/点亮）。"
 }

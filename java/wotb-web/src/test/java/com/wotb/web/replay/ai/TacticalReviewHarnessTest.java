@@ -14,7 +14,9 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
+import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.reconstruction.BattleLifecycle;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
@@ -57,7 +59,7 @@ class TacticalReviewHarnessTest {
 
     private static AiReplayAnalysisConfig config() {
         return new AiReplayAnalysisConfig(
-                ESTIMATOR, "test-model", 100_000, 131_072, 8192, 1000, false, null, 315);
+                ESTIMATOR, "test-model", 100_000, 131_072, 8192, 1000, false, null, 315, 4096);
     }
 
     private static TacticalReviewHarness harness(final AiChatGateway gateway) {
@@ -164,11 +166,23 @@ class TacticalReviewHarnessTest {
         final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
                 0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(),
                 true, 1000f, true);
+        // 事件流必须足以构建 canonical timeline：映射 + 位置 + 血量 + 伤害
         final List<com.wotb.core.replay.event.ReplayEvent> events = List.of(
                 new ParticipantMappingEvent(
                         0, new ReplayTimestamp(1000f, 0f), 8, DecodeConfidence.EXACT, 1, 1001),
+                new ParticipantMappingEvent(
+                        1, new ReplayTimestamp(1000f, 0f), 8, DecodeConfidence.EXACT, 4, 2001),
+                new PositionChangedEvent(
+                        2, new ReplayTimestamp(1000f, 0f), 10, DecodeConfidence.EXACT,
+                        1, 0, 0, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0),
+                new PositionChangedEvent(
+                        3, new ReplayTimestamp(1010f, 10f), 10, DecodeConfidence.EXACT,
+                        4, 0, 0, -10f, 0f, -10f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0),
+                new HealthChangedEvent(
+                        4, new ReplayTimestamp(1000f, 0f), 7, DecodeConfidence.EXACT,
+                        1, 1000, null, true),
                 new DamageEvent(
-                        1, new ReplayTimestamp(1010f, 10f), 8, DecodeConfidence.EXACT,
+                        5, new ReplayTimestamp(1010f, 10f), 8, DecodeConfidence.EXACT,
                         1, 4, null, null, 420, false));
         final List<BattleStateCheckpoint> checkpoints = List.of(
                 cp(1000f, 1, 1001, 1, 1000, 0f, 0f),
@@ -222,10 +236,12 @@ class TacticalReviewHarnessTest {
     }
 
     @Test
-    void noReconstructionFallsBackToOldPath() {
-        final AnalyzeResult result = harness(gateway(PRIOR_JSON))
-                .analyze(result(null), AllowedLanguage.ZH);
-        assertEquals("old-path-text", result.analysis());
+    void noReconstructionRejectsWithTimelineUnusable() {
+        // docs/current-plan.md §3：无 canonical timeline → 拒绝 AI Review（不走 settlement-only fallback）
+        final com.wotb.web.replay.exception.AiTimelineUnusableException e = assertThrows(
+                com.wotb.web.replay.exception.AiTimelineUnusableException.class,
+                () -> harness(gateway(PRIOR_JSON)).analyze(result(null), AllowedLanguage.ZH));
+        assertTrue(e.getMessage().contains("AI_TIMELINE_UNUSABLE"));
     }
 
     @Test
@@ -322,7 +338,30 @@ class TacticalReviewHarnessTest {
     @Test
     void sequentialTheoreticalTimeoutNeverExceedsEndpointDeadline() {
         // Call #1(45s) + 旧路径 fallback(≤315s) 的理论最坏值必须低于前端/后端/nginx 的 1100s
-        assertTrue(TacticalReviewHarness.CALL_1_BUDGET_SEC + config().callTimeoutSec()
+        assertTrue(PreBattleStrategicService.PRE_BATTLE_CALL_TIMEOUT_SEC + config().callTimeoutSec()
                 < TacticalReviewHarness.ENDPOINT_DEADLINE_SEC);
+    }
+
+    @Test
+    void playerCall2IsNotLimitedByTeamReviewCap() {
+        // PR #103 review BLOCKER C：Team cap（teamReviewMaxOutputTokens）只作用于 Team Call #2；
+        // Player Call #2（TacticalReviewHarness）必须保持 global cap，不被 Team cap 无意限制。
+        final int globalMaxOutput = 32_768;
+        final int teamCap = 4_096;
+        final AiReplayAnalysisConfig cfg = new AiReplayAnalysisConfig(
+                ESTIMATOR, "test-model", 100_000, 131_072, globalMaxOutput, 1000,
+                false, null, 315, teamCap);
+        final RecordingGateway gateway = recordingGateway(PRIOR_JSON, null);
+        final PlayerReplayAnalysisService playerService = new PlayerReplayAnalysisService(gateway, cfg);
+        final PreBattleStrategicService preBattleService = new PreBattleStrategicService(gateway, cfg, null);
+        final TacticalReviewHarness harness = new TacticalReviewHarness(
+                playerService, preBattleService, gateway, cfg, System::nanoTime, null);
+
+        final AnalyzeResult result = harness.analyze(result(recon()), AllowedLanguage.ZH);
+
+        assertEquals("harness-review-text", result.analysis());
+        assertNotNull(gateway.lastHarnessRequest, "player Call #2 must run");
+        assertEquals(globalMaxOutput, gateway.lastHarnessRequest.maxOutputTokens(),
+                "Player Call #2 must keep the global output cap; Team cap must not leak into the player path");
     }
 }

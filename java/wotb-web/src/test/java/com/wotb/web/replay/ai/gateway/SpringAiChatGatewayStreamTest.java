@@ -216,7 +216,7 @@ class SpringAiChatGatewayStreamTest {
         final SpringAiChatGateway unconfigured = SpringAiChatGateway.fromProperties(
                 new com.wotb.web.config.AiModelProperties(
                         "", "https://api.deepseek.com", "test-model", 10, 300, 315, 3,
-                        1000, 8000, 2.0, 1_000_000, 940_000, 32_768, 16_384, true, "max", false),
+                        1000, 8000, 2.0, 1_000_000, 940_000, 32_768, 16_384, true, "max", false, 4096),
                 null);
         assertThrows(AiNotConfiguredException.class,
                 () -> unconfigured.stream(request(), received::append));

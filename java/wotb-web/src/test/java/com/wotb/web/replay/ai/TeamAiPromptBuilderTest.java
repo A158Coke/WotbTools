@@ -1,5 +1,6 @@
 package com.wotb.web.replay.ai;
 
+import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
@@ -10,6 +11,8 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.ParticipantMappingEvent;
+import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.feature.CanonicalMapPosition;
@@ -20,7 +23,6 @@ import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.feature.TeamAggregateResult;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamEngagementSummary;
-import com.wotb.core.replay.feature.EngagementOutcome;
 import com.wotb.core.replay.feature.TeamFeatureCoverage;
 import com.wotb.core.replay.feature.TeamFormationPhase;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
@@ -136,7 +138,7 @@ class TeamAiPromptBuilderTest {
     }
 
     @Test
-    void supremacyPointsVictoryLabelWhenWinnerMissing() {
+    void supremacyPointsVictoryLabelFailsClosedWhenWinnerMissing() {
         final SingleTeamBattleAnalysisContext context =
                 contextWithNickname("Ally");
         context.battle().winnerTeam = null;
@@ -149,13 +151,14 @@ class TeamAiPromptBuilderTest {
         enemy.victoryPointsEarned = 700;
         context.battle().players = List.of(
                 context.battle().players.get(0), enemy);
+        context.battle().rosterComplete = true;
 
         final TeamAiPromptBuilder.PromptInput input =
                 TeamAiPromptBuilder.single(context);
 
-        assertTrue(input.content().matches("(?s).*result=.*落败（时间耗尽点数判定）.*"),
-                input.content());
-        assertFalse(input.content().contains("平局或未知"));
+        // 无权威胜方：禁止按占点分推断胜方 → fail closed 为未知
+        assertTrue(input.content().contains("result=平局或未知"), input.content());
+        assertFalse(input.content().contains("落败"), input.content());
     }
 
     @Test
@@ -182,14 +185,11 @@ class TeamAiPromptBuilderTest {
                 1, List.of(member), aggregate, TeamObservedAggregate.empty(),
                 List.of(), List.of(), List.of(), List.of(),
                 TeamFeatureCoverage.empty(), List.of(), true);
-        final ReplayReconstruction recon = new ReplayReconstruction(
-                null, null, 600f, 30f, List.of(),
-                List.<ReplayEvent>of(
-                        new DamageEvent(0, new ReplayTimestamp(35f, null), 8,
-                                DecodeConfidence.EXACT, 0, 0, 20_001L, 10_001L, 400, false),
-                        new DamageEvent(1, new ReplayTimestamp(43f, null), 8,
-                                DecodeConfidence.EXACT, 0, 0, 20_001L, 10_001L, 300, false)),
-                List.of(), null, null, null);
+        final ReplayReconstruction recon = DamageWindowFixture.recon(30f,
+                new DamageEvent(0, new ReplayTimestamp(35f, null), 8,
+                        DecodeConfidence.EXACT, 0, 0, 20_001L, 10_001L, 400, false),
+                new DamageEvent(1, new ReplayTimestamp(43f, null), 8,
+                        DecodeConfidence.EXACT, 0, 0, 20_001L, 10_001L, 300, false));
         final SingleTeamBattleAnalysisContext context = new SingleTeamBattleAnalysisContext(
                 "unit-A", null, "f.wotbreplay", null, battle, 1, features,
                 new ReplayCoverage(false, 0, 0, 0, 0, 0, 0.0, Map.of()),
@@ -754,7 +754,7 @@ class TeamAiPromptBuilderTest {
         battle.players = List.of(ally);
         final TeamEngagementSummary engagement = new TeamEngagementSummary(
                 10f, 20f, List.of(10_001L), List.of(20_001L),
-                1200, 800, List.of(20_001L), 3, EngagementOutcome.FAVORABLE,
+                1200, 800, List.of(20_001L), 3,
                 DecodeConfidence.EXACT);
         final TeamAggregateResult aggregate = new TeamAggregateResult(
                 1, 1000, 800, 0, 0, 0, 1, 0, null, null, null, true);
@@ -786,21 +786,87 @@ class TeamAiPromptBuilderTest {
         assertTrue(completeContent.contains("receivedSubset=800"), completeContent);
     }
 
+
+
+    @Test
+    void pointsSituationBlockIsTrimmedAsWholeWhenOverBudget() {
+        final AiTokenEstimator estimator = new ConservativeDeepSeekTokenEstimator();
+        final SingleTeamBattleAnalysisContext context = pointsSituationContext();
+        final TeamAiPromptBuilder.PromptInput full =
+                TeamAiPromptBuilder.single(context, List.of(), null, estimator, 1_000_000);
+        assertTrue(full.content().contains("=== POINTS_SITUATION"),
+                "full content must carry the points-situation block");
+        final int fullTokens = estimator.estimateTextTokens(full.content());
+        final int pointsStart = full.content().indexOf("=== POINTS_SITUATION");
+        final int blockEnd = full.content().indexOf("===", pointsStart + 10);
+        final int blockTokens = estimator.estimateTextTokens(
+                full.content().substring(pointsStart, blockEnd < 0 ? full.content().length() : blockEnd));
+        final int budget = Math.max(1, fullTokens - blockTokens + blockTokens / 2);
+        assertTrue(budget < fullTokens, "budget must exceed with the points block");
+        assertTrue(budget > fullTokens - blockTokens, "budget must fit without the points block");
+
+        final TeamAiPromptBuilder.PromptInput trimmed =
+                TeamAiPromptBuilder.single(context, List.of(), null, estimator, budget);
+
+        assertTrue(estimator.estimateTextTokens(trimmed.content()) <= budget,
+                "trimmed content must fit the budget (no AI_INPUT_TRUNCATED tail)");
+        assertFalse(trimmed.content().contains("POINTS_SITUATION"),
+                "the whole POINTS_SITUATION block must be removed");
+        assertTrue(trimmed.content().contains("SINGLE_TEAM_CONTEXT"), "mandatory header must remain");
+        assertTrue(trimmed.content().contains("AUTHORITATIVE_TEAM_RESULT"), "mandatory HPF must remain");
+        assertTrue(trimmed.content().contains("unitLimitations="), "mandatory limitations must remain");
+        assertFalse(trimmed.globalLimitations().contains("AI_INPUT_TRUNCATED"));
+    }
+
+    /** 点数局势上下文：holland 地图 + 双方阵亡（击杀夺分时间线）+ 位置轨迹（存在/推进窗口）。 */
+    private static SingleTeamBattleAnalysisContext pointsSituationContext() {
+        final Battle battle = new Battle();
+        battle.mapName = "holland";
+        battle.arenaBonusType = 2;
+        battle.durationS = 420.0;
+        battle.winnerTeam = 1;
+        final List<PlayerResult> players = new ArrayList<>();
+        for (int index = 0; index < 7; index++) {
+            final PlayerResult player = new PlayerResult();
+            player.accountId = 10_000L + index;
+            player.nickname = "Ally" + index;
+            player.team = 1;
+            player.survived = false;
+            player.deathTimeMillis = 40_000L + index * 5_000L;
+            players.add(player);
+        }
+        for (int index = 0; index < 7; index++) {
+            final PlayerResult player = new PlayerResult();
+            player.accountId = 20_000L + index;
+            player.nickname = "Enemy" + index;
+            player.team = 2;
+            player.survived = true;
+            players.add(player);
+        }
+        battle.players = players;
+        final SingleTeamBattleAnalysisContext base = contextWithNickname("Player");
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 10, 10_000L));
+        events.add(new ParticipantMappingEvent(2, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 20, 20_000L));
+        events.add(positionEvent(3, 40f, 10, -80f, 120f));
+        events.add(positionEvent(4, 42f, 10, -80f, 0f));
+        events.add(positionEvent(5, 44f, 10, -70f, 0f));
+        events.add(positionEvent(6, 40f, 20, 0f, 0f));
+        events.add(positionEvent(7, 42f, 20, 10f, 0f));
+        final ReplayReconstruction recon = new ReplayReconstruction(null, null, 600f, 30f,
+                List.of(), events, List.of(), null, null, null);
+        return new SingleTeamBattleAnalysisContext(
+                base.analysisUnitId(), base.battleId(), base.fileName(),
+                base.battleCategory(), battle, 1, base.features(),
+                base.coverage(), base.limitations(), recon);
+    }
+
+    private static PositionChangedEvent positionEvent(final int sequence, final float rawClock,
+                                                      final int entityId, final float x, final float z) {
+        return new PositionChangedEvent(sequence, new ReplayTimestamp(rawClock, null), 10,
+                DecodeConfidence.EXACT, entityId, 0, 0, x, 0f, z,
+                0f, 0f, 0f, 0f, 0f, 0f, (byte) 0);
+    }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
