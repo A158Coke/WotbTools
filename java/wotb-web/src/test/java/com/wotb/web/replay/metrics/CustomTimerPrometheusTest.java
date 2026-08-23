@@ -47,7 +47,7 @@ class CustomTimerPrometheusTest {
 
         boolean thrown = false;
         try {
-            metrics.timed(ReplayUsageMetrics.OP_RATING, 1, () -> {
+            metrics.timed(ReplayUsageMetrics.OP_PERFORMANCE, 1, () -> {
                 throw new IllegalStateException("boom");
             });
         } catch (final IllegalStateException e) {
@@ -56,7 +56,7 @@ class CustomTimerPrometheusTest {
         assertTrue(thrown);
         final String scrape = registry.scrape();
         // 异常路径也结束 Timer（duration count=1）且 in-flight 归零
-        assertTrue(scrape.contains("wotb_replay_parse_duration_seconds_count{operation=\"rating\"} 1"),
+        assertTrue(scrape.contains("wotb_replay_parse_duration_seconds_count{operation=\"performance\"} 1"),
                 "timer must stop on failure: " + scrape);
         assertTrue(scrape.contains("wotb_replay_in_flight 0"),
                 "in-flight must return to 0 after failure: " + scrape);

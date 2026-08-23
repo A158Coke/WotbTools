@@ -2,31 +2,32 @@ package com.wotb.core.stats;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.model.TankInfo;
-import com.wotb.core.ref.Tankopedia;
-import com.wotb.core.replay.evidence.EntryHpSource;
+import com.wotb.core.replay.facts.BattleHpFacts;
+import com.wotb.core.replay.facts.TradeFacts;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Locale;
+import java.util.Map;
 
-/** Realtime rating leaderboard for an uploaded replay batch. */
-public final class RatingAnalyzer {
+/**
+ * 战斗表现指标（Performance Metrics）：纯派生计算，只读、无副作用。
+ *
+ * <p>只消费统一 replay authoritative facts（{@link Battle} / {@link PlayerResult} +
+ * {@code com.wotb.core.replay.facts} 包），做纯数学推导；不解析回放、不查询 Tankopedia、
+ * 不改写任何 battle/player 字段（PotentialDamage 已在回放管线完成，trade/HP 均来自事实层）。</p>
+ *
+ * <p>原 Rating V2 的综合评分（{@code rating} / {@code finalRating} / 各权重）已移除——
+ * 本类不再输出任何总分，仅保留有业务价值的派生指标：贡献度 / KAST / Impact /
+ * 多伤率 / 存活率 / 互换击杀 / 均伤 / 协助 / 潜在伤害。</p>
+ */
+public final class PerformanceMetricsCalculator {
 
-    private static final int STANDARD_BATTLE_PLAYER_COUNT = 14;
-    private static final double EXPECTED_BATTLE_SHARE = 1.0 / STANDARD_BATTLE_PLAYER_COUNT;
-    private static final double POTENTIAL_WEIGHT = 0.70;
-    private static final double KAST_WEIGHT = 0.15;
-    private static final double IMPACT_WEIGHT = 0.25;
-    private static final double AST_WEIGHT = 0.30;
-    private static final double MULTI_DAMAGE_WEIGHT = 0.10;
-    private static final double KILLS_WEIGHT = 0.10;
-    // 车辆库缺少单车血量时的兜底值；不作为整场平均血量。
-    private static final double FALLBACK_TANK_HP = 2400.0;
+    private static final double EXPECTED_BATTLE_SHARE = 1.0 / BattleHpFacts.STANDARD_BATTLE_PLAYER_COUNT;
 
+    /** 一名玩家跨场的战斗表现聚合行。 */
     public static final class Row {
         public long accountId;
         public String nickname = "";
@@ -38,7 +39,6 @@ public final class RatingAnalyzer {
         public long assistDamage;
         public long potentialDamage;
         public long potentialDamageSupplement;
-        public int rating;
         public double kast;
         public double contribution;
         public double impactValue;
@@ -50,6 +50,8 @@ public final class RatingAnalyzer {
         public double killsAvg;
         public double averageHp;
         public double multiDamageRate;
+        public double survivalRate;
+        public int tradedDeaths;
         double kastSum;
         double roundContribution;
         double teamRoundContribution;
@@ -59,7 +61,6 @@ public final class RatingAnalyzer {
         int impactBattles;
         int multiDamageBattles;
         int survivalBattles;
-        int tradedDeaths;
 
         public double winRate() {
             return battles == 0 ? 0 : 100.0 * wins / battles;
@@ -81,33 +82,18 @@ public final class RatingAnalyzer {
             impactValue = impactBattles == 0 ? 0 : impactSum / impactBattles;
             impact = percent(impactValue);
             multiDamageRate = 100.0 * multiDamageBattles / battles;
-            rating = finalRating();
-        }
-
-        private int finalRating() {
-            final double hp = averageHp > 0 ? averageHp : 1;
-            final double potentialIndex = cap(100.0 * potentialDamageAvg / hp, 250.0);
-            final double astIndex = cap(100.0 * assistAvg / hp, 200.0);
-            final double impactIndex = cap(impactValue, 250.0);
-            final double killIndex = cap(100.0 * killsAvg, 250.0);
-            final double weighted = POTENTIAL_WEIGHT * potentialIndex
-                    + KAST_WEIGHT * cap(kast, 250.0)
-                    + IMPACT_WEIGHT * impactIndex
-                    + AST_WEIGHT * astIndex
-                    + MULTI_DAMAGE_WEIGHT * multiDamageRate
-                    + KILLS_WEIGHT * killIndex;
-            return (int) Math.round(weighted * 10.0);
+            survivalRate = 100.0 * survivalBattles / battles;
         }
     }
 
-    private RatingAnalyzer() {
+    private PerformanceMetricsCalculator() {
     }
 
-    public static List<Row> compute(final List<Battle> battles, final Tankopedia tp) {
-        PotentialDamage.apply(battles, tp);
+    /** 对一批战斗的所有玩家计算战斗表现指标（read-only；调用方负责先跑完 facts 管线）。 */
+    public static List<Row> compute(final List<Battle> battles) {
         final Map<Long, Row> rows = new LinkedHashMap<>();
         for (final Battle battle : battles) {
-            final BattleContext ctx = BattleContext.of(battle, tp);
+            final BattleContext ctx = BattleContext.of(battle);
             for (final PlayerResult player : battle.players) {
                 final Row row = rows.computeIfAbsent(player.accountId, key -> {
                     final Row r = new Row();
@@ -122,7 +108,7 @@ public final class RatingAnalyzer {
         for (final Row row : out) {
             row.finish();
         }
-        out.sort((a, b) -> Integer.compare(b.rating, a.rating));
+        out.sort((a, b) -> Double.compare(b.contribution, a.contribution));
         return out;
     }
 
@@ -142,7 +128,7 @@ public final class RatingAnalyzer {
         final double averageHp = ctx.averageHp();
         final double contributionValue = roundContribution(player, averageHp);
         final double teamContribution = ctx.teamContribution[team];
-        final double traded = tradedDeath(player, battle.players);
+        final int traded = TradeFacts.tradedDeaths(player, battle.players);
         final double kastBattle = singleBattleKast(player, win, traded, averageHp);
         final double impactValue = singleBattleImpact(player, ctx);
 
@@ -181,7 +167,7 @@ public final class RatingAnalyzer {
     }
 
     private static double singleBattleKast(final PlayerResult player, final boolean win,
-                                           final double traded, final double averageHp) {
+                                           final int traded, final double averageHp) {
         final double damageScore = ratio(player.damageDealt, averageHp * 1.15);
         final double assistScore = ratio(player.damageAssisted, averageHp * 1.25);
         final double survivalScore = player.survived && win ? 1.0 : 0.0;
@@ -195,6 +181,10 @@ public final class RatingAnalyzer {
     }
 
     private static boolean isMultiDamage(final PlayerResult player, final double averageHp) {
+        // 场均 HP 未知（facts 层 fail-closed 为 0）时无法判定多伤，不得猜测。
+        if (averageHp <= 0) {
+            return false;
+        }
         return player.damageDealt >= averageHp * 1.5
                 || (player.damageDealt >= averageHp * 1.2 && player.kills >= 1)
                 || (player.damageDealt >= averageHp && player.kills >= 2)
@@ -203,36 +193,6 @@ public final class RatingAnalyzer {
 
     private static double roundContribution(final PlayerResult player, final double averageHp) {
         return player.damageDealt + player.damageAssisted + player.kills * averageHp / 7.0;
-    }
-
-    private static double tradedDeath(final PlayerResult player, final List<PlayerResult> players) {
-        if (player.survived || player.survivalTimeSec <= 0) {
-            return 0;
-        }
-        int enemyDeaths = 0;
-        final double from = player.survivalTimeSec - 5.0;
-        final double to = player.survivalTimeSec + 5.0;
-        for (final PlayerResult other : players) {
-            if (other.team == player.team || other.survived || other.survivalTimeSec <= 0) {
-                continue;
-            }
-            if (other.survivalTimeSec >= from && other.survivalTimeSec <= to) {
-                enemyDeaths++;
-            }
-        }
-        return Math.max(0, enemyDeaths);
-    }
-
-    private static double estimatedHp(final PlayerResult player, final Tankopedia tp) {
-        if (player.entryHpSource == EntryHpSource.OBSERVED_EXACT
-                && player.entryHp != null && player.entryHp > 0) {
-            return player.entryHp;
-        }
-        final TankInfo info = tp.info(player.tankId);
-        if (info.maxHp() != null && info.maxHp() > 0) {
-            return info.maxHp();
-        }
-        return FALLBACK_TANK_HP;
     }
 
     private static double ratio(final double numerator, final double denominator) {
@@ -261,32 +221,27 @@ public final class RatingAnalyzer {
         return (team == 1 || team == 2) ? team : 0;
     }
 
+    /** 单场战场级事实快照（HP 来自 BattleHpFacts；damageAssist/teamContribution 为纯聚合）。 */
     private static final class BattleContext {
         final double[] teamContribution = new double[3];
         double battleDamageAssist;
         double battleAverageHp;
 
-        static BattleContext of(final Battle battle, final Tankopedia tp) {
+        static BattleContext of(final Battle battle) {
             final BattleContext ctx = new BattleContext();
-            double battleTotalHp = 0;
+            ctx.battleAverageHp = BattleHpFacts.averageHp(battle);
             for (final PlayerResult player : battle.players) {
-                final int team = safeTeam(player.team);
-                if (team != 0) {
-                    battleTotalHp += estimatedHp(player, tp);
-                }
                 ctx.battleDamageAssist += player.damageDealt + player.damageAssisted;
             }
-            ctx.battleAverageHp = battleTotalHp / STANDARD_BATTLE_PLAYER_COUNT;
             for (final PlayerResult player : battle.players) {
                 final int team = safeTeam(player.team);
-                final double averageHp = ctx.averageHp();
-                ctx.teamContribution[team] += roundContribution(player, averageHp);
+                ctx.teamContribution[team] += roundContribution(player, ctx.battleAverageHp);
             }
             return ctx;
         }
 
         double averageHp() {
-            return battleAverageHp > 0 ? battleAverageHp : FALLBACK_TANK_HP;
+            return battleAverageHp;
         }
     }
 }

@@ -40,7 +40,7 @@ public final class ApiPaths {
     public static final String HOF_UPLOAD = "/api/hof/upload";
     public static final String HEALTH = "/api/health";
     public static final String COLUMNS = "/api/columns";
-    public static final String RATING = "/api/rating";
+    public static final String PERFORMANCE = "/api/performance";
     public static final String PREVIEW = "/api/preview";
     public static final String EXPORT = "/api/export";
     public static final String BOOST_OPTIONS = "/api/boost/options";

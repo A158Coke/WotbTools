@@ -20,10 +20,9 @@ export function useReplay() {
     if (!resp.value) return null
     const battles = resp.value.battles || []
     const agg = resp.value.aggregate || []
-    let maxRating = 0, maxDmg = 0
-    agg.forEach(r => { maxRating = Math.max(maxRating, Number(r.cells.rating_avg) || 0) })
+    let maxDmg = 0
     battles.forEach(b => (b.players || []).forEach(p => { maxDmg = Math.max(maxDmg, Number(p.cells.damage_dealt) || 0) }))
-    return { battles: battles.length, players: agg.length, maxRating, maxDmg }
+    return { battles: battles.length, players: agg.length, maxDmg }
   })
 
   function buildFormData() {

@@ -7,12 +7,12 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.ref.VehicleCodes;
 import com.wotb.core.stats.Players;
-import com.wotb.core.stats.RatingAnalyzer;
+import com.wotb.core.stats.PerformanceMetricsCalculator;
 import com.wotb.web.replay.dto.AggRow;
 import com.wotb.web.replay.dto.BattleDto;
 import com.wotb.web.replay.dto.ColumnDef;
 import com.wotb.web.replay.dto.PlayerRow;
-import com.wotb.web.replay.dto.RatingRow;
+import com.wotb.web.replay.dto.PerformanceRow;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -47,7 +47,6 @@ public final class Mapper {
             new AggCol("win_rate", true, a -> r1(a.winRate())),
             new AggCol("survival_rate", true, a -> r1(a.survivalRate())),
             new AggCol("survival_avg", true, a -> a.avg(a.survivalSum)),
-            new AggCol("rating_avg", true, a -> Math.round(a.avgRating())),
             new AggCol("kills", true, a -> a.kills),
             new AggCol("kills_avg", true, a -> r2(a.avg(a.kills))),
             new AggCol("damage", true, a -> a.damage),
@@ -77,27 +76,28 @@ public final class Mapper {
         return out;
     }
 
-    static final List<ColumnDef> RATING_COLS = List.of(
+    static final List<ColumnDef> PERFORMANCE_COLS = List.of(
             new ColumnDef("nickname", false),
             new ColumnDef("clan", false),
             new ColumnDef("battles", true),
             new ColumnDef("wins", true),
             new ColumnDef("win_rate", true),
-            new ColumnDef("rating", true),
-            new ColumnDef("kast", true),
             new ColumnDef("contribution", true),
+            new ColumnDef("kast", true),
             new ColumnDef("impact", true),
             new ColumnDef("damage_avg", true),
             new ColumnDef("potential_damage_avg", true),
             new ColumnDef("potential_damage_supplement_avg", true),
             new ColumnDef("assist_avg", true),
             new ColumnDef("multi_damage_rate", true),
+            new ColumnDef("survival_rate", true),
+            new ColumnDef("traded_deaths", true),
             new ColumnDef("kills", true),
             new ColumnDef("kills_avg", true)
     );
 
-    public static List<ColumnDef> ratingColumns() {
-        return RATING_COLS;
+    public static List<ColumnDef> performanceColumns() {
+        return PERFORMANCE_COLS;
     }
 
     public static BattleDto toBattle(final Battle b, final String sourceName, final Tankopedia tp) {
@@ -130,27 +130,28 @@ public final class Mapper {
         return out;
     }
 
-    public static List<RatingRow> toRatings(final List<RatingAnalyzer.Row> ratings) {
-        final List<RatingRow> out = new ArrayList<>();
-        for (final RatingAnalyzer.Row rating : ratings) {
+    public static List<PerformanceRow> toPerformance(final List<PerformanceMetricsCalculator.Row> rows) {
+        final List<PerformanceRow> out = new ArrayList<>();
+        for (final PerformanceMetricsCalculator.Row row : rows) {
             final Map<String, Object> cells = new LinkedHashMap<>();
-            cells.put("nickname", rating.nickname);
-            cells.put("clan", rating.clan);
-            cells.put("battles", rating.battles);
-            cells.put("wins", rating.wins);
-            cells.put("win_rate", r1(rating.winRate()));
-            cells.put("rating", rating.rating);
-            cells.put("kast", r1(rating.kast));
-            cells.put("contribution", r1(rating.contribution));
-            cells.put("impact", rating.impact);
-            cells.put("damage_avg", r1(rating.damageAvg));
-            cells.put("potential_damage_avg", r1(rating.potentialDamageAvg));
-            cells.put("potential_damage_supplement_avg", r1(rating.potentialDamageSupplementAvg));
-            cells.put("assist_avg", r1(rating.assistAvg));
-            cells.put("multi_damage_rate", r1(rating.multiDamageRate));
-            cells.put("kills", rating.kills);
-            cells.put("kills_avg", r2(rating.killsAvg));
-            out.add(new RatingRow(cells));
+            cells.put("nickname", row.nickname);
+            cells.put("clan", row.clan);
+            cells.put("battles", row.battles);
+            cells.put("wins", row.wins);
+            cells.put("win_rate", r1(row.winRate()));
+            cells.put("contribution", r1(row.contribution));
+            cells.put("kast", r1(row.kast));
+            cells.put("impact", row.impact);
+            cells.put("damage_avg", r1(row.damageAvg));
+            cells.put("potential_damage_avg", r1(row.potentialDamageAvg));
+            cells.put("potential_damage_supplement_avg", r1(row.potentialDamageSupplementAvg));
+            cells.put("assist_avg", r1(row.assistAvg));
+            cells.put("multi_damage_rate", r1(row.multiDamageRate));
+            cells.put("survival_rate", r1(row.survivalRate));
+            cells.put("traded_deaths", row.tradedDeaths);
+            cells.put("kills", row.kills);
+            cells.put("kills_avg", r2(row.killsAvg));
+            out.add(new PerformanceRow(cells));
         }
         return out;
     }

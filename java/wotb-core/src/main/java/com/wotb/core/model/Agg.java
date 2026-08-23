@@ -14,15 +14,10 @@ public final class Agg {
     public long kills, damage, potentialDamage, potentialDamageSupplement, assisted, received, blocked;
     public long shots, hits, pens, enemiesDamaged;
     public double survivalSum;        // 各场存活时间(秒)之和(用于场均)
-    public long ratingSum;            // 各场 rating 之和(用于场均)
     public final Map<String, Integer> tanks = new TreeMap<>();
 
     public double winRate() {
         return battles == 0 ? 0 : 100.0 * wins / battles;
-    }
-
-    public double avgRating() {
-        return battles == 0 ? 0 : (double) ratingSum / battles;
     }
 
     public double survivalRate() {

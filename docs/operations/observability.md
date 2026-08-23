@@ -258,7 +258,7 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 
 1. Backend Up
 2. 每分钟回放解析请求量（`sum(rate(wotb_replay_requests_total[1m]))*60`）
-3. 按操作请求量（preview/export/rating/process/reconstruct/ai_review）
+3. 按操作请求量（preview/export/performance/process/reconstruct/ai_review）
 4. 解析文件数（按操作，`wotb_replay_files_total`）
 5. 解析耗时 P50/P95/P99（`wotb_replay_parse_duration_seconds`）
 6. 当前处理中的解析请求数（`wotb_replay_in_flight`）
@@ -505,7 +505,7 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
   - `wotb_ai_upstream_retries_total{mode}` — retry 重试次数
   - `wotb_ai_upstream_retry_outcome_total{mode,outcome=no_retry|success_after_retry|failure_after_retry}` — 重试结果
   - `wotb_ai_upstream_tokens_total{mode,token_type=input|output|total|reasoning|cache_hit|cache_miss}` — token 用量（usage 缺失时不记录）
-- **Replay 解析**（自定义，`ReplayUsageMetrics`，operation=`preview|export|rating|process|reconstruct|ai_review`）：
+- **Replay 解析**（自定义，`ReplayUsageMetrics`，operation=`preview|export|performance|process|reconstruct|ai_review`）：
   - `wotb_replay_requests_total{operation}` — 请求量
   - `wotb_replay_files_total{operation}` — 解析文件数
   - `wotb_replay_parse_duration_seconds{operation}` — 解析耗时（Timer，histogram，成功与异常都结束；`ai_review` 覆盖 `/api/replay/analyze` 的 Replay processing，不重复统计）

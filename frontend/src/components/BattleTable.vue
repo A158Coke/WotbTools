@@ -1,9 +1,8 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RATING_KEYS, ratingTier, medal, fmtDuration, mapLabel } from '../utils/helpers.js'
+import { fmtDuration, mapLabel } from '../utils/helpers.js'
 import { replayValueLabel } from '../utils/display.js'
-import poopUrl from '../assets/poop.png'
 
 const { locale, t, te } = useI18n()
 const LOCALIZED_VALUE_KEYS = new Set(['tank_type', 'tank_nation', 'potential_damage_detail'])
@@ -62,8 +61,7 @@ function survivalLabel(value) {
         <tbody>
           <tr v-for="(row, ri) in sorted" :key="ri" :class="row.team === 1 ? 't1' : 't2'">
             <td v-for="c in shownCols" :key="c.key">
-              <span v-if="RATING_KEYS.has(c.key)" class="rbadge" :class="ratingTier(row.cells[c.key])">{{ row.cells[c.key] }}<span class="medal"><template v-if="medal(battle.players, c.key, row.cells[c.key]) === 'first'"> 🥇</template><img v-else-if="medal(battle.players, c.key, row.cells[c.key]) === 'last'" class="poop" :src="poopUrl" :alt="$t('result.lowest_rating_alt')"></span></span>
-              <span v-else-if="c.key === 'survived_label'" :class="survivalClass(row.cells[c.key])">{{ survivalLabel(row.cells[c.key]) }}</span>
+              <span v-if="c.key === 'survived_label'" :class="survivalClass(row.cells[c.key])">{{ survivalLabel(row.cells[c.key]) }}</span>
               <span v-else-if="c.key === 'survival_time'">{{ fmtDuration(row.cells[c.key], t) }}</span>
               <span v-else-if="LOCALIZED_VALUE_KEYS.has(c.key)">{{ replayValueLabel(t, te, row.cells[c.key]) }}</span>
               <span v-else>{{ row.cells[c.key] }}</span>

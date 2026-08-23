@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- **统一 Replay Authoritative Facts，移除 Rating V2 综合评分**：回放事实（HP / 潜在伤害 / trade / 场均 HP）全部收敛到 replay 管线（新增 `replay/facts/BattleHpFacts` + `TradeFacts`，复用 `ObservedMaxHp`/权威 `survivalTimeSec`）；`RatingAnalyzer` 重命名为 `PerformanceMetricsCalculator`（纯派生计算、只读，删除 `finalRating`/权重/`estimatedHp`/2400 fallback）。旧 WN8 式 `Rating`/`RatingConfig`/`PlayerResult.rating`/`rating_avg`/`common/rating.json`/`GET /api/rating` 与 Excel「评分」列全部删除；`POST /api/rating` → `POST /api/performance`，返回贡献度 / KAST / Impact / 潜在伤害 / 协助 / 击杀 / 多伤率 / 存活率 / 互换击杀。前端删除 RatingModal / 评分 badge / 最高评分统计，扩展页重构为「战斗表现」。
 - **名人堂单场管理筛选可读化**：`GET /api/admin/hof` 移除 Arena ID 筛选并不再返回 `arenaId`/原始 `arenaBonusType`；新增受 HoF-admin 保护的 `GET /api/admin/hof/vehicle-options`，从当前名人堂已有车辆生成名称、国家/系别、车种、等级的稳定英文枚举选项。管理页以可选的国家/系别 → 车种 → 等级收窄车辆名称，只在最终选择车辆时提交 `tankId`；车辆库无法识别的旧记录保留其原始名称并归为 `OTHER`，不会丢失筛选入口。
 - **战局回放 Details Panel 增加 Tier X 车型图**：从 BlitzKit 公开 CDN 确定性下载 Tankopedia
   全部 84 辆十级车的透明 WebP 车型图并随前端发布；选中车辆时按 tankId 懒加载，非十级车、
