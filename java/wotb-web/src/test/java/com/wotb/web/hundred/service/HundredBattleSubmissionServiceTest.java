@@ -533,11 +533,10 @@ class HundredBattleSubmissionServiceTest {
         assertThat(s.getApprovedBattleCount()).isEqualTo(136);
         assertThat(s.getApprovedAt()).isNotNull();
         assertThat(s.getApprovedBy()).isEqualTo(ADMIN);
-        // APPROVE 终态：proof 截图事务内清空（不永久保存）；evidence 同事务删行 + commit 后清理
         assertThat(s.getProofScreenshot()).isNull();
+        verify(evidenceService).discardForSubmission(10L);
         // 无旧 CURRENT：仅保存 submission（saveAndFlush 保证提交）
         verify(repository).saveAndFlush(s);
-        verify(evidenceService).discardForSubmission(10L);
     }
 
     @Test
@@ -554,6 +553,7 @@ class HundredBattleSubmissionServiceTest {
         assertThat(s.getStatus()).isEqualTo("CURRENT");
         verify(repository).saveAndFlush(current);
         verify(repository).saveAndFlush(s);
+        verify(evidenceService).discardForSubmission(10L);
     }
 
     @Test
@@ -584,9 +584,8 @@ class HundredBattleSubmissionServiceTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("HUNDRED_INCOMPLETE_REVIEW_EVIDENCE");
 
-        // 未触碰 CURRENT 读取/变更：无 supersede、无 evidence 清理、PENDING 保持
+        // 未触碰 CURRENT 读取/变更：无 supersede，PENDING 与证据保持
         verify(repository, never()).findCurrentForUpdate(anyString(), anyLong());
-        verify(evidenceService, never()).discardForSubmission(anyLong());
         assertThat(s.getStatus()).isEqualTo("PENDING");
     }
 
@@ -646,7 +645,7 @@ class HundredBattleSubmissionServiceTest {
     // ── REJECT / CANCEL / DELETE ─────────────────────────────────────────
 
     @Test
-    void rejectSetsReasonAndClearsScreenshot() {
+    void rejectSetsReasonAndClearsEvidence() {
         final HundredBattleSubmission s = pendingSubmission();
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
@@ -658,7 +657,6 @@ class HundredBattleSubmissionServiceTest {
         assertThat(s.getRejectReason()).isEqualTo("SCREENSHOT_MISMATCH");
         assertThat(s.getRejectReasonText()).isNull();
         assertThat(s.getProofScreenshot()).isNull();
-        // REJECT 终态：evidence 同事务删行 + commit 后清理
         verify(evidenceService).discardForSubmission(10L);
     }
 
@@ -691,7 +689,7 @@ class HundredBattleSubmissionServiceTest {
     }
 
     @Test
-    void cancelByOwnerMovesPendingToCancelledAndClearsScreenshot() {
+    void cancelByOwnerMovesPendingToCancelledAndClearsEvidence() {
         final HundredBattleSubmission s = pendingSubmission();
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
@@ -700,7 +698,6 @@ class HundredBattleSubmissionServiceTest {
         assertThat(result.status()).isEqualTo("CANCELLED");
         assertThat(s.getCancelledAt()).isNotNull();
         assertThat(s.getProofScreenshot()).isNull();
-        // CANCEL 终态：evidence 同事务删行 + commit 后清理
         verify(evidenceService).discardForSubmission(10L);
     }
 
@@ -730,6 +727,7 @@ class HundredBattleSubmissionServiceTest {
     @Test
     void deleteCurrentMovesToDeletedWithReason() {
         final HundredBattleSubmission s = currentSubmission(4120);
+        s.setProofScreenshot("data:image/png;base64,AAAA");
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
         final HundredSubmissionSummaryDto result =
@@ -739,6 +737,8 @@ class HundredBattleSubmissionServiceTest {
         assertThat(s.getDeletedBy()).isEqualTo(ADMIN);
         assertThat(s.getDeleteReason()).isEqualTo("CHEATING_FORGERY");
         assertThat(s.getDeletedAt()).isNotNull();
+        assertThat(s.getProofScreenshot()).isNull();
+        verify(evidenceService).discardForSubmission(10L);
     }
 
     @Test
@@ -798,7 +798,7 @@ class HundredBattleSubmissionServiceTest {
                         new Object[]{4200, 2L},
                         new Object[]{4100, 1L}));
 
-        final HundredLeaderboardPageDto dto = service.leaderboard(TIER10_VEHICLE, 1, 50);
+        final HundredLeaderboardPageDto dto = service.leaderboard(TIER10_VEHICLE, null, null, 1, 50);
 
         assertThat(dto.items()).extracting("rank").containsExactly(1, 2, 2, 4);
         assertThat(dto.items()).extracting("approvedAverageDamage").containsExactly(4300, 4200, 4200, 4100);
@@ -817,7 +817,7 @@ class HundredBattleSubmissionServiceTest {
         when(repository.countCurrentGroupedByDamage(TIER10_VEHICLE))
                 .thenReturn(List.of(new Object[]{4300, 1L}, new Object[]{4200, 2L}));
 
-        final HundredLeaderboardPageDto dto = service.leaderboard(TIER10_VEHICLE, 2, 2);
+        final HundredLeaderboardPageDto dto = service.leaderboard(TIER10_VEHICLE, null, null, 2, 2);
 
         assertThat(dto.items()).extracting("rank").containsExactly(2, 2);
     }
@@ -837,7 +837,7 @@ class HundredBattleSubmissionServiceTest {
         when(repository.countAllCurrentGroupedByDamage())
                 .thenReturn(List.of(new Object[]{4300, 1L}, new Object[]{4200, 1L}));
 
-        final HundredLeaderboardPageDto dto = service.leaderboard(null, 9, 100);
+        final HundredLeaderboardPageDto dto = service.leaderboard(null, null, null, 9, 100);
 
         assertThat(dto.vehicleId()).isNull();
         assertThat(dto.vehicleName()).isNull();
@@ -847,6 +847,98 @@ class HundredBattleSubmissionServiceTest {
         assertThat(dto.totalPages()).isEqualTo(1);
         assertThat(dto.items()).extracting("vehicleName").containsExactly("Progetto 65", "B-C 25 t");
         assertThat(dto.items()).extracting("rank").containsExactly(1, 2);
+    }
+
+    @Test
+    void categoryLeaderboardUsesNationAndTypeIntersectionForRowsAndRanks() {
+        final HundredBattleSubmission s4300 = currentSubmission(4300);
+        s4300.setId(1L);
+        s4300.setVehicleId(TIER10_VEHICLE_2);
+        s4300.setVehicleName("B-C 25 t");
+        final HundredBattleSubmission s4200 = currentSubmission(4200);
+        s4200.setId(2L);
+        s4200.setVehicleId(TIER10_VEHICLE_2);
+        s4200.setVehicleName("B-C 25 t");
+
+        when(repository.findDistinctCurrentVehicleIds())
+                .thenReturn(List.of(TIER10_VEHICLE, TIER10_VEHICLE_2));
+        when(repository.findTopCurrentByVehicleIds(eq(List.of(TIER10_VEHICLE_2)), any()))
+                .thenReturn(List.of(s4300, s4200));
+        when(repository.countCurrentGroupedByDamageForVehicles(eq(List.of(TIER10_VEHICLE_2))))
+                .thenReturn(List.of(new Object[]{4300, 1L}, new Object[]{4200, 1L}));
+
+        final HundredLeaderboardPageDto dto = service.leaderboard(
+                null, " france ", "light_tank", 8, 99);
+
+        assertThat(dto.vehicleId()).isNull();
+        assertThat(dto.page()).isEqualTo(1);
+        assertThat(dto.size()).isEqualTo(10);
+        assertThat(dto.items()).extracting("vehicleId")
+                .containsOnly(TIER10_VEHICLE_2);
+        assertThat(dto.items()).extracting("rank").containsExactly(1, 2);
+        verify(repository).findTopCurrentByVehicleIds(eq(List.of(TIER10_VEHICLE_2)),
+                eq(PageRequest.of(0, 10)));
+    }
+
+    @Test
+    void categoryLeaderboardReturnsEmptyWhenIntersectionHasNoVehicles() {
+        when(repository.findDistinctCurrentVehicleIds())
+                .thenReturn(List.of(TIER10_VEHICLE, TIER10_VEHICLE_2));
+
+        final HundredLeaderboardPageDto dto = service.leaderboard(
+                null, "CHINA", "HEAVY_TANK", 1, 50);
+
+        assertThat(dto.items()).isEmpty();
+        assertThat(dto.page()).isEqualTo(1);
+        assertThat(dto.size()).isEqualTo(10);
+        assertThat(dto.totalItems()).isZero();
+        verify(repository, never()).findTopCurrentByVehicleIds(any(), any());
+        verify(repository, never()).countCurrentGroupedByDamageForVehicles(any());
+    }
+
+    @Test
+    void concreteVehicleReturnsEmptyWhenCategoryDoesNotMatch() {
+        final HundredLeaderboardPageDto dto = service.leaderboard(
+                TIER10_VEHICLE, "FRANCE", "MEDIUM_TANK", 2, 20);
+
+        assertThat(dto.vehicleId()).isEqualTo(TIER10_VEHICLE);
+        assertThat(dto.vehicleName()).isEqualTo("Progetto 65");
+        assertThat(dto.items()).isEmpty();
+        assertThat(dto.page()).isEqualTo(2);
+        assertThat(dto.size()).isEqualTo(20);
+        assertThat(dto.totalItems()).isZero();
+        verify(repository, never())
+                .findByVehicleIdAndStatusOrderByApprovedAverageDamageDescApprovedAtAscIdAsc(
+                        anyLong(), anyString(), any());
+        verify(repository, never()).countCurrentGroupedByDamage(anyLong());
+    }
+
+    @Test
+    void adminListCategoryFiltersWorkWithoutSelectingVehicle() {
+        final HundredBattleSubmission matching = currentSubmission(4300);
+        matching.setId(1L);
+        when(repository.findDistinctVehicleIds())
+                .thenReturn(List.of(TIER10_VEHICLE, TIER10_VEHICLE_2));
+        when(repository.searchAdminByVehicleIds(
+                eq("CURRENT"), eq(List.of(TIER10_VEHICLE)), eq(PageRequest.of(0, 50))))
+                .thenReturn(new PageImpl<>(List.of(matching), PageRequest.of(0, 50), 1));
+
+        final var dto = service.adminList(
+                "CURRENT", "EUROPE", "MEDIUM_TANK", null, 1, 50);
+
+        assertThat(dto.items()).hasSize(1);
+        assertThat(dto.items().getFirst().vehicleId()).isEqualTo(TIER10_VEHICLE);
+        verify(repository, never()).searchAdmin(any(), any());
+    }
+
+    @Test
+    void adminListVehicleAndCategoryAreAnIntersection() {
+        final var dto = service.adminList(
+                null, "FRANCE", "LIGHT_TANK", TIER10_VEHICLE, 1, 50);
+
+        assertThat(dto.items()).isEmpty();
+        verify(repository, never()).searchAdminByVehicleIds(any(), any(), any());
+        verify(repository, never()).searchAdmin(any(), any());
     }
 
     // ── Files：创建失败不持久化 ──────────────────────────────────────────

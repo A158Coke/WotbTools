@@ -33,15 +33,18 @@ public class HundredBattleController {
     }
 
     /**
-     * 公开排行榜：未传 vehicleId 时返回全站当前最高 10 条；传入时返回该 Tier X 车辆的独立排行。
-     * 两种视图的 rank 都是 query-time 计算的 competition ranking。
+     * 公开排行榜：三个筛选条件按交集处理。全部为空时返回全站 CURRENT Top 10；
+     * 仅传 nation / vehicleType 时返回分类交集 Top 10；传 vehicleId 时返回该车独立分页排行，
+     * 若同时传入的分类与该车不匹配则返回空榜。rank 始终基于同一筛选上下文计算。
      */
     @GetMapping
     public HundredLeaderboardPageDto leaderboard(
             @RequestParam(name = "vehicleId", required = false) final Long vehicleId,
+            @RequestParam(name = "nation", required = false) final String nation,
+            @RequestParam(name = "vehicleType", required = false) final String vehicleType,
             @RequestParam(name = "page", defaultValue = "1") final int page,
             @RequestParam(name = "size", defaultValue = "50") final int size) {
-        return service.leaderboard(vehicleId, page, size);
+        return service.leaderboard(vehicleId, nation, vehicleType, page, size);
     }
 
     /**

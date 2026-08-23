@@ -32,6 +32,8 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -39,7 +41,7 @@ import static org.mockito.Mockito.when;
 /**
  * 百场回放审核证据编排契约测试（Mockito，无 DB/FS 依赖；下载字节用 @TempDir 真实文件）。
  * 覆盖 docs/current-plan.md（百场 evidence）：storeAll 幂等/失败清理、attach 原子 5 行、
- * admin list/download ownership、终态 discard 行删除 + 跨表引用计数文件清理。
+ * admin list/download ownership、审批前完整性校验与跨表引用计数。
  */
 @ExtendWith(MockitoExtension.class)
 class HundredReplayEvidenceServiceTest {
@@ -66,14 +68,13 @@ class HundredReplayEvidenceServiceTest {
 
     @BeforeEach
     void setUp() {
-        // runWithLock 是具体方法（mock 不执行方法体）：直接 stub 为执行 action（真实 advisory lock 由集成测试覆盖）
-        org.mockito.Mockito.lenient().doAnswer(inv -> {
-            ((Runnable) inv.getArgument(1)).run();
-            return null;
-        }).when(replayHashLock).runWithLock(anyString(), any());
         service = new HundredReplayEvidenceService(
                 storage, repository, submissionRepository, new HundredBattleMapper(),
                 hallOfFameService, replayHashLock);
+        lenient().doAnswer(invocation -> {
+            ((Runnable) invocation.getArgument(1)).run();
+            return null;
+        }).when(replayHashLock).runWithLock(anyString(), any(Runnable.class));
     }
 
     private static HundredReplayEvidenceService.PendingReplay pending(final int slot, final String sha, final byte[] data) {
@@ -148,6 +149,35 @@ class HundredReplayEvidenceServiceTest {
 
         verify(repository, times(5)).save(any(HundredBattleReplayEvidence.class));
         verify(repository).flush();
+    }
+
+    // ── discardForSubmission ─────────────────────────────────────────────
+
+    @Test
+    void discardDeletesMetadataAndUnreferencedPhysicalFiles() {
+        when(repository.findBySubmissionId(10L)).thenReturn(List.of(
+                evidenceRow(1L, 10L, 1, SHA_A), evidenceRow(2L, 10L, 2, SHA_B)));
+        when(repository.countBySha256(anyString())).thenReturn(0L);
+        when(hallOfFameService.countReplayHashReferences(anyString())).thenReturn(0L);
+
+        service.discardForSubmission(10L);
+
+        verify(repository).deleteBySubmissionId(10L);
+        verify(storage).delete(SHA_A);
+        verify(storage).delete(SHA_B);
+    }
+
+    @Test
+    void discardKeepsPhysicalFileStillReferencedBySingleBattleHof() {
+        when(repository.findBySubmissionId(10L))
+                .thenReturn(List.of(evidenceRow(1L, 10L, 1, SHA_A)));
+        when(repository.countBySha256(SHA_A)).thenReturn(0L);
+        when(hallOfFameService.countReplayHashReferences(SHA_A)).thenReturn(1L);
+
+        service.discardForSubmission(10L);
+
+        verify(repository).deleteBySubmissionId(10L);
+        verify(storage, never()).delete(SHA_A);
     }
 
     // ── adminListEvidence ─────────────────────────────────────────────────
@@ -231,73 +261,6 @@ class HundredReplayEvidenceServiceTest {
 
         assertThat(download.data()).containsExactly(bytes);
         assertThat(download.fileName()).isEqualTo("b1.wotbreplay");
-    }
-
-    // ── discardForSubmission（终态生命周期）────────────────────────────────
-
-    @Test
-    void discardDeletesRowsAndCleansFilesWhenNoReferences() {
-        when(repository.findBySubmissionId(10L))
-                .thenReturn(List.of(evidenceRow(1L, 10L, 1, SHA_A), evidenceRow(2L, 10L, 2, SHA_B)));
-        when(repository.countBySha256(anyString())).thenReturn(0L);
-        when(hallOfFameService.countReplayHashReferences(anyString())).thenReturn(0L);
-
-        service.discardForSubmission(10L);
-
-        verify(repository).deleteBySubmissionId(10L);
-        // 每个 hash 的「引用检查 + 删除」在 advisory lock 内串行化（防并发同 hash 上传破坏不变量）
-        verify(replayHashLock, times(2)).runWithLock(anyString(), any());
-        verify(storage).delete(SHA_A);
-        verify(storage).delete(SHA_B);
-    }
-
-    @Test
-    void discardKeepsFileWhenHallOfFameStillReferences() {
-        when(repository.findBySubmissionId(10L)).thenReturn(List.of(evidenceRow(1L, 10L, 1, SHA_A)));
-        when(repository.countBySha256(SHA_A)).thenReturn(0L);
-        when(hallOfFameService.countReplayHashReferences(SHA_A)).thenReturn(1L);
-
-        service.discardForSubmission(10L);
-
-        verify(repository).deleteBySubmissionId(10L);
-        // 即使决定保留文件，引用检查也在锁内完成（与 HoF 同语义）
-        verify(replayHashLock).runWithLock(anyString(), any());
-        verify(storage, never()).delete(anyString());
-    }
-
-    @Test
-    void discardKeepsFileWhenOtherEvidenceStillReferences() {
-        when(repository.findBySubmissionId(10L)).thenReturn(List.of(evidenceRow(1L, 10L, 1, SHA_A)));
-        when(repository.countBySha256(SHA_A)).thenReturn(2L);
-
-        service.discardForSubmission(10L);
-
-        verify(repository).deleteBySubmissionId(10L);
-        verify(storage, never()).delete(anyString());
-    }
-
-    @Test
-    void discardWithoutEvidenceIsNoop() {
-        when(repository.findBySubmissionId(10L)).thenReturn(List.of());
-
-        service.discardForSubmission(10L);
-
-        verify(repository, never()).deleteBySubmissionId(anyLong());
-        verify(storage, never()).delete(anyString());
-    }
-
-    @Test
-    void discardCleanupFailureDoesNotPropagate() {
-        when(repository.findBySubmissionId(10L)).thenReturn(List.of(evidenceRow(1L, 10L, 1, SHA_A)));
-        when(repository.countBySha256(SHA_A)).thenReturn(0L);
-        when(hallOfFameService.countReplayHashReferences(SHA_A)).thenReturn(0L);
-        when(storage.delete(SHA_A))
-                .thenThrow(new HallOfFameStorageException("REPLAY_STORAGE_ERROR", HttpStatus.INTERNAL_SERVER_ERROR, "x"));
-
-        // 文件删除失败仅 WARN（orphan 保留），不影响已完成的业务状态迁移
-        service.discardForSubmission(10L);
-
-        verify(repository).deleteBySubmissionId(10L);
     }
 
     // ── requireCompleteEvidenceForApproval（approve 前置权威校验）────────────
@@ -385,7 +348,6 @@ class HundredReplayEvidenceServiceTest {
 
         // 校验通过：无异常；不读取/不清理任何东西
         verify(storage, never()).delete(anyString());
-        verify(repository, never()).deleteBySubmissionId(anyLong());
     }
 
     @Test

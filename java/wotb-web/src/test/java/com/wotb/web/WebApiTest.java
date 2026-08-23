@@ -866,14 +866,17 @@ public class WebApiTest {
     }
 
     @Test
-    void hofAdminVehicleOptionsExposeReadableVehicleMetadata() throws Exception {
+    void hofVehicleOptionsArePublicAndSharedWithAdmin() throws Exception {
         final HallOfFameRecord r = hofRecord("adm-vehicle-options", 111L, "CokeAdmin", 385L, "Progetto 65",
                 "RANDOM", 1, 7000);
         hallOfFameRecordRepository.saveAndFlush(r);
         try {
-            final JsonNode options = om.readTree(mvc().perform(get("/api/admin/hof/vehicle-options")
+            final JsonNode options = om.readTree(mvc().perform(get("/api/hof/vehicle-options"))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+            final JsonNode adminOptions = om.readTree(mvc().perform(get("/api/admin/hof/vehicle-options")
                             .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_HoF-admin"))))
                     .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+            assertEquals(options, adminOptions, "公开与管理员端点必须复用同一车辆选项实现");
             JsonNode option = null;
             for (final JsonNode candidate : options) {
                 if (candidate.get("tankId").asLong() == 385L) {
