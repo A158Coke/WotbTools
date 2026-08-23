@@ -1,5 +1,6 @@
 package com.wotb.web.hundred.gateway;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -38,6 +39,7 @@ public class WargamingStatsHttpGateway {
     private final Function<WargamingServer, URI> baseUriResolver;
     private final Duration requestTimeout;
 
+    @Autowired
     public WargamingStatsHttpGateway(
             @Value("${wotb.wargaming.application-id:}") final String applicationId) {
         this(applicationId,

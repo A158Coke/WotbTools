@@ -3,6 +3,8 @@ package com.wotb.web.hundred.gateway;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.core.env.MapPropertySource;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -14,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -23,6 +26,18 @@ class WargamingStatsHttpGatewayTest {
 
     private static final long ACCOUNT_ID = 512_345_678L;
     private static final long VEHICLE_ID = 385L;
+
+    @Test
+    void springSelectsTheProductionConstructorWhenTheTestConstructorAlsoExists() {
+        try (final AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.getEnvironment().getPropertySources().addFirst(
+                    new MapPropertySource("wg-test", Map.of("wotb.wargaming.application-id", "app")));
+            context.register(WargamingStatsHttpGateway.class);
+            context.refresh();
+
+            assertThat(context.getBean(WargamingStatsHttpGateway.class)).isNotNull();
+        }
+    }
 
     @Test
     void serverWhitelistUsesOnlyOfficialAccountHosts() {
