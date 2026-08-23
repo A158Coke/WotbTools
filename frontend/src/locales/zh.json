@@ -31,7 +31,10 @@
         "remove_title": "移除该回放",
         "add_files_title": "添加回放文件",
         "add_folder_title": "添加文件夹",
-        "remove_file_aria": "删除回放文件 {name}"
+        "remove_file_aria": "删除回放文件 {name}",
+        "files_size": "{count} 个文件 · {size}",
+        "view_list": "查看文件列表",
+        "hide_list": "收起文件列表"
     },
     "action": {
         "preview": "解析预览",
@@ -565,6 +568,18 @@
             "failed": "导出失败",
             "failed_no_valid": "没有可导出的有效回放。",
             "failed_generic": "导出失败，请重试。",
+            "cancelled": "已取消"
+        },
+        "processing_job": {
+            "title": "正在解析回放",
+            "queued": "正在准备解析…",
+            "preparing": "已创建解析任务，共 {total} 场",
+            "progress": "已解析 {processed}/{total} 场",
+            "current_file": "正在处理 {file}",
+            "counts": "有效 {v} · 重复 {d} · 失败 {f}",
+            "ready": "回放解析完成",
+            "failed": "解析失败",
+            "no_valid_replays": "没有可解析的有效回放。",
             "cancelled": "已取消"
         }
     },

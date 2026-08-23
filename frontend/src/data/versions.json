@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.16",
+    "date": "2026-08-23",
+    "tag": "chg",
+    "zh": "解析大量回放不再卡住：点击「解析预览」后立即出现任务卡片，实时显示「已解析 18/34 场」进度、当前处理中的文件和有效/重复/失败数量，可随时取消，解析完成后自动展示结果。解析后再导出 Excel 会直接复用已解析结果（不再重新上传、不再重新解析），批量导出明显更快。选择几十个回放时上传区只显示文件数与总大小摘要，点「查看文件列表」才展开（内部滚动，长文件名自动截断）。",
+    "en": "Parsing many replays no longer blocks the page: clicking Preview immediately shows a task card with a live processed/total counter, the file being processed, valid/duplicate/failure stats and a cancel button; results appear automatically when parsing finishes. Exporting Excel afterwards reuses the parsed result directly (no re-upload, no re-parsing), so large exports are noticeably faster. When dozens of replays are selected the upload area shows only a count and total-size summary until you expand the file list (inner scroll, long filenames truncated).",
+    "ru": "Разбор большого количества реплеев больше не блокирует страницу: при нажатии «Разобрать» сразу появляется карточка задачи с живым счётчиком обработано/всего, текущим файлом, статистикой годных/дублей/ошибок и кнопкой отмены; результат показывается автоматически по завершении разбора. Экспорт Excel после разбора напрямую использует уже разобранный результат (без повторной загрузки и повторного разбора), поэтому массовый экспорт стал заметно быстрее. При выборе десятков реплеев область загрузки показывает только количество и общий размер, а список раскрывается по кнопке (внутренняя прокрутка, длинные имена файлов обрезаются)."
+  },
+  {
     "v": "2.12.15",
     "date": "2026-08-23",
     "tag": "chg",

@@ -48,9 +48,10 @@ public class ReplayExportJobController {
 
     @PostMapping(value = ApiPaths.REPLAY_EXPORT_JOBS, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<Map<String, Object>> create(
-            @RequestParam("files") final MultipartFile[] files,
-            @RequestParam(name = "mode", defaultValue = "aggregate") final String mode) {
-        final String jobId = service.createJob(files, mode);
+            @RequestParam(name = "files", required = false) final MultipartFile[] files,
+            @RequestParam(name = "mode", defaultValue = "aggregate") final String mode,
+            @RequestParam(name = "processingJobId", required = false) final String processingJobId) {
+        final String jobId = service.createJob(files, mode, processingJobId);
         final ExportJob.Snapshot snap = service.status(jobId);
         return ResponseEntity.accepted().body(Map.of(
                 "jobId", snap.jobId(),
