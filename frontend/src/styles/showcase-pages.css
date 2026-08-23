@@ -1,0 +1,200 @@
+/* Remaining WotBTools pages: boost/coaching, contact, changelog, admin review surfaces. */
+
+/* Boost / coaching */
+.boost-page {
+  width: min(1680px, calc(100vw - var(--showcase-gutter) * 2)) !important;
+  max-width: none !important;
+  margin: 0 auto !important;
+  padding: 22px 0 64px !important;
+}
+.boost-topbar {
+  position: sticky;
+  top: 66px;
+  z-index: 25;
+  margin-bottom: 14px !important;
+  padding: 8px !important;
+  border: 1px solid #303a40 !important;
+  border-radius: 8px !important;
+  background: color-mix(in srgb, var(--bg) 84%, transparent) !important;
+  box-shadow: 0 12px 32px rgba(0,0,0,.19);
+  backdrop-filter: blur(12px);
+}
+.boost-tabs {
+  display: flex !important;
+  gap: 5px !important;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.boost-tabs button {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding-inline: 13px !important;
+  border: 1px solid transparent !important;
+  border-radius: 6px !important;
+  background: transparent !important;
+  color: var(--text-sub) !important;
+}
+.boost-tabs button:hover { background: var(--bg-card-hover) !important; color: var(--text-heading) !important; }
+.boost-tabs button.active {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border)) !important;
+  background: color-mix(in srgb, var(--accent) 11%, var(--bg-card)) !important;
+  color: var(--accent-dark) !important;
+}
+.boost-card {
+  margin-bottom: 14px !important;
+  padding: 22px 24px !important;
+  border: 1px solid var(--showcase-line) !important;
+  border-radius: 9px !important;
+  background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 3%, var(--bg-card)), var(--bg-card)) !important;
+  box-shadow: var(--surface-shadow) !important;
+}
+.boost-card .card-title {
+  margin-bottom: 16px !important;
+  padding-bottom: 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+  font-size: 1.12rem !important;
+}
+.boost-form {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 14px 18px !important;
+}
+.boost-form > .form-row:has(textarea),
+.boost-form > .boost-error,
+.boost-form > .boost-success,
+.boost-form > button,
+.boost-form > .form-grid { grid-column: 1 / -1; }
+.boost-form .form-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 14px 18px !important;
+}
+.boost-form .form-row { min-width: 0; }
+.boost-form :is(input,select,textarea) {
+  width: 100%;
+  border-color: #394349 !important;
+  background: #0f1518 !important;
+}
+.boost-page :is(.boost-list,.request-list,.booster-list,.admin-list) {
+  border-color: #313b41 !important;
+}
+.boost-page table { width: 100%; font-variant-numeric: tabular-nums; }
+.boost-page table thead th {
+  position: sticky;
+  top: 116px;
+  z-index: 4;
+  background: #171e22 !important;
+}
+.boost-page .modal,
+.boost-page .booster-editor {
+  border-color: #3b454b !important;
+  background: #11171a !important;
+  box-shadow: 0 30px 80px rgba(0,0,0,.48) !important;
+}
+
+/* Changelog */
+.version-page {
+  width: min(1280px, calc(100vw - var(--showcase-gutter) * 2)) !important;
+  max-width: none !important;
+  padding: 28px 0 64px !important;
+}
+.version-page-title {
+  padding: 0 0 14px !important;
+  margin-bottom: 20px !important;
+  font-size: 1.55rem !important;
+  border-bottom-color: color-mix(in srgb, var(--accent) 28%, var(--border)) !important;
+}
+.version-page .ver {
+  position: relative;
+  margin: 0 !important;
+  padding: 15px 18px 15px 84px;
+  border-left: 1px solid #374148;
+  border-bottom: 1px solid #222b30;
+  background: color-mix(in srgb, var(--bg-card) 92%, transparent);
+}
+.version-page .ver:first-of-type { border-top: 1px solid #374148; border-radius: 8px 8px 0 0; }
+.version-page .ver:last-child { border-radius: 0 0 8px 8px; }
+.version-page .ver-num {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  color: var(--accent-light) !important;
+}
+.version-page .ver p { color: var(--text-sub) !important; }
+
+/* Contact */
+.contact-page {
+  width: min(1280px, calc(100vw - var(--showcase-gutter) * 2)) !important;
+  max-width: none !important;
+  padding: 28px 0 64px !important;
+}
+.contact-title { font-size: 1.55rem !important; letter-spacing: -.02em; }
+.contact-grid { gap: 14px !important; }
+.contact-card {
+  min-height: 190px;
+  padding: 22px !important;
+  border-color: var(--showcase-line) !important;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 5%, var(--bg-card)), var(--bg-card)) !important;
+  box-shadow: var(--surface-shadow);
+}
+.contact-card:hover { transform: translateY(-2px); box-shadow: 0 20px 42px var(--accent-shadow); }
+.contact-icon { filter: saturate(.75); }
+.copy-btn { margin-top: auto !important; }
+
+/* HoF admin and other admin-like pages */
+.hof-admin-page,
+.hofadmin-page,
+.admin-hof-page {
+  width: min(1760px, calc(100vw - var(--showcase-gutter) * 2)) !important;
+  max-width: none !important;
+  margin-inline: auto !important;
+  padding: 24px 0 64px !important;
+}
+:is(.hof-admin-page,.hofadmin-page,.admin-hof-page) table {
+  width: max-content;
+  min-width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+:is(.hof-admin-page,.hofadmin-page,.admin-hof-page) thead th {
+  position: sticky;
+  top: 60px;
+  z-index: 4;
+  background: #171e22 !important;
+}
+
+/* Shared destructive actions are quieter until interaction. */
+:is(.admin-page,.hof-admin-page,.hofadmin-page,.admin-hof-page) .btn-danger {
+  box-shadow: none !important;
+}
+:is(.admin-page,.hof-admin-page,.hofadmin-page,.admin-hof-page) .btn-danger:hover {
+  opacity: 1 !important;
+}
+
+@media (max-width:1199px) {
+  .boost-page { width: calc(100vw - 24px) !important; padding-top: 16px !important; }
+  .boost-topbar { top: 64px; }
+  .boost-form { grid-template-columns: 1fr 1fr; }
+  .boost-page table thead th { top: 112px; }
+}
+
+@media (max-width:767px) {
+  .boost-page,
+  .version-page,
+  .contact-page,
+  .hof-admin-page,
+  .hofadmin-page,
+  .admin-hof-page {
+    width: calc(100vw - 16px) !important;
+    padding: 12px 0 42px !important;
+  }
+  .boost-topbar { position: static; }
+  .boost-form,
+  .boost-form .form-grid { grid-template-columns: 1fr !important; }
+  .boost-form > * { grid-column: 1 !important; }
+  .boost-card { padding: 17px !important; }
+  .boost-page table thead th { top: 56px; }
+  .version-page .ver { padding-left: 16px; }
+  .version-page .ver-num { position: static; }
+  .contact-grid { grid-template-columns: 1fr !important; }
+  :is(.hof-admin-page,.hofadmin-page,.admin-hof-page) thead th { top: 56px; }
+}
