@@ -14,7 +14,7 @@ import java.util.Set;
  * 解析并严格验证 Team Autopsy（settlement-only）的 JSON 输出。
  * <p>容忍 markdown 代码围栏；但任何契约不成立（roster 不足 7 个 key、虚构/重复
  * playerKey、LLM 判断出现 EXACT/INFERRED、verdict 引用无效 playerKey、evidence 为空、
- * 空对象、判胜无 MVP / 判负无战犯）时整段返回 {@code null}，由编排器决定不输出团队剖析段。</p>
+ * 空对象、判胜无 MVP / 判负无战犯（允许为空，不强行生成）等）时整段返回 {@code null}，由编排器决定不输出团队剖析段。</p>
  */
 public final class TeamAutopsyParser {
 
@@ -35,8 +35,7 @@ public final class TeamAutopsyParser {
 
     /**
      * @param rosterPlayerKeys 本方 roster 的合法 playerKey（必须恰好 7 个有效唯一 key）
-     * @param winner           通过显式 recorderTeam 计算的胜负；FRIENDLY_WIN 要求 mvps 非空、
-     *                         ENEMY_WIN 要求 biggestLiabilities 非空
+     * @param winner           通过显式 recorderTeam 计算的胜负；mvps / biggestLiabilities 允许为空（Quality Gate）
      */
     public static TeamAutopsyResult parse(final String output,
                                           final Set<String> rosterPlayerKeys,
@@ -60,12 +59,8 @@ public final class TeamAutopsyParser {
             if (players == null || mvps == null || liabilities == null) {
                 return null;
             }
-            if (winner == Winner.FRIENDLY_WIN && mvps.isEmpty()) {
-                return null;
-            }
-            if (winner == Winner.ENEMY_WIN && liabilities.isEmpty()) {
-                return null;
-            }
+            // Quality Gate（PR #103）：结算级数据没有明显异常时，允许 mvps / biggestLiabilities 为空，
+            // 不为了结构完整强行生成评价；空数组是合法结果（UI 不渲染对应段落）。
             return new TeamAutopsyResult(
                     players,
                     mvps,

@@ -1,0 +1,82 @@
+{
+  "modelKey": "grille-15",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 19217,
+    "modelGlb": "https://api.blitzkit.app/tanks/19217/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160.1,
+    "y": 220.36
+  },
+  "turretRaster": {
+    "logicalMinX": 120.01,
+    "logicalMinY": -211.92,
+    "logicalMaxX": 200.19,
+    "logicalMaxY": 292.86,
+    "pixelWidth": 160,
+    "pixelHeight": 1010,
+    "pivotX": 40.09,
+    "pivotY": 432.28
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.556695580482483,
+        -2.9677131175994873
+      ],
+      "max": [
+        1.5522515773773193,
+        3.2125649452209473
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -0.8798010349273682,
+        -2.6459615230560303
+      ],
+      "max": [
+        0.8798010349273682,
+        -0.7853249907493591
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.24005362391471863,
+        -2.2490732669830322
+      ],
+      "max": [
+        0.2650880217552185,
+        8.040014266967773
+      ]
+    },
+    "selectedModules": {
+      "turretId": 44561,
+      "gunId": 28945,
+      "trackId": 51985,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "Grille_15_L63_mtr",
+      "Grille_15_L63_mtr",
+      "Grille_15_L63_mtr",
+      "Grille_15_L63_track_mtr",
+      "Grille_15_L63_track_mtr",
+      "Grille_15_L63_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

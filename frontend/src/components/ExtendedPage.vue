@@ -201,7 +201,7 @@ function arrow(scope, key) {
       <template v-if="currentBattle">
         <p class="meta">
           {{ $t('metric.map') }}: {{ mapLabel(currentBattle.mapName, locale) || '-' }} ·
-          {{ $t('leaderboard.version') }}: {{ currentBattle.version || '-' }} ·
+          {{ $t('hof.version') }}: {{ currentBattle.version || '-' }} ·
           {{ $t('metric.winner') }}: {{ currentBattle.winnerTeam || '-' }} ·
           {{ currentBattle.sourceName }}
         </p>

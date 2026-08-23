@@ -10,7 +10,7 @@ import org.springframework.web.multipart.MultipartFile;
  *
  * <p>通用校验不限制文件数量（reconstruct-batch / process 允许多文件）；AI 单文件策略
  * （{@link AiReplayBatchPolicy#MAX_FILES}=1）由 {@link #validateAiReview} 单独应用
- * （analyze / AiReplayReviewService）。</p>
+ * （analyze / AiReplayReviewService）。百场 submission 完全复用本校验器（含 size/type contract）。</p>
  *
  * <p>错误码与既有端点保持一致：{@code NO_REPLAY_FILES} / {@code NO_REPLAY_FILE} /
  * {@code INVALID_REPLAY_FILE_TYPE} / {@code FILE_TOO_LARGE} /

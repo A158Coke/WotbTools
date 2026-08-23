@@ -95,8 +95,7 @@ wotb:
     # empty default: app still starts without a key; /api/replay/analyze returns AI_NOT_CONFIGURED
     api-key: ${AI_API_KEY:}
     base-url: ${AI_BASE_URL:https://api.deepseek.com}
-    # 官方稳定别名（deepseek-v4-pro 指向最新 Pro 版本，当前对应 DeepSeek-V4-Pro-0813；勿用带日期的显示名）
-    model: ${AI_MODEL:deepseek-v4-pro}
+    model: ${AI_MODEL:deepseek-v4-flash}
     connect-timeout-sec: ${AI_CONNECT_TIMEOUT_SEC:10}
     timeout-sec: ${AI_TIMEOUT_SEC:300}
     # total budget for one AiChatGateway.chat() lifecycle (attempts + retries + backoff)
@@ -108,6 +107,8 @@ wotb:
     context-window-tokens: ${AI_CONTEXT_WINDOW_TOKENS:1000000}
     single-replay-max-input-tokens: ${AI_SINGLE_REPLAY_MAX_INPUT_TOKENS:940000}
     max-output-tokens: ${AI_MAX_OUTPUT_TOKENS:32768}
+    # Team Call #2 专用输出上限（PR #103 review BLOCKER C）：effective = min(global, team-review)
+    team-review-max-output-tokens: ${AI_TEAM_REVIEW_MAX_OUTPUT_TOKENS:4096}
     prompt-safety-margin-tokens: ${AI_PROMPT_SAFETY_MARGIN_TOKENS:16384}
     # Call #2 自由文本复盘默认关闭 thinking（DeepSeek 推理模式会让 content 末尾一次性到达，
     # 破坏 SSE 流式体验）；Call #1/Autopsy 结构化调用恒为 false。开启时用独立开关。
@@ -130,6 +131,11 @@ wotb:
     coordinate:
       half-extent: ${REPLAY_COORDINATE_HALF_EXTENT:250}
       clamp-tolerance: ${REPLAY_COORDINATE_CLAMP_TOLERANCE:12.5}
+  hof:
+    # 名人堂回放文件内容寻址存储目录（生产挂 volume /data/replays）
+    replay-dir: ${HOF_REPLAY_DIR:data/replays}
+    # 磁盘保留阈值（字节，含本次写入大小）；低于则拒绝存储 REPLAY_STORAGE_FULL(507)
+    replay-min-free-bytes: ${HOF_REPLAY_MIN_FREE_BYTES:536870912}
   boost:
     auto-confirm-hours: ${BOOST_AUTO_CONFIRM_HOURS:72}
     auto-confirm-scan-ms: ${BOOST_AUTO_CONFIRM_SCAN_MS:300000}

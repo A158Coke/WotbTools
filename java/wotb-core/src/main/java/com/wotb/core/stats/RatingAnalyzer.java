@@ -4,6 +4,7 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.TankInfo;
 import com.wotb.core.ref.Tankopedia;
+import com.wotb.core.replay.evidence.EntryHpSource;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -223,6 +224,10 @@ public final class RatingAnalyzer {
     }
 
     private static double estimatedHp(final PlayerResult player, final Tankopedia tp) {
+        if (player.entryHpSource == EntryHpSource.OBSERVED_EXACT
+                && player.entryHp != null && player.entryHp > 0) {
+            return player.entryHp;
+        }
         final TankInfo info = tp.info(player.tankId);
         if (info.maxHp() != null && info.maxHp() > 0) {
             return info.maxHp();

@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { mapImages } from '../data/mapImages'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
+import BattlePlayback from './BattlePlayback.vue'
 
 /**
  * 地图鸟瞰：底图（按图片 coordinateBounds 渲染）+ 6x6 分析网格（playableBounds 系）+ 九宫格分区框 + 出生点；
@@ -13,6 +14,10 @@ const props = defineProps({
   overview: {
     type: Object,
     required: true
+  },
+  seekTo: {
+    type: Number,
+    default: null
   }
 })
 
@@ -20,7 +25,7 @@ const { t, locale } = useI18n()
 
 const image = computed(() => mapImages[props.overview.mapCode] || null)
 
-// 自适应配色：按底图平均相对亮度选择暗图/亮图调色板（规则见 docs/DEVELOPER_GUIDE.md「地图鸟瞰」节）。
+// 自适应配色：按底图平均相对亮度选择暗图/亮图调色板（规则见 docs/features/battle-playback.md）。
 const palette = ref(darkMapPalette)
 watch(image, async (img) => {
   palette.value = paletteForLuminance(await luminanceOfImage(img))
@@ -36,6 +41,12 @@ const phaseTab = ref('all')     // all|opening|mid|late
 watch(view, (next) => {
   teamTab.value = next === 'routes' ? 'all' : 'friendly'
 })
+// AI 报告时间跳转：自动切到「战局回放」视图
+watch(() => props.seekTo, (sec) => {
+  if (Number.isFinite(sec) && props.overview.playback) {
+    view.value = 'playback'
+  }
+}, { immediate: true })
 
 const W = computed(() => image.value ? image.value.width : 800)
 const H = computed(() => image.value ? image.value.height : 800)
@@ -218,10 +229,18 @@ const gridRegions = computed(() => {
           :class="{ active: view === 'routes' }"
           @click="view = 'routes'"
         >{{ $t('recon.map.view_routes') }}</button>
+        <button
+          v-if="overview.playback"
+          type="button"
+          class="map-tab"
+          :class="{ active: view === 'playback' }"
+          @click="view = 'playback'"
+          data-test="map-tab-playback"
+        >{{ $t('recon.map.view_playback') }}</button>
       </div>
     </div>
 
-    <div class="map-filters">
+    <div v-if="view !== 'playback'" class="map-filters">
       <div class="filter-group">
         <button
           v-for="key in teamKeys"
@@ -255,6 +274,7 @@ const gridRegions = computed(() => {
     </div>
 
     <svg
+      v-if="view !== 'playback'"
       class="map-svg"
       :viewBox="`0 0 ${W} ${H}`"
       role="img"
@@ -350,7 +370,13 @@ const gridRegions = computed(() => {
       </g>
     </svg>
 
-    <div class="map-legend">
+    <BattlePlayback
+      v-if="view === 'playback' && overview.playback"
+      :overview="overview"
+      :seek-to="seekTo"
+    />
+
+    <div v-if="view !== 'playback'" class="map-legend">
       <template v-if="view === 'heatmap'">
         <span class="legend-chip" :style="{ background: heatColor }"></span>
         <span>{{ $t('recon.map.legend_heat') }}: 0 … {{ heatMax.toFixed(0) }}</span>

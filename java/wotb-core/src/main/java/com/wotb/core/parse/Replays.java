@@ -12,16 +12,31 @@ import java.util.function.Consumer;
 /** 多回放: 按 arenaUniqueId 去重 */
 public final class Replays {
 
+    @FunctionalInterface
+    public interface BattleLoader {
+        Battle load(final Source source) throws Exception;
+    }
+
     private Replays() {
     }
 
     public static Collected collect(final List<Source> sources, final Consumer<String> log) {
+        return collect(sources, source -> ReplayParser.parse(source.bytes()), log);
+    }
+
+    /** 按 arenaId 去重，并使用调用方指定的回放加载链路。 */
+    public static Collected collect(final List<Source> sources,
+                                    final BattleLoader loader,
+                                    final Consumer<String> log) {
         final Collected res = new Collected();
         final Map<String, String> seen = new LinkedHashMap<>(); // arenaId -> name
         for (final Source s : sources) {
             final Battle battle;
             try {
-                battle = ReplayParser.parse(s.bytes());
+                battle = loader.load(s);
+                if (battle == null) {
+                    throw new IllegalArgumentException("NO_BATTLE_DATA");
+                }
             } catch (Exception e) {
                 res.failures.add(new String[]{s.name(), e.getMessage()});
                 if (log != null) log.accept("[失败] " + s.name() + ": " + e.getMessage());

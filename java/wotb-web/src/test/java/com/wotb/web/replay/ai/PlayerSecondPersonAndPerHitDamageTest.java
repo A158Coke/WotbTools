@@ -6,7 +6,6 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
-import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import org.junit.jupiter.api.Test;
@@ -28,6 +27,19 @@ class PlayerSecondPersonAndPerHitDamageTest {
     private static final long YOU = 1L;
     private static final long ENEMY = 2L;
     private static final long MATE = 3L;
+
+
+    /** §12/§13 权威掉血 fixture：recorder(YOU) 对 ENEMY 掉 780（Type-7 推导 + 单通知归属）。 */
+    private static ReplayReconstruction dealtRecon(final int victimEid, final long victimAccount, final int amount) {
+        return new ReplayReconstruction(null, null, 120f, 0f, List.of(),
+                List.of(
+                        new com.wotb.core.replay.event.ParticipantMappingEvent(1, new ReplayTimestamp(1f, null), 8, DecodeConfidence.EXACT, 1, YOU),
+                        new com.wotb.core.replay.event.ParticipantMappingEvent(2, new ReplayTimestamp(2f, null), 8, DecodeConfidence.EXACT, victimEid, victimAccount),
+                        new DamageEvent(3, new ReplayTimestamp(10f, null), 8, DecodeConfidence.EXACT, 1, victimEid, null, null, 999, false),
+                        new com.wotb.core.replay.event.HealthChangedEvent(4, new ReplayTimestamp(9f, null), 7, DecodeConfidence.EXACT, victimEid, 2000, null, true),
+                        new com.wotb.core.replay.event.HealthChangedEvent(5, new ReplayTimestamp(10f, null), 7, DecodeConfidence.EXACT, victimEid, 2000 - amount, null, true)),
+                List.of(), null, null, null);
+    }
 
     private static Stream<String> playerPrompts() {
         return Stream.of(
@@ -116,9 +128,10 @@ class PlayerSecondPersonAndPerHitDamageTest {
         assertTrue(written);
         final String evidence = sb.toString();
         assertTrue(evidence.contains("PER_HIT_DAMAGE_EVENTS_OBSERVED"), evidence);
-        // 3分12秒 = 192s，方向不得颠倒
-        assertTrue(evidence.contains("3分12秒：你驾驶的IS 对 敌方玩家\"EnemyAce\"驾驶的SPHT 造成了418点伤害"), evidence);
-        assertTrue(evidence.contains("3分18秒：敌方玩家\"EnemyAce\"驾驶的SPHT 对 你驾驶的IS 造成了376点伤害"), evidence);
+        // 3分12秒 = 192s，方向不得颠倒（hpLoss 语义：recorder 攻击方「你 对 …造成了」，
+        // recorder 受击「…对你造成了」，不再重复车辆名）
+        assertTrue(evidence.contains("3分12秒：你 对 敌方玩家\"EnemyAce\"驾驶的SPHT 造成了418点伤害"), evidence);
+        assertTrue(evidence.contains("3分18秒：敌方玩家\"EnemyAce\"驾驶的SPHT 对你造成了376点伤害"), evidence);
     }
 
     @Test
@@ -218,11 +231,12 @@ class PlayerSecondPersonAndPerHitDamageTest {
         recorder.killVictims.add(new com.wotb.core.stats.PotentialDamage.KillVictim(ENEMY, 780, 2));
 
         final StringBuilder sb = new StringBuilder();
-        PlayerReplayPromptBuilder.appendRecorderDamageExchange(sb, battle, recorder);
+        PlayerReplayPromptBuilder.appendRecorderDamageExchange(
+                sb, battle, dealtRecon(2, ENEMY, 780), recorder);
         final String evidence = sb.toString();
 
         assertTrue(evidence.contains("DAMAGE_EXCHANGE_AGGREGATED_OBSERVED（逐对手聚合观测子集）"), evidence);
-        assertTrue(evidence.contains("整场累计的观测子集, 不是单次伤害"), evidence);
+        assertTrue(evidence.contains("整场累计的观测子集"), evidence);
         assertTrue(evidence.contains("累计直接伤害780"), evidence);
     }
 
@@ -359,7 +373,6 @@ class PlayerSecondPersonAndPerHitDamageTest {
     }
 
     private static ReplayReconstruction recon(final Float battleStart, final DamageEvent... events) {
-        return new ReplayReconstruction(null, null, 600f, battleStart, List.of(),
-                List.<ReplayEvent>of(events), List.of(), null, null, null);
+        return DamageWindowFixture.recon(battleStart, events);
     }
 }

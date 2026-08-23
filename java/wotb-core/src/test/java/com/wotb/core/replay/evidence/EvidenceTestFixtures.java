@@ -4,7 +4,6 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.replay.event.DecodeConfidence;
-import com.wotb.core.replay.feature.EngagementOutcome;
 import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.MovementSegment;
@@ -153,7 +152,7 @@ final class EvidenceTestFixtures {
                 start, end, List.of(), List.of(),
                 dealt, received,
                 new Vector3(0, 0, 0), new Vector3(0, 0, 0),
-                EngagementOutcome.EVEN, DecodeConfidence.EXACT);
+                DecodeConfidence.EXACT);
     }
 
     static MovementSegment movement(final float start, final float end,

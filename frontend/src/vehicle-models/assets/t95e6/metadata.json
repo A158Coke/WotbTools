@@ -1,0 +1,82 @@
+{
+  "modelKey": "t95e6",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 18977,
+    "modelGlb": "https://api.blitzkit.app/tanks/18977/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160.29,
+    "y": 167.6
+  },
+  "turretRaster": {
+    "logicalMinX": 107.19,
+    "logicalMinY": -111.06,
+    "logicalMaxX": 218.12,
+    "logicalMaxY": 266.6,
+    "pixelWidth": 222,
+    "pixelHeight": 756,
+    "pivotX": 53.1,
+    "pivotY": 278.66
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.5735018253326416,
+        -3.848304033279419
+      ],
+      "max": [
+        1.5735018253326416,
+        3.3443045616149902
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.3489168882369995,
+        -2.4707741737365723
+      ],
+      "max": [
+        1.4844900369644165,
+        1.784565806388855
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.14000040292739868,
+        2.0257723331451416
+      ],
+      "max": [
+        0.13999973237514496,
+        7.1753387451171875
+      ]
+    },
+    "selectedModules": {
+      "turretId": 256801,
+      "gunId": 257057,
+      "trackId": 256801,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "A95_T95E6_mtr",
+      "A95_T95E6_mtr",
+      "A95_T95E6_mtr",
+      "A95_T95E6_track_mtr",
+      "A95_T95E6_track_mtr",
+      "A95_T95E6_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

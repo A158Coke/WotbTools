@@ -1,0 +1,82 @@
+{
+  "modelKey": "wz-111-5a",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 8497,
+    "modelGlb": "https://api.blitzkit.app/tanks/8497/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 158.3,
+    "y": 132.04
+  },
+  "turretRaster": {
+    "logicalMinX": 105.25,
+    "logicalMinY": -159.36,
+    "logicalMaxX": 214.53,
+    "logicalMaxY": 199.35,
+    "pixelWidth": 219,
+    "pixelHeight": 718,
+    "pivotX": 53.05,
+    "pivotY": 291.4
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.694567084312439,
+        -3.6695311069488525
+      ],
+      "max": [
+        1.77397882938385,
+        3.732167959213257
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.3994641304016113,
+        -1.0656219720840454
+      ],
+      "max": [
+        1.4730688333511353,
+        2.370577573776245
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.23783692717552185,
+        2.553969621658325
+      ],
+      "max": [
+        0.21080482006072998,
+        8.362832069396973
+      ]
+    },
+    "selectedModules": {
+      "turretId": 13105,
+      "gunId": 12337,
+      "trackId": 14129,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "Ch41_WZ_111_5A_mtr",
+      "Ch41_WZ_111_5A_mtr",
+      "Ch41_WZ_111_5A_mtr",
+      "Ch41_WZ_111_5A_track_mtr",
+      "Ch41_WZ_111_5A_track_mtr",
+      "Ch41_WZ_111_5A_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

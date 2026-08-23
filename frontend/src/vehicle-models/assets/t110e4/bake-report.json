@@ -1,0 +1,160 @@
+{
+  "tankId": 13089,
+  "modelKey": "t110e4",
+  "kind": "turreted",
+  "sourceModel": {
+    "glbBytes": 3062372
+  },
+  "selectedModules": {
+    "turretId": 22561,
+    "gunId": 267297,
+    "trackId": 26401,
+    "turretModelId": 1,
+    "gunModelId": 1
+  },
+  "output": {
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "logicalViewBox": "0 0 320 320",
+    "supersample": 2
+  },
+  "materials": [
+    "T110E4_mtr",
+    "T110E4_track_mtr"
+  ],
+  "texturesUsed": [
+    "T110E4_mtr",
+    "T110E4_mtr",
+    "T110E4_mtr",
+    "T110E4_track_mtr",
+    "T110E4_track_mtr",
+    "T110E4_track_mtr"
+  ],
+  "uvSetsUsed": [
+    "TEXCOORD_0"
+  ],
+  "metallicRoughness": {
+    "present": true,
+    "used": false,
+    "reason": "顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）"
+  },
+  "visibleTriangleCounts": {
+    "hull": 4806,
+    "turret": 1693
+  },
+  "alphaTested": 1,
+  "hullBounds": {
+    "min": [
+      -1.8641277551651,
+      -3.2256689071655273
+    ],
+    "max": [
+      1.879652500152588,
+      3.217258930206299
+    ]
+  },
+  "turretBounds": {
+    "min": [
+      -1.43661630153656,
+      -1.3763158321380615
+    ],
+    "max": [
+      1.4380439519882202,
+      2.2125070095062256
+    ]
+  },
+  "gunBounds": {
+    "min": [
+      -0.21771323680877686,
+      2.4139249324798584
+    ],
+    "max": [
+      0.2177036851644516,
+      6.777514934539795
+    ]
+  },
+  "turretPivot": {
+    "x": 159.66,
+    "y": 144.13
+  },
+  "pivotSource": {
+    "contract": "BlitzKit useTankTransform: yaw center = correctZYTuple(trackOrigin) + correctZYTuple(turret_origin)",
+    "hullOrigin": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "turretOrigin": {
+      "x": -9.999999974752427e-7,
+      "y": 1.5292400121688843,
+      "z": 0.36723199486732483
+    },
+    "hullOriginModel": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "turretOriginModel": {
+      "x": -0.000001,
+      "y": 0.367232,
+      "z": 1.52924
+    },
+    "modelPivot": {
+      "x": -0.000001,
+      "y": 0.367232,
+      "z": 1.52924
+    },
+    "initialTurretRotation": null
+  },
+  "rasterOrientation": {
+    "hull": {
+      "axisContract": "model +Y = screen up（raster top = bounds.maxY）",
+      "topModelY": 3.6565,
+      "bottomModelY": -3.665,
+      "topRowCovered": 38,
+      "bottomRowCovered": 601,
+      "topCoveredModelY": 3.2212,
+      "bottomCoveredModelY": -3.2296,
+      "topWidthMean": 108.39,
+      "bottomWidthMean": 102.81
+    },
+    "turret": {
+      "axisContract": "model +Y = screen up（raster top = bounds.maxY）",
+      "topModelY": 6.7775,
+      "bottomModelY": -1.3763,
+      "topRowCovered": 0,
+      "bottomRowCovered": 712,
+      "topCoveredModelY": 6.7775,
+      "bottomCoveredModelY": -1.3763,
+      "topWidthMean": 25.94,
+      "bottomWidthMean": 180.55
+    }
+  },
+  "turretRaster": {
+    "logicalMinX": 96.87,
+    "logicalMinY": -136.04,
+    "logicalMaxX": 222.51,
+    "logicalMaxY": 220.34,
+    "pixelWidth": 251,
+    "pixelHeight": 713,
+    "pivotX": 62.79,
+    "pivotY": 280.17
+  },
+  "fit": {
+    "scale": 43.70683749810074,
+    "tx": 159.6607312468162,
+    "ty": 160.1837867481599
+  },
+  "assets": {
+    "hullWebp": 42768,
+    "turretWebp": 21888
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "desaturate": 0.25,
+    "shading": "baseColor x occlusion x normal-z relief (restrained)",
+    "determinism": "pure arithmetic; same input -> same output"
+  }
+}

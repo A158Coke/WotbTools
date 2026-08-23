@@ -6,10 +6,8 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
-import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.feature.BattlePhaseType;
-import com.wotb.core.replay.feature.EngagementOutcome;
 import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import org.junit.jupiter.api.Test;
@@ -36,6 +34,20 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
     private static final long RECORDER_ACCOUNT = 1L;
     private static final long ENEMY_ACCOUNT = 2L;
 
+    /** §12/§13 权威掉血 fixture：recorder 对 enemy 掉 900、enemy 对 recorder 掉 640（Type-7 推导 + 单通知归属）。 */
+    private static ReplayReconstruction killRecon() {
+        return new ReplayReconstruction(null, null, 120f, 0f, List.of(),
+                List.of(
+                        new com.wotb.core.replay.event.ParticipantMappingEvent(1, new ReplayTimestamp(1f, null), 8, DecodeConfidence.EXACT, 1, 1L),
+                        new com.wotb.core.replay.event.ParticipantMappingEvent(2, new ReplayTimestamp(2f, null), 8, DecodeConfidence.EXACT, 2, 2L),
+                        new DamageEvent(3, new ReplayTimestamp(10f, null), 8, DecodeConfidence.EXACT, 1, 2, null, null, 999, false),
+                        new com.wotb.core.replay.event.HealthChangedEvent(4, new ReplayTimestamp(9f, null), 7, DecodeConfidence.EXACT, 2, 2000, null, true),
+                        new com.wotb.core.replay.event.HealthChangedEvent(5, new ReplayTimestamp(10f, null), 7, DecodeConfidence.EXACT, 2, 1100, null, true),
+                        new DamageEvent(6, new ReplayTimestamp(12f, null), 8, DecodeConfidence.EXACT, 2, 1, null, null, 999, false),
+                        new com.wotb.core.replay.event.HealthChangedEvent(7, new ReplayTimestamp(11f, null), 7, DecodeConfidence.EXACT, 1, 2000, null, true),
+                        new com.wotb.core.replay.event.HealthChangedEvent(8, new ReplayTimestamp(12f, null), 7, DecodeConfidence.EXACT, 1, 1360, null, true)),
+                List.of(), null, null, null);
+    }
     private static Stream<String> allSystemPrompts() {
         return Stream.of(
                 PlayerReplayPromptBuilder.SYSTEM_PROMPT,
@@ -119,7 +131,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         enemyPlayer.killVictims.add(new com.wotb.core.stats.PotentialDamage.KillVictim(RECORDER_ACCOUNT, 640, 2));
 
         final StringBuilder sb = new StringBuilder();
-        final boolean written = PlayerReplayPromptBuilder.appendKillAttribution(sb, battle, recorder);
+        final boolean written = PlayerReplayPromptBuilder.appendKillAttribution(sb, battle, killRecon(), recorder);
         final String evidence = sb.toString();
 
         assertTrue(written);
@@ -136,18 +148,27 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         final Battle battle = battleWithRecorderAndEnemy();
         final StringBuilder sb = new StringBuilder();
 
-        assertFalse(PlayerReplayPromptBuilder.appendKillAttribution(sb, battle, battle.players.get(0)));
+        assertFalse(PlayerReplayPromptBuilder.appendKillAttribution(sb, battle, killRecon(), battle.players.get(0)));
         assertEquals("", sb.toString());
     }
 
     @Test
-    void promptsRequirePerVehicleEnemyAnalysis() {
-        allSystemPrompts().forEach(prompt -> assertTrue(
-                prompt.contains("必须逐车分析敌方阵容") || prompt.contains("必须逐车分析对方阵容"), prompt));
+    void promptsRequireEnemyAnalysisWithTeamCap() {
+        // player 路径仍强制逐车分析敌方阵容（个人复盘需要逐对手威胁）
         assertTrue(PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT
                 .contains("敌方阵容逐车分析"), PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT);
         assertTrue(PlayerReplayPromptBuilder.SYSTEM_PROMPT
                 .contains("逐车分析敌方阵容"), PlayerReplayPromptBuilder.SYSTEM_PROMPT);
+        assertTrue(PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT
+                .contains("必须逐车分析敌方阵容"), PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT);
+        // 团队路径（AI Review V2.1 + PR #103 最终收尾）：对方关键威胁是【可选】内容，
+        // 不再强制逐车作文，也不再无条件强制「指出对方主要威胁」
+        final String team = TeamReplayAnalysisService.SINGLE_TEAM_PROMPT;
+        assertTrue(team.contains("对方关键威胁是【可选】内容"), team);
+        assertTrue(team.contains("只有对核心复盘确有价值时才指出 1-3 辆对方关键威胁"), team);
+        assertFalse(team.contains("逐车分析对方阵容"), "团队复盘不得强制逐车作文");
+        assertFalse(team.contains("分析对方阵容并指出对方主要威胁车辆"),
+                "团队复盘不得保留无条件 mandatory 威胁规则");
     }
 
     // ---- 3. 双方对炮明细 ----
@@ -227,10 +248,6 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         assertEquals("首次接敌", PlayerAnalysisTerms.phaseLabel(BattlePhaseType.FIRST_CONTACT));
         assertEquals("准备阶段", PlayerAnalysisTerms.phaseLabel(BattlePhaseType.PRE_BATTLE));
 
-        assertEquals("有利", PlayerAnalysisTerms.outcomeLabel(EngagementOutcome.FAVORABLE));
-        assertEquals("不利", PlayerAnalysisTerms.outcomeLabel(EngagementOutcome.UNFAVORABLE));
-        assertEquals("均势", PlayerAnalysisTerms.outcomeLabel(EngagementOutcome.EVEN));
-
         assertEquals("移动", PlayerAnalysisTerms.movementLabel(MovementType.MOVING));
         assertEquals("静止", PlayerAnalysisTerms.movementLabel(MovementType.STATIONARY));
 
@@ -246,10 +263,6 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         for (final BattlePhaseType type : BattlePhaseType.values()) {
             assertFalse(PlayerAnalysisTerms.phaseLabel(type).matches("[A-Z_]+"),
                     "phase 未中文化: " + type);
-        }
-        for (final EngagementOutcome outcome : EngagementOutcome.values()) {
-            assertFalse(PlayerAnalysisTerms.outcomeLabel(outcome).matches("[A-Z_]+"),
-                    "outcome 未中文化: " + outcome);
         }
         for (final MovementType type : MovementType.values()) {
             assertFalse(PlayerAnalysisTerms.movementLabel(type).matches("[A-Z_]+"),
@@ -321,8 +334,6 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
 
     private static ReplayReconstruction reconWith(final Float battleStart,
                                                   final DamageEvent... events) {
-        return new ReplayReconstruction(
-                null, null, 300f, battleStart, List.of(),
-                List.<ReplayEvent>of(events), List.of(), null, null, null);
+        return DamageWindowFixture.recon(battleStart, events);
     }
 }

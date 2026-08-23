@@ -65,6 +65,26 @@ class AiTimeoutChainContractTest {
                 "AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC\" != \"1100\"");
     }
 
+    /** AI 模型默认值契约：production fallback 与 application default 必须同为 deepseek-v4-flash。 */
+    @Test
+    void aiModelFallbacksStayOnFlash() throws Exception {
+        assertFileContains("application.yml",
+                repoPath("java", "wotb-web", "src", "main", "resources", "application.yml"),
+                "model: ${AI_MODEL:deepseek-v4-flash}");
+        assertFileContains(".env.example",
+                repoPath(".env.example"),
+                "AI_MODEL=deepseek-v4-flash");
+        assertFileContains("docker-compose.prod.yml",
+                repoPath("deploy", "docker-compose.prod.yml"),
+                "AI_MODEL: \"${AI_MODEL:-deepseek-v4-flash}\"");
+        assertFileContains("docker-compose online",
+                repoPath("docker", "online", "docker-compose.yml"),
+                "AI_MODEL: ${AI_MODEL:-deepseek-v4-flash}");
+        assertFileContains("deploy.yml",
+                repoPath(".github", "workflows", "deploy.yml"),
+                "AI_MODEL: ${{ vars.AI_MODEL || 'deepseek-v4-flash' }}");
+    }
+
     private static void assertFileContains(final String label, final Path file,
                                            final String expected) throws Exception {
         assertTrue(Files.isRegularFile(file), label + " 文件不存在: " + file);

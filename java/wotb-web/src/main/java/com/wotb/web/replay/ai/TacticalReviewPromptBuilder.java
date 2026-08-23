@@ -12,6 +12,7 @@ import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.util.PlayerResultFormat;
 import com.wotb.core.util.PromptDataQuoter;
 
@@ -39,14 +40,24 @@ public final class TacticalReviewPromptBuilder {
     private TacticalReviewPromptBuilder() {
     }
 
-    /** 最终产物：system + user（含裁剪状态）。 */
+    /** 最终产物：system + user（含裁剪状态 + 各 context section 的 token 估算，供可观测性）。 */
     public record PreparedHarnessPrompt(
             String systemPrompt,
             String userContent,
             int estimatedInputTokens,
             boolean truncated,
-            String budgetSummary
+            String budgetSummary,
+            java.util.Map<String, Integer> sectionTokens
     ) {
+        public PreparedHarnessPrompt(
+                String systemPrompt,
+                String userContent,
+                int estimatedInputTokens,
+                boolean truncated,
+                String budgetSummary) {
+            this(systemPrompt, userContent, estimatedInputTokens, truncated, budgetSummary,
+                    java.util.Map.of());
+        }
     }
 
     public static PreparedHarnessPrompt prepare(
@@ -54,6 +65,28 @@ public final class TacticalReviewPromptBuilder {
             final EvidenceSkillResult evidence,
             final Battle battle,
             final ReplayReconstruction recon,
+            final PlayerBattleFeatureSet features,
+            final RecorderEntityMapping recorder,
+            final AiTokenEstimator estimator,
+            final int singleReplayMaxInputTokens,
+            final int contextWindowTokens,
+            final int maxOutputTokens,
+            final int promptSafetyMarginTokens
+    ) {
+        return prepare(prior, evidence, battle, recon, null, features, recorder, estimator,
+                singleReplayMaxInputTokens, contextWindowTokens, maxOutputTokens,
+                promptSafetyMarginTokens);
+    }
+
+    /**
+     * 带 canonical timeline 的 Call #2 构建（时间线化主叙事；timeline 可为 null 时省略该段）。
+     */
+    public static PreparedHarnessPrompt prepare(
+            final PreBattleStrategicPrior prior,
+            final EvidenceSkillResult evidence,
+            final Battle battle,
+            final ReplayReconstruction recon,
+            final BattleTimeline timeline,
             final PlayerBattleFeatureSet features,
             final RecorderEntityMapping recorder,
             final AiTokenEstimator estimator,
@@ -101,18 +134,30 @@ public final class TacticalReviewPromptBuilder {
                 : "";
         boolean includeDamageWindows = !damageWindowsSection.isEmpty();
         boolean includePhases = features != null && features.phases() != null && !features.phases().isEmpty();
+        // 点数局势（击杀夺分时间线/占领点存在/进入控制点区域窗口）：录像者队伍视角
+        final String pointsSituationSection = recorder != null && recorder.team() != null
+                ? PointsSituationEvidence.renderSection(
+                        battle, recon, recorder.team(), damagePartial, "你的队伍", "敌方")
+                : "";
+        boolean includePointsSituation = !pointsSituationSection.isEmpty();
         boolean includeTop = !windows.isEmpty();
         boolean includeWindowDetail = !windows.isEmpty();
+        // Canonical Timeline 时间线段（Episode 化主叙事；timeline 不可用时省略）
+        final String timelineSection = PersonalAiContextCompiler.renderTimelineSection(
+                timeline, recorder != null ? recorder.accountId() : null);
+        boolean includeTimeline = !timelineSection.isBlank();
 
         final int effectiveLimit = Math.clamp(
                 contextWindowTokens - maxOutputTokens - promptSafetyMarginTokens,
                 0, singleReplayMaxInputTokens);
 
-        String content = assemble(baseContent, evidenceForPrompt, features, windows,
+        String content = assemble(baseContent, timelineSection, includeTimeline,
+                evidenceForPrompt, features, windows,
                 windowDetail, includeEvidence, includeEngagements,
                 includeEnemyPositions, enemyPositionsSection,
                 includeDamageWindows, damageWindowsSection,
-                includePhases, includeTop, includeWindowDetail, battle);
+                includePhases, includePointsSituation, pointsSituationSection,
+                includeTop, includeWindowDetail, battle);
         int estimated = estimate(estimator, TACTICAL_SYSTEM_PROMPT, content);
         boolean truncated = false;
 
@@ -130,6 +175,10 @@ public final class TacticalReviewPromptBuilder {
                 includeDamageWindows = false;
             } else if (includePhases) {
                 includePhases = false;
+            } else if (includePointsSituation) {
+                includePointsSituation = false;
+            } else if (includeTimeline) {
+                includeTimeline = false;
             } else if (includeWindowDetail) {
                 includeWindowDetail = false;
             } else if (includeTop) {
@@ -138,24 +187,52 @@ public final class TacticalReviewPromptBuilder {
                 break;
             }
             truncated = true;
-            content = assemble(baseContent, evidenceForPrompt, features, windows,
+            content = assemble(baseContent, timelineSection, includeTimeline,
+                    evidenceForPrompt, features, windows,
                     windowDetail, includeEvidence, includeEngagements,
                     includeEnemyPositions, enemyPositionsSection,
                     includeDamageWindows, damageWindowsSection,
-                    includePhases, includeTop, includeWindowDetail, battle);
+                    includePhases, includePointsSituation, pointsSituationSection,
+                    includeTop, includeWindowDetail, battle);
             estimated = estimate(estimator, TACTICAL_SYSTEM_PROMPT, content);
         }
 
         final String budgetSummary = String.format(
-                "tokens=%d/%d windows=%d evidence=%s phases=%s truncated=%s",
+                "tokens=%d/%d windows=%d evidence=%s phases=%s timeline=%s truncated=%s",
                 estimated, effectiveLimit, windowDetail, includeEvidence, includePhases,
-                truncated);
+                includeTimeline, truncated);
+        final java.util.Map<String, Integer> sectionTokens = sectionTokenEstimates(
+                estimator, battle, recon, features, recorder, timelineSection, includeTimeline, prior);
         return new PreparedHarnessPrompt(
-                TACTICAL_SYSTEM_PROMPT, content, estimated, truncated, budgetSummary);
+                TACTICAL_SYSTEM_PROMPT, content, estimated, truncated, budgetSummary, sectionTokens);
+    }
+
+    /**
+     * 低基数 context section token 估算（docs/current-plan.md §38）：system / battle_context /
+     * prior / timeline / task。不含 battleId/accountId 等高基数字段。
+     */
+    private static java.util.Map<String, Integer> sectionTokenEstimates(
+            final AiTokenEstimator estimator,
+            final Battle battle,
+            final ReplayReconstruction recon,
+            final PlayerBattleFeatureSet features,
+            final RecorderEntityMapping recorder,
+            final String timelineSection,
+            final boolean includeTimeline,
+            final PreBattleStrategicPrior prior) {
+        final java.util.Map<String, Integer> out = new java.util.LinkedHashMap<>();
+        out.put("system", estimator.estimateTextTokens(TACTICAL_SYSTEM_PROMPT));
+        out.put("battle_context", estimator.estimateTextTokens(snapshot(battle, recon, features, recorder)));
+        out.put("prior", estimator.estimateTextTokens(priorSection(prior)));
+        out.put("timeline", includeTimeline ? estimator.estimateTextTokens(timelineSection) : 0);
+        out.put("task", estimator.estimateTextTokens(taskSection()));
+        return java.util.Collections.unmodifiableMap(out);
     }
 
     private static String assemble(
             final String baseContent,
+            final String timelineSection,
+            final boolean includeTimeline,
             final List<AiEvidence> evidenceForPrompt,
             final PlayerBattleFeatureSet features,
             final List<AiEvidence> windows,
@@ -167,11 +244,18 @@ public final class TacticalReviewPromptBuilder {
             final boolean includeDamageWindows,
             final String damageWindowsSection,
             final boolean includePhases,
+            final boolean includePointsSituation,
+            final String pointsSituationSection,
             final boolean includeTop,
             final boolean includeWindowDetail,
             final Battle battle
     ) {
         final StringBuilder sb = new StringBuilder(baseContent);
+        if (includeTimeline && !timelineSection.isBlank()) {
+            // 时间有序主叙事：PRIOR 之后立即给出整场章节（docs/current-plan.md §33）
+            sb.append("\n======================== TACTICAL TIMELINE（时间有序战局章节·battle-relative 确定性） ========================\n");
+            sb.append(timelineSection);
+        }
         if (includeTop && !windows.isEmpty()) {
             sb.append("\n\n======================== TOP PIVOTAL WINDOWS（注意力索引，详细证据见文末） ========================\n");
             final int count = Math.min(MAX_TOP_WINDOWS, windows.size());
@@ -189,6 +273,9 @@ public final class TacticalReviewPromptBuilder {
             }
             sb.append(BattlePhaseTimelineSection.renderPlayerRows(features.phases()));
         }
+        if (includePointsSituation && !pointsSituationSection.isEmpty()) {
+            sb.append("\n\n").append(pointsSituationSection);
+        }
         if (includeEngagements && features != null
                 && features.engagements() != null && !features.engagements().isEmpty()) {
             sb.append("\n======================== 对炮明细（ENGAGEMENTS·后端确定性） ========================\n");
@@ -197,7 +284,6 @@ public final class TacticalReviewPromptBuilder {
                         .append(" 对方: ").append(opponentNames(e.enemyAccountIds(), battle))
                         .append(" | 你输出 ").append(e.damageDealt())
                         .append(" / 损失 ").append(e.damageReceived())
-                        .append(" | 结果: ").append(PlayerAnalysisTerms.outcomeLabel(e.outcome()))
                         .append(" | 置信度: ").append(PlayerAnalysisTerms.confidenceLabel(e.confidence()))
                         .append('\n');
             }

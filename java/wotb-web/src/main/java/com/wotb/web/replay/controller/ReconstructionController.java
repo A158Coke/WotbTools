@@ -10,6 +10,7 @@ import com.wotb.core.processing.ReplayBatchProcessingResult;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.web.replay.ai.AiReplayReviewService;
+import com.wotb.web.replay.ai.AiReviewEventLog;
 import com.wotb.web.replay.ai.AiReviewStreamListener;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
 import com.wotb.web.replay.ai.AllowedLanguage;
@@ -18,12 +19,17 @@ import com.wotb.web.replay.ai.gateway.AiCancellationToken;
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.config.ApiPaths;
+import com.wotb.web.replay.MapOverviewQueryService;
 import com.wotb.web.replay.dto.AnalyzeResponse;
+import com.wotb.web.replay.dto.MapOverview;
 import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
+import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import com.wotb.web.replay.exception.AiReviewBusyException;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import com.wotb.web.replay.metrics.ReplayUsageMetrics;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -55,11 +61,14 @@ import java.util.concurrent.RejectedExecutionException;
 @CrossOrigin(origins = "*")
 public class ReconstructionController {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(ReconstructionController.class);
+
     private final DefaultReplayProcessingFacade processingFacade;
     private final AiReplayReviewService reviewService;
     private final AiCancellationRegistry cancellationRegistry;
     private final AiReviewWorkerExecutor workerExecutor;
     private final ReplayUsageMetrics usageMetrics;
+    private final MapOverviewQueryService mapOverviewService;
 
     /**
      * SSE 连接超时：对齐 nginx analyze 1120s read timeout，避免服务端在代理之前
@@ -74,11 +83,13 @@ public class ReconstructionController {
             final AiReplayReviewService reviewService,
             final AiCancellationRegistry cancellationRegistry,
             final AiReviewWorkerExecutor workerExecutor,
+            final MapOverviewQueryService mapOverviewService,
             @Autowired(required = false) final ReplayUsageMetrics usageMetrics) {
         this.processingFacade = processingFacade;
         this.reviewService = reviewService;
         this.cancellationRegistry = cancellationRegistry;
         this.workerExecutor = workerExecutor;
+        this.mapOverviewService = mapOverviewService;
         this.usageMetrics = usageMetrics;
     }
 
@@ -129,6 +140,8 @@ public class ReconstructionController {
         // CAS 一次性翻转，重复 cancel 无副作用）。
         emitter.onTimeout(() -> cancellationRegistry.cancel(requestId));
         emitter.onError(error -> cancellationRegistry.cancel(requestId));
+        // docs/current-plan.md §53：SSE 生命周期。
+        LOGGER.info(AiReviewEventLog.line("ai_review_sse_opened", requestId));
         try {
             workerExecutor.execute(() -> runAnalysis(requestId, cancellation, emitter, writer, files, allowedLanguage));
         } catch (final RejectedExecutionException e) {
@@ -156,14 +169,28 @@ public class ReconstructionController {
                              final MultipartFile[] files,
                              final AllowedLanguage language) {
         AiRequestContext.set(requestId, cancellation);
+        final long workerStartNanos = System.nanoTime();
         try {
             // queued cancellation check：任务在队列中等待期间被取消（客户端断开 /
             // cancel 端点）后获取 worker 时，不调 Replay processing、不调 AI Gateway、
             // 不向已断开的客户端输出 error，直接 complete 并清理。
             if (cancellation.isCancelled()) {
+                LOGGER.info(AiReviewEventLog.line("ai_review_cancelled", requestId,
+                        "source", "CANCELLED_WHILE_QUEUED"));
+                // §54（PR #106 review）：统一终态 exactly once——queued cancellation 也是
+                // worker 生命周期的一部分，必须与 success/failure 一样恰好记录一次 ai_review_finished。
+                LOGGER.info(AiReviewEventLog.line("ai_review_finished", requestId,
+                        "result", "CANCELLED",
+                        "source", "CANCELLED_WHILE_QUEUED",
+                        "durationMs", elapsedMillis(workerStartNanos)));
                 quietComplete(emitter);
                 return;
             }
+            // docs/current-plan.md §40：AI Review 生命周期开始（只记录低基数 metadata，
+            // 不记录文件名/上传内容；workerQueueWaitMs 见 worker executor 的 debug 日志）。
+            LOGGER.info(AiReviewEventLog.line("ai_review_started", requestId,
+                    "language", language == null ? "N/A" : language.code(),
+                    "fileCount", files == null ? 0 : files.length));
             final AnalyzeResponse response = reviewService.analyzeStreaming(
                     files, language, new AiReviewStreamListener() {
                         @Override
@@ -186,19 +213,48 @@ public class ReconstructionController {
                     });
             writer.done(response);
             emitter.complete();
+            // docs/current-plan.md §53/§54：SSE 完成 + 统一终态 ai_review_finished（exactly once）。
+            // 成功路径 result=SUCCESS；失败/取消路径见下方 catch——try / catch(ClientDisconnected) /
+            // catch(RuntimeException|IOException) 三分支互斥，每分支各自恰好记录一次终态。
+            LOGGER.info(AiReviewEventLog.line("ai_review_sse_completed", requestId,
+                    "durationMs", elapsedMillis(workerStartNanos)));
+            LOGGER.info(AiReviewEventLog.line("ai_review_finished", requestId,
+                    "result", "SUCCESS",
+                    "durationMs", elapsedMillis(workerStartNanos)));
         } catch (final ClientDisconnectedException e) {
             // 客户端已断开：终止上游调用（cancel 端点语义）；emitter 已由容器以
             // error 终止，无需再主动 complete（finally 完成上下文与 registry 清理）。
             cancellationRegistry.cancel(requestId);
+            LOGGER.info(AiReviewEventLog.line("ai_review_cancelled", requestId,
+                    "source", "SSE_DISCONNECT"));
+            // §54（PR #106 review）：终态 exactly once——SSE 断开 = CANCELLED 终态。
+            LOGGER.info(AiReviewEventLog.line("ai_review_finished", requestId,
+                    "result", "CANCELLED",
+                    "source", "SSE_DISCONNECT",
+                    "durationMs", elapsedMillis(workerStartNanos)));
         } catch (final RuntimeException | IOException e) {
             // 流中途失败（含流尚未开始的数据校验失败）：一律以 error 事件传达
             // 稳定错误码（客户端断开时静默），HTTP 层面已返回 200 + SseEmitter。
+            final String errorCode = errorCodeOf(e);
+            LOGGER.warn(AiReviewEventLog.line("ai_review_failed", requestId,
+                    "errorCode", errorCode,
+                    "exceptionClass", e.getClass().getSimpleName(),
+                    "elapsedMs", elapsedMillis(workerStartNanos)));
             try {
-                writer.error(errorCodeOf(e));
-            } catch (final IOException | IllegalStateException ignored) {
-                // 客户端同时断开（写入失败 / emitter 已终止）：无意义，静默。
+                writer.error(errorCode);
+            } catch (final RuntimeException | IOException ignored) {
+                // 客户端同时断开（写入失败 / emitter 已终止）：无意义，静默。兜住 IOException 与
+                // 一切 RuntimeException（含 IllegalStateException）——否则 writer.error 自身失败
+                // 会让本分支逃逸，导致下方 ai_review_finished 终态缺失（exactly once 契约破坏）。
             }
             quietComplete(emitter);
+            // §54（PR #106 review）：终态 exactly once——任何失败都恰好记录一次
+            // ai_review_finished result=FAILED；稳定 errorCode 保留失败细节
+            // （AI_REVIEW_GROUNDING_FAILED / AI_TIMEOUT / AI_RATE_LIMITED 等）。
+            LOGGER.info(AiReviewEventLog.line("ai_review_finished", requestId,
+                    "result", "FAILED",
+                    "errorCode", errorCode,
+                    "durationMs", elapsedMillis(workerStartNanos)));
         } finally {
             // AiRequestContext 是 ThreadLocal：必须在真正执行 AI 的 worker 线程
             // 内清理，绝不能在 request 线程执行（否则一 return 就失效）。
@@ -223,8 +279,18 @@ public class ReconstructionController {
         }
     }
 
-    /** 稳定错误码提取（与 {@code @ExceptionHandler} 映射一致）。 */
-    private static String errorCodeOf(final Throwable e) {
+    /**
+     * 稳定错误码提取（与 {@code @ExceptionHandler} 映射一致）。
+     * <p>SSE 错误契约：对任何 {@link AiTimelineUnusableException} 只输出
+     * {@link AiTimelineUnusableException#STABLE_ERROR_CODE}；异常 message 冒号后的
+     * validation detail（{@code TIMELINE_*} / {@code NO_RECONSTRUCTION}）仅供后端
+     * 日志，绝不进入 SSE error 事件 / 客户端协议（GlobalExceptionHandler 同步路径按
+     * 冒号前前缀提取同一稳定码，message 前缀由异常构造函数保证单一来源）。</p>
+     */
+    static String errorCodeOf(final Throwable e) {
+        if (e instanceof AiTimelineUnusableException) {
+            return AiTimelineUnusableException.STABLE_ERROR_CODE;
+        }
         if (e instanceof AiUpstreamException upstream) {
             return upstream.code();
         }
@@ -257,6 +323,10 @@ public class ReconstructionController {
             return message != null && !message.isBlank() ? message : "BAD_REQUEST";
         }
         return "AI_UPSTREAM_UNAVAILABLE";
+    }
+
+    private static long elapsedMillis(final long startNanos) {
+        return Math.max(0L, (System.nanoTime() - startNanos) / 1_000_000L);
     }
 
     /**
@@ -312,6 +382,23 @@ public class ReconstructionController {
                 : ReplayProcessingOptions.summaryOnly();
 
         return timed(ReplayUsageMetrics.OP_PROCESS, files.length, () -> processingFacade.processBatch(toSources(files), options));
+    }
+
+    /**
+     * 地图鸟瞰（不调 AI）：只解析回放并确定性生成 MapOverview（热力/路线/战局回放）。
+     * AI Review 页面在不需要 AI 复盘时单独加载地图视图；错误码与 analyze 一致
+     * （文件校验 / NO_BATTLE_DATA），地图不可构建（未知地图/无观测/无名册/视角未解析）
+     * 返回 204 空响应，由前端显示不可用提示。
+     */
+    @PostMapping(value = ApiPaths.REPLAY_MAP_OVERVIEW, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<MapOverview> mapOverview(
+            @RequestParam("files") final MultipartFile[] files) throws IOException {
+        final MapOverview overview = timed(ReplayUsageMetrics.OP_MAP_OVERVIEW, files.length,
+                () -> mapOverviewService.buildOverview(files));
+        if (overview == null) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.ok(overview);
     }
 
     /** 执行并统计回放解析使用指标（成功与异常都记录；无 ReplayUsageMetrics 时原样执行）。 */

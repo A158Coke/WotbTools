@@ -1,6 +1,9 @@
 package com.wotb.web.replay.ai;
 
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
+import com.wotb.core.processing.FriendlyEnemyResult.Winner;
+import com.wotb.core.model.Battle;
 import com.wotb.core.replay.evidence.AiEvidence;
 import com.wotb.core.replay.feature.TeamAutopsyStats;
 import com.wotb.core.util.PromptDataQuoter;
@@ -14,7 +17,10 @@ import java.util.stream.Collectors;
  * Team Autopsy（team perspective 结算级 TEAM_AUTOPSY）Prompt 构造与中文段落渲染。
  * <p>身份使用 playerKey（P1..P7）引用，nickname/tankName 只作展示；
  * 死亡时间线仅包含本方 TEAM_A 玩家；渲染时按 playerKey 回查后端 roster，
- * 不信任 LLM 返回的名称。settlement-only：LLM 判断的 confidence 仅 PARTIAL/UNKNOWN。</p>
+ * 不信任 LLM 返回的名称。settlement-only：LLM 判断的 confidence 仅 PARTIAL/UNKNOWN——
+ * confidence/PARTIAL/UNKNOWN/settlement-only/规则候选/provenance、playerKey 与逐人贡献分类
+ * 都是 internal structured contract（PR #103 review BLOCKER D + 最终收尾 BLOCKER A），
+ * {@link #renderSection} 用户可见渲染一律不暴露——无 standout 时整段为空，绝不输出 P1~P7。</p>
  */
 public final class TeamAutopsyPromptBuilder {
 
@@ -32,13 +38,21 @@ public final class TeamAutopsyPromptBuilder {
             final PreBattleStrategicPrior prior,
             final List<AiEvidence> criticalWindows,
             final TeamBattleWinner winner,
-            final String teamLabel) {
+            final String teamLabel,
+            final Battle battle,
+            final ReplayReconstruction recon,
+            final int perspectiveTeam,
+            final boolean observedDamagePartial) {
         final StringBuilder sb = new StringBuilder(3072);
         sb.append("=== 结果 ===\n");
-        sb.append(winnerLabel(winner, teamLabel)).append('\n');
+        sb.append(winnerLabel(winner, teamLabel, battle, perspectiveTeam)).append('\n');
+        if (winner != null && winner.source() != null) {
+            sb.append("resultSource=").append(winner.source().name()).append('\n');
+        }
         if (winner != null && winner.pointsDecided()) {
-            // supremacy 点数胜负只有两种结束方式：任一方达到 1000 分提前获胜，
-            // 或时间耗尽后比较点数；双方均未达 1000 分时必然是时间耗尽。
+            // pointsDecided=true 已保证结束时刻双方均未全员阵亡（非全歼）：supremacy 点数胜负的结束方式
+            // 只按「标准业务规则 + 时长」判定——时长<420s 为某一方达到 1000 分提前结束，时长≥420s 为
+            // 时间耗尽；不使用任何点数字段断言。全歼获胜不属于点数胜负（pointsDecided=false，结果行不加结束方式后缀）。
             sb.append(pointsDecidedNote(winner)).append('\n');
         }
         sb.append("本方 7 人（TEAM_A）:\n");
@@ -71,6 +85,8 @@ public final class TeamAutopsyPromptBuilder {
                     .append(")")
                     .append(" 结算级代理=").append(s.settlementOnly())
                     .append('\n');
+            sb.append("    归因限制: earlyDeath/weakOutput 只是规则候选; 仅凭结算与死亡时间无法确定阵亡原因是"
+                    + "站位失误/指挥问题/承担既定任务, 不得直接写成确定战术过错\n");
         }
         if (prior != null && prior.teamA() != null) {
             sb.append("\n赛前职责基线（Call #1 Strategic Prior，TEAM_A）:\n");
@@ -107,91 +123,98 @@ public final class TeamAutopsyPromptBuilder {
                         .append(PromptDataQuoter.quote(s.tankName(), "未知坦克"))
                         .append(s.deathSec() > 0 ? "" : "（时刻未知）")
                         .append('\n'));
+        // 身后血量/位置优势测量（确定性）：供战犯/MVP 判定综合位置测量参考（见规则 1）
+        if (recon != null) {
+            final String behindLine = RelativeDepthHpEvidence.renderTeamSection(
+                    battle, recon, perspectiveTeam, observedDamagePartial);
+            if (!behindLine.isEmpty()) {
+                sb.append(behindLine);
+            }
+        }
         sb.append("\n请按输出契约给出 JSON。");
         return sb.toString();
     }
 
-    /** 把结构化结果渲染为追加到复盘尾部的中文「团队剖析」段；按 playerKey 回查 roster。 */
+    /**
+     * 把结构化结果渲染为追加到复盘尾部的中文段落（仅在有 standout 时）。
+     * <p>PR #103 最终收尾 BLOCKER A：{@code mvps} 与 {@code biggestLiabilities} 均为空时返回空串
+     * （没有 standout 是合法结果，UI/主复盘已知胜负，不重复）；有 standout 时只输出
+     * {@code ## 重点复查} / {@code ## 高贡献者} 两小块，每行 {@code nickname / tank：reason}。
+     * playerKey（P1..P7）仅作内部 lookup，绝不进入用户正文；confidence/PARTIAL/UNKNOWN、
+     * settlement-only/规则候选/provenance、逐人贡献分类都是 internal structured contract，
+     * 用户可见渲染一律不暴露（PR #103 review BLOCKER D）。</p>
+     */
     static String renderSection(final TeamAutopsyResult result,
-                                final TeamBattleWinner winner,
-                                final List<TeamAutopsyStats> roster,
-                                final String teamLabel) {
-        if (result == null) {
+                                final List<TeamAutopsyStats> roster) {
+        if (result == null
+                || (result.biggestLiabilities().isEmpty() && result.mvps().isEmpty())) {
             return "";
         }
         final Map<String, TeamAutopsyStats> byKey = roster == null ? Map.of()
                 : roster.stream().collect(Collectors.toMap(
                         TeamAutopsyStats::playerKey, Function.identity()));
-        final StringBuilder sb = new StringBuilder(1024);
-        sb.append("\n\n======================== 团队剖析 ========================\n");
-        sb.append("胜负: ").append(winnerLabel(winner, teamLabel)).append('\n');
+        final StringBuilder sb = new StringBuilder(512);
         if (!result.biggestLiabilities().isEmpty()) {
-            sb.append("**主要战犯：**\n");
+            sb.append("\n\n## 重点复查\n\n");
             for (final TeamAutopsyResult.AutopsyVerdict v : result.biggestLiabilities()) {
-                sb.append("- **").append(renderPlayer(v.playerKey(), byKey)).append("**")
-                        .append("（置信度: ")
-                        .append(confidenceLabel(v.confidence()))
-                        .append("）: ").append(v.reason() == null ? "" : v.reason()).append('\n');
-                if (v.evidence() != null && !v.evidence().isEmpty()) {
-                    sb.append("    证据: ").append(String.join("；", v.evidence())).append('\n');
-                }
+                sb.append(renderPlayer(v.playerKey(), byKey)).append("：")
+                        .append(v.reason() == null ? "" : v.reason()).append('\n');
             }
         }
         if (!result.mvps().isEmpty()) {
-            sb.append("**MVP：**\n");
+            sb.append("\n\n## 高贡献者\n\n");
             for (final TeamAutopsyResult.AutopsyVerdict v : result.mvps()) {
-                sb.append("- **").append(renderPlayer(v.playerKey(), byKey)).append("**")
-                        .append("（置信度: ")
-                        .append(confidenceLabel(v.confidence()))
-                        .append("）: ").append(v.reason() == null ? "" : v.reason()).append('\n');
-                if (v.evidence() != null && !v.evidence().isEmpty()) {
-                    sb.append("    证据: ").append(String.join("；", v.evidence())).append('\n');
-                }
-            }
-        }
-        if (!result.players().isEmpty()) {
-            sb.append("逐人贡献:\n");
-            for (final TeamAutopsyResult.AutopsyPlayer p : result.players()) {
-                sb.append("- ").append(renderPlayer(p.playerKey(), byKey))
-                        .append(": ")
-                        .append(contributionLabel(p.contribution()))
-                        .append("（")
-                        .append(confidenceLabel(p.confidence()))
-                        .append("）\n");
+                sb.append(renderPlayer(v.playerKey(), byKey)).append("：")
+                        .append(v.reason() == null ? "" : v.reason()).append('\n');
             }
         }
         return sb.toString();
     }
 
-    /** 按 playerKey 回查后端 roster 的权威昵称/坦克名，不信任 LLM 返回的名称。 */
+    /** 按 playerKey 回查后端 roster 的权威昵称/坦克名；playerKey 仅作内部 lookup，绝不进入用户正文。 */
     private static String renderPlayer(final String playerKey,
                                        final Map<String, TeamAutopsyStats> byKey) {
         final TeamAutopsyStats stat = byKey.get(playerKey);
         if (stat == null) {
-            return PromptDataQuoter.quote(playerKey, "未知玩家");
+            return "未知玩家";
         }
-        final String label = stat.nickname().isBlank()
-                ? stat.tankName() : stat.nickname() + " / " + stat.tankName();
-        return playerKey + "（" + PromptDataQuoter.quote(label, stat.tankName()) + "）";
+        final String nickname = stat.nickname();
+        final String tank = stat.tankName();
+        final String label = !nickname.isBlank() && !tank.isBlank()
+                ? nickname + " / " + tank
+                : (!nickname.isBlank() ? nickname : tank);
+        // 用户可见展示：昵称/坦克名来自回放数据，防换行注入；不暴露 playerKey。
+        return label.replaceAll("[\\r\\n]", " ");
     }
 
-    /** 团队赛胜负标签；使用实际队名（teamLabel），点数判定时附加结束方式说明。 */
-    static String winnerLabel(final TeamBattleWinner winner, final String teamLabel) {
+    /** 团队赛胜负标签（battle 可用时附加全歼双向语义）：全歼敌方获胜 / 被敌方全歼落败。 */
+    static String winnerLabel(final TeamBattleWinner winner, final String teamLabel,
+                              final Battle battle, final int perspectiveTeam) {
         if (winner == null) {
             return "未知";
         }
-        final String label = teamLabel == null || teamLabel.isBlank() ? "TEAM_A" : teamLabel;
+        final String label = teamLabel == null || teamLabel.isBlank() ? "本方" : teamLabel;
         final String base = switch (winner.winner()) {
             case FRIENDLY_WIN -> label + "获胜";
             case ENEMY_WIN -> label + "落败";
             case DRAW_OR_UNKNOWN -> "未知";
         };
+        // 全歼双向语义（结算存活状态，与 resultSource 无关）；battle 缺失时保持纯胜负标签。
+        final String annihilation = com.wotb.core.processing.FriendlyEnemyResult.annihilationSuffix(
+                battle, perspectiveTeam, winner.winner());
+        if (!annihilation.isEmpty()) {
+            return base + annihilation;
+        }
         if (!winner.pointsDecided()) {
             return base;
         }
         return switch (winner.pointsEndReason()) {
-            case REACHED_1000 -> base + "（达到 1000 分提前获胜）";
-            case TIME_EXPIRED -> base + "（时间耗尽点数判定）";
+            case REACHED_1000 -> winner.winner() == Winner.DRAW_OR_UNKNOWN
+                    ? base + "（某一方达到 1000 分导致提前结束，具体胜方未知）"
+                    : base + "（达到 1000 分提前获胜）";
+            case TIME_EXPIRED -> winner.winner() == Winner.DRAW_OR_UNKNOWN
+                    ? base + "（时间耗尽点数判定，具体胜方未知）"
+                    : base + "（时间耗尽点数判定）";
             case UNKNOWN, NOT_APPLICABLE -> base + "（点数判定）";
         };
     }
@@ -199,37 +222,22 @@ public final class TeamAutopsyPromptBuilder {
     /** 点数胜利的结束方式说明（供 prompt 使用；禁止 AI 把点数胜负写成常规胜利）。 */
     private static String pointsDecidedNote(final TeamBattleWinner winner) {
         return switch (winner.pointsEndReason()) {
-            case TIME_EXPIRED -> "本局为时间耗尽点数胜利（结束时刻双方均未全员阵亡，且双方均未达 1000 分），"
-                    + "叙述必须写「时间耗尽」；不要描述成敌方全歼。";
-            case REACHED_1000 -> "本局为任一方达到 1000 分提前获胜（结束时刻双方均未全员阵亡），"
-                    + "叙述必须写「达到 1000 分提前获胜」；不要描述成敌方全歼。";
-            case UNKNOWN, NOT_APPLICABLE -> "本局为争霸赛点数胜利（结束时刻双方均未全员阵亡），"
+            case TIME_EXPIRED -> "本局为时间耗尽点数判定（结束时刻双方均未全员阵亡，时长达到 7 分钟），"
+                    + "叙述必须写「时间耗尽」；双方终局比分未解码，未知，不得编造精确比分；"
                     + "不要描述成敌方全歼。";
-        };
-    }
-
-    /** 渲染层中文映射：LLM JSON 契约保持英文枚举，仅展示时翻译（MVP 保留英文）。 */
-    static String confidenceLabel(final String confidence) {
-        if (confidence == null) {
-            return "未知";
-        }
-        return switch (confidence.toUpperCase(java.util.Locale.ROOT)) {
-            case "EXACT" -> "精确";
-            case "INFERRED" -> "推断";
-            case "PARTIAL" -> "部分";
-            default -> "未知";
-        };
-    }
-
-    static String contributionLabel(final String contribution) {
-        if (contribution == null) {
-            return "未知";
-        }
-        return switch (contribution.toUpperCase(java.util.Locale.ROOT)) {
-            case "HIGH" -> "高";
-            case "MEDIUM" -> "中";
-            case "LOW" -> "低";
-            default -> "未知";
+            case REACHED_1000 -> winner.winner() == Winner.DRAW_OR_UNKNOWN
+                    ? "本局为某一方达到 1000 分导致提前结束（结束时刻双方均未全员阵亡，时长未到 7 分钟），"
+                    + "具体胜方未知；叙述写「某一方达到 1000 分导致提前结束，具体胜方未知」，"
+                    + "双方终局比分未知，不得把 1000 分分配给任何队伍；不要描述成敌方全歼。"
+                    : "本局为任一方达到 1000 分提前获胜（结束时刻双方均未全员阵亡，时长未到 7 分钟），"
+                    + "叙述必须写「达到 1000 分提前获胜」；不要描述成敌方全歼。"
+                    + "争霸赛每击杀夺取对方 40 分、本方掉人损失 40 分（业务规则，仅作叙述口径，"
+                    + "结算字段是否已含该调整未经证明）；只有权威胜方已知时胜利方终局比分才=1000"
+                    + "（1000 分上限业务约定），失败方终局比分未知，不得编造；"
+                    + "禁止把逐人占点分合计或任何公式计算结果冒充终局比分。";
+            case UNKNOWN, NOT_APPLICABLE -> "本局为争霸赛点数判定（结束时刻双方均未全员阵亡），"
+                    + "不要描述成敌方全歼；无法证明「达到 1000 分提前结束」或「时间耗尽」时只写「点数判定」，"
+                    + "终局比分未知，不得编造。";
         };
     }
 }

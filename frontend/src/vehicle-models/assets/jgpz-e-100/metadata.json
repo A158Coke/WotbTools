@@ -1,0 +1,50 @@
+{
+  "modelKey": "jgpz-e-100",
+  "kind": "turretless",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 12049,
+    "modelGlb": "https://api.blitzkit.app/tanks/12049/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -2.2397661209106445,
+        -4.267731666564941
+      ],
+      "max": [
+        2.2390758991241455,
+        7.309948444366455
+      ]
+    },
+    "turretBounds": null,
+    "gunBounds": null,
+    "selectedModules": {
+      "turretId": 22801,
+      "gunId": 18193,
+      "trackId": 28433,
+      "turretModelId": 1,
+      "gunModelId": 4
+    },
+    "texturesUsed": [
+      "JagdPz_E100_mtr",
+      "JagdPz_E100_mtr",
+      "JagdPz_E100_mtr",
+      "JagdPz_E100_track_mtr",
+      "JagdPz_E100_track_mtr",
+      "JagdPz_E100_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

@@ -14,7 +14,6 @@ public record EngagementSummary(
         int damageReceived,
         Vector3 recorderStartPosition,
         Vector3 recorderEndPosition,
-        EngagementOutcome outcome,
         DecodeConfidence confidence
 ) {
     public EngagementSummary {
@@ -25,7 +24,6 @@ public record EngagementSummary(
         if (damageReceived < 0) throw new IllegalArgumentException("damageReceived negative: " + damageReceived);
         if (alliedAccountIds == null) throw new IllegalArgumentException("alliedAccountIds must not be null");
         if (enemyAccountIds == null) throw new IllegalArgumentException("enemyAccountIds must not be null");
-        if (outcome == null) throw new IllegalArgumentException("outcome must not be null");
         if (confidence == null) confidence = DecodeConfidence.UNKNOWN;
         alliedAccountIds = List.copyOf(alliedAccountIds);
         enemyAccountIds = List.copyOf(enemyAccountIds);

@@ -15,7 +15,7 @@ public final class ApiPaths {
 
     // ---- 基础前缀 ----
     public static final String API = "/api";
-    public static final String LEADERBOARD = "/api/leaderboard";
+    public static final String HOF = "/api/hof";
     public static final String USERS = "/api/users";
     public static final String USER_NOTIFICATIONS = "/api/users/notifications";
     public static final String BOOST = "/api/boost";
@@ -30,8 +30,14 @@ public final class ApiPaths {
     public static final String ADMIN_BOOST_BOOSTERS = "/api/admin/boost/boosters";
     public static final String ADMIN_BOOST_BOOSTER_APPLICATIONS = "/api/admin/boost/booster-applications";
     public static final String ADMIN_BOOST_REQUEST_ASSIGNMENTS = "/api/admin/boost/requests/{id}/assignments";
+    public static final String HOF_ADMIN = "/api/admin/hof";
+    public static final String HOF_HUNDRED = "/api/hof/hundred";
+    public static final String HOF_HUNDRED_SUBMISSIONS = "/api/hof/hundred/submissions";
+    public static final String USERS_HUNDRED = "/api/users/hundred";
+    public static final String HOF_HUNDRED_ADMIN = "/api/admin/hof/hundred";
 
     // ---- 精确端点（SecurityConfig 与 Controller 共用） ----
+    public static final String HOF_UPLOAD = "/api/hof/upload";
     public static final String HEALTH = "/api/health";
     public static final String COLUMNS = "/api/columns";
     public static final String RATING = "/api/rating";
@@ -40,12 +46,17 @@ public final class ApiPaths {
     public static final String BOOST_OPTIONS = "/api/boost/options";
     public static final String REPLAY_ANALYZE = "/api/replay/analyze";
     public static final String REPLAY_ANALYZE_CANCEL = "/api/replay/analyze/cancel";
+    public static final String REPLAY_MAP_OVERVIEW = "/api/replay/map-overview";
     public static final String REPLAY_RECONSTRUCT_BATCH = "/api/replay/reconstruct-batch";
     public static final String REPLAY_PROCESS = "/api/replay/process";
 
     // ---- 安全匹配模式（/** 通配，仅 SecurityConfig 使用） ----
     public static final String API_PATTERN = "/api/**";
-    public static final String LEADERBOARD_PATTERN = "/api/leaderboard/**";
+    public static final String HOF_PATTERN = "/api/hof/**";
+    public static final String HOF_REPLAY_PATTERN = "/api/hof/*/replay";
+    public static final String HOF_ADMIN_PATTERN = "/api/admin/hof/**";
+    public static final String HOF_HUNDRED_PATTERN = "/api/hof/hundred/**";
+    public static final String HOF_HUNDRED_SUBMISSIONS_PATTERN = "/api/hof/hundred/submissions/**";
     public static final String USERS_PATTERN = "/api/users/**";
     public static final String BOOST_REQUESTS_PATTERN = "/api/boost/requests/**";
     public static final String BOOST_BOOSTERS_PATTERN = "/api/boost/boosters/**";

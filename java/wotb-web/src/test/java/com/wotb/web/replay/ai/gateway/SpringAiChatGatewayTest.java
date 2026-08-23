@@ -16,6 +16,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.openai.core.JsonValue;
 import com.openai.core.http.Headers;
 import com.openai.errors.BadRequestException;
@@ -30,6 +33,8 @@ import com.openai.models.completions.CompletionUsage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.LoggerFactory;
+import java.util.stream.Collectors;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -61,7 +66,7 @@ class SpringAiChatGatewayTest {
     @BeforeEach
     void setUp() {
         chatModel = mock(ChatModel.class);
-        gateway = new SpringAiChatGateway(chatModel, "deepseek-v4-pro", null,
+        gateway = new SpringAiChatGateway(chatModel, "deepseek-v4-flash", null,
                 new AiRetryPolicy(3, 0, 0, 2.0));
     }
 
@@ -79,7 +84,7 @@ class SpringAiChatGatewayTest {
         when(chatModel.call(any(Prompt.class))).thenReturn(okResponse("hello"));
         gateway.chat(request());
         final OpenAiChatOptions options = capturedOptions();
-        assertEquals("deepseek-v4-pro", options.getModel());
+        assertEquals("deepseek-v4-flash", options.getModel());
         assertEquals(Double.valueOf(0.7), options.getTemperature());
         assertEquals(Integer.valueOf(4096), options.getMaxTokens());
         assertEquals(Map.of("type", "enabled"), options.getExtraBody().get("thinking"));
@@ -98,12 +103,12 @@ class SpringAiChatGatewayTest {
     @Test
     void returnsNormalResponseWithUsageAndFinishReason() {
         when(chatModel.call(any(Prompt.class))).thenReturn(
-                response("tactical review", "deepseek-v4-pro",
+                response("tactical review", "deepseek-v4-flash",
                         new DefaultUsage(11, 22, 33), "stop"));
         final AiChatResponse result = gateway.chat(request());
         assertEquals("tactical review", result.completionText());
         assertEquals("DeepSeek", result.provider());
-        assertEquals("deepseek-v4-pro", result.model());
+        assertEquals("deepseek-v4-flash", result.model());
         assertEquals(11, result.inputTokens());
         assertEquals(22, result.outputTokens());
         assertEquals(33, result.totalTokens());
@@ -121,7 +126,7 @@ class SpringAiChatGatewayTest {
                 "prompt_cache_hit_tokens", JsonValue.from(3),
                 "prompt_cache_miss_tokens", JsonValue.from(5)));
         when(chatModel.call(any(Prompt.class))).thenReturn(
-                response("hello", "deepseek-v4-pro",
+                response("hello", "deepseek-v4-flash",
                         new DefaultUsage(11, 22, 33, nativeUsage), "stop"));
         final AiChatResponse result = gateway.chat(request());
         assertEquals(7, result.reasoningTokens());
@@ -140,7 +145,7 @@ class SpringAiChatGatewayTest {
     @Test
     void mapsBlankContentToAiEmptyResponse() {
         when(chatModel.call(any(Prompt.class))).thenReturn(
-                response(" ", "deepseek-v4-pro", null, "stop"));
+                response(" ", "deepseek-v4-flash", null, "stop"));
         final AiUpstreamException e = assertThrows(
                 AiUpstreamException.class, () -> gateway.chat(request()));
         assertEquals("AI_EMPTY_RESPONSE", e.code());
@@ -296,10 +301,46 @@ class SpringAiChatGatewayTest {
         verify(chatModel, times(2)).call(any(Prompt.class));
     }
 
+    /** PR #106 review（非 blocker A/B）：transport retry 用无歧义 retryNumber；completed 不记录伪 providerStatus。 */
+    @Test
+    void transportRetryLogUsesRetryNumberAndCompletedOmitsFakeProviderStatus() {
+        when(chatModel.call(any(Prompt.class)))
+                .thenThrow(RateLimitException.builder()
+                        .headers(Headers.builder().build())
+                        .error(error("slow down"))
+                        .build())
+                .thenReturn(okResponse("hello"));
+        final Logger gatewayLogger = (Logger) LoggerFactory.getLogger(SpringAiChatGateway.class);
+        final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        gatewayLogger.addAppender(appender);
+        try {
+            final AiChatResponse result = gateway.chat(request());
+            assertEquals("hello", result.completionText());
+            verify(chatModel, times(2)).call(any(Prompt.class));
+
+            final String all = appender.list.stream()
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .collect(Collectors.joining("\n"));
+            // 第一次退避重试 = retryNumber=1；其后的下一次上游调用是 attempt=2。
+            assertTrue(all.contains("event=ai_transport_retry"), "必须记录 transport retry 事件: " + all);
+            assertTrue(all.contains("retryNumber=1"),
+                    "第一次重试必须记录 retryNumber=1（而非歧义的 transportAttempt）: " + all);
+            assertTrue(all.contains("event=ai_upstream_call_started") && all.contains("attempt=2"),
+                    "重试后的下一次上游调用必须是 attempt=2: " + all);
+            assertFalse(all.contains("transportAttempt"), "不得再使用歧义的 transportAttempt 字段: " + all);
+            // completed 不得记录硬编码 providerStatus=200（伪 observation，非真实 transport metadata）。
+            assertFalse(all.contains("providerStatus=200"),
+                    "ai_upstream_call_completed 不得记录伪 providerStatus=200: " + all);
+        } finally {
+            gatewayLogger.detachAppender(appender);
+        }
+    }
+
     @Test
     void doesNotRetryEmptyOrInvalidCompletion() {
         when(chatModel.call(any(Prompt.class)))
-                .thenReturn(response(" ", "deepseek-v4-pro", null, "stop"));
+                .thenReturn(response(" ", "deepseek-v4-flash", null, "stop"));
         final AiUpstreamException e = assertThrows(
                 AiUpstreamException.class, () -> gateway.chat(request()));
         assertEquals("AI_EMPTY_RESPONSE", e.code());
@@ -309,7 +350,7 @@ class SpringAiChatGatewayTest {
     @Test
     void missingApiKeyProducesUnconfiguredGateway() {
         final SpringAiChatGateway unconfigured = SpringAiChatGateway.fromProperties(
-                properties("", "https://api.deepseek.com", "deepseek-v4-pro"), null);
+                properties("", "https://api.deepseek.com", "deepseek-v4-flash"), null);
         assertFalse(unconfigured.isConfigured());
         assertThrows(AiNotConfiguredException.class,
                 () -> unconfigured.chat(request()));
@@ -318,12 +359,12 @@ class SpringAiChatGatewayTest {
     @Test
     void customModelAndBaseUrlAreAppliedFromProperties() {
         final SpringAiChatGateway configured = SpringAiChatGateway.fromProperties(
-                properties("sk-test", "https://custom.example.com", "deepseek-v4-pro"), null);
+                properties("sk-test", "https://custom.example.com", "deepseek-v4-flash"), null);
         assertTrue(configured.isConfigured());
         final OpenAiChatModel model = (OpenAiChatModel) configured.chatModel();
         assertEquals("https://custom.example.com", model.getOptions().getBaseUrl());
         assertEquals("sk-test", model.getOptions().getApiKey());
-        assertEquals("deepseek-v4-pro", model.getOptions().getModel());
+        assertEquals("deepseek-v4-flash", model.getOptions().getModel());
         assertEquals(0, model.getOptions().getMaxRetries());
     }
 
@@ -331,9 +372,9 @@ class SpringAiChatGatewayTest {
     void customModelStringIsForwardedPerCall() {
         when(chatModel.call(any(Prompt.class))).thenReturn(okResponse("hello"));
         gateway.chat(new AiChatRequest("system-prompt", "user-prompt",
-                "deepseek-v4-pro", null, 4096, true, "max",
+                "deepseek-v4-flash", null, 4096, true, "max",
                 "corr-1", "SINGLE_PLAYER_BATTLE"));
-        assertEquals("deepseek-v4-pro", capturedOptions().getModel());
+        assertEquals("deepseek-v4-flash", capturedOptions().getModel());
     }
 
     private static AiChatRequest request() {
@@ -342,14 +383,14 @@ class SpringAiChatGatewayTest {
 
     private static AiChatRequest request(final boolean thinkingEnabled, final String reasoningEffort) {
         return new AiChatRequest("system-prompt", "user-prompt",
-                "deepseek-v4-pro", 0.7, 4096, thinkingEnabled, reasoningEffort,
+                "deepseek-v4-flash", 0.7, 4096, thinkingEnabled, reasoningEffort,
                 "corr-1", "SINGLE_PLAYER_BATTLE");
     }
 
     private static AiModelProperties properties(final String apiKey, final String baseUrl, final String model) {
         return new AiModelProperties(
                 apiKey, baseUrl, model, 10, 300, 315, 3, 1000, 8000, 2.0,
-                1_000_000, 940_000, 32_768, 16_384, true, "max", false);
+                1_000_000, 940_000, 32_768, 16_384, true, "max", false, 4096);
     }
 
     private static ErrorObject error(final String message) {
@@ -372,7 +413,7 @@ class SpringAiChatGatewayTest {
     }
 
     private static ChatResponse okResponse(final String text) {
-        return response(text, "deepseek-v4-pro", new DefaultUsage(11, 22, 33), "stop");
+        return response(text, "deepseek-v4-flash", new DefaultUsage(11, 22, 33), "stop");
     }
 
     private static ChatResponse response(final String text, final String model,

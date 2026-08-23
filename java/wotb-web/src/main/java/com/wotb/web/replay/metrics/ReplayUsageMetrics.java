@@ -32,6 +32,7 @@ public class ReplayUsageMetrics {
     public static final String OP_PROCESS = "process";
     public static final String OP_RECONSTRUCT = "reconstruct";
     public static final String OP_AI_REVIEW = "ai_review";
+    public static final String OP_MAP_OVERVIEW = "map_overview";
 
     private final MeterRegistry meterRegistry;
     private final AtomicInteger inFlight = new AtomicInteger();
@@ -49,7 +50,7 @@ public class ReplayUsageMetrics {
      * 执行并统计一次回放解析：请求量+1、文件数累计、耗时。
      * 成功与异常路径都会正确结束 Timer 与 in-flight 计数。
      * 注意：不统计 success/failure——解析失败以 ReplayProcessingResult.status=FAILED 返回而非抛异常，
-     * 异常判定不可靠，见 docs/observability.md。
+     * 异常判定不可靠，见 docs/operations/observability.md。
      */
     public <T> T timed(final String operation, final int fileCount, final Callable<T> body) throws Exception {
         if (meterRegistry == null) {

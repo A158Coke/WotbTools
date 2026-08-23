@@ -1,0 +1,82 @@
+{
+  "modelKey": "60tp-lewandowskiego",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 7297,
+    "modelGlb": "https://api.blitzkit.app/tanks/7297/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160.95,
+    "y": 171.14
+  },
+  "turretRaster": {
+    "logicalMinX": 93.69,
+    "logicalMinY": -149.22,
+    "logicalMaxX": 223.74,
+    "logicalMaxY": 250.92,
+    "pixelWidth": 260,
+    "pixelHeight": 801,
+    "pivotX": 67.26,
+    "pivotY": 320.36
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -2.0974068641662598,
+        -4.172522068023682
+      ],
+      "max": [
+        2.0441603660583496,
+        3.7094061374664307
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.8825232982635498,
+        -2.3132550716400146
+      ],
+      "max": [
+        1.7575854063034058,
+        2.0483338832855225
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.19548217952251434,
+        2.6448822021484375
+      ],
+      "max": [
+        0.1951623558998108,
+        8.88656234741211
+      ]
+    },
+    "selectedModules": {
+      "turretId": 10881,
+      "gunId": 10625,
+      "trackId": 11137,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "Pl15_60TP_mtr",
+      "Pl15_60TP_mtr",
+      "Pl15_60TP_mtr",
+      "Pl15_60TP_track_mtr",
+      "Pl15_60TP_track_mtr",
+      "Pl15_60TP_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

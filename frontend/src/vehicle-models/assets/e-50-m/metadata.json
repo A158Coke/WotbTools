@@ -1,0 +1,82 @@
+{
+  "modelKey": "e-50-m",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 12305,
+    "modelGlb": "https://api.blitzkit.app/tanks/12305/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160.07,
+    "y": 171.25
+  },
+  "turretRaster": {
+    "logicalMinX": 111.34,
+    "logicalMinY": -47.15,
+    "logicalMaxX": 208.85,
+    "logicalMaxY": 240.65,
+    "pixelWidth": 195,
+    "pixelHeight": 576,
+    "pivotX": 48.73,
+    "pivotY": 218.4
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.9307944774627686,
+        -4.121898174285889
+      ],
+      "max": [
+        1.9272270202636719,
+        3.361530065536499
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.2947850227355957,
+        -1.7630811929702759
+      ],
+      "max": [
+        1.296402096748352,
+        1.5251868963241577
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.09364397078752518,
+        2.192542791366577
+      ],
+      "max": [
+        0.11785519123077393,
+        5.885157108306885
+      ]
+    },
+    "selectedModules": {
+      "turretId": 25105,
+      "gunId": 18449,
+      "trackId": 30737,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "E_50M_mtr",
+      "E_50M_mtr",
+      "E_50M_mtr",
+      "E_50M_track_mtr",
+      "E_50M_track_mtr",
+      "E_50M_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

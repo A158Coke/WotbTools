@@ -63,7 +63,7 @@ public class AiReplayAnalysisService {
                 tokenEstimator, model,
                 Math.max(1, singleReplayMaxInputTokens),
                 contextWindowTokens, maxOutputTokens, promptSafetyMarginTokens,
-                call2ThinkingEnabled, reasoningEffort, 315);
+                call2ThinkingEnabled, reasoningEffort, 315, 4096);
         this.playerService = new PlayerReplayAnalysisService(gateway, config);
         this.teamService = new TeamReplayAnalysisService(
                 gateway, config,
@@ -86,10 +86,12 @@ public class AiReplayAnalysisService {
         return playerService.analyze(battle, recon, language);
     }
 
+    /** 兼容 facade 转发；{@code analyzePlayerContext} 非 production AI Review entrypoint（见 PlayerReplayAnalysisService）。 */
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx) {
         return analyzePlayerContext(ctx, AllowedLanguage.ZH);
     }
 
+    /** 兼容 facade 转发；{@code analyzePlayerContext} 非 production AI Review entrypoint（见 PlayerReplayAnalysisService）。 */
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx,
                                               final AllowedLanguage language) {
         return playerService.analyzePlayerContext(ctx, language);

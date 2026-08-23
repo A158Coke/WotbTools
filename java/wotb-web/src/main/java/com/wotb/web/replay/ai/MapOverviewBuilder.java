@@ -3,14 +3,23 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.MapNames;
+import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.processing.TeamEntityIdentity;
 import com.wotb.core.processing.TeamEntityMapper;
 import com.wotb.core.processing.TeamEntityMapping;
 import com.wotb.core.processing.TeamPerspectiveResolution;
 import com.wotb.core.processing.TeamPerspectiveResolver;
+import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.EntityRemovedEvent;
+import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
+import com.wotb.core.replay.event.TurretDirectionChangedEvent;
+import com.wotb.core.replay.event.VehicleDestroyedEvent;
+import com.wotb.core.replay.evidence.EntryHpSource;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.map.MapGridProfile;
 import com.wotb.core.replay.map.MapGridRegistry;
@@ -82,10 +91,20 @@ public final class MapOverviewBuilder {
                 .filter(DamageEvent.class::isInstance)
                 .map(DamageEvent.class::cast)
                 .toList();
+        // 战斗事实重建（§11–§17 唯一可信伤害源）：热力图伤害用权威 HP loss，不用 Type-8 raw
+        final double duration = battle.durationS != null && battle.durationS > 0
+                ? battle.durationS.doubleValue()
+                : Math.max(0.0, reconstruction.replayDurationSec());
+        final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
+                com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
+                        events, mapping,
+                        battleStart == null ? 0.0 : battleStart.doubleValue(), duration);
         final MapOverview.Heatmaps heatmaps = buildHeatmaps(
-                battle, mapping, positions, damages, friendlyTeam, profile, battleStart);
+                battle, mapping, positions, damages, friendlyTeam, profile, battleStart, combat);
         final List<MapOverview.Phase> phases = buildPhases(
                 damages, positions, battle, battleStart);
+        final MapOverview.Playback playback = buildPlayback(
+                battle, mapping, positions, events, battleStart);
 
         return new MapOverview(
                 battle.mapName.trim().toLowerCase(),
@@ -113,13 +132,474 @@ public final class MapOverviewBuilder {
                 heatmaps,
                 routes,
                 battle.arenaBonusType,
-                resolveRecorderAccountId(battle));
+                resolveRecorderAccountId(battle),
+                playback);
+    }
+
+    /**
+     * 位置流连续上报的最大间隔（秒）；超过则视为位置上报中断，重新出现时新开区间。
+     * 语义 = 服务器位置流覆盖，不等于「对录像者可见/点亮」（type-10 与点亮无关）。
+     */
+    private static final double POSITION_GAP_SEC = 5.0;
+
+    /**
+     * 战局回放数据：车辆（位置复用路线点，这里只补充位置上报区间）+
+     * 时间轴事件（DAMAGE/DESTROYED/KILL/POSITION_REPORTED/POSITION_STALE，按 battle-relative 秒）。
+     * POSITION_REPORTED/STALE 只表达服务器位置流覆盖变化，不是点亮/失察（见 POSITION_GAP_SEC）。
+     * 无法可靠解析身份的伤害/击毁不输出对应事件，绝不编造。
+     */
+    private static MapOverview.Playback buildPlayback(
+            final Battle battle,
+            final TeamEntityMapping mapping,
+            final Positions positions,
+            final List<ReplayEvent> events,
+            final Float battleStartRawClockSec) {
+        if (battle == null || battle.players == null || positions.isEmpty()) {
+            return null;
+        }
+        // 时长契约：所有 playback 数据（event/interval/direction/deathSec）都必须落在 [0, durationSec]。
+        final double duration = resolveDurationSec(battle, positions, events, battleStartRawClockSec);
+        final Long recorderAccount = resolveRecorderAccountId(battle);
+        // 战斗事实重建（§11–§17 共享推导，BattlePlaybackAdapter 同源）：权威 HP loss + 击毁
+        final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
+                com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
+                        events, mapping,
+                        battleStartRawClockSec == null ? 0.0 : battleStartRawClockSec.doubleValue(),
+                        duration);
+        final List<MapOverview.PlaybackVehicle> vehicles = new ArrayList<>();
+        for (final PlayerResult player : battle.players) {
+            if (player.team <= 0 || player.accountId <= 0) {
+                continue;
+            }
+            final List<Integer> entityIds = mapping.entityIdsByAccount()
+                    .getOrDefault(player.accountId, List.of());
+            if (entityIds.isEmpty()) {
+                continue;
+            }
+            final Double rawDeath = resolveDeathSec(player);
+            final Double deathSec = rawDeath == null ? null : Math.min(rawDeath, duration);
+            final List<MapOverview.PositionInterval> intervals = positionIntervals(
+                    entityIds, positions, events, battleStartRawClockSec, deathSec, duration);
+            final List<MapOverview.DirectionSample> directionSamples = directionSamples(
+                    entityIds, positions, events, battleStartRawClockSec, deathSec, intervals, duration);
+            final List<MapOverview.HpSample> hpSamples = hpSamplesByAccount(
+                    events, mapping, player.accountId, duration, battleStartRawClockSec);
+            vehicles.add(new MapOverview.PlaybackVehicle(
+                    player.accountId, player.nickname, player.tankId,
+                    ReplayDisplayNames.tankName(player.tankId, player.tankName), player.team,
+                    intervals, deathSec, directionSamples,
+                    // baseHp = Tankopedia 静态参考（metadata，不进本局百分比）；
+                    // observedCapacityHp = 纯回放观测（真实可信 Type-7 positive sample 最大值；
+                    //   无可信 sample 为 null；绝不 max(观测, base)/fallback base）
+                    ReplayDisplayNames.tankMaxHpValue(player.tankId),
+                    MapOverview.observedCapacityHpOf(hpSamples),
+                    hpSamples,
+                    tankTypeOf(player),
+                    player.entryHpSource == null ? null : player.entryHpSource.name(),
+                    player.entryHpSource == EntryHpSource.OBSERVED_EXACT ? player.entryHp : null,
+                    hpLossesOf(player.accountId, combat),
+                    finalStats(player)));
+        }
+        if (vehicles.isEmpty()) {
+            return null;
+        }
+
+        final List<MapOverview.PlaybackEvent> playbackEvents = new ArrayList<>();
+        final java.util.Set<Long> destroyedVictims = new java.util.HashSet<>();
+        for (final ReplayEvent event : events) {
+            if (event instanceof DamageEvent damage) {
+                final long victim = accountOf(damage.victimEid(), mapping);
+                if (victim <= 0) {
+                    continue;
+                }
+                final long attacker = accountOf(damage.attackerEid(), mapping);
+                final double t = relativeSec(damage, battleStartRawClockSec);
+                playbackEvents.add(new MapOverview.PlaybackEvent(
+                        "DAMAGE", t,
+                        attacker > 0 ? attacker : null, victim, damage.damage(),
+                        com.wotb.core.replay.feature.PlaybackCombatReconstruction
+                                .observedHpLossAt(combat, victim, t)));
+            } else if (event instanceof VehicleDestroyedEvent destroyed) {
+                final long victim = accountOf(destroyed.entityId(), mapping);
+                if (victim <= 0) {
+                    continue;
+                }
+                destroyedVictims.add(victim);
+                playbackEvents.add(new MapOverview.PlaybackEvent(
+                        "DESTROYED", relativeSec(destroyed, battleStartRawClockSec),
+                        victim, null, null, null));
+                final Integer killerEid = destroyed.killerEid();
+                final long killer = killerEid != null ? accountOf(killerEid, mapping) : 0L;
+                if (killer > 0 && killer != victim) {
+                    playbackEvents.add(new MapOverview.PlaybackEvent(
+                            "KILL", relativeSec(destroyed, battleStartRawClockSec),
+                            killer, victim, null, null));
+                }
+            }
+        }
+        // 权威击毁推导（type-7 alive=false/HP=0）：不被显式 VehicleDestroyedEvent 覆盖的受害者
+        for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Destroyed d
+                : combat.destroyed()) {
+            if (destroyedVictims.contains(d.victimAccountId())) {
+                continue;
+            }
+            playbackEvents.add(new MapOverview.PlaybackEvent(
+                    "DESTROYED", d.timeSec(), d.victimAccountId(), null, null, null));
+            if (d.killerAccountId() != null && d.killerAccountId() != d.victimAccountId()) {
+                playbackEvents.add(new MapOverview.PlaybackEvent(
+                        "KILL", d.timeSec(), d.killerAccountId(), d.victimAccountId(), null, null));
+            }
+        }
+        for (final MapOverview.PlaybackVehicle vehicle : vehicles) {
+            if (recorderAccount != null && vehicle.accountId() == recorderAccount) {
+                continue; // 录像者自身不做位置覆盖事件广播
+            }
+            for (final MapOverview.PositionInterval interval : vehicle.positionIntervals()) {
+                playbackEvents.add(new MapOverview.PlaybackEvent(
+                        "POSITION_REPORTED", interval.startSec(), vehicle.accountId(), null, null, null));
+                playbackEvents.add(new MapOverview.PlaybackEvent(
+                        "POSITION_STALE", interval.endSec(), vehicle.accountId(), null, null, null));
+            }
+        }
+        // 时间契约兜底：非法/越界事件一律不进入 DTO（绝不因单个事件突破 duration）。
+        playbackEvents.removeIf(e -> !Double.isFinite(e.timeSec())
+                || e.timeSec() < 0 || e.timeSec() > duration + 1e-6);
+        playbackEvents.sort(Comparator.comparingDouble(MapOverview.PlaybackEvent::timeSec));
+
+        return new MapOverview.Playback(duration, vehicles, playbackEvents,
+                pointsSamples(events, duration, battleStartRawClockSec));
+    }
+
+    /**
+     * 车辆回放实测血量采样（battle-relative 秒升序）：过滤 type-7 propId=3 HealthChangedEvent
+     * （EXACT 置信度），按实体→账号映射合并 re-entry，保留 [0, duration] 内样本（含阵亡到 0）。
+     */
+    private static List<MapOverview.HpSample> hpSamplesByAccount(
+            final List<ReplayEvent> events,
+            final TeamEntityMapping mapping,
+            final long accountId,
+            final double duration,
+            final Float battleStartRawClockSec) {
+        final List<MapOverview.HpSample> samples = new ArrayList<>();
+        if (events == null) {
+            return samples;
+        }
+        for (final ReplayEvent event : events) {
+            if (!(event instanceof HealthChangedEvent hp)
+                    || hp.confidence() != DecodeConfidence.EXACT
+                    || hp.currentHealth() == null) {
+                continue;
+            }
+            // signed i16 语义：仅保留真实正 HP 与阵亡 0；0xFFFD(-3)/0xFFFF(-1) 等 sentinel
+            // 已被解码器置 null，此处再兜底——绝不允许 65533/65535 进入 hpSamples
+            if (hp.currentHealth() != 0 && !HealthChangedEvent.isPlausibleHp(hp.currentHealth())) {
+                continue;
+            }
+            if (accountOf(hp.entityId(), mapping) != accountId) {
+                continue;
+            }
+            final double t = relativeSec(hp, battleStartRawClockSec);
+            if (!Double.isFinite(t) || t < 0 || t > duration + 1e-6) {
+                continue;
+            }
+            samples.add(new MapOverview.HpSample(t, hp.currentHealth()));
+        }
+        samples.sort(Comparator.comparingDouble(MapOverview.HpSample::timeSec));
+        return samples;
+    }
+
+    /**
+     * 争霸赛实时点数时间线（type-8 subtype48 root field12，PROVEN）：只消费回放真实广播，
+     * 绝不按游戏规则推算；battle-relative 秒升序，仅保留 [0, duration] 内 EXACT 事件。
+     */
+    private static List<MapOverview.PointsSample> pointsSamples(
+            final List<ReplayEvent> events,
+            final double duration,
+            final Float battleStartRawClockSec) {
+        final List<MapOverview.PointsSample> samples = new ArrayList<>();
+        if (events == null) {
+            return samples;
+        }
+        for (final ReplayEvent event : events) {
+            if (!(event instanceof SupremacyPointsChangedEvent points)
+                    || points.confidence() != DecodeConfidence.EXACT) {
+                continue;
+            }
+            final double t = relativeSec(points, battleStartRawClockSec);
+            if (!Double.isFinite(t) || t < 0 || t > duration + 1e-6) {
+                continue;
+            }
+            samples.add(new MapOverview.PointsSample(t, points.team(), points.points()));
+        }
+        samples.sort(Comparator.comparingDouble(MapOverview.PointsSample::timeSec));
+        return samples;
+    }
+
+    /**
+     * playback 时长（秒）：① finite 且 >0 的 battle.durationS；② 合法 battle-relative 的
+     * BattleEndedEvent（取最早一个）；③ 位置流最后可信时刻；全无 → 0。
+     */
+    private static double resolveDurationSec(
+            final Battle battle,
+            final Positions positions,
+            final List<ReplayEvent> events,
+            final Float battleStartRawClockSec) {
+        if (battle != null && battle.durationS != null
+                && Double.isFinite(battle.durationS) && battle.durationS > 0) {
+            return battle.durationS;
+        }
+        double battleEnd = Double.NaN;
+        for (final ReplayEvent event : events) {
+            if (event instanceof BattleEndedEvent ended) {
+                final double t = relativeSec(ended, battleStartRawClockSec);
+                if (Double.isFinite(t) && t > 0) {
+                    battleEnd = Double.isNaN(battleEnd) ? t : Math.min(battleEnd, t);
+                }
+            }
+        }
+        if (Double.isFinite(battleEnd) && battleEnd > 0) {
+            return battleEnd;
+        }
+        return Math.max(0, positions.lastTimeSec());
+    }
+
+    /**
+     * 车辆方向采样：type-7 propId=2（炮塔相对车体角）与同车 type-10 位置（hull yaw）配对。
+     * <p>可信度边界：turret sample 的 t 必须落在该车同一可信 position-report 区间内，hull yaw 只能
+     * 从该区间内的位置样本配对——位置流中断（gap）期间不得继续用后续 prop2 推动炮塔，不得跨 gap
+     * 从另一侧取 hull yaw；re-entry 后新方向段才继续。</p>
+     * <p>仅保留 finite、0 ≤ t ≤ min(duration, deathSec) 的样本；按「dt≥1s 或方向变化≥10°」降采样，
+     * 每个可信方向段的最后一个样本恒保留（冻结准确）；无可靠方向的车辆返回空列表（不伪造朝向）。</p>
+     */
+    private static List<MapOverview.DirectionSample> directionSamples(
+            final List<Integer> entityIds,
+            final Positions positions,
+            final List<ReplayEvent> events,
+            final Float battleStartRawClockSec,
+            final Double deathSec,
+            final List<MapOverview.PositionInterval> intervals,
+            final double duration) {
+        final List<double[]> raw = new ArrayList<>();
+        for (final int entityId : entityIds) {
+            for (final ReplayEvent event : events) {
+                if (!(event instanceof TurretDirectionChangedEvent turret)
+                        || turret.entityId() != entityId) {
+                    continue;
+                }
+                final double t = relativeSec(turret, battleStartRawClockSec);
+                if (!Double.isFinite(t) || t < 0 || t > duration + 1e-6
+                        || (deathSec != null && t > deathSec + 1e-6)) {
+                    continue;
+                }
+                // t 必须位于该车某个可信位置上报区间内；hull yaw 只允许来自同一区间的位置样本。
+                final MapOverview.PositionInterval interval = intervals.stream()
+                        .filter(iv -> t >= iv.startSec() - 1e-6 && t <= iv.endSec() + 1e-6)
+                        .findFirst().orElse(null);
+                if (interval == null) {
+                    continue;
+                }
+                final Position pos = nearestWithin(entityIds, positions, t,
+                        interval.startSec(), interval.endSec());
+                if (pos == null || pos.yawDeg() == null || !Double.isFinite(pos.yawDeg())) {
+                    continue;
+                }
+                raw.add(new double[]{t, pos.yawDeg(), turret.turretRelativeYawDeg()});
+            }
+        }
+        raw.sort(Comparator.comparingDouble(a -> a[0]));
+        final List<MapOverview.DirectionSample> out = new ArrayList<>();
+        double lastKeptT = Double.NEGATIVE_INFINITY;
+        double lastHull = 0;
+        double lastRel = 0;
+        for (final double[] s : raw) {
+            final boolean first = out.isEmpty();
+            final double dHull = first ? 0 : shortestArcDeg(s[1], lastHull);
+            final double dRel = first ? 0 : shortestArcDeg(s[2], lastRel);
+            if (first || s[0] - lastKeptT >= 1.0
+                    || Math.abs(dHull) >= 10.0 || Math.abs(dRel) >= 10.0) {
+                out.add(new MapOverview.DirectionSample(s[0], s[1], s[2]));
+                lastKeptT = s[0];
+                lastHull = s[1];
+                lastRel = s[2];
+            } else {
+                // 未保留：更新基准，避免漂移累积误判变化阈值
+                lastHull = s[1];
+                lastRel = s[2];
+            }
+        }
+        // 段末冻结保证：最后一个可信样本即使未跨阈值也恒保留（当前实现与注释一致）。
+        if (!raw.isEmpty()
+                && (out.isEmpty()
+                || raw.get(raw.size() - 1)[0] > out.get(out.size() - 1).timeSec() + 1e-6)) {
+            final double[] lastRaw = raw.get(raw.size() - 1);
+            out.add(new MapOverview.DirectionSample(lastRaw[0], lastRaw[1], lastRaw[2]));
+        }
+        return out;
+    }
+
+    /** 在 [startSec, endSec] 区间内找时间上最接近 t 的位置（跨实体合并；禁止区间外配对）。 */
+    private static Position nearestWithin(
+            final List<Integer> entityIds,
+            final Positions positions,
+            final double t,
+            final double startSec,
+            final double endSec) {
+        Position best = null;
+        double bestDelta = Double.MAX_VALUE;
+        for (final int entityId : entityIds) {
+            for (final Position pos : positions.byEntity().getOrDefault(entityId, List.of())) {
+                if (pos.timeSec < startSec - 1e-6 || pos.timeSec > endSec + 1e-6) {
+                    continue;
+                }
+                final double delta = Math.abs(pos.timeSec - t);
+                if (delta < bestDelta) {
+                    bestDelta = delta;
+                    best = pos;
+                }
+            }
+        }
+        return best;
+    }
+
+    /** 最短圆弧差（度，[-180,180]）。 */
+    private static double shortestArcDeg(final double a, final double b) {
+        double d = (a - b) % 360.0;
+        if (d > 180) {
+            d -= 360;
+        }
+        if (d < -180) {
+            d += 360;
+        }
+        return d;
+    }
+
+    /**
+     * 车辆位置上报区间：按位置事件时间线聚类（gap ≤ 5s 视为连续上报），
+     * EntityLeave(type-4) 是 coverage 的 hard segment boundary——每一次 leave 都强制
+     * 结束当前 coverage run，leave 后的第一条 position（无论 gap 是 0.5s 还是 20s）
+     * 开启新 run；阵亡时刻（deathSec）最后 clamp，阵亡后的 interval 不出现。
+     * re-entry 跨实体区间合并。语义 = 服务器位置流覆盖，不代表录像者点亮/可见性。
+     */
+    static List<MapOverview.PositionInterval> positionIntervals(
+            final List<Integer> entityIds,
+            final Positions positions,
+            final List<ReplayEvent> events,
+            final Float battleStartRawClockSec,
+            final Double deathSec,
+            final double duration) {
+        final List<MapOverview.PositionInterval> raw = new ArrayList<>();
+        for (final int entityId : entityIds) {
+            final List<Position> pts = positions.byEntity().getOrDefault(entityId, List.of());
+            if (pts.isEmpty()) {
+                continue;
+            }
+            // 该实体全部 EntityLeave 时刻（按时间升序），逐个消费；leave 不属于某一次
+            // 生命周期的最小值，而是按时间顺序的硬分段点。
+            final List<Double> leaves = new ArrayList<>();
+            for (final ReplayEvent event : events) {
+                if (event instanceof EntityRemovedEvent removed && removed.entityId() == entityId) {
+                    leaves.add(relativeSec(removed, battleStartRawClockSec));
+                }
+            }
+            leaves.sort(Comparator.naturalOrder());
+            int leaveIdx = 0;
+            double runStart = Double.NaN;
+            double runEnd = Double.NaN;
+            for (final Position p : pts) {
+                final double t = p.timeSec;
+                if (Double.isNaN(runStart)) {
+                    runStart = t;
+                    runEnd = t;
+                    continue;
+                }
+                // leave 在 (runEnd, t) 之间 → 强制关段（end = leave 时刻），t 开启新 run；
+                // leave == runEnd（与最后一个 position 同刻）也关闭该段（leave 在后）。
+                if (leaveIdx < leaves.size()
+                        && leaves.get(leaveIdx) >= runEnd
+                        && leaves.get(leaveIdx) < t) {
+                    raw.add(new MapOverview.PositionInterval(runStart, leaves.get(leaveIdx)));
+                    runStart = t;
+                    runEnd = t;
+                    leaveIdx++;
+                    continue;
+                }
+                // 无 leave：保留 gap > 5s 分段语义
+                if (t - runEnd > POSITION_GAP_SEC) {
+                    raw.add(new MapOverview.PositionInterval(runStart, runEnd));
+                    runStart = t;
+                    runEnd = t;
+                    continue;
+                }
+                runEnd = t;
+            }
+            if (!Double.isNaN(runStart)) {
+                raw.add(new MapOverview.PositionInterval(runStart, runEnd));
+            }
+        }
+        raw.sort(Comparator.comparingDouble(MapOverview.PositionInterval::startSec));
+        final List<MapOverview.PositionInterval> merged = new ArrayList<>();
+        for (final MapOverview.PositionInterval interval : raw) {
+            if (merged.isEmpty()
+                    || interval.startSec() - merged.get(merged.size() - 1).endSec() > 1e-6) {
+                merged.add(interval);
+            } else {
+                final MapOverview.PositionInterval last = merged.get(merged.size() - 1);
+                merged.set(merged.size() - 1, new MapOverview.PositionInterval(
+                        last.startSec(), Math.max(last.endSec(), interval.endSec())));
+            }
+        }
+        if (deathSec != null) {
+            // 阵亡时刻最终优先级：start > deathSec 的区间（阵亡后重新出现）整体剔除；
+            // 其余区间末端 clamp 到 deathSec。
+            final List<MapOverview.PositionInterval> deathClamped = new ArrayList<>();
+            for (final MapOverview.PositionInterval interval : merged) {
+                if (interval.startSec() > deathSec + 1e-6) {
+                    continue;
+                }
+                final double end = Math.min(interval.endSec(), deathSec);
+                if (end >= interval.startSec() - 1e-6) {
+                    deathClamped.add(new MapOverview.PositionInterval(
+                            interval.startSec(), Math.max(interval.startSec(), end)));
+                }
+            }
+            merged.clear();
+            merged.addAll(deathClamped);
+        }
+        // 时间契约：区间不得越过 playback duration；起点越界的区间整体剔除。
+        final List<MapOverview.PositionInterval> bounded = new ArrayList<>();
+        for (final MapOverview.PositionInterval interval : merged) {
+            if (interval.startSec() > duration + 1e-6) {
+                continue;
+            }
+            final double end = Math.min(interval.endSec(), duration);
+            if (end >= interval.startSec() - 1e-6) {
+                bounded.add(new MapOverview.PositionInterval(
+                        interval.startSec(), Math.max(interval.startSec(), end)));
+            }
+        }
+        return bounded;
+    }
+
+    private static long accountOf(final int entityId, final TeamEntityMapping mapping) {
+        if (entityId <= 0) {
+            return 0L;
+        }
+        final TeamEntityIdentity identity = mapping.identity(entityId);
+        return identity != null ? identity.accountId() : 0L;
     }
 
     /** 录像者账号 id（Battle.recorder 昵称已在 ReplayParser 解析时归一化，可稳定匹配 players）；未解析为 null。 */
     private static Long resolveRecorderAccountId(final Battle battle) {
         final PlayerResult recorder = battle.recorderResult();
         return recorder != null && recorder.accountId > 0 ? recorder.accountId : null;
+    }
+
+    /** 整场最终战绩（结算口径；仅供「最终战绩」分区，不得冒充当前时间点状态）。 */
+    private static MapOverview.FinalStats finalStats(final PlayerResult p) {
+        return new MapOverview.FinalStats(
+                p.damageDealt, p.damageReceived, p.damageAssisted, p.kills,
+                p.nShots, p.nHitsDealt, p.nPenetrationsDealt,
+                p.nHitsReceived, p.nPenetrationsReceived, p.damageBlocked);
     }
 
     private static Integer resolveFriendlyTeam(
@@ -204,7 +684,8 @@ public final class MapOverviewBuilder {
             final List<DamageEvent> damages,
             final int friendlyTeam,
             final MapGridProfile profile,
-            final Float battleStartRawClockSec
+            final Float battleStartRawClockSec,
+            final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat
     ) {
         final int cells = profile.gridCells().size();
         final double[] friendlyDwell = new double[cells];
@@ -229,22 +710,33 @@ public final class MapOverviewBuilder {
             }
         }
 
-        for (final DamageEvent damage : damages) {
-            final TeamEntityIdentity victim = mapping.entitiesById().get(damage.victimEid());
-            if (victim == null || !victim.usable() || victim.team() <= 0) {
+        // 伤害热力按受击方位置落格（§12）：值 = 权威 HP loss（Type-7 推导，含无法归属的掉血——
+        // 掉血真实发生在 victim 身上，热力按 victim 位置刻画实际承受的伤害）；
+        // Type-8 rawProtocolValue 语义未证明，不得进热力。
+        for (final Map.Entry<Long, List<com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss>> entry
+                : combat.lossesByVictim().entrySet()) {
+            final List<Integer> entityIds = mapping.entityIdsByAccount()
+                    .getOrDefault(entry.getKey(), List.of());
+            if (entityIds.isEmpty()) {
                 continue;
             }
-            final Position pos = positions.nearest(
-                    damage.victimEid(), relativeSec(damage, battleStartRawClockSec));
-            if (pos == null) {
+            final Integer victimTeam = teamOfEntityIds(entityIds, mapping);
+            if (victimTeam == null || victimTeam <= 0) {
                 continue;
             }
-            final MapGridProfile.GridCell cell = profile.cellAt(pos.x, pos.z);
-            if (cell == null) {
-                continue;
+            final double[] damageArr = victimTeam == friendlyTeam ? friendlyDamage : enemyDamage;
+            for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss loss
+                    : entry.getValue()) {
+                final Position pos = nearestPosition(entityIds, positions, loss.toSec());
+                if (pos == null) {
+                    continue;
+                }
+                final MapGridProfile.GridCell cell = profile.cellAt(pos.x, pos.z);
+                if (cell == null) {
+                    continue;
+                }
+                damageArr[profile.gridCells().indexOf(cell)] += loss.hpLoss();
             }
-            final double[] damageArr = victim.team() == friendlyTeam ? friendlyDamage : enemyDamage;
-            damageArr[profile.gridCells().indexOf(cell)] += damage.damage();
         }
 
         final Map<Long, Double> deathSecByAccount = new HashMap<>();
@@ -329,6 +821,34 @@ public final class MapOverviewBuilder {
         return phases;
     }
 
+    /** 账号 → 阵营（任一已解析实体）；无 → null。 */
+    private static Integer teamOfEntityIds(final List<Integer> entityIds,
+                                           final TeamEntityMapping mapping) {
+        for (final int eid : entityIds) {
+            final TeamEntityIdentity identity = mapping.identity(eid);
+            if (identity != null && identity.team() > 0) {
+                return identity.team();
+            }
+        }
+        return null;
+    }
+
+    /** 账号在 t 时刻最近可信位置（跨实体 re-entry 取最近）。 */
+    private static Position nearestPosition(final List<Integer> entityIds,
+                                            final Positions positions, final double t) {
+        Position best = null;
+        for (final int eid : entityIds) {
+            final Position p = positions.nearest(eid, t);
+            if (p == null) {
+                continue;
+            }
+            if (best == null || Math.abs(p.timeSec - t) < Math.abs(best.timeSec - t)) {
+                best = p;
+            }
+        }
+        return best;
+    }
+
     private static List<Double> toList(final double[] values) {
         final List<Double> out = new ArrayList<>(values.length);
         for (final double v : values) {
@@ -344,6 +864,34 @@ public final class MapOverviewBuilder {
         out.put("zh", names.zh() != null && !names.zh().isBlank() ? names.zh() : en);
         out.put("en", en);
         out.put("ru", names.ru() != null && !names.ru().isBlank() ? names.ru() : en);
+        return out;
+    }
+
+    /**
+     * 车辆类型统一 fallback（docs/current-plan.md §8）：replay/player 权威 tankType →
+     * tankopedia class（英文，API 纯英文契约）→ 空串（前端展示 —）。
+     */
+    private static String tankTypeOf(final PlayerResult player) {
+        if (player.tankType != null && !player.tankType.isBlank()) {
+            return player.tankType;
+        }
+        return ReplayDisplayNames.tankClassEn(player.tankId);
+    }
+
+    /** 车辆 HP loss 记录（共享推导 → DTO；attacker 仅在同攻击者可证明时填充）。 */
+    private static List<MapOverview.HpLoss> hpLossesOf(
+            final long accountId,
+            final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat) {
+        final List<com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss> losses =
+                combat.lossesOf(accountId);
+        if (losses.isEmpty()) {
+            return List.of();
+        }
+        final List<MapOverview.HpLoss> out = new ArrayList<>(losses.size());
+        for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss l : losses) {
+            out.add(new MapOverview.HpLoss(l.fromSec(), l.toSec(), l.hpLoss(),
+                    l.attackerAccountId(), l.attackerReliable()));
+        }
         return out;
     }
 
@@ -370,17 +918,20 @@ public final class MapOverviewBuilder {
         return event.timestamp().rawClockSec();
     }
 
-    /** 某时刻的平面位置（语义坐标 x/z 与 battle-relative 秒）。 */
-    private record Position(double timeSec, double x, double z) {
+    /**
+     * 某时刻的平面位置（语义坐标 x/z 与 battle-relative 秒）。
+     * yawDeg 来自 type-10 yaw（弧度→度，[-180,180)），非有限时为 null（不参与方向采样）。
+     */
+    record Position(double timeSec, double x, double z, Double yawDeg) {
     }
 
     /** 按实体聚合的位置时间线（有序），附带最近/最后位置查询。 */
-    private static final class Positions {
+    static final class Positions {
 
         private final Map<Integer, List<Position>> byEntity;
         private float lastTimeSec;
 
-        private Positions(final Map<Integer, List<Position>> byEntity) {
+        Positions(final Map<Integer, List<Position>> byEntity) {
             this.byEntity = byEntity;
             this.lastTimeSec = 0f;
             for (final List<Position> list : byEntity.values()) {
@@ -408,8 +959,10 @@ public final class MapOverviewBuilder {
                 if (!Double.isFinite(t) || t < 0) {
                     continue;
                 }
+                final Double yawDeg = Float.isFinite(pos.yaw())
+                        ? Math.toDegrees(pos.yaw()) : null;
                 byEntity.computeIfAbsent(pos.entityId(), k -> new ArrayList<>())
-                        .add(new Position(t, pos.x(), pos.z()));
+                        .add(new Position(t, pos.x(), pos.z(), yawDeg));
             }
             byEntity.values().forEach(list -> list.sort(Comparator.comparingDouble(Position::timeSec)));
             return new Positions(byEntity);

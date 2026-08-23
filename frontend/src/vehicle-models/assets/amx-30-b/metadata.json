@@ -1,0 +1,85 @@
+{
+  "modelKey": "amx-30-b",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 8513,
+    "modelGlb": "https://api.blitzkit.app/tanks/8513/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160,
+    "y": 159.1
+  },
+  "turretRaster": {
+    "logicalMinX": 99.9,
+    "logicalMinY": -76.42,
+    "logicalMaxX": 220.01,
+    "logicalMaxY": 267.82,
+    "pixelWidth": 240,
+    "pixelHeight": 689,
+    "pivotX": 60.1,
+    "pivotY": 235.52
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.5554832220077515,
+        -3.612112283706665
+      ],
+      "max": [
+        1.557733178138733,
+        3.233699083328247
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.4598950147628784,
+        -2.4319653511047363
+      ],
+      "max": [
+        1.4598950147628784,
+        1.6073228120803833
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.14169301092624664,
+        2.068556547164917
+      ],
+      "max": [
+        0.16367343068122864,
+        5.936581134796143
+      ]
+    },
+    "selectedModules": {
+      "turretId": 8001,
+      "gunId": 16961,
+      "trackId": 14913,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "F72_AMX_30_track_mtr",
+      "F72_AMX_30_track_mtr",
+      "F72_AMX_30_track_mtr",
+      "F72_AMX_30_mtr",
+      "F72_AMX_30_mtr",
+      "F72_AMX_30_mtr",
+      "F72_AMX_30_grill_mtr",
+      "F72_AMX_30_grill_mtr",
+      "F72_AMX_30_grill_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

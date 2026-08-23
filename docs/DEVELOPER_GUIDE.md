@@ -7,32 +7,26 @@
 ## ✦ 给接手的一句话
 
 这是个单人维护的 WoT Blitz 回放分析工具（Java core + Spring Boot + Vue + Keycloak，Web 版）。
-动手前读 `.agents/AGENTS.md` 和本文件；跨层改动按 `.agents/wotb-sync.md` 的配方；
+动手前读 `.agents/AGENTS.md` 和本文件；跨层改动按 `.agents/skills/wotb-sync/SKILL.md` 的配方；
 Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；
 改完跑 `mvn -s settings.xml test`、`npm test` 和 `npm run build`；
-提交用中文信息、推 `github-personal`（账号 A158Coke），push main 即自动部署。
+提交用中文信息（账号 A158Coke）；推送前先 `git remote -v` 确认实际 remote（本机 remote 名/SSH 别名以本机配置为准），push main 即自动部署。
 
 ---
 
 ## 文档地图
 
+文档索引（每个文档「何时读」）见 `docs/README.md`。本文件只列动手必读的几份：
+
 | 文档 | 作用 | 何时读 |
 |---|---|---|
-| **本文件 `DEVELOPER_GUIDE.md`** | 开发指南（含环境、架构、部署、约定） | 最先 |
-| [`.agents/AGENTS.md`](../.agents/AGENTS.md) | AI 硬性约定（RULES） | 动手前必读 |
-| [`.agents/wotb-sync.md`](../.agents/wotb-sync.md) | 跨层改动检查单（配方 A–G） | 增删/改名数据列、改解析/导出/前端时 |
-| [`docs/replay-data.md`](replay-data.md) | data.wotreplay 事件流格式、protobuf 字段表、死亡时间推算 | 深入回放格式时 |
-| [`docs/rating-system.md`](rating-system.md) | 评分算法细节 | 碰评分时 |
-| [`docs/rating-progress.md`](rating-progress.md) | rating 扩展目标、已完成项、缺口与下一步 | 接手 rating 扩展时 |
-| [`docs/observability.md`](observability.md) | 可观测系统（日志/指标/Grafana/Prometheus/Loki/Alloy）运维与排障 | 动监控、查日志、调保留策略时 |
-| [`docs/auth/wargaming-asia-login.md`](auth/wargaming-asia-login.md) | Wargaming.net ASIA / EU / NA 登录需求与实现（决策 D1–D18） | 改认证/账号绑定/登录页时 |
-| [`docs/auth/wargaming-asia-deployment.md`](auth/wargaming-asia-deployment.md) | WG 登录部署与 Admin Console 手工配置（运维手册） | 上线/排障 WG 登录时 |
-| [`docs/auth/keycloak-mapper-guide.md`](auth/keycloak-mapper-guide.md) | Keycloak Protocol Mapper / Client Scope 机制与生产补 mapper 指南 | JWT 缺 claim / 改 claims / 加 client scope 时 |
-| [`CHANGELOG.md`](CHANGELOG.md) | 版本历史（对外） | 了解发布历史 |
-| [`README.md`](../README.md) / [`java/README.md`](../java/README.md) | 用户向概览与文档索引；Java/Web 运行、接口、构建 | 跑起来时 |
-| [`TODO.md`](TODO.md) | 待办（含已完成收尾记录与下一步） | 找下一步做什么 |
+| 本文件 `DEVELOPER_GUIDE.md` | 开发入口（环境 / 构建 / 仓库结构 / 架构速览 / 约定） | 最先 |
+| `.agents/AGENTS.md` | 仓库级硬约定（RULES） | 动手前必读 |
+| 各目录 `AGENTS.md`（java / frontend / common / deploy / .github / keycloak×2 / map-semanticizer） | 按作用域的局部约束 | 进入对应目录时 |
+| `.agents/skills/wotb-sync/SKILL.md` | 跨层改动检查单（配方 A–K） | 增删列 / 改解析 / 导出 / 前端时 |
+| `java/README.md` | Java / Web 运行、接口、构建 | 跑起来时 |
 
-> `.agents/AGENTS.md` / `wotb-sync.md` 本就是写给"任意 AI/人"的，不绑定特定工具。
+> Agent 指令层级以真实代码为 source of truth：发现文档与代码漂移时先修正文档。
 
 ---
 
@@ -78,7 +72,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 - **车辆库更新（blitzkit 单一来源）**：推荐手动触发 GitHub Actions **`Update Tankopedia`**——runner 直接从 `assets.blitzkit.app/definitions/tanks.pb` + `consumables.pb` + `provisions.pb` + `equipment.pb`（游戏客户端数据，公开 CDN，无 IP 白名单，无需任何 secret）同步并自动提交回 main。本地跑 `cd common/python && python update_tankopedia.py` 即可。数据源为什么不用 WG 百科：WG 滞后于游戏版本（11.19 的 SPHT / AC Atlas 等缺失）且 application_id 有 IP 白名单限制。脚本旧数据只从 `--existing-dir` 目录读取（`tankopedia-tier*.json`，用于保留 extraInfo）、新数据只写 `--output-dir`（workflow 两者路径分离，输入输出互不覆盖）；流程为 `parse_tanks → 过滤业务范围 tier 7–10 → apply 物资/装备 → merge_extraInfo → 完整性门禁 → 写 4 个 tier 文件`（真实 tanks.pb 含 1–10 级，1–6 级不参与校验与输出）。写入前有**完整性门禁**（解析为空 / 总量或单 tier 数量下降超 20% / tank ID 重复 / tier 不在 7–10 / 缺 id·name·hp·gun 均失败，失败不写文件不提交）。每个文件为 `meta` + `vehicles` 数组（全部字段与值均为英文/数字）：每辆车一条记录 `name/id/tier/class/nation/hp/forwardSpeed/reverseSpeed/turretRotationSpeed/hullRotationSpeed/powerToWeightRatio/guns/alphaDamage/allowedProvision/allowedConsumables/allowedEquipment/extraInfo`。`guns` 数组含该车顶配炮塔的**全部炮**（7–9 级也可能多把，如 T-34-2 有 5 把），每把带 `gunId/isDefault/alphaDamage/shells`（shells 每发 `{type, damage, penetration}`，type 归一化 ap/apcr/heat/he，顺序即游戏内弹序）；vehicle 级 `alphaDamage` 只在有唯一权威依据时输出——单炮车 / 7–9 级顶配炮（最高 tier，同 tier 取最高 alpha，如 T-34-2=400），**10 级多终局炮车省略**（回放无可靠实际炮，AI 不输出虚假唯一炮伤）。`allowedProvision`/`allowedConsumables` 由 blitzkit 的 include/exclude 过滤器（tier/ids/clip/nations）判定后映射为 `common/wotb-item-catalog-json` 的逻辑 id / code；`allowedEquipment` 由车辆 `equipment_preset` 槽位装备映射为 catalog 装备 code（含 VK 72.01 俯角/履带齿、Type 71 改进悬挂等专属装备）；手工维护的 `extraInfo`（个人知识点）按 tank_id 保留合并，仍存在车辆的知识点丢失会直接失败。AI prompt 会注入结构化事实（车种/等级/国家/炮伤/血量/知识），Team 路径（TEAM_MEMBERS / OPPOSING_TEAM_LINEUP_AUTHORITATIVE）额外注入 alphaDamage/hp/extraInfo，prompt 规则白名单已放行这些字段。
 - **代码风格**：不可变模型用 `record`；可变模型用公有字段 POJO（**不引入 Lombok**）；局部变量/参数尽量 `final`。
 - **分层**：controller 只做 HTTP；业务在 service；core 按功能分包。新 endpoint 的逻辑写进 service。
-- 跨层联动改动（加列/改解析/改评分/改地图名…）务必按 `.agents/wotb-sync.md` 的配方走。
+- 跨层联动改动（加列/改解析/改评分/改地图名…）务必按 `.agents/skills/wotb-sync/SKILL.md` 的配方走。
 
 ---
 
@@ -99,7 +93,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 ```text
 .
 ├── README.md  LICENSE  .gitignore  .dockerignore  qodana.yaml
-├── docs/                       # 文档（TODO / current-plan / DEVELOPER_GUIDE / CHANGELOG / replay-data / rating-system / observability / team-ai-review-feature）
+├── docs/                       # 文档索引见 docs/README.md（architecture / features / research / operations / reference / auth 等）
 ├── docker/                       # Docker 构建 + 本地开发 compose
 │   ├── Dockerfile.backend        #   后端镜像：Maven → JRE（Spring Boot :8087）
 │   ├── Dockerfile.frontend       #   前端镜像：Node → nginx（:80）
@@ -123,7 +117,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 │   │   └── sponsor-config.js
 │   ├── extended.html             #   Rating V2 独立入口
 ├── .github/
-│   ├── workflows/deploy.yml      # 测试门禁 + 增量构建/部署
+│   ├── workflows/deploy.yml      # 测试门禁 + 每次统一构建三镜像/部署
 │   ├── workflows/database-backup.yml # 每日生产双库备份
 │   └── workflows/prod-diagnostics.yml # 线上诊断日志
 ├── common/                       # 共享资源
@@ -152,7 +146,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 ├── .gitignore  .dockerignore  qodana.yaml
 ├── .agents/                      # AI 工具定义
 │   ├── AGENTS.md                 #   AI 硬性约定（RULES）
-│   ├── wotb-sync.md              #   跨层改动检查单（配方 A–G）
+│   ├── wotb-sync.md              #   跨层改动检查单（指向 skills/wotb-sync/SKILL.md）
 │   └── skills/                   #   技能库（开发前：grill-me / plan-designer；开发后：review-fix / review-with-docs / code-smell / column-sync / wotb-sync）
 ```
 
@@ -184,7 +178,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
    frontend (Vue 3 + Vite, 单文件 App.vue, vue-i18n 三语, Keycloak 认证)
 ```
 
-核心包结构（`com.wotb.core`）：`parse / ref / stats / export / model / processing / replay` 子包 + 顶层 `Columns`。Web 侧按 `user / leaderboard / replay / boost / admin` 业务域分包，每个域内部再分 controller/service/entity/repository/dto。
+核心包结构（`com.wotb.core`）：`parse / ref / stats / export / model / processing / replay` 子包 + 顶层 `Columns`。Web 侧按 `user / hof / replay / boost / admin` 业务域分包，每个域内部再分 controller/service/entity/repository/dto。
 
 ### 后端核心类
 
@@ -197,6 +191,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 | `ReplayPacketParser` | `wotb-core/.../ReplayPacketParser.java` | data.wotreplay 包头/包解析 + 二进制读取（B3） |
 | `ReplayEventExtractors` | `wotb-core/.../ReplayEventExtractors.java` | EntityLeave/Position/updateArena/EntityMethod 提取（B3） |
 | `DeathTimeEstimator` | `wotb-core/.../DeathTimeEstimator.java` | 三条证据链死亡时间估算（B3） |
+| `DeathTimeReconciler` | `wotb-core/.../processing/DeathTimeReconciler.java` | 死亡时刻校准：结算缺失死亡时刻时用重建事件流 EXACT alive=false（HP=0，同实体→账号映射，取最后一条=最终阵亡）覆盖 `survivalTimeSec`（优先级：结算 > HP 死亡证据 > legacy 启发式） |
 | `Rating` | `wotb-core/.../Rating.java` | 评分引擎 |
 | `RatingAnalyzer` | `wotb-core/.../RatingAnalyzer.java` | 实时 rating V2（扩展页使用） |
 | `Tankopedia` | `wotb-core/.../Tankopedia.java` | 车辆库查表（via common/tankopedia-tier{7,8,9,10}.json） |
@@ -220,14 +215,20 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 | `PlayerBattleFeatureSet` | `wotb-core/.../feature/PlayerBattleFeatureSet.java` | 个人特征集（含 `hasFeatures` / `limitations`） |
 | `DefaultTeamBattleFeatureExtractor` | `wotb-core/.../feature/DefaultTeamBattleFeatureExtractor.java` | perspective team 的队员独立移动、阵型、交火、关键事件与权威聚合 |
 | `TeamBattleFeatureSet` | `wotb-core/.../feature/TeamBattleFeatureSet.java` | 团队特征、覆盖率、权威结算、观测子集与 limitations |
-| `AiReplayAnalysisService` | `wotb-web/.../ai/AiReplayAnalysisService.java` | 玩家/团队 AI 调用、上游错误分类与 context 编排 |
+| `AiReplayAnalysisService` | `wotb-web/.../ai/AiReplayAnalysisService.java` | 兼容 facade（保持旧入口不变，委托 PlayerReplayAnalysisService / TeamReplayAnalysisService；无真实编排） |
 | `AiCancellationRegistry` | `wotb-web/.../ai/gateway/AiCancellationRegistry.java` | in-flight AI 请求取消注册表（客户端取消 → 中断上游调用，稳定错误码 `AI_CANCELLED`） |
 | `ApiPaths` | `wotb-web/.../config/ApiPaths.java` | API URL 常量单一来源（SecurityConfig 匹配器与 Controller 映射共用） |
 | `TeamAiPromptBuilder` | `wotb-web/.../ai/TeamAiPromptBuilder.java` | 确定性团队输入压缩和 token 估算预算（`BudgetWriter` + `AiTokenEstimator`） |
+| `TeamGroundingFacts` | `wotb-core/.../replay/evidence/TeamGroundingFacts.java` | Team Call #2 确定性 Grounding Facts（证据编号 E1xx：阵亡/存活变化/关注窗口/位置快照/敌方位置知识 + prompt 渲染段） |
+| `TeamFactualConsistencyValidator` | `wotb-core/.../replay/evidence/TeamFactualConsistencyValidator.java` | 事实一致性校验（V1 时间归属 / V2 阵亡时间 / V3 存活变化 / V4 位置时间归属·exact 语义 / V5 CURRENT·LAST_KNOWN / V6 无证据硬事实；structured machine 校验优先（三语通用），正文文本兜底 ZH/EN/RU；不判断战术观点）。B1 evidence binding：claims 的 evidenceIds 必须引用真正支撑它的证据（类型映射 DEATH→PLAYER_DESTROYED / ALIVE_TRANSITION→ALIVE_COUNT_TRANSITION·FOCUS_WINDOW / POSITION_REGION→POSITION_REGION / ENEMY_POSITION→ENEMY_POSITION_KNOWN；身份/时间/数值/区域/knowledge 一致性；借用无关编号或「全局恰好存在该变化」式 PASS → BINDING FAIL） |
+| `TeamReviewEnvelopeParser` | `wotb-web/.../ai/TeamReviewEnvelopeParser.java` | Team Call #2 structured envelope（primaryDiagnosis / reviewMarkdown / claims）JSON 解析，契约不成立返回 null 触发重写；`parseDetailed()` 返回 `ParseResult`（envelope + 稳定 `ParseFailureReason` 枚举，供 observability 分类）；字符串数组字段（evidenceIds / supportingEvidenceIds）区分 MISSING / INVALID / VALID 三态（malformed → `INVALID_MACHINE_FIELD_TYPE`，合法 `[]` 仍是合法空数组）；B1 起支持可选 `subjectAccountId` 稳定身份字段（类型错误 fail-close） |
+| `AiResponseFormat` | `wotb-web/.../ai/gateway/AiResponseFormat.java` | 供应商无关输出格式契约（TEXT / JSON_OBJECT，默认 TEXT）；`AiChatRequest` 携带，`SpringAiChatGateway` per-request 映射 `response_format=json_object`（仅 Team Call #2 显式使用，其余调用保持 TEXT） |
 | `PlayerSideResolver` | `wotb-core/.../processing/PlayerSideResolver.java` | 随机战斗友方/敌方/未知解析（FRIENDLY/ENEMY/UNKNOWN），基于录像者权威 team |
 | `FriendlyEnemyResult` | `wotb-core/.../processing/FriendlyEnemyResult.java` | 三态胜负转换（FRIENDLY_WIN/ENEMY_WIN/DRAW_OR_UNKNOWN） |
 | `PlayerAnalysisPromptFormatter` | `wotb-web/.../ai/PlayerAnalysisPromptFormatter.java` | AI Prompt 格式化（友方/敌方标签，独立于 Excel 导出的 PlayerResultFormat） |
 | `TacticalReviewHarness` | `wotb-web/.../ai/TacticalReviewHarness.java` | 双 Call Harness 编排与降级阶梯（随机战个人复盘 ZH） |
+| `TankNameCorrector` | `wotb-core/.../ai/TankNameCorrector.java` | AI 复盘正文坦克名确定性纠正（R1 昵称锚定 / R2 别名归一化 / R3 独立检测；`AiReplayReviewService` 在 `done.analysis` 前应用） |
+| `TankNameAliases` | `wotb-core/.../ref/TankNameAliases.java` | 坦克名别名表（via `common/tank-name-aliases.json`；缺失/损坏降级为空表） |
 | `PreBattleStrategicService` | `wotb-web/.../ai/PreBattleStrategicService.java` | Call #1：roster-only 赛前战略基线（结构化 JSON，≤4k tokens） |
 | `TacticalReviewPromptBuilder` | `wotb-web/.../ai/TacticalReviewPromptBuilder.java` | Call #2：Priority Bookends Prompt + 相关性预算裁剪 |
 | `EvidenceSkillEngine` | `wotb-core/.../replay/evidence/EvidenceSkillEngine.java` | 6 个 Backend Skill 编排（确定性证据编译，不裁决） |
@@ -239,11 +240,15 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 | `ReplayCapacityLimiter` | `wotb-web/.../replay/service/ReplayCapacityLimiter.java` | 单实例回放解析并发闸门 |
 | `Mapper` | `wotb-web/.../replay/mapper/Mapper.java` | 核心模型 → DTO |
 | `WotbWebApplication` | `wotb-web/.../WotbWebApplication.java` | Spring Boot 入口 |
-| `LeaderboardController` | `wotb-web/.../leaderboard/controller/LeaderboardController.java` | 排行榜 REST API |
-| `LeaderboardService` | `wotb-web/.../leaderboard/service/LeaderboardService.java` | 排行榜业务：录像者匹配/去重/查询 |
-| `LeaderboardUploadService` | `wotb-web/.../leaderboard/service/LeaderboardUploadService.java` | 公开上传的限流、解析与入库编排 |
-| `LeaderboardRecord` | `wotb-web/.../leaderboard/entity/LeaderboardRecord.java` | JPA 实体（列与 Flyway V1 逐列对齐） |
-| `LeaderboardRecordRepository` | `wotb-web/.../leaderboard/repository/LeaderboardRecordRepository.java` | Spring Data JPA 仓库 |
+| `HallOfFameController` | `wotb-web/.../hof/controller/HallOfFameController.java` | 名人堂 REST API（统一公开查询 / 上传 / 下载） |
+| `HallOfFameService` | `wotb-web/.../hof/service/HallOfFameService.java` | 名人堂业务：录像者匹配/battle-type policy/replay 状态机（SAVED/ATTACHED/IDEMPOTENT/SKIPPED）/统一查询+排名/下载 |
+| `HallOfFameUploadService` | `wotb-web/.../hof/service/HallOfFameUploadService.java` | 需登录上传编排：校验→解析→policy 拒绝→SHA-256 落盘→入库（ReplayHashLock 内） |
+| `HallOfFameReplayStorage` | `wotb-web/.../hof/storage/HallOfFameReplayStorage.java` | SHA-256 内容寻址文件存储（原子 move、磁盘 reserve、幂等不覆盖、delete） |
+| `HallOfFameRecord` | `wotb-web/.../hof/entity/HallOfFameRecord.java` | JPA 实体（列与 Flyway 迁移逐列对齐，含 battle_type/arena_bonus_type + V15 replay 元数据列） |
+| `HallOfFameRecordRepository` | `wotb-web/.../hof/repository/HallOfFameRecordRepository.java` | Spring Data JPA 仓库 |
+| `HallOfFameAdminController` / `HallOfFameAdminService` | `wotb-web/.../hof/controller|service/` | 名人堂管理后台：搜索/审计/hard delete（audit+delete 单事务 + ReplayHashLock 文件清理） |
+| `HallOfFameBattleTypePolicy` | `wotb-web/.../hof/policy/HallOfFameBattleTypePolicy.java` | 战斗模式单一事实源：raw arenaBonusType → RANDOM/RATING/UNSUPPORTED |
+| `ReplayHashLock` | `wotb-web/.../hof/service/ReplayHashLock.java` | hash 级 PostgreSQL advisory lock（upload 落盘+入库 与 admin delete+文件清理串行化） |
 | `GlobalExceptionHandler` | `wotb-web/.../controller/GlobalExceptionHandler.java` | 统一异常处理 → `error + timestamp`；客户端/代理断连（Broken pipe、Connection reset，含 cause-chain 包装）仅记 WARN、不写错误 JSON |
 | `AdminUserController` | `wotb-web/.../admin/controller/AdminUserController.java` | 管理员用户管理 REST API |
 | `AdminUserService` | `wotb-web/.../admin/service/AdminUserService.java` | 管理员用户管理业务 |
@@ -263,207 +268,6 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 
 ---
 
-## AI Review Harness（随机战双 Call / 团队复盘 + Team Autopsy）
-
-随机战个人复盘在满足条件时走两 Call Harness（`TacticalReviewHarness`），否则自动降级到旧单 Call 路径：
-
-1. **Call #1（Pre-Battle Strategic Prior）**：`PreBattleStrategicService` 只输入地图名 + 双方阵容（坦克名/车种/等级/国家/单车血量）+ 双方总血量（tankopedia maxHp 求和）+ `common/tank_tactical_profiles.json` 战术 Profile，严格剥离战绩字段（伤害/击杀/存活/胜负/阵亡顺序）；`preferredPlans` 契约要求分阶段（开局/中期/残局）输出；结构化 JSON 输出由 `PreBattleStrategicParser` 解析，失败返回 null 降级。
-2. **Backend Evidence Skills**（`com.wotb.core.replay.evidence`）：`HpMomentumSkill` / `EngagementTradeSkill` / `LocalSupportSkill` / `DeathCascadeSkill` / `RouteSkill` / `CriticalWindowSkill`，输出确定性 `AiEvidence`（含 confidence / provenance / priority），只描述「发生了什么」，不做战术裁决。
-3. **Call #2（Tactical Review）**：`TacticalReviewPromptBuilder` 按 Priority Bookends 组织 Prompt（BATTLE SNAPSHOT（含结算、死亡时间线、**走位/区域时间线与压缩移动段**）→ STRATEGIC PRIOR → TOP PIVOTAL WINDOWS（≤8）→ PHASE → **对炮明细（ENGAGEMENTS·逐次交火）** → EVIDENCE → CRITICAL DECISION WINDOWS（≤8 完整证据）→ TASK），预算不足时按相关性裁剪，书签段永不裁剪。
-
-### AI 提示词文件（单一事实源）
-
-AI 提示词正文维护在 `java/wotb-web/src/main/resources/prompts/` 下的 `.zh.md` 文件（随 jar 打包到 classpath），运行期由 `AiPromptLibrary.zh("<key>")` 惰性加载并缓存（`classpath:/prompts/<key>.zh.md`）。历史 Java 文本块常量已迁移为加载调用，prompt 内容字节级不变。
-
-| key | 文件 | 对应常量 |
-|---|---|---|
-| player/fallback | `prompts/player/fallback.zh.md` | `PlayerPromptRules.SYSTEM_PROMPT`（旧单 Call 兜底） |
-| player/single | `prompts/player/single.zh.md` | `PlayerPromptRules.SINGLE_PLAYER_PROMPT` |
-| player/tactical | `prompts/player/tactical.zh.md` | `TacticalReviewPromptBuilder.TACTICAL_SYSTEM_PROMPT`（fallback + Harness 规则） |
-| team/single | `prompts/team/single.zh.md` | `TeamPromptLocalizer.SINGLE_TEAM_PROMPT` |
-| team/autopsy | `prompts/team/autopsy.zh.md` | `TeamAutopsyPromptBuilder.AUTOPSY_SYSTEM_PROMPT_SETTLEMENT_ONLY` |
-| prebattle/system | `prompts/prebattle/system.zh.md` | `PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT` |
-| prebattle/user-header | `prompts/prebattle/user-header.zh.md` | `PreBattlePromptBuilder.PRE_BATTLE_USER_HEADER`（含 `%s`/`%d` 占位，由 `.formatted()` 填充） |
-| prebattle/confidence-legend | `prompts/prebattle/confidence-legend.zh.md` | `PreBattlePromptBuilder.CONFIDENCE_LEGEND` |
-
-编辑约定：
-
-- UTF-8、LF 换行（加载器会把 CRLF 归一化为 LF；文件末尾换行保留——`confidence-legend` 以换行结尾，勿删）。
-- 文件是 ZH 完整 prompt；EN/RU 由 `PlayerPromptRules.localizePlayerSystemPrompt` / `TeamPromptLocalizer.localizeTeamSystemPrompt` 对 ZH 规则片段做字符串替换生成。**md 内中文规则片段必须与 Java 常量（`COMMON_*_RULE` / `TEAM_*_RULE` 等）逐字一致**，否则 EN/RU 替换失效。
-- 多文件 AI 复盘已移除（2026-08-12）：`player/multi` / `team/multi` 提示词、`analyzeMulti`、`MULTI_*_BATTLE` AI 分支与团队多视角分区合并全部删除；AI 复盘仅单文件（`AiReplayBatchPolicy.MAX_FILES=1`）。`BatchAnalyzer` / `ReplayAnalysisMode` 保留 MULTI 模式，因为非 AI 端点（`/api/replay/process`、`/api/replay/reconstruct-batch`）不受单文件限制。
-
-### AI 复盘评估 harness（golden cases + lessons）
-
-- **CI 模式**：`AiEvalHarnessTest`（`@Tag("ai-eval")`，默认构建运行）加载 `src/test/resources/ai-eval/cases/*.json`（synthetic 7v7 争霸赛场景），用 `TeamAiPromptBuilder.single` 构建 prompt（不调 AI），执行 `prompt_contains` / `prompt_omits` 断言，写 `target/ai-eval-report/report.md` + `report.json`；任一 FAIL 构建失败。
-- **单走行为候选**：`TeamSoloIntentSkill`（wotb-core）从阵型簇/移动段/交火/占点分推导 `OPENING_MAP_CONTROL` / `SOLO_DELAY` / `SOLO_DETACHED` 候选（PARTIAL 规则候选，B1 口径：拖延需队友获利；开局图控抑制脱节），`TeamEvidenceFormatter` 渲染 `SOLO_INTENT_CANDIDATES` 段（P3 optional）。
-- **player 路径同规则**：`SoloPlayIntentSkill`（wotb-core）复用 `RouteSkill` 脱节窗口推导同口径候选（个人复盘无「队友获利」维度），已在 `EvidenceSkillEngine` 注册；player prompt（fallback/single/tactical）追加三语 `SOLO_INTENT_RULE`。
-- **争霸赛占点与点数胜负结束方式**：`FriendlyEnemyResult.resolveTeamBattle` 新增派生 `pointsEndReason`（`REACHED_1000`=任一方 victoryPointsEarned ≥1000 提前获胜；`TIME_EXPIRED`=双方均 <1000，时间耗尽比点数；`UNKNOWN`=双方点数缺失；非点数胜负=NOT_APPLICABLE），`TeamEvidenceFormatter` 在 `CAPTURE_AND_POINTS` 段输出 `pointsEndReason`（逐人/双方占点分、`pointsDecided`、占领点区域）；提示词 `CAPTURE_RULE`（ZH/EN/RU）写明结束条件三分法——1000 分提前胜 / 全歼胜 / 时间耗尽点数决胜，`TIME_EXPIRED` 叙述必须写「时间耗尽」，禁止用 <1000 的中间比分作为获胜理由；团队剖析胜负标签按结束方式输出「（时间耗尽点数判定）/（达到 1000 分提前获胜）」。`TeamPromptLocalizer` 三语 `SOLO_INTENT_RULE` / `CAPTURE_RULE`。
-- **生产反馈闭环**：人工评估 + 用户反馈登记模板见 `docs/ai-eval/feedback-checklist.md`；可复现反馈转 lesson + synthetic case 回归。评估人工，不引入 LLM-as-judge；真实回放不入库。
-
-关键约束：
-
-- **地图战术语义层**：`MapTacticalSemanticsRegistry` 加载 `common/map-semantics/*.semantic.json`（由 `map-semanticizer` 从 Wot Blitz 客户端 SC2 + heightmap 解码生成，含 `areas` / `relationships` / `spawnSemantics` / `mapCodes` / `gridRegions` / `verified` / `source` / `displayName` / 区域 `confidence`；`displayName` 为 `map_names.json` 的 en 名，未收录回退 mapId）；按 `mapCodes` / `mapId` / token 边界别名查询，未收录地图明确 UNKNOWN，禁止编造区域语义。`relationships` 为 `List<TacticalRelationship>`（from/type/to/reason/confidence 原样保留，不做分组/改名）：ADJACENT_TO 仅表示确定性分析网格相邻，不代表可通行路线/视线/交叉火力；CONTAINS_CONTROL_POINT 与 CONTAINS_STRATEGIC_POINT 保持区分。Call #1 Prompt 输出可信度图例：EXACT_CLIENT_DATA/EXACT_SCENE_DATA=客户端直接事实、NAME_HEURISTIC=对象位置精确但类别由资源名推断、GRID_RULE_DERIVED=区域名称/边界/合并是规则候选、RULE_DERIVED_CANDIDATE=favors/risks 是假设候选；`verified=true` 渲染"人工地图核验: 已完成"（2026-08-12 起仓库内 33 张地图语义全部核验；`verified=false` 时渲染"尚未完成人工地图核验"）；语义段显示「地图: "Desert Sands"（内部 code: "desert_train"）」。CONTROLS / ENABLES_PRESSURE_AGAINST 未提供时禁止声称；出生点语义仅在有数据时输出。每个 AREA 标注 `gridRegions`（GRID_REGION_1~9），与 `MapRegionResolver` 同一坐标约定（回放 raw 按每图 playableBounds 推导的 per-map profile（`MapCoordinateProfileRegistry`，含中心偏移与半边长）→ 500×500 canonical → 3×3）；无语义数据时 GRID_REGION_1~9 仍只是位置编号。TEAM_A=队伍1、TEAM_B=队伍2 固定映射。
-- **双 Call 预算**：Call #1 独立 45s stage budget（`AiChatRequest.callTimeoutSec`），Call #2 使用剩余预算并留 10s 安全余量；Call #1 失败后剩余 < 60s 时不启动旧路径 fallback；总 deadline = `AI_CALL_TIMEOUT_SEC`。
-- **结构化 JSON 调用关闭 thinking**：`PRE_BATTLE_STRATEGIC_PRIOR`（Call #1）与 `TEAM_AUTOPSY` 在请求层强制 `thinkingEnabled=false`（`reasoningEffort=null`）。生产实测 DeepSeek thinking（`AI_REASONING_EFFORT=max`）会把整个输出预算（Call #1 4096 / Autopsy 2048）消耗在 reasoning 上、`finish_reason=length` 且 content 为空（`AI_EMPTY_RESPONSE`），导致 Call #1 静默降级、战犯/MVP 段缺失；关闭后直接输出契约 JSON。**Call #2 主复盘默认也关闭 thinking**（`AI_THINKING_ENABLED_CALL2=false`，见配置表）——DeepSeek 推理模式下 `reasoning_content` 先流、content 末尾一次性到达，破坏 SSE 逐段流式；需要推理深度时开回 `AI_THINKING_ENABLED_CALL2=true`（流式体验由网关分块兜底保证）。
-- **伤害语义（损失血量 vs 格挡伤害）**：AI 提示词统一用「损失血量」称呼 `damageReceived`（不再叫「承伤」），并强制区分两个概念——格挡伤害（`damageBlocked`）越高越好；损失血量本身中性，评价必须结合车型职责、存活时长、输出贡献与战况（重坦/装甲车抗线掉血可接受，薄皮输出车无价值掉血或过早阵亡前大量掉血才是问题）；不得仅因损失血量高判定表现差。个人复盘（fallback/harness）、团队复盘与 Team Autopsy 共用 `COMMON_DAMAGE_SEMANTICS_RULE`（ZH/EN/RU 三语，Team Autopsy 为 ZH）；战犯证据类别同步改写为「损失血量明显偏高且与车型职责/存活时长/输出不匹配」。
-- **掉血时间范围（强制规则 + 窗口证据）**：新增 `HP_LOSS_TIME_RULE`（ZH/EN/RU，player/team 提示词共用）——凡提及掉血/损失血量必须给出明确时间范围（X分XX秒–X分XX秒）与掉血量，禁止笼统描述；很短窗口内大量掉血先描述为「短时间集中掉血/高压掉血窗口」，仅当窗口总跨度 ≤15 秒、解析出 ≥2 个不同攻击者且无未解析攻击者时才可写「被多车集火」，攻击者无法解析、只有 1 个攻击者或窗口总跨度超阈值（含 ≤10s 间隔链式聚类的大跨度窗口）时不得断言集火；正常慢速掉血不误标，无窗口证据写「无法确定」。证据侧：`DamageWindowClusterer`（wotb-web）把受击者视角的逐次伤害事件按 ≤10s 间隙聚类成掉血窗口（起止时间 + 总掉血量 + 命中次数 + 不同攻击者数 + 攻击者未解析标记 + `focusFireCandidate`——仅总跨度 ≤15s、攻击者 ≥2 且无未解析时为 true）；`DamageEventIdentityResolver`（wotb-web，唯一实现）负责 DamageEvent 攻击者/受击者身份解析——真实 decoder 的账号字段恒为 null，沿 `ParticipantMappingEvent` 的 entityId→accountId 映射（复用 `TeamEntityMapper`）按 `attackerEid/victimEid` 解析，合成 fixture 直填账号优先，不再依赖生产中恒为 false 的 `lethal()`；同解析器同时接入逐次伤害段 `PER_HIT_DAMAGE_EVENTS`、逐对手对炮段 `DAMAGE_EXCHANGE_BY_OPPONENT` 与掉血窗口。player 路径（fallback 与 Tactical Harness 主路径同格式/同口径）输出 `RECORDER_DAMAGE_RECEIVED_WINDOWS`，团队路径输出 `MEMBER_DAMAGE_RECEIVED_WINDOWS`（均受 `OBSERVED_DAMAGE_IS_PARTIAL` 覆盖率抑制，覆盖不全时输出 UNAVAILABLE 不给数字）。结算级 Team Autopsy 无事件流，不提供时间窗口。
-- **观察性语义**：HP 动量只按两端共同可靠观察实体计算 delta（unspot / STALE 不伪造 HP swing；confirmed DESTROYED 按 0 HP 计入 lethal loss）；Call #2 只输出安全比较后的 HP_MOMENTUM 证据、不输出 raw 逐采样 HP 曲线，HP before/after/swing/coverage 必须来自同一 comparison cohort（禁止跨 cohort 拼接）；局部支援 denominator 使用当前时刻存活名单（已阵亡车辆不污染覆盖、存活敌军全部观察可重新 EXACT），敌军数量表达为"至少观察到 N"，仅两侧完整覆盖才 EXACT；隐藏/点亮不制造 local-number flip；Route 敌方人数优势需友军侧完整覆盖（observedEnemy 作为真实敌军下界）。
-- **观察性**：HP 动量带 `observedCoverage`，覆盖率低时置信度降为 PARTIAL；局部支援只统计 `OBSERVED` 位置，STALE/UNKNOWN 不计入。
-- **降级阶梯**：非 ZH / 无重建 / 录像者未解析 / 特征不可用 / Call #1 失败 / 无证据 → 旧单 Call 路径；对外 API 与响应结构不变。
-- **Team 复盘也应用 Call #1**：随机战个人复盘（`TacticalReviewHarness`）与训练房/联赛团队复盘（`TeamReplayAnalysisService`）都先执行 Call #1（Pre-Battle Strategic Prior：基于地图与双方阵容的赛前先验，含开局/分路假设）；团队路径按视角队伍把 prior 重标为 TEAM_A=你的队伍（teamLabel）/ TEAM_B=对方队伍 后注入团队 Prompt（视角队伍为 2 时交换 Call #1 的 TEAM_A/TEAM_B），要求对每条战略假设逐条判定 先识别实际战局类型（常规推进/一波流/蹲坑僵持等），再逐条对照「预期打法 vs 实际执行」；实际偏离预期不等于失误，特殊战局可能使分阶段计划失效；Call #1 失败不阻断团队复盘（仅缺 prior 段）。
-- **Team Autopsy（仅 team perspective 结算级）**：随机战斗个人复盘不评判 MVP/战犯。战犯/MVP 只应用于训练房/联赛团队复盘——`TeamReplayAnalysisService` 单团队单元成功后追加结算级独立 TEAM_AUTOPSY 调用：Autopsy 输入只有权威逐人结算（**无** Call #1 prior / Critical Window / Route 证据，使用结算级 system prompt），与团队主复盘的 Call #1 注入互不影响。**完整七人门禁**：仅当 recorderTeam 恰好存在 7 名有效本方玩家时才调用 Gateway（0～6 人或超过 7 人跳过并记录 roster_incomplete，保留团队主复盘）。**settlement-only 置信度边界**：LLM 生成的 contribution / MVP / 战犯判断 confidence 只能 PARTIAL/UNKNOWN，EXACT/INFERRED 整段拒绝。玩家身份用 `playerKey`（本方 roster 稳定编号，同队同名坦克可区分）；Parser 要求 players 的 playerKey 集合与 roster **完全相等**（不缺失/不额外/不重复，超长不截断）、MVP/战犯各自 ≤3（超限拒绝）、每条 verdict 引用有效 playerKey 且列表内不重复、reason 非空、evidence 非空、判胜≥1 MVP / 判负≥1 战犯、空结果拒绝；渲染按 playerKey 回查后端权威昵称/坦克名。胜负与段落渲染使用实际队名（`TeamPerspectiveLabelResolver`，如 CHRD），Team Autopsy 枚举渲染中文化（HIGH→高、PARTIAL→部分，MVP 保留英文）；阵亡时刻与主力质心距离（`deathProximityMeters`，OBSERVED 位置 + 观测时间差 + 置信度）用于脱节判断，禁止用九宫格编号差推断距离。`TeamAutopsyStatsBuilder` 只构建 recorderTeam 本方玩家，weakOutput 均值仅本方；结算字段为 Battle Result 事实，earlyDeath/weakOutput 为规则候选（各自置信度），deathInCriticalWindow 继承窗口 confidence 且结算级代理不得 EXACT；死亡时间线仅本方。TEAM_AUTOPSY 预算 = min(30s, 整体剩余 - safety margin)，不足不启动并记录 budget_exhausted；`AI_CANCELLED` 重新抛出。
-- **新增共享资源**：`common/tank_tactical_profiles.json`（精选 Tier X + 车型级默认 fallback），`wotb-core/pom.xml` 与 `docker/Dockerfile.backend` 已同步复制。
-
-## AI 分析范围边界
-
-AI 复盘区分两种 scope，互不混用：
-
-### TEAM_PERSPECTIVE（训练房 / 联赛）
-
-- 分析对象是录像者所在整支队伍。
-- 保持独立 `perspectiveTeam` 内部语义（用于后端计算，不暴露给 AI）。
-- 不使用随机战斗的 FRIENDLY/ENEMY formatter（`PlayerAnalysisPromptFormatter`）。
-- **dominant clan 队伍标签**（`TeamPerspectiveLabelResolver`）：根据 roster 中成员人数最多的军团生成用户可见名称，如 `CHRD`；军团人数并列或无军团时使用稳定 fallback `队伍-<hash>`。
-- **地图名称映射**（`MapNames.cn()`）：使用 `common/map_names.json` 单一数据源，AI prompt 中输出中文地图名。
-- **Tank ID 映射**：`PlayerResult.tankName` 已在解析阶段通过 `common/tankopedia-tier{7,8,9,10}.json` 填充，AI prompt 直接使用。
-- **500×500 九宫格区域**（`MapRegionResolver`）：地图业务尺寸 500×500，+Z 为地图上方。Replay 坐标按每图 `MapCoordinateProfile`（`MapCoordinateProfileRegistry` 从 semantic `playableBoundsMeters` 推导，含中心偏移与半边长；未收录回退默认 ±250 m）线性映射到 0…500。区域编号：1|2|3（顶行/北）、4|5|6（中行）、7|8|9（底行/南），列自西向东。无法解析时返回 UNKNOWN/0。地图语义数据的 `gridRegions` 使用同一约定（`map-semanticizer` 内 `NINE_GRID_HALF_EXTENT=250`），若调整 `REPLAY_COORDINATE_HALF_EXTENT` 需同步脚本并重新生成。
-- **结构化 cluster**（`TeamFormationCluster`）：每个 cluster 包含 canonical centroid（`CanonicalMapPosition`，500×500）、region（基于 canonical centroid）、memberIdentities、memberCount、confidence、startTime（battle-relative）、endTime。centroid 计算顺序为「先对每个成员位置 resolve/clamp 到 canonical，再在 canonical 空间求平均」（不是先平均 raw 再转换）。`TeamFormationPhase.clusters` 派生 `clusterCount()`；`TeamFormationPhase.centroid` 亦为 `CanonicalMapPosition`，prompt 用 `formatCanonicalPosition(...)` 输出（含 region，不再 raw 二次映射）。构造时验证时间合法性、region 1-9、memberCount 等于有效 identities 数。
-- **movement 单位**：distance/speed 使用 canonical 米（`MapRegionResolver.canonicalDistanceMeters(...)` 每端点先转 canonical 再求欧氏距离），speed = 米 / battle-relative 秒；stationary 阈值 `STATIONARY_THRESHOLD_METERS`（canonical 米）集中定义，Player 与 Team member movement 共用同一算法；无效/倒序/零时间差不产生 Infinity/NaN 速度，INVALID 坐标位置不参与 movement。
-- **battle-relative phase end**：`findBattleEndEvidence(...)`/`lastObservedClock(...)` 使用 `BattleStartResolution` 把 replay raw clock 转成 battle-relative；`battle.durationS` 直接使用不再二次减 start。`buildRelativePhases(firstContactRelative, battleEndRelative)`：`UNKNOWN_FIRST_CONTACT=-1`，`firstContact==0` 合法，`openingEnd` 裁剪进 battle end，非法/非有限 battleEnd 返回空 fallback；每个 phase 由 `BattlePhaseSummary` 不变量兜底 `finite/>=0/start<=end`。
-- **coverage 不变量**：单一共享 `classifyTime(event)`（USABLE/INVALID_TIMESTAMP/PRE_BATTLE）被 damage 循环、`teamPositionsByEntity`、`auditPositionEvidence` 与 phase guard 复用。invalid-timestamp damage 只计入 invalid-timestamp coverage，不计入 unattributed；pre-battle 与无效时间戳的 damage/position 不进入战术统计；`observedPositionEventCount`/`clampedPositionEventCount` 由同一分析集合派生，`TeamFeatureCoverage` 强制 `0<=clamped<=observed`；INVALID（丢弃）与 CLAMPED（降级但参与分析，附 `MAP_COORDINATES_CLAMPED` limitation）区分。
-- **MovementSegment 不变量**：compact constructor 强制所有 float 有限、时间/距离/速度非负、`start<=end`、`type`/位置/`confidence` 非空；坐标字段命名为 `rawStartPosition`/`rawEndPosition`，显式标注 raw replay 坐标域（distance/speed 为 canonical 米）。
-- **battle phases**：通过 `BATTLE_PHASES` 输出 start/end time 和 phase type。
-- **uniqueBattleCount**：multi-perspective 中区分 perspective count 和 unique battle count，同一场战斗的 opposing perspective 只算一个 battle。
-- **MemberIdentity**：accountId > 0 时优先使用 accountId；accountId ≤ 0 时使用规范化 nickname（trim、Locale.ROOT、case-insensitive）。用于 engagement 匹配、cluster 成员标识和 key events 的全链路 identity。
-- **prompt 禁止 raw team**：AI prompt 中不出现 `perspectiveTeam=1/2`、`winnerTeam=1/2`、`Team 1/2`、`队伍1/2`。使用 `teamLabel=`、`result=TEAM_WIN/TEAM_LOSS/DRAW_OR_UNKNOWN`。BATTLE_END key event 同样使用 `result=` 三态。
-- **secret redaction**：AI provider 错误摘要优先使用 Jackson tree JSON 递归隐藏敏感 key。`isSensitiveKey()` 归一化匹配覆盖 x-api-key、AWS Access Key、大小写/连字符/下划线变体。文本回退脱敏 `redactNonJson()` 采用分层正则策略：(1) `Authorization:` 前缀行整个隐藏；(2) JSON key-value 已知敏感 key 脱敏；(3) 无引号 key=value 脱敏；(4) AWS Signature/Credential 脱敏；(5) 已知 auth scheme（bearer/basic/digest）大小写不敏感，credential 任意长度，始终脱敏；(6) PascalCase custom scheme（如 `CustomScheme`、`TokenV2`）credential ≥ 3 脱敏；(7) 含数字的 scheme（如 `tokenv2`、`auth2`）credential ≥ 3 脱敏；(8) 小写 custom scheme 仅 credential 含非字母字符（数字或标点）时脱敏，避免自然语言误判。Digest auth 参数（response/nonce/opaque 等）独立脱敏。
-- **battle start resolution**：`BattleStartResolver.resolve(reconstructionBattleStart, diagnostics)` 返回 `BattleStartResolution`（IDENTIFIED / ESTIMATED / UNRESOLVED）。仅通过静态 factories 构造。准备阶段静止不进入 STATIONARY；formation/first contact/engagement/key events 使用 `battleRelative(rawClock)`。`PRE_BATTLE_START_ESTIMATED`/`PRE_BATTLE_START_UNRESOLVED` limitation 传播。
-
-### PLAYER_FOCUSED（随机战斗）
-
-- 分析对象是录像者个人。
-- 使用 FRIENDLY / ENEMY / UNKNOWN 标签，禁止输出"队伍1/队伍2"。
-- 录像者所属队伍 → 友方；另一队 → 敌方。
-- 录像者在原始 team 2 时仍正确识别为友方（`PlayerSideResolver`）。
-- 胜负使用完整三态（`FriendlyEnemyResult`）：友方获胜 / 敌方获胜 / 平局或未知。
-- 胜率只统计已知胜负场数，平局/未知不作为失败。
-- `PlayerResult.team` 原始编号不受影响（仅用于内部计算）。
-- AI Prompt 由 `PlayerAnalysisPromptFormatter` 格式化（独立于 `PlayerResultFormat`）。
-
-### AiModelProperties 配置
-
-| 属性 | 环境变量 | 默认值 | 说明 |
-|------|---------|--------|------|
-| `apiKey` | `AI_API_KEY` | 空 | DeepSeek API Key；为空时应用正常启动，AI 调用返回 `AI_NOT_CONFIGURED` |
-| `baseUrl` | `AI_BASE_URL` | `https://api.deepseek.com` | Provider Base URL |
-| `model` | `AI_MODEL` | `deepseek-v4-pro` | 模型字符串，原样传递给 Provider |
-| `connectTimeoutSec` | `AI_CONNECT_TIMEOUT_SEC` | 10 | 连接超时（秒） |
-| `timeoutSec` | `AI_TIMEOUT_SEC` | 300 | 单次 read/response 超时（秒） |
-| `callTimeoutSec` | `AI_CALL_TIMEOUT_SEC` | 315 | **整个 `AiChatGateway.chat()` 的总时间预算**（首次请求 + 全部 retry + 全部 backoff + 响应解析），必须 ≥ connect + read |
-| `retryMaxAttempts` | `AI_RETRY_MAX_ATTEMPTS` | 3 | 总预算允许范围内的最大尝试次数（含首次） |
-| `retryInitialBackoffMillis` | `AI_RETRY_INITIAL_BACKOFF_MS` | 1000 | 首次重试等待（毫秒） |
-| `retryMaxBackoffMillis` | `AI_RETRY_MAX_BACKOFF_MS` | 8000 | 重试等待上限（毫秒） |
-| `retryBackoffMultiplier` | `AI_RETRY_BACKOFF_MULTIPLIER` | 2.0 | 指数退避倍数 |
-| `contextWindowTokens` | `AI_CONTEXT_WINDOW_TOKENS` | 1000000 | DeepSeek 上下文窗口大小 |
-| `singleReplayMaxInputTokens` | `AI_SINGLE_REPLAY_MAX_INPUT_TOKENS` | 940000 | 单回放输入硬上限 |
-| `maxOutputTokens` | `AI_MAX_OUTPUT_TOKENS` | 32768 | 单次请求最大输出 |
-| `promptSafetyMarginTokens` | `AI_PROMPT_SAFETY_MARGIN_TOKENS` | 16384 | 安全余量 |
-| `thinkingEnabled` | `AI_THINKING_ENABLED` | true | 是否启用思考模式 |
-| `call2ThinkingEnabled` | `AI_THINKING_ENABLED_CALL2` | false | Call #2 自由文本复盘是否启用思考；默认关闭以保证 SSE 逐段流式（`AI_THINKING_ENABLED` 为 legacy，Call #2 已改由本开关控制） |
-| `reasoningEffort` | `AI_REASONING_EFFORT` | max | 推理力度（high/max） |
-
-启动时校验 `totalReserved <= contextWindowTokens`，不合规则 Spring Boot 启动失败。
-
-#### `AiReviewWorkerExecutor` 配置（SSE worker 池）
-
-| 属性 | 环境变量 | 默认值 | 说明 |
-|------|---------|--------|------|
-| `wotb.ai.review-worker.max-concurrent` | `AI_REVIEW_WORKER_MAX_CONCURRENT` | 4 | AI Review SSE worker 池线程数（core = max，固定不弹性伸缩），必须 ≥ 1；V1 VPS 2C4G 默认 4 |
-| `wotb.ai.review-worker.queue-capacity` | `AI_REVIEW_WORKER_QUEUE_CAPACITY` | 4 | worker 池有界队列容量，必须 ≥ 1；满载（workers + queue 全占用）时第 N+1 个请求立即返回 `503 AI_REVIEW_BUSY`（`AbortPolicy`，绝不使用 `CallerRunsPolicy`） |
-| `wotb.ai.review-worker.overall-deadline-sec` | `AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC` | 1100 | 请求整体 deadline（提交时刻 + overall，排队计入预算）：默认 1100s 覆盖团队 3 次 AI 调用（Call #1 + Call #2 + Autopsy，各 ≤315s）+ 余量，对齐前端 1100s / nginx 1120s；worker 启动时剩余预算耗尽 → 干净失败 `AI_TIMEOUT`（E 阶段） |
-
-### Token 估算器
-
-`ConservativeDeepSeekTokenEstimator` 使用 `codePointCount * 1.25` 保守估算 token 数。精确 token 数通过 API 响应的 `usage` 字段获取。
-
----
-
-### Spring AI 集成
-
-- 项目使用 **Spring AI 2.0.0**（BOM 在父 POM dependencyManagement 管理），生产 transport adapter 为 `SpringAiChatGateway`：官方 **OpenAI-compatible adapter**（`spring-ai-starter-model-openai`）连接 `https://api.deepseek.com`。原因：2.0.0 的 DeepSeek Starter 无法传递 `thinking`/`reasoning_effort`，这两个字段经 OpenAI adapter 的 `extraBody` 机制原样发送。
-- 业务层只依赖项目内 `AiChatGateway` 接口；Spring AI / OpenAI SDK 类型只存在于 `gateway` 包。Replay 领域逻辑（`wotb-core`）不依赖 Spring AI。
-- 缺少 `AI_API_KEY` 时应用正常启动，`/api/replay/analyze` 返回 `AI_NOT_CONFIGURED`；其余功能不受影响。
-- timeout/retry 由 `AiRetryPolicy` 单层控制（SDK `maxRetries=0`，无双重重试）；可重试：429、连接失败、500/502/503/504；不重试：**超时（`AI_TIMEOUT`——上游可能已完成并计费，重试会重复扣费）**、认证/权限、invalid request、context too large、空/无效 completion。
-- 总调用边界：`AI_CALL_TIMEOUT_SEC` 使用单调时钟（`System.nanoTime`）覆盖一次 `chat()` 的整个生命周期（含响应体读取与 SDK 解析）；每轮尝试前检查剩余预算，backoff 不得超过剩余预算，in-flight 请求会在预算耗尽时被中止（okhttp interceptor 捕获 Call + 看门狗，覆盖连接→发送→等待→响应体读取→反序列化；成功返回前还会复检 deadline），因此单轮实际请求时间上限为 `min(AI_TIMEOUT_SEC, 剩余预算)`。预算耗尽统一返回稳定 `AI_TIMEOUT`，超时后绝不返回 success。
-- **全链路超时对齐**（改 nginx/Dockerfile/前端时必须保持）：后端 AI 单次调用预算 `AI_CALL_TIMEOUT_SEC=315s`（connect 10 + read 300 + 重试/backoff/解析余量）；团队复盘共 3 次 AI 调用（Call #1 + Call #2 + Team Autopsy），整体 deadline 默认 **1100s**（3×315 + 余量，`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）——覆盖「切页后仍在后台跑完」的长复盘，不再被旧 400s 硬杀；容器 nginx 对 `/api/replay/analyze` 的 `proxy_read/send_timeout` 为 **1120s**（余量防 504）；前端 analyze 请求安全超时 **1100s**（`ReconstructionPage.vue` 的 `AI_ANALYZE_TIMEOUT_MS`），在代理 504 之前给出干净 `AI_TIMEOUT`；`SseEmitter` 超时同步为 1120s。host 级 Caddy/Nginx 反代也必须允许 ≥1120s，否则会提前 504。
-- **SSE 流式协议（breaking change，analyze 已无同步 JSON 响应）**：`POST /api/replay/analyze` 返回 `text/event-stream`，`ReplaySseWriter` 序列化事件（自定 JSON event，`data` 为 JSON）：`call1_start` / `call1_done`（Call #1 开始/结束，真实发起调用时必发，无论成败）、`evidence_done`（证据分析完成；随机战 harness 与团队路径均发射，团队路径在 `TeamReplayAnalysisService.analyzeTeamGroups` 首轮 Call #2 前补发）、`call2_token`（`{"delta":"..."}` 主复盘 token 增量）、`autopsy_start` / `autopsy_done`（Team Autopsy）、`done`（`{"analysis":"...","preBattleSection":"...","mapOverview":{...}}`——mapOverview 为可空的「地图鸟瞰」数据（见「地图鸟瞰」节），未知地图/无观测/无名册/视角未解析时为 JSON null，前置字段为 null 时同样输出 JSON null）、`error`（`{"code":"AI_..."}` 稳定错误码）。**异常传达规则**：request-envelope 校验（`UNKNOWN_LOCALE` / `NO_REPLAY_FILES` / `NO_REPLAY_FILE` / `REPLAY_FILE_COUNT_EXCEEDED` / `INVALID_REPLAY_FILE_TYPE` / `FILE_TOO_LARGE` / `TOTAL_REQUEST_TOO_LARGE`）与 worker 池饱和（`AI_REVIEW_BUSY`）在返回 `SseEmitter` 前由 `@ExceptionHandler` 映射 HTTP 400 / 503；worker 启动后的运行时/业务失败（`NO_BATTLE_DATA` / `PERSPECTIVE_TEAM_UNRESOLVED` / `PERSPECTIVE_TEAM_CONFLICT` / `TEAM_FEATURES_UNAVAILABLE` / `AI_NOT_CONFIGURED` / `AI_PROMPT_MANDATORY_SECTION_TOO_LARGE` / `AI_RATE_LIMITED` / `AI_TIMEOUT` / `AI_CANCELLED` / `AI_UPSTREAM_UNAVAILABLE` 等）经 `error` 事件传达（HTTP 已 200），客户端断开时终止上游调用（cancel 端点语义）不向已断开连接写入。`AiChatGateway.stream(request, consumer)` 为单次尝试（不流内重试），失败即断流并保留已输出部分；总预算 watchdog 与 `correlationId` cancel 语义与 `chat()` 一致（`AI_TIMEOUT` / `AI_CANCELLED`）。**超大 delta 分块兜底**：`SpringAiChatGateway` 对单块 >512 字符的 delta 按句子边界切成 ≤128 字符片段、每片间隔 ~20ms 转发（上限 512 片，超长自动放大单片段），保证上游粗粒度返回时前端仍逐段出字；正常 token 流不触发。同步测试路径委托流式实现（`AiReviewStreamListener.NOOP`）。nginx 该 location 已配置 `proxy_buffering off` + `X-Accel-Buffering: no` + HTTP/1.1 + 清空 `Connection` 头（chunked 流式反代必需）；**任何 host 级反代改动必须保留上述三项**，否则阶段事件/token 无法实时到达。 **公开回放接口限流（C）**：`/api/preview` `/api/export` `/api/rating` 应用 `limit_req`（单 IP 1r/s + burst 10 nodelay，429）与 `limit_conn`（单 IP 并发 5，503），仅 nginx 层，后端额度契约不变。
-- **SSE worker 池配置（`AiReviewWorkerExecutor`）**：analyze 端点的整段 AI 复盘在 worker 线程执行，servlet request 线程提交完即返回 `SseEmitter`。worker 池为**有界**（core=max fixed thread pool + bounded queue + `AbortPolicy`），**绝不使用 `CallerRunsPolicy`**——后者会让 request 线程同步执行整段 AI 复盘，重新引入 SSE blocking bug。默认 **4 concurrent workers + 4 queued**（V1 VPS 2C4G，最多 8 active/pending），第 9 个请求被立即拒绝并返回 **`503 AI_REVIEW_BUSY`**（`AiReviewBusyException` → `@ExceptionHandler`）。容量经环境变量 **`AI_REVIEW_WORKER_MAX_CONCURRENT`** / **`AI_REVIEW_WORKER_QUEUE_CAPACITY`** 可调（无需 rebuild）。线程为 daemon，命名 `wotb-ai-review-worker-N`，`@PreDestroy` 关闭池。**request-envelope 校验前置**：`files` 为空 / 文件超 `AiReplayBatchPolicy.MAX_FILES` / 类型/大小非法等请求在提交 worker 前就抛 `IllegalArgumentException` / `ReplayFileCountExceededException` → `@ExceptionHandler` 映射 HTTP 400 结构化错误码，不再进入 SSE 流后以 `error` 事件传达（worker 内 `analyzeInternal` 保留相同校验作防御）。**queued cancellation**：任务在队列中等待期间若被取消（客户端断开 / cancel 端点），worker 启动后第一时间检查 `AiCancellationToken.isCancelled()`，命中即 `complete()` emitter 并清理、不调回放解析与 AI Gateway、不向已断开连接写入。`emitter.onTimeout` / `emitter.onError`（客户端断开）只翻转 cancellation token、不主动 complete——连接错误由 Servlet async lifecycle 负责终止 emitter，worker `finally` 统一清理 `AiRequestContext` 与 cancellation registry，与显式 cancel 端点幂等。 **整体 deadline（E）**：任务在提交时刻计算 `now + overall-deadline-sec` 并通过 `AiRequestContext.overallDeadlineNanos()` 暴露给 worker；`TeamReplayAnalysisService` / `TacticalReviewHarness` 预算起点回溯到提交时刻（排队时长计入剩余预算），启动时预算耗尽直接抛 `AI_TIMEOUT`；排队等待记 DEBUG 日志与 `wotb_ai_review_queue_wait` timer。**上传校验收敛（B4）**：Controller 三个端点与 `AiReplayReviewService` 统一使用共享 `ReplayUploadValidator`（错误码不变）。
-- **客户端取消 → 上游中断**：analyze 请求携带 `correlationId`；前端取消按钮 / 页面离开（`beforeunload` keepalive）/ 前端超时会调用 `POST /api/replay/analyze/cancel`，后端 `AiCancellationRegistry` 命中后取消 in-flight okhttp Call 并停止重试（稳定错误码 `AI_CANCELLED`），避免为无人等待的响应继续计费。 **correlationId 契约（D）**：客户端提供的 correlationId 必须为 canonical UUID（格式+长度 36），analyze 与 cancel 端点非法/重复一律 400（`INVALID_CORRELATION_ID` / `DUPLICATE_CORRELATION_ID`）；`AiCancellationRegistry.register` 对重复活跃 id 返回 null（不复用 token），`unregister(id, token)` 为 ConcurrentHashMap compare-and-remove（已完成的请求不会误删复用同一 id 的新注册）。
-- Prompt/completion 默认不记录、不进 metrics；Spring AI Observation 未启用（NOOP）。日志经 `AiSecretRedactor` 集中脱敏。
-- **Call #1 覆盖可观测性**：`PreBattleStrategicService` 每次调用前输出 `Pre-battle Call #1 input`（map、mapSemantics=found/UNKNOWN、verified、areas/relationships/spawnSemantics 数量、source、displayName、team1/team2 人数、curatedProfiles/fallbackProfiles 车辆 Profile 覆盖），成功后输出 `Pre-battle Call #1 success`（hypotheses/matchups/winConditions/双方 strengths·plans 数量）；`TacticalReviewHarness` 输出 `Harness prior obtained`（prior 已注入 Call #2）与 `Harness fell back to old path: <reason>`；`TeamAutopsyService` 成功输出 `Team autopsy success`（liabilities/mvps 数量）。新增指标 `wotb_ai_review_map_semantics_total{status=found|unknown}`。按 requestId 可在 Loki 逐请求验证地图/车辆语义是否进入 Call #1 并注入 Call #2。
-- **回放解析覆盖率可观测**：`AiReplayReviewService` 对每个回放输出 `Replay event-stream parsed`（file/map/packets/decoded/partial/unknown/failed/decodedRatio），可在 Loki 按回放查看事件流解码覆盖率；真实样本 `decodedRatio≈0.31–0.35`，type 39/31/35/7 为主要未知/未解桶（逆向推进的量化基线）。
-- 测试不调用真实 AI API：`SpringAiChatGatewayTest`/`SpringAiChatGatewayMetricsTest` 使用 mock `ChatModel`。
-- **AI 输出语言跟随前端 locale**：`/api/replay/analyze` 的 multipart 表单字段 `lang`（必填，白名单 `zh`/`en`/`ru`）控制 AI 复盘输出语言；缺失时由 Spring 返回 `400`，空白或未知值返回 `400 UNKNOWN_LOCALE`。语言穿透 ReviewService → facade → Player/Team Service → Prompt Builder：ZH 直接使用原有中文 system prompt（字节级不变）；EN/RU 在中文基座上替换互斥的中文输出强制句（输出语言、称谓、车种、时间格式、未知字段与无法确定措辞），业务事实约束（不编造、坦克专有名词原样、perspective/friendly-enemy、权威结算与观测子集、注入防护、数据限制）不变。en 时间格式统一为 `Xm Xs`（如 `1m 15s`、`3m 0s`、`3m 12s`），ru 为 `X мин X с`（如 `1 мин 15 с`、`3 мин 0 с`、`3 мин 12 с`）。覆盖 player full/fallback/multi 与 team single/multi 全部路径；地图/坦克/clan/昵称等专有名词不翻译；`limitations` 与错误码仍为英文稳定码、由前端本地化。前端由 vue-i18n 当前 locale 携带 `lang`。
-
----
-
-## 地图鸟瞰（Map Overview）
-
-AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `mapOverview`（可空）→ 前端
-`MapOverview.vue` 纯 SVG 渲染（热力 + 路线双视图）。
-
-### 数据链路
-
-- **数据源**：`MapGridRegistry`（core）从 `map-semantics/*.semantic.json` 读取
-  `playableBoundsMeters` / `analysisGrid.cells`(6x6) / `sceneEvidence.battlePoints`（出生点）；
-  `MapOverviewBuilder`（web）从 `Battle`（权威名册/阵亡时刻/地图名）+ `ReplayReconstruction`
-  （type-10 位置流 / 伤害事件 / 实体→账号映射，经 `TeamEntityMapper`）聚合。
-- **坐标约定**：分析坐标与 `playableBounds` 同系——`x` = 地图横向 = 回放 x，`y` = 地图纵向 =
-  回放 z（同一原点同一米制）；`playableBounds` 用于 6×6 分析网格、热力分桶与可玩区域判断。
-  图片渲染边界独立为 `coordinateBounds`（地图图片对应的世界坐标范围，见「图片素材与对齐约定」）：
-  `px = (x - coordinateBounds.xMin)/(coordinateBounds.xMax - coordinateBounds.xMin) × W`、
-  `py = (coordinateBounds.yMax - y)/(coordinateBounds.yMax - coordinateBounds.yMin) × H`。
-  分析网格坐标仍来自 `playableBounds`，绘制时经同一变换换算，因此只覆盖可玩区、不铺满整图。
-- **标题三语**：`MapOverview` 携带 `displayNames{zh,en,ru}`（来自 `common/map_names.json`，
-  未收录时三语同 code）；前端按 vue-i18n 当前 locale 取标题，缺失回退 `displayName`（en）。
-- **模式与录像者**：`MapOverview` 携带 `arenaBonusType`（meta.json 原值；1=随机战斗，其他=训练/联赛等，
-  未知为 null）与 `recorderAccountId`（经 `Battle.recorderResult()` 解析，录像者昵称已在
-  `ReplayParser.resolveRecorderNickname` 归一化为纯昵称；未解析为 null）。随机战路线视图提供
-  「全部/本方/敌方/仅玩家」筛选，「仅玩家」只渲染录像者一条路线（含阶段切片）；非随机战维持三档。
-- **自适应配色**：前端 `frontend/src/utils/mapPalette.js` 将底图降采样 64×64 后计算平均相对亮度
-  （sRGB 线性化后按 0.2126/0.7152/0.0722 加权），阈值 0.45——低于视为暗图用亮色系、否则用深饱和色系；
-  路线 7+7 色、热力、网格/九宫格/出生点/死亡标记与路线对比描边均随色板切换；canvas 不可用或计算失败时
-  回退暗图默认色板。不做每图手工配色表。
-- **布局与标注**：鸟瞰 SVG 宽度由 scoped CSS 控制——桌面/平板为容器宽度 66.7%（约 2/3）并居中，
-  `max-width: 768px` 时恢复 100%（viewBox 不变、不裁切）；九宫格仅绘制分区框（region-line），
-  不绘制数字标注（region-label）。
-- **热力口径**：伤害热力按**受击方**位置落格（受击方阵营）；驻留/阵亡为事件计数；
-  每层 36 个值按 `gridCells` 顺序，前端按 max 归一化。
-- **路线**：双方 14 车，2s 均匀采样（间隔 = max(2s, duration/200)，每车 ≤200 点），
-  `firstObservedSec/lastObservedSec` 诚实标注观测区间（敌方静止开局通常缺失，
-  前端显示「位置观测自 X 秒起」），`deathSec` 标注阵亡；连续点 gap > 5s 前端断线。
-- **阶段切片**：opening = OPENING + FIRST_CONTACT 合并；mid = 中间段；late = 战斗末
-  `BattlePhaseSummary.DENSE_KILL_WINDOW_SEC`（15s）窗口（残局）。
-- **降级**：未知地图 / 无语义网格 / 无名册 / 无观测 / 视角未解析 → `mapOverview = null`，
-  前端不渲染。
-
-### 图片素材与对齐约定
-
-- **素材唯一权威在前端**：`frontend/src/data/mapImages.js`（mapCode → 图片资源 + 尺寸）既是
-  渲染门控也是唯一素材源——该地图无素材时整块跳过、不画示意图；后端 `MapOverview.image` 恒
-  null（兼容字段，不维护第二份目录）。
-- **新增素材流程**：图片按英文展示名小写中划线放入 `frontend/src/assets/maps/`（如
-  `normandy.png`）+ `mapImages.js` 加一行（key 用内部 code，如 `neptune`）+ 更新
-  `docs/map-catalog.md` 主表。完整映射（内部 code ↔ 展示名 ↔ 语义 mapId ↔ 素材）见
-  `docs/map-catalog.md`。
-- **对齐依据**：每张图片在 `frontend/src/data/mapImages.js` 配置 `coordinateBounds`——来源为对应
-  `map-semantics/*.semantic.json` 的 `coordinateSystem.worldBounds`（当前 28 张已登记图均为
-  -300..300，即完整世界坐标截图；新图以各自语义 JSON 为准，逐图校准）。渲染统一用
-  `coordinateBounds`，不得用 `playableBounds` 铺满图片（会越靠近边缘偏移越大）。无
-  `coordinateBounds` 的旧配置按兼容策略回退 `playableBounds`。
-
----
-
 ## 前端架构
 
 ### Frontend Layout Note
@@ -472,7 +276,7 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
 - Vue SPA 主入口视觉变量集中在 `App.vue` 的 `:root` / `[data-theme="dark"]`；独立 `/extended` 入口通过 `frontend/src/styles/theme.css` 复用同一套变量。首页、上传区、排行榜和表格应优先复用这些变量，避免局部硬编码色板。
 - 评分徽章样式使用 `r-elite` / `r-great` / `r-good` / `r-mid` / `r-poor`；最高/最低标记由 `utils/helpers.js` 的 `medal(...)` 统一计算，最低评分允许为 `0`，全员同分不显示奖惩。
 - 公共首页可通过 `?view=home` 本地预览；线上 `wotbtools.com` / `www.wotbtools.com` 无参数仍默认进入首页。
-- 首页首屏「最高伤害记录」读取 `/api/leaderboard/top-damage?page=1&size=1`，只展示当前全局第一条 `damageDealt`，接口失败或无数据时显示 `--`。
+- 首页首屏「最高伤害记录」读取 `/api/hof?page=1&size=1`，只展示当前全局第一条 `damageDealt`，接口失败或无数据时显示 `--`。
 - Keycloak `check-sso` 依赖 `frontend/public/silent-check-sso.html`，不要移除，否则公共页面会被静默登录流程整页跳转。
 - Keycloak 自助注册由 `docker/keycloak/wotbtools-realm.json` 的 `registrationAllowed` 控制；前端只触发登录流，不自建注册入口。
 
@@ -480,7 +284,8 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
 
 - `?view=home`：进入工具集首页（本地预览可用）。
 - `?view=replay`：进入回放提取器。
-- `?view=leaderboard`：进入排行榜。
+- `?view=hof`：进入名人堂（旧书签 `?view=leaderboard` 自动 canonicalize 到 `hof`）。
+- `?view=hof-admin`：进入名人堂管理（仅 `HoF-admin` 或 `wotbtools-admin` 角色；无权限显示明确无权限状态）。
 - `?view=extended`：进入 Rating V2 扩展分析页。
 - `?view=boost`：进入陪练、打手申请与管理员资格审批页。
 - `?view=profile`：进入个人中心。
@@ -504,8 +309,11 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
   - `utils/page.js` — Spring `Page.number` 响应归一化与分页默认值
   - `utils/theme.js` — 纯函数（readTheme / saveTheme / resolveTheme / applyTheme），Cookie `.wotbtools.com` 域共享 + localStorage 回退
 - `utils/helpers.js` — 常量（DEFAULT_VISIBLE / EXTENDED_ONLY_PLAYER_KEYS / RATING_TIERS）+ 工具函数（按 locale 取地图名的 `mapLabel` / ratingTier / medal 等）
-- UI 组件在 `components/`：FileUploader / ColumnPicker / AggregateTable / BattleTable / RatingModal / RemoveConfirmModal / LeaderboardPage / LoginPage（QQ + Wargaming 登录选择页）/ ProfilePage（含站内通知面板）/ BoostPage / AdminUsersPage / HomePage / ExtendedPage / ReplayPage
-- AI 复盘页组件：`ReconstructionPage`（登录门控 + 编排）→ `ReplayInputPanel`（`ReplayFilePicker` 选文件 + `ReplayAnalysisAction` 触发分析）→ `AnalysisResultPanel`（Markdown 正文常驻展示，`MarkdownContent` 渲染）
+- UI 组件在 `components/`：FileUploader / ColumnPicker / AggregateTable / BattleTable / RatingModal / RemoveConfirmModal / HoFPage / HoFAdminPage / LoginPage（QQ + Wargaming 登录选择页）/ ProfilePage（含站内通知面板）/ BoostPage / AdminUsersPage / HomePage / ExtendedPage / ReplayPage
+- AI 复盘页组件：`ReconstructionPage`（登录门控 + 编排）→ `ReplayInputPanel`（`ReplayFilePicker` 选文件 + `ReplayAnalysisAction` 触发分析）→ 独立「地图鸟瞰」区块（`MapOverview` 三视图：热力/路线/战局回放，经 `POST /api/replay/map-overview` 只解析回放、不调 AI——不跑 AI 复盘也能看图；`AnalysisResultPanel` 不再渲染地图块，其 AI 报告时间链接把 `seek` 事件上抛给页面加载/跳转并自动滚动回地图区块）→ `AnalysisResultPanel`（Markdown 正文常驻展示，`MarkdownContent` 渲染）；赛前预测/复盘正文/地图鸟瞰三板块均可独立展开/收起（默认展开）；战局回放坦克标记随地图缩放（坦克名/阵亡 ✕ 叠加层屏幕恒定），地图下方显示双方总血量条（实时剩余，含装备/物资加成）与争霸赛点数；战局回放内置临时地图标注工具栏（画笔/形状/文字，纯本地不持久化，契约见 `docs/features/battle-playback.md`「地图标注」）
+- 战局回放 Details Panel 的 Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，
+  由 `scripts/blitzkit-references.mjs --emit-portraits` 从 BlitzKit 确定性生成并随站点发布；
+  `src/vehicle-portraits/runtime.js` 按 tankId 懒加载，production 不访问 BlitzKit。
 - 回放解析上传页由 `FileUploader.vue` 负责交互，`App.vue` 提供全局上传区样式；空态、拖拽态、已选文件态共用 `upload.*` 三语文案。
 - 开发时 Vite 代理 `/api → localhost:8087`。
 - 语言持久化 `localStorage('wotb-lang')`，主题持久化 Cookie `wotbtools-theme`（domain `.wotbtools.com`）+ localStorage 回退。
@@ -545,94 +353,17 @@ API 层为**纯英文**：`/api/columns` 与各 DTO 只回 `key`(snake_case) + �
 
 ---
 
-## 潜在伤害与实时 rating
-
-扩展分析页同时支持主 SPA 路由 `?view=extended` 和独立 `/extended` 多页构建入口；生产 nginx 对 `/extended` 映射到 `extended.html`，Spring 静态资源由 `StaticForwardController` 转发。
-
-新增字段：
-- 单场玩家列：`alpha_damage`、`rank`、`potential_damage`、`potential_damage_supplement`、`potential_damage_detail`。
-- 汇总列：`potential_damage`、`potential_damage_avg`、`potential_damage_supplement_avg`。
-- 实时 rating 展示列：`rating`、`kast`、`contribution`、`impact`、`damage_avg`、`potential_damage_avg`、`potential_damage_supplement_avg`、`assist_avg`、`multi_damage_rate`、`kills`、`kills_avg`；`contribution` 仅展示，不参与最终权重；`average_hp` 和 `account_id` 不再展示。
-
-`frontend/src/composables/useColumns.js` 会过滤 `EXTENDED_ONLY_PLAYER_KEYS`，所以原回放解析页面不展示扩展专用列；扩展页 `/extended` 直接读取 `playerColumns`，可展示完整字段。列选择器缓存只作用于原回放解析页，不影响扩展页完整字段展示。
-
-`ReplayParser` 仍解析 `xp`、`credits` 到 `PlayerResult`，但这两个值受经济/加成/首胜等因素影响，不作为玩家战绩展示字段、导出列或 rating 输入。
-
-`Tankopedia` 读取车辆库（`common/tankopedia-tier{7,8,9,10}.json`，blitzkit 生成，全部英文/数字）：`name` / `tier` / `class`（英文） / `nation`（英文） / `hp` / vehicle 级 `alphaDamage` / 手工 `extraInfo`。vehicle 级 `alphaDamage` 只在数据层有唯一权威依据时由生成器输出（单炮车 / 7–9 级顶配炮 = 最高 tier 同 tier 最高 alpha，如 T-34-2=400），**10 级多终局炮车不输出**——`Tankopedia.info(...).alphaDamage()` 返回 null，AI structured facts 省略炮伤，不会把数组第一把炮的伤害伪装成本场实际炮伤；`alphaDamage` 取标准弹（`shells[0]`，已用真实数据验证；HE 往往伤害更高故禁止 `max`）。`hp` = 车体 + 顶配炮塔；`forwardSpeed`/`reverseSpeed` 来自 `speed_forwards`/`speed_backwards`，`turretRotationSpeed` 取顶配炮塔 traverse，`hullRotationSpeed` 取顶配履带 traverse，`powerToWeightRatio` = 顶配引擎功率 / 车重。10 级多炮车（如 E 100 的 12,8cm/15cm、AC Atlas 的 V1/V2）在 `guns` 数组中保留全部炮（`isDefault` 均为 false）。刷新时旧数据只从 `--existing-dir` 读取、新数据只写 `--output-dir`（Workflow 两者路径分离），并按 tank_id 保留合并旧文件中的 `extraInfo`（兼容旧 `extraKnowledge`），若仍存在的车辆知识点丢失会直接失败。`RatingAnalyzer` 的 `average_hp` 取本局双方 14 辆参战车辆的 `hp` 总和 ÷ 14；车辆库缺少 HP 时，只有该单车按 2400 兜底，不再把 2400 当作整场平均血量。
-
-`ReplayParser` 会从 `data.wotreplay` 的 Type 8 / subtype 8 / sub=3 direct HP damage 事件解析攻击者、受害者和伤害值；当阵亡玩家的累计 direct damage 达到 `damageReceived` 阈值时，当前攻击者被推断为击杀者，并把该击杀者对受害者的累计 direct damage / penetrations 写入 `PlayerResult.killVictims`。
-
-`PotentialDamage.apply(...)` 会读取 `killVictims` 和 `Tankopedia.alphaDamage`，按 `0.9 * alphaDamage * penetrations` 补增潜在伤害。若回放事件缺失、entity_id 无法映射、特殊伤害未被 direct HP damage 覆盖，仍保守回退为 `potential_damage == damage_dealt`、`potential_damage_supplement == 0`、`potential_damage_detail == 未解析`。
-
-`POST /api/rating` 只基于本次上传的 multipart 回放实时计算，不落库、不读取历史记录；`GET /api/rating` 仍保留为旧评分参数接口。扩展页的实时 rating 由 `RatingAnalyzer` 独立计算，不替换原解析页/导出的旧 `Rating.compute(...)` 字段。
-
-实时 rating 公式：
-- `average_hp`：本局双方 14 辆参战车辆的 Tankopedia `hp` 总和 / 14；同场所有玩家使用该均值。车辆库无 HP 时仅该单车暂定 2400。
-- `KAST`：参考 CS2/CS:GO 的 Kill / Assist / Survive / Traded 思路，单场取 `damage/(average_hp*1.15)`、`assist/(average_hp*1.25)`、`win && survived ? 1 : 0`、`traded_death ? 1 : 0`、`(damage+assist)/(average_hp*1.20)` 的最大值，再跨场平均并封顶 100。
-- `impact`：统计全部场次，按 `damage + assist` 在双方总池中的占比（期望份额 `1/14`）和人头折算成 Impact 百分比。
-- `contribution`：全场 `damage + assist + kills * average_hp / 7` 在本方队伍中的占比。
-- `multi_damage_rate`：单场满足 `damage >= average_hp*1.5`、`damage >= average_hp*1.2 && kills >= 1`、`damage >= average_hp && kills >= 2`、`kills >= 3` 任一条件记为一次多伤。
-- `rating`：`potential-DPB`、KAST、Impact、AST（`assist_avg`）、多伤率、场均人头加权得到，当前系数为 0.70 / 0.15 / 0.25 / 0.30 / 0.10 / 0.10，最终乘以 10 输出。
-
----
-
-## 评分（Rating）
-
-自包含的表现评分（类 WN8 机制，但**期望值来自当前处理的这批战斗，不依赖外部表**）。实现：`wotb-core/Rating.java`。
-
-> **可调项集中在 `common/rating.json`**（权重/阈值/scale/车型系数）——Java 经 classpath 读取，**改它即生效，不必改代码**；文件缺失/损坏则用内置默认。
-
-- **有效贡献 EC** = `伤害 + 0.6*协助 + 0.35*格挡 + 200*击杀`（权重见 `rating.json`）。
-- **按车型基准**：从这批数据按车型(轻/中/重/TD)求 EC 均值；某车型样本 `< 5`(含"没有同类车")时 `基准 = 全体均值 × 车型难度系数`(可调常量 `CLASS_FACTOR`，默认 轻坦0.7/中坦0.9/重坦1.0/TD1.0)，避免独苗轻坦被高 EC 的重坦拉低。
-- **评分** = `round(1000 * EC/基准 * (1 + 0.05*胜))`；`1000` = 同车型平均。
-- **基准范围 = 一起处理的这批战斗**：单场导出即相对该场；多场/预览相对整批。所以 rating 是"相对该批"的，不是绝对天梯分。
-- 列：单场「评分」`key=rating`(在 `Columns.STAT`)、汇总「场均评分」`key=rating_avg`(Mapper/AggregateSheets)。计算时机：`ExcelExporter.writeSingle/writeAggregate`(门面) 与 `ReplayService.preview` 在用之前先 `Rating.compute(...)`。
-
----
-
-## 存活时间（Survival Time）
-
-存活时间列 `survival_time`（单场）和 `survival_avg`（汇总）推算阵亡玩家的死亡时刻：
-
-**3 层 fallback + 假阳性检测：**
-1. `deathTimeMillis / 1000`（proto `#104`；v11.18 实测不存在，代码保持兼容）
-2. `damageDeathTimes`（Type 8 EntityMethod subtype 8 body[13]=3 直接 HP 伤害事件，累计达 `damageReceived` 阈值）
-3. hybrid EntityLeave / Position：EntityLeave 有假阳性时，若 Position 显著晚于 EntityLeave（>5s）则以 Position 为准
-
-**事件流来源：** `data.wotreplay` 文件由 `EventStreamReader` 解析，提取 Type 4 (EntityLeave)、Type 8 subtype 8 (damage)、Type 10 (Position)。详细格式见 `docs/replay-data.md`。
-
-**实现位置：** `EventStreamReader.java`（事件解析 + 死亡推算方法）、`ReplayParser.java`（fallback 编排，第 148–180 行）。
-
----
-
-## 排行榜（Leaderboard）
-
-MVP 只记录**录像者本人**在某场战斗中用某辆车打出的**单场伤害成绩**，不存全场 14 人，不存 replay 原文件。当前后端为单一在线配置，启动依赖 PostgreSQL。
-
-- **数据库配置**：`application.yml` 始终启用 DataSource/JPA/Flyway，`ddl-auto: validate`；本地开发需提供 PostgreSQL 与 `POSTGRES_PASSWORD`。
-- **Schema 来源**：Flyway 迁移 `wotb-web/.../resources/db/migration/V1__init_leaderboard.sql` → `V14__booster_server_level_and_description_cleanup.sql`。**改表结构必须新增迁移**（下一版 `V15__...`），不要改已应用的 V1–V14；实体列与迁移列**逐列对齐**，否则 `validate` 启动即失败。
-- **陪练需求与打手资格区服/等级**：`boost_request.region`、`booster_application.wotb_server` 与 `booster_profile.wotb_server` 都使用 `CN / ASIA / EU / NA` 四个规范值。客户需求由 `BoostRegion` 校验；打手申请从已绑定用户资料优先取得区服并保存真实值，审批或管理员创建时区服再固化到打手档案。玩家申请等级为 `CASUAL / SKILLED / ELITE / PRO / MASTER` 五档；内部兼容值 `AVERAGE_GOD` 在界面显示为“殿堂级”（英文 `Mythic`），仅允许管理员通过编辑已有打手授予。V14 等级 CHECK 锁定六个存储值，部分唯一索引保证每服最多一名殿堂级打手。`booster_application` 还保存两张截图、申请等级、QQ/微信、可接单频率、日在线时间和审核状态；这些申请元数据不得复制到 `booster_profile.description`。同一 Keycloak 用户只允许存在一个 `NEW`/`REVIEWING` 申请。审批通过由 `BoosterService` 先 flush `booster_profile`，再授予 Keycloak `booster` role；外层事务回滚会撤销新增 role。
-- **打手资料双状态**：`booster_profile.status` 控制资格是否有效；`booster_profile.available` 控制是否手动暂停接单；`boost_request_assignment` 活跃记录数控制是否忙碌。分配打手时必须同时满足 `ACTIVE`、`available=true`、活跃订单数为 0。`GET /api/booster/assignments` 默认返回打手工作台所需的活跃订单详情（需求状态、联系方式、可安排时间、备注）；`GET /api/booster/assignments?includeHistory=true` 供个人中心回看活跃 + 历史订单，服务端会把仍未释放的订单排在前面；`PATCH /api/boost/boosters/my/availability` 允许打手本人切换是否接收新订单；`PATCH /api/booster/assignments/{id}/accept|start|complete|decline` 只允许当前打手操作自己的活跃订单。
-- **仅随机战斗**：只有 `meta.json#arenaBonusType == 1`（随机）的战斗计入；训练房（==2）/娱乐/联赛等其他模式、以及模式未知（null）一律拒绝。`ReplayParser` 解析到 `Battle.arenaBonusType`，策略判断在 `LeaderboardService`。取值经真实样本核实（1=随机、2=训练房）。
-- **录像者识别**：`meta.json` 无录像者 `accountId`，`ReplayParser` 仅给出 `Battle.recorder`（昵称）。`LeaderboardService` 按 `nickname.equals(battle.recorder)` 在 `players` 中匹配；匹配不到则跳过（不猜）。
-- **去重**：唯一键 `(arena_id, account_id)` —— 同一场+同一玩家唯一；不同玩家/不同场各自成行。保存前 `findByArenaIdAndAccountId` 查重，并发冲突兜底捕获 `DataIntegrityViolationException`。
-- **数据列**（V2 新增 `version`/`battle_time`）：`version` 来自 `meta.json#version`（游戏版本号如 `"11.18.0"`），`battle_time` 来自 `meta.json#battleStartTime` epoch ms（战斗实际发生时间），`created_at` 为上传时间。两新列均可 NULL（兼容旧数据）。
-- **集成点**：`POST /api/leaderboard/upload` → `LeaderboardUploadService` → `ReplayCapacityLimiter` → `ReplayParser` → `LeaderboardService.saveIfEligible`。预览不落库、不触发上传限流。
-- **API**：`POST /api/leaderboard/upload`（上传回放，限流），`GET /api/leaderboard/top-damage?page=&size=`（全局伤害榜），`GET /api/leaderboard/tanks/{tankId}/top-damage?page=&size=`（按车）。
-- **解析边界**：最多 100 个回放、单文件 20 MiB、总请求 200 MiB；单实例默认同时处理 2 个任务。ZIP/pickle/protobuf 还有独立预算，容量满返回 503 `REPLAY_BUSY`。
-
----
-
 ## 领域速记
 
-- **回放格式**：zip 包含 3 个文件 —— `meta.json`（战斗信息）+ `battle_results.dat`（pickle + protobuf 战绩）+ `data.wotreplay`（BigWorld 事件流，用于存活时间推算）。字段表见 `docs/replay-data.md`。**不要轻易重命名/删字段**，新字段先进「原始字段」表交叉验证。
-- **存活时间**：3 层 fallback（#104 → Damage 伤害事件 → hybrid EntityLeave/Position），详见 `docs/replay-data.md`。
-- **评分**：自包含、类 WN8，基准来自"一同计算的这批战斗"（相对分，非绝对天梯）。参数在 `common/rating.json`，前端「评分规则」弹窗 + `GET /api/rating` 实时展示。细节见 `docs/rating-system.md`。
-- **数据库**：后端使用 PostgreSQL 18，单一配置始终启用 JPA/Flyway（`ddl-auto: validate`）；本地运行也必须提供数据库与 `POSTGRES_PASSWORD`。Flyway 自动配置依赖 `spring-boot-flyway`。
-- **排行榜**：schema 由 Flyway 管理。只记录录像者本人在**随机战斗**（`arenaBonusType==1`）中的单场伤害，去重键 `arena_id+account_id`；由 `POST /api/leaderboard/upload` 显式写入，预览不隐式落库。
-- **i18n**：vue-i18n 三语（zh/en/ru），`locales/*.json`；语言持久化在 `localStorage('wotb-lang')`。地图名共享字典 `common/map_names.json` 已接 `zh/en/ru`，网页按当前语言显示，导出仍固定中文。
-- **API 端点**：`GET /api/health`、`GET/POST /api/rating`、`POST /api/preview`、`POST /api/export?mode=aggregate|each`；排行榜 `POST /api/leaderboard/upload`、`GET /api/leaderboard/top-damage?page=&size=`、`GET /api/leaderboard/tanks/{tankId}/top-damage?page=&size=`；站内通知 `GET /api/users/notifications`、`GET /api/users/notifications/unread-count`、`PATCH /api/users/notifications/{id}/read`、`PATCH /api/users/notifications/read-all`。
-- **公开解析边界**：最多 100 个回放、单文件 20 MiB、总请求 200 MiB；单实例默认同时处理 2 个任务。ZIP/pickle/protobuf 还有独立预算，容量满返回 503 `REPLAY_BUSY`。
+- **回放格式**：zip 含 3 文件 —— `meta.json` + `battle_results.dat`（pickle + protobuf 战绩）+ `data.wotreplay`（BigWorld 事件流）。字段表见 `docs/reference/replay-data.md`。**不要轻易重命名/删字段**，新字段先进「原始字段」表交叉验证。
+- **存活时间**：3 层 fallback（#104 → Damage → hybrid EntityLeave/Position），详见 `docs/reference/replay-data.md`。
+- **评分**：自包含、类 WN8，基准来自「一同计算的这批战斗」（相对分，非绝对天梯）。参数在 `common/rating.json`。细节见 `docs/features/rating.md`。
+- **数据库**：PostgreSQL 18，JPA/Flyway（`ddl-auto: validate`）；Flyway 自动配置依赖 `spring-boot-flyway`。
+- **百场（Hundred Battles）**：`wotb-web/.../hundred/` 域（`HundredBattleSubmission` 单表生命周期 PENDING/CURRENT/SUPERSEDED/REJECTED/CANCELLED/DELETED；Flyway `V18` partial unique index 保证 user+vehicle 最多一个 PENDING/CURRENT）；公开 `GET /api/hof/hundred?vehicleId=`（Tier X 单车辆独立排行，competition ranking query-time 派生不落库）；提交 `POST /api/hof/hundred/submissions`（登录 + Profile gameId/nickname 前置校验 + Tier X 后端校验 + 1 张 base64 截图 + 5 replay 硬门禁：解析成功/gameId/vehicleId 匹配/5 场不同 battle）；用户取消 `POST .../submissions/{id}/cancel`；个人中心 `GET /api/users/hundred/status`；管理后台 `/api/admin/hof/hundred/**`（approve 事务内行锁重读 CURRENT 按 approvedAverageDamage 严格比较；reject/delete 原因强制；proof 截图终态事务内清空不永久保存；5 个原始 replay 由 `hundred_battle_replay_evidence`（Flyway V19）内容寻址持久化，终态同事务删行 + commit 后引用计数清理物理文件，admin-only 列表/下载端点）。见 `docs/features/hall-of-fame.md`「百场」章节。
+- **名人堂（Hall of Fame）**：schema 由 Flyway 管理；只记录录像者本人随机战斗（`arenaBonusType==1`）与评级战斗（`==7`）单场伤害（`HallOfFameBattleTypePolicy` 单一事实源，其余模式 400 `UNSUPPORTED_BATTLE_TYPE` 零持久化）；统一公开查询 `GET /api/hof`（battleType/tank/nickname 过滤 + 位置排名，同伤害 RATING 优先）；上传/下载需登录；管理后台 `GET/DELETE /api/admin/hof/**`（HoF-admin 或 wotbtools-admin；audit + delete 单事务，ReplayHashLock 保证文件引用不变量）；原始 .wotbreplay 以 SHA-256 内容寻址存 `HOF_REPLAY_DIR`（生产 volume `/data/replays`，best-effort 可丢、不纳入 DB 备份）。见 `docs/features/hall-of-fame.md`。
+- **i18n**：vue-i18n 三语（zh/en/ru），`locales/*.json`；地图名 `common/map_names.json`，网页按当前语言显示，导出固定中文。
+- **API 端点**：`GET /api/health`、`GET/POST /api/rating`、`POST /api/preview`、`POST /api/export?mode=aggregate|each`；排行榜 / 站内通知端点见 `java/README.md`。
+- **公开解析边界**：最多 100 个回放、单文件 20 MiB、总请求 200 MiB；单实例默认同时处理 2 个任务；容量满 503 `REPLAY_BUSY`。
 
 ---
 
@@ -668,8 +399,7 @@ MVP 只记录**录像者本人**在某场战斗中用某辆车打出的**单场�
 
 ## Git / 推送（个人项目，勿碰公司基建）
 
-- **远程**：SSH remote `github-personal`，账号 **`A158Coke`**。推送：
-  `GIT_SSH_COMMAND="ssh -o ConnectTimeout=15" git push github-personal main`
+- **远程**：执行前先 `git remote -v` 确认实际 remote（本机 remote 名/SSH 别名以本机配置为准，不写死）；仓库账号 **`A158Coke`**。推送：`git push <实际 remote> main`
 - **绝不**使用任何公司 token / 凭据。
 - **提交信息**：中文，结尾带 `Co-Authored-By`（若工具支持）。
 - ⚠️ **提交信息别用 `git commit -m @'...'`** —— 那是 PowerShell here-string，在 **bash** 里 `@` 会变成提交首行（历史里能看到一串以 `@` 开头的提交就是这么来的）。bash 里用普通双引号 `-m "..."` 或多个 `-m`。
@@ -704,85 +434,22 @@ cd java && mvn -s settings.xml test
 cd frontend && npm test
 ```
 
-## AI 回放复盘
+---
 
-### 视角分组与模式判定
+## 专题文档（已从本文件拆出，按需阅读）
 
-```
-files → DefaultReplayProcessingFacade.processBatch()
-  → 逐文件 validateFile(扩展名/大小) + parse + reconstruct
-  → ReplayProcessingCapabilities(summaryAvailable, reconstructionAvailable, …)
-  → BatchAnalyzer.analyze()
-       ├─ BattleCategoryUtils.fromArenaBonusType()
-       ├─ resolveScope() → PLAYER_FOCUSED / TEAM_PERSPECTIVE
-       ├─ SHA-256 精确重复去重
-       ├─ scope 一致性验证（不混合 + UNKNOWN 排除）
-       ├─ BattleIdentity + TeamPerspectiveResolver 结果分组
-       ├─ 代表回放选择（reconstruction 成功优先）
-       └─ 录像者一致性验证（PLAYER_FOCUSED + RANDOM）
-  → resolveMode() → AI 复盘单文件：SINGLE_PLAYER_BATTLE / SINGLE_TEAM_BATTLE
-    （MULTI_*_BATTLE 仅供非 AI 批量端点；AI 多文件复盘已移除）
-  → ReconstructionController
-       ├─ PLAYER_FOCUSED → analyzePlayerOrFallback
-       └─ TEAM_PERSPECTIVE → analyzeTeamGroups
-            ├─ TeamPerspectiveResolver（录像者只决定 perspectiveTeam）
-            ├─ TeamEntityMapper（可靠映射，未知实体不归队）
-            ├─ DefaultTeamBattleFeatureExtractor
-            ├─ reconstruction 可用 → 完整团队时序特征
-            └─ reconstruction 不可用 → 权威团队结算 fallback
-```
-
-### Team Perspective 语义
-
-- `RANDOM` 仍是录像者个人复盘；`TRAINING` / `TOURNAMENT` 是录像者所在整队复盘。
-- 录像者不获得特殊个人分析权重，只用于解析 `perspectiveTeam`。
-- 同场同队回放是 `SAME_TEAM_DUPLICATE_PERSPECTIVE`，只选质量最高的代表；禁止拼接原始事件流。
-- **死亡时刻口径**：部分回放 `battle_results` 的 `deathTimeMillis` 为 0，系统回退事件流估算；prompt 用 `DEATH_SOURCE` 标注来源（`BattlePhaseSummary.deathSourceLabel`），禁止把估算当权威。阶段存活人数为「至阶段末」语义（`BattlePhaseTimelineSection`），prompt 注入双方逐车阵亡时间线（`DEATH_TIMELINE`）。
-- **观测伤害抑制**：事件流覆盖未达 100% 时 `DefaultTeam/PlayerBattleFeatureExtractor` 条件标记 `OBSERVED_DAMAGE_IS_PARTIAL`，prompt 层抑制观测数字（`TeamAiPromptBuilder.appendObserved` / 随机战交火段），以权威结算为唯一口径；覆盖补齐后自动恢复。
-- **赛前预测渲染**：`PreBattleSectionRenderer` 覆盖 TEAM 变体（A队/B队/A 队/队伍1 等）、AREA ID → 中文名 + 九宫格（复用 `MapTacticalSemanticsRegistry`）、composition 键值三语翻译。
-- **复盘正文规范**：`COMMON_EVIDENCE_LOGIC_RULE`（ZH/EN/RU）禁止集火同义反复、机器标签直出与标题粘连；团队剖析段 MVP/战犯加粗、不渲染限制段；`AiReplayReviewService` 统一追加三语免责结尾。前端 `MarkdownContent` 对 `^(#{1,6})(?!#|\s)` 行补空格（`utils/markdownHeadingNormalize.js`）。
-- 同场不同队是两个独立 perspective，entityId、坐标和时钟不跨 perspective 合并。
-- 未点亮敌人的位置仍未知；不能用对方录像补写本队当时不可见的信息。
-- `battle_results.dat` 的团队总伤害、承伤、助攻、格挡、击杀、存活和死亡时刻是权威值；damage event 只标为观测子集。
-- 完整团队能力要求可靠 entity mapping；只有权威结算时仍可分析，但报告必须显示 fallback 与 limitations。
-- `ParticipantMappingEvent` 优先按 accountId 连接；accountId 缺失时保留 updateArena2 的 nickname/team，只允许唯一昵称匹配并降级为 `INFERRED`。同名冲突、非车辆实体和低置信度映射不归队。
-
-### Team Feature 判定阈值
-
-| 判定 | 规则 |
-|---|---|
-| 交火分段 | 相邻可靠伤害事件间隔 `<= 10s` 属于同一段 |
-| 集火候选 | 同一目标在任意 `<= 5s` 滑动窗口内被至少 2 名己方成员命中 |
-| 交火结果 | 一方观测伤害严格大于另一方的 `1.25` 倍才判优势/劣势；边界值算均势 |
-| 阵型采样 | `15s` 窗口，每名成员保留窗口内最后位置 |
-| 阵型连通簇 | X/Z 平面距离 `<= 100m` 视为连通 |
-| 坐标可信范围 | `|x|, |z| <= 1050 (1000 + 50 CLAMP_TOLERANCE_RAW)` 且 `|y| <= 200`；越界点忽略并计入 coverage/limitation |
-| 时间戳 | 必须 finite 且 `>= 0`；非法事件不进入移动、阵型、交火或关键事件 |
-
-> 多文件 AI 复盘已移除（2026-08-12），无多场 roster 趋势聚合（原 coverage ≥ 0.75 + Jaccard ≥ 0.60 阈值随之删除）。
-
-### Team AI 输入预算
-
-> 已从「固定数量/字符截断」迁移到 **token 估算预算**：`TeamAiPromptBuilder` 使用 `AiTokenEstimator` 估算 token，`BudgetWriter.finish(estimator, maxInputTokens, ...)` 在写入时实时判定；输入硬上限由 `AiModelProperties` 配置（`singleReplayMaxInputTokens` 等，见上文表格）。不再有 `MAX_MEMBERS` / `MAX_KEY_EVENTS` / 30,000 字符等固定截断常量。
-
-超过预算会确定性截断，并在结果中加入 `AI_INPUT_TRUNCATED`。截断策略采用三层优先级输出：
-1. **Mandatory contract**（context type、analysisUnitId、perspective header、unitLimitations、isolation/omission contract）必须完整写入，超出预算时抛 `AiPromptBudgetExceededException`（analyze 端点 worker 内经 `error` 事件传达 `AI_PROMPT_MANDATORY_SECTION_TOO_LARGE`），不得静默丢失；
-2. **High-priority facts**（authoritative aggregate、observed aggregate、member facts、coverage）必须原子完整写入，无法容纳时该 perspective 整体 omitted；
-3. **Optional details**（movements、formation、battle phases、engagements、key events）可按 unit 整块省略，被省略的 unit 加入 `truncatedUnitIds`，global `AI_INPUT_TRUNCATED` 添加。任意 unit 的截断不影响其他 unit 的 mandatory/high-priority facts。
-
-所有入口使用相同的 evidence limitation 规则：`AiReplayAnalysisService`（兼容 facade）委托 Player/Team Service 编排 `analyzeTeamGroups()` / `analyzePlayerOrFallback()`，per-unit limitations 在各自上下文头部作为 `unitLimitations=[...]` 优先输出，不混入 global `DATA_LIMITATIONS`。
-
-原始 `ReplayEvent` 和逐帧坐标流不得进入 Prompt。文件名、昵称、地图名和证据文本按 JSON 字符串编码，并在 system prompt 中声明为不可信数据，不能作为模型指令。PLAYER_FOCUSED 与 TEAM_PERSPECTIVE 使用同一个 `PromptDataQuoter.quote(value, fallback)` 实现，分别传入 `"?"` 或 `"UNKNOWN"` 作为 fallback。`TeamAiPromptBuilder.quoteData()` 和 `PlayerResultFormat.quoteForPrompt()` 均为轻量委托，不含 escaping 逻辑。所有外部字符串必须通过 `PromptDataQuoter.quote()` 转义后才能写入 prompt body。
-
-### 错误与安全
-
-上游错误统一为稳定英文码：`AI_INVALID_REQUEST`、`AI_AUTHENTICATION_ERROR`、`AI_RATE_LIMITED`、`AI_CONTEXT_TOO_LARGE`、`AI_UPSTREAM_UNAVAILABLE`、`AI_TIMEOUT`、`AI_CANCELLED`（客户端取消）、`AI_EMPTY_RESPONSE`、`AI_RESPONSE_INVALID`。**HTTP request-envelope 层**：`NO_REPLAY_FILES`、`INVALID_REPLAY_FILE_TYPE`、`FILE_TOO_LARGE`、`TOTAL_REQUEST_TOO_LARGE`、`UNKNOWN_LOCALE`、`REPLAY_FILE_COUNT_EXCEEDED`（`@ExceptionHandler` 映射 400）；**worker 池饱和** `AI_REVIEW_BUSY`（`AiReviewBusyException` → 503）。HTTP 200 中的畸形 JSON、非法 completion envelope 均归为 `AI_RESPONSE_INVALID`。日志只能包含 provider/model/status、请求字符数、分析模式、correlation ID，provider body 原文不进入日志（统一替换为 `[PROVIDER_BODY_REDACTED]`），不得记录密钥、Authorization 或完整 Prompt。普通用户文案由前端 zh/en/ru 翻译。
-
-### 测试
-
-核心测试覆盖 `TeamPerspectiveResolverTest`、`TeamEntityMapperTest`、`DefaultTeamBattleFeatureExtractorTest` 与 `BatchAnalyzerTest`；Web/AI 测试使用 MockMvc 与 mock `ChatModel`（不调用真实 AI API），前端使用 Vitest + Vue Test Utils。执行：
-
-```bash
-cd java && mvn -s settings.xml test
-cd frontend && npm ci && npm run test && npm run build
-```
+| 主题 | 文档 | 何时读 |
+|---|---|---|
+| AI 复盘架构（双 Call / 团队复盘 / Autopsy / 范围边界 / 预算） | `docs/architecture/ai-review.md` | 改 AI 复盘 / 证据链 / prompt 时 |
+| 完整回放重建流水线 | `docs/architecture/replay-pipeline.md` | 改重建 / decoder 时 |
+| 地图鸟瞰与战局回放 | `docs/features/battle-playback.md` | 改地图鸟瞰 / 战局回放 / 坦克标记时 |
+| 评分（Rating）与潜在伤害 | `docs/features/rating.md` | 改评分 / 潜在伤害时 |
+| 名人堂 | `docs/features/hall-of-fame.md` | 改名人堂时 |
+| Team AI 复盘设计 | `docs/features/team-ai-review.md` | 改团队复盘产品语义时 |
+| 回放数据字典 | `docs/reference/replay-data.md` | 深入回放格式 / 字段时 |
+| 已确认字段字典 | `docs/reference/replay-parsed-fields.md` | 查字段含义时 |
+| 地图目录 | `docs/reference/maps.md` | 加地图素材时 |
+| Tier X 专属车型系统（资产交接） | `docs/assets/tier-x-models/README.md` | 改车型系统 / 生成资产 / 交接时 |
+| Tier X 车型资产全局规范 | `docs/assets/tier-x-models/svg-generation-spec.md` | 生成/修复车型资产（WebP bake）时 |
+| 逆向研究（protocol / turret / visibility / capture-probe） | `docs/research/replay/*.md` | 逆向 packet / 方向 / 可见性 / 占点时 |
+| 观测运维 | `docs/operations/observability.md` | 动监控 / 日志 / 保留策略时 |

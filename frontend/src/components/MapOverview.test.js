@@ -331,4 +331,43 @@ describe('MapOverview', () => {
     expect(Number(spawn.attributes('cx'))).toBeCloseTo(expected.x, 1)
     expect(Number(spawn.attributes('cy'))).toBeCloseTo(expected.y, 1)
   })
+
+  it('shows the playback tab and view only when playback data exists', async () => {
+    const withPlayback = makeOverview({
+      recorderAccountId: 1,
+      playback: { durationSec: 60, vehicles: [], events: [] }
+    })
+    const wrapper = mountOverview(withPlayback)
+    expect(wrapper.find('[data-test="map-tab-playback"]').exists()).toBe(true)
+    await wrapper.findAll('.map-tab')[2].trigger('click')
+    expect(wrapper.find('[data-test="battle-playback"]').exists()).toBe(true)
+  })
+
+  it('hides the playback tab when playback data is absent', () => {
+    const wrapper = mountOverview(makeOverview())
+    expect(wrapper.find('[data-test="map-tab-playback"]').exists()).toBe(false)
+  })
+
+  it('switches to playback view when seekTo is provided', async () => {
+    const withPlayback = makeOverview({
+      recorderAccountId: 1,
+      playback: { durationSec: 60, vehicles: [], events: [] }
+    })
+    const wrapper = mount(MapOverview, {
+      props: { overview: withPlayback, seekTo: 30 },
+      global: { mocks: { $t: i18n.t } }
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-test="battle-playback"]').exists()).toBe(true)
+  })
+
+  it('keeps the current view when seekTo is provided but playback data is absent', async () => {
+    const wrapper = mount(MapOverview, {
+      props: { overview: makeOverview(), seekTo: 30 },
+      global: { mocks: { $t: i18n.t } }
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-test="battle-playback"]').exists()).toBe(false)
+    expect(wrapper.find('svg').exists()).toBe(true)
+  })
 })

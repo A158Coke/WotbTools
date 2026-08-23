@@ -205,6 +205,6 @@ export async function syncUserWotbAccountFromLogin() {
   return boostHandle(await fetch('/api/users/wotb-account/from-login', { method: 'PUT', headers: await boostHeaders() }))
 }
 
-export async function getUserLeaderboardRecords() {
+export async function getUserHofRecords() {
   return boostHandle(await fetch('/api/users/profile/records', { headers: await boostHeaders() }))
 }

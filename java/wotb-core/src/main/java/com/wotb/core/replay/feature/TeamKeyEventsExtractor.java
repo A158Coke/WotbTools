@@ -172,7 +172,8 @@ final class TeamKeyEventsExtractor {
                 .map(td -> new KeyBattleEvent(
                         td.battleRelativeSec(),
                         "TEAM_FIRST_CONTACT",
-                        "damage=" + td.event().event().damage(),
+                        // §13：伤害数字只用可证明的掉血（单通知归属）；不可归属 → unknown
+                        "damage=" + (td.trustedHpLoss() == null ? "unknown" : td.trustedHpLoss()),
                         lowestConfidence(td.event()),
                         "REPLAY_EVENT",
                         List.of(td.event().event().attackerEid(), td.event().event().victimEid())))

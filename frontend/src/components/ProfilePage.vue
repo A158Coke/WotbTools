@@ -7,7 +7,7 @@ import {
   deleteUserWotbAccount,
   getMyBoosterAssignments,
   getMyBoosterProfile,
-  getUserLeaderboardRecords,
+  getUserHofRecords,
   getUserProfile,
   updateMyBoosterAvailability,
   updateUserWotbAccount
@@ -19,6 +19,7 @@ import {
   markNotificationRead,
   syncUserWotbAccountFromLogin
 } from '../utils/api-boost.js'
+import { hofHundredCancel, hofHundredMyStatus } from '../utils/api.js'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel, enumLabel } from '../utils/display.js'
 
@@ -37,6 +38,10 @@ const syncFromLoginPending = ref(false)
 const syncFromLoginError = ref(null)
 const records = ref([])
 const recordsError = ref('')
+const hundredStatus = ref(null)
+const hundredError = ref('')
+const hundredWithdrawingId = ref(null)
+const hundredMessage = ref('')
 const boosterInfo = ref(null)
 const boosterAssignments = ref([])
 const loadingBoosterAssignments = ref(false)
@@ -91,6 +96,7 @@ async function loadProfile() {
   await syncFromLogin()
   if (profile.value?.wotbAccountId) {
     loadRecords()
+    loadHundredStatus()
   }
   loadBoosterInfo()
   loadUnreadNotificationCount()
@@ -219,6 +225,7 @@ async function saveAccount() {
     })
     editingAccount.value = false
     loadRecords()
+    loadHundredStatus()
   } catch (e) {
     editError.value = apiError(e)
   }
@@ -263,10 +270,42 @@ async function loadBoosterAssignments() {
 async function loadRecords() {
   recordsError.value = ''
   try {
-    records.value = await getUserLeaderboardRecords()
+    records.value = await getUserHofRecords()
   } catch (error) {
     recordsError.value = apiError(error)
   }
+}
+
+/** 个人中心「我的百场成绩」：当前认证 / 当前申请 / 最近拒绝。 */
+async function loadHundredStatus() {
+  hundredError.value = ''
+  try {
+    hundredStatus.value = await hofHundredMyStatus()
+  } catch (error) {
+    hundredStatus.value = null
+    hundredError.value = apiError(error)
+  }
+}
+
+/** 撤销当前待审核申请：确认后调用取消 API，成功后刷新状态。 */
+async function withdrawHundred(id) {
+  if (!confirm(t('hundred.withdrawConfirm'))) return
+  hundredWithdrawingId.value = id
+  hundredMessage.value = ''
+  hundredError.value = ''
+  try {
+    await hofHundredCancel(id)
+    hundredMessage.value = t('hundred.withdrawSuccess')
+    await loadHundredStatus()
+  } catch (error) {
+    hundredError.value = apiError(error)
+  } finally {
+    hundredWithdrawingId.value = null
+  }
+}
+
+function formatTime(value) {
+  return value ? new Date(value).toLocaleString(locale.value) : '--'
 }
 
 async function removeAccount() {
@@ -446,6 +485,79 @@ function notificationMessage(notification) {
             </div>
             <p v-if="recordsError" class="error">{{ recordsError }}</p>
             <p v-else-if="!records.length" class="profile-empty">{{ $t('profile.noRecords') }}</p>
+          </div>
+
+          <div v-if="profile.wotbAccountId" class="profile-card profile-section">
+            <h3 class="card-title section-title-line">{{ $t('hundred.profileTitle') }}</h3>
+
+            <div v-if="hundredMessage" class="hundred-ok">{{ hundredMessage }}</div>
+            <p v-if="hundredError" class="error">{{ hundredError }}</p>
+            <template v-else-if="hundredStatus">
+              <h4 class="hundred-group-title">{{ $t('hundred.currentRecords') }}</h4>
+              <div v-if="hundredStatus.current.length" class="records-table-wrap">
+                <table class="records-table">
+                  <thead>
+                    <tr>
+                      <th>{{ $t('profile.tank') }}</th>
+                      <th class="rec-dmg">{{ $t('hundred.avgDamage') }}</th>
+                      <th>{{ $t('hundred.battleCount') }}</th>
+                      <th>{{ $t('hundred.approvedAt') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="s in hundredStatus.current" :key="s.id">
+                      <td class="rec-tank">{{ s.vehicleName || '--' }}</td>
+                      <td class="rec-dmg">{{ s.approvedAverageDamage != null ? s.approvedAverageDamage.toLocaleString() : '--' }}</td>
+                      <td>{{ s.approvedBattleCount != null ? s.approvedBattleCount.toLocaleString() : '--' }}</td>
+                      <td class="rec-map">{{ formatTime(s.approvedAt) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p v-else class="profile-empty profile-empty-tight">{{ $t('hundred.noCurrent') }}</p>
+
+              <h4 class="hundred-group-title">{{ $t('hundred.currentPending') }}</h4>
+              <div v-if="hundredStatus.pending.length" class="records-table-wrap">
+                <table class="records-table">
+                  <thead>
+                    <tr>
+                      <th>{{ $t('profile.tank') }}</th>
+                      <th class="rec-dmg">{{ $t('hundred.pendingDamage') }}</th>
+                      <th>{{ $t('hundred.pendingBattles') }}</th>
+                      <th>{{ $t('hundred.pendingTime') }}</th>
+                      <th>{{ $t('hundred.reviewStatus') }}</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="s in hundredStatus.pending" :key="s.id">
+                      <td class="rec-tank">{{ s.vehicleName || '--' }}</td>
+                      <td class="rec-dmg">{{ s.claimedAverageDamage != null ? s.claimedAverageDamage.toLocaleString() : '--' }}</td>
+                      <td>{{ s.claimedBattleCount != null ? s.claimedBattleCount.toLocaleString() : '--' }}</td>
+                      <td class="rec-map">{{ formatTime(s.submittedAt) }}</td>
+                      <td><span class="badge-ok">{{ $t('hundred.reviewStatus') }}</span></td>
+                      <td class="hundred-action">
+                        <button class="btn-ghost btn-sm" :disabled="hundredWithdrawingId === s.id" @click="withdrawHundred(s.id)">
+                          {{ hundredWithdrawingId === s.id ? $t('hundred.withdrawing') : $t('hundred.withdraw') }}
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p v-else class="profile-empty profile-empty-tight">{{ $t('hundred.noPending') }}</p>
+
+              <h4 class="hundred-group-title">{{ $t('hundred.recentRejected') }}</h4>
+              <div v-if="hundredStatus.rejected.length" class="hundred-rejected">
+                <div v-for="s in hundredStatus.rejected" :key="s.id" class="hundred-rejected-item">
+                  <div class="hundred-rejected-head"><strong>{{ s.vehicleName || '--' }}</strong></div>
+                  <p class="hundred-rejected-reason">{{ $t('hundred.rejectedReason') }}: {{ s.rejectReason || '--' }}</p>
+                  <p v-if="s.rejectReasonText" class="hundred-rejected-text">{{ $t('hundred.rejectedReasonText') }}: {{ s.rejectReasonText }}</p>
+                </div>
+              </div>
+              <p v-else class="profile-empty profile-empty-tight">{{ $t('hundred.noRejected') }}</p>
+            </template>
+            <p v-else class="profile-empty profile-empty-tight">{{ $t('profile.loading') }}</p>
           </div>
         </div>
 
@@ -632,6 +744,16 @@ function notificationMessage(notification) {
 .rec-dmg { text-align: right !important; font-variant-numeric: tabular-nums; font-weight: 600; width: 90px; }
 .rec-tank { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rec-map { color: var(--text-sub); }
+.hundred-group-title { margin: 16px 0 8px; font-size: .78rem; font-weight: 700; color: var(--text-sub); letter-spacing: .05em; text-transform: uppercase; }
+.hundred-group-title:first-of-type { margin-top: 0; }
+.hundred-action { text-align: right; white-space: nowrap; }
+.hundred-ok { font-size: .82rem; color: var(--status-ok-fg); margin-bottom: 8px; }
+.hundred-rejected { display: flex; flex-direction: column; gap: 8px; }
+.hundred-rejected-item { padding: 10px 12px; border: 1px solid var(--border-light); border-radius: 6px; background: var(--bg); }
+.hundred-rejected-head { margin-bottom: 4px; }
+.hundred-rejected-head strong { font-size: .85rem; color: var(--text-heading); }
+.hundred-rejected-reason { margin: 0; font-size: .8rem; color: var(--text); }
+.hundred-rejected-text { margin: 2px 0 0; font-size: .78rem; color: var(--text-sub); line-height: 1.4; }
 .assignment-group + .assignment-group { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
 .assign-group-title { margin: 0 0 10px; font-size: .78rem; font-weight: 700; color: var(--text-sub); letter-spacing: .05em; text-transform: uppercase; }
 .assign-list { display: flex; flex-direction: column; gap: 8px; }

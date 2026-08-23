@@ -1,0 +1,50 @@
+{
+  "modelKey": "obj-268",
+  "kind": "turretless",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 13569,
+    "modelGlb": "https://api.blitzkit.app/tanks/13569/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.8806196451187134,
+        -3.640225648880005
+      ],
+      "max": [
+        1.830252766609192,
+        6.191351413726807
+      ]
+    },
+    "turretBounds": null,
+    "gunBounds": null,
+    "selectedModules": {
+      "turretId": 25601,
+      "gunId": 26369,
+      "trackId": 30977,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "Object268_mtr",
+      "Object268_mtr",
+      "Object268_mtr",
+      "Object268_track_mtr",
+      "Object268_track_mtr",
+      "Object268_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

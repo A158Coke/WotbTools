@@ -3,6 +3,7 @@ package com.wotb.core;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
+import com.wotb.core.replay.evidence.EntryHpSource;
 import com.wotb.core.stats.RatingAnalyzer;
 import org.junit.jupiter.api.Test;
 
@@ -73,17 +74,22 @@ class RatingAnalyzerTest {
     }
 
     @Test
-    void averageHpUsesBattleTotalDividedByFourteen() {
+    void averageHpUsesObservedEntryHpInBattleTotalDividedByFourteen() {
         final Tankopedia tankopedia = Tankopedia.load();
         final List<PlayerResult> players = new ArrayList<>();
         for (int index = 0; index < 7; index++) {
-            players.add(playerWithTank(index + 1L, 1, 4481L));
+            final PlayerResult teamOne = playerWithTank(index + 1L, 1, 4481L);
+            if (index == 0) {
+                teamOne.entryHpSource = EntryHpSource.OBSERVED_EXACT;
+                teamOne.entryHp = 2600;
+            }
+            players.add(teamOne);
             players.add(playerWithTank(index + 8L, 2, 19217L));
         }
         final Battle battle = new Battle();
         battle.players = players;
 
-        final double expected = (7.0 * tankopedia.info(4481L).maxHp()
+        final double expected = (2600.0 + 6.0 * tankopedia.info(4481L).maxHp()
                 + 7.0 * tankopedia.info(19217L).maxHp()) / 14.0;
         final List<RatingAnalyzer.Row> rows = RatingAnalyzer.compute(List.of(battle), tankopedia);
 
