@@ -55,16 +55,23 @@ public final class ExcelExporter {
     public static void writeAggregateLeague(final List<Battle> battles, final List<String> sourceNames,
                                             final List<String[]> duplicates, final LeagueRatingBatch batch,
                                             final Tankopedia tp, final OutputStream out) throws IOException {
-        writeAggregateLeague(battles, sourceNames, duplicates, batch, tp, Map.of(), out);
+        writeAggregateLeague(battles, sourceNames, duplicates, batch, tp, Map.of(), Map.of(), out);
     }
 
-    /** League Rating 批量工作簿（带战队名称覆盖，仅本次调用内使用）。 */
+    /**
+     * League Rating 批量工作簿（带单场 + 批次战队名称覆盖，仅本次调用内使用）。
+     *
+     * <p>{@code battleOverrides}：{arenaId}:{team} → 显示名（单场 identity）；
+     * {@code summaryOverrides}：teamKey（如 clan:CHRD）→ 显示名（批次 identity）。
+     * 批次战队汇总显示只消费 summaryOverrides（PR #123 Blocker 2，禁止用单场覆盖反向聚合）。</p>
+     */
     public static void writeAggregateLeague(final List<Battle> battles, final List<String> sourceNames,
                                             final List<String[]> duplicates, final LeagueRatingBatch batch,
-                                            final Tankopedia tp, final Map<String, String> teamNameOverrides,
+                                            final Tankopedia tp, final Map<String, String> battleOverrides,
+                                            final Map<String, String> summaryOverrides,
                                             final OutputStream out) throws IOException {
         final ExcelStyles styles = new ExcelStyles();
-        new LeagueAggregateSheets(teamNameOverrides).write(styles, battles, sourceNames, duplicates, batch, tp);
+        new LeagueAggregateSheets(summaryOverrides).write(styles, battles, sourceNames, duplicates, batch, tp);
         styles.writeTo(out);
     }
 }

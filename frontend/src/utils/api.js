@@ -35,12 +35,22 @@ async function downloadResponse(response, fallbackName) {
 /**
  * 创建导出任务：上传文件立即持久化并返回 {jobId, status, total}（202）。
  * 传 processingJobId 时复用已解析的 Processing Job result（不重新上传 replay，plan §28–§30）。
+ * 传 teamNamesJson 时以 multipart 字段传递 League 战队名称覆盖（不拼 URL query，避免超长 URL），
+ * 并保留已有 files FormData（PR #123 Blocker 1：用户编辑的战队名称必须进入 Export Job）。
  */
-export async function createExportJob(body, mode, processingJobId) {
+export async function createExportJob(body, mode, processingJobId, teamNamesJson) {
   const query = new URLSearchParams()
   query.set('mode', mode)
   if (processingJobId) query.set('processingJobId', processingJobId)
-  const r = await requireOk(await fetch(`/api/replay/export-jobs?${query}`, { method: 'POST', body }))
+  let payload = body
+  if (teamNamesJson) {
+    payload = new FormData()
+    if (body) {
+      for (const [key, value] of body.entries()) payload.append(key, value)
+    }
+    payload.append('teamNames', teamNamesJson)
+  }
+  const r = await requireOk(await fetch(`/api/replay/export-jobs?${query}`, { method: 'POST', body: payload }))
   return r.json()
 }
 

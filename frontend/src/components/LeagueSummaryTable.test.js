@@ -45,28 +45,41 @@ describe('LeagueSummaryTable', () => {
     expect(input.element.value).toBe('AAA')
   })
 
-  it('shows override team name from teamNames', () => {
+  it('shows teamKey override name from teamNames (PR #123 Blocker 2)', () => {
     const wrapper = mount(LeagueSummaryTable, {
       props: {
         title: 'T', type: 'team', rows: [teamRow()], columns: SUMMARY_COLS,
-        teamNames: { '111:1': '我的战队' }
+        teamNames: { 'clan:AAA': '我的战队' }
       },
       global: { mocks: { $t: key => key } }
     })
     expect(wrapper.find('input.team-name-input').element.value).toBe('我的战队')
   })
 
-  it('emits update-team-name for all arenaTeams on edit', async () => {
+  it('ignores battle-level arenaId:team overrides for summary display', () => {
+    // 单场 override（arenaId:team）不得影响批次战队汇总显示（PR #123 Blocker 2）
+    const wrapper = mount(LeagueSummaryTable, {
+      props: {
+        title: 'T', type: 'team', rows: [teamRow()], columns: SUMMARY_COLS,
+        teamNames: { '111:1': '单场名' }
+      },
+      global: { mocks: { $t: key => key } }
+    })
+    expect(wrapper.find('input.team-name-input').element.value).toBe('AAA')
+  })
+
+  it('emits single update-summary-team-name with teamKey (no arenaTeams loop)', async () => {
     const wrapper = mount(LeagueSummaryTable, {
       props: { title: 'T', type: 'team', rows: [teamRow()], columns: SUMMARY_COLS, teamNames: {} },
       global: { mocks: { $t: key => key } }
     })
     await wrapper.find('input.team-name-input').setValue('新队名')
-    const emitted = wrapper.emitted('update-team-name')
+    const emitted = wrapper.emitted('update-summary-team-name')
     expect(emitted).toBeTruthy()
-    expect(emitted.length).toBe(2)
-    expect(emitted[0][0]).toEqual({ arenaId: '111', team: 1, name: '新队名' })
-    expect(emitted[1][0]).toEqual({ arenaId: '222', team: 1, name: '新队名' })
+    expect(emitted.length).toBe(1)
+    expect(emitted[0][0]).toEqual({ teamKey: 'clan:AAA', name: '新队名' })
+    // 不得再 emit 旧 update-team-name（不得批量覆盖单场）
+    expect(wrapper.emitted('update-team-name')).toBeUndefined()
   })
 
   it('renders pending label when unnamed', () => {
