@@ -9,7 +9,6 @@ import com.wotb.core.ref.VehicleCodes;
 import com.wotb.core.stats.Aggregator;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
 import com.wotb.core.stats.Players;
-import com.wotb.core.stats.PotentialDamage;
 import com.wotb.web.replay.dto.AggRow;
 import com.wotb.web.replay.dto.PreviewResponse;
 import com.wotb.web.replay.dto.BattleDto;
@@ -156,20 +155,22 @@ public final class Mapper {
      * 由已处理的 authoritative Battle 列表构建完整 Preview 响应（Preview 与
      * Replay Processing Job result 共用同一 DTO 构建，plan §21）。
      *
-     * <p>battles 应来自统一 full processing 链（Replays.collect + processFull）；
-     * 此处幂等重跑 PotentialDamage + populateBattle（覆盖式写入），保证独立调用路径
-     * （同步 preview / processing job result）产出完全一致的事实层与派生指标。</p>
+     * <p><b>只读消费契约（review BLOCKER 3）</b>：battles 必须已是完整 facts 管线产出
+     * （Replays.collect + processFull + PotentialDamage + populateBattle 各一次），
+     * 本方法<b>不</b>再执行任何会 mutate 共享 Battle 的 enrichment——事实层 enrich 由
+     * 数据集创建方保证（ReplayProcessingJobService.processJob / 同步 preview 的
+     * ReplayService.previewWithinPermit）。display 派生（tankName/tankType 等）仍在本
+     * 层 {@link #toBattle} 内完成（与 Excel 写入器 SingleBattleSheets 内部行为一致，
+     * 确定性幂等覆盖）。</p>
      */
     public static PreviewResponse toPreviewResponse(final List<Battle> battles,
                                                     final List<String> battleSourceNames,
                                                     final List<String[]> duplicates,
                                                     final List<String[]> failures,
                                                     final Tankopedia tp) {
-        PotentialDamage.apply(battles, tp);   // 事实层 enrich（metrics 只读；幂等覆盖）
         final List<BattleDto> battlesDto = new ArrayList<>();
         for (int i = 0; i < battles.size(); i++) {
             final Battle battle = battles.get(i);
-            PerformanceMetricsCalculator.populateBattle(battle);   // 单场指标写入 PlayerResult（Columns.PLAYER 直接消费）
             battlesDto.add(toBattle(battle, battleSourceNames.get(i), tp));
         }
         final Map<Long, PerformanceMetricsCalculator.Row> perfById = new LinkedHashMap<>();

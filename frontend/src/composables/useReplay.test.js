@@ -210,8 +210,10 @@ describe('useReplay processing job flow (plan §13/§20/§30/§63)', () => {
   })
 
   it('export after READY reuses processingJobId without re-uploading (plan §30)', async () => {
-    // 模拟已 READY（轮询 → READY → processingJobId 完整链路由上一用例覆盖）
+    // 模拟已 READY（轮询 → READY → processingJobId 完整链路由上一用例覆盖）；
+    // resultMatchesSelection 要求 resp 与 processingJobId 成对存在。
     replay.processingJobId.value = 'p1'
+    replay.resp.value = { battles: [], aggregate: [], duplicates: [], failures: [], playerColumns: [], aggregateColumns: [] }
 
     api.createExportJob.mockResolvedValue({ jobId: 'e1', status: 'QUEUED', total: 2 })
     api.getExportJob.mockResolvedValue({ jobId: 'e1', status: 'READY', phase: null, total: 2, processed: 2, duplicates: 0, failures: 0, filename: 'x.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
@@ -231,5 +233,130 @@ describe('useReplay processing job flow (plan §13/§20/§30/§63)', () => {
     expect(body).not.toBeNull()
     expect(mode).toBe('each')
     expect(jobId).toBeUndefined()
+  })
+})
+describe('useReplay file-selection invalidation (review BLOCKER 1)', () => {
+  let replay
+
+  function pJob(overrides = {}) {
+    return { jobId: 'p1', status: 'QUEUED', phase: null, total: 9, processed: 0, valid: 0,
+      duplicates: 0, failures: 0, errorCode: null, currentFile: null, ...overrides }
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.clearAllMocks()
+    replay = useReplay()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    replay.dismissProcessingJob()
+    replay.dismissExportJob()
+  })
+
+  it('Case A: READY 后 add 文件 → processingJobId 立即失效，Export 不得复用旧 dataset', async () => {
+    replay.files.value = Array.from({ length: 9 }, (_, i) => new File(['x'], `r${i}.wotbreplay`))
+    const result = { battles: [{ mapName: 'Lagoon', sourceName: 'r0.wotbreplay' }], aggregate: [], duplicates: [], failures: [], playerColumns: [], aggregateColumns: [] }
+    api.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 9 })
+    // 状态化 mock（不用 ONCE 队列）：第 1 次轮询 PROCESSING，之后一律 READY——
+    // 对 fake-timer 可能多出的 interval tick 幂等（避免 ONCE 队列 + 残留实现交错）。
+    api.getProcessingJob.mockImplementation(() => {
+      const n = api.getProcessingJob.mock.calls.length
+      return Promise.resolve(n === 1
+        ? pJob({ status: 'PROCESSING', processed: 5, valid: 5 })
+        : pJob({ status: 'READY', processed: 9, valid: 9 }))
+    })
+    api.getProcessingJobResult.mockResolvedValue(result)
+
+    await replay.startProcessingJob()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(replay.processingJobId.value).toBe('p1')
+    expect(replay.resp.value).toEqual(result)
+
+    // add 第 10 个文件（FileUploader 任意 update:files 事件）→ 旧结果必须立即失效
+    replay.updateFiles([...replay.files.value, new File(['x'], 'r9.wotbreplay')])
+    expect(replay.processingJobId.value).toBeNull()
+    expect(replay.resp.value).toBeNull()
+
+    // Export 不得传 p1：未重新解析的新 selection 走 legacy 上传当前 files
+    api.createExportJob.mockResolvedValue({ jobId: 'e1', status: 'QUEUED', total: 10 })
+    api.getExportJob.mockResolvedValue({ jobId: 'e1', status: 'READY', phase: null, total: 10, processed: 10, duplicates: 0, failures: 0, filename: 'x.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    await replay.startExportJob('aggregate')
+    expect(api.createExportJob).toHaveBeenCalledTimes(1)
+    const [body, mode, jobId] = api.createExportJob.mock.calls[0]
+    expect(body).not.toBeNull()
+    expect(mode).toBe('aggregate')
+    expect(jobId).toBeUndefined()
+  })
+
+  it('Case B: P1 处理中 files 改变 → P1 迟到 READY 不得覆盖当前 selection', async () => {
+    replay.files.value = [new File(['x'], 'a.wotbreplay')]
+    let resolvePoll
+    api.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 1 })
+    // 第一次轮询挂起：模拟 P1 仍在处理中（响应迟到）
+    api.getProcessingJob.mockReturnValueOnce(new Promise(r => { resolvePoll = r }))
+
+    await replay.startProcessingJob()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(replay.processingJob.value.status).toBe('QUEUED')
+
+    // files 改变 → 停止轮询 + 后台取消旧 job + 结果失效
+    replay.updateFiles([new File(['y'], 'b.wotbreplay')])
+    expect(replay.processingJob.value).toBeNull()
+    expect(api.cancelProcessingJob).toHaveBeenCalledWith('p1')
+
+    // P1 迟到 READY（轮询响应在 stop 之后才 resolve）→ 必须被丢弃
+    api.getProcessingJobResult.mockResolvedValue({ battles: [], aggregate: [], duplicates: [], failures: [], playerColumns: [], aggregateColumns: [] })
+    resolvePoll(pJob({ status: 'READY', processed: 1, valid: 1 }))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(replay.processingJobId.value).toBeNull()
+    expect(replay.resp.value).toBeNull()
+    expect(replay.loading.value).toBe(false)
+  })
+
+  it('Case C: READY 后 remove / clear → 旧 processingJobId 不得复用', async () => {
+    replay.files.value = [new File(['x'], 'a.wotbreplay'), new File(['y'], 'b.wotbreplay')]
+    api.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 2 })
+    api.getProcessingJob
+      .mockResolvedValueOnce(pJob({ status: 'PROCESSING', processed: 1, valid: 1 }))
+      .mockResolvedValueOnce(pJob({ status: 'READY', processed: 2, valid: 2 }))
+    api.getProcessingJobResult.mockResolvedValue({ battles: [], aggregate: [], duplicates: [], failures: [], playerColumns: [], aggregateColumns: [] })
+
+    await replay.startProcessingJob()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(replay.processingJobId.value).toBe('p1')
+
+    // remove 一个文件（FileUploader remove 事件 → updateFiles）
+    replay.updateFiles(replay.files.value.slice(1))
+    expect(replay.processingJobId.value).toBeNull()
+    expect(replay.resp.value).toBeNull()
+
+    // clear（清空按钮 → updateFiles([])）
+    replay.updateFiles([])
+    expect(replay.processingJobId.value).toBeNull()
+    expect(replay.resp.value).toBeNull()
+    expect(replay.files.value.length).toBe(0)
+  })
+
+  it('confirmRemove 经 updateFiles 失效旧结果并重新解析（新 job 覆盖旧 id）', async () => {
+    replay.files.value = [new File(['x'], 'a.wotbreplay'), new File(['y'], 'b.wotbreplay')]
+    api.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 2 })
+    api.getProcessingJob.mockResolvedValue(pJob({ status: 'READY', processed: 2, valid: 2 }))
+    api.getProcessingJobResult.mockResolvedValue({ battles: [], aggregate: [], duplicates: [], failures: [], playerColumns: [], aggregateColumns: [] })
+    await replay.startProcessingJob()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(replay.processingJobId.value).toBe('p1')
+
+    api.createProcessingJob.mockResolvedValue({ jobId: 'p2', status: 'QUEUED', total: 1 })
+    replay.askRemoveFile(replay.files.value[0])
+    replay.confirmRemove()
+    expect(replay.files.value.length).toBe(1)
+    // 旧结果立即失效 + 剩余文件自动重新解析
+    await vi.advanceTimersByTimeAsync(0)
+    expect(api.createProcessingJob).toHaveBeenCalledTimes(2)
+    expect(replay.processingJobId.value).toBe('p2')
   })
 })

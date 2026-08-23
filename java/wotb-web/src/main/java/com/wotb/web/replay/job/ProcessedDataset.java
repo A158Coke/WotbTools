@@ -22,8 +22,21 @@ public record ProcessedDataset(List<Battle> battles,
                                List<String[]> duplicates,
                                List<String[]> failures) {
 
-    /** 有效场数（= 去重后进入结果集的场次）。 */
+    /**
+     * 防御性拷贝（shallow）：READY 后消费者（Preview / Aggregate Export / Each Export）
+     * 只读该 dataset——任何 add/remove/reorder 都不得泄漏到共享 cache（review BLOCKER 3）。
+     * Battle 本身仍 mutable（不把整个 Battle graph 改造成 immutable DTO）；
+     * 不可变性由「创建前保证 enrich invariant + 消费者只读」契约保证。
+     */
+    public ProcessedDataset {
+        battles = battles == null ? List.of() : List.copyOf(battles);
+        battleSourceNames = battleSourceNames == null ? List.of() : List.copyOf(battleSourceNames);
+        duplicates = duplicates == null ? List.of() : List.copyOf(duplicates);
+        failures = failures == null ? List.of() : List.copyOf(failures);
+    }
+
+    /** 有效场数（= 去重后进入结果集的场次；READY dataset 恒 >= 1）。 */
     public int validCount() {
-        return battles == null ? 0 : battles.size();
+        return battles.size();
     }
 }

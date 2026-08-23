@@ -92,6 +92,12 @@ public class ReplayService {
         // （同一请求生命周期内每个 replay 只解析一次，战斗表现复用同一 authoritative facts）；
         // DTO 构建与 Replay Processing Job result 共享 Mapper.toPreviewResponse（plan §21）。
         final Collected c = Replays.collect(toSources(files), this::processFull, null);
+        // facts 层 enrich 一次（Mapper.toPreviewResponse 只读消费共享 Battle，review BLOCKER 3：
+        // 与 ReplayProcessingJobService.processJob 创建 ProcessedDataset 前的 invariant 一致）。
+        PotentialDamage.apply(c.battles, tankopedia);
+        for (final Battle battle : c.battles) {
+            PerformanceMetricsCalculator.populateBattle(battle);
+        }
         return Mapper.toPreviewResponse(c.battles, c.battleSourceNames, c.duplicates, c.failures, tankopedia);
     }
 
