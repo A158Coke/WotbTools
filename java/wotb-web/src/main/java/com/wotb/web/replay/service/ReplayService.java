@@ -1,10 +1,10 @@
 package com.wotb.web.replay.service;
 
 import com.wotb.core.export.ExcelExporter;
+import com.wotb.core.league.LeagueRatingMode;
+import com.wotb.core.league.LeagueReplays;
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.Collected;
 import com.wotb.core.model.Source;
-import com.wotb.core.parse.Replays;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
@@ -90,15 +90,49 @@ public class ReplayService {
     private PreviewResponse previewWithinPermit(final MultipartFile[] files) throws Exception {
         // 统一完整处理链：parse + reconstruction + ObservedMaxHp + DeathTimeReconciler
         // （同一请求生命周期内每个 replay 只解析一次，战斗表现复用同一 authoritative facts）；
-        // DTO 构建与 Replay Processing Job result 共享 Mapper.toPreviewResponse（plan §21）。
-        final Collected c = Replays.collect(toSources(files), this::processFull, null);
-        // facts 层 enrich 一次（Mapper.toPreviewResponse 只读消费共享 Battle，review BLOCKER 3：
-        // 与 ReplayProcessingJobService.processJob 创建 ProcessedDataset 前的 invariant 一致）。
-        PotentialDamage.apply(c.battles, tankopedia);
-        for (final Battle battle : c.battles) {
+        // DTO 构建与 Replay Processing Job result 共享 Mapper.toPreviewResponse。
+        // League Rating 模式：训练赛/联赛回放经 LeagueReplays 完成模式判定/去重冲突/7v7 校验/评分。
+        final LeagueReplays.LeagueCollectResult c = LeagueReplays.collect(
+                toSources(files), this::processFull, null, null);
+        requireSupportedMode(c);
+        // facts 层 enrich 一次（Mapper.toPreviewResponse 只读消费共享 Battle）；
+        // League 模式不调用 PerformanceMetricsCalculator（旧 contribution/kast/impact 完全移除）。
+        PotentialDamage.apply(c.battles(), tankopedia);
+        if (c.mode() == LeagueRatingMode.LEAGUE_RATING) {
+            return Mapper.toPreviewResponse(c.battles(), c.battleSourceNames(),
+                    c.duplicates(), c.failures(), tankopedia, c.leagueBatch());
+        }
+        for (final Battle battle : c.battles()) {
             PerformanceMetricsCalculator.populateBattle(battle);
         }
-        return Mapper.toPreviewResponse(c.battles, c.battleSourceNames, c.duplicates, c.failures, tankopedia);
+        return Mapper.toPreviewResponse(c.battles(), c.battleSourceNames(), c.duplicates(), c.failures(), tankopedia);
+    }
+
+    /** 混合批次（普通 + 训练赛/联赛）整个请求拒绝：HTTP 400 MIXED_LEAGUE_AND_STANDARD_REPLAYS。 */
+    private static void requireSupportedMode(final LeagueReplays.LeagueCollectResult c) {
+        if (c.mode() == LeagueRatingMode.MIXED_UNSUPPORTED) {
+            throw new IllegalArgumentException("MIXED_LEAGUE_AND_STANDARD_REPLAYS");
+        }
+    }
+
+    /** 逐文件模式预扫描：[0]=存在 league（2/4）、[1]=存在普通模式（解析失败不参与）。 */
+    private static boolean[] peekModes(final List<Source> sources) {
+        boolean anyLeague = false;
+        boolean anyStandard = false;
+        for (final Source s : sources) {
+            final Integer abt;
+            try {
+                abt = com.wotb.core.parse.ReplayParser.peekArenaBonusType(s.bytes());
+            } catch (final Exception e) {
+                continue;
+            }
+            if (LeagueRatingMode.isLeague(abt)) {
+                anyLeague = true;
+            } else if (abt != null) {
+                anyStandard = true;
+            }
+        }
+        return new boolean[]{anyLeague, anyStandard};
     }
 
     /** 完整处理回填已证明的进场满血；重建不可用时仍返回结算战绩并使用车辆库兜底。 */
@@ -115,7 +149,7 @@ public class ReplayService {
 
     /**
      * 导出 xlsx/zip: 单场 -> 单场工作簿; 多场 -> 去重后的汇总工作簿; mode=each -> 每场一个 xlsx 打包 zip。
-     * 无可导出内容时返回 null (由调用方转 400)。
+     * 无可导出内容时返回 null (由调用方转 400)。League 模式与 preview 共用同一模式判定与评分 core。
      */
     public ExportResult export(final MultipartFile[] files, final String mode) throws Exception {
         return timed(ReplayUsageMetrics.OP_EXPORT, files.length, () -> capacityLimiter.execute(() -> exportWithinPermit(files, mode)));
@@ -127,21 +161,37 @@ public class ReplayService {
         }
         // 与 preview 完全同一条 authoritative full processing 链（reconstruction + ObservedMaxHp + DeathTimeReconciler），
         // 保证 Excel 与网页的 Contribution/KAST/Impact 使用同一 Battle facts；同一份 replay 只 full process 一次。
-        final Collected c = Replays.collect(toSources(files), this::processFull, null);
-        if (c.battles.isEmpty()) {
+        final LeagueReplays.LeagueCollectResult c = LeagueReplays.collect(
+                toSources(files), this::processFull, null, null);
+        requireSupportedMode(c);
+        if (c.battles().isEmpty()) {
             return null;
         }
-        PotentialDamage.apply(c.battles, tankopedia);   // 与 preview 相同的事实层 enrich
-        for (final Battle battle : c.battles) {
+        PotentialDamage.apply(c.battles(), tankopedia);   // 与 preview 相同的事实层 enrich
+        if (c.mode() == LeagueRatingMode.LEAGUE_RATING) {
+            final ByteArrayOutputStream out = new ByteArrayOutputStream();
+            final String filename;
+            if (c.battles().size() == 1) {
+                ExcelExporter.writeSingleLeague(c.battles().getFirst(),
+                        c.leagueBatch().battleResults().getFirst(), tankopedia, out);
+                filename = stripExt(c.battleSourceNames().getFirst()) + ".xlsx";
+            } else {
+                ExcelExporter.writeAggregateLeague(c.battles(), c.battleSourceNames(),
+                        c.duplicates(), c.leagueBatch(), tankopedia, out);
+                filename = "联赛汇总.xlsx";
+            }
+            return new ExportResult(filename, XLSX_MIME, out.toByteArray());
+        }
+        for (final Battle battle : c.battles()) {
             PerformanceMetricsCalculator.populateBattle(battle);   // 单场指标进 Excel 列
         }
         final ByteArrayOutputStream out = new ByteArrayOutputStream();
         final String filename;
-        if (c.battles.size() == 1) {
-            ExcelExporter.writeSingle(c.battles.getFirst(), tankopedia, out);
-            filename = stripExt(c.battleSourceNames.getFirst()) + ".xlsx";
+        if (c.battles().size() == 1) {
+            ExcelExporter.writeSingle(c.battles().getFirst(), tankopedia, out);
+            filename = stripExt(c.battleSourceNames().getFirst()) + ".xlsx";
         } else {
-            ExcelExporter.writeAggregate(c.battles, c.battleSourceNames, c.duplicates, tankopedia, out);
+            ExcelExporter.writeAggregate(c.battles(), c.battleSourceNames(), c.duplicates(), tankopedia, out);
             filename = "联赛汇总.xlsx";
         }
         return new ExportResult(filename, XLSX_MIME, out.toByteArray());
@@ -149,25 +199,49 @@ public class ReplayService {
 
     private ExportResult exportEach(final MultipartFile[] files) throws Exception {
         final List<Source> sources = toSources(files);
+        // 模式预扫描（只读 meta.json#arenaBonusType，不 processFull）：混合批次整个请求拒绝
+        // （与 preview 一致，不静默生成无 Rating 的联赛工作簿）。
+        final boolean[] leagueFlags = peekModes(sources);
+        if (leagueFlags[0] && leagueFlags[1]) {
+            throw new IllegalArgumentException("MIXED_LEAGUE_AND_STANDARD_REPLAYS");
+        }
         final ByteArrayOutputStream zipBytes = new ByteArrayOutputStream();
         int exported = 0;
         final Set<String> usedNames = new HashSet<>();
         try (ZipOutputStream zip = new ZipOutputStream(zipBytes, StandardCharsets.UTF_8)) {
-            for (final Source source : sources) {
-                try {
-                    // 与 preview 同一条 authoritative full processing 链（每份 replay 只 full process 一次）
-                    final Battle battle = processFull(source);
-                    PotentialDamage.apply(List.of(battle), tankopedia);   // 与 preview 相同的事实层 enrich
-                    PerformanceMetricsCalculator.populateBattle(battle);   // 单场指标进 Excel 列
+            if (leagueFlags[0]) {
+                // League：与 preview 同一 collect（去重冲突/7v7 校验/评分）；
+                // 只导出通过校验并完成评分的场次，冲突/不合格场次按失败策略跳过。
+                final LeagueReplays.LeagueCollectResult c = LeagueReplays.collect(
+                        sources, this::processFull, null, null);
+                for (int i = 0; i < c.battles().size(); i++) {
                     final ByteArrayOutputStream xlsx = new ByteArrayOutputStream();
-                    ExcelExporter.writeSingle(battle, tankopedia, xlsx);
-                    final ZipEntry entry = new ZipEntry(uniqueName(stripExt(source.name()) + ".xlsx", usedNames));
+                    ExcelExporter.writeSingleLeague(c.battles().get(i),
+                            c.leagueBatch().battleResults().get(i), tankopedia, xlsx);
+                    final ZipEntry entry = new ZipEntry(uniqueName(
+                            stripExt(c.battleSourceNames().get(i)) + ".xlsx", usedNames));
                     zip.putNextEntry(entry);
                     zip.write(xlsx.toByteArray());
                     zip.closeEntry();
                     exported++;
-                } catch (final Exception ignored) {
-                    // 预览已逐项报告失败; 逐场导出跳过无效输入。
+                }
+            } else {
+                for (final Source source : sources) {
+                    try {
+                        // 与 preview 同一条 authoritative full processing 链（每份 replay 只 full process 一次）
+                        final Battle battle = processFull(source);
+                        PotentialDamage.apply(List.of(battle), tankopedia);   // 与 preview 相同的事实层 enrich
+                        PerformanceMetricsCalculator.populateBattle(battle);   // 单场指标进 Excel 列
+                        final ByteArrayOutputStream xlsx = new ByteArrayOutputStream();
+                        ExcelExporter.writeSingle(battle, tankopedia, xlsx);
+                        final ZipEntry entry = new ZipEntry(uniqueName(stripExt(source.name()) + ".xlsx", usedNames));
+                        zip.putNextEntry(entry);
+                        zip.write(xlsx.toByteArray());
+                        zip.closeEntry();
+                        exported++;
+                    } catch (final Exception ignored) {
+                        // 预览已逐项报告失败; 逐场导出跳过无效输入。
+                    }
                 }
             }
         }

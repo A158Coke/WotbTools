@@ -1,7 +1,8 @@
 <script setup>
-import { ref, nextTick, inject } from 'vue'
+import { ref, computed, watch, nextTick, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { mapLabel, displayName } from '../utils/helpers.js'
+import { apiErrorLabel } from '../utils/display.js'
 import { setPendingReplayFiles } from '../utils/replayTransfer.js'
 import { useReplay } from '../composables/useReplay.js'
 import { useColumns } from '../composables/useColumns.js'
@@ -16,12 +17,13 @@ import FileUploader from './FileUploader.vue'
 import ColumnPicker from './ColumnPicker.vue'
 import AggregateTable from './AggregateTable.vue'
 import BattleTable from './BattleTable.vue'
+import LeagueSummaryTable from './LeagueSummaryTable.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import ReplayTaskCard from './ReplayTaskCard.vue'
 
-const { locale, t } = useI18n()
+const { locale, t, te } = useI18n()
 const replay = useReplay()
-const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateFiles,
+const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateFiles, selectionRevision,
   processingJob, processingError, processingActive,
   exportJob, exportError, exportActive,
   startProcessingJob, cancelProcessingJob, dismissProcessingJob,
@@ -29,8 +31,82 @@ const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateF
   askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove } = replay
 const cols = useColumns(replay.playerCols, replay.aggCols, replay.activeTab)
 const { visibleKeys, aggVisibleKeys, showColPicker, pickerScope,
-  currentOrder, shownCols, shownAggCols,
+  currentOrder, shownCols, shownAggCols, leagueMode,
   toggleColPicker, toggleCol, selectAllCols, resetCols, handleReorder } = cols
+
+/** League Rating 模式元数据（resp.league；普通模式 null）。 */
+const leagueData = computed(() => resp.value?.league || null)
+/**
+ * 两种独立的战队名称 override（PR #123 Blocker 2，禁止扁平混合）：
+ * - battleTeamNames：{arenaId:team} → 名（单场显示 / 单场 PNG / 单场与 each Excel）
+ * - summaryTeamNames：{teamKey} → 名（批次战队汇总显示 / aggregate Excel 战队汇总）
+ * 仅当前页面内存（plan §12）；批次 rename 不得反向写入所有 {arenaId:team}。
+ */
+const battleTeamNames = ref({})
+const summaryTeamNames = ref({})
+
+function updateBattleTeamName(payload) {
+  if (!payload || !payload.arenaId) return
+  const key = payload.arenaId + ':' + payload.team
+  const name = (payload.name || '').trim()
+  const next = { ...battleTeamNames.value }
+  if (name) next[key] = name
+  else delete next[key]
+  battleTeamNames.value = next
+}
+
+function updateSummaryTeamName(payload) {
+  if (!payload || !payload.teamKey) return
+  const name = (payload.name || '').trim()
+  const next = { ...summaryTeamNames.value }
+  if (name) next[payload.teamKey] = name
+  else delete next[payload.teamKey]
+  summaryTeamNames.value = next
+}
+
+/** Export Job 的战队名称覆盖 payload（无覆盖 → null；multipart field 传递，不拼 URL query）。 */
+function teamNamesPayload() {
+  const battle = battleTeamNames.value
+  const summary = summaryTeamNames.value
+  if (!Object.keys(battle).length && !Object.keys(summary).length) return null
+  return { battle, summary }
+}
+
+/**
+ * Team override 属于当前 replay selection（PR #123 Blocker 2）：任何 selection 变化
+ * （add/remove/replace/clear/remove battle/folder，全部经 updateFiles → selectionRevision++）
+ * 都使两组 override 同时失效；同一 selection 单纯重新 Processing 不清空（不依赖
+ * startProcessingJob / Processing lifecycle）。
+ */
+watch(selectionRevision, () => {
+  battleTeamNames.value = {}
+  summaryTeamNames.value = {}
+})
+
+/** PNG 导出用：League 模式全列表格（不受当前可见列限制）。 */
+function leagueExportTable(battle) {
+  const colsList = resp.value?.league?.columns || []
+  const allKeys = colsList.map(c => c.key)
+  const headers = allKeys.map(k => '<th>' + t('player_labels.' + k) + '</th>').join('')
+  const body = battle.players.map(row => {
+    const tds = allKeys.map(k => {
+      const raw = row.cells ? row.cells[k] : ''
+      let text = raw == null ? '' : String(raw)
+      const max = Number((colsList.find(c => c.key === k) || {}).max) || 0
+      if (max > 0) {
+        const v = Number(raw) || 0
+        text = Math.round(v) + ' / ' + max + ' \u00B7 ' + (Math.round(1000 * v / max) / 10) + '%'
+      }
+      return '<td>' + escapeHtml(text) + '</td>'
+    }).join('')
+    return '<tr class="' + (row.team === 1 ? 't1' : 't2') + '">' + tds + '</tr>'
+  }).join('')
+  return '<table><thead><tr>' + headers + '</tr></thead><tbody>' + body + '</tbody></table>'
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
 
 const exportingPng = ref(false)
 const aggregateRef = ref(null)
@@ -158,6 +234,16 @@ async function downloadResultPng() {
   try {
     cloneCtx = createExportClone(target, exportTheme)
     expandExportTables(cloneCtx.clone)
+    // League 模式：导出完整超宽表格（全部 Rating 维度 + 原始字段），不受当前可见列限制
+    if (leagueData.value) {
+      const battle = resp.value?.battles?.[exportBattleIdx]
+      if (battle) {
+        const fullTable = leagueExportTable(battle)
+        for (const wrap of cloneCtx.clone.querySelectorAll('.tablewrap')) {
+          wrap.innerHTML = fullTable
+        }
+      }
+    }
     await waitForLayout()
     const measured = measureExportClone(cloneCtx.clone)
     const dims = computeExportDimensions(measured)
@@ -249,11 +335,17 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
         {{ $t('result.failures', { count: resp.failures.length }) }}
         <span v-for="(f, i) in resp.failures" :key="i">{{ f[0] }} ({{ f[1] }})</span>
       </div>
+      <div v-if="leagueData?.failures?.length" class="error">
+        {{ $t('result.failures', { count: leagueData.failures.length }) }}
+        <span v-for="(lf, i) in leagueData.failures" :key="i">
+          {{ lf.fileName }} ({{ apiErrorLabel(t, te, { code: lf.code }) }})<template v-if="lf.arenaId"> · {{ lf.arenaId }}</template>
+        </span>
+      </div>
 
       <div class="restoolbar">
         <div class="tabs" :class="{ locked: showColPicker }"
              :title="showColPicker ? $t('action.picker_locked') : ''">
-          <button v-if="resp.aggregate.length" :disabled="showColPicker"
+          <button v-if="resp.aggregate.length || leagueMode" :disabled="showColPicker"
                   :class="{ active: activeTab === 'aggregate' }"
                   @click="activeTab = 'aggregate'">{{ $t('result.aggregate_tab', { count: resp.aggregate.length }) }}</button>
           <button v-for="(b, i) in resp.battles" :key="i" :disabled="showColPicker"
@@ -277,13 +369,14 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
             </button>
             <ColumnPicker v-if="showColPicker" :scope="pickerScope" :order="currentOrder"
               :visible="pickerScope === 'agg' ? aggVisibleKeys : visibleKeys"
+              :fixed-keys="pickerScope === 'player' && leagueMode ? ['nickname', 'league_rating'] : []"
               @close="showColPicker = false" @toggle="toggleCol"
               @select-all="selectAllCols" @reset="resetCols" @reorder="handleReorder" />
           </span>
-          <button class="sm" :disabled="loading || exportingPng || exportActive" @click="startExportJob('aggregate')">
+          <button class="sm" :disabled="loading || exportingPng || exportActive" @click="startExportJob('aggregate', teamNamesPayload())">
             <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_aggregate') }}
           </button>
-          <button class="ghost sm" :disabled="loading || exportingPng || exportActive" @click="startExportJob('each')">
+          <button class="ghost sm" :disabled="loading || exportingPng || exportActive" @click="startExportJob('each', teamNamesPayload())">
             <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_each') }}
           </button>
           <button class="ghost sm" :disabled="loading || exportingPng" @click="downloadResultPng">
@@ -293,13 +386,23 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
         </div>
       </div>
 
-      <div v-show="activeTab === 'aggregate' && resp.aggregate.length" ref="aggregateRef">
-        <AggregateTable :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
+      <div v-show="activeTab === 'aggregate' && (resp.aggregate.length || leagueMode)" ref="aggregateRef">
+        <template v-if="leagueMode">
+          <LeagueSummaryTable :title="$t('league.summary.title_player')" type="player"
+            :rows="leagueData?.playerSummaries || []" :columns="leagueData?.playerSummaryColumns || []"
+            :team-names="summaryTeamNames" @update-summary-team-name="updateSummaryTeamName" />
+          <LeagueSummaryTable :title="$t('league.summary.title_team')" type="team"
+            :rows="leagueData?.teamSummaries || []" :columns="leagueData?.teamSummaryColumns || []"
+            :team-names="summaryTeamNames" @update-summary-team-name="updateSummaryTeamName" />
+        </template>
+        <AggregateTable v-else :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
       </div>
 
       <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i"
            :ref="(el) => setBattleRef(el, i)">
-        <BattleTable :battle="b" :shown-cols="shownCols" />
+        <BattleTable :battle="b" :shown-cols="shownCols"
+          :league="b.league" :league-columns="leagueData?.columns || []"
+          :team-names="battleTeamNames" @update-team-name="updateBattleTeamName" />
       </div>
     </template>
 
@@ -371,6 +474,40 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
   font-size: 13px;
   line-height: 1.5;
   max-width: none;
+}
+/* PNG 导出：取消 sticky 定位，避免固定列覆盖其他列（plan §19） */
+.replay-export-root .sticky-col {
+  position: static !important;
+}
+/* PNG 导出：League 概览与汇总表样式（深色/浅色均可读） */
+.replay-export-root .league-overview {
+  border: 1px solid var(--exp-border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+.replay-export-root .league-team {
+  border: 1px solid var(--exp-border);
+  border-radius: 7px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+}
+.replay-export-root .league-team.league-win {
+  background: var(--exp-t1-bg);
+}
+.replay-export-root .team-name-input {
+  border: 1px dashed var(--exp-border);
+  color: var(--exp-text);
+}
+.replay-export-root .league-mvp {
+  color: var(--exp-text);
+}
+.replay-export-root .mvp-badge {
+  background: var(--exp-header-bg);
+  color: var(--exp-text);
+}
+.replay-export-root .league-summary-title {
+  color: var(--exp-text);
 }
 .replay-export-root .mcards {
   display: grid;

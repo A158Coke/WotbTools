@@ -1,11 +1,25 @@
 import { ref, computed, watch } from 'vue'
-import { DEFAULT_VISIBLE, EXTENDED_ONLY_PLAYER_KEYS } from '../utils/helpers.js'
+import {
+  DEFAULT_VISIBLE,
+  EXTENDED_ONLY_PLAYER_KEYS,
+  LEAGUE_DEFAULT_VISIBLE,
+  LEAGUE_FIXED_KEYS,
+  isLeagueColumns
+} from '../utils/helpers.js'
 
 const STORAGE_KEYS = {
   playerVisible: 'wotb-replay-player-visible-cols',
   playerOrder: 'wotb-replay-player-order',
   aggVisible: 'wotb-replay-agg-visible-cols',
   aggOrder: 'wotb-replay-agg-order',
+}
+
+/** League Rating 模式独立 storage scope（plan §16：普通与 League 列偏好互不污染）。 */
+const LEAGUE_STORAGE_KEYS = {
+  playerVisible: 'wotb-league-player-visible-cols',
+  playerOrder: 'wotb-league-player-order',
+  aggVisible: 'wotb-league-agg-visible-cols',
+  aggOrder: 'wotb-league-agg-order',
 }
 
 function readStoredList(key) {
@@ -33,11 +47,11 @@ function mergeOrder(availableKeys, storedOrder) {
   return appendMissingKeys(sanitized, availableKeys)
 }
 
-function restorePlayerVisible(availableKeys, storedOrder, storedVisible) {
+function restorePlayerVisible(availableKeys, storedOrder, storedVisible, defaults) {
   const available = new Set(availableKeys)
   const visible = uniqueKeys((storedVisible || []).filter(key => available.has(key)))
   const missingDefault = availableKeys.filter(key =>
-    !(storedOrder || []).includes(key) && DEFAULT_VISIBLE.includes(key))
+    !(storedOrder || []).includes(key) && defaults.includes(key))
   return [...visible, ...missingDefault.filter(key => !visible.includes(key))]
 }
 
@@ -65,6 +79,16 @@ function hadAllColumnsVisible(storedOrder, storedVisible) {
     && storedOrder.every(key => storedVisible.includes(key))
 }
 
+/** League 固定列（玩家 + 总 Rating）必须位于前两位并始终可见（sticky 布局依据）。 */
+function pinLeagueOrder(order) {
+  const rest = order.filter(key => !LEAGUE_FIXED_KEYS.includes(key))
+  return [...LEAGUE_FIXED_KEYS, ...rest]
+}
+
+function forceLeagueVisible(visible) {
+  return uniqueKeys([...visible, ...LEAGUE_FIXED_KEYS])
+}
+
 export function useColumns(playerCols, aggCols, activeTab) {
   const visibleKeys = ref([])
   const aggVisibleKeys = ref([])
@@ -72,6 +96,9 @@ export function useColumns(playerCols, aggCols, activeTab) {
   const aggOrder = ref([])
   const showColPicker = ref(false)
   const pickerScope = ref('player')
+
+  /** League Rating 模式：playerColumns 含 league_rating。 */
+  const leagueMode = computed(() => isLeagueColumns(playerCols.value))
 
   const colScope = computed(() => activeTab.value === 'aggregate' ? 'agg' : 'player')
   const currentOrder = computed(() => pickerScope.value === 'agg' ? aggOrder.value : playerOrder.value)
@@ -87,18 +114,25 @@ export function useColumns(playerCols, aggCols, activeTab) {
     aggOrder.value.filter(k => aggVisibleKeys.value.includes(k)).map(k => aggColMap.value[k]).filter(Boolean))
 
   function initFromResponse(resp) {
+    const league = isLeagueColumns(resp.playerColumns || [])
+    const storage = league ? LEAGUE_STORAGE_KEYS : STORAGE_KEYS
+    const defaults = league ? LEAGUE_DEFAULT_VISIBLE : DEFAULT_VISIBLE
     const pk = (resp.playerColumns || [])
       .filter(c => !EXTENDED_ONLY_PLAYER_KEYS.has(c.key))
       .map(c => c.key)
     const ak = (resp.aggregateColumns || []).map(c => c.key)
 
-    const storedPlayerOrder = readStoredList(STORAGE_KEYS.playerOrder)
-    const storedPlayerVisible = readStoredList(STORAGE_KEYS.playerVisible)
-    const storedAggOrder = readStoredList(STORAGE_KEYS.aggOrder)
-    const storedAggVisible = readStoredList(STORAGE_KEYS.aggVisible)
+    const storedPlayerOrder = readStoredList(storage.playerOrder)
+    const storedPlayerVisible = readStoredList(storage.playerVisible)
+    const storedAggOrder = readStoredList(storage.aggOrder)
+    const storedAggVisible = readStoredList(storage.aggVisible)
 
-    playerOrder.value = mergeOrder(pk, storedPlayerOrder)
-    visibleKeys.value = restorePlayerVisible(pk, storedPlayerOrder, storedPlayerVisible)
+    playerOrder.value = league
+      ? pinLeagueOrder(mergeOrder(pk, storedPlayerOrder))
+      : mergeOrder(pk, storedPlayerOrder)
+    visibleKeys.value = league
+      ? forceLeagueVisible(restorePlayerVisible(pk, storedPlayerOrder, storedPlayerVisible, defaults))
+      : restorePlayerVisible(pk, storedPlayerOrder, storedPlayerVisible, defaults)
     aggOrder.value = mergeOrder(ak, storedAggOrder)
     aggVisibleKeys.value = restoreAggVisible(ak, storedAggOrder, storedAggVisible)
   }
@@ -111,6 +145,9 @@ export function useColumns(playerCols, aggCols, activeTab) {
 
   function toggleCol(e) {
     const target = e.scope === 'agg' ? aggVisibleKeys : visibleKeys
+    if (e.scope === 'player' && leagueMode.value && LEAGUE_FIXED_KEYS.includes(e.key)) {
+      return // 总 Rating 固定显示，不允许被 ColumnPicker 隐藏
+    }
     target.value = target.value.includes(e.key)
       ? target.value.filter(k => k !== e.key)
       : [...target.value, e.key]
@@ -126,6 +163,9 @@ export function useColumns(playerCols, aggCols, activeTab) {
     if (scope === 'agg') {
       aggOrder.value = aggCols.value.map(c => c.key)
       aggVisibleKeys.value = aggCols.value.map(c => c.key)
+    } else if (leagueMode.value) {
+      playerOrder.value = pinLeagueOrder(basePlayerCols.value.map(c => c.key))
+      visibleKeys.value = forceLeagueVisible([...LEAGUE_DEFAULT_VISIBLE])
     } else {
       playerOrder.value = basePlayerCols.value.map(c => c.key)
       visibleKeys.value = [...DEFAULT_VISIBLE]
@@ -133,18 +173,29 @@ export function useColumns(playerCols, aggCols, activeTab) {
   }
 
   function handleReorder(next) {
-    ;(pickerScope.value === 'agg' ? aggOrder : playerOrder).value = next
+    if (pickerScope.value === 'agg') {
+      aggOrder.value = next
+    } else if (leagueMode.value) {
+      playerOrder.value = pinLeagueOrder(next)
+    } else {
+      playerOrder.value = next
+    }
   }
 
-  watch(visibleKeys, value => writeStoredList(STORAGE_KEYS.playerVisible, value))
-  watch(playerOrder, value => writeStoredList(STORAGE_KEYS.playerOrder, value))
-  watch(aggVisibleKeys, value => writeStoredList(STORAGE_KEYS.aggVisible, value))
-  watch(aggOrder, value => writeStoredList(STORAGE_KEYS.aggOrder, value))
+  watch(visibleKeys, value => writeStoredList(
+    leagueMode.value ? LEAGUE_STORAGE_KEYS.playerVisible : STORAGE_KEYS.playerVisible, value))
+  watch(playerOrder, value => writeStoredList(
+    leagueMode.value ? LEAGUE_STORAGE_KEYS.playerOrder : STORAGE_KEYS.playerOrder, value))
+  watch(aggVisibleKeys, value => writeStoredList(
+    leagueMode.value ? LEAGUE_STORAGE_KEYS.aggVisible : STORAGE_KEYS.aggVisible, value))
+  watch(aggOrder, value => writeStoredList(
+    leagueMode.value ? LEAGUE_STORAGE_KEYS.aggOrder : STORAGE_KEYS.aggOrder, value))
 
   return {
     visibleKeys, aggVisibleKeys, playerOrder, aggOrder,
     showColPicker, pickerScope, colScope, currentOrder,
     playerColMap, aggColMap, shownCols, shownAggCols,
+    leagueMode,
     initFromResponse,
     toggleColPicker, toggleCol, selectAllCols, resetCols, handleReorder,
   }

@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.17",
+    "date": "2026-08-24",
+    "tag": "add",
+    "zh": "训练赛/联赛回放新增 League Rating（0–1000）：上传训练房或联赛/锦标赛回放后，结果页直接显示双方战队 Rating、全场 MVP、双方队内最佳与每名玩家的八个维度分（实际分/上限/百分比）；随机战斗与游戏内评级战斗不受影响。批量上传给出选手与战队中位数汇总（只汇总不排名），战队名称可现场修改并同步到导出；Excel 与完整宽幅 PNG 均包含全部评分维度。",
+    "en": "Training/tournament replays now get a League Rating (0–1000): after uploading a training-room or tournament replay, the result page shows both team ratings, the MVP, each team best, and each player's eight dimension scores (actual / max / percentage). Random battles and in-game Rating battles are unaffected. Batch uploads produce player and team median summaries (summary only, no ranking), team names can be edited on the fly and flow into exports; Excel and the full-width PNG include every rating dimension.",
+    "ru": "Тренировочные/турнирные реплеи теперь получают League Rating (0–1000): после загрузки тренировочного или турнирного реплея на странице результатов показываются рейтинги обеих команд, MVP боя, лучший в каждой команде и восемь оценочных показателей каждого игрока (факт / максимум / процент). Случайные и рейтинговые бои не затронуты. При массовой загрузке выдаётся сводка игроков и команд по медианам (только сводка, без ранжирования), названия команд можно редактировать на месте — они попадают в экспорт; Excel и широкоформатный PNG содержат все оценочные показатели."
+  },
+  {
     "v": "2.12.16",
     "date": "2026-08-23",
     "tag": "chg",

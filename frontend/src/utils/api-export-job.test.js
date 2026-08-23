@@ -53,6 +53,26 @@ describe('replay export job api', () => {
     )
   })
 
+  it('createExportJob appends teamNames multipart field when provided (PR #123 Blocker 1)', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(202, { jobId: 'j1', status: 'QUEUED', total: 1 }))
+    // 复用 processingJobId 路径：body=null + teamNames → 构造含 teamNames 字段的 FormData
+    await createExportJob(null, 'aggregate', 'p1', '{"battle":{"a:1":"X"}}')
+    const [url, opts] = vi.mocked(fetch).mock.calls[0]
+    expect(url).toContain('mode=aggregate')
+    expect(url).toContain('processingJobId=p1')
+    expect(opts.body).toBeInstanceOf(FormData)
+    expect(opts.body.get('teamNames')).toBe('{"battle":{"a:1":"X"}}')
+
+    // 有 files body 时保留原字段并追加 teamNames
+    vi.mocked(fetch).mockClear()
+    const body = new FormData()
+    body.append('files', new Blob(['x']), 'a.wotbreplay')
+    await createExportJob(body, 'each', undefined, '{"summary":{"clan:CHRD":"Y"}}')
+    const [, opts2] = vi.mocked(fetch).mock.calls[0]
+    expect(opts2.body.get('files')).toBeTruthy()
+    expect(opts2.body.get('teamNames')).toBe('{"summary":{"clan:CHRD":"Y"}}')
+  })
+
   it('createExportJob propagates 503 EXPORT_QUEUE_FULL as ApiError', async () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse(503, { error: 'EXPORT_QUEUE_FULL' }))
     const err = await createExportJob(new FormData(), 'aggregate').catch(e => e)

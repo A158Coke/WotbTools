@@ -6,6 +6,8 @@ const props = defineProps({
   scope: String,
   order: Array,
   visible: Array,
+  /** 固定列 key：不可隐藏、不可拖拽（League 模式总 Rating 列）。 */
+  fixedKeys: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['toggle', 'selectAll', 'reset', 'reorder'])
@@ -32,12 +34,13 @@ function onDrop(i) {
       <button class="linkbtn" @click="$emit('close')">{{ $t('col_picker.done') }}</button>
     </div>
     <ul class="collist">
-      <li v-for="(key, idx) in order" :key="key" draggable="true"
+      <li v-for="(key, idx) in order" :key="key" :draggable="!fixedKeys.includes(key)"
           @dragstart="onDragStart(idx)" @dragover.prevent @drop="onDrop(idx)"
-          :class="{ dragging: dragIdx === idx }">
+          :class="{ dragging: dragIdx === idx, fixed: fixedKeys.includes(key) }">
         <span class="grip" :title="$t('col_picker.drag')">::</span>
         <label class="colitem">
-          <input type="checkbox" :checked="visible.includes(key)" @change="$emit('toggle', { key, scope })" />
+          <input type="checkbox" :checked="visible.includes(key)" :disabled="fixedKeys.includes(key)"
+                 @change="$emit('toggle', { key, scope })" />
           {{ $t((scope === 'agg' ? 'agg_labels.' : 'player_labels.') + key) }}
         </label>
         <span class="cat">{{ catOf(key, $t) }}</span>
