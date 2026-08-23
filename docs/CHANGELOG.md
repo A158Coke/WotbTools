@@ -15,8 +15,40 @@
   `blitzkit-references.mjs --emit-portraits` 可重复生成入口。
 
 ### Fixed
-- **名人堂筛选交集与百场证据清理**：单场公开/管理查询新增稳定码 `nation`/`vehicleType`/`tier`，国家、车种、等级无需先选具体车辆即可独立真实筛榜，多个非空条件与 `tankId` 取交集；新增匿名 `GET /api/hof/vehicle-options` 供两页复用实际已有车辆。公开百场分类 Top 10 与 competition rank 使用同一 vehicleId 集合，管理员百场列表也支持 status/nation/vehicleType/vehicleId 独立交集筛选。百场证据维持 PENDING 临时审核资产语义：APPROVE/REJECT/CANCEL/DELETE 后清空截图、删除 evidence 行，并在 commit 后清理无引用物理文件。
+- **AI Review Grounding Validation 502 修复（P0 production bug，PR #105 回归）**：真实生产复现
+  （neptune+SPHT 团队 replay + 真实 DeepSeek）确认「3 次 attempt 全部失败 → AI_REVIEW_GROUNDING_FAILED
+  (502)」的根因是 structured envelope 内部 metadata 问题被 validator 当作整次 review 致命错误：
+  claims 漏 claimType 字段、evidence binding 类型过严（over-binding）、引用错快照时间，而
+  reviewMarkdown 正文事实全部正确。修复：
+  - **Validator severity 分级（HARD_FACT / STRUCTURED_METADATA / FORMAT）**：只有用户可见事实错误
+    （阵亡时间/存活变化/位置数量/knowledge/身份/unsupported hard fact）才阻止输出；structured
+    metadata 冲突（binding 类型/时间细节、coverage 缺失、非关键 machine 字段）直接放行输出，
+    不再把内部 envelope 小问题变成整次 review 502。
+  - **Parser 容错（claimType 推断）**：claimType 缺失/未知变体按机器字段 deterministic 推断
+    （knowledge→ENEMY_POSITION / region+count+side→POSITION_REGION / value→ALIVE_TRANSITION /
+    subject+timeSec→DEATH / 纯文本→TACTICAL）；显式禁止类型（LOS/SPOTTING/VISION）仍 fail-close。
+  - **Retry 策略重构**：只有 HARD_FACT 冲突才触发 LLM 重写（targeted → full → fail-safe）；
+    metadata-only 冲突 0 次额外 LLM 调用直接输出——消除「3 次 140k prompt 全量重写」的 token
+    浪费与不可用（单次成功 attempt 从 ~420k 累计 token 降到 ~134k）。
+  - **Evidence binding 放宽（ALIVE_TRANSITION 链式支撑）**：claim value 可由引用证据链覆盖
+    （首尾一致），全局存在该变化时降 metadata。
+  - **Prompt 负担（FOCUS WINDOWS 段裁剪）**：窗口事件渲染设上限（高信息事件优先 + 其余折叠），
+    该段从 13.4k 字符（约 16.8k tokens）降到 1.8k（约 2.3k tokens，-86%）。
+  - **前端错误码**：LOCALIZED_ERROR_CODES 增加 AI_REVIEW_GROUNDING_FAILED 及 zh/en/ru 三语文案
+    （不再裸显 HTTP 502）。
+  - **可观测性**：validation 日志增加 hardConflictCount/severity；新增
+    team_review_metadata_passed 事件与 wotb_ai_team_review_grounding_conflict_total
+    （check/severity）指标。
+  - **修复 TeamEngagementExtractor NPE**：未归因掉血（attacker=null）不再触发
+    MemberIdentity.matches(null) NPE（另一类 502 候选）。
+  - 回归测试：metadata-only 冲突 1 次调用放行（旧行为 3 次重写后 502）、HARD 冲突仍 retry/fail-safe、
+    claimType 推断契约。
+  - 验证：全量 Maven 1088 tests、前端 727 tests + build、真实 E2E（修复前 3×420k→502；
+    修复后 1×133.7k→PASS_METADATA 成功输出）、批量 5 replay 真实 E2E usable 80%
+    （1 个 replay 因真实阵亡时间错误被 HARD 正确拦截）。
+- **名人堂百场审核与默认榜修复**：百场审核列表所有状态统一只显示“详情”，待审核申请只能在详情内通过/拒绝，CURRENT 只能在详情内删除；REJECTED 详情现在展示拒绝原因、补充说明与时间，CANCELLED/DELETED 终态也可查看。公开 `GET /api/hof/hundred` 的 `vehicleId` 改为可选，未传时固定返回全站 CURRENT 最高 10 条；前端国家/系别、车种筛选仅收窄 Tier X 车辆候选，不强制选择。- **名人堂筛选交集与百场证据清理**：单场公开/管理查询新增稳定码 `nation`/`vehicleType`/`tier`，国家、车种、等级无需先选具体车辆即可独立真实筛榜，多个非空条件与 `tankId` 取交集；新增匿名 `GET /api/hof/vehicle-options` 供两页复用实际已有车辆。公开百场分类 Top 10 与 competition rank 使用同一 vehicleId 集合，管理员百场列表也支持 status/nation/vehicleType/vehicleId 独立交集筛选。百场证据维持 PENDING 临时审核资产语义：APPROVE/REJECT/CANCEL/DELETE 后清空截图、删除 evidence 行，并在 commit 后清理无引用物理文件。
 - **名人堂百场审核与默认榜修复**：百场审核列表所有状态统一只显示“详情”，待审核申请只能在详情内通过/拒绝，CURRENT 只能在详情内删除；REJECTED 详情现在展示拒绝原因、补充说明与时间，CANCELLED/DELETED 终态也可查看。公开 `GET /api/hof/hundred` 的 `vehicleId` 改为可选，全部条件为空时固定返回全站 CURRENT 最高 10 条；国家/系别、车种无需选择具体车辆即可直接筛选对应分类榜。
+
 - **战局回放（Battle Playback）当前状态面板与伤害/碰撞语义修复（docs/current-plan.md 1-28）**：
   - Details Panel 收敛为 current-state 面板：删除「最大 HP」「HP %」「协助伤害」「最终战绩」分区。
   - 车辆类型 fallback：replay tankType → tankopedia class（英文）→ 空串。

@@ -103,13 +103,11 @@ public final class TeamReviewEnvelopeParser {
                     if (ids.size() > MAX_IDS_PER_CLAIM) {
                         return ParseResult.fail(ParseFailureReason.TOO_MANY_EVIDENCE_IDS);
                     }
-                    // Review Blocker B1：structured factual contract（fail-close）——
-                    // claimType 必填且必须属于 schema；每种 factual claimType 的 required machine
-                    // 字段必须齐全；机器字段类型/取值非法（如 region="six"、timeSec="112"）→ 整体拒绝。
-                    final String claimType = text(item.get("claimType")).toUpperCase(java.util.Locale.ROOT);
-                    if (!CLAIM_TYPES.contains(claimType)) {
-                        return ParseResult.fail(ParseFailureReason.UNKNOWN_CLAIM_TYPE); // 未知/禁止（LOS 等）
-                    }
+                    // Review Blocker B1：structured factual contract（fail-close，P0-4 容错）——
+                    // claimType 必填且必须属于 schema；缺失/未知时按机器字段确定性推断（能
+                    // deterministic 修复的 schema 缺失不浪费 LLM retry）；显式禁止类型（LOS 等）
+                    // 一律拒绝；每种 factual claimType 的 required machine 字段必须齐全；机器
+                    // 字段类型/取值非法（如 region="six"、timeSec="112"）→ 整体拒绝。
                     final NumField timeSecF = doubleField(item.get("timeSec"));
                     final NumField regionF = intField(item.get("region"), 1, 9);
                     final NumField countF = intField(item.get("count"), 0, 99);
@@ -130,7 +128,20 @@ public final class TeamReviewEnvelopeParser {
                             || (!knowledge.isEmpty() && !KNOWLEDGE_VALUES.contains(knowledge))) {
                         return ParseResult.fail(ParseFailureReason.INVALID_MACHINE_FIELD_TYPE);
                     }
-                    // per-claimType required fields（fail-close）
+                    final String rawClaimType = text(item.get("claimType")).toUpperCase(java.util.Locale.ROOT);
+                    // V6m 边界：显式禁止类型（LOS/SPOTTING/VISION/LINE_OF_SIGHT）——正文也不允许
+                    // 硬事实化表达，这里保持 fail-close（不推断、不降级）。
+                    if (BANNED_CLAIM_TYPES.contains(rawClaimType)) {
+                        return ParseResult.fail(ParseFailureReason.UNKNOWN_CLAIM_TYPE);
+                    }
+                    // P0-4：claimType 缺失 / 未知变体（如 DEATHS、ALIVE_COUNT_TRANSITION 全名）→
+                    // 按机器字段确定性推断；纯文本陈述（无任何 factual 机器字段）降级 TACTICAL，
+                    // 由 validator 的正文 deterministic 检查兜底（不浪费 LLM retry）。
+                    final String claimType = CLAIM_TYPES.contains(rawClaimType)
+                            ? rawClaimType
+                            : inferClaimType(timeSecF, regionF, countF,
+                                    subject, value, side, countSemantics, knowledge);
+                    // per-claimType required fields（fail-close；推断类型同样校验）
                     switch (claimType) {
                         case "DEATH" -> {
                             if (subject.isBlank() || timeSecF.missing() || ids.isEmpty()) {
@@ -212,6 +223,10 @@ public final class TeamReviewEnvelopeParser {
     /** Review Blocker B1：结构化 factual contract 的 machine 枚举值。 */
     static final Set<String> CLAIM_TYPES = Set.of(
             "DEATH", "ALIVE_TRANSITION", "POSITION_REGION", "ENEMY_POSITION", "TACTICAL");
+
+    /** V6m 边界：显式禁止的 claimType（后端无对应 evidence kind）——不推断、不降级，一律拒绝。 */
+    static final Set<String> BANNED_CLAIM_TYPES = Set.of(
+            "LOS", "SPOTTING", "VISION", "LINE_OF_SIGHT");
     static final Set<String> SIDES = Set.of("FRIENDLY", "ENEMY");
     static final Set<String> COUNT_SEMANTICS = Set.of("EXACT", "AT_LEAST", "SUBSET");
     static final Set<String> KNOWLEDGE_VALUES = Set.of("CURRENT", "LAST_KNOWN");
@@ -219,6 +234,39 @@ public final class TeamReviewEnvelopeParser {
     /** ALIVE_TRANSITION value 机器格式（三语通用）："7v7 -> 4v6" / "7v7 → 4v6"。 */
     static final Pattern MACHINE_TRANSITION = Pattern.compile(
             "\\d+\\s*[vV]\\s*\\d+\\s*(?:->|→)\\s*\\d+\\s*[vV]\\s*\\d+");
+
+
+    /**
+     * P0-4：claimType 缺失 / 未知变体时的 deterministic 推断（不浪费 LLM retry）。
+     * 按机器字段唯一性从具体到抽象推断：knowledge → ENEMY_POSITION；region+count+side+
+     * countSemantics → POSITION_REGION；value 机器存活变化 → ALIVE_TRANSITION；
+     * subject+timeSec → DEATH；纯文本陈述（无任何 factual 机器字段）→ TACTICAL。
+     * <p>推断基于机器字段，不猜测正文语义；推断出的类型仍走 per-claimType required
+     * 校验（缺必需字段仍 fail-close）。禁止类型（LOS 等）由调用方先行拒绝，不进本方法。</p>
+     */
+    private static String inferClaimType(final NumField timeSecF,
+                                         final NumField regionF,
+                                         final NumField countF,
+                                         final String subject,
+                                         final String value,
+                                         final String side,
+                                         final String countSemantics,
+                                         final String knowledge) {
+        if (!knowledge.isEmpty() && KNOWLEDGE_VALUES.contains(knowledge)) {
+            return "ENEMY_POSITION";
+        }
+        if (!regionF.missing() && !countF.missing()
+                && SIDES.contains(side) && COUNT_SEMANTICS.contains(countSemantics)) {
+            return "POSITION_REGION";
+        }
+        if (!value.isBlank() && MACHINE_TRANSITION.matcher(value).matches()) {
+            return "ALIVE_TRANSITION";
+        }
+        if (!subject.isBlank() && !timeSecF.missing()) {
+            return "DEATH";
+        }
+        return "TACTICAL";
+    }
 
     /**
      * 数值字段（Review Blocker B1：fail-close）：
