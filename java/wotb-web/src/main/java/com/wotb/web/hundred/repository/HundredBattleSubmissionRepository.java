@@ -44,6 +44,10 @@ public interface HundredBattleSubmissionRepository extends JpaRepository<Hundred
     Page<HundredBattleSubmission> findByVehicleIdAndStatusOrderByApprovedAverageDamageDescApprovedAtAscIdAsc(
             long vehicleId, String status, Pageable pageable);
 
+    /** 默认公开榜：不按车辆筛选的 CURRENT 前十（固定数量，不触发无用 count 查询）。 */
+    List<HundredBattleSubmission> findTop10ByStatusAndApprovedAverageDamageIsNotNullOrderByApprovedAverageDamageDescApprovedAtAscIdAsc(
+            String status);
+
     /** 竞争排名：全部 CURRENT 按 approved_average_damage 分组计数（服务端前缀和计算 rank）。 */
     @Query("""
             select s.approvedAverageDamage, count(s) from HundredBattleSubmission s
@@ -51,6 +55,14 @@ public interface HundredBattleSubmissionRepository extends JpaRepository<Hundred
             group by s.approvedAverageDamage
             """)
     List<Object[]> countCurrentGroupedByDamage(@Param("vehicleId") long vehicleId);
+
+    /** 默认公开榜的 competition ranking 分组来源。 */
+    @Query("""
+            select s.approvedAverageDamage, count(s) from HundredBattleSubmission s
+            where s.status = 'CURRENT' and s.approvedAverageDamage is not null
+            group by s.approvedAverageDamage
+            """)
+    List<Object[]> countAllCurrentGroupedByDamage();
 
     /** 竞争排名辅助：严格高于指定伤害的 CURRENT 数量（rank = 1 + count）。 */
     @Query("""

@@ -83,7 +83,7 @@
 
 | 端点 | 权限 | 说明 |
 |---|---|---|
-| `GET /api/hof/hundred?vehicleId=&page=&size=` | 匿名 | 单车辆独立排行榜（competition ranking 1,2,2,4，query-time 派生） |
+| `GET /api/hof/hundred?vehicleId=&page=&size=` | 匿名 | `vehicleId` 可选：缺省为全站 CURRENT 最高 10 条（固定不翻页）；传入时为单车辆独立排行榜（competition ranking 1,2,2,4，query-time 派生） |
 | `POST /api/hof/hundred/submissions` | 登录 | multipart 提交（vehicleId/averageDamage/battleCount/screenshot/replays×5） |
 | `POST /api/hof/hundred/submissions/{id}/cancel` | 登录（本人） | 用户撤销 PENDING |
 | `GET /api/users/hundred/status` | 登录 | 个人中心：CURRENT / PENDING / 最近拒绝 |
@@ -94,3 +94,9 @@
 | `POST /api/admin/hof/hundred/submissions/{id}/approve` | 同上 | 通过（approved 值可修正） |
 | `POST /api/admin/hof/hundred/submissions/{id}/reject` | 同上 | 拒绝（原因强制） |
 | `POST /api/admin/hof/hundred/submissions/{id}/delete` | 同上 | 删除 CURRENT（原因强制，不恢复 SUPERSEDED） |
+
+## 页面交互约定
+
+- 公开「百场」页默认不选车辆，标签为“默认”，展示全站当前最高 10 条并显示车辆名；选择具体车辆后才进入该车的独立分页排行榜。
+- 国家/系别与车种是**可选的车辆候选筛选**，仅缩小随后可选的 Tier X 车辆；未选它们时仍可直接从完整 Tier X 车辆列表选择。百场仅支持 Tier X，因此不另设等级筛选。
+- 管理后台列表对 PENDING / CURRENT / REJECTED / SUPERSEDED / CANCELLED / DELETED 一律只提供“详情”入口。通过、拒绝、删除只能在详情内触发；REJECTED 详情必须展示拒绝分类、说明和时间，CANCELLED / DELETED 也保留可审计的终态信息。
