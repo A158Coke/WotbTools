@@ -13,6 +13,19 @@ export const EXTENDED_ONLY_PLAYER_KEYS = new Set([
   'rank'
 ])
 
+/** League Rating 模式默认可见列（plan §15：玩家/战队/车辆/伤害/助攻/击杀/总 Rating）。 */
+export const LEAGUE_DEFAULT_VISIBLE = [
+  'nickname', 'clan', 'tank_name', 'damage_dealt', 'damage_assisted', 'kills', 'league_rating'
+]
+
+/** League 模式固定列（玩家 + 总 Rating；sticky 布局依据，不可隐藏/移动）。 */
+export const LEAGUE_FIXED_KEYS = ['nickname', 'league_rating']
+
+/** 是否 League Rating 模式（playerColumns 含 league_rating 即视为 league）。 */
+export function isLeagueColumns(cols) {
+  return Array.isArray(cols) && cols.some(c => c && c.key === 'league_rating')
+}
+
 const COL_GROUP_CAT = {
   nickname: 'identity', clan: 'identity', account_id: 'extra',
   tank_name: 'vehicle', tank_tier: 'vehicle', tank_type: 'vehicle', tank_nation: 'vehicle',
@@ -24,6 +37,12 @@ const COL_GROUP_CAT = {
   n_hits_received: 'battle', n_penetrations_received: 'battle', n_enemies_damaged: 'battle',
   contribution: 'battle', kast: 'battle', impact: 'battle',
   multi_damage_rate: 'battle', traded_deaths: 'battle',
+  league_rating: 'rating', league_damage_score: 'rating', league_assist_score: 'rating',
+  league_kill_score: 'rating', league_exchange_score: 'rating', league_blocked_score: 'rating',
+  league_survival_score: 'rating', league_shooting_score: 'rating', league_objective_score: 'rating',
+  victory_points_earned: 'battle', victory_points_seized: 'battle',
+  mvp_count: 'overview', damage_total: 'battle', assist_total: 'battle', kills_total: 'battle',
+  team_name: 'identity',
   platoon_label: 'extra', rank: 'extra',
   battles: 'overview', wins: 'overview', win_rate: 'overview', survival_rate: 'overview',
   kills_avg: 'battle', damage: 'battle', damage_avg: 'battle', assisted: 'battle', assisted_avg: 'battle',

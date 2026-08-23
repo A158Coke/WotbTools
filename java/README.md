@@ -110,6 +110,13 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 - `duplicates` / `failures`：去重和失败信息。
 - `playerColumns` / `aggregateColumns`：纯英文 key + 是否数值，前端由三语 `player_labels` / `agg_labels` 显示。
 
+> **League Rating（训练赛/联赛）**：上传含训练房（arenaBonusType=2）或联赛/锦标赛（=4）回放时，
+> 响应额外返回 `league` 元数据（mode=LEAGUE_RATING、战队 Rating/MVP/队内最佳、八维度
+> `league_*` 列与固定列元数据、选手/战队中位数汇总、校验失败列表），且 `playerColumns` /
+> `aggregateColumns` **不含** `contribution`/`kast`/`impact`；混合普通+训练赛/联赛 → HTTP 400
+> `MIXED_LEAGUE_AND_STANDARD_REPLAYS`（不返回部分预览）。评分 core 见
+> `wotb-core/.../league/`（LeagueRatingCalculator 等），preview/Excel 复用同一评分结果。
+
 ### `POST /api/preview`
 
 `multipart/form-data`，字段名为 `files`，可上传一个或多个 `.wotbreplay`。
@@ -138,7 +145,7 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 大文件量导出（如 34+ 个回放）走异步 Job，页面不再阻塞等待同步 HTTP 响应：
 
-- `POST /api/replay/export-jobs`（multipart `files` + `?mode=aggregate|each`；或 `?processingJobId=<解析任务>` 复用已解析 result，**不再重新上传 replay / 重新 processFull**）— 校验并立即把上传输入持久化到 job 临时目录（复用路径无上传输入，直接从 Processing Job 的 ProcessedDataset 生成 artifact），返回 `202 {jobId, status, total}`。引用不存在的解析任务 → 404 `PROCESSING_JOB_NOT_FOUND`，未 READY → 409 `PROCESSING_JOB_NOT_READY`。
+- `POST /api/replay/export-jobs`（multipart `files` + `?mode=aggregate|each`；或 `?processingJobId=<解析任务>` 复用已解析；可传 `teamNames` JSON（`{battle:{arenaId:team:名}, summary:{teamKey:名}}`：单场 vs 批次战队 identity 两种独立 override，仅本次调用内使用）result，**不再重新上传 replay / 重新 processFull**）— 校验并立即把上传输入持久化到 job 临时目录（复用路径无上传输入，直接从 Processing Job 的 ProcessedDataset 生成 artifact），返回 `202 {jobId, status, total}`。引用不存在的解析任务 → 404 `PROCESSING_JOB_NOT_FOUND`，未 READY → 409 `PROCESSING_JOB_NOT_READY`。
 - `GET /api/replay/export-jobs/{jobId}` — 轮询真实进度：`{jobId, status, phase, total, processed, duplicates, failures, errorCode, filename, contentType}`。`status` ∈ QUEUED / PROCESSING / READY / FAILED / CANCELLED（终态 exactly once）；`phase` ∈ PROCESSING_REPLAYS / BUILDING_EXCEL / BUILDING_ARCHIVE。0 场有效 → FAILED `NO_VALID_REPLAYS`（不生成空 Excel）。
 - `DELETE /api/replay/export-jobs/{jobId}` — 取消（QUEUED 立即终态；PROCESSING 协作取消，安全 checkpoint 后终态）。
 - `GET /api/replay/export-jobs/{jobId}/download` — READY 后流式下载 artifact（单场/汇总 xlsx 或 each zip；`FileSystemResource` streaming，不 `readAllBytes`）。
