@@ -158,6 +158,8 @@ class SecurityConfigTest {
         // 名人堂查询保持公开
         mvc.perform(get("/api/hof"))
                 .andExpect(status().isOk());
+        mvc.perform(get("/api/hof/vehicle-options"))
+                .andExpect(status().isOk());
     }
 
     /** HoF-admin 只管理名人堂；wotbtools-admin 拥有全部 admin 权限。 */
@@ -239,6 +241,7 @@ class SecurityConfigTest {
                 "/api/hof/upload",
                 "/api/hof/1/replay",
                 "/api/hof",
+                "/api/hof/vehicle-options",
                 "/api/admin/hof/probe",
                 "/api/admin/hof/audit",
                 "/static-probe"

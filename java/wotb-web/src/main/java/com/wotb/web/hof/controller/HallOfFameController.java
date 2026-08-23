@@ -2,6 +2,7 @@ package com.wotb.web.hof.controller;
 
 import com.wotb.web.config.ApiPaths;
 import com.wotb.web.hof.dto.HallOfFamePageDto;
+import com.wotb.web.hof.dto.HofVehicleOptionDto;
 import com.wotb.web.hof.dto.ReplayDownload;
 import com.wotb.web.hof.service.HallOfFameService;
 import com.wotb.web.hof.service.HallOfFameUploadService;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -47,15 +49,24 @@ public class HallOfFameController {
         return uploadService.upload(file);
     }
 
-    /** 统一公开查询：battleType=RANDOM|RATING（缺省 All）、tankId、nickname 模糊、page、size。 */
+    /** 统一公开查询：车辆分类条件 nation / vehicleType / tier 可独立使用并按交集处理。 */
     @GetMapping
     public HallOfFamePageDto list(
             @RequestParam(name = "battleType", required = false) final String battleType,
             @RequestParam(name = "tankId", required = false) final Long tankId,
+            @RequestParam(name = "nation", required = false) final String nation,
+            @RequestParam(name = "vehicleType", required = false) final String vehicleType,
+            @RequestParam(name = "tier", required = false) final Integer tier,
             @RequestParam(name = "nickname", required = false) final String nickname,
             @RequestParam(name = "page", defaultValue = "1") final int page,
             @RequestParam(name = "size", defaultValue = "50") final int size) {
-        return service.search(battleType, tankId, nickname, page, size);
+        return service.search(battleType, tankId, nation, vehicleType, tier, nickname, page, size);
+    }
+
+    /** 公开车辆筛选选项：只返回当前名人堂已有车辆及稳定英文属性。 */
+    @GetMapping("/vehicle-options")
+    public List<HofVehicleOptionDto> vehicleOptions() {
+        return service.vehicleOptions();
     }
 
     /**

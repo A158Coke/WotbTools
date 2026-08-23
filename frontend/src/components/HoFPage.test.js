@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
 
 const lbApi = vi.hoisted(() => ({
   hofList: vi.fn(() => Promise.resolve({ items: [], page: 1, size: 50, totalItems: 0, totalPages: 0 })),
+  hofVehicleOptions: vi.fn(() => Promise.resolve([])),
   hofUpload: vi.fn(() => Promise.resolve({ status: 'ok', arenaId: 'a1' })),
   hofDownload: vi.fn(() => Promise.resolve(undefined)),
   hofHundredList: vi.fn(() => Promise.resolve({ vehicleId: null, vehicleName: '', items: [], page: 1, size: 50, totalItems: 0, totalPages: 0 })),
@@ -36,7 +37,9 @@ vi.mock('../utils/helpers.js', () => ({
 }))
 
 vi.mock('../utils/display.js', () => ({
-  apiErrorLabel: (t, te, error) => (error?.code ? 'err:' + error.code : 'api-error')
+  apiErrorLabel: (t, te, error) => (error?.code ? 'err:' + error.code : 'api-error'),
+  replayValueLabel: (t, te, value) => value,
+  formatDateTimeMinute: value => value || ''
 }))
 
 vi.mock('vue-i18n', () => ({
@@ -51,6 +54,7 @@ describe('HoFPage', () => {
   beforeEach(() => {
     authenticated = true
     vi.clearAllMocks()
+    lbApi.hofVehicleOptions.mockResolvedValue([])
   })
 
   function mountPage() {
@@ -113,16 +117,60 @@ describe('HoFPage', () => {
   it('passes battle type and nickname filters to hofList', async () => {
     const wrapper = mountPage()
     await flushPromises()
-    const selects = wrapper.findAll('select')
-    // 第一个 select 是 battleType
-    await selects[0].setValue('RATING')
-    const input = wrapper.find('.lb-nick-input')
+    const singleToolbar = wrapper.findAll('.lb-toolbar')[0]
+    const selects = singleToolbar.findAll('select')
+    await selects[4].setValue('RATING')
+    const input = singleToolbar.find('.lb-nick-input')
     await input.setValue('Coke')
     await input.trigger('keyup.enter')
     await flushPromises()
     expect(lbApi.hofList).toHaveBeenLastCalledWith(
       expect.objectContaining({ battleType: 'RATING', nickname: 'Coke' })
     )
+  })
+
+  it('single-battle vehicle conditions independently filter the leaderboard and intersect vehicle choices', async () => {
+    lbApi.hofVehicleOptions.mockResolvedValue([
+      { tankId: 385, tankName: 'Progetto 65', nation: 'EUROPE', type: 'MEDIUM_TANK', tier: 10 },
+      { tankId: 999, tankName: 'European IX', nation: 'EUROPE', type: 'MEDIUM_TANK', tier: 9 },
+      { tankId: 6481, tankName: 'FV4005', nation: 'UK', type: 'TANK_DESTROYER', tier: 10 }
+    ])
+    const wrapper = mountPage()
+    await flushPromises()
+
+    let selects = wrapper.findAll('.lb-toolbar')[0].findAll('select')
+    await selects[2].setValue('10')
+    await selects[0].setValue('EUROPE')
+    await selects[1].setValue('MEDIUM_TANK')
+    await flushPromises()
+
+    selects = wrapper.findAll('.lb-toolbar')[0].findAll('select')
+    expect(selects[0].element.value).toBe('EUROPE')
+    expect(selects[1].element.value).toBe('MEDIUM_TANK')
+    expect(selects[2].element.value).toBe('10')
+    expect(selects[1].findAll('option').map(option => option.attributes('value')))
+      .toEqual(['', 'MEDIUM_TANK', 'TANK_DESTROYER'])
+    expect(selects[3].findAll('option').map(option => option.text()))
+      .toEqual(['hof.all_tanks', 'Progetto 65 · T10'])
+    expect(lbApi.hofList).toHaveBeenLastCalledWith(expect.objectContaining({
+      nation: 'EUROPE', vehicleType: 'MEDIUM_TANK', tier: '10'
+    }))
+    expect(lbApi.hofList.mock.calls.at(-1)[0].tankId).toBeNull()
+
+    await selects[3].setValue('385')
+    await flushPromises()
+    expect(lbApi.hofList).toHaveBeenLastCalledWith(expect.objectContaining({
+      nation: 'EUROPE', vehicleType: 'MEDIUM_TANK', tier: '10', tankId: 385
+    }))
+
+    await selects[2].setValue('9')
+    await flushPromises()
+    expect(selects[0].element.value).toBe('EUROPE')
+    expect(selects[1].element.value).toBe('MEDIUM_TANK')
+    expect(lbApi.hofList.mock.calls.at(-1)[0].tankId).toBeNull()
+    expect(lbApi.hofList).toHaveBeenLastCalledWith(expect.objectContaining({
+      nation: 'EUROPE', vehicleType: 'MEDIUM_TANK', tier: '9'
+    }))
   })
 
   it('triggers login when not authenticated and clicking download', async () => {
@@ -258,13 +306,15 @@ describe('HoFPage', () => {
     await wrapper.findAll('.tabs button')[1].trigger('click')
     await flushPromises()
 
-    expect(lbApi.hofHundredList).toHaveBeenLastCalledWith({ page: 1, size: 50 })
+    expect(lbApi.hofHundredList).toHaveBeenLastCalledWith({
+      page: 1, size: 50, nation: '', vehicleType: '', vehicleId: null
+    })
     expect(wrapper.find('.h100-vehicle-select option').text()).toBe('hundred.default')
     expect(wrapper.text()).toContain('Progetto 65')
     expect(wrapper.text()).toContain('GlobalTop')
   })
 
-  it('keeps nation and vehicle-type filters optional while narrowing vehicle choices', async () => {
+  it('applies optional hundred-battle category filters to the leaderboard and vehicle choices', async () => {
     const wrapper = mountPage()
     await flushPromises()
     await wrapper.findAll('.tabs button')[1].trigger('click')
@@ -275,10 +325,22 @@ describe('HoFPage', () => {
     expect(filters[0].find('option').text()).toBe('hundred.allNations')
     expect(filters[1].find('option').text()).toBe('hundred.allVehicleTypes')
 
-    await filters[0].setValue('European')
+    await filters[0].setValue('EUROPE')
     await flushPromises()
-    expect(lbApi.hofHundredList).toHaveBeenLastCalledWith({ page: 1, size: 50 })
+    expect(lbApi.hofHundredList).toHaveBeenLastCalledWith({
+      page: 1, size: 50, nation: 'EUROPE', vehicleType: '', vehicleId: null
+    })
     expect(wrapper.find('.h100-vehicle-select').findAll('option').length).toBeGreaterThan(1)
+    expect(wrapper.find('.h100-search-input').exists()).toBe(false)
+
+    await filters[1].setValue('MEDIUM_TANK')
+    await flushPromises()
+    const vehicleSelect = wrapper.find('.h100-vehicle-select')
+    await vehicleSelect.setValue('385')
+    await flushPromises()
+    expect(lbApi.hofHundredList).toHaveBeenLastCalledWith({
+      page: 1, size: 50, nation: 'EUROPE', vehicleType: 'MEDIUM_TANK', vehicleId: 385
+    })
   })
 
   it('submit modal blocks empty form with required-field error', async () => {
