@@ -1,0 +1,321 @@
+/* WotBTools Showcase Theme Layer
+ * Visual-only layer on top of tokens.css. Business behavior stays in page components.
+ * Goals: one WOTB-inspired language, wider containers, dense desktop tools, tablet/mobile reflow.
+ */
+
+:root {
+  --showcase-page-max: 1760px;
+  --showcase-wide-max: 1720px;
+  --showcase-content-max: 1420px;
+  --showcase-gutter: clamp(12px, 1.6vw, 30px);
+  --showcase-surface: color-mix(in srgb, var(--bg-card) 94%, #111 6%);
+  --showcase-surface-2: color-mix(in srgb, var(--bg-card2) 92%, #111 8%);
+  --showcase-line: color-mix(in srgb, var(--border) 76%, var(--accent) 24%);
+}
+
+[data-theme="dark"] {
+  --bg: #090d0f;
+  --bg-card: #11171a;
+  --bg-card2: #171e22;
+  --bg-card-hover: #1c252a;
+  --bg-upload: #0e1417;
+  --bg-elevated: #151c20;
+  --bg-list-hover: #182126;
+  --text: #e9e7e0;
+  --text-heading: #f6f1e7;
+  --text-sub: #a19f98;
+  --text-muted: #858985;
+  --text-label: #d7d2c8;
+  --border: #2b3439;
+  --border-header: #343d42;
+  --border-ghost: #394348;
+  --border-light: #20282c;
+  --border-heavy: #465158;
+  --accent: #d98f18;
+  --accent-hover: #f0a92c;
+  --accent-dark: #ffd382;
+  --accent-light: #f2ac30;
+  --accent-shadow: rgba(217, 143, 24, .22);
+  --surface-shadow: 0 16px 38px rgba(0, 0, 0, .28);
+  --hard-shadow: 0 26px 72px rgba(0, 0, 0, .46);
+}
+
+html, body, #app { min-height: 100%; }
+body {
+  background:
+    radial-gradient(circle at 15% -5%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 26%),
+    linear-gradient(rgba(255,255,255,.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.012) 1px, transparent 1px),
+    var(--bg);
+  background-size: auto, 36px 36px, 36px 36px, auto;
+}
+
+/* ---------- Global app shell ---------- */
+.topbar {
+  min-height: 60px !important;
+  height: 60px !important;
+  padding: 8px max(14px, calc((100vw - 1840px) / 2)) !important;
+  gap: 8px !important;
+  background: color-mix(in srgb, #080c0f 93%, transparent) !important;
+  border-bottom: 1px solid #30383d !important;
+  box-shadow: 0 10px 32px rgba(0,0,0,.24) !important;
+}
+.tb-content { padding-top: 60px !important; }
+.tb-brand { min-width: 48px; }
+.tb-logo { height: 34px !important; }
+.topbar nav { height: 100%; align-items: stretch !important; gap: 2px !important; }
+.topbar nav button {
+  min-height: 42px;
+  padding: 7px 14px !important;
+  border-radius: 5px !important;
+  color: #bebbb4 !important;
+  border-bottom: 2px solid transparent !important;
+  transition: background .16s ease, color .16s ease, border-color .16s ease;
+}
+.topbar nav button:hover { background: rgba(255,255,255,.035) !important; color: #f4efe5 !important; }
+.topbar nav button.active {
+  background: linear-gradient(180deg, rgba(217,143,24,.02), rgba(217,143,24,.14)) !important;
+  border-color: transparent !important;
+  border-bottom-color: var(--accent) !important;
+  color: #f5b445 !important;
+}
+.lang-select, .theme-bar, .auth-btn.ghost, .user-menu-trigger {
+  border-color: #343d42 !important;
+  background: rgba(17,23,26,.92) !important;
+  color: #d9d5cc !important;
+}
+.user-menu-panel {
+  border: 1px solid #394247 !important;
+  background: #11171a !important;
+  box-shadow: 0 22px 54px rgba(0,0,0,.44) !important;
+}
+
+/* ---------- Layout width system ---------- */
+.wrap {
+  max-width: var(--showcase-wide-max) !important;
+  width: calc(100vw - var(--showcase-gutter) * 2) !important;
+  margin-inline: auto !important;
+}
+.layout-content {
+  width: min(var(--showcase-content-max), calc(100vw - var(--showcase-gutter) * 2)) !important;
+  max-width: none !important;
+  padding: 26px 0 64px !important;
+}
+.layout-wide {
+  width: min(var(--showcase-wide-max), calc(100vw - var(--showcase-gutter) * 2)) !important;
+  max-width: none !important;
+  padding: 26px 0 64px !important;
+}
+.layout-data-workspace {
+  width: min(var(--showcase-page-max), calc(100vw - var(--showcase-gutter) * 2)) !important;
+  max-width: none !important;
+  padding: 24px 0 64px !important;
+}
+.layout-full-workspace {
+  width: 100% !important;
+  max-width: none !important;
+  height: calc(100vh - 60px) !important;
+}
+.admin-page {
+  width: min(var(--showcase-page-max), calc(100vw - var(--showcase-gutter) * 2)) !important;
+  max-width: none !important;
+  margin-inline: auto !important;
+  padding: 26px 0 64px !important;
+}
+
+/* ---------- Shared page hierarchy ---------- */
+.layout-content > h1,
+.layout-content > h2,
+.layout-wide > h1,
+.layout-wide > h2,
+.layout-data-workspace > h1,
+.layout-data-workspace > h2,
+.admin-page > h1,
+.admin-page > h2 {
+  letter-spacing: -.015em;
+}
+
+/* Cards/panels keep existing semantics, but share the same material language. */
+.layout-content :is(.card,.panel,.section-card,.profile-card,.account-card),
+.layout-wide :is(.card,.panel,.section-card),
+.layout-data-workspace :is(.card,.panel),
+.admin-page :is(.admin-table-wrap,.admin-search),
+.modal {
+  border-color: var(--showcase-line) !important;
+  box-shadow: var(--surface-shadow);
+}
+
+/* Inputs/buttons across tool pages */
+.layout-content :is(input,select,textarea),
+.layout-wide :is(input,select,textarea),
+.layout-data-workspace :is(input,select,textarea),
+.admin-page :is(input,select,textarea) {
+  border-color: var(--border-ghost) !important;
+  background: var(--bg-card) !important;
+}
+.layout-content :is(input,select,textarea):focus,
+.layout-wide :is(input,select,textarea):focus,
+.layout-data-workspace :is(input,select,textarea):focus,
+.admin-page :is(input,select,textarea):focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-shadow);
+}
+
+/* ---------- Replay parser ---------- */
+.layout-data-workspace > :first-child {
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border)) !important;
+}
+.restoolbar {
+  position: sticky;
+  top: 66px;
+  z-index: 30;
+  padding: 9px 10px !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent) !important;
+  box-shadow: 0 12px 30px rgba(0,0,0,.18);
+  backdrop-filter: blur(12px);
+}
+.tabs button.active {
+  color: var(--accent-dark) !important;
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border)) !important;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-card)) !important;
+}
+.battle-action {
+  border-color: #495158 !important;
+  background: #151c20 !important;
+}
+.battle-action.primary {
+  border-color: var(--accent) !important;
+  background: linear-gradient(180deg, var(--accent-light), var(--accent)) !important;
+  color: var(--accent-text) !important;
+}
+.tablewrap,
+.layout-data-workspace table {
+  scrollbar-color: var(--accent) var(--bg-card2);
+}
+.layout-data-workspace table thead th {
+  background: color-mix(in srgb, var(--bg-card2) 94%, #050607) !important;
+}
+
+/* ---------- Hall of Fame / dense rankings ---------- */
+.layout-wide table {
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.layout-wide table thead th {
+  background: color-mix(in srgb, var(--bg-card2) 94%, #050607) !important;
+}
+.layout-wide table tbody tr:hover { background: var(--bg-list-hover) !important; }
+
+/* ---------- Profile ---------- */
+.layout-content {
+  position: relative;
+}
+.layout-content::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0 auto auto 50%;
+  width: 68%;
+  height: 210px;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%);
+  pointer-events: none;
+}
+
+/* ---------- Admin operations console ---------- */
+.admin-page > h2 { font-size: 1.55rem !important; margin-bottom: 5px !important; }
+.admin-hint { margin-bottom: 18px !important; }
+.admin-search {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  box-shadow: var(--surface-shadow);
+}
+.admin-search input { min-height: 40px; }
+.admin-search button {
+  min-width: 96px;
+  background: linear-gradient(180deg, var(--accent-light), var(--accent)) !important;
+  box-shadow: 0 9px 24px var(--accent-shadow);
+}
+.admin-table-wrap {
+  max-height: calc(100vh - 250px);
+  overflow: auto !important;
+  border-color: #354047 !important;
+  box-shadow: 0 18px 44px rgba(0,0,0,.22) !important;
+}
+.admin-table { min-width: 1160px; font-variant-numeric: tabular-nums; }
+.admin-table th {
+  top: 0 !important;
+  z-index: 2;
+  height: 42px;
+  background: #171e22 !important;
+  color: #aaa79f !important;
+}
+.admin-table td { height: 48px; }
+.admin-table tbody tr:hover { background: #172025 !important; }
+.admin-table .cell-short { max-width: 190px !important; }
+.admin-table .btn-danger {
+  background: transparent !important;
+  opacity: .72;
+}
+.admin-modal {
+  border: 1px solid #394247;
+  background: #11171a !important;
+  box-shadow: 0 30px 80px rgba(0,0,0,.46);
+}
+
+/* ---------- Reconstruction / tactical workspaces ---------- */
+.layout-full-workspace,
+.reconstruction-page,
+.playback-page {
+  background: #080c0e;
+}
+.layout-full-workspace :is(.panel,.sidebar,.details-panel,.timeline,.toolbar) {
+  border-color: #303a40 !important;
+}
+
+/* ---------- Responsive contract ---------- */
+@media (max-width: 1199px) {
+  :root { --showcase-gutter: 14px; }
+  .topbar {
+    padding-inline: 12px !important;
+    overflow-x: auto !important;
+  }
+  .topbar nav button { padding-inline: 10px !important; }
+  .layout-content,
+  .layout-wide,
+  .layout-data-workspace,
+  .admin-page { padding-top: 18px !important; }
+  .restoolbar { top: 64px; }
+  .admin-table-wrap { max-height: none; }
+}
+
+@media (max-width: 767px) {
+  :root { --showcase-gutter: 8px; }
+  .topbar { min-height: 56px !important; height: 56px !important; }
+  .tb-content { padding-top: 56px !important; }
+  .tb-logo { height: 30px !important; }
+  .topbar nav { max-width: 58vw; overflow-x: auto; scrollbar-width: none; }
+  .topbar nav::-webkit-scrollbar { display: none; }
+  .topbar nav button { min-height: 38px; padding-inline: 9px !important; font-size: .78rem !important; }
+  .theme-bar { display: none !important; }
+  .lang-select { max-width: 72px; }
+
+  .layout-content,
+  .layout-wide,
+  .layout-data-workspace,
+  .admin-page {
+    width: calc(100vw - 16px) !important;
+    padding: 12px 0 42px !important;
+  }
+  .layout-full-workspace { height: calc(100vh - 56px) !important; }
+  .restoolbar { position: static; }
+  .resactions { overflow-x: auto; flex-wrap: nowrap !important; padding-bottom: 4px; }
+  .admin-search { flex-direction: column; }
+  .admin-search button { min-height: 40px; }
+  .admin-table-wrap { width: 100%; }
+  .admin-modal { width: calc(100vw - 22px) !important; padding: 18px !important; }
+}
