@@ -413,13 +413,20 @@ public class TeamReplayAnalysisService {
                     .map(TeamFactualConsistencyValidator.FactConflict::checkId)
                     .distinct().sorted()
                     .collect(java.util.stream.Collectors.joining(","));
+            final boolean hardConflicts =
+                    TeamFactualConsistencyValidator.hasHardConflict(conflicts);
             LOGGER.info(AiReviewEventLog.line("team_review_validation", correlationId,
                     "attempt", attempt,
-                    "result", "FAIL",
+                    "result", hardConflicts ? "FAIL" : "PASS_METADATA",
                     "conflictCount", conflicts.size(),
+                    "hardConflictCount", hardConflicts
+                            ? (int) conflicts.stream()
+                                    .filter(c -> c.severity() == TeamFactualConsistencyValidator.Severity.HARD_FACT)
+                                    .count()
+                            : 0,
                     "checks", checks,
                     "durationMs", elapsedMillis(validationStartNanos)));
-            countValidationAttempt("validation_failed");
+            countValidationAttempt(hardConflicts ? "validation_failed" : "metadata_only_pass");
             // docs/current-plan.md §47：DEBUG 级安全化冲突明细（只记录 check/reasonCode 低基数
             // 分类，不记录完整冲突 message / AI 原句 / Grounding Fact 内容）。
             if (LOGGER.isDebugEnabled()) {
@@ -427,8 +434,29 @@ public class TeamReplayAnalysisService {
                     LOGGER.debug(AiReviewEventLog.line("team_review_validation_conflict", correlationId,
                             "attempt", attempt,
                             "check", c.checkId(),
-                            "reasonCode", c.reasonCode() == null ? "UNCLASSIFIED" : c.reasonCode()));
+                            "reasonCode", c.reasonCode() == null ? "UNCLASSIFIED" : c.reasonCode(),
+                            "severity", c.severity().name()));
                 }
+            }
+            // P0-14：conflict 低基数指标（每类冲突累计，供 availability dashboard）。
+            for (final TeamFactualConsistencyValidator.FactConflict c : conflicts) {
+                countGroundingConflict(c.checkId(),
+                        c.severity() == TeamFactualConsistencyValidator.Severity.HARD_FACT
+                                ? "HARD" : "METADATA");
+            }
+            // P0-2/P0-6：structured metadata 冲突（evidence binding 类型/时间细节、coverage 缺失、
+            // 非关键 machine 字段）不阻塞输出——正文事实正确时直接放行，不浪费 LLM retry
+            // （生产已证明 3 次 140k prompt 全量重写导致 AI Review 连续不可用）。只有 HARD_FACT
+            // 冲突（用户可见事实错误）才进入 targeted rewrite → full rewrite → fail-safe。
+            if (!hardConflicts) {
+                LOGGER.info(AiReviewEventLog.line("team_review_metadata_passed", correlationId,
+                        "attempt", attempt,
+                        "conflictCount", conflicts.size(),
+                        "checks", checks));
+                logTeamReviewCompleted(correlationId, attempt, cumulativePromptTokens,
+                        cumulativeCompletionTokens, "PASS_METADATA", reviewStartNanos);
+                forwardTokens(listener, envelope.reviewMarkdown());
+                return envelope.reviewMarkdown();
             }
             if (attempt >= MAX_VALIDATION_ATTEMPTS) {
                 LOGGER.warn("Team Call #2 grounding validation exhausted after {} attempts ({} conflicts)",
@@ -654,6 +682,15 @@ public class TeamReplayAnalysisService {
         if (meterRegistry != null) {
             meterRegistry.counter("wotb_ai_team_review_validation_attempt_total", "result", result)
                     .increment();
+        }
+    }
+
+    /** §59/P0-14：grounding conflict 低基数指标（check=稳定 checkId；severity=HARD/metadata）。 */
+    private void countGroundingConflict(final String checkId, final String severity) {
+        if (meterRegistry != null) {
+            meterRegistry.counter("wotb_ai_team_review_grounding_conflict_total",
+                    "check", checkId == null ? "UNCLASSIFIED" : checkId,
+                    "severity", severity).increment();
         }
     }
 

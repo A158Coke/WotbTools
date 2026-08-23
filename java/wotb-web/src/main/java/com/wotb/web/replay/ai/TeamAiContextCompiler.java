@@ -88,11 +88,36 @@ public final class TeamAiContextCompiler {
                     .append("\n");
             if (!w.events().isEmpty()) {
                 sb.append("EVENTS\n");
-                for (final BattleDelta d : w.events()) {
+                // P0-10：窗口事件上限（避免 FOCUS WINDOWS 段被海量移动事件撑爆 prompt，
+                // 生产实测该段 13.4k 字符 ≈ 16.8k tokens）。优先保留高信息事件
+                // （阵亡/存活/HP/区域/接敌），移动/位置类事件折叠为一行摘要。
+                final List<BattleDelta> highInfo = w.events().stream()
+                        .filter(TeamAiContextCompiler::isHighInfoDelta)
+                        .toList();
+                final List<BattleDelta> lowInfo = w.events().stream()
+                        .filter(d -> !isHighInfoDelta(d))
+                        .toList();
+                int rendered = 0;
+                for (final BattleDelta d : highInfo) {
+                    if (rendered >= MAX_DELTAS_PER_EPISODE) {
+                        break;
+                    }
                     final String line = renderDelta(timeline, d, perspectiveTeam);
                     if (!line.isEmpty()) {
                         sb.append("- ").append(line).append("\n");
+                        rendered++;
                     }
+                }
+                if (rendered < MAX_DELTAS_PER_EPISODE && !lowInfo.isEmpty()) {
+                    final String line = renderDelta(timeline, lowInfo.get(0), perspectiveTeam);
+                    if (!line.isEmpty()) {
+                        sb.append("- ").append(line).append("\n");
+                        rendered++;
+                    }
+                }
+                final int omitted = w.events().size() - rendered;
+                if (omitted > 0) {
+                    sb.append("- （窗口内其余 ").append(omitted).append(" 个事件略）\n");
                 }
             }
             sb.append("AFTER 我方_alive=").append(w.after().friendlyAlive())
@@ -201,6 +226,17 @@ public final class TeamAiContextCompiler {
             }
         }
         return out;
+    }
+
+    /** P0-10：高信息事件（保留渲染）——阵亡/存活/HP/区域/接敌/失联/点数；移动类折叠。 */
+    private static boolean isHighInfoDelta(final BattleDelta d) {
+        return switch (d.kind()) {
+            case DESTROYED, ALIVE_COUNT_CHANGE, HP_CHANGE, HP_GAP_DELTA,
+                 REGION_CHANGE, FIRST_CONTACT, FIRST_KNOWN, ENEMY_LOST,
+                 ENEMY_REACQUIRED, POINTS_CHANGE, ENGAGEMENT_ACTIVITY,
+                 LOCAL_FORCE_CHANGE -> true;
+            default -> false;
+        };
     }
 
     private static String renderDelta(
