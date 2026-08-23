@@ -59,7 +59,7 @@ public class HundredBattleAdminController {
         return service.adminList(status, nation, vehicleType, vehicleId, page, size);
     }
 
-    /** 审核详情：proofScreenshot 仅 PENDING 返回；终态只保留结果与原因等文字数据。 */
+    /** 审核详情：MANUAL PENDING 可返回截图；WG 来源返回官方快照；终态无文件证据。 */
     @GetMapping("/submissions/{id}")
     public HundredAdminDetailDto detail(@PathVariable final long id) {
         return service.adminDetail(id);

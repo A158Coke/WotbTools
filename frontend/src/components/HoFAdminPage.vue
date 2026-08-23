@@ -16,10 +16,6 @@ const canAdmin = computed(() => {
   return Array.isArray(roles) && (roles.includes('HoF-admin') || roles.includes('wotbtools-admin'))
 })
 
-// 审核证据完整性（与 backend approve invariant 对齐）：exactly 5 行 evidence 且加载无错误才允许 APPROVE。
-// legacy PENDING（0 evidence）/ 加载失败 / 数量 != 5 → 禁用 Approve；REJECT 始终可用（backend 仍为权威边界）。
-const evidenceComplete = computed(() => replayEvidence.value.length === 5 && !evidenceError.value)
-
 const authPhase = ref('init') // init | login | ready
 const denied = ref(false)
 const error = ref('')
@@ -101,7 +97,7 @@ const actionBusy = ref(false)
 // 详情请求与证据请求分别防止旧响应覆盖当前打开的记录。
 let reviewGen = 0
 
-// ── 管理员证据（仅 PENDING：终态会清理截图与 replay metadata）──
+// ── 管理员文件证据（仅 MANUAL PENDING；WG PENDING 使用官方快照）──
 const replayEvidence = ref([])
 const evidenceLoading = ref(false)
 const evidenceError = ref('')
@@ -109,6 +105,45 @@ const screenshotZoom = ref(false)
 // stale-response guard：openReview(A) → loadEvidence(A) 后立刻 openReview(B)，
 // 若 A 的请求最后才返回，禁止 A 的 evidence 覆盖当前 B 的审核弹窗。
 let evidenceGen = 0
+
+const WARGAMING_VERIFICATION_SOURCE = 'WARGAMING_API'
+const WARGAMING_REGIONS = new Set(['ASIA', 'EU', 'NA'])
+const isWargamingReview = computed(
+  () => reviewDetail.value?.verificationSource === WARGAMING_VERIFICATION_SOURCE
+)
+const wargamingSnapshotComplete = computed(() => {
+  const detail = reviewDetail.value
+  const accountId = Number(detail?.gameAccountIdSnapshot)
+  const accountBattles = Number(detail?.officialAccountBattleCount)
+  const tankBattles = Number(detail?.officialTankBattleCount)
+  const tankDamage = Number(detail?.officialTankDamageDealt)
+  const averageDamage = Number(detail?.officialAverageDamage)
+  return isWargamingReview.value
+    && Boolean(detail?.verifiedAt)
+    && WARGAMING_REGIONS.has(detail?.verifiedServer)
+    && isIntegerAtLeast(accountId, 1)
+    && Boolean(String(detail?.nicknameSnapshot || '').trim())
+    && isIntegerAtLeast(accountBattles, 5000)
+    && isIntegerAtLeast(tankBattles, 100)
+    && tankBattles <= 2_147_483_647
+    && tankBattles <= accountBattles
+    && isIntegerAtLeast(detail?.officialTankDamageDealt, 0)
+    && isIntegerAtLeast(detail?.officialAverageDamage, 0)
+    && Math.round(tankDamage / tankBattles) === averageDamage
+})
+
+// 与 backend approve invariant 对齐：人工来源必须有截图 + exactly 5 行 evidence；
+// WG 来源只认完整官方快照，绝不要求或加载文件证据。
+const evidenceComplete = computed(() => {
+  if (reviewDetail.value?.status !== 'PENDING') return false
+  if (isWargamingReview.value) return wargamingSnapshotComplete.value
+  return Boolean(reviewDetail.value?.proofScreenshot)
+    && replayEvidence.value.length === 5
+    && !evidenceError.value
+})
+const approveDisabledHint = computed(() => isWargamingReview.value
+  ? t('hundredAdmin.wgSnapshotIncomplete')
+  : t('hundredAdmin.approveDisabledHint'))
 
 // ── 删除确认 ──
 const deleteTarget = ref(null)
@@ -340,6 +375,7 @@ function hundredStatusLabel(s) {
 
 async function openReview(row) {
   const g = ++reviewGen
+  ++evidenceGen
   reviewTarget.value = row
   reviewDetail.value = null
   reviewLoading.value = true
@@ -353,13 +389,20 @@ async function openReview(row) {
   currentDeleteReason.value = ''
   currentDeleteReasonText.value = ''
   replayEvidence.value = []
+  evidenceLoading.value = false
   evidenceError.value = ''
   screenshotZoom.value = false
   try {
     const detail = await api.hofAdminHundredDetail(row.id)
     if (g !== reviewGen) return
     reviewDetail.value = detail
-    if (detail.status === 'PENDING') loadEvidence(row.id)
+    approveDamage.value = String(detail.verificationSource === WARGAMING_VERIFICATION_SOURCE
+      ? detail.officialAverageDamage ?? '' : detail.claimedAverageDamage ?? '')
+    approveBattles.value = String(detail.verificationSource === WARGAMING_VERIFICATION_SOURCE
+      ? detail.officialTankBattleCount ?? '' : detail.claimedBattleCount ?? '')
+    if (detail.status === 'PENDING' && detail.verificationSource !== WARGAMING_VERIFICATION_SOURCE) {
+      loadEvidence(row.id)
+    }
   } catch (e) {
     if (g === reviewGen) actionMsg.value = apiErrorLabel(t, te, e)
   } finally {
@@ -367,7 +410,7 @@ async function openReview(row) {
   }
 }
 
-/** 加载 PENDING submission 的 replay evidence 元数据（旧记录可能为空）。 */
+/** 加载 MANUAL PENDING 的 replay evidence 元数据（旧记录可能为空）。 */
 async function loadEvidence(submissionId) {
   const g = ++evidenceGen
   evidenceLoading.value = true
@@ -417,6 +460,30 @@ function fmtSize(bytes) {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
+}
+
+function isIntegerAtLeast(value, minimum) {
+  if (value == null || value === '') return false
+  const number = Number(value)
+  return Number.isInteger(number) && number >= minimum
+}
+
+function formatNumber(value) {
+  if (value == null || value === '') return '-'
+  const number = Number(value)
+  return Number.isFinite(number) ? number.toLocaleString() : '-'
+}
+
+function verificationSourceLabel(source) {
+  const normalized = source || 'MANUAL'
+  const key = `hundredAdmin.verificationSource.${normalized}`
+  return te(key) ? t(key) : normalized
+}
+
+function verifiedServerLabel(server) {
+  if (!server) return '-'
+  const key = `hundredAdmin.server.${server}`
+  return te(key) ? t(key) : server
 }
 
 function closeReview() {
@@ -756,6 +823,7 @@ function battleTypeLabel(tp) {
                 <th>{{ $t('hundredAdmin.gameId') }}</th>
                 <th>{{ $t('hundredAdmin.claimedDamage') }}</th>
                 <th>{{ $t('hundredAdmin.claimedBattles') }}</th>
+                <th>{{ $t('hundredAdmin.verificationSourceLabel') }}</th>
                 <th>{{ $t('hundredAdmin.statusLabel') }}</th>
                 <th>{{ $t('hundredAdmin.submittedAt') }}</th>
                 <th>{{ $t('hofAdmin.actions') }}</th>
@@ -769,6 +837,7 @@ function battleTypeLabel(tp) {
                 <td class="muted">{{ r.gameAccountIdSnapshot }}</td>
                 <td class="dmg">{{ r.claimedAverageDamage ?? '-' }}</td>
                 <td>{{ r.claimedBattleCount ?? '-' }}</td>
+                <td><span class="hundred-source" :class="'hundred-source-' + (r.verificationSource || 'MANUAL').toLowerCase()">{{ verificationSourceLabel(r.verificationSource) }}</span></td>
                 <td><span class="hundred-status" :class="'hundred-status-' + String(r.status).toLowerCase()">{{ hundredStatusLabel(r.status) }}</span></td>
                 <td class="muted">{{ fmtTime(r.submittedAt) || '-' }}</td>
                 <td class="actions">
@@ -805,6 +874,7 @@ function battleTypeLabel(tp) {
                 <tr><th>{{ $t('hundredAdmin.vehicle') }}</th><td>{{ reviewDetail.vehicleName }}</td></tr>
                 <tr><th>{{ $t('hundredAdmin.claimedDamage') }}</th><td class="dmg">{{ reviewDetail.claimedAverageDamage }}</td></tr>
                 <tr><th>{{ $t('hundredAdmin.claimedBattles') }}</th><td>{{ reviewDetail.claimedBattleCount }}</td></tr>
+                <tr><th>{{ $t('hundredAdmin.verificationSourceLabel') }}</th><td><span class="hundred-source" :class="'hundred-source-' + (reviewDetail.verificationSource || 'MANUAL').toLowerCase()">{{ verificationSourceLabel(reviewDetail.verificationSource) }}</span></td></tr>
                 <tr><th>{{ $t('hundredAdmin.statusLabel') }}</th><td>{{ hundredStatusLabel(reviewDetail.status) }}</td></tr>
                 <tr><th>{{ $t('hundredAdmin.submittedAt') }}</th><td>{{ fmtTime(reviewDetail.submittedAt) || '-' }}</td></tr>
                 <template v-if="reviewDetail.approvedAverageDamage != null">
@@ -828,6 +898,21 @@ function battleTypeLabel(tp) {
               </tbody>
             </table>
 
+            <div v-if="isWargamingReview" class="hundred-review-section hundred-wg-snapshot">
+              <div class="hundred-review-label">{{ $t('hundredAdmin.wgSnapshot') }}</div>
+              <table class="hof-delete-table">
+                <tbody>
+                  <tr><th>{{ $t('hundredAdmin.verifiedServer') }}</th><td>{{ verifiedServerLabel(reviewDetail.verifiedServer) }}</td></tr>
+                  <tr><th>{{ $t('hundredAdmin.verifiedAccountId') }}</th><td class="muted">{{ reviewDetail.gameAccountIdSnapshot }}</td></tr>
+                  <tr><th>{{ $t('hundredAdmin.officialAccountBattles') }}</th><td>{{ formatNumber(reviewDetail.officialAccountBattleCount) }}</td></tr>
+                  <tr><th>{{ $t('hundredAdmin.officialTankBattles') }}</th><td>{{ formatNumber(reviewDetail.officialTankBattleCount) }}</td></tr>
+                  <tr><th>{{ $t('hundredAdmin.officialTankDamage') }}</th><td>{{ formatNumber(reviewDetail.officialTankDamageDealt) }}</td></tr>
+                  <tr><th>{{ $t('hundredAdmin.officialAverageDamage') }}</th><td class="dmg">{{ formatNumber(reviewDetail.officialAverageDamage) }}</td></tr>
+                  <tr><th>{{ $t('hundredAdmin.verifiedAt') }}</th><td>{{ fmtTime(reviewDetail.verifiedAt) || '-' }}</td></tr>
+                </tbody>
+              </table>
+            </div>
+
             <div v-if="reviewDetail.status === 'PENDING'" class="hundred-review-section">
               <div class="hundred-review-label">{{ $t('hundredAdmin.approved') }}</div>
               <div class="hundred-inputs">
@@ -840,7 +925,7 @@ function battleTypeLabel(tp) {
               </div>
             </div>
 
-            <div v-if="reviewDetail.status === 'PENDING'" class="hundred-review-section">
+            <div v-if="reviewDetail.status === 'PENDING' && !isWargamingReview" class="hundred-review-section">
               <div class="hundred-review-label">{{ $t('hundredAdmin.evidence') }}</div>
               <div class="hundred-proof-row">
                 <img v-if="reviewDetail.proofScreenshot" class="hundred-proof" :src="reviewDetail.proofScreenshot"
@@ -872,7 +957,7 @@ function battleTypeLabel(tp) {
               </template>
             </div>
 
-            <div class="hundred-review-section">
+            <div v-if="!isWargamingReview" class="hundred-review-section">
               <div class="hundred-review-label">{{ $t('hundredAdmin.replayValidation') }}</div>
               <ul class="val-list">
                 <li :class="reviewDetail.replayParseOk ? 'val-ok' : 'val-bad'">
@@ -895,7 +980,7 @@ function battleTypeLabel(tp) {
             <div v-if="reviewDetail.status === 'PENDING' && reviewPhase === 'view'" class="modal-actions">
               <button class="btn-sm" :disabled="actionBusy" @click="closeReview">{{ $t('hundredAdmin.close') }}</button>
               <button class="btn-sm danger" :disabled="actionBusy" @click="askReject">{{ $t('hundredAdmin.reject') }}</button>
-              <button class="btn-sm ok" :disabled="actionBusy || !evidenceComplete" :title="evidenceComplete ? '' : $t('hundredAdmin.approveDisabledHint')" @click="askApprove">{{ $t('hundredAdmin.approve') }}</button>
+              <button class="btn-sm ok" :disabled="actionBusy || !evidenceComplete" :title="evidenceComplete ? '' : approveDisabledHint" @click="askApprove">{{ $t('hundredAdmin.approve') }}</button>
             </div>
 
             <div v-else-if="reviewDetail.status === 'PENDING' && reviewPhase === 'approve-confirm'" class="hundred-action-area">
@@ -1014,6 +1099,9 @@ function battleTypeLabel(tp) {
 .hundred-status-current { background: var(--rating-good-bg); color: var(--rating-good-fg); }
 .hundred-status-rejected, .hundred-status-deleted { background: color-mix(in srgb, var(--error) 12%, var(--bg-card2)); color: var(--error); }
 .hundred-status-superseded, .hundred-status-cancelled { background: var(--bg-chip); color: var(--text-muted); }
+.hundred-source { display: inline-block; padding: 1px 7px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.hundred-source-manual { background: var(--bg-chip); color: var(--text-label); }
+.hundred-source-wargaming_api { background: var(--rating-good-bg); color: var(--rating-good-fg); }
 .btn-sm { padding: 5px 12px; border: 1px solid var(--border-ghost); border-radius: 7px; background: var(--bg-card2);
   color: var(--text-label); cursor: pointer; font-family: inherit; font-size: .8rem; }
 .btn-sm.danger { color: var(--delete); border-color: color-mix(in srgb, var(--delete) 45%, var(--border-ghost)); }
@@ -1038,6 +1126,8 @@ function battleTypeLabel(tp) {
 .hof-review-modal { max-width: 620px; }
 .hundred-review-section { margin: 12px 0; }
 .hundred-review-label { font-weight: 600; color: var(--text-muted); font-size: .85rem; margin-bottom: 6px; }
+.hundred-wg-snapshot { padding: 10px; border: 1px solid var(--border-ghost); border-radius: 8px; background: var(--bg-card2); }
+.hundred-wg-snapshot .hof-delete-table { margin: 4px 0 0; }
 .hundred-inputs { display: flex; flex-wrap: wrap; gap: 14px; }
 .hundred-inputs label { display: flex; align-items: center; gap: 6px; font-size: .85rem; color: var(--text-label); }
 .hundred-inputs input {

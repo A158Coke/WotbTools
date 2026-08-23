@@ -194,6 +194,19 @@ export async function hofHundredSubmit(formData) {
   return r.json()
 }
 
+/**
+ * 百场 WG 官方 API 认证提交（需登录，JSON）：
+ * body 包含 vehicleId / averageDamage / battleCount，不上传截图或回放。
+ */
+export async function hofHundredSubmitWargaming(body) {
+  const r = await hofAuthRequest('/api/hof/hundred/submissions/wargaming', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return r.json()
+}
+
 /** 用户撤销自己的 PENDING submission。 */
 export async function hofHundredCancel(id) {
   const r = await hofAuthRequest(`/api/hof/hundred/submissions/${encodeURIComponent(id)}/cancel`, { method: 'POST' })

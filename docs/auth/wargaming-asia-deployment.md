@@ -14,11 +14,11 @@ Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的
 > 生产实测：`api.wotblitz.*` 不提供 `/wot/auth/*`（返回 `METHOD_NOT_FOUND`），认证与账号 Host 必须分离。
 
 - 获取：Wargaming.net Developer Portal → My Applications → 选择 WoT Blitz 应用 → Application ID。
-- 注入：Keycloak 容器环境变量 `WG_APPLICATION_ID`（只配置一次）。
-  - 生产：GitHub Secrets `WG_APPLICATION_ID`（`deploy.yml` 已把 `${{ secrets.WG_APPLICATION_ID }}` 写入 keycloak service environment）。
+- 注入：Keycloak 与 backend 容器环境变量 `WG_APPLICATION_ID`（同一个值，只维护一个 secret）。Keycloak 用于 WG 登录，backend 用于百场 WG 官方自动认证。
+  - 生产：GitHub Secrets `WG_APPLICATION_ID`（`deploy.yml` 传给部署脚本，production compose 同时写入 keycloak 与 backend service environment）。
   - 本地：`docker/online/.env` 设置 `WG_APPLICATION_ID=...`。
 - 禁止把 application ID 写进 realm JSON、Git、前端、IdP alias 或浏览器参数。
-- 缺失行为（决策 D14）：Keycloak 正常启动；玩家点击 Wargaming 登录时 provider 返回"Wargaming login not configured"，不泄露其他信息。
+- 缺失行为（决策 D14）：容器正常启动；玩家点击 Wargaming 登录时 provider 返回"Wargaming login not configured"，百场 WG 自动认证返回稳定不可用错误；原人工审核链路不受影响。
 
 ## 2. 在 Keycloak Admin Console 创建三个 IdP 实例
 

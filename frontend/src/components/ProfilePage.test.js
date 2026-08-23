@@ -288,6 +288,17 @@ describe('ProfilePage Wargaming regions', () => {
         claimedAverageDamage: 3400,
         claimedBattleCount: 100,
         submittedAt: '2024-02-01T00:00:00Z'
+      }, {
+        id: 4,
+        vehicleId: 385,
+        vehicleName: 'Progetto 65',
+        status: 'PENDING',
+        verificationSource: 'WARGAMING_API',
+        claimedAverageDamage: 3500,
+        claimedBattleCount: 120,
+        officialAverageDamage: 4101,
+        officialTankBattleCount: 188,
+        submittedAt: '2024-02-02T00:00:00Z'
       }],
       rejected: [{
         id: 3,
@@ -312,6 +323,10 @@ describe('ProfilePage Wargaming regions', () => {
     expect(wrapper.text()).toContain('Object 277')
     expect(wrapper.text()).toContain('hundred.currentPending')
     expect(wrapper.text()).toContain('Jagdpanzer E 100')
+    expect(wrapper.text()).toContain('Progetto 65')
+    expect(wrapper.text()).toContain('4,101')
+    expect(wrapper.text()).toContain('188')
+    expect(wrapper.text()).not.toContain('3,500')
     expect(wrapper.text()).toContain('hundred.reviewStatus')
     expect(wrapper.text()).toContain('hundred.recentRejected')
     expect(wrapper.text()).toContain('INSUFFICIENT_PROOF')
