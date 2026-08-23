@@ -9,7 +9,6 @@ import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.parse.Replays;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.Aggregator;
-import com.wotb.core.stats.Rating;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
@@ -165,20 +164,6 @@ class ParityTest {
             assertTrue(a.battles >= 1 && a.battles <= c.battles.size());
             assertTrue(a.wins <= a.battles);
         });
-    }
-
-    @Test
-    void ratingComputedAndCentered() throws Exception {
-        final List<Battle> battles = new ArrayList<>();
-        for (final Path p : replays()) {
-            battles.add(ReplayParser.parse(Files.readAllBytes(p)));
-        }
-        Rating.compute(battles, Tankopedia.load());
-        final List<PlayerResult> all = new ArrayList<>();
-        battles.forEach(b -> all.addAll(b.players));
-        assertTrue(all.stream().allMatch(p -> p.rating != null), "每位玩家都应有评分");
-        final double avg = all.stream().mapToInt(p -> p.rating).average().orElse(0);
-        assertTrue(avg > 850 && avg < 1150, "评分均值应接近 1000, 实际 " + avg);
     }
 
     @Test

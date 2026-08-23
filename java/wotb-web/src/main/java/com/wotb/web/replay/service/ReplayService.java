@@ -11,16 +11,14 @@ import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.Aggregator;
+import com.wotb.core.stats.PerformanceMetricsCalculator;
 import com.wotb.core.stats.PotentialDamage;
-import com.wotb.core.stats.Rating;
-import com.wotb.core.stats.RatingAnalyzer;
-import com.wotb.core.stats.RatingConfig;
 import com.wotb.web.replay.dto.AggRow;
 import com.wotb.web.replay.dto.BattleDto;
 import com.wotb.web.replay.dto.ColumnDef;
 import com.wotb.web.replay.dto.ExportResult;
+import com.wotb.web.replay.dto.PerformanceRow;
 import com.wotb.web.replay.dto.PreviewResponse;
-import com.wotb.web.replay.dto.RatingResponse;
 import com.wotb.web.replay.mapper.Mapper;
 import com.wotb.web.replay.metrics.ReplayUsageMetrics;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -81,18 +79,12 @@ public class ReplayService {
     public Map<String, List<ColumnDef>> columns() {
         return Map.of(
                 "player", Mapper.playerColumns(),
-                "aggregate", Mapper.aggregateColumns(),
-                "rating", Mapper.ratingColumns());
+                "aggregate", Mapper.aggregateColumns());
     }
 
     /** 已加载车辆数 (健康检查用)。 */
     public int tankCount() {
         return tankopedia.size();
-    }
-
-    /** 当前评分参数 (供前端「评分规则」展示算法与真实权重)。 */
-    public RatingConfig ratingConfig() {
-        return Rating.config();
     }
 
     /** 解析(并去重), 返回预览: 每场玩家数据 + 跨场汇总 + 去重/失败信息。 */
@@ -101,9 +93,10 @@ public class ReplayService {
     }
 
     private PreviewResponse previewWithinPermit(final MultipartFile[] files) throws Exception {
-        final Collected c = Replays.collect(toSources(files), null);
-        PotentialDamage.apply(c.battles, tankopedia);
-        Rating.compute(c.battles, tankopedia);   // 基准=本次上传集合
+        // 统一完整处理链：parse + reconstruction + ObservedMaxHp + DeathTimeReconciler
+        // （同一请求生命周期内每个 replay 只解析一次，战斗表现复用同一 authoritative facts）
+        final Collected c = Replays.collect(toSources(files), this::processFull, null);
+        PotentialDamage.apply(c.battles, tankopedia);   // 事实层 enrich（metrics 只读）
 
         final List<BattleDto> battles = new ArrayList<>();
         for (int i = 0; i < c.battles.size(); i++) {
@@ -112,24 +105,14 @@ public class ReplayService {
         final List<AggRow> aggregate = c.battles.size() > 1
                 ? Mapper.toAggregate(Aggregator.aggregate(c.battles, tankopedia))
                 : List.of();
+        final List<PerformanceRow> performance = Mapper.toPerformance(PerformanceMetricsCalculator.compute(c.battles));
 
-        return new PreviewResponse(battles, aggregate, c.duplicates, c.failures,
-                Mapper.playerColumns(), Mapper.aggregateColumns());
-    }
-
-    /** 实时 rating: 只基于本次上传回放计算，不落库、不读取历史记录。 */
-    public RatingResponse ratingLeaderboard(final MultipartFile[] files) throws Exception {
-        return timed(ReplayUsageMetrics.OP_RATING, files.length, () -> capacityLimiter.execute(() -> ratingWithinPermit(files)));
-    }
-
-    private RatingResponse ratingWithinPermit(final MultipartFile[] files) throws Exception {
-        final Collected c = Replays.collect(toSources(files), this::processRatingSource, null);
-        return new RatingResponse(Mapper.toRatings(RatingAnalyzer.compute(c.battles, tankopedia)),
-                c.duplicates, c.failures, Mapper.ratingColumns());
+        return new PreviewResponse(battles, aggregate, performance, c.duplicates, c.failures,
+                Mapper.playerColumns(), Mapper.aggregateColumns(), Mapper.performanceColumns());
     }
 
     /** 完整处理回填已证明的进场满血；重建不可用时仍返回结算战绩并使用车辆库兜底。 */
-    private Battle processRatingSource(final Source source) {
+    private Battle processFull(final Source source) {
         final ReplayProcessingResult result = processingFacade.process(source, ReplayProcessingOptions.full());
         if (result.battle() != null) {
             return result.battle();
@@ -138,6 +121,7 @@ public class ReplayService {
                 ? result.error().message() : "REPLAY_PROCESSING_FAILED";
         throw new IllegalArgumentException(message);
     }
+
 
     /**
      * 导出 xlsx/zip: 单场 -> 单场工作簿; 多场 -> 去重后的汇总工作簿; mode=each -> 每场一个 xlsx 打包 zip。
