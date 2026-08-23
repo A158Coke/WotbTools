@@ -69,9 +69,11 @@ average_hp = 参战玩家（provenance-aware 满血）之和 ÷ 14
 **禁止硬编码 2400 兜底冒充权威**（历史 Rating V2 曾固定 2400，已移除）。
 
 **Provenance 语义（fail-closed）**：`BattleHpFacts.averageHp(battle)` 返回
-`BattleAverageHp(value, complete)`——标准 14 人战斗中存在需要计入平均值的玩家 HP UNKNOWN
-（无 OBSERVED_EXACT 且无 tankopedia base）时，场均 HP 为 **unavailable（complete=false）**，
-**禁止 UNKNOWN 按 0 参与均值**。依赖 averageHp 的衍生指标（贡献度击杀项 / KAST / 多伤率 /
+`BattleAverageHp(value, complete)`。`complete=true` 仅当：**标准 14 名有效参战玩家（team 1/2）
+全部存在、且 HP fact 全部 known**——此时 value 才是权威均值 `total / 14`。以下任一情况均为
+**unavailable（complete=false）**：参战玩家数 != 14（不足 14 人不得用部分玩家 total/14 冒充）、
+或 14 人中存在 HP UNKNOWN（无 OBSERVED_EXACT 且无 tankopedia base，**禁止按 0 参与**）、
+或 battle/players 为 null。依赖 averageHp 的衍生指标（贡献度击杀项 / KAST / 多伤率 /
 场均 HP）在 unavailable 场次 fail-closed（按「HP 已知场次」做分母，不产生伪精确结果）；
 不依赖 HP 的原始权威数据（damage / assist / kills / survival / traded / impact）仍正常显示。
 

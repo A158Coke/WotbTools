@@ -36,11 +36,47 @@ class BattleHpFactsTest {
     }
 
     @Test
-    void zeroKnownReturnsUnavailable() {
+    void thirteenOfFourteenKnownAllHpReturnsUnavailable() {
+        // 只有 13 名有效参战玩家（全 known）→ eligible=13 != 14，无权威均值
+        final Battle battle = battleWith(13, KRANVAGN);
+        final BattleHpFacts.BattleAverageHp avg = BattleHpFacts.averageHp(battle);
+        assertFalse(avg.complete(), "不足 14 名参战玩家不得标记 complete");
+        assertEquals(0.0, avg.value(), 0.01);
+    }
+
+    @Test
+    void fourOfFourteenKnownAllHpReturnsUnavailable() {
+        // 只有 4 名有效参战玩家（全 known）→ eligible=4 != 14，禁止 partial total / 14
+        final Battle battle = battleWith(4, KRANVAGN);
+        final BattleHpFacts.BattleAverageHp avg = BattleHpFacts.averageHp(battle);
+        assertFalse(avg.complete(), "4 人 battle 不得得到虚假的 total/14 权威均值");
+        assertEquals(0.0, avg.value(), 0.01);
+    }
+
+    @Test
+    void zeroPlayersReturnsUnavailable() {
         final Battle battle = new Battle();
-        battle.players = List.of(player(1L, 1, -1), player(2L, 2, -1));
+        battle.players = List.of();
         final BattleHpFacts.BattleAverageHp avg = BattleHpFacts.averageHp(battle);
         assertFalse(avg.complete());
+        assertEquals(0.0, avg.value(), 0.01);
+    }
+
+    @Test
+    void nullBattleOrPlayersReturnsUnavailable() {
+        assertFalse(BattleHpFacts.averageHp(null).complete());
+        final Battle battle = new Battle();
+        battle.players = null;
+        assertFalse(BattleHpFacts.averageHp(battle).complete());
+    }
+
+    @Test
+    void unknownHpAmongFourteenReturnsUnavailable() {
+        final Battle battle = battleWith(14, KRANVAGN);
+        // 第 14 名玩家 HP UNKNOWN（tankId=-1、无 entryHp）→ 14 人但 1 unknown，禁止按 0 参与
+        battle.players.set(13, player(999L, 1, -1));
+        final BattleHpFacts.BattleAverageHp avg = BattleHpFacts.averageHp(battle);
+        assertFalse(avg.complete(), "存在需计入平均值的 UNKNOWN 玩家时场均 HP 必须 unavailable");
         assertEquals(0.0, avg.value(), 0.01);
     }
 

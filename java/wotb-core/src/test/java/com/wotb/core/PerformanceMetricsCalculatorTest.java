@@ -20,13 +20,24 @@ class PerformanceMetricsCalculatorTest {
 
     @Test
     void kastUsesBestSingleBattleContribution() {
+        // 完整 14 人（7+7），全部 HP known → 场均 HP complete
         final Battle battle = new Battle();
         battle.winnerTeam = 1;
         battle.players = List.of(
-                player(1, 1, 0, 0, 0, false, 100, 1000),
+                player(1, 1, 0, 0, 0, false, 100, 1000),   // 死 100s，窗口内有敌 103/104s 死亡
                 player(2, 1, 0, 0, 0, true, 0, 0),
                 player(3, 2, 0, 0, 0, false, 104, 1000),
-                player(4, 2, 0, 0, 0, false, 103, 1000)
+                player(4, 2, 0, 0, 0, false, 103, 1000),
+                player(5, 1, 0, 0, 0, true, 0, 0),
+                player(6, 1, 0, 0, 0, true, 0, 0),
+                player(7, 1, 0, 0, 0, true, 0, 0),
+                player(8, 2, 0, 0, 0, true, 0, 0),
+                player(9, 2, 0, 0, 0, true, 0, 0),
+                player(10, 1, 0, 0, 0, true, 0, 0),
+                player(11, 1, 0, 0, 0, true, 0, 0),
+                player(12, 2, 0, 0, 0, true, 0, 0),
+                player(13, 2, 0, 0, 0, true, 0, 0),
+                player(14, 2, 0, 0, 0, true, 0, 0)
         );
 
         final List<PerformanceMetricsCalculator.Row> rows =
@@ -38,13 +49,24 @@ class PerformanceMetricsCalculatorTest {
 
     @Test
     void metricsExposePotentialAssistImpactAndMultiDamageWithoutCompositeRating() {
+        // 完整 14 人（7+7），全部 HP known → 场均 HP complete（不得用不完整 battle 冒充）
         final Battle battle = new Battle();
         battle.winnerTeam = 1;
         battle.players = List.of(
-                player(1, 1, 2600, 400, 2, true, 0, 0),
-                player(2, 1, 100, 0, 0, true, 0, 0),
-                player(3, 2, 600, 0, 0, false, 120, 1000),
-                player(4, 2, 200, 0, 0, true, 0, 0)
+                player(1, 1, 2600, 400, 2, true, 0, 0),   // carry
+                player(2, 1, 100, 0, 0, true, 0, 0),        // low
+                player(3, 1, 100, 0, 0, true, 0, 0),
+                player(4, 1, 100, 0, 0, true, 0, 0),
+                player(5, 1, 100, 0, 0, true, 0, 0),
+                player(6, 1, 100, 0, 0, true, 0, 0),
+                player(7, 1, 100, 0, 0, true, 0, 0),
+                player(8, 2, 600, 0, 0, false, 120, 1000),
+                player(9, 2, 200, 0, 0, true, 0, 0),
+                player(10, 2, 200, 0, 0, true, 0, 0),
+                player(11, 2, 200, 0, 0, true, 0, 0),
+                player(12, 2, 200, 0, 0, true, 0, 0),
+                player(13, 2, 200, 0, 0, true, 0, 0),
+                player(14, 2, 200, 0, 0, true, 0, 0)
         );
 
         final List<PerformanceMetricsCalculator.Row> rows =
@@ -64,14 +86,14 @@ class PerformanceMetricsCalculatorTest {
     void computeFallsBackToAccountIdWhenNicknameWhitespace() {
         final PlayerResult blankNicknamePlayer = player(1, 1, 2600, 400, 2, true, 0, 0);
         blankNicknamePlayer.nickname = "   ";
+        final List<PlayerResult> players = new ArrayList<>();
+        players.add(blankNicknamePlayer);
+        for (int i = 2; i <= 14; i++) {
+            players.add(player(i, i <= 7 ? 1 : 2, 100, 0, 0, true, 0, 0));
+        }
         final Battle battle = new Battle();
         battle.winnerTeam = 1;
-        battle.players = List.of(
-                blankNicknamePlayer,
-                player(2, 1, 100, 0, 0, true, 0, 0),
-                player(3, 2, 600, 0, 0, false, 120, 1000),
-                player(4, 2, 200, 0, 0, true, 0, 0)
-        );
+        battle.players = players;
 
         final List<PerformanceMetricsCalculator.Row> rows =
                 PerformanceMetricsCalculator.compute(List.of(battle));
