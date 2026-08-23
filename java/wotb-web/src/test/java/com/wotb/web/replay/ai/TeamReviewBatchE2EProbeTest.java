@@ -50,6 +50,7 @@ class TeamReviewBatchE2EProbeTest {
                 System::nanoTime, null);
 
         int usable = 0;
+        int executed = 0;
         final List<String> failures = new ArrayList<>();
         System.out.println("===== 批量真实 E2E（" + SAMPLES.size() + " replay）=====");
         for (final String sample : SAMPLES) {
@@ -58,6 +59,7 @@ class TeamReviewBatchE2EProbeTest {
                 System.out.println("SKIP missing: " + sample);
                 continue;
             }
+            executed++;
             final long start = System.nanoTime();
             try {
                 final byte[] bytes = Files.readAllBytes(file);
@@ -86,11 +88,19 @@ class TeamReviewBatchE2EProbeTest {
             }
         }
         System.out.println("===== 汇总 =====");
-        System.out.println("usable=" + usable + "/" + SAMPLES.size()
-                + " rate=" + (SAMPLES.isEmpty() ? 0 : Math.round(100.0 * usable / SAMPLES.size())) + "%");
+        final int ratePct = executed == 0 ? 0 : Math.round(100.0f * usable / executed);
+        System.out.println("executedSamples=" + executed + " usableSamples=" + usable
+                + " usableRate=" + ratePct + "% (target >= 80%)");
         if (!failures.isEmpty()) {
             System.out.println("failures:");
             failures.forEach(f -> System.out.println("  - " + f));
         }
+        // 显式运行时验收（计划 §20）：executed >= 1 时 usable rate 必须 >= 80%。
+        // 该断言只作用于开发者主动运行本 probe 的场景——无 AI_API_KEY 时上方
+        // Assumptions 已 skip，CI 不设 key 不会执行到这里，也不消耗任何 token。
+        org.junit.jupiter.api.Assertions.assertTrue(executed > 0,
+                "至少执行 1 个真实 replay（样本缺失时 probe 无验收意义）");
+        org.junit.jupiter.api.Assertions.assertTrue(ratePct >= 80,
+                "usable rate 必须 >= 80% (executed=" + executed + ", usable=" + usable + ")");
     }
 }
