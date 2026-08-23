@@ -182,18 +182,33 @@ class TeamReviewEnvelopeParserTest {
 
     @Test
     void failCloseUnknownClaimType() {
+        // V6m 边界：显式禁止类型（LOS 等）必须 reject——不推断、不降级。
         final String json = claimJson(
                 "\"claimType\":\"LOS\",\"timeSec\":112.0,\"text\":\"full LOS\"");
-        assertNull(TeamReviewEnvelopeParser.parse(json), "LOS/未知 claimType 必须 reject");
+        assertNull(TeamReviewEnvelopeParser.parse(json), "LOS/禁止 claimType 必须 reject");
+        // P0-4：未知类型但无任何 factual 机器字段的纯文本陈述 → deterministic 推断为 TACTICAL
+        // （正文事实由 validator 的 deterministic 检查兜底，不浪费 LLM retry）。
         final String unknown = claimJson(
                 "\"claimType\":\"FOO\",\"text\":\"something\"");
-        assertNull(TeamReviewEnvelopeParser.parse(unknown), "未知 claimType 必须 reject");
+        final TeamReviewEnvelope inferred = TeamReviewEnvelopeParser.parse(unknown);
+        assertNotNull(inferred, "P0-4: 未知 claimType（无机器字段）应推断为 TACTICAL，不 reject");
+        assertEquals("TACTICAL", inferred.claims().get(0).claimType());
     }
 
     @Test
     void failCloseClaimWithoutClaimType() {
+        // P0-4：缺 claimType 的纯文本陈述 → 推断 TACTICAL（正文由 validator 文本检查兜底）。
         final String json = claimJson("\"text\":\"no type claim\"");
-        assertNull(TeamReviewEnvelopeParser.parse(json), "claim 缺 claimType 必须 reject");
+        final TeamReviewEnvelope envelope = TeamReviewEnvelopeParser.parse(json);
+        assertNotNull(envelope, "P0-4: claim 缺 claimType 时按机器字段推断，纯文本 → TACTICAL");
+        assertEquals("TACTICAL", envelope.claims().get(0).claimType());
+        // 带 machine 字段但缺 claimType → 按字段推断为对应 factual 类型
+        final String deathNoType = claimJson(
+                "\"subject\":\"WildCat\",\"timeSec\":112.0,\"evidenceIds\":[\"E101\"],"
+                        + "\"text\":\"WildCat died at 112\"");
+        final TeamReviewEnvelope death = TeamReviewEnvelopeParser.parse(deathNoType);
+        assertNotNull(death, "P0-4: 缺 claimType 但有 subject+timeSec 应推断 DEATH");
+        assertEquals("DEATH", death.claims().get(0).claimType());
     }
 
     @Test

@@ -1127,6 +1127,7 @@
             "AI_CONTEXT_TOO_LARGE": "回放分析内容超出 AI 上下文限制，请减少文件数量。",
             "AI_UPSTREAM_UNAVAILABLE": "AI 服务暂时不可用，请稍后重试。",
             "AI_TIMEOUT": "AI 服务响应超时，请稍后重试。",
+            "AI_REVIEW_GROUNDING_FAILED": "AI 复盘未通过事实一致性校验，请重试。",
             "AI_EMPTY_RESPONSE": "AI 服务返回了空结果，请重试。",
             "AI_RESPONSE_INVALID": "AI 服务返回了无法识别的结果，请重试。",
             "AI_TIMELINE_UNUSABLE": "此回放缺少足够的战局时间线数据，暂时无法进行 AI 复盘。",
