@@ -19,6 +19,25 @@
   `blitzkit-references.mjs --emit-portraits` 可重复生成入口。
 
 ### Fixed
+- **Replay 批量导出：34+ 回放保持上传顺序、ZIP 写失败不再产出损坏包（PR #118 correctness）**：
+  - **输入顺序修复（Blocker 1）**：createJob 把上传持久化为 `N__name`，原 `Files.list().sorted()`
+    是整名字符串字典序，10+ 时顺序变成 `0,1,10,11,…,19,2,20…`；现改为按 `__` 前数字前缀整数
+    排序（`listInputsInOrder`/`inputOrder`），严格保持 `MultipartFile[]` 上传顺序——aggregate 的
+    battleSourceNames / 战斗列表「文件名」列与 mode=each 的 ZIP entry 顺序均与上传顺序一致；无法
+    解析前缀的文件排最后（防御性，不插入有效顺序中间）。
+  - **mode=each 异常边界拆分（Blocker 2）**：原单个 `catch(Exception)` 同时吞掉「该场 replay 无效」
+    （processFull/reconstruction/NO_BATTLE_DATA → failures++ 跳过继续）与「artifact/ZIP 写失败」
+    （应整个 job FAILED）；现拆为两个边界——只有 replay processing/enrichment 失败才转为
+    failures++；Battle 成功后 zip entry / POI / filesystem / OutputStream 任何失败 → 整个 job
+    FAILED，partial ZIP 由 finishTerminal 删除、绝不 READY。新增 `writeSingleExcel` 最小测试
+    seam（测试注入写失败，不引入大型抽象）。
+  - **QUEUED 取消 terminal observability exactly once**：被 `removeQueued` 移除的任务 Runnable
+    永不执行，worker 不会走到 finishTerminal → cancel 现于请求线程直接记录 `export_job_cancelled`
+    日志、`result_total{cancelled}` 与按「创建 → 取消」的 terminal duration；PROCESSING 协作取消
+    仍由 worker 记录，互不重复。`ExportJob` 恢复 `createdAtMillis`（duration 计算用）。
+  - 回归：34 replay each ZIP 顺序、12 replay aggregate 顺序（含战斗列表文件名列）、
+    valid/invalid/valid 剩余有效场顺序保持、ZIP 写失败 → FAILED + partial 删除 + 不可下载、
+    queued 取消 metrics exactly once（18 tests 全绿）。
 - **ReconstructionControllerLifecycleLogTest 并发稳定性修复（CI deploy test-backend flaky）**：
   ListAppender.list 默认是普通 ArrayList（append 无同步），runAnalysis 在 AiReviewWorkerExecutor worker 线程并发写日志而测试线程
 awaitLogContaining() 轮询 stream() 时抛 ConcurrentModificationException。改为 CopyOnWriteArrayList（写入量小、轮询读多，适合 COW），

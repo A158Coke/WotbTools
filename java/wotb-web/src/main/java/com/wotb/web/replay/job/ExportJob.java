@@ -49,6 +49,7 @@ public final class ExportJob {
     private String filename;
     private String contentType;
     private Path artifactPath;
+    private final long createdAtMillis;
     private long finishedAtMillis;
     /** 协作取消请求（worker 在安全 checkpoint 检查；QUEUED 时立即终态）。 */
     private volatile boolean cancelRequested;
@@ -57,6 +58,7 @@ public final class ExportJob {
         this.jobId = jobId;
         this.mode = mode;
         this.total = total;
+        this.createdAtMillis = System.currentTimeMillis();
     }
 
     public String jobId() {
@@ -168,6 +170,11 @@ public final class ExportJob {
     public synchronized Snapshot snapshot() {
         return new Snapshot(jobId, mode, status, phase, total, processed, duplicates, failures,
                 errorCode, filename, contentType);
+    }
+
+    /** 创建时间（QUEUED 取消的终态 duration 按「创建 → 取消」计，无 worker 运行时长）。 */
+    public long createdAtMillis() {
+        return createdAtMillis;
     }
 
     public long finishedAtMillis() {
