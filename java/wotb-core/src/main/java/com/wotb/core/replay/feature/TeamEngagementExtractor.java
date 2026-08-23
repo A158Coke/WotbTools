@@ -218,10 +218,10 @@ final class TeamEngagementExtractor {
             }
             final boolean attackerIsSubject = memberIdentity == null
                     ? l.attacker() != null && l.attacker().team() == perspectiveTeam
-                    : memberIdentity.matches(l.attacker());
+                    : l.attacker() != null && memberIdentity.matches(l.attacker());
             final boolean victimIsSubject = memberIdentity == null
                     ? l.victim() != null && l.victim().team() == perspectiveTeam
-                    : memberIdentity.matches(l.victim());
+                    : l.victim() != null && memberIdentity.matches(l.victim());
             final boolean crossTeam = l.attacker() == null
                     || l.victim() == null
                     || l.attacker().team() != l.victim().team();

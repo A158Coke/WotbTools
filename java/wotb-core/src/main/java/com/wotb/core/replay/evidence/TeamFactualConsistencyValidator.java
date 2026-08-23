@@ -53,12 +53,26 @@ public final class TeamFactualConsistencyValidator {
      * KNOWLEDGE_MISMATCH / COUNT_MISMATCH / UNSUPPORTED_HARD_FACT / TEMPORAL_OWNERSHIP 等），
      * 供 production 直接判断 validator 为什么失败；2 参构造器按 checkId 推断（BINDING 类冲突
      * 必须显式传具体原因，见各 binding 校验点）。</p>
+     * <p>severity（本轮 P0：production availability + factual safety 分界）：
+     * <ul>
+     *   <li>{@link Severity#HARD_FACT}：真正用户可见事实错误（阵亡时间/存活变化/位置数量/
+     *       knowledge/身份/unsupported hard fact）——必须阻止输出，可 retry，最终 fail-safe；</li>
+     *   <li>{@link Severity#STRUCTURED_METADATA}：structured envelope 内部 metadata 问题
+     *       （evidence binding 类型/时间细节、冗余引用、coverage 缺失但正文可 deterministic 验证、
+     *       非关键 machine 字段）——正文事实正确时不阻塞输出（P0-6）；</li>
+     *   <li>{@link Severity#FORMAT}：可 deterministic normalize 的格式问题——由 parser 容错处理。</li>
+     * </ul></p>
      */
-    public record FactConflict(String checkId, String message, String reasonCode) {
+    public record FactConflict(String checkId, String message, String reasonCode, Severity severity) {
 
-        /** 兼容旧契约：按 checkId 推断 reasonCode（BINDING 建议显式传入具体原因）。 */
+        /** 兼容旧契约：按 checkId 推断 reasonCode 与 severity。 */
         public FactConflict(final String checkId, final String message) {
-            this(checkId, message, inferReason(checkId));
+            this(checkId, message, inferReason(checkId), inferSeverity(checkId, inferReason(checkId)));
+        }
+
+        /** 显式 reasonCode + 按 checkId/reasonCode 推断 severity。 */
+        public FactConflict(final String checkId, final String message, final String reasonCode) {
+            this(checkId, message, reasonCode, inferSeverity(checkId, reasonCode));
         }
 
         private static String inferReason(final String checkId) {
@@ -76,6 +90,43 @@ public final class TeamFactualConsistencyValidator {
                 default -> "UNCLASSIFIED";
             };
         }
+
+        /** 按 checkId + reasonCode 推断严重级（BINDING 中类型/时间/冗余/歧义 = metadata；身份/区域 = hard）。 */
+        private static Severity inferSeverity(final String checkId, final String reasonCode) {
+            return switch (checkId) {
+                // 用户可见事实错误：HARD
+                case "V2", "V4", "V5", "V6" -> Severity.HARD_FACT;
+                // V1/V3 默认 HARD（正文窗口/存活变化错误）；structured binding 变体在调用点显式覆盖
+                case "V1", "V3" -> Severity.HARD_FACT;
+                // BINDING：类型/时间/未知编号/身份歧义 → structured metadata（正文事实不受影响）；
+                // 身份不符/区域不符 → HARD（wrong player / position exact error）
+                case "BINDING" -> switch (reasonCode == null ? "" : reasonCode) {
+                    case "SUBJECT_MISMATCH", "REGION_MISMATCH" -> Severity.HARD_FACT;
+                    default -> Severity.STRUCTURED_METADATA;
+                };
+                case "EVIDENCE", "CONTRACT", "INTERNAL" -> Severity.STRUCTURED_METADATA;
+                case "OUTPUT", "DIAGNOSIS" -> Severity.HARD_FACT;
+                default -> Severity.HARD_FACT;
+            };
+        }
+    }
+
+    /** 冲突严重级（P0 production availability 分界，见 {@link FactConflict#severity()}）。 */
+    public enum Severity {
+        /** 用户可见事实错误：必须阻止输出（可 retry，最终 fail-safe）。 */
+        HARD_FACT,
+        /** structured envelope 内部 metadata 问题：正文事实正确时不阻塞输出。 */
+        STRUCTURED_METADATA,
+        /** 可 deterministic normalize 的格式问题：由 parser 容错处理。 */
+        FORMAT
+    }
+
+    /** 是否有任何 HARD_FACT 冲突（production 编排只对 HARD 触发 retry / fail-safe）。 */
+    public static boolean hasHardConflict(final List<FactConflict> conflicts) {
+        if (conflicts == null) {
+            return false;
+        }
+        return conflicts.stream().anyMatch(c -> c.severity() == Severity.HARD_FACT);
     }
 
     private static final Pattern CN_MIN_SEC = Pattern.compile("(\\d+)分(\\d+)秒");
@@ -372,12 +423,87 @@ public final class TeamFactualConsistencyValidator {
                 }
             }
         }
+        // P0-8：允许引用证据链覆盖变化（如 6v7→6v3 引用 6v7→6v6→6v5→6v4→6v3 逐步变化链）——
+        // 要求证据链首尾与 claim value 一致即可，不再要求单条证据完全等价。
+        if (!fullSupport && !c.evidenceIds().isEmpty()) {
+            fullSupport = chainSupportsTransition(facts, c.evidenceIds(), a, b, cc, d);
+        }
         if (!fullSupport) {
+            // P0-6 分界：value 与引用证据不一致，但全局存活变化中确实存在该变化（正文事实正确）
+            // → STRUCTURED_METADATA（不阻塞输出）；全局也不存在该变化 → HARD_FACT（正文事实错误）。
+            final boolean existsGlobally = matchesTransition(facts, a, b, cc, d);
             conflicts.add(new FactConflict("V3",
                     "存活变化错误（structured value binding）：claim " + c.value()
-                            + " 与引用的证据（" + citedIds(c) + "）不一致；"
-                            + "不能因为全局存活变化中恰好存在该变化就 PASS。"));
+                            + " 与引用的证据（" + citedIds(c) + "）不一致"
+                            + (existsGlobally ? "，但全局存活变化中存在该变化（正文事实正确）。" : "；"
+                                    + "后端事实中也不存在该变化。"),
+                    "COUNT_MISMATCH",
+                    existsGlobally ? Severity.STRUCTURED_METADATA : Severity.HARD_FACT));
         }
+    }
+
+    /**
+     * P0-8：引用证据链是否覆盖 claim 的存活变化（首尾一致 + 中间连续）。
+     * 例：claim 6v7→6v3 引用 E111(6v7→6v6) E112(6v6→6v5) E113(6v5→6v4) E114(6v4→6v3) →
+     * 首=E111.before(6v7) 尾=E114.after(6v3) 一致，且每步 after == 下一步 before → true。
+     * <p>严格性（CI 约束）：</p>
+     * <ol>
+     *   <li>连续 evidence chain → PASS；</li>
+     *   <li>首尾匹配但中间断链（如缺 6v6→6v5）→ 不得 PASS；</li>
+     *   <li>evidence ID 顺序乱序，但真实 timeSec 连续 → PASS（按 timeSec 排序，不按 ID）；</li>
+     *   <li>时间顺序错误/反向 → 不得 PASS（排序后 before/after 不连续）；</li>
+     *   <li>ALIVE_TRANSITION + FOCUS_WINDOW 混合 chain → 按 timeSec 排序后统一验证连续性。</li>
+     * </ol>
+     * 时间键用 {@code fact.timeSec()}（AliveTransition 的 startSec/endSec 即变化时刻；
+     * FOCUS_WINDOW 取 endSec 作为窗口代表时刻，与 GroundingFacts 排序口径一致）。
+     */
+    private static boolean chainSupportsTransition(final GroundingFacts facts,
+                                                   final List<String> evidenceIds,
+                                                   final int a, final int b,
+                                                   final int cc, final int d) {
+        final List<TransitionStep> steps = new ArrayList<>();
+        for (final String id : evidenceIds) {
+            final EvidenceFact fact = facts.byId().get(id);
+            if (fact == null) {
+                continue;
+            }
+            if (TeamGroundingFacts.TYPE_ALIVE_TRANSITION.equals(fact.type())) {
+                final int[] before = parseVCount(fact.attrs().get("before"));
+                final int[] after = parseVCount(fact.attrs().get("after"));
+                if (before != null && after != null) {
+                    steps.add(new TransitionStep(fact.timeSec(),
+                            before[0], before[1], after[0], after[1]));
+                }
+            } else if (TeamGroundingFacts.TYPE_FOCUS_WINDOW.equals(fact.type())) {
+                steps.add(new TransitionStep(fact.timeSec(),
+                        intAttr(fact, "beforeFriendly"), intAttr(fact, "beforeEnemy"),
+                        intAttr(fact, "afterFriendly"), intAttr(fact, "afterEnemy")));
+            }
+        }
+        if (steps.isEmpty()) {
+            return false;
+        }
+        // 按真实时间（battle-relative 秒）排序：evidence ID 乱序不影响链判定
+        steps.sort(java.util.Comparator.comparingDouble(TransitionStep::timeSec));
+        final TransitionStep first = steps.get(0);
+        final TransitionStep last = steps.get(steps.size() - 1);
+        if (first.beforeF() != a || first.beforeE() != b
+                || last.afterF() != cc || last.afterE() != d) {
+            return false;
+        }
+        // 中间连续性：每步 after 必须 == 下一步 before（断链 / 反向 / 时间错序 → false）
+        for (int i = 0; i + 1 < steps.size(); i++) {
+            final TransitionStep cur = steps.get(i);
+            final TransitionStep next = steps.get(i + 1);
+            if (cur.afterF() != next.beforeF() || cur.afterE() != next.beforeE()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** 存活变化链的一步：时间 + before/after 存活数（friendly/enemy）。 */
+    private record TransitionStep(double timeSec, int beforeF, int beforeE, int afterF, int afterE) {
     }
 
     /** B1 POSITION_REGION：引用的 POSITION_REGION 证据是 primary source（side/region/count/countSemantics）。 */
@@ -762,10 +888,14 @@ public final class TeamFactualConsistencyValidator {
                 final double t = fact.timeSec();
                 for (final double[] r : ranges) {
                     if (t < r[0] - WINDOW_EDGE_TOLERANCE_SEC || t > r[1] + WINDOW_EDGE_TOLERANCE_SEC) {
+                        // P0-6：structured binding 的引用窗口偏差——正文事实不受影响（正文窗口
+                        // 检查在下方独立进行），降级为 STRUCTURED_METADATA，不阻塞整次 AI Review。
                         conflicts.add(new FactConflict("V1",
                                 "时间归属冲突：陈述声称窗口 " + rangeText(r)
                                         + "，但引用的证据 " + id + "（" + factBrief(fact) + "，"
-                                        + TeamGroundingFacts.formatClock(t) + "）不在该窗口内。"));
+                                        + TeamGroundingFacts.formatClock(t) + "）不在该窗口内。",
+                                "TEMPORAL_OWNERSHIP",
+                                Severity.STRUCTURED_METADATA));
                     }
                 }
             }
