@@ -3,10 +3,10 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { mapLabel } from '../utils/helpers.js'
-import { apiErrorLabel } from '../utils/display.js'
+import { apiErrorLabel, replayValueLabel } from '../utils/display.js'
 import * as api from '../utils/api.js'
 
-const { t, te, locale } = useI18n()
+const { t, te, tm, locale } = useI18n()
 const { initPromise, tokenParsed, login } = useAuth()
 
 // 授权在 auth 初始化完成后决定（不先渲染再等 403）；直接访问无权限 → 明确无权限状态。
@@ -33,13 +33,33 @@ const totalPages = ref(0)
 const totalItems = ref(0)
 const fNickname = ref('')
 const fAccountId = ref('')
-const fArenaId = ref('')
 const fUploadedBy = ref('')
 const fBattleType = ref('')
 const fTankId = ref('')
 const fReplayAvailable = ref('')
 const fSort = ref('')
+const vehicleOptions = ref([])
+const vehicleOptionsLoading = ref(false)
+const fNation = ref('')
+const fTankType = ref('')
+const fTankTier = ref('')
 let gen = 0
+
+const filteredVehicleTypes = computed(() => uniqueValues(vehicleOptions.value
+  .filter(v => !fNation.value || v.nation === fNation.value)
+  .map(v => v.type)))
+const vehicleNations = computed(() => uniqueValues(vehicleOptions.value.map(v => v.nation)))
+const filteredVehicleTiers = computed(() => uniqueValues(vehicleOptions.value
+  .filter(v => (!fNation.value || v.nation === fNation.value)
+    && (!fTankType.value || v.type === fTankType.value))
+  .map(v => v.tier)
+  .filter(v => v != null))
+  .sort((a, b) => a - b))
+const filteredVehicles = computed(() => vehicleOptions.value
+  .filter(v => (!fNation.value || v.nation === fNation.value)
+    && (!fTankType.value || v.type === fTankType.value)
+    && (!fTankTier.value || String(v.tier) === fTankTier.value))
+  .sort((a, b) => (a.tankName || '').localeCompare(b.tankName || '')))
 
 // ── 操作日志 tab（只读）──
 const auditRows = ref([])
@@ -55,20 +75,24 @@ const hundredLoading = ref(false)
 const hundredPage = ref(1)
 const hundredTotalPages = ref(0)
 const hundredTotalItems = ref(0)
-const hundredStatus = ref('') // '' | PENDING | CURRENT
+const hundredStatus = ref('') // '' | PENDING | CURRENT | REJECTED | SUPERSEDED | CANCELLED | DELETED
 let hundredGen = 0
 
-// ── 百场审核弹窗（PENDING 行）──
+// ── 百场详情弹窗（所有状态共用；只有详情内才可执行状态操作）──
 const reviewTarget = ref(null)
 const reviewDetail = ref(null)
 const reviewLoading = ref(false)
-const reviewPhase = ref('view') // view | approve-confirm | reject-form
+const reviewPhase = ref('view') // view | approve-confirm | reject-form | delete-form
 const approveDamage = ref('')
 const approveBattles = ref('')
 const rejectReason = ref('')
 const rejectReasonText = ref('')
+const currentDeleteReason = ref('')
+const currentDeleteReasonText = ref('')
 const actionMsg = ref('')
 const actionBusy = ref(false)
+// 详情请求与证据请求分别防止旧响应覆盖当前打开的记录。
+let reviewGen = 0
 
 // ── 审核证据（PENDING：截图 + 5 replay metadata）──
 const replayEvidence = ref([])
@@ -78,13 +102,6 @@ const screenshotZoom = ref(false)
 // stale-response guard：openReview(A) → loadEvidence(A) 后立刻 openReview(B)，
 // 若 A 的请求最后才返回，禁止 A 的 evidence 覆盖当前 B 的审核弹窗。
 let evidenceGen = 0
-
-// ── 百场删除弹窗（CURRENT 行）──
-const hundredDeleteTarget = ref(null)
-const hundredDeleteReason = ref('')
-const hundredDeleteReasonText = ref('')
-const hundredDeleteMsg = ref('')
-const hundredDeleting = ref(false)
 
 // ── 删除确认 ──
 const deleteTarget = ref(null)
@@ -109,6 +126,7 @@ onMounted(async () => {
     return
   }
   loadRecords()
+  loadVehicleOptions()
 })
 
 async function loadRecords() {
@@ -119,7 +137,6 @@ async function loadRecords() {
     const params = { page: page.value, size: size.value }
     if (fNickname.value.trim()) params.nickname = fNickname.value.trim()
     if (fAccountId.value.trim()) params.accountId = fAccountId.value.trim()
-    if (fArenaId.value.trim()) params.arenaId = fArenaId.value.trim()
     if (fUploadedBy.value.trim()) params.uploadedBy = fUploadedBy.value.trim()
     if (fBattleType.value) params.battleType = fBattleType.value
     if (fTankId.value.trim()) params.tankId = fTankId.value.trim()
@@ -135,6 +152,55 @@ async function loadRecords() {
   } finally {
     if (g === gen) loading.value = false
   }
+}
+
+async function loadVehicleOptions() {
+  vehicleOptionsLoading.value = true
+  try {
+    vehicleOptions.value = (await api.hofAdminVehicleOptions()) || []
+  } catch (e) {
+    error.value = apiErrorLabel(t, te, e)
+  } finally {
+    vehicleOptionsLoading.value = false
+  }
+}
+
+function onNationChange() {
+  const hadTankFilter = Boolean(fTankId.value)
+  fTankType.value = ''
+  fTankTier.value = ''
+  fTankId.value = ''
+  if (hadTankFilter) search()
+}
+
+function onTankTypeChange() {
+  const hadTankFilter = Boolean(fTankId.value)
+  fTankTier.value = ''
+  fTankId.value = ''
+  if (hadTankFilter) search()
+}
+
+function onTankTierChange() {
+  const hadTankFilter = Boolean(fTankId.value)
+  fTankId.value = ''
+  if (hadTankFilter) search()
+}
+
+function onVehicleChange() {
+  search()
+}
+
+function vehicleLabel(vehicle) {
+  const name = vehicle.tankName || t('hofAdmin.unknownVehicle')
+  return vehicle.tier == null ? name : `${name} · T${vehicle.tier}`
+}
+
+function vehicleEnumLabel(value) {
+  return replayValueLabel(t, te, value)
+}
+
+function uniqueValues(values) {
+  return [...new Set(values.filter(Boolean))].sort()
 }
 
 function search() {
@@ -251,6 +317,7 @@ function hundredStatusLabel(s) {
 }
 
 async function openReview(row) {
+  const g = ++reviewGen
   reviewTarget.value = row
   reviewDetail.value = null
   reviewLoading.value = true
@@ -261,16 +328,20 @@ async function openReview(row) {
   approveBattles.value = String(row.claimedBattleCount ?? '')
   rejectReason.value = ''
   rejectReasonText.value = ''
+  currentDeleteReason.value = ''
+  currentDeleteReasonText.value = ''
   replayEvidence.value = []
   evidenceError.value = ''
   screenshotZoom.value = false
   try {
-    reviewDetail.value = await api.hofAdminHundredDetail(row.id)
-    loadEvidence(row.id)
+    const detail = await api.hofAdminHundredDetail(row.id)
+    if (g !== reviewGen) return
+    reviewDetail.value = detail
+    if (detail.status === 'PENDING') loadEvidence(row.id)
   } catch (e) {
-    actionMsg.value = apiErrorLabel(t, te, e)
+    if (g === reviewGen) actionMsg.value = apiErrorLabel(t, te, e)
   } finally {
-    reviewLoading.value = false
+    if (g === reviewGen) reviewLoading.value = false
   }
 }
 
@@ -328,8 +399,12 @@ function fmtSize(bytes) {
 
 function closeReview() {
   if (actionBusy.value) return
+  ++reviewGen
+  ++evidenceGen
   reviewTarget.value = null
   reviewDetail.value = null
+  replayEvidence.value = []
+  evidenceError.value = ''
   actionMsg.value = ''
   screenshotZoom.value = false
 }
@@ -402,43 +477,50 @@ async function confirmReject() {
   loadHundred()
 }
 
-function askHundredDelete(row) {
-  hundredDeleteTarget.value = row
-  hundredDeleteReason.value = ''
-  hundredDeleteReasonText.value = ''
-  hundredDeleteMsg.value = ''
+function askCurrentDelete() {
+  currentDeleteReason.value = ''
+  currentDeleteReasonText.value = ''
+  actionMsg.value = ''
+  reviewPhase.value = 'delete-form'
 }
 
-function cancelHundredDelete() {
-  hundredDeleteTarget.value = null
-  hundredDeleteMsg.value = ''
+function cancelCurrentDelete() {
+  actionMsg.value = ''
+  reviewPhase.value = 'view'
 }
 
-async function confirmHundredDelete() {
-  if (hundredDeleting.value || !hundredDeleteTarget.value) return
-  if (!hundredDeleteReason.value) {
-    hundredDeleteMsg.value = t('hundredAdmin.deleteReasonRequired')
+async function confirmCurrentDelete() {
+  if (actionBusy.value || !reviewTarget.value) return
+  if (!currentDeleteReason.value) {
+    actionMsg.value = t('hundredAdmin.deleteReasonRequired')
     return
   }
-  const text = hundredDeleteReasonText.value.trim()
-  if (hundredDeleteReason.value === 'OTHER' && !text) {
-    hundredDeleteMsg.value = t('hundredAdmin.deleteReasonText')
+  const text = currentDeleteReasonText.value.trim()
+  if (currentDeleteReason.value === 'OTHER' && !text) {
+    actionMsg.value = t('hundredAdmin.deleteReasonText')
     return
   }
-  hundredDeleting.value = true
-  hundredDeleteMsg.value = ''
+  actionBusy.value = true
+  actionMsg.value = ''
   try {
-    await api.hofAdminHundredDelete(hundredDeleteTarget.value.id, {
-      deleteReason: hundredDeleteReason.value,
+    await api.hofAdminHundredDelete(reviewTarget.value.id, {
+      deleteReason: currentDeleteReason.value,
       ...(text ? { deleteReasonText: text } : {}),
     })
-    cancelHundredDelete()
-    loadHundred()
   } catch (e) {
-    hundredDeleteMsg.value = apiErrorLabel(t, te, e)
+    actionMsg.value = apiErrorLabel(t, te, e)
+    return
   } finally {
-    hundredDeleting.value = false
+    actionBusy.value = false
   }
+  closeReview()
+  loadHundred()
+}
+
+function reasonLabel(kind, reason) {
+  if (!reason) return '-'
+  const options = tm(`hundredAdmin.${kind}ReasonOptions`)
+  return options && typeof options === 'object' && options[reason] ? options[reason] : reason
 }
 
 function fmtTime(s) {
@@ -475,14 +557,28 @@ function battleTypeLabel(tp) {
       </div>
 
       <!-- ── 名人堂记录 ── -->
-      <div v-if="activeTab === 'records'">
-        <div class="hof-admin-filters">
-          <input v-model="fNickname" :placeholder="$t('hofAdmin.fNickname')" @keyup.enter="search" />
-          <input v-model="fAccountId" :placeholder="$t('hofAdmin.fAccountId')" @keyup.enter="search" />
-          <input v-model="fArenaId" :placeholder="$t('hofAdmin.fArenaId')" @keyup.enter="search" />
-          <input v-model="fUploadedBy" :placeholder="$t('hofAdmin.fUploadedBy')" @keyup.enter="search" />
-          <input v-model="fTankId" :placeholder="$t('hofAdmin.fTankId')" @keyup.enter="search" />
-          <select v-model="fBattleType" @change="search">
+        <div v-if="activeTab === 'records'">
+          <div class="hof-admin-filters">
+            <input v-model="fNickname" :placeholder="$t('hofAdmin.fNickname')" @keyup.enter="search" />
+            <input v-model="fAccountId" :placeholder="$t('hofAdmin.fAccountId')" @keyup.enter="search" />
+            <input v-model="fUploadedBy" :placeholder="$t('hofAdmin.fUploadedBy')" @keyup.enter="search" />
+            <select v-model="fNation" :disabled="vehicleOptionsLoading" @change="onNationChange">
+              <option value="">{{ $t('hofAdmin.allNations') }}</option>
+              <option v-for="nation in vehicleNations" :key="nation" :value="nation">{{ vehicleEnumLabel(nation) }}</option>
+            </select>
+            <select v-model="fTankType" :disabled="vehicleOptionsLoading" @change="onTankTypeChange">
+              <option value="">{{ $t('hofAdmin.allVehicleTypes') }}</option>
+              <option v-for="type in filteredVehicleTypes" :key="type" :value="type">{{ vehicleEnumLabel(type) }}</option>
+            </select>
+            <select v-model="fTankTier" :disabled="vehicleOptionsLoading" @change="onTankTierChange">
+              <option value="">{{ $t('hofAdmin.allVehicleTiers') }}</option>
+              <option v-for="tier in filteredVehicleTiers" :key="tier" :value="String(tier)">T{{ tier }}</option>
+            </select>
+            <select v-model="fTankId" :disabled="vehicleOptionsLoading" @change="onVehicleChange">
+              <option value="">{{ $t('hofAdmin.allVehicles') }}</option>
+              <option v-for="vehicle in filteredVehicles" :key="vehicle.tankId" :value="String(vehicle.tankId)">{{ vehicleLabel(vehicle) }}</option>
+            </select>
+            <select v-model="fBattleType" @change="search">
             <option value="">{{ $t('hofAdmin.battleTypeAll') }}</option>
             <option value="RANDOM">{{ $t('hof.battleType.random') }}</option>
             <option value="RATING">{{ $t('hof.battleType.rating') }}</option>
@@ -512,7 +608,6 @@ function battleTypeLabel(tp) {
                 <th>{{ $t('hofAdmin.accountId') }}</th>
                 <th>{{ $t('hofAdmin.tank') }}</th>
                 <th>{{ $t('hofAdmin.battleType') }}</th>
-                <th>arenaBonusType</th>
                 <th>{{ $t('hofAdmin.damage') }}</th>
                 <th>{{ $t('hofAdmin.map') }}</th>
                 <th>{{ $t('hofAdmin.version') }}</th>
@@ -532,7 +627,6 @@ function battleTypeLabel(tp) {
                 <td class="muted">{{ r.accountId }}</td>
                 <td>{{ r.tankName }}</td>
                 <td><span class="bt-badge" :class="r.battleType === 'RATING' ? 'bt-rating' : 'bt-random'">{{ battleTypeLabel(r.battleType) }}</span></td>
-                <td class="muted">{{ r.arenaBonusType }}</td>
                 <td class="dmg">{{ r.damageDealt.toLocaleString() }}</td>
                 <td>{{ mapLabel(r.mapName, locale) }}</td>
                 <td class="muted">{{ r.version || '-' }}</td>
@@ -576,13 +670,11 @@ function battleTypeLabel(tp) {
                 <th>{{ $t('hofAdmin.auditAction') }}</th>
                 <th>{{ $t('hofAdmin.auditAdmin') }}</th>
                 <th>Record ID</th>
-                <th>Arena ID</th>
                 <th>Account ID</th>
                 <th>{{ $t('hofAdmin.player') }}</th>
                 <th>{{ $t('hofAdmin.tank') }}</th>
                 <th>{{ $t('hofAdmin.damage') }}</th>
                 <th>{{ $t('hofAdmin.battleType') }}</th>
-                <th>arenaBonusType</th>
                 <th>{{ $t('hofAdmin.replayHash') }}</th>
               </tr>
             </thead>
@@ -592,13 +684,11 @@ function battleTypeLabel(tp) {
                 <td><span class="audit-action">{{ a.action }}</span></td>
                 <td class="muted">{{ a.adminUsername || a.adminKeycloakUserId }}</td>
                 <td class="muted">{{ a.recordId }}</td>
-                <td class="muted">{{ a.arenaId }}</td>
                 <td class="muted">{{ a.accountId }}</td>
                 <td>{{ a.nickname }}</td>
                 <td>{{ a.tankName }}</td>
                 <td class="dmg">{{ a.damageDealt.toLocaleString() }}</td>
                 <td>{{ battleTypeLabel(a.battleType) }}</td>
-                <td class="muted">{{ a.arenaBonusType }}</td>
                 <td class="muted hash">{{ a.replayHash ? a.replayHash.slice(0, 12) + '…' : '-' }}</td>
               </tr>
             </tbody>
@@ -618,6 +708,10 @@ function battleTypeLabel(tp) {
             <option value="">{{ $t('hundredAdmin.statusAll') }}</option>
             <option value="PENDING">{{ $t('hundredAdmin.status.PENDING') }}</option>
             <option value="CURRENT">{{ $t('hundredAdmin.status.CURRENT') }}</option>
+            <option value="REJECTED">{{ $t('hundredAdmin.status.REJECTED') }}</option>
+            <option value="SUPERSEDED">{{ $t('hundredAdmin.status.SUPERSEDED') }}</option>
+            <option value="CANCELLED">{{ $t('hundredAdmin.status.CANCELLED') }}</option>
+            <option value="DELETED">{{ $t('hundredAdmin.status.DELETED') }}</option>
           </select>
         </div>
 
@@ -650,8 +744,7 @@ function battleTypeLabel(tp) {
                 <td><span class="hundred-status" :class="'hundred-status-' + String(r.status).toLowerCase()">{{ hundredStatusLabel(r.status) }}</span></td>
                 <td class="muted">{{ fmtTime(r.submittedAt) || '-' }}</td>
                 <td class="actions">
-                  <button v-if="r.status === 'PENDING'" class="btn-sm" @click="openReview(r)">{{ $t('hundredAdmin.approve') }}</button>
-                  <button v-if="r.status === 'CURRENT'" class="btn-sm danger" @click="askHundredDelete(r)">{{ $t('hundredAdmin.delete') }}</button>
+                  <button class="btn-sm" @click="openReview(r)">{{ $t('hundredAdmin.details') }}</button>
                 </td>
               </tr>
             </tbody>
@@ -671,10 +764,10 @@ function battleTypeLabel(tp) {
         </label>
       </div>
 
-      <!-- ── 百场审核弹窗（PENDING）── -->
+      <!-- ── 百场详情：所有状态都从这里查看，操作不会直接出现在列表中 ── -->
       <div v-if="reviewTarget" class="modal-overlay" @click.self="closeReview">
         <div class="modal hof-review-modal">
-          <h3>{{ $t('hundredAdmin.tab') }}</h3>
+          <h3>{{ $t('hundredAdmin.details') }}</h3>
           <p v-if="reviewLoading" class="muted">{{ $t('hundredAdmin.loading') }}</p>
           <template v-else-if="reviewDetail">
             <table class="hof-delete-table">
@@ -684,10 +777,30 @@ function battleTypeLabel(tp) {
                 <tr><th>{{ $t('hundredAdmin.vehicle') }}</th><td>{{ reviewDetail.vehicleName }}</td></tr>
                 <tr><th>{{ $t('hundredAdmin.claimedDamage') }}</th><td class="dmg">{{ reviewDetail.claimedAverageDamage }}</td></tr>
                 <tr><th>{{ $t('hundredAdmin.claimedBattles') }}</th><td>{{ reviewDetail.claimedBattleCount }}</td></tr>
+                <tr><th>{{ $t('hundredAdmin.statusLabel') }}</th><td>{{ hundredStatusLabel(reviewDetail.status) }}</td></tr>
+                <tr><th>{{ $t('hundredAdmin.submittedAt') }}</th><td>{{ fmtTime(reviewDetail.submittedAt) || '-' }}</td></tr>
+                <template v-if="reviewDetail.approvedAverageDamage != null">
+                  <tr><th>{{ $t('hundredAdmin.approvedDamage') }}</th><td class="dmg">{{ reviewDetail.approvedAverageDamage }}</td></tr>
+                  <tr><th>{{ $t('hundredAdmin.approvedBattles') }}</th><td>{{ reviewDetail.approvedBattleCount }}</td></tr>
+                  <tr><th>{{ $t('hundredAdmin.approvedAt') }}</th><td>{{ fmtTime(reviewDetail.approvedAt) || '-' }}</td></tr>
+                </template>
+                <template v-if="reviewDetail.status === 'REJECTED'">
+                  <tr><th>{{ $t('hundredAdmin.rejectReason') }}</th><td>{{ reasonLabel('reject', reviewDetail.rejectReason) }}</td></tr>
+                  <tr v-if="reviewDetail.rejectReasonText"><th>{{ $t('hundredAdmin.rejectReasonTextValue') }}</th><td>{{ reviewDetail.rejectReasonText }}</td></tr>
+                  <tr><th>{{ $t('hundredAdmin.rejectedAt') }}</th><td>{{ fmtTime(reviewDetail.rejectedAt) || '-' }}</td></tr>
+                </template>
+                <template v-if="reviewDetail.status === 'CANCELLED'">
+                  <tr><th>{{ $t('hundredAdmin.cancelledAt') }}</th><td>{{ fmtTime(reviewDetail.cancelledAt) || '-' }}</td></tr>
+                </template>
+                <template v-if="reviewDetail.status === 'DELETED'">
+                  <tr><th>{{ $t('hundredAdmin.deleteReason') }}</th><td>{{ reasonLabel('delete', reviewDetail.deleteReason) }}</td></tr>
+                  <tr v-if="reviewDetail.deleteReasonText"><th>{{ $t('hundredAdmin.deleteReasonTextValue') }}</th><td>{{ reviewDetail.deleteReasonText }}</td></tr>
+                  <tr><th>{{ $t('hundredAdmin.deletedAt') }}</th><td>{{ fmtTime(reviewDetail.deletedAt) || '-' }}</td></tr>
+                </template>
               </tbody>
             </table>
 
-            <div class="hundred-review-section">
+            <div v-if="reviewDetail.status === 'PENDING'" class="hundred-review-section">
               <div class="hundred-review-label">{{ $t('hundredAdmin.approved') }}</div>
               <div class="hundred-inputs">
                 <label>{{ $t('hundredAdmin.approvedDamage') }}
@@ -699,7 +812,7 @@ function battleTypeLabel(tp) {
               </div>
             </div>
 
-            <div class="hundred-review-section">
+            <div v-if="reviewDetail.status === 'PENDING'" class="hundred-review-section">
               <div class="hundred-review-label">{{ $t('hundredAdmin.evidence') }}</div>
               <div class="hundred-proof-row">
                 <img v-if="reviewDetail.proofScreenshot" class="hundred-proof" :src="reviewDetail.proofScreenshot"
@@ -745,13 +858,13 @@ function battleTypeLabel(tp) {
 
             <p v-if="actionMsg" class="error">{{ actionMsg }}</p>
 
-            <div v-if="reviewPhase === 'view'" class="modal-actions">
+            <div v-if="reviewDetail.status === 'PENDING' && reviewPhase === 'view'" class="modal-actions">
               <button class="btn-sm" :disabled="actionBusy" @click="closeReview">{{ $t('hundredAdmin.close') }}</button>
               <button class="btn-sm danger" :disabled="actionBusy" @click="askReject">{{ $t('hundredAdmin.reject') }}</button>
               <button class="btn-sm ok" :disabled="actionBusy || !evidenceComplete" :title="evidenceComplete ? '' : $t('hundredAdmin.approveDisabledHint')" @click="askApprove">{{ $t('hundredAdmin.approve') }}</button>
             </div>
 
-            <div v-else-if="reviewPhase === 'approve-confirm'" class="hundred-action-area">
+            <div v-else-if="reviewDetail.status === 'PENDING' && reviewPhase === 'approve-confirm'" class="hundred-action-area">
               <p class="hundred-confirm">{{ $t('hundredAdmin.approveConfirm') }}</p>
               <div class="modal-actions">
                 <button class="btn-sm" :disabled="actionBusy" @click="reviewPhase = 'view'">{{ $t('hundredAdmin.cancel') }}</button>
@@ -761,7 +874,7 @@ function battleTypeLabel(tp) {
               </div>
             </div>
 
-            <div v-else class="hundred-action-area">
+            <div v-else-if="reviewDetail.status === 'PENDING' && reviewPhase === 'reject-form'" class="hundred-action-area">
               <label class="hundred-reason-label">{{ $t('hundredAdmin.rejectReason') }}</label>
               <select v-model="rejectReason">
                 <option value="">{{ $t('hundredAdmin.rejectReasonRequired') }}</option>
@@ -776,6 +889,31 @@ function battleTypeLabel(tp) {
                 </button>
               </div>
             </div>
+
+            <div v-else-if="reviewDetail.status === 'CURRENT' && reviewPhase === 'view'" class="modal-actions">
+              <button class="btn-sm" :disabled="actionBusy" @click="closeReview">{{ $t('hundredAdmin.close') }}</button>
+              <button class="btn-sm danger" :disabled="actionBusy" @click="askCurrentDelete">{{ $t('hundredAdmin.delete') }}</button>
+            </div>
+
+            <div v-else-if="reviewDetail.status === 'CURRENT' && reviewPhase === 'delete-form'" class="hundred-action-area">
+              <label class="hundred-reason-label">{{ $t('hundredAdmin.deleteReason') }}</label>
+              <select v-model="currentDeleteReason">
+                <option value="">{{ $t('hundredAdmin.deleteReasonRequired') }}</option>
+                <option v-for="(label, key) in $tm('hundredAdmin.deleteReasonOptions')" :key="key" :value="key">{{ label }}</option>
+              </select>
+              <textarea v-model="currentDeleteReasonText" rows="2" :placeholder="$t('hundredAdmin.deleteReasonPlaceholder')"></textarea>
+              <p class="hundred-confirm">{{ $t('hundredAdmin.deleteConfirm') }}</p>
+              <div class="modal-actions">
+                <button class="btn-sm" :disabled="actionBusy" @click="cancelCurrentDelete">{{ $t('hundredAdmin.cancel') }}</button>
+                <button class="btn-sm danger" :disabled="actionBusy" @click="confirmCurrentDelete">
+                  {{ actionBusy ? $t('hundredAdmin.deleting') : $t('hundredAdmin.delete') }}
+                </button>
+              </div>
+            </div>
+
+            <div v-else class="modal-actions">
+              <button class="btn-sm" :disabled="actionBusy" @click="closeReview">{{ $t('hundredAdmin.close') }}</button>
+            </div>
           </template>
         </div>
       </div>
@@ -785,34 +923,6 @@ function battleTypeLabel(tp) {
         <div class="screenshot-zoom-inner">
           <img :src="reviewDetail.proofScreenshot" :alt="$t('hundredAdmin.screenshot')" />
           <button class="btn-sm" @click="screenshotZoom = false">{{ $t('hundredAdmin.zoomClose') }}</button>
-        </div>
-      </div>
-
-      <!-- ── 百场删除弹窗（CURRENT）── -->
-      <div v-if="hundredDeleteTarget" class="modal-overlay" @click.self="cancelHundredDelete">
-        <div class="modal hof-delete-modal">
-          <h3>{{ $t('hundredAdmin.delete') }}</h3>
-          <table class="hof-delete-table">
-            <tbody>
-              <tr><th>{{ $t('hundredAdmin.user') }}</th><td>{{ hundredDeleteTarget.nicknameSnapshot }}</td></tr>
-              <tr><th>{{ $t('hundredAdmin.vehicle') }}</th><td>{{ hundredDeleteTarget.vehicleName }}</td></tr>
-              <tr><th>{{ $t('hundredAdmin.claimed') }}</th><td>{{ hundredDeleteTarget.claimedAverageDamage }} / {{ hundredDeleteTarget.claimedBattleCount }}</td></tr>
-            </tbody>
-          </table>
-          <label class="hundred-reason-label">{{ $t('hundredAdmin.deleteReason') }}</label>
-          <select v-model="hundredDeleteReason">
-            <option value="">{{ $t('hundredAdmin.deleteReasonRequired') }}</option>
-            <option v-for="(label, key) in $tm('hundredAdmin.deleteReasonOptions')" :key="key" :value="key">{{ label }}</option>
-          </select>
-          <textarea v-model="hundredDeleteReasonText" rows="2" :placeholder="$t('hundredAdmin.deleteReasonPlaceholder')"></textarea>
-          <p class="hundred-confirm">{{ $t('hundredAdmin.deleteConfirm') }}</p>
-          <p v-if="hundredDeleteMsg" class="error">{{ hundredDeleteMsg }}</p>
-          <div class="modal-actions">
-            <button class="btn-sm" :disabled="hundredDeleting" @click="cancelHundredDelete">{{ $t('hundredAdmin.cancel') }}</button>
-            <button class="btn-sm danger" :disabled="hundredDeleting" @click="confirmHundredDelete">
-              {{ hundredDeleting ? $t('hundredAdmin.deleting') : $t('hundredAdmin.delete') }}
-            </button>
-          </div>
         </div>
       </div>
 
@@ -829,7 +939,6 @@ function battleTypeLabel(tp) {
               <tr><th>{{ $t('hofAdmin.battleType') }}</th><td>{{ battleTypeLabel(deleteTarget.battleType) }}</td></tr>
               <tr><th>{{ $t('hofAdmin.map') }}</th><td>{{ mapLabel(deleteTarget.mapName, locale) }}</td></tr>
               <tr><th>{{ $t('hofAdmin.battleTime') }}</th><td>{{ fmtTime(deleteTarget.battleTime) || '-' }}</td></tr>
-              <tr><th>Arena ID</th><td>{{ deleteTarget.arenaId }}</td></tr>
             </tbody>
           </table>
           <p v-if="deleteMsg" class="error">{{ deleteMsg }}</p>
@@ -869,6 +978,8 @@ function battleTypeLabel(tp) {
 .hundred-status { display: inline-block; padding: 1px 7px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
 .hundred-status-pending { background: var(--status-warn-bg); color: var(--status-warn-fg); }
 .hundred-status-current { background: var(--rating-good-bg); color: var(--rating-good-fg); }
+.hundred-status-rejected, .hundred-status-deleted { background: color-mix(in srgb, var(--error) 12%, var(--bg-card2)); color: var(--error); }
+.hundred-status-superseded, .hundred-status-cancelled { background: var(--bg-chip); color: var(--text-muted); }
 .btn-sm { padding: 5px 12px; border: 1px solid var(--border-ghost); border-radius: 7px; background: var(--bg-card2);
   color: var(--text-label); cursor: pointer; font-family: inherit; font-size: .8rem; }
 .btn-sm.danger { color: var(--delete); border-color: color-mix(in srgb, var(--delete) 45%, var(--border-ghost)); }

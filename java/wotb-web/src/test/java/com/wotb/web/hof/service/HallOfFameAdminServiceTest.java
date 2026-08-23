@@ -4,6 +4,7 @@ import com.wotb.web.hof.entity.HallOfFameAdminLog;
 import com.wotb.web.hof.entity.HallOfFameRecord;
 import com.wotb.web.hof.repository.HallOfFameAdminLogRepository;
 import com.wotb.web.hof.repository.HallOfFameRecordRepository;
+import com.wotb.web.hof.repository.HofAdminVehicleProjection;
 import com.wotb.web.hof.storage.HallOfFameReplayStorage;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -14,14 +15,14 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.List;
 import java.util.Optional;
-import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -251,7 +252,30 @@ class HallOfFameAdminServiceTest {
     @Test
     void searchRejectsInvalidBattleTypeFilter() {
         final ResponseStatusException e = assertThrows(ResponseStatusException.class,
-                () -> service().search(null, null, null, null, "TRAINING", null, null, null, 1, 50));
+                () -> service().search(null, null, null, "TRAINING", null, null, null, 1, 50));
         assertEquals(HttpStatus.BAD_REQUEST, e.getStatusCode());
+    }
+
+    @Test
+    void vehicleOptionsUseReadableMetadataAndKeepUnknownLegacyVehicles() {
+        final HofAdminVehicleProjection known = mock(HofAdminVehicleProjection.class);
+        when(known.getTankId()).thenReturn(385L); // Progetto 65, Tier X European medium
+        when(known.getTankName()).thenReturn("Progetto 65");
+        final HofAdminVehicleProjection unknown = mock(HofAdminVehicleProjection.class);
+        when(unknown.getTankId()).thenReturn(999_999L);
+        when(unknown.getTankName()).thenReturn("Legacy Tank");
+        when(repository.findAdminVehicleOptions()).thenReturn(List.of(known, unknown));
+
+        final var options = service().vehicleOptions();
+
+        assertEquals(2, options.size());
+        assertEquals("Progetto 65", options.get(0).tankName());
+        assertEquals("EUROPE", options.get(0).nation());
+        assertEquals("MEDIUM_TANK", options.get(0).type());
+        assertEquals(Integer.valueOf(10), options.get(0).tier());
+        assertEquals("Legacy Tank", options.get(1).tankName());
+        assertEquals("OTHER", options.get(1).nation());
+        assertEquals("OTHER", options.get(1).type());
+        assertNull(options.get(1).tier());
     }
 }
