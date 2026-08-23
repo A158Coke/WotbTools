@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+$origDir = Get-Location
 $scratch = Join-Path ([System.IO.Path]::GetFullPath($env:TEMP)) ('ocr-verify-' + [guid]::NewGuid().ToString('N'))
 $fixtures = Join-Path $PSScriptRoot 'fixtures'
 
@@ -85,5 +86,5 @@ try {
   Remove-Item -Recurse -Force $scratch -ErrorAction SilentlyContinue
 }
 finally {
-  Set-Location 'C:\Users\yu.chen\Desktop\MyPersonalProject\WotbTools-ocr-worktree'
+  Set-Location $origDir
 }
