@@ -443,16 +443,25 @@ public final class TeamFactualConsistencyValidator {
     }
 
     /**
-     * P0-8：引用证据链是否覆盖 claim 的存活变化（首尾一致即可）。
+     * P0-8：引用证据链是否覆盖 claim 的存活变化（首尾一致 + 中间连续）。
      * 例：claim 6v7→6v3 引用 E111(6v7→6v6) E112(6v6→6v5) E113(6v5→6v4) E114(6v4→6v3) →
-     * 首=E111.before(6v7) 尾=E114.after(6v3) 一致 → true。FOCUS_WINDOW 证据按
-     * before/after 同构处理。链中证据时间无序时按 before 排序。
+     * 首=E111.before(6v7) 尾=E114.after(6v3) 一致，且每步 after == 下一步 before → true。
+     * <p>严格性（CI 约束）：</p>
+     * <ol>
+     *   <li>连续 evidence chain → PASS；</li>
+     *   <li>首尾匹配但中间断链（如缺 6v6→6v5）→ 不得 PASS；</li>
+     *   <li>evidence ID 顺序乱序，但真实 timeSec 连续 → PASS（按 timeSec 排序，不按 ID）；</li>
+     *   <li>时间顺序错误/反向 → 不得 PASS（排序后 before/after 不连续）；</li>
+     *   <li>ALIVE_TRANSITION + FOCUS_WINDOW 混合 chain → 按 timeSec 排序后统一验证连续性。</li>
+     * </ol>
+     * 时间键用 {@code fact.timeSec()}（AliveTransition 的 startSec/endSec 即变化时刻；
+     * FOCUS_WINDOW 取 endSec 作为窗口代表时刻，与 GroundingFacts 排序口径一致）。
      */
     private static boolean chainSupportsTransition(final GroundingFacts facts,
                                                    final List<String> evidenceIds,
                                                    final int a, final int b,
                                                    final int cc, final int d) {
-        final List<int[]> steps = new ArrayList<>();
+        final List<TransitionStep> steps = new ArrayList<>();
         for (final String id : evidenceIds) {
             final EvidenceFact fact = facts.byId().get(id);
             if (fact == null) {
@@ -462,22 +471,39 @@ public final class TeamFactualConsistencyValidator {
                 final int[] before = parseVCount(fact.attrs().get("before"));
                 final int[] after = parseVCount(fact.attrs().get("after"));
                 if (before != null && after != null) {
-                    steps.add(new int[]{before[0], before[1], after[0], after[1]});
+                    steps.add(new TransitionStep(fact.timeSec(),
+                            before[0], before[1], after[0], after[1]));
                 }
             } else if (TeamGroundingFacts.TYPE_FOCUS_WINDOW.equals(fact.type())) {
-                steps.add(new int[]{
+                steps.add(new TransitionStep(fact.timeSec(),
                         intAttr(fact, "beforeFriendly"), intAttr(fact, "beforeEnemy"),
-                        intAttr(fact, "afterFriendly"), intAttr(fact, "afterEnemy")});
+                        intAttr(fact, "afterFriendly"), intAttr(fact, "afterEnemy")));
             }
         }
         if (steps.isEmpty()) {
             return false;
         }
-        // 按 before 时间排序（AliveTransition 的 sec 未直接存于 attrs，按 before 字典序近似）
-        steps.sort(java.util.Comparator.<int[]>comparingInt(s -> s[0]).thenComparingInt(s -> s[1]));
-        final int[] first = steps.get(0);
-        final int[] last = steps.get(steps.size() - 1);
-        return first[0] == a && first[1] == b && last[2] == cc && last[3] == d;
+        // 按真实时间（battle-relative 秒）排序：evidence ID 乱序不影响链判定
+        steps.sort(java.util.Comparator.comparingDouble(TransitionStep::timeSec));
+        final TransitionStep first = steps.get(0);
+        final TransitionStep last = steps.get(steps.size() - 1);
+        if (first.beforeF() != a || first.beforeE() != b
+                || last.afterF() != cc || last.afterE() != d) {
+            return false;
+        }
+        // 中间连续性：每步 after 必须 == 下一步 before（断链 / 反向 / 时间错序 → false）
+        for (int i = 0; i + 1 < steps.size(); i++) {
+            final TransitionStep cur = steps.get(i);
+            final TransitionStep next = steps.get(i + 1);
+            if (cur.afterF() != next.beforeF() || cur.afterE() != next.beforeE()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** 存活变化链的一步：时间 + before/after 存活数（friendly/enemy）。 */
+    private record TransitionStep(double timeSec, int beforeF, int beforeE, int afterF, int afterE) {
     }
 
     /** B1 POSITION_REGION：引用的 POSITION_REGION 证据是 primary source（side/region/count/countSemantics）。 */
