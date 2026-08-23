@@ -28,10 +28,10 @@ public class HallOfFameRecordMapper implements Mapper<HallOfFameRecord, HallOfFa
                 r.getReplayHash() != null);
     }
 
-    /** 管理后台全量 DTO（admin 内部字段，不对外）。 */
+    /** 管理后台业务治理 DTO（不含内部战斗唯一键与 raw 模式码）。 */
     public HofAdminRecordDto toAdminDto(final HallOfFameRecord r) {
-        return new HofAdminRecordDto(r.getId(), r.getArenaId(), r.getAccountId(), r.getNickname(),
-                r.getTankId(), r.getTankName(), r.getBattleType(), r.getArenaBonusType(),
+        return new HofAdminRecordDto(r.getId(), r.getAccountId(), r.getNickname(),
+                r.getTankId(), r.getTankName(), r.getBattleType(),
                 r.getDamageDealt(), r.getMapName(), r.getVersion(), r.getBattleTime(),
                 r.getCreatedAt(), r.getReplayHash(), r.getReplayFileName(), r.getReplaySize(),
                 r.getReplayUploadedBy(), r.getReplayHash() != null);

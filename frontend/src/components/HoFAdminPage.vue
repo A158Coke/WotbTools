@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { mapLabel } from '../utils/helpers.js'
-import { apiErrorLabel } from '../utils/display.js'
+import { apiErrorLabel, replayValueLabel } from '../utils/display.js'
 import * as api from '../utils/api.js'
 
 const { t, te, locale } = useI18n()
@@ -33,13 +33,33 @@ const totalPages = ref(0)
 const totalItems = ref(0)
 const fNickname = ref('')
 const fAccountId = ref('')
-const fArenaId = ref('')
 const fUploadedBy = ref('')
 const fBattleType = ref('')
 const fTankId = ref('')
 const fReplayAvailable = ref('')
 const fSort = ref('')
+const vehicleOptions = ref([])
+const vehicleOptionsLoading = ref(false)
+const fNation = ref('')
+const fTankType = ref('')
+const fTankTier = ref('')
 let gen = 0
+
+const filteredVehicleTypes = computed(() => uniqueValues(vehicleOptions.value
+  .filter(v => !fNation.value || v.nation === fNation.value)
+  .map(v => v.type)))
+const vehicleNations = computed(() => uniqueValues(vehicleOptions.value.map(v => v.nation)))
+const filteredVehicleTiers = computed(() => uniqueValues(vehicleOptions.value
+  .filter(v => (!fNation.value || v.nation === fNation.value)
+    && (!fTankType.value || v.type === fTankType.value))
+  .map(v => v.tier)
+  .filter(v => v != null))
+  .sort((a, b) => a - b))
+const filteredVehicles = computed(() => vehicleOptions.value
+  .filter(v => (!fNation.value || v.nation === fNation.value)
+    && (!fTankType.value || v.type === fTankType.value)
+    && (!fTankTier.value || String(v.tier) === fTankTier.value))
+  .sort((a, b) => (a.tankName || '').localeCompare(b.tankName || '')))
 
 // ── 操作日志 tab（只读）──
 const auditRows = ref([])
@@ -109,6 +129,7 @@ onMounted(async () => {
     return
   }
   loadRecords()
+  loadVehicleOptions()
 })
 
 async function loadRecords() {
@@ -119,7 +140,6 @@ async function loadRecords() {
     const params = { page: page.value, size: size.value }
     if (fNickname.value.trim()) params.nickname = fNickname.value.trim()
     if (fAccountId.value.trim()) params.accountId = fAccountId.value.trim()
-    if (fArenaId.value.trim()) params.arenaId = fArenaId.value.trim()
     if (fUploadedBy.value.trim()) params.uploadedBy = fUploadedBy.value.trim()
     if (fBattleType.value) params.battleType = fBattleType.value
     if (fTankId.value.trim()) params.tankId = fTankId.value.trim()
@@ -135,6 +155,55 @@ async function loadRecords() {
   } finally {
     if (g === gen) loading.value = false
   }
+}
+
+async function loadVehicleOptions() {
+  vehicleOptionsLoading.value = true
+  try {
+    vehicleOptions.value = (await api.hofAdminVehicleOptions()) || []
+  } catch (e) {
+    error.value = apiErrorLabel(t, te, e)
+  } finally {
+    vehicleOptionsLoading.value = false
+  }
+}
+
+function onNationChange() {
+  const hadTankFilter = Boolean(fTankId.value)
+  fTankType.value = ''
+  fTankTier.value = ''
+  fTankId.value = ''
+  if (hadTankFilter) search()
+}
+
+function onTankTypeChange() {
+  const hadTankFilter = Boolean(fTankId.value)
+  fTankTier.value = ''
+  fTankId.value = ''
+  if (hadTankFilter) search()
+}
+
+function onTankTierChange() {
+  const hadTankFilter = Boolean(fTankId.value)
+  fTankId.value = ''
+  if (hadTankFilter) search()
+}
+
+function onVehicleChange() {
+  search()
+}
+
+function vehicleLabel(vehicle) {
+  const name = vehicle.tankName || t('hofAdmin.unknownVehicle')
+  return vehicle.tier == null ? name : `${name} · T${vehicle.tier}`
+}
+
+function vehicleEnumLabel(value) {
+  return replayValueLabel(t, te, value)
+}
+
+function uniqueValues(values) {
+  return [...new Set(values.filter(Boolean))].sort()
 }
 
 function search() {
@@ -475,14 +544,28 @@ function battleTypeLabel(tp) {
       </div>
 
       <!-- ── 名人堂记录 ── -->
-      <div v-if="activeTab === 'records'">
-        <div class="hof-admin-filters">
-          <input v-model="fNickname" :placeholder="$t('hofAdmin.fNickname')" @keyup.enter="search" />
-          <input v-model="fAccountId" :placeholder="$t('hofAdmin.fAccountId')" @keyup.enter="search" />
-          <input v-model="fArenaId" :placeholder="$t('hofAdmin.fArenaId')" @keyup.enter="search" />
-          <input v-model="fUploadedBy" :placeholder="$t('hofAdmin.fUploadedBy')" @keyup.enter="search" />
-          <input v-model="fTankId" :placeholder="$t('hofAdmin.fTankId')" @keyup.enter="search" />
-          <select v-model="fBattleType" @change="search">
+        <div v-if="activeTab === 'records'">
+          <div class="hof-admin-filters">
+            <input v-model="fNickname" :placeholder="$t('hofAdmin.fNickname')" @keyup.enter="search" />
+            <input v-model="fAccountId" :placeholder="$t('hofAdmin.fAccountId')" @keyup.enter="search" />
+            <input v-model="fUploadedBy" :placeholder="$t('hofAdmin.fUploadedBy')" @keyup.enter="search" />
+            <select v-model="fNation" :disabled="vehicleOptionsLoading" @change="onNationChange">
+              <option value="">{{ $t('hofAdmin.allNations') }}</option>
+              <option v-for="nation in vehicleNations" :key="nation" :value="nation">{{ vehicleEnumLabel(nation) }}</option>
+            </select>
+            <select v-model="fTankType" :disabled="vehicleOptionsLoading" @change="onTankTypeChange">
+              <option value="">{{ $t('hofAdmin.allVehicleTypes') }}</option>
+              <option v-for="type in filteredVehicleTypes" :key="type" :value="type">{{ vehicleEnumLabel(type) }}</option>
+            </select>
+            <select v-model="fTankTier" :disabled="vehicleOptionsLoading" @change="onTankTierChange">
+              <option value="">{{ $t('hofAdmin.allVehicleTiers') }}</option>
+              <option v-for="tier in filteredVehicleTiers" :key="tier" :value="String(tier)">T{{ tier }}</option>
+            </select>
+            <select v-model="fTankId" :disabled="vehicleOptionsLoading" @change="onVehicleChange">
+              <option value="">{{ $t('hofAdmin.allVehicles') }}</option>
+              <option v-for="vehicle in filteredVehicles" :key="vehicle.tankId" :value="String(vehicle.tankId)">{{ vehicleLabel(vehicle) }}</option>
+            </select>
+            <select v-model="fBattleType" @change="search">
             <option value="">{{ $t('hofAdmin.battleTypeAll') }}</option>
             <option value="RANDOM">{{ $t('hof.battleType.random') }}</option>
             <option value="RATING">{{ $t('hof.battleType.rating') }}</option>
@@ -512,7 +595,6 @@ function battleTypeLabel(tp) {
                 <th>{{ $t('hofAdmin.accountId') }}</th>
                 <th>{{ $t('hofAdmin.tank') }}</th>
                 <th>{{ $t('hofAdmin.battleType') }}</th>
-                <th>arenaBonusType</th>
                 <th>{{ $t('hofAdmin.damage') }}</th>
                 <th>{{ $t('hofAdmin.map') }}</th>
                 <th>{{ $t('hofAdmin.version') }}</th>
@@ -532,7 +614,6 @@ function battleTypeLabel(tp) {
                 <td class="muted">{{ r.accountId }}</td>
                 <td>{{ r.tankName }}</td>
                 <td><span class="bt-badge" :class="r.battleType === 'RATING' ? 'bt-rating' : 'bt-random'">{{ battleTypeLabel(r.battleType) }}</span></td>
-                <td class="muted">{{ r.arenaBonusType }}</td>
                 <td class="dmg">{{ r.damageDealt.toLocaleString() }}</td>
                 <td>{{ mapLabel(r.mapName, locale) }}</td>
                 <td class="muted">{{ r.version || '-' }}</td>
@@ -576,13 +657,11 @@ function battleTypeLabel(tp) {
                 <th>{{ $t('hofAdmin.auditAction') }}</th>
                 <th>{{ $t('hofAdmin.auditAdmin') }}</th>
                 <th>Record ID</th>
-                <th>Arena ID</th>
                 <th>Account ID</th>
                 <th>{{ $t('hofAdmin.player') }}</th>
                 <th>{{ $t('hofAdmin.tank') }}</th>
                 <th>{{ $t('hofAdmin.damage') }}</th>
                 <th>{{ $t('hofAdmin.battleType') }}</th>
-                <th>arenaBonusType</th>
                 <th>{{ $t('hofAdmin.replayHash') }}</th>
               </tr>
             </thead>
@@ -592,13 +671,11 @@ function battleTypeLabel(tp) {
                 <td><span class="audit-action">{{ a.action }}</span></td>
                 <td class="muted">{{ a.adminUsername || a.adminKeycloakUserId }}</td>
                 <td class="muted">{{ a.recordId }}</td>
-                <td class="muted">{{ a.arenaId }}</td>
                 <td class="muted">{{ a.accountId }}</td>
                 <td>{{ a.nickname }}</td>
                 <td>{{ a.tankName }}</td>
                 <td class="dmg">{{ a.damageDealt.toLocaleString() }}</td>
                 <td>{{ battleTypeLabel(a.battleType) }}</td>
-                <td class="muted">{{ a.arenaBonusType }}</td>
                 <td class="muted hash">{{ a.replayHash ? a.replayHash.slice(0, 12) + '…' : '-' }}</td>
               </tr>
             </tbody>
@@ -776,6 +853,7 @@ function battleTypeLabel(tp) {
                 </button>
               </div>
             </div>
+
           </template>
         </div>
       </div>
@@ -816,6 +894,7 @@ function battleTypeLabel(tp) {
         </div>
       </div>
 
+
       <!-- ── 删除二次确认 ── -->
       <div v-if="deleteTarget" class="modal-overlay" @click.self="cancelDelete">
         <div class="modal hof-delete-modal">
@@ -829,7 +908,6 @@ function battleTypeLabel(tp) {
               <tr><th>{{ $t('hofAdmin.battleType') }}</th><td>{{ battleTypeLabel(deleteTarget.battleType) }}</td></tr>
               <tr><th>{{ $t('hofAdmin.map') }}</th><td>{{ mapLabel(deleteTarget.mapName, locale) }}</td></tr>
               <tr><th>{{ $t('hofAdmin.battleTime') }}</th><td>{{ fmtTime(deleteTarget.battleTime) || '-' }}</td></tr>
-              <tr><th>Arena ID</th><td>{{ deleteTarget.arenaId }}</td></tr>
             </tbody>
           </table>
           <p v-if="deleteMsg" class="error">{{ deleteMsg }}</p>

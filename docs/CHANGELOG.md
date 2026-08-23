@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- **名人堂单场管理筛选可读化**：`GET /api/admin/hof` 移除 Arena ID 筛选并不再返回 `arenaId`/原始 `arenaBonusType`；新增受 HoF-admin 保护的 `GET /api/admin/hof/vehicle-options`，从当前名人堂已有车辆生成名称、国家/系别、车种、等级的稳定英文枚举选项。管理页以可选的国家/系别 → 车种 → 等级收窄车辆名称，只在最终选择车辆时提交 `tankId`；车辆库无法识别的旧记录保留其原始名称并归为 `OTHER`，不会丢失筛选入口。
 - **战局回放 Details Panel 增加 Tier X 车型图**：从 BlitzKit 公开 CDN 确定性下载 Tankopedia
   全部 84 辆十级车的透明 WebP 车型图并随前端发布；选中车辆时按 tankId 懒加载，非十级车、
   缺图或加载失败静默降级，production 不访问 BlitzKit。新增 Tier X 100% 图片覆盖测试与

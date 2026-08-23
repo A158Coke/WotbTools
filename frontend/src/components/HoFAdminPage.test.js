@@ -11,6 +11,7 @@ const api = vi.hoisted(() => ({
 
 const hofAdminApi = vi.hoisted(() => ({
   hofAdminList: vi.fn(() => Promise.resolve({ items: [], page: 1, size: 50, totalItems: 0, totalPages: 0 })),
+  hofAdminVehicleOptions: vi.fn(() => Promise.resolve([])),
   hofAdminAudit: vi.fn(() => Promise.resolve({ items: [], page: 1, size: 50, totalItems: 0, totalPages: 0 })),
   hofAdminDelete: vi.fn(() => Promise.resolve(undefined)),
   hofAdminDownload: vi.fn(() => Promise.resolve(undefined)),
@@ -36,7 +37,10 @@ vi.mock('../composables/useAuth.js', () => ({
 
 vi.mock('../utils/api.js', () => hofAdminApi)
 vi.mock('../utils/helpers.js', () => ({ mapLabel: () => '' }))
-vi.mock('../utils/display.js', () => ({ apiErrorLabel: (t, te, e) => (e?.code ? 'err:' + e.code : 'api-error') }))
+vi.mock('../utils/display.js', () => ({
+  apiErrorLabel: (t, te, e) => (e?.code ? 'err:' + e.code : 'api-error'),
+  replayValueLabel: (t, te, value) => value
+}))
 // 三语 reason options（object message：tm/$tm 才返回 object；$t 只用于字符串 key）
 const REJECT_OPTIONS = {
   SCREENSHOT_MISMATCH: '截图数据与申报不符',
@@ -89,6 +93,7 @@ describe('HoFAdminPage', () => {
     roles = ['HoF-admin']
     authenticated = true
     vi.clearAllMocks()
+    hofAdminApi.hofAdminVehicleOptions.mockResolvedValue([])
   })
 
   function mountPage() {
@@ -105,6 +110,44 @@ describe('HoFAdminPage', () => {
     await flushPromises()
     expect(wrapper.find('.hof-admin-denied').exists()).toBe(false)
     expect(hofAdminApi.hofAdminList).toHaveBeenCalled()
+    expect(hofAdminApi.hofAdminVehicleOptions).toHaveBeenCalled()
+  })
+
+  it('uses optional readable vehicle filters and sends only the selected tank ID', async () => {
+    hofAdminApi.hofAdminVehicleOptions.mockResolvedValue([
+      { tankId: 385, tankName: 'Progetto 65', nation: 'EUROPE', type: 'MEDIUM_TANK', tier: 10 },
+      { tankId: 6481, tankName: 'FV4005', nation: 'UK', type: 'TANK_DESTROYER', tier: 10 },
+      { tankId: 999, tankName: 'Kranvagn', nation: 'EUROPE', type: 'HEAVY_TANK', tier: 10 }
+    ])
+    const wrapper = mountPage()
+    await flushPromises()
+
+    const textInputs = wrapper.findAll('.hof-admin-filters input')
+    expect(textInputs.map(input => input.attributes('placeholder')))
+      .toEqual(['hofAdmin.fNickname', 'hofAdmin.fAccountId', 'hofAdmin.fUploadedBy'])
+
+    let selects = wrapper.find('.hof-admin-filters').findAll('select')
+    // 三项都未选择时，车辆下拉直接提供全量候选。
+    expect(selects[3].findAll('option')).toHaveLength(4)
+
+    await selects[0].setValue('EUROPE')
+    await flushPromises()
+    selects = wrapper.find('.hof-admin-filters').findAll('select')
+    expect(selects[1].findAll('option').map(option => option.attributes('value')))
+      .toEqual(['', 'HEAVY_TANK', 'MEDIUM_TANK'])
+
+    await selects[1].setValue('MEDIUM_TANK')
+    await flushPromises()
+    selects = wrapper.find('.hof-admin-filters').findAll('select')
+    expect(selects[3].findAll('option').map(option => option.text()))
+      .toEqual(['hofAdmin.allVehicles', 'Progetto 65 · T10'])
+
+    await selects[3].setValue('385')
+    await flushPromises()
+    expect(hofAdminApi.hofAdminList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tankId: '385' })
+    )
+    expect(hofAdminApi.hofAdminList.mock.calls.at(-1)[0]).not.toHaveProperty('arenaId')
   })
 
   it('wotbtools-admin sees admin content', async () => {

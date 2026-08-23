@@ -3,6 +3,7 @@ package com.wotb.web.hof.controller;
 import com.wotb.web.config.ApiPaths;
 import com.wotb.web.hof.dto.HofAdminAuditPageDto;
 import com.wotb.web.hof.dto.HofAdminPageDto;
+import com.wotb.web.hof.dto.HofAdminVehicleOptionDto;
 import com.wotb.web.hof.dto.ReplayDownload;
 import com.wotb.web.hof.service.HallOfFameAdminService;
 import com.wotb.web.hof.service.HallOfFameService;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -40,12 +42,11 @@ public class HallOfFameAdminController {
         this.hofService = hofService;
     }
 
-    /** 管理列表：nickname / accountId / arenaId / uploadedBy / battleType / tankId / replayAvailable / sort / 分页。 */
+    /** 管理列表：nickname / accountId / uploadedBy / battleType / tankId / replayAvailable / sort / 分页。 */
     @GetMapping
     public HofAdminPageDto list(
             @RequestParam(name = "nickname", required = false) final String nickname,
             @RequestParam(name = "accountId", required = false) final Long accountId,
-            @RequestParam(name = "arenaId", required = false) final String arenaId,
             @RequestParam(name = "uploadedBy", required = false) final String uploadedBy,
             @RequestParam(name = "battleType", required = false) final String battleType,
             @RequestParam(name = "tankId", required = false) final Long tankId,
@@ -53,8 +54,14 @@ public class HallOfFameAdminController {
             @RequestParam(name = "sort", required = false) final String sort,
             @RequestParam(name = "page", defaultValue = "1") final int page,
             @RequestParam(name = "size", defaultValue = "50") final int size) {
-        return adminService.search(nickname, accountId, arenaId, uploadedBy, battleType,
+        return adminService.search(nickname, accountId, uploadedBy, battleType,
                 tankId, replayAvailable, sort, page, size);
+    }
+
+    /** 管理筛选车辆：返回当前名人堂已有车辆的业务可读属性。 */
+    @GetMapping("/vehicle-options")
+    public List<HofAdminVehicleOptionDto> vehicleOptions() {
+        return adminService.vehicleOptions();
     }
 
     /** 操作日志（只读）。 */
