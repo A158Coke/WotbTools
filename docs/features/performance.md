@@ -42,7 +42,13 @@ mutate 任何字段，也不再自行解析回放或查询 Tankopedia。
 
 **不再存在** `performance` 数组 / `performanceColumns` / `PerformanceRow` /
 `PerformanceTable` 组件——用户上传一次即可在单场表与汇总表直接看到这些指标。
-Excel 单场「玩家数据」与汇总「汇总」表同步包含对应列（导出路径先 `populateBattle` 再写表）。
+
+**Preview / Excel export / mode=each 三条输出链使用同一条 authoritative full processing**：
+`ReplayService` 的 preview 与 export（含 `mode=each`）都经 `Replays.collect(..., processFull, ...)`
+加载，即同一 `DefaultReplayProcessingFacade.process(Source, full())`（parse + reconstruction +
+`ObservedMaxHp` + `DeathTimeReconciler`），随后 `populateBattle` 再映射/导出。同一输出请求中
+每份 replay 只 full process 一次，Excel 单场「玩家数据」/汇总「汇总」/逐场导出与网页完全同源，
+Contribution/KAST/Impact 数值一致（不允许 export 走 raw parse 造成 preview/Excel 差异）。
 
 ## 输出列
 
