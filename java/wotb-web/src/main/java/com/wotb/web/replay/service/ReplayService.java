@@ -39,7 +39,7 @@ import java.util.zip.ZipOutputStream;
 @Service
 public class ReplayService {
 
-    static final int MAX_REPLAY_FILES = 100;
+    public static final int MAX_REPLAY_FILES = 100;
     static final long MAX_REPLAY_FILE_BYTES = 20L * 1024 * 1024;
     static final long MAX_REPLAY_REQUEST_BYTES = 200L * 1024 * 1024;
 

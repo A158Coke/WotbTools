@@ -5,6 +5,8 @@
 ## [Unreleased]
 
 ### Added
+- **Replay 批量导出改为 Export Job（长任务 UX 架构，plan §7–§23）**：新增 `POST /api/replay/export-jobs`（202 返回 jobId；创建时即校验并把上传输入持久化到 job 临时目录，绝不在异步 worker 持有 `MultipartFile`）、`GET /api/replay/export-jobs/{jobId}`（真实 `processed/total` + `phase` + `duplicates/failures` + 终态 `errorCode`）、`DELETE /api/replay/export-jobs/{jobId}`（QUEUED 立即终态 / PROCESSING 协作取消，安全 checkpoint 后终态）、`GET /api/replay/export-jobs/{jobId}/download`（`FileSystemResource` streaming，不再 `ByteArrayOutputStream` + 大 `byte[]` 全量驻留）。`Replays.collect` 新增可选逐文件进度回调（4 参重载，3 参/2 参旧调用不变；每个输入恰好回调一次，成功/重复/失败都推进 processed）。内存态 `ExportJobStore`（单实例部署，TTL 30 分钟清理终态 job 与临时目录，启动清理孤儿目录）+ 有界 worker 池（2 并发 / 4 排队，满载 503 `EXPORT_QUEUE_FULL`）；worker 执行前仍获取全局 `ReplayCapacityLimiter` 许可（`max-concurrent-jobs=2` 不变，job 化不绕过全局容量）；batch 内 replay 仍串行（不引入 parallelStream/VirtualThread）。0 场有效 → FAILED `NO_VALID_REPLAYS`（不生成空 Excel）。单场 XLSX sheet 顺序改为 玩家数据/战斗信息/原始字段 且默认打开「玩家数据」（§28）。指标 `wotb_replay_export_job_duration_seconds` / `queue_wait_seconds` / `result_total`（低基数，无 jobId/文件名 tag）。旧同步 `POST /api/export` 保留（向后兼容，未删除）。 **PR #118 两处 blocker 修复**：① QUEUED 取消不再只改业务状态——`ReplayExportWorkerExecutor` 保存 jobId→Runnable 句柄，`cancel` 经 `ThreadPoolExecutor.remove(Runnable)` 把尚未执行的任务从有界队列移除（立即释放 queue slot，新 job 不再误报 `EXPORT_QUEUE_FULL`；已 dequeue/运行中的任务 remove 返回 false，由协作取消在 checkpoint 终态，绝不再执行已取消任务）；② `mode=each` 改为逐场流式：每场 `processFull → enrich → metrics → writeSingle 写入 ZIP entry → 释放 Battle`，working set O(1)（不再全批次保留 `List<Battle>`），全程 phase=`BUILDING_ARCHIVE`（UI 不显示假的「全部解析完才开始生成」）；FAILED/CANCELLED 终态删除 partial artifact（不暴露半包）。
+
 - **百场提交会话草稿与回放累计选择**：`HoFPage` 不再在打开/关闭提交弹窗时重置表单，车辆、数值、截图 base64 与 `File[]` 在当前组件生命周期内保留；回放选择按 `name + size + lastModified` 去重并分批追加至 5 个，非法/重复/超限批次不会清空既有文件，支持截图/回放逐项移除与显式确认清空。FileReader 使用 generation 防止过期回调覆盖新截图；提交失败保留草稿，成功后统一 reset。未新增浏览器持久化、服务器预上传或 API 变更。
 - **Contribution / KAST / Impact 正式并入回放解析结果**：单场玩家表直接新增「贡献度 / KAST / Impact」三列（来自 `PerformanceMetricsCalculator.battleMetrics`，与跨场聚合共用同一公式与同一 `Battle`/`PlayerResult` facts，绝不二次解析/二次计算）；删除独立「战斗表现」tab 与 `PerformanceTable` 组件、`PreviewResponse.performance`/`performanceColumns` 字段、`PerformanceRow` DTO 与 `Mapper.toPerformance`；跨场聚合（汇总）新增 contribution/kast/impact/multi_damage_rate/traded_deaths 五列（`Mapper.toAggregate` 按 accountId 合并 `PerformanceMetricsCalculator.compute` 结果）。`impact` 契约由带 `%` 的字符串统一为数值（前端负责格式化 `%`），排序保持 numeric。HP UNKNOWN 时单场/汇总的 contribution/kast/多伤率输出 null（UI 显示 `--`，不再冒充 0）；`Row.hpEligible` 标记是否存在 HP 已知场次。Excel 单场「玩家数据」/汇总「汇总」同步新增对应列（`Columns.STAT` + `AggregateSheets`）；**preview / export / mode=each 三条链统一走 `Replays.collect(..., processFull, ...)`（同一 authoritative full processing：reconstruction + ObservedMaxHp + DeathTimeReconciler），再 `populateBattle`，保证 Excel 与网页 Contribution/KAST/Impact 同源**。三语 locale 同步（player_labels/agg_labels 新增键，删除 performance_labels/performance_tab）。
 - **统一 Replay Authoritative Facts，移除 Rating V2 综合评分**：回放事实（HP / 潜在伤害 / trade / 场均 HP）全部收敛到 replay 管线（新增 `replay/facts/BattleHpFacts` + `TradeFacts`，复用 `ObservedMaxHp`/权威 `survivalTimeSec`）；`RatingAnalyzer` 重命名为 `PerformanceMetricsCalculator`（纯派生计算、只读，删除 `finalRating`/权重/`estimatedHp`/2400 fallback）。旧 WN8 式 `Rating`/`RatingConfig`/`PlayerResult.rating`/`rating_avg`/`common/rating.json`/`GET /api/rating` 与 Excel「评分」列全部删除；`POST /api/rating` → `POST /api/performance`，返回贡献度 / KAST / Impact / 潜在伤害 / 协助 / 击杀 / 多伤率 / 存活率 / 互换击杀。前端删除 RatingModal / 评分 badge / 最高评分统计，扩展页重构为「战斗表现」。
@@ -17,6 +19,25 @@
   `blitzkit-references.mjs --emit-portraits` 可重复生成入口。
 
 ### Fixed
+- **Replay 批量导出：34+ 回放保持上传顺序、ZIP 写失败不再产出损坏包（PR #118 correctness）**：
+  - **输入顺序修复（Blocker 1）**：createJob 把上传持久化为 `N__name`，原 `Files.list().sorted()`
+    是整名字符串字典序，10+ 时顺序变成 `0,1,10,11,…,19,2,20…`；现改为按 `__` 前数字前缀整数
+    排序（`listInputsInOrder`/`inputOrder`），严格保持 `MultipartFile[]` 上传顺序——aggregate 的
+    battleSourceNames / 战斗列表「文件名」列与 mode=each 的 ZIP entry 顺序均与上传顺序一致；无法
+    解析前缀的文件排最后（防御性，不插入有效顺序中间）。
+  - **mode=each 异常边界拆分（Blocker 2）**：原单个 `catch(Exception)` 同时吞掉「该场 replay 无效」
+    （processFull/reconstruction/NO_BATTLE_DATA → failures++ 跳过继续）与「artifact/ZIP 写失败」
+    （应整个 job FAILED）；现拆为两个边界——只有 replay processing/enrichment 失败才转为
+    failures++；Battle 成功后 zip entry / POI / filesystem / OutputStream 任何失败 → 整个 job
+    FAILED，partial ZIP 由 finishTerminal 删除、绝不 READY。新增 `writeSingleExcel` 最小测试
+    seam（测试注入写失败，不引入大型抽象）。
+  - **QUEUED 取消 terminal observability exactly once**：被 `removeQueued` 移除的任务 Runnable
+    永不执行，worker 不会走到 finishTerminal → cancel 现于请求线程直接记录 `export_job_cancelled`
+    日志、`result_total{cancelled}` 与按「创建 → 取消」的 terminal duration；PROCESSING 协作取消
+    仍由 worker 记录，互不重复。`ExportJob` 恢复 `createdAtMillis`（duration 计算用）。
+  - 回归：34 replay each ZIP 顺序、12 replay aggregate 顺序（含战斗列表文件名列）、
+    valid/invalid/valid 剩余有效场顺序保持、ZIP 写失败 → FAILED + partial 删除 + 不可下载、
+    queued 取消 metrics exactly once（18 tests 全绿）。
 - **ReconstructionControllerLifecycleLogTest 并发稳定性修复（CI deploy test-backend flaky）**：
   ListAppender.list 默认是普通 ArrayList（append 无同步），runAnalysis 在 AiReviewWorkerExecutor worker 线程并发写日志而测试线程
 awaitLogContaining() 轮询 stream() 时抛 ConcurrentModificationException。改为 CopyOnWriteArrayList（写入量小、轮询读多，适合 COW），
