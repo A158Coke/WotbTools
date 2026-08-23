@@ -28,22 +28,19 @@ async function downloadResponse(response, fallbackName) {
   URL.revokeObjectURL(url)
 }
 
-export async function preview(body) {
-  const r = await requireOk(await fetch('/api/preview', { method: 'POST', body }))
-  return r.json()
-}
-
-
 /** 名人堂统一公开查询：nation / vehicleType / tier / tankId 可独立使用并取交集。 */
 
 // ── Replay Export Job（/api/replay/export-jobs，匿名公开；创建立即返回 jobId，轮询真实进度）──
 
-/** 创建导出任务：上传文件立即持久化并返回 {jobId, status, total}（202）。 */
-export async function createExportJob(body, mode) {
-  const r = await requireOk(await fetch(
-    `/api/replay/export-jobs?mode=${encodeURIComponent(mode)}`,
-    { method: 'POST', body }
-  ))
+/**
+ * 创建导出任务：上传文件立即持久化并返回 {jobId, status, total}（202）。
+ * 传 processingJobId 时复用已解析的 Processing Job result（不重新上传 replay，plan §28–§30）。
+ */
+export async function createExportJob(body, mode, processingJobId) {
+  const query = new URLSearchParams()
+  query.set('mode', mode)
+  if (processingJobId) query.set('processingJobId', processingJobId)
+  const r = await requireOk(await fetch(`/api/replay/export-jobs?${query}`, { method: 'POST', body }))
   return r.json()
 }
 
@@ -56,6 +53,31 @@ export async function getExportJob(jobId) {
 /** 取消任务（QUEUED 立即生效；PROCESSING 协作取消）。 */
 export async function cancelExportJob(jobId) {
   await requireOk(await fetch(`/api/replay/export-jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }))
+}
+
+// ── Replay Processing Job（/api/replay/processing-jobs，匿名公开；解析预览改为异步 Job）──
+
+/** 创建解析任务：上传文件立即持久化并返回 {jobId, status, total}（202，HTTP request 不等待解析）。 */
+export async function createProcessingJob(body) {
+  const r = await requireOk(await fetch('/api/replay/processing-jobs', { method: 'POST', body }))
+  return r.json()
+}
+
+/** 查询解析任务状态/进度：{jobId, status, phase, total, processed, valid, duplicates, failures, errorCode, currentFile}。 */
+export async function getProcessingJob(jobId) {
+  const r = await requireOk(await fetch(`/api/replay/processing-jobs/${encodeURIComponent(jobId)}`))
+  return r.json()
+}
+
+/** 取消解析任务（QUEUED 立即生效；PROCESSING 协作取消）。 */
+export async function cancelProcessingJob(jobId) {
+  await requireOk(await fetch(`/api/replay/processing-jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }))
+}
+
+/** READY 后获取 Preview 数据（不重新解析回放，plan §21）。 */
+export async function getProcessingJobResult(jobId) {
+  const r = await requireOk(await fetch(`/api/replay/processing-jobs/${encodeURIComponent(jobId)}/result`))
+  return r.json()
 }
 
 /** READY 后下载 artifact（后端 FileSystemResource server-side streaming；前端 blob 缓冲后触发下载）。 */

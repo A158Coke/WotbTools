@@ -52,6 +52,10 @@ public final class ApiPaths {
     public static final String REPLAY_EXPORT_JOB_STATUS = "/api/replay/export-jobs/{jobId}";
     public static final String REPLAY_EXPORT_JOB_DOWNLOAD = "/api/replay/export-jobs/{jobId}/download";
     public static final String REPLAY_EXPORT_JOBS_PATTERN = "/api/replay/export-jobs/**";
+    public static final String REPLAY_PROCESSING_JOBS = "/api/replay/processing-jobs";
+    public static final String REPLAY_PROCESSING_JOB_STATUS = "/api/replay/processing-jobs/{jobId}";
+    public static final String REPLAY_PROCESSING_JOB_RESULT = "/api/replay/processing-jobs/{jobId}/result";
+    public static final String REPLAY_PROCESSING_JOBS_PATTERN = "/api/replay/processing-jobs/**";
 
     // ---- 安全匹配模式（/** 通配，仅 SecurityConfig 使用） ----
     public static final String API_PATTERN = "/api/**";

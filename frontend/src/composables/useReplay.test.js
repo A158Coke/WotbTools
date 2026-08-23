@@ -18,6 +18,10 @@ const api = vi.hoisted(() => ({
   getExportJob: vi.fn(),
   cancelExportJob: vi.fn(),
   downloadExportJob: vi.fn(),
+  createProcessingJob: vi.fn(),
+  getProcessingJob: vi.fn(),
+  cancelProcessingJob: vi.fn(),
+  getProcessingJobResult: vi.fn(),
   preview: vi.fn(),
 }))
 
@@ -41,6 +45,7 @@ describe('useReplay export job flow', () => {
   afterEach(() => {
     vi.useRealTimers()
     replay.dismissExportJob()
+    replay.dismissProcessingJob()
   })
 
   it('startExportJob creates job and polls until terminal', async () => {
@@ -116,5 +121,115 @@ describe('useReplay export job flow', () => {
     await vi.advanceTimersByTimeAsync(1500)
     expect(replay.exportJob.value).toBeNull()
     expect(replay.exportError.value.length).toBeGreaterThan(0)
+  })
+})
+
+
+describe('useReplay processing job flow (plan §13/§20/§30/§63)', () => {
+  let replay
+
+  function pJob(overrides = {}) {
+    return { jobId: 'p1', status: 'QUEUED', phase: null, total: 34, processed: 0, valid: 0,
+      duplicates: 0, failures: 0, errorCode: null, currentFile: null, ...overrides }
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.clearAllMocks()
+    replay = useReplay()
+    replay.files.value = [new File(['x'], 'a.wotbreplay'), new File(['y'], 'b.wotbreplay')]
+  })
+
+  it('startProcessingJob creates job, polls real progress, auto-loads result on READY', async () => {
+    const onColumnsInit = vi.fn()
+    const result = { battles: [{ mapName: 'Lagoon', sourceName: 'a.wotbreplay' }], aggregate: [], duplicates: [], failures: [], playerColumns: [], aggregateColumns: [] }
+    api.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 34 })
+    api.getProcessingJob
+      .mockResolvedValueOnce(pJob({ status: 'PROCESSING', phase: 'PROCESSING_REPLAYS', processed: 18, valid: 16, duplicates: 2, failures: 1 }))
+      .mockResolvedValueOnce(pJob({ status: 'READY', phase: null, processed: 34, valid: 31, duplicates: 2, failures: 1 }))
+    api.getProcessingJobResult.mockResolvedValue(result)
+
+    await replay.startProcessingJob(onColumnsInit)
+    expect(api.createProcessingJob).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(0)
+    // 第一次轮询：真实 18/34 + 计数（plan §63 processing 真实显示）
+    expect(replay.processingJob.value.status).toBe('PROCESSING')
+    expect(replay.processingJob.value.processed).toBe(18)
+    expect(replay.processingJob.value.valid).toBe(16)
+    expect(replay.processingJob.value.duplicates).toBe(2)
+    expect(replay.processingJob.value.failures).toBe(1)
+
+    await vi.advanceTimersByTimeAsync(1500)
+    // READY：自动拉取 result 展示（plan §20），不强迫用户再点「加载结果」
+    expect(replay.processingJob.value.status).toBe('READY')
+    expect(replay.resp.value).toEqual(result)
+    expect(replay.processingJobId.value).toBe('p1')
+    expect(onColumnsInit).toHaveBeenCalledWith(result)
+    expect(replay.loading.value).toBe(false)
+    // 终端后停止轮询
+    const calls = api.getProcessingJob.mock.calls.length
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(api.getProcessingJob.mock.calls.length).toBe(calls)
+  })
+
+  it('processing FAILED shows error and stops polling', async () => {
+    api.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 1 })
+    api.getProcessingJob.mockResolvedValue(pJob({ status: 'FAILED', phase: null, errorCode: 'NO_VALID_REPLAYS', failures: 1 }))
+
+    await replay.startProcessingJob()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(replay.processingJob.value.status).toBe('FAILED')
+    expect(replay.processingError.value).toContain('replay.processing_job.no_valid_replays')
+    expect(replay.loading.value).toBe(false)
+  })
+
+  it('cancelProcessingJob stops polling and marks CANCELLED', async () => {
+    api.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 34 })
+    api.getProcessingJob.mockResolvedValue(pJob({ status: 'PROCESSING', processed: 5 }))
+    api.cancelProcessingJob.mockResolvedValue(undefined)
+
+    await replay.startProcessingJob()
+    await replay.cancelProcessingJob()
+    expect(api.cancelProcessingJob).toHaveBeenCalledWith('p1')
+    expect(replay.processingJob.value.status).toBe('CANCELLED')
+    expect(replay.loading.value).toBe(false)
+    const calls = api.getProcessingJob.mock.calls.length
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(api.getProcessingJob.mock.calls.length).toBe(calls)
+  })
+
+  it('prevents duplicate processing while job active', async () => {
+    api.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 34 })
+    api.getProcessingJob.mockResolvedValue(pJob({ status: 'PROCESSING', processed: 3 }))
+
+    await replay.startProcessingJob()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(replay.processingActive.value).toBe(true)
+    await replay.startProcessingJob()
+    expect(api.createProcessingJob).toHaveBeenCalledTimes(1)
+  })
+
+  it('export after READY reuses processingJobId without re-uploading (plan §30)', async () => {
+    // 模拟已 READY（轮询 → READY → processingJobId 完整链路由上一用例覆盖）
+    replay.processingJobId.value = 'p1'
+
+    api.createExportJob.mockResolvedValue({ jobId: 'e1', status: 'QUEUED', total: 2 })
+    api.getExportJob.mockResolvedValue({ jobId: 'e1', status: 'READY', phase: null, total: 2, processed: 2, duplicates: 0, failures: 0, filename: 'x.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    await replay.startExportJob('aggregate')
+    // 关键：不重新上传（body=null）、带 processingJobId
+    expect(api.createExportJob).toHaveBeenCalledWith(null, 'aggregate', 'p1')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(replay.exportJob.value.status).toBe('READY')
+  })
+
+  it('export without processing result still uploads (legacy path)', async () => {
+    api.createExportJob.mockResolvedValue({ jobId: 'e1', status: 'QUEUED', total: 2 })
+    api.getExportJob.mockResolvedValue({ jobId: 'e1', status: 'READY', phase: null, total: 2, processed: 2, duplicates: 0, failures: 0, filename: 'x.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    await replay.startExportJob('each')
+    expect(api.createExportJob).toHaveBeenCalledTimes(1)
+    const [body, mode, jobId] = api.createExportJob.mock.calls[0]
+    expect(body).not.toBeNull()
+    expect(mode).toBe('each')
+    expect(jobId).toBeUndefined()
   })
 })

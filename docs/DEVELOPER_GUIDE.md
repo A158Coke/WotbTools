@@ -205,7 +205,13 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 | `ReconstructionController` | `wotb-web/.../replay/controller/ReconstructionController.java` | AI 分析 + 重建 REST API |
 | `ReplayExportJobService` | `wotb-web/.../replay/job/ReplayExportJobService.java` | Export Job 编排：创建即持久化输入（不异步持有 MultipartFile）→ 有界 worker 池串行 full processing → 真实进度 → XLSX/ZIP 临时 artifact → READY（终态 exactly once；worker 仍获取 ReplayCapacityLimiter 全局容量；TTL 清理） |
 | `ReplayExportJobController` | `wotb-web/.../replay/controller/ReplayExportJobController.java` | Export Job REST API（POST 创建 202 / GET 状态 / DELETE 取消 / GET download 流式下载，匿名公开） |
-| `ExportJobStore` | `wotb-web/.../replay/job/ExportJobStore.java` | 内存态 Export Job 注册表 + 临时目录生命周期（TTL sweeper / 启动孤儿清理） |
+| `ExportJobStore` | `wotb-web/.../replay/job/ExportJobStore.java` | 内存态 Export Job 注册表 + 临时目录生命周期（TTL sweeper / 启动孤儿清理；目录/TTL/清理委托共享 `ReplayJobStorage`） |
+| `ReplayJobState` | `wotb-web/.../replay/job/ReplayJobState.java` | 通用 Replay Job 状态机（Export 与 Processing 共用，composition）：QUEUED→PROCESSING→READY/FAILED/CANCELLED 终态 exactly once + 真实进度 + 协作取消 |
+| `ReplayJobStorage` | `wotb-web/.../replay/job/ReplayJobStorage.java` | 通用 Job 临时目录生命周期（独立 root、TTL sweeper、启动孤儿清理；Export/Processing 各自组合） |
+| `ReplayProcessingJobService` | `wotb-web/.../replay/job/ReplayProcessingJobService.java` | Replay Processing Job 编排：解析预览异步化——create 持久化输入返回 202 → 有界 worker 池串行 processFull → 真实进度 → READY + 内存态 ProcessedDataset（Preview/Export 复用，processFull 每 replay 恰好一次） |
+| `ReplayProcessingJobController` | `wotb-web/.../replay/controller/ReplayProcessingJobController.java` | Replay Processing Job REST API（POST 创建 202 / GET 状态 / DELETE 取消 / GET result 返回 Preview 数据，匿名公开） |
+| `ReplayProcessingJobStore` | `wotb-web/.../replay/job/ReplayProcessingJobStore.java` | 内存态 Processing Job 注册表 + result 引用计数（Export acquire/release，防 TTL 误清理）+ 临时输入目录生命周期 |
+| `ReplayJobFiles` | `wotb-web/.../replay/job/ReplayJobFiles.java` | Export/Processing 共享的临时输入文件工具（N__ 前缀整数排序保持上传顺序、惰性 Source、文件名安全化） |
 | `ReplayProcessingCapabilities` | `wotb-core/.../processing/ReplayProcessingCapabilities.java` | scope-independent 能力事实；可分析规则由 `BatchAnalyzer` 计算 |
 | `RecorderEntityMapping` | `wotb-core/.../processing/RecorderEntityMapping.java` | 录像者 entity 映射结果 |
 | `TeamPerspectiveResolver` | `wotb-core/.../processing/TeamPerspectiveResolver.java` | 以权威战绩、accountId、participant、nickname 证据解析录像者所在队 |
@@ -299,7 +305,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 ### 前端组件
 
 - 根组件 `App.vue`（编排层），无 Vue Router、无组件库。逻辑全在 **composables** 和 **utils** 中：
-  - `composables/useReplay.js` — 文件/预览/导出/战斗移除状态管理
+  - `composables/useReplay.js` — 文件/解析（Processing Job：创建→轮询真实进度→READY 自动展示 result）/导出（READY 后复用 processingJobId，不重新上传）/战斗移除状态管理
   - `composables/useColumns.js` — 列可见性/排序/选择器状态；`localStorage` 持久化单场/汇总两套列配置，并在后端新增列时自动补齐顺序
   - `composables/useTheme.js` — 主题切换（auto/light/dark），数据持久化调用 `utils/theme.js`
   - `composables/useAuth.js` — Keycloak 认证适配器（check-sso 游客模式；未登录时 `login(view)` 直接跳转 Keycloak 托管登录页，IdP 选择（QQ + 三个 WG 区服）由 Keycloak 页面提供，前端不硬编码 idpHint）
@@ -362,7 +368,7 @@ API 层为**纯英文**：`/api/columns` 与各 DTO 只回 `key`(snake_case) + �
 - **百场（Hundred Battles）**：`wotb-web/.../hundred/` 域（`HundredBattleSubmission` 单表生命周期 PENDING/CURRENT/SUPERSEDED/REJECTED/CANCELLED/DELETED；Flyway `V18` partial unique index 保证 user+vehicle 最多一个 PENDING/CURRENT）；公开 `GET /api/hof/hundred?nation=&vehicleType=&vehicleId=` 支持分类/车辆交集 Top 10 与单车独立排行，competition ranking 仅 query-time 派生；管理员列表 `GET /api/admin/hof/hundred/submissions?status=&nation=&vehicleType=&vehicleId=` 使用同样可独立生效的交集筛选。提交 `POST /api/hof/hundred/submissions`（登录 + Profile gameId/nickname + Tier X + 截图 + 5 replay 硬门禁）；个人中心 `GET /api/users/hundred/status`。审核证据严格 admin-only 且只在 PENDING 期间保留；APPROVE/REJECT/CANCEL/DELETE 后清空截图、删除 evidence metadata，并清理无引用物理文件。见 `docs/features/hall-of-fame.md`「百场」章节。
 - **名人堂（Hall of Fame）**：schema 由 Flyway 管理；只记录录像者本人随机战斗（`arenaBonusType==1`）与评级战斗（`==7`）单场伤害（`HallOfFameBattleTypePolicy` 单一事实源，其余模式 400 `UNSUPPORTED_BATTLE_TYPE` 零持久化）；统一公开查询 `GET /api/hof`（battleType/nation/vehicleType/tier/tank/nickname 交集过滤 + 位置排名，同伤害 RATING 优先），匿名 `GET /api/hof/vehicle-options` 返回实际已有车辆分类；公开页和管理页的国家/车种/等级无需先选车辆即可真实筛榜。上传/下载需登录；管理后台 `GET/DELETE /api/admin/hof/**`（HoF-admin 或 wotbtools-admin；audit + delete 单事务，ReplayHashLock 保证文件引用不变量）；原始 .wotbreplay 以 SHA-256 内容寻址存 `HOF_REPLAY_DIR`（生产 volume `/data/replays`，best-effort 可丢、不纳入 DB 备份）。见 `docs/features/hall-of-fame.md`。
 - **i18n**：vue-i18n 三语（zh/en/ru），`locales/*.json`；地图名 `common/map_names.json`，网页按当前语言显示，导出固定中文。
-- **API 端点**：`GET /api/health`、`POST /api/preview`（单场 cells 含 contribution/kast/impact，汇总含跨场指标）、`POST /api/export?mode=aggregate|each`（同步旧端点，向后兼容）、`POST /api/replay/export-jobs`（Export Job：202 返回 jobId，创建即持久化输入；`GET /api/replay/export-jobs/{jobId}` 轮询真实进度；`DELETE .../{jobId}` 取消；`GET .../{jobId}/download` 流式下载）；排行榜 / 站内通知端点见 `java/README.md`。
+- **API 端点**：`GET /api/health`、`POST /api/preview`（单场 cells 含 contribution/kast/impact，汇总含跨场指标）、`POST /api/export?mode=aggregate|each`（同步旧端点，向后兼容）、`POST /api/replay/export-jobs`（Export Job：202 返回 jobId，创建即持久化输入，可传 `processingJobId` 复用已解析 result；`GET /api/replay/export-jobs/{jobId}` 轮询真实进度；`DELETE .../{jobId}` 取消；`GET .../{jobId}/download` 流式下载）、`POST /api/replay/processing-jobs`（Replay Processing Job：解析预览异步化，202 返回 jobId，READY 后 `GET .../{jobId}/result` 返回 Preview 数据——Preview 与 Export 共享同一份 processFull 结果，同一批回放只解析一次）；排行榜 / 站内通知端点见 `java/README.md`。
 - **公开解析边界**：最多 100 个回放、单文件 20 MiB、总请求 200 MiB；单实例默认同时处理 2 个任务；容量满 503 `REPLAY_BUSY`。
 
 ---

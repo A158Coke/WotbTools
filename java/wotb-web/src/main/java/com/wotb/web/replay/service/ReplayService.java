@@ -9,11 +9,8 @@ import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.ref.Tankopedia;
-import com.wotb.core.stats.Aggregator;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
 import com.wotb.core.stats.PotentialDamage;
-import com.wotb.web.replay.dto.AggRow;
-import com.wotb.web.replay.dto.BattleDto;
 import com.wotb.web.replay.dto.ColumnDef;
 import com.wotb.web.replay.dto.ExportResult;
 import com.wotb.web.replay.dto.PreviewResponse;
@@ -27,7 +24,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -93,27 +89,10 @@ public class ReplayService {
 
     private PreviewResponse previewWithinPermit(final MultipartFile[] files) throws Exception {
         // 统一完整处理链：parse + reconstruction + ObservedMaxHp + DeathTimeReconciler
-        // （同一请求生命周期内每个 replay 只解析一次，战斗表现复用同一 authoritative facts）
+        // （同一请求生命周期内每个 replay 只解析一次，战斗表现复用同一 authoritative facts）；
+        // DTO 构建与 Replay Processing Job result 共享 Mapper.toPreviewResponse（plan §21）。
         final Collected c = Replays.collect(toSources(files), this::processFull, null);
-        PotentialDamage.apply(c.battles, tankopedia);   // 事实层 enrich（metrics 只读）
-
-        final List<BattleDto> battles = new ArrayList<>();
-        for (int i = 0; i < c.battles.size(); i++) {
-            final Battle battle = c.battles.get(i);
-            PerformanceMetricsCalculator.populateBattle(battle);   // 单场指标写入 PlayerResult（Columns.PLAYER 直接消费）
-            battles.add(Mapper.toBattle(battle, c.battleSourceNames.get(i), tankopedia));
-        }
-        final List<PerformanceMetricsCalculator.Row> perfRows = PerformanceMetricsCalculator.compute(c.battles);
-        final Map<Long, PerformanceMetricsCalculator.Row> perfById = new HashMap<>();
-        for (final PerformanceMetricsCalculator.Row row : perfRows) {
-            perfById.put(row.accountId, row);
-        }
-        final List<AggRow> aggregate = c.battles.size() > 1
-                ? Mapper.toAggregate(Aggregator.aggregate(c.battles, tankopedia), perfById)
-                : List.of();
-
-        return new PreviewResponse(battles, aggregate, c.duplicates, c.failures,
-                Mapper.playerColumns(), Mapper.aggregateColumns());
+        return Mapper.toPreviewResponse(c.battles, c.battleSourceNames, c.duplicates, c.failures, tankopedia);
     }
 
     /** 完整处理回填已证明的进场满血；重建不可用时仍返回结算战绩并使用车辆库兜底。 */
