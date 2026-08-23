@@ -1,13 +1,25 @@
 package com.wotb.web.replay.service;
 
+import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
+import com.wotb.core.processing.DefaultReplayProcessingFacade;
+import com.wotb.core.processing.ReplayProcessingCapabilities;
+import com.wotb.core.processing.ReplayProcessingOptions;
+import com.wotb.core.processing.ReplayProcessingResult;
+import com.wotb.core.processing.ReplayProcessingStatus;
+import com.wotb.web.replay.dto.RatingResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Arrays;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ReplayServiceTest {
@@ -52,6 +64,41 @@ class ReplayServiceTest {
                 () -> ReplayService.validateUploads(files));
 
         assertEquals("REQUEST_TOO_LARGE", error.getMessage());
+    }
+
+    @Test
+    void ratingUsesFullProcessingToPopulateEntryHp() throws Exception {
+        final DefaultReplayProcessingFacade processingFacade = mock(DefaultReplayProcessingFacade.class);
+        final Battle battle = new Battle();
+        battle.arenaId = "rating-battle";
+        battle.players = List.of(player(1L, 1), player(2L, 2));
+        when(processingFacade.process(any(), eq(ReplayProcessingOptions.full()))).thenReturn(
+                new ReplayProcessingResult("rating.wotbreplay", ReplayProcessingStatus.SUCCESS,
+                        null, battle, null, null,
+                        ReplayProcessingCapabilities.summaryOnly(false), null, null));
+        final ReplayService service = new ReplayService(new ReplayCapacityLimiter(1), processingFacade, null);
+
+        final RatingResponse response = service.ratingLeaderboard(new MultipartFile[]{ratingFile()});
+
+        assertEquals(2, response.rows().size());
+        verify(processingFacade).process(any(), eq(ReplayProcessingOptions.full()));
+    }
+
+    private static PlayerResult player(final long accountId, final int team) {
+        final PlayerResult player = new PlayerResult();
+        player.accountId = accountId;
+        player.nickname = "p" + accountId;
+        player.team = team;
+        player.tankId = 4481L;
+        return player;
+    }
+
+    private static MultipartFile ratingFile() throws Exception {
+        final MultipartFile file = mock(MultipartFile.class);
+        when(file.getSize()).thenReturn(1L);
+        when(file.getOriginalFilename()).thenReturn("rating.wotbreplay");
+        when(file.getBytes()).thenReturn(new byte[]{1});
+        return file;
     }
 
     private static MultipartFile multipartFile(final long size) {

@@ -29,15 +29,15 @@
 
 ### average-HP
 
-公式口径已确定：每场每名玩家取敌方队伍平均 HP。
+每场所有玩家使用同一个本局平均 HP。
 
 ```text
-average_hp = 敌方 7 台车实际进场总血量 / 7
+average_hp = 本局 14 台参战车辆的总血量 / 14
 ```
 
-也就是 1 队玩家看 2 队总血量 / 7，2 队玩家看 1 队总血量 / 7。这样可以覆盖同车因配件、消耗品或模式导致的实际血量差异。
+总血量逐车取值：`entryHpSource == OBSERVED_EXACT` 时使用回放已证明的进场满血（含装备/物资加成）；其他车辆使用 Tankopedia 基础 HP。双方所有玩家使用该均值，不再把 2400 作为整场平均血量。
 
-注意：车辆库（`common/tankopedia-tier{7,8,9,10}.json`，blitzkit 生成）已含 `hp`；但回放里每台车实际进场血量 / 双方总血量字段尚未确认解析，车辆库缺失时仍暂定单车 HP 为 2400。
+注意：`OBSERVED_EXACT` 有严格受击覆盖与受击前样本证明；无法证明的进场满血不会猜测，仍使用车辆库基础 HP。车辆库也没有该车 HP 时，单车才暂定 2400。
 
 ### KAST
 
@@ -131,19 +131,19 @@ rating = round(10 * weightedIndex)
 ## API
 
 - `GET /api/rating`：返回原评分参数快照，供旧评分说明弹窗使用。
-- `POST /api/rating`：上传本次回放，返回实时 rating 表、重复文件、解析失败文件和 `ratingColumns`。
+- `POST /api/rating`：上传本次回放，完整处理回放以回填 `OBSERVED_EXACT` 进场满血，返回实时 rating 表、重复文件、解析失败文件和 `ratingColumns`；重建不可用时保留结算战绩并回退车辆库基础 HP。
 - `/api/columns.rating`：只返回英文 key + 是否数值，显示名由前端三语 `rating_labels` 映射。
 
 ## 已知限制与后续
 
-- **精确 average_hp 数据源未解析**：当前 `common/tankopedia-tier{7,8,9,10}.json` 有 HP，但回放里每车实际进场血量 / 双方总血量字段尚未确认解析；车辆库无 HP 时暂定单车 HP 为 2400。后续方向见 `docs/ROADMAP.md`（Research）。
+- **进场满血覆盖并非全量**：只有 `OBSERVED_EXACT` 的车辆使用回放实测进场满血；其余车辆仍使用 `common/tankopedia-tier{7,8,9,10}.json` 基础 HP，车辆库也缺失时才暂定单车 HP 为 2400。后续方向见 `docs/ROADMAP.md`（Research）。
 - **特殊伤害未校验**：殉爆 / 火烧等非 direct HP damage 场景尚未用真实样本校验，可能误补/漏补潜在伤害。
 - **rating 参数未经大批量回归**：权重与封顶值基于当前样本，后续用真实比赛批量样本微调（见 `docs/ROADMAP.md`）。
 
 ## 测试
 
-- `RatingAnalyzerTest` 覆盖 Trade death KAST、多伤率、协助、Impact 和综合 rating 排序。
-- `WebApiTest` 覆盖 `/api/columns.rating` 和 `POST /api/rating` 返回字段。
+- `RatingAnalyzerTest` 覆盖 Trade death KAST、多伤率、协助、Impact、综合 rating 排序，以及总血量 ÷ 14 时的 `OBSERVED_EXACT` 进场满血。
+- `ReplayServiceTest` 覆盖 `/api/rating` 走完整回放处理；`WebApiTest` 覆盖 `/api/columns.rating` 和 `POST /api/rating` 返回字段。
 
 ## 潜在伤害（Potential Damage）链路
 
@@ -158,7 +158,7 @@ rating = round(10 * weightedIndex)
 
 `ReplayParser` 仍解析 `xp`、`credits` 到 `PlayerResult`，但这两个值受经济/加成/首胜等因素影响，不作为玩家战绩展示字段、导出列或 rating 输入。
 
-`Tankopedia` 读取车辆库（`common/tankopedia-tier{7,8,9,10}.json`，blitzkit 生成，全部英文/数字）：`name` / `tier` / `class`（英文） / `nation`（英文） / `hp` / vehicle 级 `alphaDamage` / 手工 `extraInfo`。vehicle 级 `alphaDamage` 只在数据层有唯一权威依据时由生成器输出（单炮车 / 7–9 级顶配炮 = 最高 tier 同 tier 最高 alpha，如 T-34-2=400），**10 级多终局炮车不输出**——`Tankopedia.info(...).alphaDamage()` 返回 null，AI structured facts 省略炮伤，不会把数组第一把炮的伤害伪装成本场实际炮伤；`alphaDamage` 取标准弹（`shells[0]`，已用真实数据验证；HE 往往伤害更高故禁止 `max`）。`hp` = 车体 + 顶配炮塔；`forwardSpeed`/`reverseSpeed` 来自 `speed_forwards`/`speed_backwards`，`turretRotationSpeed` 取顶配炮塔 traverse，`hullRotationSpeed` 取顶配履带 traverse，`powerToWeightRatio` = 顶配引擎功率 / 车重。10 级多炮车（如 E 100 的 12,8cm/15cm、AC Atlas 的 V1/V2）在 `guns` 数组中保留全部炮（`isDefault` 均为 false）。刷新时旧数据只从 `--existing-dir` 读取、新数据只写 `--output-dir`（Workflow 两者路径分离），并按 tank_id 保留合并旧文件中的 `extraInfo`（兼容旧 `extraKnowledge`），若仍存在的车辆知识点丢失会直接失败。`average_hp` 的目标口径是"敌方 7 台车实际进场总血量 / 7"，但回放里的每台车实际进场血量 / 双方总血量字段尚未确认解析；当前实现为：车辆库有 HP 时用车辆库，否则未知单车 HP 暂定 2400。
+`Tankopedia` 读取车辆库（`common/tankopedia-tier{7,8,9,10}.json`，blitzkit 生成，全部英文/数字）：`name` / `tier` / `class`（英文） / `nation`（英文） / `hp` / vehicle 级 `alphaDamage` / 手工 `extraInfo`。vehicle 级 `alphaDamage` 只在数据层有唯一权威依据时由生成器输出（单炮车 / 7–9 级顶配炮 = 最高 tier 同 tier 最高 alpha，如 T-34-2=400），**10 级多终局炮车不输出**——`Tankopedia.info(...).alphaDamage()` 返回 null，AI structured facts 省略炮伤，不会把数组第一把炮的伤害伪装成本场实际炮伤；`alphaDamage` 取标准弹（`shells[0]`，已用真实数据验证；HE 往往伤害更高故禁止 `max`）。`hp` = 车体 + 顶配炮塔；`forwardSpeed`/`reverseSpeed` 来自 `speed_forwards`/`speed_backwards`，`turretRotationSpeed` 取顶配炮塔 traverse，`hullRotationSpeed` 取顶配履带 traverse，`powerToWeightRatio` = 顶配引擎功率 / 车重。10 级多炮车（如 E 100 的 12,8cm/15cm、AC Atlas 的 V1/V2）在 `guns` 数组中保留全部炮（`isDefault` 均为 false）。刷新时旧数据只从 `--existing-dir` 读取、新数据只写 `--output-dir`（Workflow 两者路径分离），并按 tank_id 保留合并旧文件中的 `extraInfo`（兼容旧 `extraKnowledge`），若仍存在的车辆知识点丢失会直接失败。`average_hp` 取本局双方 14 辆参战车辆的满血总和 ÷ 14：仅 `OBSERVED_EXACT` 使用回放已证明的进场满血，其余使用车辆库基础 HP；车辆库也缺失时，才按单车 2400 兜底。
 
 `ReplayParser` 会从 `data.wotreplay` 的 Type 8 / subtype 8 / sub=3 direct HP damage 事件解析攻击者、受害者和伤害值；当阵亡玩家的累计 direct damage 达到 `damageReceived` 阈值时，当前攻击者被推断为击杀者，并把该击杀者对受害者的累计 direct damage / penetrations 写入 `PlayerResult.killVictims`。
 

@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.8",
+    "date": "2026-08-23",
+    "tag": "fix",
+    "zh": "Rating V2 的平均血量现在按本局 14 辆参战车辆的总血量平均计算；已可靠观测到的进场满血会计入，其他车辆使用官方车辆库基础血量，不再固定按 2400 血量评分",
+    "en": "Rating V2 now derives average HP from the combined HP of all 14 vehicles in the battle; reliably observed entry HP is used when available and the official vehicle base HP is used otherwise, instead of a fixed 2,400 HP",
+    "ru": "В Rating V2 среднее HP теперь рассчитывается по суммарному запасу прочности всех 14 машин в бою: при наличии используется надёжно наблюдённое HP при входе, иначе базовое HP из официальной базы техники, а не фиксированные 2400 HP"
+  },
+  {
     "v": "2.12.7",
     "date": "2026-08-21",
     "tag": "add",

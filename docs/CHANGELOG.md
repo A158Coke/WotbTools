@@ -1132,6 +1132,9 @@
   并 seek 暂停；三语 locale 与文档同步。
 
 ### Changed
+- **Rating V2 平均血量改为本局总血量均分**：`POST /api/rating` 走完整回放处理，优先汇总本局
+  14 名有效参战车辆中已证明的进场满血（`OBSERVED_EXACT`），其余使用 Tankopedia 基础 HP 后除以 14；
+  所有玩家使用同一个本局平均值，不再按敌队人数或固定平均值计算。车辆库缺少 HP 时，仅该单车以 2400 兜底。
 - **打手最高等级显示名调整**：保留数据库/API 内部兼容值 `AVERAGE_GOD`，仅把界面中文名改为“殿堂级”、英文名改为 `Mythic`，俄文同步对应译名；管理员编辑授予、普通申请禁用及每服最多一名的规则不变。
 - **AI 复盘胜负来源证据层级与全歼双向语义（battle result 权威）**：`CAPTURE_RULE`（ZH/EN/RU）
   不再宣称所有 result 行都来自权威 winnerTeam，改为按 `resultSource` 三级证据描述——

@@ -6,6 +6,9 @@ import com.wotb.core.model.Collected;
 import com.wotb.core.model.Source;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.parse.Replays;
+import com.wotb.core.processing.DefaultReplayProcessingFacade;
+import com.wotb.core.processing.ReplayProcessingOptions;
+import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.Aggregator;
 import com.wotb.core.stats.PotentialDamage;
@@ -22,6 +25,7 @@ import com.wotb.web.replay.mapper.Mapper;
 import com.wotb.web.replay.metrics.ReplayUsageMetrics;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayOutputStream;
@@ -48,12 +52,15 @@ public class ReplayService {
 
     private final Tankopedia tankopedia = Tankopedia.load();
     private final ReplayCapacityLimiter capacityLimiter;
+    private final DefaultReplayProcessingFacade processingFacade;
     private final ReplayUsageMetrics usageMetrics;
 
     @Autowired
     public ReplayService(final ReplayCapacityLimiter capacityLimiter,
+                         final DefaultReplayProcessingFacade processingFacade,
                          @Autowired(required = false) final ReplayUsageMetrics usageMetrics) {
         this.capacityLimiter = capacityLimiter;
+        this.processingFacade = processingFacade;
         this.usageMetrics = usageMetrics;
     }
 
@@ -116,9 +123,20 @@ public class ReplayService {
     }
 
     private RatingResponse ratingWithinPermit(final MultipartFile[] files) throws Exception {
-        final Collected c = Replays.collect(toSources(files), null);
+        final Collected c = Replays.collect(toSources(files), this::processRatingSource, null);
         return new RatingResponse(Mapper.toRatings(RatingAnalyzer.compute(c.battles, tankopedia)),
                 c.duplicates, c.failures, Mapper.ratingColumns());
+    }
+
+    /** 完整处理回填已证明的进场满血；重建不可用时仍返回结算战绩并使用车辆库兜底。 */
+    private Battle processRatingSource(final Source source) {
+        final ReplayProcessingResult result = processingFacade.process(source, ReplayProcessingOptions.full());
+        if (result.battle() != null) {
+            return result.battle();
+        }
+        final String message = result.error() != null && StringUtils.hasText(result.error().message())
+                ? result.error().message() : "REPLAY_PROCESSING_FAILED";
+        throw new IllegalArgumentException(message);
     }
 
     /**

@@ -4,6 +4,7 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.TankInfo;
 import com.wotb.core.ref.Tankopedia;
+import com.wotb.core.replay.evidence.EntryHpSource;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -15,14 +16,16 @@ import java.util.Locale;
 /** Realtime rating leaderboard for an uploaded replay batch. */
 public final class RatingAnalyzer {
 
-    private static final double EXPECTED_BATTLE_SHARE = 1.0 / 14.0;
+    private static final int STANDARD_BATTLE_PLAYER_COUNT = 14;
+    private static final double EXPECTED_BATTLE_SHARE = 1.0 / STANDARD_BATTLE_PLAYER_COUNT;
     private static final double POTENTIAL_WEIGHT = 0.70;
     private static final double KAST_WEIGHT = 0.15;
     private static final double IMPACT_WEIGHT = 0.25;
     private static final double AST_WEIGHT = 0.30;
     private static final double MULTI_DAMAGE_WEIGHT = 0.10;
     private static final double KILLS_WEIGHT = 0.10;
-    private static final double DEFAULT_AVERAGE_HP = 2400.0;
+    // 车辆库缺少单车血量时的兜底值；不作为整场平均血量。
+    private static final double FALLBACK_TANK_HP = 2400.0;
 
     public static final class Row {
         public long accountId;
@@ -136,7 +139,7 @@ public final class RatingAnalyzer {
         final int team = safeTeam(player.team);
         final Integer winner = battle.winnerTeam;
         final boolean win = winner != null && winner != 0 && player.team == winner;
-        final double averageHp = ctx.enemyAverageHp(player.team);
+        final double averageHp = ctx.averageHp();
         final double contributionValue = roundContribution(player, averageHp);
         final double teamContribution = ctx.teamContribution[team];
         final double traded = tradedDeath(player, battle.players);
@@ -221,11 +224,15 @@ public final class RatingAnalyzer {
     }
 
     private static double estimatedHp(final PlayerResult player, final Tankopedia tp) {
+        if (player.entryHpSource == EntryHpSource.OBSERVED_EXACT
+                && player.entryHp != null && player.entryHp > 0) {
+            return player.entryHp;
+        }
         final TankInfo info = tp.info(player.tankId);
         if (info.maxHp() != null && info.maxHp() > 0) {
             return info.maxHp();
         }
-        return DEFAULT_AVERAGE_HP;
+        return FALLBACK_TANK_HP;
     }
 
     private static double ratio(final double numerator, final double denominator) {
@@ -255,47 +262,31 @@ public final class RatingAnalyzer {
     }
 
     private static final class BattleContext {
-        final double[] teamAverageHp = new double[3];
         final double[] teamContribution = new double[3];
         double battleDamageAssist;
+        double battleAverageHp;
 
         static BattleContext of(final Battle battle, final Tankopedia tp) {
             final BattleContext ctx = new BattleContext();
-            final double[] hpSum = new double[3];
-            final int[] hpCount = new int[3];
+            double battleTotalHp = 0;
             for (final PlayerResult player : battle.players) {
                 final int team = safeTeam(player.team);
-                final double hp = estimatedHp(player, tp);
-                hpSum[team] += hp;
-                hpCount[team]++;
+                if (team != 0) {
+                    battleTotalHp += estimatedHp(player, tp);
+                }
                 ctx.battleDamageAssist += player.damageDealt + player.damageAssisted;
             }
-            for (int team = 0; team < ctx.teamAverageHp.length; team++) {
-                ctx.teamAverageHp[team] = hpCount[team] == 0 ? DEFAULT_AVERAGE_HP : hpSum[team] / hpCount[team];
-            }
+            ctx.battleAverageHp = battleTotalHp / STANDARD_BATTLE_PLAYER_COUNT;
             for (final PlayerResult player : battle.players) {
                 final int team = safeTeam(player.team);
-                final double averageHp = ctx.enemyAverageHp(player.team);
+                final double averageHp = ctx.averageHp();
                 ctx.teamContribution[team] += roundContribution(player, averageHp);
             }
             return ctx;
         }
 
-        double enemyAverageHp(final int team) {
-            if (team == 1) {
-                return positive(teamAverageHp[2], teamAverageHp[1]);
-            }
-            if (team == 2) {
-                return positive(teamAverageHp[1], teamAverageHp[2]);
-            }
-            return positive(teamAverageHp[0], DEFAULT_AVERAGE_HP);
-        }
-
-        private static double positive(final double preferred, final double fallback) {
-            if (preferred > 0) {
-                return preferred;
-            }
-            return fallback > 0 ? fallback : DEFAULT_AVERAGE_HP;
+        double averageHp() {
+            return battleAverageHp > 0 ? battleAverageHp : FALLBACK_TANK_HP;
         }
     }
 }
