@@ -327,3 +327,85 @@ export async function hofAdminHundredDelete(id, body) {
   })
   return r.json()
 }
+
+// ── 名人堂「三环」（/api/hof/mark3，人工审核）────────────────────────────
+
+/** 三环公开排行榜（匿名）：nation / vehicleType / vehicleId 可选并取交集。 */
+export async function hofMark3List(params = {}) {
+  const r = await requireOk(await fetch(withQuery('/api/hof/mark3', params)))
+  return r.json()
+}
+
+/**
+ * 三环提交（需登录，multipart）：
+ * formData 包含 vehicleId / battleCount / averageDamage / winRate /
+ * proofScreenshots(×1–2 base64) / replays(×5)。
+ */
+export async function hofMark3Submit(formData) {
+  const r = await hofAuthRequest('/api/hof/mark3/submissions', { method: 'POST', body: formData })
+  return r.json()
+}
+
+/** 用户撤销自己的 PENDING 三环 submission。 */
+export async function hofMark3Cancel(id) {
+  const r = await hofAuthRequest(`/api/hof/mark3/submissions/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
+  return r.json()
+}
+
+/** 个人中心三环状态：{current, pending, rejected}。 */
+export async function hofMark3MyStatus() {
+  const r = await hofAuthRequest('/api/users/mark3/status')
+  return r.json()
+}
+
+// ── 三环管理后台（/api/admin/hof/mark3/**，HoF-admin / wotbtools-admin）──
+
+/** 三环审核列表：status / nation / vehicleType / vehicleId 可独立使用并取交集。 */
+export async function hofAdminMark3List(params = {}) {
+  const r = await hofAdminRequest(withQuery('/api/admin/hof/mark3/submissions', params))
+  return r.json()
+}
+
+/** 三环审核详情（proofScreenshots 仅 PENDING 返回；终态已清理）。 */
+export async function hofAdminMark3Detail(id) {
+  const r = await hofAdminRequest(`/api/admin/hof/mark3/submissions/${encodeURIComponent(id)}`)
+  return r.json()
+}
+
+/** 三环审核证据列表（admin-only）：slot/originalFilename/fileSize/arenaId/sha256。 */
+export async function hofAdminMark3Replays(submissionId) {
+  const r = await hofAdminRequest(`/api/admin/hof/mark3/submissions/${encodeURIComponent(submissionId)}/replays`)
+  return r.json()
+}
+
+/** 下载单个三环审核回放（admin-only）。 */
+export async function hofAdminMark3ReplayDownload(submissionId, replayId) {
+  const r = await hofAdminRequest(
+    `/api/admin/hof/mark3/submissions/${encodeURIComponent(submissionId)}/replays/${encodeURIComponent(replayId)}`
+  )
+  await downloadResponse(r, `replay-${replayId}.wotbreplay`)
+}
+
+/** APPROVE：管理员只改变状态，三环数据由后端冻结的 submission 值决定。 */
+export async function hofAdminMark3Approve(id) {
+  const r = await hofAdminRequest(`/api/admin/hof/mark3/submissions/${encodeURIComponent(id)}/approve`, {
+    method: 'POST',
+  })
+  return r.json()
+}
+
+/** REJECT：{rejectReason, rejectReasonText?}（原因强制）。 */
+export async function hofAdminMark3Reject(id, body) {
+  const r = await hofAdminRequest(`/api/admin/hof/mark3/submissions/${encodeURIComponent(id)}/reject`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  })
+  return r.json()
+}
+
+/** 删除 CURRENT：{deleteReason, deleteReasonText?}（原因强制）。 */
+export async function hofAdminMark3Delete(id, body) {
+  const r = await hofAdminRequest(`/api/admin/hof/mark3/submissions/${encodeURIComponent(id)}/delete`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  })
+  return r.json()
+}
