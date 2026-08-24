@@ -3,6 +3,7 @@
         "title": "WoTBTools",
         "subtitle": "Replay parsing · Hall of Fame · Live rating · AI tactical review",
         "replay_tab": "Replay",
+        "analysis_tab": "Battle Analysis",
         "theme": "Theme",
         "login": "Login",
         "profile": "Profile",
@@ -30,7 +31,10 @@
         "remove_title": "Remove this replay",
         "add_files_title": "Add replay files",
         "add_folder_title": "Add folder",
-        "remove_file_aria": "Remove replay file {name}"
+        "remove_file_aria": "Remove replay file {name}",
+        "files_size": "{count} files · {size}",
+        "view_list": "View file list",
+        "hide_list": "Hide file list"
     },
     "action": {
         "preview": "Parse & Preview",
@@ -40,7 +44,9 @@
         "picker_locked": "Column picker is open — click Done to switch tables",
         "export_aggregate": "Merge & Export",
         "export_each": "Export Each",
-        "download_png": "Download as PNG"
+        "download_png": "Download as PNG",
+        "battle_playback": "Battle Replay",
+        "ai_review": "AI Review"
     },
     "result": {
         "aggregate_tab": "Aggregate ({count} players)",
@@ -125,7 +131,8 @@
         "vehicle": "Vehicle",
         "battle": "Battle",
         "extra": "Extra",
-        "overview": "Overview"
+        "overview": "Overview",
+        "rating": "Rating"
     },
     "hof": {
         "btn": "Hall of Fame",
@@ -165,6 +172,7 @@
         "upload_hint": "Only Random and Rating battle replays are supported",
         "upload_success": "Uploaded! Entered the Hall of Fame",
         "upload_title": "Upload a replay to enter the Hall of Fame",
+        "submit_entry": "Submit Entry",
         "upload_btn": "Select Replay",
         "uploading": "Uploading...",
         "invalid_file": "Please select a .wotbreplay file",
@@ -472,7 +480,26 @@
         "rank": "Military rank",
         "potential_damage": "Potential damage",
         "potential_damage_supplement": "Supplement damage",
-        "potential_damage_detail": "Potential detail"
+        "potential_damage_detail": "Potential detail",
+        "league_rating": "Total Rating",
+        "league_damage_score": "Damage Score",
+        "league_damage_score_tip": "Team 60% + Global 40%, max 400",
+        "league_assist_score": "Assist Score",
+        "league_assist_score_tip": "Team 70% + Global 30%, max 100",
+        "league_kill_score": "Kill Score",
+        "league_kill_score_tip": "Team 40% + Global 60%, max 100",
+        "league_exchange_score": "Exchange Score",
+        "league_exchange_score_tip": "Output/(Output+Received) × participation, max 150",
+        "league_blocked_score": "Blocked Score",
+        "league_blocked_score_tip": "Team 70% + Global 30%, max 50",
+        "league_survival_score": "Survival/Trade Score",
+        "league_survival_score_tip": "Win+survive 100 / trade 75 / loser top-4 50, max 100",
+        "league_shooting_score": "Shooting Score",
+        "league_shooting_score_tip": "Hit 30% + Pen 70% (Wilson small-sample) × damage participation, max 50",
+        "league_objective_score": "Objective Score",
+        "league_objective_score_tip": "Earned 30% + Seized 70% (experimental), max 50",
+        "victory_points_earned": "Points Earned",
+        "victory_points_seized": "Points Seized"
     },
     "agg_labels": {
         "nickname": "Player",
@@ -506,7 +533,16 @@
         "kast": "KAST",
         "impact": "Impact",
         "multi_damage_rate": "Multi-damage rate",
-        "traded_deaths": "Trades"
+        "traded_deaths": "Trades",
+        "league_rating": "Rating Median",
+        "league_damage_score": "Damage Median",
+        "league_assist_score": "Assist Median",
+        "league_kill_score": "Kill Median",
+        "league_exchange_score": "Exchange Median",
+        "league_blocked_score": "Blocked Median",
+        "league_survival_score": "Survival/Trade Median",
+        "league_shooting_score": "Shooting Median",
+        "league_objective_score": "Objective Median"
     },
     "theme": {
         "auto": "Auto",
@@ -576,10 +612,34 @@
     },
     "replay": {
         "no_files": "Select replay files or a folder first",
+        "no_results": "No battle data to display",
         "preview_failed": "Preview failed",
         "export_failed": "Export failed",
         "png_export_failed": "PNG export failed",
-        "png_exporting": "Exporting PNG…"
+        "png_exporting": "Exporting PNG…",
+        "login_required_for_battle": "Battle Replay / AI Review require sign-in. Please re-select your replay after signing in.",
+        "export_job": {
+            "title": "Exporting battle data",
+            "queued": "Preparing export…",
+            "preparing": "Export job created · {total} files",
+            "progress": "{processed}/{total} processed",
+            "phase_processing": "Parsing replays…",
+            "phase_excel": "Building Excel…",
+            "phase_archive": "Exporting per-replay files into ZIP…",
+            "duplicates_failures": "{d} duplicate · {f} failed",
+            "valid_summary": "{v} valid · {d} duplicate · {f} failed",
+            "ready": "Excel ready",
+            "download": "Download file",
+            "cancel": "Cancel",
+            "dismiss": "Dismiss",
+            "failed": "Export failed",
+            "failed_no_valid": "No valid replays to export.",
+            "failed_generic": "Export failed, please try again.",
+            "cancelled": "Cancelled"
+        },
+        "processing_job": {
+            "mixed_league_standard": "Mixed upload detected: standard and training/tournament replays cannot be parsed together"
+        }
     },
     "boost": {
         "submitTab": "Submit",
@@ -968,7 +1028,18 @@
         "HUNDRED_SUBMISSION_NOT_FOUND": "Submission not found",
         "PROOF_SCREENSHOT_REQUIRED": "Please upload a proof screenshot",
         "INVALID_HUNDRED_STATUS": "Invalid hundred-battle status",
-        "HUNDRED_APPROVED_BATTLE_COUNT_TOO_LOW": "Approved battle count must be at least 100 (hundred-battle eligibility)"
+        "HUNDRED_APPROVED_BATTLE_COUNT_TOO_LOW": "Approved battle count must be at least 100 (hundred-battle eligibility)",
+        "MIXED_LEAGUE_AND_STANDARD_REPLAYS": "Cannot mix standard replays with training/tournament replays in one batch. Please split them.",
+        "LEAGUE_ARENA_ID_MISSING": "Replay is missing arena ID",
+        "LEAGUE_NOT_SEVEN_VS_SEVEN": "Not a standard 7v7 battle (7 players per team required) — no rating",
+        "LEAGUE_INVALID_TEAM": "Invalid team number in results",
+        "LEAGUE_DUPLICATE_ACCOUNT_ID": "Duplicate or invalid player account in results",
+        "LEAGUE_MISSING_TANK": "A player is missing a vehicle",
+        "LEAGUE_ROSTER_INCOMPLETE": "Roster does not match results (incomplete roster)",
+        "LEAGUE_NO_DECISIVE_WINNER": "Draw or unknown winner — no rating",
+        "LEAGUE_MISSING_DEATH_TIME": "A destroyed player lacks a reliable death time — battle not rated",
+        "LEAGUE_INVALID_STAT_FACTS": "Results contain invalid value relationships",
+        "CONFLICTING_REPLAYS_FOR_ARENA": "Multiple replays of the same battle disagree on key facts — all copies rejected"
     },
     "admin": {
         "title": "User Management",
@@ -1015,6 +1086,14 @@
     },
     "home": {
         "replayTitle": "Replay Extractor",
+        "uploadReplay": "Upload Replay",
+        "analysisTitle": "Battle Analysis",
+        "analysisDesc": "Batch-parse replays and inspect battle data; pick a battle for reconstruction and AI review.",
+        "viewAnalysisHistory": "View Analysis History",
+        "learnAnalysis": "Explore Battle Analysis",
+        "recentAnalysis": "Recent Analysis",
+        "recentAnalysisEmptyTitle": "Start your first battle analysis",
+        "recentAnalysisEmptyDesc": "After you upload a .wotbreplay, your recent analysis records will show here.",
         "replayDesc": "Upload .wotbreplay files, extract battle data and export to Excel.",
         "highestDamageRecord": "Highest Damage Record",
         "hofDesc": "Damage Hall of Fame for Random and Rating battles — upload a replay to enter.",
@@ -1182,6 +1261,44 @@
             "TOTAL_REQUEST_TOO_LARGE": "The combined upload size exceeds the limit.",
             "UNKNOWN_LOCALE": "Invalid language setting. Please refresh the page and try again.",
             "AI_REVIEW_BUSY": "AI review service is currently busy. Please try again later."
+        }
+    },
+    "league": {
+        "title": "League Rating",
+        "subtitle": "Training/tournament rating · current battle data only · 0–1000",
+        "mode_desc": "Rated only for Training and Tournament replays; random battles and in-game Rating battles are not eligible.",
+        "team_rating": "Team Rating",
+        "mvp": "MVP",
+        "team_best": "Team Best",
+        "team1": "Team 1",
+        "team2": "Team 2",
+        "team_name_placeholder": "Enter team name",
+        "team_name_pending": "Unnamed",
+        "edit_hint": "Team names are kept in this page only and disappear on refresh",
+        "points_note": "Objective: Points Earned 30% + Points Seized 70% (experimental — does not infer final score)",
+        "summary": {
+            "title_player": "Player Summary (median)",
+            "title_team": "Team Summary (median)",
+            "nickname": "Player",
+            "clan": "Team",
+            "battles": "Battles",
+            "league_rating": "Rating Median",
+            "league_damage_score": "Damage",
+            "league_assist_score": "Assist",
+            "league_kill_score": "Kills",
+            "league_exchange_score": "Exchange",
+            "league_blocked_score": "Blocked",
+            "league_survival_score": "Survival/Trade",
+            "league_shooting_score": "Shooting",
+            "league_objective_score": "Objective",
+            "mvp_count": "MVP Count",
+            "wins": "Wins",
+            "damage_total": "Total Damage",
+            "assist_total": "Total Assist",
+            "kills_total": "Total Kills",
+            "team_name": "Team",
+            "battles_note": "Battles played (more samples = more reliable)",
+            "no_ranking_note": "Summary only — no ranking or batch awards"
         }
     }
 }

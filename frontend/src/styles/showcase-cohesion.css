@@ -1,0 +1,316 @@
+/* WotBTools V2 — visual cohesion fixes for high-value showcase pages.
+ * These product workspaces intentionally use a stable dark tactical surface even when
+ * the user's global/system theme is light. The fullscreen artwork remains visible in
+ * gutters while tool surfaces stay readable and visually consistent.
+ */
+
+/* ========================= Replay Parser ========================= */
+.layout-data-workspace {
+  color: #e9e7e0;
+}
+
+.layout-data-workspace .uploadwrap {
+  border-color: rgba(218, 151, 37, .42) !important;
+  background:
+    linear-gradient(100deg, rgba(12,17,20,.97) 0%, rgba(13,19,22,.94) 52%, rgba(17,20,21,.82) 100%),
+    url('../assets/showcase/replay/replay-hero-battlefield-v1.png') 82% center / cover no-repeat !important;
+  color: #e9e7e0 !important;
+  box-shadow: 0 24px 60px rgba(0,0,0,.38) !important;
+  backdrop-filter: blur(12px);
+}
+.layout-data-workspace .uploadwrap::after {
+  opacity: .55;
+}
+.layout-data-workspace .uploadhead h1 { color: #f6f1e7 !important; }
+.layout-data-workspace .uploadhead p { color: #aaa79f !important; }
+.layout-data-workspace .upload-kicker { color: #f0a42b !important; }
+.layout-data-workspace .upload-points span {
+  border-color: rgba(222,154,40,.25) !important;
+  background: rgba(217,143,24,.08) !important;
+  color: #c9c5bb !important;
+}
+
+.layout-data-workspace .uploadcard {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(102,118,127,.60) !important;
+  background:
+    linear-gradient(105deg, rgba(5,11,14,.91), rgba(6,13,16,.77)),
+    url('../assets/showcase/replay/replay-hero-battlefield-v1.png') center 58% / cover no-repeat !important;
+  color: #ece9e0 !important;
+  box-shadow: inset 0 0 45px rgba(0,0,0,.32);
+}
+.layout-data-workspace .uploadcard::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 82%, rgba(238,101,25,.16), transparent 25%),
+    radial-gradient(circle at 82% 22%, rgba(44,145,180,.13), transparent 28%);
+}
+.layout-data-workspace .uploadcard > * { position: relative; z-index: 1; }
+.layout-data-workspace .uploadcard .up-title { color: #f2ede3 !important; }
+.layout-data-workspace .uploadcard .up-sub,
+.layout-data-workspace .uploadcard .muted { color: #9da3a1 !important; }
+.layout-data-workspace .uploadcard .up-icon {
+  border: 1px solid rgba(240,164,43,.20);
+  background: rgba(240,164,43,.11) !important;
+  color: #f0a42b !important;
+}
+
+.layout-data-workspace .filebtn,
+.layout-data-workspace button {
+  border-color: #465159;
+}
+.layout-data-workspace .filebtn:not(.ghost),
+.layout-data-workspace .actionrow .lg {
+  border-color: #d98f18 !important;
+  background: linear-gradient(180deg, #f0aa30, #cf8310) !important;
+  color: #140d03 !important;
+}
+.layout-data-workspace .filebtn.ghost,
+.layout-data-workspace button.ghost {
+  background: rgba(17,24,28,.88) !important;
+  color: #d6d3ca !important;
+}
+.layout-data-workspace .filebtn.ghost:hover,
+.layout-data-workspace button.ghost:hover {
+  border-color: #d98f18 !important;
+  color: #f0aa30 !important;
+}
+
+.layout-data-workspace .filebar,
+.layout-data-workspace .restoolbar,
+.layout-data-workspace .tablewrap {
+  border-color: #344047 !important;
+  background: rgba(12,18,21,.92) !important;
+  color: #e3e0d8 !important;
+  box-shadow: 0 18px 42px rgba(0,0,0,.28) !important;
+  backdrop-filter: blur(12px);
+}
+.layout-data-workspace .chip {
+  border-color: rgba(217,143,24,.28) !important;
+  background: rgba(217,143,24,.09) !important;
+  color: #d6d2c8 !important;
+}
+.layout-data-workspace table thead th {
+  background: #141c20 !important;
+  color: #b5b2aa !important;
+}
+.layout-data-workspace table tbody tr { background: rgba(13,19,22,.82); }
+.layout-data-workspace table tbody tr:hover { background: rgba(31,43,49,.94) !important; }
+
+/* ========================= Hall of Fame ========================= */
+.lb-wrap {
+  color: #e9e7e0;
+}
+.lb-wrap > .tabs {
+  border-color: #39444a !important;
+  background: rgba(10,15,18,.90) !important;
+  box-shadow: 0 18px 40px rgba(0,0,0,.28) !important;
+}
+.lb-wrap > .tabs button {
+  color: #aaa79f !important;
+}
+.lb-wrap > .tabs button.active {
+  border-color: rgba(217,143,24,.42) !important;
+  background: rgba(217,143,24,.13) !important;
+  color: #f0aa30 !important;
+}
+
+.lb-wrap .lb-head {
+  border-color: rgba(217,143,24,.38) !important;
+  background:
+    linear-gradient(100deg, rgba(12,17,20,.96) 0%, rgba(16,19,20,.92) 58%, rgba(32,23,13,.80) 100%) !important;
+  color: #e9e7e0 !important;
+  box-shadow: 0 22px 54px rgba(0,0,0,.32) !important;
+  backdrop-filter: blur(10px);
+}
+.lb-wrap .lb-head h1 { color: #f6f1e7 !important; }
+.lb-wrap .lb-head p { color: #aaa79f !important; }
+
+/* The filter bar is a dense operations toolbar. CSS Grid gives every field real
+ * width instead of squeezing labels into one narrow flex line:
+ *   row 1: Nation | Vehicle Type | Tier | Vehicle (spans 2 → widest field)
+ *   row 2: Battle Type | Player Search (spans 2) | Limit | Refresh
+ * Each label stays on one line, the nickname input is usable, limit/refresh align.
+ * Tablet wraps to two columns, mobile is task-first with the wide fields spanning
+ * the full row. */
+.lb-wrap .lb-toolbar {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 10px 14px !important;
+  align-items: end !important;
+  padding: 12px 14px !important;
+  border: 1px solid #39444a !important;
+  background: rgba(10,16,19,.92) !important;
+  color: #c9c5bb !important;
+  box-shadow: 0 18px 42px rgba(0,0,0,.30) !important;
+  backdrop-filter: blur(12px);
+}
+.lb-wrap .lb-toolbar .lb-limit:has(.hof-vehicle-select),
+.lb-wrap .lb-toolbar .lb-limit:has(.lb-nick-input) {
+  grid-column: span 2;
+}
+.lb-wrap .lb-toolbar > * {
+  min-width: 0;
+}
+.lb-wrap .lb-toolbar .lb-limit {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.lb-wrap .lb-toolbar .lb-label,
+.lb-wrap .lb-toolbar .label,
+.lb-wrap .lb-toolbar span:not(.dropdown) {
+  color: #a8aaa5 !important;
+}
+.lb-wrap .lb-toolbar .lb-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lb-wrap .lb-toolbar :is(select,input) {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  height: 38px !important;
+  border: 1px solid #445057 !important;
+  border-radius: 6px !important;
+  background: #11191d !important;
+  color: #e4e1d9 !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.02);
+}
+.lb-wrap .lb-toolbar .lb-nick-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  min-width: 0;
+}
+.lb-wrap .lb-toolbar .lb-nick-input {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+.lb-wrap .lb-toolbar select:disabled,
+.lb-wrap .lb-toolbar input:disabled {
+  opacity: .52;
+}
+.lb-wrap .lb-toolbar input::placeholder { color: #737b7c !important; }
+.lb-wrap .lb-toolbar button {
+  min-height: 38px;
+  justify-self: start;
+  border: 1px solid #445057 !important;
+  border-radius: 6px !important;
+  background: #151d21 !important;
+  color: #d7d3ca !important;
+}
+.lb-wrap .lb-toolbar button:hover {
+  border-color: #d98f18 !important;
+  color: #f0aa30 !important;
+}
+
+.lb-wrap .lb-submit-row {
+  display: flex !important;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 4px 0 14px !important;
+  padding: 10px 12px !important;
+  border: 1px solid rgba(57,68,74,.5) !important;
+  border-radius: 8px !important;
+  background: rgba(10,16,19,.50) !important;
+  backdrop-filter: blur(8px);
+}
+.lb-wrap .h100-pending-card {
+  border-color: var(--showcase-tactical-border) !important;
+  background: var(--showcase-tactical-soft) !important;
+  box-shadow: none !important;
+}
+.lb-wrap .h100-pending-title { color: #f0a42b !important; }
+.lb-wrap .h100-pending-meta { color: #9aa09c !important; }
+.lb-wrap .h100-pending-meta strong { color: #f0a42b !important; }
+.lb-wrap .h100-pending-time { color: #8f948d !important; }
+.lb-wrap .lb-download {
+  border-color: #39444a !important;
+  background: rgba(15, 21, 25, .9) !important;
+  color: #c9c5bb !important;
+}
+.lb-wrap .lb-download:hover:not(:disabled) { background: #1c262b !important; color: #f0a42b !important; }
+.lb-wrap .pagination button {
+  border-color: #39444a !important;
+  background: #151d21 !important;
+  color: #d7d3ca !important;
+}
+.lb-wrap .pagination button:hover:not(:disabled) { background: #1c262b !important; }
+.lb-wrap .lb-submit-row button,
+.lb-wrap .submit-btn {
+  border-color: #d98f18 !important;
+  background: linear-gradient(180deg, #f0aa30, #cf8310) !important;
+  color: #160e03 !important;
+  box-shadow: 0 10px 26px rgba(217,143,24,.20);
+}
+
+.lb-wrap .tablewrap {
+  border-color: #354047 !important;
+  background: rgba(11,17,20,.94) !important;
+  box-shadow: 0 20px 48px rgba(0,0,0,.30) !important;
+}
+.lb-wrap table thead th {
+  background: #151d21 !important;
+  color: #aaa79f !important;
+}
+.lb-wrap table tbody tr { background: rgba(13,19,22,.86); }
+.lb-wrap table tbody tr:hover { background: rgba(28,39,44,.96) !important; }
+.lb-wrap table tbody td { color: #d8d5cd; }
+
+/* Error/warning states should integrate with the dark workspace instead of becoming
+ * huge pastel strips that visually reset the page back to the old light UI. */
+.lb-wrap .lb-upload-msg.err {
+  color: #ff8f86 !important;
+}
+.lb-wrap .error,
+.layout-data-workspace .error {
+  border: 1px solid rgba(225,87,78,.46) !important;
+  border-left: 3px solid rgba(225,87,78,.85) !important;
+  border-radius: 7px;
+  background: rgba(105,28,24,.62) !important;
+  color: #ffb6ae !important;
+  box-shadow: 0 10px 26px rgba(0,0,0,.18);
+}
+.lb-wrap .warn,
+.layout-data-workspace .warn {
+  border: 1px solid rgba(224,160,45,.42) !important;
+  border-radius: 7px;
+  background: rgba(90,61,14,.58) !important;
+  color: #f5cf83 !important;
+}
+
+@media (min-width: 1200px) {
+  .layout-data-workspace .uploadwrap {
+    width: min(1040px, 72vw);
+    margin-inline: auto;
+  }
+  .lb-wrap .lb-toolbar.h100-toolbar {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 1199px) {
+  .layout-data-workspace .uploadwrap { width: 100%; }
+  .lb-wrap .lb-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .layout-data-workspace .uploadwrap { padding: 16px !important; }
+  .lb-wrap .lb-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px 10px !important;
+    overflow: visible !important;
+  }
+  .lb-wrap .lb-toolbar .lb-limit:has(.h100-vehicle-select) {
+    grid-column: 1 / -1 !important;
+  }
+}

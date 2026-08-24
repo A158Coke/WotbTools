@@ -5,6 +5,7 @@ import com.wotb.web.hof.exception.HallOfFameStorageException;
 import com.wotb.web.admin.exception.AdminConflictException;
 import com.wotb.web.admin.exception.AdminInternalException;
 import com.wotb.web.replay.exception.ReplayBusyException;
+import com.wotb.web.replay.job.ExportQueueFullException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.catalina.connector.ClientAbortException;
@@ -89,6 +90,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleReplayBusy(final ReplayBusyException e) {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(body("REPLAY_BUSY"));
+    }
+
+    @ExceptionHandler(ExportQueueFullException.class)
+    public ResponseEntity<Map<String, Object>> handleExportQueueFull(final ExportQueueFullException e) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(body("EXPORT_QUEUE_FULL"));
     }
 
     @ExceptionHandler(HallOfFameStorageException.class)

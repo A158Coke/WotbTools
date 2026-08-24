@@ -3,6 +3,7 @@
         "title": "WoTBTools",
         "subtitle": "回放解析 · 在线排行榜 · 实时评分 · AI 战术复盘",
         "replay_tab": "回放解析",
+        "analysis_tab": "战局分析",
         "theme": "主题",
         "login": "登入",
         "profile": "个人中心",
@@ -30,7 +31,10 @@
         "remove_title": "移除该回放",
         "add_files_title": "添加回放文件",
         "add_folder_title": "添加文件夹",
-        "remove_file_aria": "删除回放文件 {name}"
+        "remove_file_aria": "删除回放文件 {name}",
+        "files_size": "{count} 个文件 · {size}",
+        "view_list": "查看文件列表",
+        "hide_list": "收起文件列表"
     },
     "action": {
         "preview": "解析预览",
@@ -40,7 +44,9 @@
         "picker_locked": "列选择器打开时不可切换表格，请先点「完成」",
         "export_aggregate": "合并汇总",
         "export_each": "每场导出",
-        "download_png": "下载为 PNG"
+        "download_png": "下载为 PNG",
+        "battle_playback": "战局回放",
+        "ai_review": "AI 复盘"
     },
     "result": {
         "aggregate_tab": "汇总 ({count} 名选手)",
@@ -125,7 +131,8 @@
         "vehicle": "车辆",
         "battle": "战斗",
         "extra": "附加",
-        "overview": "总览"
+        "overview": "总览",
+        "rating": "评分"
     },
     "hof": {
         "btn": "名人堂",
@@ -165,6 +172,7 @@
         "upload_hint": "仅支持随机战斗和评级战斗回放",
         "upload_success": "上传成功！已进入名人堂",
         "upload_title": "上传回放以进入名人堂",
+        "submit_entry": "提交记录",
         "upload_btn": "选择回放文件",
         "uploading": "上传中...",
         "invalid_file": "请选择 .wotbreplay 文件",
@@ -472,7 +480,26 @@
         "rank": "军阶",
         "potential_damage": "潜在伤害",
         "potential_damage_supplement": "补增伤害",
-        "potential_damage_detail": "潜在明细"
+        "potential_damage_detail": "潜在明细",
+        "league_rating": "总Rating",
+        "league_damage_score": "伤害评分",
+        "league_damage_score_tip": "本队贡献 60% + 全场排名 40%，满分 400",
+        "league_assist_score": "助攻评分",
+        "league_assist_score_tip": "本队贡献 70% + 全场排名 30%，满分 100",
+        "league_kill_score": "击杀评分",
+        "league_kill_score_tip": "本队贡献 40% + 全场排名 60%，满分 100",
+        "league_exchange_score": "换血效率评分",
+        "league_exchange_score_tip": "输出/(输出+承伤) × 参与度，满分 150",
+        "league_blocked_score": "阻挡评分",
+        "league_blocked_score_tip": "本队贡献 70% + 全场排名 30%，满分 50",
+        "league_survival_score": "存活/互换评分",
+        "league_survival_score_tip": "胜方存活 100 / 互换 75 / 败方存活前四 50，满分 100",
+        "league_shooting_score": "射击效率评分",
+        "league_shooting_score_tip": "命中 30% + 击穿 70%（Wilson 小样本修正）× 伤害参与，满分 50",
+        "league_objective_score": "争霸占点评分",
+        "league_objective_score_tip": "Earned 30% + Seized 70%（实验性口径），满分 50",
+        "victory_points_earned": "占点得分",
+        "victory_points_seized": "占领分"
     },
     "agg_labels": {
         "nickname": "玩家",
@@ -506,7 +533,16 @@
         "kast": "KAST",
         "impact": "Impact",
         "multi_damage_rate": "多伤率",
-        "traded_deaths": "互换击杀"
+        "traded_deaths": "互换击杀",
+        "league_rating": "Rating 中位数",
+        "league_damage_score": "伤害评分中位数",
+        "league_assist_score": "助攻评分中位数",
+        "league_kill_score": "击杀评分中位数",
+        "league_exchange_score": "换血效率中位数",
+        "league_blocked_score": "阻挡评分中位数",
+        "league_survival_score": "存活/互换中位数",
+        "league_shooting_score": "射击效率中位数",
+        "league_objective_score": "占点评分中位数"
     },
     "theme": {
         "auto": "跟随系统",
@@ -576,10 +612,34 @@
     },
     "replay": {
         "no_files": "请先选择回放文件或文件夹",
+        "no_results": "未解析出可展示的战斗数据",
         "preview_failed": "预览失败",
         "export_failed": "导出失败",
         "png_export_failed": "PNG 导出失败",
-        "png_exporting": "正在导出 PNG…"
+        "png_exporting": "正在导出 PNG…",
+        "login_required_for_battle": "战局回放 / AI 复盘需要登录。登录后请重新选择回放文件。",
+        "export_job": {
+            "title": "正在导出战斗数据",
+            "queued": "正在准备导出…",
+            "preparing": "已创建导出任务，共 {total} 场",
+            "progress": "已处理 {processed}/{total} 场",
+            "phase_processing": "正在解析回放…",
+            "phase_excel": "正在生成 Excel…",
+            "phase_archive": "正在逐场导出并打包 ZIP…",
+            "duplicates_failures": "重复 {d} · 失败 {f}",
+            "valid_summary": "有效 {v} 场 · 重复 {d} · 失败 {f}",
+            "ready": "Excel 已生成",
+            "download": "下载文件",
+            "cancel": "取消",
+            "dismiss": "关闭",
+            "failed": "导出失败",
+            "failed_no_valid": "没有可导出的有效回放。",
+            "failed_generic": "导出失败，请重试。",
+            "cancelled": "已取消"
+        },
+        "processing_job": {
+            "mixed_league_standard": "检测到混合上传：普通回放与训练赛/联赛回放不能同时解析"
+        }
     },
     "boost": {
         "submitTab": "提交需求",
@@ -968,7 +1028,18 @@
         "HUNDRED_SUBMISSION_NOT_FOUND": "百场申请不存在",
         "PROOF_SCREENSHOT_REQUIRED": "请上传成绩截图",
         "INVALID_HUNDRED_STATUS": "无效的百场状态",
-        "HUNDRED_APPROVED_BATTLE_COUNT_TOO_LOW": "通过场次必须不少于 100 场（百场资格）"
+        "HUNDRED_APPROVED_BATTLE_COUNT_TOO_LOW": "通过场次必须不少于 100 场（百场资格）",
+        "MIXED_LEAGUE_AND_STANDARD_REPLAYS": "不能混合上传普通回放与训练赛/联赛回放，请分开处理。",
+        "LEAGUE_ARENA_ID_MISSING": "回放缺少竞技场 ID",
+        "LEAGUE_NOT_SEVEN_VS_SEVEN": "不是标准 7v7 对局（需两队各 7 人），不产生 Rating",
+        "LEAGUE_INVALID_TEAM": "结算存在非法队伍编号",
+        "LEAGUE_DUPLICATE_ACCOUNT_ID": "结算存在重复或非法的玩家账号",
+        "LEAGUE_MISSING_TANK": "结算存在缺少车辆的玩家",
+        "LEAGUE_ROSTER_INCOMPLETE": "名册与结算不一致（名册不完整）",
+        "LEAGUE_NO_DECISIVE_WINNER": "平局或未知胜方，不产生 Rating",
+        "LEAGUE_MISSING_DEATH_TIME": "阵亡玩家缺少可靠死亡时间，整场不评分",
+        "LEAGUE_INVALID_STAT_FACTS": "结算数据存在非法数值关系",
+        "CONFLICTING_REPLAYS_FOR_ARENA": "同一场比赛的多份回放关键数据不一致，全部拒绝评分"
     },
     "admin": {
         "title": "用户管理",
@@ -1015,6 +1086,14 @@
     },
     "home": {
         "replayTitle": "回放提取器",
+        "uploadReplay": "上传回放",
+        "analysisTitle": "战局分析",
+        "analysisDesc": "批量解析回放、查看战局数据；选择单场可进入战局回放与 AI 复盘。",
+        "viewAnalysisHistory": "查看分析记录",
+        "learnAnalysis": "了解战局分析",
+        "recentAnalysis": "最近分析",
+        "recentAnalysisEmptyTitle": "开始你的第一次战局分析",
+        "recentAnalysisEmptyDesc": "上传 .wotbreplay 后，最近的分析记录会显示在这里。",
         "replayDesc": "上传 .wotbreplay 回放文件，提取战斗数据并导出 Excel。",
         "highestDamageRecord": "最高伤害记录",
         "hofDesc": "随机战斗与评级战斗的单场伤害排行 — 上传回放即可进入名人堂。",
@@ -1182,6 +1261,44 @@
             "TOTAL_REQUEST_TOO_LARGE": "上传文件总大小超过限制。",
             "UNKNOWN_LOCALE": "无效的语言设置，请刷新页面后重试。",
             "AI_REVIEW_BUSY": "AI 复盘服务当前繁忙，请稍后重试。"
+        }
+    },
+    "league": {
+        "title": "League Rating",
+        "subtitle": "训练赛/联赛评分 · 仅使用本场数据 · 0–1000",
+        "mode_desc": "仅训练赛（Training）与联赛/锦标赛（Tournament）回放评分；随机战斗与游戏内评级战斗不适用。",
+        "team_rating": "战队 Rating",
+        "mvp": "全场 MVP",
+        "team_best": "队内最佳",
+        "team1": "Team 1",
+        "team2": "Team 2",
+        "team_name_placeholder": "输入战队名称",
+        "team_name_pending": "待命名",
+        "edit_hint": "战队名称仅保存在当前页面，刷新后消失",
+        "points_note": "争霸占点：占点得分 Earned 30% + 占领分 Seized 70%（实验性口径，不推断终局比分）",
+        "summary": {
+            "title_player": "选手汇总（中位数）",
+            "title_team": "战队汇总（中位数）",
+            "nickname": "玩家",
+            "clan": "战队",
+            "battles": "场次",
+            "league_rating": "Rating 中位数",
+            "league_damage_score": "伤害评分",
+            "league_assist_score": "助攻评分",
+            "league_kill_score": "击杀评分",
+            "league_exchange_score": "换血效率",
+            "league_blocked_score": "阻挡评分",
+            "league_survival_score": "存活/互换",
+            "league_shooting_score": "射击效率",
+            "league_objective_score": "占点评分",
+            "mvp_count": "MVP 次数",
+            "wins": "胜场",
+            "damage_total": "总伤害",
+            "assist_total": "总助攻",
+            "kills_total": "总击杀",
+            "team_name": "战队",
+            "battles_note": "参赛场次（多场样本更可靠）",
+            "no_ranking_note": "仅汇总，不排名、不产生批次奖项"
         }
     }
 }

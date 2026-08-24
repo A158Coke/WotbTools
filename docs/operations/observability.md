@@ -507,6 +507,10 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
   - `wotb_ai_upstream_tokens_total{mode,token_type=input|output|total|reasoning|cache_hit|cache_miss}` — token 用量（usage 缺失时不记录）
 - **Replay 解析**（自定义，`ReplayUsageMetrics`，operation=`preview|export|process|reconstruct|ai_review`）：
   - `wotb_replay_requests_total{operation}` — 请求量
+  - `wotb_replay_processing_job_created_total` / `wotb_replay_processing_job_files_total` — Processing Job 创建数与输入文件数（低基数，无 jobId/文件名 tag）
+  - `wotb_replay_processing_job_queue_wait_seconds` / `wotb_replay_processing_job_duration_seconds` — 排队等待与总耗时（Timer）
+  - `wotb_replay_processing_job_result_total{result=ready|failed|cancelled}` — 终态计数（exactly once）
+  - `wotb_replay_processing_file_duration_seconds` — 单个 replay full processing 耗时（p50/p95 用于评估并行化收益，无 filename tag）
   - `wotb_replay_files_total{operation}` — 解析文件数
   - `wotb_replay_parse_duration_seconds{operation}` — 解析耗时（Timer，histogram，成功与异常都结束；`ai_review` 覆盖 `/api/replay/analyze` 的 Replay processing，不重复统计）
   - `wotb_replay_in_flight` — 当前处理中的解析请求数（Gauge）

@@ -20,6 +20,55 @@ const h2c = vi.hoisted(() => {
     resetCalls: () => { calls.length = 0 },
     call: (...args) => { calls.push(args); if (!impl) throw new Error('html2canvas not initialized'); return impl(...args) },
   }
+describe('ReplayPage export job flow', () => {
+  function exportButtons(wrapper) {
+    return wrapper.findAll('button').filter(b => b.text().includes('action.export_aggregate') || b.text().includes('action.export_each'))
+  }
+
+  it('export aggregate button calls startExportJob with aggregate', async () => {
+    state.init.resp = makeResp()
+    const wrapper = mountPage()
+    await exportButtons(wrapper)[0].trigger('click')
+    // 无覆盖时 teamNamesPayload() = null（PR #123 Blocker 1：名称必须经 payload 传递）
+    expect(state.replay.startExportJob).toHaveBeenCalledWith('aggregate', null)
+  })
+
+  it('export each button calls startExportJob with each', async () => {
+    state.init.resp = makeResp()
+    const wrapper = mountPage()
+    await exportButtons(wrapper)[1].trigger('click')
+    expect(state.replay.startExportJob).toHaveBeenCalledWith('each', null)
+  })
+
+  it('renders ReplayTaskCard when export job exists', async () => {
+    state.init.resp = makeResp()
+    const wrapper = mountPage()
+    expect(wrapper.find('[data-testid="replay-task-card"]').exists()).toBe(false)
+    jobState.setJob({ jobId: 'j1', status: 'PROCESSING', phase: 'PROCESSING_REPLAYS', total: 2, processed: 1, duplicates: 0, failures: 0 })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="replay-task-card"]').exists()).toBe(true)
+  })
+
+  it('disables export buttons while a job is active', async () => {
+    state.init.resp = makeResp()
+    const wrapper = mountPage()
+    jobState.setActive(true)
+    await flushPromises()
+    for (const btn of exportButtons(wrapper)) {
+      expect(btn.attributes('disabled')).toBeDefined()
+    }
+  })
+
+  it('does not create export job when active (guard in page)', async () => {
+    state.init.resp = makeResp()
+    const wrapper = mountPage()
+    jobState.setActive(true)
+    await flushPromises()
+    await exportButtons(wrapper)[0].trigger('click')
+    expect(state.replay.startExportJob).not.toHaveBeenCalled()
+  })
+})
+
 })
 
 vi.mock('html2canvas', () => ({
@@ -33,6 +82,8 @@ const state = vi.hoisted(() => {
   let _error
   let _loading
   let _locale
+  let _files
+  let _fns
 
   function setActiveTab(val) {
     if (_activeTab) _activeTab.value = val
@@ -52,19 +103,45 @@ const state = vi.hoisted(() => {
 
   return {
     // Store ref once created
-    capture: (r) => { _activeTab = r.activeTab; _resp = r.resp; _error = r.error; _loading = r.loading; _locale = r.locale },
+    capture: (r) => { _activeTab = r.activeTab; _resp = r.resp; _error = r.error; _loading = r.loading; _locale = r.locale; _files = r.files },
+    captureFns: (fns) => { _fns = fns },
+    get replay() { return _fns || {} },
     clear: () => { _activeTab = null; _resp = null; _error = null; _loading = null; _locale = null },
     setActiveTab, setResp, setError, setLoading, setLocale,
     // Default initial values
-    init: { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en' },
+    init: { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en', files: [] },
   }
 })
 
+
+const jobState = vi.hoisted(() => {
+  let _exportJob
+  let _exportActive
+  return {
+    capture: (job, active) => { _exportJob = job; _exportActive = active },
+    clear: () => { _exportJob = null; _exportActive = null },
+    setJob: (v) => { if (_exportJob) _exportJob.value = v },
+    setActive: (v) => { if (_exportActive) _exportActive.value = v },
+  }
+})
+
+const pJobState = vi.hoisted(() => {
+  let _processingJob
+  let _processingActive
+  let _processingJobId
+  return {
+    capture: (job, active, id) => { _processingJob = job; _processingActive = active; _processingJobId = id },
+    clear: () => { _processingJob = null; _processingActive = null; _processingJobId = null },
+    setJob: (v) => { if (_processingJob) _processingJob.value = v },
+    setActive: (v) => { if (_processingActive) _processingActive.value = v },
+    setId: (v) => { if (_processingJobId) _processingJobId.value = v },
+  }
+})
 vi.mock('vue-i18n', async () => {
   const { ref } = await import('vue')
   const locale = ref('en')
   return {
-    useI18n: () => ({ locale, t: i18n.t })
+    useI18n: () => ({ locale, t: i18n.t, te: key => i18n.t.mock.calls.some(c => c[0] === key) })
   }
 })
 
@@ -75,6 +152,7 @@ vi.mock('../composables/useReplay.js', async () => {
   const { ref, computed } = await import('vue')
   const resp = ref(null)
   const activeTab = ref('aggregate')
+  const selectionRevision = ref(0)
   const error = ref('')
   const files = ref([])
   const loading = ref(false)
@@ -95,14 +173,33 @@ vi.mock('../composables/useReplay.js', async () => {
         error.value = state.init.error
         loading.value = state.init.loading
         localeRef.value = state.init.locale
+        files.value = state.init.files || []
       }
       state.capture({ activeTab, resp, error, loading, locale: localeRef })
       state.init = null
+      const exportJobRef = ref(null)
+      const exportActiveRef = ref(false)
+      const processingJobRef = ref(null)
+      const processingActiveRef = ref(false)
+      const processingJobIdRef = ref(null)
+      jobState.capture(exportJobRef, exportActiveRef)
+      pJobState.capture(processingJobRef, processingActiveRef, processingJobIdRef)
+      const startExportJob = vi.fn()
+      const startProcessingJob = vi.fn()
+      const updateFiles = vi.fn(() => { selectionRevision.value++ })
+      state.captureFns({ startExportJob, startProcessingJob, updateFiles })
       return {
         files, loading, error, resp, activeTab,
         aggStats: computed(() => null),
-        pendingRemove, playerCols, aggCols,
-        doPreview: vi.fn(), doExport: vi.fn(),
+        selectionRevision,
+        pendingRemove, updateFiles, playerCols, aggCols,
+        exportJob: exportJobRef, exportError: ref(''), exportActive: exportActiveRef,
+        processingJob: processingJobRef, processingError: ref(''), processingActive: processingActiveRef,
+        processingJobId: processingJobIdRef,
+        startProcessingJob, cancelProcessingJob: vi.fn(),
+        dismissProcessingJob: vi.fn(),
+        startExportJob, cancelExportJob: vi.fn(),
+        downloadExportResult: vi.fn(), dismissExportJob: vi.fn(),
         askRemoveBattle: vi.fn(), askRemoveFile: vi.fn(),
         cancelRemove: vi.fn(), confirmRemove: vi.fn(),
       }
@@ -119,6 +216,8 @@ vi.mock('../composables/useColumns.js', async () => {
       showColPicker: ref(false), pickerScope: ref('player'),
       currentOrder: computed(() => []),
       shownCols: computed(() => []), shownAggCols: computed(() => []),
+      // 测试 seam：window.__testLeagueMode 控制 league 模式渲染
+      leagueMode: computed(() => !!window.__testLeagueMode),
       toggleColPicker: vi.fn(), toggleCol: vi.fn(),
       selectAllCols: vi.fn(), resetCols: vi.fn(),
       handleReorder: vi.fn(), initFromResponse: vi.fn(),
@@ -143,12 +242,19 @@ function makeResp(overrides = {}) {
   }
 }
 
-function mountPage() {
+function mountPage(overrides = {}) {
+  const auth = overrides.auth || { authenticated: true, login: vi.fn() }
+  const navigate = overrides.navigate || vi.fn()
   return mount(ReplayPage, {
     global: {
       mocks: { $t: i18n.t },
+      provide: {
+        navigate,
+        isAuthenticated: () => auth.authenticated,
+        login: auth.login,
+      },
       stubs: {
-        FileUploader: { template: '<div class="file-uploader-stub" />' },
+        FileUploader: { template: '<div class="file-uploader-stub"><button class="preview-stub" @click="$emit(&quot;preview&quot;)">action.preview</button></div>' },
         ColumnPicker: { template: '<div class="col-picker-stub" />' },
         AggregateTable: {
           template: '<div class="agg-table-stub" data-export-role="aggregate">' +
@@ -206,6 +312,47 @@ function interceptAppendChild(configFn) {
 function stripOffscreen() {
   for (const el of document.querySelectorAll('[style*="left: -9999px"]')) el.parentNode?.removeChild(el)
 }
+
+describe('ReplayPage processing job flow', () => {
+  beforeEach(() => {
+    state.clear()
+    state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en', files: [] }
+  })
+
+  it('renders processing task card with real 18/34 progress (plan §64)', async () => {
+    state.init.resp = null
+    const wrapper = mountPage()
+    expect(wrapper.find('[data-testid="replay-task-card"]').exists()).toBe(false)
+    pJobState.setJob({ jobId: 'p1', status: 'PROCESSING', phase: 'PROCESSING_REPLAYS', total: 34, processed: 18, valid: 16, duplicates: 2, failures: 1, currentFile: 'x.wotbreplay' })
+    await flushPromises()
+    const card = wrapper.find('[data-testid="replay-task-card"]')
+    expect(card.exists()).toBe(true)
+    expect(card.text()).toContain('replay.processing_job.title')
+    expect(card.text()).toContain('replay.processing_job.progress')
+  })
+
+  it('processing READY hides processing card when export card present (export takes the slot)', async () => {
+    state.init.resp = null
+    const wrapper = mountPage()
+    pJobState.setJob({ jobId: 'p1', status: 'READY', phase: null, total: 34, processed: 34, valid: 31, duplicates: 2, failures: 1 })
+    jobState.setJob({ jobId: 'e1', status: 'PROCESSING', phase: 'BUILDING_EXCEL', total: 34, processed: 34, duplicates: 0, failures: 0 })
+    await flushPromises()
+    const cards = wrapper.findAll('[data-testid="replay-task-card"]')
+    expect(cards.length).toBe(1)
+    expect(cards[0].text()).toContain('replay.export_job.title')
+  })
+
+  it('preview button triggers startProcessingJob', async () => {
+    state.init.resp = null
+    state.init.files = [new File(['x'], 'a.wotbreplay')]
+    const wrapper = mountPage()
+    const previewBtn = wrapper.findAll('button').find(b => b.text().includes('action.preview'))
+    expect(previewBtn).toBeDefined()
+    await previewBtn.trigger('click')
+    await flushPromises()
+    expect(state.replay.startProcessingJob).toHaveBeenCalled()
+  })
+})
 
 describe('ReplayPage PNG export', () => {
   let origCreateObjectURL, origRevokeObjectURL, mockCanvas, wrapper, h2cDefaultImpl
@@ -672,5 +819,291 @@ describe('ReplayPage PNG export', () => {
       await flushPromises()
       expect(URL.revokeObjectURL).toHaveBeenCalled()
     })
+  })
+})
+
+
+describe('ReplayPage Battle context actions（V2：登录门控 + 跨视图文件传递）', () => {
+  function makeRespWithSource() {
+    return {
+      aggregate: [{ cells: { nickname: 'Player1', damage_dealt: 5000 } }],
+      battles: [
+        { mapName: 'Lagoon', sourceName: 'lagoon.wotbreplay', players: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }] }
+      ],
+      duplicates: [], failures: [],
+      playerColumns: [{ key: 'nickname', label: '昵称' }],
+      aggregateColumns: [{ key: 'nickname', label: '昵称' }]
+    }
+  }
+
+  afterEach(async () => {
+    state.clear()
+    state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en' }
+    // 清空模块级 replayTransfer 单例，避免跨测试污染
+    const transferModule = await import('../utils/replayTransfer.js')
+    transferModule.takePendingReplayFiles()
+    vi.restoreAllMocks()
+  })
+
+  function mountWithBattle(resp, auth, nav) {
+    const files = resp.battles.map(b => {
+      const f = new File(['replay'], b.sourceName, { type: 'application/octet-stream' })
+      return f
+    })
+    state.init = { activeTab: 'b0', resp, error: '', loading: false, locale: 'en', files }
+    return mountPage({ auth, navigate: nav || vi.fn() })
+  }
+
+  it('Summary（aggregate）context 不渲染战局回放 / AI 复盘按钮', () => {
+    state.init = { activeTab: 'aggregate', resp: makeRespWithSource(), error: '', loading: false, locale: 'en' }
+    const wrapper = mountPage()
+    expect(wrapper.find('[data-testid="battle-playback-btn"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="battle-ai-btn"]').exists()).toBe(false)
+  })
+
+  it('已登录点击「战局回放」→ setPendingReplayFiles(playback) + navigate(reconstruction)', async () => {
+    const navigate = vi.fn()
+    const setPending = vi.fn()
+    const transferModule = await import('../utils/replayTransfer.js')
+    const spy = vi.spyOn(transferModule, 'setPendingReplayFiles')
+    const wrapper = mountWithBattle(makeRespWithSource(), { authenticated: true, login: vi.fn() }, navigate)
+    await wrapper.find('[data-testid="battle-playback-btn"]').trigger('click')
+    await flushPromises()
+    expect(spy).toHaveBeenCalledWith([expect.any(Object)], 'playback')
+    expect(navigate).toHaveBeenCalledWith('reconstruction')
+    expect(transferModule.takePendingReplayFiles()).toBeTruthy()
+    spy.mockRestore()
+  })
+
+  it('已登录点击「AI 复盘」→ setPendingReplayFiles(ai) + navigate(reconstruction)，不自动发起 AI', async () => {
+    const navigate = vi.fn()
+    const transferModule = await import('../utils/replayTransfer.js')
+    const spy = vi.spyOn(transferModule, 'setPendingReplayFiles')
+    const wrapper = mountWithBattle(makeRespWithSource(), { authenticated: true, login: vi.fn() }, navigate)
+    await wrapper.find('[data-testid="battle-ai-btn"]').trigger('click')
+    await flushPromises()
+    expect(spy).toHaveBeenCalledWith([expect.any(Object)], 'ai')
+    expect(navigate).toHaveBeenCalledWith('reconstruction')
+    spy.mockRestore()
+  })
+
+  it('未登录点击「战局回放」→ confirm 提示 + login，不 navigate、不 setPending（不静默丢文件）', async () => {
+    const navigate = vi.fn()
+    const login = vi.fn()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const transferModule = await import('../utils/replayTransfer.js')
+    const spy = vi.spyOn(transferModule, 'setPendingReplayFiles')
+    const wrapper = mountWithBattle(makeRespWithSource(), { authenticated: false, login }, navigate)
+    await wrapper.find('[data-testid="battle-playback-btn"]').trigger('click')
+    await flushPromises()
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(login).toHaveBeenCalledWith('replay')
+    expect(navigate).not.toHaveBeenCalled()
+    expect(spy).not.toHaveBeenCalled()
+    expect(transferModule.takePendingReplayFiles()).toBeNull()
+    confirmSpy.mockRestore()
+    spy.mockRestore()
+  })
+
+  it('未登录取消 confirm → 不 login 不 navigate', async () => {
+    const navigate = vi.fn()
+    const login = vi.fn()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const wrapper = mountWithBattle(makeRespWithSource(), { authenticated: false, login }, navigate)
+    await wrapper.find('[data-testid="battle-ai-btn"]').trigger('click')
+    await flushPromises()
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(login).not.toHaveBeenCalled()
+    expect(navigate).not.toHaveBeenCalled()
+    confirmSpy.mockRestore()
+  })
+
+  it('battle 无对应文件（files 中无匹配 sourceName）→ 点击无操作', async () => {
+    const navigate = vi.fn()
+    const resp = makeRespWithSource()
+    // files 为空：currentBattleFile 找不到 battle.sourceName 对应文件
+    state.init = { activeTab: 'b0', resp, error: '', loading: false, locale: 'en', files: [] }
+    const wrapper = mountPage({ auth: { authenticated: true, login: vi.fn() }, navigate })
+    await wrapper.find('[data-testid="battle-playback-btn"]').trigger('click')
+    await flushPromises()
+    expect(navigate).not.toHaveBeenCalled()
+  })
+})
+describe('ReplayPage League Rating', () => {
+  beforeEach(() => {
+    state.clear()
+    state.init = { activeTab: 'b0', resp: null, error: '', loading: false, locale: 'zh', files: [] }
+  })
+
+  it('renders league validation failures with code and arenaId', async () => {
+    state.init.resp = makeResp({
+      league: {
+        failures: [
+          { fileName: 'bad.wotbreplay', arenaId: '111', code: 'LEAGUE_NOT_SEVEN_VS_SEVEN' }
+        ]
+      }
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    const text = wrapper.text()
+    expect(text).toContain('bad.wotbreplay')
+    expect(text).toContain('LEAGUE_NOT_SEVEN_VS_SEVEN')
+    expect(text).toContain('111')
+  })
+
+  it('shows aggregate tab in league mode (resp.league is the page source of truth)', async () => {
+    state.init.resp = makeResp({
+      aggregate: [],
+      league: {
+        mode: 'LEAGUE_RATING',
+        columns: [],
+        playerSummaries: [],
+        playerSummaryColumns: [],
+        teamSummaries: [],
+        teamSummaryColumns: [],
+        failures: []
+      }
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    const tabs = wrapper.findAll('button')
+    expect(tabs.some(b => b.text().includes('result.aggregate_tab'))).toBe(true)
+  })
+
+  it('battle rename only updates battle overrides (no summary pollution)', async () => {
+    state.init.resp = makeResp({ league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
+    const wrapper = mountPage()
+    await flushPromises()
+    wrapper.vm.battleTeamNames['111:1'] = 'CHRD'
+    expect(wrapper.vm.battleTeamNames['111:1']).toBe('CHRD')
+    expect(wrapper.vm.summaryTeamNames).toEqual({})
+  })
+
+  it('summary rename only updates teamKey overrides (no battle pollution)', async () => {
+    state.init.resp = makeResp({ league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
+    const wrapper = mountPage()
+    await flushPromises()
+    wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
+    expect(wrapper.vm.summaryTeamNames['clan:CHRD']).toBe('CHRD A队')
+    expect(wrapper.vm.battleTeamNames).toEqual({})
+  })
+
+  it('export passes battle + summary overrides payload (PR #123 Blocker 1)', async () => {
+    state.init.resp = makeResp({ league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
+    const wrapper = mountPage()
+    await flushPromises()
+    wrapper.vm.battleTeamNames['111:1'] = 'CHRD'
+    wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
+    const exportBtn = wrapper.findAll('button').find(b => b.text().includes('action.export_aggregate'))
+    await exportBtn.trigger('click')
+    expect(state.replay.startExportJob).toHaveBeenCalledWith('aggregate', {
+      battle: { '111:1': 'CHRD' },
+      summary: { 'clan:CHRD': 'CHRD A队' }
+    })
+  })
+
+  it('clears both overrides when replay selection changes (PR #123 Blocker 2)', async () => {
+    state.init.resp = makeResp({ league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
+    const wrapper = mountPage()
+    await flushPromises()
+    wrapper.vm.battleTeamNames['arenaA:1'] = 'CHRD'
+    wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
+    expect(wrapper.vm.battleTeamNames).not.toEqual({})
+    // 触发真实 selection 变化（统一 updateFiles 入口 → selectionRevision++）
+    wrapper.vm.updateFiles(['b.wotbreplay'])
+    await nextTick()
+    expect(wrapper.vm.battleTeamNames).toEqual({})
+    expect(wrapper.vm.summaryTeamNames).toEqual({})
+  })
+
+  it('removing a single replay also clears overrides (PR #123 Blocker 2)', async () => {
+    state.init.resp = makeResp({ league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
+    const wrapper = mountPage()
+    await flushPromises()
+    wrapper.vm.battleTeamNames['arenaA:1'] = 'CHRD'
+    wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
+    // 删除单个 replay：同样走 updateFiles → selection 变化
+    wrapper.vm.updateFiles(['a.wotbreplay'])
+    await nextTick()
+    expect(wrapper.vm.battleTeamNames).toEqual({})
+    expect(wrapper.vm.summaryTeamNames).toEqual({})
+  })
+
+  it('re-processing same selection does NOT clear overrides (PR #123 Blocker 2)', async () => {
+    state.init.resp = makeResp({ league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
+    const wrapper = mountPage()
+    await flushPromises()
+    wrapper.vm.battleTeamNames['arenaA:1'] = 'CHRD'
+    wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
+    // 同一 selection 重新解析：selectionRevision 不变 → overrides 保留
+    wrapper.vm.startProcessingJob()
+    await nextTick()
+    expect(wrapper.vm.battleTeamNames['arenaA:1']).toBe('CHRD')
+    expect(wrapper.vm.summaryTeamNames['clan:CHRD']).toBe('CHRD A队')
+  })
+})
+
+describe('ReplayPage result visibility (P0: no blank results; league mode from resp.league)', () => {
+  beforeEach(() => {
+    state.clear()
+    state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en', files: [] }
+  })
+
+  it('多场 + aggregate 空 + 无 league：battle tabs 存在且 BattleTable panel 可见（不再空白）', async () => {
+    state.init.resp = makeResp({
+      aggregate: [],
+      battles: [
+        { mapName: 'Lagoon', players: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }] },
+        { mapName: 'Frozen', players: [{ cells: { nickname: 'P2', damage_dealt: 4000 } }] }
+      ]
+    })
+    state.init.activeTab = 'b0'
+    const wrapper = mountPage()
+    await flushPromises()
+    // 两个 battle tabs 都存在
+    const tabs = wrapper.findAll('button')
+    expect(tabs.some(b => b.text().includes('Lagoon #1'))).toBe(true)
+    expect(tabs.some(b => b.text().includes('Frozen #2'))).toBe(true)
+    // 至少一个 BattleTable panel 可见（结果区不为空）
+    const battlePanels = wrapper.findAll('.battle-table-stub')
+    expect(battlePanels.length).toBeGreaterThan(0)
+    expect(battlePanels[0].isVisible()).toBe(true)
+    // aggregate panel 隐藏（v-show 在 wrapper div 上；happy-dom 无布局，用 inline display 判定）
+    expect(wrapper.find('.agg-table-stub').element.parentElement.style.display).toBe('none')
+  })
+
+  it('league 模式以 resp.league 为唯一事实源：即使 playerColumns 无 league_rating，aggregate tab + LeagueSummaryTable 也显示', async () => {
+    delete window.__testLeagueMode // 列派生 league mode 必须关闭
+    state.init.resp = makeResp({
+      aggregate: [],
+      playerColumns: [{ key: 'nickname', label: '昵称' }], // 不含 league_rating
+      league: {
+        mode: 'LEAGUE_RATING',
+        columns: [],
+        playerSummaries: [{ nickname: 'P1', ratingMedian: 1500, battles: 5, wins: 3, damageTotal: 25000, killsTotal: 10, dimensionMedians: [] }],
+        playerSummaryColumns: [{ key: 'nickname', label: '昵称' }, { key: 'league_rating', label: 'Rating' }],
+        teamSummaries: [],
+        teamSummaryColumns: [],
+        failures: []
+      }
+    })
+    state.init.activeTab = 'aggregate'
+    const wrapper = mountPage()
+    await flushPromises()
+    const tabs = wrapper.findAll('button')
+    expect(tabs.some(b => b.text().includes('result.aggregate_tab'))).toBe(true)
+    expect(wrapper.find('.league-summary').exists()).toBe(true)
+    // aggregate=[] 且 resp.league 存在时不允许 fallback 掉汇总面板
+    expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
+  })
+
+  it('无 battles 无 aggregate 无 league：显示空态提示，不崩溃不空白', async () => {
+    state.init.resp = makeResp({ aggregate: [], battles: [], league: null })
+    state.init.activeTab = 'aggregate'
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.text()).toContain('replay.no_results')
+    expect(wrapper.findAll('.battle-table-stub').length).toBe(0)
+    expect(wrapper.find('.agg-table-stub').element.parentElement.style.display).toBe('none')
   })
 })

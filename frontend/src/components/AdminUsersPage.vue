@@ -210,22 +210,23 @@ function fmtTime(s) {
 
 <style scoped>
 .admin-page { max-width: 1200px; margin: 0 auto; padding: 24px 20px 64px; }
-.admin-page h2 { font-size: 1.3rem; margin: 0 0 4px; }
-.admin-hint { font-size: .85rem; color: var(--text-sub); margin: 0 0 16px; }
+.admin-page h2 { font-size: 1.3rem; margin: 0 0 4px; color: #f2ede3; }
+.admin-hint { font-size: .85rem; color: #9aa09c; margin: 0 0 16px; }
 .admin-search { display: flex; gap: 8px; margin-bottom: 16px; }
-.admin-search input { flex: 1; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); font-size: .85rem; }
+.admin-search input { flex: 1; padding: 8px 12px; border: 1px solid #39444a; border-radius: 8px; background: #0f1518; color: #e4e1d9; font-size: .85rem; }
 .admin-search button { padding: 8px 20px; border: none; border-radius: 7px; background: var(--accent); color: var(--accent-text); cursor: pointer; font-size: .85rem; font-weight: 700; }
-.admin-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); box-shadow: var(--surface-shadow); }
+.admin-table-wrap { overflow-x: auto; border: 1px solid #354047; border-radius: 8px; background: #0d1215; box-shadow: var(--surface-shadow); }
 .admin-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
-.admin-table th, .admin-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border-light); white-space: nowrap; }
-.admin-table th { background: var(--bg-card2); font-weight: 600; color: var(--text-sub); font-size: .78rem; position: sticky; top: 0; }
-.admin-table tbody tr:hover { background: var(--bg-list-hover); }
+.admin-table th, .admin-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #263136; white-space: nowrap; }
+.admin-table th { background: #171e22; font-weight: 600; color: #aaa79f; font-size: .78rem; position: sticky; top: 0; }
+.admin-table tbody tr:hover { background: #172025; }
+.admin-table td { color: #d8d5cd; }
 .cell-mono { font-family: monospace; font-size: .78rem; }
 .cell-short { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
-.cell-time { font-size: .78rem; color: var(--text-sub); }
+.cell-time { font-size: .78rem; color: #9aa09c; }
 .cell-actions { display: flex; gap: 4px; }
-.btn-sm { padding: 4px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text); cursor: pointer; font-size: .8rem; font-family: inherit; }
-.btn-sm:hover { background: var(--bg-card-hover); }
+.btn-sm { padding: 4px 12px; border: 1px solid #39444a; border-radius: 6px; background: #151d21; color: #d7d3ca; cursor: pointer; font-size: .8rem; font-family: inherit; }
+.btn-sm:hover { background: #1c262b; }
 .btn-danger { color: var(--error); border-color: var(--error); }
 .btn-danger:disabled { opacity: .4; cursor: not-allowed; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 200; }
@@ -235,10 +236,10 @@ function fmtTime(s) {
 .detail-section { margin-bottom: 16px; }
 .detail-row { display: flex; gap: 12px; padding: 4px 0; font-size: .85rem; }
 .detail-row .dl { font-weight: 600; color: var(--text-sub); min-width: 110px; flex-shrink: 0; }
-.admin-error { color: var(--error); font-size: .85rem; padding: 8px 0; }
-.admin-warn { color: var(--status-warn-fg); font-size: .85rem; }
-.admin-ok { color: var(--status-ok-fg); font-size: .85rem; font-weight: 700; }
-.admin-muted { color: var(--text-sub); font-size: .85rem; padding: 16px 0; text-align: center; }
+.admin-error { color: #ff8f86; font-size: .85rem; padding: 8px 0; }
+.admin-warn { color: #f0c97e; font-size: .85rem; }
+.admin-ok { color: #9fd39a; font-size: .85rem; font-weight: 700; }
+.admin-muted { color: #9aa09c; font-size: .85rem; padding: 16px 0; text-align: center; }
 .confirm-modal { max-width: 480px; }
 .confirm-modal .danger { color: var(--error); }
 .admin-confirm-input { width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; margin-top: 4px; box-sizing: border-box; background: var(--bg-card); color: var(--text); }

@@ -1,6 +1,7 @@
 <script setup>
-import { computed, defineAsyncComponent, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, provide, ref } from 'vue'
 import { useTheme } from './composables/useTheme.js'
+import { useAuth } from './composables/useAuth.js'
 import { useError } from './composables/useError.js'
 import HomePage from './components/HomePage.vue'
 import ReplayPage from './components/ReplayPage.vue'
@@ -17,6 +18,7 @@ import ContactPage from './components/ContactPage.vue'
 const PlaybackQaPage = defineAsyncComponent(() => import('./components/PlaybackQaPage.vue'))
 
 const { theme, handleTheme } = useTheme()
+const { initPromise, login, logout, isAuthenticated, userName, tokenParsed } = useAuth()
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
 
 const languageOptions = [
@@ -76,7 +78,63 @@ function navigate(view) {
   else url.searchParams.set('view', view)
   window.history.replaceState({}, '', url.toString())
 }
+// 子页面（ReplayPage Battle context）注入 navigate，实现 SPA 内跨视图跳转（战局回放/AI 复盘）；
+// 同时注入登录态与 login：Battle action 需登录，ReplayPage 在未登录时明确提示而非静默跳转。
+provide('navigate', navigate)
+provide('isAuthenticated', isAuthenticated)
+provide('login', login)
+
 function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
+
+const userMenuOpen = ref(false)
+const userMenuPos = ref({ top: 0, right: 16 })
+const userMenuTrigger = ref(null)
+const userMenuPanelEl = ref(null)
+const isAdmin = computed(() => {
+  const roles = tokenParsed.value?.realm_access?.roles || []
+  return roles.includes('wotbtools-admin')
+})
+const isHofAdmin = computed(() => {
+  const roles = tokenParsed.value?.realm_access?.roles || []
+  return roles.includes('HoF-admin') || roles.includes('wotbtools-admin')
+})
+// 菜单面板经 Teleport 挂到 body，用 fixed 定位对齐触发按钮下方：
+// 不受 .topbar overflow-x:auto 裁切，也不撑高顶栏（移动端横向滚动保留）。
+function toggleUserMenu() {
+  if (userMenuOpen.value) { closeUserMenu(); return }
+  const el = userMenuTrigger.value
+  if (el) {
+    const rect = el.getBoundingClientRect()
+    userMenuPos.value = {
+      top: rect.bottom + 6,
+      right: Math.max(8, window.innerWidth - rect.right)
+    }
+  }
+  userMenuOpen.value = true
+}
+function closeUserMenu() { userMenuOpen.value = false }
+// 点击面板内部不关闭（go/handleLogin 等自行关闭）；点击外部关闭。
+function onDocClick(e) {
+  if (!userMenuOpen.value) return
+  if (userMenuTrigger.value?.contains(e.target)) return
+  if (userMenuPanelEl.value?.contains(e.target)) return
+  closeUserMenu()
+}
+function onDocKeydown(e) {
+  if (e.key === 'Escape' && userMenuOpen.value) closeUserMenu()
+}
+function handleLogin() { closeUserMenu(); login('profile') }
+function handleLogout() { closeUserMenu(); logout() }
+function go(view) { closeUserMenu(); navigate(view) }
+onMounted(() => {
+  initPromise.catch(() => {})
+  document.addEventListener('click', onDocClick)
+  document.addEventListener('keydown', onDocKeydown)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocClick)
+  document.removeEventListener('keydown', onDocKeydown)
+})
 </script>
 
 <template>
@@ -86,10 +144,9 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
     </a>
     <nav>
       <button v-if="isHomeHost" :class="{ active: activeTool === 'home' }" @click="navigate('home')">{{ $t('profile.home') }}</button>
-      <button :class="{ active: activeTool === 'replay' }" @click="navigate('replay')">{{ $t('app.replay_tab') }}</button>
+      <button :class="{ active: activeTool === 'replay' }" @click="navigate('replay')">{{ $t('app.analysis_tab') }}</button>
       <button :class="{ active: activeTool === 'hof' }" @click="navigate('hof')">{{ $t('hof.btn') }}</button>
       <button :class="{ active: activeTool === 'boost' }" @click="navigate('boost')">{{ $t('app.boost_tab') }}</button>
-      <button data-testid="ai-review-nav-button" :class="{ active: activeTool === 'reconstruction' }" @click="navigate('reconstruction')">{{ $t('recon.nav') }}</button>
     </nav>
     <div class="tb-spacer"></div>
     <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
@@ -100,10 +157,32 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button :class="{ active: theme === 'light' }" @click="handleTheme('light')">{{ $t('theme.light') }}</button>
       <button :class="{ active: theme === 'dark' }" @click="handleTheme('dark')">{{ $t('theme.dark') }}</button>
     </div>
-    <button class="auth-btn ghost" :class="{ active: activeTool === 'version' }" @click="navigate('version')">{{ $t('version.btn') }}</button>
-    <button class="auth-btn ghost" :class="{ active: activeTool === 'contact' }" @click="navigate('contact')">{{ $t('contact.nav') }}</button>
-    <a class="auth-btn ghost" href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }}</a>
-    <a class="auth-btn ghost" @click.prevent="navigate('profile')" href="/?view=profile">{{$t('app.profile')}}</a>
+    <div class="dropdown user-menu">
+      <button ref="userMenuTrigger" class="auth-btn ghost user-menu-trigger" @click="toggleUserMenu" :aria-expanded="userMenuOpen" :aria-haspopup="true">
+        {{ isAuthenticated() ? userName() : $t('app.login') }}
+        <span class="caret">▼</span>
+      </button>
+      <!-- Teleport 到 body：fixed 定位在触发按钮下方，脱离 .topbar overflow 裁切 -->
+      <Teleport to="body">
+        <div v-if="userMenuOpen" ref="userMenuPanelEl" class="user-menu-panel" :style="{ top: userMenuPos.top + 'px', right: userMenuPos.right + 'px' }" role="menu">
+          <template v-if="isAuthenticated()">
+            <button class="user-menu-item" role="menuitem" @click="go('profile')">{{ $t('app.profile') }}</button>
+            <button v-if="isAdmin" class="user-menu-item" role="menuitem" @click="go('admin-users')">{{ $t('admin.title') }}</button>
+            <button v-if="isHofAdmin" class="user-menu-item" role="menuitem" @click="go('hof-admin')">{{ $t('hofAdmin.cardTitle') }}</button>
+            <button class="user-menu-item" role="menuitem" @click="go('version')">{{ $t('version.btn') }}</button>
+            <button class="user-menu-item" role="menuitem" @click="go('contact')">{{ $t('contact.nav') }}</button>
+            <a class="user-menu-item" role="menuitem" href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }}</a>
+            <button class="user-menu-item danger" role="menuitem" @click="handleLogout">{{ $t('profile.logout') }}</button>
+          </template>
+          <template v-else>
+            <button class="user-menu-item" role="menuitem" @click="handleLogin">{{ $t('app.login') }}</button>
+            <button class="user-menu-item" role="menuitem" @click="go('version')">{{ $t('version.btn') }}</button>
+            <button class="user-menu-item" role="menuitem" @click="go('contact')">{{ $t('contact.nav') }}</button>
+            <a class="user-menu-item" role="menuitem" href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }}</a>
+          </template>
+        </div>
+      </Teleport>
+    </div>
   </div>
 
   <div class="tb-content">
@@ -125,153 +204,7 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
 </template>
 
 <style>
-:root {
-  --bg: #f1f3f0;
-  --bg-card: #ffffff;
-  --bg-card2: #eef1eb;
-  --bg-card-hover: #e4e8de;
-  --bg-blue: #e7efe1;
-  --bg-blue-light: #f1f6ec;
-  --bg-upload: #fbfcf7;
-  --bg-elevated: #ffffff;
-  --bg-chip: #ece8dd;
-  --bg-list-hover: #f6f4ec;
-  --bg-rating: #f5efe0;
-  --bg-t1: #eef5e8;
-  --bg-t2: #f8eee6;
-  --tag-bg: #edf4e5;
-  --text: #1e231f;
-  --text-heading: #171b18;
-  --text-sub: #72796f;
-  --text-secondary: #72796f;
-  --text-muted: #6a7067;
-  --text-label: #3e473f;
-  --text-upload: #252d27;
-  --text-upload-sub: #747d71;
-  --text-modal: #2c332d;
-  --text-rating: #50574f;
-  --text-code: #28312b;
-  --border: #d9ded2;
-  --border-header: #ced6c7;
-  --border-ghost: #cbd3c4;
-  --border-dashed: #aeb99f;
-  --border-chip: #d3c9b7;
-  --border-col: #bdc8b2;
-  --border-light: #ecefe7;
-  --border-heavy: #b9c3ad;
-  --border-warn: #d8aa45;
-  --border-tab-active: #d2a43c;
-  --border-rating: #e3d5b6;
-  --accent: #c98d20;
-  --accent-hover: #ad7514;
-  --accent-dark: #745014;
-  --accent-light: #e4b351;
-  --accent-icon: #9c6e18;
-  --accent-shadow: rgba(201, 141, 32, .16);
-  --accent-text: #17130b;
-  --hero-fg-rgb: 247 240 223;
-  --surface-shadow: 0 14px 34px rgba(34, 38, 30, .07);
-  --hard-shadow: 0 22px 70px rgba(22, 26, 18, .16);
-  --error: #b6362e;
-  --warn-text: #6f4700;
-  --warn-bg: #fff6dc;
-  --delete: #a83b34;
-  --scroll-fade: #f1f3f0;
-  --rating-elite-bg: #7a4b0f;
-  --rating-elite-fg: #fff7df;
-  --rating-great-bg: #b87818;
-  --rating-great-fg: #17130b;
-  --rating-good-bg: #e4b351;
-  --rating-good-fg: #17130b;
-  --rating-mid-bg: #e9dfca;
-  --rating-mid-fg: #544121;
-  --rating-poor-bg: #eadfce;
-  --rating-poor-fg: #716351;
-  --status-info-bg: #dceff5;
-  --status-info-fg: #155364;
-  --status-warn-bg: #fff2ca;
-  --status-warn-fg: #724c08;
-  --status-ok-bg: #dff2de;
-  --status-ok-fg: #1e5b2d;
-  --status-err-bg: #f9dcdc;
-  --status-err-fg: #8c2d2b;
-  --danger-solid-fg: #ffffff;
-  --focus-ring: rgba(201, 141, 32, .28);
-}
-
-[data-theme="dark"] {
-  --bg: #0f1412;
-  --bg-card: #171d1a;
-  --bg-card2: #202821;
-  --bg-card-hover: #293329;
-  --bg-blue: #28311f;
-  --bg-blue-light: #202a1d;
-  --bg-upload: #141a17;
-  --bg-elevated: #1a211c;
-  --bg-chip: #28251d;
-  --bg-list-hover: #21291f;
-  --bg-rating: #2a2417;
-  --bg-t1: #1d2a1d;
-  --bg-t2: #2d2119;
-  --tag-bg: #24321f;
-  --text: #e7ebe2;
-  --text-heading: #f4f2e8;
-  --text-sub: #98a193;
-  --text-secondary: #98a193;
-  --text-muted: #858f81;
-  --text-label: #c7d0c0;
-  --text-upload: #e0e6da;
-  --text-upload-sub: #9aa493;
-  --text-modal: #dce3d8;
-  --text-rating: #c2cbbd;
-  --text-code: #e3e8dc;
-  --border: #2d352b;
-  --border-header: #37402f;
-  --border-ghost: #3b4436;
-  --border-dashed: #566246;
-  --border-chip: #4a402c;
-  --border-col: #4b5742;
-  --border-light: #242b24;
-  --border-heavy: #566246;
-  --border-warn: #9b7626;
-  --border-tab-active: #b48224;
-  --border-rating: #443923;
-  --accent: #d99a25;
-  --accent-hover: #f0b33e;
-  --accent-dark: #ffd27a;
-  --accent-light: #f0b33e;
-  --accent-icon: #e5a946;
-  --accent-shadow: rgba(217, 154, 37, .22);
-  --accent-text: #17130b;
-  --hero-fg-rgb: 247 240 223;
-  --surface-shadow: 0 14px 34px rgba(0, 0, 0, .24);
-  --hard-shadow: 0 22px 70px rgba(0, 0, 0, .42);
-  --error: #f06a5f;
-  --warn-text: #f5ca76;
-  --warn-bg: #2b2110;
-  --delete: #d5685f;
-  --scroll-fade: #0f1412;
-  --rating-elite-bg: #f0b33e;
-  --rating-elite-fg: #17130b;
-  --rating-great-bg: #b48224;
-  --rating-great-fg: #fff4db;
-  --rating-good-bg: #6f5d26;
-  --rating-good-fg: #f6df9b;
-  --rating-mid-bg: #403827;
-  --rating-mid-fg: #d9c8a9;
-  --rating-poor-bg: #302d27;
-  --rating-poor-fg: #aaa091;
-  --status-info-bg: #17313a;
-  --status-info-fg: #a8dcea;
-  --status-warn-bg: #332712;
-  --status-warn-fg: #f5ca76;
-  --status-ok-bg: #18351f;
-  --status-ok-fg: #a8e2b1;
-  --status-err-bg: #3a1f1f;
-  --status-err-fg: #f1aaa6;
-  --danger-solid-fg: #ffffff;
-  --focus-ring: rgba(217, 154, 37, .34);
-}
+/* V2: Design Tokens 已外移至 src/styles/tokens.css（单一事实源）；此处仅保留组件/全局样式。 */
 
 * { box-sizing: border-box; }
 body { margin: 0; font: 14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans', Helvetica, Arial, sans-serif;
@@ -318,11 +251,45 @@ h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
   background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-size: .82rem; font-family: inherit; white-space: nowrap; }
 .auth-btn:hover { background: var(--bg-blue-light); border-color: var(--accent); color: var(--accent-dark); text-decoration: none; }
 .auth-btn.active { background: var(--bg-blue); border-color: var(--accent); color: var(--accent-dark); font-weight: 700; }
-.tabs { display: flex; gap: 4px; margin-bottom: 12px; background: var(--bg-card2); border-radius: 9px; padding: 3px; }
+.user-menu { display: flex; align-items: center; }
+.user-menu-trigger { display: inline-flex; align-items: center; gap: 6px; }
+.user-menu-trigger .caret { font-size: 10px; opacity: .7; }
+.user-menu-panel {
+  position: fixed;
+  z-index: 220;
+  min-width: 200px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-elevated);
+  box-shadow: var(--hard-shadow);
+}
+.user-menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-label);
+  text-align: left;
+  font-size: .85rem;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.user-menu-item:hover { background: var(--bg-list-hover); color: var(--text-heading); text-decoration: none; }
+.user-menu-item.danger { color: var(--error); }
+.user-menu-item.danger:hover { background: var(--status-err-bg); color: var(--status-err-fg); }
+.tabs { display: flex; gap: 4px; margin-bottom: 12px; background: rgba(13,18,22,.92); border: 1px solid rgba(58,69,76,.5); border-radius: 9px; padding: 3px; }
 .tabs button { flex: 1; padding: 8px 0; border: none; border-radius: 7px;
-  background: transparent; color: var(--text-sub); cursor: pointer; font-size: .85rem; font-family: inherit; font-weight: 500; }
-.tabs button.active { background: var(--bg-card); color: var(--accent-dark); font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-.tabs button:hover:not(.active) { color: var(--text-label); }
+  background: transparent; color: #b5b2aa; cursor: pointer; font-size: .85rem; font-family: inherit; font-weight: 500; }
+.tabs button.active { background: rgba(217,143,24,.16); color: #f0aa30; font-weight: 700; box-shadow: none; }
+.tabs button:hover:not(.active) { color: #e0ddd4; }
 .tabs button:disabled { opacity: .5; cursor: not-allowed; }
 .tablewrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); box-shadow: var(--surface-shadow); }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -344,12 +311,14 @@ tr:hover td { background: var(--bg-list-hover); }
   color: var(--text-sub); background: transparent; cursor: pointer; transition: all .12s; }
 .tabx:hover { background: var(--error); color: var(--danger-solid-fg); }
 .mcards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
-.mc { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; text-align: center; box-shadow: var(--surface-shadow); }
-.mc .k { font-size: .78rem; color: var(--text-sub); margin-bottom: 4px; }
-.mc .v { font-size: 1.4rem; font-weight: 700; color: var(--text-heading); font-variant-numeric: tabular-nums; }
-.wrap .warn, .wrap .error { padding: 10px 16px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; }
-.wrap .warn { background: var(--warn-bg); border: 1px solid var(--border-warn); color: var(--warn-text); }
-.wrap .error { background: var(--status-err-bg); border: 1px solid color-mix(in srgb, var(--error) 34%, var(--border)); color: var(--status-err-fg); }
+.mc { background: rgba(16,22,26,.94); border: 1px solid rgba(58,69,76,.55); border-radius: 8px; padding: 14px 16px; text-align: center; box-shadow: var(--surface-shadow); }
+.mc .k { font-size: .78rem; color: #a3a6a0; margin-bottom: 4px; }
+.mc .v { font-size: 1.4rem; font-weight: 700; color: #f6f1e7; font-variant-numeric: tabular-nums; }
+/* 页面级提示条（V2）：不依赖 .wrap 容器，任何 Layout Primitive 下均可复用。
+   亮/暗主题由 token（--warn-bg/--border-warn/--warn-text、--status-err-*）自动切换。 */
+.warn, .error { display: block; padding: 10px 16px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; line-height: 1.55; }
+.warn { background: var(--warn-bg); border: 1px solid var(--border-warn); color: var(--warn-text); }
+.error { background: var(--status-err-bg); border: 1px solid color-mix(in srgb, var(--error) 34%, var(--border)); color: var(--status-err-fg); }
 .up-area { border: 2px dashed var(--border-dashed); border-radius: 8px; padding: 28px 16px; text-align: center;
   background: var(--bg-upload); cursor: pointer; margin-bottom: 12px; transition: background .15s, border-color .15s; }
 .up-area:hover { border-color: var(--accent); background: var(--bg-blue-light); box-shadow: 0 14px 34px var(--accent-shadow); }
@@ -364,18 +333,18 @@ tr:hover td { background: var(--bg-list-hover); }
 .upload-points { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .upload-points span { display: inline-flex; align-items: center; min-height: 28px; padding: 5px 10px; border: 1px solid var(--border);
   border-radius: 6px; background: var(--bg-card); color: var(--text-sub); font-size: 12px; font-weight: 600; }
-.uploadcard { min-height: 250px; border: 1.5px dashed var(--border-dashed); border-radius: 8px; padding: 42px 32px;
-  text-align: center; background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 45%), var(--bg-upload);
+.uploadcard { min-height: 250px; border: 1.5px dashed rgba(110,124,132,.7); border-radius: 8px; padding: 42px 32px;
+  text-align: center; background: linear-gradient(135deg, rgba(10,17,20,.92), rgba(7,12,15,.96));
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   transition: background .15s, border-color .15s, box-shadow .15s, transform .15s; }
 .uploadcard:hover, .uploadcard.dragging { border-color: var(--accent); background: var(--bg-blue-light); box-shadow: 0 14px 34px var(--accent-shadow); }
 .uploadcard.dragging { transform: translateY(-1px); }
 .up-title { font-weight: 800; color: var(--text-upload); font-size: 1.08rem; }
 .up-sub { font-size: 13px; color: var(--text-upload-sub); margin-top: 6px; }
-.filebar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); box-shadow: var(--surface-shadow); }
-.fb-summary { display: flex; align-items: center; gap: 10px; min-width: 180px; color: var(--text-label); }
-.fb-summary strong { display: block; font-size: 13px; color: var(--text-heading); }
-.fb-count { display: block; margin-top: 2px; font-size: 12px; color: var(--text-sub); }
+.filebar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; padding: 12px; border: 1px solid #39444a; border-radius: 8px; background: rgba(13,18,22,.92); box-shadow: var(--surface-shadow); }
+.fb-summary { display: flex; align-items: center; gap: 10px; min-width: 180px; color: #c9c5bb; }
+.fb-summary strong { display: block; font-size: 13px; color: #f2ede3; }
+.fb-count { display: block; margin-top: 2px; font-size: 12px; color: #9aa09c; }
 .fb-ic { color: var(--accent-icon); }
 .filebar .ghost { padding: 6px 14px; border: 1px solid var(--border-ghost); border-radius: 7px; cursor: pointer; font-size: .82rem; font-family: inherit; }
 .filebar .ghost:hover { background: var(--bg-card-hover); }
@@ -397,9 +366,9 @@ tr:hover td { background: var(--bg-list-hover); }
   max-width: 980px;
   margin: 0 auto 28px;
   padding: 24px;
-  border: 1px solid var(--border);
+  border: 1px solid #39444a;
   border-radius: 8px;
-  background: linear-gradient(180deg, var(--bg-elevated), color-mix(in srgb, var(--bg-card2) 46%, var(--bg-elevated)));
+  background: linear-gradient(180deg, rgba(19,26,30,.96), rgba(13,18,21,.94));
   box-shadow: var(--surface-shadow);
 }
 .up-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -433,9 +402,9 @@ tr:hover td { background: var(--bg-list-hover); }
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--border-heavy);
+  border: 1px solid #39444a;
   border-radius: 8px;
-  background: var(--bg-elevated);
+  background: rgba(15, 21, 25, .98);
   box-shadow: var(--hard-shadow);
 }
 .colpanel-head {
@@ -444,19 +413,19 @@ tr:hover td { background: var(--bg-list-hover); }
   gap: 8px;
   align-items: center;
   padding: 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-card2);
+  border-bottom: 1px solid #263136;
+  background: #171e22;
 }
-.cph-title { min-width: 0; color: var(--text-heading); font-size: 13px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.linkbtn { border: 1px solid var(--border-ghost); border-radius: 6px; background: var(--bg-card); color: var(--text-label); padding: 5px 9px; cursor: pointer; font: inherit; font-size: 12px; }
-.linkbtn:hover { border-color: var(--accent); color: var(--accent-dark); }
+.cph-title { min-width: 0; color: #f2ede3; font-size: 13px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.linkbtn { border: 1px solid #39444a; border-radius: 6px; background: #151d21; color: #d7d3ca; padding: 5px 9px; cursor: pointer; font: inherit; font-size: 12px; }
+.linkbtn:hover { border-color: var(--accent); color: #f0a42b; }
 .collist { list-style: none; margin: 0; padding: 8px; overflow-y: auto; max-height: calc(100vh - 166px); }
-.collist li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px; border-radius: 6px; color: var(--text-label); }
-.collist li:hover { background: var(--bg-list-hover); }
+.collist li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px; border-radius: 6px; color: #c9c5bb; }
+.collist li:hover { background: #1c262b; }
 .collist li.dragging { opacity: .5; }
 .grip { color: var(--text-sub); cursor: grab; font-size: 13px; }
 .colitem { min-width: 0; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cat { color: var(--text-sub); font-size: 11px; }
+.cat { color: #9aa09c; font-size: 11px; }
 @media (max-width: 768px) {
   .mcards { grid-template-columns: repeat(2, 1fr); }
   .filebar { flex-wrap: wrap; }

@@ -145,7 +145,7 @@ Wargaming ASIA/EU/NA 登录与百场 WG 自动认证需要给 Keycloak、backend
 ├── .agents/                      # AI 工具定义
 │   ├── AGENTS.md                 #   AI 硬性约定（RULES）
 │   ├── wotb-sync.md              #   跨层改动检查单（指向 skills/wotb-sync/SKILL.md）
-│   └── skills/                   #   技能库（开发前：grill-me / plan-designer；开发后：review-fix / review-with-docs / code-smell / column-sync / wotb-sync）
+│   └── skills/                   #   技能库（开发前：grill-me / plan-designer；开发后：review-fix / review-with-docs / code-smell / column-sync / wotb-sync；review-with-docs 内置 OpenCodeReview delegate 引擎，见 .opencodereview/rule.json）
 ```
 
 ### 架构速览
@@ -191,6 +191,11 @@ Wargaming ASIA/EU/NA 登录与百场 WG 自动认证需要给 Keycloak、backend
 | `DeathTimeEstimator` | `wotb-core/.../DeathTimeEstimator.java` | 三条证据链死亡时间估算（B3） |
 | `DeathTimeReconciler` | `wotb-core/.../processing/DeathTimeReconciler.java` | 死亡时刻校准：结算缺失死亡时刻时用重建事件流 EXACT alive=false（HP=0，同实体→账号映射，取最后一条=最终阵亡）覆盖 `survivalTimeSec`（优先级：结算 > HP 死亡证据 > legacy 启发式） |
 | `PerformanceMetricsCalculator` | `wotb-core/.../stats/PerformanceMetricsCalculator.java` | 战斗表现指标（纯派生计算，只读；原 Rating V2 已移除综合评分） |
+| `LeagueRatingCalculator` | `wotb-core/.../league/LeagueRatingCalculator.java` | League Rating 评分 core（纯数学，八维度合计 1000，胜方 ×1.05 封顶；preview/Excel 共用，禁止两套公式） |
+| `LeagueRatingValidator` | `wotb-core/.../league/LeagueRatingValidator.java` | 7v7 严格完整性门槛（结构字段 fail-closed、统计字段缺失=零值不误拒） |
+| `LeagueReplays` | `wotb-core/.../league/LeagueReplays.java` | 模式判定（STANDARD_REPLAY/LEAGUE_RATING/MIXED_UNSUPPORTED）+ 批次去重/冲突 + 校验 + 评分单点入口 |
+| `LeagueRatingBatchAggregator` | `wotb-core/.../league/LeagueRatingBatchAggregator.java` | 批次选手/战队中位数汇总（奇数中间值/偶数平均，未取整，不排序不设最低场次） |
+| `LeagueSingleSheets` / `LeagueAggregateSheets` | `wotb-core/.../export/` | League 单场/批量 Excel（维度分/满分/百分比；不含 contribution/kast/impact） |
 | `BattleHpFacts` / `TradeFacts` | `wotb-core/.../replay/facts/` | 场均 HP / 互换击杀事实（replay 管线权威口径） |
 | `Tankopedia` | `wotb-core/.../Tankopedia.java` | 车辆库查表（via common/tankopedia-tier{7,8,9,10}.json） |
 | `MapNames` | `wotb-core/.../MapNames.java` | 地图名中文表（via common/map_names.json） |
@@ -203,6 +208,15 @@ Wargaming ASIA/EU/NA 登录与百场 WG 自动认证需要给 Keycloak、backend
 | `Replays` | `wotb-core/.../Replays.java` | 多回放去重收集 |
 | `ReplayController` | `wotb-web/.../replay/controller/ReplayController.java` | REST API 映射 |
 | `ReconstructionController` | `wotb-web/.../replay/controller/ReconstructionController.java` | AI 分析 + 重建 REST API |
+| `ReplayExportJobService` | `wotb-web/.../replay/job/ReplayExportJobService.java` | Export Job 编排：创建即持久化输入（不异步持有 MultipartFile）→ 有界 worker 池串行 full processing → 真实进度 → XLSX/ZIP 临时 artifact → READY（终态 exactly once；worker 仍获取 ReplayCapacityLimiter 全局容量；TTL 清理） |
+| `ReplayExportJobController` | `wotb-web/.../replay/controller/ReplayExportJobController.java` | Export Job REST API（POST 创建 202 / GET 状态 / DELETE 取消 / GET download 流式下载，匿名公开） |
+| `ExportJobStore` | `wotb-web/.../replay/job/ExportJobStore.java` | 内存态 Export Job 注册表 + 临时目录生命周期（TTL sweeper / 启动孤儿清理；目录/TTL/清理委托共享 `ReplayJobStorage`） |
+| `ReplayJobState` | `wotb-web/.../replay/job/ReplayJobState.java` | 通用 Replay Job 状态机（Export 与 Processing 共用，composition）：QUEUED→PROCESSING→READY/FAILED/CANCELLED 终态 exactly once + 真实进度 + 协作取消 |
+| `ReplayJobStorage` | `wotb-web/.../replay/job/ReplayJobStorage.java` | 通用 Job 临时目录生命周期（独立 root、TTL sweeper、启动孤儿清理；Export/Processing 各自组合） |
+| `ReplayProcessingJobService` | `wotb-web/.../replay/job/ReplayProcessingJobService.java` | Replay Processing Job 编排：解析预览异步化——create 持久化输入返回 202 → 有界 worker 池串行 processFull → 真实进度 → READY + 内存态 ProcessedDataset（Preview/Export 复用，processFull 每 replay 恰好一次） |
+| `ReplayProcessingJobController` | `wotb-web/.../replay/controller/ReplayProcessingJobController.java` | Replay Processing Job REST API（POST 创建 202 / GET 状态 / DELETE 取消 / GET result 返回 Preview 数据，匿名公开） |
+| `ReplayProcessingJobStore` | `wotb-web/.../replay/job/ReplayProcessingJobStore.java` | 内存态 Processing Job 注册表 + result 引用计数（Export acquire/release，防 TTL 误清理）+ 临时输入目录生命周期 |
+| `ReplayJobFiles` | `wotb-web/.../replay/job/ReplayJobFiles.java` | Export/Processing 共享的临时输入文件工具（N__ 前缀整数排序保持上传顺序、惰性 Source、文件名安全化） |
 | `ReplayProcessingCapabilities` | `wotb-core/.../processing/ReplayProcessingCapabilities.java` | scope-independent 能力事实；可分析规则由 `BatchAnalyzer` 计算 |
 | `RecorderEntityMapping` | `wotb-core/.../processing/RecorderEntityMapping.java` | 录像者 entity 映射结果 |
 | `TeamPerspectiveResolver` | `wotb-core/.../processing/TeamPerspectiveResolver.java` | 以权威战绩、accountId、participant、nickname 证据解析录像者所在队 |
@@ -296,7 +310,7 @@ Wargaming ASIA/EU/NA 登录与百场 WG 自动认证需要给 Keycloak、backend
 ### 前端组件
 
 - 根组件 `App.vue`（编排层），无 Vue Router、无组件库。逻辑全在 **composables** 和 **utils** 中：
-  - `composables/useReplay.js` — 文件/预览/导出/战斗移除状态管理
+  - `composables/useReplay.js` — 文件/解析（Processing Job：创建→轮询真实进度→READY 自动展示 result）/导出（READY 后且 `resultMatchesSelection` 时复用 processingJobId，不重新上传）/战斗移除状态管理；所有 files 变化统一走 `updateFiles`（立即失效旧 processingJobId/resp + 停止旧轮询 + 后台取消，`processingPollJobId` token + `selectionRevision` 防过期 READY 覆盖）
   - `composables/useColumns.js` — 列可见性/排序/选择器状态；`localStorage` 持久化单场/汇总两套列配置，并在后端新增列时自动补齐顺序
   - `composables/useTheme.js` — 主题切换（auto/light/dark），数据持久化调用 `utils/theme.js`
   - `composables/useAuth.js` — Keycloak 认证适配器（check-sso 游客模式；未登录时 `login(view)` 直接跳转 Keycloak 托管登录页，IdP 选择（QQ + 三个 WG 区服）由 Keycloak 页面提供，前端不硬编码 idpHint）
@@ -355,11 +369,12 @@ API 层为**纯英文**：`/api/columns` 与各 DTO 只回 `key`(snake_case) + �
 - **回放格式**：zip 含 3 文件 —— `meta.json` + `battle_results.dat`（pickle + protobuf 战绩）+ `data.wotreplay`（BigWorld 事件流）。字段表见 `docs/reference/replay-data.md`。**不要轻易重命名/删字段**，新字段先进「原始字段」表交叉验证。
 - **存活时间**：3 层 fallback（#104 → Damage → hybrid EntityLeave/Position），详见 `docs/reference/replay-data.md`。
 - **战斗表现**：纯派生指标（贡献度 / KAST / Impact / 潜在伤害 / 协助 / 击杀 / 多伤率 / 存活率 / 互换击杀），消费统一回放事实，不再输出任何综合评分；单场玩家表直接含 contribution/kast/impact 列、汇总表含跨场指标列，无独立 tab/端点/字段。细节见 `docs/features/performance.md`。
+- **League Rating（训练赛/联赛评分）**：作为「回放解析」的条件能力——训练房（arenaBonusType=2）与联赛/锦标赛（=4）回放经 `LeagueReplays` 判定模式并产生 0–1000 评分；普通回放契约零回归；混合批次 HTTP 400 `MIXED_LEAGUE_AND_STANDARD_REPLAYS`。评分只使用当前回放可证明事实，全程内存（不写库/不持久化）；数据来源、公式、完整性门槛与限制见 `docs/features/league-rating.md`。**不是旧 Rating V2 综合评分**。
 - **数据库**：PostgreSQL 18，JPA/Flyway（`ddl-auto: validate`）；Flyway 自动配置依赖 `spring-boot-flyway`。
 - **百场（Hundred Battles）**：`wotb-web/.../hundred/` 域（`HundredBattleSubmission` 单表生命周期 PENDING/CURRENT/SUPERSEDED/REJECTED/CANCELLED/DELETED；partial unique index 保证 user+vehicle 最多一个 PENDING/CURRENT）。原 `POST /api/hof/hundred/submissions` 人工链路继续强制截图 + 5 replay；新增 `POST /api/hof/hundred/submissions/wargaming` 只接受可信 ASIA/EU/NA WG 身份，以官方账号/单车 totals 判定账号总场次 >=5000、单车 >=100，精确场均 <=3900 自动 CURRENT、>3900 自动创建无文件 PENDING。`verification_source` 区分 MANUAL 文件证据和 WARGAMING_API 官方快照证据，claimed 值不参与分流或排名。公开分类/车辆交集排行、个人状态与管理员详情/审核继续复用同一状态机。见 `docs/features/hall-of-fame.md`「百场」章节。
 - **名人堂（Hall of Fame）**：schema 由 Flyway 管理；只记录录像者本人随机战斗（`arenaBonusType==1`）与评级战斗（`==7`）单场伤害（`HallOfFameBattleTypePolicy` 单一事实源，其余模式 400 `UNSUPPORTED_BATTLE_TYPE` 零持久化）；统一公开查询 `GET /api/hof`（battleType/nation/vehicleType/tier/tank/nickname 交集过滤 + 位置排名，同伤害 RATING 优先），匿名 `GET /api/hof/vehicle-options` 返回实际已有车辆分类；公开页和管理页的国家/车种/等级无需先选车辆即可真实筛榜。上传/下载需登录；管理后台 `GET/DELETE /api/admin/hof/**`（HoF-admin 或 wotbtools-admin；audit + delete 单事务，ReplayHashLock 保证文件引用不变量）；原始 .wotbreplay 以 SHA-256 内容寻址存 `HOF_REPLAY_DIR`（生产 volume `/data/replays`，best-effort 可丢、不纳入 DB 备份）。见 `docs/features/hall-of-fame.md`。
 - **i18n**：vue-i18n 三语（zh/en/ru），`locales/*.json`；地图名 `common/map_names.json`，网页按当前语言显示，导出固定中文。
-- **API 端点**：`GET /api/health`、`POST /api/preview`（单场 cells 含 contribution/kast/impact，汇总含跨场指标）、`POST /api/export?mode=aggregate|each`；排行榜 / 站内通知端点见 `java/README.md`。
+- **API 端点**：`GET /api/health`、`POST /api/preview`（单场 cells 含 contribution/kast/impact，汇总含跨场指标；训练赛/联赛回放返回 `league` 元数据——战队 Rating/MVP/八维度/选手与战队中位数汇总，playerColumns/aggregateColumns 不含 contribution/kast/impact；混合普通+训练赛/联赛 → 400 `MIXED_LEAGUE_AND_STANDARD_REPLAYS`）、`POST /api/export?mode=aggregate|each`（同步旧端点，向后兼容；League 模式规则与 preview 一致）、`POST /api/replay/export-jobs`（Export Job：202 返回 jobId，创建即持久化输入，可传 `processingJobId` 复用已解析 result、可传 `teamNames` JSON（`{battle:{arenaId:team:名}, summary:{teamKey:名}}` 两种独立 override：单场 vs 批次战队 identity，仅本次调用内使用；PR #123 Blocker 1/2）；League 批次导出 League 单场/批量工作簿；`GET /api/replay/export-jobs/{jobId}` 轮询真实进度；`DELETE .../{jobId}` 取消；`GET .../{jobId}/download` 流式下载）、`POST /api/replay/processing-jobs`（Replay Processing Job：解析预览异步化，202 返回 jobId，READY 后 `GET .../{jobId}/result` 返回 Preview 数据——Preview 与 Export 共享同一份 processFull 结果，同一批回放只解析一次）；排行榜 / 站内通知端点见 `java/README.md`。
 - **公开解析边界**：最多 100 个回放、单文件 20 MiB、总请求 200 MiB；单实例默认同时处理 2 个任务；容量满 503 `REPLAY_BUSY`。
 
 ---
