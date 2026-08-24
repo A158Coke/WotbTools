@@ -118,6 +118,12 @@ export DB_PASSWORD=db-secret KC_ADMIN_PASSWORD=kc-secret WG_APPLICATION_ID=wg-id
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+# WG application ID must reach both consumers: Keycloak IdP and backend hundred-battle verification.
+wg_application_id_injections="$(grep -Fc 'WG_APPLICATION_ID: ${WG_APPLICATION_ID:?WG_APPLICATION_ID is required}' \
+  "$WORK/deploy/docker-compose.prod.yml")"
+[[ "$wg_application_id_injections" == "2" ]] \
+  || fail "production compose must inject WG_APPLICATION_ID into keycloak and backend"
+
 # ---- deadline alignment guard: 400 must fail fast with a clean error; 1100 must pass ----
 export TAG=sha-A
 set +e

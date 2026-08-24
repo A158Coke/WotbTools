@@ -248,6 +248,19 @@ export async function hofHundredSubmit(formData) {
   return r.json()
 }
 
+/**
+ * 百场 WG 官方 API 认证提交（需登录，JSON）：
+ * body 包含 vehicleId / averageDamage / battleCount，不上传截图或回放。
+ */
+export async function hofHundredSubmitWargaming(body) {
+  const r = await hofAuthRequest('/api/hof/hundred/submissions/wargaming', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return r.json()
+}
+
 /** 用户撤销自己的 PENDING submission。 */
 export async function hofHundredCancel(id) {
   const r = await hofAuthRequest(`/api/hof/hundred/submissions/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
@@ -291,10 +304,10 @@ export async function hofAdminHundredReplayDownload(submissionId, replayId) {
   await downloadResponse(r, `replay-${replayId}.wotbreplay`)
 }
 
-/** APPROVE：{approvedAverageDamage, approvedBattleCount}。 */
-export async function hofAdminHundredApprove(id, body) {
+/** APPROVE：管理员只改变状态，成绩由后端的冻结 submission 值决定。 */
+export async function hofAdminHundredApprove(id) {
   const r = await hofAdminRequest(`/api/admin/hof/hundred/submissions/${encodeURIComponent(id)}/approve`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    method: 'POST',
   })
   return r.json()
 }

@@ -42,7 +42,7 @@ public class HundredReplayEvidenceService {
 
     private static final Logger log = LoggerFactory.getLogger(HundredReplayEvidenceService.class);
 
-    /** APPROVE 前置校验要求的 evidence 行数（一个 PENDING 恰好 5 个原始回放）。 */
+    /** MANUAL PENDING 的 APPROVE 前置 evidence 行数（WG 来源不创建文件证据）。 */
     private static final int APPROVAL_EVIDENCE_COUNT = 5;
 
     private final HallOfFameReplayStorage storage;
