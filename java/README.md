@@ -113,8 +113,9 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 > **League Rating（训练赛/联赛）**：上传含训练房（arenaBonusType=2）或联赛/锦标赛（=4）回放时，
 > 响应额外返回 `league` 元数据（mode=LEAGUE_RATING、战队 Rating/MVP/队内最佳、八维度
 > `league_*` 列与固定列元数据、选手/战队中位数汇总、校验失败列表），且 `playerColumns` /
-> `aggregateColumns` **不含** `contribution`/`kast`/`impact`；混合普通+训练赛/联赛 → HTTP 400
-> `MIXED_LEAGUE_AND_STANDARD_REPLAYS`（不返回部分预览）。评分 core 见
+> `aggregateColumns` **不含** `contribution`/`kast`/`impact`；混合普通+训练赛/联赛 →
+> League Rating 不聚合（`league=null`、`leagueUnavailableCode=MIXED_LEAGUE_AND_STANDARD_REPLAYS`，
+> battles 仍按普通回放语义成功返回，plan §21）。评分 core 见
 > `wotb-core/.../league/`（LeagueRatingCalculator 等），preview/Excel 复用同一评分结果。
 
 ### `POST /api/preview`

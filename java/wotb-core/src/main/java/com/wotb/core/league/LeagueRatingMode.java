@@ -16,7 +16,8 @@ import java.util.List;
  * 其余（1=随机战斗、7=游戏内评级、8=Mad Games、未知）一律属于普通回放。</p>
  *
  * <p>批次模式：所有成功解析的回放同为 LEAGUE → {@link #LEAGUE_RATING}；同为非 LEAGUE →
- * {@link #STANDARD_REPLAY}；两类混合 → {@link #MIXED_UNSUPPORTED}（调用方拒绝整个请求）。</p>
+ * {@link #STANDARD_REPLAY}；两类混合 → {@link #MIXED_UNSUPPORTED}（League Rating 不聚合
+ * 混合批次；battles 仍按普通回放语义成功返回，League Analysis unavailable 由调用方提示）。</p>
  */
 public enum LeagueRatingMode {
 
@@ -26,7 +27,7 @@ public enum LeagueRatingMode {
     /** 训练赛/联赛回放：执行严格完整性校验并计算 League Rating。 */
     LEAGUE_RATING,
 
-    /** 同一批次同时出现普通回放与训练赛/联赛回放：整个请求拒绝（HTTP 400）。 */
+    /** 同一批次同时出现普通回放与训练赛/联赛回放：League Rating 不聚合；解析仍成功（plan §21）。 */
     MIXED_UNSUPPORTED;
 
     /** 训练房 raw arenaBonusType（项目真实夹具证据）。 */
