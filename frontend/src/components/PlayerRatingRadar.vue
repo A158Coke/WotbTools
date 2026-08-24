@@ -2,15 +2,15 @@
 import { computed } from 'vue'
 
 /**
- * 选手画像雷达图（review PR#134 BLOCKER 6.14）：动态指标轴（默认七维 League Rating，
+ * 选手画像雷达图：动态指标轴（默认七维 League Rating，
  * 用户可自定义指标与顺序）。只负责 geometry / labels / polygon / detail 渲染，
  * 不负责任何业务公式——normalization 由 Radar Metric Registry（utils/radarMetrics.js）
  * 在父组件适配层完成，本组件只消费 {key,label,rawValue,normalized,displayValue,available}。
  *
- * - 轴序 = props.metrics 顺序（用户自定义，BLOCKER 6.3/6.9）。
+ * - 轴序 = props.metrics 顺序（用户自定义）。
  * - available:false 的轴：detail 显示 '--'，不绘制该顶点（不冒充 0/0%）；polygon 只连接
- *   实际 available 的顶点（BLOCKER 6.12 partial availability）。
- * - 禁止 current-batch-max normalization（BLOCKER 6.7）：normalized 由 registry 稳定给出。
+ *   实际 available 的顶点（partial availability）。
+ * - 禁止 current-batch-max normalization：normalized 由 registry 稳定给出。
  */
 const props = defineProps({
   /** 轴数据（顺序即绘制顺序）。 */
@@ -50,7 +50,7 @@ const gridHalfPoints = computed(() => {
   return Array.from({ length: axisCount.value }, (_, i) => point(i, 0.5).join(',')).join(' ')
 })
 
-/** 数据多边形：只连接实际 available 的顶点（BLOCKER 6.12）。 */
+/** 数据多边形：只连接实际 available 的顶点。 */
 const polygonPoints = computed(() => {
   return props.metrics
     .map((m, i) => ({ i, ratio: normalized.value[i] }))

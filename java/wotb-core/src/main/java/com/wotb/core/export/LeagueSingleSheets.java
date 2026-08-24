@@ -24,7 +24,7 @@ import java.util.function.Function;
 
 /**
  * League Rating 单场工作簿：玩家数据（Rating 维度分/满分/百分比 + 关键原始字段 +
- * 单场 Performance Metrics（contribution/kast/impact，review PR#134 BLOCKER 1）+ 占点原始字段）/
+ * 单场 Performance Metrics（contribution/kast/impact）+ 占点原始字段）/
  * 战斗信息（双方战队 Rating + MVP + 队内最佳）/ 原始字段。
  */
 final class LeagueSingleSheets {

@@ -4,7 +4,32 @@
 
 ## [Unreleased]
 
-### Added
+### Changed
+- **PR #134 最终收口（零技术债 closeout）**：
+  - **leagueMode 单一事实源**：前端页面级 CW 模式只消费 `resp.leagueMode === true`（后端
+    显式标记），删除 `!!resp.league` 兼容回退与 `isLeagueColumns()` 列内容推断
+    （helpers.js 删除 helper）；useColumns 显式接收 leagueMode ref；初始 tab 决策
+    （chooseInitialResultTab）同步改用 leagueMode。
+  - **Radar 满分单一来源**：删除 radarMetrics.js 硬编码的 `LEAGUE_DIM_MAXES`
+    （400/100/...），League 维度归一化改为消费后端 `resp.league.columns`（key/max）
+    metadata——缺失满分 → 该轴 "--"；新增 radarMetrics 单测（max=400 → max=500 自动跟随）。
+  - **导出语义区分（XLSX 全量 / PNG 当前视图）**：PNG 不再强制导出全量列——改为所见即所得
+    （当前 ColumnPicker 可见列 + 顺序 + 当前排序），删除第三轮「PNG 完整超宽表格」contract
+    与 `utils/leagueExportTable.js`（含单测）；XLSX 保持完整数据、与前端偏好解耦。
+  - **一级 Workspace 导航脱离 .tabs**：ReplayPage DOM 移除 `.workspace-tabs` 上的
+    `.tabs` class，`.workspace-tabs` 成为独立按钮式一级能力导航（按钮自带 border/radius/
+    背景，active 不改变尺寸）；AI Review 由 `.ai-review-panel` 成为唯一 width owner
+    （Action/Error/Streaming/Result 同宽），`AnalysisResultPanel` 不再自行决定页面宽度，
+    header 收口为单行 toolbar（`top: var(--topbar-h)`，移除 52px 硬编码与负 margin）。
+  - **league-rating.md 与代码逐字对齐**：preliminary = 六个非存活维度之和（伤害/助攻/击杀/
+    换血/阻挡/射击），base = preliminary + survival；混合批次各导出语义按真实代码描述；
+    清理 "后续 Excel 导出" 等过期措辞与全部 `review PR#134 BLOCKER x` / `plan §x`
+    考古引用。
+  - **死代码/过期 API/过期测试清理**：BattleTable 删除未使用 `round1`、未解构
+    `stickyLeft`、行 key 改 `account_id`；CwPlayerSummaryTable 删除未解构
+    `stickyLeft`；LeagueSummaryTable 删除 stale `type` prop（ReplayPage 与测试同步）；
+    测试 fixture 七维严格 7 值（含 invariant 断言）；Rating 格式统一到 helpers.js
+    `ratingCellText` / `leagueMaxByKey`（单场表/CW 表/导出共用）。
 - **Replay CW Rating UI 收口（docs/current-plan.md）**：
   - **Rating 八维 → 七维**：`LeagueRatingCalculator` / `PlayerLeagueRating` 删除争霸占点评分
     维度（`MAX_OBJECTIVE` / `objectiveScore` / earned/seized index 全链路移除），射击效率满分

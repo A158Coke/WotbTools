@@ -10,7 +10,7 @@ import java.util.Map;
 /**
  * 同 arenaId 多份回放的<b>关键事实一致性</b>比较（当前上传批次内去重用，不建立持久化记录）。
  *
- * <p>比较覆盖（plan §4）：两队账号与车辆阵容、winnerTeam、玩家关键结算数据、
+ * <p>比较覆盖：两队账号与车辆阵容、winnerTeam、玩家关键结算数据、
  * 生存状态、死亡时间、能够影响 Rating 的其他事实。任一关键事实不一致 → 冲突，
  * 该场全部副本均拒绝评分（{@code CONFLICTING_REPLAYS_FOR_ARENA}）。</p>
  */

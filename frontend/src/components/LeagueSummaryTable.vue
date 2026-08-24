@@ -8,13 +8,13 @@ const props = defineProps({
   rows: { type: Array, default: () => [] },
   /** ColumnDef 列表（key + num） */
   columns: { type: Array, default: () => [] },
-  /** 批次战队 identity 覆盖 {teamKey: name}（PR #123 Blocker 2：不得反向改单场 {arenaId:team}）。 */
+  /** 批次战队 identity 覆盖 {teamKey: name}（不得反向改单场 {arenaId:team}）。 */
   teamNames: { type: Object, default: () => ({}) },
 })
 const emit = defineEmits(['update-summary-team-name'])
 const { t, locale } = useI18n()
 
-// ---- 全列 ASC/DESC（plan §11：所有可见列可排序；missing-last；raw sort） ----
+// ---- 全列 ASC/DESC（所有可见列可排序；missing-last；raw sort） ----
 const sortKey = ref('')
 const sortReverse = ref(false)
 
@@ -74,13 +74,13 @@ function displayValue(value) {
   return String(value)
 }
 
-/** 战队/汇总总 Rating：只显示整数（850），不显示 /1000 冗余完成度（review PR#134 BLOCKER 1）。 */
+/** 战队/汇总总 Rating：只显示整数（850），不显示 /1000 冗余完成度。 */
 function ratingText(value) {
   if (value == null || value === '' || !Number.isFinite(Number(value))) return '--'
   return String(Math.round(Number(value)))
 }
 
-/** 列 key → 战队汇总行字段（review PR#134 BLOCKER 1 后排序用 raw 中位数/维度值）。 */
+/** 列 key → 战队汇总行字段（排序用 raw 中位数/维度值）。 */
 function summarySortValue(row, key) {
   if (key === 'league_rating') return row.ratingMedian
   if (key === 'battles') return row.battles
@@ -97,7 +97,7 @@ function teamDisplayName(row) {
   return row.autoName || t('league.team_name_pending')
 }
 
-/** 批次战队名称编辑：只改 {teamKey} → 名，绝不批量覆盖所有 {arenaId:team}（PR #123 Blocker 2）。 */
+/** 批次战队名称编辑：只改 {teamKey} → 名，绝不批量覆盖所有 {arenaId:team}。 */
 function onTeamNameInput(row, event) {
   emit('update-summary-team-name', { teamKey: row.teamKey, name: event.target.value })
 }
@@ -127,7 +127,7 @@ function onTeamNameInput(row, event) {
               <template v-else>{{ displayValue(cellValue(row, c.key)) }}</template>
             </td>
           </tr>
-          <!-- League Rating 空态（plan §12）：明确 neutral 文案，而不是只有 "--" -->
+          <!-- League Rating 空态：明确 neutral 文案，而不是只有 "--" -->
           <tr v-if="!rows.length"><td :colspan="Math.max(columns.length, 1)" class="league-summary-empty">{{ $t('league.summary.no_rateable') }}</td></tr>
         </tbody>
       </table>

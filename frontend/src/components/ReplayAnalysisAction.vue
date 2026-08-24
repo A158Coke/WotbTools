@@ -55,10 +55,10 @@ defineEmits(['analyze', 'cancel'])
 
 .ai-action .cancel {
   padding: 8px 16px;
-  border: 1px solid #465159;
+  border: 1px solid var(--border);
   border-radius: 6px;
-  background: rgba(15, 21, 25, .9);
-  color: #c9c5bb;
+  background: var(--bg-card);
+  color: var(--text-label);
   font-size: .85rem;
   font-family: inherit;
   cursor: pointer;

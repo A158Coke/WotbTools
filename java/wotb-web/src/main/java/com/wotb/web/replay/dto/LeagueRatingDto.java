@@ -7,7 +7,7 @@ import java.util.List;
  *
  * <p>mode 稳定英文码：{@code LEAGUE_RATING} / {@code STANDARD_REPLAY}；混合批次
  * League Rating 不聚合（{@code league=null}，battles 仍按普通回放语义成功返回，
- * PreviewResponse.leagueUnavailableCode 提示，plan §21）。</p>
+ * PreviewResponse.leagueUnavailableCode 提示）。</p>
  */
 public record LeagueRatingDto(
         String mode,

@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** League Rating Excel 导出（plan §18/§21.6；review PR#134 BLOCKER 1：含单场
+/** League Rating Excel 导出（含单场
  * Performance Metrics contribution/kast/impact、维度分/满分/百分比、战队名称覆盖）。 */
 class LeagueExcelExportTest {
 
@@ -50,7 +50,7 @@ class LeagueExcelExportTest {
             assertTrue(headerText.toString().contains("伤害评分"), "必须包含维度列");
             assertTrue(headerText.toString().contains("占点得分"), "必须包含占点原始字段");
             assertTrue(headerText.toString().contains("占领分"), "必须包含占领分原始字段");
-            // review PR#134 BLOCKER 1：单场 Performance Metrics 保留在 CW 单场工作簿
+            // 单场 Performance Metrics 保留在 CW 单场工作簿
             assertTrue(headerText.toString().contains("贡献度"), "League 单场必须含 Contribution");
             assertTrue(headerText.toString().contains("KAST"), "League 单场必须含 KAST");
             assertTrue(headerText.toString().contains("Impact"), "League 单场必须含 Impact");

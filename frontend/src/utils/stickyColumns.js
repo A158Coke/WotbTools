@@ -1,9 +1,9 @@
 import { ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 
 /**
- * 表格 sticky 核心列对（玩家列 + Rating 列）测量 helper（review PR#134 BLOCKER 2.9/2.10）。
+ * 表格 sticky 核心列对（玩家列 + Rating 列）测量 helper。
  *
- * 抽取自 BattleTable 已验证的 sticky lifecycle（plan §3.3/§3.4/§19 Test A-F）：
+ * 抽取自 BattleTable 已验证的 sticky lifecycle：
  * - invariant：nickname.left = 0；league_rating.left = 真实可见 nickname 列宽（>0）。
  * - hidden（active=false 或 width<=0）时禁止写入，已有有效 offset 不被覆盖成 0。
  * - 测量链：nextTick → rAF → getBoundingClientRect().width（happy-dom 无 rAF 时回退 setTimeout）。

@@ -27,7 +27,7 @@ public enum LeagueRatingMode {
     /** 训练赛/联赛回放：执行严格完整性校验并计算 League Rating。 */
     LEAGUE_RATING,
 
-    /** 同一批次同时出现普通回放与训练赛/联赛回放：League Rating 不聚合；解析仍成功（plan §21）。 */
+    /** 同一批次同时出现普通回放与训练赛/联赛回放：League Rating 不聚合；解析仍成功。 */
     MIXED_UNSUPPORTED;
 
     /** 训练房 raw arenaBonusType（项目真实夹具证据）。 */
