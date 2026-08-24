@@ -217,8 +217,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .up-icon .ic { width: 28px; height: 28px; }
 .wrap { max-width: 1200px; margin: 0 auto; padding: 24px 20px 64px; }
 h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
-.tb-content { padding-top: 52px; }
-.topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 100; height: 52px;
+.tb-content { padding-top: var(--topbar-h); }
+.topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 100; height: var(--topbar-h);
   display: flex; align-items: center; gap: 8px; padding: 8px 16px;
   background: color-mix(in srgb, var(--bg-card) 92%, transparent);
   border-bottom: 1px solid var(--border-header);
@@ -301,8 +301,7 @@ tr:hover td { background: var(--bg-list-hover); }
 .mc { background: rgba(16,22,26,.94); border: 1px solid rgba(58,69,76,.55); border-radius: 8px; padding: 14px 16px; text-align: center; box-shadow: var(--surface-shadow); }
 .mc .k { font-size: .78rem; color: #a3a6a0; margin-bottom: 4px; }
 .mc .v { font-size: 1.4rem; font-weight: 700; color: #f6f1e7; font-variant-numeric: tabular-nums; }
-/* 页面级提示条（V2）：不依赖 .wrap 容器，任何 Layout Primitive 下均可复用。
-   亮/暗主题由 token（--warn-bg/--border-warn/--warn-text、--status-err-*）自动切换。 */
+/* 页面级提示条（V2）：不依赖 .wrap 容器，任何 Layout Primitive 下均可复用。 */
 .warn, .error { display: block; padding: 10px 16px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; line-height: 1.55; }
 .warn { background: var(--warn-bg); border: 1px solid var(--border-warn); color: var(--warn-text); }
 .error { background: var(--status-err-bg); border: 1px solid color-mix(in srgb, var(--error) 34%, var(--border)); color: var(--status-err-fg); }
