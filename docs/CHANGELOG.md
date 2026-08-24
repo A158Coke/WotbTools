@@ -5,6 +5,34 @@
 ## [Unreleased]
 
 ### Added
+- **Replay CW Rating UI 收口（docs/current-plan.md）**：
+  - **Rating 八维 → 七维**：`LeagueRatingCalculator` / `PlayerLeagueRating` 删除争霸占点评分
+    维度（`MAX_OBJECTIVE` / `objectiveScore` / earned/seized index 全链路移除），射击效率满分
+    50 → 100 补位，总分保持 1000；`LeagueColumns.DIM_KEYS/DIM_MAX` 同步为七维；
+    `victoryPointsEarned/Seized` 降级为客观统计（不参与 Rating），新增
+    points-independence 回归测试（争霸点数改变不影响 Rating）。
+  - **获取点数事实化**：Replay Aggregate 新增 `earned` 累计（Agg.earned），汇总列新增
+    `earned_total` / `earned_avg`（「获取点数总计」「获取点数/场」）；单场仍展示
+    `victory_points_earned`（「获取点数」）；`victory_points_seized` 保留 backend fact、
+    CW Rating 主 UI 不再展示（UI 列定义移除）。
+  - **CW 玩家统一表（plan §6）**：新增 `utils/playerSummaryMerge.js`
+    （accountId join，缺失 League 补 "--"）与 `CwPlayerSummaryTable.vue`；League 模式
+    汇总页不再出现「基础 Aggregate 玩家表 + League 玩家表」两张平级表，统一玩家主表 +
+    独立战队表。
+  - **选手详情 Side Drawer（plan §8/§9）**：新增 `PlayerDetailDrawer.vue`（右侧 overlay、
+    backdrop/×/Escape 关闭、aria dialog、按 accountId 选择）与 `PlayerRatingRadar.vue`
+    （原生 SVG 七轴、score/max 归一化 0–100%、detail 原始分/满分/百分比）；单场与汇总
+    玩家行点击打开，Tab/selection 变化自动关闭。
+  - **全列 ASC/DESC（plan §11/§12）**：新增 `utils/tableSort.js`
+    （normalizeMissing/compareValues/stableSortRows：numeric、自然字符串序、
+    missing-last 与方向无关、raw sort、稳定）；BattleTable / AggregateTable /
+    CwPlayerSummaryTable / LeagueSummaryTable 全部接入，team_name 按最终显示名排序。
+  - **P0 sticky 生命周期修复（plan §3）**：BattleTable 新增 `active` prop（父组件传
+    activeTab 可见性），hidden→visible 后 nextTick + rAF 重测、ResizeObserver 监听
+    nickname 列宽、width<=0 不覆盖有效 offset（禁止 0 width 污染）；ReplayPage 传
+    `:active="activeTab === 'b' + i"`。
+  - **文档**：league-rating.md 七维公式/占点不评分/统一表/Drawer/排序、versions.json
+    v2.12.27（zh/en/ru）。
 - **Replay Core / League Rating 业务边界加固（docs/current-plan.md）**：
   - **前端不再把 League Rating 校验失败显示成红色「文件解析失败」**：训练赛/联赛回放无法生成
     Rating 时，结果区改为琥珀色 warning 汇总（League Rating · 可评分 X / N · N 场未生成 Rating
@@ -82,7 +110,7 @@
     队伍冲突→双 false、全等→双 true）、LeagueReplaysTest（#201=15/#301=14 rated、多场合法 CW
     playerSummaries/teamSummaries 非空）、LeagueRosterCompletenessTest（<b>真实 CW fixture 入库
     common/fixtures/replays/（15/14 训练房 + 14/14 tournament），CI 无条件全链路</b>：14 个 Player
-    Rating、八维度 0-max、Team 1/2 Rating、MVP、两队最佳、#201>#301 断言、真实双份 collect →
+    Rating、七维度 0-max、Team 1/2 Rating、MVP、两队最佳、#201>#301 断言、真实双份 collect →
     summaries 非空）+ AI fail-closed 回归（CW 15/14 全局 rosterComplete=false → 不推导点数/存活
     结束方式、无全歼推断，PR #73 boundary 不放松）。
   - **文档**：protocol.md / replay-data.md / replay-parsed-fields.md / league-rating.md 同步——

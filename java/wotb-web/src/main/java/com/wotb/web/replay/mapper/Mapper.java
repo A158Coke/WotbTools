@@ -81,7 +81,9 @@ public final class Mapper {
             new AggCol("pens", true, a -> a.pens),
             new AggCol("enemies_damaged_avg", true, a -> r2(a.avg(a.enemiesDamaged))),
             new AggCol("tanks", false, Agg::tanksStr),
-            new AggCol("account_id", true, a -> a.accountId)
+            new AggCol("account_id", true, a -> a.accountId),
+            new AggCol("earned_total", true, a -> a.earned),
+            new AggCol("earned_avg", true, a -> r1(a.avg(a.earned)))
     );
 
     /** 汇总表追加的跨场表现派生列（与 AGG_COLS 并列；值由 PerformanceMetricsCalculator 行按 accountId 合并）。 */
@@ -119,7 +121,7 @@ public final class Mapper {
             out.add(new ColumnDef(key, true));
         }
         out.add(new ColumnDef(LeagueColumns.VICTORY_POINTS_EARNED, true));
-        out.add(new ColumnDef(LeagueColumns.VICTORY_POINTS_SEIZED, true));
+        // victory_points_seized 保留为 backend fact，CW Rating 主 UI 不展示（plan §5.3）
         return out;
     }
 
@@ -133,7 +135,7 @@ public final class Mapper {
                     LeagueColumns.dimMax(d), false, false, "rating"));
         }
         out.add(new LeagueColumnDef(LeagueColumns.VICTORY_POINTS_EARNED, true, 0, false, false, "battle"));
-        out.add(new LeagueColumnDef(LeagueColumns.VICTORY_POINTS_SEIZED, true, 0, false, false, "battle"));
+        // victory_points_seized 不进入 Rating 列系统（backend fact 保留，UI 不展示，plan §5.3）
         return out;
     }
 
@@ -216,7 +218,7 @@ public final class Mapper {
                     cells.put(LeagueColumns.RATING, r1(plr.finalRating()));
                     final double[] dims = {
                             plr.damageScore(), plr.assistScore(), plr.killScore(), plr.exchangeScore(),
-                            plr.blockedScore(), plr.survivalTradeScore(), plr.shootingScore(), plr.objectiveScore()};
+                            plr.blockedScore(), plr.survivalTradeScore(), plr.shootingScore()};
                     for (int d = 0; d < LeagueColumns.DIM_KEYS.size(); d++) {
                         cells.put(LeagueColumns.dimKey(d), r1(dims[d]));
                     }

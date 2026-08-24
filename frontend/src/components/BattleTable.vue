@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { fmtDuration, mapLabel } from '../utils/helpers.js'
 import { replayValueLabel } from '../utils/display.js'
+import { stableSortRows } from '../utils/tableSort.js'
 
 const { locale, t, te } = useI18n()
 const LOCALIZED_VALUE_KEYS = new Set(['tank_type', 'tank_nation', 'potential_damage_detail'])
@@ -17,8 +18,13 @@ const props = defineProps({
   league: { type: Object, default: null },
   /** 战队名称覆盖：{arenaId:team: name}（仅当前页面内存，plan §12）。 */
   teamNames: { type: Object, default: () => ({}) },
+  /**
+   * 本表是否当前可见（父组件拥有真实 activeTab；BattleTable 不通过 DOM 猜 visibility）。
+   * active=false（v-show hidden）时禁止测量：hidden DOM width=0 不得覆盖有效 sticky offset。
+   */
+  active: { type: Boolean, default: true },
 })
-const emit = defineEmits(['update-team-name'])
+const emit = defineEmits(['update-team-name', 'select-player'])
 
 const isLeague = computed(() => !!props.league)
 const leagueMaxByKey = computed(() =>
@@ -32,17 +38,29 @@ function percentCell(value) {
 const sortKey = ref('')
 const sortReverse = ref(false)
 
+/** 战队名称按用户最终看到的名（override → autoName）排序（plan §11.8），不按隐藏 teamKey。 */
+function teamNameValue(row) {
+  const teamNumber = row.team
+  const key = props.battle.arenaId + ':' + teamNumber
+  const override = props.teamNames ? props.teamNames[key] : undefined
+  if (override) return override
+  return teamNumber === 1 ? props.league?.team1?.autoName : props.league?.team2?.autoName
+}
+
 const sorted = computed(() => {
   if (!sortKey.value) return props.battle.players
-  const arr = [...props.battle.players]
   const col = props.shownCols.find(c => c.key === sortKey.value)
-  arr.sort((ra, rb) => {
-    let a = ra.cells[sortKey.value], b = rb.cells[sortKey.value]
-    if (col?.num) { a = Number(a) || 0; b = Number(b) || 0; return a - b }
-    return String(a).localeCompare(String(b))
+  const isTeamName = sortKey.value === 'team_name'
+  const valueGetter = isTeamName ? teamNameValue : undefined
+  return stableSortRows(props.battle.players, {
+    key: sortKey.value,
+    direction: sortReverse.value ? -1 : 1,
+    num: isTeamName ? false : !!col?.num,
+    locale: locale.value,
+    valueGetter,
+    // accountId 兜底保持稳定（同分不跳行）
+    tiebreakGetter: row => row.cells?.account_id,
   })
-  if (sortReverse.value) arr.reverse()
-  return arr
 })
 
 function sortBy(col) {
@@ -98,6 +116,16 @@ function onTeamNameInput(teamNumber, event) {
   emit('update-team-name', { arenaId: props.battle.arenaId, team: teamNumber, name: event.target.value })
 }
 
+/** 点击玩家行 → 打开选手 Drawer（plan §8.1：CW 单场 BattleTable 支持；selection = accountId §8.7）。 */
+function onRowClick(row) {
+  if (!isLeague.value) return
+  emit('select-player', {
+    scope: 'battle',
+    accountId: Number(row.cells.account_id),
+    arenaId: props.battle.arenaId,
+  })
+}
+
 // ---- Rating 单元格（总分「927 · 92.7%」；维度「342 / 400 · 85.5%」） ----
 
 function ratingCellText(value, key) {
@@ -121,31 +149,90 @@ function rowFlags(row) {
 }
 
 // ---- sticky 列（League 模式：玩家 + 总 Rating 固定，左偏移响应真实列宽） ----
+// invariant：nickname.left = 0；league_rating.left = 真实可见 nickname 列宽（>0）。
+// 禁止 hidden measurement（width<=0）覆盖有效 offset（plan §3.3/§3.4）。
 
 const headerRefs = ref({})
-const stickyLeft = ref({ nickname: 0, league_rating: 0 })
+const stickyLeft = ref({ nickname: 0, league_rating: null })
 
-function measureSticky() {
-  if (!isLeague.value) return
+let stickyRaf = 0
+let stickyObserver = null
+
+// happy-dom / 老环境无 rAF 时回退 setTimeout(0)；组件内部不直接依赖全局 rAF 存在。
+const nextFrame = typeof requestAnimationFrame === 'function'
+  ? (cb) => requestAnimationFrame(cb)
+  : (cb) => setTimeout(cb, 0)
+const cancelFrame = typeof cancelAnimationFrame === 'function'
+  ? (id) => cancelAnimationFrame(id)
+  : (id) => clearTimeout(id)
+
+function disconnectStickyObserver() {
+  if (stickyObserver) {
+    stickyObserver.disconnect()
+    stickyObserver = null
+  }
+}
+
+function connectStickyObserver() {
+  disconnectStickyObserver()
+  const nickEl = headerRefs.value['nickname']
+  if (!nickEl || typeof ResizeObserver === 'undefined') return
+  stickyObserver = new ResizeObserver(() => scheduleStickyMeasure())
+  stickyObserver.observe(nickEl)
+}
+
+/** 读取真实可见 nickname 列宽；非有限或 <=0 视为 hidden（返回 0，不参与写入）。 */
+function nicknameWidth() {
+  const nickEl = headerRefs.value['nickname']
+  if (!nickEl) return 0
+  const width = nickEl.getBoundingClientRect().width
+  return (Number.isFinite(width) && width > 0) ? width : 0
+}
+
+/**
+ * 调度一次 sticky 测量：active=false 不测；nextTick + rAF 后读真实 layout；
+ * width<=0（hidden）时保留已有有效 offset，绝不写入 0（plan §3.3/§3.4/Test E）。
+ */
+function scheduleStickyMeasure() {
+  if (!isLeague.value || !props.active) return
   nextTick(() => {
-    const nickEl = headerRefs.value['nickname']
-    const nickW = nickEl ? nickEl.offsetWidth : 130
-    stickyLeft.value = { nickname: 0, league_rating: nickW }
+    cancelFrame(stickyRaf)
+    stickyRaf = nextFrame(() => {
+      const width = nicknameWidth()
+      if (width <= 0) return
+      stickyLeft.value = { nickname: 0, league_rating: width }
+    })
   })
 }
 
-watch(() => props.shownCols, measureSticky, { deep: true })
-watch(isLeague, measureSticky)
-// 排序箭头会改变表头宽度 → 昵称列宽可能变化 → Rating sticky 左偏移必须重测（plan §21）
-watch([sortKey, sortReverse], measureSticky)
-onMounted(() => {
-  measureSticky()
-  window.addEventListener('resize', measureSticky)
+// 表头 ref 改变（重挂载）→ 重连 observer（mount → observe / ref 改变 → reconnect）
+watch(headerRefs, () => connectStickyObserver(), { deep: true })
+// 列系统 / League 模式 / 排序箭头变化都可能改昵称列宽 → 重新调度测量（plan §3.6/§14）
+watch(() => props.shownCols, scheduleStickyMeasure, { deep: true })
+watch(isLeague, scheduleStickyMeasure)
+watch([sortKey, sortReverse], scheduleStickyMeasure)
+// hidden → visible：父组件切换 activeTab 后重新测量真实宽度（plan §3.3）
+watch(() => props.active, (active) => {
+  if (active) scheduleStickyMeasure()
 })
-onBeforeUnmount(() => window.removeEventListener('resize', measureSticky))
+onMounted(() => {
+  connectStickyObserver()
+  scheduleStickyMeasure()
+  window.addEventListener('resize', scheduleStickyMeasure)
+})
+onBeforeUnmount(() => {
+  disconnectStickyObserver()
+  cancelFrame(stickyRaf)
+  window.removeEventListener('resize', scheduleStickyMeasure)
+})
 
 const isStickyCol = key => isLeague.value && (key === 'nickname' || key === 'league_rating')
-const colStyle = key => isStickyCol(key) ? { left: (stickyLeft.value[key] || 0) + 'px' } : {}
+const colStyle = key => {
+  if (!isStickyCol(key)) return {}
+  if (key === 'nickname') return { left: '0px' }
+  const v = stickyLeft.value[key]
+  return v == null ? {} : { left: v + 'px' }
+}
 </script>
 
 <template>
@@ -197,7 +284,9 @@ const colStyle = key => isStickyCol(key) ? { left: (stickyLeft.value[key] || 0) 
           </th>
         </tr></thead>
         <tbody>
-          <tr v-for="(row, ri) in sorted" :key="ri" :class="row.team === 1 ? 't1' : 't2'">
+          <tr v-for="(row, ri) in sorted" :key="ri"
+              :class="[row.team === 1 ? 't1' : 't2', isLeague ? 'player-row' : '']"
+              @click="onRowClick(row)">
             <td v-for="c in shownCols" :key="c.key"
                 :class="{ 'sticky-col': isStickyCol(c.key), 'sticky-t1': isStickyCol(c.key) && row.team === 1, 'sticky-t2': isStickyCol(c.key) && row.team === 2 }"
                 :style="colStyle(c.key)">
@@ -264,6 +353,10 @@ const colStyle = key => isStickyCol(key) ? { left: (stickyLeft.value[key] || 0) 
 .league-table td.sticky-col.sticky-t1 { background: color-mix(in srgb, var(--bg-t1) 64%, var(--bg-card)); }
 .league-table td.sticky-col.sticky-t2 { background: color-mix(in srgb, var(--bg-t2) 64%, var(--bg-card)); }
 .league-table tr:hover td.sticky-col { background: var(--bg-list-hover); }
+
+/* 玩家行点击（Drawer 打开，plan §13：header click 排序、row click 选人，互不触发） */
+.league-table .player-row { cursor: pointer; }
+.league-table tr.player-row:hover td { background: var(--bg-list-hover); }
 
 /* Rating 单元格 + 徽标（固定尺寸避免列宽跳动） */
 .league-rating-cell { display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; }

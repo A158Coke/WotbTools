@@ -85,8 +85,10 @@ function mountPage() {
         AggregateTable: { template: '<div class="agg-table-stub" />' },
         BattleTable: { template: '<div class="battle-table-stub" />' },
         LeagueSummaryTable: { template: '<div class="league-summary-stub" />' },
+        CwPlayerSummaryTable: { template: '<div class="cw-player-summary-stub" />' },
         RemoveConfirmModal: { template: '<div class="remove-modal-stub" />' },
         ReplayTaskCard: { template: '<div class="replay-task-stub" />' },
+        PlayerDetailDrawer: { props: ['context', 'player'], template: '<div class="drawer-stub" />' },
       },
     },
   })
@@ -149,8 +151,8 @@ describe('ReplayPage READY 第一帧渲染（P0：同一提交周期内结果立
     wrapper.unmount()
   })
 
-  it('league 批次 + aggregate 有数据（partial）：基础 AggregateTable 与 LeagueSummary 同时可见（非二选一）', async () => {
-    // plan Case C：partial League（aggregate 非空 + playerSummaries 非空）→ 两个汇总同时存在
+  it('league 批次 + aggregate 有数据（partial）：统一玩家表可见，基础 AggregateTable 与 League 玩家表都不得出现（plan §1.3）', async () => {
+    // plan Case C：partial League（aggregate 非空 + playerSummaries 非空）→ 统一玩家表 + 独立战队表
     const wrapper = await runReadyFlow(baseResp({
       battles: twoBattles,
       aggregate: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }],
@@ -162,19 +164,22 @@ describe('ReplayPage READY 第一帧渲染（P0：同一提交周期内结果立
         failures: [],
       },
     }))
-    expect(wrapper.find('.agg-table-stub').element.parentElement.style.display).not.toBe('none')
-    expect(wrapper.find('.league-summary-stub').element.parentElement.style.display).not.toBe('none')
+    expect(wrapper.find('.cw-player-summary-stub').element.parentElement.style.display).not.toBe('none')
+    expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
+    // 战队表独立存在（plan §1.3/§7）；League 玩家表不再单独出现（已并入统一表）
+    expect(wrapper.find('.league-summary-stub').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('league 批次 0/30（aggregate 非空 + playerSummaries 空）：基础 Aggregate 可见 + League 空态可见', async () => {
-    // plan Case A：30 parsed / 0 rated → 基础汇总正常，League 区块显示明确空态
+  it('league 批次 0/30（aggregate 非空 + playerSummaries 空）：统一玩家表仍可见（缺失 League 补 --）+ 战队空态', async () => {
+    // plan Case A：30 parsed / 0 rated → 统一玩家表正常显示 aggregate 玩家，战队区块显示明确空态
     const wrapper = await runReadyFlow(baseResp({
       battles: twoBattles,
       aggregate: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }],
       league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] },
     }))
-    expect(wrapper.find('.agg-table-stub').element.parentElement.style.display).not.toBe('none')
+    expect(wrapper.find('.cw-player-summary-stub').element.parentElement.style.display).not.toBe('none')
+    expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
     expect(wrapper.find('[data-testid="league-summary-empty"]').exists()).toBe(true)
     expect(wrapper.find('.league-summary-stub').exists()).toBe(false)
     wrapper.unmount()

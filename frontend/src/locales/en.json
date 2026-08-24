@@ -494,9 +494,7 @@
         "league_survival_score": "Survival/Trade Score",
         "league_survival_score_tip": "Win+survive 100 / trade 75 / loser top-4 50, max 100",
         "league_shooting_score": "Shooting Score",
-        "league_shooting_score_tip": "Hit 30% + Pen 70% (Wilson small-sample) × damage participation, max 50",
-        "league_objective_score": "Objective Score",
-        "league_objective_score_tip": "Earned 30% + Seized 70% (experimental), max 50",
+        "league_shooting_score_tip": "Hit 30% + Pen 70% (Wilson small-sample) × damage participation, max 100",
         "victory_points_earned": "Points Earned",
         "victory_points_seized": "Points Seized"
     },
@@ -533,6 +531,8 @@
         "impact": "Impact",
         "multi_damage_rate": "Multi-damage rate",
         "traded_deaths": "Trades",
+        "earned_total": "Points Earned Total",
+        "earned_avg": "Points Earned Avg",
         "league_rating": "Rating Median",
         "league_damage_score": "Damage Median",
         "league_assist_score": "Assist Median",
@@ -540,8 +540,7 @@
         "league_exchange_score": "Exchange Median",
         "league_blocked_score": "Blocked Median",
         "league_survival_score": "Survival/Trade Median",
-        "league_shooting_score": "Shooting Median",
-        "league_objective_score": "Objective Median"
+        "league_shooting_score": "Shooting Median"
     },
     "theme": {
         "auto": "Auto",
@@ -1295,7 +1294,6 @@
             "league_blocked_score": "Blocked",
             "league_survival_score": "Survival/Trade",
             "league_shooting_score": "Shooting",
-            "league_objective_score": "Objective",
             "mvp_count": "MVP Count",
             "wins": "Wins",
             "damage_total": "Total Damage",
@@ -1304,6 +1302,34 @@
             "team_name": "Team",
             "battles_note": "Battles played (more samples = more reliable)",
             "no_ranking_note": "Summary only — no ranking or batch awards"
+        },
+        "drawer": {
+            "close": "Close",
+            "no_clan": "No clan",
+            "radar_title": "Seven-dimension performance",
+            "facts_title": "Performance",
+            "radar": {
+                "damage": "Damage",
+                "assist": "Assist",
+                "kill": "Kills",
+                "exchange": "Exchange",
+                "blocked": "Blocked",
+                "survival": "Survival/Trade",
+                "shooting": "Shooting"
+            },
+            "battles": "Battles",
+            "win_rate": "Win Rate",
+            "wins": "Wins",
+            "mvp": "MVP Count",
+            "damage_avg": "Avg Damage",
+            "assist_avg": "Avg Assist",
+            "kills_avg": "Avg Kills",
+            "earned_avg": "Points Earned Avg",
+            "damage": "Damage",
+            "assist": "Assist",
+            "kills": "Kills",
+            "points_earned": "Points Earned",
+            "survived": "Status"
         }
     }
 }

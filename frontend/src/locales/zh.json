@@ -494,10 +494,8 @@
         "league_survival_score": "存活/互换评分",
         "league_survival_score_tip": "胜方存活 100 / 互换 75 / 败方存活前四 50，满分 100",
         "league_shooting_score": "射击效率评分",
-        "league_shooting_score_tip": "命中 30% + 击穿 70%（Wilson 小样本修正）× 伤害参与，满分 50",
-        "league_objective_score": "争霸占点评分",
-        "league_objective_score_tip": "Earned 30% + Seized 70%（实验性口径），满分 50",
-        "victory_points_earned": "占点得分",
+        "league_shooting_score_tip": "命中 30% + 击穿 70%（Wilson 小样本修正）× 伤害参与，满分 100",
+        "victory_points_earned": "获取点数",
         "victory_points_seized": "占领分"
     },
     "agg_labels": {
@@ -533,6 +531,8 @@
         "impact": "Impact",
         "multi_damage_rate": "多伤率",
         "traded_deaths": "互换击杀",
+        "earned_total": "获取点数总计",
+        "earned_avg": "获取点数/场",
         "league_rating": "Rating 中位数",
         "league_damage_score": "伤害评分中位数",
         "league_assist_score": "助攻评分中位数",
@@ -540,8 +540,7 @@
         "league_exchange_score": "换血效率中位数",
         "league_blocked_score": "阻挡评分中位数",
         "league_survival_score": "存活/互换中位数",
-        "league_shooting_score": "射击效率中位数",
-        "league_objective_score": "占点评分中位数"
+        "league_shooting_score": "射击效率中位数"
     },
     "theme": {
         "auto": "跟随系统",
@@ -1295,7 +1294,6 @@
             "league_blocked_score": "阻挡评分",
             "league_survival_score": "存活/互换",
             "league_shooting_score": "射击效率",
-            "league_objective_score": "占点评分",
             "mvp_count": "MVP 次数",
             "wins": "胜场",
             "damage_total": "总伤害",
@@ -1304,6 +1302,34 @@
             "team_name": "战队",
             "battles_note": "参赛场次（多场样本更可靠）",
             "no_ranking_note": "仅汇总，不排名、不产生批次奖项"
+        },
+        "drawer": {
+            "close": "关闭",
+            "no_clan": "无战队",
+            "radar_title": "本场七维表现",
+            "facts_title": "本场表现",
+            "radar": {
+                "damage": "伤害",
+                "assist": "助攻",
+                "kill": "击杀",
+                "exchange": "换血",
+                "blocked": "阻挡",
+                "survival": "存活/互换",
+                "shooting": "射击"
+            },
+            "battles": "场次",
+            "win_rate": "胜率",
+            "wins": "胜场",
+            "mvp": "MVP 次数",
+            "damage_avg": "场均伤害",
+            "assist_avg": "场均助攻",
+            "kills_avg": "场均击杀",
+            "earned_avg": "获取点数/场",
+            "damage": "伤害",
+            "assist": "助攻",
+            "kills": "击杀",
+            "points_earned": "获取点数",
+            "survived": "存活状态"
         }
     }
 }

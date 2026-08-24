@@ -1,10 +1,10 @@
 <script setup>
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { stableSortRows } from '../utils/tableSort.js'
 
 const props = defineProps({
   title: String,
-  /** 'player' | 'team' */
-  type: String,
   rows: { type: Array, default: () => [] },
   /** ColumnDef 列表（key + num） */
   columns: { type: Array, default: () => [] },
@@ -12,11 +12,39 @@ const props = defineProps({
   teamNames: { type: Object, default: () => ({}) },
 })
 const emit = defineEmits(['update-summary-team-name'])
-const { t } = useI18n()
+const { t, locale } = useI18n()
+
+// ---- 全列 ASC/DESC（plan §11：所有可见列可排序；missing-last；raw sort） ----
+const sortKey = ref('')
+const sortReverse = ref(false)
+
+const sortedRows = computed(() => {
+  if (!sortKey.value) return props.rows
+  const col = props.columns.find(c => c.key === sortKey.value)
+  const isTeamName = sortKey.value === 'team_name'
+  return stableSortRows(props.rows, {
+    key: sortKey.value,
+    direction: sortReverse.value ? -1 : 1,
+    num: isTeamName ? false : !!col?.num,
+    locale: locale.value,
+    // team_name 按用户最终看到的名排序（override → autoName → pending，plan §11.8）
+    valueGetter: isTeamName ? teamDisplayName : undefined,
+    tiebreakGetter: row => row.teamKey,
+  })
+})
+
+function sortBy(col) {
+  if (sortKey.value === col.key) sortReverse.value = !sortReverse.value
+  else { sortKey.value = col.key; sortReverse.value = false }
+}
+
+function arrow(key) {
+  return sortKey.value === key ? (sortReverse.value ? ' ▼' : ' ▲') : ''
+}
 
 const DIM_KEYS = ['league_damage_score', 'league_assist_score', 'league_kill_score',
   'league_exchange_score', 'league_blocked_score', 'league_survival_score',
-  'league_shooting_score', 'league_objective_score']
+  'league_shooting_score']
 
 function label(key) {
   return t('league.summary.' + key)
@@ -46,7 +74,8 @@ function displayValue(value) {
 }
 
 function ratingText(value) {
-  const v = Number(value) || 0
+  if (value == null || value === '' || !Number.isFinite(Number(value))) return '--'
+  const v = Number(value)
   const pct = Math.round(1000 * v / 1000) / 10
   return Math.round(v) + ' · ' + pct + '%'
 }
@@ -72,10 +101,10 @@ function onTeamNameInput(row, event) {
     <div class="tablewrap">
       <table>
         <thead><tr>
-          <th v-for="c in columns" :key="c.key">{{ label(c.key) }}</th>
+          <th v-for="c in columns" :key="c.key" @click="sortBy(c)">{{ label(c.key) }}{{ arrow(c.key) }}</th>
         </tr></thead>
         <tbody>
-          <tr v-for="(row, i) in rows" :key="i">
+          <tr v-for="(row, i) in sortedRows" :key="row.teamKey ?? row.accountId ?? i">
             <td v-for="c in columns" :key="c.key">
               <template v-if="c.key === 'team_name'">
                 <input class="team-name-input" :value="teamDisplayName(row)"

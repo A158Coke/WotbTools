@@ -103,7 +103,6 @@ const LEAGUE_PLAYER_COLS = [
   { key: 'damage_dealt', num: true },
   { key: 'damage_assisted', num: true },
   { key: 'league_damage_score', num: true },
-  { key: 'league_objective_score', num: true },
   { key: 'victory_points_earned', num: true }
 ]
 

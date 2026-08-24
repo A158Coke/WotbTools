@@ -168,7 +168,6 @@ final class LeagueAggregateSheets {
                 styles.setCell(row.createCell(c++), ExcelStyles.r1(p.blockedScore()), styles.plain(), "league_score");
                 styles.setCell(row.createCell(c++), ExcelStyles.r1(p.survivalTradeScore()), styles.plain(), "league_score");
                 styles.setCell(row.createCell(c++), ExcelStyles.r1(p.shootingScore()), styles.plain(), "league_score");
-                styles.setCell(row.createCell(c++), ExcelStyles.r1(p.objectiveScore()), styles.plain(), "league_score");
             }
         }
         ws.createFreezePane(1, 1);
@@ -268,6 +267,6 @@ final class LeagueAggregateSheets {
 
     private static List<String> dimTitles() {
         return List.of("伤害评分", "助攻评分", "击杀评分", "换血效率评分",
-                "阻挡评分", "存活/互换评分", "射击效率评分", "争霸占点评分");
+                "阻挡评分", "存活/互换评分", "射击效率评分");
     }
 }

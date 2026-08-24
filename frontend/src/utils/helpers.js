@@ -39,7 +39,7 @@ const COL_GROUP_CAT = {
   multi_damage_rate: 'battle', traded_deaths: 'battle',
   league_rating: 'rating', league_damage_score: 'rating', league_assist_score: 'rating',
   league_kill_score: 'rating', league_exchange_score: 'rating', league_blocked_score: 'rating',
-  league_survival_score: 'rating', league_shooting_score: 'rating', league_objective_score: 'rating',
+  league_survival_score: 'rating', league_shooting_score: 'rating',
   victory_points_earned: 'battle', victory_points_seized: 'battle',
   mvp_count: 'overview', damage_total: 'battle', assist_total: 'battle', kills_total: 'battle',
   team_name: 'identity',
