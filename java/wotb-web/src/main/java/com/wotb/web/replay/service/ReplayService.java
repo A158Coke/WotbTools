@@ -225,6 +225,9 @@ public class ReplayService {
                 // 已在 collect 阶段跳过，不进 ZIP。
                 final LeagueReplays.LeagueCollectResult c = LeagueReplays.collect(
                         sources, this::processFull, null, null);
+                // 与 preview / standard export 同一 authoritative enrichment：
+                // PotentialDamage → 单场 Performance Metrics（League 单场工作簿含潜在伤害列）
+                PotentialDamage.apply(c.battles(), tankopedia);
                 for (final Battle battle : c.battles()) {
                     PerformanceMetricsCalculator.populateBattle(battle);
                 }

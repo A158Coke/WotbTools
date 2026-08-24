@@ -37,19 +37,29 @@ final class AggregateSheets {
 
     static void write(final ExcelStyles styles, final List<Battle> battles, final List<String> sourceNames,
                       final List<String[]> duplicates, final Tankopedia tp) {
+        write(styles, battles, sourceNames, duplicates, tp, "");
+    }
+
+    /**
+     * 与 {@link #write} 相同（canonical Replay 汇总/明细/战斗列表，单一 schema 源）；
+     * {@code sheetPrefix} 供 League 批量工作簿区分（如 "Replay "），避免与 League 专属表同名。
+     */
+    static void write(final ExcelStyles styles, final List<Battle> battles, final List<String> sourceNames,
+                      final List<String[]> duplicates, final Tankopedia tp, final String sheetPrefix) {
         final Map<Long, Agg> agg = Aggregator.aggregate(battles, tp);
         final Map<Long, PerformanceMetricsCalculator.Row> perfById = new HashMap<>();
         for (final PerformanceMetricsCalculator.Row row : PerformanceMetricsCalculator.compute(battles)) {
             perfById.put(row.accountId, row);
         }
-        summary(styles, agg, perfById);
-        detail(styles, battles, tp);
-        battleList(styles, battles, sourceNames, duplicates);
+        summary(styles, agg, perfById, sheetPrefix);
+        detail(styles, battles, tp, sheetPrefix);
+        battleList(styles, battles, sourceNames, duplicates, sheetPrefix);
     }
 
     private static void summary(final ExcelStyles styles, final Map<Long, Agg> aggMap,
-                                final Map<Long, PerformanceMetricsCalculator.Row> perfById) {
-        final Sheet ws = styles.workbook().createSheet("汇总");
+                                final Map<Long, PerformanceMetricsCalculator.Row> perfById,
+                                final String sheetPrefix) {
+        final Sheet ws = styles.workbook().createSheet(sheetPrefix + "汇总");
         // 与 API Mapper.toAggregate 同一契约（Excel 空单元格 = API null）：
         //   contribution/kast/多伤率 依赖 HP（hpEligible=false 时 unavailable）
         //   impact/tradedDeaths 不依赖 HP（仅要求该账号存在 performance row）
@@ -74,6 +84,9 @@ final class AggregateSheets {
                 new AggregateColumn("场均击杀", 7, true, a -> ExcelStyles.r2(a.avg(a.kills))),
                 new AggregateColumn("总伤害", 9, true, a -> a.damage),
                 new AggregateColumn("场均伤害", 9, true, a -> ExcelStyles.r1(a.avg(a.damage))),
+                new AggregateColumn("总潜在伤害", 10, true, a -> a.potentialDamage),
+                new AggregateColumn("场均潜在伤害", 10, true, a -> ExcelStyles.r1(a.avg(a.potentialDamage))),
+                new AggregateColumn("场均补增伤害", 9, true, a -> ExcelStyles.r1(a.avg(a.potentialDamageSupplement))),
                 new AggregateColumn("总协助伤害", 9, true, a -> a.assisted),
                 new AggregateColumn("场均协助伤害", 9, true, a -> ExcelStyles.r1(a.avg(a.assisted))),
                 new AggregateColumn("场均损失血量", 8, true, a -> ExcelStyles.r1(a.avg(a.received))),
@@ -84,6 +97,8 @@ final class AggregateSheets {
                 new AggregateColumn("总命中次数", 8, true, a -> a.hits),
                 new AggregateColumn("总击穿次数", 8, true, a -> a.pens),
                 new AggregateColumn("场均击伤", 9, true, a -> ExcelStyles.r2(a.avg(a.enemiesDamaged))),
+                new AggregateColumn("获取点数总计", 10, true, a -> a.earned),
+                new AggregateColumn("获取点数/场", 9, true, a -> ExcelStyles.r1(a.avg(a.earned))),
                 new AggregateColumn("用车", 30, false, Agg::tanksStr),
                 new AggregateColumn("账号ID", 12, true, a -> a.accountId)
         );
@@ -107,8 +122,9 @@ final class AggregateSheets {
         return row == null ? null : getter.apply(row);
     }
 
-    private static void detail(final ExcelStyles styles, final List<Battle> battles, final Tankopedia tp) {
-        final Sheet ws = styles.workbook().createSheet("明细");
+    private static void detail(final ExcelStyles styles, final List<Battle> battles, final Tankopedia tp,
+                              final String sheetPrefix) {
+        final Sheet ws = styles.workbook().createSheet(sheetPrefix + "明细");
         // 复用 STAT 列, 前面加场次信息, 末尾加账号
         record DCol(String title, int xlsx, String key, Function<PlayerResult, Object> get) {
         }
@@ -157,8 +173,9 @@ final class AggregateSheets {
     }
 
     private static void battleList(final ExcelStyles styles, final List<Battle> battles,
-                                   final List<String> names, final List<String[]> duplicates) {
-        final Sheet ws = styles.workbook().createSheet("战斗列表");
+                                   final List<String> names, final List<String[]> duplicates,
+                                   final String sheetPrefix) {
+        final Sheet ws = styles.workbook().createSheet(sheetPrefix + "战斗列表");
         final String[][] spec = {{"序号", "6"}, {"日期", "17"}, {"地图", "12"}, {"时长", "9"},
                 {"获胜队", "8"}, {"玩家数", "7"}, {"arenaUniqueId", "22"}, {"文件名", "40"}};
         styles.writeHeader(ws, Arrays.asList(spec));

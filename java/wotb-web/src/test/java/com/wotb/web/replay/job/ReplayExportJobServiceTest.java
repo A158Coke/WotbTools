@@ -22,6 +22,7 @@ import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -61,7 +62,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** Export Job 编排回归（plan §40–§43）：lifecycle / progress / artifact / 失败 / 取消。 */
+/** Export Job 编排回归：lifecycle / progress / artifact / 失败 / 取消。 */
 class ReplayExportJobServiceTest {
 
     private Path tmpDir;
@@ -99,7 +100,7 @@ class ReplayExportJobServiceTest {
         assertEquals(0, snap.duplicates());
         assertEquals(0, snap.failures());
 
-        // artifact 存在、MIME/文件名正确、POI 可打开、sheet 顺序正确（§42）
+        // artifact 存在、MIME/文件名正确、POI 可打开、sheet 顺序正确（玩家数据 sheet 保持首个活动表）
         final Path artifact = store.get(jobId).artifactPath();
         assertTrue(Files.exists(artifact));
         assertEquals("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", snap.contentType());
@@ -122,7 +123,7 @@ class ReplayExportJobServiceTest {
         final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
         assertEquals(ExportJob.Status.READY, snap.status());
         assertEquals(2, snap.total());
-        assertEquals(2, snap.processed(), "重复文件也推进 processed（§11）");
+        assertEquals(2, snap.processed(), "重复文件也推进 processed");
         assertEquals(1, snap.duplicates());
         assertEquals(0, snap.failures());
     }
@@ -135,7 +136,7 @@ class ReplayExportJobServiceTest {
 
         final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
         assertEquals(ExportJob.Status.FAILED, snap.status());
-        assertEquals("NO_VALID_REPLAYS", snap.errorCode(), "0 场有效不得生成空 Excel（§33）");
+        assertEquals("NO_VALID_REPLAYS", snap.errorCode(), "0 场有效不得生成空 Excel");
         assertEquals(1, snap.failures());
     }
 
@@ -196,11 +197,11 @@ class ReplayExportJobServiceTest {
                 entries++;
             }
         }
-        assertEquals(2, entries, "mode=each 每个有效回放一个 xlsx（§17）");
+        assertEquals(2, entries, "mode=each 每个有效回放一个 xlsx");
     }
 
 
-    // ---- PR #118 Blocker A：QUEUED 取消必须真正释放 executor queue slot ----
+    // ---- QUEUED 取消必须真正释放 executor queue slot ----
 
     @Test
     void cancelledQueuedJobFreesQueueCapacity() throws Exception {
@@ -420,7 +421,7 @@ class ReplayExportJobServiceTest {
         assertEquals(3, snap.processed());
     }
 
-    // ---- PR #118 Blocker 1：输入顺序必须保持上传顺序（不得 filename 字典序）----
+    // ---- 输入顺序必须保持上传顺序（不得 filename 字典序）----
 
     @Test
     void eachPreservesUploadOrderAcrossThirtyFourReplays() throws Exception {
@@ -500,7 +501,7 @@ class ReplayExportJobServiceTest {
                 "无效 replay 跳过（failures++），剩余有效 replay 仍保持原上传顺序");
     }
 
-    // ---- PR #118 Blocker 2：artifact 写失败 = 整个 job FAILED（不得误判为单场失败）----
+    // ---- artifact 写失败 = 整个 job FAILED（不得误判为单场失败）----
 
     @Test
     void eachZipWriteFailureFailsWholeJobAndRemovesPartialArtifact() throws Exception {
@@ -528,7 +529,7 @@ class ReplayExportJobServiceTest {
         assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
     }
 
-    // ---- plan §28–§30 / §61：Export 复用 Processing Job result（不重新上传 / 不 processFull）----
+    // ---- Export 复用 Processing Job result（不重新上传 / 不 processFull）----
 
     @Test
     void createFromProcessingResultAggregateReusesDatasetWithoutReprocessing() throws Exception {
@@ -549,7 +550,7 @@ class ReplayExportJobServiceTest {
                     List.<String[]>of(new String[]{"bad.wotbreplay", "REPLAY_PROCESSING_FAILED"}),
                     null, null));
             processingStore.register(pJob);
-            // Export acquire 引用（plan §52）
+            // Export acquire 引用（引用计数阻止 TTL 清理）
             processingStore.acquireForExport(pJobId);
 
             final String jobId = service.createJob(null, "aggregate", pJobId);
@@ -560,7 +561,7 @@ class ReplayExportJobServiceTest {
             assertEquals(1, snap.duplicates());
             assertEquals(1, snap.failures());
 
-            // 关键验收：facade.processFull 必须零次调用（plan §56/§61：Export 不再 processFull）
+            // 关键验收：facade.processFull 必须零次调用（Export 不再 processFull）
             verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
 
             // artifact 可打开、filename 正确
@@ -813,7 +814,7 @@ class ReplayExportJobServiceTest {
         try {
             service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
                     executor, processingStore, meterRegistry);
-            // 模拟 Processing Job 创建 dataset 前的 enrich invariant（plan §21/§27）
+            // 模拟 Processing Job 创建 dataset 前的 enrich invariant（facts 层 enrich 只由数据集创建方保证）
             final Battle b = battle("arena-1");
             b.players.getFirst().damageDealt = 5000;
             final List<Battle> battles = List.of(b);
@@ -1154,6 +1155,24 @@ class ReplayExportJobServiceTest {
         assertEquals(ExportJob.Status.READY, snap.status());
         assertEquals(0, snap.failures(), "Rating-ineligible 场次导出为标准工作簿，不得计入 failures");
         assertEquals(2, zipEntryNames(jobId).size(), "纯 CW each 必须导出 2 个 XLSX（不得丢弃 ineligible 场）");
+        // upload each 的 rated 工作簿必须经 PotentialDamage enrichment（潜在伤害 > 0，非未 enrich 默认值）
+        try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(store.get(jobId).artifactPath()))) {
+            final ZipEntry first = zip.getNextEntry();
+            assertNotNull(first);
+            try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(zip.readAllBytes()))) {
+                final Sheet players = wb.getSheet("玩家数据");
+                final Row header = players.getRow(0);
+                int potentialCol = -1;
+                for (int c = 0; c < header.getLastCellNum(); c++) {
+                    if ("潜在伤害".equals(header.getCell(c).getStringCellValue())) {
+                        potentialCol = c;
+                    }
+                }
+                assertTrue(potentialCol >= 0, "玩家数据必须含 潜在伤害 列");
+                assertTrue(players.getRow(1).getCell(potentialCol).getNumericCellValue() > 0,
+                        "upload each 的 rated 工作簿必须经 PotentialDamage enrichment（潜在伤害 > 0）");
+            }
+        }
     }
 
     @Test
