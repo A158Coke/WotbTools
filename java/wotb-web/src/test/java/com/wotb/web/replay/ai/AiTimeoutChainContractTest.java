@@ -39,8 +39,9 @@ class AiTimeoutChainContractTest {
         assertFileContains("application.yml",
                 repoPath("java", "wotb-web", "src", "main", "resources", "application.yml"),
                 "overall-deadline-sec: ${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:1100}");
-        assertFileContains("ReconstructionPage.vue",
-                repoPath("frontend", "src", "components", "ReconstructionPage.vue"),
+        // AI Review SSE 分析流已随单页 Workspace 改造从 ReconstructionPage 抽到 AiReviewPanel（PR #128）
+        assertFileContains("AiReviewPanel.vue",
+                repoPath("frontend", "src", "components", "AiReviewPanel.vue"),
                 "const AI_ANALYZE_TIMEOUT_MS = 1_100_000");
         assertFileContains("nginx.conf read",
                 repoPath("deploy", "nginx", "nginx.conf"),

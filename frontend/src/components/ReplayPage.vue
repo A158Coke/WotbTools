@@ -492,7 +492,8 @@ watch(files, (next) => {
         <AiReviewPanel :file="workspaceFile" login-view="replay" @seek="onAiSeek" />
       </div>
       <div v-show="workspaceTab === 'playback'" data-test="workspace-playback-panel">
-        <BattlePlaybackPanel :file="workspaceFile" :auto-load="true" :seek-to="playbackSeek" login-view="replay" />
+        <!-- active=进入战局回放 capability 时面板才自动加载地图；AI 复盘期间保持挂载但不发请求 -->
+        <BattlePlaybackPanel :file="workspaceFile" :active="workspaceTab === 'playback'" :seek-to="playbackSeek" login-view="replay" />
       </div>
     </template>
 

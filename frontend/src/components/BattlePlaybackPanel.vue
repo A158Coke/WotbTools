@@ -2,7 +2,9 @@
   战局回放 / 战局重建 Workspace 面板（单页 Workspace 改造）。
   从 ReconstructionPage 抽出的地图区块核心：/api/replay/map-overview 只解析回放、不调 AI；
   热力/路线/战局回放（MapOverview）。与 AI 复盘解耦——不想跑 AI 复盘时也能看图。
-  目标文件由父组件以 prop 传入；autoLoad=true（战局回放入口）时文件就绪自动加载；
+  目标文件由父组件以 prop 传入；file identity 与「是否开始加载」解耦：仅当宿主声明
+  active=true（战局回放 capability 已进入，如 ReplayPage 切到 playback tab）且该文件尚未
+  尝试加载时才自动请求 /api/replay/map-overview；独立页默认手动加载。
   seekTo 支持 AI 报告时间链接（未加载先拉取、自动展开折叠，MapOverview 收到 seek 后切回放视图）。
 -->
 <script setup>
@@ -15,8 +17,10 @@ import MapOverview from './MapOverview.vue'
 const props = defineProps({
   /** 目标回放文件（null = 尚未选择，显示空态提示）。 */
   file: { type: Object, default: null },
-  /** 文件就绪后自动加载地图（ReplayPage 战局回放入口 = true；独立页默认手动加载）。 */
-  autoLoad: { type: Boolean, default: false },
+  /** 宿主声明「战局回放 capability 已进入」：仅当 active=true 且该文件尚未尝试加载时自动请求
+   * （ReplayPage 传入 workspaceTab === 'playback'；独立 reconstruction 页默认 false = 手动加载）。
+   * 不再把「file prop 变化」当作「用户要求加载 playback」——两个状态相互独立。 */
+  active: { type: Boolean, default: false },
   /** AI 报告时间跳转（秒）；宿主切换到本面板后传入。 */
   seekTo: { type: Number, default: null },
   /** 未登录/401 时回跳视图。 */
@@ -130,11 +134,29 @@ function toggleMap() {
   mapOpen.value = !mapOpen.value
 }
 
-// 目标文件变化：重置地图；autoLoad（战局回放入口）时自动加载。
+/**
+ * 文件变化：重置地图并取消在途请求（abort + generation 失效）；是否自动加载由
+ * maybeAutoLoadMap 依 active 决定——文件变化本身不等于用户要求加载 playback。
+ */
 watch(() => props.file, () => {
   resetMap()
-  if (props.file && props.autoLoad) loadMapOverview()
+  maybeAutoLoadMap()
 }, { immediate: true })
+
+/** active 变化（进入/离开战局回放 capability）：进入时按需自动加载；离开不卸载、保留已有状态。 */
+watch(() => props.active, () => {
+  maybeAutoLoadMap()
+}, { immediate: true })
+
+/**
+ * 自动加载守卫：file 就绪 + active（宿主声明已进入战局回放）+ 该文件尚未尝试过加载（mapLoaded=false）
+ * + 无在途请求。同一文件已加载（或已尝试失败/204）后再次进入不重复请求；手动按钮仍可重试。
+ */
+function maybeAutoLoadMap() {
+  if (props.file && props.active && !mapLoaded.value && !mapLoading.value) {
+    loadMapOverview()
+  }
+}
 
 /**
  * AI 报告时间跳转：确保地图已加载（未加载先拉取）并自动展开折叠中的地图区块，
