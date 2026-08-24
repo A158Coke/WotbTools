@@ -5,6 +5,19 @@
 ## [Unreleased]
 
 ### Added
+- **Replay Core / League Rating 业务边界加固（docs/current-plan.md）**：
+  - **前端不再把 League Rating 校验失败显示成红色「文件解析失败」**：训练赛/联赛回放无法生成
+    Rating 时，结果区改为琥珀色 warning 汇总（League Rating · 可评分 X / N · N 场未生成 Rating
+    + [查看详情] 按稳定错误码分组、再展开具体文件与 arenaId，不默认铺满超长文件名）；真正解析
+    失败仍显示红色错误（不降级）。三语 locale 新增 league.rated_count / unrated_count /
+    failure_view / failure_hide。
+  - **混合批次不再整体拒绝（plan §21）**：普通 + 训练赛/联赛混传时 League Rating 不聚合
+    （league=null），全部可解析回放按普通回放语义成功返回——Processing Job READY、Preview 与
+    标准导出可用；响应新增 leagueUnavailableCode=MIXED_LEAGUE_AND_STANDARD_REPLAYS，前端显示
+    琥珀色提示。preview / Processing Job result / 同步与异步导出四条链统一。
+  - **领域边界守卫**：新增 LeagueDomainBoundaryGuardTest（§24）——LeagueFailure ≠
+    ReplayFailure、Battle ↔ Rating 按 arenaId identity 绑定（禁止数组位置）、混合批次不污染
+    Parser；前端 §23 Test 1–7 + mixed 用例落地。
 - **战斗分析页改为单页 Workspace，AI 复盘 / 战局回放原地切换且不丢数据（docs/current-plan.md）**：
   - **ReplayPage 下半部分改造为可动态切换的 Battle Workspace**：新增「解析结果 / AI 复盘 / 战局回放」三个一级能力 tab（复用全局 .tabs 视觉），v-show 保持各面板挂载——切走再切回时解析结果、AI 复盘进度/结果、地图与战局回放播放器状态全部保留；顶部「回放数据提取 / 文件选择 / 解析控制」区域不变。
   - **入口全部改原地切换**：上传区的「战局回放 / AI 复盘」快捷按钮与结果 toolbar 的 battle-level 动作不再 navigate('reconstruction') 跨视图跳转，改为原地切到对应 Workspace 面板；目标文件直接复用当前 selection 内存文件（不重新上传、不重复解析、不跨视图交接）。多文件仍需显式选择目标 replay（禁止 fallback 第一场）；AI 复盘仍不自动消耗额度（进面板后手动发起）。

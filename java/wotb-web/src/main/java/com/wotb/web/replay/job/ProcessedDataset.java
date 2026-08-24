@@ -17,12 +17,17 @@ import java.util.List;
  * <p>注意：Battle 仅含结算战绩（players + killVictims 等），不携带 reconstruction
  * 事件流（ReplayReconstruction 在处理后即可 GC）；34/50 场 dataset 的 heap 成本
  * 远低于完整重建对象（Strategy A，plan §24）。</p>
+ *
+ * <p>混合批次（普通 + 训练赛/联赛混传）：{@code leagueUnavailableCode} =
+ * {@code MIXED_LEAGUE_AND_STANDARD_REPLAYS}（League Rating 不聚合混合批次，battles 仍按
+ * 普通回放语义成功返回，plan §21）；其余场景为 null。</p>
  */
 public record ProcessedDataset(List<Battle> battles,
                                List<String> battleSourceNames,
                                List<String[]> duplicates,
                                List<String[]> failures,
-                               LeagueRatingBatch league) {
+                               LeagueRatingBatch league,
+                               String leagueUnavailableCode) {
 
     /**
      * 防御性拷贝（shallow）：READY 后消费者（Preview / Aggregate Export / Each Export）

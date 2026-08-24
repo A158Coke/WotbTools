@@ -38,6 +38,40 @@ const { visibleKeys, aggVisibleKeys, showColPicker, pickerScope,
 
 /** League Rating 模式元数据（resp.league；普通模式 null）。 */
 const leagueData = computed(() => resp.value?.league || null)
+
+// ---- League Rating 校验失败展示（plan §16/§17/§18：neutral/warning 语义 + 可展开汇总，
+//      不把 league failure 显示成红色「文件解析失败」，不默认铺满超长文件名）----
+const showLeagueFailures = ref(false)
+const expandedLeagueGroups = ref({})
+
+/** 已评分场数（battle.league != null ⟺ 该场完成 Rating；identity 绑定，不依赖数组 index）。 */
+const ratedBattleCount = computed(() =>
+  (resp.value?.battles || []).filter(b => !!b.league).length)
+
+/** League 校验失败按稳定 code 分组（保持首次出现顺序；code 文案走 api_errors 三语）。 */
+const leagueFailureGroups = computed(() => {
+  const groups = {}
+  for (const lf of leagueData.value?.failures || []) {
+    if (!groups[lf.code]) groups[lf.code] = []
+    groups[lf.code].push(lf)
+  }
+  return groups
+})
+
+function toggleLeagueFailures() {
+  showLeagueFailures.value = !showLeagueFailures.value
+}
+
+function toggleLeagueGroup(code) {
+  expandedLeagueGroups.value = { ...expandedLeagueGroups.value, [code]: !expandedLeagueGroups.value[code] }
+}
+
+/** 混合批次（普通 + 训练赛/联赛混传）League Rating 不可用提示（plan §21）。 */
+const leagueUnavailableMessage = computed(() => {
+  const code = resp.value?.leagueUnavailableCode
+  if (!code) return ''
+  return t('league.unavailable_mixed')
+})
 /**
  * 页面级 League 模式（P0：resp.league 是唯一事实源，不再由 playerColumns 是否含
  * league_rating 间接推断）。useColumns 的 leagueMode 只负责列系统（storage scope /
@@ -414,11 +448,32 @@ watch(files, (next) => {
           {{ $t('result.failures', { count: resp.failures.length }) }}
           <span v-for="(f, i) in resp.failures" :key="i">{{ f[0] }} ({{ f[1] }})</span>
         </div>
-        <div v-if="leagueData?.failures?.length" class="error">
-          {{ $t('result.failures', { count: leagueData.failures.length }) }}
-          <span v-for="(lf, i) in leagueData.failures" :key="i">
-            {{ lf.fileName }} ({{ apiErrorLabel(t, te, { code: lf.code }) }})<template v-if="lf.arenaId"> · {{ lf.arenaId }}</template>
-          </span>
+        <div v-if="leagueUnavailableMessage" class="warn league-unavailable" data-testid="league-unavailable">
+          {{ leagueUnavailableMessage }}
+        </div>
+        <div v-if="leagueData?.failures?.length" class="warn league-failure-summary" data-testid="league-failure-summary">
+          <div class="league-failure-head">
+            <span class="lf-title">{{ $t('league.title') }}</span>
+            <span class="lf-rated">{{ $t('league.rated_count', { rated: ratedBattleCount, total: resp.battles.length }) }}</span>
+            <span class="lf-unrated">{{ $t('league.unrated_count', { count: resp.battles.length - ratedBattleCount }) }}</span>
+            <button class="lf-toggle" data-testid="league-failure-toggle" :aria-expanded="showLeagueFailures"
+                    @click="toggleLeagueFailures">
+              {{ showLeagueFailures ? $t('league.failure_hide') : $t('league.failure_view') }}
+            </button>
+          </div>
+          <div v-if="showLeagueFailures" class="league-failure-detail" data-testid="league-failure-detail">
+            <div v-for="(group, code) in leagueFailureGroups" :key="code" class="league-failure-group">
+              <button class="lf-group-head" data-testid="league-failure-group" :aria-expanded="!!expandedLeagueGroups[code]"
+                      @click="toggleLeagueGroup(code)">
+                {{ apiErrorLabel(t, te, { code }) }} · {{ group.length }}
+              </button>
+              <ul v-if="expandedLeagueGroups[code]" class="lf-group-files" data-testid="league-failure-files">
+                <li v-for="lf in group" :key="lf.fileName">
+                  {{ lf.fileName }}<template v-if="lf.arenaId"> · {{ lf.arenaId }}</template>
+                </li>
+              </ul>
+            </div>
+          </div>
         </div>
 
         <div class="restoolbar">
@@ -535,6 +590,54 @@ watch(files, (next) => {
 }
 .battle-action.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-text); }
 .replay-empty-note { padding: 18px 4px; color: var(--text-muted); font-size: .85rem; }
+/* League Rating 校验失败汇总（plan §17/§18）：warning 语义，可展开，不铺满超长文件名 */
+.league-failure-summary { margin-top: 10px; padding: 10px 14px; }
+.league-failure-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: .85rem;
+}
+.lf-title { font-weight: 700; color: var(--warn-text); }
+.lf-rated, .lf-unrated { font-variant-numeric: tabular-nums; }
+.lf-unrated { color: var(--warn-text); }
+.lf-toggle {
+  margin-left: auto;
+  padding: 3px 10px;
+  border: 1px solid rgba(224,160,45,.5);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--warn-text);
+  cursor: pointer;
+  font-size: .78rem;
+  font-family: inherit;
+}
+.lf-toggle:hover { background: rgba(224,160,45,.16); }
+.league-failure-detail { margin-top: 8px; border-top: 1px solid rgba(224,160,45,.25); padding-top: 8px; }
+.league-failure-group { margin-bottom: 4px; }
+.lf-group-head {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-label);
+  cursor: pointer;
+  font-size: .8rem;
+  font-family: inherit;
+}
+.lf-group-head:hover { background: rgba(224,160,45,.14); color: var(--warn-text); }
+.lf-group-files {
+  margin: 2px 0 6px;
+  padding: 2px 8px 2px 22px;
+  color: var(--text-muted);
+  font-size: .78rem;
+  word-break: break-word;
+}
+.league-unavailable { margin-top: 10px; padding: 8px 14px; font-size: .85rem; }
 .replay-export-root.replay-export-light {
   --exp-bg: #ffffff;
   --exp-card-bg: #f8f9fa;

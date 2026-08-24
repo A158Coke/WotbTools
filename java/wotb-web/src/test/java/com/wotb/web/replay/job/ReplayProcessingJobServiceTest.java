@@ -221,7 +221,9 @@ class ReplayProcessingJobServiceTest {
     }
 
     @Test
-    void mixedLeagueAndStandardFailsWithStableErrorCode() throws Exception {
+    void mixedLeagueAndStandardJobReadyKeepsAllBattles() throws Exception {
+        // plan §21/Case I：混合批次 Processing Job 必须 READY（禁止 mixed 污染 Processing Job）；
+        // League Rating 不聚合，battles 按普通回放语义成功返回，dataset 携带 leagueUnavailableCode。
         when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
             final Source s = inv.getArgument(0);
             final Battle b = new Battle();
@@ -235,9 +237,16 @@ class ReplayProcessingJobServiceTest {
                 file("t-training.wotbreplay"), file("r-random.wotbreplay")});
 
         final ReplayProcessingJob.Snapshot snap = awaitTerminal(jobId, 10_000);
-        assertEquals(ReplayProcessingJob.Status.FAILED, snap.status());
-        assertEquals("MIXED_LEAGUE_AND_STANDARD_REPLAYS", snap.errorCode(),
-                "混合批次必须整体拒绝并返回稳定错误码");
+        assertEquals(ReplayProcessingJob.Status.READY, snap.status(),
+                "混合批次必须 READY（§21：禁止 mixed League eligibility 使 Processing Job FAILED）");
+        assertEquals(0, snap.failures(), "混合批次无解析失败时 failures 必须为 0");
+        assertEquals(2, snap.valid(), "混合批次两个已解析文件都计有效");
+        final PreviewResponse r = service.result(jobId);
+        assertNotNull(r, "混合批次 result 必须可用（preview 可展示全部 battles）");
+        assertEquals("MIXED_LEAGUE_AND_STANDARD_REPLAYS", r.leagueUnavailableCode());
+        assertEquals(2, r.battles().size());
+        assertNull(r.league(), "混合批次不产生 League Rating 元数据");
+        assertTrue(r.failures().isEmpty());
     }
 
     @Test

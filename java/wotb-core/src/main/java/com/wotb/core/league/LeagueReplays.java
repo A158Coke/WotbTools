@@ -20,8 +20,9 @@ import java.util.function.Consumer;
  * parsing validity != league rating eligibility），失败以 {@link LeagueFailure} 稳定错误码返回。</p>
  *
  * <p>普通模式（{@code STANDARD_REPLAY}）复用 {@link Replays} 既有 arenaId 去重语义，
- * 普通回放契约零回归；混合模式（{@code MIXED_UNSUPPORTED}）由调用方整体拒绝（HTTP 400
- * {@code MIXED_LEAGUE_AND_STANDARD_REPLAYS}）。</p>
+ * 普通回放契约零回归；混合模式（{@code MIXED_UNSUPPORTED}）同普通模式返回全部可解析
+ * battles（League Rating 不支持混合批次聚合，League Analysis unavailable 由调用方提示，
+ * plan §21：禁止 mixed League eligibility 污染 Replay Parser）。</p>
  *
  * <p>league 去重范围仅限当前上传批次（plan §4）：同一 arenaId 多份回放关键事实一致 →
  * 只计一份、其余进 duplicates；不一致 → 该场全部副本拒绝评分（{@code CONFLICTING_REPLAYS_FOR_ARENA}）。
@@ -69,15 +70,13 @@ public final class LeagueReplays {
                 .filter(e -> !e.failed())
                 .map(Replays.ParsedEntry::battle).toList());
         if (mode == LeagueRatingMode.MIXED_UNSUPPORTED) {
-            // 混合批次：整个请求拒绝（调用方抛 400 MIXED_LEAGUE_AND_STANDARD_REPLAYS），
-            // 不返回部分预览；progress 按文件回调 FAILURE（推进 processed）。
-            for (final Replays.ParsedEntry e : entries) {
-                if (progress != null) {
-                    progress.onProcessed(e.source(), Replays.Outcome.FAILURE);
-                }
-            }
-            return new LeagueCollectResult(mode, List.of(), List.of(), List.of(),
-                    failuresFrom(entries), List.of(), null);
+            // 混合批次（普通 + 训练赛/联赛混传）：League Rating 不支持混合批次聚合，
+            // 但<b>不得污染 Replay Parser</b>（plan §21 / Case I）——所有可解析回放仍按
+            // 普通回放语义成功返回（标准 arenaId 去重，progress 真实 outcome），League
+            // Analysis unavailable 由调用方以 leagueUnavailableCode 提示，不再整体拒绝。
+            final com.wotb.core.model.Collected c = Replays.dedupe(entries, log, progress);
+            return new LeagueCollectResult(mode, c.battles, c.battleSourceNames, c.duplicates,
+                    c.failures, List.of(), null);
         }
         if (mode == LeagueRatingMode.STANDARD_REPLAY) {
             final com.wotb.core.model.Collected c = Replays.dedupe(entries, log, progress);
