@@ -108,8 +108,8 @@ function onClick(event) {
   margin: .6em 0;
   padding: 6px 12px;
   border-left: 3px solid var(--accent);
-  background: var(--bg-card2);
-  color: var(--text-label);
+  background: rgba(10, 15, 18, .6);
+  color: #c9c5bb;
   font-size: .85rem;
 }
 .markdown-content :deep(code) {
@@ -117,15 +117,15 @@ function onClick(event) {
   font-size: .82rem;
   padding: 2px 5px;
   border-radius: 4px;
-  background: var(--bg-card2);
-  color: var(--text-code);
+  background: rgba(10, 15, 18, .7);
+  color: #e6b45c;
 }
 .markdown-content :deep(pre) {
   margin: .6em 0;
   padding: 10px 12px;
   border-radius: 6px;
-  background: var(--bg-card2);
-  border: 1px solid var(--border-light);
+  background: rgba(9, 14, 17, .8);
+  border: 1px solid rgba(66, 77, 84, .45);
   overflow-x: auto;
 }
 .markdown-content :deep(pre code) {
@@ -142,17 +142,18 @@ function onClick(event) {
 .markdown-content :deep(th),
 .markdown-content :deep(td) {
   padding: 5px 8px;
-  border: 1px solid var(--border);
+  border: 1px solid #303a40;
   text-align: left;
 }
 .markdown-content :deep(th) {
-  background: var(--bg-card2);
-  color: var(--text-heading);
+  background: #171e22;
+  color: #f2ede3;
   font-weight: 700;
 }
+.markdown-content :deep(td) { color: #d8d5cd; }
 .markdown-content :deep(hr) {
   border: none;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid rgba(66, 77, 84, .45);
   margin: 1em 0;
 }
 .markdown-content :deep(a) {
