@@ -80,7 +80,7 @@
   --focus-ring: rgba(217, 154, 37, .34);
 
   /* V2 Layout tokens */
-  --topbar-h: 52px;
+  --topbar-h: 60px;
   --layout-gutter: 24px;
   --content-max: 1280px;
   --wide-max: 1600px;
