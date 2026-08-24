@@ -235,6 +235,29 @@ class ReplayServiceLeagueTest {
     }
 
     @Test
+    void leaguePreviewCarriesBaseReplayAggregateAlongsideLeagueSummary() throws Exception {
+        // plan §5/§6：League Rating Summary 是附加分析，不替代基础 Replay Aggregate。
+        // 多场 League 批次的 resp.aggregate 必须包含标准基础汇总（0 场可评分 ≠ Replay 没数据）；
+        // 列边界不变（aggregateColumns 仍为 League 变体，不含旧三指标，PR #131）。
+        final Battle good = LeagueTestReplays.sevenVsSeven(1);
+        good.arenaId = "111";
+        good.arenaBonusType = 2;
+        final Battle bad = LeagueTestReplays.sevenVsSeven(2);
+        bad.arenaId = "222";
+        bad.arenaBonusType = 2;
+        bad.rosterComplete = false;
+        final ReplayService service = perFileService(List.of(good, bad));
+
+        final PreviewResponse r = service.preview(new MockMultipartFile[]{
+                file("g.wotbreplay", new byte[]{1}), file("b.wotbreplay", new byte[]{2})});
+        assertEquals("LEAGUE_RATING", r.league().mode());
+        assertFalse(r.aggregate().isEmpty(), "League 模式也必须输出基础 Replay Aggregate（跨场汇总）");
+        assertFalse(r.league().playerSummaries().isEmpty(), "League 汇总同时存在（不是二选一）");
+        assertFalse(r.aggregateColumns().stream().anyMatch(c -> c.key().equals("contribution")),
+                "基础汇总列仍是 League 变体（PR #131 列边界不变）");
+    }
+
+    @Test
     void singleIneligibleLeagueExportFallsBackToStandardWorkbook() throws Exception {
         final Battle bad = LeagueTestReplays.sevenVsSeven(1);
         bad.arenaId = "111";

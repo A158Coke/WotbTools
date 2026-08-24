@@ -2,6 +2,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import BattleTable from './BattleTable.vue'
 
 vi.mock('vue-i18n', () => ({
@@ -168,6 +169,22 @@ describe('BattleTable League Rating', () => {
     expect(nicknameTh.classes()).toContain('sticky-col')
     expect(ratingTh.classes()).toContain('sticky-col')
     expect(damageTh.classes()).not.toContain('sticky-col')
+  })
+
+  it('second sticky column carries measured left offset and rows keep team sticky classes (layout contract, plan §21)', async () => {
+    const wrapper = mountLeague(makeLeagueBattle())
+    // measureSticky 在 onMounted 的 nextTick 回调里写 stickyLeft；需要再 flush 一次让 th 重渲染
+    await nextTick()
+    await nextTick()
+    const ratingTh = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
+    // 结构契约：第二固定列必须带测量出的像素 left 偏移（happy-dom 无真实布局，
+    // 不断言具体数值，只断言「偏移已按测量结果写入 inline style」）
+    expect(ratingTh.attributes('style')).toMatch(/left:\s*\d+px/)
+    // 两队的 sticky 玩家/Rating cell 必须带 team semantic class（plan §18：不丢队色）
+    const stickyT1 = wrapper.findAll('tbody td').filter(td => td.classes().includes('sticky-t1'))
+    const stickyT2 = wrapper.findAll('tbody td').filter(td => td.classes().includes('sticky-t2'))
+    expect(stickyT1.length).toBeGreaterThan(0)
+    expect(stickyT2.length).toBeGreaterThan(0)
   })
 
   it('emits update-team-name on team name input', async () => {
