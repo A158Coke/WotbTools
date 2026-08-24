@@ -1,4 +1,6 @@
 FROM node:24-alpine AS build
+# Build identity：CI 经 build-arg 注入 git commit（Docker 上下文无 .git 无法自行 rev-parse）。
+ARG BUILD_COMMIT=unknown
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm config set registry https://registry.npmmirror.com && npm ci
@@ -7,6 +9,7 @@ COPY common/map_names.json /common/map_names.json
 # 隐藏 QA 页（?view=vehicle-models）动态 import Tankopedia 车辆库（仅 tier10）
 COPY common/tankopedia-tier10.json /common/tankopedia-tier10.json
 COPY common/assets /common/assets
+ENV BUILD_COMMIT=${BUILD_COMMIT}
 RUN npm run build
 
 FROM nginx:alpine

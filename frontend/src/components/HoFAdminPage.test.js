@@ -178,6 +178,17 @@ describe('HoFAdminPage', () => {
     expect(hofAdminApi.hofAdminVehicleOptions).toHaveBeenCalled()
   })
 
+  it('renders the three admin tabs (records / audit / hundred) for authorized users', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    const tabs = wrapper.findAll('.hof-admin-tabs button')
+    // 防未来 refactor 丢失审核入口：三 Tab 必须存在且顺序固定
+    expect(tabs.map(button => button.text())).toEqual([
+      'hofAdmin.recordsTab', 'hofAdmin.auditTab', 'hundredAdmin.tab'
+    ])
+    expect(tabs[0].classes()).toContain('active') // 默认停在 records
+  })
+
   it('uses optional readable vehicle filters as real search conditions and intersects the selected tank', async () => {
     hofAdminApi.hofAdminVehicleOptions.mockResolvedValue([
       { tankId: 385, tankName: 'Progetto 65', nation: 'EUROPE', type: 'MEDIUM_TANK', tier: 10 },
