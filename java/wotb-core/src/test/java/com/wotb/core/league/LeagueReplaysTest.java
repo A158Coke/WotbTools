@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -19,6 +20,11 @@ class LeagueReplaysTest {
 
     private static Source source(final String name, final Battle battle, final int arenaBonusType) throws Exception {
         return new Source(name, LeagueTestBattles.replayBytes(battle, arenaBonusType));
+    }
+
+    private static Source source(final String name, final Battle battle, final int arenaBonusType,
+                                 final List<Long> extraRosterAccounts) throws Exception {
+        return new Source(name, LeagueTestBattles.replayBytes(battle, arenaBonusType, extraRosterAccounts));
     }
 
     private static LeagueReplays.LeagueCollectResult collect(final List<Source> sources) {
@@ -125,6 +131,39 @@ class LeagueReplaysTest {
         assertEquals(2, r.leagueFailures().size());
         assertTrue(r.leagueFailures().stream()
                 .allMatch(f -> f.code().equals(LeagueFailure.Code.CONFLICTING_REPLAYS_FOR_ARENA)));
+    }
+
+    @Test
+    void trainingRosterWithExtraNonCombatantStillRated() throws Exception {
+        // probe shape（20260725_1535 训练房）：名册 #201=15（14 combatant + 1 extra non-combatant），
+        // 结算 #301=14。extra 只写名册不写结算 → parser rosterComplete=true → Rating 通过
+        // （ActualCombatantSet == #301；名册 extra ≠ 缺失的结算队员）。
+        final Battle battle = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        battle.arenaId = "111";
+        final LeagueReplays.LeagueCollectResult r = collect(List.of(
+                source("a.wotbreplay", battle, 2, List.of(3117047709L))));
+        assertEquals(LeagueRatingMode.LEAGUE_RATING, r.mode());
+        assertEquals(1, r.battles().size());
+        assertEquals(1, r.leagueBatch().battleResults().size());
+        assertTrue(r.leagueBatch().battleResults().getFirst().rated());
+        assertTrue(r.leagueFailures().isEmpty(), "名册 extra non-combatant 不得导致 ROSTER_INCOMPLETE");
+    }
+
+    @Test
+    void multipleValidLeagueReplaysProduceSummaries() throws Exception {
+        // 真实批量（plan §17）：N>=2 份合法 League 回放 → playerSummaries / teamSummaries 非空
+        final Battle t1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        t1.arenaId = "111";
+        final Battle t2 = LeagueTestBattles.battle(2, LeagueTestBattles.defaultSevenVsSeven());
+        t2.arenaId = "222";
+        final LeagueReplays.LeagueCollectResult r = collect(List.of(
+                source("t1.wotbreplay", t1, 2, List.of(999_999L)),
+                source("t2.wotbreplay", t2, 4, List.of(888_888L))));
+        assertEquals(LeagueRatingMode.LEAGUE_RATING, r.mode());
+        assertEquals(2, r.leagueBatch().battleResults().size());
+        assertTrue(r.leagueFailures().isEmpty());
+        assertFalse(r.leagueBatch().playerSummaries().isEmpty(), "多场合法 CW playerSummaries 必须非空");
+        assertFalse(r.leagueBatch().teamSummaries().isEmpty(), "多场合法 CW teamSummaries 必须非空");
     }
 
     @Test

@@ -251,11 +251,24 @@ class ReplayParserTest {
     }
 
     @Test
-    void rosterCompleteFalseWhenRosterAndResultsAccountsMismatch() throws IOException {
-        // 名册(#201) 有 2 人，战绩(#301) 只有 1 人（其余结算记录缺失）
+    void rosterCompleteTrueWhenRosterHasExtraNonCombatant() throws IOException {
+        // 真实训练赛名册 #201 可含 non-combatant extra（probe：20260725_1535 训练房
+        // #201=15/#301=14，extra 账号 3117047709 观战者；ActualCombatantSet == #301）。
+        // 结算 #301 全部来自名册且队伍一致 → 阵容完整，extra 不导致 ROSTER_INCOMPLETE。
         final byte[] root = rosterResultsRoot(
+                List.of(new int[]{1001, 1}, new int[]{1002, 1}, new int[]{1003, 2}),
                 List.of(new int[]{1001, 1}, new int[]{1002, 1}),
+                1);
+        final Battle battle = ReplayParser.parse(zip(Map.of("battle_results.dat", pickle(root))));
+        assertEquals(Boolean.TRUE, battle.rosterComplete);
+    }
+
+    @Test
+    void rosterCompleteFalseWhenResultAccountMissingFromRoster() throws IOException {
+        // 幽灵结算：战绩 #301 有账号不在名册 #201 中 → 结算身份无法确认，阵容不完整
+        final byte[] root = rosterResultsRoot(
                 List.of(new int[]{1001, 1}),
+                List.of(new int[]{1001, 1}, new int[]{2001, 2}),
                 1);
         final Battle battle = ReplayParser.parse(zip(Map.of("battle_results.dat", pickle(root))));
         assertEquals(Boolean.FALSE, battle.rosterComplete);

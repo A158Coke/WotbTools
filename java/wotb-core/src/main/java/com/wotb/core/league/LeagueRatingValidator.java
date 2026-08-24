@@ -92,7 +92,9 @@ public final class LeagueRatingValidator {
             failures.add(new LeagueFailure("", arena, LeagueFailure.Code.MISSING_TANK));
         }
 
-        // 5. rosterComplete：名册与结算账号集合一致且名册队伍与结算队伍无冲突
+        // 5. rosterComplete：结算账号全部来自名册（#301 ⊆ #201，无幽灵结算）且名册队伍与
+        //    结算队伍无冲突；名册 #201 可含 non-combatant extra（观战者等，protocol.md PROVEN），
+        //    不要求名册全集合 == 结算全集合
         if (!Boolean.TRUE.equals(battle.rosterComplete)) {
             failures.add(new LeagueFailure("", arena, LeagueFailure.Code.ROSTER_INCOMPLETE));
         }

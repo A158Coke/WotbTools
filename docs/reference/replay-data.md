@@ -301,7 +301,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 |--------|-----------------|--------------|----------------|---------------|------------------------------|
 | **#1** | `R_NICK = 1`    | bytes(UTF-8) | `"田_..."`      | **昵称**        | 是 → `PlayerResult.nickname`  |
 | **#2** | `R_PLATOON = 2` | varint       | `281447127`    | **组队 ID**     | 是 → `PlayerResult.platoonId` |
-| **#3** | —               | varint       | `1` / `2`      | **队伍**（名册来源）  | 是 → 结算阵容完整性校验（与战绩 #301→#2→#102 对比，见 `Battle.rosterComplete`） |
+| **#3** | —               | varint       | `1` / `2`      | **队伍**（名册来源）  | 是 → 结算阵容完整性校验（与战绩 #301→#2→#102 对比；**#201 可含 non-combatant extra**，不要求全集合一致，见 `Battle.rosterComplete` 与 protocol.md「SPECTATOR / NON-COMBATANT ENTITY」） |
 | **#4** | —               | varint       | `380362`       | 未知 — 车辆相关 ID？ | 否                            |
 | **#5** | `R_CLAN = 5`    | bytes(UTF-8) | `"猫猫乐坏"`       | **战队标签**      | 是 → `PlayerResult.clan`      |
 | **#6** | —               | bytes(2)     | `\x00\x00`     | 未知（2 字节零）     | 否                            |
