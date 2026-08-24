@@ -27,8 +27,11 @@
   background: #151d21 !important;
   color: #d8d5cd !important;
 }
-.hof-admin .hof-admin-filters,
-.hof-admin .hof-admin-tabs {
+/* The HoF admin tab strip layout (sticky / top / z-index) is canonical in
+ * showcase-rankings.css and MUST NOT be overridden here: this file loads last,
+ * so a position:relative override keeps rankings' top offset and slides the
+ * tab strip under the filters (HoF admin "百场审核" tab invisibility regression). */
+.hof-admin .hof-admin-filters {
   position: relative;
   z-index: 5;
 }

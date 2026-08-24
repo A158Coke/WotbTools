@@ -58,8 +58,23 @@
   `blitzkit-references.mjs --emit-portraits` 可重复生成入口。
 
 ### Fixed
-- **生产「名人堂管理」页顶部三 Tab（记录 / 操作日志 / 百场审核）在重新部署后仍不可见（缓存根因修复）**：
-  - 根因：`deploy/nginx/nginx.conf` 的 `location /` 未设置任何 Cache-Control——浏览器把旧 index.html 及其引用的旧 hash bundle 当作可缓存资源，部署新镜像后仍加载旧 JS，导致 `?view=hof-admin` 显示旧版页面（无 `.hof-admin-tabs`），百场审核入口丢失；构建/部署产物经实证无问题（生产运行 `sha-305d7ac3` = 含百场审核源码的 main HEAD）。
+- **生产「名人堂管理」页顶部三 Tab（记录 / 操作日志 / 百场审核）不可见——真正根因是 CSS cascade，不是浏览器缓存**：
+  - 真正根因：`frontend/src/styles/showcase-regressions.css` 在 `main.js` 中最后加载，把
+    `.hof-admin-tabs` 从 canonical（`showcase-rankings.css`）的 `position: sticky; top: 66px; z-index: 22`
+    覆盖为 `position: relative; z-index: 5`，但 rankings.css 的 `top: 66px` 偏移残留——Tab 被下移
+    恰好落入 `.hof-admin-filters`（同为 relative + z-index 5）区域，后绘制的 filters 把 Tab 盖住；
+    移动端 `position: static` 同样被该 override 破坏。DOM 测试全绿但生产 UI 不可见即由此而来。
+  - 修复：从 `showcase-regressions.css` 的 override 中彻底移除 `.hof-admin-tabs`（只保留
+    `.hof-admin-filters`），让 Tab 恢复 canonical 的 sticky 布局——Desktop sticky top 66px /
+    Tablet sticky top 64px / Mobile static；不新增第二套 Tab 定义、不加 `!important` 堆叠。
+  - 回归测试：新增 `frontend/src/styles/hof-admin-tabs-css.test.js` CSS source-contract 测试——
+    断言 rankings.css 保持 canonical sticky/偏移规则、regressions.css（最后加载）不再引用 tab
+    strip、main.js 加载顺序不变；DOM 测试（三 Tab 存在且可点击）原样保留。
+  - 勘误：此前 PR #130 将本问题归因于浏览器缓存并加 nginx Cache-Control 与 build identity——
+    缓存策略与构建版本标识本身仍保留（属基础设施加固），但本问题的根因是上述 CSS cascade，
+    并非缓存。部署新版本后 Tab 不可见的现象系样式覆盖所致，与旧 bundle 缓存无关。
+- **生产「名人堂管理」页顶部三 Tab 缓存根因修复（PR #130，见上勘误：非本问题真正根因）**：
+  - 根因（原记录，已勘误）：`deploy/nginx/nginx.conf` 的 `location /` 未设置任何 Cache-Control——浏览器把旧 index.html 及其引用的旧 hash bundle 当作可缓存资源，部署新镜像后仍加载旧 JS，导致 `?view=hof-admin` 显示旧版页面（无 `.hof-admin-tabs`），百场审核入口丢失；构建/部署产物经实证无问题（生产运行 `sha-305d7ac3` = 含百场审核源码的 main HEAD）。
   - 修复：SPA 缓存策略——`location = /index.html` 加 `Cache-Control: no-cache, no-store, must-revalidate`（每次重新验证，新 bundle hash 部署后立即生效）；`location /assets/`（Vite 内容 hash 产物）加 `Cache-Control: public, max-age=31536000, immutable`；静态资源 404 不再 fallback 到 index.html（`try_files $uri =404`）。
   - **Build identity（防再猜版本）**：`vite.config.js` 注入 `__BUILD_COMMIT__` / `__BUILD_TIME__`（git rev-parse --short + ISO time，无 git 时降级 unknown），build 时生成 `dist/version.json`，`main.js` 启动 console 输出 `[build] commit=... time=...`——生产页面异常时可立即核对实际 bundle 版本。
   - **回归测试**：`HoFAdminPage.test.js` 新增显式断言——authorized 用户必须渲染三 Tab（`hofAdmin.recordsTab / hofAdmin.auditTab / hundredAdmin.tab` 顺序固定），防未来 UI refactor 再次丢失审核入口。
