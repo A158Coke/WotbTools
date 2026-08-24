@@ -233,7 +233,7 @@ Processing/Export task notification 必须低于 Modal stacking level；移动�
 
 ### AI Review / Battle Playback
 
-`ReconstructionPage` 登录门控并编排 AI review、MapOverview、BattlePlayback。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，由 BlitzKit 确定性生成，production 不访问 BlitzKit。
+主入口在 `?view=replay` 的 Battle Workspace：`ReplayPage` 下半部分原地切换「解析结果 / AI 复盘 / 战局回放」三个面板（`v-show` 保持状态，不跨视图跳转）。`AiReviewPanel`（SSE 分析流 + 结果）与 `BattlePlaybackPanel`（`/api/replay/map-overview` + MapOverview）是单一事实源实现；独立深链 `?view=reconstruction` 由 `ReconstructionPage` 登录门控后组合同一对面板。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，由 BlitzKit 确定性生成，production 不访问 BlitzKit。
 
 地图鸟瞰/战局回放契约见 `docs/features/battle-playback.md`；AI 双 Call、Team Review、Evidence/Validator 契约见 `docs/architecture/ai-review.md` 与 `docs/features/team-ai-review.md`。
 

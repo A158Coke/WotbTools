@@ -76,9 +76,8 @@ function navigate(view) {
   else url.searchParams.set('view', view)
   window.history.replaceState({}, '', url.toString())
 }
-// 子页面（ReplayPage Battle context）注入 navigate，实现 SPA 内跨视图跳转（战局回放/AI 复盘）；
-// 同时注入登录态与 login：Battle action 需登录，ReplayPage 在未登录时明确提示而非静默跳转。
-provide('navigate', navigate)
+// 注入登录态与 login：Battle action（战局回放 / AI 复盘）需登录，ReplayPage / FileUploader
+// 在未登录时明确提示而非静默跳转（单页 Workspace 改造后不再需要跨视图 navigate 注入）。
 provide('isAuthenticated', isAuthenticated)
 provide('login', login)
 

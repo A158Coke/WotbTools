@@ -5,6 +5,15 @@
 ## [Unreleased]
 
 ### Added
+- **战斗分析页改为单页 Workspace，AI 复盘 / 战局回放原地切换且不丢数据（docs/current-plan.md）**：
+  - **ReplayPage 下半部分改造为可动态切换的 Battle Workspace**：新增「解析结果 / AI 复盘 / 战局回放」三个一级能力 tab（复用全局 .tabs 视觉），v-show 保持各面板挂载——切走再切回时解析结果、AI 复盘进度/结果、地图与战局回放播放器状态全部保留；顶部「回放数据提取 / 文件选择 / 解析控制」区域不变。
+  - **入口全部改原地切换**：上传区的「战局回放 / AI 复盘」快捷按钮与结果 toolbar 的 battle-level 动作不再 navigate('reconstruction') 跨视图跳转，改为原地切到对应 Workspace 面板；目标文件直接复用当前 selection 内存文件（不重新上传、不重复解析、不跨视图交接）。多文件仍需显式选择目标 replay（禁止 fallback 第一场）；AI 复盘仍不自动消耗额度（进面板后手动发起）。
+  - **逻辑拆分单一事实源**：从 ReconstructionPage 抽出 AiReviewPanel（SSE 分析流 call1/evidence/call2/autopsy + 流式进度 + AnalysisResultPanel）与 BattlePlaybackPanel（/api/replay/map-overview 地图区块 + MapOverview + AI seek 联动），ReconstructionPage 改为组合两者并保留独立深链入口（?view=reconstruction 与登录回跳不变）；独立页的「AI 战术复盘」发起按钮随拆分移入 AiReviewPanel，ReplayInputPanel 精简为纯文件选择面板。面板的登录兜底走 loginView prop（Workspace=replay / 独立页=reconstruction）。
+  - **移除跨视图文件交接**：utils/replayTransfer.js（setPending/take/peek）已无调用方，删除；ReconstructionPage 移除 adoptPendingReplay / onActivated 接管逻辑。
+  - **AI 报告时间链接**：原地切到战局回放面板并自动加载/展开地图后 seek（未加载先拉取、折叠自动展开、MapOverview 不被重建），独立页行为不变（滚动定位到地图区块）。
+  - **三语 locale**：新增 workspace.tab_results / results_hint / ai_empty / playback_empty（zh/en/ru 同步）。
+  - **测试**：ReplayPage 新增 Workspace 用例（tab 默认值 / 直接入口切换 / 切走切回状态保持 / 解析预览切回结果），v-show 可见性按 element.style.display 断言（happy-dom 的 getComputedStyle 不反映 inline style，与项目既有 v-show 测试一致）；FileUploader 直接入口改断言 workspace-action emit；ReconstructionPage 删除跨视图接管用例（特性移除）。
+
 - **百场名人堂 WG 官方 API 自动认证链路**：保留原截图 + 5 回放人工审核端点，新增仅限 `wotb_verified` ASIA/EU/NA 身份的 JSON 提交链路。后端以固定白名单 host 调用 WG `account/info` + `tanks/stats`，冻结账号总场次、单车总伤害/场次与计算场均；账号总场次至少 5000、目标 Tier X 至少 100 场，MANUAL 使用原申报成绩、WARGAMING_API 使用官方快照。官方精确场均 `<=3900` 原子写入 CURRENT，`>3900` 自动创建无文件 PENDING 供管理员审核；审批端点不接收成绩数据，管理员只能通过、拒绝或删除，不能改写任何排名值。WG key 只从运行时 `WG_APPLICATION_ID` 注入 backend，端点受登录与 nginx 限流保护，失败零落库并引导原人工链路。
 - **review-with-docs 集成 Alibaba OpenCodeReview（OCR）delegate mode（docs/current-plan.md）**：
   `review-with-docs` 重构为三层审查引擎——Layer A（Requirement/Plan Auditor，主代理自审 plan/requirements/acceptance criteria 完成度，OCR 无 finding 不代表性完成）、Layer B（OpenCodeReview Code Auditor，`ocr delegate preview/rule` 确定性文件筛选+规则解析，推理由主代理 DeepSeek 完成，不维护第二套 LLM 配置）、Layer C（Review Reconciler，去重/验证/重定级，BLOCKER/MAJOR/MINOR + Blocker count=0 完成条件不变）。外部调用方式不变（仍 `review-with-docs`）、current-plan 流程不变、blocker=0 语义不变；新增 `.opencodereview/rule.json`（WotBTools-aware 首版少量规则：Java/Spring、Vue 前端 + replay invariant、Keycloak SPI、CI/deploy）；验证 Case 1–6 并明确 deterministic/agent-level 边界（scripts/ocr-verify/）：deterministic tests（verify-ocr.ps1，可重复、无 LLM）覆盖 merge-base 多 commit 范围（Case 5）、项目规则命中（Case 1 确定性部分）、no-diff reviewable=0（Case 6）、OCR 失败非零退出码（Case 4 确定性部分）；agent-level scenarios（主代理按 skill 执行并记录）覆盖 NPE bug 完整检出闭环（Case 1）、requirement 遗漏 MISSING/BLOCKER（Case 2）、OCR false positive 拒绝/降级（Case 3）、OCR failure 的 plan audit 继续 + review incomplete 处理（Case 4）。OCR 固定版本 `@alibaba-group/open-code-review@1.9.10`（Apache-2.0）。未新增 GitHub OCR Action、未增加用户人工步骤。

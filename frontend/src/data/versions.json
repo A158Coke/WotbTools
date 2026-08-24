@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.21",
+    "date": "2026-08-24",
+    "tag": "chg",
+    "zh": "战局分析页面不再跳页：解析结果、AI 复盘、战局回放改为同一页面内原地切换，AI 复盘进度与结果、战局回放画面在切换后原样保留，无需重新上传或重新解析回放。",
+    "en": "Battle Analysis no longer leaves the page: Parse Results, AI Review, and Battle Playback now switch in place within the same page. AI progress/results and the playback view are kept when you switch away and back — no re-upload or re-parse required.",
+    "ru": "Анализ боя больше не переходит на другие страницы: результаты разбора, AI-разбор и повтор боя переключаются прямо на месте. Прогресс и результаты AI-разбора, а также вид повтора сохраняются при переключении туда и обратно — повторно загружать и разбирать реплей не нужно."
+  },
+  {
     "v": "2.12.20",
     "date": "2026-08-24",
     "tag": "chg",

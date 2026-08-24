@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n'
 import { mapLabel, displayName } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { replayAggregatePlayerCount } from '../utils/replayView.js'
-import { setPendingReplayFiles } from '../utils/replayTransfer.js'
 import { useReplay } from '../composables/useReplay.js'
 import { useColumns } from '../composables/useColumns.js'
 import {
@@ -21,6 +20,8 @@ import BattleTable from './BattleTable.vue'
 import LeagueSummaryTable from './LeagueSummaryTable.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import ReplayTaskCard from './ReplayTaskCard.vue'
+import AiReviewPanel from './AiReviewPanel.vue'
+import BattlePlaybackPanel from './BattlePlaybackPanel.vue'
 
 const { locale, t, te } = useI18n()
 const replay = useReplay()
@@ -281,8 +282,8 @@ async function downloadResultPng() {
 
 
 /** Battle context actions（plan §13/§21）：具体 battle 才出现「战局回放 / AI 复盘」。
- * Summary context 不渲染这些入口。文件经 replayTransfer 单例跨视图传给 ReconstructionPage。 */
-const navigate = inject('navigate', null)
+ * Summary context 不渲染这些入口。单页 Workspace：点击后原地切到对应面板，目标文件
+ * 直接复用当前 selection 内文件——不跨视图跳转、不重新上传、不重复解析。 */
 const isAuthenticated = inject('isAuthenticated', () => false)
 const login = inject('login', null)
 
@@ -297,8 +298,7 @@ function currentBattleFile() {
 /**
  * Battle context actions 需登录（/api/replay/analyze 与 /api/replay/map-overview 均走
  * authedFetch）。未登录点击不静默跳转：文件只存在内存，Keycloak 整页跳转会清空——
- * 先在当前页明确告知（登录后需重新选择回放），确认后再去登录；已登录走 replayTransfer
- * SPA 内跨视图交接（文件不落 localStorage，仅内存 + 服务端不保存回放）。
+ * 先在当前页明确告知（登录后需重新选择回放），确认后再去登录。
  */
 function requireLoginForBattleAction() {
   if (isAuthenticated()) return true
@@ -307,113 +307,193 @@ function requireLoginForBattleAction() {
   return false
 }
 
+// ---- Workspace（解析结果 / AI 复盘 / 战局回放 原地切换；v-show 保持各面板状态）----
+const workspaceTab = ref('results')
+const workspaceFile = ref(null)
+const playbackSeek = ref(null)
+
+function openWorkspacePlayback(file) {
+  workspaceFile.value = file
+  playbackSeek.value = null
+  workspaceTab.value = 'playback'
+}
+
+function openWorkspaceAi(file) {
+  workspaceFile.value = file
+  workspaceTab.value = 'ai'
+}
+
+/**
+ * Workspace 一级 tab 切换统一入口（results / ai / playback）。
+ * 目标解析规则（唯一事实源）：
+ * - 已显式选择 workspaceFile → 直接沿用（单纯切 tab 不清空，AI 进度/地图状态由 v-show 保持）；
+ * - 未选择且 files 恰有 1 个 → 自动以该唯一文件为目标：复用 selection 内原始 File reference
+ *   （不重新上传、不重新解析、不复制对象）；与 FileUploader / battle toolbar 快捷入口统一走
+ *   登录门禁（未登录 confirm + login，不切换、不设置 target、不自动发 API 请求）；
+ * - 未选择且 files 多个 → 保持 null（空态），禁止静默 fallback 到 files[0]（多文件必须显式选目标）。
+ */
+function selectWorkspaceTab(tab) {
+  if (tab === 'ai' || tab === 'playback') {
+    if (!workspaceFile.value && files.value.length === 1) {
+      if (!requireLoginForBattleAction()) return
+      workspaceFile.value = files.value[0]
+    }
+  }
+  workspaceTab.value = tab
+}
+
+/** FileUploader 直接入口（单文件 / 显式选择）上抛：原地切到对应面板。 */
+function onWorkspaceAction({ file, mode }) {
+  if (mode === 'playback') openWorkspacePlayback(file)
+  else openWorkspaceAi(file)
+}
+
 function openBattlePlayback() {
   const f = currentBattleFile()
-  if (!f || !navigate) return
+  if (!f) return
   if (!requireLoginForBattleAction()) return
-  setPendingReplayFiles([f], 'playback')
-  navigate('reconstruction')
+  openWorkspacePlayback(f)
 }
 
 function openAiReview() {
   const f = currentBattleFile()
-  if (!f || !navigate) return
+  if (!f) return
   if (!requireLoginForBattleAction()) return
-  setPendingReplayFiles([f], 'ai')
-  navigate('reconstruction')
+  openWorkspaceAi(f)
 }
 
-async function preview() { await startProcessingJob(cols.initFromResponse) }
+/** AI 报告时间链接：切到战局回放面板并 seek（BattlePlaybackPanel 自动加载/展开地图）。
+ * 先置 null 再 nextTick 写回：连续点击同一时间戳也能重新触发子组件 watch。 */
+async function onAiSeek(sec) {
+  workspaceTab.value = 'playback'
+  playbackSeek.value = null
+  await nextTick()
+  playbackSeek.value = sec
+}
+
+async function preview() {
+  workspaceTab.value = 'results'
+  await startProcessingJob(cols.initFromResponse)
+}
 
 function onFileRemoveRequest(f) { askRemoveFile(f) }
+
+// 文件集合变化后目标文件可能已被移除/清空：失效 workspaceFile（面板回到空态），不静默沿用旧文件。
+watch(files, (next) => {
+  if (workspaceFile.value && !next.includes(workspaceFile.value)) {
+    workspaceFile.value = null
+  }
+})
 </script>
 
 <template>
   <div class="layout-data-workspace">
     <FileUploader :files="files" :loading="loading" :confirm-remove="!!resp"
-      @update:files="updateFiles" @preview="preview" @remove-request="onFileRemoveRequest" />
+      @update:files="updateFiles" @preview="preview" @remove-request="onFileRemoveRequest"
+      @workspace-action="onWorkspaceAction" />
 
     <p v-if="error" class="error">{{ error }}</p>
 
-    <template v-if="resp">
-      <div v-if="resp.duplicates.length" class="warn">
-        {{ $t('result.duplicates', { count: resp.duplicates.length }) }}
-        <span v-for="(d, i) in resp.duplicates" :key="i">{{ d[0] }}</span>
-      </div>
-      <div v-if="resp.failures.length" class="error">
-        {{ $t('result.failures', { count: resp.failures.length }) }}
-        <span v-for="(f, i) in resp.failures" :key="i">{{ f[0] }} ({{ f[1] }})</span>
-      </div>
-      <div v-if="leagueData?.failures?.length" class="error">
-        {{ $t('result.failures', { count: leagueData.failures.length }) }}
-        <span v-for="(lf, i) in leagueData.failures" :key="i">
-          {{ lf.fileName }} ({{ apiErrorLabel(t, te, { code: lf.code }) }})<template v-if="lf.arenaId"> · {{ lf.arenaId }}</template>
-        </span>
+    <!-- Workspace：有文件（解析前也能直接进 AI/回放）或已有解析结果时可见；
+         resp 依赖 files 才存在，故 files.length || resp 与真实状态机一致。 -->
+    <template v-if="files.length || resp">
+      <div class="workspace-tabs tabs" role="tablist" aria-label="Workspace">
+        <button data-testid="workspace-results-tab" :class="{ active: workspaceTab === 'results' }" @click="selectWorkspaceTab('results')">{{ $t('workspace.tab_results') }}</button>
+        <button data-testid="workspace-ai-tab" :class="{ active: workspaceTab === 'ai' }" @click="selectWorkspaceTab('ai')">{{ $t('action.ai_review') }}</button>
+        <button data-testid="workspace-playback-tab" :class="{ active: workspaceTab === 'playback' }" @click="selectWorkspaceTab('playback')">{{ $t('action.battle_playback') }}</button>
       </div>
 
-      <div class="restoolbar">
-        <div class="tabs" :class="{ locked: showColPicker }"
-             :title="showColPicker ? $t('action.picker_locked') : ''">
-          <button v-if="resp.aggregate.length || leagueMode" :disabled="showColPicker"
-                  :class="{ active: activeTab === 'aggregate' }"
-                  @click="activeTab = 'aggregate'">{{ $t('result.aggregate_tab', { count: aggregatePlayerCount }) }}</button>
-          <button v-for="(b, i) in resp.battles" :key="i" :disabled="showColPicker"
-                  :class="{ active: activeTab === 'b' + i }"
-                  @click="activeTab = 'b' + i">{{ mapLabel(b.mapName, locale) }} #{{ i + 1 }}
-            <span class="tabx" :title="$t('modal.remove_title')" @click.stop="askRemoveBattle(b, i)">&times;</span>
-          </button>
+      <div v-show="workspaceTab === 'results'">
+        <p v-if="!resp" class="replay-empty-note">{{ $t('workspace.results_hint') }}</p>
+        <template v-if="resp">
+        <div v-if="resp.duplicates.length" class="warn">
+          {{ $t('result.duplicates', { count: resp.duplicates.length }) }}
+          <span v-for="(d, i) in resp.duplicates" :key="i">{{ d[0] }}</span>
         </div>
-        <div class="resactions">
-          <template v-if="activeTab !== 'aggregate'">
-            <button class="battle-action" data-testid="battle-playback-btn" @click="openBattlePlayback">
-              <svg class="ic" viewBox="0 0 24 24"><path d="M3 5l6 3-6 3zM15 5l6 3-6 3zM9 8h6M9 8v8M9 16l6-3M9 13l6-3" /></svg>{{ $t('action.battle_playback') }}
-            </button>
-            <button class="battle-action primary" data-testid="battle-ai-btn" @click="openAiReview">
-              <svg class="ic" viewBox="0 0 24 24"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 7.7l5.4-.8z" /></svg>{{ $t('action.ai_review') }}
-            </button>
-          </template>
-          <span class="dropdown">
-            <button class="ghost sm" @click="toggleColPicker">
-              <svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" /></svg>{{ $t('action.select_cols') }} v
-            </button>
-            <ColumnPicker v-if="showColPicker" :scope="pickerScope" :order="currentOrder"
-              :visible="pickerScope === 'agg' ? aggVisibleKeys : visibleKeys"
-              :fixed-keys="pickerScope === 'player' && leagueMode ? ['nickname', 'league_rating'] : []"
-              @close="showColPicker = false" @toggle="toggleCol"
-              @select-all="selectAllCols" @reset="resetCols" @reorder="handleReorder" />
+        <div v-if="resp.failures.length" class="error">
+          {{ $t('result.failures', { count: resp.failures.length }) }}
+          <span v-for="(f, i) in resp.failures" :key="i">{{ f[0] }} ({{ f[1] }})</span>
+        </div>
+        <div v-if="leagueData?.failures?.length" class="error">
+          {{ $t('result.failures', { count: leagueData.failures.length }) }}
+          <span v-for="(lf, i) in leagueData.failures" :key="i">
+            {{ lf.fileName }} ({{ apiErrorLabel(t, te, { code: lf.code }) }})<template v-if="lf.arenaId"> · {{ lf.arenaId }}</template>
           </span>
-          <button class="sm" :disabled="loading || exportingPng || exportActive" @click="startExportJob('aggregate', teamNamesPayload())">
-            <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_aggregate') }}
-          </button>
-          <button class="ghost sm" :disabled="loading || exportingPng || exportActive" @click="startExportJob('each', teamNamesPayload())">
-            <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_each') }}
-          </button>
-          <button class="ghost sm" :disabled="loading || exportingPng" @click="downloadResultPng">
-            <svg class="ic" viewBox="0 0 24 24" width="16" height="16"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12"/></svg>
-            {{ exportingPng ? $t('replay.png_exporting') : $t('action.download_png') }}
-          </button>
         </div>
-      </div>
 
-      <p v-if="!resp.battles.length && !resp.aggregate.length && !leagueData" class="replay-empty-note">{{ $t('replay.no_results') }}</p>
+        <div class="restoolbar">
+          <div class="tabs" :class="{ locked: showColPicker }"
+               :title="showColPicker ? $t('action.picker_locked') : ''">
+            <button v-if="resp.aggregate.length || leagueMode" :disabled="showColPicker"
+                    :class="{ active: activeTab === 'aggregate' }"
+                    @click="activeTab = 'aggregate'">{{ $t('result.aggregate_tab', { count: aggregatePlayerCount }) }}</button>
+            <button v-for="(b, i) in resp.battles" :key="i" :disabled="showColPicker"
+                    :class="{ active: activeTab === 'b' + i }"
+                    @click="activeTab = 'b' + i">{{ mapLabel(b.mapName, locale) }} #{{ i + 1 }}
+              <span class="tabx" :title="$t('modal.remove_title')" @click.stop="askRemoveBattle(b, i)">&times;</span>
+            </button>
+          </div>
+          <div class="resactions">
+            <template v-if="activeTab !== 'aggregate'">
+              <button class="battle-action" data-testid="battle-playback-btn" @click="openBattlePlayback">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M3 5l6 3-6 3zM15 5l6 3-6 3zM9 8h6M9 8v8M9 16l6-3M9 13l6-3" /></svg>{{ $t('action.battle_playback') }}
+              </button>
+              <button class="battle-action primary" data-testid="battle-ai-btn" @click="openAiReview">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 7.7l5.4-.8z" /></svg>{{ $t('action.ai_review') }}
+              </button>
+            </template>
+            <span class="dropdown">
+              <button class="ghost sm" @click="toggleColPicker">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" /></svg>{{ $t('action.select_cols') }} v
+              </button>
+              <ColumnPicker v-if="showColPicker" :scope="pickerScope" :order="currentOrder"
+                :visible="pickerScope === 'agg' ? aggVisibleKeys : visibleKeys"
+                :fixed-keys="pickerScope === 'player' && leagueMode ? ['nickname', 'league_rating'] : []"
+                @close="showColPicker = false" @toggle="toggleCol"
+                @select-all="selectAllCols" @reset="resetCols" @reorder="handleReorder" />
+            </span>
+            <button class="sm" :disabled="loading || exportingPng || exportActive" @click="startExportJob('aggregate', teamNamesPayload())">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_aggregate') }}
+            </button>
+            <button class="ghost sm" :disabled="loading || exportingPng || exportActive" @click="startExportJob('each', teamNamesPayload())">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_each') }}
+            </button>
+            <button class="ghost sm" :disabled="loading || exportingPng" @click="downloadResultPng">
+              <svg class="ic" viewBox="0 0 24 24" width="16" height="16"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12"/></svg>
+              {{ exportingPng ? $t('replay.png_exporting') : $t('action.download_png') }}
+            </button>
+          </div>
+        </div>
 
-      <div v-show="activeTab === 'aggregate' && (resp.aggregate.length || leagueMode)" ref="aggregateRef">
-        <template v-if="leagueMode">
-          <LeagueSummaryTable :title="$t('league.summary.title_player')" type="player"
-            :rows="leagueData?.playerSummaries || []" :columns="leagueData?.playerSummaryColumns || []"
-            :team-names="summaryTeamNames" @update-summary-team-name="updateSummaryTeamName" />
-          <LeagueSummaryTable :title="$t('league.summary.title_team')" type="team"
-            :rows="leagueData?.teamSummaries || []" :columns="leagueData?.teamSummaryColumns || []"
-            :team-names="summaryTeamNames" @update-summary-team-name="updateSummaryTeamName" />
+        <p v-if="!resp.battles.length && !resp.aggregate.length && !leagueData" class="replay-empty-note">{{ $t('replay.no_results') }}</p>
+
+        <div v-show="activeTab === 'aggregate' && (resp.aggregate.length || leagueMode)" ref="aggregateRef">
+          <template v-if="leagueMode">
+            <LeagueSummaryTable :title="$t('league.summary.title_player')" type="player"
+              :rows="leagueData?.playerSummaries || []" :columns="leagueData?.playerSummaryColumns || []"
+              :team-names="summaryTeamNames" @update-summary-team-name="updateSummaryTeamName" />
+            <LeagueSummaryTable :title="$t('league.summary.title_team')" type="team"
+              :rows="leagueData?.teamSummaries || []" :columns="leagueData?.teamSummaryColumns || []"
+              :team-names="summaryTeamNames" @update-summary-team-name="updateSummaryTeamName" />
+          </template>
+          <AggregateTable v-else :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
+        </div>
+
+        <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i"
+             :ref="(el) => setBattleRef(el, i)">
+          <BattleTable :battle="b" :shown-cols="shownCols"
+            :league="b.league" :league-columns="leagueData?.columns || []"
+            :team-names="battleTeamNames" @update-team-name="updateBattleTeamName" />
+        </div>
         </template>
-        <AggregateTable v-else :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
       </div>
 
-      <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i"
-           :ref="(el) => setBattleRef(el, i)">
-        <BattleTable :battle="b" :shown-cols="shownCols"
-          :league="b.league" :league-columns="leagueData?.columns || []"
-          :team-names="battleTeamNames" @update-team-name="updateBattleTeamName" />
+      <div v-show="workspaceTab === 'ai'" data-test="workspace-ai-panel">
+        <AiReviewPanel :file="workspaceFile" login-view="replay" @seek="onAiSeek" />
+      </div>
+      <div v-show="workspaceTab === 'playback'" data-test="workspace-playback-panel">
+        <!-- active=进入战局回放 capability 时面板才自动加载地图；AI 复盘期间保持挂载但不发请求 -->
+        <BattlePlaybackPanel :file="workspaceFile" :active="workspaceTab === 'playback'" :seek-to="playbackSeek" login-view="replay" />
       </div>
     </template>
 
@@ -429,6 +509,8 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
 </template>
 
 <style>
+/* Workspace 一级能力切换（解析结果 / AI 复盘 / 战局回放）：复用全局 .tabs 视觉 */
+.workspace-tabs { margin-top: 16px; }
 .battle-action {
   display: inline-flex;
   align-items: center;
