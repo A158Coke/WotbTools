@@ -45,6 +45,13 @@
   `blitzkit-references.mjs --emit-portraits` 可重复生成入口。
 
 ### Fixed
+- **P0：League Rating 校验失败不再删除成功解析的回放（Replay parsing validity ≠ League Rating eligibility）**：
+  - 根因：`LeagueReplays.collectLeague` 把「仅 Rating eligible 的场次」当作结果集 battles 返回（Rating 校验失败经 `continue` 从最终集合消失），`ReplayProcessingJobService` 以 `c.battles().isEmpty()` 判定 `NO_VALID_REPLAYS`——全部 replay 成功解析但全部 Rating 不合格时，Processing Job 错误 FAILED 并提示「没有可用的回放文件」。
+  - 领域分离：`LeagueCollectResult.battles` 恢复为「去重/冲突后全部成功解析的 Battle」（可进 Preview/Export 基础数据）；Rating 只对通过 `LeagueRatingValidator` 的场次计算（`LeagueRatingBatch.battleResults` 与批次汇总只含 eligible）；校验失败以 `LeagueFailure` 稳定错误码（`LEAGUE_*`）返回，不再触发 `NO_VALID_REPLAYS`（该错误码仅保留给「所有 replay 真正解析失败」）。
+  - 稳定 identity：`LeagueRatingResult` 新增 `arenaId`；`LeagueRatingBatch.resultFor(arenaId)` 按 identity 绑定 Battle ↔ Rating，消除 `Mapper.toPreviewResponse` / `ReplayService` 导出 / `ReplayExportJobService` / `LeagueAggregateSheets` 的数组 index 绑定（battles.size() 可大于 battleResults.size()，禁止 index 错位/IndexOutOfBounds）。
+  - 进度语义：Rating-ineligible 但已解析的文件 progress 报 `SUCCESS`（可预览），不再计入解析失败；job `valid` = 成功解析并可进入 Preview 的 replay 数。
+  - 导出：单场 league 未通过校验回退普通单场工作簿（基础数据仍可导出，不 NPE）；each 模式跳过未评分场次；汇总 Excel「每场明细」只含 eligible，「战斗列表」列出全部 battle 且 ineligible 场显示真实 failure 文案（不重复行）。
+  - 测试：新增 core `LeagueReplaysTest`（Case A 全 eligible / Case B 部分不合格保留 / Case C 全不合格仍 READY / progress SUCCESS 语义）、`ReplayProcessingJobServiceTest`（全部 League 不合格 Job READY、partial ratings）、`ReplayServiceLeagueTest`（partial Preview identity 绑定、单场不合格导出回退）、`LeagueExcelExportTest`（partial 汇总导出不崩溃不错位）；修正 `invalidSevenVsSevenReportedAsFailureOthersContinue` 旧断言（battles 保留 bad 场）。
 - **WG 首次登录可直接提交百场认证**：`HundredWargamingSubmissionService` 先验证可信 JWT，再复用 `UserProfileService.syncFromLogin` 原子创建或刷新 WARGAMING Profile，随后仍执行 JWT 与数据库 Profile 的完整交叉校验后才查询 WG stats。同步冲突或失败保持 fail-closed，绝不调用外部 stats 或创建 submission。
 - **Replay Processing Job review 闭环修复（PR #121 correctness/concurrency 3 项 blocker）**：
   - **文件集合变化立即失效旧解析结果（Blocker 1）**：前端新增统一 `updateFiles` 入口（FileUploader 任意 add / folder-add / remove / clear / replace 事件都走它），任何 files 变化立即置空 `processingJobId` 与已展示的 `resp`（防止「UI 显示 dataset A、files 是 dataset B、Export 复用 A」）；正在处理的旧 Job 停止轮询并后台协作取消（释放 queue slot / 容量）；`pollProcessingJob` 以 `processingPollJobId` 作 request token + `selectionRevision` 作 revision，丢弃迟到/过期的 READY 响应（P1 处理中 files 改变 → P1 随后 READY 不得覆盖当前 selection）；Export 复用仅当 `resultMatchesSelection`（processingJobId 与 resp 成对存在），否则走 legacy 上传当前 files，绝不静默导出旧 dataset。
