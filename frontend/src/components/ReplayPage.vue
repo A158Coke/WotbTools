@@ -3,6 +3,7 @@ import { ref, computed, watch, nextTick, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { mapLabel, displayName } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
+import { replayAggregatePlayerCount } from '../utils/replayView.js'
 import { setPendingReplayFiles } from '../utils/replayTransfer.js'
 import { useReplay } from '../composables/useReplay.js'
 import { useColumns } from '../composables/useColumns.js'
@@ -42,6 +43,8 @@ const leagueData = computed(() => resp.value?.league || null)
  * fixed keys / picker），页面 tab 存在性 / LeagueSummaryTable / 默认 activeTab 一律看这里。
  */
 const leagueMode = computed(() => !!leagueData.value)
+/** 汇总 tab 的真实选手数量：League 汇总使用 playerSummaries，普通模式使用 aggregate。 */
+const aggregatePlayerCount = computed(() => replayAggregatePlayerCount(resp.value))
 /**
  * 两种独立的战队名称 override（PR #123 Blocker 2，禁止扁平混合）：
  * - battleTeamNames：{arenaId:team} → 名（单场显示 / 单场 PNG / 单场与 each Excel）
@@ -353,7 +356,7 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
              :title="showColPicker ? $t('action.picker_locked') : ''">
           <button v-if="resp.aggregate.length || leagueMode" :disabled="showColPicker"
                   :class="{ active: activeTab === 'aggregate' }"
-                  @click="activeTab = 'aggregate'">{{ $t('result.aggregate_tab', { count: resp.aggregate.length }) }}</button>
+                  @click="activeTab = 'aggregate'">{{ $t('result.aggregate_tab', { count: aggregatePlayerCount }) }}</button>
           <button v-for="(b, i) in resp.battles" :key="i" :disabled="showColPicker"
                   :class="{ active: activeTab === 'b' + i }"
                   @click="activeTab = 'b' + i">{{ mapLabel(b.mapName, locale) }} #{{ i + 1 }}

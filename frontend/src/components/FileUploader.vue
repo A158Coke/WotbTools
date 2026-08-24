@@ -1,14 +1,35 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, inject, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { fileKey, displayName } from '../utils/helpers.js'
+import { setPendingReplayFiles } from '../utils/replayTransfer.js'
 
 const emit = defineEmits(['update:files', 'preview', 'remove-request'])
 const props = defineProps({ files: Array, loading: Boolean, confirmRemove: Boolean })
 const dragging = ref(false)
-/** 文件列表默认折叠（plan §18：34/50 个 filename 不再全部铺开撑高上传区）。 */
 const listOpen = ref(false)
+const actionFileKey = ref('')
+const navigate = inject('navigate', null)
+const isAuthenticated = inject('isAuthenticated', () => false)
+const login = inject('login', null)
+const { t } = useI18n()
 
 const totalBytes = computed(() => props.files.reduce((sum, f) => sum + (f.size || 0), 0))
+const actionFile = computed(() => {
+  if (props.files.length === 1) return props.files[0]
+  if (!actionFileKey.value) return null
+  return props.files.find(f => fileKey(f) === actionFileKey.value) || null
+})
+const directActionDisabled = computed(() => props.loading || !actionFile.value)
+
+watch(() => props.files.map(fileKey), (keys) => {
+  // Multi-file AI/playback must always target an explicitly selected file.
+  // If the chosen replay was removed/replaced, invalidate the selection instead
+  // of silently falling back to another replay.
+  if (props.files.length !== 1 && (!actionFileKey.value || !keys.includes(actionFileKey.value))) {
+    actionFileKey.value = ''
+  }
+}, { deep: true })
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B'
@@ -49,6 +70,20 @@ function onDrop(e) {
   dragging.value = false
   addFiles(e.dataTransfer.files)
 }
+
+function requireLoginForReplayAction() {
+  if (isAuthenticated()) return true
+  const ok = window.confirm(t('replay.login_required_for_battle'))
+  if (ok && login) login('replay')
+  return false
+}
+
+function openReplayAction(mode) {
+  const f = actionFile.value
+  if (!f || !navigate || !requireLoginForReplayAction()) return
+  setPendingReplayFiles([f], mode)
+  navigate('reconstruction')
+}
 </script>
 
 <template>
@@ -84,7 +119,6 @@ function onDrop(e) {
     </div>
 
     <div v-else class="filebar" :class="{ dragging }">
-      <!-- 汇总区（plan §17：34/50 文件不直接铺开，高度不随文件数线性增长） -->
       <div class="fb-summary">
         <svg class="ic fb-ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
         <div>
@@ -93,14 +127,13 @@ function onDrop(e) {
         </div>
       </div>
 
-      <!-- 折叠文件列表（plan §18/§65：默认 collapsed + 内部 scroll，长 filename 截断 + title） -->
       <button class="ghost sm" :class="{ active: listOpen }" :aria-expanded="listOpen" @click="listOpen = !listOpen">
         {{ listOpen ? $t('upload.hide_list') : $t('upload.view_list', { count: files.length }) }}
       </button>
       <div v-if="listOpen" class="fb-list" data-testid="file-list">
         <span v-for="f in files" :key="fileKey(f)" class="chip" :title="displayName(f)">
-          {{ displayName(f) }}
-          <button class="chipx" :title="$t('upload.remove_title')" @click="removeFile(f)">&times;</button>
+          <span class="chip-name">{{ displayName(f) }}</span>
+          <button type="button" class="chipx" :title="$t('upload.remove_title')" :aria-label="$t('upload.remove_title')" @click.stop="removeFile(f)">&times;</button>
         </span>
       </div>
 
@@ -119,37 +152,33 @@ function onDrop(e) {
       </div>
     </div>
 
-    <div v-if="files.length" class="actionrow">
-      <button class="lg" :disabled="loading" @click="$emit('preview')">
-        {{ $t('action.preview') }}<svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
-      </button>
-      <span v-if="loading" class="muted">{{ $t('action.processing') }}</span>
-      <span v-else class="muted">{{ $t('action.preview_hint') }}</span>
+    <div v-if="files.length" class="replay-workspace-actions">
+      <select v-if="files.length > 1" v-model="actionFileKey" class="replay-action-file" :aria-label="$t('upload.action_replay_selector')">
+        <option value="" disabled>{{ $t('upload.action_replay_placeholder') }}</option>
+        <option v-for="f in files" :key="fileKey(f)" :value="fileKey(f)">{{ displayName(f) }}</option>
+      </select>
+      <div class="actionrow">
+        <button class="lg" :disabled="loading" @click="$emit('preview')">
+          {{ $t('action.preview') }}<svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+        </button>
+        <button class="battle-action" :disabled="directActionDisabled" data-testid="direct-playback-btn" @click="openReplayAction('playback')">{{ $t('action.battle_playback') }}</button>
+        <button class="battle-action primary" :disabled="directActionDisabled" data-testid="direct-ai-btn" @click="openReplayAction('ai')">{{ $t('action.ai_review') }}</button>
+        <span v-if="loading" class="muted">{{ $t('action.processing') }}</span>
+      </div>
     </div>
   </section>
 </template>
 
 <style scoped>
-/* 折叠文件列表：内部 scroll，高度不随文件数增长（plan §65） */
-.fb-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  max-height: 180px;
-  overflow-y: auto;
-  padding: 4px 2px;
-  border-top: 1px solid var(--border, #dee2e6);
-}
-.fb-list .chip {
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.fb-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
+.fb-list { display:flex; flex-wrap:wrap; gap:6px; max-height:180px; overflow-y:auto; padding:4px 2px; border-top:1px solid var(--border,#dee2e6); }
+.fb-list .chip { display:inline-flex; align-items:center; gap:6px; max-width:320px; min-width:0; }
+.chip-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fb-list .chipx { flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; padding:0; border-radius:6px; line-height:1; cursor:pointer; }
+.fb-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.replay-workspace-actions { margin-top:14px; padding-top:14px; border-top:1px solid var(--border-ghost); }
+.replay-action-file { width:min(100%,560px); margin-bottom:10px; min-height:36px; padding:6px 10px; border:1px solid var(--border-ghost); border-radius:7px; background:var(--bg-card); color:var(--text); }
+.actionrow { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.battle-action { display:inline-flex; align-items:center; min-height:40px; padding:8px 16px; border:1px solid var(--border-ghost); border-radius:7px; background:var(--bg-card); color:var(--text-label); cursor:pointer; font:inherit; font-weight:700; }
+.battle-action.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-text); }
+.battle-action:disabled { opacity:.48; cursor:not-allowed; }
 </style>

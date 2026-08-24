@@ -10,10 +10,11 @@
 
 ## 结构与约定
 
-- 入口 `index.html`（工具集主页，单文件 `App.vue`）；`homepage/` = 工具集主页 + 赞助页。
-- `src/composables/`（useTheme/useReplay/useColumns/useAuth 等）、`src/utils/`、`src/components/`、`src/styles/`、`src/data/`。
-- **i18n**：所有文案在 `src/locales/{zh,en,ru}.json` 三语同步；显示名在 `player_labels`/`agg_labels`；稳定错误码走 `api_errors.*`；禁止硬编码文案。
-- **跨站偏好**：主题/语言偏好写 `domain=.wotbtools.com` cookie（`utils/theme.js` 同款写法），localStorage 仅本地开发回退。
+- 入口 `index.html`（Vue SPA）；`homepage/` 只保留独立赞助页及其运行时配置，不再维护旧静态主页/个人中心副本。
+- `src/composables/`（useReplay/useColumns/useAuth 等）、`src/utils/`、`src/components/`、`src/styles/`、`src/data/`。
+- **主题策略**：产品只支持暗色。`frontend/index.html` 在首屏固定 `data-theme="dark"`，不读取系统主题、不保存主题偏好、不提供主题切换器；禁止重新引入 `useTheme`、`utils/theme.js` 或 `wotbtools-theme` cookie/localStorage。
+- **i18n**：基础文案在 `src/locales/{zh,en,ru}.json`；按功能追加的文案放 `feature-messages.json`，由 `messages.js` 深合并且不得修改基础 locale 对象。三语必须同步；显示名在 `player_labels`/`agg_labels`；稳定错误码走 `api_errors.*`；禁止在 `main.js` 或组件启动阶段动态 patch locale 对象。
+- **跨站偏好**：当前只持久化语言 `wotb-lang`；主题没有用户偏好状态。
 - **versions.json**（`src/data/`）：仅用户可见变更新增条目；`v` 递增不跳号、三语同条目、顶部追加、不改历史条目；纯技术/CI 变更不写。
 - 测试文件与组件同目录（`*.test.js`），`// @vitest-environment happy-dom` 按需声明。
 - **Tier X 专属车型系统**（`src/vehicle-models/`）：Tankopedia Tier X 100% 覆盖由
@@ -41,14 +42,14 @@
   - data-workspace：约 1760px，Replay/大型数据表/Admin；
   - full-workspace：100%，战局重建/地图/战术画布。
 - Replay Parser 是最高频工具：Desktop 必须尽可能使用可用宽度，Table 保持高 information density；不要把玩家行改成大型 Card。允许 sticky header / sticky 关键列 / 横向滚动，横滚是字段过多的 fallback，而不是窄 container 的副作用。
-- Replay context 业务不可破坏：Summary 不出现 AI 复盘/战局回放；选中具体 replay 后才显示 Battle-level actions。UI 重构不得改变这条业务语义。
+- **Replay Workspace 语义**：上传区的「解析预览 / 战局回放 / AI 复盘」是三个一级能力。单文件可直接进入 AI/Playback；多文件必须显式选择目标 replay，禁止 fallback 第一场。解析后的 Aggregate/Summary 本身不代表具体 battle，因此结果 toolbar 的 Battle-level action 仍只在具体 battle tab 出现。
 - Reconstruction/Map/Strategy 类型页面按 workspace 设计：地图/画布吃最大空间，Inspector/Timeline/Toolbar 围绕画布布局；禁止再套 1100–1200px 居中页面。
 - Admin 使用同一 Design System，但视觉定位是 Operations Console；高风险删除动作不能与“查看”同权重长期红色高亮。
 - **响应式必须同时覆盖三档**，不能先做 Desktop 后用 scale 缩小：
   - Desktop `>=1200px`：完整导航、高数据密度、完整 workspace；
   - 11 英寸级 Tablet `768–1199px`：保留主要工具和导航语义，侧栏/操作栏可收缩或横滚；不要把 tablet 当 phone；
   - Mobile `<768px`（以 iPhone 11 级约 375×812 为基准）：核心任务优先，复杂表格允许关键列 + 横滚/展开，Inspector 改 bottom sheet/单列；不得整体 `transform: scale()`。
-- 每个页面修改完成必须人工检查至少 1920px Desktop、约 834px Tablet、约 375px Mobile，并检查 light/dark、overflow、sticky、hover/focus、loading/empty/error。
+- 每个页面修改完成必须人工检查至少 1920px Desktop、约 834px Tablet、约 375px Mobile，并检查暗色下的 contrast、overflow、sticky、hover/focus、loading/empty/error。
 
 ## AI 复盘前端边界
 

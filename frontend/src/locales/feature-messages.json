@@ -1,0 +1,95 @@
+{
+  "zh": {
+    "home": {
+      "boostDesc": "专业陪练服务，提升战斗技巧与实战表现。"
+    },
+    "boost": {
+      "notificationTitle": {
+        "BOOST_REQUEST_SUBMITTED": "陪练需求已提交"
+      },
+      "notificationMessage": {
+        "BOOST_REQUEST_SUBMITTED": "你的陪练需求 #{requestId} 已提交，等待审核。"
+      }
+    },
+    "upload": {
+      "action_replay_selector": "选择用于 AI 复盘或战局回放的回放",
+      "action_replay_placeholder": "请选择一份回放"
+    },
+    "replay": {
+      "processing_job": {
+        "queued": "等待解析",
+        "preparing": "正在准备解析 {total} 个回放…",
+        "title": "正在解析回放",
+        "progress": "解析进度：{processed}/{total}",
+        "current_file": "当前文件：{file}",
+        "counts": "有效 {v} · 重复 {d} · 失败 {f}",
+        "ready": "回放解析完成",
+        "failed": "回放解析失败",
+        "no_valid_replays": "没有可用的回放文件",
+        "cancelled": "解析已取消"
+      }
+    }
+  },
+  "en": {
+    "home": {
+      "boostDesc": "Coaching sessions to improve gameplay and battle performance."
+    },
+    "boost": {
+      "notificationTitle": {
+        "BOOST_REQUEST_SUBMITTED": "Coaching request submitted"
+      },
+      "notificationMessage": {
+        "BOOST_REQUEST_SUBMITTED": "Your coaching request #{requestId} was submitted and is awaiting review."
+      }
+    },
+    "upload": {
+      "action_replay_selector": "Select a replay for AI review or battle playback",
+      "action_replay_placeholder": "Select a replay"
+    },
+    "replay": {
+      "processing_job": {
+        "queued": "Waiting to parse",
+        "preparing": "Preparing {total} replays…",
+        "title": "Parsing replays",
+        "progress": "Progress: {processed}/{total}",
+        "current_file": "Current file: {file}",
+        "counts": "Valid {v} · duplicates {d} · failed {f}",
+        "ready": "Replay parsing complete",
+        "failed": "Replay parsing failed",
+        "no_valid_replays": "No valid replay files were found",
+        "cancelled": "Parsing cancelled"
+      }
+    }
+  },
+  "ru": {
+    "home": {
+      "boostDesc": "Тренировки для улучшения игровых навыков и эффективности в бою."
+    },
+    "boost": {
+      "notificationTitle": {
+        "BOOST_REQUEST_SUBMITTED": "Заявка на тренировку отправлена"
+      },
+      "notificationMessage": {
+        "BOOST_REQUEST_SUBMITTED": "Ваша заявка #{requestId} отправлена и ожидает проверки."
+      }
+    },
+    "upload": {
+      "action_replay_selector": "Выберите реплей для ИИ-разбора или просмотра боя",
+      "action_replay_placeholder": "Выберите реплей"
+    },
+    "replay": {
+      "processing_job": {
+        "queued": "Ожидание обработки",
+        "preparing": "Подготовка {total} реплеев…",
+        "title": "Обработка реплеев",
+        "progress": "Прогресс: {processed}/{total}",
+        "current_file": "Текущий файл: {file}",
+        "counts": "Успешно {v} · дубликаты {d} · ошибки {f}",
+        "ready": "Обработка реплеев завершена",
+        "failed": "Ошибка обработки реплеев",
+        "no_valid_replays": "Подходящие файлы реплеев не найдены",
+        "cancelled": "Обработка отменена"
+      }
+    }
+  }
+}
