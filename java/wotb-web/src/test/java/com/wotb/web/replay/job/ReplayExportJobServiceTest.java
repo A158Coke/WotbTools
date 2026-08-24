@@ -546,7 +546,7 @@ class ReplayExportJobServiceTest {
                     List.of(battle("arena-1")), List.of("one.wotbreplay"),
                     List.<String[]>of(new String[]{"dup.wotbreplay", "arena-1"}),
                     List.<String[]>of(new String[]{"bad.wotbreplay", "REPLAY_PROCESSING_FAILED"}),
-                    null));
+                    null, null));
             processingStore.register(pJob);
             // Export acquire 引用（plan §52）
             processingStore.acquireForExport(pJobId);
@@ -591,7 +591,7 @@ class ReplayExportJobServiceTest {
             pJob.markReady(new ProcessedDataset(
                     List.of(battle("arena-1"), battle("arena-2")),
                     List.of("one.wotbreplay", "two.wotbreplay"),
-                    List.<String[]>of(), List.<String[]>of(), null));
+                    List.<String[]>of(), List.<String[]>of(), null, null));
             processingStore.register(pJob);
             processingStore.acquireForExport(pJobId);
 
@@ -997,7 +997,7 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJob pJob = new ReplayProcessingJob(id, total);
         pJob.startProcessing();
         pJob.updateProgress(total, duplicates.size(), failures.size());
-        pJob.markReady(new ProcessedDataset(battles, names, duplicates, failures, null));
+        pJob.markReady(new ProcessedDataset(battles, names, duplicates, failures, null, null));
         processingStore.register(pJob);
         return id;
     }
@@ -1019,7 +1019,7 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJob pJob = new ReplayProcessingJob(id, total);
         pJob.startProcessing();
         pJob.updateProgress(total, duplicates.size(), failures.size());
-        pJob.markReady(new ProcessedDataset(battles, names, duplicates, failures, null));
+        pJob.markReady(new ProcessedDataset(battles, names, duplicates, failures, null, null));
         processingStore.register(pJob);
         processingStore.acquireForExport(id);
         return id;
@@ -1198,7 +1198,7 @@ class ReplayExportJobServiceTest {
             results.add(LeagueRatingCalculator.calculate(b));
         }
         final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(battles, results, List.of());
-        return new ProcessedDataset(battles, names, List.of(), List.of(), batch);
+        return new ProcessedDataset(battles, names, List.of(), List.of(), batch, null);
     }
 
     /** 构造并注册一个已 READY 的 League Processing Job（from-result 复用路径测试用；调用方负责 release）。 */

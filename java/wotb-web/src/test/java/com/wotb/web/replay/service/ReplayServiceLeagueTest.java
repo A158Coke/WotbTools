@@ -113,7 +113,9 @@ class ReplayServiceLeagueTest {
     }
 
     @Test
-    void mixedBatchRejectedWithStableCode() throws Exception {
+    void mixedBatchPreviewKeepsBattlesAndReportsLeagueUnavailable() throws Exception {
+        // plan §21/Case I：混合批次不再 HTTP 400——League Rating 不聚合（league=null），
+        // battles 按普通回放语义成功返回，leagueUnavailableCode 携带混合码。
         final Battle training = LeagueTestReplays.sevenVsSeven(1);
         training.arenaId = "111";
         training.arenaBonusType = 2;
@@ -122,10 +124,12 @@ class ReplayServiceLeagueTest {
         random.arenaBonusType = 1;
         final ReplayService service = perFileService(List.of(training, random));
 
-        final IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> service.preview(new MockMultipartFile[]{
-                        file("t.wotbreplay", new byte[]{1}), file("r.wotbreplay", new byte[]{2})}));
-        assertEquals("MIXED_LEAGUE_AND_STANDARD_REPLAYS", error.getMessage());
+        final PreviewResponse r = service.preview(new MockMultipartFile[]{
+                file("t.wotbreplay", new byte[]{1}), file("r.wotbreplay", new byte[]{2})});
+        assertNull(r.league(), "混合批次不产生 League Rating 元数据");
+        assertEquals(2, r.battles().size(), "混合批次所有可解析 Battle 必须保留在 Preview");
+        assertEquals("MIXED_LEAGUE_AND_STANDARD_REPLAYS", r.leagueUnavailableCode());
+        assertTrue(r.failures().isEmpty(), "混合批次无解析失败时 failures 必须为空");
     }
 
     @Test
@@ -171,18 +175,21 @@ class ReplayServiceLeagueTest {
     }
 
     @Test
-    void leagueEachExportRejectsMixedBatch() throws Exception {
+    void leagueEachExportMixedBatchWritesStandardWorkbooks() throws Exception {
+        // plan §21/§13：混合批次 each 导出按普通回放逐场生成标准单场工作簿（League Analysis unavailable）
         final Battle training = LeagueTestReplays.sevenVsSeven(1);
         training.arenaId = "111";
+        training.arenaBonusType = 2;
         final Battle random = LeagueTestReplays.sevenVsSeven(1);
         random.arenaId = "999";
         random.arenaBonusType = 1;
         final ReplayService service = perFileService(List.of(training, random));
-        final IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> service.export(new MockMultipartFile[]{
-                        file("t.wotbreplay", LeagueTestReplays.replayBytes(training, 2)),
-                        file("r.wotbreplay", LeagueTestReplays.replayBytes(random, 1))}, "each"));
-        assertEquals("MIXED_LEAGUE_AND_STANDARD_REPLAYS", error.getMessage());
+        final ExportResult result = service.export(new MockMultipartFile[]{
+                file("t.wotbreplay", LeagueTestReplays.replayBytes(training, 2)),
+                file("r.wotbreplay", LeagueTestReplays.replayBytes(random, 1))}, "each");
+        assertNotNull(result, "混合批次 each 导出必须成功（不得整体拒绝）");
+        assertTrue(result.filename().endsWith(".zip"));
+        assertTrue(result.data().length > 0);
     }
 
     @Test
