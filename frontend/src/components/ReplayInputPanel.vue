@@ -1,18 +1,14 @@
+<!--
+  独立 reconstruction 页的文件选择面板（单页 Workspace 改造后仅此页使用）。
+  「AI 战术复盘」发起按钮已随拆分移入 AiReviewPanel（ReplayPage Workspace 与独立页共用同一实现），
+  本面板只负责：标题 + 单文件选择/移除/清空。
+-->
 <script setup>
-import ReplayAnalysisAction from './ReplayAnalysisAction.vue'
 import ReplayFilePicker from './ReplayFilePicker.vue'
 
 defineProps({
   files: {
     type: Array,
-    required: true
-  },
-  analyzing: {
-    type: Boolean,
-    required: true
-  },
-  canUseAiReview: {
-    type: Boolean,
     required: true
   }
 })
@@ -20,9 +16,7 @@ defineProps({
 defineEmits([
   'add-file',
   'remove-file',
-  'clear',
-  'analyze',
-  'cancel'
+  'clear'
 ])
 </script>
 
@@ -39,13 +33,6 @@ defineEmits([
       @add-file="$emit('add-file', $event)"
       @remove-file="$emit('remove-file', $event)"
       @clear="$emit('clear')"
-    />
-
-    <ReplayAnalysisAction
-      v-if="canUseAiReview && files.length"
-      :analyzing="analyzing"
-      @analyze="$emit('analyze')"
-      @cancel="$emit('cancel')"
     />
   </div>
 </template>

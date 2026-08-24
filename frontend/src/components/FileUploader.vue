@@ -2,14 +2,12 @@
 import { ref, computed, inject, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { fileKey, displayName } from '../utils/helpers.js'
-import { setPendingReplayFiles } from '../utils/replayTransfer.js'
 
-const emit = defineEmits(['update:files', 'preview', 'remove-request'])
+const emit = defineEmits(['update:files', 'preview', 'remove-request', 'workspace-action'])
 const props = defineProps({ files: Array, loading: Boolean, confirmRemove: Boolean })
 const dragging = ref(false)
 const listOpen = ref(false)
 const actionFileKey = ref('')
-const navigate = inject('navigate', null)
 const isAuthenticated = inject('isAuthenticated', () => false)
 const login = inject('login', null)
 const { t } = useI18n()
@@ -78,11 +76,15 @@ function requireLoginForReplayAction() {
   return false
 }
 
+/**
+ * 直接进入 AI 复盘 / 战局回放（单页 Workspace）：不跨视图跳转、不重新上传——
+ * 目标文件已在 ReplayPage 内存中，上抛给页面切到对应 Workspace 面板。
+ * 多文件必须经选择器显式指定目标（actionFile），禁止 fallback 第一场。
+ */
 function openReplayAction(mode) {
   const f = actionFile.value
-  if (!f || !navigate || !requireLoginForReplayAction()) return
-  setPendingReplayFiles([f], mode)
-  navigate('reconstruction')
+  if (!f || !requireLoginForReplayAction()) return
+  emit('workspace-action', { file: f, mode })
 }
 </script>
 
