@@ -35,7 +35,7 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
         <p class="hero-subtitle">{{ $t('app.subtitle') }}</p>
         <div class="hero-actions">
           <a class="hero-btn primary" href="/?view=replay">{{ $t('home.uploadReplay') }}</a>
-          <a class="hero-btn secondary" href="/?view=replay">{{ $t('home.analysisTitle') }}</a>
+          <a class="hero-btn secondary" href="/?view=replay">{{ $t('home.viewAnalysisHistory') }}</a>
         </div>
       </div>
       <aside class="record-card">
@@ -52,7 +52,7 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
     <section class="feature-grid" aria-label="WotBTools">
       <a class="feature-card feature-primary" href="/?view=replay">
         <div class="feature-visual"><img :src="cardReplayImg" alt="" aria-hidden="true"><span class="feature-index">01</span></div>
-        <div class="feature-copy"><h2>{{ $t('home.analysisTitle') }}</h2><p>{{ $t('home.analysisDesc') }}</p><span class="feature-action">{{ $t('home.uploadReplay') }} →</span></div>
+        <div class="feature-copy"><h2>{{ $t('home.analysisTitle') }}</h2><p>{{ $t('home.analysisDesc') }}</p><span class="feature-action">{{ $t('home.learnAnalysis') }} →</span></div>
       </a>
       <a class="feature-card" href="/?view=hof">
         <div class="feature-visual"><img :src="cardHofImg" alt="" aria-hidden="true"><span class="feature-index">02</span></div>
@@ -69,10 +69,11 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
     </section>
 
     <section class="home-bottom">
-      <div class="bottom-panel replay-panel">
-        <div class="bottom-copy"><span class="panel-kicker">{{ $t('home.analysisTitle') }}</span><h2>{{ $t('upload.title') }}</h2><p>{{ $t('upload.description') }}</p>
-          <div class="panel-actions"><a class="mini-action primary" href="/?view=replay">{{ $t('upload.select_files') }}</a><a class="mini-action" href="/?view=replay">{{ $t('upload.select_folder') }}</a></div>
-        </div><div class="replay-decoration" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="bottom-panel recent-panel">
+        <h2 class="recent-title">{{ $t('home.recentAnalysis') }}</h2>
+        <p class="recent-empty-title">{{ $t('home.recentAnalysisEmptyTitle') }}</p>
+        <p class="recent-empty-desc">{{ $t('home.recentAnalysisEmptyDesc') }}</p>
+        <div class="panel-actions"><a class="mini-action primary" href="/?view=replay">{{ $t('home.uploadReplay') }}</a></div>
       </div>
       <div class="bottom-panel quick-panel"><h2>{{ $t('app.title') }}</h2><a href="/?view=version">{{ $t('version.btn') }} <span>→</span></a><a href="/?view=contact">{{ $t('contact.nav') }} <span>→</span></a><a href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }} <span>→</span></a><a href="/sponsor.html">{{ $t('home.sponsorTitle') }} <span>→</span></a></div>
     </section>
@@ -212,19 +213,10 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
 
 .home-bottom { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(270px, .65fr); gap: 14px; margin-top: 14px; }
 .bottom-panel { border: 1px solid var(--showcase-tactical-border); border-radius: 9px; background: var(--showcase-tactical-2); box-shadow: var(--surface-shadow); }
-.replay-panel { position: relative; overflow: hidden; min-height: 170px; padding: 22px; }
-.replay-panel:after {
-  content: '';
-  position: absolute;
-  inset: 0 0 0 auto;
-  width: 43%;
-  background: linear-gradient(90deg, transparent, rgba(217, 154, 37, .07));
-  pointer-events: none;
-}
-.bottom-copy { position: relative; z-index: 2; max-width: 640px; }
-.panel-kicker { color: #f0a42b; font-size: .72rem; font-weight: 900; letter-spacing: .08em; }
-.bottom-copy h2 { margin: 7px 0 6px; font-size: 1.2rem; color: var(--showcase-tactical-heading); }
-.bottom-copy p { margin: 0; color: var(--showcase-tactical-muted); font-size: .84rem; line-height: 1.55; }
+.recent-panel { min-height: 170px; padding: 22px; }
+.recent-title { margin: 0 0 12px; font-size: 1.2rem; color: var(--showcase-tactical-heading); }
+.recent-empty-title { margin: 0 0 6px; color: var(--showcase-tactical-heading); font-size: .95rem; font-weight: 700; }
+.recent-empty-desc { max-width: 600px; margin: 0; color: var(--showcase-tactical-muted); font-size: .84rem; line-height: 1.55; }
 .panel-actions { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 15px; }
 .mini-action {
   display: inline-flex;
@@ -241,10 +233,6 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
 }
 .mini-action:hover { text-decoration: none; border-color: #d99a25; }
 .mini-action.primary { border-color: #d99a25; background: #d58b19; color: #171006; }
-.replay-decoration { position: absolute; right: 28px; top: 30px; display: grid; gap: 12px; width: 220px; opacity: .55; }
-.replay-decoration span { height: 12px; border: 1px solid rgba(217, 154, 37, .38); transform: skewX(-18deg); }
-.replay-decoration span:nth-child(2) { margin-left: 28px; }
-.replay-decoration span:nth-child(3) { margin-left: 58px; }
 .quick-panel { padding: 16px 18px; }
 .quick-panel h2 { margin: 0 0 8px; font-size: .95rem; color: var(--showcase-tactical-heading); }
 .quick-panel a {
@@ -290,7 +278,6 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
   .feature-grid { grid-template-columns: 1fr; }
   .feature-visual { height: 112px; }
   .feature-copy p { min-height: 0; }
-  .replay-decoration { display: none; }
-  .replay-panel { padding: 18px; }
+  .recent-panel { padding: 18px; }
 }
 </style>

@@ -45,3 +45,63 @@ describe('HomePage highest damage record', () => {
     wrapper.unmount()
   })
 })
+
+describe('HomePage information architecture — single replay entry point', () => {
+  beforeEach(() => {
+    api.hofList.mockReset()
+    api.hofList.mockResolvedValue({ items: [] })
+  })
+
+  it('hero primary CTA is Upload Replay → replay view', () => {
+    const wrapper = mountPage()
+    const primary = wrapper.find('.hero-btn.primary')
+    expect(primary.text()).toBe('home.uploadReplay')
+    expect(primary.attributes('href')).toBe('/?view=replay')
+    wrapper.unmount()
+  })
+
+  it('hero secondary CTA is View Analysis History → replay view (not a second upload CTA)', () => {
+    const wrapper = mountPage()
+    const secondary = wrapper.find('.hero-btn.secondary')
+    expect(secondary.text()).toBe('home.viewAnalysisHistory')
+    expect(secondary.attributes('href')).toBe('/?view=replay')
+    wrapper.unmount()
+  })
+
+  it('feature card 01 CTA is Explore Battle Analysis, not Upload Replay', () => {
+    const wrapper = mountPage()
+    const action = wrapper.find('.feature-primary .feature-action')
+    expect(action.text()).toBe('home.learnAnalysis →')
+    expect(wrapper.find('.feature-primary').attributes('href')).toBe('/?view=replay')
+    wrapper.unmount()
+  })
+
+  it('bottom replay upload panel is removed (no third upload entry point)', () => {
+    const wrapper = mountPage()
+    expect(wrapper.find('.replay-panel').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('upload.select_files')
+    expect(wrapper.text()).not.toContain('upload.select_folder')
+    wrapper.unmount()
+  })
+
+  it('shows Recent Analysis empty state with a contextual upload CTA', () => {
+    const wrapper = mountPage()
+    const panel = wrapper.find('.recent-panel')
+    expect(panel.exists()).toBe(true)
+    expect(panel.find('.recent-title').text()).toBe('home.recentAnalysis')
+    expect(panel.find('.recent-empty-title').text()).toBe('home.recentAnalysisEmptyTitle')
+    expect(panel.find('.recent-empty-desc').text()).toBe('home.recentAnalysisEmptyDesc')
+    const cta = panel.find('.mini-action.primary')
+    expect(cta.text()).toBe('home.uploadReplay')
+    expect(cta.attributes('href')).toBe('/?view=replay')
+    wrapper.unmount()
+  })
+
+  it('quick links panel is preserved', () => {
+    const wrapper = mountPage()
+    const quick = wrapper.find('.quick-panel')
+    expect(quick.exists()).toBe(true)
+    expect(quick.findAll('a')).toHaveLength(4)
+    wrapper.unmount()
+  })
+})
