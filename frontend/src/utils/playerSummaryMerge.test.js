@@ -9,9 +9,11 @@ describe('mergeCwPlayerRows', () => {
   ]
   const summaries = [
     { accountId: 1001, nickname: 'A', clan: 'AAA', battles: 3, ratingMedian: 850.4,
-      dimensionMedians: [300.2, 60, 70, 110, 40, 80, 100], mvpCount: 2 },
+      dimensionMedians: [300.2, 60, 70, 110, 40, 80, 100], mvpCount: 2,
+      contribution: 22.4, kast: 100, impact: 151.2 },
     { accountId: 2001, nickname: 'B', clan: 'BBB', battles: 2, ratingMedian: 720.1,
-      dimensionMedians: [250, 50, 60, 90, 30, 70, 80], mvpCount: 0 },
+      dimensionMedians: [250, 50, 60, 90, 30, 70, 80], mvpCount: 0,
+      contribution: 18.1, kast: 80, impact: 120.5 },
   ]
 
   it('joins league fields by accountId (not index/order)', () => {
@@ -23,6 +25,9 @@ describe('mergeCwPlayerRows', () => {
     expect(a.cells.league_damage_score).toBe(300.2)
     expect(a.cells.league_shooting_score).toBe(100)
     expect(a.cells.mvp_count).toBe(2)
+    // BLOCKER 5：评分场次独立于解析场次（aggregate battles 不被 League 覆盖）
+    expect(a.cells.battles).toBe(3)
+    expect(a.cells.rated_battles).toBe(3)
     // aggregate facts 保留
     expect(a.cells.damage_avg).toBe(500)
     expect(a.cells.earned_avg).toBe(80)
@@ -45,6 +50,29 @@ describe('mergeCwPlayerRows', () => {
     expect(a.cells.league_rating).toBe(850.4)
     expect(a.cells.nickname).toBe('A')
     expect(a.cells.damage_avg == null).toBe(true) // aggregate 字段缺失 → UI '--'
+    // BLOCKER 1/5：League-only 行带跨场 Performance Metrics + 评分场次
+    expect(a.cells.rated_battles).toBe(3)
+    expect(a.cells.contribution).toBe(22.4)
+    expect(a.cells.kast).toBe(100)
+    expect(a.cells.impact).toBe(151.2)
+  })
+
+  it('aggregate 行的 Performance Metrics 不被 League-only 样本覆盖（BLOCKER 1：aggregate 全量样本优先）', () => {
+    const aggWithPerf = [
+      { team: 1, cells: { account_id: 1001, nickname: 'A', battles: 12, contribution: 20.0, kast: 90, impact: 140.0 } },
+    ]
+    // league summary 携带 rated-only 样本（不同样本，数值不同）
+    const rows = mergeCwPlayerRows(aggWithPerf, [{
+      accountId: 1001, nickname: 'A', clan: 'AAA', battles: 8, ratingMedian: 850,
+      dimensionMedians: [300, 60, 70, 110, 40, 80, 100], mvpCount: 2,
+      contribution: 30.0, kast: 99, impact: 200.0,
+    }])
+    const a = rows[0]
+    expect(a.cells.battles).toBe(12)          // 解析场次不被 rated-only 覆盖
+    expect(a.cells.rated_battles).toBe(8)     // 评分场次独立
+    expect(a.cells.contribution).toBe(20.0)   // aggregate 样本优先
+    expect(a.cells.kast).toBe(90)
+    expect(a.cells.impact).toBe(140.0)
   })
 
   it('tolerates null/empty inputs', () => {

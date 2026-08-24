@@ -2,6 +2,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import CwPlayerSummaryTable from './CwPlayerSummaryTable.vue'
 
 vi.mock('vue-i18n', () => ({
@@ -109,5 +110,94 @@ describe('CwPlayerSummaryTable', () => {
     // A=850.4 rated, B=null → A first, B missing last
     expect(rows.at(0).text()).toContain('850')
     expect(rows.at(1).text()).toContain('--')
+  })
+
+  it('renders Performance Metrics columns as percentages (review PR#134 BLOCKER 1)', () => {
+    const wrapper = mountTable({
+      columns: [
+        { key: 'nickname', num: false },
+        { key: 'contribution', num: true },
+        { key: 'kast', num: true },
+        { key: 'impact', num: true },
+      ],
+      rows: [
+        { team: 1, league: null, cells: { account_id: 1001, nickname: 'A', contribution: 22.4, kast: 100, impact: 151.2 } },
+        { team: 2, league: null, cells: { account_id: 2001, nickname: 'B', contribution: null, kast: null, impact: null } },
+      ],
+    })
+    const text = wrapper.text()
+    expect(text).toContain('22.4%')
+    expect(text).toContain('100%')
+    expect(text).toContain('151.2%')
+    // HP UNKNOWN → B 行全部 '--'（不冒充 0%；'100%' 里的 '0%' 子串不算）
+    expect(text).toContain('B------')
+    expect(text).not.toMatch(/(^|\D)0%/)
+  })
+
+  it('displays rated_battles separately from battles (BLOCKER 5)', () => {
+    const wrapper = mountTable({
+      columns: [
+        { key: 'nickname', num: false },
+        { key: 'battles', num: true },
+        { key: 'rated_battles', num: true },
+      ],
+      rows: [
+        { team: 1, league: null, cells: { account_id: 1001, nickname: 'A', battles: 12, rated_battles: 8 } },
+      ],
+    })
+    const text = wrapper.text()
+    expect(text).toContain('12')
+    expect(text).toContain('8')
+  })
+})
+
+describe('CwPlayerSummaryTable sticky core pair (review PR#134 BLOCKER 2.9/2.10)', () => {
+  // happy-dom 无真实布局：getBoundingClientRect 宽度由测试 stub 控制
+  function stubNickWidth(wrapper, width) {
+    const nickTh = wrapper.findAll('th').find(t => t.text().includes('nickname'))
+    nickTh.element.getBoundingClientRect = () => ({ width, height: 24, top: 0, left: 0, right: width, bottom: 24 })
+    return nickTh
+  }
+
+  async function flushSticky() {
+    await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    await nextTick()
+  }
+
+  const STICKY_COLS = [
+    { key: 'nickname', num: false },
+    { key: 'league_rating', num: true },
+    { key: 'battles', num: true },
+  ]
+
+  it('hidden（active=false）不得把 Rating sticky left 写成有效 0', async () => {
+    const wrapper = mountTable({ columns: STICKY_COLS, active: false })
+    await flushSticky()
+    const ratingTh = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
+    expect(ratingTh.attributes('style') || '').not.toContain('left')
+  })
+
+  it('visible：nickname left=0、rating left=实测昵称列宽', async () => {
+    const wrapper = mountTable({ columns: STICKY_COLS })
+    stubNickWidth(wrapper, 132)
+    await flushSticky()
+    const nickTh = wrapper.findAll('th').find(t => t.text().includes('nickname'))
+    const ratingTh = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
+    expect(nickTh.attributes('style')).toContain('left: 0px')
+    expect(ratingTh.attributes('style')).toContain('left: 132px')
+  })
+
+  it('column reorder（columns prop 变化）→ 重测到新昵称列宽（BLOCKER 2.10）', async () => {
+    const wrapper = mountTable({ columns: STICKY_COLS })
+    stubNickWidth(wrapper, 132)
+    await flushSticky()
+    let ratingTh = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
+    expect(ratingTh.attributes('style')).toContain('left: 132px')
+    stubNickWidth(wrapper, 148)
+    await wrapper.setProps({ columns: [...STICKY_COLS].reverse() })
+    await flushSticky()
+    ratingTh = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
+    expect(ratingTh.attributes('style')).toContain('left: 148px')
   })
 })

@@ -1,7 +1,6 @@
 package com.wotb.core.league;
 
 import java.util.List;
-import java.util.Set;
 
 /**
  * League Rating 列契约（key 单一来源：API / 前端 / Excel 导出三方一致）。
@@ -44,10 +43,6 @@ public final class LeagueColumns {
     /** League 模式默认可见列（玩家/战队/车辆/伤害/助攻/击杀/总 Rating；plan §15）。 */
     public static final List<String> DEFAULT_VISIBLE = List.of(
             "nickname", "clan", "tank_name", "damage_dealt", "damage_assisted", "kills", RATING);
-
-    /** League 模式单场玩家表中被移除的旧指标列（plan §14）。 */
-    public static final Set<String> REMOVED_LEGACY_KEYS = Set.of(
-            "contribution", "kast", "impact");
 
     /** 玩家表固定列（player + 总 Rating；不可移动，sticky 布局依据）。 */
     public static final List<String> FIXED_PLAYER_COLUMNS = List.of("nickname", RATING);

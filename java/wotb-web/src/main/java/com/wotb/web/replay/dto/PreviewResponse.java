@@ -15,6 +15,12 @@ import java.util.List;
  * <p>混合批次（普通 + 训练赛/联赛混传）：{@code leagueUnavailableCode} 携带
  * {@code MIXED_LEAGUE_AND_STANDARD_REPLAYS}（League Rating 不聚合混合批次；battles 仍按
  * 普通回放语义成功返回，plan §21）；其余场景为 null。</p>
+ *
+ * <p>{@code leagueMode} 与 {@code league} 是<b>两个独立状态</b>（review PR#134 BLOCKER 3）：
+ * {@code leagueMode=true} = 这是 CW UI（CW 列契约 / Player Drawer / sticky pair /
+ * Performance metrics 可用 / Rating 列可存在），由批次模式（训练赛/联赛）决定；
+ * {@code league} 仅决定本场/批次是否有 League Rating 结果（Rating-ineligible 场次
+ * league=null 但 leagueMode 仍为 true，Rating/七维显示 "--"）。禁止用 league != null 推断 CW。</p>
  */
 public record PreviewResponse(List<BattleDto> battles,
                               List<AggRow> aggregate,
@@ -23,5 +29,6 @@ public record PreviewResponse(List<BattleDto> battles,
                               List<ColumnDef> playerColumns,
                               List<ColumnDef> aggregateColumns,
                               LeagueRatingDto league,
-                              String leagueUnavailableCode) {
+                              String leagueUnavailableCode,
+                              boolean leagueMode) {
 }

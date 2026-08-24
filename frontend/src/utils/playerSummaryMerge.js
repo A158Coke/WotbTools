@@ -1,10 +1,14 @@
 /**
- * CW 统一玩家表数据合并（plan §6/§21）：
+ * CW 统一玩家表数据合并（plan §6/§21；review PR#134 BLOCKER 5）：
  * 以 Replay Aggregate（Replay Core，覆盖全部已解析 CW 场次与玩家）为基底，
  * 按 accountId join League Player Summary（Rating 附加字段）。
  *
  * - join identity 一律 accountId，禁止 array index / nickname / row order（§6.3）。
  * - 缺失侧（有 Aggregate 无 League Rating）保留玩家，League 字段补 null → UI 显示 "--"（§21 Missing side）。
+ * - 样本语义分离（BLOCKER 5）：cells.battles = Replay Aggregate 解析场次（不被 League 覆盖）；
+ *   cells.rated_battles = League Player Summary 评分场次（LeaguePlayerSummary.battles，rated-only）。
+ * - Performance Metrics（contribution/kast/impact）为跨场 aggregate 样本；League-only 行（aggregate
+ *   未覆盖，如单场 CW）取 league playerSummary 携带的跨场值（BLOCKER 1）。
  */
 
 /** League Rating 七维列 key（顺序与后端 LeagueColumns.DIM_KEYS 一致）。 */
@@ -41,7 +45,8 @@ export function mergeCwPlayerRows(aggregateRows, playerSummaries) {
     }
     return { team: row.team, cells, league: summary }
   })
-  // League-only（aggregate 未覆盖，如单场 CW）：League 字段展示，Aggregate 字段 null
+  // League-only（aggregate 未覆盖，如单场 CW）：League 字段展示，Aggregate 字段 null。
+  // battles = 该场景解析场次 == 评分场次（aggregate 为空时同源）；rated_battles 另列（BLOCKER 5）
   for (const s of byAccount.values()) {
     const cells = {
       account_id: s.accountId,
@@ -53,18 +58,28 @@ export function mergeCwPlayerRows(aggregateRows, playerSummaries) {
       assist_total: s.assistTotal ?? null,
       kills_total: s.killsTotal ?? null,
     }
-    fillLeagueCells(cells, s)
+    fillLeagueCells(cells, s, true)
     rows.push({ team: 0, cells, league: s })
   }
   return rows
 }
 
-/** 把 League summary 字段写入统一行 cells（Rating 中位数 / 七维中位数 / MVP 次数；缺失置 null）。 */
-function fillLeagueCells(cells, summary) {
+/** 把 League summary 字段写入统一行 cells（Rating 中位数 / 七维中位数 / MVP 次数 / 评分场次；
+ * includePerf=true 时附加跨场 Performance Metrics，仅用于 League-only 行，绝不覆盖 aggregate 样本）。
+ */
+function fillLeagueCells(cells, summary, includePerf = false) {
   cells.league_rating = summary?.ratingMedian ?? null
   const dims = summary?.dimensionMedians || []
   CW_DIM_KEYS.forEach((key, i) => { cells[key] = dims[i] ?? null })
   cells.mvp_count = summary?.mvpCount ?? null
+  // 评分场次（rated-only 样本，独立于 aggregate 的解析场次；BLOCKER 5）
+  cells.rated_battles = summary?.battles ?? null
+  // 跨场 Performance Metrics（BLOCKER 1）：只给 aggregate 未覆盖的 League-only 行补值
+  if (includePerf) {
+    cells.contribution = summary?.contribution ?? null
+    cells.kast = summary?.kast ?? null
+    cells.impact = summary?.impact ?? null
+  }
 }
 
 /**

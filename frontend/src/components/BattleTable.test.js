@@ -123,14 +123,16 @@ function leagueCols() {
   ]
 }
 
-function mountLeague(battle, cols, teamNames) {
+function mountLeague(battle, cols, teamNames, extraProps = {}) {
   return mount(BattleTable, {
     props: {
       battle,
       shownCols: cols || leagueCols(),
       leagueColumns: LEAGUE_COLUMN_DEFS,
       league: battle.league,
-      teamNames: teamNames || {}
+      leagueMode: true,
+      teamNames: teamNames || {},
+      ...extraProps
     },
     global: { mocks: { $t: key => key } }
   })
@@ -301,5 +303,54 @@ describe('BattleTable League Rating', () => {
     const th = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
     await th.trigger('click')
     expect(wrapper.emitted('select-player')).toBeUndefined()
+  })
+
+  // ---- review PR#134 BLOCKER 3：leagueMode（CW UI）与 league（Rating 结果）是两个独立状态 ----
+
+  it('leagueMode=true + league=null（Rating-ineligible CW 场）：仍是 CW——点击打开 Drawer、Rating 显示 --、sticky 契约保持', async () => {
+    const battle = makeLeagueBattle()
+    battle.league = null // 本场未评分（如名册不完整），但仍是 CW
+    const wrapper = mountLeague(battle, leagueCols())
+    // 概览仍渲染（CW UI），但 Rating/MVP 不伪造
+    const text = wrapper.text()
+    expect(text).toContain('league.title')
+    expect(text).not.toContain('88.1%') // 战队 Rating 不得伪造
+    expect(text).not.toContain('MVP')   // 无 MVP 徽标（league null）
+    // Rating 单元格显示 '--'（不得 0 · 0%）
+    expect(text).toContain('--')
+    // sticky 契约：nickname + league_rating 仍 sticky
+    const ths = wrapper.findAll('th')
+    expect(ths.find(t => t.text().includes('nickname')).classes()).toContain('sticky-col')
+    expect(ths.find(t => t.text().includes('league_rating')).classes()).toContain('sticky-col')
+    // 点击玩家行 → 仍打开 Drawer（BLOCKER 3.3）
+    const rowA = wrapper.findAll('tbody tr').find(r => r.text().includes('A'))
+    await rowA.trigger('click')
+    const emitted = wrapper.emitted('select-player')
+    expect(emitted).toBeTruthy()
+    expect(emitted[0][0]).toEqual({ scope: 'battle', accountId: 1001, arenaId: '111' })
+  })
+
+  it('Rating-ineligible 场 Rating 单元格显示 -- 而不是 0（BLOCKER 3.3 不冒充 0）', async () => {
+    const battle = makeLeagueBattle()
+    battle.league = null
+    battle.players = battle.players.map(p => ({
+      ...p, cells: { ...p.cells, league_rating: undefined, league_damage_score: undefined }
+    }))
+    const wrapper = mountLeague(battle, leagueCols())
+    expect(wrapper.text()).not.toMatch(/0 · 0%/)
+  })
+
+  it('column reorder（shownCols 变化）→ sticky 重测到新昵称列宽（BLOCKER 2.10）', async () => {
+    const wrapper = mountLeague(makeLeagueBattle())
+    stubNickWidth(wrapper, 132)
+    await flushSticky()
+    let ratingTh = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
+    expect(ratingTh.attributes('style')).toContain('left: 132px')
+    // reorder 后昵称列变宽 → 必须重测（不得假设 nickname 宽度不变）
+    stubNickWidth(wrapper, 148)
+    await wrapper.setProps({ shownCols: [...leagueCols()].reverse() })
+    await flushSticky()
+    ratingTh = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
+    expect(ratingTh.attributes('style')).toContain('left: 148px')
   })
 })

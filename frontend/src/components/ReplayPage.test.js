@@ -222,18 +222,29 @@ vi.mock('../composables/useReplay.js', async () => {
 vi.mock('../composables/useColumns.js', async () => {
   const { ref, computed } = await import('vue')
   return {
-    useColumns: () => ({
-      visibleKeys: ref([]), aggVisibleKeys: ref([]),
-      playerOrder: ref([]), aggOrder: ref([]),
-      showColPicker: ref(false), pickerScope: ref('player'),
-      currentOrder: computed(() => []),
-      shownCols: computed(() => []), shownAggCols: computed(() => []),
-      // 测试 seam：window.__testLeagueMode 控制 league 模式渲染
-      leagueMode: computed(() => !!window.__testLeagueMode),
-      toggleColPicker: vi.fn(), toggleCol: vi.fn(),
-      selectAllCols: vi.fn(), resetCols: vi.fn(),
-      handleReorder: vi.fn(), initFromResponse: vi.fn(),
-    })
+    useColumns: () => {
+      // 测试 seam：window.__testLeagueMode 控制 league 模式渲染；
+      // window.__testCwVisible / __testCwOrder 模拟 useColumns cw scope（BLOCKER 2）
+      const cwKeys = window.__testCwVisible || [
+        'nickname', 'league_rating', 'clan', 'battles', 'wins', 'win_rate',
+        'damage_avg', 'earned_avg', 'contribution', 'kast', 'impact'
+      ]
+      const cwOrder = window.__testCwOrder || [...cwKeys]
+      return {
+        visibleKeys: ref([]), aggVisibleKeys: ref([]),
+        playerOrder: ref([]), aggOrder: ref([]),
+        cwVisibleKeys: ref([...cwKeys]),
+        cwOrder: ref([...cwOrder]),
+        showColPicker: ref(false), pickerScope: ref('player'),
+        currentOrder: computed(() => []),
+        shownCols: computed(() => []), shownAggCols: computed(() => []),
+        // 测试 seam：window.__testLeagueMode 控制 league 模式渲染
+        leagueMode: computed(() => !!window.__testLeagueMode),
+        toggleColPicker: vi.fn(), toggleCol: vi.fn(),
+        selectAllCols: vi.fn(), resetCols: vi.fn(),
+        handleReorder: vi.fn(), initFromResponse: vi.fn(),
+      }
+    }
   }
 })
 
@@ -296,7 +307,8 @@ function mountPage(overrides = {}) {
             '<p class="scroll-hint">Scroll</p></div>'
         },
         RemoveConfirmModal: { template: '<div class="remove-modal-stub" />' },
-        PlayerDetailDrawer: { props: ['context', 'player'], template: '<div class="drawer-stub">{{ context ? "open:" + context.accountId : "closed" }}</div>' }
+        PlayerDetailDrawer: { props: ['context', 'player'], template: '<div class="drawer-stub">{{ context ? "open:" + context.accountId : "closed" }}</div>' },
+        ...(overrides.stubs || {})
       }
     }
   })
@@ -1696,6 +1708,120 @@ describe('ReplayPage Player Detail Drawer (plan §8/§23)', () => {
     await nextTick()
     const drawer = wrapper.find('.drawer-stub')
     expect(drawer.text()).toBe('closed')
+    wrapper.unmount()
+  })
+})
+describe('ReplayPage CW unified table column contract + CW/Rating boundary (review PR#134 BLOCKER 2/3)', () => {
+  beforeEach(() => {
+    state.clear()
+    state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'zh', files: [] }
+    delete window.__testCwVisible
+    delete window.__testCwOrder
+  })
+
+  /** 富 league 响应：playerSummaryColumns 含七维 + mvp_count + perf；aggregateColumns 含 facts。 */
+  function cwResp() {
+    return makeResp({
+      aggregate: [
+        { team: 1, cells: { account_id: 1001, nickname: 'Alpha', clan: 'AAA', battles: 12, wins: 8, win_rate: 66.7, damage_avg: 500, earned_avg: 80, contribution: 22.4, kast: 100, impact: 151.2 } },
+        { team: 2, cells: { account_id: 2001, nickname: 'Beta', clan: 'BBB', battles: 12, wins: 4, win_rate: 33.3, damage_avg: 300, earned_avg: 40, contribution: 18.1, kast: 80, impact: 120.5 } },
+      ],
+      aggregateColumns: [
+        { key: 'nickname', num: false }, { key: 'clan', num: false }, { key: 'battles', num: true },
+        { key: 'wins', num: true }, { key: 'win_rate', num: true }, { key: 'damage_avg', num: true },
+        { key: 'earned_avg', num: true }, { key: 'contribution', num: true }, { key: 'kast', num: true },
+        { key: 'impact', num: true },
+      ],
+      playerColumns: [{ key: 'nickname', label: '昵称' }, { key: 'league_rating', label: 'Rating' }],
+      league: {
+        mode: 'LEAGUE_RATING',
+        columns: [
+          { key: 'league_rating', max: 1000, fixed: true },
+          { key: 'league_damage_score', max: 400 },
+          { key: 'league_shooting_score', max: 100 },
+        ],
+        playerSummaries: [
+          { accountId: 1001, nickname: 'Alpha', clan: 'AAA', battles: 8, ratingMedian: 850.4, dimensionMedians: [342, 60, 70, 110, 40, 80, 100], mvpCount: 2, wins: 8, contribution: 22.4, kast: 100, impact: 151.2 },
+        ],
+        playerSummaryColumns: [
+          { key: 'nickname', num: false }, { key: 'clan', num: false }, { key: 'battles', num: true },
+          { key: 'league_rating', num: true }, { key: 'league_damage_score', num: true },
+          { key: 'league_shooting_score', num: true }, { key: 'mvp_count', num: true },
+          { key: 'wins', num: true }, { key: 'contribution', num: true }, { key: 'kast', num: true },
+          { key: 'impact', num: true },
+        ],
+        teamSummaries: [], teamSummaryColumns: [], failures: [],
+      }
+    })
+  }
+
+  function cwThKeys(wrapper) {
+    // $t mock 返回完整 key（'agg_labels.nickname'）→ 去掉前缀还原列 key
+    return wrapper.findAll('.cw-player-summary th').map(t =>
+      t.text().replace(/[▼▲]/g, '').replace(/^agg_labels\./, ''))
+  }
+
+  it('统一表列 = cw scope 可见列：七维/MVP 不是 forced visible（BLOCKER 2.6）', async () => {
+    window.__testCwVisible = ['nickname', 'league_rating', 'clan', 'battles', 'wins', 'win_rate',
+      'damage_avg', 'earned_avg', 'contribution', 'kast', 'impact']
+    state.init.resp = cwResp()
+    const wrapper = mountPage()
+    await flushPromises()
+    const keys = cwThKeys(wrapper)
+    // 七维/MVP 不在 cwVisibleKeys → 不渲染（不再是 alwaysVisible）
+    expect(keys).not.toContain('league_damage_score')
+    expect(keys).not.toContain('mvp_count')
+    // nickname + league_rating 固定出现
+    expect(keys[0]).toBe('nickname')
+    expect(keys[1]).toBe('league_rating')
+    // 表现指标与 facts 可显示
+    expect(keys).toContain('contribution')
+    expect(keys).toContain('kast')
+    expect(keys).toContain('impact')
+    expect(keys).toContain('earned_avg')
+    wrapper.unmount()
+  })
+
+  it('用户自定义顺序生效：nickname + league_rating 固定前两位，其余按偏好顺序（BLOCKER 2.8/2.11）', async () => {
+    window.__testCwVisible = window.__testCwOrder = ['nickname', 'league_rating',
+      'impact', 'kast', 'damage_avg', 'league_damage_score', 'earned_avg']
+    state.init.resp = cwResp()
+    const wrapper = mountPage()
+    await flushPromises()
+    const keys = cwThKeys(wrapper)
+    expect(keys).toEqual(['nickname', 'league_rating', 'impact', 'kast', 'damage_avg', 'league_damage_score', 'earned_avg'])
+    wrapper.unmount()
+  })
+
+  it('leagueMode=true + 该场 league=null（Rating-ineligible CW 场）：battle 点击仍打开 Drawer（BLOCKER 3.4）', async () => {
+    state.init.resp = makeResp({
+      aggregate: [],
+      battles: [
+        { arenaId: '111', mapName: 'Lagoon', league: null, players: [{ team: 1, cells: { account_id: 1001, nickname: 'P1', damage_dealt: 5000 } }] },
+      ],
+      league: {
+        mode: 'LEAGUE_RATING',
+        columns: [{ key: 'league_rating', max: 1000, fixed: true }],
+        playerSummaries: [], playerSummaryColumns: [], teamSummaries: [], teamSummaryColumns: [], failures: [],
+      }
+    })
+    state.init.activeTab = 'b0'
+    window.__testCwVisible = ['nickname', 'league_rating']
+    const wrapper = mountPage({
+      stubs: {
+        BattleTable: {
+          props: ['battle', 'league', 'leagueMode'],
+          emits: ['select-player'],
+          template: '<div class="battle-table-stub" data-testid="battle-stub" @click="$emit(&quot;select-player&quot;, { scope: &apos;battle&apos;, accountId: 1001, arenaId: &apos;111&apos; })">battle</div>'
+        }
+      }
+    })
+    await flushPromises()
+    // leagueMode=true（CW 批次），即使该场 league=null：仍是 CW UI
+    expect(wrapper.find('[data-testid="league-summary-title"]').exists()).toBe(true)
+    await wrapper.find('.battle-table-stub').trigger('click')
+    const drawer = wrapper.find('.drawer-stub')
+    expect(drawer.text()).toContain('open:1001')
     wrapper.unmount()
   })
 })

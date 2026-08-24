@@ -1,9 +1,10 @@
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { fmtDuration, mapLabel } from '../utils/helpers.js'
 import { replayValueLabel } from '../utils/display.js'
 import { stableSortRows } from '../utils/tableSort.js'
+import { useStickyColumns } from '../utils/stickyColumns.js'
 
 const { locale, t, te } = useI18n()
 const LOCALIZED_VALUE_KEYS = new Set(['tank_type', 'tank_nation', 'potential_damage_detail'])
@@ -14,7 +15,10 @@ const props = defineProps({
   shownCols: Array,
   /** League 模式：resp.league.columns（key/max/fixed/group 元数据）。 */
   leagueColumns: { type: Array, default: () => [] },
-  /** League 模式：resp.league 单场元数据（team ratings / MVP / 队内最佳）。 */
+  /**
+   * League 模式单场元数据（team ratings / MVP / 队内最佳）。仅决定本场<b>是否有 Rating 结果</b>，
+   * 不决定 CW UI（review PR#134 BLOCKER 3：leagueMode 与 league 是两个独立状态）。
+   */
   league: { type: Object, default: null },
   /** 战队名称覆盖：{arenaId:team: name}（仅当前页面内存，plan §12）。 */
   teamNames: { type: Object, default: () => ({}) },
@@ -23,10 +27,18 @@ const props = defineProps({
    * active=false（v-show hidden）时禁止测量：hidden DOM width=0 不得覆盖有效 sticky offset。
    */
   active: { type: Boolean, default: true },
+  /**
+   * CW（League Rating）模式（review PR#134 BLOCKER 3）：决定这是 CW UI（CW 列契约 /
+   * Player Drawer / sticky pair / Rating 列存在）。Rating-ineligible 场次 league==null
+   * 但 leagueMode=true —— 该场仍是 CW：Replay facts / Performance metrics 正常显示，
+   * Rating/七维显示 "--"，点击玩家仍打开 Drawer。
+   */
+  leagueMode: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update-team-name', 'select-player'])
 
-const isLeague = computed(() => !!props.league)
+/** CW UI 开关（不再是 league != null 推断；BLOCKER 3）。 */
+const isLeague = computed(() => props.leagueMode)
 const leagueMaxByKey = computed(() =>
   Object.fromEntries((props.leagueColumns || []).map(c => [c.key, c.max])))
 
@@ -91,8 +103,10 @@ function round1(v) {
   return Math.round(n * 10) / 10
 }
 
+/** Rating 文本：缺失（Rating-ineligible 场次）→ '--'，不冒充 0（review PR#134 BLOCKER 3）。 */
 function ratingText(rating, max) {
-  const v = Number(rating) || 0
+  if (rating == null || rating === '' || !Number.isFinite(Number(rating))) return '--'
+  const v = Number(rating)
   const m = Number(max) || 1000
   const pct = m > 0 ? Math.round(1000 * v / m) / 10 : 0
   return Math.round(v) + ' · ' + pct + '%'
@@ -116,7 +130,8 @@ function onTeamNameInput(teamNumber, event) {
   emit('update-team-name', { arenaId: props.battle.arenaId, team: teamNumber, name: event.target.value })
 }
 
-/** 点击玩家行 → 打开选手 Drawer（plan §8.1：CW 单场 BattleTable 支持；selection = accountId §8.7）。 */
+/** 点击玩家行 → 打开选手 Drawer（plan §8.1：CW 单场 BattleTable 支持；selection = accountId §8.7）。
+ * CW UI（leagueMode）即支持——Rating-ineligible 场次（league=null）同样打开 Drawer（BLOCKER 3）。 */
 function onRowClick(row) {
   if (!isLeague.value) return
   emit('select-player', {
@@ -126,12 +141,13 @@ function onRowClick(row) {
   })
 }
 
-// ---- Rating 单元格（总分「927 · 92.7%」；维度「342 / 400 · 85.5%」） ----
+// ---- Rating 单元格（总分「927 · 92.7%」；维度「342 / 400 · 85.5%」；缺失 → '--'）----
 
 function ratingCellText(value, key) {
-  const v = Number(value) || 0
+  if (value == null || value === '' || !Number.isFinite(Number(value))) return '--'
+  const v = Number(value)
   const max = Number(leagueMaxByKey.value[key]) || 0
-  if (max <= 0) return String(v)
+  if (max <= 0) return String(Math.round(v * 10) / 10)
   const pct = Math.round(1000 * v / max) / 10
   // 总 Rating 显示「927 · 92.7%」；维度显示「342 / 400 · 85.5%」
   if (key === 'league_rating') return Math.round(v) + ' · ' + pct + '%'
@@ -148,91 +164,17 @@ function rowFlags(row) {
   return { mvp, teamBest }
 }
 
-// ---- sticky 列（League 模式：玩家 + 总 Rating 固定，左偏移响应真实列宽） ----
+// ---- sticky 列（CW 模式：玩家 + 总 Rating 固定，左偏移响应真实列宽）----
 // invariant：nickname.left = 0；league_rating.left = 真实可见 nickname 列宽（>0）。
-// 禁止 hidden measurement（width<=0）覆盖有效 offset（plan §3.3/§3.4）。
-
-const headerRefs = ref({})
-const stickyLeft = ref({ nickname: 0, league_rating: null })
-
-let stickyRaf = 0
-let stickyObserver = null
-
-// happy-dom / 老环境无 rAF 时回退 setTimeout(0)；组件内部不直接依赖全局 rAF 存在。
-const nextFrame = typeof requestAnimationFrame === 'function'
-  ? (cb) => requestAnimationFrame(cb)
-  : (cb) => setTimeout(cb, 0)
-const cancelFrame = typeof cancelAnimationFrame === 'function'
-  ? (id) => cancelAnimationFrame(id)
-  : (id) => clearTimeout(id)
-
-function disconnectStickyObserver() {
-  if (stickyObserver) {
-    stickyObserver.disconnect()
-    stickyObserver = null
-  }
-}
-
-function connectStickyObserver() {
-  disconnectStickyObserver()
-  const nickEl = headerRefs.value['nickname']
-  if (!nickEl || typeof ResizeObserver === 'undefined') return
-  stickyObserver = new ResizeObserver(() => scheduleStickyMeasure())
-  stickyObserver.observe(nickEl)
-}
-
-/** 读取真实可见 nickname 列宽；非有限或 <=0 视为 hidden（返回 0，不参与写入）。 */
-function nicknameWidth() {
-  const nickEl = headerRefs.value['nickname']
-  if (!nickEl) return 0
-  const width = nickEl.getBoundingClientRect().width
-  return (Number.isFinite(width) && width > 0) ? width : 0
-}
-
-/**
- * 调度一次 sticky 测量：active=false 不测；nextTick + rAF 后读真实 layout；
- * width<=0（hidden）时保留已有有效 offset，绝不写入 0（plan §3.3/§3.4/Test E）。
- */
-function scheduleStickyMeasure() {
-  if (!isLeague.value || !props.active) return
-  nextTick(() => {
-    cancelFrame(stickyRaf)
-    stickyRaf = nextFrame(() => {
-      const width = nicknameWidth()
-      if (width <= 0) return
-      stickyLeft.value = { nickname: 0, league_rating: width }
-    })
-  })
-}
-
-// 表头 ref 改变（重挂载）→ 重连 observer（mount → observe / ref 改变 → reconnect）
-watch(headerRefs, () => connectStickyObserver(), { deep: true })
-// 列系统 / League 模式 / 排序箭头变化都可能改昵称列宽 → 重新调度测量（plan §3.6/§14）
-watch(() => props.shownCols, scheduleStickyMeasure, { deep: true })
-watch(isLeague, scheduleStickyMeasure)
-watch([sortKey, sortReverse], scheduleStickyMeasure)
-// hidden → visible：父组件切换 activeTab 后重新测量真实宽度（plan §3.3）
-watch(() => props.active, (active) => {
-  if (active) scheduleStickyMeasure()
-})
-onMounted(() => {
-  connectStickyObserver()
-  scheduleStickyMeasure()
-  window.addEventListener('resize', scheduleStickyMeasure)
-})
-onBeforeUnmount(() => {
-  disconnectStickyObserver()
-  cancelFrame(stickyRaf)
-  window.removeEventListener('resize', scheduleStickyMeasure)
+// 复用 useStickyColumns（抽取自本组件验证过的 lifecycle；review PR#134 BLOCKER 2.9/2.10）。
+const { headerRefs, stickyLeft, isStickyCol, colStyle, schedule } = useStickyColumns({
+  enabled: isLeague,
+  active: computed(() => props.active),
+  watchCols: computed(() => props.shownCols),
 })
 
-const isStickyCol = key => isLeague.value && (key === 'nickname' || key === 'league_rating')
-const colStyle = key => {
-  if (!isStickyCol(key)) return {}
-  if (key === 'nickname') return { left: '0px' }
-  const v = stickyLeft.value[key]
-  return v == null ? {} : { left: v + 'px' }
-}
+// 排序箭头变化可能改昵称列宽 → 重新调度测量（plan §3.6/§14）
+watch([sortKey, sortReverse], schedule)
 </script>
 
 <template>
@@ -244,7 +186,7 @@ const colStyle = key => {
       <div class="mc"><div class="k">{{ $t('metric.player_count') }}</div><div class="v">{{ battle.players.length }}</div></div>
     </div>
 
-    <!-- League Rating 概览（训练赛/联赛专属；概览卡下方、玩家表上方） -->
+    <!-- League Rating 概览（CW 专属；Rating-ineligible 场次 league=null → 显示 "--" 不伪造，BLOCKER 3） -->
     <div v-if="isLeague" class="league-overview">
       <div class="league-head">
         <span class="league-title">{{ $t('league.title') }}</span>
@@ -258,15 +200,15 @@ const colStyle = key => {
                  :placeholder="t('league.team_name_pending')"
                  :title="t('league.edit_hint')"
                  @input="onTeamNameInput(tn, $event)" />
-          <span class="league-team-rating">{{ teamRatingText(tn === 1 ? league.team1 : league.team2) }}</span>
+          <span class="league-team-rating">{{ teamRatingText(tn === 1 ? league?.team1 : league?.team2) }}</span>
         </div>
       </div>
       <div class="league-mvp">
         <span class="lm-label">{{ $t('league.mvp') }}</span>
-        <b class="lm-value">{{ league.mvpNickname || '--' }}</b>
+        <b class="lm-value">{{ league?.mvpNickname || '--' }}</b>
         <span class="lm-label">{{ $t('league.team_best') }}</span>
-        <b class="lm-value">{{ $t('league.team1') }}: {{ league.team1BestNickname || '--' }}</b>
-        <b class="lm-value">{{ $t('league.team2') }}: {{ league.team2BestNickname || '--' }}</b>
+        <b class="lm-value">{{ $t('league.team1') }}: {{ league?.team1BestNickname || '--' }}</b>
+        <b class="lm-value">{{ $t('league.team2') }}: {{ league?.team2BestNickname || '--' }}</b>
       </div>
       <div class="league-note">{{ $t('league.points_note') }}</div>
     </div>

@@ -9,6 +9,7 @@ import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.web.replay.LeagueTestReplays;
+import com.wotb.web.replay.dto.AggRow;
 import com.wotb.web.replay.dto.BattleDto;
 import com.wotb.web.replay.dto.ExportResult;
 import com.wotb.web.replay.dto.PreviewResponse;
@@ -76,14 +77,19 @@ class ReplayServiceLeagueTest {
         assertNotNull(r.battles().getFirst().league());
         assertNotNull(r.battles().getFirst().league().team1());
         assertNotNull(r.battles().getFirst().league().team2());
-        // League 模式玩家列不含旧三指标
-        assertFalse(r.playerColumns().stream().anyMatch(c -> c.key().equals("contribution")));
-        assertFalse(r.playerColumns().stream().anyMatch(c -> c.key().equals("kast")));
-        assertFalse(r.playerColumns().stream().anyMatch(c -> c.key().equals("impact")));
+        // review PR#134 BLOCKER 1：Performance Metrics（contribution/kast/impact）必须保留在 CW 单场
+        assertTrue(r.playerColumns().stream().anyMatch(c -> c.key().equals("contribution")));
+        assertTrue(r.playerColumns().stream().anyMatch(c -> c.key().equals("kast")));
+        assertTrue(r.playerColumns().stream().anyMatch(c -> c.key().equals("impact")));
         assertTrue(r.playerColumns().stream().anyMatch(c -> c.key().equals("league_rating")));
-        // 玩家单元格含 Rating 维度
+        // 玩家单元格含 Rating 维度 + 单场 Performance Metrics
         assertTrue(r.battles().getFirst().players().getFirst().cells().containsKey("league_rating"));
         assertTrue(r.battles().getFirst().players().getFirst().cells().containsKey("league_damage_score"));
+        assertTrue(r.battles().getFirst().players().getFirst().cells().containsKey("contribution"));
+        assertTrue(r.battles().getFirst().players().getFirst().cells().containsKey("kast"));
+        assertTrue(r.battles().getFirst().players().getFirst().cells().containsKey("impact"));
+        // review PR#134 BLOCKER 3：leagueMode 与 league 结果存在性分离（CW 批次 leagueMode=true）
+        assertTrue(r.leagueMode(), "CW 批次 leagueMode 必须为 true（即使个别场次 Rating-ineligible）");
         // 固定列元数据
         assertTrue(r.league().columns().stream().anyMatch(c -> c.key().equals("league_rating") && c.fixed()));
         assertEquals(1000, r.league().columns().stream()
@@ -129,6 +135,7 @@ class ReplayServiceLeagueTest {
         assertNull(r.league(), "混合批次不产生 League Rating 元数据");
         assertEquals(2, r.battles().size(), "混合批次所有可解析 Battle 必须保留在 Preview");
         assertEquals("MIXED_LEAGUE_AND_STANDARD_REPLAYS", r.leagueUnavailableCode());
+        assertFalse(r.leagueMode(), "混合批次按普通回放语义，leagueMode 必须为 false");
         assertTrue(r.failures().isEmpty(), "混合批次无解析失败时 failures 必须为空");
     }
 
@@ -253,8 +260,21 @@ class ReplayServiceLeagueTest {
         assertEquals("LEAGUE_RATING", r.league().mode());
         assertFalse(r.aggregate().isEmpty(), "League 模式也必须输出基础 Replay Aggregate（跨场汇总）");
         assertFalse(r.league().playerSummaries().isEmpty(), "League 汇总同时存在（不是二选一）");
-        assertFalse(r.aggregateColumns().stream().anyMatch(c -> c.key().equals("contribution")),
-                "基础汇总列仍是 League 变体（PR #131 列边界不变）");
+        // review PR#134 BLOCKER 1：CW 汇总列必须保留跨场 contribution/kast/impact
+        assertTrue(r.aggregateColumns().stream().anyMatch(c -> c.key().equals("contribution")),
+                "CW 汇总列必须含跨场 contribution（Performance Metrics 保留）");
+        assertTrue(r.aggregateColumns().stream().anyMatch(c -> c.key().equals("kast")));
+        assertTrue(r.aggregateColumns().stream().anyMatch(c -> c.key().equals("impact")));
+        // 汇总行 cells 含跨场表现指标（HP 已知场非 null）
+        final AggRow first = r.aggregate().getFirst();
+        assertTrue(first.cells().containsKey("contribution"), "汇总行必须输出 contribution 列值");
+        assertTrue(first.cells().containsKey("impact"), "汇总行必须输出 impact 列值");
+        // league playerSummary 列与值含跨场 Performance Metrics
+        assertTrue(r.league().playerSummaryColumns().stream().anyMatch(c -> c.key().equals("kast")),
+                "league.playerSummaryColumns 必须含 kast");
+        assertTrue(r.league().playerSummaries().stream()
+                        .anyMatch(s -> s.impact() != null),
+                "league.playerSummaries 必须携带跨场 impact");
     }
 
     @Test
