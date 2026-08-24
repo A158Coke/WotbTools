@@ -23,9 +23,10 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 训练赛与联赛可以在同一批次内混合（都属于 League Rating）。
 
 **模式判定**：每次预览产生明确模式——`STANDARD_REPLAY`（全部普通）、
-`LEAGUE_RATING`（全部训练赛/联赛）、`MIXED_UNSUPPORTED`（两类混合 → HTTP 400
-`MIXED_LEAGUE_AND_STANDARD_REPLAYS`，不返回部分预览）。preview / 合并导出 / 每场导出
-共用同一判定与同一评分 core（禁止两套公式）。
+`LEAGUE_RATING`（全部训练赛/联赛）、`MIXED_UNSUPPORTED`（两类混合 → League Rating 不聚合，
+`league=null` + `leagueUnavailableCode=MIXED_LEAGUE_AND_STANDARD_REPLAYS`，battles 仍按普通
+回放语义成功返回，plan §21：混合 League eligibility 不得污染 Replay Parser）。preview / 合并导出 /
+每场导出共用同一判定与同一评分 core（禁止两套公式）。
 
 ## 数据来源与内存级生命周期
 

@@ -1356,9 +1356,13 @@ describe('ReplayPage League Rating', () => {
     state.init = { activeTab: 'b0', resp: null, error: '', loading: false, locale: 'zh', files: [] }
   })
 
-  it('renders league validation failures with code and arenaId', async () => {
+  it('renders league validation failures as collapsible summary, details on expand', async () => {
     state.init.resp = makeResp({
+      battles: [
+        { mapName: 'Lagoon', league: null, players: [] },
+      ],
       league: {
+        mode: 'LEAGUE_RATING',
         failures: [
           { fileName: 'bad.wotbreplay', arenaId: '111', code: 'LEAGUE_NOT_SEVEN_VS_SEVEN' }
         ]
@@ -1366,10 +1370,21 @@ describe('ReplayPage League Rating', () => {
     })
     const wrapper = mountPage()
     await flushPromises()
-    const text = wrapper.text()
-    expect(text).toContain('bad.wotbreplay')
-    expect(text).toContain('LEAGUE_NOT_SEVEN_VS_SEVEN')
-    expect(text).toContain('111')
+    // 默认：汇总可见，详情（文件名/错误码）折叠——不得默认铺满红色解析失败
+    expect(wrapper.find('[data-testid="league-failure-summary"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="league-failure-summary"]').classes()).not.toContain('error')
+    expect(wrapper.find('[data-testid="league-failure-summary"]').classes()).toContain('warn')
+    expect(wrapper.text()).toContain('league.rated_count')
+    expect(wrapper.find('[data-testid="league-failure-detail"]').exists()).toBe(false)
+    expect(wrapper.find('.error').exists()).toBe(false)
+    // 展开详情 → 分组错误码 + 展开分组 → 具体文件与 arenaId
+    await wrapper.find('[data-testid="league-failure-toggle"]').trigger('click')
+    expect(wrapper.find('[data-testid="league-failure-detail"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('LEAGUE_NOT_SEVEN_VS_SEVEN')
+    expect(wrapper.find('[data-testid="league-failure-files"]').exists()).toBe(false)
+    await wrapper.find('[data-testid="league-failure-group"]').trigger('click')
+    expect(wrapper.text()).toContain('bad.wotbreplay')
+    expect(wrapper.text()).toContain('111')
   })
 
   it('shows aggregate tab in league mode (resp.league is the page source of truth)', async () => {
@@ -1526,5 +1541,140 @@ describe('ReplayPage result visibility (P0: no blank results; league mode from r
     expect(wrapper.text()).toContain('replay.no_results')
     expect(wrapper.findAll('.battle-table-stub').length).toBe(0)
     expect(wrapper.find('.agg-table-stub').element.parentElement.style.display).toBe('none')
+  })
+})
+describe('ReplayPage League failure UX separation (plan §23 Test 1-7)', () => {
+  beforeEach(() => {
+    state.clear()
+    state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'zh', files: [] }
+  })
+
+  function manyBattles(count, leagueFlags = true) {
+    const out = []
+    for (let i = 0; i < count; i++) {
+      out.push({ mapName: 'Lagoon', sourceName: 'b' + i + '.wotbreplay', league: leagueFlags ? null : undefined, players: [{ cells: { nickname: 'P' + i, damage_dealt: 100 } }] })
+    }
+    return out
+  }
+
+  function manyLeagueFailures(count, code) {
+    const out = []
+    for (let i = 0; i < count; i++) out.push({ fileName: 'b' + i + '.wotbreplay', arenaId: 'arena-' + i, code })
+    return out
+  }
+
+  it('Test 1: valid=30 duplicate=5 failed=0 + leagueFailures=30 → 卡片计数正确，无红色「文件解析失败」，League 汇总为 warning', async () => {
+    state.init.resp = makeResp({
+      battles: manyBattles(30, true),
+      league: { mode: 'LEAGUE_RATING', failures: manyLeagueFailures(30, 'LEAGUE_ROSTER_INCOMPLETE') }
+    })
+    const wrapper = mountPage()
+    pJobState.setJob({ jobId: 'p1', status: 'READY', phase: null, total: 35, processed: 35, valid: 30, duplicates: 5, failures: 0 })
+    await flushPromises()
+    const card = wrapper.find('[data-testid="replay-task-card"]')
+    expect(card.exists()).toBe(true)
+    expect(card.text()).toContain('replay.processing_job.counts:30,5,0')
+    // 不得出现红色解析失败块（result.failures 只用于真正 parser failure）
+    expect(wrapper.find('.error').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('result.failures')
+    // League failure 汇总存在且为 warning 语义
+    const summary = wrapper.find('[data-testid="league-failure-summary"]')
+    expect(summary.exists()).toBe(true)
+    expect(summary.classes()).toContain('warn')
+    expect(summary.classes()).not.toContain('error')
+    wrapper.unmount()
+  })
+
+  it('Test 2: League failure 汇总含可评分/未生成计数，可展开分组详情', async () => {
+    state.init.resp = makeResp({
+      battles: manyBattles(3, true),
+      league: {
+        mode: 'LEAGUE_RATING',
+        failures: [
+          ...manyLeagueFailures(2, 'LEAGUE_ROSTER_INCOMPLETE'),
+          { fileName: 'b2.wotbreplay', arenaId: 'arena-2', code: 'LEAGUE_ROSTER_MISMATCH' }
+        ]
+      }
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.text()).toContain('league.rated_count:0,3')
+    expect(wrapper.text()).toContain('league.unrated_count:3')
+    await wrapper.find('[data-testid="league-failure-toggle"]').trigger('click')
+    const groups = wrapper.findAll('[data-testid="league-failure-group"]')
+    expect(groups.length).toBe(2)
+    expect(groups[0].text()).toContain('LEAGUE_ROSTER_INCOMPLETE')
+    expect(groups[0].text()).toContain('2')
+    wrapper.unmount()
+  })
+
+  it('Test 3: League failure 不使用 destructive error 呈现（类为 warn 非 error）', async () => {
+    state.init.resp = makeResp({
+      battles: manyBattles(1, true),
+      league: { mode: 'LEAGUE_RATING', failures: manyLeagueFailures(1, 'LEAGUE_NOT_SEVEN_VS_SEVEN') }
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="league-failure-summary"]').classes()).toContain('warn')
+    expect(wrapper.find('[data-testid="league-failure-summary"]').classes()).not.toContain('error')
+    expect(wrapper.find('.error').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('Test 4: 30 Battle + 0 Rating → battle tabs 全部存在，可逐场查看', async () => {
+    state.init.resp = makeResp({
+      battles: manyBattles(30, true),
+      league: { mode: 'LEAGUE_RATING', failures: manyLeagueFailures(30, 'LEAGUE_ROSTER_INCOMPLETE') }
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.findAll('.battle-table-stub').length).toBe(30)
+    wrapper.unmount()
+  })
+
+  it('Test 5/6: League-ineligible Battle 的 AI 复盘 / 战局回放 action 正常可用', async () => {
+    state.init.resp = makeResp({
+      battles: manyBattles(1, true),
+      league: { mode: 'LEAGUE_RATING', failures: manyLeagueFailures(1, 'LEAGUE_ROSTER_INCOMPLETE') }
+    })
+    state.init.activeTab = 'b0'
+    const wrapper = mountPage()
+    await flushPromises()
+    const aiBtn = wrapper.find('[data-testid="battle-ai-btn"]')
+    const pbBtn = wrapper.find('[data-testid="battle-playback-btn"]')
+    expect(aiBtn.exists()).toBe(true)
+    expect(pbBtn.exists()).toBe(true)
+    expect(aiBtn.attributes('disabled')).toBeUndefined()
+    expect(pbBtn.attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('Test 7: 真正 parser failure 仍显示红色「文件解析失败」（不降级成 warning）', async () => {
+    state.init.resp = makeResp({
+      failures: [['broken.wotbreplay', 'REPLAY_PROCESSING_FAILED']]
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    const errBlock = wrapper.find('.error')
+    expect(errBlock.exists()).toBe(true)
+    expect(errBlock.text()).toContain('result.failures:1')
+    expect(errBlock.text()).toContain('broken.wotbreplay')
+    wrapper.unmount()
+  })
+
+  it('mixed 批次：leagueUnavailableCode 显示琥珀色提示，battles 正常渲染（plan §21）', async () => {
+    state.init.resp = makeResp({
+      battles: manyBattles(2, false),
+      leagueUnavailableCode: 'MIXED_LEAGUE_AND_STANDARD_REPLAYS'
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    const notice = wrapper.find('[data-testid="league-unavailable"]')
+    expect(notice.exists()).toBe(true)
+    expect(notice.classes()).toContain('warn')
+    expect(wrapper.text()).toContain('league.unavailable_mixed')
+    expect(wrapper.findAll('.battle-table-stub').length).toBe(2)
+    expect(wrapper.find('.error').exists()).toBe(false)
+    wrapper.unmount()
   })
 })

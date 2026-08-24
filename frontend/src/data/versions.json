@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.23",
+    "date": "2026-08-24",
+    "tag": "fix",
+    "zh": "训练赛/联赛回放无法计算 Rating 时不再误显示为「文件解析失败」：未生成 Rating 的比赛保留在结果中，改为醒目的汇总提示（可评分 X / N、N 场未生成 Rating），可按原因分组展开查看具体回放；真正解析失败的回放仍显示红色错误。混合上传普通与训练赛/联赛回放时不再整体拒绝：所有能解析的回放都正常展示，League Rating 暂不可用并给出提示。",
+    "en": "Training/tournament replays that cannot be League-rated are no longer shown as \"failed to parse\": unrated battles stay in the results with a clear summary (rateable X / N, N battles without Rating) that can be expanded by reason to view the specific replays; genuinely unparsable replays still show as errors. Mixed uploads of standard and training/tournament replays are no longer rejected outright: every parsable replay is shown normally, with League Rating unavailable and a notice explaining why.",
+    "ru": "Тренировочные/турнирные реплеи, для которых нельзя рассчитать Rating, больше не показываются как «не удалось разобрать»: бои без рейтинга остаются в результатах с понятной сводкой (оценено X / N, N боёв без Rating), которую можно раскрыть по причинам и посмотреть конкретные реплеи; по-настоящему неразбираемые реплеи по-прежнему показываются как ошибки. Смешанные загрузки обычных и тренировочных/турнирных реплеев больше не отклоняются целиком: все разбираемые реплеи отображаются нормально, а League Rating недоступен с соответствующим уведомлением."
+  },
+  {
     "v": "2.12.22",
     "date": "2026-08-24",
     "tag": "fix",

@@ -607,9 +607,7 @@ public class ReplayExportJobService {
         if (job.isCancelled()) {
             throw new JobCancelledException();
         }
-        if (c.mode() == LeagueRatingMode.MIXED_UNSUPPORTED) {
-            throw new IllegalArgumentException("MIXED_LEAGUE_AND_STANDARD_REPLAYS");
-        }
+        // 混合批次按普通回放语义导出（plan §21/§13：standard export 不依赖 League eligibility）
         if (c.battles().isEmpty()) {
             throw new NoValidReplaysException();
         }
@@ -724,8 +722,8 @@ public class ReplayExportJobService {
 
     /**
      * mode=each 的模式预扫描：读取每个文件 meta.json#arenaBonusType 判定批次模式。
-     * 返回 null = 普通模式（沿用逐文件流式路径）；League 模式返回收集结果；混合批次抛
-     * MIXED_LEAGUE_AND_STANDARD_REPLAYS（与 preview 一致，不静默生成无 Rating 的联赛工作簿）。
+     * 返回 null = 普通/混合模式（沿用逐文件流式路径；混合批次 League Analysis unavailable，
+     * plan §21，按普通回放逐场导出）；仅当整批都是 league 时返回 League 收集结果。
      */
     private LeagueReplays.LeagueCollectResult eachLeagueResult(final List<Path> inputs) throws Exception {
         boolean anyLeague = false;
@@ -743,10 +741,7 @@ public class ReplayExportJobService {
                 anyStandard = true;
             }
         }
-        if (anyLeague && anyStandard) {
-            throw new IllegalArgumentException("MIXED_LEAGUE_AND_STANDARD_REPLAYS");
-        }
-        if (!anyLeague) {
+        if (!anyLeague || anyStandard) {
             return null;
         }
         return LeagueReplays.collect(ReplayJobFiles.lazySources(inputs), this::processFull, null, null);

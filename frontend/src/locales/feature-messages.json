@@ -28,6 +28,13 @@
         "no_valid_replays": "没有可用的回放文件",
         "cancelled": "解析已取消"
       }
+    },
+    "league": {
+      "rated_count": "可评分 {rated} / {total}",
+      "unrated_count": "{count} 场未生成 Rating",
+      "failure_view": "查看详情",
+      "failure_hide": "收起详情",
+      "unavailable_mixed": "League Rating 不适用于混合批次（普通回放与训练赛/联赛回放混传），已按普通回放展示"
     }
   },
   "en": {
@@ -59,6 +66,13 @@
         "no_valid_replays": "No valid replay files were found",
         "cancelled": "Parsing cancelled"
       }
+    },
+    "league": {
+      "rated_count": "Rateable {rated} / {total}",
+      "unrated_count": "{count} battle(s) without Rating",
+      "failure_view": "View details",
+      "failure_hide": "Hide details",
+      "unavailable_mixed": "League Rating is not available for mixed batches (standard + training/tournament replays); shown as standard replays"
     }
   },
   "ru": {
@@ -90,6 +104,13 @@
         "no_valid_replays": "Подходящие файлы реплеев не найдены",
         "cancelled": "Обработка отменена"
       }
+    },
+    "league": {
+      "rated_count": "Оценено {rated} / {total}",
+      "unrated_count": "{count} боя без рейтинга",
+      "failure_view": "Подробнее",
+      "failure_hide": "Скрыть",
+      "unavailable_mixed": "League Rating недоступен для смешанных наборов (обычные + тренировочные/турнирные реплеи); показаны как обычные реплеи"
     }
   }
 }
