@@ -1,0 +1,20 @@
+{
+  "rules": [
+    {
+      "path": "java/**/*.java",
+      "rule": "WotBTools Java/Spring review. Java 21 correctness: null safety (Optional misuse, NPE paths), records/POJO per project style (no Lombok), final locals/params. Spring Boot: controller only HTTP, business in service; exception → HTTP mapping (no raw 500 leaking internals); DTO contract (API pure English keys, no *Label/message in DTO); constructor injection only — @Autowired field injection is forbidden except documented ponytail; transaction behavior; concurrency (shared mutable state, thread-safe collections); serialization/deserialization boundaries; repository/service boundary regression; test gap for critical logic. Do NOT raise blockers for style preferences."
+    },
+    {
+      "path": "frontend/**/*.{vue,js}",
+      "rule": "WotBTools Vue 3 frontend review. State correctness (refs vs reactive, stale state), component lifecycle and event listener cleanup, async race protection (abort/cleanup, generation tokens against stale callbacks), state synchronization, responsive regression, i18n via $t()/locale JSON (no hardcoded UI strings), API contract mismatch with backend DTOs. Replay-specific invariants: map zoom must NOT change screen-space tank marker size; vehicle selection must NOT make replay/map key regions disappear; current replay state must NOT display final-result data. Do NOT raise blockers for style preferences."
+    },
+    {
+      "path": "keycloak-*/**/*.java",
+      "rule": "WotBTools Keycloak SPI provider review. Keycloak 26 compatibility, SPI contract (IdentityProvider/Factory), IdP login regression, service account handling, realm/client role semantics, user creation/linking regression, external IdP identity consistency, token/security behavior. Do NOT raise blockers for style preferences."
+    },
+    {
+      "path": "{.github/**,deploy/**,docker/**}",
+      "rule": "WotBTools CI/deploy review. Secrets leakage (no hardcoded secrets, no secret in logs/artifacts), deployment correctness, rollback regression, production config regression, accidental public port exposure, container startup, broken CI assumptions, unpinned critical external action if security-relevant. Do NOT raise blockers for style preferences."
+    }
+  ]
+}

@@ -3,6 +3,7 @@
         "title": "WoTBTools",
         "subtitle": "Парсинг реплеев · Рейтинги · Рейтинг в реальном времени · AI-разбор",
         "replay_tab": "Реплей",
+        "analysis_tab": "Анализ боя",
         "theme": "Тема",
         "login": "Войти",
         "profile": "Профиль",
@@ -30,7 +31,10 @@
         "remove_title": "Удалить этот реплей",
         "add_files_title": "Добавить файлы реплеев",
         "add_folder_title": "Добавить папку",
-        "remove_file_aria": "Удалить файл реплея {name}"
+        "remove_file_aria": "Удалить файл реплея {name}",
+        "files_size": "файлов: {count} · {size}",
+        "view_list": "Показать список",
+        "hide_list": "Скрыть список"
     },
     "action": {
         "preview": "Разобрать",
@@ -40,7 +44,9 @@
         "picker_locked": "Выбор колонок открыт — нажмите Готово для переключения таблиц",
         "export_aggregate": "Сводный экспорт",
         "export_each": "Экспорт каждого боя",
-        "download_png": "Скачать как PNG"
+        "download_png": "Скачать как PNG",
+        "battle_playback": "Повтор боя",
+        "ai_review": "AI Разбор"
     },
     "result": {
         "aggregate_tab": "Сводка ({count} игроков)",
@@ -125,7 +131,8 @@
         "vehicle": "Техника",
         "battle": "Бой",
         "extra": "Дополнительно",
-        "overview": "Обзор"
+        "overview": "Обзор",
+        "rating": "Рейтинг"
     },
     "hof": {
         "btn": "Зал славы",
@@ -165,6 +172,7 @@
         "upload_hint": "Поддерживаются только реплеи случайных и рейтинговых боёв",
         "upload_success": "Загружено! Вы в Зале славы",
         "upload_title": "Загрузите реплей, чтобы попасть в Зал славы",
+        "submit_entry": "Отправить запись",
         "upload_btn": "Выбрать реплей",
         "uploading": "Загрузка...",
         "invalid_file": "Выберите файл .wotbreplay",
@@ -472,7 +480,26 @@
         "rank": "Ранг",
         "potential_damage": "Потенциальный урон",
         "potential_damage_supplement": "Добавленный урон",
-        "potential_damage_detail": "Детали потенциала"
+        "potential_damage_detail": "Детали потенциала",
+        "league_rating": "Общий рейтинг",
+        "league_damage_score": "Очки урона",
+        "league_damage_score_tip": "Команда 60% + Глобально 40%, макс. 400",
+        "league_assist_score": "Очки помощи",
+        "league_assist_score_tip": "Команда 70% + Глобально 30%, макс. 100",
+        "league_kill_score": "Очки фрагов",
+        "league_kill_score_tip": "Команда 40% + Глобально 60%, макс. 100",
+        "league_exchange_score": "Очки размена",
+        "league_exchange_score_tip": "Урон/(Урон+Получено) × участие, макс. 150",
+        "league_blocked_score": "Очки блокировки",
+        "league_blocked_score_tip": "Команда 70% + Глобально 30%, макс. 50",
+        "league_survival_score": "Выживание/Размен",
+        "league_survival_score_tip": "Победа+выжил 100 / размен 75 / топ-4 проигравших 50, макс. 100",
+        "league_shooting_score": "Очки стрельбы",
+        "league_shooting_score_tip": "Попадания 30% + пробития 70% (Wilson) × участие в уроне, макс. 50",
+        "league_objective_score": "Очки за базу",
+        "league_objective_score_tip": "Захват 30% + Бой за базу 70% (экспериментально), макс. 50",
+        "victory_points_earned": "Очки за базу (получено)",
+        "victory_points_seized": "Очки за базу (захвачено)"
     },
     "agg_labels": {
         "nickname": "Игрок",
@@ -506,7 +533,16 @@
         "kast": "KAST",
         "impact": "Impact",
         "multi_damage_rate": "Мульти-урон",
-        "traded_deaths": "Размены"
+        "traded_deaths": "Размены",
+        "league_rating": "Медиана рейтинга",
+        "league_damage_score": "Медиана урона",
+        "league_assist_score": "Медиана помощи",
+        "league_kill_score": "Медиана фрагов",
+        "league_exchange_score": "Медиана размена",
+        "league_blocked_score": "Медиана блокировки",
+        "league_survival_score": "Медиана выживания",
+        "league_shooting_score": "Медиана стрельбы",
+        "league_objective_score": "Медиана за базу"
     },
     "theme": {
         "auto": "Авто",
@@ -576,10 +612,34 @@
     },
     "replay": {
         "no_files": "Сначала выберите реплеи или папку",
+        "no_results": "Нет данных боя для отображения",
         "preview_failed": "Ошибка предпросмотра",
         "export_failed": "Ошибка экспорта",
         "png_export_failed": "Ошибка экспорта PNG",
-        "png_exporting": "Экспорт PNG…"
+        "png_exporting": "Экспорт PNG…",
+        "login_required_for_battle": "Повтор боя / AI-разбор требуют входа. После входа выберите реплей заново.",
+        "export_job": {
+            "title": "Экспорт данных боя",
+            "queued": "Подготовка экспорта…",
+            "preparing": "Задача создана · файлов: {total}",
+            "progress": "Обработано {processed}/{total}",
+            "phase_processing": "Анализ реплеев…",
+            "phase_excel": "Формирование Excel…",
+            "phase_archive": "Формирование ZIP по реплеям…",
+            "duplicates_failures": "дублей {d} · ошибок {f}",
+            "valid_summary": "годных {v} · дублей {d} · ошибок {f}",
+            "ready": "Excel готов",
+            "download": "Скачать файл",
+            "cancel": "Отмена",
+            "dismiss": "Закрыть",
+            "failed": "Ошибка экспорта",
+            "failed_no_valid": "Нет годных реплеев для экспорта.",
+            "failed_generic": "Ошибка экспорта, повторите попытку.",
+            "cancelled": "Отменено"
+        },
+        "processing_job": {
+            "mixed_league_standard": "Обнаружена смешанная загрузка: обычные и тренировочные/турнирные реплеи нельзя разбирать вместе"
+        }
     },
     "boost": {
         "submitTab": "Заявка",
@@ -968,7 +1028,18 @@
         "HUNDRED_SUBMISSION_NOT_FOUND": "Заявка не найдена",
         "PROOF_SCREENSHOT_REQUIRED": "Загрузите скриншот-доказательство",
         "INVALID_HUNDRED_STATUS": "Недопустимый статус",
-        "HUNDRED_APPROVED_BATTLE_COUNT_TOO_LOW": "Подтверждённое число боёв должно быть не меньше 100 (квалификация «100 боёв»)"
+        "HUNDRED_APPROVED_BATTLE_COUNT_TOO_LOW": "Подтверждённое число боёв должно быть не меньше 100 (квалификация «100 боёв»)",
+        "MIXED_LEAGUE_AND_STANDARD_REPLAYS": "Нельзя смешивать обычные реплеи с тренировочными/турнирными в одной загрузке. Разделите их.",
+        "LEAGUE_ARENA_ID_MISSING": "В реплее отсутствует ID арены",
+        "LEAGUE_NOT_SEVEN_VS_SEVEN": "Это не стандартный бой 7×7 (нужно по 7 игроков в команде) — рейтинг не рассчитывается",
+        "LEAGUE_INVALID_TEAM": "Неверный номер команды в результатах",
+        "LEAGUE_DUPLICATE_ACCOUNT_ID": "Дублирующийся или недействительный аккаунт игрока",
+        "LEAGUE_MISSING_TANK": "У игрока отсутствует танк",
+        "LEAGUE_ROSTER_INCOMPLETE": "Состав не совпадает с результатами (неполный состав)",
+        "LEAGUE_NO_DECISIVE_WINNER": "Ничья или неизвестный победитель — рейтинг не рассчитывается",
+        "LEAGUE_MISSING_DEATH_TIME": "У уничтоженного игрока нет надёжного времени смерти — бой не оценивается",
+        "LEAGUE_INVALID_STAT_FACTS": "В результатах некорректные соотношения значений",
+        "CONFLICTING_REPLAYS_FOR_ARENA": "Несколько реплеев одного боя расходятся по ключевым данным — все копии отклонены"
     },
     "admin": {
         "title": "Управление пользователями",
@@ -1015,6 +1086,14 @@
     },
     "home": {
         "replayTitle": "Анализатор реплеев",
+        "uploadReplay": "Загрузить реплей",
+        "analysisTitle": "Анализ боя",
+        "analysisDesc": "Пакетный разбор реплеев и просмотр данных боя; выберите бой для реконструкции и AI-разбора.",
+        "viewAnalysisHistory": "История анализов",
+        "learnAnalysis": "Подробнее об анализе боя",
+        "recentAnalysis": "Недавние анализы",
+        "recentAnalysisEmptyTitle": "Начните первый анализ боя",
+        "recentAnalysisEmptyDesc": "После загрузки .wotbreplay здесь появятся ваши последние анализы.",
         "replayDesc": "Загружайте .wotbreplay файлы и экспортируйте данные в Excel.",
         "highestDamageRecord": "Рекорд урона",
         "hofDesc": "Зал славы по урону за случайные и рейтинговые бои — загрузите реплей, чтобы попасть.",
@@ -1182,6 +1261,44 @@
             "TOTAL_REQUEST_TOO_LARGE": "Общий размер файлов превышает лимит.",
             "UNKNOWN_LOCALE": "Неверная настройка языка. Обновите страницу и попробуйте снова.",
             "AI_REVIEW_BUSY": "Служба ИИ-обзора сейчас занята. Повторите попытку позже."
+        }
+    },
+    "league": {
+        "title": "League Rating",
+        "subtitle": "Рейтинг тренировок/турниров · только данные этого боя · 0–1000",
+        "mode_desc": "Рейтинг только для реплеев тренировок (Training) и турниров (Tournament); случайные бои и рейтинговые бои не оцениваются.",
+        "team_rating": "Рейтинг команды",
+        "mvp": "MVP боя",
+        "team_best": "Лучший в команде",
+        "team1": "Team 1",
+        "team2": "Team 2",
+        "team_name_placeholder": "Введите название команды",
+        "team_name_pending": "Без названия",
+        "edit_hint": "Названия команд хранятся только на этой странице и исчезают после обновления",
+        "points_note": "За базу: очки получено 30% + захвачено 70% (экспериментально — не определяет итоговый счёт)",
+        "summary": {
+            "title_player": "Сводка игроков (медиана)",
+            "title_team": "Сводка команд (медиана)",
+            "nickname": "Игрок",
+            "clan": "Команда",
+            "battles": "Бои",
+            "league_rating": "Медиана рейтинга",
+            "league_damage_score": "Урон",
+            "league_assist_score": "Помощь",
+            "league_kill_score": "Фраги",
+            "league_exchange_score": "Размен",
+            "league_blocked_score": "Блокировка",
+            "league_survival_score": "Выживание",
+            "league_shooting_score": "Стрельба",
+            "league_objective_score": "База",
+            "mvp_count": "MVP раз",
+            "wins": "Победы",
+            "damage_total": "Всего урона",
+            "assist_total": "Всего помощи",
+            "kills_total": "Всего фрагов",
+            "team_name": "Команда",
+            "battles_note": "Проведено боёв (больше выборка — надёжнее)",
+            "no_ranking_note": "Только сводка — без ранжирования и наград"
         }
     }
 }

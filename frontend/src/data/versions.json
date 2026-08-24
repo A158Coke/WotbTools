@@ -1,11 +1,43 @@
 [
   {
+    "v": "2.12.18",
+    "date": "2026-08-24",
+    "tag": "add",
+    "zh": "百场名人堂新增 WG 官方自动认证，同时完整保留原来的截图和 5 个回放人工审核。使用 Wargaming 亚洲、欧洲或北美账号登录的玩家只需填写车辆、场均和场数；官方账号总场次至少 5000、目标车辆至少 100 场时可认证。官方精确场均不超过 3900 自动入榜，超过 3900 自动转为管理员审核且无需补传文件；管理员只能通过、拒绝或删除，不能改写成绩；WG 不可用时仍可使用原人工入口。",
+    "en": "The 100-battle Hall of Fame now supports official WG verification while fully retaining the existing screenshot-and-5-replay review route. Players signed in with Wargaming Asia, Europe, or North America only enter the vehicle, average damage, and battle count. Verification requires at least 5,000 account battles and 100 battles in the selected vehicle. An official exact average up to 3,900 is listed automatically; a higher average is routed to admin review without extra files. Admins can only approve, reject, or delete entries and cannot alter scores. The original manual route remains available when WG is unavailable.",
+    "ru": "Для Зала славы за 100 боёв добавлена официальная проверка WG, при этом прежняя ручная проверка со скриншотом и пятью реплеями полностью сохранена. Игроки, вошедшие через Wargaming Asia, Europe или North America, указывают только технику, средний урон и число боёв. Требуется не менее 5000 боёв на аккаунте и 100 боёв на выбранной технике. Точное официальное среднее до 3900 включительно публикуется автоматически, а более высокий результат отправляется администратору без дополнительных файлов. Администратор может только одобрить, отклонить или удалить запись и не может изменить показатели; при недоступности WG остаётся ручной способ."
+  },
+  {
+    "v": "2.12.17",
+    "date": "2026-08-24",
+    "tag": "add",
+    "zh": "训练赛/联赛回放新增 League Rating（0–1000）：上传训练房或联赛/锦标赛回放后，结果页直接显示双方战队 Rating、全场 MVP、双方队内最佳与每名玩家的八个维度分（实际分/上限/百分比）；随机战斗与游戏内评级战斗不受影响。批量上传给出选手与战队中位数汇总（只汇总不排名），战队名称可现场修改并同步到导出；Excel 与完整宽幅 PNG 均包含全部评分维度。",
+    "en": "Training/tournament replays now get a League Rating (0–1000): after uploading a training-room or tournament replay, the result page shows both team ratings, the MVP, each team best, and each player's eight dimension scores (actual / max / percentage). Random battles and in-game Rating battles are unaffected. Batch uploads produce player and team median summaries (summary only, no ranking), team names can be edited on the fly and flow into exports; Excel and the full-width PNG include every rating dimension.",
+    "ru": "Тренировочные/турнирные реплеи теперь получают League Rating (0–1000): после загрузки тренировочного или турнирного реплея на странице результатов показываются рейтинги обеих команд, MVP боя, лучший в каждой команде и восемь оценочных показателей каждого игрока (факт / максимум / процент). Случайные и рейтинговые бои не затронуты. При массовой загрузке выдаётся сводка игроков и команд по медианам (только сводка, без ранжирования), названия команд можно редактировать на месте — они попадают в экспорт; Excel и широкоформатный PNG содержат все оценочные показатели."
+  },
+  {
+    "v": "2.12.16",
+    "date": "2026-08-23",
+    "tag": "chg",
+    "zh": "解析大量回放不再卡住：点击「解析预览」后立即出现任务卡片，实时显示「已解析 18/34 场」进度、当前处理中的文件和有效/重复/失败数量，可随时取消，解析完成后自动展示结果。解析后再导出 Excel 会直接复用已解析结果（不再重新上传、不再重新解析），批量导出明显更快。选择几十个回放时上传区只显示文件数与总大小摘要，点「查看文件列表」才展开（内部滚动，长文件名自动截断）。",
+    "en": "Parsing many replays no longer blocks the page: clicking Preview immediately shows a task card with a live processed/total counter, the file being processed, valid/duplicate/failure stats and a cancel button; results appear automatically when parsing finishes. Exporting Excel afterwards reuses the parsed result directly (no re-upload, no re-parsing), so large exports are noticeably faster. When dozens of replays are selected the upload area shows only a count and total-size summary until you expand the file list (inner scroll, long filenames truncated).",
+    "ru": "Разбор большого количества реплеев больше не блокирует страницу: при нажатии «Разобрать» сразу появляется карточка задачи с живым счётчиком обработано/всего, текущим файлом, статистикой годных/дублей/ошибок и кнопкой отмены; результат показывается автоматически по завершении разбора. Экспорт Excel после разбора напрямую использует уже разобранный результат (без повторной загрузки и повторного разбора), поэтому массовый экспорт стал заметно быстрее. При выборе десятков реплеев область загрузки показывает только количество и общий размер, а список раскрывается по кнопке (внутренняя прокрутка, длинные имена файлов обрезаются)."
+  },
+  {
+    "v": "2.12.15",
+    "date": "2026-08-23",
+    "tag": "chg",
+    "zh": "界面整体重构（V2）：统一顶部导航——「回放解析」与「AI 复盘」合并为「战局分析」一级入口，更新历史 / 联系我 / 反馈 / 个人中心 / 管理后台收进右上角用户菜单（登录后显示用户名）；回放解析结果页改用近全宽数据工作区，选择具体单场后可直接进入「战局回放」或「AI 复盘」；名人堂改用更宽布局，上传入口改为「提交记录」按钮（弹窗内上传），排行榜成为页面核心；个人中心放宽到 1280px；战局回放/地图分析获得更宽工作区。",
+    "en": "Overall UI refresh (V2): unified top navigation - Replay and AI Review merge into a single Battle Analysis entry; Changelog / Contact / Feedback / Profile / Admin move into the user menu in the top-right (shows username when signed in); the replay results page uses a near-full-width data workspace, and picking a specific battle gives direct access to Battle Replay and AI Review; the Hall of Fame uses a wider layout with upload moved into a Submit Entry dialog and the leaderboard as the core; the profile page widens to 1280px; battle playback / map analysis get a wider workspace.",
+    "ru": "Общий редизайн интерфейса (V2): единая верхняя навигация — «Реплей» и «AI-разбор» объединены во «Анализ боя»; История версий / Контакты / Обратная связь / Профиль / Администрирование перенесены в меню пользователя справа вверху (показывает имя при входе); страница результатов реплея использует рабочую область почти на всю ширину, а выбор конкретного боя даёт прямой доступ к «Повтору боя» и «AI-разбору»; Зал славы получил более широкий макет с загрузкой в диалоге «Отправить запись» и таблицей рекордов как ядром страницы; профиль расширен до 1280px; повтор боя / анализ карты получили более широкую область."
+  },
+  {
     "v": "2.12.14",
     "date": "2026-08-23",
-    "tag": "add",
-    "zh": "百场名人堂新增 WG 官方自动认证，同时完整保留原来的截图和 5 个回放人工审核。使用 Wargaming 亚洲、欧洲或北美账号登录的玩家只需填写车辆、场均和场数；官方账号总场次至少 5000、目标车辆至少 100 场时可认证。官方精确场均不超过 3900 自动入榜，超过 3900 自动转为管理员审核且无需补传文件；WG 不可用时仍可使用原人工入口。",
-    "en": "The 100-battle Hall of Fame now supports official WG verification while fully retaining the existing screenshot-and-5-replay review route. Players signed in with Wargaming Asia, Europe, or North America only enter the vehicle, average damage, and battle count. Verification requires at least 5,000 account battles and 100 battles in the selected vehicle. An official exact average up to 3,900 is listed automatically; a higher average is routed to admin review without extra files. The original manual route remains available when WG is unavailable.",
-    "ru": "Для Зала славы за 100 боёв добавлена официальная проверка WG, при этом прежняя ручная проверка со скриншотом и пятью реплеями полностью сохранена. Игроки, вошедшие через Wargaming Asia, Europe или North America, указывают только технику, средний урон и число боёв. Требуется не менее 5000 боёв на аккаунте и 100 боёв на выбранной технике. Точное официальное среднее до 3900 включительно публикуется автоматически, а более высокий результат отправляется администратору без дополнительных файлов; при недоступности WG остаётся ручной способ."
+    "tag": "chg",
+    "zh": "导出大批量回放不再像页面卡死：点击导出后右下角出现任务卡片，实时显示已处理场数/总场数进度、当前阶段（解析回放 / 生成 Excel / 打包 ZIP）和重复/失败数量，可随时取消，完成后一键下载；导出期间页面照常使用。单场 Excel 打开后默认显示「玩家数据」表。",
+    "en": "Exporting many replays no longer looks frozen: after clicking export a task card appears in the bottom-right corner with a live progress bar (processed/total), the current phase (parsing replays / building Excel / building ZIP), duplicate and failure counts, and a cancel button; when ready you download right from the card and the page stays usable during the whole export. Single-battle Excel files now open on the Players sheet.",
+    "ru": "Экспорт многих реплеев больше не выглядит как зависание: после нажатия экспорта в правом нижнем углу появляется карточка задачи с живым прогрессом (обработано/всего), текущей фазой (анализ реплеев / формирование Excel / формирование ZIP), счётчиком дублей и ошибок и кнопкой отмены; по готовности файл скачивается из карточки, а страница остаётся рабочей во время всего экспорта. Одиночный Excel теперь открывается на листе «Игроки»."
   },
   {
     "v": "2.12.13",

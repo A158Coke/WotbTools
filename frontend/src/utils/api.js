@@ -28,19 +28,73 @@ async function downloadResponse(response, fallbackName) {
   URL.revokeObjectURL(url)
 }
 
-export async function preview(body) {
-  const r = await requireOk(await fetch('/api/preview', { method: 'POST', body }))
+/** 名人堂统一公开查询：nation / vehicleType / tier / tankId 可独立使用并取交集。 */
+
+// ── Replay Export Job（/api/replay/export-jobs，匿名公开；创建立即返回 jobId，轮询真实进度）──
+
+/**
+ * 创建导出任务：上传文件立即持久化并返回 {jobId, status, total}（202）。
+ * 传 processingJobId 时复用已解析的 Processing Job result（不重新上传 replay，plan §28–§30）。
+ * 传 teamNamesJson 时以 multipart 字段传递 League 战队名称覆盖（不拼 URL query，避免超长 URL），
+ * 并保留已有 files FormData（PR #123 Blocker 1：用户编辑的战队名称必须进入 Export Job）。
+ */
+export async function createExportJob(body, mode, processingJobId, teamNamesJson) {
+  const query = new URLSearchParams()
+  query.set('mode', mode)
+  if (processingJobId) query.set('processingJobId', processingJobId)
+  let payload = body
+  if (teamNamesJson) {
+    payload = new FormData()
+    if (body) {
+      for (const [key, value] of body.entries()) payload.append(key, value)
+    }
+    payload.append('teamNames', teamNamesJson)
+  }
+  const r = await requireOk(await fetch(`/api/replay/export-jobs?${query}`, { method: 'POST', body: payload }))
   return r.json()
 }
 
-export async function downloadBlob(mode, body) {
-  const r = await requireOk(await fetch(`/api/export?mode=${encodeURIComponent(mode)}`, { method: 'POST', body }))
-  const blob = await r.blob()
-  const cd = r.headers.get('Content-Disposition') || ''
-  return { blob, disposition: cd }
+/** 查询任务状态/进度：{jobId, status, phase, total, processed, duplicates, failures, errorCode, filename, contentType}。 */
+export async function getExportJob(jobId) {
+  const r = await requireOk(await fetch(`/api/replay/export-jobs/${encodeURIComponent(jobId)}`))
+  return r.json()
 }
 
-/** 名人堂统一公开查询：nation / vehicleType / tier / tankId 可独立使用并取交集。 */
+/** 取消任务（QUEUED 立即生效；PROCESSING 协作取消）。 */
+export async function cancelExportJob(jobId) {
+  await requireOk(await fetch(`/api/replay/export-jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }))
+}
+
+// ── Replay Processing Job（/api/replay/processing-jobs，匿名公开；解析预览改为异步 Job）──
+
+/** 创建解析任务：上传文件立即持久化并返回 {jobId, status, total}（202，HTTP request 不等待解析）。 */
+export async function createProcessingJob(body) {
+  const r = await requireOk(await fetch('/api/replay/processing-jobs', { method: 'POST', body }))
+  return r.json()
+}
+
+/** 查询解析任务状态/进度：{jobId, status, phase, total, processed, valid, duplicates, failures, errorCode, currentFile}。 */
+export async function getProcessingJob(jobId) {
+  const r = await requireOk(await fetch(`/api/replay/processing-jobs/${encodeURIComponent(jobId)}`))
+  return r.json()
+}
+
+/** 取消解析任务（QUEUED 立即生效；PROCESSING 协作取消）。 */
+export async function cancelProcessingJob(jobId) {
+  await requireOk(await fetch(`/api/replay/processing-jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }))
+}
+
+/** READY 后获取 Preview 数据（不重新解析回放，plan §21）。 */
+export async function getProcessingJobResult(jobId) {
+  const r = await requireOk(await fetch(`/api/replay/processing-jobs/${encodeURIComponent(jobId)}/result`))
+  return r.json()
+}
+
+/** READY 后下载 artifact（后端 FileSystemResource server-side streaming；前端 blob 缓冲后触发下载）。 */
+export async function downloadExportJob(jobId, fallbackName) {
+  const r = await requireOk(await fetch(`/api/replay/export-jobs/${encodeURIComponent(jobId)}/download`))
+  await downloadResponse(r, fallbackName)
+}
 export async function hofList(params = {}) {
   const r = await requireOk(await fetch(withQuery('/api/hof', params)))
   return r.json()

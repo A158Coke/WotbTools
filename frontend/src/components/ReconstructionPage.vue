@@ -1,8 +1,9 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { localizeAiError } from '../utils/reconstruction-analysis.js'
+import { takePendingReplayFiles } from '../utils/replayTransfer.js'
 import AnalysisResultPanel from './AnalysisResultPanel.vue'
 import MapOverview from './MapOverview.vue'
 import ReplayInputPanel from './ReplayInputPanel.vue'
@@ -40,10 +41,32 @@ onMounted(async () => {
   }
   if (loggedIn) {
     authPhase.value = 'ready'
+    adoptPendingReplay()
     return
   }
   authPhase.value = 'login'
   login(LOGIN_VIEW)
+})
+
+
+/** 跨视图文件接管（Phase 2 V2）：ReplayPage Battle context「战局回放/AI 复盘」跳转来此时，
+ * 把暂存的 replay 文件接管为本地 files。mode=playback 自动加载地图；mode=ai 只填充文件，
+ * 由用户点击「AI 战术复盘」发起（不自动消耗 AI 额度）。
+ * take 语义：只消费一次；未 ready 时（登录回跳）由 onActivated 再次尝试。 */
+function adoptPendingReplay() {
+  const pending = takePendingReplayFiles()
+  if (!pending || !pending.files || !pending.files.length) return
+  files.value = pending.files.slice()
+  error.value = ''
+  resetResults()
+  resetMap()
+  if (pending.mode === 'playback') {
+    loadMapOverview()
+  }
+}
+
+onActivated(() => {
+  if (authPhase.value === 'ready') adoptPendingReplay()
 })
 
 onBeforeUnmount(() => {
@@ -481,7 +504,7 @@ function onPageLeave() {
 </script>
 
 <template>
-  <main class="recon-page wrap">
+  <main class="recon-page layout-data-workspace">
     <!-- 未登录：提示并已自动跳转登录页，按钮用于跳转失败时手动重试 -->
     <div v-if="authPhase === 'login'" class="recon-auth">
       <p>{{ $t('recon.pleaseLogin') }}</p>
@@ -560,14 +583,15 @@ function onPageLeave() {
 .recon-page :deep(.sub-hint) { color: var(--text-sub); font-size: .88rem; margin: 6px 0 16px; }
 .recon-page :deep(.fb-chips) { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 12px; }
 .recon-page :deep(.chip) { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 3px 8px; border-radius: 5px; background: var(--bg-chip); color: var(--text-label); }
-.error { color: var(--error); font-size: .88rem; }
+.error { font-size: .88rem; }
 .recon-auth { text-align: center; padding: 40px; color: var(--text-secondary); }
 
 .recon-page :deep(.panel) {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: rgba(13, 18, 22, .94);
+  border: 1px solid #303a40;
   border-radius: 8px;
   padding: 16px 20px;
+  color: #d8d5cd;
 }
 .recon-page :deep(.panel h2) { margin: 0 0 12px; font-size: 1rem; }
 

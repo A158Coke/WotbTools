@@ -50,6 +50,23 @@ public final class ReplayParser {
     private ReplayParser() {
     }
 
+    /**
+     * 只读 meta.json#arenaBonusType（模式预扫描用；不解析 battle_results.dat）。
+     * 缺失/不可解析 → null。
+     */
+    public static Integer peekArenaBonusType(final byte[] replayBytes) throws IOException {
+        final Map<String, byte[]> entries = ReplayArchiveReader.read(replayBytes);
+        final byte[] metaBytes = entries.get("meta.json");
+        if (metaBytes == null) {
+            return null;
+        }
+        final JsonNode meta = MAPPER.readTree(metaBytes);
+        if (meta == null || !meta.isObject() || !meta.hasNonNull("arenaBonusType")) {
+            return null;
+        }
+        return meta.get("arenaBonusType").asInt();
+    }
+
     public static Battle parse(final byte[] replayBytes) throws IOException {
         try {
             return parse(unzip(replayBytes));

@@ -1,0 +1,186 @@
+/* WotBTools Showcase — canonical PNG page backgrounds.
+ * Loaded after showcase-backgrounds.css. V1/V2/V3 SVGs stay in the repo as
+ * fallback/history, but the current showcase layer is the replaceable high-quality
+ * PNG set under assets/showcase/<page>/ (see assets/showcase/README.md).
+ *
+ * Background contract (inherited from showcase-backgrounds.css):
+ *  - artwork = fixed pseudo-element below the topbar, full viewport width,
+ *    cover / no-repeat / centered — it never scrolls away and never lives
+ *    inside the 1420/1720/1760px content container;
+ *  - the ::before veil is a separate readability layer, so light/dark theming
+ *    is done with the overlay/surface only, never with a second image.
+ *  - background-attachment: fixed is intentionally NOT used (mobile/Safari).
+ */
+
+/* Page-wide readability veil — the cinematic artwork must never compete with UI text.
+ * Showcase pages intentionally keep a dark operations-console veil even when the
+ * global theme is light; light mode changes controls/surfaces, not text legibility. */
+.layout-content::before,
+.layout-wide::before,
+.layout-data-workspace::before,
+.admin-page::before,
+.profile-page::before,
+.boost-page::before,
+.version-page::before,
+.contact-page::before,
+.hof-page::before,
+.hof-wrap::before,
+.hall-page::before,
+.lb-wrap::before,
+.hof-admin-page::before,
+.hofadmin-page::before,
+.admin-hof-page::before,
+.hof-admin::before,
+.rating-page::before,
+.rating-section::before,
+.rating-workspace::before {
+  background: linear-gradient(180deg, rgba(5,8,10,.32), rgba(5,8,10,.60)) !important;
+}
+
+[data-theme="dark"] :is(
+  .layout-content,
+  .layout-wide,
+  .layout-data-workspace,
+  .admin-page,
+  .profile-page,
+  .boost-page,
+  .version-page,
+  .contact-page,
+  .hof-page,
+  .hof-wrap,
+  .hall-page,
+  .lb-wrap,
+  .hof-admin-page,
+  .hofadmin-page,
+  .admin-hof-page,
+  .hof-admin,
+  .rating-page,
+  .rating-section,
+  .rating-workspace
+)::before {
+  background: linear-gradient(180deg, rgba(5,8,10,.28), rgba(5,8,10,.58)) !important;
+}
+
+/* ---------- Home — hero-v4: burning sunset battlefield, tank anchor on the right ---------- */
+.homepage-showcase::before {
+  background-image:
+    linear-gradient(180deg, rgba(4,7,9,.10), rgba(4,7,9,.40)),
+    url('../assets/showcase/home/hero-v4.png') !important;
+  opacity: .96 !important;
+}
+.homepage-showcase .showcase-hero {
+  background:
+    linear-gradient(90deg, rgba(5,8,10,.94) 0%, rgba(5,8,10,.79) 34%, rgba(5,8,10,.10) 67%, rgba(5,8,10,.40) 100%),
+    url('../assets/showcase/home/hero-v4.png') 62% 50% / cover no-repeat !important;
+}
+
+/* ---------- Replay — cold ruined battlefield; upload/toolbar/results share one tactical surface ---------- */
+.layout-data-workspace::after {
+  background-image: url('../assets/showcase/replay/replay-hero-battlefield-v1.png') !important;
+  opacity: .88 !important;
+}
+.layout-data-workspace .uploadwrap {
+  background:
+    linear-gradient(96deg, rgba(10,16,19,.96) 0%, rgba(11,17,20,.90) 55%, rgba(13,18,21,.78) 100%),
+    url('../assets/showcase/replay/replay-hero-battlefield-v1.png') 72% 50% / cover no-repeat !important;
+}
+.layout-data-workspace .uploadcard {
+  background:
+    linear-gradient(135deg, rgba(5,11,14,.88), rgba(7,12,14,.92)),
+    url('../assets/showcase/replay/replay-hero-battlefield-v1.png') center / cover no-repeat !important;
+}
+
+/* ---------- Reconstruction — tactical atmosphere; the real replay map stays authoritative ---------- */
+.recon-page::after {
+  background-image: url('../assets/showcase/reconstruction/reconstruction-hero-tactical-v1.png') !important;
+  opacity: .90 !important;
+}
+.recon-page::before {
+  background: linear-gradient(180deg, rgba(4,10,12,.14), rgba(4,10,12,.40)) !important;
+}
+
+/* ---------- Hall of Fame — ceremonial hall, strong gold focal point ---------- */
+.hof-page::after,
+.hof-wrap::after,
+.hall-page::after,
+.lb-wrap::after {
+  background-image: url('../assets/showcase/hof/hof-hero-hall-v1.png') !important;
+  opacity: .90 !important;
+}
+
+/* ---------- Rating — atmosphere only; real rating data always renders on its own surface ---------- */
+.rating-page::after,
+.rating-section::after,
+.rating-workspace::after {
+  background-image: url('../assets/showcase/rating/rating-hero-analysis-v1.png') !important;
+  opacity: .80 !important;
+}
+
+/* ---------- Profile — armored camp / hangar; no avatar dependency ---------- */
+.profile-page::after {
+  background-image: url('../assets/showcase/profile/profile-hero-camp-v1.png') !important;
+  opacity: .84 !important;
+}
+.profile-page .profile-hero {
+  background:
+    linear-gradient(95deg, rgba(12,17,20,.93) 0%, rgba(14,19,21,.80) 52%, rgba(15,20,22,.55) 100%),
+    url('../assets/showcase/profile/profile-hero-camp-v1.png') 72% 55% / cover no-repeat !important;
+}
+
+/* ---------- Boost — alpine combat training range ---------- */
+.boost-page::after {
+  background-image: url('../assets/showcase/boost/boost-hero-training-v1.png') !important;
+  opacity: .78 !important;
+}
+
+/* ---------- User admin — command center, deliberately weaker: operations console first ---------- */
+.admin-page::after {
+  background-image: url('../assets/showcase/admin/admin-hero-command-v1.png') !important;
+  opacity: .42 !important;
+}
+
+/* ---------- Hall-of-Fame admin — review console stays readable ---------- */
+.hof-admin-page::after,
+.hofadmin-page::after,
+.admin-hof-page::after,
+.hof-admin::after {
+  background-image: url('../assets/showcase/hof-admin/hof-admin-hero-command-v1.png') !important;
+  opacity: .42 !important;
+}
+
+/* ---------- Version history — workshop / changelog ---------- */
+.version-page::after {
+  background-image: url('../assets/showcase/version/version-hero-workshop-v1.png') !important;
+  opacity: .74 !important;
+}
+
+/* ---------- Contact — field communications radio link ---------- */
+.contact-page::after {
+  background-image: url('../assets/showcase/contact/contact-hero-radio-v1.png') !important;
+  opacity: .74 !important;
+}
+
+@media (max-width: 767px) {
+  .homepage-showcase::before,
+  .homepage-showcase .showcase-hero,
+  .layout-data-workspace::after,
+  .recon-page::after,
+  .hof-page::after,
+  .hof-wrap::after,
+  .hall-page::after,
+  .lb-wrap::after,
+  .rating-page::after,
+  .rating-section::after,
+  .rating-workspace::after,
+  .profile-page::after,
+  .boost-page::after,
+  .admin-page::after,
+  .hof-admin-page::after,
+  .hofadmin-page::after,
+  .admin-hof-page::after,
+  .hof-admin::after,
+  .version-page::after,
+  .contact-page::after {
+    background-position: 68% center !important;
+  }
+}

@@ -100,6 +100,11 @@ describe('HoFPage', () => {
     await flushPromises()
   }
 
+  async function openSingleUpload(wrapper) {
+    await wrapper.find('.lb-submit-row button.filebtn').trigger('click')
+    await flushPromises()
+  }
+
   async function openHundredSubmit(wrapper) {
     await wrapper.findAll('.tabs button')[1].trigger('click')
     await flushPromises()
@@ -216,9 +221,10 @@ describe('HoFPage', () => {
     authenticated = false
     const wrapper = mountPage()
     await flushPromises()
-    const input = wrapper.find('input[type="file"]')
+    await openSingleUpload(wrapper)
+    const input = wrapper.find('.hof-upload-modal input[type="file"]')
     const clickSpy = vi.spyOn(input.element, 'click')
-    await wrapper.find('button.filebtn').trigger('click')
+    await wrapper.find('.hof-upload-modal button.filebtn').trigger('click')
     expect(api.login).toHaveBeenCalledWith('hof')
     expect(clickSpy).not.toHaveBeenCalled()
     expect(lbApi.hofUpload).not.toHaveBeenCalled()
@@ -228,9 +234,10 @@ describe('HoFPage', () => {
     authenticated = true
     const wrapper = mountPage()
     await flushPromises()
-    const input = wrapper.find('input[type="file"]')
+    await openSingleUpload(wrapper)
+    const input = wrapper.find('.hof-upload-modal input[type="file"]')
     const clickSpy = vi.spyOn(input.element, 'click')
-    await wrapper.find('button.filebtn').trigger('click')
+    await wrapper.find('.hof-upload-modal button.filebtn').trigger('click')
     expect(clickSpy).toHaveBeenCalledTimes(1)
     expect(lbApi.hofUpload).not.toHaveBeenCalled()
   })
@@ -240,14 +247,16 @@ describe('HoFPage', () => {
     const wrapper = mountPage()
     await flushPromises()
     const file = new File([new Uint8Array([1, 2, 3])], 'battle.wotbreplay', { type: 'application/octet-stream' })
-    await wrapper.find('.lb-upload-section').trigger('drop', { dataTransfer: { files: [file] } })
+    await openSingleUpload(wrapper)
+    await wrapper.find('.hof-upload-modal .lb-upload-section').trigger('drop', { dataTransfer: { files: [file] } })
     expect(api.login).toHaveBeenCalledWith('hof')
     expect(lbApi.hofUpload).not.toHaveBeenCalled()
   })
 
   it('uploads file with valid extension when authenticated', async () => {
     const wrapper = mountPage()
-    const input = wrapper.find('input[type="file"]')
+    await openSingleUpload(wrapper)
+    const input = wrapper.find('.hof-upload-modal input[type="file"]')
     const file = new File([new Uint8Array([1, 2, 3])], 'battle.wotbreplay', { type: 'application/octet-stream' })
     Object.defineProperty(input.element, 'files', { value: [file] })
     await input.trigger('change')
@@ -259,7 +268,8 @@ describe('HoFPage', () => {
     lbApi.hofUpload.mockRejectedValue(new ApiError('UNSUPPORTED_BATTLE_TYPE', 400))
     const wrapper = mountPage()
     await flushPromises()
-    const input = wrapper.find('input[type="file"]')
+    await openSingleUpload(wrapper)
+    const input = wrapper.find('.hof-upload-modal input[type="file"]')
     const file = new File([new Uint8Array([1, 2, 3])], 'battle.wotbreplay', { type: 'application/octet-stream' })
     Object.defineProperty(input.element, 'files', { value: [file] })
     await input.trigger('change')

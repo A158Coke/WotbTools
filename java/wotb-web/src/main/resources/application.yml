@@ -131,6 +131,19 @@ wotb:
       overall-deadline-sec: ${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:1100}
   replay:
     max-concurrent-jobs: ${REPLAY_MAX_CONCURRENT_JOBS:2}
+    export-job:
+      # 导出 Job 临时目录（上传输入 + 最终 artifact；TTL 自动清理，见 ExportJobStore）
+      dir: ${REPLAY_EXPORT_JOB_DIR:${java.io.tmpdir}/wotb-export-jobs}
+      ttl-minutes: ${REPLAY_EXPORT_JOB_TTL_MINUTES:30}
+      # worker 线程数（与全局 replay 容量同值，job 不绕过 max-concurrent-jobs）
+      max-concurrent: ${REPLAY_EXPORT_JOB_MAX_CONCURRENT:2}
+      # 有界等待队列；满载 503 EXPORT_QUEUE_FULL（不建无限队列）
+      queue-capacity: ${REPLAY_EXPORT_JOB_QUEUE_CAPACITY:4}
+    processing-job:
+      # Replay Processing Job 临时输入目录（上传持久化；result 为内存态 dataset，TTL 自动清理）
+      dir: ${REPLAY_PROCESSING_JOB_DIR:${java.io.tmpdir}/wotb-replay-processing-jobs}
+      ttl-minutes: ${REPLAY_PROCESSING_JOB_TTL_MINUTES:30}
+      # 与 export-job 共用同一有界 worker 池（max-concurrent/queue-capacity 见上；不复制两套 executor）
     coordinate:
       half-extent: ${REPLAY_COORDINATE_HALF_EXTENT:250}
       clamp-tolerance: ${REPLAY_COORDINATE_CLAMP_TOLERANCE:12.5}

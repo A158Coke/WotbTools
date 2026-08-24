@@ -18,6 +18,7 @@ const uploading = ref(false)
 const uploadMsg = ref('')
 const uploadOk = ref(false)
 const dragging = ref(false)
+const showUploadModal = ref(false)
 const fileInput = ref(null)
 const downloadingId = ref(null)
 const downloadErr = ref('')
@@ -660,60 +661,76 @@ function fmtDate(s) {
         <p>{{ $t('hof.subtitle') }}</p>
       </header>
 
-      <section class="lb-upload-section"
-               @dragover.prevent="dragging = true"
-               @dragleave.prevent="dragging = false"
-               @drop.prevent="dragging = false; onDrop($event)">
-        <div class="lb-upload-card" :class="{ dragging }">
-          <span class="up-icon"><svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg></span>
-          <div class="up-title">{{ $t('hof.upload_title') }}</div>
-          <div class="up-sub">{{ $t('hof.upload_hint') }}</div>
-          <input ref="fileInput" type="file" accept=".wotbreplay" class="lb-hidden-input" @change="onFileChange" :disabled="uploading" />
-          <button type="button" class="filebtn" :class="{ 'lb-uploading': uploading }" @click="onUploadButtonClick">
-            <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
-            {{ uploading ? $t('hof.uploading') : $t('hof.upload_btn') }}
-          </button>
+      <div class="lb-submit-row">
+        <button type="button" class="filebtn" @click="showUploadModal = true">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg>{{ $t('hof.submit_entry') }}
+        </button>
+        <span v-if="uploadMsg" class="lb-upload-msg" :class="{ err: !uploadOk }">{{ uploadMsg }}</span>
+      </div>
+
+      <!-- 提交记录 Modal（§29：上传入口不再长期占据首屏，Ranking 成为核心） -->
+      <div v-if="showUploadModal" class="modal-overlay" @click.self="showUploadModal = false">
+        <div class="modal hof-upload-modal" role="dialog" aria-modal="true" :aria-label="$t('hof.upload_title')">
+          <div class="modal-head">
+            <h2>{{ $t('hof.upload_title') }}</h2>
+            <button type="button" class="modal-x" :aria-label="$t('app.close')" @click="showUploadModal = false">&times;</button>
+          </div>
+          <section class="lb-upload-section"
+                   @dragover.prevent="dragging = true"
+                   @dragleave.prevent="dragging = false"
+                   @drop.prevent="dragging = false; onDrop($event)">
+            <div class="lb-upload-card" :class="{ dragging }">
+              <span class="up-icon"><svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg></span>
+              <div class="up-title">{{ $t('hof.upload_title') }}</div>
+              <div class="up-sub">{{ $t('hof.upload_hint') }}</div>
+              <input ref="fileInput" type="file" accept=".wotbreplay" class="lb-hidden-input" @change="onFileChange" :disabled="uploading" />
+              <button type="button" class="filebtn" :class="{ 'lb-uploading': uploading }" @click="onUploadButtonClick">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
+                {{ uploading ? $t('hof.uploading') : $t('hof.upload_btn') }}
+              </button>
+            </div>
+            <p v-if="uploadMsg" class="lb-upload-msg" :class="{ err: !uploadOk }">{{ uploadMsg }}</p>
+          </section>
         </div>
-        <p v-if="uploadMsg" class="lb-upload-msg" :class="{ err: !uploadOk }">{{ uploadMsg }}</p>
-      </section>
+      </div>
 
       <div class="lb-toolbar">
-        <label class="lb-limit">{{ $t('hof.nation') }}
+        <label class="lb-limit"><span class="lb-label">{{ $t('hof.nation') }}</span>
           <select v-model="singleNation" :disabled="singleVehicleOptionsLoading" @change="onSingleVehicleConditionChange">
             <option value="">{{ $t('hof.allNations') }}</option>
             <option v-for="nation in singleVehicleNations" :key="nation" :value="nation">{{ vehicleValueLabel(nation) }}</option>
           </select>
         </label>
-        <label class="lb-limit">{{ $t('hof.vehicleType') }}
+        <label class="lb-limit"><span class="lb-label">{{ $t('hof.vehicleType') }}</span>
           <select v-model="singleVehicleType" :disabled="singleVehicleOptionsLoading" @change="onSingleVehicleConditionChange">
             <option value="">{{ $t('hof.allVehicleTypes') }}</option>
             <option v-for="type in singleVehicleTypes" :key="type" :value="type">{{ vehicleValueLabel(type) }}</option>
           </select>
         </label>
-        <label class="lb-limit">{{ $t('hof.vehicleTier') }}
+        <label class="lb-limit"><span class="lb-label">{{ $t('hof.vehicleTier') }}</span>
           <select v-model="singleVehicleTier" :disabled="singleVehicleOptionsLoading" @change="onSingleVehicleConditionChange">
             <option value="">{{ $t('hof.allVehicleTiers') }}</option>
             <option v-for="tier in singleVehicleTiers" :key="tier" :value="String(tier)">T{{ tier }}</option>
           </select>
         </label>
-        <label class="lb-limit">{{ $t('hof.selectVehicle') }}
+        <label class="lb-limit"><span class="lb-label">{{ $t('hof.selectVehicle') }}</span>
           <select v-model="selectedTankId" class="hof-vehicle-select" :disabled="singleVehicleOptionsLoading" @change="onSingleVehicleChange">
             <option :value="null">{{ $t('hof.all_tanks') }}</option>
             <option v-for="vehicle in filteredSingleVehicles" :key="vehicle.tankId" :value="vehicle.tankId">{{ vehicleOptionLabel(vehicle) }}</option>
           </select>
         </label>
-        <label class="lb-limit">{{ $t('hof.battleTypeLabel') }}
+        <label class="lb-limit"><span class="lb-label">{{ $t('hof.battleTypeLabel') }}</span>
           <select v-model="battleType" @change="onBattleTypeChange">
             <option value="">{{ $t('hof.battleType.all') }}</option>
             <option value="RANDOM">{{ $t('hof.battleType.random') }}</option>
             <option value="RATING">{{ $t('hof.battleType.rating') }}</option>
           </select>
         </label>
-        <label class="lb-limit">{{ $t('hof.nicknameSearch') }}
-          <input v-model="nickname" class="lb-nick-input" :placeholder="$t('hof.nicknamePlaceholder')" @keyup.enter="searchNickname" />
-          <button type="button" class="ghost sm" @click="searchNickname">{{ $t('hof.search') }}</button>
+        <label class="lb-limit"><span class="lb-label">{{ $t('hof.nicknameSearch') }}</span>
+          <span class="lb-nick-row"><input v-model="nickname" class="lb-nick-input" :placeholder="$t('hof.nicknamePlaceholder')" @keyup.enter="searchNickname" />
+          <button type="button" class="ghost sm" @click="searchNickname">{{ $t('hof.search') }}</button></span>
         </label>
-        <label class="lb-limit">{{ $t('hof.limit') }}
+        <label class="lb-limit"><span class="lb-label">{{ $t('hof.limit') }}</span>
           <select v-model.number="limit" @change="page = 1; load()">
             <option :value="20">20</option>
             <option :value="50">50</option>
@@ -807,19 +824,19 @@ function fmtDate(s) {
       </header>
 
       <div class="lb-toolbar h100-toolbar">
-        <label class="lb-limit h100-filter">{{ $t('hundred.nation') }}
+        <label class="lb-limit h100-filter"><span class="lb-label">{{ $t('hundred.nation') }}</span>
           <select v-model="h100Nation" @change="onHundredVehicleFilterChange">
             <option value="">{{ $t('hundred.allNations') }}</option>
             <option v-for="nation in h100Nations" :key="nation" :value="nation">{{ vehicleValueLabel(nation) }}</option>
           </select>
         </label>
-        <label class="lb-limit h100-filter">{{ $t('hundred.vehicleType') }}
+        <label class="lb-limit h100-filter"><span class="lb-label">{{ $t('hundred.vehicleType') }}</span>
           <select v-model="h100VehicleType" @change="onHundredVehicleFilterChange">
             <option value="">{{ $t('hundred.allVehicleTypes') }}</option>
             <option v-for="vehicleType in h100VehicleTypes" :key="vehicleType" :value="vehicleType">{{ vehicleValueLabel(vehicleType) }}</option>
           </select>
         </label>
-        <label class="lb-limit h100-vehicle-filter">{{ $t('hundred.selectVehicle') }}
+        <label class="lb-limit h100-vehicle-filter"><span class="lb-label">{{ $t('hundred.selectVehicle') }}</span>
           <select v-model="h100VehicleId" class="h100-vehicle-select" @change="onHundredVehicleChange">
             <option :value="null">{{ $t('hundred.default') }}</option>
             <option v-for="vehicle in filteredHundredVehicles" :key="vehicle.id" :value="vehicle.id">{{ vehicle.name }}</option>
@@ -993,18 +1010,21 @@ function fmtDate(s) {
 </template>
 
 <style scoped>
-.lb-wrap { max-width: 1080px; margin: 0 auto; padding: 24px 20px 56px; }
+.lb-wrap { max-width: var(--wide-max, 1600px); margin: 0 auto; padding: 24px 20px 56px; }
 .lb-head { margin: 0 0 14px; }
 .lb-kicker { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 6px; background: var(--bg-rating); color: var(--accent-dark); font-size: 12px; font-weight: 800; }
 .lb-head h1 { margin: 10px 0 6px; color: var(--text-heading); font-size: 1.7rem; line-height: 1.15; letter-spacing: 0; }
 .lb-head p { margin: 0; color: var(--text-label); line-height: 1.65; }
-.lb-toolbar { display: flex; align-items: center; gap: 12px; margin: 16px 0 12px; flex-wrap: wrap; }
-.lb-limit { font-size: 13px; color: var(--text-label); display: inline-flex; align-items: center; gap: 6px; }
+.lb-toolbar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 14px;
+  align-items: end; margin: 16px 0 12px; }
+.lb-limit { font-size: 13px; color: var(--text-label); display: grid; gap: 4px; min-width: 0; }
+.lb-limit .lb-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lb-limit select { border: 1px solid var(--border-ghost);
   background: var(--bg-card2); color: var(--text-label); padding: 5px 10px; border-radius: 7px;
-  font-size: 13px; cursor: pointer; font-family: inherit; }
+  font-size: 13px; cursor: pointer; font-family: inherit; width: 100%; min-width: 0; }
 .lb-nick-input { border: 1px solid var(--border-ghost); background: var(--bg-card2); color: var(--text-label);
-  padding: 5px 10px; border-radius: 7px; font-size: 13px; font-family: inherit; width: 130px; }
+  padding: 5px 10px; border-radius: 7px; font-size: 13px; font-family: inherit; width: 100%; min-width: 0; }
+.lb-nick-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; min-width: 0; }
 .lb-dmg { font-weight: 800; color: var(--accent-dark); font-variant-numeric: tabular-nums; }
 .lb-replay { white-space: nowrap; }
 .bt-badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; }
@@ -1037,6 +1057,14 @@ function fmtDate(s) {
 .rk-bronze { background: var(--rating-great-bg); color: var(--rating-great-fg); }
 .muted { padding: 28px 4px; color: var(--text-muted); }
 
+.lb-submit-row { display: flex; align-items: center; gap: 12px; margin: 14px 0 16px; flex-wrap: wrap; }
+.lb-submit-row .lb-upload-msg { margin: 0; }
+.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.modal-head h2 { margin: 0; }
+.modal-x { border: none; background: transparent; color: var(--text-sub); font-size: 1.4rem; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+.modal-x:hover { background: var(--bg-card-hover); color: var(--text-heading); }
+.hof-upload-modal { max-width: 560px; }
+.hof-upload-modal .lb-upload-card { padding: 26px 18px; }
 .lb-upload-section { margin: 16px 0; }
 .lb-upload-card {
   position: relative;
@@ -1070,7 +1098,6 @@ function fmtDate(s) {
 .lb-upload-card .filebtn.lb-uploading { opacity: .6; pointer-events: none; }
 .lb-upload-msg { margin-top: 10px; font-size: 13px; text-align: center; }
 .lb-upload-msg.err { color: var(--error); }
-.lb-wrap .error { display: inline-block; padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--error) 35%, var(--border)); border-radius: 8px; background: color-mix(in srgb, var(--error) 8%, var(--bg-card)); color: var(--error); }
 .pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 16px 0; font-size: .85rem; }
 .pagination button { padding: 6px 14px; border: 1px solid var(--border-ghost); border-radius: 7px; background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-family: inherit; font-size: .82rem; }
 .pagination button:disabled { opacity: .4; cursor: not-allowed; }
@@ -1161,6 +1188,5 @@ function fmtDate(s) {
   .lb-upload-card { min-height: 230px; padding: 28px 16px; }
   .lb-upload-card .up-title { max-width: 260px; }
   .lb-upload-card .up-sub { max-width: 240px; }
-  .lb-nick-input { width: 90px; }
 }
 </style>
