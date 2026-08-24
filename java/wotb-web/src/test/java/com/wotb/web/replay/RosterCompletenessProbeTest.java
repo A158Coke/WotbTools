@@ -1,9 +1,14 @@
 package com.wotb.web.replay;
 
 import com.wotb.core.league.LeagueFailure;
+import com.wotb.core.league.LeagueRatingBatchAggregator;
+import com.wotb.core.league.LeagueRatingCalculator;
+import com.wotb.core.league.LeagueRatingMode;
 import com.wotb.core.league.LeagueRatingValidator;
+import com.wotb.core.league.LeagueReplays;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.model.Source;
 import com.wotb.core.parse.EventStreamReader;
 import com.wotb.core.parse.PickleReader;
 import com.wotb.core.parse.Protobuf;
@@ -18,7 +23,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.stream.Stream;
 
 /**
  * 真实回放 roster/结算完整性 probe（可重复运行，无样本自动跳过）：
@@ -146,5 +153,76 @@ class RosterCompletenessProbeTest {
         final Set<Long> out = new LinkedHashSet<>(a);
         out.removeAll(b);
         return out;
+    }
+
+    /**
+     * 用户批次冠军赛回放批量验证（common/34冠军赛回放，gitignore 本地样本；无文件自动跳过）：
+     * 全批 parse → LeagueRatingValidator → 每份失败码计数；再走 LeagueReplays.collect 端到端
+     * （Rating + 汇总），验证 0/N 是否已消除。
+     */
+    @Test
+    void probeUserChampionshipBatchWhenPresent() throws Exception {
+        final Path batch = Path.of(System.getProperty("user.dir"), "..", "..", "common", "34冠军赛回放");
+        if (!Files.isDirectory(batch)) {
+            System.out.println("\n===== SKIP（34冠军赛回放 目录缺失）");
+            return;
+        }
+        final List<Path> replays;
+        try (Stream<Path> s = Files.walk(batch)) {
+            replays = s.filter(p -> Files.isRegularFile(p) && p.toString().endsWith(".wotbreplay"))
+                    .sorted().toList();
+        }
+        if (replays.isEmpty()) {
+            System.out.println("\n===== SKIP（34冠军赛回放 无 .wotbreplay）");
+            return;
+        }
+
+        int parsed = 0;
+        int rated = 0;
+        int parseFailed = 0;
+        final Map<String, Integer> failureCodes = new TreeMap<>();
+        final List<Source> sources = new ArrayList<>();
+        for (final Path p : replays) {
+            final byte[] bytes = Files.readAllBytes(p);
+            try {
+                final Battle b = ReplayParser.parse(bytes);
+                parsed++;
+                sources.add(new Source(p.getFileName().toString(), bytes));
+                final List<LeagueFailure> fs = LeagueRatingValidator.validate(b);
+                if (fs.isEmpty()) {
+                    rated++;
+                } else {
+                    failureCodes.merge(fs.getFirst().code(), 1, Integer::sum);
+                }
+                System.out.println(p.getFileName() + " arenaBonusType=" + b.arenaBonusType
+                        + " players=" + (b.players == null ? 0 : b.players.size())
+                        + " rosterComplete=" + b.rosterComplete
+                        + " firstCode=" + (fs.isEmpty() ? "PASS" : fs.getFirst().code()));
+            } catch (final Exception e) {
+                parseFailed++;
+                System.out.println("PARSE_FAIL " + p.getFileName() + " : " + e.getMessage());
+            }
+        }
+
+        // 端到端：全批 collect → League 汇总（只对 eligible 场次评分）
+        int ratedInBatch = 0;
+        if (!sources.isEmpty()) {
+            final LeagueReplays.LeagueCollectResult r = LeagueReplays.collect(
+                    sources, source -> ReplayParser.parse(source.bytes()), null, null);
+            System.out.println("batch mode=" + r.mode()
+                    + " battles=" + r.battles().size()
+                    + " leagueFailures=" + r.leagueFailures().size());
+            if (r.leagueBatch() != null) {
+                ratedInBatch = r.leagueBatch().battleResults().size();
+                System.out.println("batch ratedBattles=" + ratedInBatch
+                        + " playerSummaries=" + r.leagueBatch().playerSummaries().size()
+                        + " teamSummaries=" + r.leagueBatch().teamSummaries().size());
+            }
+        }
+
+        System.out.println("===== 34冠军赛回放 batch summary: files=" + replays.size()
+                + " parsed=" + parsed + " rated=" + rated + " parseFailed=" + parseFailed
+                + " ratedInBatch=" + ratedInBatch
+                + " failureCodes=" + failureCodes);
     }
 }
