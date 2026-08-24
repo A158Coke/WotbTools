@@ -192,8 +192,38 @@
   .lb-wrap > .tabs,
   .hof-admin-tabs { position: static; }
   .lb-wrap .lb-head { padding: 18px !important; }
-  .lb-wrap .lb-toolbar { display: flex !important; overflow-x: auto; flex-wrap: nowrap !important; }
-  .lb-wrap .lb-toolbar > * { flex: 0 0 auto; }
+  /* Mobile: the filter form must never become a horizontal-scrolling strip (data
+   * tables may scroll, form filters may not). Task-first 2-column grid, explicit
+   * placement per the real DOM:
+   *   row 1: Nation | Vehicle Type     row 2: Vehicle Tier | Battle Type
+   *   row 3: Select Vehicle (full)     row 4: Nickname + Search (full)
+   *   row 5: Show count | Refresh      (conditional Clear-filter auto-places below)
+   * Hundred-battles toolbar: Nation | Vehicle Type / Select Vehicle (full) /
+   * Refresh | Submit. */
+  .lb-wrap .lb-toolbar {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px 10px !important;
+    overflow: visible !important;
+  }
+  .lb-wrap .lb-toolbar > * { min-width: 0; }
+  /* Single-battle toolbar (children: Nation, Vehicle Type, Vehicle Tier,
+   * Select Vehicle, Battle Type, Nickname, Limit, [Clear filter], Refresh). */
+  .lb-wrap .lb-toolbar:not(.h100-toolbar) .lb-limit:nth-child(1) { grid-area: 1 / 1; }
+  .lb-wrap .lb-toolbar:not(.h100-toolbar) .lb-limit:nth-child(2) { grid-area: 1 / 2; }
+  .lb-wrap .lb-toolbar:not(.h100-toolbar) .lb-limit:nth-child(3) { grid-area: 2 / 1; }
+  .lb-wrap .lb-toolbar:not(.h100-toolbar) .lb-limit:nth-child(7) { grid-area: 5 / 1; }
+  .lb-wrap .lb-toolbar:not(.h100-toolbar) .lb-limit:has(select option[value="RATING"]) { grid-area: 2 / 2; }
+  .lb-wrap .lb-toolbar:not(.h100-toolbar) .lb-limit:has(.hof-vehicle-select) { grid-area: 3 / 1 / 4 / 3; }
+  .lb-wrap .lb-toolbar:not(.h100-toolbar) .lb-limit:has(.lb-nick-input) { grid-area: 4 / 1 / 5 / 3; }
+  .lb-wrap .lb-toolbar:not(.h100-toolbar) > button:last-child { grid-area: 5 / 2; }
+  /* Hundred-battles toolbar (children: Nation, Vehicle Type, Select Vehicle,
+   * Refresh, Submit). */
+  .lb-wrap .lb-toolbar.h100-toolbar .lb-limit:nth-child(1) { grid-area: 1 / 1; }
+  .lb-wrap .lb-toolbar.h100-toolbar .lb-limit:nth-child(2) { grid-area: 1 / 2; }
+  .lb-wrap .lb-toolbar.h100-toolbar .lb-limit:has(.h100-vehicle-select) { grid-area: 2 / 1 / 3 / 3; }
+  .lb-wrap .lb-toolbar.h100-toolbar > button:nth-child(4) { grid-area: 3 / 1; }
+  .lb-wrap .lb-toolbar.h100-toolbar > button:nth-child(5) { grid-area: 3 / 2; }
   .hof-admin-filters { grid-template-columns: 1fr 1fr !important; }
   .hof-admin-table th { top: 56px; }
 }
