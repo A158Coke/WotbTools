@@ -179,6 +179,9 @@ jobs:
           tags: |
             ${{ env.GHCR_IMAGE_PREFIX }}-frontend:${{ needs.changes.outputs.tag }}
             ${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest
+          # Build identity：镜像内 /version.json 与 console 记录真实 git commit（Docker 上下文无 .git）
+          build-args: |
+            BUILD_COMMIT=${{ needs.changes.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
