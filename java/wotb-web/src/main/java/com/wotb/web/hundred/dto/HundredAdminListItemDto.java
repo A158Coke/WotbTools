@@ -21,6 +21,7 @@ public record HundredAdminListItemDto(
     OffsetDateTime submittedAt,
     OffsetDateTime approvedAt,
     String rejectReason,
-    String deleteReason
+    String deleteReason,
+    String verificationSource
 ) {
 }

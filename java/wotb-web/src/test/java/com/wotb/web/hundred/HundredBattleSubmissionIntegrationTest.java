@@ -4,6 +4,7 @@ import com.wotb.web.hof.dto.ReplayDownload;
 import com.wotb.web.hundred.dto.HundredReplayEvidenceDto;
 import com.wotb.web.hundred.entity.HundredBattleReplayEvidence;
 import com.wotb.web.hundred.entity.HundredBattleSubmission;
+import com.wotb.web.hundred.gateway.WargamingOfficialStats;
 import com.wotb.web.hundred.repository.HundredBattleReplayEvidenceRepository;
 import com.wotb.web.hundred.repository.HundredBattleSubmissionRepository;
 import com.wotb.web.hundred.service.HundredBattleSubmissionService;
@@ -29,6 +30,8 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -110,7 +113,7 @@ class HundredBattleSubmissionIntegrationTest {
         return repository.findByUserKeycloakIdAndStatusInOrderBySubmittedAtDesc("kc-user", List.of("CURRENT")).size();
     }
 
-    /** 场景 A：existing CURRENT(4000) + PENDING(4200) → approve(4200) 成功 → 恰好一个 CURRENT、旧行 SUPERSEDED。 */
+    /** 场景 A：existing CURRENT(4000) + PENDING(4200) → approve 成功 → 恰好一个 CURRENT、旧行 SUPERSEDED。 */
     @Test
     void approveReplacesCurrentWithSingleCurrentRow() throws Exception {
         final HundredBattleSubmission current = insertRow("CURRENT", 4000, 150);
@@ -119,7 +122,7 @@ class HundredBattleSubmissionIntegrationTest {
         repository.saveAndFlush(pending);
         attachCompleteEvidence(pending.getId());
 
-        service.approve("admin-sub", pending.getId(), 4200, 150);
+        service.approve("admin-sub", pending.getId());
 
         final HundredBattleSubmission oldRow = repository.findById(current.getId()).orElseThrow();
         final HundredBattleSubmission newRow = repository.findById(pending.getId()).orElseThrow();
@@ -146,7 +149,7 @@ class HundredBattleSubmissionIntegrationTest {
         attachCompleteEvidence(pending.getId());
 
         assertThrows(DataIntegrityViolationException.class,
-                () -> service.approve("x".repeat(200), pending.getId(), 4200, 150));
+                () -> service.approve("x".repeat(200), pending.getId()));
 
         final HundredBattleSubmission oldRow = repository.findById(current.getId()).orElseThrow();
         final HundredBattleSubmission pendingRow = repository.findById(pending.getId()).orElseThrow();
@@ -242,7 +245,7 @@ class HundredBattleSubmissionIntegrationTest {
         repository.saveAndFlush(s);
 
         final IllegalStateException ex = assertThrows(IllegalStateException.class,
-                () -> service.approve("admin-sub", s.getId(), 4200, 150));
+                () -> service.approve("admin-sub", s.getId()));
         assertEquals("HUNDRED_INCOMPLETE_REVIEW_EVIDENCE", ex.getMessage());
         assertEquals("PENDING", repository.findById(s.getId()).orElseThrow().getStatus());
         assertEquals(0, currentCount(), "approve 失败不得产生 CURRENT");
@@ -270,7 +273,7 @@ class HundredBattleSubmissionIntegrationTest {
         evidenceService.attach(s.getId(), replays);
         assertEquals(5, evidenceRepository.findBySubmissionIdOrderBySlotAsc(s.getId()).size());
 
-        service.approve("admin-sub", s.getId(), 4200, 150);
+        service.approve("admin-sub", s.getId());
 
         final HundredBattleSubmission approved = repository.findById(s.getId()).orElseThrow();
         assertEquals("CURRENT", approved.getStatus());
@@ -279,6 +282,75 @@ class HundredBattleSubmissionIntegrationTest {
         for (final HundredReplayEvidenceService.PendingReplay r : replays) {
             assertFalse(Files.exists(storageDir.resolve(r.sha256() + ".wotbreplay")),
                     "approve 后无引用物理证据应清理: " + r.sha256());
+        }
+    }
+
+    @Test
+    void v20PersistsManualDefaultAndCompleteWargamingSnapshot() {
+        final HundredBattleSubmission manual = insertRow("REJECTED", 3900, 100);
+        assertEquals("MANUAL", repository.findById(manual.getId()).orElseThrow().getVerificationSource());
+
+        final HundredBattleSubmission wargaming = insertRow("REJECTED", 3900, 100);
+        wargaming.setUserKeycloakId("wg-user");
+        wargaming.setGameAccountIdSnapshot(512_345_678L);
+        wargaming.setVerificationSource("WARGAMING_API");
+        wargaming.setVerifiedAt(OffsetDateTime.parse("2026-08-23T10:00:00Z"));
+        wargaming.setVerifiedServer("ASIA");
+        wargaming.setOfficialAccountBattleCount(5_000L);
+        wargaming.setOfficialTankBattleCount(100L);
+        wargaming.setOfficialTankDamageDealt(390_000L);
+        wargaming.setOfficialAverageDamage(3900);
+        repository.saveAndFlush(wargaming);
+
+        final HundredBattleSubmission stored = repository.findById(wargaming.getId()).orElseThrow();
+        assertEquals("WARGAMING_API", stored.getVerificationSource());
+        assertEquals(390_000L, stored.getOfficialTankDamageDealt());
+    }
+
+    @Test
+    void v20DatabaseCheckRejectsIncompleteWargamingSnapshot() {
+        final HundredBattleSubmission invalid = insertRow("REJECTED", 3900, 100);
+        invalid.setVerificationSource("WARGAMING_API");
+
+        assertThrows(DataIntegrityViolationException.class, () -> repository.saveAndFlush(invalid));
+    }
+
+    @Test
+    void concurrentWargamingAutoCurrentCreatesAtMostOneCurrent() throws Exception {
+        final WargamingOfficialStats stats = new WargamingOfficialStats(
+                "ASIA", 512_345_678L, "PlayerOne", 5_000, 385L, 100, 390_000);
+        final CountDownLatch start = new CountDownLatch(1);
+        final AtomicReference<Throwable> firstError = new AtomicReference<>();
+        final AtomicReference<Throwable> secondError = new AtomicReference<>();
+        final Runnable first = () -> invokeWargamingCreate(start, stats, firstError);
+        final Runnable second = () -> invokeWargamingCreate(start, stats, secondError);
+        final Thread firstThread = new Thread(first, "wg-current-1");
+        final Thread secondThread = new Thread(second, "wg-current-2");
+        firstThread.start();
+        secondThread.start();
+        start.countDown();
+        firstThread.join(30_000);
+        secondThread.join(30_000);
+
+        assertFalse(firstThread.isAlive());
+        assertFalse(secondThread.isAlive());
+        final int successes = (firstError.get() == null ? 1 : 0) + (secondError.get() == null ? 1 : 0);
+        assertEquals(1, successes, "并发 WG 自动 CURRENT 必须恰好一个成功");
+        assertEquals(1, currentCount());
+        final Throwable loser = firstError.get() == null ? secondError.get() : firstError.get();
+        assertTrue(loser instanceof IllegalStateException);
+        assertEquals("HUNDRED_NOT_HIGHER", loser.getMessage());
+    }
+
+    private void invokeWargamingCreate(final CountDownLatch start,
+                                       final WargamingOfficialStats stats,
+                                       final AtomicReference<Throwable> error) {
+        try {
+            start.await();
+            service.createWargamingSubmission(
+                    "kc-user", 1, 1, stats, OffsetDateTime.parse("2026-08-23T10:00:00Z"));
+        } catch (final Throwable t) {
+            error.set(t);
         }
     }
 }

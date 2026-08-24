@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- **百场名人堂 WG 官方 API 自动认证链路**：保留原截图 + 5 回放人工审核端点，新增仅限 `wotb_verified` ASIA/EU/NA 身份的 JSON 提交链路。后端以固定白名单 host 调用 WG `account/info` + `tanks/stats`，冻结账号总场次、单车总伤害/场次与计算场均；账号总场次至少 5000、目标 Tier X 至少 100 场，MANUAL 使用原申报成绩、WARGAMING_API 使用官方快照。官方精确场均 `<=3900` 原子写入 CURRENT，`>3900` 自动创建无文件 PENDING 供管理员审核；审批端点不接收成绩数据，管理员只能通过、拒绝或删除，不能改写任何排名值。WG key 只从运行时 `WG_APPLICATION_ID` 注入 backend，端点受登录与 nginx 限流保护，失败零落库并引导原人工链路。
 - **review-with-docs 集成 Alibaba OpenCodeReview（OCR）delegate mode（docs/current-plan.md）**：
   `review-with-docs` 重构为三层审查引擎——Layer A（Requirement/Plan Auditor，主代理自审 plan/requirements/acceptance criteria 完成度，OCR 无 finding 不代表性完成）、Layer B（OpenCodeReview Code Auditor，`ocr delegate preview/rule` 确定性文件筛选+规则解析，推理由主代理 DeepSeek 完成，不维护第二套 LLM 配置）、Layer C（Review Reconciler，去重/验证/重定级，BLOCKER/MAJOR/MINOR + Blocker count=0 完成条件不变）。外部调用方式不变（仍 `review-with-docs`）、current-plan 流程不变、blocker=0 语义不变；新增 `.opencodereview/rule.json`（WotBTools-aware 首版少量规则：Java/Spring、Vue 前端 + replay invariant、Keycloak SPI、CI/deploy）；验证 Case 1–6 并明确 deterministic/agent-level 边界（scripts/ocr-verify/）：deterministic tests（verify-ocr.ps1，可重复、无 LLM）覆盖 merge-base 多 commit 范围（Case 5）、项目规则命中（Case 1 确定性部分）、no-diff reviewable=0（Case 6）、OCR 失败非零退出码（Case 4 确定性部分）；agent-level scenarios（主代理按 skill 执行并记录）覆盖 NPE bug 完整检出闭环（Case 1）、requirement 遗漏 MISSING/BLOCKER（Case 2）、OCR false positive 拒绝/降级（Case 3）、OCR failure 的 plan audit 继续 + review incomplete 处理（Case 4）。OCR 固定版本 `@alibaba-group/open-code-review@1.9.10`（Apache-2.0）。未新增 GitHub OCR Action、未增加用户人工步骤。
 - **Replay 解析预览改为 Replay Processing Job（回放处理升级为 Job，Preview/Export 共享解析结果，plan §0–§72）**：
@@ -35,6 +36,7 @@
   `blitzkit-references.mjs --emit-portraits` 可重复生成入口。
 
 ### Fixed
+- **WG 首次登录可直接提交百场认证**：`HundredWargamingSubmissionService` 先验证可信 JWT，再复用 `UserProfileService.syncFromLogin` 原子创建或刷新 WARGAMING Profile，随后仍执行 JWT 与数据库 Profile 的完整交叉校验后才查询 WG stats。同步冲突或失败保持 fail-closed，绝不调用外部 stats 或创建 submission。
 - **Replay Processing Job review 闭环修复（PR #121 correctness/concurrency 3 项 blocker）**：
   - **文件集合变化立即失效旧解析结果（Blocker 1）**：前端新增统一 `updateFiles` 入口（FileUploader 任意 add / folder-add / remove / clear / replace 事件都走它），任何 files 变化立即置空 `processingJobId` 与已展示的 `resp`（防止「UI 显示 dataset A、files 是 dataset B、Export 复用 A」）；正在处理的旧 Job 停止轮询并后台协作取消（释放 queue slot / 容量）；`pollProcessingJob` 以 `processingPollJobId` 作 request token + `selectionRevision` 作 revision，丢弃迟到/过期的 READY 响应（P1 处理中 files 改变 → P1 随后 READY 不得覆盖当前 selection）；Export 复用仅当 `resultMatchesSelection`（processingJobId 与 resp 成对存在），否则走 legacy 上传当前 files，绝不静默导出旧 dataset。
   - **from-result each 的 valid 语义修复（Blocker 2）**：`processEachFromResult` 的 NO_VALID_REPLAYS 判定由 `processed - failures <= 0` 改为 `ds.validCount() <= 0`——`ds.battles()` 本身就是 Processing 阶段排除 duplicates/failures 后的有效场，failures 不得再与其相减（否则 1 valid + 1 failure 会被误判为 NO_VALID_REPLAYS）；duplicates/failures 只用于进度与终态统计。新增测试：1v1f / 1v2f / 2v5f / 0v（each + aggregate）全路径。
