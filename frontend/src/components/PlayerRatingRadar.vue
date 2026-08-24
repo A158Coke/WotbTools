@@ -2,21 +2,19 @@
 import { computed } from 'vue'
 
 /**
- * 七维 Rating 雷达图（plan §10）：原生 SVG，无 canvas blur，responsive。
- * - 每个轴使用归一化百分比 score / dimensionMax * 100（plan §10.2），所有轴 0–100% 可比较。
- * - 轴序与后端 LeagueColumns.DIM_KEYS 一致：伤害/助攻/击杀/换血/阻挡/存活互换/射击。
- * - 未来 Compare 扩展：props 只暴露 primary（+ optional comparison），当前不实现双 polygon（plan §35）。
+ * 选手画像雷达图（review PR#134 BLOCKER 6.14）：动态指标轴（默认七维 League Rating，
+ * 用户可自定义指标与顺序）。只负责 geometry / labels / polygon / detail 渲染，
+ * 不负责任何业务公式——normalization 由 Radar Metric Registry（utils/radarMetrics.js）
+ * 在父组件适配层完成，本组件只消费 {key,label,rawValue,normalized,displayValue,available}。
+ *
+ * - 轴序 = props.metrics 顺序（用户自定义，BLOCKER 6.3/6.9）。
+ * - available:false 的轴：detail 显示 '--'，不绘制该顶点（不冒充 0/0%）；polygon 只连接
+ *   实际 available 的顶点（BLOCKER 6.12 partial availability）。
+ * - 禁止 current-batch-max normalization（BLOCKER 6.7）：normalized 由 registry 稳定给出。
  */
 const props = defineProps({
-  /** 七维分数数组（原始分数，顺序与 axes 对齐）。 */
-  scores: { type: Array, default: () => [] },
-  /** 七维满分数组（与 scores 对齐；缺省按后端 MAX 常量）。 */
-  maxes: {
-    type: Array,
-    default: () => [400, 100, 100, 150, 50, 100, 100],
-  },
-  /** 轴显示标签（默认由父组件传 i18n 后的标签）。 */
-  labels: { type: Array, default: () => [] },
+  /** 轴数据（顺序即绘制顺序）。 */
+  metrics: { type: Array, default: () => [] },
   /** 尺寸（px，正方形；responsive：组件自身用 CSS width 100%）。 */
   size: { type: Number, default: 300 },
 })
@@ -24,21 +22,17 @@ const props = defineProps({
 const CENTER = 150
 const RADIUS = 120
 
-const axisCount = computed(() => 7)
+const axisCount = computed(() => props.metrics.length)
 
-/** 每个轴的归一化百分比 [0, 1]，缺失/非有限 → 0。 */
-const normalized = computed(() => {
-  return props.scores.map((s, i) => {
-    const max = Number(props.maxes[i]) || 0
-    const v = Number(s)
-    if (max <= 0 || !Number.isFinite(v) || v <= 0) return 0
-    return Math.max(0, Math.min(1, v / max))
-  })
-})
+/** 每个轴归一化比例（unavailable → null；不参与 polygon，不当作 0）。 */
+const normalized = computed(() =>
+  props.metrics.map(m => (m.available ? Math.max(0, Math.min(1, m.normalized)) : null)))
+
+const availableCount = computed(() => props.metrics.filter(m => m.available).length)
 
 /** 轴角度：从 12 点方向顺时针。 */
 function angle(i) {
-  return (Math.PI * 2 * i) / axisCount.value - Math.PI / 2
+  return (Math.PI * 2 * i) / Math.max(axisCount.value, 1) - Math.PI / 2
 }
 
 function point(i, ratio) {
@@ -56,48 +50,53 @@ const gridHalfPoints = computed(() => {
   return Array.from({ length: axisCount.value }, (_, i) => point(i, 0.5).join(',')).join(' ')
 })
 
-/** 数据多边形（归一化百分比半径）。 */
+/** 数据多边形：只连接实际 available 的顶点（BLOCKER 6.12）。 */
 const polygonPoints = computed(() => {
-  return normalized.value.map((ratio, i) => point(i, ratio).join(',')).join(' ')
+  return props.metrics
+    .map((m, i) => ({ i, ratio: normalized.value[i] }))
+    .filter(p => p.ratio != null)
+    .map(p => point(p.i, p.ratio).join(','))
+    .join(' ')
 })
 
 /** 轴端点标签位置（radius 1.16）。 */
 const labelPositions = computed(() => {
   return Array.from({ length: axisCount.value }, (_, i) => {
     const [x, y] = point(i, 1.16)
-    return { x, y, label: props.labels[i] || '' }
+    return { x, y, label: props.metrics[i]?.label || '' }
   })
 })
 </script>
 
 <template>
-  <div class="player-radar" role="img" :aria-label="'Rating radar: ' + (labels || []).join(', ')">
+  <div class="player-radar" role="img" :aria-label="'Radar: ' + (metrics || []).map(m => m.label).join(', ')">
     <svg :viewBox="'0 0 ' + size + ' ' + size" class="radar-svg">
       <!-- 网格：100% 外圈 + 50% 内圈 + 轴线 -->
       <polygon :points="gridPoints" class="radar-grid-outer" />
       <polygon :points="gridHalfPoints" class="radar-grid-inner" />
-      <line v-for="i in 7" :key="'axis-' + i"
+      <line v-for="i in axisCount" :key="'axis-' + i"
             :x1="CENTER" :y1="CENTER"
             :x2="point(i - 1, 1)[0]" :y2="point(i - 1, 1)[1]"
             class="radar-axis" />
-      <!-- 数据多边形 -->
+      <!-- 数据多边形（只连接 available 顶点） -->
       <polygon :points="polygonPoints" class="radar-data" />
-      <!-- 数据顶点 -->
-      <circle v-for="i in 7" :key="'dot-' + i"
-              :cx="point(i - 1, normalized[i - 1] || 0)[0]"
-              :cy="point(i - 1, normalized[i - 1] || 0)[1]"
-              r="3" class="radar-dot" />
+      <!-- 数据顶点（unavailable 不画点） -->
+      <template v-for="i in axisCount" :key="'dot-' + i">
+        <circle v-if="normalized[i - 1] != null"
+                :cx="point(i - 1, normalized[i - 1])[0]"
+                :cy="point(i - 1, normalized[i - 1])[1]"
+                r="3" class="radar-dot" />
+      </template>
       <!-- 轴标签 -->
       <text v-for="(p, i) in labelPositions" :key="'label-' + i"
             :x="p.x" :y="p.y" text-anchor="middle" dominant-baseline="middle"
             class="radar-label">{{ p.label }}</text>
     </svg>
-    <!-- 维度 detail：原始分 / Max · 百分比（plan §10.3） -->
-    <ul v-if="scores.length" class="radar-details">
-      <li v-for="(label, i) in labels" :key="i">
-        <span class="rd-name">{{ label }}</span>
-        <span class="rd-value">{{ Math.round(Number(scores[i]) || 0) }} / {{ maxes[i] }} ·
-          {{ Math.round(1000 * (normalized[i] || 0)) / 10 }}%</span>
+    <!-- 轴 detail：displayValue（缺失 → '--'，不冒充 0/0%） -->
+    <ul v-if="metrics.length" class="radar-details">
+      <li v-for="(m, i) in metrics" :key="i">
+        <span class="rd-name">{{ m.label }}</span>
+        <span class="rd-value">{{ m.displayValue || '--' }}</span>
       </li>
     </ul>
   </div>

@@ -24,8 +24,8 @@ import java.util.function.Function;
 
 /**
  * League Rating 单场工作簿：玩家数据（Rating 维度分/满分/百分比 + 关键原始字段 +
- * 占点原始字段，不含 Contribution/KAST/Impact）/ 战斗信息（双方战队 Rating + MVP +
- * 队内最佳）/ 原始字段。
+ * 单场 Performance Metrics（contribution/kast/impact，review PR#134 BLOCKER 1）+ 占点原始字段）/
+ * 战斗信息（双方战队 Rating + MVP + 队内最佳）/ 原始字段。
  */
 final class LeagueSingleSheets {
 
@@ -61,6 +61,9 @@ final class LeagueSingleSheets {
         header.add(new String[]{"击杀", "6"});
         header.add(new String[]{"伤害", "8"});
         header.add(new String[]{"协助伤害", "9"});
+        header.add(new String[]{"贡献度", "8"});
+        header.add(new String[]{"KAST", "7"});
+        header.add(new String[]{"Impact", "8"});
         header.add(new String[]{"损失血量", "9"});
         header.add(new String[]{"格挡", "9"});
         header.add(new String[]{"存活时间", "10"});
@@ -116,6 +119,11 @@ final class LeagueSingleSheets {
             styles.setCell(row.createCell(c++), p.kills, fill, "kills");
             styles.setCell(row.createCell(c++), p.damageDealt, fill, "damage_dealt");
             styles.setCell(row.createCell(c++), p.damageAssisted, fill, "damage_assisted");
+            // 单场 Performance Metrics（PerformanceMetricsCalculator.populateBattle 回填；
+            // HP UNKNOWN → contribution/kast null → 空单元格，不冒充 0）
+            styles.setCell(row.createCell(c++), p.contribution, fill, "contribution");
+            styles.setCell(row.createCell(c++), p.kast, fill, "kast");
+            styles.setCell(row.createCell(c++), p.impact, fill, "impact");
             styles.setCell(row.createCell(c++), p.damageReceived, fill, "damage_received");
             styles.setCell(row.createCell(c++), p.damageBlocked, fill, "damage_blocked");
             styles.setCell(row.createCell(c++), ExcelStyles.duration(p.survivalTimeSec), fill, "survival_time");

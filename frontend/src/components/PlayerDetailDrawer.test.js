@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PlayerDetailDrawer from './PlayerDetailDrawer.vue'
 
@@ -17,18 +17,46 @@ const SUMMARY_PLAYER = {
   mvpCount: 2,
   battles: 3,
   wins: 2,
-  cells: { account_id: 1001, battles: 3, wins: 2, win_rate: 66.7, damage_avg: 500, assisted_avg: 120, kills_avg: 3.2, earned_avg: 80 },
+  cells: {
+    account_id: 1001, battles: 12, rated_battles: 8, wins: 2, win_rate: 66.7,
+    damage_avg: 500, assisted_avg: 120, kills_avg: 3.2, earned_avg: 80,
+    contribution: 22.4, kast: 100, impact: 151.2,
+  },
+}
+
+const BATTLE_PLAYER = {
+  accountId: 2001,
+  nickname: 'Beta',
+  clan: 'BBB',
+  rating: 812.6,
+  dimensionMedians: [250, 50, 60, 90, 30, 70, 80],
+  cells: {
+    account_id: 2001, damage_dealt: 3000, damage_assisted: 900, kills: 3,
+    damage_blocked: 1200, n_shots: 20, n_hits_dealt: 14, n_penetrations_dealt: 9,
+    survived_label: 'SURVIVED', victory_points_earned: 180,
+    contribution: 18.1, kast: 80, impact: 120.5,
+  },
+}
+
+/** 雷达 stub：透传 metrics 数组（断言 axis 数量/顺序用），真实渲染由 PlayerRatingRadar 负责。 */
+const RADAR_STUB = {
+  props: ['metrics'],
+  template: '<div class="radar-stub">{{ metrics.map(m => m.label).join(",") }}</div>',
 }
 
 function mountDrawer(context, player) {
   return mount(PlayerDetailDrawer, {
     props: { context, player },
     global: {
-      stubs: { PlayerRatingRadar: { template: '<div class="radar-stub" />' }, teleport: true },
-      // stub teleport：内容留在组件内，happy-dom 可直接查询
+      stubs: { PlayerRatingRadar: RADAR_STUB, teleport: true },
+      mocks: { $t: key => key },
     }
   })
 }
+
+beforeEach(() => {
+  localStorage.clear()
+})
 
 describe('PlayerDetailDrawer (plan §8/§9/§23)', () => {
   it('closed when context or player is null', () => {
@@ -75,5 +103,177 @@ describe('PlayerDetailDrawer (plan §8/§9/§23)', () => {
       { ...SUMMARY_PLAYER, ratingMedian: null })
     expect(wrapper.text()).toContain('--')
     expect(wrapper.text()).not.toMatch(/\b0\b ·/)
+  })
+})
+
+describe('PlayerDetailDrawer scope semantics (review PR#134 BLOCKER 4)', () => {
+  it('summary: scope label 当前批次中位数 + 比赛事实 title + 评分场次', () => {
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    const text = wrapper.text()
+    expect(text).toContain('league.drawer.scope_summary')
+    expect(text).toContain('league.drawer.facts_title_summary')
+    // BLOCKER 5：场次（解析 12）与评分场次（rated 8）分开显示
+    expect(text).toContain('league.drawer.battles')
+    expect(text).toContain('league.drawer.rated_battles')
+    expect(text).toContain('12')
+    expect(text).toContain('8')
+  })
+
+  it('summary: radar title 不写「本场」语义', () => {
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    expect(wrapper.text()).toContain('league.drawer.radar_title_summary')
+    // 旧 key league.drawer.radar_title（无后缀）不得再出现；新 key 带 _summary/_battle 后缀
+    expect(wrapper.text()).not.toMatch(/league\.drawer\.radar_title($|[^_])/)
+  })
+
+  it('battle: scope label 本场表现 + 单场 facts（阻挡/射击/命中/击穿/存活/获取点数）', () => {
+    const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, BATTLE_PLAYER)
+    const text = wrapper.text()
+    expect(text).toContain('league.drawer.scope_battle')
+    expect(text).toContain('league.drawer.facts_title_battle')
+    expect(text).toContain('league.drawer.blocked')
+    expect(text).toContain('1200')
+    expect(text).toContain('league.drawer.shots')
+    expect(text).toContain('20')
+    expect(text).toContain('league.drawer.hits')
+    expect(text).toContain('14')
+    expect(text).toContain('league.drawer.pens')
+    expect(text).toContain('9')
+    expect(text).toContain('survived.alive')
+    expect(text).toContain('league.drawer.points_earned')
+    expect(text).toContain('180')
+  })
+
+  it('performance section shows Contribution/KAST/Impact with %（BLOCKER 4：独立区域，不是 Rating）', () => {
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    const text = wrapper.text()
+    expect(text).toContain('league.drawer.perf_title')
+    expect(text).toContain('player_labels.contribution')
+    expect(text).toContain('player_labels.kast')
+    expect(text).toContain('player_labels.impact')
+    expect(text).toContain('22.4%')
+    expect(text).toContain('100%')
+    expect(text).toContain('151.2%')
+  })
+
+  it('performance null → --（不冒充 0%），Rating-ineligible 场同样显示表现指标', () => {
+    const ineligible = {
+      ...BATTLE_PLAYER,
+      rating: null,
+      dimensionMedians: [null, null, null, null, null, null, null],
+      cells: { ...BATTLE_PLAYER.cells, contribution: null, kast: null, impact: null },
+    }
+    const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, ineligible)
+    const text = wrapper.text()
+    expect(text).toContain('--')
+    expect(text).not.toContain('0%')
+  })
+})
+
+describe('PlayerDetailDrawer custom Radar (review PR#134 BLOCKER 6)', () => {
+  it('default: 7 League dimension axes（无偏好时默认体验不变）', () => {
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    const radar = wrapper.find('.radar-stub')
+    const labels = radar.text().split(',')
+    expect(labels).toHaveLength(7)
+    expect(labels[0]).toBe('player_labels.league_damage_score')
+    expect(labels[6]).toBe('player_labels.league_shooting_score')
+  })
+
+  it('custom selection + reorder：kast/contribution/damage/kill → axis 顺序严格一致', () => {
+    localStorage.setItem('wotb-radar-metric-order', JSON.stringify(
+      ['kast', 'contribution', 'league_damage_score', 'league_kill_score']))
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    const labels = wrapper.find('.radar-stub').text().split(',')
+    expect(labels).toEqual(['player_labels.kast', 'player_labels.contribution',
+      'player_labels.league_damage_score', 'player_labels.league_kill_score'])
+  })
+
+  it('invalid saved keys filtered; too few → fallback default seven (BLOCKER 6.10)', () => {
+    localStorage.setItem('wotb-radar-metric-order', JSON.stringify(['removed_metric', 'kast']))
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    const labels = wrapper.find('.radar-stub').text().split(',')
+    expect(labels).toHaveLength(7)
+    expect(labels[0]).toBe('player_labels.league_damage_score')
+  })
+
+  it('picker: toggle adds metric, radar updates and persists (BLOCKER 6.2/6.9/6.10)', async () => {
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await wrapper.find('[data-testid="radar-settings"]').trigger('click')
+    expect(wrapper.find('[data-testid="radar-picker"]').exists()).toBe(true)
+    // 添加 kast（默认未选中）
+    const kastLi = wrapper.findAll('.radar-picker-list li').find(li => li.text().includes('player_labels.kast'))
+    await kastLi.find('input').setValue(true)
+    let labels = wrapper.find('.radar-stub').text().split(',')
+    expect(labels).toContain('player_labels.kast')
+    expect(labels).toHaveLength(8)
+    // 持久化（独立于 table column preference，BLOCKER 6.4/6.10）
+    const saved = JSON.parse(localStorage.getItem('wotb-radar-metric-order'))
+    expect(saved).toContain('kast')
+    expect(localStorage.getItem('wotb-league-cw-visible-cols')).toBeNull()
+  })
+
+  it('picker min 3：不能取消到 3 个以下（BLOCKER 6.8）', async () => {
+    localStorage.setItem('wotb-radar-metric-order', JSON.stringify(['kast', 'contribution', 'league_damage_score']))
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await wrapper.find('[data-testid="radar-settings"]').trigger('click')
+    const kastLi = wrapper.findAll('.radar-picker-list li').find(li => li.text().includes('player_labels.kast'))
+    await kastLi.find('input').setValue(false) // 尝试取消第 3 个
+    // 仍保留 3 个 + 提示
+    const labels = wrapper.find('.radar-stub').text().split(',')
+    expect(labels).toHaveLength(3)
+    expect(wrapper.find('.radar-hint').exists()).toBe(true)
+  })
+
+  it('picker max 8：不能加到 9 个（BLOCKER 6.8）', async () => {
+    localStorage.setItem('wotb-radar-metric-order', JSON.stringify(
+      ['league_damage_score', 'league_assist_score', 'league_kill_score', 'league_exchange_score',
+        'league_blocked_score', 'league_survival_score', 'league_shooting_score', 'kast']))
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await wrapper.find('[data-testid="radar-settings"]').trigger('click')
+    const contribLi = wrapper.findAll('.radar-picker-list li').find(li => li.text().includes('player_labels.contribution'))
+    await contribLi.find('input').setValue(true) // 尝试第 9 个
+    const labels = wrapper.find('.radar-stub').text().split(',')
+    expect(labels).toHaveLength(8)
+    expect(wrapper.find('.radar-hint').exists()).toBe(true)
+  })
+
+  it('reorder via up/down arrows changes radar axis order', async () => {
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await wrapper.find('[data-testid="radar-settings"]').trigger('click')
+    const assistLi = wrapper.findAll('.radar-picker-list li').find(li => li.text().includes('player_labels.league_assist_score'))
+    await assistLi.find('.rp-arrow').trigger('click') // ↑ 上移
+    const labels = wrapper.find('.radar-stub').text().split(',')
+    expect(labels[0]).toBe('player_labels.league_assist_score')
+    expect(labels[1]).toBe('player_labels.league_damage_score')
+  })
+
+  it('Rating-ineligible（所有 League axes null）：radar 显示 无评分数据 空态（BLOCKER 6.12）', () => {
+    const ineligible = {
+      ...BATTLE_PLAYER,
+      rating: null,
+      dimensionMedians: [null, null, null, null, null, null, null],
+      cells: { ...BATTLE_PLAYER.cells, contribution: 18.1, kast: 80, impact: 120.5 },
+    }
+    const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, ineligible)
+    expect(wrapper.find('[data-testid="radar-empty"]').text()).toBe('league.drawer.radar_unavailable')
+  })
+
+  it('partial availability：雷达照常绘制 performance axes，并提示部分指标无评分数据（BLOCKER 6.12）', () => {
+    // 用户把 KAST/Impact 加入 Radar；本场 League 维度无评分（null）但 performance 有值
+    localStorage.setItem('wotb-radar-metric-order', JSON.stringify(
+      ['kast', 'league_damage_score', 'impact', 'league_kill_score']))
+    const mixed = {
+      ...BATTLE_PLAYER,
+      rating: null,
+      dimensionMedians: [null, null, null, null, null, null, null],
+      cells: { ...BATTLE_PLAYER.cells },
+    }
+    const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, mixed)
+    expect(wrapper.find('[data-testid="radar-partial"]').text()).toBe('league.drawer.radar_partial')
+    // 有 available 轴（kast/impact）→ 雷达照常绘制，轴序一致（League 缺失轴显示 --，不崩溃）
+    const labels = wrapper.find('.radar-stub').text().split(',')
+    expect(labels).toEqual(['player_labels.kast', 'player_labels.league_damage_score',
+      'player_labels.impact', 'player_labels.league_kill_score'])
   })
 })

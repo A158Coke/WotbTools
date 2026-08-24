@@ -35,7 +35,7 @@ const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateF
   startExportJob, cancelExportJob, downloadExportResult, dismissExportJob,
   askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove } = replay
 const cols = useColumns(replay.playerCols, replay.aggCols, replay.activeTab)
-const { visibleKeys, aggVisibleKeys, showColPicker, pickerScope,
+const { visibleKeys, aggVisibleKeys, cwVisibleKeys, cwOrder, showColPicker, pickerScope,
   currentOrder, shownCols, shownAggCols,
   toggleColPicker, toggleCol, selectAllCols, resetCols, handleReorder } = cols
 
@@ -52,11 +52,15 @@ const unifiedRows = computed(() => leagueData.value
 const unifiedAllCols = computed(() => leagueData.value
   ? mergeCwPlayerColumns(leagueData.value.playerSummaryColumns || [], resp.value?.aggregateColumns || [])
   : [])
-/** 统一表可见列：agg scope 控制 aggregate 列显隐；固定列（玩家 + Rating + 七维 + MVP，plan §6.4）始终可见。 */
+/** 统一表可见列（review PR#134 BLOCKER 2）：useColumns cw scope 驱动（可见性 + 顺序 + 持久化）。
+ * 只有 nickname + league_rating 固定（cwOrder 已 pin 在前两位），七维/MVP/表现指标/facts 全部用户可隐藏、可拖拽。 */
 const unifiedShownCols = computed(() => {
-  const visible = new Set(aggVisibleKeys.value)
-  const alwaysVisible = new Set(['nickname', 'league_rating', ...CW_DIM_KEYS, 'mvp_count'])
-  return unifiedAllCols.value.filter(c => alwaysVisible.has(c.key) || visible.has(c.key))
+  if (!leagueMode.value) return []
+  const byKey = new Map(unifiedAllCols.value.map(c => [c.key, c]))
+  return cwOrder.value
+    .filter(k => cwVisibleKeys.value.includes(k))
+    .map(k => byKey.get(k))
+    .filter(Boolean)
 })
 
 // ---- Player Detail Drawer（plan §8/§34：只存 identity，不存 mutable row；刷新后按 accountId 重新 resolve） ----
@@ -153,11 +157,13 @@ const leagueUnavailableMessage = computed(() => {
   return t('league.unavailable_mixed')
 })
 /**
- * 页面级 League 模式（P0：resp.league 是唯一事实源，不再由 playerColumns 是否含
- * league_rating 间接推断）。useColumns 的 leagueMode 只负责列系统（storage scope /
- * fixed keys / picker），页面 tab 存在性 / LeagueSummaryTable / 默认 activeTab 一律看这里。
+ * 页面级 CW（League）模式（review PR#134 BLOCKER 3）：由后端显式 leagueMode 决定
+ * （resp.leagueMode；兼容旧响应回退到 resp.league 存在）。与 league 结果存在性分离——
+ * Rating-ineligible 批次/场次 league=null 但仍是 CW（Player Drawer / Performance metrics /
+ * Replay facts 照常，Rating/七维显示 "--"）。useColumns 的 leagueMode 只负责列系统
+ * （storage scope / fixed keys / picker）；页面 tab 存在性 / 统一玩家表 / 默认 activeTab 看这里。
  */
-const leagueMode = computed(() => !!leagueData.value)
+const leagueMode = computed(() => !!resp.value?.leagueMode || !!resp.value?.league)
 /**
  * 汇总 tab 的真实基础选手数量（plan §10）：一律来自 Replay Core 的 resp.aggregate。
  * League Rating 的选手数属于 League 区块，不得混入基础汇总人数。
@@ -585,8 +591,8 @@ watch(files, (next) => {
                 <svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" /></svg>{{ $t('action.select_cols') }} v
               </button>
               <ColumnPicker v-if="showColPicker" :scope="pickerScope" :order="currentOrder"
-                :visible="pickerScope === 'agg' ? aggVisibleKeys : visibleKeys"
-                :fixed-keys="pickerScope === 'player' && leagueMode ? ['nickname', 'league_rating'] : []"
+                :visible="pickerScope === 'agg' ? aggVisibleKeys : pickerScope === 'cw' ? cwVisibleKeys : visibleKeys"
+                :fixed-keys="(pickerScope === 'cw' || (pickerScope === 'player' && leagueMode)) ? ['nickname', 'league_rating'] : []"
                 @close="showColPicker = false" @toggle="toggleCol"
                 @select-all="selectAllCols" @reset="resetCols" @reorder="handleReorder" />
             </span>
@@ -618,6 +624,7 @@ watch(files, (next) => {
             <CwPlayerSummaryTable :title="$t('league.summary.title_player')"
               :rows="unifiedRows" :columns="unifiedShownCols"
               :league-columns="leagueData?.columns || []" :league-mode="true"
+              :active="activeTab === 'aggregate'"
               @select-player="selectPlayer" />
             <template v-if="(leagueData?.teamSummaries?.length || 0) > 0">
               <LeagueSummaryTable :title="$t('league.summary.title_team')" type="team"
@@ -632,7 +639,7 @@ watch(files, (next) => {
              :ref="(el) => setBattleRef(el, i)">
           <BattleTable :battle="b" :shown-cols="shownCols"
             :active="activeTab === 'b' + i"
-            :league="b.league" :league-columns="leagueData?.columns || []"
+            :league-mode="leagueMode" :league="b.league" :league-columns="leagueData?.columns || []"
             :team-names="battleTeamNames" @update-team-name="updateBattleTeamName"
             @select-player="selectPlayer" />
         </div>

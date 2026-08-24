@@ -253,15 +253,16 @@ public class ReplayProcessingJobService {
         final String leagueUnavailableCode = c.mode() == LeagueRatingMode.MIXED_UNSUPPORTED
                 ? "MIXED_LEAGUE_AND_STANDARD_REPLAYS" : null;
         // 事实层 enrich 一次：Preview / Export 直接消费已 enrich 的 authoritative Battle（plan §21/§27）。
-        // League 模式不调用 PerformanceMetricsCalculator（旧 contribution/kast/impact 完全移除）。
+        // League 模式同样回填单场 Performance Metrics（contribution/kast/impact 在 CW 保留，
+        // review PR#134 BLOCKER 1：表现指标 ≠ Rating 维度；from-result Preview/Export 同源）。
         PotentialDamage.apply(c.battles(), tankopedia);
+        for (final Battle battle : c.battles()) {
+            PerformanceMetricsCalculator.populateBattle(battle);
+        }
         if (c.mode() == LeagueRatingMode.LEAGUE_RATING) {
             job.markReady(new ProcessedDataset(c.battles(), c.battleSourceNames(),
                     c.duplicates(), c.failures(), c.leagueBatch(), null));
             return;
-        }
-        for (final Battle battle : c.battles()) {
-            PerformanceMetricsCalculator.populateBattle(battle);
         }
         job.markReady(new ProcessedDataset(c.battles(), c.battleSourceNames(),
                 c.duplicates(), c.failures(), null, leagueUnavailableCode));

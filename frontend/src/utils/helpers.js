@@ -18,6 +18,21 @@ export const LEAGUE_DEFAULT_VISIBLE = [
   'nickname', 'clan', 'tank_name', 'damage_dealt', 'damage_assisted', 'kills', 'league_rating'
 ]
 
+/**
+ * CW 统一玩家表默认可见列（review PR#134 BLOCKER 2：只有 nickname + league_rating 是
+ * 固定核心列；其余列（七维/MVP/表现指标/facts）都只是默认可见，用户可隐藏、可拖拽）。
+ * 七维 + MVP 默认展示（延续旧体验），但不再是 alwaysVisible 硬编码。
+ */
+export const CW_SUMMARY_DEFAULT_VISIBLE = [
+  'nickname', 'league_rating',
+  'league_damage_score', 'league_assist_score', 'league_kill_score',
+  'league_exchange_score', 'league_blocked_score', 'league_survival_score',
+  'league_shooting_score', 'mvp_count',
+  'clan', 'battles', 'wins', 'win_rate',
+  'damage_avg', 'assisted_avg', 'kills_avg', 'earned_avg',
+  'contribution', 'kast', 'impact'
+]
+
 /** League 模式固定列（玩家 + 总 Rating；sticky 布局依据，不可隐藏/移动）。 */
 export const LEAGUE_FIXED_KEYS = ['nickname', 'league_rating']
 
@@ -45,6 +60,7 @@ const COL_GROUP_CAT = {
   team_name: 'identity',
   platoon_label: 'extra', rank: 'extra',
   battles: 'overview', wins: 'overview', win_rate: 'overview', survival_rate: 'overview',
+  rated_battles: 'overview',
   kills_avg: 'battle', damage: 'battle', damage_avg: 'battle', assisted: 'battle', assisted_avg: 'battle',
   received_avg: 'battle', blocked_avg: 'battle', hit_rate: 'battle', pen_rate: 'battle',
   enemies_damaged_avg: 'battle', survival_avg: 'battle', tanks: 'extra',

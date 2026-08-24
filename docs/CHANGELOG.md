@@ -33,6 +33,35 @@
     `:active="activeTab === 'b' + i"`。
   - **文档**：league-rating.md 七维公式/占点不评分/统一表/Drawer/排序、versions.json
     v2.12.27（zh/en/ru）。
+- **PR #134 review 修复（review PR#134 BLOCKER 1–6 + MERGE GATE）**：
+  - **BLOCKER 1 Performance Metrics 保留在 CW**：撤销「League 移除旧三指标」——LeagueColumns
+    删除 REMOVED_LEGACY_KEYS；leaguePlayerColumns / leagueAggregateColumns /
+    leaguePlayerSummaryColumns 与单场 cells 全部恢复 contribution/kast/impact；preview /
+    Processing Job / 导出（ReplayService + ReplayExportJobService 全链）在 League 模式同样
+    populateBattle；LeaguePlayerSummaryDto 新增跨场 contribution/kast/impact；
+    LeagueSingleSheets 玩家数据表新增 贡献度/KAST/Impact 列。统一玩家表 / Drawer（表现指标区）
+    均展示；null → "--"。
+  - **BLOCKER 2 CW 列契约**：统一玩家表只有 nickname + league_rating 固定（sticky 核心对），
+    其余列（七维/MVP/表现指标/facts）全部经 useColumns 新增 cw scope（wotb-league-cw-*
+    storage，复用同一 ColumnPicker/拖拽/持久化）控制可见性与顺序；mergeCwPlayerColumns 只
+    提供列 universe 不决定最终顺序；CwPlayerSummaryTable 抽取 utils/stickyColumns.js
+    实现 nickname=0 / rating=实测宽度，reorder/排序后重测。
+  - **BLOCKER 3 CW 模式与 Rating 结果分离**：PreviewResponse 新增 leagueMode 字段
+    （显式 CW 批次标记）；BattleTable 新增 leagueMode prop——CW UI（Drawer/sticky/概览/
+    Rating 列）由 leagueMode 决定，league 仅决定本场 Rating 结果；Rating-ineligible 场
+    league=null 仍显示 "--"、点击玩家仍打开 Drawer，不伪造 MVP/战队 Rating。
+  - **BLOCKER 4 Drawer scope 语义**：Summary（当前批次中位数：Rating 中位数/七维中位数/
+    跨场表现指标/比赛事实含场次+评分场次）与 Battle（本场表现：本场七维/本场表现指标/单场
+    facts）分区展示，i18n 三语；表现指标为独立区域（不是 Rating）。
+  - **BLOCKER 5 样本语义**：统一表 cells.battles（解析场次，不被覆盖）+ cells.rated_battles
+    （评分场次，LeaguePlayerSummary.battles）；Drawer 与表都分开显示。
+  - **BLOCKER 6 自定义 Radar**：新增 utils/radarMetrics.js Radar Metric Registry（League
+    七维 score/max、KAST/Contribution /100、Impact /200 饱和——稳定 batch 无关参考值，
+    display-only）；PlayerRatingRadar 改为动态 metrics 驱动；Drawer 增加「设置指标」面板
+    （勾选 + ↑/↓，min 3 / max 8），偏好独立 localStorage（wotb-radar-metric-order），
+    Summary/Battle 共用；axis 缺失显示 "--"，partial availability 提示，不影响 Rating。
+  - **MERGE GATE**：浏览器验收清单追加 BLOCKER 2/3/4/5/6 场景（见
+    docs/verification/cw-rating-ui-acceptance.md）；未执行真实浏览器验收不得宣称 MERGE READY。
 - **Replay Core / League Rating 业务边界加固（docs/current-plan.md）**：
   - **前端不再把 League Rating 校验失败显示成红色「文件解析失败」**：训练赛/联赛回放无法生成
     Rating 时，结果区改为琥珀色 warning 汇总（League Rating · 可评分 X / N · N 场未生成 Rating

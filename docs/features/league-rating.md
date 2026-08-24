@@ -34,8 +34,9 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
   team、tankId、winnerTeam、damageDealt、damageAssisted、damageReceived、damageBlocked、
   kills、survived、survivalTimeSec、nShots、nHitsDealt、nPenetrationsDealt、
   victoryPointsEarned、victoryPointsSeized、accountId、nickname、clan、arenaId、arenaBonusType。
-- **不用** Tankopedia HP / 期望值、Potential Damage、XP/Credits、AI、历史上传、旧
-  contribution/kast/impact、外部 API 或全服统计。
+- **Rating 计算不用** Tankopedia HP / 期望值、Potential Damage、XP/Credits、AI、历史上传、
+  外部 API 或全服统计（contribution/kast/impact 是 Replay Performance Metrics，**保留在
+  CW 单场/汇总表与选手 Drawer**，只作表现展示，不进七维 Rating/Radar，review PR#134 BLOCKER 1）。
 - 全部结果（评分、战队名称覆盖、MVP）只存在于当前 HTTP 请求与前端页面内存中；
   刷新 / 重新上传 / 服务重启后不保留。不写数据库、localStorage、服务端文件。
 - 复用 `TradeFacts`（±5 秒互换窗口，时间窗口启发式，非精确 killer attribution）。
@@ -119,8 +120,14 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
   胜场与关键原始统计总量/均值、获取点数/场（客观统计）。
 - 战队汇总按批次 team key：参赛场次、单场 teamRating 中位数、七维度中位数、胜场。
 - CW 汇总页（League 模式）：玩家信息合并为**一张统一玩家表**（Replay Aggregate 为基底，
-  按 accountId join League Player Summary；有 Aggregate 无 Rating 的玩家保留并补 "--"），
-  点击任意玩家行右侧滑出选手详情 Drawer（七维雷达图 + 本场/汇总表现）。战队独立一张表。
+  按 accountId join League Player Summary；有 Aggregate 无 Rating 的玩家保留并补 "--"）。
+  **列契约**（review PR#134 BLOCKER 2）：只有「玩家 + 总 Rating」固定（sticky 核心对），
+  其余列（七维 / MVP / 表现指标 / 原始 facts）全部经 ColumnPicker 显示/隐藏/重排并持久化，
+  mergeCwPlayerColumns 只提供合法列 universe，不替用户决定最终顺序。
+  **样本语义**（BLOCKER 5）：场次 = Replay Aggregate 解析场次；评分场次 = League Player
+  Summary 评分场次（rated-only），两列独立显示，不互相覆盖。
+  点击任意玩家行右侧滑出选手详情 Drawer（**可自定义指标/顺序的雷达图** + 表现指标 +
+  scope 语义的评分/事实）。战队独立一张表。
 - 中位数：奇数取中间值、偶数取两个中间值的算术平均；使用未取整分数；不设最低场次；
   不排序、不产生批次 MVP/前三名；必须显示参赛场次。
 - 选手与战队汇总并入库内现有「合并汇总」视图（两个紧邻表格，不混行伪装）。
@@ -128,9 +135,9 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 ## Excel 导出
 
 - 普通模式 Excel 保持现状。
-- League 单场工作簿：玩家数据（身份 + Rating 关键原始字段 + 占点原始字段 + 七维度
-  实际分/满分/百分比 + 总 Rating）、战斗信息（含双方战队 Rating、全场 MVP、双方队内最佳）、
-  原始字段；**不含 Contribution / KAST / Impact**。
+- League 单场工作簿：玩家数据（身份 + 单场 Performance Metrics（contribution/kast/impact，
+  review PR#134 BLOCKER 1）+ Rating 关键原始字段 + 占点原始字段 + 七维度实际分/满分/百分比
+  + 总 Rating）、战斗信息（含双方战队 Rating、全场 MVP、双方队内最佳）、原始字段。
 - League 批量工作簿：选手汇总、战队汇总、每场明细、战斗列表（含重复/冲突/校验失败）；
   不产生赛季排名或批次奖项。
 - mode=each：只导出通过校验并完成评分的场次；冲突/不合格按失败策略跳过；混合模式与
@@ -148,10 +155,22 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 
 - 不新建页面/上传入口。当前 `ReplayPage` / `BattleTable`：概览卡下方、玩家表上方增加
   League Rating 概览（双方战队名称与 Rating、全场 MVP、双方队内最佳、占点实验性说明）。
-- 玩家表固定「玩家」与「总 Rating」两列（sticky，左偏移响应真实列宽），其余列横向滚动；
-  Team 1/Team 2 行底色不覆盖 sticky 单元格；MVP 徽标固定尺寸避免列宽跳动。
-- League 默认可见列：玩家/战队/车辆/伤害/助攻/击杀/总 Rating；七个维度经 ColumnPicker
-  显示/隐藏/重排；总 Rating 固定不可隐藏。列名与原始字段区分（「伤害」vs「伤害评分」）。
+- 玩家表固定「玩家」与「总 Rating」两列（sticky，左偏移响应真实列宽；hidden/reorder 后
+  重新测量），其余列横向滚动；Team 1/Team 2 行底色不覆盖 sticky 单元格；MVP 徽标固定尺寸
+  避免列宽跳动。sticky 测量逻辑抽取为 utils/stickyColumns.js 供单场表与统一玩家表复用。
+- **CW 列契约**（review PR#134 BLOCKER 2）：仅「玩家 + 总 Rating」固定不可隐藏/移动；
+  单场表、CW 统一玩家表都经 useColumns（league scope）控制可见性与顺序，持久化独立于普通模式。
+  CW 统一玩家表另有独立 cw scope（wotb-league-cw-* storage），同样复用同一 ColumnPicker
+  /拖拽/持久化基础设施，不造第二套系统。
+- League 默认可见列：单场表 = 玩家/战队/车辆/伤害/助攻/击杀/总 Rating（contribution/kast/impact
+  在列 universe 中，可经 ColumnPicker 显示）；CW 统一玩家表默认 = 玩家/总 Rating/七维/MVP/
+  场次/胜场/胜率/场均伤害/场均助攻/场均击杀/获取点数每场/表现指标。列名与原始字段区分
+  （「伤害」vs「伤害评分」）。
+- **选手 Drawer 雷达**（review PR#134 BLOCKER 6）：默认七维 League Rating，用户可自定义
+  指标（七维 + contribution/kast/impact）与顺序（min 3 / max 8），偏好独立 localStorage
+  （wotb-radar-metric-order），Summary 与 Battle 共用；normalization 由 Radar Metric
+  Registry（utils/radarMetrics.js）统一提供（League = score/max；KAST/Contribution = /100；
+  Impact = /200 饱和，稳定参考值，display-only）；axis 缺失显示 "--"，不冒充 0/0%。
 - 所有可见列（单场 / 普通汇总 / CW 统一玩家表 / 战队汇总）均支持 ASC/DESC 排序：
   数值 numeric、字符串自然序（Intl.Collator numeric）、缺失（null/''/NaN/--）恒排最后、
   排序基于 raw 值（格式化单元格按原始数值排）。
@@ -169,12 +188,17 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 - 模式：单普通/单训练/单联赛/随机/游戏内评级、Training+Tournament 允许、Training+Random
   与 Tournament+评级 整体 400、preview/合并导出/每场导出规则一致。
 - API 契约：普通模式响应兼容、League 含 typed 数据、League playerColumns/aggregateColumns
-  不含 contribution/kast/impact、总 Rating 固定列元数据、七维度 max、failures/duplicates/conflicts。
+  **含** contribution/kast/impact（review PR#134 BLOCKER 1）、总 Rating 固定列元数据、七维度
+  max、leagueMode 显式标记（BLOCKER 3）、failures/duplicates/conflicts。
 - 前端：普通模式不显示 Rating UI、League 显示战队 Rating/MVP/新列、混合错误、固定列、
   ColumnPicker 控制维度、普通/League 偏好隔离、sticky 列、队名编辑即时更新、重复徽标、
-  旧三指标不存在、批次只汇总不排名、手机/平板/桌面滚动无覆盖。
-- 导出：普通 Excel 不回归、League Excel 含总分/七维度/MVP/战队分/队名覆盖、不含旧三指标、
-  PNG 全列导出、sticky 不覆盖、超宽不裁切、深浅主题、canvas 限制安全缩放。
+  **CW 列契约（仅玩家+Rating 固定，其余用户控制，两个自定义顺序测试）**、
+  **leagueMode=true + league=null 仍是 CW（Drawer/Performance/facts 照常，Rating 显示 --）**、
+  **自定义 Radar（默认七维/自定义/重排/持久化/非法偏好 fallback/缺失轴 --）**、
+  批次只汇总不排名、手机/平板/桌面滚动无覆盖。
+- 导出：普通 Excel 不回归、League Excel 含总分/七维度/MVP/战队分/队名覆盖、
+  **含单场 contribution/kast/impact**、PNG 全列导出、sticky 不覆盖、超宽不裁切、深浅主题、
+  canvas 限制安全缩放。
 
 ## Build-to-Learn（设计决策）
 
@@ -194,10 +218,16 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
    且其精确定义（是否含被动占点增长/击杀夺分）尚未证明；把结算值合成进个人评分属于
    过度推断。2026-08 起两个字段仅作为客观统计展示（获取点数 / 获取点数/场），
    **不进入任何 Rating 维度**。
-6. **为什么 League 与普通回放必须使用模式化列契约**：普通模式保留 contribution/kast/impact
-   与既有列；League 模式移除旧三指标并新增 Rating 维度列。若不模式化，两种模式会互相
-   污染列配置（ColumnPicker 偏好、Excel 表头、PNG），且用户会把「伤害」与「伤害评分」混淆。
-   模式化后：API 按模式返回列集合、前端按模式隔离 storage scope、导出按模式选择 writer。
+6. **为什么 League 与普通回放必须使用模式化列契约**：两种模式都保留 contribution/kast/impact
+   （它们是 Replay Performance Metrics，review PR#134 BLOCKER 1 撤销了旧「League 移除旧三指标」）；
+   League 模式**新增** Rating 维度列（league_*），且只有「玩家 + 总 Rating」固定（BLOCKER 2）。
+   若不模式化，两种模式会互相污染列配置（ColumnPicker 偏好、Excel 表头、PNG），且用户会把
+   「伤害」与「伤害评分」混淆。模式化后：API 按模式返回列集合、前端按模式隔离 storage scope、
+   导出按模式选择 writer。
+7. **为什么 Radar 指标需要 Registry 而不是组件硬编码**（review PR#134 BLOCKER 6）：不同指标
+   取值语义不同（League 维度有明确满分；KAST/Contribution 是 0–100 百分比；Impact 可 >100），
+   组件无法现场猜 normalization。Registry 让每个可选指标自带稳定、batch 无关的 normalize，
+   保证同玩家同数值在任何批次形状一致；Radar 是 visualization preference，永远不改 Rating。
 7. **如何避免 preview / Excel / PNG 出现三套算法**：评分 core（`LeagueRatingCalculator`）
    是纯 Java 单点实现；preview 与 Excel 都由 `LeagueReplays.collect` 产出同一
    `LeagueRatingBatch`（Excel 从 ProcessedDataset 复用，不二次解析/不二次计算）；

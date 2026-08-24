@@ -112,11 +112,15 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 > **League Rating（训练赛/联赛）**：上传含训练房（arenaBonusType=2）或联赛/锦标赛（=4）回放时，
 > 响应额外返回 `league` 元数据（mode=LEAGUE_RATING、战队 Rating/MVP/队内最佳、七维度
-> `league_*` 列与固定列元数据、选手/战队中位数汇总、校验失败列表），且 `playerColumns` /
-> `aggregateColumns` **不含** `contribution`/`kast`/`impact`；混合普通+训练赛/联赛 →
-> League Rating 不聚合（`league=null`、`leagueUnavailableCode=MIXED_LEAGUE_AND_STANDARD_REPLAYS`，
-> battles 仍按普通回放语义成功返回，plan §21）。评分 core 见
-> `wotb-core/.../league/`（LeagueRatingCalculator 等），preview/Excel 复用同一评分结果。
+> `league_*` 列与固定列元数据、选手/战队中位数汇总、校验失败列表）。`playerColumns` /
+> `aggregateColumns` **保留** `contribution`/`kast`/`impact`（review PR#134 BLOCKER 1：
+> Performance Metrics 属于 Replay 数据，CW 单场/汇总表必须可显示；不是 League Rating 维度，
+> 不进七维 Rating/Radar）。响应另带 `leagueMode`（true = CW 批次，与 `league` 结果存在性分离：
+> Rating-ineligible 场次 `league=null` 但 `leagueMode=true`，review PR#134 BLOCKER 3）。
+> 混合普通+训练赛/联赛 → League Rating 不聚合（`league=null`、
+> `leagueUnavailableCode=MIXED_LEAGUE_AND_STANDARD_REPLAYS`，battles 仍按普通回放语义成功返回，
+> plan §21）。评分 core 见 `wotb-core/.../league/`（LeagueRatingCalculator 等），
+> preview/Excel 复用同一评分结果。
 
 ### `POST /api/preview`
 

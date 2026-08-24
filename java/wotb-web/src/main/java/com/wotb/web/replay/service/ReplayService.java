@@ -100,14 +100,15 @@ public class ReplayService {
         final String leagueUnavailableCode = c.mode() == LeagueRatingMode.MIXED_UNSUPPORTED
                 ? "MIXED_LEAGUE_AND_STANDARD_REPLAYS" : null;
         // facts 层 enrich 一次（Mapper.toPreviewResponse 只读消费共享 Battle）；
-        // League 模式不调用 PerformanceMetricsCalculator（旧 contribution/kast/impact 完全移除）。
+        // League 模式同样回填单场 Performance Metrics（contribution/kast/impact 在 CW 保留，
+        // review PR#134 BLOCKER 1：表现指标 ≠ Rating 维度；Preview/Export 同源）。
         PotentialDamage.apply(c.battles(), tankopedia);
+        for (final Battle battle : c.battles()) {
+            PerformanceMetricsCalculator.populateBattle(battle);
+        }
         if (c.mode() == LeagueRatingMode.LEAGUE_RATING) {
             return Mapper.toPreviewResponse(c.battles(), c.battleSourceNames(),
                     c.duplicates(), c.failures(), tankopedia, c.leagueBatch());
-        }
-        for (final Battle battle : c.battles()) {
-            PerformanceMetricsCalculator.populateBattle(battle);
         }
         return Mapper.toPreviewResponse(c.battles(), c.battleSourceNames(), c.duplicates(), c.failures(),
                 tankopedia, null, leagueUnavailableCode);
@@ -166,6 +167,10 @@ public class ReplayService {
             return null;
         }
         PotentialDamage.apply(c.battles(), tankopedia);   // 与 preview 相同的事实层 enrich
+        // 单场 Performance Metrics 回填（League 单场工作簿含 contribution/kast/impact，review PR#134 BLOCKER 1）
+        for (final Battle battle : c.battles()) {
+            PerformanceMetricsCalculator.populateBattle(battle);
+        }
         if (c.mode() == LeagueRatingMode.LEAGUE_RATING) {
             final ByteArrayOutputStream out = new ByteArrayOutputStream();
             final String filename;
@@ -217,6 +222,9 @@ public class ReplayService {
                 // 只导出通过校验并完成评分的场次，冲突/不合格场次按失败策略跳过。
                 final LeagueReplays.LeagueCollectResult c = LeagueReplays.collect(
                         sources, this::processFull, null, null);
+                for (final Battle battle : c.battles()) {
+                    PerformanceMetricsCalculator.populateBattle(battle);
+                }
                 for (int i = 0; i < c.battles().size(); i++) {
                     // identity 绑定（plan §9）；只导出通过校验并完成评分的场次，
                     // 冲突/不合格场次按失败策略跳过（与既有注释语义一致，之前因 bug 隐式生效）
