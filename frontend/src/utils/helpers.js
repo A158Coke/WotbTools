@@ -44,16 +44,22 @@ export function leagueMaxByKey(leagueColumns) {
 /**
  * Rating 单元格文本（单场表 / CW 统一玩家表 / PNG 导出共用同一 contract）：
  * 总 Rating 只显示整数（927），不显示 /1000 冗余完成度；
+ * 总 Rating 只显示整数（927）——{@link ratingTotalText} 是总 Rating 唯一 formatter；
  * 七维显示「342 / 400 · 85.5%」（max 来自后端 metadata）；
  * 缺失（null / '' / NaN）→ '--'，不冒充 0；只有真实 raw 0 才显示 0。
  */
+export function ratingTotalText(value) {
+  if (value == null || value === '' || !Number.isFinite(Number(value))) return '--'
+  return String(Math.round(Number(value)))
+}
+
 export function ratingCellText(value, key, maxByKey = {}) {
   if (value == null || value === '' || !Number.isFinite(Number(value))) return '--'
   const v = Number(value)
+  if (key === 'league_rating') return ratingTotalText(v)
   const max = Number(maxByKey[key]) || 0
   if (max <= 0) return String(Math.round(v * 10) / 10)
   const pct = Math.round(1000 * v / max) / 10
-  if (key === 'league_rating') return String(Math.round(v))
   return Math.round(v) + ' / ' + max + ' \u00B7 ' + pct + '%'
 }
 

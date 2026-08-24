@@ -330,7 +330,7 @@ public final class Mapper {
      * 由已处理的 authoritative Battle 列表构建完整 Preview 响应（Preview 与
      * Replay Processing Job result 共用同一 DTO 构建）。
      *
-     * <p><b>只读消费契约（review BLOCKER 3）</b>：battles 必须已是完整 facts 管线产出
+     * <p><b>只读消费契约</b>：battles 必须已是完整 facts 管线产出
      * （Replays.collect + processFull + PotentialDamage + populateBattle 各一次），
      * 本方法<b>不</b>再执行任何会 mutate 共享 Battle 的 enrichment——事实层 enrich 由
      * 数据集创建方保证（ReplayProcessingJobService.processJob / 同步 preview 的

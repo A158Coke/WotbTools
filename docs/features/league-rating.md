@@ -25,7 +25,7 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 **模式判定**：每次预览产生明确模式——`STANDARD_REPLAY`（全部普通）、
 `LEAGUE_RATING`（全部训练赛/联赛）、`MIXED_UNSUPPORTED`（两类混合 → League Rating 不聚合，
 `league=null` + `leagueUnavailableCode=MIXED_LEAGUE_AND_STANDARD_REPLAYS`，battles 仍按普通
-回放语义成功返回，plan §21：混合 League eligibility 不得污染 Replay Parser）。preview / 合并导出 /
+回放语义成功返回——混合 League eligibility 不得污染 Replay Parser）。preview / 合并导出 /
 每场导出共用同一判定与同一评分 core（禁止两套公式）。
 
 ## 数据来源与内存级生命周期
@@ -161,7 +161,7 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
   - CW 统一玩家表 PNG：列 = 当前 `unifiedShownCols`（cwOrder + cwVisibleKeys）。
   - Team Summary PNG：当前完整显示列（Team Summary 无独立 ColumnPicker，保持整表）。
   - CW 固定列（nickname + league_rating）本就属于 fixed visible，自然始终出现，
-    PNG export helper 不做第二轮 column policy。
+    PNG export helper 不做额外 column policy。
 - 实现：克隆当前结果 panel DOM（`createExportClone` + `getExportTarget`），即得到当前
   可见列/顺序/排序/战队名称覆盖；clone 中取消 sticky 定位（避免固定列覆盖其他列），
   `.tablewrap` 使用 `max-content` 自然宽度；按真实 descendant 宽度测量，在 canvas
@@ -215,7 +215,8 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 - 前端：普通模式不显示 Rating UI、League 显示战队 Rating/MVP/新列、混合错误、固定列、
   ColumnPicker 控制维度、普通/League 偏好隔离、sticky 列、队名编辑即时更新、重复徽标、
   **CW 列契约（仅玩家+Rating 固定，其余用户控制，两个自定义顺序测试）**、
-  **leagueMode=true + league=null 仍是 CW（Drawer/Performance/facts 照常，Rating 显示 --）**、
+  **leagueMode=true + league envelope 存在但 0 评分（battle.league=null、playerSummaries=[]）
+  仍是 CW（Drawer/Performance/facts 照常，Rating 显示 --）**、
   **自定义 Radar（默认七维/自定义/重排/持久化/非法偏好 fallback/缺失轴 --）**、
   批次只汇总不排名、手机/平板/桌面滚动无覆盖。
 - 导出：普通 Excel 不回归、League Excel 含总分/七维度/MVP/战队分/队名覆盖、

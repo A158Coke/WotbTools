@@ -31,7 +31,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/** League Rating 模式矩阵：preview / aggregate export / each export 规则一致（plan §21.3）。 */
+/** League Rating 模式矩阵：preview / aggregate export / each export 规则一致。 */
 class ReplayServiceLeagueTest {
 
     private static MockMultipartFile file(final String name, final byte[] bytes) {
@@ -120,7 +120,7 @@ class ReplayServiceLeagueTest {
 
     @Test
     void mixedBatchPreviewKeepsBattlesAndReportsLeagueUnavailable() throws Exception {
-        // plan §21/Case I：混合批次不再 HTTP 400——League Rating 不聚合（league=null），
+        // Case I：混合批次不再 HTTP 400——League Rating 不聚合（league=null），
         // battles 按普通回放语义成功返回，leagueUnavailableCode 携带混合码。
         final Battle training = LeagueTestReplays.sevenVsSeven(1);
         training.arenaId = "111";
@@ -183,7 +183,7 @@ class ReplayServiceLeagueTest {
 
     @Test
     void leagueEachExportMixedBatchWritesStandardWorkbooks() throws Exception {
-        // plan §21/§13：混合批次 each 导出按普通回放逐场生成标准单场工作簿（League Analysis unavailable）
+        // 混合批次 each 导出按普通回放逐场生成标准单场工作簿（League Analysis unavailable）
         final Battle training = LeagueTestReplays.sevenVsSeven(1);
         training.arenaId = "111";
         training.arenaBonusType = 2;
@@ -231,7 +231,7 @@ class ReplayServiceLeagueTest {
                 file("g.wotbreplay", new byte[]{1}), file("b.wotbreplay", new byte[]{2})});
         assertEquals("LEAGUE_RATING", r.league().mode());
         assertEquals(2, r.battles().size(), "Rating-ineligible Battle 必须保留在 Preview");
-        // identity 绑定（plan §9）：eligible 场带 Rating，ineligible 场 league==null，不得 index 错绑
+        // identity 绑定：eligible 场带 Rating，ineligible 场 league==null，不得 index 错绑
         final BattleDto goodDto = r.battles().get(0);
         final BattleDto badDto = r.battles().get(1);
         assertEquals("111", goodDto.arenaId());
@@ -243,7 +243,7 @@ class ReplayServiceLeagueTest {
 
     @Test
     void leaguePreviewCarriesBaseReplayAggregateAlongsideLeagueSummary() throws Exception {
-        // plan §5/§6：League Rating Summary 是附加分析，不替代基础 Replay Aggregate。
+        // League Rating Summary 是附加分析，不替代基础 Replay Aggregate。
         // 多场 League 批次的 resp.aggregate 必须包含标准基础汇总（0 场可评分 ≠ Replay 没数据）；
         // League aggregateColumns 保留跨场 contribution/kast/impact。
         final Battle good = LeagueTestReplays.sevenVsSeven(1);
@@ -302,7 +302,7 @@ class ReplayServiceLeagueTest {
         assertEquals(100.0, ((Number) row.cells().get("assisted_avg")).doubleValue(), 0.01);
         assertEquals(2.0, ((Number) row.cells().get("kills_avg")).doubleValue(), 0.01);
         assertEquals(0.0, ((Number) row.cells().get("earned_avg")).doubleValue(), 0.01);
-        // rated_battles = League Player Summary 评分场次（BLOCKER 5：独立于解析场次 battles）
+        // rated_battles = League Player Summary 评分场次（独立于解析场次 battles）
         assertTrue(r.league().playerSummaries().stream()
                         .anyMatch(s -> s.accountId() == 1001L && s.battles() == 1),
                 "CW 单场评分场次 = 1");

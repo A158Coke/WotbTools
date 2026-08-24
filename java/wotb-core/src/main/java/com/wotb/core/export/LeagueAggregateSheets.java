@@ -26,10 +26,10 @@ import java.util.Set;
  */
 final class LeagueAggregateSheets {
 
-    /** 批次战队 identity override：teamKey → 显示名（PR #123 Blocker 2：aggregate rename 不得反向改单场）。 */
+    /** 批次战队 identity override：teamKey → 显示名（aggregate rename 不得反向改单场）。 */
     private final Map<String, String> summaryOverrides;
 
-    /** 单场战队 override：{arenaId}:{team} → 显示名（PR #123 Blocker 1：每场明细必须消费，不得丢弃）。 */
+    /** 单场战队 override：{arenaId}:{team} → 显示名（每场明细必须消费，不得丢弃）。 */
     private final Map<String, String> battleOverrides;
 
     LeagueAggregateSheets() {
@@ -183,7 +183,7 @@ final class LeagueAggregateSheets {
     }
 
     /**
-     * 每场明细的队伍名（PR #123 Blocker 1）：battleOverride[arenaId:team] → 该场 TeamLeagueRating.autoName
+     * 每场明细的队伍名：battleOverride[arenaId:team] → 该场 TeamLeagueRating.autoName
      * → 现有 fallback（Team 1/Team 2）。只读 battleOverrides，绝不消费 summaryOverrides（批次 identity 不反向
      * 写回单场明细）；autoName 复用评分 core 的 LeagueTeamNamer 单一事实源，不重新扫描 clan。
      */

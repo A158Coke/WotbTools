@@ -29,7 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 真实训练赛/CW 7v7 名册完整性收口（plan §6/§7/§14-§17）：
+ * 真实训练赛/CW 7v7 名册完整性收口：
  * 名册 #201=15（14 combatant + 1 non-combatant）/ 结算 #301=14 必须
  * Parser→Validator→Calculator 全链路通过，产出 14 个 Player Rating、七维度、
  * Team 1/2 Rating、MVP、两队最佳；同时证明<b>全局 Battle.rosterComplete 不被弱化</b>
@@ -84,7 +84,7 @@ class LeagueRosterCompletenessTest {
     }
 
     /**
-     * Blocker 2：真实 CW/Training fixture（common/fixtures/replays/ 入库，CI 无条件执行）——
+     * 真实 CW/Training fixture（common/fixtures/replays/ 入库，CI 无条件执行）——
      * 真实 15/14 shape（#201=15 / #301=14，probe 已验证）全链路：Parser → Validator →
      * Calculator，断言 14 Player Ratings、七维度、Team 1/2、MVP、两队最佳。
      */
@@ -115,7 +115,7 @@ class LeagueRosterCompletenessTest {
     }
 
     /**
-     * Blocker 2：真实 Tournament 14/14 fixture（入库，CI 无条件执行）——Tournament/CW 验收。
+     * 真实 Tournament 14/14 fixture（入库，CI 无条件执行）——Tournament/CW 验收。
      */
     @Test
     void realFixture14v14ParsesAndRates() throws Exception {
@@ -133,7 +133,7 @@ class LeagueRosterCompletenessTest {
     }
 
     /**
-     * Blocker 2：两份真实 CW fixture 端到端批次（collect → battleResults / summaries 非空）。
+     * 两份真实 CW fixture 端到端批次（collect → battleResults / summaries 非空）。
      */
     @Test
     void realFixturesBatchCollectProducesSummaries() throws Exception {

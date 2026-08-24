@@ -28,7 +28,7 @@ function mountTable(overrides = {}) {
   })
 }
 
-describe('AggregateTable sorting (plan §25)', () => {
+describe('AggregateTable sorting', () => {
   it('numeric asc: 9 21 100', async () => {
     const wrapper = mountTable()
     const th = wrapper.findAll('th').find(t => t.text().includes('damage_avg'))
