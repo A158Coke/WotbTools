@@ -66,8 +66,8 @@
   background-repeat: no-repeat;
 }
 
-/* A page-wide readability veil. It is intentionally separate from cards/panels so
- * the artwork remains visible in gutters while dense tables/forms stay readable. */
+/* Page-wide readability veil. WotBTools is dark-only, so there is one canonical
+ * overlay instead of separate light/dark branches. */
 .layout-content::before,
 .layout-wide::before,
 .layout-data-workspace::before,
@@ -95,30 +95,6 @@
   bottom: 0;
   left: 0;
   pointer-events: none;
-  background: linear-gradient(180deg, rgba(239,242,239,.28), rgba(239,242,239,.50));
-}
-
-[data-theme="dark"] :is(
-  .layout-content,
-  .layout-wide,
-  .layout-data-workspace,
-  .admin-page,
-  .profile-page,
-  .boost-page,
-  .version-page,
-  .contact-page,
-  .hof-page,
-  .hof-wrap,
-  .hall-page,
-  .lb-wrap,
-  .hof-admin-page,
-  .hofadmin-page,
-  .admin-hof-page,
-  .hof-admin,
-  .rating-page,
-  .rating-section,
-  .rating-workspace
-)::before {
   background: linear-gradient(180deg, rgba(5,8,10,.30), rgba(5,8,10,.58));
 }
 
@@ -237,9 +213,7 @@
   opacity: .66;
 }
 
-/* Content surfaces should sit above the artwork. We do NOT force every individual
- * card translucent; only the page-level panels that previously painted giant flat
- * blocks are softened enough for the full-screen backdrop to remain perceptible. */
+/* Content surfaces should sit above the artwork. */
 :is(.layout-content,.layout-wide,.layout-data-workspace,.admin-page,.profile-page,.boost-page,.version-page,.contact-page,.hof-page,.hof-wrap,.hall-page,.lb-wrap,.hof-admin-page,.hofadmin-page,.admin-hof-page,.hof-admin) {
   background-color: transparent !important;
 }
