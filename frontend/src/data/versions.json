@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.22",
+    "date": "2026-08-24",
+    "tag": "fix",
+    "zh": "修复 League 回放解析被误判：选择多份训练赛/联赛回放点击「解析预览」后，此前会提示「没有可用的回放文件」导致解析失败；现在只要回放本身能正常解析就会显示结果，无法计算 League Rating 的比赛保留在结果中并显示具体原因，不再把「评分条件不满足」当成「回放无效」。",
+    "en": "Fixed League replays being rejected as invalid: after selecting training/tournament replays and clicking Preview, the page previously said \"no valid replays\" even though the files parsed fine. Now every successfully parsed replay is shown, and battles that cannot be League-rated stay in the results with their specific reason instead of being treated as invalid.",
+    "ru": "Исправлена ошибочная отбраковка реплеев League: при выборе тренировочных/турнирных реплеев и нажатии «Разобрать» раньше появлялось сообщение «нет доступных реплеев». Теперь каждый корректно разобранный реплей отображается, а бои без League Rating остаются в результатах с указанием конкретной причины, а не как недействительные."
+  },
+  {
     "v": "2.12.21",
     "date": "2026-08-24",
     "tag": "chg",
