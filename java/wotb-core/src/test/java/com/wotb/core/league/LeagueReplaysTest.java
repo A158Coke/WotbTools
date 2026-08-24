@@ -78,7 +78,9 @@ class LeagueReplaysTest {
     }
 
     @Test
-    void trainingPlusRandomIsMixed() throws Exception {
+    void trainingPlusRandomIsMixedKeepsParsedBattles() throws Exception {
+        // plan §21/Case I：混合批次不再整体拒绝——League Rating 不聚合，但全部可解析
+        // replay 仍按普通回放语义成功返回（battles 保留、无 leagueBatch、progress 真实 outcome）。
         final Battle t = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         t.arenaId = "111";
         final Battle rand = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
@@ -86,13 +88,15 @@ class LeagueReplaysTest {
         final LeagueReplays.LeagueCollectResult r = collect(List.of(
                 source("t.wotbreplay", t, 2), source("r.wotbreplay", rand, 1)));
         assertEquals(LeagueRatingMode.MIXED_UNSUPPORTED, r.mode());
-        assertTrue(r.battles().isEmpty());
-        // 每个文件恰好一次 progress
+        assertEquals(2, r.battles().size(), "混合批次所有可解析 Battle 必须保留（禁止污染 Parser）");
+        assertNull(r.leagueBatch(), "混合批次不产生 League Rating");
+        assertTrue(r.leagueFailures().isEmpty());
+        // 每个文件恰好一次 progress；已解析文件必须 SUCCESS（不得计为解析失败）
         final List<String> outcomes = new ArrayList<>();
         LeagueReplays.collect(List.of(source("t.wotbreplay", t, 2), source("r.wotbreplay", rand, 1)),
                 source -> ReplayParser.parse(source.bytes()), null, (s, o) -> outcomes.add(s.name() + ":" + o));
         assertEquals(2, outcomes.size());
-        assertTrue(outcomes.stream().allMatch(o -> o.endsWith(":FAILURE")));
+        assertTrue(outcomes.stream().allMatch(o -> o.endsWith(":SUCCESS")));
     }
 
     @Test
