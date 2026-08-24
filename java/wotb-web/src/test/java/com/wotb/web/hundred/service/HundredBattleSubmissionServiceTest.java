@@ -528,7 +528,7 @@ class HundredBattleSubmissionServiceTest {
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
         final HundredSubmissionSummaryDto result =
-                service.approve(ADMIN, 10L, 4200, 136);
+                service.approve(ADMIN, 10L);
 
         assertThat(result.status()).isEqualTo("CURRENT");
         assertThat(s.getApprovedAverageDamage()).isEqualTo(4200);
@@ -548,7 +548,7 @@ class HundredBattleSubmissionServiceTest {
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
         when(repository.findCurrentForUpdate(USER, TIER10_VEHICLE)).thenReturn(Optional.of(current));
 
-        final HundredSubmissionSummaryDto result = service.approve(ADMIN, 10L, 4200, 136);
+        final HundredSubmissionSummaryDto result = service.approve(ADMIN, 10L);
 
         assertThat(result.status()).isEqualTo("CURRENT");
         assertThat(current.getStatus()).isEqualTo("SUPERSEDED");
@@ -559,14 +559,14 @@ class HundredBattleSubmissionServiceTest {
     }
 
     @Test
-    void approveRejectsWhenApprovedValueNotHigherThanCurrent() {
+    void approveRejectsWhenFrozenSubmissionValueNotHigherThanCurrent() {
         final HundredBattleSubmission s = pendingSubmission();
-        final HundredBattleSubmission current = currentSubmission(4100);
+        final HundredBattleSubmission current = currentSubmission(4200);
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
         when(repository.findCurrentForUpdate(USER, TIER10_VEHICLE)).thenReturn(Optional.of(current));
 
-        // 管理员修正 approved=4050 < CURRENT 4100 → stale approve 拒绝（claimed 4200 不作数）
-        assertThatThrownBy(() -> service.approve(ADMIN, 10L, 4050, 136))
+        // MANUAL 的创建时申报场均=4200，与 CURRENT 相同，管理员不能改分绕过严格递增。
+        assertThatThrownBy(() -> service.approve(ADMIN, 10L))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("HUNDRED_APPROVE_STALE");
         assertThat(current.getStatus()).isEqualTo("CURRENT");
@@ -582,7 +582,7 @@ class HundredBattleSubmissionServiceTest {
         org.mockito.Mockito.doThrow(new IllegalStateException("HUNDRED_INCOMPLETE_REVIEW_EVIDENCE"))
                 .when(evidenceService).requireCompleteEvidenceForApproval(anyLong(), any());
 
-        assertThatThrownBy(() -> service.approve(ADMIN, 10L, 4200, 136))
+        assertThatThrownBy(() -> service.approve(ADMIN, 10L))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("HUNDRED_INCOMPLETE_REVIEW_EVIDENCE");
 
@@ -598,22 +598,30 @@ class HundredBattleSubmissionServiceTest {
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
         when(repository.findCurrentForUpdate(USER, TIER10_VEHICLE)).thenReturn(Optional.of(current));
 
-        assertThatThrownBy(() -> service.approve(ADMIN, 10L, 4200, 136))
+        assertThatThrownBy(() -> service.approve(ADMIN, 10L))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("HUNDRED_APPROVE_STALE");
     }
 
     @Test
     void approveRejectsInvalidApprovedValues() {
-        assertThatThrownBy(() -> service.approve(ADMIN, 10L, 0, 136))
+        final HundredBattleSubmission s = pendingSubmission();
+        s.setClaimedAverageDamage(0);
+        when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
+
+        assertThatThrownBy(() -> service.approve(ADMIN, 10L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_INVALID_APPROVED");
     }
 
     @Test
     void approveRejectsBattleCountBelowOneHundred() {
-        // 百场资格：approvedBattleCount < 100 必须拒绝（backend authoritative，非前端校验）。
-        assertThatThrownBy(() -> service.approve(ADMIN, 10L, 4200, 99))
+        final HundredBattleSubmission s = pendingSubmission();
+        s.setClaimedBattleCount(99);
+        when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
+
+        // 百场资格：冻结 battleCount < 100 必须拒绝（backend authoritative）。
+        assertThatThrownBy(() -> service.approve(ADMIN, 10L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_APPROVED_BATTLE_COUNT_TOO_LOW");
         verify(repository, never()).saveAndFlush(any());
@@ -623,9 +631,10 @@ class HundredBattleSubmissionServiceTest {
     @Test
     void approveAllowsBattleCountExactlyOneHundred() {
         final HundredBattleSubmission s = pendingSubmission();
+        s.setClaimedBattleCount(100);
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
-        final HundredSubmissionSummaryDto result = service.approve(ADMIN, 10L, 4200, 100);
+        final HundredSubmissionSummaryDto result = service.approve(ADMIN, 10L);
 
         assertThat(result.status()).isEqualTo("CURRENT");
         assertThat(s.getApprovedBattleCount()).isEqualTo(100);
@@ -639,7 +648,7 @@ class HundredBattleSubmissionServiceTest {
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
         // 竞争：CANCEL 已成功 → APPROVE 得到明确 conflict
-        assertThatThrownBy(() -> service.approve(ADMIN, 10L, 4200, 136))
+        assertThatThrownBy(() -> service.approve(ADMIN, 10L))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("HUNDRED_SUBMISSION_NOT_PENDING");
     }
@@ -848,6 +857,8 @@ class HundredBattleSubmissionServiceTest {
     void wargamingPendingApprovalUsesOfficialSnapshotWithoutReplayEvidence() {
         final HundredBattleSubmission pending = pendingSubmission();
         pending.setProofScreenshot(null);
+        pending.setClaimedAverageDamage(9_999);
+        pending.setClaimedBattleCount(1);
         pending.setVerificationSource("WARGAMING_API");
         pending.setVerifiedAt(OffsetDateTime.parse("2026-08-23T10:00:00Z"));
         pending.setVerifiedServer("EU");
@@ -857,10 +868,12 @@ class HundredBattleSubmissionServiceTest {
         pending.setOfficialAverageDamage(3900);
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(pending));
 
-        final HundredSubmissionSummaryDto result = service.approve(ADMIN, 10L, 3900, 100);
+        final HundredSubmissionSummaryDto result = service.approve(ADMIN, 10L);
 
         assertThat(result.status()).isEqualTo("CURRENT");
         assertThat(result.verificationSource()).isEqualTo("WARGAMING_API");
+        assertThat(pending.getApprovedAverageDamage()).isEqualTo(3900);
+        assertThat(pending.getApprovedBattleCount()).isEqualTo(100);
         verify(evidenceService, never()).requireCompleteEvidenceForApproval(anyLong(), any());
         verify(evidenceService).discardForSubmission(10L);
     }
@@ -878,7 +891,7 @@ class HundredBattleSubmissionServiceTest {
         pending.setOfficialAverageDamage(3899); // 与 totals 四舍五入结果不一致
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(pending));
 
-        assertThatThrownBy(() -> service.approve(ADMIN, 10L, 3900, 100))
+        assertThatThrownBy(() -> service.approve(ADMIN, 10L))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("HUNDRED_WARGAMING_SNAPSHOT_INVALID");
         verify(repository, never()).findCurrentForUpdate(anyString(), anyLong());

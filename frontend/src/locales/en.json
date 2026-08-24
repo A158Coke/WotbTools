@@ -444,8 +444,7 @@
         "legacyNoReplays": "This submission was created before replay evidence persistence existed; original replays are unavailable. Please reject and ask the user to resubmit.",
         "evidenceIncomplete": "Review evidence is incomplete (exactly 5 replays required); approval is not possible.",
         "approveDisabledHint": "Review evidence is incomplete, cannot approve",
-        "wgSnapshotIncomplete": "The WG official verification snapshot is incomplete, cannot approve",
-        "approvedBattlesMin": "Approved battle count cannot be below 100"
+        "wgSnapshotIncomplete": "The WG official verification snapshot is incomplete, cannot approve"
     },
     "player_labels": {
         "nickname": "Player",

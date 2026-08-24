@@ -4,7 +4,6 @@ import com.wotb.web.config.ApiPaths;
 import com.wotb.web.hof.dto.ReplayDownload;
 import com.wotb.web.hundred.dto.HundredAdminDetailDto;
 import com.wotb.web.hundred.dto.HundredAdminPageDto;
-import com.wotb.web.hundred.dto.HundredApproveRequest;
 import com.wotb.web.hundred.dto.HundredDeleteRequest;
 import com.wotb.web.hundred.dto.HundredRejectRequest;
 import com.wotb.web.hundred.dto.HundredReplayEvidenceDto;
@@ -91,12 +90,10 @@ public class HundredBattleAdminController {
                 .body(download.data());
     }
 
-    /** APPROVE：事务内重新读取 CURRENT 并比较 approvedAverageDamage；旧 CURRENT → SUPERSEDED。 */
+    /** APPROVE：只变更状态；排名值由冻结的 submission 数据决定，旧 CURRENT → SUPERSEDED。 */
     @PostMapping("/submissions/{id}/approve")
-    public HundredSubmissionSummaryDto approve(@PathVariable final long id,
-                                               @RequestBody final HundredApproveRequest body) {
-        return service.approve(JwtUtil.requireUserId(), id,
-                body.approvedAverageDamage(), body.approvedBattleCount());
+    public HundredSubmissionSummaryDto approve(@PathVariable final long id) {
+        return service.approve(JwtUtil.requireUserId(), id);
     }
 
     /** REJECT：原因强制（OTHER 必须填文本）。 */

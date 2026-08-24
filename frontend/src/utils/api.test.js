@@ -13,7 +13,7 @@ vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => auth,
 }))
 
-import { hofDownload, hofHundredSubmitWargaming, hofUpload } from './api.js'
+import { hofAdminHundredApprove, hofDownload, hofHundredSubmitWargaming, hofUpload } from './api.js'
 
 function jsonResponse(status, body) {
   return {
@@ -123,5 +123,22 @@ describe('authenticated HoF API requests (real api.js, fetch mocked)', () => {
         body: JSON.stringify(body),
       }),
     )
+  })
+
+  it('approves a hundred-battle submission without a score payload', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { status: 'CURRENT' }))
+
+    await hofAdminHundredApprove(17)
+
+    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+      '/api/admin/hof/hundred/submissions/17/approve',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-token' },
+      }),
+    )
+    const [, options] = vi.mocked(fetch).mock.calls[0]
+    expect(options).not.toHaveProperty('body')
+    expect(options.headers).not.toHaveProperty('Content-Type')
   })
 })

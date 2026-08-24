@@ -54,7 +54,7 @@
 
 - **单表生命周期**：`hundred_battle_submission` 承载完整生命周期（PENDING / CURRENT / SUPERSEDED / REJECTED / CANCELLED / DELETED，VARCHAR+CHECK）。一条 submission 审核通过即成为 CURRENT；被更高纪录替代 → SUPERSEDED；管理员删除 → DELETED。
 - **数据库不变量**（Flyway `V18__create_hundred_battle_submission.sql`，partial unique index）：user+vehicle **最多一个 active PENDING**、**最多一个 CURRENT**；rank 永不落库。
-- **快照冻结**：创建瞬间冻结 `game_account_id_snapshot` / `nickname_snapshot`（Profile 后续修改 gameId/nickname 不影响历史 submission）；排行榜只读取审核通过的 `approvedAverageDamage` / `approvedBattleCount`，`claimed*` 仅作审计。
+- **快照冻结**：创建瞬间冻结 `game_account_id_snapshot` / `nickname_snapshot`（Profile 后续修改 gameId/nickname 不影响历史 submission）；排行榜只读取审核通过的 `approvedAverageDamage` / `approvedBattleCount`。APPROVE 不接收成绩：MANUAL 使用创建时的 `claimed*`，WARGAMING_API 使用冻结官方快照，管理员不能改写任一成绩。
 - **认证来源**：`verification_source=MANUAL|WARGAMING_API`。WG 来源同时冻结区服、认证时间、账号总场次、单车总场次、单车总伤害与服务端计算场均；用户申报值不参与资格、3900 分流或入榜数值。
 - **gameId 唯一**：复用 `user_profile` 已有 `uk_user_profile_wotb_account (wotb_server, wotb_account_id)`，不新建约束。
 
@@ -73,13 +73,13 @@
 2. 仅接受可信 WG JWT（`wotb_verified=true`）且区服为 `ASIA/EU/NA`；JWT、WARGAMING Profile 与 WG API 返回的区服/accountId 必须一致，不提供任意 Player ID 代提交入口。
 3. 后端用 WG `account/info` 与 `tanks/stats` 查询官方快照：账号总场次必须 `>=5000`，目标 Tier X 车辆场次必须 `>=100`。WG 调用失败、数据缺失或资格不足时零落库，并提示改走人工链路。
 4. 排名和 approved 值由 `officialTankDamageDealt / officialTankBattleCount` 四舍五入得到；3900 分流用未舍入精确比较 `officialTankDamageDealt > 3900 × officialTankBattleCount`，不允许用申报低值绕过。
-5. 官方精确场均 `<=3900` 时直接成为 CURRENT，并原子替代该用户该车更低的旧 CURRENT；`>3900` 时自动创建 WARGAMING_API 来源 PENDING，交由管理员查看冻结的 WG 官方快照后通过或拒绝，仍无需补截图/回放。
+5. 官方精确场均 `<=3900` 时直接成为 CURRENT，并原子替代该用户该车更低的旧 CURRENT；`>3900` 时自动创建 WARGAMING_API 来源 PENDING，交由管理员查看冻结的 WG 官方快照后通过或拒绝，仍无需补截图/回放；通过不接收也不修改成绩。成为 CURRENT 后仍可按删除流程处理。
 6. BlitzStars 不作为自动认证依赖或 WG 失败 fallback；本期不做定时刷新、自动降榜或历史重算。
 
 ## 审核与并发（数据库一致性优先，无分布式锁）
 
 - `findByIdForUpdate`（PESSIMISTIC_WRITE 行锁）使 APPROVE / REJECT / CANCEL 从 PENDING → terminal **只成功一次**；败者得 `HUNDRED_SUBMISSION_NOT_PENDING`（409）。
-- APPROVE 事务内重新读取 CURRENT（行锁）并按管理员最终 `approvedAverageDamage > current.approvedAverageDamage` 比较（`HUNDRED_APPROVE_STALE`，409）；旧 CURRENT → SUPERSEDED，新 submission → CURRENT。
+- APPROVE 事务内重新读取 CURRENT（行锁），以 MANUAL 的冻结申报场均或 WARGAMING_API 的冻结官方场均比较（`HUNDRED_APPROVE_STALE`，409）；旧 CURRENT → SUPERSEDED，新 submission → CURRENT。审批端点没有成绩请求体。
 - REJECT / 删除 CURRENT 原因强制（分类 + OTHER 必填文本）。
 - **proof 生命周期**：MANUAL 来源截图以 base64 存 DB，5 个原始 replay 由 `hundred_battle_replay_evidence`（Flyway V19）**内容寻址持久化**（复用 `HallOfFameReplayStorage`，`{HOF_REPLAY_DIR}/{sha256}.wotbreplay`，幂等/原子/防路径穿越）。文件证据仅服务 MANUAL PENDING；APPROVE / REJECT / CANCEL / DELETE 终态事务内清空截图、删除 evidence 行，commit 后按跨表引用计数 best-effort 清理无引用物理文件。WARGAMING_API 来源从不创建文件证据，以冻结的官方数字快照作为审核证据。
 
@@ -103,7 +103,7 @@
 | `GET /api/admin/hof/hundred/submissions/{id}` | 同上 | 所有状态详情；MANUAL PENDING 可返回 proof，WG 来源返回官方快照，终态保留结果/原因文字 |
 | `GET /api/admin/hof/hundred/submissions/{id}/replays` | 同上 | PENDING 回放证据 metadata；终态或旧记录为空 |
 | `GET /api/admin/hof/hundred/submissions/{submissionId}/replays/{replayId}` | 同上 | 下载单个原始 .wotbreplay（ownership 校验 + UTF-8 filename） |
-| `POST /api/admin/hof/hundred/submissions/{id}/approve` | 同上 | 通过（approved 值可修正） |
+| `POST /api/admin/hof/hundred/submissions/{id}/approve` | 同上 | 通过；无请求体，MANUAL 使用原申报值、WG 使用官方冻结快照 |
 | `POST /api/admin/hof/hundred/submissions/{id}/reject` | 同上 | 拒绝（原因强制） |
 | `POST /api/admin/hof/hundred/submissions/{id}/delete` | 同上 | 删除 CURRENT（原因强制，不恢复 SUPERSEDED） |
 
@@ -111,4 +111,4 @@
 
 - 公开「百场」页默认不选分类/车辆，标签为“默认”，展示全站当前最高 10 条并显示车辆名。国家/系别与车种任一非空时，立即展示分类交集 Top 10，并同时收窄可见的 Tier X 车辆下拉；选择具体车辆后进入该车独立分页排行。百场仅支持 Tier X，因此不另设等级筛选。
 - 百场提交弹窗提供“人工审核 / WG 自动认证”两种模式。人工模式沿用**当前页面会话草稿**：关闭弹窗、点击遮罩、切换 Tab 或切到 WG 模式均不清空截图和已选回放；回放可分批追加到 5 个并逐项移除。WG 模式只显示车辆、场均、场数，不读取/发送文件；仅可信 ASIA/EU/NA WG 身份可用。提交失败保留草稿，成功或用户确认清空后重置。
-- 管理后台列表可按国家/系别、车种、具体车辆和状态独立筛选（百场仅 Tier X，不另设等级）；对 PENDING / CURRENT / REJECTED / SUPERSEDED / CANCELLED / DELETED 一律只提供“详情”入口。通过、拒绝、删除只能在详情内触发；截图、回放列表与下载按钮只在 PENDING 详情展示，终态详情只保留审核结果、拒绝/删除原因等文字信息。
+- 管理后台列表可按国家/系别、车种、具体车辆和状态独立筛选（百场仅 Tier X，不另设等级）；对 PENDING / CURRENT / REJECTED / SUPERSEDED / CANCELLED / DELETED 一律只提供“详情”入口。通过、拒绝、删除只能在详情内触发，管理员不提供成绩编辑控件；截图、回放列表与下载按钮只在 PENDING 详情展示，终态详情只保留审核结果、拒绝/删除原因等文字信息。

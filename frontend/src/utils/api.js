@@ -304,10 +304,10 @@ export async function hofAdminHundredReplayDownload(submissionId, replayId) {
   await downloadResponse(r, `replay-${replayId}.wotbreplay`)
 }
 
-/** APPROVE：{approvedAverageDamage, approvedBattleCount}。 */
-export async function hofAdminHundredApprove(id, body) {
+/** APPROVE：管理员只改变状态，成绩由后端的冻结 submission 值决定。 */
+export async function hofAdminHundredApprove(id) {
   const r = await hofAdminRequest(`/api/admin/hof/hundred/submissions/${encodeURIComponent(id)}/approve`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    method: 'POST',
   })
   return r.json()
 }
