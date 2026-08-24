@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.24",
+    "date": "2026-08-24",
+    "tag": "fix",
+    "zh": "修复名人堂管理页顶部「名人堂记录 / 操作日志 / 百场审核」三个 Tab 不可见：此前部署后页面只显示筛选器和记录表格，Tab 被样式覆盖隐藏；现在三个 Tab 正常显示并可点击切换，手机端正常堆叠在筛选器上方。",
+    "en": "Fixed the Hall of Fame admin page so its top tabs (Records / Audit Log / 100-Battle Review) are visible again: after deployment the page only showed the filters and records table because the tab strip was hidden by a CSS cascade override. The three tabs now display and switch normally, stacking above the filters on mobile.",
+    "ru": "Исправлена невидимость вкладок «Записи / Журнал аудита / Проверка 100 боёв» на странице администрирования Зала славы: после развёртывания страница показывала только фильтры и таблицу записей, потому что полоса вкладок была скрыта переопределением каскада CSS. Теперь три вкладки отображаются и переключаются, а на мобильных устройствах корректно располагаются над фильтрами."
+  },
+  {
     "v": "2.12.23",
     "date": "2026-08-24",
     "tag": "fix",
