@@ -254,7 +254,13 @@ function mountPage(overrides = {}) {
         login: auth.login,
       },
       stubs: {
-        FileUploader: { template: '<div class="file-uploader-stub"><button class="preview-stub" @click="$emit(&quot;preview&quot;)">action.preview</button></div>' },
+        FileUploader: {
+          props: ['files'],
+          template: '<div class="file-uploader-stub"><button class="preview-stub" @click="$emit(&quot;preview&quot;)">action.preview</button>' +
+            '<button class="ai-action-stub" @click="$emit(&quot;workspace-action&quot;, { file: files[0], mode: &apos;ai&apos; })">ai</button></div>'
+        },
+        AiReviewPanel: { name: 'AiReviewPanel', props: ['file', 'loginView'], template: '<div class="ai-panel-stub" />' },
+        BattlePlaybackPanel: { name: 'BattlePlaybackPanel', props: ['file', 'autoLoad', 'seekTo', 'loginView'], template: '<div class="playback-panel-stub" />' },
         ColumnPicker: { template: '<div class="col-picker-stub" />' },
         AggregateTable: {
           template: '<div class="agg-table-stub" data-export-role="aggregate">' +
@@ -279,6 +285,13 @@ function mountPage(overrides = {}) {
       }
     }
   })
+}
+
+function panelDisplay(wrapper, testId) {
+  // happy-dom 的 getComputedStyle 不反映 inline style（v-show 依赖），
+  // 故直接检查 element.style.display（与项目既有 v-show 测试一致）。
+  const el = wrapper.find(`[data-test="${testId}"]`)
+  return el.exists() ? el.element.style.display : null
 }
 
 function pngButton(wrapper) {
@@ -823,7 +836,7 @@ describe('ReplayPage PNG export', () => {
 })
 
 
-describe('ReplayPage Battle context actions（V2：登录门控 + 跨视图文件传递）', () => {
+describe('ReplayPage Battle context actions（V2：登录门控 + Workspace 原地切换）', () => {
   function makeRespWithSource() {
     return {
       aggregate: [{ cells: { nickname: 'Player1', damage_dealt: 5000 } }],
@@ -839,9 +852,6 @@ describe('ReplayPage Battle context actions（V2：登录门控 + 跨视图文�
   afterEach(async () => {
     state.clear()
     state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en' }
-    // 清空模块级 replayTransfer 单例，避免跨测试污染
-    const transferModule = await import('../utils/replayTransfer.js')
-    transferModule.takePendingReplayFiles()
     vi.restoreAllMocks()
   })
 
@@ -861,48 +871,44 @@ describe('ReplayPage Battle context actions（V2：登录门控 + 跨视图文�
     expect(wrapper.find('[data-testid="battle-ai-btn"]').exists()).toBe(false)
   })
 
-  it('已登录点击「战局回放」→ setPendingReplayFiles(playback) + navigate(reconstruction)', async () => {
+  it('已登录点击「战局回放」→ 原地切到 Workspace playback，目标文件为当前 battle（不跨视图）', async () => {
     const navigate = vi.fn()
-    const setPending = vi.fn()
-    const transferModule = await import('../utils/replayTransfer.js')
-    const spy = vi.spyOn(transferModule, 'setPendingReplayFiles')
     const wrapper = mountWithBattle(makeRespWithSource(), { authenticated: true, login: vi.fn() }, navigate)
     await wrapper.find('[data-testid="battle-playback-btn"]').trigger('click')
     await flushPromises()
-    expect(spy).toHaveBeenCalledWith([expect.any(Object)], 'playback')
-    expect(navigate).toHaveBeenCalledWith('reconstruction')
-    expect(transferModule.takePendingReplayFiles()).toBeTruthy()
-    spy.mockRestore()
+    expect(navigate).not.toHaveBeenCalled()
+    expect(panelDisplay(wrapper, 'workspace-playback-panel')).not.toBe('none')
+    expect(panelDisplay(wrapper, 'workspace-ai-panel')).toBe('none')
+    const panel = wrapper.findComponent({ name: 'BattlePlaybackPanel' })
+    expect(panel.props('file')?.name).toBe('lagoon.wotbreplay')
+    expect(panel.props('autoLoad')).toBe(true)
   })
 
-  it('已登录点击「AI 复盘」→ setPendingReplayFiles(ai) + navigate(reconstruction)，不自动发起 AI', async () => {
+  it('已登录点击「AI 复盘」→ 原地切到 Workspace ai（不自动发起 AI、不跨视图）', async () => {
     const navigate = vi.fn()
-    const transferModule = await import('../utils/replayTransfer.js')
-    const spy = vi.spyOn(transferModule, 'setPendingReplayFiles')
     const wrapper = mountWithBattle(makeRespWithSource(), { authenticated: true, login: vi.fn() }, navigate)
     await wrapper.find('[data-testid="battle-ai-btn"]').trigger('click')
     await flushPromises()
-    expect(spy).toHaveBeenCalledWith([expect.any(Object)], 'ai')
-    expect(navigate).toHaveBeenCalledWith('reconstruction')
-    spy.mockRestore()
+    expect(navigate).not.toHaveBeenCalled()
+    expect(panelDisplay(wrapper, 'workspace-ai-panel')).not.toBe('none')
+    expect(panelDisplay(wrapper, 'workspace-playback-panel')).toBe('none')
+    const panel = wrapper.findComponent({ name: 'AiReviewPanel' })
+    expect(panel.props('file')?.name).toBe('lagoon.wotbreplay')
+    expect(panel.props('loginView')).toBe('replay')
   })
 
-  it('未登录点击「战局回放」→ confirm 提示 + login，不 navigate、不 setPending（不静默丢文件）', async () => {
+  it('未登录点击「战局回放」→ confirm 提示 + login，不切换 Workspace（不静默丢文件）', async () => {
     const navigate = vi.fn()
     const login = vi.fn()
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    const transferModule = await import('../utils/replayTransfer.js')
-    const spy = vi.spyOn(transferModule, 'setPendingReplayFiles')
     const wrapper = mountWithBattle(makeRespWithSource(), { authenticated: false, login }, navigate)
     await wrapper.find('[data-testid="battle-playback-btn"]').trigger('click')
     await flushPromises()
     expect(confirmSpy).toHaveBeenCalled()
     expect(login).toHaveBeenCalledWith('replay')
     expect(navigate).not.toHaveBeenCalled()
-    expect(spy).not.toHaveBeenCalled()
-    expect(transferModule.takePendingReplayFiles()).toBeNull()
+    expect(panelDisplay(wrapper, 'workspace-playback-panel')).toBe('none')
     confirmSpy.mockRestore()
-    spy.mockRestore()
   })
 
   it('未登录取消 confirm → 不 login 不 navigate', async () => {
@@ -927,6 +933,69 @@ describe('ReplayPage Battle context actions（V2：登录门控 + 跨视图文�
     await wrapper.find('[data-testid="battle-playback-btn"]').trigger('click')
     await flushPromises()
     expect(navigate).not.toHaveBeenCalled()
+  })
+})
+
+describe('ReplayPage 单页 Workspace（解析结果 / AI 复盘 / 战局回放 原地切换）', () => {
+  function mountWithFiles(files, resp = null) {
+    state.init = { activeTab: 'aggregate', resp, error: '', loading: false, locale: 'en', files }
+    return mountPage({ auth: { authenticated: true, login: vi.fn() } })
+  }
+
+  it('有文件时显示三个 Workspace tab，默认解析结果面板', () => {
+    const wrapper = mountWithFiles([new File(['r'], 'a.wotbreplay')])
+    expect(wrapper.find('[data-testid="workspace-results-tab"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="workspace-ai-tab"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="workspace-playback-tab"]').exists()).toBe(true)
+    expect(panelDisplay(wrapper, 'workspace-ai-panel')).toBe('none')
+    expect(panelDisplay(wrapper, 'workspace-playback-panel')).toBe('none')
+  })
+
+  it('无文件时不渲染 Workspace（只有上传面板）', () => {
+    const wrapper = mountWithFiles([])
+    expect(wrapper.find('[data-testid="workspace-ai-tab"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="workspace-ai-panel"]').exists()).toBe(false)
+  })
+
+  it('FileUploader 直接入口（workspace-action ai）→ 原地切到 AI 面板并传入目标文件', async () => {
+    const files = [new File(['r'], 'direct.wotbreplay')]
+    const wrapper = mountWithFiles(files)
+    await wrapper.find('.ai-action-stub').trigger('click')
+    await flushPromises()
+    expect(panelDisplay(wrapper, 'workspace-ai-panel')).not.toBe('none')
+    expect(panelDisplay(wrapper, 'workspace-playback-panel')).toBe('none')
+    expect(wrapper.findComponent({ name: 'AiReviewPanel' }).props('file')?.name).toBe('direct.wotbreplay')
+  })
+
+  it('切走再切回：AI 面板保持挂载（v-show 不销毁，file 未变 = 状态保留）', async () => {
+    const files = [new File(['r'], 'keep.wotbreplay')]
+    const wrapper = mountWithFiles(files)
+    await wrapper.find('.ai-action-stub').trigger('click')
+    await flushPromises()
+    expect(panelDisplay(wrapper, 'workspace-ai-panel')).not.toBe('none')
+    expect(wrapper.findComponent({ name: 'AiReviewPanel' }).props('file')?.name).toBe('keep.wotbreplay')
+
+    // 切回解析结果 → AI 面板隐藏
+    await wrapper.find('[data-testid="workspace-results-tab"]').trigger('click')
+    await flushPromises()
+    expect(panelDisplay(wrapper, 'workspace-ai-panel')).toBe('none')
+
+    // 再切回 AI：同一面板实例（file prop 未变）
+    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
+    await flushPromises()
+    expect(panelDisplay(wrapper, 'workspace-ai-panel')).not.toBe('none')
+    expect(wrapper.findComponent({ name: 'AiReviewPanel' }).props('file')?.name).toBe('keep.wotbreplay')
+  })
+
+  it('解析预览 → 切回解析结果面板并启动解析 Job', async () => {
+    const files = [new File(['r'], 'a.wotbreplay')]
+    const wrapper = mountWithFiles(files)
+    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
+    await wrapper.find('.preview-stub').trigger('click')
+    await flushPromises()
+    expect(state.replay.startProcessingJob).toHaveBeenCalled()
+    expect(panelDisplay(wrapper, 'workspace-ai-panel')).toBe('none')
+    expect(panelDisplay(wrapper, 'workspace-playback-panel')).toBe('none')
   })
 })
 describe('ReplayPage League Rating', () => {

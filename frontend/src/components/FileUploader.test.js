@@ -7,10 +7,8 @@ import FileUploader from './FileUploader.vue'
 const i18n = vi.hoisted(() => ({
   t: vi.fn((key, values) => values ? `${key}:${Object.values(values).join(',')}` : key)
 }))
-const transfer = vi.hoisted(() => ({ setPendingReplayFiles: vi.fn() }))
 
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: i18n.t, locale: { value: 'en' } }) }))
-vi.mock('../utils/replayTransfer.js', () => ({ setPendingReplayFiles: transfer.setPendingReplayFiles }))
 
 function makeFiles(count, size = 1024) {
   return Array.from({ length: count }, (_, i) =>
@@ -18,21 +16,23 @@ function makeFiles(count, size = 1024) {
 }
 
 function mountUploader(files = [], loading = false, options = {}) {
-  const navigate = options.navigate || vi.fn()
   return {
-    navigate,
     wrapper: mount(FileUploader, {
       props: { files, loading, confirmRemove: false },
       global: {
         mocks: { $t: i18n.t },
         provide: {
-          navigate,
           isAuthenticated: options.isAuthenticated || (() => true),
           login: vi.fn()
         }
       }
     })
   }
+}
+
+function lastWorkspaceAction(wrapper) {
+  const events = wrapper.emitted('workspace-action')
+  return events ? events[events.length - 1][0] : null
 }
 
 describe('FileUploader 文件列表与回放工作台', () => {
@@ -90,28 +90,23 @@ describe('FileUploader 文件列表与回放工作台', () => {
     expect(previewBtn.attributes('disabled')).toBeDefined()
   })
 
-  it('单文件无需先解析即可直接进入 AI 复盘', async () => {
-    transfer.setPendingReplayFiles.mockClear()
+  it('单文件无需先解析即可直接进入 AI 复盘（emit workspace-action 原地切换）', async () => {
     const files = makeFiles(1)
-    const { wrapper, navigate } = mountUploader(files)
+    const { wrapper } = mountUploader(files)
     await wrapper.find('[data-testid="direct-ai-btn"]').trigger('click')
-    expect(transfer.setPendingReplayFiles).toHaveBeenCalledWith([files[0]], 'ai')
-    expect(navigate).toHaveBeenCalledWith('reconstruction')
+    expect(lastWorkspaceAction(wrapper)).toEqual({ file: files[0], mode: 'ai' })
   })
 
-  it('单文件无需先解析即可直接进入战局回放', async () => {
-    transfer.setPendingReplayFiles.mockClear()
+  it('单文件无需先解析即可直接进入战局回放（emit workspace-action 原地切换）', async () => {
     const files = makeFiles(1)
-    const { wrapper, navigate } = mountUploader(files)
+    const { wrapper } = mountUploader(files)
     await wrapper.find('[data-testid="direct-playback-btn"]').trigger('click')
-    expect(transfer.setPendingReplayFiles).toHaveBeenCalledWith([files[0]], 'playback')
-    expect(navigate).toHaveBeenCalledWith('reconstruction')
+    expect(lastWorkspaceAction(wrapper)).toEqual({ file: files[0], mode: 'playback' })
   })
 
   it('多文件未明确选择时 AI/回放均不可执行', async () => {
-    transfer.setPendingReplayFiles.mockClear()
     const files = makeFiles(3)
-    const { wrapper, navigate } = mountUploader(files)
+    const { wrapper } = mountUploader(files)
     const ai = wrapper.find('[data-testid="direct-ai-btn"]')
     const playback = wrapper.find('[data-testid="direct-playback-btn"]')
     expect(wrapper.find('.replay-action-file').element.value).toBe('')
@@ -119,24 +114,21 @@ describe('FileUploader 文件列表与回放工作台', () => {
     expect(playback.attributes('disabled')).toBeDefined()
     await ai.trigger('click')
     await playback.trigger('click')
-    expect(transfer.setPendingReplayFiles).not.toHaveBeenCalled()
-    expect(navigate).not.toHaveBeenCalled()
+    expect(wrapper.emitted('workspace-action')).toBeUndefined()
   })
 
   it('多文件必须通过选择器明确指定 AI/回放目标文件', async () => {
-    transfer.setPendingReplayFiles.mockClear()
     const files = makeFiles(3)
     const { wrapper } = mountUploader(files)
     const select = wrapper.find('.replay-action-file')
     await select.setValue(`${files[2].name}:${files[2].size}:${files[2].lastModified}`)
     await wrapper.find('[data-testid="direct-ai-btn"]').trigger('click')
-    expect(transfer.setPendingReplayFiles).toHaveBeenCalledWith([files[2]], 'ai')
+    expect(lastWorkspaceAction(wrapper)).toEqual({ file: files[2], mode: 'ai' })
   })
 
   it('已选择的多文件目标被移除后失效且不得 fallback 到第一场', async () => {
-    transfer.setPendingReplayFiles.mockClear()
     const files = makeFiles(3)
-    const { wrapper, navigate } = mountUploader(files)
+    const { wrapper } = mountUploader(files)
     const select = wrapper.find('.replay-action-file')
     await select.setValue(`${files[2].name}:${files[2].size}:${files[2].lastModified}`)
     expect(wrapper.find('[data-testid="direct-ai-btn"]').attributes('disabled')).toBeUndefined()
@@ -145,7 +137,6 @@ describe('FileUploader 文件列表与回放工作台', () => {
     expect(wrapper.find('.replay-action-file').element.value).toBe('')
     expect(wrapper.find('[data-testid="direct-ai-btn"]').attributes('disabled')).toBeDefined()
     await wrapper.find('[data-testid="direct-ai-btn"]').trigger('click')
-    expect(transfer.setPendingReplayFiles).not.toHaveBeenCalled()
-    expect(navigate).not.toHaveBeenCalled()
+    expect(wrapper.emitted('workspace-action')).toBeUndefined()
   })
 })

@@ -1262,6 +1262,12 @@
             "AI_REVIEW_BUSY": "AI review service is currently busy. Please try again later."
         }
     },
+    "workspace": {
+        "tab_results": "Parse Results",
+        "results_hint": "Run 'Parse & Preview' to see the parsed results here",
+        "ai_empty": "Select a replay to start AI review",
+        "playback_empty": "Select a replay to view battle playback"
+    },
     "league": {
         "title": "League Rating",
         "subtitle": "Training/tournament rating · current battle data only · 0–1000",
