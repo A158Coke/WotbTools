@@ -90,7 +90,7 @@ class LeagueRatingValidatorTest {
     @Test
     void rejectsIncompleteRoster() {
         final Battle battle = LeagueTestBattles.battle(1, defaultSevenVsSeven());
-        battle.rosterComplete = false;
+        battle.settlementAccountsCoveredByRoster = false;
         assertEquals(List.of(LeagueFailure.Code.ROSTER_INCOMPLETE),
                 codes(battle));
     }
@@ -98,7 +98,7 @@ class LeagueRatingValidatorTest {
     @Test
     void rejectsNullRosterComplete() {
         final Battle battle = LeagueTestBattles.battle(1, defaultSevenVsSeven());
-        battle.rosterComplete = null;
+        battle.settlementAccountsCoveredByRoster = null;
         assertEquals(List.of(LeagueFailure.Code.ROSTER_INCOMPLETE),
                 codes(battle));
     }

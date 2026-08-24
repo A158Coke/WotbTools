@@ -80,8 +80,14 @@ class ReplayParserFixtureTest {
         for (final Path p : fixtures()) {
             final Battle b = ReplayParser.parse(Files.readAllBytes(p));
             assertEquals(14, b.players.size(), p.getFileName().toString());
-            assertTrue(Boolean.TRUE.equals(b.rosterComplete),
-                    "已提交夹具必须标记结算阵容完整（rosterComplete=true）: " + p.getFileName());
+            // 结算必须完整：每个结算账号都在名册中（League 专属证据）。全局 rosterComplete 是
+            // 严格契约——#201 含 non-combatant extra 的 fixture（cw-training-15-14-example）
+            // 预期为 false（AI fail-closed 不放松），不能无条件断言 true。
+            assertTrue(Boolean.TRUE.equals(b.settlementAccountsCoveredByRoster),
+                    "已提交夹具结算账号必须全部来自名册（settlementAccountsCoveredByRoster=true）: "
+                            + p.getFileName());
+            assertTrue(Boolean.TRUE.equals(b.settlementRosterTeamConsistent),
+                    "已提交夹具名册队伍必须与结算队伍一致: " + p.getFileName());
             // 发射 >= 命中 >= 击穿
             b.players.forEach(pr -> assertTrue(
                     pr.nShots >= pr.nHitsDealt && pr.nHitsDealt >= pr.nPenetrationsDealt,

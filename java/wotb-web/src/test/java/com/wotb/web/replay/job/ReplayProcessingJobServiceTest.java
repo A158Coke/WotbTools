@@ -133,6 +133,8 @@ class ReplayProcessingJobServiceTest {
             b.arenaBonusType = 2;
             b.winnerTeam = 1;
             b.rosterComplete = true;
+            b.settlementAccountsCoveredByRoster = true;
+            b.settlementRosterTeamConsistent = true;
             b.players = new ArrayList<>();
             for (int i = 0; i < 14; i++) {
                 final PlayerResult p = new PlayerResult();
@@ -169,7 +171,7 @@ class ReplayProcessingJobServiceTest {
                     b.players.getFirst().survived = false;
                     b.players.getFirst().survivalTimeSec = 0; // MISSING_DEATH_TIME
                 }
-                case "m-roster.wotbreplay" -> b.rosterComplete = false; // ROSTER_INCOMPLETE
+                case "m-roster.wotbreplay" -> b.settlementAccountsCoveredByRoster = false; // ROSTER_INCOMPLETE
                 case "m-winner.wotbreplay" -> b.winnerTeam = null; // NO_DECISIVE_WINNER
                 default -> { }
             }
@@ -202,7 +204,7 @@ class ReplayProcessingJobServiceTest {
             final Source s = inv.getArgument(0);
             final Battle b = leagueBattle(s.name());
             if (s.name().equals("p-bad.wotbreplay")) {
-                b.rosterComplete = false;
+                b.settlementAccountsCoveredByRoster = false;
             }
             return leagueProcessingResult(b, s.name());
         });
@@ -515,6 +517,8 @@ class ReplayProcessingJobServiceTest {
         b.arenaBonusType = 2;
         b.winnerTeam = 1;
         b.rosterComplete = true;
+        b.settlementAccountsCoveredByRoster = true;
+        b.settlementRosterTeamConsistent = true;
         b.players = new ArrayList<>();
         for (int i = 0; i < 14; i++) {
             final PlayerResult p = new PlayerResult();

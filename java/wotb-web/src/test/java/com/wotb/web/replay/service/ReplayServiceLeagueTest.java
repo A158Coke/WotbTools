@@ -217,7 +217,7 @@ class ReplayServiceLeagueTest {
         final Battle bad = LeagueTestReplays.sevenVsSeven(2);
         bad.arenaId = "222";
         bad.arenaBonusType = 2;
-        bad.rosterComplete = false;
+        bad.settlementAccountsCoveredByRoster = false;
         final ReplayService service = perFileService(List.of(good, bad));
 
         final PreviewResponse r = service.preview(new MockMultipartFile[]{
@@ -245,7 +245,7 @@ class ReplayServiceLeagueTest {
         final Battle bad = LeagueTestReplays.sevenVsSeven(2);
         bad.arenaId = "222";
         bad.arenaBonusType = 2;
-        bad.rosterComplete = false;
+        bad.settlementAccountsCoveredByRoster = false;
         final ReplayService service = perFileService(List.of(good, bad));
 
         final PreviewResponse r = service.preview(new MockMultipartFile[]{
@@ -262,7 +262,7 @@ class ReplayServiceLeagueTest {
         final Battle bad = LeagueTestReplays.sevenVsSeven(1);
         bad.arenaId = "111";
         bad.arenaBonusType = 2;
-        bad.rosterComplete = false;
+        bad.settlementAccountsCoveredByRoster = false;
         final ExportResult result = leagueService(bad).export(
                 new MockMultipartFile[]{file("bad.wotbreplay", new byte[]{1})}, "aggregate");
         assertNotNull(result, "单场 league 未通过校验也必须能导出基础数据（不崩溃、不错位）");
