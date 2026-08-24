@@ -9,6 +9,26 @@ const JOB_ACTIVE = new Set(['QUEUED', 'PROCESSING'])
 const JOB_POLL_MS = 1500
 
 /**
+ * 初始结果 tab 决策（P0 修复：activeTab 必须始终指向真实存在、可渲染的结果 panel）。
+ * 不能再按 battle 数量猜测 aggregate——aggregate tab/panel 的真实存在条件是
+ * `resp.aggregate.length > 0 || resp.league != null`，而 battle panel 是 `battles[i]`。
+ *
+ * 语义（与 ReplayPage.vue 的 tab/panel 渲染条件一一对应）：
+ * - League 汇总存在（resp.league）→ aggregate（渲染 LeagueSummaryTable）
+ * - 普通 aggregate 有数据 → aggregate（渲染 AggregateTable）
+ * - 无任何汇总但至少有 battle → b0（第一场 BattleTable）
+ * - 什么都没有 → aggregate（页面显示空态提示，不产生 JS error / 空白）
+ */
+export function chooseInitialResultTab(result) {
+  const hasLeague = !!result?.league
+  const hasAggregate = Array.isArray(result?.aggregate) && result.aggregate.length > 0
+  const hasBattles = Array.isArray(result?.battles) && result.battles.length > 0
+  if (hasLeague || hasAggregate) return 'aggregate'
+  if (hasBattles) return 'b0'
+  return 'aggregate'
+}
+
+/**
  * Replay 页状态（plan §43：明确状态模型，避免互相冲突的散落 boolean）：
  * EMPTY（无文件）→ FILES_SELECTED（有文件未解析）→ PROCESSING（解析 Job 进行中）→
  * READY（结果已展示；processingJobId 供 Export 复用）；异常 → FAILED / CANCELLED。
@@ -129,8 +149,11 @@ export function useReplay() {
         // result 与 files 是同一批次（READY 后不再变化）；直接替换 resp。
         resp.value = result
         processingJobId.value = readyJobId
+        // P0：默认 tab 只依赖 response 本身（resp.league / aggregate / battles），
+        // 在 columns 初始化之前决定——保证 READY 提交周期内 resp、League 模式、
+        // aggregate 可见性与 activeTab 一致，结果 panel 第一帧即渲染，无需二次 poll/点击。
+        activeTab.value = chooseInitialResultTab(result)
         if (onColumnsInit) onColumnsInit(result)
-        activeTab.value = result.battles.length > 1 ? 'aggregate' : 'b0'
         loading.value = false
       } else if (data.status === 'FAILED' || data.status === 'CANCELLED') {
         stopProcessingPolling()
