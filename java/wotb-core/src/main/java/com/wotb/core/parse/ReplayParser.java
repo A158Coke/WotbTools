@@ -195,9 +195,17 @@ public final class ReplayParser {
         battle.recorderVehicle = text(meta, "playerVehicleName");
         battle.arenaBonusType = meta.hasNonNull("arenaBonusType") ? meta.get("arenaBonusType").asInt() : null;
         battle.players = players;
-        // 结算阵容完整性证据：战绩 #301 的每个结算账号都来自名册 #201（无幽灵结算）且
-        // 名册队伍与结算队伍一致（存在时）。#201 可含 non-combatant extra（观战者等，
-        // protocol.md PROVEN：ActualCombatantSet == #301），extra 不导致阵容不完整。
+        // ---- 结算阵容完整性证据（严格全局契约 + League 专属证据分离）----
+        // Battle.rosterComplete 保持严格 fail-closed 语义（#201 全集合 == #301 全集合 + 队伍一致），
+        // 供 SURVIVOR_SETTLEMENT / annihilationSuffix / pointsEndReason 等「完整逐人结算」推断
+        // 使用——#201 存在无法证明为 spectator 的 extra（如 #201=4/#301=3）时不得视为完整。
+        // League Rating 对 non-combatant extra 的宽容（标准 7v7 且 #301 完整 14 人时 extra 不属于
+        // 14 名 settled combatants，见 protocol.md）由 League 专属证据表达，LeagueRatingValidator
+        // 判断，不扩大全局 rosterComplete 语义。
+        battle.settlementAccountsCoveredByRoster =
+                resolveSettlementCoveredByRoster(roster.keySet(), players);
+        battle.settlementRosterTeamConsistent =
+                resolveSettlementRosterTeamConsistent(rosterTeamByAcc, players);
         battle.rosterComplete = resolveRosterComplete(roster.keySet(), rosterTeamByAcc, players);
 
         // ---- data.wotreplay 事件流 ----
@@ -276,15 +284,12 @@ public final class ReplayParser {
     }
 
     /**
-     * 结算阵容完整性（settlement participant completeness）：
-     * 战绩 #301 的每个结算账号都必须在名册 #201 中（无幽灵结算、结算者都有名册身份），
-     * 且名册提供的队伍字段(#201→#2→#3)与结算队伍一致（存在时）。
-     *
-     * <p><b>不要求 #201 全集合 == #301 全集合</b>：真实训练赛/联赛名册 #201 可含不属于
-     * #301 的 non-combatant（观战者等，probe：20260725_1535 训练房 #201=15/#301=14，
-     * extra 账号 3117047709；见 docs/research/replay/protocol.md「SPECTATOR /
-     * NON-COMBATANT ENTITY」——ActualCombatantSet == #301）。名册 extra 账号 ≠
-     * 缺失的结算队员，不导致阵容不完整。</p>
+     * 结算阵容完整性（<b>严格 fail-closed 全局契约</b>）：名册 #201 与战绩 #301 的账号集合
+     * 完全一致（所有参战成员都有结算记录），且名册提供的队伍字段(#201→#2→#3)与结算队伍一致
+     * （字段缺失时不做硬性要求）。#201 存在无法证明为 spectator 的 extra（如 #201=4/#301=3）
+     * 时返回 false——League Rating 的 non-combatant extra 宽容不在此处实现，走
+     * {@link #resolveSettlementCoveredByRoster} / {@link #resolveSettlementRosterTeamConsistent}
+     * + LeagueRatingValidator。
      */
     private static boolean resolveRosterComplete(final Set<Long> rosterAccounts,
                                                  final Map<Long, Integer> rosterTeamByAcc,
@@ -292,10 +297,50 @@ public final class ReplayParser {
         if (rosterAccounts.isEmpty() || players == null || players.isEmpty()) {
             return false;
         }
+        final Set<Long> resultAccounts = players.stream()
+                .map(p -> p.accountId)
+                .collect(Collectors.toSet());
+        if (!resultAccounts.equals(rosterAccounts)) {
+            return false;
+        }
+        for (final PlayerResult p : players) {
+            final Integer rosterTeam = rosterTeamByAcc.get(p.accountId);
+            if (rosterTeam != null && rosterTeam.intValue() != p.team) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * League 专属结算覆盖证据：战绩 #301 的每个结算账号都出现在名册 #201 中（无幽灵结算）。
+     * #201 可含 non-combatant extra（标准 7v7 且 #301 完整 14 人时 extra 不属于 14 名
+     * settled combatants），extra 不影响本结果；名册为空或结算为空时 fail-closed。
+     */
+    private static boolean resolveSettlementCoveredByRoster(final Set<Long> rosterAccounts,
+                                                            final List<PlayerResult> players) {
+        if (rosterAccounts.isEmpty() || players == null || players.isEmpty()) {
+            return false;
+        }
         for (final PlayerResult p : players) {
             if (!rosterAccounts.contains(p.accountId)) {
                 return false;
             }
+        }
+        return true;
+    }
+
+    /**
+     * League 专属队伍一致性证据：名册 #201→#2→#3 提供的队伍字段（存在时）与结算队伍一致。
+     * 队伍字段缺失时不做硬性要求。
+     */
+    private static boolean resolveSettlementRosterTeamConsistent(
+            final Map<Long, Integer> rosterTeamByAcc,
+            final List<PlayerResult> players) {
+        if (players == null || players.isEmpty()) {
+            return false;
+        }
+        for (final PlayerResult p : players) {
             final Integer rosterTeam = rosterTeamByAcc.get(p.accountId);
             if (rosterTeam != null && rosterTeam.intValue() != p.team) {
                 return false;

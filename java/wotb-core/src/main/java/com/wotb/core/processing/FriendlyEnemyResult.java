@@ -235,10 +235,10 @@ public final class FriendlyEnemyResult {
 
     /**
      * 结算阵容完整前提（SURVIVOR_SETTLEMENT / annihilationSuffix / pointsEndReason 共享）：
-     * ReplayParser 确认结算战绩 #301 无幽灵结算（每个结算账号都在名册 #201 中）且名册队伍与
-     * 结算队伍一致（存在时）。名册 #201 可含 non-combatant extra（观战者等，ActualCombatantSet
-     * == #301，见 protocol.md），extra 不视为缺失队员；未知一律视为不完整，残缺点数/存活数
-     * 不得用于推断胜方或结束方式。
+     * 仅当 ReplayParser 确认名册(#201)与战绩(#301)账号/队伍一致（严格 fail-closed 契约）时
+     * 返回 true；未知一律视为不完整，残缺点数/存活数不得用于推断胜方或结束方式。
+     * League Rating 对 non-combatant extra 的宽容走 League 专属证据（LeagueRatingValidator），
+     * 不改变本前提——#201 存在无法证明为 spectator 的 extra 时仍视为不完整。
      */
     public static boolean rosterComplete(final Battle battle) {
         return battle != null && Boolean.TRUE.equals(battle.rosterComplete);

@@ -71,6 +71,9 @@ public final class LeagueTestReplays {
         battle.mapName = "italy";
         battle.durationS = 300.0;
         battle.rosterComplete = true;
+        // League 专属结算证据（synthetic 构造：结算由同一 players 列表驱动，视为覆盖且队伍一致）
+        battle.settlementAccountsCoveredByRoster = true;
+        battle.settlementRosterTeamConsistent = true;
         battle.players = new ArrayList<>();
         for (final PlayerSpec s : specs) {
             final PlayerResult p = new PlayerResult();

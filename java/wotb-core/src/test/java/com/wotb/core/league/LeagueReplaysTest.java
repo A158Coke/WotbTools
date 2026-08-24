@@ -219,7 +219,7 @@ class LeagueReplaysTest {
         good.arenaId = "111";
         final Battle bad = LeagueTestBattles.battle(2, LeagueTestBattles.defaultSevenVsSeven());
         bad.arenaId = "222";
-        bad.rosterComplete = false; // ROSTER_INCOMPLETE
+        bad.settlementAccountsCoveredByRoster = false; // ROSTER_INCOMPLETE
         final LeagueReplays.LeagueCollectResult r = collectBattles(List.of(good, bad));
         assertEquals(LeagueRatingMode.LEAGUE_RATING, r.mode());
         assertEquals(2, r.battles().size(), "Rating 不合格的 Battle 必须保留在解析结果");
@@ -242,7 +242,7 @@ class LeagueReplaysTest {
         // ROSTER_INCOMPLETE
         final Battle roster = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         roster.arenaId = "222";
-        roster.rosterComplete = false;
+        roster.settlementAccountsCoveredByRoster = false;
         // NO_DECISIVE_WINNER
         final Battle winner = LeagueTestBattles.battle(null, LeagueTestBattles.defaultSevenVsSeven());
         winner.arenaId = "333";
@@ -260,7 +260,7 @@ class LeagueReplaysTest {
     void ratingValidationFailureReportsSuccessProgressNotFailure() {
         final Battle bad = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         bad.arenaId = "111";
-        bad.rosterComplete = false;
+        bad.settlementAccountsCoveredByRoster = false;
         final List<String> outcomes = new ArrayList<>();
         final LeagueReplays.LeagueCollectResult r = LeagueReplays.collect(
                 List.of(new Source("bad.wotbreplay", new byte[]{1})),

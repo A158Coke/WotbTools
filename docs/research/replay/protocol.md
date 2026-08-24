@@ -147,13 +147,20 @@ spectator != missing team member
 no PositionChanged != missing position（静止同坐标 gap 已证实，见下节）
 ```
 
-**rosterComplete 语义修正（2026-08-24 probe 验证）**：Battle.rosterComplete 由「#201 全集合
-== #301 全集合」修正为「结算 #301 每个账号都在名册 #201 中（无幽灵结算）+ 名册队伍与结算队伍
-一致」。名册 #201 与 Type0 accountDatabaseIds 都是全员名册（可含 non-combatant），不是 actual
-participant 集合；全样本 probe：6/6 真实样本中 5 份 #201=#301=Type0=14（random×1、tournament×4、
-11.19 Maus），1 份训练房（20260725_1535，#201=15/Type0=15、#301=14，extra 账号 3117047709 观战者
-不结算）——extra 不导致 ROSTER_INCOMPLETE。League Rating 只要求「participant completeness
-evidence 无真实冲突」：结算者全部有名册身份 + 队伍一致。
+**结算阵容完整性证据分层（2026-08-24 probe 验证）**：全局 Battle.rosterComplete 保持
+严格 fail-closed 契约（#201 全集合 == #301 全集合 + 队伍一致）——它是 SURVIVOR_SETTLEMENT /
+annihilationSuffix / pointsEndReason 等「完整逐人结算」推断的前提，名册 #201 存在无法证明为
+spectator 的 extra（如 #201=4 / #301=3）时不得视为完整。League Rating 对 non-combatant extra
+的宽容走 League 专属证据（Battle.settlementAccountsCoveredByRoster = #301 每个结算账号都在
+名册中；Battle.settlementRosterTeamConsistent = 名册队伍与结算队伍一致，由 LeagueRatingValidator
+判断），不扩大全局 rosterComplete 语义。
+
+证据边界：全样本 probe 仅观察到 6/6 真实样本中 5 份 #201=#301=Type0=14（random×1、tournament×4、
+11.19 Maus），1 份训练房（20260725_1535，#201=15/Type0=15、#301=14，extra 账号 3117047709 无
+#301 settlement）。不把「任何 #201 extra 都是观战者」表述为 universal rule——现有证据只
+支持：标准 7v7 且 #301 已完整 14 人时，该 extra 不属于 14 名 settled combatants。League Rating
+准入仅要求「结算者全部有名册身份 + 队伍一致」，extra 不导致 ROSTER_INCOMPLETE；其余场景
+（非标准人数 / #301 不完整）由 Validator 其他门槛与全局严格契约 fail-closed。
 
 **PositionChanged 是 change/state-driven（2026-08-19 验证）**：
 - 存活己方静止车辆可长时间无新位置包：11.18 Maus 样本（20260808_1608，holland）

@@ -226,7 +226,7 @@ class LeagueExcelExportTest {
         b1.arenaId = "arena-1";
         final Battle b2 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         b2.arenaId = "arena-2";
-        b2.rosterComplete = false;
+        b2.settlementAccountsCoveredByRoster = false;
         final LeagueRatingResult r1 = LeagueRatingCalculator.calculate(b1);
         final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(
                 List.of(b1), List.of(r1),

@@ -60,25 +60,34 @@
 ### Fixed
 
 - **CW / Training Replay Rating 名册完整性收口（PR #132 追加，真实 0/N 根因修复）**：
-  - **根因**：ReplayParser.resolveRosterComplete 要求名册(#201)与结算(#301)账号<b>全集合一致</b>；
-    真实训练赛/联赛名册 #201 可含 non-combatant（观战者等，protocol.md PROVEN：
-    ActualCombatantSet == #301）——#201=15 / #301=14 的合法训练房被误判 LEAGUE_ROSTER_INCOMPLETE，
-    整批 0/N Rating。
-  - **修正（方案 A）**：rosterComplete 重定义为 settlement participant completeness——结算 #301
-    每个账号都在名册 #201 中（无幽灵结算）+ 名册队伍(#201→#2→#3)与结算队伍一致（存在时）；
-    名册 extra non-combatant 不再导致阵容不完整。LeagueRatingValidator 门槛不变（14 人 7v7 /
-    unique 账号 / tankId / 明确胜方 / 死亡时间 / 数值关系），ROSTER_INCOMPLETE 只留给真实
-    participant/settlement mismatch（幽灵结算、队伍冲突）。
+  - **根因**：LeagueRatingValidator 直接引用全局 Battle.rosterComplete（#201 全集合 == #301 全集合）
+    作为准入门槛；真实训练赛/联赛名册 #201 可含不属于 #301 的 non-combatant 记录
+    （probe：20260725_1535 训练房 #201=15 / #301=14，extra 账号 3117047709 无 #301 settlement）——
+    #201=15 / #301=14 的合法训练房被误判 LEAGUE_ROSTER_INCOMPLETE，整批 0/N Rating。
+  - **修正（最终方案：League 专属证据，不弱化全局契约）**：
+    - <b>全局 Battle.rosterComplete 保持严格 fail-closed 语义不变</b>（#201 全集合 == #301 全集合 +
+      队伍一致）——它是 SURVIVOR_SETTLEMENT / annihilationSuffix / pointsEndReason 等 AI 完整结算
+      推断的前提，名册存在无法证明为 spectator 的 extra（如 #201=4/#301=3）时不得视为完整；
+    - 新增 <b>League 专属证据</b>：Battle.settlementAccountsCoveredByRoster（#301 每个结算账号都
+      在名册 #201 中，无幽灵结算）+ Battle.settlementRosterTeamConsistent（名册队伍与结算队伍一致，
+      存在时），由 LeagueRatingValidator 判断——标准 7v7 且 #301 完整 14 人时 extra 不导致
+      ROSTER_INCOMPLETE；其余门槛（14 人 7v7 / unique 账号 / tankId / 明确胜方 / 死亡时间 / 数值
+      关系）不变，ROSTER_INCOMPLETE 只留给真实 mismatch（幽灵结算、队伍冲突）。
   - **真实 probe 证据**（RosterCompletenessProbeTest，common/data 本地样本自动跳过）：
     random×1 / tournament×4 / 11.19 Maus 均 #201=#301=Type0=14；20260725_1535 训练房
-    #201=15 / #301=14 / Type0=15（extra=3117047709 观战者不结算）。修复后该训练房
-    rosterComplete=true、Validator PASS（修复前 false / LEAGUE_ROSTER_INCOMPLETE），其余样本零回归。
-  - **测试**：ReplayParserTest（名册 extra→true、幽灵结算→false、队伍冲突→false）、
-    LeagueReplaysTest（#201=15/#301=14 rated、多场合法 CW playerSummaries/teamSummaries 非空）、
-    LeagueRosterCompletenessTest（真实结构字节 Parser→Validator→Calculator 全链路：14 个 Player
-    Rating、八维度 0-max、Team 1/2 Rating、MVP、两队最佳 + 本地真实训练房样本自动验证）。
-  - **文档**：protocol.md / replay-data.md / replay-parsed-fields.md / league-rating.md 同步修正
-    「#201 全集合 == #301 全集合」错误描述，改为证据验证的新定义。
+    #201=15 / #301=14 / Type0=15（extra=3117047709 无 #301 settlement）。修复后该训练房全局
+    rosterComplete=false（严格）、League 专属证据完整 → Validator PASS（修复前
+    LEAGUE_ROSTER_INCOMPLETE），其余样本零回归。
+  - **测试**：ReplayParserTest（extra→全局严格 false + League 专属 true、幽灵结算→双 false、
+    队伍冲突→双 false、全等→双 true）、LeagueReplaysTest（#201=15/#301=14 rated、多场合法 CW
+    playerSummaries/teamSummaries 非空）、LeagueRosterCompletenessTest（<b>真实 CW fixture 入库
+    common/fixtures/replays/（15/14 训练房 + 14/14 tournament），CI 无条件全链路</b>：14 个 Player
+    Rating、八维度 0-max、Team 1/2 Rating、MVP、两队最佳、#201>#301 断言、真实双份 collect →
+    summaries 非空）+ AI fail-closed 回归（CW 15/14 全局 rosterComplete=false → 不推导点数/存活
+    结束方式、无全歼推断，PR #73 boundary 不放松）。
+  - **文档**：protocol.md / replay-data.md / replay-parsed-fields.md / league-rating.md 同步——
+    全局 rosterComplete 严格契约保持，「任何 #201 extra 都是观战者」不表述为 universal rule，
+    仅记录证据边界（标准 7v7 且 #301 完整 14 人时 extra 不属于 14 名 settled combatants）。
 - **Replay 汇总空数据 + 超宽表格重叠 P0 修复（docs/current-plan.md）**：
   - **League 模式恢复基础 Replay Aggregate**：Mapper.toPreviewResponse 在 League 模式下不再输出空
     aggregate——多场时按标准路径计算并输出基础跨场汇总（Aggregator.aggregate +
