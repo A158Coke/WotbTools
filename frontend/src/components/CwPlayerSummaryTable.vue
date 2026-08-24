@@ -3,13 +3,14 @@ import { computed, ref, watch } from 'vue'
 import { CW_DIM_KEYS } from '../utils/playerSummaryMerge.js'
 import { stableSortRows } from '../utils/tableSort.js'
 import { useStickyColumns } from '../utils/stickyColumns.js'
+import { leagueMaxByKey, ratingCellText } from '../utils/helpers.js'
 
 /**
- * CW 统一玩家汇总表（plan §6；review PR#134 BLOCKER 2/2.9）：Replay Aggregate 全量玩家 +
- * League Rating 按 accountId join，缺失 League 字段显示 "--"。汇总页唯一玩家主表；战队仍走
- * LeagueSummaryTable。列 = 用户偏好（useColumns cw scope）驱动：只有 nickname + league_rating
- * 固定（sticky 核心对，left=0 / 实测昵称列宽），其余列（七维/MVP/表现指标/facts）用户可隐藏、
- * 可拖拽顺序。点击玩家行 emit select-player（Side Drawer，plan §8/§13）。
+ * CW 统一玩家汇总表：Replay Aggregate 全量玩家 + League Rating 按 accountId join，
+ * 缺失 League 字段显示 "--"。汇总页唯一玩家主表；战队仍走 LeagueSummaryTable。
+ * 列 = 用户偏好（useColumns cw scope）驱动：只有 nickname + league_rating 固定
+ * （sticky 核心对，left=0 / 实测昵称列宽），其余列（七维/MVP/表现指标/facts）用户可隐藏、
+ * 可拖拽顺序。点击玩家行 emit select-player（Side Drawer）。
  */
 const props = defineProps({
   title: String,
@@ -20,20 +21,19 @@ const props = defineProps({
   leagueColumns: { type: Array, default: () => [] },
   /** 是否 League 模式（决定 league_rating/七维是否渲染评分格式） */
   leagueMode: { type: Boolean, default: false },
-  /** 本表是否当前可见（父组件持有 activeTab；v-show hidden 时禁止 sticky 测量，BLOCKER 2.9） */
+  /** 本表是否当前可见（父组件持有 activeTab；v-show hidden 时禁止 sticky 测量） */
   active: { type: Boolean, default: true },
-  /** Drawer 选中玩家 accountId（identity 跟随；Drawer 关闭 → null → 清除 highlight，review PR#134 第三轮 UX） */
+  /** Drawer 选中玩家 accountId（identity 跟随；Drawer 关闭 → null → 清除 highlight） */
   selectedAccountId: { type: [Number, String], default: null },
 })
 const emit = defineEmits(['select-player'])
 
-const leagueMaxByKey = computed(() =>
-  Object.fromEntries((props.leagueColumns || []).map(c => [c.key, c.max])))
+const maxByKey = computed(() => leagueMaxByKey(props.leagueColumns))
 
 // 跨场/单场 Performance Metrics 百分比展示；HP UNKNOWN → null → '--'（不冒充 0）
 const PERCENT_KEYS = new Set(['contribution', 'kast', 'impact'])
 
-// ---- 全列 ASC/DESC（plan §11：任何可见列都可排序；missing-last；raw sort）----
+// ---- 全列 ASC/DESC（任何可见列都可排序；missing-last；raw sort）----
 const sortKey = ref('')
 const sortReverse = ref(false)
 
@@ -57,18 +57,7 @@ function arrow(key) {
   return sortKey.value === key ? (sortReverse.value ? ' ▼' : ' ▲') : ''
 }
 
-/** Rating 文本：缺失（无评分数据）→ '--'，不冒充 0（BLOCKER 3/6.12）。
- * 总 Rating 只显示整数（850），不显示 /1000 冗余完成度（review PR#134 BLOCKER 1）；
- * 七维仍显示「342 / 400 · 85.5%」。 */
-function ratingCellText(value, key) {
-  if (value == null || value === '' || !Number.isFinite(Number(value))) return '--'
-  const v = Number(value)
-  const max = Number(leagueMaxByKey.value[key]) || 0
-  if (max <= 0) return String(Math.round(v * 10) / 10)
-  const pct = Math.round(1000 * v / max) / 10
-  if (key === 'league_rating') return String(Math.round(v))
-  return Math.round(v) + ' / ' + max + ' · ' + pct + '%'
-}
+// Rating 格式 contract 在 helpers.js 唯一实现（单场表 / CW 统一玩家表 / PNG 导出共用）。
 
 function isRatingKey(key) {
   return props.leagueMode && (key === 'league_rating' || CW_DIM_KEYS.includes(key))
@@ -83,7 +72,7 @@ function cellDisplay(row, col) {
   const key = col.key
   const raw = row.cells[key]
   if (raw == null || raw === '') return '--'
-  if (isRatingKey(key)) return ratingCellText(raw, key)
+  if (isRatingKey(key)) return ratingCellText(raw, key, maxByKey.value)
   if (PERCENT_KEYS.has(key)) return percentCell(raw)
   if (col.num) {
     const n = Number(raw)
@@ -93,19 +82,19 @@ function cellDisplay(row, col) {
 }
 
 function onRowClick(row) {
-  // §8.7 identity = accountId；scope 标记汇总（drawerPlayer 按 scope + accountId 重新 resolve）
+  // identity = accountId；scope 标记汇总（drawerPlayer 按 scope + accountId 重新 resolve）
   emit('select-player', { scope: 'summary', accountId: Number(row.cells.account_id) })
 }
 
-/** 选中行判定按 accountId（禁止 row index；排序后 highlight 跟随同一玩家，review PR#134 第三轮 UX）。 */
+/** 选中行判定按 accountId（禁止 row index；排序后 highlight 跟随同一玩家）。 */
 function isSelectedRow(row) {
   const sel = props.selectedAccountId
   if (sel == null || sel === '') return false
   return Number(row.cells.account_id) === Number(sel)
 }
 
-// ---- sticky 核心对（BLOCKER 2.9）：nickname.left=0；league_rating.left=实测昵称列宽 >0 ----
-const { headerRefs, stickyLeft, isStickyCol, colStyle, schedule } = useStickyColumns({
+// ---- sticky 核心对：nickname.left=0；league_rating.left=实测昵称列宽 >0 ----
+const { headerRefs, isStickyCol, colStyle, schedule } = useStickyColumns({
   enabled: computed(() => props.leagueMode),
   active: computed(() => props.active),
   watchCols: computed(() => props.columns),
@@ -151,7 +140,7 @@ watch([sortKey, sortReverse], schedule)
 .league-summary-note { font-size: .72rem; color: var(--text-sub); }
 .player-row { cursor: pointer; }
 .player-row:hover td { background: var(--bg-list-hover); }
-/* Drawer 选中玩家行 highlight（review PR#134 第三轮 UX）：accent 浅染，覆盖 hover 与 sticky 底色 */
+/* Drawer 选中玩家行 highlight：accent 浅染，覆盖 hover 与 sticky 底色 */
 .cw-player-summary tr.player-row.selected td { background: color-mix(in srgb, var(--accent) 16%, var(--bg-card)); }
 .cw-player-summary tr.player-row.selected td.sticky-t1 { background: color-mix(in srgb, var(--accent) 16%, var(--bg-t1)); }
 .cw-player-summary tr.player-row.selected td.sticky-t2 { background: color-mix(in srgb, var(--accent) 16%, var(--bg-t2)); }
@@ -160,8 +149,8 @@ watch([sortKey, sortReverse], schedule)
 .cw-player-summary tr.player-row.selected:hover td.sticky-t2 { background: color-mix(in srgb, var(--accent) 24%, var(--bg-t2)); }
 .league-summary-empty { text-align: center; color: var(--text-sub); }
 
-/* CW 统一玩家表 sticky：玩家 + Rating 固定（BLOCKER 2.9）。
-   z-index 层级与 BattleTable.league-table 对齐（plan §17）：tbody 3 < thead 7。 */
+/* CW 统一玩家表 sticky：玩家 + Rating 固定。
+   z-index 层级与 BattleTable.league-table 对齐：tbody 3 < thead 7。 */
 .cw-table th.sticky-col, .cw-table td.sticky-col { position: sticky; }
 .cw-table td.sticky-col { z-index: 3; background: var(--bg-card); }
 .cw-table th.sticky-col { z-index: 7; background: var(--bg-card2); }

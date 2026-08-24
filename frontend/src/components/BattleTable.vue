@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { fmtDuration, mapLabel } from '../utils/helpers.js'
+import { fmtDuration, mapLabel, leagueMaxByKey, ratingCellText } from '../utils/helpers.js'
 import { replayValueLabel } from '../utils/display.js'
 import { stableSortRows } from '../utils/tableSort.js'
 import { useStickyColumns } from '../utils/stickyColumns.js'
@@ -17,10 +17,10 @@ const props = defineProps({
   leagueColumns: { type: Array, default: () => [] },
   /**
    * League 模式单场元数据（team ratings / MVP / 队内最佳）。仅决定本场<b>是否有 Rating 结果</b>，
-   * 不决定 CW UI（review PR#134 BLOCKER 3：leagueMode 与 league 是两个独立状态）。
+   * 不决定 CW UI（leagueMode 与 league 是两个独立状态）。
    */
   league: { type: Object, default: null },
-  /** 战队名称覆盖：{arenaId:team: name}（仅当前页面内存，plan §12）。 */
+  /** 战队名称覆盖：{arenaId:team: name}（仅当前页面内存）。 */
   teamNames: { type: Object, default: () => ({}) },
   /**
    * 本表是否当前可见（父组件拥有真实 activeTab；BattleTable 不通过 DOM 猜 visibility）。
@@ -28,23 +28,22 @@ const props = defineProps({
    */
   active: { type: Boolean, default: true },
   /**
-   * CW（League Rating）模式（review PR#134 BLOCKER 3）：决定这是 CW UI（CW 列契约 /
-   * Player Drawer / sticky pair / Rating 列存在）。Rating-ineligible 场次 league==null
-   * 但 leagueMode=true —— 该场仍是 CW：Replay facts / Performance metrics 正常显示，
-   * Rating/七维显示 "--"，点击玩家仍打开 Drawer。
+   * CW（League Rating）模式：决定这是 CW UI（CW 列契约 / Player Drawer / sticky pair /
+   * Rating 列存在）。Rating-ineligible 场次 league==null 但 leagueMode=true —— 该场仍是
+   * CW：Replay facts / Performance metrics 正常显示，Rating/七维显示 "--"，
+   * 点击玩家仍打开 Drawer。
    */
   leagueMode: { type: Boolean, default: false },
-  /** Drawer 选中玩家 identity：accountId + arenaId（Battle scope 必须双匹配；排序后跟随同一账号，
-   *  review PR#134 第三轮 UX）。Drawer 关闭 → null → 清除 highlight。 */
+  /** Drawer 选中玩家 identity：accountId + arenaId（Battle scope 必须双匹配；排序后跟随同一账号）。
+   * Drawer 关闭 → null → 清除 highlight。 */
   selectedAccountId: { type: [Number, String], default: null },
   selectedArenaId: { type: [Number, String], default: null },
 })
 const emit = defineEmits(['update-team-name', 'select-player'])
 
-/** CW UI 开关（不再是 league != null 推断；BLOCKER 3）。 */
+/** CW UI 开关（显式 leagueMode；不再从 league != null 推断）。 */
 const isLeague = computed(() => props.leagueMode)
-const leagueMaxByKey = computed(() =>
-  Object.fromEntries((props.leagueColumns || []).map(c => [c.key, c.max])))
+const maxByKey = computed(() => leagueMaxByKey(props.leagueColumns))
 
 function percentCell(value) {
   if (value == null || value === '') return '--'
@@ -54,7 +53,7 @@ function percentCell(value) {
 const sortKey = ref('')
 const sortReverse = ref(false)
 
-/** 战队名称按用户最终看到的名（override → autoName）排序（plan §11.8），不按隐藏 teamKey。 */
+/** 战队名称按用户最终看到的名（override → autoName）排序，不按隐藏 teamKey。 */
 function teamNameValue(row) {
   const teamNumber = row.team
   const key = props.battle.arenaId + ':' + teamNumber
@@ -102,13 +101,8 @@ function survivalLabel(value) {
 
 // ---- League Rating 概览 ----
 
-function round1(v) {
-  const n = Number(v) || 0
-  return Math.round(n * 10) / 10
-}
-
-/** Rating 文本：缺失（Rating-ineligible 场次）→ '--'，不冒充 0（review PR#134 BLOCKER 3）。
- * 总 Rating 只显示整数（927），不显示 /1000 换算的冗余完成度百分比（review PR#134 BLOCKER 1）。 */
+/** Rating 文本：缺失（Rating-ineligible 场次）→ '--'，不冒充 0。
+ * 总 Rating 只显示整数（927），不显示 /1000 换算的冗余完成度百分比。 */
 function ratingText(rating) {
   if (rating == null || rating === '' || !Number.isFinite(Number(rating))) return '--'
   return String(Math.round(Number(rating)))
@@ -132,8 +126,8 @@ function onTeamNameInput(teamNumber, event) {
   emit('update-team-name', { arenaId: props.battle.arenaId, team: teamNumber, name: event.target.value })
 }
 
-/** 点击玩家行 → 打开选手 Drawer（plan §8.1：CW 单场 BattleTable 支持；selection = accountId §8.7）。
- * CW UI（leagueMode）即支持——Rating-ineligible 场次（league=null）同样打开 Drawer（BLOCKER 3）。 */
+/** 点击玩家行 → 打开选手 Drawer（CW 单场 BattleTable 支持；selection = accountId）。
+ * CW UI（leagueMode）即支持——Rating-ineligible 场次（league=null）同样打开 Drawer。 */
 function onRowClick(row) {
   if (!isLeague.value) return
   emit('select-player', {
@@ -154,18 +148,7 @@ function isSelectedRow(row) {
 }
 
 // ---- Rating 单元格（总分「927」；维度「342 / 400 · 85.5%」；缺失 → '--'）----
-
-function ratingCellText(value, key) {
-  if (value == null || value === '' || !Number.isFinite(Number(value))) return '--'
-  const v = Number(value)
-  const max = Number(leagueMaxByKey.value[key]) || 0
-  if (max <= 0) return String(Math.round(v * 10) / 10)
-  const pct = Math.round(1000 * v / max) / 10
-  // 总 Rating 只显示整数（927），不显示 /1000 冗余完成度（review PR#134 BLOCKER 1）；
-  // 七维仍显示「342 / 400 · 85.5%」
-  if (key === 'league_rating') return String(Math.round(v))
-  return Math.round(v) + ' / ' + max + ' · ' + pct + '%'
-}
+// 格式 contract 在 helpers.js 唯一实现（单场表 / CW 统一玩家表 / PNG 导出共用）。
 
 function rowFlags(row) {
   if (!isLeague.value) return { mvp: false, teamBest: false }
@@ -179,14 +162,14 @@ function rowFlags(row) {
 
 // ---- sticky 列（CW 模式：玩家 + 总 Rating 固定，左偏移响应真实列宽）----
 // invariant：nickname.left = 0；league_rating.left = 真实可见 nickname 列宽（>0）。
-// 复用 useStickyColumns（抽取自本组件验证过的 lifecycle；review PR#134 BLOCKER 2.9/2.10）。
-const { headerRefs, stickyLeft, isStickyCol, colStyle, schedule } = useStickyColumns({
+// 复用 useStickyColumns（抽取自本组件验证过的 sticky lifecycle）。
+const { headerRefs, isStickyCol, colStyle, schedule } = useStickyColumns({
   enabled: isLeague,
   active: computed(() => props.active),
   watchCols: computed(() => props.shownCols),
 })
 
-// 排序箭头变化可能改昵称列宽 → 重新调度测量（plan §3.6/§14）
+// 排序箭头变化可能改昵称列宽 → 重新调度测量
 watch([sortKey, sortReverse], schedule)
 </script>
 
@@ -199,7 +182,7 @@ watch([sortKey, sortReverse], schedule)
       <div class="mc"><div class="k">{{ $t('metric.player_count') }}</div><div class="v">{{ battle.players.length }}</div></div>
     </div>
 
-    <!-- League Rating 概览（CW 专属；Rating-ineligible 场次 league=null → 显示 "--" 不伪造，BLOCKER 3） -->
+    <!-- League Rating 概览（CW 专属；Rating-ineligible 场次 league=null → 显示 "--" 不伪造） -->
     <div v-if="isLeague" class="league-overview">
       <div class="league-head">
         <span class="league-title">{{ $t('league.title') }}</span>
@@ -234,12 +217,12 @@ watch([sortKey, sortReverse], schedule)
               :class="{ 'sticky-col': isStickyCol(c.key) }" :style="colStyle(c.key)"
               @click="sortBy(c)"
               :title="c.key === 'survival_time' ? $t('player_labels.survival_time_tip')
-                : (isLeague && leagueMaxByKey[c.key] > 0 ? $t('player_labels.' + c.key + '_tip') : undefined)">
+                : (isLeague && maxByKey[c.key] > 0 ? $t('player_labels.' + c.key + '_tip') : undefined)">
             {{ $t('player_labels.' + c.key) }}{{ arrow(c.key) }}
           </th>
         </tr></thead>
         <tbody>
-          <tr v-for="(row, ri) in sorted" :key="ri"
+          <tr v-for="(row, ri) in sorted" :key="row.cells.account_id"
               :class="[row.team === 1 ? 't1' : 't2', isLeague ? 'player-row' : '', { selected: isSelectedRow(row) }]"
               @click="onRowClick(row)">
             <td v-for="c in shownCols" :key="c.key"
@@ -250,11 +233,11 @@ watch([sortKey, sortReverse], schedule)
               <span v-else-if="LOCALIZED_VALUE_KEYS.has(c.key)">{{ replayValueLabel(t, te, row.cells[c.key]) }}</span>
               <span v-else-if="PERCENT_KEYS.has(c.key)">{{ percentCell(row.cells[c.key]) }}</span>
               <span v-else-if="c.key === 'league_rating'" class="league-rating-cell">
-                {{ ratingCellText(row.cells[c.key], c.key) }}
+                {{ ratingCellText(row.cells[c.key], c.key, maxByKey) }}
                 <span v-if="rowFlags(row).mvp" class="mvp-badge" :title="$t('league.mvp')">MVP</span>
                 <span v-else-if="rowFlags(row).teamBest" class="team-best-badge" :title="$t('league.team_best')">★</span>
               </span>
-              <span v-else-if="isLeague && leagueMaxByKey[c.key] > 0">{{ ratingCellText(row.cells[c.key], c.key) }}</span>
+              <span v-else-if="isLeague && maxByKey[c.key] > 0">{{ ratingCellText(row.cells[c.key], c.key, maxByKey) }}</span>
               <span v-else>{{ row.cells[c.key] }}</span>
             </td>
           </tr>
@@ -297,7 +280,7 @@ watch([sortKey, sortReverse], schedule)
 .league-note { margin-top: 6px; font-size: .72rem; color: var(--text-sub); }
 
 /* League 表格：玩家 + 总 Rating sticky；其余列横向滚动。
-   z-index 层级（plan §17）：tbody normal < tbody sticky(3) < thead normal(5) < thead sticky(7)。
+   z-index 层级：tbody normal < tbody sticky(3) < thead normal(5) < thead sticky(7)。
    此处 scoped 特异性高于全局 showcase 规则，必须显式对齐全局层级——
    否则普通表头(5)画在 sticky 表头(3)之上，横向滚动时普通表头会覆盖固定玩家/Rating 列。 */
 .league-table th.sticky-col, .league-table td.sticky-col {
@@ -309,10 +292,10 @@ watch([sortKey, sortReverse], schedule)
 .league-table td.sticky-col.sticky-t2 { background: color-mix(in srgb, var(--bg-t2) 64%, var(--bg-card)); }
 .league-table tr:hover td.sticky-col { background: var(--bg-list-hover); }
 
-/* 玩家行点击（Drawer 打开，plan §13：header click 排序、row click 选人，互不触发） */
+/* 玩家行点击（Drawer 打开；header click 排序、row click 选人，互不触发） */
 .league-table .player-row { cursor: pointer; }
 .league-table tr.player-row:hover td { background: var(--bg-list-hover); }
-/* Drawer 选中玩家行 highlight（review PR#134 第三轮 UX）：accent 浅染，覆盖 hover 与 sticky 底色 */
+/* Drawer 选中玩家行 highlight：accent 浅染，覆盖 hover 与 sticky 底色 */
 .league-table tr.player-row.selected td { background: color-mix(in srgb, var(--accent) 16%, var(--bg-card)); }
 .league-table tr.player-row.selected td.sticky-t1 { background: color-mix(in srgb, var(--accent) 16%, var(--bg-t1)); }
 .league-table tr.player-row.selected td.sticky-t2 { background: color-mix(in srgb, var(--accent) 16%, var(--bg-t2)); }

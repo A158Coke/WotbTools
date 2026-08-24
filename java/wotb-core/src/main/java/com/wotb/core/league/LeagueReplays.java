@@ -22,9 +22,9 @@ import java.util.function.Consumer;
  * <p>普通模式（{@code STANDARD_REPLAY}）复用 {@link Replays} 既有 arenaId 去重语义，
  * 普通回放契约零回归；混合模式（{@code MIXED_UNSUPPORTED}）同普通模式返回全部可解析
  * battles（League Rating 不支持混合批次聚合，League Analysis unavailable 由调用方提示，
- * plan §21：禁止 mixed League eligibility 污染 Replay Parser）。</p>
+ * 禁止 mixed League eligibility 污染 Replay Parser。</p>
  *
- * <p>league 去重范围仅限当前上传批次（plan §4）：同一 arenaId 多份回放关键事实一致 →
+ * <p>league 去重范围仅限当前上传批次：同一 arenaId 多份回放关键事实一致 →
  * 只计一份、其余进 duplicates；不一致 → 该场全部副本拒绝评分（{@code CONFLICTING_REPLAYS_FOR_ARENA}）。
  * 不采用第一份、不自动选择「字段更多」的副本；不建立持久化记录。</p>
  */
@@ -71,7 +71,7 @@ public final class LeagueReplays {
                 .map(Replays.ParsedEntry::battle).toList());
         if (mode == LeagueRatingMode.MIXED_UNSUPPORTED) {
             // 混合批次（普通 + 训练赛/联赛混传）：League Rating 不支持混合批次聚合，
-            // 但<b>不得污染 Replay Parser</b>（plan §21 / Case I）——所有可解析回放仍按
+            // 但<b>不得污染 Replay Parser</b>——所有可解析回放仍按
             // 普通回放语义成功返回（标准 arenaId 去重，progress 真实 outcome），League
             // Analysis unavailable 由调用方以 leagueUnavailableCode 提示，不再整体拒绝。
             final com.wotb.core.model.Collected c = Replays.dedupe(entries, log, progress);
@@ -91,7 +91,7 @@ public final class LeagueReplays {
      *
      * <p>返回的 battles = 去重/冲突后<b>全部</b>成功解析的 Battle（Rating 不合格也保留，
      * 只进 leagueFailures）；ratedBattles/ratedNames/results 仅用于 League Rating 计算与
-     * 批次聚合（plan §6：aggregate 只基于 eligible 场次）。</p>
+     * 批次聚合（aggregate 只基于 eligible 场次）。</p>
      */
     private static LeagueCollectResult collectLeague(final List<Replays.ParsedEntry> entries,
                                                      final Replays.ReplayProgressListener progress) {

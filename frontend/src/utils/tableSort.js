@@ -1,12 +1,12 @@
 /**
- * 表格通用排序纯函数（plan §11/§12）。
+ * 表格通用排序纯函数。
  *
  * 统一行为：
  * - numeric：所有数值必须 numeric sort，禁止字符串字典序（"100" < "20" 是错的）。
  * - string：Intl.Collator(locale, { numeric: true, sensitivity: 'base' }) 自然排序（Player1/Player2/Player10）。
- * - missing-last：null / undefined / '' / NaN / '--' 无论 ASC 还是 DESC 都放最后（plan §11.5）。
+ * - missing-last：null / undefined / '' / NaN / '--' 无论 ASC 还是 DESC 都放最后。
  * - stable：同值保持输入顺序（V8 sort 稳定；包装 index 兜底）。
- * - formatted vs raw：排序永远基于 raw 值；格式化（百分比/分数/时长）由 valueGetter 还原（plan §11.6）。
+ * - formatted vs raw：排序永远基于 raw 值；格式化（百分比/分数/时长）由 valueGetter 还原。
  */
 
 /** 缺失哨兵（所有被认为是"无值"的形态都归一为它）。 */
@@ -100,7 +100,7 @@ export function stableSortRows(rows, spec) {
   const tieGet = spec.tiebreakGetter
   const indexed = rows.map((row, index) => ({ row, index }))
   indexed.sort((x, y) => {
-    // missing-last 与方向无关：缺失永远放最后（plan §11.5），不乘 direction
+    // missing-last 与方向无关：缺失永远放最后，不乘 direction
     const ax = normalizeMissing(get(x.row))
     const by = normalizeMissing(get(y.row))
     const xMissing = ax === MISSING
@@ -127,7 +127,7 @@ export function stableSortRows(rows, spec) {
   return indexed.map(e => e.row)
 }
 
-/** 切换方向：无 key → ASC；同 key → 反转；换 key → ASC（plan §11.2：无 unsorted 第三态）。 */
+/** 切换方向：无 key → ASC；同 key → 反转；换 key → ASC（无 unsorted 第三态）。 */
 export function nextDirection(currentKey, nextKey, currentDirection) {
   if (currentKey !== nextKey) return 1
   return currentDirection === 1 ? -1 : 1

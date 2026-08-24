@@ -42,8 +42,9 @@ function mountCols(storage) {
   const playerCols = ref(PLAYER_COLS)
   const aggCols = ref(AGG_COLS)
   const activeTab = ref('b0')
-  const c = useColumns(playerCols, aggCols, activeTab)
-  c.initFromResponse({ playerColumns: PLAYER_COLS, aggregateColumns: AGG_COLS })
+  const leagueMode = ref(false)
+  const c = useColumns(playerCols, aggCols, activeTab, leagueMode)
+  c.initFromResponse({ playerColumns: PLAYER_COLS, aggregateColumns: AGG_COLS, leagueMode: false })
   return c
 }
 
@@ -102,7 +103,7 @@ const LEAGUE_PLAYER_COLS = [
   { key: 'kills', num: true },
   { key: 'damage_dealt', num: true },
   { key: 'damage_assisted', num: true },
-  // review PR#134 BLOCKER 1：Performance Metrics 保留在 CW 单场列 universe
+  // Performance Metrics 保留在 CW 单场列 universe
   { key: 'contribution', num: true },
   { key: 'kast', num: true },
   { key: 'impact', num: true },
@@ -114,8 +115,9 @@ function mountLeagueCols(storage) {
   const playerCols = ref(LEAGUE_PLAYER_COLS)
   const aggCols = ref(AGG_COLS)
   const activeTab = ref('b0')
-  const c = useColumns(playerCols, aggCols, activeTab)
-  c.initFromResponse({ playerColumns: LEAGUE_PLAYER_COLS, aggregateColumns: AGG_COLS })
+  const leagueMode = ref(true)
+  const c = useColumns(playerCols, aggCols, activeTab, leagueMode)
+  c.initFromResponse({ playerColumns: LEAGUE_PLAYER_COLS, aggregateColumns: AGG_COLS, leagueMode: true })
   return c
 }
 
@@ -126,6 +128,35 @@ describe('useColumns League Rating scope', () => {
     const c = mountLeagueCols(freshStorage())
     expect(c.leagueMode.value).toBe(true)
     expect(c.playerOrder.value.slice(0, 2)).toEqual(['nickname', 'league_rating'])
+  })
+
+  it('leagueMode 唯一事实源：playerColumns 含 league_rating 但 leagueMode=false → 普通模式', async () => {
+    const store = freshStorage()
+    const c = useColumns(ref(LEAGUE_PLAYER_COLS), ref(AGG_COLS), ref('b0'), ref(false))
+    c.initFromResponse({ playerColumns: LEAGUE_PLAYER_COLS, aggregateColumns: AGG_COLS, leagueMode: false })
+    expect(c.leagueMode.value).toBe(false)
+    // 普通可见列默认（DEFAULT_VISIBLE）：league_rating 不默认显示、contribution 默认显示
+    expect(c.visibleKeys.value).not.toContain('league_rating')
+    expect(c.visibleKeys.value).toContain('contribution')
+    // 持久化走普通 storage scope，不污染 league scope
+    c.toggleCol({ key: 'kast', scope: 'player' })
+    await nextTick()
+    expect(store.get('wotb-replay-player-visible-cols')).toBeTruthy()
+    expect(store.has('wotb-league-player-visible-cols')).toBe(false)
+  })
+
+  it('leagueMode=true 即使 playerColumns 不含 league_rating 也是 CW 列契约', () => {
+    const c = useColumns(ref(PLAYER_COLS), ref(AGG_COLS), ref('b0'), ref(true))
+    c.initFromResponse({ playerColumns: PLAYER_COLS, aggregateColumns: AGG_COLS, leagueMode: true })
+    expect(c.leagueMode.value).toBe(true)
+    // league_rating 不在列 universe，固定对不强制出现；但 cw scope（汇总 tab）仍可用
+    const agg = useColumns(ref(PLAYER_COLS), ref(CW_AGG_COLS), ref('aggregate'), ref(true))
+    agg.initFromResponse({
+      playerColumns: PLAYER_COLS, aggregateColumns: CW_AGG_COLS, leagueMode: true,
+      league: { playerSummaryColumns: LEAGUE_SUMMARY_COLS },
+    })
+    expect(agg.colScope.value).toBe('cw')
+    expect(agg.cwOrder.value.slice(0, 2)).toEqual(['nickname', 'league_rating'])
   })
 
   it('league rating column is always visible and not hideable', () => {
@@ -187,13 +218,13 @@ describe('useColumns League Rating scope', () => {
   })
 })
 
-// ---- review PR#134 BLOCKER 2：CW 统一玩家表 cw scope（nickname + rating 固定，其余用户自由）----
+// ---- CW 统一玩家表 cw scope（nickname + rating 固定，其余用户自由）----
 
 const LEAGUE_SUMMARY_COLS = [
   { key: 'nickname', num: false },
   { key: 'clan', num: false },
   { key: 'battles', num: true },
-  // review PR#134 BLOCKER 2：rated_battles 进入生产 Column contract（后端 ColumnDef → merge → cw universe）
+  // rated_battles 进入生产 Column contract（后端 ColumnDef → merge → cw universe）
   { key: 'rated_battles', num: true },
   { key: 'league_rating', num: true },
   { key: 'league_damage_score', num: true },
@@ -222,16 +253,18 @@ function mountCwCols(storage) {
   const playerCols = ref(LEAGUE_PLAYER_COLS)
   const aggCols = ref(CW_AGG_COLS)
   const activeTab = ref('aggregate')
-  const c = useColumns(playerCols, aggCols, activeTab)
+  const leagueMode = ref(true)
+  const c = useColumns(playerCols, aggCols, activeTab, leagueMode)
   c.initFromResponse({
     playerColumns: LEAGUE_PLAYER_COLS,
     aggregateColumns: CW_AGG_COLS,
+    leagueMode: true,
     league: { playerSummaryColumns: LEAGUE_SUMMARY_COLS },
   })
   return c
 }
 
-describe('useColumns CW unified summary scope (review PR#134 BLOCKER 2)', () => {
+describe('useColumns CW unified summary scope', () => {
   beforeEach(() => { freshStorage(); vi.clearAllMocks() })
 
   it('cw scope: nickname + league_rating pinned first, dims/mvp/perf default-visible, facts toggleable', () => {
@@ -266,7 +299,7 @@ describe('useColumns CW unified summary scope (review PR#134 BLOCKER 2)', () => 
     expect(c.cwVisibleKeys.value).not.toContain('kast')
   })
 
-  it('user custom order applies: impact, kast, damage_avg, league_damage_score, earned_avg → nickname, league_rating 前置（BLOCKER 2.11）', () => {
+  it('user custom order applies: impact, kast, damage_avg, league_damage_score, earned_avg → nickname, league_rating 前置', () => {
     const c = mountCwCols(freshStorage())
     c.pickerScope.value = 'cw' // 真实流程：toggleColPicker 先设 pickerScope 再 handleReorder
     c.handleReorder(['impact', 'kast', 'damage_avg', 'league_damage_score', 'earned_avg'])
@@ -276,7 +309,7 @@ describe('useColumns CW unified summary scope (review PR#134 BLOCKER 2)', () => 
     ])
   })
 
-  it('another custom order proves not hardcoded (BLOCKER 2.11)', () => {
+  it('another custom order proves not hardcoded', () => {
     const c = mountCwCols(freshStorage())
     c.pickerScope.value = 'cw'
     c.handleReorder(['kast', 'contribution', 'league_damage_score', 'league_assist_score', 'battles'])
@@ -286,7 +319,7 @@ describe('useColumns CW unified summary scope (review PR#134 BLOCKER 2)', () => 
     ])
   })
 
-  it('cw preference persists across remount (BLOCKER 2.4)', async () => {
+  it('cw preference persists across remount', async () => {
     const store = freshStorage()
     const c1 = mountCwCols(store)
     c1.toggleCol({ key: 'league_damage_score', scope: 'cw' }) // 隐藏 → visible 持久化
@@ -307,10 +340,11 @@ describe('useColumns CW unified summary scope (review PR#134 BLOCKER 2)', () => 
 
   it('colScope: league summary tab → cw; league battle tab → player', () => {
     const activeTab = ref('aggregate')
-    const c = useColumns(ref(LEAGUE_PLAYER_COLS), ref(CW_AGG_COLS), activeTab)
+    const c = useColumns(ref(LEAGUE_PLAYER_COLS), ref(CW_AGG_COLS), activeTab, ref(true))
     c.initFromResponse({
       playerColumns: LEAGUE_PLAYER_COLS,
       aggregateColumns: CW_AGG_COLS,
+      leagueMode: true,
       league: { playerSummaryColumns: LEAGUE_SUMMARY_COLS },
     })
     expect(c.colScope.value).toBe('cw')
@@ -329,7 +363,7 @@ describe('useColumns CW unified summary scope (review PR#134 BLOCKER 2)', () => 
     expect(c.cwVisibleKeys.value).toContain('impact')
   })
 
-  it('rated_battles 进入生产 cw column contract（BLOCKER 2）：universe/order/visible/toggle/reorder', () => {
+  it('rated_battles 进入生产 cw column contract：universe/order/visible/toggle/reorder', () => {
     const c = mountCwCols(freshStorage())
     // 真实 response-like 链：league.playerSummaryColumns（含 rated_battles）→ mergeCwPlayerColumns
     // → cwOrder/cwVisibleKeys（默认可见 + 固定对前置）

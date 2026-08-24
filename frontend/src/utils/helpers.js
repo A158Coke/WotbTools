@@ -13,13 +13,13 @@ export const EXTENDED_ONLY_PLAYER_KEYS = new Set([
   'rank'
 ])
 
-/** League Rating 模式默认可见列（plan §15：玩家/战队/车辆/伤害/助攻/击杀/总 Rating）。 */
+/** League Rating 模式默认可见列（玩家/战队/车辆/伤害/助攻/击杀/总 Rating）。 */
 export const LEAGUE_DEFAULT_VISIBLE = [
   'nickname', 'clan', 'tank_name', 'damage_dealt', 'damage_assisted', 'kills', 'league_rating'
 ]
 
 /**
- * CW 统一玩家表默认可见列（review PR#134 BLOCKER 2：只有 nickname + league_rating 是
+ * CW 统一玩家表默认可见列（只有 nickname + league_rating 是
  * 固定核心列；其余列（七维/MVP/表现指标/facts）都只是默认可见，用户可隐藏、可拖拽）。
  * 七维 + MVP 默认展示（延续旧体验），但不再是 alwaysVisible 硬编码。
  */
@@ -36,9 +36,25 @@ export const CW_SUMMARY_DEFAULT_VISIBLE = [
 /** League 模式固定列（玩家 + 总 Rating；sticky 布局依据，不可隐藏/移动）。 */
 export const LEAGUE_FIXED_KEYS = ['nickname', 'league_rating']
 
-/** 是否 League Rating 模式（playerColumns 含 league_rating 即视为 league）。 */
-export function isLeagueColumns(cols) {
-  return Array.isArray(cols) && cols.some(c => c && c.key === 'league_rating')
+/** Rating 列满分元数据（resp.league.columns：key → max）。 */
+export function leagueMaxByKey(leagueColumns) {
+  return Object.fromEntries((leagueColumns || []).map(c => [c.key, c.max]))
+}
+
+/**
+ * Rating 单元格文本（单场表 / CW 统一玩家表 / PNG 导出共用同一 contract）：
+ * 总 Rating 只显示整数（927），不显示 /1000 冗余完成度；
+ * 七维显示「342 / 400 · 85.5%」（max 来自后端 metadata）；
+ * 缺失（null / '' / NaN）→ '--'，不冒充 0；只有真实 raw 0 才显示 0。
+ */
+export function ratingCellText(value, key, maxByKey = {}) {
+  if (value == null || value === '' || !Number.isFinite(Number(value))) return '--'
+  const v = Number(value)
+  const max = Number(maxByKey[key]) || 0
+  if (max <= 0) return String(Math.round(v * 10) / 10)
+  const pct = Math.round(1000 * v / max) / 10
+  if (key === 'league_rating') return String(Math.round(v))
+  return Math.round(v) + ' / ' + max + ' \u00B7 ' + pct + '%'
 }
 
 const COL_GROUP_CAT = {

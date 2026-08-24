@@ -254,7 +254,7 @@ public class ReplayProcessingJobService {
                 ? "MIXED_LEAGUE_AND_STANDARD_REPLAYS" : null;
         // 事实层 enrich 一次：Preview / Export 直接消费已 enrich 的 authoritative Battle（plan §21/§27）。
         // League 模式同样回填单场 Performance Metrics（contribution/kast/impact 在 CW 保留，
-        // review PR#134 BLOCKER 1：表现指标 ≠ Rating 维度；from-result Preview/Export 同源）。
+        // 表现指标 ≠ Rating 维度；from-result Preview/Export 同源。
         PotentialDamage.apply(c.battles(), tankopedia);
         for (final Battle battle : c.battles()) {
             PerformanceMetricsCalculator.populateBattle(battle);

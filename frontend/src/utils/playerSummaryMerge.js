@@ -1,14 +1,14 @@
 /**
- * CW 统一玩家表数据合并（plan §6/§21；review PR#134 BLOCKER 5）：
+ * CW 统一玩家表数据合并：
  * 以 Replay Aggregate（Replay Core，覆盖全部已解析 CW 场次与玩家）为基底，
  * 按 accountId join League Player Summary（Rating 附加字段）。
  *
- * - join identity 一律 accountId，禁止 array index / nickname / row order（§6.3）。
- * - 缺失侧（有 Aggregate 无 League Rating）保留玩家，League 字段补 null → UI 显示 "--"（§21 Missing side）。
- * - 样本语义分离（BLOCKER 5）：cells.battles = Replay Aggregate 解析场次（不被 League 覆盖）；
+ * - join identity 一律 accountId，禁止 array index / nickname / row order。
+ * - 缺失侧（有 Aggregate 无 League Rating）保留玩家，League 字段补 null → UI 显示 "--"（missing side）。
+ * - 样本语义分离：cells.battles = Replay Aggregate 解析场次（不被 League 覆盖）；
  *   cells.rated_battles = League Player Summary 评分场次（LeaguePlayerSummary.battles，rated-only）。
  * - Performance Metrics（contribution/kast/impact）为跨场 aggregate 样本；League-only 行（aggregate
- *   未覆盖，如单场 CW）取 league playerSummary 携带的跨场值（BLOCKER 1）。
+ *   未覆盖，如单场 CW）取 league playerSummary 携带的跨场值。
  */
 
 /** League Rating 七维列 key（顺序与后端 LeagueColumns.DIM_KEYS 一致）。 */
@@ -23,13 +23,13 @@ export const CW_DIM_KEYS = [
 ]
 
 /** League 特有、aggregate 不持有的列（统一表列定义中前置插入）。
- * rated_battles 也来自 league.playerSummaryColumns（BLOCKER 5/2：评分场次 ≠ 解析场次），
+ * rated_battles 也来自 league.playerSummaryColumns（评分场次 ≠ 解析场次），
  * 必须进入 cw 列 universe（ColumnPicker 可显示/隐藏/reorder）。 */
 const LEAGUE_ONLY_KEYS = new Set(['league_rating', ...CW_DIM_KEYS, 'mvp_count', 'rated_battles'])
 
 /**
  * 合并统一玩家行（union：Aggregate ∪ League，按 accountId）。
- * - 有 Aggregate 无 League：保留玩家，League 字段补 null（UI 显示 "--"，plan §21 Missing side）。
+ * - 有 Aggregate 无 League：保留玩家，League 字段补 null（UI 显示 "--"，missing side）。
  * - 有 League 无 Aggregate（如单场 CW：aggregate 仅在多场时产出）：League 字段保留，Aggregate 字段补 null。
  * @param {Array} aggregateRows resp.aggregate（每行 {team, cells}，cells 含 account_id）
  * @param {Array} playerSummaries league.playerSummaries（每项 accountId/nickname/clan/battles/ratingMedian/dimensionMedians/mvpCount/wins）
@@ -48,7 +48,7 @@ export function mergeCwPlayerRows(aggregateRows, playerSummaries) {
     return { team: row.team, cells, league: summary }
   })
   // League-only（aggregate 未覆盖，如单场 CW）：League 字段展示，Aggregate 字段 null。
-  // battles = 该场景解析场次 == 评分场次（aggregate 为空时同源）；rated_battles 另列（BLOCKER 5）
+  // battles = 该场景解析场次 == 评分场次（aggregate 为空时同源）；rated_battles 另列
   for (const s of byAccount.values()) {
     const cells = {
       account_id: s.accountId,
@@ -74,9 +74,9 @@ function fillLeagueCells(cells, summary, includePerf = false) {
   const dims = summary?.dimensionMedians || []
   CW_DIM_KEYS.forEach((key, i) => { cells[key] = dims[i] ?? null })
   cells.mvp_count = summary?.mvpCount ?? null
-  // 评分场次（rated-only 样本，独立于 aggregate 的解析场次；BLOCKER 5）
+  // 评分场次（rated-only 样本，独立于 aggregate 的解析场次）
   cells.rated_battles = summary?.battles ?? null
-  // 跨场 Performance Metrics（BLOCKER 1）：只给 aggregate 未覆盖的 League-only 行补值
+  // 跨场 Performance Metrics：只给 aggregate 未覆盖的 League-only 行补值
   if (includePerf) {
     cells.contribution = summary?.contribution ?? null
     cells.kast = summary?.kast ?? null

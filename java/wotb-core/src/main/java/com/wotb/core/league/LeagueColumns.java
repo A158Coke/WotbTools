@@ -40,7 +40,7 @@ public final class LeagueColumns {
     public static final String VICTORY_POINTS_EARNED = "victory_points_earned";
     public static final String VICTORY_POINTS_SEIZED = "victory_points_seized";
 
-    /** League 模式默认可见列（玩家/战队/车辆/伤害/助攻/击杀/总 Rating；plan §15）。 */
+    /** League 模式默认可见列（玩家/战队/车辆/伤害/助攻/击杀/总 Rating）。 */
     public static final List<String> DEFAULT_VISIBLE = List.of(
             "nickname", "clan", "tank_name", "damage_dealt", "damage_assisted", "kills", RATING);
 

@@ -363,7 +363,17 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.ai-action-row { margin-top: 16px; }
+/* AI Review Workspace 唯一 width owner：AI Action / Error / Streaming / Analysis Result
+   全部共享同一 left/right edge 与 max-width；子组件不再各自决定页面宽度。 */
+.ai-review-panel {
+  width: min(1100px, 100%);
+  margin-inline: auto;
+}
+.ai-action-row {
+  display: flex;
+  align-items: center;
+  margin: 16px 0;
+}
 .ws-note { margin: 18px 4px; color: var(--text-muted); font-size: .85rem; }
 
 /* 流式生成面板：阶段状态 + 主复盘 token 滚动预览 */

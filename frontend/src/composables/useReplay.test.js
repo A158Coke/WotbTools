@@ -489,8 +489,8 @@ describe('useReplay initial result tab (P0: activeTab must point to a renderable
     expect(replay.activeTab.value).toBe('aggregate')
   })
 
-  it('Test C: 多场 + aggregate 空 + league 存在 → READY 后 activeTab=aggregate（不 fallback 到 b0）', async () => {
-    readyWith({ ...base, battles: twoBattles, aggregate: [], league })
+  it('Test C: 多场 + aggregate 空 + leagueMode=true → READY 后 activeTab=aggregate（不 fallback 到 b0）', async () => {
+    readyWith({ ...base, battles: twoBattles, aggregate: [], league, leagueMode: true })
     await replay.startProcessingJob()
     await vi.advanceTimersByTimeAsync(0)
     await vi.advanceTimersByTimeAsync(1500)
@@ -507,18 +507,18 @@ describe('useReplay initial result tab (P0: activeTab must point to a renderable
 
   it('chooseInitialResultTab 纯函数：所有已知 response 的 activeTab 都指向真实 panel（invariant）', () => {
     const cases = [
-      { result: { battles: twoBattles, aggregate: [], league: null }, expectTab: 'b0' },
-      { result: { battles: twoBattles, aggregate: [{ cells: {} }], league: null }, expectTab: 'aggregate' },
-      { result: { battles: twoBattles, aggregate: [], league }, expectTab: 'aggregate' },
-      { result: { battles: [twoBattles[0]], aggregate: [], league: null }, expectTab: 'b0' },
-      { result: { battles: [], aggregate: [], league: null }, expectTab: 'aggregate' }
+      { result: { battles: twoBattles, aggregate: [], leagueMode: false }, expectTab: 'b0' },
+      { result: { battles: twoBattles, aggregate: [{ cells: {} }], leagueMode: false }, expectTab: 'aggregate' },
+      { result: { battles: twoBattles, aggregate: [], league, leagueMode: true }, expectTab: 'aggregate' },
+      { result: { battles: [twoBattles[0]], aggregate: [], leagueMode: false }, expectTab: 'b0' },
+      { result: { battles: [], aggregate: [], leagueMode: false }, expectTab: 'aggregate' }
     ]
     for (const { result, expectTab } of cases) {
       const tab = chooseInitialResultTab(result)
       expect(tab).toBe(expectTab)
       if (tab === 'aggregate') {
         // aggregate 有真实 panel 或（空结果）由页面空态兜底——绝不允许「指向不存在 panel 导致空白」
-        const panelExists = !!result.league || (result.aggregate || []).length > 0
+        const panelExists = result.leagueMode === true || (result.aggregate || []).length > 0
         const emptyStateCovers = !(result.battles || []).length && !panelExists
         expect(panelExists || emptyStateCovers).toBe(true)
       } else {

@@ -12,7 +12,7 @@ import java.util.function.ToDoubleFunction;
 /**
  * League Rating 计算器（纯数学、无 Spring、无副作用）。
  *
- * <p>只消费当前回放解析出的权威事实（plan §5），不使用 Tankopedia HP、历史均值、
+ * <p>只消费当前回放解析出的权威事实，不使用 Tankopedia HP、历史均值、
  * Potential Damage、XP/Credits、AI 或外部统计。七个维度合计满分 1000；
  * 胜方最终分 ×1.05（封顶 1000），败方不扣分。</p>
  *

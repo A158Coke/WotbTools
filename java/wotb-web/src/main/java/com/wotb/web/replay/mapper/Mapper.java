@@ -107,7 +107,7 @@ public final class Mapper {
     // ---- League Rating 列定义（key 单一来源 LeagueColumns；显示名前端三语 / 导出中文） ----
 
     /** League 模式单场玩家列：标准列（含 contribution/kast/impact，Performance Metrics 保留在 CW）
-     * + Rating 维度 + 占点原始字段（review PR#134 BLOCKER 1：旧指标是 Replay Performance Metrics，
+     * + Rating 维度 + 占点原始字段（contribution/kast/impact 是 Replay Performance Metrics，
      * 不是 League Rating 维度，必须保留在 CW 单场表，不得进入七维 Rating/Radar）。 */
     public static List<ColumnDef> leaguePlayerColumns() {
         final List<ColumnDef> out = new ArrayList<>();
@@ -123,7 +123,7 @@ public final class Mapper {
             out.add(new ColumnDef(key, true));
         }
         out.add(new ColumnDef(LeagueColumns.VICTORY_POINTS_EARNED, true));
-        // victory_points_seized 保留为 backend fact，CW Rating 主 UI 不展示（plan §5.3）
+        // victory_points_seized 保留为 backend fact，CW Rating 主 UI 不展示
         return out;
     }
 
@@ -137,12 +137,12 @@ public final class Mapper {
                     LeagueColumns.dimMax(d), false, false, "rating"));
         }
         out.add(new LeagueColumnDef(LeagueColumns.VICTORY_POINTS_EARNED, true, 0, false, false, "battle"));
-        // victory_points_seized 不进入 Rating 列系统（backend fact 保留，UI 不展示，plan §5.3）
+        // victory_points_seized 不进入 Rating 列系统（backend fact 保留，UI 不展示）
         return out;
     }
 
     /** League 模式汇总列：标准汇总列完整保留（含跨场 contribution/kast/impact；
-     * review PR#134 BLOCKER 1：Performance Metrics 属于 Replay 数据，CW 汇总表必须可显示）。 */
+     * Performance Metrics 属于 Replay 数据，CW 汇总表必须可显示）。 */
     public static List<ColumnDef> leagueAggregateColumns() {
         return aggregateColumns();
     }
@@ -153,7 +153,7 @@ public final class Mapper {
         out.add(new ColumnDef("nickname", false));
         out.add(new ColumnDef("clan", false));
         out.add(new ColumnDef("battles", true));
-        // 评分场次（rated-only 样本，与 Replay Aggregate 的解析场次 battles 分开；review PR#134 BLOCKER 5/2）
+        // 评分场次（rated-only 样本，与 Replay Aggregate 的解析场次 battles 分开）
         out.add(new ColumnDef("rated_battles", true));
         out.add(new ColumnDef(LeagueColumns.RATING, true));
         for (final String key : LeagueColumns.DIM_KEYS) {
@@ -164,7 +164,7 @@ public final class Mapper {
         out.add(new ColumnDef("damage_total", true));
         out.add(new ColumnDef("assist_total", true));
         out.add(new ColumnDef("kills_total", true));
-        // 跨场 Performance Metrics（与 resp.aggregate 同一全部已解析场次样本，review PR#134 BLOCKER 1）
+        // 跨场 Performance Metrics（与 resp.aggregate 同一全部已解析场次样本）
         out.add(new ColumnDef("contribution", true));
         out.add(new ColumnDef("kast", true));
         out.add(new ColumnDef("impact", true));
@@ -196,7 +196,7 @@ public final class Mapper {
      * @param league    该场评分结果；Rating-ineligible 场次为 null（Battle 仍正常展示，
      *                  Rating 列留空，plan：解析有效性 ≠ Rating 资格）
      * @param leagueMode 整个批次是否为 League Rating 模式（决定是否注入 Rating 列元数据 /
-     *                   CW UI 语义；contribution/kast/impact 保留，review PR#134 BLOCKER 1；
+     *                   CW UI 语义；contribution/kast/impact 保留；
      *                   Rating-ineligible 场次 league==null 但 leagueMode 仍为 true）
      */
     public static BattleDto toBattle(final Battle b, final String sourceName, final Tankopedia tp,
@@ -215,7 +215,7 @@ public final class Mapper {
             final Map<String, Object> cells = new LinkedHashMap<>();
             for (final Columns.Column c : Columns.PLAYER) {
                 // 单场 Performance Metrics（contribution/kast/impact）在 League 模式同样保留
-                // （review PR#134 BLOCKER 1：表现指标 ≠ Rating 维度；由调用方 populateBattle 回填）
+                // （表现指标 ≠ Rating 维度；由调用方 populateBattle 回填）
                 cells.put(c.key(), playerValue(c, p));
             }
             if (league != null) {
@@ -328,7 +328,7 @@ public final class Mapper {
 
     /**
      * 由已处理的 authoritative Battle 列表构建完整 Preview 响应（Preview 与
-     * Replay Processing Job result 共用同一 DTO 构建，plan §21）。
+     * Replay Processing Job result 共用同一 DTO 构建）。
      *
      * <p><b>只读消费契约（review BLOCKER 3）</b>：battles 必须已是完整 facts 管线产出
      * （Replays.collect + processFull + PotentialDamage + populateBattle 各一次），
@@ -341,7 +341,7 @@ public final class Mapper {
     /**
      * League 模式：battles 为<b>全部</b>成功解析的 Battle（含 Rating-ineligible 场次），
      * 每场 Rating 经 {@link LeagueRatingBatch#resultFor} 按 arenaId identity 绑定
-     * （不依赖数组 index——battles.size() 可大于 battleResults.size()，plan §9）。
+     * （不依赖数组 index——battles.size() 可大于 battleResults.size()）。
      */
     public static PreviewResponse toPreviewResponse(final List<Battle> battles,
                                                     final List<String> battleSourceNames,
@@ -354,7 +354,7 @@ public final class Mapper {
 
     /**
      * 完整 Preview 构建：league != null → League 模式；否则普通模式。
-     * leagueUnavailableCode 非 null（混合批次 MIXED_LEAGUE_AND_STANDARD_REPLAYS，plan §21）
+     * leagueUnavailableCode 非 null（混合批次 MIXED_LEAGUE_AND_STANDARD_REPLAYS）
      * 时按普通模式输出 battles/aggregate，同时携带 League 不可用提示码。
      */
     public static PreviewResponse toPreviewResponse(final List<Battle> battles,
@@ -372,9 +372,9 @@ public final class Mapper {
         }
         // 基础 Replay Aggregate 属于 Replay Core：无论 League Rating 是否成功，
         // 只要是多场（跨场汇总语义），就必须输出标准基础汇总——League Rating Summary
-        // 是附加分析，不替代基础汇总（plan §4/§5）。League 模式的 aggregateColumns 保留
-        // 跨场 contribution/kast/impact（review PR#134 BLOCKER 1：Performance Metrics 在 CW 可显示）。
-        // review PR#134 BLOCKER 2（第三轮）：CW/League 单场也生成基础 Replay Aggregate row——
+        // 是附加分析，不替代基础汇总。League 模式的 aggregateColumns 保留
+        // 跨场 contribution/kast/impact（Performance Metrics 在 CW 可显示）。
+        // CW/League 单场也生成基础 Replay Aggregate row——
         // 单场 CW Unified Summary 需要 damage_avg/assisted_avg/kills_avg/earned_avg 等
         // Replay Core 权威事实（全部可由该场结算得出，禁止伪装成 unavailable）；
         // Standard 单场保持旧语义（aggregate 为空）。aggregate 空列表时 toAggregate 自然为空。

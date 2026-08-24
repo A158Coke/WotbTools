@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PlayerRatingRadar from './PlayerRatingRadar.vue'
 import { CW_DIM_KEYS } from '../utils/playerSummaryMerge.js'
+import { leagueMaxByKey } from '../utils/helpers.js'
 import {
   RADAR_METRIC_DEFS,
   RADAR_AVAILABLE_KEYS,
@@ -14,20 +15,23 @@ import {
 } from '../utils/radarMetrics.js'
 
 /**
- * 选手详情 Side Drawer（plan §8/§9/§16；review PR#134 BLOCKER 4/6）。
- * - position: fixed 右侧 overlay，不占 Table 布局空间（§8.4/§15）。
- * - 打开时 focus 关闭按钮；Escape / × / backdrop 关闭；关闭后 focus 回到触发行（§16）。
- * - selection identity = accountId（§8.7）：排序/刷新后由父组件按 accountId 重新 resolve 数据。
- * - scope 语义（BLOCKER 4）：summary = 当前批次中位数（Rating 中位数 + 七维中位数 + 跨场
+ * 选手详情 Side Drawer。
+ * - position: fixed 右侧 overlay，不占 Table 布局空间。
+ * - 打开时 focus 关闭按钮；Escape / × / backdrop 关闭；关闭后 focus 回到触发行。
+ * - selection identity = accountId：排序/刷新后由父组件按 accountId 重新 resolve 数据。
+ * - scope 语义：summary = 当前批次中位数（Rating 中位数 + 七维中位数 + 跨场
  *   Performance Metrics + 比赛事实）；battle = 本场表现（单场 Rating + 本场 Performance + 单场 facts）。
- * - Radar（BLOCKER 6）：默认七维，用户可自定义指标/顺序（Radar Metric Registry，presentation-only，
+ * - Radar：默认七维，用户可自定义指标/顺序（Radar Metric Registry，presentation-only，
  *   独立于 Table ColumnPicker，独立 localStorage）；axis 缺失 → '--'，不冒充 0/0%。
+ *   League 维度归一化使用后端 resp.league.columns 满分 metadata（key/max），不复制常量。
  */
 const props = defineProps({
-  /** 当前选中上下文；null = 关闭（§34）。 */
+  /** 当前选中上下文；null = 关闭。 */
   context: { type: Object, default: null },
   /** Drawer 标题区域数据（父组件已按 context 解析好当前行）。 */
   player: { type: Object, default: null },
+  /** League Rating 列满分元数据（resp.league.columns：key → max；Radar 归一化唯一事实源）。 */
+  leagueColumns: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['close'])
 const { t } = useI18n()
@@ -37,8 +41,8 @@ const closeBtn = ref(null)
 
 const isSummary = computed(() => props.context?.scope === 'summary')
 
-/** 顶部 Rating 信息（null/undefined/非有限 → '--'，不冒充 0；plan §8.6 缺失侧）。
- * 只显示整数（927），不显示 /1000 冗余完成度（review PR#134 BLOCKER 1）。 */
+/** 顶部 Rating 信息（null/undefined/非有限 → '--'，不冒充 0）。
+ * 只显示整数（927），不显示 /1000 冗余完成度。 */
 function ratingLine() {
   const p = props.player
   if (!p) return { rating: '--' }
@@ -49,8 +53,8 @@ function ratingLine() {
   return { rating: Math.round(v) }
 }
 
-// ---- Radar Metric Selection（BLOCKER 6）：默认七维，用户可自定义指标与顺序 ----
-// 偏好独立于 Table ColumnPicker（BLOCKER 6.4），Summary/Battle 共用同一配置（6.11）。
+// ---- Radar Metric Selection：默认七维，用户可自定义指标与顺序 ----
+// 偏好独立于 Table ColumnPicker，Summary/Battle 共用同一配置。
 const radarOrder = ref(loadRadarPreference())
 const showRadarPicker = ref(false)
 const radarHint = ref('')
@@ -92,7 +96,11 @@ function moveRadarMetric(key, dir) {
   persistRadarOrder()
 }
 
-/** 雷达轴（顺序 = 用户偏好；league 维度取 dimensionMedians[i]，performance 取 cells[key]）。 */
+/** League 维度满分 metadata（resp.league.columns：key → max），Radar 归一化使用，不复制后端常量。 */
+const maxByKey = computed(() => leagueMaxByKey(props.leagueColumns))
+
+/** 雷达轴（顺序 = 用户偏好；league 维度取 dimensionMedians[i] 且按后端 column.max 归一化，
+ *  performance 取 cells[key] 按 /100）。 */
 const radarMetrics = computed(() => {
   const p = props.player
   if (!p) return []
@@ -101,14 +109,12 @@ const radarMetrics = computed(() => {
       const def = RADAR_METRIC_DEFS[key]
       if (!def) return null
       let raw
-      let dimIndex
       if (def.source === 'league') {
-        dimIndex = CW_DIM_KEYS.indexOf(key)
-        raw = p.dimensionMedians?.[dimIndex]
+        raw = p.dimensionMedians?.[CW_DIM_KEYS.indexOf(key)]
       } else {
         raw = p.cells?.[key]
       }
-      const resolved = resolveRadarMetric(key, raw, dimIndex)
+      const resolved = resolveRadarMetric(key, raw, maxByKey.value)
       return { ...resolved, label: t(resolved.label) }
     })
     .filter(Boolean)
@@ -118,7 +124,7 @@ const radarAvailableCount = computed(() => radarMetrics.value.filter(m => m.avai
 const radarHasMissing = computed(() =>
   radarMetrics.value.length > 0 && radarAvailableCount.value < radarMetrics.value.length)
 
-// ---- 表现指标（Performance Metrics；BLOCKER 4：独立区域，不是 Rating）----
+// ---- 表现指标（Performance Metrics；独立区域，不是 Rating）----
 const perfFacts = computed(() => {
   const p = props.player
   if (!p) return []
@@ -131,7 +137,7 @@ const perfFacts = computed(() => {
   })
 })
 
-// ---- 比赛事实（BLOCKER 4.1/4.2：summary 批次中位数样本；battle 单场 facts）----
+// ---- 比赛事实（summary 批次中位数样本；battle 单场 facts）----
 const facts = computed(() => {
   const p = props.player
   if (!p) return []
@@ -173,7 +179,7 @@ watch(open, (v) => {
   if (v) {
     nextTick(() => closeBtn.value?.focus?.())
   }
-  // 关闭后 focus 回到触发行由父组件负责（§16）
+  // 关闭后 focus 回到触发行由父组件负责
 })
 
 onMounted(() => {
@@ -202,7 +208,7 @@ onBeforeUnmount(() => {
           <span class="pd-rating-value">{{ ratingLine().rating }}</span>
         </div>
 
-        <!-- 七维 / 自定义 Radar（BLOCKER 6） -->
+        <!-- 七维 / 自定义 Radar -->
         <div class="pd-section-row">
           <div class="pd-section">{{ isSummary ? t('league.drawer.radar_title_summary') : t('league.drawer.radar_title_battle') }}</div>
           <button class="pd-linkbtn" data-testid="radar-settings" @click="showRadarPicker = !showRadarPicker">
@@ -232,7 +238,7 @@ onBeforeUnmount(() => {
         <div v-if="radarAvailableCount === 0" class="radar-empty" data-testid="radar-empty">{{ t('league.drawer.radar_unavailable') }}</div>
         <PlayerRatingRadar v-else :metrics="radarMetrics" />
 
-        <!-- 表现指标（BLOCKER 4：Contribution/KAST/Impact 独立区域，不是 Rating） -->
+        <!-- 表现指标（Contribution/KAST/Impact 独立区域，不是 Rating） -->
         <div class="pd-section">{{ t('league.drawer.perf_title') }}</div>
         <dl class="pd-facts" data-testid="perf-facts">
           <template v-for="(f, i) in perfFacts" :key="'p' + i">

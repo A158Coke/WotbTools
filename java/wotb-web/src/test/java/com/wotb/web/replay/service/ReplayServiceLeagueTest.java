@@ -77,7 +77,7 @@ class ReplayServiceLeagueTest {
         assertNotNull(r.battles().getFirst().league());
         assertNotNull(r.battles().getFirst().league().team1());
         assertNotNull(r.battles().getFirst().league().team2());
-        // review PR#134 BLOCKER 1：Performance Metrics（contribution/kast/impact）必须保留在 CW 单场
+        // Performance Metrics（contribution/kast/impact）必须保留在 CW 单场
         assertTrue(r.playerColumns().stream().anyMatch(c -> c.key().equals("contribution")));
         assertTrue(r.playerColumns().stream().anyMatch(c -> c.key().equals("kast")));
         assertTrue(r.playerColumns().stream().anyMatch(c -> c.key().equals("impact")));
@@ -88,7 +88,7 @@ class ReplayServiceLeagueTest {
         assertTrue(r.battles().getFirst().players().getFirst().cells().containsKey("contribution"));
         assertTrue(r.battles().getFirst().players().getFirst().cells().containsKey("kast"));
         assertTrue(r.battles().getFirst().players().getFirst().cells().containsKey("impact"));
-        // review PR#134 BLOCKER 3：leagueMode 与 league 结果存在性分离（CW 批次 leagueMode=true）
+        // leagueMode 与 league 结果存在性分离（CW 批次 leagueMode=true）
         assertTrue(r.leagueMode(), "CW 批次 leagueMode 必须为 true（即使个别场次 Rating-ineligible）");
         // 固定列元数据
         assertTrue(r.league().columns().stream().anyMatch(c -> c.key().equals("league_rating") && c.fixed()));
@@ -245,7 +245,7 @@ class ReplayServiceLeagueTest {
     void leaguePreviewCarriesBaseReplayAggregateAlongsideLeagueSummary() throws Exception {
         // plan §5/§6：League Rating Summary 是附加分析，不替代基础 Replay Aggregate。
         // 多场 League 批次的 resp.aggregate 必须包含标准基础汇总（0 场可评分 ≠ Replay 没数据）；
-        // review PR#134 BLOCKER 1：League aggregateColumns 保留跨场 contribution/kast/impact。
+        // League aggregateColumns 保留跨场 contribution/kast/impact。
         final Battle good = LeagueTestReplays.sevenVsSeven(1);
         good.arenaId = "111";
         good.arenaBonusType = 2;
@@ -260,7 +260,7 @@ class ReplayServiceLeagueTest {
         assertEquals("LEAGUE_RATING", r.league().mode());
         assertFalse(r.aggregate().isEmpty(), "League 模式也必须输出基础 Replay Aggregate（跨场汇总）");
         assertFalse(r.league().playerSummaries().isEmpty(), "League 汇总同时存在（不是二选一）");
-        // review PR#134 BLOCKER 1：CW 汇总列必须保留跨场 contribution/kast/impact
+        // CW 汇总列必须保留跨场 contribution/kast/impact
         assertTrue(r.aggregateColumns().stream().anyMatch(c -> c.key().equals("contribution")),
                 "CW 汇总列必须含跨场 contribution（Performance Metrics 保留）");
         assertTrue(r.aggregateColumns().stream().anyMatch(c -> c.key().equals("kast")));
@@ -272,7 +272,7 @@ class ReplayServiceLeagueTest {
         // league playerSummary 列与值含跨场 Performance Metrics
         assertTrue(r.league().playerSummaryColumns().stream().anyMatch(c -> c.key().equals("kast")),
                 "league.playerSummaryColumns 必须含 kast");
-        // review PR#134 BLOCKER 2：rated_battles 必须进入生产 playerSummaryColumns（ColumnDef 链）
+        // rated_battles 必须进入生产 playerSummaryColumns（ColumnDef 链）
         assertTrue(r.league().playerSummaryColumns().stream().anyMatch(c -> c.key().equals("rated_battles")),
                 "league.playerSummaryColumns 必须含 rated_battles（评分场次列契约）");
         assertTrue(r.league().playerSummaries().stream()
@@ -280,7 +280,7 @@ class ReplayServiceLeagueTest {
                 "league.playerSummaries 必须携带跨场 impact");
     }
 
-    // ---- review PR#134 BLOCKER 2（第三轮）：CW/League 单场也生成基础 Replay Aggregate row ----
+    // ---- CW/League 单场也生成基础 Replay Aggregate row ----
 
     @Test
     void singleCwBattlePreviewCarriesBaseAggregateFacts() throws Exception {
@@ -331,7 +331,7 @@ class ReplayServiceLeagueTest {
 
     @Test
     void standardSingleBattleAggregateStaysEmpty() throws Exception {
-        // Standard（Random）单场：aggregate 保持空（旧语义；review PR#134 BLOCKER 2 不得回归）
+        // Standard（Random）单场：aggregate 保持空（旧语义；不得回归）
         final Battle battle = LeagueTestReplays.sevenVsSeven(1);
         battle.arenaId = "333";
         battle.arenaBonusType = 1;

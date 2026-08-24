@@ -612,8 +612,8 @@ public class ReplayExportJobService {
             throw new NoValidReplaysException();
         }
         PotentialDamage.apply(c.battles(), tankopedia);
-        // 单场 Performance Metrics 回填（League 单场工作簿含 contribution/kast/impact，
-        // review PR#134 BLOCKER 1；from-result 路径的 dataset 已在创建时 enrich）
+        // 单场 Performance Metrics 回填（League 单场工作簿含 contribution/kast/impact；
+        // from-result 路径的 dataset 已在创建时 enrich）
         for (final Battle battle : c.battles()) {
             PerformanceMetricsCalculator.populateBattle(battle);
         }
@@ -625,7 +625,7 @@ public class ReplayExportJobService {
         job.trackArtifact(artifact);
         try (OutputStream out = Files.newOutputStream(artifact)) {
             if (c.mode() == LeagueRatingMode.LEAGUE_RATING) {
-                // League Rating：复用同一评分 core + 单场 Performance Metrics（review PR#134 BLOCKER 1）
+                // League Rating：复用同一评分 core + 单场 Performance Metrics
                 if (c.battles().size() == 1) {
                     // identity 绑定（plan §9）；未评分单场回退普通单场工作簿
                     final LeagueRatingResult single =
@@ -761,7 +761,7 @@ public class ReplayExportJobService {
         int processed = 0;
         int exported = 0;
         int skipped = 0;
-        // 单场 Performance Metrics 回填（League 单场工作簿含 contribution/kast/impact，review PR#134 BLOCKER 1）
+        // 单场 Performance Metrics 回填（League 单场工作簿含 contribution/kast/impact）
         for (final Battle battle : c.battles()) {
             PerformanceMetricsCalculator.populateBattle(battle);
         }
