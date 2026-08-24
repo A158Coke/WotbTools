@@ -22,6 +22,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.OffsetDateTime;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -30,6 +31,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -79,8 +81,35 @@ class HundredWargamingSubmissionServiceTest {
                 USER, new HundredWargamingSubmissionRequest(VEHICLE, 1_234, 7));
 
         assertThat(result.decision()).isEqualTo("AUTO_APPROVED");
+        verify(userProfileService).syncFromLogin(USER);
         verify(submissionService).validateWargamingPreflight(USER, VEHICLE);
         verify(gateway).fetch(WargamingServer.ASIA, ACCOUNT, VEHICLE);
+    }
+
+    @Test
+    void firstTrustedLoginSyncsMissingProfileBeforeSubmitting() {
+        login(true, "ASIA", ACCOUNT, "PlayerOne");
+        final AtomicReference<Optional<UserProfile>> profileState = new AtomicReference<>(Optional.empty());
+        when(userProfileService.findEntityByKeycloakUserId(USER)).thenAnswer(invocation -> profileState.get());
+        doAnswer(invocation -> {
+            profileState.set(Optional.of(profile()));
+            return null;
+        }).when(userProfileService).syncFromLogin(USER);
+        final WargamingOfficialStats official = stats(5_000, 100, 390_000);
+        when(gateway.fetch(WargamingServer.ASIA, ACCOUNT, VEHICLE)).thenReturn(official);
+        when(submissionService.createWargamingSubmission(
+                eq(USER), eq(3900), eq(100), eq(official), any(OffsetDateTime.class)))
+                .thenReturn(new HundredWargamingSubmissionResult(
+                        9L, "CURRENT", "AUTO_APPROVED", 3900, 100));
+
+        final HundredWargamingSubmissionResult result = service.create(
+                USER, new HundredWargamingSubmissionRequest(VEHICLE, 3900, 100));
+
+        assertThat(result.decision()).isEqualTo("AUTO_APPROVED");
+        verify(userProfileService).syncFromLogin(USER);
+        verify(gateway).fetch(WargamingServer.ASIA, ACCOUNT, VEHICLE);
+        verify(submissionService).createWargamingSubmission(
+                eq(USER), eq(3900), eq(100), eq(official), any(OffsetDateTime.class));
     }
 
     @Test
@@ -90,6 +119,7 @@ class HundredWargamingSubmissionServiceTest {
                 USER, new HundredWargamingSubmissionRequest(VEHICLE, 3900, 100)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_WARGAMING_IDENTITY_REQUIRED");
+        verify(userProfileService, never()).syncFromLogin(USER);
         verify(gateway, never()).fetch(any(), anyLong(), anyLong());
 
         login(true, "ASIA", ACCOUNT, "PlayerOne");
@@ -100,6 +130,25 @@ class HundredWargamingSubmissionServiceTest {
                 USER, new HundredWargamingSubmissionRequest(VEHICLE, 3900, 100)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_WARGAMING_IDENTITY_MISMATCH");
+        verify(submissionService, never()).createWargamingSubmission(
+                anyString(), anyInt(), anyInt(), any(), any());
+    }
+
+    @Test
+    void profileSyncFailureNeverQueriesWargamingOrCreatesSubmission() {
+        login(true, "ASIA", ACCOUNT, "PlayerOne");
+        doAnswer(invocation -> {
+            throw new IllegalArgumentException("PROFILE_REGION_MISMATCH");
+        }).when(userProfileService).syncFromLogin(USER);
+
+        assertThatThrownBy(() -> service.create(
+                USER, new HundredWargamingSubmissionRequest(VEHICLE, 3900, 100)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("PROFILE_REGION_MISMATCH");
+
+        verify(userProfileService, never()).findEntityByKeycloakUserId(USER);
+        verify(gateway, never()).fetch(any(), anyLong(), anyLong());
+        verify(submissionService, never()).validateWargamingPreflight(anyString(), anyLong());
         verify(submissionService, never()).createWargamingSubmission(
                 anyString(), anyInt(), anyInt(), any(), any());
     }

@@ -16,7 +16,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
-/** WG 官方统计链路：可信身份交叉校验 → 外部查询 → 零文件 submission 决策。 */
+/** WG 官方统计链路：可信 JWT → Profile 同步与交叉校验 → 外部查询 → 零文件 submission 决策。 */
 @Service
 public class HundredWargamingSubmissionService {
 
@@ -40,7 +40,7 @@ public class HundredWargamingSubmissionService {
         if (request == null || request.averageDamage() <= 0 || request.battleCount() <= 0) {
             throw new IllegalArgumentException("HUNDRED_INVALID_CLAIM");
         }
-        final TrustedIdentity identity = requireTrustedIdentity(userId);
+        final TrustedIdentity identity = syncAndRequireTrustedIdentity(userId);
         // cheap preflight 在外部调用前完成；事务写入阶段仍会重检 PENDING/Tier X。
         submissionService.validateWargamingPreflight(userId, request.vehicleId());
 
@@ -65,22 +65,30 @@ public class HundredWargamingSubmissionService {
                 OffsetDateTime.now(ZoneOffset.UTC));
     }
 
-    private TrustedIdentity requireTrustedIdentity(final String userId) {
+    private TrustedIdentity syncAndRequireTrustedIdentity(final String userId) {
+        final TrustedIdentity identity = requireTrustedJwtIdentity();
+        // 首次 WG 登录尚未访问个人中心时，同步创建 Profile；失败直接终止，绝不查询 WG stats。
+        userProfileService.syncFromLogin(userId);
+        final UserProfile profile = userProfileService.findEntityByKeycloakUserId(userId)
+                .orElseThrow(() -> new IllegalArgumentException("HUNDRED_WARGAMING_IDENTITY_REQUIRED"));
+        if (!userId.equals(profile.getKeycloakUserId())
+                || !"WARGAMING".equals(profile.getWotbAccountSource())
+                || !identity.server().name().equals(profile.getWotbServer())
+                || profile.getWotbAccountId() == null
+                || identity.accountId() != profile.getWotbAccountId()
+                || profile.getWotbAccountVerifiedAt() == null
+                || !identity.nickname().equals(normalized(profile.getWotbNickname()))) {
+            throw new IllegalArgumentException("HUNDRED_WARGAMING_IDENTITY_MISMATCH");
+        }
+        return identity;
+    }
+
+    private static TrustedIdentity requireTrustedJwtIdentity() {
         final WargamingServer server = WargamingServer.fromCode(JwtUtil.currentWotbRegion());
         final Long accountId = JwtUtil.currentWotbAccountId();
         final String nickname = normalized(JwtUtil.currentWotbNickname());
         if (!JwtUtil.currentWotbVerified() || server == null || accountId == null || nickname == null) {
             throw new IllegalArgumentException("HUNDRED_WARGAMING_IDENTITY_REQUIRED");
-        }
-        final UserProfile profile = userProfileService.findEntityByKeycloakUserId(userId)
-                .orElseThrow(() -> new IllegalArgumentException("HUNDRED_WARGAMING_IDENTITY_REQUIRED"));
-        if (!userId.equals(profile.getKeycloakUserId())
-                || !"WARGAMING".equals(profile.getWotbAccountSource())
-                || !server.name().equals(profile.getWotbServer())
-                || !accountId.equals(profile.getWotbAccountId())
-                || profile.getWotbAccountVerifiedAt() == null
-                || !nickname.equals(normalized(profile.getWotbNickname()))) {
-            throw new IllegalArgumentException("HUNDRED_WARGAMING_IDENTITY_MISMATCH");
         }
         return new TrustedIdentity(server, accountId, nickname);
     }
