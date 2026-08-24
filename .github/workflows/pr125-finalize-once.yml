@@ -1,17 +1,15 @@
 name: PR125 final post-conflict cleanup
 
 on:
-  push:
-    branches:
-      - fix/dark-theme-ui-regressions
-    paths:
-      - .github/workflows/pr125-finalize-once.yml
+  pull_request:
+    types: [synchronize]
 
 permissions:
   contents: write
 
 jobs:
   finalize:
+    if: github.event.pull_request.number == 125 && github.event.pull_request.head.ref == 'fix/dark-theme-ui-regressions'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,13 +54,11 @@ jobs:
               section = section.replace(anchor, anchor + body, 1)
               return text[:start] + section + text[end:]
 
-          # 1) Keep the global viewport contract aligned with the actual Showcase topbar.
           tokens_path = Path('frontend/src/styles/tokens.css')
           tokens = tokens_path.read_text(encoding='utf-8')
           tokens = replace_exact(tokens, '--topbar-h: 52px;', '--topbar-h: 60px;', 'tokens topbar height')
           tokens_path.write_text(tokens, encoding='utf-8')
 
-          # 2) User-visible version history. main already owns 2.12.18/2.12.19.
           versions_path = Path('frontend/src/data/versions.json')
           versions = json.loads(versions_path.read_text(encoding='utf-8'))
           if not any(item.get('v') == '2.12.20' for item in versions):
@@ -78,7 +74,6 @@ jobs:
               })
               versions_path.write_text(json.dumps(versions, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
-          # 3) Changelogs: only touch the top Unreleased section; preserve WG/Hundred entries already on main.
           product_path = Path('docs/CHANGELOG-PRODUCT.md')
           product = product_path.read_text(encoding='utf-8')
           product_added = (
@@ -101,7 +96,6 @@ jobs:
           tech = insert_unreleased(tech, '### Added', tech_entry, 'PR125：暗色主题收敛 + Replay Workspace + UI regression cleanup', 'technical Added')
           tech_path.write_text(tech, encoding='utf-8')
 
-          # 4) Developer Guide: patch only statements made stale by PR125; do not overwrite WG/Hundred content from main.
           guide_path = Path('docs/DEVELOPER_GUIDE.md')
           guide = guide_path.read_text(encoding='utf-8')
           replacements = [
@@ -130,8 +124,6 @@ jobs:
               guide = replace_exact(guide, ui_anchor, ui_anchor + replay_note, 'guide replay workspace')
 
           guide_path.write_text(guide, encoding='utf-8')
-
-          # The helper must not remain in the PR.
           Path('.github/workflows/pr125-finalize-once.yml').unlink()
           PY
 
