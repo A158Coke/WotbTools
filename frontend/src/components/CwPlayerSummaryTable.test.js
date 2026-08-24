@@ -48,7 +48,11 @@ describe('CwPlayerSummaryTable', () => {
   it('renders rating cells with score/max percentage format', () => {
     const wrapper = mountTable()
     const text = wrapper.text()
-    expect(text).toContain('850 · 85%')
+    // 总 Rating 只显示整数（850），不显示 /1000 冗余完成度（review PR#134 BLOCKER 1）
+    expect(text).toContain('850')
+    expect(text).not.toContain('850 ·')
+    expect(text).not.toContain('85% ·')
+    // 七维仍显示「342 / 400 · 85.5%」
     expect(text).toContain('342 / 400 · 85.5%')
   })
 

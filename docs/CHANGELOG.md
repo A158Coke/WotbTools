@@ -33,7 +33,7 @@
     `:active="activeTab === 'b' + i"`。
   - **文档**：league-rating.md 七维公式/占点不评分/统一表/Drawer/排序、versions.json
     v2.12.27（zh/en/ru）。
-- **PR #134 review 修复（review PR#134 BLOCKER 1–6 + MERGE GATE）**：
+- **PR #134 review 修复（review PR#134 BLOCKER 1–6；browser acceptance 不再是 merge gate）**：
   - **BLOCKER 1 Performance Metrics 保留在 CW**：撤销「League 移除旧三指标」——LeagueColumns
     删除 REMOVED_LEGACY_KEYS；leaguePlayerColumns / leagueAggregateColumns /
     leaguePlayerSummaryColumns 与单场 cells 全部恢复 contribution/kast/impact；preview /
@@ -56,12 +56,32 @@
   - **BLOCKER 5 样本语义**：统一表 cells.battles（解析场次，不被覆盖）+ cells.rated_battles
     （评分场次，LeaguePlayerSummary.battles）；Drawer 与表都分开显示。
   - **BLOCKER 6 自定义 Radar**：新增 utils/radarMetrics.js Radar Metric Registry（League
-    七维 score/max、KAST/Contribution /100、Impact /200 饱和——稳定 batch 无关参考值，
-    display-only）；PlayerRatingRadar 改为动态 metrics 驱动；Drawer 增加「设置指标」面板
+    七维 score/max、KAST/Contribution /100——稳定 batch 无关参考值，display-only）；
+    PlayerRatingRadar 改为动态 metrics 驱动；Drawer 增加「设置指标」面板
     （勾选 + ↑/↓，min 3 / max 8），偏好独立 localStorage（wotb-radar-metric-order），
     Summary/Battle 共用；axis 缺失显示 "--"，partial availability 提示，不影响 Rating。
-  - **MERGE GATE**：浏览器验收清单追加 BLOCKER 2/3/4/5/6 场景（见
-    docs/verification/cw-rating-ui-acceptance.md）；未执行真实浏览器验收不得宣称 MERGE READY。
+  - **browser acceptance 不再是 merge gate**：真实浏览器人工验收从 PR #134 merge gate
+    降级为可选人工 QA 清单（docs/verification/cw-rating-ui-acceptance.md，Optional manual
+    QA checklist）；自动化测试 + exact-head CI 通过即可合并，不再要求人工填写验收记录。
+- **PR #134 review 第二轮修复（review PR#134 BLOCKER 1–4；browser acceptance 已非 merge gate）**：
+  - **总 Rating 只显示整数**：删除「927 · 92.7%」/1000 冗余完成度——BattleTable（玩家单元格 +
+    战队 Rating 概览）、CwPlayerSummaryTable、LeagueSummaryTable（战队汇总）、PlayerDetailDrawer
+    （顶部大号 Rating）、PNG 导出（leagueExportTable）统一只显示整数（927）；七维仍显示
+    「342 / 400 · 85.5%」，Performance Metrics 百分比不受影响。排序/MVP/中位数仍用未取整 raw。
+  - **rated_battles 进入生产 Column contract**：后端 leaguePlayerSummaryColumns() 新增
+    rated_battles ColumnDef；前端 mergeCwPlayerColumns 的 LEAGUE_ONLY_KEYS 纳入
+    rated_battles；CW_SUMMARY_DEFAULT_VISIBLE 默认显示「场次 + 评分场次」——完整链
+    ColumnDef → Preview → merge → useColumns cw scope → ColumnPicker → 统一表 → Drawer。
+  - **Impact 退出 Radar（BLOCKER 3）**：移除 IMPACT_RADAR_REF=200 拍脑袋参考值；Impact 不再是
+    Radar axis candidate（RADAR_METRIC_DEFS / RADAR_AVAILABLE_KEYS 移除），仍完整保留在表格 /
+    Drawer 表现指标区 / 排序 / ColumnPicker / 导出；Registry 扩展点保留，待产品确认稳定
+    normalization 后再注册。
+  - **一级 Workspace tabs UI 修复（BLOCKER 4）**：根因 = .layout-data-workspace .tabs
+    （flex:1 1 460px + 全宽深条背景）误伤 .workspace-tabs（同带 .tabs class）——battle 分栏
+    规则作用域收窄到 .restoolbar .tabs，.workspace-tabs 独立成紧凑单行导航
+    （fit-content、内容驱动高度、按钮垂直居中、active pill 不贴边）；业务切换逻辑不变。
+  - **LeagueSummaryTable 排序修复**：战队汇总行无 cells，league_rating 排序此前全读 undefined
+    （stable 假通过）——新增列 key → 行字段映射（ratingMedian / dimensionMedians），raw 排序生效。
 - **Replay Core / League Rating 业务边界加固（docs/current-plan.md）**：
   - **前端不再把 League Rating 校验失败显示成红色「文件解析失败」**：训练赛/联赛回放无法生成
     Rating 时，结果区改为琥珀色 warning 汇总（League Rating · 可评分 X / N · N 场未生成 Rating
@@ -150,7 +170,7 @@
     aggregate——多场时按标准路径计算并输出基础跨场汇总（Aggregator.aggregate +
     PerformanceMetricsCalculator.compute，同一 Replay Core 数据），League Rating Summary 是附加
     分析而非替代品（resp.aggregate 有数据时 League 模式不再隐藏 AggregateTable）；aggregateColumns
-    仍用 League 变体（不含 contribution/kast/impact，PR #131 列边界不变）。
+    用 League 变体（review PR#134 BLOCKER 1 起保留跨场 contribution/kast/impact）。
   - **汇总人数语义修复**：replayAggregatePlayerCount 一律取 resp.aggregate.length（Replay Core
     基础汇总人数），不再在 League 模式改用 league.playerSummaries.length——0 场可评分 ≠ Replay
     没数据，「汇总（0 名选手）」误导消失。

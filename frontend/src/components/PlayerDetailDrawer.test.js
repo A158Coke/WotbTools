@@ -260,9 +260,9 @@ describe('PlayerDetailDrawer custom Radar (review PR#134 BLOCKER 6)', () => {
   })
 
   it('partial availability：雷达照常绘制 performance axes，并提示部分指标无评分数据（BLOCKER 6.12）', () => {
-    // 用户把 KAST/Impact 加入 Radar；本场 League 维度无评分（null）但 performance 有值
+    // 用户把 KAST/Contribution 加入 Radar；本场 League 维度无评分（null）但 performance 有值
     localStorage.setItem('wotb-radar-metric-order', JSON.stringify(
-      ['kast', 'league_damage_score', 'impact', 'league_kill_score']))
+      ['kast', 'league_damage_score', 'contribution', 'league_kill_score']))
     const mixed = {
       ...BATTLE_PLAYER,
       rating: null,
@@ -271,9 +271,29 @@ describe('PlayerDetailDrawer custom Radar (review PR#134 BLOCKER 6)', () => {
     }
     const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, mixed)
     expect(wrapper.find('[data-testid="radar-partial"]').text()).toBe('league.drawer.radar_partial')
-    // 有 available 轴（kast/impact）→ 雷达照常绘制，轴序一致（League 缺失轴显示 --，不崩溃）
+    // 有 available 轴（kast/contribution）→ 雷达照常绘制，轴序一致（League 缺失轴显示 --，不崩溃）
     const labels = wrapper.find('.radar-stub').text().split(',')
     expect(labels).toEqual(['player_labels.kast', 'player_labels.league_damage_score',
-      'player_labels.impact', 'player_labels.league_kill_score'])
+      'player_labels.contribution', 'player_labels.league_kill_score'])
+  })
+
+  it('Impact 不出现在 Radar picker，但 Performance 区仍显示 Impact（review PR#134 BLOCKER 3）', async () => {
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await wrapper.find('[data-testid="radar-settings"]').trigger('click')
+    const pickerText = wrapper.find('[data-testid="radar-picker"]').text()
+    expect(pickerText).toContain('player_labels.kast')
+    expect(pickerText).toContain('player_labels.contribution')
+    expect(pickerText).not.toContain('player_labels.impact')
+    // 存储的旧偏好含 impact → 加载时被过滤（不崩溃）；过滤后仍 ≥3 轴 → 保留剩余
+    localStorage.setItem('wotb-radar-metric-order',
+      JSON.stringify(['kast', 'impact', 'contribution', 'league_damage_score']))
+    const wrapper2 = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    const labels = wrapper2.find('.radar-stub').text().split(',')
+    expect(labels).toEqual(['player_labels.kast', 'player_labels.contribution',
+      'player_labels.league_damage_score'])
+    // Performance 区仍显示 Impact
+    const perfText = wrapper2.find('[data-testid="perf-facts"]').text()
+    expect(perfText).toContain('player_labels.impact')
+    expect(perfText).toContain('151.2%')
   })
 })

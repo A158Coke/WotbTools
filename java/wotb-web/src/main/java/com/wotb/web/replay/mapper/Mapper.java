@@ -153,6 +153,8 @@ public final class Mapper {
         out.add(new ColumnDef("nickname", false));
         out.add(new ColumnDef("clan", false));
         out.add(new ColumnDef("battles", true));
+        // 评分场次（rated-only 样本，与 Replay Aggregate 的解析场次 battles 分开；review PR#134 BLOCKER 5/2）
+        out.add(new ColumnDef("rated_battles", true));
         out.add(new ColumnDef(LeagueColumns.RATING, true));
         for (final String key : LeagueColumns.DIM_KEYS) {
             out.add(new ColumnDef(key, true));
@@ -193,7 +195,8 @@ public final class Mapper {
      *
      * @param league    该场评分结果；Rating-ineligible 场次为 null（Battle 仍正常展示，
      *                  Rating 列留空，plan：解析有效性 ≠ Rating 资格）
-     * @param leagueMode 整个批次是否为 League Rating 模式（决定是否移除旧三指标列；
+     * @param leagueMode 整个批次是否为 League Rating 模式（决定是否注入 Rating 列元数据 /
+     *                   CW UI 语义；contribution/kast/impact 保留，review PR#134 BLOCKER 1；
      *                   Rating-ineligible 场次 league==null 但 leagueMode 仍为 true）
      */
     public static BattleDto toBattle(final Battle b, final String sourceName, final Tankopedia tp,

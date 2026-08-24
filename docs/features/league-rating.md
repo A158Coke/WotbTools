@@ -36,7 +36,9 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
   victoryPointsEarned、victoryPointsSeized、accountId、nickname、clan、arenaId、arenaBonusType。
 - **Rating 计算不用** Tankopedia HP / 期望值、Potential Damage、XP/Credits、AI、历史上传、
   外部 API 或全服统计（contribution/kast/impact 是 Replay Performance Metrics，**保留在
-  CW 单场/汇总表与选手 Drawer**，只作表现展示，不进七维 Rating/Radar，review PR#134 BLOCKER 1）。
+  CW 单场/汇总表与选手 Drawer**，只作表现展示，不进七维 Rating；contribution/kast 可经用户
+  选择进入自定义 Radar（BLOCKER 6），Impact 暂不入 Radar（BLOCKER 3：无稳定 normalization
+  contract），review PR#134 BLOCKER 1/3/6）。
 - 全部结果（评分、战队名称覆盖、MVP）只存在于当前 HTTP 请求与前端页面内存中；
   刷新 / 重新上传 / 服务重启后不保留。不写数据库、localStorage、服务端文件。
 - 复用 `TradeFacts`（±5 秒互换窗口，时间窗口启发式，非精确 killer attribution）。
@@ -99,8 +101,9 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
   或占点时间线。
 - 某项指标全场为零 → 该维度全员 0，不把权重重新分配。
 - **最终分**：base = 七维之和；胜方 min(1000, base × 1.05)，败方 = base（不扣分）。
-  最终计算保留高精度；API 返回未取整值；页面总分显示整数 + 完成度（如 `927 · 92.7%`），
-  维度显示 `342 / 400 · 85.5%`。排名 / MVP / 中位数一律使用未取整分数。
+  最终计算保留高精度；API 返回未取整值；**总 Rating 页面只显示整数（如 `927`）**，
+  不显示 /1000 换算的冗余完成度百分比（review PR#134 BLOCKER 1：`927 · 92.7%` 会被误读为
+  百分位/胜率）；七维维度仍显示 `342 / 400 · 85.5%`。排名 / MVP / 中位数一律使用未取整分数。
 
 ## MVP 与战队 Rating
 
@@ -164,13 +167,17 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
   /拖拽/持久化基础设施，不造第二套系统。
 - League 默认可见列：单场表 = 玩家/战队/车辆/伤害/助攻/击杀/总 Rating（contribution/kast/impact
   在列 universe 中，可经 ColumnPicker 显示）；CW 统一玩家表默认 = 玩家/总 Rating/七维/MVP/
-  场次/胜场/胜率/场均伤害/场均助攻/场均击杀/获取点数每场/表现指标。列名与原始字段区分
+  场次/评分场次/胜场/胜率/场均伤害/场均助攻/场均击杀/获取点数每场/表现指标
+  （rated_battles 进入生产 Column contract：leaguePlayerSummaryColumns → mergeCwPlayerColumns
+  → useColumns cw scope → ColumnPicker，review PR#134 BLOCKER 2）。列名与原始字段区分
   （「伤害」vs「伤害评分」）。
 - **选手 Drawer 雷达**（review PR#134 BLOCKER 6）：默认七维 League Rating，用户可自定义
-  指标（七维 + contribution/kast/impact）与顺序（min 3 / max 8），偏好独立 localStorage
-  （wotb-radar-metric-order），Summary 与 Battle 共用；normalization 由 Radar Metric
-  Registry（utils/radarMetrics.js）统一提供（League = score/max；KAST/Contribution = /100；
-  Impact = /200 饱和，稳定参考值，display-only）；axis 缺失显示 "--"，不冒充 0/0%。
+  指标（七维 + contribution/kast；**Impact 不入 Radar**——暂无已确认的稳定 normalization
+  contract，review PR#134 BLOCKER 3，仍完整保留在表格/Drawer 表现指标区/排序/导出）与顺序
+  （min 3 / max 8），偏好独立 localStorage（wotb-radar-metric-order），Summary 与 Battle
+  共用；normalization 由 Radar Metric Registry（utils/radarMetrics.js）统一提供
+  （League = score/max；KAST/Contribution = /100；batch 无关，禁止 current-batch-max）；
+  axis 缺失显示 "--"，不冒充 0/0%。
 - 所有可见列（单场 / 普通汇总 / CW 统一玩家表 / 战队汇总）均支持 ASC/DESC 排序：
   数值 numeric、字符串自然序（Intl.Collator numeric）、缺失（null/''/NaN/--）恒排最后、
   排序基于 raw 值（格式化单元格按原始数值排）。

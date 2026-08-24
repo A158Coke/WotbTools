@@ -228,7 +228,11 @@ function leagueExportTable(battle) {
       const max = Number((colsList.find(c => c.key === k) || {}).max) || 0
       if (max > 0) {
         const v = Number(raw) || 0
-        text = Math.round(v) + ' / ' + max + ' \u00B7 ' + (Math.round(1000 * v / max) / 10) + '%'
+        // 总 Rating（max 1000）PNG 导出只显示整数（927），不显示 /1000 冗余完成度
+        // （review PR#134 BLOCKER 1）；七维仍显示「342 / 400 · 85.5%」
+        text = k === 'league_rating'
+          ? String(Math.round(v))
+          : Math.round(v) + ' / ' + max + ' \u00B7 ' + (Math.round(1000 * v / max) / 10) + '%'
       }
       return '<td>' + escapeHtml(text) + '</td>'
     }).join('')
@@ -669,8 +673,9 @@ watch(files, (next) => {
 </template>
 
 <style>
-/* Workspace 一级能力切换（解析结果 / AI 复盘 / 战局回放）：复用全局 .tabs 视觉 */
-.workspace-tabs { margin-top: 16px; }
+/* Workspace 一级能力切换（解析结果 / AI 复盘 / 战局回放）：紧凑单行一级导航。
+   视觉样式在 showcase-workspaces.css（.layout-data-workspace .workspace-tabs），
+   不复用 restoolbar 的 battle 分栏 .tabs（review PR#134 BLOCKER 4）。 */
 /* 汇总 Tab 双区块（plan §7）：基础 Replay Aggregate 与 League Rating 汇总并列，
    各自独立标题，League Rating 是附加分析不是替代品。 */
 .replay-section-title {

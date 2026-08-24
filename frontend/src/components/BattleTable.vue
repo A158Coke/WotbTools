@@ -103,18 +103,16 @@ function round1(v) {
   return Math.round(n * 10) / 10
 }
 
-/** Rating 文本：缺失（Rating-ineligible 场次）→ '--'，不冒充 0（review PR#134 BLOCKER 3）。 */
-function ratingText(rating, max) {
+/** Rating 文本：缺失（Rating-ineligible 场次）→ '--'，不冒充 0（review PR#134 BLOCKER 3）。
+ * 总 Rating 只显示整数（927），不显示 /1000 换算的冗余完成度百分比（review PR#134 BLOCKER 1）。 */
+function ratingText(rating) {
   if (rating == null || rating === '' || !Number.isFinite(Number(rating))) return '--'
-  const v = Number(rating)
-  const m = Number(max) || 1000
-  const pct = m > 0 ? Math.round(1000 * v / m) / 10 : 0
-  return Math.round(v) + ' · ' + pct + '%'
+  return String(Math.round(Number(rating)))
 }
 
 function teamRatingText(team) {
   if (!team) return '--'
-  return ratingText(team.teamRating, 1000)
+  return ratingText(team.teamRating)
 }
 
 function teamName(teamNumber) {
@@ -141,7 +139,7 @@ function onRowClick(row) {
   })
 }
 
-// ---- Rating 单元格（总分「927 · 92.7%」；维度「342 / 400 · 85.5%」；缺失 → '--'）----
+// ---- Rating 单元格（总分「927」；维度「342 / 400 · 85.5%」；缺失 → '--'）----
 
 function ratingCellText(value, key) {
   if (value == null || value === '' || !Number.isFinite(Number(value))) return '--'
@@ -149,8 +147,9 @@ function ratingCellText(value, key) {
   const max = Number(leagueMaxByKey.value[key]) || 0
   if (max <= 0) return String(Math.round(v * 10) / 10)
   const pct = Math.round(1000 * v / max) / 10
-  // 总 Rating 显示「927 · 92.7%」；维度显示「342 / 400 · 85.5%」
-  if (key === 'league_rating') return Math.round(v) + ' · ' + pct + '%'
+  // 总 Rating 只显示整数（927），不显示 /1000 冗余完成度（review PR#134 BLOCKER 1）；
+  // 七维仍显示「342 / 400 · 85.5%」
+  if (key === 'league_rating') return String(Math.round(v))
   return Math.round(v) + ' / ' + max + ' · ' + pct + '%'
 }
 
