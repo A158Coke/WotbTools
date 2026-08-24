@@ -42,7 +42,7 @@ class LeagueDomainBoundaryGuardTest {
     @Test
     void leagueValidationFailureKeepsBattleOutOfParserFailures() {
         final Battle bad = training("222");
-        bad.rosterComplete = false; // LEAGUE_ROSTER_INCOMPLETE
+        bad.settlementAccountsCoveredByRoster = false; // LEAGUE_ROSTER_INCOMPLETE
         final LeagueReplays.LeagueCollectResult r = collectBattles(List.of(bad));
 
         assertEquals(1, r.battles().size(), "Rating-ineligible 场必须保留在 battles");
@@ -57,7 +57,7 @@ class LeagueDomainBoundaryGuardTest {
     @Test
     void battleRatingBindsByArenaIdentityNotPosition() {
         final Battle bad = training("222");
-        bad.rosterComplete = false;
+        bad.settlementAccountsCoveredByRoster = false;
         final Battle good = training("111");
         final LeagueReplays.LeagueCollectResult r = collectBattles(List.of(bad, good));
 

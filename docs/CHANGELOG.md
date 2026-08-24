@@ -58,6 +58,63 @@
   `blitzkit-references.mjs --emit-portraits` 可重复生成入口。
 
 ### Fixed
+
+- **CW / Training Replay Rating 名册完整性收口（PR #132 追加，真实 0/N 根因修复）**：
+  - **根因**：LeagueRatingValidator 直接引用全局 Battle.rosterComplete（#201 全集合 == #301 全集合）
+    作为准入门槛；真实训练赛/联赛名册 #201 可含不属于 #301 的 non-combatant 记录
+    （probe：20260725_1535 训练房 #201=15 / #301=14，extra 账号 3117047709 无 #301 settlement）——
+    #201=15 / #301=14 的合法训练房被误判 LEAGUE_ROSTER_INCOMPLETE，整批 0/N Rating。
+  - **修正（最终方案：League 专属证据，不弱化全局契约）**：
+    - <b>全局 Battle.rosterComplete 保持严格 fail-closed 语义不变</b>（#201 全集合 == #301 全集合 +
+      队伍一致）——它是 SURVIVOR_SETTLEMENT / annihilationSuffix / pointsEndReason 等 AI 完整结算
+      推断的前提，名册存在无法证明为 spectator 的 extra（如 #201=4/#301=3）时不得视为完整；
+    - 新增 <b>League 专属证据</b>：Battle.settlementAccountsCoveredByRoster（#301 每个结算账号都
+      在名册 #201 中，无幽灵结算）+ Battle.settlementRosterTeamConsistent（名册队伍与结算队伍一致，
+      存在时），由 LeagueRatingValidator 判断——标准 7v7 且 #301 完整 14 人时 extra 不导致
+      ROSTER_INCOMPLETE；其余门槛（14 人 7v7 / unique 账号 / tankId / 明确胜方 / 死亡时间 / 数值
+      关系）不变，ROSTER_INCOMPLETE 只留给真实 mismatch（幽灵结算、队伍冲突）。
+  - **真实 probe 证据**（RosterCompletenessProbeTest，common/data 本地样本自动跳过）：
+    random×1 / tournament×4 / 11.19 Maus 均 #201=#301=Type0=14；20260725_1535 训练房
+    #201=15 / #301=14 / Type0=15（extra=3117047709 无 #301 settlement）。修复后该训练房全局
+    rosterComplete=false（严格）、League 专属证据完整 → Validator PASS（修复前
+    LEAGUE_ROSTER_INCOMPLETE），其余样本零回归。
+  - **测试**：ReplayParserTest（extra→全局严格 false + League 专属 true、幽灵结算→双 false、
+    队伍冲突→双 false、全等→双 true）、LeagueReplaysTest（#201=15/#301=14 rated、多场合法 CW
+    playerSummaries/teamSummaries 非空）、LeagueRosterCompletenessTest（<b>真实 CW fixture 入库
+    common/fixtures/replays/（15/14 训练房 + 14/14 tournament），CI 无条件全链路</b>：14 个 Player
+    Rating、八维度 0-max、Team 1/2 Rating、MVP、两队最佳、#201>#301 断言、真实双份 collect →
+    summaries 非空）+ AI fail-closed 回归（CW 15/14 全局 rosterComplete=false → 不推导点数/存活
+    结束方式、无全歼推断，PR #73 boundary 不放松）。
+  - **文档**：protocol.md / replay-data.md / replay-parsed-fields.md / league-rating.md 同步——
+    全局 rosterComplete 严格契约保持，「任何 #201 extra 都是观战者」不表述为 universal rule，
+    仅记录证据边界（标准 7v7 且 #301 完整 14 人时 extra 不属于 14 名 settled combatants）。
+- **Replay 汇总空数据 + 超宽表格重叠 P0 修复（docs/current-plan.md）**：
+  - **League 模式恢复基础 Replay Aggregate**：Mapper.toPreviewResponse 在 League 模式下不再输出空
+    aggregate——多场时按标准路径计算并输出基础跨场汇总（Aggregator.aggregate +
+    PerformanceMetricsCalculator.compute，同一 Replay Core 数据），League Rating Summary 是附加
+    分析而非替代品（resp.aggregate 有数据时 League 模式不再隐藏 AggregateTable）；aggregateColumns
+    仍用 League 变体（不含 contribution/kast/impact，PR #131 列边界不变）。
+  - **汇总人数语义修复**：replayAggregatePlayerCount 一律取 resp.aggregate.length（Replay Core
+    基础汇总人数），不再在 League 模式改用 league.playerSummaries.length——0 场可评分 ≠ Replay
+    没数据，「汇总（0 名选手）」误导消失。
+  - **汇总 Tab 双区块**：ReplayPage 汇总 Tab 拆为「基础战斗汇总（AggregateTable）」+「League Rating
+    汇总（LeagueSummaryTable player/team）」两个独立区块（League 模式下并存，非二选一）；summaries
+    全空时 League 区块显示明确 neutral 空态「暂无可评分场次」，LeagueSummaryTable 空行不再只显示
+    '--'。
+  - **超宽表格横向滚动 / sticky 列重叠修复**：.tablewrap 显式成为 scroll container
+    （position:relative + overflow-x:auto + max-width:100%）；sticky 第一列禁用 background: inherit
+    （行背景半透明 rgba(13,19,22,.82) 导致横滚时后方列从 sticky 列下方穿透），改为与 t1/t2 行背景
+    同表达式的 opaque color-mix + hover 不透明背景；League 表 sticky 层级修正（scoped
+    .league-table th.sticky-col z-index 3 → 7，不再低于普通表头 5——普通表头横滚时不再覆盖固定
+    玩家/Rating 列）；排序箭头改变表头宽度后重新测量 Rating sticky 左偏移。
+  - **Toolbar 响应式**：.restoolbar 由 grid minmax(0,1fr) auto 改为 flex 自然换行（空间不足时
+    actions 整行换到 tabs 下方，不再把 tabs 挤压到 0 宽）；sticky toolbar 背景不透明度 82% → 96%。
+  - **三语 locale**：新增 result.base_summary_title / league.summary.section_title /
+    league.summary.no_rateable（feature-messages.json，zh/en/ru 同步）。
+  - **测试**：backend ReplayServiceLeagueTest.leaguePreviewCarriesBaseReplayAggregateAlongsideLeagueSummary
+    （League 模式基础汇总与 League 汇总并存 + 列边界不变）；frontend replayView / ReplayPage /
+    ReplayPageReadyFlow / LeagueSummaryTable / BattleTable 回归（Case A 0/30、Case C partial 双区块
+    并存、tab 人数来自 aggregate、League 空态、sticky 结构契约）。
 - **生产「名人堂管理」页顶部三 Tab（记录 / 操作日志 / 百场审核）不可见——真正根因是 CSS cascade，不是浏览器缓存**：
   - 真正根因：`frontend/src/styles/showcase-regressions.css` 在 `main.js` 中最后加载，把
     `.hof-admin-tabs` 从 canonical（`showcase-rankings.css`）的 `position: sticky; top: 66px; z-index: 22`
@@ -75,6 +132,7 @@
     并非缓存。部署新版本后 Tab 不可见的现象系样式覆盖所致，与旧 bundle 缓存无关。
 - **生产「名人堂管理」页顶部三 Tab 缓存根因修复（PR #130，见上勘误：非本问题真正根因）**：
   - 根因（原记录，已勘误）：`deploy/nginx/nginx.conf` 的 `location /` 未设置任何 Cache-Control——浏览器把旧 index.html 及其引用的旧 hash bundle 当作可缓存资源，部署新镜像后仍加载旧 JS，导致 `?view=hof-admin` 显示旧版页面（无 `.hof-admin-tabs`），百场审核入口丢失；构建/部署产物经实证无问题（生产运行 `sha-305d7ac3` = 含百场审核源码的 main HEAD）。
+
   - 修复：SPA 缓存策略——`location = /index.html` 加 `Cache-Control: no-cache, no-store, must-revalidate`（每次重新验证，新 bundle hash 部署后立即生效）；`location /assets/`（Vite 内容 hash 产物）加 `Cache-Control: public, max-age=31536000, immutable`；静态资源 404 不再 fallback 到 index.html（`try_files $uri =404`）。
   - **Build identity（防再猜版本）**：`vite.config.js` 注入 `__BUILD_COMMIT__` / `__BUILD_TIME__`（git rev-parse --short + ISO time，无 git 时降级 unknown），build 时生成 `dist/version.json`，`main.js` 启动 console 输出 `[build] commit=... time=...`——生产页面异常时可立即核对实际 bundle 版本。
   - **回归测试**：`HoFAdminPage.test.js` 新增显式断言——authorized 用户必须渲染三 Tab（`hofAdmin.recordsTab / hofAdmin.auditTab / hundredAdmin.tab` 顺序固定），防未来 UI refactor 再次丢失审核入口。

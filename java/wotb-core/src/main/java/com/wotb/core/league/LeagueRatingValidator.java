@@ -92,8 +92,15 @@ public final class LeagueRatingValidator {
             failures.add(new LeagueFailure("", arena, LeagueFailure.Code.MISSING_TANK));
         }
 
-        // 5. rosterComplete：名册与结算账号集合一致且名册队伍与结算队伍无冲突
-        if (!Boolean.TRUE.equals(battle.rosterComplete)) {
+        // 5. League 专属结算覆盖：结算账号全部来自名册（#301 ⊆ #201，无幽灵结算）且名册队伍与
+        //    结算队伍无冲突（存在时）。名册 #201 可含 non-combatant extra（标准 7v7 且 #301 完整
+        //    14 人时 extra 不属于 14 名 settled combatants，见 protocol.md）——extra 不导致不完整。
+        //    注意：不引用全局 Battle.rosterComplete（保持 #201 全集合 == #301 全集合的严格
+        //    fail-closed 语义，供 SURVIVOR_SETTLEMENT / annihilation 等推断使用）；League Rating
+        //    的宽容由 League 专属证据 settlementAccountsCoveredByRoster /
+        //    settlementRosterTeamConsistent 表达。
+        if (!Boolean.TRUE.equals(battle.settlementAccountsCoveredByRoster)
+                || !Boolean.TRUE.equals(battle.settlementRosterTeamConsistent)) {
             failures.add(new LeagueFailure("", arena, LeagueFailure.Code.ROSTER_INCOMPLETE));
         }
 

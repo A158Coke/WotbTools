@@ -71,6 +71,9 @@ public final class LeagueTestReplays {
         battle.mapName = "italy";
         battle.durationS = 300.0;
         battle.rosterComplete = true;
+        // League 专属结算证据（synthetic 构造：结算由同一 players 列表驱动，视为覆盖且队伍一致）
+        battle.settlementAccountsCoveredByRoster = true;
+        battle.settlementRosterTeamConsistent = true;
         battle.players = new ArrayList<>();
         for (final PlayerSpec s : specs) {
             final PlayerResult p = new PlayerResult();
@@ -98,11 +101,22 @@ public final class LeagueTestReplays {
 
     /** 编码成 .wotbreplay zip 字节（meta + pickle + protobuf）。 */
     public static byte[] replayBytes(final Battle battle, final int arenaBonusType) throws IOException {
+        return replayBytes(battle, arenaBonusType, List.of());
+    }
+
+    /**
+     * 编码成 .wotbreplay zip 字节，名册 #201 额外包含 {@code extraRosterAccounts}
+     * （只写 #201，不写 #301——真实训练赛名册可含 non-combatant，probe shape：
+     * 20260725_1535 训练房 #201=15 / #301=14，extra=观战者账号，ActualCombatantSet==#301）。
+     */
+    public static byte[] replayBytes(final Battle battle, final int arenaBonusType,
+                                     final List<Long> extraRosterAccounts) throws IOException {
         final Map<String, byte[]> entries = new LinkedHashMap<>();
         final String meta = "{\"version\":\"1.0\",\"mapName\":\"italy\",\"battleDuration\":300,"
                 + "\"battleStartTime\":1683152279,\"arenaBonusType\":" + arenaBonusType + "}";
         entries.put("meta.json", meta.getBytes(StandardCharsets.UTF_8));
-        entries.put("battle_results.dat", pickle(battle.arenaId, rootProtobuf(battle)));
+        entries.put("battle_results.dat", pickle(battle.arenaId,
+                rootProtobuf(battle, extraRosterAccounts)));
         final ByteArrayOutputStream zip = new ByteArrayOutputStream();
         try (ZipOutputStream z = new ZipOutputStream(zip)) {
             for (final Map.Entry<String, byte[]> e : entries.entrySet()) {
@@ -115,9 +129,23 @@ public final class LeagueTestReplays {
     }
 
     static byte[] rootProtobuf(final Battle battle) throws IOException {
+        return rootProtobuf(battle, List.of());
+    }
+
+    static byte[] rootProtobuf(final Battle battle, final List<Long> extraRosterAccounts) throws IOException {
         final ByteArrayOutputStream root = new ByteArrayOutputStream();
         if (battle.winnerTeam != null) {
             writeField(root, 3, battle.winnerTeam);
+        }
+        // #201 名册额外 non-combatant 条目（账号 + 队伍，不写 #301）
+        for (final long extra : extraRosterAccounts) {
+            final ByteArrayOutputStream info = new ByteArrayOutputStream();
+            writeStringField(info, 1, "extra-" + extra);
+            writeField(info, 3, 2);
+            final ByteArrayOutputStream rosterEntry = new ByteArrayOutputStream();
+            writeField(rosterEntry, 1, extra);
+            writeBytesField(rosterEntry, 2, info.toByteArray());
+            writeBytesField(root, 201, rosterEntry.toByteArray());
         }
         final Map<Long, PlayerResult> byAccount = new LinkedHashMap<>();
         for (final PlayerResult p : battle.players) {

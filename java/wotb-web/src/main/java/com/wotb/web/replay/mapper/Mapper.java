@@ -362,12 +362,10 @@ public final class Mapper {
             final LeagueRatingResult battleLeague = league == null ? null : league.resultFor(battle.arenaId);
             battlesDto.add(toBattle(battle, battleSourceNames.get(i), tp, battleLeague, league != null));
         }
-        if (league != null) {
-            // League 模式：不输出旧汇总表（选手/战队中位数汇总走 league.*）；
-            // aggregateColumns 不含 contribution/kast/impact（plan §14）
-            return new PreviewResponse(battlesDto, List.of(), duplicates, failures,
-                    leaguePlayerColumns(), leagueAggregateColumns(), leagueDto(league), null);
-        }
+        // 基础 Replay Aggregate 属于 Replay Core：无论 League Rating 是否成功，
+        // 只要是多场（跨场汇总语义），就必须输出标准基础汇总——League Rating Summary
+        // 是附加分析，不替代基础汇总（plan §4/§5）。League 模式的 aggregateColumns 仍用
+        // League 变体（不含 contribution/kast/impact，PR #131 列边界不变）。
         final Map<Long, PerformanceMetricsCalculator.Row> perfById = new LinkedHashMap<>();
         for (final PerformanceMetricsCalculator.Row row : PerformanceMetricsCalculator.compute(battles)) {
             perfById.put(row.accountId, row);
@@ -375,6 +373,10 @@ public final class Mapper {
         final List<AggRow> aggregate = battles.size() > 1
                 ? toAggregate(Aggregator.aggregate(battles, tp), perfById)
                 : List.of();
+        if (league != null) {
+            return new PreviewResponse(battlesDto, aggregate, duplicates, failures,
+                    leaguePlayerColumns(), leagueAggregateColumns(), leagueDto(league), null);
+        }
         return new PreviewResponse(battlesDto, aggregate, duplicates, failures,
                 playerColumns(), aggregateColumns(), null, leagueUnavailableCode);
     }

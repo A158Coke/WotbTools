@@ -20,12 +20,35 @@ public class Battle {
     public List<PlayerResult> players;
 
     /**
-     * 结算阵容完整性证据（ReplayParser 设置）：名册(#201) 与战绩(#301) 的账号集合完全一致
-     * （所有参战成员都有结算记录）；名册提供队伍字段(#201→#2→#3)时还要求与结算队伍一致；
-     * null/false 表示未知或不完整（非回放解析路径或数据缺失）。
-     * 只有为 true 时，才能用 survivors==0 断言全歼或推导 SURVIVOR_SETTLEMENT。
+     * 结算阵容完整性证据（ReplayParser 设置，<b>严格 fail-closed 全局契约</b>）：
+     * 名册(#201) 与战绩(#301) 的账号集合完全一致（所有参战成员都有结算记录），且名册提供的
+     * 队伍字段(#201→#2→#3)与结算队伍一致（存在时）。null/false 表示未知或不完整
+     * （非回放解析路径或数据缺失）。
+     *
+     * <p><b>不得为 League Rating 弱化本字段</b>：它是 SURVIVOR_SETTLEMENT / annihilationSuffix /
+     * pointsEndReason 等「完整逐人结算」推断的 fail-closed 前提——#201 存在无法证明为
+     * spectator 的 extra（如 #201=4 / #301=3）时不得视为完整。League Rating 对
+     * non-combatant extra 的宽容由 League 专属证据
+     * {@link #settlementAccountsCoveredByRoster} / {@link #settlementRosterTeamConsistent}
+     * 表达，由 LeagueRatingValidator 判断，不扩大本字段语义。</p>
+     *
+     * <p>只有为 true 时，才能用 survivors==0 断言全歼或推导 SURVIVOR_SETTLEMENT。</p>
      */
     public Boolean rosterComplete;
+
+    /**
+     * League 专属结算覆盖证据（ReplayParser 设置）：战绩 #301 的每个结算账号是否都出现在
+     * 名册 #201 中（无幽灵结算）。#201 可含 non-combatant extra（标准 7v7 且 #301 完整 14 人
+     * 时，extra 不属于 14 名 settled combatants，见 protocol.md「SPECTATOR /
+     * NON-COMBATANT ENTITY」），extra 不影响本字段。null=无名册证据（非回放解析路径）。
+     */
+    public Boolean settlementAccountsCoveredByRoster;
+
+    /**
+     * League 专属队伍一致性证据（ReplayParser 设置）：名册 #201→#2→#3 提供的队伍字段
+     * （存在时）是否与结算队伍一致。null=无队伍证据。
+     */
+    public Boolean settlementRosterTeamConsistent;
 
     public int nPlayers() {
         return players == null ? 0 : players.size();
