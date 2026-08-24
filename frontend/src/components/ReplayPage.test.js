@@ -951,28 +951,23 @@ describe('ReplayPage League Rating', () => {
     expect(text).toContain('111')
   })
 
-  it('shows aggregate tab in league mode', async () => {
-    window.__testLeagueMode = true
-    try {
-      state.init.resp = makeResp({
-        aggregate: [],
-        league: {
-          mode: 'LEAGUE_RATING',
-          columns: [],
-          playerSummaries: [],
-          playerSummaryColumns: [],
-          teamSummaries: [],
-          teamSummaryColumns: [],
-          failures: []
-        }
-      })
-      const wrapper = mountPage()
-      await flushPromises()
-      const tabs = wrapper.findAll('button')
-      expect(tabs.some(b => b.text().includes('result.aggregate_tab'))).toBe(true)
-    } finally {
-      delete window.__testLeagueMode
-    }
+  it('shows aggregate tab in league mode (resp.league is the page source of truth)', async () => {
+    state.init.resp = makeResp({
+      aggregate: [],
+      league: {
+        mode: 'LEAGUE_RATING',
+        columns: [],
+        playerSummaries: [],
+        playerSummaryColumns: [],
+        teamSummaries: [],
+        teamSummaryColumns: [],
+        failures: []
+      }
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    const tabs = wrapper.findAll('button')
+    expect(tabs.some(b => b.text().includes('result.aggregate_tab'))).toBe(true)
   })
 
   it('battle rename only updates battle overrides (no summary pollution)', async () => {
@@ -1045,5 +1040,70 @@ describe('ReplayPage League Rating', () => {
     await nextTick()
     expect(wrapper.vm.battleTeamNames['arenaA:1']).toBe('CHRD')
     expect(wrapper.vm.summaryTeamNames['clan:CHRD']).toBe('CHRD A队')
+  })
+})
+
+describe('ReplayPage result visibility (P0: no blank results; league mode from resp.league)', () => {
+  beforeEach(() => {
+    state.clear()
+    state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en', files: [] }
+  })
+
+  it('多场 + aggregate 空 + 无 league：battle tabs 存在且 BattleTable panel 可见（不再空白）', async () => {
+    state.init.resp = makeResp({
+      aggregate: [],
+      battles: [
+        { mapName: 'Lagoon', players: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }] },
+        { mapName: 'Frozen', players: [{ cells: { nickname: 'P2', damage_dealt: 4000 } }] }
+      ]
+    })
+    state.init.activeTab = 'b0'
+    const wrapper = mountPage()
+    await flushPromises()
+    // 两个 battle tabs 都存在
+    const tabs = wrapper.findAll('button')
+    expect(tabs.some(b => b.text().includes('Lagoon #1'))).toBe(true)
+    expect(tabs.some(b => b.text().includes('Frozen #2'))).toBe(true)
+    // 至少一个 BattleTable panel 可见（结果区不为空）
+    const battlePanels = wrapper.findAll('.battle-table-stub')
+    expect(battlePanels.length).toBeGreaterThan(0)
+    expect(battlePanels[0].isVisible()).toBe(true)
+    // aggregate panel 隐藏（v-show 在 wrapper div 上；happy-dom 无布局，用 inline display 判定）
+    expect(wrapper.find('.agg-table-stub').element.parentElement.style.display).toBe('none')
+  })
+
+  it('league 模式以 resp.league 为唯一事实源：即使 playerColumns 无 league_rating，aggregate tab + LeagueSummaryTable 也显示', async () => {
+    delete window.__testLeagueMode // 列派生 league mode 必须关闭
+    state.init.resp = makeResp({
+      aggregate: [],
+      playerColumns: [{ key: 'nickname', label: '昵称' }], // 不含 league_rating
+      league: {
+        mode: 'LEAGUE_RATING',
+        columns: [],
+        playerSummaries: [{ nickname: 'P1', ratingMedian: 1500, battles: 5, wins: 3, damageTotal: 25000, killsTotal: 10, dimensionMedians: [] }],
+        playerSummaryColumns: [{ key: 'nickname', label: '昵称' }, { key: 'league_rating', label: 'Rating' }],
+        teamSummaries: [],
+        teamSummaryColumns: [],
+        failures: []
+      }
+    })
+    state.init.activeTab = 'aggregate'
+    const wrapper = mountPage()
+    await flushPromises()
+    const tabs = wrapper.findAll('button')
+    expect(tabs.some(b => b.text().includes('result.aggregate_tab'))).toBe(true)
+    expect(wrapper.find('.league-summary').exists()).toBe(true)
+    // aggregate=[] 且 resp.league 存在时不允许 fallback 掉汇总面板
+    expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
+  })
+
+  it('无 battles 无 aggregate 无 league：显示空态提示，不崩溃不空白', async () => {
+    state.init.resp = makeResp({ aggregate: [], battles: [], league: null })
+    state.init.activeTab = 'aggregate'
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.text()).toContain('replay.no_results')
+    expect(wrapper.findAll('.battle-table-stub').length).toBe(0)
+    expect(wrapper.find('.agg-table-stub').element.parentElement.style.display).toBe('none')
   })
 })

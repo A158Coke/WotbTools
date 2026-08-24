@@ -575,6 +575,7 @@
     },
     "replay": {
         "no_files": "请先选择回放文件或文件夹",
+        "no_results": "未解析出可展示的战斗数据",
         "preview_failed": "预览失败",
         "export_failed": "导出失败",
         "png_export_failed": "PNG 导出失败",

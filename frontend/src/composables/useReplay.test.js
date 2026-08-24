@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
-import { useReplay } from './useReplay.js'
+import { useReplay, chooseInitialResultTab } from './useReplay.js'
 
 const i18n = vi.hoisted(() => ({
   t: vi.fn((key) => key),
@@ -433,5 +433,98 @@ describe('useReplay file-selection invalidation (review BLOCKER 1)', () => {
     expect(replay.processingJobId.value).toBe('p2')
     expect(replay.resp.value.battles[0].sourceName).toBe('b.wotbreplay')
     expect(replay.processingError.value).toBe('')
+  })
+})
+
+describe('useReplay initial result tab (P0: activeTab must point to a renderable panel)', () => {
+  let replay
+
+  function pJob(overrides = {}) {
+    return { jobId: 'p1', status: 'QUEUED', phase: null, total: 2, processed: 0, valid: 0,
+      duplicates: 0, failures: 0, errorCode: null, currentFile: null, ...overrides }
+  }
+
+  function readyWith(result) {
+    api.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 2 })
+    api.getProcessingJob
+      .mockResolvedValueOnce(pJob({ status: 'PROCESSING', processed: 1, valid: 1 }))
+      .mockResolvedValueOnce(pJob({ status: 'READY', processed: 2, valid: 2 }))
+    api.getProcessingJobResult.mockResolvedValue(result)
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.clearAllMocks()
+    replay = useReplay()
+    replay.files.value = [new File(['x'], 'a.wotbreplay'), new File(['y'], 'b.wotbreplay')]
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    replay.dismissProcessingJob()
+    replay.dismissExportJob()
+  })
+
+  const base = { duplicates: [], failures: [], playerColumns: [], aggregateColumns: [] }
+  const twoBattles = [
+    { mapName: 'Lagoon', sourceName: 'a.wotbreplay' },
+    { mapName: 'Frozen', sourceName: 'b.wotbreplay' }
+  ]
+  const league = { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] }
+
+  it('Test A: 多场 + aggregate 空 + 无 league → READY 后 activeTab=b0（P0 核心回归）', async () => {
+    readyWith({ ...base, battles: twoBattles, aggregate: [] })
+    await replay.startProcessingJob()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(replay.resp.value.battles).toHaveLength(2)
+    expect(replay.activeTab.value).toBe('b0')
+  })
+
+  it('Test B: 多场 + aggregate 有数据 + 无 league → READY 后 activeTab=aggregate', async () => {
+    readyWith({ ...base, battles: twoBattles, aggregate: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }] })
+    await replay.startProcessingJob()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(replay.activeTab.value).toBe('aggregate')
+  })
+
+  it('Test C: 多场 + aggregate 空 + league 存在 → READY 后 activeTab=aggregate（不 fallback 到 b0）', async () => {
+    readyWith({ ...base, battles: twoBattles, aggregate: [], league })
+    await replay.startProcessingJob()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(replay.activeTab.value).toBe('aggregate')
+  })
+
+  it('Test D: 单场 + aggregate 空 + 无 league → READY 后 activeTab=b0', async () => {
+    readyWith({ ...base, battles: [twoBattles[0]], aggregate: [] })
+    await replay.startProcessingJob()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(replay.activeTab.value).toBe('b0')
+  })
+
+  it('chooseInitialResultTab 纯函数：所有已知 response 的 activeTab 都指向真实 panel（invariant）', () => {
+    const cases = [
+      { result: { battles: twoBattles, aggregate: [], league: null }, expectTab: 'b0' },
+      { result: { battles: twoBattles, aggregate: [{ cells: {} }], league: null }, expectTab: 'aggregate' },
+      { result: { battles: twoBattles, aggregate: [], league }, expectTab: 'aggregate' },
+      { result: { battles: [twoBattles[0]], aggregate: [], league: null }, expectTab: 'b0' },
+      { result: { battles: [], aggregate: [], league: null }, expectTab: 'aggregate' }
+    ]
+    for (const { result, expectTab } of cases) {
+      const tab = chooseInitialResultTab(result)
+      expect(tab).toBe(expectTab)
+      if (tab === 'aggregate') {
+        // aggregate 有真实 panel 或（空结果）由页面空态兜底——绝不允许「指向不存在 panel 导致空白」
+        const panelExists = !!result.league || (result.aggregate || []).length > 0
+        const emptyStateCovers = !(result.battles || []).length && !panelExists
+        expect(panelExists || emptyStateCovers).toBe(true)
+      } else {
+        const idx = parseInt(tab.replace('b', ''), 10)
+        expect((result.battles || [])[idx]).toBeDefined()
+      }
+    }
   })
 })
