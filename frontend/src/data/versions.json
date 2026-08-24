@@ -1,6 +1,6 @@
 [
   {
-    "v": "2.12.25",
+    "v": "2.12.26",
     "date": "2026-08-24",
     "tag": "fix",
     "zh": "训练赛/联赛回放名册里存在观战者等非参战记录时，不再被误判为「名册不完整」：只要 14 名结算玩家完整（无重复、队伍 7v7、车辆与胜方明确）即可正常生成 League Rating——14 名玩家评分、八维度、双方战队 Rating、MVP 与两队最佳。",
@@ -8,12 +8,20 @@
     "ru": "Реплеи тренировочных/турнирных боёв, в списке которых есть не участвовавшие в бою записи (например, зрители), больше не отклоняются как «неполный состав»: пока все 14 игроков в итогах присутствуют полностью (уникальные аккаунты, составы 7v7, корректные машины и явный победитель), League Rating формируется штатно — 14 рейтингов игроков, восемь измерений, рейтинги обеих команд, MVP и лучший игрок каждой команды."
   },
   {
-    "v": "2.12.24",
+    "v": "2.12.25",
     "date": "2026-08-24",
     "tag": "fix",
     "zh": "修复回放汇总显示「0 名选手」：训练赛/联赛回放即使无法生成 League Rating，基础战斗汇总也正常显示真实选手数据；没有任何可评分场次时，League 汇总区块显示「暂无可评分场次」。超宽战斗表格横向滚动时，固定玩家/评分列不再与后方列文字重叠，工具栏在窄屏下自动换行。",
     "en": "Fixed the replay summary showing \"0 players\": even when no League Rating can be generated for training/tournament replays, the base battle summary now shows real player data, and the League Rating section shows \"No rateable battles yet\" when there is nothing to rate. Fixed text overlap between the fixed player/rating columns and scrolling columns in wide battle tables, and the toolbar now wraps naturally on narrow screens.",
     "ru": "Исправлена сводка «0 игроков»: даже если League Rating не может быть рассчитан для тренировочных/турнирных реплеев, базовая сводка по боям теперь показывает реальные данные игроков, а раздел League Rating показывает «Нет подходящих боёв для рейтинга». Исправлено наложение текста между закреплёнными колонками игрока/рейтинга и прокручиваемыми колонками в широких таблицах боя; панель инструментов теперь корректно переносится на узких экранах."
+  },
+  {
+    "v": "2.12.24",
+    "date": "2026-08-24",
+    "tag": "fix",
+    "zh": "修复名人堂管理页顶部「名人堂记录 / 操作日志 / 百场审核」三个 Tab 不可见：此前部署后页面只显示筛选器和记录表格，Tab 被样式覆盖隐藏；现在三个 Tab 正常显示并可点击切换，手机端正常堆叠在筛选器上方。",
+    "en": "Fixed the Hall of Fame admin page so its top tabs (Records / Audit Log / 100-Battle Review) are visible again: after deployment the page only showed the filters and records table because the tab strip was hidden by a CSS cascade override. The three tabs now display and switch normally, stacking above the filters on mobile.",
+    "ru": "Исправлена невидимость вкладок «Записи / Журнал аудита / Проверка 100 боёв» на странице администрирования Зала славы: после развёртывания страница показывала только фильтры и таблицу записей, потому что полоса вкладок была скрыта переопределением каскада CSS. Теперь три вкладки отображаются и переключаются, а на мобильных устройствах корректно располагаются над фильтрами."
   },
   {
     "v": "2.12.23",
