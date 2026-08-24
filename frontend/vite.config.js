@@ -1,10 +1,49 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { execSync } from 'node:child_process'
+import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 // dev 时把 /api 代理到本地后端；生产由 nginx 反向代理。
+
+/** Build identity：生产 bundle 可精确对应 git commit + 构建时间（见 /version.json 与 console 输出）。
+ * 优先取 Docker 构建参数 BUILD_COMMIT（CI 传入，Docker 上下文无 .git 无法自行 rev-parse），
+ * 本地构建再 fallback 到 git rev-parse；两者皆无时降级 unknown，不阻断构建。 */
+function buildIdentity() {
+  const fromEnv = process.env.BUILD_COMMIT
+  let commit = (fromEnv && fromEnv.trim()) || 'unknown'
+  if (commit === 'unknown') {
+    try {
+      commit = execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim()
+    } catch {
+      // 无 git 上下文（如发布 tarball）时保持 unknown。
+    }
+  }
+  return {
+    commit,
+    buildTime: new Date().toISOString(),
+  }
+}
+
+const identity = buildIdentity()
+
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    {
+      name: 'wotb-build-identity',
+      apply: 'build',
+      closeBundle() {
+        const outDir = resolve(__dirname, 'dist')
+        writeFileSync(resolve(outDir, 'version.json'),
+          JSON.stringify({ commit: identity.commit, buildTime: identity.buildTime }, null, 2) + '\n')
+      },
+    },
+  ],
+  define: {
+    __BUILD_COMMIT__: JSON.stringify(identity.commit),
+    __BUILD_TIME__: JSON.stringify(identity.buildTime),
+  },
   server: {
     port: 5173,
     // 允许 dev server 读取仓库根的共享 JSON (common/map_names.json 等)。

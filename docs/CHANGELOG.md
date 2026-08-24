@@ -58,7 +58,12 @@
   `blitzkit-references.mjs --emit-portraits` 可重复生成入口。
 
 ### Fixed
-- **P0：League Rating 校验失败不再删除成功解析的回放（Replay parsing validity ≠ League Rating eligibility）**：
+- **生产「名人堂管理」页顶部三 Tab（记录 / 操作日志 / 百场审核）在重新部署后仍不可见（缓存根因修复）**：
+  - 根因：`deploy/nginx/nginx.conf` 的 `location /` 未设置任何 Cache-Control——浏览器把旧 index.html 及其引用的旧 hash bundle 当作可缓存资源，部署新镜像后仍加载旧 JS，导致 `?view=hof-admin` 显示旧版页面（无 `.hof-admin-tabs`），百场审核入口丢失；构建/部署产物经实证无问题（生产运行 `sha-305d7ac3` = 含百场审核源码的 main HEAD）。
+  - 修复：SPA 缓存策略——`location = /index.html` 加 `Cache-Control: no-cache, no-store, must-revalidate`（每次重新验证，新 bundle hash 部署后立即生效）；`location /assets/`（Vite 内容 hash 产物）加 `Cache-Control: public, max-age=31536000, immutable`；静态资源 404 不再 fallback 到 index.html（`try_files $uri =404`）。
+  - **Build identity（防再猜版本）**：`vite.config.js` 注入 `__BUILD_COMMIT__` / `__BUILD_TIME__`（git rev-parse --short + ISO time，无 git 时降级 unknown），build 时生成 `dist/version.json`，`main.js` 启动 console 输出 `[build] commit=... time=...`——生产页面异常时可立即核对实际 bundle 版本。
+  - **回归测试**：`HoFAdminPage.test.js` 新增显式断言——authorized 用户必须渲染三 Tab（`hofAdmin.recordsTab / hofAdmin.auditTab / hundredAdmin.tab` 顺序固定），防未来 UI refactor 再次丢失审核入口。
+  - **P0：League Rating 校验失败不再删除成功解析的回放（Replay parsing validity ≠ League Rating eligibility）**：
   - 根因：`LeagueReplays.collectLeague` 把「仅 Rating eligible 的场次」当作结果集 battles 返回（Rating 校验失败经 `continue` 从最终集合消失），`ReplayProcessingJobService` 以 `c.battles().isEmpty()` 判定 `NO_VALID_REPLAYS`——全部 replay 成功解析但全部 Rating 不合格时，Processing Job 错误 FAILED 并提示「没有可用的回放文件」。
   - 领域分离：`LeagueCollectResult.battles` 恢复为「去重/冲突后全部成功解析的 Battle」（可进 Preview/Export 基础数据）；Rating 只对通过 `LeagueRatingValidator` 的场次计算（`LeagueRatingBatch.battleResults` 与批次汇总只含 eligible）；校验失败以 `LeagueFailure` 稳定错误码（`LEAGUE_*`）返回，不再触发 `NO_VALID_REPLAYS`（该错误码仅保留给「所有 replay 真正解析失败」）。
   - 稳定 identity：`LeagueRatingResult` 新增 `arenaId`；`LeagueRatingBatch.resultFor(arenaId)` 按 identity 绑定 Battle ↔ Rating，消除 `Mapper.toPreviewResponse` / `ReplayService` 导出 / `ReplayExportJobService` / `LeagueAggregateSheets` 的数组 index 绑定（battles.size() 可大于 battleResults.size()，禁止 index 错位/IndexOutOfBounds）。
