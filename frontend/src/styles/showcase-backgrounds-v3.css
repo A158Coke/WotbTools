@@ -12,7 +12,9 @@
  *  - background-attachment: fixed is intentionally NOT used (mobile/Safari).
  */
 
-/* Page-wide readability veil — independent from the artwork. */
+/* Page-wide readability veil — the cinematic artwork must never compete with UI text.
+ * Showcase pages intentionally keep a dark operations-console veil even when the
+ * global theme is light; light mode changes controls/surfaces, not text legibility. */
 .layout-content::before,
 .layout-wide::before,
 .layout-data-workspace::before,
@@ -32,7 +34,7 @@
 .rating-page::before,
 .rating-section::before,
 .rating-workspace::before {
-  background: linear-gradient(180deg, rgba(239,242,239,.16), rgba(239,242,239,.34)) !important;
+  background: linear-gradient(180deg, rgba(5,8,10,.32), rgba(5,8,10,.60)) !important;
 }
 
 [data-theme="dark"] :is(
@@ -56,7 +58,7 @@
   .rating-section,
   .rating-workspace
 )::before {
-  background: linear-gradient(180deg, rgba(5,8,10,.17), rgba(5,8,10,.42)) !important;
+  background: linear-gradient(180deg, rgba(5,8,10,.28), rgba(5,8,10,.58)) !important;
 }
 
 /* ---------- Home — hero-v4: burning sunset battlefield, tank anchor on the right ---------- */
@@ -128,13 +130,13 @@
 /* ---------- Boost — alpine combat training range ---------- */
 .boost-page::after {
   background-image: url('../assets/showcase/boost/boost-hero-training-v1.png') !important;
-  opacity: .86 !important;
+  opacity: .78 !important;
 }
 
 /* ---------- User admin — command center, deliberately weaker: operations console first ---------- */
 .admin-page::after {
   background-image: url('../assets/showcase/admin/admin-hero-command-v1.png') !important;
-  opacity: .50 !important;
+  opacity: .42 !important;
 }
 
 /* ---------- Hall-of-Fame admin — review console stays readable ---------- */
@@ -143,19 +145,19 @@
 .admin-hof-page::after,
 .hof-admin::after {
   background-image: url('../assets/showcase/hof-admin/hof-admin-hero-command-v1.png') !important;
-  opacity: .60 !important;
+  opacity: .42 !important;
 }
 
 /* ---------- Version history — workshop / changelog ---------- */
 .version-page::after {
   background-image: url('../assets/showcase/version/version-hero-workshop-v1.png') !important;
-  opacity: .82 !important;
+  opacity: .74 !important;
 }
 
 /* ---------- Contact — field communications radio link ---------- */
 .contact-page::after {
   background-image: url('../assets/showcase/contact/contact-hero-radio-v1.png') !important;
-  opacity: .82 !important;
+  opacity: .74 !important;
 }
 
 @media (max-width: 767px) {

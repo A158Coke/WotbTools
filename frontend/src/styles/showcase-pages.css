@@ -6,6 +6,7 @@
   max-width: none !important;
   margin: 0 auto !important;
   padding: 22px 0 64px !important;
+  color: #c9c5bb !important;
 }
 .boost-topbar {
   position: sticky;
@@ -15,8 +16,8 @@
   padding: 8px !important;
   border: 1px solid #303a40 !important;
   border-radius: 8px !important;
-  background: color-mix(in srgb, var(--bg) 84%, transparent) !important;
-  box-shadow: 0 12px 32px rgba(0,0,0,.19);
+  background: rgba(13, 18, 22, .96) !important;
+  box-shadow: 0 12px 32px rgba(0,0,0,.25);
   backdrop-filter: blur(12px);
 }
 .boost-tabs {
@@ -25,9 +26,9 @@
   overflow-x: auto;
   scrollbar-width: thin;
   padding: 6px !important;
-  border: 1px solid rgba(57, 68, 74, .55) !important;
+  border: 1px solid rgba(57, 68, 74, .7) !important;
   border-radius: 8px !important;
-  background: rgba(13, 18, 22, .92) !important;
+  background: rgba(13, 18, 22, .96) !important;
 }
 .boost-tabs button {
   flex: 0 0 auto;
@@ -36,12 +37,12 @@
   border: 1px solid transparent !important;
   border-radius: 6px !important;
   background: transparent !important;
-  color: #b5b2aa !important;
+  color: #c9c5bb !important;
 }
-.boost-tabs button:hover { background: rgba(28, 37, 42, .9) !important; color: #f2ede3 !important; }
+.boost-tabs button:hover { background: rgba(28, 37, 42, .95) !important; color: #f2ede3 !important; }
 .boost-tabs button.active {
-  border-color: rgba(217, 143, 24, .42) !important;
-  background: rgba(217, 143, 24, .16) !important;
+  border-color: rgba(217, 143, 24, .52) !important;
+  background: rgba(217, 143, 24, .19) !important;
   color: #f0a42b !important;
 }
 .boost-card {
@@ -49,19 +50,22 @@
   padding: 22px 24px !important;
   border: 1px solid var(--showcase-tactical-border) !important;
   border-radius: 9px !important;
-  background: var(--showcase-tactical) !important;
+  background: linear-gradient(160deg, rgba(24, 30, 34, .985), rgba(13, 18, 21, .99)) !important;
+  color: #c9c5bb !important;
   box-shadow: var(--surface-shadow) !important;
 }
 .boost-card .card-title {
   margin-bottom: 16px !important;
   padding-bottom: 10px;
-  border-bottom: 1px solid rgba(66, 77, 84, .45);
+  border-bottom: 1px solid rgba(66, 77, 84, .55);
   font-size: 1.12rem !important;
-  color: var(--showcase-tactical-heading) !important;
+  color: #f2ede3 !important;
 }
+.boost-card :is(label,.form-label,.hint,.muted,p) { color: #b7b4ac; }
+.boost-card label { color: #d8d5cd !important; }
 .boost-warning {
   border-color: rgba(224, 160, 45, .42) !important;
-  background: rgba(90, 61, 14, .58) !important;
+  background: rgba(90, 61, 14, .72) !important;
   color: #f5cf83 !important;
 }
 .boost-form {
@@ -82,23 +86,29 @@
 .boost-form .form-row { min-width: 0; }
 .boost-form :is(input,select,textarea) {
   width: 100%;
-  border-color: #394349 !important;
-  background: #0f1518 !important;
+  border-color: #4a555b !important;
+  background: #0b1114 !important;
+  color: #ece8df !important;
 }
+.boost-form :is(input,textarea)::placeholder { color: #777f7d !important; opacity: 1; }
 .boost-page :is(.boost-list,.request-list,.booster-list,.admin-list) {
   border-color: #313b41 !important;
+  background: rgba(13, 18, 22, .97) !important;
 }
-.boost-page table { width: 100%; font-variant-numeric: tabular-nums; }
+.boost-page table { width: 100%; color: #d8d5cd !important; font-variant-numeric: tabular-nums; }
 .boost-page table thead th {
   position: sticky;
   top: 116px;
   z-index: 4;
   background: #171e22 !important;
+  color: #c9c5bb !important;
 }
+.boost-page table td { color: #d8d5cd; }
 .boost-page .modal,
 .boost-page .booster-editor {
   border-color: #3b454b !important;
   background: #11171a !important;
+  color: #d8d5cd !important;
   box-shadow: 0 30px 80px rgba(0,0,0,.48) !important;
 }
 
@@ -113,6 +123,7 @@
   margin-bottom: 20px !important;
   font-size: 1.55rem !important;
   border-bottom-color: color-mix(in srgb, var(--accent) 28%, var(--border)) !important;
+  color: #f2ede3 !important;
 }
 .version-page .ver {
   position: relative;
@@ -120,7 +131,8 @@
   padding: 15px 18px 15px 84px;
   border-left: 1px solid #374148;
   border-bottom: 1px solid #222b30;
-  background: rgba(13, 18, 22, .88);
+  background: rgba(13, 18, 22, .95);
+  color: #c9c5bb;
   backdrop-filter: blur(6px);
 }
 .version-page .ver:first-of-type { border-top: 1px solid #374148; border-radius: 8px 8px 0 0; }
@@ -131,31 +143,34 @@
   top: 16px;
   color: var(--accent-light) !important;
 }
-.version-page .ver-date { color: #8f948d !important; }
-.version-page .ver p { color: #a3a6a0 !important; }
+.version-page .ver-date { color: #a4a9a3 !important; }
+.version-page .ver p { color: #c3c0b8 !important; }
 
 /* Contact */
 .contact-page {
   width: min(1280px, calc(100vw - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   padding: 28px 0 64px !important;
+  color: #c9c5bb !important;
 }
 .contact-title { font-size: 1.55rem !important; letter-spacing: -.02em; color: #f2ede3 !important; }
-.contact-subtitle { color: #a3a6a0 !important; }
+.contact-subtitle { color: #c3c0b8 !important; }
 .contact-grid { gap: 14px !important; }
 .contact-card {
   min-height: 190px;
   padding: 22px !important;
   border-color: var(--showcase-tactical-border) !important;
-  background: var(--showcase-tactical) !important;
+  background: linear-gradient(160deg, rgba(24, 30, 34, .985), rgba(13, 18, 21, .99)) !important;
+  color: #d8d5cd !important;
   box-shadow: var(--surface-shadow);
 }
-.contact-hint { color: #8f948d !important; }
+.contact-hint { color: #a4a9a3 !important; }
 .contact-card:hover { transform: translateY(-2px); box-shadow: 0 20px 42px var(--accent-shadow); }
 .contact-icon { filter: saturate(.75); }
 .copy-btn { margin-top: auto !important; }
 
 /* HoF admin and other admin-like pages */
+.hof-admin,
 .hof-admin-page,
 .hofadmin-page,
 .admin-hof-page {
@@ -163,24 +178,44 @@
   max-width: none !important;
   margin-inline: auto !important;
   padding: 24px 0 64px !important;
+  color: #d8d5cd !important;
 }
-:is(.hof-admin-page,.hofadmin-page,.admin-hof-page) table {
-  width: max-content;
-  min-width: 100%;
+:is(.hof-admin,.hof-admin-page,.hofadmin-page,.admin-hof-page) .hof-admin-tabs,
+:is(.hof-admin,.hof-admin-page,.hofadmin-page,.admin-hof-page) .hof-admin-filters,
+:is(.hof-admin,.hof-admin-page,.admin-hof-page) .tablewrap {
+  background: rgba(13, 18, 22, .97) !important;
+}
+:is(.hof-admin,.hof-admin-page,.hofadmin-page,.admin-hof-page) .tablewrap {
+  max-width: 100%;
+  overflow: auto !important;
+  border: 1px solid #354047 !important;
+  border-radius: 8px;
+}
+:is(.hof-admin,.hof-admin-page,.hofadmin-page,.admin-hof-page) table {
+  width: max-content !important;
+  min-width: 100% !important;
+  color: #d8d5cd !important;
   font-variant-numeric: tabular-nums;
 }
-:is(.hof-admin-page,.hofadmin-page,.admin-hof-page) thead th {
+:is(.hof-admin,.hof-admin-page,.hofadmin-page,.admin-hof-page) thead th {
   position: sticky;
   top: 60px;
   z-index: 4;
   background: #171e22 !important;
+  color: #c9c5bb !important;
+}
+:is(.hof-admin,.hof-admin-page,.hofadmin-page,.admin-hof-page) tbody td { color: #d8d5cd; }
+:is(.hof-admin,.hof-admin-page,.hofadmin-page,.admin-hof-page) :is(input,select,textarea) {
+  border-color: #465158 !important;
+  background: #0f1518 !important;
+  color: #e4e1d9 !important;
 }
 
 /* Shared destructive actions are quieter until interaction. */
-:is(.admin-page,.hof-admin-page,.hofadmin-page,.admin-hof-page) .btn-danger {
+:is(.admin-page,.hof-admin,.hof-admin-page,.hofadmin-page,.admin-hof-page) .btn-danger {
   box-shadow: none !important;
 }
-:is(.admin-page,.hof-admin-page,.hofadmin-page,.admin-hof-page) .btn-danger:hover {
+:is(.admin-page,.hof-admin,.hof-admin-page,.hofadmin-page,.admin-hof-page) .btn-danger:hover {
   opacity: 1 !important;
 }
 
@@ -195,6 +230,7 @@
   .boost-page,
   .version-page,
   .contact-page,
+  .hof-admin,
   .hof-admin-page,
   .hofadmin-page,
   .admin-hof-page {
@@ -210,5 +246,5 @@
   .version-page .ver { padding-left: 16px; }
   .version-page .ver-num { position: static; }
   .contact-grid { grid-template-columns: 1fr !important; }
-  :is(.hof-admin-page,.hofadmin-page,.admin-hof-page) thead th { top: 56px; }
+  :is(.hof-admin,.hof-admin-page,.hofadmin-page,.admin-hof-page) thead th { top: 56px; }
 }
