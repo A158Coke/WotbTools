@@ -178,12 +178,19 @@ public final class Mapper {
     // ---- Battle / 单场 ----
 
     public static BattleDto toBattle(final Battle b, final String sourceName, final Tankopedia tp) {
-        return toBattle(b, sourceName, tp, null);
+        return toBattle(b, sourceName, tp, null, false);
     }
 
-    /** League 模式时注入 Rating 单元格与单场元数据（普通模式 league 参数为 null）。 */
+    /**
+     * League 模式时注入 Rating 单元格与单场元数据（普通模式 league 参数为 null）。
+     *
+     * @param league    该场评分结果；Rating-ineligible 场次为 null（Battle 仍正常展示，
+     *                  Rating 列留空，plan：解析有效性 ≠ Rating 资格）
+     * @param leagueMode 整个批次是否为 League Rating 模式（决定是否移除旧三指标列；
+     *                   Rating-ineligible 场次 league==null 但 leagueMode 仍为 true）
+     */
     public static BattleDto toBattle(final Battle b, final String sourceName, final Tankopedia tp,
-                                     final LeagueRatingResult league) {
+                                     final LeagueRatingResult league, final boolean leagueMode) {
         final Function<Long, String> platoon = Players.platoonLabeler();
         final List<PlayerRow> rows = new ArrayList<>();
         final Map<Long, PlayerLeagueRating> leagueByAccount = new LinkedHashMap<>();
@@ -198,7 +205,7 @@ public final class Mapper {
             final Map<String, Object> cells = new LinkedHashMap<>();
             for (final Columns.Column c : Columns.PLAYER) {
                 // League 模式完全移除旧 contribution/kast/impact（plan §14）；普通模式保留
-                if (league != null && LeagueColumns.REMOVED_LEGACY_KEYS.contains(c.key())) {
+                if (leagueMode && LeagueColumns.REMOVED_LEGACY_KEYS.contains(c.key())) {
                     continue;
                 }
                 cells.put(c.key(), playerValue(c, p));
@@ -214,6 +221,10 @@ public final class Mapper {
                         cells.put(LeagueColumns.dimKey(d), r1(dims[d]));
                     }
                 }
+                cells.put(LeagueColumns.VICTORY_POINTS_EARNED, p.victoryPointsEarned);
+                cells.put(LeagueColumns.VICTORY_POINTS_SEIZED, p.victoryPointsSeized);
+            } else if (leagueMode) {
+                // Rating-ineligible league 场次：占点原始字段是 battle facts，仍应输出
                 cells.put(LeagueColumns.VICTORY_POINTS_EARNED, p.victoryPointsEarned);
                 cells.put(LeagueColumns.VICTORY_POINTS_SEIZED, p.victoryPointsSeized);
             }
@@ -327,7 +338,11 @@ public final class Mapper {
         return toPreviewResponse(battles, battleSourceNames, duplicates, failures, tp, null);
     }
 
-    /** League 模式：battles 与 league.battleResults() 按下标对齐（同一 ProcessedDataset 产出）。 */
+    /**
+     * League 模式：battles 为<b>全部</b>成功解析的 Battle（含 Rating-ineligible 场次），
+     * 每场 Rating 经 {@link LeagueRatingBatch#resultFor} 按 arenaId identity 绑定
+     * （不依赖数组 index——battles.size() 可大于 battleResults.size()，plan §9）。
+     */
     public static PreviewResponse toPreviewResponse(final List<Battle> battles,
                                                     final List<String> battleSourceNames,
                                                     final List<String[]> duplicates,
@@ -337,9 +352,8 @@ public final class Mapper {
         final List<BattleDto> battlesDto = new ArrayList<>();
         for (int i = 0; i < battles.size(); i++) {
             final Battle battle = battles.get(i);
-            final LeagueRatingResult battleLeague = league == null || league.battleResults().size() <= i
-                    ? null : league.battleResults().get(i);
-            battlesDto.add(toBattle(battle, battleSourceNames.get(i), tp, battleLeague));
+            final LeagueRatingResult battleLeague = league == null ? null : league.resultFor(battle.arenaId);
+            battlesDto.add(toBattle(battle, battleSourceNames.get(i), tp, battleLeague, league != null));
         }
         if (league != null) {
             // League 模式：不输出旧汇总表（选手/战队中位数汇总走 league.*）；

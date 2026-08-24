@@ -157,6 +157,69 @@ class ReplayProcessingJobServiceTest {
         assertTrue(ds.league().battleResults().getFirst().rated());
     }
 
+    // ---- P0 回归：League Rating 校验失败不得删除 Battle / 不得触发 NO_VALID_REPLAYS ----
+
+    @Test
+    void allLeagueBattlesRatingIneligibleJobStillReady() throws Exception {
+        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
+            final Source s = inv.getArgument(0);
+            final Battle b = leagueBattle(s.name());
+            switch (s.name()) {
+                case "m-death.wotbreplay" -> {
+                    b.players.getFirst().survived = false;
+                    b.players.getFirst().survivalTimeSec = 0; // MISSING_DEATH_TIME
+                }
+                case "m-roster.wotbreplay" -> b.rosterComplete = false; // ROSTER_INCOMPLETE
+                case "m-winner.wotbreplay" -> b.winnerTeam = null; // NO_DECISIVE_WINNER
+                default -> { }
+            }
+            return leagueProcessingResult(b, s.name());
+        });
+        final String jobId = service.createJob(new MultipartFile[]{
+                file("m-death.wotbreplay"), file("m-roster.wotbreplay"), file("m-winner.wotbreplay")});
+
+        final ReplayProcessingJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+        assertEquals(ReplayProcessingJob.Status.READY, snap.status(),
+                "全部 League replay 成功解析但全部 Rating 不合格时 Job 必须 READY（P0 Blocker，禁止 NO_VALID_REPLAYS）");
+        assertEquals(3, snap.valid(), "valid = 成功解析并可进入 Preview 的 replay 数");
+        assertEquals(0, snap.failures(), "Rating 不合格不得计入解析失败（plan §18）");
+
+        final ProcessedDataset ds = store.get(jobId).result();
+        assertEquals(3, ds.battles().size(), "全部 Rating-ineligible Battle 必须保留在 dataset");
+        assertEquals(0, ds.league().battleResults().size());
+        assertEquals(3, ds.league().failures().size());
+        assertEquals(1, ds.league().failures().stream()
+                .filter(f -> f.code().equals(com.wotb.core.league.LeagueFailure.Code.MISSING_DEATH_TIME)).count());
+        assertEquals(1, ds.league().failures().stream()
+                .filter(f -> f.code().equals(com.wotb.core.league.LeagueFailure.Code.ROSTER_INCOMPLETE)).count());
+        assertEquals(1, ds.league().failures().stream()
+                .filter(f -> f.code().equals(com.wotb.core.league.LeagueFailure.Code.NO_DECISIVE_WINNER)).count());
+    }
+
+    @Test
+    void partialLeagueRatingsJobReadyKeepsAllBattles() throws Exception {
+        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
+            final Source s = inv.getArgument(0);
+            final Battle b = leagueBattle(s.name());
+            if (s.name().equals("p-bad.wotbreplay")) {
+                b.rosterComplete = false;
+            }
+            return leagueProcessingResult(b, s.name());
+        });
+        final String jobId = service.createJob(new MultipartFile[]{
+                file("p-good.wotbreplay"), file("p-bad.wotbreplay")});
+
+        final ReplayProcessingJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+        assertEquals(ReplayProcessingJob.Status.READY, snap.status());
+        assertEquals(2, snap.valid());
+        assertEquals(0, snap.failures());
+
+        final ProcessedDataset ds = store.get(jobId).result();
+        assertEquals(2, ds.battles().size(), "eligible + ineligible 两场都必须进入 Preview battles");
+        assertEquals(1, ds.league().battleResults().size(), "Rating 只对 eligible 场次计算");
+        assertEquals(1, ds.league().failures().size());
+    }
+
     @Test
     void mixedLeagueAndStandardFailsWithStableErrorCode() throws Exception {
         when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
@@ -432,6 +495,32 @@ class ReplayProcessingJobServiceTest {
             p.tankId = 4481L;
             battle.players.add(p);
         }
+        return new ReplayProcessingResult(name, ReplayProcessingStatus.SUCCESS, null, battle,
+                null, null, ReplayProcessingCapabilities.summaryOnly(false), null, null);
+    }
+
+    /** 合法 7v7 league battle（arenaBonusType=2；可再改字段制造校验失败）。 */
+    private static Battle leagueBattle(final String name) {
+        final Battle b = new Battle();
+        b.arenaId = "arena-" + name;
+        b.arenaBonusType = 2;
+        b.winnerTeam = 1;
+        b.rosterComplete = true;
+        b.players = new ArrayList<>();
+        for (int i = 0; i < 14; i++) {
+            final PlayerResult p = new PlayerResult();
+            p.accountId = i + 1L;
+            p.nickname = "p" + (i + 1);
+            p.team = i < 7 ? 1 : 2;
+            p.tankId = 4481L;
+            p.survived = true;
+            p.survivalTimeSec = 300;
+            b.players.add(p);
+        }
+        return b;
+    }
+
+    private static ReplayProcessingResult leagueProcessingResult(final Battle battle, final String name) {
         return new ReplayProcessingResult(name, ReplayProcessingStatus.SUCCESS, null, battle,
                 null, null, ReplayProcessingCapabilities.summaryOnly(false), null, null);
     }
