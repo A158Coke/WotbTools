@@ -125,12 +125,14 @@
 .layout-data-workspace .tablewrap {
   border: 1px solid #303a40 !important;
   border-radius: 8px !important;
-  background: var(--bg-card) !important;
+  background: #11171a !important;
+  color: #d8d5cd !important;
   box-shadow: 0 16px 38px rgba(0,0,0,.16);
 }
 .layout-data-workspace table {
   width: max-content;
   min-width: 100%;
+  color: #d8d5cd !important;
   font-variant-numeric: tabular-nums;
 }
 .layout-data-workspace table thead th {
@@ -138,11 +140,15 @@
   top: 0;
   z-index: 5;
   height: 42px;
-  color: var(--text-sub) !important;
+  background: #171e22 !important;
+  color: #c9c5bb !important;
   border-bottom-color: #3a444a !important;
 }
-.layout-data-workspace table tbody td { height: 44px; }
-.layout-data-workspace table tbody tr:hover { background: var(--bg-list-hover) !important; }
+.layout-data-workspace table tbody td {
+  height: 44px;
+  color: #d8d5cd;
+}
+.layout-data-workspace table tbody tr:hover { background: #172025 !important; }
 .layout-data-workspace table th:first-child,
 .layout-data-workspace table td:first-child {
   position: sticky;
