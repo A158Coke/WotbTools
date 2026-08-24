@@ -7,14 +7,11 @@
  *  - artwork = fixed pseudo-element below the topbar, full viewport width,
  *    cover / no-repeat / centered — it never scrolls away and never lives
  *    inside the 1420/1720/1760px content container;
- *  - the ::before veil is a separate readability layer, so light/dark theming
- *    is done with the overlay/surface only, never with a second image.
+ *  - the ::before veil is a separate dark-only readability layer;
  *  - background-attachment: fixed is intentionally NOT used (mobile/Safari).
  */
 
-/* Page-wide readability veil — the cinematic artwork must never compete with UI text.
- * Showcase pages intentionally keep a dark operations-console veil even when the
- * global theme is light; light mode changes controls/surfaces, not text legibility. */
+/* Canonical page-wide readability veil — one dark operations-console treatment. */
 .layout-content::before,
 .layout-wide::before,
 .layout-data-workspace::before,
@@ -34,30 +31,6 @@
 .rating-page::before,
 .rating-section::before,
 .rating-workspace::before {
-  background: linear-gradient(180deg, rgba(5,8,10,.32), rgba(5,8,10,.60)) !important;
-}
-
-[data-theme="dark"] :is(
-  .layout-content,
-  .layout-wide,
-  .layout-data-workspace,
-  .admin-page,
-  .profile-page,
-  .boost-page,
-  .version-page,
-  .contact-page,
-  .hof-page,
-  .hof-wrap,
-  .hall-page,
-  .lb-wrap,
-  .hof-admin-page,
-  .hofadmin-page,
-  .admin-hof-page,
-  .hof-admin,
-  .rating-page,
-  .rating-section,
-  .rating-workspace
-)::before {
   background: linear-gradient(180deg, rgba(5,8,10,.28), rgba(5,8,10,.58)) !important;
 }
 

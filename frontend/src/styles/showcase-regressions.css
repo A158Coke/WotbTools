@@ -1,0 +1,80 @@
+/* WotBTools Showcase — cross-page regression guards.
+ * Keep this file last in main.js: these selectors intentionally reconcile legacy
+ * component-scoped layout with the V2 Showcase shell. No theme state lives here. */
+
+/* HoF admin: the table wrapper is the only scrolling/sticky coordinate system. */
+.hof-admin {
+  width: min(1760px, calc(100vw - 48px)) !important;
+  max-width: 1760px !important;
+}
+.hof-admin .tablewrap {
+  position: relative !important;
+  overflow: auto !important;
+  isolation: isolate;
+}
+.hof-admin .hof-admin-table {
+  position: relative;
+  z-index: 0;
+}
+.hof-admin .hof-admin-table thead {
+  position: relative;
+  z-index: 2;
+}
+.hof-admin .hof-admin-table thead th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 3 !important;
+  background: #151d21 !important;
+  color: #d8d5cd !important;
+}
+.hof-admin .hof-admin-filters,
+.hof-admin .hof-admin-tabs {
+  position: relative;
+  z-index: 5;
+}
+
+/* Public Hall of Fame: only the primary tab strip is sticky. A second fixed offset
+ * for filters breaks as soon as translated labels change the tabs' real height. */
+.lb-wrap .lb-toolbar {
+  position: static !important;
+  top: auto !important;
+  z-index: auto !important;
+}
+
+/* AI review header sits below the actual Showcase topbar (60px). */
+@media (min-width: 1081px) {
+  .analysis-panel .panel-head {
+    top: 60px !important;
+  }
+}
+
+/* Replay task card stays inside the viewport and below modal overlays.
+ * Stacking order: topbar (100) < task notification (180) < modal (200). */
+.layout-data-workspace:has(> .replay-task-card) {
+  padding-bottom: 230px !important;
+}
+.replay-task-card {
+  z-index: 180 !important;
+  width: min(300px, calc(100vw - 32px)) !important;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+@media (max-width: 767px) {
+  .hof-admin {
+    width: 100% !important;
+    padding-inline: 12px !important;
+  }
+
+  .layout-data-workspace:has(> .replay-task-card) {
+    padding-bottom: 260px !important;
+  }
+  .replay-task-card {
+    left: 8px !important;
+    right: 8px !important;
+    bottom: 8px !important;
+    width: auto !important;
+    max-height: min(46vh, 300px);
+  }
+}
