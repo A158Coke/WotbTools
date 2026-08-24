@@ -12,6 +12,19 @@ import zh from './locales/zh.json'
 import en from './locales/en.json'
 import ru from './locales/ru.json'
 
+// Keep showcase/legacy notification copy complete even while older persisted
+// notification rows may still use the historical BOOST_REQUEST_SUBMITTED code.
+zh.home.boostDesc = '专业陪练服务，提升战斗技巧与实战表现。'
+en.home.boostDesc = 'Coaching sessions to improve gameplay and battle performance.'
+ru.home.boostDesc = 'Тренировки для улучшения игровых навыков и эффективности в бою.'
+
+zh.boost.notificationTitle.BOOST_REQUEST_SUBMITTED = '陪练需求已提交'
+zh.boost.notificationMessage.BOOST_REQUEST_SUBMITTED = '你的陪练需求 #{requestId} 已提交，等待审核。'
+en.boost.notificationTitle.BOOST_REQUEST_SUBMITTED = 'Coaching request submitted'
+en.boost.notificationMessage.BOOST_REQUEST_SUBMITTED = 'Your coaching request #{requestId} was submitted and is awaiting review.'
+ru.boost.notificationTitle.BOOST_REQUEST_SUBMITTED = 'Заявка на тренировку отправлена'
+ru.boost.notificationMessage.BOOST_REQUEST_SUBMITTED = 'Ваша заявка #{requestId} отправлена и ожидает проверки.'
+
 const previewHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
 
 async function bootstrap() {
