@@ -258,6 +258,9 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .drawer-backdrop {
+  /* Desktop：drawer 从 var(--topbar-h)+8 开始，topbar（--z-topbar）保持在 backdrop 之上
+     （topbar 仍可见/可交互）。≤1080px 时提升到 --z-modal（见下方 media query），
+     Drawer 成为 modal overlay，叠在 sticky topbar 之上，关闭按钮始终可见可操作。 */
   position: fixed; inset: 0; z-index: 60;
   background: color-mix(in srgb, #000 35%, transparent);
 }
@@ -273,7 +276,11 @@ onBeforeUnmount(() => {
 }
 @media (max-width: 1080px) {
   /* <=1080px 时 App.vue .topbar 变为 sticky + auto height（可换行、高度不定），
-     固定偏移无法对齐；回退从视口顶部开始的右侧面板（backdrop/× 仍可关闭）。 */
+     固定偏移无法对齐；回退从视口顶部开始的右侧面板（backdrop/× 仍可关闭）。
+     stacking contract：Drawer 是 modal overlay——backdrop 提升到 --z-modal（200，
+     高于 --z-topbar 100），保证面板/关闭按钮在 sticky topbar 之上；全局 modal
+     （--z-modal 200）仍可与 Drawer 同级，由 DOM 顺序决出。 */
+  .drawer-backdrop { z-index: var(--z-modal); }
   .player-drawer { top: 8px; }
 }
 .pd-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }

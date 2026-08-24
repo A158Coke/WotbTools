@@ -46,14 +46,15 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 /**
- * Replay Export Job 编排（docs/current-plan.md §7–§23）。
+ * Replay Export Job 编排（异步长任务：bounded worker + 有界队列 + 真实进度 + 终态 exactly once）。
  *
  * <p>Create（request 线程）：校验 → 把上传输入持久化到 job 临时目录（绝不在异步
- * worker 持有 {@code MultipartFile}，§37）→ 注册 job → 提交有界 worker 池 → 202。
- * Worker（§23：batch 内 replay 仍串行）：全局容量许可（§21）→ 逐文件 full
- * processing（与 preview 同一 authoritative 链，§31）→ 真实进度 → XLSX/ZIP 写
- * 临时 artifact（不再 ByteArrayOutputStream 全量驻留，§15）→ READY。
- * metadata-only 不适用：本服务只处理导出，失败/取消按 §32/§33 语义。</p>
+ * worker 持有 {@code MultipartFile}——request 生命周期结束即释放）→ 注册 job →
+ * 提交有界 worker 池 → 202。Worker：batch 内 replay 保持上传顺序串行；执行前获取
+ * 全局 {@link ReplayCapacityLimiter} 许可（max-concurrent-jobs 不因 job 化提高）→
+ * 逐文件 full processing（与 preview 同一 authoritative 链）→ 真实进度 →
+ * XLSX/ZIP 写入流式 artifact（不 ByteArrayOutputStream 全量驻留）→ READY。
+ * metadata-only 不适用：本服务只处理导出，失败/取消按失败/取消语义终态。</p>
  */
 @Service
 public class ReplayExportJobService {
@@ -334,7 +335,7 @@ public class ReplayExportJobService {
                 return;
             }
             LOGGER.info(logLine("export_job_started", job.jobId(), "mode", job.mode(), "total", job.total()));
-            // 全局 replay 容量仍然生效（§21）：job 化不绕过 max-concurrent-jobs=2。
+            // 全局 replay 容量仍然生效：job 化不绕过 max-concurrent-jobs=2。
             capacityLimiter.acquire();
             try {
                 processJob(job, inputDir, each);
@@ -493,7 +494,6 @@ public class ReplayExportJobService {
         final int duplicates = ds.duplicates().size();
         final int failures = ds.failures().size();
         int processed = 0;
-        int skipped = 0;
         try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(artifact), StandardCharsets.UTF_8)) {
             for (int i = 0; i < battles.size(); i++) {
                 // 安全 checkpoint：每个 replay 开始前。
@@ -501,41 +501,37 @@ public class ReplayExportJobService {
                     throw new JobCancelledException();
                 }
                 processed++;
+                // Replay parse success 与 Rating eligibility 是两个独立领域：解析成功但
+                // Rating-ineligible 的 CW 场次同样导出（标准单场工作簿，Replay facts 保留），
+                // 不得因未评分把已解析回放从 ZIP 中丢弃。
                 final LeagueRatingResult leagueResult =
                         ds.isLeague() ? ds.league().resultFor(battles.get(i).arenaId) : null;
-                if (ds.isLeague() && leagueResult == null) {
-                    // Rating-ineligible 场次：Battle 已解析但不产生 Rating XLSX（失败策略跳过）
-                    skipped++;
-                    job.updateProgress(processed, duplicates, failures + skipped);
-                    continue;
-                }
                 // Battle 已成功（Processing 阶段完成）；此处任何写入失败 → 整个 job FAILED
                 // （边界：artifact generation failure 不得误判为单场失败）。
                 final ZipEntry entry = new ZipEntry(uniqueName(
                         ReplayJobFiles.stripExt(ds.battleSourceNames().get(i)) + ".xlsx", usedNames));
                 zip.putNextEntry(entry);
-                if (ds.isLeague()) {
+                if (leagueResult != null) {
                     writeSingleLeagueExcel(battles.get(i), leagueResult, job.teamNames().battle(), zip);
                 } else {
                     writeSingleExcel(battles.get(i), zip);
                 }
                 zip.closeEntry();
-                job.updateProgress(processed, duplicates, failures + skipped);
+                job.updateProgress(processed, duplicates, failures);
             }
         }
         if (job.isCancelled()) {
             throw new JobCancelledException();
         }
-        if (ds.validCount() <= 0 || processed - skipped <= 0) {
+        if (ds.validCount() <= 0) {
             throw new NoValidReplaysException();
         }
         // duplicates/failures 已在 Processing 阶段处理，此处计入最终 processed（保证 processed == total）。
-        // 注意 processed 已含 skipped（全部 battles 都迭代过），不得再加 skipped，否则 processed 超过 total。
-        job.updateProgress(processed + duplicates + failures, duplicates, failures + skipped);
+        job.updateProgress(processed + duplicates + failures, duplicates, failures);
         job.markReady("逐场导出.zip", ZIP_MIME, artifact);
     }
 
-    /** 终态收尾（exactly once 由 job 状态机保证）：日志 + 指标；FAILED/CANCELLED 删除 partial artifact（§11 不暴露半包）。 */
+    /** 终态收尾（exactly once 由 job 状态机保证）：日志 + 指标；FAILED/CANCELLED 删除 partial artifact（不暴露半包）。 */
     private void finishTerminal(final ExportJob job, final long startNanos) {
         final ExportJob.Snapshot snap = job.snapshot();
         if (snap.status() != ExportJob.Status.READY) {
@@ -544,7 +540,7 @@ public class ReplayExportJobService {
         logTerminal(snap);
         recordTerminal(snap, System.nanoTime() - startNanos, snap.mode());
         // 终态（含 FAILED/CANCELLED）统一保留到 TTL，让前端能读到终态错误码；
-        // 物理清理（输入 + artifact）由 ExportJobStore 的 TTL sweeper 完成（§18）。
+        // 物理清理（输入 + artifact）由 ExportJobStore 的 TTL sweeper 完成。
     }
 
     /**
@@ -583,7 +579,7 @@ public class ReplayExportJobService {
         }
     }
 
-    /** aggregate：LeagueReplays.collect 去重/模式判定 + 逐文件进度（§11/§12/§13），串行（§23）。 */
+    /** aggregate：LeagueReplays.collect 去重/模式判定 + 逐文件进度；batch 内串行处理。 */
     private void processAggregate(final ExportJob job, final List<Path> inputs) throws Exception {
         final int[] counters = new int[3]; // processed / duplicates / failures
         final Replays.ReplayProgressListener progress = (source, outcome) -> {
@@ -597,7 +593,7 @@ public class ReplayExportJobService {
             job.updateProgress(counters[0], counters[1], counters[2]);
             LOGGER.debug(logLine("export_job_progress", job.jobId(), "processed", counters[0],
                     "duplicates", counters[1], "failures", counters[2], "total", job.total()));
-            // 安全 checkpoint：每个 replay 完成后检查取消（§20）。
+            // 安全 checkpoint：每个 replay 完成后检查取消。
             if (job.isCancelled()) {
                 throw new JobCancelledException();
             }
@@ -669,7 +665,7 @@ public class ReplayExportJobService {
      *     单场 enrichment）：只说明「该场无效」→ {@code failures++} 并跳过，继续后续 replay；</li>
      * <li><b>artifact generation failure</b>（Battle 已成功，后续 zip entry / POI /
      *     filesystem / OutputStream 任何失败）：意味着 ZIP 可能已损坏 → 整个 job FAILED，
-     *     绝不继续写、绝不 READY；partial artifact 由 finishTerminal 删除（§11）。</li>
+     *     绝不继续写、绝不 READY；partial artifact 由 finishTerminal 删除（不暴露半包）。</li>
      * </ul></p>
      * 取消时 partial zip 同样由 finishTerminal 删除，不暴露半包。
      */
@@ -687,7 +683,7 @@ public class ReplayExportJobService {
         int failures = 0;
         try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(artifact), StandardCharsets.UTF_8)) {
             for (final Path p : inputs) {
-                // 安全 checkpoint：每个 replay 开始前（§11）。
+                // 安全 checkpoint：每个 replay 开始前。
                 if (job.isCancelled()) {
                     throw new JobCancelledException();
                 }
@@ -753,14 +749,15 @@ public class ReplayExportJobService {
     }
 
     /**
-     * League mode=each：只导出通过 7v7 校验并完成评分的场次（冲突/不合格场次按失败策略跳过）。
-     * Rating 按 arenaId identity 绑定；未评分场次计入 failures 进度并跳过。
+     * League mode=each：每场一个 XLSX——已评分场次 → League 单场工作簿；解析成功但
+     * Rating-ineligible（resultFor=null）→ 标准单场工作簿（Replay facts / Performance
+     * Metrics 保留，不跳过、不计入 failures）；真正解析失败/冲突的场次在 collect 阶段
+     * 已按失败语义排除。Rating 按 arenaId identity 绑定。
      */
     private void processEachLeague(final ExportJob job, final LeagueReplays.LeagueCollectResult c,
                                    final Path artifact, final Set<String> usedNames) throws Exception {
         int processed = 0;
         int exported = 0;
-        int skipped = 0;
         // 单场 Performance Metrics 回填（League 单场工作簿含 contribution/kast/impact）
         for (final Battle battle : c.battles()) {
             PerformanceMetricsCalculator.populateBattle(battle);
@@ -771,20 +768,19 @@ public class ReplayExportJobService {
                     throw new JobCancelledException();
                 }
                 processed++;
-                final LeagueRatingResult result =
-                        c.leagueBatch().resultFor(c.battles().get(i).arenaId);
-                if (result == null) {
-                    skipped++;
-                    progressCheckpoint(job, processed, skipped);
-                    continue;
-                }
+                final Battle battle = c.battles().get(i);
+                final LeagueRatingResult result = c.leagueBatch().resultFor(battle.arenaId);
                 final ZipEntry entry = new ZipEntry(uniqueName(
                         ReplayJobFiles.stripExt(c.battleSourceNames().get(i)) + ".xlsx", usedNames));
                 zip.putNextEntry(entry);
-                writeSingleLeagueExcel(c.battles().get(i), result, job.teamNames().battle(), zip);
+                if (result != null) {
+                    writeSingleLeagueExcel(battle, result, job.teamNames().battle(), zip);
+                } else {
+                    writeSingleExcel(battle, zip);
+                }
                 zip.closeEntry();
                 exported++;
-                progressCheckpoint(job, processed, skipped);
+                progressCheckpoint(job, processed, 0);
             }
         }
         if (job.isCancelled()) {
@@ -823,7 +819,7 @@ public class ReplayExportJobService {
         ExcelExporter.writeSingleLeague(battle, result, tankopedia, teamNames, out);
     }
 
-    /** 与 preview/export 完全相同的 authoritative full processing 链（§31，禁止 raw parse 回归）。 */
+    /** 与 preview/export 完全相同的 authoritative full processing 链（禁止 raw parse 回归）。 */
     private Battle processFull(final Source source) {
         final ReplayProcessingResult result = processingFacade.process(source, ReplayProcessingOptions.full());
         if (result.battle() != null) {
@@ -912,7 +908,7 @@ public class ReplayExportJobService {
     private static final class JobCancelledException extends RuntimeException {
     }
 
-    /** 0 场有效回放（§33）：不生成空 Excel，终态 FAILED + NO_VALID_REPLAYS。 */
+    /** 0 场有效回放：不生成空 Excel，终态 FAILED + NO_VALID_REPLAYS。 */
     private static final class NoValidReplaysException extends RuntimeException {
     }
 }

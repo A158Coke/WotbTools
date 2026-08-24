@@ -194,7 +194,8 @@ public final class Mapper {
      * League 模式时注入 Rating 单元格与单场元数据（普通模式 league 参数为 null）。
      *
      * @param league    该场评分结果；Rating-ineligible 场次为 null（Battle 仍正常展示，
-     *                  Rating 列留空，plan：解析有效性 ≠ Rating 资格）
+     *                  Rating 列留空——Replay validity and Rating eligibility are independent;
+     *                  Rating-ineligible parsed battles remain valid Replay results）
      * @param leagueMode 整个批次是否为 League Rating 模式（决定是否注入 Rating 列元数据 /
      *                   CW UI 语义；contribution/kast/impact 保留；
      *                   Rating-ineligible 场次 league==null 但 leagueMode 仍为 true）

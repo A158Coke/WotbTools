@@ -13,12 +13,17 @@ import com.wotb.web.replay.dto.AggRow;
 import com.wotb.web.replay.dto.BattleDto;
 import com.wotb.web.replay.dto.ExportResult;
 import com.wotb.web.replay.dto.PreviewResponse;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -200,6 +205,59 @@ class ReplayServiceLeagueTest {
     }
 
     @Test
+    void leagueEachExportKeepsRatingIneligibleParsedBattleAsStandardWorkbook() throws Exception {
+        // 纯 CW 2 场：1 场可评分（7v7）、1 场解析成功但 Rating-ineligible（13 人）。
+        // 每场都必须进入 ZIP——已评分 → League 单场工作簿；未评分 → 标准单场工作簿
+        // （Replay facts / Performance Metrics 保留，不跳过）。
+        final Battle rated = LeagueTestReplays.sevenVsSeven(1);
+        rated.arenaId = "111";
+        final Battle ineligible = LeagueTestReplays.sevenVsSeven(1);
+        ineligible.arenaId = "222";
+        ineligible.players.remove(0); // 13 人 → NOT_SEVEN_VS_SEVEN，Rating-ineligible
+        final ReplayService service = perFileService(List.of(rated, ineligible));
+        final ExportResult result = service.export(new MockMultipartFile[]{
+                file("rated.wotbreplay", LeagueTestReplays.replayBytes(rated, 2)),
+                file("unrated.wotbreplay", LeagueTestReplays.replayBytes(ineligible, 2))}, "each");
+        assertNotNull(result);
+        assertTrue(result.filename().endsWith(".zip"));
+        final List<String> names = new ArrayList<>();
+        final List<String> texts = new ArrayList<>();
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(result.data()))) {
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(zip.readAllBytes()))) {
+                    texts.add(workbookText(wb));
+                }
+                names.add(entry.getName());
+            }
+        }
+        assertEquals(2, names.size(), "纯 CW each 必须导出 2 个 XLSX（1 League + 1 Standard，不得丢弃 ineligible 场）");
+        assertTrue(texts.get(0).contains("战队Rating"), "rated 场应为 League 单场工作簿");
+        assertFalse(texts.get(1).contains("战队Rating"), "ineligible 场应为标准单场工作簿（无 Rating 块）");
+        assertTrue(texts.get(1).contains("P1002"), "标准工作簿仍保留 Replay facts / 玩家身份");
+    }
+
+    private static String workbookText(final Workbook wb) {
+        final StringBuilder sb = new StringBuilder();
+        for (int s = 0; s < wb.getNumberOfSheets(); s++) {
+            final var sheet = wb.getSheetAt(s);
+            for (int rr = 0; rr <= sheet.getLastRowNum(); rr++) {
+                final var row = sheet.getRow(rr);
+                if (row == null) {
+                    continue;
+                }
+                for (int c = 0; c < row.getLastCellNum(); c++) {
+                    final var cell = row.getCell(c);
+                    if (cell != null && cell.getCellType() == org.apache.poi.ss.usermodel.CellType.STRING) {
+                        sb.append(cell.getStringCellValue());
+                    }
+                }
+            }
+        }
+        return sb.toString();
+    }
+
+    @Test
     void leagueValidationFailureReportedWithCode() throws Exception {
         final Battle bad = LeagueTestReplays.sevenVsSeven(1);
         bad.arenaId = "111";
@@ -208,13 +266,13 @@ class ReplayServiceLeagueTest {
         final PreviewResponse r = leagueService(bad).preview(new MockMultipartFile[]{
                 file("bad.wotbreplay", new byte[]{1})});
         assertNotNull(r.league());
-        assertEquals(1, r.battles().size(), "Rating 不合格的单场也必须保留在 Preview（领域分离，P0）");
+        assertEquals(1, r.battles().size(), "Rating 不合格的单场也必须保留在 Preview（领域分离）");
         assertNull(r.battles().getFirst().league(), "未评分场不得被绑定任何 Rating");
         assertTrue(r.league().failures().stream()
                 .anyMatch(f -> f.code().equals(LeagueFailure.Code.NOT_SEVEN_VS_SEVEN)));
     }
 
-    // ---- P0 回归：partial League Rating（battles 保留全部，Rating 只对 eligible）----
+    // ---- partial League Rating（battles 保留全部，Rating 只对 eligible）----
 
     @Test
     void partialLeaguePreviewKeepsAllBattlesAndRatingOnlyForEligible() throws Exception {

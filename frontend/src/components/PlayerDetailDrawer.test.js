@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PlayerDetailDrawer from './PlayerDetailDrawer.vue'
@@ -287,6 +289,29 @@ describe('PlayerDetailDrawer custom Radar', () => {
     const labels = wrapper.find('.radar-stub').text().split(',')
     expect(labels).toEqual(['player_labels.kast', 'player_labels.league_damage_score',
       'player_labels.contribution', 'player_labels.league_kill_score'])
+  })
+
+  describe('Drawer stacking / layout contract', () => {
+    it('desktop top 使用 --topbar-h token（无 56px 硬编码）；≤1080px Drawer 提升到 modal 层、面板从视口顶部开始', () => {
+      // happy-dom 环境下 import.meta.url 指向 vite-node 缓存路径，改从项目根解析源码
+      const source = readFileSync(resolve(process.cwd(), 'src/components/PlayerDetailDrawer.vue'), 'utf8')
+      // desktop：top = calc(var(--topbar-h) + 8px)，禁止 56px magic number
+      expect(source).toContain('top: calc(var(--topbar-h) + 8px)')
+      expect(source).not.toContain('top: 56px')
+      // ≤1080px：backdrop 提升到 --z-modal（200，高于 --z-topbar 100），面板 top: 8px
+      const mobileBlock = source.match(/@media \(max-width: 1080px\) \{[\s\S]*?\n\}/)?.[0] || ''
+      expect(mobileBlock).toContain('.drawer-backdrop { z-index: var(--z-modal); }')
+      expect(mobileBlock).toContain('.player-drawer { top: 8px; }')
+    })
+
+    it('关闭按钮仍在 drawer header（移动端也始终可见可操作）', () => {
+      const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+      const head = wrapper.find('.pd-head')
+      expect(head.exists()).toBe(true)
+      const close = head.find('.pd-close')
+      expect(close.exists()).toBe(true)
+      expect(close.attributes('aria-label')).toBe('league.drawer.close')
+    })
   })
 
   it('Impact 不出现在 Radar picker，但 Performance 区仍显示 Impact', async () => {
