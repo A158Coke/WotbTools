@@ -262,6 +262,10 @@ function switchTab(tab) {
     loadHundredList()
     loadPending()
   }
+  if (tab === 'mark3') {
+    loadMark3List()
+    loadMark3Status()
+  }
 }
 
 // ── 百场：车辆 / 排行榜 ─────────────────────────────────────────
@@ -638,6 +642,408 @@ async function withdrawPending(p) {
   }
 }
 
+// ── 三环：车辆 / 排行榜 ─────────────────────────────────────────
+// 三环与百场共用 Tier X 车辆分类，但只允许人工证据审核。
+const mark3Vehicles = HUNDRED_VEHICLES
+const mark3VehicleId = ref(null)
+const mark3VehicleName = ref('')
+const mark3Nation = ref('')
+const mark3VehicleType = ref('')
+const mark3Rows = ref([])
+const mark3Loading = ref(false)
+const mark3Error = ref('')
+const mark3Page = ref(1)
+const mark3TotalPages = ref(0)
+const mark3Size = 50
+let mark3LoadGeneration = 0
+
+const mark3CurrentList = ref([])
+const mark3PendingList = ref([])
+const mark3WithdrawingId = ref(null)
+const mark3Msg = ref('')
+const mark3MsgErr = ref(false)
+
+const mark3Nations = uniqueValues(mark3Vehicles.map(vehicle => vehicle.nation))
+const mark3VehicleTypes = uniqueValues(mark3Vehicles.map(vehicle => vehicle.vehicleType))
+const filteredMark3Vehicles = computed(() => mark3Vehicles.filter(vehicle =>
+  (!mark3Nation.value || vehicle.nation === mark3Nation.value)
+    && (!mark3VehicleType.value || vehicle.vehicleType === mark3VehicleType.value)))
+const selectedMark3Current = computed(() => findMark3Status(mark3CurrentList.value, mark3VehicleId.value))
+const selectedMark3Pending = computed(() => findMark3Status(mark3PendingList.value, mark3VehicleId.value))
+
+function findMark3Status(items, vehicleId) {
+  if (!vehicleId) return null
+  return (items || []).find(item => Number(item.vehicleId) === Number(vehicleId)) || null
+}
+
+async function loadMark3List() {
+  const generation = ++mark3LoadGeneration
+  mark3Loading.value = true
+  mark3Error.value = ''
+  try {
+    const params = {
+      page: mark3Page.value,
+      size: mark3Size,
+      nation: mark3Nation.value,
+      vehicleType: mark3VehicleType.value,
+      vehicleId: mark3VehicleId.value,
+    }
+    const res = await api.hofMark3List(params)
+    if (generation !== mark3LoadGeneration) return
+    mark3Rows.value = res.items || []
+    mark3TotalPages.value = res.totalPages || 0
+  } catch (e) {
+    if (generation === mark3LoadGeneration) mark3Error.value = apiErrorLabel(t, te, e)
+  } finally {
+    if (generation === mark3LoadGeneration) mark3Loading.value = false
+  }
+}
+
+function onMark3VehicleChange() {
+  const vehicle = mark3Vehicles.find(item => item.id === Number(mark3VehicleId.value))
+  mark3VehicleName.value = vehicle?.name || ''
+  mark3Msg.value = ''
+  mark3Page.value = 1
+  loadMark3List()
+  loadMark3Status()
+}
+
+function onMark3VehicleFilterChange() {
+  if (mark3VehicleId.value
+      && !filteredMark3Vehicles.value.some(vehicle => vehicle.id === Number(mark3VehicleId.value))) {
+    mark3VehicleId.value = null
+    mark3VehicleName.value = ''
+  }
+  mark3Msg.value = ''
+  mark3Page.value = 1
+  loadMark3List()
+  loadMark3Status()
+}
+
+// 个人三环状态仅在已登录时读取，匿名看榜单不会触发登录跳转。
+async function loadMark3Status() {
+  if (!isAuthenticated()) {
+    mark3CurrentList.value = []
+    mark3PendingList.value = []
+    return
+  }
+  try {
+    const status = await api.hofMark3MyStatus()
+    mark3CurrentList.value = Array.isArray(status.current) ? status.current : []
+    mark3PendingList.value = Array.isArray(status.pending) ? status.pending : []
+  } catch {
+    mark3CurrentList.value = []
+    mark3PendingList.value = []
+  }
+}
+
+function goMark3Page(nextPage) {
+  mark3Page.value = nextPage
+  loadMark3List()
+}
+
+// ── 三环：人工提交弹窗 ─────────────────────────────────────────
+const showMark3Submit = ref(false)
+const mark3Submitting = ref(false)
+const mark3SubmitError = ref('')
+const mark3NeedProfile = ref(false)
+const mark3ScreenshotErr = ref('')
+const mark3ReplayErr = ref('')
+const mark3ScreenshotsInput = ref(null)
+const mark3ReplaysInput = ref(null)
+const mark3ScreenshotsReading = ref(false)
+let mark3ScreenshotReadGeneration = 0
+const mark3SubmitForm = reactive({
+  vehicleId: null,
+  battleCount: '',
+  averageDamage: '',
+  winRate: '',
+  proofScreenshots: [],
+  replays: [],
+})
+
+const mark3HasDraft = computed(() => Boolean(
+  mark3SubmitForm.vehicleId
+  || mark3SubmitForm.battleCount !== ''
+  || mark3SubmitForm.averageDamage !== ''
+  || mark3SubmitForm.winRate !== ''
+  || mark3SubmitForm.proofScreenshots.length
+  || mark3SubmitForm.replays.length
+))
+const submitMark3Vehicles = computed(() => {
+  const candidates = filteredMark3Vehicles.value
+  const draftVehicle = mark3Vehicles.find(vehicle => vehicle.id === Number(mark3SubmitForm.vehicleId))
+  if (!draftVehicle || candidates.some(vehicle => vehicle.id === draftVehicle.id)) return candidates
+  return [draftVehicle, ...candidates].sort((a, b) => a.name.localeCompare(b.name))
+})
+
+function openMark3Submit() {
+  if (!requireLogin()) return
+  showMark3Submit.value = true
+  mark3Submitting.value = false
+  mark3NeedProfile.value = false
+  mark3SubmitError.value = ''
+  mark3ScreenshotErr.value = ''
+  mark3ReplayErr.value = ''
+  if (!mark3SubmitForm.vehicleId && mark3VehicleId.value) {
+    mark3SubmitForm.vehicleId = mark3VehicleId.value
+  }
+}
+
+function closeMark3Submit() {
+  if (!mark3Submitting.value) showMark3Submit.value = false
+}
+
+function resetMark3Draft() {
+  ++mark3ScreenshotReadGeneration
+  mark3ScreenshotsReading.value = false
+  mark3SubmitForm.vehicleId = null
+  mark3SubmitForm.battleCount = ''
+  mark3SubmitForm.averageDamage = ''
+  mark3SubmitForm.winRate = ''
+  mark3SubmitForm.proofScreenshots = []
+  mark3SubmitForm.replays = []
+  mark3SubmitError.value = ''
+  mark3NeedProfile.value = false
+  mark3ScreenshotErr.value = ''
+  mark3ReplayErr.value = ''
+  if (mark3ScreenshotsInput.value) mark3ScreenshotsInput.value.value = ''
+  if (mark3ReplaysInput.value) mark3ReplaysInput.value.value = ''
+}
+
+function clearMark3Draft() {
+  if (!mark3HasDraft.value || mark3Submitting.value) return
+  if (!window.confirm(t('mark3.clearDraftConfirm'))) return
+  resetMark3Draft()
+}
+
+function mark3FileKey(file) {
+  return `${file.name}\u0000${file.size}\u0000${file.lastModified}`
+}
+
+function readMark3Screenshot(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve({ key: mark3FileKey(file), name: file.name, data: String(reader.result || '') })
+    reader.onerror = () => reject(new Error('IMAGE_READ_ERROR'))
+    reader.readAsDataURL(file)
+  })
+}
+
+function mark3ScreenshotFileError(files) {
+  if (files.some(file => !file.type.startsWith('image/'))) return 'mark3.invalidImageType'
+  if (files.some(file => file.size > 4 * 1024 * 1024)) return 'mark3.invalidImageSize'
+  return ''
+}
+
+function collectUniqueMark3Files(files, existingKeys) {
+  const knownKeys = new Set(existingKeys)
+  const additions = []
+  let duplicateCount = 0
+  for (const file of files) {
+    const key = mark3FileKey(file)
+    if (knownKeys.has(key)) {
+      duplicateCount++
+      continue
+    }
+    knownKeys.add(key)
+    additions.push(file)
+  }
+  return { additions, duplicateCount }
+}
+
+function readMark3Screenshots(additions, duplicateCount) {
+  const generation = ++mark3ScreenshotReadGeneration
+  mark3ScreenshotsReading.value = true
+  Promise.all(additions.map(readMark3Screenshot))
+    .then(screenshots => {
+      if (generation !== mark3ScreenshotReadGeneration) return
+      mark3SubmitForm.proofScreenshots.push(...screenshots)
+      mark3ScreenshotErr.value = duplicateCount ? t('mark3.screenshotDuplicateIgnored') : ''
+    })
+    .catch(() => {
+      if (generation === mark3ScreenshotReadGeneration) mark3ScreenshotErr.value = t('mark3.imageReadError')
+    })
+    .finally(() => {
+      if (generation === mark3ScreenshotReadGeneration) mark3ScreenshotsReading.value = false
+    })
+}
+
+function onMark3ScreenshotsChange(event) {
+  const input = event.target
+  const files = Array.from(input.files || [])
+  input.value = ''
+  if (!files.length) return
+  mark3ScreenshotErr.value = ''
+  const invalidFileKey = mark3ScreenshotFileError(files)
+  if (invalidFileKey) {
+    mark3ScreenshotErr.value = t(invalidFileKey)
+    return
+  }
+  const { additions, duplicateCount } = collectUniqueMark3Files(
+    files, mark3SubmitForm.proofScreenshots.map(screenshot => screenshot.key)
+  )
+  if (!additions.length) {
+    mark3ScreenshotErr.value = duplicateCount ? t('mark3.screenshotDuplicateIgnored') : ''
+    return
+  }
+  if (mark3SubmitForm.proofScreenshots.length + additions.length > 2) {
+    mark3ScreenshotErr.value = t('mark3.screenshotLimit')
+    return
+  }
+  readMark3Screenshots(additions, duplicateCount)
+}
+
+function removeMark3Screenshot(index) {
+  mark3SubmitForm.proofScreenshots.splice(index, 1)
+  mark3ScreenshotErr.value = ''
+}
+
+function onMark3ReplaysChange(event) {
+  const input = event.target
+  const files = Array.from(input.files || [])
+  input.value = ''
+  if (!files.length) return
+  if (files.some(file => !file.name.toLowerCase().endsWith('.wotbreplay'))) {
+    mark3ReplayErr.value = t('mark3.invalidReplayType')
+    return
+  }
+  const { additions, duplicateCount } = collectUniqueMark3Files(
+    files, mark3SubmitForm.replays.map(mark3FileKey)
+  )
+  if (mark3SubmitForm.replays.length + additions.length > 5) {
+    mark3ReplayErr.value = t('mark3.replayLimit')
+    return
+  }
+  mark3SubmitForm.replays.push(...additions)
+  mark3ReplayErr.value = duplicateCount ? t('mark3.replayDuplicateIgnored') : ''
+}
+
+function removeMark3Replay(index) {
+  mark3SubmitForm.replays.splice(index, 1)
+  mark3ReplayErr.value = ''
+}
+
+function isMark3WinRate(value) {
+  const rate = Number(value)
+  return Number.isFinite(rate)
+    && rate >= 0
+    && rate <= 100
+    && Math.abs(rate * 100 - Math.round(rate * 100)) < 1e-8
+}
+
+function mark3SubmissionValues() {
+  return {
+    vehicleId: Number(mark3SubmitForm.vehicleId),
+    battleCount: Number(mark3SubmitForm.battleCount),
+    averageDamage: Number(mark3SubmitForm.averageDamage),
+    winRate: Number(mark3SubmitForm.winRate),
+  }
+}
+
+function isPositiveInteger(value) {
+  return Number.isInteger(value) && value > 0
+}
+
+function hasValidMark3Metrics(values) {
+  return isPositiveInteger(values.vehicleId)
+    && isPositiveInteger(values.battleCount)
+    && isPositiveInteger(values.averageDamage)
+    && mark3SubmitForm.winRate !== ''
+    && isMark3WinRate(values.winRate)
+}
+
+function hasCompleteMark3Evidence() {
+  const screenshotCount = mark3SubmitForm.proofScreenshots.length
+  return !mark3ScreenshotsReading.value
+    && screenshotCount >= 1
+    && screenshotCount <= 2
+    && mark3SubmitForm.replays.length === 5
+}
+
+function mark3SubmissionValidationKey(values) {
+  if (!hasValidMark3Metrics(values) || !hasCompleteMark3Evidence()) return 'mark3.fillRequired'
+  if (findMark3Status(mark3CurrentList.value, values.vehicleId)) return 'mark3.currentExistsLocal'
+  if (findMark3Status(mark3PendingList.value, values.vehicleId)) return 'mark3.pendingExistsLocal'
+  return ''
+}
+
+function createMark3SubmissionFormData(values) {
+  const formData = new FormData()
+  formData.append('vehicleId', String(values.vehicleId))
+  formData.append('battleCount', String(values.battleCount))
+  formData.append('averageDamage', String(values.averageDamage))
+  formData.append('winRate', String(values.winRate))
+  for (const screenshot of mark3SubmitForm.proofScreenshots) formData.append('proofScreenshots', screenshot.data)
+  for (const replay of mark3SubmitForm.replays) formData.append('replays', replay)
+  return formData
+}
+
+function isMark3ProfileError(error) {
+  return ['MARK3_PROFILE_GAME_ID_REQUIRED', 'MARK3_PROFILE_NICKNAME_REQUIRED'].includes(error?.code)
+}
+
+async function submitMark3() {
+  if (mark3Submitting.value) return
+  const values = mark3SubmissionValues()
+  const validationKey = mark3SubmissionValidationKey(values)
+  if (validationKey) {
+    mark3SubmitError.value = t(validationKey)
+    return
+  }
+  mark3Submitting.value = true
+  mark3SubmitError.value = ''
+  mark3NeedProfile.value = false
+  try {
+    await api.hofMark3Submit(createMark3SubmissionFormData(values))
+    resetMark3Draft()
+    showMark3Submit.value = false
+    mark3Msg.value = t('mark3.submitSuccess')
+    mark3MsgErr.value = false
+    await loadMark3List()
+    await loadMark3Status()
+  } catch (e) {
+    if (isMark3ProfileError(e)) {
+      mark3NeedProfile.value = true
+      mark3SubmitError.value = t('mark3.needProfile')
+    } else {
+      mark3SubmitError.value = apiErrorLabel(t, te, e)
+    }
+  } finally {
+    mark3Submitting.value = false
+  }
+}
+
+async function withdrawMark3Pending(submission) {
+  if (mark3WithdrawingId.value) return
+  if (!window.confirm(t('mark3.withdrawConfirm'))) return
+  mark3WithdrawingId.value = submission.id
+  mark3Msg.value = ''
+  try {
+    await api.hofMark3Cancel(submission.id)
+    await loadMark3Status()
+    mark3Msg.value = t('mark3.withdrawSuccess')
+    mark3MsgErr.value = false
+  } catch (e) {
+    mark3Msg.value = apiErrorLabel(t, te, e)
+    mark3MsgErr.value = true
+  } finally {
+    mark3WithdrawingId.value = null
+  }
+}
+
+function formatMark3Number(value) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number.toLocaleString() : '—'
+}
+
+function formatMark3WinRate(value) {
+  const number = Number(value)
+  return Number.isFinite(number)
+    ? `${number.toLocaleString(undefined, { maximumFractionDigits: 2 })}%`
+    : '—'
+}
+
 function fmtDate(s) {
   if (!s) return ''
   const d = new Date(s)
@@ -652,6 +1058,7 @@ function fmtDate(s) {
     <div class="tabs">
       <button type="button" :class="{ active: activeTab === 'single' }" @click="switchTab('single')">{{ $t('hof.singleTab') }}</button>
       <button type="button" :class="{ active: activeTab === 'hundred' }" @click="switchTab('hundred')">{{ $t('hundred.tab') }}</button>
+      <button type="button" :class="{ active: activeTab === 'mark3' }" @click="switchTab('mark3')">{{ $t('mark3.tab') }}</button>
     </div>
 
     <div v-show="activeTab === 'single'">
@@ -904,6 +1311,108 @@ function fmtDate(s) {
       </div>
     </div>
 
+    <div v-show="activeTab === 'mark3'" class="h100-pane mark3-pane">
+      <header class="lb-head">
+        <span class="lb-kicker">{{ $t('hof.btn') }}</span>
+        <h1>{{ $t('mark3.tab') }}</h1>
+        <p>{{ $t('mark3.subtitle') }}</p>
+      </header>
+
+      <div class="lb-toolbar h100-toolbar">
+        <label class="lb-limit mark3-filter"><span class="lb-label">{{ $t('mark3.nation') }}</span>
+          <select v-model="mark3Nation" @change="onMark3VehicleFilterChange">
+            <option value="">{{ $t('mark3.allNations') }}</option>
+            <option v-for="nation in mark3Nations" :key="nation" :value="nation">{{ vehicleValueLabel(nation) }}</option>
+          </select>
+        </label>
+        <label class="lb-limit mark3-filter"><span class="lb-label">{{ $t('mark3.vehicleType') }}</span>
+          <select v-model="mark3VehicleType" @change="onMark3VehicleFilterChange">
+            <option value="">{{ $t('mark3.allVehicleTypes') }}</option>
+            <option v-for="vehicleType in mark3VehicleTypes" :key="vehicleType" :value="vehicleType">{{ vehicleValueLabel(vehicleType) }}</option>
+          </select>
+        </label>
+        <label class="lb-limit mark3-vehicle-filter"><span class="lb-label">{{ $t('mark3.selectVehicle') }}</span>
+          <select v-model="mark3VehicleId" class="mark3-vehicle-select" @change="onMark3VehicleChange">
+            <option :value="null">{{ $t('mark3.default') }}</option>
+            <option v-for="vehicle in filteredMark3Vehicles" :key="vehicle.id" :value="vehicle.id">{{ vehicle.name }}</option>
+          </select>
+        </label>
+        <button type="button" class="ghost sm" :disabled="mark3Loading" @click="loadMark3List">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v6h-6" /></svg>{{ $t('hof.refresh') }}
+        </button>
+        <button type="button" class="ghost sm h100-submit-btn mark3-submit-btn"
+                :disabled="!!selectedMark3Current || !!selectedMark3Pending || mark3Loading" @click="openMark3Submit">
+          {{ $t('mark3.submit') }}
+        </button>
+      </div>
+
+      <p v-if="mark3VehicleId" class="lb-filter-hint">
+        {{ $t('mark3.selectVehicle') }}: <strong>{{ mark3VehicleName }}</strong>
+      </p>
+
+      <div v-if="selectedMark3Current" class="h100-pending-card mark3-current-card">
+        <div class="h100-pending-body">
+          <div class="h100-pending-title">{{ $t('mark3.currentTitle', { vehicle: selectedMark3Current.vehicleName || mark3VehicleName }) }}</div>
+          <div class="h100-pending-meta">
+            <span>{{ $t('mark3.currentBattles') }}: <strong>{{ formatMark3Number(selectedMark3Current.approvedBattleCount ?? selectedMark3Current.claimedBattleCount) }}</strong></span>
+            <span>{{ $t('mark3.currentDamage') }}: <strong>{{ formatMark3Number(selectedMark3Current.approvedAverageDamage ?? selectedMark3Current.claimedAverageDamage) }}</strong></span>
+            <span>{{ $t('mark3.currentWinRate') }}: <strong>{{ formatMark3WinRate(selectedMark3Current.approvedWinRate ?? selectedMark3Current.claimedWinRate) }}</strong></span>
+          </div>
+        </div>
+      </div>
+      <div v-else-if="selectedMark3Pending" class="h100-pending-card">
+        <div class="h100-pending-body">
+          <div class="h100-pending-title">{{ $t('mark3.pendingTitle', { vehicle: selectedMark3Pending.vehicleName || mark3VehicleName }) }}</div>
+          <div class="h100-pending-meta">
+            <span>{{ $t('mark3.pendingBattles') }}: <strong>{{ formatMark3Number(selectedMark3Pending.claimedBattleCount) }}</strong></span>
+            <span>{{ $t('mark3.pendingDamage') }}: <strong>{{ formatMark3Number(selectedMark3Pending.claimedAverageDamage) }}</strong></span>
+            <span>{{ $t('mark3.pendingWinRate') }}: <strong>{{ formatMark3WinRate(selectedMark3Pending.claimedWinRate) }}</strong></span>
+            <span class="h100-pending-time">{{ $t('mark3.pendingTime') }}: {{ fmtDate(selectedMark3Pending.submittedAt) || '-' }}</span>
+          </div>
+        </div>
+        <button type="button" class="ghost sm danger" :disabled="mark3WithdrawingId === selectedMark3Pending.id" @click="withdrawMark3Pending(selectedMark3Pending)">
+          {{ mark3WithdrawingId === selectedMark3Pending.id ? $t('mark3.withdrawing') : $t('mark3.withdraw') }}
+        </button>
+      </div>
+
+      <p v-if="mark3Msg" class="lb-upload-msg" :class="{ err: mark3MsgErr }">{{ mark3Msg }}</p>
+
+      <p v-if="mark3Error" class="error">{{ mark3Error }}</p>
+      <p v-else-if="mark3Loading" class="muted">{{ $t('mark3.loading') }}</p>
+      <p v-else-if="!mark3Rows.length" class="muted">{{ $t(mark3VehicleId ? 'mark3.empty' : 'mark3.emptyDefault') }}</p>
+      <div v-else class="tablewrap">
+        <table>
+          <thead>
+            <tr>
+              <th>{{ $t('mark3.rank') }}</th>
+              <th>{{ $t('mark3.vehicle') }}</th>
+              <th>{{ $t('mark3.nickname') }}</th>
+              <th>{{ $t('mark3.battleCount') }}</th>
+              <th>{{ $t('mark3.avgDamage') }}</th>
+              <th>{{ $t('mark3.winRate') }}</th>
+              <th>{{ $t('mark3.approvedAt') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in mark3Rows" :key="row.id">
+              <td><span class="rk" :class="rankClass(row.rank)">{{ row.rank }}</span></td>
+              <td>{{ row.vehicleName }}</td>
+              <td>{{ row.nickname }}</td>
+              <td class="lb-dmg">{{ formatMark3Number(row.approvedBattleCount) }}</td>
+              <td>{{ formatMark3Number(row.approvedAverageDamage) }}</td>
+              <td>{{ formatMark3WinRate(row.approvedWinRate) }}</td>
+              <td class="lb-time">{{ fmtDate(row.approvedAt) || '-' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div v-if="mark3TotalPages > 1" class="pagination">
+        <button type="button" :disabled="mark3Page <= 1" @click="goMark3Page(mark3Page - 1)">{{ $t('mark3.prev') }}</button>
+        <span>{{ $t('mark3.pageInfo', { page: mark3Page, total: mark3TotalPages }) }}</span>
+        <button type="button" :disabled="mark3Page >= mark3TotalPages" @click="goMark3Page(mark3Page + 1)">{{ $t('mark3.next') }}</button>
+      </div>
+    </div>
+
     <div v-if="showSubmit" class="modal-overlay" @click.self="closeSubmit">
       <div class="modal h100-modal">
         <h2>{{ $t('hundred.submitTitle') }}</h2>
@@ -1006,6 +1515,87 @@ function fmtDate(s) {
         </div>
       </div>
     </div>
+
+    <div v-if="showMark3Submit" class="modal-overlay" @click.self="closeMark3Submit">
+      <div class="modal h100-modal mark3-modal">
+        <h2>{{ $t('mark3.submitTitle') }}</h2>
+        <p>{{ $t('mark3.submitDesc') }}</p>
+        <p class="h100-draft-hint">{{ $t('mark3.draftHint') }}</p>
+
+        <div class="h100-field">
+          <label class="h100-field-label" for="mark3-submit-vehicle">{{ $t('mark3.selectVehicle') }}</label>
+          <select id="mark3-submit-vehicle" v-model="mark3SubmitForm.vehicleId">
+            <option :value="null" disabled>{{ $t('mark3.chooseVehicle') }}</option>
+            <option v-for="vehicle in submitMark3Vehicles" :key="vehicle.id" :value="vehicle.id">{{ vehicle.name }}</option>
+          </select>
+        </div>
+
+        <div class="h100-field">
+          <label class="h100-field-label" for="mark3-submit-battles">{{ $t('mark3.claimedBattles') }}</label>
+          <input id="mark3-submit-battles" v-model.number="mark3SubmitForm.battleCount" type="number" min="1" step="1" />
+          <small>{{ $t('mark3.claimedBattlesHint') }}</small>
+        </div>
+
+        <div class="h100-field">
+          <label class="h100-field-label" for="mark3-submit-damage">{{ $t('mark3.claimedDamage') }}</label>
+          <input id="mark3-submit-damage" v-model.number="mark3SubmitForm.averageDamage" type="number" min="1" step="1" />
+          <small>{{ $t('mark3.claimedDamageHint') }}</small>
+        </div>
+
+        <div class="h100-field">
+          <label class="h100-field-label" for="mark3-submit-win-rate">{{ $t('mark3.claimedWinRate') }}</label>
+          <input id="mark3-submit-win-rate" v-model.number="mark3SubmitForm.winRate" type="number" min="0" max="100" step="0.01" />
+          <small>{{ $t('mark3.claimedWinRateHint') }}</small>
+        </div>
+
+        <div class="h100-field">
+          <span class="h100-field-label">{{ $t('mark3.screenshotLabel') }}
+            <span class="h100-counter">{{ $t('mark3.screenshotCounter', { current: mark3SubmitForm.proofScreenshots.length }) }}</span>
+          </span>
+          <input ref="mark3ScreenshotsInput" type="file" accept="image/*" multiple @change="onMark3ScreenshotsChange" />
+          <small>{{ $t('mark3.screenshotHint') }}</small>
+          <p v-if="mark3ScreenshotsReading" class="h100-file-reading">{{ $t('mark3.readingScreenshots') }}</p>
+          <ul v-if="mark3SubmitForm.proofScreenshots.length" class="h100-selected-files mark3-proof-list">
+            <li v-for="(screenshot, index) in mark3SubmitForm.proofScreenshots" :key="screenshot.key" class="h100-selected-file mark3-proof-item">
+              <img class="mark3-proof-preview" :src="screenshot.data" :alt="$t('mark3.screenshotPreview', { number: index + 1 })" />
+              <span class="h100-file-index">{{ index + 1 }}</span>
+              <span class="h100-selected-name" :title="screenshot.name">{{ screenshot.name }}</span>
+              <button type="button" class="h100-remove-file" :aria-label="$t('mark3.removeFile', { name: screenshot.name })" @click="removeMark3Screenshot(index)">×</button>
+            </li>
+          </ul>
+          <p v-if="mark3ScreenshotErr" class="h100-err">{{ mark3ScreenshotErr }}</p>
+        </div>
+
+        <div class="h100-field">
+          <span class="h100-field-label">{{ $t('mark3.replaysLabel') }}
+            <span class="h100-counter">{{ $t('mark3.replayCounter', { current: mark3SubmitForm.replays.length }) }}</span>
+          </span>
+          <input ref="mark3ReplaysInput" type="file" accept=".wotbreplay" multiple @change="onMark3ReplaysChange" />
+          <small>{{ $t('mark3.replaysHint') }}</small>
+          <ul v-if="mark3SubmitForm.replays.length" class="h100-selected-files">
+            <li v-for="(replay, index) in mark3SubmitForm.replays" :key="mark3FileKey(replay)" class="h100-selected-file">
+              <span class="h100-file-index">{{ index + 1 }}</span>
+              <span class="h100-selected-name" :title="replay.name">{{ replay.name }}</span>
+              <button type="button" class="h100-remove-file" :aria-label="$t('mark3.removeFile', { name: replay.name })" @click="removeMark3Replay(index)">×</button>
+            </li>
+          </ul>
+          <p v-if="mark3ReplayErr" class="h100-err">{{ mark3ReplayErr }}</p>
+        </div>
+
+        <p v-if="mark3NeedProfile" class="h100-need-profile">
+          {{ mark3SubmitError }} <a href="/?view=profile">{{ $t('mark3.goProfile') }}</a>
+        </p>
+        <p v-else-if="mark3SubmitError" class="h100-err">{{ mark3SubmitError }}</p>
+
+        <div class="modal-actions">
+          <button type="button" class="ghost danger h100-clear-draft" :disabled="mark3Submitting || !mark3HasDraft" @click="clearMark3Draft">{{ $t('mark3.clearDraft') }}</button>
+          <button type="button" class="ghost" :disabled="mark3Submitting" @click="closeMark3Submit">{{ $t('app.close') }}</button>
+          <button type="button" class="filebtn mark3-modal-submit" :disabled="mark3Submitting || mark3ScreenshotsReading" @click="submitMark3">
+            {{ mark3Submitting ? $t('mark3.submitting') : $t('mark3.submit') }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -1104,8 +1694,8 @@ function fmtDate(s) {
 .pagination button:hover:not(:disabled) { background: var(--bg-card-hover); }
 
 /* ── 百场 Tab ─────────────────────────────────── */
-.h100-vehicle-filter { flex-wrap: wrap; }
-.hof-vehicle-select, .h100-vehicle-select { min-width: 200px; }
+.h100-vehicle-filter, .mark3-vehicle-filter { flex-wrap: wrap; }
+.hof-vehicle-select, .h100-vehicle-select, .mark3-vehicle-select { min-width: 200px; }
 .h100-pending-card {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   margin: 12px 0; padding: 12px 14px;
@@ -1164,6 +1754,11 @@ function fmtDate(s) {
   background: var(--bg-card2); color: var(--text-label); font-size: 12px;
 }
 .h100-selected-files .h100-selected-file { margin-top: 0; }
+.mark3-proof-item { align-items: center; }
+.mark3-proof-preview {
+  width: 48px; height: 36px; flex: 0 0 auto; object-fit: cover;
+  border: 1px solid var(--border-ghost); border-radius: 5px; background: var(--bg-card);
+}
 .h100-file-index {
   display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
   width: 20px; height: 20px; border-radius: 50%;

@@ -24,7 +24,11 @@ const lbApi = vi.hoisted(() => ({
     id: 2, status: 'CURRENT', decision: 'AUTO_APPROVED', verifiedAverageDamage: 3800, verifiedBattleCount: 120
   })),
   hofHundredCancel: vi.fn(() => Promise.resolve({ id: 1, status: 'CANCELLED' })),
-  hofHundredMyStatus: vi.fn(() => Promise.resolve({ current: [], pending: [], rejected: [] }))
+  hofHundredMyStatus: vi.fn(() => Promise.resolve({ current: [], pending: [], rejected: [] })),
+  hofMark3List: vi.fn(() => Promise.resolve({ vehicleId: null, vehicleName: '', items: [], page: 1, size: 50, totalItems: 0, totalPages: 0 })),
+  hofMark3Submit: vi.fn(() => Promise.resolve({ id: 3, status: 'PENDING' })),
+  hofMark3Cancel: vi.fn(() => Promise.resolve({ id: 3, status: 'CANCELLED' })),
+  hofMark3MyStatus: vi.fn(() => Promise.resolve({ current: [], pending: [], rejected: [] }))
 }))
 
 vi.mock('../composables/useAuth.js', () => ({
@@ -68,6 +72,9 @@ describe('HoFPage', () => {
     lbApi.hofHundredSubmitWargaming.mockResolvedValue({
       id: 2, status: 'CURRENT', decision: 'AUTO_APPROVED', verifiedAverageDamage: 3800, verifiedBattleCount: 120
     })
+    lbApi.hofMark3List.mockResolvedValue({ vehicleId: null, vehicleName: '', items: [], page: 1, size: 50, totalItems: 0, totalPages: 0 })
+    lbApi.hofMark3Submit.mockResolvedValue({ id: 3, status: 'PENDING' })
+    lbApi.hofMark3MyStatus.mockResolvedValue({ current: [], pending: [], rejected: [] })
   })
 
   function mountPage() {
@@ -109,6 +116,13 @@ describe('HoFPage', () => {
     await wrapper.findAll('.tabs button')[1].trigger('click')
     await flushPromises()
     await wrapper.find('.h100-submit-btn').trigger('click')
+    await flushPromises()
+  }
+
+  async function openMark3Submit(wrapper) {
+    await wrapper.findAll('.tabs button')[2].trigger('click')
+    await flushPromises()
+    await wrapper.find('.mark3-submit-btn').trigger('click')
     await flushPromises()
   }
 
@@ -306,7 +320,7 @@ describe('HoFPage', () => {
     await flushPromises()
 
     const tabButtons = wrapper.findAll('.tabs button')
-    expect(tabButtons).toHaveLength(2)
+    expect(tabButtons).toHaveLength(3)
     await tabButtons[1].trigger('click')
     await flushPromises()
     // 切到百场 Tab → 拉取个人 PENDING 状态
@@ -681,5 +695,119 @@ describe('HoFPage', () => {
     expect(wrapper.find('#h100-submit-damage').element.value).toBe('')
     expect(wrapper.find('.h100-selected-files').exists()).toBe(false)
     expect(wrapper.find('.h100-selected-file').exists()).toBe(false)
+  })
+
+  it('loads Mark 3 rows with the same category filters and preserves server competition ranks', async () => {
+    lbApi.hofMark3List.mockResolvedValue({
+      vehicleId: null,
+      vehicleName: '',
+      items: [
+        { id: 31, rank: 1, vehicleId: 385, vehicleName: 'Progetto 65', nickname: 'Fast', approvedBattleCount: 76, approvedAverageDamage: 4200, approvedWinRate: 68.25, approvedAt: '2026-08-24T00:00:00Z' },
+        { id: 32, rank: 1, vehicleId: 385, vehicleName: 'Progetto 65', nickname: 'AlsoFast', approvedBattleCount: 76, approvedAverageDamage: 4100, approvedWinRate: 66.5, approvedAt: '2026-08-25T00:00:00Z' },
+      ],
+      page: 1, size: 50, totalItems: 2, totalPages: 1,
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await wrapper.findAll('.tabs button')[2].trigger('click')
+    await flushPromises()
+
+    expect(lbApi.hofMark3List).toHaveBeenLastCalledWith({
+      page: 1, size: 50, nation: '', vehicleType: '', vehicleId: null,
+    })
+    expect(wrapper.findAll('.mark3-pane .rk').map(item => item.text())).toEqual(['1', '1'])
+    expect(wrapper.text()).toContain('68.25%')
+
+    const filters = wrapper.findAll('.mark3-pane .mark3-filter select')
+    await filters[0].setValue('EUROPE')
+    await flushPromises()
+    expect(lbApi.hofMark3List).toHaveBeenLastCalledWith({
+      page: 1, size: 50, nation: 'EUROPE', vehicleType: '', vehicleId: null,
+    })
+  })
+
+  it('submits Mark 3 data with two proofScreenshots and exactly five replays', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    await openMark3Submit(wrapper)
+
+    const modal = wrapper.find('.mark3-modal')
+    await modal.find('#mark3-submit-vehicle').setValue('385')
+    await modal.find('#mark3-submit-battles').setValue('86')
+    await modal.find('#mark3-submit-damage').setValue('4123')
+    await modal.find('#mark3-submit-win-rate').setValue('67.25')
+    const inputs = modal.findAll('input[type="file"]')
+    await setFiles(inputs[0], [
+      new File(['one'], 'start.png', { type: 'image/png', lastModified: 1 }),
+      new File(['two'], 'finish.png', { type: 'image/png', lastModified: 2 }),
+    ])
+    await vi.waitFor(() => expect(modal.findAll('.mark3-proof-item')).toHaveLength(2))
+    await setFiles(inputs[1], [1, 2, 3, 4, 5].map(number => new File(
+      [`r${number}`], `battle-${number}.wotbreplay`, { lastModified: number }
+    )))
+
+    await modal.find('.mark3-modal-submit').trigger('click')
+    await flushPromises()
+
+    expect(lbApi.hofMark3Submit).toHaveBeenCalledTimes(1)
+    const [formData] = lbApi.hofMark3Submit.mock.calls[0]
+    expect(formData.get('vehicleId')).toBe('385')
+    expect(formData.get('battleCount')).toBe('86')
+    expect(formData.get('averageDamage')).toBe('4123')
+    expect(formData.get('winRate')).toBe('67.25')
+    expect(formData.getAll('proofScreenshots')).toHaveLength(2)
+    expect(formData.getAll('replays')).toHaveLength(5)
+  })
+
+  it('rejects a Mark 3 win rate with more than two decimal places before upload', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    await openMark3Submit(wrapper)
+
+    const modal = wrapper.find('.mark3-modal')
+    await modal.find('#mark3-submit-vehicle').setValue('385')
+    await modal.find('#mark3-submit-battles').setValue('86')
+    await modal.find('#mark3-submit-damage').setValue('4123')
+    await modal.find('#mark3-submit-win-rate').setValue('67.251')
+    const inputs = modal.findAll('input[type="file"]')
+    await setFiles(inputs[0], [new File(['one'], 'start.png', { type: 'image/png', lastModified: 1 })])
+    await vi.waitFor(() => expect(modal.findAll('.mark3-proof-item')).toHaveLength(1))
+    await setFiles(inputs[1], [1, 2, 3, 4, 5].map(number => new File(
+      [`r${number}`], `battle-${number}.wotbreplay`, { lastModified: number }
+    )))
+
+    await modal.find('.mark3-modal-submit').trigger('click')
+
+    expect(modal.text()).toContain('mark3.fillRequired')
+    expect(lbApi.hofMark3Submit).not.toHaveBeenCalled()
+  })
+
+  it('requires login before opening the Mark 3 submission dialog', async () => {
+    authenticated = false
+    const wrapper = mountPage()
+    await flushPromises()
+    await wrapper.findAll('.tabs button')[2].trigger('click')
+    await flushPromises()
+    await wrapper.find('.mark3-submit-btn').trigger('click')
+
+    expect(api.login).toHaveBeenCalledWith('hof')
+    expect(wrapper.find('.mark3-modal').exists()).toBe(false)
+  })
+
+  it('blocks a second Mark 3 submission for a vehicle with a CURRENT record', async () => {
+    lbApi.hofMark3MyStatus.mockResolvedValue({
+      current: [{ id: 40, vehicleId: 385, vehicleName: 'Progetto 65', status: 'CURRENT', approvedBattleCount: 76, approvedAverageDamage: 4200, approvedWinRate: 68 }],
+      pending: [], rejected: [],
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    await wrapper.findAll('.tabs button')[2].trigger('click')
+    await flushPromises()
+    await wrapper.find('.mark3-pane .mark3-vehicle-select').setValue('385')
+    await flushPromises()
+
+    expect(wrapper.find('.mark3-current-card').exists()).toBe(true)
+    expect(wrapper.find('.mark3-submit-btn').attributes('disabled')).toBeDefined()
   })
 })
