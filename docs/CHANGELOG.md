@@ -5,7 +5,7 @@
 ## [Unreleased]
 
 ### Changed
-- **PR #134 最终收口（零技术债 closeout）**：
+- **CW Rating UI 架构与导出契约收口**：
   - **leagueMode 单一事实源**：前端页面级 CW 模式只消费 `resp.leagueMode === true`（后端
     显式标记），删除 `!!resp.league` 兼容回退与 `isLeagueColumns()` 列内容推断
     （helpers.js 删除 helper）；useColumns 显式接收 leagueMode ref；初始 tab 决策
@@ -23,7 +23,7 @@
     header 收口为单行 toolbar（`top: var(--topbar-h)`，移除 52px 硬编码与负 margin）。
   - **league-rating.md 与代码逐字对齐**：preliminary = 六个非存活维度之和（伤害/助攻/击杀/
     换血/阻挡/射击），base = preliminary + survival；混合批次各导出语义按真实代码描述；
-    清理 "后续 Excel 导出" 等过期措辞与全部 review/plan 考古引用。
+    清理 "后续 Excel 导出" 等过期措辞与过期计划引用。
   - **死代码/过期 API/过期测试清理**：BattleTable 删除未使用 `round1`、未解构
     `stickyLeft`、行 key 改 `account_id`；CwPlayerSummaryTable 删除未解构
     `stickyLeft`；LeagueSummaryTable 删除 stale `type` prop（ReplayPage 与测试同步）；
@@ -38,11 +38,11 @@
     + playerSummaries=[] + battle.league=null（不再把 leagueMode=true + league=null 当合法 fixture）。
   - **Drawer 定位 token 化**：.player-drawer `top: 56px` 硬编码 → `calc(var(--topbar-h) + 8px)`，
     ≤1080px 回退 `top: 8px`（topbar sticky + auto-height 无法固定对齐，CSS contract 优先）。
-  - **考古清零**：PR touched 范围内 production code/tests/docs 的 review/plan 考古引用
-    全部改写为领域语义（测试名移除 PR 历史括号）；
-    删除 PR 专用人工 QA 清单 `docs/verification/cw-rating-ui-acceptance.md`（browser QA 非 merge gate，
-    长期回归由自动化测试 + exact-head CI 承担）。
-- **Replay CW Rating UI 收口（docs/current-plan.md）**：
+  - **注释与文档收尾**：变更范围内 production code/tests/docs 的过期注释与计划引用
+    改写为领域语义（测试名改为行为描述）；
+    删除仅服务单次人工验收的清单 `docs/verification/cw-rating-ui-acceptance.md`（浏览器人工验收
+    不是合并门槛，长期回归由自动化测试与 CI 承担）。
+- **Replay CW Rating UI 收口**：
   - **Rating 八维 → 七维**：`LeagueRatingCalculator` / `PlayerLeagueRating` 删除争霸占点评分
     维度（`MAX_OBJECTIVE` / `objectiveScore` / earned/seized index 全链路移除），射击效率满分
     50 → 100 补位，总分保持 1000；`LeagueColumns.DIM_KEYS/DIM_MAX` 同步为七维；
@@ -64,7 +64,7 @@
     （normalizeMissing/compareValues/stableSortRows：numeric、自然字符串序、
     missing-last 与方向无关、raw sort、稳定）；BattleTable / AggregateTable /
     CwPlayerSummaryTable / LeagueSummaryTable 全部接入，team_name 按最终显示名排序。
-  - **P0 sticky 生命周期修复**：BattleTable 新增 `active` prop（父组件传
+  - **sticky 生命周期修复**：BattleTable 新增 `active` prop（父组件传
     activeTab 可见性），hidden→visible 后 nextTick + rAF 重测、ResizeObserver 监听
     nickname 列宽、width<=0 不覆盖有效 offset（禁止 0 width 污染）；ReplayPage 传
     `:active="activeTab === 'b' + i"`。
@@ -192,7 +192,7 @@
   - **文档**：protocol.md / replay-data.md / replay-parsed-fields.md / league-rating.md 同步——
     全局 rosterComplete 严格契约保持，「任何 #201 extra 都是观战者」不表述为 universal rule，
     仅记录证据边界（标准 7v7 且 #301 完整 14 人时 extra 不属于 14 名 settled combatants）。
-- **Replay 汇总空数据 + 超宽表格重叠 P0 修复（docs/current-plan.md）**：
+- **Replay 汇总空数据 + 超宽表格重叠修复**：
   - **League 模式恢复基础 Replay Aggregate**：Mapper.toPreviewResponse 在 League 模式下不再输出空
     aggregate——多场时按标准路径计算并输出基础跨场汇总（Aggregator.aggregate +
     PerformanceMetricsCalculator.compute，同一 Replay Core 数据），League Rating Summary 是附加

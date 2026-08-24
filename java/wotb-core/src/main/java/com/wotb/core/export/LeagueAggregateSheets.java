@@ -142,7 +142,7 @@ final class LeagueAggregateSheets {
         styles.writeHeader(ws, header);
         int rIdx = 1;
         // 只对通过校验并完成评分的场次输出 Rating 明细（identity 绑定，不依赖 index）；
-        // Rating-ineligible 场次在「战斗列表」中以失败状态展示（plan：基础数据可导出，Rating 只对 eligible 存在）
+        // Rating-ineligible 场次在「战斗列表」中以失败状态展示（基础数据可导出，Rating 只对 eligible 存在）
         for (int i = 0; i < battles.size(); i++) {
             final Battle battle = battles.get(i);
             final LeagueRatingResult result = batch.resultFor(battle.arenaId);

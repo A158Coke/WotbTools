@@ -218,22 +218,25 @@ public class ReplayService {
         final Set<String> usedNames = new HashSet<>();
         try (ZipOutputStream zip = new ZipOutputStream(zipBytes, StandardCharsets.UTF_8)) {
             if (allLeague) {
-                // League：与 preview 同一 collect（去重冲突/7v7 校验/评分）；
-                // 只导出通过校验并完成评分的场次，冲突/不合格场次按失败策略跳过。
+                // League：与 preview 同一 collect（去重冲突/7v7 校验/评分）。
+                // 已评分场次 → League 单场工作簿；解析成功但 Rating-ineligible（resultFor=null）
+                // → 标准单场工作簿（Replay facts / Performance Metrics 保留）——Replay parse
+                // success 与 Rating eligibility 是两个独立领域；真正解析失败/冲突的场次
+                // 已在 collect 阶段跳过，不进 ZIP。
                 final LeagueReplays.LeagueCollectResult c = LeagueReplays.collect(
                         sources, this::processFull, null, null);
                 for (final Battle battle : c.battles()) {
                     PerformanceMetricsCalculator.populateBattle(battle);
                 }
                 for (int i = 0; i < c.battles().size(); i++) {
-                    // identity 绑定；只导出通过校验并完成评分的场次，
-                    // 冲突/不合格场次按失败策略跳过（与既有注释语义一致，之前因 bug 隐式生效）
-                    final LeagueRatingResult result = c.leagueBatch().resultFor(c.battles().get(i).arenaId);
-                    if (result == null) {
-                        continue;
-                    }
+                    final Battle battle = c.battles().get(i);
+                    final LeagueRatingResult result = c.leagueBatch().resultFor(battle.arenaId);
                     final ByteArrayOutputStream xlsx = new ByteArrayOutputStream();
-                    ExcelExporter.writeSingleLeague(c.battles().get(i), result, tankopedia, xlsx);
+                    if (result != null) {
+                        ExcelExporter.writeSingleLeague(battle, result, tankopedia, xlsx);
+                    } else {
+                        ExcelExporter.writeSingle(battle, tankopedia, xlsx);
+                    }
                     final ZipEntry entry = new ZipEntry(uniqueName(
                             stripExt(c.battleSourceNames().get(i)) + ".xlsx", usedNames));
                     zip.putNextEntry(entry);

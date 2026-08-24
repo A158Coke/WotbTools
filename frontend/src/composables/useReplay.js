@@ -9,7 +9,7 @@ const JOB_ACTIVE = new Set(['QUEUED', 'PROCESSING'])
 const JOB_POLL_MS = 1500
 
 /**
- * 初始结果 tab 决策（P0 修复：activeTab 必须始终指向真实存在、可渲染的结果 panel）。
+ * 初始结果 tab 决策（activeTab 必须始终指向真实存在、可渲染的结果 panel）。
  * 不能再按 battle 数量猜测 aggregate——aggregate tab/panel 的真实存在条件是
  * `resp.aggregate.length > 0 || resp.leagueMode === true`，而 battle panel 是 `battles[i]`。
  *

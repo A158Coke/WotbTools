@@ -43,8 +43,7 @@ export function leagueMaxByKey(leagueColumns) {
 
 /**
  * Rating 单元格文本（单场表 / CW 统一玩家表 / PNG 导出共用同一 contract）：
- * 总 Rating 只显示整数（927），不显示 /1000 冗余完成度；
- * 总 Rating 只显示整数（927）——{@link ratingTotalText} 是总 Rating 唯一 formatter；
+ * 总 Rating 只显示整数（927），不显示 /1000 冗余完成度（唯一 formatter = ratingTotalText）；
  * 七维显示「342 / 400 · 85.5%」（max 来自后端 metadata）；
  * 缺失（null / '' / NaN）→ '--'，不冒充 0；只有真实 raw 0 才显示 0。
  */

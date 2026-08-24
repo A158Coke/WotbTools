@@ -36,7 +36,9 @@ const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateF
   askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove } = replay
 /**
  * 页面级 CW（League）模式：唯一事实源 resp.leagueMode（后端显式标记，普通/混合批次为 false）。
- * 与 league 结果存在性分离——Rating-ineligible 批次/场次 league=null 但仍是 CW
+ * Batch contract：leagueMode=true ⟺ 纯 CW 批次，resp.league envelope 始终存在
+ * （无论评分场数，playerSummaries 可为空）。
+ * Battle contract：battle.league 可能为 null（Rating-ineligible 场次）——该场仍是 CW UI
  * （Player Drawer / Performance metrics / Replay facts 照常，Rating/七维显示 "--"）。
  * useColumns 的 leagueMode 只负责列系统（storage scope / fixed keys / picker）；
  * 页面 tab 存在性 / 统一玩家表 / 默认 activeTab 看这里。

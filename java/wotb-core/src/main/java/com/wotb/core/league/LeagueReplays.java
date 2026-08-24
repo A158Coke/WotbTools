@@ -13,11 +13,12 @@ import java.util.function.Consumer;
 /**
  * League Rating 模式的批次收集：解析全部输入 → 模式判定 → 去重/冲突 → 完整性校验 → 评分。
  *
- * <p><b>领域分离（P0 修复）</b>：{@link LeagueCollectResult#battles()} 返回<b>全部</b>成功解析
- * 并通过去重/冲突规则的 Battle（可进入 Preview/Export 的基础数据）；League Rating <b>只</b>对
- * 通过 {@link LeagueRatingValidator} 完整性校验的场次计算（{@link LeagueRatingBatch#battleResults()}
- * 与汇总均只含 eligible 场次）。Rating 校验失败<b>不得</b>把 Battle 从结果中移除（plan：replay
- * parsing validity != league rating eligibility），失败以 {@link LeagueFailure} 稳定错误码返回。</p>
+ * <p><b>Replay Core validity and League Rating eligibility are independent domains</b>：
+ * {@link LeagueCollectResult#battles()} 返回<b>全部</b>成功解析并通过去重/冲突规则的 Battle
+ * （可进入 Preview/Export 的基础数据）；League Rating <b>只</b>对通过
+ * {@link LeagueRatingValidator} 完整性校验的场次计算（{@link LeagueRatingBatch#battleResults()}
+ * 与汇总均只含 eligible 场次）。Rating-ineligible parsed battles remain valid Replay results——
+ * Rating 校验失败<b>不得</b>把 Battle 从结果中移除，失败以 {@link LeagueFailure} 稳定错误码返回。</p>
  *
  * <p>普通模式（{@code STANDARD_REPLAY}）复用 {@link Replays} 既有 arenaId 去重语义，
  * 普通回放契约零回归；混合模式（{@code MIXED_UNSUPPORTED}）同普通模式返回全部可解析
