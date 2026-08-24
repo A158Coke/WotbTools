@@ -374,11 +374,16 @@ public final class Mapper {
         // 只要是多场（跨场汇总语义），就必须输出标准基础汇总——League Rating Summary
         // 是附加分析，不替代基础汇总（plan §4/§5）。League 模式的 aggregateColumns 保留
         // 跨场 contribution/kast/impact（review PR#134 BLOCKER 1：Performance Metrics 在 CW 可显示）。
+        // review PR#134 BLOCKER 2（第三轮）：CW/League 单场也生成基础 Replay Aggregate row——
+        // 单场 CW Unified Summary 需要 damage_avg/assisted_avg/kills_avg/earned_avg 等
+        // Replay Core 权威事实（全部可由该场结算得出，禁止伪装成 unavailable）；
+        // Standard 单场保持旧语义（aggregate 为空）。aggregate 空列表时 toAggregate 自然为空。
         final Map<Long, PerformanceMetricsCalculator.Row> perfById = new LinkedHashMap<>();
         for (final PerformanceMetricsCalculator.Row row : PerformanceMetricsCalculator.compute(battles)) {
             perfById.put(row.accountId, row);
         }
-        final List<AggRow> aggregate = battles.size() > 1
+        final boolean shouldAggregate = battles.size() > 1 || league != null;
+        final List<AggRow> aggregate = shouldAggregate
                 ? toAggregate(Aggregator.aggregate(battles, tp), perfById)
                 : List.of();
         if (league != null) {

@@ -860,6 +860,158 @@ describe('ReplayPage PNG export', () => {
       expect(URL.revokeObjectURL).toHaveBeenCalled()
     })
   })
+
+  describe('league PNG export（完整列 universe，review PR#134 BLOCKER 1 第三轮）', () => {
+    afterEach(() => {
+      delete window.__testCwVisible
+      delete window.__testCwOrder
+    })
+
+    function leaguePngResp() {
+      return makeResp({
+        aggregate: [],
+        battles: [
+          {
+            mapName: 'Lagoon', league: { mvpAccountId: 1001 },
+            players: [
+              { team: 1, cells: { account_id: 1001, nickname: 'Alpha', clan: 'AAA', tank_name: 'KV-2', damage_dealt: 5000, damage_assisted: 900, kills: 3, contribution: 22.4, kast: 100, impact: 151.2, league_rating: 927.4, league_damage_score: 342, league_shooting_score: 100, victory_points_earned: 5 } },
+              { team: 2, cells: { account_id: 2001, nickname: 'Beta', clan: 'BBB', tank_name: 'IS-7', damage_dealt: 3000, damage_assisted: 400, kills: 1, contribution: null, kast: null, impact: 80.5, league_rating: null, league_damage_score: null, league_shooting_score: null, victory_points_earned: 0 } },
+            ],
+          },
+        ],
+        playerColumns: [
+          { key: 'nickname', num: false }, { key: 'clan', num: false }, { key: 'tank_name', num: false },
+          { key: 'damage_dealt', num: true }, { key: 'damage_assisted', num: true }, { key: 'kills', num: true },
+          { key: 'contribution', num: true }, { key: 'kast', num: true }, { key: 'impact', num: true },
+          { key: 'league_rating', num: true }, { key: 'league_damage_score', num: true },
+          { key: 'league_shooting_score', num: true }, { key: 'victory_points_earned', num: true },
+        ],
+        league: {
+          mode: 'LEAGUE_RATING',
+          columns: [
+            { key: 'league_rating', max: 1000, fixed: true },
+            { key: 'league_damage_score', max: 400 },
+            { key: 'league_shooting_score', max: 100 },
+          ],
+          playerSummaries: [], playerSummaryColumns: [],
+          teamSummaries: [], teamSummaryColumns: [], failures: [],
+        },
+      })
+    }
+
+    function captureClone() {
+      let clone = null
+      interceptAppendChild(node => {
+        const c = node.querySelector?.('.replay-export-root')
+        if (c) clone = c
+      })
+      return () => clone
+    }
+
+    it('单场 Battle PNG：完整列 = resp.playerColumns（ColumnPicker 隐藏列仍导出；nickname/damage/perf/Rating/七维/占点全在）', async () => {
+      state.init.resp = leaguePngResp()
+      state.init.activeTab = 'b0'
+      wrapper = mountPage()
+      const getClone = captureClone()
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
+      const html = getClone().querySelector('.tablewrap').innerHTML
+      // 完整 backend 列 universe（不依赖当前 visible-only DOM）
+      for (const k of ['nickname', 'clan', 'tank_name', 'damage_dealt', 'damage_assisted', 'kills',
+        'contribution', 'kast', 'impact', 'league_rating', 'league_damage_score',
+        'league_shooting_score', 'victory_points_earned']) {
+        expect(html).toContain('<th>player_labels.' + k + '</th>')
+      }
+      // 值存在：nickname / damage / perf / Rating
+      expect(html).toContain('Alpha')
+      expect(html).toContain('5000')
+      expect(html).toContain('22.4%')
+      expect(html).toContain('927') // 总 Rating 整数
+      expect(html).toContain('342 / 400')
+    })
+
+    it('Rating-ineligible 单场 PNG：league_rating/七维 null → --，不得伪造 0 / 0%', async () => {
+      state.init.resp = leaguePngResp()
+      state.init.activeTab = 'b0'
+      wrapper = mountPage()
+      const getClone = captureClone()
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
+      const html = getClone().querySelector('.tablewrap').innerHTML
+      expect(html).toContain('<td>--</td>') // Beta 的 Rating/维度缺失
+      expect(html).not.toContain('0 / 1000')
+      expect(html).not.toContain('0 / 400 · 0%')
+      // 真实 raw 0（victory_points_earned=0）保留 0，不被误判为缺失
+      expect(html).toContain('<td>0</td>')
+      expect(html).toContain('Beta')
+      expect(html).toContain('3000')
+    })
+
+    it('League aggregate PNG：UI 隐藏 KAST/Impact/七维时 export DOM 仍含完整 cw + 战队列', async () => {
+      window.__testCwVisible = ['nickname', 'league_rating'] // 页面只显示核心对
+      state.init.resp = makeResp({
+        aggregate: [
+          { team: 1, cells: { account_id: 1001, nickname: 'Alpha', clan: 'AAA', battles: 1, wins: 1, damage_avg: 5000, earned_avg: 5, contribution: 22.4, kast: 100, impact: 151.2 } },
+        ],
+        aggregateColumns: [
+          { key: 'nickname', num: false }, { key: 'battles', num: true }, { key: 'wins', num: true },
+          { key: 'damage_avg', num: true }, { key: 'earned_avg', num: true },
+          { key: 'contribution', num: true }, { key: 'kast', num: true }, { key: 'impact', num: true },
+        ],
+        playerColumns: [{ key: 'nickname', num: false }],
+        battles: [],
+        league: {
+          mode: 'LEAGUE_RATING',
+          columns: [
+            { key: 'league_rating', max: 1000, fixed: true },
+            { key: 'league_damage_score', max: 400 },
+          ],
+          playerSummaries: [
+            { accountId: 1001, nickname: 'Alpha', clan: 'AAA', battles: 1, ratingMedian: 927.4,
+              dimensionMedians: [342, 60, 70, 110, 40, 80, 100], mvpCount: 1, wins: 1,
+              contribution: 22.4, kast: 100, impact: 151.2 },
+          ],
+          playerSummaryColumns: [
+            { key: 'nickname', num: false }, { key: 'rated_battles', num: true },
+            { key: 'league_rating', num: true }, { key: 'league_damage_score', num: true },
+            { key: 'mvp_count', num: true }, { key: 'contribution', num: true },
+            { key: 'kast', num: true }, { key: 'impact', num: true },
+          ],
+          teamSummaries: [
+            { teamKey: 'AAA', autoName: 'AAA', battles: 1, ratingMedian: 900.6,
+              dimensionMedians: [300, 50, 60, 90, 30, 70, 80], wins: 1 },
+          ],
+          teamSummaryColumns: [
+            { key: 'team_name', num: false }, { key: 'battles', num: true },
+            { key: 'league_rating', num: true }, { key: 'league_damage_score', num: true },
+            { key: 'wins', num: true },
+          ],
+          failures: [],
+        },
+      })
+      state.init.activeTab = 'aggregate'
+      wrapper = mountPage()
+      const getClone = captureClone()
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
+      const wraps = getClone().querySelectorAll('.tablewrap')
+      expect(wraps.length).toBeGreaterThanOrEqual(2) // 玩家统一表 + 战队汇总表
+      const playerHtml = wraps[0].innerHTML
+      for (const k of ['nickname', 'rated_battles', 'league_rating', 'league_damage_score',
+        'mvp_count', 'contribution', 'kast', 'impact', 'damage_avg', 'earned_avg']) {
+        expect(playerHtml).toContain('<th>agg_labels.' + k + '</th>')
+      }
+      expect(playerHtml).toContain('927') // 总 Rating 整数
+      expect(playerHtml).toContain('342 / 400 · 85.5%')
+      expect(playerHtml).toContain('22.4%')
+      const teamHtml = wraps[1].innerHTML
+      expect(teamHtml).toContain('<th>league.summary.team_name</th>')
+      expect(teamHtml).toContain('<th>league.summary.league_rating</th>')
+      expect(teamHtml).toContain('<th>league.summary.league_damage_score</th>')
+      expect(teamHtml).toContain('AAA')
+      expect(teamHtml).toContain('901') // 战队总 Rating 整数
+    })
+  })
 })
 
 

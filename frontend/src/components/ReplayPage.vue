@@ -21,6 +21,7 @@ import LeagueSummaryTable from './LeagueSummaryTable.vue'
 import CwPlayerSummaryTable from './CwPlayerSummaryTable.vue'
 import PlayerDetailDrawer from './PlayerDetailDrawer.vue'
 import { mergeCwPlayerRows, mergeCwPlayerColumns, CW_DIM_KEYS } from '../utils/playerSummaryMerge.js'
+import { leagueBattleExportTable, leagueAggregateExportTables } from '../utils/leagueExportTable.js'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import ReplayTaskCard from './ReplayTaskCard.vue'
 import AiReviewPanel from './AiReviewPanel.vue'
@@ -76,6 +77,14 @@ function closeDrawer() {
 
 /** Drawer 打开状态：context 存在即打开（§8.2 默认关闭）。 */
 const drawerOpen = computed(() => !!selectedPlayerContext.value)
+
+/** 选中玩家 identity（review PR#134 第三轮 UX）：scope + accountId + arenaId；
+ *  Drawer 关闭（closeDrawer / Tab 切换 / selectionRevision）→ null → 表格清除 selected highlight。 */
+const selectedPlayer = computed(() => {
+  const ctx = selectedPlayerContext.value
+  if (!ctx) return null
+  return { scope: ctx.scope, accountId: Number(ctx.accountId), arenaId: ctx.arenaId || null }
+})
 
 /** 当前 Drawer 的玩家数据（按 context 实时 resolve；排序/响应刷新后仍指向原选手，§8.7）。 */
 const drawerPlayer = computed(() => {
@@ -215,34 +224,11 @@ watch(selectionRevision, () => {
   battleTeamNames.value = {}
   summaryTeamNames.value = {}
 })
-
-/** PNG 导出用：League 模式全列表格（不受当前可见列限制）。 */
-function leagueExportTable(battle) {
-  const colsList = resp.value?.league?.columns || []
-  const allKeys = colsList.map(c => c.key)
-  const headers = allKeys.map(k => '<th>' + t('player_labels.' + k) + '</th>').join('')
-  const body = battle.players.map(row => {
-    const tds = allKeys.map(k => {
-      const raw = row.cells ? row.cells[k] : ''
-      let text = raw == null ? '' : String(raw)
-      const max = Number((colsList.find(c => c.key === k) || {}).max) || 0
-      if (max > 0) {
-        const v = Number(raw) || 0
-        // 总 Rating（max 1000）PNG 导出只显示整数（927），不显示 /1000 冗余完成度
-        // （review PR#134 BLOCKER 1）；七维仍显示「342 / 400 · 85.5%」
-        text = k === 'league_rating'
-          ? String(Math.round(v))
-          : Math.round(v) + ' / ' + max + ' \u00B7 ' + (Math.round(1000 * v / max) / 10) + '%'
-      }
-      return '<td>' + escapeHtml(text) + '</td>'
-    }).join('')
-    return '<tr class="' + (row.team === 1 ? 't1' : 't2') + '">' + tds + '</tr>'
-  }).join('')
-  return '<table><thead><tr>' + headers + '</tr></thead><tbody>' + body + '</tbody></table>'
-}
-
-function escapeHtml(value) {
-  return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+/** League PNG 导出列头（导出是独立 rendering concern；不依赖 ColumnPicker 可见列）。 */
+function exportLabel(scope, key) {
+  return scope === 'agg' ? t('agg_labels.' + key)
+    : scope === 'team' ? t('league.summary.' + key)
+      : t('player_labels.' + key)
 }
 
 const exportingPng = ref(false)
@@ -371,14 +357,34 @@ async function downloadResultPng() {
   try {
     cloneCtx = createExportClone(target, exportTheme)
     expandExportTables(cloneCtx.clone)
-    // League 模式：导出完整超宽表格（全部 Rating 维度 + 原始字段），不受当前可见列限制
+    // League 模式：导出完整超宽表格，不受当前 ColumnPicker 可见列限制（review PR#134 BLOCKER 1）。
+    // 单场列 universe = resp.playerColumns（backend 全量：facts + Rating + 占点）；resp.league.columns
+    // 只提供 Rating max/format 元数据；汇总 = 完整 CW 统一玩家表 + 完整战队汇总表。
     if (leagueData.value) {
-      const battle = resp.value?.battles?.[exportBattleIdx]
-      if (battle) {
-        const fullTable = leagueExportTable(battle)
-        for (const wrap of cloneCtx.clone.querySelectorAll('.tablewrap')) {
-          wrap.innerHTML = fullTable
+      const leagueCols = leagueData.value.columns || []
+      if (!isNaN(exportBattleIdx)) {
+        const battle = resp.value?.battles?.[exportBattleIdx]
+        if (battle) {
+          const fullTable = leagueBattleExportTable(
+            battle,
+            resp.value?.playerColumns || [],
+            leagueCols,
+            key => exportLabel('player', key)
+          )
+          for (const wrap of cloneCtx.clone.querySelectorAll('.tablewrap')) {
+            wrap.innerHTML = fullTable
+          }
         }
+      } else {
+        const tables = leagueAggregateExportTables(
+          resp.value,
+          key => exportLabel('agg', key),
+          key => exportLabel('team', key),
+          summaryTeamNames.value
+        )
+        const wraps = cloneCtx.clone.querySelectorAll('.tablewrap')
+        if (wraps.length > 0) wraps[0].innerHTML = tables.player
+        if (wraps.length > 1) wraps[1].innerHTML = tables.team
       }
     }
     await waitForLayout()
@@ -629,6 +635,7 @@ watch(files, (next) => {
               :rows="unifiedRows" :columns="unifiedShownCols"
               :league-columns="leagueData?.columns || []" :league-mode="true"
               :active="activeTab === 'aggregate'"
+              :selected-account-id="selectedPlayer?.accountId ?? null"
               @select-player="selectPlayer" />
             <template v-if="(leagueData?.teamSummaries?.length || 0) > 0">
               <LeagueSummaryTable :title="$t('league.summary.title_team')" type="team"
@@ -645,6 +652,8 @@ watch(files, (next) => {
             :active="activeTab === 'b' + i"
             :league-mode="leagueMode" :league="b.league" :league-columns="leagueData?.columns || []"
             :team-names="battleTeamNames" @update-team-name="updateBattleTeamName"
+            :selected-account-id="selectedPlayer?.accountId ?? null"
+            :selected-arena-id="selectedPlayer?.arenaId ?? null"
             @select-player="selectPlayer" />
         </div>
         </template>
