@@ -58,6 +58,34 @@
   `blitzkit-references.mjs --emit-portraits` 可重复生成入口。
 
 ### Fixed
+- **Replay 汇总空数据 + 超宽表格重叠 P0 修复（docs/current-plan.md）**：
+  - **League 模式恢复基础 Replay Aggregate**：Mapper.toPreviewResponse 在 League 模式下不再输出空
+    aggregate——多场时按标准路径计算并输出基础跨场汇总（Aggregator.aggregate +
+    PerformanceMetricsCalculator.compute，同一 Replay Core 数据），League Rating Summary 是附加
+    分析而非替代品（resp.aggregate 有数据时 League 模式不再隐藏 AggregateTable）；aggregateColumns
+    仍用 League 变体（不含 contribution/kast/impact，PR #131 列边界不变）。
+  - **汇总人数语义修复**：replayAggregatePlayerCount 一律取 resp.aggregate.length（Replay Core
+    基础汇总人数），不再在 League 模式改用 league.playerSummaries.length——0 场可评分 ≠ Replay
+    没数据，「汇总（0 名选手）」误导消失。
+  - **汇总 Tab 双区块**：ReplayPage 汇总 Tab 拆为「基础战斗汇总（AggregateTable）」+「League Rating
+    汇总（LeagueSummaryTable player/team）」两个独立区块（League 模式下并存，非二选一）；summaries
+    全空时 League 区块显示明确 neutral 空态「暂无可评分场次」，LeagueSummaryTable 空行不再只显示
+    '--'。
+  - **超宽表格横向滚动 / sticky 列重叠修复**：.tablewrap 显式成为 scroll container
+    （position:relative + overflow-x:auto + max-width:100%）；sticky 第一列禁用 background: inherit
+    （行背景半透明 rgba(13,19,22,.82) 导致横滚时后方列从 sticky 列下方穿透），改为与 t1/t2 行背景
+    同表达式的 opaque color-mix + hover 不透明背景；League 表 sticky 层级修正（scoped
+    .league-table th.sticky-col z-index 3 → 7，不再低于普通表头 5——普通表头横滚时不再覆盖固定
+    玩家/Rating 列）；排序箭头改变表头宽度后重新测量 Rating sticky 左偏移。
+  - **Toolbar 响应式**：.restoolbar 由 grid minmax(0,1fr) auto 改为 flex 自然换行（空间不足时
+    actions 整行换到 tabs 下方，不再把 tabs 挤压到 0 宽）；sticky toolbar 背景不透明度 82% → 96%。
+  - **三语 locale**：新增 result.base_summary_title / league.summary.section_title /
+    league.summary.no_rateable（feature-messages.json，zh/en/ru 同步）。
+  - **测试**：backend ReplayServiceLeagueTest.leaguePreviewCarriesBaseReplayAggregateAlongsideLeagueSummary
+    （League 模式基础汇总与 League 汇总并存 + 列边界不变）；frontend replayView / ReplayPage /
+    ReplayPageReadyFlow / LeagueSummaryTable / BattleTable 回归（Case A 0/30、Case C partial 双区块
+    并存、tab 人数来自 aggregate、League 空态、sticky 结构契约）。
+### Fixed
 - **生产「名人堂管理」页顶部三 Tab（记录 / 操作日志 / 百场审核）在重新部署后仍不可见（缓存根因修复）**：
   - 根因：`deploy/nginx/nginx.conf` 的 `location /` 未设置任何 Cache-Control——浏览器把旧 index.html 及其引用的旧 hash bundle 当作可缓存资源，部署新镜像后仍加载旧 JS，导致 `?view=hof-admin` 显示旧版页面（无 `.hof-admin-tabs`），百场审核入口丢失；构建/部署产物经实证无问题（生产运行 `sha-305d7ac3` = 含百场审核源码的 main HEAD）。
   - 修复：SPA 缓存策略——`location = /index.html` 加 `Cache-Control: no-cache, no-store, must-revalidate`（每次重新验证，新 bundle hash 部署后立即生效）；`location /assets/`（Vite 内容 hash 产物）加 `Cache-Control: public, max-age=31536000, immutable`；静态资源 404 不再 fallback 到 index.html（`try_files $uri =404`）。

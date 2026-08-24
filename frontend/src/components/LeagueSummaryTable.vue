@@ -87,7 +87,8 @@ function onTeamNameInput(row, event) {
               <template v-else>{{ displayValue(cellValue(row, c.key)) }}</template>
             </td>
           </tr>
-          <tr v-if="!rows.length"><td :colspan="columns.length" class="league-summary-empty">--</td></tr>
+          <!-- League Rating 空态（plan §12）：明确 neutral 文案，而不是只有 "--" -->
+          <tr v-if="!rows.length"><td :colspan="Math.max(columns.length, 1)" class="league-summary-empty">{{ $t('league.summary.no_rateable') }}</td></tr>
         </tbody>
       </table>
     </div>

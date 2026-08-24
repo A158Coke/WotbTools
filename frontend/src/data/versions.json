@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.24",
+    "date": "2026-08-24",
+    "tag": "fix",
+    "zh": "修复回放汇总显示「0 名选手」：训练赛/联赛回放即使无法生成 League Rating，基础战斗汇总也正常显示真实选手数据；没有任何可评分场次时，League 汇总区块显示「暂无可评分场次」。超宽战斗表格横向滚动时，固定玩家/评分列不再与后方列文字重叠，工具栏在窄屏下自动换行。",
+    "en": "Fixed the replay summary showing \"0 players\": even when no League Rating can be generated for training/tournament replays, the base battle summary now shows real player data, and the League Rating section shows \"No rateable battles yet\" when there is nothing to rate. Fixed text overlap between the fixed player/rating columns and scrolling columns in wide battle tables, and the toolbar now wraps naturally on narrow screens.",
+    "ru": "Исправлена сводка «0 игроков»: даже если League Rating не может быть рассчитан для тренировочных/турнирных реплеев, базовая сводка по боям теперь показывает реальные данные игроков, а раздел League Rating показывает «Нет подходящих боёв для рейтинга». Исправлено наложение текста между закреплёнными колонками игрока/рейтинга и прокручиваемыми колонками в широких таблицах боя; панель инструментов теперь корректно переносится на узких экранах."
+  },
+  {
     "v": "2.12.23",
     "date": "2026-08-24",
     "tag": "fix",

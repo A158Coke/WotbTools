@@ -93,4 +93,13 @@ describe('LeagueSummaryTable', () => {
     })
     expect(wrapper.find('input.team-name-input').element.value).toBe('league.team_name_pending')
   })
+
+  it('shows explicit neutral empty state instead of bare -- when no rows (plan §12)', () => {
+    const wrapper = mount(LeagueSummaryTable, {
+      props: { title: 'T', type: 'player', rows: [], columns: SUMMARY_COLS, teamNames: {} },
+      global: { mocks: { $t: key => key } }
+    })
+    expect(wrapper.find('td.league-summary-empty').text()).toBe('league.summary.no_rateable')
+    expect(wrapper.find('td.league-summary-empty').text()).not.toBe('--')
+  })
 })
