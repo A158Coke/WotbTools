@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { nextTick, ref, computed, toRaw } from 'vue'
+import { nextTick, ref, computed, toRaw, watch, onMounted, onUnmounted } from 'vue'
 import ReplayPage from './ReplayPage.vue'
 
 const i18n = vi.hoisted(() => ({
@@ -148,6 +148,18 @@ vi.mock('vue-i18n', async () => {
 // We need locale ref from i18n mock. Store it in a shared module var.
 const localeHolder = vi.hoisted(() => ({ ref: null }))
 
+// 真实 BattlePlaybackPanel（playback 加载门控用例）的鉴权 seam：ensureToken 恒成功、token 恒定。
+vi.mock('../composables/useAuth.js', () => ({
+  useAuth: () => ({
+    tokenParsed: { value: { realm_access: { roles: ['wotbtools-user'] } } },
+    token: () => 'test-token',
+    ensureToken: vi.fn(async () => true),
+    login: vi.fn(),
+    authenticated: { value: true },
+    initPromise: Promise.resolve(true)
+  })
+}))
+
 vi.mock('../composables/useReplay.js', async () => {
   const { ref, computed } = await import('vue')
   const resp = ref(null)
@@ -260,7 +272,9 @@ function mountPage(overrides = {}) {
             '<button class="ai-action-stub" @click="$emit(&quot;workspace-action&quot;, { file: files[0], mode: &apos;ai&apos; })">ai</button></div>'
         },
         AiReviewPanel: { name: 'AiReviewPanel', props: ['file', 'loginView'], template: '<div class="ai-panel-stub" />' },
-        BattlePlaybackPanel: { name: 'BattlePlaybackPanel', props: ['file', 'autoLoad', 'seekTo', 'loginView'], template: '<div class="playback-panel-stub" />' },
+        ...(overrides.realPlayback
+          ? (overrides.mapStub ? { MapOverview: overrides.mapStub } : {})
+          : { BattlePlaybackPanel: { name: 'BattlePlaybackPanel', props: ['file', 'active', 'seekTo', 'loginView'], template: '<div class="playback-panel-stub" />' } }),
         ColumnPicker: { template: '<div class="col-picker-stub" />' },
         AggregateTable: {
           template: '<div class="agg-table-stub" data-export-role="aggregate">' +
@@ -881,7 +895,7 @@ describe('ReplayPage Battle context actions（V2：登录门控 + Workspace 原�
     expect(panelDisplay(wrapper, 'workspace-ai-panel')).toBe('none')
     const panel = wrapper.findComponent({ name: 'BattlePlaybackPanel' })
     expect(panel.props('file')?.name).toBe('lagoon.wotbreplay')
-    expect(panel.props('autoLoad')).toBe(true)
+    expect(panel.props('active')).toBe(true)
   })
 
   it('已登录点击「AI 复盘」→ 原地切到 Workspace ai（不自动发起 AI、不跨视图）', async () => {
@@ -1033,14 +1047,14 @@ describe('ReplayPage Workspace target resolution（唯一文件自动定位 / �
     expect(toRaw(aiPanel(wrapper).props('file'))).toBe(f)
   })
 
-  it('Case B: 唯一文件直接点击「战局回放」Tab → 自动以该文件为 target，autoLoad 语义正确', async () => {
+  it('Case B: 唯一文件直接点击「战局回放」Tab → 自动以该文件为 target，active 语义正确', async () => {
     const f = new File(['r'], 'single.wotbreplay')
     const wrapper = mountWs([f])
     await wrapper.find('[data-testid="workspace-playback-tab"]').trigger('click')
     await flushPromises()
     expect(panelDisplay(wrapper, 'workspace-playback-panel')).not.toBe('none')
     expect(toRaw(playbackPanel(wrapper).props('file'))).toBe(f)
-    expect(playbackPanel(wrapper).props('autoLoad')).toBe(true)
+    expect(playbackPanel(wrapper).props('active')).toBe(true)
   })
 
   it('Case C: 多文件未显式选择 target → 直接点击 AI/playback Tab 不 fallback 第一场（保持空态）', async () => {
@@ -1132,6 +1146,207 @@ describe('ReplayPage Workspace target resolution（唯一文件自动定位 / �
     expect(login).not.toHaveBeenCalled()
     expect(playbackPanel(wrapper).props('file')).toBeNull()
     confirmSpy.mockRestore()
+  })
+})
+
+describe('ReplayPage playback 加载门控（file identity 与 active 解耦，真实 BattlePlaybackPanel）', () => {
+  /** /api/replay/map-overview 成功响应 mock（与 ReconstructionPage.test 同款契约）。 */
+  function mapJsonResponse(overview) {
+    return { ok: true, status: 200, json: vi.fn().mockResolvedValue(overview) }
+  }
+
+  function mapOverviewFixture(mapCode = 'desert_train') {
+    return {
+      mapCode, displayName: 'Map', displayNames: { zh: '图', en: 'Map', ru: 'Карта' },
+      friendlyTeam: 1, playableBounds: { xMin: -300, xMax: 300, yMin: -300, yMax: 300 },
+      gridCells: [], spawnPoints: [], phases: [],
+      heatmaps: { friendly: { dwell: [], damage: [], deaths: [] }, enemy: { dwell: [], damage: [], deaths: [] } },
+      routes: [], arenaBonusType: 1, recorderAccountId: null, playback: null
+    }
+  }
+
+  /** 记录 MapOverview seekTo 的 stub（含初始值与 watch 变化）。 */
+  function mapSeekStub(seen) {
+    return {
+      name: 'MapOverview',
+      props: ['overview', 'seekTo'],
+      setup(props) {
+        seen.push(props.seekTo)
+        watch(() => props.seekTo, v => seen.push(v))
+        return () => null
+      }
+    }
+  }
+
+  /** 记录 MapOverview 挂载/卸载生命周期（折叠/切 tab 应为 v-show 语义，不销毁组件）。 */
+  function mapLifecycleStub(seen, lifecycle) {
+    return {
+      name: 'MapOverview',
+      props: ['overview', 'seekTo'],
+      setup(props) {
+        seen.push(props.seekTo)
+        watch(() => props.seekTo, v => seen.push(v))
+        onMounted(() => lifecycle.push('mount'))
+        onUnmounted(() => lifecycle.push('unmount'))
+        return () => null
+      }
+    }
+  }
+
+  /** 记录 MapOverview overview.mapCode 的 stub（分辨 A/B 数据）。 */
+  function mapCodeStub(seenCodes) {
+    return {
+      name: 'MapOverview',
+      props: ['overview', 'seekTo'],
+      setup(props) {
+        seenCodes.push(props.overview ? props.overview.mapCode : null)
+        return () => null
+      }
+    }
+  }
+
+  /** 可控 deferred fetch：按调用顺序记录 resolver；可选收集 AbortSignal。 */
+  function deferredFetch(signals = []) {
+    const resolvers = []
+    const mock = vi.fn((url, opts = {}) => {
+      if (opts.signal) signals.push(opts.signal)
+      return new Promise(resolve => { resolvers.push(resolve) })
+    })
+    mock.resolvers = resolvers
+    return mock
+  }
+
+  function mountWsReal(files, { resp = null, activeTab = 'aggregate', mapStub = null, auth } = {}) {
+    state.init = { activeTab, resp, error: '', loading: false, locale: 'en', files }
+    const overrides = { realPlayback: true, mapStub }
+    if (auth) overrides.auth = auth
+    return mountPage(overrides)
+  }
+
+  function mapCalls(fetchMock) {
+    return fetchMock.mock.calls.filter(([u]) => String(u) === '/api/replay/map-overview').length
+  }
+
+  function makeTwoBattleResp() {
+    return {
+      aggregate: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }],
+      battles: [
+        { mapName: 'Lagoon', sourceName: 'a.wotbreplay', players: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }] },
+        { mapName: 'Frozen', sourceName: 'b.wotbreplay', players: [{ cells: { nickname: 'P2', damage_dealt: 4000 } }] }
+      ],
+      duplicates: [], failures: [],
+      playerColumns: [{ key: 'nickname', label: '昵称' }],
+      aggregateColumns: [{ key: 'nickname', label: '昵称' }]
+    }
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('Case 1: 唯一文件直接点击「AI 复盘」→ AiReviewPanel 拿到文件，但 map-overview 请求 = 0', async () => {
+    const f = new File(['r'], 'single.wotbreplay')
+    const fetchMock = vi.fn().mockResolvedValue(mapJsonResponse(mapOverviewFixture()))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountWsReal([f])
+    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
+    await flushPromises()
+    expect(toRaw(wrapper.findComponent({ name: 'AiReviewPanel' }).props('file'))).toBe(f)
+    expect(mapCalls(fetchMock)).toBe(0)
+  })
+
+  it('Case 2: 唯一文件直接点击「战局回放」→ map-overview 请求 = 1', async () => {
+    const f = new File(['r'], 'single.wotbreplay')
+    const fetchMock = vi.fn().mockResolvedValue(mapJsonResponse(mapOverviewFixture()))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountWsReal([f])
+    await wrapper.find('[data-testid="workspace-playback-tab"]').trigger('click')
+    await flushPromises()
+    expect(mapCalls(fetchMock)).toBe(1)
+  })
+
+  it('Case 3: AI → Playback：AI 阶段无 map 请求，切 Playback 后才出现第 1 次', async () => {
+    const f = new File(['r'], 'single.wotbreplay')
+    const fetchMock = vi.fn().mockResolvedValue(mapJsonResponse(mapOverviewFixture()))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountWsReal([f])
+    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
+    await flushPromises()
+    expect(mapCalls(fetchMock)).toBe(0)
+    await wrapper.find('[data-testid="workspace-playback-tab"]').trigger('click')
+    await flushPromises()
+    expect(mapCalls(fetchMock)).toBe(1)
+  })
+
+  it('Case 4: Playback 完成 → AI → Playback：map 请求总数仍 = 1，MapOverview 不销毁', async () => {
+    const f = new File(['r'], 'single.wotbreplay')
+    const seen = []
+    const lifecycle = []
+    const fetchMock = vi.fn().mockResolvedValue(mapJsonResponse(mapOverviewFixture()))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountWsReal([f], { mapStub: mapLifecycleStub(seen, lifecycle) })
+    await wrapper.find('[data-testid="workspace-playback-tab"]').trigger('click')
+    await flushPromises()
+    expect(mapCalls(fetchMock)).toBe(1)
+    expect(lifecycle).toEqual(['mount'])
+    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
+    await flushPromises()
+    expect(panelDisplay(wrapper, 'workspace-playback-panel')).toBe('none') // v-show 隐藏而非销毁
+    expect(lifecycle).toEqual(['mount'])
+    await wrapper.find('[data-testid="workspace-playback-tab"]').trigger('click')
+    await flushPromises()
+    expect(mapCalls(fetchMock)).toBe(1) // 已加载同文件：不重复请求
+    expect(lifecycle).toEqual(['mount']) // 同一 MapOverview 实例
+  })
+
+  it('Case 5: AI 报告时间链接 seek → 自动切 Playback、未加载则请求 map、seek 传给 MapOverview', async () => {
+    const f = new File(['r'], 'single.wotbreplay')
+    const seen = []
+    const fetchMock = vi.fn().mockResolvedValue(mapJsonResponse(mapOverviewFixture()))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountWsReal([f], { mapStub: mapSeekStub(seen) })
+    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
+    await flushPromises()
+    expect(mapCalls(fetchMock)).toBe(0)
+    // AI 报告时间链接：由 AiReviewPanel 上抛 seek 事件
+    wrapper.findComponent({ name: 'AiReviewPanel' }).vm.$emit('seek', 200)
+    await flushPromises()
+    expect(panelDisplay(wrapper, 'workspace-playback-panel')).not.toBe('none') // 已切到 Playback
+    expect(mapCalls(fetchMock)).toBe(1) // 未加载：自动请求
+    expect(seen).toContain(200) // seek 传给 MapOverview
+  })
+
+  it('Case 6: A 正在 map load → 切换 target B：A abort、迟到响应不覆盖、B 进入 Playback 后才加载', async () => {
+    const a = new File(['r'], 'a.wotbreplay')
+    const b = new File(['r'], 'b.wotbreplay')
+    const seenCodes = []
+    const signals = []
+    const fetchMock = deferredFetch(signals)
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountWsReal([a, b], { resp: makeTwoBattleResp(), activeTab: 'b0', mapStub: mapCodeStub(seenCodes) })
+    // 显式选 A（battle toolbar）进入 Playback：A 请求 in-flight
+    await wrapper.find('[data-testid="battle-playback-btn"]').trigger('click')
+    await flushPromises()
+    expect(fetchMock.resolvers.length).toBe(1)
+    // 切换到 battle B（AI tab，未进入 Playback）：A 请求被 abort，B 不加载
+    state.setActiveTab('b1')
+    await flushPromises()
+    await wrapper.find('[data-testid="battle-ai-btn"]').trigger('click')
+    await flushPromises()
+    expect(signals[0].aborted).toBe(true) // A 在途请求已取消
+    expect(fetchMock.resolvers.length).toBe(1) // B 未进入 Playback 前不发起请求
+    // A 迟到响应不得覆盖 B（generation 失效）
+    fetchMock.resolvers[0](mapJsonResponse(mapOverviewFixture('rift')))
+    await flushPromises()
+    expect(seenCodes.filter(c => c === 'rift')).toHaveLength(0) // A 从未显示
+    // 进入 Playback：B 开始加载并显示
+    await wrapper.find('[data-testid="workspace-playback-tab"]').trigger('click')
+    await flushPromises()
+    expect(fetchMock.resolvers.length).toBe(2) // B 请求
+    fetchMock.resolvers[1](mapJsonResponse(mapOverviewFixture('desert_train')))
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'MapOverview' }).exists()).toBe(true)
+    expect(seenCodes).toContain('desert_train')
   })
 })
 
