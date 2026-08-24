@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.25",
+    "date": "2026-08-24",
+    "tag": "fix",
+    "zh": "训练赛/联赛回放名册里存在观战者等非参战记录时，不再被误判为「名册不完整」：只要 14 名结算玩家完整（无重复、队伍 7v7、车辆与胜方明确）即可正常生成 League Rating——14 名玩家评分、八维度、双方战队 Rating、MVP 与两队最佳。",
+    "en": "Training/tournament replays whose roster contains non-combatant entries (e.g. spectators) are no longer rejected as \"incomplete roster\": as long as all 14 settled players are complete (unique accounts, 7v7 teams, valid vehicles and a decisive winner), League Rating is generated normally — 14 player ratings, eight dimensions, both team ratings, MVP and each team's best.",
+    "ru": "Реплеи тренировочных/турнирных боёв, в списке которых есть не участвовавшие в бою записи (например, зрители), больше не отклоняются как «неполный состав»: пока все 14 игроков в итогах присутствуют полностью (уникальные аккаунты, составы 7v7, корректные машины и явный победитель), League Rating формируется штатно — 14 рейтингов игроков, восемь измерений, рейтинги обеих команд, MVP и лучший игрок каждой команды."
+  },
+  {
     "v": "2.12.24",
     "date": "2026-08-24",
     "tag": "fix",

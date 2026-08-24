@@ -20,8 +20,10 @@ public class Battle {
     public List<PlayerResult> players;
 
     /**
-     * 结算阵容完整性证据（ReplayParser 设置）：名册(#201) 与战绩(#301) 的账号集合完全一致
-     * （所有参战成员都有结算记录）；名册提供队伍字段(#201→#2→#3)时还要求与结算队伍一致；
+     * 结算阵容完整性证据（ReplayParser 设置）：战绩 #301 的每个结算账号都来自名册 #201
+     * （无幽灵结算、结算者都有名册身份），且名册提供的队伍字段(#201→#2→#3)与结算队伍一致
+     * （存在时）。#201 可含 non-combatant extra（观战者等，ActualCombatantSet == #301，
+     * 见 protocol.md）——extra 账号不导致阵容不完整。
      * null/false 表示未知或不完整（非回放解析路径或数据缺失）。
      * 只有为 true 时，才能用 survivors==0 断言全歼或推导 SURVIVOR_SETTLEMENT。
      */

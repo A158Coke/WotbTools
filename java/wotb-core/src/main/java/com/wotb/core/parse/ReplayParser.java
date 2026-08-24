@@ -195,8 +195,9 @@ public final class ReplayParser {
         battle.recorderVehicle = text(meta, "playerVehicleName");
         battle.arenaBonusType = meta.hasNonNull("arenaBonusType") ? meta.get("arenaBonusType").asInt() : null;
         battle.players = players;
-        // 结算阵容完整性证据：只有名册(#201)与战绩(#301)账号集合一致且每个账号队伍一致，
-        // 才能用 survivors==0 断言全歼或推导 SURVIVOR_SETTLEMENT（不把未知当成零存活）。
+        // 结算阵容完整性证据：战绩 #301 的每个结算账号都来自名册 #201（无幽灵结算）且
+        // 名册队伍与结算队伍一致（存在时）。#201 可含 non-combatant extra（观战者等，
+        // protocol.md PROVEN：ActualCombatantSet == #301），extra 不导致阵容不完整。
         battle.rosterComplete = resolveRosterComplete(roster.keySet(), rosterTeamByAcc, players);
 
         // ---- data.wotreplay 事件流 ----
@@ -275,8 +276,15 @@ public final class ReplayParser {
     }
 
     /**
-     * 结算阵容完整性：名册与战绩账号集合完全一致（所有参战成员都有结算记录）；
-     * 名册提供队伍字段(#201→#2→#3)时，还要求与结算队伍一致（字段缺失时不做硬性要求）。
+     * 结算阵容完整性（settlement participant completeness）：
+     * 战绩 #301 的每个结算账号都必须在名册 #201 中（无幽灵结算、结算者都有名册身份），
+     * 且名册提供的队伍字段(#201→#2→#3)与结算队伍一致（存在时）。
+     *
+     * <p><b>不要求 #201 全集合 == #301 全集合</b>：真实训练赛/联赛名册 #201 可含不属于
+     * #301 的 non-combatant（观战者等，probe：20260725_1535 训练房 #201=15/#301=14，
+     * extra 账号 3117047709；见 docs/research/replay/protocol.md「SPECTATOR /
+     * NON-COMBATANT ENTITY」——ActualCombatantSet == #301）。名册 extra 账号 ≠
+     * 缺失的结算队员，不导致阵容不完整。</p>
      */
     private static boolean resolveRosterComplete(final Set<Long> rosterAccounts,
                                                  final Map<Long, Integer> rosterTeamByAcc,
@@ -284,13 +292,10 @@ public final class ReplayParser {
         if (rosterAccounts.isEmpty() || players == null || players.isEmpty()) {
             return false;
         }
-        final Set<Long> resultAccounts = players.stream()
-                .map(p -> p.accountId)
-                .collect(Collectors.toSet());
-        if (!resultAccounts.equals(rosterAccounts)) {
-            return false;
-        }
         for (final PlayerResult p : players) {
+            if (!rosterAccounts.contains(p.accountId)) {
+                return false;
+            }
             final Integer rosterTeam = rosterTeamByAcc.get(p.accountId);
             if (rosterTeam != null && rosterTeam.intValue() != p.team) {
                 return false;

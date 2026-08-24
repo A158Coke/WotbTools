@@ -147,6 +147,14 @@ spectator != missing team member
 no PositionChanged != missing position（静止同坐标 gap 已证实，见下节）
 ```
 
+**rosterComplete 语义修正（2026-08-24 probe 验证）**：Battle.rosterComplete 由「#201 全集合
+== #301 全集合」修正为「结算 #301 每个账号都在名册 #201 中（无幽灵结算）+ 名册队伍与结算队伍
+一致」。名册 #201 与 Type0 accountDatabaseIds 都是全员名册（可含 non-combatant），不是 actual
+participant 集合；全样本 probe：6/6 真实样本中 5 份 #201=#301=Type0=14（random×1、tournament×4、
+11.19 Maus），1 份训练房（20260725_1535，#201=15/Type0=15、#301=14，extra 账号 3117047709 观战者
+不结算）——extra 不导致 ROSTER_INCOMPLETE。League Rating 只要求「participant completeness
+evidence 无真实冲突」：结算者全部有名册身份 + 队伍一致。
+
 **PositionChanged 是 change/state-driven（2026-08-19 验证）**：
 - 存活己方静止车辆可长时间无新位置包：11.18 Maus 样本（20260808_1608，holland）
   7/7 己方成员开局 `gap=10.8s [0.0s→10.8s]` 同坐标（dist=0.0m）且无 EntityLeave，

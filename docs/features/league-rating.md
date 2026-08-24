@@ -43,7 +43,8 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 ## 严格完整性门槛（7v7）
 
 每场必须：14 个结算记录、14 个唯一非零 accountId、队伍只能为 1/2、两队各 7 人、
-`rosterComplete=true`（名册与结算账号集合一致且名册队伍无冲突）、14 名玩家非零 tankId、
+`rosterComplete=true`（结算账号全部来自名册 #201 且名册队伍无冲突；名册可含 non-combatant
+extra，如观战者，不要求名册全集合 == 结算全集合）、14 名玩家非零 tankId、
 `winnerTeam` 明确为 1/2（平局/未知不评分）、阵亡玩家 `survivalTimeSec > 0` 且与战斗时长无
 明显矛盾、统计字段无负值/非有限/违反真实字段关系（命中≤射击、击穿≤命中）。
 

@@ -58,6 +58,27 @@
   `blitzkit-references.mjs --emit-portraits` 可重复生成入口。
 
 ### Fixed
+- **CW / Training Replay Rating 名册完整性收口（PR #132 追加，真实 0/N 根因修复）**：
+  - **根因**：ReplayParser.resolveRosterComplete 要求名册(#201)与结算(#301)账号<b>全集合一致</b>；
+    真实训练赛/联赛名册 #201 可含 non-combatant（观战者等，protocol.md PROVEN：
+    ActualCombatantSet == #301）——#201=15 / #301=14 的合法训练房被误判 LEAGUE_ROSTER_INCOMPLETE，
+    整批 0/N Rating。
+  - **修正（方案 A）**：rosterComplete 重定义为 settlement participant completeness——结算 #301
+    每个账号都在名册 #201 中（无幽灵结算）+ 名册队伍(#201→#2→#3)与结算队伍一致（存在时）；
+    名册 extra non-combatant 不再导致阵容不完整。LeagueRatingValidator 门槛不变（14 人 7v7 /
+    unique 账号 / tankId / 明确胜方 / 死亡时间 / 数值关系），ROSTER_INCOMPLETE 只留给真实
+    participant/settlement mismatch（幽灵结算、队伍冲突）。
+  - **真实 probe 证据**（RosterCompletenessProbeTest，common/data 本地样本自动跳过）：
+    random×1 / tournament×4 / 11.19 Maus 均 #201=#301=Type0=14；20260725_1535 训练房
+    #201=15 / #301=14 / Type0=15（extra=3117047709 观战者不结算）。修复后该训练房
+    rosterComplete=true、Validator PASS（修复前 false / LEAGUE_ROSTER_INCOMPLETE），其余样本零回归。
+  - **测试**：ReplayParserTest（名册 extra→true、幽灵结算→false、队伍冲突→false）、
+    LeagueReplaysTest（#201=15/#301=14 rated、多场合法 CW playerSummaries/teamSummaries 非空）、
+    LeagueRosterCompletenessTest（真实结构字节 Parser→Validator→Calculator 全链路：14 个 Player
+    Rating、八维度 0-max、Team 1/2 Rating、MVP、两队最佳 + 本地真实训练房样本自动验证）。
+  - **文档**：protocol.md / replay-data.md / replay-parsed-fields.md / league-rating.md 同步修正
+    「#201 全集合 == #301 全集合」错误描述，改为证据验证的新定义。
+### Fixed
 - **Replay 汇总空数据 + 超宽表格重叠 P0 修复（docs/current-plan.md）**：
   - **League 模式恢复基础 Replay Aggregate**：Mapper.toPreviewResponse 在 League 模式下不再输出空
     aggregate——多场时按标准路径计算并输出基础跨场汇总（Aggregator.aggregate +
