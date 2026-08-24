@@ -575,6 +575,7 @@
     },
     "replay": {
         "no_files": "Select replay files or a folder first",
+        "no_results": "No battle data to display",
         "preview_failed": "Preview failed",
         "export_failed": "Export failed",
         "png_export_failed": "PNG export failed",

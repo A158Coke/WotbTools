@@ -31,11 +31,17 @@ const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateF
   askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove } = replay
 const cols = useColumns(replay.playerCols, replay.aggCols, replay.activeTab)
 const { visibleKeys, aggVisibleKeys, showColPicker, pickerScope,
-  currentOrder, shownCols, shownAggCols, leagueMode,
+  currentOrder, shownCols, shownAggCols,
   toggleColPicker, toggleCol, selectAllCols, resetCols, handleReorder } = cols
 
 /** League Rating 模式元数据（resp.league；普通模式 null）。 */
 const leagueData = computed(() => resp.value?.league || null)
+/**
+ * 页面级 League 模式（P0：resp.league 是唯一事实源，不再由 playerColumns 是否含
+ * league_rating 间接推断）。useColumns 的 leagueMode 只负责列系统（storage scope /
+ * fixed keys / picker），页面 tab 存在性 / LeagueSummaryTable / 默认 activeTab 一律看这里。
+ */
+const leagueMode = computed(() => !!leagueData.value)
 /**
  * 两种独立的战队名称 override（PR #123 Blocker 2，禁止扁平混合）：
  * - battleTeamNames：{arenaId:team} → 名（单场显示 / 单场 PNG / 单场与 each Excel）
@@ -386,6 +392,8 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
         </div>
       </div>
 
+      <p v-if="!resp.battles.length && !resp.aggregate.length && !leagueData" class="replay-empty-note">{{ $t('replay.no_results') }}</p>
+
       <div v-show="activeTab === 'aggregate' && (resp.aggregate.length || leagueMode)" ref="aggregateRef">
         <template v-if="leagueMode">
           <LeagueSummaryTable :title="$t('league.summary.title_player')" type="player"
@@ -441,6 +449,7 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
   color: var(--accent-text);
 }
 .battle-action.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-text); }
+.replay-empty-note { padding: 18px 4px; color: var(--text-muted); font-size: .85rem; }
 .replay-export-root.replay-export-light {
   --exp-bg: #ffffff;
   --exp-card-bg: #f8f9fa;
