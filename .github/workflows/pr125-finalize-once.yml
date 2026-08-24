@@ -1,0 +1,154 @@
+name: PR125 final post-conflict cleanup
+
+on:
+  push:
+    branches:
+      - fix/dark-theme-ui-regressions
+    paths:
+      - .github/workflows/pr125-finalize-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/dark-theme-ui-regressions
+          fetch-depth: 0
+
+      - name: Apply final cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          def replace_exact(text, old, new, label, required=True):
+              count = text.count(old)
+              if count == 0 and not required:
+                  return text
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              return text.replace(old, new, 1)
+
+          def unreleased_section(text, label):
+              marker = '## [Unreleased]'
+              start = text.find(marker)
+              if start < 0:
+                  raise SystemExit(f'{label}: missing {marker}')
+              next_release = text.find('\n## [', start + len(marker))
+              if next_release < 0:
+                  next_release = len(text)
+              return start, next_release, text[start:next_release]
+
+          def insert_unreleased(text, heading, body, sentinel, label):
+              if sentinel in text:
+                  return text
+              start, end, section = unreleased_section(text, label)
+              anchor = heading + '\n'
+              count = section.count(anchor)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one {heading} in Unreleased, found {count}')
+              section = section.replace(anchor, anchor + body, 1)
+              return text[:start] + section + text[end:]
+
+          # 1) Keep the global viewport contract aligned with the actual Showcase topbar.
+          tokens_path = Path('frontend/src/styles/tokens.css')
+          tokens = tokens_path.read_text(encoding='utf-8')
+          tokens = replace_exact(tokens, '--topbar-h: 52px;', '--topbar-h: 60px;', 'tokens topbar height')
+          tokens_path.write_text(tokens, encoding='utf-8')
+
+          # 2) User-visible version history. main already owns 2.12.18/2.12.19.
+          versions_path = Path('frontend/src/data/versions.json')
+          versions = json.loads(versions_path.read_text(encoding='utf-8'))
+          if not any(item.get('v') == '2.12.20' for item in versions):
+              if not versions or versions[0].get('v') != '2.12.19':
+                  raise SystemExit(f'unexpected versions.json head: {versions[0].get("v") if versions else None}')
+              versions.insert(0, {
+                  'v': '2.12.20',
+                  'date': '2026-08-24',
+                  'tag': 'chg',
+                  'zh': '界面统一为暗色主题并移除主题切换；回放上传区新增「战局回放 / AI 复盘」独立入口，单个回放可直接进入，多个回放需先明确选择目标；训练赛/联赛汇总显示真实选手人数；赞助页升级为深色战场风格。',
+                  'en': 'The site is now dark-only with the theme switcher removed. Replay upload now exposes direct Battle Playback / AI Review actions: a single replay can open directly, while multiple replays require an explicit target selection. Training/tournament summaries show the real player count, and the sponsor page now uses the dark battlefield design.',
+                  'ru': 'Сайт теперь использует только тёмную тему, переключатель темы удалён. В загрузке реплеев появились отдельные действия «Повтор боя» и «AI-разбор»: один реплей открывается сразу, а при нескольких нужно явно выбрать целевой. В сводке тренировочных/турнирных боёв показывается реальное число игроков, а страница поддержки получила тёмный дизайн в стиле поля боя.'
+              })
+              versions_path.write_text(json.dumps(versions, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          # 3) Changelogs: only touch the top Unreleased section; preserve WG/Hundred entries already on main.
+          product_path = Path('docs/CHANGELOG-PRODUCT.md')
+          product = product_path.read_text(encoding='utf-8')
+          product_added = (
+              '- **回放上传区新增「战局回放 / AI 复盘」独立入口**：单文件可直接进入；多文件必须明确选择目标回放，不会静默使用第一场。\n'
+              '- **赞助页升级为深色战场风格**：保留原赞助方式与二维码失败降级，同时统一为新的暗色视觉。\n'
+          )
+          product_fixed = (
+              '- **训练赛/联赛「汇总」页签显示真实选手人数**：League 模式改用 `league.playerSummaries`，不再因 `aggregate=[]` 显示 0。\n'
+              '- **回放与管理页可读性/叠层回归修复**：统一暗色主题，修复 HoF 审核 sticky 重叠、AI 标题偏移、任务通知与 Modal 层级及移动端遮挡。\n'
+          )
+          product = insert_unreleased(product, '### Added', product_added, '回放上传区新增「战局回放 / AI 复盘」独立入口', 'product Added')
+          product = insert_unreleased(product, '### Fixed', product_fixed, '训练赛/联赛「汇总」页签显示真实选手人数', 'product Fixed')
+          product_path.write_text(product, encoding='utf-8')
+
+          tech_path = Path('docs/CHANGELOG.md')
+          tech = tech_path.read_text(encoding='utf-8')
+          tech_entry = (
+              '- **PR125：暗色主题收敛 + Replay Workspace + UI regression cleanup**：删除 `useTheme` / `utils/theme.js` 与旧静态 homepage/profile 副本；`tokens.css` 成为暗色单一事实源并统一 60px Topbar viewport contract；Replay 上传区提供解析、战局回放、AI 复盘三个一级能力，多文件必须显式选择目标；League 汇总人数读取 `playerSummaries`；i18n 使用 `feature-messages.json + messages.js` 非破坏性组合；Sponsor、HoF sticky、AI sticky、notification/modal stacking 与移动端遮挡同步修复。\n'
+          )
+          tech = insert_unreleased(tech, '### Added', tech_entry, 'PR125：暗色主题收敛 + Replay Workspace + UI regression cleanup', 'technical Added')
+          tech_path.write_text(tech, encoding='utf-8')
+
+          # 4) Developer Guide: patch only statements made stale by PR125; do not overwrite WG/Hundred content from main.
+          guide_path = Path('docs/DEVELOPER_GUIDE.md')
+          guide = guide_path.read_text(encoding='utf-8')
+          replacements = [
+              ('`frontend/`(Vue 3 + 工具集主页)', '`frontend/`(Vue 3 SPA + 独立赞助页)', 'guide repo summary'),
+              ('组合式模块（useTheme / useReplay / useColumns / useAuth）', '组合式模块（useReplay / useColumns / useAuth 等）', 'guide composables'),
+              ('API、i18n 显示、竞态控制、主题与通用工具', 'API、i18n 显示、竞态控制与通用工具', 'guide utils'),
+              ('独立入口共享主题变量（theme.css）', 'dark-only design tokens + Showcase 分层样式', 'guide styles'),
+              ('三语（zh / en / ru）', '三语基础 JSON + feature-messages/messages 组合层', 'guide locales'),
+              ('工具集主页与运行时配置赞助页', '独立赞助页与运行时配置', 'guide homepage description'),
+              ('│   │   ├── index.html\n│   │   ├── sponsor.html', '│   │   ├── sponsor.html', 'guide old homepage index'),
+              ('Dockerfile 构建时 → homepage + frontend/public', 'Dockerfile 构建时 → frontend image root', 'guide asset destination'),
+              ('保证语言选择、主题切换、反馈入口、版本历史、联系入口和个人中心入口都不会被挤出屏幕。', '保证语言选择、反馈入口、版本历史、联系入口和个人中心入口都不会被挤出屏幕。', 'guide topbar controls'),
+              ('- Vue SPA 主入口视觉变量集中在 `App.vue` 的 `:root` / `[data-theme="dark"]`；`frontend/src/styles/theme.css` 复用同一套变量。首页、上传区、排行榜和表格应优先复用这些变量，避免局部硬编码色板。', '- **产品只支持暗色主题**：`frontend/index.html` 首屏固定 `data-theme="dark"`；基础视觉变量由 `frontend/src/styles/tokens.css :root` 单一提供，Showcase 样式在其上分层覆盖。不存在运行时 `useTheme` / `utils/theme.js` / `wotbtools-theme` 偏好，也不响应 `prefers-color-scheme`。\n- **i18n 组合层**：基础三语 JSON 为 `frontend/src/locales/{zh,en,ru}.json`；按功能追加文案放 `feature-messages.json`，由 `messages.js` 非破坏性深合并。禁止在 `main.js` 或组件初始化时动态修改 imported locale 对象。', 'guide theme/i18n architecture'),
+              ('- `?view=replay`：进入回放提取器。', '- `?view=replay`：进入回放工作台；上传后可选择解析预览、战局回放或 AI 复盘。', 'guide replay route'),
+              ('  - `composables/useTheme.js` — 主题切换（auto/light/dark），数据持久化调用 `utils/theme.js`\n', '', 'guide useTheme line'),
+              ('  - `utils/theme.js` — 纯函数（readTheme / saveTheme / resolveTheme / applyTheme），Cookie `.wotbtools.com` 域共享 + localStorage 回退\n', '', 'guide theme util line'),
+              ('- 语言持久化 `localStorage(\'wotb-lang\')`，主题持久化 Cookie `wotbtools-theme`（domain `.wotbtools.com`）+ localStorage 回退。', '- 语言持久化 `localStorage(\'wotb-lang\')`；主题固定暗色，不保存主题 cookie/localStorage。', 'guide preference policy'),
+              ('前端 `frontend/src/locales/{zh,en,ru}.json` 负责渲染文案。', '前端 locale composition（基础 JSON + feature messages）负责渲染文案。', 'guide notification i18n')
+          ]
+          for old, new, label in replacements:
+              guide = replace_exact(guide, old, new, label)
+
+          ui_anchor = '- UI 组件在 `components/`：FileUploader / ColumnPicker / AggregateTable / BattleTable / PerformanceTable / RemoveConfirmModal / HoFPage / HoFAdminPage / LoginPage（QQ + Wargaming 登录选择页）/ ProfilePage（含站内通知面板）/ BoostPage / AdminUsersPage / HomePage / ReplayPage\n'
+          replay_note = '- **Replay Workspace**：`FileUploader.vue` 在选中 replay 后提供「解析预览 / 战局回放 / AI 复盘」三个一级能力。单文件 AI/Playback 可直接进入；多文件必须显式选择目标 replay，禁止 fallback 第一场。解析后的 Aggregate/Summary 本身不代表具体 battle，因此结果 toolbar 的 Battle-level action 仍只在具体 battle tab 出现。\n'
+          if replay_note.strip() not in guide:
+              guide = replace_exact(guide, ui_anchor, ui_anchor + replay_note, 'guide replay workspace')
+
+          guide_path.write_text(guide, encoding='utf-8')
+
+          # The helper must not remain in the PR.
+          Path('.github/workflows/pr125-finalize-once.yml').unlink()
+          PY
+
+          git diff --check
+          test ! -e .github/workflows/pr125-finalize-once.yml
+          grep -q -- '--topbar-h: 60px;' frontend/src/styles/tokens.css
+          grep -q '"v": "2.12.20"' frontend/src/data/versions.json
+          ! grep -q 'composables/useTheme.js' docs/DEVELOPER_GUIDE.md
+          ! grep -q 'utils/theme.js.*纯函数' docs/DEVELOPER_GUIDE.md
+          git status --short
+
+      - name: Commit final cleanup to PR125 branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "OpenAI"
+          git config user.email "codex@openai.com"
+          git add frontend/src/styles/tokens.css frontend/src/data/versions.json docs/CHANGELOG-PRODUCT.md docs/CHANGELOG.md docs/DEVELOPER_GUIDE.md .github/workflows/pr125-finalize-once.yml
+          git commit -m "修复 PR125 冲突后的收尾漂移"
+          git push origin HEAD:fix/dark-theme-ui-regressions
