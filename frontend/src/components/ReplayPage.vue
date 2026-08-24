@@ -323,6 +323,25 @@ function openWorkspaceAi(file) {
   workspaceTab.value = 'ai'
 }
 
+/**
+ * Workspace 一级 tab 切换统一入口（results / ai / playback）。
+ * 目标解析规则（唯一事实源）：
+ * - 已显式选择 workspaceFile → 直接沿用（单纯切 tab 不清空，AI 进度/地图状态由 v-show 保持）；
+ * - 未选择且 files 恰有 1 个 → 自动以该唯一文件为目标：复用 selection 内原始 File reference
+ *   （不重新上传、不重新解析、不复制对象）；与 FileUploader / battle toolbar 快捷入口统一走
+ *   登录门禁（未登录 confirm + login，不切换、不设置 target、不自动发 API 请求）；
+ * - 未选择且 files 多个 → 保持 null（空态），禁止静默 fallback 到 files[0]（多文件必须显式选目标）。
+ */
+function selectWorkspaceTab(tab) {
+  if (tab === 'ai' || tab === 'playback') {
+    if (!workspaceFile.value && files.value.length === 1) {
+      if (!requireLoginForBattleAction()) return
+      workspaceFile.value = files.value[0]
+    }
+  }
+  workspaceTab.value = tab
+}
+
 /** FileUploader 直接入口（单文件 / 显式选择）上抛：原地切到对应面板。 */
 function onWorkspaceAction({ file, mode }) {
   if (mode === 'playback') openWorkspacePlayback(file)
@@ -379,9 +398,9 @@ watch(files, (next) => {
          resp 依赖 files 才存在，故 files.length || resp 与真实状态机一致。 -->
     <template v-if="files.length || resp">
       <div class="workspace-tabs tabs" role="tablist" aria-label="Workspace">
-        <button data-testid="workspace-results-tab" :class="{ active: workspaceTab === 'results' }" @click="workspaceTab = 'results'">{{ $t('workspace.tab_results') }}</button>
-        <button data-testid="workspace-ai-tab" :class="{ active: workspaceTab === 'ai' }" @click="workspaceTab = 'ai'">{{ $t('action.ai_review') }}</button>
-        <button data-testid="workspace-playback-tab" :class="{ active: workspaceTab === 'playback' }" @click="workspaceTab = 'playback'">{{ $t('action.battle_playback') }}</button>
+        <button data-testid="workspace-results-tab" :class="{ active: workspaceTab === 'results' }" @click="selectWorkspaceTab('results')">{{ $t('workspace.tab_results') }}</button>
+        <button data-testid="workspace-ai-tab" :class="{ active: workspaceTab === 'ai' }" @click="selectWorkspaceTab('ai')">{{ $t('action.ai_review') }}</button>
+        <button data-testid="workspace-playback-tab" :class="{ active: workspaceTab === 'playback' }" @click="selectWorkspaceTab('playback')">{{ $t('action.battle_playback') }}</button>
       </div>
 
       <div v-show="workspaceTab === 'results'">
