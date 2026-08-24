@@ -587,10 +587,11 @@ function onPageLeave() {
 .recon-auth { text-align: center; padding: 40px; color: var(--text-secondary); }
 
 .recon-page :deep(.panel) {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: rgba(13, 18, 22, .94);
+  border: 1px solid #303a40;
   border-radius: 8px;
   padding: 16px 20px;
+  color: #d8d5cd;
 }
 .recon-page :deep(.panel h2) { margin: 0 0 12px; font-size: 1rem; }
 
