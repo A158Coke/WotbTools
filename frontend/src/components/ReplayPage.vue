@@ -78,8 +78,14 @@ const leagueUnavailableMessage = computed(() => {
  * fixed keys / picker），页面 tab 存在性 / LeagueSummaryTable / 默认 activeTab 一律看这里。
  */
 const leagueMode = computed(() => !!leagueData.value)
-/** 汇总 tab 的真实选手数量：League 汇总使用 playerSummaries，普通模式使用 aggregate。 */
+/**
+ * 汇总 tab 的真实基础选手数量（plan §10）：一律来自 Replay Core 的 resp.aggregate。
+ * League Rating 的选手数属于 League 区块，不得混入基础汇总人数。
+ */
 const aggregatePlayerCount = computed(() => replayAggregatePlayerCount(resp.value))
+/** League Rating 是否有可展示汇总（player/team 任一非空；全空时区块显示明确空态）。 */
+const leagueHasSummaries = computed(() =>
+  (leagueData.value?.playerSummaries?.length || 0) + (leagueData.value?.teamSummaries?.length || 0) > 0)
 /**
  * 两种独立的战队名称 override（PR #123 Blocker 2，禁止扁平混合）：
  * - battleTeamNames：{arenaId:team} → 名（单场显示 / 单场 PNG / 单场与 each Excel）
@@ -523,15 +529,25 @@ watch(files, (next) => {
         <p v-if="!resp.battles.length && !resp.aggregate.length && !leagueData" class="replay-empty-note">{{ $t('replay.no_results') }}</p>
 
         <div v-show="activeTab === 'aggregate' && (resp.aggregate.length || leagueMode)" ref="aggregateRef">
-          <template v-if="leagueMode">
-            <LeagueSummaryTable :title="$t('league.summary.title_player')" type="player"
-              :rows="leagueData?.playerSummaries || []" :columns="leagueData?.playerSummaryColumns || []"
-              :team-names="summaryTeamNames" @update-summary-team-name="updateSummaryTeamName" />
-            <LeagueSummaryTable :title="$t('league.summary.title_team')" type="team"
-              :rows="leagueData?.teamSummaries || []" :columns="leagueData?.teamSummaryColumns || []"
-              :team-names="summaryTeamNames" @update-summary-team-name="updateSummaryTeamName" />
+          <!-- 基础 Replay Aggregate：Replay Core 汇总，只要有多场数据就必须展示。
+               League Rating 存在与否都不隐藏它（plan §5/§6/§11）。 -->
+          <template v-if="resp.aggregate.length">
+            <h2 v-if="leagueMode" class="replay-section-title" data-testid="base-aggregate-title">{{ $t('result.base_summary_title') }}</h2>
+            <AggregateTable :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
           </template>
-          <AggregateTable v-else :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
+          <!-- League Rating 汇总：附加分析，不替代基础汇总；全空时给明确 neutral 空态。 -->
+          <template v-if="leagueMode">
+            <h2 class="replay-section-title" data-testid="league-summary-title">{{ $t('league.summary.section_title') }}</h2>
+            <template v-if="leagueHasSummaries">
+              <LeagueSummaryTable :title="$t('league.summary.title_player')" type="player"
+                :rows="leagueData?.playerSummaries || []" :columns="leagueData?.playerSummaryColumns || []"
+                :team-names="summaryTeamNames" @update-summary-team-name="updateSummaryTeamName" />
+              <LeagueSummaryTable :title="$t('league.summary.title_team')" type="team"
+                :rows="leagueData?.teamSummaries || []" :columns="leagueData?.teamSummaryColumns || []"
+                :team-names="summaryTeamNames" @update-summary-team-name="updateSummaryTeamName" />
+            </template>
+            <p v-else class="league-summary-empty" data-testid="league-summary-empty">{{ $t('league.summary.no_rateable') }}</p>
+          </template>
         </div>
 
         <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i"
@@ -566,6 +582,25 @@ watch(files, (next) => {
 <style>
 /* Workspace 一级能力切换（解析结果 / AI 复盘 / 战局回放）：复用全局 .tabs 视觉 */
 .workspace-tabs { margin-top: 16px; }
+/* 汇总 Tab 双区块（plan §7）：基础 Replay Aggregate 与 League Rating 汇总并列，
+   各自独立标题，League Rating 是附加分析不是替代品。 */
+.replay-section-title {
+  margin: 18px 0 8px;
+  font-size: .92rem;
+  font-weight: 800;
+  color: var(--text-heading);
+  letter-spacing: .01em;
+}
+.replay-section-title:first-child { margin-top: 4px; }
+.league-summary-empty {
+  margin: 8px 2px 16px;
+  padding: 14px 16px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-sub);
+  font-size: .85rem;
+  background: color-mix(in srgb, var(--bg-card) 82%, transparent);
+}
 .battle-action {
   display: inline-flex;
   align-items: center;

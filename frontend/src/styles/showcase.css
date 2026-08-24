@@ -173,7 +173,7 @@ body {
   padding: 9px 10px !important;
   border: 1px solid var(--border) !important;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--bg) 82%, transparent) !important;
+  background: color-mix(in srgb, var(--bg) 96%, transparent) !important;
   box-shadow: 0 12px 30px rgba(0,0,0,.18);
   backdrop-filter: blur(12px);
 }

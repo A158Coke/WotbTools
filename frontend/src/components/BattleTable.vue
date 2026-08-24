@@ -136,6 +136,8 @@ function measureSticky() {
 
 watch(() => props.shownCols, measureSticky, { deep: true })
 watch(isLeague, measureSticky)
+// 排序箭头会改变表头宽度 → 昵称列宽可能变化 → Rating sticky 左偏移必须重测（plan §21）
+watch([sortKey, sortReverse], measureSticky)
 onMounted(() => {
   measureSticky()
   window.addEventListener('resize', measureSticky)
@@ -250,13 +252,15 @@ const colStyle = key => isStickyCol(key) ? { left: (stickyLeft.value[key] || 0) 
 .lm-value { color: var(--text-heading); font-weight: 700; }
 .league-note { margin-top: 6px; font-size: .72rem; color: var(--text-sub); }
 
-/* League 表格：玩家 + 总 Rating sticky；其余列横向滚动 */
+/* League 表格：玩家 + 总 Rating sticky；其余列横向滚动。
+   z-index 层级（plan §17）：tbody normal < tbody sticky(3) < thead normal(5) < thead sticky(7)。
+   此处 scoped 特异性高于全局 showcase 规则，必须显式对齐全局层级——
+   否则普通表头(5)画在 sticky 表头(3)之上，横向滚动时普通表头会覆盖固定玩家/Rating 列。 */
 .league-table th.sticky-col, .league-table td.sticky-col {
   position: sticky;
-  z-index: 1;
 }
-.league-table th.sticky-col { z-index: 3; background: var(--bg-card2); }
-.league-table td.sticky-col { background: var(--bg-card); }
+.league-table td.sticky-col { z-index: 3; background: var(--bg-card); }
+.league-table th.sticky-col { z-index: 7; background: var(--bg-card2); }
 .league-table td.sticky-col.sticky-t1 { background: color-mix(in srgb, var(--bg-t1) 64%, var(--bg-card)); }
 .league-table td.sticky-col.sticky-t2 { background: color-mix(in srgb, var(--bg-t2) 64%, var(--bg-card)); }
 .league-table tr:hover td.sticky-col { background: var(--bg-list-hover); }

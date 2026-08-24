@@ -1504,8 +1504,8 @@ describe('ReplayPage result visibility (P0: no blank results; league mode from r
     const battlePanels = wrapper.findAll('.battle-table-stub')
     expect(battlePanels.length).toBeGreaterThan(0)
     expect(battlePanels[0].isVisible()).toBe(true)
-    // aggregate panel 隐藏（v-show 在 wrapper div 上；happy-dom 无布局，用 inline display 判定）
-    expect(wrapper.find('.agg-table-stub').element.parentElement.style.display).toBe('none')
+    // aggregate 空 → AggregateTable 不渲染（v-if 由 resp.aggregate 驱动，plan §5）
+    expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
   })
 
   it('league 模式以 resp.league 为唯一事实源：即使 playerColumns 无 league_rating，aggregate tab + LeagueSummaryTable 也显示', async () => {
@@ -1533,6 +1533,68 @@ describe('ReplayPage result visibility (P0: no blank results; league mode from r
     expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
   })
 
+  it('league 模式 + aggregate 有数据：基础 AggregateTable 与 LeagueSummary 同时展示（plan Case C）', async () => {
+    state.init.resp = makeResp({
+      aggregate: [
+        { cells: { nickname: 'P1', damage_dealt: 5000 } },
+        { cells: { nickname: 'P2', damage_dealt: 3000 } }
+      ],
+      playerColumns: [{ key: 'nickname', label: '昵称' }], // 不含 league_rating
+      league: {
+        mode: 'LEAGUE_RATING',
+        columns: [],
+        playerSummaries: [{ nickname: 'P1', ratingMedian: 900, battles: 2, wins: 1, damageTotal: 9000, killsTotal: 4, dimensionMedians: [] }],
+        playerSummaryColumns: [{ key: 'nickname', label: '昵称' }, { key: 'league_rating', label: 'Rating' }],
+        teamSummaries: [],
+        teamSummaryColumns: [],
+        failures: []
+      }
+    })
+    state.init.activeTab = 'aggregate'
+    const wrapper = mountPage()
+    await flushPromises()
+    // 两个汇总区块同时存在，不是二选一（plan §7/§11）
+    expect(wrapper.find('.agg-table-stub').exists()).toBe(true)
+    expect(wrapper.find('.league-summary').exists()).toBe(true)
+    // 区块标题区分数据源
+    expect(wrapper.find('[data-testid="base-aggregate-title"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="league-summary-title"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('league 0/30：基础 Aggregate 可见 + League 区块显示明确空态，且 tab 人数来自 resp.aggregate（plan Case A/B）', async () => {
+    state.init.resp = makeResp({
+      aggregate: [
+        { cells: { nickname: 'P1', damage_dealt: 5000 } },
+        { cells: { nickname: 'P2', damage_dealt: 3000 } }
+      ],
+      league: {
+        mode: 'LEAGUE_RATING',
+        columns: [],
+        playerSummaries: [],
+        playerSummaryColumns: [{ key: 'nickname', label: '昵称' }],
+        teamSummaries: [],
+        teamSummaryColumns: [],
+        failures: []
+      }
+    })
+    state.init.activeTab = 'aggregate'
+    const wrapper = mountPage()
+    await flushPromises()
+    // 基础汇总仍在（0 可评分 ≠ Replay 没数据）
+    expect(wrapper.find('.agg-table-stub').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="base-aggregate-title"]').exists()).toBe(true)
+    // League 区块为明确 neutral 空态，而不是 "--"
+    expect(wrapper.find('[data-testid="league-summary-empty"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="league-summary-empty"]').classes()).not.toContain('error')
+    expect(wrapper.find('.league-summary').exists()).toBe(false)
+    // 汇总 tab 人数来自 resp.aggregate（2），不是 league.playerSummaries（0）
+    const tabs = wrapper.findAll('button')
+    const aggTab = tabs.find(b => b.text().includes('result.aggregate_tab'))
+    expect(aggTab.text()).toContain('result.aggregate_tab:2')
+    wrapper.unmount()
+  })
+
   it('无 battles 无 aggregate 无 league：显示空态提示，不崩溃不空白', async () => {
     state.init.resp = makeResp({ aggregate: [], battles: [], league: null })
     state.init.activeTab = 'aggregate'
@@ -1540,7 +1602,7 @@ describe('ReplayPage result visibility (P0: no blank results; league mode from r
     await flushPromises()
     expect(wrapper.text()).toContain('replay.no_results')
     expect(wrapper.findAll('.battle-table-stub').length).toBe(0)
-    expect(wrapper.find('.agg-table-stub').element.parentElement.style.display).toBe('none')
+    expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
   })
 })
 describe('ReplayPage League failure UX separation (plan §23 Test 1-7)', () => {

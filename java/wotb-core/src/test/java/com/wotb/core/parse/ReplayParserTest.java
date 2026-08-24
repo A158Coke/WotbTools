@@ -251,25 +251,48 @@ class ReplayParserTest {
     }
 
     @Test
-    void rosterCompleteFalseWhenRosterAndResultsAccountsMismatch() throws IOException {
-        // 名册(#201) 有 2 人，战绩(#301) 只有 1 人（其余结算记录缺失）
+    void rosterExtraKeepsGlobalRosterCompleteStrictButLeagueEvidenceComplete() throws IOException {
+        // 真实训练赛名册 #201 可含 non-combatant extra（probe：20260725_1535 训练房
+        // #201=15/#301=14，extra 账号 3117047709 观战者；标准 7v7 且 #301 完整 14 人时 extra
+        // 不属于 14 名 settled combatants）。
+        // 全局 Battle.rosterComplete 保持严格 fail-closed（#201 全集合 == #301 全集合）——
+        // extra 存在时不扩大为 true；League 专属证据（#301 ⊆ #201 + 队伍一致）为 true，
+        // LeagueRatingValidator 据此允许 non-combatant extra。
         final byte[] root = rosterResultsRoot(
+                List.of(new int[]{1001, 1}, new int[]{1002, 1}, new int[]{1003, 2}),
                 List.of(new int[]{1001, 1}, new int[]{1002, 1}),
+                1);
+        final Battle battle = ReplayParser.parse(zip(Map.of("battle_results.dat", pickle(root))));
+        assertEquals(Boolean.FALSE, battle.rosterComplete,
+                "全局 rosterComplete 保持严格契约（extra 不扩大为 true，AI fail-closed 不放松）");
+        assertEquals(Boolean.TRUE, battle.settlementAccountsCoveredByRoster,
+                "League 专属证据：#301 全部来自名册（无幽灵结算）");
+        assertEquals(Boolean.TRUE, battle.settlementRosterTeamConsistent,
+                "League 专属证据：名册队伍与结算队伍一致");
+    }
+
+    @Test
+    void rosterCompleteFalseWhenResultAccountMissingFromRoster() throws IOException {
+        // 幽灵结算：战绩 #301 有账号不在名册 #201 中 → 全局严格契约与 League 专属覆盖均不完整
+        final byte[] root = rosterResultsRoot(
                 List.of(new int[]{1001, 1}),
+                List.of(new int[]{1001, 1}, new int[]{2001, 2}),
                 1);
         final Battle battle = ReplayParser.parse(zip(Map.of("battle_results.dat", pickle(root))));
         assertEquals(Boolean.FALSE, battle.rosterComplete);
+        assertEquals(Boolean.FALSE, battle.settlementAccountsCoveredByRoster);
     }
 
     @Test
     void rosterCompleteFalseWhenRosterTeamDiffersFromResultTeam() throws IOException {
-        // 名册队伍(#201→#2→#3)=1，结算队伍(#301→#2→#102)=2 → 队伍不一致
+        // 名册队伍(#201→#2→#3)=1，结算队伍(#301→#2→#102)=2 → 队伍不一致（全局与 League 专属均不完整）
         final byte[] root = rosterResultsRoot(
                 List.of(new int[]{1001, 1}),
                 List.of(new int[]{1001, 2}),
                 1);
         final Battle battle = ReplayParser.parse(zip(Map.of("battle_results.dat", pickle(root))));
         assertEquals(Boolean.FALSE, battle.rosterComplete);
+        assertEquals(Boolean.FALSE, battle.settlementRosterTeamConsistent);
     }
 
     @Test
@@ -280,6 +303,8 @@ class ReplayParserTest {
                 1);
         final Battle battle = ReplayParser.parse(zip(Map.of("battle_results.dat", pickle(root))));
         assertEquals(Boolean.TRUE, battle.rosterComplete);
+        assertEquals(Boolean.TRUE, battle.settlementAccountsCoveredByRoster);
+        assertEquals(Boolean.TRUE, battle.settlementRosterTeamConsistent);
     }
 
     private static Long invokeParseLong(final Method parseLong, final String value)

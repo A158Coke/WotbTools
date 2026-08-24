@@ -40,7 +40,9 @@
 | `arenaId` | String | 地图/竞技场 ID（来源：`battle_results.dat`） |
 | `winnerTeam` | Integer | 获胜队伍原始编号；null=平局/未知（来源：`battle_results.dat`） |
 | `players` | List\<PlayerResult\> | 全部玩家战绩（来源：`battle_results.dat`） |
-| `rosterComplete` | Boolean | 结算阵容完整性证据：名册(#201)与战绩(#301)账号集合一致（所有参战成员都有结算记录）且名册提供队伍(#201→#2→#3)时与结算队伍一致时为 true；null=未知/不完整（来源：`ReplayParser` 对比 #201/#301）。所有依赖完整逐人结算的推断共享该前提：survivors==0 断言全歼 / SURVIVOR_SETTLEMENT / POINTS_INFERENCE / pointsEndReason（REACHED_1000 / TIME_EXPIRED）仅在 true 时可用；不完整时占点分总量抑制（`pointsTotalsUnavailable=true`），结束方式降级 UNKNOWN |
+| `rosterComplete` | Boolean | 结算阵容完整性证据（<b>严格 fail-closed 全局契约</b>）：名册(#201)与战绩(#301)账号集合完全一致且名册队伍(#201→#2→#3)（存在时）与结算队伍一致时为 true；null=未知/不完整（来源：`ReplayParser`）。<b>不因 League Rating 弱化</b>：它是全歼 / SURVIVOR_SETTLEMENT / POINTS_INFERENCE / pointsEndReason 等「完整逐人结算」推断的 fail-closed 前提；#201 存在无法证明为 spectator 的 extra（如 #201=4/#301=3）时不得视为完整。League Rating 对 non-combatant extra 的宽容走 League 专属证据（见下两字段） |
+| `settlementAccountsCoveredByRoster` | Boolean | League 专属结算覆盖证据（`ReplayParser` 设置）：战绩 #301 每个结算账号都出现在名册 #201 中（无幽灵结算）；null=无名册证据（非回放解析路径）。#201 可含 non-combatant extra（标准 7v7 且 #301 完整 14 人时 extra 不属于 14 名 settled combatants），extra 不影响本字段 |
+| `settlementRosterTeamConsistent` | Boolean | League 专属队伍一致性证据（`ReplayParser` 设置）：名册 #201→#2→#3 提供的队伍字段（存在时）与结算队伍一致；null=无队伍证据 |
 | `version` | String | 游戏版本（来源：`meta.json`） |
 | `mapName` | String | 内部地图 code（如 `desert_train`；来源：`meta.json`） |
 | `durationS` | Double | 战斗时长（秒，来源：`meta.json#battleDuration`，上限 420） |
