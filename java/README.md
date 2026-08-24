@@ -113,14 +113,14 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 > **League Rating（训练赛/联赛）**：上传含训练房（arenaBonusType=2）或联赛/锦标赛（=4）回放时，
 > 响应额外返回 `league` 元数据（mode=LEAGUE_RATING、战队 Rating/MVP/队内最佳、七维度
 > `league_*` 列与固定列元数据、选手/战队中位数汇总、校验失败列表）。`playerColumns` /
-> `aggregateColumns` **保留** `contribution`/`kast`/`impact`（review PR#134 BLOCKER 1：
-> Performance Metrics 属于 Replay 数据，CW 单场/汇总表必须可显示；不是 League Rating 维度，
-> 不进七维 Rating；contribution/kast 可进自定义 Radar，Impact 暂不入 Radar——BLOCKER 3 无稳定
-> normalization contract）。响应另带 `leagueMode`（true = CW 批次，与 `league` 结果存在性分离：
-> Rating-ineligible 场次 `league=null` 但 `leagueMode=true`，review PR#134 BLOCKER 3）。
+> `aggregateColumns` **保留** `contribution`/`kast`/`impact`（Performance Metrics 属于
+> Replay 数据，CW 单场/汇总表必须可显示；不是 League Rating 维度，不进七维 Rating；
+> contribution/kast 可进自定义 Radar，Impact 无稳定 normalization contract 暂不入 Radar）。
+> 响应另带 `leagueMode`（true = CW 批次，与 `league` 结果存在性分离：
+> Rating-ineligible 场次 `league=null` 但 `leagueMode=true`）。
 > 混合普通+训练赛/联赛 → League Rating 不聚合（`league=null`、
-> `leagueUnavailableCode=MIXED_LEAGUE_AND_STANDARD_REPLAYS`，battles 仍按普通回放语义成功返回，
-> plan §21）。评分 core 见 `wotb-core/.../league/`（LeagueRatingCalculator 等），
+> `leagueUnavailableCode=MIXED_LEAGUE_AND_STANDARD_REPLAYS`，battles 仍按普通回放语义成功返回）。
+> 评分 core 见 `wotb-core/.../league/`（LeagueRatingCalculator 等），
 > preview/Excel 复用同一评分结果。
 
 ### `POST /api/preview`
@@ -167,7 +167,7 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 - `DELETE /api/replay/processing-jobs/{jobId}` — 取消（QUEUED 立即终态并释放 executor queue slot；PROCESSING 协作取消，安全 checkpoint 后终态）。
 - `GET /api/replay/processing-jobs/{jobId}/result` — READY 后返回 Preview 数据（battles / aggregate / duplicates / failures / playerColumns / aggregateColumns；**不再重新 process replay**）；未 READY → 409 `JOB_NOT_READY`。
 
-容量与生命周期：与 Export Job **共用同一有界 worker 池**（`REPLAY_EXPORT_JOB_MAX_CONCURRENT=2` / `REPLAY_EXPORT_JOB_QUEUE_CAPACITY=4`，满载 503 `PROCESSING_QUEUE_FULL`）；worker 仍获取全局 `ReplayCapacityLimiter` 许可（`REPLAY_MAX_CONCURRENT_JOBS=2` 不提高），batch 内 replay 串行。ProcessedDataset 为**内存态短生命周期缓存**（Strategy A，TTL `REPLAY_PROCESSING_JOB_TTL_MINUTES=30`，默认与 Export 一致）：只缓存已 enrich 的 Battle 结算战绩（不携带 reconstruction 事件流），34/50 场 heap 成本可接受；Export 创建时对 result `acquire` 引用计数（plan §52），活跃 Export 期间 TTL 清理跳过，Export 终态 `release` 后才允许清理；**acquire 成功后任何在 worker 接手前的失败（job 目录创建 / submit rejection）都会释放引用**（ownership lifecycle，不泄漏 refcount 阻止 TTL 清理）。临时输入目录由 `REPLAY_PROCESSING_JOB_DIR` 管理（TTL 清理 + 启动孤儿清理）。旧同步 `POST /api/preview` 保留（向后兼容，deprecated）。
+容量与生命周期：与 Export Job **共用同一有界 worker 池**（`REPLAY_EXPORT_JOB_MAX_CONCURRENT=2` / `REPLAY_EXPORT_JOB_QUEUE_CAPACITY=4`，满载 503 `PROCESSING_QUEUE_FULL`）；worker 仍获取全局 `ReplayCapacityLimiter` 许可（`REPLAY_MAX_CONCURRENT_JOBS=2` 不提高），batch 内 replay 串行。ProcessedDataset 为**内存态短生命周期缓存**（Strategy A，TTL `REPLAY_PROCESSING_JOB_TTL_MINUTES=30`，默认与 Export 一致）：只缓存已 enrich 的 Battle 结算战绩（不携带 reconstruction 事件流），34/50 场 heap 成本可接受；Export 创建时对 result `acquire` 引用计数，活跃 Export 期间 TTL 清理跳过，Export 终态 `release` 后才允许清理；**acquire 成功后任何在 worker 接手前的失败（job 目录创建 / submit rejection）都会释放引用**（ownership lifecycle，不泄漏 refcount 阻止 TTL 清理）。临时输入目录由 `REPLAY_PROCESSING_JOB_DIR` 管理（TTL 清理 + 启动孤儿清理）。旧同步 `POST /api/preview` 保留（向后兼容，deprecated）。
 
 ### AI 复盘与批量处理（wotbtools-user / wotbtools-admin）
 

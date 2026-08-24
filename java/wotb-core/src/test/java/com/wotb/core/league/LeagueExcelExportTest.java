@@ -119,7 +119,7 @@ class LeagueExcelExportTest {
 
     @Test
     void aggregateLeagueWorkbookAppliesTeamKeyOverride() throws Exception {
-        // 两场 team1 均 clan=AAA → 批次 teamKey = clan:AAA（PR #123 Blocker 2：批次 identity override）
+        // 两场 team1 均 clan=AAA → 批次 teamKey = clan:AAA（批次 identity override）
         final Battle b1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         b1.arenaId = "arena-1";
         final Battle b2 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
@@ -173,7 +173,7 @@ class LeagueExcelExportTest {
 
     @Test
     void aggregateDetailSheetAppliesBattleTeamOverrides() throws Exception {
-        // PR #123 Blocker 1（Test 1）：battle override 必须进入「每场明细」，不得仍是 Team 1/Team 2
+        // （Test 1）：battle override 必须进入「每场明细」，不得仍是 Team 1/Team 2
         final Battle b1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         b1.arenaId = "arena-1";
         final Battle b2 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
@@ -199,7 +199,7 @@ class LeagueExcelExportTest {
 
     @Test
     void aggregateDetailBattleOverrideDoesNotChangeTeamSummaryIdentity() throws Exception {
-        // PR #123 Blocker 1（Test 2）：battle override 只改单场明细；战队汇总仍走 autoName（AAA）
+        // （Test 2）：battle override 只改单场明细；战队汇总仍走 autoName（AAA）
         final Battle b1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         b1.arenaId = "arena-1";
         final LeagueRatingResult r1 = LeagueRatingCalculator.calculate(b1);
@@ -262,7 +262,7 @@ class LeagueExcelExportTest {
 
     @Test
     void aggregateSummaryOverrideDoesNotLeakIntoDetailSheet() throws Exception {
-        // PR #123 Blocker 1（Test 3）：summary override 只改战队汇总；每场明细仍用 autoName（AAA）
+        // （Test 3）：summary override 只改战队汇总；每场明细仍用 autoName（AAA）
         final Battle b1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         b1.arenaId = "arena-1";
         final LeagueRatingResult r1 = LeagueRatingCalculator.calculate(b1);

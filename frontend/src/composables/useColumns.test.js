@@ -93,7 +93,7 @@ describe('useColumns derived metric columns', () => {
   })
 })
 
-// ---- League Rating 列 scope（plan §16：普通与 League 列偏好互不污染） ----
+// ---- League Rating 列 scope（普通与 League 列偏好互不污染） ----
 
 const LEAGUE_PLAYER_COLS = [
   { key: 'nickname', num: false },
@@ -167,7 +167,7 @@ describe('useColumns League Rating scope', () => {
     expect(c.visibleKeys.value).toContain('league_rating')
   })
 
-  it('league battle columns keep contribution/kast/impact in universe (BLOCKER 1), not default-visible, toggleable', () => {
+  it('league battle columns keep contribution/kast/impact in universe, not default-visible, toggleable', () => {
     const c = mountLeagueCols(freshStorage())
     // 存在于列 universe（ColumnPicker 可显示）
     expect(c.playerOrder.value).toContain('contribution')

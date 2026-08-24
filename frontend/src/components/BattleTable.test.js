@@ -87,7 +87,7 @@ describe('BattleTable derived metrics', () => {
   })
 })
 
-// ---- League Rating（plan §15/§10：概览、Rating 单元格、MVP 徽标、sticky 列、队名编辑） ----
+// ---- League Rating：概览、Rating 单元格、MVP 徽标、sticky 列、队名编辑 ----
 
 function makeLeagueBattle() {
   return {
@@ -145,7 +145,7 @@ describe('BattleTable League Rating', () => {
     const inputs = wrapper.findAll('input.team-name-input')
     expect(inputs[0].element.value).toBe('AAA')
     expect(inputs[1].element.value).toBe('BBB')
-    // 战队 Rating 只显示整数（881），不显示冗余 /1000 完成度（review PR#134 BLOCKER 1）
+    // 战队 Rating 只显示整数（881），不显示冗余 /1000 完成度
     const text = wrapper.text()
     expect(text).toContain('881')
     expect(text).not.toContain('88.1%')
@@ -158,7 +158,7 @@ describe('BattleTable League Rating', () => {
     expect(text).toContain('★')            // B 队2 队内最佳
   })
 
-  it('总 Rating 只显示整数（927），不显示 /1000 冗余完成度（review PR#134 BLOCKER 1）', () => {
+  it('总 Rating 只显示整数（927），不显示 /1000 冗余完成度', () => {
     const wrapper = mountLeague(makeLeagueBattle())
     const text = wrapper.text()
     expect(text).toContain('927')
@@ -168,7 +168,7 @@ describe('BattleTable League Rating', () => {
     expect(text).not.toContain('81.3%')
   })
 
-  it('raw league_rating=927.4 → display 927，但排序用 raw 927.4（review PR#134 BLOCKER 1 regression）', async () => {
+  it('raw league_rating=927.4 → display 927，但排序用 raw 927.4（回归）', async () => {
     const battle = makeLeagueBattle()
     battle.players = [
       { team: 1, cells: { nickname: 'A', account_id: 1001, league_rating: 927.4, league_damage_score: 342.1, damage_dealt: 3000 } },
@@ -205,7 +205,7 @@ describe('BattleTable League Rating', () => {
     expect(damageTh.classes()).not.toContain('sticky-col')
   })
 
-  // ---- P0 sticky lifecycle（plan §19 Test A–F；Test F：/left:\s*\d+px/ 不能再作为成功标准，
+  // ---- P0 sticky lifecycle（A–F：hidden→visible 重测、ResizeObserver、0 width 不覆盖；
   //      因为 left:0px 也会通过——必须断言具体测量值） ----
 
   function stubNickWidth(wrapper, width) {
@@ -221,7 +221,7 @@ describe('BattleTable League Rating', () => {
     await nextTick()
   }
 
-  it('hidden mount（active=false，nickname width=0）不得把 Rating sticky left 写成有效的 0（plan §19 Test A）', async () => {
+  it('hidden mount（active=false，nickname width=0）不得把 Rating sticky left 写成有效的 0', async () => {
     const wrapper = mountLeague(makeLeagueBattle())
     await wrapper.setProps({ active: false })
     await flushSticky()
@@ -229,7 +229,7 @@ describe('BattleTable League Rating', () => {
     expect(ratingTh.attributes('style') || '').not.toContain('left')
   })
 
-  it('hidden → visible：真实 width=132 时 nickname left=0、rating left=132px（plan §19 Test B）', async () => {
+  it('hidden → visible：真实 width=132 时 nickname left=0、rating left=132px', async () => {
     const wrapper = mountLeague(makeLeagueBattle())
     await wrapper.setProps({ active: false })
     stubNickWidth(wrapper, 132)
@@ -239,14 +239,14 @@ describe('BattleTable League Rating', () => {
     const ratingTh = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
     expect(nickTh.attributes('style')).toContain('left: 0px')
     expect(ratingTh.attributes('style')).toContain('left: 132px')
-    // 两队的 sticky 玩家/Rating cell 必须带 team semantic class（plan §18：不丢队色）
+    // 两队的 sticky 玩家/Rating cell 必须带 team semantic class（不丢队色）
     const stickyT1 = wrapper.findAll('tbody td').filter(td => td.classes().includes('sticky-t1'))
     const stickyT2 = wrapper.findAll('tbody td').filter(td => td.classes().includes('sticky-t2'))
     expect(stickyT1.length).toBeGreaterThan(0)
     expect(stickyT2.length).toBeGreaterThan(0)
   })
 
-  it('重新激活：inactive 时列宽变化、active 后重测到新宽度 148（plan §19 Test C）', async () => {
+  it('重新激活：inactive 时列宽变化、active 后重测到新宽度 148', async () => {
     const wrapper = mountLeague(makeLeagueBattle())
     stubNickWidth(wrapper, 132)
     await flushSticky()
@@ -260,7 +260,7 @@ describe('BattleTable League Rating', () => {
     expect(ratingTh.attributes('style')).toContain('left: 148px')
   })
 
-  it('ResizeObserver：132 → 150 时 sticky offset 更新（plan §19 Test D）', async () => {
+  it('ResizeObserver：132 → 150 时 sticky offset 更新', async () => {
     const wrapper = mountLeague(makeLeagueBattle())
     stubNickWidth(wrapper, 132)
     await flushSticky()
@@ -273,7 +273,7 @@ describe('BattleTable League Rating', () => {
     expect(ratingTh.attributes('style')).toContain('left: 150px')
   })
 
-  it('ResizeObserver width=0：已有有效 150 不得被覆盖成 0（plan §19 Test E）', async () => {
+  it('ResizeObserver width=0：已有有效 150 不得被覆盖成 0', async () => {
     const wrapper = mountLeague(makeLeagueBattle())
     stubNickWidth(wrapper, 150)
     await flushSticky()
@@ -303,7 +303,7 @@ describe('BattleTable League Rating', () => {
     expect(inputs[0].element.value).toBe('我的战队')
   })
 
-  it('emits select-player with accountId on league row click (plan §8/§13)', async () => {
+  it('emits select-player with accountId on league row click', async () => {
     const wrapper = mountLeague(makeLeagueBattle())
     const rowA = wrapper.findAll('tbody tr').find(r => r.text().includes('A'))
     await rowA.trigger('click')
@@ -312,7 +312,7 @@ describe('BattleTable League Rating', () => {
     expect(emitted[0][0]).toEqual({ scope: 'battle', accountId: 1001, arenaId: '111' })
   })
 
-  it('does not emit select-player in standard (non-league) mode (plan §8.1)', async () => {
+  it('does not emit select-player in standard (non-league) mode', async () => {
     const wrapper = mountTable(makeBattle([
       { team: 1, cells: { nickname: 'A', damage_dealt: 3000, contribution: 22.4, kast: 100, impact: 151.2 } }
     ]), makeCols())
@@ -320,14 +320,14 @@ describe('BattleTable League Rating', () => {
     expect(wrapper.emitted('select-player')).toBeUndefined()
   })
 
-  it('header click sorts but does not open drawer (plan §13)', async () => {
+  it('header click sorts but does not open drawer', async () => {
     const wrapper = mountLeague(makeLeagueBattle())
     const th = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
     await th.trigger('click')
     expect(wrapper.emitted('select-player')).toBeUndefined()
   })
 
-  // ---- review PR#134 BLOCKER 3：leagueMode（CW UI）与 league（Rating 结果）是两个独立状态 ----
+  // ---- leagueMode（CW UI）与 league（Rating 结果）是两个独立状态 ----
 
   it('leagueMode=true + league=null（Rating-ineligible CW 场）：仍是 CW——点击打开 Drawer、Rating 显示 --、sticky 契约保持', async () => {
     const battle = makeLeagueBattle()
@@ -344,7 +344,7 @@ describe('BattleTable League Rating', () => {
     const ths = wrapper.findAll('th')
     expect(ths.find(t => t.text().includes('nickname')).classes()).toContain('sticky-col')
     expect(ths.find(t => t.text().includes('league_rating')).classes()).toContain('sticky-col')
-    // 点击玩家行 → 仍打开 Drawer（BLOCKER 3.3）
+    // 点击玩家行 → 仍打开 Drawer（Rating-ineligible 场）
     const rowA = wrapper.findAll('tbody tr').find(r => r.text().includes('A'))
     await rowA.trigger('click')
     const emitted = wrapper.emitted('select-player')
@@ -352,7 +352,7 @@ describe('BattleTable League Rating', () => {
     expect(emitted[0][0]).toEqual({ scope: 'battle', accountId: 1001, arenaId: '111' })
   })
 
-  it('Rating-ineligible 场 Rating 单元格显示 -- 而不是 0（BLOCKER 3.3 不冒充 0）', async () => {
+  it('Rating-ineligible 场 Rating 单元格显示 -- 而不是 0（不冒充 0）', async () => {
     const battle = makeLeagueBattle()
     battle.league = null
     battle.players = battle.players.map(p => ({
@@ -362,7 +362,7 @@ describe('BattleTable League Rating', () => {
     expect(wrapper.text()).not.toMatch(/0 · 0%/)
   })
 
-  it('column reorder（shownCols 变化）→ sticky 重测到新昵称列宽（BLOCKER 2.10）', async () => {
+  it('column reorder（shownCols 变化）→ sticky 重测到新昵称列宽', async () => {
     const wrapper = mountLeague(makeLeagueBattle())
     stubNickWidth(wrapper, 132)
     await flushSticky()
@@ -377,7 +377,7 @@ describe('BattleTable League Rating', () => {
   })
 })
 
-describe('BattleTable selected row highlight (review PR#134 第三轮 UX)', () => {
+describe('BattleTable selected row highlight', () => {
   function selectedRows(wrapper) {
     return wrapper.findAll('tbody tr').filter(r => r.classes().includes('selected'))
   }

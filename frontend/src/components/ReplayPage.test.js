@@ -29,7 +29,7 @@ describe('ReplayPage export job flow', () => {
     state.init.resp = makeResp()
     const wrapper = mountPage()
     await exportButtons(wrapper)[0].trigger('click')
-    // 无覆盖时 teamNamesPayload() = null（PR #123 Blocker 1：名称必须经 payload 传递）
+    // 无覆盖时 teamNamesPayload() = null（名称必须经 payload 传递）
     expect(state.replay.startExportJob).toHaveBeenCalledWith('aggregate', null)
   })
 
@@ -224,7 +224,7 @@ vi.mock('../composables/useColumns.js', async () => {
   return {
     useColumns: () => {
       // 测试 seam：window.__testLeagueMode 控制 league 模式渲染；
-      // window.__testCwVisible / __testCwOrder 模拟 useColumns cw scope（BLOCKER 2）
+      // window.__testCwVisible / __testCwOrder 模拟 useColumns cw scope
       const cwKeys = window.__testCwVisible || [
         'nickname', 'league_rating', 'clan', 'battles', 'wins', 'win_rate',
         'damage_avg', 'earned_avg', 'contribution', 'kast', 'impact'
@@ -361,7 +361,7 @@ describe('ReplayPage processing job flow', () => {
     state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en', files: [] }
   })
 
-  it('renders processing task card with real 18/34 progress (plan §64)', async () => {
+  it('renders processing task card with real 18/34 progress', async () => {
     state.init.resp = null
     const wrapper = mountPage()
     expect(wrapper.find('[data-testid="replay-task-card"]').exists()).toBe(false)
@@ -1682,7 +1682,7 @@ describe('ReplayPage League Rating', () => {
     expect(wrapper.vm.battleTeamNames).toEqual({})
   })
 
-  it('export passes battle + summary overrides payload (PR #123 Blocker 1)', async () => {
+  it('export passes battle + summary overrides payload', async () => {
     state.init.resp = makeResp({ leagueMode: true, league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
     const wrapper = mountPage()
     await flushPromises()
@@ -1696,7 +1696,7 @@ describe('ReplayPage League Rating', () => {
     })
   })
 
-  it('clears both overrides when replay selection changes (PR #123 Blocker 2)', async () => {
+  it('clears both overrides when replay selection changes', async () => {
     state.init.resp = makeResp({ leagueMode: true, league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
     const wrapper = mountPage()
     await flushPromises()
@@ -1710,7 +1710,7 @@ describe('ReplayPage League Rating', () => {
     expect(wrapper.vm.summaryTeamNames).toEqual({})
   })
 
-  it('removing a single replay also clears overrides (PR #123 Blocker 2)', async () => {
+  it('removing a single replay also clears overrides', async () => {
     state.init.resp = makeResp({ leagueMode: true, league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
     const wrapper = mountPage()
     await flushPromises()
@@ -1723,7 +1723,7 @@ describe('ReplayPage League Rating', () => {
     expect(wrapper.vm.summaryTeamNames).toEqual({})
   })
 
-  it('re-processing same selection does NOT clear overrides (PR #123 Blocker 2)', async () => {
+  it('re-processing same selection does NOT clear overrides', async () => {
     state.init.resp = makeResp({ leagueMode: true, league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } })
     const wrapper = mountPage()
     await flushPromises()
@@ -1762,7 +1762,7 @@ describe('ReplayPage result visibility (P0: no blank results; league mode from r
     const battlePanels = wrapper.findAll('.battle-table-stub')
     expect(battlePanels.length).toBeGreaterThan(0)
     expect(battlePanels[0].isVisible()).toBe(true)
-    // aggregate 空 → AggregateTable 不渲染（v-if 由 resp.aggregate 驱动，plan §5）
+    // aggregate 空 → AggregateTable 不渲染（v-if 由 resp.aggregate 驱动）
     expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
   })
 
@@ -1787,7 +1787,7 @@ describe('ReplayPage result visibility (P0: no blank results; league mode from r
     await flushPromises()
     const tabs = wrapper.findAll('button')
     expect(tabs.some(b => b.text().includes('result.aggregate_tab'))).toBe(true)
-    // CW 模式：玩家信息只走统一玩家表（plan §1.3），不再渲染两张平级玩家表
+    // CW 模式：玩家信息只走统一玩家表，不再渲染两张平级玩家表
     expect(wrapper.find('.cw-player-summary').exists()).toBe(true)
     expect(wrapper.find('.league-summary').exists()).toBe(false)
     expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
@@ -1843,7 +1843,7 @@ describe('ReplayPage result visibility (P0: no blank results; league mode from r
     state.init.activeTab = 'aggregate'
     const wrapper = mountPage()
     await flushPromises()
-    // 0 可评分 ≠ Replay 没数据：统一玩家表仍渲染 aggregate 玩家（plan §21 Missing side 不删玩家）
+    // 0 可评分 ≠ Replay 没数据：统一玩家表仍渲染 aggregate 玩家（Missing side 不删玩家）
     expect(wrapper.find('.cw-player-summary').exists()).toBe(true)
     expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
     // 战队区块为明确 neutral 空态，而不是 "--"
@@ -1894,26 +1894,42 @@ describe('ReplayPage result visibility (P0: no blank results; league mode from r
     expect(wrapper.find('.agg-table-stub').exists()).toBe(true)
   })
 
-  it('leagueMode=true + resp.league=null（页面级 Rating-ineligible CW 批次）：仍是 CW UI', async () => {
+  it('leagueMode=true + league envelope 存在但 0 评分（battle.league=null、playerSummaries=[]）：CW UI + 统一表保留 aggregate 玩家', async () => {
+    // 生产 contract：纯 CW 批次必有 league envelope（无论评分场数）；单场是否评分由 battle.league 决定。
     state.init.resp = makeResp({
-      aggregate: [],
+      aggregate: [
+        { cells: { account_id: 1001, nickname: 'P1', damage_dealt: 5000 } },
+      ],
       battles: [
         { mapName: 'Lagoon', league: null, players: [{ team: 1, cells: { account_id: 1001, nickname: 'P1', damage_dealt: 5000 } }] },
       ],
       playerColumns: [{ key: 'nickname', label: '昵称' }],
-      league: null,
+      league: {
+        mode: 'LEAGUE_RATING',
+        columns: [{ key: 'league_rating', max: 1000, fixed: true }],
+        playerSummaries: [],
+        playerSummaryColumns: [{ key: 'nickname', label: '昵称' }],
+        teamSummaries: [], teamSummaryColumns: [], failures: [],
+      },
       leagueMode: true,
     })
     state.init.activeTab = 'aggregate'
     const wrapper = mountPage()
     await flushPromises()
-    // CW UI 存在（aggregate tab + 统一玩家表空态 + League 标题），不退化为基础表
+    // CW UI 存在（aggregate tab + 统一玩家表 + League 标题），不退化为基础表
     expect(wrapper.find('[data-testid="league-summary-title"]').exists()).toBe(true)
     expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
+    expect(wrapper.find('.cw-player-summary').exists()).toBe(true)
+    // 统一表保留 Replay Aggregate 玩家（0 评分不删玩家；Rating/七维补 "--"）
+    const rows = wrapper.findAll('.cw-player-summary tbody tr')
+    expect(rows.length).toBeGreaterThan(0)
+    expect(wrapper.text()).toContain('P1')
+    // 战队区块为明确 neutral 空态，不伪造 Team Rating / MVP
     expect(wrapper.find('[data-testid="league-summary-empty"]').exists()).toBe(true)
+    expect(wrapper.find('.league-summary').exists()).toBe(false)
   })
 })
-describe('ReplayPage Player Detail Drawer (plan §8/§23)', () => {
+describe('ReplayPage Player Detail Drawer', () => {
   beforeEach(() => {
     state.clear()
     state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'zh', files: [] }
@@ -1941,7 +1957,7 @@ describe('ReplayPage Player Detail Drawer (plan §8/§23)', () => {
     })
   }
 
-  it('默认关闭（plan §8.2）', async () => {
+  it('默认关闭', async () => {
     state.init.resp = leagueResp()
     state.init.activeTab = 'aggregate'
     const wrapper = mountPage()
@@ -1951,7 +1967,7 @@ describe('ReplayPage Player Detail Drawer (plan §8/§23)', () => {
     wrapper.unmount()
   })
 
-  it('点击统一表玩家行 → 打开 Drawer 并带 accountId（plan §8.3/§8.7）', async () => {
+  it('点击统一表玩家行 → 打开 Drawer 并带 accountId', async () => {
     state.init.resp = leagueResp()
     state.init.activeTab = 'aggregate'
     const wrapper = mountPage()
@@ -1964,7 +1980,7 @@ describe('ReplayPage Player Detail Drawer (plan §8/§23)', () => {
     wrapper.unmount()
   })
 
-  it('点击另一玩家 → Drawer 不关闭，内容切换（plan §8.5）', async () => {
+  it('点击另一玩家 → Drawer 不关闭，内容切换', async () => {
     state.init.resp = leagueResp()
     state.init.activeTab = 'aggregate'
     const wrapper = mountPage()
@@ -1977,7 +1993,7 @@ describe('ReplayPage Player Detail Drawer (plan §8/§23)', () => {
     wrapper.unmount()
   })
 
-  it('排序后 selected accountId 不变（plan §8.7/§23 Sorting）', async () => {
+  it('排序后 selected accountId 不变', async () => {
     state.init.resp = leagueResp()
     state.init.activeTab = 'aggregate'
     const wrapper = mountPage()
@@ -1992,7 +2008,7 @@ describe('ReplayPage Player Detail Drawer (plan §8/§23)', () => {
     wrapper.unmount()
   })
 
-  it('Tab 切换关闭 Drawer（plan §8.9）', async () => {
+  it('Tab 切换关闭 Drawer', async () => {
     state.init.resp = leagueResp()
     state.init.activeTab = 'aggregate'
     const wrapper = mountPage()

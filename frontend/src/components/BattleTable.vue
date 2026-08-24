@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { fmtDuration, mapLabel, leagueMaxByKey, ratingCellText } from '../utils/helpers.js'
+import { fmtDuration, mapLabel, leagueMaxByKey, ratingCellText, ratingTotalText } from '../utils/helpers.js'
 import { replayValueLabel } from '../utils/display.js'
 import { stableSortRows } from '../utils/tableSort.js'
 import { useStickyColumns } from '../utils/stickyColumns.js'
@@ -101,16 +101,9 @@ function survivalLabel(value) {
 
 // ---- League Rating 概览 ----
 
-/** Rating 文本：缺失（Rating-ineligible 场次）→ '--'，不冒充 0。
- * 总 Rating 只显示整数（927），不显示 /1000 换算的冗余完成度百分比。 */
-function ratingText(rating) {
-  if (rating == null || rating === '' || !Number.isFinite(Number(rating))) return '--'
-  return String(Math.round(Number(rating)))
-}
-
 function teamRatingText(team) {
   if (!team) return '--'
-  return ratingText(team.teamRating)
+  return ratingTotalText(team.teamRating)
 }
 
 function teamName(teamNumber) {

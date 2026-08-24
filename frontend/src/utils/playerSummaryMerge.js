@@ -7,8 +7,13 @@
  * - 缺失侧（有 Aggregate 无 League Rating）保留玩家，League 字段补 null → UI 显示 "--"（missing side）。
  * - 样本语义分离：cells.battles = Replay Aggregate 解析场次（不被 League 覆盖）；
  *   cells.rated_battles = League Player Summary 评分场次（LeaguePlayerSummary.battles，rated-only）。
- * - Performance Metrics（contribution/kast/impact）为跨场 aggregate 样本；League-only 行（aggregate
- *   未覆盖，如单场 CW）取 league playerSummary 携带的跨场值。
+ * - Performance Metrics（contribution/kast/impact）为跨场 aggregate 样本；仅当某评分玩家
+ *   在 aggregate 中缺失（防御路径，见 mergeCwPlayerRows）时，才取 league playerSummary
+ *   携带的跨场值兜底。
+ *
+ * 生产 contract：CW 批次必生成基础 Replay Aggregate（shouldAggregate = battles.size() > 1
+ * || league != null），因此「单场 CW 无 aggregate」不是合法状态——League-only 分支只为
+ * aggregate 侧数据形状变化（如未来过滤/裁剪）保留 union 兜底，正常不触发。
  */
 
 /** League Rating 七维列 key（顺序与后端 LeagueColumns.DIM_KEYS 一致）。 */
@@ -30,7 +35,8 @@ const LEAGUE_ONLY_KEYS = new Set(['league_rating', ...CW_DIM_KEYS, 'mvp_count', 
 /**
  * 合并统一玩家行（union：Aggregate ∪ League，按 accountId）。
  * - 有 Aggregate 无 League：保留玩家，League 字段补 null（UI 显示 "--"，missing side）。
- * - 有 League 无 Aggregate（如单场 CW：aggregate 仅在多场时产出）：League 字段保留，Aggregate 字段补 null。
+ * - 有 League 无 Aggregate：防御兜底——保留评分玩家，Aggregate 字段补 null（当前 contract 下
+ *   CW 批次必生成 aggregate，正常不触发）。
  * @param {Array} aggregateRows resp.aggregate（每行 {team, cells}，cells 含 account_id）
  * @param {Array} playerSummaries league.playerSummaries（每项 accountId/nickname/clan/battles/ratingMedian/dimensionMedians/mvpCount/wins）
  * @returns {Array<{team:number, cells:Object, league:Object|null}>}
@@ -47,8 +53,8 @@ export function mergeCwPlayerRows(aggregateRows, playerSummaries) {
     }
     return { team: row.team, cells, league: summary }
   })
-  // League-only（aggregate 未覆盖，如单场 CW）：League 字段展示，Aggregate 字段 null。
-  // battles = 该场景解析场次 == 评分场次（aggregate 为空时同源）；rated_battles 另列
+  // 防御兜底：playerSummary 中存在但 aggregate 未覆盖的玩家（当前 contract 下 CW 批次
+  // 必生成 aggregate，正常不触发）——保留评分玩家，Aggregate 字段补 null。
   for (const s of byAccount.values()) {
     const cells = {
       account_id: s.accountId,
@@ -67,7 +73,8 @@ export function mergeCwPlayerRows(aggregateRows, playerSummaries) {
 }
 
 /** 把 League summary 字段写入统一行 cells（Rating 中位数 / 七维中位数 / MVP 次数 / 评分场次；
- * includePerf=true 时附加跨场 Performance Metrics，仅用于 League-only 行，绝不覆盖 aggregate 样本）。
+ * includePerf=true 时附加跨场 Performance Metrics，仅用于 aggregate 未覆盖的兜底行，
+ * 绝不覆盖 aggregate 样本）。
  */
 function fillLeagueCells(cells, summary, includePerf = false) {
   cells.league_rating = summary?.ratingMedian ?? null
@@ -76,7 +83,7 @@ function fillLeagueCells(cells, summary, includePerf = false) {
   cells.mvp_count = summary?.mvpCount ?? null
   // 评分场次（rated-only 样本，独立于 aggregate 的解析场次）
   cells.rated_battles = summary?.battles ?? null
-  // 跨场 Performance Metrics：只给 aggregate 未覆盖的 League-only 行补值
+  // 跨场 Performance Metrics：只给 aggregate 未覆盖的兜底行补值
   if (includePerf) {
     cells.contribution = summary?.contribution ?? null
     cells.kast = summary?.kast ?? null

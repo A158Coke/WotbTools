@@ -52,14 +52,16 @@ const { visibleKeys, aggVisibleKeys, cwVisibleKeys, cwOrder, showColPicker, pick
 const leagueData = computed(() => resp.value?.league || null)
 
 /**
- * CW 统一玩家表：Replay Aggregate（全量玩家/场次）∪ League Player Summary
- * 按 accountId join；缺失 League 字段补 "--"。列 = league 特有列前置 + aggregate 全部列。
+ * CW 统一玩家表：以 Replay Aggregate（Replay Core 全量玩家/场次）为基底，
+ * 按 accountId join League Player Summary（可为空——0 评分场次的 CW 批次仍完整
+ * 展示 aggregate 玩家，Rating/七维补 "--"）。列 = league 特有列前置 + aggregate 全部列。
+ * 存在性由 leagueMode 决定（CW UI），不依赖 league envelope 内容。
  */
-const unifiedRows = computed(() => leagueData.value
-  ? mergeCwPlayerRows(resp.value?.aggregate || [], leagueData.value.playerSummaries || [])
+const unifiedRows = computed(() => leagueMode.value
+  ? mergeCwPlayerRows(resp.value?.aggregate || [], leagueData.value?.playerSummaries || [])
   : [])
-const unifiedAllCols = computed(() => leagueData.value
-  ? mergeCwPlayerColumns(leagueData.value.playerSummaryColumns || [], resp.value?.aggregateColumns || [])
+const unifiedAllCols = computed(() => leagueMode.value
+  ? mergeCwPlayerColumns(leagueData.value?.playerSummaryColumns || [], resp.value?.aggregateColumns || [])
   : [])
 /** 统一表可见列：useColumns cw scope 驱动（可见性 + 顺序 + 持久化）。
  * 只有 nickname + league_rating 固定（cwOrder 已 pin 在前两位），七维/MVP/表现指标/facts 全部用户可隐藏、可拖拽。 */
@@ -215,7 +217,7 @@ function teamNamesPayload() {
 }
 
 /**
- * Team override 属于当前 replay selection（PR #123 Blocker 2）：任何 selection 变化
+ * Team override 绑定当前 replay selection：任何 selection 变化
  * （add/remove/replace/clear/remove battle/folder，全部经 updateFiles → selectionRevision++）
  * 都使两组 override 同时失效；同一 selection 单纯重新 Processing 不清空（不依赖
  * startProcessingJob / Processing lifecycle）。

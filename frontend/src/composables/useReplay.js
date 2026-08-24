@@ -268,7 +268,7 @@ export function useReplay() {
    * 已解析 result，不再重新上传 replay / 重新解析。防重复：已有活跃 job 时忽略。
    *
    * @param {object|null} teamNamesOverrides League 战队名称覆盖
-   *        {battle:{arenaId:team:名}, summary:{teamKey:名}}（PR #123 Blocker 1：必须完整传给 Export Job）；
+   *        {battle:{arenaId:team:名}, summary:{teamKey:名}}（必须完整传给 Export Job）；
    *        创建时快照进 Export Job，后续编辑不影响已创建的异步任务。
    */
   async function startExportJob(mode, teamNamesOverrides = null) {
@@ -364,7 +364,7 @@ export function useReplay() {
 
   return {
     files, loading, error, resp, playerCols, aggCols, activeTab, aggStats, pendingRemove,
-    /** 文件集合版本号：任何 selection 变化（updateFiles）都会自增；team overrides 等 selection-bound 状态以此失效（PR #123 Blocker 2）。 */
+    /** 文件集合版本号：任何 selection 变化（updateFiles）都会自增；team overrides 等 selection-bound 状态以此失效。 */
     selectionRevision,
     updateFiles,
     processingJob, processingError, processingActive, processingJobId,

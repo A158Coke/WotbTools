@@ -48,7 +48,7 @@ describe('CwPlayerSummaryTable', () => {
   it('renders rating cells with score/max percentage format', () => {
     const wrapper = mountTable()
     const text = wrapper.text()
-    // 总 Rating 只显示整数（850），不显示 /1000 冗余完成度（review PR#134 BLOCKER 1）
+    // 总 Rating 只显示整数（850），不显示 /1000 冗余完成度
     expect(text).toContain('850')
     expect(text).not.toContain('850 ·')
     expect(text).not.toContain('85% ·')
@@ -85,7 +85,7 @@ describe('CwPlayerSummaryTable', () => {
     expect(wrapper.find('td.league-summary-empty').text()).toBe('league.summary.no_rateable')
   })
 
-  it('sorts numeric asc then desc (plan §25), missing last', async () => {
+  it('sorts numeric asc then desc, missing last', async () => {
     const wrapper = mountTable({
       rows: [
         { team: 1, league: null, cells: { account_id: 1001, nickname: 'A', earned_avg: 80, league_rating: null, mvp_count: null } },
@@ -106,7 +106,7 @@ describe('CwPlayerSummaryTable', () => {
     expect(rows.at(2).text()).toContain('C')
   })
 
-  it('sorts rating by raw value (formatted cell, plan §11.6)', async () => {
+  it('sorts rating by raw value (formatted cell)', async () => {
     const wrapper = mountTable()
     const th = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
     await th.trigger('click')
@@ -116,7 +116,7 @@ describe('CwPlayerSummaryTable', () => {
     expect(rows.at(1).text()).toContain('--')
   })
 
-  it('renders Performance Metrics columns as percentages (review PR#134 BLOCKER 1)', () => {
+  it('renders Performance Metrics columns as percentages', () => {
     const wrapper = mountTable({
       columns: [
         { key: 'nickname', num: false },
@@ -138,7 +138,7 @@ describe('CwPlayerSummaryTable', () => {
     expect(text).not.toMatch(/(^|\D)0%/)
   })
 
-  it('displays rated_battles separately from battles (BLOCKER 5)', () => {
+  it('displays rated_battles separately from battles', () => {
     const wrapper = mountTable({
       columns: [
         { key: 'nickname', num: false },
@@ -155,7 +155,7 @@ describe('CwPlayerSummaryTable', () => {
   })
 })
 
-describe('CwPlayerSummaryTable selected row highlight (review PR#134 第三轮 UX)', () => {
+describe('CwPlayerSummaryTable selected row highlight', () => {
   it('selected 判定按 accountId（禁止 row index）', () => {
     const wrapper = mountTable({ selectedAccountId: 2001 })
     const rows = wrapper.findAll('tbody tr')
@@ -185,7 +185,7 @@ describe('CwPlayerSummaryTable selected row highlight (review PR#134 第三轮 U
   })
 })
 
-describe('CwPlayerSummaryTable sticky core pair (review PR#134 BLOCKER 2.9/2.10)', () => {
+describe('CwPlayerSummaryTable sticky core pair', () => {
   // happy-dom 无真实布局：getBoundingClientRect 宽度由测试 stub 控制
   function stubNickWidth(wrapper, width) {
     const nickTh = wrapper.findAll('th').find(t => t.text().includes('nickname'))
@@ -222,7 +222,7 @@ describe('CwPlayerSummaryTable sticky core pair (review PR#134 BLOCKER 2.9/2.10)
     expect(ratingTh.attributes('style')).toContain('left: 132px')
   })
 
-  it('column reorder（columns prop 变化）→ 重测到新昵称列宽（BLOCKER 2.10）', async () => {
+  it('column reorder（columns prop 变化）→ 重测到新昵称列宽', async () => {
     const wrapper = mountTable({ columns: STICKY_COLS })
     stubNickWidth(wrapper, 132)
     await flushSticky()

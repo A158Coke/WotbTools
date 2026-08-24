@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PlayerRatingRadar from './PlayerRatingRadar.vue'
 import { CW_DIM_KEYS } from '../utils/playerSummaryMerge.js'
-import { leagueMaxByKey } from '../utils/helpers.js'
+import { leagueMaxByKey, ratingTotalText } from '../utils/helpers.js'
 import {
   RADAR_METRIC_DEFS,
   RADAR_AVAILABLE_KEYS,
@@ -41,16 +41,12 @@ const closeBtn = ref(null)
 
 const isSummary = computed(() => props.context?.scope === 'summary')
 
-/** 顶部 Rating 信息（null/undefined/非有限 → '--'，不冒充 0）。
- * 只显示整数（927），不显示 /1000 冗余完成度。 */
+/** 顶部 Rating 信息：缺失（null/undefined/非有限）→ '--'，不冒充 0；
+ * 只显示整数（927）——总 Rating 格式化统一走 helpers.ratingTotalText。 */
 function ratingLine() {
   const p = props.player
   if (!p) return { rating: '--' }
-  const raw = p.rating ?? p.ratingMedian
-  if (raw == null || raw === '') return { rating: '--' }
-  const v = Number(raw)
-  if (!Number.isFinite(v)) return { rating: '--' }
-  return { rating: Math.round(v) }
+  return { rating: ratingTotalText(p.rating ?? p.ratingMedian) }
 }
 
 // ---- Radar Metric Selection：默认七维，用户可自定义指标与顺序 ----
@@ -266,7 +262,7 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, #000 35%, transparent);
 }
 .player-drawer {
-  position: fixed; top: 56px; right: 8px; bottom: 8px; width: min(380px, calc(100vw - 16px));
+  position: fixed; top: calc(var(--topbar-h) + 8px); right: 8px; bottom: 8px; width: min(380px, calc(100vw - 16px));
   background: var(--bg-card2); border: 1px solid var(--border); border-radius: 12px;
   box-shadow: var(--surface-shadow); overflow-y: auto; padding: 16px;
   animation: pd-slide-in .22s ease-out;
@@ -274,6 +270,11 @@ onBeforeUnmount(() => {
 @keyframes pd-slide-in {
   from { transform: translateX(30px); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
+}
+@media (max-width: 1080px) {
+  /* <=1080px 时 App.vue .topbar 变为 sticky + auto height（可换行、高度不定），
+     固定偏移无法对齐；回退从视口顶部开始的右侧面板（backdrop/× 仍可关闭）。 */
+  .player-drawer { top: 8px; }
 }
 .pd-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
 .pd-title { font-size: 1.1rem; font-weight: 800; color: var(--text-heading); }

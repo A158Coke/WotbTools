@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static com.wotb.core.league.LeagueTestBattles.defaultSevenVsSeven;
 
-/** League Rating 七维度公式 / 存活 / 最终分 / MVP（plan §8-§10、§21.1）。 */
+/** League Rating 七维度公式 / 存活 / 最终分 / MVP。 */
 class LeagueRatingCalculatorTest {
 
     /** 14 名玩家全部同统计（T=0.5、G=0.5 可精确断言）。 */
@@ -316,7 +316,7 @@ class LeagueRatingCalculatorTest {
         assertEquals(7, r.team2().players().size());
     }
 
-    // ---- 七维回归（plan §20）----
+    // ---- 七维回归 ----
 
     /** 七维满分总和必须保持 1000（Objective 50 删除后 Shooting 50→100 补位）。 */
     @Test
@@ -336,7 +336,7 @@ class LeagueRatingCalculatorTest {
         }
     }
 
-    /** victoryPointsEarned / victoryPointsSeized 是客观事实，不得影响任何 Rating（plan §4.5）。 */
+    /** victoryPointsEarned / victoryPointsSeized 是客观事实，不得影响任何 Rating。 */
     @Test
     void victoryPointsDoNotAffectRating() {
         final List<LeagueTestBattles.PlayerSpec> base = defaultSevenVsSeven();
@@ -373,7 +373,7 @@ class LeagueRatingCalculatorTest {
         assertEquals(r0.team2().teamBest().accountId(), r1.team2().teamBest().accountId(), "队内最佳不得受占点影响");
     }
 
-    /** 七维均在 [0, dimensionMax]，最终 Rating 在 [0, 1000]（plan §20 Boundary）。 */
+    /** 七维均在 [0, dimensionMax]，最终 Rating 在 [0, 1000]（边界）。 */
     @Test
     void sevenDimensionsStayWithinBounds() {
         final LeagueRatingResult r = LeagueRatingCalculator.calculate(identicalBattle(1, true));

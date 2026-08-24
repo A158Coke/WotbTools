@@ -8,7 +8,7 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key })
 }))
 
-/** 构造 metrics 轴数据（review PR#134 BLOCKER 6.14：组件只消费 normalized，不负责任何业务公式）。 */
+/** 构造 metrics 轴数据（组件只消费 normalized，不负责任何业务公式）。 */
 function metric(key, label, rawValue, normalized, displayValue, available = true) {
   return { key, label, rawValue, normalized, displayValue, available }
 }
@@ -30,16 +30,18 @@ function mountRadar(metrics) {
   })
 }
 
-describe('PlayerRatingRadar (plan §10/§24; review PR#134 BLOCKER 6.14)', () => {
-  it('renders axes per metrics length (default 7)', () => {
+describe('PlayerRatingRadar', () => {
+  it('renders axes per metrics length (default 7) with fixed 300×300 viewBox', () => {
     const wrapper = mountRadar()
     expect(wrapper.findAll('.radar-axis')).toHaveLength(7)
     expect(wrapper.findAll('.radar-dot')).toHaveLength(7)
     expect(wrapper.findAll('.radar-label')).toHaveLength(7)
     expect(wrapper.find('.radar-data').exists()).toBe(true)
+    // geometry 固定（CENTER=150 / RADIUS=120），不暴露可配置 size API
+    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 300 300')
   })
 
-  it('custom selection: axisCount = metrics.length, order follows metrics array (BLOCKER 6.2/6.3)', () => {
+  it('custom selection: axisCount = metrics.length, order follows metrics array', () => {
     const custom = [
       metric('kast', 'KAST', 78.4, 0.784, '78.4%'),
       metric('contribution', '贡献度', 22.4, 0.224, '22.4%'),
@@ -52,7 +54,7 @@ describe('PlayerRatingRadar (plan §10/§24; review PR#134 BLOCKER 6.14)', () =>
     expect(labels).toEqual(['KAST', '贡献度', '伤害', '击杀'])
   })
 
-  it('normalizes by score/max: 200/400 and 50/100 both map to 50% radius (plan §24)', () => {
+  it('normalizes by score/max: 200/400 and 50/100 both map to 50% radius', () => {
     const wrapper = mountRadar()
     const pts = wrapper.find('.radar-data').attributes('points').split(' ').map(p => p.split(',').map(Number))
     const CENTER = 150
@@ -68,14 +70,14 @@ describe('PlayerRatingRadar (plan §10/§24; review PR#134 BLOCKER 6.14)', () =>
     expect(Math.hypot(pts[0][0] - 150, pts[0][1] - 150)).toBeCloseTo(120, 1)
   })
 
-  it('unavailable axis: not drawn on polygon, detail shows -- (BLOCKER 6.12, 不冒充 0%)', () => {
+  it('unavailable axis: not drawn on polygon, detail shows -- (不冒充 0%)', () => {
     const mixed = [
       metric('kast', 'KAST', 78.4, 0.784, '78.4%'),
       metric('league_damage_score', '伤害', null, null, '--', false), // Rating-ineligible 场
       metric('impact', 'Impact', 151.2, 0.756, '151.2%'),
     ]
     const wrapper = mountRadar(mixed)
-    // polygon 只连接 available 顶点（BLOCKER 6.12）
+    // polygon 只连接 available 顶点
     const pts = wrapper.find('.radar-data').attributes('points').split(' ').map(p => p.split(',').map(Number))
     expect(pts).toHaveLength(2)
     expect(wrapper.findAll('.radar-dot')).toHaveLength(2)
@@ -85,7 +87,7 @@ describe('PlayerRatingRadar (plan §10/§24; review PR#134 BLOCKER 6.14)', () =>
     expect(text).not.toContain('0%')
   })
 
-  it('renders detail list with displayValue (score/max/percentage; BLOCKER 6.14)', () => {
+  it('renders detail list with displayValue (score/max/percentage)', () => {
     const wrapper = mountRadar([
       metric('league_damage_score', '伤害', 342, 0.855, '342 / 400 · 85.5%'),
       metric('league_shooting_score', '射击', 100, 1, '100 / 100 · 100%'),
@@ -96,7 +98,7 @@ describe('PlayerRatingRadar (plan §10/§24; review PR#134 BLOCKER 6.14)', () =>
     expect(text).toContain('100 / 100')
   })
 
-  it('reorder: SVG / labels order follows metrics array (BLOCKER 6.9)', () => {
+  it('reorder: SVG / labels order follows metrics array', () => {
     const reordered = [
       metric('impact', 'Impact', 151.2, 0.756, '151.2%'),
       metric('league_damage_score', '伤害', 200, 0.5, '200 / 400 · 50%'),

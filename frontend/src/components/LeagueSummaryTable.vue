@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { stableSortRows } from '../utils/tableSort.js'
+import { ratingTotalText } from '../utils/helpers.js'
+import { CW_DIM_KEYS } from '../utils/playerSummaryMerge.js'
 
 const props = defineProps({
   title: String,
@@ -43,10 +45,6 @@ function arrow(key) {
   return sortKey.value === key ? (sortReverse.value ? ' ▼' : ' ▲') : ''
 }
 
-const DIM_KEYS = ['league_damage_score', 'league_assist_score', 'league_kill_score',
-  'league_exchange_score', 'league_blocked_score', 'league_survival_score',
-  'league_shooting_score']
-
 function label(key) {
   return t('league.summary.' + key)
 }
@@ -62,7 +60,7 @@ function cellValue(row, key) {
   if (key === 'damage_total') return row.damageTotal
   if (key === 'assist_total') return row.assistTotal
   if (key === 'kills_total') return row.killsTotal
-  const dimIndex = DIM_KEYS.indexOf(key)
+  const dimIndex = CW_DIM_KEYS.indexOf(key)
   if (dimIndex >= 0) return (row.dimensionMedians || [])[dimIndex]
   return row[key]
 }
@@ -74,19 +72,13 @@ function displayValue(value) {
   return String(value)
 }
 
-/** 战队/汇总总 Rating：只显示整数（850），不显示 /1000 冗余完成度。 */
-function ratingText(value) {
-  if (value == null || value === '' || !Number.isFinite(Number(value))) return '--'
-  return String(Math.round(Number(value)))
-}
-
 /** 列 key → 战队汇总行字段（排序用 raw 中位数/维度值）。 */
 function summarySortValue(row, key) {
   if (key === 'league_rating') return row.ratingMedian
   if (key === 'battles') return row.battles
   if (key === 'wins') return row.wins
   if (key === 'mvp_count') return row.mvpCount
-  const dimIndex = DIM_KEYS.indexOf(key)
+  const dimIndex = CW_DIM_KEYS.indexOf(key)
   if (dimIndex >= 0) return (row.dimensionMedians || [])[dimIndex]
   return row[key]
 }
@@ -123,7 +115,7 @@ function onTeamNameInput(row, event) {
                        :title="t('league.edit_hint')"
                        @input="onTeamNameInput(row, $event)" />
               </template>
-              <template v-else-if="c.key === 'league_rating'">{{ ratingText(cellValue(row, c.key)) }}</template>
+              <template v-else-if="c.key === 'league_rating'">{{ ratingTotalText(cellValue(row, c.key)) }}</template>
               <template v-else>{{ displayValue(cellValue(row, c.key)) }}</template>
             </td>
           </tr>

@@ -25,7 +25,7 @@ describe('mergeCwPlayerRows', () => {
     expect(a.cells.league_damage_score).toBe(300.2)
     expect(a.cells.league_shooting_score).toBe(100)
     expect(a.cells.mvp_count).toBe(2)
-    // BLOCKER 5：评分场次独立于解析场次（aggregate battles 不被 League 覆盖）
+    // 评分场次独立于解析场次（aggregate battles 不被 League 覆盖）
     expect(a.cells.battles).toBe(3)
     expect(a.cells.rated_battles).toBe(3)
     // aggregate facts 保留
@@ -33,7 +33,7 @@ describe('mergeCwPlayerRows', () => {
     expect(a.cells.earned_avg).toBe(80)
   })
 
-  it('keeps aggregate-only players with null league fields (missing side, plan §21)', () => {
+  it('keeps aggregate-only players with null league fields (missing side)', () => {
     const rows = mergeCwPlayerRows(aggRows, summaries)
     const c = rows.find(r => r.cells.account_id === 3001)
     expect(c).toBeTruthy()
@@ -43,8 +43,8 @@ describe('mergeCwPlayerRows', () => {
     expect(c.cells.damage_avg).toBe(600) // 基础 facts 仍在
   })
 
-  it('CW 单场：backend 生成基础 aggregate row → merge 后 facts 不再缺失（review PR#134 BLOCKER 2）', () => {
-    // 单场 CW 的 resp.aggregate 现在由 Replay Core 生成（battles=1 → avg=本场值），
+  it('CW 单场：backend 生成基础 aggregate row → merge 后 facts 不缺失', () => {
+    // CW 单场的 resp.aggregate 由 Replay Core 生成（battles=1 → avg=本场值），
     // Unified Summary 的 damage_avg/assisted_avg/kills_avg/earned_avg 是真实事实，不再显示 '--'
     const rows = mergeCwPlayerRows([
       { team: 1, cells: { account_id: 1001, nickname: 'A', clan: 'AAA', battles: 1, wins: 1, damage_avg: 500, assisted_avg: 100, kills_avg: 2, earned_avg: 80, contribution: 22.4, kast: 100, impact: 151.2 } },
@@ -55,14 +55,14 @@ describe('mergeCwPlayerRows', () => {
     expect(a.cells.assisted_avg).toBe(100)
     expect(a.cells.kills_avg).toBe(2)
     expect(a.cells.earned_avg).toBe(80)
-    // BLOCKER 1/5：跨场 Performance Metrics + 评分场次保留
+    // 跨场 Performance Metrics + 评分场次保留
     expect(a.cells.rated_battles).toBe(3)
     expect(a.cells.contribution).toBe(22.4)
     expect(a.cells.kast).toBe(100)
     expect(a.cells.impact).toBe(151.2)
   })
 
-  it('aggregate 为空时 League-only 行仍安全保留（防御路径，不再作为单场 CW 的产品契约）', () => {
+  it('aggregate 为空时评分玩家仍安全保留（防御路径，非单场 CW 产品契约）', () => {
     const rows = mergeCwPlayerRows([], summaries)
     expect(rows).toHaveLength(2)
     const a = rows.find(r => r.cells.account_id === 1001)
@@ -73,7 +73,7 @@ describe('mergeCwPlayerRows', () => {
     expect(a.cells.contribution).toBe(22.4)
   })
 
-  it('aggregate 行的 Performance Metrics 不被 League-only 样本覆盖（BLOCKER 1：aggregate 全量样本优先）', () => {
+  it('aggregate 行的 Performance Metrics 不被兜底样本覆盖（aggregate 全量样本优先）', () => {
     const aggWithPerf = [
       { team: 1, cells: { account_id: 1001, nickname: 'A', battles: 12, contribution: 20.0, kast: 90, impact: 140.0 } },
     ]
@@ -101,7 +101,7 @@ describe('mergeCwPlayerColumns', () => {
   const leagueCols = [
     { key: 'nickname', num: false },
     { key: 'battles', num: true },
-    // BLOCKER 2：rated_battles 来自 league.playerSummaryColumns，必须进入统一表 universe
+    // rated_battles 来自 league.playerSummaryColumns，必须进入统一表 universe
     { key: 'rated_battles', num: true },
     { key: 'league_rating', num: true },
     { key: 'league_damage_score', num: true },
@@ -125,7 +125,7 @@ describe('mergeCwPlayerColumns', () => {
     expect(keys.indexOf('league_rating')).toBeGreaterThanOrEqual(0)
     expect(keys.indexOf('league_damage_score')).toBeGreaterThan(keys.indexOf('league_rating'))
     expect(keys.indexOf('mvp_count')).toBeGreaterThan(keys.indexOf('league_damage_score'))
-    // BLOCKER 2：rated_battles 保留（league 特有列，aggregate 无 → 不重复）
+    // rated_battles 保留（league 特有列，aggregate 无 → 不重复）
     expect(keys).toContain('rated_battles')
     expect(keys.filter(k => k === 'rated_battles')).toHaveLength(1)
     // aggregate 追加且去重（nickname/battles/wins 已在 league 中，不重复）

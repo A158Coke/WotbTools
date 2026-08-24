@@ -15,8 +15,6 @@ import { computed } from 'vue'
 const props = defineProps({
   /** 轴数据（顺序即绘制顺序）。 */
   metrics: { type: Array, default: () => [] },
-  /** 尺寸（px，正方形；responsive：组件自身用 CSS width 100%）。 */
-  size: { type: Number, default: 300 },
 })
 
 const CENTER = 150
@@ -27,8 +25,6 @@ const axisCount = computed(() => props.metrics.length)
 /** 每个轴归一化比例（unavailable → null；不参与 polygon，不当作 0）。 */
 const normalized = computed(() =>
   props.metrics.map(m => (m.available ? Math.max(0, Math.min(1, m.normalized)) : null)))
-
-const availableCount = computed(() => props.metrics.filter(m => m.available).length)
 
 /** 轴角度：从 12 点方向顺时针。 */
 function angle(i) {
@@ -70,7 +66,7 @@ const labelPositions = computed(() => {
 
 <template>
   <div class="player-radar" role="img" :aria-label="'Radar: ' + (metrics || []).map(m => m.label).join(', ')">
-    <svg :viewBox="'0 0 ' + size + ' ' + size" class="radar-svg">
+    <svg viewBox="0 0 300 300" class="radar-svg">
       <!-- 网格：100% 外圈 + 50% 内圈 + 轴线 -->
       <polygon :points="gridPoints" class="radar-grid-outer" />
       <polygon :points="gridHalfPoints" class="radar-grid-inner" />

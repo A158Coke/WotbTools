@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import LeagueSummaryTable from './LeagueSummaryTable.vue'
+import { CW_DIM_KEYS } from '../utils/playerSummaryMerge.js'
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key, locale: { value: 'zh' } })
@@ -34,11 +35,8 @@ function teamRow(overrides = {}) {
 describe('LeagueSummaryTable', () => {
   it('七维 invariant：战队汇总 dimensionMedians 恰好 7 个值（无残留第八维）', () => {
     expect(teamRow().dimensionMedians).toHaveLength(7)
-    // 七维 key 集恰好 7 个（与 DIM_KEYS 对齐；禁止 fixture 偷偷保留第八维）
-    const DIM_KEYS = ['league_damage_score', 'league_assist_score', 'league_kill_score',
-      'league_exchange_score', 'league_blocked_score', 'league_survival_score',
-      'league_shooting_score']
-    expect(DIM_KEYS).toHaveLength(7)
+    // 七维 key 集恰好 7 个（与 CW_DIM_KEYS 单一事实源对齐；禁止 fixture 偷偷保留第八维）
+    expect(CW_DIM_KEYS).toHaveLength(7)
   })
 
   it('renders rows with team name, battles and rating median', () => {
@@ -55,7 +53,7 @@ describe('LeagueSummaryTable', () => {
     expect(input.element.value).toBe('AAA')
   })
 
-  it('shows teamKey override name from teamNames (PR #123 Blocker 2)', () => {
+  it('shows teamKey override name from teamNames', () => {
     const wrapper = mount(LeagueSummaryTable, {
       props: {
         title: 'T', rows: [teamRow()], columns: SUMMARY_COLS,
@@ -67,7 +65,7 @@ describe('LeagueSummaryTable', () => {
   })
 
   it('ignores battle-level arenaId:team overrides for summary display', () => {
-    // 单场 override（arenaId:team）不得影响批次战队汇总显示（PR #123 Blocker 2）
+    // 单场 override（arenaId:team）不得影响批次战队汇总显示（两种 identity 隔离）
     const wrapper = mount(LeagueSummaryTable, {
       props: {
         title: 'T', rows: [teamRow()], columns: SUMMARY_COLS,

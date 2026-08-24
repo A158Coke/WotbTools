@@ -18,7 +18,7 @@ describe('normalizeMissing', () => {
   })
 })
 
-describe('compareValues numeric (plan §11.3/§25)', () => {
+describe('compareValues numeric', () => {
   const sort = values => values.slice().sort((a, b) => compareValues(a, b, { num: true }))
   it('sorts 100/9/21 numerically asc: 9 21 100', () => {
     expect(sort([100, 9, 21])).toEqual([9, 21, 100])
@@ -29,7 +29,7 @@ describe('compareValues numeric (plan §11.3/§25)', () => {
   it('string numbers are not lexicographic', () => {
     expect(sort(['100', '20', '3'])).toEqual(['3', '20', '100'])
   })
-  it('missing always last regardless of direction (via stableSortRows, plan §11.5)', () => {
+  it('missing always last regardless of direction (via stableSortRows)', () => {
     const asc = [null, 50, 20, '--', 100].map(v => ({ cells: { v } }))
     expect(stableSortRows(asc, { key: 'v', direction: 1, num: true }).map(r => r.cells.v))
       .toEqual([20, 50, 100, null, '--'])
@@ -38,7 +38,7 @@ describe('compareValues numeric (plan §11.3/§25)', () => {
   })
 })
 
-describe('compareValues string (plan §11.4)', () => {
+describe('compareValues string', () => {
   it('natural order Player1 Player2 Player10', () => {
     const vals = ['Player10', 'Player2', 'Player1']
     expect(vals.slice().sort((a, b) => compareValues(a, b, { num: false })))
@@ -51,7 +51,7 @@ describe('compareValues string (plan §11.4)', () => {
   })
 })
 
-describe('stableSortRows (plan §12)', () => {
+describe('stableSortRows', () => {
   const rows = [
     { cells: { rating: 927.4, name: 'P1' } },
     { cells: { rating: 812.6, name: 'P2' } },
@@ -71,7 +71,7 @@ describe('stableSortRows (plan §12)', () => {
     stableSortRows(rows, { key: 'rating', direction: 1, num: true })
     expect(rows.map(r => r.cells.name)).toEqual(before)
   })
-  it('supports valueGetter for formatted-vs-raw (plan §11.6)', () => {
+  it('supports valueGetter for formatted-vs-raw', () => {
     const rawRows = [
       { cells: { rating: '342 / 400 · 85.5%' }, raw: 342.1 },
       { cells: { rating: '400 / 400 · 100%' }, raw: 400 },
@@ -92,7 +92,7 @@ describe('stableSortRows (plan §12)', () => {
   })
 })
 
-describe('nextDirection (plan §11.2)', () => {
+describe('nextDirection', () => {
   it('first click asc, second desc, third asc (no unsorted)', () => {
     expect(nextDirection(null, 'rating', 1)).toBe(1)
     expect(nextDirection('rating', 'rating', 1)).toBe(-1)
