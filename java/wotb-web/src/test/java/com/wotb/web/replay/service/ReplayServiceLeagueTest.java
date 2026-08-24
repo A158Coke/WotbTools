@@ -9,6 +9,7 @@ import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.web.replay.LeagueTestReplays;
+import com.wotb.web.replay.dto.BattleDto;
 import com.wotb.web.replay.dto.ExportResult;
 import com.wotb.web.replay.dto.PreviewResponse;
 import org.junit.jupiter.api.Test;
@@ -193,7 +194,49 @@ class ReplayServiceLeagueTest {
         final PreviewResponse r = leagueService(bad).preview(new MockMultipartFile[]{
                 file("bad.wotbreplay", new byte[]{1})});
         assertNotNull(r.league());
+        assertEquals(1, r.battles().size(), "Rating 不合格的单场也必须保留在 Preview（领域分离，P0）");
+        assertNull(r.battles().getFirst().league(), "未评分场不得被绑定任何 Rating");
         assertTrue(r.league().failures().stream()
                 .anyMatch(f -> f.code().equals(LeagueFailure.Code.NOT_SEVEN_VS_SEVEN)));
+    }
+
+    // ---- P0 回归：partial League Rating（battles 保留全部，Rating 只对 eligible）----
+
+    @Test
+    void partialLeaguePreviewKeepsAllBattlesAndRatingOnlyForEligible() throws Exception {
+        final Battle good = LeagueTestReplays.sevenVsSeven(1);
+        good.arenaId = "111";
+        good.arenaBonusType = 2;
+        final Battle bad = LeagueTestReplays.sevenVsSeven(2);
+        bad.arenaId = "222";
+        bad.arenaBonusType = 2;
+        bad.rosterComplete = false;
+        final ReplayService service = perFileService(List.of(good, bad));
+
+        final PreviewResponse r = service.preview(new MockMultipartFile[]{
+                file("g.wotbreplay", new byte[]{1}), file("b.wotbreplay", new byte[]{2})});
+        assertEquals("LEAGUE_RATING", r.league().mode());
+        assertEquals(2, r.battles().size(), "Rating-ineligible Battle 必须保留在 Preview");
+        // identity 绑定（plan §9）：eligible 场带 Rating，ineligible 场 league==null，不得 index 错绑
+        final BattleDto goodDto = r.battles().get(0);
+        final BattleDto badDto = r.battles().get(1);
+        assertEquals("111", goodDto.arenaId());
+        assertNotNull(goodDto.league(), "eligible 场必须携带 Rating 元数据");
+        assertNull(badDto.league(), "ineligible 场不得被错误绑定 Rating");
+        assertTrue(r.league().failures().stream()
+                .anyMatch(f -> f.code().equals(LeagueFailure.Code.ROSTER_INCOMPLETE)));
+    }
+
+    @Test
+    void singleIneligibleLeagueExportFallsBackToStandardWorkbook() throws Exception {
+        final Battle bad = LeagueTestReplays.sevenVsSeven(1);
+        bad.arenaId = "111";
+        bad.arenaBonusType = 2;
+        bad.rosterComplete = false;
+        final ExportResult result = leagueService(bad).export(
+                new MockMultipartFile[]{file("bad.wotbreplay", new byte[]{1})}, "aggregate");
+        assertNotNull(result, "单场 league 未通过校验也必须能导出基础数据（不崩溃、不错位）");
+        assertTrue(result.filename().endsWith(".xlsx"));
+        assertTrue(result.data().length > 0);
     }
 }

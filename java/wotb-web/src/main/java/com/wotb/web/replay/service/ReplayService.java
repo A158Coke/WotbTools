@@ -2,6 +2,7 @@ package com.wotb.web.replay.service;
 
 import com.wotb.core.export.ExcelExporter;
 import com.wotb.core.league.LeagueRatingMode;
+import com.wotb.core.league.LeagueRatingResult;
 import com.wotb.core.league.LeagueReplays;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.Source;
@@ -172,8 +173,14 @@ public class ReplayService {
             final ByteArrayOutputStream out = new ByteArrayOutputStream();
             final String filename;
             if (c.battles().size() == 1) {
-                ExcelExporter.writeSingleLeague(c.battles().getFirst(),
-                        c.leagueBatch().battleResults().getFirst(), tankopedia, out);
+                // identity 绑定：单场 Rating 按 arenaId 查找（plan §9）；未通过校验的
+                // 单场 league 回放仍导出基础数据（普通单场工作簿，无 Rating 列），不崩溃不错位
+                final LeagueRatingResult single = c.leagueBatch().resultFor(c.battles().getFirst().arenaId);
+                if (single != null) {
+                    ExcelExporter.writeSingleLeague(c.battles().getFirst(), single, tankopedia, out);
+                } else {
+                    ExcelExporter.writeSingle(c.battles().getFirst(), tankopedia, out);
+                }
                 filename = stripExt(c.battleSourceNames().getFirst()) + ".xlsx";
             } else {
                 ExcelExporter.writeAggregateLeague(c.battles(), c.battleSourceNames(),
@@ -215,9 +222,14 @@ public class ReplayService {
                 final LeagueReplays.LeagueCollectResult c = LeagueReplays.collect(
                         sources, this::processFull, null, null);
                 for (int i = 0; i < c.battles().size(); i++) {
+                    // identity 绑定（plan §9）；只导出通过校验并完成评分的场次，
+                    // 冲突/不合格场次按失败策略跳过（与既有注释语义一致，之前因 bug 隐式生效）
+                    final LeagueRatingResult result = c.leagueBatch().resultFor(c.battles().get(i).arenaId);
+                    if (result == null) {
+                        continue;
+                    }
                     final ByteArrayOutputStream xlsx = new ByteArrayOutputStream();
-                    ExcelExporter.writeSingleLeague(c.battles().get(i),
-                            c.leagueBatch().battleResults().get(i), tankopedia, xlsx);
+                    ExcelExporter.writeSingleLeague(c.battles().get(i), result, tankopedia, xlsx);
                     final ZipEntry entry = new ZipEntry(uniqueName(
                             stripExt(c.battleSourceNames().get(i)) + ".xlsx", usedNames));
                     zip.putNextEntry(entry);

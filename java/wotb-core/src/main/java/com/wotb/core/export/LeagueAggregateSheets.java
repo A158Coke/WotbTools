@@ -14,8 +14,11 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * League Rating 批量工作簿：选手汇总（中位数）/ 战队汇总（中位数）/ 每场明细 /
@@ -138,9 +141,14 @@ final class LeagueAggregateSheets {
         }
         styles.writeHeader(ws, header);
         int rIdx = 1;
-        for (int i = 0; i < battles.size() && i < batch.battleResults().size(); i++) {
+        // 只对通过校验并完成评分的场次输出 Rating 明细（identity 绑定，不依赖 index）；
+        // Rating-ineligible 场次在「战斗列表」中以失败状态展示（plan：基础数据可导出，Rating 只对 eligible 存在）
+        for (int i = 0; i < battles.size(); i++) {
             final Battle battle = battles.get(i);
-            final LeagueRatingResult result = batch.battleResults().get(i);
+            final LeagueRatingResult result = batch.resultFor(battle.arenaId);
+            if (result == null) {
+                continue;
+            }
             final String sourceName = sourceNames.size() > i ? sourceNames.get(i) : "";
             for (final PlayerLeagueRating p : result.players()) {
                 final Row row = ws.createRow(rIdx++);
@@ -204,6 +212,15 @@ final class LeagueAggregateSheets {
         header.add(new String[]{"时长", "8"});
         header.add(new String[]{"状态", "14"});
         styles.writeHeader(ws, header);
+        // 已解析 battle 集合（校验失败场次也在 battles 中；冲突场次不在）
+        final Set<String> battleArenaIds = new HashSet<>();
+        for (final Battle b : battles) {
+            battleArenaIds.add(b.arenaId);
+        }
+        final Map<String, String> codeByArena = new HashMap<>();
+        for (final com.wotb.core.league.LeagueFailure f : batch.failures()) {
+            codeByArena.putIfAbsent(f.arenaId(), f.code());
+        }
         int rIdx = 1;
         for (int i = 0; i < battles.size(); i++) {
             final Battle battle = battles.get(i);
@@ -214,7 +231,10 @@ final class LeagueAggregateSheets {
             styles.setCell(row.createCell(c++), MapNames.cn(battle.mapName), styles.plain(), "tank_name");
             styles.setCell(row.createCell(c++), Players.TEAM_NAME.getOrDefault(battle.winnerTeam == null ? 0 : battle.winnerTeam, "平局/未知"), styles.plain(), "battles");
             styles.setCell(row.createCell(c++), ExcelStyles.duration(battle.durationS), styles.plain(), "damage_dealt");
-            styles.setCell(row.createCell(c++), "已评分", styles.plain(), "nickname");
+            final String status = batch.resultFor(battle.arenaId) != null ? "已评分"
+                    : codeByArena.containsKey(battle.arenaId) ? failureLabel(codeByArena.get(battle.arenaId))
+                    : "未评分";
+            styles.setCell(row.createCell(c++), status, styles.plain(), "nickname");
         }
         for (final String[] d : duplicates) {
             final Row row = ws.createRow(rIdx++);
@@ -223,6 +243,10 @@ final class LeagueAggregateSheets {
             styles.setCell(row.createCell(5), "重复", styles.plain(), "nickname");
         }
         for (final com.wotb.core.league.LeagueFailure f : batch.failures()) {
+            // 校验失败场次已在 battle 行显示状态，避免重复行；仅冲突等不在 battles 的失败单独成行
+            if (battleArenaIds.contains(f.arenaId())) {
+                continue;
+            }
             final Row row = ws.createRow(rIdx++);
             styles.setCell(row.createCell(0), f.fileName(), styles.plain(), "nickname");
             styles.setCell(row.createCell(1), f.arenaId(), styles.plain(), "clan");

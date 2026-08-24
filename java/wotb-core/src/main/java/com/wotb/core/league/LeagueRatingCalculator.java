@@ -221,7 +221,7 @@ public final class LeagueRatingCalculator {
         final List<PlayerLeagueRating> team1Players = built.stream().filter(p -> p.team() == 1).toList();
         final List<PlayerLeagueRating> team2Players = built.stream().filter(p -> p.team() == 2).toList();
 
-        return new LeagueRatingResult(List.copyOf(built),
+        return new LeagueRatingResult(battle.arenaId, List.copyOf(built),
                 teamRating(1, team1Players, winner),
                 teamRating(2, team2Players, winner),
                 mvp, true);
