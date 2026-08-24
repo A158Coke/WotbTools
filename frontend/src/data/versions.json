@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.19",
+    "date": "2026-08-24",
+    "tag": "fix",
+    "zh": "首次使用 Wargaming 亚洲、欧洲或北美账号登录后，现在无需先访问个人中心即可直接提交百场官方认证；系统会自动同步账号资料。账号冲突或身份验证失败仍会安全拒绝，不会创建申请。",
+    "en": "After your first sign-in with a Wargaming Asia, Europe, or North America account, you can now submit 100-battle official verification directly without visiting Profile first. Your account profile is synchronized automatically. Account conflicts or identity verification failures are still safely rejected without creating an entry.",
+    "ru": "После первого входа через Wargaming Asia, Europe или North America теперь можно сразу подать заявку на официальную проверку 100 боёв, не открывая сначала профиль. Данные аккаунта синхронизируются автоматически. Конфликты аккаунта или ошибки проверки личности безопасно отклоняются без создания заявки."
+  },
+  {
     "v": "2.12.18",
     "date": "2026-08-24",
     "tag": "add",

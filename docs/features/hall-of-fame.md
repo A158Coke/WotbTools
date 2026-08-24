@@ -74,7 +74,8 @@
 3. 后端用 WG `account/info` 与 `tanks/stats` 查询官方快照：账号总场次必须 `>=5000`，目标 Tier X 车辆场次必须 `>=100`。WG 调用失败、数据缺失或资格不足时零落库，并提示改走人工链路。
 4. 排名和 approved 值由 `officialTankDamageDealt / officialTankBattleCount` 四舍五入得到；3900 分流用未舍入精确比较 `officialTankDamageDealt > 3900 × officialTankBattleCount`，不允许用申报低值绕过。
 5. 官方精确场均 `<=3900` 时直接成为 CURRENT，并原子替代该用户该车更低的旧 CURRENT；`>3900` 时自动创建 WARGAMING_API 来源 PENDING，交由管理员查看冻结的 WG 官方快照后通过或拒绝，仍无需补截图/回放；通过不接收也不修改成绩。成为 CURRENT 后仍可按删除流程处理。
-6. BlitzStars 不作为自动认证依赖或 WG 失败 fallback；本期不做定时刷新、自动降榜或历史重算。
+6. 首次可信 WG 登录后直接提交时，后端先按 JWT 幂等同步 Profile，再以同步后的 Profile 与 JWT 完整交叉校验；同步冲突或失败时不查询 WG API、不创建 submission。
+7. BlitzStars 不作为自动认证依赖或 WG 失败 fallback；本期不做定时刷新、自动降榜或历史重算。
 
 ## 审核与并发（数据库一致性优先，无分布式锁）
 

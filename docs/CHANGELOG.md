@@ -36,6 +36,7 @@
   `blitzkit-references.mjs --emit-portraits` 可重复生成入口。
 
 ### Fixed
+- **WG 首次登录可直接提交百场认证**：`HundredWargamingSubmissionService` 先验证可信 JWT，再复用 `UserProfileService.syncFromLogin` 原子创建或刷新 WARGAMING Profile，随后仍执行 JWT 与数据库 Profile 的完整交叉校验后才查询 WG stats。同步冲突或失败保持 fail-closed，绝不调用外部 stats 或创建 submission。
 - **Replay Processing Job review 闭环修复（PR #121 correctness/concurrency 3 项 blocker）**：
   - **文件集合变化立即失效旧解析结果（Blocker 1）**：前端新增统一 `updateFiles` 入口（FileUploader 任意 add / folder-add / remove / clear / replace 事件都走它），任何 files 变化立即置空 `processingJobId` 与已展示的 `resp`（防止「UI 显示 dataset A、files 是 dataset B、Export 复用 A」）；正在处理的旧 Job 停止轮询并后台协作取消（释放 queue slot / 容量）；`pollProcessingJob` 以 `processingPollJobId` 作 request token + `selectionRevision` 作 revision，丢弃迟到/过期的 READY 响应（P1 处理中 files 改变 → P1 随后 READY 不得覆盖当前 selection）；Export 复用仅当 `resultMatchesSelection`（processingJobId 与 resp 成对存在），否则走 legacy 上传当前 files，绝不静默导出旧 dataset。
   - **from-result each 的 valid 语义修复（Blocker 2）**：`processEachFromResult` 的 NO_VALID_REPLAYS 判定由 `processed - failures <= 0` 改为 `ds.validCount() <= 0`——`ds.battles()` 本身就是 Processing 阶段排除 duplicates/failures 后的有效场，failures 不得再与其相减（否则 1 valid + 1 failure 会被误判为 NO_VALID_REPLAYS）；duplicates/failures 只用于进度与终态统计。新增测试：1v1f / 1v2f / 2v5f / 0v（each + aggregate）全路径。
