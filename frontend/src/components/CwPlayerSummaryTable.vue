@@ -55,14 +55,16 @@ function arrow(key) {
   return sortKey.value === key ? (sortReverse.value ? ' ▼' : ' ▲') : ''
 }
 
-/** Rating 文本：缺失（无评分数据）→ '--'，不冒充 0（BLOCKER 3/6.12）。 */
+/** Rating 文本：缺失（无评分数据）→ '--'，不冒充 0（BLOCKER 3/6.12）。
+ * 总 Rating 只显示整数（850），不显示 /1000 冗余完成度（review PR#134 BLOCKER 1）；
+ * 七维仍显示「342 / 400 · 85.5%」。 */
 function ratingCellText(value, key) {
   if (value == null || value === '' || !Number.isFinite(Number(value))) return '--'
   const v = Number(value)
   const max = Number(leagueMaxByKey.value[key]) || 0
   if (max <= 0) return String(Math.round(v * 10) / 10)
   const pct = Math.round(1000 * v / max) / 10
-  if (key === 'league_rating') return Math.round(v) + ' · ' + pct + '%'
+  if (key === 'league_rating') return String(Math.round(v))
   return Math.round(v) + ' / ' + max + ' · ' + pct + '%'
 }
 

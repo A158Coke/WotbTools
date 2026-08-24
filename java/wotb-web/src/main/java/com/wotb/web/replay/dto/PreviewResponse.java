@@ -9,8 +9,9 @@ import java.util.List;
  * KAST / Impact / 多伤率 / 互换击杀。不再有独立「战斗表现」模块/字段。
  *
  * <p>League Rating 模式（训练赛/联赛回放）：{@code league} 携带 Rating 元数据与汇总；
- * 普通模式 {@code league=null}（契约兼容）。League 模式下 playerColumns/aggregateColumns
- * 由服务端调整为不含 contribution/kast/impact、包含 Rating 维度列。</p>
+ * 普通模式 {@code league=null}（契约兼容）。League 模式下列定义<b>保留</b>
+ * contribution/kast/impact（Replay Performance Metrics，review PR#134 BLOCKER 1），
+ * 并新增 Rating 维度列。</p>
  *
  * <p>混合批次（普通 + 训练赛/联赛混传）：{@code leagueUnavailableCode} 携带
  * {@code MIXED_LEAGUE_AND_STANDARD_REPLAYS}（League Rating 不聚合混合批次；battles 仍按

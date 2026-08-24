@@ -1,13 +1,12 @@
-# CW Rating UI 收口 — 浏览器验收清单（plan §26；review PR#134 BLOCKER 2–6 追加项）
+# CW Rating UI 收口 — 可选人工 QA 清单（Optional manual QA checklist）
 
-> 由人工在真实浏览器执行（happy-dom 无法证明 sticky layout）。建议最新 Chrome，登录后
-> 访问 wotbtools.com 的回放解析页上传 CW 回放。测试样本：
+> 本清单是<b>可选的</b>浏览器人工验收（happy-dom 无法证明 sticky layout），
+> <b>不是 PR #134 的 merge gate</b>（review 已降级：自动化测试 + exact-head CI 通过即可合并；
+> 浏览器人工验收未执行不构成 blocker）。需要时由人工在真实浏览器执行：建议最新 Chrome，
+> 登录后访问 wotbtools.com 的回放解析页上传 CW 回放。测试样本：
 > 30+ 份训练赛/联赛回放（common/data/34冠军赛回放/ 目录有真实样本，可一次全选）。
 >
 > 分支：feat/replay-cw-rating-ui-closeout（部署后此清单适用；本地可 cd frontend && npm run dev 联调后端验证）。
->
-> 注意（review PR#134 MERGE GATE）：CI/unit 全绿不能代替真实浏览器验收——历史曾出现
-> CI 全绿但真实浏览器 sticky 重叠。本清单必须实际执行并填写验收记录，否则不得宣称 MERGE READY。
 
 ## 前置
 
@@ -61,7 +60,9 @@
 ## Scenario 4b — Custom Radar（review PR#134 BLOCKER 6）
 
 - [ ] 打开 Drawer → 默认看到七维雷达
-- [ ] 打开「设置指标」→ 删除几个七维、加入 KAST、Contribution、Impact → 雷达即时更新
+- [ ] 打开「设置指标」→ 删除几个七维、加入 KAST、Contribution → 雷达即时更新
+- [ ] Impact 不出现在雷达指标列表（BLOCKER 3：无稳定 normalization contract，暂不入 Radar），
+      但 Drawer 表现指标区 / 表格仍正常显示 Impact
 - [ ] 调整 axis 顺序（↑/↓）→ 雷达轴序跟随
 - [ ] 少于 3 个时阻止并提示；多于 8 个时阻止并提示
 - [ ] 关闭 Drawer → 打开另一玩家 → 配置保留；Summary → Battle → 配置一致

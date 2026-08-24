@@ -22,8 +22,10 @@ export const CW_DIM_KEYS = [
   'league_shooting_score',
 ]
 
-/** League 特有、aggregate 不持有的列（统一表列定义中前置插入）。 */
-const LEAGUE_ONLY_KEYS = new Set(['league_rating', ...CW_DIM_KEYS, 'mvp_count'])
+/** League 特有、aggregate 不持有的列（统一表列定义中前置插入）。
+ * rated_battles 也来自 league.playerSummaryColumns（BLOCKER 5/2：评分场次 ≠ 解析场次），
+ * 必须进入 cw 列 universe（ColumnPicker 可显示/隐藏/reorder）。 */
+const LEAGUE_ONLY_KEYS = new Set(['league_rating', ...CW_DIM_KEYS, 'mvp_count', 'rated_battles'])
 
 /**
  * 合并统一玩家行（union：Aggregate ∪ League，按 accountId）。

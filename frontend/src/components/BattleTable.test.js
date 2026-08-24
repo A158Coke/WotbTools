@@ -145,10 +145,10 @@ describe('BattleTable League Rating', () => {
     const inputs = wrapper.findAll('input.team-name-input')
     expect(inputs[0].element.value).toBe('AAA')
     expect(inputs[1].element.value).toBe('BBB')
-    // 战队 Rating「881 · 88.1%」在概览文本中
+    // 战队 Rating 只显示整数（881），不显示冗余 /1000 完成度（review PR#134 BLOCKER 1）
     const text = wrapper.text()
     expect(text).toContain('881')
-    expect(text).toContain('88.1%')
+    expect(text).not.toContain('88.1%')
   })
 
   it('renders MVP and team best badges', () => {
@@ -158,11 +158,33 @@ describe('BattleTable League Rating', () => {
     expect(text).toContain('★')            // B 队2 队内最佳
   })
 
-  it('formats rating cell as total and percentage', () => {
+  it('总 Rating 只显示整数（927），不显示 /1000 冗余完成度（review PR#134 BLOCKER 1）', () => {
     const wrapper = mountLeague(makeLeagueBattle())
     const text = wrapper.text()
-    expect(text).toContain('927 · 92.7%')
-    expect(text).toContain('813 · 81.3%')
+    expect(text).toContain('927')
+    expect(text).not.toContain('92.7%')
+    expect(text).not.toContain('927 ·')
+    expect(text).toContain('813')
+    expect(text).not.toContain('81.3%')
+  })
+
+  it('raw league_rating=927.4 → display 927，但排序用 raw 927.4（review PR#134 BLOCKER 1 regression）', async () => {
+    const battle = makeLeagueBattle()
+    battle.players = [
+      { team: 1, cells: { nickname: 'A', account_id: 1001, league_rating: 927.4, league_damage_score: 342.1, damage_dealt: 3000 } },
+      { team: 1, cells: { nickname: 'B', account_id: 1002, league_rating: 927.8, league_damage_score: 350.2, damage_dealt: 3100 } },
+    ]
+    const wrapper = mountLeague(battle, leagueCols())
+    // display 都是 927（整数），不出现 927.4/927.8 或百分比
+    expect(wrapper.text()).toContain('927')
+    expect(wrapper.text()).not.toContain('927.4')
+    expect(wrapper.text()).not.toContain('927.8')
+    expect(wrapper.text()).not.toMatch(/92\.7%/)
+    // 点击 Rating 表头 ASC：raw 927.4 排在 raw 927.8 之前（display 相同也能正确排序）
+    const th = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
+    await th.trigger('click')
+    const firstRow = wrapper.findAll('tbody tr').at(0)
+    expect(firstRow.text()).toContain('A')
   })
 
   it('formats dimension cell as score / max · percentage', () => {

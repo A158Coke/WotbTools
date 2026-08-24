@@ -99,7 +99,11 @@
   gap: 10px 12px;
   margin: 14px 0 !important;
 }
-.layout-data-workspace .tabs {
+/* restoolbar（解析结果二级 tab 行）专属：battle 分栏随内容伸展 + 横滚。
+   注意不要用 `.layout-data-workspace .tabs` 裸选择器——一级 Workspace 导航
+   （.workspace-tabs）也带 .tabs class，会被这里误伤成全宽空深条
+   （review PR#134 BLOCKER 4：一级导航必须是紧凑单行，不是大横条）。 */
+.layout-data-workspace .restoolbar .tabs {
   display: flex;
   flex: 1 1 460px;
   gap: 5px !important;
@@ -107,10 +111,50 @@
   overflow-x: auto;
   scrollbar-width: thin;
 }
-.layout-data-workspace .tabs button {
+.layout-data-workspace .restoolbar .tabs button {
   flex: 0 0 auto;
   min-height: 34px;
   border-radius: 6px !important;
+}
+
+/* 一级 Workspace 能力切换（解析结果 / AI 复盘 / 战局回放）：紧凑单行一级导航
+   （review PR#134 BLOCKER 4）。宽度由内容驱动（fit-content，不再是一条全宽空深条）、
+   高度由内容驱动、按钮垂直居中、active pill 完整处于容器内部不贴边；
+   与 restoolbar 的 battle 分栏 .tabs 样式完全解耦。 */
+.layout-data-workspace .workspace-tabs {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 16px 0 14px;
+  padding: 4px;
+  border: 1px solid rgba(58,69,76,.5);
+  border-radius: 9px;
+  background: rgba(13,18,22,.92);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.layout-data-workspace .workspace-tabs button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 4px 16px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #b5b2aa;
+  cursor: pointer;
+  font-size: .85rem;
+  font-family: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.layout-data-workspace .workspace-tabs button:hover:not(.active) { color: #e0ddd4; }
+.layout-data-workspace .workspace-tabs button.active {
+  background: rgba(217,143,24,.16);
+  color: #f0aa30;
+  font-weight: 700;
 }
 .layout-data-workspace .resactions {
   display: flex;
@@ -295,7 +339,7 @@
   .layout-data-workspace .fb-chips { width: 100%; max-height: 96px; }
   .layout-data-workspace .actionrow { align-items: flex-start !important; }
   .layout-data-workspace .actionrow .lg { width: 100%; justify-content: center; }
-  .layout-data-workspace .tabs { width: 100%; }
+  .layout-data-workspace .restoolbar .tabs { width: 100%; }
   .layout-data-workspace .resactions { width: 100%; }
   .layout-data-workspace table th:first-child,
   .layout-data-workspace table td:first-child { min-width: 126px; }

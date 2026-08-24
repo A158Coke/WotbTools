@@ -27,8 +27,9 @@ const sortedRows = computed(() => {
     direction: sortReverse.value ? -1 : 1,
     num: isTeamName ? false : !!col?.num,
     locale: locale.value,
-    // team_name 按用户最终看到的名排序（override → autoName → pending，plan §11.8）
-    valueGetter: isTeamName ? teamDisplayName : undefined,
+    // 行是 TeamLeagueSummary（ratingMedian / dimensionMedians 字段，无 cells）；
+    // 列 key → 行字段映射，否则 league_rating 排序会全读到 undefined（stable 假通过）
+    valueGetter: isTeamName ? teamDisplayName : (row) => summarySortValue(row, sortKey.value),
     tiebreakGetter: row => row.teamKey,
   })
 })
@@ -73,11 +74,21 @@ function displayValue(value) {
   return String(value)
 }
 
+/** 战队/汇总总 Rating：只显示整数（850），不显示 /1000 冗余完成度（review PR#134 BLOCKER 1）。 */
 function ratingText(value) {
   if (value == null || value === '' || !Number.isFinite(Number(value))) return '--'
-  const v = Number(value)
-  const pct = Math.round(1000 * v / 1000) / 10
-  return Math.round(v) + ' · ' + pct + '%'
+  return String(Math.round(Number(value)))
+}
+
+/** 列 key → 战队汇总行字段（review PR#134 BLOCKER 1 后排序用 raw 中位数/维度值）。 */
+function summarySortValue(row, key) {
+  if (key === 'league_rating') return row.ratingMedian
+  if (key === 'battles') return row.battles
+  if (key === 'wins') return row.wins
+  if (key === 'mvp_count') return row.mvpCount
+  const dimIndex = DIM_KEYS.indexOf(key)
+  if (dimIndex >= 0) return (row.dimensionMedians || [])[dimIndex]
+  return row[key]
 }
 
 function teamDisplayName(row) {

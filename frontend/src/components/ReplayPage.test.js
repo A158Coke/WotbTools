@@ -984,6 +984,20 @@ describe('ReplayPage 单页 Workspace（解析结果 / AI 复盘 / 战局回放 
     expect(wrapper.find('[data-test="workspace-ai-panel"]').exists()).toBe(false)
   })
 
+  it('一级 tab active class 跟随切换，业务状态不被 UI 修复改变（BLOCKER 4）', async () => {
+    const files = [new File(['r'], 'active.wotbreplay')]
+    const wrapper = mountWithFiles(files)
+    const resultsTab = wrapper.find('[data-testid="workspace-results-tab"]')
+    const aiTab = wrapper.find('[data-testid="workspace-ai-tab"]')
+    expect(resultsTab.classes()).toContain('active')
+    expect(aiTab.classes()).not.toContain('active')
+    await aiTab.trigger('click')
+    await flushPromises()
+    expect(aiTab.classes()).toContain('active')
+    expect(resultsTab.classes()).not.toContain('active')
+    expect(panelDisplay(wrapper, 'workspace-ai-panel')).not.toBe('none')
+  })
+
   it('FileUploader 直接入口（workspace-action ai）→ 原地切到 AI 面板并传入目标文件', async () => {
     const files = [new File(['r'], 'direct.wotbreplay')]
     const wrapper = mountWithFiles(files)
@@ -1745,6 +1759,8 @@ describe('ReplayPage CW unified table column contract + CW/Rating boundary (revi
         ],
         playerSummaryColumns: [
           { key: 'nickname', num: false }, { key: 'clan', num: false }, { key: 'battles', num: true },
+          // BLOCKER 2：rated_battles 进入生产 playerSummaryColumns（后端 ColumnDef）
+          { key: 'rated_battles', num: true },
           { key: 'league_rating', num: true }, { key: 'league_damage_score', num: true },
           { key: 'league_shooting_score', num: true }, { key: 'mvp_count', num: true },
           { key: 'wins', num: true }, { key: 'contribution', num: true }, { key: 'kast', num: true },
@@ -1762,7 +1778,7 @@ describe('ReplayPage CW unified table column contract + CW/Rating boundary (revi
   }
 
   it('统一表列 = cw scope 可见列：七维/MVP 不是 forced visible（BLOCKER 2.6）', async () => {
-    window.__testCwVisible = ['nickname', 'league_rating', 'clan', 'battles', 'wins', 'win_rate',
+    window.__testCwVisible = ['nickname', 'league_rating', 'clan', 'battles', 'rated_battles', 'wins', 'win_rate',
       'damage_avg', 'earned_avg', 'contribution', 'kast', 'impact']
     state.init.resp = cwResp()
     const wrapper = mountPage()
@@ -1779,17 +1795,19 @@ describe('ReplayPage CW unified table column contract + CW/Rating boundary (revi
     expect(keys).toContain('kast')
     expect(keys).toContain('impact')
     expect(keys).toContain('earned_avg')
+    // BLOCKER 2：rated_battles 走真实生产链（playerSummaryColumns → merge → cwVisibleKeys → 表头）
+    expect(keys).toContain('rated_battles')
     wrapper.unmount()
   })
 
   it('用户自定义顺序生效：nickname + league_rating 固定前两位，其余按偏好顺序（BLOCKER 2.8/2.11）', async () => {
     window.__testCwVisible = window.__testCwOrder = ['nickname', 'league_rating',
-      'impact', 'kast', 'damage_avg', 'league_damage_score', 'earned_avg']
+      'impact', 'kast', 'rated_battles', 'damage_avg', 'league_damage_score', 'earned_avg']
     state.init.resp = cwResp()
     const wrapper = mountPage()
     await flushPromises()
     const keys = cwThKeys(wrapper)
-    expect(keys).toEqual(['nickname', 'league_rating', 'impact', 'kast', 'damage_avg', 'league_damage_score', 'earned_avg'])
+    expect(keys).toEqual(['nickname', 'league_rating', 'impact', 'kast', 'rated_battles', 'damage_avg', 'league_damage_score', 'earned_avg'])
     wrapper.unmount()
   })
 

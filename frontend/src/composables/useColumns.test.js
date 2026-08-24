@@ -193,6 +193,8 @@ const LEAGUE_SUMMARY_COLS = [
   { key: 'nickname', num: false },
   { key: 'clan', num: false },
   { key: 'battles', num: true },
+  // review PR#134 BLOCKER 2：rated_battles 进入生产 Column contract（后端 ColumnDef → merge → cw universe）
+  { key: 'rated_battles', num: true },
   { key: 'league_rating', num: true },
   { key: 'league_damage_score', num: true },
   { key: 'league_shooting_score', num: true },
@@ -325,5 +327,24 @@ describe('useColumns CW unified summary scope (review PR#134 BLOCKER 2)', () => 
     expect(c.cwOrder.value.slice(0, 2)).toEqual(['nickname', 'league_rating'])
     expect(c.cwVisibleKeys.value).toContain('league_shooting_score')
     expect(c.cwVisibleKeys.value).toContain('impact')
+  })
+
+  it('rated_battles 进入生产 cw column contract（BLOCKER 2）：universe/order/visible/toggle/reorder', () => {
+    const c = mountCwCols(freshStorage())
+    // 真实 response-like 链：league.playerSummaryColumns（含 rated_battles）→ mergeCwPlayerColumns
+    // → cwOrder/cwVisibleKeys（默认可见 + 固定对前置）
+    expect(c.cwOrder.value).toContain('rated_battles')
+    expect(c.cwVisibleKeys.value).toContain('rated_battles')
+    // 不可隐藏的固定对仍是 nickname + league_rating；rated_battles 可 toggle
+    c.toggleCol({ key: 'rated_battles', scope: 'cw' })
+    expect(c.cwVisibleKeys.value).not.toContain('rated_battles')
+    c.toggleCol({ key: 'rated_battles', scope: 'cw' })
+    expect(c.cwVisibleKeys.value).toContain('rated_battles')
+    // reorder：rated_battles 可放在任意非固定位置（如 impact 之后）
+    c.pickerScope.value = 'cw'
+    c.handleReorder(['impact', 'rated_battles', 'kast', 'league_damage_score'])
+    expect(c.cwOrder.value).toEqual([
+      'nickname', 'league_rating', 'impact', 'rated_battles', 'kast', 'league_damage_score',
+    ])
   })
 })

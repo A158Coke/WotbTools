@@ -37,16 +37,16 @@ const closeBtn = ref(null)
 
 const isSummary = computed(() => props.context?.scope === 'summary')
 
-/** 顶部 Rating 信息（null/undefined/非有限 → '--'，不冒充 0；plan §8.6 缺失侧）。 */
+/** 顶部 Rating 信息（null/undefined/非有限 → '--'，不冒充 0；plan §8.6 缺失侧）。
+ * 只显示整数（927），不显示 /1000 冗余完成度（review PR#134 BLOCKER 1）。 */
 function ratingLine() {
   const p = props.player
-  if (!p) return { rating: '--', pct: '' }
+  if (!p) return { rating: '--' }
   const raw = p.rating ?? p.ratingMedian
-  if (raw == null || raw === '') return { rating: '--', pct: '' }
+  if (raw == null || raw === '') return { rating: '--' }
   const v = Number(raw)
-  if (!Number.isFinite(v)) return { rating: '--', pct: '' }
-  const pct = Math.round(1000 * v / 1000) / 10
-  return { rating: Math.round(v), pct: pct + '%' }
+  if (!Number.isFinite(v)) return { rating: '--' }
+  return { rating: Math.round(v) }
 }
 
 // ---- Radar Metric Selection（BLOCKER 6）：默认七维，用户可自定义指标与顺序 ----
@@ -200,7 +200,6 @@ onBeforeUnmount(() => {
         </div>
         <div class="pd-rating">
           <span class="pd-rating-value">{{ ratingLine().rating }}</span>
-          <span class="pd-rating-pct">{{ ratingLine().pct }}</span>
         </div>
 
         <!-- 七维 / 自定义 Radar（BLOCKER 6） -->
@@ -281,7 +280,6 @@ onBeforeUnmount(() => {
 .pd-close:hover { color: var(--text-heading); border-color: var(--accent); }
 .pd-rating { display: flex; align-items: baseline; gap: 8px; margin: 12px 0 4px; }
 .pd-rating-value { font-size: 1.6rem; font-weight: 800; color: var(--accent-dark); font-variant-numeric: tabular-nums; }
-.pd-rating-pct { font-size: .9rem; color: var(--text-sub); font-weight: 700; }
 .pd-section { margin: 14px 0 8px; font-size: .8rem; font-weight: 800; color: var(--text-sub); letter-spacing: .02em; }
 .pd-section-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 14px 0 8px; }
 .pd-section-row .pd-section { margin: 0; }

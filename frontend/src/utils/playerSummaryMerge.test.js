@@ -85,6 +85,8 @@ describe('mergeCwPlayerColumns', () => {
   const leagueCols = [
     { key: 'nickname', num: false },
     { key: 'battles', num: true },
+    // BLOCKER 2：rated_battles 来自 league.playerSummaryColumns，必须进入统一表 universe
+    { key: 'rated_battles', num: true },
     { key: 'league_rating', num: true },
     { key: 'league_damage_score', num: true },
     { key: 'mvp_count', num: true },
@@ -107,6 +109,9 @@ describe('mergeCwPlayerColumns', () => {
     expect(keys.indexOf('league_rating')).toBeGreaterThanOrEqual(0)
     expect(keys.indexOf('league_damage_score')).toBeGreaterThan(keys.indexOf('league_rating'))
     expect(keys.indexOf('mvp_count')).toBeGreaterThan(keys.indexOf('league_damage_score'))
+    // BLOCKER 2：rated_battles 保留（league 特有列，aggregate 无 → 不重复）
+    expect(keys).toContain('rated_battles')
+    expect(keys.filter(k => k === 'rated_battles')).toHaveLength(1)
     // aggregate 追加且去重（nickname/battles/wins 已在 league 中，不重复）
     expect(keys.indexOf('win_rate')).toBeGreaterThan(keys.indexOf('league_rating'))
     expect(keys.indexOf('earned_avg')).toBeGreaterThan(keys.indexOf('win_rate'))

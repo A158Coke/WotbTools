@@ -245,7 +245,7 @@ class ReplayServiceLeagueTest {
     void leaguePreviewCarriesBaseReplayAggregateAlongsideLeagueSummary() throws Exception {
         // plan §5/§6：League Rating Summary 是附加分析，不替代基础 Replay Aggregate。
         // 多场 League 批次的 resp.aggregate 必须包含标准基础汇总（0 场可评分 ≠ Replay 没数据）；
-        // 列边界不变（aggregateColumns 仍为 League 变体，不含旧三指标，PR #131）。
+        // review PR#134 BLOCKER 1：League aggregateColumns 保留跨场 contribution/kast/impact。
         final Battle good = LeagueTestReplays.sevenVsSeven(1);
         good.arenaId = "111";
         good.arenaBonusType = 2;
@@ -272,6 +272,9 @@ class ReplayServiceLeagueTest {
         // league playerSummary 列与值含跨场 Performance Metrics
         assertTrue(r.league().playerSummaryColumns().stream().anyMatch(c -> c.key().equals("kast")),
                 "league.playerSummaryColumns 必须含 kast");
+        // review PR#134 BLOCKER 2：rated_battles 必须进入生产 playerSummaryColumns（ColumnDef 链）
+        assertTrue(r.league().playerSummaryColumns().stream().anyMatch(c -> c.key().equals("rated_battles")),
+                "league.playerSummaryColumns 必须含 rated_battles（评分场次列契约）");
         assertTrue(r.league().playerSummaries().stream()
                         .anyMatch(s -> s.impact() != null),
                 "league.playerSummaries 必须携带跨场 impact");

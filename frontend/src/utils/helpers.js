@@ -28,7 +28,7 @@ export const CW_SUMMARY_DEFAULT_VISIBLE = [
   'league_damage_score', 'league_assist_score', 'league_kill_score',
   'league_exchange_score', 'league_blocked_score', 'league_survival_score',
   'league_shooting_score', 'mvp_count',
-  'clan', 'battles', 'wins', 'win_rate',
+  'clan', 'battles', 'rated_battles', 'wins', 'win_rate',
   'damage_avg', 'assisted_avg', 'kills_avg', 'earned_avg',
   'contribution', 'kast', 'impact'
 ]
