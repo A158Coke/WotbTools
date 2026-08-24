@@ -1,6 +1,5 @@
 <script setup>
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, provide, ref } from 'vue'
-import { useTheme } from './composables/useTheme.js'
 import { useAuth } from './composables/useAuth.js'
 import { useError } from './composables/useError.js'
 import HomePage from './components/HomePage.vue'
@@ -17,7 +16,6 @@ import ContactPage from './components/ContactPage.vue'
 // 复用生产 BattlePlayback（异步加载，不拖进普通用户初始 bundle）
 const PlaybackQaPage = defineAsyncComponent(() => import('./components/PlaybackQaPage.vue'))
 
-const { theme, handleTheme } = useTheme()
 const { initPromise, login, logout, isAuthenticated, userName, tokenParsed } = useAuth()
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
 
@@ -152,11 +150,6 @@ onBeforeUnmount(() => {
     <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
       <option v-for="l in languageOptions" :key="l.key" :value="l.key">{{ l.label }}</option>
     </select>
-    <div class="theme-bar">
-      <button :class="{ active: theme === 'auto' }" @click="handleTheme('auto')" :title="$t('app.theme')">{{ $t('theme.auto') }}</button>
-      <button :class="{ active: theme === 'light' }" @click="handleTheme('light')">{{ $t('theme.light') }}</button>
-      <button :class="{ active: theme === 'dark' }" @click="handleTheme('dark')">{{ $t('theme.dark') }}</button>
-    </div>
     <div class="dropdown user-menu">
       <button ref="userMenuTrigger" class="auth-btn ghost user-menu-trigger" @click="toggleUserMenu" :aria-expanded="userMenuOpen" :aria-haspopup="true">
         {{ isAuthenticated() ? userName() : $t('app.login') }}
@@ -224,8 +217,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .up-icon .ic { width: 28px; height: 28px; }
 .wrap { max-width: 1200px; margin: 0 auto; padding: 24px 20px 64px; }
 h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
-.tb-content { padding-top: 52px; }
-.topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 100; height: 52px;
+.tb-content { padding-top: var(--topbar-h); }
+.topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 100; height: var(--topbar-h);
   display: flex; align-items: center; gap: 8px; padding: 8px 16px;
   background: color-mix(in srgb, var(--bg-card) 92%, transparent);
   border-bottom: 1px solid var(--border-header);
@@ -240,12 +233,6 @@ h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
   background: transparent; color: var(--text-sub); cursor: pointer; font-size: .85rem; font-family: inherit; white-space: nowrap; }
 .topbar nav button.active { background: var(--bg-blue); color: var(--accent-dark); border-color: var(--border-tab-active); font-weight: 700; }
 .topbar nav button:hover { background: var(--bg-card-hover); color: var(--text-label); }
-.theme-bar { display: flex; gap: 2px; flex: 0 0 auto; align-items: center; white-space: nowrap;
-  background: var(--bg-card2); border: 1px solid var(--border-ghost); border-radius: 7px; padding: 2px; }
-.theme-bar button { flex: 0 0 auto; padding: 4px 10px; border: none; border-radius: 5px;
-  background: transparent; color: var(--text-sub); cursor: pointer; font-size: .73rem; line-height: 1; font-family: inherit; }
-.theme-bar button:hover { color: var(--text-label); background: transparent; }
-.theme-bar button.active { background: var(--accent); color: var(--accent-text); font-weight: 700; }
 .tb-spacer { flex: 1; }
 .auth-btn { padding: 6px 14px; border: 1px solid var(--border-ghost); border-radius: 7px;
   background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-size: .82rem; font-family: inherit; white-space: nowrap; }
@@ -314,8 +301,7 @@ tr:hover td { background: var(--bg-list-hover); }
 .mc { background: rgba(16,22,26,.94); border: 1px solid rgba(58,69,76,.55); border-radius: 8px; padding: 14px 16px; text-align: center; box-shadow: var(--surface-shadow); }
 .mc .k { font-size: .78rem; color: #a3a6a0; margin-bottom: 4px; }
 .mc .v { font-size: 1.4rem; font-weight: 700; color: #f6f1e7; font-variant-numeric: tabular-nums; }
-/* 页面级提示条（V2）：不依赖 .wrap 容器，任何 Layout Primitive 下均可复用。
-   亮/暗主题由 token（--warn-bg/--border-warn/--warn-text、--status-err-*）自动切换。 */
+/* 页面级提示条（V2）：不依赖 .wrap 容器，任何 Layout Primitive 下均可复用。 */
 .warn, .error { display: block; padding: 10px 16px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; line-height: 1.55; }
 .warn { background: var(--warn-bg); border: 1px solid var(--border-warn); color: var(--warn-text); }
 .error { background: var(--status-err-bg); border: 1px solid color-mix(in srgb, var(--error) 34%, var(--border)); color: var(--status-err-fg); }
@@ -488,7 +474,6 @@ tr:hover td { background: var(--bg-list-hover); }
   .topbar { padding: 6px; gap: 4px; }
   .tb-content { padding-top: 0; }
   .topbar nav button { padding: 4px 6px; font-size: .72rem; }
-  .theme-bar { display: none; }
   .lang-select { font-size: .7rem; padding: 3px 18px 3px 5px; background-size: 10px; }
   .tb-logo { height: 22px; }
   .auth-btn { padding: 4px 8px; font-size: .75rem; }
