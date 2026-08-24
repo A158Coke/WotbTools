@@ -330,14 +330,6 @@ public final class Mapper {
      * 层 {@link #toBattle} 内完成（与 Excel 写入器 SingleBattleSheets 内部行为一致，
      * 确定性幂等覆盖）。</p>
      */
-    public static PreviewResponse toPreviewResponse(final List<Battle> battles,
-                                                    final List<String> battleSourceNames,
-                                                    final List<String[]> duplicates,
-                                                    final List<String[]> failures,
-                                                    final Tankopedia tp) {
-        return toPreviewResponse(battles, battleSourceNames, duplicates, failures, tp, null);
-    }
-
     /**
      * League 模式：battles 为<b>全部</b>成功解析的 Battle（含 Rating-ineligible 场次），
      * 每场 Rating 经 {@link LeagueRatingBatch#resultFor} 按 arenaId identity 绑定
@@ -349,6 +341,21 @@ public final class Mapper {
                                                     final List<String[]> failures,
                                                     final Tankopedia tp,
                                                     final LeagueRatingBatch league) {
+        return toPreviewResponse(battles, battleSourceNames, duplicates, failures, tp, league, null);
+    }
+
+    /**
+     * 完整 Preview 构建：league != null → League 模式；否则普通模式。
+     * leagueUnavailableCode 非 null（混合批次 MIXED_LEAGUE_AND_STANDARD_REPLAYS，plan §21）
+     * 时按普通模式输出 battles/aggregate，同时携带 League 不可用提示码。
+     */
+    public static PreviewResponse toPreviewResponse(final List<Battle> battles,
+                                                    final List<String> battleSourceNames,
+                                                    final List<String[]> duplicates,
+                                                    final List<String[]> failures,
+                                                    final Tankopedia tp,
+                                                    final LeagueRatingBatch league,
+                                                    final String leagueUnavailableCode) {
         final List<BattleDto> battlesDto = new ArrayList<>();
         for (int i = 0; i < battles.size(); i++) {
             final Battle battle = battles.get(i);
@@ -359,7 +366,7 @@ public final class Mapper {
             // League 模式：不输出旧汇总表（选手/战队中位数汇总走 league.*）；
             // aggregateColumns 不含 contribution/kast/impact（plan §14）
             return new PreviewResponse(battlesDto, List.of(), duplicates, failures,
-                    leaguePlayerColumns(), leagueAggregateColumns(), leagueDto(league));
+                    leaguePlayerColumns(), leagueAggregateColumns(), leagueDto(league), null);
         }
         final Map<Long, PerformanceMetricsCalculator.Row> perfById = new LinkedHashMap<>();
         for (final PerformanceMetricsCalculator.Row row : PerformanceMetricsCalculator.compute(battles)) {
@@ -369,7 +376,7 @@ public final class Mapper {
                 ? toAggregate(Aggregator.aggregate(battles, tp), perfById)
                 : List.of();
         return new PreviewResponse(battlesDto, aggregate, duplicates, failures,
-                playerColumns(), aggregateColumns(), null);
+                playerColumns(), aggregateColumns(), null, leagueUnavailableCode);
     }
 
     private static LeagueRatingDto leagueDto(final LeagueRatingBatch league) {

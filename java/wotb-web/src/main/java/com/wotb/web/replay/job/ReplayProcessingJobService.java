@@ -153,7 +153,7 @@ public class ReplayProcessingJobService {
         }
         final ProcessedDataset ds = job.result();
         return Mapper.toPreviewResponse(ds.battles(), ds.battleSourceNames(),
-                ds.duplicates(), ds.failures(), tankopedia, ds.league());
+                ds.duplicates(), ds.failures(), tankopedia, ds.league(), ds.leagueUnavailableCode());
     }
 
     private ReplayProcessingJob requireJob(final String jobId) {
@@ -245,26 +245,26 @@ public class ReplayProcessingJobService {
         if (job.isCancelled()) {
             throw new JobCancelledException();
         }
-        if (c.mode() == LeagueRatingMode.MIXED_UNSUPPORTED) {
-            // 混合批次：整个请求拒绝（不返回部分预览）；job 终态错误码供前端三语展示。
-            throw new IllegalArgumentException("MIXED_LEAGUE_AND_STANDARD_REPLAYS");
-        }
         if (c.battles().isEmpty()) {
             throw new NoValidReplaysException();
         }
+        // 混合批次不再整体拒绝（plan §21）：League Rating 不聚合混合批次，battles 仍按
+        // 普通回放语义成功返回并 READY，leagueUnavailableCode 提示 League Analysis unavailable。
+        final String leagueUnavailableCode = c.mode() == LeagueRatingMode.MIXED_UNSUPPORTED
+                ? "MIXED_LEAGUE_AND_STANDARD_REPLAYS" : null;
         // 事实层 enrich 一次：Preview / Export 直接消费已 enrich 的 authoritative Battle（plan §21/§27）。
         // League 模式不调用 PerformanceMetricsCalculator（旧 contribution/kast/impact 完全移除）。
         PotentialDamage.apply(c.battles(), tankopedia);
         if (c.mode() == LeagueRatingMode.LEAGUE_RATING) {
             job.markReady(new ProcessedDataset(c.battles(), c.battleSourceNames(),
-                    c.duplicates(), c.failures(), c.leagueBatch()));
+                    c.duplicates(), c.failures(), c.leagueBatch(), null));
             return;
         }
         for (final Battle battle : c.battles()) {
             PerformanceMetricsCalculator.populateBattle(battle);
         }
         job.markReady(new ProcessedDataset(c.battles(), c.battleSourceNames(),
-                c.duplicates(), c.failures(), null));
+                c.duplicates(), c.failures(), null, leagueUnavailableCode));
     }
 
     /** 与 preview/export 完全相同的 authoritative full processing 链（plan §26，禁止 raw parse 回归）。 */

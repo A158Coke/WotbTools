@@ -132,7 +132,7 @@ Processing Job 创建后持久化输入、由有界 worker 串行 `processFull`�
 
 ### League Rating
 
-训练房 `arenaBonusType=2` 与联赛/锦标赛 `=4` 才启用 0–1000 League Rating。普通回放不显示 Rating；混合普通 + League 批次拒绝为 `MIXED_LEAGUE_AND_STANDARD_REPLAYS`。评分、完整性校验、批次中位数和 Excel 必须复用 core 单一公式。
+训练房 `arenaBonusType=2` 与联赛/锦标赛 `=4` 才启用 0–1000 League Rating。普通回放不显示 Rating；混合普通 + League 批次 League Rating 不聚合（`league=null` + `leagueUnavailableCode=MIXED_LEAGUE_AND_STANDARD_REPLAYS`，battles 仍按普通回放语义成功返回，plan §21）。评分、完整性校验、批次中位数和 Excel 必须复用 core 单一公式。
 
 ### Hall of Fame / Hundred Battles
 
