@@ -149,9 +149,15 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 ## PNG 导出
 
 - League 模式 PNG 导出**完整超宽表格**（全部 Rating 维度 + 原始字段），不受当前 ColumnPicker
-  可见列限制；导出 clone 中取消 sticky 定位（避免固定列覆盖其他列），`.tablewrap` 使用
-  `max-content` 自然宽度；按真实 descendant 宽度测量，在 canvas 16384 限制内自动降 scale，
-  不裁切右侧列、不压缩到视口宽度；深色/浅色主题均可读；战队名称覆盖随克隆 DOM 导出。
+  可见列限制；**列 universe 以 backend 列定义为单一事实源**（review PR#134 第三轮 BLOCKER 1）：
+  单场 = `resp.playerColumns`（Replay facts + Rating + 占点原始字段）；汇总 =
+  `mergeCwPlayerColumns(playerSummaryColumns, aggregateColumns)` 完整 CW 统一玩家表 +
+  `teamSummaryColumns` 完整战队表；`resp.league.columns` 只提供 Rating max/format 元数据
+  （总 Rating 整数、七维 score/max/%）。Rating-ineligible 场次 Rating/七维导出 `--`
+  （只有真实 raw 0 才显示 0，禁止 `Number(raw) || 0` 伪造）。导出 clone 中取消 sticky 定位
+  （避免固定列覆盖其他列），`.tablewrap` 使用 `max-content` 自然宽度；按真实 descendant
+  宽度测量，在 canvas 16384 限制内自动降 scale，不裁切右侧列、不压缩到视口宽度；深色/浅色
+  主题均可读；战队名称覆盖随克隆 DOM 导出（含批次战队 override）。
 - 普通回放 PNG 行为保持现状。
 
 ## 前端集成

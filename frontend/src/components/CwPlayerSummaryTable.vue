@@ -22,6 +22,8 @@ const props = defineProps({
   leagueMode: { type: Boolean, default: false },
   /** 本表是否当前可见（父组件持有 activeTab；v-show hidden 时禁止 sticky 测量，BLOCKER 2.9） */
   active: { type: Boolean, default: true },
+  /** Drawer 选中玩家 accountId（identity 跟随；Drawer 关闭 → null → 清除 highlight，review PR#134 第三轮 UX） */
+  selectedAccountId: { type: [Number, String], default: null },
 })
 const emit = defineEmits(['select-player'])
 
@@ -95,6 +97,13 @@ function onRowClick(row) {
   emit('select-player', { scope: 'summary', accountId: Number(row.cells.account_id) })
 }
 
+/** 选中行判定按 accountId（禁止 row index；排序后 highlight 跟随同一玩家，review PR#134 第三轮 UX）。 */
+function isSelectedRow(row) {
+  const sel = props.selectedAccountId
+  if (sel == null || sel === '') return false
+  return Number(row.cells.account_id) === Number(sel)
+}
+
 // ---- sticky 核心对（BLOCKER 2.9）：nickname.left=0；league_rating.left=实测昵称列宽 >0 ----
 const { headerRefs, stickyLeft, isStickyCol, colStyle, schedule } = useStickyColumns({
   enabled: computed(() => props.leagueMode),
@@ -122,7 +131,7 @@ watch([sortKey, sortReverse], schedule)
         </tr></thead>
         <tbody>
           <tr v-for="(row, i) in sortedRows" :key="row.cells.account_id ?? i"
-              :class="[row.team === 1 ? 't1' : 't2', 'player-row']"
+              :class="[row.team === 1 ? 't1' : 't2', 'player-row', { selected: isSelectedRow(row) }]"
               @click="onRowClick(row)">
             <td v-for="c in columns" :key="c.key"
                 :class="{ 'sticky-col': isStickyCol(c.key), 'sticky-t1': isStickyCol(c.key) && row.team === 1, 'sticky-t2': isStickyCol(c.key) && row.team === 2 }"
@@ -142,6 +151,13 @@ watch([sortKey, sortReverse], schedule)
 .league-summary-note { font-size: .72rem; color: var(--text-sub); }
 .player-row { cursor: pointer; }
 .player-row:hover td { background: var(--bg-list-hover); }
+/* Drawer 选中玩家行 highlight（review PR#134 第三轮 UX）：accent 浅染，覆盖 hover 与 sticky 底色 */
+.cw-player-summary tr.player-row.selected td { background: color-mix(in srgb, var(--accent) 16%, var(--bg-card)); }
+.cw-player-summary tr.player-row.selected td.sticky-t1 { background: color-mix(in srgb, var(--accent) 16%, var(--bg-t1)); }
+.cw-player-summary tr.player-row.selected td.sticky-t2 { background: color-mix(in srgb, var(--accent) 16%, var(--bg-t2)); }
+.cw-player-summary tr.player-row.selected:hover td { background: color-mix(in srgb, var(--accent) 24%, var(--bg-card)); }
+.cw-player-summary tr.player-row.selected:hover td.sticky-t1 { background: color-mix(in srgb, var(--accent) 24%, var(--bg-t1)); }
+.cw-player-summary tr.player-row.selected:hover td.sticky-t2 { background: color-mix(in srgb, var(--accent) 24%, var(--bg-t2)); }
 .league-summary-empty { text-align: center; color: var(--text-sub); }
 
 /* CW 统一玩家表 sticky：玩家 + Rating 固定（BLOCKER 2.9）。

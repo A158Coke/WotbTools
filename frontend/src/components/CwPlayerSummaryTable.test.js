@@ -155,6 +155,36 @@ describe('CwPlayerSummaryTable', () => {
   })
 })
 
+describe('CwPlayerSummaryTable selected row highlight (review PR#134 第三轮 UX)', () => {
+  it('selected 判定按 accountId（禁止 row index）', () => {
+    const wrapper = mountTable({ selectedAccountId: 2001 })
+    const rows = wrapper.findAll('tbody tr')
+    expect(rows[0].classes()).not.toContain('selected') // 1001 未选中
+    expect(rows[1].classes()).toContain('selected')     // 2001 选中（index 1）
+  })
+
+  it('selectedAccountId 为 null 时不加 highlight（Drawer 关闭 → 清除）', () => {
+    const wrapper = mountTable()
+    for (const row of wrapper.findAll('tbody tr')) {
+      expect(row.classes()).not.toContain('selected')
+    }
+  })
+
+  it('排序后 highlight 跟随同一 accountId（index 变化不脱靶）', async () => {
+    const wrapper = mountTable({ selectedAccountId: 2001 })
+    // 排序前 B（2001）在第二行
+    expect(wrapper.findAll('tbody tr')[1].classes()).toContain('selected')
+    // nickname DESC → B 第一行；highlight 仍跟随 B（index 0）
+    const th = wrapper.findAll('th').find(t => t.text().includes('nickname'))
+    await th.trigger('click') // ASC: A, B
+    await th.trigger('click') // DESC: B, A
+    const rows = wrapper.findAll('tbody tr')
+    expect(rows[0].text()).toContain('B')
+    expect(rows[0].classes()).toContain('selected')
+    expect(rows[1].classes()).not.toContain('selected')
+  })
+})
+
 describe('CwPlayerSummaryTable sticky core pair (review PR#134 BLOCKER 2.9/2.10)', () => {
   // happy-dom 无真实布局：getBoundingClientRect 宽度由测试 stub 控制
   function stubNickWidth(wrapper, width) {

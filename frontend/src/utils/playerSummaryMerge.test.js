@@ -43,18 +43,34 @@ describe('mergeCwPlayerRows', () => {
     expect(c.cells.damage_avg).toBe(600) // 基础 facts 仍在
   })
 
-  it('includes league-only players when aggregate misses them (single battle CW)', () => {
+  it('CW 单场：backend 生成基础 aggregate row → merge 后 facts 不再缺失（review PR#134 BLOCKER 2）', () => {
+    // 单场 CW 的 resp.aggregate 现在由 Replay Core 生成（battles=1 → avg=本场值），
+    // Unified Summary 的 damage_avg/assisted_avg/kills_avg/earned_avg 是真实事实，不再显示 '--'
+    const rows = mergeCwPlayerRows([
+      { team: 1, cells: { account_id: 1001, nickname: 'A', clan: 'AAA', battles: 1, wins: 1, damage_avg: 500, assisted_avg: 100, kills_avg: 2, earned_avg: 80, contribution: 22.4, kast: 100, impact: 151.2 } },
+    ], summaries)
+    const a = rows.find(r => r.cells.account_id === 1001)
+    expect(a.cells.league_rating).toBe(850.4)
+    expect(a.cells.damage_avg).toBe(500)
+    expect(a.cells.assisted_avg).toBe(100)
+    expect(a.cells.kills_avg).toBe(2)
+    expect(a.cells.earned_avg).toBe(80)
+    // BLOCKER 1/5：跨场 Performance Metrics + 评分场次保留
+    expect(a.cells.rated_battles).toBe(3)
+    expect(a.cells.contribution).toBe(22.4)
+    expect(a.cells.kast).toBe(100)
+    expect(a.cells.impact).toBe(151.2)
+  })
+
+  it('aggregate 为空时 League-only 行仍安全保留（防御路径，不再作为单场 CW 的产品契约）', () => {
     const rows = mergeCwPlayerRows([], summaries)
     expect(rows).toHaveLength(2)
     const a = rows.find(r => r.cells.account_id === 1001)
     expect(a.cells.league_rating).toBe(850.4)
     expect(a.cells.nickname).toBe('A')
-    expect(a.cells.damage_avg == null).toBe(true) // aggregate 字段缺失 → UI '--'
-    // BLOCKER 1/5：League-only 行带跨场 Performance Metrics + 评分场次
+    expect(a.cells.damage_avg == null).toBe(true) // aggregate 缺失 → UI '--'（仅防御路径）
     expect(a.cells.rated_battles).toBe(3)
     expect(a.cells.contribution).toBe(22.4)
-    expect(a.cells.kast).toBe(100)
-    expect(a.cells.impact).toBe(151.2)
   })
 
   it('aggregate 行的 Performance Metrics 不被 League-only 样本覆盖（BLOCKER 1：aggregate 全量样本优先）', () => {

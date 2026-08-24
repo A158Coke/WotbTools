@@ -376,3 +376,50 @@ describe('BattleTable League Rating', () => {
     expect(ratingTh.attributes('style')).toContain('left: 148px')
   })
 })
+
+describe('BattleTable selected row highlight (review PR#134 第三轮 UX)', () => {
+  function selectedRows(wrapper) {
+    return wrapper.findAll('tbody tr').filter(r => r.classes().includes('selected'))
+  }
+
+  it('Battle scope 双匹配（arenaId + accountId）才 highlight；按 accountId 而非 row index', () => {
+    const wrapper = mountLeague(makeLeagueBattle(), leagueCols(), {}, {
+      selectedAccountId: 2001,
+      selectedArenaId: '111',
+    })
+    const rows = wrapper.findAll('tbody tr')
+    expect(rows[0].classes()).not.toContain('selected') // 1001（index 0）未选中
+    expect(rows[1].classes()).toContain('selected')     // 2001（index 1）选中
+  })
+
+  it('arenaId 不匹配（另一场）→ 无 highlight（禁止跨场误亮）', () => {
+    const wrapper = mountLeague(makeLeagueBattle(), leagueCols(), {}, {
+      selectedAccountId: 1001,
+      selectedArenaId: '999',
+    })
+    expect(selectedRows(wrapper).length).toBe(0)
+  })
+
+  it('selected props 为 null（Drawer 关闭）→ 清除 highlight', () => {
+    const wrapper = mountLeague(makeLeagueBattle())
+    expect(selectedRows(wrapper).length).toBe(0)
+  })
+
+  it('Standard（非 leagueMode）→ 即使传 props 也不 highlight', () => {
+    const battle = makeBattle([
+      { team: 1, cells: { nickname: 'A', account_id: 1001, damage_dealt: 3000 } },
+    ])
+    battle.arenaId = '111'
+    const wrapper = mount(BattleTable, {
+      props: {
+        battle,
+        shownCols: makeCols(),
+        leagueMode: false,
+        selectedAccountId: 1001,
+        selectedArenaId: '111',
+      },
+      global: { mocks: { $t: key => key } },
+    })
+    expect(selectedRows(wrapper).length).toBe(0)
+  })
+})

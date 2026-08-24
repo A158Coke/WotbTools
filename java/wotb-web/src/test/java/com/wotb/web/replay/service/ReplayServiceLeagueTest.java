@@ -280,6 +280,67 @@ class ReplayServiceLeagueTest {
                 "league.playerSummaries 必须携带跨场 impact");
     }
 
+    // ---- review PR#134 BLOCKER 2（第三轮）：CW/League 单场也生成基础 Replay Aggregate row ----
+
+    @Test
+    void singleCwBattlePreviewCarriesBaseAggregateFacts() throws Exception {
+        // CW 单场：Unified Summary 的 damage_avg/assisted_avg/kills_avg/earned_avg 由 Replay Core
+        // 权威事实得出（battles=1 → avg=本场值），禁止伪装成 unavailable（'--'）。
+        final Battle battle = LeagueTestReplays.sevenVsSeven(1);
+        battle.arenaId = "111";
+        battle.arenaBonusType = 2;
+        final PreviewResponse r = leagueService(battle).preview(new MockMultipartFile[]{
+                file("a.wotbreplay", new byte[]{1})});
+        assertNotNull(r.league());
+        assertFalse(r.aggregate().isEmpty(), "CW 单场必须生成基础 Replay Aggregate row（Unified Summary 事实源）");
+        // Team1 首名（accountId 1001）：damage=450 / assist=100 / kills=2 / earned=0
+        final AggRow row = r.aggregate().stream()
+                .filter(a -> ((Number) a.cells().get("account_id")).longValue() == 1001L)
+                .findFirst().orElseThrow();
+        assertEquals(1, ((Number) row.cells().get("battles")).intValue(), "解析场次 = 1");
+        assertEquals(450.0, ((Number) row.cells().get("damage_avg")).doubleValue(), 0.01);
+        assertEquals(100.0, ((Number) row.cells().get("assisted_avg")).doubleValue(), 0.01);
+        assertEquals(2.0, ((Number) row.cells().get("kills_avg")).doubleValue(), 0.01);
+        assertEquals(0.0, ((Number) row.cells().get("earned_avg")).doubleValue(), 0.01);
+        // rated_battles = League Player Summary 评分场次（BLOCKER 5：独立于解析场次 battles）
+        assertTrue(r.league().playerSummaries().stream()
+                        .anyMatch(s -> s.accountId() == 1001L && s.battles() == 1),
+                "CW 单场评分场次 = 1");
+    }
+
+    @Test
+    void singleCwIneligibleBattleStillCarriesAggregateFacts() throws Exception {
+        // Rating-ineligible CW 单场：基础 aggregate facts 仍生成（Replay Core），Rating/七维为 null（UI '--'）
+        final Battle bad = LeagueTestReplays.sevenVsSeven(1);
+        bad.arenaId = "111";
+        bad.arenaBonusType = 2;
+        bad.settlementAccountsCoveredByRoster = false;
+        final PreviewResponse r = leagueService(bad).preview(new MockMultipartFile[]{
+                file("bad.wotbreplay", new byte[]{1})});
+        assertNotNull(r.league(), "ineligible 场仍是 CW 批次（leagueMode=true）");
+        assertNull(r.battles().getFirst().league(), "未评分场不得绑定 Rating");
+        assertFalse(r.aggregate().isEmpty(), "Rating-ineligible CW 单场仍生成基础 aggregate facts（不丢事实）");
+        final AggRow row = r.aggregate().stream()
+                .filter(a -> ((Number) a.cells().get("account_id")).longValue() == 1001L)
+                .findFirst().orElseThrow();
+        assertEquals(450.0, ((Number) row.cells().get("damage_avg")).doubleValue(), 0.01);
+        assertEquals(2.0, ((Number) row.cells().get("kills_avg")).doubleValue(), 0.01);
+        // 该场无评分 → 不产生评分汇总行（rated_battles 空，Rating 由前端统一显示 '--'）
+        assertTrue(r.league().playerSummaries().isEmpty(), "ineligible 场不得产生评分汇总行");
+    }
+
+    @Test
+    void standardSingleBattleAggregateStaysEmpty() throws Exception {
+        // Standard（Random）单场：aggregate 保持空（旧语义；review PR#134 BLOCKER 2 不得回归）
+        final Battle battle = LeagueTestReplays.sevenVsSeven(1);
+        battle.arenaId = "333";
+        battle.arenaBonusType = 1;
+        final PreviewResponse r = leagueService(battle).preview(new MockMultipartFile[]{
+                file("c.wotbreplay", new byte[]{3})});
+        assertNull(r.league());
+        assertTrue(r.aggregate().isEmpty(), "Standard 单场 aggregate 必须为空（多场才跨场汇总）");
+    }
+
     @Test
     void singleIneligibleLeagueExportFallsBackToStandardWorkbook() throws Exception {
         final Battle bad = LeagueTestReplays.sevenVsSeven(1);

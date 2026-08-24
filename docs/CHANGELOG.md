@@ -82,6 +82,24 @@
     （fit-content、内容驱动高度、按钮垂直居中、active pill 不贴边）；业务切换逻辑不变。
   - **LeagueSummaryTable 排序修复**：战队汇总行无 cells，league_rating 排序此前全读 undefined
     （stable 假通过）——新增列 key → 行字段映射（ratingMedian / dimensionMedians），raw 排序生效。
+- **PR #134 review 第三轮修复（review PR#134 BLOCKER 1/2 + UX follow-up；browser acceptance 已非 merge gate）**：
+  - **BLOCKER 1 League PNG 导出契约修复**：导出列 universe 以 backend 列定义为单一事实源，
+    不再误用 `resp.league.columns`（那只是 Rating metadata）——单场 = `resp.playerColumns`
+    完整列（nickname/clan/tank/damage/assist/kills/contribution/kast/impact/league_rating/七维/
+    victory_points_earned 全导出）；汇总新建完整 export DOM（`mergeCwPlayerColumns` 完整 CW
+    统一玩家表 + `teamSummaryColumns` 完整战队表，含批次战队 override），不再复用当前
+    ColumnPicker visible-only DOM；新增 `utils/leagueExportTable.js`（构造 + 单测）与
+    ReplayPage PNG 集成测试。Rating-ineligible 场次 Rating/七维导出 `--`（只有真实 raw 0
+    才显示 0，删除 `Number(raw) || 0` 伪造）。
+  - **BLOCKER 2 单场 CW Unified Summary 事实修复**：`Mapper.toPreviewResponse` 改为
+    `shouldAggregate = battles.size() > 1 || league != null`——CW/League 单场也生成基础
+    Replay Aggregate row（damage_avg/assisted_avg/kills_avg/earned_avg 由 Replay Core 权威
+    事实得出，不再伪装成 unavailable）；Standard 单场保持旧语义（aggregate 空）。新增
+    ReplayServiceLeagueTest 单场 rated/ineligible/standard 三用例，修正 merge 单测。
+  - **UX follow-up 选中行 highlight**：Drawer 打开时当前玩家行按 `accountId`（Battle 还需
+    `arenaId`）高亮（禁止 row index；排序后跟随同一账号），Drawer 关闭 / Tab 切换 /
+    selectionRevision 自动清除；CwPlayerSummaryTable / BattleTable 新增
+    selectedAccountId/selectedArenaId props + 轻量单测。
 - **Replay Core / League Rating 业务边界加固（docs/current-plan.md）**：
   - **前端不再把 League Rating 校验失败显示成红色「文件解析失败」**：训练赛/联赛回放无法生成
     Rating 时，结果区改为琥珀色 warning 汇总（League Rating · 可评分 X / N · N 场未生成 Rating

@@ -34,6 +34,10 @@ const props = defineProps({
    * Rating/七维显示 "--"，点击玩家仍打开 Drawer。
    */
   leagueMode: { type: Boolean, default: false },
+  /** Drawer 选中玩家 identity：accountId + arenaId（Battle scope 必须双匹配；排序后跟随同一账号，
+   *  review PR#134 第三轮 UX）。Drawer 关闭 → null → 清除 highlight。 */
+  selectedAccountId: { type: [Number, String], default: null },
+  selectedArenaId: { type: [Number, String], default: null },
 })
 const emit = defineEmits(['update-team-name', 'select-player'])
 
@@ -139,6 +143,16 @@ function onRowClick(row) {
   })
 }
 
+/** 选中行判定：accountId + 本场 arenaId 双匹配（禁止 row index；排序后 highlight 跟随同一账号）。 */
+function isSelectedRow(row) {
+  if (!isLeague.value) return false
+  const selId = props.selectedAccountId
+  const selArena = props.selectedArenaId
+  if (selId == null || selId === '' || selArena == null || selArena === '') return false
+  return String(props.battle.arenaId) === String(selArena)
+    && Number(row.cells.account_id) === Number(selId)
+}
+
 // ---- Rating 单元格（总分「927」；维度「342 / 400 · 85.5%」；缺失 → '--'）----
 
 function ratingCellText(value, key) {
@@ -226,7 +240,7 @@ watch([sortKey, sortReverse], schedule)
         </tr></thead>
         <tbody>
           <tr v-for="(row, ri) in sorted" :key="ri"
-              :class="[row.team === 1 ? 't1' : 't2', isLeague ? 'player-row' : '']"
+              :class="[row.team === 1 ? 't1' : 't2', isLeague ? 'player-row' : '', { selected: isSelectedRow(row) }]"
               @click="onRowClick(row)">
             <td v-for="c in shownCols" :key="c.key"
                 :class="{ 'sticky-col': isStickyCol(c.key), 'sticky-t1': isStickyCol(c.key) && row.team === 1, 'sticky-t2': isStickyCol(c.key) && row.team === 2 }"
@@ -298,6 +312,13 @@ watch([sortKey, sortReverse], schedule)
 /* 玩家行点击（Drawer 打开，plan §13：header click 排序、row click 选人，互不触发） */
 .league-table .player-row { cursor: pointer; }
 .league-table tr.player-row:hover td { background: var(--bg-list-hover); }
+/* Drawer 选中玩家行 highlight（review PR#134 第三轮 UX）：accent 浅染，覆盖 hover 与 sticky 底色 */
+.league-table tr.player-row.selected td { background: color-mix(in srgb, var(--accent) 16%, var(--bg-card)); }
+.league-table tr.player-row.selected td.sticky-t1 { background: color-mix(in srgb, var(--accent) 16%, var(--bg-t1)); }
+.league-table tr.player-row.selected td.sticky-t2 { background: color-mix(in srgb, var(--accent) 16%, var(--bg-t2)); }
+.league-table tr.player-row.selected:hover td { background: color-mix(in srgb, var(--accent) 24%, var(--bg-card)); }
+.league-table tr.player-row.selected:hover td.sticky-t1 { background: color-mix(in srgb, var(--accent) 24%, var(--bg-t1)); }
+.league-table tr.player-row.selected:hover td.sticky-t2 { background: color-mix(in srgb, var(--accent) 24%, var(--bg-t2)); }
 
 /* Rating 单元格 + 徽标（固定尺寸避免列宽跳动） */
 .league-rating-cell { display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; }
