@@ -14,17 +14,17 @@ import org.apache.poi.ss.usermodel.Font;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.ss.util.CellRangeAddress;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
-import java.util.function.Function;
 
 /**
- * League Rating 单场工作簿：玩家数据（Rating 维度分/满分/百分比 + 关键原始字段 +
- * 单场 Performance Metrics（contribution/kast/impact）+ 占点原始字段）/
+ * League Rating 单场工作簿：玩家数据 = canonical {@link Columns#PLAYER} 全部 Replay 字段
+ * （identity/vehicle/单场 stats/潜在伤害/Performance Metrics/received-blocked/shots-hits-pens/
+ * 被命中/被击穿/击伤/排/军阶/车辆ID/账号ID，单一 schema 源）+
+ * League 专属扩展（占点得分/占领分 + 七维评分/满分/百分比 + 总Rating/满分/百分比）；
  * 战斗信息（双方战队 Rating + MVP + 队内最佳）/ 原始字段。
  */
 final class LeagueSingleSheets {
@@ -48,92 +48,32 @@ final class LeagueSingleSheets {
         styles.workbook().setActiveSheet(0);
     }
 
-    /** 玩家数据表：身份 + Rating 关键原始字段 + 七维度（实际分/满分/百分比）+ 总 Rating。 */
+    /**
+     * 玩家数据表：canonical {@link Columns#PLAYER} 全部 Replay 字段（单一 schema 源，
+     * 由 SingleBattleSheets 共享 writer 渲染）+ League 专属扩展列
+     * （占点得分/占领分 + 七维评分/满分/百分比 + 总Rating/满分/百分比）。
+     */
     private void players(final ExcelStyles styles, final Battle b, final LeagueRatingResult result,
                          final Tankopedia tp) {
-        final Sheet ws = styles.workbook().createSheet("玩家数据");
-        // [中文表头, xlsx 宽]
-        final List<String[]> header = new ArrayList<>();
-        header.add(new String[]{"玩家", "20"});
-        header.add(new String[]{"战队", "10"});
-        header.add(new String[]{"车辆", "20"});
-        header.add(new String[]{"存活", "6"});
-        header.add(new String[]{"击杀", "6"});
-        header.add(new String[]{"伤害", "8"});
-        header.add(new String[]{"协助伤害", "9"});
-        header.add(new String[]{"贡献度", "8"});
-        header.add(new String[]{"KAST", "7"});
-        header.add(new String[]{"Impact", "8"});
-        header.add(new String[]{"损失血量", "9"});
-        header.add(new String[]{"格挡", "9"});
-        header.add(new String[]{"存活时间", "10"});
-        header.add(new String[]{"射击次数", "6"});
-        header.add(new String[]{"命中次数", "6"});
-        header.add(new String[]{"击穿", "6"});
-        header.add(new String[]{"命中率", "7"});
-        header.add(new String[]{"击穿率", "7"});
-        header.add(new String[]{"占点得分", "9"});
-        header.add(new String[]{"占领分", "9"});
-        header.add(new String[]{"伤害评分", "9"});
-        header.add(new String[]{"满分", "6"});
-        header.add(new String[]{"百分比", "8"});
-        header.add(new String[]{"助攻评分", "9"});
-        header.add(new String[]{"满分", "6"});
-        header.add(new String[]{"百分比", "8"});
-        header.add(new String[]{"击杀评分", "9"});
-        header.add(new String[]{"满分", "6"});
-        header.add(new String[]{"百分比", "8"});
-        header.add(new String[]{"换血效率评分", "10"});
-        header.add(new String[]{"满分", "6"});
-        header.add(new String[]{"百分比", "8"});
-        header.add(new String[]{"阻挡评分", "9"});
-        header.add(new String[]{"满分", "6"});
-        header.add(new String[]{"百分比", "8"});
-        header.add(new String[]{"存活/互换评分", "10"});
-        header.add(new String[]{"满分", "6"});
-        header.add(new String[]{"百分比", "8"});
-        header.add(new String[]{"射击效率评分", "10"});
-        header.add(new String[]{"满分", "6"});
-        header.add(new String[]{"百分比", "8"});
-        header.add(new String[]{"总Rating", "9"});
-        header.add(new String[]{"满分", "6"});
-        header.add(new String[]{"百分比", "8"});
-        styles.writeHeader(ws, header);
-
-        final List<PlayerResult> players = Players.sorted(b.players);
-        final Function<Long, String> platoon = Players.platoonLabeler();
-        for (final PlayerResult p : players) {
-            Players.enrich(p, tp);
-            p.platoonLabel = platoon.apply(p.platoonId);
+        final List<String[]> leagueHeader = new ArrayList<>();
+        leagueHeader.add(new String[]{"占点得分", "9"});
+        leagueHeader.add(new String[]{"占领分", "9"});
+        final String[] dimTitles = {"伤害评分", "助攻评分", "击杀评分", "换血效率评分",
+                "阻挡评分", "存活/互换评分", "射击效率评分"};
+        for (final String t : dimTitles) {
+            leagueHeader.add(new String[]{t, "9"});
+            leagueHeader.add(new String[]{"满分", "6"});
+            leagueHeader.add(new String[]{"百分比", "8"});
         }
-        int rIdx = 1;
-        for (final PlayerResult p : players) {
-            final Row row = ws.createRow(rIdx++);
-            final CellStyle fill = p.team == 1 ? styles.team1() : styles.team2();
-            final PlayerLeagueRating r = result.byAccount(p.accountId);
-            int c = 0;
-            styles.setCell(row.createCell(c++), p.nickname, fill, "nickname");
-            styles.setCell(row.createCell(c++), p.clan, fill, "clan");
-            styles.setCell(row.createCell(c++), p.tankName, fill, "tank_name");
-            styles.setCell(row.createCell(c++), p.survived ? "存活" : "阵亡", fill, "survived_label");
-            styles.setCell(row.createCell(c++), p.kills, fill, "kills");
-            styles.setCell(row.createCell(c++), p.damageDealt, fill, "damage_dealt");
-            styles.setCell(row.createCell(c++), p.damageAssisted, fill, "damage_assisted");
-            // 单场 Performance Metrics（PerformanceMetricsCalculator.populateBattle 回填；
-            // HP UNKNOWN → contribution/kast null → 空单元格，不冒充 0）
-            styles.setCell(row.createCell(c++), p.contribution, fill, "contribution");
-            styles.setCell(row.createCell(c++), p.kast, fill, "kast");
-            styles.setCell(row.createCell(c++), p.impact, fill, "impact");
-            styles.setCell(row.createCell(c++), p.damageReceived, fill, "damage_received");
-            styles.setCell(row.createCell(c++), p.damageBlocked, fill, "damage_blocked");
-            styles.setCell(row.createCell(c++), ExcelStyles.duration(p.survivalTimeSec), fill, "survival_time");
-            styles.setCell(row.createCell(c++), p.nShots, fill, "n_shots");
-            styles.setCell(row.createCell(c++), p.nHitsDealt, fill, "n_hits_dealt");
-            styles.setCell(row.createCell(c++), p.nPenetrationsDealt, fill, "n_penetrations_dealt");
-            styles.setCell(row.createCell(c++), p.nShots == 0 ? 0 : ExcelStyles.r1(1000.0 * p.nHitsDealt / p.nShots) / 10.0, fill, "hit_rate");
-            styles.setCell(row.createCell(c++), p.nShots == 0 ? 0 : ExcelStyles.r1(1000.0 * p.nPenetrationsDealt / p.nShots) / 10.0, fill, "pen_rate");
+        leagueHeader.add(new String[]{"总Rating", "9"});
+        leagueHeader.add(new String[]{"满分", "6"});
+        leagueHeader.add(new String[]{"百分比", "8"});
+
+        SingleBattleSheets.writePlayers(styles, b, tp, leagueHeader, (row, p, fill, startCol) -> {
+            int c = startCol;
             styles.setCell(row.createCell(c++), p.victoryPointsEarned, fill, "victory_points_earned");
             styles.setCell(row.createCell(c++), p.victoryPointsSeized, fill, "victory_points_seized");
+            final PlayerLeagueRating r = result.byAccount(p.accountId);
             if (r != null) {
                 final double[] dims = {r.damageScore(), r.assistScore(), r.killScore(), r.exchangeScore(),
                         r.blockedScore(), r.survivalTradeScore(), r.shootingScore()};
@@ -150,9 +90,7 @@ final class LeagueSingleSheets {
                 styles.setCell(row.createCell(c++), (int) PlayerLeagueRating.MAX_FINAL, fill, "league_max");
                 styles.setCell(row.createCell(c++), percent(r.finalRating(), PlayerLeagueRating.MAX_FINAL), fill, "league_pct");
             }
-        }
-        ws.createFreezePane(1, 1);
-        ws.setAutoFilter(new CellRangeAddress(0, players.size(), 0, header.size() - 1));
+        });
     }
 
     private static double percent(final double v, final double max) {

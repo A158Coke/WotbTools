@@ -13,6 +13,8 @@ import com.wotb.web.replay.dto.AggRow;
 import com.wotb.web.replay.dto.BattleDto;
 import com.wotb.web.replay.dto.ExportResult;
 import com.wotb.web.replay.dto.PreviewResponse;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
@@ -255,6 +257,35 @@ class ReplayServiceLeagueTest {
             }
         }
         return sb.toString();
+    }
+
+    @Test
+    void leagueEachExportEnrichesPotentialDamage() throws Exception {
+        // 纯 CW each 必须与 preview/standard export 同一 authoritative enrichment：
+        // PotentialDamage.apply 后 潜在伤害 = 实际伤害 + supplement（fixture 无 killVictims → = damageDealt；
+        // 未 enrich 时默认 0——证明同步 pure-League each 不再缺失 Potential Damage）。
+        final Battle battle = LeagueTestReplays.sevenVsSeven(1);
+        battle.arenaId = "111";
+        final ReplayService service = leagueService(battle);
+        final ExportResult result = service.export(new MockMultipartFile[]{
+                file("a.wotbreplay", LeagueTestReplays.replayBytes(battle, 2))}, "each");
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(result.data()))) {
+            final ZipEntry entry = zip.getNextEntry();
+            assertNotNull(entry);
+            try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(zip.readAllBytes()))) {
+                final Sheet players = wb.getSheet("玩家数据");
+                final Row header = players.getRow(0);
+                int potentialCol = -1;
+                for (int c = 0; c < header.getLastCellNum(); c++) {
+                    if ("潜在伤害".equals(header.getCell(c).getStringCellValue())) {
+                        potentialCol = c;
+                    }
+                }
+                assertTrue(potentialCol >= 0, "玩家数据必须含 潜在伤害 列");
+                assertTrue(players.getRow(1).getCell(potentialCol).getNumericCellValue() > 0,
+                        "潜在伤害必须被 PotentialDamage enrichment 填充（>0），不得是未 enrich 默认值");
+            }
+        }
     }
 
     @Test

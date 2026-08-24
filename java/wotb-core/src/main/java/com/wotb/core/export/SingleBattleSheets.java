@@ -74,9 +74,24 @@ final class SingleBattleSheets {
     }
 
     private static void players(final ExcelStyles styles, final Battle b, final Tankopedia tp) {
+        writePlayers(styles, b, tp, null, null);
+    }
+
+    /**
+     * 玩家数据 sheet：canonical {@link Columns#PLAYER}（Standard/League 单场共用的唯一
+     * Replay 字段 schema 源）+ 可选 League 专属扩展列（表头 + 行尾回调）。
+     * League 只追加自身 extension，绝不复制 canonical 字段列表。
+     */
+    static void writePlayers(final ExcelStyles styles, final Battle b, final Tankopedia tp,
+                             final List<String[]> extraHeader, final PlayerRowTail tail) {
         final Sheet ws = styles.workbook().createSheet("玩家数据");
         final List<Columns.Column> columns = Columns.PLAYER;
-        styles.writeHeader(ws, columns.stream().map(c -> new String[]{c.title(), String.valueOf(c.xlsx())}).toList());
+        final List<String[]> header = new ArrayList<>(columns.stream()
+                .map(c -> new String[]{c.title(), String.valueOf(c.xlsx())}).toList());
+        if (extraHeader != null) {
+            header.addAll(extraHeader);
+        }
+        styles.writeHeader(ws, header);
 
         final List<PlayerResult> players = Players.sorted(b.players);
         final Function<Long, String> platoon = Players.platoonLabeler();
@@ -88,16 +103,26 @@ final class SingleBattleSheets {
         for (final PlayerResult p : players) {
             final Row row = ws.createRow(rIdx++);
             final CellStyle fill = p.team == 1 ? styles.team1() : styles.team2();
-            for (int c = 0; c < columns.size(); c++) {
-                final Columns.Column column = columns.get(c);
+            int c = 0;
+            for (final Columns.Column column : columns) {
                 final Object val = "survival_time".equals(column.key())
                         ? ExcelStyles.duration((Double) column.get().apply(p))
                         : column.get().apply(p);
                 styles.setCell(row.createCell(c), val, fill, column.key());
+                c++;
+            }
+            if (tail != null) {
+                tail.accept(row, p, fill, c);
             }
         }
         ws.createFreezePane(1, 1);
-        ws.setAutoFilter(new CellRangeAddress(0, players.size(), 0, columns.size() - 1));
+        ws.setAutoFilter(new CellRangeAddress(0, players.size(), 0, header.size() - 1));
+    }
+
+    /** 玩家数据行扩展回调（在 canonical 列之后追加 League 专属单元格；startCol = canonical 列数）。 */
+    @FunctionalInterface
+    interface PlayerRowTail {
+        void accept(Row row, PlayerResult p, CellStyle fill, int startCol);
     }
 
     private static void raw(final ExcelStyles styles, final Battle b) {

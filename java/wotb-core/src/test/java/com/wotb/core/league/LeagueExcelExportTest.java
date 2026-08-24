@@ -1,5 +1,6 @@
 package com.wotb.core.league;
 
+import com.wotb.core.Columns;
 import com.wotb.core.export.ExcelExporter;
 import com.wotb.core.model.Battle;
 import com.wotb.core.ref.Tankopedia;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -107,14 +109,103 @@ class LeagueExcelExportTest {
                 List.of(), batch, Tankopedia.load(), out);
 
         try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()))) {
-            assertEquals(4, wb.getNumberOfSheets());
-            assertEquals("选手汇总", wb.getSheetName(0));
-            assertEquals("战队汇总", wb.getSheetName(1));
-            assertEquals("每场明细", wb.getSheetName(2));
-            assertEquals("战斗列表", wb.getSheetName(3));
+            // 完整 Replay 汇总（Replay 前缀，全部解析场次）+ League Rating 专属表
+            assertEquals(7, wb.getNumberOfSheets());
+            assertEquals("Replay 汇总", wb.getSheetName(0));
+            assertEquals("Replay 明细", wb.getSheetName(1));
+            assertEquals("Replay 战斗列表", wb.getSheetName(2));
+            assertEquals("选手汇总", wb.getSheetName(3));
+            assertEquals("战队汇总", wb.getSheetName(4));
+            assertEquals("每场明细", wb.getSheetName(5));
+            assertEquals("战斗列表", wb.getSheetName(6));
             assertNotNull(wb.getSheet("选手汇总").getRow(1), "选手汇总应有数据行");
             assertNotNull(wb.getSheet("战队汇总").getRow(1), "战队汇总应有数据行");
+            assertNotNull(wb.getSheet("Replay 汇总").getRow(1), "Replay 汇总应有数据行");
         }
+    }
+
+    @Test
+    void singleLeagueWorkbookContainsFullCanonicalPlayerSchema() throws Exception {
+        final Battle battle = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        final LeagueRatingResult result = LeagueRatingCalculator.calculate(battle);
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ExcelExporter.writeSingleLeague(battle, result, Tankopedia.load(), out);
+
+        try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()))) {
+            final Row header = wb.getSheet("玩家数据").getRow(0);
+            final List<String> headers = new ArrayList<>();
+            for (int c = 0; c < header.getLastCellNum(); c++) {
+                headers.add(header.getCell(c).getStringCellValue());
+            }
+            // canonical Columns.PLAYER 全部字段必须存在（单一 schema 源，Rated 不得丢 Standard 字段）
+            for (final Columns.Column col : Columns.PLAYER) {
+                assertTrue(headers.contains(col.title()),
+                        "League 单场玩家数据必须含 canonical 字段：" + col.title() + "，实际表头：" + headers);
+            }
+            // League 专属扩展
+            assertTrue(headers.contains("占点得分"), "必须含 占点得分");
+            assertTrue(headers.contains("占领分"), "必须含 占领分");
+            assertTrue(headers.contains("伤害评分"), "必须含七维评分列");
+            assertTrue(headers.contains("总Rating"), "必须含总Rating");
+            // 证明此前 League subset 缺失的字段现在存在
+            for (final String missing : List.of("潜在伤害", "补增伤害", "潜在明细", "等级", "坦克类型",
+                    "国家", "炮伤", "被命中", "被击穿", "击伤", "排", "军阶", "车辆ID", "账号ID")) {
+                assertTrue(headers.contains(missing), "此前缺失字段必须存在：" + missing);
+            }
+        }
+    }
+
+    @Test
+    void aggregateLeagueWorkbookContainsFullReplayFactsAndSeparatesRatedSample() throws Exception {
+        // 1 rated（arena-1）+ 1 Rating-ineligible（arena-2，同 14 名玩家）：
+        // Replay 汇总 battles=2（全部解析场次样本）；League 选手汇总 rated_battles=1（仅 eligible 样本）
+        final Battle b1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        b1.arenaId = "arena-1";
+        final Battle b2 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        b2.arenaId = "arena-2";
+        b2.settlementAccountsCoveredByRoster = false;
+        final LeagueRatingResult r1 = LeagueRatingCalculator.calculate(b1);
+        final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(
+                List.of(b1), List.of(r1),
+                List.of(new LeagueFailure("two.wotbreplay", "arena-2", LeagueFailure.Code.ROSTER_INCOMPLETE)));
+
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ExcelExporter.writeAggregateLeague(List.of(b1, b2), List.of("one.wotbreplay", "two.wotbreplay"),
+                List.of(), batch, Tankopedia.load(), out);
+
+        try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()))) {
+            // Replay 汇总：canonical aggregate facts（含此前缺失的获取点数 + Performance Metrics）
+            final Sheet replay = wb.getSheet("Replay 汇总");
+            final String replayHeader = headerText(replay);
+            for (final String col : List.of("场次", "获取点数总计", "获取点数/场", "贡献度%", "KAST%", "Impact%",
+                    "潜在伤害", "总伤害", "总射击次数", "总命中次数", "总击穿次数")) {
+                assertTrue(replayHeader.contains(col), "Replay 汇总必须含 " + col + "，实际：" + replayHeader);
+            }
+            // 场次列（第 3 列）数据 = 2：全部解析场次样本（含 Rating-ineligible）
+            assertEquals(2.0, replay.getRow(1).getCell(2).getNumericCellValue(), 1e-9,
+                    "Replay aggregate 样本 = 全部解析场次（2），Rating-ineligible 不得从 aggregate 消失");
+            // Replay 明细：覆盖全部 2 场玩家（28 行数据行；ineligible 场 Replay facts 不丢）
+            final Sheet replayDetail = wb.getSheet("Replay 明细");
+            assertTrue(replayDetail.getLastRowNum() >= 28,
+                    "Replay 明细必须覆盖全部解析场次（28 行玩家），实际 " + replayDetail.getLastRowNum());
+            // League 选手汇总：rated 样本 battles=1（battles != rated_battles）
+            final Sheet leaguePlayers = wb.getSheet("选手汇总");
+            assertEquals(1.0, leaguePlayers.getRow(1).getCell(2).getNumericCellValue(), 1e-9,
+                    "League rated 样本 = 1（仅 eligible 场次），与实际 battles=2 分离");
+            // 战斗列表（League）仍列出 ineligible 场状态
+            final String list = sheetTextAll(wb.getSheet("战斗列表"));
+            assertTrue(list.contains("arena-2"), "战斗列表必须列出全部解析 battle（含 ineligible）");
+            assertTrue(list.contains("名册不完整"), "ineligible 场状态必须显示真实 failure 文案");
+        }
+    }
+
+    private static String headerText(final Sheet sheet) {
+        final StringBuilder sb = new StringBuilder();
+        final Row header = sheet.getRow(0);
+        for (int c = 0; c < header.getLastCellNum(); c++) {
+            sb.append(header.getCell(c).getStringCellValue()).append("|");
+        }
+        return sb.toString();
     }
 
     @Test
