@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { nextTick, ref, computed } from 'vue'
+import { nextTick, ref, computed, toRaw } from 'vue'
 import ReplayPage from './ReplayPage.vue'
 
 const i18n = vi.hoisted(() => ({
@@ -998,6 +998,143 @@ describe('ReplayPage 单页 Workspace（解析结果 / AI 复盘 / 战局回放 
     expect(panelDisplay(wrapper, 'workspace-playback-panel')).toBe('none')
   })
 })
+describe('ReplayPage Workspace target resolution（唯一文件自动定位 / 多文件禁 fallback / 登录门禁统一）', () => {
+  function makeBattleResp(sourceName) {
+    return {
+      aggregate: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }],
+      battles: [
+        { mapName: 'Lagoon', sourceName, players: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }] }
+      ],
+      duplicates: [], failures: [],
+      playerColumns: [{ key: 'nickname', label: '昵称' }],
+      aggregateColumns: [{ key: 'nickname', label: '昵称' }]
+    }
+  }
+
+  function mountWs(files, resp = null, auth = { authenticated: true, login: vi.fn() }, activeTab = 'aggregate') {
+    state.init = { activeTab, resp, error: '', loading: false, locale: 'en', files }
+    return mountPage({ auth })
+  }
+
+  function aiPanel(wrapper) {
+    return wrapper.findComponent({ name: 'AiReviewPanel' })
+  }
+
+  function playbackPanel(wrapper) {
+    return wrapper.findComponent({ name: 'BattlePlaybackPanel' })
+  }
+
+  it('Case A: 唯一文件直接点击「AI 复盘」Tab → 自动以该文件为 target（复用原始 File reference，不重新上传/解析）', async () => {
+    const f = new File(['r'], 'single.wotbreplay')
+    const wrapper = mountWs([f])
+    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
+    await flushPromises()
+    expect(panelDisplay(wrapper, 'workspace-ai-panel')).not.toBe('none')
+    expect(toRaw(aiPanel(wrapper).props('file'))).toBe(f)
+  })
+
+  it('Case B: 唯一文件直接点击「战局回放」Tab → 自动以该文件为 target，autoLoad 语义正确', async () => {
+    const f = new File(['r'], 'single.wotbreplay')
+    const wrapper = mountWs([f])
+    await wrapper.find('[data-testid="workspace-playback-tab"]').trigger('click')
+    await flushPromises()
+    expect(panelDisplay(wrapper, 'workspace-playback-panel')).not.toBe('none')
+    expect(toRaw(playbackPanel(wrapper).props('file'))).toBe(f)
+    expect(playbackPanel(wrapper).props('autoLoad')).toBe(true)
+  })
+
+  it('Case C: 多文件未显式选择 target → 直接点击 AI/playback Tab 不 fallback 第一场（保持空态）', async () => {
+    const a = new File(['r'], 'a.wotbreplay')
+    const b = new File(['r'], 'b.wotbreplay')
+    const wrapper = mountWs([a, b])
+    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
+    await flushPromises()
+    expect(aiPanel(wrapper).props('file')).toBeNull()
+    expect(aiPanel(wrapper).props('file')).not.toBe(a)
+    await wrapper.find('[data-testid="workspace-playback-tab"]').trigger('click')
+    await flushPromises()
+    expect(playbackPanel(wrapper).props('file')).toBeNull()
+    expect(playbackPanel(wrapper).props('file')).not.toBe(a)
+  })
+
+  it('Case D: 显式选择 b 后 AI → results → AI：target 仍是 b，面板不销毁', async () => {
+    const a = new File(['r'], 'a.wotbreplay')
+    const b = new File(['r'], 'b.wotbreplay')
+    const wrapper = mountWs([a, b], makeBattleResp('b.wotbreplay'), { authenticated: true, login: vi.fn() }, 'b0')
+    await wrapper.find('[data-testid="battle-ai-btn"]').trigger('click')
+    await flushPromises()
+    expect(toRaw(aiPanel(wrapper).props('file'))).toBe(b)
+    const vmBefore = aiPanel(wrapper).vm
+    // AI → results → AI：workspaceFile 不被清空，v-show 不销毁组件
+    await wrapper.find('[data-testid="workspace-results-tab"]').trigger('click')
+    await flushPromises()
+    expect(panelDisplay(wrapper, 'workspace-ai-panel')).toBe('none')
+    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
+    await flushPromises()
+    expect(toRaw(aiPanel(wrapper).props('file'))).toBe(b)
+    expect(aiPanel(wrapper).vm).toBe(vmBefore)
+  })
+
+  it('Case E: 显式 target=b 后删除 b → workspaceFile 失效为空态，不自动切到 a', async () => {
+    const a = new File(['r'], 'a.wotbreplay')
+    const b = new File(['r'], 'b.wotbreplay')
+    const wrapper = mountWs([a, b], makeBattleResp('b.wotbreplay'), { authenticated: true, login: vi.fn() }, 'b0')
+    await wrapper.find('[data-testid="battle-ai-btn"]').trigger('click')
+    await flushPromises()
+    expect(toRaw(aiPanel(wrapper).props('file'))).toBe(b)
+    // 删除 b：真实 files ref 变化触发 watch(files) 失效 target，不得改指 a
+    wrapper.vm.files = [a]
+    await flushPromises()
+    expect(aiPanel(wrapper).props('file')).toBeNull()
+    expect(aiPanel(wrapper).props('file')).not.toBe(a)
+  })
+
+  it('Case F: 唯一文件 AI → playback → AI：同一 File reference，AI 面板不因切 Tab 重建', async () => {
+    const f = new File(['r'], 'single.wotbreplay')
+    const wrapper = mountWs([f])
+    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
+    await flushPromises()
+    expect(toRaw(aiPanel(wrapper).props('file'))).toBe(f)
+    const vmBefore = aiPanel(wrapper).vm
+    await wrapper.find('[data-testid="workspace-playback-tab"]').trigger('click')
+    await flushPromises()
+    expect(toRaw(playbackPanel(wrapper).props('file'))).toBe(f)
+    expect(panelDisplay(wrapper, 'workspace-ai-panel')).toBe('none') // v-show 隐藏而非销毁
+    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
+    await flushPromises()
+    expect(toRaw(aiPanel(wrapper).props('file'))).toBe(f)
+    expect(aiPanel(wrapper).vm).toBe(vmBefore) // 未重建
+  })
+
+  it('唯一文件未登录直接点击「AI 复盘」Tab → 与快捷入口统一登录门禁（confirm + login，不切换、不设置 target）', async () => {
+    const f = new File(['r'], 'single.wotbreplay')
+    const login = vi.fn()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const wrapper = mountWs([f], null, { authenticated: false, login })
+    await wrapper.find('[data-testid="workspace-ai-tab"]').trigger('click')
+    await flushPromises()
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(login).toHaveBeenCalledWith('replay')
+    expect(panelDisplay(wrapper, 'workspace-ai-panel')).toBe('none') // 不切换
+    expect(aiPanel(wrapper).props('file')).toBeNull() // 不设置 target
+    confirmSpy.mockRestore()
+  })
+
+  it('多文件未登录直接点击「战局回放」Tab → 无 target 保持空态，不触发登录门禁', async () => {
+    const a = new File(['r'], 'a.wotbreplay')
+    const b = new File(['r'], 'b.wotbreplay')
+    const login = vi.fn()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const wrapper = mountWs([a, b], null, { authenticated: false, login })
+    await wrapper.find('[data-testid="workspace-playback-tab"]').trigger('click')
+    await flushPromises()
+    expect(confirmSpy).not.toHaveBeenCalled() // 无目标无需门禁（与快捷按钮禁用态一致）
+    expect(login).not.toHaveBeenCalled()
+    expect(playbackPanel(wrapper).props('file')).toBeNull()
+    confirmSpy.mockRestore()
+  })
+})
+
 describe('ReplayPage League Rating', () => {
   beforeEach(() => {
     state.clear()
