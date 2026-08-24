@@ -58,7 +58,7 @@ import java.util.Set;
  * <ul>
  *   <li>user + vehicle 最多一个 active PENDING / CURRENT（V18 partial unique index）</li>
  *   <li>APPROVE/REJECT/CANCEL 只能从 PENDING 成功一次（{@link #findByIdForUpdate} 行锁 + 状态复核）</li>
- *   <li>APPROVE 事务内重新读取 CURRENT 并按 approvedAverageDamage 严格比较</li>
+ *   <li>APPROVE 只使用创建时冻结的 MANUAL 申报值或 WG 官方快照，并按其场均严格比较</li>
  *   <li>身份/成绩快照创建瞬间冻结；排行榜只读 approved*</li>
  * </ul>
  *
@@ -80,7 +80,7 @@ public class HundredBattleSubmissionService {
     private static final String VERIFICATION_MANUAL = "MANUAL";
     private static final String VERIFICATION_WARGAMING = "WARGAMING_API";
 
-    /** 「百场」资格最低场次：管理员最终 approvedBattleCount 必须 ≥ 100。 */
+    /** 「百场」资格最低场次：写入排行榜的冻结 battleCount 必须 ≥ 100。 */
     private static final int MIN_APPROVED_BATTLE_COUNT = 100;
 
     /** 拒绝原因分类（docs/current-plan.md §32）。 */
@@ -499,27 +499,24 @@ public class HundredBattleSubmissionService {
     }
 
     /**
-     * APPROVE：事务内行锁重新读取 CURRENT，按管理员最终 approvedAverageDamage 严格比较；
+     * APPROVE：事务内行锁重新读取 CURRENT，使用创建时冻结的成绩严格比较；
      * 旧 CURRENT → SUPERSEDED，新 submission → CURRENT。与并发 CANCEL/REJECT/APPROVE
      * 由 submission 行锁 + 状态复核串行化（仅一次 PENDING → terminal 成功）。
      */
     @Transactional
     public HundredSubmissionSummaryDto approve(final String adminUserId,
-                                               final long submissionId,
-                                               final int approvedAverageDamage,
-                                               final int approvedBattleCount) {
-        if (approvedAverageDamage <= 0 || approvedBattleCount <= 0) {
-            throw new IllegalArgumentException("HUNDRED_INVALID_APPROVED");
-        }
-        // 「百场」资格：管理员最终 approvedBattleCount 必须 ≥ 100（backend authoritative；前端仅 UX）。
-        if (approvedBattleCount < MIN_APPROVED_BATTLE_COUNT) {
-            throw new IllegalArgumentException("HUNDRED_APPROVED_BATTLE_COUNT_TOO_LOW");
-        }
+                                               final long submissionId) {
         final HundredBattleSubmission submission = repository.findByIdForUpdate(submissionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "HUNDRED_SUBMISSION_NOT_FOUND"));
         requirePending(submission);
 
         requireApprovalEvidence(submission);
+        final boolean wargamingSubmission = VERIFICATION_WARGAMING.equals(submission.getVerificationSource());
+        final int approvedAverageDamage = wargamingSubmission
+                ? submission.getOfficialAverageDamage() : submission.getClaimedAverageDamage();
+        final int approvedBattleCount = wargamingSubmission
+                ? Math.toIntExact(submission.getOfficialTankBattleCount()) : submission.getClaimedBattleCount();
+        requireApprovedValues(approvedAverageDamage, approvedBattleCount);
         final HundredBattleSubmission saved = promoteToCurrent(
                 submission, approvedAverageDamage, approvedBattleCount, adminUserId,
                 OffsetDateTime.now(), "HUNDRED_APPROVE_STALE", true);
@@ -597,6 +594,16 @@ public class HundredBattleSubmissionService {
     private void requireNoPending(final String userId, final long vehicleId) {
         if (repository.existsByUserKeycloakIdAndVehicleIdAndStatus(userId, vehicleId, "PENDING")) {
             throw new IllegalStateException("HUNDRED_PENDING_EXISTS");
+        }
+    }
+
+    /** 审批成绩必须是提交时的冻结值，且两来源都先经过各自的证据门禁。 */
+    private static void requireApprovedValues(final int approvedAverageDamage, final int approvedBattleCount) {
+        if (approvedAverageDamage <= 0 || approvedBattleCount <= 0) {
+            throw new IllegalArgumentException("HUNDRED_INVALID_APPROVED");
+        }
+        if (approvedBattleCount < MIN_APPROVED_BATTLE_COUNT) {
+            throw new IllegalArgumentException("HUNDRED_APPROVED_BATTLE_COUNT_TOO_LOW");
         }
     }
 

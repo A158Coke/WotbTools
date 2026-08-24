@@ -348,11 +348,8 @@ describe('HoFAdminPage', () => {
     expect(items[1].classes()).toContain('val-bad')
     expect(items[2].classes()).toContain('val-ok')
     expect(items[3].classes()).toContain('val-ok')
-    // 管理员确认输入预填申报值
-    const inputs = modal.findAll('.hundred-inputs input')
-    expect(inputs.length).toBe(2)
-    expect(inputs[0].element.value).toBe('4200')
-    expect(inputs[1].element.value).toBe('100')
+    // 管理员只能改变状态，页面不再提供改分输入框。
+    expect(modal.findAll('.hundred-inputs input')).toHaveLength(0)
   })
 
   it('approve flow confirms then calls approve API and refreshes list', async () => {
@@ -378,15 +375,12 @@ describe('HoFAdminPage', () => {
     // 确认后调用 approve 并刷新列表
     await approveBtn().trigger('click')
     await flushPromises()
-    expect(hofAdminApi.hofAdminHundredApprove).toHaveBeenCalledWith(11, {
-      approvedAverageDamage: 4200,
-      approvedBattleCount: 100
-    })
+    expect(hofAdminApi.hofAdminHundredApprove).toHaveBeenCalledWith(11)
     expect(hofAdminApi.hofAdminHundredList).toHaveBeenCalledTimes(2)
     expect(wrapper.find('.hof-review-modal').exists()).toBe(false)
   })
 
-  it('WG PENDING shows official snapshot, skips replay evidence, and approves from official values', async () => {
+  it('WG PENDING shows official snapshot, skips replay evidence, and approves without score fields', async () => {
     hofAdminApi.hofAdminHundredList.mockResolvedValue({
       items: [wargamingPendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1
     })
@@ -410,19 +404,14 @@ describe('HoFAdminPage', () => {
     expect(modal.find('.replay-evidence-list').exists(), 'no replay evidence list').toBe(false)
     expect(modal.find('.val-list').exists(), 'no replay validation list').toBe(false)
 
-    const inputs = modal.findAll('.hundred-inputs input')
-    expect(inputs[0].element.value).toBe('4101')
-    expect(inputs[1].element.value).toBe('188')
+    expect(modal.findAll('.hundred-inputs input')).toHaveLength(0)
     const approve = () => wrapper.findAll('.hof-review-modal button')
       .find(button => button.text() === 'hundredAdmin.approve')
     expect(approve().attributes('disabled')).toBeUndefined()
     await approve().trigger('click')
     await approve().trigger('click')
     await flushPromises()
-    expect(hofAdminApi.hofAdminHundredApprove).toHaveBeenCalledWith(14, {
-      approvedAverageDamage: 4101,
-      approvedBattleCount: 188,
-    })
+    expect(hofAdminApi.hofAdminHundredApprove).toHaveBeenCalledWith(14)
   })
 
   it('WG PENDING with an incomplete or inconsistent official snapshot disables approval without legacy evidence warning', async () => {
@@ -549,28 +538,6 @@ describe('HoFAdminPage', () => {
     expect(modal.findAll('button').map(button => button.text())).not.toContain('hundredAdmin.approve')
     expect(modal.findAll('button').map(button => button.text())).not.toContain('hundredAdmin.reject')
     expect(modal.findAll('button').map(button => button.text())).not.toContain('hundredAdmin.delete')
-  })
-
-  it('approve rejects battle count below 100 with local UX hint (backend still authoritative)', async () => {
-    hofAdminApi.hofAdminHundredList.mockResolvedValue({
-      items: [pendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1
-    })
-    hofAdminApi.hofAdminHundredDetail.mockResolvedValue(pendingDetail)
-    hofAdminApi.hofAdminHundredReplays.mockResolvedValue(replayEvidence) // 完整 5 evidence → approve 可用
-    const wrapper = mountPage()
-    await flushPromises()
-    await switchToHundred(wrapper)
-    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
-    await flushPromises()
-
-    const inputs = wrapper.findAll('.hundred-inputs input')
-    await inputs[1].setValue(99)
-    const approveBtn = () => wrapper.findAll('.hof-review-modal button').find(b => b.text() === 'hundredAdmin.approve')
-    await approveBtn().trigger('click')
-    await approveBtn().trigger('click')
-    await flushPromises()
-    expect(hofAdminApi.hofAdminHundredApprove).not.toHaveBeenCalled()
-    expect(wrapper.find('.hof-review-modal').text()).toContain('hundredAdmin.approvedBattlesMin')
   })
 
   const replayEvidence = [

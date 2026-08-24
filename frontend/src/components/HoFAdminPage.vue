@@ -86,8 +86,6 @@ const reviewTarget = ref(null)
 const reviewDetail = ref(null)
 const reviewLoading = ref(false)
 const reviewPhase = ref('view') // view | approve-confirm | reject-form | delete-form
-const approveDamage = ref('')
-const approveBattles = ref('')
 const rejectReason = ref('')
 const rejectReasonText = ref('')
 const currentDeleteReason = ref('')
@@ -382,8 +380,6 @@ async function openReview(row) {
   reviewPhase.value = 'view'
   actionMsg.value = ''
   actionBusy.value = false
-  approveDamage.value = String(row.claimedAverageDamage ?? '')
-  approveBattles.value = String(row.claimedBattleCount ?? '')
   rejectReason.value = ''
   rejectReasonText.value = ''
   currentDeleteReason.value = ''
@@ -396,10 +392,6 @@ async function openReview(row) {
     const detail = await api.hofAdminHundredDetail(row.id)
     if (g !== reviewGen) return
     reviewDetail.value = detail
-    approveDamage.value = String(detail.verificationSource === WARGAMING_VERIFICATION_SOURCE
-      ? detail.officialAverageDamage ?? '' : detail.claimedAverageDamage ?? '')
-    approveBattles.value = String(detail.verificationSource === WARGAMING_VERIFICATION_SOURCE
-      ? detail.officialTankBattleCount ?? '' : detail.claimedBattleCount ?? '')
     if (detail.status === 'PENDING' && detail.verificationSource !== WARGAMING_VERIFICATION_SOURCE) {
       loadEvidence(row.id)
     }
@@ -510,24 +502,10 @@ function askReject() {
 
 async function confirmApprove() {
   if (actionBusy.value || !reviewTarget.value) return
-  const dmg = Number(approveDamage.value)
-  const battles = Number(approveBattles.value)
-  if (!Number.isInteger(dmg) || dmg <= 0 || !Number.isInteger(battles) || battles <= 0) {
-    actionMsg.value = apiErrorLabel(t, te, { code: 'HUNDRED_INVALID_APPROVED' })
-    return
-  }
-  // 百场资格前端 UX 校验（backend 仍为 authoritative boundary）
-  if (battles < 100) {
-    actionMsg.value = t('hundredAdmin.approvedBattlesMin')
-    return
-  }
   actionBusy.value = true
   actionMsg.value = ''
   try {
-    await api.hofAdminHundredApprove(reviewTarget.value.id, {
-      approvedAverageDamage: dmg,
-      approvedBattleCount: battles,
-    })
+    await api.hofAdminHundredApprove(reviewTarget.value.id)
   } catch (e) {
     actionMsg.value = apiErrorLabel(t, te, e)
     return
@@ -913,18 +891,6 @@ function battleTypeLabel(tp) {
               </table>
             </div>
 
-            <div v-if="reviewDetail.status === 'PENDING'" class="hundred-review-section">
-              <div class="hundred-review-label">{{ $t('hundredAdmin.approved') }}</div>
-              <div class="hundred-inputs">
-                <label>{{ $t('hundredAdmin.approvedDamage') }}
-                  <input v-model.number="approveDamage" type="number" min="1" step="1" />
-                </label>
-                <label>{{ $t('hundredAdmin.approvedBattles') }}
-                  <input v-model.number="approveBattles" type="number" min="100" step="1" />
-                </label>
-              </div>
-            </div>
-
             <div v-if="reviewDetail.status === 'PENDING' && !isWargamingReview" class="hundred-review-section">
               <div class="hundred-review-label">{{ $t('hundredAdmin.evidence') }}</div>
               <div class="hundred-proof-row">
@@ -1128,11 +1094,6 @@ function battleTypeLabel(tp) {
 .hundred-review-label { font-weight: 600; color: var(--text-muted); font-size: .85rem; margin-bottom: 6px; }
 .hundred-wg-snapshot { padding: 10px; border: 1px solid var(--border-ghost); border-radius: 8px; background: var(--bg-card2); }
 .hundred-wg-snapshot .hof-delete-table { margin: 4px 0 0; }
-.hundred-inputs { display: flex; flex-wrap: wrap; gap: 14px; }
-.hundred-inputs label { display: flex; align-items: center; gap: 6px; font-size: .85rem; color: var(--text-label); }
-.hundred-inputs input {
-  width: 110px; border: 1px solid var(--border-ghost); background: var(--bg-card2); color: var(--text-label);
-  padding: 5px 8px; border-radius: 7px; font-size: 13px; font-family: inherit; }
 .hundred-proof { display: block; max-width: 100%; max-height: 320px; border: 1px solid var(--border-ghost); border-radius: 8px; cursor: zoom-in; }
 .hundred-proof-empty { color: var(--text-muted); }
 .hundred-proof-row { display: flex; align-items: flex-start; gap: 10px; }

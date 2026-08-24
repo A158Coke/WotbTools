@@ -113,7 +113,7 @@ class HundredBattleSubmissionIntegrationTest {
         return repository.findByUserKeycloakIdAndStatusInOrderBySubmittedAtDesc("kc-user", List.of("CURRENT")).size();
     }
 
-    /** 场景 A：existing CURRENT(4000) + PENDING(4200) → approve(4200) 成功 → 恰好一个 CURRENT、旧行 SUPERSEDED。 */
+    /** 场景 A：existing CURRENT(4000) + PENDING(4200) → approve 成功 → 恰好一个 CURRENT、旧行 SUPERSEDED。 */
     @Test
     void approveReplacesCurrentWithSingleCurrentRow() throws Exception {
         final HundredBattleSubmission current = insertRow("CURRENT", 4000, 150);
@@ -122,7 +122,7 @@ class HundredBattleSubmissionIntegrationTest {
         repository.saveAndFlush(pending);
         attachCompleteEvidence(pending.getId());
 
-        service.approve("admin-sub", pending.getId(), 4200, 150);
+        service.approve("admin-sub", pending.getId());
 
         final HundredBattleSubmission oldRow = repository.findById(current.getId()).orElseThrow();
         final HundredBattleSubmission newRow = repository.findById(pending.getId()).orElseThrow();
@@ -149,7 +149,7 @@ class HundredBattleSubmissionIntegrationTest {
         attachCompleteEvidence(pending.getId());
 
         assertThrows(DataIntegrityViolationException.class,
-                () -> service.approve("x".repeat(200), pending.getId(), 4200, 150));
+                () -> service.approve("x".repeat(200), pending.getId()));
 
         final HundredBattleSubmission oldRow = repository.findById(current.getId()).orElseThrow();
         final HundredBattleSubmission pendingRow = repository.findById(pending.getId()).orElseThrow();
@@ -245,7 +245,7 @@ class HundredBattleSubmissionIntegrationTest {
         repository.saveAndFlush(s);
 
         final IllegalStateException ex = assertThrows(IllegalStateException.class,
-                () -> service.approve("admin-sub", s.getId(), 4200, 150));
+                () -> service.approve("admin-sub", s.getId()));
         assertEquals("HUNDRED_INCOMPLETE_REVIEW_EVIDENCE", ex.getMessage());
         assertEquals("PENDING", repository.findById(s.getId()).orElseThrow().getStatus());
         assertEquals(0, currentCount(), "approve 失败不得产生 CURRENT");
@@ -273,7 +273,7 @@ class HundredBattleSubmissionIntegrationTest {
         evidenceService.attach(s.getId(), replays);
         assertEquals(5, evidenceRepository.findBySubmissionIdOrderBySlotAsc(s.getId()).size());
 
-        service.approve("admin-sub", s.getId(), 4200, 150);
+        service.approve("admin-sub", s.getId());
 
         final HundredBattleSubmission approved = repository.findById(s.getId()).orElseThrow();
         assertEquals("CURRENT", approved.getStatus());
