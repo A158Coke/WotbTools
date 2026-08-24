@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static com.wotb.core.league.LeagueTestBattles.defaultSevenVsSeven;
 
-/** League Rating 八维度公式 / 存活 / 最终分 / MVP（plan §8-§10、§21.1）。 */
+/** League Rating 七维度公式 / 存活 / 最终分 / MVP（plan §8-§10、§21.1）。 */
 class LeagueRatingCalculatorTest {
 
     /** 14 名玩家全部同统计（T=0.5、G=0.5 可精确断言）。 */
@@ -43,21 +43,19 @@ class LeagueRatingCalculatorTest {
     void identicalStatsProduceExpectedDimensionScores() {
         final LeagueRatingResult r = LeagueRatingCalculator.calculate(identicalBattle(1, false));
         final PlayerLeagueRating p = r.byAccount(1001);
-        // T=0.5、G=0.5 → damage=400×0.5=200 / assist=50 / kill=50 / blocked=25 / exchange=75 / objective=25
+        // T=0.5、G=0.5 → damage=400×0.5=200 / assist=50 / kill=50 / blocked=25 / exchange=75
         assertEquals(200, p.damageScore(), 1e-6);
         assertEquals(50, p.assistScore(), 1e-6);
         assertEquals(50, p.killScore(), 1e-6);
         assertEquals(25, p.blockedScore(), 1e-6);
         assertEquals(75, p.exchangeScore(), 1e-6);
-        assertEquals(25, p.objectiveScore(), 1e-6);
         // 射击：participation=1，conf=0.3×wilson(8,10)+0.7×wilson(6,8)
         final double conf = 0.3 * LeagueRatingNormalizer.wilsonLowerBound(8, 10)
                 + 0.7 * LeagueRatingNormalizer.wilsonLowerBound(6, 8);
-        assertEquals(50 * Math.min(1, conf / 0.70), p.shootingScore(), 1e-6);
+        assertEquals(100 * Math.min(1, conf / 0.70), p.shootingScore(), 1e-6);
         // 全部维度在 [0, max]
         assertTrue(p.damageScore() <= PlayerLeagueRating.MAX_DAMAGE);
         assertTrue(p.shootingScore() <= PlayerLeagueRating.MAX_SHOOTING);
-        assertTrue(p.objectiveScore() <= PlayerLeagueRating.MAX_OBJECTIVE);
     }
 
     @Test
@@ -93,7 +91,6 @@ class LeagueRatingCalculatorTest {
             assertEquals(0, p.exchangeScore(), 1e-9);
             assertEquals(0, p.blockedScore(), 1e-9);
             assertEquals(0, p.shootingScore(), 1e-9);
-            assertEquals(0, p.objectiveScore(), 1e-9);
             assertEquals(0, p.preliminary(), 1e-9);
         }
     }
@@ -267,11 +264,11 @@ class LeagueRatingCalculatorTest {
     void mvpComparatorPrefersWinnerOnEqualScore() {
         // 同 finalRating：胜方优先（比较器直接测试）
         final PlayerLeagueRating loser = new PlayerLeagueRating(
-                2001, "L", "", 2, 0, 0, 0, 0, 0, 0, 0, 0,
+                2001, "L", "", 2, 0, 0, 0, 0, 0, 0, 0,
                 0, 100, 100, LeagueRatingCalculator.STATE_TRADE,
                 500, 0, 1, false, false, false);
         final PlayerLeagueRating winner = new PlayerLeagueRating(
-                1001, "W", "", 1, 0, 0, 0, 0, 0, 0, 0, 0,
+                1001, "W", "", 1, 0, 0, 0, 0, 0, 0, 0,
                 0, 95, 100, LeagueRatingCalculator.STATE_WIN_SURVIVED,
                 300, 0, 1, true, false, false);
         final var cmp = LeagueRatingCalculator.mvpComparator(1);
@@ -281,11 +278,11 @@ class LeagueRatingCalculatorTest {
     @Test
     void mvpComparatorBreaksTieByDamage() {
         final PlayerLeagueRating a = new PlayerLeagueRating(
-                1001, "A", "", 1, 0, 0, 0, 0, 0, 0, 0, 0,
+                1001, "A", "", 1, 0, 0, 0, 0, 0, 0, 0,
                 0, 100, 105, LeagueRatingCalculator.STATE_WIN_SURVIVED,
                 800, 0, 1, true, false, false);
         final PlayerLeagueRating b = new PlayerLeagueRating(
-                1002, "B", "", 1, 0, 0, 0, 0, 0, 0, 0, 0,
+                1002, "B", "", 1, 0, 0, 0, 0, 0, 0, 0,
                 0, 100, 105, LeagueRatingCalculator.STATE_WIN_SURVIVED,
                 900, 0, 1, true, false, false);
         final var cmp = LeagueRatingCalculator.mvpComparator(1);
@@ -319,36 +316,76 @@ class LeagueRatingCalculatorTest {
         assertEquals(7, r.team2().players().size());
     }
 
-    // ---- 占点 30/70 ----
+    // ---- 七维回归（plan §20）----
 
+    /** 七维满分总和必须保持 1000（Objective 50 删除后 Shooting 50→100 补位）。 */
     @Test
-    void objectiveEarnedThirtySeizedSeventy() {
-        // 队1 玩家 A 只有 earned、玩家 B 只有 seized → 各自 objective 分 15 vs 35（权重 30/70）
-        final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
-        for (final LeagueTestBattles.PlayerSpec s : specs) {
-            s.damage = 0; s.assist = 0; s.blocked = 0; s.kills = 0; s.points(0, 0);
+    void sevenDimensionMaxesSumToThousand() {
+        final double total = PlayerLeagueRating.MAX_DAMAGE + PlayerLeagueRating.MAX_ASSIST
+                + PlayerLeagueRating.MAX_KILL + PlayerLeagueRating.MAX_EXCHANGE
+                + PlayerLeagueRating.MAX_BLOCKED + PlayerLeagueRating.MAX_SURVIVAL_TRADE
+                + PlayerLeagueRating.MAX_SHOOTING;
+        assertEquals(1000, total, 1e-9);
+        assertEquals(100, PlayerLeagueRating.MAX_SHOOTING, 1e-9);
+        assertEquals(7, LeagueColumns.DIM_KEYS.size(), "Rating 必须只有七维");
+        assertEquals(7, LeagueColumns.DIM_MAX.size(), "DIM_MAX 必须与 DIM_KEYS 对齐");
+        for (int d = 0; d < LeagueColumns.DIM_KEYS.size(); d++) {
+            assertEquals(LeagueColumns.dimMax(d), LeagueColumns.DIM_MAX.get(d), 1e-9);
+            assertTrue(!LeagueColumns.DIM_KEYS.get(d).contains("objective"),
+                    "不得残留 objective 维度 key");
         }
-        specs.get(0).points(100, 0);   // 1001: only earned
-        specs.get(1).points(0, 100);   // 1002: only seized
-        final LeagueRatingResult r = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, specs));
-        final double earnedOnly = r.byAccount(1001).objectiveScore();
-        final double seizedOnly = r.byAccount(1002).objectiveScore();
-        assertEquals(15, earnedOnly, 1e-6);
-        assertEquals(35, seizedOnly, 1e-6);
-        assertTrue(seizedOnly > earnedOnly);
     }
 
+    /** victoryPointsEarned / victoryPointsSeized 是客观事实，不得影响任何 Rating（plan §4.5）。 */
     @Test
-    void noPointsMeansZeroObjectiveScore() {
-        final LeagueRatingResult r = LeagueRatingCalculator.calculate(identicalBattle(1, false));
-        // identicalBattle 有占点分，改造成无占点场次
-        final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
-        for (final LeagueTestBattles.PlayerSpec s : specs) {
-            s.points(0, 0);
+    void victoryPointsDoNotAffectRating() {
+        final List<LeagueTestBattles.PlayerSpec> base = defaultSevenVsSeven();
+        final List<LeagueTestBattles.PlayerSpec> changed = new ArrayList<>();
+        for (final LeagueTestBattles.PlayerSpec s : base) {
+            changed.add(new LeagueTestBattles.PlayerSpec(s.accountId, s.team)
+                    .damage(s.damage).assist(s.assist).blocked(s.blocked).kills(s.kills)
+                    .shots(s.shots).hits(s.hits).pens(s.pens).received(s.received)
+                    .points(s.earned, s.seized).clan(s.clan));
         }
-        final LeagueRatingResult r0 = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, specs));
-        for (final PlayerLeagueRating p : r0.players()) {
-            assertEquals(0, p.objectiveScore(), 1e-9);
+        for (final LeagueTestBattles.PlayerSpec s : changed) {
+            // 只改争霸点数（覆盖全部增量组合），其它 battle facts 完全不变
+            s.points(s.earned + 137, s.seized + 89);
+        }
+        final LeagueRatingResult r0 = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, base));
+        final LeagueRatingResult r1 = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, changed));
+        for (int i = 0; i < r0.players().size(); i++) {
+            final PlayerLeagueRating a = r0.players().get(i);
+            final PlayerLeagueRating b = r1.players().get(i);
+            assertEquals(a.damageScore(), b.damageScore(), 1e-9, "damage 不得受占点影响");
+            assertEquals(a.assistScore(), b.assistScore(), 1e-9, "assist 不得受占点影响");
+            assertEquals(a.killScore(), b.killScore(), 1e-9, "kill 不得受占点影响");
+            assertEquals(a.exchangeScore(), b.exchangeScore(), 1e-9, "exchange 不得受占点影响");
+            assertEquals(a.blockedScore(), b.blockedScore(), 1e-9, "blocked 不得受占点影响");
+            assertEquals(a.survivalTradeScore(), b.survivalTradeScore(), 1e-9, "survival 不得受占点影响");
+            assertEquals(a.shootingScore(), b.shootingScore(), 1e-9, "shooting 不得受占点影响");
+            assertEquals(a.finalRating(), b.finalRating(), 1e-9, "final Rating 不得受占点影响");
+            assertEquals(a.team(), b.team());
+        }
+        assertEquals(r0.team1().teamRating(), r1.team1().teamRating(), 1e-9, "Team Rating 不得受占点影响");
+        assertEquals(r0.team2().teamRating(), r1.team2().teamRating(), 1e-9, "Team Rating 不得受占点影响");
+        assertEquals(r0.mvp().accountId(), r1.mvp().accountId(), "MVP 不得受占点影响");
+        assertEquals(r0.team1().teamBest().accountId(), r1.team1().teamBest().accountId(), "队内最佳不得受占点影响");
+        assertEquals(r0.team2().teamBest().accountId(), r1.team2().teamBest().accountId(), "队内最佳不得受占点影响");
+    }
+
+    /** 七维均在 [0, dimensionMax]，最终 Rating 在 [0, 1000]（plan §20 Boundary）。 */
+    @Test
+    void sevenDimensionsStayWithinBounds() {
+        final LeagueRatingResult r = LeagueRatingCalculator.calculate(identicalBattle(1, true));
+        for (final PlayerLeagueRating p : r.players()) {
+            assertTrue(0 <= p.damageScore() && p.damageScore() <= PlayerLeagueRating.MAX_DAMAGE);
+            assertTrue(0 <= p.assistScore() && p.assistScore() <= PlayerLeagueRating.MAX_ASSIST);
+            assertTrue(0 <= p.killScore() && p.killScore() <= PlayerLeagueRating.MAX_KILL);
+            assertTrue(0 <= p.exchangeScore() && p.exchangeScore() <= PlayerLeagueRating.MAX_EXCHANGE);
+            assertTrue(0 <= p.blockedScore() && p.blockedScore() <= PlayerLeagueRating.MAX_BLOCKED);
+            assertTrue(0 <= p.survivalTradeScore() && p.survivalTradeScore() <= PlayerLeagueRating.MAX_SURVIVAL_TRADE);
+            assertTrue(0 <= p.shootingScore() && p.shootingScore() <= PlayerLeagueRating.MAX_SHOOTING);
+            assertTrue(0 <= p.finalRating() && p.finalRating() <= PlayerLeagueRating.MAX_FINAL);
         }
     }
 }

@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 真实训练赛/CW 7v7 名册完整性收口（plan §6/§7/§14-§17）：
  * 名册 #201=15（14 combatant + 1 non-combatant）/ 结算 #301=14 必须
- * Parser→Validator→Calculator 全链路通过，产出 14 个 Player Rating、八维度、
+ * Parser→Validator→Calculator 全链路通过，产出 14 个 Player Rating、七维度、
  * Team 1/2 Rating、MVP、两队最佳；同时证明<b>全局 Battle.rosterComplete 不被弱化</b>
  * （extra 存在时保持严格 fail-closed，AI 推断不受影响）。
  */
@@ -66,7 +66,7 @@ class LeagueRosterCompletenessTest {
         for (final PlayerLeagueRating p : result.players()) {
             assertTrue(p.finalRating() >= 0 && p.finalRating() <= PlayerLeagueRating.MAX_FINAL,
                     "总 Rating 必须在 0-1000 范围: " + p.finalRating());
-            // 八维度全部产生且不越界
+            // 七维度全部产生且不越界
             assertTrue(p.damageScore() >= 0 && p.damageScore() <= PlayerLeagueRating.MAX_DAMAGE, "damage 维度越界");
             assertTrue(p.assistScore() >= 0 && p.assistScore() <= PlayerLeagueRating.MAX_ASSIST, "assist 维度越界");
             assertTrue(p.killScore() >= 0 && p.killScore() <= PlayerLeagueRating.MAX_KILL, "kill 维度越界");
@@ -74,7 +74,6 @@ class LeagueRosterCompletenessTest {
             assertTrue(p.blockedScore() >= 0 && p.blockedScore() <= PlayerLeagueRating.MAX_BLOCKED, "blocked 维度越界");
             assertTrue(p.survivalTradeScore() >= 0 && p.survivalTradeScore() <= PlayerLeagueRating.MAX_SURVIVAL_TRADE, "survival 维度越界");
             assertTrue(p.shootingScore() >= 0 && p.shootingScore() <= PlayerLeagueRating.MAX_SHOOTING, "shooting 维度越界");
-            assertTrue(p.objectiveScore() >= 0 && p.objectiveScore() <= PlayerLeagueRating.MAX_OBJECTIVE, "objective 维度越界");
         }
         assertNotNull(result.team1(), "Team 1 Rating 必须存在");
         assertNotNull(result.team2(), "Team 2 Rating 必须存在");
@@ -87,7 +86,7 @@ class LeagueRosterCompletenessTest {
     /**
      * Blocker 2：真实 CW/Training fixture（common/fixtures/replays/ 入库，CI 无条件执行）——
      * 真实 15/14 shape（#201=15 / #301=14，probe 已验证）全链路：Parser → Validator →
-     * Calculator，断言 14 Player Ratings、八维度、Team 1/2、MVP、两队最佳。
+     * Calculator，断言 14 Player Ratings、七维度、Team 1/2、MVP、两队最佳。
      */
     @Test
     void realFixture15v14ParsesAndRates() throws Exception {
@@ -243,7 +242,7 @@ class LeagueRosterCompletenessTest {
                 root.getOrDefault(301, List.of()).size()};
     }
 
-    /** Rating 结果完整性断言：14 个 PlayerRating、八维度范围、Team 1/2、MVP、两队最佳。 */
+    /** Rating 结果完整性断言：14 个 PlayerRating、七维度范围、Team 1/2、MVP、两队最佳。 */
     private static void assertRateResultComplete(final LeagueRatingResult result) {
         assertEquals(14, result.players().size());
         for (final PlayerLeagueRating p : result.players()) {
@@ -256,7 +255,6 @@ class LeagueRosterCompletenessTest {
             assertTrue(p.blockedScore() >= 0 && p.blockedScore() <= PlayerLeagueRating.MAX_BLOCKED, "blocked 维度越界");
             assertTrue(p.survivalTradeScore() >= 0 && p.survivalTradeScore() <= PlayerLeagueRating.MAX_SURVIVAL_TRADE, "survival 维度越界");
             assertTrue(p.shootingScore() >= 0 && p.shootingScore() <= PlayerLeagueRating.MAX_SHOOTING, "shooting 维度越界");
-            assertTrue(p.objectiveScore() >= 0 && p.objectiveScore() <= PlayerLeagueRating.MAX_OBJECTIVE, "objective 维度越界");
         }
         assertNotNull(result.team1(), "Team 1 Rating 必须存在");
         assertNotNull(result.team2(), "Team 2 Rating 必须存在");

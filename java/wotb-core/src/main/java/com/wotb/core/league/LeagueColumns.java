@@ -17,7 +17,7 @@ public final class LeagueColumns {
     /** 总 Rating 列 key（固定显示，不允许被 ColumnPicker 隐藏）。 */
     public static final String RATING = "league_rating";
 
-    /** 八个 Rating 维度列 key（顺序与 {@link #DIM_MAX} / {@link #DIM_GROUP} 对齐）。 */
+    /** 七个 Rating 维度列 key（顺序与 {@link #DIM_MAX} 对齐）。 */
     public static final List<String> DIM_KEYS = List.of(
             "league_damage_score",
             "league_assist_score",
@@ -25,10 +25,9 @@ public final class LeagueColumns {
             "league_exchange_score",
             "league_blocked_score",
             "league_survival_score",
-            "league_shooting_score",
-            "league_objective_score");
+            "league_shooting_score");
 
-    /** 八个维度满分（顺序与 {@link #DIM_KEYS} 对齐，合计 1000）。 */
+    /** 七个维度满分（顺序与 {@link #DIM_KEYS} 对齐，合计 1000）。 */
     public static final List<Double> DIM_MAX = List.of(
             PlayerLeagueRating.MAX_DAMAGE,
             PlayerLeagueRating.MAX_ASSIST,
@@ -36,8 +35,7 @@ public final class LeagueColumns {
             PlayerLeagueRating.MAX_EXCHANGE,
             PlayerLeagueRating.MAX_BLOCKED,
             PlayerLeagueRating.MAX_SURVIVAL_TRADE,
-            PlayerLeagueRating.MAX_SHOOTING,
-            PlayerLeagueRating.MAX_OBJECTIVE);
+            PlayerLeagueRating.MAX_SHOOTING);
 
     /** 占点原始字段列 key（UI 与导出必须同时显示两个原始字段）。 */
     public static final String VICTORY_POINTS_EARNED = "victory_points_earned";

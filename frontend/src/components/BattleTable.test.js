@@ -9,6 +9,16 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key, te: () => false, locale: { value: 'zh' } })
 }))
 
+// ResizeObserver mock（happy-dom 无真实布局）：捕获回调供 Test D/E 手动触发宽度变化
+let roCallback = null
+class MockResizeObserver {
+  constructor(cb) { roCallback = cb }
+  observe() {}
+  disconnect() {}
+  unobserve() {}
+}
+globalThis.ResizeObserver = MockResizeObserver
+
 function makeBattle(players) {
   return {
     mapName: 'Lagoon',
@@ -171,20 +181,84 @@ describe('BattleTable League Rating', () => {
     expect(damageTh.classes()).not.toContain('sticky-col')
   })
 
-  it('second sticky column carries measured left offset and rows keep team sticky classes (layout contract, plan §21)', async () => {
+  // ---- P0 sticky lifecycle（plan §19 Test A–F；Test F：/left:\s*\d+px/ 不能再作为成功标准，
+  //      因为 left:0px 也会通过——必须断言具体测量值） ----
+
+  function stubNickWidth(wrapper, width) {
+    const nickTh = wrapper.findAll('th').find(t => t.text().includes('nickname'))
+    nickTh.element.getBoundingClientRect = () => ({ width, height: 24, top: 0, left: 0, right: width, bottom: 24 })
+    return nickTh
+  }
+
+  async function flushSticky() {
+    // 组件：nextTick → rAF（happy-dom 用 setTimeout 模拟）→ stickyLeft 写入 → 下一次 render 反映到 style
+    await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    await nextTick()
+  }
+
+  it('hidden mount（active=false，nickname width=0）不得把 Rating sticky left 写成有效的 0（plan §19 Test A）', async () => {
     const wrapper = mountLeague(makeLeagueBattle())
-    // measureSticky 在 onMounted 的 nextTick 回调里写 stickyLeft；需要再 flush 一次让 th 重渲染
-    await nextTick()
-    await nextTick()
+    await wrapper.setProps({ active: false })
+    await flushSticky()
     const ratingTh = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
-    // 结构契约：第二固定列必须带测量出的像素 left 偏移（happy-dom 无真实布局，
-    // 不断言具体数值，只断言「偏移已按测量结果写入 inline style」）
-    expect(ratingTh.attributes('style')).toMatch(/left:\s*\d+px/)
+    expect(ratingTh.attributes('style') || '').not.toContain('left')
+  })
+
+  it('hidden → visible：真实 width=132 时 nickname left=0、rating left=132px（plan §19 Test B）', async () => {
+    const wrapper = mountLeague(makeLeagueBattle())
+    await wrapper.setProps({ active: false })
+    stubNickWidth(wrapper, 132)
+    await wrapper.setProps({ active: true })
+    await flushSticky()
+    const nickTh = wrapper.findAll('th').find(t => t.text().includes('nickname'))
+    const ratingTh = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
+    expect(nickTh.attributes('style')).toContain('left: 0px')
+    expect(ratingTh.attributes('style')).toContain('left: 132px')
     // 两队的 sticky 玩家/Rating cell 必须带 team semantic class（plan §18：不丢队色）
     const stickyT1 = wrapper.findAll('tbody td').filter(td => td.classes().includes('sticky-t1'))
     const stickyT2 = wrapper.findAll('tbody td').filter(td => td.classes().includes('sticky-t2'))
     expect(stickyT1.length).toBeGreaterThan(0)
     expect(stickyT2.length).toBeGreaterThan(0)
+  })
+
+  it('重新激活：inactive 时列宽变化、active 后重测到新宽度 148（plan §19 Test C）', async () => {
+    const wrapper = mountLeague(makeLeagueBattle())
+    stubNickWidth(wrapper, 132)
+    await flushSticky()
+    let ratingTh = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
+    expect(ratingTh.attributes('style')).toContain('left: 132px')
+    await wrapper.setProps({ active: false })
+    stubNickWidth(wrapper, 148)
+    await wrapper.setProps({ active: true })
+    await flushSticky()
+    ratingTh = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
+    expect(ratingTh.attributes('style')).toContain('left: 148px')
+  })
+
+  it('ResizeObserver：132 → 150 时 sticky offset 更新（plan §19 Test D）', async () => {
+    const wrapper = mountLeague(makeLeagueBattle())
+    stubNickWidth(wrapper, 132)
+    await flushSticky()
+    let ratingTh = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
+    expect(ratingTh.attributes('style')).toContain('left: 132px')
+    stubNickWidth(wrapper, 150)
+    if (roCallback) roCallback()
+    await flushSticky()
+    ratingTh = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
+    expect(ratingTh.attributes('style')).toContain('left: 150px')
+  })
+
+  it('ResizeObserver width=0：已有有效 150 不得被覆盖成 0（plan §19 Test E）', async () => {
+    const wrapper = mountLeague(makeLeagueBattle())
+    stubNickWidth(wrapper, 150)
+    await flushSticky()
+    const ratingTh = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
+    expect(ratingTh.attributes('style')).toContain('left: 150px')
+    stubNickWidth(wrapper, 0)
+    if (roCallback) roCallback()
+    await flushSticky()
+    expect(ratingTh.attributes('style')).toContain('left: 150px')
   })
 
   it('emits update-team-name on team name input', async () => {
@@ -203,5 +277,29 @@ describe('BattleTable League Rating', () => {
     const wrapper = mountLeague(battle, leagueCols(), { '111:1': '我的战队' })
     const inputs = wrapper.findAll('input.team-name-input')
     expect(inputs[0].element.value).toBe('我的战队')
+  })
+
+  it('emits select-player with accountId on league row click (plan §8/§13)', async () => {
+    const wrapper = mountLeague(makeLeagueBattle())
+    const rowA = wrapper.findAll('tbody tr').find(r => r.text().includes('A'))
+    await rowA.trigger('click')
+    const emitted = wrapper.emitted('select-player')
+    expect(emitted).toBeTruthy()
+    expect(emitted[0][0]).toEqual({ scope: 'battle', accountId: 1001, arenaId: '111' })
+  })
+
+  it('does not emit select-player in standard (non-league) mode (plan §8.1)', async () => {
+    const wrapper = mountTable(makeBattle([
+      { team: 1, cells: { nickname: 'A', damage_dealt: 3000, contribution: 22.4, kast: 100, impact: 151.2 } }
+    ]), makeCols())
+    await wrapper.find('tbody tr').trigger('click')
+    expect(wrapper.emitted('select-player')).toBeUndefined()
+  })
+
+  it('header click sorts but does not open drawer (plan §13)', async () => {
+    const wrapper = mountLeague(makeLeagueBattle())
+    const th = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
+    await th.trigger('click')
+    expect(wrapper.emitted('select-player')).toBeUndefined()
   })
 })

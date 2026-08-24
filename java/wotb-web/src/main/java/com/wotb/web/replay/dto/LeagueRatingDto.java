@@ -11,7 +11,7 @@ import java.util.List;
  */
 public record LeagueRatingDto(
         String mode,
-        // Rating 列元数据（总 Rating 固定、八维度满分、占点字段等）
+        // Rating 列元数据（总 Rating 固定、七维度满分、占点字段等）
         List<LeagueColumnDef> columns,
         // 批次选手中位数汇总（typed）
         List<LeaguePlayerSummaryDto> playerSummaries,

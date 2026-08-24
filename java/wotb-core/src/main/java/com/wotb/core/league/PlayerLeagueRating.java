@@ -1,12 +1,12 @@
 package com.wotb.core.league;
 
-/** 一名玩家的一场 League Rating 结果（维度分 + 汇总分 + MVP 标记 + Rating 关键原始字段）。 */
+/** 一名玩家的一场 League Rating 结果（七维分 + 汇总分 + MVP 标记 + Rating 关键原始字段）。 */
 public record PlayerLeagueRating(
         long accountId,
         String nickname,
         String clan,
         int team,
-        // 八个维度分（未取整，全部 [0, dimensionMax]）
+        // 七个维度分（未取整，全部 [0, dimensionMax]）
         double damageScore,
         double assistScore,
         double killScore,
@@ -14,10 +14,9 @@ public record PlayerLeagueRating(
         double blockedScore,
         double survivalTradeScore,
         double shootingScore,
-        double objectiveScore,
         // 不含存活分与胜方倍率的 preliminary 分（败方前四判断用）
         double preliminary,
-        // 基础分 = 八个维度之和（未取整）
+        // 基础分 = 七个维度之和（未取整）
         double baseRating,
         // 最终分：胜方 ×1.05（封顶 1000），败方 = baseRating（未取整）
         double finalRating,
@@ -40,8 +39,7 @@ public record PlayerLeagueRating(
     public static final double MAX_EXCHANGE = 150;
     public static final double MAX_BLOCKED = 50;
     public static final double MAX_SURVIVAL_TRADE = 100;
-    public static final double MAX_SHOOTING = 50;
-    public static final double MAX_OBJECTIVE = 50;
+    public static final double MAX_SHOOTING = 100;
     /** 最终分上限。 */
     public static final double MAX_FINAL = 1000;
 }

@@ -102,4 +102,43 @@ describe('LeagueSummaryTable', () => {
     expect(wrapper.find('td.league-summary-empty').text()).toBe('league.summary.no_rateable')
     expect(wrapper.find('td.league-summary-empty').text()).not.toBe('--')
   })
+
+  it('sorts rating median asc (plan §25 numeric)', async () => {
+    const rows = [
+      teamRow({ teamKey: 'clan:BBB', ratingMedian: 700.2, autoName: 'BBB' }),
+      teamRow({ teamKey: 'clan:AAA', ratingMedian: 850.4, autoName: 'AAA' }),
+      teamRow({ teamKey: 'clan:CCC', ratingMedian: null, autoName: 'CCC' }),
+    ]
+    const wrapper = mount(LeagueSummaryTable, {
+      props: { title: 'T', type: 'team', rows, columns: SUMMARY_COLS, teamNames: {} },
+      global: { mocks: { $t: key => key } }
+    })
+    const th = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
+    await th.trigger('click')
+    const rowsOut = wrapper.findAll('tbody tr')
+    expect(rowsOut.at(0).text()).toContain('700')   // 700.2 → 700
+    expect(rowsOut.at(1).text()).toContain('850')   // 850.4 → 850
+    expect(rowsOut.at(2).text()).toContain('--')    // missing last
+  })
+
+  it('sorts team name by final display name (override-aware, plan §11.8)', async () => {
+    // TeamA autoName；TeamB override 为 "Alpha" → 排序必须用 "Alpha"（override）而非 "TeamB"
+    const rows = [
+      teamRow({ teamKey: 'clan:A', autoName: 'TeamA' }),
+      teamRow({ teamKey: 'clan:B', autoName: 'TeamB' }),
+    ]
+    const wrapper = mount(LeagueSummaryTable, {
+      props: {
+        title: 'T', type: 'team', rows, columns: SUMMARY_COLS,
+        teamNames: { 'clan:B': 'Alpha' } // override TeamB → Alpha
+      },
+      global: { mocks: { $t: key => key } }
+    })
+    const th = wrapper.findAll('th').find(t => t.text().includes('team_name'))
+    await th.trigger('click')
+    const rowsOut = wrapper.findAll('tbody tr')
+    // "Alpha"（原 TeamB）应排在 "TeamA" 前（A < T）
+    expect(rowsOut.at(0).find('input').element.value).toBe('Alpha')
+    expect(rowsOut.at(1).find('input').element.value).toBe('TeamA')
+  })
 })

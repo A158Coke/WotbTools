@@ -48,7 +48,7 @@ final class LeagueSingleSheets {
         styles.workbook().setActiveSheet(0);
     }
 
-    /** 玩家数据表：身份 + Rating 关键原始字段 + 八维度（实际分/满分/百分比）+ 总 Rating。 */
+    /** 玩家数据表：身份 + Rating 关键原始字段 + 七维度（实际分/满分/百分比）+ 总 Rating。 */
     private void players(final ExcelStyles styles, final Battle b, final LeagueRatingResult result,
                          final Tankopedia tp) {
         final Sheet ws = styles.workbook().createSheet("玩家数据");
@@ -92,9 +92,6 @@ final class LeagueSingleSheets {
         header.add(new String[]{"射击效率评分", "10"});
         header.add(new String[]{"满分", "6"});
         header.add(new String[]{"百分比", "8"});
-        header.add(new String[]{"争霸占点评分", "10"});
-        header.add(new String[]{"满分", "6"});
-        header.add(new String[]{"百分比", "8"});
         header.add(new String[]{"总Rating", "9"});
         header.add(new String[]{"满分", "6"});
         header.add(new String[]{"百分比", "8"});
@@ -131,11 +128,11 @@ final class LeagueSingleSheets {
             styles.setCell(row.createCell(c++), p.victoryPointsSeized, fill, "victory_points_seized");
             if (r != null) {
                 final double[] dims = {r.damageScore(), r.assistScore(), r.killScore(), r.exchangeScore(),
-                        r.blockedScore(), r.survivalTradeScore(), r.shootingScore(), r.objectiveScore()};
+                        r.blockedScore(), r.survivalTradeScore(), r.shootingScore()};
                 final double[] maxes = {PlayerLeagueRating.MAX_DAMAGE, PlayerLeagueRating.MAX_ASSIST,
                         PlayerLeagueRating.MAX_KILL, PlayerLeagueRating.MAX_EXCHANGE,
                         PlayerLeagueRating.MAX_BLOCKED, PlayerLeagueRating.MAX_SURVIVAL_TRADE,
-                        PlayerLeagueRating.MAX_SHOOTING, PlayerLeagueRating.MAX_OBJECTIVE};
+                        PlayerLeagueRating.MAX_SHOOTING};
                 for (int d = 0; d < dims.length; d++) {
                     styles.setCell(row.createCell(c++), ExcelStyles.r1(dims[d]), fill, "league_score");
                     styles.setCell(row.createCell(c++), (int) maxes[d], fill, "league_max");

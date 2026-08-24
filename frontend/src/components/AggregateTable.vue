@@ -2,8 +2,9 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { fmtDuration } from '../utils/helpers.js'
+import { stableSortRows } from '../utils/tableSort.js'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const props = defineProps({ aggregate: Array, shownCols: Array, aggStats: Object })
 const sortKey = ref('')
 const sortReverse = ref(false)
@@ -17,15 +18,14 @@ function percentCell(value) {
 
 const sorted = computed(() => {
   if (!sortKey.value) return props.aggregate
-  const arr = [...props.aggregate]
   const col = props.shownCols.find(c => c.key === sortKey.value)
-  arr.sort((ra, rb) => {
-    let a = ra.cells[sortKey.value], b = rb.cells[sortKey.value]
-    if (col?.num) { a = Number(a) || 0; b = Number(b) || 0; return a - b }
-    return String(a).localeCompare(String(b))
+  return stableSortRows(props.aggregate, {
+    key: sortKey.value,
+    direction: sortReverse.value ? -1 : 1,
+    num: !!col?.num,
+    locale: locale.value,
+    tiebreakGetter: row => row.cells?.account_id,
   })
-  if (sortReverse.value) arr.reverse()
-  return arr
 })
 
 function sortBy(col) {

@@ -295,7 +295,8 @@ function mountPage(overrides = {}) {
             '</tbody></table></div>' +
             '<p class="scroll-hint">Scroll</p></div>'
         },
-        RemoveConfirmModal: { template: '<div class="remove-modal-stub" />' }
+        RemoveConfirmModal: { template: '<div class="remove-modal-stub" />' },
+        PlayerDetailDrawer: { props: ['context', 'player'], template: '<div class="drawer-stub">{{ context ? "open:" + context.accountId : "closed" }}</div>' }
       }
     }
   })
@@ -1508,7 +1509,7 @@ describe('ReplayPage result visibility (P0: no blank results; league mode from r
     expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
   })
 
-  it('league 模式以 resp.league 为唯一事实源：即使 playerColumns 无 league_rating，aggregate tab + LeagueSummaryTable 也显示', async () => {
+  it('league 模式以 resp.league 为唯一事实源：即使 playerColumns 无 league_rating，aggregate tab + 统一玩家表也显示', async () => {
     delete window.__testLeagueMode // 列派生 league mode 必须关闭
     state.init.resp = makeResp({
       aggregate: [],
@@ -1528,12 +1529,13 @@ describe('ReplayPage result visibility (P0: no blank results; league mode from r
     await flushPromises()
     const tabs = wrapper.findAll('button')
     expect(tabs.some(b => b.text().includes('result.aggregate_tab'))).toBe(true)
-    expect(wrapper.find('.league-summary').exists()).toBe(true)
-    // aggregate=[] 且 resp.league 存在时不允许 fallback 掉汇总面板
+    // CW 模式：玩家信息只走统一玩家表（plan §1.3），不再渲染两张平级玩家表
+    expect(wrapper.find('.cw-player-summary').exists()).toBe(true)
+    expect(wrapper.find('.league-summary').exists()).toBe(false)
     expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
   })
 
-  it('league 模式 + aggregate 有数据：基础 AggregateTable 与 LeagueSummary 同时展示（plan Case C）', async () => {
+  it('league 模式 + aggregate 有数据：统一玩家表唯一存在（plan §1.3），战队表独立', async () => {
     state.init.resp = makeResp({
       aggregate: [
         { cells: { nickname: 'P1', damage_dealt: 5000 } },
@@ -1553,16 +1555,16 @@ describe('ReplayPage result visibility (P0: no blank results; league mode from r
     state.init.activeTab = 'aggregate'
     const wrapper = mountPage()
     await flushPromises()
-    // 两个汇总区块同时存在，不是二选一（plan §7/§11）
-    expect(wrapper.find('.agg-table-stub').exists()).toBe(true)
-    expect(wrapper.find('.league-summary').exists()).toBe(true)
-    // 区块标题区分数据源
-    expect(wrapper.find('[data-testid="base-aggregate-title"]').exists()).toBe(true)
+    // CW 模式：玩家只有一个主表（统一表），基础 AggregateTable 与 League 玩家表都不得再出现
+    expect(wrapper.find('.cw-player-summary').exists()).toBe(true)
+    expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
+    expect(wrapper.find('.league-summary').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="base-aggregate-title"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="league-summary-title"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('league 0/30：基础 Aggregate 可见 + League 区块显示明确空态，且 tab 人数来自 resp.aggregate（plan Case A/B）', async () => {
+  it('league 0/30：统一玩家表仍显示全部 aggregate 玩家（缺失 League 补 --），战队显示空态，tab 人数来自 resp.aggregate', async () => {
     state.init.resp = makeResp({
       aggregate: [
         { cells: { nickname: 'P1', damage_dealt: 5000 } },
@@ -1581,10 +1583,10 @@ describe('ReplayPage result visibility (P0: no blank results; league mode from r
     state.init.activeTab = 'aggregate'
     const wrapper = mountPage()
     await flushPromises()
-    // 基础汇总仍在（0 可评分 ≠ Replay 没数据）
-    expect(wrapper.find('.agg-table-stub').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="base-aggregate-title"]').exists()).toBe(true)
-    // League 区块为明确 neutral 空态，而不是 "--"
+    // 0 可评分 ≠ Replay 没数据：统一玩家表仍渲染 aggregate 玩家（plan §21 Missing side 不删玩家）
+    expect(wrapper.find('.cw-player-summary').exists()).toBe(true)
+    expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
+    // 战队区块为明确 neutral 空态，而不是 "--"
     expect(wrapper.find('[data-testid="league-summary-empty"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="league-summary-empty"]').classes()).not.toContain('error')
     expect(wrapper.find('.league-summary').exists()).toBe(false)
@@ -1603,6 +1605,98 @@ describe('ReplayPage result visibility (P0: no blank results; league mode from r
     expect(wrapper.text()).toContain('replay.no_results')
     expect(wrapper.findAll('.battle-table-stub').length).toBe(0)
     expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
+  })
+})
+describe('ReplayPage Player Detail Drawer (plan §8/§23)', () => {
+  beforeEach(() => {
+    state.clear()
+    state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'zh', files: [] }
+  })
+
+  function leagueResp() {
+    return makeResp({
+      aggregate: [
+        { team: 1, cells: { account_id: 1001, nickname: 'Alpha', clan: 'AAA', battles: 3, wins: 2, damage_avg: 500, earned_avg: 80 } },
+        { team: 2, cells: { account_id: 2001, nickname: 'Beta', clan: 'BBB', battles: 2, wins: 0, damage_avg: 300, earned_avg: 40 } },
+      ],
+      playerColumns: [{ key: 'nickname', label: '昵称' }],
+      league: {
+        mode: 'LEAGUE_RATING',
+        columns: [{ key: 'league_rating', max: 1000, fixed: true }],
+        playerSummaries: [
+          { accountId: 1001, nickname: 'Alpha', clan: 'AAA', battles: 3, ratingMedian: 850.4, dimensionMedians: [342, 60, 70, 110, 40, 80, 100], mvpCount: 2, wins: 2 },
+        ],
+        playerSummaryColumns: [{ key: 'nickname', label: '昵称' }, { key: 'league_rating', label: 'Rating' }],
+        teamSummaries: [],
+        teamSummaryColumns: [],
+        failures: []
+      }
+    })
+  }
+
+  it('默认关闭（plan §8.2）', async () => {
+    state.init.resp = leagueResp()
+    state.init.activeTab = 'aggregate'
+    const wrapper = mountPage()
+    await flushPromises()
+    const drawer = wrapper.find('.drawer-stub')
+    expect(drawer.text()).toBe('closed')
+    wrapper.unmount()
+  })
+
+  it('点击统一表玩家行 → 打开 Drawer 并带 accountId（plan §8.3/§8.7）', async () => {
+    state.init.resp = leagueResp()
+    state.init.activeTab = 'aggregate'
+    const wrapper = mountPage()
+    await flushPromises()
+    const rows = wrapper.findAll('.cw-player-summary tbody tr')
+    expect(rows.length).toBe(2)
+    await rows[0].trigger('click')
+    const drawer = wrapper.find('.drawer-stub')
+    expect(drawer.text()).toContain('open:1001')
+    wrapper.unmount()
+  })
+
+  it('点击另一玩家 → Drawer 不关闭，内容切换（plan §8.5）', async () => {
+    state.init.resp = leagueResp()
+    state.init.activeTab = 'aggregate'
+    const wrapper = mountPage()
+    await flushPromises()
+    const rows = wrapper.findAll('.cw-player-summary tbody tr')
+    await rows[0].trigger('click')
+    await rows[1].trigger('click')
+    const drawer = wrapper.find('.drawer-stub')
+    expect(drawer.text()).toContain('open:2001')
+    wrapper.unmount()
+  })
+
+  it('排序后 selected accountId 不变（plan §8.7/§23 Sorting）', async () => {
+    state.init.resp = leagueResp()
+    state.init.activeTab = 'aggregate'
+    const wrapper = mountPage()
+    await flushPromises()
+    const rows = wrapper.findAll('.cw-player-summary tbody tr')
+    await rows[0].trigger('click')
+    // 排序：点击 nickname 表头 → ASC（Alpha/Beta 不变顺序）
+    const th = wrapper.findAll('.cw-player-summary th').find(t => t.text().includes('nickname'))
+    await th.trigger('click')
+    const drawer = wrapper.find('.drawer-stub')
+    expect(drawer.text()).toContain('open:1001')
+    wrapper.unmount()
+  })
+
+  it('Tab 切换关闭 Drawer（plan §8.9）', async () => {
+    state.init.resp = leagueResp()
+    state.init.activeTab = 'aggregate'
+    const wrapper = mountPage()
+    await flushPromises()
+    const rows = wrapper.findAll('.cw-player-summary tbody tr')
+    await rows[0].trigger('click')
+    state.setActiveTab('b0')
+    await nextTick()
+    const drawer = wrapper.find('.drawer-stub')
+    expect(drawer.text()).toBe('closed')
+    wrapper.unmount()
   })
 })
 describe('ReplayPage League failure UX separation (plan §23 Test 1-7)', () => {
