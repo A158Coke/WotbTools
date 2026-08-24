@@ -118,27 +118,28 @@ const hasCounts = computed(() => (props.job?.duplicates || 0) + (props.job?.fail
   bottom: 16px;
   width: 300px;
   z-index: 1000;
-  background: var(--card-bg, #ffffff);
-  border: 1px solid var(--border, #dee2e6);
+  background: rgba(15,21,25,.97);
+  border: 1px solid #39444a;
   border-radius: 10px;
   padding: 14px 16px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
   font-size: 13px;
   line-height: 1.5;
+  color: #e9e7e0;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.etc-title { font-weight: 700; }
-.etc-ok { color: #28a745; }
-.etc-err { color: #dc3545; }
-.etc-sub { color: var(--text-sub, #666); word-break: break-word; }
-.etc-counts { color: #c97a00; font-size: 12px; }
-.etc-error { color: #dc3545; font-size: 12px; }
+.etc-title { font-weight: 700; color: #f2ede3; }
+.etc-ok { color: #7fd48a; }
+.etc-err { color: #ff8f86; }
+.etc-sub { color: #a3a6a0; word-break: break-word; }
+.etc-counts { color: #f0a42b; font-size: 12px; }
+.etc-error { color: #ff8f86; font-size: 12px; }
 .etc-progress-line { font-variant-numeric: tabular-nums; }
 .etc-bar {
   height: 8px;
-  background: var(--border, #e9ecef);
+  background: #2b3439;
   border-radius: 4px;
   overflow: hidden;
 }
@@ -153,8 +154,9 @@ const hasCounts = computed(() => (props.job?.duplicates || 0) + (props.job?.fail
   align-self: flex-start;
   padding: 5px 12px;
   border-radius: 6px;
-  border: 1px solid var(--border, #ced4da);
+  border: 1px solid #465159;
   background: transparent;
+  color: #d7d3ca;
   cursor: pointer;
   font-size: 13px;
 }

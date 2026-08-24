@@ -402,11 +402,12 @@ const gridRegions = computed(() => {
 
 <style scoped>
 .map-overview {
-  border: 1px solid var(--border);
+  border: 1px solid #303a40;
   border-radius: 6px;
-  background: var(--bg-card2);
+  background: rgba(13, 18, 22, .94);
   padding: 8px 12px;
   margin: 0 0 12px;
+  color: #c9c5bb;
 }
 .map-head {
   display: flex;
@@ -415,12 +416,12 @@ const gridRegions = computed(() => {
   gap: 12px;
   margin-bottom: 6px;
 }
-.map-title { font-weight: 700; color: var(--text-heading); }
+.map-title { font-weight: 700; color: #f2ede3; }
 .map-tabs, .filter-group { display: flex; gap: 4px; flex-wrap: wrap; }
 .map-tab, .filter-btn {
-  border: 1px solid var(--border);
-  background: var(--bg-card);
-  color: var(--text-label);
+  border: 1px solid #39444a;
+  background: rgba(15, 21, 25, .92);
+  color: #c9c5bb;
   border-radius: 4px;
   padding: 2px 8px;
   font-size: .78rem;
