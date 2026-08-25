@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Added
+- **名人堂三环（Mark 3）人工审核排行榜**：新增独立 `mark3` domain、Flyway `V21` submission/evidence 表和 `/api/hof/mark3`、`/api/users/mark3`、`/api/admin/hof/mark3` API。仅限 Tier X，玩家提交三环所需场数、过程场均、过程胜率、1–2 张截图与恰好 5 个回放；无 Wargaming 自动认证链路。创建路径从五个 replay byte[] 读取、解析、hash 锁、落盘到事务全程复用全局 `ReplayCapacityLimiter`，容量满返回 503 `REPLAY_BUSY`。排行榜按已审核三环场数升序，场数相同使用 competition ranking；同用户同车的 CURRENT 唯一且不被后续申请替代，不使用 `SUPERSEDED`。REJECTED/CANCELLED/DELETED 可重提；管理员通过、拒绝或删除时均不能改写成绩，终态会清理截图和回放证据。
+
 ### Changed
 - **League Rating：死亡时间 UNKNOWN 不再整场拒绝评分**：
   - `LeagueRatingValidator` 删除 battle-level `MISSING_DEATH_TIME` gate：阵亡玩家
@@ -174,6 +177,7 @@
   - **AI 报告时间链接**：原地切到战局回放面板并自动加载/展开地图后 seek（未加载先拉取、折叠自动展开、MapOverview 不被重建），独立页行为不变（滚动定位到地图区块）。
   - **三语 locale**：新增 workspace.tab_results / results_hint / ai_empty / playback_empty（zh/en/ru 同步）。
   - **测试**：ReplayPage 新增 Workspace 用例（tab 默认值 / 直接入口切换 / 切走切回状态保持 / 解析预览切回结果），v-show 可见性按 element.style.display 断言（happy-dom 的 getComputedStyle 不反映 inline style，与项目既有 v-show 测试一致）；FileUploader 直接入口改断言 workspace-action emit；ReconstructionPage 删除跨视图接管用例（特性移除）。
+
 
 - **百场名人堂 WG 官方 API 自动认证链路**：保留原截图 + 5 回放人工审核端点，新增仅限 `wotb_verified` ASIA/EU/NA 身份的 JSON 提交链路。后端以固定白名单 host 调用 WG `account/info` + `tanks/stats`，冻结账号总场次、单车总伤害/场次与计算场均；账号总场次至少 5000、目标 Tier X 至少 100 场，MANUAL 使用原申报成绩、WARGAMING_API 使用官方快照。官方精确场均 `<=3900` 原子写入 CURRENT，`>3900` 自动创建无文件 PENDING 供管理员审核；审批端点不接收成绩数据，管理员只能通过、拒绝或删除，不能改写任何排名值。WG key 只从运行时 `WG_APPLICATION_ID` 注入 backend，端点受登录与 nginx 限流保护，失败零落库并引导原人工链路。
 - **review-with-docs 集成 Alibaba OpenCodeReview（OCR）delegate mode（docs/current-plan.md）**：
