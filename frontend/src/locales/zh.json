@@ -1450,6 +1450,12 @@
             "AI_REVIEW_BUSY": "AI 复盘服务当前繁忙，请稍后重试。"
         }
     },
+    "workspace": {
+        "tab_results": "解析结果",
+        "results_hint": "点击「解析预览」后，解析结果将显示在这里",
+        "ai_empty": "选择一场回放后开始 AI 复盘",
+        "playback_empty": "选择一场回放后查看战局回放"
+    },
     "league": {
         "title": "League Rating",
         "subtitle": "训练赛/联赛评分 · 仅使用本场数据 · 0–1000",

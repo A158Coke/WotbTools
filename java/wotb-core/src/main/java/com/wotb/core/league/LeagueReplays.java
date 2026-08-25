@@ -13,9 +13,16 @@ import java.util.function.Consumer;
 /**
  * League Rating 模式的批次收集：解析全部输入 → 模式判定 → 去重/冲突 → 完整性校验 → 评分。
  *
+ * <p><b>领域分离（P0 修复）</b>：{@link LeagueCollectResult#battles()} 返回<b>全部</b>成功解析
+ * 并通过去重/冲突规则的 Battle（可进入 Preview/Export 的基础数据）；League Rating <b>只</b>对
+ * 通过 {@link LeagueRatingValidator} 完整性校验的场次计算（{@link LeagueRatingBatch#battleResults()}
+ * 与汇总均只含 eligible 场次）。Rating 校验失败<b>不得</b>把 Battle 从结果中移除（plan：replay
+ * parsing validity != league rating eligibility），失败以 {@link LeagueFailure} 稳定错误码返回。</p>
+ *
  * <p>普通模式（{@code STANDARD_REPLAY}）复用 {@link Replays} 既有 arenaId 去重语义，
- * 普通回放契约零回归；混合模式（{@code MIXED_UNSUPPORTED}）由调用方整体拒绝（HTTP 400
- * {@code MIXED_LEAGUE_AND_STANDARD_REPLAYS}）。</p>
+ * 普通回放契约零回归；混合模式（{@code MIXED_UNSUPPORTED}）同普通模式返回全部可解析
+ * battles（League Rating 不支持混合批次聚合，League Analysis unavailable 由调用方提示，
+ * plan §21：禁止 mixed League eligibility 污染 Replay Parser）。</p>
  *
  * <p>league 去重范围仅限当前上传批次（plan §4）：同一 arenaId 多份回放关键事实一致 →
  * 只计一份、其余进 duplicates；不一致 → 该场全部副本拒绝评分（{@code CONFLICTING_REPLAYS_FOR_ARENA}）。
@@ -23,7 +30,12 @@ import java.util.function.Consumer;
  */
 public final class LeagueReplays {
 
-    /** 批次收集结果：mode + 有效场 + 重复/失败 + league 评分与汇总。 */
+    /**
+     * 批次收集结果：mode + 成功解析的 battles（可进 Preview）+ 重复/解析失败 +
+     * league 校验失败 + league 评分与汇总（battleResults 仅含 eligible 场次）。
+     * battles/battleSourceNames 与 leagueBatch.battleResults() 不再要求数量一一对应；
+     * Battle 与 Rating 的关联使用 {@link LeagueRatingResult#arenaId()} identity。
+     */
     public record LeagueCollectResult(
             LeagueRatingMode mode,
             List<Battle> battles,
@@ -58,15 +70,13 @@ public final class LeagueReplays {
                 .filter(e -> !e.failed())
                 .map(Replays.ParsedEntry::battle).toList());
         if (mode == LeagueRatingMode.MIXED_UNSUPPORTED) {
-            // 混合批次：整个请求拒绝（调用方抛 400 MIXED_LEAGUE_AND_STANDARD_REPLAYS），
-            // 不返回部分预览；progress 按文件回调 FAILURE（推进 processed）。
-            for (final Replays.ParsedEntry e : entries) {
-                if (progress != null) {
-                    progress.onProcessed(e.source(), Replays.Outcome.FAILURE);
-                }
-            }
-            return new LeagueCollectResult(mode, List.of(), List.of(), List.of(),
-                    failuresFrom(entries), List.of(), null);
+            // 混合批次（普通 + 训练赛/联赛混传）：League Rating 不支持混合批次聚合，
+            // 但<b>不得污染 Replay Parser</b>（plan §21 / Case I）——所有可解析回放仍按
+            // 普通回放语义成功返回（标准 arenaId 去重，progress 真实 outcome），League
+            // Analysis unavailable 由调用方以 leagueUnavailableCode 提示，不再整体拒绝。
+            final com.wotb.core.model.Collected c = Replays.dedupe(entries, log, progress);
+            return new LeagueCollectResult(mode, c.battles, c.battleSourceNames, c.duplicates,
+                    c.failures, List.of(), null);
         }
         if (mode == LeagueRatingMode.STANDARD_REPLAY) {
             final com.wotb.core.model.Collected c = Replays.dedupe(entries, log, progress);
@@ -76,7 +86,13 @@ public final class LeagueReplays {
         return collectLeague(entries, progress);
     }
 
-    /** league 分支：去重/冲突 → 校验 → 评分 → 汇总。 */
+    /**
+     * league 分支：去重/冲突 → 校验 → 评分 → 汇总。
+     *
+     * <p>返回的 battles = 去重/冲突后<b>全部</b>成功解析的 Battle（Rating 不合格也保留，
+     * 只进 leagueFailures）；ratedBattles/ratedNames/results 仅用于 League Rating 计算与
+     * 批次聚合（plan §6：aggregate 只基于 eligible 场次）。</p>
+     */
     private static LeagueCollectResult collectLeague(final List<Replays.ParsedEntry> entries,
                                                      final Replays.ReplayProgressListener progress) {
         // 按 arenaId 分组（保留上传顺序）
@@ -114,7 +130,8 @@ public final class LeagueReplays {
             battleSourceNames.add(kept.source().name());
         }
 
-        // 校验 + 评分（每场独立；不合格该场不评分，其他场继续）
+        // 校验 + 评分（每场独立；不合格该场不评分但 Battle 仍保留在 battles，
+        // 只记录 leagueFailure；eligible 场次进入 ratedBattles 用于 Rating 与批次聚合）
         final List<LeagueRatingResult> results = new ArrayList<>();
         final List<Battle> ratedBattles = new ArrayList<>();
         final List<String> ratedNames = new ArrayList<>();
@@ -135,7 +152,9 @@ public final class LeagueReplays {
                 ratedBattles, results, leagueFailures);
 
         // progress：解析失败 → FAILURE；冲突副本 → FAILURE；重复 → DUPLICATE；
-        // 校验失败 → FAILURE；评分成功 → SUCCESS（每个文件恰好一次）
+        // Rating 校验失败（非冲突）→ SUCCESS（已成功解析并可进 Preview；Rating 不合格
+        // 是独立领域信息，经 leagueFailures 返回，不得计入解析失败）；其余 → SUCCESS
+        // （每个文件恰好一次）
         if (progress != null) {
             final Map<String, Replays.Outcome> outcomeBySource = new LinkedHashMap<>();
             for (final Replays.ParsedEntry e : entries) {
@@ -151,13 +170,6 @@ public final class LeagueReplays {
                     outcomeBySource.put(e.source().name(), Replays.Outcome.DUPLICATE);
                     continue;
                 }
-                final boolean validationFailed = leagueFailures.stream()
-                        .anyMatch(f -> f.fileName().equals(e.source().name())
-                                && !f.code().equals(LeagueFailure.Code.CONFLICTING_REPLAYS_FOR_ARENA));
-                if (validationFailed) {
-                    outcomeBySource.put(e.source().name(), Replays.Outcome.FAILURE);
-                    continue;
-                }
                 outcomeBySource.put(e.source().name(), Replays.Outcome.SUCCESS);
             }
             for (final Replays.ParsedEntry e : entries) {
@@ -166,7 +178,7 @@ public final class LeagueReplays {
         }
 
         return new LeagueCollectResult(LeagueRatingMode.LEAGUE_RATING,
-                ratedBattles, ratedNames, duplicates,
+                battles, battleSourceNames, duplicates,
                 failuresFrom(entries), leagueFailures, batch);
     }
 

@@ -2,6 +2,7 @@ package com.wotb.web.replay.service;
 
 import com.wotb.core.export.ExcelExporter;
 import com.wotb.core.league.LeagueRatingMode;
+import com.wotb.core.league.LeagueRatingResult;
 import com.wotb.core.league.LeagueReplays;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.Source;
@@ -94,7 +95,10 @@ public class ReplayService {
         // League Rating 模式：训练赛/联赛回放经 LeagueReplays 完成模式判定/去重冲突/7v7 校验/评分。
         final LeagueReplays.LeagueCollectResult c = LeagueReplays.collect(
                 toSources(files), this::processFull, null, null);
-        requireSupportedMode(c);
+        // 混合批次不再整体拒绝（plan §21）：League Rating 不聚合混合批次，battles 仍按
+        // 普通回放语义成功返回，leagueUnavailableCode 提示 League Analysis unavailable。
+        final String leagueUnavailableCode = c.mode() == LeagueRatingMode.MIXED_UNSUPPORTED
+                ? "MIXED_LEAGUE_AND_STANDARD_REPLAYS" : null;
         // facts 层 enrich 一次（Mapper.toPreviewResponse 只读消费共享 Battle）；
         // League 模式不调用 PerformanceMetricsCalculator（旧 contribution/kast/impact 完全移除）。
         PotentialDamage.apply(c.battles(), tankopedia);
@@ -105,14 +109,8 @@ public class ReplayService {
         for (final Battle battle : c.battles()) {
             PerformanceMetricsCalculator.populateBattle(battle);
         }
-        return Mapper.toPreviewResponse(c.battles(), c.battleSourceNames(), c.duplicates(), c.failures(), tankopedia);
-    }
-
-    /** 混合批次（普通 + 训练赛/联赛）整个请求拒绝：HTTP 400 MIXED_LEAGUE_AND_STANDARD_REPLAYS。 */
-    private static void requireSupportedMode(final LeagueReplays.LeagueCollectResult c) {
-        if (c.mode() == LeagueRatingMode.MIXED_UNSUPPORTED) {
-            throw new IllegalArgumentException("MIXED_LEAGUE_AND_STANDARD_REPLAYS");
-        }
+        return Mapper.toPreviewResponse(c.battles(), c.battleSourceNames(), c.duplicates(), c.failures(),
+                tankopedia, null, leagueUnavailableCode);
     }
 
     /** 逐文件模式预扫描：[0]=存在 league（2/4）、[1]=存在普通模式（解析失败不参与）。 */
@@ -163,7 +161,7 @@ public class ReplayService {
         // 保证 Excel 与网页的 Contribution/KAST/Impact 使用同一 Battle facts；同一份 replay 只 full process 一次。
         final LeagueReplays.LeagueCollectResult c = LeagueReplays.collect(
                 toSources(files), this::processFull, null, null);
-        requireSupportedMode(c);
+        // 混合批次按普通回放语义导出（plan §21/§13：standard export 不依赖 League eligibility）
         if (c.battles().isEmpty()) {
             return null;
         }
@@ -172,8 +170,14 @@ public class ReplayService {
             final ByteArrayOutputStream out = new ByteArrayOutputStream();
             final String filename;
             if (c.battles().size() == 1) {
-                ExcelExporter.writeSingleLeague(c.battles().getFirst(),
-                        c.leagueBatch().battleResults().getFirst(), tankopedia, out);
+                // identity 绑定：单场 Rating 按 arenaId 查找（plan §9）；未通过校验的
+                // 单场 league 回放仍导出基础数据（普通单场工作簿，无 Rating 列），不崩溃不错位
+                final LeagueRatingResult single = c.leagueBatch().resultFor(c.battles().getFirst().arenaId);
+                if (single != null) {
+                    ExcelExporter.writeSingleLeague(c.battles().getFirst(), single, tankopedia, out);
+                } else {
+                    ExcelExporter.writeSingle(c.battles().getFirst(), tankopedia, out);
+                }
                 filename = stripExt(c.battleSourceNames().getFirst()) + ".xlsx";
             } else {
                 ExcelExporter.writeAggregateLeague(c.battles(), c.battleSourceNames(),
@@ -199,25 +203,29 @@ public class ReplayService {
 
     private ExportResult exportEach(final MultipartFile[] files) throws Exception {
         final List<Source> sources = toSources(files);
-        // 模式预扫描（只读 meta.json#arenaBonusType，不 processFull）：混合批次整个请求拒绝
-        // （与 preview 一致，不静默生成无 Rating 的联赛工作簿）。
+        // 模式预扫描（只读 meta.json#arenaBonusType，不 processFull）：仅当整批都是
+        // league（训练赛/联赛）时走 League Rating 导出；混合批次按普通回放逐场导出
+        // （plan §21：混合批次 League Analysis unavailable，standard export 不受影响）。
         final boolean[] leagueFlags = peekModes(sources);
-        if (leagueFlags[0] && leagueFlags[1]) {
-            throw new IllegalArgumentException("MIXED_LEAGUE_AND_STANDARD_REPLAYS");
-        }
+        final boolean allLeague = leagueFlags[0] && !leagueFlags[1];
         final ByteArrayOutputStream zipBytes = new ByteArrayOutputStream();
         int exported = 0;
         final Set<String> usedNames = new HashSet<>();
         try (ZipOutputStream zip = new ZipOutputStream(zipBytes, StandardCharsets.UTF_8)) {
-            if (leagueFlags[0]) {
+            if (allLeague) {
                 // League：与 preview 同一 collect（去重冲突/7v7 校验/评分）；
                 // 只导出通过校验并完成评分的场次，冲突/不合格场次按失败策略跳过。
                 final LeagueReplays.LeagueCollectResult c = LeagueReplays.collect(
                         sources, this::processFull, null, null);
                 for (int i = 0; i < c.battles().size(); i++) {
+                    // identity 绑定（plan §9）；只导出通过校验并完成评分的场次，
+                    // 冲突/不合格场次按失败策略跳过（与既有注释语义一致，之前因 bug 隐式生效）
+                    final LeagueRatingResult result = c.leagueBatch().resultFor(c.battles().get(i).arenaId);
+                    if (result == null) {
+                        continue;
+                    }
                     final ByteArrayOutputStream xlsx = new ByteArrayOutputStream();
-                    ExcelExporter.writeSingleLeague(c.battles().get(i),
-                            c.leagueBatch().battleResults().get(i), tankopedia, xlsx);
+                    ExcelExporter.writeSingleLeague(c.battles().get(i), result, tankopedia, xlsx);
                     final ZipEntry entry = new ZipEntry(uniqueName(
                             stripExt(c.battleSourceNames().get(i)) + ".xlsx", usedNames));
                     zip.putNextEntry(entry);

@@ -123,16 +123,18 @@ describe('ReplayPage READY 第一帧渲染（P0：同一提交周期内结果立
     const wrapper = await runReadyFlow(baseResp({ battles: twoBattles, aggregate: [] }))
     // 不需要用户点击 tab：b0 面板已可见
     expect(wrapper.find('.battle-table-stub').element.parentElement.style.display).not.toBe('none')
-    expect(wrapper.find('.agg-table-stub').element.parentElement.style.display).toBe('none')
+    // aggregate 空 → AggregateTable 不渲染（v-if 由 resp.aggregate 驱动，plan §5）
+    expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
     expect(wrapper.find('.league-summary-stub').exists()).toBe(false)
     wrapper.unmount()
   })
 
-  it('league 批次（aggregate 空 + league 存在）：READY 后 LeagueSummary 立即可见', async () => {
+  it('league 批次（aggregate 空 + league 存在、summaries 全空）：READY 后 League 明确空态可见', async () => {
     const wrapper = await runReadyFlow(baseResp({ battles: twoBattles, aggregate: [], league }))
-    expect(wrapper.find('.league-summary-stub').element.parentElement.style.display).not.toBe('none')
+    // league summaries 全空 → 区块显示 neutral 空态，不渲染 LeagueSummaryTable（plan §8/§12）
+    expect(wrapper.find('[data-testid="league-summary-empty"]').exists()).toBe(true)
+    expect(wrapper.find('.league-summary-stub').exists()).toBe(false)
     expect(wrapper.find('.battle-table-stub').element.parentElement.style.display).toBe('none')
-    expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -143,6 +145,37 @@ describe('ReplayPage READY 第一帧渲染（P0：同一提交周期内结果立
     }))
     expect(wrapper.find('.agg-table-stub').element.parentElement.style.display).not.toBe('none')
     expect(wrapper.find('.battle-table-stub').element.parentElement.style.display).toBe('none')
+    expect(wrapper.find('.league-summary-stub').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('league 批次 + aggregate 有数据（partial）：基础 AggregateTable 与 LeagueSummary 同时可见（非二选一）', async () => {
+    // plan Case C：partial League（aggregate 非空 + playerSummaries 非空）→ 两个汇总同时存在
+    const wrapper = await runReadyFlow(baseResp({
+      battles: twoBattles,
+      aggregate: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }],
+      league: {
+        mode: 'LEAGUE_RATING',
+        columns: [],
+        playerSummaries: [{ nickname: 'P1', ratingMedian: 900 }],
+        teamSummaries: [{ teamKey: 'clan:AAA', ratingMedian: 850 }],
+        failures: [],
+      },
+    }))
+    expect(wrapper.find('.agg-table-stub').element.parentElement.style.display).not.toBe('none')
+    expect(wrapper.find('.league-summary-stub').element.parentElement.style.display).not.toBe('none')
+    wrapper.unmount()
+  })
+
+  it('league 批次 0/30（aggregate 非空 + playerSummaries 空）：基础 Aggregate 可见 + League 空态可见', async () => {
+    // plan Case A：30 parsed / 0 rated → 基础汇总正常，League 区块显示明确空态
+    const wrapper = await runReadyFlow(baseResp({
+      battles: twoBattles,
+      aggregate: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }],
+      league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] },
+    }))
+    expect(wrapper.find('.agg-table-stub').element.parentElement.style.display).not.toBe('none')
+    expect(wrapper.find('[data-testid="league-summary-empty"]').exists()).toBe(true)
     expect(wrapper.find('.league-summary-stub').exists()).toBe(false)
     wrapper.unmount()
   })

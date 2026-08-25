@@ -18,6 +18,7 @@ import com.wotb.web.mark3.entity.Mark3Submission;
 import com.wotb.web.mark3.enums.Mark3Status;
 import com.wotb.web.mark3.repository.Mark3SubmissionRepository;
 import com.wotb.web.replay.ReplayUploadValidator;
+import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -73,6 +74,7 @@ public class Mark3SubmissionService {
     private final Mark3SubmissionRepository repository;
     private final Mark3Mapper mapper;
     private final UserProfileService userProfileService;
+    private final ReplayCapacityLimiter capacityLimiter;
     private final Mark3ReplayEvidenceService evidenceService;
     private final ReplayHashLock replayHashLock;
     private final TransactionTemplate transactionTemplate;
@@ -82,12 +84,14 @@ public class Mark3SubmissionService {
             final Mark3SubmissionRepository repository,
             final Mark3Mapper mapper,
             final UserProfileService userProfileService,
+            final ReplayCapacityLimiter capacityLimiter,
             final Mark3ReplayEvidenceService evidenceService,
             final ReplayHashLock replayHashLock,
             final PlatformTransactionManager transactionManager) {
         this.repository = repository;
         this.mapper = mapper;
         this.userProfileService = userProfileService;
+        this.capacityLimiter = capacityLimiter;
         this.evidenceService = evidenceService;
         this.replayHashLock = replayHashLock;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -121,8 +125,37 @@ public class Mark3SubmissionService {
         if (replays == null || replays.size() != REPLAY_COUNT) {
             throw new IllegalArgumentException("MARK3_REPLAY_COUNT");
         }
-        ReplayUploadValidator.validate(replays.toArray(new MultipartFile[0]));
         requireNoActiveSubmission(userId, vehicleId);
+
+        try {
+            return capacityLimiter.execute(() -> createSubmissionWithinReplayCapacity(
+                    userId, vehicleId, gameId, vehicle.name(), profile.getWotbNickname().trim(),
+                    claimedBattleCount, claimedAverageDamage, normalizedWinRate,
+                    normalizedScreenshots, replays));
+        } catch (final RuntimeException e) {
+            throw e;
+        } catch (final Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
+     * 全局 replay 容量许可覆盖完整的重型生命周期：校验、读入五个 byte[]、解析、hash 锁、落盘和事务。
+     * 进入许可后再次检查 active 状态，避免其他请求刚创建 PENDING 时仍重复解析整组证据。
+     */
+    private Mark3CreateResult createSubmissionWithinReplayCapacity(
+            final String userId,
+            final long vehicleId,
+            final long gameId,
+            final String vehicleName,
+            final String nickname,
+            final int claimedBattleCount,
+            final int claimedAverageDamage,
+            final BigDecimal claimedWinRate,
+            final List<String> normalizedScreenshots,
+            final List<MultipartFile> replays) {
+        requireNoActiveSubmission(userId, vehicleId);
+        ReplayUploadValidator.validate(replays.toArray(new MultipartFile[0]));
 
         final Set<String> arenaIds = new HashSet<>();
         final List<Mark3ReplayEvidenceService.PendingReplay> pendingReplays = new ArrayList<>();
@@ -158,8 +191,8 @@ public class Mark3SubmissionService {
                 .sorted()
                 .toList();
         return replayHashLock.runWithLocksResult(hashes, () -> createLocked(
-                userId, vehicleId, gameId, vehicle.name(), profile.getWotbNickname().trim(),
-                claimedBattleCount, claimedAverageDamage, normalizedWinRate,
+                userId, vehicleId, gameId, vehicleName, nickname,
+                claimedBattleCount, claimedAverageDamage, claimedWinRate,
                 normalizedScreenshots, pendingReplays, hashes));
     }
 

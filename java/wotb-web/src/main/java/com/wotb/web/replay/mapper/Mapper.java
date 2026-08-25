@@ -178,12 +178,19 @@ public final class Mapper {
     // ---- Battle / 单场 ----
 
     public static BattleDto toBattle(final Battle b, final String sourceName, final Tankopedia tp) {
-        return toBattle(b, sourceName, tp, null);
+        return toBattle(b, sourceName, tp, null, false);
     }
 
-    /** League 模式时注入 Rating 单元格与单场元数据（普通模式 league 参数为 null）。 */
+    /**
+     * League 模式时注入 Rating 单元格与单场元数据（普通模式 league 参数为 null）。
+     *
+     * @param league    该场评分结果；Rating-ineligible 场次为 null（Battle 仍正常展示，
+     *                  Rating 列留空，plan：解析有效性 ≠ Rating 资格）
+     * @param leagueMode 整个批次是否为 League Rating 模式（决定是否移除旧三指标列；
+     *                   Rating-ineligible 场次 league==null 但 leagueMode 仍为 true）
+     */
     public static BattleDto toBattle(final Battle b, final String sourceName, final Tankopedia tp,
-                                     final LeagueRatingResult league) {
+                                     final LeagueRatingResult league, final boolean leagueMode) {
         final Function<Long, String> platoon = Players.platoonLabeler();
         final List<PlayerRow> rows = new ArrayList<>();
         final Map<Long, PlayerLeagueRating> leagueByAccount = new LinkedHashMap<>();
@@ -198,7 +205,7 @@ public final class Mapper {
             final Map<String, Object> cells = new LinkedHashMap<>();
             for (final Columns.Column c : Columns.PLAYER) {
                 // League 模式完全移除旧 contribution/kast/impact（plan §14）；普通模式保留
-                if (league != null && LeagueColumns.REMOVED_LEGACY_KEYS.contains(c.key())) {
+                if (leagueMode && LeagueColumns.REMOVED_LEGACY_KEYS.contains(c.key())) {
                     continue;
                 }
                 cells.put(c.key(), playerValue(c, p));
@@ -214,6 +221,10 @@ public final class Mapper {
                         cells.put(LeagueColumns.dimKey(d), r1(dims[d]));
                     }
                 }
+                cells.put(LeagueColumns.VICTORY_POINTS_EARNED, p.victoryPointsEarned);
+                cells.put(LeagueColumns.VICTORY_POINTS_SEIZED, p.victoryPointsSeized);
+            } else if (leagueMode) {
+                // Rating-ineligible league 场次：占点原始字段是 battle facts，仍应输出
                 cells.put(LeagueColumns.VICTORY_POINTS_EARNED, p.victoryPointsEarned);
                 cells.put(LeagueColumns.VICTORY_POINTS_SEIZED, p.victoryPointsSeized);
             }
@@ -319,34 +330,42 @@ public final class Mapper {
      * 层 {@link #toBattle} 内完成（与 Excel 写入器 SingleBattleSheets 内部行为一致，
      * 确定性幂等覆盖）。</p>
      */
-    public static PreviewResponse toPreviewResponse(final List<Battle> battles,
-                                                    final List<String> battleSourceNames,
-                                                    final List<String[]> duplicates,
-                                                    final List<String[]> failures,
-                                                    final Tankopedia tp) {
-        return toPreviewResponse(battles, battleSourceNames, duplicates, failures, tp, null);
-    }
-
-    /** League 模式：battles 与 league.battleResults() 按下标对齐（同一 ProcessedDataset 产出）。 */
+    /**
+     * League 模式：battles 为<b>全部</b>成功解析的 Battle（含 Rating-ineligible 场次），
+     * 每场 Rating 经 {@link LeagueRatingBatch#resultFor} 按 arenaId identity 绑定
+     * （不依赖数组 index——battles.size() 可大于 battleResults.size()，plan §9）。
+     */
     public static PreviewResponse toPreviewResponse(final List<Battle> battles,
                                                     final List<String> battleSourceNames,
                                                     final List<String[]> duplicates,
                                                     final List<String[]> failures,
                                                     final Tankopedia tp,
                                                     final LeagueRatingBatch league) {
+        return toPreviewResponse(battles, battleSourceNames, duplicates, failures, tp, league, null);
+    }
+
+    /**
+     * 完整 Preview 构建：league != null → League 模式；否则普通模式。
+     * leagueUnavailableCode 非 null（混合批次 MIXED_LEAGUE_AND_STANDARD_REPLAYS，plan §21）
+     * 时按普通模式输出 battles/aggregate，同时携带 League 不可用提示码。
+     */
+    public static PreviewResponse toPreviewResponse(final List<Battle> battles,
+                                                    final List<String> battleSourceNames,
+                                                    final List<String[]> duplicates,
+                                                    final List<String[]> failures,
+                                                    final Tankopedia tp,
+                                                    final LeagueRatingBatch league,
+                                                    final String leagueUnavailableCode) {
         final List<BattleDto> battlesDto = new ArrayList<>();
         for (int i = 0; i < battles.size(); i++) {
             final Battle battle = battles.get(i);
-            final LeagueRatingResult battleLeague = league == null || league.battleResults().size() <= i
-                    ? null : league.battleResults().get(i);
-            battlesDto.add(toBattle(battle, battleSourceNames.get(i), tp, battleLeague));
+            final LeagueRatingResult battleLeague = league == null ? null : league.resultFor(battle.arenaId);
+            battlesDto.add(toBattle(battle, battleSourceNames.get(i), tp, battleLeague, league != null));
         }
-        if (league != null) {
-            // League 模式：不输出旧汇总表（选手/战队中位数汇总走 league.*）；
-            // aggregateColumns 不含 contribution/kast/impact（plan §14）
-            return new PreviewResponse(battlesDto, List.of(), duplicates, failures,
-                    leaguePlayerColumns(), leagueAggregateColumns(), leagueDto(league));
-        }
+        // 基础 Replay Aggregate 属于 Replay Core：无论 League Rating 是否成功，
+        // 只要是多场（跨场汇总语义），就必须输出标准基础汇总——League Rating Summary
+        // 是附加分析，不替代基础汇总（plan §4/§5）。League 模式的 aggregateColumns 仍用
+        // League 变体（不含 contribution/kast/impact，PR #131 列边界不变）。
         final Map<Long, PerformanceMetricsCalculator.Row> perfById = new LinkedHashMap<>();
         for (final PerformanceMetricsCalculator.Row row : PerformanceMetricsCalculator.compute(battles)) {
             perfById.put(row.accountId, row);
@@ -354,8 +373,12 @@ public final class Mapper {
         final List<AggRow> aggregate = battles.size() > 1
                 ? toAggregate(Aggregator.aggregate(battles, tp), perfById)
                 : List.of();
+        if (league != null) {
+            return new PreviewResponse(battlesDto, aggregate, duplicates, failures,
+                    leaguePlayerColumns(), leagueAggregateColumns(), leagueDto(league), null);
+        }
         return new PreviewResponse(battlesDto, aggregate, duplicates, failures,
-                playerColumns(), aggregateColumns(), null);
+                playerColumns(), aggregateColumns(), null, leagueUnavailableCode);
     }
 
     private static LeagueRatingDto leagueDto(final LeagueRatingBatch league) {

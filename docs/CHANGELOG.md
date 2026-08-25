@@ -5,7 +5,30 @@
 ## [Unreleased]
 
 ### Added
-- **名人堂三环（Mark 3）人工审核排行榜**：新增独立 `mark3` domain、Flyway `V21` submission/evidence 表和 `/api/hof/mark3`、`/api/users/mark3`、`/api/admin/hof/mark3` API。仅限 Tier X，玩家提交三环所需场数、过程场均、过程胜率、1–2 张截图与恰好 5 个回放；无 Wargaming 自动认证链路。排行榜按已审核三环场数升序，场数相同使用 competition ranking；同用户同车的 CURRENT 唯一且不被后续申请替代，不使用 `SUPERSEDED`。REJECTED/CANCELLED/DELETED 可重提；管理员通过、拒绝或删除时均不能改写成绩，终态会清理截图和回放证据。
+- **名人堂三环（Mark 3）人工审核排行榜**：新增独立 `mark3` domain、Flyway `V21` submission/evidence 表和 `/api/hof/mark3`、`/api/users/mark3`、`/api/admin/hof/mark3` API。仅限 Tier X，玩家提交三环所需场数、过程场均、过程胜率、1–2 张截图与恰好 5 个回放；无 Wargaming 自动认证链路。创建路径从五个 replay byte[] 读取、解析、hash 锁、落盘到事务全程复用全局 `ReplayCapacityLimiter`，容量满返回 503 `REPLAY_BUSY`。排行榜按已审核三环场数升序，场数相同使用 competition ranking；同用户同车的 CURRENT 唯一且不被后续申请替代，不使用 `SUPERSEDED`。REJECTED/CANCELLED/DELETED 可重提；管理员通过、拒绝或删除时均不能改写成绩，终态会清理截图和回放证据。
+- **Replay Core / League Rating 业务边界加固（docs/current-plan.md）**：
+  - **前端不再把 League Rating 校验失败显示成红色「文件解析失败」**：训练赛/联赛回放无法生成
+    Rating 时，结果区改为琥珀色 warning 汇总（League Rating · 可评分 X / N · N 场未生成 Rating
+    + [查看详情] 按稳定错误码分组、再展开具体文件与 arenaId，不默认铺满超长文件名）；真正解析
+    失败仍显示红色错误（不降级）。三语 locale 新增 league.rated_count / unrated_count /
+    failure_view / failure_hide。
+  - **混合批次不再整体拒绝（plan §21）**：普通 + 训练赛/联赛混传时 League Rating 不聚合
+    （league=null），全部可解析回放按普通回放语义成功返回——Processing Job READY、Preview 与
+    标准导出可用；响应新增 leagueUnavailableCode=MIXED_LEAGUE_AND_STANDARD_REPLAYS，前端显示
+    琥珀色提示。preview / Processing Job result / 同步与异步导出四条链统一。
+  - **领域边界守卫**：新增 LeagueDomainBoundaryGuardTest（§24）——LeagueFailure ≠
+    ReplayFailure、Battle ↔ Rating 按 arenaId identity 绑定（禁止数组位置）、混合批次不污染
+    Parser；前端 §23 Test 1–7 + mixed 用例落地。
+- **战斗分析页改为单页 Workspace，AI 复盘 / 战局回放原地切换且不丢数据（docs/current-plan.md）**：
+  - **ReplayPage 下半部分改造为可动态切换的 Battle Workspace**：新增「解析结果 / AI 复盘 / 战局回放」三个一级能力 tab（复用全局 .tabs 视觉），v-show 保持各面板挂载——切走再切回时解析结果、AI 复盘进度/结果、地图与战局回放播放器状态全部保留；顶部「回放数据提取 / 文件选择 / 解析控制」区域不变。
+  - **入口全部改原地切换**：上传区的「战局回放 / AI 复盘」快捷按钮与结果 toolbar 的 battle-level 动作不再 navigate('reconstruction') 跨视图跳转，改为原地切到对应 Workspace 面板；目标文件直接复用当前 selection 内存文件（不重新上传、不重复解析、不跨视图交接）。多文件仍需显式选择目标 replay（禁止 fallback 第一场）；AI 复盘仍不自动消耗额度（进面板后手动发起）。
+  - **逻辑拆分单一事实源**：从 ReconstructionPage 抽出 AiReviewPanel（SSE 分析流 call1/evidence/call2/autopsy + 流式进度 + AnalysisResultPanel）与 BattlePlaybackPanel（/api/replay/map-overview 地图区块 + MapOverview + AI seek 联动），ReconstructionPage 改为组合两者并保留独立深链入口（?view=reconstruction 与登录回跳不变）；独立页的「AI 战术复盘」发起按钮随拆分移入 AiReviewPanel，ReplayInputPanel 精简为纯文件选择面板。面板的登录兜底走 loginView prop（Workspace=replay / 独立页=reconstruction）。
+  - **移除跨视图文件交接**：utils/replayTransfer.js（setPending/take/peek）已无调用方，删除；ReconstructionPage 移除 adoptPendingReplay / onActivated 接管逻辑。
+  - **AI 报告时间链接**：原地切到战局回放面板并自动加载/展开地图后 seek（未加载先拉取、折叠自动展开、MapOverview 不被重建），独立页行为不变（滚动定位到地图区块）。
+  - **三语 locale**：新增 workspace.tab_results / results_hint / ai_empty / playback_empty（zh/en/ru 同步）。
+  - **测试**：ReplayPage 新增 Workspace 用例（tab 默认值 / 直接入口切换 / 切走切回状态保持 / 解析预览切回结果），v-show 可见性按 element.style.display 断言（happy-dom 的 getComputedStyle 不反映 inline style，与项目既有 v-show 测试一致）；FileUploader 直接入口改断言 workspace-action emit；ReconstructionPage 删除跨视图接管用例（特性移除）。
+
+
 - **百场名人堂 WG 官方 API 自动认证链路**：保留原截图 + 5 回放人工审核端点，新增仅限 `wotb_verified` ASIA/EU/NA 身份的 JSON 提交链路。后端以固定白名单 host 调用 WG `account/info` + `tanks/stats`，冻结账号总场次、单车总伤害/场次与计算场均；账号总场次至少 5000、目标 Tier X 至少 100 场，MANUAL 使用原申报成绩、WARGAMING_API 使用官方快照。官方精确场均 `<=3900` 原子写入 CURRENT，`>3900` 自动创建无文件 PENDING 供管理员审核；审批端点不接收成绩数据，管理员只能通过、拒绝或删除，不能改写任何排名值。WG key 只从运行时 `WG_APPLICATION_ID` 注入 backend，端点受登录与 nginx 限流保护，失败零落库并引导原人工链路。
 - **review-with-docs 集成 Alibaba OpenCodeReview（OCR）delegate mode（docs/current-plan.md）**：
   `review-with-docs` 重构为三层审查引擎——Layer A（Requirement/Plan Auditor，主代理自审 plan/requirements/acceptance criteria 完成度，OCR 无 finding 不代表性完成）、Layer B（OpenCodeReview Code Auditor，`ocr delegate preview/rule` 确定性文件筛选+规则解析，推理由主代理 DeepSeek 完成，不维护第二套 LLM 配置）、Layer C（Review Reconciler，去重/验证/重定级，BLOCKER/MAJOR/MINOR + Blocker count=0 完成条件不变）。外部调用方式不变（仍 `review-with-docs`）、current-plan 流程不变、blocker=0 语义不变；新增 `.opencodereview/rule.json`（WotBTools-aware 首版少量规则：Java/Spring、Vue 前端 + replay invariant、Keycloak SPI、CI/deploy）；验证 Case 1–6 并明确 deterministic/agent-level 边界（scripts/ocr-verify/）：deterministic tests（verify-ocr.ps1，可重复、无 LLM）覆盖 merge-base 多 commit 范围（Case 5）、项目规则命中（Case 1 确定性部分）、no-diff reviewable=0（Case 6）、OCR 失败非零退出码（Case 4 确定性部分）；agent-level scenarios（主代理按 skill 执行并记录）覆盖 NPE bug 完整检出闭环（Case 1）、requirement 遗漏 MISSING/BLOCKER（Case 2）、OCR false positive 拒绝/降级（Case 3）、OCR failure 的 plan audit 继续 + review incomplete 处理（Case 4）。OCR 固定版本 `@alibaba-group/open-code-review@1.9.10`（Apache-2.0）。未新增 GitHub OCR Action、未增加用户人工步骤。
@@ -37,6 +60,91 @@
   `blitzkit-references.mjs --emit-portraits` 可重复生成入口。
 
 ### Fixed
+
+- **CW / Training Replay Rating 名册完整性收口（PR #132 追加，真实 0/N 根因修复）**：
+  - **根因**：LeagueRatingValidator 直接引用全局 Battle.rosterComplete（#201 全集合 == #301 全集合）
+    作为准入门槛；真实训练赛/联赛名册 #201 可含不属于 #301 的 non-combatant 记录
+    （probe：20260725_1535 训练房 #201=15 / #301=14，extra 账号 3117047709 无 #301 settlement）——
+    #201=15 / #301=14 的合法训练房被误判 LEAGUE_ROSTER_INCOMPLETE，整批 0/N Rating。
+  - **修正（最终方案：League 专属证据，不弱化全局契约）**：
+    - <b>全局 Battle.rosterComplete 保持严格 fail-closed 语义不变</b>（#201 全集合 == #301 全集合 +
+      队伍一致）——它是 SURVIVOR_SETTLEMENT / annihilationSuffix / pointsEndReason 等 AI 完整结算
+      推断的前提，名册存在无法证明为 spectator 的 extra（如 #201=4/#301=3）时不得视为完整；
+    - 新增 <b>League 专属证据</b>：Battle.settlementAccountsCoveredByRoster（#301 每个结算账号都
+      在名册 #201 中，无幽灵结算）+ Battle.settlementRosterTeamConsistent（名册队伍与结算队伍一致，
+      存在时），由 LeagueRatingValidator 判断——标准 7v7 且 #301 完整 14 人时 extra 不导致
+      ROSTER_INCOMPLETE；其余门槛（14 人 7v7 / unique 账号 / tankId / 明确胜方 / 死亡时间 / 数值
+      关系）不变，ROSTER_INCOMPLETE 只留给真实 mismatch（幽灵结算、队伍冲突）。
+  - **真实 probe 证据**（RosterCompletenessProbeTest，common/data 本地样本自动跳过）：
+    random×1 / tournament×4 / 11.19 Maus 均 #201=#301=Type0=14；20260725_1535 训练房
+    #201=15 / #301=14 / Type0=15（extra=3117047709 无 #301 settlement）。修复后该训练房全局
+    rosterComplete=false（严格）、League 专属证据完整 → Validator PASS（修复前
+    LEAGUE_ROSTER_INCOMPLETE），其余样本零回归。
+  - **测试**：ReplayParserTest（extra→全局严格 false + League 专属 true、幽灵结算→双 false、
+    队伍冲突→双 false、全等→双 true）、LeagueReplaysTest（#201=15/#301=14 rated、多场合法 CW
+    playerSummaries/teamSummaries 非空）、LeagueRosterCompletenessTest（<b>真实 CW fixture 入库
+    common/fixtures/replays/（15/14 训练房 + 14/14 tournament），CI 无条件全链路</b>：14 个 Player
+    Rating、八维度 0-max、Team 1/2 Rating、MVP、两队最佳、#201>#301 断言、真实双份 collect →
+    summaries 非空）+ AI fail-closed 回归（CW 15/14 全局 rosterComplete=false → 不推导点数/存活
+    结束方式、无全歼推断，PR #73 boundary 不放松）。
+  - **文档**：protocol.md / replay-data.md / replay-parsed-fields.md / league-rating.md 同步——
+    全局 rosterComplete 严格契约保持，「任何 #201 extra 都是观战者」不表述为 universal rule，
+    仅记录证据边界（标准 7v7 且 #301 完整 14 人时 extra 不属于 14 名 settled combatants）。
+- **Replay 汇总空数据 + 超宽表格重叠 P0 修复（docs/current-plan.md）**：
+  - **League 模式恢复基础 Replay Aggregate**：Mapper.toPreviewResponse 在 League 模式下不再输出空
+    aggregate——多场时按标准路径计算并输出基础跨场汇总（Aggregator.aggregate +
+    PerformanceMetricsCalculator.compute，同一 Replay Core 数据），League Rating Summary 是附加
+    分析而非替代品（resp.aggregate 有数据时 League 模式不再隐藏 AggregateTable）；aggregateColumns
+    仍用 League 变体（不含 contribution/kast/impact，PR #131 列边界不变）。
+  - **汇总人数语义修复**：replayAggregatePlayerCount 一律取 resp.aggregate.length（Replay Core
+    基础汇总人数），不再在 League 模式改用 league.playerSummaries.length——0 场可评分 ≠ Replay
+    没数据，「汇总（0 名选手）」误导消失。
+  - **汇总 Tab 双区块**：ReplayPage 汇总 Tab 拆为「基础战斗汇总（AggregateTable）」+「League Rating
+    汇总（LeagueSummaryTable player/team）」两个独立区块（League 模式下并存，非二选一）；summaries
+    全空时 League 区块显示明确 neutral 空态「暂无可评分场次」，LeagueSummaryTable 空行不再只显示
+    '--'。
+  - **超宽表格横向滚动 / sticky 列重叠修复**：.tablewrap 显式成为 scroll container
+    （position:relative + overflow-x:auto + max-width:100%）；sticky 第一列禁用 background: inherit
+    （行背景半透明 rgba(13,19,22,.82) 导致横滚时后方列从 sticky 列下方穿透），改为与 t1/t2 行背景
+    同表达式的 opaque color-mix + hover 不透明背景；League 表 sticky 层级修正（scoped
+    .league-table th.sticky-col z-index 3 → 7，不再低于普通表头 5——普通表头横滚时不再覆盖固定
+    玩家/Rating 列）；排序箭头改变表头宽度后重新测量 Rating sticky 左偏移。
+  - **Toolbar 响应式**：.restoolbar 由 grid minmax(0,1fr) auto 改为 flex 自然换行（空间不足时
+    actions 整行换到 tabs 下方，不再把 tabs 挤压到 0 宽）；sticky toolbar 背景不透明度 82% → 96%。
+  - **三语 locale**：新增 result.base_summary_title / league.summary.section_title /
+    league.summary.no_rateable（feature-messages.json，zh/en/ru 同步）。
+  - **测试**：backend ReplayServiceLeagueTest.leaguePreviewCarriesBaseReplayAggregateAlongsideLeagueSummary
+    （League 模式基础汇总与 League 汇总并存 + 列边界不变）；frontend replayView / ReplayPage /
+    ReplayPageReadyFlow / LeagueSummaryTable / BattleTable 回归（Case A 0/30、Case C partial 双区块
+    并存、tab 人数来自 aggregate、League 空态、sticky 结构契约）。
+- **生产「名人堂管理」页顶部三 Tab（记录 / 操作日志 / 百场审核）不可见——真正根因是 CSS cascade，不是浏览器缓存**：
+  - 真正根因：`frontend/src/styles/showcase-regressions.css` 在 `main.js` 中最后加载，把
+    `.hof-admin-tabs` 从 canonical（`showcase-rankings.css`）的 `position: sticky; top: 66px; z-index: 22`
+    覆盖为 `position: relative; z-index: 5`，但 rankings.css 的 `top: 66px` 偏移残留——Tab 被下移
+    恰好落入 `.hof-admin-filters`（同为 relative + z-index 5）区域，后绘制的 filters 把 Tab 盖住；
+    移动端 `position: static` 同样被该 override 破坏。DOM 测试全绿但生产 UI 不可见即由此而来。
+  - 修复：从 `showcase-regressions.css` 的 override 中彻底移除 `.hof-admin-tabs`（只保留
+    `.hof-admin-filters`），让 Tab 恢复 canonical 的 sticky 布局——Desktop sticky top 66px /
+    Tablet sticky top 64px / Mobile static；不新增第二套 Tab 定义、不加 `!important` 堆叠。
+  - 回归测试：新增 `frontend/src/styles/hof-admin-tabs-css.test.js` CSS source-contract 测试——
+    断言 rankings.css 保持 canonical sticky/偏移规则、regressions.css（最后加载）不再引用 tab
+    strip、main.js 加载顺序不变；DOM 测试（三 Tab 存在且可点击）原样保留。
+  - 勘误：此前 PR #130 将本问题归因于浏览器缓存并加 nginx Cache-Control 与 build identity——
+    缓存策略与构建版本标识本身仍保留（属基础设施加固），但本问题的根因是上述 CSS cascade，
+    并非缓存。部署新版本后 Tab 不可见的现象系样式覆盖所致，与旧 bundle 缓存无关。
+- **生产「名人堂管理」页顶部三 Tab 缓存根因修复（PR #130，见上勘误：非本问题真正根因）**：
+  - 根因（原记录，已勘误）：`deploy/nginx/nginx.conf` 的 `location /` 未设置任何 Cache-Control——浏览器把旧 index.html 及其引用的旧 hash bundle 当作可缓存资源，部署新镜像后仍加载旧 JS，导致 `?view=hof-admin` 显示旧版页面（无 `.hof-admin-tabs`），百场审核入口丢失；构建/部署产物经实证无问题（生产运行 `sha-305d7ac3` = 含百场审核源码的 main HEAD）。
+
+  - 修复：SPA 缓存策略——`location = /index.html` 加 `Cache-Control: no-cache, no-store, must-revalidate`（每次重新验证，新 bundle hash 部署后立即生效）；`location /assets/`（Vite 内容 hash 产物）加 `Cache-Control: public, max-age=31536000, immutable`；静态资源 404 不再 fallback 到 index.html（`try_files $uri =404`）。
+  - **Build identity（防再猜版本）**：`vite.config.js` 注入 `__BUILD_COMMIT__` / `__BUILD_TIME__`（git rev-parse --short + ISO time，无 git 时降级 unknown），build 时生成 `dist/version.json`，`main.js` 启动 console 输出 `[build] commit=... time=...`——生产页面异常时可立即核对实际 bundle 版本。
+  - **回归测试**：`HoFAdminPage.test.js` 新增显式断言——authorized 用户必须渲染三 Tab（`hofAdmin.recordsTab / hofAdmin.auditTab / hundredAdmin.tab` 顺序固定），防未来 UI refactor 再次丢失审核入口。
+  - **P0：League Rating 校验失败不再删除成功解析的回放（Replay parsing validity ≠ League Rating eligibility）**：
+  - 根因：`LeagueReplays.collectLeague` 把「仅 Rating eligible 的场次」当作结果集 battles 返回（Rating 校验失败经 `continue` 从最终集合消失），`ReplayProcessingJobService` 以 `c.battles().isEmpty()` 判定 `NO_VALID_REPLAYS`——全部 replay 成功解析但全部 Rating 不合格时，Processing Job 错误 FAILED 并提示「没有可用的回放文件」。
+  - 领域分离：`LeagueCollectResult.battles` 恢复为「去重/冲突后全部成功解析的 Battle」（可进 Preview/Export 基础数据）；Rating 只对通过 `LeagueRatingValidator` 的场次计算（`LeagueRatingBatch.battleResults` 与批次汇总只含 eligible）；校验失败以 `LeagueFailure` 稳定错误码（`LEAGUE_*`）返回，不再触发 `NO_VALID_REPLAYS`（该错误码仅保留给「所有 replay 真正解析失败」）。
+  - 稳定 identity：`LeagueRatingResult` 新增 `arenaId`；`LeagueRatingBatch.resultFor(arenaId)` 按 identity 绑定 Battle ↔ Rating，消除 `Mapper.toPreviewResponse` / `ReplayService` 导出 / `ReplayExportJobService` / `LeagueAggregateSheets` 的数组 index 绑定（battles.size() 可大于 battleResults.size()，禁止 index 错位/IndexOutOfBounds）。
+  - 进度语义：Rating-ineligible 但已解析的文件 progress 报 `SUCCESS`（可预览），不再计入解析失败；job `valid` = 成功解析并可进入 Preview 的 replay 数。
+  - 导出：单场 league 未通过校验回退普通单场工作簿（基础数据仍可导出，不 NPE）；each 模式跳过未评分场次；汇总 Excel「每场明细」只含 eligible，「战斗列表」列出全部 battle 且 ineligible 场显示真实 failure 文案（不重复行）。
+  - 测试：新增 core `LeagueReplaysTest`（Case A 全 eligible / Case B 部分不合格保留 / Case C 全不合格仍 READY / progress SUCCESS 语义）、`ReplayProcessingJobServiceTest`（全部 League 不合格 Job READY、partial ratings）、`ReplayServiceLeagueTest`（partial Preview identity 绑定、单场不合格导出回退）、`LeagueExcelExportTest`（partial 汇总导出不崩溃不错位）；修正 `invalidSevenVsSevenReportedAsFailureOthersContinue` 旧断言（battles 保留 bad 场）。
 - **WG 首次登录可直接提交百场认证**：`HundredWargamingSubmissionService` 先验证可信 JWT，再复用 `UserProfileService.syncFromLogin` 原子创建或刷新 WARGAMING Profile，随后仍执行 JWT 与数据库 Profile 的完整交叉校验后才查询 WG stats。同步冲突或失败保持 fail-closed，绝不调用外部 stats 或创建 submission。
 - **Replay Processing Job review 闭环修复（PR #121 correctness/concurrency 3 项 blocker）**：
   - **文件集合变化立即失效旧解析结果（Blocker 1）**：前端新增统一 `updateFiles` 入口（FileUploader 任意 add / folder-add / remove / clear / replace 事件都走它），任何 files 变化立即置空 `processingJobId` 与已展示的 `resp`（防止「UI 显示 dataset A、files 是 dataset B、Export 复用 A」）；正在处理的旧 Job 停止轮询并后台协作取消（释放 queue slot / 容量）；`pollProcessingJob` 以 `processingPollJobId` 作 request token + `selectionRevision` 作 revision，丢弃迟到/过期的 READY 响应（P1 处理中 files 改变 → P1 随后 READY 不得覆盖当前 selection）；Export 复用仅当 `resultMatchesSelection`（processingJobId 与 resp 成对存在），否则走 legacy 上传当前 files，绝不静默导出旧 dataset。

@@ -1,0 +1,137 @@
+{
+  "zh": {
+    "home": {
+      "boostDesc": "专业陪练服务，提升战斗技巧与实战表现。"
+    },
+    "boost": {
+      "notificationTitle": {
+        "BOOST_REQUEST_SUBMITTED": "陪练需求已提交"
+      },
+      "notificationMessage": {
+        "BOOST_REQUEST_SUBMITTED": "你的陪练需求 #{requestId} 已提交，等待审核。"
+      }
+    },
+    "upload": {
+      "action_replay_selector": "选择用于 AI 复盘或战局回放的回放",
+      "action_replay_placeholder": "请选择一份回放"
+    },
+    "replay": {
+      "processing_job": {
+        "queued": "等待解析",
+        "preparing": "正在准备解析 {total} 个回放…",
+        "title": "正在解析回放",
+        "progress": "解析进度：{processed}/{total}",
+        "current_file": "当前文件：{file}",
+        "counts": "有效 {v} · 重复 {d} · 失败 {f}",
+        "ready": "回放解析完成",
+        "failed": "回放解析失败",
+        "no_valid_replays": "没有可用的回放文件",
+        "cancelled": "解析已取消"
+      }
+    },
+    "league": {
+      "rated_count": "可评分 {rated} / {total}",
+      "unrated_count": "{count} 场未生成 Rating",
+      "failure_view": "查看详情",
+      "failure_hide": "收起详情",
+      "unavailable_mixed": "League Rating 不适用于混合批次（普通回放与训练赛/联赛回放混传），已按普通回放展示",
+      "summary": {
+        "section_title": "League Rating 汇总",
+        "no_rateable": "暂无可评分场次"
+      }
+    },
+    "result": {
+      "base_summary_title": "基础战斗汇总"
+    }
+  },
+  "en": {
+    "home": {
+      "boostDesc": "Coaching sessions to improve gameplay and battle performance."
+    },
+    "boost": {
+      "notificationTitle": {
+        "BOOST_REQUEST_SUBMITTED": "Coaching request submitted"
+      },
+      "notificationMessage": {
+        "BOOST_REQUEST_SUBMITTED": "Your coaching request #{requestId} was submitted and is awaiting review."
+      }
+    },
+    "upload": {
+      "action_replay_selector": "Select a replay for AI review or battle playback",
+      "action_replay_placeholder": "Select a replay"
+    },
+    "replay": {
+      "processing_job": {
+        "queued": "Waiting to parse",
+        "preparing": "Preparing {total} replays…",
+        "title": "Parsing replays",
+        "progress": "Progress: {processed}/{total}",
+        "current_file": "Current file: {file}",
+        "counts": "Valid {v} · duplicates {d} · failed {f}",
+        "ready": "Replay parsing complete",
+        "failed": "Replay parsing failed",
+        "no_valid_replays": "No valid replay files were found",
+        "cancelled": "Parsing cancelled"
+      }
+    },
+    "league": {
+      "rated_count": "Rateable {rated} / {total}",
+      "unrated_count": "{count} battle(s) without Rating",
+      "failure_view": "View details",
+      "failure_hide": "Hide details",
+      "unavailable_mixed": "League Rating is not available for mixed batches (standard + training/tournament replays); shown as standard replays",
+      "summary": {
+        "section_title": "League Rating Summary",
+        "no_rateable": "No rateable battles yet"
+      }
+    },
+    "result": {
+      "base_summary_title": "Base Battle Summary"
+    }
+  },
+  "ru": {
+    "home": {
+      "boostDesc": "Тренировки для улучшения игровых навыков и эффективности в бою."
+    },
+    "boost": {
+      "notificationTitle": {
+        "BOOST_REQUEST_SUBMITTED": "Заявка на тренировку отправлена"
+      },
+      "notificationMessage": {
+        "BOOST_REQUEST_SUBMITTED": "Ваша заявка #{requestId} отправлена и ожидает проверки."
+      }
+    },
+    "upload": {
+      "action_replay_selector": "Выберите реплей для ИИ-разбора или просмотра боя",
+      "action_replay_placeholder": "Выберите реплей"
+    },
+    "replay": {
+      "processing_job": {
+        "queued": "Ожидание обработки",
+        "preparing": "Подготовка {total} реплеев…",
+        "title": "Обработка реплеев",
+        "progress": "Прогресс: {processed}/{total}",
+        "current_file": "Текущий файл: {file}",
+        "counts": "Успешно {v} · дубликаты {d} · ошибки {f}",
+        "ready": "Обработка реплеев завершена",
+        "failed": "Ошибка обработки реплеев",
+        "no_valid_replays": "Подходящие файлы реплеев не найдены",
+        "cancelled": "Обработка отменена"
+      }
+    },
+    "league": {
+      "rated_count": "Оценено {rated} / {total}",
+      "unrated_count": "{count} боя без рейтинга",
+      "failure_view": "Подробнее",
+      "failure_hide": "Скрыть",
+      "unavailable_mixed": "League Rating недоступен для смешанных наборов (обычные + тренировочные/турнирные реплеи); показаны как обычные реплеи",
+      "summary": {
+        "section_title": "Сводка League Rating",
+        "no_rateable": "Нет подходящих боёв для рейтинга"
+      }
+    },
+    "result": {
+      "base_summary_title": "Сводка по боям"
+    }
+  }
+}

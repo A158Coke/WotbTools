@@ -1,11 +1,67 @@
 [
   {
-    "v": "2.12.20",
-    "date": "2026-08-24",
+"v": "2.12.27",
+    "date": "2026-08-25",
     "tag": "add",
     "zh": "名人堂新增「三环」单车最速排行榜：目前仅限十级车并由人工审核。提交时填写获得三环所需场数、过程场均和胜率，附 1–2 张截图与 5 个回放；从 0 场开始打三环的新车可只附一张截图，其他情况请提供 0% 和 95% 截图。场数越少排名越高，相同场数并列；同一玩家同一车辆已有已通过记录时，后续申请不能替代它，拒绝、撤销或删除的申请可重新提交。管理员只能通过、拒绝或删除，不能修改成绩。",
     "en": "The Hall of Fame now has a fastest Mark of Excellence III leaderboard for each Tier X vehicle, reviewed manually. Submit the battles needed for three marks, average damage and win rate with 1–2 screenshots and 5 replays; a new vehicle started from zero battles may use one screenshot, while other entries should show 0% and 95%. Fewer battles rank higher and equal counts share a rank. A player's current result for that vehicle cannot be replaced by a later entry; rejected, cancelled, or deleted entries may be submitted again. Admins can only approve, reject, or delete entries, never edit the score.",
     "ru": "В Зале славы появился рейтинг самого быстрого получения трёх отметок на каждой технике X уровня с ручной проверкой. Укажите число боёв до трёх отметок, средний урон и процент побед, приложите 1–2 скриншота и 5 реплеев; для новой машины, начатой с нуля боёв, достаточно одного скриншота, в остальных случаях нужны скриншоты 0% и 95%. Чем меньше боёв, тем выше место, одинаковые результаты делят место. Текущий результат игрока на этой машине нельзя заменить более поздней заявкой; отклонённую, отменённую или удалённую заявку можно подать заново. Администратор может только одобрить, отклонить или удалить запись, но не изменить показатели."
+  },
+  {
+    "v": "2.12.26",
+    "date": "2026-08-24",
+    "tag": "fix",
+    "zh": "训练赛/联赛回放名册里存在观战者等非参战记录时，不再被误判为「名册不完整」：只要 14 名结算玩家完整（无重复、队伍 7v7、车辆与胜方明确）即可正常生成 League Rating——14 名玩家评分、八维度、双方战队 Rating、MVP 与两队最佳。",
+    "en": "Training/tournament replays whose roster contains non-combatant entries (e.g. spectators) are no longer rejected as \"incomplete roster\": as long as all 14 settled players are complete (unique accounts, 7v7 teams, valid vehicles and a decisive winner), League Rating is generated normally — 14 player ratings, eight dimensions, both team ratings, MVP and each team's best.",
+    "ru": "Реплеи тренировочных/турнирных боёв, в списке которых есть не участвовавшие в бою записи (например, зрители), больше не отклоняются как «неполный состав»: пока все 14 игроков в итогах присутствуют полностью (уникальные аккаунты, составы 7v7, корректные машины и явный победитель), League Rating формируется штатно — 14 рейтингов игроков, восемь измерений, рейтинги обеих команд, MVP и лучший игрок каждой команды."
+  },
+  {
+    "v": "2.12.25",
+    "date": "2026-08-24",
+    "tag": "fix",
+    "zh": "修复回放汇总显示「0 名选手」：训练赛/联赛回放即使无法生成 League Rating，基础战斗汇总也正常显示真实选手数据；没有任何可评分场次时，League 汇总区块显示「暂无可评分场次」。超宽战斗表格横向滚动时，固定玩家/评分列不再与后方列文字重叠，工具栏在窄屏下自动换行。",
+    "en": "Fixed the replay summary showing \"0 players\": even when no League Rating can be generated for training/tournament replays, the base battle summary now shows real player data, and the League Rating section shows \"No rateable battles yet\" when there is nothing to rate. Fixed text overlap between the fixed player/rating columns and scrolling columns in wide battle tables, and the toolbar now wraps naturally on narrow screens.",
+    "ru": "Исправлена сводка «0 игроков»: даже если League Rating не может быть рассчитан для тренировочных/турнирных реплеев, базовая сводка по боям теперь показывает реальные данные игроков, а раздел League Rating показывает «Нет подходящих боёв для рейтинга». Исправлено наложение текста между закреплёнными колонками игрока/рейтинга и прокручиваемыми колонками в широких таблицах боя; панель инструментов теперь корректно переносится на узких экранах."
+  },
+  {
+    "v": "2.12.24",
+    "date": "2026-08-24",
+    "tag": "fix",
+    "zh": "修复名人堂管理页顶部「名人堂记录 / 操作日志 / 百场审核」三个 Tab 不可见：此前部署后页面只显示筛选器和记录表格，Tab 被样式覆盖隐藏；现在三个 Tab 正常显示并可点击切换，手机端正常堆叠在筛选器上方。",
+    "en": "Fixed the Hall of Fame admin page so its top tabs (Records / Audit Log / 100-Battle Review) are visible again: after deployment the page only showed the filters and records table because the tab strip was hidden by a CSS cascade override. The three tabs now display and switch normally, stacking above the filters on mobile.",
+    "ru": "Исправлена невидимость вкладок «Записи / Журнал аудита / Проверка 100 боёв» на странице администрирования Зала славы: после развёртывания страница показывала только фильтры и таблицу записей, потому что полоса вкладок была скрыта переопределением каскада CSS. Теперь три вкладки отображаются и переключаются, а на мобильных устройствах корректно располагаются над фильтрами."
+  },
+  {
+    "v": "2.12.23",
+    "date": "2026-08-24",
+    "tag": "fix",
+    "zh": "训练赛/联赛回放无法计算 Rating 时不再误显示为「文件解析失败」：未生成 Rating 的比赛保留在结果中，改为醒目的汇总提示（可评分 X / N、N 场未生成 Rating），可按原因分组展开查看具体回放；真正解析失败的回放仍显示红色错误。混合上传普通与训练赛/联赛回放时不再整体拒绝：所有能解析的回放都正常展示，League Rating 暂不可用并给出提示。",
+    "en": "Training/tournament replays that cannot be League-rated are no longer shown as \"failed to parse\": unrated battles stay in the results with a clear summary (rateable X / N, N battles without Rating) that can be expanded by reason to view the specific replays; genuinely unparsable replays still show as errors. Mixed uploads of standard and training/tournament replays are no longer rejected outright: every parsable replay is shown normally, with League Rating unavailable and a notice explaining why.",
+    "ru": "Тренировочные/турнирные реплеи, для которых нельзя рассчитать Rating, больше не показываются как «не удалось разобрать»: бои без рейтинга остаются в результатах с понятной сводкой (оценено X / N, N боёв без Rating), которую можно раскрыть по причинам и посмотреть конкретные реплеи; по-настоящему неразбираемые реплеи по-прежнему показываются как ошибки. Смешанные загрузки обычных и тренировочных/турнирных реплеев больше не отклоняются целиком: все разбираемые реплеи отображаются нормально, а League Rating недоступен с соответствующим уведомлением."
+  },
+  {
+    "v": "2.12.22",
+    "date": "2026-08-24",
+    "tag": "fix",
+    "zh": "修复 League 回放解析被误判：选择多份训练赛/联赛回放点击「解析预览」后，此前会提示「没有可用的回放文件」导致解析失败；现在只要回放本身能正常解析就会显示结果，无法计算 League Rating 的比赛保留在结果中并显示具体原因，不再把「评分条件不满足」当成「回放无效」。",
+    "en": "Fixed League replays being rejected as invalid: after selecting training/tournament replays and clicking Preview, the page previously said \"no valid replays\" even though the files parsed fine. Now every successfully parsed replay is shown, and battles that cannot be League-rated stay in the results with their specific reason instead of being treated as invalid.",
+    "ru": "Исправлена ошибочная отбраковка реплеев League: при выборе тренировочных/турнирных реплеев и нажатии «Разобрать» раньше появлялось сообщение «нет доступных реплеев». Теперь каждый корректно разобранный реплей отображается, а бои без League Rating остаются в результатах с указанием конкретной причины, а не как недействительные."
+  },
+  {
+    "v": "2.12.21",
+    "date": "2026-08-24",
+    "tag": "chg",
+    "zh": "战局分析页面不再跳页：解析结果、AI 复盘、战局回放改为同一页面内原地切换，AI 复盘进度与结果、战局回放画面在切换后原样保留，无需重新上传或重新解析回放。",
+    "en": "Battle Analysis no longer leaves the page: Parse Results, AI Review, and Battle Playback now switch in place within the same page. AI progress/results and the playback view are kept when you switch away and back — no re-upload or re-parse required.",
+    "ru": "Анализ боя больше не переходит на другие страницы: результаты разбора, AI-разбор и повтор боя переключаются прямо на месте. Прогресс и результаты AI-разбора, а также вид повтора сохраняются при переключении туда и обратно — повторно загружать и разбирать реплей не нужно."
+  },
+  {
+    "v": "2.12.20",
+    "date": "2026-08-24",
+    "tag": "chg",
+    "zh": "界面统一为暗色主题并移除主题切换；战局分析上传区新增「解析预览 / 战局回放 / AI 复盘」三个并列入口，单文件可直接进入 AI 复盘或战局回放，多文件必须明确选择目标回放；支持单独移除误选回放。同步修复 League 汇总人数、处理任务通知三语、名人堂/后台表格重叠与可读性、赞助页战场背景和移动端通知遮挡问题。",
+    "en": "The interface is now dark-only and the theme switcher is removed. The Battle Analysis upload workspace exposes Preview / Battle Playback / AI Review as peer actions: a single replay can open AI Review or Playback directly, while multi-file uploads require an explicit target replay. Individual selected replays can also be removed. This release also fixes League aggregate player counts, processing-job i18n, Hall of Fame/admin table overlap and readability, the Sponsor battlefield background, and mobile notification overlap.",
+    "ru": "Интерфейс теперь использует только тёмную тему, переключатель тем удалён. В рабочей области анализа боя доступны три равноправных действия: предпросмотр, повтор боя и AI-разбор; для одного реплея AI-разбор или повтор можно открыть сразу, а при нескольких файлах нужно явно выбрать нужный реплей. Также можно удалять отдельные выбранные файлы. Исправлены число игроков в сводке League, локализация задач обработки, перекрытия и читаемость таблиц Зала славы/админки, фон страницы поддержки и перекрытие уведомлений на мобильных устройствах."
   },
   {
     "v": "2.12.19",
@@ -197,7 +253,7 @@
     "tag": "add",
     "zh": "战局回放新增玩家名/坦克名标签与碰撞优化：控制栏可分别开关「显示玩家名」「显示坦克名」（选择会被记住，刷新后保留）；玩家名与坦克名共用一个背景块显示，文字颜色跟随阵营；玩家名过长时按实际像素截断（悬停显示完整名字）；高密度战局中名字互相遮挡时，玩家名会自动隐藏（稍后恢复）而不遮挡更重要的坦克名，坦克名冲突时轻量上下错开；点击坦克现在以车体为准（车体范围外的标签/图标区域不再误选中），多个坦克重叠时自动选中离点击位置最近的一辆；战局回放支持全屏模式：点「全屏」后地图填满屏幕，播放进度、倍速、缩放与平移、选中车辆与显示偏好都保持不变，按 ESC 或「退出全屏」即恢复。",
     "en": "Battle playback gains player/tank name labels with collision handling: the control bar can toggle \"Show player names\" and \"Show tank names\" separately (your choice is remembered across visits); player and tank names share one background block, colored by team; overly long player names are truncated by actual pixel width (hover shows the full name); in dense battles overlapping names auto-hide the player name (restoring later) instead of covering the more important tank name, and conflicting tank names shift apart slightly; clicking a tank now targets its hull (labels/icons outside the hull no longer select it), and when tanks overlap, the one nearest to your click is selected; battle playback also supports fullscreen mode: entering fullscreen fills the screen with the map while keeping playback progress, speed, zoom/pan, the selected vehicle and display preferences intact, and pressing ESC or \"Exit fullscreen\" restores the window.",
-    "ru": "В повтор боя добавлены метки с именами игроков/танков и обработка коллизий: в панели управления можно отдельно включать «имена игроков» и «названия танков» (выбор запоминается); имя игрока и название танка показываются в одном блоке, цвет — по команде; слишком длинные имена игроков обрезаются по фактической ширине (при наведении показывается полное имя); при пересечении меток в плотном бою имя игрока автоматически скрывается (позже восстанавливается), уступая более важному названию танка, а конфликтующие названия танков слегка раздвигаются по вертикали; клик по танку теперь учитывает корпус (клики по меткам/иконкам вне корпуса больше не выбирают машину), а при наложении машин выбирается ближайшая к точке клика; в повторе боя также есть полноэкранный режим: при входе в полный экран карта занимает весь экран, а прогресс воспроизведения, скорость, масштаб, выбранная машина и настройки отображения сохраняются; выход — по ESC или кнопке «Выйти из полного экрана»."
+    "ru": "В повтор боя добавлены метки с именами игроков/танков и обработка коллизий: в панели управления можно отдельно включать «имена игроков» и «названия танков» (выбор запоминается); имя игрока и название танка показываются в одном блоке, цвет — по команде; слишком длинные имена игроков обрезаются по фактической ширине (при наведении показывается полное имя); при пересечении меток в плотном бою имя игрока автоматически скрывается (позже восстанавливается), уступая более важному названию танка, а конфликтующие названия танков слегка раздвигаются по вертикали; клик по танку теперь учитывает корпус (клики по меткам/иконкам вне корпуса больше не выбирают машину), а при наложении машин выбирается ближайшая к точке клика; в повторе боя также есть полноэкранный режим: при входе в полный экран карта занимает весь экран, а прогресс воспроизведения, скорость, масштаб, выбранная машина и настройки отображения сохраняются; выход — по ESC или кнопке «Выйти из полноэкранного режима»."
   },
   {
     "v": "2.11.19",
@@ -269,7 +325,7 @@
     "tag": "fix",
     "zh": "AI 复盘战局回放与地图鸟瞰修复/增强：战局回放坦克标记与信息栏改用权威坦克名（tankId 经车辆库解析，如 29985 显示为 SPHT，不再显示纯数字）；修复敌方坦克「位置上报→中断→再上报」后图标残留透明（最后已知位置淡化不解除）；点击 AI 报告中的时间链接自动滚动到地图区块并切到战局回放视图；赛前预测/复盘正文/地图鸟瞰三板块支持独立展开/收起（默认展开）",
     "en": "AI review battle-playback and map-overview fixes/enhancements: the battle-playback tank marker and info panel now show the authoritative tank name (tankId resolved via the vehicle database, e.g. 29985 shows as SPHT, no longer a raw number); fixed the enemy marker staying transparent after a position-report gap re-report cycle (the last-known fade no longer sticks); clicking a time link in the AI report now auto-scrolls to the map section and switches to the battle-playback view; the pre-battle prediction / review body / map overview sections can each collapse/expand independently (expanded by default)",
-    "ru": "Исправления и улучшения повтора боя и обзора карты в ИИ-разборе: маркер танка и панель информации теперь показывают авторитетное название танка (tankId разрешается по базе техники, напр. 29985 отображается как SPHT, а не числом); исправлено, что маркер противника оставался прозрачным после цикла «отчёт о позиции перерыв повторный отчёт» (затухание последней известной позиции больше не залипает); клик по временной ссылке в отчёте ИИ теперь прокручивает к блоку карты и переключается на вид повтора боя; блоки «прогноз до боя / текст разбора / обзор карты» можно сворачивать и разворачивать независимо (по умолчанию развёрнуты)"
+    "ru": "Исправления и улучшения повтора боя и обзора карты в ИИ-разборе: маркер танка и панель информации теперь показывают авторитетное название танка (tankId разрешается по базе техники, напр. 29985 отображается как SPHT, а не числом); исправлено, что маркер противника оставался прозрачным после цикла «отчёт о позиции перерыв повторный отчёт» (затухание последней известной позиции больше не залипает); клик по временной ссылке в отчёте ИИ теперь прокручивает к блоку карты и переключает на вид повтора боя; блоки «прогноз до боя / текст разбора / обзор карты» можно сворачивать и разворачивать независимо (по умолчанию развёрнуты)"
   },
   {
     "v": "2.11.10",

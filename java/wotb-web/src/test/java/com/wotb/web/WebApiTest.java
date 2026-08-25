@@ -5,6 +5,7 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.web.boost.dto.BoosterApplicationSummaryDto;
 import com.wotb.web.boost.entity.BoosterApplication;
@@ -165,6 +166,20 @@ public class WebApiTest {
                 "application/octet-stream", Files.readAllBytes(p));
     }
 
+    /**
+     * HoF/标准导出场景使用的随机战 fixture（random-battle-example，arenaBonusType=1）。
+     * 不依赖 replays() 排序——fixtures/replays 现含 CW 训练房（arenaBonusType=2），
+     * HoF 上传会以 UNSUPPORTED_BATTLE_TYPE 拒绝，必须显式选随机战样本。
+     */
+    private static Path standardRandomFixture() throws Exception {
+        for (final Path p : replays()) {
+            if (p.getFileName().toString().contains("random-battle-example")) {
+                return p;
+            }
+        }
+        return replays().getFirst();
+    }
+
     @Test
     void previewMultipleWithDuplicate() throws Exception {
         final List<Path> files = replays();
@@ -179,8 +194,15 @@ public class WebApiTest {
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         final JsonNode n = om.readTree(json);
-        assertEquals(files.size(), n.get("battles").size());
-        assertEquals(1, n.get("duplicates").size());
+        // 唯一战斗数按 arenaId 去重：提交夹具（fixtures/replays）与本地可选样本（common/data）
+        // 可能含同 arenaId 副本（如 cw-training-15-14-example 与本地 data/20260725_1535 同场）
+        final Set<String> uniqueArenas = new HashSet<>();
+        for (final Path p : files) {
+            uniqueArenas.add(ReplayParser.parse(Files.readAllBytes(p)).arenaId);
+        }
+        assertEquals(uniqueArenas.size(), n.get("battles").size());
+        assertEquals(files.size() - uniqueArenas.size() + 1, n.get("duplicates").size(),
+                "重复数 = 跨目录同场副本 + 手工 dup 1 份");
         // aggregate 仅在 >1 场唯一战斗时由后端输出（ReplayService），单一夹具下为空
         if (files.size() > 1) {
             assertFalse(n.get("aggregate").isEmpty());
@@ -326,7 +348,8 @@ public class WebApiTest {
 
     @Test
     void hofUploadPersistsReplayAndAllowsByteIdenticalDownload() throws Exception {
-        final Path replay = replays().getFirst();
+        // HoF 只接受随机战（arenaBonusType=1）；fixtures 含 CW 训练房，必须显式选随机战样本
+        final Path replay = standardRandomFixture();
         final String json = hofUpload(replay);
         final JsonNode n = om.readTree(json);
         assertEquals("ok", n.get("status").asText());
@@ -351,7 +374,7 @@ public class WebApiTest {
 
     @Test
     void hofUploadIdempotentForSameFile() throws Exception {
-        final Path replay = replays().getFirst();
+        final Path replay = standardRandomFixture();
         hofUpload(replay);
         final long filesAfterFirst = Files.list(REPLAY_DIR)
                 .filter(p -> p.getFileName().toString().endsWith(".wotbreplay")).count();

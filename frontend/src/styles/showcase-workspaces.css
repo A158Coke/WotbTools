@@ -89,14 +89,19 @@
   box-shadow: 0 12px 28px var(--accent-shadow);
 }
 
+/* Toolbar（plan §22）：flex + 自然换行。空间充足时 tabs + actions 同一行；
+   空间不足时 actions 自动换到下一行，禁止 absolute/negative margin/overlay。
+   tabs 保持 min-width:0 + overflow-x:auto（30 场 battle tab 横滚）。 */
 .layout-data-workspace .restoolbar {
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
+  display: flex !important;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
   margin: 14px 0 !important;
 }
 .layout-data-workspace .tabs {
   display: flex;
+  flex: 1 1 460px;
   gap: 5px !important;
   min-width: 0;
   overflow-x: auto;
@@ -109,10 +114,12 @@
 }
 .layout-data-workspace .resactions {
   display: flex;
+  flex: 0 1 auto;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  min-width: 0;
 }
 .layout-data-workspace .battle-action {
   min-height: 35px;
@@ -122,7 +129,13 @@
   box-shadow: 0 9px 24px var(--accent-shadow);
 }
 
+/* .tablewrap 必须成为明确 scroll container（plan §14/§15）：
+   超宽 table 只在 .tablewrap 内横向滚动，不撑破 body / 不覆盖 sibling。 */
 .layout-data-workspace .tablewrap {
+  position: relative;
+  overflow-x: auto;
+  overflow-y: auto;
+  max-width: 100%;
   border: 1px solid #303a40 !important;
   border-radius: 8px !important;
   background: #11171a !important;
@@ -149,13 +162,20 @@
   color: #d8d5cd;
 }
 .layout-data-workspace table tbody tr:hover { background: #172025 !important; }
+/* Sticky 第一列必须 opaque（plan §16/§18/§19）：禁止 background: inherit——
+   行背景 rgba(13,19,22,.82) 半透明，横滚时后方列会从 sticky 列下方穿透。
+   这里与 App.vue t1/t2 行背景同一 color-mix 表达式（两个不透明色混合 = 不透明结果），
+   hover 也给不透明背景，保证 sticky 第一列与行视觉一致且不透。 */
 .layout-data-workspace table th:first-child,
 .layout-data-workspace table td:first-child {
   position: sticky;
   left: 0;
   z-index: 3;
-  background: inherit;
+  background: var(--bg-card);
 }
+.layout-data-workspace table tbody tr.t1 td:first-child { background: color-mix(in srgb, var(--bg-t1) 64%, var(--bg-card)); }
+.layout-data-workspace table tbody tr.t2 td:first-child { background: color-mix(in srgb, var(--bg-t2) 64%, var(--bg-card)); }
+.layout-data-workspace table tbody tr:hover td:first-child { background: var(--bg-list-hover); }
 .layout-data-workspace table thead th:first-child { z-index: 7; background: #171e22 !important; }
 
 /* ========== Reconstruction / AI + map ========== */
@@ -258,8 +278,9 @@
 }
 
 @media (max-width: 1199px) {
-  .layout-data-workspace .restoolbar { grid-template-columns: 1fr; }
-  .layout-data-workspace .resactions { justify-content: flex-start; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 3px; }
+  /* restoolbar 已改为 flex 自然换行（plan §22），不再需要 grid 覆盖；
+     actions 保持左对齐，允许整行换到 tabs 下方。 */
+  .layout-data-workspace .resactions { justify-content: flex-start; }
   .layout-data-workspace .uploadwrap { padding: 20px !important; }
   .recon-page { width: calc(100vw - 18px) !important; }
 }

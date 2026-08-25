@@ -1,4 +1,4 @@
-/* WotBTools Showcase Theme Layer
+/* WotBTools Showcase dark visual layer
  * Visual-only layer on top of tokens.css. Business behavior stays in page components.
  * Goals: one WOTB-inspired language, wider containers, dense desktop tools, tablet/mobile reflow.
  */
@@ -11,8 +11,7 @@
   --showcase-surface: color-mix(in srgb, var(--bg-card) 94%, #111 6%);
   --showcase-surface-2: color-mix(in srgb, var(--bg-card2) 92%, #111 8%);
   --showcase-line: color-mix(in srgb, var(--border) 76%, var(--accent) 24%);
-  /* Tactical smoked surfaces — same dark graphite in both themes so content
-     panels belong to the Operations Console instead of re-whitening the page. */
+  /* Tactical smoked surfaces keep content inside the Operations Console language. */
   --showcase-tactical: linear-gradient(160deg, rgba(28, 34, 38, .95) 0%, rgba(17, 22, 25, .97) 100%);
   --showcase-tactical-2: linear-gradient(165deg, rgba(22, 28, 31, .93) 0%, rgba(14, 19, 22, .96) 100%);
   --showcase-tactical-border: rgba(66, 77, 84, .55);
@@ -20,12 +19,10 @@
   --showcase-tactical-heading: #f2ede3;
   --showcase-tactical-text: #c9c5bb;
   --showcase-tactical-muted: #8f948d;
-  /* Nested/soft panels (item rows, summary strips, dropdowns) inside tactical cards. */
   --showcase-tactical-soft: rgba(10, 15, 18, .55);
   --showcase-tactical-soft-2: rgba(9, 14, 17, .8);
-}
 
-[data-theme="dark"] {
+  /* Showcase product palette. Dark is the only supported theme. */
   --bg: #090d0f;
   --bg-card: #11171a;
   --bg-card2: #171e22;
@@ -63,15 +60,15 @@ body {
 }
 
 .topbar {
-  min-height: 60px !important;
-  height: 60px !important;
+  min-height: var(--topbar-h) !important;
+  height: var(--topbar-h) !important;
   padding: 8px max(14px, calc((100vw - 1840px) / 2)) !important;
   gap: 8px !important;
   background: color-mix(in srgb, #080c0f 93%, transparent) !important;
   border-bottom: 1px solid #30383d !important;
   box-shadow: 0 10px 32px rgba(0,0,0,.24) !important;
 }
-.tb-content { padding-top: 60px !important; }
+.tb-content { padding-top: var(--topbar-h) !important; }
 .tb-brand { min-width: 48px; }
 .tb-logo { height: 34px !important; }
 .topbar nav { height: 100%; align-items: stretch !important; gap: 2px !important; }
@@ -90,7 +87,7 @@ body {
   border-bottom-color: var(--accent) !important;
   color: #f5b445 !important;
 }
-.lang-select, .theme-bar, .auth-btn.ghost, .user-menu-trigger {
+.lang-select, .auth-btn.ghost, .user-menu-trigger {
   border-color: #343d42 !important;
   background: rgba(17,23,26,.92) !important;
   color: #d9d5cc !important;
@@ -124,7 +121,7 @@ body {
 .layout-full-workspace {
   width: 100% !important;
   max-width: none !important;
-  height: calc(100vh - 60px) !important;
+  height: calc(100vh - var(--topbar-h)) !important;
 }
 .admin-page {
   width: min(var(--showcase-page-max), calc(100vw - var(--showcase-gutter) * 2)) !important;
@@ -176,7 +173,7 @@ body {
   padding: 9px 10px !important;
   border: 1px solid var(--border) !important;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--bg) 82%, transparent) !important;
+  background: color-mix(in srgb, var(--bg) 96%, transparent) !important;
   box-shadow: 0 12px 30px rgba(0,0,0,.18);
   backdrop-filter: blur(12px);
 }
@@ -214,7 +211,7 @@ body {
 .hof-page thead th,
 .hof-wrap thead th {
   position: sticky;
-  top: 60px;
+  top: var(--topbar-h);
   z-index: 4;
   background: #171e22 !important;
 }
@@ -345,7 +342,6 @@ body {
   .topbar nav { max-width: 58vw; overflow-x: auto; scrollbar-width: none; }
   .topbar nav::-webkit-scrollbar { display: none; }
   .topbar nav button { min-height: 38px; padding-inline: 9px !important; font-size: .78rem !important; }
-  .theme-bar { display: none !important; }
   .lang-select { max-width: 72px; }
 
   .layout-content,

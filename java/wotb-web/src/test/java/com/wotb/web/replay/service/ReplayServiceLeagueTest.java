@@ -9,6 +9,7 @@ import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.web.replay.LeagueTestReplays;
+import com.wotb.web.replay.dto.BattleDto;
 import com.wotb.web.replay.dto.ExportResult;
 import com.wotb.web.replay.dto.PreviewResponse;
 import org.junit.jupiter.api.Test;
@@ -112,7 +113,9 @@ class ReplayServiceLeagueTest {
     }
 
     @Test
-    void mixedBatchRejectedWithStableCode() throws Exception {
+    void mixedBatchPreviewKeepsBattlesAndReportsLeagueUnavailable() throws Exception {
+        // plan §21/Case I：混合批次不再 HTTP 400——League Rating 不聚合（league=null），
+        // battles 按普通回放语义成功返回，leagueUnavailableCode 携带混合码。
         final Battle training = LeagueTestReplays.sevenVsSeven(1);
         training.arenaId = "111";
         training.arenaBonusType = 2;
@@ -121,10 +124,12 @@ class ReplayServiceLeagueTest {
         random.arenaBonusType = 1;
         final ReplayService service = perFileService(List.of(training, random));
 
-        final IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> service.preview(new MockMultipartFile[]{
-                        file("t.wotbreplay", new byte[]{1}), file("r.wotbreplay", new byte[]{2})}));
-        assertEquals("MIXED_LEAGUE_AND_STANDARD_REPLAYS", error.getMessage());
+        final PreviewResponse r = service.preview(new MockMultipartFile[]{
+                file("t.wotbreplay", new byte[]{1}), file("r.wotbreplay", new byte[]{2})});
+        assertNull(r.league(), "混合批次不产生 League Rating 元数据");
+        assertEquals(2, r.battles().size(), "混合批次所有可解析 Battle 必须保留在 Preview");
+        assertEquals("MIXED_LEAGUE_AND_STANDARD_REPLAYS", r.leagueUnavailableCode());
+        assertTrue(r.failures().isEmpty(), "混合批次无解析失败时 failures 必须为空");
     }
 
     @Test
@@ -170,18 +175,21 @@ class ReplayServiceLeagueTest {
     }
 
     @Test
-    void leagueEachExportRejectsMixedBatch() throws Exception {
+    void leagueEachExportMixedBatchWritesStandardWorkbooks() throws Exception {
+        // plan §21/§13：混合批次 each 导出按普通回放逐场生成标准单场工作簿（League Analysis unavailable）
         final Battle training = LeagueTestReplays.sevenVsSeven(1);
         training.arenaId = "111";
+        training.arenaBonusType = 2;
         final Battle random = LeagueTestReplays.sevenVsSeven(1);
         random.arenaId = "999";
         random.arenaBonusType = 1;
         final ReplayService service = perFileService(List.of(training, random));
-        final IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> service.export(new MockMultipartFile[]{
-                        file("t.wotbreplay", LeagueTestReplays.replayBytes(training, 2)),
-                        file("r.wotbreplay", LeagueTestReplays.replayBytes(random, 1))}, "each"));
-        assertEquals("MIXED_LEAGUE_AND_STANDARD_REPLAYS", error.getMessage());
+        final ExportResult result = service.export(new MockMultipartFile[]{
+                file("t.wotbreplay", LeagueTestReplays.replayBytes(training, 2)),
+                file("r.wotbreplay", LeagueTestReplays.replayBytes(random, 1))}, "each");
+        assertNotNull(result, "混合批次 each 导出必须成功（不得整体拒绝）");
+        assertTrue(result.filename().endsWith(".zip"));
+        assertTrue(result.data().length > 0);
     }
 
     @Test
@@ -193,7 +201,72 @@ class ReplayServiceLeagueTest {
         final PreviewResponse r = leagueService(bad).preview(new MockMultipartFile[]{
                 file("bad.wotbreplay", new byte[]{1})});
         assertNotNull(r.league());
+        assertEquals(1, r.battles().size(), "Rating 不合格的单场也必须保留在 Preview（领域分离，P0）");
+        assertNull(r.battles().getFirst().league(), "未评分场不得被绑定任何 Rating");
         assertTrue(r.league().failures().stream()
                 .anyMatch(f -> f.code().equals(LeagueFailure.Code.NOT_SEVEN_VS_SEVEN)));
+    }
+
+    // ---- P0 回归：partial League Rating（battles 保留全部，Rating 只对 eligible）----
+
+    @Test
+    void partialLeaguePreviewKeepsAllBattlesAndRatingOnlyForEligible() throws Exception {
+        final Battle good = LeagueTestReplays.sevenVsSeven(1);
+        good.arenaId = "111";
+        good.arenaBonusType = 2;
+        final Battle bad = LeagueTestReplays.sevenVsSeven(2);
+        bad.arenaId = "222";
+        bad.arenaBonusType = 2;
+        bad.settlementAccountsCoveredByRoster = false;
+        final ReplayService service = perFileService(List.of(good, bad));
+
+        final PreviewResponse r = service.preview(new MockMultipartFile[]{
+                file("g.wotbreplay", new byte[]{1}), file("b.wotbreplay", new byte[]{2})});
+        assertEquals("LEAGUE_RATING", r.league().mode());
+        assertEquals(2, r.battles().size(), "Rating-ineligible Battle 必须保留在 Preview");
+        // identity 绑定（plan §9）：eligible 场带 Rating，ineligible 场 league==null，不得 index 错绑
+        final BattleDto goodDto = r.battles().get(0);
+        final BattleDto badDto = r.battles().get(1);
+        assertEquals("111", goodDto.arenaId());
+        assertNotNull(goodDto.league(), "eligible 场必须携带 Rating 元数据");
+        assertNull(badDto.league(), "ineligible 场不得被错误绑定 Rating");
+        assertTrue(r.league().failures().stream()
+                .anyMatch(f -> f.code().equals(LeagueFailure.Code.ROSTER_INCOMPLETE)));
+    }
+
+    @Test
+    void leaguePreviewCarriesBaseReplayAggregateAlongsideLeagueSummary() throws Exception {
+        // plan §5/§6：League Rating Summary 是附加分析，不替代基础 Replay Aggregate。
+        // 多场 League 批次的 resp.aggregate 必须包含标准基础汇总（0 场可评分 ≠ Replay 没数据）；
+        // 列边界不变（aggregateColumns 仍为 League 变体，不含旧三指标，PR #131）。
+        final Battle good = LeagueTestReplays.sevenVsSeven(1);
+        good.arenaId = "111";
+        good.arenaBonusType = 2;
+        final Battle bad = LeagueTestReplays.sevenVsSeven(2);
+        bad.arenaId = "222";
+        bad.arenaBonusType = 2;
+        bad.settlementAccountsCoveredByRoster = false;
+        final ReplayService service = perFileService(List.of(good, bad));
+
+        final PreviewResponse r = service.preview(new MockMultipartFile[]{
+                file("g.wotbreplay", new byte[]{1}), file("b.wotbreplay", new byte[]{2})});
+        assertEquals("LEAGUE_RATING", r.league().mode());
+        assertFalse(r.aggregate().isEmpty(), "League 模式也必须输出基础 Replay Aggregate（跨场汇总）");
+        assertFalse(r.league().playerSummaries().isEmpty(), "League 汇总同时存在（不是二选一）");
+        assertFalse(r.aggregateColumns().stream().anyMatch(c -> c.key().equals("contribution")),
+                "基础汇总列仍是 League 变体（PR #131 列边界不变）");
+    }
+
+    @Test
+    void singleIneligibleLeagueExportFallsBackToStandardWorkbook() throws Exception {
+        final Battle bad = LeagueTestReplays.sevenVsSeven(1);
+        bad.arenaId = "111";
+        bad.arenaBonusType = 2;
+        bad.settlementAccountsCoveredByRoster = false;
+        final ExportResult result = leagueService(bad).export(
+                new MockMultipartFile[]{file("bad.wotbreplay", new byte[]{1})}, "aggregate");
+        assertNotNull(result, "单场 league 未通过校验也必须能导出基础数据（不崩溃、不错位）");
+        assertTrue(result.filename().endsWith(".xlsx"));
+        assertTrue(result.data().length > 0);
     }
 }

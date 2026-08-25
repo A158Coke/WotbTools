@@ -6,6 +6,8 @@ import com.wotb.core.parse.ReplayParser;
 import com.wotb.web.mark3.dto.Mark3LeaderboardPageDto;
 import com.wotb.web.mark3.entity.Mark3Submission;
 import com.wotb.web.mark3.repository.Mark3SubmissionRepository;
+import com.wotb.web.replay.exception.ReplayBusyException;
+import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,6 +26,12 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -68,8 +76,7 @@ class Mark3SubmissionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new Mark3SubmissionService(
-                repository, new Mark3Mapper(), userProfileService, evidenceService, replayHashLock, transactionManager);
+        service = newService(new ReplayCapacityLimiter(2));
         lenient().when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         lenient().when(repository.saveAndFlush(any())).thenAnswer(invocation -> {
             final Mark3Submission submission = invocation.getArgument(0);
@@ -216,11 +223,101 @@ class Mark3SubmissionServiceTest {
     }
 
     @Test
+    void rejectsFullGlobalReplayCapacityBeforeParsingOrPersistence() throws Exception {
+        final ReplayCapacityLimiter limiter = new ReplayCapacityLimiter(1);
+        final Mark3SubmissionService limitedService = newService(limiter);
+        final ExecutorService executor = Executors.newSingleThreadExecutor();
+        final CountDownLatch entered = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        try {
+            final Future<String> holder = executor.submit(() -> limiter.execute(() -> {
+                entered.countDown();
+                if (!release.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("TEST_TIMEOUT");
+                }
+                return "released";
+            }));
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+            when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+
+            try (final var parser = mockStatic(ReplayParser.class)) {
+                assertThatThrownBy(() -> limitedService.createSubmission(
+                        USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.25"),
+                        List.of(IMAGE_ONE), fiveReplays()))
+                        .isInstanceOf(ReplayBusyException.class)
+                        .hasMessage("REPLAY_BUSY");
+                parser.verifyNoInteractions();
+            }
+            verify(evidenceService, never()).storeAll(anyList());
+            verify(repository, never()).saveAndFlush(any());
+
+            release.countDown();
+            assertThat(holder.get(5, TimeUnit.SECONDS)).isEqualTo("released");
+        } finally {
+            release.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void rechecksActiveSubmissionInsideCapacityBeforeParsing() {
+        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(repository.existsByUserKeycloakIdAndVehicleIdAndStatus(USER, TIER10_VEHICLE, "CURRENT"))
+                .thenReturn(false, true);
+
+        try (final var parser = mockStatic(ReplayParser.class)) {
+            assertThatThrownBy(() -> service.createSubmission(
+                    USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.25"),
+                    List.of(IMAGE_ONE), fiveReplays()))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("MARK3_CURRENT_EXISTS");
+            parser.verifyNoInteractions();
+        }
+        verify(evidenceService, never()).storeAll(anyList());
+        verify(repository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void releasesGlobalReplayCapacityAfterParseFailure() throws Exception {
+        final Mark3SubmissionService limitedService = newService(new ReplayCapacityLimiter(1));
+        final AtomicInteger parseCalls = new AtomicInteger();
+        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+
+        try (final var parser = mockStatic(ReplayParser.class)) {
+            parser.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(invocation -> {
+                if (parseCalls.getAndIncrement() == 0) {
+                    throw new IllegalArgumentException("invalid replay");
+                }
+                final byte[] data = invocation.getArgument(0);
+                return battle(new String(data));
+            });
+
+            assertThatThrownBy(() -> limitedService.createSubmission(
+                    USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.25"),
+                    List.of(IMAGE_ONE), fiveReplays()))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("INVALID_REPLAY_FILE");
+
+            assertThat(limitedService.createSubmission(
+                    USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.25"),
+                    List.of(IMAGE_ONE), fiveReplays()).status()).isEqualTo("PENDING");
+        }
+
+        verify(evidenceService).storeAll(anyList());
+    }
+
+    @Test
     void rejectReasonTextCannotOverflowDatabaseColumn() {
         assertThatThrownBy(() -> service.reject(ADMIN, 10L, "OTHER", "x".repeat(501)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("MARK3_REJECT_REASON_TEXT_TOO_LONG");
         verify(repository, never()).findByIdForUpdate(anyLong());
+    }
+
+    private Mark3SubmissionService newService(final ReplayCapacityLimiter limiter) {
+        return new Mark3SubmissionService(
+                repository, new Mark3Mapper(), userProfileService, limiter,
+                evidenceService, replayHashLock, transactionManager);
     }
 
     private static UserProfile profile() {
