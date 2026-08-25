@@ -26,16 +26,20 @@ import java.util.Map;
  * 任一 hard-conflict 事实不一致 → 冲突，该场全部副本均拒绝评分
  * （{@code CONFLICTING_REPLAYS_FOR_ARENA}）。</p>
  *
- * <p><b>死亡时间语义三层（先判 INVALID，再判 UNKNOWN/KNOWN）</b>：
+ * <p><b>survivalTimeSec 两个层次必须严格区分</b>：
  * <ol>
- * <li><b>INVALID</b>（{@code survivalTimeSec < 0} / NaN / Infinity）：非法 stat facts，
- *     与<b>任何</b>其它值（含 UNKNOWN 0）都 conflict——UNKNOWN 不是 wildcard，
- *     不能把两个互相矛盾的 KNOWN 或一个 INVALID 洗成合法；</li>
- * <li><b>UNKNOWN</b>（{@code == 0}）：精确死亡时刻无法从回放可靠证明（evidence
- *     absence），与任意合法 KNOWN / 其它 UNKNOWN 兼容；</li>
- * <li><b>KNOWN</b>（{@code > 0}）：两个 KNOWN 差 ≤ {@value #DEATH_TIME_TOLERANCE_SEC}s
- *     一致，超过容差 conflict。</li>
+ * <li><b>Stat validity（所有玩家统一）</b>：{@code survivalTimeSec < 0} / NaN /
+ *     Infinity 对<b>任何</b>玩家（含存活玩家）都是非法 stat facts，与<b>任何</b>其它值
+ *     都 conflict——因为 {@code LeagueRatingValidator.hasInvalidStatFacts()} 会对全部
+ *     PlayerResult 执行该检查，INVALID 会改变 League eligibility，不能被 survivor
+ *     shortcut 绕过（否则上传顺序决定是否评分）。UNKNOWN=0 合法，不算 invalid。</li>
+ * <li><b>Death-time evidence reconciliation（仅阵亡玩家）</b>：{@code survived=false}
+ *     才执行 UNKNOWN(0) / KNOWN(&gt;0) / {@value #DEATH_TIME_TOLERANCE_SEC}s 容差语义；
+ *     存活玩家的 finite + non-negative survivalTimeSec <b>不参与</b>死亡时间一致性比较。
+ *     两个存活玩家的合法值不同（如 300 vs 301.5）不是 conflict。</li>
  * </ol>
+ * 判定顺序固定为：survived mismatch → INVALID first → survived shortcut →
+ * dead UNKNOWN/KNOWN reconciliation。</p>
  * 一致副本经 {@link #validateAndReconcile} 做<b>group-level</b>判定与确定性 canonical
  * 收口（与上传顺序无关，见该方法 javadoc）。</p>
  */
@@ -111,31 +115,38 @@ public final class LeagueRatingConflictDetector {
     }
 
     /**
-     * 死亡时间一致性（<b>先判 INVALID，再判 UNKNOWN/KNOWN</b>）：
-     * 存活玩家双方均存活；阵亡玩家 {@code survivalTimeSec < 0} / NaN / Infinity =
-     * 非法 stat facts，与<b>任何</b>其它值（含 UNKNOWN 0）都是 conflict——
-     * UNKNOWN 不是 wildcard，不得把 INVALID 或互相矛盾的 KNOWN 洗成合法；
-     * {@code == 0} = UNKNOWN（证据缺失，与任意合法 KNOWN / 其它 UNKNOWN 兼容）；
-     * 两个 KNOWN 值差 ≤ {@value #DEATH_TIME_TOLERANCE_SEC}s 视为一致。
+     * survivalTimeSec 一致性（<b>先判 INVALID（所有玩家），再判 survived shortcut，
+     * 最后才做阵亡玩家 UNKNOWN/KNOWN reconciliation</b>）：
+     * <ul>
+     * <li>存活状态不同 → conflict；</li>
+     * <li>{@code < 0} / NaN / Infinity 对<b>任何</b>玩家都是非法 stat facts，与任何值
+     *     conflict（含存活玩家——Validator 对全玩家拒绝，survivor shortcut 不得绕过，
+     *     否则上传顺序决定是否评分）；</li>
+     * <li>双方存活且值合法（finite + ≥0）→ 一致（不把死亡时间 1s 容差错套给存活玩家）；</li>
+     * <li>阵亡玩家：{@code == 0} = UNKNOWN（证据缺失，与任意合法 KNOWN / 其它 UNKNOWN
+     *     兼容）；两个 KNOWN 值差 ≤ {@value #DEATH_TIME_TOLERANCE_SEC}s 视为一致。</li>
+     * </ul>
      */
     private static boolean sameDeathTime(final PlayerResult a, final PlayerResult b) {
         if (a.survived != b.survived) {
             return false;
         }
-        if (a.survived) {
-            return true;
-        }
         final double x = a.survivalTimeSec;
         final double y = b.survivalTimeSec;
-        // 1) INVALID first：与任何值都 conflict（含 0）——fail closed，禁止洗成 UNKNOWN
+        // 1) INVALID first：对任何玩家（含存活）都 conflict（含 0）——fail closed，
+        //    禁止洗成 UNKNOWN；存活玩家不得用 shortcut 绕过 stat-fact validity
         if (invalid(x) || invalid(y)) {
             return false;
         }
-        // 2) UNKNOWN(0) 是证据缺失，不是数值 0：与任何合法值兼容（canonical 阶段再收口）
+        // 2) 双方存活：合法（finite + ≥0）的 survivalTimeSec 不参与死亡时间 reconciliation
+        if (a.survived) {
+            return true;
+        }
+        // 3) 阵亡玩家：UNKNOWN(0) 是证据缺失，不是数值 0：与任何合法值兼容
         if (x == 0 || y == 0) {
             return true;
         }
-        // 3) KNOWN vs KNOWN：容差内一致
+        // 4) 阵亡 KNOWN vs KNOWN：容差内一致
         return Math.abs(x - y) <= DEATH_TIME_TOLERANCE_SEC;
     }
 

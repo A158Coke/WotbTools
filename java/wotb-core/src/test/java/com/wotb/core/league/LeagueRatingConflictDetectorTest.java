@@ -185,6 +185,62 @@ class LeagueRatingConflictDetectorTest {
         assertFalse(LeagueRatingConflictDetector.consistent(b, a));
     }
 
+    // ---- Survivor INVALID fail-closed：survived shortcut 不得绕过 stat-fact validity ----
+
+    @Test
+    void survivorValidPlusNaNCConflicts() {
+        // 双方 survived=true，但 B 的 survivalTimeSec=NaN：Validator 对全玩家拒绝，
+        // 一致性也必须 fail closed（否则上传顺序决定是否评分）。
+        final Battle a = battle();
+        final Battle b = battle();
+        a.players.get(0).survived = true;
+        a.players.get(0).survivalTimeSec = 300;
+        b.players.get(0).survived = true;
+        b.players.get(0).survivalTimeSec = Double.NaN;
+        assertFalse(LeagueRatingConflictDetector.consistent(a, b),
+                "survivor valid + NaN 必须 conflict（INVALID first，survived shortcut 不得绕过）");
+        assertFalse(LeagueRatingConflictDetector.consistent(b, a));
+    }
+
+    @Test
+    void survivorValidPlusInfinityConflicts() {
+        final Battle a = battle();
+        final Battle b = battle();
+        a.players.get(0).survived = true;
+        a.players.get(0).survivalTimeSec = 300;
+        b.players.get(0).survived = true;
+        b.players.get(0).survivalTimeSec = Double.POSITIVE_INFINITY;
+        assertFalse(LeagueRatingConflictDetector.consistent(a, b));
+        assertFalse(LeagueRatingConflictDetector.consistent(b, a));
+    }
+
+    @Test
+    void survivorValidPlusNegativeConflicts() {
+        final Battle a = battle();
+        final Battle b = battle();
+        a.players.get(0).survived = true;
+        a.players.get(0).survivalTimeSec = 300;
+        b.players.get(0).survived = true;
+        b.players.get(0).survivalTimeSec = -1;
+        assertFalse(LeagueRatingConflictDetector.consistent(a, b));
+        assertFalse(LeagueRatingConflictDetector.consistent(b, a));
+    }
+
+    @Test
+    void twoValidSurvivorsDoNotUseDeathTimeTolerance() {
+        // 两个存活玩家的合法 survivalTimeSec 不同（300 vs 301.5）不是 conflict：
+        // death-time UNKNOWN/KNOWN/1s tolerance 只属于阵亡玩家，不得错套给 survivor。
+        final Battle a = battle();
+        final Battle b = battle();
+        a.players.get(0).survived = true;
+        a.players.get(0).survivalTimeSec = 300;
+        b.players.get(0).survived = true;
+        b.players.get(0).survivalTimeSec = 301.5;
+        assertTrue(LeagueRatingConflictDetector.consistent(a, b),
+                "两个合法 survivor 的 finite survivalTimeSec 差异不是死亡时间 conflict");
+        assertTrue(LeagueRatingConflictDetector.consistent(b, a));
+    }
+
     // ---- hard-conflict 字段（settlement / duration / received stats / clan）----
 
     @Test
