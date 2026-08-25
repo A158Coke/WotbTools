@@ -73,11 +73,6 @@ public class PlayerResult {
     // 存活时间(秒, 由 ReplayParser 计算)
     public double survivalTimeSec;
 
-    // 明细表临时字段 (每场不同)
-    public String tmpDate = "";
-    public String tmpMap = "";
-    public String tmpResult = "";
-
     // 完整原始字段 (字段号 -> 值列表), 供"原始字段"表/排查
     public Map<Integer, List<Object>> raw;
 }

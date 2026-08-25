@@ -1,5 +1,6 @@
 package com.wotb.core.export;
 
+import com.wotb.core.league.LeagueColumns;
 import com.wotb.core.league.LeagueRatingBatch;
 import com.wotb.core.league.LeagueRatingResult;
 import com.wotb.core.league.PlayerLeagueRating;
@@ -26,10 +27,10 @@ import java.util.Set;
  */
 final class LeagueAggregateSheets {
 
-    /** 批次战队 identity override：teamKey → 显示名（PR #123 Blocker 2：aggregate rename 不得反向改单场）。 */
+    /** 批次战队 identity override：teamKey → 显示名（aggregate rename 不得反向改单场）。 */
     private final Map<String, String> summaryOverrides;
 
-    /** 单场战队 override：{arenaId}:{team} → 显示名（PR #123 Blocker 1：每场明细必须消费，不得丢弃）。 */
+    /** 单场战队 override：{arenaId}:{team} → 显示名（每场明细必须消费，不得丢弃）。 */
     private final Map<String, String> battleOverrides;
 
     LeagueAggregateSheets() {
@@ -55,10 +56,12 @@ final class LeagueAggregateSheets {
         final List<String[]> header = new ArrayList<>();
         header.add(new String[]{"玩家", "20"});
         header.add(new String[]{"战队", "10"});
-        header.add(new String[]{"场次", "6"});
+        // rated-only sample：League 专属 summary 的场次是评分样本，与 Replay 汇总的解析场次区分
+        header.add(new String[]{"评分场次", "8"});
         header.add(new String[]{"总Rating中位数", "12"});
-        for (final String dim : dimTitles()) {
-            header.add(new String[]{dim + "中位数", "10"});
+        // 七维标题单一来源：LeagueExcelColumns.dimensionTitle（key 由 LeagueColumns.DIM_KEYS 驱动）
+        for (final String key : LeagueColumns.DIM_KEYS) {
+            header.add(new String[]{LeagueExcelColumns.dimensionTitle(key) + "中位数", "10"});
         }
         header.add(new String[]{"MVP次数", "8"});
         header.add(new String[]{"胜场", "6"});
@@ -90,10 +93,12 @@ final class LeagueAggregateSheets {
         final Sheet ws = styles.workbook().createSheet("战队汇总");
         final List<String[]> header = new ArrayList<>();
         header.add(new String[]{"战队", "20"});
-        header.add(new String[]{"场次", "6"});
+        // rated-only sample（同选手汇总：评分场次 ≠ Replay 解析场次）
+        header.add(new String[]{"评分场次", "8"});
         header.add(new String[]{"战队Rating中位数", "12"});
-        for (final String dim : dimTitles()) {
-            header.add(new String[]{dim + "中位数", "10"});
+        // 七维标题单一来源：LeagueExcelColumns.dimensionTitle（key 由 LeagueColumns.DIM_KEYS 驱动）
+        for (final String key : LeagueColumns.DIM_KEYS) {
+            header.add(new String[]{LeagueExcelColumns.dimensionTitle(key) + "中位数", "10"});
         }
         header.add(new String[]{"胜场", "6"});
         styles.writeHeader(ws, header);
@@ -136,13 +141,14 @@ final class LeagueAggregateSheets {
         header.add(new String[]{"车辆", "16"});
         header.add(new String[]{"伤害", "8"});
         header.add(new String[]{"总Rating", "9"});
-        for (final String dim : dimTitles()) {
-            header.add(new String[]{dim, "9"});
+        // 七维标题单一来源：LeagueExcelColumns.dimensionTitle（key 由 LeagueColumns.DIM_KEYS 驱动）
+        for (final String key : LeagueColumns.DIM_KEYS) {
+            header.add(new String[]{LeagueExcelColumns.dimensionTitle(key), "9"});
         }
         styles.writeHeader(ws, header);
         int rIdx = 1;
         // 只对通过校验并完成评分的场次输出 Rating 明细（identity 绑定，不依赖 index）；
-        // Rating-ineligible 场次在「战斗列表」中以失败状态展示（plan：基础数据可导出，Rating 只对 eligible 存在）
+        // Rating-ineligible 场次在「战斗列表」中以失败状态展示（基础数据可导出，Rating 只对 eligible 存在）
         for (int i = 0; i < battles.size(); i++) {
             final Battle battle = battles.get(i);
             final LeagueRatingResult result = batch.resultFor(battle.arenaId);
@@ -161,14 +167,10 @@ final class LeagueAggregateSheets {
                 styles.setCell(row.createCell(c++), tp.info(tankId(battle, p)).name(), styles.plain(), "tank_name");
                 styles.setCell(row.createCell(c++), p.damageDealt(), styles.plain(), "damage_dealt");
                 styles.setCell(row.createCell(c++), ExcelStyles.r1(p.finalRating()), styles.plain(), "league_rating");
-                styles.setCell(row.createCell(c++), ExcelStyles.r1(p.damageScore()), styles.plain(), "league_score");
-                styles.setCell(row.createCell(c++), ExcelStyles.r1(p.assistScore()), styles.plain(), "league_score");
-                styles.setCell(row.createCell(c++), ExcelStyles.r1(p.killScore()), styles.plain(), "league_score");
-                styles.setCell(row.createCell(c++), ExcelStyles.r1(p.exchangeScore()), styles.plain(), "league_score");
-                styles.setCell(row.createCell(c++), ExcelStyles.r1(p.blockedScore()), styles.plain(), "league_score");
-                styles.setCell(row.createCell(c++), ExcelStyles.r1(p.survivalTradeScore()), styles.plain(), "league_score");
-                styles.setCell(row.createCell(c++), ExcelStyles.r1(p.shootingScore()), styles.plain(), "league_score");
-                styles.setCell(row.createCell(c++), ExcelStyles.r1(p.objectiveScore()), styles.plain(), "league_score");
+                // 七维顺序单一来源：dimensionScores()（与 LeagueColumns.DIM_KEYS 严格一致）
+                for (final Double score : p.dimensionScores()) {
+                    styles.setCell(row.createCell(c++), ExcelStyles.r1(score), styles.plain(), "league_score");
+                }
             }
         }
         ws.createFreezePane(1, 1);
@@ -184,7 +186,7 @@ final class LeagueAggregateSheets {
     }
 
     /**
-     * 每场明细的队伍名（PR #123 Blocker 1）：battleOverride[arenaId:team] → 该场 TeamLeagueRating.autoName
+     * 每场明细的队伍名：battleOverride[arenaId:team] → 该场 TeamLeagueRating.autoName
      * → 现有 fallback（Team 1/Team 2）。只读 battleOverrides，绝不消费 summaryOverrides（批次 identity 不反向
      * 写回单场明细）；autoName 复用评分 core 的 LeagueTeamNamer 单一事实源，不重新扫描 clan。
      */
@@ -266,8 +268,4 @@ final class LeagueAggregateSheets {
         };
     }
 
-    private static List<String> dimTitles() {
-        return List.of("伤害评分", "助攻评分", "击杀评分", "换血效率评分",
-                "阻挡评分", "存活/互换评分", "射击效率评分", "争霸占点评分");
-    }
 }

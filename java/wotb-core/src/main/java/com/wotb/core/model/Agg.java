@@ -12,6 +12,7 @@ public final class Agg {
     public long lastTime = -1;
     public int battles, wins, survived;
     public long kills, damage, potentialDamage, potentialDamageSupplement, assisted, received, blocked;
+    public long earned;   // 争霸赛获取点数累计（客观事实，不参与 Rating）
     public long shots, hits, pens, enemiesDamaged;
     public double survivalSum;        // 各场存活时间(秒)之和(用于场均)
     public final Map<String, Integer> tanks = new TreeMap<>();

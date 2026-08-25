@@ -12,8 +12,8 @@ import java.util.function.ToDoubleFunction;
 /**
  * League Rating 计算器（纯数学、无 Spring、无副作用）。
  *
- * <p>只消费当前回放解析出的权威事实（plan §5），不使用 Tankopedia HP、历史均值、
- * Potential Damage、XP/Credits、AI 或外部统计。八个维度合计满分 1000；
+ * <p>只消费当前回放解析出的权威事实，不使用 Tankopedia HP、历史均值、
+ * Potential Damage、XP/Credits、AI 或外部统计。七个维度合计满分 1000；
  * 胜方最终分 ×1.05（封顶 1000），败方不扣分。</p>
  *
  * <p>前置条件：调用方先经 {@link LeagueRatingValidator} 确认 7v7 完整性
@@ -22,14 +22,13 @@ import java.util.function.ToDoubleFunction;
  */
 public final class LeagueRatingCalculator {
 
-    /** 维度权重 [teamWeight, globalWeight]（顺序：伤害/助攻/击杀/换血/阻挡/占点）。 */
+    /** 维度权重 [teamWeight, globalWeight]（顺序：伤害/助攻/击杀/换血/阻挡）。 */
     private static final double[][] DIM_WEIGHTS = {
             {0.60, 0.40},   // 伤害
             {0.70, 0.30},   // 助攻
             {0.40, 0.60},   // 击杀
             {0.30, 0.70},   // 换血效率
             {0.70, 0.30},   // 阻挡
-            {0.70, 0.30},   // 争霸占点
     };
 
     private LeagueRatingCalculator() {
@@ -57,16 +56,12 @@ public final class LeagueRatingCalculator {
         final double[] teamAvgKills = teamAverages(players, p -> p.kills);
         final double[] teamAvgBlocked = teamAverages(players, p -> p.damageBlocked);
         final double[] teamAvgEffectiveOutput = teamAverages(players, p -> effectiveOutput(p));
-        final double[] teamAvgEarned = teamAverages(players, p -> p.victoryPointsEarned);
-        final double[] teamAvgSeized = teamAverages(players, p -> p.victoryPointsSeized);
 
         // ---- 全场排名指数（未取整值） ----
         final List<Double> allDamage = values(players, p -> (double) p.damageDealt);
         final List<Double> allAssist = values(players, p -> (double) p.damageAssisted);
         final List<Double> allKills = values(players, p -> (double) p.kills);
         final List<Double> allBlocked = values(players, p -> (double) p.damageBlocked);
-        final List<Double> allPointsEarned = values(players, p -> (double) p.victoryPointsEarned);
-        final List<Double> allPointsSeized = values(players, p -> (double) p.victoryPointsSeized);
 
         // ---- 维度分 ----
         final double[] damage = new double[n];
@@ -75,7 +70,6 @@ public final class LeagueRatingCalculator {
         final double[] blocked = new double[n];
         final double[] exchange = new double[n];
         final double[] shooting = new double[n];
-        final double[] objective = new double[n];
 
         final double[] exchangeEff = new double[n];
         final double[] damageParticipation = new double[n];
@@ -114,13 +108,6 @@ public final class LeagueRatingCalculator {
             shooting[i] = PlayerLeagueRating.MAX_SHOOTING
                     * Math.min(1.0, shootingConfidence / 0.70)
                     * damageParticipation[i];
-
-            // 争霸占点：earned/seized 分别归一化，禁止直接相加原始值
-            final double earnedIndex = 0.70 * LeagueRatingNormalizer.teamIndex(p.victoryPointsEarned, teamAvgEarned[t])
-                    + 0.30 * LeagueRatingNormalizer.globalIndex(p.victoryPointsEarned, allPointsEarned);
-            final double seizedIndex = 0.70 * LeagueRatingNormalizer.teamIndex(p.victoryPointsSeized, teamAvgSeized[t])
-                    + 0.30 * LeagueRatingNormalizer.globalIndex(p.victoryPointsSeized, allPointsSeized);
-            objective[i] = PlayerLeagueRating.MAX_OBJECTIVE * (0.30 * earnedIndex + 0.70 * seizedIndex);
         }
 
         // 换血维度的本队平均值需等 exchangeEff 全部算完
@@ -152,7 +139,7 @@ public final class LeagueRatingCalculator {
         loserSurvived.add(new ArrayList<>());
         loserSurvived.add(new ArrayList<>());
         for (int i = 0; i < n; i++) {
-            preliminary[i] = damage[i] + assist[i] + kill[i] + exchange[i] + blocked[i] + shooting[i] + objective[i];
+            preliminary[i] = damage[i] + assist[i] + kill[i] + exchange[i] + blocked[i] + shooting[i];
             final PlayerResult p = players.get(i);
             if (p.team != winner && p.survived) {
                 loserSurvived.get(p.team).add(i);
@@ -193,7 +180,7 @@ public final class LeagueRatingCalculator {
             built.add(new PlayerLeagueRating(
                     p.accountId, p.nickname, p.clan, p.team,
                     damage[i], assist[i], kill[i], exchange[i], blocked[i],
-                    survival, shooting[i], objective[i],
+                    survival, shooting[i],
                     preliminary[i], base, finalRating, state,
                     p.damageDealt, p.damageAssisted, p.kills, p.survived,
                     false, false));
@@ -297,7 +284,7 @@ public final class LeagueRatingCalculator {
                                                 final boolean mvp, final boolean teamBest) {
         return new PlayerLeagueRating(p.accountId(), p.nickname(), p.clan(), p.team(),
                 p.damageScore(), p.assistScore(), p.killScore(), p.exchangeScore(),
-                p.blockedScore(), p.survivalTradeScore(), p.shootingScore(), p.objectiveScore(),
+                p.blockedScore(), p.survivalTradeScore(), p.shootingScore(),
                 p.preliminary(), p.baseRating(), p.finalRating(), p.survivalState(),
                 p.damageDealt(), p.damageAssisted(), p.kills(), p.survived(),
                 mvp, teamBest);
@@ -347,19 +334,16 @@ public final class LeagueRatingCalculator {
                     LeagueTeamNamer.NAME_SOURCE_UNNAMED, null, List.of());
         }
         double sum = 0;
-        final double[] dimSums = new double[8];
+        final double[] dimSums = new double[LeagueColumns.DIM_KEYS.size()];
         for (final PlayerLeagueRating p : players) {
             sum += p.finalRating();
-            dimSums[0] += p.damageScore();
-            dimSums[1] += p.assistScore();
-            dimSums[2] += p.killScore();
-            dimSums[3] += p.exchangeScore();
-            dimSums[4] += p.blockedScore();
-            dimSums[5] += p.survivalTradeScore();
-            dimSums[6] += p.shootingScore();
-            dimSums[7] += p.objectiveScore();
+            // 七维顺序单一来源：dimensionScores()（与 LeagueColumns.DIM_KEYS 严格一致）
+            final List<Double> scores = p.dimensionScores();
+            for (int d = 0; d < scores.size(); d++) {
+                dimSums[d] += scores.get(d);
+            }
         }
-        final List<Double> dimAverages = new ArrayList<>(8);
+        final List<Double> dimAverages = new ArrayList<>(dimSums.length);
         for (final double d : dimSums) {
             dimAverages.add(d / n);
         }

@@ -41,7 +41,7 @@ function onDrop(i) {
         <label class="colitem">
           <input type="checkbox" :checked="visible.includes(key)" :disabled="fixedKeys.includes(key)"
                  @change="$emit('toggle', { key, scope })" />
-          {{ $t((scope === 'agg' ? 'agg_labels.' : 'player_labels.') + key) }}
+          {{ $t((scope === 'player' ? 'player_labels.' : 'agg_labels.') + key) }}
         </label>
         <span class="cat">{{ catOf(key, $t) }}</span>
       </li>
