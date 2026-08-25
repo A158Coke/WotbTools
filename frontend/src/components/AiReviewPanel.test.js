@@ -69,3 +69,77 @@ describe('AiReviewPanel workspace layout ownership', () => {
     expect(wrapper.find('.ai-action-row').exists()).toBe(false)
   })
 })
+
+// ---- plan §36–§37：Dataset 路径发送 processingJobId+sourceId JSON（不再上传 replay）----
+
+describe('AiReviewPanel dataset request', () => {
+  function mountDatasetPanel(overrides = {}) {
+    return mount(AiReviewPanel, {
+      props: {
+        file: { name: 'a.wotbreplay' },
+        processingJobId: 'p1',
+        sourceId: 'r0',
+        ...overrides
+      },
+      global: {
+        mocks: { $t: key => key },
+        stubs: {
+          ReplayAnalysisAction: {
+            props: ['analyzing'],
+            template: '<button class="dataset-analyze" @click="$emit(&apos;analyze&apos;)">analyze</button>'
+          }
+        }
+      }
+    })
+  }
+
+  function sseResponse() {
+    return {
+      ok: true,
+      status: 200,
+      body: {
+        getReader: () => ({
+          read: async () => ({ done: true }),
+          releaseLock: () => {}
+        })
+      }
+    }
+  }
+
+  it('发送 JSON dataset 引用（processingJobId/sourceId/lang/correlationId）', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse())
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountDatasetPanel()
+
+    await wrapper.find('.dataset-analyze').trigger('click')
+    await nextTick()
+    await nextTick()
+
+    const [url, options] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/replay/analyze')
+    expect(options.method).toBe('POST')
+    expect(options.headers['Content-Type']).toBe('application/json')
+    const body = JSON.parse(options.body)
+    expect(body.processingJobId).toBe('p1')
+    expect(body.sourceId).toBe('r0')
+    expect(body.lang).toBe('zh')
+    expect(typeof body.correlationId).toBe('string')
+    vi.unstubAllGlobals()
+  })
+
+  it('无 dataset 引用时回退 multipart FormData（legacy，Phase 9 移除）', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse())
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountDatasetPanel({ processingJobId: null, sourceId: null })
+
+    await wrapper.find('.dataset-analyze').trigger('click')
+    await nextTick()
+    await nextTick()
+
+    const [url, options] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/replay/analyze')
+    expect(options.body).toBeInstanceOf(FormData)
+    expect(options.headers['Content-Type']).toBeUndefined()
+    vi.unstubAllGlobals()
+  })
+})

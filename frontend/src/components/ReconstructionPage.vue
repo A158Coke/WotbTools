@@ -8,6 +8,7 @@
 import { nextTick, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
+import * as api from '../utils/api.js'
 import AiReviewPanel from './AiReviewPanel.vue'
 import BattlePlaybackPanel from './BattlePlaybackPanel.vue'
 import ReplayInputPanel from './ReplayInputPanel.vue'
@@ -43,6 +44,10 @@ onMounted(async () => {
 
 const files = ref([])
 const error = ref('')
+/** Dataset 引用（plan §50）：独立深链同样走 Processing Pipeline，不重新上传/full process。 */
+const processingJobId = ref(null)
+const sourceId = ref(null)
+let datasetPollTimer = null
 // AI 报告时间跳转：传给 BattlePlaybackPanel（seekTo 自动加载/展开地图），并滚动定位到地图面板。
 const mapSeek = ref(null)
 const playbackPanelEl = ref(null)
@@ -58,6 +63,7 @@ function addFile(e) {
   }
   files.value = [picked[0]]
   error.value = ''
+  ensureDataset()
 }
 
 function removeFile(index) {
@@ -68,6 +74,47 @@ function removeFile(index) {
 function clearFile() {
   files.value = []
   error.value = ''
+  invalidateDataset()
+}
+
+function invalidateDataset() {
+  processingJobId.value = null
+  sourceId.value = null
+  if (datasetPollTimer) { clearTimeout(datasetPollTimer); datasetPollTimer = null }
+}
+
+/** 选择回放后自动创建 Processing Job（priority=r0）并等待 source READY（plan §40/§50）。 */
+async function ensureDataset() {
+  invalidateDataset()
+  const file = files.value[0]
+  if (!file) return
+  try {
+    const fd = new FormData()
+    fd.append('files', file)
+    fd.append('prioritySourceIndex', '0')
+    const created = await api.createProcessingJob(fd)
+    if (!files.value.length) { api.cancelProcessingJob(created.jobId).catch(() => {}) ; return }
+    processingJobId.value = created.jobId
+    pollSourceReady(created.jobId)
+  } catch (e) {
+    error.value = e?.message || String(e)
+  }
+}
+
+function pollSourceReady(jobId) {
+  datasetPollTimer = setTimeout(async () => {
+    try {
+      const data = await api.getProcessingJob(jobId)
+      if (processingJobId.value !== jobId) return
+      const s = (data.sources || []).find(x => x.sourceId === 'r0')
+      if (s && s.status === 'READY') { sourceId.value = 'r0'; datasetPollTimer = null; return }
+      if (s && s.status === 'FAILED') { error.value = 'SOURCE_PROCESSING_FAILED'; datasetPollTimer = null; return }
+      if (['READY', 'FAILED', 'CANCELLED'].includes(data.status)) { datasetPollTimer = null; return }
+      pollSourceReady(jobId)
+    } catch {
+      datasetPollTimer = null
+    }
+  }, 750)
 }
 
 /** AI 报告时间链接 → 回滚到地图区块（MapOverview 已自动切到战局回放视图）。 */
@@ -108,6 +155,8 @@ async function onAiSeek(sec) {
       <div ref="playbackPanelEl">
         <BattlePlaybackPanel
           :file="files[0] || null"
+          :processing-job-id="processingJobId"
+          :source-id="sourceId"
           :seek-to="mapSeek"
           login-view="reconstruction"
         />
@@ -115,6 +164,8 @@ async function onAiSeek(sec) {
 
       <AiReviewPanel
         :file="files[0] || null"
+        :processing-job-id="processingJobId"
+        :source-id="sourceId"
         login-view="reconstruction"
         @seek="onAiSeek"
       />

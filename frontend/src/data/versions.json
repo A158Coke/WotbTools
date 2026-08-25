@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.31",
+    "date": "2026-08-25",
+    "tag": "chg",
+    "zh": "回放解析体验升级：上传后分阶段显示真实进度（上传 / 准备任务 / 排队 / 解析 / 整理结果），大批次最多同时解析 2 个回放并显示当前文件名；解析与导出进度不再互相遮挡。直接点击「AI 复盘」或「战局回放」无需先点「解析预览」——系统会自动优先解析你选中的回放，其余文件继续后台解析；AI 复盘与战局回放复用同一次解析结果，不再重复上传或重复解析。",
+    "en": "Replay processing experience upgraded: after upload the page shows real stage-by-stage progress (upload / preparing / queued / parsing / finalizing), large batches parse up to 2 replays at a time with the current file names, and processing no longer hides behind export tasks. Clicking \"AI Review\" or \"Battle Playback\" directly no longer requires \"Parse Preview\" first — the system auto-parses your selected replay first while the rest continue in the background; AI Review and Battle Playback reuse the same parse result instead of re-uploading or re-parsing.",
+    "ru": "Улучшен разбор реплеев: после загрузки страница показывает реальный поэтапный прогресс (загрузка / подготовка / очередь / разбор / сводка), большие наборы разбирают до 2 реплеев одновременно с указанием текущих файлов, а разбор больше не скрывается за задачами экспорта. Прямой переход к «AI-разбор» или «Повтор боя» больше не требует сначала нажать «Предпросмотр разбора» — система сама в первую очередь разбирает выбранный реплей, остальные продолжают разбираться в фоне; AI-разбор и повтор боя используют один и тот же результат разбора без повторной загрузки и повторного разбора."
+  },
+  {
     "v": "2.12.30",
     "date": "2026-08-25",
     "tag": "fix",

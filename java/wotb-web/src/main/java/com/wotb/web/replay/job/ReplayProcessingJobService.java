@@ -11,6 +11,7 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
 import com.wotb.web.replay.ReplayUploadValidator;
+import com.wotb.web.replay.ai.MapOverviewBuilder;
 import com.wotb.web.replay.dto.PreviewResponse;
 import com.wotb.web.replay.mapper.Mapper;
 import com.wotb.web.replay.service.ReplayService;
@@ -79,9 +80,22 @@ public class ReplayProcessingJobService {
      * Scheduler（有界，满载 503 PROCESSING_QUEUE_FULL）并返回 jobId（202 语义）。
      */
     public String createJob(final MultipartFile[] files) {
+        return createJob(files, null);
+    }
+
+    /**
+     * 创建 Replay Processing Job（plan §41）：{@code prioritySourceIndex} 指定用户
+     * 直接点击 AI/Playback 的目标 source——Scheduler 内该 source 排到本 job 队首
+     * （不突破全局并发=2），实现「目标 replay 优先解析、batch 其余继续后台解析」。
+     */
+    public String createJob(final MultipartFile[] files, final Integer prioritySourceIndex) {
         ReplayUploadValidator.validate(files);
         if (files.length > ReplayService.MAX_REPLAY_FILES) {
             throw new IllegalArgumentException("TOO_MANY_REPLAY_FILES");
+        }
+        if (prioritySourceIndex != null
+                && (prioritySourceIndex < 0 || prioritySourceIndex >= files.length)) {
+            throw new IllegalArgumentException("SOURCE_NOT_FOUND");
         }
         final String jobId = UUID.randomUUID().toString();
         final Path inputDir = store.inputDir(jobId);
@@ -113,7 +127,7 @@ public class ReplayProcessingJobService {
         final Replays.ParsedEntry[] entries = new Replays.ParsedEntry[inputs.size()];
         final AtomicInteger[] parse = {new AtomicInteger(), new AtomicInteger(), new AtomicInteger()};
         try {
-            parseScheduler.submit(jobId, IntStream.range(0, inputs.size()).boxed().toList(),
+            parseScheduler.submit(jobId, sourceOrder(prioritySourceIndex, inputs.size()),
                     index -> processSource(job, inputs.get(index), index, entries, parse),
                     () -> onFirstDispatch(job, submittedNanos),
                     () -> finalizeJob(job, entries, parse, submittedNanos));
@@ -124,6 +138,20 @@ public class ReplayProcessingJobService {
         recordCreated(files.length);
         LOGGER.info(logLine("processing_job_created", jobId, "files", files.length));
         return jobId;
+    }
+
+    /** 调度顺序：priority source 先于其余（其余保持上传顺序，plan §41/§43）。 */
+    private static List<Integer> sourceOrder(final Integer prioritySourceIndex, final int total) {
+        final List<Integer> order = new ArrayList<>(total);
+        if (prioritySourceIndex != null) {
+            order.add(prioritySourceIndex);
+        }
+        for (int i = 0; i < total; i++) {
+            if (prioritySourceIndex == null || i != prioritySourceIndex) {
+                order.add(i);
+            }
+        }
+        return order;
     }
 
     public ReplayProcessingJob.Snapshot status(final String jobId) {
@@ -201,11 +229,9 @@ public class ReplayProcessingJobService {
             job.markSourceFailed(index, "PROCESSING_JOB_STORAGE_UNAVAILABLE");
             return;
         }
+        final ReplayProcessingResult result;
         try {
-            final Battle battle = processFullTracked(source);
-            job.updateParseProgress(parse[0].incrementAndGet(), parse[1].incrementAndGet(), parse[2].get());
-            job.markSourceReady(index);
-            entries[index] = new Replays.ParsedEntry(index, name, battle, null);
+            result = processFullResultTracked(source);
         } catch (final Exception e) {
             final String message = e.getMessage() == null || e.getMessage().isBlank()
                     ? "REPLAY_PROCESSING_FAILED" : e.getMessage();
@@ -214,7 +240,25 @@ public class ReplayProcessingJobService {
             entries[index] = new Replays.ParsedEntry(index, name, null, message);
             LOGGER.debug(logLine("processing_job_source_failed", job.jobId(),
                     "sourceIndex", index, "sourceName", name, "error", message));
+            return;
         }
+        final Battle battle = result.battle();
+        // Derived artifacts（plan §22/§19）：MapOverview 不可用 ≠ parse failure（§107）；
+        // artifact 写失败属于存储不可用 → source FAILED（消费者依赖 artifact）。
+        try {
+            ReplayArtifactWriter.writeMapOverview(store.jobDir(job.jobId()), index,
+                    MapOverviewBuilder.build(battle, result.reconstruction()));
+            ReplayArtifactWriter.writeAiFacts(store.jobDir(job.jobId()), index, result);
+        } catch (final IOException e) {
+            LOGGER.warn(logLine("processing_job_artifact_write_failed", job.jobId(),
+                    "sourceIndex", index, "sourceName", name), e);
+            job.updateParseProgress(parse[0].incrementAndGet(), parse[1].get(), parse[2].incrementAndGet());
+            job.markSourceFailed(index, "PROCESSING_JOB_STORAGE_UNAVAILABLE");
+            return;
+        }
+        job.updateParseProgress(parse[0].incrementAndGet(), parse[1].incrementAndGet(), parse[2].get());
+        job.markSourceReady(index);
+        entries[index] = new Replays.ParsedEntry(index, name, battle, null);
     }
 
     /**
@@ -300,24 +344,28 @@ public class ReplayProcessingJobService {
     }
 
     /** 与 preview/export 完全相同的 authoritative full processing 链（禁止 raw parse 回归）。 */
-    private Battle processFull(final Source source) {
+    private ReplayProcessingResult processFullResult(final Source source) {
         final ReplayProcessingResult result = processingFacade.process(source, ReplayProcessingOptions.full());
-        if (result.battle() != null) {
-            return result.battle();
+        if (meterRegistry != null) {
+            // plan §75：full processing 计数器（验证 1 replay → Preview/AI/Playback/Export = +1）
+            meterRegistry.counter("wotb_replay_full_processing_total").increment();
         }
-        final String message = result.error() != null && StringUtils.hasText(result.error().message())
-                ? result.error().message() : "REPLAY_PROCESSING_FAILED";
-        throw new IllegalArgumentException(message);
+        if (result.battle() == null) {
+            final String message = result.error() != null && StringUtils.hasText(result.error().message())
+                    ? result.error().message() : "REPLAY_PROCESSING_FAILED";
+            throw new IllegalArgumentException(message);
+        }
+        return result;
     }
 
     /** 单文件处理 + 逐文件耗时指标（低基数，无 filename tag）。 */
-    private Battle processFullTracked(final Source source) {
+    private ReplayProcessingResult processFullResultTracked(final Source source) {
         if (meterRegistry == null) {
-            return processFull(source);
+            return processFullResult(source);
         }
         final Timer.Sample sample = Timer.start(meterRegistry);
         try {
-            return processFull(source);
+            return processFullResult(source);
         } finally {
             sample.stop(Timer.builder("wotb_replay_processing_file_duration_seconds")
                     .description("单个 replay full processing 耗时")

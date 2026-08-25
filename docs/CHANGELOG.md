@@ -5,6 +5,26 @@
 ## [Unreleased]
 
 ### Added
+- **Replay Processing Pipeline V2**：回放处理链重构为「一次上传 → 一次 full process →
+  多消费者复用」：
+  - 全局 `ReplayParseScheduler`（默认并发 2，`REPLAY_PARSE_MAX_CONCURRENT`；job-aware
+    公平轮转 + queued cancellation + 有界 pending，满载 503 `PROCESSING_QUEUE_FULL`）；
+  - source-level 模型：`sourceId/sourceIndex`、per-source 状态、`activeSources[]`、
+    `parseCompleted/parseSucceeded/parseFailed` 真实进度与 `FINALIZING_BATCH` phase；
+  - 内存重构：`ParsedEntry` 不再持有 `Source`/`byte[]`（batch 聚合阶段原始字节可 GC）；
+  - Derived Artifacts：worker 内构建 `derived/{sourceId}/ai-facts.json` 与
+    `map-overview.json`（临时文件 + atomic move，先写后 READY）；
+  - AI 复盘 / 战局回放 Dataset 路径：`/api/replay/analyze` 与
+    `/api/replay/map-overview` 新增 JSON 引用（`processingJobId + sourceId`），读取
+    cached artifact，不再重新上传 / 重新 full process；支持
+    `prioritySourceIndex` 直接进入能力（目标 replay 优先解析）；
+  - Dataset Lease：`acquireForSource/release` 通用引用计数，读取期间 TTL 不清；
+  - artifact executor 拆分：Excel/ZIP 构建并发独立配置
+    `REPLAY_ARTIFACT_MAX_CONCURRENT`（默认 1）；
+  - observability：`wotb_replay_parse_active` /
+    `wotb_replay_parse_queue_depth` / `wotb_replay_processing_jobs_active` /
+    `wotb_replay_processing_jobs_queued` / `wotb_replay_full_processing_total` /
+    `wotb_replay_dataset_cache_hits|misses_total`（低基数）。
 - **名人堂三环（Mark 3）人工审核排行榜**：新增独立 `mark3` domain、Flyway `V21` submission/evidence 表和 `/api/hof/mark3`、`/api/users/mark3`、`/api/admin/hof/mark3` API。仅限 Tier X，玩家提交三环所需场数、过程场均、过程胜率、1–2 张截图与恰好 5 个回放；无 Wargaming 自动认证链路。创建路径从五个 replay byte[] 读取、解析、hash 锁、落盘到事务全程复用全局 `ReplayCapacityLimiter`，容量满返回 503 `REPLAY_BUSY`。排行榜按已审核三环场数升序，场数相同使用 competition ranking；同用户同车的 CURRENT 唯一且不被后续申请替代，不使用 `SUPERSEDED`。REJECTED/CANCELLED/DELETED 可重提；管理员通过、拒绝或删除时均不能改写成绩，终态会清理截图和回放证据。
 
 ### Fixed

@@ -127,9 +127,21 @@ Wargaming ASIA/EU/NA 登录与百场 WG 官方认证需要 Keycloak 和 backend 
 
 ### Replay Processing
 
-Processing Job 创建后持久化输入、由有界 worker 串行 `processFull`，READY 后保存 `ProcessedDataset`；Preview 与后续 Export 可以复用这一份结果。`ReplayJobState` / `ReplayJobStorage` 是 Export 与 Processing 共用的状态机/临时目录底座。
+Processing Job 创建后持久化输入，source 任务提交给全局 `ReplayParseScheduler`
+（Replay Full Processing 唯一 CPU 预算：默认并发 2、job-aware 公平轮转、queued
+cancellation、有界 pending）；每个 source 独立 `processFull` 后写 derived artifact
+（`ai-facts.json` / `map-overview.json`，原子写、先写后 READY），全部完成后单线程
+deterministic FINALIZING_BATCH（去重 / League / Rating / 汇总）→ READY 保存
+`ProcessedDataset`。Preview / Export / AI / 战局回放消费同一 Dataset（AI/Playback 走
+`processingJobId + sourceId` 引用读 artifact，不再重复 full process）。`ReplayJobState` /
+`ReplayJobStorage` 是 Export 与 Processing 共用的状态机/临时目录底座；
+`ReplayArtifactWriter` 负责 artifact 读写，`acquireForSource/release` 提供 Dataset
+Lease（读取期间 TTL 不清）。
 
-公开解析边界：最多 100 个 replay、单文件 20 MiB、总请求 200 MiB；单实例默认同时处理 2 个任务，容量满返回 `503 REPLAY_BUSY`。
+公开解析边界：最多 100 个 replay、单文件 20 MiB、总请求 200 MiB；Replay Full Processing
+默认并发 2（`REPLAY_PARSE_MAX_CONCURRENT`），pending source 上限 200
+（`REPLAY_PARSE_QUEUE_CAPACITY`，满载 503 `PROCESSING_QUEUE_FULL`）；Excel/ZIP artifact
+构建并发独立为 1（`REPLAY_ARTIFACT_MAX_CONCURRENT`）。
 
 ### League Rating
 

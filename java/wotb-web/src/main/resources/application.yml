@@ -136,6 +136,9 @@ wotb:
       max-concurrent: ${REPLAY_PARSE_MAX_CONCURRENT:2}
       # 全部 job 的 pending source 总数上限；满载 503 PROCESSING_QUEUE_FULL（plan §95/§116）
       queue-capacity: ${REPLAY_PARSE_QUEUE_CAPACITY:200}
+    artifact:
+      # Excel/ZIP artifact 构建并发（plan §46：与 parse 分离，2C 默认 1）
+      max-concurrent: ${REPLAY_ARTIFACT_MAX_CONCURRENT:1}
     export-job:
       # 导出 Job 临时目录（上传输入 + 最终 artifact；TTL 自动清理，见 ExportJobStore）
       dir: ${REPLAY_EXPORT_JOB_DIR:${java.io.tmpdir}/wotb-export-jobs}

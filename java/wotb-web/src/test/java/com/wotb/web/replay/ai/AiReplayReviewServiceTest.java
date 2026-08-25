@@ -16,6 +16,10 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
+import com.wotb.web.replay.job.ProcessedDataset;
+import com.wotb.web.replay.job.ReplayArtifactWriter;
+import com.wotb.web.replay.job.ReplayProcessingJob;
+import com.wotb.web.replay.job.ReplayProcessingJobStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,6 +28,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
 import tools.jackson.databind.json.JsonMapper;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -392,6 +399,48 @@ class AiReplayReviewServiceTest {
         assertTrue(section.contains("重坦正面推进"));
         assertFalse(section.contains("PRE-BATTLE"), "machine section header must be removed");
         assertFalse(section.contains("TEAM_A"), "internal team tokens must be replaced");
+    }
+
+    // ---- plan §36–§38/§87：Dataset 路径只读 ai-facts，不得调用 processingFacade ----
+
+    @Test
+    void analyzeFactsFromDatasetReadsArtifactWithoutProcessingFacade() throws Exception {
+        final Path dir = Files.createTempDirectory("wotb-ai-dataset-test");
+        final ReplayProcessingJobStore store = new ReplayProcessingJobStore(dir, 60);
+        try {
+            final ReplayProcessingResult result = randomResult();
+            final ReplayProcessingJob job = new ReplayProcessingJob("j1", List.of("a.wotbreplay"));
+            job.startProcessing();
+            job.markSourceProcessing(0, "a.wotbreplay");
+            ReplayArtifactWriter.writeAiFacts(store.jobDir("j1"), 0, result);
+            job.markSourceReady(0);
+            job.updateProgress(1, 0, 0);
+            job.markReady(new ProcessedDataset(List.of(result.battle()), List.of("a.wotbreplay"),
+                    List.of(), List.of(), null, null));
+            store.register(job);
+            service = new AiReplayReviewService(
+                    processingFacade, aiAnalysisService, null, null, null, store);
+            when(aiAnalysisService.analyzePlayerOrFallback(any(), eq(AllowedLanguage.ZH), any()))
+                    .thenReturn(new AnalyzeResult("dataset-analysis"));
+
+            final AnalyzeResponse response =
+                    service.analyzeFacts("j1", 0, AllowedLanguage.ZH, AiReviewStreamListener.NOOP);
+
+            assertNotNull(response);
+            assertTrue(response.analysis().contains("dataset-analysis"));
+            verify(processingFacade, never()).process(any(), any());
+        } finally {
+            store.close();
+            try (var walk = Files.walk(dir)) {
+                walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                    try {
+                        Files.deleteIfExists(p);
+                    } catch (final Exception ignored) {
+                        // best-effort test cleanup
+                    }
+                });
+            }
+        }
     }
 
     @Test

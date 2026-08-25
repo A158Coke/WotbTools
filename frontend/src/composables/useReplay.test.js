@@ -267,6 +267,21 @@ describe('useReplay processing job flow', () => {
     expect(replay.processingError.value).toBe('')
   })
 
+  it('requestDirectAction creates job with priority and resolves when source READY', async () => {
+    api.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 2 })
+    api.getProcessingJob.mockResolvedValue({
+      jobId: 'p1', status: 'PROCESSING', total: 2,
+      sources: [{ sourceId: 'r0', status: 'READY' }, { sourceId: 'r1', status: 'READY' }]
+    })
+    replay.files.value = [new File(['a'], 'a.wotbreplay'), new File(['b'], 'b.wotbreplay')]
+
+    const ref = await replay.requestDirectAction(replay.files.value[1], 'ai')
+
+    expect(ref).toEqual({ processingJobId: 'p1', sourceId: 'r1' })
+    const fd = api.createProcessingJob.mock.calls[0][0]
+    expect(fd.get('prioritySourceIndex')).toBe('1')
+  })
+
   it('export after READY reuses processingJobId without re-uploading', async () => {
     // 模拟已 READY（轮询 → READY → processingJobId 完整链路由上一用例覆盖）；
     // resultMatchesSelection 要求 resp 与 processingJobId 成对存在。

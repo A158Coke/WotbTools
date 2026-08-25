@@ -18,7 +18,11 @@ import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.processing.TeamPerspectiveResolver;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
+import com.wotb.core.replay.facts.AiReplayFacts;
 import com.wotb.core.ref.ReplayDisplayNames;
+import com.wotb.web.replay.job.ReplayArtifactWriter;
+import com.wotb.web.replay.job.ReplayProcessingJob;
+import com.wotb.web.replay.job.ReplayProcessingJobStore;
 import com.wotb.web.replay.metrics.ReplayUsageMetrics;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -53,13 +57,15 @@ public class AiReplayReviewService {
     private final TacticalReviewHarness tacticalReviewHarness;
     private final MeterRegistry meterRegistry;
     private final ReplayUsageMetrics replayUsageMetrics;
+    /** Dataset Lease 提供方（plan §25）：AI 读取 derived artifact 前 acquire，防止 TTL 清理。 */
+    private final ReplayProcessingJobStore processingStore;
 
     private final AtomicInteger aiReviewInFlight = new AtomicInteger();
     private Timer aiReviewDuration;
     public AiReplayReviewService(
             final DefaultReplayProcessingFacade processingFacade,
             final AiReplayAnalysisService aiAnalysisService) {
-        this(processingFacade, aiAnalysisService, null, null, null);
+        this(processingFacade, aiAnalysisService, null, null, null, null);
     }
 
     @Autowired
@@ -68,12 +74,24 @@ public class AiReplayReviewService {
             final AiReplayAnalysisService aiAnalysisService,
             final TacticalReviewHarness tacticalReviewHarness,
             @Autowired(required = false) final MeterRegistry meterRegistry,
-            @Autowired(required = false) final ReplayUsageMetrics replayUsageMetrics) {
+            @Autowired(required = false) final ReplayUsageMetrics replayUsageMetrics,
+            @Autowired(required = false) final ReplayProcessingJobStore processingStore) {
         this.processingFacade = processingFacade;
         this.aiAnalysisService = aiAnalysisService;
         this.tacticalReviewHarness = tacticalReviewHarness;
         this.meterRegistry = meterRegistry;
         this.replayUsageMetrics = replayUsageMetrics;
+        this.processingStore = processingStore;
+    }
+
+    /** 测试/旧调用便利构造器（无 Dataset lease 提供方）。 */
+    public AiReplayReviewService(
+            final DefaultReplayProcessingFacade processingFacade,
+            final AiReplayAnalysisService aiAnalysisService,
+            final TacticalReviewHarness tacticalReviewHarness,
+            final MeterRegistry meterRegistry,
+            final ReplayUsageMetrics replayUsageMetrics) {
+        this(processingFacade, aiAnalysisService, tacticalReviewHarness, meterRegistry, replayUsageMetrics, null);
     }
 
     public AnalyzeResponse analyze(final MultipartFile[] files) throws IOException {
@@ -186,6 +204,70 @@ public class AiReplayReviewService {
                 }
             }
         }
+        return analyzeResults(allResults, language, listener);
+    }
+
+    /**
+     * Dataset 路径（plan §36–§38）：从 Processing Job 的 derived artifact 读取
+     * {@link AiReplayFacts} 并执行同一 AI 链路；<b>不</b>重新上传 / 不重新 full
+     * process（BLOCKER A）。source 未 READY / job 不存在返回稳定错误码。
+     */
+    public AnalyzeResponse analyzeFacts(final String processingJobId, final int sourceIndex,
+                                        final AllowedLanguage language,
+                                        final AiReviewStreamListener listener) throws IOException {
+        if (processingStore == null) {
+            throw new IllegalArgumentException("DATASET_UNAVAILABLE");
+        }
+        final ReplayProcessingJob job = processingStore.acquireForSource(processingJobId);
+        if (job == null) {
+            datasetCache("ai", false);
+            throw new IllegalArgumentException("JOB_NOT_FOUND");
+        }
+        try {
+            final ReplayProcessingJob.Snapshot snap = job.snapshot();
+            if (sourceIndex < 0 || sourceIndex >= snap.sources().size()) {
+                throw new IllegalArgumentException("SOURCE_NOT_FOUND");
+            }
+            final ReplayProcessingJob.SourceState state = snap.sources().get(sourceIndex);
+            if (state.status() != ReplayProcessingJob.SourceStatus.READY) {
+                throw new IllegalArgumentException(
+                        state.status() == ReplayProcessingJob.SourceStatus.FAILED
+                                ? "SOURCE_PROCESSING_FAILED" : "SOURCE_NOT_READY");
+            }
+            final AiReplayFacts facts =
+                    ReplayArtifactWriter.readAiFacts(processingStore.jobDir(processingJobId), sourceIndex);
+            datasetCache("ai", true);
+            return analyzeFacts(facts, language, listener);
+        } catch (final java.io.IOException e) {
+            datasetCache("ai", false);
+            throw new IllegalArgumentException("DATASET_EXPIRED");
+        } finally {
+            processingStore.release(processingJobId);
+        }
+    }
+
+    private void datasetCache(final String consumer, final boolean hit) {
+        if (meterRegistry == null) {
+            return;
+        }
+        meterRegistry.counter("wotb_replay_dataset_cache_"
+                + (hit ? "hits" : "misses") + "_total", "consumer", consumer).increment();
+    }
+
+    /** 对已还原的 facts 执行与旧 analyze 完全相同的 authoritative AI 链路。 */
+    public AnalyzeResponse analyzeFacts(final AiReplayFacts facts,
+                                        final AllowedLanguage language,
+                                        final AiReviewStreamListener listener) {
+        return analyzeResults(List.of(facts.toResult()), language, listener);
+    }
+
+    /**
+     * 已解析结果列表的 AI 编排（旧 analyze 与 Dataset 路径共用，plan §20）：
+     * coverage 日志 → 模式判定 → 可分析分组 → 单场/团队分支。
+     */
+    private AnalyzeResponse analyzeResults(final List<ReplayProcessingResult> allResults,
+                                           final AllowedLanguage language,
+                                           final AiReviewStreamListener listener) {
         for (final ReplayProcessingResult r : allResults) {
             if (r.reconstruction() != null && r.reconstruction().coverage() != null) {
                 final ReplayCoverage cov = r.reconstruction().coverage();

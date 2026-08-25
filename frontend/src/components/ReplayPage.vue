@@ -32,6 +32,7 @@ const replay = useReplay()
 const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateFiles, selectionRevision,
   processingJob, processingError, processingActive,
   uploadState, cancelProcessing,
+  requestDirectAction,
   exportJob, exportError, exportActive,
   startProcessingJob, dismissProcessingJob,
   startExportJob, cancelExportJob, downloadExportResult, dismissExportJob,
@@ -423,16 +424,38 @@ function requireLoginForBattleAction() {
 const workspaceTab = ref('results')
 const workspaceFile = ref(null)
 const playbackSeek = ref(null)
+/** 当前 workspace 文件对应的 Dataset 引用（{processingJobId, sourceId}；换文件即失效）。 */
+const datasetRef = ref(null)
 
-function openWorkspacePlayback(file) {
-  workspaceFile.value = file
-  playbackSeek.value = null
-  workspaceTab.value = 'playback'
+/** 目标文件变化 → 旧 dataset 引用失效（plan §54：旧响应不覆盖新 selection）。 */
+watch(workspaceFile, () => {
+  datasetRef.value = null
+})
+
+/** 确保目标 source READY 后返回 Dataset 引用（自动创建/复用 Processing Job，plan §40）。 */
+async function ensureDatasetFor(file) {
+  if (!file) return null
+  try {
+    datasetRef.value = await requestDirectAction(file, workspaceTab.value)
+    return datasetRef.value
+  } catch (e) {
+    datasetRef.value = null
+    processingError.value = e?.message || String(e)
+    return null
+  }
 }
 
-function openWorkspaceAi(file) {
+async function openWorkspacePlayback(file) {
+  workspaceTab.value = 'playback'
   workspaceFile.value = file
+  playbackSeek.value = null
+  await ensureDatasetFor(file)
+}
+
+async function openWorkspaceAi(file) {
   workspaceTab.value = 'ai'
+  workspaceFile.value = file
+  await ensureDatasetFor(file)
 }
 
 /**
@@ -444,30 +467,32 @@ function openWorkspaceAi(file) {
  *   登录门禁（未登录 confirm + login，不切换、不设置 target、不自动发 API 请求）；
  * - 未选择且 files 多个 → 保持 null（空态），禁止静默 fallback 到 files[0]（多文件必须显式选目标）。
  */
-function selectWorkspaceTab(tab) {
+async function selectWorkspaceTab(tab) {
   if (tab === 'ai' || tab === 'playback') {
     if (!workspaceFile.value && files.value.length === 1) {
       if (!requireLoginForBattleAction()) return
       workspaceFile.value = files.value[0]
+      await ensureDatasetFor(files.value[0])
     }
   }
   workspaceTab.value = tab
 }
 
 /** FileUploader 直接入口（单文件 / 显式选择）上抛：原地切到对应面板。 */
-function onWorkspaceAction({ file, mode }) {
+async function onWorkspaceAction({ file, mode }) {
+  if (!requireLoginForBattleAction()) return
   if (mode === 'playback') openWorkspacePlayback(file)
   else openWorkspaceAi(file)
 }
 
-function openBattlePlayback() {
+async function openBattlePlayback() {
   const f = currentBattleFile()
   if (!f) return
   if (!requireLoginForBattleAction()) return
   openWorkspacePlayback(f)
 }
 
-function openAiReview() {
+async function openAiReview() {
   const f = currentBattleFile()
   if (!f) return
   if (!requireLoginForBattleAction()) return
@@ -652,11 +677,14 @@ watch(files, (next) => {
       </div>
 
       <div v-show="workspaceTab === 'ai'" data-test="workspace-ai-panel">
-        <AiReviewPanel :file="workspaceFile" login-view="replay" @seek="onAiSeek" />
+        <AiReviewPanel :file="workspaceFile" :processing-job-id="datasetRef?.processingJobId ?? null"
+          :source-id="datasetRef?.sourceId ?? null" login-view="replay" @seek="onAiSeek" />
       </div>
       <div v-show="workspaceTab === 'playback'" data-test="workspace-playback-panel">
         <!-- active=进入战局回放 capability 时面板才自动加载地图；AI 复盘期间保持挂载但不发请求 -->
-        <BattlePlaybackPanel :file="workspaceFile" :active="workspaceTab === 'playback'" :seek-to="playbackSeek" login-view="replay" />
+        <BattlePlaybackPanel :file="workspaceFile" :processing-job-id="datasetRef?.processingJobId ?? null"
+          :source-id="datasetRef?.sourceId ?? null" :active="workspaceTab === 'playback'"
+          :seek-to="playbackSeek" login-view="replay" />
       </div>
     </template>
 
