@@ -31,16 +31,19 @@
   UI "--"，禁止 0/0 伪装 0%）；numerator == 0 且 denominator > 0 → 合法 0%。跨场基于总量
   sum(pens)/sum(hits)，不是各场平均。**UI raw rate ≠ Rating shooting**：League Rating 射击维度
   内部仍为 Wilson 95% 置信下界合成（30% 命中 / 70% 击穿），未因 UI 显示真实百分比而改裸比例。
-- **League 专属列宇宙移除 Potential Damage**：`Mapper.leaguePlayerColumns()` /
-  `leagueAggregateColumns()` 过滤 potential_damage / supplement / detail / avg 系列
-  （Potential Damage 对当前 League Rating 无业务价值）；**League 单场 XLSX
-  （`LeagueSingleSheets`）改为 canonical `Columns.PLAYER` 过滤 potential 系列
-  （title/width/numeric/getter 仍来自 `Columns.Column`，不复制 schema），
-  League each 导出（`ReplayExportJobService.processEachLeague` / `ReplayService.exportEach`
-  allLeague 分支）不再执行 `PotentialDamage.apply`（`populateBattle` 保留，
-  Contribution/KAST/Impact 仍是有效 League 数据）。标准 Replay 列宇宙与
-  League aggregate XLSX 中 Replay Core 基础 sheets（Replay 汇总/明细/战斗列表）
-  原样保留（既有 Standard 消费者），不做无边界删除。
+- **全局移除 Potential Damage / 潜在伤害指标**（用户正式决策，非仅 League）：
+  - 删除 `PotentialDamage` 计算类、`PlayerResult.potentialDamage*` 字段、
+    `Columns.PLAYER` / `AggregateColumns` / `Agg` / `PerformanceMetricsCalculator.Row`
+    的 potential 系列（含 avg），`AggregateSheets` 不再输出 总潜在伤害/场均潜在伤害/
+    场均补增伤害；
+  - Preview / Processing Job / 同步与异步 Export（aggregate / each / single /
+    from-result 全部路径）不再执行 `PotentialDamage.apply`——runtime enrichment = 0；
+  - Standard / League 单场与汇总 XLSX、mode=each（含 Rating-ineligible Standard
+    fallback）、API column metadata、前端三语 locale / tables / ColumnPicker 全部不再
+    出现 potential_damage 系列；
+  - 保留的独立职责：`killVictims` 击杀前伤害明细（killer attribution 证据链，
+    AI 复盘「谁杀谁」消费）拆分为 `KillVictim` model，与已删除的潜在伤害指标无关；
+  - schema absence regression 锁定旧字段不得重新进入 API/export。
 - **Player Radar 数据语义收口（Summary mean / Battle 单场分离）**：
   - `PlayerLeagueSummary` 新增 `dimensionMeans`（七维算术平均，rated-only 分母；
     UNKNOWN death-time 场是合法 rated sample，Survival/Trade 真实 0 参与平均；

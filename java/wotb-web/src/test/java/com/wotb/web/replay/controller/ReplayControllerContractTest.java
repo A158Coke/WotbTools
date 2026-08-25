@@ -44,10 +44,10 @@ class ReplayControllerContractTest {
 
         assertTrue(response.get("player").size() > 10);
         assertTrue(stream(response.get("player")).anyMatch(column -> "alpha_damage".equals(key(column))));
-        assertTrue(stream(response.get("player")).anyMatch(column -> "potential_damage".equals(key(column))));
         assertTrue(stream(response.get("player")).anyMatch(column -> "rank".equals(key(column))));
-        assertTrue(stream(response.get("aggregate"))
-                .anyMatch(column -> "potential_damage_avg".equals(key(column))));
+        assertTrue(stream(response.get("player")).noneMatch(column -> key(column).startsWith("potential_damage")),
+                "Potential Damage 已全局移除，列元数据不得再暴露");
+        assertTrue(stream(response.get("aggregate")).noneMatch(column -> key(column).startsWith("potential_damage")));
         // 单场/汇总列已直接包含表现派生列（contribution/kast/impact 等）；不再有任何独立 performance 概念
         assertTrue(stream(response.get("player")).anyMatch(column -> "contribution".equals(key(column))));
         assertTrue(stream(response.get("player")).anyMatch(column -> "kast".equals(key(column))));

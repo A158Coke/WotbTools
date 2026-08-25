@@ -18,7 +18,7 @@ import java.util.Map;
  *
  * <p>只消费统一 replay authoritative facts（{@link Battle} / {@link PlayerResult} +
  * {@code com.wotb.core.replay.facts} 包），做纯数学推导；不解析回放、不查询 Tankopedia、
- * 不改写任何 battle/player 字段（PotentialDamage 已在回放管线完成，trade/HP 均来自事实层）。</p>
+ * 不改写任何 battle/player 字段（trade/HP 均来自事实层）。</p>
  *
  * <p><b>HP fail-closed</b>：场均 HP 为 {@link BattleAverageHp#complete()}=false（存在 UNKNOWN）
  * 的场次，依赖 HP 的衍生指标（贡献度击杀项 / KAST / 多伤率 / 场均 HP）不累计，绝不产出伪精确
@@ -43,16 +43,12 @@ public final class PerformanceMetricsCalculator {
         public long kills;
         public long damage;
         public long assistDamage;
-        public long potentialDamage;
-        public long potentialDamageSupplement;
         public double kast;
         public double contribution;
         public double impactValue;
         public String impact = "0.00%";
         public double damageAvg;
         public double assistAvg;
-        public double potentialDamageAvg;
-        public double potentialDamageSupplementAvg;
         public double killsAvg;
         public double averageHp;
         public double multiDamageRate;
@@ -83,8 +79,6 @@ public final class PerformanceMetricsCalculator {
             }
             damageAvg = (double) damage / battles;
             assistAvg = (double) assistDamage / battles;
-            potentialDamageAvg = (double) potentialDamage / battles;
-            potentialDamageSupplementAvg = (double) potentialDamageSupplement / battles;
             killsAvg = (double) kills / battles;
             averageHp = averageHpBattles == 0 ? 0 : averageHpSum / averageHpBattles;
             kast = kastBattles == 0 ? 0 : cap(100.0 * kastSum / kastBattles, 100.0);
@@ -211,8 +205,6 @@ public final class PerformanceMetricsCalculator {
         row.kills += player.kills;
         row.damage += player.damageDealt;
         row.assistDamage += player.damageAssisted;
-        row.potentialDamage += player.potentialDamage;
-        row.potentialDamageSupplement += player.potentialDamageSupplement;
         row.impactSum += impactValue;
         row.impactBattles++;
         if (player.survived) {

@@ -22,7 +22,7 @@
 | 文档 | 何时读 |
 |---|---|
 | `features/battle-playback.md` | 改地图鸟瞰 / 战局回放 / 双层坦克标记时 |
-| `features/performance.md` | 改战斗表现指标 / 潜在伤害时 |
+| `features/performance.md` | 改战斗表现指标时 |
 | `features/hall-of-fame.md` | 改名人堂时 |
 | `features/team-ai-review.md` | 改团队复盘产品语义时 |
 | `features/league-rating.md` | 改训练赛/联赛评分（League Rating）公式 / 模式 / 完整性门槛 / 导出时 |

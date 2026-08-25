@@ -30,7 +30,6 @@
 | `deathTimeMillis` | long | 战绩 `#104` | 死亡时刻（毫秒，battle-relative） | 存活/未知=0 → 事件流估算 |
 | `survivalTimeSec` | double | 派生 | 存活时间（秒） | ReplayParser 计算 |
 | `xp` / `credits` | int | 战绩 | 经验/银币 | 展示用 |
-| `potentialDamage` 系 | int/List | 战绩 | 潜在伤害 | 逐击杀明细解析完成前 = 实际伤害 |
 | `tankName` / `tankTier` / `tankType` / `tankNation` / `alphaDamage` | String | tankopedia 映射 | 展示派生字段 | 非回放原始值 |
 
 ## 2. 战斗层（`Battle`，来源按字段区分）

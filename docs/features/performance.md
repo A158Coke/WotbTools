@@ -23,7 +23,7 @@ PerformanceMetricsCalculator（纯派生计算，只读）
 ```
 
 Battle Playback / AI Review / Performance Metrics 全部消费同一 `Battle` / `PlayerResult`
-事实；`PotentialDamage.apply` 由编排层（`ReplayService`）在 metrics 之前执行，metrics 不再
+事实；编排层（`ReplayService`）在 metrics 之前完成回放管线 enrich，metrics 不再
 mutate 任何字段，也不再自行解析回放或查询 Tankopedia。
 
 ## 集成方式
@@ -158,18 +158,6 @@ killer 级 trade 语义应在事实层扩展，不在 metrics 层重推。
 - 已删除独立 `POST /api/performance` 端点与 `/extended` 页面（不再存在第二套 pipeline），
   也**不再有独立的 `performance` 数组 / `performanceColumns` 字段**。
 - 列 key 纯英文 + 是否数值，显示名由前端三语 `player_labels` / `agg_labels` 映射。
-
-## 潜在伤害（Potential Damage）链路
-
-- `ReplayParser` 从 `data.wotreplay` 的 Type 8 / subtype 8 / sub=3 direct HP damage 事件
-  解析攻击者、受害者和伤害值；阵亡玩家累计 direct damage 达到 `damageReceived` 阈值时，
-  推断当前攻击者为击杀者，并把累计 direct damage / penetrations 写入
-  `PlayerResult.killVictims`。
-- `PotentialDamage.apply(battles, tankopedia)` 在编排层（`ReplayService.preview`）执行：
-  读 `killVictims` 与 `Tankopedia.alphaDamage`，按
-  `0.9 * alphaDamage * penetrations` 补增潜在伤害；事件缺失 / entity 无法映射 / 特殊伤害
-  未覆盖时保守回退 `potential_damage == damage_dealt`、`potential_damage_supplement == 0`、
-  `potential_damage_detail == 未解析`。
 
 ## 测试
 

@@ -9,7 +9,7 @@ import java.util.List;
  * Replay Processing Job 的已处理回放数据集（短生命周期 job cache，TTL 与 Job 一致）。
  *
  * <p><b>enrich 不变式</b>：{@code battles} 是 worker 完成时已统一 enrich 的 authoritative
- * Battle 列表——PotentialDamage 与 PerformanceMetricsCalculator.populateBattle 各恰好执行一次，
+ * Battle 列表——PerformanceMetricsCalculator.populateBattle 各恰好执行一次，
  * 之后 Preview / Aggregate Export / Each Export 都只读消费同一份 facts，绝不二次 processFull、
  * 绝不再次执行会修改 Battle facts 的 enrichment（缓存 raw parser 结果替代 authoritative
  * Battle 会丢失 reconstruction/HP/死亡时间校准，导致 UI 与 Excel 数值漂移）。</p>

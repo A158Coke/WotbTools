@@ -1,6 +1,5 @@
 package com.wotb.core.parse;
 
-import com.wotb.core.stats.PotentialDamage;
 
 import org.junit.jupiter.api.Test;
 
@@ -42,11 +41,6 @@ class EventStreamReaderTest {
         assertEquals(500, kill.damage());
         assertEquals(2, kill.penetrations());
 
-        final PotentialDamage.BattlePotential potential = PotentialDamage.computeBattle(
-                600, 400, List.of(new PotentialDamage.KillVictim(
-                        kill.victimAccountId(), kill.damage(), kill.penetrations())));
-        assertEquals(820, potential.potentialDamage());
-        assertEquals(220, potential.supplementDamage());
     }
 
     @Test

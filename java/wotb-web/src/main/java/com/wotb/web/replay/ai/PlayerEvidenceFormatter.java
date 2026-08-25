@@ -19,7 +19,6 @@ import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.stats.PotentialDamage;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
@@ -493,7 +492,7 @@ final class PlayerEvidenceFormatter {
             byAccount.putIfAbsent(p.accountId, p);
         }
         final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat = combat(battle, recon);
-        for (final PotentialDamage.KillVictim victim : rec.killVictims) {
+        for (final com.wotb.core.model.KillVictim victim : rec.killVictims) {
             final PlayerResult target = byAccount.get(victim.victimAccountId());
             if (target == null) continue;
             final int lethalTotal = dealtTo(combat, rec.accountId,
@@ -503,7 +502,7 @@ final class PlayerEvidenceFormatter {
         }
         for (final PlayerResult other : battle.players) {
             if (PlayerAnalysisPromptFormatter.isSamePlayer(other, rec)) continue;
-            for (final PotentialDamage.KillVictim victim : other.killVictims) {
+            for (final com.wotb.core.model.KillVictim victim : other.killVictims) {
                 if (victim.victimAccountId() != rec.accountId) continue;
                 final int lethalTotal = dealtTo(combat, other.accountId,
                         rec.accountId, deathSecOrEnd(rec, combat));

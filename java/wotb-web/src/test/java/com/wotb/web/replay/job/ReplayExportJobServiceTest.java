@@ -13,9 +13,7 @@ import com.wotb.core.processing.ReplayProcessingCapabilities;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
-import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
-import com.wotb.core.stats.PotentialDamage;
 import com.wotb.web.replay.LeagueTestReplays;
 import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import io.micrometer.core.instrument.Counter;
@@ -916,9 +914,8 @@ class ReplayExportJobServiceTest {
             final String eachJob = service.createJob(null, "each", pJobId);
             assertEquals(ExportJob.Status.READY, awaitTerminal(eachJob, 10_000).status());
 
-            // 关键：共享 Battle 未被 PotentialDamage.apply / populateBattle 修改
-            assertEquals(0, b.players.getFirst().potentialDamage,
-                    "PotentialDamage.apply 不得在 from-result 路径再次执行（damageDealt=5000 会被改写）");
+            // 关键：共享 Battle 未被 populateBattle 修改（from-result 只读消费，
+            // 不得二次回填 Performance Metrics；Potential Damage 已全局移除）
             assertEquals(null, b.players.getFirst().contribution,
                     "populateBattle 不得在 from-result 路径再次执行（HP 已知场会回填 contribution）");
             assertEquals(null, b.players.getFirst().kast);
@@ -940,12 +937,10 @@ class ReplayExportJobServiceTest {
             final Battle b = battle("arena-1");
             b.players.getFirst().damageDealt = 5000;
             final List<Battle> battles = List.of(b);
-            PotentialDamage.apply(battles, Tankopedia.load());
             for (final Battle battle : battles) {
                 PerformanceMetricsCalculator.populateBattle(battle);
             }
-            final int expectedPotential = b.players.getFirst().potentialDamage;
-            assertTrue(expectedPotential == 5000, "测试前置：PotentialDamage 应把 potentialDamage 置为 damageDealt");
+            assertEquals(5000, b.players.getFirst().damageDealt, "测试前置：damageDealt 应保持 5000");
             assertNotNull(b.players.getFirst().contribution, "测试前置：HP 已知场 populateBattle 应回填 contribution");
             final String pJobId = readyProcessingJob(processingStore, "proc-parity",
                     battles, List.of("one.wotbreplay"),
@@ -953,12 +948,12 @@ class ReplayExportJobServiceTest {
 
             final String aggJob = service.createJob(null, "aggregate", pJobId);
             assertEquals(ExportJob.Status.READY, awaitTerminal(aggJob, 10_000).status());
-            assertEquals(expectedPotential, b.players.getFirst().potentialDamage,
+            assertEquals(5000, b.players.getFirst().damageDealt,
                     "from-result 导出不得改动已 enrich 的权威 metrics（Preview/Export parity）");
             assertNotNull(b.players.getFirst().contribution);
             final String eachJob = service.createJob(null, "each", pJobId);
             assertEquals(ExportJob.Status.READY, awaitTerminal(eachJob, 10_000).status());
-            assertEquals(expectedPotential, b.players.getFirst().potentialDamage);
+            assertEquals(5000, b.players.getFirst().damageDealt);
             assertNotNull(b.players.getFirst().contribution);
             verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             processingStore.release(pJobId);
@@ -1415,13 +1410,19 @@ class ReplayExportJobServiceTest {
         assertEquals(ExportJob.Status.READY, snap.status());
         assertEquals(0, snap.failures(), "Rating-ineligible 场次导出为标准工作簿，不得计入 failures");
         assertEquals(2, zipEntryNames(jobId).size(), "纯 CW each 必须导出 2 个 XLSX（不得丢弃 ineligible 场）");
-        // League each：rated 工作簿 = League 单场工作簿——不得含 Potential Damage 列
-        // （该指标不是 League Analysis 数据），但必须含 League 扩展（总Rating）与
-        // 单场 Performance Metrics（Contribution/KAST/Impact）+ 基础 Replay facts。
+        // League each（global Potential Damage removal）：rated → League 单场工作簿、
+        // ineligible → Standard 单场工作簿——两者都不得含 潜在伤害 列；
+        // rated 必须有 League 扩展（总Rating）与单场 Performance Metrics + 基础 facts。
         try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(store.get(jobId).artifactPath()))) {
-            final ZipEntry first = zip.getNextEntry();
-            assertNotNull(first);
-            try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(zip.readAllBytes()))) {
+            final Map<String, Workbook> byName = new java.util.HashMap<>();
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                byName.put(entry.getName(), new XSSFWorkbook(new ByteArrayInputStream(zip.readAllBytes())));
+            }
+            assertEquals(2, byName.size());
+            assertTrue(byName.containsKey("rated.xlsx") && byName.containsKey("unrated.xlsx"),
+                    "必须按文件名定位两个 entry：" + byName.keySet());
+            try (Workbook wb = byName.get("rated.xlsx")) {
                 final Sheet players = wb.getSheet("玩家数据");
                 final Row header = players.getRow(0);
                 final StringBuilder headerText = new StringBuilder();
@@ -1435,6 +1436,19 @@ class ReplayExportJobServiceTest {
                 assertTrue(headerText.toString().contains("KAST"), "League 单场必须含 KAST");
                 assertTrue(headerText.toString().contains("Impact"), "League 单场必须含 Impact");
                 assertTrue(headerText.toString().contains("伤害"), "League 单场必须保留基础 Replay facts");
+            }
+            try (Workbook wb = byName.get("unrated.xlsx")) {
+                final Sheet players = wb.getSheet("玩家数据");
+                final Row header = players.getRow(0);
+                final StringBuilder headerText = new StringBuilder();
+                for (int c = 0; c < header.getLastCellNum(); c++) {
+                    headerText.append(header.getCell(c).getStringCellValue()).append("|");
+                }
+                assertTrue(!headerText.toString().contains("潜在伤害"),
+                        "Rating-ineligible Standard fallback 也不得含 潜在伤害 列：" + headerText);
+                assertTrue(!headerText.toString().contains("总Rating"),
+                        "ineligible 场应为标准工作簿（无 Rating 扩展）：" + headerText);
+                assertTrue(headerText.toString().contains("伤害"), "Standard fallback 必须保留基础 Replay facts");
             }
         }
     }

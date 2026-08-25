@@ -465,9 +465,6 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `survived_label`              | 文本  | `PlayerResult.survived`                  | —     | API 返回 `SURVIVED`/`DESTROYED`，前端映射存活/阵亡（#105==-1 → 存活）                          |
 | `kills`                       | 整数  | `PlayerResult.kills`                     | 人数    | #18                                                                             |
 | `damage_dealt`                | 整数  | `PlayerResult.damageDealt`               | HP    | #8                                                                              |
-| `potential_damage`            | 整数  | `PlayerResult.potentialDamage`           | HP    | 潜在伤害                                                                            |
-| `potential_damage_supplement` | 整数  | `PlayerResult.potentialDamageSupplement` | HP    | 补增伤害                                                                            |
-| `potential_damage_detail`     | 文本  | `PlayerResult.potentialDamageDetailed`   | —     | API 返回 `PARSED`/`UNPARSED`，前端三语映射；导出使用中文                                        |
 | `damage_assisted`             | 整数  | `PlayerResult.damageAssisted`            | HP    | #9 + #10                                                                        |
 | `contribution`               | 浮点数 | `PerformanceMetricsCalculator.battleMetrics` → `PlayerResult.contribution` | %  | 单场贡献率（派生；HP 全 UNKNOWN 时为 null → 前端 `--`）                                     |
 | `kast`                       | 浮点数 | `PerformanceMetricsCalculator.battleMetrics` → `PlayerResult.kast`          | %  | 单场 KAST（派生；HP 全 UNKNOWN 时为 null → 前端 `--`）                                    |
