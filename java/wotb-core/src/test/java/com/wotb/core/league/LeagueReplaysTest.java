@@ -471,6 +471,43 @@ class LeagueReplaysTest {
         assertEquals(0, r.leagueBatch().battleResults().size());
     }
 
+    // ---- Survivor INVALID 上传顺序无关（P0）：valid+NaN / valid+Infinity / valid+negative ----
+
+    @Test
+    void survivorInvalidConflictsRegardlessOfUploadOrder() {
+        // 玩家 1001 两份副本都 survived=true；一份 survivalTimeSec=300（合法），
+        // 另一份为 INVALID（NaN/Infinity/-1）。Validator 对全玩家拒绝 INVALID，
+        // 因此 group 一致性必须 fail closed——两个上传顺序必须同 outcome：
+        // 全部 CONFLICTING_REPLAYS_FOR_ARENA、该 arena 0 场 rated（不许某一顺序进入
+        // Validator 而另一个顺序被拒绝）。每个顺序用全新 Battle（canonical 不 mutate 冲突副本）。
+        for (final double invalid : new double[]{Double.NaN, Double.POSITIVE_INFINITY, -1}) {
+            final LeagueReplays.LeagueCollectResult r1 = collectBattles(List.of(
+                    survivorCopy(300), survivorCopy(invalid)));
+            final LeagueReplays.LeagueCollectResult r2 = collectBattles(List.of(
+                    survivorCopy(invalid), survivorCopy(300)));
+            for (final LeagueReplays.LeagueCollectResult r : List.of(r1, r2)) {
+                assertEquals(0, r.battles().size(),
+                        "invalid=" + invalid + " 必须整场拒绝评分（上传顺序无关）");
+                assertEquals(2, r.leagueFailures().size());
+                assertTrue(r.leagueFailures().stream().allMatch(
+                                f -> f.code().equals(LeagueFailure.Code.CONFLICTING_REPLAYS_FOR_ARENA)),
+                        "invalid=" + invalid + " 必须是 CONFLICTING_REPLAYS_FOR_ARENA");
+                assertEquals(0, r.leagueBatch().battleResults().size(),
+                        "invalid=" + invalid + " 该 arena 不得进入 Validator/评分");
+            }
+        }
+    }
+
+    /** 全新 Battle：玩家 1001 存活且 survivalTimeSec 为指定值（其余默认 7v7）。 */
+    private static Battle survivorCopy(final double survivalTimeSec) {
+        final List<LeagueTestBattles.PlayerSpec> specs = LeagueTestBattles.defaultSevenVsSeven();
+        specs.getFirst().survived = true;
+        specs.getFirst().survivalTimeSec = survivalTimeSec;
+        final Battle b = LeagueTestBattles.battle(1, specs);
+        b.arenaId = "111";
+        return b;
+    }
+
     @Test
     void ratingValidationFailureReportsSuccessProgressNotFailure() {
         final Battle bad = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
