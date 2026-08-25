@@ -128,7 +128,7 @@ class LeagueExcelExportTest {
     }
 
     @Test
-    void singleLeagueWorkbookContainsFullCanonicalPlayerSchema() throws Exception {
+    void singleLeagueWorkbookContainsCanonicalSchemaMinusPotentialDamage() throws Exception {
         final Battle battle = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         final LeagueRatingResult result = LeagueRatingCalculator.calculate(battle);
         final ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -140,18 +140,29 @@ class LeagueExcelExportTest {
             for (int c = 0; c < header.getLastCellNum(); c++) {
                 headers.add(header.getCell(c).getStringCellValue());
             }
-            // canonical Columns.PLAYER 全部字段必须存在（单一 schema 源，Rated 不得丢 Standard 字段）
+            // canonical Columns.PLAYER 过滤 Potential Damage family（单一 schema 源，
+            // 列定义仍来自 Columns.Column；Potential Damage 不是 League Analysis 指标）
             for (final Columns.Column col : Columns.PLAYER) {
-                assertTrue(headers.contains(col.title()),
-                        "League 单场玩家数据必须含 canonical 字段：" + col.title() + "，实际表头：" + headers);
+                final boolean potential = col.key().equals("potential_damage")
+                        || col.key().equals("potential_damage_supplement")
+                        || col.key().equals("potential_damage_detail");
+                if (potential) {
+                    assertTrue(!headers.contains(col.title()),
+                            "League 单场玩家数据不得含 Potential Damage 字段：" + col.title()
+                                    + "，实际表头：" + headers);
+                } else {
+                    assertTrue(headers.contains(col.title()),
+                            "League 单场玩家数据必须含 canonical 字段：" + col.title()
+                                    + "，实际表头：" + headers);
+                }
             }
             // League 专属扩展
             assertTrue(headers.contains("占点得分"), "必须含 占点得分");
             assertTrue(headers.contains("占领分"), "必须含 占领分");
             assertTrue(headers.contains("伤害评分"), "必须含七维评分列");
             assertTrue(headers.contains("总Rating"), "必须含总Rating");
-            // 证明此前 League subset 缺失的字段现在存在
-            for (final String missing : List.of("潜在伤害", "补增伤害", "潜在明细", "等级", "坦克类型",
+            // 非 Potential 的 canonical Replay facts 必须完整保留（不得误删其它字段）
+            for (final String missing : List.of("等级", "坦克类型",
                     "国家", "炮伤", "被命中", "被击穿", "击伤", "排", "军阶", "车辆ID", "账号ID")) {
                 assertTrue(headers.contains(missing), "此前缺失字段必须存在：" + missing);
             }
@@ -184,6 +195,8 @@ class LeagueExcelExportTest {
                     "潜在伤害", "总伤害", "总射击次数", "总命中次数", "总击穿次数")) {
                 assertTrue(replayHeader.contains(col), "Replay 汇总必须含 " + col + "，实际：" + replayHeader);
             }
+            // 注：Replay 前缀 sheet = Replay Core 基础 facts（Standard Replay 兼容），
+            // 潜在伤害在此存在是 Replay Core compatibility，不是 League Rating 依赖它。
             // 场次列（第 3 列）数据 = 2：全部解析场次样本（含 Rating-ineligible）
             assertEquals(2.0, replay.getRow(1).getCell(2).getNumericCellValue(), 1e-9,
                     "Replay aggregate 样本 = 全部解析场次（2），Rating-ineligible 不得从 aggregate 消失");

@@ -341,3 +341,20 @@ Team Rating 计算；Radar aggregation 只发生在多场 player summary visuali
   frontend 不硬编码 domain max；Performance 按 /100；禁止 current-batch-max 归一化。
 - **Impact 不入 Radar**（无稳定 normalization contract）；hit_rate / pen_rate /
   Potential Damage 也不入 Radar candidate。
+
+## Potential Damage 与 League 的边界（consumer matrix）
+
+Potential Damage 对当前 League Rating / League Analysis **没有业务价值**，最终契约：
+
+| 消费者 | 是否保留 Potential Damage | 原因 |
+| --- | --- | --- |
+| Standard Replay UI / 单场导出 / 普通汇总 | 保留 | 既有 Standard Replay 业务消费者 |
+| League aggregate XLSX 的 Replay Core 基础 sheets（Replay 汇总/明细/战斗列表） | 保留 | Replay Core compatibility（标准 Replay facts），不是 League Rating 依赖它 |
+| League 专属 UI 列宇宙（`Mapper.leaguePlayerColumns` / `leagueAggregateColumns`） | 无 | 已在列定义层过滤 |
+| League Radar candidates | 无 | `RADAR_AVAILABLE_KEYS` 不含 potential 系列 |
+| League 单场 XLSX（`LeagueSingleSheets`） | 无 | `Columns.PLAYER` 过滤 potential_damage / supplement / detail（列定义仍来自 canonical `Columns.Column`，不复制 schema） |
+| League each 导出 enrichment | 无 | `processEachLeague` 不再执行 `PotentialDamage.apply`；`populateBattle` 保留（Contribution/KAST/Impact 仍是有效 League 数据） |
+| League Rating 公式 / Summary / Team Rating | 无 | 计算器不消费 |
+
+不要写成「全项目删除 Potential Damage」——Standard Replay 与 Replay Core sheets 保留是
+本 PR 的明确边界。

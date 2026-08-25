@@ -305,10 +305,11 @@ class ReplayServiceLeagueTest {
     }
 
     @Test
-    void leagueEachExportEnrichesPotentialDamage() throws Exception {
-        // 纯 CW each 必须与 preview/standard export 同一 authoritative enrichment：
-        // PotentialDamage.apply 后 潜在伤害 = 实际伤害 + supplement（fixture 无 killVictims → = damageDealt；
-        // 未 enrich 时默认 0——证明同步 pure-League each 不再缺失 Potential Damage）。
+    void leagueEachExportExcludesPotentialDamageAndKeepsLeagueFacts() throws Exception {
+        // 纯 CW each：League 单场工作簿必须过滤 Potential Damage family
+        // （该指标不是 League Analysis 数据，也不得为它运行 enrichment）；
+        // 但 League 扩展（总Rating）与单场 Performance Metrics（Contribution/KAST/Impact）
+        // 及基础 Replay facts（伤害）必须保留。
         final Battle battle = LeagueTestReplays.sevenVsSeven(1);
         battle.arenaId = "111";
         final ReplayService service = leagueService(battle);
@@ -320,15 +321,17 @@ class ReplayServiceLeagueTest {
             try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(zip.readAllBytes()))) {
                 final Sheet players = wb.getSheet("玩家数据");
                 final Row header = players.getRow(0);
-                int potentialCol = -1;
+                final StringBuilder headerText = new StringBuilder();
                 for (int c = 0; c < header.getLastCellNum(); c++) {
-                    if ("潜在伤害".equals(header.getCell(c).getStringCellValue())) {
-                        potentialCol = c;
-                    }
+                    headerText.append(header.getCell(c).getStringCellValue()).append("|");
                 }
-                assertTrue(potentialCol >= 0, "玩家数据必须含 潜在伤害 列");
-                assertTrue(players.getRow(1).getCell(potentialCol).getNumericCellValue() > 0,
-                        "潜在伤害必须被 PotentialDamage enrichment 填充（>0），不得是未 enrich 默认值");
+                assertTrue(!headerText.toString().contains("潜在伤害"),
+                        "League 单场工作簿不得含 潜在伤害 列：" + headerText);
+                assertTrue(headerText.toString().contains("总Rating"), "League 单场必须含 总Rating");
+                assertTrue(headerText.toString().contains("贡献度"), "League 单场必须含 Contribution");
+                assertTrue(headerText.toString().contains("KAST"), "League 单场必须含 KAST");
+                assertTrue(headerText.toString().contains("Impact"), "League 单场必须含 Impact");
+                assertTrue(headerText.toString().contains("伤害"), "League 单场必须保留基础 Replay facts");
             }
         }
     }

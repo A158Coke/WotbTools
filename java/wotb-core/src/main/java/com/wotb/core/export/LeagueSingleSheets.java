@@ -13,8 +13,9 @@ import java.util.Map;
 
 /**
  * League Rating 单场工作簿：玩家数据 = canonical {@link Columns#PLAYER} 全部 Replay 字段
- * （identity/vehicle/单场 stats/潜在伤害/Performance Metrics/received-blocked/shots-hits-pens/
- * 被命中/被击穿/击伤/排/军阶/车辆ID/账号ID，单一 schema 源）+
+ * <b>过滤 Potential Damage family</b>（identity/vehicle/单场 stats/Performance Metrics/
+ * received-blocked/shots-hits-pens/被命中/被击穿/击伤/排/军阶/车辆ID/账号ID，单一 schema
+ * 源；潜在伤害对当前 League Analysis 无业务价值，见 {@link #leagueReplayPlayerColumns()}）+
  * League 专属扩展（占点得分/占领分 + 七维评分/满分/百分比 + 总Rating/满分/百分比）；
  * 战斗信息（canonical base 由 {@link SingleBattleSheets#writeBattleInfo} 渲染 +
  * League 扩展 Team Rating + MVP + 队内最佳）/ 原始字段（共用 {@link SingleBattleSheets#writeRaw}）。
@@ -44,7 +45,8 @@ final class LeagueSingleSheets {
 
     /**
      * 玩家数据表：canonical {@link Columns#PLAYER} 全部 Replay 字段（单一 schema 源，
-     * 由 SingleBattleSheets 共享 writer 渲染）+ League 专属扩展列
+     * 由 SingleBattleSheets 共享 writer 渲染；过滤 Potential Damage family，见
+     * {@link #leagueReplayPlayerColumns()}）+ League 专属扩展列
      * （占点得分/占领分 + 七维评分/满分/百分比 + 总Rating/满分/百分比）。
      */
     private void players(final ExcelStyles styles, final Battle b, final LeagueRatingResult result,
@@ -79,7 +81,26 @@ final class LeagueSingleSheets {
                 styles.setCell(row.createCell(c++), (int) PlayerLeagueRating.MAX_FINAL, fill, "league_max");
                 styles.setCell(row.createCell(c++), percent(r.finalRating(), PlayerLeagueRating.MAX_FINAL), fill, "league_pct");
             }
-        });
+        }, leagueReplayPlayerColumns());
+    }
+
+    /**
+     * League 单场 Replay 玩家列：canonical {@link Columns#PLAYER} 过滤 Potential Damage
+     * family（potential_damage / potential_damage_supplement / potential_damage_detail）。
+     * Potential Damage 对当前 League Rating / League Analysis 没有业务价值，不得作为
+     * League analysis 数据输出；Standard Replay 单场（{@link SingleBattleSheets}）与
+     * League aggregate 中的 Replay Core 基础 sheets 仍完整保留（既有 Standard 消费者）。
+     */
+    static List<Columns.Column> leagueReplayPlayerColumns() {
+        return Columns.PLAYER.stream()
+                .filter(c -> !isPotentialDamageKey(c.key()))
+                .toList();
+    }
+
+    private static boolean isPotentialDamageKey(final String key) {
+        return key.equals("potential_damage")
+                || key.equals("potential_damage_supplement")
+                || key.equals("potential_damage_detail");
     }
 
     private static double percent(final double v, final double max) {

@@ -100,8 +100,20 @@ final class SingleBattleSheets {
      */
     static void writePlayers(final ExcelStyles styles, final Battle b, final Tankopedia tp,
                              final List<String[]> extraHeader, final PlayerRowTail tail) {
+        writePlayers(styles, b, tp, extraHeader, tail, Columns.PLAYER);
+    }
+
+    /**
+     * 玩家数据 sheet：canonical {@link Columns#PLAYER}（Standard/League 单场共用的唯一
+     * Replay 字段 schema 源）+ 可选 League 专属扩展列（表头 + 行尾回调）。
+     * {@code columns} 允许调用方给出 canonical 的过滤视图（如 League 单场过滤
+     * Potential Damage family），列定义本身仍来自 {@link Columns.Column}（title/width/
+     * numeric/getter 单一事实源），禁止 copy/paste 列定义。League 只追加自身 extension。
+     */
+    static void writePlayers(final ExcelStyles styles, final Battle b, final Tankopedia tp,
+                             final List<String[]> extraHeader, final PlayerRowTail tail,
+                             final List<Columns.Column> columns) {
         final Sheet ws = styles.workbook().createSheet("玩家数据");
-        final List<Columns.Column> columns = Columns.PLAYER;
         final List<String[]> header = new ArrayList<>(columns.stream()
                 .map(c -> new String[]{c.title(), String.valueOf(c.xlsx())}).toList());
         if (extraHeader != null) {
