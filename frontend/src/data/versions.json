@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.29",
+    "date": "2026-08-25",
+    "tag": "fix",
+    "zh": "修复百场审核摘要：管理员列表现在只显示认证场均和认证场次。WG 官方认证使用官方快照，人工审核使用通过后的数值；用户申报值仍可在详情中查看。",
+    "en": "Fixed the 100-battle admin summary: the list now shows only certified average damage and battle count. WG entries use the official snapshot, while manual entries use their approved values; the player claim remains available in details.",
+    "ru": "Исправлена сводка проверки 100 боёв: список администратора теперь показывает только подтверждённые средний урон и число боёв. Для WG используются официальные данные, для ручной проверки — утверждённые значения; заявленные игроком данные остаются в подробностях."
+  },
+  {
     "v": "2.12.28",
     "date": "2026-08-25",
     "tag": "add",
