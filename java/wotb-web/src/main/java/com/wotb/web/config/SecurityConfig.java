@@ -35,6 +35,7 @@ import static com.wotb.web.config.ApiPaths.EXPORT;
 import static com.wotb.web.config.ApiPaths.HEALTH;
 import static com.wotb.web.config.ApiPaths.HOF_ADMIN_PATTERN;
 import static com.wotb.web.config.ApiPaths.HOF_HUNDRED_SUBMISSIONS_PATTERN;
+import static com.wotb.web.config.ApiPaths.HOF_MARK3_SUBMISSIONS_PATTERN;
 import static com.wotb.web.config.ApiPaths.HOF_PATTERN;
 import static com.wotb.web.config.ApiPaths.HOF_REPLAY_PATTERN;
 import static com.wotb.web.config.ApiPaths.HOF_UPLOAD;
@@ -78,6 +79,8 @@ public class SecurityConfig {
                 .requestMatchers(HOF_UPLOAD, HOF_REPLAY_PATTERN).authenticated()
                 // 百场：排行榜公开；提交/取消需登录（必须置于 HOF_PATTERN permitAll 之前）
                 .requestMatchers(HOF_HUNDRED_SUBMISSIONS_PATTERN).authenticated()
+                // 三环：排行榜公开；人工提交/取消需登录（必须置于 HOF_PATTERN permitAll 之前）
+                .requestMatchers(HOF_MARK3_SUBMISSIONS_PATTERN).authenticated()
                 .requestMatchers(HOF_PATTERN).permitAll()
 
                 // --- Replay Export Job（匿名公开，与 /api/export 权限一致；含 status/cancel/download） ---

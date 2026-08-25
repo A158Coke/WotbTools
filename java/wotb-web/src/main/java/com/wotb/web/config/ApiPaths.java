@@ -35,6 +35,9 @@ public final class ApiPaths {
     public static final String HOF_HUNDRED_SUBMISSIONS = "/api/hof/hundred/submissions";
     public static final String USERS_HUNDRED = "/api/users/hundred";
     public static final String HOF_HUNDRED_ADMIN = "/api/admin/hof/hundred";
+    public static final String HOF_MARK3 = "/api/hof/mark3";
+    public static final String USERS_MARK3 = "/api/users/mark3";
+    public static final String HOF_MARK3_ADMIN = "/api/admin/hof/mark3";
 
     // ---- 精确端点（SecurityConfig 与 Controller 共用） ----
     public static final String HOF_UPLOAD = "/api/hof/upload";
@@ -64,6 +67,7 @@ public final class ApiPaths {
     public static final String HOF_ADMIN_PATTERN = "/api/admin/hof/**";
     public static final String HOF_HUNDRED_PATTERN = "/api/hof/hundred/**";
     public static final String HOF_HUNDRED_SUBMISSIONS_PATTERN = "/api/hof/hundred/submissions/**";
+    public static final String HOF_MARK3_SUBMISSIONS_PATTERN = "/api/hof/mark3/submissions/**";
     public static final String USERS_PATTERN = "/api/users/**";
     public static final String BOOST_REQUESTS_PATTERN = "/api/boost/requests/**";
     public static final String BOOST_BOOSTERS_PATTERN = "/api/boost/boosters/**";

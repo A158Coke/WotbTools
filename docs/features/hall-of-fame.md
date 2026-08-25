@@ -5,7 +5,7 @@
 名人堂只接受**随机战斗（RANDOM）**与**评级战斗（RATING）**回放；训练房 / 联赛 / 锦标赛 / 娱乐 / 未知模式一律拒绝（上传 → HTTP 400 `UNSUPPORTED_BATTLE_TYPE`，零持久化）。Replay 文件是 authoritative source：`.wotbreplay` → `ReplayParser` → authoritative battle facts → battle-type policy → 名人堂；**禁止人工修改 replay-derived authoritative facts**（admin 是 governance，不是数据编辑器）。
 
 - **数据库配置**：`application.yml` 始终启用 DataSource/JPA/Flyway，`ddl-auto: validate`；本地开发需提供 PostgreSQL 与 `POSTGRES_PASSWORD`。
-- **Schema 来源**：Flyway 迁移 `V1__init_leaderboard.sql` → `V15__add_leaderboard_replay_file.sql`（历史 immutable），`V16__rename_leaderboard_to_hall_of_fame.sql`（表/约束/索引 rename-in-place + battle_type/arena_bonus_type + backfill），`V17__create_hall_of_fame_admin_log.sql`（admin 审计表）。**改表结构必须新增迁移**，不要改已应用的版本；实体列与迁移列**逐列对齐**，否则 `validate` 启动即失败。
+- **Schema 来源**：Flyway 迁移 `V1__init_leaderboard.sql` → `V15__add_leaderboard_replay_file.sql`（历史 immutable），`V16__rename_leaderboard_to_hall_of_fame.sql`（表/约束/索引 rename-in-place + battle_type/arena_bonus_type + backfill），`V17__create_hall_of_fame_admin_log.sql`（admin 审计表），`V18`–`V20`（百场申请、回放证据、WG 审核快照）以及 `V21__create_mark3_submission.sql`（三环申请与回放证据）。**改表结构必须新增迁移**，不要改已应用的版本；实体列与迁移列**逐列对齐**，否则 `validate` 启动即失败。
 - **战斗模式数据模型**：`hall_of_fame_record` 同时保存 `battle_type varchar(16) NOT NULL`（业务归一值 `RANDOM`/`RATING`，CHECK 约束，非 PG ENUM）与 `arena_bonus_type integer NOT NULL`（replay 解析出的 authoritative raw integer，protocol provenance / 调试 / 未来扩展）。历史数据 backfill 为 `RANDOM/1`（旧系统 PR #97 前只允许 Random；PR #97 起允许 Rating，历史行无法逐行推导，统一按 `RANDOM/1`，带 replay_hash 的行未来可重解析修正）。
 - **支持的战斗模式**：判断集中在 `HallOfFameBattleTypePolicy`（`HallOfFameBattleType` 单一事实源，禁止散落两处漂移）。证据等级明确区分「本项目真实回放证据」与「外部 replay tooling 证据」：
 
@@ -113,3 +113,55 @@
 - 公开「百场」页默认不选分类/车辆，标签为“默认”，展示全站当前最高 10 条并显示车辆名。国家/系别与车种任一非空时，立即展示分类交集 Top 10，并同时收窄可见的 Tier X 车辆下拉；选择具体车辆后进入该车独立分页排行。百场仅支持 Tier X，因此不另设等级筛选。
 - 百场提交弹窗提供“人工审核 / WG 自动认证”两种模式。人工模式沿用**当前页面会话草稿**：关闭弹窗、点击遮罩、切换 Tab 或切到 WG 模式均不清空截图和已选回放；回放可分批追加到 5 个并逐项移除。WG 模式只显示车辆、场均、场数，不读取/发送文件；仅可信 ASIA/EU/NA WG 身份可用。提交失败保留草稿，成功或用户确认清空后重置。
 - 管理后台列表可按国家/系别、车种、具体车辆和状态独立筛选（百场仅 Tier X，不另设等级）；对 PENDING / CURRENT / REJECTED / SUPERSEDED / CANCELLED / DELETED 一律只提供“详情”入口。通过、拒绝、删除只能在详情内触发，管理员不提供成绩编辑控件；截图、回放列表与下载按钮只在 PENDING 详情展示，终态详情只保留审核结果、拒绝/删除原因等文字信息。
+
+---
+
+# 三环（Mark 3）排行榜
+
+> 每辆 Tier X 车辆独立的「最少场次获得三环」排行榜。仅人工审核，不调用 Wargaming API、不提供官方自动认证链路。实现见 `wotb-web/.../mark3/`。
+
+## 业务模型
+
+- **状态机**：`mark3_submission` 只使用 PENDING / CURRENT / REJECTED / CANCELLED / DELETED（VARCHAR + CHECK）；**没有 SUPERSEDED**。通过申请成为 CURRENT 后，即为同一玩家同一车辆唯一且不可替换的三环记录。
+- **数据库不变量**：Flyway `V21__create_mark3_submission.sql` 的 partial unique index 保证同用户同车最多一条 active PENDING/CURRENT；服务层在已有 CURRENT 时拒绝新提交，并在 APPROVE 时再次检查，绝不替代 CURRENT。REJECTED / CANCELLED / DELETED 后允许重新提交。
+- **冻结值**：提交时冻结 Profile 的账号 ID 与昵称快照；审核通过后冻结申报的 `battleCount`、`averageDamage`、`winRate` 为 approved 值。管理员审批不接收也不能改写任何成绩数据。
+- **排名**：只读取 CURRENT，按 `approvedBattleCount ASC` 排序；相同三环场数为 competition ranking（名次跳号），`approvedAt ASC, id ASC` 只用于稳定展示，不以场均或胜率打破并列。
+- **筛选**：公开榜和管理列表都使用与百场相同的国家/系别、车种、车辆交集筛选；全空或仅分类时显示 CURRENT Top 10，选择具体车辆后为该车独立分页。当前只允许 Tier X，不另设等级筛选。
+
+## 人工审核链路硬门禁（创建失败整单拒绝，不进入 PENDING）
+
+1. 需登录且 Profile 已配置 gameId + nickname。
+2. 车辆必须是 authoritative Tier X。
+3. 需提交 `battleCount`、`averageDamage` 与 `winRate`；`winRate` 为 0–100 的百分数，最多两位小数。
+4. 截图只能为 1–2 张有效图片，单张不超过 4 MiB。新车从 0 场开始打三环可以只提供一张；其余申请应提供记录开始与结束的 0% 和 95% 截图。后端只校验数量与图片格式，证据内容由管理员人工判断。
+5. 正好 5 个 `.wotbreplay`；全部解析成功，均匹配提交时的账号和车辆，且 5 个 `arenaId` 互不相同。
+6. 同一用户同一车辆已有 CURRENT 时永远不能再创建或通过新申请；PENDING 已存在时也不能重复提交。
+
+## 审核、证据与并发
+
+- 创建时的 replay 校验、读入五个 byte[]、解析、hash 锁、落盘和事务共用全局 `ReplayCapacityLimiter`；容量已满时在解析前返回 503 `REPLAY_BUSY`，任何 success、校验失败、解析失败、存储失败或 DB 失败都会释放许可。
+- `findByIdForUpdate`（PESSIMISTIC_WRITE）使 APPROVE / REJECT / CANCEL 从 PENDING 到终态只成功一次；APPROVE 事务内重查该用户该车的 CURRENT，存在即拒绝，绝不产生替代记录。
+- 管理员只能在详情中通过、拒绝或删除：通过无请求体，直接冻结原申报数值；拒绝与删除均要求原因。没有任何修改场数、场均或胜率的接口或控件。
+- 1–2 张截图和 5 个 replay evidence 只在 PENDING 期间对 HoF-admin / wotbtools-admin 可见。回放以 SHA-256 内容寻址保存在隔离的 `${wotb.hof.replay-dir}/mark3` 子目录（默认 `data/replays/mark3`），沿用 ownership 校验但不与单场/百场共用 hash 引用计数；APPROVE / REJECT / CANCEL / DELETE 到终态后清空截图、删除 evidence，随后 best-effort 清理该目录中无引用的物理文件。
+
+## API
+
+| 端点 | 权限 | 说明 |
+|---|---|---|
+| `GET /api/hof/mark3?nation=&vehicleType=&vehicleId=&page=&size=` | 匿名 | Tier X 三环公开榜；国家/系别、车种和车辆取交集，按三环场数升序 competition rank |
+| `POST /api/hof/mark3/submissions` | 登录 | multipart 提交：vehicleId、battleCount、averageDamage、winRate、1–2 张 base64 `data:image/` proofScreenshots、5 个 replays；全局 replay 容量满时 503 `REPLAY_BUSY` |
+| `POST /api/hof/mark3/submissions/{id}/cancel` | 登录（本人） | 撤销自己的 PENDING |
+| `GET /api/users/mark3/status` | 登录 | 个人中心：CURRENT / PENDING / 最近拒绝 |
+| `GET /api/admin/hof/mark3/submissions?status=&nation=&vehicleType=&vehicleId=&page=&size=` | HoF-admin/wotbtools-admin | 审核列表；状态、国家/系别、车种、车辆独立筛选并取交集 |
+| `GET /api/admin/hof/mark3/submissions/{id}` | 同上 | 所有状态详情；PENDING 返回 proof，终态保留结果与原因文字 |
+| `GET /api/admin/hof/mark3/submissions/{id}/replays` | 同上 | PENDING 回放证据 metadata |
+| `GET /api/admin/hof/mark3/submissions/{submissionId}/replays/{replayId}` | 同上 | 下载单个原始 `.wotbreplay`（ownership 校验 + UTF-8 filename） |
+| `POST /api/admin/hof/mark3/submissions/{id}/approve` | 同上 | 通过；无请求体，冻结原申报值，不能替代 CURRENT |
+| `POST /api/admin/hof/mark3/submissions/{id}/reject` | 同上 | 拒绝（原因强制） |
+| `POST /api/admin/hof/mark3/submissions/{id}/delete` | 同上 | 删除 CURRENT（原因强制） |
+
+## 页面交互约定
+
+- 公开「三环」页复用百场的筛选与分页体验，展示三环场数、过程场均、过程胜率；三环场数越少越靠前。
+- 提交弹窗只提供人工审核，要求填写三环场数、过程场均、过程胜率、1–2 张截图与 5 个回放；明确显示 0 场新车可只传一张、其余应提供 0% 和 95% 截图的提示。
+- 管理后台提供三环审核 tab；列表和详情不显示成绩编辑输入。PENDING 详情可查看截图和下载 5 个回放，终态仅保留审核结果及原因文字。

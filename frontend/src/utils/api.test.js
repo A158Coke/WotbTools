@@ -13,7 +13,14 @@ vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => auth,
 }))
 
-import { hofAdminHundredApprove, hofDownload, hofHundredSubmitWargaming, hofUpload } from './api.js'
+import {
+  hofAdminHundredApprove,
+  hofAdminMark3Approve,
+  hofDownload,
+  hofHundredSubmitWargaming,
+  hofMark3Submit,
+  hofUpload,
+} from './api.js'
 
 function jsonResponse(status, body) {
   return {
@@ -132,6 +139,49 @@ describe('authenticated HoF API requests (real api.js, fetch mocked)', () => {
 
     expect(vi.mocked(fetch)).toHaveBeenCalledWith(
       '/api/admin/hof/hundred/submissions/17/approve',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-token' },
+      }),
+    )
+    const [, options] = vi.mocked(fetch).mock.calls[0]
+    expect(options).not.toHaveProperty('body')
+    expect(options.headers).not.toHaveProperty('Content-Type')
+  })
+
+  it('submits Mark 3 evidence with the exact repeated multipart keys', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { id: 23, status: 'PENDING' }))
+    const formData = new FormData()
+    formData.append('vehicleId', '385')
+    formData.append('battleCount', '86')
+    formData.append('averageDamage', '4123')
+    formData.append('winRate', '67.25')
+    formData.append('proofScreenshots', 'data:image/png;base64,one')
+    formData.append('proofScreenshots', 'data:image/png;base64,two')
+    formData.append('replays', file)
+
+    const result = await hofMark3Submit(formData)
+
+    expect(result).toEqual({ id: 23, status: 'PENDING' })
+    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+      '/api/hof/mark3/submissions',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-token' },
+        body: formData,
+      }),
+    )
+    expect(formData.getAll('proofScreenshots')).toHaveLength(2)
+    expect(formData.getAll('replays')).toHaveLength(1)
+  })
+
+  it('approves a Mark 3 submission without a score payload', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { status: 'CURRENT' }))
+
+    await hofAdminMark3Approve(23)
+
+    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+      '/api/admin/hof/mark3/submissions/23/approve',
       expect.objectContaining({
         method: 'POST',
         headers: { Authorization: 'Bearer test-token' },
