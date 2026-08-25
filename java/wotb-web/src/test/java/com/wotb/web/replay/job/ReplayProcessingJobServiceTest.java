@@ -162,14 +162,14 @@ class ReplayProcessingJobServiceTest {
     // ---- P0 回归：League Rating 校验失败不得删除 Battle / 不得触发 NO_VALID_REPLAYS ----
 
     @Test
-    void allLeagueBattlesRatingIneligibleJobStillReady() throws Exception {
+    void leagueJobReadyWithUnknownDeathTimeAndOtherFailures() throws Exception {
         when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
             final Source s = inv.getArgument(0);
             final Battle b = leagueBattle(s.name());
             switch (s.name()) {
                 case "m-death.wotbreplay" -> {
                     b.players.getFirst().survived = false;
-                    b.players.getFirst().survivalTimeSec = 0; // MISSING_DEATH_TIME
+                    b.players.getFirst().survivalTimeSec = 0; // 死亡时间 UNKNOWN（合法，照常评分）
                 }
                 case "m-roster.wotbreplay" -> b.settlementAccountsCoveredByRoster = false; // ROSTER_INCOMPLETE
                 case "m-winner.wotbreplay" -> b.winnerTeam = null; // NO_DECISIVE_WINNER
@@ -182,16 +182,14 @@ class ReplayProcessingJobServiceTest {
 
         final ReplayProcessingJob.Snapshot snap = awaitTerminal(jobId, 10_000);
         assertEquals(ReplayProcessingJob.Status.READY, snap.status(),
-                "全部 League replay 成功解析但全部 Rating 不合格时 Job 必须 READY（P0 Blocker，禁止 NO_VALID_REPLAYS）");
+                "全部 League replay 成功解析时 Job 必须 READY（P0 Blocker，禁止 NO_VALID_REPLAYS）");
         assertEquals(3, snap.valid(), "valid = 成功解析并可进入 Preview 的 replay 数");
         assertEquals(0, snap.failures(), "Rating 不合格不得计入解析失败（plan §18）");
 
         final ProcessedDataset ds = store.get(jobId).result();
-        assertEquals(3, ds.battles().size(), "全部 Rating-ineligible Battle 必须保留在 dataset");
-        assertEquals(0, ds.league().battleResults().size());
-        assertEquals(3, ds.league().failures().size());
-        assertEquals(1, ds.league().failures().stream()
-                .filter(f -> f.code().equals(com.wotb.core.league.LeagueFailure.Code.MISSING_DEATH_TIME)).count());
+        assertEquals(3, ds.battles().size(), "全部 Battle 必须保留在 dataset");
+        assertEquals(1, ds.league().battleResults().size(), "死亡时间 UNKNOWN 场照常评分");
+        assertEquals(2, ds.league().failures().size());
         assertEquals(1, ds.league().failures().stream()
                 .filter(f -> f.code().equals(com.wotb.core.league.LeagueFailure.Code.ROSTER_INCOMPLETE)).count());
         assertEquals(1, ds.league().failures().stream()

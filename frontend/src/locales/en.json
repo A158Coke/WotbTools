@@ -1040,7 +1040,6 @@
         "LEAGUE_MISSING_TANK": "A player is missing a vehicle",
         "LEAGUE_ROSTER_INCOMPLETE": "Roster does not match results (incomplete roster)",
         "LEAGUE_NO_DECISIVE_WINNER": "Draw or unknown winner — no rating",
-        "LEAGUE_MISSING_DEATH_TIME": "A destroyed player lacks a reliable death time — battle not rated",
         "LEAGUE_INVALID_STAT_FACTS": "Results contain invalid value relationships",
         "CONFLICTING_REPLAYS_FOR_ARENA": "Multiple replays of the same battle disagree on key facts — all copies rejected"
     },

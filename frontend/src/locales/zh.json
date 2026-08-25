@@ -1040,7 +1040,6 @@
         "LEAGUE_MISSING_TANK": "结算存在缺少车辆的玩家",
         "LEAGUE_ROSTER_INCOMPLETE": "名册与结算不一致（名册不完整）",
         "LEAGUE_NO_DECISIVE_WINNER": "平局或未知胜方，不产生 Rating",
-        "LEAGUE_MISSING_DEATH_TIME": "阵亡玩家缺少可靠死亡时间，整场不评分",
         "LEAGUE_INVALID_STAT_FACTS": "结算数据存在非法数值关系",
         "CONFLICTING_REPLAYS_FOR_ARENA": "同一场比赛的多份回放关键数据不一致，全部拒绝评分"
     },

@@ -234,26 +234,36 @@ class LeagueReplaysTest {
 
     @Test
     void caseC_allRatingIneligibleAllBattlesStillParsed() throws Exception {
-        // MISSING_DEATH_TIME：一名阵亡玩家死亡时间为 0（非正有限）
+        // ROSTER_INCOMPLETE + NO_DECISIVE_WINNER：全部 Rating 不合格时所有 Battle 仍必须保留
+        final Battle roster = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        roster.arenaId = "222";
+        roster.settlementAccountsCoveredByRoster = false;
+        final Battle winner = LeagueTestBattles.battle(null, LeagueTestBattles.defaultSevenVsSeven());
+        winner.arenaId = "333";
+        final LeagueReplays.LeagueCollectResult r = collectBattles(List.of(roster, winner));
+        assertEquals(LeagueRatingMode.LEAGUE_RATING, r.mode());
+        assertEquals(2, r.battles().size(), "全部 Rating 不合格时所有 Battle 仍必须保留（禁止 NO_VALID_REPLAYS）");
+        assertEquals(0, r.leagueBatch().battleResults().size());
+        assertEquals(2, r.leagueFailures().size());
+        assertTrue(r.leagueFailures().stream().anyMatch(f -> f.code().equals(LeagueFailure.Code.ROSTER_INCOMPLETE)));
+        assertTrue(r.leagueFailures().stream().anyMatch(f -> f.code().equals(LeagueFailure.Code.NO_DECISIVE_WINNER)));
+    }
+
+    @Test
+    void unknownDeathTimeBattleIsRatedWithQualityWarning() throws Exception {
+        // 死亡时间 UNKNOWN（survivalTimeSec == 0）不再是 battle-level failure：
+        // 该场照常评分，仅计入非阻断 quality limitation（UNKNOWN != INVALID）
         final List<LeagueTestBattles.PlayerSpec> deathSpecs = LeagueTestBattles.defaultSevenVsSeven();
         deathSpecs.getFirst().dead(0);
         final Battle death = LeagueTestBattles.battle(1, deathSpecs);
         death.arenaId = "111";
-        // ROSTER_INCOMPLETE
-        final Battle roster = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
-        roster.arenaId = "222";
-        roster.settlementAccountsCoveredByRoster = false;
-        // NO_DECISIVE_WINNER
-        final Battle winner = LeagueTestBattles.battle(null, LeagueTestBattles.defaultSevenVsSeven());
-        winner.arenaId = "333";
-        final LeagueReplays.LeagueCollectResult r = collectBattles(List.of(death, roster, winner));
+        final LeagueReplays.LeagueCollectResult r = collectBattles(List.of(death));
         assertEquals(LeagueRatingMode.LEAGUE_RATING, r.mode());
-        assertEquals(3, r.battles().size(), "全部 Rating 不合格时所有 Battle 仍必须保留（禁止 NO_VALID_REPLAYS）");
-        assertEquals(0, r.leagueBatch().battleResults().size());
-        assertEquals(3, r.leagueFailures().size());
-        assertTrue(r.leagueFailures().stream().anyMatch(f -> f.code().equals(LeagueFailure.Code.MISSING_DEATH_TIME)));
-        assertTrue(r.leagueFailures().stream().anyMatch(f -> f.code().equals(LeagueFailure.Code.ROSTER_INCOMPLETE)));
-        assertTrue(r.leagueFailures().stream().anyMatch(f -> f.code().equals(LeagueFailure.Code.NO_DECISIVE_WINNER)));
+        assertEquals(1, r.battles().size());
+        assertEquals(1, r.leagueBatch().battleResults().size(), "UNKNOWN 死亡场照常评分");
+        assertTrue(r.leagueFailures().isEmpty(), "UNKNOWN 不是 failure");
+        assertEquals(1, r.leagueBatch().ratingQuality().unknownDeathTimePlayers(),
+                "UNKNOWN 死亡玩家计入非阻断 quality limitation");
     }
 
     @Test

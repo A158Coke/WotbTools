@@ -118,11 +118,36 @@ class LeagueRatingValidatorTest {
     }
 
     @Test
-    void rejectsDeadPlayerWithoutReliableDeathTime() {
+    void acceptsDeadPlayerWithUnknownDeathTime() {
+        // survivalTimeSec == 0 = 死亡时间 UNKNOWN（合法）：不产生 failure，整场允许评分
+        final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
+        specs.get(0).dead(0);
+        assertTrue(LeagueRatingValidator.validate(LeagueTestBattles.battle(1, specs)).isEmpty());
+    }
+
+    @Test
+    void rejectsNegativeDeathTime() {
+        final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
+        specs.get(0).dead(-1);
+        assertEquals(List.of(LeagueFailure.Code.INVALID_STAT_FACTS),
+                codes(LeagueTestBattles.battle(1, specs)));
+    }
+
+    @Test
+    void rejectsNaNDeathTime() {
         final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
         specs.get(0).survived = false;
-        specs.get(0).survivalTimeSec = 0;
-        assertEquals(List.of(LeagueFailure.Code.MISSING_DEATH_TIME),
+        specs.get(0).survivalTimeSec = Double.NaN;
+        assertEquals(List.of(LeagueFailure.Code.INVALID_STAT_FACTS),
+                codes(LeagueTestBattles.battle(1, specs)));
+    }
+
+    @Test
+    void rejectsInfiniteDeathTime() {
+        final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
+        specs.get(0).survived = false;
+        specs.get(0).survivalTimeSec = Double.POSITIVE_INFINITY;
+        assertEquals(List.of(LeagueFailure.Code.INVALID_STAT_FACTS),
                 codes(LeagueTestBattles.battle(1, specs)));
     }
 

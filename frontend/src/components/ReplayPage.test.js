@@ -1644,6 +1644,32 @@ describe('ReplayPage League Rating', () => {
     expect(wrapper.text()).toContain('111')
   })
 
+  it('shows death-time unknown quality warning as non-blocking notice (not a failure)', async () => {
+    state.init.resp = makeResp({
+      battles: [
+        { mapName: 'Lagoon', league: { mvp: { nickname: 'X' }, team1: {}, team2: {} }, players: [] },
+      ],
+      leagueMode: true,
+      league: {
+        mode: 'LEAGUE_RATING',
+        failures: [],
+        ratingQuality: { unknownDeathTimePlayers: 5 }
+      }
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    // 修复后场景：0 failure、全部评分（可评分 1 / 1），但存在 5 名死亡时间 UNKNOWN 玩家
+    // → 只显示非阻断 quality warning，不进入「未生成 Rating」failure 列表
+    expect(wrapper.find('[data-testid="league-failure-summary"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="league-quality-warning"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('league.rated_count:1,1')
+    expect(wrapper.text()).not.toContain('league.unrated_count')
+    expect(wrapper.text()).not.toContain('LEAGUE_MISSING_DEATH_TIME')
+    expect(wrapper.find('[data-testid="league-failure-toggle"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="league-failure-detail"]').exists()).toBe(false)
+    expect(wrapper.find('.error').exists()).toBe(false)
+  })
+
   it('shows aggregate tab in league mode (resp.leagueMode is the page source of truth)', async () => {
     state.init.resp = makeResp({
       aggregate: [],

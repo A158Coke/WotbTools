@@ -48,15 +48,29 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 `settlementAccountsCoveredByRoster=true`（结算账号全部来自名册 #201，无幽灵结算）且
 `settlementRosterTeamConsistent=true`（名册队伍无冲突；名册可含 non-combatant extra，如观战者，
 不要求名册全集合 == 结算全集合）、14 名玩家非零 tankId、
-`winnerTeam` 明确为 1/2（平局/未知不评分）、阵亡玩家 `survivalTimeSec > 0` 且与战斗时长无
-明显矛盾、统计字段无负值/非有限/违反真实字段关系（命中≤射击、击穿≤命中）。
+`winnerTeam` 明确为 1/2（平局/未知不评分）、统计字段无负值/非有限/违反真实字段关系
+（命中≤射击、击穿≤命中）。
+
+**死亡时间 UNKNOWN ≠ 数据非法**：阵亡玩家 `survivalTimeSec == 0` 表示精确死亡时刻无法从
+回放可靠证明（`DeathTimeReconciler` 的 fail-closed 结果），这是**合法状态**——整场仍允许评分；
+该玩家仅在依赖死亡时刻的 Survival/Trade 维度按 0 分保守计算（`TradeFacts` 无法建立 ±5s
+死亡窗口即 fail-closed 返回 0，绝不猜测），其它六维按真实 Replay facts 正常评分，
+总分保持 0–1000 不重新归一化。`survivalTimeSec < 0` / NaN / Infinity /
+明显超过战斗时长（`> duration + 1s`）仍为非法 stat facts（`LEAGUE_INVALID_STAT_FACTS`），
+整场拒绝评分。
 
 **protobuf 零值策略**：身份/队伍/车辆/胜方等结构字段按真实存在性 fail-closed（0/非法值拒绝）；
 伤害/助攻/阻挡/击杀/占点等统计字段**合法为 0**——proto 未编码字段解码为 0 与真实 0 不可区分
 （`PlayerResult.raw` 保留字段存在性但不作统计字段的完整性要求），缺失与零值同等对待，
 绝不把「字段缺失」误判为损坏。某一场不满足门槛 → 该场不评分，在失败列表返回
-文件名 + arenaId + 稳定错误码（如 `LEAGUE_NOT_SEVEN_VS_SEVEN` / `LEAGUE_MISSING_DEATH_TIME`），
+文件名 + arenaId + 稳定错误码（如 `LEAGUE_NOT_SEVEN_VS_SEVEN` / `LEAGUE_ROSTER_INCOMPLETE`），
 批量中其他合法同类型回放继续。不允许管理员强制绕过。
+
+**评分质量限制（非阻断）**：评分可以生成、但某些子事实无法证明（如死亡时间 UNKNOWN）时，
+<b>不进入 failure 列表</b>，而是由响应 `league.ratingQuality.unknownDeathTimePlayers` 返回
+该批已评分场次中「死亡时间 UNKNOWN 的阵亡玩家」实例数；这些玩家照常进入单场 Rating、
+选手/战队汇总、中位数、MVP、Excel/PNG 导出，仅「存活 / 互换」维度按 0 分保守计算。
+前端以非阻断 warning 提示，不允许把 UNKNOWN 伪装成「所有数据完全可靠」。
 
 ## 批次去重与冲突（仅当前批次）
 
@@ -205,8 +219,9 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
   胜方 ×1.05 与 1000 封顶、MVP/队内最佳/重复徽标、战队七人平均、七维满分总和=1000、
   争霸点数不影响 Rating（points independence）、奇数/偶数中位数。
 - 完整性：标准 7v7、13/15 人、非 7/7、重复账号、缺 tankId、roster 不完整、队伍冲突、
-  未知胜方、平局、阵亡时间缺失、合法零值、protobuf 缺失字段不误拒、非法数值关系、
-  arenaId 重复一致/冲突。
+  未知胜方、平局、死亡时间 UNKNOWN（`survivalTimeSec == 0`）不阻塞评分、负数/NaN/Infinity/
+  超时长死亡时间拒绝、合法零值、protobuf 缺失字段不误拒、非法数值关系、
+  arenaId 重复一致/冲突、UNKNOWN 不得推断 trade。
 - 模式：单普通/单训练/单联赛/随机/游戏内评级、Training+Tournament 允许、Training+Random
   与 Tournament+评级 整体 400、preview/合并导出/每场导出规则一致。
 - API 契约：普通模式响应兼容、League 含 typed 数据、League playerColumns/aggregateColumns

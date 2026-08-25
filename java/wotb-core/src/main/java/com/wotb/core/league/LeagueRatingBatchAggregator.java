@@ -90,7 +90,32 @@ public final class LeagueRatingBatchAggregator {
         playerSummaries.sort(Comparator.comparingLong(PlayerLeagueSummary::accountId));
         teamSummaries.sort(Comparator.comparing(TeamLeagueSummary::teamKey));
         return new LeagueRatingBatch(results, playerSummaries, teamSummaries,
-                failures == null ? List.of() : List.copyOf(failures));
+                failures == null ? List.of() : List.copyOf(failures),
+                ratingQuality(battles));
+    }
+
+    /**
+     * 统计已评分场次中「死亡时间 UNKNOWN」的阵亡玩家实例数（{@code survivalTimeSec == 0}
+     * 是项目既有 UNKNOWN 契约：精确死亡时刻无法从回放可靠证明；负数/非有限已被
+     * {@link LeagueRatingValidator} 拒绝，不会进入已评分场次）。
+     * 该数量是评分质量 limitation，不是 failure——这些玩家照常获得 Rating，
+     * 仅 Survival/Trade 维度按 0 分保守计算。
+     */
+    private static LeagueRatingQuality ratingQuality(final List<Battle> battles) {
+        int unknown = 0;
+        if (battles != null) {
+            for (final Battle battle : battles) {
+                if (battle == null || battle.players == null) {
+                    continue;
+                }
+                for (final com.wotb.core.model.PlayerResult p : battle.players) {
+                    if (!p.survived && p.survivalTimeSec == 0) {
+                        unknown++;
+                    }
+                }
+            }
+        }
+        return new LeagueRatingQuality(unknown);
     }
 
     /** 批次 team key：多数军团标签优先，否则 arenaId:team（禁止跨场合并所有 Team 1）。 */

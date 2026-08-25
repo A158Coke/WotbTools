@@ -24,6 +24,7 @@ import com.wotb.web.replay.dto.LeagueColumnDef;
 import com.wotb.web.replay.dto.LeagueFailureDto;
 import com.wotb.web.replay.dto.LeaguePlayerSummaryDto;
 import com.wotb.web.replay.dto.LeagueRatingDto;
+import com.wotb.web.replay.dto.LeagueRatingQualityDto;
 import com.wotb.web.replay.dto.LeagueTeamDto;
 import com.wotb.web.replay.dto.LeagueTeamSummaryDto;
 import com.wotb.web.replay.dto.PreviewResponse;
@@ -371,7 +372,9 @@ public final class Mapper {
         for (final com.wotb.core.league.LeagueFailure f : league.failures()) {
             failures.add(new LeagueFailureDto(f.fileName(), f.arenaId(), f.code()));
         }
+        final com.wotb.core.league.LeagueRatingQuality quality = league.ratingQuality();
         return new LeagueRatingDto("LEAGUE_RATING", leagueColumnDefs(), players, teams,
-                leaguePlayerSummaryColumns(), leagueTeamSummaryColumns(), failures);
+                leaguePlayerSummaryColumns(), leagueTeamSummaryColumns(), failures,
+                new LeagueRatingQualityDto(quality.unknownDeathTimePlayers()));
     }
 }

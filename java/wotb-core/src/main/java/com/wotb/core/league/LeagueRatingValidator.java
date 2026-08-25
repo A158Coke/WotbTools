@@ -19,6 +19,12 @@ import java.util.Set;
  * 缺失与零值同等对待，绝不把「字段缺失」误判为损坏。统计字段只校验<b>数值关系矛盾</b>
  * （负值 / 非有限 / 命中&gt;射击 / 击穿&gt;命中）。</p>
  *
+ * <p><b>死亡时间 UNKNOWN ≠ 数据非法</b>：阵亡玩家 {@code survivalTimeSec == 0} 表示
+ * 精确死亡时刻无法从回放可靠证明（{@link com.wotb.core.processing.DeathTimeReconciler}
+ * 的 fail-closed 结果），这是合法状态——整场仍允许评分，该玩家仅在依赖死亡时刻的
+ * Survival/Trade 维度保守得 0 分。{@code survivalTimeSec < 0} / NaN / Infinity /
+ * 明显超过战斗时长仍为 {@code INVALID_STAT_FACTS}，整场拒绝评分。</p>
+ *
  * <p>返回<b>全部</b>发现的失败（按严重度排序，调用方取第一条作为该场错误码）。</p>
  */
 public final class LeagueRatingValidator {
@@ -109,22 +115,19 @@ public final class LeagueRatingValidator {
             failures.add(new LeagueFailure("", arena, LeagueFailure.Code.NO_DECISIVE_WINNER));
         }
 
-        // 7. 阵亡玩家必须有可靠死亡时间；存活/死亡时间与战斗时长不得明显矛盾
-        boolean missingDeathTime = false;
+        // 7. 阵亡玩家死亡时间语义（死亡时间 UNKNOWN ≠ 数据非法）：
+        //    survivalTimeSec == 0 = UNKNOWN（合法，允许整场评分——该玩家仅在依赖死亡时刻的
+        //    Survival/Trade 维度 fail-closed 得 0 分，见 TradeFacts）；负数 / NaN / Infinity
+        //    由下方 hasInvalidStatFacts 统一拒绝（INVALID_STAT_FACTS）；此处只保留
+        //    「死亡时间明显超过战斗时长」的矛盾检查（明显矛盾仍为非法 stat facts）。
         boolean contradictoryTime = false;
         final Double duration = battle.durationS;
         for (final PlayerResult p : players) {
-            if (!p.survived) {
-                if (!LeagueRatingNormalizer.finitePositive(p.survivalTimeSec)) {
-                    missingDeathTime = true;
-                } else if (duration != null && Double.isFinite(duration)
-                        && p.survivalTimeSec > duration + DEATH_TIME_TOLERANCE_SEC) {
-                    contradictoryTime = true;
-                }
+            if (!p.survived && Double.isFinite(p.survivalTimeSec)
+                    && duration != null && Double.isFinite(duration)
+                    && p.survivalTimeSec > duration + DEATH_TIME_TOLERANCE_SEC) {
+                contradictoryTime = true;
             }
-        }
-        if (missingDeathTime) {
-            failures.add(new LeagueFailure("", arena, LeagueFailure.Code.MISSING_DEATH_TIME));
         }
         if (contradictoryTime) {
             failures.add(new LeagueFailure("", arena, LeagueFailure.Code.INVALID_STAT_FACTS));
