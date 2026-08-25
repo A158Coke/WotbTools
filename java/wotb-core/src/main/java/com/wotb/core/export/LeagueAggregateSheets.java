@@ -263,7 +263,6 @@ final class LeagueAggregateSheets {
             case com.wotb.core.league.LeagueFailure.Code.NOT_SEVEN_VS_SEVEN -> "非标准 7v7";
             case com.wotb.core.league.LeagueFailure.Code.ROSTER_INCOMPLETE -> "名册不完整";
             case com.wotb.core.league.LeagueFailure.Code.NO_DECISIVE_WINNER -> "平局/未知胜方";
-            case com.wotb.core.league.LeagueFailure.Code.MISSING_DEATH_TIME -> "阵亡时间缺失";
             default -> code;
         };
     }

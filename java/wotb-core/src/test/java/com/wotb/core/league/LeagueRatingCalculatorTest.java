@@ -250,6 +250,33 @@ class LeagueRatingCalculatorTest {
         assertEquals(0, r.byAccount(1001).survivalTradeScore(), 1e-9);
     }
 
+    @Test
+    void unknownDeathTimeStillRatedWithNoneSurvivalState() {
+        // dead + survivalTimeSec == 0（UNKNOWN）：Rating 照常生成；
+        // 存活/互换维度 fail-closed 0（state=NONE），其它六维按真实 facts 正常计算，
+        // 总分保持 0–1000 不重新归一化。
+        final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
+        specs.get(0).dead(0);
+        final LeagueRatingResult r = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, specs));
+        final PlayerLeagueRating p = r.byAccount(1001);
+        assertEquals(LeagueRatingCalculator.STATE_NONE, p.survivalState());
+        assertEquals(0, p.survivalTradeScore(), 1e-9);
+        assertTrue(p.damageScore() > 0, "其它六维按真实 facts 正常计算");
+        assertTrue(p.assistScore() > 0);
+        assertTrue(p.finalRating() <= PlayerLeagueRating.MAX_FINAL,
+                "总分保持 0–1000，UNKNOWN 不得触发重新归一化");
+        assertEquals(1000, PlayerLeagueRating.MAX_DAMAGE + PlayerLeagueRating.MAX_ASSIST
+                + PlayerLeagueRating.MAX_KILL + PlayerLeagueRating.MAX_EXCHANGE
+                + PlayerLeagueRating.MAX_BLOCKED + PlayerLeagueRating.MAX_SURVIVAL_TRADE
+                + PlayerLeagueRating.MAX_SHOOTING, 1e-9);
+
+        // UNKNOWN 死亡时刻不得建立 trade 窗口（即使敌方在相邻时刻阵亡）
+        specs.get(7).dead(1.0);
+        final LeagueRatingResult r2 = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, specs));
+        assertEquals(0, r2.byAccount(1001).survivalTradeScore(), 1e-9,
+                "UNKNOWN 死亡时间不得推断 trade");
+    }
+
     // ---- 最终分 ----
 
     @Test

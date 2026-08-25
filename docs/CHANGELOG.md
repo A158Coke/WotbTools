@@ -5,6 +5,22 @@
 ## [Unreleased]
 
 ### Changed
+- **League Rating：死亡时间 UNKNOWN 不再整场拒绝评分**：
+  - `LeagueRatingValidator` 删除 battle-level `MISSING_DEATH_TIME` gate：阵亡玩家
+    `survivalTimeSec == 0` 定义为合法 UNKNOWN（不产生 failure，整场照常评分）；
+    `<0` / NaN / Infinity / 超过战斗时长+tolerance 仍为 `INVALID_STAT_FACTS`
+    （beyond-duration 检查限定有限值，避免与 stat-facts 重复计数）。
+  - `LeagueFailure.Code.MISSING_DEATH_TIME` 全链路删除（core 常量 / Excel 失败标签 /
+    前端三语 i18n / 测试 / 文档）。
+  - 新增非阻断 `ratingQuality.unknownDeathTimePlayers`（core `LeagueRatingBatch` →
+    `LeagueRatingDto` → preview 响应）；前端在存在 UNKNOWN 玩家时显示 quality warning
+    （可评分 X/X 不变、不计入「未生成 Rating」）。
+  - 回归保护：`TradeFacts` 对 `survivalTimeSec <= 0` fail-closed 语义不变（新增
+    `unknownDeathTimeDoesNotInferTrade` 等单测）；`DeathTimeReconciler` correctness
+    contract（PR #100 IS-4 128.12s / later-alive-refutes-legacy / 0xFFFE 等）零改动、全绿。
+  - 真实回放验证：3 个此前失败的 arena（`8963319361188400` / `1161438972003065843` /
+    `1161440170298931846`）validator PASS + 生成 Rating，5 名 UNKNOWN 玩家
+    `survivalState=NONE` / `survivalTradeScore=0`；本地 23 场批次 23/23 rated、0 failure。
 - **CW Rating UI 架构与导出契约收口**：
   - **leagueMode 单一事实源**：前端页面级 CW 模式只消费 `resp.leagueMode === true`（后端
     显式标记），删除 `!!resp.league` 兼容回退与 `isLeagueColumns()` 列内容推断
