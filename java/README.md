@@ -105,7 +105,7 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 返回：
 
-- `battles`：每场玩家基础战绩 + 扩展字段（`alpha_damage`、`rank`、`potential_damage`、`potential_damage_supplement`、`potential_damage_detail`），玩家 cells 直接包含 `contribution`/`kast`/`impact`（HP UNKNOWN 时为 null，UI 显示 `--`）。
+- `battles`：每场玩家基础战绩 + 扩展字段（`alpha_damage`、`rank`），玩家 cells 直接包含 `contribution`/`kast`/`impact`（HP UNKNOWN 时为 null，UI 显示 `--`）。
 - `aggregate`：跨场汇总（>1 场时），含跨场 `contribution`/`kast`/`impact`/`multi_damage_rate`/`traded_deaths`。
 - `duplicates` / `failures`：去重和失败信息。
 - `playerColumns` / `aggregateColumns`：纯英文 key + 是否数值，前端由三语 `player_labels` / `agg_labels` 显示。
@@ -160,7 +160,7 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 ### Replay Processing Job（匿名公开，解析预览异步化）
 
-「上传多个回放 → 解析预览」从长同步 HTTP 改为异步 Processing Job：HTTP request 立即返回 202 + jobId，worker 在全局 replay 容量内串行 `processFull`（每个 replay 恰好一次），产出**共享的 ProcessedDataset** 供 Preview / Export / 战局回放复用（同一批 34 个回放不再 Preview ×34 后又 Export ×34，总 `processFull` 调用数 = 文件数）。**READY 后消费者只读**：facts 层 enrich（PotentialDamage + populateBattle）只在 dataset 创建时执行一次，Preview result / from-result Export 不再二次 mutate 共享 Battle（并发 Preview / aggregate / each Export 同一 dataset 无 shared mutable write）；`validCount() > 0` 即允许 from-result 导出（failures 只用于进度/统计，不与有效场数相减）。
+「上传多个回放 → 解析预览」从长同步 HTTP 改为异步 Processing Job：HTTP request 立即返回 202 + jobId，worker 在全局 replay 容量内串行 `processFull`（每个 replay 恰好一次），产出**共享的 ProcessedDataset** 供 Preview / Export / 战局回放复用（同一批 34 个回放不再 Preview ×34 后又 Export ×34，总 `processFull` 调用数 = 文件数）。**READY 后消费者只读**：facts 层 enrich（populateBattle）只在 dataset 创建时执行一次，Preview result / from-result Export 不再二次 mutate 共享 Battle（并发 Preview / aggregate / each Export 同一 dataset 无 shared mutable write）；`validCount() > 0` 即允许 from-result 导出（failures 只用于进度/统计，不与有效场数相减）。
 
 - `POST /api/replay/processing-jobs`（multipart `files`）— 校验并立即持久化上传输入，返回 `202 {jobId, status, total}`。
 - `GET /api/replay/processing-jobs/{jobId}` — 轮询真实进度：`{jobId, status, phase, total, processed, valid, duplicates, failures, errorCode, currentFile}`。`status` ∈ QUEUED / PROCESSING / READY / FAILED / CANCELLED（终态 exactly once）；`phase` = PROCESSING_REPLAYS（真实 processed/total，不为无观察价值的阶段造假 phase）；`valid` = 去重后有效场数；`currentFile` 为当前处理中的输入文件名（前端截断显示，不作为 metric tag）。0 场有效 → FAILED `NO_VALID_REPLAYS`。

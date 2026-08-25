@@ -24,6 +24,7 @@ import com.wotb.web.replay.dto.LeagueColumnDef;
 import com.wotb.web.replay.dto.LeagueFailureDto;
 import com.wotb.web.replay.dto.LeaguePlayerSummaryDto;
 import com.wotb.web.replay.dto.LeagueRatingDto;
+import com.wotb.web.replay.dto.LeagueRatingQualityDto;
 import com.wotb.web.replay.dto.LeagueTeamDto;
 import com.wotb.web.replay.dto.LeagueTeamSummaryDto;
 import com.wotb.web.replay.dto.PreviewResponse;
@@ -268,7 +269,6 @@ public final class Mapper {
             case "tank_type" -> VehicleCodes.classCode(player.tankType);
             case "tank_nation" -> VehicleCodes.nationCode(player.tankNation);
             case "survived_label" -> player.survived ? "SURVIVED" : "DESTROYED";
-            case "potential_damage_detail" -> player.potentialDamageDetailed ? "PARSED" : "UNPARSED";
             default -> column.get().apply(player);
         };
     }
@@ -278,7 +278,7 @@ public final class Mapper {
      * Replay Processing Job result 共用同一 DTO 构建）。
      *
      * <p><b>只读消费契约</b>：battles 必须已是完整 facts 管线产出
-     * （Replays.collect + processFull + PotentialDamage + populateBattle 各一次），
+     * （Replays.collect + processFull + populateBattle 各一次），
      * 本方法<b>不</b>再执行任何会 mutate 共享 Battle 的 enrichment——事实层 enrich 由
      * 数据集创建方保证（ReplayProcessingJobService.processJob / 同步 preview 的
      * ReplayService.previewWithinPermit）。display 派生（tankName/tankType 等）仍在本
@@ -352,6 +352,7 @@ public final class Mapper {
                     s.accountId(), s.nickname(), s.clan(), s.battles(),
                     r1(s.ratingMedian()),
                     s.dimensionMedians().stream().map(Mapper::r1).toList(),
+                    s.dimensionMeans().stream().map(Mapper::r1).toList(),
                     s.mvpCount(), s.wins(), s.damageTotal(), s.assistTotal(), s.killsTotal(),
                     // 跨场 Performance Metrics（与 resp.aggregate 同一全部已解析场次样本）；
                     // HP 全部 UNKNOWN → contribution/kast null（UI "--"），impact 恒有值
@@ -371,7 +372,9 @@ public final class Mapper {
         for (final com.wotb.core.league.LeagueFailure f : league.failures()) {
             failures.add(new LeagueFailureDto(f.fileName(), f.arenaId(), f.code()));
         }
+        final com.wotb.core.league.LeagueRatingQuality quality = league.ratingQuality();
         return new LeagueRatingDto("LEAGUE_RATING", leagueColumnDefs(), players, teams,
-                leaguePlayerSummaryColumns(), leagueTeamSummaryColumns(), failures);
+                leaguePlayerSummaryColumns(), leagueTeamSummaryColumns(), failures,
+                new LeagueRatingQualityDto(quality.unknownDeathTimePlayers()));
     }
 }

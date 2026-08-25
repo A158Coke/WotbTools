@@ -9,7 +9,8 @@ describe('mergeCwPlayerRows', () => {
   ]
   const summaries = [
     { accountId: 1001, nickname: 'A', clan: 'AAA', battles: 3, ratingMedian: 850.4,
-      dimensionMedians: [300.2, 60, 70, 110, 40, 80, 100], mvpCount: 2,
+      dimensionMedians: [300.2, 60, 70, 110, 40, 80, 100],
+      dimensionMeans: [250, 40, 30, 75, 10, 50, 65], mvpCount: 2,
       contribution: 22.4, kast: 100, impact: 151.2 },
     { accountId: 2001, nickname: 'B', clan: 'BBB', battles: 2, ratingMedian: 720.1,
       dimensionMedians: [250, 50, 60, 90, 30, 70, 80], mvpCount: 0,
@@ -21,6 +22,8 @@ describe('mergeCwPlayerRows', () => {
     expect(rows).toHaveLength(3)
     const a = rows.find(r => r.cells.account_id === 1001)
     expect(a.league.accountId).toBe(1001)
+    // Radar mean 契约原样透传（Table 的 dimensionMedians 语义不受影响）
+    expect(a.league.dimensionMeans).toEqual([250, 40, 30, 75, 10, 50, 65])
     expect(a.cells.league_rating).toBe(850.4)
     expect(a.cells.league_damage_score).toBe(300.2)
     expect(a.cells.league_shooting_score).toBe(100)

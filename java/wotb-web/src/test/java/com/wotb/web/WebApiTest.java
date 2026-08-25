@@ -210,8 +210,9 @@ public class WebApiTest {
         final JsonNode b0 = n.get("battles").get(0);
         assertEquals(14, b0.get("players").size());
         assertTrue(b0.get("players").get(0).get("cells").has("damage_dealt"));
-        assertTrue(b0.get("players").get(0).get("cells").has("potential_damage"));
-        assertTrue(b0.get("players").get(0).get("cells").has("potential_damage_supplement"));
+        assertFalse(b0.get("players").get(0).get("cells").has("potential_damage"),
+                "Potential Damage 已全局移除，API cells 不得再暴露");
+        assertFalse(b0.get("players").get(0).get("cells").has("potential_damage_supplement"));
     }
 
     @Test

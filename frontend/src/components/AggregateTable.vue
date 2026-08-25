@@ -10,10 +10,18 @@ const sortKey = ref('')
 const sortReverse = ref(false)
 // 跨场表现派生列：百分比展示；HP 全部 UNKNOWN 时为 null（显示 "--"，不冒充 0）
 const PERCENT_KEYS = new Set(['contribution', 'kast', 'impact', 'multi_damage_rate'])
+// 跨场原始比例列：分母为 0（无射击/无命中）→ null（unavailable，显示 "--"，禁止 0/0 伪装 0%）
+const RATE_KEYS = new Set(['hit_rate', 'pen_rate'])
 
 function percentCell(value) {
   if (value == null || value === '') return '--'
   return (Math.round(value * 10) / 10) + '%'
+}
+
+/** 原始比例（0-100 标尺）：denominator==0 → null（unavailable，显示 "--"）；否则展示数值。 */
+function rateCell(value) {
+  if (value == null || value === '') return '--'
+  return String(Math.round(Number(value) * 10) / 10)
 }
 
 const sorted = computed(() => {
@@ -55,6 +63,7 @@ function arrow(key) {
             <td v-for="c in shownCols" :key="c.key">
               <span v-if="c.key === 'survival_avg'">{{ fmtDuration(row.cells[c.key], t) }}</span>
               <span v-else-if="PERCENT_KEYS.has(c.key)">{{ percentCell(row.cells[c.key]) }}</span>
+              <span v-else-if="RATE_KEYS.has(c.key)">{{ rateCell(row.cells[c.key]) }}</span>
               <span v-else>{{ row.cells[c.key] }}</span>
             </td>
           </tr>

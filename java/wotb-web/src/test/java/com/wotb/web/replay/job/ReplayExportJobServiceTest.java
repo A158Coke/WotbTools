@@ -1,5 +1,6 @@
 package com.wotb.web.replay.job;
 
+import com.wotb.core.league.LeagueFailure;
 import com.wotb.core.league.LeagueRatingBatch;
 import com.wotb.core.league.LeagueRatingBatchAggregator;
 import com.wotb.core.league.LeagueRatingCalculator;
@@ -12,9 +13,7 @@ import com.wotb.core.processing.ReplayProcessingCapabilities;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
-import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
-import com.wotb.core.stats.PotentialDamage;
 import com.wotb.web.replay.LeagueTestReplays;
 import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import io.micrometer.core.instrument.Counter;
@@ -915,9 +914,8 @@ class ReplayExportJobServiceTest {
             final String eachJob = service.createJob(null, "each", pJobId);
             assertEquals(ExportJob.Status.READY, awaitTerminal(eachJob, 10_000).status());
 
-            // 关键：共享 Battle 未被 PotentialDamage.apply / populateBattle 修改
-            assertEquals(0, b.players.getFirst().potentialDamage,
-                    "PotentialDamage.apply 不得在 from-result 路径再次执行（damageDealt=5000 会被改写）");
+            // 关键：共享 Battle 未被 populateBattle 修改（from-result 只读消费，
+            // 不得二次回填 Performance Metrics；Potential Damage 已全局移除）
             assertEquals(null, b.players.getFirst().contribution,
                     "populateBattle 不得在 from-result 路径再次执行（HP 已知场会回填 contribution）");
             assertEquals(null, b.players.getFirst().kast);
@@ -939,12 +937,10 @@ class ReplayExportJobServiceTest {
             final Battle b = battle("arena-1");
             b.players.getFirst().damageDealt = 5000;
             final List<Battle> battles = List.of(b);
-            PotentialDamage.apply(battles, Tankopedia.load());
             for (final Battle battle : battles) {
                 PerformanceMetricsCalculator.populateBattle(battle);
             }
-            final int expectedPotential = b.players.getFirst().potentialDamage;
-            assertTrue(expectedPotential == 5000, "测试前置：PotentialDamage 应把 potentialDamage 置为 damageDealt");
+            assertEquals(5000, b.players.getFirst().damageDealt, "测试前置：damageDealt 应保持 5000");
             assertNotNull(b.players.getFirst().contribution, "测试前置：HP 已知场 populateBattle 应回填 contribution");
             final String pJobId = readyProcessingJob(processingStore, "proc-parity",
                     battles, List.of("one.wotbreplay"),
@@ -952,12 +948,12 @@ class ReplayExportJobServiceTest {
 
             final String aggJob = service.createJob(null, "aggregate", pJobId);
             assertEquals(ExportJob.Status.READY, awaitTerminal(aggJob, 10_000).status());
-            assertEquals(expectedPotential, b.players.getFirst().potentialDamage,
+            assertEquals(5000, b.players.getFirst().damageDealt,
                     "from-result 导出不得改动已 enrich 的权威 metrics（Preview/Export parity）");
             assertNotNull(b.players.getFirst().contribution);
             final String eachJob = service.createJob(null, "each", pJobId);
             assertEquals(ExportJob.Status.READY, awaitTerminal(eachJob, 10_000).status());
-            assertEquals(expectedPotential, b.players.getFirst().potentialDamage);
+            assertEquals(5000, b.players.getFirst().damageDealt);
             assertNotNull(b.players.getFirst().contribution);
             verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             processingStore.release(pJobId);
@@ -1222,6 +1218,144 @@ class ReplayExportJobServiceTest {
     }
 
     @Test
+    void leagueAggregateExportFromResultPartialRatedReady() throws Exception {
+        // 生产 500 回归补测（mode=aggregate + processingJobId reuse + partial-rated dataset）：
+        // battles=2（1 rated + 1 Rating-ineligible）→ Export READY、errorCode null、XLSX 合法；
+        // League 汇总只统计 rated 样本；战斗列表同时含 rated + ineligible（失败原因）。
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-league-agg-partial"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            final String ratedArena = "arena-r";
+            final String ineligibleArena = "arena-i";
+            final Battle rated = leagueBattle(ratedArena);
+            final Battle ineligible = leagueBattle(ineligibleArena);
+            ineligible.players.remove(0); // 13 人 → Rating-ineligible（resultFor=null）
+            final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(
+                    List.of(rated), List.of(LeagueRatingCalculator.calculate(rated)),
+                    List.of(new LeagueFailure(ineligibleArena + ".wotbreplay", ineligibleArena,
+                            LeagueFailure.Code.NOT_SEVEN_VS_SEVEN)));
+            final ProcessedDataset ds = new ProcessedDataset(
+                    List.of(rated, ineligible),
+                    List.of(ratedArena + ".wotbreplay", ineligibleArena + ".wotbreplay"),
+                    List.of(), List.of(), batch, null);
+            final ReplayProcessingJob pJob = new ReplayProcessingJob("proc-partial", ds.validCount());
+            pJob.startProcessing();
+            pJob.updateProgress(ds.validCount(), 0, 0);
+            pJob.markReady(ds);
+            processingStore.register(pJob);
+            processingStore.acquireForExport("proc-partial");
+
+            final String jobId = service.createJob(null, "aggregate", "proc-partial");
+            final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+            assertEquals(ExportJob.Status.READY, snap.status(),
+                    "partial-rated League aggregate 必须 READY（不得 INTERNAL_ERROR / NPE / IOOBE）");
+            assertNull(snap.errorCode());
+            try (Workbook wb = new XSSFWorkbook(Files.newInputStream(store.get(jobId).artifactPath()))) {
+                final String text = workbookText(wb);
+                assertTrue(text.contains("arena-r"), "战斗列表必须含 rated 场");
+                assertTrue(text.contains("arena-i"), "战斗列表必须含 Rating-ineligible 场");
+                assertTrue(text.contains("已评分"), "rated 场战斗列表状态必须为已评分");
+                assertTrue(text.contains("非标准 7v7"), "ineligible 场战斗列表必须显示失败原因");
+            }
+            processingStore.release("proc-partial");
+        } finally {
+            deleteDir(processingStore.jobDir("").getParent());
+        }
+    }
+
+    @Test
+    void leagueAggregateExportFromResultWithUnknownDeathTimeReady() throws Exception {
+        // PR #135 契约：UNKNOWN death-time 场照常评分；ratingQuality / canonical 收口
+        // 不得破坏 Export path（processingJobId reuse + aggregate → READY + XLSX 合法）。
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-league-agg-unknown"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            final Battle unknown = leagueBattle("arena-1");
+            unknown.players.get(0).survived = false;
+            unknown.players.get(0).survivalTimeSec = 0; // 死亡时间 UNKNOWN
+            final Battle normal = leagueBattle("arena-2");
+            final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(
+                    List.of(unknown, normal),
+                    List.of(LeagueRatingCalculator.calculate(unknown),
+                            LeagueRatingCalculator.calculate(normal)),
+                    List.of());
+            assertEquals(1, batch.ratingQuality().unknownDeathTimePlayers(),
+                    "canonical 后 UNKNOWN 玩家计入 quality（aggregate 路径一致性）");
+            final ProcessedDataset ds = new ProcessedDataset(
+                    List.of(unknown, normal),
+                    List.of("arena-1.wotbreplay", "arena-2.wotbreplay"),
+                    List.of(), List.of(), batch, null);
+            final ReplayProcessingJob pJob = new ReplayProcessingJob("proc-unknown", ds.validCount());
+            pJob.startProcessing();
+            pJob.updateProgress(ds.validCount(), 0, 0);
+            pJob.markReady(ds);
+            processingStore.register(pJob);
+            processingStore.acquireForExport("proc-unknown");
+
+            final String jobId = service.createJob(null, "aggregate", "proc-unknown");
+            final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+            assertEquals(ExportJob.Status.READY, snap.status());
+            assertNull(snap.errorCode());
+            try (Workbook wb = new XSSFWorkbook(Files.newInputStream(store.get(jobId).artifactPath()))) {
+                assertNotNull(wb.getSheet("选手汇总"), "UNKNOWN 场必须正常生成 League 汇总表");
+                assertNotNull(wb.getSheet("每场明细"), "UNKNOWN 场必须正常生成每场明细表");
+            }
+            processingStore.release("proc-unknown");
+        } finally {
+            deleteDir(processingStore.jobDir("").getParent());
+        }
+    }
+
+    @Test
+    void leagueAggregateExportFromResultZeroRatedStillReady() throws Exception {
+        // 产品契约：Replay 解析成功即使 0 场 eligible，dataset 仍有效；aggregate 必须成功导出
+        // （基础 Replay sheets 存在、League summary 为空、战斗列表显示失败原因），不得因
+        // battleResults.isEmpty() 500。
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-league-agg-zero"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            final Battle i1 = leagueBattle("arena-a");
+            i1.players.remove(0); // 13 人
+            final Battle i2 = leagueBattle("arena-b");
+            i2.players.remove(0);
+            final List<LeagueFailure> failures = List.of(
+                    new LeagueFailure("arena-a.wotbreplay", "arena-a", LeagueFailure.Code.NOT_SEVEN_VS_SEVEN),
+                    new LeagueFailure("arena-b.wotbreplay", "arena-b", LeagueFailure.Code.NOT_SEVEN_VS_SEVEN));
+            final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(
+                    List.of(), List.of(), failures);
+            final ProcessedDataset ds = new ProcessedDataset(
+                    List.of(i1, i2),
+                    List.of("arena-a.wotbreplay", "arena-b.wotbreplay"),
+                    List.of(), List.of(), batch, null);
+            final ReplayProcessingJob pJob = new ReplayProcessingJob("proc-zero", ds.validCount());
+            pJob.startProcessing();
+            pJob.updateProgress(ds.validCount(), 0, 0);
+            pJob.markReady(ds);
+            processingStore.register(pJob);
+            processingStore.acquireForExport("proc-zero");
+
+            final String jobId = service.createJob(null, "aggregate", "proc-zero");
+            final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+            assertEquals(ExportJob.Status.READY, snap.status(),
+                    "0 场可评分的 League dataset 仍应成功导出");
+            assertNull(snap.errorCode());
+            try (Workbook wb = new XSSFWorkbook(Files.newInputStream(store.get(jobId).artifactPath()))) {
+                final String text = workbookText(wb);
+                assertTrue(text.contains("非标准 7v7"), "战斗列表必须显示 Rating-ineligible 失败原因");
+            }
+            processingStore.release("proc-zero");
+        } finally {
+            deleteDir(processingStore.jobDir("").getParent());
+        }
+    }
+
+    @Test
     void leagueEachExportAppliesPerBattleTeamNames() throws Exception {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-league-each"), 60);
@@ -1276,22 +1410,45 @@ class ReplayExportJobServiceTest {
         assertEquals(ExportJob.Status.READY, snap.status());
         assertEquals(0, snap.failures(), "Rating-ineligible 场次导出为标准工作簿，不得计入 failures");
         assertEquals(2, zipEntryNames(jobId).size(), "纯 CW each 必须导出 2 个 XLSX（不得丢弃 ineligible 场）");
-        // upload each 的 rated 工作簿必须经 PotentialDamage enrichment（潜在伤害 > 0，非未 enrich 默认值）
+        // League each（global Potential Damage removal）：rated → League 单场工作簿、
+        // ineligible → Standard 单场工作簿——两者都不得含 潜在伤害 列；
+        // rated 必须有 League 扩展（总Rating）与单场 Performance Metrics + 基础 facts。
         try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(store.get(jobId).artifactPath()))) {
-            final ZipEntry first = zip.getNextEntry();
-            assertNotNull(first);
-            try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(zip.readAllBytes()))) {
+            final Map<String, Workbook> byName = new java.util.HashMap<>();
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                byName.put(entry.getName(), new XSSFWorkbook(new ByteArrayInputStream(zip.readAllBytes())));
+            }
+            assertEquals(2, byName.size());
+            assertTrue(byName.containsKey("rated.xlsx") && byName.containsKey("unrated.xlsx"),
+                    "必须按文件名定位两个 entry：" + byName.keySet());
+            try (Workbook wb = byName.get("rated.xlsx")) {
                 final Sheet players = wb.getSheet("玩家数据");
                 final Row header = players.getRow(0);
-                int potentialCol = -1;
+                final StringBuilder headerText = new StringBuilder();
                 for (int c = 0; c < header.getLastCellNum(); c++) {
-                    if ("潜在伤害".equals(header.getCell(c).getStringCellValue())) {
-                        potentialCol = c;
-                    }
+                    headerText.append(header.getCell(c).getStringCellValue()).append("|");
                 }
-                assertTrue(potentialCol >= 0, "玩家数据必须含 潜在伤害 列");
-                assertTrue(players.getRow(1).getCell(potentialCol).getNumericCellValue() > 0,
-                        "upload each 的 rated 工作簿必须经 PotentialDamage enrichment（潜在伤害 > 0）");
+                assertTrue(!headerText.toString().contains("潜在伤害"),
+                        "League 单场工作簿不得含 潜在伤害 列：" + headerText);
+                assertTrue(headerText.toString().contains("总Rating"), "League 单场必须含 总Rating");
+                assertTrue(headerText.toString().contains("贡献度"), "League 单场必须含 Contribution");
+                assertTrue(headerText.toString().contains("KAST"), "League 单场必须含 KAST");
+                assertTrue(headerText.toString().contains("Impact"), "League 单场必须含 Impact");
+                assertTrue(headerText.toString().contains("伤害"), "League 单场必须保留基础 Replay facts");
+            }
+            try (Workbook wb = byName.get("unrated.xlsx")) {
+                final Sheet players = wb.getSheet("玩家数据");
+                final Row header = players.getRow(0);
+                final StringBuilder headerText = new StringBuilder();
+                for (int c = 0; c < header.getLastCellNum(); c++) {
+                    headerText.append(header.getCell(c).getStringCellValue()).append("|");
+                }
+                assertTrue(!headerText.toString().contains("潜在伤害"),
+                        "Rating-ineligible Standard fallback 也不得含 潜在伤害 列：" + headerText);
+                assertTrue(!headerText.toString().contains("总Rating"),
+                        "ineligible 场应为标准工作簿（无 Rating 扩展）：" + headerText);
+                assertTrue(headerText.toString().contains("伤害"), "Standard fallback 必须保留基础 Replay facts");
             }
         }
     }

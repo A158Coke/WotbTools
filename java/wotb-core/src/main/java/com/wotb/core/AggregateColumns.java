@@ -45,15 +45,12 @@ public final class AggregateColumns {
             new CoreColumn("kills_avg", true, a -> r2(a.avg(a.kills))),
             new CoreColumn("damage", true, a -> a.damage),
             new CoreColumn("damage_avg", true, a -> r1(a.avg(a.damage))),
-            new CoreColumn("potential_damage", true, a -> a.potentialDamage),
-            new CoreColumn("potential_damage_avg", true, a -> r1(a.avg(a.potentialDamage))),
-            new CoreColumn("potential_damage_supplement_avg", true, a -> r1(a.avg(a.potentialDamageSupplement))),
             new CoreColumn("assisted", true, a -> a.assisted),
             new CoreColumn("assisted_avg", true, a -> r1(a.avg(a.assisted))),
             new CoreColumn("received_avg", true, a -> r1(a.avg(a.received))),
             new CoreColumn("blocked_avg", true, a -> r1(a.avg(a.blocked))),
-            new CoreColumn("hit_rate", true, a -> r1(a.hitRate())),
-            new CoreColumn("pen_rate", true, a -> r1(a.penRate())),
+            new CoreColumn("hit_rate", true, a -> rateOrNull(a.hitRate())),
+            new CoreColumn("pen_rate", true, a -> rateOrNull(a.penRate())),
             new CoreColumn("shots", true, a -> a.shots),
             new CoreColumn("hits", true, a -> a.hits),
             new CoreColumn("pens", true, a -> a.pens),
@@ -97,6 +94,12 @@ public final class AggregateColumns {
             }
         }
         throw new IllegalArgumentException("unknown aggregate performance column: " + key);
+    }
+
+    /** 跨场比例（0-100，一位小数）；分母为 0 的场次无比例 → null（unavailable，禁止 0/0 伪装 0%）。
+     * 跨场基于<b>总量</b>：sum(pens)/sum(hits)，不是各场比例的简单平均（Agg 累计 shots/hits/pens 后再算）。 */
+    private static Object rateOrNull(final Double v) {
+        return v == null ? null : r1(v);
     }
 
     private static double r1(final double v) {

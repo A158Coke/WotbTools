@@ -13,7 +13,6 @@ import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
-import com.wotb.core.stats.PotentialDamage;
 import com.wotb.web.replay.ReplayExportNames;
 import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.replay.service.ReplayCapacityLimiter;
@@ -376,6 +375,8 @@ public class ReplayExportJobService {
                                    final boolean each, final long submittedNanos) {
         final long startNanos = System.nanoTime();
         recordQueueWait(submittedNanos, startNanos, job.mode());
+        // 方法作用域：失败日志需要 dataset 上下文（parsed/rated/duplicates/league failures）
+        final ProcessedDataset ds = processingJob.result();
         try {
             if (!job.startProcessing()) {
                 // QUEUED 期间被取消 → 已终态 CANCELLED；worker 负责终态统计。
@@ -389,7 +390,6 @@ public class ReplayExportJobService {
             }
             LOGGER.info(logLine("export_job_started", job.jobId(), "mode", job.mode(), "total", job.total(),
                     "reuse_processing_job", processingJob.jobId()));
-            final ProcessedDataset ds = processingJob.result();
             if (each) {
                 processEachFromResult(job, ds);
             } else {
@@ -403,8 +403,18 @@ public class ReplayExportJobService {
             if (job.isCancelled()) {
                 job.markCancelled();
             } else {
+                // 结构化失败上下文（安全字段：无 replay 二进制 / Authorization / token）：
+                // mode / reuse / processing job 状态 / parsed / rated / duplicates / league failures
                 LOGGER.warn(logLine("export_job_failed_detail", job.jobId(),
-                        "error", e.getClass().getSimpleName(), "message", String.valueOf(e.getMessage())), e);
+                        "mode", job.mode(),
+                        "reuse_processing_job", processingJob.jobId(),
+                        "processing_job_status", processingJob.snapshot().status().name(),
+                        "parsed_battles", ds.battles().size(),
+                        "rated_battles", ds.isLeague() ? ds.league().battleResults().size() : 0,
+                        "duplicates", ds.duplicates().size(),
+                        "league_failures", ds.isLeague() ? ds.league().failures().size() : 0,
+                        "error", e.getClass().getSimpleName(),
+                        "message", String.valueOf(e.getMessage())), e);
                 job.markFailed(errorCodeOf(e));
             }
             finishTerminal(job, startNanos);
@@ -426,7 +436,7 @@ public class ReplayExportJobService {
 
     /**
      * aggregate：直接复用已 enrich 的 battles 生成汇总 XLSX（无任何 replay processing 步骤，
-     * 只读消费 {@link ProcessedDataset}：不再次 PotentialDamage / populateBattle
+     * 只读消费 {@link ProcessedDataset}：不再次 populateBattle
      * / 任何会 mutate 共享 Battle 的 enrichment——enrich 由 Processing Job
      * 创建 dataset 前保证（ReplayProcessingJobService.processJob）。
      */
@@ -608,7 +618,6 @@ public class ReplayExportJobService {
         if (c.battles().isEmpty()) {
             throw new NoValidReplaysException();
         }
-        PotentialDamage.apply(c.battles(), tankopedia);
         // 单场 Performance Metrics 回填（League 单场工作簿含 contribution/kast/impact；
         // from-result 路径的 dataset 已在创建时 enrich）
         for (final Battle battle : c.battles()) {
@@ -640,7 +649,7 @@ public class ReplayExportJobService {
                 }
             } else {
                 // 单场 Performance Metrics 已在上方统一回填（与 League 分支同一 authoritative
-                // enrichment，只执行一次——processFull → PotentialDamage → populateBattle → renderer）
+                // enrichment，只执行一次——processFull → populateBattle → renderer）
                 if (c.battles().size() == 1) {
                     ExcelExporter.writeSingle(c.battles().getFirst(), tankopedia, out);
                 } else {
@@ -695,7 +704,6 @@ public class ReplayExportJobService {
                     if (battle == null) {
                         throw new IllegalArgumentException("NO_BATTLE_DATA");
                     }
-                    PotentialDamage.apply(List.of(battle), tankopedia);
                     PerformanceMetricsCalculator.populateBattle(battle);
                 } catch (final Exception e) {
                     failures++;
@@ -758,9 +766,7 @@ public class ReplayExportJobService {
                                    final Path artifact, final Set<String> usedNames) throws Exception {
         int processed = 0;
         int exported = 0;
-        // 与 preview / standard export 同一 authoritative enrichment：
-        // PotentialDamage → 单场 Performance Metrics（League 单场工作簿含潜在伤害列）
-        PotentialDamage.apply(c.battles(), tankopedia);
+        // 仍回填单场 Performance Metrics（Contribution/KAST/Impact 是有效 League 数据）。
         for (final Battle battle : c.battles()) {
             PerformanceMetricsCalculator.populateBattle(battle);
         }

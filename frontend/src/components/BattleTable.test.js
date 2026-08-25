@@ -67,6 +67,28 @@ describe('BattleTable derived metrics', () => {
     expect(text).toContain('120.5%')
   })
 
+  it('renders hit_rate/pen_rate raw percentages; null (no shots/no hits) shows -- not 0', () => {
+    const cols = [
+      { key: 'nickname', num: false },
+      { key: 'hit_rate', num: true },
+      { key: 'pen_rate', num: true }
+    ]
+    const wrapper = mountTable(makeBattle([
+      // shots=10 hits=5 pens=4 → 命中率 50，击穿率 80
+      { team: 1, cells: { nickname: 'A', hit_rate: 50, pen_rate: 80 } },
+      // shots=0 → 无射击 → null（unavailable，显示 --，禁止 0/0 伪装 0%）
+      { team: 1, cells: { nickname: 'B', hit_rate: null, pen_rate: null } },
+      // shots=10 hits=0 → 命中率 0（合法），击穿率 null
+      { team: 1, cells: { nickname: 'C', hit_rate: 0, pen_rate: null } }
+    ]), cols)
+
+    const text = wrapper.text()
+    expect(text).toContain('50')
+    expect(text).toContain('80')
+    expect(text).toContain('0')
+    expect((text.match(/--/g) || []).length).toBeGreaterThanOrEqual(2)
+  })
+
   it('sorts contribution numerically (not lexicographically)', async () => {
     const wrapper = mountTable(makeBattle([
       { team: 1, cells: { nickname: 'A', damage_dealt: 3000, contribution: 100, kast: 100, impact: 200 } },
