@@ -2480,4 +2480,17 @@ describe('ReplayPage Workspace Dataset generation ownership（BLOCKER 1）', () 
     await pB
     wrapper.unmount()
   })
+
+  it('本地 source poll 取消（SOURCE_POLL_CANCELLED）即使属于当前 generation 也不写 processingError', async () => {
+    const fileA = new File(['a'], 'a.wotbreplay')
+    directActionHolder.setImpl(() =>
+      Promise.reject(Object.assign(new Error('SOURCE_POLL_CANCELLED'), { name: 'LocalCancellation' })))
+    const wrapper = mountWithFilesLocal([fileA])
+
+    await wrapper.vm.openWorkspaceAi(fileA)
+    await flushPromises()
+    expect(wrapper.vm.datasetRef).toBeNull()
+    expect(wsErrState.value).toBe('', '本地取消不得显示成用户业务错误')
+    wrapper.unmount()
+  })
 })
