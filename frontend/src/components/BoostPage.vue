@@ -925,7 +925,8 @@ function switchTab(t) {
     </div>
 
     <!-- Tab: Apply Booster -->
-    <div v-if="tab === 'apply' && !isBooster" class="boost-card">
+    <template v-if="!isBooster">
+    <div v-show="tab === 'apply'" class="boost-card boost-apply-card">
       <h3 class="card-title">{{ $t('boost.applyBoosterTitle') }}</h3>
       <p class="boost-warning">{{ $t('boost.applyBoosterWarning') }}</p>
 
@@ -1052,6 +1053,7 @@ function switchTab(t) {
         </div>
       </div>
     </div>
+    </template>
 
     <!-- Tab: My Booster Assignments -->
     <div v-if="isBooster && tab === 'myAssignments'" class="boost-card">

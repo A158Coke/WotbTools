@@ -8,7 +8,7 @@
 - **名人堂三环（Mark 3）人工审核排行榜**：新增独立 `mark3` domain、Flyway `V21` submission/evidence 表和 `/api/hof/mark3`、`/api/users/mark3`、`/api/admin/hof/mark3` API。仅限 Tier X，玩家提交三环所需场数、过程场均、过程胜率、1–2 张截图与恰好 5 个回放；无 Wargaming 自动认证链路。创建路径从五个 replay byte[] 读取、解析、hash 锁、落盘到事务全程复用全局 `ReplayCapacityLimiter`，容量满返回 503 `REPLAY_BUSY`。排行榜按已审核三环场数升序，场数相同使用 competition ranking；同用户同车的 CURRENT 唯一且不被后续申请替代，不使用 `SUPERSEDED`。REJECTED/CANCELLED/DELETED 可重提；管理员通过、拒绝或删除时均不能改写成绩，终态会清理截图和回放证据。
 
 ### Fixed
-- **统一图片 data URL 上传链路**：新增无业务文案的前端 `ImageDataUploader`，替换百场、三环和陪练申请中重复的 `FileReader` 实现；统一校验图片 MIME、4 MiB 上限和最终 `data:image/` 值，读取失败或非图片 data URL 在浏览器侧拒绝，不再把无效值提交给后端。临时关闭百场/三环弹窗或在 MANUAL/WG 间切换时保留正在读取的截图，回到手动模式后继续写入同一页草稿；仅用户重选、移除、清空草稿或整页卸载会作废过期回调。三环的总图片数与已有图片去重在 FileReader 前门禁，超限时零读取；不改 API 或后端存储契约。
+- **统一图片 data URL 上传链路**：新增无业务文案的前端 `ImageDataUploader`，替换百场、三环和陪练申请中重复的 `FileReader` 实现；统一校验图片 MIME、4 MiB 上限和最终 `data:image/` 值，读取失败或非图片 data URL 在浏览器侧拒绝，不再把无效值提交给后端。临时关闭百场/三环弹窗、在 MANUAL/WG 间切换或切换陪练页内部 Tab 时保留正在读取的截图，回到原表单后继续写入同一页草稿；仅用户重选、移除、清空草稿、成功提交 reset 或整页卸载会作废过期回调。三环的总图片数与已有图片去重在 FileReader 前门禁，超限时零读取；不改 API 或后端存储契约。
 - **百场管理员审核摘要改用认证数值**：`GET /api/admin/hof/hundred/submissions` 只返回 `certifiedAverageDamage` 和 `certifiedBattleCount`；WG 官方认证映射冻结的官方快照，人工审核映射已通过数值。申报值继续仅在详情接口保留。
 
 ### Changed
