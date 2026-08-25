@@ -205,8 +205,8 @@ describe('BattleTable League Rating', () => {
     expect(damageTh.classes()).not.toContain('sticky-col')
   })
 
-  // ---- P0 sticky lifecycle（A–F：hidden→visible 重测、ResizeObserver、0 width 不覆盖；
-  //      因为 left:0px 也会通过——必须断言具体测量值） ----
+  // ---- sticky lifecycle：hidden→visible remeasure / ResizeObserver / zero-width protection
+  //       （left:0px 也会通过——必须断言具体测量值） ----
 
   function stubNickWidth(wrapper, width) {
     const nickTh = wrapper.findAll('th').find(t => t.text().includes('nickname'))

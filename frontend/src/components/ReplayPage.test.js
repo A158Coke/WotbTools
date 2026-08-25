@@ -1737,7 +1737,7 @@ describe('ReplayPage League Rating', () => {
   })
 })
 
-describe('ReplayPage result visibility (P0: no blank results; league mode from resp.leagueMode)', () => {
+describe('ReplayPage result visibility (no blank results; league mode from resp.leagueMode)', () => {
   beforeEach(() => {
     state.clear()
     state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en', files: [] }

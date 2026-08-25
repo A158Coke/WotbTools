@@ -436,7 +436,7 @@ describe('useReplay file-selection invalidation', () => {
   })
 })
 
-describe('useReplay initial result tab (P0: activeTab must point to a renderable panel)', () => {
+describe('useReplay initial result tab (activeTab must point to a renderable panel)', () => {
   let replay
 
   function pJob(overrides = {}) {
@@ -472,7 +472,7 @@ describe('useReplay initial result tab (P0: activeTab must point to a renderable
   ]
   const league = { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] }
 
-  it('Test A: 多场 + aggregate 空 + 无 league → READY 后 activeTab=b0（P0 核心回归）', async () => {
+  it('Test A: 多场 + aggregate 空 + 无 league → READY 后 activeTab=b0', async () => {
     readyWith({ ...base, battles: twoBattles, aggregate: [] })
     await replay.startProcessingJob()
     await vi.advanceTimersByTimeAsync(0)

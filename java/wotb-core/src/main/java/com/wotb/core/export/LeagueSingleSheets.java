@@ -7,7 +7,6 @@ import com.wotb.core.league.PlayerLeagueRating;
 import com.wotb.core.league.TeamLeagueRating;
 import com.wotb.core.model.Battle;
 import com.wotb.core.ref.Tankopedia;
-import com.wotb.core.stats.Players;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -26,16 +25,6 @@ final class LeagueSingleSheets {
 
     /** 战队名称覆盖 key：{arenaId}:{team} → 显示名（仅当前导出调用内使用，不保存）。 */
     private final Map<String, String> teamNameOverrides;
-
-    /** 七维标题（presentation 映射；维度 key / 顺序 / 满分由 {@link LeagueColumns} 单一驱动）。 */
-    private static final Map<String, String> DIM_TITLES = Map.of(
-            "league_damage_score", "伤害评分",
-            "league_assist_score", "助攻评分",
-            "league_kill_score", "击杀评分",
-            "league_exchange_score", "换血效率评分",
-            "league_blocked_score", "阻挡评分",
-            "league_survival_score", "存活/互换评分",
-            "league_shooting_score", "射击效率评分");
 
     LeagueSingleSheets() {
         this(Map.of());
@@ -63,9 +52,9 @@ final class LeagueSingleSheets {
         final List<String[]> leagueHeader = new ArrayList<>();
         leagueHeader.add(new String[]{"占点得分", "9"});
         leagueHeader.add(new String[]{"占领分", "9"});
-        final int dimensionCount = LeagueColumns.DIM_KEYS.size();
-        for (int d = 0; d < dimensionCount; d++) {
-            leagueHeader.add(new String[]{DIM_TITLES.get(LeagueColumns.dimKey(d)), "9"});
+        // 七维标题单一来源：LeagueExcelColumns.dimensionTitle（key 由 LeagueColumns.DIM_KEYS 驱动）
+        for (final String key : LeagueColumns.DIM_KEYS) {
+            leagueHeader.add(new String[]{LeagueExcelColumns.dimensionTitle(key), "9"});
             leagueHeader.add(new String[]{"满分", "6"});
             leagueHeader.add(new String[]{"百分比", "8"});
         }
@@ -81,7 +70,7 @@ final class LeagueSingleSheets {
             if (r != null) {
                 // 七维顺序单一来源：dimensionScores()（与 LeagueColumns.DIM_KEYS 严格一致）
                 final List<Double> dims = r.dimensionScores();
-                for (int d = 0; d < dimensionCount; d++) {
+                for (int d = 0; d < LeagueColumns.DIM_KEYS.size(); d++) {
                     styles.setCell(row.createCell(c++), ExcelStyles.r1(dims.get(d)), fill, "league_score");
                     styles.setCell(row.createCell(c++), (int) LeagueColumns.dimMax(d), fill, "league_max");
                     styles.setCell(row.createCell(c++), percent(dims.get(d), LeagueColumns.dimMax(d)), fill, "league_pct");
