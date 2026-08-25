@@ -9,7 +9,7 @@ import java.util.List;
  * {@link #failures()} 中以稳定错误码报告。<b>battleResults 与调用方持有的 parsed battles
  * 不再按下标对齐</b>（parsed battles 可含 Rating-ineligible 场次，数量可大于
  * battleResults）；Battle ↔ Rating 的关联用 {@link LeagueRatingResult#arenaId()} 经
- * {@link #resultFor(String)} 按 identity 查找，禁止按数组 index 绑定（plan §9）。</p>
+ * {@link #resultFor(String)} 按 identity 查找，禁止按数组 index 绑定。</p>
  */
 public record LeagueRatingBatch(
         List<LeagueRatingResult> battleResults,
