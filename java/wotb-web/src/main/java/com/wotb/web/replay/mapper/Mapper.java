@@ -66,32 +66,19 @@ public final class Mapper {
         return out;
     }
 
-    /**
-     * League 专属列宇宙中过滤的 Potential Damage 列 key（Potential Damage 对当前 League
-     * Rating 没有业务价值；只影响 League UI/export 的可选列集合，不影响 Replay Core 标准列）。
-     */
-    private static boolean isLeagueExcludedPotentialKey(final String key) {
-        return key.equals("potential_damage")
-                || key.equals("potential_damage_supplement")
-                || key.equals("potential_damage_detail")
-                || key.equals("potential_damage_avg")
-                || key.equals("potential_damage_supplement_avg");
-    }
-
     // ---- League Rating 列定义（key 单一来源 LeagueColumns；显示名前端三语 / 导出中文） ----
 
     /** League 模式单场玩家列：标准列（含 contribution/kast/impact，Performance Metrics 保留在 CW）
      * + Rating 维度 + 占点原始字段（contribution/kast/impact 是 Replay Performance Metrics，
      * 不是 League Rating 维度，必须保留在 CW 单场表，不得进入七维 Rating/Radar）。
-     * <b>Potential Damage 不是 League Rating / League Analysis 指标</b>：从 League column
-     * universe 过滤 potential_damage / potential_damage_supplement / potential_damage_detail
-     * （标准 Replay 仍保留，见 {@link #playerColumns}——普通回放有既有消费者，不无边界删除）。 */
+     * Potential Damage 已从 canonical schema（{@link Columns#PLAYER}）全局移除，
+     * 无需额外 League 过滤。 */
     public static List<ColumnDef> leaguePlayerColumns() {
         final List<ColumnDef> out = new ArrayList<>();
         out.add(new ColumnDef("nickname", false));
         out.add(new ColumnDef(LeagueColumns.RATING, true));
         for (final Columns.Column c : Columns.PLAYER) {
-            if (c.key().equals("nickname") || isLeagueExcludedPotentialKey(c.key())) {
+            if (c.key().equals("nickname")) {
                 continue;
             }
             out.add(new ColumnDef(c.key(), c.num()));
@@ -120,21 +107,10 @@ public final class Mapper {
 
     /** League 模式汇总列：标准汇总列完整保留（含跨场 contribution/kast/impact；
      * Performance Metrics 属于 Replay 数据，CW 汇总表必须可显示）。
-     * <b>Potential Damage 不是 League Rating / League Analysis 指标</b>：从 League column
-     * universe 过滤 potential_damage / potential_damage_avg / potential_damage_supplement_avg
-     * （标准 Replay aggregate 仍保留，见 {@link #aggregateColumns}）。 */
+     * Potential Damage 已从 canonical aggregate schema（{@link AggregateColumns}）全局移除，
+     * 无需额外 League 过滤。 */
     public static List<ColumnDef> leagueAggregateColumns() {
-        final List<ColumnDef> out = new ArrayList<>();
-        for (final AggregateColumns.CoreColumn c : AggregateColumns.CORE) {
-            if (isLeagueExcludedPotentialKey(c.key())) {
-                continue;
-            }
-            out.add(new ColumnDef(c.key(), c.numeric()));
-        }
-        for (final AggregateColumns.PerfColumn c : AggregateColumns.PERFORMANCE) {
-            out.add(new ColumnDef(c.key(), c.numeric()));
-        }
-        return out;
+        return aggregateColumns();
     }
 
     /** League 批次选手汇总列。 */
@@ -297,7 +273,6 @@ public final class Mapper {
             case "tank_type" -> VehicleCodes.classCode(player.tankType);
             case "tank_nation" -> VehicleCodes.nationCode(player.tankNation);
             case "survived_label" -> player.survived ? "SURVIVED" : "DESTROYED";
-            case "potential_damage_detail" -> player.potentialDamageDetailed ? "PARSED" : "UNPARSED";
             default -> column.get().apply(player);
         };
     }
@@ -307,7 +282,7 @@ public final class Mapper {
      * Replay Processing Job result 共用同一 DTO 构建）。
      *
      * <p><b>只读消费契约</b>：battles 必须已是完整 facts 管线产出
-     * （Replays.collect + processFull + PotentialDamage + populateBattle 各一次），
+     * （Replays.collect + processFull + populateBattle 各一次），
      * 本方法<b>不</b>再执行任何会 mutate 共享 Battle 的 enrichment——事实层 enrich 由
      * 数据集创建方保证（ReplayProcessingJobService.processJob / 同步 preview 的
      * ReplayService.previewWithinPermit）。display 派生（tankName/tankType 等）仍在本

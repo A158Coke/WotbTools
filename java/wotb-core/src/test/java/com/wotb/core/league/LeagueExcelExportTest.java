@@ -128,7 +128,7 @@ class LeagueExcelExportTest {
     }
 
     @Test
-    void singleLeagueWorkbookContainsCanonicalSchemaMinusPotentialDamage() throws Exception {
+    void singleLeagueWorkbookContainsFullCanonicalPlayerSchema() throws Exception {
         final Battle battle = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         final LeagueRatingResult result = LeagueRatingCalculator.calculate(battle);
         final ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -140,22 +140,15 @@ class LeagueExcelExportTest {
             for (int c = 0; c < header.getLastCellNum(); c++) {
                 headers.add(header.getCell(c).getStringCellValue());
             }
-            // canonical Columns.PLAYER 过滤 Potential Damage family（单一 schema 源，
-            // 列定义仍来自 Columns.Column；Potential Damage 不是 League Analysis 指标）
+            // canonical Columns.PLAYER 全部字段（单一 schema 源；Potential Damage 已从
+            // canonical schema 全局移除，因此天然不存在潜在伤害列）
             for (final Columns.Column col : Columns.PLAYER) {
-                final boolean potential = col.key().equals("potential_damage")
-                        || col.key().equals("potential_damage_supplement")
-                        || col.key().equals("potential_damage_detail");
-                if (potential) {
-                    assertTrue(!headers.contains(col.title()),
-                            "League 单场玩家数据不得含 Potential Damage 字段：" + col.title()
-                                    + "，实际表头：" + headers);
-                } else {
-                    assertTrue(headers.contains(col.title()),
-                            "League 单场玩家数据必须含 canonical 字段：" + col.title()
-                                    + "，实际表头：" + headers);
-                }
+                assertTrue(headers.contains(col.title()),
+                        "League 单场玩家数据必须含 canonical 字段：" + col.title() + "，实际表头：" + headers);
             }
+            assertTrue(headers.stream().noneMatch(h -> h.contains("潜在伤害") || h.contains("补增伤害")
+                            || h.contains("潜在明细")),
+                    "Potential Damage 已全局移除，任何表头都不得出现：" + headers);
             // League 专属扩展
             assertTrue(headers.contains("占点得分"), "必须含 占点得分");
             assertTrue(headers.contains("占领分"), "必须含 占领分");
@@ -192,11 +185,11 @@ class LeagueExcelExportTest {
             final Sheet replay = wb.getSheet("Replay 汇总");
             final String replayHeader = headerText(replay);
             for (final String col : List.of("场次", "获取点数总计", "获取点数/场", "贡献度%", "KAST%", "Impact%",
-                    "潜在伤害", "总伤害", "总射击次数", "总命中次数", "总击穿次数")) {
+                    "总伤害", "总射击次数", "总命中次数", "总击穿次数")) {
                 assertTrue(replayHeader.contains(col), "Replay 汇总必须含 " + col + "，实际：" + replayHeader);
             }
-            // 注：Replay 前缀 sheet = Replay Core 基础 facts（Standard Replay 兼容），
-            // 潜在伤害在此存在是 Replay Core compatibility，不是 League Rating 依赖它。
+            assertTrue(!replayHeader.contains("潜在伤害"),
+                    "Potential Damage 已全局移除，Replay 汇总也不得含潜在伤害：" + replayHeader);
             // 场次列（第 3 列）数据 = 2：全部解析场次样本（含 Rating-ineligible）
             assertEquals(2.0, replay.getRow(1).getCell(2).getNumericCellValue(), 1e-9,
                     "Replay aggregate 样本 = 全部解析场次（2），Rating-ineligible 不得从 aggregate 消失");
@@ -257,9 +250,6 @@ class LeagueExcelExportTest {
             case "kills_avg" -> "场均击杀";
             case "damage" -> "总伤害";
             case "damage_avg" -> "场均伤害";
-            case "potential_damage" -> "总潜在伤害";
-            case "potential_damage_avg" -> "场均潜在伤害";
-            case "potential_damage_supplement_avg" -> "场均补增伤害";
             case "assisted" -> "总协助伤害";
             case "assisted_avg" -> "场均协助伤害";
             case "received_avg" -> "场均损失血量";
@@ -339,6 +329,26 @@ class LeagueExcelExportTest {
     }
 
     @Test
+    void standardSingleWorkbookNeverExposesPotentialDamageColumns() throws Exception {
+        // Potential Damage 已全局移除：Standard 单场 XLSX 玩家数据表不得含 潜在伤害 /
+        // 补增伤害 / 潜在明细，基础 Replay facts 必须保留。
+        final Battle battle = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        final Workbook wb = writeSingle(battle);
+        final Row header = wb.getSheet("玩家数据").getRow(0);
+        final List<String> headers = new ArrayList<>();
+        for (int c = 0; c < header.getLastCellNum(); c++) {
+            headers.add(header.getCell(c).getStringCellValue());
+        }
+        assertTrue(headers.stream().noneMatch(h -> h.contains("潜在伤害") || h.contains("补增伤害")
+                        || h.contains("潜在明细")),
+                "Standard 单场不得含 Potential Damage 列：" + headers);
+        for (final String keep : List.of("伤害", "射击次数", "命中次数", "击穿", "命中率", "击穿率",
+                "贡献度", "KAST", "Impact")) {
+            assertTrue(headers.contains(keep), "Standard 单场必须保留 " + keep + "：" + headers);
+        }
+    }
+
+    @Test
     void aggregateDetailSheetContainsFullCanonicalPlayerSchema() throws Exception {
         final Battle b1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         b1.arenaId = "arena-1";
@@ -370,11 +380,14 @@ class LeagueExcelExportTest {
                 assertEquals(1, headers.stream().filter(once::equals).count(), once + " 不得在明细表重复，实际：" + headers);
             }
             // 此前容易丢失的字段必须存在（不依赖行数断言）
-            for (final String missing : List.of("等级", "坦克类型", "国家", "炮伤", "潜在伤害", "补增伤害",
-                    "潜在明细", "被命中", "被击穿", "击伤", "排", "军阶", "车辆ID", "账号ID",
+            for (final String missing : List.of("等级", "坦克类型", "国家", "炮伤",
+                    "被命中", "被击穿", "击伤", "排", "军阶", "车辆ID", "账号ID",
                     "贡献度", "KAST", "Impact")) {
                 assertTrue(headers.contains(missing), "此前缺失字段必须存在：" + missing + "，实际：" + headers);
             }
+            assertTrue(headers.stream().noneMatch(h -> h.contains("潜在伤害") || h.contains("补增伤害")
+                            || h.contains("潜在明细")),
+                    "Potential Damage 已全局移除，Standard 汇总明细也不得含：" + headers);
             // 文件名/竞技场ID 有值
             final String text = sheetTextAll(detail);
             assertTrue(text.contains("one.wotbreplay") && text.contains("two.wotbreplay"),

@@ -23,7 +23,6 @@ import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
-import com.wotb.core.stats.PotentialDamage;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import org.junit.jupiter.api.Test;
 
@@ -252,8 +251,8 @@ class ReplayDamageWindowIntegrationTest {
                 .filter(p -> p != null && p.team != recorder.team())
                 .findFirst().orElseThrow();
         // 构造双方 killVictims（事件流观测数据）：累计伤害 780 / 击穿 2、650 / 3
-        rec.killVictims.add(new PotentialDamage.KillVictim(enemy.accountId, 780, 2));
-        enemy.killVictims.add(new PotentialDamage.KillVictim(rec.accountId, 650, 3));
+        rec.killVictims.add(new com.wotb.core.model.KillVictim(enemy.accountId, 780, 2));
+        enemy.killVictims.add(new com.wotb.core.model.KillVictim(rec.accountId, 650, 3));
 
         final PlayerBattleFeatureSet features = new DefaultPlayerBattleFeatureExtractor()
                 .extract(result.reconstruction(), recorder, battle);

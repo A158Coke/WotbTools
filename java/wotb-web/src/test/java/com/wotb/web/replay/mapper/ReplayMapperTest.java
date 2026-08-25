@@ -25,7 +25,6 @@ class ReplayMapperTest {
         final PlayerResult survivor = player(1L, true);
         final PlayerResult destroyed = player(2L, false);
         survivor.tankId = 4481L;
-        survivor.potentialDamageDetailed = true;
         destroyed.tankId = 24321L;
         final Battle battle = new Battle();
         battle.players = List.of(survivor, destroyed);
@@ -43,10 +42,8 @@ class ReplayMapperTest {
                         row -> row.cells()));
         assertEquals("HEAVY_TANK", cellsByAccount.get(1L).get("tank_type"));
         assertEquals("EUROPE", cellsByAccount.get(1L).get("tank_nation"));
-        assertEquals("PARSED", cellsByAccount.get(1L).get("potential_damage_detail"));
         assertEquals("LIGHT_TANK", cellsByAccount.get(2L).get("tank_type"));
         assertEquals("USSR", cellsByAccount.get(2L).get("tank_nation"));
-        assertEquals("UNPARSED", cellsByAccount.get(2L).get("potential_damage_detail"));
     }
 
     @Test
@@ -158,33 +155,28 @@ class ReplayMapperTest {
     }
 
     @Test
-    void leagueColumnsExcludePotentialDamageButStandardReplayKeepsIt() {
-        // Potential Damage 不是 League Rating / League Analysis 指标：从 League column universe
-        // 过滤（potential_damage / supplement / detail / avg / supplement_avg）；
-        // 标准 Replay column universe 保留（普通回放有既有消费者，不无边界删除）。
+    void columnsNeverExposePotentialDamageInAnyScope() {
+        // Potential Damage 已从 canonical schema 全局移除：Standard 与 League 的
+        // 单场/汇总列 universe 都不得再出现 potential_damage 系列（schema absence regression）。
         final java.util.Set<String> leaguePlayerKeys = Mapper.leaguePlayerColumns().stream()
                 .map(com.wotb.web.replay.dto.ColumnDef::key)
                 .collect(java.util.stream.Collectors.toSet());
-        assertTrue(leaguePlayerKeys.stream().noneMatch(k -> k.startsWith("potential_damage")),
-                "League 单场列不得暴露 potential_damage 系列: " + leaguePlayerKeys);
-
         final java.util.Set<String> leagueAggKeys = Mapper.leagueAggregateColumns().stream()
                 .map(com.wotb.web.replay.dto.ColumnDef::key)
                 .collect(java.util.stream.Collectors.toSet());
-        assertTrue(leagueAggKeys.stream().noneMatch(k -> k.startsWith("potential_damage")),
-                "League 汇总列不得暴露 potential_damage 系列: " + leagueAggKeys);
-
         final java.util.Set<String> standardPlayerKeys = Mapper.playerColumns().stream()
                 .map(com.wotb.web.replay.dto.ColumnDef::key)
                 .collect(java.util.stream.Collectors.toSet());
-        assertTrue(standardPlayerKeys.contains("potential_damage"),
-                "标准 Replay 单场列必须保留 potential_damage（既有消费者）");
         final java.util.Set<String> standardAggKeys = Mapper.aggregateColumns().stream()
                 .map(com.wotb.web.replay.dto.ColumnDef::key)
                 .collect(java.util.stream.Collectors.toSet());
-        assertTrue(standardAggKeys.contains("potential_damage"),
-                "标准 Replay 汇总列必须保留 potential_damage");
-        assertTrue(standardAggKeys.contains("potential_damage_avg"));
+        for (final java.util.Set<String> keys : java.util.List.of(
+                leaguePlayerKeys, leagueAggKeys, standardPlayerKeys, standardAggKeys)) {
+            assertTrue(keys.stream().noneMatch(k -> k.startsWith("potential_damage")),
+                    "任何列 universe 不得暴露 potential_damage 系列: " + keys);
+        }
+        assertTrue(standardPlayerKeys.contains("damage_dealt"), "标准 Replay 基础事实必须保留");
+        assertTrue(standardAggKeys.contains("damage"), "标准 Replay 汇总基础事实必须保留");
     }
 
     @Test

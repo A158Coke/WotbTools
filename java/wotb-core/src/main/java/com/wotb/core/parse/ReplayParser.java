@@ -5,7 +5,6 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.stats.PotentialDamage;
 import org.springframework.util.StringUtils;
 
 import java.io.IOException;
@@ -246,7 +245,7 @@ public final class ReplayParser {
                     continue;
                 }
                 for (final EventStreamReader.KillVictimDamage victim : entry.getValue()) {
-                    killer.killVictims.add(new PotentialDamage.KillVictim(
+                    killer.killVictims.add(new com.wotb.core.model.KillVictim(
                             victim.victimAccountId(), victim.damage(), victim.penetrations()));
                 }
             }

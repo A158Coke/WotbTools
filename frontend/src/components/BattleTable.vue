@@ -7,7 +7,7 @@ import { stableSortRows } from '../utils/tableSort.js'
 import { useStickyColumns } from '../utils/stickyColumns.js'
 
 const { locale, t, te } = useI18n()
-const LOCALIZED_VALUE_KEYS = new Set(['tank_type', 'tank_nation', 'potential_damage_detail'])
+const LOCALIZED_VALUE_KEYS = new Set(['tank_type', 'tank_nation'])
 // 单场表现派生列：HP unknown 时为 null（显示 "--"，不冒充 0）；有值时统一百分比展示
 const PERCENT_KEYS = new Set(['contribution', 'kast', 'impact'])
 // 原始比例列：denominator == 0（无射击/无命中）→ null（unavailable，显示 "--"，禁止 0/0 伪装 0%）

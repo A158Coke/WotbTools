@@ -23,6 +23,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -306,8 +307,7 @@ class ReplayServiceLeagueTest {
 
     @Test
     void leagueEachExportExcludesPotentialDamageAndKeepsLeagueFacts() throws Exception {
-        // 纯 CW each：League 单场工作簿必须过滤 Potential Damage family
-        // （该指标不是 League Analysis 数据，也不得为它运行 enrichment）；
+        // 纯 CW each：Potential Damage 已全局移除——League 单场工作簿不得含潜在伤害列；
         // 但 League 扩展（总Rating）与单场 Performance Metrics（Contribution/KAST/Impact）
         // 及基础 Replay facts（伤害）必须保留。
         final Battle battle = LeagueTestReplays.sevenVsSeven(1);
@@ -332,6 +332,54 @@ class ReplayServiceLeagueTest {
                 assertTrue(headerText.toString().contains("KAST"), "League 单场必须含 KAST");
                 assertTrue(headerText.toString().contains("Impact"), "League 单场必须含 Impact");
                 assertTrue(headerText.toString().contains("伤害"), "League 单场必须保留基础 Replay facts");
+            }
+        }
+    }
+
+    @Test
+    void leagueEachExcludesPotentialDamageForRatedAndIneligibleWorkbooks() throws Exception {
+        // 纯 CW each（sync 入口）：rated → League 单场工作簿；Rating-ineligible →
+        // Standard 单场工作簿。Potential Damage 已全局移除——两个 workbook 都不得含
+        // 潜在伤害 列（此前 Standard fallback 需要 enrichment 的边界已随全局删除作废）。
+        final Battle rated = LeagueTestReplays.sevenVsSeven(1);
+        rated.arenaId = "111";
+        final Battle ineligible = LeagueTestReplays.sevenVsSeven(1);
+        ineligible.arenaId = "222";
+        ineligible.players.remove(0); // 13 人 → Rating-ineligible
+        final ReplayService service = perFileService(List.of(rated, ineligible));
+        final ExportResult result = service.export(new MockMultipartFile[]{
+                file("rated.wotbreplay", LeagueTestReplays.replayBytes(rated, 2)),
+                file("unrated.wotbreplay", LeagueTestReplays.replayBytes(ineligible, 2))}, "each");
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(result.data()))) {
+            final Map<String, Workbook> byName = new java.util.HashMap<>();
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                byName.put(entry.getName(), new XSSFWorkbook(new ByteArrayInputStream(zip.readAllBytes())));
+            }
+            assertEquals(2, byName.size());
+            assertTrue(byName.containsKey("rated.xlsx") && byName.containsKey("unrated.xlsx"),
+                    "必须按文件名定位两个 entry：" + byName.keySet());
+            try (Workbook wb = byName.get("rated.xlsx")) {
+                final StringBuilder headerText = new StringBuilder();
+                final Row header = wb.getSheet("玩家数据").getRow(0);
+                for (int c = 0; c < header.getLastCellNum(); c++) {
+                    headerText.append(header.getCell(c).getStringCellValue()).append("|");
+                }
+                assertTrue(!headerText.toString().contains("潜在伤害"),
+                        "rated League 工作簿不得含 潜在伤害：" + headerText);
+                assertTrue(headerText.toString().contains("总Rating"), "rated 必须是 League 工作簿");
+            }
+            try (Workbook wb = byName.get("unrated.xlsx")) {
+                final StringBuilder headerText = new StringBuilder();
+                final Row header = wb.getSheet("玩家数据").getRow(0);
+                for (int c = 0; c < header.getLastCellNum(); c++) {
+                    headerText.append(header.getCell(c).getStringCellValue()).append("|");
+                }
+                assertTrue(!headerText.toString().contains("潜在伤害"),
+                        "ineligible Standard fallback 不得含 潜在伤害：" + headerText);
+                assertTrue(!headerText.toString().contains("总Rating"),
+                        "ineligible 应为 Standard 工作簿（无 Rating 扩展）：" + headerText);
+                assertTrue(headerText.toString().contains("伤害"), "Standard fallback 必须保留基础 facts");
             }
         }
     }

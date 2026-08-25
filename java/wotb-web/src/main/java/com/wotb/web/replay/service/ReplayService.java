@@ -11,7 +11,6 @@ import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
-import com.wotb.core.stats.PotentialDamage;
 import com.wotb.web.replay.ReplayExportNames;
 import com.wotb.web.replay.dto.ColumnDef;
 import com.wotb.web.replay.dto.ExportResult;
@@ -103,7 +102,6 @@ public class ReplayService {
         // facts 层 enrich 一次（Mapper.toPreviewResponse 只读消费共享 Battle）；
         // League 模式同样回填单场 Performance Metrics（contribution/kast/impact 在 CW 保留；
         // 表现指标 ≠ Rating 维度；Preview/Export 同源）。
-        PotentialDamage.apply(c.battles(), tankopedia);
         for (final Battle battle : c.battles()) {
             PerformanceMetricsCalculator.populateBattle(battle);
         }
@@ -167,7 +165,6 @@ public class ReplayService {
         if (c.battles().isEmpty()) {
             return null;
         }
-        PotentialDamage.apply(c.battles(), tankopedia);   // 与 preview 相同的事实层 enrich
         // 单场 Performance Metrics 回填（League 单场工作簿含 contribution/kast/impact）
         for (final Battle battle : c.battles()) {
             PerformanceMetricsCalculator.populateBattle(battle);
@@ -223,8 +220,6 @@ public class ReplayService {
                 // 已在 collect 阶段跳过，不进 ZIP。
                 final LeagueReplays.LeagueCollectResult c = LeagueReplays.collect(
                         sources, this::processFull, null, null);
-                // League each：不执行 PotentialDamage enrichment（League 单场工作簿已过滤
-                // Potential Damage family——该指标对当前 League Analysis 无业务价值）；
                 // 仍回填单场 Performance Metrics（Contribution/KAST/Impact 是有效 League 数据）。
                 for (final Battle battle : c.battles()) {
                     PerformanceMetricsCalculator.populateBattle(battle);
@@ -250,7 +245,6 @@ public class ReplayService {
                     try {
                         // 与 preview 同一条 authoritative full processing 链（每份 replay 只 full process 一次）
                         final Battle battle = processFull(source);
-                        PotentialDamage.apply(List.of(battle), tankopedia);   // 与 preview 相同的事实层 enrich
                         PerformanceMetricsCalculator.populateBattle(battle);   // 单场指标进 Excel 列
                         final ByteArrayOutputStream xlsx = new ByteArrayOutputStream();
                         ExcelExporter.writeSingle(battle, tankopedia, xlsx);

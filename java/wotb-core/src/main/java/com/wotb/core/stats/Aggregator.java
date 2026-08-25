@@ -44,8 +44,6 @@ public final class Aggregator {
                 a.survivalSum += p.survivalTimeSec;
                 a.kills += p.kills;
                 a.damage += p.damageDealt;
-                a.potentialDamage += p.potentialDamage;
-                a.potentialDamageSupplement += p.potentialDamageSupplement;
                 a.assisted += p.damageAssisted;
                 a.received += p.damageReceived;
                 a.blocked += p.damageBlocked;
