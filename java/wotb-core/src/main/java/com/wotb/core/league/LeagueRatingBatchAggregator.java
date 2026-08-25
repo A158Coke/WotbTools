@@ -122,12 +122,14 @@ public final class LeagueRatingBatchAggregator {
         return (sorted.get(mid - 1) + sorted.get(mid)) / 2.0;
     }
 
-    /** 把扁平维度值列表（每场 7 个）按维度分组求中位数。 */
+    /** 把扁平维度值列表（每场 dimensionCount 个）按维度分组求中位数；维度数取
+     * canonical {@link LeagueColumns#DIM_KEYS}，禁止复制 magic number。 */
     private static List<Double> chunkMedians(final List<Double> dims) {
-        final List<Double> out = new ArrayList<>(7);
-        for (int d = 0; d < 7; d++) {
+        final int dimensionCount = LeagueColumns.DIM_KEYS.size();
+        final List<Double> out = new ArrayList<>(dimensionCount);
+        for (int d = 0; d < dimensionCount; d++) {
             final List<Double> perDim = new ArrayList<>();
-            for (int i = d; i < dims.size(); i += 7) {
+            for (int i = d; i < dims.size(); i += dimensionCount) {
                 perDim.add(dims.get(i));
             }
             out.add(median(perDim));

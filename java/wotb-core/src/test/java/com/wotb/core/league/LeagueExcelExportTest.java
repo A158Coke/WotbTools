@@ -208,6 +208,184 @@ class LeagueExcelExportTest {
         return sb.toString();
     }
 
+    // ---- canonical base battle info / raw / aggregate detail schema（XLSX complete-data）----
+
+    @Test
+    void standardAndLeagueSingleShareCanonicalBattleInfoAndLeagueHasRecorderVehicle() throws Exception {
+        final Battle battle = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        battle.recorder = "P1001";
+        battle.recorderVehicle = "Kranvagn";
+        final LeagueRatingResult result = LeagueRatingCalculator.calculate(battle);
+
+        final List<String> standardKeys = battleInfoKeys(writeSingle(battle));
+        final List<String> leagueKeys = battleInfoKeys(writeSingleLeague(battle, result));
+
+        // canonical base 完全一致（League 不得复制 base list）
+        final List<String> base = List.of("游戏版本", "地图", "开始时间", "战斗时长", "获胜队伍",
+                "录像者", "录像者车辆", "玩家数", "竞技场ID");
+        assertEquals(base, standardKeys, "Standard 单场战斗信息必须恰好是 canonical base");
+        for (final String key : base) {
+            assertTrue(leagueKeys.contains(key), "League 单场必须含同一 canonical base key：" + key);
+        }
+        // League 只追加扩展；Rated CW XLSX 不得比 Standard 少基础信息（录像者车辆此前缺失）
+        assertEquals(List.of("游戏版本", "地图", "开始时间", "战斗时长", "获胜队伍",
+                        "录像者", "录像者车辆", "玩家数", "竞技场ID",
+                        "Team 1 战队Rating", "Team 2 战队Rating", "全场MVP",
+                        "Team 1 队内最佳", "Team 2 队内最佳"),
+                leagueKeys, "League 单场战斗信息 = canonical base + League 扩展");
+    }
+
+    @Test
+    void rawSheetSchemaIdenticalForStandardAndLeague() throws Exception {
+        final Battle battle = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        final java.util.Map<Integer, List<Object>> raw = new java.util.HashMap<>();
+        raw.put(1, List.of("alpha"));
+        raw.put(2, List.of(7L, 8L));
+        raw.put(3, List.of(new byte[]{0x01, 0x7F}));
+        battle.players.getFirst().raw = raw;
+        final LeagueRatingResult result = LeagueRatingCalculator.calculate(battle);
+
+        final List<String> standardHeaders = rawHeaders(writeSingle(battle));
+        final List<String> leagueHeaders = rawHeaders(writeSingleLeague(battle, result));
+        assertEquals(standardHeaders, leagueHeaders,
+                "Standard / League 原始字段表 schema 必须一致（共用 SingleBattleSheets.writeRaw）");
+        assertTrue(standardHeaders.contains("#1") && standardHeaders.contains("#2")
+                        && standardHeaders.contains("#3"),
+                "原始字段表必须含 protobuf 字段号列，实际：" + standardHeaders);
+    }
+
+    @Test
+    void aggregateDetailSheetContainsFullCanonicalPlayerSchema() throws Exception {
+        final Battle b1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        b1.arenaId = "arena-1";
+        final Battle b2 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        b2.arenaId = "arena-2";
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ExcelExporter.writeAggregate(List.of(b1, b2), List.of("one.wotbreplay", "two.wotbreplay"),
+                List.of(), Tankopedia.load(), out);
+
+        try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()))) {
+            final Sheet detail = wb.getSheet("明细");
+            assertNotNull(detail, "汇总工作簿必须含明细表");
+            final Row header = detail.getRow(0);
+            final List<String> headers = new ArrayList<>();
+            for (int c = 0; c < header.getLastCellNum(); c++) {
+                headers.add(header.getCell(c).getStringCellValue());
+            }
+            // battle context 打头（batch 可追踪）
+            for (final String head : List.of("文件名", "竞技场ID", "日期", "地图", "胜负")) {
+                assertTrue(headers.contains(head), "Replay 明细必须含 " + head + "，实际：" + headers);
+            }
+            // 完整 canonical Columns.PLAYER（单一 schema 源，不是 STAT 子集）
+            for (final Columns.Column col : Columns.PLAYER) {
+                assertTrue(headers.contains(col.title()),
+                        "Replay 明细必须含 canonical 字段：" + col.title() + "，实际：" + headers);
+            }
+            // 玩家/战队/车辆 只出现一次（contextual head 不得重复 canonical 列）
+            for (final String once : List.of("玩家", "战队", "车辆")) {
+                assertEquals(1, headers.stream().filter(once::equals).count(), once + " 不得在明细表重复，实际：" + headers);
+            }
+            // 此前容易丢失的字段必须存在（不依赖行数断言）
+            for (final String missing : List.of("等级", "坦克类型", "国家", "炮伤", "潜在伤害", "补增伤害",
+                    "潜在明细", "被命中", "被击穿", "击伤", "排", "军阶", "车辆ID", "账号ID",
+                    "贡献度", "KAST", "Impact")) {
+                assertTrue(headers.contains(missing), "此前缺失字段必须存在：" + missing + "，实际：" + headers);
+            }
+            // 文件名/竞技场ID 有值
+            final String text = sheetTextAll(detail);
+            assertTrue(text.contains("one.wotbreplay") && text.contains("two.wotbreplay"),
+                    "明细必须含文件名列值（batch 可追踪）");
+            assertTrue(text.contains("arena-1") && text.contains("arena-2"), "明细必须含竞技场ID列值");
+        }
+    }
+
+    @Test
+    void leagueSummariesLabelRatedSampleAsScoredBattles() throws Exception {
+        final Battle battle = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        final LeagueRatingResult result = LeagueRatingCalculator.calculate(battle);
+        final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(
+                List.of(battle), List.of(result), List.of());
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ExcelExporter.writeAggregateLeague(List.of(battle), List.of("one.wotbreplay"),
+                List.of(), batch, Tankopedia.load(), out);
+
+        try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()))) {
+            // rated-only sample：League 专属 summary 不得叫「场次」（与 Replay 汇总解析场次语义冲突）
+            assertEquals("评分场次", wb.getSheet("选手汇总").getRow(0).getCell(2).getStringCellValue(),
+                    "选手汇总场次列必须准确表达 rated sample");
+            assertEquals("评分场次", wb.getSheet("战队汇总").getRow(0).getCell(1).getStringCellValue(),
+                    "战队汇总场次列必须准确表达 rated sample");
+        }
+    }
+
+    @Test
+    void leagueSummaryDimensionMedianCountMatchesCanonicalDimensionKeys() throws Exception {
+        final Battle battle = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        final LeagueRatingResult result = LeagueRatingCalculator.calculate(battle);
+        final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(
+                List.of(battle), List.of(result), List.of());
+        // chunkMedians 输出维度数必须 == canonical DIM_KEYS（禁止 magic 7）
+        assertEquals(LeagueColumns.DIM_KEYS.size(),
+                batch.playerSummaries().getFirst().dimensionMedians().size(),
+                "选手维度中位数数量必须 == LeagueColumns.DIM_KEYS.size()");
+        assertEquals(LeagueColumns.DIM_KEYS.size(),
+                batch.teamSummaries().getFirst().dimensionMedians().size(),
+                "战队维度中位数数量必须 == LeagueColumns.DIM_KEYS.size()");
+
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ExcelExporter.writeAggregateLeague(List.of(battle), List.of("one.wotbreplay"),
+                List.of(), batch, Tankopedia.load(), out);
+        try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()))) {
+            final Row header = wb.getSheet("选手汇总").getRow(0);
+            int medianCount = 0;
+            for (int c = 0; c < header.getLastCellNum(); c++) {
+                final String title = header.getCell(c).getStringCellValue();
+                // 维度中位数列（排除 总Rating中位数 / 战队Rating中位数 这两个汇总分中位数）
+                if (title.endsWith("中位数") && !title.equals("总Rating中位数")
+                        && !title.equals("战队Rating中位数")) {
+                    medianCount++;
+                }
+            }
+            assertEquals(LeagueColumns.DIM_KEYS.size(), medianCount,
+                    "Excel 维度中位数列数必须 == LeagueColumns.DIM_KEYS.size()（禁止 magic 7）");
+        }
+    }
+
+    private static Workbook writeSingle(final Battle battle) throws Exception {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ExcelExporter.writeSingle(battle, Tankopedia.load(), out);
+        return new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()));
+    }
+
+    private static Workbook writeSingleLeague(final Battle battle, final LeagueRatingResult result) throws Exception {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ExcelExporter.writeSingleLeague(battle, result, Tankopedia.load(), out);
+        return new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()));
+    }
+
+    private static List<String> battleInfoKeys(final Workbook wb) {
+        final List<String> keys = new ArrayList<>();
+        final Sheet info = wb.getSheet("战斗信息");
+        for (int r = 2; r <= info.getLastRowNum(); r++) {
+            final Row row = info.getRow(r);
+            if (row == null || row.getCell(0) == null) {
+                continue;
+            }
+            keys.add(row.getCell(0).getStringCellValue());
+        }
+        return keys;
+    }
+
+    private static List<String> rawHeaders(final Workbook wb) {
+        final Sheet raw = wb.getSheet("原始字段");
+        final Row header = raw.getRow(0);
+        final List<String> out = new ArrayList<>();
+        for (int c = 0; c < header.getLastCellNum(); c++) {
+            out.add(header.getCell(c).getStringCellValue());
+        }
+        return out;
+    }
+
     @Test
     void aggregateLeagueWorkbookAppliesTeamKeyOverride() throws Exception {
         // 两场 team1 均 clan=AAA → 批次 teamKey = clan:AAA（批次 identity override）

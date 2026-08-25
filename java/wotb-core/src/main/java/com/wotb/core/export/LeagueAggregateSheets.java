@@ -55,7 +55,8 @@ final class LeagueAggregateSheets {
         final List<String[]> header = new ArrayList<>();
         header.add(new String[]{"玩家", "20"});
         header.add(new String[]{"战队", "10"});
-        header.add(new String[]{"场次", "6"});
+        // rated-only sample：League 专属 summary 的场次是评分样本，与 Replay 汇总的解析场次区分
+        header.add(new String[]{"评分场次", "8"});
         header.add(new String[]{"总Rating中位数", "12"});
         for (final String dim : dimTitles()) {
             header.add(new String[]{dim + "中位数", "10"});
@@ -90,7 +91,8 @@ final class LeagueAggregateSheets {
         final Sheet ws = styles.workbook().createSheet("战队汇总");
         final List<String[]> header = new ArrayList<>();
         header.add(new String[]{"战队", "20"});
-        header.add(new String[]{"场次", "6"});
+        // rated-only sample（同选手汇总：评分场次 ≠ Replay 解析场次）
+        header.add(new String[]{"评分场次", "8"});
         header.add(new String[]{"战队Rating中位数", "12"});
         for (final String dim : dimTitles()) {
             header.add(new String[]{dim + "中位数", "10"});

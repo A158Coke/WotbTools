@@ -1,5 +1,6 @@
 package com.wotb.web.replay.mapper;
 
+import com.wotb.core.AggregateColumns;
 import com.wotb.core.Columns;
 import com.wotb.core.league.LeagueColumns;
 import com.wotb.core.league.LeagueRatingBatch;
@@ -51,56 +52,16 @@ public final class Mapper {
         return out;
     }
 
-    /** 汇总表列定义 (key + 是否数值 + 取值函数; 中文名由前端/导出层各自映射)。 */
-    record AggCol(String key, boolean num, Function<Agg, Object> get) {
-    }
-
-    static final List<AggCol> AGG_COLS = List.of(
-            new AggCol("nickname", false, a -> a.nickname),
-            new AggCol("clan", false, a -> a.clan),
-            new AggCol("battles", true, a -> a.battles),
-            new AggCol("wins", true, a -> a.wins),
-            new AggCol("win_rate", true, a -> r1(a.winRate())),
-            new AggCol("survival_rate", true, a -> r1(a.survivalRate())),
-            new AggCol("survival_avg", true, a -> a.avg(a.survivalSum)),
-            new AggCol("kills", true, a -> a.kills),
-            new AggCol("kills_avg", true, a -> r2(a.avg(a.kills))),
-            new AggCol("damage", true, a -> a.damage),
-            new AggCol("damage_avg", true, a -> r1(a.avg(a.damage))),
-            new AggCol("potential_damage", true, a -> a.potentialDamage),
-            new AggCol("potential_damage_avg", true, a -> r1(a.avg(a.potentialDamage))),
-            new AggCol("potential_damage_supplement_avg", true, a -> r1(a.avg(a.potentialDamageSupplement))),
-            new AggCol("assisted", true, a -> a.assisted),
-            new AggCol("assisted_avg", true, a -> r1(a.avg(a.assisted))),
-            new AggCol("received_avg", true, a -> r1(a.avg(a.received))),
-            new AggCol("blocked_avg", true, a -> r1(a.avg(a.blocked))),
-            new AggCol("hit_rate", true, a -> r1(a.hitRate())),
-            new AggCol("pen_rate", true, a -> r1(a.penRate())),
-            new AggCol("shots", true, a -> a.shots),
-            new AggCol("hits", true, a -> a.hits),
-            new AggCol("pens", true, a -> a.pens),
-            new AggCol("enemies_damaged_avg", true, a -> r2(a.avg(a.enemiesDamaged))),
-            new AggCol("tanks", false, Agg::tanksStr),
-            new AggCol("account_id", true, a -> a.accountId),
-            new AggCol("earned_total", true, a -> a.earned),
-            new AggCol("earned_avg", true, a -> r1(a.avg(a.earned)))
-    );
-
-    /** 汇总表追加的跨场表现派生列（与 AGG_COLS 并列；值由 PerformanceMetricsCalculator 行按 accountId 合并）。 */
-    static final List<ColumnDef> AGG_PERF_COLS = List.of(
-            new ColumnDef("contribution", true),
-            new ColumnDef("kast", true),
-            new ColumnDef("impact", true),
-            new ColumnDef("multi_damage_rate", true),
-            new ColumnDef("traded_deaths", true)
-    );
-
+    /** 汇总表列定义：消费 canonical {@link AggregateColumns}（key/numeric/getter 单一事实源，
+     * 与 Excel AggregateSheets 共用；本层不维护平行 schema）。 */
     public static List<ColumnDef> aggregateColumns() {
         final List<ColumnDef> out = new ArrayList<>();
-        for (final AggCol c : AGG_COLS) {
-            out.add(new ColumnDef(c.key(), c.num()));
+        for (final AggregateColumns.CoreColumn c : AggregateColumns.CORE) {
+            out.add(new ColumnDef(c.key(), c.numeric()));
         }
-        out.addAll(AGG_PERF_COLS);
+        for (final AggregateColumns.PerfColumn c : AggregateColumns.PERFORMANCE) {
+            out.add(new ColumnDef(c.key(), c.numeric()));
+        }
         return out;
     }
 
@@ -286,23 +247,14 @@ public final class Mapper {
         final List<AggRow> out = new ArrayList<>();
         for (final Agg a : list) {
             final Map<String, Object> cells = new LinkedHashMap<>();
-            for (final AggCol c : AGG_COLS) {
+            for (final AggregateColumns.CoreColumn c : AggregateColumns.CORE) {
                 cells.put(c.key(), c.get().apply(a));
             }
             final PerformanceMetricsCalculator.Row perf = perfById.get(a.accountId);
-            if (perf != null) {
-                // 跨场表现派生列：HP 全部 UNKNOWN 时 contribution/kast/多伤率 unavailable（null，UI 显示 "--"）
-                cells.put("contribution", perf.hpEligible ? r1(perf.contribution) : null);
-                cells.put("kast", perf.hpEligible ? r1(perf.kast) : null);
-                cells.put("impact", r1(perf.impactValue));
-                cells.put("multi_damage_rate", perf.hpEligible ? r1(perf.multiDamageRate) : null);
-                cells.put("traded_deaths", perf.tradedDeaths);
-            } else {
-                cells.put("contribution", null);
-                cells.put("kast", null);
-                cells.put("impact", null);
-                cells.put("multi_damage_rate", null);
-                cells.put("traded_deaths", 0);
+            // 跨场表现派生列：canonical getter 单一来源（HP 全部 UNKNOWN 时
+            // contribution/kast/多伤率 unavailable → null，UI 显示 "--"；impact/tradedDeaths 恒有值）
+            for (final AggregateColumns.PerfColumn c : AggregateColumns.PERFORMANCE) {
+                cells.put(c.key(), perf == null ? null : c.get().apply(perf));
             }
             out.add(new AggRow(cells, a.team));
         }
@@ -311,10 +263,6 @@ public final class Mapper {
 
     private static double r1(final double v) {
         return Math.round(v * 10) / 10.0;
-    }
-
-    private static double r2(final double v) {
-        return Math.round(v * 100) / 100.0;
     }
 
     private static Object playerValue(final Columns.Column column, final PlayerResult player) {
