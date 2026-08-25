@@ -34,7 +34,7 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
   team、tankId、winnerTeam、damageDealt、damageAssisted、damageReceived、damageBlocked、
   kills、survived、survivalTimeSec、nShots、nHitsDealt、nPenetrationsDealt、
   victoryPointsEarned、victoryPointsSeized、accountId、nickname、clan、arenaId、arenaBonusType。
-- **Rating 计算不用** Tankopedia HP / 期望值、Potential Damage、XP/Credits、AI、历史上传、
+- **Rating 计算不用** Tankopedia HP / 期望值、XP/Credits、AI、历史上传、
   外部 API 或全服统计（contribution/kast/impact 是 Replay Performance Metrics，**保留在
   CW 单场/汇总表与选手 Drawer**，只作表现展示，不进七维 Rating；contribution/kast 可经用户
   选择进入自定义 Radar，Impact 无稳定 normalization contract 暂不入 Radar）。
@@ -339,8 +339,8 @@ Team Rating 计算；Radar aggregation 只发生在多场 player summary visuali
   对残缺 stride fail fast）；Radar 轴缺失显示 `--`，不冒充 0/0%。
 - **归一化**：League 维度满分来自后端 `resp.league.columns`（key/max），
   frontend 不硬编码 domain max；Performance 按 /100；禁止 current-batch-max 归一化。
-- **Impact 不入 Radar**（无稳定 normalization contract）；hit_rate / pen_rate /
-  Potential Damage 也不入 Radar candidate。
+- **Impact 不入 Radar**（无稳定 normalization contract）；hit_rate / pen_rate
+  也不入 Radar candidate。
 
 ## Potential Damage（潜在伤害）
 

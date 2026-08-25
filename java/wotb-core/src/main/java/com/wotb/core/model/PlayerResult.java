@@ -31,7 +31,7 @@ public class PlayerResult {
     public int xp;
     public int credits;
 
-    // 击杀前伤害明细（killer attribution 证据链；AI 复盘消费，与潜在伤害指标无关）
+    // 击杀前伤害明细（killer attribution 证据链；AI 复盘消费）
     public final List<KillVictim> killVictims = new ArrayList<>();
 
     // 名册信息

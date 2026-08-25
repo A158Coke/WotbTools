@@ -70,9 +70,7 @@ public final class Mapper {
 
     /** League 模式单场玩家列：标准列（含 contribution/kast/impact，Performance Metrics 保留在 CW）
      * + Rating 维度 + 占点原始字段（contribution/kast/impact 是 Replay Performance Metrics，
-     * 不是 League Rating 维度，必须保留在 CW 单场表，不得进入七维 Rating/Radar）。
-     * Potential Damage 已从 canonical schema（{@link Columns#PLAYER}）全局移除，
-     * 无需额外 League 过滤。 */
+     * 不是 League Rating 维度，必须保留在 CW 单场表，不得进入七维 Rating/Radar）。 */
     public static List<ColumnDef> leaguePlayerColumns() {
         final List<ColumnDef> out = new ArrayList<>();
         out.add(new ColumnDef("nickname", false));
@@ -106,9 +104,7 @@ public final class Mapper {
     }
 
     /** League 模式汇总列：标准汇总列完整保留（含跨场 contribution/kast/impact；
-     * Performance Metrics 属于 Replay 数据，CW 汇总表必须可显示）。
-     * Potential Damage 已从 canonical aggregate schema（{@link AggregateColumns}）全局移除，
-     * 无需额外 League 过滤。 */
+     * Performance Metrics 属于 Replay 数据，CW 汇总表必须可显示）。 */
     public static List<ColumnDef> leagueAggregateColumns() {
         return aggregateColumns();
     }

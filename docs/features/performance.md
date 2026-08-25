@@ -169,5 +169,5 @@ killer 级 trade 语义应在事实层扩展，不在 metrics 层重推。
   `ReplayMapperTest` 覆盖 cells 含 contribution/kast/impact 与汇总合并、HP unknown → null；
   `WebApiTest` 覆盖 `POST /api/preview` 的单场 cells 含三列且 impact 为数值（不含 `rating`，
   无 `performance` 字段）。
-- `docs/current-plan.md` 要求单一事实源回归：Playback 伤害 == Performance Metrics 输入
-  伤害（同一 `PlayerResult.damageDealt`）。
+- 单一事实源回归必须保证：Playback 伤害 == Performance Metrics 输入伤害
+  （同一 `PlayerResult.damageDealt`）。

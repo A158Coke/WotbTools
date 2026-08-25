@@ -27,7 +27,7 @@ import java.util.Map;
  *
  * <p>原 Rating V2 的综合评分（{@code rating} / {@code finalRating} / 各权重）已移除——
  * 本类不再输出任何总分，仅保留有业务价值的派生指标：贡献度 / KAST / Impact /
- * 多伤率 / 存活率 / 互换击杀 / 均伤 / 协助 / 潜在伤害。</p>
+ * 多伤率 / 存活率 / 互换击杀 / 均伤 / 协助。</p>
  */
 public final class PerformanceMetricsCalculator {
 
