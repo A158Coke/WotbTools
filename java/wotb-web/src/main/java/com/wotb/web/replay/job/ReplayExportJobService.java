@@ -769,9 +769,9 @@ public class ReplayExportJobService {
                                    final Path artifact, final Set<String> usedNames) throws Exception {
         int processed = 0;
         int exported = 0;
-        // 与 preview / standard export 同一 authoritative enrichment：
-        // PotentialDamage → 单场 Performance Metrics（League 单场工作簿含潜在伤害列）
-        PotentialDamage.apply(c.battles(), tankopedia);
+        // League each：不执行 PotentialDamage enrichment（League 单场工作簿已过滤
+        // Potential Damage family——该指标对当前 League Analysis 无业务价值）；
+        // 仍回填单场 Performance Metrics（Contribution/KAST/Impact 是有效 League 数据）。
         for (final Battle battle : c.battles()) {
             PerformanceMetricsCalculator.populateBattle(battle);
         }

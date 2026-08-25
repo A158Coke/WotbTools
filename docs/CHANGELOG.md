@@ -33,8 +33,14 @@
   内部仍为 Wilson 95% 置信下界合成（30% 命中 / 70% 击穿），未因 UI 显示真实百分比而改裸比例。
 - **League 专属列宇宙移除 Potential Damage**：`Mapper.leaguePlayerColumns()` /
   `leagueAggregateColumns()` 过滤 potential_damage / supplement / detail / avg 系列
-  （Potential Damage 对当前 League Rating 无业务价值）；标准 Replay 列宇宙与
-  League XLSX 中 Replay Core 基础 sheets 原样保留（既有消费者），不做无边界删除。
+  （Potential Damage 对当前 League Rating 无业务价值）；**League 单场 XLSX
+  （`LeagueSingleSheets`）改为 canonical `Columns.PLAYER` 过滤 potential 系列
+  （title/width/numeric/getter 仍来自 `Columns.Column`，不复制 schema），
+  League each 导出（`ReplayExportJobService.processEachLeague` / `ReplayService.exportEach`
+  allLeague 分支）不再执行 `PotentialDamage.apply`（`populateBattle` 保留，
+  Contribution/KAST/Impact 仍是有效 League 数据）。标准 Replay 列宇宙与
+  League aggregate XLSX 中 Replay Core 基础 sheets（Replay 汇总/明细/战斗列表）
+  原样保留（既有 Standard 消费者），不做无边界删除。
 - **Player Radar 数据语义收口（Summary mean / Battle 单场分离）**：
   - `PlayerLeagueSummary` 新增 `dimensionMeans`（七维算术平均，rated-only 分母；
     UNKNOWN death-time 场是合法 rated sample，Survival/Trade 真实 0 参与平均；
