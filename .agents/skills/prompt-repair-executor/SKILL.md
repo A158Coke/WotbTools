@@ -170,6 +170,11 @@ Fix → Targeted Test → Fix Remaining Failure → Targeted Test Green
 frontend full tests / backend full tests / build / lint / static checks
 ```
 
+**省时优化（已存在 PR branch 时）**：业务代码 compile/build 通过后即可 commit + push
+到当前 PR branch，让 GitHub CI 与本地 full verify 并行，不必等本地 full suite 全绿才推。
+后续 test 发现新问题 → 追加修复 commit 再 push（禁止 force push）。最终报告仍以
+**最新 HEAD 的 CI + 本地测试**为准（旧 HEAD CI 不算 merge proof，见"CI / merge readiness"）。
+
 ### PHASE 6 — FINAL CLEANUP
 
 - **review-with-docs / fallow 只在此阶段运行**（REPAIR → TEST → FINAL REVIEW），
@@ -226,6 +231,10 @@ frontend full tests / backend full tests / build / lint / static checks
   保护用户未提交修改：禁止 `git reset --hard` / `git checkout .` / `git clean -fd`。
   是否自动 commit/push 遵循现有 DSH workflow 约定（repo 默认：review-with-docs 零 blocker
   后可提交开 PR；见 `.agents/AGENTS.md`）。
+  **省时优化**：处于已存在 PR branch 的 repair 流程中，业务代码 compile/build 通过即可
+  commit + push（让 CI 与本地测试并行），无需等本地 full verify 全绿；push 后照常完成
+  targeted/full verify，发现新问题追加 commit 再 push——禁止 force push / 改写已公开历史，
+  推送前按仓库约定确认 remote。
 - **Build-to-Learn 兼容**：若当前流程有 build-to-learn，Repair 模式下保持简短，只解释
   本次涉及的关键机制 / 旧实现为何错 / 新实现为何对；不为教学扩大 Discovery。
 
