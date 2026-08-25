@@ -68,9 +68,27 @@ class HundredBattleMapperTest {
         assertThat(detail.officialTankDamageDealt()).isEqualTo(390_001L);
         assertThat(detail.officialAverageDamage()).isEqualTo(3900);
 
-        assertThat(mapper.toAdminListItem(submission).verificationSource()).isEqualTo("WARGAMING_API");
+        final var adminListItem = mapper.toAdminListItem(submission);
+        assertThat(adminListItem.verificationSource()).isEqualTo("WARGAMING_API");
+        assertThat(adminListItem.certifiedAverageDamage()).isEqualTo(3900);
+        assertThat(adminListItem.certifiedBattleCount()).isEqualTo(100L);
         assertThat(mapper.toSummary(submission).verificationSource()).isEqualTo("WARGAMING_API");
         assertThat(mapper.toSummary(submission).officialTankBattleCount()).isEqualTo(100L);
         assertThat(mapper.toSummary(submission).officialAverageDamage()).isEqualTo(3900);
+    }
+
+    @Test
+    void manualAdminListUsesApprovedValuesInsteadOfClaimedValues() {
+        final HundredBattleSubmission submission = new HundredBattleSubmission();
+        submission.setVerificationSource("MANUAL");
+        submission.setClaimedAverageDamage(3_800);
+        submission.setClaimedBattleCount(100);
+        submission.setApprovedAverageDamage(3_814);
+        submission.setApprovedBattleCount(103);
+
+        final var adminListItem = mapper.toAdminListItem(submission);
+
+        assertThat(adminListItem.certifiedAverageDamage()).isEqualTo(3_814);
+        assertThat(adminListItem.certifiedBattleCount()).isEqualTo(103L);
     }
 }
