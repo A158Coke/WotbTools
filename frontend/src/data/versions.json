@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.29",
+    "date": "2026-08-25",
+    "tag": "chg",
+    "zh": "互换击杀判定窗口扩大为 ±10 秒（边界包含），League 存活/互换评分与 KAST、互换击杀同步生效。击穿率口径修正：按「击穿数 ÷ 命中数」计算（此前误用「击穿数 ÷ 射击数」），命中率按「命中数 ÷ 射击数」；无射击或无命中时显示「—」而不是假的 0%（无射击=命中率与击穿率都不可用；有射击全未命中=命中率 0%、击穿率不可用；有命中全未击穿=击穿率 0%），跨场汇总基于总命中/总击穿而非各场简单平均。这些是展示用真实百分比，评分内部射击效率仍用置信度算法。同一场次多份回放的死亡时间按全组一致性确定性收口：死亡时间未知（UNKNOWN）不再是通配符，两份互相矛盾的已知死亡时间（差超过 1 秒）即使夹杂未知副本也会判定为冲突；非法死亡时间（负数/非有限）与任何值冲突，绝不当作未知处理。",
+    "en": "The trade-death window is now ±10 seconds (inclusive): League Survival/Trade scoring plus KAST and traded-death metrics all use the same window. Penetration rate is now defined as penetrations ÷ hits (previously incorrectly penetrations ÷ shots), and hit rate as hits ÷ shots; when there is no denominator (no shots / no hits) the UI shows a dash instead of a fake 0% (no shots = both rates unavailable; shots but no hits = hit rate 0% and pen rate unavailable; hits but no pens = pen rate 0%). Aggregate rates use total pens ÷ total hits, not a simple average of per-battle rates. These are raw display percentages — the internal shooting score still uses the confidence (Wilson) formula. When the same arena is uploaded several times, death times are canonically reconciled per group: UNKNOWN is no longer a wildcard — two mutually contradictory known death times (more than 1s apart) conflict even when an UNKNOWN copy is present, and invalid death times (negative / non-finite) conflict with anything and are never treated as unknown.",
+    "ru": "Окно размена теперь ±10 секунд (границы включены): оценка «Выживание / Обмен» в League, а также KAST и показатель разменов используют одно окно. Процент пробитий теперь определяется как пробития ÷ попадания (раньше ошибочно пробития ÷ выстрелы), процент попаданий — как попадания ÷ выстрелы; при нулевом знаменателе (нет выстрелов / нет попаданий) вместо фальшивого 0% показывается «—» (нет выстрелов — оба процента недоступны; выстрелы без попаданий — процент попаданий 0%, процент пробитий недоступен; попадания без пробитий — процент пробитий 0%). Сводный процент считается по сумме пробитий ÷ сумме попаданий, а не как простое среднее. Это реальные проценты для отображения — внутренняя стрелковая оценка по-прежнему использует доверительный (Wilson) расчёт. Если одна арена загружена несколько раз, время гибели приводится к каноническому по всей группе: UNKNOWN больше не является подстановочным значением — два взаимно противоречивых известных времени гибели (разница более 1 с) дают конфликт, даже если среди копий есть UNKNOWN, а недопустимые времена (отрицательные / не конечные) конфликтуют с любым значением и никогда не считаются неизвестными."
+  },
+  {
     "v": "2.12.28",
     "date": "2026-08-25",
     "tag": "chg",

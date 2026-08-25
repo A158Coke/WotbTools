@@ -66,17 +66,32 @@ public final class Mapper {
         return out;
     }
 
+    /**
+     * League 专属列宇宙中过滤的 Potential Damage 列 key（Potential Damage 对当前 League
+     * Rating 没有业务价值；只影响 League UI/export 的可选列集合，不影响 Replay Core 标准列）。
+     */
+    private static boolean isLeagueExcludedPotentialKey(final String key) {
+        return key.equals("potential_damage")
+                || key.equals("potential_damage_supplement")
+                || key.equals("potential_damage_detail")
+                || key.equals("potential_damage_avg")
+                || key.equals("potential_damage_supplement_avg");
+    }
+
     // ---- League Rating 列定义（key 单一来源 LeagueColumns；显示名前端三语 / 导出中文） ----
 
     /** League 模式单场玩家列：标准列（含 contribution/kast/impact，Performance Metrics 保留在 CW）
      * + Rating 维度 + 占点原始字段（contribution/kast/impact 是 Replay Performance Metrics，
-     * 不是 League Rating 维度，必须保留在 CW 单场表，不得进入七维 Rating/Radar）。 */
+     * 不是 League Rating 维度，必须保留在 CW 单场表，不得进入七维 Rating/Radar）。
+     * <b>Potential Damage 不是 League Rating / League Analysis 指标</b>：从 League column
+     * universe 过滤 potential_damage / potential_damage_supplement / potential_damage_detail
+     * （标准 Replay 仍保留，见 {@link #playerColumns}——普通回放有既有消费者，不无边界删除）。 */
     public static List<ColumnDef> leaguePlayerColumns() {
         final List<ColumnDef> out = new ArrayList<>();
         out.add(new ColumnDef("nickname", false));
         out.add(new ColumnDef(LeagueColumns.RATING, true));
         for (final Columns.Column c : Columns.PLAYER) {
-            if (c.key().equals("nickname")) {
+            if (c.key().equals("nickname") || isLeagueExcludedPotentialKey(c.key())) {
                 continue;
             }
             out.add(new ColumnDef(c.key(), c.num()));
@@ -104,9 +119,22 @@ public final class Mapper {
     }
 
     /** League 模式汇总列：标准汇总列完整保留（含跨场 contribution/kast/impact；
-     * Performance Metrics 属于 Replay 数据，CW 汇总表必须可显示）。 */
+     * Performance Metrics 属于 Replay 数据，CW 汇总表必须可显示）。
+     * <b>Potential Damage 不是 League Rating / League Analysis 指标</b>：从 League column
+     * universe 过滤 potential_damage / potential_damage_avg / potential_damage_supplement_avg
+     * （标准 Replay aggregate 仍保留，见 {@link #aggregateColumns}）。 */
     public static List<ColumnDef> leagueAggregateColumns() {
-        return aggregateColumns();
+        final List<ColumnDef> out = new ArrayList<>();
+        for (final AggregateColumns.CoreColumn c : AggregateColumns.CORE) {
+            if (isLeagueExcludedPotentialKey(c.key())) {
+                continue;
+            }
+            out.add(new ColumnDef(c.key(), c.numeric()));
+        }
+        for (final AggregateColumns.PerfColumn c : AggregateColumns.PERFORMANCE) {
+            out.add(new ColumnDef(c.key(), c.numeric()));
+        }
+        return out;
     }
 
     /** League 批次选手汇总列。 */
@@ -353,6 +381,7 @@ public final class Mapper {
                     s.accountId(), s.nickname(), s.clan(), s.battles(),
                     r1(s.ratingMedian()),
                     s.dimensionMedians().stream().map(Mapper::r1).toList(),
+                    s.dimensionMeans().stream().map(Mapper::r1).toList(),
                     s.mvpCount(), s.wins(), s.damageTotal(), s.assistTotal(), s.killsTotal(),
                     // 跨场 Performance Metrics（与 resp.aggregate 同一全部已解析场次样本）；
                     // HP 全部 UNKNOWN → contribution/kast null（UI "--"），impact 恒有值

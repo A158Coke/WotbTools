@@ -8,6 +8,45 @@
 - **名人堂三环（Mark 3）人工审核排行榜**：新增独立 `mark3` domain、Flyway `V21` submission/evidence 表和 `/api/hof/mark3`、`/api/users/mark3`、`/api/admin/hof/mark3` API。仅限 Tier X，玩家提交三环所需场数、过程场均、过程胜率、1–2 张截图与恰好 5 个回放；无 Wargaming 自动认证链路。创建路径从五个 replay byte[] 读取、解析、hash 锁、落盘到事务全程复用全局 `ReplayCapacityLimiter`，容量满返回 503 `REPLAY_BUSY`。排行榜按已审核三环场数升序，场数相同使用 competition ranking；同用户同车的 CURRENT 唯一且不被后续申请替代，不使用 `SUPERSEDED`。REJECTED/CANCELLED/DELETED 可重提；管理员通过、拒绝或删除时均不能改写成绩，终态会清理截图和回放证据。
 
 ### Changed
+- **League Rating：canonical 收口升级为 group-level all-pairs（上传顺序无关，UNKNOWN 不是 wildcard）**：
+  - `LeagueRatingConflictDetector` 新增 `validateAndReconcile(List<Battle>)`：对同 arenaId 全部副本做
+    **全对一致性**检查（不再以 first copy 作 anchor）——`[UNKNOWN, KNOWN100, KNOWN128]` 因
+    KNOWN100 vs KNOWN128 超 1s 容差而必须 conflict，与上传顺序无关；全部一致才做确定性 canonical
+    收口（UNKNOWN+KNOWN → KNOWN、KNOWN+KNOWN → 最小 KNOWN、全部 UNKNOWN → UNKNOWN(0)）。
+  - **INVALID 死亡时间 fail-closed**：`survivalTimeSec < 0` / NaN / Infinity 与**任何**值（含
+    UNKNOWN 0）都 conflict；canonicalizer 删除「无 KNOWN 就归零」分支——INVALID 绝不洗成 UNKNOWN。
+  - **hard-conflict 字段扩展**：`settlementAccountsCoveredByRoster` /
+    `settlementRosterTeamConsistent`（决定 ROSTER_INCOMPLETE）、`durationS`（影响死亡时间
+    beyond-duration 判定）、`nHitsReceived` / `nPenetrationsReceived` / `nEnemiesDamaged`
+    （validator 非法值检查）、`clan`（影响 team autoName / teamKey / batch summary identity）
+    不一致即 conflict；代码注释明确 hard-conflict vs evidence-reconciliation 分类。
+  - 回归测试：三副本 6 排列全部 conflict / 全部 not-conflict + canonical 一致；每个上传顺序测试
+    使用全新 Battle 实例（canonicalization 原地 mutate，禁止复用已收口对象）。
+- **互换击杀窗口 ±5s → ±10s（用户批准）**：`TradeFacts.TRADE_WINDOW_SEC = 10.0`，
+  边界包含（T±10.0 算 trade、T±10.01 不算）；League Survival/Trade、Performance KAST、
+  tradedDeaths 共享同一事实源自动同步。duplicate 死亡时间证据容差仍为 1s，两参数明确独立。
+- **原始射击比例语义修正（UI 真实百分比）**：`hit_rate = hits/shots`、
+  `pen_rate = penetrations/hits`（分母是命中次数，不是射击次数；单场 `Columns.STAT` 与跨场
+  `Agg`/`AggregateColumns` 单一事实源同步）。denominator == 0 → null（API null / Excel 空单元格 /
+  UI "--"，禁止 0/0 伪装 0%）；numerator == 0 且 denominator > 0 → 合法 0%。跨场基于总量
+  sum(pens)/sum(hits)，不是各场平均。**UI raw rate ≠ Rating shooting**：League Rating 射击维度
+  内部仍为 Wilson 95% 置信下界合成（30% 命中 / 70% 击穿），未因 UI 显示真实百分比而改裸比例。
+- **League 专属列宇宙移除 Potential Damage**：`Mapper.leaguePlayerColumns()` /
+  `leagueAggregateColumns()` 过滤 potential_damage / supplement / detail / avg 系列
+  （Potential Damage 对当前 League Rating 无业务价值）；标准 Replay 列宇宙与
+  League XLSX 中 Replay Core 基础 sheets 原样保留（既有消费者），不做无边界删除。
+- **Player Radar 数据语义收口（Summary mean / Battle 单场分离）**：
+  - `PlayerLeagueSummary` 新增 `dimensionMeans`（七维算术平均，rated-only 分母；
+    UNKNOWN death-time 场是合法 rated sample，Survival/Trade 真实 0 参与平均；
+    Rating-ineligible 场不进入分母）；`dimensionMedians` 保留给 Table/Excel
+    「典型比赛得分」契约，两者语义严格分离。
+  - Summary Radar 七维正式 = `dimensionMeans`（当前批次平均能力画像）；
+    Battle Radar 七维正式 = 本场 `dimensionScores`（当前单场 `league_*_score`），
+    `ReplayPage` 不再用 `dimensionMedians` 命名承载单场数据。
+  - `LeagueRatingBatchAggregator` 新增 `chunkMeans`（独立测试锁定七维交错 stride，
+    残缺样本 fail fast——missing 不得冒充真实 0）。
+  - 回归测试：158布丁 型稀疏 Assist（[0,0,0,0,100,100] → median 0 / mean 33.33）
+    锁定 Radar 显示 mean；Summary/Battle scope 各自断言 raw/normalized。
 - **League Rating：死亡时间 UNKNOWN 不再整场拒绝评分**：
   - `LeagueRatingValidator` 删除 battle-level `MISSING_DEATH_TIME` gate：阵亡玩家
     `survivalTimeSec == 0` 定义为合法 UNKNOWN（不产生 failure，整场照常评分）；

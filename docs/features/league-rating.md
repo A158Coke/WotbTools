@@ -40,7 +40,7 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
   选择进入自定义 Radar，Impact 无稳定 normalization contract 暂不入 Radar）。
 - 全部结果（评分、战队名称覆盖、MVP）只存在于当前 HTTP 请求与前端页面内存中；
   刷新 / 重新上传 / 服务重启后不保留。不写数据库、localStorage、服务端文件。
-- 复用 `TradeFacts`（±5 秒互换窗口，时间窗口启发式，非精确 killer attribution）。
+- 复用 `TradeFacts`（±10 秒互换窗口，时间窗口启发式，非精确 killer attribution）。
 
 ## 严格完整性门槛（7v7）
 
@@ -53,7 +53,7 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 
 **死亡时间 UNKNOWN ≠ 数据非法**：阵亡玩家 `survivalTimeSec == 0` 表示精确死亡时刻无法从
 回放可靠证明（`DeathTimeReconciler` 的 fail-closed 结果），这是**合法状态**——整场仍允许评分；
-该玩家仅在依赖死亡时刻的 Survival/Trade 维度按 0 分保守计算（`TradeFacts` 无法建立 ±5s
+该玩家仅在依赖死亡时刻的 Survival/Trade 维度按 0 分保守计算（`TradeFacts` 无法建立 ±10s
 死亡窗口即 fail-closed 返回 0，绝不猜测），其它六维按真实 Replay facts 正常评分，
 总分保持 0–1000 不重新归一化。`survivalTimeSec < 0` / NaN / Infinity /
 明显超过战斗时长（`> duration + 1s`）仍为非法 stat facts（`LEAGUE_INVALID_STAT_FACTS`），
@@ -78,15 +78,30 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
   其余进 duplicates；关键事实不一致（阵容/winnerTeam/玩家结算/生存状态等）→ 该场全部副本
   拒绝评分（`CONFLICTING_REPLAYS_FOR_ARENA`）。不自动选「字段更多」的副本；
   不建立持久化记录，重新上传同一 arenaId 会重新计算。
-- **死亡时间 UNKNOWN(0) 不是冲突**：UNKNOWN 是「当前 replay 无法可靠证明精确死亡时刻」
-  （evidence absence），不是「已证明死亡时间为 0 秒」。同一 arenaId 多份副本中
-  UNKNOWN+KNOWN / UNKNOWN+UNKNOWN 视为一致；只有两个已知（>0）死亡时间超过 1s 容差、
-  或生死状态（survived）不同、或出现负数/非有限死亡时间，才是冲突。
-- **确定性 canonical 死亡时间收口**：一致副本只保留一份（第一份 source identity），
+- **死亡时间三层语义（先判 INVALID，再判 UNKNOWN/KNOWN）**：
+  - **INVALID**（`survivalTimeSec < 0` / NaN / Infinity）：非法 stat facts，与**任何**其它值
+    （含 UNKNOWN 0）都是冲突——UNKNOWN 不是 wildcard，不能把 INVALID 或两个互相矛盾的 KNOWN
+    洗成合法；整场拒绝评分（`CONFLICTING_REPLAYS_FOR_ARENA`）。
+  - **UNKNOWN**（`== 0`）：当前 replay 无法可靠证明精确死亡时刻（evidence absence），
+    不是「已证明死亡时间为 0 秒」；与任意合法 KNOWN / 其它 UNKNOWN 兼容。
+  - **KNOWN**（`> 0`）：两个 KNOWN 差 ≤ 1s 容差一致，超过容差冲突；生死状态（survived）
+    不同也是冲突。
+- **Group-level all-pairs 判定（上传顺序无关）**：对同 arenaId 全部副本做**全对**一致性检查
+  （`LeagueRatingConflictDetector.validateAndReconcile`），不再以 first copy 作 anchor——
+  `[UNKNOWN, KNOWN100, KNOWN128]` 因 KNOWN100 vs KNOWN128 超 1s 容差必须 conflict，
+  UNKNOWN 不能隔开两个互相矛盾的 KNOWN；上传顺序不改变是否评分。
+- **确定性 canonical 死亡时间收口**：全部一致时只保留一份（第一份 source identity），
   其余进 duplicates；死亡时间按与上传顺序无关的规则收口——UNKNOWN+KNOWN → 采用 KNOWN；
   KNOWN+KNOWN → 采用全部 KNOWN 的最小值；全部 UNKNOWN → 保持 UNKNOWN(0)。
+  canonicalizer **只处理合法值**（UNKNOWN=0 / KNOWN=finite>0），INVALID 在一致性阶段已
+  fail-closed 拒绝，绝不修改、替换、清洗非法值（禁止 INVALID→UNKNOWN）。
   最终进入 Validator / Calculator / 批次汇总 / `ratingQuality` 的是这份 canonical battle，
   上传顺序不改变 Rating 结果（`ratingQuality` 只统计 canonical battle 中的 UNKNOWN 玩家实例）。
+- **hard-conflict 字段**（任一不一致 → 冲突）：settlementAccountsCoveredByRoster /
+  settlementRosterTeamConsistent（决定 ROSTER_INCOMPLETE）、durationS（影响死亡时间
+  beyond-duration 判定）、nHitsReceived / nPenetrationsReceived / nEnemiesDamaged
+  （validator 非法值检查参与）、clan（影响 team autoName / teamKey / batch summary identity）；
+  **仅死亡时间 UNKNOWN 允许 evidence reconciliation**，不存在「字段更多 replay 优先」。
 
 ## 七维度公式（合计 1000）
 
@@ -110,7 +125,7 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
   唯一最后=0、全场全零=0；用未取整值计算排序。
 - **换血效率**：O = dmg + 0.6×assist + 0.35×blocked；参与度 = min(1, O/teamAvgEff)；
   效率 = O/(O+received) × 参与度（零安全；少量输出+零承伤不能满分；承伤不直接奖励/扣分）。
-- **存活/互换**：胜方存活 100；阵亡且 ±5s 内有互换 75；败方存活且 preliminary 进入本队前四 50；
+- **存活/互换**：胜方存活 100；阵亡且 ±10s 内有互换 75；败方存活且 preliminary 进入本队前四 50；
   其他 0。preliminary = **六个非存活维度之和**（伤害/助攻/击杀/换血/阻挡/射击，不含存活分与
   胜方倍率）；base = preliminary + survival；第四名同分依次按
   preliminary → damageDealt → damageAssisted → kills → accountId。
@@ -278,3 +293,51 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
    是纯 Java 单点实现；preview 与 Excel 都由 `LeagueReplays.collect` 产出同一
    `LeagueRatingBatch`（Excel 从 ProcessedDataset 复用，不二次解析/不二次计算）；
    PNG 的数值直接来自 preview DTO 的同一 cells。任何公式改动只改 core 一处。
+## 原始射击比例（raw shooting rates）
+
+正式契约（UI 展示层真实百分比，与 Rating 内部 Wilson confidence 是两套独立语义）：
+
+```
+hit_rate  = hits / shots        （命中率）
+pen_rate  = penetrations / hits （击穿率——分母是命中次数，不是射击次数）
+```
+
+- denominator == 0（无射击 / 无命中）→ **null（unavailable）**：API null、Excel 空单元格、UI 显示 "--"，禁止 0/0 伪装成 0%。
+- numerator == 0 且 denominator > 0 → **合法 0%**（有射击全未命中 / 有命中全未击穿）。
+- 跨场（aggregate）基于**总量**：`sum(pens) / sum(hits)`、`sum(hits) / sum(shots)`，
+  不是各场比例的简单平均。
+- **UI raw rate ≠ Rating shooting score**：League Rating 射击维度内部仍使用
+  Wilson 95% 置信下界合成（命中 30% / 击穿 70%，见 LeagueRatingCalculator），
+  不因 UI 显示真实百分比而改成裸比例。
+
+## Player Radar 数据契约（Summary mean / Battle 单场）
+
+Radar 是 presentation / player-profile visualization，不参与 finalRating / MVP /
+Team Rating 计算；Radar aggregation 只发生在多场 player summary visualization。
+
+| Context   | 指标        | 数据来源                                |
+| --------- | ----------- | --------------------------------------- |
+| Summary   | Final Rating | `ratingMedian`（跨场中位数，不改 mean）   |
+| Summary   | League 七维  | `dimensionMeans`（rated-battle 算术平均） |
+| Battle    | Final Rating | 当前单场 `league_rating`                 |
+| Battle    | League 七维  | 当前单场 `league_*_score`（`dimensionScores`） |
+| Summary   | Contribution/KAST | 当前批次 Performance aggregate（全部已解析场次样本） |
+| Battle    | Contribution/KAST | 当前单场 Performance metric               |
+
+规则：
+
+- **Summary 七维 = arithmetic mean of rated battle scores**（分母 = 评分场次，
+  Rating-ineligible 场不进入；UNKNOWN death-time 场是合法 rated sample，
+  Survival/Trade 的真实 0 必须进入 mean，不能过滤；真实 0 参与平均，
+  禁止只平均非零场次）。「典型比赛得分」（Table/Excel）仍用
+  `dimensionMedians`——两个 UI 回答不同问题，禁止把 mean 改名成 median 或反之。
+- **Battle Radar 永远显示本场数据**；`ReplayPage` / `PlayerDetailDrawer` 按 scope
+  取数（summary → `dimensionMeans`，battle → `dimensionScores`），
+  禁止 summary 数据污染 battle radar 或 battle 数据污染 summary radar。
+- **missing / invalid ≠ 真实 0**：`dimensionScores` 非 7 维、null、NaN、Infinity 是
+  invariant violation（`LeagueRatingBatchAggregator.chunkMeans/chunkMedians`
+  对残缺 stride fail fast）；Radar 轴缺失显示 `--`，不冒充 0/0%。
+- **归一化**：League 维度满分来自后端 `resp.league.columns`（key/max），
+  frontend 不硬编码 domain max；Performance 按 /100；禁止 current-batch-max 归一化。
+- **Impact 不入 Radar**（无稳定 normalization contract）；hit_rate / pen_rate /
+  Potential Damage 也不入 Radar candidate。

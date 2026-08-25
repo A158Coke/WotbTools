@@ -139,11 +139,11 @@ contribution = player(roundContribution) / team(roundContribution) * 100
   或 `>= average_hp && kills >= 2`，或 `kills >= 3` 任一成立；`average_hp <= 0`（HP 未知）
   时不判定（fail-closed）。
 - 存活率：`survived 场次 / 总场次 * 100`。
-- 互换击杀：`TradeFacts` 死亡时刻窗口启发式——玩家阵亡且死亡时刻 ±5 秒内存在敌方阵亡。
+- 互换击杀：`TradeFacts` 死亡时刻窗口启发式——玩家阵亡且死亡时刻 ±10 秒内存在敌方阵亡。
 
 ## Trade 事实（TradeFacts）
 
-`com.wotb.core.replay.facts.TradeFacts.tradedDeaths(player, players)`：死亡时刻 ±5s 窗口
+`com.wotb.core.replay.facts.TradeFacts.tradedDeaths(player, players)`：死亡时刻 ±10s 窗口
 内的敌方死亡数；存活或死亡时刻未知 → 0（fail-closed，不猜测）。消费
 `DeathTimeReconciler` 校准后的权威 `survivalTimeSec`。注意这是**死亡时刻窗口启发式**，
 不是 killer attribution；回放 reconstruction 的 killer 证据并非所有对局可靠，后续如需

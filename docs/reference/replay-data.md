@@ -478,8 +478,8 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `n_shots`                     | 整数  | `PlayerResult.nShots`                    | 次数    | #4                                                                              |
 | `n_hits_dealt`                | 整数  | `PlayerResult.nHitsDealt`                | 次数    | #5                                                                              |
 | `n_penetrations_dealt`        | 整数  | `PlayerResult.nPenetrationsDealt`        | 次数    | #7                                                                              |
-| `hit_rate`                    | 浮点数 | `nHitsDealt / nShots * 100`              | %     | 推导                                                                              |
-| `pen_rate`                    | 浮点数 | `nPenetrationsDealt / nShots * 100`      | %     | 推导                                                                              |
+| `hit_rate`                    | 浮点数/空 | `nHitsDealt / nShots * 100`              | %     | 推导（`nShots == 0` → null，前端 `--`，禁止 0/0 伪装 0%）                              |
+| `pen_rate`                    | 浮点数/空 | `nPenetrationsDealt / nHitsDealt * 100`  | %     | 推导（分母是命中次数不是射击次数；`nHitsDealt == 0` → null）                             |
 | `n_hits_received`             | 整数  | `PlayerResult.nHitsReceived`             | 次数    | #12                                                                             |
 | `n_penetrations_received`     | 整数  | `PlayerResult.nPenetrationsReceived`     | 次数    | #15                                                                             |
 | `n_enemies_damaged`           | 整数  | `PlayerResult.nEnemiesDamaged`           | 人数    | #17                                                                             |
@@ -504,8 +504,8 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `assisted_avg`        | 浮点数 | `assisted/battles`       | HP/场 |
 | `received_avg`        | 浮点数 | `received/battles`       | HP/场 |
 | `blocked_avg`         | 浮点数 | `blocked/battles`        | HP/场 |
-| `hit_rate`            | 浮点数 | `hits/shots * 100`       | %    |
-| `pen_rate`            | 浮点数 | `pens/shots * 100`       | %    |
+| `hit_rate`            | 浮点数/空 | `sum(hits)/sum(shots) * 100` | %  | 跨场基于总量；`sum(shots)==0` → null |
+| `pen_rate`            | 浮点数/空 | `sum(pens)/sum(hits) * 100` | %   | 跨场基于总量；`sum(hits)==0` → null  |
 | `shots`               | 整数  | Sum                      | 次数   |
 | `hits`                | 整数  | Sum                      | 次数   |
 | `pens`                | 整数  | Sum                      | 次数   |

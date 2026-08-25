@@ -33,12 +33,14 @@ public final class Agg {
         return battles == 0 ? 0 : total / battles;
     }
 
-    public double hitRate() {
-        return shots == 0 ? 0 : 100.0 * hits / shots;
+    /** 命中率 = hits/shots（0-100）；shots == 0 → null（unavailable，禁止 0/0 伪装 0%）。 */
+    public Double hitRate() {
+        return shots == 0 ? null : 100.0 * hits / shots;
     }
 
-    public double penRate() {
-        return shots == 0 ? 0 : 100.0 * pens / shots;
+    /** 击穿率 = pens/hits（0-100，分母是命中次数不是射击次数）；hits == 0 → null。 */
+    public Double penRate() {
+        return hits == 0 ? null : 100.0 * pens / hits;
     }
 
     public String tanksStr() {

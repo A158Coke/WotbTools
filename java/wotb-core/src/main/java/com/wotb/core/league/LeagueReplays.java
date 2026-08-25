@@ -29,9 +29,11 @@ import java.util.function.Consumer;
  * 只计一份、其余进 duplicates；不一致 → 该场全部副本拒绝评分（{@code CONFLICTING_REPLAYS_FOR_ARENA}）。
  * 不自动选择「字段更多」的副本；不建立持久化记录。
  * <b>死亡时间 UNKNOWN(0) 不是冲突</b>：UNKNOWN+KNOWN / UNKNOWN+UNKNOWN 副本视为一致，
- * 经 {@link LeagueRatingConflictDetector#reconcileDeathTimes} 做确定性 canonical 收口
- * （KNOWN 证据优先、KNOWN+KNOWN 取最小 KNOWN、全部 UNKNOWN 保持 UNKNOWN），
- * 最终 Rating 与上传顺序无关。</p>
+ * 经 {@link LeagueRatingConflictDetector#validateAndReconcile} 做<b>group-level</b>
+ * all-pairs 判定 + 确定性 canonical 收口（KNOWN 证据优先、KNOWN+KNOWN 取最小 KNOWN、
+ * 全部 UNKNOWN 保持 UNKNOWN），最终 Rating 与上传顺序无关。UNKNOWN 不是 wildcard：
+ * 不能隔开两个互相矛盾的 KNOWN（[UNKNOWN, KNOWN100, KNOWN128] 必须 conflict）；
+ * INVALID（负数 / NaN / Infinity）与任何值 conflict，绝不洗成 UNKNOWN。</p>
  */
 public final class LeagueReplays {
 
@@ -117,7 +119,12 @@ public final class LeagueReplays {
 
         for (final Map.Entry<String, List<Replays.ParsedEntry>> group : byArena.entrySet()) {
             final List<Replays.ParsedEntry> copies = group.getValue();
-            final boolean conflicted = copies.size() > 1 && !consistent(copies);
+            // group-level all-pairs 一致性 + 确定性 canonical 收口（与上传顺序无关）：
+            // UNKNOWN 不是 wildcard——[UNKNOWN, KNOWN100, KNOWN128] 因 KNOWN100 vs KNOWN128
+            // 超容差必须 conflict；INVALID（负数/NaN/Inf）与任何值 conflict，绝不洗成 UNKNOWN。
+            final boolean conflicted = copies.size() > 1
+                    && !LeagueRatingConflictDetector.validateAndReconcile(
+                            copies.stream().map(Replays.ParsedEntry::battle).toList());
             if (conflicted) {
                 conflictedArenas.add(group.getKey());
                 for (final Replays.ParsedEntry copy : copies) {
@@ -127,16 +134,11 @@ public final class LeagueReplays {
                 continue;
             }
             // 一致：只保留第一份（source identity），其余进 duplicates；
-            // 死亡时间做确定性 canonical 收口（UNKNOWN+KNOWN→KNOWN / KNOWN+KNOWN→最小
-            // KNOWN / 全部 UNKNOWN→UNKNOWN(0)，与上传顺序无关——进入
+            // canonical 收口已在 validateAndReconcile 内完成（进入
             // Validator/Calculator/Aggregator/ratingQuality 的 Battle 必须 deterministic）
             final Replays.ParsedEntry kept = copies.getFirst();
             for (int i = 1; i < copies.size(); i++) {
                 duplicates.add(new String[]{copies.get(i).source().name(), group.getKey()});
-            }
-            if (copies.size() > 1) {
-                LeagueRatingConflictDetector.reconcileDeathTimes(kept.battle(),
-                        copies.stream().map(Replays.ParsedEntry::battle).toList());
             }
             battles.add(kept.battle());
             battleSourceNames.add(kept.source().name());
@@ -192,17 +194,6 @@ public final class LeagueReplays {
         return new LeagueCollectResult(LeagueRatingMode.LEAGUE_RATING,
                 battles, battleSourceNames, duplicates,
                 failuresFrom(entries), leagueFailures, batch);
-    }
-
-    /** 多份同 arenaId 副本是否全部关键事实一致。 */
-    private static boolean consistent(final List<Replays.ParsedEntry> copies) {
-        final Battle first = copies.getFirst().battle();
-        for (int i = 1; i < copies.size(); i++) {
-            if (!LeagueRatingConflictDetector.consistent(first, copies.get(i).battle())) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private static List<String[]> failuresFrom(final List<Replays.ParsedEntry> entries) {

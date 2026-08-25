@@ -112,7 +112,10 @@ const drawerPlayer = computed(() => {
       clan: row.cells.clan || '',
       rating: row.cells.league_rating,
       ratingMedian: row.cells.league_rating,
-      dimensionMedians: CW_DIM_KEYS.map(k => row.cells[k]),
+      // Summary Radar 七维 = league playerSummary 的 dimensionMeans（rated-battle 算术平均；
+      // 与 Table 的 dimensionMedians 严格分离）。aggregate-only 玩家（row.league null）→
+      // undefined → Radar 轴 unavailable（"--"），不冒充 0。
+      dimensionMeans: row.league?.dimensionMeans ?? null,
       mvpCount: row.cells.mvp_count,
       battles: row.cells.battles,
       wins: row.cells.wins,
@@ -128,8 +131,8 @@ const drawerPlayer = computed(() => {
     nickname: row.cells.nickname,
     clan: row.cells.clan || '',
     rating: row.cells.league_rating,
-    ratingMedian: row.cells.league_rating,
-    dimensionMedians: CW_DIM_KEYS.map(k => row.cells[k]),
+    // Battle Radar 七维 = 本场 league_*_score（禁止命名/复用跨场 dimensionMedians/Means）
+    dimensionScores: CW_DIM_KEYS.map(k => row.cells[k]),
     cells: row.cells,
   }
 })

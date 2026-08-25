@@ -208,10 +208,10 @@ class LeagueRatingCalculatorTest {
 
     @Test
     void deadWithTradeGetsSeventyFive() {
-        // 让 1001 阵亡，且其死亡 ±5s 内有敌方阵亡 → TRADE
+        // 让 1001 阵亡，且其死亡 ±10s 内有敌方阵亡 → TRADE
         final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
         specs.get(0).dead(100.0);
-        specs.get(7).dead(101.0);   // 敌方死亡在 ±5s 窗口内
+        specs.get(7).dead(101.0);   // 敌方死亡在 ±10s 窗口内
         final LeagueRatingResult r = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, specs));
         final PlayerLeagueRating p = r.byAccount(1001);
         assertEquals(75, p.survivalTradeScore(), 1e-9);
@@ -245,7 +245,7 @@ class LeagueRatingCalculatorTest {
     void deadNoTradeNoSurvivalScore() {
         final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
         specs.get(0).dead(100.0);
-        // 无敌方在 ±5s 内死亡
+        // 无敌方在 ±10s 内死亡
         final LeagueRatingResult r = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, specs));
         assertEquals(0, r.byAccount(1001).survivalTradeScore(), 1e-9);
     }
