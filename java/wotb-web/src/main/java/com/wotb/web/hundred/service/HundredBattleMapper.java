@@ -19,6 +19,8 @@ import java.util.Map;
 @Service
 public class HundredBattleMapper implements Mapper<HundredBattleSubmission, HundredSubmissionSummaryDto> {
 
+    private static final String WARGAMING_VERIFICATION_SOURCE = "WARGAMING_API";
+
     @Override
     public HundredSubmissionSummaryDto toDto(final HundredBattleSubmission s) {
         return toSummary(s);
@@ -43,17 +45,30 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
                 s.getApprovedAt());
     }
 
-    /** 管理后台列表行（不含 proof 截图）。 */
+    /** 管理后台列表行只展示认证后的数值；申报值仅在详情接口保留。 */
     public HundredAdminListItemDto toAdminListItem(final HundredBattleSubmission s) {
         return new HundredAdminListItemDto(
                 s.getId(), s.getStatus(), s.getVehicleId(), s.getVehicleName(),
                 s.getGameAccountIdSnapshot(), s.getNicknameSnapshot(),
-                s.getClaimedAverageDamage(), s.getClaimedBattleCount(),
-                s.getApprovedAverageDamage(), s.getApprovedBattleCount(),
+                certifiedAverageDamage(s), certifiedBattleCount(s),
                 s.isReplayParseOk(), s.isReplayGameIdMatch(),
                 s.isReplayVehicleMatch(), s.isReplayDistinctBattles(),
                 s.getSubmittedAt(), s.getApprovedAt(), s.getRejectReason(), s.getDeleteReason(),
                 s.getVerificationSource());
+    }
+
+    private static Integer certifiedAverageDamage(final HundredBattleSubmission submission) {
+        return WARGAMING_VERIFICATION_SOURCE.equals(submission.getVerificationSource())
+                ? submission.getOfficialAverageDamage()
+                : submission.getApprovedAverageDamage();
+    }
+
+    private static Long certifiedBattleCount(final HundredBattleSubmission submission) {
+        if (WARGAMING_VERIFICATION_SOURCE.equals(submission.getVerificationSource())) {
+            return submission.getOfficialTankBattleCount();
+        }
+        return submission.getApprovedBattleCount() == null
+                ? null : submission.getApprovedBattleCount().longValue();
     }
 
     /** 管理后台回放证据 metadata（admin-only；不含文件内容）。 */
