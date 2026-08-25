@@ -8,7 +8,8 @@ import BoostPage from './BoostPage.vue'
 const api = vi.hoisted(() => ({
   listBoosters: vi.fn(),
   updateBooster: vi.fn(),
-  searchUsers: vi.fn()
+  searchUsers: vi.fn(),
+  createBoosterApplication: vi.fn()
 }))
 
 vi.mock('../composables/useAuth.js', () => ({
@@ -30,6 +31,7 @@ vi.mock('../utils/api-boost.js', async () => {
     getUserProfile: () => Promise.resolve({ wotbServer: 'CN' }),
     getMyBoosterProfile: () => Promise.reject(new Error('not-a-booster')),
     boostListMyBoosterApplications: () => Promise.resolve([]),
+    boostCreateBoosterApplication: api.createBoosterApplication,
     adminBoostBoosterList: api.listBoosters,
     adminBoostBoosterUpdate: api.updateBooster,
     adminSearchUsers: api.searchUsers
@@ -70,18 +72,48 @@ function mountPage() {
   })
 }
 
-describe('BoostPage booster editor', () => {
+async function setFiles(input, files) {
+  Object.defineProperty(input.element, 'files', { value: files, configurable: true })
+  await input.trigger('change')
+  await flushPromises()
+}
+
+function stubDeferredFileReader() {
+  const readers = []
+  class DeferredFileReader {
+    constructor() {
+      this.onload = null
+      this.onerror = null
+      this.result = null
+      readers.push(this)
+    }
+
+    readAsDataURL() {}
+  }
+  vi.stubGlobal('FileReader', DeferredFileReader)
+  return readers
+}
+
+async function openApplication(wrapper) {
+  await wrapper.findAll('.boost-tabs button').find(button => button.text() === 'boost.applyBoosterTab').trigger('click')
+  await flushPromises()
+  return wrapper.find('.boost-apply-card')
+}
+
+describe('BoostPage', () => {
   let wrapper
 
   beforeEach(() => {
     api.listBoosters.mockResolvedValue({ content: [booster], number: 0, size: 20, totalPages: 1 })
     api.updateBooster.mockResolvedValue(booster)
     api.searchUsers.mockResolvedValue([])
+    api.createBoosterApplication.mockResolvedValue({ code: 'BOOSTER_APPLICATION_SUBMITTED' })
   })
 
   afterEach(() => {
     wrapper?.unmount()
     document.body.innerHTML = ''
+    vi.unstubAllGlobals()
     vi.clearAllMocks()
   })
 
@@ -173,5 +205,83 @@ describe('BoostPage booster editor', () => {
       .find(values => values.includes('MASTER'))
     expect(levels).toEqual(['CASUAL', 'SKILLED', 'ELITE', 'PRO', 'MASTER'])
     expect(levels).not.toContain('AVERAGE_GOD')
+  })
+
+  it.each([
+    ['overall', 0, 'late-overall.png'],
+    ['vehicle', 1, 'late-vehicle.png'],
+  ])('preserves a pending %s screenshot across tab switches', async (_kind, inputIndex, fileName) => {
+    const readers = stubDeferredFileReader()
+    wrapper = mountPage()
+    await flushPromises()
+    const application = await openApplication(wrapper)
+    await setFiles(
+      application.findAll('input[type="file"]')[inputIndex],
+      [new File(['proof'], fileName, { type: 'image/png', lastModified: inputIndex + 1 })]
+    )
+    expect(readers).toHaveLength(1)
+
+    await wrapper.findAll('.boost-tabs button').find(button => button.text() === 'boost.submitTab').trigger('click')
+    expect(application.attributes('style')).toContain('display: none')
+    readers[0].result = 'data:image/png;base64,AAAA'
+    readers[0].onload()
+    await flushPromises()
+
+    await openApplication(wrapper)
+    expect(wrapper.find('.boost-apply-card').text()).toContain(fileName)
+  })
+
+  it('keeps only the latest pending application image selection', async () => {
+    const readers = stubDeferredFileReader()
+    wrapper = mountPage()
+    await flushPromises()
+    const application = await openApplication(wrapper)
+    const overallInput = application.findAll('input[type="file"]')[0]
+
+    await setFiles(overallInput, [new File(['first'], 'first.png', { type: 'image/png' })])
+    await setFiles(overallInput, [new File(['second'], 'second.png', { type: 'image/png' })])
+    readers[0].result = 'data:image/png;base64,AAAA'
+    readers[0].onload()
+    readers[1].result = 'data:image/png;base64,BBBB'
+    readers[1].onload()
+    await flushPromises()
+
+    expect(application.text()).not.toContain('first.png')
+    expect(application.text()).toContain('second.png')
+  })
+
+  it('does not restore a pending image after successful application submission resets the draft', async () => {
+    const readers = stubDeferredFileReader()
+    wrapper = mountPage()
+    await flushPromises()
+    const application = await openApplication(wrapper)
+    const [overallInput, vehicleInput] = application.findAll('input[type="file"]')
+
+    await setFiles(overallInput, [new File(['old-overall'], 'old-overall.png', { type: 'image/png' })])
+    readers[0].result = 'data:image/png;base64,AAAA'
+    readers[0].onload()
+    await setFiles(vehicleInput, [new File(['vehicle'], 'vehicle.png', { type: 'image/png' })])
+    readers[1].result = 'data:image/png;base64,BBBB'
+    readers[1].onload()
+    await vi.waitFor(() => expect(application.text()).toContain('vehicle.png'))
+
+    await setFiles(overallInput, [new File(['late'], 'late-overall.png', { type: 'image/png' })])
+    expect(readers).toHaveLength(3)
+    const inputs = application.findAll('input')
+    await inputs[0].setValue('Player')
+    await inputs[1].setValue('123')
+    await inputs[4].setValue('123456')
+    await inputs[6].setValue('20:00-22:00')
+    await application.find('.btn-primary').trigger('click')
+    await flushPromises()
+    expect(api.createBoosterApplication).toHaveBeenCalledTimes(1)
+
+    readers[2].result = 'data:image/png;base64,CCCC'
+    readers[2].onload()
+    await flushPromises()
+
+    expect(application.text()).not.toContain('old-overall.png')
+    expect(application.text()).not.toContain('late-overall.png')
+    expect(application.text()).not.toContain('vehicle.png')
   })
 })
