@@ -267,6 +267,124 @@ class LeagueReplaysTest {
     }
 
     @Test
+    void unknownPlusKnownReconciledDeterministicallyRegardlessOfUploadOrder() {
+        // 同一 arenaId 两份一致副本：玩家 1001 死亡时间一份 UNKNOWN(0)、一份 KNOWN 128.12；
+        // 敌方 2001 在两份中都于 128.5s 阵亡（±5s 窗口内 → TRADE）。
+        // UNKNOWN+KNOWN 不是 conflict；canonical 使用 KNOWN；上传顺序不影响最终 Rating。
+        final List<LeagueTestBattles.PlayerSpec> specsA = LeagueTestBattles.defaultSevenVsSeven();
+        specsA.getFirst().dead(0);
+        specsA.get(7).dead(128.5);
+        final Battle a = LeagueTestBattles.battle(1, specsA);
+        a.arenaId = "111";
+        final List<LeagueTestBattles.PlayerSpec> specsB = LeagueTestBattles.defaultSevenVsSeven();
+        specsB.getFirst().dead(128.12);
+        specsB.get(7).dead(128.5);
+        final Battle b = LeagueTestBattles.battle(1, specsB);
+        b.arenaId = "111";
+
+        final LeagueReplays.LeagueCollectResult r1 = collectBattles(List.of(a, b));
+        final LeagueReplays.LeagueCollectResult r2 = collectBattles(List.of(b, a));
+
+        for (final LeagueReplays.LeagueCollectResult r : List.of(r1, r2)) {
+            assertTrue(r.leagueFailures().isEmpty(),
+                    "UNKNOWN + KNOWN 死亡时间不得判 CONFLICTING_REPLAYS_FOR_ARENA");
+            assertEquals(1, r.battles().size());
+            assertEquals(1, r.leagueBatch().battleResults().size());
+            assertEquals(1, r.duplicates().size());
+            assertEquals(0, r.leagueBatch().ratingQuality().unknownDeathTimePlayers(),
+                    "canonical 使用 KNOWN → 该玩家不计 UNKNOWN quality");
+        }
+        // canonical 死亡时间 = KNOWN 128.12（保留 battle 的玩家已收口，与顺序无关）
+        assertEquals(128.12, r1.battles().getFirst().players.getFirst().survivalTimeSec, 1e-9);
+        assertEquals(128.12, r2.battles().getFirst().players.getFirst().survivalTimeSec, 1e-9);
+
+        final LeagueRatingResult rr1 = r1.leagueBatch().battleResults().getFirst();
+        final LeagueRatingResult rr2 = r2.leagueBatch().battleResults().getFirst();
+        final PlayerLeagueRating p1 = rr1.byAccount(1001);
+        final PlayerLeagueRating p2 = rr2.byAccount(1001);
+        assertEquals(LeagueRatingCalculator.STATE_TRADE, p1.survivalState(),
+                "KNOWN 128.12 ±5s 内存在敌方死亡 → TRADE");
+        assertEquals(p1.survivalState(), p2.survivalState());
+        assertEquals(p1.survivalTradeScore(), p2.survivalTradeScore(), 1e-9);
+        assertEquals(p1.finalRating(), p2.finalRating(), 1e-9);
+        assertEquals(rr1.players().stream().map(PlayerLeagueRating::finalRating).toList(),
+                rr2.players().stream().map(PlayerLeagueRating::finalRating).toList(),
+                "上传顺序变化不得改变任何玩家 finalRating");
+    }
+
+    @Test
+    void unknownPlusUnknownStaysUnknownRatedOnceQualityOne() {
+        // 同一 arenaId 两份一致副本：同一阵亡玩家死亡时间都是 UNKNOWN(0)。
+        // 不 conflict、只评分一次；canonical 仍 UNKNOWN；quality 只计 canonical battle 的 1 个实例。
+        final List<LeagueTestBattles.PlayerSpec> specsA = LeagueTestBattles.defaultSevenVsSeven();
+        specsA.getFirst().dead(0);
+        final Battle a = LeagueTestBattles.battle(1, specsA);
+        a.arenaId = "111";
+        final List<LeagueTestBattles.PlayerSpec> specsB = LeagueTestBattles.defaultSevenVsSeven();
+        specsB.getFirst().dead(0);
+        final Battle b = LeagueTestBattles.battle(1, specsB);
+        b.arenaId = "111";
+
+        final LeagueReplays.LeagueCollectResult r = collectBattles(List.of(a, b));
+        assertTrue(r.leagueFailures().isEmpty(), "UNKNOWN + UNKNOWN 不是 conflict");
+        assertEquals(1, r.battles().size());
+        assertEquals(1, r.leagueBatch().battleResults().size(), "只评分一次");
+        assertEquals(1, r.duplicates().size());
+        assertEquals(0.0, r.battles().getFirst().players.getFirst().survivalTimeSec, 1e-9,
+                "canonical 保持 UNKNOWN(0)");
+        final PlayerLeagueRating p = r.leagueBatch().battleResults().getFirst().byAccount(1001);
+        assertEquals(LeagueRatingCalculator.STATE_NONE, p.survivalState());
+        assertEquals(0, p.survivalTradeScore(), 1e-9);
+        assertEquals(1, r.leagueBatch().ratingQuality().unknownDeathTimePlayers(),
+                "quality 统计 canonical battle 中的玩家实例，不得因两份 duplicate 计成 2");
+    }
+
+    @Test
+    void knownKnownWithinToleranceCanonicalMinDeterministic() {
+        // KNOWN 128.12 vs KNOWN 128.50（≤1s 容差）：不 conflict；canonical = 最小 KNOWN = 128.12，
+        // 与上传顺序无关。
+        final List<LeagueTestBattles.PlayerSpec> specsX = LeagueTestBattles.defaultSevenVsSeven();
+        specsX.getFirst().dead(128.12);
+        final Battle x = LeagueTestBattles.battle(1, specsX);
+        x.arenaId = "111";
+        final List<LeagueTestBattles.PlayerSpec> specsY = LeagueTestBattles.defaultSevenVsSeven();
+        specsY.getFirst().dead(128.50);
+        final Battle y = LeagueTestBattles.battle(1, specsY);
+        y.arenaId = "111";
+
+        final LeagueReplays.LeagueCollectResult r1 = collectBattles(List.of(x, y));
+        final LeagueReplays.LeagueCollectResult r2 = collectBattles(List.of(y, x));
+        for (final LeagueReplays.LeagueCollectResult r : List.of(r1, r2)) {
+            assertTrue(r.leagueFailures().isEmpty());
+            assertEquals(1, r.leagueBatch().battleResults().size());
+        }
+        assertEquals(128.12, r1.battles().getFirst().players.getFirst().survivalTimeSec, 1e-9);
+        assertEquals(128.12, r2.battles().getFirst().players.getFirst().survivalTimeSec, 1e-9);
+        assertEquals(r1.leagueBatch().battleResults().getFirst().byAccount(1001).finalRating(),
+                r2.leagueBatch().battleResults().getFirst().byAccount(1001).finalRating(), 1e-9);
+    }
+
+    @Test
+    void knownKnownBeyondToleranceRejectedAsConflict() {
+        final List<LeagueTestBattles.PlayerSpec> specsX = LeagueTestBattles.defaultSevenVsSeven();
+        specsX.getFirst().dead(100.0);
+        final Battle x = LeagueTestBattles.battle(1, specsX);
+        x.arenaId = "111";
+        final List<LeagueTestBattles.PlayerSpec> specsY = LeagueTestBattles.defaultSevenVsSeven();
+        specsY.getFirst().dead(128.0);
+        final Battle y = LeagueTestBattles.battle(1, specsY);
+        y.arenaId = "111";
+
+        final LeagueReplays.LeagueCollectResult r = collectBattles(List.of(x, y));
+        assertEquals(2, r.leagueFailures().size());
+        assertTrue(r.leagueFailures().stream()
+                        .allMatch(f -> f.code().equals(LeagueFailure.Code.CONFLICTING_REPLAYS_FOR_ARENA)),
+                "两个互相矛盾的 KNOWN 死亡时间 → 全部副本拒绝评分");
+        assertTrue(r.battles().isEmpty());
+        assertEquals(0, r.leagueBatch().battleResults().size());
+    }
+
+    @Test
     void ratingValidationFailureReportsSuccessProgressNotFailure() {
         final Battle bad = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         bad.arenaId = "111";

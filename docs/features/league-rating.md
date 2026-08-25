@@ -76,8 +76,17 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 
 - 按正式战斗身份 `arenaId` 去重（不按文件名）。同一 arenaId 多份回放关键事实一致 → 只计一份，
   其余进 duplicates；关键事实不一致（阵容/winnerTeam/玩家结算/生存状态等）→ 该场全部副本
-  拒绝评分（`CONFLICTING_REPLAYS_FOR_ARENA`）。不采用第一份、不选「字段更多」的副本；
+  拒绝评分（`CONFLICTING_REPLAYS_FOR_ARENA`）。不自动选「字段更多」的副本；
   不建立持久化记录，重新上传同一 arenaId 会重新计算。
+- **死亡时间 UNKNOWN(0) 不是冲突**：UNKNOWN 是「当前 replay 无法可靠证明精确死亡时刻」
+  （evidence absence），不是「已证明死亡时间为 0 秒」。同一 arenaId 多份副本中
+  UNKNOWN+KNOWN / UNKNOWN+UNKNOWN 视为一致；只有两个已知（>0）死亡时间超过 1s 容差、
+  或生死状态（survived）不同、或出现负数/非有限死亡时间，才是冲突。
+- **确定性 canonical 死亡时间收口**：一致副本只保留一份（第一份 source identity），
+  其余进 duplicates；死亡时间按与上传顺序无关的规则收口——UNKNOWN+KNOWN → 采用 KNOWN；
+  KNOWN+KNOWN → 采用全部 KNOWN 的最小值；全部 UNKNOWN → 保持 UNKNOWN(0)。
+  最终进入 Validator / Calculator / 批次汇总 / `ratingQuality` 的是这份 canonical battle，
+  上传顺序不改变 Rating 结果（`ratingQuality` 只统计 canonical battle 中的 UNKNOWN 玩家实例）。
 
 ## 七维度公式（合计 1000）
 

@@ -27,7 +27,11 @@ import java.util.function.Consumer;
  *
  * <p>league 去重范围仅限当前上传批次：同一 arenaId 多份回放关键事实一致 →
  * 只计一份、其余进 duplicates；不一致 → 该场全部副本拒绝评分（{@code CONFLICTING_REPLAYS_FOR_ARENA}）。
- * 不采用第一份、不自动选择「字段更多」的副本；不建立持久化记录。</p>
+ * 不自动选择「字段更多」的副本；不建立持久化记录。
+ * <b>死亡时间 UNKNOWN(0) 不是冲突</b>：UNKNOWN+KNOWN / UNKNOWN+UNKNOWN 副本视为一致，
+ * 经 {@link LeagueRatingConflictDetector#reconcileDeathTimes} 做确定性 canonical 收口
+ * （KNOWN 证据优先、KNOWN+KNOWN 取最小 KNOWN、全部 UNKNOWN 保持 UNKNOWN），
+ * 最终 Rating 与上传顺序无关。</p>
  */
 public final class LeagueReplays {
 
@@ -122,10 +126,17 @@ public final class LeagueReplays {
                 }
                 continue;
             }
-            // 一致：只保留第一份，其余进 duplicates
+            // 一致：只保留第一份（source identity），其余进 duplicates；
+            // 死亡时间做确定性 canonical 收口（UNKNOWN+KNOWN→KNOWN / KNOWN+KNOWN→最小
+            // KNOWN / 全部 UNKNOWN→UNKNOWN(0)，与上传顺序无关——进入
+            // Validator/Calculator/Aggregator/ratingQuality 的 Battle 必须 deterministic）
             final Replays.ParsedEntry kept = copies.getFirst();
             for (int i = 1; i < copies.size(); i++) {
                 duplicates.add(new String[]{copies.get(i).source().name(), group.getKey()});
+            }
+            if (copies.size() > 1) {
+                LeagueRatingConflictDetector.reconcileDeathTimes(kept.battle(),
+                        copies.stream().map(Replays.ParsedEntry::battle).toList());
             }
             battles.add(kept.battle());
             battleSourceNames.add(kept.source().name());

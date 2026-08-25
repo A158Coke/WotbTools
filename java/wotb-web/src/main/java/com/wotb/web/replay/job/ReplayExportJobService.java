@@ -376,6 +376,8 @@ public class ReplayExportJobService {
                                    final boolean each, final long submittedNanos) {
         final long startNanos = System.nanoTime();
         recordQueueWait(submittedNanos, startNanos, job.mode());
+        // 方法作用域：失败日志需要 dataset 上下文（parsed/rated/duplicates/league failures）
+        final ProcessedDataset ds = processingJob.result();
         try {
             if (!job.startProcessing()) {
                 // QUEUED 期间被取消 → 已终态 CANCELLED；worker 负责终态统计。
@@ -389,7 +391,6 @@ public class ReplayExportJobService {
             }
             LOGGER.info(logLine("export_job_started", job.jobId(), "mode", job.mode(), "total", job.total(),
                     "reuse_processing_job", processingJob.jobId()));
-            final ProcessedDataset ds = processingJob.result();
             if (each) {
                 processEachFromResult(job, ds);
             } else {
@@ -403,8 +404,18 @@ public class ReplayExportJobService {
             if (job.isCancelled()) {
                 job.markCancelled();
             } else {
+                // 结构化失败上下文（安全字段：无 replay 二进制 / Authorization / token）：
+                // mode / reuse / processing job 状态 / parsed / rated / duplicates / league failures
                 LOGGER.warn(logLine("export_job_failed_detail", job.jobId(),
-                        "error", e.getClass().getSimpleName(), "message", String.valueOf(e.getMessage())), e);
+                        "mode", job.mode(),
+                        "reuse_processing_job", processingJob.jobId(),
+                        "processing_job_status", processingJob.snapshot().status().name(),
+                        "parsed_battles", ds.battles().size(),
+                        "rated_battles", ds.isLeague() ? ds.league().battleResults().size() : 0,
+                        "duplicates", ds.duplicates().size(),
+                        "league_failures", ds.isLeague() ? ds.league().failures().size() : 0,
+                        "error", e.getClass().getSimpleName(),
+                        "message", String.valueOf(e.getMessage())), e);
                 job.markFailed(errorCodeOf(e));
             }
             finishTerminal(job, startNanos);
