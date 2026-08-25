@@ -1,5 +1,6 @@
 package com.wotb.web.replay.mapper;
 
+import com.wotb.core.AggregateColumns;
 import com.wotb.core.Columns;
 import com.wotb.core.league.LeagueColumns;
 import com.wotb.core.league.LeagueRatingBatch;
@@ -51,66 +52,30 @@ public final class Mapper {
         return out;
     }
 
-    /** 汇总表列定义 (key + 是否数值 + 取值函数; 中文名由前端/导出层各自映射)。 */
-    record AggCol(String key, boolean num, Function<Agg, Object> get) {
-    }
-
-    static final List<AggCol> AGG_COLS = List.of(
-            new AggCol("nickname", false, a -> a.nickname),
-            new AggCol("clan", false, a -> a.clan),
-            new AggCol("battles", true, a -> a.battles),
-            new AggCol("wins", true, a -> a.wins),
-            new AggCol("win_rate", true, a -> r1(a.winRate())),
-            new AggCol("survival_rate", true, a -> r1(a.survivalRate())),
-            new AggCol("survival_avg", true, a -> a.avg(a.survivalSum)),
-            new AggCol("kills", true, a -> a.kills),
-            new AggCol("kills_avg", true, a -> r2(a.avg(a.kills))),
-            new AggCol("damage", true, a -> a.damage),
-            new AggCol("damage_avg", true, a -> r1(a.avg(a.damage))),
-            new AggCol("potential_damage", true, a -> a.potentialDamage),
-            new AggCol("potential_damage_avg", true, a -> r1(a.avg(a.potentialDamage))),
-            new AggCol("potential_damage_supplement_avg", true, a -> r1(a.avg(a.potentialDamageSupplement))),
-            new AggCol("assisted", true, a -> a.assisted),
-            new AggCol("assisted_avg", true, a -> r1(a.avg(a.assisted))),
-            new AggCol("received_avg", true, a -> r1(a.avg(a.received))),
-            new AggCol("blocked_avg", true, a -> r1(a.avg(a.blocked))),
-            new AggCol("hit_rate", true, a -> r1(a.hitRate())),
-            new AggCol("pen_rate", true, a -> r1(a.penRate())),
-            new AggCol("shots", true, a -> a.shots),
-            new AggCol("hits", true, a -> a.hits),
-            new AggCol("pens", true, a -> a.pens),
-            new AggCol("enemies_damaged_avg", true, a -> r2(a.avg(a.enemiesDamaged))),
-            new AggCol("tanks", false, Agg::tanksStr),
-            new AggCol("account_id", true, a -> a.accountId)
-    );
-
-    /** 汇总表追加的跨场表现派生列（与 AGG_COLS 并列；值由 PerformanceMetricsCalculator 行按 accountId 合并）。 */
-    static final List<ColumnDef> AGG_PERF_COLS = List.of(
-            new ColumnDef("contribution", true),
-            new ColumnDef("kast", true),
-            new ColumnDef("impact", true),
-            new ColumnDef("multi_damage_rate", true),
-            new ColumnDef("traded_deaths", true)
-    );
-
+    /** 汇总表列定义：消费 canonical {@link AggregateColumns}（key/numeric/getter 单一事实源，
+     * 与 Excel AggregateSheets 共用；本层不维护平行 schema）。 */
     public static List<ColumnDef> aggregateColumns() {
         final List<ColumnDef> out = new ArrayList<>();
-        for (final AggCol c : AGG_COLS) {
-            out.add(new ColumnDef(c.key(), c.num()));
+        for (final AggregateColumns.CoreColumn c : AggregateColumns.CORE) {
+            out.add(new ColumnDef(c.key(), c.numeric()));
         }
-        out.addAll(AGG_PERF_COLS);
+        for (final AggregateColumns.PerfColumn c : AggregateColumns.PERFORMANCE) {
+            out.add(new ColumnDef(c.key(), c.numeric()));
+        }
         return out;
     }
 
     // ---- League Rating 列定义（key 单一来源 LeagueColumns；显示名前端三语 / 导出中文） ----
 
-    /** League 模式单场玩家列：标准列（移除 contribution/kast/impact）+ Rating 维度 + 占点原始字段。 */
+    /** League 模式单场玩家列：标准列（含 contribution/kast/impact，Performance Metrics 保留在 CW）
+     * + Rating 维度 + 占点原始字段（contribution/kast/impact 是 Replay Performance Metrics，
+     * 不是 League Rating 维度，必须保留在 CW 单场表，不得进入七维 Rating/Radar）。 */
     public static List<ColumnDef> leaguePlayerColumns() {
         final List<ColumnDef> out = new ArrayList<>();
         out.add(new ColumnDef("nickname", false));
         out.add(new ColumnDef(LeagueColumns.RATING, true));
         for (final Columns.Column c : Columns.PLAYER) {
-            if (LeagueColumns.REMOVED_LEGACY_KEYS.contains(c.key()) || c.key().equals("nickname")) {
+            if (c.key().equals("nickname")) {
                 continue;
             }
             out.add(new ColumnDef(c.key(), c.num()));
@@ -119,7 +84,7 @@ public final class Mapper {
             out.add(new ColumnDef(key, true));
         }
         out.add(new ColumnDef(LeagueColumns.VICTORY_POINTS_EARNED, true));
-        out.add(new ColumnDef(LeagueColumns.VICTORY_POINTS_SEIZED, true));
+        // victory_points_seized 保留为 backend fact，CW Rating 主 UI 不展示
         return out;
     }
 
@@ -133,15 +98,14 @@ public final class Mapper {
                     LeagueColumns.dimMax(d), false, false, "rating"));
         }
         out.add(new LeagueColumnDef(LeagueColumns.VICTORY_POINTS_EARNED, true, 0, false, false, "battle"));
-        out.add(new LeagueColumnDef(LeagueColumns.VICTORY_POINTS_SEIZED, true, 0, false, false, "battle"));
+        // victory_points_seized 不进入 Rating 列系统（backend fact 保留，UI 不展示）
         return out;
     }
 
-    /** League 模式汇总列：标准汇总列（移除 contribution/kast/impact；旧指标在 League 模式完全移除）。 */
+    /** League 模式汇总列：标准汇总列完整保留（含跨场 contribution/kast/impact；
+     * Performance Metrics 属于 Replay 数据，CW 汇总表必须可显示）。 */
     public static List<ColumnDef> leagueAggregateColumns() {
-        return aggregateColumns().stream()
-                .filter(c -> !LeagueColumns.REMOVED_LEGACY_KEYS.contains(c.key()))
-                .toList();
+        return aggregateColumns();
     }
 
     /** League 批次选手汇总列。 */
@@ -150,6 +114,8 @@ public final class Mapper {
         out.add(new ColumnDef("nickname", false));
         out.add(new ColumnDef("clan", false));
         out.add(new ColumnDef("battles", true));
+        // 评分场次（rated-only 样本，与 Replay Aggregate 的解析场次 battles 分开）
+        out.add(new ColumnDef("rated_battles", true));
         out.add(new ColumnDef(LeagueColumns.RATING, true));
         for (final String key : LeagueColumns.DIM_KEYS) {
             out.add(new ColumnDef(key, true));
@@ -159,6 +125,10 @@ public final class Mapper {
         out.add(new ColumnDef("damage_total", true));
         out.add(new ColumnDef("assist_total", true));
         out.add(new ColumnDef("kills_total", true));
+        // 跨场 Performance Metrics（与 resp.aggregate 同一全部已解析场次样本）
+        out.add(new ColumnDef("contribution", true));
+        out.add(new ColumnDef("kast", true));
+        out.add(new ColumnDef("impact", true));
         return out;
     }
 
@@ -185,8 +155,10 @@ public final class Mapper {
      * League 模式时注入 Rating 单元格与单场元数据（普通模式 league 参数为 null）。
      *
      * @param league    该场评分结果；Rating-ineligible 场次为 null（Battle 仍正常展示，
-     *                  Rating 列留空，plan：解析有效性 ≠ Rating 资格）
-     * @param leagueMode 整个批次是否为 League Rating 模式（决定是否移除旧三指标列；
+     *                  Rating 列留空——Replay validity and Rating eligibility are independent;
+     *                  Rating-ineligible parsed battles remain valid Replay results）
+     * @param leagueMode 整个批次是否为 League Rating 模式（决定是否注入 Rating 列元数据 /
+     *                   CW UI 语义；contribution/kast/impact 保留；
      *                   Rating-ineligible 场次 league==null 但 leagueMode 仍为 true）
      */
     public static BattleDto toBattle(final Battle b, final String sourceName, final Tankopedia tp,
@@ -204,21 +176,17 @@ public final class Mapper {
             p.platoonLabel = platoon.apply(p.platoonId);
             final Map<String, Object> cells = new LinkedHashMap<>();
             for (final Columns.Column c : Columns.PLAYER) {
-                // League 模式完全移除旧 contribution/kast/impact（plan §14）；普通模式保留
-                if (leagueMode && LeagueColumns.REMOVED_LEGACY_KEYS.contains(c.key())) {
-                    continue;
-                }
+                // 单场 Performance Metrics（contribution/kast/impact）在 League 模式同样保留
+                // （表现指标 ≠ Rating 维度；由调用方 populateBattle 回填）
                 cells.put(c.key(), playerValue(c, p));
             }
             if (league != null) {
                 final PlayerLeagueRating plr = leagueByAccount.get(p.accountId);
                 if (plr != null) {
                     cells.put(LeagueColumns.RATING, r1(plr.finalRating()));
-                    final double[] dims = {
-                            plr.damageScore(), plr.assistScore(), plr.killScore(), plr.exchangeScore(),
-                            plr.blockedScore(), plr.survivalTradeScore(), plr.shootingScore(), plr.objectiveScore()};
+                    // 七维顺序单一来源：dimensionScores()（与 LeagueColumns.DIM_KEYS 严格一致）
                     for (int d = 0; d < LeagueColumns.DIM_KEYS.size(); d++) {
-                        cells.put(LeagueColumns.dimKey(d), r1(dims[d]));
+                        cells.put(LeagueColumns.dimKey(d), r1(plr.dimensionScores().get(d)));
                     }
                 }
                 cells.put(LeagueColumns.VICTORY_POINTS_EARNED, p.victoryPointsEarned);
@@ -277,23 +245,14 @@ public final class Mapper {
         final List<AggRow> out = new ArrayList<>();
         for (final Agg a : list) {
             final Map<String, Object> cells = new LinkedHashMap<>();
-            for (final AggCol c : AGG_COLS) {
+            for (final AggregateColumns.CoreColumn c : AggregateColumns.CORE) {
                 cells.put(c.key(), c.get().apply(a));
             }
             final PerformanceMetricsCalculator.Row perf = perfById.get(a.accountId);
-            if (perf != null) {
-                // 跨场表现派生列：HP 全部 UNKNOWN 时 contribution/kast/多伤率 unavailable（null，UI 显示 "--"）
-                cells.put("contribution", perf.hpEligible ? r1(perf.contribution) : null);
-                cells.put("kast", perf.hpEligible ? r1(perf.kast) : null);
-                cells.put("impact", r1(perf.impactValue));
-                cells.put("multi_damage_rate", perf.hpEligible ? r1(perf.multiDamageRate) : null);
-                cells.put("traded_deaths", perf.tradedDeaths);
-            } else {
-                cells.put("contribution", null);
-                cells.put("kast", null);
-                cells.put("impact", null);
-                cells.put("multi_damage_rate", null);
-                cells.put("traded_deaths", 0);
+            // 跨场表现派生列：canonical getter 单一来源（HP 全部 UNKNOWN 时
+            // contribution/kast/多伤率 unavailable → null，UI 显示 "--"；impact/tradedDeaths 恒有值）
+            for (final AggregateColumns.PerfColumn c : AggregateColumns.PERFORMANCE) {
+                cells.put(c.key(), perf == null ? null : c.get().apply(perf));
             }
             out.add(new AggRow(cells, a.team));
         }
@@ -302,10 +261,6 @@ public final class Mapper {
 
     private static double r1(final double v) {
         return Math.round(v * 10) / 10.0;
-    }
-
-    private static double r2(final double v) {
-        return Math.round(v * 100) / 100.0;
     }
 
     private static Object playerValue(final Columns.Column column, final PlayerResult player) {
@@ -320,9 +275,9 @@ public final class Mapper {
 
     /**
      * 由已处理的 authoritative Battle 列表构建完整 Preview 响应（Preview 与
-     * Replay Processing Job result 共用同一 DTO 构建，plan §21）。
+     * Replay Processing Job result 共用同一 DTO 构建）。
      *
-     * <p><b>只读消费契约（review BLOCKER 3）</b>：battles 必须已是完整 facts 管线产出
+     * <p><b>只读消费契约</b>：battles 必须已是完整 facts 管线产出
      * （Replays.collect + processFull + PotentialDamage + populateBattle 各一次），
      * 本方法<b>不</b>再执行任何会 mutate 共享 Battle 的 enrichment——事实层 enrich 由
      * 数据集创建方保证（ReplayProcessingJobService.processJob / 同步 preview 的
@@ -333,7 +288,7 @@ public final class Mapper {
     /**
      * League 模式：battles 为<b>全部</b>成功解析的 Battle（含 Rating-ineligible 场次），
      * 每场 Rating 经 {@link LeagueRatingBatch#resultFor} 按 arenaId identity 绑定
-     * （不依赖数组 index——battles.size() 可大于 battleResults.size()，plan §9）。
+     * （不依赖数组 index——battles.size() 可大于 battleResults.size()）。
      */
     public static PreviewResponse toPreviewResponse(final List<Battle> battles,
                                                     final List<String> battleSourceNames,
@@ -346,7 +301,7 @@ public final class Mapper {
 
     /**
      * 完整 Preview 构建：league != null → League 模式；否则普通模式。
-     * leagueUnavailableCode 非 null（混合批次 MIXED_LEAGUE_AND_STANDARD_REPLAYS，plan §21）
+     * leagueUnavailableCode 非 null（混合批次 MIXED_LEAGUE_AND_STANDARD_REPLAYS）
      * 时按普通模式输出 battles/aggregate，同时携带 League 不可用提示码。
      */
     public static PreviewResponse toPreviewResponse(final List<Battle> battles,
@@ -364,31 +319,45 @@ public final class Mapper {
         }
         // 基础 Replay Aggregate 属于 Replay Core：无论 League Rating 是否成功，
         // 只要是多场（跨场汇总语义），就必须输出标准基础汇总——League Rating Summary
-        // 是附加分析，不替代基础汇总（plan §4/§5）。League 模式的 aggregateColumns 仍用
-        // League 变体（不含 contribution/kast/impact，PR #131 列边界不变）。
+        // 是附加分析，不替代基础汇总。League 模式的 aggregateColumns 保留
+        // 跨场 contribution/kast/impact（Performance Metrics 在 CW 可显示）。
+        // CW/League 单场也生成基础 Replay Aggregate row——
+        // 单场 CW Unified Summary 需要 damage_avg/assisted_avg/kills_avg/earned_avg 等
+        // Replay Core 权威事实（全部可由该场结算得出，禁止伪装成 unavailable）；
+        // Standard 单场保持旧语义（aggregate 为空）。aggregate 空列表时 toAggregate 自然为空。
         final Map<Long, PerformanceMetricsCalculator.Row> perfById = new LinkedHashMap<>();
         for (final PerformanceMetricsCalculator.Row row : PerformanceMetricsCalculator.compute(battles)) {
             perfById.put(row.accountId, row);
         }
-        final List<AggRow> aggregate = battles.size() > 1
+        final boolean shouldAggregate = battles.size() > 1 || league != null;
+        final List<AggRow> aggregate = shouldAggregate
                 ? toAggregate(Aggregator.aggregate(battles, tp), perfById)
                 : List.of();
         if (league != null) {
+            // leagueMode=true：CW UI 存在（含 Rating-ineligible 场次）；league 仅决定本场 Rating 结果
             return new PreviewResponse(battlesDto, aggregate, duplicates, failures,
-                    leaguePlayerColumns(), leagueAggregateColumns(), leagueDto(league), null);
+                    leaguePlayerColumns(), leagueAggregateColumns(), leagueDto(league, perfById),
+                    null, true);
         }
         return new PreviewResponse(battlesDto, aggregate, duplicates, failures,
-                playerColumns(), aggregateColumns(), null, leagueUnavailableCode);
+                playerColumns(), aggregateColumns(), null, leagueUnavailableCode, false);
     }
 
-    private static LeagueRatingDto leagueDto(final LeagueRatingBatch league) {
+    private static LeagueRatingDto leagueDto(final LeagueRatingBatch league,
+                                              final Map<Long, PerformanceMetricsCalculator.Row> perfById) {
         final List<LeaguePlayerSummaryDto> players = new ArrayList<>();
         for (final PlayerLeagueSummary s : league.playerSummaries()) {
+            final PerformanceMetricsCalculator.Row perf = perfById.get(s.accountId());
             players.add(new LeaguePlayerSummaryDto(
                     s.accountId(), s.nickname(), s.clan(), s.battles(),
                     r1(s.ratingMedian()),
                     s.dimensionMedians().stream().map(Mapper::r1).toList(),
-                    s.mvpCount(), s.wins(), s.damageTotal(), s.assistTotal(), s.killsTotal()));
+                    s.mvpCount(), s.wins(), s.damageTotal(), s.assistTotal(), s.killsTotal(),
+                    // 跨场 Performance Metrics（与 resp.aggregate 同一全部已解析场次样本）；
+                    // HP 全部 UNKNOWN → contribution/kast null（UI "--"），impact 恒有值
+                    perf == null || !perf.hpEligible ? null : r1(perf.contribution),
+                    perf == null || !perf.hpEligible ? null : r1(perf.kast),
+                    perf == null ? null : r1(perf.impactValue)));
         }
         final List<LeagueTeamSummaryDto> teams = new ArrayList<>();
         for (final TeamLeagueSummary s : league.teamSummaries()) {

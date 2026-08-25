@@ -7,7 +7,7 @@ public record TeamLeagueRating(
         int team,
         // 战队 Rating = 本队 7 名玩家 finalRating 的算术平均（未取整）
         double teamRating,
-        // 八个维度分各自的本队算术平均（解释/导出用）
+        // 七个维度分各自的本队算术平均（解释/导出用）
         List<Double> dimensionAverages,
         // 自动战队名称；null = 未达到多数标签，需用户填写
         String autoName,

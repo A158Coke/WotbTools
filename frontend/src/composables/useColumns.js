@@ -4,8 +4,9 @@ import {
   EXTENDED_ONLY_PLAYER_KEYS,
   LEAGUE_DEFAULT_VISIBLE,
   LEAGUE_FIXED_KEYS,
-  isLeagueColumns
+  CW_SUMMARY_DEFAULT_VISIBLE
 } from '../utils/helpers.js'
+import { mergeCwPlayerColumns } from '../utils/playerSummaryMerge.js'
 
 const STORAGE_KEYS = {
   playerVisible: 'wotb-replay-player-visible-cols',
@@ -14,12 +15,16 @@ const STORAGE_KEYS = {
   aggOrder: 'wotb-replay-agg-order',
 }
 
-/** League Rating 模式独立 storage scope（plan §16：普通与 League 列偏好互不污染）。 */
+/** League Rating（CW）模式独立 storage scope：普通与 League 列偏好互不污染。 */
 const LEAGUE_STORAGE_KEYS = {
   playerVisible: 'wotb-league-player-visible-cols',
   playerOrder: 'wotb-league-player-order',
   aggVisible: 'wotb-league-agg-visible-cols',
   aggOrder: 'wotb-league-agg-order',
+  // CW 统一玩家表 scope（复用同一 useColumns/ColumnPicker 基础设施，
+  // 复用现有 toggle/reorder/persistence，不另建第二套系统）
+  cwVisible: 'wotb-league-cw-visible-cols',
+  cwOrder: 'wotb-league-cw-order',
 }
 
 function readStoredList(key) {
@@ -89,19 +94,33 @@ function forceLeagueVisible(visible) {
   return uniqueKeys([...visible, ...LEAGUE_FIXED_KEYS])
 }
 
-export function useColumns(playerCols, aggCols, activeTab) {
+export function useColumns(playerCols, aggCols, activeTab, leagueModeRef = ref(false)) {
   const visibleKeys = ref([])
   const aggVisibleKeys = ref([])
   const playerOrder = ref([])
   const aggOrder = ref([])
+  /** CW 统一玩家表 scope：nickname + league_rating 固定，其余列用户控制可见/顺序。 */
+  const cwVisibleKeys = ref([])
+  const cwOrder = ref([])
+  const cwAvailableKeys = ref([])
   const showColPicker = ref(false)
   const pickerScope = ref('player')
 
-  /** League Rating 模式：playerColumns 含 league_rating。 */
-  const leagueMode = computed(() => isLeagueColumns(playerCols.value))
+  /** League（CW）模式：显式消费页面级 leagueMode（resp.leagueMode），不从列内容推断。 */
+  const leagueMode = computed(() => leagueModeRef.value)
 
-  const colScope = computed(() => activeTab.value === 'aggregate' ? 'agg' : 'player')
-  const currentOrder = computed(() => pickerScope.value === 'agg' ? aggOrder.value : playerOrder.value)
+  /**
+   * ColumnPicker 作用域：普通模式 汇总tab → agg；League 模式汇总tab → cw（统一玩家表）；
+   * battle tab → player（单场玩家表，League 与普通共用同一 player 偏好）。
+   */
+  const colScope = computed(() => {
+    if (activeTab.value === 'aggregate') return leagueMode.value ? 'cw' : 'agg'
+    return 'player'
+  })
+  const currentOrder = computed(() =>
+    pickerScope.value === 'agg' ? aggOrder.value
+      : pickerScope.value === 'cw' ? cwOrder.value
+        : playerOrder.value)
   const basePlayerCols = computed(() =>
     playerCols.value.filter(c => !EXTENDED_ONLY_PLAYER_KEYS.has(c.key)))
 
@@ -114,7 +133,8 @@ export function useColumns(playerCols, aggCols, activeTab) {
     aggOrder.value.filter(k => aggVisibleKeys.value.includes(k)).map(k => aggColMap.value[k]).filter(Boolean))
 
   function initFromResponse(resp) {
-    const league = isLeagueColumns(resp.playerColumns || [])
+    // 唯一事实源 resp.leagueMode；playerColumns 是否含 league_rating 不决定模式
+    const league = resp.leagueMode === true
     const storage = league ? LEAGUE_STORAGE_KEYS : STORAGE_KEYS
     const defaults = league ? LEAGUE_DEFAULT_VISIBLE : DEFAULT_VISIBLE
     const pk = (resp.playerColumns || [])
@@ -135,6 +155,21 @@ export function useColumns(playerCols, aggCols, activeTab) {
       : restorePlayerVisible(pk, storedPlayerOrder, storedPlayerVisible, defaults)
     aggOrder.value = mergeOrder(ak, storedAggOrder)
     aggVisibleKeys.value = restoreAggVisible(ak, storedAggOrder, storedAggVisible)
+
+    // CW 统一玩家表列 universe = league.playerSummaryColumns ∪ aggregateColumns：
+    // mergeCwPlayerColumns 只负责提供合法 universe/去重，最终可见顺序由用户偏好决定
+    if (league) {
+      const ck = mergeCwPlayerColumns(
+        resp.league?.playerSummaryColumns || [],
+        resp.aggregateColumns || []
+      ).filter(c => !EXTENDED_ONLY_PLAYER_KEYS.has(c.key)).map(c => c.key)
+      cwAvailableKeys.value = ck
+      const storedCwOrder = readStoredList(storage.cwOrder)
+      const storedCwVisible = readStoredList(storage.cwVisible)
+      cwOrder.value = pinLeagueOrder(mergeOrder(ck, storedCwOrder))
+      cwVisibleKeys.value = forceLeagueVisible(
+        restorePlayerVisible(ck, storedCwOrder, storedCwVisible, CW_SUMMARY_DEFAULT_VISIBLE))
+    }
   }
 
   function toggleColPicker() {
@@ -144,6 +179,13 @@ export function useColumns(playerCols, aggCols, activeTab) {
   }
 
   function toggleCol(e) {
+    if (e.scope === 'cw') {
+      if (LEAGUE_FIXED_KEYS.includes(e.key)) return // 玩家/Rating 固定显示，不可隐藏
+      cwVisibleKeys.value = cwVisibleKeys.value.includes(e.key)
+        ? cwVisibleKeys.value.filter(k => k !== e.key)
+        : [...cwVisibleKeys.value, e.key]
+      return
+    }
     const target = e.scope === 'agg' ? aggVisibleKeys : visibleKeys
     if (e.scope === 'player' && leagueMode.value && LEAGUE_FIXED_KEYS.includes(e.key)) {
       return // 总 Rating 固定显示，不允许被 ColumnPicker 隐藏
@@ -154,13 +196,17 @@ export function useColumns(playerCols, aggCols, activeTab) {
   }
 
   function selectAllCols(scope) {
+    if (scope === 'cw') { cwVisibleKeys.value = cwOrder.value.slice(); return }
     const all = (scope === 'agg' ? aggOrder : playerOrder).value.slice()
     if (scope === 'agg') aggVisibleKeys.value = all
     else visibleKeys.value = all
   }
 
   function resetCols(scope) {
-    if (scope === 'agg') {
+    if (scope === 'cw') {
+      cwOrder.value = pinLeagueOrder([...cwAvailableKeys.value])
+      cwVisibleKeys.value = forceLeagueVisible([...CW_SUMMARY_DEFAULT_VISIBLE])
+    } else if (scope === 'agg') {
       aggOrder.value = aggCols.value.map(c => c.key)
       aggVisibleKeys.value = aggCols.value.map(c => c.key)
     } else if (leagueMode.value) {
@@ -173,7 +219,9 @@ export function useColumns(playerCols, aggCols, activeTab) {
   }
 
   function handleReorder(next) {
-    if (pickerScope.value === 'agg') {
+    if (pickerScope.value === 'cw') {
+      cwOrder.value = pinLeagueOrder(next)
+    } else if (pickerScope.value === 'agg') {
       aggOrder.value = next
     } else if (leagueMode.value) {
       playerOrder.value = pinLeagueOrder(next)
@@ -190,9 +238,12 @@ export function useColumns(playerCols, aggCols, activeTab) {
     leagueMode.value ? LEAGUE_STORAGE_KEYS.aggVisible : STORAGE_KEYS.aggVisible, value))
   watch(aggOrder, value => writeStoredList(
     leagueMode.value ? LEAGUE_STORAGE_KEYS.aggOrder : STORAGE_KEYS.aggOrder, value))
+  watch(cwVisibleKeys, value => writeStoredList(LEAGUE_STORAGE_KEYS.cwVisible, value))
+  watch(cwOrder, value => writeStoredList(LEAGUE_STORAGE_KEYS.cwOrder, value))
 
   return {
     visibleKeys, aggVisibleKeys, playerOrder, aggOrder,
+    cwVisibleKeys, cwOrder,
     showColPicker, pickerScope, colScope, currentOrder,
     playerColMap, aggColMap, shownCols, shownAggCols,
     leagueMode,

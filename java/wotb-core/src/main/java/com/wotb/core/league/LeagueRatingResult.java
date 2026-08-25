@@ -4,7 +4,7 @@ import java.util.List;
 
 /** 一场训练赛/联赛回放的完整 League Rating 结果。 */
 public record LeagueRatingResult(
-        // 稳定 identity：本场 arenaId（与 Battle 关联不依赖数组 index，plan §9）
+        // 稳定 identity：本场 arenaId（与 Battle 关联不依赖数组 index）
         String arenaId,
         // 14 名玩家各自评分
         List<PlayerLeagueRating> players,

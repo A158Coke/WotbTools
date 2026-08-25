@@ -140,32 +140,36 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
 </template>
 
 <style scoped>
+/* AI 复盘结果 Card：宽度由父级 .ai-review-panel 拥有（唯一 width owner），
+   本组件只负责内部 component styling，不再自行决定页面宽度/居中。 */
 .analysis-panel {
   margin-top: 16px;
-  max-width: 1100px;
-  margin-left: auto;
-  margin-right: auto;
-  border: 1px solid #303a40;
+  width: 100%;
+  max-width: none;
+  margin-left: 0;
+  margin-right: 0;
+  border: 1px solid var(--border);
   border-radius: 9px;
-  background: rgba(13, 18, 22, .94);
-  box-shadow: 0 20px 52px rgba(0, 0, 0, .26);
+  background: var(--bg-card2);
+  box-shadow: var(--surface-shadow);
   overflow: hidden;
-  color: #d8d5cd;
+  color: var(--text);
 }
 .panel-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  /* 随用户视角固定在右上角：页面滚动时头部吸顶，复制按钮保持在可视区右上角。
-     top 必须落在全局 Topbar 下方——App.vue 桌面端 (>1080px) .topbar 为 fixed 高 52px
-     (z-index:100)，若 top:0 会被顶栏遮挡；此值须与 App.vue .tb-content padding-top 同步。 */
+  min-height: 48px;
+  padding: 10px 14px;
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+  /* 长报告滚动时头部吸顶：top 使用全局 topbar token（App.vue 桌面端 .topbar
+     fixed 高 var(--topbar-h)），禁止硬编码重复事实源。 */
   position: sticky;
-  top: 52px;
+  top: var(--topbar-h);
   z-index: 20;
-  background: rgba(13, 18, 22, .97);
-  padding: 8px 0;
-  margin: -8px 0 0;
+  background: var(--bg-card2);
 }
 @media (max-width: 1080px) {
   /* <=1080px 时 App.vue .topbar 变为 sticky + auto height（可换行、高度不定），
@@ -176,48 +180,34 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
     top: auto;
   }
 }
-.panel-head h2 { margin: 0 0 12px; }
-.panel-head-actions { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-.panel-head-actions .copy-btn, .panel-head-actions .toggle-btn { margin: 0; }
-.toggle-btn {
+.panel-head h2 { margin: 0; }
+.panel-head-actions { display: flex; align-items: center; gap: 8px; margin: 0; }
+.toggle-btn, .copy-btn {
   padding: 4px 12px;
-  border: 1px solid #465159;
+  border: 1px solid var(--border);
   border-radius: 5px;
-  background: #151d21;
-  color: #c9c5bb;
+  background: var(--bg-card);
+  color: var(--text-label);
   font-size: .8rem;
   cursor: pointer;
   white-space: nowrap;
   transition: border-color .15s, color .15s;
 }
-.toggle-btn:hover { border-color: var(--accent); color: #f0aa30; }
-.copy-btn {
-  margin: 0 0 12px;
-  padding: 4px 12px;
-  border: 1px solid #465159;
-  border-radius: 5px;
-  background: #151d21;
-  color: #c9c5bb;
-  font-size: .8rem;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: border-color .15s, color .15s;
-}
-.copy-btn:hover { border-color: var(--accent); color: #f0aa30; }
-.copy-btn.copied { border-color: var(--accent); color: #f0aa30; }
+.toggle-btn:hover, .copy-btn:hover { border-color: var(--accent); color: var(--accent-dark); }
+.copy-btn.copied { border-color: var(--accent); color: var(--accent-dark); }
+/* 正文统一水平 padding；Header 已自带 padding，正文区块不再各自用 margin 修位置 */
 .analysis-text {
   white-space: pre-wrap;
   line-height: 1.6;
   font-size: .9rem;
-  color: #d8d5cd;
-  margin: 0 0 8px;
+  color: var(--text);
+  padding: 12px 14px 14px;
+  margin: 0;
 }
 .prebattle-block {
-  margin: 0 0 12px;
-  border: 1px solid #303a40;
-  border-radius: 6px;
-  background: rgba(17, 23, 26, .92);
-  padding: 8px 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
 }
 .prebattle-toggle {
   display: flex;
@@ -230,9 +220,9 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
   background: none;
   cursor: pointer;
   font-size: .9rem;
-  color: #f2ede3;
+  color: var(--text-heading);
 }
-.prebattle-title { font-weight: 700; color: #f2ede3; }
-.prebattle-state { font-size: .78rem; color: #9aa09c; }
-.prebattle-content { margin: 8px 0 0; }
+.prebattle-title { font-weight: 700; color: var(--text-heading); }
+.prebattle-state { font-size: .78rem; color: var(--text-muted); }
+.prebattle-content { margin: 8px 0 0; padding: 0; }
 </style>

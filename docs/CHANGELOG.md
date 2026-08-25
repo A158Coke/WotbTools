@@ -6,19 +6,125 @@
 
 ### Added
 - **名人堂三环（Mark 3）人工审核排行榜**：新增独立 `mark3` domain、Flyway `V21` submission/evidence 表和 `/api/hof/mark3`、`/api/users/mark3`、`/api/admin/hof/mark3` API。仅限 Tier X，玩家提交三环所需场数、过程场均、过程胜率、1–2 张截图与恰好 5 个回放；无 Wargaming 自动认证链路。创建路径从五个 replay byte[] 读取、解析、hash 锁、落盘到事务全程复用全局 `ReplayCapacityLimiter`，容量满返回 503 `REPLAY_BUSY`。排行榜按已审核三环场数升序，场数相同使用 competition ranking；同用户同车的 CURRENT 唯一且不被后续申请替代，不使用 `SUPERSEDED`。REJECTED/CANCELLED/DELETED 可重提；管理员通过、拒绝或删除时均不能改写成绩，终态会清理截图和回放证据。
+
+### Changed
+- **CW Rating UI 架构与导出契约收口**：
+  - **leagueMode 单一事实源**：前端页面级 CW 模式只消费 `resp.leagueMode === true`（后端
+    显式标记），删除 `!!resp.league` 兼容回退与 `isLeagueColumns()` 列内容推断
+    （helpers.js 删除 helper）；useColumns 显式接收 leagueMode ref；初始 tab 决策
+    （chooseInitialResultTab）同步改用 leagueMode。
+  - **Radar 满分单一来源**：删除 radarMetrics.js 硬编码的 `LEAGUE_DIM_MAXES`
+    （400/100/...），League 维度归一化改为消费后端 `resp.league.columns`（key/max）
+    metadata——缺失满分 → 该轴 "--"；新增 radarMetrics 单测（max=400 → max=500 自动跟随）。
+  - **导出语义区分（XLSX 全量 / PNG 当前视图）**：PNG 不再强制导出全量列——改为所见即所得
+    （当前 ColumnPicker 可见列 + 顺序 + 当前排序），删除旧「PNG 完整超宽表格」contract
+    与 `utils/leagueExportTable.js`（含单测）；XLSX 保持完整数据、与前端偏好解耦。
+  - **一级 Workspace 导航脱离 .tabs**：ReplayPage DOM 移除 `.workspace-tabs` 上的
+    `.tabs` class，`.workspace-tabs` 成为独立按钮式一级能力导航（按钮自带 border/radius/
+    背景，active 不改变尺寸）；AI Review 由 `.ai-review-panel` 成为唯一 width owner
+    （Action/Error/Streaming/Result 同宽），`AnalysisResultPanel` 不再自行决定页面宽度，
+    header 收口为单行 toolbar（`top: var(--topbar-h)`，移除 52px 硬编码与负 margin）。
+  - **league-rating.md 与代码逐字对齐**：preliminary = 六个非存活维度之和（伤害/助攻/击杀/
+    换血/阻挡/射击），base = preliminary + survival；混合批次各导出语义按真实代码描述；
+    清理 "后续 Excel 导出" 等过期措辞与过期计划引用。
+  - **死代码/过期 API/过期测试清理**：BattleTable 删除未使用 `round1`、未解构
+    `stickyLeft`、行 key 改 `account_id`；CwPlayerSummaryTable 删除未解构
+    `stickyLeft`；LeagueSummaryTable 删除 stale `type` prop（ReplayPage 与测试同步）；
+    测试 fixture 七维严格 7 值（含 invariant 断言）；Rating 格式统一到 helpers.js
+    `ratingCellText` / `ratingTotalText` / `leagueMaxByKey`（单场表/CW 表/战队汇总/Drawer/导出共用，
+    删除各组件重复的 ratingText/teamRatingText/ratingLine 分支与 LeagueSummaryTable 本地 DIM_KEYS 副本）。
+  - **Radar 死 API 清理**：PlayerRatingRadar 删除假 `size` prop（viewBox 固定 300×300，geometry
+    CENTER=150/RADIUS=120 不再伪装可配置）与未使用的 availableCount；测试断言固定 viewBox。
+  - **统一玩家表与 league envelope 解耦**：unifiedRows/unifiedAllCols 存在性由 leagueMode 决定
+    （不再 `leagueData ? ... : []`）——league envelope 存在但 0 评分的 CW 批次仍完整展示
+    Replay Aggregate 玩家（Rating/七维补 "--"）；生产契约用例改为 leagueMode=true + envelope 存在
+    + playerSummaries=[] + battle.league=null（不再把 leagueMode=true + league=null 当合法 fixture）。
+  - **Drawer 定位 token 化**：.player-drawer `top: 56px` 硬编码 → `calc(var(--topbar-h) + 8px)`，
+    ≤1080px 回退 `top: 8px`（topbar sticky + auto-height 无法固定对齐，CSS contract 优先）。
+  - **注释与文档收尾**：变更范围内 production code/tests/docs 的过期注释与计划引用
+    改写为领域语义（测试名改为行为描述）；
+    删除仅服务单次人工验收的清单 `docs/verification/cw-rating-ui-acceptance.md`（浏览器人工验收
+    不是合并门槛，长期回归由自动化测试与 CI 承担）。
+- **Replay CW Rating UI 收口**：
+  - **Rating 八维 → 七维**：`LeagueRatingCalculator` / `PlayerLeagueRating` 删除争霸占点评分
+    维度（`MAX_OBJECTIVE` / `objectiveScore` / earned/seized index 全链路移除），射击效率满分
+    50 → 100 补位，总分保持 1000；`LeagueColumns.DIM_KEYS/DIM_MAX` 同步为七维；
+    `victoryPointsEarned/Seized` 降级为客观统计（不参与 Rating），新增
+    points-independence 回归测试（争霸点数改变不影响 Rating）。
+  - **获取点数事实化**：Replay Aggregate 新增 `earned` 累计（Agg.earned），汇总列新增
+    `earned_total` / `earned_avg`（「获取点数总计」「获取点数/场」）；单场仍展示
+    `victory_points_earned`（「获取点数」）；`victory_points_seized` 保留 backend fact、
+    CW Rating 主 UI 不再展示（UI 列定义移除）。
+  - **CW 玩家统一表**：新增 `utils/playerSummaryMerge.js`
+    （accountId join，缺失 League 补 "--"）与 `CwPlayerSummaryTable.vue`；League 模式
+    汇总页不再出现「基础 Aggregate 玩家表 + League 玩家表」两张平级表，统一玩家主表 +
+    独立战队表。
+  - **选手详情 Side Drawer**：新增 `PlayerDetailDrawer.vue`（右侧 overlay、
+    backdrop/×/Escape 关闭、aria dialog、按 accountId 选择）与 `PlayerRatingRadar.vue`
+    （原生 SVG 七轴、score/max 归一化 0–100%、detail 原始分/满分/百分比）；单场与汇总
+    玩家行点击打开，Tab/selection 变化自动关闭。
+  - **全列 ASC/DESC**：新增 `utils/tableSort.js`
+    （normalizeMissing/compareValues/stableSortRows：numeric、自然字符串序、
+    missing-last 与方向无关、raw sort、稳定）；BattleTable / AggregateTable /
+    CwPlayerSummaryTable / LeagueSummaryTable 全部接入，team_name 按最终显示名排序。
+  - **sticky 生命周期修复**：BattleTable 新增 `active` prop（父组件传
+    activeTab 可见性），hidden→visible 后 nextTick + rAF 重测、ResizeObserver 监听
+    nickname 列宽、width<=0 不覆盖有效 offset（禁止 0 width 污染）；ReplayPage 传
+    `:active="activeTab === 'b' + i"`。
+  - **文档**：league-rating.md 七维公式/占点不评分/统一表/Drawer/排序、versions.json
+    v2.12.27（zh/en/ru）。
+- **CW Rating UI 行为收口（Performance / 列契约 / 模式分离 / Radar / 导出 / 单场事实）**：
+  - **Performance Metrics 保留在 CW**：league 列定义 / 单场 cells / Processing Job 与导出全链
+    恢复 contribution/kast/impact（null → "--"），统一玩家表与 Drawer 表现指标区展示；不参与
+    七维 Rating。
+  - **CW 列契约**：统一玩家表只有 nickname + league_rating 固定（sticky 核心对），其余列
+    （七维/MVP/表现指标/facts）经 useColumns cw scope（独立 storage，复用同一
+    ColumnPicker/拖拽/持久化）控制可见性与顺序；sticky 核心对抽取 utils/stickyColumns.js
+    （nickname=0 / rating=实测昵称宽，reorder/排序后重测）。
+  - **CW 模式与 Rating 结果分离**：PreviewResponse 新增 leagueMode 显式字段；CW UI
+    （Drawer/sticky/概览/Rating 列）由 leagueMode 决定，league 只决定本场 Rating 结果；
+    Rating-ineligible 场 league=null 仍显示 "--"、点击玩家仍打开 Drawer，不伪造 MVP/战队 Rating。
+  - **Drawer scope 语义 + 选中行 highlight**：Summary（批次中位数）与 Battle（本场表现）分区；
+    表现指标为独立区域（不是 Rating）；Drawer 打开时当前玩家行按 accountId（Battle 加 arenaId）
+    高亮（禁止 row index，排序后跟随同一账号），关闭 / Tab 切换 / selection 变化自动清除。
+  - **样本语义**：统一表 cells.battles（解析场次）+ cells.rated_battles（评分场次）分开显示。
+  - **总 Rating 只显示整数**：BattleTable（单元格 + 战队概览）、CwPlayerSummaryTable、
+    LeagueSummaryTable、PlayerDetailDrawer、PNG 统一只显示整数（927）；七维「342 / 400 · 85.5%」；
+    排序/MVP/中位数仍用未取整 raw。
+  - **rated_battles 进入生产 Column contract**：leaguePlayerSummaryColumns 新增 rated_battles
+    ColumnDef；前端 mergeCwPlayerColumns 的 LEAGUE_ONLY_KEYS 纳入；完整链 ColumnDef → Preview →
+    merge → useColumns cw scope → ColumnPicker → 统一表 → Drawer。
+  - **自定义 Radar**：utils/radarMetrics.js Radar Metric Registry（league 七维 score/max 来自
+    后端 metadata、KAST/Contribution /100 稳定参考值，display-only）；Drawer「设置指标」面板
+    （勾选 + ↑/↓，min 3 / max 8），偏好独立 localStorage（wotb-radar-metric-order），
+    Summary/Battle 共用；axis 缺失 "--"，partial availability 提示，不影响 Rating。Impact 无稳定
+    normalization 不入 Radar，仍完整保留在表格 / Drawer 表现指标区 / 排序 / 导出。
+  - **League PNG 导出契约（最终：当前视图）**：PNG 克隆当前 DOM（当前可见列 + 顺序 + 排序 +
+    战队名覆盖，所见即所得）；XLSX 保持完整数据、不受前端 ColumnPicker 偏好影响；Rating-ineligible
+    场次 Rating/七维导出 "--"（只有真实 raw 0 才显示 0）。此前「PNG 全量列 + leagueExportTable.js」
+    方案已撤销（见上方 closeout 条目）。
+  - **单场 CW Unified Summary 事实**：Mapper.toPreviewResponse 改为
+    shouldAggregate = battles.size() > 1 || league != null——CW/League 单场也生成基础 Replay
+    Aggregate row（damage_avg/assisted_avg/kills_avg/earned_avg 由 Replay Core 权威事实得出，
+    不伪装 unavailable）；Standard 单场保持旧语义（aggregate 空）。新增 ReplayServiceLeagueTest
+    单场 rated/ineligible/standard 三用例，修正 merge 单测。
+  - **一级 Workspace tabs 与 restoolbar 样式隔离**：battle 分栏规则作用域收窄到
+    .restoolbar .tabs，.workspace-tabs 独立成紧凑单行导航（不再被 .tabs 通用规则误伤）。
+  - **LeagueSummaryTable 排序修复**：战队汇总行按 ratingMedian/dimensionMedians 字段映射排序
+    （raw 中位数排序生效）。
 - **Replay Core / League Rating 业务边界加固（docs/current-plan.md）**：
   - **前端不再把 League Rating 校验失败显示成红色「文件解析失败」**：训练赛/联赛回放无法生成
     Rating 时，结果区改为琥珀色 warning 汇总（League Rating · 可评分 X / N · N 场未生成 Rating
     + [查看详情] 按稳定错误码分组、再展开具体文件与 arenaId，不默认铺满超长文件名）；真正解析
     失败仍显示红色错误（不降级）。三语 locale 新增 league.rated_count / unrated_count /
     failure_view / failure_hide。
-  - **混合批次不再整体拒绝（plan §21）**：普通 + 训练赛/联赛混传时 League Rating 不聚合
+  - **混合批次不再整体拒绝**：普通 + 训练赛/联赛混传时 League Rating 不聚合
     （league=null），全部可解析回放按普通回放语义成功返回——Processing Job READY、Preview 与
     标准导出可用；响应新增 leagueUnavailableCode=MIXED_LEAGUE_AND_STANDARD_REPLAYS，前端显示
     琥珀色提示。preview / Processing Job result / 同步与异步导出四条链统一。
-  - **领域边界守卫**：新增 LeagueDomainBoundaryGuardTest（§24）——LeagueFailure ≠
+  - **领域边界守卫**：新增 LeagueDomainBoundaryGuardTest——LeagueFailure ≠
     ReplayFailure、Battle ↔ Rating 按 arenaId identity 绑定（禁止数组位置）、混合批次不污染
-    Parser；前端 §23 Test 1–7 + mixed 用例落地。
+    Parser；前端 Test 1–7 + mixed 用例落地。
 - **战斗分析页改为单页 Workspace，AI 复盘 / 战局回放原地切换且不丢数据（docs/current-plan.md）**：
   - **ReplayPage 下半部分改造为可动态切换的 Battle Workspace**：新增「解析结果 / AI 复盘 / 战局回放」三个一级能力 tab（复用全局 .tabs 视觉），v-show 保持各面板挂载——切走再切回时解析结果、AI 复盘进度/结果、地图与战局回放播放器状态全部保留；顶部「回放数据提取 / 文件选择 / 解析控制」区域不变。
   - **入口全部改原地切换**：上传区的「战局回放 / AI 复盘」快捷按钮与结果 toolbar 的 battle-level 动作不再 navigate('reconstruction') 跨视图跳转，改为原地切到对应 Workspace 面板；目标文件直接复用当前 selection 内存文件（不重新上传、不重复解析、不跨视图交接）。多文件仍需显式选择目标 replay（禁止 fallback 第一场）；AI 复盘仍不自动消耗额度（进面板后手动发起）。
@@ -32,13 +138,13 @@
 - **百场名人堂 WG 官方 API 自动认证链路**：保留原截图 + 5 回放人工审核端点，新增仅限 `wotb_verified` ASIA/EU/NA 身份的 JSON 提交链路。后端以固定白名单 host 调用 WG `account/info` + `tanks/stats`，冻结账号总场次、单车总伤害/场次与计算场均；账号总场次至少 5000、目标 Tier X 至少 100 场，MANUAL 使用原申报成绩、WARGAMING_API 使用官方快照。官方精确场均 `<=3900` 原子写入 CURRENT，`>3900` 自动创建无文件 PENDING 供管理员审核；审批端点不接收成绩数据，管理员只能通过、拒绝或删除，不能改写任何排名值。WG key 只从运行时 `WG_APPLICATION_ID` 注入 backend，端点受登录与 nginx 限流保护，失败零落库并引导原人工链路。
 - **review-with-docs 集成 Alibaba OpenCodeReview（OCR）delegate mode（docs/current-plan.md）**：
   `review-with-docs` 重构为三层审查引擎——Layer A（Requirement/Plan Auditor，主代理自审 plan/requirements/acceptance criteria 完成度，OCR 无 finding 不代表性完成）、Layer B（OpenCodeReview Code Auditor，`ocr delegate preview/rule` 确定性文件筛选+规则解析，推理由主代理 DeepSeek 完成，不维护第二套 LLM 配置）、Layer C（Review Reconciler，去重/验证/重定级，BLOCKER/MAJOR/MINOR + Blocker count=0 完成条件不变）。外部调用方式不变（仍 `review-with-docs`）、current-plan 流程不变、blocker=0 语义不变；新增 `.opencodereview/rule.json`（WotBTools-aware 首版少量规则：Java/Spring、Vue 前端 + replay invariant、Keycloak SPI、CI/deploy）；验证 Case 1–6 并明确 deterministic/agent-level 边界（scripts/ocr-verify/）：deterministic tests（verify-ocr.ps1，可重复、无 LLM）覆盖 merge-base 多 commit 范围（Case 5）、项目规则命中（Case 1 确定性部分）、no-diff reviewable=0（Case 6）、OCR 失败非零退出码（Case 4 确定性部分）；agent-level scenarios（主代理按 skill 执行并记录）覆盖 NPE bug 完整检出闭环（Case 1）、requirement 遗漏 MISSING/BLOCKER（Case 2）、OCR false positive 拒绝/降级（Case 3）、OCR failure 的 plan audit 继续 + review incomplete 处理（Case 4）。OCR 固定版本 `@alibaba-group/open-code-review@1.9.10`（Apache-2.0）。未新增 GitHub OCR Action、未增加用户人工步骤。
-- **Replay 解析预览改为 Replay Processing Job（回放处理升级为 Job，Preview/Export 共享解析结果，plan §0–§72）**：
+- **Replay 解析预览改为 Replay Processing Job（回放处理升级为 Job，Preview/Export 共享解析结果）**：
   - **后端**：新增 `POST /api/replay/processing-jobs`（202 返回 jobId；HTTP request 不等待解析；创建时校验并持久化上传输入，绝不在异步 worker 持有 `MultipartFile`）、`GET /api/replay/processing-jobs/{jobId}`（真实 `processed/total` + `valid/duplicates/failures` + `currentFile` + 终态 `errorCode`）、`DELETE .../{jobId}`（QUEUED 立即终态并释放 executor queue slot / PROCESSING 协作取消）、`GET .../{jobId}/result`（READY 后返回 Preview 数据，**不再重新 process replay**）。状态机 QUEUED→PROCESSING→READY/FAILED/CANCELLED 终态 exactly once；Phase 仅 PROCESSING_REPLAYS（有真实进度，不为无观察价值的阶段造假 phase）；0 场有效 → FAILED `NO_VALID_REPLAYS`。
   - **共享 ProcessedDataset（Strategy A 内存缓存）**：worker 完成后 enrich 一次（PotentialDamage + populateBattle）并缓存已处理的 authoritative Battle（仅结算战绩，不携带 reconstruction 事件流；34/50 场 heap 成本可接受），TTL 30 分钟（`REPLAY_PROCESSING_JOB_TTL_MINUTES`，默认与 Export 一致）；Preview result / Export 直接复用，**同一批 34 个回放 Preview+Export 的 processFull 总调用数 = 34（不再 ×2）**。
-  - **Export 复用 result（plan §28–§30）**：`POST /api/replay/export-jobs?processingJobId=...` 创建 Export Job 时引用 Processing Job result（不重新上传 replay、不 processFull，直接生成 XLSX/ZIP）；Export 创建时对 result `acquire` 引用计数、终态 `release`（plan §52：活跃 Export 期间 Processing result 不被 TTL 清理，不出现「Export 进行到一半 result 消失 FAILED」）；404 `PROCESSING_JOB_NOT_FOUND` / 409 `PROCESSING_JOB_NOT_READY`。
-  - **复用 PR #118 基础设施，不复制两套**（plan §3）：抽取通用 `ReplayJobState`（状态机）/ `ReplayJobStorage`（目录+TTL sweeper+孤儿清理）/ `ReplayJobFiles`（输入顺序/惰性 Source），ExportJob/ExportJobStore 组合重构（公共 API 与行为不变，18 个既有测试零改动通过）；Processing Job 与 Export Job **共用同一有界 worker 池**（2/4，满载 503 `PROCESSING_QUEUE_FULL`），worker 仍获取全局 `ReplayCapacityLimiter` 许可（`max-concurrent-jobs=2` 不提高）；batch 内 replay 保持上传顺序串行（N__ 前缀整数排序）。
+  - **Export 复用 result（引用计数生命周期）**：`POST /api/replay/export-jobs?processingJobId=...` 创建 Export Job 时引用 Processing Job result（不重新上传 replay、不 processFull，直接生成 XLSX/ZIP）；Export 创建时对 result `acquire` 引用计数、终态 `release`（活跃 Export 期间 Processing result 不被 TTL 清理，不出现「Export 进行到一半 result 消失 FAILED」）；404 `PROCESSING_JOB_NOT_FOUND` / 409 `PROCESSING_JOB_NOT_READY`。
+  - **复用既有 Job 基础设施，不复制两套**：抽取通用 `ReplayJobState`（状态机）/ `ReplayJobStorage`（目录+TTL sweeper+孤儿清理）/ `ReplayJobFiles`（输入顺序/惰性 Source），ExportJob/ExportJobStore 组合重构（公共 API 与行为不变，18 个既有测试零改动通过）；Processing Job 与 Export Job **共用同一有界 worker 池**（2/4，满载 503 `PROCESSING_QUEUE_FULL`），worker 仍获取全局 `ReplayCapacityLimiter` 许可（`max-concurrent-jobs=2` 不提高）；batch 内 replay 保持上传顺序串行（N__ 前缀整数排序）。
   - **指标与日志**：`wotb_replay_processing_job_created_total` / `files_total` / `queue_wait_seconds` / `duration_seconds` / `result_total{result=ready|failed|cancelled}` / `processing_file_duration_seconds`（低基数，无 jobId/filename/username/arenaId tag）；生命周期日志 `processing_job_created/started/ready/failed/cancelled/cleaned`（progress 仅 DEBUG，终态 exactly once）。
-  - **前端**：解析预览改走 Processing Job——`useReplay` 新增 startProcessingJob/cancelProcessingJob/dismissProcessingJob（创建→1.5s 轮询真实进度→READY 自动拉取 result 展示，plan §20）；统一 `ReplayTaskCard`（Processing/Export 同一视觉体系，plan §41）替换旧 ExportTaskCard；READY 后点导出自动传 `processingJobId`（不再重新上传 34 个文件）；上传区文件列表默认折叠（34/50 文件显示「N 个文件 · 总大小」+ 查看文件列表，内部 scroll，长 filename 截断 + title，plan §17–§19/§65）。三语 locale 新增 `replay.processing_job.*` / `upload.files_size` / `upload.view_list` / `upload.hide_list`。
+  - **前端**：解析预览改走 Processing Job——`useReplay` 新增 startProcessingJob/cancelProcessingJob/dismissProcessingJob（创建→1.5s 轮询真实进度→READY 自动拉取 result 展示）；统一 `ReplayTaskCard`（Processing/Export 同一视觉体系）替换旧 ExportTaskCard；READY 后点导出自动传 `processingJobId`（不再重新上传 34 个文件）；上传区文件列表默认折叠（34/50 文件显示「N 个文件 · 总大小」+ 查看文件列表，内部 scroll，长 filename 截断 + title）。三语 locale 新增 `replay.processing_job.*` / `upload.files_size` / `upload.view_list` / `upload.hide_list`。
   - **测试**：后端新增 `ReplayProcessingJobServiceTest` 13 项（lifecycle/progress/34 场上传顺序/exactly-once processFull/result 不二次解析/QUEUED+PROCESSING 取消/NO_VALID_REPLAYS/TTL 引用计数）+ `ReplayExportJobServiceTest` 新增 4 项 from-result 复用（facade processFull 零调用验证）；前端 useReplay/ReplayPage/ReplayTaskCard 测试同步（Processing 真实 18/34、READY 自动展示、export 传 jobId 不重新上传）。
   - **文档**：java/README.md 新增 Replay Processing Job API 段；CHANGELOG-PRODUCT 记录用户可见变更；旧同步 `POST /api/preview` 保留（向后兼容，deprecated）。
 - **Frontend V2 UI/UX 重构（docs/current-plan.md Phase 1–6）**：建立 Design Tokens 单一事实源（src/styles/tokens.css，原 App.vue 内联变量迁移 + 新增 Layout/Spacing/Radius/Z-index/Typography/Tactical 阵营色 token，删除未引用 theme.css）；新增四类 Layout Primitives（layout-content / layout-wide / layout-data-workspace / layout-full-workspace）；App Shell 导航重排——「回放解析」与「AI 复盘」合并为「战局分析」一级入口，utility 收进右上角 user menu（useAuth 接入 App.vue，provide navigate 供子页跨视图跳转）；ReplayPage 结果区改近全宽，Battle context 新增「战局回放 / AI 复盘」高权重动作，文件经 utils/replayTransfer.js 单例跨视图传给 ReconstructionPage（take 语义接管，playback 模式自动加载地图）；HoFPage 改 Wide Layout（1600px）+ 上传收敛为「提交记录」Modal；ProfilePage 改 Content Layout（1280px）+ Hero 移除 Logout；ReconstructionPage 外层改近全宽 + AnalysisResultPanel 阅读限宽。三语 locale 同步新增 action.battle_playback/ai_review、home.uploadReplay/analysisTitle/analysisDesc、hof.submit_entry。测试同步（HoFPage 上传用例改 modal 路径、App.test useAuth mock 补全）。
@@ -46,7 +152,7 @@
 - **PR #119 评审闭环修复**：①用户菜单改 Teleport 到 body + fixed 定位（脱离 .topbar overflow 裁切，桌面/平板/手机完整显示，外部点击/Escape 关闭）；②ReplayPage Battle actions 增加登录门控——未登录点击「战局回放 / AI 复盘」先在当前页明确提示（登录后需重新选择回放），不再静默跳转丢 File；已登录 SPA 内跨视图交接不变（playback 自动加载地图、ai 只接管文件，不写 localStorage）；③导航入口三语改「战局分析 / Battle Analysis / Анализ боя」（新增 app.analysis_tab，保留 replay_tab 不动）；④页面级 warn/error 提示改独立 .warn/.error 类（不再依赖 .wrap 容器，亮/暗主题 token 生效）。新增测试：App 用户菜单 6 项（桌面/834px/375px/外部点击/Escape/开关）、ReplayPage Battle 登录门控 6 项、ReconstructionPage 接管 5 项（已登录 playback 自动地图/ai 只接管/KeepAlive 返回/连续接管/未登录不消费）。
 
 
-- **Replay 批量导出改为 Export Job（长任务 UX 架构，plan §7–§23）**：新增 `POST /api/replay/export-jobs`（202 返回 jobId；创建时即校验并把上传输入持久化到 job 临时目录，绝不在异步 worker 持有 `MultipartFile`）、`GET /api/replay/export-jobs/{jobId}`（真实 `processed/total` + `phase` + `duplicates/failures` + 终态 `errorCode`）、`DELETE /api/replay/export-jobs/{jobId}`（QUEUED 立即终态 / PROCESSING 协作取消，安全 checkpoint 后终态）、`GET /api/replay/export-jobs/{jobId}/download`（`FileSystemResource` streaming，不再 `ByteArrayOutputStream` + 大 `byte[]` 全量驻留）。`Replays.collect` 新增可选逐文件进度回调（4 参重载，3 参/2 参旧调用不变；每个输入恰好回调一次，成功/重复/失败都推进 processed）。内存态 `ExportJobStore`（单实例部署，TTL 30 分钟清理终态 job 与临时目录，启动清理孤儿目录）+ 有界 worker 池（2 并发 / 4 排队，满载 503 `EXPORT_QUEUE_FULL`）；worker 执行前仍获取全局 `ReplayCapacityLimiter` 许可（`max-concurrent-jobs=2` 不变，job 化不绕过全局容量）；batch 内 replay 仍串行（不引入 parallelStream/VirtualThread）。0 场有效 → FAILED `NO_VALID_REPLAYS`（不生成空 Excel）。单场 XLSX sheet 顺序改为 玩家数据/战斗信息/原始字段 且默认打开「玩家数据」（§28）。指标 `wotb_replay_export_job_duration_seconds` / `queue_wait_seconds` / `result_total`（低基数，无 jobId/文件名 tag）。旧同步 `POST /api/export` 保留（向后兼容，未删除）。 **PR #118 两处 blocker 修复**：① QUEUED 取消不再只改业务状态——`ReplayExportWorkerExecutor` 保存 jobId→Runnable 句柄，`cancel` 经 `ThreadPoolExecutor.remove(Runnable)` 把尚未执行的任务从有界队列移除（立即释放 queue slot，新 job 不再误报 `EXPORT_QUEUE_FULL`；已 dequeue/运行中的任务 remove 返回 false，由协作取消在 checkpoint 终态，绝不再执行已取消任务）；② `mode=each` 改为逐场流式：每场 `processFull → enrich → metrics → writeSingle 写入 ZIP entry → 释放 Battle`，working set O(1)（不再全批次保留 `List<Battle>`），全程 phase=`BUILDING_ARCHIVE`（UI 不显示假的「全部解析完才开始生成」）；FAILED/CANCELLED 终态删除 partial artifact（不暴露半包）。
+- **Replay 批量导出改为 Export Job（长任务 UX 架构）**：新增 `POST /api/replay/export-jobs`（202 返回 jobId；创建时即校验并把上传输入持久化到 job 临时目录，绝不在异步 worker 持有 `MultipartFile`）、`GET /api/replay/export-jobs/{jobId}`（真实 `processed/total` + `phase` + `duplicates/failures` + 终态 `errorCode`）、`DELETE /api/replay/export-jobs/{jobId}`（QUEUED 立即终态 / PROCESSING 协作取消，安全 checkpoint 后终态）、`GET /api/replay/export-jobs/{jobId}/download`（`FileSystemResource` streaming，不再 `ByteArrayOutputStream` + 大 `byte[]` 全量驻留）。`Replays.collect` 新增可选逐文件进度回调（4 参重载，3 参/2 参旧调用不变；每个输入恰好回调一次，成功/重复/失败都推进 processed）。内存态 `ExportJobStore`（单实例部署，TTL 30 分钟清理终态 job 与临时目录，启动清理孤儿目录）+ 有界 worker 池（2 并发 / 4 排队，满载 503 `EXPORT_QUEUE_FULL`）；worker 执行前仍获取全局 `ReplayCapacityLimiter` 许可（`max-concurrent-jobs=2` 不变，job 化不绕过全局容量）；batch 内 replay 仍串行（不引入 parallelStream/VirtualThread）。0 场有效 → FAILED `NO_VALID_REPLAYS`（不生成空 Excel）。单场 XLSX sheet 顺序改为 玩家数据/战斗信息/原始字段 且默认打开「玩家数据」。指标 `wotb_replay_export_job_duration_seconds` / `queue_wait_seconds` / `result_total`（低基数，无 jobId/文件名 tag）。旧同步 `POST /api/export` 保留（向后兼容，未删除）。 **PR #118 两处 blocker 修复**：① QUEUED 取消不再只改业务状态——`ReplayExportWorkerExecutor` 保存 jobId→Runnable 句柄，`cancel` 经 `ThreadPoolExecutor.remove(Runnable)` 把尚未执行的任务从有界队列移除（立即释放 queue slot，新 job 不再误报 `EXPORT_QUEUE_FULL`；已 dequeue/运行中的任务 remove 返回 false，由协作取消在 checkpoint 终态，绝不再执行已取消任务）；② `mode=each` 改为逐场流式：每场 `processFull → enrich → metrics → writeSingle 写入 ZIP entry → 释放 Battle`，working set O(1)（不再全批次保留 `List<Battle>`），全程 phase=`BUILDING_ARCHIVE`（UI 不显示假的「全部解析完才开始生成」）；FAILED/CANCELLED 终态删除 partial artifact（不暴露半包）。
 
 - **百场提交会话草稿与回放累计选择**：`HoFPage` 不再在打开/关闭提交弹窗时重置表单，车辆、数值、截图 base64 与 `File[]` 在当前组件生命周期内保留；回放选择按 `name + size + lastModified` 去重并分批追加至 5 个，非法/重复/超限批次不会清空既有文件，支持截图/回放逐项移除与显式确认清空。FileReader 使用 generation 防止过期回调覆盖新截图；提交失败保留草稿，成功后统一 reset。未新增浏览器持久化、服务器预上传或 API 变更。
 - **Contribution / KAST / Impact 正式并入回放解析结果**：单场玩家表直接新增「贡献度 / KAST / Impact」三列（来自 `PerformanceMetricsCalculator.battleMetrics`，与跨场聚合共用同一公式与同一 `Battle`/`PlayerResult` facts，绝不二次解析/二次计算）；删除独立「战斗表现」tab 与 `PerformanceTable` 组件、`PreviewResponse.performance`/`performanceColumns` 字段、`PerformanceRow` DTO 与 `Mapper.toPerformance`；跨场聚合（汇总）新增 contribution/kast/impact/multi_damage_rate/traded_deaths 五列（`Mapper.toAggregate` 按 accountId 合并 `PerformanceMetricsCalculator.compute` 结果）。`impact` 契约由带 `%` 的字符串统一为数值（前端负责格式化 `%`），排序保持 numeric。HP UNKNOWN 时单场/汇总的 contribution/kast/多伤率输出 null（UI 显示 `--`，不再冒充 0）；`Row.hpEligible` 标记是否存在 HP 已知场次。Excel 单场「玩家数据」/汇总「汇总」同步新增对应列（`Columns.STAT` + `AggregateSheets`）；**preview / export / mode=each 三条链统一走 `Replays.collect(..., processFull, ...)`（同一 authoritative full processing：reconstruction + ObservedMaxHp + DeathTimeReconciler），再 `populateBattle`，保证 Excel 与网页 Contribution/KAST/Impact 同源**。三语 locale 同步（player_labels/agg_labels 新增键，删除 performance_labels/performance_tab）。
@@ -84,18 +190,18 @@
     队伍冲突→双 false、全等→双 true）、LeagueReplaysTest（#201=15/#301=14 rated、多场合法 CW
     playerSummaries/teamSummaries 非空）、LeagueRosterCompletenessTest（<b>真实 CW fixture 入库
     common/fixtures/replays/（15/14 训练房 + 14/14 tournament），CI 无条件全链路</b>：14 个 Player
-    Rating、八维度 0-max、Team 1/2 Rating、MVP、两队最佳、#201>#301 断言、真实双份 collect →
+    Rating、七维度 0-max、Team 1/2 Rating、MVP、两队最佳、#201>#301 断言、真实双份 collect →
     summaries 非空）+ AI fail-closed 回归（CW 15/14 全局 rosterComplete=false → 不推导点数/存活
     结束方式、无全歼推断，PR #73 boundary 不放松）。
   - **文档**：protocol.md / replay-data.md / replay-parsed-fields.md / league-rating.md 同步——
     全局 rosterComplete 严格契约保持，「任何 #201 extra 都是观战者」不表述为 universal rule，
     仅记录证据边界（标准 7v7 且 #301 完整 14 人时 extra 不属于 14 名 settled combatants）。
-- **Replay 汇总空数据 + 超宽表格重叠 P0 修复（docs/current-plan.md）**：
+- **Replay 汇总空数据 + 超宽表格重叠修复**：
   - **League 模式恢复基础 Replay Aggregate**：Mapper.toPreviewResponse 在 League 模式下不再输出空
     aggregate——多场时按标准路径计算并输出基础跨场汇总（Aggregator.aggregate +
     PerformanceMetricsCalculator.compute，同一 Replay Core 数据），League Rating Summary 是附加
     分析而非替代品（resp.aggregate 有数据时 League 模式不再隐藏 AggregateTable）；aggregateColumns
-    仍用 League 变体（不含 contribution/kast/impact，PR #131 列边界不变）。
+    用 League 变体（保留跨场 contribution/kast/impact）。
   - **汇总人数语义修复**：replayAggregatePlayerCount 一律取 resp.aggregate.length（Replay Core
     基础汇总人数），不再在 League 模式改用 league.playerSummaries.length——0 场可评分 ≠ Replay
     没数据，「汇总（0 名选手）」误导消失。

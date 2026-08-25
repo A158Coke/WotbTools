@@ -125,7 +125,7 @@ describe('useReplay export job flow', () => {
 })
 
 
-describe('useReplay processing job flow (plan §13/§20/§30/§63)', () => {
+describe('useReplay processing job flow', () => {
   let replay
 
   function pJob(overrides = {}) {
@@ -152,7 +152,7 @@ describe('useReplay processing job flow (plan §13/§20/§30/§63)', () => {
     await replay.startProcessingJob(onColumnsInit)
     expect(api.createProcessingJob).toHaveBeenCalledTimes(1)
     await vi.advanceTimersByTimeAsync(0)
-    // 第一次轮询：真实 18/34 + 计数（plan §63 processing 真实显示）
+    // 第一次轮询：真实 18/34 + 计数（processing 真实显示）
     expect(replay.processingJob.value.status).toBe('PROCESSING')
     expect(replay.processingJob.value.processed).toBe(18)
     expect(replay.processingJob.value.valid).toBe(16)
@@ -160,7 +160,7 @@ describe('useReplay processing job flow (plan §13/§20/§30/§63)', () => {
     expect(replay.processingJob.value.failures).toBe(1)
 
     await vi.advanceTimersByTimeAsync(1500)
-    // READY：自动拉取 result 展示（plan §20），不强迫用户再点「加载结果」
+    // READY：自动拉取 result 展示，不强迫用户再点「加载结果」
     expect(replay.processingJob.value.status).toBe('READY')
     expect(replay.resp.value).toEqual(result)
     expect(replay.processingJobId.value).toBe('p1')
@@ -222,7 +222,7 @@ describe('useReplay processing job flow (plan §13/§20/§30/§63)', () => {
     expect(api.createProcessingJob).toHaveBeenCalledTimes(1)
   })
 
-  it('export after READY reuses processingJobId without re-uploading (plan §30)', async () => {
+  it('export after READY reuses processingJobId without re-uploading', async () => {
     // 模拟已 READY（轮询 → READY → processingJobId 完整链路由上一用例覆盖）；
     // resultMatchesSelection 要求 resp 与 processingJobId 成对存在。
     replay.processingJobId.value = 'p1'
@@ -237,7 +237,7 @@ describe('useReplay processing job flow (plan §13/§20/§30/§63)', () => {
     expect(replay.exportJob.value.status).toBe('READY')
   })
 
-  it('startExportJob passes league team name overrides to api (PR #123 Blocker 1)', async () => {
+  it('startExportJob passes league team name overrides to api', async () => {
     replay.processingJobId.value = 'p1'
     replay.resp.value = { battles: [], aggregate: [], duplicates: [], failures: [], playerColumns: [], aggregateColumns: [] }
     api.createExportJob.mockResolvedValue({ jobId: 'e1', status: 'QUEUED', total: 2 })
@@ -269,7 +269,7 @@ describe('useReplay processing job flow (plan §13/§20/§30/§63)', () => {
     expect(jobId).toBeUndefined()
   })
 })
-describe('useReplay file-selection invalidation (review BLOCKER 1)', () => {
+describe('useReplay file-selection invalidation', () => {
   let replay
 
   function pJob(overrides = {}) {
@@ -393,7 +393,7 @@ describe('useReplay file-selection invalidation (review BLOCKER 1)', () => {
     expect(api.createProcessingJob).toHaveBeenCalledTimes(2)
     expect(replay.processingJobId.value).toBe('p2')
   })
-  it('Case: stale P1 reject 不停止 P2 polling（review BLOCKER 1 stale error race）', async () => {
+  it('Case: stale P1 reject 不停止 P2 polling（stale error race）', async () => {
     replay.files.value = [new File(['x'], 'a.wotbreplay')]
     let rejectP1
     api.createProcessingJob.mockResolvedValueOnce({ jobId: 'p1', status: 'QUEUED', total: 1 })
@@ -436,7 +436,7 @@ describe('useReplay file-selection invalidation (review BLOCKER 1)', () => {
   })
 })
 
-describe('useReplay initial result tab (P0: activeTab must point to a renderable panel)', () => {
+describe('useReplay initial result tab (activeTab must point to a renderable panel)', () => {
   let replay
 
   function pJob(overrides = {}) {
@@ -472,7 +472,7 @@ describe('useReplay initial result tab (P0: activeTab must point to a renderable
   ]
   const league = { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] }
 
-  it('Test A: 多场 + aggregate 空 + 无 league → READY 后 activeTab=b0（P0 核心回归）', async () => {
+  it('Test A: 多场 + aggregate 空 + 无 league → READY 后 activeTab=b0', async () => {
     readyWith({ ...base, battles: twoBattles, aggregate: [] })
     await replay.startProcessingJob()
     await vi.advanceTimersByTimeAsync(0)
@@ -489,8 +489,8 @@ describe('useReplay initial result tab (P0: activeTab must point to a renderable
     expect(replay.activeTab.value).toBe('aggregate')
   })
 
-  it('Test C: 多场 + aggregate 空 + league 存在 → READY 后 activeTab=aggregate（不 fallback 到 b0）', async () => {
-    readyWith({ ...base, battles: twoBattles, aggregate: [], league })
+  it('Test C: 多场 + aggregate 空 + leagueMode=true → READY 后 activeTab=aggregate（不 fallback 到 b0）', async () => {
+    readyWith({ ...base, battles: twoBattles, aggregate: [], league, leagueMode: true })
     await replay.startProcessingJob()
     await vi.advanceTimersByTimeAsync(0)
     await vi.advanceTimersByTimeAsync(1500)
@@ -507,18 +507,18 @@ describe('useReplay initial result tab (P0: activeTab must point to a renderable
 
   it('chooseInitialResultTab 纯函数：所有已知 response 的 activeTab 都指向真实 panel（invariant）', () => {
     const cases = [
-      { result: { battles: twoBattles, aggregate: [], league: null }, expectTab: 'b0' },
-      { result: { battles: twoBattles, aggregate: [{ cells: {} }], league: null }, expectTab: 'aggregate' },
-      { result: { battles: twoBattles, aggregate: [], league }, expectTab: 'aggregate' },
-      { result: { battles: [twoBattles[0]], aggregate: [], league: null }, expectTab: 'b0' },
-      { result: { battles: [], aggregate: [], league: null }, expectTab: 'aggregate' }
+      { result: { battles: twoBattles, aggregate: [], leagueMode: false }, expectTab: 'b0' },
+      { result: { battles: twoBattles, aggregate: [{ cells: {} }], leagueMode: false }, expectTab: 'aggregate' },
+      { result: { battles: twoBattles, aggregate: [], league, leagueMode: true }, expectTab: 'aggregate' },
+      { result: { battles: [twoBattles[0]], aggregate: [], leagueMode: false }, expectTab: 'b0' },
+      { result: { battles: [], aggregate: [], leagueMode: false }, expectTab: 'aggregate' }
     ]
     for (const { result, expectTab } of cases) {
       const tab = chooseInitialResultTab(result)
       expect(tab).toBe(expectTab)
       if (tab === 'aggregate') {
         // aggregate 有真实 panel 或（空结果）由页面空态兜底——绝不允许「指向不存在 panel 导致空白」
-        const panelExists = !!result.league || (result.aggregate || []).length > 0
+        const panelExists = result.leagueMode === true || (result.aggregate || []).length > 0
         const emptyStateCovers = !(result.battles || []).length && !panelExists
         expect(panelExists || emptyStateCovers).toBe(true)
       } else {
