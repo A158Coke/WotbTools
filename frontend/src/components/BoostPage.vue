@@ -37,6 +37,7 @@ import {
   getUserProfile,
   startMyBoosterAssignment
 } from '../utils/api-boost.js'
+import ImageDataUploader from './ImageDataUploader.vue'
 
 const { t, te } = useI18n()
 const { initPromise, login, isAuthenticated, userName, tokenParsed } = useAuth()
@@ -86,6 +87,8 @@ const applicationForm = ref({
   selfAssessment: ''
 })
 const imageNames = ref({ overall: '', vehicle: '' })
+const overallImageUploader = ref(null)
+const vehicleImageUploader = ref(null)
 const applicationSubmitting = ref(false)
 const applicationError = ref('')
 const applicationSuccess = ref('')
@@ -375,40 +378,33 @@ function latestOpenApplication() {
   return myApplications.value.find(a => a.status === 'NEW' || a.status === 'REVIEWING')
 }
 
-function readImage(file) {
-  return new Promise((resolve, reject) => {
-    if (!file) { resolve(''); return }
-    if (!file.type?.startsWith('image/')) {
-      reject(new Error(t('boost.applicationImageTypeError')))
-      return
-    }
-    if (file.size > imageMaxBytes) {
-      reject(new Error(t('boost.applicationImageSizeError')))
-      return
-    }
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result || ''))
-    reader.onerror = () => reject(new Error(t('boost.applicationImageReadError')))
-    reader.readAsDataURL(file)
-  })
+function onApplicationImageSelected(kind, images) {
+  const image = images[0]
+  if (!image) return
+  applicationError.value = ''
+  if (kind === 'overall') {
+    applicationForm.value.overallStatsImage = image.data
+    imageNames.value.overall = image.name
+  } else {
+    applicationForm.value.vehicleStatsImage = image.data
+    imageNames.value.vehicle = image.name
+  }
 }
 
-async function selectApplicationImage(kind, event) {
-  applicationError.value = ''
-  const file = event.target.files?.[0]
-  try {
-    const dataUrl = await readImage(file)
-    if (kind === 'overall') {
-      applicationForm.value.overallStatsImage = dataUrl
-      imageNames.value.overall = file?.name || ''
-    } else {
-      applicationForm.value.vehicleStatsImage = dataUrl
-      imageNames.value.vehicle = file?.name || ''
-    }
-  } catch (e) {
-    applicationError.value = apiError(e)
-    event.target.value = ''
-  }
+function onApplicationImageError(code) {
+  const errorKey = {
+    'invalid-type': 'boost.applicationImageTypeError',
+    'too-large': 'boost.applicationImageSizeError',
+  }[code] || 'boost.applicationImageReadError'
+  applicationError.value = t(errorKey)
+}
+
+function resetApplicationImages() {
+  overallImageUploader.value?.invalidatePendingRead()
+  vehicleImageUploader.value?.invalidatePendingRead()
+  applicationForm.value.overallStatsImage = ''
+  applicationForm.value.vehicleStatsImage = ''
+  imageNames.value = { overall: '', vehicle: '' }
 }
 
 async function openApplicationImage(src, alt, trigger) {
@@ -452,10 +448,8 @@ async function submitBoosterApplication() {
   try {
     const response = await boostCreateBoosterApplication(f)
     applicationSuccess.value = apiCode(response.code, 'boost.applicationSubmitted')
-    f.overallStatsImage = ''
-    f.vehicleStatsImage = ''
+    resetApplicationImages()
     f.selfAssessment = ''
-    imageNames.value = { overall: '', vehicle: '' }
     await loadMyApplications()
   } catch (e) {
     applicationError.value = apiError(e)
@@ -931,7 +925,8 @@ function switchTab(t) {
     </div>
 
     <!-- Tab: Apply Booster -->
-    <div v-if="tab === 'apply' && !isBooster" class="boost-card">
+    <template v-if="!isBooster">
+    <div v-show="tab === 'apply'" class="boost-card boost-apply-card">
       <h3 class="card-title">{{ $t('boost.applyBoosterTitle') }}</h3>
       <p class="boost-warning">{{ $t('boost.applyBoosterWarning') }}</p>
 
@@ -958,12 +953,16 @@ function switchTab(t) {
         <div class="form-grid">
           <div class="form-row">
             <label>{{ $t('boost.applicationOverallImage') }} *</label>
-            <input type="file" accept="image/*" @change="selectApplicationImage('overall', $event)" />
+            <ImageDataUploader ref="overallImageUploader" :max-bytes="imageMaxBytes"
+                               @selected="onApplicationImageSelected('overall', $event)"
+                               @error="onApplicationImageError" />
             <small class="field-hint">{{ imageNames.overall || $t('boost.applicationImageHint') }}</small>
           </div>
           <div class="form-row">
             <label>{{ $t('boost.applicationVehicleImage') }} *</label>
-            <input type="file" accept="image/*" @change="selectApplicationImage('vehicle', $event)" />
+            <ImageDataUploader ref="vehicleImageUploader" :max-bytes="imageMaxBytes"
+                               @selected="onApplicationImageSelected('vehicle', $event)"
+                               @error="onApplicationImageError" />
             <small class="field-hint">{{ imageNames.vehicle || $t('boost.applicationImageHint') }}</small>
           </div>
         </div>
@@ -1054,6 +1053,7 @@ function switchTab(t) {
         </div>
       </div>
     </div>
+    </template>
 
     <!-- Tab: My Booster Assignments -->
     <div v-if="isBooster && tab === 'myAssignments'" class="boost-card">

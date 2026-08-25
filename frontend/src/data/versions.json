@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.30",
+    "date": "2026-08-25",
+    "tag": "fix",
+    "zh": "百场、三环和陪练申请的图片上传现由同一组件处理：浏览器会先校验图片 data URL；关闭名人堂弹窗、切换认证方式或切换陪练页 Tab 时，正在读取的截图会保留到草稿，切换文件、移除或清空草稿后旧读取不会覆盖当前选择。三环超过两张图片会在读取前直接提示。",
+    "en": "Image uploads for 100-battle, Mark 3 and booster applications now share one component. A pending screenshot is kept in the draft when you close a Hall-of-Fame dialog, switch verification modes or change a booster-page tab, while a stale read cannot overwrite the current choice after replacement, removal or clearing. Mark 3 rejects more than two images before reading them.",
+    "ru": "Загрузка изображений для заявок на 100 боёв, три отметки и бустеров теперь использует общий компонент: незавершённое чтение скриншота сохраняется в черновике при закрытии окна Зала славы, смене режима проверки или вкладки страницы бустеров, а устаревшее чтение не заменяет текущий выбор после замены, удаления или очистки. Для трёх отметок выбор более двух изображений отклоняется до чтения."
+  },
+  {
     "v": "2.12.29",
     "date": "2026-08-25",
     "tag": "chg",
