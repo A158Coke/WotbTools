@@ -4,6 +4,11 @@ import { fileKey } from '../utils/helpers.js'
 
 const props = defineProps({
   multiple: Boolean,
+  maxFiles: Number,
+  existingKeys: {
+    type: Array,
+    default: () => [],
+  },
   maxBytes: {
     type: Number,
     default: 4 * 1024 * 1024,
@@ -24,6 +29,22 @@ function validateImages(files) {
   if (files.some(file => !file.type?.startsWith('image/'))) return 'invalid-type'
   if (files.some(file => file.size > props.maxBytes)) return 'too-large'
   return ''
+}
+
+function collectNewFiles(files) {
+  const knownKeys = new Set(props.existingKeys)
+  const additions = []
+  let duplicateCount = 0
+  for (const file of files) {
+    const key = fileKey(file)
+    if (knownKeys.has(key)) {
+      duplicateCount += 1
+      continue
+    }
+    knownKeys.add(key)
+    additions.push(file)
+  }
+  return { additions, duplicateCount }
 }
 
 function readImage(file) {
@@ -54,11 +75,20 @@ function onPick(event) {
     emit('error', validationError)
     return
   }
+  const { additions, duplicateCount } = collectNewFiles(files)
+  if (props.maxFiles != null && props.existingKeys.length + additions.length > props.maxFiles) {
+    emit('error', 'too-many')
+    return
+  }
+  if (!additions.length) {
+    if (duplicateCount) emit('selected', [], duplicateCount)
+    return
+  }
 
   emit('reading', true)
-  Promise.all(files.map(readImage))
+  Promise.all(additions.map(readImage))
     .then(images => {
-      if (generation === readGeneration) emit('selected', images)
+      if (generation === readGeneration) emit('selected', images, duplicateCount)
     })
     .catch(error => {
       if (generation === readGeneration) emit('error', error?.message || 'read-error')
