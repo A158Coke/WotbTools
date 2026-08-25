@@ -21,6 +21,34 @@
   - 真实回放验证：3 个此前失败的 arena（`8963319361188400` / `1161438972003065843` /
     `1161440170298931846`）validator PASS + 生成 Rating，5 名 UNKNOWN 玩家
     `survivalState=NONE` / `survivalTradeScore=0`；本地 23 场批次 23/23 rated、0 failure。
+- **League Rating：同 arenaId 多份回放的死亡时间确定性 canonical 收口**：
+  - `LeagueRatingConflictDetector.sameDeathTime` 语义修正：`survivalTimeSec == 0` = UNKNOWN
+    （evidence absence）与任何值兼容（UNKNOWN+UNKNOWN / UNKNOWN+KNOWN 都不是 conflict）；
+    两个 KNOWN 超过 1s 容差 / 生死状态不同 / 负数/非有限死亡时间仍是冲突。
+  - 新增 `reconcileDeathTimes`（与上传顺序无关）：UNKNOWN+KNOWN → KNOWN、
+    KNOWN+KNOWN → 最小 KNOWN、全部 UNKNOWN → UNKNOWN(0)；`LeagueReplays` 在一致副本
+    去重时对保留 battle 执行收口——进入 Validator/Calculator/汇总/`ratingQuality` 的是
+    deterministic canonical battle，上传顺序不改变 Rating（`ratingQuality` 只统计
+    canonical battle 中的 UNKNOWN 实例，不因 duplicates 重复计数）。
+  - 新增回归：ConflictDetector 单测（UNKNOWN/UNKNOWN、UNKNOWN/KNOWN、KNOWN 容差内外、
+    survived mismatch、非法值冲突、reconcile 单元）与 `LeagueReplays` 集成测试
+    （UNKNOWN+KNOWN 双顺序 finalRating 一致、UNKNOWN+UNKNOWN quality=1、
+    KNOWN+KNOWN 容差内 canonical min / 容差外 conflict）。
+- **Replay Export Job：processingJobId reuse 不再 500（HTTP contract 收口）**：
+  - 生产根因：`ReplayExportJobController.create` 强制 `consumes=multipart/form-data`，
+    而 Processing result reuse 是合法 bodyless POST（`useReplay.startExportJob` 在
+    无战队名称覆盖时 `body=null`）→ `HttpMediaTypeNotSupportedException` 落入 generic
+    handler → `INTERNAL_ERROR` 500。修复：移除强制 consumes，POST 同时支持
+    multipart 上传 / bodyless processingJobId reuse / multipart teamNames reuse，
+    client contract == controller contract == service contract。
+  - `GlobalExceptionHandler` 补 `HttpMediaTypeNotSupportedException → 415` 与
+    `HttpRequestMethodNotSupportedException → 405`（framework client 错误不再是 500）。
+  - `runJobFromResult` 失败日志补结构化上下文（mode / reuse / processing job status /
+    parsed / rated / duplicates / league failures），异常保留 stack trace。
+  - 新增 `ReplayExportJobControllerContractTest`（bodyless reuse 202 / multipart 202 /
+    reuse+teamNames 202）、前端 `api-export-job.test.js` bodyless reuse 回归、
+    `ReplayExportJobServiceTest` partial-rated / UNKNOWN-death / 0-rated League aggregate
+    export 集成测试（全部 READY + XLSX 合法）。
 - **CW Rating UI 架构与导出契约收口**：
   - **leagueMode 单一事实源**：前端页面级 CW 模式只消费 `resp.leagueMode === true`（后端
     显式标记），删除 `!!resp.league` 兼容回退与 `isLeagueColumns()` 列内容推断

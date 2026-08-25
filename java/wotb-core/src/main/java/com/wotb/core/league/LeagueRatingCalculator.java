@@ -17,7 +17,10 @@ import java.util.function.ToDoubleFunction;
  * 胜方最终分 ×1.05（封顶 1000），败方不扣分。</p>
  *
  * <p>前置条件：调用方先经 {@link LeagueRatingValidator} 确认 7v7 完整性
- * （14 唯一账号、队伍 7/7、tankId、rosterComplete、明确胜方、阵亡时间可靠、数值关系合法）。
+ * （14 唯一账号、队伍 7/7、tankId、rosterComplete、明确胜方、数值关系合法）。
+ * 阵亡玩家死亡时间为合法 KNOWN（{@code > 0}）或 UNKNOWN（{@code == 0}，精确死亡时刻
+ * 无法从回放可靠证明——该玩家仅 Survival/Trade 维度 fail-closed 得 0 分）；
+ * 非法时间事实（负数 / 非有限 / 明显超过战斗时长）已由 validator 拒绝。
  * 若前置校验失败，本计算器不产生 Rating（调用方按失败处理）。</p>
  */
 public final class LeagueRatingCalculator {

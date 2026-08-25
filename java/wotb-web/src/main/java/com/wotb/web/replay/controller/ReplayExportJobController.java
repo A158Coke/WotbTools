@@ -46,7 +46,13 @@ public class ReplayExportJobController {
         this.service = service;
     }
 
-    @PostMapping(value = ApiPaths.REPLAY_EXPORT_JOBS, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    // HTTP contract（修复生产 500：Processing result reuse 是合法 bodyless create）：
+    // 不强制 consumes=multipart/form-data——POST 同时支持
+    //   a) multipart 上传（files 字段，首传路径）
+    //   b) bodyless processingJobId reuse（无 body、无 multipart Content-Type）
+    //   c) multipart teamNames reuse（processingJobId + teamNames 字段）
+    // 三者与 service 契约一致（files/processingJobId 均 required=false）。
+    @PostMapping(value = ApiPaths.REPLAY_EXPORT_JOBS)
     public ResponseEntity<Map<String, Object>> create(
             @RequestParam(name = "files", required = false) final MultipartFile[] files,
             @RequestParam(name = "mode", defaultValue = "aggregate") final String mode,
