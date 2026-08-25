@@ -34,7 +34,13 @@
         "remove_file_aria": "Remove replay file {name}",
         "files_size": "{count} files · {size}",
         "view_list": "View file list",
-        "hide_list": "Hide file list"
+        "hide_list": "Hide file list",
+        "reject_offending_title": "The following replays cannot be parsed:",
+        "reject_too_large_file": "{name} — {size}",
+        "reject_invalid_type": "{name} is not a .wotbreplay file",
+        "reject_size_hint": "Each replay is limited to 20 MB.",
+        "reject_count": "At most 100 replay files can be selected.",
+        "reject_total": "The combined replay size exceeds 200 MB."
     },
     "action": {
         "preview": "Parse & Preview",
@@ -1154,8 +1160,10 @@
         "INVALID_REPLAY_FILE": "Invalid replay file",
         "UNSUPPORTED_BATTLE_TYPE": "Only Random and Rating battles are supported.",
         "TOO_MANY_REPLAY_FILES": "Too many replay files",
-        "FILE_TOO_LARGE": "File is too large",
-        "REQUEST_TOO_LARGE": "The upload is too large",
+  "FILE_TOO_LARGE": "File is too large",
+  "REQUEST_TOO_LARGE": "The upload is too large",
+  "TOTAL_REQUEST_TOO_LARGE": "The combined upload size exceeds the limit.",
+  "UPLOAD_TOO_LARGE": "The upload is too large.",
         "REPLAY_BUSY": "Replay processing is busy. Try again later.",
         "AI_REVIEW_BUSY": "AI review service is busy. Try again later.",
         "MULTIPART_ERROR": "Invalid upload request",

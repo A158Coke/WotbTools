@@ -12,6 +12,8 @@ import * as api from '../utils/api.js'
 import AiReviewPanel from './AiReviewPanel.vue'
 import BattlePlaybackPanel from './BattlePlaybackPanel.vue'
 import ReplayInputPanel from './ReplayInputPanel.vue'
+import { displayName } from '../utils/helpers.js'
+import { formatReplaySize, validateReplaySelection } from '../utils/replayUpload.js'
 
 // KeepAlive include 匹配组件名：App.vue 仅缓存本页，切走视图时保持面板状态存活。
 defineOptions({ name: 'ReconstructionPage' })
@@ -54,16 +56,35 @@ const playbackPanelEl = ref(null)
 
 function addFile(e) {
   const picked = Array.from(e.target.files || [])
-    .filter(f => f.name.toLowerCase().endsWith('.wotbreplay'))
-  if (picked.length === 0) {
-    if ((e.target.files || []).length) {
-      error.value = t('recon.invalid_file')
-    }
+  const result = validateReplaySelection(picked)
+  if (!result.valid) {
+    error.value = replaySelectionErrorMessage(t, result)
     return
   }
+  if (picked.length === 0) return
   files.value = [picked[0]]
   error.value = ''
   ensureDataset()
+}
+
+/** 与 FileUploader 同一共享 contract：preflight 拒绝时展示全部 offending 文件 + 限制提示。 */
+function replaySelectionErrorMessage(tt, result) {
+  const lines = []
+  for (const off of result.offending) {
+    lines.push(off.reason === 'INVALID_TYPE'
+      ? tt('upload.reject_invalid_type', { name: displayName(off.file) })
+      : tt('upload.reject_too_large_file', { name: displayName(off.file), size: formatReplaySize(off.file.size) }))
+  }
+  if (result.offending.some(o => o.reason === 'FILE_TOO_LARGE')) {
+    lines.push(tt('upload.reject_size_hint'))
+  }
+  if (result.tooMany) {
+    lines.push(tt('upload.reject_count'))
+  }
+  if (result.totalTooLarge) {
+    lines.push(tt('upload.reject_total'))
+  }
+  return lines.join(' ')
 }
 
 function removeFile(index) {

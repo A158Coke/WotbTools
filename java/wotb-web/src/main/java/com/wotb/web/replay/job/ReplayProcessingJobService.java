@@ -33,7 +33,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 
 /**
@@ -125,12 +124,11 @@ public class ReplayProcessingJobService {
         store.register(job);
         final long submittedNanos = System.nanoTime();
         final Replays.ParsedEntry[] entries = new Replays.ParsedEntry[inputs.size()];
-        final AtomicInteger[] parse = {new AtomicInteger(), new AtomicInteger(), new AtomicInteger()};
         try {
             parseScheduler.submit(jobId, sourceOrder(prioritySourceIndex, inputs.size()),
-                    index -> processSource(job, inputs.get(index), index, entries, parse),
+                    index -> processSource(job, inputs.get(index), index, entries),
                     () -> onFirstDispatch(job, submittedNanos),
-                    () -> finalizeJob(job, entries, parse, submittedNanos));
+                    () -> finalizeJob(job, entries, submittedNanos));
         } catch (final ProcessingQueueFullException e) {
             store.removeAndCleanup(jobId);
             throw e;
@@ -213,9 +211,13 @@ public class ReplayProcessingJobService {
     /**
      * 单 source full processing（并发执行，plan §15）：真实 parse 进度随完成推进，
      * per-source 状态 PROCESSING → READY|FAILED；raw byte[] 只在本次调用内存活。
+     *
+     * <p>BLOCKER 3：任何已注册 source 处理失败都必须写入 authoritative failed
+     * {@link Replays.ParsedEntry}——source 状态 / parse 计数 / ParsedEntry / final
+     * failures 描述同一个 outcome；不允许用 null 表示业务失败。</p>
      */
     private void processSource(final ReplayProcessingJob job, final Path input, final int index,
-                               final Replays.ParsedEntry[] entries, final AtomicInteger[] parse) {
+                               final Replays.ParsedEntry[] entries) {
         if (job.isCancelled()) {
             return; // PROCESSING cancel：不再开始新的 full processing（plan §53）
         }
@@ -225,8 +227,9 @@ public class ReplayProcessingJobService {
         try {
             source = new Source(name, Files.readAllBytes(input));
         } catch (final IOException e) {
-            job.updateParseProgress(parse[0].incrementAndGet(), parse[1].get(), parse[2].incrementAndGet());
             job.markSourceFailed(index, "PROCESSING_JOB_STORAGE_UNAVAILABLE");
+            job.recordParseFailure();
+            entries[index] = new Replays.ParsedEntry(index, name, null, "PROCESSING_JOB_STORAGE_UNAVAILABLE");
             return;
         }
         final ReplayProcessingResult result;
@@ -235,8 +238,8 @@ public class ReplayProcessingJobService {
         } catch (final Exception e) {
             final String message = e.getMessage() == null || e.getMessage().isBlank()
                     ? "REPLAY_PROCESSING_FAILED" : e.getMessage();
-            job.updateParseProgress(parse[0].incrementAndGet(), parse[1].get(), parse[2].incrementAndGet());
             job.markSourceFailed(index, message);
+            job.recordParseFailure();
             entries[index] = new Replays.ParsedEntry(index, name, null, message);
             LOGGER.debug(logLine("processing_job_source_failed", job.jobId(),
                     "sourceIndex", index, "sourceName", name, "error", message));
@@ -252,12 +255,13 @@ public class ReplayProcessingJobService {
         } catch (final IOException e) {
             LOGGER.warn(logLine("processing_job_artifact_write_failed", job.jobId(),
                     "sourceIndex", index, "sourceName", name), e);
-            job.updateParseProgress(parse[0].incrementAndGet(), parse[1].get(), parse[2].incrementAndGet());
             job.markSourceFailed(index, "PROCESSING_JOB_STORAGE_UNAVAILABLE");
+            job.recordParseFailure();
+            entries[index] = new Replays.ParsedEntry(index, name, null, "PROCESSING_JOB_STORAGE_UNAVAILABLE");
             return;
         }
-        job.updateParseProgress(parse[0].incrementAndGet(), parse[1].incrementAndGet(), parse[2].get());
         job.markSourceReady(index);
+        job.recordParseSuccess();
         entries[index] = new Replays.ParsedEntry(index, name, battle, null);
     }
 
@@ -266,7 +270,7 @@ public class ReplayProcessingJobService {
      * 去重 / League / Rating / 汇总 → enrich → READY。取消在阶段间检查。
      */
     private void finalizeJob(final ReplayProcessingJob job, final Replays.ParsedEntry[] entries,
-                             final AtomicInteger[] parse, final long submittedNanos) {
+                             final long submittedNanos) {
         final long startNanos = System.nanoTime();
         try {
             if (job.isCancelled()) {
@@ -275,14 +279,20 @@ public class ReplayProcessingJobService {
                 return;
             }
             final List<Replays.ParsedEntry> list = new ArrayList<>(entries.length);
-            for (final Replays.ParsedEntry e : entries) {
-                if (e != null) {
-                    list.add(e);
+            for (int i = 0; i < entries.length; i++) {
+                if (entries[i] == null) {
+                    // 非 CANCELLED job：每个 sourceIndex 必须存在 terminal ParsedEntry。
+                    // null 是内部 invariant violation，不是合法业务情况——绝不静默过滤。
+                    throw new ProcessingJobInternalInvariantException("sourceIndex=" + i);
                 }
+                list.add(entries[i]);
             }
+            final ReplayProcessingJob.Snapshot parseSnap = job.snapshot();
             LOGGER.info(logLine("processing_job_parse_done", job.jobId(),
-                    "parseCompleted", parse[0].get(), "parseSucceeded", parse[1].get(),
-                    "parseFailed", parse[2].get(), "total", job.total()));
+                    "parseCompleted", parseSnap.parseCompleted(),
+                    "parseSucceeded", parseSnap.parseSucceeded(),
+                    "parseFailed", parseSnap.parseFailed(),
+                    "total", job.total()));
             job.advancePhase(ReplayProcessingJob.PHASE_FINALIZING_BATCH);
             // finalize 阶段按权威 outcome 推进 duplicates/failures（conflicted 计 FAILURE、
             // Rating-ineligible 计 SUCCESS，与旧 progress 语义一致）；parse 计数不受影响。
@@ -448,6 +458,9 @@ public class ReplayProcessingJobService {
         if (e instanceof NoValidReplaysException) {
             return "NO_VALID_REPLAYS";
         }
+        if (e instanceof ProcessingJobInternalInvariantException) {
+            return "PROCESSING_JOB_INTERNAL_INVARIANT";
+        }
         if (e instanceof IllegalArgumentException) {
             final String message = e.getMessage();
             if (StringUtils.hasText(message)) {
@@ -467,6 +480,16 @@ public class ReplayProcessingJobService {
 
     /** 协作取消 checkpoint 信号（finalize 阶段间检查，统一转 CANCELLED）。 */
     private static final class JobCancelledException extends RuntimeException {
+    }
+
+    /**
+     * 内部不变式违例：非 CANCELLED job 的某个 sourceIndex 缺少 terminal ParsedEntry。
+     * 视为编程错误而非业务情况——finalize 直接 FAILED + PROCESSING_JOB_INTERNAL_INVARIANT。
+     */
+    private static final class ProcessingJobInternalInvariantException extends RuntimeException {
+        ProcessingJobInternalInvariantException(final String detail) {
+            super("missing terminal ParsedEntry for " + detail);
+        }
     }
 
     /** 0 场有效回放：终态 FAILED + NO_VALID_REPLAYS。 */

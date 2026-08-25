@@ -25,6 +25,26 @@
     `wotb_replay_parse_queue_depth` / `wotb_replay_processing_jobs_active` /
     `wotb_replay_processing_jobs_queued` / `wotb_replay_full_processing_total` /
     `wotb_replay_dataset_cache_hits|misses_total`（低基数）。
+  - **scheduler 线程安全收口**：`ReplayParseScheduler` 全部调度状态（slot 预留 /
+    jobs / per-job pending / ready 成员资格 / queuedSources / activeForJob / 派发 /
+    cancellation）统一由单一协调锁串行化；每 job 在 round-robin 队列至多出现一次，
+    executor 内不形成 scheduler 未知的第二层 backlog（reserved+running ≤
+    `REPLAY_PARSE_MAX_CONCURRENT` 恒成立）；业务 runner / onStart / onComplete 均在锁外执行。
+  - **parse 进度原子化**：`ReplayProcessingJob` 自持 parse outcome
+    （`recordParseSuccess` / `recordParseFailure`），同一 synchronized transition 内推进
+    completed/succeeded/failed，对外快照恒满足 `parseCompleted == parseSucceeded +
+    parseFailed` 且三计数单调不减；service 不再用 `AtomicInteger[]` 拼 snapshot。
+  - **失败必须产生 ParsedEntry**：任何已注册 source 处理失败（输入读取 / artifact
+    写入 / 解析异常）都会写入 authoritative failed `ParsedEntry`；finalize 前校验非
+    CANCELLED job 每个 sourceIndex 都有 terminal entry，缺失视为内部 invariant violation
+    （FAILED + `PROCESSING_JOB_INTERNAL_INVARIANT`），绝不静默过滤 null。
+  - **前端 upload preflight**：共享 `validateReplaySelection`（`.wotbreplay` /
+    ≤100 文件 / 单文件 ≤20 MiB / 总量 ≤200 MiB），选择文件 / 文件夹 / add / drag-drop
+    统一走同一 contract；非法候选不进入 active selection、不发起 Processing Job，
+    一次展示全部 offending 文件与具体大小，chip 显示「文件名 · 大小」。
+  - **multipart transport 错误码**：`MaxUploadSizeExceededException` 按结构化 cause
+    chain 区分单 part（`FILE_TOO_LARGE`）与 request 总量（`TOTAL_REQUEST_TOO_LARGE`），
+    无法结构区分时回退通用 `UPLOAD_TOO_LARGE`；HTTP 恒 413，不 parse exception message。
 - **名人堂三环（Mark 3）人工审核排行榜**：新增独立 `mark3` domain、Flyway `V21` submission/evidence 表和 `/api/hof/mark3`、`/api/users/mark3`、`/api/admin/hof/mark3` API。仅限 Tier X，玩家提交三环所需场数、过程场均、过程胜率、1–2 张截图与恰好 5 个回放；无 Wargaming 自动认证链路。创建路径从五个 replay byte[] 读取、解析、hash 锁、落盘到事务全程复用全局 `ReplayCapacityLimiter`，容量满返回 503 `REPLAY_BUSY`。排行榜按已审核三环场数升序，场数相同使用 competition ranking；同用户同车的 CURRENT 唯一且不被后续申请替代，不使用 `SUPERSEDED`。REJECTED/CANCELLED/DELETED 可重提；管理员通过、拒绝或删除时均不能改写成绩，终态会清理截图和回放证据。
 
 ### Fixed

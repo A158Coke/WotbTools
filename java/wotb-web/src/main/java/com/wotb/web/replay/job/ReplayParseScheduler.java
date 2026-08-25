@@ -12,9 +12,10 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.Map;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -25,7 +26,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <ul>
  *   <li>全局 CPU 并发固定 {@code max-concurrent}（2C4G 默认 2，禁止超过）——唯一
  *       Replay CPU 预算权威（plan §48/BLOCKER J 最终态）。</li>
- *   <li>job-aware 公平调度：per-job pending deque + 全局 slot + round-robin 派发，
+ *   <li>job-aware 公平调度：per-job pending deque + 全局 slot + round-robin 派发
+ *       （每 job 在 ready 队列中至多出现一次，杜绝 dispatch/completion 重复入队），
  *       后来的 1-file Job 不会被 50-file Job 全批堵死（plan §6.7/§12）。</li>
  *   <li>queued cancellation：{@link #removeQueued} 立即丢弃尚未开始的 source，
  *       不泄漏 queue 容量；正在执行的 source 由调用方协作取消（plan §53）。</li>
@@ -33,6 +35,12 @@ import java.util.concurrent.atomic.AtomicInteger;
  *       满载 submit 抛 {@link ProcessingQueueFullException}（503 PROCESSING_QUEUE_FULL）。</li>
  *   <li>shutdown 无残留线程（daemon worker + shutdown）。</li>
  * </ul>
+ *
+ * <p><b>线程安全（BLOCKER 1 最终态）</b>：全部调度状态（free-slot reservation、
+ * jobs map、per-job pending、ready 成员资格、queuedSources、activeForJob、派发决策、
+ * cancellation bookkeeping）统一由 {@link #stateLock} 串行化。业务 runner / onStart /
+ * onComplete 一律在锁外执行；worker 线程池内不允许出现 scheduler 不知道的第二层
+ * backlog（每次派发前都在锁内预留 slot，{@code reserved+running ≤ maxConcurrent}）。</p>
  * 本类<b>不承担</b>业务 dedupe / League / Export / AI / DTO 映射（plan §10）。
  */
 @Component
@@ -57,6 +65,8 @@ public final class ReplayParseScheduler implements AutoCloseable {
         final Runnable onComplete;
         boolean started;
         int activeForJob;
+        /** 是否已在 {@code readyJobs} 队列中（round-robin 成员资格，至多一次）。 */
+        boolean ready;
 
         JobEntry(final String jobId, final List<Integer> sources, final SourceRunner runner,
                  final Runnable onStart, final Runnable onComplete) {
@@ -70,12 +80,18 @@ public final class ReplayParseScheduler implements AutoCloseable {
 
     private final int maxConcurrent;
     private final int maxQueuedSources;
-    private final ConcurrentHashMap<String, JobEntry> jobs = new ConcurrentHashMap<>();
-    /** round-robin 队列：每次派发后把该 job 排到队尾（job-aware fairness）。 */
-    private final LinkedBlockingQueue<String> readyJobs = new LinkedBlockingQueue<>();
-    private final AtomicInteger activeSources = new AtomicInteger();
-    private final AtomicInteger queuedSources = new AtomicInteger();
-    private final AtomicInteger activeJobs = new AtomicInteger();
+    /** 全部调度状态的单一协调锁（BLOCKER 1：free-slot / jobs / pending / ready / cancellation 统一串行化）。 */
+    private final Object stateLock = new Object();
+    private final Map<String, JobEntry> jobs = new HashMap<>();
+    /** round-robin 队列：每次派发后把该 job 排到队尾（job-aware fairness；成员资格由 entry.ready 保证唯一）。 */
+    private final ArrayDeque<String> readyJobs = new ArrayDeque<>();
+    /** 已预留/正在执行的 source 数（派发前在锁内 +1，worker 完成在锁内 -1；恒 ≤ maxConcurrent）。 */
+    private int activeSources;
+    /** 全部 job 尚未派发的 pending source 总数（锁内维护，= queue capacity 的真实 workload）。 */
+    private int queuedSources;
+    /** 已开始派发且尚未全部完成的 job 数。 */
+    private int activeJobs;
+    private boolean closed;
     private final ThreadPoolExecutor workers;
     private final MeterRegistry meterRegistry;
 
@@ -143,19 +159,19 @@ public final class ReplayParseScheduler implements AutoCloseable {
             onComplete.run();
             return;
         }
-        // 有界排队：先占 pending 额度，失败不占用。
-        while (true) {
-            final int cur = queuedSources.get();
-            if (cur + sourceIndexes.size() > maxQueuedSources) {
+        final JobEntry entry = new JobEntry(jobId, sourceIndexes, runner, onStart, onComplete);
+        synchronized (stateLock) {
+            if (closed) {
+                throw new IllegalStateException("replay parse scheduler is closed");
+            }
+            // 有界排队：锁内校验 + 占额，失败不占用。
+            if (queuedSources + sourceIndexes.size() > maxQueuedSources) {
                 throw new ProcessingQueueFullException();
             }
-            if (queuedSources.compareAndSet(cur, cur + sourceIndexes.size())) {
-                break;
-            }
+            queuedSources += sourceIndexes.size();
+            jobs.put(jobId, entry);
+            offerReady(entry);
         }
-        final JobEntry entry = new JobEntry(jobId, sourceIndexes, runner, onStart, onComplete);
-        jobs.put(jobId, entry);
-        readyJobs.offer(jobId);
         pump();
     }
 
@@ -166,64 +182,94 @@ public final class ReplayParseScheduler implements AutoCloseable {
      * {@code onComplete} 会在最后一个结束后触发。
      */
     public boolean cancelQueued(final String jobId) {
-        final JobEntry entry = jobs.get(jobId);
-        if (entry == null) {
-            return true;
-        }
-        int drained = 0;
-        boolean activeRemaining;
-        synchronized (entry) {
+        synchronized (stateLock) {
+            final JobEntry entry = jobs.get(jobId);
+            if (entry == null) {
+                return true;
+            }
+            int drained = 0;
             while (!entry.pending.isEmpty()) {
                 entry.pending.poll();
                 drained++;
             }
-            activeRemaining = entry.activeForJob > 0;
+            queuedSources -= drained;
+            final boolean activeRemaining = entry.activeForJob > 0;
+            if (!activeRemaining) {
+                jobs.remove(jobId, entry);
+                readyJobs.remove(jobId);
+                entry.ready = false;
+                if (entry.started) {
+                    // 已派发过（activeJobs 已 +1）但全部 source 已结束/取消 → 释放 job 计数。
+                    activeJobs--;
+                }
+            }
+            return !activeRemaining;
         }
-        if (drained > 0) {
-            queuedSources.addAndGet(-drained);
-        }
-        if (!activeRemaining) {
-            jobs.remove(jobId, entry);
-        }
-        return !activeRemaining;
     }
 
-    /** 全局调度（每次 slot 释放后触发；round-robin 从队头取 job 派发并排到队尾）。 */
+    /**
+     * 全局调度（每次 slot 释放后触发；round-robin 从队头取 job 派发并排到队尾）。
+     * 每次迭代：锁内完成 slot 预留 + ready 成员资格转移 + pending 记账，锁外执行
+     * onStart 与 {@code workers.execute}——业务回调绝不在锁内运行。
+     */
     private void pump() {
-        while (activeSources.get() < maxConcurrent) {
-            final String jobId = readyJobs.poll();
-            if (jobId == null) {
-                return;
-            }
-            final JobEntry entry = jobs.get(jobId);
-            if (entry == null) {
-                continue;
-            }
+        while (true) {
+            final JobEntry entry;
             final Integer next;
-            boolean firstDispatch = false;
-            synchronized (entry) {
+            final boolean firstDispatch;
+            synchronized (stateLock) {
+                if (closed || activeSources >= maxConcurrent) {
+                    return;
+                }
+                entry = pollReady();
+                if (entry == null) {
+                    return;
+                }
                 next = entry.pending.poll();
                 if (next == null) {
-                    continue;
+                    continue; // 防御：ready 成员已删除但 pending 已空（取消竞态窗口外不应出现）
                 }
-                queuedSources.decrementAndGet();
+                queuedSources--;
                 entry.activeForJob++;
-                if (!entry.started) {
+                firstDispatch = !entry.started;
+                if (firstDispatch) {
                     entry.started = true;
-                    firstDispatch = true;
+                    activeJobs++;
                 }
+                // 本 job 本回合只派发一个 source：还有剩余则排到队尾（成员资格唯一，不会重复入队）。
+                if (!entry.pending.isEmpty()) {
+                    offerReady(entry);
+                }
+                activeSources++;
             }
             if (firstDispatch) {
-                activeJobs.incrementAndGet();
                 try {
                     entry.onStart.run();
                 } catch (final RuntimeException e) {
-                    LOGGER.warn("replay_parse_job_start_callback_failed jobId={}", jobId, e);
+                    LOGGER.warn("replay_parse_job_start_callback_failed jobId={}", entry.jobId, e);
                 }
             }
-            activeSources.incrementAndGet();
-            readyJobs.offer(jobId);
-            workers.execute(() -> runSource(entry, next));
+            try {
+                workers.execute(() -> runSource(entry, next));
+            } catch (final RejectedExecutionException e) {
+                // scheduler 已关闭的窗口竞态：撤销预留，保持计数器不变式，不再派发。
+                LOGGER.warn("replay_parse_dispatch_rejected jobId={} sourceIndex={}",
+                        entry.jobId, next, e);
+                synchronized (stateLock) {
+                    activeSources--;
+                    entry.activeForJob--;
+                    queuedSources++;
+                    entry.pending.addFirst(next);
+                    if (firstDispatch) {
+                        entry.started = false;
+                        activeJobs--;
+                    }
+                    if (!entry.ready) {
+                        offerReady(entry);
+                    }
+                }
+                return;
+            }
         }
     }
 
@@ -235,57 +281,98 @@ public final class ReplayParseScheduler implements AutoCloseable {
             LOGGER.warn("replay_parse_source_runner_failed jobId={} sourceIndex={}",
                     entry.jobId, sourceIndex, e);
         } finally {
-            activeSources.decrementAndGet();
             final boolean jobDone;
-            synchronized (entry) {
+            synchronized (stateLock) {
+                activeSources--;
                 entry.activeForJob--;
                 jobDone = entry.pending.isEmpty() && entry.activeForJob == 0;
+                if (jobDone) {
+                    activeJobs--;
+                    jobs.remove(entry.jobId, entry);
+                    readyJobs.remove(entry.jobId);
+                    entry.ready = false;
+                } else if (!entry.ready && !entry.pending.isEmpty()) {
+                    offerReady(entry);
+                }
             }
             if (jobDone) {
-                activeJobs.decrementAndGet();
-                jobs.remove(entry.jobId, entry);
                 try {
                     entry.onComplete.run();
                 } catch (final RuntimeException e) {
                     LOGGER.error("replay_parse_job_complete_callback_failed jobId={}", entry.jobId, e);
                 }
-            } else {
-                readyJobs.offer(entry.jobId);
             }
+            // 释放的 slot 在锁外重新派发：与 submit/其他 completion 并发进入 pump() 也安全——
+            // 每次派发决策都在 stateLock 内完成 slot 预留，业务回调绝不在锁内运行。
             pump();
         }
+    }
+
+    /** ready 队列入队（成员资格由 entry.ready 保证：同一 job 至多出现一次）。 */
+    private void offerReady(final JobEntry entry) {
+        if (!entry.ready) {
+            readyJobs.addLast(entry.jobId);
+            entry.ready = true;
+        }
+    }
+
+    /** ready 队列出队（调用方必须持有 stateLock；返回的 entry.ready 已置 false）。 */
+    private JobEntry pollReady() {
+        while (!readyJobs.isEmpty()) {
+            final String jobId = readyJobs.pollFirst();
+            final JobEntry entry = jobs.get(jobId);
+            if (entry == null || !entry.ready) {
+                continue; // 已取消/已完成的 stale 成员
+            }
+            entry.ready = false;
+            return entry;
+        }
+        return null;
     }
 
     // ---- observability（plan §78，低基数） ----
 
     /** 当前并行执行的 source 数（≤ max-concurrent）。 */
     public int activeSources() {
-        return activeSources.get();
+        synchronized (stateLock) {
+            return activeSources;
+        }
     }
 
     /** 当前排队等待的 source 数（全部 job 的 pending 总和）。 */
     public int queuedSources() {
-        return queuedSources.get();
+        synchronized (stateLock) {
+            return queuedSources;
+        }
     }
 
     /** 当前有活跃 source 的 job 数。 */
     public int activeJobs() {
-        return activeJobs.get();
+        synchronized (stateLock) {
+            return activeJobs;
+        }
     }
 
     /** 当前在 round-robin 队列中的 job 数。 */
     public int queuedJobs() {
-        return readyJobs.size();
+        synchronized (stateLock) {
+            return readyJobs.size();
+        }
     }
 
     /** 测试可读的 registered job 快照（不暴露内部可变结构）。 */
     List<String> registeredJobs() {
-        return new ArrayList<>(jobs.keySet());
+        synchronized (stateLock) {
+            return new ArrayList<>(jobs.keySet());
+        }
     }
 
     @PreDestroy
     @Override
     public void close() {
+        synchronized (stateLock) {
+            closed = true;
+        }
         workers.shutdown();
     }
 

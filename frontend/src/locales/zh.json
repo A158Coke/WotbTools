@@ -34,7 +34,13 @@
         "remove_file_aria": "删除回放文件 {name}",
         "files_size": "{count} 个文件 · {size}",
         "view_list": "查看文件列表",
-        "hide_list": "收起文件列表"
+        "hide_list": "收起文件列表",
+        "reject_offending_title": "以下回放无法解析：",
+        "reject_too_large_file": "{name} — {size}",
+        "reject_invalid_type": "{name} 不是 .wotbreplay 文件",
+        "reject_size_hint": "单个回放最大允许 20 MB。",
+        "reject_count": "一次最多选择 100 个回放文件。",
+        "reject_total": "所选回放总大小超过 200 MB。"
     },
     "action": {
         "preview": "解析预览",
@@ -1154,8 +1160,10 @@
         "INVALID_REPLAY_FILE": "回放文件无效",
         "UNSUPPORTED_BATTLE_TYPE": "仅支持随机战斗和评级战斗回放。",
         "TOO_MANY_REPLAY_FILES": "回放文件数量过多",
-        "FILE_TOO_LARGE": "文件过大",
-        "REQUEST_TOO_LARGE": "本次上传总大小过大",
+  "FILE_TOO_LARGE": "文件过大",
+  "REQUEST_TOO_LARGE": "本次上传总大小过大",
+  "TOTAL_REQUEST_TOO_LARGE": "本次上传总大小超过限制。",
+  "UPLOAD_TOO_LARGE": "上传内容过大。",
         "REPLAY_BUSY": "回放处理繁忙，请稍后重试",
         "AI_REVIEW_BUSY": "AI 复盘服务繁忙，请稍后重试",
         "MULTIPART_ERROR": "上传请求格式错误",

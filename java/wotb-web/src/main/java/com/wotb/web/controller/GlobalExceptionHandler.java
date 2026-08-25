@@ -22,6 +22,8 @@ import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.util.StringUtils;
+import org.apache.tomcat.util.http.fileupload.impl.FileSizeLimitExceededException;
+import org.apache.tomcat.util.http.fileupload.impl.SizeLimitExceededException;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -108,7 +110,28 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, Object>> handleMaxUploadSize(final MaxUploadSizeExceededException e) {
         return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE)
-                .body(body("FILE_TOO_LARGE"));
+                .body(body(uploadTooLargeCode(e)));
+    }
+
+    /**
+     * Multipart transport 错误码（BLOCKER 5）：框架解析失败发生在 controller 之前，
+     * 正常用户的精确错误由 frontend preflight 提供。这里只按结构化 cause chain 区分：
+     * Tomcat 单 part 超限 → {@code FILE_TOO_LARGE}；request 总大小超限 →
+     * {@code TOTAL_REQUEST_TOO_LARGE}；无法结构区分（其他容器/未知 cause）→
+     * 通用 {@code UPLOAD_TOO_LARGE}，绝不 parse exception message 猜测。HTTP 恒 413。
+     */
+    private static String uploadTooLargeCode(final MaxUploadSizeExceededException e) {
+        Throwable cause = e;
+        while (cause != null) {
+            if (cause instanceof FileSizeLimitExceededException) {
+                return "FILE_TOO_LARGE";
+            }
+            if (cause instanceof SizeLimitExceededException) {
+                return "TOTAL_REQUEST_TOO_LARGE";
+            }
+            cause = cause.getCause();
+        }
+        return "UPLOAD_TOO_LARGE";
     }
 
     @ExceptionHandler(MultipartException.class)

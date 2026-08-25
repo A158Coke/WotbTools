@@ -68,10 +68,16 @@ public final class ReplayProcessingJob {
     private volatile ProcessedDataset result;
     /** 当前处理中的输入文件名（进度回调更新；不作为 metric tag）。 */
     private volatile String currentFile;
-    /** 真实 parse 进度（单 replay full process 完成即推进，与 dedupe/finalize 解耦）。 */
-    private volatile int parseCompleted;
-    private volatile int parseSucceeded;
-    private volatile int parseFailed;
+    /**
+     * 真实 parse 进度（单 replay full process 完成即推进，与 dedupe/finalize 解耦）。
+     * BLOCKER 2：三个计数只在 {@link #recordParseSuccess()} / {@link #recordParseFailure()}
+     * 的同一 synchronized transition 内变更；{@link #snapshot()} 同监视器读取，
+     * 保证对外永远看到一致三元组（parseCompleted == parseSucceeded + parseFailed），
+     * 且三个计数单调不减。
+     */
+    private int parseCompleted;
+    private int parseSucceeded;
+    private int parseFailed;
 
     /** 测试便利构造器：无真实文件名时用占位名。 */
     public ReplayProcessingJob(final String jobId, final int total) {
@@ -110,14 +116,23 @@ public final class ReplayProcessingJob {
     }
 
     /**
-     * 推进真实 parse 进度（每个输入完成 full process 后调用一次，无论成功/失败）；
+     * 单个 source parse 成功：completed/succeeded 在同一原子 transition 内推进，
      * {@code processed} 兼容字段同步为 parseCompleted（前端旧字段仍可用）。
      */
-    public void updateParseProgress(final int completed, final int succeeded, final int failed) {
-        this.parseCompleted = completed;
-        this.parseSucceeded = succeeded;
-        this.parseFailed = failed;
-        state.updateProgress(completed, 0, 0);
+    public synchronized void recordParseSuccess() {
+        parseCompleted++;
+        parseSucceeded++;
+        state.updateProgress(parseCompleted, 0, 0);
+    }
+
+    /**
+     * 单个 source parse 失败：completed/failed 在同一原子 transition 内推进，
+     * {@code processed} 兼容字段同步为 parseCompleted（前端旧字段仍可用）。
+     */
+    public synchronized void recordParseFailure() {
+        parseCompleted++;
+        parseFailed++;
+        state.updateProgress(parseCompleted, 0, 0);
     }
 
     /** PROCESSING 期间切换 phase（WAITING_FOR_WORKER → PROCESSING_REPLAYS → FINALIZING_BATCH）。 */
