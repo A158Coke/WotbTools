@@ -14,8 +14,7 @@ import java.util.Map;
 /**
  * League Rating 单场工作簿：玩家数据 = canonical {@link Columns#PLAYER} 全部 Replay 字段
  * （identity/vehicle/单场 stats/Performance Metrics/received-blocked/shots-hits-pens/
- * 被命中/被击穿/击伤/排/军阶/车辆ID/账号ID，单一 schema 源；Potential Damage 已从
- * canonical schema 全局移除）+
+ * 被命中/被击穿/击伤/排/军阶/车辆ID/账号ID，单一 schema 源）+
  * League 专属扩展（占点得分/占领分 + 七维评分/满分/百分比 + 总Rating/满分/百分比）；
  * 战斗信息（canonical base 由 {@link SingleBattleSheets#writeBattleInfo} 渲染 +
  * League 扩展 Team Rating + MVP + 队内最佳）/ 原始字段（共用 {@link SingleBattleSheets#writeRaw}）。
