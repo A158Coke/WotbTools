@@ -1,9 +1,10 @@
 package com.wotb.core.export;
 
+import com.wotb.core.AggregateColumns;
+import com.wotb.core.Columns;
 import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.Columns;
 import com.wotb.core.ref.MapNames;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.Aggregator;
@@ -23,16 +24,67 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 
 /** 多场汇总工作簿的三张表: 汇总 / 明细 / 战斗列表。 */
 final class AggregateSheets {
 
-    /** 汇总表的一列。 */
-    private record AggregateColumn(String title, int xlsx, boolean num, Function<Agg, Object> get) {
+    private AggregateSheets() {
     }
 
-    private AggregateSheets() {
+    /**
+     * 汇总表 presentation spec：中文 title / xlsx width / 展示顺序。
+     * key 与取值 getter 一律消费 canonical {@link AggregateColumns}（本层<b>不</b>定义
+     * 业务 getter / numeric / key 宇宙）。
+     */
+    private record SummarySpec(String title, int width, String key) {
+    }
+
+    private static final List<SummarySpec> SUMMARY_SPECS = List.of(
+            new SummarySpec("玩家", 18, "nickname"),
+            new SummarySpec("战队", 10, "clan"),
+            new SummarySpec("场次", 6, "battles"),
+            new SummarySpec("胜场", 6, "wins"),
+            new SummarySpec("胜率%", 8, "win_rate"),
+            new SummarySpec("存活率%", 9, "survival_rate"),
+            new SummarySpec("贡献度%", 9, "contribution"),
+            new SummarySpec("KAST%", 8, "kast"),
+            new SummarySpec("Impact%", 9, "impact"),
+            new SummarySpec("多伤率%", 9, "multi_damage_rate"),
+            new SummarySpec("互换击杀", 8, "traded_deaths"),
+            new SummarySpec("平均存活时间", 12, "survival_avg"),
+            new SummarySpec("总击杀", 7, "kills"),
+            new SummarySpec("场均击杀", 7, "kills_avg"),
+            new SummarySpec("总伤害", 9, "damage"),
+            new SummarySpec("场均伤害", 9, "damage_avg"),
+            new SummarySpec("总潜在伤害", 10, "potential_damage"),
+            new SummarySpec("场均潜在伤害", 10, "potential_damage_avg"),
+            new SummarySpec("场均补增伤害", 9, "potential_damage_supplement_avg"),
+            new SummarySpec("总协助伤害", 9, "assisted"),
+            new SummarySpec("场均协助伤害", 9, "assisted_avg"),
+            new SummarySpec("场均损失血量", 8, "received_avg"),
+            new SummarySpec("场均格挡", 8, "blocked_avg"),
+            new SummarySpec("命中率%", 8, "hit_rate"),
+            new SummarySpec("击穿率%", 8, "pen_rate"),
+            new SummarySpec("总射击次数", 8, "shots"),
+            new SummarySpec("总命中次数", 8, "hits"),
+            new SummarySpec("总击穿次数", 8, "pens"),
+            new SummarySpec("场均击伤", 9, "enemies_damaged_avg"),
+            new SummarySpec("获取点数总计", 10, "earned_total"),
+            new SummarySpec("获取点数/场", 9, "earned_avg"),
+            new SummarySpec("用车", 30, "tanks"),
+            new SummarySpec("账号ID", 12, "account_id")
+    );
+
+    private static final Map<String, AggregateColumns.PerfColumn> PERF_BY_KEY = new HashMap<>();
+    private static final Map<String, AggregateColumns.CoreColumn> CORE_BY_KEY = new HashMap<>();
+
+    static {
+        for (final AggregateColumns.PerfColumn c : AggregateColumns.PERFORMANCE) {
+            PERF_BY_KEY.put(c.key(), c);
+        }
+        for (final AggregateColumns.CoreColumn c : AggregateColumns.CORE) {
+            CORE_BY_KEY.put(c.key(), c);
+        }
     }
 
     static void write(final ExcelStyles styles, final List<Battle> battles, final List<String> sourceNames,
@@ -52,7 +104,7 @@ final class AggregateSheets {
             perfById.put(row.accountId, row);
         }
         summary(styles, agg, perfById, sheetPrefix);
-        detail(styles, battles, tp, sheetPrefix);
+        detail(styles, battles, sourceNames, tp, sheetPrefix);
         battleList(styles, battles, sourceNames, duplicates, sheetPrefix);
     }
 
@@ -60,116 +112,98 @@ final class AggregateSheets {
                                 final Map<Long, PerformanceMetricsCalculator.Row> perfById,
                                 final String sheetPrefix) {
         final Sheet ws = styles.workbook().createSheet(sheetPrefix + "汇总");
-        // 与 API Mapper.toAggregate 同一契约（Excel 空单元格 = API null）：
-        //   contribution/kast/多伤率 依赖 HP（hpEligible=false 时 unavailable）
+        // 与 API Mapper.toAggregate 同一 canonical 契约（AggregateColumns getter 单一事实源）：
+        //   contribution/kast/多伤率 依赖 HP（hpEligible=false 时 unavailable → null = Excel 空单元格）
         //   impact/tradedDeaths 不依赖 HP（仅要求该账号存在 performance row）
-        final Function<Long, PerformanceMetricsCalculator.Row> perfOf = perfById::get;
-        final List<AggregateColumn> cols = List.of(
-                new AggregateColumn("玩家", 18, false, a -> a.nickname),
-                new AggregateColumn("战队", 10, false, a -> a.clan),
-                new AggregateColumn("场次", 6, true, a -> a.battles),
-                new AggregateColumn("胜场", 6, true, a -> a.wins),
-                new AggregateColumn("胜率%", 8, true, a -> ExcelStyles.r1(a.winRate())),
-                new AggregateColumn("存活率%", 9, true, a -> ExcelStyles.r1(a.survivalRate())),
-                new AggregateColumn("贡献度%", 9, true, a -> perfVal(perfOf.apply(a.accountId), p -> p.hpEligible
-                        ? ExcelStyles.r1(p.contribution) : null)),
-                new AggregateColumn("KAST%", 8, true, a -> perfVal(perfOf.apply(a.accountId), p -> p.hpEligible
-                        ? ExcelStyles.r1(p.kast) : null)),
-                new AggregateColumn("Impact%", 9, true, a -> perfVal(perfOf.apply(a.accountId), p -> ExcelStyles.r1(p.impactValue))),
-                new AggregateColumn("多伤率%", 9, true, a -> perfVal(perfOf.apply(a.accountId), p -> p.hpEligible
-                        ? ExcelStyles.r1(p.multiDamageRate) : null)),
-                new AggregateColumn("互换击杀", 8, true, a -> perfVal(perfOf.apply(a.accountId), p -> (double) p.tradedDeaths)),
-                new AggregateColumn("平均存活时间", 12, false, a -> ExcelStyles.duration(a.avg(a.survivalSum))),
-                new AggregateColumn("总击杀", 7, true, a -> a.kills),
-                new AggregateColumn("场均击杀", 7, true, a -> ExcelStyles.r2(a.avg(a.kills))),
-                new AggregateColumn("总伤害", 9, true, a -> a.damage),
-                new AggregateColumn("场均伤害", 9, true, a -> ExcelStyles.r1(a.avg(a.damage))),
-                new AggregateColumn("总潜在伤害", 10, true, a -> a.potentialDamage),
-                new AggregateColumn("场均潜在伤害", 10, true, a -> ExcelStyles.r1(a.avg(a.potentialDamage))),
-                new AggregateColumn("场均补增伤害", 9, true, a -> ExcelStyles.r1(a.avg(a.potentialDamageSupplement))),
-                new AggregateColumn("总协助伤害", 9, true, a -> a.assisted),
-                new AggregateColumn("场均协助伤害", 9, true, a -> ExcelStyles.r1(a.avg(a.assisted))),
-                new AggregateColumn("场均损失血量", 8, true, a -> ExcelStyles.r1(a.avg(a.received))),
-                new AggregateColumn("场均格挡", 8, true, a -> ExcelStyles.r1(a.avg(a.blocked))),
-                new AggregateColumn("命中率%", 8, true, a -> ExcelStyles.r1(a.hitRate())),
-                new AggregateColumn("击穿率%", 8, true, a -> ExcelStyles.r1(a.penRate())),
-                new AggregateColumn("总射击次数", 8, true, a -> a.shots),
-                new AggregateColumn("总命中次数", 8, true, a -> a.hits),
-                new AggregateColumn("总击穿次数", 8, true, a -> a.pens),
-                new AggregateColumn("场均击伤", 9, true, a -> ExcelStyles.r2(a.avg(a.enemiesDamaged))),
-                new AggregateColumn("获取点数总计", 10, true, a -> a.earned),
-                new AggregateColumn("获取点数/场", 9, true, a -> ExcelStyles.r1(a.avg(a.earned))),
-                new AggregateColumn("用车", 30, false, Agg::tanksStr),
-                new AggregateColumn("账号ID", 12, true, a -> a.accountId)
-        );
-        styles.writeHeader(ws, cols.stream().map(c -> new String[]{c.title(), String.valueOf(c.xlsx())}).toList());
+        styles.writeHeader(ws, SUMMARY_SPECS.stream()
+                .map(s -> new String[]{s.title(), String.valueOf(s.width())}).toList());
         final List<Agg> rows = new ArrayList<>(aggMap.values());
         rows.sort((x, y) -> Double.compare(y.avg(y.damage), x.avg(x.damage)));
         int rIdx = 1;
         for (final Agg a : rows) {
             final Row row = ws.createRow(rIdx++);
-            for (int c = 0; c < cols.size(); c++) {
-                styles.setCell(row.createCell(c), cols.get(c).get().apply(a), styles.plain(), c < 2 ? "nickname" : "x");
+            for (int c = 0; c < SUMMARY_SPECS.size(); c++) {
+                styles.setCell(row.createCell(c), summaryValue(SUMMARY_SPECS.get(c), a, perfById),
+                        styles.plain(), c < 2 ? "nickname" : "x");
             }
         }
         ws.createFreezePane(1, 1);
-        ws.setAutoFilter(new CellRangeAddress(0, rows.size(), 0, cols.size() - 1));
+        ws.setAutoFilter(new CellRangeAddress(0, rows.size(), 0, SUMMARY_SPECS.size() - 1));
     }
 
-    /** 跨场表现派生列取值：HP 全部 UNKNOWN 时 unavailable（null → Excel 空单元格，不冒充 0）。 */
-    private static Object perfVal(final PerformanceMetricsCalculator.Row row,
-                                  final Function<PerformanceMetricsCalculator.Row, Object> getter) {
-        return row == null ? null : getter.apply(row);
-    }
-
-    private static void detail(final ExcelStyles styles, final List<Battle> battles, final Tankopedia tp,
-                              final String sheetPrefix) {
-        final Sheet ws = styles.workbook().createSheet(sheetPrefix + "明细");
-        // 复用 STAT 列, 前面加场次信息, 末尾加账号
-        record DCol(String title, int xlsx, String key, Function<PlayerResult, Object> get) {
+    /** 汇总单元格取值：canonical getter 单一来源；仅「平均存活时间」做 Excel duration 展示格式化。 */
+    private static Object summaryValue(final SummarySpec spec, final Agg a,
+                                       final Map<Long, PerformanceMetricsCalculator.Row> perfById) {
+        if (spec.key().equals("survival_avg")) {
+            return ExcelStyles.duration((Double) CORE_BY_KEY.get(spec.key()).get().apply(a));
         }
-        final List<DCol> head = List.of(
-                new DCol("日期", 17, "date", p -> p.tmpDate),
-                new DCol("地图", 12, "map_name", p -> p.tmpMap),
-                new DCol("玩家", 16, "nickname", p -> p.nickname),
-                new DCol("战队", 9, "clan", p -> p.clan),
-                new DCol("车辆", 16, "tank_name", p -> p.tankName),
-                new DCol("胜负", 6, "result", p -> p.tmpResult)
-        );
+        final AggregateColumns.PerfColumn perf = PERF_BY_KEY.get(spec.key());
+        if (perf != null) {
+            final PerformanceMetricsCalculator.Row row = perfById.get(a.accountId);
+            return row == null ? null : perf.get().apply(row);
+        }
+        return CORE_BY_KEY.get(spec.key()).get().apply(a);
+    }
+
+    /**
+     * Replay 明细：battle context（文件名 / 竞技场ID / 日期 / 地图 / 胜负）+
+     * 完整 canonical {@link Columns#PLAYER}（玩家/战队/车辆/等级/类型/国家/炮伤/单场 stats/
+     * 被命中/被击穿/击伤/排/军阶/车辆ID/账号ID——单一 schema 源，不复制字段列表）。
+     */
+    private static void detail(final ExcelStyles styles, final List<Battle> battles, final List<String> sourceNames,
+                               final Tankopedia tp, final String sheetPrefix) {
+        final Sheet ws = styles.workbook().createSheet(sheetPrefix + "明细");
+        record DCol(String title, int xlsx, String key, java.util.function.Function<PlayerResult, Object> get) {
+        }
         final List<String[]> hdrSpec = new ArrayList<>();
-        head.forEach(d -> hdrSpec.add(new String[]{d.title(), String.valueOf(d.xlsx())}));
-        Columns.STAT.forEach(c -> hdrSpec.add(new String[]{c.title(), String.valueOf(c.xlsx())}));
-        hdrSpec.add(new String[]{"账号ID", "12"});
+        hdrSpec.add(new String[]{"文件名", "40"});
+        hdrSpec.add(new String[]{"竞技场ID", "22"});
+        hdrSpec.add(new String[]{"日期", "17"});
+        hdrSpec.add(new String[]{"地图", "12"});
+        hdrSpec.add(new String[]{"胜负", "6"});
+        Columns.PLAYER.forEach(c -> hdrSpec.add(new String[]{c.title(), String.valueOf(c.xlsx())}));
         styles.writeHeader(ws, hdrSpec);
 
+        final java.util.function.Function<Long, String> platoon = Players.platoonLabeler();
         int rIdx = 1;
-        for (final Battle b : battles) {
+        for (int i = 0; i < battles.size(); i++) {
+            final Battle b = battles.get(i);
             final String date = ExcelStyles.fmt(b.startTime, ExcelStyles.DT_MIN);
             final Integer winner = b.winnerTeam;
+            final String sourceName = i < sourceNames.size() ? sourceNames.get(i) : "";
+            final String mapName = MapNames.cn(b.mapName);
+            final List<DCol> head = List.of(
+                    new DCol("文件名", 40, "nickname", p -> sourceName),
+                    new DCol("竞技场ID", 22, "x", p -> b.arenaId),
+                    new DCol("日期", 17, "date", p -> date),
+                    new DCol("地图", 12, "map_name", p -> mapName),
+                    new DCol("胜负", 6, "x", p -> resultOf(winner, p.team))
+            );
             for (final PlayerResult p : Players.sorted(b.players)) {
                 Players.enrich(p, tp);
-                p.tmpDate = date;
-                p.tmpMap = MapNames.cn(b.mapName);
-                p.tmpResult = (winner != null && winner != 0)
-                        ? (p.team == winner ? "胜" : "负") : "平";
+                p.platoonLabel = platoon.apply(p.platoonId);
                 final Row row = ws.createRow(rIdx++);
                 int c = 0;
                 for (final DCol d : head) {
                     styles.setCell(row.createCell(c), d.get().apply(p), styles.plain(), d.key());
                     c++;
                 }
-                for (final Columns.Column column : Columns.STAT) {
-                    final Object val = "survival_time".equals(column.key())
-                            ? ExcelStyles.duration((Double) column.get().apply(p))
-                            : column.get().apply(p);
-                    styles.setCell(row.createCell(c), val, styles.plain(), column.key());
+                for (final Columns.Column column : Columns.PLAYER) {
+                    styles.setCell(row.createCell(c), SingleBattleSheets.playerColumnValue(column, p),
+                            styles.plain(), column.key());
                     c++;
                 }
-                styles.setCell(row.createCell(c), p.accountId, styles.plain(), "x");
             }
         }
         ws.createFreezePane(2, 1);
         ws.setAutoFilter(new CellRangeAddress(0, rIdx - 1, 0, hdrSpec.size() - 1));
+    }
+
+    private static String resultOf(final Integer winner, final int team) {
+        if (winner == null || winner == 0) {
+            return "平";
+        }
+        return team == winner ? "胜" : "负";
     }
 
     private static void battleList(final ExcelStyles styles, final List<Battle> battles,

@@ -12,6 +12,7 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
 import com.wotb.core.stats.PotentialDamage;
+import com.wotb.web.replay.ReplayExportNames;
 import com.wotb.web.replay.dto.ColumnDef;
 import com.wotb.web.replay.dto.ExportResult;
 import com.wotb.web.replay.dto.PreviewResponse;
@@ -187,12 +188,9 @@ public class ReplayService {
             } else {
                 ExcelExporter.writeAggregateLeague(c.battles(), c.battleSourceNames(),
                         c.duplicates(), c.leagueBatch(), tankopedia, out);
-                filename = "联赛汇总.xlsx";
+                filename = ReplayExportNames.aggregate(c.mode());
             }
             return new ExportResult(filename, XLSX_MIME, out.toByteArray());
-        }
-        for (final Battle battle : c.battles()) {
-            PerformanceMetricsCalculator.populateBattle(battle);   // 单场指标进 Excel 列
         }
         final ByteArrayOutputStream out = new ByteArrayOutputStream();
         final String filename;
@@ -201,7 +199,7 @@ public class ReplayService {
             filename = stripExt(c.battleSourceNames().getFirst()) + ".xlsx";
         } else {
             ExcelExporter.writeAggregate(c.battles(), c.battleSourceNames(), c.duplicates(), tankopedia, out);
-            filename = "联赛汇总.xlsx";
+            filename = ReplayExportNames.aggregate(c.mode());
         }
         return new ExportResult(filename, XLSX_MIME, out.toByteArray());
     }

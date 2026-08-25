@@ -14,6 +14,7 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
 import com.wotb.core.stats.PotentialDamage;
+import com.wotb.web.replay.ReplayExportNames;
 import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import com.wotb.web.replay.service.ReplayService;
@@ -442,7 +443,7 @@ public class ReplayExportJobService {
         job.advancePhase(ExportJob.Phase.BUILDING_EXCEL);
         final String filename = battles.size() == 1
                 ? ReplayJobFiles.stripExt(ds.battleSourceNames().getFirst()) + ".xlsx"
-                : "联赛汇总.xlsx";
+                : (ds.isLeague() ? ReplayExportNames.LEAGUE_AGGREGATE : ReplayExportNames.STANDARD_AGGREGATE);
         final Path artifact = store.jobDir(job.jobId()).resolve("result.xlsx");
         job.trackArtifact(artifact);
         try (OutputStream out = Files.newOutputStream(artifact)) {
@@ -616,7 +617,7 @@ public class ReplayExportJobService {
         job.advancePhase(ExportJob.Phase.BUILDING_EXCEL);
         final String filename = c.battles().size() == 1
                 ? ReplayJobFiles.stripExt(c.battleSourceNames().getFirst()) + ".xlsx"
-                : "联赛汇总.xlsx";
+                : ReplayExportNames.aggregate(c.mode());
         final Path artifact = store.jobDir(job.jobId()).resolve("result.xlsx");
         job.trackArtifact(artifact);
         try (OutputStream out = Files.newOutputStream(artifact)) {
@@ -638,9 +639,8 @@ public class ReplayExportJobService {
                             job.teamNames().battle(), job.teamNames().summary(), out);
                 }
             } else {
-                for (final Battle battle : c.battles()) {
-                    PerformanceMetricsCalculator.populateBattle(battle);
-                }
+                // 单场 Performance Metrics 已在上方统一回填（与 League 分支同一 authoritative
+                // enrichment，只执行一次——processFull → PotentialDamage → populateBattle → renderer）
                 if (c.battles().size() == 1) {
                     ExcelExporter.writeSingle(c.battles().getFirst(), tankopedia, out);
                 } else {

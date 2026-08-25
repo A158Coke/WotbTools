@@ -36,7 +36,8 @@ public final class LeagueColumns {
             PlayerLeagueRating.MAX_SURVIVAL_TRADE,
             PlayerLeagueRating.MAX_SHOOTING);
 
-    /** 占点原始字段列 key（UI 与导出必须同时显示两个原始字段）。 */
+    /** 占点原始字段列 key（backend/export facts）：earned → CW 主 UI 展示；
+     *  seized → backend fact 保留、XLSX 可导出、CW 主 UI 不展示。 */
     public static final String VICTORY_POINTS_EARNED = "victory_points_earned";
     public static final String VICTORY_POINTS_SEIZED = "victory_points_seized";
 

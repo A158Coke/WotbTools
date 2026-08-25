@@ -176,6 +176,51 @@ class ReplayServiceLeagueTest {
         assertTrue(result.filename().endsWith(".xlsx"));
     }
 
+    // ---- multi aggregate export filename contract（Standard / League / Mixed 单一规则）----
+
+    @Test
+    void standardMultiExportUsesStandardAggregateFilename() throws Exception {
+        final Battle b1 = LeagueTestReplays.sevenVsSeven(1);
+        b1.arenaId = "111";
+        b1.arenaBonusType = 1;
+        final Battle b2 = LeagueTestReplays.sevenVsSeven(1);
+        b2.arenaId = "222";
+        b2.arenaBonusType = 1;
+        final ReplayService service = perFileService(List.of(b1, b2));
+        final ExportResult result = service.export(new MockMultipartFile[]{
+                file("s1.wotbreplay", new byte[]{1}), file("s2.wotbreplay", new byte[]{2})}, "aggregate");
+        assertNotNull(result);
+        assertEquals("回放汇总.xlsx", result.filename(), "multi Standard 必须用标准汇总文件名");
+    }
+
+    @Test
+    void leagueMultiExportUsesLeagueAggregateFilename() throws Exception {
+        final Battle b1 = LeagueTestReplays.sevenVsSeven(1);
+        b1.arenaId = "111";
+        final Battle b2 = LeagueTestReplays.sevenVsSeven(1);
+        b2.arenaId = "222";
+        final ReplayService service = perFileService(List.of(b1, b2));
+        final ExportResult result = service.export(new MockMultipartFile[]{
+                file("c1.wotbreplay", new byte[]{1}), file("c2.wotbreplay", new byte[]{2})}, "aggregate");
+        assertNotNull(result);
+        assertEquals("联赛汇总.xlsx", result.filename(), "multi 纯 CW 必须用联赛汇总文件名");
+    }
+
+    @Test
+    void mixedMultiExportUsesStandardAggregateFilename() throws Exception {
+        final Battle training = LeagueTestReplays.sevenVsSeven(1);
+        training.arenaId = "111";
+        training.arenaBonusType = 2;
+        final Battle random = LeagueTestReplays.sevenVsSeven(1);
+        random.arenaId = "222";
+        random.arenaBonusType = 1;
+        final ReplayService service = perFileService(List.of(training, random));
+        final ExportResult result = service.export(new MockMultipartFile[]{
+                file("t.wotbreplay", new byte[]{1}), file("r.wotbreplay", new byte[]{2})}, "aggregate");
+        assertNotNull(result, "混合批次 aggregate 导出必须正常（League Rating unavailable 不影响 Replay 导出）");
+        assertEquals("回放汇总.xlsx", result.filename(), "multi Mixed 必须用标准汇总文件名");
+    }
+
     @Test
     void leagueEachExportUsesPeekModeAndWritesLeagueWorkbook() throws Exception {
         final Battle battle = LeagueTestReplays.sevenVsSeven(1);

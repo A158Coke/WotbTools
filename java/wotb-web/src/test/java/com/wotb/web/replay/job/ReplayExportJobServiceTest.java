@@ -475,6 +475,127 @@ class ReplayExportJobServiceTest {
         assertEquals(expected, fileColumn, "aggregate 战斗列表文件名列必须保持上传顺序");
     }
 
+    // ---- aggregate export filename contract（Standard / League / Mixed 同步与异步同一规则）----
+
+    @Test
+    void aggregateStandardUploadUsesStandardAggregateFilename() throws Exception {
+        stubFacadeBattlesDistinct();  // arenaBonusType 默认 0 → STANDARD_REPLAY
+        final String jobId = service.createJob(new MultipartFile[]{
+                file("s1.wotbreplay"), file("s2.wotbreplay")}, "aggregate");
+        final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+        assertEquals(ExportJob.Status.READY, snap.status());
+        assertEquals("回放汇总.xlsx", snap.filename(), "multi Standard upload aggregate 必须用标准汇总文件名");
+    }
+
+    @Test
+    void aggregateLeagueUploadUsesLeagueAggregateFilename() throws Exception {
+        final Battle rated1 = LeagueTestReplays.sevenVsSeven(1);
+        rated1.arenaId = "111";
+        final Battle rated2 = LeagueTestReplays.sevenVsSeven(1);
+        rated2.arenaId = "222";
+        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
+            final Source s = inv.getArgument(0);
+            return new ReplayProcessingResult(s.name(), ReplayProcessingStatus.SUCCESS, null,
+                    s.name().startsWith("c1") ? rated1 : rated2, null, null,
+                    ReplayProcessingCapabilities.summaryOnly(false), null, null);
+        });
+        final String jobId = service.createJob(new MultipartFile[]{
+                file("c1.wotbreplay"), file("c2.wotbreplay")}, "aggregate");
+        final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+        assertEquals(ExportJob.Status.READY, snap.status());
+        assertEquals("联赛汇总.xlsx", snap.filename(), "multi 纯 CW upload aggregate 必须用联赛汇总文件名");
+    }
+
+    @Test
+    void aggregateMixedUploadUsesStandardAggregateFilename() throws Exception {
+        // 1 Standard + 1 CW（返回 battle 的 arenaBonusType 判定 MIXED_UNSUPPORTED）
+        final Battle standard = LeagueTestReplays.sevenVsSeven(1);
+        standard.arenaId = "333";
+        standard.arenaBonusType = 1;
+        final Battle training = LeagueTestReplays.sevenVsSeven(1);
+        training.arenaId = "111";
+        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
+            final Source s = inv.getArgument(0);
+            return new ReplayProcessingResult(s.name(), ReplayProcessingStatus.SUCCESS, null,
+                    s.name().startsWith("s-") ? standard : training, null, null,
+                    ReplayProcessingCapabilities.summaryOnly(false), null, null);
+        });
+        final String jobId = service.createJob(new MultipartFile[]{
+                file("s-mixed.wotbreplay"), file("t-mixed.wotbreplay")}, "aggregate");
+        final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+        assertEquals(ExportJob.Status.READY, snap.status());
+        assertEquals("回放汇总.xlsx", snap.filename(), "multi Mixed upload aggregate 必须用标准汇总文件名");
+    }
+
+    @Test
+    void fromResultStandardAggregateUsesStandardAggregateFilename() throws Exception {
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-agg-std"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            final String pJobId = readyProcessingJob(processingStore, "proc-std-agg",
+                    List.of(battle("arena-1"), battle("arena-2")),
+                    List.of("one.wotbreplay", "two.wotbreplay"), List.of(), List.of());
+            final String jobId = service.createJob(null, "aggregate", pJobId);
+            final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+            assertEquals(ExportJob.Status.READY, snap.status());
+            assertEquals("回放汇总.xlsx", snap.filename(),
+                    "multi Standard from-result aggregate 必须用标准汇总文件名");
+            processingStore.release(pJobId);
+        } finally {
+            deleteDir(processingStore.jobDir("").getParent());
+        }
+    }
+
+    @Test
+    void fromResultLeagueAggregateUsesLeagueAggregateFilename() throws Exception {
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-agg-league"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            final String pJobId = readyLeagueProcessingJob(processingStore, "proc-league-agg",
+                    "arena-1", "arena-2");
+            final String jobId = service.createJob(null, "aggregate", pJobId);
+            final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+            assertEquals(ExportJob.Status.READY, snap.status());
+            assertEquals("联赛汇总.xlsx", snap.filename(),
+                    "multi 纯 CW from-result aggregate 必须用联赛汇总文件名");
+            processingStore.release(pJobId);
+        } finally {
+            deleteDir(processingStore.jobDir("").getParent());
+        }
+    }
+
+    @Test
+    void fromResultMixedAggregateUsesStandardAggregateFilename() throws Exception {
+        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
+                Files.createTempDirectory("wotb-agg-mixed"), 60);
+        try {
+            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
+                    executor, processingStore, meterRegistry);
+            final String pJobId = "proc-mixed-agg";
+            final ReplayProcessingJob pJob = new ReplayProcessingJob(pJobId, 2);
+            pJob.startProcessing();
+            pJob.updateProgress(2, 0, 0);
+            pJob.markReady(new ProcessedDataset(
+                    List.of(battle("arena-1"), battle("arena-2")),
+                    List.of("one.wotbreplay", "two.wotbreplay"),
+                    List.of(), List.of(), null, "MIXED_LEAGUE_AND_STANDARD_REPLAYS"));
+            processingStore.register(pJob);
+            processingStore.acquireForExport(pJobId);
+            final String jobId = service.createJob(null, "aggregate", pJobId);
+            final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+            assertEquals(ExportJob.Status.READY, snap.status());
+            assertEquals("回放汇总.xlsx", snap.filename(),
+                    "multi Mixed from-result aggregate 必须用标准汇总文件名");
+            processingStore.release(pJobId);
+        } finally {
+            deleteDir(processingStore.jobDir("").getParent());
+        }
+    }
+
     @Test
     void eachKeepsUploadOrderOfValidReplaysWhenInvalidInMiddle() throws Exception {
         when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
