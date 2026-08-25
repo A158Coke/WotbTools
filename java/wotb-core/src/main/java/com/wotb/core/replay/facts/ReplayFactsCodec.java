@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
 import tools.jackson.databind.DeserializationContext;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.MapperFeature;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.deser.std.StdDeserializer;
 import tools.jackson.databind.json.JsonMapper;
@@ -55,6 +56,7 @@ public final class ReplayFactsCodec {
         module.addSerializer(ReplayEvent.class, new ReplayEventSerializer());
         module.addDeserializer(ReplayEvent.class, new ReplayEventDeserializer());
         return JsonMapper.builder()
+                .enable(MapperFeature.ALLOW_FINAL_FIELDS_AS_MUTATORS)
                 .changeDefaultVisibility(vc -> vc.withVisibility(
                         PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY))
                 .addModule(module)

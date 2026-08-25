@@ -5,6 +5,7 @@ import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -39,8 +40,11 @@ class ReplayFactsCodecTest {
         final AiReplayFacts restored = ReplayFactsCodec.fromBytes(json);
         final ReplayProcessingResult round = restored.toResult();
 
-        // 全量 parity：facts JSON 必须确定性且往返无损（byte[] 组件以 base64 深度比较）
-        assertDeepEqual(ReplayFactsCodec.toJson(facts), ReplayFactsCodec.toJson(restored), "$");
+        // 全量 parity：facts JSON 必须确定性且往返无损（统一走 write→parse 规范路径，
+        // byte[] 组件以 base64 深度比较；数值按值比较）
+        final JsonMapper mapper = JsonMapper.builder().build();
+        assertDeepEqual(mapper.readTree(ReplayFactsCodec.toBytes(facts)),
+                mapper.readTree(ReplayFactsCodec.toBytes(restored)), "$");
 
         // 结果级
         assertEquals(result.status(), round.status());
@@ -102,6 +106,8 @@ class ReplayFactsCodecTest {
                 return;
             }
         }
-        throw new AssertionError("分歧: " + path + "\n expected=" + expected + "\n actual=" + actual);
+        throw new AssertionError("分歧: " + path
+                + "\n expectedType=" + expected.getNodeType() + " expected=" + expected
+                + "\n actualType=" + actual.getNodeType() + " actual=" + actual);
     }
 }
