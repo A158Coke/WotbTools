@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { mapLabel, displayName } from '../utils/helpers.js'
+import { mapLabel, displayName, fileKey } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { replayAggregatePlayerCount } from '../utils/replayView.js'
 import { useReplay } from '../composables/useReplay.js'
@@ -426,21 +426,51 @@ const workspaceFile = ref(null)
 const playbackSeek = ref(null)
 /** 当前 workspace 文件对应的 Dataset 引用（{processingJobId, sourceId}；换文件即失效）。 */
 const datasetRef = ref(null)
+/**
+ * Workspace Dataset 请求 generation（BLOCKER 1）：每次目标变化（workspaceFile 或新的
+ * ensureDatasetFor 调用）自增；requestDirectAction 是异步的，返回后必须校验 revision +
+ * target file identity 仍属于当前 generation，否则直接丢弃——绝不让 A 的迟到响应把
+ * datasetRef 绑到已切走的 B 上（data correctness，不是 UI cosmetic）。
+ */
+let workspaceDatasetRevision = 0
 
-/** 目标文件变化 → 旧 dataset 引用失效（plan §54：旧响应不覆盖新 selection）。 */
+/**
+ * 目标文件变化 → 旧 dataset 引用立即失效（清空，UI 不残留旧引用）。revision 的递增
+ * 只由 ensureDatasetFor 负责（每次请求前 ++）；这里不能 ++——Vue 的 pre-flush watcher
+ * 会在「请求发起后、await 续体前」运行，把当前请求自己误判成 stale（BLOCKER 1 竞态测试
+ * 暴露：workspaceFile 变化 → flush → revision 被顶掉 → 新 dataset 被丢弃）。清空旧值
+ * 只是即时 UI 失效；真正的 ownership 由 ensureDatasetFor 的 revision + fileKey 校验保证。
+ */
 watch(workspaceFile, () => {
   datasetRef.value = null
 })
 
-/** 确保目标 source READY 后返回 Dataset 引用（自动创建/复用 Processing Job，plan §40）。 */
+/**
+ * 确保目标 source READY 后返回 Dataset 引用（自动创建/复用 Processing Job，plan §40）。
+ * 写入 datasetRef 前必须确认：请求发起时的 revision 仍是最新、当前 workspaceFile 的
+ * fileKey 仍等于目标文件。任何 stale 结果（成功或失败）一律 discard——不写 datasetRef、
+ * 不写 processingError、不修改当前 workspace 状态。
+ */
 async function ensureDatasetFor(file) {
   if (!file) return null
+  const revision = ++workspaceDatasetRevision
+  const targetKey = fileKey(file)
   try {
-    datasetRef.value = await requestDirectAction(file, workspaceTab.value)
-    return datasetRef.value
+    const ref = await requestDirectAction(file, workspaceTab.value)
+    const current = workspaceFile.value
+    if (revision !== workspaceDatasetRevision || !current || fileKey(current) !== targetKey) {
+      // stale response：不属于当前 workspace generation，直接丢弃。
+      return null
+    }
+    datasetRef.value = ref
+    return ref
   } catch (e) {
-    datasetRef.value = null
-    processingError.value = e?.message || String(e)
+    const current = workspaceFile.value
+    if (revision === workspaceDatasetRevision && current && fileKey(current) === targetKey) {
+      // 仅当前 generation 的失败才允许写错误；stale 错误不得污染新 selection。
+      datasetRef.value = null
+      processingError.value = e?.message || String(e)
+    }
     return null
   }
 }

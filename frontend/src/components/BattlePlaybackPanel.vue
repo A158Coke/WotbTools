@@ -12,6 +12,7 @@ import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { localizeAiError } from '../utils/reconstruction-analysis.js'
+import { fileKey } from '../utils/helpers.js'
 import MapOverview from './MapOverview.vue'
 
 const props = defineProps({
@@ -124,7 +125,7 @@ async function loadMapOverview() {
   }
 }
 
-/** 文件变化（新增/移除/清空）时使旧请求失效并取消，重置地图区块。 */
+/** 文件变化（新增/移除/清空）或 Dataset identity 变化时使旧请求失效并取消，重置地图区块。 */
 function resetMap() {
   mapRequestSeq++
   if (mapAbortController) {
@@ -145,22 +146,20 @@ function toggleMap() {
 }
 
 /**
- * 文件变化：重置地图并取消在途请求（abort + generation 失效）；是否自动加载由
- * maybeAutoLoadMap 依 active 决定——文件变化本身不等于用户要求加载 playback。
+ * effective Dataset identity（BLOCKER 1.2）：file + processingJobId + sourceId 三者共同
+ * 决定「当前地图属于谁」。任一变化都必须真正 reset（abort 在途请求、清空已加载的旧 map、
+ * 解除 mapLoaded 阻塞），否则错误 Dataset A 的已加载地图会在 B 身份下继续显示。
+ * 单一 watcher 同时避免 file watcher + dataset watcher 对同一变化的双重请求。
  */
-watch(() => props.file, () => {
+function effectiveDatasetKey() {
+  const f = props.file
+  return `${f ? fileKey(f) : ''}|${props.processingJobId || ''}|${props.sourceId || ''}`
+}
+
+watch(effectiveDatasetKey, () => {
   resetMap()
   maybeAutoLoadMap()
 }, { immediate: true })
-
-/** Dataset 引用到达/变化（Direct Capability 异步准备）→ 重试自动加载（plan §40）。 */
-watch(() => [props.processingJobId, props.sourceId], () => {
-  if (mapError.value === 'DATASET_UNAVAILABLE') {
-    mapError.value = ''
-    mapLoaded.value = false // 解除错误态阻塞，dataset 到达后允许自动加载（plan §40）
-  }
-  maybeAutoLoadMap()
-})
 
 /** active 变化（进入/离开战局回放 capability）：进入时按需自动加载；离开不卸载、保留已有状态。 */
 watch(() => props.active, () => {

@@ -137,6 +137,25 @@ const pJobState = vi.hoisted(() => {
     setId: (v) => { if (_processingJobId) _processingJobId.value = v },
   }
 })
+
+/** BLOCKER 1：requestDirectAction 可控制 impl（deferred Promise 决定 resolve 顺序）。 */
+const directActionHolder = vi.hoisted(() => {
+  let impl = async () => ({ processingJobId: 'p1', sourceId: 'r0' })
+  return {
+    setImpl: (fn) => { impl = fn },
+    fn: () => vi.fn(impl),
+    reset: () => { impl = async () => ({ processingJobId: 'p1', sourceId: 'r0' }) }
+  }
+})
+
+/** BLOCKER 1：stale 失败不得写 processingError（持有 useReplay mock 的 error ref）。 */
+const wsErrState = vi.hoisted(() => {
+  let ref = null
+  return {
+    capture: (r) => { ref = r },
+    get value() { return ref ? ref.value : undefined }
+  }
+})
 vi.mock('vue-i18n', async () => {
   const { ref } = await import('vue')
   const locale = ref('en')
@@ -194,8 +213,10 @@ vi.mock('../composables/useReplay.js', async () => {
       const processingJobRef = ref(null)
       const processingActiveRef = ref(false)
       const processingJobIdRef = ref(null)
+      const processingErrorRef = ref('')
       jobState.capture(exportJobRef, exportActiveRef)
       pJobState.capture(processingJobRef, processingActiveRef, processingJobIdRef)
+      wsErrState.capture(processingErrorRef)
       const startExportJob = vi.fn()
       const startProcessingJob = vi.fn()
       const updateFiles = vi.fn(() => { selectionRevision.value++ })
@@ -206,10 +227,10 @@ vi.mock('../composables/useReplay.js', async () => {
         selectionRevision,
         pendingRemove, updateFiles, playerCols, aggCols,
         exportJob: exportJobRef, exportError: ref(''), exportActive: exportActiveRef,
-        processingJob: processingJobRef, processingError: ref(''), processingActive: processingActiveRef,
+        processingJob: processingJobRef, processingError: processingErrorRef, processingActive: processingActiveRef,
         processingJobId: processingJobIdRef,
         uploadState: ref(null), cancelProcessing: vi.fn(),
-        requestDirectAction: vi.fn(async () => ({ processingJobId: 'p1', sourceId: 'r0' })),
+        requestDirectAction: directActionHolder.fn(),
         startProcessingJob, cancelProcessingJob: vi.fn(),
         dismissProcessingJob: vi.fn(),
         startExportJob, cancelExportJob: vi.fn(),
@@ -2359,6 +2380,104 @@ describe('ReplayPage League failure UX separation', () => {
     expect(wrapper.text()).toContain('league.unavailable_mixed')
     expect(wrapper.findAll('.battle-table-stub').length).toBe(2)
     expect(wrapper.find('.error').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})
+
+// ---- BLOCKER 1：Workspace Dataset stale response ownership（generation/revision）----
+
+describe('ReplayPage Workspace Dataset generation ownership（BLOCKER 1）', () => {
+  function mountWithFilesLocal(files) {
+    state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en', files }
+    return mountPage({ auth: { authenticated: true, login: vi.fn() } })
+  }
+
+  function deferred() {
+    let resolve
+    let reject
+    const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+    return { promise, resolve, reject }
+  }
+
+  afterEach(() => {
+    directActionHolder.reset()
+  })
+
+  it('AI：B 先 READY、A 迟到 → datasetRef 永远属于当前 workspaceFile（A 被丢弃）', async () => {
+    const fileA = new File(['a'], 'a.wotbreplay')
+    const fileB = new File(['b'], 'b.wotbreplay')
+    const dA = deferred()
+    const dB = deferred()
+    let call = 0
+    directActionHolder.setImpl(() => (++call === 1 ? dA.promise : dB.promise))
+    const wrapper = mountWithFilesLocal([fileA, fileB])
+
+    const pA = wrapper.vm.openWorkspaceAi(fileA) // A pending（不 await，等 B 先行）
+    const pB = wrapper.vm.openWorkspaceAi(fileB) // B pending
+
+    dB.resolve({ processingJobId: 'pB', sourceId: 'r1' })
+    await flushPromises()
+    expect(wrapper.vm.workspaceFile?.name).toBe('b.wotbreplay')
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r1' })
+
+    dA.resolve({ processingJobId: 'pA', sourceId: 'r0' }) // A 迟到
+    await flushPromises()
+    expect(wrapper.vm.workspaceFile?.name).toBe('b.wotbreplay')
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r1' },
+      'A 的迟到响应不得把 datasetRef 绑回 A')
+    await pA
+    await pB
+    wrapper.unmount()
+  })
+
+  it('Playback：同一竞态下 B 胜出、A 迟到被丢弃', async () => {
+    const fileA = new File(['a'], 'a.wotbreplay')
+    const fileB = new File(['b'], 'b.wotbreplay')
+    const dA = deferred()
+    const dB = deferred()
+    let call = 0
+    directActionHolder.setImpl(() => (++call === 1 ? dA.promise : dB.promise))
+    const wrapper = mountWithFilesLocal([fileA, fileB])
+
+    const pA = wrapper.vm.openWorkspacePlayback(fileA)
+    const pB = wrapper.vm.openWorkspacePlayback(fileB)
+
+    dB.resolve({ processingJobId: 'pB', sourceId: 'r1' })
+    await flushPromises()
+    expect(wrapper.vm.workspaceFile?.name).toBe('b.wotbreplay')
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r1' })
+
+    dA.resolve({ processingJobId: 'pA', sourceId: 'r0' })
+    await flushPromises()
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r1' })
+    expect(wrapper.vm.workspaceFile?.name).toBe('b.wotbreplay')
+    await pA
+    await pB
+    wrapper.unmount()
+  })
+
+  it('stale failure 不写 processingError、不污染当前 workspace', async () => {
+    const fileA = new File(['a'], 'a.wotbreplay')
+    const fileB = new File(['b'], 'b.wotbreplay')
+    const dA = deferred()
+    const dB = deferred()
+    let call = 0
+    directActionHolder.setImpl(() => (++call === 1 ? dA.promise : dB.promise))
+    const wrapper = mountWithFilesLocal([fileA, fileB])
+
+    const pA = wrapper.vm.openWorkspaceAi(fileA)
+    const pB = wrapper.vm.openWorkspaceAi(fileB)
+    dB.resolve({ processingJobId: 'pB', sourceId: 'r1' })
+    await flushPromises()
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r1' })
+
+    dA.reject(new Error('STALE_DATASET_FAILURE')) // A 迟到失败
+    await flushPromises()
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r1' })
+    expect(wsErrState.value).toBe('', 'stale 错误不得写入当前 selection 的 processingError')
+    expect(wrapper.vm.workspaceFile?.name).toBe('b.wotbreplay')
+    await pA
+    await pB
     wrapper.unmount()
   })
 })

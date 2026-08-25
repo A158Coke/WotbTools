@@ -54,8 +54,12 @@ let cancelRequested = false
 let timedOut = false
 let currentCorrelationId = ''
 let analyzeStartedAt = 0
-/** 文件切换代际：切文件时在途分析作废，迟到的结果/错误不写状态。 */
-let fileRevision = 0
+/**
+ * Dataset 请求代际（BLOCKER 1.1）：authoritative input = file + processingJobId + sourceId
+ * 三者。任一变化（含 Dataset identity 单独变化）都使在途分析作废——迟到响应不得写
+ * analysisResult / partialAnalysis / error，也不得覆盖新 generation 的 loading/finally。
+ */
+let datasetRevision = 0
 
 function resetResults() {
   analysisResult.value = null
@@ -63,14 +67,21 @@ function resetResults() {
   partialAnalysis.value = ''
 }
 
-// 目标文件变化：作废在途分析并重置面板（状态只属于当前目标文件）。
-watch(() => props.file, () => {
-  fileRevision++
+// 目标 file 或 Dataset identity 变化：作废在途分析并重置面板（状态只属于当前目标）。
+watch(() => [props.file, props.processingJobId, props.sourceId], () => {
+  datasetRevision++
   if (analyzing.value) {
     cancelRequested = true
     fireCancel(currentCorrelationId)
+    if (analyzeTimeoutTimer) {
+      clearTimeout(analyzeTimeoutTimer)
+      analyzeTimeoutTimer = null
+    }
     if (analyzeAbortController) analyzeAbortController.abort()
+    analyzeAbortController = null
+    currentCorrelationId = ''
   }
+  analyzing.value = false
   resetResults()
   error.value = ''
 })
@@ -129,7 +140,7 @@ async function runAnalyze() {
     error.value = t('recon.errors.NO_REPLAY_FILE')
     return
   }
-  const revisionAtStart = fileRevision
+  const revisionAtStart = datasetRevision
   analyzing.value = true
   error.value = ''
   analysisResult.value = null
@@ -163,14 +174,14 @@ async function runAnalyze() {
       throw new Error(localizeAiError(errorData, r.status, t))
     }
     // SSE 流式解析：阶段事件 + call2_token 主复盘增量 + done 收尾。
-    const receivedDone = await readAnalyzeStream(r, controller)
+    const receivedDone = await readAnalyzeStream(r, controller, revisionAtStart)
     if (!receivedDone && !cancelRequested) {
       // 流异常中断（未收到 done 且未取消）：视为无效响应。
       throw new Error(t('recon.errors.AI_RESPONSE_INVALID'))
     }
   } catch (e) {
-    // 文件已切换：本次分析作废，不写任何状态。
-    if (fileRevision !== revisionAtStart) return
+    // file / Dataset identity 已切换：本次分析作废，不写任何状态。
+    if (datasetRevision !== revisionAtStart) return
     if (e && e.name === 'AbortError') {
       error.value = timedOut ? t('recon.errors.AI_TIMEOUT') : t('recon.cancelled')
     } else if (cancelRequested) {
@@ -182,9 +193,12 @@ async function runAnalyze() {
   } finally {
     clearTimeout(analyzeTimeoutTimer)
     analyzeTimeoutTimer = null
-    analyzeAbortController = null
-    currentCorrelationId = ''
-    analyzing.value = false
+    if (datasetRevision === revisionAtStart) {
+      // 仅当前 generation 可重置共享请求状态；stale finally 不得覆盖新 generation。
+      analyzeAbortController = null
+      currentCorrelationId = ''
+      analyzing.value = false
+    }
   }
 }
 
@@ -213,7 +227,7 @@ function analyzeBody(correlationId) {
  * error → 抛出本地化错误。
  * @returns {Promise<boolean>} 是否收到 done 事件
  */
-async function readAnalyzeStream(r, controller) {
+async function readAnalyzeStream(r, controller, revisionAtStart) {
   const reader = r.body.getReader()
   const decoder = new TextDecoder('utf-8')
   let buffer = ''
@@ -238,6 +252,10 @@ async function readAnalyzeStream(r, controller) {
   }
 
   const handleStreamEvent = (event, data) => {
+    if (datasetRevision !== revisionAtStart) {
+      // Dataset identity 已在途变化：本流属于旧 generation，任何阶段/结果都不得写回。
+      return
+    }
     switch (event) {
       case 'call1_start':
         progressStage.value = 'call1'
