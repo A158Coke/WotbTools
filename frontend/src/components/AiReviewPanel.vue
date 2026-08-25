@@ -48,18 +48,19 @@ const partialAnalysis = ref('')
 // AI 复盘请求生命周期：客户端安全超时 + 取消（AbortController + 后端 cancel 端点）。
 // 超时链对齐：后端整体 deadline=1100s < nginx analyze 1120s；前端 1100s 在 nginx 之前给出干净 AI_TIMEOUT。
 const AI_ANALYZE_TIMEOUT_MS = 1_100_000
-let analyzeAbortController = null
-let analyzeTimeoutTimer = null
-let cancelRequested = false
-let timedOut = false
-let currentCorrelationId = ''
-let analyzeStartedAt = 0
 /**
  * Dataset 请求代际（BLOCKER 1.1）：authoritative input = file + processingJobId + sourceId
  * 三者。任一变化（含 Dataset identity 单独变化）都使在途分析作废——迟到响应不得写
  * analysisResult / partialAnalysis / error，也不得覆盖新 generation 的 loading/finally。
  */
 let datasetRevision = 0
+/**
+ * 当前 AI analysis run（BLOCKER 2）：每次 runAnalyze 创建独立 run context
+ * {revision, controller, correlationId, startedAt, timeoutTimer, cancelRequested, timedOut}。
+ * 跨 generation 不再共享任何 mutable request 字段——旧 A 永远只能操作 A 自己的
+ * controller / timer / correlationId，绝不可能清掉 B 的 timer 或 cancel B 的请求。
+ */
+let activeRun = null
 
 function resetResults() {
   analysisResult.value = null
@@ -67,20 +68,15 @@ function resetResults() {
   partialAnalysis.value = ''
 }
 
-// 目标 file 或 Dataset identity 变化：作废在途分析并重置面板（状态只属于当前目标）。
+// 目标 file 或 Dataset identity 变化：只取消 oldRun（自己的 timer/correlationId/controller），
+// 再解除 active ownership；新 B run 不得被 oldRun 的异步 unwind 影响。
 watch(() => [props.file, props.processingJobId, props.sourceId], () => {
   datasetRevision++
-  if (analyzing.value) {
-    cancelRequested = true
-    fireCancel(currentCorrelationId)
-    if (analyzeTimeoutTimer) {
-      clearTimeout(analyzeTimeoutTimer)
-      analyzeTimeoutTimer = null
-    }
-    if (analyzeAbortController) analyzeAbortController.abort()
-    analyzeAbortController = null
-    currentCorrelationId = ''
+  const oldRun = activeRun
+  if (oldRun) {
+    cancelRun(oldRun)
   }
+  activeRun = null
   analyzing.value = false
   resetResults()
   error.value = ''
@@ -120,11 +116,20 @@ function fireCancel(correlationId) {
   }).catch(() => {})
 }
 
+/** 只取消指定 run（closure-capture：只操作 run 自己的 timer / correlationId / controller）。 */
+function cancelRun(run) {
+  if (!run) return
+  run.cancelRequested = true
+  if (run.timeoutTimer) {
+    clearTimeout(run.timeoutTimer)
+    run.timeoutTimer = null
+  }
+  fireCancel(run.correlationId)
+  run.controller.abort()
+}
+
 function cancelAnalyze() {
-  if (!analyzing.value || !analyzeAbortController) return
-  cancelRequested = true
-  fireCancel(currentCorrelationId)
-  analyzeAbortController.abort()
+  cancelRun(activeRun)
 }
 
 function newCorrelationId() {
@@ -140,26 +145,31 @@ async function runAnalyze() {
     error.value = t('recon.errors.NO_REPLAY_FILE')
     return
   }
-  const revisionAtStart = datasetRevision
+  const run = {
+    revision: datasetRevision,
+    controller: new AbortController(),
+    correlationId: newCorrelationId(),
+    startedAt: Date.now(),
+    timeoutTimer: null,
+    cancelRequested: false,
+    timedOut: false
+  }
+  activeRun = run
   analyzing.value = true
   error.value = ''
   analysisResult.value = null
   progressStage.value = 'call1'
   partialAnalysis.value = ''
-  cancelRequested = false
-  timedOut = false
-  currentCorrelationId = newCorrelationId()
-  analyzeStartedAt = Date.now()
-  const controller = new AbortController()
-  analyzeAbortController = controller
-  analyzeTimeoutTimer = setTimeout(() => {
-    timedOut = true
-    fireCancel(currentCorrelationId)
-    controller.abort()
+  // timeout closure-capture run：fire 时只读 run.correlationId / run.controller（BLOCKER 2.4）。
+  run.timeoutTimer = setTimeout(() => {
+    run.timedOut = true
+    fireCancel(run.correlationId)
+    run.controller.abort()
   }, AI_ANALYZE_TIMEOUT_MS)
   try {
-    const r = await authedFetch('/api/replay/analyze', analyzeBody(currentCorrelationId),
-      { signal: controller.signal })
+    const r = await authedFetch('/api/replay/analyze', analyzeBody(run.correlationId),
+      { signal: run.controller.signal })
+    if (activeRun !== run) return // stale response：不读流、不写任何状态
     if (!r.ok) {
       const rawBody = await r.text().catch(() => '')
       const trimmed = rawBody.trim()
@@ -174,29 +184,28 @@ async function runAnalyze() {
       throw new Error(localizeAiError(errorData, r.status, t))
     }
     // SSE 流式解析：阶段事件 + call2_token 主复盘增量 + done 收尾。
-    const receivedDone = await readAnalyzeStream(r, controller, revisionAtStart)
-    if (!receivedDone && !cancelRequested) {
+    const receivedDone = await readAnalyzeStream(r, run)
+    if (!receivedDone && !run.cancelRequested) {
       // 流异常中断（未收到 done 且未取消）：视为无效响应。
       throw new Error(t('recon.errors.AI_RESPONSE_INVALID'))
     }
   } catch (e) {
     // file / Dataset identity 已切换：本次分析作废，不写任何状态。
-    if (datasetRevision !== revisionAtStart) return
+    if (activeRun !== run) return
     if (e && e.name === 'AbortError') {
-      error.value = timedOut ? t('recon.errors.AI_TIMEOUT') : t('recon.cancelled')
-    } else if (cancelRequested) {
+      error.value = run.timedOut ? t('recon.errors.AI_TIMEOUT') : t('recon.cancelled')
+    } else if (run.cancelRequested) {
       // 用户主动取消：保持「已取消」语义，忽略后端 error 事件。
       error.value = t('recon.cancelled')
     } else {
       error.value = e.message || String(e)
     }
   } finally {
-    clearTimeout(analyzeTimeoutTimer)
-    analyzeTimeoutTimer = null
-    if (datasetRevision === revisionAtStart) {
-      // 仅当前 generation 可重置共享请求状态；stale finally 不得覆盖新 generation。
-      analyzeAbortController = null
-      currentCorrelationId = ''
+    // BLOCKER 2.3：只清理自己的 timer；非当前 run 的 finally 不得触碰共享 UI 状态。
+    clearTimeout(run.timeoutTimer)
+    run.timeoutTimer = null
+    if (activeRun === run) {
+      activeRun = null
       analyzing.value = false
     }
   }
@@ -219,7 +228,7 @@ function analyzeBody(correlationId) {
 }
 
 /**
- * 读取 SSE 响应体并分发事件：
+ * 读取 SSE 响应体并分发事件（run context 显式传入，BLOCKER 2.5）：
  * call1_start/call1_done/evidence_done → 阶段状态；
  * call2_token → 主复盘文本累积（token 滚动）；
  * autopsy_start/autopsy_done → 团队剖析阶段；
@@ -227,14 +236,14 @@ function analyzeBody(correlationId) {
  * error → 抛出本地化错误。
  * @returns {Promise<boolean>} 是否收到 done 事件
  */
-async function readAnalyzeStream(r, controller, revisionAtStart) {
+async function readAnalyzeStream(r, run) {
   const reader = r.body.getReader()
   const decoder = new TextDecoder('utf-8')
   let buffer = ''
   let currentEvent = ''
   let currentData = ''
   let receivedDone = false
-  const deadlineMs = analyzeStartedAt + AI_ANALYZE_TIMEOUT_MS
+  const deadlineMs = run.startedAt + AI_ANALYZE_TIMEOUT_MS
 
   const dispatch = () => {
     if (!currentEvent) return
@@ -252,7 +261,7 @@ async function readAnalyzeStream(r, controller, revisionAtStart) {
   }
 
   const handleStreamEvent = (event, data) => {
-    if (datasetRevision !== revisionAtStart) {
+    if (activeRun !== run) {
       // Dataset identity 已在途变化：本流属于旧 generation，任何阶段/结果都不得写回。
       return
     }
@@ -309,9 +318,9 @@ async function readAnalyzeStream(r, controller, revisionAtStart) {
     for (;;) {
       // 墙钟超时兜底：后台标签定时器被节流时，活跃流仍按 1100s 语义中止。
       if (Date.now() >= deadlineMs) {
-        timedOut = true
-        fireCancel(currentCorrelationId)
-        controller.abort()
+        run.timedOut = true
+        fireCancel(run.correlationId)
+        run.controller.abort()
         const err = new Error('AI_ANALYZE_TIMEOUT')
         err.name = 'AbortError'
         throw err
@@ -350,8 +359,9 @@ async function readAnalyzeStream(r, controller, revisionAtStart) {
 }
 
 function onPageLeave() {
-  if (analyzing.value && currentCorrelationId) {
-    fireCancel(currentCorrelationId)
+  const run = activeRun
+  if (run) {
+    fireCancel(run.correlationId)
   }
 }
 

@@ -469,7 +469,10 @@ async function ensureDatasetFor(file) {
     if (revision === workspaceDatasetRevision && current && fileKey(current) === targetKey) {
       // 仅当前 generation 的失败才允许写错误；stale 错误不得污染新 selection。
       datasetRef.value = null
-      processingError.value = e?.message || String(e)
+      if (e && e.name !== 'AbortError') {
+        // 用户取消上传（UPLOADING/REGISTERING cancel）：不显示错误。
+        processingError.value = e?.message || String(e)
+      }
     }
     return null
   }

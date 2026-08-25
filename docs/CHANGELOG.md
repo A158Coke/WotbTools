@@ -84,6 +84,22 @@
     sweep/remove 先移除注册则 acquire 必然失败；物理磁盘删除在锁外执行；引用计数
     更名 `datasetLeaseRefs`（AI/Playback/Export 共享语义）；新增确定性并发测试
     （acquire wins / sweep wins / 多 lease / underflow / 压力 invariant）。
+  - **Processing create single-flight（第五轮）**：`useReplay` 引入
+    `processingStart`（{revision, promise, controller, prioritySourceIndex,
+    onColumnsInit}）作为当前 selection 的唯一 in-flight create owner——同一
+    selectionRevision 下 startProcessingJob / 任意数量 Direct Action（AI/Playback/
+    manual Parse）共享同一个 `api.createProcessingJob` Promise（backend 至多一个
+    Processing Job），priority 由第一个发起者决定，绝不用「abort 旧 create + 新建」
+    切换 priority（abort XHR ≠ 后端事务回滚）。selection 变化时 abort 并 null owner，
+    stale create 迟到 resolve 一律 best-effort cancel 且不绑定 / 不 poll / 不写
+    upload/loading/error；uploadState / poll interval 均经 owner 校验，一个 job 至多
+    一个主 poll interval。
+  - **AI analysis per-run context（第五轮）**：`AiReviewPanel` 每次 runAnalyze 创建
+    独立 run context（revision / controller / correlationId / startedAt /
+    timeoutTimer / cancelRequested / timedOut），`activeRun` 作为唯一 ownership——
+    旧 A 的 finally 只清自己的 timer、timeout callback closure-capture A 的
+    correlationId、SSE 事件按 `activeRun === run` 守卫写回；Dataset identity 切换只
+    cancel oldRun，绝不可能清掉 B 的 timer 或 cancel B 的请求。
 - **名人堂三环（Mark 3）人工审核排行榜**：新增独立 `mark3` domain、Flyway `V21` submission/evidence 表和 `/api/hof/mark3`、`/api/users/mark3`、`/api/admin/hof/mark3` API。仅限 Tier X，玩家提交三环所需场数、过程场均、过程胜率、1–2 张截图与恰好 5 个回放；无 Wargaming 自动认证链路。创建路径从五个 replay byte[] 读取、解析、hash 锁、落盘到事务全程复用全局 `ReplayCapacityLimiter`，容量满返回 503 `REPLAY_BUSY`。排行榜按已审核三环场数升序，场数相同使用 competition ranking；同用户同车的 CURRENT 唯一且不被后续申请替代，不使用 `SUPERSEDED`。REJECTED/CANCELLED/DELETED 可重提；管理员通过、拒绝或删除时均不能改写成绩，终态会清理截图和回放证据。
 
 ### Fixed

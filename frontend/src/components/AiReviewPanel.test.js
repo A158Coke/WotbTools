@@ -234,6 +234,7 @@ describe('AiReviewPanel Dataset identity ownership（BLOCKER 1.1）', () => {
 
     expect(wrapper.vm.analysisResult).toBeNull('旧 A 的 analysisResult 不得写回')
     expect(wrapper.vm.partialAnalysis).toBe('')
+    expect(wrapper.vm.progressStage).toBe('', '旧 A 的迟到事件不得写 progressStage')
     expect(wrapper.vm.error).toBe('')
     vi.unstubAllGlobals()
   })
@@ -299,5 +300,176 @@ describe('AiReviewPanel Dataset identity ownership（BLOCKER 1.1）', () => {
     expect(wrapper.vm.analysisResult).toEqual({ analysis: 'B RESULT', preBattleSection: undefined })
     expect(wrapper.vm.analyzing).toBe(false)
     vi.unstubAllGlobals()
+  })
+})
+
+// ---- BLOCKER 2：每次 AI analysis 独立 run context（timer/correlationId/controller 所有权）----
+
+describe('AiReviewPanel per-run context（BLOCKER 2）', () => {
+  function deferred() {
+    let resolve
+    let reject
+    const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+    return { promise, resolve, reject }
+  }
+
+  function mountDatasetPanel(overrides = {}) {
+    return mount(AiReviewPanel, {
+      props: {
+        file: { name: 'a.wotbreplay' },
+        processingJobId: 'pA',
+        sourceId: 'r0',
+        ...overrides
+      },
+      global: {
+        mocks: { $t: key => key },
+        stubs: {
+          ReplayAnalysisAction: {
+            props: ['analyzing'],
+            template: '<button class="dataset-analyze" @click="$emit(&apos;analyze&apos;)">analyze</button>'
+          },
+          AnalysisResultPanel: {
+            props: ['result'],
+            template: '<div class="result-stub">{{ result.analysis }}</div>'
+          }
+        }
+      }
+    })
+  }
+
+  function controllableSse() {
+    const queue = []
+    let waiting = null
+    return {
+      ok: true,
+      status: 200,
+      body: {
+        getReader: () => ({
+          read: () => {
+            if (queue.length) {
+              return Promise.resolve(queue.shift())
+            }
+            return new Promise(res => { waiting = res })
+          },
+          releaseLock: () => {}
+        })
+      },
+      _release: (value) => {
+        if (waiting) {
+          const w = waiting
+          waiting = null
+          w(value)
+        } else {
+          queue.push(value)
+        }
+      }
+    }
+  }
+
+  const sseEvent = (event, data) => {
+    const encoder = new TextEncoder()
+    return encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+  }
+
+  /** analyze/cancel 路由 mock：cancel 恒返回 ok，analyze 按顺序返回可控 SSE。 */
+  function routedFetch(...sseResponses) {
+    let analyzeCall = 0
+    return vi.fn((url) => {
+      if (String(url).includes('/cancel')) {
+        return Promise.resolve({ ok: true, status: 200 })
+      }
+      const sse = sseResponses[analyzeCall]
+      analyzeCall++
+      return Promise.resolve(sse)
+    })
+  }
+
+  function analyzeCalls(fetchMock) {
+    return fetchMock.mock.calls.filter(([u]) => String(u) === '/api/replay/analyze')
+  }
+
+  it('stale A finally 不得清 B timeout：B deadline 仍触发、cancel 用 B correlationId、显示 B 超时', async () => {
+    vi.useFakeTimers()
+    const sseA = controllableSse()
+    const sseB = controllableSse()
+    const fetchMock = routedFetch(sseA, sseB)
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountDatasetPanel()
+
+    await wrapper.find('.dataset-analyze').trigger('click') // A
+    await nextTick()
+    const aCorr = JSON.parse(analyzeCalls(fetchMock)[0][1].body).correlationId
+
+    await wrapper.setProps({ processingJobId: 'pB', sourceId: 'r0' }) // A 被 cancel（watcher）
+    await nextTick()
+    expect(wrapper.vm.analyzing).toBe(false)
+
+    await wrapper.find('.dataset-analyze').trigger('click') // B 启动（B timer 已安装）
+    await nextTick()
+    expect(wrapper.vm.analyzing).toBe(true)
+    const bCorr = JSON.parse(analyzeCalls(fetchMock)[1][1].body).correlationId
+    expect(bCorr).not.toBe(aCorr)
+
+    // A 的 async unwind 最后执行（fetch resolve + stream 收尾 → A finally）：
+    // 不得 clear B 的 timeoutTimer。
+    sseA._release({ done: false, value: sseEvent('done', { analysis: 'OLD' }) })
+    sseA._release({ done: true, value: undefined })
+    await flushPromises()
+
+    // 推进到 B deadline：B timeout 必须触发（即使 A finally 已跑过）
+    await vi.advanceTimersByTimeAsync(1_100_000)
+    sseB._release({ done: false, value: new TextEncoder().encode('') }) // 唤醒流循环检查墙钟 deadline
+    await flushPromises()
+
+    expect(wrapper.vm.error).toBe('recon.errors.AI_TIMEOUT', 'B 的 timeout 语义必须保留')
+    expect(wrapper.vm.analyzing).toBe(false)
+    const cancelUrls = fetchMock.mock.calls
+      .filter(([u]) => String(u).includes('/api/replay/analyze/cancel'))
+      .map(([u]) => String(u))
+    expect(cancelUrls.some(u => u.includes(encodeURIComponent(bCorr)))).toBe(true,
+      'B 的 timeout cancel 必须使用 B correlationId')
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it('stale A 的 cancel/timeout 只操作 A 自己的 correlationId，绝不 cancel B', async () => {
+    vi.useFakeTimers()
+    const sseA = controllableSse()
+    const sseB = controllableSse()
+    const fetchMock = routedFetch(sseA, sseB)
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountDatasetPanel()
+
+    await wrapper.find('.dataset-analyze').trigger('click') // A
+    await nextTick()
+    const aCorr = JSON.parse(analyzeCalls(fetchMock)[0][1].body).correlationId
+
+    await wrapper.setProps({ processingJobId: 'pB', sourceId: 'r0' }) // watcher 只 cancel A
+    await nextTick()
+    await wrapper.find('.dataset-analyze').trigger('click') // B
+    await nextTick()
+    const bCorr = JSON.parse(analyzeCalls(fetchMock)[1][1].body).correlationId
+
+    // B 活跃期间：A 不得触发任何 B_ID 的 cancel（A 只能操作 A_ID）
+    const cancelUrlsBefore = fetchMock.mock.calls
+      .filter(([u]) => String(u).includes('/api/replay/analyze/cancel'))
+      .map(([u]) => String(u))
+    expect(cancelUrlsBefore.some(u => u.includes(encodeURIComponent(aCorr)))).toBe(true,
+      'A 的 cancel（watcher 触发）使用 A correlationId')
+    expect(cancelUrlsBefore.some(u => u.includes(encodeURIComponent(bCorr)))).toBe(false,
+      'A 不得在 B 活跃时 cancel B')
+
+    // 推进 B 自身 deadline：只有 B 自己触发 cancel（A 的 timer 已在切换时 clear）
+    await vi.advanceTimersByTimeAsync(1_100_000)
+    sseB._release({ done: false, value: new TextEncoder().encode('') })
+    await flushPromises()
+
+    const cancelUrls = fetchMock.mock.calls
+      .filter(([u]) => String(u).includes('/api/replay/analyze/cancel'))
+      .map(([u]) => String(u))
+    expect(cancelUrls.filter(u => u.includes(encodeURIComponent(bCorr))).length).toBeGreaterThan(0,
+      'B 的 timeout cancel 使用 B correlationId')
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
   })
 })
