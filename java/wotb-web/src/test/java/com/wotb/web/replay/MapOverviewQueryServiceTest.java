@@ -10,7 +10,9 @@ import com.wotb.web.replay.job.ProcessedDataset;
 import com.wotb.web.replay.job.ReplayArtifactWriter;
 import com.wotb.web.replay.job.ReplayProcessingJob;
 import com.wotb.web.replay.job.ReplayProcessingJobStore;
+import org.springframework.http.HttpStatus;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -77,10 +79,15 @@ class MapOverviewQueryServiceTest {
             store.register(job);
 
             final MapOverviewQueryService service = new MapOverviewQueryService(store);
-            assertThrows(IllegalArgumentException.class,
+            // BLOCKER 4：Dataset reference 契约改为稳定 ResponseStatusException（HTTP 409/404）。
+            final ResponseStatusException notReady = assertThrows(ResponseStatusException.class,
                     () -> service.buildOverviewFromDataset("j1", 0), "未 READY 必须 SOURCE_NOT_READY");
-            assertThrows(IllegalArgumentException.class,
+            assertEquals(HttpStatus.CONFLICT, notReady.getStatusCode());
+            assertEquals("SOURCE_NOT_READY", notReady.getReason());
+            final ResponseStatusException missing = assertThrows(ResponseStatusException.class,
                     () -> service.buildOverviewFromDataset("missing", 0), "job 不存在必须 JOB_NOT_FOUND");
+            assertEquals(HttpStatus.NOT_FOUND, missing.getStatusCode());
+            assertEquals("JOB_NOT_FOUND", missing.getReason());
         } finally {
             store.close();
             try (var walk = Files.walk(dir)) {

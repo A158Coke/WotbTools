@@ -323,6 +323,7 @@ class ReplayParseSchedulerTest {
             final CountDownLatch started = new CountDownLatch(1);
             final CountDownLatch release = new CountDownLatch(1);
             final AtomicInteger targetRuns = new AtomicInteger();
+            final AtomicInteger targetCompletions = new AtomicInteger();
             scheduler.submit(blockingId, List.of(0),
                     i -> {
                         started.countDown();
@@ -332,11 +333,16 @@ class ReplayParseSchedulerTest {
             assertTrue(started.await(5, TimeUnit.SECONDS), "blocking source 应占用唯一 worker");
             scheduler.submit(targetId, List.of(0),
                     i -> targetRuns.incrementAndGet(),
-                    () -> { }, () -> { });
+                    () -> { }, targetCompletions::incrementAndGet);
             assertEquals(1, scheduler.queuedSources(), "target 应排队");
 
-            // 取消与 completion 同时竞争唯一 slot：取消赢 → target 永不执行；
-            // completion 赢 → target 恰好执行一次。两种结果都必须与返回值一致。
+            // 取消与 completion 同时竞争唯一 slot，存在三种交错：
+            // 1) cancel 先赢（dispatch 前移除）→ NO_COMPLETION_PENDING，target 0 次；
+            // 2) completion 先赢（dispatch 后）→ ACTIVE_COMPLETION_PENDING，target 1 次；
+            // 3) cancel 在 target 已完整执行并被移除之后到达（jobs.get == null）
+            //    → NO_COMPLETION_PENDING（onComplete 已触发，未来不会再触发）。
+            // 返回值契约 = 「onComplete 未来是否还会触发」，三种交错都必须与 target
+            // 实际执行 + onComplete 次数一致（CI #719 曾在此误判第三种交错为不一致）。
             final ExecutorService pool = Executors.newFixedThreadPool(2);
             final ReplayParseScheduler.CancellationResult[] cancelResult = {null};
             final CountDownLatch bothDone = new CountDownLatch(2);
@@ -356,11 +362,20 @@ class ReplayParseSchedulerTest {
                 pool.shutdownNow();
             }
             if (cancelResult[0] == ReplayParseScheduler.CancellationResult.NO_COMPLETION_PENDING) {
-                assertEquals(0, targetRuns.get(), "cancelQueued=true 时 target 不得执行任何 source");
+                // onComplete 未来不会触发：要么从未派发（0 runs），要么已完整执行且
+                // onComplete 已触发（1 run + 1 completion）——绝不允许「运行中但未完成」。
+                assertTrue(targetRuns.get() == 0
+                                || (targetRuns.get() == 1 && targetCompletions.get() == 1),
+                        "NO_COMPLETION_PENDING = onComplete 永不(再)触发（0 runs 或已完成的 1 run）");
             } else {
                 assertEquals(1, targetRuns.get(), "cancelQueued=false 时 target 应恰好执行一次");
             }
             awaitIdle(scheduler, 5_000);
+            if (cancelResult[0] == ReplayParseScheduler.CancellationResult.ACTIVE_COMPLETION_PENDING) {
+                assertEquals(1, targetCompletions.get(), "ACTIVE_COMPLETION_PENDING 时 onComplete 恰好一次");
+            } else if (targetRuns.get() == 1) {
+                assertEquals(1, targetCompletions.get(), "已执行且 NO_COMPLETION_PENDING：onComplete 已触发恰好一次");
+            }
         }
     }
 
