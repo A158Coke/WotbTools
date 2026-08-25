@@ -413,6 +413,9 @@ export function useReplay() {
     const ac = new AbortController()
     sourcePollAborts.add(ac)
     let timer = null
+    let settled = false
+    let resolve
+    let reject
     const cleanup = () => {
       sourcePollAborts.delete(ac)
       if (timer) {
@@ -420,38 +423,71 @@ export function useReplay() {
         timer = null
       }
     }
-    return new Promise((resolve, reject) => {
+    /** 唯一 terminal：resolve 至多一次，settle 后立即释放 registry（timer + abort）。 */
+    const resolveOnce = (value) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(value)
+    }
+    /** 唯一 terminal：reject 至多一次，settle 后立即释放 registry（timer + abort）。 */
+    const rejectOnce = (error) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(error)
+    }
+    // 取消（stopSourcePolls / teardown）必须立刻 settle：GET pending、timer 等待期间
+    // abort 都不能让外层 Promise 永久 pending（迟到 response 一律 pure discard）。
+    ac.signal.addEventListener('abort', () => {
+      if (timer) {
+        clearTimeout(timer)
+        sourcePollTimers.delete(timer)
+        timer = null
+      }
+      rejectOnce(new Error('SOURCE_POLL_CANCELLED'))
+    }, { once: true })
+    return new Promise((res, rej) => {
+      resolve = res
+      reject = rej
       const poll = async () => {
         if (ac.signal.aborted) {
-          cleanup()
-          reject(new Error('SOURCE_POLL_CANCELLED'))
+          rejectOnce(new Error('SOURCE_POLL_CANCELLED'))
           return
         }
+        let data
         try {
-          const data = await api.getProcessingJob(jobId)
-          if (ac.signal.aborted) return
-          const s = (data.sources || []).find(x => x.sourceId === sourceId)
-          if (s && s.status === 'READY') {
-            cleanup()
-            resolve({ processingJobId: jobId, sourceId })
-            return
-          }
-          if (s && s.status === 'FAILED') {
-            cleanup()
-            reject(new Error('SOURCE_PROCESSING_FAILED'))
-            return
-          }
-          if (JOB_TERMINAL.has(data.status)) {
-            cleanup()
-            reject(new Error('SOURCE_NOT_READY'))
-            return
-          }
-          timer = setTimeout(poll, 750)
-          sourcePollTimers.add(timer)
+          data = await api.getProcessingJob(jobId)
         } catch (e) {
-          cleanup()
-          reject(e)
+          // GET 失败：取消已发生 → 一律以本地 cancellation settle（迟到 reject 不得把
+          // 网络错误写成当前用户错误）；未取消 → 原样传播。
+          if (ac.signal.aborted) {
+            rejectOnce(new Error('SOURCE_POLL_CANCELLED'))
+          } else {
+            rejectOnce(e)
+          }
+          return
         }
+        // 迟到响应（await 期间已取消）：pure discard，外层 Promise 以 cancellation settle。
+        if (ac.signal.aborted) {
+          rejectOnce(new Error('SOURCE_POLL_CANCELLED'))
+          return
+        }
+        const s = (data.sources || []).find(x => x.sourceId === sourceId)
+        if (s && s.status === 'READY') {
+          resolveOnce({ processingJobId: jobId, sourceId })
+          return
+        }
+        if (s && s.status === 'FAILED') {
+          rejectOnce(new Error('SOURCE_PROCESSING_FAILED'))
+          return
+        }
+        if (JOB_TERMINAL.has(data.status)) {
+          rejectOnce(new Error('SOURCE_NOT_READY'))
+          return
+        }
+        timer = setTimeout(poll, 750)
+        sourcePollTimers.add(timer)
       }
       poll()
     })

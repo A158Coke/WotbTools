@@ -469,8 +469,9 @@ async function ensureDatasetFor(file) {
     if (revision === workspaceDatasetRevision && current && fileKey(current) === targetKey) {
       // 仅当前 generation 的失败才允许写错误；stale 错误不得污染新 selection。
       datasetRef.value = null
-      if (e && e.name !== 'AbortError') {
-        // 用户取消上传（UPLOADING/REGISTERING cancel）：不显示错误。
+      if (e && e.name !== 'AbortError' && e?.message !== 'SOURCE_POLL_CANCELLED') {
+        // 用户取消上传（UPLOADING/REGISTERING cancel）与 source poll 本地取消
+        // （selection / workspace target / teardown）：不显示错误。
         processingError.value = e?.message || String(e)
       }
     }

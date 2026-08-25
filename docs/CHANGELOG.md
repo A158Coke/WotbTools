@@ -125,6 +125,15 @@
     补齐第三种交错（cancel 在 target 已完整执行后被移除后到达 → NO_COMPLETION_PENDING
     且 onComplete 已触发），断言与 scheduler「onComplete 未来不再触发」契约一致
     （CI #719 曾因此误判失败）。
+  - **source poll cancellation exactly-once settle（终审收尾）**：
+    `pollSourceReady` 全部 terminal path 收敛到 `resolveOnce`/`rejectOnce`
+    （settled 标志 + timer/abort registry 同步释放）——GET pending 或 750ms
+    timer 等待期间 abort（selection change / cancel / dismiss / teardown）立即以
+    `SOURCE_POLL_CANCELLED` reject，迟到 response 一律 pure discard，绝不永久
+    pending / 双 settle；`getProcessingJob` 不支持 AbortSignal，故不强制改 API
+    client，取消语义由外层 Promise 自洽保证；ReplayPage `ensureDatasetFor` 把本地
+    source poll 取消视为 AbortError 同级，不写入 processingError（不显示成用户
+    业务错误）。
 - **名人堂三环（Mark 3）人工审核排行榜**：新增独立 `mark3` domain、Flyway `V21` submission/evidence 表和 `/api/hof/mark3`、`/api/users/mark3`、`/api/admin/hof/mark3` API。仅限 Tier X，玩家提交三环所需场数、过程场均、过程胜率、1–2 张截图与恰好 5 个回放；无 Wargaming 自动认证链路。创建路径从五个 replay byte[] 读取、解析、hash 锁、落盘到事务全程复用全局 `ReplayCapacityLimiter`，容量满返回 503 `REPLAY_BUSY`。排行榜按已审核三环场数升序，场数相同使用 competition ranking；同用户同车的 CURRENT 唯一且不被后续申请替代，不使用 `SUPERSEDED`。REJECTED/CANCELLED/DELETED 可重提；管理员通过、拒绝或删除时均不能改写成绩，终态会清理截图和回放证据。
 
 ### Fixed
