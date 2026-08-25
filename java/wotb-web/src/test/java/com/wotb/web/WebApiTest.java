@@ -5,7 +5,6 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.web.boost.dto.BoosterApplicationSummaryDto;
 import com.wotb.web.boost.entity.BoosterApplication;
@@ -39,7 +38,6 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -53,10 +51,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.IntFunction;
-import java.util.HashSet;
 import java.util.Set;
 import java.util.stream.Stream;
-import java.util.zip.ZipInputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -65,6 +61,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 
@@ -181,109 +178,45 @@ public class WebApiTest {
     }
 
     @Test
-    void previewMultipleWithDuplicate() throws Exception {
+    void legacyPreviewReturnsGone() throws Exception {
         final List<Path> files = replays();
         var req = multipart("/api/preview");
         for (final Path p : files) {
             req = req.file(file(p));
         }
-        req = req.file(new MockMultipartFile("files", "dup.wotbreplay",
-                "application/octet-stream", Files.readAllBytes(files.getFirst())));
-
-        final String json = mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-        final JsonNode n = om.readTree(json);
-        // 唯一战斗数按 arenaId 去重：提交夹具（fixtures/replays）与本地可选样本（common/data）
-        // 可能含同 arenaId 副本（如 cw-training-15-14-example 与本地 data/20260725_1535 同场）
-        final Set<String> uniqueArenas = new HashSet<>();
-        for (final Path p : files) {
-            uniqueArenas.add(ReplayParser.parse(Files.readAllBytes(p)).arenaId);
-        }
-        assertEquals(uniqueArenas.size(), n.get("battles").size());
-        assertEquals(files.size() - uniqueArenas.size() + 1, n.get("duplicates").size(),
-                "重复数 = 跨目录同场副本 + 手工 dup 1 份");
-        // aggregate 仅在 >1 场唯一战斗时由后端输出（ReplayService），单一夹具下为空
-        if (files.size() > 1) {
-            assertFalse(n.get("aggregate").isEmpty());
-        }
-        final JsonNode b0 = n.get("battles").get(0);
-        assertEquals(14, b0.get("players").size());
-        assertTrue(b0.get("players").get(0).get("cells").has("damage_dealt"));
-        assertFalse(b0.get("players").get(0).get("cells").has("potential_damage"),
-                "Potential Damage 已全局移除，API cells 不得再暴露");
-        assertFalse(b0.get("players").get(0).get("cells").has("potential_damage_supplement"));
+        // BLOCKER 2：同步 multipart preview 已废弃 → 稳定 410 REPLAY_LEGACY_DEPRECATED，
+        // 不在 scheduler 之外做任何 full processing。
+        mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.error").value("REPLAY_LEGACY_DEPRECATED"));
     }
 
     @Test
-    void previewEmbedsMetricsInBattleAndAggregateFromSameProcessing() throws Exception {
-        final List<Path> files = replays();
-        var req = multipart("/api/preview");
-        for (final Path p : files) {
-            req = req.file(file(p));
-        }
-
-        final String json = mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-        final JsonNode n = om.readTree(json);
-        // 单场玩家表直接内嵌 Contribution/KAST/Impact（复用同一 authoritative facts）
-        final JsonNode battleCells = n.get("battles").get(0).get("players").get(0).get("cells");
-        assertTrue(battleCells.has("kast"));
-        assertTrue(battleCells.has("contribution"));
-        assertTrue(battleCells.has("impact"));
-        assertFalse(battleCells.has("rating"), "不得再输出 Rating 综合评分");
-        // impact 统一为数值契约，前端负责格式化 %（不再是带 % 的字符串）
-        assertTrue(battleCells.get("impact").isNumber(), "impact 必须为数值（前端格式化 %）");
-        // 汇总列定义同样内嵌跨场表现派生列
-        final JsonNode aggCols = n.get("aggregateColumns");
-        assertTrue(aggCols.isArray());
-        boolean hasContribution = false;
-        for (final JsonNode c : aggCols) {
-            if ("contribution".equals(c.get("key").asText())) {
-                hasContribution = true;
-            }
-        }
-        assertTrue(hasContribution, "汇总表列定义必须包含 contribution");
-        // 不再有独立 performance 数组 / performanceColumns
-        assertFalse(n.has("performance"));
-        assertFalse(n.has("performanceColumns"));
+    void previewMetricsAndAggregateContractMovedToProcessingJobResult() throws Exception {
+        // metrics/dedupe/aggregate 契约已由 Processing Job result 提供（ReplayProcessingJobServiceTest
+        // 覆盖）；同步 /api/preview 一律 410，绝不绕过 scheduler。
+        final var req = multipart("/api/preview").file(file(replays().getFirst()));
+        mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.error").value("REPLAY_LEGACY_DEPRECATED"));
     }
 
     @Test
-    void exportReturnsXlsx() throws Exception {
+    void legacyExportReturnsGone() throws Exception {
         final var req = multipart("/api/export").file(file(replays().getFirst()));
-        final byte[] body = mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsByteArray();
-        assertTrue(body.length > 3000);
-        assertEquals('P', body[0]);
-        assertEquals('K', body[1]);
+        mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.error").value("REPLAY_LEGACY_DEPRECATED"));
     }
 
     @Test
-    void exportEachReturnsZipWithOneXlsxPerReplay() throws Exception {
-        final List<Path> files = replays();
-        var req = multipart("/api/export").param("mode", "each");
-        for (final Path p : files) {
-            req = req.file(file(p));
-        }
-
-        final byte[] body = mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsByteArray();
-        assertEquals('P', body[0]);
-        assertEquals('K', body[1]);
-
-        final Set<String> names = new HashSet<>();
-        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(body))) {
-            java.util.zip.ZipEntry entry;
-            while ((entry = zip.getNextEntry()) != null) {
-                names.add(entry.getName());
-            }
-        }
-        assertEquals(files.size(), names.size());
-        assertTrue(names.stream().allMatch(n -> n.endsWith(".xlsx")));
+    void exportEachLegacyReturnsGone() throws Exception {
+        // xlsx/zip 导出契约已由 Export Job dataset 路径覆盖（ReplayExportJobServiceTest）；
+        // 同步 /api/export 一律 410。
+        final var req = multipart("/api/export").param("mode", "each").file(file(replays().getFirst()));
+        mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.error").value("REPLAY_LEGACY_DEPRECATED"));
     }
 
     @Test

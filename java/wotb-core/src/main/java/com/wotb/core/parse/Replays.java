@@ -20,10 +20,10 @@ public final class Replays {
         FAILURE
     }
 
-    /** 逐文件进度回调（供长任务展示真实 processed/total，不携带 web DTO）。 */
+    /** 逐文件进度回调（供长任务展示真实 processed/total；不携带 Source/byte[]，plan §16）。 */
     @FunctionalInterface
     public interface ReplayProgressListener {
-        void onProcessed(final Source source, final Outcome outcome);
+        void onProcessed(final int sourceIndex, final String sourceName, final Outcome outcome);
     }
 
     @FunctionalInterface
@@ -31,8 +31,12 @@ public final class Replays {
         Battle load(final Source source) throws Exception;
     }
 
-    /** 一个输入文件的解析结果：成功 → {@code battle != null}；失败 → {@code failureMessage != null}。 */
-    public record ParsedEntry(Source source, Battle battle, String failureMessage) {
+    /**
+     * 一个输入文件的轻量解析结果（成功 → {@code battle != null}；失败 →
+     * {@code failureMessage != null}）。<b>不持有 {@link Source} / byte[]</b>——
+     * 解析完成后 batch 聚合阶段不再需要原始字节（plan §16/BLOCKER F）。
+     */
+    public record ParsedEntry(int sourceIndex, String sourceName, Battle battle, String failureMessage) {
         public boolean failed() {
             return failureMessage != null;
         }
@@ -68,7 +72,8 @@ public final class Replays {
                                              final BattleLoader loader,
                                              final Consumer<String> log) {
         final List<ParsedEntry> entries = new ArrayList<>(sources.size());
-        for (final Source s : sources) {
+        for (int i = 0; i < sources.size(); i++) {
+            final Source s = sources.get(i);
             final Battle battle;
             try {
                 battle = loader.load(s);
@@ -79,10 +84,10 @@ public final class Replays {
                 if (log != null) {
                     log.accept("[失败] " + s.name() + ": " + e.getMessage());
                 }
-                entries.add(new ParsedEntry(s, null, e.getMessage()));
+                entries.add(new ParsedEntry(i, s.name(), null, e.getMessage()));
                 continue;
             }
-            entries.add(new ParsedEntry(s, battle, null));
+            entries.add(new ParsedEntry(i, s.name(), battle, null));
         }
         return entries;
     }
@@ -94,34 +99,33 @@ public final class Replays {
         final Collected res = new Collected();
         final Map<String, String> seen = new LinkedHashMap<>(); // arenaId -> name
         for (final ParsedEntry entry : entries) {
-            final Source s = entry.source();
             if (entry.failed()) {
-                res.failures.add(new String[]{s.name(), entry.failureMessage()});
+                res.failures.add(new String[]{entry.sourceName(), entry.failureMessage()});
                 if (progress != null) {
-                    progress.onProcessed(s, Outcome.FAILURE);
+                    progress.onProcessed(entry.sourceIndex(), entry.sourceName(), Outcome.FAILURE);
                 }
                 continue;
             }
             final Battle battle = entry.battle();
             final String aid = battle.arenaId;
             if (seen.containsKey(aid)) {
-                res.duplicates.add(new String[]{s.name(), aid});
+                res.duplicates.add(new String[]{entry.sourceName(), aid});
                 if (log != null) {
-                    log.accept("[跳过-重复] " + s.name() + " (与 " + seen.get(aid) + " 同一场)");
+                    log.accept("[跳过-重复] " + entry.sourceName() + " (与 " + seen.get(aid) + " 同一场)");
                 }
                 if (progress != null) {
-                    progress.onProcessed(s, Outcome.DUPLICATE);
+                    progress.onProcessed(entry.sourceIndex(), entry.sourceName(), Outcome.DUPLICATE);
                 }
                 continue;
             }
-            seen.put(aid, s.name());
+            seen.put(aid, entry.sourceName());
             res.battles.add(battle);
-            res.battleSourceNames.add(s.name());
+            res.battleSourceNames.add(entry.sourceName());
             if (log != null) {
-                log.accept("[读取] " + s.name() + "  地图:" + battle.mapName + "  玩家:" + battle.nPlayers());
+                log.accept("[读取] " + entry.sourceName() + "  地图:" + battle.mapName + "  玩家:" + battle.nPlayers());
             }
             if (progress != null) {
-                progress.onProcessed(s, Outcome.SUCCESS);
+                progress.onProcessed(entry.sourceIndex(), entry.sourceName(), Outcome.SUCCESS);
             }
         }
         return res;

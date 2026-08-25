@@ -27,14 +27,13 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.MapOverviewQueryService;
 import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiReviewStreamListener;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
-import com.wotb.web.replay.ReplayUploadValidator;
-import com.wotb.web.replay.exception.ReplayFileCountExceededException;
+import com.wotb.web.replay.ai.AllowedLanguage;
+import com.wotb.web.replay.ReplayLegacyEndpoints;
 import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
@@ -43,8 +42,8 @@ import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -58,12 +57,11 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  *   <li><b>生命周期</b>：timeout/error/客户端断开驱动 cancellation，清理幂等；</li>
  *   <li>客户端断开 / 流中途失败 / worker 失败的事件传达语义。</li>
  * </ul>
- * <p>不依赖 MockMvc：直接调用 {@code controller.analyze(...)} 并用收集事件的
+ * <p>不依赖 MockMvc：直接调用 {@code controller.analyzeDataset(...)} 并用收集事件的
  * {@link RecordingEmitter} 验证 SSE 载荷，避免异步完成时序在 asyncDispatch 中不确定。</p>
  */
 class ReconstructionControllerStreamingTest {
 
-    private DefaultReplayProcessingFacade processingFacade;
     private AiReplayAnalysisService aiService;
     private AiReplayReviewService reviewService;
     private AiCancellationRegistry cancellationRegistry;
@@ -72,12 +70,12 @@ class ReconstructionControllerStreamingTest {
 
     @BeforeEach
     void setUp() {
-        processingFacade = mock(DefaultReplayProcessingFacade.class);
         aiService = mock(AiReplayAnalysisService.class);
-        reviewService = spy(new AiReplayReviewService(processingFacade, aiService));
+        reviewService = spy(new AiReplayReviewService(aiService));
         cancellationRegistry = spy(new AiCancellationRegistry());
         workerExecutor = new AiReviewWorkerExecutor();
-        controller = new ReconstructionController(processingFacade, reviewService, cancellationRegistry, workerExecutor, new MapOverviewQueryService(processingFacade), null);
+        controller = new ReconstructionController(reviewService, cancellationRegistry, workerExecutor,
+                new MapOverviewQueryService(null));
     }
 
     @AfterEach
@@ -88,7 +86,7 @@ class ReconstructionControllerStreamingTest {
     @Test
     void emitsFullStageSequenceAndDoneWithBothContractFields() throws Exception {
         doAnswer(invocation -> {
-            final AiReviewStreamListener listener = invocation.getArgument(2);
+            final AiReviewStreamListener listener = invocation.getArgument(3);
             listener.onStage("call1_start");
             listener.onStage("call1_done");
             listener.onStage("evidence_done");
@@ -102,7 +100,7 @@ class ReconstructionControllerStreamingTest {
                             new com.wotb.web.replay.dto.MapOverview.Bounds(-256, 260, -251, 254.3),
                             List.of(), null, List.of(), List.of(), null, List.of(),
                             null, null, null));
-        }).when(reviewService).analyzeStreaming(any(), any(), any());
+        }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         final String body = drainUntilTerminal(analyzeDirect("zh", null));
 
@@ -121,14 +119,14 @@ class ReconstructionControllerStreamingTest {
     @Test
     void autopsyEventsAreForwardedBeforeDone() throws Exception {
         doAnswer(invocation -> {
-            final AiReviewStreamListener listener = invocation.getArgument(2);
+            final AiReviewStreamListener listener = invocation.getArgument(3);
             listener.onStage("call1_start");
             listener.onStage("call1_done");
             listener.onToken("team review");
             listener.onStage("autopsy_start");
             listener.onStage("autopsy_done");
             return new AnalyzeResponse("full", null);
-        }).when(reviewService).analyzeStreaming(any(), any(), any());
+        }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         final String body = drainUntilTerminal(analyzeDirect("zh", null));
 
@@ -154,14 +152,14 @@ class ReconstructionControllerStreamingTest {
         final ReconstructionController controllerSpy = spy(controller);
         doReturn(flaky).when(controllerSpy).newAnalyzeEmitter();
         doAnswer(invocation -> {
-            final AiReviewStreamListener listener = invocation.getArgument(2);
+            final AiReviewStreamListener listener = invocation.getArgument(3);
             listener.onStage("call1_start");
             // 第二次 send 抛 IOException → worker 应取消该 correlationId 的上游调用。
             listener.onToken("boom");
             return new AnalyzeResponse("x", null);
-        }).when(reviewService).analyzeStreaming(any(), any(), any());
+        }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
-        controllerSpy.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000004");
+        controllerSpy.analyzeDataset(datasetRequest("zh", "00000000-0000-0000-0000-000000000004"));
 
         verify(cancellationRegistry, timeout(5000)).cancel("00000000-0000-0000-0000-000000000004");
     }
@@ -169,12 +167,12 @@ class ReconstructionControllerStreamingTest {
     @Test
     void midStreamFailureIsConveyedAsErrorEvent() throws Exception {
         doAnswer(invocation -> {
-            final AiReviewStreamListener listener = invocation.getArgument(2);
+            final AiReviewStreamListener listener = invocation.getArgument(3);
             listener.onStage("call1_start");
             listener.onStage("call1_done");
             listener.onToken("partial");
             throw new AiUpstreamException("AI_RATE_LIMITED", 429, "corr-stream");
-        }).when(reviewService).analyzeStreaming(any(), any(), any());
+        }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         final String body = drainUntilTerminal(analyzeDirect("zh", "00000000-0000-0000-0000-000000000016"));
 
@@ -191,7 +189,7 @@ class ReconstructionControllerStreamingTest {
         // 未发送任何事件时的校验失败也以稳定码传达，不再映射为 HTTP 状态码。
         doAnswer(invocation -> {
             throw new AiUpstreamException("AI_UPSTREAM_UNAVAILABLE", 500, "corr-stream");
-        }).when(reviewService).analyzeStreaming(any(), any(), any());
+        }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         final String body = drainUntilTerminal(analyzeDirect("zh", "00000000-0000-0000-0000-000000000017"));
 
@@ -204,20 +202,20 @@ class ReconstructionControllerStreamingTest {
     void unknownLocaleFailsBeforeStreamStarts() throws Exception {
         // 白名单校验在 request 线程同步执行：直接抛 IllegalArgumentException（400 语义保留）。
         assertThrows(IllegalArgumentException.class,
-                () -> controller.analyze(replayFiles(), "xx", null));
-        verify(reviewService, never()).analyzeStreaming(any(), any(), any());
+                () -> controller.analyzeDataset(datasetRequest("xx", null)));
+        verify(reviewService, never()).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
     }
 
     @Test
     void returnsEmitterBeforeAnalysisCompletesAndFirstStageEventArrivesEarly() throws Exception {
         final CountDownLatch release = new CountDownLatch(1);
         doAnswer(invocation -> {
-            final AiReviewStreamListener listener = invocation.getArgument(2);
+            final AiReviewStreamListener listener = invocation.getArgument(3);
             listener.onStage("call1_start");
             release.await(10, TimeUnit.SECONDS);
             listener.onToken("late-token");
             return new AnalyzeResponse("full", null);
-        }).when(reviewService).analyzeStreaming(any(), any(), any());
+        }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         final long startNanos = System.nanoTime();
         final RecordingEmitter emitter = analyzeDirect("zh", "00000000-0000-0000-0000-000000000001");
@@ -253,13 +251,13 @@ class ReconstructionControllerStreamingTest {
         final CountDownLatch releaseWorker = new CountDownLatch(1);
         doAnswer(invocation -> {
             workerStarted.countDown();
-            final AiReviewStreamListener listener = invocation.getArgument(2);
+            final AiReviewStreamListener listener = invocation.getArgument(3);
             listener.onStage("call1_start");
             // 保持 worker 处于 in-flight 状态，直到主线程完成 cancel 断言，
             // 避免 worker 提前完成并在 finally 中 unregister 造成竞态。
             releaseWorker.await(10, TimeUnit.SECONDS);
             return new AnalyzeResponse("full", null);
-        }).when(reviewService).analyzeStreaming(any(), any(), any());
+        }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         final RecordingEmitter emitter = analyzeDirect("zh", "00000000-0000-0000-0000-000000000002");
         // 等待 worker 真正启动（通过 worker-entry cancellation check）再 cancel。
@@ -279,10 +277,10 @@ class ReconstructionControllerStreamingTest {
     @Test
     void emitterTimeoutCancelsInFlightRequest() throws Exception {
         doAnswer(invocation -> {
-            final AiReviewStreamListener listener = invocation.getArgument(2);
+            final AiReviewStreamListener listener = invocation.getArgument(3);
             listener.onStage("call1_start");
             return new AnalyzeResponse("full", null);
-        }).when(reviewService).analyzeStreaming(any(), any(), any());
+        }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         final AtomicReference<Runnable> timeoutCallback = new AtomicReference<>();
         final RecordingEmitter emitter = new RecordingEmitter(ReconstructionController.SSE_TIMEOUT_MS);
@@ -294,7 +292,7 @@ class ReconstructionControllerStreamingTest {
         final ReconstructionController controllerSpy = spy(controller);
         doReturn(spyEmitter).when(controllerSpy).newAnalyzeEmitter();
 
-        controllerSpy.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000005");
+        controllerSpy.analyzeDataset(datasetRequest("zh", "00000000-0000-0000-0000-000000000005"));
 
         final Runnable callback = timeoutCallback.get();
         assertNotNull(callback, "onTimeout callback must be registered");
@@ -305,10 +303,10 @@ class ReconstructionControllerStreamingTest {
     @Test
     void emitterErrorCancelsInFlightRequest() throws Exception {
         doAnswer(invocation -> {
-            final AiReviewStreamListener listener = invocation.getArgument(2);
+            final AiReviewStreamListener listener = invocation.getArgument(3);
             listener.onStage("call1_start");
             return new AnalyzeResponse("full", null);
-        }).when(reviewService).analyzeStreaming(any(), any(), any());
+        }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         final AtomicReference<java.util.function.Consumer<Throwable>> errorCallback = new AtomicReference<>();
         final RecordingEmitter emitter = new RecordingEmitter(ReconstructionController.SSE_TIMEOUT_MS);
@@ -320,7 +318,7 @@ class ReconstructionControllerStreamingTest {
         final ReconstructionController controllerSpy = spy(controller);
         doReturn(spyEmitter).when(controllerSpy).newAnalyzeEmitter();
 
-        controllerSpy.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000006");
+        controllerSpy.analyzeDataset(datasetRequest("zh", "00000000-0000-0000-0000-000000000006"));
 
         final java.util.function.Consumer<Throwable> callback = errorCallback.get();
         assertNotNull(callback, "onError callback must be registered");
@@ -337,10 +335,10 @@ class ReconstructionControllerStreamingTest {
             workerStarted.countDown();
             release.await(10, TimeUnit.SECONDS);
             return new AnalyzeResponse("full", null);
-        }).when(reviewService).analyzeStreaming(any(), any(), any());
+        }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         final RecordingEmitter emitter = analyzeDirect("zh", "00000000-0000-0000-0000-000000000007");
-        // 等待 worker 真正启动（进入 analyzeStreaming，被 release latch 阻塞）再 cancel。
+        // 等待 worker 真正启动（进入 analyzeFacts，被 release latch 阻塞）再 cancel。
         assertTrue(workerStarted.await(5, TimeUnit.SECONDS),
                 "worker must start and block before cancel");
         // 进行中：cancel 端点命中。
@@ -357,11 +355,11 @@ class ReconstructionControllerStreamingTest {
         final CountDownLatch workerStarted = new CountDownLatch(1);
         doAnswer(invocation -> {
             workerStarted.countDown();
-            final AiReviewStreamListener listener = invocation.getArgument(2);
+            final AiReviewStreamListener listener = invocation.getArgument(3);
             listener.onStage("call1_start");
             listener.onToken("token");
             return new AnalyzeResponse("full", null);
-        }).when(reviewService).analyzeStreaming(any(), any(), any());
+        }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         final RecordingEmitter emitter = analyzeDirect("zh", "00000000-0000-0000-0000-000000000003");
         // 等待 worker 真正启动（通过 worker-entry cancellation check）再 cancel。
@@ -390,7 +388,7 @@ class ReconstructionControllerStreamingTest {
     @Test
     void analyzeRejectsInvalidCorrelationId() {
         assertThrows(IllegalArgumentException.class,
-                () -> controller.analyze(replayFiles(), "zh", "not-a-uuid"));
+                () -> controller.analyzeDataset(datasetRequest("zh", "not-a-uuid")));
     }
 
     @Test
@@ -398,7 +396,7 @@ class ReconstructionControllerStreamingTest {
         final String id = "00000000-0000-0000-0000-0000000000cc";
         assertNotNull(cancellationRegistry.register(id));
         assertThrows(IllegalArgumentException.class,
-                () -> controller.analyze(replayFiles(), "zh", id));
+                () -> controller.analyzeDataset(datasetRequest("zh", id)));
     }
 
     @Test
@@ -408,48 +406,42 @@ class ReconstructionControllerStreamingTest {
     }
 
     @Test
-    void analyzeRejectsMultipleFilesWithFileCountExceeded() {
-        assertThrows(ReplayFileCountExceededException.class,
-                () -> controller.analyze(replayFiles2(), "zh", null));
+    void legacyBatchAndValidationEndpointsReturnStableGone() {
+        // multipart 校验与批量处理属于已废弃同步路径：一律 410 REPLAY_LEGACY_DEPRECATED，
+        // 不再有第二套 scheduler 之外的 full processing（BLOCKER 2）。
+        goneOf(() -> {
+            try {
+                controller.reconstructBatch(new org.springframework.mock.web.MockMultipartFile[0]);
+            } catch (final java.io.IOException ex) {
+                throw new RuntimeException(ex);
+            }
+        });
+        goneOf(() -> {
+            try {
+                controller.process(new org.springframework.mock.web.MockMultipartFile[0], false);
+            } catch (final java.io.IOException ex) {
+                throw new RuntimeException(ex);
+            }
+        });
     }
 
-    @Test
-    void reconstructBatchAllowsMultipleFiles() throws Exception {
-        // 文件数量不受 AI 单文件策略限制（B4 回归：通用校验不检查 MAX_FILES）
-        controller.reconstructBatch(replayFiles2());
-    }
-
-    @Test
-    void processAllowsMultipleFiles() throws Exception {
-        controller.process(replayFiles2(), false);
-    }
-
-    @Test
-    void genericUploadValidationErrorCodesAreStable() throws Exception {
-        final IllegalArgumentException type = assertThrows(IllegalArgumentException.class,
-                () -> controller.process(new MultipartFile[]{
-                        new MockMultipartFile("files", "x.txt", "text/plain", new byte[]{1})}, false));
-        assertEquals("INVALID_REPLAY_FILE_TYPE", type.getMessage());
-
-        final IllegalArgumentException empty = assertThrows(IllegalArgumentException.class,
-                () -> controller.process(new MultipartFile[]{
-                        new MockMultipartFile("files", "empty.wotbreplay", "application/octet-stream", new byte[0])}, false));
-        assertEquals("NO_REPLAY_FILE", empty.getMessage());
-
-        final IllegalArgumentException tooLarge = assertThrows(IllegalArgumentException.class,
-                () -> controller.process(new MultipartFile[]{
-                        new MockMultipartFile("files", "big.wotbreplay", "application/octet-stream",
-                                new byte[(int) ReplayUploadValidator.MAX_FILE_SIZE + 1])}, false));
-        assertEquals("FILE_TOO_LARGE", tooLarge.getMessage());
+    private static void goneOf(final Runnable call) {
+        final ResponseStatusException e = assertThrows(ResponseStatusException.class, call::run);
+        assertEquals(HttpStatus.GONE, e.getStatusCode());
+        assertEquals(ReplayLegacyEndpoints.DEPRECATED_ERROR, e.getReason());
     }
 
     // ---- helpers ----
+
+    private ReconstructionController.AnalyzeDatasetRequest datasetRequest(final String lang, final String correlationId) {
+        return new ReconstructionController.AnalyzeDatasetRequest("p1", "r0", lang, correlationId);
+    }
 
     private RecordingEmitter analyzeDirect(final String lang, final String correlationId) {
         final RecordingEmitter emitter = new RecordingEmitter(ReconstructionController.SSE_TIMEOUT_MS);
         final ReconstructionController controllerSpy = spy(controller);
         doReturn(emitter).when(controllerSpy).newAnalyzeEmitter();
-        controllerSpy.analyze(replayFiles(), lang, correlationId);
+        controllerSpy.analyzeDataset(datasetRequest(lang, correlationId));
         return emitter;
     }
 
@@ -472,17 +464,6 @@ class ReconstructionControllerStreamingTest {
         assertTrue(body.toString().contains("event:done") || body.toString().contains("event:error"),
                 "stream must complete with done or error: " + body);
         return body.toString();
-    }
-
-    private static MultipartFile[] replayFiles() {
-        return new MultipartFile[]{new MockMultipartFile(
-                "files", "stream.wotbreplay", "application/octet-stream", new byte[]{1})};
-    }
-
-    private static MultipartFile[] replayFiles2() {
-        final MockMultipartFile file = new MockMultipartFile(
-                "files", "stream.wotbreplay", "application/octet-stream", new byte[]{1});
-        return new MultipartFile[]{file, file};
     }
 
     /** 收集 SSE 事件的 SseEmitter（send 不写真实 response，仅入队）。 */

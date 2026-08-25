@@ -12,11 +12,15 @@ import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { localizeAiError } from '../utils/reconstruction-analysis.js'
+import { fileKey } from '../utils/helpers.js'
 import MapOverview from './MapOverview.vue'
 
 const props = defineProps({
   /** 目标回放文件（null = 尚未选择，显示空态提示）。 */
   file: { type: Object, default: null },
+  /** Dataset 引用（plan §39）：两者齐备时读 cached map-overview，不再上传 replay。 */
+  processingJobId: { type: String, default: null },
+  sourceId: { type: String, default: null },
   /** 宿主声明「战局回放 capability 已进入」：仅当 active=true 且该文件尚未尝试加载时自动请求
    * （ReplayPage 传入 workspaceTab === 'playback'；独立 reconstruction 页默认 false = 手动加载）。
    * 不再把「file prop 变化」当作「用户要求加载 playback」——两个状态相互独立。 */
@@ -40,6 +44,7 @@ async function authedFetch(url, body, { signal } = {}) {
   }
   const accessToken = token()
   const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
+  if (typeof body === 'string') headers['Content-Type'] = 'application/json'
   const r = await fetch(url, { method: 'POST', headers, body, signal })
   if (r.status === 401) {
     login(props.loginView)
@@ -72,15 +77,21 @@ let mapAbortController = null
  */
 async function loadMapOverview() {
   if (mapLoading.value || !props.file) return
+  // Dataset 路径（plan §39/§109）：必须携带 processingJobId+sourceId，绝不回退 multipart（BLOCKER B）
+  if (!props.processingJobId || !props.sourceId) {
+    mapError.value = 'DATASET_UNAVAILABLE'
+    mapLoaded.value = true
+    return
+  }
   const controller = new AbortController()
   mapAbortController = controller
   const requestSeq = ++mapRequestSeq
   mapLoading.value = true
   mapError.value = ''
-  const fd = new FormData()
-  fd.append('files', props.file)
   try {
-    const r = await authedFetch('/api/replay/map-overview', fd, { signal: controller.signal })
+    const r = await authedFetch('/api/replay/map-overview',
+      JSON.stringify({ processingJobId: props.processingJobId, sourceId: props.sourceId }),
+      { signal: controller.signal })
     if (requestSeq !== mapRequestSeq) return // 换文件/卸载：旧响应丢弃
     if (r.status === 204) {
       mapOverview.value = null
@@ -114,7 +125,7 @@ async function loadMapOverview() {
   }
 }
 
-/** 文件变化（新增/移除/清空）时使旧请求失效并取消，重置地图区块。 */
+/** 文件变化（新增/移除/清空）或 Dataset identity 变化时使旧请求失效并取消，重置地图区块。 */
 function resetMap() {
   mapRequestSeq++
   if (mapAbortController) {
@@ -135,10 +146,17 @@ function toggleMap() {
 }
 
 /**
- * 文件变化：重置地图并取消在途请求（abort + generation 失效）；是否自动加载由
- * maybeAutoLoadMap 依 active 决定——文件变化本身不等于用户要求加载 playback。
+ * effective Dataset identity（BLOCKER 1.2）：file + processingJobId + sourceId 三者共同
+ * 决定「当前地图属于谁」。任一变化都必须真正 reset（abort 在途请求、清空已加载的旧 map、
+ * 解除 mapLoaded 阻塞），否则错误 Dataset A 的已加载地图会在 B 身份下继续显示。
+ * 单一 watcher 同时避免 file watcher + dataset watcher 对同一变化的双重请求。
  */
-watch(() => props.file, () => {
+function effectiveDatasetKey() {
+  const f = props.file
+  return `${f ? fileKey(f) : ''}|${props.processingJobId || ''}|${props.sourceId || ''}`
+}
+
+watch(effectiveDatasetKey, () => {
   resetMap()
   maybeAutoLoadMap()
 }, { immediate: true })

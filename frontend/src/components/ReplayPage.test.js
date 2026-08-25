@@ -137,6 +137,25 @@ const pJobState = vi.hoisted(() => {
     setId: (v) => { if (_processingJobId) _processingJobId.value = v },
   }
 })
+
+/** BLOCKER 1：requestDirectAction 可控制 impl（deferred Promise 决定 resolve 顺序）。 */
+const directActionHolder = vi.hoisted(() => {
+  let impl = async () => ({ processingJobId: 'p1', sourceId: 'r0' })
+  return {
+    setImpl: (fn) => { impl = fn },
+    fn: () => vi.fn(impl),
+    reset: () => { impl = async () => ({ processingJobId: 'p1', sourceId: 'r0' }) }
+  }
+})
+
+/** BLOCKER 1：stale 失败不得写 processingError（持有 useReplay mock 的 error ref）。 */
+const wsErrState = vi.hoisted(() => {
+  let ref = null
+  return {
+    capture: (r) => { ref = r },
+    get value() { return ref ? ref.value : undefined }
+  }
+})
 vi.mock('vue-i18n', async () => {
   const { ref } = await import('vue')
   const locale = ref('en')
@@ -194,8 +213,10 @@ vi.mock('../composables/useReplay.js', async () => {
       const processingJobRef = ref(null)
       const processingActiveRef = ref(false)
       const processingJobIdRef = ref(null)
+      const processingErrorRef = ref('')
       jobState.capture(exportJobRef, exportActiveRef)
       pJobState.capture(processingJobRef, processingActiveRef, processingJobIdRef)
+      wsErrState.capture(processingErrorRef)
       const startExportJob = vi.fn()
       const startProcessingJob = vi.fn()
       const updateFiles = vi.fn(() => { selectionRevision.value++ })
@@ -206,8 +227,10 @@ vi.mock('../composables/useReplay.js', async () => {
         selectionRevision,
         pendingRemove, updateFiles, playerCols, aggCols,
         exportJob: exportJobRef, exportError: ref(''), exportActive: exportActiveRef,
-        processingJob: processingJobRef, processingError: ref(''), processingActive: processingActiveRef,
+        processingJob: processingJobRef, processingError: processingErrorRef, processingActive: processingActiveRef,
         processingJobId: processingJobIdRef,
+        uploadState: ref(null), cancelProcessing: vi.fn(),
+        requestDirectAction: directActionHolder.fn(),
         startProcessingJob, cancelProcessingJob: vi.fn(),
         dismissProcessingJob: vi.fn(),
         startExportJob, cancelExportJob: vi.fn(),
@@ -361,26 +384,28 @@ describe('ReplayPage processing job flow', () => {
     state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en', files: [] }
   })
 
-  it('renders processing task card with real 18/34 progress', async () => {
+  it('renders inline processing panel with real 18/34 parse progress', async () => {
     state.init.resp = null
     const wrapper = mountPage()
-    expect(wrapper.find('[data-testid="replay-task-card"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="replay-processing-panel"]').exists()).toBe(false)
     pJobState.setJob({ jobId: 'p1', status: 'PROCESSING', phase: 'PROCESSING_REPLAYS', total: 34, processed: 18, valid: 16, duplicates: 2, failures: 1, currentFile: 'x.wotbreplay' })
     await flushPromises()
-    const card = wrapper.find('[data-testid="replay-task-card"]')
-    expect(card.exists()).toBe(true)
-    expect(card.text()).toContain('replay.processing_job.title')
-    expect(card.text()).toContain('replay.processing_job.progress')
+    const panel = wrapper.find('[data-testid="replay-processing-panel"]')
+    expect(panel.exists()).toBe(true)
+    expect(panel.text()).toContain('replay.processing_job.title')
+    expect(panel.text()).toContain('replay.processing_job.progress')
   })
 
-  it('processing READY hides processing card when export card present (export takes the slot)', async () => {
+  it('processing panel and export card coexist (no mutual exclusion, plan §35)', async () => {
     state.init.resp = null
     const wrapper = mountPage()
     pJobState.setJob({ jobId: 'p1', status: 'READY', phase: null, total: 34, processed: 34, valid: 31, duplicates: 2, failures: 1 })
     jobState.setJob({ jobId: 'e1', status: 'PROCESSING', phase: 'BUILDING_EXCEL', total: 34, processed: 34, duplicates: 0, failures: 0 })
     await flushPromises()
+    const panel = wrapper.find('[data-testid="replay-processing-panel"]')
+    expect(panel.exists()).toBe(true, "Export 存在时 Processing 进度不得被隐藏")
     const cards = wrapper.findAll('[data-testid="replay-task-card"]')
-    expect(cards.length).toBe(1)
+    expect(cards.length).toBe(1, "Export 仍使用独立任务卡")
     expect(cards[0].text()).toContain('replay.export_job.title')
   })
 
@@ -1589,6 +1614,7 @@ describe('ReplayPage playback 加载门控（file identity 与 active 解耦，�
     await flushPromises()
     await wrapper.find('[data-testid="battle-ai-btn"]').trigger('click')
     await flushPromises()
+    await flushPromises() // 新 async dataset 步骤（requestDirectAction）settle
     expect(signals[0].aborted).toBe(true) // A 在途请求已取消
     expect(fetchMock.resolvers.length).toBe(1) // B 未进入 Playback 前不发起请求
     // A 迟到响应不得覆盖 B（generation 失效）
@@ -2246,9 +2272,9 @@ describe('ReplayPage League failure UX separation', () => {
     const wrapper = mountPage()
     pJobState.setJob({ jobId: 'p1', status: 'READY', phase: null, total: 35, processed: 35, valid: 30, duplicates: 5, failures: 0 })
     await flushPromises()
-    const card = wrapper.find('[data-testid="replay-task-card"]')
+    const card = wrapper.find('[data-testid="replay-processing-panel"]')
     expect(card.exists()).toBe(true)
-    expect(card.text()).toContain('replay.processing_job.counts:30,5,0')
+    expect(card.text()).toContain('replay.processing_job.valid_summary:30,5,0')
     // 不得出现红色解析失败块（result.failures 只用于真正 parser failure）
     expect(wrapper.find('.error').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('result.failures')
@@ -2354,6 +2380,117 @@ describe('ReplayPage League failure UX separation', () => {
     expect(wrapper.text()).toContain('league.unavailable_mixed')
     expect(wrapper.findAll('.battle-table-stub').length).toBe(2)
     expect(wrapper.find('.error').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})
+
+// ---- BLOCKER 1：Workspace Dataset stale response ownership（generation/revision）----
+
+describe('ReplayPage Workspace Dataset generation ownership（BLOCKER 1）', () => {
+  function mountWithFilesLocal(files) {
+    state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en', files }
+    return mountPage({ auth: { authenticated: true, login: vi.fn() } })
+  }
+
+  function deferred() {
+    let resolve
+    let reject
+    const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+    return { promise, resolve, reject }
+  }
+
+  afterEach(() => {
+    directActionHolder.reset()
+  })
+
+  it('AI：B 先 READY、A 迟到 → datasetRef 永远属于当前 workspaceFile（A 被丢弃）', async () => {
+    const fileA = new File(['a'], 'a.wotbreplay')
+    const fileB = new File(['b'], 'b.wotbreplay')
+    const dA = deferred()
+    const dB = deferred()
+    let call = 0
+    directActionHolder.setImpl(() => (++call === 1 ? dA.promise : dB.promise))
+    const wrapper = mountWithFilesLocal([fileA, fileB])
+
+    const pA = wrapper.vm.openWorkspaceAi(fileA) // A pending（不 await，等 B 先行）
+    const pB = wrapper.vm.openWorkspaceAi(fileB) // B pending
+
+    dB.resolve({ processingJobId: 'pB', sourceId: 'r1' })
+    await flushPromises()
+    expect(wrapper.vm.workspaceFile?.name).toBe('b.wotbreplay')
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r1' })
+
+    dA.resolve({ processingJobId: 'pA', sourceId: 'r0' }) // A 迟到
+    await flushPromises()
+    expect(wrapper.vm.workspaceFile?.name).toBe('b.wotbreplay')
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r1' },
+      'A 的迟到响应不得把 datasetRef 绑回 A')
+    await pA
+    await pB
+    wrapper.unmount()
+  })
+
+  it('Playback：同一竞态下 B 胜出、A 迟到被丢弃', async () => {
+    const fileA = new File(['a'], 'a.wotbreplay')
+    const fileB = new File(['b'], 'b.wotbreplay')
+    const dA = deferred()
+    const dB = deferred()
+    let call = 0
+    directActionHolder.setImpl(() => (++call === 1 ? dA.promise : dB.promise))
+    const wrapper = mountWithFilesLocal([fileA, fileB])
+
+    const pA = wrapper.vm.openWorkspacePlayback(fileA)
+    const pB = wrapper.vm.openWorkspacePlayback(fileB)
+
+    dB.resolve({ processingJobId: 'pB', sourceId: 'r1' })
+    await flushPromises()
+    expect(wrapper.vm.workspaceFile?.name).toBe('b.wotbreplay')
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r1' })
+
+    dA.resolve({ processingJobId: 'pA', sourceId: 'r0' })
+    await flushPromises()
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r1' })
+    expect(wrapper.vm.workspaceFile?.name).toBe('b.wotbreplay')
+    await pA
+    await pB
+    wrapper.unmount()
+  })
+
+  it('stale failure 不写 processingError、不污染当前 workspace', async () => {
+    const fileA = new File(['a'], 'a.wotbreplay')
+    const fileB = new File(['b'], 'b.wotbreplay')
+    const dA = deferred()
+    const dB = deferred()
+    let call = 0
+    directActionHolder.setImpl(() => (++call === 1 ? dA.promise : dB.promise))
+    const wrapper = mountWithFilesLocal([fileA, fileB])
+
+    const pA = wrapper.vm.openWorkspaceAi(fileA)
+    const pB = wrapper.vm.openWorkspaceAi(fileB)
+    dB.resolve({ processingJobId: 'pB', sourceId: 'r1' })
+    await flushPromises()
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r1' })
+
+    dA.reject(new Error('STALE_DATASET_FAILURE')) // A 迟到失败
+    await flushPromises()
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r1' })
+    expect(wsErrState.value).toBe('', 'stale 错误不得写入当前 selection 的 processingError')
+    expect(wrapper.vm.workspaceFile?.name).toBe('b.wotbreplay')
+    await pA
+    await pB
+    wrapper.unmount()
+  })
+
+  it('本地 source poll 取消（SOURCE_POLL_CANCELLED）即使属于当前 generation 也不写 processingError', async () => {
+    const fileA = new File(['a'], 'a.wotbreplay')
+    directActionHolder.setImpl(() =>
+      Promise.reject(Object.assign(new Error('SOURCE_POLL_CANCELLED'), { name: 'LocalCancellation' })))
+    const wrapper = mountWithFilesLocal([fileA])
+
+    await wrapper.vm.openWorkspaceAi(fileA)
+    await flushPromises()
+    expect(wrapper.vm.datasetRef).toBeNull()
+    expect(wsErrState.value).toBe('', '本地取消不得显示成用户业务错误')
     wrapper.unmount()
   })
 })

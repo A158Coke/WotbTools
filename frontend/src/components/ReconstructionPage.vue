@@ -5,12 +5,20 @@
   跨视图文件交接（replayTransfer）已随原地切换改造移除——文件不再离开 ReplayPage。
 -->
 <script setup>
-import { nextTick, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
+import * as api from '../utils/api.js'
 import AiReviewPanel from './AiReviewPanel.vue'
 import BattlePlaybackPanel from './BattlePlaybackPanel.vue'
 import ReplayInputPanel from './ReplayInputPanel.vue'
+import { displayName, fileKey } from '../utils/helpers.js'
+import {
+  MAX_REPLAY_FILES,
+  MAX_REPLAY_TOTAL_BYTES,
+  formatReplaySize,
+  validateReplaySelection
+} from '../utils/replayUpload.js'
 
 // KeepAlive include 匹配组件名：App.vue 仅缓存本页，切走视图时保持面板状态存活。
 defineOptions({ name: 'ReconstructionPage' })
@@ -43,32 +51,169 @@ onMounted(async () => {
 
 const files = ref([])
 const error = ref('')
+/** Dataset 引用（plan §50）：独立深链同样走 Processing Pipeline，不重新上传/full process。 */
+const processingJobId = ref(null)
+const sourceId = ref(null)
+/**
+ * selection generation（BLOCKER 2）：任何文件选择变化（select / replace / remove / clear）
+ * 自增。createProcessingJob 是异步的——返回后必须校验 generation + file identity 仍属于
+ * 当前 selection，否则 best-effort cancel 返回的 jobId 并丢弃（绝不绑定 stale job）。
+ * pollSourceReady 同样绑定 revision + jobId，迟到 poll 响应不得写当前状态。
+ */
+let datasetRevision = 0
+let datasetPollTimer = null
+let datasetPollJobId = null
 // AI 报告时间跳转：传给 BattlePlaybackPanel（seekTo 自动加载/展开地图），并滚动定位到地图面板。
 const mapSeek = ref(null)
 const playbackPanelEl = ref(null)
 
 function addFile(e) {
   const picked = Array.from(e.target.files || [])
-    .filter(f => f.name.toLowerCase().endsWith('.wotbreplay'))
-  if (picked.length === 0) {
-    if ((e.target.files || []).length) {
-      error.value = t('recon.invalid_file')
-    }
+  const result = validateReplaySelection(picked)
+  if (!result.valid) {
+    error.value = replaySelectionErrorMessage(t, result)
     return
   }
+  if (picked.length === 0) return
   files.value = [picked[0]]
   error.value = ''
+  selectionChanged()
+  ensureDataset()
+}
+
+/** 与 FileUploader 同一共享 contract：preflight 拒绝时展示全部 offending 文件 + 限制提示。 */
+function replaySelectionErrorMessage(tt, result) {
+  const lines = []
+  for (const off of result.offending) {
+    lines.push(off.reason === 'INVALID_TYPE'
+      ? tt('upload.reject_invalid_type', { name: displayName(off.file) })
+      : tt('upload.reject_too_large_file', { name: displayName(off.file), size: formatReplaySize(off.file.size) }))
+  }
+  if (result.offending.some(o => o.reason === 'FILE_TOO_LARGE')) {
+    lines.push(tt('upload.reject_size_hint'))
+  }
+  if (result.tooMany) {
+    lines.push(tt('upload.reject_count', { max: MAX_REPLAY_FILES, current: result.count }))
+  }
+  if (result.totalTooLarge) {
+    lines.push(tt('upload.reject_total', {
+      size: formatReplaySize(result.totalBytes),
+      max: formatReplaySize(MAX_REPLAY_TOTAL_BYTES)
+    }))
+  }
+  return lines.join(' ')
 }
 
 function removeFile(index) {
   files.value = files.value.filter((_, i) => i !== index)
   error.value = ''
+  selectionChanged()
 }
 
 function clearFile() {
   files.value = []
   error.value = ''
+  selectionChanged()
 }
+
+/** 文件选择变化：新 generation + 立即失效旧 owned Dataset（含 best-effort cancel）。 */
+function selectionChanged() {
+  datasetRevision++
+  invalidateDataset()
+}
+
+/**
+ * 本地 Dataset 失效 + 后端 owned job 取消（BLOCKER 2.1）：
+ * - 停止本页 poll（timer + token 置空）；
+ * - 对 ReconstructionPage 自己 create 的、仍非终态的 Processing Job best-effort cancel
+ *   （后端对 READY/FAILED/CANCELLED 返回 no-op，可接受）；绝不取消 ReplayPage 共享 batch job。
+ * - 清理 processingJobId / sourceId 引用。
+ */
+function invalidateDataset() {
+  if (datasetPollTimer) {
+    clearTimeout(datasetPollTimer)
+    datasetPollTimer = null
+  }
+  datasetPollJobId = null
+  const owned = processingJobId.value
+  if (owned) {
+    api.cancelProcessingJob(owned).catch(() => {})
+  }
+  processingJobId.value = null
+  sourceId.value = null
+}
+
+/** 选择回放后自动创建 Processing Job（priority=r0）并等待 source READY（plan §40/§50）。 */
+async function ensureDataset() {
+  invalidateDataset()
+  const file = files.value[0]
+  if (!file) return
+  const revision = datasetRevision
+  const targetKey = fileKey(file)
+  try {
+    const fd = new FormData()
+    fd.append('files', file)
+    fd.append('prioritySourceIndex', '0')
+    const created = await api.createProcessingJob(fd)
+    const current = files.value[0]
+    if (datasetRevision !== revision || !current || fileKey(current) !== targetKey) {
+      // stale create response：请求发起时的 selection 已被替换/清空——
+      // 立即 best-effort cancel 返回的 jobId，不绑定、不启动 poll。
+      api.cancelProcessingJob(created.jobId).catch(() => {})
+      return
+    }
+    processingJobId.value = created.jobId
+    datasetPollJobId = created.jobId
+    pollSourceReady(created.jobId, revision)
+  } catch (e) {
+    const current = files.value[0]
+    if (datasetRevision !== revision || !current || fileKey(current) !== targetKey) {
+      return // stale error：不得污染当前 selection
+    }
+    error.value = e?.message || String(e)
+  }
+}
+
+function pollSourceReady(jobId, revision) {
+  const poll = async () => {
+    if (datasetRevision !== revision || datasetPollJobId !== jobId) return
+    try {
+      const data = await api.getProcessingJob(jobId)
+      if (datasetRevision !== revision || datasetPollJobId !== jobId) return
+      const s = (data.sources || []).find(x => x.sourceId === 'r0')
+      if (s && s.status === 'READY') {
+        sourceId.value = 'r0'
+        datasetPollTimer = null
+        datasetPollJobId = null
+        return
+      }
+      if (s && s.status === 'FAILED') {
+        error.value = 'SOURCE_PROCESSING_FAILED'
+        datasetPollTimer = null
+        datasetPollJobId = null
+        return
+      }
+      if (['READY', 'FAILED', 'CANCELLED'].includes(data.status)) {
+        datasetPollTimer = null
+        datasetPollJobId = null
+        return
+      }
+      datasetPollTimer = setTimeout(poll, 750)
+    } catch {
+      if (datasetRevision === revision && datasetPollJobId === jobId) {
+        datasetPollTimer = null
+        datasetPollJobId = null
+      }
+    }
+  }
+  poll() // 首次立即检查（测试/直连场景无需等待 750ms）
+}
+
+onBeforeUnmount(() => {
+  // teardown（BLOCKER 2.1）：revision++ 使任何在途 create 返回都被视为 stale（立即
+  // cancel、不绑定到已卸载页面）；同时 best-effort cancel 已拥有的非终态 job 并清 refs。
+  selectionChanged()
+})
 
 /** AI 报告时间链接 → 回滚到地图区块（MapOverview 已自动切到战局回放视图）。 */
 async function onAiSeek(sec) {
@@ -108,6 +253,8 @@ async function onAiSeek(sec) {
       <div ref="playbackPanelEl">
         <BattlePlaybackPanel
           :file="files[0] || null"
+          :processing-job-id="processingJobId"
+          :source-id="sourceId"
           :seek-to="mapSeek"
           login-view="reconstruction"
         />
@@ -115,6 +262,8 @@ async function onAiSeek(sec) {
 
       <AiReviewPanel
         :file="files[0] || null"
+        :processing-job-id="processingJobId"
+        :source-id="sourceId"
         login-view="reconstruction"
         @seek="onAiSeek"
       />

@@ -131,6 +131,14 @@ wotb:
       overall-deadline-sec: ${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:1100}
   replay:
     max-concurrent-jobs: ${REPLAY_MAX_CONCURRENT_JOBS:2}
+    parse:
+      # Replay Full Processing 唯一 CPU 预算（2C4G VPS 默认 2；禁止超过核心数，plan §11/§6.5）
+      max-concurrent: ${REPLAY_PARSE_MAX_CONCURRENT:2}
+      # 全部 job 的 pending source 总数上限；满载 503 PROCESSING_QUEUE_FULL（plan §95/§116）
+      queue-capacity: ${REPLAY_PARSE_QUEUE_CAPACITY:200}
+    artifact:
+      # Excel/ZIP artifact 构建并发（plan §46：与 parse 分离，2C 默认 1）
+      max-concurrent: ${REPLAY_ARTIFACT_MAX_CONCURRENT:1}
     export-job:
       # 导出 Job 临时目录（上传输入 + 最终 artifact；TTL 自动清理，见 ExportJobStore）
       dir: ${REPLAY_EXPORT_JOB_DIR:${java.io.tmpdir}/wotb-export-jobs}

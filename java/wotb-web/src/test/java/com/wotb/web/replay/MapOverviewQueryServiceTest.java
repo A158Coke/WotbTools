@@ -2,107 +2,103 @@ package com.wotb.web.replay;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.processing.ReplayProcessingOptions;
-import com.wotb.core.processing.ReplayProcessingResult;
-import com.wotb.core.processing.ReplayProcessingStatus;
-import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import com.wotb.web.replay.dto.MapOverview;
+import com.wotb.web.replay.job.ProcessedDataset;
+import com.wotb.web.replay.job.ReplayArtifactWriter;
+import com.wotb.web.replay.job.ReplayProcessingJob;
+import com.wotb.web.replay.job.ReplayProcessingJobStore;
+import org.springframework.http.HttpStatus;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 /**
- * {@code /api/replay/map-overview} 查询服务契约：只解析回放、不调 AI；
- * 校验/错误码与 analyze 一致；地图不可构建时返回 null（由控制器转 204）。
- * 正路径用真实 fixture（与 MapOverviewBuilderTest 同源）。
+ * {@code /api/replay/map-overview} Dataset 路径查询服务契约（BLOCKER 2）：
+ * 只读 Processing Job cached {@code map-overview.json}，<b>不</b>重新 full
+ * process（multipart 上传路径已废弃，服务不再持有 processingFacade）。
  */
 class MapOverviewQueryServiceTest {
 
-    private static Path fixture() {
-        return Path.of(System.getProperty("user.dir"), "..", "..", "common", "fixtures",
-                "replays", "random-battle-example.wotbreplay").normalize();
-    }
+    @Test
+    void buildsOverviewFromDatasetArtifactWithoutProcessingFacade() throws Exception {
+        final Path dir = Files.createTempDirectory("wotb-mapoverview-dataset-test");
+        final ReplayProcessingJobStore store = new ReplayProcessingJobStore(dir, 60);
+        try {
+            final MapOverview overview = new MapOverview(
+                    "malinovka", "Malinovka", java.util.Map.of("zh", "马利诺夫卡"), 1,
+                    new MapOverview.Bounds(0, 500, 0, 500), java.util.List.of(), null,
+                    java.util.List.of(), java.util.List.of(), null, java.util.List.of(),
+                    2, 123L, null);
+            final Battle battle = new Battle();
+            battle.arenaId = "arena-1";
+            final ReplayProcessingJob job = new ReplayProcessingJob("j1", List.of("a.wotbreplay"));
+            job.startProcessing();
+            job.markSourceProcessing(0, "a.wotbreplay");
+            ReplayArtifactWriter.writeMapOverview(store.jobDir("j1"), 0, overview);
+            job.markSourceReady(0);
+            job.updateProgress(1, 0, 0);
+            job.markReady(new ProcessedDataset(List.of(battle), List.of("a.wotbreplay"),
+                    List.of(), List.of(), null, null));
+            store.register(job);
 
-    private static MultipartFile fixtureFile() throws Exception {
-        final byte[] bytes = Files.readAllBytes(fixture());
-        return new MockMultipartFile("files", fixture().getFileName().toString(), null, bytes);
+            final MapOverviewQueryService service = new MapOverviewQueryService(store);
+            final MapOverview read = service.buildOverviewFromDataset("j1", 0);
+
+            assertNotNull(read);
+            assertEquals("malinovka", read.mapCode());
+        } finally {
+            store.close();
+            try (var walk = Files.walk(dir)) {
+                walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                    try {
+                        Files.deleteIfExists(p);
+                    } catch (final Exception ignored) {
+                        // best-effort test cleanup
+                    }
+                });
+            }
+        }
     }
 
     @Test
-    void buildsOverviewFromFixtureWithoutAnyAi() throws Exception {
-        final MapOverviewQueryService service =
-                new MapOverviewQueryService(new DefaultReplayProcessingFacade());
-        final MapOverview overview = service.buildOverview(new MultipartFile[]{fixtureFile()});
-        assertNotNull(overview, "fixture 应产出完整地图鸟瞰");
-        assertEquals("rift", overview.mapCode());
-        assertEquals(14, overview.routes().size());
-        assertNotNull(overview.playback(), "战局回放数据应存在");
-    }
+    void datasetPathReturnsNullWhenArtifactUnavailableAndRejectsNotReadySource() throws Exception {
+        final Path dir = Files.createTempDirectory("wotb-mapoverview-dataset-test");
+        final ReplayProcessingJobStore store = new ReplayProcessingJobStore(dir, 60);
+        try {
+            final Battle battle = new Battle();
+            battle.arenaId = "arena-1";
+            final ReplayProcessingJob job = new ReplayProcessingJob("j1", List.of("a.wotbreplay"));
+            job.startProcessing();
+            job.markSourceProcessing(0, "a.wotbreplay");
+            store.register(job);
 
-    @Test
-    void throwsNoBattleDataWhenBattleUnparsed() throws Exception {
-        final DefaultReplayProcessingFacade facade = mock(DefaultReplayProcessingFacade.class);
-        when(facade.process(any(), any())).thenReturn(new ReplayProcessingResult(
-                "x.wotbreplay", ReplayProcessingStatus.SUCCESS, null, null, null,
-                null, null, null, null));
-        final MapOverviewQueryService service = new MapOverviewQueryService(facade);
-        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                () -> service.buildOverview(new MultipartFile[]{fixtureFile()}));
-        assertEquals("NO_BATTLE_DATA", e.getMessage());
-    }
-
-    @Test
-    void requestsFullTimelineReconstructionLikeAnalyze() throws Exception {
-        final DefaultReplayProcessingFacade facade = mock(DefaultReplayProcessingFacade.class);
-        when(facade.process(any(), any())).thenReturn(new ReplayProcessingResult(
-                "x.wotbreplay", ReplayProcessingStatus.SUCCESS, null, null, null,
-                null, null, null, null));
-        final MapOverviewQueryService service = new MapOverviewQueryService(facade);
-        assertThrows(IllegalArgumentException.class,
-                () -> service.buildOverview(new MultipartFile[]{fixtureFile()}));
-        final ArgumentCaptor<ReplayProcessingOptions> options =
-                ArgumentCaptor.forClass(ReplayProcessingOptions.class);
-        verify(facade).process(any(), options.capture());
-        assertEquals(true, options.getValue().reconstructTimeline(),
-                "地图鸟瞰需要完整事件流重建（与 analyze 同口径）");
-    }
-
-    @Test
-    void returnsNullWhenOverviewNotBuildable() throws Exception {
-        final DefaultReplayProcessingFacade facade = mock(DefaultReplayProcessingFacade.class);
-        // battle 可解析但 reconstruction 缺失（重建失败被保留）：builder 降级 null
-        when(facade.process(any(), any())).thenReturn(new ReplayProcessingResult(
-                "x.wotbreplay", ReplayProcessingStatus.SUCCESS, null, new Battle(), null,
-                null, null, null, null));
-        final MapOverviewQueryService service = new MapOverviewQueryService(facade);
-        assertNull(service.buildOverview(new MultipartFile[]{fixtureFile()}));
-    }
-
-    @Test
-    void rejectsEmptyUploadsWithStableCodes() {
-        final MapOverviewQueryService service =
-                new MapOverviewQueryService(mock(DefaultReplayProcessingFacade.class));
-        final IllegalArgumentException empty = assertThrows(IllegalArgumentException.class,
-                () -> service.buildOverview(new MultipartFile[]{}));
-        assertEquals("NO_REPLAY_FILES", empty.getMessage());
-        final MultipartFile[] twoFiles = new MultipartFile[]{
-                new MockMultipartFile("files", "a.wotbreplay", null, new byte[]{1}),
-                new MockMultipartFile("files", "b.wotbreplay", null, new byte[]{1})
-        };
-        assertThrows(ReplayFileCountExceededException.class,
-                () -> service.buildOverview(twoFiles));
+            final MapOverviewQueryService service = new MapOverviewQueryService(store);
+            // BLOCKER 4：Dataset reference 契约改为稳定 ResponseStatusException（HTTP 409/404）。
+            final ResponseStatusException notReady = assertThrows(ResponseStatusException.class,
+                    () -> service.buildOverviewFromDataset("j1", 0), "未 READY 必须 SOURCE_NOT_READY");
+            assertEquals(HttpStatus.CONFLICT, notReady.getStatusCode());
+            assertEquals("SOURCE_NOT_READY", notReady.getReason());
+            final ResponseStatusException missing = assertThrows(ResponseStatusException.class,
+                    () -> service.buildOverviewFromDataset("missing", 0), "job 不存在必须 JOB_NOT_FOUND");
+            assertEquals(HttpStatus.NOT_FOUND, missing.getStatusCode());
+            assertEquals("JOB_NOT_FOUND", missing.getReason());
+        } finally {
+            store.close();
+            try (var walk = Files.walk(dir)) {
+                walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                    try {
+                        Files.deleteIfExists(p);
+                    } catch (final Exception ignored) {
+                        // best-effort test cleanup
+                    }
+                });
+            }
+        }
     }
 }

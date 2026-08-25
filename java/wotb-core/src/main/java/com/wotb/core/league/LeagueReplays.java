@@ -72,7 +72,20 @@ public final class LeagueReplays {
                                               final Replays.BattleLoader loader,
                                               final Consumer<String> log,
                                               final Replays.ReplayProgressListener progress) {
-        final List<Replays.ParsedEntry> entries = Replays.parseAll(sources, loader, log);
+        return finalize(Replays.parseAll(sources, loader, log), log, progress);
+    }
+
+    /**
+     * 已解析条目（{@link Replays.ParsedEntry}）的批次收尾：模式判定 → 去重/冲突 →
+     * 完整性校验 → 评分 → 汇总。
+     *
+     * <p>与 {@link #collect} 的语义完全一致（同一 authoritative 链路），但<b>不再负责
+     * 逐文件解析</b>——调用方（如 Replay Processing Pipeline）可先并发完成全部分析，
+     * 再在本方法内单线程 deterministic 收尾；解析完成顺序不影响结果。</p>
+     */
+    public static LeagueCollectResult finalize(final List<Replays.ParsedEntry> entries,
+                                               final Consumer<String> log,
+                                               final Replays.ReplayProgressListener progress) {
         final LeagueRatingMode mode = LeagueRatingMode.classify(entries.stream()
                 .filter(e -> !e.failed())
                 .map(Replays.ParsedEntry::battle).toList());
@@ -128,7 +141,7 @@ public final class LeagueReplays {
             if (conflicted) {
                 conflictedArenas.add(group.getKey());
                 for (final Replays.ParsedEntry copy : copies) {
-                    leagueFailures.add(new LeagueFailure(copy.source().name(), group.getKey(),
+                    leagueFailures.add(new LeagueFailure(copy.sourceName(), group.getKey(),
                             LeagueFailure.Code.CONFLICTING_REPLAYS_FOR_ARENA));
                 }
                 continue;
@@ -138,10 +151,10 @@ public final class LeagueReplays {
             // Validator/Calculator/Aggregator/ratingQuality 的 Battle 必须 deterministic）
             final Replays.ParsedEntry kept = copies.getFirst();
             for (int i = 1; i < copies.size(); i++) {
-                duplicates.add(new String[]{copies.get(i).source().name(), group.getKey()});
+                duplicates.add(new String[]{copies.get(i).sourceName(), group.getKey()});
             }
             battles.add(kept.battle());
-            battleSourceNames.add(kept.source().name());
+            battleSourceNames.add(kept.sourceName());
         }
 
         // 校验 + 评分（每场独立；不合格该场不评分但 Battle 仍保留在 battles，
@@ -173,21 +186,21 @@ public final class LeagueReplays {
             final Map<String, Replays.Outcome> outcomeBySource = new LinkedHashMap<>();
             for (final Replays.ParsedEntry e : entries) {
                 if (e.failed()) {
-                    outcomeBySource.put(e.source().name(), Replays.Outcome.FAILURE);
+                    outcomeBySource.put(e.sourceName(), Replays.Outcome.FAILURE);
                     continue;
                 }
                 if (conflictedArenas.contains(e.battle().arenaId)) {
-                    outcomeBySource.put(e.source().name(), Replays.Outcome.FAILURE);
+                    outcomeBySource.put(e.sourceName(), Replays.Outcome.FAILURE);
                     continue;
                 }
-                if (duplicates.stream().anyMatch(d -> d[0].equals(e.source().name()))) {
-                    outcomeBySource.put(e.source().name(), Replays.Outcome.DUPLICATE);
+                if (duplicates.stream().anyMatch(d -> d[0].equals(e.sourceName()))) {
+                    outcomeBySource.put(e.sourceName(), Replays.Outcome.DUPLICATE);
                     continue;
                 }
-                outcomeBySource.put(e.source().name(), Replays.Outcome.SUCCESS);
+                outcomeBySource.put(e.sourceName(), Replays.Outcome.SUCCESS);
             }
             for (final Replays.ParsedEntry e : entries) {
-                progress.onProcessed(e.source(), outcomeBySource.get(e.source().name()));
+                progress.onProcessed(e.sourceIndex(), e.sourceName(), outcomeBySource.get(e.sourceName()));
             }
         }
 
@@ -200,7 +213,7 @@ public final class LeagueReplays {
         final List<String[]> out = new ArrayList<>();
         for (final Replays.ParsedEntry e : entries) {
             if (e.failed()) {
-                out.add(new String[]{e.source().name(), e.failureMessage()});
+                out.add(new String[]{e.sourceName(), e.failureMessage()});
             }
         }
         return out;

@@ -11,9 +11,9 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
 import com.wotb.web.replay.ReplayUploadValidator;
+import com.wotb.web.replay.ai.MapOverviewBuilder;
 import com.wotb.web.replay.dto.PreviewResponse;
 import com.wotb.web.replay.mapper.Mapper;
-import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import com.wotb.web.replay.service.ReplayService;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -29,94 +29,127 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 
 /**
  * Replay Processing Job 编排（lifecycle / 进度 / 取消 / 复用 / TTL）。
  *
- * <p><b>为什么是 Job</b>：把「上传多个 replay → 解析预览」从长同步 HTTP 改为异步
- * Processing Job——create 快速返回 202 + jobId，worker 在全局 replay 容量内串行
- * processFull（每个 replay 恰好一次），产出 {@link ProcessedDataset}
- * 供 Preview / Export / Aggregate 复用（不再 Preview ×34 后又 Export ×34）。</p>
- *
- * <p>Create（request 线程）：校验 → 把上传输入持久化到 job 临时目录（绝不在异步
- * worker 持有 {@code MultipartFile}）→ 注册 job → 提交有界 worker 池
- * （复用 {@link ReplayExportWorkerExecutor}：同一 bounded queue，不复制
- * 两套 worker executor）→ 202。Worker：全局容量许可（max-concurrent-jobs=2
- * 不提高）→ 逐文件 full processing（与 preview 同一 authoritative 链）→
- * 真实进度（processed/total + valid/duplicates/failures）→ READY +
+ * <p><b>V2 执行模型（plan §17/§47）</b>：create 快速返回 202 + jobId（上传输入持久化
+ * 到 job 临时目录，绝不在异步 worker 持有 {@code MultipartFile}）；真正 full processing
+ * 统一交给 {@link ReplayParseScheduler}（全局并发=2、job-aware 公平、queued cancellation），
+ * 每个 source 独立一个任务；全部 source 完成后由最后一个完成的 worker 单线程执行
+ * deterministic FINALIZING_BATCH（去重 / League / Rating / 汇总）→ READY +
  * 内存态 ProcessedDataset（TTL 与 Job 一致）。</p>
  *
- * <p>状态机 / 进度 / 取消 / 终态 observability 与 Export Job 共用同一基础设施
- * （{@link ReplayJobState} 与 {@link ReplayJobStorage}）；QUEUED 取消立即释放
- * executor queue slot，PROCESSING 协作取消。</p>
+ * <p>进度语义（plan §2/§29）：PROCESSING_REPLAYS 阶段逐 replay 推进
+ * {@code parseCompleted/parseSucceeded/parseFailed}（真实解析完成数，与 dedupe 解耦）；
+ * valid/duplicates/failures 只在 FINALIZING_BATCH 后确定。</p>
  */
 @Service
 public class ReplayProcessingJobService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ReplayProcessingJobService.class);
 
-    private final ReplayCapacityLimiter capacityLimiter;
     private final DefaultReplayProcessingFacade processingFacade;
     private final ReplayProcessingJobStore store;
-    /** 与 Export Job 共用的有界 worker 池（同一队列容量，不复制两套 executor）。 */
-    private final ReplayExportWorkerExecutor workerExecutor;
+    /** Replay Full Processing 唯一 CPU 预算权威（plan §48 最终态；全局并发=2 + 公平）。 */
+    private final ReplayParseScheduler parseScheduler;
     private final MeterRegistry meterRegistry;
     private final Tankopedia tankopedia = Tankopedia.load();
 
     @Autowired
-    public ReplayProcessingJobService(final ReplayCapacityLimiter capacityLimiter,
-                                      final DefaultReplayProcessingFacade processingFacade,
+    public ReplayProcessingJobService(final DefaultReplayProcessingFacade processingFacade,
                                       final ReplayProcessingJobStore store,
-                                      final ReplayExportWorkerExecutor workerExecutor,
+                                      final ReplayParseScheduler parseScheduler,
                                       @Autowired(required = false) final MeterRegistry meterRegistry) {
-        this.capacityLimiter = capacityLimiter;
         this.processingFacade = processingFacade;
         this.store = store;
-        this.workerExecutor = workerExecutor;
+        this.parseScheduler = parseScheduler;
         this.meterRegistry = meterRegistry;
     }
 
     // ---- create / status / cancel / result ----
 
     /**
-     * 创建 Replay Processing Job：校验并持久化输入后返回 jobId（202 语义）。
-     * 队列满载抛 {@link ProcessingQueueFullException}（503 PROCESSING_QUEUE_FULL）。
+     * 创建 Replay Processing Job：校验并持久化输入后把 source 任务提交给全局
+     * Scheduler（有界，满载 503 PROCESSING_QUEUE_FULL）并返回 jobId（202 语义）。
      */
     public String createJob(final MultipartFile[] files) {
+        return createJob(files, null);
+    }
+
+    /**
+     * 创建 Replay Processing Job（plan §41）：{@code prioritySourceIndex} 指定用户
+     * 直接点击 AI/Playback 的目标 source——Scheduler 内该 source 排到本 job 队首
+     * （不突破全局并发=2），实现「目标 replay 优先解析、batch 其余继续后台解析」。
+     */
+    public String createJob(final MultipartFile[] files, final Integer prioritySourceIndex) {
         ReplayUploadValidator.validate(files);
         if (files.length > ReplayService.MAX_REPLAY_FILES) {
             throw new IllegalArgumentException("TOO_MANY_REPLAY_FILES");
         }
+        if (prioritySourceIndex != null
+                && (prioritySourceIndex < 0 || prioritySourceIndex >= files.length)) {
+            throw new IllegalArgumentException("SOURCE_NOT_FOUND");
+        }
         final String jobId = UUID.randomUUID().toString();
         final Path inputDir = store.inputDir(jobId);
+        final List<String> sourceNames = new ArrayList<>(files.length);
         try {
             Files.createDirectories(inputDir);
             int i = 0;
             for (final MultipartFile f : files) {
                 final String name = f.getOriginalFilename() == null ? "replay.wotbreplay" : f.getOriginalFilename();
-                f.transferTo(inputDir.resolve(i + "__" + ReplayJobFiles.sanitizeFileName(name)));
+                final String safe = ReplayJobFiles.sanitizeFileName(name);
+                f.transferTo(inputDir.resolve(i + "__" + safe));
+                sourceNames.add(safe);
                 i++;
             }
         } catch (final IOException e) {
             store.removeAndCleanup(jobId);
             throw new IllegalStateException("PROCESSING_JOB_STORAGE_UNAVAILABLE");
         }
-        final ReplayProcessingJob job = new ReplayProcessingJob(jobId, files.length);
+        final List<Path> inputs;
+        try {
+            inputs = ReplayJobFiles.listInputsInOrder(inputDir);
+        } catch (final IOException e) {
+            store.removeAndCleanup(jobId);
+            throw new IllegalStateException("PROCESSING_JOB_STORAGE_UNAVAILABLE");
+        }
+        final ReplayProcessingJob job = new ReplayProcessingJob(jobId, sourceNames);
         store.register(job);
         final long submittedNanos = System.nanoTime();
+        final Replays.ParsedEntry[] entries = new Replays.ParsedEntry[inputs.size()];
         try {
-            workerExecutor.submit(jobId, () -> runJob(job, inputDir, submittedNanos));
-        } catch (final RejectedExecutionException e) {
+            parseScheduler.submit(jobId, sourceOrder(prioritySourceIndex, inputs.size()),
+                    index -> processSource(job, inputs.get(index), index, entries),
+                    () -> onFirstDispatch(job, submittedNanos),
+                    () -> finalizeJob(job, entries, submittedNanos));
+        } catch (final ProcessingQueueFullException e) {
             store.removeAndCleanup(jobId);
-            throw new ProcessingQueueFullException();
+            throw e;
         }
         recordCreated(files.length);
         LOGGER.info(logLine("processing_job_created", jobId, "files", files.length));
         return jobId;
+    }
+
+    /** 调度顺序：priority source 先于其余（其余保持上传顺序，plan §41/§43）。 */
+    private static List<Integer> sourceOrder(final Integer prioritySourceIndex, final int total) {
+        final List<Integer> order = new ArrayList<>(total);
+        if (prioritySourceIndex != null) {
+            order.add(prioritySourceIndex);
+        }
+        for (int i = 0; i < total; i++) {
+            if (prioritySourceIndex == null || i != prioritySourceIndex) {
+                order.add(i);
+            }
+        }
+        return order;
     }
 
     public ReplayProcessingJob.Snapshot status(final String jobId) {
@@ -124,17 +157,22 @@ public class ReplayProcessingJobService {
     }
 
     /**
-     * 取消：QUEUED 立即终态并真正释放 executor queue slot（{@code removeQueued}）；
-     * PROCESSING 协作取消（worker checkpoint 后终态）。与 Export Job 同一取消语义。
+     * 取消：QUEUED 立即终态并释放 Scheduler pending 容量（{@code cancelQueued}）；
+     * PROCESSING 置协作取消标志（已派发 source 完成安全 unit 后终态，plan §53）。
      */
     public boolean cancel(final String jobId) {
         final ReplayProcessingJob job = requireJob(jobId);
         final boolean changed = job.requestCancel();
         if (changed) {
-            final boolean removed = workerExecutor.removeQueued(jobId);
-            if (removed) {
-                // QUEUED 任务已被移除、Runnable 永不执行 → 请求线程直接记录终态 observability。
-                finishTerminalQueuedCancel(job);
+            final ReplayParseScheduler.CancellationResult result = parseScheduler.cancelQueued(jobId);
+            if (result == ReplayParseScheduler.CancellationResult.NO_COMPLETION_PENDING) {
+                // scheduler 明确不再触发 onComplete（BLOCKER 1）：无论 QUEUED（requestCancel
+                // 已置 CANCELLED）还是 PROCESSING（requestCancel 只置 cancelRequested），
+                // 都必须先把 job 推进 CANCELLED 终态，再记录 terminal observability——
+                // 否则 PROCESSING 取消竞态会永久卡在 PROCESSING。markCancelled 对已
+                // CANCELLED 的 QUEUED 路径幂等返回 false，无副作用。
+                job.markCancelled();
+                finishTerminalWithoutCompletionCallback(job);
             }
         }
         return changed;
@@ -163,29 +201,139 @@ public class ReplayProcessingJobService {
         return job;
     }
 
-    // ---- worker 执行 ----
+    // ---- Scheduler 回调 ----
 
-    private void runJob(final ReplayProcessingJob job, final Path inputDir, final long submittedNanos) {
-        final long startNanos = System.nanoTime();
-        recordQueueWait(submittedNanos, startNanos);
+    /** 第一个 source 实际派发前（QUEUED → PROCESSING + 排队时长指标）。 */
+    private void onFirstDispatch(final ReplayProcessingJob job, final long submittedNanos) {
+        if (!job.startProcessing()) {
+            // QUEUED 期间已取消 → 终态由取消线程或 finalizeJob 处理。
+            return;
+        }
+        recordQueueWait(submittedNanos, System.nanoTime());
+        LOGGER.info(logLine("processing_job_started", job.jobId(), "total", job.total()));
+    }
+
+    /**
+     * 单 source full processing（并发执行，plan §15）：真实 parse 进度随完成推进，
+     * per-source 状态 PROCESSING → READY|FAILED；raw byte[] 只在本次调用内存活。
+     *
+     * <p>BLOCKER 3：任何已注册 source 处理失败都必须写入 authoritative failed
+     * {@link Replays.ParsedEntry}——source 状态 / parse 计数 / ParsedEntry / final
+     * failures 描述同一个 outcome；不允许用 null 表示业务失败。</p>
+     */
+    private void processSource(final ReplayProcessingJob job, final Path input, final int index,
+                               final Replays.ParsedEntry[] entries) {
+        if (job.isCancelled()) {
+            return; // PROCESSING cancel：不再开始新的 full processing（plan §53）
+        }
+        final String name = ReplayJobFiles.inputName(input);
+        job.markSourceProcessing(index, name);
+        final Source source;
         try {
-            if (!job.startProcessing()) {
-                // QUEUED 期间被取消 → 已终态 CANCELLED；worker 负责终态统计。
-                finishTerminal(job, startNanos);
-                return;
-            }
+            source = new Source(name, Files.readAllBytes(input));
+        } catch (final IOException e) {
+            job.markSourceFailed(index, "PROCESSING_JOB_STORAGE_UNAVAILABLE");
+            job.recordParseFailure();
+            entries[index] = new Replays.ParsedEntry(index, name, null, "PROCESSING_JOB_STORAGE_UNAVAILABLE");
+            return;
+        }
+        final ReplayProcessingResult result;
+        try {
+            result = processFullResultTracked(source);
+        } catch (final Exception e) {
+            final String message = e.getMessage() == null || e.getMessage().isBlank()
+                    ? "REPLAY_PROCESSING_FAILED" : e.getMessage();
+            job.markSourceFailed(index, message);
+            job.recordParseFailure();
+            entries[index] = new Replays.ParsedEntry(index, name, null, message);
+            LOGGER.debug(logLine("processing_job_source_failed", job.jobId(),
+                    "sourceIndex", index, "sourceName", name, "error", message));
+            return;
+        }
+        final Battle battle = result.battle();
+        // Derived artifacts（plan §22/§19）：MapOverview 不可用 ≠ parse failure（§107）；
+        // artifact 写失败属于存储不可用 → source FAILED（消费者依赖 artifact）。
+        try {
+            ReplayArtifactWriter.writeMapOverview(store.jobDir(job.jobId()), index,
+                    MapOverviewBuilder.build(battle, result.reconstruction()));
+            ReplayArtifactWriter.writeAiFacts(store.jobDir(job.jobId()), index, result);
+        } catch (final IOException e) {
+            LOGGER.warn(logLine("processing_job_artifact_write_failed", job.jobId(),
+                    "sourceIndex", index, "sourceName", name), e);
+            job.markSourceFailed(index, "PROCESSING_JOB_STORAGE_UNAVAILABLE");
+            job.recordParseFailure();
+            entries[index] = new Replays.ParsedEntry(index, name, null, "PROCESSING_JOB_STORAGE_UNAVAILABLE");
+            return;
+        }
+        job.markSourceReady(index);
+        job.recordParseSuccess();
+        entries[index] = new Replays.ParsedEntry(index, name, battle, null);
+    }
+
+    /**
+     * 全部 source 结束后单线程 deterministic 收尾（plan §17）：FINALIZING_BATCH →
+     * 去重 / League / Rating / 汇总 → enrich → READY。取消在阶段间检查。
+     */
+    private void finalizeJob(final ReplayProcessingJob job, final Replays.ParsedEntry[] entries,
+                             final long submittedNanos) {
+        final long startNanos = System.nanoTime();
+        try {
             if (job.isCancelled()) {
                 job.markCancelled();
                 finishTerminal(job, startNanos);
                 return;
             }
-            LOGGER.info(logLine("processing_job_started", job.jobId(), "total", job.total()));
-            // 全局 replay 容量仍然生效：job 化不绕过 max-concurrent-jobs=2。
-            capacityLimiter.acquire();
-            try {
-                processJob(job, inputDir);
-            } finally {
-                capacityLimiter.release();
+            final List<Replays.ParsedEntry> list = new ArrayList<>(entries.length);
+            for (int i = 0; i < entries.length; i++) {
+                if (entries[i] == null) {
+                    // 非 CANCELLED job：每个 sourceIndex 必须存在 terminal ParsedEntry。
+                    // null 是内部 invariant violation，不是合法业务情况——绝不静默过滤。
+                    throw new ProcessingJobInternalInvariantException("sourceIndex=" + i);
+                }
+                list.add(entries[i]);
+            }
+            final ReplayProcessingJob.Snapshot parseSnap = job.snapshot();
+            LOGGER.info(logLine("processing_job_parse_done", job.jobId(),
+                    "parseCompleted", parseSnap.parseCompleted(),
+                    "parseSucceeded", parseSnap.parseSucceeded(),
+                    "parseFailed", parseSnap.parseFailed(),
+                    "total", job.total()));
+            job.advancePhase(ReplayProcessingJob.PHASE_FINALIZING_BATCH);
+            // finalize 阶段按权威 outcome 推进 duplicates/failures（conflicted 计 FAILURE、
+            // Rating-ineligible 计 SUCCESS，与旧 progress 语义一致）；parse 计数不受影响。
+            final int[] counters = new int[3]; // processed / duplicates / failures
+            final Replays.ReplayProgressListener finalizeProgress = (sourceIndex, sourceName, outcome) -> {
+                counters[0]++;
+                if (outcome == Replays.Outcome.DUPLICATE) {
+                    counters[1]++;
+                }
+                if (outcome == Replays.Outcome.FAILURE) {
+                    counters[2]++;
+                }
+                job.updateProgress(counters[0], counters[1], counters[2]);
+            };
+            final LeagueReplays.LeagueCollectResult c =
+                    LeagueReplays.finalize(list, null, finalizeProgress);
+            if (job.isCancelled()) {
+                throw new JobCancelledException();
+            }
+            if (c.battles().isEmpty()) {
+                throw new NoValidReplaysException();
+            }
+            // 混合批次不再整体拒绝：League Rating 不聚合混合批次，battles 仍按
+            // 普通回放语义成功返回并 READY，leagueUnavailableCode 提示 League Analysis unavailable。
+            final String leagueUnavailableCode = c.mode() == LeagueRatingMode.MIXED_UNSUPPORTED
+                    ? "MIXED_LEAGUE_AND_STANDARD_REPLAYS" : null;
+            // 事实层 enrich 一次：Preview / Export 直接消费已 enrich 的 authoritative Battle。
+            for (final Battle battle : c.battles()) {
+                PerformanceMetricsCalculator.populateBattle(battle);
+            }
+            if (c.mode() == LeagueRatingMode.LEAGUE_RATING) {
+                job.markReady(new ProcessedDataset(c.battles(), c.battleSourceNames(),
+                        c.duplicates(), c.failures(), c.leagueBatch(), null));
+            } else {
+                job.markReady(new ProcessedDataset(c.battles(), c.battleSourceNames(),
+                        c.duplicates(), c.failures(), null, leagueUnavailableCode));
             }
             finishTerminal(job, startNanos);
         } catch (final JobCancelledException e) {
@@ -210,81 +358,29 @@ public class ReplayProcessingJobService {
         }
     }
 
-    /**
-     * 核心处理：与 preview 同一 authoritative full processing 链（processFull =
-     * reconstruction + ObservedMaxHp + DeathTimeReconciler），按上传顺序串行
-     * （禁止 batch 内并发），真实进度（每个输入成功/重复/失败都推进
-     * processed），完成后 enrich 一次并保存 ProcessedDataset。
-     */
-    private void processJob(final ReplayProcessingJob job, final Path inputDir) throws Exception {
-        final List<Path> inputs = ReplayJobFiles.listInputsInOrder(inputDir);
-        final int[] counters = new int[3]; // processed / duplicates / failures
-        final Replays.ReplayProgressListener progress = (source, outcome) -> {
-            counters[0]++;
-            if (outcome == Replays.Outcome.DUPLICATE) {
-                counters[1]++;
-            }
-            if (outcome == Replays.Outcome.FAILURE) {
-                counters[2]++;
-            }
-            job.updateProgress(counters[0], counters[1], counters[2]);
-            LOGGER.debug(logLine("processing_job_progress", job.jobId(), "processed", counters[0],
-                    "duplicates", counters[1], "failures", counters[2], "total", job.total()));
-            // 安全 checkpoint：每个 replay 完成后检查取消。
-            if (job.isCancelled()) {
-                throw new JobCancelledException();
-            }
-        };
-        final LeagueReplays.LeagueCollectResult c = LeagueReplays.collect(
-                ReplayJobFiles.lazySources(inputs), source -> {
-                    // 当前处理文件（前端截断显示；不作为 metric tag）。
-                    job.setCurrentFile(source.name());
-                    return processFullTracked(source);
-                }, null, progress);
-        if (job.isCancelled()) {
-            throw new JobCancelledException();
-        }
-        if (c.battles().isEmpty()) {
-            throw new NoValidReplaysException();
-        }
-        // 混合批次不再整体拒绝：League Rating 不聚合混合批次，battles 仍按
-        // 普通回放语义成功返回并 READY，leagueUnavailableCode 提示 League Analysis unavailable。
-        final String leagueUnavailableCode = c.mode() == LeagueRatingMode.MIXED_UNSUPPORTED
-                ? "MIXED_LEAGUE_AND_STANDARD_REPLAYS" : null;
-        // 事实层 enrich 一次：Preview / Export 直接消费已 enrich 的 authoritative Battle。
-        // League 模式同样回填单场 Performance Metrics（contribution/kast/impact 在 CW 保留，
-        // 表现指标 ≠ Rating 维度；from-result Preview/Export 同源。
-        for (final Battle battle : c.battles()) {
-            PerformanceMetricsCalculator.populateBattle(battle);
-        }
-        if (c.mode() == LeagueRatingMode.LEAGUE_RATING) {
-            job.markReady(new ProcessedDataset(c.battles(), c.battleSourceNames(),
-                    c.duplicates(), c.failures(), c.leagueBatch(), null));
-            return;
-        }
-        job.markReady(new ProcessedDataset(c.battles(), c.battleSourceNames(),
-                c.duplicates(), c.failures(), null, leagueUnavailableCode));
-    }
-
     /** 与 preview/export 完全相同的 authoritative full processing 链（禁止 raw parse 回归）。 */
-    private Battle processFull(final Source source) {
+    private ReplayProcessingResult processFullResult(final Source source) {
         final ReplayProcessingResult result = processingFacade.process(source, ReplayProcessingOptions.full());
-        if (result.battle() != null) {
-            return result.battle();
+        if (meterRegistry != null) {
+            // plan §75：full processing 计数器（验证 1 replay → Preview/AI/Playback/Export = +1）
+            meterRegistry.counter("wotb_replay_full_processing_total").increment();
         }
-        final String message = result.error() != null && StringUtils.hasText(result.error().message())
-                ? result.error().message() : "REPLAY_PROCESSING_FAILED";
-        throw new IllegalArgumentException(message);
+        if (result.battle() == null) {
+            final String message = result.error() != null && StringUtils.hasText(result.error().message())
+                    ? result.error().message() : "REPLAY_PROCESSING_FAILED";
+            throw new IllegalArgumentException(message);
+        }
+        return result;
     }
 
     /** 单文件处理 + 逐文件耗时指标（低基数，无 filename tag）。 */
-    private Battle processFullTracked(final Source source) {
+    private ReplayProcessingResult processFullResultTracked(final Source source) {
         if (meterRegistry == null) {
-            return processFull(source);
+            return processFullResult(source);
         }
         final Timer.Sample sample = Timer.start(meterRegistry);
         try {
-            return processFull(source);
+            return processFullResult(source);
         } finally {
             sample.stop(Timer.builder("wotb_replay_processing_file_duration_seconds")
                     .description("单个 replay full processing 耗时")
@@ -293,15 +389,25 @@ public class ReplayProcessingJobService {
         }
     }
 
-    /** 终态收尾（exactly once 由状态机保证）：日志 + 指标；终态保留到 TTL（store sweeper 清理）。 */
+    /** 终态收尾（idempotent）：日志 + 指标；终态保留到 TTL（store sweeper 清理）。 */
     private void finishTerminal(final ReplayProcessingJob job, final long startNanos) {
+        if (!job.markTerminalRecorded()) {
+            return;
+        }
         final ReplayProcessingJob.Snapshot snap = job.snapshot();
         logTerminal(snap);
         recordTerminal(snap, System.nanoTime() - startNanos);
     }
 
-    /** QUEUED 取消的终态收尾（任务已 removeQueued、Runnable 永不执行，由请求线程直接记录）。 */
-    private void finishTerminalQueuedCancel(final ReplayProcessingJob job) {
+    /**
+     * 无 completion callback 的终态收尾（QUEUED 取消 / PROCESSING 取消竞态中
+     * scheduler 返回 NO_COMPLETION_PENDING 时）：onComplete 永不触发、worker 不会
+     * 调用 finishTerminal，由请求线程记录 terminal observability（exactly once）。
+     */
+    private void finishTerminalWithoutCompletionCallback(final ReplayProcessingJob job) {
+        if (!job.markTerminalRecorded()) {
+            return;
+        }
         final ReplayProcessingJob.Snapshot snap = job.snapshot();
         logTerminal(snap);
         recordTerminal(snap, TimeUnit.MILLISECONDS.toNanos(System.currentTimeMillis() - job.createdAtMillis()));
@@ -361,6 +467,9 @@ public class ReplayProcessingJobService {
         if (e instanceof NoValidReplaysException) {
             return "NO_VALID_REPLAYS";
         }
+        if (e instanceof ProcessingJobInternalInvariantException) {
+            return "PROCESSING_JOB_INTERNAL_INVARIANT";
+        }
         if (e instanceof IllegalArgumentException) {
             final String message = e.getMessage();
             if (StringUtils.hasText(message)) {
@@ -378,8 +487,18 @@ public class ReplayProcessingJobService {
         return sb.toString();
     }
 
-    /** 协作取消 checkpoint 信号（进度回调/循环内抛出，runJob 统一转 CANCELLED）。 */
+    /** 协作取消 checkpoint 信号（finalize 阶段间检查，统一转 CANCELLED）。 */
     private static final class JobCancelledException extends RuntimeException {
+    }
+
+    /**
+     * 内部不变式违例：非 CANCELLED job 的某个 sourceIndex 缺少 terminal ParsedEntry。
+     * 视为编程错误而非业务情况——finalize 直接 FAILED + PROCESSING_JOB_INTERNAL_INVARIANT。
+     */
+    private static final class ProcessingJobInternalInvariantException extends RuntimeException {
+        ProcessingJobInternalInvariantException(final String detail) {
+            super("missing terminal ParsedEntry for " + detail);
+        }
     }
 
     /** 0 场有效回放：终态 FAILED + NO_VALID_REPLAYS。 */

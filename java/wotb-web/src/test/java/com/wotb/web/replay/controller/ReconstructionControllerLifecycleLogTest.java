@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -12,12 +13,12 @@ import static org.mockito.Mockito.spy;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.web.replay.MapOverviewQueryService;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiReviewStreamListener;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
+import com.wotb.web.replay.ai.AllowedLanguage;
 import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
@@ -31,8 +32,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
-import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.web.multipart.MultipartFile;
 
 /**
  * PR #106 review（blocker 2）：AI Review worker 生命周期<b>终态 exactly once</b>——
@@ -50,7 +49,6 @@ class ReconstructionControllerLifecycleLogTest {
     private static final String ID_QUEUED_1 = "00000000-0000-0000-0000-0000000000c1";
     private static final String ID_QUEUED_2 = "00000000-0000-0000-0000-0000000000c2";
 
-    private DefaultReplayProcessingFacade processingFacade;
     private AiReplayAnalysisService aiService;
     private AiReplayReviewService reviewService;
     private AiCancellationRegistry cancellationRegistry;
@@ -61,13 +59,12 @@ class ReconstructionControllerLifecycleLogTest {
 
     @BeforeEach
     void setUp() {
-        processingFacade = mock(DefaultReplayProcessingFacade.class);
         aiService = mock(AiReplayAnalysisService.class);
-        reviewService = spy(new AiReplayReviewService(processingFacade, aiService));
+        reviewService = spy(new AiReplayReviewService(aiService));
         cancellationRegistry = spy(new AiCancellationRegistry());
         workerExecutor = new AiReviewWorkerExecutor();
-        controller = new ReconstructionController(processingFacade, reviewService, cancellationRegistry,
-                workerExecutor, new MapOverviewQueryService(processingFacade), null);
+        controller = new ReconstructionController(reviewService, cancellationRegistry,
+                workerExecutor, new MapOverviewQueryService(null));
         controllerLogger = (Logger) LoggerFactory.getLogger(ReconstructionController.class);
         appender = new ListAppender<>();
         // ListAppender.list 默认是普通 ArrayList，append() 无同步：worker 线程并发写
@@ -88,11 +85,11 @@ class ReconstructionControllerLifecycleLogTest {
     @Test
     void successLifecycleEmitsFinishedExactlyOnce() throws Exception {
         doAnswer(invocation -> {
-            final AiReviewStreamListener listener = invocation.getArgument(2);
+            final AiReviewStreamListener listener = invocation.getArgument(3);
             listener.onStage("call1_start");
             listener.onToken("draft");
             return new AnalyzeResponse("full", null);
-        }).when(reviewService).analyzeStreaming(any(), any(), any());
+        }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         analyzeDirect(controller, ID_SUCCESS);
         final String all = awaitLogContaining(ID_SUCCESS, "event=ai_review_finished");
@@ -111,7 +108,7 @@ class ReconstructionControllerLifecycleLogTest {
     void failureLifecycleEmitsFinishedExactlyOnceWithFailedResult() throws Exception {
         doAnswer(invocation -> {
             throw new AiUpstreamException("AI_RATE_LIMITED", 429, ID_FAILED);
-        }).when(reviewService).analyzeStreaming(any(), any(), any());
+        }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         analyzeDirect(controller, ID_FAILED);
         final String all = awaitLogContaining(ID_FAILED, "event=ai_review_finished");
@@ -144,14 +141,14 @@ class ReconstructionControllerLifecycleLogTest {
         final ReconstructionController controllerSpy = spy(controller);
         doReturn(flaky).when(controllerSpy).newAnalyzeEmitter();
         doAnswer(invocation -> {
-            final AiReviewStreamListener listener = invocation.getArgument(2);
+            final AiReviewStreamListener listener = invocation.getArgument(3);
             listener.onStage("call1_start");
             // 第二次 send 抛 IOException → worker 应以 SSE_DISCONNECT 取消并给出 CANCELLED 终态。
             listener.onToken("boom");
             return new AnalyzeResponse("x", null);
-        }).when(reviewService).analyzeStreaming(any(), any(), any());
+        }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
-        controllerSpy.analyze(replayFiles(), "zh", ID_DISCONNECT);
+        controllerSpy.analyzeDataset(datasetRequest(ID_DISCONNECT));
         final String all = awaitLogContaining(ID_DISCONNECT, "event=ai_review_finished");
 
         assertEquals(1, countFinished(all, ID_DISCONNECT),
@@ -168,15 +165,15 @@ class ReconstructionControllerLifecycleLogTest {
     void queuedCancellationLifecycleEmitsFinishedExactlyOnceWithCancelledResult() throws Exception {
         // 单 worker：第一个请求占住 worker，第二个请求排队 → 排队期间被取消 → 拾取时走 CANCELLED_WHILE_QUEUED。
         workerExecutor = new AiReviewWorkerExecutor(1, 4);
-        controller = new ReconstructionController(processingFacade, reviewService, cancellationRegistry,
-                workerExecutor, new MapOverviewQueryService(processingFacade), null);
+        controller = new ReconstructionController(reviewService, cancellationRegistry,
+                workerExecutor, new MapOverviewQueryService(null));
         final CountDownLatch firstStarted = new CountDownLatch(1);
         final CountDownLatch releaseFirst = new CountDownLatch(1);
         doAnswer(invocation -> {
             firstStarted.countDown();
             releaseFirst.await(10, TimeUnit.SECONDS);
             return new AnalyzeResponse("full", null);
-        }).when(reviewService).analyzeStreaming(any(), any(), any());
+        }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         analyzeDirect(controller, ID_QUEUED_1);
         assertTrue(firstStarted.await(5, TimeUnit.SECONDS),
@@ -204,9 +201,8 @@ class ReconstructionControllerLifecycleLogTest {
 
     // ---- helpers ----
 
-    private static MultipartFile[] replayFiles() {
-        return new MultipartFile[]{new MockMultipartFile(
-                "files", "stream.wotbreplay", "application/octet-stream", new byte[]{1})};
+    private static ReconstructionController.AnalyzeDatasetRequest datasetRequest(final String correlationId) {
+        return new ReconstructionController.AnalyzeDatasetRequest("p1", "r0", "zh", correlationId);
     }
 
     private ReconstructionControllerStreamingTest.RecordingEmitter analyzeDirect(
@@ -216,7 +212,7 @@ class ReconstructionControllerLifecycleLogTest {
                         ReconstructionController.SSE_TIMEOUT_MS);
         final ReconstructionController controllerSpy = spy(target);
         doReturn(emitter).when(controllerSpy).newAnalyzeEmitter();
-        controllerSpy.analyze(replayFiles(), "zh", correlationId);
+        controllerSpy.analyzeDataset(datasetRequest(correlationId));
         return emitter;
     }
 

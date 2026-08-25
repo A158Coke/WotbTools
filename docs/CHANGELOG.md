@@ -5,6 +5,135 @@
 ## [Unreleased]
 
 ### Added
+- **Replay Processing Pipeline V2**：回放处理链重构为「一次上传 → 一次 full process →
+  多消费者复用」：
+  - 全局 `ReplayParseScheduler`（默认并发 2，`REPLAY_PARSE_MAX_CONCURRENT`；job-aware
+    公平轮转 + queued cancellation + 有界 pending，满载 503 `PROCESSING_QUEUE_FULL`）；
+  - source-level 模型：`sourceId/sourceIndex`、per-source 状态、`activeSources[]`、
+    `parseCompleted/parseSucceeded/parseFailed` 真实进度与 `FINALIZING_BATCH` phase；
+  - 内存重构：`ParsedEntry` 不再持有 `Source`/`byte[]`（batch 聚合阶段原始字节可 GC）；
+  - Derived Artifacts：worker 内构建 `derived/{sourceId}/ai-facts.json` 与
+    `map-overview.json`（临时文件 + atomic move，先写后 READY）；
+  - AI 复盘 / 战局回放 Dataset 路径：`/api/replay/analyze` 与
+    `/api/replay/map-overview` 新增 JSON 引用（`processingJobId + sourceId`），读取
+    cached artifact，不再重新上传 / 重新 full process；支持
+    `prioritySourceIndex` 直接进入能力（目标 replay 优先解析）；
+  - Dataset Lease：`acquireForSource/release` 通用引用计数，读取期间 TTL 不清；
+  - artifact executor 拆分：Excel/ZIP 构建并发独立配置
+    `REPLAY_ARTIFACT_MAX_CONCURRENT`（默认 1）；
+  - observability：`wotb_replay_parse_active` /
+    `wotb_replay_parse_queue_depth` / `wotb_replay_processing_jobs_active` /
+    `wotb_replay_processing_jobs_queued` / `wotb_replay_full_processing_total` /
+    `wotb_replay_dataset_cache_hits|misses_total`（低基数）。
+  - **scheduler 线程安全收口**：`ReplayParseScheduler` 全部调度状态（slot 预留 /
+    jobs / per-job pending / ready 成员资格 / queuedSources / activeForJob / 派发 /
+    cancellation）统一由单一协调锁串行化；每 job 在 round-robin 队列至多出现一次，
+    executor 内不形成 scheduler 未知的第二层 backlog（reserved+running ≤
+    `REPLAY_PARSE_MAX_CONCURRENT` 恒成立）；业务 runner / onStart / onComplete 均在锁外执行。
+  - **parse 进度原子化**：`ReplayProcessingJob` 自持 parse outcome
+    （`recordParseSuccess` / `recordParseFailure`），同一 synchronized transition 内推进
+    completed/succeeded/failed，对外快照恒满足 `parseCompleted == parseSucceeded +
+    parseFailed` 且三计数单调不减；service 不再用 `AtomicInteger[]` 拼 snapshot。
+  - **失败必须产生 ParsedEntry**：任何已注册 source 处理失败（输入读取 / artifact
+    写入 / 解析异常）都会写入 authoritative failed `ParsedEntry`；finalize 前校验非
+    CANCELLED job 每个 sourceIndex 都有 terminal entry，缺失视为内部 invariant violation
+    （FAILED + `PROCESSING_JOB_INTERNAL_INVARIANT`），绝不静默过滤 null。
+  - **前端 upload preflight**：共享 `validateReplaySelection`（`.wotbreplay` /
+    ≤100 文件 / 单文件 ≤20 MiB / 总量 ≤200 MiB），选择文件 / 文件夹 / add / drag-drop
+    统一走同一 contract；非法候选不进入 active selection、不发起 Processing Job，
+    一次展示全部 offending 文件与具体大小，chip 显示「文件名 · 大小」。
+  - **multipart transport 错误码**：`MaxUploadSizeExceededException` 按结构化 cause
+    chain 区分单 part（`FILE_TOO_LARGE`）与 request 总量（`TOTAL_REQUEST_TOO_LARGE`），
+    无法结构区分时回退通用 `UPLOAD_TOO_LARGE`；HTTP 恒 413，不 parse exception message。
+  - **PROCESSING 取消竞态修复**：`cancelQueued` 改为显式
+    `CancellationResult`（NO_COMPLETION_PENDING / ACTIVE_COMPLETION_PENDING）；
+    scheduler 明确不再触发 onComplete 时（QUEUED 或 PROCESSING），service 先把 job
+    推进 CANCELLED 终态再记录 terminal observability——杜绝「PROCESSING 永久卡死」；
+    新增确定性竞态回归测试（completion 记账后、pump 派发前 cancel）。
+  - **legacy 同步 full-processing 端点关闭**：`/api/preview`、`/api/export`、
+    `/api/replay/analyze` multipart、`/api/replay/map-overview` multipart、
+    `/api/replay/reconstruct-batch`、`/api/replay/process` 一律稳定 410
+    `REPLAY_LEGACY_DEPRECATED`；Export Job 强制 `processingJobId`（裸上传 410）。
+    删除 ReplayService / AiReplayReviewService / MapOverviewQueryService /
+    ReplayExportJobService 中的独立 full processing 死代码——ReplayParseScheduler
+    是 Replay Processing 产品域唯一 CPU budget authority，ReplayCapacityLimiter
+    仅保留给 HoF/Mark3/百场 submission 校验域。
+  - **folder 选择先过滤 .wotbreplay**：FileUploader 的文件夹 / add-folder /
+    drag-drop 先筛出回放再与现有 selection 合并（.DS_Store / png / txt 等辅助文件
+    不计入 100 上限与 200 MiB 总量、不导致整批失败）；整次选择无回放时明确提示
+    「未找到 .wotbreplay」；count/total 提示带实际值（当前 N 个 / 当前批次 X MB）。
+  - **Workspace Dataset 竞态归属修复（第四轮）**：ReplayPage 的
+    `ensureDatasetFor` 引入 workspace dataset generation + target fileKey 校验——
+    A/B 快速切换时 A 的迟到 `requestDirectAction` 响应（成功或失败）一律丢弃，绝不把
+    `datasetRef` 绑回已切走的回放（data correctness，不再依赖清空 watcher 阻止回写）。
+    AiReviewPanel 的 request ownership 绑定 file + `processingJobId` + `sourceId`
+    三者：Dataset identity 在途变化时旧分析 abort / 迟到 SSE 结果与错误不得写回、
+    stale finally 不得覆盖新 generation 的 loading。BattlePlaybackPanel 改为单一
+    effective identity（file + dataset）watcher：identity 变化真正 reset（abort +
+    清空已加载 map + 解除 mapLoaded 阻塞）并自动加载新 Dataset，同时消除
+    file/dataset 双 watcher 的重复请求。
+  - **ReconstructionPage selection lifecycle + owned Job 取消（第四轮）**：引入
+    selection generation（select/replace/remove/clear 自增）；createProcessingJob
+    返回后校验 revision + fileKey，stale job 立即 best-effort cancel 且不绑定；
+    poll 绑定 revision + jobId，迟到响应不写状态；remove/clear/teardown 对页面自己
+    create 的非终态 Processing Job best-effort cancel（不影响 ReplayPage 共享 batch
+    job）；确定性测试覆盖 A→B 乱序 / clear during create / remove active / 快速 A/B/C。
+  - **Dataset Lease 与 TTL 清理原子化（第四轮）**：`ReplayProcessingJobStore` 的
+    acquire（source/export）/ release / sweepExpired / removeAndCleanup 统一在同一
+    `lifecycleLock` 上线性化——acquire 先成功则 sweeper 必然看见 lease 而跳过，
+    sweep/remove 先移除注册则 acquire 必然失败；物理磁盘删除在锁外执行；引用计数
+    更名 `datasetLeaseRefs`（AI/Playback/Export 共享语义）；新增确定性并发测试
+    （acquire wins / sweep wins / 多 lease / underflow / 压力 invariant）。
+  - **Processing create single-flight（第五轮）**：`useReplay` 引入
+    `processingStart`（{revision, promise, controller, prioritySourceIndex,
+    onColumnsInit}）作为当前 selection 的唯一 in-flight create owner——同一
+    selectionRevision 下 startProcessingJob / 任意数量 Direct Action（AI/Playback/
+    manual Parse）共享同一个 `api.createProcessingJob` Promise（backend 至多一个
+    Processing Job），priority 由第一个发起者决定，绝不用「abort 旧 create + 新建」
+    切换 priority（abort XHR ≠ 后端事务回滚）。selection 变化时 abort 并 null owner，
+    stale create 迟到 resolve 一律 best-effort cancel 且不绑定 / 不 poll / 不写
+    upload/loading/error；uploadState / poll interval 均经 owner 校验，一个 job 至多
+    一个主 poll interval。
+  - **AI analysis per-run context（第五轮）**：`AiReviewPanel` 每次 runAnalyze 创建
+    独立 run context（revision / controller / correlationId / startedAt /
+    timeoutTimer / cancelRequested / timedOut），`activeRun` 作为唯一 ownership——
+    旧 A 的 finally 只清自己的 timer、timeout callback closure-capture A 的
+    correlationId、SSE 事件按 `activeRun === run` 守卫写回；Dataset identity 切换只
+    cancel oldRun，绝不可能清掉 B 的 timer 或 cancel B 的请求。
+  - **Processing ownership lifecycle 完成（终审）**：UPLOADING 允许 abort（server 未
+    接受，无 orphan）；REGISTERING（multipart 已上传完）禁止 abort 丢 jobId——标记
+    cancelRequested 保留 create owner/request，202 返回后 best-effort
+    cancelProcessingJob(created.jobId) 且不绑定 / 不 poll / 不暴露成 Dataset；
+    REGISTERING cancel 后旧 create settle 前禁止新建 p2（single-flight 保持）。
+    ReplayPage/unmount 时 owned QUEUED/PROCESSING job best-effort cancel、REGISTERING
+    create 标记取消等 jobId（绝不 orphan）、READY dataset 不 cancel；source-ready
+    poll 注册 timer+abort，selection change / cancel / teardown 全部终止。
+  - **poll/result 完整 async ownership（终审）**：主 poll 捕获 jobId + selectionRevision，
+    STALE RESPONSE = ZERO SHARED STATE WRITES（不再写 loading）；READY result 迟到
+    resolve 同样 pure discard；startProcessingJob catch 校验 revision 后才写错误。
+  - **authoritative Dataset reuse（终审）**：READY 后普通 Preview 复用现有
+    result/dataset（不重新 create/upload/parse，api.createProcessingJob 计数不变）；
+    Direct Action 的 GET processingJobId 只允许稳定 404/JOB_NOT_FOUND 时 invalidate +
+    重建 replacement，transient（network/5xx/timeout/auth/malformed）一律传播且不
+    重新 full-process。
+  - **Dataset REST 4xx 契约（终审）**：AI/Map JSON Dataset reference 缺失/空 → 400
+    `DATASET_REFERENCE_REQUIRED`、非法 sourceId → 400 `SOURCE_NOT_FOUND`、job 不存在/
+    过期 → 404 `JOB_NOT_FOUND`、source 未 READY → 409 `SOURCE_NOT_READY`；null 引用
+    不再进入 store 查找 NPE → 500（map-overview 同步 HTTP 全量落实；AI SSE 端点同码
+    经 worker 稳定 error 事件传达）。
+  - **scheduler cancel/complete 竞态测试语义修正（终审）**：`cancelAndCompletionRaceIsConsistent`
+    补齐第三种交错（cancel 在 target 已完整执行后被移除后到达 → NO_COMPLETION_PENDING
+    且 onComplete 已触发），断言与 scheduler「onComplete 未来不再触发」契约一致
+    （CI #719 曾因此误判失败）。
+  - **source poll cancellation exactly-once settle（终审收尾）**：
+    `pollSourceReady` 全部 terminal path 收敛到 `resolveOnce`/`rejectOnce`
+    （settled 标志 + timer/abort registry 同步释放）——GET pending 或 750ms
+    timer 等待期间 abort（selection change / cancel / dismiss / teardown）立即以
+    `SOURCE_POLL_CANCELLED` reject，迟到 response 一律 pure discard，绝不永久
+    pending / 双 settle；`getProcessingJob` 不支持 AbortSignal，故不强制改 API
+    client，取消语义由外层 Promise 自洽保证；ReplayPage `ensureDatasetFor` 把本地
+    source poll 取消视为 AbortError 同级，不写入 processingError（不显示成用户
+    业务错误）。
 - **名人堂三环（Mark 3）人工审核排行榜**：新增独立 `mark3` domain、Flyway `V21` submission/evidence 表和 `/api/hof/mark3`、`/api/users/mark3`、`/api/admin/hof/mark3` API。仅限 Tier X，玩家提交三环所需场数、过程场均、过程胜率、1–2 张截图与恰好 5 个回放；无 Wargaming 自动认证链路。创建路径从五个 replay byte[] 读取、解析、hash 锁、落盘到事务全程复用全局 `ReplayCapacityLimiter`，容量满返回 503 `REPLAY_BUSY`。排行榜按已审核三环场数升序，场数相同使用 competition ranking；同用户同车的 CURRENT 唯一且不被后续申请替代，不使用 `SUPERSEDED`。REJECTED/CANCELLED/DELETED 可重提；管理员通过、拒绝或删除时均不能改写成绩，终态会清理截图和回放证据。
 
 ### Fixed
