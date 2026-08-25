@@ -68,7 +68,15 @@ export function useReplay() {
   const processingError = ref('')
   /** 上传阶段本地状态（{phase:'UPLOADING'|'REGISTERING', loaded, total, percent}）。 */
   const uploadState = ref(null)
-  let uploadAbort = null
+  /**
+   * 当前 selection 的 in-flight Processing create（BLOCKER 1 single-flight）：
+   * {revision, promise, controller, prioritySourceIndex, onColumnsInit}。
+   * 同一 selectionRevision 下所有 startProcessingJob / requestDirectAction 共享同一个
+   * create Promise——api.createProcessingJob 至多调用一次；priority 由第一个发起者决定，
+   * 后续 caller 复用同一 job 后各自等待自己的 sourceId READY。绝不用
+   * 「abort 旧 create + 新建」来实现 priority 切换（abort XHR ≠ 后端事务回滚）。
+   */
+  let processingStart = null
   /** 已完成解析的 Processing Job id（供 Export 复用 result，不重新上传/processFull）。 */
   const processingJobId = ref(null)
   let processingPollTimer = null
@@ -146,9 +154,13 @@ export function useReplay() {
     stopProcessingPolling()
     const job = processingJob.value
     processingJob.value = null
-    uploadAbort?.abort()
-    uploadAbort = null
+    // BLOCKER 1.3：abort 当前 in-flight create（server 可能已接受 → stale 返回后 best-effort cancel）。
+    if (processingStart) {
+      processingStart.controller?.abort()
+      processingStart = null
+    }
     uploadState.value = null
+    loading.value = false
     if (job && JOB_ACTIVE.has(job.status)) {
       api.cancelProcessingJob(job.jobId).catch(() => {})
     }
@@ -221,24 +233,58 @@ export function useReplay() {
     }
   }
 
+  /** 当前 create 是否为最新 owner（BLOCKER 1.4：只有 owner 才能写共享 UI 状态）。 */
+  function isCurrentCreate(start) {
+    return processingStart === start
+  }
+
   /**
-   * 创建解析任务并开始轮询真实进度。READY 后自动拉取 result 展示。
-   * 防重复：已有活跃 job 时忽略再次点击。
+   * 确保当前 selection 有且仅有一个 Processing Job（BLOCKER 1 single-flight）：
+   * 1) 已有活跃 job（QUEUED/PROCESSING）→ 直接复用；2) 同 revision 已有 in-flight create
+   * → 共享同一 Promise（manual Parse 可补充 READY 后的列初始化）；3) 否则创建。
+   * 返回 {jobId, stale}。
    */
-  async function startProcessingJob(onColumnsInit, { prioritySourceIndex } = {}) {
-    if (!files.value.length) { error.value = t('replay.no_files'); return }
-    if (processingActive.value) return
-    const revisionAtCreate = selectionRevision.value
+  function ensureProcessingCreate(prioritySourceIndex, onColumnsInit) {
+    const job = processingJob.value
+    if (job && (job.status === 'QUEUED' || job.status === 'PROCESSING')) {
+      return Promise.resolve({ jobId: job.jobId, stale: false })
+    }
+    if (processingStart && processingStart.revision === selectionRevision.value) {
+      if (onColumnsInit) {
+        processingStart.onColumnsInit = onColumnsInit
+      }
+      return processingStart.promise
+    }
+    const revision = selectionRevision.value
+    const start = {
+      revision,
+      prioritySourceIndex,
+      onColumnsInit,
+      controller: new AbortController()
+    }
+    processingStart = start
+    start.promise = doCreate(start) // doCreate 的同步前缀内可能触发 onProgress（mock），必须先登记 owner
+    return start.promise
+  }
+
+  /**
+   * 真正的 create + bind（single-flight owner）。stale / abort / 迟到 catch/finally
+   * 只能清理自己的局部资源；共享 UI 状态（uploadState / loading / processingError /
+   * processingJob / poll token）一律经 isCurrentCreate 校验后才允许写。
+   */
+  async function doCreate(start) {
+    const revision = start.revision
+    const controller = start.controller
     loading.value = true
     error.value = ''
     processingError.value = ''
-    uploadAbort?.abort()
-    const controller = new AbortController()
-    uploadAbort = controller
     uploadState.value = { phase: 'UPLOADING', loaded: 0, total: 0, percent: 0 }
     try {
-      const created = await api.createProcessingJob(buildFormData(prioritySourceIndex), {
+      const created = await api.createProcessingJob(buildFormData(start.prioritySourceIndex), {
         onProgress: ({ loaded, total, percent }) => {
+          if (!isCurrentCreate(start)) {
+            return // 旧 owner 的进度不得写当前 UI
+          }
           // 上传体已发完但 202 未返回 → REGISTERING（plan §28）
           uploadState.value = {
             phase: percent >= 100 ? 'REGISTERING' : 'UPLOADING',
@@ -249,15 +295,18 @@ export function useReplay() {
         },
         signal: controller.signal
       })
-      if (uploadAbort === controller) uploadAbort = null
-      uploadState.value = null
-      if (selectionRevision.value !== revisionAtCreate) {
-        // 创建请求期间 files 已变化：该 job 的输入不再匹配当前 selection——不注册到状态，
-        // 后台取消（其输入由后端 TTL 清理）。
+      if (selectionRevision.value !== revision || !isCurrentCreate(start)) {
+        // BLOCKER 1.3：selection 已变 / owner 已被替换——best-effort cancel，不绑定、不 poll、
+        // 不覆盖当前 selection 状态。abort 发生时 server 可能已成功创建 job，必须 cancel 兜底。
         api.cancelProcessingJob(created.jobId).catch(() => {})
-        loading.value = false
-        return
+        if (isCurrentCreate(start)) {
+          processingStart = null
+          uploadState.value = null
+          loading.value = false
+        }
+        return { jobId: created.jobId, stale: true }
       }
+      stopProcessingPolling() // BLOCKER 1.5：新主 poll 前确保旧 interval 已终止（无 lost interval）
       processingJob.value = {
         jobId: created.jobId,
         status: created.status || 'QUEUED',
@@ -271,13 +320,35 @@ export function useReplay() {
         currentFile: null
       }
       processingPollJobId = created.jobId
-      processingPollTimer = setInterval(() => pollProcessingJob(onColumnsInit), JOB_POLL_MS)
-      pollProcessingJob(onColumnsInit)
-    } catch (e) {
+      processingPollTimer = setInterval(() => pollProcessingJob(start.onColumnsInit), JOB_POLL_MS)
+      pollProcessingJob(start.onColumnsInit)
+      processingStart = null
       uploadState.value = null
-      if (uploadAbort === controller) uploadAbort = null
+      return { jobId: created.jobId, stale: false }
+    } catch (e) {
+      if (isCurrentCreate(start)) {
+        processingStart = null
+        uploadState.value = null
+        loading.value = false
+      }
+      throw e
+    }
+  }
+
+  /**
+   * 创建解析任务并开始轮询真实进度。READY 后自动拉取 result 展示。
+   * 防重复：已有活跃 job 时忽略；UPLOADING/REGISTERING 期间与 Direct Action 共享
+   * 同一个 create（single-flight，BLOCKER 1），绝不 abort 后重建第二个 backend job。
+   */
+  async function startProcessingJob(onColumnsInit, { prioritySourceIndex } = {}) {
+    if (!files.value.length) { error.value = t('replay.no_files'); return }
+    if (processingActive.value) return
+    try {
+      const result = await ensureProcessingCreate(prioritySourceIndex, onColumnsInit)
+      if (!result || result.stale) return
+    } catch (e) {
       if (e && e.name === 'AbortError') {
-        // 用户取消上传 / selection 变化：不显示错误，状态已被 updateFiles 清空
+        // 用户取消上传 / selection 变化：不显示错误（状态由 cancelProcessing/updateFiles 处理）。
         return
       }
       loading.value = false
@@ -317,16 +388,15 @@ export function useReplay() {
    * Direct AI/Playback（plan §40）：选中文件直接点击 capability 时，确保 Dataset 存在
    * 且目标 source READY（无则自动创建 Processing Job + priority 优先解析），返回
    * {processingJobId, sourceId} 供面板消费。批量其余 source 继续后台解析。
+   * 查找顺序（BLOCKER 1.6）：1) 已有 READY dataset → 2) 当前 active job → 3) 当前
+   * selection 的 in-flight create（single-flight）→ 4) 才创建。同一 selection 的所有
+   * Direct Action 共享同一个 backend Processing Job（绝无 p1/p2 双 job）。
    */
   async function requestDirectAction(file, mode) {
     const idx = files.value.findIndex(f => fileKey(f) === fileKey(file))
     if (idx < 0) throw new Error('NO_REPLAY_FILE')
     const sourceId = `r${idx}`
-    const job = processingJob.value
-    if (job && (job.status === 'QUEUED' || job.status === 'PROCESSING' || job.status === 'READY')) {
-      const s = (job.sources || []).find(x => x.sourceId === sourceId)
-      if (s && s.status === 'READY') return { processingJobId: job.jobId, sourceId }
-    }
+    // 1) 已有 READY dataset（dismiss 面板后仍可复用，不重新 full process）
     if (processingJobId.value) {
       try {
         const data = await api.getProcessingJob(processingJobId.value)
@@ -339,17 +409,26 @@ export function useReplay() {
         // dataset 已过期：回退到新建
       }
     }
-    await startProcessingJob(null, { prioritySourceIndex: idx })
-    const created = processingJob.value
-    if (!created) throw new Error('PROCESSING_START_FAILED')
+    // 2) 当前 active job：source READY 直接返回；仍在处理则等自己的 sourceId
+    const job = processingJob.value
+    if (job && (job.status === 'QUEUED' || job.status === 'PROCESSING' || job.status === 'READY')) {
+      const s = (job.sources || []).find(x => x.sourceId === sourceId)
+      if (s && s.status === 'READY') return { processingJobId: job.jobId, sourceId }
+      if (job.status === 'QUEUED' || job.status === 'PROCESSING') {
+        return pollSourceReady(job.jobId, sourceId)
+      }
+    }
+    // 3)+4) in-flight create 或新建（single-flight：B 复用 A 的 create，绝不双 job）
+    const created = await ensureProcessingCreate(idx)
+    if (!created || created.stale) throw new Error('PROCESSING_START_FAILED')
     return pollSourceReady(created.jobId, sourceId)
   }
 
-  /** 统一取消：上传阶段 abort XHR；已注册 Job 走协作取消。 */
+  /** 统一取消：上传阶段 abort 当前 in-flight create（single-flight owner）；已注册 Job 走协作取消。 */
   function cancelProcessing() {
     if (uploadState.value) {
-      uploadAbort?.abort()
-      uploadAbort = null
+      processingStart?.controller?.abort()
+      processingStart = null
       uploadState.value = null
       loading.value = false
       return
@@ -470,6 +549,10 @@ export function useReplay() {
   onUnmounted(() => {
     stopProcessingPolling()
     stopExportPolling()
+    if (processingStart) {
+      processingStart.controller?.abort()
+      processingStart = null
+    }
   })
 
   function askRemoveBattle(battle, idx) {
