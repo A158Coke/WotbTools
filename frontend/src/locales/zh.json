@@ -435,6 +435,8 @@
         "claimed": "用户申报",
         "claimedDamage": "申报场均",
         "claimedBattles": "申报场次",
+        "certifiedDamage": "认证场均",
+        "certifiedBattles": "认证场次",
         "approved": "管理员确认",
         "approvedDamage": "通过场均",
         "approvedBattles": "通过场次",

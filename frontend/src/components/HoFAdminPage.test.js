@@ -80,6 +80,7 @@ const pendingItem = {
   gameAccountIdSnapshot: 'game-123', nicknameSnapshot: 'SnapUser',
   claimedAverageDamage: 4200, claimedBattleCount: 100,
   approvedAverageDamage: null, approvedBattleCount: null,
+  certifiedAverageDamage: null, certifiedBattleCount: null,
   replayParseOk: true, replayGameIdMatch: true, replayVehicleMatch: true, replayDistinctBattles: true,
   submittedAt: '2024-01-01T00:00:00Z', approvedAt: null, rejectReason: null, deleteReason: null
 }
@@ -90,6 +91,7 @@ const currentItem = {
   gameAccountIdSnapshot: 'game-456', nicknameSnapshot: 'CurUser',
   claimedAverageDamage: 3800, claimedBattleCount: 120,
   approvedAverageDamage: 3800, approvedBattleCount: 120,
+  certifiedAverageDamage: 3800, certifiedBattleCount: 120,
   replayParseOk: true, replayGameIdMatch: true, replayVehicleMatch: true, replayDistinctBattles: true,
   submittedAt: '2023-12-01T00:00:00Z', approvedAt: '2023-12-02T00:00:00Z', rejectReason: null, deleteReason: null
 }
@@ -143,6 +145,8 @@ const wargamingPendingItem = {
   nicknameSnapshot: 'WgPlayer',
   gameAccountIdSnapshot: '572253806',
   verificationSource: 'WARGAMING_API',
+  certifiedAverageDamage: 4101,
+  certifiedBattleCount: 188,
   officialAverageDamage: 4101,
 }
 
@@ -361,6 +365,29 @@ describe('HoFAdminPage', () => {
     expect(hofAdminApi.hofAdminHundredList).toHaveBeenLastCalledWith({
       page: 1, size: 50, status: 'CURRENT', nation: 'EUROPE', vehicleType: 'MEDIUM_TANK', vehicleId: 385
     })
+  })
+
+  it('hundred summary shows certified values instead of claimed values', async () => {
+    const officialItem = {
+      ...wargamingPendingItem,
+      claimedAverageDamage: 3800,
+      claimedBattleCount: 100,
+      certifiedAverageDamage: 3814,
+      certifiedBattleCount: 103,
+    }
+    hofAdminApi.hofAdminHundredList.mockResolvedValue({
+      items: [officialItem], page: 1, size: 50, totalItems: 1, totalPages: 1
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    await switchToHundred(wrapper)
+
+    const table = wrapper.find('.hof-hundred .hof-admin-table')
+    expect(table.findAll('th').map(header => header.text())).toContain('hundredAdmin.certifiedDamage')
+    expect(table.findAll('th').map(header => header.text())).toContain('hundredAdmin.certifiedBattles')
+    expect(table.text()).toContain('3814')
+    expect(table.text()).toContain('103')
+    expect(table.text()).not.toContain('3800')
   })
 
   it('PENDING row opens review modal with screenshot and validation items', async () => {

@@ -435,6 +435,8 @@
         "claimed": "Заявлено",
         "claimedDamage": "Заявленный ср. урон",
         "claimedBattles": "Заявлено боёв",
+        "certifiedDamage": "Подтверждённый ср. урон",
+        "certifiedBattles": "Подтверждено боёв",
         "approved": "Подтверждено",
         "approvedDamage": "Подтв. ср. урон",
         "approvedBattles": "Подтв. боёв",

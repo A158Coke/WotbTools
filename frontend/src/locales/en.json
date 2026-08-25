@@ -435,6 +435,8 @@
         "claimed": "Claimed",
         "claimedDamage": "Claimed avg. damage",
         "claimedBattles": "Claimed battles",
+        "certifiedDamage": "Certified avg. damage",
+        "certifiedBattles": "Certified battles",
         "approved": "Approved",
         "approvedDamage": "Approved avg. damage",
         "approvedBattles": "Approved battles",
