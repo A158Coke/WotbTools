@@ -16,7 +16,9 @@ import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -153,9 +155,17 @@ class ParityTest {
         // 再加一份重复(同一场)
         sources.add(new Source("dup.wotbreplay", Files.readAllBytes(files.get(0))));
 
+        // 唯一战斗数按 arenaId 去重：提交夹具（common/fixtures/replays）与本地可选样本
+        // （common/data，gitignored）可能包含同 arenaId 副本（如 cw-training-15-14-example
+        // 与本地 data/20260725_1535 同场），Replays.collect 按 arenaId 去重。
+        final Set<String> uniqueArenas = new LinkedHashSet<>();
+        for (final Path p : files) {
+            uniqueArenas.add(ReplayParser.parse(Files.readAllBytes(p)).arenaId);
+        }
         final Collected c = Replays.collect(sources, null);
-        assertEquals(files.size(), c.battles.size(), "唯一战斗数");
-        assertEquals(1, c.duplicates.size(), "应跳过 1 个重复");
+        assertEquals(uniqueArenas.size(), c.battles.size(), "唯一战斗数");
+        // 重复数 = 跨目录同 arenaId 副本（files.size() - 唯一数）+ 手工 dup 1 份
+        assertEquals(files.size() - uniqueArenas.size() + 1, c.duplicates.size(), "重复数");
         assertEquals(0, c.failures.size());
 
         final var agg = Aggregator.aggregate(c.battles, Tankopedia.load());

@@ -113,8 +113,9 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 > **League Rating（训练赛/联赛）**：上传含训练房（arenaBonusType=2）或联赛/锦标赛（=4）回放时，
 > 响应额外返回 `league` 元数据（mode=LEAGUE_RATING、战队 Rating/MVP/队内最佳、八维度
 > `league_*` 列与固定列元数据、选手/战队中位数汇总、校验失败列表），且 `playerColumns` /
-> `aggregateColumns` **不含** `contribution`/`kast`/`impact`；混合普通+训练赛/联赛 → HTTP 400
-> `MIXED_LEAGUE_AND_STANDARD_REPLAYS`（不返回部分预览）。评分 core 见
+> `aggregateColumns` **不含** `contribution`/`kast`/`impact`；混合普通+训练赛/联赛 →
+> League Rating 不聚合（`league=null`、`leagueUnavailableCode=MIXED_LEAGUE_AND_STANDARD_REPLAYS`，
+> battles 仍按普通回放语义成功返回，plan §21）。评分 core 见
 > `wotb-core/.../league/`（LeagueRatingCalculator 等），preview/Excel 复用同一评分结果。
 
 ### `POST /api/preview`
@@ -199,7 +200,7 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 
 - **三环（Mark 3）**：Tier X 单车最速三环排行榜，仅走人工审核（`com.wotb.web.mark3` 域）：
   - `GET /api/hof/mark3?nation=&vehicleType=&vehicleId=&page=&size=` — 公开排行榜（匿名；与百场相同的国家/系别、车种、车辆交集；全空或仅分类时为 CURRENT Top 10，选择车辆后为该车独立分页；按 approvedBattleCount ASC，场数相同为 competition rank，稳定展示按 approvedAt ASC、id ASC）。
-  - `POST /api/hof/mark3/submissions` — 提交三环成绩（**需登录** + Profile gameId/nickname 已配置；multipart：vehicleId/battleCount/averageDamage/winRate/proofScreenshots×1–2（单张不超过 4 MiB 的 base64 `data:image/`）/replays×5）。仅 authoritative Tier X；胜率为 0–100 的百分数且最多两位小数；5 个回放均须解析成功、匹配账号与车辆且 arenaId 不重复。截图只校验图片数量/格式：从 0 场开始打三环的新车可 1 张，其他申请由管理员核验 0% 与 95% 起止截图。
+  - `POST /api/hof/mark3/submissions` — 提交三环成绩（**需登录** + Profile gameId/nickname 已配置；multipart：vehicleId/battleCount/averageDamage/winRate/proofScreenshots×1–2（单张不超过 4 MiB 的 base64 `data:image/`）/replays×5）。仅 authoritative Tier X；胜率为 0–100 的百分数且最多两位小数；5 个回放均须解析成功、匹配账号与车辆且 arenaId 不重复。读取/解析/落盘/事务全程通过全局 `ReplayCapacityLimiter`，容量满在解析前返回 503 `REPLAY_BUSY`。截图只校验图片数量/格式：从 0 场开始打三环的新车可 1 张，其他申请由管理员核验 0% 与 95% 起止截图。
   - `POST /api/hof/mark3/submissions/{id}/cancel` — 用户撤销自己的 PENDING（**需登录**）。
   - `GET /api/users/mark3/status` — 个人中心三环状态（CURRENT / PENDING / 最近拒绝；**需登录**）。
   - 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof/mark3/submissions?status=&nation=&vehicleType=&vehicleId=`（状态/国家/车种/车辆交集筛选）、`GET .../submissions/{id}`（详情与 PENDING proof）、`GET .../submissions/{id}/replays` 与 `GET .../submissions/{submissionId}/replays/{replayId}`（仅 PENDING 回放证据）、`POST .../{id}/approve`（无请求体，冻结原申报数据）、`POST .../{id}/reject`、`POST .../{id}/delete`（原因强制）。管理员不能改写场数、场均或胜率。

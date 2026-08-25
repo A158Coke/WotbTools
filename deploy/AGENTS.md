@@ -8,6 +8,8 @@
 - **统一构建**：生产部署（deploy.yml）每次运行都统一构建三个 SHA 镜像——`wotbtools-backend` / `wotbtools-frontend` / `wotbtools-keycloak`（GHCR 前缀 `ghcr.io/a158coke/`，tag = `sha-<short>` + `latest`）；路径检测（backend/frontend 变更标志）**只用于** test-backend/test-frontend 测试门禁与 tag 计算，**不用于**增量构建镜像（未变更时对应测试 job 为 skipped，构建仍执行）。改动此逻辑时同步 workflow 与 `deploy.sh` 契约校验。
 - 生产编排 `deploy/docker-compose.prod.yml` + `deploy/deploy.sh`（fail-fast 校验，含 `AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC=1100` 等契约；改动后端超时/编排变量必须同步 `AiTimeoutChainContractTest`、仓库根 `.env.example` 与本文件）。
 - 反向代理 `deploy/nginx/nginx.conf`：`/api/replay/analyze` 固定 `proxy_read/send_timeout 1120s` + `proxy_buffering off`（SSE 流式）；其余 120s。
+- **SPA 缓存策略（frontend 部署即生效的关键）**：`location = /index.html` 固定 `Cache-Control: no-cache, no-store, must-revalidate`（禁止浏览器缓存入口页，新 bundle hash 部署后立即生效）；`location /assets/`（Vite 内容 hash 产物）固定 `Cache-Control: public, max-age=31536000, immutable`，且 404 不 fallback 到 index.html。改缓存头会影响用户能否看到新前端版本，改动需在 `?view=hof-admin` 等页验证。
+- **Build identity（防猜版本）**：frontend 构建注入真实 git commit——deploy.yml build-frontend 传 `BUILD_COMMIT=${{ needs.changes.outputs.tag }}` build-arg，`vite.config.js` 据此生成 `dist/version.json` 并在启动 console 输出 `[build] commit=... time=...`（Docker 上下文无 `.git`，必须经 build-arg 注入，本地构建才 fallback `git rev-parse`）。生产页面异常时先核对实际 bundle 版本。
 - 本地八服务开发环境在 `docker/online/docker-compose.yml`（postgres/keycloak/wotb-backend/wotb-frontend + prometheus/loki/alloy/grafana），**不是四容器**。
 
 ## 运维（安全）

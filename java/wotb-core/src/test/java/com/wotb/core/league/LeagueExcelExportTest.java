@@ -219,6 +219,46 @@ class LeagueExcelExportTest {
     }
 
     @Test
+    void aggregateLeaguePartialRatingsListsAllBattlesDetailsOnlyRated() throws Exception {
+        // P0：battles 含 Rating-ineligible 场（arena-2）时：每场明细只含 eligible，
+        // 战斗列表列出全部 battle 且 ineligible 场显示真实 failure 状态，不重复行、不崩溃
+        final Battle b1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        b1.arenaId = "arena-1";
+        final Battle b2 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        b2.arenaId = "arena-2";
+        b2.settlementAccountsCoveredByRoster = false;
+        final LeagueRatingResult r1 = LeagueRatingCalculator.calculate(b1);
+        final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(
+                List.of(b1), List.of(r1),
+                List.of(new LeagueFailure("two.wotbreplay", "arena-2", LeagueFailure.Code.ROSTER_INCOMPLETE)));
+
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ExcelExporter.writeAggregateLeague(List.of(b1, b2), List.of("one.wotbreplay", "two.wotbreplay"),
+                List.of(), batch, Tankopedia.load(), out);
+
+        try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()))) {
+            final String detail = sheetTextAll(wb.getSheet("每场明细"));
+            assertTrue(detail.contains("arena-1"), "每场明细必须含 eligible 场");
+            assertTrue(!detail.contains("arena-2"), "每场明细不得含 Rating-ineligible 场（无 Rating 明细）");
+            final String list = sheetTextAll(wb.getSheet("战斗列表"));
+            assertTrue(list.contains("arena-2"), "战斗列表必须列出全部解析 battle（含 ineligible）");
+            assertTrue(list.contains("名册不完整"), "ineligible 场状态必须显示真实 failure 文案，实际：" + list);
+            assertEquals(1, countOccurrences(list, "已评分"), "只有 eligible 场标记已评分，实际：" + list);
+            assertEquals(1, countOccurrences(list, "名册不完整"), "ineligible 场不得因 battle 行 + failure 行重复，实际：" + list);
+        }
+    }
+
+    private static int countOccurrences(final String text, final String needle) {
+        int count = 0;
+        int idx = 0;
+        while ((idx = text.indexOf(needle, idx)) != -1) {
+            count++;
+            idx += needle.length();
+        }
+        return count;
+    }
+
+    @Test
     void aggregateSummaryOverrideDoesNotLeakIntoDetailSheet() throws Exception {
         // PR #123 Blocker 1（Test 3）：summary override 只改战队汇总；每场明细仍用 autoName（AAA）
         final Battle b1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());

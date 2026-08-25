@@ -139,6 +139,7 @@
 
 ## 审核、证据与并发
 
+- 创建时的 replay 校验、读入五个 byte[]、解析、hash 锁、落盘和事务共用全局 `ReplayCapacityLimiter`；容量已满时在解析前返回 503 `REPLAY_BUSY`，任何 success、校验失败、解析失败、存储失败或 DB 失败都会释放许可。
 - `findByIdForUpdate`（PESSIMISTIC_WRITE）使 APPROVE / REJECT / CANCEL 从 PENDING 到终态只成功一次；APPROVE 事务内重查该用户该车的 CURRENT，存在即拒绝，绝不产生替代记录。
 - 管理员只能在详情中通过、拒绝或删除：通过无请求体，直接冻结原申报数值；拒绝与删除均要求原因。没有任何修改场数、场均或胜率的接口或控件。
 - 1–2 张截图和 5 个 replay evidence 只在 PENDING 期间对 HoF-admin / wotbtools-admin 可见。回放以 SHA-256 内容寻址保存在隔离的 `${wotb.hof.replay-dir}/mark3` 子目录（默认 `data/replays/mark3`），沿用 ownership 校验但不与单场/百场共用 hash 引用计数；APPROVE / REJECT / CANCEL / DELETE 到终态后清空截图、删除 evidence，随后 best-effort 清理该目录中无引用的物理文件。
@@ -148,7 +149,7 @@
 | 端点 | 权限 | 说明 |
 |---|---|---|
 | `GET /api/hof/mark3?nation=&vehicleType=&vehicleId=&page=&size=` | 匿名 | Tier X 三环公开榜；国家/系别、车种和车辆取交集，按三环场数升序 competition rank |
-| `POST /api/hof/mark3/submissions` | 登录 | multipart 提交：vehicleId、battleCount、averageDamage、winRate、1–2 张 base64 `data:image/` proofScreenshots、5 个 replays |
+| `POST /api/hof/mark3/submissions` | 登录 | multipart 提交：vehicleId、battleCount、averageDamage、winRate、1–2 张 base64 `data:image/` proofScreenshots、5 个 replays；全局 replay 容量满时 503 `REPLAY_BUSY` |
 | `POST /api/hof/mark3/submissions/{id}/cancel` | 登录（本人） | 撤销自己的 PENDING |
 | `GET /api/users/mark3/status` | 登录 | 个人中心：CURRENT / PENDING / 最近拒绝 |
 | `GET /api/admin/hof/mark3/submissions?status=&nation=&vehicleType=&vehicleId=&page=&size=` | HoF-admin/wotbtools-admin | 审核列表；状态、国家/系别、车种、车辆独立筛选并取交集 |
