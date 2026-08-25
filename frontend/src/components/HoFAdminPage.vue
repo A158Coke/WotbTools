@@ -1088,8 +1088,8 @@ function battleTypeLabel(tp) {
                 <th>{{ $t('hundredAdmin.vehicle') }}</th>
                 <th>{{ $t('hundredAdmin.nicknameSnapshot') }}</th>
                 <th>{{ $t('hundredAdmin.gameId') }}</th>
-                <th>{{ $t('hundredAdmin.claimedDamage') }}</th>
-                <th>{{ $t('hundredAdmin.claimedBattles') }}</th>
+                <th>{{ $t('hundredAdmin.certifiedDamage') }}</th>
+                <th>{{ $t('hundredAdmin.certifiedBattles') }}</th>
                 <th>{{ $t('hundredAdmin.verificationSourceLabel') }}</th>
                 <th>{{ $t('hundredAdmin.statusLabel') }}</th>
                 <th>{{ $t('hundredAdmin.submittedAt') }}</th>
@@ -1102,8 +1102,8 @@ function battleTypeLabel(tp) {
                 <td>{{ r.vehicleName }}</td>
                 <td>{{ r.nicknameSnapshot }}</td>
                 <td class="muted">{{ r.gameAccountIdSnapshot }}</td>
-                <td class="dmg">{{ r.claimedAverageDamage ?? '-' }}</td>
-                <td>{{ r.claimedBattleCount ?? '-' }}</td>
+                <td class="dmg">{{ r.certifiedAverageDamage ?? '-' }}</td>
+                <td>{{ r.certifiedBattleCount ?? '-' }}</td>
                 <td><span class="hundred-source" :class="'hundred-source-' + (r.verificationSource || 'MANUAL').toLowerCase()">{{ verificationSourceLabel(r.verificationSource) }}</span></td>
                 <td><span class="hundred-status" :class="'hundred-status-' + String(r.status).toLowerCase()">{{ hundredStatusLabel(r.status) }}</span></td>
                 <td class="muted">{{ fmtTime(r.submittedAt) || '-' }}</td>
