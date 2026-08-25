@@ -62,6 +62,28 @@
     drag-drop 先筛出回放再与现有 selection 合并（.DS_Store / png / txt 等辅助文件
     不计入 100 上限与 200 MiB 总量、不导致整批失败）；整次选择无回放时明确提示
     「未找到 .wotbreplay」；count/total 提示带实际值（当前 N 个 / 当前批次 X MB）。
+  - **Workspace Dataset 竞态归属修复（第四轮）**：ReplayPage 的
+    `ensureDatasetFor` 引入 workspace dataset generation + target fileKey 校验——
+    A/B 快速切换时 A 的迟到 `requestDirectAction` 响应（成功或失败）一律丢弃，绝不把
+    `datasetRef` 绑回已切走的回放（data correctness，不再依赖清空 watcher 阻止回写）。
+    AiReviewPanel 的 request ownership 绑定 file + `processingJobId` + `sourceId`
+    三者：Dataset identity 在途变化时旧分析 abort / 迟到 SSE 结果与错误不得写回、
+    stale finally 不得覆盖新 generation 的 loading。BattlePlaybackPanel 改为单一
+    effective identity（file + dataset）watcher：identity 变化真正 reset（abort +
+    清空已加载 map + 解除 mapLoaded 阻塞）并自动加载新 Dataset，同时消除
+    file/dataset 双 watcher 的重复请求。
+  - **ReconstructionPage selection lifecycle + owned Job 取消（第四轮）**：引入
+    selection generation（select/replace/remove/clear 自增）；createProcessingJob
+    返回后校验 revision + fileKey，stale job 立即 best-effort cancel 且不绑定；
+    poll 绑定 revision + jobId，迟到响应不写状态；remove/clear/teardown 对页面自己
+    create 的非终态 Processing Job best-effort cancel（不影响 ReplayPage 共享 batch
+    job）；确定性测试覆盖 A→B 乱序 / clear during create / remove active / 快速 A/B/C。
+  - **Dataset Lease 与 TTL 清理原子化（第四轮）**：`ReplayProcessingJobStore` 的
+    acquire（source/export）/ release / sweepExpired / removeAndCleanup 统一在同一
+    `lifecycleLock` 上线性化——acquire 先成功则 sweeper 必然看见 lease 而跳过，
+    sweep/remove 先移除注册则 acquire 必然失败；物理磁盘删除在锁外执行；引用计数
+    更名 `datasetLeaseRefs`（AI/Playback/Export 共享语义）；新增确定性并发测试
+    （acquire wins / sweep wins / 多 lease / underflow / 压力 invariant）。
 - **名人堂三环（Mark 3）人工审核排行榜**：新增独立 `mark3` domain、Flyway `V21` submission/evidence 表和 `/api/hof/mark3`、`/api/users/mark3`、`/api/admin/hof/mark3` API。仅限 Tier X，玩家提交三环所需场数、过程场均、过程胜率、1–2 张截图与恰好 5 个回放；无 Wargaming 自动认证链路。创建路径从五个 replay byte[] 读取、解析、hash 锁、落盘到事务全程复用全局 `ReplayCapacityLimiter`，容量满返回 503 `REPLAY_BUSY`。排行榜按已审核三环场数升序，场数相同使用 competition ranking；同用户同车的 CURRENT 唯一且不被后续申请替代，不使用 `SUPERSEDED`。REJECTED/CANCELLED/DELETED 可重提；管理员通过、拒绝或删除时均不能改写成绩，终态会清理截图和回放证据。
 
 ### Fixed

@@ -8,6 +8,8 @@ import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PreDestroy;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -20,11 +22,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 关闭调度器。目录 / TTL / 孤儿清理 / 删除委托共享 {@link ReplayJobStorage}
  * （plan §3，与 Export 共用同一存储组件）。</p>
  *
- * <p><b>Export 引用生命周期（plan §52）</b>：Processing READY 后 Export Job 从本
- * store 读取 {@link ProcessedDataset} 生成 artifact。为避免「Export 进行到一半 →
- * Processing TTL cleanup → result 消失 → FAILED」，Export 创建时
- * {@link #acquire(String)} 对该 job 引用计数 +1，Export 终态后
- * {@link #release(String)} -1；TTL sweeper 只清理引用计数为 0 的过期 job。</p>
+ * <p><b>Dataset Lease 生命周期（plan §52/BLOCKER 3）</b>：AI / Playback / Export 消费
+ * Processing result 或 derived artifact 前 {@link #acquireForSource(String)} /
+ * {@link #acquireForExport(String)} 对 job 的 lease 计数 +1，消费结束后
+ * {@link #release(String)} -1；TTL sweeper 只清理 lease 为 0 的过期 job。acquire /
+ * release / sweep / remove 全部在同一个 {@code lifecycleLock} 上线性化——成功 acquire
+ * 后 sweeper 必然看见 lease 而跳过，sweep/remove 先移除注册后 acquire 必然失败，
+ * 绝不存在「acquire 成功但 storage 已删除」的第三种结果。</p>
  */
 @Component
 public class ReplayProcessingJobStore {
@@ -32,8 +36,17 @@ public class ReplayProcessingJobStore {
     private static final Logger LOGGER = LoggerFactory.getLogger(ReplayProcessingJobStore.class);
 
     private final ConcurrentHashMap<String, ReplayProcessingJob> jobs = new ConcurrentHashMap<>();
-    /** processingJobId → 活跃 Export 引用数（acquire/release 配对）。 */
-    private final ConcurrentHashMap<String, AtomicInteger> refCounts = new ConcurrentHashMap<>();
+    /**
+     * processingJobId → 活跃 Dataset Lease 数（AI / Playback / Export 共享，
+     * acquire/release 配对；BLOCKER 3 语义命名，不再叫 export refs）。
+     */
+    private final ConcurrentHashMap<String, AtomicInteger> datasetLeaseRefs = new ConcurrentHashMap<>();
+    /**
+     * Dataset 生命周期原子性边界（BLOCKER 3）：acquire（lease+1）、release（lease-1）、
+     * sweep/remove（registry 移除 + 建立 no-new-acquire 状态）都在这把锁内线性化；
+     * 物理磁盘删除在锁外执行（不长时间占锁），但 acquire 在 registry 移除后无法成功。
+     */
+    private final Object lifecycleLock = new Object();
     private final ReplayJobStorage storage;
     private final long ttlMinutes;
 
@@ -64,7 +77,9 @@ public class ReplayProcessingJobStore {
     }
 
     public void register(final ReplayProcessingJob job) {
-        jobs.put(job.jobId(), job);
+        synchronized (lifecycleLock) {
+            jobs.put(job.jobId(), job);
+        }
     }
 
     public ReplayProcessingJob get(final String jobId) {
@@ -76,16 +91,18 @@ public class ReplayProcessingJobStore {
      * job 不存在或未 READY 返回 null（Export 不得读取未完成/不存在的 result）。
      */
     public ReplayProcessingJob acquireForExport(final String jobId) {
-        final ReplayProcessingJob job = jobs.get(jobId);
-        if (job == null) {
-            return null;
+        synchronized (lifecycleLock) {
+            final ReplayProcessingJob job = jobs.get(jobId);
+            if (job == null) {
+                return null;
+            }
+            final ReplayProcessingJob.Snapshot snap = job.snapshot();
+            if (snap.status() != ReplayProcessingJob.Status.READY || job.result() == null) {
+                return null;
+            }
+            datasetLeaseRefs.computeIfAbsent(jobId, k -> new AtomicInteger()).incrementAndGet();
+            return job;
         }
-        final ReplayProcessingJob.Snapshot snap = job.snapshot();
-        if (snap.status() != ReplayProcessingJob.Status.READY || job.result() == null) {
-            return null;
-        }
-        refCounts.computeIfAbsent(jobId, k -> new AtomicInteger()).incrementAndGet();
-        return job;
     }
 
     /**
@@ -94,49 +111,69 @@ public class ReplayProcessingJobStore {
      * per-source READY 即可（plan §42/§43，Direct Capability 在 batch finalize 前消费）。
      */
     public ReplayProcessingJob acquireForSource(final String jobId) {
-        final ReplayProcessingJob job = jobs.get(jobId);
-        if (job == null) {
-            return null;
+        synchronized (lifecycleLock) {
+            final ReplayProcessingJob job = jobs.get(jobId);
+            if (job == null) {
+                return null;
+            }
+            datasetLeaseRefs.computeIfAbsent(jobId, k -> new AtomicInteger()).incrementAndGet();
+            return job;
         }
-        refCounts.computeIfAbsent(jobId, k -> new AtomicInteger()).incrementAndGet();
-        return job;
     }
 
     /** Export 终态后释放引用（与 {@link #acquireForExport} 配对）。 */
     public void release(final String jobId) {
-        final AtomicInteger counter = refCounts.get(jobId);
-        if (counter != null && counter.decrementAndGet() <= 0) {
-            refCounts.remove(jobId, counter);
+        synchronized (lifecycleLock) {
+            final AtomicInteger counter = datasetLeaseRefs.get(jobId);
+            if (counter != null && counter.decrementAndGet() <= 0) {
+                datasetLeaseRefs.remove(jobId, counter);
+            }
         }
     }
 
-    /** 移除并物理删除整个 job 目录（输入）。 */
+    /** 移除并物理删除整个 job 目录（输入 + artifact/result；BLOCKER 3：registry 移除在锁内，磁盘删除在锁外）。 */
     public void removeAndCleanup(final String jobId) {
-        jobs.remove(jobId);
-        refCounts.remove(jobId);
+        synchronized (lifecycleLock) {
+            jobs.remove(jobId);
+            datasetLeaseRefs.remove(jobId);
+        }
         storage.removeAndCleanup(jobId);
     }
 
-    /** 周期 TTL 清理（同包测试可直接触发；引用计数 > 0 的 job 跳过，plan §52）。 */
+    /**
+     * 周期 TTL 清理（同包测试可直接触发；lease > 0 的 job 跳过，plan §52）。
+     * BLOCKER 3：锁内完成过期判定 + registry 移除（建立 no-new-acquire 状态），
+     * 锁外执行物理磁盘删除——acquire 在 registry 移除后无法成功，物理删除不会
+     * 与 acquire 竞争出「acquire 成功但 storage 已删」。
+     */
     void sweepExpired() {
         final long cutoff = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(ttlMinutes);
-        for (final ReplayProcessingJob job : jobs.values()) {
-            final ReplayProcessingJob.Snapshot snap = job.snapshot();
-            final long finishedAt = job.finishedAtMillis();
-            final boolean expired = switch (snap.status()) {
-                case READY, FAILED, CANCELLED -> finishedAt > 0 && finishedAt < cutoff;
-                default -> false;
-            };
-            if (!expired) {
-                continue;
+        final List<String> toClean = new ArrayList<>();
+        synchronized (lifecycleLock) {
+            for (final ReplayProcessingJob job : jobs.values()) {
+                final ReplayProcessingJob.Snapshot snap = job.snapshot();
+                final long finishedAt = job.finishedAtMillis();
+                final boolean expired = switch (snap.status()) {
+                    case READY, FAILED, CANCELLED -> finishedAt > 0 && finishedAt < cutoff;
+                    default -> false;
+                };
+                if (!expired) {
+                    continue;
+                }
+                final AtomicInteger leases = datasetLeaseRefs.get(job.jobId());
+                if (leases != null && leases.get() > 0) {
+                    // 活跃 Dataset Lease（AI/Playback/Export）正在消费：跳过，等 release 后下轮清理。
+                    continue;
+                }
+                LOGGER.info("replay_processing_job_cleaned ttl_expired=true jobId={} status={}",
+                        job.jobId(), snap.status());
+                jobs.remove(job.jobId());
+                datasetLeaseRefs.remove(job.jobId());
+                toClean.add(job.jobId());
             }
-            final AtomicInteger refs = refCounts.get(job.jobId());
-            if (refs != null && refs.get() > 0) {
-                // 活跃 Export 正在消费 result：跳过，等 Export 结束 release 后下轮清理（plan §52）。
-                continue;
-            }
-            LOGGER.info("replay_processing_job_cleaned ttl_expired=true jobId={} status={}", job.jobId(), snap.status());
-            removeAndCleanup(job.jobId());
+        }
+        for (final String jobId : toClean) {
+            storage.removeAndCleanup(jobId);
         }
     }
 
