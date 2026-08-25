@@ -160,14 +160,24 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 ### Replay Processing Job（匿名公开，解析预览异步化）
 
-「上传多个回放 → 解析预览」从长同步 HTTP 改为异步 Processing Job：HTTP request 立即返回 202 + jobId，worker 在全局 replay 容量内串行 `processFull`（每个 replay 恰好一次），产出**共享的 ProcessedDataset** 供 Preview / Export / 战局回放复用（同一批 34 个回放不再 Preview ×34 后又 Export ×34，总 `processFull` 调用数 = 文件数）。**READY 后消费者只读**：facts 层 enrich（populateBattle）只在 dataset 创建时执行一次，Preview result / from-result Export 不再二次 mutate 共享 Battle（并发 Preview / aggregate / each Export 同一 dataset 无 shared mutable write）；`validCount() > 0` 即允许 from-result 导出（failures 只用于进度/统计，不与有效场数相减）。
+「上传多个回放 → 解析预览」从长同步 HTTP 改为异步 Processing Job：HTTP request 立即返回 202 + jobId，source 任务提交给**全局 `ReplayParseScheduler`**（默认并发 2，job-aware 公平轮转 + queued cancellation + 有界 pending），每个 replay 恰好 `processFull` 一次，产出**共享的 ProcessedDataset** 供 Preview / Export / AI / 战局回放复用（同一批 34 个回放不再 Preview ×34 / AI ×34 / Playback ×34，总 `processFull` 调用数 = 文件数）。**READY 后消费者只读**：facts 层 enrich（populateBattle）只在 dataset 创建时执行一次，Preview result / from-result Export 不再二次 mutate 共享 Battle（并发 Preview / aggregate / each Export 同一 dataset 无 shared mutable write）；`validCount() > 0` 即允许 from-result 导出（failures 只用于进度/统计，不与有效场数相减）。
 
-- `POST /api/replay/processing-jobs`（multipart `files`）— 校验并立即持久化上传输入，返回 `202 {jobId, status, total}`。
-- `GET /api/replay/processing-jobs/{jobId}` — 轮询真实进度：`{jobId, status, phase, total, processed, valid, duplicates, failures, errorCode, currentFile}`。`status` ∈ QUEUED / PROCESSING / READY / FAILED / CANCELLED（终态 exactly once）；`phase` = PROCESSING_REPLAYS（真实 processed/total，不为无观察价值的阶段造假 phase）；`valid` = 去重后有效场数；`currentFile` 为当前处理中的输入文件名（前端截断显示，不作为 metric tag）。0 场有效 → FAILED `NO_VALID_REPLAYS`。
-- `DELETE /api/replay/processing-jobs/{jobId}` — 取消（QUEUED 立即终态并释放 executor queue slot；PROCESSING 协作取消，安全 checkpoint 后终态）。
+- `POST /api/replay/processing-jobs`（multipart `files`，可选表单字段 `prioritySourceIndex` 指定直接进入 AI/Playback 的目标 source）— 校验并立即持久化上传输入，返回 `202 {jobId, status, total}`。
+- `GET /api/replay/processing-jobs/{jobId}` — 轮询真实进度：`{jobId, status, phase, total, processed, valid, duplicates, failures, errorCode, currentFile, parseCompleted, parseSucceeded, parseFailed, sources[], activeSources[]}`。`status` ∈ QUEUED / PROCESSING / READY / FAILED / CANCELLED（终态 exactly once）；`phase` ∈ WAITING_FOR_WORKER / PROCESSING_REPLAYS / FINALIZING_BATCH（parse 进度 = `parseCompleted/total`，与 dedupe/finalize 解耦；`valid/duplicates/failures` 只在 FINALIZING 后确定）；`sources[]` 为轻量 per-source 状态（`sourceId`（`r{index}`）/`sourceIndex`/`displayName`/`status`/`errorCode`），`activeSources[]` 为当前并行处理中的 source（≤2）。0 场有效 → FAILED `NO_VALID_REPLAYS`。
+- `DELETE /api/replay/processing-jobs/{jobId}` — 取消（QUEUED 立即终态并释放 scheduler pending 容量；PROCESSING 置协作取消标志，已派发 source 完成安全 unit 后终态；FINALIZING 阶段间 checkpoint）。
 - `GET /api/replay/processing-jobs/{jobId}/result` — READY 后返回 Preview 数据（battles / aggregate / duplicates / failures / playerColumns / aggregateColumns；**不再重新 process replay**）；未 READY → 409 `JOB_NOT_READY`。
 
-容量与生命周期：与 Export Job **共用同一有界 worker 池**（`REPLAY_EXPORT_JOB_MAX_CONCURRENT=2` / `REPLAY_EXPORT_JOB_QUEUE_CAPACITY=4`，满载 503 `PROCESSING_QUEUE_FULL`）；worker 仍获取全局 `ReplayCapacityLimiter` 许可（`REPLAY_MAX_CONCURRENT_JOBS=2` 不提高），batch 内 replay 串行。ProcessedDataset 为**内存态短生命周期缓存**（Strategy A，TTL `REPLAY_PROCESSING_JOB_TTL_MINUTES=30`，默认与 Export 一致）：只缓存已 enrich 的 Battle 结算战绩（不携带 reconstruction 事件流），34/50 场 heap 成本可接受；Export 创建时对 result `acquire` 引用计数，活跃 Export 期间 TTL 清理跳过，Export 终态 `release` 后才允许清理；**acquire 成功后任何在 worker 接手前的失败（job 目录创建 / submit rejection）都会释放引用**（ownership lifecycle，不泄漏 refcount 阻止 TTL 清理）。临时输入目录由 `REPLAY_PROCESSING_JOB_DIR` 管理（TTL 清理 + 启动孤儿清理）。旧同步 `POST /api/preview` 保留（向后兼容，deprecated）。
+容量与生命周期：Replay Full Processing 的唯一 CPU 预算为 `ReplayParseScheduler`
+（`REPLAY_PARSE_MAX_CONCURRENT`，默认 2；`REPLAY_PARSE_QUEUE_CAPACITY` 默认 200，
+满载 503 `PROCESSING_QUEUE_FULL`）；Excel/ZIP artifact 构建独立于 parse
+（`REPLAY_ARTIFACT_MAX_CONCURRENT`，默认 1）。ProcessedDataset 为**内存态短生命周期缓存**
+（TTL `REPLAY_PROCESSING_JOB_TTL_MINUTES=30`）：只缓存已 enrich 的 Battle 结算战绩
+（不携带 reconstruction 事件流）；per-source derived artifact（`ai-facts.json` /
+`map-overview.json`）写 `derived/{sourceId}/`（临时文件 + atomic move，先写后 READY，
+TTL 随 job 目录清理）。Dataset Lease：Export / AI / Playback 读取前 `acquire`（引用计数
++1，TTL 清理跳过），结束后 `release`；acquire 后任何失败都释放引用（不泄漏 refcount）。
+临时输入目录由 `REPLAY_PROCESSING_JOB_DIR` 管理（TTL 清理 + 启动孤儿清理）。旧同步
+`POST /api/preview` 保留（向后兼容，deprecated）。
 
 ### AI 复盘与批量处理（wotbtools-user / wotbtools-admin）
 
@@ -176,7 +186,7 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 - `POST /api/replay/reconstruct-batch` — 批量重建（单文件 ≤ 20 MiB、请求合计 ≤ 200 MiB），返回 `ReplayBatchProcessingResult`（含 `suggestedAnalysisMode`、逐文件 `ReplayProcessingResult`）。
 - `POST /api/replay/process?reconstruct=false` — 通用批量处理，可选开启重建。
-- `POST /api/replay/analyze` — 上传 `files[]` 生成 AI 战术复盘；**单文件限制（`AiReplayBatchPolicy.MAX_FILES=1`）**，仅 `SINGLE_PLAYER_BATTLE` / `SINGLE_TEAM_BATTLE` 模式（多文件 AI 复盘已移除，2026-08-12）。表单字段 `lang`（必填，白名单 `zh`/`en`/`ru`）控制 AI 复盘输出语言；缺失时返回 `400`，空白或未知值返回 `400 UNKNOWN_LOCALE`。可选表单字段 `correlationId` 用于客户端取消；`POST /api/replay/analyze/cancel?correlationId=...` 中断 in-flight 上游调用（返回 `204`，未注册返回 `404`），被取消请求稳定返回 `AI_CANCELLED`。`POST /api/replay/map-overview` — 上传 `files[]` 只解析回放并确定性生成 `MapOverview`（热力/路线/战局回放，**不调 AI**），同步 JSON 返回；地图不可构建（未知地图/无观测/无名册/视角未解析）返回 `204`；校验与错误码与 analyze 一致。**响应为 SSE 流式（breaking change，旧同步 JSON 端点不保留）**：事件 `call1_start` / `call1_done` / `evidence_done` / `call2_token`（`{"delta"}`）/ `autopsy_start` / `autopsy_done` / `done`（`{"analysis","preBattleSection","mapOverview"}`，`mapOverview` 可空，字段见 `docs/features/battle-playback.md`）/ `error`（`{"code"}`，worker 启动后的失败经 SSE 传达）；request-envelope 校验与 worker 池饱和在返回 `SseEmitter` 前由 HTTP 状态码 + 稳定错误码文本返回（400/503）。完整协议见 `docs/features/team-ai-review.md` §8。
+- `POST /api/replay/analyze` — **Dataset 路径（推荐）**：JSON body `{processingJobId, sourceId, lang, correlationId}`，只读 derived `ai-facts.json`（**不再重新上传 / 重新 full process**）；legacy multipart `files[]` 路径保留（deprecated）。**单文件限制（`AiReplayBatchPolicy.MAX_FILES=1`）**，仅 `SINGLE_PLAYER_BATTLE` / `SINGLE_TEAM_BATTLE` 模式。表单/JSON 字段 `lang`（必填，白名单 `zh`/`en`/`ru`）控制输出语言；缺失返回 `400`，空白或未知值返回 `400 UNKNOWN_LOCALE`。可选 `correlationId` 用于客户端取消；`POST /api/replay/analyze/cancel?correlationId=...` 中断 in-flight 上游调用（返回 `204`，未注册返回 `404`）。稳定错误码含 `JOB_NOT_FOUND` / `SOURCE_NOT_FOUND` / `SOURCE_NOT_READY` / `SOURCE_PROCESSING_FAILED` / `DATASET_EXPIRED`。`POST /api/replay/map-overview` — Dataset 路径 JSON body `{processingJobId, sourceId}` 读 cached `map-overview.json`（不重新 full process）；legacy multipart 路径保留（deprecated）。地图不可构建返回 `204`。**响应为 SSE 流式**：事件 `call1_start` / `call1_done` / `evidence_done` / `call2_token`（`{"delta"}`）/ `autopsy_start` / `autopsy_done` / `done`（`{"analysis","preBattleSection","mapOverview"}`）/ `error`（`{"code"}`）；request-envelope 校验与 worker 池饱和在返回 `SseEmitter` 前由 HTTP 状态码 + 稳定错误码文本返回（400/503）。完整协议见 `docs/features/team-ai-review.md` §8。
 
 **策略**：上传文件先统一校验扩展名、空文件和单文件大小；通过预校验后，解析/重建错误才按文件隔离。系统执行 SHA-256 精确去重，并按 battle + perspective 分组。随机战斗分析录像者个人；训练房/联赛分析录像者所在整队，录像者只用于解析 `perspectiveTeam`。同场同队回放只选一个代表，同场双方保持独立；未点亮敌人仍未知，不能跨录像补全视野。
 

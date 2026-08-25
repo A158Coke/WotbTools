@@ -20,6 +20,7 @@ import {
   hofHundredSubmitWargaming,
   hofMark3Submit,
   hofUpload,
+  createProcessingJob,
 } from './api.js'
 
 function jsonResponse(status, body) {
@@ -190,5 +191,97 @@ describe('authenticated HoF API requests (real api.js, fetch mocked)', () => {
     const [, options] = vi.mocked(fetch).mock.calls[0]
     expect(options).not.toHaveProperty('body')
     expect(options.headers).not.toHaveProperty('Content-Type')
+  })
+})
+
+// ── Replay Processing Job create：XHR 真实上传进度（plan §27/§28）──
+
+/** 可控的 XHR 替身：手动触发 progress / load / abort。 */
+class FakeXhr {
+  constructor() {
+    this.upload = {}
+    this.status = 0
+    this.responseText = ''
+    this.headers = {}
+    this.aborted = false
+  }
+
+  open(method, url) {
+    this.method = method
+    this.url = url
+  }
+
+  send(body) {
+    this.body = body
+  }
+
+  abort() {
+    this.aborted = true
+    if (typeof this.onabort === 'function') this.onabort()
+  }
+
+  progress(loaded, total) {
+    if (typeof this.upload.onprogress === 'function') {
+      this.upload.onprogress({ lengthComputable: true, loaded, total })
+    }
+  }
+
+  respond(status, text) {
+    this.status = status
+    this.responseText = text
+    if (typeof this.onload === 'function') this.onload()
+  }
+}
+
+describe('createProcessingJob XHR upload progress', () => {
+  let xhr
+
+  beforeEach(() => {
+    xhr = null
+    vi.stubGlobal('XMLHttpRequest', class {
+      constructor() {
+        xhr = new FakeXhr()
+        return xhr
+      }
+    })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('reports real upload progress 0→100 and resolves on 202', async () => {
+    const progressCalls = []
+    const fd = new FormData()
+    const promise = createProcessingJob(fd, {
+      onProgress: (p) => progressCalls.push(p)
+    })
+    expect(xhr.method).toBe('POST')
+    expect(xhr.url).toBe('/api/replay/processing-jobs')
+
+    xhr.progress(33_554_432, 67_108_864)
+    xhr.progress(67_108_864, 67_108_864)
+    expect(progressCalls).toEqual([
+      { loaded: 33_554_432, total: 67_108_864, percent: 50 },
+      { loaded: 67_108_864, total: 67_108_864, percent: 100 },
+    ])
+
+    xhr.respond(202, JSON.stringify({ jobId: 'p1', status: 'QUEUED', total: 2 }))
+    await expect(promise).resolves.toEqual({ jobId: 'p1', status: 'QUEUED', total: 2 })
+    expect(xhr.body).toBe(fd)
+  })
+
+  it('rejects with stable ApiError code on non-2xx', async () => {
+    const promise = createProcessingJob(new FormData())
+    xhr.respond(503, JSON.stringify({ code: 'PROCESSING_QUEUE_FULL' }))
+    await expect(promise).rejects.toMatchObject({ code: 'PROCESSING_QUEUE_FULL', status: 503 })
+  })
+
+  it('aborts the XHR when signal fires and rejects with AbortError', async () => {
+    const controller = new AbortController()
+    const promise = createProcessingJob(new FormData(), { signal: controller.signal })
+    controller.abort()
+    expect(xhr.aborted).toBe(true)
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
   })
 })

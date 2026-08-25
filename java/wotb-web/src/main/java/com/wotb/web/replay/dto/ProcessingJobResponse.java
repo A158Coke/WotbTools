@@ -2,10 +2,15 @@ package com.wotb.web.replay.dto;
 
 import com.wotb.web.replay.job.ReplayProcessingJob;
 
+import java.util.List;
+
 /** Replay Processing Job 状态 DTO（纯英文 key，前端三语映射；不暴露内部 result/Path）。 */
 public record ProcessingJobResponse(String jobId, String status, String phase,
                                     int total, int processed, int valid, int duplicates, int failures,
-                                    String errorCode, String currentFile) {
+                                    String errorCode, String currentFile,
+                                    int parseCompleted, int parseSucceeded, int parseFailed,
+                                    List<ProcessingSourceDto> sources,
+                                    List<ActiveSourceDto> activeSources) {
 
     public static ProcessingJobResponse from(final ReplayProcessingJob.Snapshot snap) {
         return new ProcessingJobResponse(
@@ -18,6 +23,11 @@ public record ProcessingJobResponse(String jobId, String status, String phase,
                 snap.duplicates(),
                 snap.failures(),
                 snap.errorCode(),
-                snap.currentFile());
+                snap.currentFile(),
+                snap.parseCompleted(),
+                snap.parseSucceeded(),
+                snap.parseFailed(),
+                snap.sources().stream().map(ProcessingSourceDto::from).toList(),
+                snap.activeSources().stream().map(ActiveSourceDto::from).toList());
     }
 }

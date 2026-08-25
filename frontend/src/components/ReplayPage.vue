@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, inject } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { mapLabel, displayName } from '../utils/helpers.js'
+import { mapLabel, displayName, fileKey } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { replayAggregatePlayerCount } from '../utils/replayView.js'
 import { useReplay } from '../composables/useReplay.js'
@@ -23,6 +23,7 @@ import PlayerDetailDrawer from './PlayerDetailDrawer.vue'
 import { mergeCwPlayerRows, mergeCwPlayerColumns, CW_DIM_KEYS } from '../utils/playerSummaryMerge.js'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import ReplayTaskCard from './ReplayTaskCard.vue'
+import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
 import AiReviewPanel from './AiReviewPanel.vue'
 import BattlePlaybackPanel from './BattlePlaybackPanel.vue'
 
@@ -30,8 +31,10 @@ const { locale, t, te } = useI18n()
 const replay = useReplay()
 const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateFiles, selectionRevision,
   processingJob, processingError, processingActive,
+  uploadState, cancelProcessing,
+  requestDirectAction,
   exportJob, exportError, exportActive,
-  startProcessingJob, cancelProcessingJob, dismissProcessingJob,
+  startProcessingJob, dismissProcessingJob,
   startExportJob, cancelExportJob, downloadExportResult, dismissExportJob,
   askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove } = replay
 /**
@@ -421,16 +424,72 @@ function requireLoginForBattleAction() {
 const workspaceTab = ref('results')
 const workspaceFile = ref(null)
 const playbackSeek = ref(null)
+/** 当前 workspace 文件对应的 Dataset 引用（{processingJobId, sourceId}；换文件即失效）。 */
+const datasetRef = ref(null)
+/**
+ * Workspace Dataset 请求 generation（BLOCKER 1）：每次目标变化（workspaceFile 或新的
+ * ensureDatasetFor 调用）自增；requestDirectAction 是异步的，返回后必须校验 revision +
+ * target file identity 仍属于当前 generation，否则直接丢弃——绝不让 A 的迟到响应把
+ * datasetRef 绑到已切走的 B 上（data correctness，不是 UI cosmetic）。
+ */
+let workspaceDatasetRevision = 0
 
-function openWorkspacePlayback(file) {
-  workspaceFile.value = file
-  playbackSeek.value = null
-  workspaceTab.value = 'playback'
+/**
+ * 目标文件变化 → 旧 dataset 引用立即失效（清空，UI 不残留旧引用）。revision 的递增
+ * 只由 ensureDatasetFor 负责（每次请求前 ++）；这里不能 ++——Vue 的 pre-flush watcher
+ * 会在「请求发起后、await 续体前」运行，把当前请求自己误判成 stale（BLOCKER 1 竞态测试
+ * 暴露：workspaceFile 变化 → flush → revision 被顶掉 → 新 dataset 被丢弃）。清空旧值
+ * 只是即时 UI 失效；真正的 ownership 由 ensureDatasetFor 的 revision + fileKey 校验保证。
+ */
+watch(workspaceFile, () => {
+  datasetRef.value = null
+})
+
+/**
+ * 确保目标 source READY 后返回 Dataset 引用（自动创建/复用 Processing Job，plan §40）。
+ * 写入 datasetRef 前必须确认：请求发起时的 revision 仍是最新、当前 workspaceFile 的
+ * fileKey 仍等于目标文件。任何 stale 结果（成功或失败）一律 discard——不写 datasetRef、
+ * 不写 processingError、不修改当前 workspace 状态。
+ */
+async function ensureDatasetFor(file) {
+  if (!file) return null
+  const revision = ++workspaceDatasetRevision
+  const targetKey = fileKey(file)
+  try {
+    const ref = await requestDirectAction(file, workspaceTab.value)
+    const current = workspaceFile.value
+    if (revision !== workspaceDatasetRevision || !current || fileKey(current) !== targetKey) {
+      // stale response：不属于当前 workspace generation，直接丢弃。
+      return null
+    }
+    datasetRef.value = ref
+    return ref
+  } catch (e) {
+    const current = workspaceFile.value
+    if (revision === workspaceDatasetRevision && current && fileKey(current) === targetKey) {
+      // 仅当前 generation 的失败才允许写错误；stale 错误不得污染新 selection。
+      datasetRef.value = null
+      if (e && e.name !== 'AbortError' && e?.message !== 'SOURCE_POLL_CANCELLED') {
+        // 用户取消上传（UPLOADING/REGISTERING cancel）与 source poll 本地取消
+        // （selection / workspace target / teardown）：不显示错误。
+        processingError.value = e?.message || String(e)
+      }
+    }
+    return null
+  }
 }
 
-function openWorkspaceAi(file) {
+async function openWorkspacePlayback(file) {
+  workspaceTab.value = 'playback'
   workspaceFile.value = file
+  playbackSeek.value = null
+  await ensureDatasetFor(file)
+}
+
+async function openWorkspaceAi(file) {
   workspaceTab.value = 'ai'
+  workspaceFile.value = file
+  await ensureDatasetFor(file)
 }
 
 /**
@@ -442,30 +501,32 @@ function openWorkspaceAi(file) {
  *   登录门禁（未登录 confirm + login，不切换、不设置 target、不自动发 API 请求）；
  * - 未选择且 files 多个 → 保持 null（空态），禁止静默 fallback 到 files[0]（多文件必须显式选目标）。
  */
-function selectWorkspaceTab(tab) {
+async function selectWorkspaceTab(tab) {
   if (tab === 'ai' || tab === 'playback') {
     if (!workspaceFile.value && files.value.length === 1) {
       if (!requireLoginForBattleAction()) return
       workspaceFile.value = files.value[0]
+      await ensureDatasetFor(files.value[0])
     }
   }
   workspaceTab.value = tab
 }
 
 /** FileUploader 直接入口（单文件 / 显式选择）上抛：原地切到对应面板。 */
-function onWorkspaceAction({ file, mode }) {
+async function onWorkspaceAction({ file, mode }) {
+  if (!requireLoginForBattleAction()) return
   if (mode === 'playback') openWorkspacePlayback(file)
   else openWorkspaceAi(file)
 }
 
-function openBattlePlayback() {
+async function openBattlePlayback() {
   const f = currentBattleFile()
   if (!f) return
   if (!requireLoginForBattleAction()) return
   openWorkspacePlayback(f)
 }
 
-function openAiReview() {
+async function openAiReview() {
   const f = currentBattleFile()
   if (!f) return
   if (!requireLoginForBattleAction()) return
@@ -503,6 +564,16 @@ watch(files, (next) => {
       @workspace-action="onWorkspaceAction" />
 
     <p v-if="error" class="error">{{ error }}</p>
+
+    <!-- 主操作区 inline 进度面板（plan §32/§35）：不依赖 files/resp 渲染条件，
+         与 Export 任务卡各自独立，不再互斥隐藏（BLOCKER H）。 -->
+    <ReplayProcessingPanel
+      v-if="uploadState || processingJob"
+      :upload-state="uploadState"
+      :job="processingJob"
+      :error="processingError"
+      @cancel="cancelProcessing"
+      @dismiss="dismissProcessingJob" />
 
     <!-- Workspace：有文件（解析前也能直接进 AI/回放）或已有解析结果时可见；
          resp 依赖 files 才存在，故 files.length || resp 与真实状态机一致。 -->
@@ -640,17 +711,17 @@ watch(files, (next) => {
       </div>
 
       <div v-show="workspaceTab === 'ai'" data-test="workspace-ai-panel">
-        <AiReviewPanel :file="workspaceFile" login-view="replay" @seek="onAiSeek" />
+        <AiReviewPanel :file="workspaceFile" :processing-job-id="datasetRef?.processingJobId ?? null"
+          :source-id="datasetRef?.sourceId ?? null" login-view="replay" @seek="onAiSeek" />
       </div>
       <div v-show="workspaceTab === 'playback'" data-test="workspace-playback-panel">
         <!-- active=进入战局回放 capability 时面板才自动加载地图；AI 复盘期间保持挂载但不发请求 -->
-        <BattlePlaybackPanel :file="workspaceFile" :active="workspaceTab === 'playback'" :seek-to="playbackSeek" login-view="replay" />
+        <BattlePlaybackPanel :file="workspaceFile" :processing-job-id="datasetRef?.processingJobId ?? null"
+          :source-id="datasetRef?.sourceId ?? null" :active="workspaceTab === 'playback'"
+          :seek-to="playbackSeek" login-view="replay" />
       </div>
     </template>
 
-    <ReplayTaskCard v-if="processingJob && !exportJob" :job="processingJob" :error="processingError"
-      kind="processing"
-      @cancel="cancelProcessingJob" @dismiss="dismissProcessingJob" />
     <ReplayTaskCard v-if="exportJob" :job="exportJob" :error="exportError"
       kind="export"
       @cancel="cancelExportJob" @download="downloadExportResult" @dismiss="dismissExportJob" />

@@ -42,8 +42,9 @@ public class ReplayProcessingJobController {
 
     @PostMapping(value = ApiPaths.REPLAY_PROCESSING_JOBS, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<Map<String, Object>> create(
-            @RequestParam("files") final MultipartFile[] files) {
-        final String jobId = service.createJob(files);
+            @RequestParam("files") final MultipartFile[] files,
+            @RequestParam(name = "prioritySourceIndex", required = false) final Integer prioritySourceIndex) {
+        final String jobId = service.createJob(files, prioritySourceIndex);
         final ReplayProcessingJob.Snapshot snap = service.status(jobId);
         return ResponseEntity.accepted().body(Map.of(
                 "jobId", snap.jobId(),

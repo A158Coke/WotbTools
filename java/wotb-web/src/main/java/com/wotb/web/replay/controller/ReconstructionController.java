@@ -1,13 +1,9 @@
 package com.wotb.web.replay.controller;
 
-import com.wotb.core.model.Source;
 import com.wotb.core.processing.AiNotConfiguredException;
-import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.MixedAnalysisScopesException;
 import com.wotb.core.processing.MixedRandomBattleRecordersException;
 import com.wotb.core.processing.PerspectiveTeamNotResolvedException;
-import com.wotb.core.processing.ReplayBatchProcessingResult;
-import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiReviewEventLog;
@@ -19,33 +15,32 @@ import com.wotb.web.replay.ai.gateway.AiCancellationToken;
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.config.ApiPaths;
+import com.wotb.web.replay.ReplayLegacyEndpoints;
 import com.wotb.web.replay.MapOverviewQueryService;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.dto.MapOverview;
-import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import com.wotb.web.replay.exception.AiReviewBusyException;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
-import com.wotb.web.replay.metrics.ReplayUsageMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.RejectedExecutionException;
@@ -61,13 +56,16 @@ import java.util.concurrent.RejectedExecutionException;
 @CrossOrigin(origins = "*")
 public class ReconstructionController {
 
+    /** Dataset 路径 AI 复盘请求体（plan §36–§37；API 纯英文 key）。 */
+    public record AnalyzeDatasetRequest(String processingJobId, String sourceId,
+                                        String lang, String correlationId) {
+    }
+
     private static final Logger LOGGER = LoggerFactory.getLogger(ReconstructionController.class);
 
-    private final DefaultReplayProcessingFacade processingFacade;
     private final AiReplayReviewService reviewService;
     private final AiCancellationRegistry cancellationRegistry;
     private final AiReviewWorkerExecutor workerExecutor;
-    private final ReplayUsageMetrics usageMetrics;
     private final MapOverviewQueryService mapOverviewService;
 
     /**
@@ -79,18 +77,14 @@ public class ReconstructionController {
 
     @Autowired
     public ReconstructionController(
-            final DefaultReplayProcessingFacade processingFacade,
             final AiReplayReviewService reviewService,
             final AiCancellationRegistry cancellationRegistry,
             final AiReviewWorkerExecutor workerExecutor,
-            final MapOverviewQueryService mapOverviewService,
-            @Autowired(required = false) final ReplayUsageMetrics usageMetrics) {
-        this.processingFacade = processingFacade;
+            final MapOverviewQueryService mapOverviewService) {
         this.reviewService = reviewService;
         this.cancellationRegistry = cancellationRegistry;
         this.workerExecutor = workerExecutor;
         this.mapOverviewService = mapOverviewService;
-        this.usageMetrics = usageMetrics;
     }
 
     /**
@@ -113,45 +107,95 @@ public class ReconstructionController {
             @RequestParam("files") final MultipartFile[] files,
             @RequestParam(name = "lang", required = true) final String lang,
             @RequestParam(name = "correlationId", required = false) final String correlationId) {
-        final AllowedLanguage allowedLanguage = AllowedLanguage.fromCode(lang);
+        // V2：multipart 上传的 analyze 已废弃（AI 只走 Processing Dataset 引用，
+        // 见 analyzeDataset JSON 路径）。稳定 410，绝不在此 full process。
+        throw ReplayLegacyEndpoints.gone();
+    }
+
+    /**
+     * AI 复盘 Dataset 路径（plan §36–§38）：请求体为 {@code {processingJobId, sourceId,
+     * lang, correlationId}}，AI 只读 derived {@code ai-facts.json}，<b>不</b>重新上传 /
+     * 不重新 full process（BLOCKER A）。SSE 生命周期与 multipart 路径完全一致。
+     */
+    @PostMapping(value = ApiPaths.REPLAY_ANALYZE, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public SseEmitter analyzeDataset(@RequestBody final AnalyzeDatasetRequest request) {
+        // BLOCKER 4：显式 reference 校验（缺失 → 400 DATASET_REFERENCE_REQUIRED），
+        // 杜绝 null processingJobId / sourceId 进入 store 查找 NPE → 500。
+        requireDatasetReference(request);
+        final AllowedLanguage allowedLanguage = AllowedLanguage.fromCode(request.lang());
         if (allowedLanguage == null) {
             throw new IllegalArgumentException("UNKNOWN_LOCALE");
         }
-        // HTTP request-envelope validation（request 线程同步执行）：文件参数校验
-        // 在提交 worker 前完成，非法请求直接 HTTP 400（经 @ExceptionHandler），
-        // 不进入 SSE 流。worker 内 analyzeInternal 保留相同校验作为防御。
-        ReplayUploadValidator.validateAiReview(files);
-        if (correlationId != null && !correlationId.isBlank()
-                && !AiCancellationRegistry.isValidCorrelationId(correlationId)) {
+        final int sourceIndex = parseSourceIndex(request.sourceId());
+        if (correlationIdInvalid(request.correlationId())) {
             throw new IllegalArgumentException("INVALID_CORRELATION_ID");
         }
-        // Client-provided id (frontend cancel button / navigation) or a fresh
-        // one; both are safe random opaque ids, never logged with the request.
-        final String requestId = correlationId != null && !correlationId.isBlank()
-                ? correlationId : UUID.randomUUID().toString();
+        // AI 是 SSE 流式端点：job 不存在/过期（404 JOB_NOT_FOUND）与 source 未 READY
+        // （409 SOURCE_NOT_READY）由 worker 内 analyzeFacts 的稳定 ResponseStatusException
+        // 经 errorCodeOf 转为 SSE error 事件（与 map-overview 同步端点同一套稳定码，
+        // 传输形态因端点类型而异）；此处只做同步 reference 字段校验（400）。
+        final String requestId = request.correlationId() != null && !request.correlationId().isBlank()
+                ? request.correlationId() : UUID.randomUUID().toString();
         final AiCancellationToken cancellation = cancellationRegistry.register(requestId);
         if (cancellation == null) {
             throw new IllegalArgumentException("DUPLICATE_CORRELATION_ID");
         }
         final SseEmitter emitter = newAnalyzeEmitter();
         final ReplaySseWriter writer = new ReplaySseWriter(emitter);
-        // 生命周期回调：timeout / error / 客户端断开都翻转 cancellation token
-        // （经 registry 走 cancel 端点语义），与显式 cancel 端点幂等（token 是
-        // CAS 一次性翻转，重复 cancel 无副作用）。
         emitter.onTimeout(() -> cancellationRegistry.cancel(requestId));
         emitter.onError(error -> cancellationRegistry.cancel(requestId));
-        // docs/current-plan.md §53：SSE 生命周期。
-        LOGGER.info(AiReviewEventLog.line("ai_review_sse_opened", requestId));
+        LOGGER.info(AiReviewEventLog.line("ai_review_sse_opened", requestId, "source", "dataset"));
         try {
-            workerExecutor.execute(() -> runAnalysis(requestId, cancellation, emitter, writer, files, allowedLanguage));
+            workerExecutor.execute(() -> runAnalysis(requestId, cancellation, emitter, writer,
+                    allowedLanguage, listener -> reviewService.analyzeFacts(
+                            request.processingJobId(), sourceIndex, allowedLanguage, listener)));
         } catch (final RejectedExecutionException e) {
-            // Worker 池满（workers + queue 全占用）：清理已注册的 cancellation token
-            // （不留泄漏），不把永远无 worker 执行的 emitter 返回给客户端，直接抛
-            // AiReviewBusyException → @ExceptionHandler 映射 503 AI_REVIEW_BUSY。
             cancellationRegistry.unregister(requestId, cancellation);
             throw new AiReviewBusyException();
         }
         return emitter;
+    }
+
+    /** sourceId 形如 {@code r0} / {@code r12}（plan §9）；非法/缺失 → 400 SOURCE_NOT_FOUND。 */
+    private static int parseSourceIndex(final String sourceId) {
+        if (sourceId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SOURCE_NOT_FOUND");
+        }
+        final java.util.regex.Matcher m = java.util.regex.Pattern.compile("^r(\\d+)$").matcher(sourceId.trim());
+        if (!m.matches()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SOURCE_NOT_FOUND");
+        }
+        return Integer.parseInt(m.group(1));
+    }
+
+    /** 缺失/空 reference（含 null request body）→ 400 DATASET_REFERENCE_REQUIRED。 */
+    private static void requireDatasetReference(final Object request) {
+        final String processingJobId;
+        final String sourceId;
+        if (request instanceof AnalyzeDatasetRequest r) {
+            processingJobId = r.processingJobId();
+            sourceId = r.sourceId();
+        } else if (request instanceof MapOverviewDatasetRequest r) {
+            processingJobId = r.processingJobId();
+            sourceId = r.sourceId();
+        } else {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "DATASET_REFERENCE_REQUIRED");
+        }
+        if (processingJobId == null || processingJobId.isBlank()
+                || sourceId == null || sourceId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "DATASET_REFERENCE_REQUIRED");
+        }
+    }
+
+    private static boolean correlationIdInvalid(final String correlationId) {
+        return correlationId != null && !correlationId.isBlank()
+                && !AiCancellationRegistry.isValidCorrelationId(correlationId);
+    }
+
+    /** worker 内 AI 复盘执行器（multipart / dataset 共用同一生命周期）。 */
+    @FunctionalInterface
+    private interface AnalysisInvoker {
+        AnalyzeResponse invoke(AiReviewStreamListener listener) throws IOException;
     }
 
     /**
@@ -166,8 +210,8 @@ public class ReconstructionController {
                              final AiCancellationToken cancellation,
                              final SseEmitter emitter,
                              final ReplaySseWriter writer,
-                             final MultipartFile[] files,
-                             final AllowedLanguage language) {
+                             final AllowedLanguage language,
+                             final AnalysisInvoker invoker) {
         AiRequestContext.set(requestId, cancellation);
         final long workerStartNanos = System.nanoTime();
         try {
@@ -189,10 +233,8 @@ public class ReconstructionController {
             // docs/current-plan.md §40：AI Review 生命周期开始（只记录低基数 metadata，
             // 不记录文件名/上传内容；workerQueueWaitMs 见 worker executor 的 debug 日志）。
             LOGGER.info(AiReviewEventLog.line("ai_review_started", requestId,
-                    "language", language == null ? "N/A" : language.code(),
-                    "fileCount", files == null ? 0 : files.length));
-            final AnalyzeResponse response = reviewService.analyzeStreaming(
-                    files, language, new AiReviewStreamListener() {
+                    "language", language == null ? "N/A" : language.code()));
+            final AnalyzeResponse response = invoker.invoke(new AiReviewStreamListener() {
                         @Override
                         public void onStage(final String stage) {
                             try {
@@ -318,6 +360,11 @@ public class ReconstructionController {
         if (e instanceof MixedRandomBattleRecordersException) {
             return "MIXED_RANDOM_BATTLE_RECORDERS";
         }
+        if (e instanceof ResponseStatusException rse) {
+            // BLOCKER 4：Dataset reference 稳定码（JOB_NOT_FOUND / SOURCE_NOT_READY / ...）。
+            final String reason = rse.getReason();
+            return reason != null && !reason.isBlank() ? reason : "DATASET_REFERENCE_ERROR";
+        }
         if (e instanceof IllegalArgumentException) {
             final String message = e.getMessage();
             return message != null && !message.isBlank() ? message : "BAD_REQUEST";
@@ -362,26 +409,19 @@ public class ReconstructionController {
      * POST /api/replay/reconstruct-batch
      */
     @PostMapping(value = ApiPaths.REPLAY_RECONSTRUCT_BATCH, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ReplayBatchProcessingResult reconstructBatch(
+    public Object reconstructBatch(
             @RequestParam("files") final MultipartFile[] files) throws IOException {
-
-        ReplayUploadValidator.validate(files);
-        final List<Source> sources = toSources(files);
-        return timed(ReplayUsageMetrics.OP_RECONSTRUCT, files.length, () -> processingFacade.processBatch(sources, ReplayProcessingOptions.full()));
+        // V2：批量重建不再单独暴露 multipart 端点（重建由 Processing Job full
+        // process 统一产出，经 scheduler 调度）。稳定 410，绝不绕过 scheduler。
+        throw ReplayLegacyEndpoints.gone();
     }
 
     @PostMapping(value = ApiPaths.REPLAY_PROCESS, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ReplayBatchProcessingResult process(
+    public Object process(
             @RequestParam("files") final MultipartFile[] files,
             @RequestParam(name = "reconstruct", defaultValue = "false") final boolean doReconstruct) throws IOException {
-
-        ReplayUploadValidator.validate(files);
-
-        final ReplayProcessingOptions options = doReconstruct
-                ? ReplayProcessingOptions.full()
-                : ReplayProcessingOptions.summaryOnly();
-
-        return timed(ReplayUsageMetrics.OP_PROCESS, files.length, () -> processingFacade.processBatch(toSources(files), options));
+        // V2：同步批量处理已废弃（前端统一走 Processing Job + scheduler）。稳定 410。
+        throw ReplayLegacyEndpoints.gone();
     }
 
     /**
@@ -393,44 +433,27 @@ public class ReconstructionController {
     @PostMapping(value = ApiPaths.REPLAY_MAP_OVERVIEW, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<MapOverview> mapOverview(
             @RequestParam("files") final MultipartFile[] files) throws IOException {
-        final MapOverview overview = timed(ReplayUsageMetrics.OP_MAP_OVERVIEW, files.length,
-                () -> mapOverviewService.buildOverview(files));
+        // V2：multipart 地图鸟瞰已废弃（战局回放只读 Processing Job 的 cached
+        // map-overview.json，见 mapOverviewDataset JSON 路径）。稳定 410。
+        throw ReplayLegacyEndpoints.gone();
+    }
+
+    /** 战局回放 Dataset 路径（plan §39/§88）：读 cached map-overview.json，不重新 full process。 */
+    @PostMapping(value = ApiPaths.REPLAY_MAP_OVERVIEW, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<MapOverview> mapOverviewDataset(
+            @RequestBody final MapOverviewDatasetRequest request) {
+        // BLOCKER 4：显式 reference 校验（缺失 → 400），杜绝 null 进 store NPE → 500。
+        requireDatasetReference(request);
+        final MapOverview overview = mapOverviewService.buildOverviewFromDataset(
+                request.processingJobId(), parseSourceIndex(request.sourceId()));
         if (overview == null) {
             return ResponseEntity.noContent().build();
         }
         return ResponseEntity.ok(overview);
     }
 
-    /** 执行并统计回放解析使用指标（成功与异常都记录；无 ReplayUsageMetrics 时原样执行）。 */
-    private <T> T timed(final String operation, final int fileCount, final ThrowingSupplier<T> body) throws IOException {
-        if (usageMetrics == null) {
-            return invoke(body);
-        }
-        try {
-            return usageMetrics.timed(operation, fileCount, body::get);
-        } catch (final IOException e) {
-            throw e;
-        } catch (final RuntimeException e) {
-            // 保留 runtime 异常身份，使 @ExceptionHandler(IllegalArgumentException.class) 等映射仍生效
-            throw e;
-        } catch (final Exception e) {
-            throw new IOException(e);
-        }
-    }
-
-    private static <T> T invoke(final ThrowingSupplier<T> body) throws IOException {
-        try {
-            return body.get();
-        } catch (final IOException | RuntimeException e) {
-            throw e;
-        } catch (final Exception e) {
-            throw new IOException(e);
-        }
-    }
-
-    @FunctionalInterface
-    private interface ThrowingSupplier<T> {
-        T get() throws Exception;
+    /** 战局回放 Dataset 请求体（API 纯英文 key）。 */
+    public record MapOverviewDatasetRequest(String processingJobId, String sourceId) {
     }
 
     // ---- 异常映射（仅本控制器；返回稳定错误码文本，供前端本地化） ----
@@ -537,16 +560,4 @@ public class ReconstructionController {
 
     // ---- 辅助 ----
 
-    /**
-     * 将 MultipartFile 数组转换为 Source 列表。
-     */
-    private static List<Source> toSources(final MultipartFile[] files) throws IOException {
-        final List<Source> sources = new ArrayList<>();
-        for (final MultipartFile f : files) {
-            sources.add(new Source(
-                    f.getOriginalFilename() != null ? f.getOriginalFilename() : "replay.wotbreplay",
-                    f.getBytes()));
-        }
-        return sources;
-    }
 }

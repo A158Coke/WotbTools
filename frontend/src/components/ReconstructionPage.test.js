@@ -42,11 +42,27 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: i18n.t, locale: i18nLocale })
 }))
 
+/** Dataset 自动准备（plan §50）：mock api 使测试环境不依赖真实后端。 */
+const apiMock = vi.hoisted(() => ({
+  createProcessingJob: vi.fn(),
+  getProcessingJob: vi.fn(),
+  cancelProcessingJob: vi.fn()
+}))
+
+vi.mock('../utils/api.js', () => apiMock)
+
 describe('ReconstructionPage team analysis', () => {
   beforeEach(() => {
     auth.ensureToken.mockResolvedValue(true)
     auth.login.mockReset()
     i18n.t.mockClear()
+    apiMock.createProcessingJob.mockClear()
+    apiMock.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 1 })
+    apiMock.getProcessingJob.mockResolvedValue({
+      jobId: 'p1', status: 'PROCESSING', total: 1,
+      sources: [{ sourceId: 'r0', status: 'READY' }]
+    })
+    apiMock.cancelProcessingJob.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -77,6 +93,33 @@ describe('ReconstructionPage team analysis', () => {
     const wrapper = mountedPage()
     const input = wrapper.get('input[type="file"]')
     expect(input.element.hasAttribute('multiple')).toBe(false)
+  })
+
+  it('oversized replay rejected by shared preflight：不调用 createProcessingJob', async () => {
+    const wrapper = mountedPage()
+    const input = wrapper.get('input[type="file"]')
+    const files = [new File(
+      [new Uint8Array(20 * 1024 * 1024 + 1)],
+      'huge.wotbreplay',
+      { type: 'application/octet-stream' }
+    )]
+    Object.defineProperty(input.element, 'files', { value: files, configurable: true })
+    await input.trigger('change')
+
+    expect(wrapper.text()).toContain('upload.reject_too_large_file:huge.wotbreplay,20.0 MB')
+    expect(apiMock.createProcessingJob).not.toHaveBeenCalled()
+    expect(wrapper.findAll('.chip').length).toBe(0) // 不进入 active selection（chip 不渲染）
+  })
+
+  it('non-replay file rejected by shared preflight：不调用 createProcessingJob', async () => {
+    const wrapper = mountedPage()
+    const input = wrapper.get('input[type="file"]')
+    const files = [new File(['x'], 'notes.txt', { type: 'text/plain' })]
+    Object.defineProperty(input.element, 'files', { value: files, configurable: true })
+    await input.trigger('change')
+
+    expect(wrapper.text()).toContain('upload.reject_invalid_type:notes.txt')
+    expect(apiMock.createProcessingJob).not.toHaveBeenCalled()
   })
 
   it('shows only the AI review markdown, not internal diagnostics', async () => {
@@ -154,7 +197,7 @@ describe('ReconstructionPage team analysis', () => {
         await flushPromises()
 
         const requestBody = fetchMock.mock.calls.at(-1)[1].body
-        expect(requestBody.get('lang')).toBe(locale)
+        expect(JSON.parse(requestBody).lang).toBe(locale)
       }
     } finally {
       i18nLocale.value = 'zh'
@@ -191,6 +234,148 @@ describe('ReconstructionPage team analysis', () => {
     // mode 属内部字段，不再展示给普通用户
     expect(wrapper.text()).not.toContain('recon.modes.SINGLE_PLAYER_BATTLE')
     expect(wrapper.text()).not.toContain('recon.team_scope_note')
+  })
+})
+
+// ---- BLOCKER 2：selection lifecycle（generation）+ owned Processing Job cancellation ----
+
+describe('ReconstructionPage selection lifecycle（BLOCKER 2）', () => {
+  function deferred() {
+    let resolve
+    let reject
+    const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+    return { promise, resolve, reject }
+  }
+
+  beforeEach(() => {
+    auth.ensureToken.mockResolvedValue(true)
+    auth.login.mockReset()
+    i18n.t.mockClear()
+    apiMock.createProcessingJob.mockReset()
+    apiMock.getProcessingJob.mockReset()
+    apiMock.cancelProcessingJob.mockReset()
+    apiMock.cancelProcessingJob.mockResolvedValue(undefined)
+    apiMock.getProcessingJob.mockResolvedValue({
+      jobId: 'x', status: 'PROCESSING', total: 1,
+      sources: [{ sourceId: 'r0', status: 'READY' }]
+    })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    // 恢复本仓库测试共用的 apiMock 默认实现：本 describe 的 mockReset 不得影响后续 describe。
+    apiMock.createProcessingJob.mockReset()
+    apiMock.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 1 })
+    apiMock.getProcessingJob.mockReset()
+    apiMock.getProcessingJob.mockResolvedValue({
+      jobId: 'p1', status: 'PROCESSING', total: 1,
+      sources: [{ sourceId: 'r0', status: 'READY' }]
+    })
+    apiMock.cancelProcessingJob.mockReset()
+    apiMock.cancelProcessingJob.mockResolvedValue(undefined)
+  })
+
+  it('A→B create 乱序返回：B 胜出、stale A 被 cancel、poll 不覆盖 B', async () => {
+    const dA = deferred()
+    const dB = deferred()
+    apiMock.createProcessingJob
+      .mockImplementationOnce(() => dA.promise)
+      .mockImplementationOnce(() => dB.promise)
+    const wrapper = mountedPage()
+
+    await selectReplays(wrapper, ['a.wotbreplay']) // create A pending
+    await selectReplays(wrapper, ['b.wotbreplay']) // create B pending
+
+    dB.resolve({ jobId: 'pB', status: 'QUEUED', total: 1 }) // B 先返回
+    await flushPromises()
+    expect(wrapper.vm.processingJobId).toBe('pB')
+    expect(wrapper.vm.sourceId).toBe('r0')
+
+    dA.resolve({ jobId: 'pA', status: 'QUEUED', total: 1 }) // A 迟到
+    await flushPromises()
+    expect(wrapper.vm.processingJobId).toBe('pB', 'stale A 不得覆盖当前 owned job')
+    expect(apiMock.cancelProcessingJob).toHaveBeenCalledWith('pA')
+    expect(apiMock.getProcessingJob.mock.calls.some(([id]) => id === 'pA')).toBe(false,
+      'stale A 不得启动 poll')
+    wrapper.unmount()
+  })
+
+  it('clear during create：A 迟到响应被 cancel、不绑定、无 poll', async () => {
+    const dA = deferred()
+    apiMock.createProcessingJob.mockImplementationOnce(() => dA.promise)
+    const wrapper = mountedPage()
+
+    await selectReplays(wrapper, ['a.wotbreplay'])
+    await wrapper.findAll('button').find(b => b.text() === 'upload.clear').trigger('click')
+
+    dA.resolve({ jobId: 'pA', status: 'QUEUED', total: 1 })
+    await flushPromises()
+    expect(apiMock.cancelProcessingJob).toHaveBeenCalledWith('pA')
+    expect(wrapper.vm.processingJobId).toBeNull()
+    expect(wrapper.vm.sourceId).toBeNull()
+    expect(apiMock.getProcessingJob.mock.calls.some(([id]) => id === 'pA')).toBe(false,
+      '页面不得保留 stale Dataset / poll')
+    wrapper.unmount()
+  })
+
+  it('remove active file：cancel owned job + timer/refs 清理', async () => {
+    apiMock.createProcessingJob.mockResolvedValue({ jobId: 'pA', status: 'QUEUED', total: 1 })
+    const wrapper = mountedPage()
+
+    await selectReplays(wrapper, ['a.wotbreplay'])
+    await flushPromises()
+    expect(wrapper.vm.processingJobId).toBe('pA')
+    expect(wrapper.vm.sourceId).toBe('r0')
+
+    await wrapper.findAll('.chipx')[0].trigger('click') // remove 唯一 replay
+    expect(apiMock.cancelProcessingJob).toHaveBeenCalledWith('pA')
+    expect(wrapper.vm.processingJobId).toBeNull()
+    expect(wrapper.vm.sourceId).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('rapid A/B/C：只保留 C，A/B 全部 cancel、无 orphan poll', async () => {
+    const dA = deferred()
+    const dB = deferred()
+    const dC = deferred()
+    apiMock.createProcessingJob
+      .mockImplementationOnce(() => dA.promise)
+      .mockImplementationOnce(() => dB.promise)
+      .mockImplementationOnce(() => dC.promise)
+    const wrapper = mountedPage()
+
+    await selectReplays(wrapper, ['a.wotbreplay'])
+    await selectReplays(wrapper, ['b.wotbreplay'])
+    await selectReplays(wrapper, ['c.wotbreplay'])
+
+    dC.resolve({ jobId: 'pC', status: 'QUEUED', total: 1 })
+    await flushPromises()
+    expect(wrapper.vm.processingJobId).toBe('pC')
+
+    dA.resolve({ jobId: 'pA', status: 'QUEUED', total: 1 })
+    dB.resolve({ jobId: 'pB', status: 'QUEUED', total: 1 })
+    await flushPromises()
+    expect(wrapper.vm.processingJobId).toBe('pC')
+    expect(apiMock.cancelProcessingJob).toHaveBeenCalledWith('pA')
+    expect(apiMock.cancelProcessingJob).toHaveBeenCalledWith('pB')
+    expect(apiMock.getProcessingJob.mock.calls.filter(([id]) => id === 'pA' || id === 'pB').length).toBe(0,
+      'A/B 不得遗留 frontend poll')
+    wrapper.unmount()
+  })
+
+  it('teardown during create：迟到响应被 cancel、不绑定到已卸载页面', async () => {
+    const dA = deferred()
+    apiMock.createProcessingJob.mockImplementationOnce(() => dA.promise)
+    const wrapper = mountedPage()
+
+    await selectReplays(wrapper, ['a.wotbreplay']) // create A pending
+    wrapper.unmount() // teardown：在途 create 必须作废
+
+    dA.resolve({ jobId: 'pA', status: 'QUEUED', total: 1 })
+    await flushPromises()
+    expect(apiMock.cancelProcessingJob).toHaveBeenCalledWith('pA')
+    expect(apiMock.getProcessingJob.mock.calls.some(([id]) => id === 'pA')).toBe(false,
+      '已卸载页面不得绑定 job / 启动 poll')
   })
 })
 
@@ -789,7 +974,9 @@ describe('ReconstructionPage standalone map section', () => {
     // 请求打到独立端点（不经过 /api/replay/analyze）
     const call = fetch.mock.calls.find(([url]) => String(url) === '/api/replay/map-overview')
     expect(call).toBeDefined()
-    expect(call[1].body.has('files')).toBe(true)
+    const datasetBody = JSON.parse(call[1].body)
+    expect(datasetBody.processingJobId).toBe('p1')
+    expect(datasetBody.sourceId).toBe('r0')
     // 地图视图挂载，overview 传入；按钮消失
     expect(wrapper.findComponent({ name: 'MapOverview' }).exists()).toBe(true)
     expect(wrapper.find('[data-test="map-load-btn"]').exists()).toBe(false)
@@ -1148,7 +1335,7 @@ describe('ReconstructionPage AI request lifecycle (timeout + cancel)', () => {
     const analyzeCall = fetchMock.mock.calls.find(
       ([url]) => String(url) === '/api/replay/analyze'
     )
-    const correlationId = analyzeCall[1].body.get('correlationId')
+    const correlationId = JSON.parse(analyzeCall[1].body).correlationId
     expect(correlationId).toBeTruthy()
 
     await cancelBtn.trigger('click')

@@ -4,12 +4,16 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import org.apache.catalina.connector.ClientAbortException;
+import org.apache.tomcat.util.http.InvalidParameterException;
+import org.apache.tomcat.util.http.fileupload.impl.FileSizeLimitExceededException;
+import org.apache.tomcat.util.http.fileupload.impl.SizeLimitExceededException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotWritableException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 
 import java.io.IOException;
@@ -167,5 +171,59 @@ class GlobalExceptionHandlerTest {
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertEquals("IO_ERROR", response.getBody().get("error"));
         assertEquals(0, errorEvents().size(), "IO_ERROR is a handled warning, not Unhandled exception");
+    }
+
+    // ---- BLOCKER 5：MaxUploadSizeExceededException transport contract（HTTP 恒 413）----
+
+    @Test
+    void singlePartTooLargeMapsToFileTooLargeWith413() {
+        final MaxUploadSizeExceededException ex = new MaxUploadSizeExceededException(-1,
+                new FileSizeLimitExceededException("The field files exceeds its maximum permitted size",
+                        27_000_000L, 20L * 1024 * 1024));
+        final ResponseEntity<Map<String, Object>> response = handler.handleMaxUploadSize(ex);
+
+        assertEquals(HttpStatus.CONTENT_TOO_LARGE, response.getStatusCode());
+        assertEquals("FILE_TOO_LARGE", response.getBody().get("error"));
+    }
+
+    @Test
+    void requestTooLargeMapsToTotalRequestTooLargeWith413() {
+        final MaxUploadSizeExceededException ex = new MaxUploadSizeExceededException(-1,
+                new SizeLimitExceededException("The request was rejected because its size exceeds the configured maximum",
+                        210L * 1024 * 1024, 200L * 1024 * 1024));
+        final ResponseEntity<Map<String, Object>> response = handler.handleMaxUploadSize(ex);
+
+        assertEquals(HttpStatus.CONTENT_TOO_LARGE, response.getStatusCode());
+        assertEquals("TOTAL_REQUEST_TOO_LARGE", response.getBody().get("error"));
+    }
+
+    @Test
+    void realTomcatCauseChainMapsToFileTooLarge() {
+        // Tomcat 11: getParts → InvalidParameterException(SizeException, 413) → Spring 包装成
+        // MaxUploadSizeExceededException。结构化 cause chain 必须能穿透识别。
+        final MaxUploadSizeExceededException ex = new MaxUploadSizeExceededException(-1,
+                new InvalidParameterException(new FileSizeLimitExceededException(
+                        "The field files exceeds its maximum permitted size of 20971520 bytes.",
+                        27_000_000L, 20L * 1024 * 1024), 413));
+        final ResponseEntity<Map<String, Object>> response = handler.handleMaxUploadSize(ex);
+
+        assertEquals(HttpStatus.CONTENT_TOO_LARGE, response.getStatusCode());
+        assertEquals("FILE_TOO_LARGE", response.getBody().get("error"));
+    }
+
+    @Test
+    void maxUploadWithoutStructuredCauseFallsBackToGenericUploadTooLarge() {
+        // 无结构化 cause：不得 parse exception message 猜测 → 通用 UPLOAD_TOO_LARGE。
+        final MaxUploadSizeExceededException plain = new MaxUploadSizeExceededException(-1);
+        final ResponseEntity<Map<String, Object>> plainResponse = handler.handleMaxUploadSize(plain);
+        assertEquals(HttpStatus.CONTENT_TOO_LARGE, plainResponse.getStatusCode());
+        assertEquals("UPLOAD_TOO_LARGE", plainResponse.getBody().get("error"));
+
+        // message 含 "size exceeded" 但 cause 不是结构化 size 异常 → 仍不得按 message 猜测。
+        final MaxUploadSizeExceededException msgCause = new MaxUploadSizeExceededException(-1,
+                new IOException("Maximum upload size of 20971520 bytes exceeded"));
+        final ResponseEntity<Map<String, Object>> msgResponse = handler.handleMaxUploadSize(msgCause);
+        assertEquals(HttpStatus.CONTENT_TOO_LARGE, msgResponse.getStatusCode());
+        assertEquals("UPLOAD_TOO_LARGE", msgResponse.getBody().get("error"));
     }
 }

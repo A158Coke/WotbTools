@@ -35,6 +35,12 @@ function lastWorkspaceAction(wrapper) {
   return events ? events[events.length - 1][0] : null
 }
 
+function pickFiles(wrapper, files, testId = 'select-files-input') {
+  const input = wrapper.get(`[data-testid="${testId}"]`)
+  Object.defineProperty(input.element, 'files', { value: files, configurable: true })
+  return input.trigger('change')
+}
+
 describe('FileUploader 文件列表与回放工作台', () => {
   it('34 个文件默认折叠：只显示 summary，不铺开 filename', () => {
     const { wrapper } = mountUploader(makeFiles(34))
@@ -138,5 +144,198 @@ describe('FileUploader 文件列表与回放工作台', () => {
     expect(wrapper.find('[data-testid="direct-ai-btn"]').attributes('disabled')).toBeDefined()
     await wrapper.find('[data-testid="direct-ai-btn"]').trigger('click')
     expect(wrapper.emitted('workspace-action')).toBeUndefined()
+  })
+
+  // ---- BLOCKER 4：共享 upload preflight（选择文件/文件夹/add/drop 同一 contract）----
+
+  it('file chip 显示 filename · size（1.8 MB）', async () => {
+    const files = [
+      { name: 'a.wotbreplay', size: Math.floor(1.8 * 1024 * 1024), lastModified: 1 },
+      { name: 'b.wotbreplay', size: 5 * 1024 * 1024, lastModified: 2 }
+    ]
+    const { wrapper } = mountUploader(files)
+    await wrapper.findAll('button').find(b => b.text().includes('upload.view_list')).trigger('click')
+    const chips = wrapper.findAll('.chip')
+    expect(chips[0].text()).toContain('a.wotbreplay')
+    expect(chips[0].text()).toContain('1.8 MB')
+    expect(chips[1].text()).toContain('5.0 MB')
+  })
+
+  it('101 个文件 rejected：不更新 selection，显示数量上限', async () => {
+    const { wrapper } = mountUploader([])
+    const files = Array.from({ length: 101 }, (_, i) => ({
+      name: `r${i}.wotbreplay`, size: 1024, lastModified: i
+    }))
+    await pickFiles(wrapper, files)
+    expect(wrapper.emitted('update:files')).toBeUndefined()
+    const err = wrapper.get('[data-testid="upload-validation-error"]')
+    expect(err.text()).toContain('upload.reject_count:100,101')
+  })
+
+  it('exactly 20 MiB accepted → 更新 selection', async () => {
+    const { wrapper } = mountUploader([])
+    const files = [{ name: 'ok.wotbreplay', size: 20 * 1024 * 1024, lastModified: 1 }]
+    await pickFiles(wrapper, files)
+    const emitted = wrapper.emitted('update:files')
+    expect(emitted).toBeTruthy()
+    expect(emitted[0][0]).toEqual(files)
+  })
+
+  it('>20 MiB rejected：显示具体 filename + actual size，不更新 selection', async () => {
+    const { wrapper } = mountUploader([])
+    await pickFiles(wrapper, [
+      { name: 'huge.wotbreplay', size: Math.floor(27.4 * 1024 * 1024), lastModified: 1 }
+    ])
+    expect(wrapper.emitted('update:files')).toBeUndefined()
+    const err = wrapper.get('[data-testid="upload-validation-error"]')
+    expect(err.text()).toContain('upload.reject_too_large_file:huge.wotbreplay,27.4 MB')
+    expect(err.text()).toContain('upload.reject_size_hint')
+  })
+
+  it('54 files / 85 MiB + one 27.4 MiB → 拒绝（selection 不更新 → createProcessingJob 不会发生）', async () => {
+    const files = [
+      ...Array.from({ length: 54 }, (_, i) => ({
+        name: `batch-${i}.wotbreplay`, size: Math.floor(85 * 1024 * 1024 / 54), lastModified: i
+      })),
+      { name: 'oversized.wotbreplay', size: Math.floor(27.4 * 1024 * 1024), lastModified: 999 }
+    ]
+    const { wrapper } = mountUploader([])
+    await pickFiles(wrapper, files)
+    expect(wrapper.emitted('update:files')).toBeUndefined()
+    expect(wrapper.get('[data-testid="upload-validation-error"]').text())
+      .toContain('upload.reject_too_large_file:oversized.wotbreplay,27.4 MB')
+  })
+
+  it('multiple oversized files 全部显示', async () => {
+    const { wrapper } = mountUploader([])
+    await pickFiles(wrapper, [
+      { name: 'a.wotbreplay', size: 21 * 1024 * 1024, lastModified: 1 },
+      { name: 'b.wotbreplay', size: 30 * 1024 * 1024, lastModified: 2 },
+      { name: 'ok.wotbreplay', size: 1024, lastModified: 3 }
+    ])
+    const err = wrapper.get('[data-testid="upload-validation-error"]')
+    expect(err.findAll('li').length).toBe(2)
+    expect(err.text()).toContain('a.wotbreplay')
+    expect(err.text()).toContain('b.wotbreplay')
+  })
+
+  it('existing valid selection + invalid add → 保留原 selection', async () => {
+    const existing = [
+      { name: 'keep-0.wotbreplay', size: 1024, lastModified: 1 },
+      { name: 'keep-1.wotbreplay', size: 2048, lastModified: 2 }
+    ]
+    const { wrapper } = mountUploader(existing)
+    await pickFiles(wrapper, [
+      { name: 'huge.wotbreplay', size: 21 * 1024 * 1024, lastModified: 3 }
+    ], 'add-files-input')
+    expect(wrapper.emitted('update:files')).toBeUndefined()
+    expect(wrapper.get('[data-testid="upload-validation-error"]').exists()).toBe(true)
+
+    await wrapper.findAll('button').find(b => b.text().includes('upload.view_list')).trigger('click')
+    const chips = wrapper.findAll('.chip')
+    expect(chips.length).toBe(2)
+    expect(chips.map(c => c.find('.chip-name').text())).toEqual(['keep-0.wotbreplay', 'keep-1.wotbreplay'])
+  })
+
+  it('drag/drop 走同一 validator', async () => {
+    const { wrapper } = mountUploader([])
+    await wrapper.get('section.uploadwrap').trigger('drop', {
+      dataTransfer: {
+        files: [{ name: 'huge.wotbreplay', size: 25 * 1024 * 1024, lastModified: 1 }]
+      }
+    })
+    expect(wrapper.emitted('update:files')).toBeUndefined()
+    expect(wrapper.get('[data-testid="upload-validation-error"]').text())
+      .toContain('upload.reject_too_large_file:huge.wotbreplay,25.0 MB')
+  })
+
+  it('folder 只含非 .wotbreplay → 明确提示未找到回放', async () => {
+    const { wrapper } = mountUploader([])
+    await pickFiles(wrapper, [
+      { name: 'notes.txt', size: 1024, lastModified: 1 }
+    ], 'select-folder-input')
+    expect(wrapper.emitted('update:files')).toBeUndefined()
+    expect(wrapper.get('[data-testid="upload-validation-error"]').text())
+      .toContain('upload.reject_no_replay')
+  })
+
+  it('folder: replay + .DS_Store → replay accepted，非回放忽略', async () => {
+    const { wrapper } = mountUploader([])
+    await pickFiles(wrapper, [
+      { name: 'replay-a.wotbreplay', size: 1024, lastModified: 1 },
+      { name: '.DS_Store', size: 6148, lastModified: 2 }
+    ], 'select-folder-input')
+    const emitted = wrapper.emitted('update:files')
+    expect(emitted).toBeTruthy()
+    expect(emitted[0][0].map(f => f.name)).toEqual(['replay-a.wotbreplay'])
+    expect(wrapper.find('[data-testid="upload-validation-error"]').exists()).toBe(false)
+  })
+
+  it('folder: replay + png + txt → replay accepted，非回放不计 count/total', async () => {
+    const { wrapper } = mountUploader([])
+    await pickFiles(wrapper, [
+      { name: 'shot.png', size: 30 * 1024 * 1024, lastModified: 1 },
+      { name: 'readme.txt', size: 40 * 1024 * 1024, lastModified: 2 },
+      { name: 'replay-a.wotbreplay', size: 1024, lastModified: 3 }
+    ], 'select-folder-input')
+    const emitted = wrapper.emitted('update:files')
+    expect(emitted).toBeTruthy()
+    expect(emitted[0][0].map(f => f.name)).toEqual(['replay-a.wotbreplay'])
+    // 非回放 70MiB 不计入总量 → 单文件 1KiB 完全合法（无 total 超限提示）
+    expect(wrapper.find('[data-testid="upload-validation-error"]').exists()).toBe(false)
+  })
+
+  it('drag/drop 混合文件 → replay accepted，其他文件忽略', async () => {
+    const { wrapper } = mountUploader([])
+    await wrapper.get('section.uploadwrap').trigger('drop', {
+      dataTransfer: {
+        files: [
+          { name: 'notes.txt', size: 1024, lastModified: 1 },
+          { name: 'replay-b.wotbreplay', size: 2048, lastModified: 2 }
+        ]
+      }
+    })
+    const emitted = wrapper.emitted('update:files')
+    expect(emitted).toBeTruthy()
+    expect(emitted[0][0].map(f => f.name)).toEqual(['replay-b.wotbreplay'])
+  })
+
+  it('101 replay + 50 non-replay → 拒绝且 count 显示当前 101', async () => {
+    const { wrapper } = mountUploader([])
+    const files = [
+      ...Array.from({ length: 101 }, (_, i) => ({
+        name: `r${i}.wotbreplay`, size: 1024, lastModified: i
+      })),
+      ...Array.from({ length: 50 }, (_, i) => ({
+        name: `aux-${i}.txt`, size: 1024, lastModified: 1000 + i
+      }))
+    ]
+    await pickFiles(wrapper, files)
+    expect(wrapper.emitted('update:files')).toBeUndefined()
+    expect(wrapper.get('[data-testid="upload-validation-error"]').text())
+      .toContain('upload.reject_count:100,101')
+  })
+
+  it('total 超限显示实际大小（214.7 MB / 200.0 MB）', async () => {
+    const { wrapper } = mountUploader([])
+    const perFile = Math.floor(214.7 * 1024 * 1024 / 2)
+    await pickFiles(wrapper, [
+      { name: 'a.wotbreplay', size: perFile, lastModified: 1 },
+      { name: 'b.wotbreplay', size: perFile, lastModified: 2 }
+    ])
+    expect(wrapper.emitted('update:files')).toBeUndefined()
+    const err = wrapper.get('[data-testid="upload-validation-error"]')
+    expect(err.text()).toContain('upload.reject_total:214.7 MB,200.0 MB')
+  })
+
+  it('非 .wotbreplay 与合法文件混合（选择文件入口）→ 过滤后 accepted', async () => {
+    const { wrapper } = mountUploader([])
+    await pickFiles(wrapper, [
+      { name: 'a.txt', size: 10, lastModified: 1 },
+      { name: 'b.wotbreplay', size: 1024, lastModified: 2 }
+    ])
+    const emitted = wrapper.emitted('update:files')
+    expect(emitted).toBeTruthy()
+    expect(emitted[0][0].map(f => f.name)).toEqual(['b.wotbreplay'])
   })
 })
