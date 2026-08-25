@@ -21,7 +21,14 @@ const hofAdminApi = vi.hoisted(() => ({
   hofAdminHundredReject: vi.fn(() => Promise.resolve({ status: 'REJECTED' })),
   hofAdminHundredDelete: vi.fn(() => Promise.resolve(undefined)),
   hofAdminHundredReplays: vi.fn(() => Promise.resolve([])),
-  hofAdminHundredReplayDownload: vi.fn(() => Promise.resolve(undefined))
+  hofAdminHundredReplayDownload: vi.fn(() => Promise.resolve(undefined)),
+  hofAdminMark3List: vi.fn(() => Promise.resolve({ items: [], page: 1, size: 50, totalItems: 0, totalPages: 0 })),
+  hofAdminMark3Detail: vi.fn(() => Promise.resolve({})),
+  hofAdminMark3Approve: vi.fn(() => Promise.resolve({ status: 'CURRENT' })),
+  hofAdminMark3Reject: vi.fn(() => Promise.resolve({ status: 'REJECTED' })),
+  hofAdminMark3Delete: vi.fn(() => Promise.resolve(undefined)),
+  hofAdminMark3Replays: vi.fn(() => Promise.resolve([])),
+  hofAdminMark3ReplayDownload: vi.fn(() => Promise.resolve(undefined))
 }))
 
 let roles = ['HoF-admin']
@@ -61,6 +68,8 @@ const DELETE_OPTIONS = {
 const optionMessages = (key) => {
   if (key === 'hundredAdmin.rejectReasonOptions') return REJECT_OPTIONS
   if (key === 'hundredAdmin.deleteReasonOptions') return DELETE_OPTIONS
+  if (key === 'mark3Admin.rejectReasonOptions') return REJECT_OPTIONS
+  if (key === 'mark3Admin.deleteReasonOptions') return DELETE_OPTIONS
   return {}
 }
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: k => k, te: () => true, tm: optionMessages, locale: ref('zh') }) }))
@@ -152,6 +161,22 @@ const wargamingPendingDetail = {
   replayDistinctBattles: false,
 }
 
+const mark3PendingItem = {
+  id: 31, status: 'PENDING', vehicleId: 385, vehicleName: 'Progetto 65',
+  gameAccountIdSnapshot: 'game-333', nicknameSnapshot: 'ThreeMarkPlayer',
+  claimedBattleCount: 76, claimedAverageDamage: 4210, claimedWinRate: 67.25,
+  approvedBattleCount: null, approvedAverageDamage: null, approvedWinRate: null,
+  replayParseOk: true, replayGameIdMatch: true, replayVehicleMatch: true, replayDistinctBattles: true,
+  submittedAt: '2026-08-24T00:00:00Z', approvedAt: null, rejectReason: null, deleteReason: null,
+}
+
+const mark3PendingDetail = {
+  ...mark3PendingItem,
+  proofScreenshots: ['data:image/png;base64,start', 'data:image/png;base64,finish'],
+  rejectedAt: null, rejectedBy: null, rejectReasonText: null,
+  cancelledAt: null, deletedAt: null, deletedBy: null, deleteReasonText: null,
+}
+
 describe('HoFAdminPage', () => {
   beforeEach(() => {
     roles = ['HoF-admin']
@@ -159,6 +184,7 @@ describe('HoFAdminPage', () => {
     vi.clearAllMocks()
     hofAdminApi.hofAdminVehicleOptions.mockResolvedValue([])
     hofAdminApi.hofAdminHundredReplays.mockResolvedValue([])
+    hofAdminApi.hofAdminMark3Replays.mockResolvedValue([])
   })
 
   function mountPage() {
@@ -170,6 +196,11 @@ describe('HoFAdminPage', () => {
     await flushPromises()
   }
 
+  async function switchToMark3(wrapper) {
+    await wrapper.findAll('.hof-admin-tabs button')[3].trigger('click')
+    await flushPromises()
+  }
+
   it('HoF-admin sees admin content and loads records', async () => {
     const wrapper = mountPage()
     await flushPromises()
@@ -178,13 +209,13 @@ describe('HoFAdminPage', () => {
     expect(hofAdminApi.hofAdminVehicleOptions).toHaveBeenCalled()
   })
 
-  it('renders the three admin tabs (records / audit / hundred) for authorized users', async () => {
+  it('renders the four admin tabs (records / audit / hundred / mark3) for authorized users', async () => {
     const wrapper = mountPage()
     await flushPromises()
     const tabs = wrapper.findAll('.hof-admin-tabs button')
-    // 防未来 refactor 丢失审核入口：三 Tab 必须存在且顺序固定
+    // 防未来 refactor 丢失审核入口：四个 Tab 必须存在且顺序固定
     expect(tabs.map(button => button.text())).toEqual([
-      'hofAdmin.recordsTab', 'hofAdmin.auditTab', 'hundredAdmin.tab'
+      'hofAdmin.recordsTab', 'hofAdmin.auditTab', 'hundredAdmin.tab', 'mark3Admin.tab'
     ])
     expect(tabs[0].classes()).toContain('active') // 默认停在 records
   })
@@ -689,5 +720,71 @@ describe('HoFAdminPage', () => {
     const wrapper = mountPage()
     await openReviewWithEvidence(wrapper, replayEvidence)
     expect(approveBtn(wrapper).attributes('disabled')).toBeUndefined()
+  })
+
+  it('loads the Mark 3 review tab with the same filters and no SUPERSEDED status', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    await switchToMark3(wrapper)
+
+    expect(hofAdminApi.hofAdminMark3List).toHaveBeenLastCalledWith({
+      page: 1, size: 50, status: '', nation: '', vehicleType: '', vehicleId: null,
+    })
+    const selects = wrapper.findAll('.hof-mark3 select')
+    const statusValues = selects[3].findAll('option').map(option => option.element.value)
+    expect(statusValues).toEqual(['', 'PENDING', 'CURRENT', 'REJECTED', 'CANCELLED', 'DELETED'])
+
+    await selects[0].setValue('EUROPE')
+    await flushPromises()
+    expect(hofAdminApi.hofAdminMark3List).toHaveBeenLastCalledWith({
+      page: 1, size: 50, status: '', nation: 'EUROPE', vehicleType: '', vehicleId: null,
+    })
+  })
+
+  it('reviews two Mark 3 screenshots and five replays, then approves without a score payload', async () => {
+    hofAdminApi.hofAdminMark3List.mockResolvedValue({
+      items: [mark3PendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1,
+    })
+    hofAdminApi.hofAdminMark3Detail.mockResolvedValue(mark3PendingDetail)
+    hofAdminApi.hofAdminMark3Replays.mockResolvedValue(replayEvidence)
+    const wrapper = mountPage()
+    await flushPromises()
+    await switchToMark3(wrapper)
+    await wrapper.find('.hof-mark3 .actions .btn-sm').trigger('click')
+    await flushPromises()
+
+    const modal = wrapper.find('.hof-review-modal')
+    expect(modal.findAll('.mark3-admin-screenshots .hundred-proof')).toHaveLength(2)
+    expect(modal.findAll('.replay-evidence-item')).toHaveLength(5)
+    expect(modal.find('input[type="number"]').exists()).toBe(false)
+
+    const approve = modal.findAll('button').find(button => button.text() === 'mark3Admin.approve')
+    expect(approve.attributes('disabled')).toBeUndefined()
+    await approve.trigger('click')
+    await flushPromises()
+    expect(modal.text()).toContain('mark3Admin.approveConfirm')
+
+    const confirm = modal.findAll('button').find(button => button.text() === 'mark3Admin.approve')
+    await confirm.trigger('click')
+    await flushPromises()
+    expect(hofAdminApi.hofAdminMark3Approve).toHaveBeenCalledWith(31)
+    expect(hofAdminApi.hofAdminMark3Approve.mock.calls[0]).toHaveLength(1)
+  })
+
+  it('limits the Mark 3 reject detail field to the backend maximum', async () => {
+    hofAdminApi.hofAdminMark3List.mockResolvedValue({
+      items: [mark3PendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1,
+    })
+    hofAdminApi.hofAdminMark3Detail.mockResolvedValue(mark3PendingDetail)
+    hofAdminApi.hofAdminMark3Replays.mockResolvedValue(replayEvidence)
+    const wrapper = mountPage()
+    await flushPromises()
+    await switchToMark3(wrapper)
+    await wrapper.find('.hof-mark3 .actions .btn-sm').trigger('click')
+    await flushPromises()
+
+    const modal = wrapper.find('.hof-review-modal')
+    await modal.findAll('button').find(button => button.text() === 'mark3Admin.reject').trigger('click')
+    expect(modal.find('textarea').attributes('maxlength')).toBe('500')
   })
 })

@@ -81,6 +81,25 @@ const filteredHundredAdminVehicles = computed(() => hundredVehicleOptions.filter
   (!hundredNation.value || vehicle.nation === hundredNation.value)
     && (!hundredVehicleType.value || vehicle.vehicleType === hundredVehicleType.value)))
 
+// ── 三环审核 tab（仅人工证据；状态不含 SUPERSEDED）──
+const mark3Rows = ref([])
+const mark3Loading = ref(false)
+const mark3Page = ref(1)
+const mark3TotalPages = ref(0)
+const mark3TotalItems = ref(0)
+const mark3Status = ref('')
+const mark3Nation = ref('')
+const mark3VehicleType = ref('')
+const mark3VehicleId = ref(null)
+let mark3Gen = 0
+
+const mark3VehicleOptions = HUNDRED_VEHICLES
+const mark3Nations = uniqueValues(mark3VehicleOptions.map(vehicle => vehicle.nation))
+const mark3VehicleTypes = uniqueValues(mark3VehicleOptions.map(vehicle => vehicle.vehicleType))
+const filteredMark3AdminVehicles = computed(() => mark3VehicleOptions.filter(vehicle =>
+  (!mark3Nation.value || vehicle.nation === mark3Nation.value)
+    && (!mark3VehicleType.value || vehicle.vehicleType === mark3VehicleType.value)))
+
 // ── 百场详情弹窗（所有状态共用；只有详情内才可执行状态操作）──
 const reviewTarget = ref(null)
 const reviewDetail = ref(null)
@@ -142,6 +161,34 @@ const evidenceComplete = computed(() => {
 const approveDisabledHint = computed(() => isWargamingReview.value
   ? t('hundredAdmin.wgSnapshotIncomplete')
   : t('hundredAdmin.approveDisabledHint'))
+
+// ── 三环详情弹窗（仅通过、拒绝、删除；没有改分字段）──
+const mark3ReviewTarget = ref(null)
+const mark3ReviewDetail = ref(null)
+const mark3ReviewLoading = ref(false)
+const mark3ReviewPhase = ref('view') // view | approve-confirm | reject-form | delete-form
+const mark3RejectReason = ref('')
+const mark3RejectReasonText = ref('')
+const mark3DeleteReason = ref('')
+const mark3DeleteReasonText = ref('')
+const mark3ActionMsg = ref('')
+const mark3ActionBusy = ref(false)
+const mark3ReplayEvidence = ref([])
+const mark3EvidenceLoading = ref(false)
+const mark3EvidenceError = ref('')
+const mark3ScreenshotZoom = ref('')
+let mark3ReviewGen = 0
+let mark3EvidenceGen = 0
+
+const mark3EvidenceComplete = computed(() => {
+  if (mark3ReviewDetail.value?.status !== 'PENDING') return false
+  const screenshots = mark3ReviewDetail.value?.proofScreenshots
+  return Array.isArray(screenshots)
+    && screenshots.length >= 1
+    && screenshots.length <= 2
+    && mark3ReplayEvidence.value.length === 5
+    && !mark3EvidenceError.value
+})
 
 // ── 删除确认 ──
 const deleteTarget = ref(null)
@@ -247,6 +294,9 @@ function onSizeChange() {
   if (activeTab.value === 'hundred') {
     hundredPage.value = 1
     loadHundred()
+  } else if (activeTab.value === 'mark3') {
+    mark3Page.value = 1
+    loadMark3()
   } else {
     page.value = 1
     loadRecords()
@@ -278,6 +328,7 @@ function switchTab(tab) {
   activeTab.value = tab
   if (tab === 'audit' && !auditRows.value.length) loadAudit()
   if (tab === 'hundred' && !hundredRows.value.length) loadHundred()
+  if (tab === 'mark3' && !mark3Rows.value.length) loadMark3()
 }
 
 async function download(id) {
@@ -363,6 +414,63 @@ function onHundredVehicleChange() {
 function goHundredPage(p) {
   hundredPage.value = p
   loadHundred()
+}
+
+// ── 三环审核 ──────────────────────────────────────────────────
+
+async function loadMark3() {
+  const generation = ++mark3Gen
+  mark3Loading.value = true
+  error.value = ''
+  try {
+    const params = {
+      page: mark3Page.value,
+      size: size.value,
+      status: mark3Status.value,
+      nation: mark3Nation.value,
+      vehicleType: mark3VehicleType.value,
+      vehicleId: mark3VehicleId.value,
+    }
+    const res = await api.hofAdminMark3List(params)
+    if (generation !== mark3Gen) return
+    mark3Rows.value = res.items || []
+    mark3TotalPages.value = res.totalPages || 0
+    mark3TotalItems.value = res.totalItems || 0
+  } catch (e) {
+    if (generation === mark3Gen) error.value = apiErrorLabel(t, te, e)
+  } finally {
+    if (generation === mark3Gen) mark3Loading.value = false
+  }
+}
+
+function onMark3StatusChange() {
+  mark3Page.value = 1
+  loadMark3()
+}
+
+function onMark3VehicleFilterChange() {
+  if (mark3VehicleId.value
+      && !filteredMark3AdminVehicles.value.some(vehicle => vehicle.id === Number(mark3VehicleId.value))) {
+    mark3VehicleId.value = null
+  }
+  mark3Page.value = 1
+  loadMark3()
+}
+
+function onMark3VehicleChange() {
+  mark3Page.value = 1
+  loadMark3()
+}
+
+function goMark3Page(nextPage) {
+  mark3Page.value = nextPage
+  loadMark3()
+}
+
+function mark3StatusLabel(status) {
+  if (!status) return '-'
+  const key = 'mark3Admin.status.' + status
+  return te(key) ? t(key) : String(status)
 }
 
 function hundredStatusLabel(s) {
@@ -584,6 +692,186 @@ async function confirmCurrentDelete() {
   loadHundred()
 }
 
+async function openMark3Review(row) {
+  const generation = ++mark3ReviewGen
+  ++mark3EvidenceGen
+  mark3ReviewTarget.value = row
+  mark3ReviewDetail.value = null
+  mark3ReviewLoading.value = true
+  mark3ReviewPhase.value = 'view'
+  mark3ActionMsg.value = ''
+  mark3ActionBusy.value = false
+  mark3RejectReason.value = ''
+  mark3RejectReasonText.value = ''
+  mark3DeleteReason.value = ''
+  mark3DeleteReasonText.value = ''
+  mark3ReplayEvidence.value = []
+  mark3EvidenceLoading.value = false
+  mark3EvidenceError.value = ''
+  mark3ScreenshotZoom.value = ''
+  try {
+    const detail = await api.hofAdminMark3Detail(row.id)
+    if (generation !== mark3ReviewGen) return
+    mark3ReviewDetail.value = detail
+    if (detail.status === 'PENDING') loadMark3Evidence(row.id)
+  } catch (e) {
+    if (generation === mark3ReviewGen) mark3ActionMsg.value = apiErrorLabel(t, te, e)
+  } finally {
+    if (generation === mark3ReviewGen) mark3ReviewLoading.value = false
+  }
+}
+
+async function loadMark3Evidence(submissionId) {
+  const generation = ++mark3EvidenceGen
+  mark3EvidenceLoading.value = true
+  mark3EvidenceError.value = ''
+  try {
+    const evidence = (await api.hofAdminMark3Replays(submissionId)) || []
+    if (generation !== mark3EvidenceGen) return
+    mark3ReplayEvidence.value = evidence
+  } catch (e) {
+    if (generation !== mark3EvidenceGen) return
+    mark3EvidenceError.value = apiErrorLabel(t, te, e)
+    mark3ReplayEvidence.value = []
+  } finally {
+    if (generation === mark3EvidenceGen) mark3EvidenceLoading.value = false
+  }
+}
+
+function closeMark3Review() {
+  if (mark3ActionBusy.value) return
+  ++mark3ReviewGen
+  ++mark3EvidenceGen
+  mark3ReviewTarget.value = null
+  mark3ReviewDetail.value = null
+  mark3ReplayEvidence.value = []
+  mark3EvidenceError.value = ''
+  mark3ActionMsg.value = ''
+  mark3ScreenshotZoom.value = ''
+}
+
+function downloadMark3Screenshot(src, index) {
+  if (!src) return
+  const anchor = document.createElement('a')
+  anchor.href = src
+  anchor.download = `mark3-${index + 1}-${screenshotFileName(src)}`
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+}
+
+async function downloadMark3Replay(evidence) {
+  if (!mark3ReviewTarget.value) return
+  try {
+    await api.hofAdminMark3ReplayDownload(mark3ReviewTarget.value.id, evidence.id)
+  } catch (e) {
+    mark3EvidenceError.value = apiErrorLabel(t, te, e)
+  }
+}
+
+function askMark3Approve() {
+  mark3ActionMsg.value = ''
+  mark3ReviewPhase.value = 'approve-confirm'
+}
+
+function askMark3Reject() {
+  mark3ActionMsg.value = ''
+  mark3ReviewPhase.value = 'reject-form'
+}
+
+function askMark3Delete() {
+  mark3DeleteReason.value = ''
+  mark3DeleteReasonText.value = ''
+  mark3ActionMsg.value = ''
+  mark3ReviewPhase.value = 'delete-form'
+}
+
+async function confirmMark3Approve() {
+  if (mark3ActionBusy.value || !mark3ReviewTarget.value) return
+  mark3ActionBusy.value = true
+  mark3ActionMsg.value = ''
+  try {
+    await api.hofAdminMark3Approve(mark3ReviewTarget.value.id)
+  } catch (e) {
+    mark3ActionMsg.value = apiErrorLabel(t, te, e)
+    return
+  } finally {
+    mark3ActionBusy.value = false
+  }
+  closeMark3Review()
+  loadMark3()
+}
+
+async function confirmMark3Reject() {
+  if (mark3ActionBusy.value || !mark3ReviewTarget.value) return
+  if (!mark3RejectReason.value) {
+    mark3ActionMsg.value = t('mark3Admin.rejectReasonRequired')
+    return
+  }
+  const text = mark3RejectReasonText.value.trim()
+  if (mark3RejectReason.value === 'OTHER' && !text) {
+    mark3ActionMsg.value = t('mark3Admin.rejectReasonText')
+    return
+  }
+  mark3ActionBusy.value = true
+  mark3ActionMsg.value = ''
+  try {
+    await api.hofAdminMark3Reject(mark3ReviewTarget.value.id, {
+      rejectReason: mark3RejectReason.value,
+      ...(text ? { rejectReasonText: text } : {}),
+    })
+  } catch (e) {
+    mark3ActionMsg.value = apiErrorLabel(t, te, e)
+    return
+  } finally {
+    mark3ActionBusy.value = false
+  }
+  closeMark3Review()
+  loadMark3()
+}
+
+async function confirmMark3Delete() {
+  if (mark3ActionBusy.value || !mark3ReviewTarget.value) return
+  if (!mark3DeleteReason.value) {
+    mark3ActionMsg.value = t('mark3Admin.deleteReasonRequired')
+    return
+  }
+  const text = mark3DeleteReasonText.value.trim()
+  if (mark3DeleteReason.value === 'OTHER' && !text) {
+    mark3ActionMsg.value = t('mark3Admin.deleteReasonText')
+    return
+  }
+  mark3ActionBusy.value = true
+  mark3ActionMsg.value = ''
+  try {
+    await api.hofAdminMark3Delete(mark3ReviewTarget.value.id, {
+      deleteReason: mark3DeleteReason.value,
+      ...(text ? { deleteReasonText: text } : {}),
+    })
+  } catch (e) {
+    mark3ActionMsg.value = apiErrorLabel(t, te, e)
+    return
+  } finally {
+    mark3ActionBusy.value = false
+  }
+  closeMark3Review()
+  loadMark3()
+}
+
+function mark3ReasonLabel(kind, reason) {
+  if (!reason) return '-'
+  const options = tm(`mark3Admin.${kind}ReasonOptions`)
+  return options && typeof options === 'object' && options[reason] ? options[reason] : reason
+}
+
+function formatMark3WinRate(value) {
+  if (value == null || value === '') return '-'
+  const number = Number(value)
+  return Number.isFinite(number)
+    ? `${number.toLocaleString(undefined, { maximumFractionDigits: 2 })}%`
+    : '-'
+}
+
 function reasonLabel(kind, reason) {
   if (!reason) return '-'
   const options = tm(`hundredAdmin.${kind}ReasonOptions`)
@@ -615,6 +903,7 @@ function battleTypeLabel(tp) {
         <button :class="{ active: activeTab === 'records' }" @click="switchTab('records')">{{ $t('hofAdmin.recordsTab') }}</button>
         <button :class="{ active: activeTab === 'audit' }" @click="switchTab('audit')">{{ $t('hofAdmin.auditTab') }}</button>
         <button :class="{ active: activeTab === 'hundred' }" @click="switchTab('hundred')">{{ $t('hundredAdmin.tab') }}</button>
+        <button :class="{ active: activeTab === 'mark3' }" @click="switchTab('mark3')">{{ $t('mark3Admin.tab') }}</button>
       </div>
 
       <!-- ── 名人堂记录 ── -->
@@ -763,7 +1052,7 @@ function battleTypeLabel(tp) {
       </div>
 
       <!-- ── 百场审核 ── -->
-      <div v-else class="hof-hundred">
+      <div v-else-if="activeTab === 'hundred'" class="hof-hundred">
         <div class="hof-admin-filters">
           <select v-model="hundredNation" @change="onHundredVehicleFilterChange">
             <option value="">{{ $t('hundred.allNations') }}</option>
@@ -831,6 +1120,80 @@ function battleTypeLabel(tp) {
           <button :disabled="hundredPage >= hundredTotalPages" @click="goHundredPage(hundredPage + 1)">{{ $t('hundredAdmin.next') }}</button>
         </div>
         <label class="page-size">{{ $t('hundredAdmin.size') }}
+          <select v-model.number="size" @change="onSizeChange">
+            <option :value="20">20</option>
+            <option :value="50">50</option>
+            <option :value="100">100</option>
+          </select>
+        </label>
+      </div>
+
+      <!-- ── 三环审核 ── -->
+      <div v-else class="hof-mark3">
+        <div class="hof-admin-filters">
+          <select v-model="mark3Nation" @change="onMark3VehicleFilterChange">
+            <option value="">{{ $t('mark3.allNations') }}</option>
+            <option v-for="nation in mark3Nations" :key="nation" :value="nation">{{ vehicleEnumLabel(nation) }}</option>
+          </select>
+          <select v-model="mark3VehicleType" @change="onMark3VehicleFilterChange">
+            <option value="">{{ $t('mark3.allVehicleTypes') }}</option>
+            <option v-for="vehicleType in mark3VehicleTypes" :key="vehicleType" :value="vehicleType">{{ vehicleEnumLabel(vehicleType) }}</option>
+          </select>
+          <select v-model="mark3VehicleId" @change="onMark3VehicleChange">
+            <option :value="null">{{ $t('mark3.allVehicles') }}</option>
+            <option v-for="vehicle in filteredMark3AdminVehicles" :key="vehicle.id" :value="vehicle.id">{{ vehicle.name }}</option>
+          </select>
+          <select v-model="mark3Status" @change="onMark3StatusChange">
+            <option value="">{{ $t('mark3Admin.statusAll') }}</option>
+            <option value="PENDING">{{ $t('mark3Admin.status.PENDING') }}</option>
+            <option value="CURRENT">{{ $t('mark3Admin.status.CURRENT') }}</option>
+            <option value="REJECTED">{{ $t('mark3Admin.status.REJECTED') }}</option>
+            <option value="CANCELLED">{{ $t('mark3Admin.status.CANCELLED') }}</option>
+            <option value="DELETED">{{ $t('mark3Admin.status.DELETED') }}</option>
+          </select>
+        </div>
+
+        <p v-if="error" class="error">{{ error }}</p>
+        <p v-if="mark3Loading" class="muted">{{ $t('mark3Admin.loading') }}</p>
+        <p v-else-if="!mark3Rows.length" class="muted">{{ $t('mark3Admin.empty') }}</p>
+        <div v-else class="tablewrap">
+          <table class="hof-admin-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>{{ $t('mark3Admin.vehicle') }}</th>
+                <th>{{ $t('mark3Admin.nicknameSnapshot') }}</th>
+                <th>{{ $t('mark3Admin.gameId') }}</th>
+                <th>{{ $t('mark3Admin.claimedBattles') }}</th>
+                <th>{{ $t('mark3Admin.claimedDamage') }}</th>
+                <th>{{ $t('mark3Admin.claimedWinRate') }}</th>
+                <th>{{ $t('mark3Admin.statusLabel') }}</th>
+                <th>{{ $t('mark3Admin.submittedAt') }}</th>
+                <th>{{ $t('hofAdmin.actions') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in mark3Rows" :key="row.id">
+                <td class="muted">{{ row.id }}</td>
+                <td>{{ row.vehicleName }}</td>
+                <td>{{ row.nicknameSnapshot }}</td>
+                <td class="muted">{{ row.gameAccountIdSnapshot }}</td>
+                <td class="dmg">{{ formatNumber(row.claimedBattleCount) }}</td>
+                <td>{{ formatNumber(row.claimedAverageDamage) }}</td>
+                <td>{{ formatMark3WinRate(row.claimedWinRate) }}</td>
+                <td><span class="hundred-status" :class="'hundred-status-' + String(row.status).toLowerCase()">{{ mark3StatusLabel(row.status) }}</span></td>
+                <td class="muted">{{ fmtTime(row.submittedAt) || '-' }}</td>
+                <td class="actions"><button class="btn-sm" @click="openMark3Review(row)">{{ $t('mark3Admin.details') }}</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-if="mark3TotalPages > 1" class="pagination">
+          <button :disabled="mark3Page <= 1" @click="goMark3Page(mark3Page - 1)">{{ $t('mark3Admin.prev') }}</button>
+          <span>{{ $t('mark3Admin.pageInfo', { page: mark3Page, total: mark3TotalPages, items: mark3TotalItems }) }}</span>
+          <button :disabled="mark3Page >= mark3TotalPages" @click="goMark3Page(mark3Page + 1)">{{ $t('mark3Admin.next') }}</button>
+        </div>
+        <label class="page-size">{{ $t('mark3Admin.size') }}
           <select v-model.number="size" @change="onSizeChange">
             <option :value="20">20</option>
             <option :value="50">50</option>
@@ -1003,11 +1366,148 @@ function battleTypeLabel(tp) {
         </div>
       </div>
 
+      <!-- ── 三环详情：只审核状态，绝不提供成绩编辑控件 ── -->
+      <div v-if="mark3ReviewTarget" class="modal-overlay" @click.self="closeMark3Review">
+        <div class="modal hof-review-modal">
+          <h3>{{ $t('mark3Admin.details') }}</h3>
+          <p v-if="mark3ReviewLoading" class="muted">{{ $t('mark3Admin.loading') }}</p>
+          <template v-else-if="mark3ReviewDetail">
+            <table class="hof-delete-table">
+              <tbody>
+                <tr><th>{{ $t('mark3Admin.user') }}</th><td>{{ mark3ReviewDetail.nicknameSnapshot }}</td></tr>
+                <tr><th>{{ $t('mark3Admin.gameId') }}</th><td class="muted">{{ mark3ReviewDetail.gameAccountIdSnapshot }}</td></tr>
+                <tr><th>{{ $t('mark3Admin.vehicle') }}</th><td>{{ mark3ReviewDetail.vehicleName }}</td></tr>
+                <tr><th>{{ $t('mark3Admin.claimedBattles') }}</th><td class="dmg">{{ formatNumber(mark3ReviewDetail.claimedBattleCount) }}</td></tr>
+                <tr><th>{{ $t('mark3Admin.claimedDamage') }}</th><td>{{ formatNumber(mark3ReviewDetail.claimedAverageDamage) }}</td></tr>
+                <tr><th>{{ $t('mark3Admin.claimedWinRate') }}</th><td>{{ formatMark3WinRate(mark3ReviewDetail.claimedWinRate) }}</td></tr>
+                <tr><th>{{ $t('mark3Admin.statusLabel') }}</th><td>{{ mark3StatusLabel(mark3ReviewDetail.status) }}</td></tr>
+                <tr><th>{{ $t('mark3Admin.submittedAt') }}</th><td>{{ fmtTime(mark3ReviewDetail.submittedAt) || '-' }}</td></tr>
+                <template v-if="mark3ReviewDetail.approvedBattleCount != null">
+                  <tr><th>{{ $t('mark3Admin.approvedBattles') }}</th><td class="dmg">{{ formatNumber(mark3ReviewDetail.approvedBattleCount) }}</td></tr>
+                  <tr><th>{{ $t('mark3Admin.approvedDamage') }}</th><td>{{ formatNumber(mark3ReviewDetail.approvedAverageDamage) }}</td></tr>
+                  <tr><th>{{ $t('mark3Admin.approvedWinRate') }}</th><td>{{ formatMark3WinRate(mark3ReviewDetail.approvedWinRate) }}</td></tr>
+                  <tr><th>{{ $t('mark3Admin.approvedAt') }}</th><td>{{ fmtTime(mark3ReviewDetail.approvedAt) || '-' }}</td></tr>
+                </template>
+                <template v-if="mark3ReviewDetail.status === 'REJECTED'">
+                  <tr><th>{{ $t('mark3Admin.rejectReason') }}</th><td>{{ mark3ReasonLabel('reject', mark3ReviewDetail.rejectReason) }}</td></tr>
+                  <tr v-if="mark3ReviewDetail.rejectReasonText"><th>{{ $t('mark3Admin.rejectReasonTextValue') }}</th><td>{{ mark3ReviewDetail.rejectReasonText }}</td></tr>
+                  <tr><th>{{ $t('mark3Admin.rejectedAt') }}</th><td>{{ fmtTime(mark3ReviewDetail.rejectedAt) || '-' }}</td></tr>
+                </template>
+                <template v-if="mark3ReviewDetail.status === 'CANCELLED'">
+                  <tr><th>{{ $t('mark3Admin.cancelledAt') }}</th><td>{{ fmtTime(mark3ReviewDetail.cancelledAt) || '-' }}</td></tr>
+                </template>
+                <template v-if="mark3ReviewDetail.status === 'DELETED'">
+                  <tr><th>{{ $t('mark3Admin.deleteReason') }}</th><td>{{ mark3ReasonLabel('delete', mark3ReviewDetail.deleteReason) }}</td></tr>
+                  <tr v-if="mark3ReviewDetail.deleteReasonText"><th>{{ $t('mark3Admin.deleteReasonTextValue') }}</th><td>{{ mark3ReviewDetail.deleteReasonText }}</td></tr>
+                  <tr><th>{{ $t('mark3Admin.deletedAt') }}</th><td>{{ fmtTime(mark3ReviewDetail.deletedAt) || '-' }}</td></tr>
+                </template>
+              </tbody>
+            </table>
+
+            <div v-if="mark3ReviewDetail.status === 'PENDING'" class="hundred-review-section">
+              <div class="hundred-review-label">{{ $t('mark3Admin.evidence') }}</div>
+              <div v-if="mark3ReviewDetail.proofScreenshots?.length" class="mark3-admin-screenshots">
+                <div v-for="(screenshot, index) in mark3ReviewDetail.proofScreenshots" :key="screenshot" class="hundred-proof-row">
+                  <img class="hundred-proof" :src="screenshot" :alt="$t('mark3Admin.screenshot', { number: index + 1 })" @click="mark3ScreenshotZoom = screenshot" />
+                  <button class="btn-sm" @click="downloadMark3Screenshot(screenshot, index)">{{ $t('mark3Admin.downloadScreenshot') }}</button>
+                </div>
+              </div>
+              <span v-else class="hundred-proof-empty">—</span>
+              <p v-if="mark3EvidenceLoading" class="muted">{{ $t('mark3Admin.loading') }}</p>
+              <p v-else-if="mark3EvidenceError" class="error">{{ mark3EvidenceError }}</p>
+              <template v-else>
+                <p v-if="!mark3ReplayEvidence.length" class="hundred-legacy-warn">{{ $t('mark3Admin.legacyNoReplays') }}</p>
+                <template v-else>
+                  <p v-if="mark3ReplayEvidence.length !== 5" class="hundred-legacy-warn">{{ $t('mark3Admin.evidenceIncomplete') }}</p>
+                  <ul class="replay-evidence-list">
+                    <li v-for="evidence in mark3ReplayEvidence" :key="evidence.id" class="replay-evidence-item">
+                      <span class="replay-slot">#{{ evidence.slot }}</span>
+                      <span class="replay-name" :title="evidence.originalFilename">{{ evidence.originalFilename }}</span>
+                      <span class="replay-size">{{ fmtSize(evidence.fileSize) }}</span>
+                      <button class="btn-sm" :title="$t('mark3Admin.replayDownload')" @click="downloadMark3Replay(evidence)">⬇</button>
+                    </li>
+                  </ul>
+                </template>
+              </template>
+            </div>
+
+            <div class="hundred-review-section">
+              <div class="hundred-review-label">{{ $t('mark3Admin.replayValidation') }}</div>
+              <ul class="val-list">
+                <li :class="mark3ReviewDetail.replayParseOk ? 'val-ok' : 'val-bad'"><span class="val-mark">{{ mark3ReviewDetail.replayParseOk ? '✓' : '✗' }}</span>{{ $t('mark3Admin.valParsed') }}</li>
+                <li :class="mark3ReviewDetail.replayGameIdMatch ? 'val-ok' : 'val-bad'"><span class="val-mark">{{ mark3ReviewDetail.replayGameIdMatch ? '✓' : '✗' }}</span>{{ $t('mark3Admin.valGameId') }}</li>
+                <li :class="mark3ReviewDetail.replayVehicleMatch ? 'val-ok' : 'val-bad'"><span class="val-mark">{{ mark3ReviewDetail.replayVehicleMatch ? '✓' : '✗' }}</span>{{ $t('mark3Admin.valVehicle') }}</li>
+                <li :class="mark3ReviewDetail.replayDistinctBattles ? 'val-ok' : 'val-bad'"><span class="val-mark">{{ mark3ReviewDetail.replayDistinctBattles ? '✓' : '✗' }}</span>{{ $t('mark3Admin.valDistinct') }}</li>
+              </ul>
+            </div>
+
+            <p v-if="mark3ActionMsg" class="error">{{ mark3ActionMsg }}</p>
+
+            <div v-if="mark3ReviewDetail.status === 'PENDING' && mark3ReviewPhase === 'view'" class="modal-actions">
+              <button class="btn-sm" :disabled="mark3ActionBusy" @click="closeMark3Review">{{ $t('mark3Admin.close') }}</button>
+              <button class="btn-sm danger" :disabled="mark3ActionBusy" @click="askMark3Reject">{{ $t('mark3Admin.reject') }}</button>
+              <button class="btn-sm ok" :disabled="mark3ActionBusy || !mark3EvidenceComplete" :title="mark3EvidenceComplete ? '' : $t('mark3Admin.approveDisabledHint')" @click="askMark3Approve">{{ $t('mark3Admin.approve') }}</button>
+            </div>
+
+            <div v-else-if="mark3ReviewDetail.status === 'PENDING' && mark3ReviewPhase === 'approve-confirm'" class="hundred-action-area">
+              <p class="hundred-confirm">{{ $t('mark3Admin.approveConfirm') }}</p>
+              <div class="modal-actions">
+                <button class="btn-sm" :disabled="mark3ActionBusy" @click="mark3ReviewPhase = 'view'">{{ $t('mark3Admin.cancel') }}</button>
+                <button class="btn-sm ok" :disabled="mark3ActionBusy" @click="confirmMark3Approve">{{ mark3ActionBusy ? $t('mark3Admin.approving') : $t('mark3Admin.approve') }}</button>
+              </div>
+            </div>
+
+            <div v-else-if="mark3ReviewDetail.status === 'PENDING' && mark3ReviewPhase === 'reject-form'" class="hundred-action-area">
+              <label class="hundred-reason-label">{{ $t('mark3Admin.rejectReason') }}</label>
+              <select v-model="mark3RejectReason">
+                <option value="">{{ $t('mark3Admin.rejectReasonRequired') }}</option>
+                <option v-for="(label, key) in $tm('mark3Admin.rejectReasonOptions')" :key="key" :value="key">{{ label }}</option>
+              </select>
+              <textarea v-model="mark3RejectReasonText" rows="2" maxlength="500" :placeholder="$t('mark3Admin.rejectReasonPlaceholder')"></textarea>
+              <p class="hundred-confirm">{{ $t('mark3Admin.rejectConfirm') }}</p>
+              <div class="modal-actions">
+                <button class="btn-sm" :disabled="mark3ActionBusy" @click="mark3ReviewPhase = 'view'">{{ $t('mark3Admin.cancel') }}</button>
+                <button class="btn-sm danger" :disabled="mark3ActionBusy" @click="confirmMark3Reject">{{ mark3ActionBusy ? $t('mark3Admin.rejecting') : $t('mark3Admin.reject') }}</button>
+              </div>
+            </div>
+
+            <div v-else-if="mark3ReviewDetail.status === 'CURRENT' && mark3ReviewPhase === 'view'" class="modal-actions">
+              <button class="btn-sm" :disabled="mark3ActionBusy" @click="closeMark3Review">{{ $t('mark3Admin.close') }}</button>
+              <button class="btn-sm danger" :disabled="mark3ActionBusy" @click="askMark3Delete">{{ $t('mark3Admin.delete') }}</button>
+            </div>
+
+            <div v-else-if="mark3ReviewDetail.status === 'CURRENT' && mark3ReviewPhase === 'delete-form'" class="hundred-action-area">
+              <label class="hundred-reason-label">{{ $t('mark3Admin.deleteReason') }}</label>
+              <select v-model="mark3DeleteReason">
+                <option value="">{{ $t('mark3Admin.deleteReasonRequired') }}</option>
+                <option v-for="(label, key) in $tm('mark3Admin.deleteReasonOptions')" :key="key" :value="key">{{ label }}</option>
+              </select>
+              <textarea v-model="mark3DeleteReasonText" rows="2" maxlength="500" :placeholder="$t('mark3Admin.deleteReasonPlaceholder')"></textarea>
+              <p class="hundred-confirm">{{ $t('mark3Admin.deleteConfirm') }}</p>
+              <div class="modal-actions">
+                <button class="btn-sm" :disabled="mark3ActionBusy" @click="mark3ReviewPhase = 'view'">{{ $t('mark3Admin.cancel') }}</button>
+                <button class="btn-sm danger" :disabled="mark3ActionBusy" @click="confirmMark3Delete">{{ mark3ActionBusy ? $t('mark3Admin.deleting') : $t('mark3Admin.delete') }}</button>
+              </div>
+            </div>
+
+            <div v-else class="modal-actions">
+              <button class="btn-sm" :disabled="mark3ActionBusy" @click="closeMark3Review">{{ $t('mark3Admin.close') }}</button>
+            </div>
+          </template>
+        </div>
+      </div>
+
       <!-- ── 截图放大（lightbox）── -->
       <div v-if="screenshotZoom && reviewDetail?.proofScreenshot" class="modal-overlay screenshot-zoom" @click.self="screenshotZoom = false">
         <div class="screenshot-zoom-inner">
           <img :src="reviewDetail.proofScreenshot" :alt="$t('hundredAdmin.screenshot')" />
           <button class="btn-sm" @click="screenshotZoom = false">{{ $t('hundredAdmin.zoomClose') }}</button>
+        </div>
+      </div>
+      <div v-if="mark3ScreenshotZoom" class="modal-overlay screenshot-zoom" @click.self="mark3ScreenshotZoom = ''">
+        <div class="screenshot-zoom-inner">
+          <img :src="mark3ScreenshotZoom" :alt="$t('mark3Admin.screenshot', { number: '' })" />
+          <button class="btn-sm" @click="mark3ScreenshotZoom = ''">{{ $t('mark3Admin.zoomClose') }}</button>
         </div>
       </div>
 
@@ -1097,6 +1597,7 @@ function battleTypeLabel(tp) {
 .hundred-proof { display: block; max-width: 100%; max-height: 320px; border: 1px solid var(--border-ghost); border-radius: 8px; cursor: zoom-in; }
 .hundred-proof-empty { color: var(--text-muted); }
 .hundred-proof-row { display: flex; align-items: flex-start; gap: 10px; }
+.mark3-admin-screenshots { display: grid; gap: 10px; }
 .hundred-proof-row .btn-sm { margin-top: 4px; white-space: nowrap; }
 .replay-evidence-list { list-style: none; padding: 0; margin: 6px 0; }
 .replay-evidence-item { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: .85rem; color: var(--text-label); }
