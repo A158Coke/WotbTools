@@ -795,6 +795,23 @@
             "cancelled": "已取消"
         },
         "processing_job": {
+            "uploading": "正在上传…",
+            "uploading_progress": "已上传 {loaded} / {total}",
+            "registering": "上传完成，服务器正在准备任务…",
+            "queued": "等待解析资源…",
+            "queued_total": "已创建解析任务，共 {total} 场",
+            "title": "正在解析回放",
+            "progress": "已解析 {processed} / {total}",
+            "active_sources": "正在并行解析 {count} 个回放",
+            "current_file": "当前文件：{file}",
+            "counts": "成功 {v} · 失败 {f}",
+            "finalizing": "正在整理解析结果…",
+            "finalizing_detail": "去重 / 联赛校验 / Rating / 汇总",
+            "ready": "解析完成",
+            "valid_summary": "有效 {v} 场 · 重复 {d} · 失败 {f}",
+            "failed": "解析失败",
+            "cancelled": "已取消",
+            "no_valid_replays": "没有可用的有效回放。",
             "mixed_league_standard": "检测到混合上传：普通回放与训练赛/联赛回放不能同时解析"
         }
     },

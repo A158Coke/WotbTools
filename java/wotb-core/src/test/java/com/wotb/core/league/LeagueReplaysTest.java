@@ -100,7 +100,8 @@ class LeagueReplaysTest {
         // 每个文件恰好一次 progress；已解析文件必须 SUCCESS（不得计为解析失败）
         final List<String> outcomes = new ArrayList<>();
         LeagueReplays.collect(List.of(source("t.wotbreplay", t, 2), source("r.wotbreplay", rand, 1)),
-                source -> ReplayParser.parse(source.bytes()), null, (s, o) -> outcomes.add(s.name() + ":" + o));
+                source -> ReplayParser.parse(source.bytes()), null,
+                (index, name, o) -> outcomes.add(name + ":" + o));
         assertEquals(2, outcomes.size());
         assertTrue(outcomes.stream().allMatch(o -> o.endsWith(":SUCCESS")));
     }
@@ -516,7 +517,7 @@ class LeagueReplaysTest {
         final List<String> outcomes = new ArrayList<>();
         final LeagueReplays.LeagueCollectResult r = LeagueReplays.collect(
                 List.of(new Source("bad.wotbreplay", new byte[]{1})),
-                source -> bad, null, (s, o) -> outcomes.add(s.name() + ":" + o));
+                source -> bad, null, (index, name, o) -> outcomes.add(name + ":" + o));
         assertEquals(1, r.battles().size());
         assertEquals(1, r.leagueFailures().size());
         assertEquals(List.of("bad.wotbreplay:SUCCESS"), outcomes,

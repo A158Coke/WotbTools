@@ -222,6 +222,51 @@ describe('useReplay processing job flow', () => {
     expect(api.createProcessingJob).toHaveBeenCalledTimes(1)
   })
 
+  it('tracks UPLOADING → REGISTERING → QUEUED with real upload progress', async () => {
+    let resolveCreate
+    const pending = new Promise(r => { resolveCreate = r })
+    api.getProcessingJob.mockReturnValue(new Promise(() => {})) // 轮询挂起，避免 READY 覆盖断言
+    api.createProcessingJob.mockImplementation((body, { onProgress }) => {
+      onProgress({ loaded: 33_554_432, total: 67_108_864, percent: 50 })
+      return pending
+    })
+
+    const p = replay.startProcessingJob()
+    expect(replay.processingUiState.value).toBe('UPLOADING')
+    expect(replay.uploadState.value.percent).toBe(50)
+
+    // 上传体已发完、202 未返回 → REGISTERING（plan §28）
+    const opts = api.createProcessingJob.mock.calls[0][1]
+    opts.onProgress({ loaded: 67_108_864, total: 67_108_864, percent: 100 })
+    expect(replay.processingUiState.value).toBe('REGISTERING')
+
+    resolveCreate({ jobId: 'p1', status: 'QUEUED', total: 34 })
+    await p
+    expect(replay.processingUiState.value).toBe('QUEUED')
+    expect(replay.uploadState.value).toBeNull()
+  })
+
+  it('cancelProcessing aborts active upload without ghost job state', async () => {
+    api.getProcessingJob.mockReturnValue(new Promise(() => {}))
+    api.createProcessingJob.mockImplementation((body, { onProgress, signal }) =>
+      new Promise((_, reject) => {
+        signal.addEventListener('abort', () => {
+          const err = new Error('UPLOAD_ABORTED')
+          err.name = 'AbortError'
+          reject(err)
+        })
+      }))
+
+    const p = replay.startProcessingJob()
+    expect(replay.processingUiState.value).toBe('UPLOADING')
+    replay.cancelProcessing()
+    await p
+
+    expect(replay.processingUiState.value).not.toBe('UPLOADING')
+    expect(replay.processingJob.value).toBeNull()
+    expect(replay.processingError.value).toBe('')
+  })
+
   it('export after READY reuses processingJobId without re-uploading', async () => {
     // 模拟已 READY（轮询 → READY → processingJobId 完整链路由上一用例覆盖）；
     // resultMatchesSelection 要求 resp 与 processingJobId 成对存在。
