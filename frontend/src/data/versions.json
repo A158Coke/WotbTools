@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.28",
+    "date": "2026-08-25",
+    "tag": "add",
+    "zh": "名人堂新增「三环」单车最速排行榜：目前仅限十级车并由人工审核。提交时填写获得三环所需场数、过程场均和胜率，附 1–2 张截图与 5 个回放；从 0 场开始打三环的新车可只附一张截图，其他情况请提供 0% 和 95% 截图。场数越少排名越高，相同场数并列；同一玩家同一车辆已有已通过记录时，后续申请不能替代它，拒绝、撤销或删除的申请可重新提交。管理员只能通过、拒绝或删除，不能修改成绩。",
+    "en": "The Hall of Fame now has a fastest Mark of Excellence III leaderboard for each Tier X vehicle, reviewed manually. Submit the battles needed for three marks, average damage and win rate with 1–2 screenshots and 5 replays; a new vehicle started from zero battles may use one screenshot, while other entries should show 0% and 95%. Fewer battles rank higher and equal counts share a rank. A player's current result for that vehicle cannot be replaced by a later entry; rejected, cancelled, or deleted entries may be submitted again. Admins can only approve, reject, or delete entries, never edit the score.",
+    "ru": "В Зале славы появился рейтинг самого быстрого получения трёх отметок на каждой технике X уровня с ручной проверкой. Укажите число боёв до трёх отметок, средний урон и процент побед, приложите 1–2 скриншота и 5 реплеев; для новой машины, начатой с нуля боёв, достаточно одного скриншота, в остальных случаях нужны скриншоты 0% и 95%. Чем меньше боёв, тем выше место, одинаковые результаты делят место. Текущий результат игрока на этой машине нельзя заменить более поздней заявкой; отклонённую, отменённую или удалённую заявку можно подать заново. Администратор может только одобрить, отклонить или удалить запись, но не изменить показатели."
+  },
+  {
     "v": "2.12.27",
     "date": "2026-08-24",
     "tag": "feat",
