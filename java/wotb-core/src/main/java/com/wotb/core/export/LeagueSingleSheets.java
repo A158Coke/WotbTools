@@ -79,12 +79,12 @@ final class LeagueSingleSheets {
             styles.setCell(row.createCell(c++), p.victoryPointsSeized, fill, "victory_points_seized");
             final PlayerLeagueRating r = result.byAccount(p.accountId);
             if (r != null) {
-                final double[] dims = {r.damageScore(), r.assistScore(), r.killScore(), r.exchangeScore(),
-                        r.blockedScore(), r.survivalTradeScore(), r.shootingScore()};
+                // 七维顺序单一来源：dimensionScores()（与 LeagueColumns.DIM_KEYS 严格一致）
+                final List<Double> dims = r.dimensionScores();
                 for (int d = 0; d < dimensionCount; d++) {
-                    styles.setCell(row.createCell(c++), ExcelStyles.r1(dims[d]), fill, "league_score");
+                    styles.setCell(row.createCell(c++), ExcelStyles.r1(dims.get(d)), fill, "league_score");
                     styles.setCell(row.createCell(c++), (int) LeagueColumns.dimMax(d), fill, "league_max");
-                    styles.setCell(row.createCell(c++), percent(dims[d], LeagueColumns.dimMax(d)), fill, "league_pct");
+                    styles.setCell(row.createCell(c++), percent(dims.get(d), LeagueColumns.dimMax(d)), fill, "league_pct");
                 }
                 styles.setCell(row.createCell(c++), ExcelStyles.r1(r.finalRating()), fill, "league_rating");
                 styles.setCell(row.createCell(c++), (int) PlayerLeagueRating.MAX_FINAL, fill, "league_max");

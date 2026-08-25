@@ -149,7 +149,7 @@ export function useReplay() {
         // result 与 files 是同一批次（READY 后不再变化）；直接替换 resp。
         resp.value = result
         processingJobId.value = readyJobId
-        // P0：默认 tab 只依赖 response 本身（resp.league / aggregate / battles），
+        // 默认 tab 只依赖 response 本身（resp.league / aggregate / battles），
         // 在 columns 初始化之前决定——保证 READY 提交周期内 resp、League 模式、
         // aggregate 可见性与 activeTab 一致，结果 panel 第一帧即渲染，无需二次 poll/点击。
         activeTab.value = chooseInitialResultTab(result)

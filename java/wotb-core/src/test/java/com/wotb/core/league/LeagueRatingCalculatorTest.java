@@ -59,6 +59,31 @@ class LeagueRatingCalculatorTest {
     }
 
     @Test
+    void dimensionScoresAlignWithCanonicalDimensionKeys() {
+        final LeagueRatingResult r = LeagueRatingCalculator.calculate(identicalBattle(1, false));
+        final PlayerLeagueRating p = r.byAccount(1001);
+        final List<Double> scores = p.dimensionScores();
+        // 唯一有序表示：数量与顺序必须 == canonical DIM_KEYS（维度增删时任一 consumer 不得静默漏一维）
+        assertEquals(LeagueColumns.DIM_KEYS.size(), scores.size(),
+                "dimensionScores 数量必须 == LeagueColumns.DIM_KEYS.size()");
+        for (int d = 0; d < LeagueColumns.DIM_KEYS.size(); d++) {
+            final String key = LeagueColumns.dimKey(d);
+            final double expected = switch (key) {
+                case "league_damage_score" -> p.damageScore();
+                case "league_assist_score" -> p.assistScore();
+                case "league_kill_score" -> p.killScore();
+                case "league_exchange_score" -> p.exchangeScore();
+                case "league_blocked_score" -> p.blockedScore();
+                case "league_survival_score" -> p.survivalTradeScore();
+                case "league_shooting_score" -> p.shootingScore();
+                default -> throw new AssertionError("unexpected dimension key: " + key);
+            };
+            assertEquals(expected, scores.get(d), 1e-9,
+                    "dimensionScores[" + d + "] 必须 == " + key);
+        }
+    }
+
+    @Test
     void winnerGetsSurvivalHundredAndMultiplier() {
         final LeagueRatingResult r = LeagueRatingCalculator.calculate(identicalBattle(1, false));
         final PlayerLeagueRating winner = r.byAccount(1001);
