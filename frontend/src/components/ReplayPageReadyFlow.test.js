@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-// P0 端到端：ReplayPage 挂载真实 useReplay + useColumns（仅 mock api / i18n / 重型子组件）。
+// 端到端：ReplayPage 挂载真实 useReplay + useColumns（仅 mock api / i18n / 重型子组件）。
 // 验证 Processing READY 后**同一提交周期内**：resp、League 模式、aggregate 可见性与 activeTab
 // 一致，正确结果 panel 第一帧即渲染——不需要用户再点 tab、不需要第二次 poll、
 // 不需要等待 column preference 初始化。
@@ -94,7 +94,7 @@ function mountPage() {
   })
 }
 
-describe('ReplayPage READY 第一帧渲染（P0：同一提交周期内结果立即可见）', () => {
+describe('ReplayPage READY 第一帧渲染（同一提交周期内结果立即可见）', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()

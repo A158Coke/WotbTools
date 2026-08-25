@@ -34,7 +34,7 @@ public record PlayerLeagueRating(
         // 本队最佳
         boolean teamBest) {
 
-    /** 维度满分常量（与计划权重表一致，合计 1000）。 */
+    /** Rating 维度满分常量，合计 1000。 */
     public static final double MAX_DAMAGE = 400;
     public static final double MAX_ASSIST = 100;
     public static final double MAX_KILL = 100;

@@ -202,6 +202,20 @@ class LeagueExcelExportTest {
         }
     }
 
+    /** League Excel 七维标题测试 oracle（key → 中文标题；验证 canonical DIM_KEYS 全量覆盖，非 positional list）。 */
+    private static String dimensionTitleOracle(final String key) {
+        return switch (key) {
+            case "league_damage_score" -> "伤害评分";
+            case "league_assist_score" -> "助攻评分";
+            case "league_kill_score" -> "击杀评分";
+            case "league_exchange_score" -> "换血效率评分";
+            case "league_blocked_score" -> "阻挡评分";
+            case "league_survival_score" -> "存活/互换评分";
+            case "league_shooting_score" -> "射击效率评分";
+            default -> throw new AssertionError("unexpected League dimension key: " + key);
+        };
+    }
+
     /** 给一场 battle 的玩家设置 {@code count} 个不同的 platoonId（按 players 顺序循环）。 */
     private static void setDistinctPlatoons(final Battle battle, final int count) {
         int i = 0;
@@ -353,6 +367,33 @@ class LeagueExcelExportTest {
             assertTrue(text.contains("one.wotbreplay") && text.contains("two.wotbreplay"),
                     "明细必须含文件名列值（batch 可追踪）");
             assertTrue(text.contains("arena-1") && text.contains("arena-2"), "明细必须含竞技场ID列值");
+        }
+    }
+
+    @Test
+    void leagueDimensionExcelTitlesCoverAllCanonicalKeys() throws Exception {
+        // League Excel 七维标题必须由 canonical DIM_KEYS 驱动（key set 全量覆盖，禁止 positional list）。
+        final Battle battle = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        final LeagueRatingResult result = LeagueRatingCalculator.calculate(battle);
+        final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(
+                List.of(battle), List.of(result), List.of());
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ExcelExporter.writeAggregateLeague(List.of(battle), List.of("one.wotbreplay"),
+                List.of(), batch, Tankopedia.load(), out);
+        try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()))) {
+            for (final String sheetName : List.of("选手汇总", "战队汇总", "每场明细")) {
+                final String header = headerText(wb.getSheet(sheetName));
+                int dimColumns = 0;
+                for (final String key : LeagueColumns.DIM_KEYS) {
+                    final String title = dimensionTitleOracle(key);
+                    final String needle = sheetName.equals("每场明细") ? title : title + "中位数";
+                    assertEquals(1, countOccurrences(header, needle),
+                            sheetName + " 必须恰好含 " + key + " 的标题：" + needle + "，实际表头：" + header);
+                    dimColumns++;
+                }
+                assertEquals(LeagueColumns.DIM_KEYS.size(), dimColumns,
+                        sheetName + " 维度标题列数必须 == LeagueColumns.DIM_KEYS.size()");
+            }
         }
     }
 

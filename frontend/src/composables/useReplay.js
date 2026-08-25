@@ -149,7 +149,8 @@ export function useReplay() {
         // result 与 files 是同一批次（READY 后不再变化）；直接替换 resp。
         resp.value = result
         processingJobId.value = readyJobId
-        // 默认 tab 只依赖 response 本身（resp.league / aggregate / battles），
+        // 默认 tab 只依赖 response 本身：resp.leagueMode / resp.aggregate / resp.battles
+        // （resp.league 不是页面级 CW mode source；页面级唯一事实源是 resp.leagueMode）。
         // 在 columns 初始化之前决定——保证 READY 提交周期内 resp、League 模式、
         // aggregate 可见性与 activeTab 一致，结果 panel 第一帧即渲染，无需二次 poll/点击。
         activeTab.value = chooseInitialResultTab(result)
@@ -169,7 +170,8 @@ export function useReplay() {
     } catch (e) {
       // stale error race：旧 job 的迟到失败（网络 reject / 404 / timeout）
       // 同样不得影响已更新的 Processing Job——token 已变（updateFiles 停止 / 新 job 已启动）则
-      // 直接丢弃，绝不清掉新 job 的 timer/token（否则 P2 后端继续跑但前端永远停止轮询）。
+      // 直接丢弃，绝不清掉新 job 的 timer/token；否则后端任务仍继续运行，
+      // 但前端会永久停止轮询当前任务。
       if (processingPollJobId !== pollJobId) {
         return
       }

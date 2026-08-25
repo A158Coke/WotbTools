@@ -215,7 +215,7 @@ watch([sortKey, sortReverse], schedule)
           </th>
         </tr></thead>
         <tbody>
-          <tr v-for="(row, ri) in sorted" :key="row.cells.account_id"
+          <tr v-for="row in sorted" :key="row.cells.account_id"
               :class="[row.team === 1 ? 't1' : 't2', isLeague ? 'player-row' : '', { selected: isSelectedRow(row) }]"
               @click="onRowClick(row)">
             <td v-for="c in shownCols" :key="c.key"

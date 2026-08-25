@@ -1,5 +1,6 @@
 package com.wotb.core.export;
 
+import com.wotb.core.league.LeagueColumns;
 import com.wotb.core.league.LeagueRatingBatch;
 import com.wotb.core.league.LeagueRatingResult;
 import com.wotb.core.league.PlayerLeagueRating;
@@ -58,8 +59,9 @@ final class LeagueAggregateSheets {
         // rated-only sample：League 专属 summary 的场次是评分样本，与 Replay 汇总的解析场次区分
         header.add(new String[]{"评分场次", "8"});
         header.add(new String[]{"总Rating中位数", "12"});
-        for (final String dim : dimTitles()) {
-            header.add(new String[]{dim + "中位数", "10"});
+        // 七维标题单一来源：LeagueExcelColumns.dimensionTitle（key 由 LeagueColumns.DIM_KEYS 驱动）
+        for (final String key : LeagueColumns.DIM_KEYS) {
+            header.add(new String[]{LeagueExcelColumns.dimensionTitle(key) + "中位数", "10"});
         }
         header.add(new String[]{"MVP次数", "8"});
         header.add(new String[]{"胜场", "6"});
@@ -94,8 +96,9 @@ final class LeagueAggregateSheets {
         // rated-only sample（同选手汇总：评分场次 ≠ Replay 解析场次）
         header.add(new String[]{"评分场次", "8"});
         header.add(new String[]{"战队Rating中位数", "12"});
-        for (final String dim : dimTitles()) {
-            header.add(new String[]{dim + "中位数", "10"});
+        // 七维标题单一来源：LeagueExcelColumns.dimensionTitle（key 由 LeagueColumns.DIM_KEYS 驱动）
+        for (final String key : LeagueColumns.DIM_KEYS) {
+            header.add(new String[]{LeagueExcelColumns.dimensionTitle(key) + "中位数", "10"});
         }
         header.add(new String[]{"胜场", "6"});
         styles.writeHeader(ws, header);
@@ -138,8 +141,9 @@ final class LeagueAggregateSheets {
         header.add(new String[]{"车辆", "16"});
         header.add(new String[]{"伤害", "8"});
         header.add(new String[]{"总Rating", "9"});
-        for (final String dim : dimTitles()) {
-            header.add(new String[]{dim, "9"});
+        // 七维标题单一来源：LeagueExcelColumns.dimensionTitle（key 由 LeagueColumns.DIM_KEYS 驱动）
+        for (final String key : LeagueColumns.DIM_KEYS) {
+            header.add(new String[]{LeagueExcelColumns.dimensionTitle(key), "9"});
         }
         styles.writeHeader(ws, header);
         int rIdx = 1;
@@ -264,8 +268,4 @@ final class LeagueAggregateSheets {
         };
     }
 
-    private static List<String> dimTitles() {
-        return List.of("伤害评分", "助攻评分", "击杀评分", "换血效率评分",
-                "阻挡评分", "存活/互换评分", "射击效率评分");
-    }
 }
