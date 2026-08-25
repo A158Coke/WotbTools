@@ -37,6 +37,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -60,6 +61,11 @@ import java.util.concurrent.RejectedExecutionException;
 @RestController
 @CrossOrigin(origins = "*")
 public class ReconstructionController {
+
+    /** Dataset 路径 AI 复盘请求体（plan §36–§37；API 纯英文 key）。 */
+    public record AnalyzeDatasetRequest(String processingJobId, String sourceId,
+                                        String lang, String correlationId) {
+    }
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ReconstructionController.class);
 
@@ -143,7 +149,8 @@ public class ReconstructionController {
         // docs/current-plan.md §53：SSE 生命周期。
         LOGGER.info(AiReviewEventLog.line("ai_review_sse_opened", requestId));
         try {
-            workerExecutor.execute(() -> runAnalysis(requestId, cancellation, emitter, writer, files, allowedLanguage));
+            workerExecutor.execute(() -> runAnalysis(requestId, cancellation, emitter, writer,
+                    allowedLanguage, listener -> reviewService.analyzeStreaming(files, allowedLanguage, listener)));
         } catch (final RejectedExecutionException e) {
             // Worker 池满（workers + queue 全占用）：清理已注册的 cancellation token
             // （不留泄漏），不把永远无 worker 执行的 emitter 返回给客户端，直接抛
@@ -152,6 +159,69 @@ public class ReconstructionController {
             throw new AiReviewBusyException();
         }
         return emitter;
+    }
+
+    /**
+     * AI 复盘 Dataset 路径（plan §36–§38）：请求体为 {@code {processingJobId, sourceId,
+     * lang, correlationId}}，AI 只读 derived {@code ai-facts.json}，<b>不</b>重新上传 /
+     * 不重新 full process（BLOCKER A）。SSE 生命周期与 multipart 路径完全一致。
+     */
+    @PostMapping(value = ApiPaths.REPLAY_ANALYZE, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public SseEmitter analyzeDataset(@RequestBody final AnalyzeDatasetRequest request) {
+        final AllowedLanguage allowedLanguage = AllowedLanguage.fromCode(request.lang());
+        if (allowedLanguage == null) {
+            throw new IllegalArgumentException("UNKNOWN_LOCALE");
+        }
+        if (request.processingJobId() == null || request.processingJobId().isBlank()) {
+            throw new IllegalArgumentException("JOB_NOT_FOUND");
+        }
+        final int sourceIndex = parseSourceIndex(request.sourceId());
+        if (correlationIdInvalid(request.correlationId())) {
+            throw new IllegalArgumentException("INVALID_CORRELATION_ID");
+        }
+        final String requestId = request.correlationId() != null && !request.correlationId().isBlank()
+                ? request.correlationId() : UUID.randomUUID().toString();
+        final AiCancellationToken cancellation = cancellationRegistry.register(requestId);
+        if (cancellation == null) {
+            throw new IllegalArgumentException("DUPLICATE_CORRELATION_ID");
+        }
+        final SseEmitter emitter = newAnalyzeEmitter();
+        final ReplaySseWriter writer = new ReplaySseWriter(emitter);
+        emitter.onTimeout(() -> cancellationRegistry.cancel(requestId));
+        emitter.onError(error -> cancellationRegistry.cancel(requestId));
+        LOGGER.info(AiReviewEventLog.line("ai_review_sse_opened", requestId, "source", "dataset"));
+        try {
+            workerExecutor.execute(() -> runAnalysis(requestId, cancellation, emitter, writer,
+                    allowedLanguage, listener -> reviewService.analyzeFacts(
+                            request.processingJobId(), sourceIndex, allowedLanguage, listener)));
+        } catch (final RejectedExecutionException e) {
+            cancellationRegistry.unregister(requestId, cancellation);
+            throw new AiReviewBusyException();
+        }
+        return emitter;
+    }
+
+    /** sourceId 形如 {@code r0} / {@code r12}（plan §9）；非法返回 SOURCE_NOT_FOUND。 */
+    private static int parseSourceIndex(final String sourceId) {
+        if (sourceId == null) {
+            throw new IllegalArgumentException("SOURCE_NOT_FOUND");
+        }
+        final java.util.regex.Matcher m = java.util.regex.Pattern.compile("^r(\\d+)$").matcher(sourceId.trim());
+        if (!m.matches()) {
+            throw new IllegalArgumentException("SOURCE_NOT_FOUND");
+        }
+        return Integer.parseInt(m.group(1));
+    }
+
+    private static boolean correlationIdInvalid(final String correlationId) {
+        return correlationId != null && !correlationId.isBlank()
+                && !AiCancellationRegistry.isValidCorrelationId(correlationId);
+    }
+
+    /** worker 内 AI 复盘执行器（multipart / dataset 共用同一生命周期）。 */
+    @FunctionalInterface
+    private interface AnalysisInvoker {
+        AnalyzeResponse invoke(AiReviewStreamListener listener) throws IOException;
     }
 
     /**
@@ -166,8 +236,8 @@ public class ReconstructionController {
                              final AiCancellationToken cancellation,
                              final SseEmitter emitter,
                              final ReplaySseWriter writer,
-                             final MultipartFile[] files,
-                             final AllowedLanguage language) {
+                             final AllowedLanguage language,
+                             final AnalysisInvoker invoker) {
         AiRequestContext.set(requestId, cancellation);
         final long workerStartNanos = System.nanoTime();
         try {
@@ -189,10 +259,8 @@ public class ReconstructionController {
             // docs/current-plan.md §40：AI Review 生命周期开始（只记录低基数 metadata，
             // 不记录文件名/上传内容；workerQueueWaitMs 见 worker executor 的 debug 日志）。
             LOGGER.info(AiReviewEventLog.line("ai_review_started", requestId,
-                    "language", language == null ? "N/A" : language.code(),
-                    "fileCount", files == null ? 0 : files.length));
-            final AnalyzeResponse response = reviewService.analyzeStreaming(
-                    files, language, new AiReviewStreamListener() {
+                    "language", language == null ? "N/A" : language.code()));
+            final AnalyzeResponse response = invoker.invoke(new AiReviewStreamListener() {
                         @Override
                         public void onStage(final String stage) {
                             try {
@@ -399,6 +467,22 @@ public class ReconstructionController {
             return ResponseEntity.noContent().build();
         }
         return ResponseEntity.ok(overview);
+    }
+
+    /** 战局回放 Dataset 路径（plan §39/§88）：读 cached map-overview.json，不重新 full process。 */
+    @PostMapping(value = ApiPaths.REPLAY_MAP_OVERVIEW, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<MapOverview> mapOverviewDataset(
+            @RequestBody final MapOverviewDatasetRequest request) {
+        final MapOverview overview = mapOverviewService.buildOverviewFromDataset(
+                request.processingJobId(), parseSourceIndex(request.sourceId()));
+        if (overview == null) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.ok(overview);
+    }
+
+    /** 战局回放 Dataset 请求体（API 纯英文 key）。 */
+    public record MapOverviewDatasetRequest(String processingJobId, String sourceId) {
     }
 
     /** 执行并统计回放解析使用指标（成功与异常都记录；无 ReplayUsageMetrics 时原样执行）。 */

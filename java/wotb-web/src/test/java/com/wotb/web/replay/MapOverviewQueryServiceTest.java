@@ -16,13 +16,20 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import com.wotb.web.replay.dto.MapOverview;
+import com.wotb.web.replay.job.ProcessedDataset;
+import com.wotb.web.replay.job.ReplayArtifactWriter;
+import com.wotb.web.replay.job.ReplayProcessingJob;
+import com.wotb.web.replay.job.ReplayProcessingJobStore;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.nio.file.Files;
 import java.nio.file.Path;
+
+import static org.mockito.Mockito.never;
 
 /**
  * {@code /api/replay/map-overview} 查询服务契约：只解析回放、不调 AI；
@@ -50,6 +57,82 @@ class MapOverviewQueryServiceTest {
         assertEquals("rift", overview.mapCode());
         assertEquals(14, overview.routes().size());
         assertNotNull(overview.playback(), "战局回放数据应存在");
+    }
+
+    // ---- plan §39/§88：Dataset 路径读 cached artifact，不重新 full process ----
+
+    @Test
+    void buildsOverviewFromDatasetArtifactWithoutProcessingFacade() throws Exception {
+        final Path dir = Files.createTempDirectory("wotb-mapoverview-dataset-test");
+        final ReplayProcessingJobStore store = new ReplayProcessingJobStore(dir, 60);
+        try {
+            final MapOverview overview = new MapOverview(
+                    "malinovka", "Malinovka", java.util.Map.of("zh", "马利诺夫卡"), 1,
+                    new MapOverview.Bounds(0, 500, 0, 500), java.util.List.of(), null,
+                    java.util.List.of(), java.util.List.of(), null, java.util.List.of(),
+                    2, 123L, null);
+            final Battle battle = new Battle();
+            battle.arenaId = "arena-1";
+            final ReplayProcessingJob job = new ReplayProcessingJob("j1", List.of("a.wotbreplay"));
+            job.startProcessing();
+            job.markSourceProcessing(0, "a.wotbreplay");
+            ReplayArtifactWriter.writeMapOverview(store.jobDir("j1"), 0, overview);
+            job.markSourceReady(0);
+            job.updateProgress(1, 0, 0);
+            job.markReady(new ProcessedDataset(List.of(battle), List.of("a.wotbreplay"),
+                    List.of(), List.of(), null, null));
+            store.register(job);
+
+            final MapOverviewQueryService service =
+                    new MapOverviewQueryService(mock(DefaultReplayProcessingFacade.class), store);
+            final MapOverview read = service.buildOverviewFromDataset("j1", 0);
+
+            assertNotNull(read);
+            assertEquals("malinovka", read.mapCode());
+        } finally {
+            store.close();
+            try (var walk = Files.walk(dir)) {
+                walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                    try {
+                        Files.deleteIfExists(p);
+                    } catch (final Exception ignored) {
+                        // best-effort test cleanup
+                    }
+                });
+            }
+        }
+    }
+
+    @Test
+    void datasetPathReturnsNullWhenArtifactUnavailableAndRejectsNotReadySource() throws Exception {
+        final Path dir = Files.createTempDirectory("wotb-mapoverview-dataset-test");
+        final ReplayProcessingJobStore store = new ReplayProcessingJobStore(dir, 60);
+        try {
+            final Battle battle = new Battle();
+            battle.arenaId = "arena-1";
+            final ReplayProcessingJob job = new ReplayProcessingJob("j1", List.of("a.wotbreplay"));
+            job.startProcessing();
+            job.markSourceProcessing(0, "a.wotbreplay");
+            store.register(job);
+
+            final MapOverviewQueryService service =
+                    new MapOverviewQueryService(mock(DefaultReplayProcessingFacade.class), store);
+            assertThrows(IllegalArgumentException.class,
+                    () -> service.buildOverviewFromDataset("j1", 0), "未 READY 必须 SOURCE_NOT_READY");
+            assertThrows(IllegalArgumentException.class,
+                    () -> service.buildOverviewFromDataset("missing", 0), "job 不存在必须 JOB_NOT_FOUND");
+        } finally {
+            store.close();
+            try (var walk = Files.walk(dir)) {
+                walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                    try {
+                        Files.deleteIfExists(p);
+                    } catch (final Exception ignored) {
+                        // best-effort test cleanup
+                    }
+                });
+            }
+        }
     }
 
     @Test

@@ -16,6 +16,9 @@ import ReplayAnalysisAction from './ReplayAnalysisAction.vue'
 const props = defineProps({
   /** 目标回放文件（null = 尚未选择，显示空态提示）。 */
   file: { type: Object, default: null },
+  /** Dataset 引用（plan §36–§37）：两者齐备时走 derived ai-facts，不再上传 replay。 */
+  processingJobId: { type: String, default: null },
+  sourceId: { type: String, default: null },
   /** 未登录/401 时回跳视图：ReplayPage Workspace=replay，独立 reconstruction 页=reconstruction。 */
   loginView: { type: String, default: 'replay' }
 })
@@ -82,6 +85,7 @@ async function authedFetch(url, body, { signal } = {}) {
   }
   const accessToken = token()
   const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
+  if (typeof body === 'string') headers['Content-Type'] = 'application/json'
   const r = await fetch(url, { method: 'POST', headers, body, signal })
   if (r.status === 401) {
     login(props.loginView)
@@ -143,11 +147,8 @@ async function runAnalyze() {
     controller.abort()
   }, AI_ANALYZE_TIMEOUT_MS)
   try {
-    const r = await authedFetch(
-      '/api/replay/analyze',
-      singleFileFormData(currentCorrelationId),
-      { signal: controller.signal }
-    )
+    const r = await authedFetch('/api/replay/analyze', analyzeBody(currentCorrelationId),
+      { signal: controller.signal })
     if (!r.ok) {
       const rawBody = await r.text().catch(() => '')
       const trimmed = rawBody.trim()
@@ -194,6 +195,22 @@ function singleFileFormData(correlationId) {
   fd.append('lang', locale.value)
   if (correlationId) fd.append('correlationId', correlationId)
   return fd
+}
+
+/**
+ * Dataset 优先（plan §36）：processingJobId+sourceId 齐备 → JSON 引用；
+ * 否则回退 multipart（legacy，Phase 9 移除）。
+ */
+function analyzeBody(correlationId) {
+  if (props.processingJobId && props.sourceId) {
+    return JSON.stringify({
+      processingJobId: props.processingJobId,
+      sourceId: props.sourceId,
+      lang: locale.value,
+      correlationId
+    })
+  }
+  return singleFileFormData(correlationId)
 }
 
 /**

@@ -17,6 +17,9 @@ import MapOverview from './MapOverview.vue'
 const props = defineProps({
   /** 目标回放文件（null = 尚未选择，显示空态提示）。 */
   file: { type: Object, default: null },
+  /** Dataset 引用（plan §39）：两者齐备时读 cached map-overview，不再上传 replay。 */
+  processingJobId: { type: String, default: null },
+  sourceId: { type: String, default: null },
   /** 宿主声明「战局回放 capability 已进入」：仅当 active=true 且该文件尚未尝试加载时自动请求
    * （ReplayPage 传入 workspaceTab === 'playback'；独立 reconstruction 页默认 false = 手动加载）。
    * 不再把「file prop 变化」当作「用户要求加载 playback」——两个状态相互独立。 */
@@ -40,6 +43,7 @@ async function authedFetch(url, body, { signal } = {}) {
   }
   const accessToken = token()
   const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
+  if (typeof body === 'string') headers['Content-Type'] = 'application/json'
   const r = await fetch(url, { method: 'POST', headers, body, signal })
   if (r.status === 401) {
     login(props.loginView)
@@ -79,8 +83,11 @@ async function loadMapOverview() {
   mapError.value = ''
   const fd = new FormData()
   fd.append('files', props.file)
+  const body = props.processingJobId && props.sourceId
+    ? JSON.stringify({ processingJobId: props.processingJobId, sourceId: props.sourceId })
+    : fd
   try {
-    const r = await authedFetch('/api/replay/map-overview', fd, { signal: controller.signal })
+    const r = await authedFetch('/api/replay/map-overview', body, { signal: controller.signal })
     if (requestSeq !== mapRequestSeq) return // 换文件/卸载：旧响应丢弃
     if (r.status === 204) {
       mapOverview.value = null

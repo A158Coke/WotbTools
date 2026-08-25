@@ -484,6 +484,54 @@ class ReplayProcessingJobServiceTest {
         assertEquals(ReplayProcessingJob.SourceStatus.READY, done.sources().get(1).status());
     }
 
+    // ---- plan §21/§22/§23：READY 前写 derived artifacts（MapOverview unavailable ≠ parse failure）----
+
+    @Test
+    void readyJobWritesDerivedArtifactsAndSkipsUnavailableMapOverview() throws Exception {
+        stubFacadeBattlesDistinct(); // reconstruction=null → MapOverview unavailable
+        final String jobId = service.createJob(new MultipartFile[]{file("a.wotbreplay")});
+        final ReplayProcessingJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+        assertEquals(ReplayProcessingJob.Status.READY, snap.status());
+        assertEquals(1, snap.valid());
+
+        final Path jobDir = store.jobDir(jobId);
+        assertTrue(Files.exists(ReplayArtifactWriter.aiFactsPath(jobDir, 0)),
+                "READY 前必须先写 ai-facts.json（先写 artifact 后置 READY）");
+        assertFalse(Files.exists(ReplayArtifactWriter.mapOverviewPath(jobDir, 0)),
+                "MapOverview unavailable 时不得写伪 artifact，也不得判 parse failure");
+
+        final com.wotb.core.replay.facts.AiReplayFacts facts =
+                ReplayArtifactWriter.readAiFacts(jobDir, 0);
+        assertEquals("a.wotbreplay", facts.fileName());
+        assertEquals("arena-a.wotbreplay", facts.battle().arenaId);
+    }
+
+    // ---- plan §40–§43：prioritySourceIndex 目标 source 优先调度（不突破并发=2）----
+
+    @Test
+    void prioritySourceIndexSchedulesTargetFirst() throws Exception {
+        parseScheduler.close();
+        parseScheduler = new ReplayParseScheduler(1, 200); // 串行 worker：可观察执行顺序
+        service = new ReplayProcessingJobService(facade, store, parseScheduler, null);
+        final List<String> order = new CopyOnWriteArrayList<>();
+        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
+            final Source s = inv.getArgument(0);
+            order.add(s.name());
+            return result(s.name(), "arena-" + s.name());
+        });
+
+        final String jobId = service.createJob(new MultipartFile[]{
+                file("r0.wotbreplay"), file("r1.wotbreplay"), file("r2.wotbreplay")}, 1);
+
+        awaitTerminal(jobId, 10_000);
+        assertEquals("r1.wotbreplay", order.getFirst(), "priority source 必须先执行（plan §41）");
+        assertEquals(3, order.size());
+        assertEquals(List.of("r0.wotbreplay", "r1.wotbreplay", "r2.wotbreplay"),
+                service.status(jobId).sources().stream()
+                        .map(ReplayProcessingJob.SourceState::sourceName).toList(),
+                "业务顺序仍保持上传顺序");
+    }
+
     // ---- plan §57：exactly once processing（Preview/result/Export 不得二次 processFull）----
 
     @Test

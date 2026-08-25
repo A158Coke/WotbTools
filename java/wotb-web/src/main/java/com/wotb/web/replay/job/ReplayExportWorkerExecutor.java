@@ -32,7 +32,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Component
 public class ReplayExportWorkerExecutor implements AutoCloseable {
 
-    static final int DEFAULT_MAX_CONCURRENT = 2;
+    static final int DEFAULT_MAX_CONCURRENT = 1;
     static final int DEFAULT_QUEUE_CAPACITY = 4;
 
     private final ThreadPoolExecutor executor;
@@ -41,7 +41,8 @@ public class ReplayExportWorkerExecutor implements AutoCloseable {
 
     @Autowired
     public ReplayExportWorkerExecutor(
-            @Value("${wotb.replay.export-job.max-concurrent:2}") final int maxConcurrent,
+            @Value("${wotb.replay.artifact.max-concurrent:${wotb.replay.export-job.max-concurrent:1}}")
+            final int maxConcurrent,
             @Value("${wotb.replay.export-job.queue-capacity:4}") final int queueCapacity) {
         if (maxConcurrent < 1) {
             throw new IllegalArgumentException("export-job max-concurrent must be >= 1: " + maxConcurrent);

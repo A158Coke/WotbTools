@@ -88,6 +88,20 @@ public class ReplayProcessingJobStore {
         return job;
     }
 
+    /**
+     * Dataset Lease（plan §25）：AI / Playback 读取 derived artifact 前获取引用
+     * （+1，阻止 TTL 清理）。与 {@link #acquireForExport} 不同，不要求 batch READY——
+     * per-source READY 即可（plan §42/§43，Direct Capability 在 batch finalize 前消费）。
+     */
+    public ReplayProcessingJob acquireForSource(final String jobId) {
+        final ReplayProcessingJob job = jobs.get(jobId);
+        if (job == null) {
+            return null;
+        }
+        refCounts.computeIfAbsent(jobId, k -> new AtomicInteger()).incrementAndGet();
+        return job;
+    }
+
     /** Export 终态后释放引用（与 {@link #acquireForExport} 配对）。 */
     public void release(final String jobId) {
         final AtomicInteger counter = refCounts.get(jobId);

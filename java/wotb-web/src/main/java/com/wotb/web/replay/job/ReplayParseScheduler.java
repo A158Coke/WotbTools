@@ -1,6 +1,9 @@
 package com.wotb.web.replay.job;
 
 import jakarta.annotation.PreDestroy;
+import jakarta.annotation.PostConstruct;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -74,11 +77,13 @@ public final class ReplayParseScheduler implements AutoCloseable {
     private final AtomicInteger queuedSources = new AtomicInteger();
     private final AtomicInteger activeJobs = new AtomicInteger();
     private final ThreadPoolExecutor workers;
+    private final MeterRegistry meterRegistry;
 
     @Autowired
     public ReplayParseScheduler(
             @Value("${wotb.replay.parse.max-concurrent:2}") final int maxConcurrent,
-            @Value("${wotb.replay.parse.queue-capacity:200}") final int maxQueuedSources) {
+            @Value("${wotb.replay.parse.queue-capacity:200}") final int maxQueuedSources,
+            @Autowired(required = false) final MeterRegistry meterRegistry) {
         if (maxConcurrent < 1) {
             throw new IllegalArgumentException("replay parse max-concurrent must be >= 1: " + maxConcurrent);
         }
@@ -87,6 +92,7 @@ public final class ReplayParseScheduler implements AutoCloseable {
         }
         this.maxConcurrent = maxConcurrent;
         this.maxQueuedSources = maxQueuedSources;
+        this.meterRegistry = meterRegistry;
         this.workers = new ThreadPoolExecutor(
                 maxConcurrent, maxConcurrent, 0L, TimeUnit.MILLISECONDS,
                 new java.util.concurrent.LinkedBlockingQueue<>(),
@@ -97,6 +103,31 @@ public final class ReplayParseScheduler implements AutoCloseable {
     /** 测试便利构造器。 */
     public ReplayParseScheduler(final int maxConcurrent) {
         this(maxConcurrent, DEFAULT_QUEUE_CAPACITY);
+    }
+
+    /** 测试便利构造器。 */
+    public ReplayParseScheduler(final int maxConcurrent, final int maxQueuedSources) {
+        this(maxConcurrent, maxQueuedSources, null);
+    }
+
+    /** 低基数 scheduler metrics（plan §74/§78，无高基数 tag）。 */
+    @PostConstruct
+    void initMetrics() {
+        if (meterRegistry == null) {
+            return;
+        }
+        Gauge.builder("wotb_replay_parse_active", this, ReplayParseScheduler::activeSources)
+                .description("当前并行执行的 replay full processing 数")
+                .register(meterRegistry);
+        Gauge.builder("wotb_replay_parse_queue_depth", this, ReplayParseScheduler::queuedSources)
+                .description("排队等待的 replay source 数")
+                .register(meterRegistry);
+        Gauge.builder("wotb_replay_processing_jobs_active", this, ReplayParseScheduler::activeJobs)
+                .description("有活跃 source 的 processing job 数")
+                .register(meterRegistry);
+        Gauge.builder("wotb_replay_processing_jobs_queued", this, ReplayParseScheduler::queuedJobs)
+                .description("round-robin 队列中的 processing job 数")
+                .register(meterRegistry);
     }
 
     /**

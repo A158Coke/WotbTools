@@ -117,9 +117,12 @@ export function useReplay() {
    */
   const resultMatchesSelection = computed(() => !!processingJobId.value && !!resp.value)
 
-  function buildFormData() {
+  function buildFormData(prioritySourceIndex) {
     const fd = new FormData()
     files.value.forEach(f => fd.append('files', f, displayName(f)))
+    if (prioritySourceIndex !== undefined && prioritySourceIndex !== null) {
+      fd.append('prioritySourceIndex', String(prioritySourceIndex))
+    }
     return fd
   }
 
@@ -222,7 +225,7 @@ export function useReplay() {
    * 创建解析任务并开始轮询真实进度。READY 后自动拉取 result 展示。
    * 防重复：已有活跃 job 时忽略再次点击。
    */
-  async function startProcessingJob(onColumnsInit) {
+  async function startProcessingJob(onColumnsInit, { prioritySourceIndex } = {}) {
     if (!files.value.length) { error.value = t('replay.no_files'); return }
     if (processingActive.value) return
     const revisionAtCreate = selectionRevision.value
@@ -234,7 +237,7 @@ export function useReplay() {
     uploadAbort = controller
     uploadState.value = { phase: 'UPLOADING', loaded: 0, total: 0, percent: 0 }
     try {
-      const created = await api.createProcessingJob(buildFormData(), {
+      const created = await api.createProcessingJob(buildFormData(prioritySourceIndex), {
         onProgress: ({ loaded, total, percent }) => {
           // 上传体已发完但 202 未返回 → REGISTERING（plan §28）
           uploadState.value = {
@@ -280,6 +283,66 @@ export function useReplay() {
       loading.value = false
       processingError.value = `${t('replay.preview_failed')}: ${apiErrorLabel(t, te, e)}`
     }
+  }
+
+  /** 轮询直到指定 source READY（Direct Capability，plan §40–§43）。 */
+  function pollSourceReady(jobId, sourceId) {
+    return new Promise((resolve, reject) => {
+      const poll = async () => {
+        try {
+          const data = await api.getProcessingJob(jobId)
+          const s = (data.sources || []).find(x => x.sourceId === sourceId)
+          if (s && s.status === 'READY') {
+            resolve({ processingJobId: jobId, sourceId })
+            return
+          }
+          if (s && s.status === 'FAILED') {
+            reject(new Error('SOURCE_PROCESSING_FAILED'))
+            return
+          }
+          if (JOB_TERMINAL.has(data.status)) {
+            reject(new Error('SOURCE_NOT_READY'))
+            return
+          }
+          setTimeout(poll, 750)
+        } catch (e) {
+          reject(e)
+        }
+      }
+      poll()
+    })
+  }
+
+  /**
+   * Direct AI/Playback（plan §40）：选中文件直接点击 capability 时，确保 Dataset 存在
+   * 且目标 source READY（无则自动创建 Processing Job + priority 优先解析），返回
+   * {processingJobId, sourceId} 供面板消费。批量其余 source 继续后台解析。
+   */
+  async function requestDirectAction(file, mode) {
+    const idx = files.value.findIndex(f => fileKey(f) === fileKey(file))
+    if (idx < 0) throw new Error('NO_REPLAY_FILE')
+    const sourceId = `r${idx}`
+    const job = processingJob.value
+    if (job && (job.status === 'QUEUED' || job.status === 'PROCESSING' || job.status === 'READY')) {
+      const s = (job.sources || []).find(x => x.sourceId === sourceId)
+      if (s && s.status === 'READY') return { processingJobId: job.jobId, sourceId }
+    }
+    if (processingJobId.value) {
+      try {
+        const data = await api.getProcessingJob(processingJobId.value)
+        const s = (data.sources || []).find(x => x.sourceId === sourceId)
+        if (s && s.status === 'READY') return { processingJobId: processingJobId.value, sourceId }
+        if (data.status === 'QUEUED' || data.status === 'PROCESSING') {
+          return pollSourceReady(processingJobId.value, sourceId)
+        }
+      } catch {
+        // dataset 已过期：回退到新建
+      }
+    }
+    await startProcessingJob(null, { prioritySourceIndex: idx })
+    const created = processingJob.value
+    if (!created) throw new Error('PROCESSING_START_FAILED')
+    return pollSourceReady(created.jobId, sourceId)
   }
 
   /** 统一取消：上传阶段 abort XHR；已注册 Job 走协作取消。 */
@@ -443,6 +506,7 @@ export function useReplay() {
     uploadState, processingUiState,
     exportJob, exportError, exportActive,
     startProcessingJob, cancelProcessingJob, cancelProcessing, dismissProcessingJob,
+    requestDirectAction,
     startExportJob, cancelExportJob, downloadExportResult, dismissExportJob,
     askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove, confirmRemoveBattle,
   }
