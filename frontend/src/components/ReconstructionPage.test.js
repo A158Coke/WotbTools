@@ -42,11 +42,26 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: i18n.t, locale: i18nLocale })
 }))
 
+/** Dataset 自动准备（plan §50）：mock api 使测试环境不依赖真实后端。 */
+const apiMock = vi.hoisted(() => ({
+  createProcessingJob: vi.fn(),
+  getProcessingJob: vi.fn(),
+  cancelProcessingJob: vi.fn()
+}))
+
+vi.mock('../utils/api.js', () => apiMock)
+
 describe('ReconstructionPage team analysis', () => {
   beforeEach(() => {
     auth.ensureToken.mockResolvedValue(true)
     auth.login.mockReset()
     i18n.t.mockClear()
+    apiMock.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 1 })
+    apiMock.getProcessingJob.mockResolvedValue({
+      jobId: 'p1', status: 'PROCESSING', total: 1,
+      sources: [{ sourceId: 'r0', status: 'READY' }]
+    })
+    apiMock.cancelProcessingJob.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -154,7 +169,7 @@ describe('ReconstructionPage team analysis', () => {
         await flushPromises()
 
         const requestBody = fetchMock.mock.calls.at(-1)[1].body
-        expect(requestBody.get('lang')).toBe(locale)
+        expect(JSON.parse(requestBody).lang).toBe(locale)
       }
     } finally {
       i18nLocale.value = 'zh'
@@ -789,7 +804,9 @@ describe('ReconstructionPage standalone map section', () => {
     // 请求打到独立端点（不经过 /api/replay/analyze）
     const call = fetch.mock.calls.find(([url]) => String(url) === '/api/replay/map-overview')
     expect(call).toBeDefined()
-    expect(call[1].body.has('files')).toBe(true)
+    const datasetBody = JSON.parse(call[1].body)
+    expect(datasetBody.processingJobId).toBe('p1')
+    expect(datasetBody.sourceId).toBe('r0')
     // 地图视图挂载，overview 传入；按钮消失
     expect(wrapper.findComponent({ name: 'MapOverview' }).exists()).toBe(true)
     expect(wrapper.find('[data-test="map-load-btn"]').exists()).toBe(false)
@@ -1148,7 +1165,7 @@ describe('ReconstructionPage AI request lifecycle (timeout + cancel)', () => {
     const analyzeCall = fetchMock.mock.calls.find(
       ([url]) => String(url) === '/api/replay/analyze'
     )
-    const correlationId = analyzeCall[1].body.get('correlationId')
+    const correlationId = JSON.parse(analyzeCall[1].body).correlationId
     expect(correlationId).toBeTruthy()
 
     await cancelBtn.trigger('click')

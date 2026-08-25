@@ -49,6 +49,7 @@ describe('useReplay export job flow', () => {
   })
 
   it('startExportJob creates job and polls until terminal', async () => {
+    replay.processingJobId.value = 'p1'
     api.createExportJob.mockResolvedValue({ jobId: 'j1', status: 'QUEUED', total: 2 })
     api.getExportJob
       .mockResolvedValueOnce(job({ status: 'PROCESSING', phase: 'PROCESSING_REPLAYS', processed: 1 }))
@@ -66,6 +67,7 @@ describe('useReplay export job flow', () => {
   })
 
   it('prevents duplicate export while job active', async () => {
+    replay.processingJobId.value = 'p1'
     api.createExportJob.mockResolvedValue({ jobId: 'j1', status: 'QUEUED', total: 1 })
     api.getExportJob.mockResolvedValue(job({ status: 'PROCESSING', processed: 1 }))
 
@@ -77,6 +79,7 @@ describe('useReplay export job flow', () => {
   })
 
   it('polls until FAILED then stops', async () => {
+    replay.processingJobId.value = 'p1'
     api.createExportJob.mockResolvedValue({ jobId: 'j1', status: 'QUEUED', total: 1 })
     api.getExportJob.mockResolvedValue(job({ status: 'FAILED', phase: null, errorCode: 'NO_VALID_REPLAYS' }))
 
@@ -89,6 +92,7 @@ describe('useReplay export job flow', () => {
   })
 
   it('cancel stops polling and marks CANCELLED', async () => {
+    replay.processingJobId.value = 'p1'
     api.createExportJob.mockResolvedValue({ jobId: 'j1', status: 'QUEUED', total: 1 })
     api.getExportJob.mockResolvedValue(job({ status: 'PROCESSING', processed: 1 }))
     api.cancelExportJob.mockResolvedValue(undefined)
@@ -103,6 +107,7 @@ describe('useReplay export job flow', () => {
   })
 
   it('download only when READY', async () => {
+    replay.processingJobId.value = 'p1'
     api.createExportJob.mockResolvedValue({ jobId: 'j1', status: 'QUEUED', total: 1 })
     api.getExportJob.mockResolvedValue(job({ status: 'PROCESSING', processed: 1 }))
     await replay.startExportJob('aggregate')
@@ -318,15 +323,12 @@ describe('useReplay processing job flow', () => {
     })
   })
 
-  it('export without processing result still uploads (legacy path)', async () => {
+  it('export without processing result is rejected (dataset-only, BLOCKER-free 收敛)', async () => {
     api.createExportJob.mockResolvedValue({ jobId: 'e1', status: 'QUEUED', total: 2 })
     api.getExportJob.mockResolvedValue({ jobId: 'e1', status: 'READY', phase: null, total: 2, processed: 2, duplicates: 0, failures: 0, filename: 'x.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     await replay.startExportJob('each')
-    expect(api.createExportJob).toHaveBeenCalledTimes(1)
-    const [body, mode, jobId] = api.createExportJob.mock.calls[0]
-    expect(body).not.toBeNull()
-    expect(mode).toBe('each')
-    expect(jobId).toBeUndefined()
+    expect(api.createExportJob).not.toHaveBeenCalled()
+    expect(replay.exportError.value).toBe('replay.export_job.require_processing')
   })
 })
 describe('useReplay file-selection invalidation', () => {
@@ -374,15 +376,12 @@ describe('useReplay file-selection invalidation', () => {
     expect(replay.processingJobId.value).toBeNull()
     expect(replay.resp.value).toBeNull()
 
-    // Export 不得传 p1：未重新解析的新 selection 走 legacy 上传当前 files
+    // Export 只允许 dataset 复用：processingJobId 失效后必须拒绝，绝不 legacy 重新上传
     api.createExportJob.mockResolvedValue({ jobId: 'e1', status: 'QUEUED', total: 10 })
     api.getExportJob.mockResolvedValue({ jobId: 'e1', status: 'READY', phase: null, total: 10, processed: 10, duplicates: 0, failures: 0, filename: 'x.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     await replay.startExportJob('aggregate')
-    expect(api.createExportJob).toHaveBeenCalledTimes(1)
-    const [body, mode, jobId] = api.createExportJob.mock.calls[0]
-    expect(body).not.toBeNull()
-    expect(mode).toBe('aggregate')
-    expect(jobId).toBeUndefined()
+    expect(api.createExportJob).not.toHaveBeenCalled()
+    expect(replay.exportError.value).toBe('replay.export_job.require_processing')
   })
 
   it('Case B: P1 处理中 files 改变 → P1 迟到 READY 不得覆盖当前 selection', async () => {

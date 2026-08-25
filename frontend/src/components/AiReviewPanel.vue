@@ -188,29 +188,20 @@ async function runAnalyze() {
   }
 }
 
-/** 单文件表单（analyze 使用唯一的文件）。 */
-function singleFileFormData(correlationId) {
-  const fd = new FormData()
-  if (props.file) fd.append('files', props.file)
-  fd.append('lang', locale.value)
-  if (correlationId) fd.append('correlationId', correlationId)
-  return fd
-}
-
 /**
- * Dataset 优先（plan §36）：processingJobId+sourceId 齐备 → JSON 引用；
- * 否则回退 multipart（legacy，Phase 9 移除）。
+ * Dataset 路径（plan §36/§109）：必须携带 processingJobId+sourceId，绝不回退 multipart
+ * 重新上传/重新 full process（BLOCKER A）。
  */
 function analyzeBody(correlationId) {
-  if (props.processingJobId && props.sourceId) {
-    return JSON.stringify({
-      processingJobId: props.processingJobId,
-      sourceId: props.sourceId,
-      lang: locale.value,
-      correlationId
-    })
+  if (!props.processingJobId || !props.sourceId) {
+    throw new Error('DATASET_UNAVAILABLE')
   }
-  return singleFileFormData(correlationId)
+  return JSON.stringify({
+    processingJobId: props.processingJobId,
+    sourceId: props.sourceId,
+    lang: locale.value,
+    correlationId
+  })
 }
 
 /**

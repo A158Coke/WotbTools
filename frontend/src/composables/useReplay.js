@@ -409,14 +409,15 @@ export function useReplay() {
   async function startExportJob(mode, teamNamesOverrides = null) {
     if (!files.value.length) { error.value = t('replay.no_files'); return }
     if (exportActive.value) return
+    if (!processingJobId.value) {
+      exportError.value = t('replay.export_job.require_processing')
+      return
+    }
     error.value = ''
     exportError.value = ''
     try {
-      const reuse = resultMatchesSelection.value
-      const body = reuse ? null : buildFormData()
       const teamNamesJson = teamNamesOverrides ? JSON.stringify(teamNamesOverrides) : null
-      const created = await api.createExportJob(body, mode,
-        reuse ? processingJobId.value : undefined, teamNamesJson)
+      const created = await api.createExportJob(null, mode, processingJobId.value, teamNamesJson)
       exportJob.value = {
         jobId: created.jobId,
         status: created.status || 'QUEUED',

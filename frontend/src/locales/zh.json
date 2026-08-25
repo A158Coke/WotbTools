@@ -792,6 +792,7 @@
             "failed": "导出失败",
             "failed_no_valid": "没有可导出的有效回放。",
             "failed_generic": "导出失败，请重试。",
+            "require_processing": "请先完成解析后再导出。",
             "cancelled": "已取消"
         },
         "processing_job": {

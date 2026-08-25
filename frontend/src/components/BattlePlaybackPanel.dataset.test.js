@@ -61,4 +61,23 @@ describe('BattlePlaybackPanel dataset request', () => {
     expect(body.sourceId).toBe('r0')
     vi.unstubAllGlobals()
   })
+
+  it('无 dataset 引用时拒绝发起请求并提示（不再回退 multipart，BLOCKER B）', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(BattlePlaybackPanel, {
+      props: { file: { name: 'a.wotbreplay' }, processingJobId: null, sourceId: null, active: true, loginView: 'replay' },
+      global: {
+        mocks: { $t: key => key },
+        stubs: { MapOverview: { template: '<div class="map-stub" />' } }
+      }
+    })
+
+    await new Promise(r => setTimeout(r, 20))
+    await new Promise(r => setTimeout(r, 20))
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-test="map-error"]').text()).toContain('DATASET_UNAVAILABLE')
+    vi.unstubAllGlobals()
+  })
 })

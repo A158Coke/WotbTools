@@ -76,18 +76,21 @@ let mapAbortController = null
  */
 async function loadMapOverview() {
   if (mapLoading.value || !props.file) return
+  // Dataset 路径（plan §39/§109）：必须携带 processingJobId+sourceId，绝不回退 multipart（BLOCKER B）
+  if (!props.processingJobId || !props.sourceId) {
+    mapError.value = 'DATASET_UNAVAILABLE'
+    mapLoaded.value = true
+    return
+  }
   const controller = new AbortController()
   mapAbortController = controller
   const requestSeq = ++mapRequestSeq
   mapLoading.value = true
   mapError.value = ''
-  const fd = new FormData()
-  fd.append('files', props.file)
-  const body = props.processingJobId && props.sourceId
-    ? JSON.stringify({ processingJobId: props.processingJobId, sourceId: props.sourceId })
-    : fd
   try {
-    const r = await authedFetch('/api/replay/map-overview', body, { signal: controller.signal })
+    const r = await authedFetch('/api/replay/map-overview',
+      JSON.stringify({ processingJobId: props.processingJobId, sourceId: props.sourceId }),
+      { signal: controller.signal })
     if (requestSeq !== mapRequestSeq) return // 换文件/卸载：旧响应丢弃
     if (r.status === 204) {
       mapOverview.value = null
@@ -149,6 +152,15 @@ watch(() => props.file, () => {
   resetMap()
   maybeAutoLoadMap()
 }, { immediate: true })
+
+/** Dataset 引用到达/变化（Direct Capability 异步准备）→ 重试自动加载（plan §40）。 */
+watch(() => [props.processingJobId, props.sourceId], () => {
+  if (mapError.value === 'DATASET_UNAVAILABLE') {
+    mapError.value = ''
+    mapLoaded.value = false // 解除错误态阻塞，dataset 到达后允许自动加载（plan §40）
+  }
+  maybeAutoLoadMap()
+})
 
 /** active 变化（进入/离开战局回放 capability）：进入时按需自动加载；离开不卸载、保留已有状态。 */
 watch(() => props.active, () => {
