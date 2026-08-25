@@ -593,7 +593,7 @@ public class ReplayExportJobService {
     /** aggregate：LeagueReplays.collect 去重/模式判定 + 逐文件进度；batch 内串行处理。 */
     private void processAggregate(final ExportJob job, final List<Path> inputs) throws Exception {
         final int[] counters = new int[3]; // processed / duplicates / failures
-        final Replays.ReplayProgressListener progress = (source, outcome) -> {
+        final Replays.ReplayProgressListener progress = (sourceIndex, sourceName, outcome) -> {
             counters[0]++;
             if (outcome == Replays.Outcome.DUPLICATE) {
                 counters[1]++;

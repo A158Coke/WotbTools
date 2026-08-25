@@ -23,6 +23,7 @@ import PlayerDetailDrawer from './PlayerDetailDrawer.vue'
 import { mergeCwPlayerRows, mergeCwPlayerColumns, CW_DIM_KEYS } from '../utils/playerSummaryMerge.js'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import ReplayTaskCard from './ReplayTaskCard.vue'
+import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
 import AiReviewPanel from './AiReviewPanel.vue'
 import BattlePlaybackPanel from './BattlePlaybackPanel.vue'
 
@@ -30,8 +31,9 @@ const { locale, t, te } = useI18n()
 const replay = useReplay()
 const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateFiles, selectionRevision,
   processingJob, processingError, processingActive,
+  uploadState, cancelProcessing,
   exportJob, exportError, exportActive,
-  startProcessingJob, cancelProcessingJob, dismissProcessingJob,
+  startProcessingJob, dismissProcessingJob,
   startExportJob, cancelExportJob, downloadExportResult, dismissExportJob,
   askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove } = replay
 /**
@@ -504,6 +506,16 @@ watch(files, (next) => {
 
     <p v-if="error" class="error">{{ error }}</p>
 
+    <!-- 主操作区 inline 进度面板（plan §32/§35）：不依赖 files/resp 渲染条件，
+         与 Export 任务卡各自独立，不再互斥隐藏（BLOCKER H）。 -->
+    <ReplayProcessingPanel
+      v-if="uploadState || processingJob"
+      :upload-state="uploadState"
+      :job="processingJob"
+      :error="processingError"
+      @cancel="cancelProcessing"
+      @dismiss="dismissProcessingJob" />
+
     <!-- Workspace：有文件（解析前也能直接进 AI/回放）或已有解析结果时可见；
          resp 依赖 files 才存在，故 files.length || resp 与真实状态机一致。 -->
     <template v-if="files.length || resp">
@@ -648,9 +660,6 @@ watch(files, (next) => {
       </div>
     </template>
 
-    <ReplayTaskCard v-if="processingJob && !exportJob" :job="processingJob" :error="processingError"
-      kind="processing"
-      @cancel="cancelProcessingJob" @dismiss="dismissProcessingJob" />
     <ReplayTaskCard v-if="exportJob" :job="exportJob" :error="exportError"
       kind="export"
       @cancel="cancelExportJob" @download="downloadExportResult" @dismiss="dismissExportJob" />

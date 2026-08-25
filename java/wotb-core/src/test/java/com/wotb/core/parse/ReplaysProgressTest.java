@@ -31,7 +31,7 @@ class ReplaysProgressTest {
                     return battle;
                 },
                 null,
-                (source, outcome) -> outcomes.add(source.name() + ":" + outcome));
+                (sourceIndex, sourceName, outcome) -> outcomes.add(sourceName + ":" + outcome));
 
         assertEquals(List.of("a.wotbreplay:SUCCESS", "b.wotbreplay:DUPLICATE", "c.wotbreplay:FAILURE"), outcomes);
         assertEquals(1, collected.battles.size());

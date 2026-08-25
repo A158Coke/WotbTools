@@ -67,10 +67,65 @@ export async function cancelExportJob(jobId) {
 
 // ── Replay Processing Job（/api/replay/processing-jobs，匿名公开；解析预览改为异步 Job）──
 
-/** 创建解析任务：上传文件立即持久化并返回 {jobId, status, total}（202，HTTP request 不等待解析）。 */
-export async function createProcessingJob(body) {
-  const r = await requireOk(await fetch('/api/replay/processing-jobs', { method: 'POST', body }))
-  return r.json()
+/**
+ * 创建解析任务：XHR 上传 multipart（真实 upload progress，plan §27），202 返回
+ * {jobId, status, total}（HTTP request 不等待解析）。
+ * @param {FormData} body multipart files
+ * @param {{onProgress?: (p:{loaded:number,total:number,percent:number})=>void,
+ *          signal?: AbortSignal}} options
+ */
+export function createProcessingJob(body, { onProgress, signal } = {}) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', '/api/replay/processing-jobs')
+    const abort = () => xhr.abort()
+    signal?.addEventListener('abort', abort, { once: true })
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress({
+          loaded: e.loaded,
+          total: e.total,
+          percent: Math.min(100, Math.round((e.loaded / e.total) * 100)),
+        })
+      }
+    }
+    xhr.onload = () => {
+      signal?.removeEventListener('abort', abort)
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText || '{}'))
+        } catch {
+          reject(new ApiError('INVALID_RESPONSE', xhr.status))
+        }
+        return
+      }
+      reject(apiErrorFromXhr(xhr))
+    }
+    xhr.onerror = () => {
+      signal?.removeEventListener('abort', abort)
+      reject(new ApiError('NETWORK_ERROR', 0))
+    }
+    xhr.onabort = () => {
+      signal?.removeEventListener('abort', abort)
+      const err = new Error('UPLOAD_ABORTED')
+      err.name = 'AbortError'
+      reject(err)
+    }
+    xhr.send(body)
+  })
+}
+
+/** XHR 非 2xx 响应 → 稳定 ApiError（body 优先取 error/code，退化 HTTP_<status>）。 */
+function apiErrorFromXhr(xhr) {
+  let code = `HTTP_${xhr.status}`
+  try {
+    const body = JSON.parse(xhr.responseText || '{}')
+    const candidate = body?.error || body?.code
+    if (typeof candidate === 'string' && candidate) code = candidate
+  } catch {
+    // 非 JSON 错误响应使用稳定 HTTP_<status> 兜底
+  }
+  return new ApiError(code, xhr.status)
 }
 
 /** 查询解析任务状态/进度：{jobId, status, phase, total, processed, valid, duplicates, failures, errorCode, currentFile}。 */

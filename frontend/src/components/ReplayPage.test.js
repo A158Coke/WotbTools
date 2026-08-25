@@ -208,6 +208,7 @@ vi.mock('../composables/useReplay.js', async () => {
         exportJob: exportJobRef, exportError: ref(''), exportActive: exportActiveRef,
         processingJob: processingJobRef, processingError: ref(''), processingActive: processingActiveRef,
         processingJobId: processingJobIdRef,
+        uploadState: ref(null), cancelProcessing: vi.fn(),
         startProcessingJob, cancelProcessingJob: vi.fn(),
         dismissProcessingJob: vi.fn(),
         startExportJob, cancelExportJob: vi.fn(),
@@ -361,26 +362,28 @@ describe('ReplayPage processing job flow', () => {
     state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en', files: [] }
   })
 
-  it('renders processing task card with real 18/34 progress', async () => {
+  it('renders inline processing panel with real 18/34 parse progress', async () => {
     state.init.resp = null
     const wrapper = mountPage()
-    expect(wrapper.find('[data-testid="replay-task-card"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="replay-processing-panel"]').exists()).toBe(false)
     pJobState.setJob({ jobId: 'p1', status: 'PROCESSING', phase: 'PROCESSING_REPLAYS', total: 34, processed: 18, valid: 16, duplicates: 2, failures: 1, currentFile: 'x.wotbreplay' })
     await flushPromises()
-    const card = wrapper.find('[data-testid="replay-task-card"]')
-    expect(card.exists()).toBe(true)
-    expect(card.text()).toContain('replay.processing_job.title')
-    expect(card.text()).toContain('replay.processing_job.progress')
+    const panel = wrapper.find('[data-testid="replay-processing-panel"]')
+    expect(panel.exists()).toBe(true)
+    expect(panel.text()).toContain('replay.processing_job.title')
+    expect(panel.text()).toContain('replay.processing_job.progress')
   })
 
-  it('processing READY hides processing card when export card present (export takes the slot)', async () => {
+  it('processing panel and export card coexist (no mutual exclusion, plan §35)', async () => {
     state.init.resp = null
     const wrapper = mountPage()
     pJobState.setJob({ jobId: 'p1', status: 'READY', phase: null, total: 34, processed: 34, valid: 31, duplicates: 2, failures: 1 })
     jobState.setJob({ jobId: 'e1', status: 'PROCESSING', phase: 'BUILDING_EXCEL', total: 34, processed: 34, duplicates: 0, failures: 0 })
     await flushPromises()
+    const panel = wrapper.find('[data-testid="replay-processing-panel"]')
+    expect(panel.exists()).toBe(true, "Export 存在时 Processing 进度不得被隐藏")
     const cards = wrapper.findAll('[data-testid="replay-task-card"]')
-    expect(cards.length).toBe(1)
+    expect(cards.length).toBe(1, "Export 仍使用独立任务卡")
     expect(cards[0].text()).toContain('replay.export_job.title')
   })
 
@@ -2246,9 +2249,9 @@ describe('ReplayPage League failure UX separation', () => {
     const wrapper = mountPage()
     pJobState.setJob({ jobId: 'p1', status: 'READY', phase: null, total: 35, processed: 35, valid: 30, duplicates: 5, failures: 0 })
     await flushPromises()
-    const card = wrapper.find('[data-testid="replay-task-card"]')
+    const card = wrapper.find('[data-testid="replay-processing-panel"]')
     expect(card.exists()).toBe(true)
-    expect(card.text()).toContain('replay.processing_job.counts:30,5,0')
+    expect(card.text()).toContain('replay.processing_job.valid_summary:30,5,0')
     // 不得出现红色解析失败块（result.failures 只用于真正 parser failure）
     expect(wrapper.find('.error').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('result.failures')

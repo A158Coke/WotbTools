@@ -52,8 +52,17 @@ public final class ReplayJobState {
     private volatile boolean cancelRequested;
 
     public ReplayJobState(final String jobId, final int total) {
+        this(jobId, total, null);
+    }
+
+    /**
+     * 指定初始 phase 的状态机（Processing Job 用 {@code WAITING_FOR_WORKER} 表达
+     * QUEUED 阶段等待解析资源；Export Job 保持 null 兼容）。
+     */
+    public ReplayJobState(final String jobId, final int total, final String initialPhase) {
         this.jobId = jobId;
         this.total = total;
+        this.phase = initialPhase;
         this.createdAtMillis = System.currentTimeMillis();
     }
 

@@ -9,7 +9,6 @@ import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.web.replay.dto.PreviewResponse;
-import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,7 +48,7 @@ class ReplayProcessingJobServiceTest {
     private ReplayProcessingJobStore store;
     private ReplayProcessingJobService service;
     private DefaultReplayProcessingFacade facade;
-    private ReplayExportWorkerExecutor executor;
+    private ReplayParseScheduler parseScheduler;
     private SimpleMeterRegistry meterRegistry;
 
     @BeforeEach
@@ -57,14 +56,14 @@ class ReplayProcessingJobServiceTest {
         tmpDir = Files.createTempDirectory("wotb-processing-job-test");
         store = new ReplayProcessingJobStore(tmpDir, 60);
         facade = mock(DefaultReplayProcessingFacade.class);
-        executor = new ReplayExportWorkerExecutor(2, 4);
+        parseScheduler = new ReplayParseScheduler(2, 200);
         meterRegistry = new SimpleMeterRegistry();
-        service = new ReplayProcessingJobService(new ReplayCapacityLimiter(2), facade, store, executor, meterRegistry);
+        service = new ReplayProcessingJobService(facade, store, parseScheduler, meterRegistry);
     }
 
     @AfterEach
     void tearDown() {
-        executor.close();
+        parseScheduler.close();
         store.close();
         deleteDir(tmpDir);
     }
@@ -280,13 +279,13 @@ class ReplayProcessingJobServiceTest {
         assertEquals(ReplayProcessingJob.Status.CANCELLED, snap.status(), "协作取消后 worker 应终态 CANCELLED");
     }
 
-    // ---- plan §36：QUEUED 取消必须真正释放 executor queue slot ----
+    // ---- plan §36：QUEUED 取消必须真正释放 scheduler pending 容量 ----
 
     @Test
-    void cancelledQueuedJobFreesQueueCapacity() throws Exception {
-        executor.close();
-        executor = new ReplayExportWorkerExecutor(1, 1);
-        service = new ReplayProcessingJobService(new ReplayCapacityLimiter(2), facade, store, executor, null);
+    void cancelledQueuedJobFreesSchedulerCapacity() throws Exception {
+        parseScheduler.close();
+        parseScheduler = new ReplayParseScheduler(1, 2); // 1 worker + 2 pending 上限
+        service = new ReplayProcessingJobService(facade, store, parseScheduler, null);
 
         final CountDownLatch started = new CountDownLatch(1);
         final CountDownLatch releaseA = new CountDownLatch(1);
@@ -298,12 +297,12 @@ class ReplayProcessingJobServiceTest {
         final String jobA = service.createJob(new MultipartFile[]{file("a.wotbreplay")});
         assertTrue(started.await(5, TimeUnit.SECONDS), "job A 应占用唯一 worker");
 
-        final String jobB = service.createJob(new MultipartFile[]{file("b.wotbreplay")});
-        // workers=1 + queue=1 已满 → C 必须 503 PROCESSING_QUEUE_FULL
+        final String jobB = service.createJob(new MultipartFile[]{file("b1.wotbreplay"), file("b2.wotbreplay")});
+        // 唯一 worker 被 A 占用；B 占满 pending 上限后，C 必须 503 PROCESSING_QUEUE_FULL
         assertThrows(ProcessingQueueFullException.class,
                 () -> service.createJob(new MultipartFile[]{file("c.wotbreplay")}));
 
-        // 取消 QUEUED 的 B → 必须立即释放 queue slot
+        // 取消 QUEUED 的 B → 必须立即释放 pending 容量
         assertTrue(service.cancel(jobB));
         assertEquals(ReplayProcessingJob.Status.CANCELLED, service.status(jobB).status());
 
@@ -319,9 +318,9 @@ class ReplayProcessingJobServiceTest {
 
     @Test
     void cancelledQueuedJobNeverProcessesReplay() throws Exception {
-        executor.close();
-        executor = new ReplayExportWorkerExecutor(1, 1);
-        service = new ReplayProcessingJobService(new ReplayCapacityLimiter(2), facade, store, executor, null);
+        parseScheduler.close();
+        parseScheduler = new ReplayParseScheduler(1, 200); // 唯一 worker：B 必然排队
+        service = new ReplayProcessingJobService(facade, store, parseScheduler, null);
 
         final CountDownLatch started = new CountDownLatch(1);
         final CountDownLatch releaseA = new CountDownLatch(1);
@@ -353,10 +352,10 @@ class ReplayProcessingJobServiceTest {
                 "被取消的 queued job 不得执行任何 replay processing");
     }
 
-    // ---- plan §59：34 replay 上传顺序 + 进度 ----
+    // ---- plan §59/§84：34 replay 并行处理，结果顺序必须恢复上传顺序 ----
 
     @Test
-    void thirtyFourReplaysKeepUploadOrderAndReachFullProgress() throws Exception {
+    void thirtyFourReplaysKeepResultOrderWithParallelProcessing() throws Exception {
         stubFacadeBattlesDistinct();
         final List<String> processedOrder = new CopyOnWriteArrayList<>();
         when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
@@ -375,12 +374,114 @@ class ReplayProcessingJobServiceTest {
         assertEquals(ReplayProcessingJob.Status.READY, snap.status());
         assertEquals(34, snap.processed(), "processed 必须最终 == 34");
         assertEquals(34, snap.valid());
-        assertEquals(expected, processedOrder,
-                "处理顺序必须 = 上传顺序 0,1,...,9,10,...,33（字典序会得到 0,1,10,11,...,2,...）");
+        assertEquals(34, processedOrder.size(), "全部 34 个 source 都必须执行");
 
-        // result 的 battleSourceNames 与上传顺序一致
+        // V2 并行：完成顺序允许乱序（plan §84），但最终业务顺序必须恢复上传顺序
         final ProcessedDataset ds = store.get(jobId).result();
         assertEquals(expected, ds.battleSourceNames());
+        assertEquals(expected, snap.sources().stream()
+                        .map(ReplayProcessingJob.SourceState::sourceName).toList(),
+                "per-source 顺序必须保持上传顺序（不随并行完成顺序变化）");
+    }
+
+    // ---- plan §29/§31：真实 parse 进度（parseCompleted/parseSucceeded/parseFailed）与 FINALIZING_BATCH ----
+
+    @Test
+    void parseProgressAndFinalizingPhaseAreExposed() throws Exception {
+        final CountDownLatch aStarted = new CountDownLatch(1);
+        final CountDownLatch bStarted = new CountDownLatch(1);
+        final CountDownLatch cStarted = new CountDownLatch(1);
+        final CountDownLatch releaseA = new CountDownLatch(1);
+        final CountDownLatch releaseRest = new CountDownLatch(1);
+        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
+            final Source s = inv.getArgument(0);
+            if (s.name().startsWith("a")) {
+                aStarted.countDown();
+                releaseA.await(10, TimeUnit.SECONDS);
+            }
+            if (s.name().startsWith("b")) {
+                bStarted.countDown();
+            }
+            if (s.name().startsWith("c")) {
+                cStarted.countDown();
+            }
+            if (!s.name().startsWith("a")) {
+                releaseRest.await(10, TimeUnit.SECONDS);
+            }
+            return result(s.name(), "arena-" + s.name());
+        });
+
+        final String jobId = service.createJob(new MultipartFile[]{
+                file("a.wotbreplay"), file("b.wotbreplay"), file("c.wotbreplay")});
+
+        // a 正在 full process：PROCESSING 阶段 parse 进度=0（尚未完成任何 replay）
+        assertTrue(aStarted.await(5, TimeUnit.SECONDS));
+        final ReplayProcessingJob.Snapshot processingSnap =
+                awaitStatus(jobId, ReplayProcessingJob.Status.PROCESSING, 5_000);
+        assertEquals(ReplayProcessingJob.PHASE_PROCESSING_REPLAYS, processingSnap.phase());
+        assertEquals(0, processingSnap.parseCompleted(),
+                "a 未完成时 parseCompleted 必须为 0（不得用 dedupe 计数冒充）");
+
+        // 释放 a → parseCompleted=1 稳定可见（b/c 阻塞，避免窗口消失）
+        assertTrue(bStarted.await(5, TimeUnit.SECONDS), "并发=2 时 a、b 应同时处理");
+        releaseA.countDown();
+        assertTrue(cStarted.await(5, TimeUnit.SECONDS), "a 完成后 c 应补位");
+        final ReplayProcessingJob.Snapshot during = awaitParseCount(jobId, 1, 5_000);
+        assertEquals(ReplayProcessingJob.Status.PROCESSING, during.status());
+        assertEquals(ReplayProcessingJob.PHASE_PROCESSING_REPLAYS, during.phase());
+        assertEquals(1, during.parseCompleted(), "parse 进度=真实完成数（不得被 dedupe 阶段吞掉）");
+        assertEquals(1, during.parseSucceeded());
+        assertEquals(0, during.parseFailed());
+
+        releaseRest.countDown();
+        final ReplayProcessingJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+        assertEquals(ReplayProcessingJob.Status.READY, snap.status());
+        assertEquals(3, snap.parseCompleted());
+        assertEquals(3, snap.parseSucceeded());
+        assertEquals(0, snap.parseFailed());
+        assertEquals(3, snap.valid());
+    }
+
+    // ---- plan §9/§42：sourceId/sourceIndex/per-source 状态与 activeSources[] ----
+
+    @Test
+    void sourceLevelStatesExposeSourceIdOrderAndActiveSources() throws Exception {
+        final CountDownLatch aStarted = new CountDownLatch(1);
+        final CountDownLatch bStarted = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
+            final Source s = inv.getArgument(0);
+            if (s.name().startsWith("a")) {
+                aStarted.countDown();
+            }
+            if (s.name().startsWith("b")) {
+                bStarted.countDown();
+            }
+            release.await(10, TimeUnit.SECONDS);
+            return result(s.name(), "arena-" + s.name());
+        });
+
+        final String jobId = service.createJob(new MultipartFile[]{
+                file("a.wotbreplay"), file("b.wotbreplay")});
+        assertTrue(aStarted.await(5, TimeUnit.SECONDS));
+        assertTrue(bStarted.await(5, TimeUnit.SECONDS), "并发=2 时两个 source 应同时处理");
+
+        final ReplayProcessingJob.Snapshot during = service.status(jobId);
+        assertEquals(2, during.sources().size());
+        assertEquals("r0", during.sources().get(0).sourceId(), "sourceId 必须按上传顺序 = r{index}");
+        assertEquals("a.wotbreplay", during.sources().get(0).sourceName());
+        assertEquals(ReplayProcessingJob.SourceStatus.PROCESSING, during.sources().get(0).status());
+        assertEquals(ReplayProcessingJob.SourceStatus.PROCESSING, during.sources().get(1).status());
+        assertEquals(2, during.activeSources().size(),
+                "两个 source 同时 PROCESSING → activeSources 必须同时包含两者");
+
+        release.countDown();
+        final ReplayProcessingJob.Snapshot done = awaitTerminal(jobId, 10_000);
+        assertEquals(List.of("a.wotbreplay", "b.wotbreplay"),
+                done.sources().stream().map(ReplayProcessingJob.SourceState::sourceName).toList(),
+                "per-source 顺序必须保持上传顺序（不随完成顺序变化）");
+        assertEquals(ReplayProcessingJob.SourceStatus.READY, done.sources().get(0).status());
+        assertEquals(ReplayProcessingJob.SourceStatus.READY, done.sources().get(1).status());
     }
 
     // ---- plan §57：exactly once processing（Preview/result/Export 不得二次 processFull）----
@@ -565,6 +666,34 @@ class ReplayProcessingJobServiceTest {
             Thread.sleep(20);
         }
         throw new AssertionError("job did not reach terminal within " + timeoutMs + " ms: " + jobId);
+    }
+
+    /** 轮询直到 parseCompleted >= expected（观察 PROCESSING 中间态）。 */
+    private ReplayProcessingJob.Snapshot awaitParseCount(final String jobId, final int expected,
+                                                         final long timeoutMs) throws InterruptedException {
+        final long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            final ReplayProcessingJob.Snapshot snap = service.status(jobId);
+            if (snap.parseCompleted() >= expected) {
+                return snap;
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError("parseCompleted did not reach " + expected + " within " + timeoutMs + " ms");
+    }
+
+    /** 轮询直到 job 到达指定非终态（观察 PROCESSING 中间态）。 */
+    private ReplayProcessingJob.Snapshot awaitStatus(final String jobId, final ReplayProcessingJob.Status status,
+                                                     final long timeoutMs) throws InterruptedException {
+        final long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            final ReplayProcessingJob.Snapshot snap = service.status(jobId);
+            if (snap.status() == status) {
+                return snap;
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError("job did not reach " + status + " within " + timeoutMs + " ms");
     }
 
     private static void deleteDir(final Path dir) {

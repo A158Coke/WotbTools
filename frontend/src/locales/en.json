@@ -795,6 +795,23 @@
             "cancelled": "Cancelled"
         },
         "processing_job": {
+            "uploading": "Uploading…",
+            "uploading_progress": "Uploaded {loaded} / {total}",
+            "registering": "Upload complete, preparing task…",
+            "queued": "Waiting for parse resources…",
+            "queued_total": "Processing task created, {total} replays",
+            "title": "Parsing replays",
+            "progress": "Parsed {processed} / {total}",
+            "active_sources": "Parsing {count} replays in parallel",
+            "current_file": "Current file: {file}",
+            "counts": "OK {v} · Failed {f}",
+            "finalizing": "Finalizing results…",
+            "finalizing_detail": "Dedupe / League validation / Rating / Aggregation",
+            "ready": "Parse complete",
+            "valid_summary": "Valid {v} · Duplicate {d} · Failed {f}",
+            "failed": "Parse failed",
+            "cancelled": "Cancelled",
+            "no_valid_replays": "No valid replays found.",
             "mixed_league_standard": "Mixed upload detected: standard and training/tournament replays cannot be parsed together"
         }
     },

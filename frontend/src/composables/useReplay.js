@@ -8,6 +8,20 @@ const JOB_TERMINAL = new Set(['READY', 'FAILED', 'CANCELLED'])
 const JOB_ACTIVE = new Set(['QUEUED', 'PROCESSING'])
 const JOB_POLL_MS = 1500
 
+/** 处理中 UI 状态（单一事实源，plan §58；UPLOADING/REGISTERING 为前端本地态）。 */
+export const PROCESSING_UI_STATES = Object.freeze({
+  EMPTY: 'EMPTY',
+  FILES_SELECTED: 'FILES_SELECTED',
+  UPLOADING: 'UPLOADING',
+  REGISTERING: 'REGISTERING',
+  QUEUED: 'QUEUED',
+  PROCESSING: 'PROCESSING',
+  FINALIZING: 'FINALIZING',
+  READY: 'READY',
+  FAILED: 'FAILED',
+  CANCELLED: 'CANCELLED'
+})
+
 /**
  * 初始结果 tab 决策（activeTab 必须始终指向真实存在、可渲染的结果 panel）。
  * 不能再按 battle 数量猜测 aggregate——aggregate tab/panel 的真实存在条件是
@@ -52,6 +66,9 @@ export function useReplay() {
   // ---- Replay Processing Job（异步 Job：真实进度 + 可取消 + result 复用）----
   const processingJob = ref(null)
   const processingError = ref('')
+  /** 上传阶段本地状态（{phase:'UPLOADING'|'REGISTERING', loaded, total, percent}）。 */
+  const uploadState = ref(null)
+  let uploadAbort = null
   /** 已完成解析的 Processing Job id（供 Export 复用 result，不重新上传/processFull）。 */
   const processingJobId = ref(null)
   let processingPollTimer = null
@@ -77,6 +94,21 @@ export function useReplay() {
 
   const processingActive = computed(() => processingJob.value && JOB_ACTIVE.has(processingJob.value.status))
   const exportActive = computed(() => exportJob.value && JOB_ACTIVE.has(exportJob.value.status))
+  /** 处理 UX 派生状态：upload 本地态 → job 状态 + phase（FINALIZING_BATCH → FINALIZING）。 */
+  const processingUiState = computed(() => {
+    if (uploadState.value) return uploadState.value.phase
+    const job = processingJob.value
+    if (!job) return files.value.length ? PROCESSING_UI_STATES.FILES_SELECTED : PROCESSING_UI_STATES.EMPTY
+    switch (job.status) {
+      case 'QUEUED': return PROCESSING_UI_STATES.QUEUED
+      case 'PROCESSING':
+        return job.phase === 'FINALIZING_BATCH' ? PROCESSING_UI_STATES.FINALIZING : PROCESSING_UI_STATES.PROCESSING
+      case 'READY': return PROCESSING_UI_STATES.READY
+      case 'FAILED': return PROCESSING_UI_STATES.FAILED
+      case 'CANCELLED': return PROCESSING_UI_STATES.CANCELLED
+      default: return PROCESSING_UI_STATES.FILES_SELECTED
+    }
+  })
   /**
    * 当前展示的 result 是否与当前 files selection 一致（export eligibility）：
    * processingJobId 与 resp 只会在「READY 自动加载」时成对设置、在 updateFiles 时成对清除，
@@ -111,6 +143,9 @@ export function useReplay() {
     stopProcessingPolling()
     const job = processingJob.value
     processingJob.value = null
+    uploadAbort?.abort()
+    uploadAbort = null
+    uploadState.value = null
     if (job && JOB_ACTIVE.has(job.status)) {
       api.cancelProcessingJob(job.jobId).catch(() => {})
     }
@@ -194,8 +229,25 @@ export function useReplay() {
     loading.value = true
     error.value = ''
     processingError.value = ''
+    uploadAbort?.abort()
+    const controller = new AbortController()
+    uploadAbort = controller
+    uploadState.value = { phase: 'UPLOADING', loaded: 0, total: 0, percent: 0 }
     try {
-      const created = await api.createProcessingJob(buildFormData())
+      const created = await api.createProcessingJob(buildFormData(), {
+        onProgress: ({ loaded, total, percent }) => {
+          // 上传体已发完但 202 未返回 → REGISTERING（plan §28）
+          uploadState.value = {
+            phase: percent >= 100 ? 'REGISTERING' : 'UPLOADING',
+            loaded,
+            total,
+            percent
+          }
+        },
+        signal: controller.signal
+      })
+      if (uploadAbort === controller) uploadAbort = null
+      uploadState.value = null
       if (selectionRevision.value !== revisionAtCreate) {
         // 创建请求期间 files 已变化：该 job 的输入不再匹配当前 selection——不注册到状态，
         // 后台取消（其输入由后端 TTL 清理）。
@@ -219,9 +271,27 @@ export function useReplay() {
       processingPollTimer = setInterval(() => pollProcessingJob(onColumnsInit), JOB_POLL_MS)
       pollProcessingJob(onColumnsInit)
     } catch (e) {
+      uploadState.value = null
+      if (uploadAbort === controller) uploadAbort = null
+      if (e && e.name === 'AbortError') {
+        // 用户取消上传 / selection 变化：不显示错误，状态已被 updateFiles 清空
+        return
+      }
       loading.value = false
       processingError.value = `${t('replay.preview_failed')}: ${apiErrorLabel(t, te, e)}`
     }
+  }
+
+  /** 统一取消：上传阶段 abort XHR；已注册 Job 走协作取消。 */
+  function cancelProcessing() {
+    if (uploadState.value) {
+      uploadAbort?.abort()
+      uploadAbort = null
+      uploadState.value = null
+      loading.value = false
+      return
+    }
+    return cancelProcessingJob()
   }
 
   async function cancelProcessingJob() {
@@ -370,8 +440,9 @@ export function useReplay() {
     selectionRevision,
     updateFiles,
     processingJob, processingError, processingActive, processingJobId,
+    uploadState, processingUiState,
     exportJob, exportError, exportActive,
-    startProcessingJob, cancelProcessingJob, dismissProcessingJob,
+    startProcessingJob, cancelProcessingJob, cancelProcessing, dismissProcessingJob,
     startExportJob, cancelExportJob, downloadExportResult, dismissExportJob,
     askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove, confirmRemoveBattle,
   }
