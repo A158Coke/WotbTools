@@ -40,13 +40,8 @@ public final class LeagueRatingBatchAggregator {
                 acc.clan = p.clan();
                 acc.battles++;
                 acc.ratings.add(p.finalRating());
-                acc.dims.add(p.damageScore());
-                acc.dims.add(p.assistScore());
-                acc.dims.add(p.killScore());
-                acc.dims.add(p.exchangeScore());
-                acc.dims.add(p.blockedScore());
-                acc.dims.add(p.survivalTradeScore());
-                acc.dims.add(p.shootingScore());
+                // 七维顺序单一来源：dimensionScores()（与 LeagueColumns.DIM_KEYS 严格一致）
+                acc.dims.addAll(p.dimensionScores());
                 if (p.mvp()) {
                     acc.mvpCount++;
                 }

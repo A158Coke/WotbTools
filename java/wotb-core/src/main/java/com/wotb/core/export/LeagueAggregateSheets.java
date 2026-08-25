@@ -163,13 +163,10 @@ final class LeagueAggregateSheets {
                 styles.setCell(row.createCell(c++), tp.info(tankId(battle, p)).name(), styles.plain(), "tank_name");
                 styles.setCell(row.createCell(c++), p.damageDealt(), styles.plain(), "damage_dealt");
                 styles.setCell(row.createCell(c++), ExcelStyles.r1(p.finalRating()), styles.plain(), "league_rating");
-                styles.setCell(row.createCell(c++), ExcelStyles.r1(p.damageScore()), styles.plain(), "league_score");
-                styles.setCell(row.createCell(c++), ExcelStyles.r1(p.assistScore()), styles.plain(), "league_score");
-                styles.setCell(row.createCell(c++), ExcelStyles.r1(p.killScore()), styles.plain(), "league_score");
-                styles.setCell(row.createCell(c++), ExcelStyles.r1(p.exchangeScore()), styles.plain(), "league_score");
-                styles.setCell(row.createCell(c++), ExcelStyles.r1(p.blockedScore()), styles.plain(), "league_score");
-                styles.setCell(row.createCell(c++), ExcelStyles.r1(p.survivalTradeScore()), styles.plain(), "league_score");
-                styles.setCell(row.createCell(c++), ExcelStyles.r1(p.shootingScore()), styles.plain(), "league_score");
+                // 七维顺序单一来源：dimensionScores()（与 LeagueColumns.DIM_KEYS 严格一致）
+                for (final Double score : p.dimensionScores()) {
+                    styles.setCell(row.createCell(c++), ExcelStyles.r1(score), styles.plain(), "league_score");
+                }
             }
         }
         ws.createFreezePane(1, 1);

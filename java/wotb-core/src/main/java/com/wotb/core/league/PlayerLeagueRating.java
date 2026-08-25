@@ -1,5 +1,7 @@
 package com.wotb.core.league;
 
+import java.util.List;
+
 /** 一名玩家的一场 League Rating 结果（七维分 + 汇总分 + MVP 标记 + Rating 关键原始字段）。 */
 public record PlayerLeagueRating(
         long accountId,
@@ -42,4 +44,16 @@ public record PlayerLeagueRating(
     public static final double MAX_SHOOTING = 100;
     /** 最终分上限。 */
     public static final double MAX_FINAL = 1000;
+
+    /**
+     * 七维分数的唯一有序表示（顺序严格与 {@link LeagueColumns#DIM_KEYS} 一致）。
+     *
+     * <p>consumer（Mapper / Excel 单场 / Excel 批量 / 批次聚合）一律消费本方法，
+     * 禁止自行重写 {@code List.of(damageScore(), assistScore(), ...)} 数组——
+     * 维度增删时只有本方法知道顺序，杜绝「某个 consumer 静默漏一维」。</p>
+     */
+    public List<Double> dimensionScores() {
+        return List.of(damageScore, assistScore, killScore, exchangeScore,
+                blockedScore, survivalTradeScore, shootingScore);
+    }
 }

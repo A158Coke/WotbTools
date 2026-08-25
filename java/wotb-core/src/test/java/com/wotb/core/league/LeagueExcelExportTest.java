@@ -1,9 +1,12 @@
 package com.wotb.core.league;
 
+import com.wotb.core.AggregateColumns;
 import com.wotb.core.Columns;
 import com.wotb.core.export.ExcelExporter;
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
+import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -199,6 +202,60 @@ class LeagueExcelExportTest {
         }
     }
 
+    /** 给一场 battle 的玩家设置 {@code count} 个不同的 platoonId（按 players 顺序循环）。 */
+    private static void setDistinctPlatoons(final Battle battle, final int count) {
+        int i = 0;
+        for (final PlayerResult p : battle.players) {
+            p.platoonId = 100L + (i % count);
+            i++;
+        }
+    }
+
+    private static String cellText(final Row row, final int c) {
+        final Cell cell = row.getCell(c);
+        return cell == null ? "" : cell.getStringCellValue();
+    }
+
+    /** Excel 汇总标题（测试 oracle：验证 Excel 汇总列集合与 canonical 列宇宙 exact 对齐）。 */
+    private static String summaryTitle(final String key) {
+        return switch (key) {
+            case "nickname" -> "玩家";
+            case "clan" -> "战队";
+            case "battles" -> "场次";
+            case "wins" -> "胜场";
+            case "win_rate" -> "胜率%";
+            case "survival_rate" -> "存活率%";
+            case "survival_avg" -> "平均存活时间";
+            case "kills" -> "总击杀";
+            case "kills_avg" -> "场均击杀";
+            case "damage" -> "总伤害";
+            case "damage_avg" -> "场均伤害";
+            case "potential_damage" -> "总潜在伤害";
+            case "potential_damage_avg" -> "场均潜在伤害";
+            case "potential_damage_supplement_avg" -> "场均补增伤害";
+            case "assisted" -> "总协助伤害";
+            case "assisted_avg" -> "场均协助伤害";
+            case "received_avg" -> "场均损失血量";
+            case "blocked_avg" -> "场均格挡";
+            case "hit_rate" -> "命中率%";
+            case "pen_rate" -> "击穿率%";
+            case "shots" -> "总射击次数";
+            case "hits" -> "总命中次数";
+            case "pens" -> "总击穿次数";
+            case "enemies_damaged_avg" -> "场均击伤";
+            case "tanks" -> "用车";
+            case "account_id" -> "账号ID";
+            case "earned_total" -> "获取点数总计";
+            case "earned_avg" -> "获取点数/场";
+            case "contribution" -> "贡献度%";
+            case "kast" -> "KAST%";
+            case "impact" -> "Impact%";
+            case "multi_damage_rate" -> "多伤率%";
+            case "traded_deaths" -> "互换击杀";
+            default -> throw new AssertionError("unexpected aggregate key: " + key);
+        };
+    }
+
     private static String headerText(final Sheet sheet) {
         final StringBuilder sb = new StringBuilder();
         final Row header = sheet.getRow(0);
@@ -296,6 +353,80 @@ class LeagueExcelExportTest {
             assertTrue(text.contains("one.wotbreplay") && text.contains("two.wotbreplay"),
                     "明细必须含文件名列值（batch 可追踪）");
             assertTrue(text.contains("arena-1") && text.contains("arena-2"), "明细必须含竞技场ID列值");
+        }
+    }
+
+    @Test
+    void aggregateDetailPlatoonLabelsRestartPerBattle() throws Exception {
+        // 排号语义按单场 Battle 独立：battle 1 三个 platoon → A/B/C；
+        // battle 2 两个不同 platoon → 必须重新从 A/B 开始（不得接续 C/D 或共享映射）。
+        final Battle b1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        b1.arenaId = "arena-1";
+        setDistinctPlatoons(b1, 3);
+        final Battle b2 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        b2.arenaId = "arena-2";
+        setDistinctPlatoons(b2, 2);
+
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ExcelExporter.writeAggregate(List.of(b1, b2), List.of("one.wotbreplay", "two.wotbreplay"),
+                List.of(), Tankopedia.load(), out);
+        try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()))) {
+            final Sheet detail = wb.getSheet("明细");
+            final Row header = detail.getRow(0);
+            int platoonCol = -1;
+            for (int c = 0; c < header.getLastCellNum(); c++) {
+                if ("排".equals(header.getCell(c).getStringCellValue())) {
+                    platoonCol = c;
+                }
+            }
+            assertTrue(platoonCol >= 0, "明细必须含 排 列");
+            final List<String> battle1 = new ArrayList<>();
+            final List<String> battle2 = new ArrayList<>();
+            for (int r = 1; r <= 14; r++) {
+                battle1.add(cellText(detail.getRow(r), platoonCol));
+            }
+            for (int r = 15; r <= 28; r++) {
+                battle2.add(cellText(detail.getRow(r), platoonCol));
+            }
+            // 同一场多个 platoon：A/B/C 正常递增
+            assertEquals(3, new java.util.HashSet<>(battle1).size(), "battle 1 应有 3 个不同排标签");
+            assertTrue(battle1.contains("A") && battle1.contains("B") && battle1.contains("C"),
+                    "battle 1 排标签必须为 A/B/C，实际 " + battle1);
+            // 跨 battle 重新从 A 开始：battle 2 不得接续 battle 1 的映射
+            assertEquals("A", battle2.getFirst(), "battle 2 第一个排必须重新从 A 开始（跨 battle 不得共享映射）");
+            assertTrue(!battle2.contains("C") && !battle2.contains("D"),
+                    "battle 2 不得出现 battle 1 的延续标签，实际 " + battle2);
+        }
+    }
+
+    @Test
+    void aggregateSummaryHeaderExactlyMatchesCanonicalColumns() throws Exception {
+        // 汇总列集合必须恰好 == canonical AggregateColumns.CORE + PERFORMANCE：
+        // 任何 missing / unexpected / duplicate 都会使「列数相等 + 标题恰好出现一次」失败。
+        final Battle b1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        b1.arenaId = "arena-1";
+        final Battle b2 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        b2.arenaId = "arena-2";
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ExcelExporter.writeAggregate(List.of(b1, b2), List.of("one.wotbreplay", "two.wotbreplay"),
+                List.of(), Tankopedia.load(), out);
+        try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()))) {
+            final Row header = wb.getSheet("汇总").getRow(0);
+            final List<String> headers = new ArrayList<>();
+            for (int c = 0; c < header.getLastCellNum(); c++) {
+                headers.add(header.getCell(c).getStringCellValue());
+            }
+            final int canonicalCount = AggregateColumns.CORE.size() + AggregateColumns.PERFORMANCE.size();
+            assertEquals(canonicalCount, headers.size(),
+                    "汇总列数必须 == canonical AggregateColumns 列数（unexpected 列会破坏该计数）");
+            for (final AggregateColumns.CoreColumn c : AggregateColumns.CORE) {
+                assertEquals(1, headers.stream().filter(h -> h.equals(summaryTitle(c.key()))).count(),
+                        "canonical 列必须恰好出现一次（missing/duplicate 均失败）：" + c.key());
+            }
+            for (final AggregateColumns.PerfColumn c : AggregateColumns.PERFORMANCE) {
+                assertEquals(1, headers.stream().filter(h -> h.equals(summaryTitle(c.key()))).count(),
+                        "canonical 列必须恰好出现一次（missing/duplicate 均失败）：" + c.key());
+            }
         }
     }
 
@@ -491,8 +622,9 @@ class LeagueExcelExportTest {
 
     @Test
     void aggregateLeaguePartialRatingsListsAllBattlesDetailsOnlyRated() throws Exception {
-        // P0：battles 含 Rating-ineligible 场（arena-2）时：每场明细只含 eligible，
-        // 战斗列表列出全部 battle 且 ineligible 场显示真实 failure 状态，不重复行、不崩溃
+        // Rating-ineligible battles remain part of the parsed Replay dataset:
+        // 每场明细只含 eligible（无 Rating 的场次没有 Rating 明细行）；
+        // 战斗列表列出全部 battle 且 ineligible 场显示真实 failure 状态，不重复行、不崩溃。
         final Battle b1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         b1.arenaId = "arena-1";
         final Battle b2 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());

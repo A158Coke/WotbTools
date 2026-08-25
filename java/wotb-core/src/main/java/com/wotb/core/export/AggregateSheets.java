@@ -22,8 +22,11 @@ import org.apache.poi.ss.util.CellRangeAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
 
 /** 多场汇总工作簿的三张表: 汇总 / 明细 / 战斗列表。 */
 final class AggregateSheets {
@@ -31,60 +34,73 @@ final class AggregateSheets {
     private AggregateSheets() {
     }
 
-    /**
-     * 汇总表 presentation spec：中文 title / xlsx width / 展示顺序。
-     * key 与取值 getter 一律消费 canonical {@link AggregateColumns}（本层<b>不</b>定义
-     * 业务 getter / numeric / key 宇宙）。
-     */
-    private record SummarySpec(String title, int width, String key) {
+    /** 汇总表 presentation 元数据：中文 title + xlsx width（key 由 canonical 列驱动，不允许自建 key 宇宙）。 */
+    private record SummaryPresentation(String title, int width) {
     }
 
-    private static final List<SummarySpec> SUMMARY_SPECS = List.of(
-            new SummarySpec("玩家", 18, "nickname"),
-            new SummarySpec("战队", 10, "clan"),
-            new SummarySpec("场次", 6, "battles"),
-            new SummarySpec("胜场", 6, "wins"),
-            new SummarySpec("胜率%", 8, "win_rate"),
-            new SummarySpec("存活率%", 9, "survival_rate"),
-            new SummarySpec("贡献度%", 9, "contribution"),
-            new SummarySpec("KAST%", 8, "kast"),
-            new SummarySpec("Impact%", 9, "impact"),
-            new SummarySpec("多伤率%", 9, "multi_damage_rate"),
-            new SummarySpec("互换击杀", 8, "traded_deaths"),
-            new SummarySpec("平均存活时间", 12, "survival_avg"),
-            new SummarySpec("总击杀", 7, "kills"),
-            new SummarySpec("场均击杀", 7, "kills_avg"),
-            new SummarySpec("总伤害", 9, "damage"),
-            new SummarySpec("场均伤害", 9, "damage_avg"),
-            new SummarySpec("总潜在伤害", 10, "potential_damage"),
-            new SummarySpec("场均潜在伤害", 10, "potential_damage_avg"),
-            new SummarySpec("场均补增伤害", 9, "potential_damage_supplement_avg"),
-            new SummarySpec("总协助伤害", 9, "assisted"),
-            new SummarySpec("场均协助伤害", 9, "assisted_avg"),
-            new SummarySpec("场均损失血量", 8, "received_avg"),
-            new SummarySpec("场均格挡", 8, "blocked_avg"),
-            new SummarySpec("命中率%", 8, "hit_rate"),
-            new SummarySpec("击穿率%", 8, "pen_rate"),
-            new SummarySpec("总射击次数", 8, "shots"),
-            new SummarySpec("总命中次数", 8, "hits"),
-            new SummarySpec("总击穿次数", 8, "pens"),
-            new SummarySpec("场均击伤", 9, "enemies_damaged_avg"),
-            new SummarySpec("获取点数总计", 10, "earned_total"),
-            new SummarySpec("获取点数/场", 9, "earned_avg"),
-            new SummarySpec("用车", 30, "tanks"),
-            new SummarySpec("账号ID", 12, "account_id")
+    private static final Map<String, SummaryPresentation> SUMMARY_PRESENTATION = Map.ofEntries(
+            Map.entry("nickname", new SummaryPresentation("玩家", 18)),
+            Map.entry("clan", new SummaryPresentation("战队", 10)),
+            Map.entry("battles", new SummaryPresentation("场次", 6)),
+            Map.entry("wins", new SummaryPresentation("胜场", 6)),
+            Map.entry("win_rate", new SummaryPresentation("胜率%", 8)),
+            Map.entry("survival_rate", new SummaryPresentation("存活率%", 9)),
+            Map.entry("survival_avg", new SummaryPresentation("平均存活时间", 12)),
+            Map.entry("kills", new SummaryPresentation("总击杀", 7)),
+            Map.entry("kills_avg", new SummaryPresentation("场均击杀", 7)),
+            Map.entry("damage", new SummaryPresentation("总伤害", 9)),
+            Map.entry("damage_avg", new SummaryPresentation("场均伤害", 9)),
+            Map.entry("potential_damage", new SummaryPresentation("总潜在伤害", 10)),
+            Map.entry("potential_damage_avg", new SummaryPresentation("场均潜在伤害", 10)),
+            Map.entry("potential_damage_supplement_avg", new SummaryPresentation("场均补增伤害", 9)),
+            Map.entry("assisted", new SummaryPresentation("总协助伤害", 9)),
+            Map.entry("assisted_avg", new SummaryPresentation("场均协助伤害", 9)),
+            Map.entry("received_avg", new SummaryPresentation("场均损失血量", 8)),
+            Map.entry("blocked_avg", new SummaryPresentation("场均格挡", 8)),
+            Map.entry("hit_rate", new SummaryPresentation("命中率%", 8)),
+            Map.entry("pen_rate", new SummaryPresentation("击穿率%", 8)),
+            Map.entry("shots", new SummaryPresentation("总射击次数", 8)),
+            Map.entry("hits", new SummaryPresentation("总命中次数", 8)),
+            Map.entry("pens", new SummaryPresentation("总击穿次数", 8)),
+            Map.entry("enemies_damaged_avg", new SummaryPresentation("场均击伤", 9)),
+            Map.entry("tanks", new SummaryPresentation("用车", 30)),
+            Map.entry("account_id", new SummaryPresentation("账号ID", 12)),
+            Map.entry("earned_total", new SummaryPresentation("获取点数总计", 10)),
+            Map.entry("earned_avg", new SummaryPresentation("获取点数/场", 9)),
+            Map.entry("contribution", new SummaryPresentation("贡献度%", 9)),
+            Map.entry("kast", new SummaryPresentation("KAST%", 8)),
+            Map.entry("impact", new SummaryPresentation("Impact%", 9)),
+            Map.entry("multi_damage_rate", new SummaryPresentation("多伤率%", 9)),
+            Map.entry("traded_deaths", new SummaryPresentation("互换击杀", 8))
     );
 
-    private static final Map<String, AggregateColumns.PerfColumn> PERF_BY_KEY = new HashMap<>();
-    private static final Map<String, AggregateColumns.CoreColumn> CORE_BY_KEY = new HashMap<>();
+    /** 表现派生列 key 集合（canonical 成员资格单一来源）。 */
+    private static final Set<String> PERF_KEYS;
+
+    /** 汇总列集合 = canonical {@link AggregateColumns#CORE} + {@link AggregateColumns#PERFORMANCE}
+     * （Excel 与 API 同一 canonical 列宇宙；presentation 只提供 title/width）。 */
+    private static final List<String> SUMMARY_KEYS;
 
     static {
-        for (final AggregateColumns.PerfColumn c : AggregateColumns.PERFORMANCE) {
-            PERF_BY_KEY.put(c.key(), c);
-        }
+        final List<String> keys = new ArrayList<>();
+        final Set<String> perfKeys = new HashSet<>();
         for (final AggregateColumns.CoreColumn c : AggregateColumns.CORE) {
-            CORE_BY_KEY.put(c.key(), c);
+            keys.add(c.key());
         }
+        for (final AggregateColumns.PerfColumn c : AggregateColumns.PERFORMANCE) {
+            keys.add(c.key());
+            perfKeys.add(c.key());
+        }
+        // fail fast：canonical key 必须全部有 presentation metadata；
+        // 缺任何一个（新增字段忘加 title/width）在类加载即失败，绝不静默缺列。
+        for (final String key : keys) {
+            if (!SUMMARY_PRESENTATION.containsKey(key)) {
+                throw new IllegalStateException(
+                        "aggregate summary presentation metadata missing for canonical key: " + key);
+            }
+        }
+        SUMMARY_KEYS = List.copyOf(keys);
+        PERF_KEYS = Set.copyOf(perfKeys);
     }
 
     static void write(final ExcelStyles styles, final List<Battle> battles, final List<String> sourceNames,
@@ -115,45 +131,48 @@ final class AggregateSheets {
         // 与 API Mapper.toAggregate 同一 canonical 契约（AggregateColumns getter 单一事实源）：
         //   contribution/kast/多伤率 依赖 HP（hpEligible=false 时 unavailable → null = Excel 空单元格）
         //   impact/tradedDeaths 不依赖 HP（仅要求该账号存在 performance row）
-        styles.writeHeader(ws, SUMMARY_SPECS.stream()
-                .map(s -> new String[]{s.title(), String.valueOf(s.width())}).toList());
+        styles.writeHeader(ws, SUMMARY_KEYS.stream()
+                .map(k -> new String[]{SUMMARY_PRESENTATION.get(k).title(),
+                        String.valueOf(SUMMARY_PRESENTATION.get(k).width())}).toList());
         final List<Agg> rows = new ArrayList<>(aggMap.values());
         rows.sort((x, y) -> Double.compare(y.avg(y.damage), x.avg(x.damage)));
         int rIdx = 1;
         for (final Agg a : rows) {
             final Row row = ws.createRow(rIdx++);
-            for (int c = 0; c < SUMMARY_SPECS.size(); c++) {
-                styles.setCell(row.createCell(c), summaryValue(SUMMARY_SPECS.get(c), a, perfById),
+            for (int c = 0; c < SUMMARY_KEYS.size(); c++) {
+                styles.setCell(row.createCell(c), summaryValue(SUMMARY_KEYS.get(c), a, perfById),
                         styles.plain(), c < 2 ? "nickname" : "x");
             }
         }
         ws.createFreezePane(1, 1);
-        ws.setAutoFilter(new CellRangeAddress(0, rows.size(), 0, SUMMARY_SPECS.size() - 1));
+        ws.setAutoFilter(new CellRangeAddress(0, rows.size(), 0, SUMMARY_KEYS.size() - 1));
     }
 
     /** 汇总单元格取值：canonical getter 单一来源；仅「平均存活时间」做 Excel duration 展示格式化。 */
-    private static Object summaryValue(final SummarySpec spec, final Agg a,
+    private static Object summaryValue(final String key, final Agg a,
                                        final Map<Long, PerformanceMetricsCalculator.Row> perfById) {
-        if (spec.key().equals("survival_avg")) {
-            return ExcelStyles.duration((Double) CORE_BY_KEY.get(spec.key()).get().apply(a));
+        if (key.equals("survival_avg")) {
+            return ExcelStyles.duration((Double) AggregateColumns.core(key).get().apply(a));
         }
-        final AggregateColumns.PerfColumn perf = PERF_BY_KEY.get(spec.key());
-        if (perf != null) {
+        if (PERF_KEYS.contains(key)) {
             final PerformanceMetricsCalculator.Row row = perfById.get(a.accountId);
-            return row == null ? null : perf.get().apply(row);
+            return row == null ? null : AggregateColumns.perf(key).get().apply(row);
         }
-        return CORE_BY_KEY.get(spec.key()).get().apply(a);
+        return AggregateColumns.core(key).get().apply(a);
     }
 
     /**
      * Replay 明细：battle context（文件名 / 竞技场ID / 日期 / 地图 / 胜负）+
      * 完整 canonical {@link Columns#PLAYER}（玩家/战队/车辆/等级/类型/国家/炮伤/单场 stats/
      * 被命中/被击穿/击伤/排/军阶/车辆ID/账号ID——单一 schema 源，不复制字段列表）。
+     *
+     * <p>排标签（{@link Players#platoonLabeler}）按单场 Battle 独立：platoonId → A/B/C
+     * 映射只在该场有效，不同 replay 的排号重新从 A 开始（排号不是跨场身份）。</p>
      */
     private static void detail(final ExcelStyles styles, final List<Battle> battles, final List<String> sourceNames,
                                final Tankopedia tp, final String sheetPrefix) {
         final Sheet ws = styles.workbook().createSheet(sheetPrefix + "明细");
-        record DCol(String title, int xlsx, String key, java.util.function.Function<PlayerResult, Object> get) {
+        record DCol(String title, int xlsx, String key, Function<PlayerResult, Object> get) {
         }
         final List<String[]> hdrSpec = new ArrayList<>();
         hdrSpec.add(new String[]{"文件名", "40"});
@@ -164,7 +183,6 @@ final class AggregateSheets {
         Columns.PLAYER.forEach(c -> hdrSpec.add(new String[]{c.title(), String.valueOf(c.xlsx())}));
         styles.writeHeader(ws, hdrSpec);
 
-        final java.util.function.Function<Long, String> platoon = Players.platoonLabeler();
         int rIdx = 1;
         for (int i = 0; i < battles.size(); i++) {
             final Battle b = battles.get(i);
@@ -172,6 +190,8 @@ final class AggregateSheets {
             final Integer winner = b.winnerTeam;
             final String sourceName = i < sourceNames.size() ? sourceNames.get(i) : "";
             final String mapName = MapNames.cn(b.mapName);
+            // 每场独立 platoon labeler：跨 battle 不共享 platoonId → 字母映射
+            final Function<Long, String> platoon = Players.platoonLabeler();
             final List<DCol> head = List.of(
                     new DCol("文件名", 40, "nickname", p -> sourceName),
                     new DCol("竞技场ID", 22, "x", p -> b.arenaId),

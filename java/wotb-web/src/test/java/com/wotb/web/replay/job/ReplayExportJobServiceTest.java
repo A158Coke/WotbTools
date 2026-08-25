@@ -891,7 +891,7 @@ class ReplayExportJobServiceTest {
         }
     }
 
-    // ---- review BLOCKER 3：from-result Export 只读消费 ProcessedDataset（不再 mutate 共享 Battle）----
+    // ---- from-result Export 只读消费 ProcessedDataset（不再 mutate 共享 Battle facts）----
 
     @Test
     void fromResultExportsDoNotMutateProcessedDataset() throws Exception {
@@ -966,7 +966,7 @@ class ReplayExportJobServiceTest {
         }
     }
 
-    // ---- review BLOCKER 2：acquire Processing result 后的 refcount ownership lifecycle ----
+    // ---- acquire Processing result 后的 refcount ownership lifecycle ----
 
     @Test
     void storageFailureAfterAcquireReleasesProcessingRefcount() throws Exception {
@@ -1051,7 +1051,7 @@ class ReplayExportJobServiceTest {
 
             // jobB：from-result → QUEUED（acquire +1，等 worker）
             final String jobB = service.createJob(null, "aggregate", pJobId);
-            // QUEUED 取消 → removeQueued → 请求线程 release（review BLOCKER 2 语义保留）
+            // QUEUED 取消 → removeQueued → 请求线程 release（引用计数语义保留）
             assertTrue(service.cancel(jobB));
             assertEquals(ExportJob.Status.CANCELLED, service.status(jobB).status());
 

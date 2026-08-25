@@ -184,11 +184,9 @@ public final class Mapper {
                 final PlayerLeagueRating plr = leagueByAccount.get(p.accountId);
                 if (plr != null) {
                     cells.put(LeagueColumns.RATING, r1(plr.finalRating()));
-                    final double[] dims = {
-                            plr.damageScore(), plr.assistScore(), plr.killScore(), plr.exchangeScore(),
-                            plr.blockedScore(), plr.survivalTradeScore(), plr.shootingScore()};
+                    // 七维顺序单一来源：dimensionScores()（与 LeagueColumns.DIM_KEYS 严格一致）
                     for (int d = 0; d < LeagueColumns.DIM_KEYS.size(); d++) {
-                        cells.put(LeagueColumns.dimKey(d), r1(dims[d]));
+                        cells.put(LeagueColumns.dimKey(d), r1(plr.dimensionScores().get(d)));
                     }
                 }
                 cells.put(LeagueColumns.VICTORY_POINTS_EARNED, p.victoryPointsEarned);

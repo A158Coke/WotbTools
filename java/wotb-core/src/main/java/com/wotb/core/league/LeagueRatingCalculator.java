@@ -334,18 +334,16 @@ public final class LeagueRatingCalculator {
                     LeagueTeamNamer.NAME_SOURCE_UNNAMED, null, List.of());
         }
         double sum = 0;
-        final double[] dimSums = new double[7];
+        final double[] dimSums = new double[LeagueColumns.DIM_KEYS.size()];
         for (final PlayerLeagueRating p : players) {
             sum += p.finalRating();
-            dimSums[0] += p.damageScore();
-            dimSums[1] += p.assistScore();
-            dimSums[2] += p.killScore();
-            dimSums[3] += p.exchangeScore();
-            dimSums[4] += p.blockedScore();
-            dimSums[5] += p.survivalTradeScore();
-            dimSums[6] += p.shootingScore();
+            // 七维顺序单一来源：dimensionScores()（与 LeagueColumns.DIM_KEYS 严格一致）
+            final List<Double> scores = p.dimensionScores();
+            for (int d = 0; d < scores.size(); d++) {
+                dimSums[d] += scores.get(d);
+            }
         }
-        final List<Double> dimAverages = new ArrayList<>(7);
+        final List<Double> dimAverages = new ArrayList<>(dimSums.length);
         for (final double d : dimSums) {
             dimAverages.add(d / n);
         }
