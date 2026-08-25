@@ -26,7 +26,6 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -350,6 +349,53 @@ class ReplayProcessingJobServiceTest {
         awaitTerminal(jobC, 10_000);
         assertFalse(processedNames.contains("b.wotbreplay"),
                 "被取消的 queued job 不得执行任何 replay processing");
+    }
+
+    // ---- BLOCKER 1：PROCESSING 取消竞态（completion 记账后、pump 派发前 cancel）----
+
+    @Test
+    void processCancelRaceWithNoCompletionPendingTerminatesCancelled() throws Exception {
+        parseScheduler.close();
+        parseScheduler = new ReplayParseScheduler(1, 200);
+        service = new ReplayProcessingJobService(facade, store, parseScheduler, meterRegistry);
+        final List<String> processedNames = new CopyOnWriteArrayList<>();
+        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
+            final Source s = inv.getArgument(0);
+            processedNames.add(s.name());
+            return result(s.name(), "arena-" + s.name());
+        });
+
+        // 确定性复现竞态：source 0 完成（activeForJob→0、pending 仍非空、job 已从
+        // ready 队列重新入队）之后、completion 线程 pump 派发 source 1 之前调用 cancel。
+        final String[] jobIdRef = {null};
+        parseScheduler.beforePumpHook = () -> {
+            if (jobIdRef[0] != null) {
+                service.cancel(jobIdRef[0]);
+            }
+        };
+        final String jobId = service.createJob(new MultipartFile[]{
+                file("a.wotbreplay"), file("b.wotbreplay")});
+        jobIdRef[0] = jobId;
+
+        final ReplayProcessingJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+        assertEquals(ReplayProcessingJob.Status.CANCELLED, snap.status(),
+                "NO_COMPLETION_PENDING 取消后 job 必须进入 CANCELLED 终态，不得永久停在 PROCESSING");
+        assertEquals(List.of("a.wotbreplay"), processedNames,
+                "cancel 后 pending source 不得执行 full process");
+        assertEquals(1, snap.parseCompleted(), "已完成的 source 计入 parse 进度");
+        assertEquals(1, snap.parseSucceeded());
+        assertEquals(0, snap.parseFailed());
+
+        // terminal observability exactly once（cancel 竞态路径只记录一次 CANCELLED）。
+        final var cancelled = meterRegistry.get("wotb_replay_processing_job_result_total")
+                .tag("result", "cancelled").counter().count();
+        assertEquals(1.0, cancelled, 0.0);
+
+        // scheduler 最终归零（无残留 job / pending / active）。
+        assertEquals(0, parseScheduler.activeSources());
+        assertEquals(0, parseScheduler.queuedSources());
+        assertEquals(0, parseScheduler.queuedJobs());
+        assertTrue(parseScheduler.registeredJobs().isEmpty(), "取消后 scheduler 不得残留 job 注册");
     }
 
     // ---- plan §59/§84：34 replay 并行处理，结果顺序必须恢复上传顺序 ----

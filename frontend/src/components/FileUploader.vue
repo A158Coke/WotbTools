@@ -2,7 +2,13 @@
 import { ref, computed, inject, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { fileKey, displayName } from '../utils/helpers.js'
-import { formatReplaySize, validateReplaySelection } from '../utils/replayUpload.js'
+import {
+  MAX_REPLAY_FILES,
+  MAX_REPLAY_TOTAL_BYTES,
+  formatReplaySize,
+  isReplayFileName,
+  validateReplaySelection
+} from '../utils/replayUpload.js'
 
 const emit = defineEmits(['update:files', 'preview', 'remove-request', 'workspace-action'])
 const props = defineProps({ files: Array, loading: Boolean, confirmRemove: Boolean })
@@ -14,6 +20,8 @@ const validation = ref(null)
 const isAuthenticated = inject('isAuthenticated', () => false)
 const login = inject('login', null)
 const { t } = useI18n()
+const maxReplayFiles = MAX_REPLAY_FILES
+const maxReplayTotal = formatReplaySize(MAX_REPLAY_TOTAL_BYTES)
 
 const totalBytes = computed(() => props.files.reduce((sum, f) => sum + (f.size || 0), 0))
 const actionFile = computed(() => {
@@ -40,13 +48,20 @@ watch(() => props.files, () => {
 
 /**
  * 统一的候选入口（选择文件 / 选择文件夹 / add files / drag-drop 全部走这里）：
- * 先对「现有 selection + 新候选」合并后的完整集合做 preflight；任一违规 → 不更新
- * active files、不触发 Processing Job，保留之前合法 selection，一次展示所有 offending。
+ * BLOCKER 3：批量/folder 交互<b>先过滤 .wotbreplay</b>，非回放文件不参与 100 上限 /
+ * 200 MiB 总量、不得让合法 replay 整批失败；再对「现有 selection + 过滤后的新候选」
+ * 合并集合做 preflight。任一违规 → 不更新 active files、不触发 Processing Job，
+ * 保留之前合法 selection，一次展示所有 offending。
  */
 function addFiles(list) {
   const picked = Array.from(list || [])
+  const replays = picked.filter(f => isReplayFileName(f?.name))
+  if (replays.length === 0) {
+    validation.value = { noReplay: true, offending: [], tooMany: false, totalTooLarge: false }
+    return
+  }
   const byKey = new Map(props.files.map(f => [fileKey(f), f]))
-  picked.forEach(f => byKey.set(fileKey(f), f))
+  replays.forEach(f => byKey.set(fileKey(f), f))
   const prospective = Array.from(byKey.values()).sort((a, b) => displayName(a).localeCompare(displayName(b)))
   const result = validateReplaySelection(prospective)
   if (!result.valid) {
@@ -118,6 +133,7 @@ function openReplayAction(mode) {
     </div>
 
     <div v-if="validation" class="upload-errors" data-testid="upload-validation-error">
+      <p v-if="validation.noReplay" class="upload-errors-hint">{{ $t('upload.reject_no_replay') }}</p>
       <p v-if="validation.offending.length" class="upload-errors-title">{{ $t('upload.reject_offending_title') }}</p>
       <ul v-if="validation.offending.length" class="upload-errors-list">
         <li v-for="off in validation.offending" :key="fileKey(off.file)">
@@ -126,8 +142,8 @@ function openReplayAction(mode) {
         </li>
       </ul>
       <p v-if="validation.offending.some(o => o.reason === 'FILE_TOO_LARGE')" class="upload-errors-hint">{{ $t('upload.reject_size_hint') }}</p>
-      <p v-if="validation.tooMany" class="upload-errors-hint">{{ $t('upload.reject_count') }}</p>
-      <p v-if="validation.totalTooLarge" class="upload-errors-hint">{{ $t('upload.reject_total') }}</p>
+      <p v-if="validation.tooMany" class="upload-errors-hint">{{ $t('upload.reject_count', { max: maxReplayFiles, current: validation.count }) }}</p>
+      <p v-if="validation.totalTooLarge" class="upload-errors-hint">{{ $t('upload.reject_total', { size: formatReplaySize(validation.totalBytes), max: maxReplayTotal }) }}</p>
     </div>
 
     <div v-if="!files.length" class="uploadcard" :class="{ dragging }">

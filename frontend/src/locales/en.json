@@ -38,9 +38,10 @@
         "reject_offending_title": "The following replays cannot be parsed:",
         "reject_too_large_file": "{name} — {size}",
         "reject_invalid_type": "{name} is not a .wotbreplay file",
+        "reject_no_replay": "No .wotbreplay replay files found in the selection.",
         "reject_size_hint": "Each replay is limited to 20 MB.",
-        "reject_count": "At most 100 replay files can be selected.",
-        "reject_total": "The combined replay size exceeds 200 MB."
+        "reject_count": "At most {max} replays can be selected; currently {current}.",
+        "reject_total": "The current batch is {size}; the maximum allowed is {max}."
     },
     "action": {
         "preview": "Parse & Preview",

@@ -4,15 +4,12 @@ import com.wotb.core.ai.ClusterTermSanitizer;
 import com.wotb.core.ai.TankNameCorrector;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.model.Source;
 import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.core.processing.BatchAnalyzer;
-import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.PerspectiveTeamNotResolvedException;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.ReplayAnalysisScope;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
-import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.processing.TeamPerspectiveResolver;
@@ -23,7 +20,6 @@ import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.web.replay.job.ReplayArtifactWriter;
 import com.wotb.web.replay.job.ReplayProcessingJob;
 import com.wotb.web.replay.job.ReplayProcessingJobStore;
-import com.wotb.web.replay.metrics.ReplayUsageMetrics;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -35,10 +31,7 @@ import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 import com.wotb.web.replay.exception.AiTimelineUnusableException;
-import com.wotb.web.replay.ReplayUploadValidator;
-import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -52,159 +45,36 @@ public class AiReplayReviewService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AiReplayReviewService.class);
 
-    private final DefaultReplayProcessingFacade processingFacade;
     private final AiReplayAnalysisService aiAnalysisService;
     private final TacticalReviewHarness tacticalReviewHarness;
     private final MeterRegistry meterRegistry;
-    private final ReplayUsageMetrics replayUsageMetrics;
     /** Dataset Lease 提供方（plan §25）：AI 读取 derived artifact 前 acquire，防止 TTL 清理。 */
     private final ReplayProcessingJobStore processingStore;
 
     private final AtomicInteger aiReviewInFlight = new AtomicInteger();
     private Timer aiReviewDuration;
-    public AiReplayReviewService(
-            final DefaultReplayProcessingFacade processingFacade,
-            final AiReplayAnalysisService aiAnalysisService) {
-        this(processingFacade, aiAnalysisService, null, null, null, null);
+    public AiReplayReviewService(final AiReplayAnalysisService aiAnalysisService) {
+        this(aiAnalysisService, null, null, null);
     }
 
     @Autowired
     public AiReplayReviewService(
-            final DefaultReplayProcessingFacade processingFacade,
             final AiReplayAnalysisService aiAnalysisService,
             final TacticalReviewHarness tacticalReviewHarness,
             @Autowired(required = false) final MeterRegistry meterRegistry,
-            @Autowired(required = false) final ReplayUsageMetrics replayUsageMetrics,
             @Autowired(required = false) final ReplayProcessingJobStore processingStore) {
-        this.processingFacade = processingFacade;
         this.aiAnalysisService = aiAnalysisService;
         this.tacticalReviewHarness = tacticalReviewHarness;
         this.meterRegistry = meterRegistry;
-        this.replayUsageMetrics = replayUsageMetrics;
         this.processingStore = processingStore;
     }
 
     /** 测试/旧调用便利构造器（无 Dataset lease 提供方）。 */
     public AiReplayReviewService(
-            final DefaultReplayProcessingFacade processingFacade,
             final AiReplayAnalysisService aiAnalysisService,
             final TacticalReviewHarness tacticalReviewHarness,
-            final MeterRegistry meterRegistry,
-            final ReplayUsageMetrics replayUsageMetrics) {
-        this(processingFacade, aiAnalysisService, tacticalReviewHarness, meterRegistry, replayUsageMetrics, null);
-    }
-
-    public AnalyzeResponse analyze(final MultipartFile[] files) throws IOException {
-        return analyze(files, AllowedLanguage.ZH);
-    }
-
-    public AnalyzeResponse analyze(final MultipartFile[] files,
-                                   final AllowedLanguage language) throws IOException {
-        return analyzeStreaming(files, language, AiReviewStreamListener.NOOP);
-    }
-
-    /**
-     * 流式变体：与 {@link #analyze(MultipartFile[], AllowedLanguage)} 完全相同的
-     * 校验/指标/异常语义，额外通过 {@code listener} 广播阶段事件与主复盘 token
-     * 增量。同步路径委托本方法（NOOP listener），保证单一实现不回归。
-     */
-    public AnalyzeResponse analyzeStreaming(final MultipartFile[] files,
-                                            final AllowedLanguage language,
-                                            final AiReviewStreamListener listener)
-            throws IOException {
-        final boolean metrics = meterRegistry != null;
-        final Timer.Sample sample = metrics ? Timer.start(meterRegistry) : null;
-        if (metrics) {
-            aiReviewInFlight.incrementAndGet();
-            meterRegistry.counter("wotb_ai_review_requests_total").increment();
-        }
-        String result = "success";
-        String errorType = null;
-        try {
-            return analyzeInternal(files, language, listener);
-        } catch (final AiNotConfiguredException e) {
-            result = "rejected";
-            errorType = "AI_NOT_CONFIGURED";
-            throw e;
-        } catch (final AiPromptBudgetExceededException e) {
-            result = "rejected";
-            errorType = "AI_PROMPT_BUDGET_EXCEEDED";
-            throw e;
-        } catch (final UnsupportedReplayAnalysisModeException e) {
-            result = "rejected";
-            errorType = "UNSUPPORTED_BATTLE_CATEGORY";
-            throw e;
-        } catch (final PerspectiveTeamNotResolvedException e) {
-            result = "rejected";
-            errorType = "PERSPECTIVE_TEAM_UNRESOLVED";
-            throw e;
-        } catch (final ReplayFileCountExceededException e) {
-            result = "rejected";
-            errorType = "REPLAY_FILE_COUNT_EXCEEDED";
-            throw e;
-        } catch (final AiTimelineUnusableException e) {
-            // Timeline 不可用（PR #102 review）：拒绝且按稳定码记录错误类型指标
-            // （固定低基数值，不引入高基数 label；detail 只留日志不进指标）。
-            result = "rejected";
-            errorType = AiTimelineUnusableException.STABLE_ERROR_CODE;
-            throw e;
-        } catch (final IllegalArgumentException e) {
-            // 文件校验 / NO_BATTLE_DATA / token budget 拒绝：均计入 rejected
-            result = "rejected";
-            throw e;
-        } catch (final AiUpstreamException e) {
-            result = "failure";
-            errorType = e.code();
-            throw e;
-        } catch (final RuntimeException e) {
-            // 未列出的运行时异常：计入 failure，避免虚增 success
-            result = "failure";
-            throw e;
-        } catch (final IOException e) {
-            result = "failure";
-            throw e;
-        } finally {
-            if (metrics) {
-                if (sample != null) {
-                    sample.stop(aiReviewDuration);
-                }
-                aiReviewInFlight.decrementAndGet();
-                meterRegistry.counter("wotb_ai_review_results_total",
-                        "result", result).increment();
-                if (errorType != null) {
-                    meterRegistry.counter("wotb_ai_review_errors_total",
-                            "type", errorType).increment();
-                }
-            }
-        }
-    }
-
-    private AnalyzeResponse analyzeInternal(final MultipartFile[] files,
-                                            final AllowedLanguage language,
-                                            final AiReviewStreamListener listener) throws IOException {
-        ReplayUploadValidator.validateAiReview(files);
-        final List<ReplayProcessingResult> allResults = new ArrayList<>();
-        for (int index = 0; index < files.length; index++) {
-            final MultipartFile file = files[index];
-            final String name = file.getOriginalFilename() != null
-                    ? file.getOriginalFilename() : "replay.wotbreplay";
-            final Source source = new Source(name, file.getBytes());
-            if (replayUsageMetrics == null) {
-                allResults.add(processingFacade.process(source, ReplayProcessingOptions.full()));
-            } else {
-                try {
-                    allResults.add(replayUsageMetrics.timed(
-                            ReplayUsageMetrics.OP_AI_REVIEW, 1,
-                            () -> processingFacade.process(source, ReplayProcessingOptions.full())));
-                } catch (final RuntimeException e) {
-                    throw e;
-                } catch (final Exception e) {
-                    // process 不抛 checked；此处仅防御性包装
-                    throw new IOException(e);
-                }
-            }
-        }
-        return analyzeResults(allResults, language, listener);
+            final MeterRegistry meterRegistry) {
+        this(aiAnalysisService, tacticalReviewHarness, meterRegistry, null);
     }
 
     /**
@@ -258,7 +128,72 @@ public class AiReplayReviewService {
     public AnalyzeResponse analyzeFacts(final AiReplayFacts facts,
                                         final AllowedLanguage language,
                                         final AiReviewStreamListener listener) {
-        return analyzeResults(List.of(facts.toResult()), language, listener);
+        return analyzeTracked(language, listener,
+                () -> analyzeResults(List.of(facts.toResult()), language, listener));
+    }
+
+    /**
+     * AI Review 边界指标信封（V2 收口后挂在 Dataset 共享路径，不得因 multipart
+     * 删除而丢失 observability）：请求计数 / in-flight gauge / 耗时 / 结果类别 /
+     * 稳定错误码（低基数）。异常语义与异常本身完全一致，只增加记账。
+     */
+    private AnalyzeResponse analyzeTracked(final AllowedLanguage language,
+                                           final AiReviewStreamListener listener,
+                                           final java.util.function.Supplier<AnalyzeResponse> body) {
+        final boolean metrics = meterRegistry != null;
+        final Timer.Sample sample = metrics ? Timer.start(meterRegistry) : null;
+        if (metrics) {
+            aiReviewInFlight.incrementAndGet();
+            meterRegistry.counter("wotb_ai_review_requests_total").increment();
+        }
+        String result = "success";
+        String errorType = null;
+        try {
+            return body.get();
+        } catch (final AiNotConfiguredException e) {
+            result = "rejected";
+            errorType = "AI_NOT_CONFIGURED";
+            throw e;
+        } catch (final AiPromptBudgetExceededException e) {
+            result = "rejected";
+            errorType = "AI_PROMPT_BUDGET_EXCEEDED";
+            throw e;
+        } catch (final UnsupportedReplayAnalysisModeException e) {
+            result = "rejected";
+            errorType = "UNSUPPORTED_BATTLE_CATEGORY";
+            throw e;
+        } catch (final PerspectiveTeamNotResolvedException e) {
+            result = "rejected";
+            errorType = "PERSPECTIVE_TEAM_UNRESOLVED";
+            throw e;
+        } catch (final AiTimelineUnusableException e) {
+            result = "rejected";
+            errorType = AiTimelineUnusableException.STABLE_ERROR_CODE;
+            throw e;
+        } catch (final IllegalArgumentException e) {
+            result = "rejected";
+            throw e;
+        } catch (final AiUpstreamException e) {
+            result = "failure";
+            errorType = e.code();
+            throw e;
+        } catch (final RuntimeException e) {
+            result = "failure";
+            throw e;
+        } finally {
+            if (metrics) {
+                if (sample != null) {
+                    sample.stop(aiReviewDuration);
+                }
+                aiReviewInFlight.decrementAndGet();
+                meterRegistry.counter("wotb_ai_review_results_total",
+                        "result", result).increment();
+                if (errorType != null) {
+                    meterRegistry.counter("wotb_ai_review_errors_total",
+                            "type", errorType).increment();
+                }
+            }
+        }
     }
 
     /**

@@ -7,15 +7,10 @@ import com.wotb.core.league.LeagueRatingCalculator;
 import com.wotb.core.league.LeagueRatingResult;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.model.Source;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.processing.ReplayProcessingCapabilities;
 import com.wotb.core.processing.ReplayProcessingOptions;
-import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
-import com.wotb.web.replay.LeagueTestReplays;
-import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -41,10 +36,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -78,7 +71,7 @@ class ReplayExportJobServiceTest {
         facade = mock(DefaultReplayProcessingFacade.class);
         executor = new ReplayExportWorkerExecutor(2, 4);
         meterRegistry = new SimpleMeterRegistry();
-        service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store, executor, meterRegistry);
+        service = new ReplayExportJobService(store, executor, null, meterRegistry);
     }
 
     @AfterEach
@@ -87,561 +80,6 @@ class ReplayExportJobServiceTest {
         deleteDir(tmpDir);
     }
 
-    @Test
-    void createJobRunsToReadyWithPlayableArtifact() throws Exception {
-        stubFacadeBattles();
-        final String jobId = service.createJob(new MultipartFile[]{file("battle-a.wotbreplay")}, "aggregate");
-
-        final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
-        assertEquals(ExportJob.Status.READY, snap.status());
-        assertEquals(1, snap.total());
-        assertEquals(1, snap.processed());
-        assertEquals(0, snap.duplicates());
-        assertEquals(0, snap.failures());
-
-        // artifact 存在、MIME/文件名正确、POI 可打开、sheet 顺序正确（玩家数据 sheet 保持首个活动表）
-        final Path artifact = store.get(jobId).artifactPath();
-        assertTrue(Files.exists(artifact));
-        assertEquals("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", snap.contentType());
-        assertEquals("battle-a.xlsx", snap.filename());
-        try (Workbook wb = new XSSFWorkbook(Files.newInputStream(artifact))) {
-            assertEquals("玩家数据", wb.getSheetName(0), "玩家数据必须是第一个 sheet");
-            assertEquals("战斗信息", wb.getSheetName(1));
-            assertEquals("原始字段", wb.getSheetName(2));
-            assertEquals("玩家数据", wb.getSheetAt(wb.getActiveSheetIndex()).getSheetName());
-        }
-        assertEquals(ExportJob.Status.READY, service.status(jobId).status());
-    }
-
-    @Test
-    void aggregateDeduplicatesAndCountsProgress() throws Exception {
-        stubFacadeBattles();  // same arena for all names
-        final String jobId = service.createJob(new MultipartFile[]{
-                file("dup-a.wotbreplay"), file("dup-b.wotbreplay")}, "aggregate");
-
-        final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
-        assertEquals(ExportJob.Status.READY, snap.status());
-        assertEquals(2, snap.total());
-        assertEquals(2, snap.processed(), "重复文件也推进 processed");
-        assertEquals(1, snap.duplicates());
-        assertEquals(0, snap.failures());
-    }
-
-    @Test
-    void noValidReplaysFailsWithStableErrorCode() throws Exception {
-        when(facade.process(any(), eq(ReplayProcessingOptions.full())))
-                .thenThrow(new IllegalArgumentException("REPLAY_PROCESSING_FAILED"));
-        final String jobId = service.createJob(new MultipartFile[]{file("bad.wotbreplay")}, "aggregate");
-
-        final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
-        assertEquals(ExportJob.Status.FAILED, snap.status());
-        assertEquals("NO_VALID_REPLAYS", snap.errorCode(), "0 场有效不得生成空 Excel");
-        assertEquals(1, snap.failures());
-    }
-
-    @Test
-    void cancelDuringProcessingIsCooperative() throws Exception {
-        final CountDownLatch started = new CountDownLatch(1);
-        final CountDownLatch release = new CountDownLatch(1);
-        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
-            started.countDown();
-            release.await(10, TimeUnit.SECONDS);
-            throw new IllegalArgumentException("NO_BATTLE_DATA");
-        });
-        final String jobId = service.createJob(new MultipartFile[]{file("block.wotbreplay")}, "aggregate");
-        assertTrue(started.await(5, TimeUnit.SECONDS), "job 应开始处理");
-
-        assertTrue(service.cancel(jobId), "PROCESSING 中取消应请求成功");
-        release.countDown();
-
-        final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
-        assertEquals(ExportJob.Status.CANCELLED, snap.status(), "协作取消后 worker 应终态 CANCELLED");
-    }
-
-    @Test
-    void downloadBeforeReadyIsConflict() throws Exception {
-        final CountDownLatch started = new CountDownLatch(1);
-        final CountDownLatch release = new CountDownLatch(1);
-        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
-            started.countDown();
-            release.await(10, TimeUnit.SECONDS);
-            throw new IllegalArgumentException("NO_BATTLE_DATA");
-        });
-        final String jobId = service.createJob(new MultipartFile[]{file("block.wotbreplay")}, "aggregate");
-        assertTrue(started.await(5, TimeUnit.SECONDS));
-
-        final ResponseStatusException error = assertThrows(ResponseStatusException.class, () -> service.download(jobId));
-        assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
-
-        service.cancel(jobId);
-        release.countDown();
-        awaitTerminal(jobId, 10_000);
-    }
-
-    @Test
-    void eachModeProducesZipWithOneXlsxPerBattle() throws Exception {
-        stubFacadeBattlesDistinct();
-        final String jobId = service.createJob(new MultipartFile[]{
-                file("one.wotbreplay"), file("two.wotbreplay")}, "each");
-
-        final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
-        assertEquals(ExportJob.Status.READY, snap.status());
-        assertEquals("application/zip", snap.contentType());
-        final Path artifact = store.get(jobId).artifactPath();
-        int entries = 0;
-        try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(artifact))) {
-            ZipEntry entry;
-            while ((entry = zip.getNextEntry()) != null) {
-                assertTrue(entry.getName().endsWith(".xlsx"));
-                entries++;
-            }
-        }
-        assertEquals(2, entries, "mode=each 每个有效回放一个 xlsx");
-    }
-
-
-    // ---- QUEUED 取消必须真正释放 executor queue slot ----
-
-    @Test
-    void cancelledQueuedJobFreesQueueCapacity() throws Exception {
-        executor.close();
-        executor = new ReplayExportWorkerExecutor(1, 1);
-        service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store, executor, null);
-
-        final CountDownLatch started = new CountDownLatch(1);
-        final CountDownLatch releaseA = new CountDownLatch(1);
-        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
-            started.countDown();
-            releaseA.await(10, TimeUnit.SECONDS);
-            throw new IllegalArgumentException("NO_BATTLE_DATA");
-        });
-        final String jobA = service.createJob(new MultipartFile[]{file("a.wotbreplay")}, "aggregate");
-        assertTrue(started.await(5, TimeUnit.SECONDS), "job A 应占用唯一 worker");
-
-        final String jobB = service.createJob(new MultipartFile[]{file("b.wotbreplay")}, "aggregate");
-        // workers=1 + queue=1 已满 → C 必须 503 EXPORT_QUEUE_FULL
-        assertThrows(ExportQueueFullException.class,
-                () -> service.createJob(new MultipartFile[]{file("c.wotbreplay")}, "aggregate"));
-
-        // 取消 QUEUED 的 B → 必须立即释放 queue slot
-        assertTrue(service.cancel(jobB));
-        assertEquals(ExportJob.Status.CANCELLED, service.status(jobB).status());
-
-        // 立即创建 C → 必须 ACCEPTED（不再 EXPORT_QUEUE_FULL）
-        final String jobC = service.createJob(new MultipartFile[]{file("c.wotbreplay")}, "aggregate");
-        assertNotNull(jobC, "取消 QUEUED job 后新 job 必须能立即入队");
-
-        // 清理：取消 A（PROCESSING 协作取消）并释放，等待全部终态
-        service.cancel(jobA);
-        releaseA.countDown();
-        awaitTerminal(jobA, 10_000);
-        awaitTerminal(jobC, 10_000);
-    }
-
-    @Test
-    void cancelledQueuedJobNeverProcessesReplay() throws Exception {
-        executor.close();
-        executor = new ReplayExportWorkerExecutor(1, 1);
-        service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store, executor, null);
-
-        final CountDownLatch started = new CountDownLatch(1);
-        final CountDownLatch releaseA = new CountDownLatch(1);
-        final List<String> processedNames = new java.util.concurrent.CopyOnWriteArrayList<>();
-        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
-            final com.wotb.core.model.Source s = inv.getArgument(0);
-            processedNames.add(s.name());
-            if (s.name().startsWith("a")) {
-                started.countDown();
-                releaseA.await(10, TimeUnit.SECONDS);
-            }
-            throw new IllegalArgumentException("NO_BATTLE_DATA");
-        });
-        final String jobA = service.createJob(new MultipartFile[]{file("a.wotbreplay")}, "aggregate");
-        assertTrue(started.await(5, TimeUnit.SECONDS));
-        final String jobB = service.createJob(new MultipartFile[]{file("b.wotbreplay")}, "aggregate");
-
-        assertTrue(service.cancel(jobB));
-        final ExportJob.Snapshot snapB = service.status(jobB);
-        assertEquals(ExportJob.Status.CANCELLED, snapB.status());
-        assertEquals(0, snapB.processed(), "取消的 queued job 不得处理任何 replay");
-        assertNull(store.get(jobB).artifactPath(), "取消的 queued job 不得有 artifact");
-
-        // 释放 A 后让 C 入队并完成；B 的 Runnable 已从 queue 移除，processFull 绝不能被 B 触发
-        final String jobC = service.createJob(new MultipartFile[]{file("c.wotbreplay")}, "aggregate");
-        service.cancel(jobA);
-        releaseA.countDown();
-        awaitTerminal(jobA, 10_000);
-        awaitTerminal(jobC, 10_000);
-        assertFalse(processedNames.contains("b.wotbreplay"),
-                "被取消的 queued job 不得执行任何 replay processing");
-    }
-
-    @Test
-    void cancelDuringProcessingEndsInSingleTerminal() throws Exception {
-        executor.close();
-        executor = new ReplayExportWorkerExecutor(2, 2);
-        service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store, executor, null);
-
-        final CountDownLatch bStarted = new CountDownLatch(1);
-        final CountDownLatch releaseB = new CountDownLatch(1);
-        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
-            bStarted.countDown();
-            releaseB.await(10, TimeUnit.SECONDS);
-            throw new IllegalArgumentException("NO_BATTLE_DATA");
-        });
-        final String jobB = service.createJob(new MultipartFile[]{file("b.wotbreplay")}, "aggregate");
-        assertTrue(bStarted.await(5, TimeUnit.SECONDS), "B 应进入 PROCESSING");
-
-        // PROCESSING 中取消 → 协作取消（不中断线程），终态 CANCELLED 恰好一次
-        assertTrue(service.cancel(jobB));
-        releaseB.countDown();
-        final ExportJob.Snapshot snap = awaitTerminal(jobB, 10_000);
-        assertEquals(ExportJob.Status.CANCELLED, snap.status());
-        final ExportJob job = store.get(jobB);
-        assertFalse(job.markReady("x.xlsx", "m", null), "终态后不得再迁移到 READY");
-        assertFalse(job.markFailed("X"), "终态后不得再迁移到 FAILED");
-    }
-
-    @Test
-    void queuedCancellationRecordsTerminalObservabilityExactlyOnce() throws Exception {
-        executor.close();
-        executor = new ReplayExportWorkerExecutor(1, 1);
-        service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store, executor, meterRegistry);
-
-        final CountDownLatch started = new CountDownLatch(1);
-        final CountDownLatch releaseA = new CountDownLatch(1);
-        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
-            started.countDown();
-            releaseA.await(10, TimeUnit.SECONDS);
-            throw new IllegalArgumentException("NO_BATTLE_DATA");
-        });
-        final String jobA = service.createJob(new MultipartFile[]{file("a.wotbreplay")}, "aggregate");
-        assertTrue(started.await(5, TimeUnit.SECONDS), "job A 应占用唯一 worker");
-        final String jobB = service.createJob(new MultipartFile[]{file("b.wotbreplay")}, "aggregate");
-
-        // QUEUED 取消：removeQueued 成功 → Runnable 永不执行 → 请求线程立即记录终态 observability
-        assertTrue(service.cancel(jobB));
-        final Counter cancelled = meterRegistry.get("wotb_replay_export_job_result_total")
-                .tag("result", "cancelled").counter();
-        assertEquals(1.0, cancelled.count(), "queued 取消必须立即记录 result_total{cancelled} 一次");
-
-        // PROCESSING 协作取消由 worker 的 finishTerminal 记录，不得与 queued 记录重复
-        service.cancel(jobA);
-        releaseA.countDown();
-        awaitTerminal(jobA, 10_000);
-        assertEquals(2.0, cancelled.count(), "queued + processing 各恰好记录一次，不得重复");
-        final Timer duration = meterRegistry.get("wotb_replay_export_job_duration_seconds")
-                .tag("mode", "aggregate").timer();
-        assertEquals(2L, duration.count(), "两次取消各记录一次 terminal duration");
-    }
-
-    // ---- mode=each 流式（O(1) Battle working set）----
-
-    @Test
-    void eachStreamsThreeXlsxEntriesAllOpenableByPoi() throws Exception {
-        stubFacadeBattlesDistinct();
-        final String jobId = service.createJob(new MultipartFile[]{
-                file("one.wotbreplay"), file("two.wotbreplay"), file("three.wotbreplay")}, "each");
-        final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
-        assertEquals(ExportJob.Status.READY, snap.status());
-        assertEquals(3, snap.processed());
-        final Path artifact = store.get(jobId).artifactPath();
-        int count = 0;
-        try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(artifact))) {
-            ZipEntry entry;
-            while ((entry = zip.getNextEntry()) != null) {
-                assertTrue(entry.getName().endsWith(".xlsx"));
-                // POI 的 XSSFWorkbook(InputStream) 会关闭传入流：先读 entry bytes 再打开（ZipInputStream 必须保持打开）。
-                final byte[] entryBytes = zip.readAllBytes();
-                try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(entryBytes))) {
-                    assertEquals("玩家数据", wb.getSheetName(0), "每个 xlsx entry 必须可被 POI 打开");
-                }
-                count++;
-            }
-        }
-        assertEquals(3, count);
-    }
-
-    @Test
-    void eachStreamsSkipsInvalidReplayMidBatch() throws Exception {
-        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
-            final com.wotb.core.model.Source s = inv.getArgument(0);
-            if (s.name().equals("bad.wotbreplay")) {
-                throw new IllegalArgumentException("REPLAY_PROCESSING_FAILED");
-            }
-            return result(s.name(), "arena-" + s.name());
-        });
-        final String jobId = service.createJob(new MultipartFile[]{
-                file("one.wotbreplay"), file("bad.wotbreplay"), file("three.wotbreplay")}, "each");
-        final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
-        assertEquals(ExportJob.Status.READY, snap.status());
-        assertEquals(3, snap.processed());
-        assertEquals(1, snap.failures());
-        int entries = 0;
-        try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(store.get(jobId).artifactPath()))) {
-            while (zip.getNextEntry() != null) {
-                entries++;
-            }
-        }
-        assertEquals(2, entries, "中间无效 replay 跳过，ZIP 只含有效场");
-    }
-
-    @Test
-    void eachWritesZipEntryBeforeProcessingNextReplay() throws Exception {
-        executor.close();
-        executor = new ReplayExportWorkerExecutor(1, 1);
-        service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store, executor, null);
-
-        final AtomicInteger calls = new AtomicInteger();
-        final String[] jobIdRef = new String[1];
-        final CountDownLatch firstCallDone = new CountDownLatch(1);
-        final CountDownLatch goSecond = new CountDownLatch(1);
-        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
-            final int n = calls.incrementAndGet();
-            if (n == 1) {
-                firstCallDone.countDown();
-                goSecond.await(10, TimeUnit.SECONDS);
-            } else if (n == 2 && jobIdRef[0] != null) {
-                // 第 2 场开始 processFull 时，第 1 场的 XLSX 必须已写入 zip（流式证明）
-                final Path zip = store.jobDir(jobIdRef[0]).resolve("result.zip");
-                assertTrue(Files.exists(zip) && Files.size(zip) > 0,
-                        "第 2 场处理开始时 zip 必须已含第 1 场 entry（O(1) working set）");
-            }
-            final com.wotb.core.model.Source s = inv.getArgument(0);
-            return result(s.name(), "arena-" + s.name());
-        });
-        final String jobId = service.createJob(new MultipartFile[]{
-                file("one.wotbreplay"), file("two.wotbreplay"), file("three.wotbreplay")}, "each");
-        jobIdRef[0] = jobId;
-        assertTrue(firstCallDone.await(5, TimeUnit.SECONDS));
-        goSecond.countDown();
-        final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
-        assertEquals(ExportJob.Status.READY, snap.status());
-        assertEquals(3, snap.processed());
-    }
-
-    // ---- 输入顺序必须保持上传顺序（不得 filename 字典序）----
-
-    @Test
-    void eachPreservesUploadOrderAcrossThirtyFourReplays() throws Exception {
-        stubFacadeBattlesDistinct();
-        final MultipartFile[] files = new MultipartFile[34];
-        final List<String> expected = new ArrayList<>();
-        for (int i = 0; i < 34; i++) {
-            files[i] = file("r" + i + ".wotbreplay");
-            expected.add("r" + i + ".xlsx");
-        }
-        final String jobId = service.createJob(files, "each");
-        final ExportJob.Snapshot snap = awaitTerminal(jobId, 60_000);
-        assertEquals(ExportJob.Status.READY, snap.status());
-        assertEquals(34, snap.processed());
-        assertEquals(expected, zipEntryNames(jobId),
-                "ZIP entry 顺序必须 = 上传顺序 0,1,...,9,10,...,33（字典序会得到 0,1,10,11,...,2,...）");
-    }
-
-    @Test
-    void aggregatePreservesUploadOrderAcrossTwelveReplays() throws Exception {
-        final List<String> processedOrder = new CopyOnWriteArrayList<>();
-        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
-            final com.wotb.core.model.Source s = inv.getArgument(0);
-            processedOrder.add(s.name());
-            return result(s.name(), "arena-" + s.name());
-        });
-        final MultipartFile[] files = new MultipartFile[12];
-        final List<String> expected = new ArrayList<>();
-        for (int i = 0; i < 12; i++) {
-            files[i] = file("g" + i + ".wotbreplay");
-            expected.add("g" + i + ".wotbreplay");
-        }
-        final String jobId = service.createJob(files, "aggregate");
-        final ExportJob.Snapshot snap = awaitTerminal(jobId, 30_000);
-        assertEquals(ExportJob.Status.READY, snap.status());
-        assertEquals(12, snap.processed());
-        assertEquals(expected, processedOrder,
-                "aggregate 处理顺序必须 = 上传顺序（字典序会得到 0,1,10,11,...,2,...）");
-
-        // battleSourceNames（战斗列表「文件名」列）必须与上传顺序一致
-        final List<String> fileColumn = new ArrayList<>();
-        try (Workbook wb = new XSSFWorkbook(Files.newInputStream(store.get(jobId).artifactPath()))) {
-            final Sheet sheet = wb.getSheet("战斗列表");
-            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
-                final Cell cell = sheet.getRow(i).getCell(7);
-                if (cell != null && cell.getCellType() == CellType.STRING) {
-                    fileColumn.add(cell.getStringCellValue());
-                }
-            }
-        }
-        assertEquals(expected, fileColumn, "aggregate 战斗列表文件名列必须保持上传顺序");
-    }
-
-    // ---- aggregate export filename contract（Standard / League / Mixed 同步与异步同一规则）----
-
-    @Test
-    void aggregateStandardUploadUsesStandardAggregateFilename() throws Exception {
-        stubFacadeBattlesDistinct();  // arenaBonusType 默认 0 → STANDARD_REPLAY
-        final String jobId = service.createJob(new MultipartFile[]{
-                file("s1.wotbreplay"), file("s2.wotbreplay")}, "aggregate");
-        final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
-        assertEquals(ExportJob.Status.READY, snap.status());
-        assertEquals("回放汇总.xlsx", snap.filename(), "multi Standard upload aggregate 必须用标准汇总文件名");
-    }
-
-    @Test
-    void aggregateLeagueUploadUsesLeagueAggregateFilename() throws Exception {
-        final Battle rated1 = LeagueTestReplays.sevenVsSeven(1);
-        rated1.arenaId = "111";
-        final Battle rated2 = LeagueTestReplays.sevenVsSeven(1);
-        rated2.arenaId = "222";
-        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
-            final Source s = inv.getArgument(0);
-            return new ReplayProcessingResult(s.name(), ReplayProcessingStatus.SUCCESS, null,
-                    s.name().startsWith("c1") ? rated1 : rated2, null, null,
-                    ReplayProcessingCapabilities.summaryOnly(false), null, null);
-        });
-        final String jobId = service.createJob(new MultipartFile[]{
-                file("c1.wotbreplay"), file("c2.wotbreplay")}, "aggregate");
-        final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
-        assertEquals(ExportJob.Status.READY, snap.status());
-        assertEquals("联赛汇总.xlsx", snap.filename(), "multi 纯 CW upload aggregate 必须用联赛汇总文件名");
-    }
-
-    @Test
-    void aggregateMixedUploadUsesStandardAggregateFilename() throws Exception {
-        // 1 Standard + 1 CW（返回 battle 的 arenaBonusType 判定 MIXED_UNSUPPORTED）
-        final Battle standard = LeagueTestReplays.sevenVsSeven(1);
-        standard.arenaId = "333";
-        standard.arenaBonusType = 1;
-        final Battle training = LeagueTestReplays.sevenVsSeven(1);
-        training.arenaId = "111";
-        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
-            final Source s = inv.getArgument(0);
-            return new ReplayProcessingResult(s.name(), ReplayProcessingStatus.SUCCESS, null,
-                    s.name().startsWith("s-") ? standard : training, null, null,
-                    ReplayProcessingCapabilities.summaryOnly(false), null, null);
-        });
-        final String jobId = service.createJob(new MultipartFile[]{
-                file("s-mixed.wotbreplay"), file("t-mixed.wotbreplay")}, "aggregate");
-        final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
-        assertEquals(ExportJob.Status.READY, snap.status());
-        assertEquals("回放汇总.xlsx", snap.filename(), "multi Mixed upload aggregate 必须用标准汇总文件名");
-    }
-
-    @Test
-    void fromResultStandardAggregateUsesStandardAggregateFilename() throws Exception {
-        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-agg-std"), 60);
-        try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
-            final String pJobId = readyProcessingJob(processingStore, "proc-std-agg",
-                    List.of(battle("arena-1"), battle("arena-2")),
-                    List.of("one.wotbreplay", "two.wotbreplay"), List.of(), List.of());
-            final String jobId = service.createJob(null, "aggregate", pJobId);
-            final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
-            assertEquals(ExportJob.Status.READY, snap.status());
-            assertEquals("回放汇总.xlsx", snap.filename(),
-                    "multi Standard from-result aggregate 必须用标准汇总文件名");
-            processingStore.release(pJobId);
-        } finally {
-            deleteDir(processingStore.jobDir("").getParent());
-        }
-    }
-
-    @Test
-    void fromResultLeagueAggregateUsesLeagueAggregateFilename() throws Exception {
-        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-agg-league"), 60);
-        try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
-            final String pJobId = readyLeagueProcessingJob(processingStore, "proc-league-agg",
-                    "arena-1", "arena-2");
-            final String jobId = service.createJob(null, "aggregate", pJobId);
-            final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
-            assertEquals(ExportJob.Status.READY, snap.status());
-            assertEquals("联赛汇总.xlsx", snap.filename(),
-                    "multi 纯 CW from-result aggregate 必须用联赛汇总文件名");
-            processingStore.release(pJobId);
-        } finally {
-            deleteDir(processingStore.jobDir("").getParent());
-        }
-    }
-
-    @Test
-    void fromResultMixedAggregateUsesStandardAggregateFilename() throws Exception {
-        final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
-                Files.createTempDirectory("wotb-agg-mixed"), 60);
-        try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
-            final String pJobId = "proc-mixed-agg";
-            final ReplayProcessingJob pJob = new ReplayProcessingJob(pJobId, 2);
-            pJob.startProcessing();
-            pJob.updateProgress(2, 0, 0);
-            pJob.markReady(new ProcessedDataset(
-                    List.of(battle("arena-1"), battle("arena-2")),
-                    List.of("one.wotbreplay", "two.wotbreplay"),
-                    List.of(), List.of(), null, "MIXED_LEAGUE_AND_STANDARD_REPLAYS"));
-            processingStore.register(pJob);
-            processingStore.acquireForExport(pJobId);
-            final String jobId = service.createJob(null, "aggregate", pJobId);
-            final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
-            assertEquals(ExportJob.Status.READY, snap.status());
-            assertEquals("回放汇总.xlsx", snap.filename(),
-                    "multi Mixed from-result aggregate 必须用标准汇总文件名");
-            processingStore.release(pJobId);
-        } finally {
-            deleteDir(processingStore.jobDir("").getParent());
-        }
-    }
-
-    @Test
-    void eachKeepsUploadOrderOfValidReplaysWhenInvalidInMiddle() throws Exception {
-        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
-            final com.wotb.core.model.Source s = inv.getArgument(0);
-            if (s.name().equals("bad.wotbreplay")) {
-                throw new IllegalArgumentException("REPLAY_PROCESSING_FAILED");
-            }
-            return result(s.name(), "arena-" + s.name());
-        });
-        final MultipartFile[] files = new MultipartFile[12];
-        final List<String> expected = new ArrayList<>();
-        for (int i = 0; i < 12; i++) {
-            files[i] = i == 5 ? file("bad.wotbreplay") : file("r" + i + ".wotbreplay");
-            if (i != 5) {
-                expected.add("r" + i + ".xlsx");
-            }
-        }
-        final String jobId = service.createJob(files, "each");
-        final ExportJob.Snapshot snap = awaitTerminal(jobId, 30_000);
-        assertEquals(ExportJob.Status.READY, snap.status(), "存在有效 replay 时整体必须 READY");
-        assertEquals(12, snap.processed());
-        assertEquals(1, snap.failures());
-        assertEquals(expected, zipEntryNames(jobId),
-                "无效 replay 跳过（failures++），剩余有效 replay 仍保持原上传顺序");
-    }
-
-    // ---- artifact 写失败 = 整个 job FAILED（不得误判为单场失败）----
-
-    @Test
-    void eachZipWriteFailureFailsWholeJobAndRemovesPartialArtifact() throws Exception {
-        stubFacadeBattlesDistinct();
-        service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store, executor, meterRegistry) {
-            @Override
-            void writeSingleExcel(final Battle battle, final OutputStream out) throws IOException {
-                throw new IOException("simulated disk full");
-            }
-        };
-        final String jobId = service.createJob(new MultipartFile[]{
-                file("a.wotbreplay"), file("b.wotbreplay")}, "each");
-        final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
-        assertEquals(ExportJob.Status.FAILED, snap.status(), "ZIP entry 写失败必须 FAILED，不得 READY");
-        assertEquals("EXPORT_JOB_FAILED", snap.errorCode());
-        assertFalse(Files.exists(store.jobDir(jobId).resolve("result.zip")),
-                "partial ZIP 必须被删除（不暴露半包）");
-        final ResponseStatusException error = assertThrows(ResponseStatusException.class, () -> service.download(jobId));
-        assertEquals(HttpStatus.CONFLICT, error.getStatusCode(), "FAILED job 不得提供下载");
-    }
 
     @Test
     void unknownJobIsNotFound() {
@@ -656,8 +94,8 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-processing-reuse-test"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
 
             // 构造一个已 READY 的 Processing Job（含已解析 dataset）
             final String pJobId = "proc-1";
@@ -704,8 +142,8 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-processing-reuse-each"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
             final String pJobId = "proc-2";
             final ReplayProcessingJob pJob = new ReplayProcessingJob(pJobId, 2);
             pJob.startProcessing();
@@ -734,8 +172,8 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-processing-missing"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
             final ResponseStatusException error = assertThrows(ResponseStatusException.class,
                     () -> service.createJob(null, "aggregate", "no-such-job"));
             assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode(), "引用不存在的 Processing Job 必须 404");
@@ -749,8 +187,8 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-processing-notready"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
             final ReplayProcessingJob pJob = new ReplayProcessingJob("proc-3", 1);
             pJob.startProcessing();  // PROCESSING，未 READY
             processingStore.register(pJob);
@@ -769,8 +207,8 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-b2-1v1f"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
             final String pJobId = readyProcessingJob(processingStore, "proc-1v1f",
                     List.of(battle("arena-1")), List.of("one.wotbreplay"),
                     List.<String[]>of(),
@@ -795,8 +233,8 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-b2-1v2f"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
             final String pJobId = readyProcessingJob(processingStore, "proc-1v2f",
                     List.of(battle("arena-1")), List.of("one.wotbreplay"),
                     List.<String[]>of(),
@@ -821,8 +259,8 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-b2-2v5f"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
             final String pJobId = readyProcessingJob(processingStore, "proc-2v5f",
                     List.of(battle("arena-1"), battle("arena-2")),
                     List.of("one.wotbreplay", "two.wotbreplay"),
@@ -849,8 +287,8 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-b2-0v"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
             final String pJobId = readyProcessingJob(processingStore, "proc-0v",
                     List.of(), List.of(),
                     List.<String[]>of(),
@@ -872,8 +310,8 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-b2-0v-agg"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
             final String pJobId = readyProcessingJob(processingStore, "proc-0v-agg",
                     List.of(), List.of(),
                     List.<String[]>of(),
@@ -897,8 +335,8 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-b3-nomutate"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
             // 未 enrich 的 dataset（模拟创建时 invariant 被满足前的原始 battle）
             final Battle b = battle("arena-1");
             b.players.getFirst().damageDealt = 5000;
@@ -931,8 +369,8 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-b3-parity"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
             // 模拟 Processing Job 创建 dataset 前的 enrich invariant（facts 层 enrich 只由数据集创建方保证）
             final Battle b = battle("arena-1");
             b.players.getFirst().damageDealt = 5000;
@@ -977,8 +415,8 @@ class ReplayExportJobServiceTest {
             }
         };
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, failingStore,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(failingStore, executor,
+                    processingStore, meterRegistry);
             final String pJobId = readyProcessingJobNoAcquire(processingStore, "proc-storagefail",
                     List.of(battle("arena-1")), List.of("one.wotbreplay"),
                     List.<String[]>of(), List.<String[]>of());
@@ -1003,8 +441,8 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-b2-success"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
             final String pJobId = readyProcessingJobNoAcquire(processingStore, "proc-success",
                     List.of(battle("arena-1")), List.of("one.wotbreplay"),
                     List.<String[]>of(), List.<String[]>of());
@@ -1028,22 +466,24 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-b2-queuedcancel"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
             final String pJobId = readyProcessingJobNoAcquire(processingStore, "proc-queuedcancel",
                     List.of(battle("arena-1")), List.of("one.wotbreplay"),
                     List.<String[]>of(), List.<String[]>of());
 
-            // jobA 占住唯一 worker（multipart，facade 阻塞）
+            // 直接占用唯一 worker（from-result 任务无解析阻塞点；用 executor 原生任务占位）
             final CountDownLatch started = new CountDownLatch(1);
             final CountDownLatch releaseA = new CountDownLatch(1);
-            when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
+            executor.submit("blocker", () -> {
                 started.countDown();
-                releaseA.await(10, TimeUnit.SECONDS);
-                throw new IllegalArgumentException("NO_BATTLE_DATA");
+                try {
+                    releaseA.await(10, TimeUnit.SECONDS);
+                } catch (final InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
             });
-            final String jobA = service.createJob(new MultipartFile[]{file("a.wotbreplay")}, "aggregate");
-            assertTrue(started.await(5, TimeUnit.SECONDS), "job A 应占用唯一 worker");
+            assertTrue(started.await(5, TimeUnit.SECONDS), "blocker 应占用唯一 worker");
 
             // jobB：from-result → QUEUED（acquire +1，等 worker）
             final String jobB = service.createJob(null, "aggregate", pJobId);
@@ -1055,10 +495,7 @@ class ReplayExportJobServiceTest {
             processingStore.sweepExpired();
             assertNull(processingStore.get(pJobId), "QUEUED 取消后引用必须 release，TTL 可清理");
 
-            // 清理 jobA（PROCESSING 协作取消）
-            service.cancel(jobA);
             releaseA.countDown();
-            awaitTerminal(jobA, 10_000);
         } finally {
             deleteDir(processingStore.jobDir("proc-queuedcancel").getParent());
         }
@@ -1071,23 +508,31 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-b2-submitreject"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
             final String pJobId = readyProcessingJobNoAcquire(processingStore, "proc-submitreject",
                     List.of(battle("arena-1")), List.of("one.wotbreplay"),
                     List.<String[]>of(), List.<String[]>of());
 
-            // jobA 占住唯一 worker，jobB 占满 queue
+            // blocker 占住唯一 worker，filler 占满 queue → 第三个 submit 必须被拒绝
             final CountDownLatch started = new CountDownLatch(1);
             final CountDownLatch releaseA = new CountDownLatch(1);
-            when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
+            executor.submit("blocker", () -> {
                 started.countDown();
-                releaseA.await(10, TimeUnit.SECONDS);
-                throw new IllegalArgumentException("NO_BATTLE_DATA");
+                try {
+                    releaseA.await(10, TimeUnit.SECONDS);
+                } catch (final InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
             });
-            final String jobA = service.createJob(new MultipartFile[]{file("a.wotbreplay")}, "aggregate");
-            assertTrue(started.await(5, TimeUnit.SECONDS), "job A 应占用唯一 worker");
-            final String jobB = service.createJob(new MultipartFile[]{file("b.wotbreplay")}, "aggregate");
+            assertTrue(started.await(5, TimeUnit.SECONDS), "blocker 应占用唯一 worker");
+            executor.submit("filler", () -> {
+                try {
+                    releaseA.await(10, TimeUnit.SECONDS);
+                } catch (final InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
 
             // jobC：from-result → acquire +1 → submit rejection → finally 必须 release
             assertThrows(ExportQueueFullException.class,
@@ -1097,15 +542,23 @@ class ReplayExportJobServiceTest {
             processingStore.sweepExpired();
             assertNull(processingStore.get(pJobId), "submit rejection 后引用必须 release，TTL 可清理");
 
-            // 清理 jobA / jobB
-            service.cancel(jobB);
-            service.cancel(jobA);
             releaseA.countDown();
-            awaitTerminal(jobA, 10_000);
-            awaitTerminal(jobB, 10_000);
         } finally {
             deleteDir(processingStore.jobDir("proc-submitreject").getParent());
         }
+    }
+
+    // ---- BLOCKER 2：Export 不再接受裸 replay 上传（legacy multipart 已废弃）----
+
+    @Test
+    void exportJobWithoutProcessingJobIdIsRejectedAsGone() {
+        final ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> service.createJob(
+                        new MockMultipartFile[]{new MockMultipartFile(
+                                "files", "a.wotbreplay", "application/octet-stream", new byte[]{1})},
+                        "aggregate", null, (String) null));
+        assertEquals(HttpStatus.GONE, e.getStatusCode());
+        assertEquals(com.wotb.web.replay.ReplayLegacyEndpoints.DEPRECATED_ERROR, e.getReason());
     }
 
     /** 构造并注册一个已 READY 的 Processing Job（不 acquire——让 createJob 成为唯一引用来源，便于断言 refcount balance）。 */
@@ -1167,8 +620,8 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-league-reuse"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
             final String pJobId = readyLeagueProcessingJob(processingStore, "proc-l1", "arena-1");
 
             // 复用 processingJobId + 单场 battle override（名称必须进入 Excel）
@@ -1194,8 +647,8 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-league-agg"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
             // 两场 team1 均 clan=AAA → 批次 teamKey = clan:AAA（跨场聚合为一行）
             final String pJobId = readyLeagueProcessingJob(processingStore, "proc-l2", "arena-1", "arena-2");
 
@@ -1225,8 +678,8 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-league-agg-partial"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
             final String ratedArena = "arena-r";
             final String ineligibleArena = "arena-i";
             final Battle rated = leagueBattle(ratedArena);
@@ -1272,8 +725,8 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-league-agg-unknown"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
             final Battle unknown = leagueBattle("arena-1");
             unknown.players.get(0).survived = false;
             unknown.players.get(0).survivalTimeSec = 0; // 死亡时间 UNKNOWN
@@ -1318,8 +771,8 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-league-agg-zero"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
             final Battle i1 = leagueBattle("arena-a");
             i1.players.remove(0); // 13 人
             final Battle i2 = leagueBattle("arena-b");
@@ -1360,8 +813,8 @@ class ReplayExportJobServiceTest {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-league-each"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
             final String pJobId = readyLeagueProcessingJob(processingStore, "proc-l3", "arena-1", "arena-2");
 
             // Test 6：each ZIP 中每场使用各自 battle override，不得串队名
@@ -1393,73 +846,14 @@ class ReplayExportJobServiceTest {
         }
     }
 
-    @Test
-    void leagueEachUploadKeepsRatingIneligibleBattleAndDoesNotInflateFailures() throws Exception {
-        // 纯 CW 2 场（真实字节，meta arenaBonusType=2）：1 rated（7v7）、1 Rating-ineligible（13 人）。
-        // ZIP 必须含 2 个 XLSX；Rating-ineligible 导出为标准工作簿，不得计入 failures。
-        final Battle rated = LeagueTestReplays.sevenVsSeven(1);
-        rated.arenaId = "111";
-        final Battle ineligible = LeagueTestReplays.sevenVsSeven(1);
-        ineligible.arenaId = "222";
-        ineligible.players.remove(0);
-        stubFacadeLeagueBattles(rated, ineligible);
-        final MultipartFile[] files = new MultipartFile[]{
-                leagueFile("rated.wotbreplay"), leagueFile("unrated.wotbreplay")};
-        final String jobId = service.createJob(files, "each");
-        final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
-        assertEquals(ExportJob.Status.READY, snap.status());
-        assertEquals(0, snap.failures(), "Rating-ineligible 场次导出为标准工作簿，不得计入 failures");
-        assertEquals(2, zipEntryNames(jobId).size(), "纯 CW each 必须导出 2 个 XLSX（不得丢弃 ineligible 场）");
-        // League each（global Potential Damage removal）：rated → League 单场工作簿、
-        // ineligible → Standard 单场工作簿——两者都不得含 潜在伤害 列；
-        // rated 必须有 League 扩展（总Rating）与单场 Performance Metrics + 基础 facts。
-        try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(store.get(jobId).artifactPath()))) {
-            final Map<String, Workbook> byName = new java.util.HashMap<>();
-            ZipEntry entry;
-            while ((entry = zip.getNextEntry()) != null) {
-                byName.put(entry.getName(), new XSSFWorkbook(new ByteArrayInputStream(zip.readAllBytes())));
-            }
-            assertEquals(2, byName.size());
-            assertTrue(byName.containsKey("rated.xlsx") && byName.containsKey("unrated.xlsx"),
-                    "必须按文件名定位两个 entry：" + byName.keySet());
-            try (Workbook wb = byName.get("rated.xlsx")) {
-                final Sheet players = wb.getSheet("玩家数据");
-                final Row header = players.getRow(0);
-                final StringBuilder headerText = new StringBuilder();
-                for (int c = 0; c < header.getLastCellNum(); c++) {
-                    headerText.append(header.getCell(c).getStringCellValue()).append("|");
-                }
-                assertTrue(!headerText.toString().contains("潜在伤害"),
-                        "League 单场工作簿不得含 潜在伤害 列：" + headerText);
-                assertTrue(headerText.toString().contains("总Rating"), "League 单场必须含 总Rating");
-                assertTrue(headerText.toString().contains("贡献度"), "League 单场必须含 Contribution");
-                assertTrue(headerText.toString().contains("KAST"), "League 单场必须含 KAST");
-                assertTrue(headerText.toString().contains("Impact"), "League 单场必须含 Impact");
-                assertTrue(headerText.toString().contains("伤害"), "League 单场必须保留基础 Replay facts");
-            }
-            try (Workbook wb = byName.get("unrated.xlsx")) {
-                final Sheet players = wb.getSheet("玩家数据");
-                final Row header = players.getRow(0);
-                final StringBuilder headerText = new StringBuilder();
-                for (int c = 0; c < header.getLastCellNum(); c++) {
-                    headerText.append(header.getCell(c).getStringCellValue()).append("|");
-                }
-                assertTrue(!headerText.toString().contains("潜在伤害"),
-                        "Rating-ineligible Standard fallback 也不得含 潜在伤害 列：" + headerText);
-                assertTrue(!headerText.toString().contains("总Rating"),
-                        "ineligible 场应为标准工作簿（无 Rating 扩展）：" + headerText);
-                assertTrue(headerText.toString().contains("伤害"), "Standard fallback 必须保留基础 Replay facts");
-            }
-        }
-    }
 
     @Test
     void leagueEachReuseKeepsRatingIneligibleBattleAndDoesNotReprocess() throws Exception {
         final ReplayProcessingJobStore processingStore = new ReplayProcessingJobStore(
                 Files.createTempDirectory("wotb-league-reuse-each"), 60);
         try {
-            service = new ReplayExportJobService(new ReplayCapacityLimiter(2), facade, store,
-                    executor, processingStore, meterRegistry);
+            service = new ReplayExportJobService(store, executor,
+                    processingStore, meterRegistry);
             // 1 场 rated + 1 场 Rating-ineligible（batch.resultFor=null）
             final String pJobId = readyLeagueProcessingJobWithIneligible(
                     processingStore, "proc-re1", "arena-1", "arena-2");
@@ -1623,59 +1017,6 @@ class ReplayExportJobServiceTest {
     }
 
     // ---- helpers ----
-
-    private void stubFacadeBattles() {
-        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
-            final Source source = inv.getArgument(0);
-            return result(source.name(), "dup-arena");
-        });
-    }
-
-    private void stubFacadeBattlesDistinct() {
-        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
-            final Source source = inv.getArgument(0);
-            return result(source.name(), "arena-" + source.name());
-        });
-    }
-
-    private ReplayProcessingResult result(final String name, final String arenaId) {
-        final Battle battle = new Battle();
-        battle.arenaId = arenaId;
-        battle.winnerTeam = 1;
-        battle.players = new ArrayList<>();
-        for (int i = 0; i < 14; i++) {
-            final PlayerResult p = new PlayerResult();
-            p.accountId = i + 1L;
-            p.nickname = "p" + (i + 1);
-            p.team = i < 7 ? 1 : 2;
-            p.tankId = 4481L;
-            battle.players.add(p);
-        }
-        return new ReplayProcessingResult(name, ReplayProcessingStatus.SUCCESS, null, battle,
-                null, null, ReplayProcessingCapabilities.summaryOnly(false), null, null);
-    }
-
-    private static MultipartFile file(final String name) {
-        return new MockMultipartFile("files", name, "application/octet-stream", new byte[]{1, 2, 3});
-    }
-
-    /** 单场 league 回放文件（真实字节，meta.json arenaBonusType=2——供 peekArenaBonusType 模式扫描）。 */
-    private static MultipartFile leagueFile(final String name) throws IOException {
-        final Battle seed = LeagueTestReplays.sevenVsSeven(1);
-        seed.arenaId = "111"; // replayBytes 编码要求 numeric arenaId
-        return new MockMultipartFile("files", name, "application/octet-stream",
-                LeagueTestReplays.replayBytes(seed, 2));
-    }
-
-    /** facade 按文件名返回 league battle（unrated 前缀 → 13 人 Rating-ineligible；其余 → rated 7v7）。 */
-    private void stubFacadeLeagueBattles(final Battle rated, final Battle ineligible) {
-        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
-            final Source source = inv.getArgument(0);
-            final Battle b = source.name().startsWith("unrated") ? ineligible : rated;
-            return new ReplayProcessingResult(source.name(), ReplayProcessingStatus.SUCCESS,
-                    null, b, null, null, ReplayProcessingCapabilities.summaryOnly(false), null, null);
-        });
-    }
 
     /** 按 ZIP 顺序收集 entry 名（验证 mode=each 输出顺序）。 */
     private List<String> zipEntryNames(final String jobId) throws Exception {

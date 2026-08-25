@@ -39,13 +39,14 @@ describe('replayUpload 共享 contract（BLOCKER 4）', () => {
 
   it('100 个文件 accepted，101 个 rejected（count <= 100）', () => {
     const files100 = Array.from({ length: 100 }, (_, i) => replayFile(`r${i}.wotbreplay`, 1024))
-    expect(validateReplaySelection(files100).valid).toBe(true)
+    expect(validateReplaySelection(files100)).toMatchObject({ valid: true, count: 100 })
 
     const files101 = Array.from({ length: 101 }, (_, i) => replayFile(`r${i}.wotbreplay`, 1024))
     const result = validateReplaySelection(files101)
     expect(result.valid).toBe(false)
     expect(result.tooMany).toBe(true)
     expect(result.offending).toEqual([])
+    expect(result.count).toBe(101)
   })
 
   it('exactly 20 MiB accepted，>20 MiB rejected（单文件上限）', () => {
@@ -101,6 +102,18 @@ describe('replayUpload 共享 contract（BLOCKER 4）', () => {
     expect(result.offending).toEqual([{ file: replayFile('readme.txt', 1024), reason: 'INVALID_TYPE' }])
     expect(result.tooMany).toBe(false)
     expect(result.totalTooLarge).toBe(false)
+    expect(result.count).toBe(1)
     expect(result.totalBytes).toBe(1024)
+  })
+
+  it('101 replay + 50 non-replay → count=101（非回放不计入 100 上限）', () => {
+    const result = validateReplaySelection([
+      ...Array.from({ length: 101 }, (_, i) => replayFile(`r${i}.wotbreplay`, 1024)),
+      ...Array.from({ length: 50 }, (_, i) => replayFile(`aux-${i}.txt`, 1024))
+    ])
+    expect(result.count).toBe(101)
+    expect(result.tooMany).toBe(true)
+    expect(result.valid).toBe(false)
+    expect(result.totalBytes).toBe(101 * 1024)
   })
 })

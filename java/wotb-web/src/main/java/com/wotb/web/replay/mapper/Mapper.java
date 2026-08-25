@@ -280,8 +280,8 @@ public final class Mapper {
      * <p><b>只读消费契约</b>：battles 必须已是完整 facts 管线产出
      * （Replays.collect + processFull + populateBattle 各一次），
      * 本方法<b>不</b>再执行任何会 mutate 共享 Battle 的 enrichment——事实层 enrich 由
-     * 数据集创建方保证（ReplayProcessingJobService.processJob / 同步 preview 的
-     * ReplayService.previewWithinPermit）。display 派生（tankName/tankType 等）仍在本
+     * 数据集创建方保证（ReplayProcessingJobService 的 full processing 链；同步
+     * preview 已废弃为 410）。display 派生（tankName/tankType 等）仍在本
      * 层 {@link #toBattle} 内完成（与 Excel 写入器 SingleBattleSheets 内部行为一致，
      * 确定性幂等覆盖）。</p>
      */

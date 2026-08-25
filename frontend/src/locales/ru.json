@@ -38,9 +38,10 @@
         "reject_offending_title": "Следующие реплеи не могут быть обработаны:",
         "reject_too_large_file": "{name} — {size}",
         "reject_invalid_type": "{name} — не файл .wotbreplay",
+        "reject_no_replay": "В выборе не найдено файлов .wotbreplay.",
         "reject_size_hint": "Максимальный размер одного реплея — 20 МБ.",
-        "reject_count": "Можно выбрать не более 100 файлов реплеев.",
-        "reject_total": "Общий размер реплеев превышает 200 МБ."
+        "reject_count": "Можно выбрать не более {max} реплеев, сейчас {current}.",
+        "reject_total": "Текущий набор — {size}, максимум {max}."
     },
     "action": {
         "preview": "Разобрать",

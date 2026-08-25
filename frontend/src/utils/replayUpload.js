@@ -34,6 +34,7 @@ export function formatReplaySize(bytes) {
  * - {@code valid}：整体是否可接受（任一违规即 false）；
  * - {@code offending}：逐文件违规（INVALID_TYPE / FILE_TOO_LARGE，一次展示全部）；
  * - {@code tooMany} / {@code totalTooLarge}：集合级违规；
+ * - {@code count}：类型合法的回放文件数（非 .wotbreplay 不计入 100 上限）；
  * - {@code totalBytes}：类型合法文件的累计大小。
  */
 export function validateReplaySelection(files) {
@@ -59,6 +60,7 @@ export function validateReplaySelection(files) {
     offending,
     tooMany,
     totalTooLarge,
+    count: typeValid.length,
     totalBytes
   }
 }

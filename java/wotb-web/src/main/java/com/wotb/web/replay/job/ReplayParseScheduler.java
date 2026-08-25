@@ -57,6 +57,14 @@ public final class ReplayParseScheduler implements AutoCloseable {
         void run(int sourceIndex) throws Exception;
     }
 
+    /** {@link #cancelQueued} 的结果语义（BLOCKER 1）：明确 completion callback 是否还会触发。 */
+    public enum CancellationResult {
+        /** 该 job 已从 scheduler 移除，{@code onComplete} 永不触发——调用方必须自行推进终态。 */
+        NO_COMPLETION_PENDING,
+        /** 仍有活跃 source，{@code onComplete} 会在最后一个结束后触发。 */
+        ACTIVE_COMPLETION_PENDING
+    }
+
     private static final class JobEntry {
         final String jobId;
         final ArrayDeque<Integer> pending = new ArrayDeque<>();
@@ -94,6 +102,8 @@ public final class ReplayParseScheduler implements AutoCloseable {
     private boolean closed;
     private final ThreadPoolExecutor workers;
     private final MeterRegistry meterRegistry;
+    /** 测试专用：completion 记账后、pump 前同步钩子（确定性复现 BLOCKER 1 取消竞态窗口）。 */
+    Runnable beforePumpHook;
 
     @Autowired
     public ReplayParseScheduler(
@@ -177,15 +187,17 @@ public final class ReplayParseScheduler implements AutoCloseable {
 
     /**
      * 取消：丢弃该 job 尚未开始的 source（释放 pending 额度）；已派发/运行中由调用方
-     * 协作取消。返回 {@code true} = 没有任何已派发的 source，{@code onComplete} 永不
-     * 触发（调用方需自行记录终态）；返回 {@code false} = 有活跃 source，
-     * {@code onComplete} 会在最后一个结束后触发。
+     * 协作取消。返回 {@link CancellationResult}：
+     * {@code NO_COMPLETION_PENDING} = 已从 scheduler 移除（无活跃 source），
+     * {@code onComplete} 永不触发，调用方必须自行把 job 推进终态；
+     * {@code ACTIVE_COMPLETION_PENDING} = 仍有活跃 source，{@code onComplete}
+     * 会在最后一个结束后触发。
      */
-    public boolean cancelQueued(final String jobId) {
+    public CancellationResult cancelQueued(final String jobId) {
         synchronized (stateLock) {
             final JobEntry entry = jobs.get(jobId);
             if (entry == null) {
-                return true;
+                return CancellationResult.NO_COMPLETION_PENDING;
             }
             int drained = 0;
             while (!entry.pending.isEmpty()) {
@@ -203,7 +215,8 @@ public final class ReplayParseScheduler implements AutoCloseable {
                     activeJobs--;
                 }
             }
-            return !activeRemaining;
+            return activeRemaining ? CancellationResult.ACTIVE_COMPLETION_PENDING
+                    : CancellationResult.NO_COMPLETION_PENDING;
         }
     }
 
@@ -301,6 +314,10 @@ public final class ReplayParseScheduler implements AutoCloseable {
                 } catch (final RuntimeException e) {
                     LOGGER.error("replay_parse_job_complete_callback_failed jobId={}", entry.jobId, e);
                 }
+            }
+            // BLOCKER 1 测试缝：completion 记账后、pump 派发前（复现取消竞态窗口）。
+            if (beforePumpHook != null) {
+                beforePumpHook.run();
             }
             // 释放的 slot 在锁外重新派发：与 submit/其他 completion 并发进入 pump() 也安全——
             // 每次派发决策都在 stateLock 内完成 slot 预留，业务回调绝不在锁内运行。

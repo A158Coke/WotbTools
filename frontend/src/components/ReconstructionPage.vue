@@ -13,7 +13,12 @@ import AiReviewPanel from './AiReviewPanel.vue'
 import BattlePlaybackPanel from './BattlePlaybackPanel.vue'
 import ReplayInputPanel from './ReplayInputPanel.vue'
 import { displayName } from '../utils/helpers.js'
-import { formatReplaySize, validateReplaySelection } from '../utils/replayUpload.js'
+import {
+  MAX_REPLAY_FILES,
+  MAX_REPLAY_TOTAL_BYTES,
+  formatReplaySize,
+  validateReplaySelection
+} from '../utils/replayUpload.js'
 
 // KeepAlive include 匹配组件名：App.vue 仅缓存本页，切走视图时保持面板状态存活。
 defineOptions({ name: 'ReconstructionPage' })
@@ -79,10 +84,13 @@ function replaySelectionErrorMessage(tt, result) {
     lines.push(tt('upload.reject_size_hint'))
   }
   if (result.tooMany) {
-    lines.push(tt('upload.reject_count'))
+    lines.push(tt('upload.reject_count', { max: MAX_REPLAY_FILES, current: result.count }))
   }
   if (result.totalTooLarge) {
-    lines.push(tt('upload.reject_total'))
+    lines.push(tt('upload.reject_total', {
+      size: formatReplaySize(result.totalBytes),
+      max: formatReplaySize(MAX_REPLAY_TOTAL_BYTES)
+    }))
   }
   return lines.join(' ')
 }

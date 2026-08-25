@@ -38,9 +38,10 @@
         "reject_offending_title": "以下回放无法解析：",
         "reject_too_large_file": "{name} — {size}",
         "reject_invalid_type": "{name} 不是 .wotbreplay 文件",
+        "reject_no_replay": "未找到 .wotbreplay 回放文件。",
         "reject_size_hint": "单个回放最大允许 20 MB。",
-        "reject_count": "一次最多选择 100 个回放文件。",
-        "reject_total": "所选回放总大小超过 200 MB。"
+        "reject_count": "一次最多选择 {max} 个回放，当前 {current} 个。",
+        "reject_total": "当前批次 {size}，最大允许 {max}。"
     },
     "action": {
         "preview": "解析预览",
