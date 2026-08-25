@@ -44,7 +44,8 @@ vi.mock('../composables/useAuth.js', () => ({
 vi.mock('../utils/api.js', () => lbApi)
 
 vi.mock('../utils/helpers.js', () => ({
-  mapLabel: () => ''
+  mapLabel: () => '',
+  fileKey: file => [file.webkitRelativePath || file.name, file.size, file.lastModified].join(':')
 }))
 
 vi.mock('../utils/display.js', () => ({
@@ -756,7 +757,9 @@ describe('HoFPage', () => {
     expect(formData.get('battleCount')).toBe('86')
     expect(formData.get('averageDamage')).toBe('4123')
     expect(formData.get('winRate')).toBe('67.25')
-    expect(formData.getAll('proofScreenshots')).toHaveLength(2)
+    const screenshots = formData.getAll('proofScreenshots')
+    expect(screenshots).toHaveLength(2)
+    expect(screenshots.every(screenshot => String(screenshot).startsWith('data:image/'))).toBe(true)
     expect(formData.getAll('replays')).toHaveLength(5)
   })
 

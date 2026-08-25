@@ -6,6 +6,7 @@ import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel, formatDateTimeMinute, replayValueLabel } from '../utils/display.js'
 import { HUNDRED_VEHICLES } from '../utils/hundredVehicles.js'
 import * as api from '../utils/api.js'
+import ImageDataUploader from './ImageDataUploader.vue'
 
 const { locale, t, te } = useI18n()
 const rows = ref([])
@@ -376,11 +377,10 @@ const submitError = ref('')
 const needProfile = ref(false)
 const screenshotErr = ref('')
 const replayErr = ref('')
-const screenshotInput = ref(null)
+const screenshotUploader = ref(null)
 const replaysInput = ref(null)
 const screenshotName = ref('')
 const screenshotReading = ref(false)
-let screenshotReadGeneration = 0
 const submitForm = reactive({
   vehicleId: null,
   averageDamage: '',
@@ -444,14 +444,13 @@ function resetSharedSubmitDraft() {
 }
 
 function resetManualEvidenceDraft() {
-  ++screenshotReadGeneration
+  screenshotUploader.value?.invalidatePendingRead()
   screenshotReading.value = false
   submitForm.screenshot = ''
   submitForm.replays = []
   screenshotName.value = ''
   screenshotErr.value = ''
   replayErr.value = ''
-  if (screenshotInput.value) screenshotInput.value.value = ''
   if (replaysInput.value) replaysInput.value.value = ''
 }
 
@@ -470,45 +469,32 @@ function clearSubmitDraft() {
   resetSubmitDraft()
 }
 
-function onScreenshotChange(e) {
-  const input = e.target
-  const f = input.files?.[0]
-  input.value = ''
-  if (!f) return
-  const generation = ++screenshotReadGeneration
-  screenshotReading.value = false
+function onScreenshotSelected(images) {
+  const screenshot = images[0]
+  if (!screenshot) return
   screenshotErr.value = ''
-  if (!f.type.startsWith('image/')) {
-    screenshotErr.value = t('hundred.invalidImageType')
-    return
-  }
-  if (f.size > 4 * 1024 * 1024) {
-    screenshotErr.value = t('hundred.invalidImageSize')
-    return
-  }
-  screenshotReading.value = true
-  const reader = new FileReader()
-  reader.onload = () => {
-    if (generation !== screenshotReadGeneration) return
-    submitForm.screenshot = String(reader.result || '')
-    screenshotName.value = f.name
-    screenshotReading.value = false
-  }
-  reader.onerror = () => {
-    if (generation !== screenshotReadGeneration) return
-    screenshotErr.value = t('hundred.imageReadError')
-    screenshotReading.value = false
-  }
-  reader.readAsDataURL(f)
+  submitForm.screenshot = screenshot.data
+  screenshotName.value = screenshot.name
+}
+
+function onScreenshotUploadError(code) {
+  const errorKey = {
+    'invalid-type': 'hundred.invalidImageType',
+    'too-large': 'hundred.invalidImageSize',
+  }[code] || 'hundred.imageReadError'
+  screenshotErr.value = t(errorKey)
+}
+
+function onScreenshotReading(reading) {
+  screenshotReading.value = reading
 }
 
 function removeScreenshot() {
-  ++screenshotReadGeneration
+  screenshotUploader.value?.invalidatePendingRead()
   screenshotReading.value = false
   submitForm.screenshot = ''
   screenshotName.value = ''
   screenshotErr.value = ''
-  if (screenshotInput.value) screenshotInput.value.value = ''
 }
 
 function replayFileKey(file) {
@@ -749,10 +735,9 @@ const mark3SubmitError = ref('')
 const mark3NeedProfile = ref(false)
 const mark3ScreenshotErr = ref('')
 const mark3ReplayErr = ref('')
-const mark3ScreenshotsInput = ref(null)
+const mark3ScreenshotUploader = ref(null)
 const mark3ReplaysInput = ref(null)
 const mark3ScreenshotsReading = ref(false)
-let mark3ScreenshotReadGeneration = 0
 const mark3SubmitForm = reactive({
   vehicleId: null,
   battleCount: '',
@@ -795,7 +780,7 @@ function closeMark3Submit() {
 }
 
 function resetMark3Draft() {
-  ++mark3ScreenshotReadGeneration
+  mark3ScreenshotUploader.value?.invalidatePendingRead()
   mark3ScreenshotsReading.value = false
   mark3SubmitForm.vehicleId = null
   mark3SubmitForm.battleCount = ''
@@ -807,7 +792,6 @@ function resetMark3Draft() {
   mark3NeedProfile.value = false
   mark3ScreenshotErr.value = ''
   mark3ReplayErr.value = ''
-  if (mark3ScreenshotsInput.value) mark3ScreenshotsInput.value.value = ''
   if (mark3ReplaysInput.value) mark3ReplaysInput.value.value = ''
 }
 
@@ -818,22 +802,7 @@ function clearMark3Draft() {
 }
 
 function mark3FileKey(file) {
-  return `${file.name}\u0000${file.size}\u0000${file.lastModified}`
-}
-
-function readMark3Screenshot(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve({ key: mark3FileKey(file), name: file.name, data: String(reader.result || '') })
-    reader.onerror = () => reject(new Error('IMAGE_READ_ERROR'))
-    reader.readAsDataURL(file)
-  })
-}
-
-function mark3ScreenshotFileError(files) {
-  if (files.some(file => !file.type.startsWith('image/'))) return 'mark3.invalidImageType'
-  if (files.some(file => file.size > 4 * 1024 * 1024)) return 'mark3.invalidImageSize'
-  return ''
+  return file.key || [file.name, file.size, file.lastModified].join('\u0000')
 }
 
 function collectUniqueMark3Files(files, existingKeys) {
@@ -852,36 +821,10 @@ function collectUniqueMark3Files(files, existingKeys) {
   return { additions, duplicateCount }
 }
 
-function readMark3Screenshots(additions, duplicateCount) {
-  const generation = ++mark3ScreenshotReadGeneration
-  mark3ScreenshotsReading.value = true
-  Promise.all(additions.map(readMark3Screenshot))
-    .then(screenshots => {
-      if (generation !== mark3ScreenshotReadGeneration) return
-      mark3SubmitForm.proofScreenshots.push(...screenshots)
-      mark3ScreenshotErr.value = duplicateCount ? t('mark3.screenshotDuplicateIgnored') : ''
-    })
-    .catch(() => {
-      if (generation === mark3ScreenshotReadGeneration) mark3ScreenshotErr.value = t('mark3.imageReadError')
-    })
-    .finally(() => {
-      if (generation === mark3ScreenshotReadGeneration) mark3ScreenshotsReading.value = false
-    })
-}
-
-function onMark3ScreenshotsChange(event) {
-  const input = event.target
-  const files = Array.from(input.files || [])
-  input.value = ''
-  if (!files.length) return
+function onMark3ScreenshotsSelected(screenshots) {
   mark3ScreenshotErr.value = ''
-  const invalidFileKey = mark3ScreenshotFileError(files)
-  if (invalidFileKey) {
-    mark3ScreenshotErr.value = t(invalidFileKey)
-    return
-  }
   const { additions, duplicateCount } = collectUniqueMark3Files(
-    files, mark3SubmitForm.proofScreenshots.map(screenshot => screenshot.key)
+    screenshots, mark3SubmitForm.proofScreenshots.map(mark3FileKey)
   )
   if (!additions.length) {
     mark3ScreenshotErr.value = duplicateCount ? t('mark3.screenshotDuplicateIgnored') : ''
@@ -891,7 +834,20 @@ function onMark3ScreenshotsChange(event) {
     mark3ScreenshotErr.value = t('mark3.screenshotLimit')
     return
   }
-  readMark3Screenshots(additions, duplicateCount)
+  mark3SubmitForm.proofScreenshots.push(...additions)
+  mark3ScreenshotErr.value = duplicateCount ? t('mark3.screenshotDuplicateIgnored') : ''
+}
+
+function onMark3ScreenshotUploadError(code) {
+  const errorKey = {
+    'invalid-type': 'mark3.invalidImageType',
+    'too-large': 'mark3.invalidImageSize',
+  }[code] || 'mark3.imageReadError'
+  mark3ScreenshotErr.value = t(errorKey)
+}
+
+function onMark3ScreenshotsReading(reading) {
+  mark3ScreenshotsReading.value = reading
 }
 
 function removeMark3Screenshot(index) {
@@ -1473,7 +1429,10 @@ function fmtDate(s) {
         <template v-if="submitMode === SUBMIT_MODE_MANUAL">
           <div class="h100-field">
             <span class="h100-field-label">{{ $t('hundred.screenshotLabel') }}</span>
-            <input ref="screenshotInput" type="file" accept="image/*" @change="onScreenshotChange" />
+          <ImageDataUploader ref="screenshotUploader"
+                              @selected="onScreenshotSelected"
+                              @error="onScreenshotUploadError"
+                              @reading="onScreenshotReading" />
             <small>{{ $t('hundred.screenshotHint') }}</small>
             <p v-if="screenshotReading" class="h100-file-reading">{{ $t('hundred.readingScreenshot') }}</p>
             <div v-else-if="screenshotName" class="h100-selected-file">
@@ -1552,7 +1511,10 @@ function fmtDate(s) {
           <span class="h100-field-label">{{ $t('mark3.screenshotLabel') }}
             <span class="h100-counter">{{ $t('mark3.screenshotCounter', { current: mark3SubmitForm.proofScreenshots.length }) }}</span>
           </span>
-          <input ref="mark3ScreenshotsInput" type="file" accept="image/*" multiple @change="onMark3ScreenshotsChange" />
+          <ImageDataUploader ref="mark3ScreenshotUploader" multiple
+                              @selected="onMark3ScreenshotsSelected"
+                              @error="onMark3ScreenshotUploadError"
+                              @reading="onMark3ScreenshotsReading" />
           <small>{{ $t('mark3.screenshotHint') }}</small>
           <p v-if="mark3ScreenshotsReading" class="h100-file-reading">{{ $t('mark3.readingScreenshots') }}</p>
           <ul v-if="mark3SubmitForm.proofScreenshots.length" class="h100-selected-files mark3-proof-list">

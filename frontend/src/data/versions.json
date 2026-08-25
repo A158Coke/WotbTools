@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.30",
+    "date": "2026-08-25",
+    "tag": "fix",
+    "zh": "百场、三环和陪练申请的图片上传现由同一组件处理：浏览器会先校验图片 data URL；切换文件或清空草稿后，旧图片的慢读取结果不会再覆盖当前选择，避免提交时出现无效截图提示。",
+    "en": "Image uploads for 100-battle, Mark 3 and booster applications now share one component. The browser validates image data URLs first, and a stale read cannot overwrite the current selection after you change a file or clear a draft.",
+    "ru": "Загрузка изображений для заявок на 100 боёв, три отметки и бустеров теперь использует общий компонент: браузер сначала проверяет data URL изображения, а устаревшее чтение после смены файла или очистки черновика больше не заменяет текущий выбор."
+  },
+  {
     "v": "2.12.29",
     "date": "2026-08-25",
     "tag": "chg",
