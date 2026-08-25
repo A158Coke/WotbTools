@@ -16,6 +16,8 @@ const SUMMARY_PLAYER = {
   clan: 'AAA',
   ratingMedian: 850.4,
   dimensionMedians: [342, 60, 70, 110, 40, 80, 100],
+  // 与 medians 故意不同：Radar 必须用 mean（40/30/10/50 等），不能被 median 的 0 覆盖
+  dimensionMeans: [250, 40, 30, 75, 10, 50, 65],
   mvpCount: 2,
   battles: 3,
   wins: 2,
@@ -31,7 +33,8 @@ const BATTLE_PLAYER = {
   nickname: 'Beta',
   clan: 'BBB',
   rating: 812.6,
-  dimensionMedians: [250, 50, 60, 90, 30, 70, 80],
+  // battle scope 只允许单场 dimensionScores（禁止 dimensionMedians/Means 命名复用）
+  dimensionScores: [320, 55, 70, 110, 40, 75, 82],
   cells: {
     account_id: 2001, damage_dealt: 3000, damage_assisted: 900, kills: 3,
     damage_blocked: 1200, n_shots: 20, n_hits_dealt: 14, n_penetrations_dealt: 9,
@@ -40,10 +43,18 @@ const BATTLE_PLAYER = {
   },
 }
 
-/** 雷达 stub：透传 metrics 数组（断言 axis 数量/顺序用），真实渲染由 PlayerRatingRadar 负责。 */
+/** 雷达 stub：透传 metrics 数组——label 文本用于 axis 数量/顺序断言；
+ *  data-values 暴露 key/rawValue/normalized/displayValue/available 供 value 断言
+ *  （polygon 与 detail 必须消费同一个 raw，测试不能只看 label）。 */
 const RADAR_STUB = {
   props: ['metrics'],
-  template: '<div class="radar-stub">{{ metrics.map(m => m.label).join(",") }}</div>',
+  template: '<div class="radar-stub" :data-values="JSON.stringify(metrics.map(m => ({key:m.key,rawValue:m.rawValue,normalized:m.normalized,displayValue:m.displayValue,available:m.available})))">{{ metrics.map(m => m.label).join(",") }}</div>',
+}
+
+/** 解析 radar stub 的轴值（key → metric）。 */
+function radarValues(wrapper) {
+  const raw = wrapper.find('.radar-stub').attributes('data-values')
+  return Object.fromEntries(JSON.parse(raw).map(m => [m.key, m]))
 }
 
 /** League 维度满分 metadata（resp.league.columns：key → max；Radar 归一化唯一事实源）。 */
@@ -174,7 +185,7 @@ describe('PlayerDetailDrawer scope semantics', () => {
     const ineligible = {
       ...BATTLE_PLAYER,
       rating: null,
-      dimensionMedians: [null, null, null, null, null, null, null],
+      dimensionScores: [null, null, null, null, null, null, null],
       cells: { ...BATTLE_PLAYER.cells, contribution: null, kast: null, impact: null },
     }
     const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, ineligible)
@@ -266,7 +277,7 @@ describe('PlayerDetailDrawer custom Radar', () => {
     const ineligible = {
       ...BATTLE_PLAYER,
       rating: null,
-      dimensionMedians: [null, null, null, null, null, null, null],
+      dimensionScores: [null, null, null, null, null, null, null],
       cells: { ...BATTLE_PLAYER.cells, contribution: 18.1, kast: 80, impact: 120.5 },
     }
     const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, ineligible)
@@ -280,7 +291,7 @@ describe('PlayerDetailDrawer custom Radar', () => {
     const mixed = {
       ...BATTLE_PLAYER,
       rating: null,
-      dimensionMedians: [null, null, null, null, null, null, null],
+      dimensionScores: [null, null, null, null, null, null, null],
       cells: { ...BATTLE_PLAYER.cells },
     }
     const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, mixed)
@@ -332,5 +343,64 @@ describe('PlayerDetailDrawer custom Radar', () => {
     const perfText = wrapper2.find('[data-testid="perf-facts"]').text()
     expect(perfText).toContain('player_labels.impact')
     expect(perfText).toContain('151.2%')
+  })
+
+  describe('Radar scope-aware data source contract', () => {
+    it('Summary：League 七维取 dimensionMeans（非 median），并断言 raw/normalized', () => {
+      const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+      const values = radarValues(wrapper)
+      expect(values.league_damage_score.rawValue).toBe(250)
+      expect(values.league_assist_score.rawValue).toBe(40)
+      expect(values.league_kill_score.rawValue).toBe(30)
+      expect(values.league_blocked_score.rawValue).toBe(10)
+      expect(values.league_survival_score.rawValue).toBe(50)
+      // 不能被 median 的 0/342/60/70/110/80/100 覆盖
+      expect(values.league_assist_score.rawValue).not.toBe(60)
+      expect(values.league_kill_score.rawValue).not.toBe(70)
+      expect(values.league_blocked_score.rawValue).not.toBe(40)
+      // 归一化 = raw / 后端 max（250/400=0.625；40/100=0.4）
+      expect(values.league_damage_score.normalized).toBeCloseTo(0.625, 3)
+      expect(values.league_assist_score.normalized).toBeCloseTo(0.4, 3)
+      expect(values.league_assist_score.displayValue).toBe('40 / 100 \u00B7 40%')
+    })
+
+    it('Summary 158布丁 型：Assist mean 28.333 而非 median 0', () => {
+      // 6 场 rated，assist scores [0,0,0,0,80,90] → median=0，mean=28.333...
+      const sparse = {
+        ...SUMMARY_PLAYER,
+        ratingMedian: 742.6,
+        dimensionMedians: [240, 0, 0, 70, 0, 0, 60],
+        dimensionMeans: [250, 28.333333333333332, 30, 75, 10, 50, 65],
+      }
+      const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, sparse)
+      const values = radarValues(wrapper)
+      expect(values.league_assist_score.rawValue).toBeCloseTo(28.333333, 4)
+      expect(values.league_assist_score.normalized).toBeCloseTo(0.28333, 4)
+      expect(values.league_assist_score.available).toBe(true)
+      expect(values.league_assist_score.rawValue).not.toBe(0)
+    })
+
+    it('Battle：League 七维取本场 dimensionScores，绝不使用跨场 means/medians', () => {
+      // 故意提供与 battle scores 完全不同的 dimensionMeans/Medians——battle scope 必须忽略
+      const battle = {
+        ...BATTLE_PLAYER,
+        dimensionScores: [320, 55, 70, 110, 40, 75, 82],
+        dimensionMeans: [1, 2, 3, 4, 5, 6, 7],
+        dimensionMedians: [8, 9, 10, 11, 12, 13, 14],
+      }
+      const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, battle)
+      const values = radarValues(wrapper)
+      expect(values.league_damage_score.rawValue).toBe(320)
+      expect(values.league_assist_score.rawValue).toBe(55)
+      expect(values.league_kill_score.rawValue).toBe(70)
+      expect(values.league_exchange_score.rawValue).toBe(110)
+      expect(values.league_blocked_score.rawValue).toBe(40)
+      expect(values.league_survival_score.rawValue).toBe(75)
+      expect(values.league_shooting_score.rawValue).toBe(82)
+      // 不得被 dimensionMeans [1..7] / dimensionMedians [8..14] 污染
+      expect(values.league_assist_score.rawValue).not.toBe(2)
+      expect(values.league_kill_score.rawValue).not.toBe(10)
+      expect(values.league_damage_score.normalized).toBeCloseTo(0.8, 3) // 320/400
+    })
   })
 })

@@ -8,7 +8,7 @@ import java.util.List;
  * 互换击杀（trade）事实。
  *
  * <p>业务语义（保持原 Rating V2 的既有窗口规则，仅把推导从 metrics 层迁移到事实层）：
- * 玩家死亡后 ±{@value #TRADE_WINDOW_SEC} 秒内存在敌方死亡 → 视为 traded。依赖
+ * 玩家死亡后 ±{@value #TRADE_WINDOW_SEC} 秒内（边界包含）存在敌方死亡 → 视为 traded。依赖
  * {@link com.wotb.core.processing.DeathTimeReconciler} 校准后的权威
  * {@link PlayerResult#survivalTimeSec}；玩家存活或死亡时刻未知时 fail-closed 返回 0，
  * 绝不猜测。</p>
@@ -19,8 +19,8 @@ import java.util.List;
  */
 public final class TradeFacts {
 
-    /** 互换击杀时间窗口（秒）：玩家死亡 ± 窗口内存在敌方死亡。 */
-    public static final double TRADE_WINDOW_SEC = 5.0;
+    /** 互换击杀时间窗口（秒）：玩家死亡 ± 窗口内存在敌方死亡（正式语义 ±10s，边界包含）。 */
+    public static final double TRADE_WINDOW_SEC = 10.0;
 
     private TradeFacts() {
     }

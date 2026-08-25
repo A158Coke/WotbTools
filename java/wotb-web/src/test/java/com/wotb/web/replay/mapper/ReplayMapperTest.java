@@ -157,6 +157,64 @@ class ReplayMapperTest {
         assertNotNull(cells.get("impact"));
     }
 
+    @Test
+    void leagueColumnsExcludePotentialDamageButStandardReplayKeepsIt() {
+        // Potential Damage 不是 League Rating / League Analysis 指标：从 League column universe
+        // 过滤（potential_damage / supplement / detail / avg / supplement_avg）；
+        // 标准 Replay column universe 保留（普通回放有既有消费者，不无边界删除）。
+        final java.util.Set<String> leaguePlayerKeys = Mapper.leaguePlayerColumns().stream()
+                .map(com.wotb.web.replay.dto.ColumnDef::key)
+                .collect(java.util.stream.Collectors.toSet());
+        assertTrue(leaguePlayerKeys.stream().noneMatch(k -> k.startsWith("potential_damage")),
+                "League 单场列不得暴露 potential_damage 系列: " + leaguePlayerKeys);
+
+        final java.util.Set<String> leagueAggKeys = Mapper.leagueAggregateColumns().stream()
+                .map(com.wotb.web.replay.dto.ColumnDef::key)
+                .collect(java.util.stream.Collectors.toSet());
+        assertTrue(leagueAggKeys.stream().noneMatch(k -> k.startsWith("potential_damage")),
+                "League 汇总列不得暴露 potential_damage 系列: " + leagueAggKeys);
+
+        final java.util.Set<String> standardPlayerKeys = Mapper.playerColumns().stream()
+                .map(com.wotb.web.replay.dto.ColumnDef::key)
+                .collect(java.util.stream.Collectors.toSet());
+        assertTrue(standardPlayerKeys.contains("potential_damage"),
+                "标准 Replay 单场列必须保留 potential_damage（既有消费者）");
+        final java.util.Set<String> standardAggKeys = Mapper.aggregateColumns().stream()
+                .map(com.wotb.web.replay.dto.ColumnDef::key)
+                .collect(java.util.stream.Collectors.toSet());
+        assertTrue(standardAggKeys.contains("potential_damage"),
+                "标准 Replay 汇总列必须保留 potential_damage");
+        assertTrue(standardAggKeys.contains("potential_damage_avg"));
+    }
+
+    @Test
+    void battleRateCellsNullWhenDenominatorZero() {
+        // hit_rate/pen_rate：denominator==0 → null（API null，UI "--"，禁止 0/0 伪装 0%）
+        final PlayerResult p = player(1L, true);
+        p.tankId = 4481L;
+        p.nShots = 0;
+        p.nHitsDealt = 0;
+        p.nPenetrationsDealt = 0;
+        final Battle battle = new Battle();
+        battle.players = List.of(p);
+        final BattleDto dto = Mapper.toBattle(battle, "sample.wotbreplay", Tankopedia.load());
+        final Map<String, Object> cells = dto.players().getFirst().cells();
+        assertEquals(null, cells.get("hit_rate"));
+        assertEquals(null, cells.get("pen_rate"));
+
+        final PlayerResult hit = player(2L, true);
+        hit.tankId = 4481L;
+        hit.nShots = 10;
+        hit.nHitsDealt = 5;
+        hit.nPenetrationsDealt = 4;
+        final Battle b2 = new Battle();
+        b2.players = List.of(hit);
+        final Map<String, Object> c2 = Mapper.toBattle(b2, "sample.wotbreplay", Tankopedia.load())
+                .players().getFirst().cells();
+        assertEquals(50.0, ((Number) c2.get("hit_rate")).doubleValue(), 1e-9);
+        assertEquals(80.0, ((Number) c2.get("pen_rate")).doubleValue(), 1e-9);
+    }
+
     private static PlayerResult player(final long accountId, final boolean survived) {
         final PlayerResult player = new PlayerResult();
         player.accountId = accountId;

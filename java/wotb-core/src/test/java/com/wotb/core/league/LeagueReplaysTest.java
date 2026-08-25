@@ -269,21 +269,14 @@ class LeagueReplaysTest {
     @Test
     void unknownPlusKnownReconciledDeterministicallyRegardlessOfUploadOrder() {
         // 同一 arenaId 两份一致副本：玩家 1001 死亡时间一份 UNKNOWN(0)、一份 KNOWN 128.12；
-        // 敌方 2001 在两份中都于 128.5s 阵亡（±5s 窗口内 → TRADE）。
+        // 敌方 2001 在两份中都于 128.5s 阵亡（±10s 窗口内 → TRADE）。
         // UNKNOWN+KNOWN 不是 conflict；canonical 使用 KNOWN；上传顺序不影响最终 Rating。
-        final List<LeagueTestBattles.PlayerSpec> specsA = LeagueTestBattles.defaultSevenVsSeven();
-        specsA.getFirst().dead(0);
-        specsA.get(7).dead(128.5);
-        final Battle a = LeagueTestBattles.battle(1, specsA);
-        a.arenaId = "111";
-        final List<LeagueTestBattles.PlayerSpec> specsB = LeagueTestBattles.defaultSevenVsSeven();
-        specsB.getFirst().dead(128.12);
-        specsB.get(7).dead(128.5);
-        final Battle b = LeagueTestBattles.battle(1, specsB);
-        b.arenaId = "111";
-
-        final LeagueReplays.LeagueCollectResult r1 = collectBattles(List.of(a, b));
-        final LeagueReplays.LeagueCollectResult r2 = collectBattles(List.of(b, a));
+        // 每个顺序必须用<b>全新构造</b>的 Battle（上一轮 canonicalization 会原地 mutate
+        // 保留副本的 survivalTimeSec——复用对象会让第二顺序变成 KNOWN+KNOWN，测不出顺序独立性）。
+        final LeagueReplays.LeagueCollectResult r1 = collectBattles(List.of(
+                unknownCopy(128.5), knownCopy(128.12, 128.5)));
+        final LeagueReplays.LeagueCollectResult r2 = collectBattles(List.of(
+                knownCopy(128.12, 128.5), unknownCopy(128.5)));
 
         for (final LeagueReplays.LeagueCollectResult r : List.of(r1, r2)) {
             assertTrue(r.leagueFailures().isEmpty(),
@@ -303,7 +296,7 @@ class LeagueReplaysTest {
         final PlayerLeagueRating p1 = rr1.byAccount(1001);
         final PlayerLeagueRating p2 = rr2.byAccount(1001);
         assertEquals(LeagueRatingCalculator.STATE_TRADE, p1.survivalState(),
-                "KNOWN 128.12 ±5s 内存在敌方死亡 → TRADE");
+                "KNOWN 128.12 ±10s 内存在敌方死亡 → TRADE");
         assertEquals(p1.survivalState(), p2.survivalState());
         assertEquals(p1.survivalTradeScore(), p2.survivalTradeScore(), 1e-9);
         assertEquals(p1.finalRating(), p2.finalRating(), 1e-9);
@@ -342,18 +335,11 @@ class LeagueReplaysTest {
     @Test
     void knownKnownWithinToleranceCanonicalMinDeterministic() {
         // KNOWN 128.12 vs KNOWN 128.50（≤1s 容差）：不 conflict；canonical = 最小 KNOWN = 128.12，
-        // 与上传顺序无关。
-        final List<LeagueTestBattles.PlayerSpec> specsX = LeagueTestBattles.defaultSevenVsSeven();
-        specsX.getFirst().dead(128.12);
-        final Battle x = LeagueTestBattles.battle(1, specsX);
-        x.arenaId = "111";
-        final List<LeagueTestBattles.PlayerSpec> specsY = LeagueTestBattles.defaultSevenVsSeven();
-        specsY.getFirst().dead(128.50);
-        final Battle y = LeagueTestBattles.battle(1, specsY);
-        y.arenaId = "111";
-
-        final LeagueReplays.LeagueCollectResult r1 = collectBattles(List.of(x, y));
-        final LeagueReplays.LeagueCollectResult r2 = collectBattles(List.of(y, x));
+        // 与上传顺序无关。每个顺序用全新 Battle 实例（canonicalization 原地 mutate 保留副本）。
+        final LeagueReplays.LeagueCollectResult r1 = collectBattles(List.of(
+                knownCopy(128.12, 300.0), knownCopy(128.50, 300.0)));
+        final LeagueReplays.LeagueCollectResult r2 = collectBattles(List.of(
+                knownCopy(128.50, 300.0), knownCopy(128.12, 300.0)));
         for (final LeagueReplays.LeagueCollectResult r : List.of(r1, r2)) {
             assertTrue(r.leagueFailures().isEmpty());
             assertEquals(1, r.leagueBatch().battleResults().size());
@@ -362,6 +348,107 @@ class LeagueReplaysTest {
         assertEquals(128.12, r2.battles().getFirst().players.getFirst().survivalTimeSec, 1e-9);
         assertEquals(r1.leagueBatch().battleResults().getFirst().byAccount(1001).finalRating(),
                 r2.leagueBatch().battleResults().getFirst().byAccount(1001).finalRating(), 1e-9);
+    }
+
+    // ---- 三副本 group 测试（UNKNOWN 不能隔开互相矛盾的 KNOWN；全新 Battle 每顺序）----
+
+    @Test
+    void threeCopiesUnknownKnown100Known128ConflictRegardlessOfOrder() {
+        // Case 1：UNKNOWN + KNOWN100 + KNOWN128 —— 100 vs 128 超 1s 容差 → 全部 6 种排列
+        // 都必须是 CONFLICTING_REPLAYS_FOR_ARENA（UNKNOWN 不是 wildcard，不能隔开矛盾 KNOWN）。
+        final double[][] orders = {
+                {0, 100, 128}, {0, 128, 100}, {100, 0, 128},
+                {100, 128, 0}, {128, 0, 100}, {128, 100, 0}};
+        for (final double[] o : orders) {
+            final LeagueReplays.LeagueCollectResult r = collectBattles(List.of(
+                    copyWithDeath(o[0]), copyWithDeath(o[1]), copyWithDeath(o[2])));
+            assertEquals(0, r.battles().size(), "order " + java.util.Arrays.toString(o));
+            assertEquals(3, r.leagueFailures().size());
+            assertTrue(r.leagueFailures().stream().allMatch(
+                            f -> f.code().equals(LeagueFailure.Code.CONFLICTING_REPLAYS_FOR_ARENA)),
+                    "order " + java.util.Arrays.toString(o) + " 必须全部 conflict");
+            assertEquals(0, r.leagueBatch().battleResults().size());
+        }
+    }
+
+    @Test
+    void threeCopiesUnknownKnown128_12Known128_50RatedSameRegardlessOfOrder() {
+        // Case 2：UNKNOWN + KNOWN128.12 + KNOWN128.50 —— KNOWN 互相一致（≤1s）→
+        // 全部 6 种排列都不 conflict；canonical = 128.12；最终 Rating 与 ratingQuality 相同。
+        final double[][] orders = {
+                {0, 128.12, 128.50}, {0, 128.50, 128.12}, {128.12, 0, 128.50},
+                {128.12, 128.50, 0}, {128.50, 0, 128.12}, {128.50, 128.12, 0}};
+        double lastRating = Double.NaN;
+        for (final double[] o : orders) {
+            final LeagueReplays.LeagueCollectResult r = collectBattles(List.of(
+                    copyWithDeath(o[0]), copyWithDeath(o[1]), copyWithDeath(o[2])));
+            assertTrue(r.leagueFailures().isEmpty(), "order " + java.util.Arrays.toString(o)
+                    + " 不得 conflict: " + r.leagueFailures());
+            assertEquals(1, r.battles().size());
+            assertEquals(1, r.leagueBatch().battleResults().size());
+            assertEquals(2, r.duplicates().size());
+            assertEquals(0, r.leagueBatch().ratingQuality().unknownDeathTimePlayers(),
+                    "canonical 使用 KNOWN → 不计 UNKNOWN quality");
+            assertEquals(128.12, r.battles().getFirst().players.getFirst().survivalTimeSec, 1e-9,
+                    "canonical = min KNOWN（与顺序无关）");
+            final double rating = r.leagueBatch().battleResults().getFirst()
+                    .byAccount(1001).finalRating();
+            if (!Double.isNaN(lastRating)) {
+                assertEquals(lastRating, rating, 1e-9, "最终 Rating 与上传顺序无关");
+            }
+            lastRating = rating;
+        }
+    }
+
+    @Test
+    void threeCopiesUnknownKnown100Known128ConflictAllOrdersCheckpairwise() {
+        // 与上面重复的显式 all-pairs 语义：3 份副本任何一份为 first 都必须拒绝
+        // （LeagueReplays 内部已用 group-level all-pairs，这里验证公共 collect 结果稳定）。
+        final List<LeagueTestBattles.PlayerSpec> specsU = LeagueTestBattles.defaultSevenVsSeven();
+        specsU.getFirst().dead(0);
+        final List<LeagueTestBattles.PlayerSpec> specs100 = LeagueTestBattles.defaultSevenVsSeven();
+        specs100.getFirst().dead(100);
+        final List<LeagueTestBattles.PlayerSpec> specs128 = LeagueTestBattles.defaultSevenVsSeven();
+        specs128.getFirst().dead(128);
+        final List<Battle> base = List.of(
+                LeagueTestBattles.battle(1, specsU),
+                LeagueTestBattles.battle(1, specs100),
+                LeagueTestBattles.battle(1, specs128));
+        for (final Battle b : base) {
+            b.arenaId = "111";
+        }
+        final LeagueReplays.LeagueCollectResult r = collectBattles(base);
+        assertEquals(0, r.battles().size());
+        assertEquals(3, r.leagueFailures().size());
+    }
+
+    /** 全新 Battle：玩家 1001 死亡时间 UNKNOWN(0)；敌方 2001 于 enemyDeath 阵亡（其余存活 300s）。 */
+    private static Battle unknownCopy(final double enemyDeath) {
+        final List<LeagueTestBattles.PlayerSpec> specs = LeagueTestBattles.defaultSevenVsSeven();
+        specs.getFirst().dead(0);
+        specs.get(7).dead(enemyDeath);
+        final Battle b = LeagueTestBattles.battle(1, specs);
+        b.arenaId = "111";
+        return b;
+    }
+
+    /** 全新 Battle：玩家 1001 死亡时间 KNOWN；敌方 2001 于 enemyDeath 阵亡。 */
+    private static Battle knownCopy(final double death, final double enemyDeath) {
+        final List<LeagueTestBattles.PlayerSpec> specs = LeagueTestBattles.defaultSevenVsSeven();
+        specs.getFirst().dead(death);
+        specs.get(7).dead(enemyDeath);
+        final Battle b = LeagueTestBattles.battle(1, specs);
+        b.arenaId = "111";
+        return b;
+    }
+
+    /** 全新 Battle：玩家 1001 死亡时间为指定值（无敌方死亡，其余全部存活 300s）。 */
+    private static Battle copyWithDeath(final double death) {
+        final List<LeagueTestBattles.PlayerSpec> specs = LeagueTestBattles.defaultSevenVsSeven();
+        specs.getFirst().dead(death);
+        final Battle b = LeagueTestBattles.battle(1, specs);
+        b.arenaId = "111";
+        return b;
     }
 
     @Test
