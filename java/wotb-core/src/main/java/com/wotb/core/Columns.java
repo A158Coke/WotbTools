@@ -33,10 +33,6 @@ public final class Columns {
             new Column("存活", "survived_label", 6, false, p -> p.survived ? "存活" : "阵亡"),
             new Column("击杀", "kills", 6, true, p -> p.kills),
             new Column("伤害", "damage_dealt", 8, true, p -> p.damageDealt),
-            new Column("潜在伤害", "potential_damage", 9, true, p -> p.potentialDamage),
-            new Column("补增伤害", "potential_damage_supplement", 9, true, p -> p.potentialDamageSupplement),
-            new Column("潜在明细", "potential_damage_detail", 9, false,
-                    p -> p.potentialDamageDetailed ? "已解析" : "未解析"),
             new Column("协助伤害", "damage_assisted", 9, true, p -> p.damageAssisted),
             new Column("贡献度", "contribution", 8, true, p -> p.contribution),
             new Column("KAST", "kast", 7, true, p -> p.kast),
@@ -47,8 +43,8 @@ public final class Columns {
             new Column("射击次数", "n_shots", 6, true, p -> p.nShots),
             new Column("命中次数", "n_hits_dealt", 6, true, p -> p.nHitsDealt),
             new Column("击穿", "n_penetrations_dealt", 6, true, p -> p.nPenetrationsDealt),
-            new Column("命中率", "hit_rate", 7, true, p -> p.nShots == 0 ? 0 : Math.round(1000.0 * p.nHitsDealt / p.nShots) / 10.0),
-            new Column("击穿率", "pen_rate", 7, true, p -> p.nShots == 0 ? 0 : Math.round(1000.0 * p.nPenetrationsDealt / p.nShots) / 10.0),
+            new Column("命中率", "hit_rate", 7, true, p -> rate(p.nShots, p.nHitsDealt)),
+            new Column("击穿率", "pen_rate", 7, true, p -> rate(p.nHitsDealt, p.nPenetrationsDealt)),
             new Column("被命中", "n_hits_received", 7, true, p -> p.nHitsReceived),
             new Column("被击穿", "n_penetrations_received", 7, true, p -> p.nPenetrationsReceived),
             new Column("击伤", "n_enemies_damaged", 9, true, p -> p.nEnemiesDamaged)
@@ -74,6 +70,21 @@ public final class Columns {
             out.addAll(l);
         }
         return List.copyOf(out);
+    }
+
+    /**
+     * 原始比例（0-100 标尺，一位小数）：{@code rate = numerator / denominator}。
+     * <b>denominator == 0 → null</b>（unavailable，UI 显示 "--"，禁止 0/0 伪装成 0%）；
+     * numerator == 0 且 denominator &gt; 0 → 合法 0。命中率 = hits/shots；
+     * 击穿率 = penetrations/hits（真实消费分母 = 命中次数，不是射击次数）。
+     * <b>与 Rating 内部 shooting 维度（Wilson confidence）是两个不同语义</b>：
+     * 本列是 UI 真实百分比，Rating 仍是 Wilson 下界合成（见 LeagueRatingCalculator）。
+     */
+    private static Object rate(final double denominator, final double numerator) {
+        if (denominator <= 0) {
+            return null;
+        }
+        return Math.round(1000.0 * numerator / denominator) / 10.0;
     }
 
     /** 表头显示宽度: 中文算 2, 其余算 1。 */

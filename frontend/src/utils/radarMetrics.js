@@ -35,7 +35,9 @@ const clamp01 = v => Math.max(0, Math.min(1, v))
  * 指标定义：
  * - key: 数据 key（League 维度 / performance 指标）
  * - labelKey: 显示名 i18n key（player_labels.*）
- * - source: 'league'（dimensionMedians / league_* cells）| 'performance'（contribution/kast cells）
+ * - source: 'league'（scope-aware：summary → player.dimensionMeans[i]，
+ *   battle → player.dimensionScores[i]；禁止 battle 复用跨场字段）|
+ *   'performance'（contribution/kast cells）
  * League 维度的 normalize/format 不在此闭包——满分来自后端 metadata（maxByKey），
  * 由 resolveRadarMetric 按 raw / column.max 计算（后端唯一事实源）。
  */

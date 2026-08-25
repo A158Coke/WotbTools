@@ -38,7 +38,8 @@ const LEAGUE_ONLY_KEYS = new Set(['league_rating', ...CW_DIM_KEYS, 'mvp_count', 
  * - 有 League 无 Aggregate：防御兜底——保留评分玩家，Aggregate 字段补 null（当前 contract 下
  *   CW 批次必生成 aggregate，正常不触发）。
  * @param {Array} aggregateRows resp.aggregate（每行 {team, cells}，cells 含 account_id）
- * @param {Array} playerSummaries league.playerSummaries（每项 accountId/nickname/clan/battles/ratingMedian/dimensionMedians/mvpCount/wins）
+ * @param {Array} playerSummaries league.playerSummaries（每项 accountId/nickname/clan/battles/ratingMedian/
+ *   dimensionMedians/dimensionMeans/mvpCount/wins；dimensionMeans 原样透传到 row.league 供 Summary Radar）
  * @returns {Array<{team:number, cells:Object, league:Object|null}>}
  */
 export function mergeCwPlayerRows(aggregateRows, playerSummaries) {

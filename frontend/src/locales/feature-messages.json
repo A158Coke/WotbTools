@@ -34,6 +34,7 @@
       "unrated_count": "{count} 场未生成 Rating",
       "failure_view": "查看详情",
       "failure_hide": "收起详情",
+      "death_time_unknown_warning": "{count} 名阵亡玩家的精确死亡时刻无法从回放可靠确认；这些玩家的「存活 / 互换」维度按 0 分保守计算。",
       "unavailable_mixed": "League Rating 不适用于混合批次（普通回放与训练赛/联赛回放混传），已按普通回放展示",
       "summary": {
         "section_title": "League Rating 汇总",
@@ -79,6 +80,7 @@
       "unrated_count": "{count} battle(s) without Rating",
       "failure_view": "View details",
       "failure_hide": "Hide details",
+      "death_time_unknown_warning": "{count} destroyed player(s) have an exact death time that cannot be reliably confirmed from the replay; their Survival / Trade dimension is conservatively scored 0.",
       "unavailable_mixed": "League Rating is not available for mixed batches (standard + training/tournament replays); shown as standard replays",
       "summary": {
         "section_title": "League Rating Summary",
@@ -124,6 +126,7 @@
       "unrated_count": "{count} боя без рейтинга",
       "failure_view": "Подробнее",
       "failure_hide": "Скрыть",
+      "death_time_unknown_warning": "Точное время гибели {count} уничтоженного(ых) игрока(ов) не удаётся надёжно подтвердить; их измерение «Выживание / Обмен» консервативно оценено в 0.",
       "unavailable_mixed": "League Rating недоступен для смешанных наборов (обычные + тренировочные/турнирные реплеи); показаны как обычные реплеи",
       "summary": {
         "section_title": "Сводка League Rating",

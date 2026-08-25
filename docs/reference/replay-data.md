@@ -465,9 +465,6 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `survived_label`              | 文本  | `PlayerResult.survived`                  | —     | API 返回 `SURVIVED`/`DESTROYED`，前端映射存活/阵亡（#105==-1 → 存活）                          |
 | `kills`                       | 整数  | `PlayerResult.kills`                     | 人数    | #18                                                                             |
 | `damage_dealt`                | 整数  | `PlayerResult.damageDealt`               | HP    | #8                                                                              |
-| `potential_damage`            | 整数  | `PlayerResult.potentialDamage`           | HP    | 潜在伤害                                                                            |
-| `potential_damage_supplement` | 整数  | `PlayerResult.potentialDamageSupplement` | HP    | 补增伤害                                                                            |
-| `potential_damage_detail`     | 文本  | `PlayerResult.potentialDamageDetailed`   | —     | API 返回 `PARSED`/`UNPARSED`，前端三语映射；导出使用中文                                        |
 | `damage_assisted`             | 整数  | `PlayerResult.damageAssisted`            | HP    | #9 + #10                                                                        |
 | `contribution`               | 浮点数 | `PerformanceMetricsCalculator.battleMetrics` → `PlayerResult.contribution` | %  | 单场贡献率（派生；HP 全 UNKNOWN 时为 null → 前端 `--`）                                     |
 | `kast`                       | 浮点数 | `PerformanceMetricsCalculator.battleMetrics` → `PlayerResult.kast`          | %  | 单场 KAST（派生；HP 全 UNKNOWN 时为 null → 前端 `--`）                                    |
@@ -478,8 +475,8 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `n_shots`                     | 整数  | `PlayerResult.nShots`                    | 次数    | #4                                                                              |
 | `n_hits_dealt`                | 整数  | `PlayerResult.nHitsDealt`                | 次数    | #5                                                                              |
 | `n_penetrations_dealt`        | 整数  | `PlayerResult.nPenetrationsDealt`        | 次数    | #7                                                                              |
-| `hit_rate`                    | 浮点数 | `nHitsDealt / nShots * 100`              | %     | 推导                                                                              |
-| `pen_rate`                    | 浮点数 | `nPenetrationsDealt / nShots * 100`      | %     | 推导                                                                              |
+| `hit_rate`                    | 浮点数/空 | `nHitsDealt / nShots * 100`              | %     | 推导（`nShots == 0` → null，前端 `--`，禁止 0/0 伪装 0%）                              |
+| `pen_rate`                    | 浮点数/空 | `nPenetrationsDealt / nHitsDealt * 100`  | %     | 推导（分母是命中次数不是射击次数；`nHitsDealt == 0` → null）                             |
 | `n_hits_received`             | 整数  | `PlayerResult.nHitsReceived`             | 次数    | #12                                                                             |
 | `n_penetrations_received`     | 整数  | `PlayerResult.nPenetrationsReceived`     | 次数    | #15                                                                             |
 | `n_enemies_damaged`           | 整数  | `PlayerResult.nEnemiesDamaged`           | 人数    | #17                                                                             |
@@ -504,8 +501,8 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `assisted_avg`        | 浮点数 | `assisted/battles`       | HP/场 |
 | `received_avg`        | 浮点数 | `received/battles`       | HP/场 |
 | `blocked_avg`         | 浮点数 | `blocked/battles`        | HP/场 |
-| `hit_rate`            | 浮点数 | `hits/shots * 100`       | %    |
-| `pen_rate`            | 浮点数 | `pens/shots * 100`       | %    |
+| `hit_rate`            | 浮点数/空 | `sum(hits)/sum(shots) * 100` | %  | 跨场基于总量；`sum(shots)==0` → null |
+| `pen_rate`            | 浮点数/空 | `sum(pens)/sum(hits) * 100` | %   | 跨场基于总量；`sum(hits)==0` → null  |
 | `shots`               | 整数  | Sum                      | 次数   |
 | `hits`                | 整数  | Sum                      | 次数   |
 | `pens`                | 整数  | Sum                      | 次数   |

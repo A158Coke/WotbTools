@@ -20,7 +20,6 @@ public record LeagueFailure(
         public static final String MISSING_TANK = "LEAGUE_MISSING_TANK";
         public static final String ROSTER_INCOMPLETE = "LEAGUE_ROSTER_INCOMPLETE";
         public static final String NO_DECISIVE_WINNER = "LEAGUE_NO_DECISIVE_WINNER";
-        public static final String MISSING_DEATH_TIME = "LEAGUE_MISSING_DEATH_TIME";
         public static final String INVALID_STAT_FACTS = "LEAGUE_INVALID_STAT_FACTS";
         public static final String CONFLICTING_REPLAYS_FOR_ARENA = "CONFLICTING_REPLAYS_FOR_ARENA";
 

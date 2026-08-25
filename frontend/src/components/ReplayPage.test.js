@@ -309,7 +309,7 @@ function mountPage(overrides = {}) {
             '<p class="scroll-hint">Scroll</p></div>'
         },
         RemoveConfirmModal: { template: '<div class="remove-modal-stub" />' },
-        PlayerDetailDrawer: { props: ['context', 'player'], template: '<div class="drawer-stub">{{ context ? "open:" + context.accountId : "closed" }}</div>' },
+        PlayerDetailDrawer: { props: ['context', 'player'], template: '<div class="drawer-stub">{{ context ? "open:" + context.accountId + ":" + JSON.stringify(player || {}) : "closed" }}</div>' },
         ...(overrides.stubs || {})
       }
     }
@@ -1644,6 +1644,32 @@ describe('ReplayPage League Rating', () => {
     expect(wrapper.text()).toContain('111')
   })
 
+  it('shows death-time unknown quality warning as non-blocking notice (not a failure)', async () => {
+    state.init.resp = makeResp({
+      battles: [
+        { mapName: 'Lagoon', league: { mvp: { nickname: 'X' }, team1: {}, team2: {} }, players: [] },
+      ],
+      leagueMode: true,
+      league: {
+        mode: 'LEAGUE_RATING',
+        failures: [],
+        ratingQuality: { unknownDeathTimePlayers: 5 }
+      }
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    // 修复后场景：0 failure、全部评分（可评分 1 / 1），但存在 5 名死亡时间 UNKNOWN 玩家
+    // → 只显示非阻断 quality warning，不进入「未生成 Rating」failure 列表
+    expect(wrapper.find('[data-testid="league-failure-summary"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="league-quality-warning"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('league.rated_count:1,1')
+    expect(wrapper.text()).not.toContain('league.unrated_count')
+    expect(wrapper.text()).not.toContain('LEAGUE_MISSING_DEATH_TIME')
+    expect(wrapper.find('[data-testid="league-failure-toggle"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="league-failure-detail"]').exists()).toBe(false)
+    expect(wrapper.find('.error').exists()).toBe(false)
+  })
+
   it('shows aggregate tab in league mode (resp.leagueMode is the page source of truth)', async () => {
     state.init.resp = makeResp({
       aggregate: [],
@@ -1947,7 +1973,9 @@ describe('ReplayPage Player Detail Drawer', () => {
         mode: 'LEAGUE_RATING',
         columns: [{ key: 'league_rating', max: 1000, fixed: true }],
         playerSummaries: [
-          { accountId: 1001, nickname: 'Alpha', clan: 'AAA', battles: 3, ratingMedian: 850.4, dimensionMedians: [342, 60, 70, 110, 40, 80, 100], mvpCount: 2, wins: 2 },
+          { accountId: 1001, nickname: 'Alpha', clan: 'AAA', battles: 3, ratingMedian: 850.4,
+            dimensionMedians: [342, 60, 70, 110, 40, 80, 100],
+            dimensionMeans: [250, 40, 30, 75, 10, 50, 65], mvpCount: 2, wins: 2 },
         ],
         playerSummaryColumns: [{ key: 'nickname', label: '昵称' }, { key: 'league_rating', label: 'Rating' }],
         teamSummaries: [],
@@ -1990,6 +2018,53 @@ describe('ReplayPage Player Detail Drawer', () => {
     await rows[1].trigger('click')
     const drawer = wrapper.find('.drawer-stub')
     expect(drawer.text()).toContain('open:2001')
+    wrapper.unmount()
+  })
+
+  it('Summary Drawer：player 携带 dimensionMeans（Radar mean 契约），不带单场 dimensionScores', async () => {
+    state.init.resp = leagueResp()
+    state.init.activeTab = 'aggregate'
+    const wrapper = mountPage()
+    await flushPromises()
+    await wrapper.findAll('.cw-player-summary tbody tr')[0].trigger('click')
+    const text = wrapper.find('.drawer-stub').text()
+    expect(text).toContain('"dimensionMeans":[250,40,30,75,10,50,65]')
+    expect(text).not.toContain('"dimensionScores"')
+    wrapper.unmount()
+  })
+
+  it('Battle Drawer：player 携带本场 dimensionScores，绝不携带跨场 dimensionMeans/dimensionMedians', async () => {
+    state.init.resp = makeResp({
+      aggregate: [],
+      battles: [{
+        arenaId: '111', mapName: 'Lagoon',
+        players: [{ team: 1, cells: {
+          account_id: 1001, nickname: 'P1', league_rating: 812.6,
+          league_damage_score: 320, league_assist_score: 55, league_kill_score: 70,
+          league_exchange_score: 110, league_blocked_score: 40,
+          league_survival_score: 75, league_shooting_score: 82,
+        } }],
+      }],
+      leagueMode: true,
+      league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [],
+        playerSummaryColumns: [], teamSummaries: [], teamSummaryColumns: [], failures: [] },
+    })
+    state.init.activeTab = 'b0'
+    const wrapper = mountPage({
+      stubs: {
+        BattleTable: {
+          props: ['battle', 'league', 'leagueMode'],
+          emits: ['select-player'],
+          template: '<div class="battle-table-stub" @click="$emit(&quot;select-player&quot;, { scope: &apos;battle&apos;, accountId: 1001, arenaId: &apos;111&apos; })">battle</div>'
+        }
+      }
+    })
+    await flushPromises()
+    await wrapper.find('.battle-table-stub').trigger('click')
+    const text = wrapper.find('.drawer-stub').text()
+    expect(text).toContain('"dimensionScores":[320,55,70,110,40,75,82]')
+    expect(text).not.toContain('"dimensionMeans"')
+    expect(text).not.toContain('"dimensionMedians"')
     wrapper.unmount()
   })
 

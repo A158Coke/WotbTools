@@ -112,7 +112,10 @@ const drawerPlayer = computed(() => {
       clan: row.cells.clan || '',
       rating: row.cells.league_rating,
       ratingMedian: row.cells.league_rating,
-      dimensionMedians: CW_DIM_KEYS.map(k => row.cells[k]),
+      // Summary Radar 七维 = league playerSummary 的 dimensionMeans（rated-battle 算术平均；
+      // 与 Table 的 dimensionMedians 严格分离）。aggregate-only 玩家（row.league null）→
+      // undefined → Radar 轴 unavailable（"--"），不冒充 0。
+      dimensionMeans: row.league?.dimensionMeans ?? null,
       mvpCount: row.cells.mvp_count,
       battles: row.cells.battles,
       wins: row.cells.wins,
@@ -128,8 +131,8 @@ const drawerPlayer = computed(() => {
     nickname: row.cells.nickname,
     clan: row.cells.clan || '',
     rating: row.cells.league_rating,
-    ratingMedian: row.cells.league_rating,
-    dimensionMedians: CW_DIM_KEYS.map(k => row.cells[k]),
+    // Battle Radar 七维 = 本场 league_*_score（禁止命名/复用跨场 dimensionMedians/Means）
+    dimensionScores: CW_DIM_KEYS.map(k => row.cells[k]),
     cells: row.cells,
   }
 })
@@ -152,6 +155,11 @@ const expandedLeagueGroups = ref({})
 /** 已评分场数（battle.league != null ⟺ 该场完成 Rating；identity 绑定，不依赖数组 index）。 */
 const ratedBattleCount = computed(() =>
   (resp.value?.battles || []).filter(b => !!b.league).length)
+
+/** 死亡时间 UNKNOWN 的阵亡玩家数（backend authoritative ratingQuality；
+ *  非阻断 quality limitation——这些玩家照常评分，仅存活/互换维度按 0 分保守计算）。 */
+const unknownDeathTimeCount = computed(() =>
+  leagueData.value?.ratingQuality?.unknownDeathTimePlayers || 0)
 
 /** League 校验失败按稳定 code 分组（保持首次出现顺序；code 文案走 api_errors 三语）。 */
 const leagueFailureGroups = computed(() => {
@@ -519,17 +527,20 @@ watch(files, (next) => {
         <div v-if="leagueUnavailableMessage" class="warn league-unavailable" data-testid="league-unavailable">
           {{ leagueUnavailableMessage }}
         </div>
-        <div v-if="leagueData?.failures?.length" class="warn league-failure-summary" data-testid="league-failure-summary">
+        <div v-if="leagueData && (leagueData.failures?.length || unknownDeathTimeCount > 0)" class="warn league-failure-summary" data-testid="league-failure-summary">
           <div class="league-failure-head">
             <span class="lf-title">{{ $t('league.title') }}</span>
             <span class="lf-rated">{{ $t('league.rated_count', { rated: ratedBattleCount, total: resp.battles.length }) }}</span>
-            <span class="lf-unrated">{{ $t('league.unrated_count', { count: resp.battles.length - ratedBattleCount }) }}</span>
-            <button class="lf-toggle" data-testid="league-failure-toggle" :aria-expanded="showLeagueFailures"
+            <span v-if="leagueData.failures?.length" class="lf-unrated">{{ $t('league.unrated_count', { count: resp.battles.length - ratedBattleCount }) }}</span>
+            <button v-if="leagueData.failures?.length" class="lf-toggle" data-testid="league-failure-toggle" :aria-expanded="showLeagueFailures"
                     @click="toggleLeagueFailures">
               {{ showLeagueFailures ? $t('league.failure_hide') : $t('league.failure_view') }}
             </button>
           </div>
-          <div v-if="showLeagueFailures" class="league-failure-detail" data-testid="league-failure-detail">
+          <div v-if="unknownDeathTimeCount > 0" class="league-quality-warning" data-testid="league-quality-warning">
+            {{ $t('league.death_time_unknown_warning', { count: unknownDeathTimeCount }) }}
+          </div>
+          <div v-if="showLeagueFailures && leagueData.failures?.length" class="league-failure-detail" data-testid="league-failure-detail">
             <div v-for="(group, code) in leagueFailureGroups" :key="code" class="league-failure-group">
               <button class="lf-group-head" data-testid="league-failure-group" :aria-expanded="!!expandedLeagueGroups[code]"
                       @click="toggleLeagueGroup(code)">
@@ -710,6 +721,8 @@ watch(files, (next) => {
 .lf-title { font-weight: 700; color: var(--warn-text); }
 .lf-rated, .lf-unrated { font-variant-numeric: tabular-nums; }
 .lf-unrated { color: var(--warn-text); }
+/* 死亡时间 UNKNOWN 质量提示（非阻断 warning；不是 failure） */
+.league-quality-warning { margin-top: 8px; font-size: .85rem; color: var(--warn-text); }
 .lf-toggle {
   margin-left: auto;
   padding: 3px 10px;

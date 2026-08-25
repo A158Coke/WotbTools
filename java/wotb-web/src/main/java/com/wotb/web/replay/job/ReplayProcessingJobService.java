@@ -10,7 +10,6 @@ import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
-import com.wotb.core.stats.PotentialDamage;
 import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.replay.dto.PreviewResponse;
 import com.wotb.web.replay.mapper.Mapper;
@@ -255,7 +254,6 @@ public class ReplayProcessingJobService {
         // 事实层 enrich 一次：Preview / Export 直接消费已 enrich 的 authoritative Battle。
         // League 模式同样回填单场 Performance Metrics（contribution/kast/impact 在 CW 保留，
         // 表现指标 ≠ Rating 维度；from-result Preview/Export 同源。
-        PotentialDamage.apply(c.battles(), tankopedia);
         for (final Battle battle : c.battles()) {
             PerformanceMetricsCalculator.populateBattle(battle);
         }

@@ -9,8 +9,7 @@ export const DEFAULT_VISIBLE = [
 ]
 
 export const EXTENDED_ONLY_PLAYER_KEYS = new Set([
-  'alpha_damage', 'potential_damage', 'potential_damage_supplement', 'potential_damage_detail',
-  'rank'
+  'alpha_damage', 'rank'
 ])
 
 /** League Rating 模式默认可见列（玩家/战队/车辆/伤害/助攻/击杀/总 Rating）。 */
@@ -67,7 +66,6 @@ const COL_GROUP_CAT = {
   tank_name: 'vehicle', tank_tier: 'vehicle', tank_type: 'vehicle', tank_nation: 'vehicle',
   alpha_damage: 'vehicle', tank_id: 'extra',
   survived_label: 'battle', survival_time: 'battle', kills: 'battle', damage_dealt: 'battle',
-  potential_damage: 'battle', potential_damage_supplement: 'battle', potential_damage_detail: 'extra',
   damage_assisted: 'battle', damage_received: 'battle', damage_blocked: 'battle',
   n_shots: 'battle', n_hits_dealt: 'battle', n_penetrations_dealt: 'battle',
   n_hits_received: 'battle', n_penetrations_received: 'battle', n_enemies_damaged: 'battle',

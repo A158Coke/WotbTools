@@ -25,7 +25,6 @@ class ReplayMapperTest {
         final PlayerResult survivor = player(1L, true);
         final PlayerResult destroyed = player(2L, false);
         survivor.tankId = 4481L;
-        survivor.potentialDamageDetailed = true;
         destroyed.tankId = 24321L;
         final Battle battle = new Battle();
         battle.players = List.of(survivor, destroyed);
@@ -43,10 +42,8 @@ class ReplayMapperTest {
                         row -> row.cells()));
         assertEquals("HEAVY_TANK", cellsByAccount.get(1L).get("tank_type"));
         assertEquals("EUROPE", cellsByAccount.get(1L).get("tank_nation"));
-        assertEquals("PARSED", cellsByAccount.get(1L).get("potential_damage_detail"));
         assertEquals("LIGHT_TANK", cellsByAccount.get(2L).get("tank_type"));
         assertEquals("USSR", cellsByAccount.get(2L).get("tank_nation"));
-        assertEquals("UNPARSED", cellsByAccount.get(2L).get("potential_damage_detail"));
     }
 
     @Test
@@ -155,6 +152,59 @@ class ReplayMapperTest {
         assertEquals(null, cells.get("kast"));
         assertEquals(null, cells.get("multi_damage_rate"));
         assertNotNull(cells.get("impact"));
+    }
+
+    @Test
+    void columnsNeverExposePotentialDamageInAnyScope() {
+        // Potential Damage 已从 canonical schema 全局移除：Standard 与 League 的
+        // 单场/汇总列 universe 都不得再出现 potential_damage 系列（schema absence regression）。
+        final java.util.Set<String> leaguePlayerKeys = Mapper.leaguePlayerColumns().stream()
+                .map(com.wotb.web.replay.dto.ColumnDef::key)
+                .collect(java.util.stream.Collectors.toSet());
+        final java.util.Set<String> leagueAggKeys = Mapper.leagueAggregateColumns().stream()
+                .map(com.wotb.web.replay.dto.ColumnDef::key)
+                .collect(java.util.stream.Collectors.toSet());
+        final java.util.Set<String> standardPlayerKeys = Mapper.playerColumns().stream()
+                .map(com.wotb.web.replay.dto.ColumnDef::key)
+                .collect(java.util.stream.Collectors.toSet());
+        final java.util.Set<String> standardAggKeys = Mapper.aggregateColumns().stream()
+                .map(com.wotb.web.replay.dto.ColumnDef::key)
+                .collect(java.util.stream.Collectors.toSet());
+        for (final java.util.Set<String> keys : java.util.List.of(
+                leaguePlayerKeys, leagueAggKeys, standardPlayerKeys, standardAggKeys)) {
+            assertTrue(keys.stream().noneMatch(k -> k.startsWith("potential_damage")),
+                    "任何列 universe 不得暴露 potential_damage 系列: " + keys);
+        }
+        assertTrue(standardPlayerKeys.contains("damage_dealt"), "标准 Replay 基础事实必须保留");
+        assertTrue(standardAggKeys.contains("damage"), "标准 Replay 汇总基础事实必须保留");
+    }
+
+    @Test
+    void battleRateCellsNullWhenDenominatorZero() {
+        // hit_rate/pen_rate：denominator==0 → null（API null，UI "--"，禁止 0/0 伪装 0%）
+        final PlayerResult p = player(1L, true);
+        p.tankId = 4481L;
+        p.nShots = 0;
+        p.nHitsDealt = 0;
+        p.nPenetrationsDealt = 0;
+        final Battle battle = new Battle();
+        battle.players = List.of(p);
+        final BattleDto dto = Mapper.toBattle(battle, "sample.wotbreplay", Tankopedia.load());
+        final Map<String, Object> cells = dto.players().getFirst().cells();
+        assertEquals(null, cells.get("hit_rate"));
+        assertEquals(null, cells.get("pen_rate"));
+
+        final PlayerResult hit = player(2L, true);
+        hit.tankId = 4481L;
+        hit.nShots = 10;
+        hit.nHitsDealt = 5;
+        hit.nPenetrationsDealt = 4;
+        final Battle b2 = new Battle();
+        b2.players = List.of(hit);
+        final Map<String, Object> c2 = Mapper.toBattle(b2, "sample.wotbreplay", Tankopedia.load())
+                .players().getFirst().cells();
+        assertEquals(50.0, ((Number) c2.get("hit_rate")).doubleValue(), 1e-9);
+        assertEquals(80.0, ((Number) c2.get("pen_rate")).doubleValue(), 1e-9);
     }
 
     private static PlayerResult player(final long accountId, final boolean survived) {

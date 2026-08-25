@@ -1,7 +1,6 @@
 package com.wotb.core.model;
 
 import com.wotb.core.replay.evidence.EntryHpSource;
-import com.wotb.core.stats.PotentialDamage;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,11 +31,8 @@ public class PlayerResult {
     public int xp;
     public int credits;
 
-    // 潜在伤害: 当前保留字段链路; 逐击杀目标明细解析完成前等于实际伤害。
-    public final List<PotentialDamage.KillVictim> killVictims = new ArrayList<>();
-    public int potentialDamage;
-    public int potentialDamageSupplement;
-    public boolean potentialDamageDetailed;
+    // 击杀前伤害明细（killer attribution 证据链；AI 复盘消费）
+    public final List<KillVictim> killVictims = new ArrayList<>();
 
     // 名册信息
     public String nickname = "";

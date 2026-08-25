@@ -75,7 +75,7 @@ public final class LeagueRatingBatchAggregator {
             final PlayerAcc acc = e.getValue();
             playerSummaries.add(new PlayerLeagueSummary(
                     e.getKey(), acc.nickname, acc.clan, acc.battles,
-                    median(acc.ratings), chunkMedians(acc.dims),
+                    median(acc.ratings), chunkMedians(acc.dims), chunkMeans(acc.dims),
                     acc.mvpCount, acc.wins, acc.damageTotal, acc.assistTotal, acc.killsTotal));
         }
         final List<TeamLeagueSummary> teamSummaries = new ArrayList<>();
@@ -90,7 +90,32 @@ public final class LeagueRatingBatchAggregator {
         playerSummaries.sort(Comparator.comparingLong(PlayerLeagueSummary::accountId));
         teamSummaries.sort(Comparator.comparing(TeamLeagueSummary::teamKey));
         return new LeagueRatingBatch(results, playerSummaries, teamSummaries,
-                failures == null ? List.of() : List.copyOf(failures));
+                failures == null ? List.of() : List.copyOf(failures),
+                ratingQuality(battles));
+    }
+
+    /**
+     * 统计已评分场次中「死亡时间 UNKNOWN」的阵亡玩家实例数（{@code survivalTimeSec == 0}
+     * 是项目既有 UNKNOWN 契约：精确死亡时刻无法从回放可靠证明；负数/非有限已被
+     * {@link LeagueRatingValidator} 拒绝，不会进入已评分场次）。
+     * 该数量是评分质量 limitation，不是 failure——这些玩家照常获得 Rating，
+     * 仅 Survival/Trade 维度按 0 分保守计算。
+     */
+    private static LeagueRatingQuality ratingQuality(final List<Battle> battles) {
+        int unknown = 0;
+        if (battles != null) {
+            for (final Battle battle : battles) {
+                if (battle == null || battle.players == null) {
+                    continue;
+                }
+                for (final com.wotb.core.model.PlayerResult p : battle.players) {
+                    if (!p.survived && p.survivalTimeSec == 0) {
+                        unknown++;
+                    }
+                }
+            }
+        }
+        return new LeagueRatingQuality(unknown);
     }
 
     /** 批次 team key：多数军团标签优先，否则 arenaId:team（禁止跨场合并所有 Team 1）。 */
@@ -115,9 +140,22 @@ public final class LeagueRatingBatchAggregator {
         return (sorted.get(mid - 1) + sorted.get(mid)) / 2.0;
     }
 
-    /** 把扁平维度值列表（每场 dimensionCount 个）按维度分组求中位数；维度数取
-     * canonical {@link LeagueColumns#DIM_KEYS}，禁止复制 magic number。 */
+    /** 扁平维度值列表必须是完整场次交错（每场 dimensionCount 个），维度数取
+     * canonical {@link LeagueColumns#DIM_KEYS}，禁止复制 magic number；
+     * 非整场（size % dimensionCount != 0）→ invariant violation，fail fast
+     * （不允许残缺样本被静默当作 0 混入汇总）。 */
+    private static void validateChunkStride(final List<Double> dims) {
+        final int dimensionCount = LeagueColumns.DIM_KEYS.size();
+        if (dims.size() % dimensionCount != 0) {
+            throw new IllegalStateException(
+                    "flat dimension samples must be whole battles (stride=" + dimensionCount
+                            + "), got " + dims.size());
+        }
+    }
+
+    /** 把扁平维度值列表（每场 dimensionCount 个）按维度分组求中位数。 */
     private static List<Double> chunkMedians(final List<Double> dims) {
+        validateChunkStride(dims);
         final int dimensionCount = LeagueColumns.DIM_KEYS.size();
         final List<Double> out = new ArrayList<>(dimensionCount);
         for (int d = 0; d < dimensionCount; d++) {
@@ -126,6 +164,29 @@ public final class LeagueRatingBatchAggregator {
                 perDim.add(dims.get(i));
             }
             out.add(median(perDim));
+        }
+        return out;
+    }
+
+    /**
+     * 把扁平维度值列表（每场 dimensionCount 个）按维度分组求<b>算术平均</b>
+     * （Summary Radar 的「平均能力画像」契约；与 {@link #chunkMedians} 的中位数
+     * 「典型比赛得分」是两个明确不同的聚合语义）。只含 rated battles 样本
+     * （调用方在 aggregate 循环中已跳过 Rating-ineligible 场次）；
+     * 真实 0 分必须进入平均，缺失/非法在更早的 validator/calculator 已拒绝。
+     */
+    static List<Double> chunkMeans(final List<Double> dims) {
+        validateChunkStride(dims);
+        final int dimensionCount = LeagueColumns.DIM_KEYS.size();
+        final List<Double> out = new ArrayList<>(dimensionCount);
+        for (int d = 0; d < dimensionCount; d++) {
+            double sum = 0;
+            int n = 0;
+            for (int i = d; i < dims.size(); i += dimensionCount) {
+                sum += dims.get(i);
+                n++;
+            }
+            out.add(n == 0 ? 0 : sum / n);
         }
         return out;
     }

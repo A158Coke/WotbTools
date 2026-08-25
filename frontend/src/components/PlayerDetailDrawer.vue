@@ -19,8 +19,10 @@ import {
  * - position: fixed 右侧 overlay，不占 Table 布局空间。
  * - 打开时 focus 关闭按钮；Escape / × / backdrop 关闭；关闭后 focus 回到触发行。
  * - selection identity = accountId：排序/刷新后由父组件按 accountId 重新 resolve 数据。
- * - scope 语义：summary = 当前批次中位数（Rating 中位数 + 七维中位数 + 跨场
- *   Performance Metrics + 比赛事实）；battle = 本场表现（单场 Rating + 本场 Performance + 单场 facts）。
+ * - scope 语义：summary = 当前批次（Rating 中位数 + 七维算术平均（dimensionMeans，
+ *   Radar 平均能力画像）+ 跨场 Performance Metrics + 比赛事实）；battle = 本场表现
+ *   （单场 Rating + 本场七维（dimensionScores）+ 本场 Performance + 单场 facts）。
+ *   battle scope 禁止使用 dimensionMeans / dimensionMedians（那是跨场数据）。
  * - Radar：默认七维，用户可自定义指标/顺序（Radar Metric Registry，presentation-only，
  *   独立于 Table ColumnPicker，独立 localStorage）；axis 缺失 → '--'，不冒充 0/0%。
  *   League 维度归一化使用后端 resp.league.columns 满分 metadata（key/max），不复制常量。
@@ -95,8 +97,10 @@ function moveRadarMetric(key, dir) {
 /** League 维度满分 metadata（resp.league.columns：key → max），Radar 归一化使用，不复制后端常量。 */
 const maxByKey = computed(() => leagueMaxByKey(props.leagueColumns))
 
-/** 雷达轴（顺序 = 用户偏好；league 维度取 dimensionMedians[i] 且按后端 column.max 归一化，
- *  performance 取 cells[key] 按 /100）。 */
+/** 雷达轴（顺序 = 用户偏好；league 维度按 scope 取数：
+ *  summary → dimensionMeans[i]（rated-battle 算术平均），battle → dimensionScores[i]
+ *  （本场七维）；均按后端 column.max 归一化，performance 取 cells[key] 按 /100。
+ *  禁止 battle 复用跨场聚合字段、禁止 summary 用 median 冒充 mean）。 */
 const radarMetrics = computed(() => {
   const p = props.player
   if (!p) return []
@@ -106,7 +110,8 @@ const radarMetrics = computed(() => {
       if (!def) return null
       let raw
       if (def.source === 'league') {
-        raw = p.dimensionMedians?.[CW_DIM_KEYS.indexOf(key)]
+        const idx = CW_DIM_KEYS.indexOf(key)
+        raw = isSummary.value ? p.dimensionMeans?.[idx] : p.dimensionScores?.[idx]
       } else {
         raw = p.cells?.[key]
       }

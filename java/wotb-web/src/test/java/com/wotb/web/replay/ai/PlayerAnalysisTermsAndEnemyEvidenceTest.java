@@ -127,8 +127,8 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         final Battle battle = battleWithRecorderAndEnemy();
         final PlayerResult recorder = battle.players.get(0);
         final PlayerResult enemyPlayer = battle.players.get(1);
-        recorder.killVictims.add(new com.wotb.core.stats.PotentialDamage.KillVictim(ENEMY_ACCOUNT, 900, 3));
-        enemyPlayer.killVictims.add(new com.wotb.core.stats.PotentialDamage.KillVictim(RECORDER_ACCOUNT, 640, 2));
+        recorder.killVictims.add(new com.wotb.core.model.KillVictim(ENEMY_ACCOUNT, 900, 3));
+        enemyPlayer.killVictims.add(new com.wotb.core.model.KillVictim(RECORDER_ACCOUNT, 640, 2));
 
         final StringBuilder sb = new StringBuilder();
         final boolean written = PlayerReplayPromptBuilder.appendKillAttribution(sb, battle, killRecon(), recorder);

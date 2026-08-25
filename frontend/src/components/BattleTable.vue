@@ -7,9 +7,11 @@ import { stableSortRows } from '../utils/tableSort.js'
 import { useStickyColumns } from '../utils/stickyColumns.js'
 
 const { locale, t, te } = useI18n()
-const LOCALIZED_VALUE_KEYS = new Set(['tank_type', 'tank_nation', 'potential_damage_detail'])
+const LOCALIZED_VALUE_KEYS = new Set(['tank_type', 'tank_nation'])
 // 单场表现派生列：HP unknown 时为 null（显示 "--"，不冒充 0）；有值时统一百分比展示
 const PERCENT_KEYS = new Set(['contribution', 'kast', 'impact'])
+// 原始比例列：denominator == 0（无射击/无命中）→ null（unavailable，显示 "--"，禁止 0/0 伪装 0%）
+const RATE_KEYS = new Set(['hit_rate', 'pen_rate'])
 const props = defineProps({
   battle: Object,
   shownCols: Array,
@@ -48,6 +50,12 @@ const maxByKey = computed(() => leagueMaxByKey(props.leagueColumns))
 function percentCell(value) {
   if (value == null || value === '') return '--'
   return (Math.round(value * 10) / 10) + '%'
+}
+
+/** 原始比例（0-100 标尺）：denominator==0 → null（unavailable，显示 "--"）；否则展示数值。 */
+function rateCell(value) {
+  if (value == null || value === '') return '--'
+  return String(Math.round(Number(value) * 10) / 10)
 }
 
 const sortKey = ref('')
@@ -225,6 +233,7 @@ watch([sortKey, sortReverse], schedule)
               <span v-else-if="c.key === 'survival_time'">{{ fmtDuration(row.cells[c.key], t) }}</span>
               <span v-else-if="LOCALIZED_VALUE_KEYS.has(c.key)">{{ replayValueLabel(t, te, row.cells[c.key]) }}</span>
               <span v-else-if="PERCENT_KEYS.has(c.key)">{{ percentCell(row.cells[c.key]) }}</span>
+              <span v-else-if="RATE_KEYS.has(c.key)">{{ rateCell(row.cells[c.key]) }}</span>
               <span v-else-if="c.key === 'league_rating'" class="league-rating-cell">
                 {{ ratingCellText(row.cells[c.key], c.key, maxByKey) }}
                 <span v-if="rowFlags(row).mvp" class="mvp-badge" :title="$t('league.mvp')">MVP</span>

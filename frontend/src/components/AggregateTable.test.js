@@ -28,6 +28,25 @@ function mountTable(overrides = {}) {
   })
 }
 
+describe('AggregateTable raw rates', () => {
+  it('renders hit_rate/pen_rate raw percentages; null (no shots/no hits) shows -- not 0', () => {
+    const cols = [
+      { key: 'nickname', num: false },
+      { key: 'hit_rate', num: true },
+      { key: 'pen_rate', num: true }
+    ]
+    const rows = [
+      { team: 1, cells: { nickname: 'A', account_id: 1, hit_rate: 50, pen_rate: 80 } },
+      { team: 1, cells: { nickname: 'B', account_id: 2, hit_rate: null, pen_rate: null } }
+    ]
+    const wrapper = mountTable({ aggregate: rows, shownCols: cols })
+    const text = wrapper.text()
+    expect(text).toContain('50')
+    expect(text).toContain('80')
+    expect((text.match(/--/g) || []).length).toBeGreaterThanOrEqual(2)
+  })
+})
+
 describe('AggregateTable sorting', () => {
   it('numeric asc: 9 21 100', async () => {
     const wrapper = mountTable()
