@@ -145,6 +145,7 @@ Processing Job 创建后持久化输入、由有界 worker 串行 `processFull`�
 - WARGAMING_API：只接受可信 ASIA/EU/NA WG 身份；账号总场次 >=5000、目标车 >=100；官方精确场均 <=3900 自动 CURRENT，>3900 创建无文件 PENDING。
 - 首次 WG 登录可直接提交：服务端先同步 Profile，再做 JWT ↔ Profile ↔ WG 官方响应交叉校验。
 - 管理员只能通过、拒绝或删除，不能改写成绩。
+- 管理员百场摘要列表只展示认证值：WG 使用冻结官方快照，MANUAL 使用通过后的值；申报值仅在详情保留。
 
 三环域只走人工审核：1–2 张截图、5 个已验证 replay，按 approved battleCount 升序 competition rank；CURRENT 不可替换，REJECTED/CANCELLED/DELETED 可重提。三环 replay 解析通过共享 `ReplayCapacityLimiter`，容量满沿用 `REPLAY_BUSY`。
 
