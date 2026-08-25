@@ -34,7 +34,13 @@
         "remove_file_aria": "Удалить файл реплея {name}",
         "files_size": "файлов: {count} · {size}",
         "view_list": "Показать список",
-        "hide_list": "Скрыть список"
+        "hide_list": "Скрыть список",
+        "reject_offending_title": "Следующие реплеи не могут быть обработаны:",
+        "reject_too_large_file": "{name} — {size}",
+        "reject_invalid_type": "{name} — не файл .wotbreplay",
+        "reject_size_hint": "Максимальный размер одного реплея — 20 МБ.",
+        "reject_count": "Можно выбрать не более 100 файлов реплеев.",
+        "reject_total": "Общий размер реплеев превышает 200 МБ."
     },
     "action": {
         "preview": "Разобрать",
@@ -1154,8 +1160,10 @@
         "INVALID_REPLAY_FILE": "Некорректный файл повтора",
         "UNSUPPORTED_BATTLE_TYPE": "Поддерживаются только случайные и рейтинговые бои.",
         "TOO_MANY_REPLAY_FILES": "Слишком много файлов повторов",
-        "FILE_TOO_LARGE": "Файл слишком большой",
-        "REQUEST_TOO_LARGE": "Общий размер загрузки слишком велик",
+  "FILE_TOO_LARGE": "Файл слишком большой",
+  "REQUEST_TOO_LARGE": "Общий размер загрузки слишком велик",
+  "TOTAL_REQUEST_TOO_LARGE": "Общий размер загрузки превышает лимит.",
+  "UPLOAD_TOO_LARGE": "Загрузка слишком большая.",
         "REPLAY_BUSY": "Обработка повторов занята. Повторите попытку позже.",
         "AI_REVIEW_BUSY": "Служба ИИ-обзора занята. Повторите попытку позже.",
         "MULTIPART_ERROR": "Некорректный запрос загрузки",

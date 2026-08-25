@@ -56,6 +56,7 @@ describe('ReconstructionPage team analysis', () => {
     auth.ensureToken.mockResolvedValue(true)
     auth.login.mockReset()
     i18n.t.mockClear()
+    apiMock.createProcessingJob.mockClear()
     apiMock.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 1 })
     apiMock.getProcessingJob.mockResolvedValue({
       jobId: 'p1', status: 'PROCESSING', total: 1,
@@ -92,6 +93,33 @@ describe('ReconstructionPage team analysis', () => {
     const wrapper = mountedPage()
     const input = wrapper.get('input[type="file"]')
     expect(input.element.hasAttribute('multiple')).toBe(false)
+  })
+
+  it('oversized replay rejected by shared preflight：不调用 createProcessingJob', async () => {
+    const wrapper = mountedPage()
+    const input = wrapper.get('input[type="file"]')
+    const files = [new File(
+      [new Uint8Array(20 * 1024 * 1024 + 1)],
+      'huge.wotbreplay',
+      { type: 'application/octet-stream' }
+    )]
+    Object.defineProperty(input.element, 'files', { value: files, configurable: true })
+    await input.trigger('change')
+
+    expect(wrapper.text()).toContain('upload.reject_too_large_file:huge.wotbreplay,20.0 MB')
+    expect(apiMock.createProcessingJob).not.toHaveBeenCalled()
+    expect(wrapper.findAll('.chip').length).toBe(0) // 不进入 active selection（chip 不渲染）
+  })
+
+  it('non-replay file rejected by shared preflight：不调用 createProcessingJob', async () => {
+    const wrapper = mountedPage()
+    const input = wrapper.get('input[type="file"]')
+    const files = [new File(['x'], 'notes.txt', { type: 'text/plain' })]
+    Object.defineProperty(input.element, 'files', { value: files, configurable: true })
+    await input.trigger('change')
+
+    expect(wrapper.text()).toContain('upload.reject_invalid_type:notes.txt')
+    expect(apiMock.createProcessingJob).not.toHaveBeenCalled()
   })
 
   it('shows only the AI review markdown, not internal diagnostics', async () => {

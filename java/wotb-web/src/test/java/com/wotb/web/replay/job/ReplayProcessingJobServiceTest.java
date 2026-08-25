@@ -442,6 +442,195 @@ class ReplayProcessingJobServiceTest {
         assertEquals(3, snap.valid());
     }
 
+    // ---- BLOCKER 2：parse 进度单一原子状态权威（一致三元组 + 单调 + 中间态轮询）----
+
+    @Test
+    void twoWorkersCompletingSuccessAndSuccessKeepConsistentParseSnapshot() throws Exception {
+        final CountDownLatch aStarted = new CountDownLatch(1);
+        final CountDownLatch bStarted = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
+            final Source s = inv.getArgument(0);
+            if (s.name().startsWith("a")) {
+                aStarted.countDown();
+            }
+            if (s.name().startsWith("b")) {
+                bStarted.countDown();
+            }
+            release.await(10, TimeUnit.SECONDS); // 两个 worker 同时完成
+            return result(s.name(), "arena-" + s.name());
+        });
+        final String jobId = service.createJob(new MultipartFile[]{
+                file("a.wotbreplay"), file("b.wotbreplay")});
+        assertTrue(aStarted.await(5, TimeUnit.SECONDS), "a 应占用第一个 worker");
+        assertTrue(bStarted.await(5, TimeUnit.SECONDS), "b 应占用第二个 worker");
+
+        release.countDown();
+        final ReplayProcessingJob.Snapshot snap = awaitParseInvariants(jobId, 10_000);
+        assertEquals(ReplayProcessingJob.Status.READY, snap.status());
+        assertEquals(2, snap.parseCompleted());
+        assertEquals(2, snap.parseSucceeded());
+        assertEquals(0, snap.parseFailed());
+        assertEquals(2, snap.valid());
+    }
+
+    @Test
+    void twoWorkersCompletingSuccessAndFailureKeepConsistentParseSnapshot() throws Exception {
+        final CountDownLatch aStarted = new CountDownLatch(1);
+        final CountDownLatch bStarted = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
+            final Source s = inv.getArgument(0);
+            if (s.name().startsWith("a")) {
+                aStarted.countDown();
+            }
+            if (s.name().startsWith("b")) {
+                bStarted.countDown();
+            }
+            release.await(10, TimeUnit.SECONDS); // 两个 worker 同时完成
+            if (s.name().startsWith("b")) {
+                throw new IllegalArgumentException("REPLAY_PROCESSING_FAILED");
+            }
+            return result(s.name(), "arena-" + s.name());
+        });
+        final String jobId = service.createJob(new MultipartFile[]{
+                file("a.wotbreplay"), file("b.wotbreplay")});
+        assertTrue(aStarted.await(5, TimeUnit.SECONDS), "a 应占用第一个 worker");
+        assertTrue(bStarted.await(5, TimeUnit.SECONDS), "b 应占用第二个 worker");
+
+        release.countDown();
+        final ReplayProcessingJob.Snapshot snap = awaitParseInvariants(jobId, 10_000);
+        assertEquals(ReplayProcessingJob.Status.READY, snap.status());
+        assertEquals(2, snap.parseCompleted());
+        assertEquals(1, snap.parseSucceeded());
+        assertEquals(1, snap.parseFailed());
+        assertEquals(1, snap.valid());
+        assertEquals(1, snap.failures());
+    }
+
+    // ---- BLOCKER 3：任何已注册 source 失败都必须产生 authoritative failed ParsedEntry ----
+
+    @Test
+    void inputStorageReadFailureProducesFailedParsedEntryAndConsistentDataset() throws Exception {
+        parseScheduler.close();
+        parseScheduler = new ReplayParseScheduler(1, 200); // 唯一 worker：可确定性破坏输入后再派发
+        service = new ReplayProcessingJobService(facade, store, parseScheduler, null);
+        final CountDownLatch blockerStarted = new CountDownLatch(1);
+        final CountDownLatch releaseBlocker = new CountDownLatch(1);
+        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
+            final Source s = inv.getArgument(0);
+            if (s.name().equals("blocker.wotbreplay")) {
+                blockerStarted.countDown();
+                releaseBlocker.await(10, TimeUnit.SECONDS);
+            }
+            return result(s.name(), "arena-" + s.name());
+        });
+        service.createJob(new MultipartFile[]{file("blocker.wotbreplay")});
+        assertTrue(blockerStarted.await(5, TimeUnit.SECONDS), "blocker 应占用唯一 worker");
+
+        final String jobId = service.createJob(new MultipartFile[]{
+                file("ok.wotbreplay"), file("bad.wotbreplay")});
+        // B 仍排队：把 bad 输入替换成目录 → Files.readAllBytes 抛 IOException
+        final Path badInput = ReplayJobFiles.listInputsInOrder(store.inputDir(jobId)).stream()
+                .filter(p -> p.getFileName().toString().contains("bad"))
+                .findFirst().orElseThrow();
+        Files.delete(badInput);
+        Files.createDirectory(badInput);
+
+        releaseBlocker.countDown();
+        final ReplayProcessingJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+        assertEquals(ReplayProcessingJob.Status.READY, snap.status());
+        assertEquals(2, snap.parseCompleted());
+        assertEquals(1, snap.parseSucceeded());
+        assertEquals(1, snap.parseFailed());
+        assertEquals(1, snap.valid());
+        assertEquals(1, snap.failures());
+        final ReplayProcessingJob.SourceState badState = snap.sources().stream()
+                .filter(s -> s.sourceName().equals("bad.wotbreplay")).findFirst().orElseThrow();
+        assertEquals(ReplayProcessingJob.SourceStatus.FAILED, badState.status());
+        assertEquals("PROCESSING_JOB_STORAGE_UNAVAILABLE", badState.failureMessage());
+
+        final ProcessedDataset ds = store.get(jobId).result();
+        assertTrue(ds.failures().stream().anyMatch(f -> f[0].equals("bad.wotbreplay")
+                        && f[1].equals("PROCESSING_JOB_STORAGE_UNAVAILABLE")),
+                "ProcessedDataset.failures 必须包含同一个失败文件");
+        assertEquals(2, snap.processed(), "processed 必须最终 == total（失败也计入）");
+    }
+
+    @Test
+    void artifactWriteFailureProducesFailedParsedEntryAndConsistentDataset() throws Exception {
+        parseScheduler.close();
+        parseScheduler = new ReplayParseScheduler(1, 200);
+        service = new ReplayProcessingJobService(facade, store, parseScheduler, null);
+        final CountDownLatch blockerStarted = new CountDownLatch(1);
+        final CountDownLatch releaseBlocker = new CountDownLatch(1);
+        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
+            final Source s = inv.getArgument(0);
+            if (s.name().equals("blocker.wotbreplay")) {
+                blockerStarted.countDown();
+                releaseBlocker.await(10, TimeUnit.SECONDS);
+            }
+            return result(s.name(), "arena-" + s.name());
+        });
+        service.createJob(new MultipartFile[]{file("blocker.wotbreplay")});
+        assertTrue(blockerStarted.await(5, TimeUnit.SECONDS));
+
+        final String jobId = service.createJob(new MultipartFile[]{
+                file("bad-artifact.wotbreplay"), file("ok.wotbreplay")});
+        // B 仍排队：把 derived/r0 变成普通文件 → artifact 写 createDirectories 抛 IOException
+        final Path derivedR0 = store.jobDir(jobId).resolve("derived").resolve("r0");
+        Files.createDirectories(derivedR0.getParent());
+        Files.writeString(derivedR0, "not-a-directory");
+
+        releaseBlocker.countDown();
+        final ReplayProcessingJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+        assertEquals(ReplayProcessingJob.Status.READY, snap.status());
+        assertEquals(2, snap.parseCompleted());
+        assertEquals(1, snap.parseSucceeded());
+        assertEquals(1, snap.parseFailed());
+        final ReplayProcessingJob.SourceState failedState = snap.sources().stream()
+                .filter(s -> s.sourceName().equals("bad-artifact.wotbreplay")).findFirst().orElseThrow();
+        assertEquals(ReplayProcessingJob.SourceStatus.FAILED, failedState.status());
+        assertEquals("PROCESSING_JOB_STORAGE_UNAVAILABLE", failedState.failureMessage());
+
+        final ProcessedDataset ds = store.get(jobId).result();
+        assertEquals(1, ds.failures().size());
+        assertTrue(ds.failures().stream().anyMatch(f -> f[0].equals("bad-artifact.wotbreplay")
+                        && f[1].equals("PROCESSING_JOB_STORAGE_UNAVAILABLE")),
+                "ProcessedDataset.failures 必须包含同一个失败文件");
+        assertEquals(1, ds.validCount());
+        assertEquals(2, snap.processed());
+    }
+
+    @Test
+    void parserFailureProducesFailedParsedEntryAndConsistentDataset() throws Exception {
+        when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
+            final Source s = inv.getArgument(0);
+            if (s.name().equals("bad.wotbreplay")) {
+                throw new IllegalArgumentException("REPLAY_PROCESSING_FAILED");
+            }
+            return result(s.name(), "arena-" + s.name());
+        });
+        final String jobId = service.createJob(new MultipartFile[]{
+                file("ok.wotbreplay"), file("bad.wotbreplay")});
+
+        final ReplayProcessingJob.Snapshot snap = awaitTerminal(jobId, 10_000);
+        assertEquals(ReplayProcessingJob.Status.READY, snap.status());
+        assertEquals(2, snap.parseCompleted());
+        assertEquals(1, snap.parseSucceeded());
+        assertEquals(1, snap.parseFailed());
+        assertEquals(1, snap.valid());
+        assertEquals(1, snap.failures());
+        final ReplayProcessingJob.SourceState badState = snap.sources().stream()
+                .filter(s -> s.sourceName().equals("bad.wotbreplay")).findFirst().orElseThrow();
+        assertEquals(ReplayProcessingJob.SourceStatus.FAILED, badState.status());
+        assertEquals("REPLAY_PROCESSING_FAILED", badState.failureMessage());
+
+        final ProcessedDataset ds = store.get(jobId).result();
+        assertTrue(ds.failures().stream().anyMatch(f -> f[0].equals("bad.wotbreplay")
+                && f[1].contains("REPLAY_PROCESSING_FAILED")));
+    }
+
     // ---- plan §9/§42：sourceId/sourceIndex/per-source 状态与 activeSources[] ----
 
     @Test
@@ -742,6 +931,33 @@ class ReplayProcessingJobServiceTest {
             Thread.sleep(20);
         }
         throw new AssertionError("job did not reach " + status + " within " + timeoutMs + " ms");
+    }
+
+    /** 轮询直到终态，每个中间 snapshot 都校验 parse 一致三元组 + 单调性（BLOCKER 2）。 */
+    private ReplayProcessingJob.Snapshot awaitParseInvariants(final String jobId, final long timeoutMs)
+            throws InterruptedException {
+        final long deadline = System.currentTimeMillis() + timeoutMs;
+        int lastCompleted = -1;
+        int lastSucceeded = -1;
+        int lastFailed = -1;
+        while (System.currentTimeMillis() < deadline) {
+            final ReplayProcessingJob.Snapshot snap = service.status(jobId);
+            assertEquals(snap.parseCompleted(), snap.parseSucceeded() + snap.parseFailed(),
+                    "parseCompleted 必须恒等于 parseSucceeded + parseFailed（一致三元组）");
+            assertTrue(snap.parseCompleted() >= lastCompleted, "parseCompleted 不得下降");
+            assertTrue(snap.parseSucceeded() >= lastSucceeded, "parseSucceeded 不得下降");
+            assertTrue(snap.parseFailed() >= lastFailed, "parseFailed 不得下降");
+            lastCompleted = snap.parseCompleted();
+            lastSucceeded = snap.parseSucceeded();
+            lastFailed = snap.parseFailed();
+            if (snap.status() == ReplayProcessingJob.Status.READY
+                    || snap.status() == ReplayProcessingJob.Status.FAILED
+                    || snap.status() == ReplayProcessingJob.Status.CANCELLED) {
+                return snap;
+            }
+            Thread.sleep(5);
+        }
+        throw new AssertionError("job did not reach terminal within " + timeoutMs + " ms: " + jobId);
     }
 
     private static void deleteDir(final Path dir) {
