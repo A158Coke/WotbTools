@@ -11,11 +11,10 @@ import com.wotb.core.processing.ReplayIdentity;
 import com.wotb.core.processing.ReplayProcessingCapabilities;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
+import com.wotb.core.replay.facts.AiReplayFacts;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.replay.dto.AnalyzeResponse;
-import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import com.wotb.web.replay.job.ProcessedDataset;
 import com.wotb.web.replay.job.ReplayArtifactWriter;
 import com.wotb.web.replay.job.ReplayProcessingJob;
@@ -25,8 +24,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.web.multipart.MultipartFile;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.file.Files;
@@ -36,7 +33,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -45,6 +41,13 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * AI 复盘共享链（V2 Dataset 路径，BLOCKER 2）：multipart 上传入口已废弃，
+ * {@code analyzeFacts(AiReplayFacts, ...)} 是唯一 AI 复盘入口（读 Processing Job
+ * derived facts，不重新 full process）。本测试覆盖 AI 链：preBattleSection 渲染、
+ * tank-name correction package 传播、team/player 分支、listener 事件转发与 Dataset
+ * artifact 读取（processingFacade 零调用）。
+ */
 @ExtendWith(MockitoExtension.class)
 class AiReplayReviewServiceTest {
 
@@ -58,7 +61,7 @@ class AiReplayReviewServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AiReplayReviewService(processingFacade, aiAnalysisService);
+        service = new AiReplayReviewService(aiAnalysisService);
     }
 
     @Test
@@ -115,217 +118,19 @@ class AiReplayReviewServiceTest {
                 prior, 1, "星簇", AllowedLanguage.ZH, "neptune");
         final List<String> corrected = AiReplayReviewService.sanitizeClusterTerms(
                 List.of(rendered, "星簇（Kranvagn）随主力簇推进"), battle);
-        // preBattleSection（renderer 输出）：昵称/坦克名/teamLabel(clan) 保留，内部术语转换
         final String pre = corrected.get(0);
         assertTrue(pre.contains("星簇"), "权威昵称/teamLabel 必须保留: " + pre);
         assertFalse(pre.contains("星群"), "不得改写成星群: " + pre);
         assertTrue(pre.contains("Kranvagn"), "权威坦克名必须保留: " + pre);
         assertTrue(pre.contains("主力集群"), "内部术语必须转换: " + pre);
         assertFalse(pre.contains("主力簇"), "内部术语不得残留: " + pre);
-        // analysis 段同样保留
         final String analysis = corrected.get(1);
         assertTrue(analysis.contains("星簇"), analysis);
         assertFalse(analysis.contains("星群"), analysis);
-        // null preBattleSection 不回归
         final List<String> withNull = AiReplayReviewService.sanitizeClusterTerms(
                 java.util.Arrays.asList("主力簇推进", null), battle);
         assertNull(withNull.get(1));
         assertTrue(withNull.get(0).contains("主力集群"), withNull.get(0));
-    }
-
-    @Test
-    void nullBatchThrowsIllegalArgument() {
-        final var ex = assertThrows(IllegalArgumentException.class,
-                () -> service.analyze(null));
-        assertEquals("NO_REPLAY_FILES", ex.getMessage());
-    }
-
-    @Test
-    void twoFilesThrowsReplayFileCountExceeded() {
-        final var files = new MockMultipartFile[]{
-                new MockMultipartFile("files", "a.wotbreplay",
-                        "application/octet-stream", new byte[]{1}),
-                new MockMultipartFile("files", "b.wotbreplay",
-                        "application/octet-stream", new byte[]{1})
-        };
-        assertThrows(ReplayFileCountExceededException.class,
-                () -> service.analyze(files));
-    }
-
-    @Test
-    void invalidExtensionThrowsIllegalArgument() {
-        final var files = new MockMultipartFile[]{
-                new MockMultipartFile("files", "file.txt",
-                        "application/octet-stream", new byte[]{1})
-        };
-        final var ex = assertThrows(IllegalArgumentException.class,
-                () -> service.analyze(files));
-        assertEquals("INVALID_REPLAY_FILE_TYPE", ex.getMessage());
-    }
-
-    @Test
-    void emptyFileThrowsIllegalArgument() {
-        final var files = new MockMultipartFile[]{
-                new MockMultipartFile("files", "empty.wotbreplay",
-                        "application/octet-stream", new byte[0])
-        };
-        final var ex = assertThrows(IllegalArgumentException.class,
-                () -> service.analyze(files));
-        assertEquals("NO_REPLAY_FILE", ex.getMessage());
-    }
-
-    @Test
-    void fileTooLargeThrowsIllegalArgument() {
-        final var files = new MockMultipartFile[]{
-                new MockMultipartFile("files", "big.wotbreplay",
-                        "application/octet-stream", new byte[21 * 1024 * 1024])
-        };
-        final var ex = assertThrows(IllegalArgumentException.class,
-                () -> service.analyze(files));
-        assertEquals("FILE_TOO_LARGE", ex.getMessage());
-    }
-
-    @Test
-    void emptyArrayThrowsNoReplayFiles() {
-        final var ex = assertThrows(IllegalArgumentException.class,
-                () -> service.analyze(new MockMultipartFile[0]));
-        assertEquals("NO_REPLAY_FILES", ex.getMessage());
-    }
-
-    @Test
-    void nullElementThrowsNoReplayFile() {
-        final var files = new MockMultipartFile[]{null};
-        final var ex = assertThrows(IllegalArgumentException.class,
-                () -> service.analyze(files));
-        assertEquals("NO_REPLAY_FILE", ex.getMessage());
-    }
-
-    @Test
-    void singleFileTotalSizeIsSameAsFileSize() throws IOException {
-        final var file = mock(MultipartFile.class);
-        when(file.getOriginalFilename()).thenReturn("valid.wotbreplay");
-        when(file.isEmpty()).thenReturn(false);
-        when(file.getSize()).thenReturn(ReplayUploadValidator.MAX_FILE_SIZE);
-        when(file.getBytes()).thenReturn(new byte[]{1});
-        when(processingFacade.process(any(), any()))
-                .thenThrow(new IllegalStateException("VALIDATION_PASSED"));
-        final var ex = assertThrows(IllegalStateException.class,
-                () -> service.analyze(new MultipartFile[]{file}));
-        assertEquals("VALIDATION_PASSED", ex.getMessage());
-    }
-
-    @Test
-    void blankFilenameThrowsInvalidReplayFileType() throws IOException {
-        final var file = mock(MultipartFile.class);
-        when(file.getOriginalFilename()).thenReturn("   ");
-        final var ex = assertThrows(IllegalArgumentException.class,
-                () -> service.analyze(new MultipartFile[]{file}));
-        assertEquals("INVALID_REPLAY_FILE_TYPE", ex.getMessage());
-    }
-
-    @Test
-    void nullFilenameThrowsInvalidReplayFileType() throws IOException {
-        final var file = mock(MultipartFile.class);
-        when(file.getOriginalFilename()).thenReturn(null);
-        final var ex = assertThrows(IllegalArgumentException.class,
-                () -> service.analyze(new MultipartFile[]{file}));
-        assertEquals("INVALID_REPLAY_FILE_TYPE", ex.getMessage());
-    }
-
-    @Test
-    void uppercaseExtensionIsAccepted() throws IOException {
-        final var file = mock(MultipartFile.class);
-        when(file.getOriginalFilename()).thenReturn("TEST.WOTBREPLAY");
-        when(file.isEmpty()).thenReturn(false);
-        when(file.getSize()).thenReturn(1L);
-        when(file.getBytes()).thenReturn(new byte[]{1});
-        when(processingFacade.process(any(), any()))
-                .thenThrow(new IllegalStateException("VALIDATION_PASSED"));
-        final var ex = assertThrows(IllegalStateException.class,
-                () -> service.analyze(new MultipartFile[]{file}));
-        assertEquals("VALIDATION_PASSED", ex.getMessage());
-    }
-
-    @Test
-    void exactMaxFileSizeIsAccepted() throws IOException {
-        final var file = mock(MultipartFile.class);
-        when(file.getOriginalFilename()).thenReturn("valid.wotbreplay");
-        when(file.isEmpty()).thenReturn(false);
-        when(file.getSize()).thenReturn(ReplayUploadValidator.MAX_FILE_SIZE);
-        when(file.getBytes()).thenReturn(new byte[]{1});
-        when(processingFacade.process(any(), any()))
-                .thenThrow(new IllegalStateException("VALIDATION_PASSED"));
-        final var ex = assertThrows(IllegalStateException.class,
-                () -> service.analyze(new MultipartFile[]{file}));
-        assertEquals("VALIDATION_PASSED", ex.getMessage());
-    }
-
-    @Test
-    void exceedsMaxFileSizeThrows() throws IOException {
-        final var file = mock(MultipartFile.class);
-        when(file.getOriginalFilename()).thenReturn("big.wotbreplay");
-        when(file.isEmpty()).thenReturn(false);
-        when(file.getSize()).thenReturn(ReplayUploadValidator.MAX_FILE_SIZE + 1);
-        final var ex = assertThrows(IllegalArgumentException.class,
-                () -> service.analyze(new MultipartFile[]{file}));
-        assertEquals("FILE_TOO_LARGE", ex.getMessage());
-    }
-
-    @Test
-    void singleFileExactMaxFileSizeIsAccepted() throws IOException {
-        final var file = mock(MultipartFile.class);
-        when(file.getOriginalFilename()).thenReturn("valid.wotbreplay");
-        when(file.isEmpty()).thenReturn(false);
-        when(file.getSize()).thenReturn(1L);
-        when(file.getBytes()).thenReturn(new byte[]{1});
-        when(processingFacade.process(any(), any()))
-                .thenThrow(new IllegalStateException("VALIDATION_PASSED"));
-        final var ex = assertThrows(IllegalStateException.class,
-                () -> service.analyze(new MultipartFile[]{file}));
-        assertEquals("VALIDATION_PASSED", ex.getMessage());
-    }
-
-    @Test
-    void oneFileIsAccepted() throws IOException {
-        final var file = mock(MultipartFile.class);
-        when(file.getOriginalFilename()).thenReturn("single.wotbreplay");
-        when(file.isEmpty()).thenReturn(false);
-        when(file.getSize()).thenReturn(1L);
-        when(file.getBytes()).thenReturn(new byte[]{1});
-        when(processingFacade.process(any(), any()))
-                .thenThrow(new IllegalStateException("VALIDATION_PASSED"));
-        final var ex = assertThrows(IllegalStateException.class,
-                () -> service.analyze(new MultipartFile[]{file}));
-        assertEquals("VALIDATION_PASSED", ex.getMessage());
-    }
-
-    @Test
-    void twoFilesExceededDoesNotCallGetBytes() throws IOException {
-        final var file = mock(MultipartFile.class);
-        when(file.getOriginalFilename()).thenReturn("a.wotbreplay");
-        when(file.isEmpty()).thenReturn(false);
-        when(file.getSize()).thenReturn(1L);
-        final var files = new MultipartFile[]{
-                file, file
-        };
-        assertThrows(ReplayFileCountExceededException.class,
-                () -> service.analyze(files));
-        verify(files[0], never()).getBytes();
-        verify(files[1], never()).getBytes();
-    }
-
-    @Test
-    void twoFilesExceededDoesNotCallProcessingFacade() throws IOException {
-        final var file = mock(MultipartFile.class);
-        when(file.getOriginalFilename()).thenReturn("a.wotbreplay");
-        when(file.isEmpty()).thenReturn(false);
-        when(file.getSize()).thenReturn(1L);
-        final var files = new MultipartFile[]{
-                file, file
-        };
-        assertThrows(ReplayFileCountExceededException.class,
-                () -> service.analyze(files));
-        verify(processingFacade, never()).process(any(), any());
     }
 
     // ---- Call #1 preBattleSection 渲染（SINGLE_PLAYER_BATTLE harness 路径） ----
@@ -368,25 +173,28 @@ class AiReplayReviewServiceTest {
                 battle, null, null, capabilities, null, null);
     }
 
-    private MockMultipartFile singleFile() {
-        return new MockMultipartFile("files", "a.wotbreplay",
-                "application/octet-stream", new byte[]{1});
+    private AnalyzeResponse analyzeResult(final ReplayProcessingResult result) {
+        return analyzeResult(result, AllowedLanguage.ZH, AiReviewStreamListener.NOOP);
     }
 
-    private void stubRandomProcessing() throws IOException {
-        when(processingFacade.process(any(), any())).thenReturn(randomResult());
+    private AnalyzeResponse analyzeResult(final ReplayProcessingResult result, final AllowedLanguage language) {
+        return analyzeResult(result, language, AiReviewStreamListener.NOOP);
+    }
+
+    private AnalyzeResponse analyzeResult(final ReplayProcessingResult result, final AllowedLanguage language,
+                                          final AiReviewStreamListener listener) {
+        return service.analyzeFacts(AiReplayFacts.fromResult(result), language, listener);
     }
 
     @Test
-    void harnessPathRendersPreBattleSectionWhenPriorAvailable() throws IOException {
+    void harnessPathRendersPreBattleSectionWhenPriorAvailable() {
         final TacticalReviewHarness harness = mock(TacticalReviewHarness.class);
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.ZH), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("harness-text"), PRIOR));
-        service = new AiReplayReviewService(processingFacade, aiAnalysisService, harness, null, null);
-        stubRandomProcessing();
+        service = new AiReplayReviewService(aiAnalysisService, harness, null);
 
-        final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
+        final AnalyzeResponse response = analyzeResult(randomResult());
 
         assertTrue(response.analysis().startsWith("harness-text"),
                 "analysis text must be preserved before footer");
@@ -418,8 +226,7 @@ class AiReplayReviewServiceTest {
             job.markReady(new ProcessedDataset(List.of(result.battle()), List.of("a.wotbreplay"),
                     List.of(), List.of(), null, null));
             store.register(job);
-            service = new AiReplayReviewService(
-                    processingFacade, aiAnalysisService, null, null, null, store);
+            service = new AiReplayReviewService(aiAnalysisService, null, null, store);
             when(aiAnalysisService.analyzePlayerOrFallback(any(), eq(AllowedLanguage.ZH), any()))
                     .thenReturn(new AnalyzeResult("dataset-analysis"));
 
@@ -444,15 +251,14 @@ class AiReplayReviewServiceTest {
     }
 
     @Test
-    void harnessPathNullSectionWhenPriorUnavailable() throws IOException {
+    void harnessPathNullSectionWhenPriorUnavailable() {
         final TacticalReviewHarness harness = mock(TacticalReviewHarness.class);
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.ZH), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("harness-text"), null));
-        service = new AiReplayReviewService(processingFacade, aiAnalysisService, harness, null, null);
-        stubRandomProcessing();
+        service = new AiReplayReviewService(aiAnalysisService, harness, null);
 
-        final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
+        final AnalyzeResponse response = analyzeResult(randomResult());
 
         assertTrue(response.analysis().startsWith("harness-text"));
         assertTrue(response.analysis().endsWith("AI复盘仅供参考"));
@@ -461,17 +267,14 @@ class AiReplayReviewServiceTest {
     }
 
     @Test
-    void nonZhRequestYieldsNullPreBattleSection() throws IOException {
+    void nonZhRequestYieldsNullPreBattleSection() {
         final TacticalReviewHarness harness = mock(TacticalReviewHarness.class);
-        // 非 ZH 时 harness 内部走 fallback，不产出 prior（契约由 Harness 保证）
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.EN), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("fallback-text"), null));
-        service = new AiReplayReviewService(processingFacade, aiAnalysisService, harness, null, null);
-        stubRandomProcessing();
+        service = new AiReplayReviewService(aiAnalysisService, harness, null);
 
-        final AnalyzeResponse response = service.analyze(
-                new MultipartFile[]{singleFile()}, AllowedLanguage.EN);
+        final AnalyzeResponse response = analyzeResult(randomResult(), AllowedLanguage.EN);
 
         assertTrue(response.analysis().startsWith("fallback-text"));
         assertTrue(response.analysis().endsWith("This AI review is for reference only"),
@@ -480,12 +283,11 @@ class AiReplayReviewServiceTest {
     }
 
     @Test
-    void noHarnessFallbackKeepsNullSection() throws IOException {
+    void noHarnessFallbackKeepsNullSection() {
         when(aiAnalysisService.analyzePlayerOrFallback(any(), eq(AllowedLanguage.ZH), any()))
                 .thenReturn(new AnalyzeResult("fallback-text"));
-        stubRandomProcessing();
 
-        final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
+        final AnalyzeResponse response = analyzeResult(randomResult());
 
         assertTrue(response.analysis().startsWith("fallback-text"));
         assertTrue(response.analysis().endsWith("AI复盘仅供参考"));
@@ -504,7 +306,7 @@ class AiReplayReviewServiceTest {
     }
 
     @Test
-    void analyzeStreamingForwardsStageAndTokenEventsToListener() throws IOException {
+    void analyzeFactsForwardsStageAndTokenEventsToListener() {
         final TacticalReviewHarness harness = mock(TacticalReviewHarness.class);
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.ZH), any())).thenAnswer(
                 invocation -> {
@@ -517,12 +319,10 @@ class AiReplayReviewServiceTest {
                     return new TacticalReviewHarness.HarnessOutcome(
                             new AnalyzeResult("harness-text"), PRIOR);
                 });
-        service = new AiReplayReviewService(processingFacade, aiAnalysisService, harness, null, null);
-        stubRandomProcessing();
+        service = new AiReplayReviewService(aiAnalysisService, harness, null);
 
         final StringBuilder events = new StringBuilder();
-        final AnalyzeResponse response = service.analyzeStreaming(
-                new MultipartFile[]{singleFile()}, AllowedLanguage.ZH,
+        final AnalyzeResponse response = analyzeResult(randomResult(), AllowedLanguage.ZH,
                 new AiReviewStreamListener() {
                     @Override
                     public void onStage(final String stage) {
@@ -543,17 +343,14 @@ class AiReplayReviewServiceTest {
     }
 
     @Test
-    void randomBattleWithResolvedRecorderTeamDoesNotShowNicknameAsTeamLabel() throws IOException {
-        // 随机战 recorder team 已解析为 1（reconstruction 有 recorder participant）：
-        // 渲染为「友军画像/敌军画像」，不附加录像者 nickname 作为 team label。
+    void randomBattleWithResolvedRecorderTeamDoesNotShowNicknameAsTeamLabel() {
         final TacticalReviewHarness harness = mock(TacticalReviewHarness.class);
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.ZH), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("harness-text"), PRIOR));
-        service = new AiReplayReviewService(processingFacade, aiAnalysisService, harness, null, null);
-        when(processingFacade.process(any(), any())).thenReturn(randomResultWithReconstruction());
+        service = new AiReplayReviewService(aiAnalysisService, harness, null);
 
-        final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
+        final AnalyzeResponse response = analyzeResult(randomResultWithReconstruction());
 
         assertTrue(response.analysis().startsWith("harness-text"));
         assertTrue(response.analysis().endsWith("AI复盘仅供参考"));
@@ -567,13 +364,12 @@ class AiReplayReviewServiceTest {
     }
 
     @Test
-    void fallbackPathCorrectsHallucinatedTankName() throws IOException {
+    void fallbackPathCorrectsHallucinatedTankName() {
         when(aiAnalysisService.analyzePlayerOrFallback(any(), eq(AllowedLanguage.ZH), any()))
                 .thenReturn(new AnalyzeResult("1分07秒：CHRD的埃米尔1951（Awesomeman954）!紧接着阵亡"));
-        when(processingFacade.process(any(), any())).thenReturn(randomBattleResult(
-                "random-arena", 1, List.of(player("Awesomeman954", 1001L, 1, 4481))));
 
-        final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
+        final AnalyzeResponse response = analyzeResult(randomBattleResult(
+                "random-arena", 1, List.of(player("Awesomeman954", 1001L, 1, 4481))));
 
         assertTrue(response.analysis().startsWith("1分07秒：CHRD的Kranvagn（Awesomeman954）!紧接着阵亡"),
                 "hallucinated EMIL 1951 must be corrected to roster Kranvagn");
@@ -582,17 +378,16 @@ class AiReplayReviewServiceTest {
     }
 
     @Test
-    void teamBranchCorrectsTankNamesInAnalysisAndPreBattleSection() throws IOException {
+    void teamBranchCorrectsTankNamesInAnalysisAndPreBattleSection() {
         when(aiAnalysisService.analyzeTeamGroups(any(), eq(AllowedLanguage.ZH), any()))
                 .thenReturn(new TeamAnalyzeResult(
                         new AnalyzeResult("1分07秒：CHRD的埃米尔1951（Awesomeman954）阵亡"),
                         "赛前：Awesomeman954（埃米尔1951）带队"));
-        when(processingFacade.process(any(), any())).thenReturn(randomBattleResult(
+
+        final AnalyzeResponse response = analyzeResult(randomBattleResult(
                 "team-arena", 2, List.of(
                         player("Awesomeman954", 1001L, 1, 4481),
                         player("A158布丁", 2001L, 2, 6929))));
-
-        final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
 
         assertTrue(response.analysis().startsWith("1分07秒：CHRD的Kranvagn（Awesomeman954）阵亡"),
                 "analysis tank names must be roster-authoritative");
@@ -604,17 +399,16 @@ class AiReplayReviewServiceTest {
     // ---- package 传播：analysis + preBattleSection 共享同一份 anchor 证明 ----
 
     @Test
-    void packagePropagation_analysisAnchor_preBattleStandalone() throws IOException {
+    void packagePropagation_analysisAnchor_preBattleStandalone() {
         when(aiAnalysisService.analyzeTeamGroups(any(), eq(AllowedLanguage.ZH), any()))
                 .thenReturn(new TeamAnalyzeResult(
                         new AnalyzeResult("埃米尔1951（Awesomeman954）阵亡"),
                         "赛前：埃米尔1951负责正面推进"));
-        when(processingFacade.process(any(), any())).thenReturn(randomBattleResult(
+
+        final AnalyzeResponse response = analyzeResult(randomBattleResult(
                 "team-arena", 2, List.of(
                         player("Awesomeman954", 1001L, 1, 4481),
                         player("A158布丁", 2001L, 2, 6929))));
-
-        final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
 
         assertTrue(response.analysis().startsWith("Kranvagn（Awesomeman954）阵亡"),
                 "analysis anchored mention must be corrected");
@@ -628,17 +422,16 @@ class AiReplayReviewServiceTest {
     }
 
     @Test
-    void packagePropagation_preBattleAnchor_analysisStandalone() throws IOException {
+    void packagePropagation_preBattleAnchor_analysisStandalone() {
         when(aiAnalysisService.analyzeTeamGroups(any(), eq(AllowedLanguage.ZH), any()))
                 .thenReturn(new TeamAnalyzeResult(
                         new AnalyzeResult("EMIL 1951 前压顶线"),
                         "赛前：埃米尔1951（Awesomeman954）带队"));
-        when(processingFacade.process(any(), any())).thenReturn(randomBattleResult(
+
+        final AnalyzeResponse response = analyzeResult(randomBattleResult(
                 "team-arena", 2, List.of(
                         player("Awesomeman954", 1001L, 1, 4481),
                         player("A158布丁", 2001L, 2, 6929))));
-
-        final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
 
         assertTrue(response.analysis().startsWith("Kranvagn 前压顶线"),
                 "analysis standalone must be corrected via preBattle anchor proof");
@@ -646,17 +439,16 @@ class AiReplayReviewServiceTest {
     }
 
     @Test
-    void packagePropagation_conflictingAnchors_standaloneFailClosed() throws IOException {
+    void packagePropagation_conflictingAnchors_standaloneFailClosed() {
         when(aiAnalysisService.analyzeTeamGroups(any(), eq(AllowedLanguage.ZH), any()))
                 .thenReturn(new TeamAnalyzeResult(
                         new AnalyzeResult("埃米尔1951（Awesomeman954）阵亡。埃米尔1951前压。"),
                         "赛前：埃米尔1951（A158布丁）带队"));
-        when(processingFacade.process(any(), any())).thenReturn(randomBattleResult(
+
+        final AnalyzeResponse response = analyzeResult(randomBattleResult(
                 "team-arena", 2, List.of(
                         player("Awesomeman954", 1001L, 1, 4481),
                         player("A158布丁", 2001L, 2, 6929))));
-
-        final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
 
         assertTrue(response.analysis().startsWith("Kranvagn（Awesomeman954）阵亡。EMIL 1951前压。"),
                 "standalone must stay fail-closed when anchors conflict across sections");
@@ -667,18 +459,16 @@ class AiReplayReviewServiceTest {
     }
 
     @Test
-    void packagePropagation_sourceInRoster_crossSectionNotRewritten() throws IOException {
+    void packagePropagation_sourceInRoster_crossSectionNotRewritten() {
         when(aiAnalysisService.analyzeTeamGroups(any(), eq(AllowedLanguage.ZH), any()))
                 .thenReturn(new TeamAnalyzeResult(
                         new AnalyzeResult("埃米尔1951（Awesomeman954）阵亡"),
                         "赛前：EMIL 1951负责正面推进"));
         // 本场同时有 Kranvagn 与 EMIL 1951：source canonical 本身在 roster → 跨段不得传播
-        when(processingFacade.process(any(), any())).thenReturn(randomBattleResult(
+        final AnalyzeResponse response = analyzeResult(randomBattleResult(
                 "team-arena", 2, List.of(
                         player("Awesomeman954", 1001L, 1, 4481),
                         player("EMILPlayer", 2001L, 2, 4737))));
-
-        final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
 
         assertTrue(response.analysis().startsWith("Kranvagn（Awesomeman954）阵亡"),
                 "anchored mention is locally corrected to Kranvagn");
@@ -687,17 +477,16 @@ class AiReplayReviewServiceTest {
     }
 
     @Test
-    void packagePropagation_nullPreBattleSection_analysisStillCorrected() throws IOException {
+    void packagePropagation_nullPreBattleSection_analysisStillCorrected() {
         when(aiAnalysisService.analyzeTeamGroups(any(), eq(AllowedLanguage.ZH), any()))
                 .thenReturn(new TeamAnalyzeResult(
                         new AnalyzeResult("埃米尔1951（Awesomeman954）阵亡"),
                         null));
-        when(processingFacade.process(any(), any())).thenReturn(randomBattleResult(
+
+        final AnalyzeResponse response = analyzeResult(randomBattleResult(
                 "team-arena", 2, List.of(
                         player("Awesomeman954", 1001L, 1, 4481),
                         player("A158布丁", 2001L, 2, 6929))));
-
-        final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
 
         assertTrue(response.analysis().startsWith("Kranvagn（Awesomeman954）阵亡"),
                 "analysis must still be corrected when preBattleSection is null");
@@ -761,5 +550,4 @@ class AiReplayReviewServiceTest {
                 new ReplayIdentity("h", "random-arena", "11.0", "random_map", 1001L, null),
                 battle, reconstruction, null, capabilities, null, null);
     }
-
 }

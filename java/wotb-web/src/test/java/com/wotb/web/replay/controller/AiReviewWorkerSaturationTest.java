@@ -20,11 +20,11 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.web.replay.MapOverviewQueryService;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
+import com.wotb.web.replay.ai.AllowedLanguage;
 import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
 import com.wotb.web.replay.dto.AnalyzeResponse;
@@ -32,8 +32,6 @@ import com.wotb.web.replay.exception.AiReviewBusyException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.web.multipart.MultipartFile;
 
 /**
  * Worker saturation 与 queued cancellation 回归测试：
@@ -48,7 +46,6 @@ import org.springframework.web.multipart.MultipartFile;
  */
 class AiReviewWorkerSaturationTest {
 
-    private DefaultReplayProcessingFacade processingFacade;
     private AiReplayAnalysisService aiService;
     private AiReplayReviewService reviewService;
     private AiCancellationRegistry cancellationRegistry;
@@ -57,9 +54,8 @@ class AiReviewWorkerSaturationTest {
 
     @BeforeEach
     void setUp() {
-        processingFacade = mock(DefaultReplayProcessingFacade.class);
         aiService = mock(AiReplayAnalysisService.class);
-        reviewService = spy(new AiReplayReviewService(processingFacade, aiService));
+        reviewService = spy(new AiReplayReviewService(aiService));
         cancellationRegistry = spy(new AiCancellationRegistry());
     }
 
@@ -76,7 +72,8 @@ class AiReviewWorkerSaturationTest {
     void thirdRequestIsRejectedWhenOneWorkerAndOneQueueSlotAreFull() throws Exception {
         // workers=1, queue=1: max 2 tasks (1 running + 1 queued), 3rd rejected.
         workerExecutor = new AiReviewWorkerExecutor(1, 1);
-        controller = new ReconstructionController(processingFacade, reviewService, cancellationRegistry, workerExecutor, new MapOverviewQueryService(processingFacade), null);
+        controller = new ReconstructionController(reviewService, cancellationRegistry, workerExecutor,
+                new MapOverviewQueryService(null));
 
         // Task A occupies the single worker (blocking latch).
         final CountDownLatch taskAStarted = new CountDownLatch(1);
@@ -85,7 +82,7 @@ class AiReviewWorkerSaturationTest {
             taskAStarted.countDown();
             releaseTaskA.await(10, TimeUnit.SECONDS);
             return new AnalyzeResponse("a");
-        }).when(reviewService).analyzeStreaming(any(), any(), any());
+        }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         // Task A: occupies the worker.
         final ReconstructionControllerStreamingTest.RecordingEmitter emitterA =
@@ -93,7 +90,7 @@ class AiReviewWorkerSaturationTest {
                         ReconstructionController.SSE_TIMEOUT_MS);
         final ReconstructionController controllerSpyA = spy(controller);
         doReturn(emitterA).when(controllerSpyA).newAnalyzeEmitter();
-        controllerSpyA.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000011");
+        controllerSpyA.analyzeDataset(datasetRequest("00000000-0000-0000-0000-000000000011"));
         assertTrue(taskAStarted.await(5, TimeUnit.SECONDS), "Task A must start on the worker");
 
         // Task B: enters the queue (worker busy, queue has capacity=1).
@@ -102,7 +99,7 @@ class AiReviewWorkerSaturationTest {
                         ReconstructionController.SSE_TIMEOUT_MS);
         final ReconstructionController controllerSpyB = spy(controller);
         doReturn(emitterB).when(controllerSpyB).newAnalyzeEmitter();
-        controllerSpyB.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000012");
+        controllerSpyB.analyzeDataset(datasetRequest("00000000-0000-0000-0000-000000000012"));
 
         // Task C: workers + queue full → RejectedExecutionException → AiReviewBusyException.
         final ReconstructionControllerStreamingTest.RecordingEmitter emitterC =
@@ -114,7 +111,7 @@ class AiReviewWorkerSaturationTest {
         final AtomicReference<String> callerThreadName = new AtomicReference<>();
         final Thread testThread = Thread.currentThread();
         try {
-            controllerSpyC.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000013");
+            controllerSpyC.analyzeDataset(datasetRequest("00000000-0000-0000-0000-000000000013"));
             // If no exception, the task ran in the caller thread (CallerRunsPolicy bug).
             callerThreadName.set(testThread.getName());
         } catch (final AiReviewBusyException e) {
@@ -141,31 +138,32 @@ class AiReviewWorkerSaturationTest {
         // This is implicitly verified by the saturation test above; here we verify
         // the executor type directly by checking that a 1/1 pool rejects the 3rd task.
         workerExecutor = new AiReviewWorkerExecutor(1, 1);
-        controller = new ReconstructionController(processingFacade, reviewService, cancellationRegistry, workerExecutor, new MapOverviewQueryService(processingFacade), null);
+        controller = new ReconstructionController(reviewService, cancellationRegistry, workerExecutor,
+                new MapOverviewQueryService(null));
 
         final CountDownLatch holdWorker = new CountDownLatch(1);
         doAnswer(invocation -> {
             holdWorker.await(10, TimeUnit.SECONDS);
             return new AnalyzeResponse("hold");
-        }).when(reviewService).analyzeStreaming(any(), any(), any());
+        }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         // Occupy worker + queue.
         final ReconstructionController spyA = spy(controller);
         doReturn(new ReconstructionControllerStreamingTest.RecordingEmitter(
                 ReconstructionController.SSE_TIMEOUT_MS)).when(spyA).newAnalyzeEmitter();
-        spyA.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000021");
+        spyA.analyzeDataset(datasetRequest("00000000-0000-0000-0000-000000000021"));
 
         final ReconstructionController spyB = spy(controller);
         doReturn(new ReconstructionControllerStreamingTest.RecordingEmitter(
                 ReconstructionController.SSE_TIMEOUT_MS)).when(spyB).newAnalyzeEmitter();
-        spyB.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000022");
+        spyB.analyzeDataset(datasetRequest("00000000-0000-0000-0000-000000000022"));
 
         // Third submit must throw AiReviewBusyException (AbortPolicy), not run in caller.
         final ReconstructionController spyC = spy(controller);
         doReturn(new ReconstructionControllerStreamingTest.RecordingEmitter(
                 ReconstructionController.SSE_TIMEOUT_MS)).when(spyC).newAnalyzeEmitter();
         assertThrows(AiReviewBusyException.class,
-                () -> spyC.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000023"));
+                () -> spyC.analyzeDataset(datasetRequest("00000000-0000-0000-0000-000000000023")));
 
         holdWorker.countDown();
     }
@@ -173,10 +171,11 @@ class AiReviewWorkerSaturationTest {
     // ---- #11 queued cancellation ----
 
     @Test
-    void cancelledQueuedTaskDoesNotCallAnalyzeStreamingWhenPickedUp() throws Exception {
+    void cancelledQueuedTaskDoesNotCallAnalyzeFactsWhenPickedUp() throws Exception {
         // worker=1, queue=2: Task A occupies worker, Task B sits in queue.
         workerExecutor = new AiReviewWorkerExecutor(1, 2);
-        controller = new ReconstructionController(processingFacade, reviewService, cancellationRegistry, workerExecutor, new MapOverviewQueryService(processingFacade), null);
+        controller = new ReconstructionController(reviewService, cancellationRegistry, workerExecutor,
+                new MapOverviewQueryService(null));
 
         // Task A occupies the worker until released.
         final CountDownLatch taskAStarted = new CountDownLatch(1);
@@ -185,7 +184,7 @@ class AiReviewWorkerSaturationTest {
             taskAStarted.countDown();
             releaseTaskA.await(10, TimeUnit.SECONDS);
             return new AnalyzeResponse("a");
-        }).when(reviewService).analyzeStreaming(any(), any(), any());
+        }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         // Task A: occupy the worker.
         final ReconstructionControllerStreamingTest.RecordingEmitter emitterA =
@@ -193,7 +192,7 @@ class AiReviewWorkerSaturationTest {
                         ReconstructionController.SSE_TIMEOUT_MS);
         final ReconstructionController spyA = spy(controller);
         doReturn(emitterA).when(spyA).newAnalyzeEmitter();
-        spyA.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000014");
+        spyA.analyzeDataset(datasetRequest("00000000-0000-0000-0000-000000000014"));
         assertTrue(taskAStarted.await(5, TimeUnit.SECONDS), "Task A must start");
 
         // Task B: enters the queue.
@@ -202,7 +201,7 @@ class AiReviewWorkerSaturationTest {
                         ReconstructionController.SSE_TIMEOUT_MS);
         final ReconstructionController spyB = spy(controller);
         doReturn(emitterB).when(spyB).newAnalyzeEmitter();
-        spyB.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000015");
+        spyB.analyzeDataset(datasetRequest("00000000-0000-0000-0000-000000000015"));
 
         // Cancel Task B while it is queued (cancel endpoint / client disconnect).
         assertTrue(cancellationRegistry.cancel("00000000-0000-0000-0000-000000000015"),
@@ -216,13 +215,14 @@ class AiReviewWorkerSaturationTest {
         // since cancelled tasks don't emit events, we verify via analyzeStreaming never
         // being called for cancel-B. We use a timeout-based verification.
         //
-        // The key assertion: analyzeStreaming is never called for the cancelled task.
-        // Since Task A already called analyzeStreaming once, we verify it was called
+        // The key assertion: analyzeFacts is never called for the cancelled task.
+        // Since Task A already called analyzeFacts once, we verify it was called
         // exactly once (for Task A only), not twice.
-        verify(reviewService, timeout(5000).times(1)).analyzeStreaming(any(), any(), any());
+        verify(reviewService, timeout(5000).times(1))
+                .analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
         // After waiting a bit more, it must still be exactly 1 (Task B never called).
         Thread.sleep(500);
-        verify(reviewService, times(1)).analyzeStreaming(any(), any(), any());
+        verify(reviewService, times(1)).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         // Cancellation registry: Task B must be unregistered after worker completes it.
         verify(cancellationRegistry, timeout(5000)).unregister(eq("00000000-0000-0000-0000-000000000015"), any());
@@ -257,8 +257,7 @@ class AiReviewWorkerSaturationTest {
 
     // ---- helpers ----
 
-    private static MultipartFile[] replayFiles() {
-        return new MultipartFile[]{new MockMultipartFile(
-                "files", "saturation.wotbreplay", "application/octet-stream", new byte[]{1})};
+    private static ReconstructionController.AnalyzeDatasetRequest datasetRequest(final String correlationId) {
+        return new ReconstructionController.AnalyzeDatasetRequest("p1", "r0", "zh", correlationId);
     }
 }

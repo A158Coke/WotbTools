@@ -16,11 +16,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * 有界 Export Job worker executor（模式对齐 {@code AiReviewWorkerExecutor}）。
  *
- * <p>容量设计（V1：2C4G VPS）：固定 {@code max-concurrent}（默认 2，与
- * {@code ReplayCapacityLimiter} 同值）worker + 有界队列（默认 4），满载抛
+ * <p>容量设计（V1：2C4G VPS）：固定 {@code max-concurrent}（默认 1，与
+ * {@code REPLAY_ARTIFACT_MAX_CONCURRENT} 同值）worker + 有界队列（默认 4），满载抛
  * {@code RejectedExecutionException}（AbortPolicy），由服务层转 503
- * {@code EXPORT_QUEUE_FULL}。worker 在执行时仍会获取全局
- * {@code ReplayCapacityLimiter} 许可（plan §21：HTTP 异步化不能绕过全局容量）。</p>
+ * {@code EXPORT_QUEUE_FULL}。BLOCKER 2 后 Export 只消费 Processing Job dataset
+ * （无 replay processing），不再获取全局 replay 容量许可——解析 CPU 预算唯一权威是
+ * {@code ReplayParseScheduler}。</p>
  *
  * <p><b>QUEUED 取消（PR #118 Blocker A）</b>：{@link #submit(String, Runnable)} 保存
  * jobId → 实际提交的 Runnable 句柄；{@link #removeQueued(String)} 用

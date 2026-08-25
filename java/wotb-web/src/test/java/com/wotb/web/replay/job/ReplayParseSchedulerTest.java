@@ -13,7 +13,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** 全局 ReplayParseScheduler 测试（plan §83：concurrency / single large job / fairness / cancellation / shutdown）。 */
@@ -118,7 +117,8 @@ class ReplayParseSchedulerTest {
                 () -> { }, () -> { });
         assertEquals(3, scheduler.queuedSources(), "B 的三个 source 应全部排队（唯一 worker 被 A 占用）");
 
-        assertTrue(scheduler.cancelQueued("b"), "无活跃 source 时取消应直接释放");
+        assertEquals(ReplayParseScheduler.CancellationResult.NO_COMPLETION_PENDING,
+                scheduler.cancelQueued("b"), "无活跃 source 时取消应直接释放（onComplete 永不触发）");
         assertEquals(0, scheduler.queuedSources(), "取消后 pending 容量必须释放");
 
         release.countDown();
@@ -148,7 +148,8 @@ class ReplayParseSchedulerTest {
         // 已派发的 0 允许完成安全 unit
         assertEquals(3, scheduler.queuedSources());
         assertEquals(1, scheduler.activeSources(), "source 0 应在执行中");
-        assertFalse(scheduler.cancelQueued("p"), "存在活跃 source 时 onComplete 仍会触发");
+        assertEquals(ReplayParseScheduler.CancellationResult.ACTIVE_COMPLETION_PENDING,
+                scheduler.cancelQueued("p"), "存在活跃 source 时 onComplete 仍会触发");
         assertEquals(0, scheduler.queuedSources(), "取消后 pending 必须清空");
         release.countDown();
         awaitIdle(scheduler, 5_000);
@@ -337,7 +338,7 @@ class ReplayParseSchedulerTest {
             // 取消与 completion 同时竞争唯一 slot：取消赢 → target 永不执行；
             // completion 赢 → target 恰好执行一次。两种结果都必须与返回值一致。
             final ExecutorService pool = Executors.newFixedThreadPool(2);
-            final boolean[] cancelResult = {false};
+            final ReplayParseScheduler.CancellationResult[] cancelResult = {null};
             final CountDownLatch bothDone = new CountDownLatch(2);
             try {
                 pool.submit(() -> {
@@ -354,7 +355,7 @@ class ReplayParseSchedulerTest {
             } finally {
                 pool.shutdownNow();
             }
-            if (cancelResult[0]) {
+            if (cancelResult[0] == ReplayParseScheduler.CancellationResult.NO_COMPLETION_PENDING) {
                 assertEquals(0, targetRuns.get(), "cancelQueued=true 时 target 不得执行任何 source");
             } else {
                 assertEquals(1, targetRuns.get(), "cancelQueued=false 时 target 应恰好执行一次");

@@ -164,10 +164,15 @@ public class ReplayProcessingJobService {
         final ReplayProcessingJob job = requireJob(jobId);
         final boolean changed = job.requestCancel();
         if (changed) {
-            final boolean noCompletionPending = parseScheduler.cancelQueued(jobId);
-            if (noCompletionPending) {
-                // 没有任何 source 被派发 → onComplete 永不触发，请求线程直接记录终态。
-                finishTerminalQueuedCancel(job);
+            final ReplayParseScheduler.CancellationResult result = parseScheduler.cancelQueued(jobId);
+            if (result == ReplayParseScheduler.CancellationResult.NO_COMPLETION_PENDING) {
+                // scheduler 明确不再触发 onComplete（BLOCKER 1）：无论 QUEUED（requestCancel
+                // 已置 CANCELLED）还是 PROCESSING（requestCancel 只置 cancelRequested），
+                // 都必须先把 job 推进 CANCELLED 终态，再记录 terminal observability——
+                // 否则 PROCESSING 取消竞态会永久卡在 PROCESSING。markCancelled 对已
+                // CANCELLED 的 QUEUED 路径幂等返回 false，无副作用。
+                job.markCancelled();
+                finishTerminalWithoutCompletionCallback(job);
             }
         }
         return changed;
@@ -394,8 +399,12 @@ public class ReplayProcessingJobService {
         recordTerminal(snap, System.nanoTime() - startNanos);
     }
 
-    /** QUEUED 取消的终态收尾（无 source 被派发、onComplete 永不触发，由请求线程记录）。 */
-    private void finishTerminalQueuedCancel(final ReplayProcessingJob job) {
+    /**
+     * 无 completion callback 的终态收尾（QUEUED 取消 / PROCESSING 取消竞态中
+     * scheduler 返回 NO_COMPLETION_PENDING 时）：onComplete 永不触发、worker 不会
+     * 调用 finishTerminal，由请求线程记录 terminal observability（exactly once）。
+     */
+    private void finishTerminalWithoutCompletionCallback(final ReplayProcessingJob job) {
         if (!job.markTerminalRecorded()) {
             return;
         }

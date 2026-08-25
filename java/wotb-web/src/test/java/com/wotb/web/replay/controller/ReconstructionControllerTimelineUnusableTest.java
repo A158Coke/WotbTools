@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wotb.core.processing.AiNotConfiguredException;
-import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.replay.timeline.TimelineError;
 import com.wotb.web.replay.MapOverviewQueryService;
 import com.wotb.web.replay.ai.AiReplayReviewService;
@@ -24,8 +23,6 @@ import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
@@ -43,11 +40,9 @@ class ReconstructionControllerTimelineUnusableTest {
 
     private AiReviewWorkerExecutor workerExecutor;
     private AiCancellationRegistry cancellationRegistry;
-    private DefaultReplayProcessingFacade facade;
 
     @BeforeEach
     void setUp() {
-        facade = new DefaultReplayProcessingFacade();
         cancellationRegistry = new AiCancellationRegistry();
         workerExecutor = new AiReviewWorkerExecutor();
     }
@@ -61,7 +56,7 @@ class ReconstructionControllerTimelineUnusableTest {
     void timelineUnusableSseErrorEventCarriesOnlyStableCode_validationDetailNeverLeaks() throws Exception {
         final TestableController controller = controllerWith(new ThrowingReviewService(
                 List.of(TimelineError.TIMELINE_CLOCK_UNRESOLVED, TimelineError.TIMELINE_META_INVALID)));
-        controller.analyze(replayFiles(), "zh", UUID.randomUUID().toString());
+        controller.analyzeDataset(datasetRequest("zh", UUID.randomUUID().toString()));
 
         final String errorEvent = awaitErrorEvent(controller.emitter);
         // 1) 客户端 code EXACTLY == 稳定码
@@ -80,7 +75,7 @@ class ReconstructionControllerTimelineUnusableTest {
     void timelineUnusableNoReconstructionVariantAlsoYieldsStableCode() throws Exception {
         // NO_RECONSTRUCTION 变体（无 reconstruction 拒绝）同样只传稳定码
         final TestableController controller = controllerWith(new ThrowingReviewService("NO_RECONSTRUCTION"));
-        controller.analyze(replayFiles(), "zh", UUID.randomUUID().toString());
+        controller.analyzeDataset(datasetRequest("zh", UUID.randomUUID().toString()));
 
         final String errorEvent = awaitErrorEvent(controller.emitter);
         assertEquals("AI_TIMELINE_UNUSABLE", extractCode(errorEvent), errorEvent);
@@ -116,7 +111,12 @@ class ReconstructionControllerTimelineUnusableTest {
     // ---- helpers ----
 
     private TestableController controllerWith(final ThrowingReviewService reviewService) {
-        return new TestableController(facade, reviewService, cancellationRegistry, workerExecutor);
+        return new TestableController(reviewService, cancellationRegistry, workerExecutor);
+    }
+
+    private static ReconstructionController.AnalyzeDatasetRequest datasetRequest(
+            final String lang, final String correlationId) {
+        return new ReconstructionController.AnalyzeDatasetRequest("p1", "r0", lang, correlationId);
     }
 
     private static String awaitErrorEvent(final ReconstructionControllerStreamingTest.RecordingEmitter emitter)
@@ -155,21 +155,14 @@ class ReconstructionControllerTimelineUnusableTest {
         }
     }
 
-    private static MultipartFile[] replayFiles() {
-        return new MultipartFile[]{new MockMultipartFile(
-                "files", "stream.wotbreplay", "application/octet-stream", new byte[]{1})};
-    }
-
     /** 真实 controller 子类：注入收集事件的 emitter（替代 Mockito spy）。 */
     private static final class TestableController extends ReconstructionController {
         final ReconstructionControllerStreamingTest.RecordingEmitter emitter;
 
-        TestableController(final DefaultReplayProcessingFacade facade,
-                           final AiReplayReviewService reviewService,
+        TestableController(final AiReplayReviewService reviewService,
                            final AiCancellationRegistry cancellationRegistry,
                            final AiReviewWorkerExecutor workerExecutor) {
-            super(facade, reviewService, cancellationRegistry, workerExecutor,
-                    new MapOverviewQueryService(facade), null);
+            super(reviewService, cancellationRegistry, workerExecutor, new MapOverviewQueryService(null));
             emitter = new ReconstructionControllerStreamingTest.RecordingEmitter(
                     ReconstructionController.SSE_TIMEOUT_MS);
         }
@@ -193,14 +186,15 @@ class ReconstructionControllerTimelineUnusableTest {
         }
 
         private ThrowingReviewService(final RuntimeException failure) {
-            super(null, null);
+            super(null);
             this.failure = failure;
         }
 
         @Override
-        public AnalyzeResponse analyzeStreaming(final MultipartFile[] files,
-                                                final AllowedLanguage language,
-                                                final AiReviewStreamListener listener) {
+        public AnalyzeResponse analyzeFacts(final String processingJobId,
+                                            final int sourceIndex,
+                                            final AllowedLanguage language,
+                                            final AiReviewStreamListener listener) {
             throw failure;
         }
     }
