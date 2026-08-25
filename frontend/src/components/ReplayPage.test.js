@@ -209,6 +209,7 @@ vi.mock('../composables/useReplay.js', async () => {
         processingJob: processingJobRef, processingError: ref(''), processingActive: processingActiveRef,
         processingJobId: processingJobIdRef,
         uploadState: ref(null), cancelProcessing: vi.fn(),
+        requestDirectAction: vi.fn(async () => ({ processingJobId: 'p1', sourceId: 'r0' })),
         startProcessingJob, cancelProcessingJob: vi.fn(),
         dismissProcessingJob: vi.fn(),
         startExportJob, cancelExportJob: vi.fn(),
@@ -1592,6 +1593,7 @@ describe('ReplayPage playback 加载门控（file identity 与 active 解耦，�
     await flushPromises()
     await wrapper.find('[data-testid="battle-ai-btn"]').trigger('click')
     await flushPromises()
+    await flushPromises() // 新 async dataset 步骤（requestDirectAction）settle
     expect(signals[0].aborted).toBe(true) // A 在途请求已取消
     expect(fetchMock.resolvers.length).toBe(1) // B 未进入 Playback 前不发起请求
     // A 迟到响应不得覆盖 B（generation 失效）

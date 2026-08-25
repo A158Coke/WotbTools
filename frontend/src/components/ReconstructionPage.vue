@@ -102,7 +102,7 @@ async function ensureDataset() {
 }
 
 function pollSourceReady(jobId) {
-  datasetPollTimer = setTimeout(async () => {
+  const poll = async () => {
     try {
       const data = await api.getProcessingJob(jobId)
       if (processingJobId.value !== jobId) return
@@ -110,11 +110,12 @@ function pollSourceReady(jobId) {
       if (s && s.status === 'READY') { sourceId.value = 'r0'; datasetPollTimer = null; return }
       if (s && s.status === 'FAILED') { error.value = 'SOURCE_PROCESSING_FAILED'; datasetPollTimer = null; return }
       if (['READY', 'FAILED', 'CANCELLED'].includes(data.status)) { datasetPollTimer = null; return }
-      pollSourceReady(jobId)
+      datasetPollTimer = setTimeout(poll, 750)
     } catch {
       datasetPollTimer = null
     }
-  }, 750)
+  }
+  poll() // 首次立即检查（测试/直连场景无需等待 750ms）
 }
 
 /** AI 报告时间链接 → 回滚到地图区块（MapOverview 已自动切到战局回放视图）。 */

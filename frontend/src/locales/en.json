@@ -792,6 +792,7 @@
             "failed": "Export failed",
             "failed_no_valid": "No valid replays to export.",
             "failed_generic": "Export failed, please try again.",
+            "require_processing": "Please finish parsing before exporting.",
             "cancelled": "Cancelled"
         },
         "processing_job": {

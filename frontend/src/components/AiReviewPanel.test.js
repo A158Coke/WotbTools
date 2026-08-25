@@ -127,7 +127,7 @@ describe('AiReviewPanel dataset request', () => {
     vi.unstubAllGlobals()
   })
 
-  it('无 dataset 引用时回退 multipart FormData（legacy，Phase 9 移除）', async () => {
+  it('无 dataset 引用时拒绝发起请求并提示（不再回退 multipart，BLOCKER A）', async () => {
     const fetchMock = vi.fn().mockResolvedValue(sseResponse())
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mountDatasetPanel({ processingJobId: null, sourceId: null })
@@ -136,10 +136,8 @@ describe('AiReviewPanel dataset request', () => {
     await nextTick()
     await nextTick()
 
-    const [url, options] = fetchMock.mock.calls[0]
-    expect(url).toBe('/api/replay/analyze')
-    expect(options.body).toBeInstanceOf(FormData)
-    expect(options.headers['Content-Type']).toBeUndefined()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(wrapper.find('.error').text()).toContain('DATASET_UNAVAILABLE')
     vi.unstubAllGlobals()
   })
 })
