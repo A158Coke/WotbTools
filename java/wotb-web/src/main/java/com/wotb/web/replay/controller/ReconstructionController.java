@@ -29,6 +29,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -118,17 +119,21 @@ public class ReconstructionController {
      */
     @PostMapping(value = ApiPaths.REPLAY_ANALYZE, consumes = MediaType.APPLICATION_JSON_VALUE)
     public SseEmitter analyzeDataset(@RequestBody final AnalyzeDatasetRequest request) {
+        // BLOCKER 4：显式 reference 校验（缺失 → 400 DATASET_REFERENCE_REQUIRED），
+        // 杜绝 null processingJobId / sourceId 进入 store 查找 NPE → 500。
+        requireDatasetReference(request);
         final AllowedLanguage allowedLanguage = AllowedLanguage.fromCode(request.lang());
         if (allowedLanguage == null) {
             throw new IllegalArgumentException("UNKNOWN_LOCALE");
-        }
-        if (request.processingJobId() == null || request.processingJobId().isBlank()) {
-            throw new IllegalArgumentException("JOB_NOT_FOUND");
         }
         final int sourceIndex = parseSourceIndex(request.sourceId());
         if (correlationIdInvalid(request.correlationId())) {
             throw new IllegalArgumentException("INVALID_CORRELATION_ID");
         }
+        // AI 是 SSE 流式端点：job 不存在/过期（404 JOB_NOT_FOUND）与 source 未 READY
+        // （409 SOURCE_NOT_READY）由 worker 内 analyzeFacts 的稳定 ResponseStatusException
+        // 经 errorCodeOf 转为 SSE error 事件（与 map-overview 同步端点同一套稳定码，
+        // 传输形态因端点类型而异）；此处只做同步 reference 字段校验（400）。
         final String requestId = request.correlationId() != null && !request.correlationId().isBlank()
                 ? request.correlationId() : UUID.randomUUID().toString();
         final AiCancellationToken cancellation = cancellationRegistry.register(requestId);
@@ -151,16 +156,35 @@ public class ReconstructionController {
         return emitter;
     }
 
-    /** sourceId 形如 {@code r0} / {@code r12}（plan §9）；非法返回 SOURCE_NOT_FOUND。 */
+    /** sourceId 形如 {@code r0} / {@code r12}（plan §9）；非法/缺失 → 400 SOURCE_NOT_FOUND。 */
     private static int parseSourceIndex(final String sourceId) {
         if (sourceId == null) {
-            throw new IllegalArgumentException("SOURCE_NOT_FOUND");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SOURCE_NOT_FOUND");
         }
         final java.util.regex.Matcher m = java.util.regex.Pattern.compile("^r(\\d+)$").matcher(sourceId.trim());
         if (!m.matches()) {
-            throw new IllegalArgumentException("SOURCE_NOT_FOUND");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SOURCE_NOT_FOUND");
         }
         return Integer.parseInt(m.group(1));
+    }
+
+    /** 缺失/空 reference（含 null request body）→ 400 DATASET_REFERENCE_REQUIRED。 */
+    private static void requireDatasetReference(final Object request) {
+        final String processingJobId;
+        final String sourceId;
+        if (request instanceof AnalyzeDatasetRequest r) {
+            processingJobId = r.processingJobId();
+            sourceId = r.sourceId();
+        } else if (request instanceof MapOverviewDatasetRequest r) {
+            processingJobId = r.processingJobId();
+            sourceId = r.sourceId();
+        } else {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "DATASET_REFERENCE_REQUIRED");
+        }
+        if (processingJobId == null || processingJobId.isBlank()
+                || sourceId == null || sourceId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "DATASET_REFERENCE_REQUIRED");
+        }
     }
 
     private static boolean correlationIdInvalid(final String correlationId) {
@@ -336,6 +360,11 @@ public class ReconstructionController {
         if (e instanceof MixedRandomBattleRecordersException) {
             return "MIXED_RANDOM_BATTLE_RECORDERS";
         }
+        if (e instanceof ResponseStatusException rse) {
+            // BLOCKER 4：Dataset reference 稳定码（JOB_NOT_FOUND / SOURCE_NOT_READY / ...）。
+            final String reason = rse.getReason();
+            return reason != null && !reason.isBlank() ? reason : "DATASET_REFERENCE_ERROR";
+        }
         if (e instanceof IllegalArgumentException) {
             final String message = e.getMessage();
             return message != null && !message.isBlank() ? message : "BAD_REQUEST";
@@ -413,6 +442,8 @@ public class ReconstructionController {
     @PostMapping(value = ApiPaths.REPLAY_MAP_OVERVIEW, consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<MapOverview> mapOverviewDataset(
             @RequestBody final MapOverviewDatasetRequest request) {
+        // BLOCKER 4：显式 reference 校验（缺失 → 400），杜绝 null 进 store NPE → 500。
+        requireDatasetReference(request);
         final MapOverview overview = mapOverviewService.buildOverviewFromDataset(
                 request.processingJobId(), parseSourceIndex(request.sourceId()));
         if (overview == null) {

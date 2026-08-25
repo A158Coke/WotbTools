@@ -31,7 +31,9 @@ import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 import com.wotb.web.replay.exception.AiTimelineUnusableException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -85,22 +87,23 @@ public class AiReplayReviewService {
     public AnalyzeResponse analyzeFacts(final String processingJobId, final int sourceIndex,
                                         final AllowedLanguage language,
                                         final AiReviewStreamListener listener) throws IOException {
+        requireDatasetReference(processingJobId, sourceIndex);
         if (processingStore == null) {
-            throw new IllegalArgumentException("DATASET_UNAVAILABLE");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "DATASET_UNAVAILABLE");
         }
         final ReplayProcessingJob job = processingStore.acquireForSource(processingJobId);
         if (job == null) {
             datasetCache("ai", false);
-            throw new IllegalArgumentException("JOB_NOT_FOUND");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "JOB_NOT_FOUND");
         }
         try {
             final ReplayProcessingJob.Snapshot snap = job.snapshot();
             if (sourceIndex < 0 || sourceIndex >= snap.sources().size()) {
-                throw new IllegalArgumentException("SOURCE_NOT_FOUND");
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SOURCE_NOT_FOUND");
             }
             final ReplayProcessingJob.SourceState state = snap.sources().get(sourceIndex);
             if (state.status() != ReplayProcessingJob.SourceStatus.READY) {
-                throw new IllegalArgumentException(
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
                         state.status() == ReplayProcessingJob.SourceStatus.FAILED
                                 ? "SOURCE_PROCESSING_FAILED" : "SOURCE_NOT_READY");
             }
@@ -110,9 +113,17 @@ public class AiReplayReviewService {
             return analyzeFacts(facts, language, listener);
         } catch (final java.io.IOException e) {
             datasetCache("ai", false);
-            throw new IllegalArgumentException("DATASET_EXPIRED");
+            // artifact 缺失 = dataset 已过期 → 404（BLOCKER 4 稳定语义）。
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "JOB_NOT_FOUND");
         } finally {
             processingStore.release(processingJobId);
+        }
+    }
+
+    /** 缺失/空引用 → 400（杜绝 null processingJobId 进入 store 查找 NPE → 500）。 */
+    private static void requireDatasetReference(final String processingJobId, final int sourceIndex) {
+        if (processingJobId == null || processingJobId.isBlank() || sourceIndex < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "DATASET_REFERENCE_REQUIRED");
         }
     }
 

@@ -100,6 +100,31 @@
     旧 A 的 finally 只清自己的 timer、timeout callback closure-capture A 的
     correlationId、SSE 事件按 `activeRun === run` 守卫写回；Dataset identity 切换只
     cancel oldRun，绝不可能清掉 B 的 timer 或 cancel B 的请求。
+  - **Processing ownership lifecycle 完成（终审）**：UPLOADING 允许 abort（server 未
+    接受，无 orphan）；REGISTERING（multipart 已上传完）禁止 abort 丢 jobId——标记
+    cancelRequested 保留 create owner/request，202 返回后 best-effort
+    cancelProcessingJob(created.jobId) 且不绑定 / 不 poll / 不暴露成 Dataset；
+    REGISTERING cancel 后旧 create settle 前禁止新建 p2（single-flight 保持）。
+    ReplayPage/unmount 时 owned QUEUED/PROCESSING job best-effort cancel、REGISTERING
+    create 标记取消等 jobId（绝不 orphan）、READY dataset 不 cancel；source-ready
+    poll 注册 timer+abort，selection change / cancel / teardown 全部终止。
+  - **poll/result 完整 async ownership（终审）**：主 poll 捕获 jobId + selectionRevision，
+    STALE RESPONSE = ZERO SHARED STATE WRITES（不再写 loading）；READY result 迟到
+    resolve 同样 pure discard；startProcessingJob catch 校验 revision 后才写错误。
+  - **authoritative Dataset reuse（终审）**：READY 后普通 Preview 复用现有
+    result/dataset（不重新 create/upload/parse，api.createProcessingJob 计数不变）；
+    Direct Action 的 GET processingJobId 只允许稳定 404/JOB_NOT_FOUND 时 invalidate +
+    重建 replacement，transient（network/5xx/timeout/auth/malformed）一律传播且不
+    重新 full-process。
+  - **Dataset REST 4xx 契约（终审）**：AI/Map JSON Dataset reference 缺失/空 → 400
+    `DATASET_REFERENCE_REQUIRED`、非法 sourceId → 400 `SOURCE_NOT_FOUND`、job 不存在/
+    过期 → 404 `JOB_NOT_FOUND`、source 未 READY → 409 `SOURCE_NOT_READY`；null 引用
+    不再进入 store 查找 NPE → 500（map-overview 同步 HTTP 全量落实；AI SSE 端点同码
+    经 worker 稳定 error 事件传达）。
+  - **scheduler cancel/complete 竞态测试语义修正（终审）**：`cancelAndCompletionRaceIsConsistent`
+    补齐第三种交错（cancel 在 target 已完整执行后被移除后到达 → NO_COMPLETION_PENDING
+    且 onComplete 已触发），断言与 scheduler「onComplete 未来不再触发」契约一致
+    （CI #719 曾因此误判失败）。
 - **名人堂三环（Mark 3）人工审核排行榜**：新增独立 `mark3` domain、Flyway `V21` submission/evidence 表和 `/api/hof/mark3`、`/api/users/mark3`、`/api/admin/hof/mark3` API。仅限 Tier X，玩家提交三环所需场数、过程场均、过程胜率、1–2 张截图与恰好 5 个回放；无 Wargaming 自动认证链路。创建路径从五个 replay byte[] 读取、解析、hash 锁、落盘到事务全程复用全局 `ReplayCapacityLimiter`，容量满返回 503 `REPLAY_BUSY`。排行榜按已审核三环场数升序，场数相同使用 competition ranking；同用户同车的 CURRENT 唯一且不被后续申请替代，不使用 `SUPERSEDED`。REJECTED/CANCELLED/DELETED 可重提；管理员通过、拒绝或删除时均不能改写成绩，终态会清理截图和回放证据。
 
 ### Fixed

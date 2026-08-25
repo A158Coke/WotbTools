@@ -6,7 +6,9 @@ import com.wotb.web.replay.job.ReplayArtifactWriter;
 import com.wotb.web.replay.job.ReplayProcessingJob;
 import com.wotb.web.replay.job.ReplayProcessingJobStore;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 
@@ -32,27 +34,32 @@ public class MapOverviewQueryService {
      * Dataset Lease 保护读取期间不被 TTL 清理（plan §25）。
      */
     public MapOverview buildOverviewFromDataset(final String processingJobId, final int sourceIndex) {
+        // BLOCKER 4：缺失引用 → 400（controller 已前置校验；此处为防御，杜绝 null 进 store NPE→500）。
+        if (processingJobId == null || processingJobId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "DATASET_REFERENCE_REQUIRED");
+        }
         if (processingStore == null) {
-            throw new IllegalArgumentException("DATASET_UNAVAILABLE");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "DATASET_UNAVAILABLE");
         }
         final ReplayProcessingJob job = processingStore.acquireForSource(processingJobId);
         if (job == null) {
-            throw new IllegalArgumentException("JOB_NOT_FOUND");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "JOB_NOT_FOUND");
         }
         try {
             final ReplayProcessingJob.Snapshot snap = job.snapshot();
             if (sourceIndex < 0 || sourceIndex >= snap.sources().size()) {
-                throw new IllegalArgumentException("SOURCE_NOT_FOUND");
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SOURCE_NOT_FOUND");
             }
             final ReplayProcessingJob.SourceState state = snap.sources().get(sourceIndex);
             if (state.status() != ReplayProcessingJob.SourceStatus.READY) {
-                throw new IllegalArgumentException(
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
                         state.status() == ReplayProcessingJob.SourceStatus.FAILED
                                 ? "SOURCE_PROCESSING_FAILED" : "SOURCE_NOT_READY");
             }
             return ReplayArtifactWriter.readMapOverview(processingStore.jobDir(processingJobId), sourceIndex);
         } catch (final java.io.IOException e) {
-            throw new IllegalArgumentException("DATASET_EXPIRED");
+            // artifact 缺失 = dataset 已过期 → 404（BLOCKER 4 稳定语义）。
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "JOB_NOT_FOUND");
         } finally {
             processingStore.release(processingJobId);
         }
