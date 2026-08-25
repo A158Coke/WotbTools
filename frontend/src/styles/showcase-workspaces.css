@@ -89,7 +89,7 @@
   box-shadow: 0 12px 28px var(--accent-shadow);
 }
 
-/* Toolbar（plan §22）：flex + 自然换行。空间充足时 tabs + actions 同一行；
+/* Toolbar：flex + 自然换行。空间充足时 tabs + actions 同一行；
    空间不足时 actions 自动换到下一行，禁止 absolute/negative margin/overlay。
    tabs 保持 min-width:0 + overflow-x:auto（30 场 battle tab 横滚）。 */
 .layout-data-workspace .restoolbar {
@@ -99,18 +99,67 @@
   gap: 10px 12px;
   margin: 14px 0 !important;
 }
-.layout-data-workspace .tabs {
+/* restoolbar（解析结果二级 tab 行）专属：battle 分栏随内容伸展 + 横滚。
+   不用 `.layout-data-workspace .tabs` 裸选择器——一级 Workspace 导航是独立的
+   .workspace-tabs，不继承 .tabs contract。 */
+.layout-data-workspace .restoolbar .tabs {
   display: flex;
   flex: 1 1 460px;
-  gap: 5px !important;
+  gap: 5px;
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: thin;
 }
-.layout-data-workspace .tabs button {
+.layout-data-workspace .restoolbar .tabs button {
   flex: 0 0 auto;
   min-height: 34px;
-  border-radius: 6px !important;
+  border-radius: 6px;
+}
+
+/* 一级 Workspace 能力切换（解析结果 / AI 复盘 / 战局回放）：独立的一级能力导航，
+   与 restoolbar 的 battle 二级 .tabs 完全解耦（DOM 不携带 .tabs class）。
+   外层只负责 layout / spacing / 横向溢出；每个按钮自己承担视觉边界（独立 border /
+   radius / 背景），active 不改变尺寸、不产生 layout shift。 */
+.layout-data-workspace .workspace-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 16px 0 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.layout-data-workspace .workspace-tabs button {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 7px 14px;
+  border: 1px solid var(--border-ghost);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-label);
+  font-size: .85rem;
+  font-family: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.layout-data-workspace .workspace-tabs button:hover:not(.active) {
+  border-color: var(--accent);
+  color: var(--accent-dark);
+  background: var(--bg-list-hover);
+}
+.layout-data-workspace .workspace-tabs button.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-card));
+  color: var(--accent-dark);
+  font-weight: 700;
 }
 .layout-data-workspace .resactions {
   display: flex;
@@ -129,7 +178,7 @@
   box-shadow: 0 9px 24px var(--accent-shadow);
 }
 
-/* .tablewrap 必须成为明确 scroll container（plan §14/§15）：
+/* .tablewrap 必须成为明确 scroll container：
    超宽 table 只在 .tablewrap 内横向滚动，不撑破 body / 不覆盖 sibling。 */
 .layout-data-workspace .tablewrap {
   position: relative;
@@ -162,7 +211,7 @@
   color: #d8d5cd;
 }
 .layout-data-workspace table tbody tr:hover { background: #172025 !important; }
-/* Sticky 第一列必须 opaque（plan §16/§18/§19）：禁止 background: inherit——
+/* Sticky 第一列必须 opaque：禁止 background: inherit——
    行背景 rgba(13,19,22,.82) 半透明，横滚时后方列会从 sticky 列下方穿透。
    这里与 App.vue t1/t2 行背景同一 color-mix 表达式（两个不透明色混合 = 不透明结果），
    hover 也给不透明背景，保证 sticky 第一列与行视觉一致且不透。 */
@@ -278,7 +327,7 @@
 }
 
 @media (max-width: 1199px) {
-  /* restoolbar 已改为 flex 自然换行（plan §22），不再需要 grid 覆盖；
+  /* restoolbar 已改为 flex 自然换行，不再需要 grid 覆盖；
      actions 保持左对齐，允许整行换到 tabs 下方。 */
   .layout-data-workspace .resactions { justify-content: flex-start; }
   .layout-data-workspace .uploadwrap { padding: 20px !important; }
@@ -295,7 +344,7 @@
   .layout-data-workspace .fb-chips { width: 100%; max-height: 96px; }
   .layout-data-workspace .actionrow { align-items: flex-start !important; }
   .layout-data-workspace .actionrow .lg { width: 100%; justify-content: center; }
-  .layout-data-workspace .tabs { width: 100%; }
+  .layout-data-workspace .restoolbar .tabs { width: 100%; }
   .layout-data-workspace .resactions { width: 100%; }
   .layout-data-workspace table th:first-child,
   .layout-data-workspace table td:first-child { min-width: 126px; }

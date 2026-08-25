@@ -18,6 +18,9 @@ import ColumnPicker from './ColumnPicker.vue'
 import AggregateTable from './AggregateTable.vue'
 import BattleTable from './BattleTable.vue'
 import LeagueSummaryTable from './LeagueSummaryTable.vue'
+import CwPlayerSummaryTable from './CwPlayerSummaryTable.vue'
+import PlayerDetailDrawer from './PlayerDetailDrawer.vue'
+import { mergeCwPlayerRows, mergeCwPlayerColumns, CW_DIM_KEYS } from '../utils/playerSummaryMerge.js'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import ReplayTaskCard from './ReplayTaskCard.vue'
 import AiReviewPanel from './AiReviewPanel.vue'
@@ -31,15 +34,117 @@ const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateF
   startProcessingJob, cancelProcessingJob, dismissProcessingJob,
   startExportJob, cancelExportJob, downloadExportResult, dismissExportJob,
   askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove } = replay
-const cols = useColumns(replay.playerCols, replay.aggCols, replay.activeTab)
-const { visibleKeys, aggVisibleKeys, showColPicker, pickerScope,
+/**
+ * 页面级 CW（League）模式：唯一事实源 resp.leagueMode（后端显式标记，普通/混合批次为 false）。
+ * Batch contract：leagueMode=true ⟺ 纯 CW 批次，resp.league envelope 始终存在
+ * （无论评分场数，playerSummaries 可为空）。
+ * Battle contract：battle.league 可能为 null（Rating-ineligible 场次）——该场仍是 CW UI
+ * （Player Drawer / Performance metrics / Replay facts 照常，Rating/七维显示 "--"）。
+ * useColumns 的 leagueMode 只负责列系统（storage scope / fixed keys / picker）；
+ * 页面 tab 存在性 / 统一玩家表 / 默认 activeTab 看这里。
+ */
+const leagueMode = computed(() => resp.value?.leagueMode === true)
+
+const cols = useColumns(replay.playerCols, replay.aggCols, replay.activeTab, leagueMode)
+const { visibleKeys, aggVisibleKeys, cwVisibleKeys, cwOrder, showColPicker, pickerScope,
   currentOrder, shownCols, shownAggCols,
   toggleColPicker, toggleCol, selectAllCols, resetCols, handleReorder } = cols
 
 /** League Rating 模式元数据（resp.league；普通模式 null）。 */
 const leagueData = computed(() => resp.value?.league || null)
 
-// ---- League Rating 校验失败展示（plan §16/§17/§18：neutral/warning 语义 + 可展开汇总，
+/**
+ * CW 统一玩家表：以 Replay Aggregate（Replay Core 全量玩家/场次）为基底，
+ * 按 accountId join League Player Summary（可为空——0 评分场次的 CW 批次仍完整
+ * 展示 aggregate 玩家，Rating/七维补 "--"）。列 = league 特有列前置 + aggregate 全部列。
+ * 存在性由 leagueMode 决定（CW UI），不依赖 league envelope 内容。
+ */
+const unifiedRows = computed(() => leagueMode.value
+  ? mergeCwPlayerRows(resp.value?.aggregate || [], leagueData.value?.playerSummaries || [])
+  : [])
+const unifiedAllCols = computed(() => leagueMode.value
+  ? mergeCwPlayerColumns(leagueData.value?.playerSummaryColumns || [], resp.value?.aggregateColumns || [])
+  : [])
+/** 统一表可见列：useColumns cw scope 驱动（可见性 + 顺序 + 持久化）。
+ * 只有 nickname + league_rating 固定（cwOrder 已 pin 在前两位），七维/MVP/表现指标/facts 全部用户可隐藏、可拖拽。 */
+const unifiedShownCols = computed(() => {
+  if (!leagueMode.value) return []
+  const byKey = new Map(unifiedAllCols.value.map(c => [c.key, c]))
+  return cwOrder.value
+    .filter(k => cwVisibleKeys.value.includes(k))
+    .map(k => byKey.get(k))
+    .filter(Boolean)
+})
+
+// ---- Player Detail Drawer（只存 identity，不存 mutable row；刷新后按 accountId 重新 resolve） ----
+const selectedPlayerContext = ref(null)
+
+function selectPlayer(context) {
+  selectedPlayerContext.value = context
+}
+
+function closeDrawer() {
+  selectedPlayerContext.value = null
+}
+
+/** Drawer 打开状态：context 存在即打开（默认关闭）。 */
+const drawerOpen = computed(() => !!selectedPlayerContext.value)
+
+/** 选中玩家 identity：scope + accountId + arenaId；
+ *  Drawer 关闭（closeDrawer / Tab 切换 / selectionRevision）→ null → 表格清除 selected highlight。 */
+const selectedPlayer = computed(() => {
+  const ctx = selectedPlayerContext.value
+  if (!ctx) return null
+  return { scope: ctx.scope, accountId: Number(ctx.accountId), arenaId: ctx.arenaId || null }
+})
+
+/** 当前 Drawer 的玩家数据（按 context 实时 resolve；排序/响应刷新后仍指向原选手）。 */
+const drawerPlayer = computed(() => {
+  const ctx = selectedPlayerContext.value
+  if (!ctx) return null
+  if (ctx.scope === 'summary') {
+    // 统一玩家表行：优先 unifiedRows（含 league join），按 accountId 查找
+    const row = unifiedRows.value.find(r => Number(r.cells.account_id) === Number(ctx.accountId))
+    if (!row) return null
+    return {
+      accountId: row.cells.account_id,
+      nickname: row.cells.nickname,
+      clan: row.cells.clan || '',
+      rating: row.cells.league_rating,
+      ratingMedian: row.cells.league_rating,
+      dimensionMedians: CW_DIM_KEYS.map(k => row.cells[k]),
+      mvpCount: row.cells.mvp_count,
+      battles: row.cells.battles,
+      wins: row.cells.wins,
+      cells: row.cells,
+    }
+  }
+  // scope === 'battle'：该场 BattleTable 玩家行
+  const battle = (resp.value?.battles || []).find(b => b.arenaId === ctx.arenaId)
+  const row = battle?.players?.find(p => Number(p.cells.account_id) === Number(ctx.accountId))
+  if (!row) return null
+  return {
+    accountId: row.cells.account_id,
+    nickname: row.cells.nickname,
+    clan: row.cells.clan || '',
+    rating: row.cells.league_rating,
+    ratingMedian: row.cells.league_rating,
+    dimensionMedians: CW_DIM_KEYS.map(k => row.cells[k]),
+    cells: row.cells,
+  }
+})
+
+/** selection 变化（上传/删除/替换/clear/新 batch）→ 关闭 Drawer 防旧数据污染。 */
+watch(selectionRevision, () => {
+  selectedPlayerContext.value = null
+})
+
+/** Tab 切换（汇总 ↔ Battle 或 Battle ↔ Battle）→ 关闭 Drawer 避免上下文混淆。 */
+watch(activeTab, () => {
+  selectedPlayerContext.value = null
+})
+
+// ---- League Rating 校验失败展示（neutral/warning 语义 + 可展开汇总，
 //      不把 league failure 显示成红色「文件解析失败」，不默认铺满超长文件名）----
 const showLeagueFailures = ref(false)
 const expandedLeagueGroups = ref({})
@@ -66,31 +171,22 @@ function toggleLeagueGroup(code) {
   expandedLeagueGroups.value = { ...expandedLeagueGroups.value, [code]: !expandedLeagueGroups.value[code] }
 }
 
-/** 混合批次（普通 + 训练赛/联赛混传）League Rating 不可用提示（plan §21）。 */
+/** 混合批次（普通 + 训练赛/联赛混传）League Rating 不可用提示。 */
 const leagueUnavailableMessage = computed(() => {
   const code = resp.value?.leagueUnavailableCode
   if (!code) return ''
   return t('league.unavailable_mixed')
 })
 /**
- * 页面级 League 模式（P0：resp.league 是唯一事实源，不再由 playerColumns 是否含
- * league_rating 间接推断）。useColumns 的 leagueMode 只负责列系统（storage scope /
- * fixed keys / picker），页面 tab 存在性 / LeagueSummaryTable / 默认 activeTab 一律看这里。
- */
-const leagueMode = computed(() => !!leagueData.value)
-/**
- * 汇总 tab 的真实基础选手数量（plan §10）：一律来自 Replay Core 的 resp.aggregate。
+ * 汇总 tab 的真实基础选手数量：一律来自 Replay Core 的 resp.aggregate。
  * League Rating 的选手数属于 League 区块，不得混入基础汇总人数。
  */
 const aggregatePlayerCount = computed(() => replayAggregatePlayerCount(resp.value))
-/** League Rating 是否有可展示汇总（player/team 任一非空；全空时区块显示明确空态）。 */
-const leagueHasSummaries = computed(() =>
-  (leagueData.value?.playerSummaries?.length || 0) + (leagueData.value?.teamSummaries?.length || 0) > 0)
 /**
- * 两种独立的战队名称 override（PR #123 Blocker 2，禁止扁平混合）：
+ * 两种独立的战队名称 override（禁止扁平混合）：
  * - battleTeamNames：{arenaId:team} → 名（单场显示 / 单场 PNG / 单场与 each Excel）
  * - summaryTeamNames：{teamKey} → 名（批次战队汇总显示 / aggregate Excel 战队汇总）
- * 仅当前页面内存（plan §12）；批次 rename 不得反向写入所有 {arenaId:team}。
+ * 仅当前页面内存；批次 rename 不得反向写入所有 {arenaId:team}。
  */
 const battleTeamNames = ref({})
 const summaryTeamNames = ref({})
@@ -123,7 +219,7 @@ function teamNamesPayload() {
 }
 
 /**
- * Team override 属于当前 replay selection（PR #123 Blocker 2）：任何 selection 变化
+ * Team override 绑定当前 replay selection：任何 selection 变化
  * （add/remove/replace/clear/remove battle/folder，全部经 updateFiles → selectionRevision++）
  * 都使两组 override 同时失效；同一 selection 单纯重新 Processing 不清空（不依赖
  * startProcessingJob / Processing lifecycle）。
@@ -132,32 +228,6 @@ watch(selectionRevision, () => {
   battleTeamNames.value = {}
   summaryTeamNames.value = {}
 })
-
-/** PNG 导出用：League 模式全列表格（不受当前可见列限制）。 */
-function leagueExportTable(battle) {
-  const colsList = resp.value?.league?.columns || []
-  const allKeys = colsList.map(c => c.key)
-  const headers = allKeys.map(k => '<th>' + t('player_labels.' + k) + '</th>').join('')
-  const body = battle.players.map(row => {
-    const tds = allKeys.map(k => {
-      const raw = row.cells ? row.cells[k] : ''
-      let text = raw == null ? '' : String(raw)
-      const max = Number((colsList.find(c => c.key === k) || {}).max) || 0
-      if (max > 0) {
-        const v = Number(raw) || 0
-        text = Math.round(v) + ' / ' + max + ' \u00B7 ' + (Math.round(1000 * v / max) / 10) + '%'
-      }
-      return '<td>' + escapeHtml(text) + '</td>'
-    }).join('')
-    return '<tr class="' + (row.team === 1 ? 't1' : 't2') + '">' + tds + '</tr>'
-  }).join('')
-  return '<table><thead><tr>' + headers + '</tr></thead><tbody>' + body + '</tbody></table>'
-}
-
-function escapeHtml(value) {
-  return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-}
-
 const exportingPng = ref(false)
 const aggregateRef = ref(null)
 const battleRefs = ref([])
@@ -284,16 +354,8 @@ async function downloadResultPng() {
   try {
     cloneCtx = createExportClone(target, exportTheme)
     expandExportTables(cloneCtx.clone)
-    // League 模式：导出完整超宽表格（全部 Rating 维度 + 原始字段），不受当前可见列限制
-    if (leagueData.value) {
-      const battle = resp.value?.battles?.[exportBattleIdx]
-      if (battle) {
-        const fullTable = leagueExportTable(battle)
-        for (const wrap of cloneCtx.clone.querySelectorAll('.tablewrap')) {
-          wrap.innerHTML = fullTable
-        }
-      }
-    }
+    // PNG = 当前视图（所见即所得）：克隆当前 DOM 即得到当前 ColumnPicker 可见列与顺序、
+    // 当前排序与战队名称覆盖，不做任何全量列替换（XLSX 才是完整数据导出，与前端偏好解耦）。
     await waitForLayout()
     const measured = measureExportClone(cloneCtx.clone)
     const dims = computeExportDimensions(measured)
@@ -321,7 +383,7 @@ async function downloadResultPng() {
 }
 
 
-/** Battle context actions（plan §13/§21）：具体 battle 才出现「战局回放 / AI 复盘」。
+/** Battle context actions：具体 battle 才出现「战局回放 / AI 复盘」。
  * Summary context 不渲染这些入口。单页 Workspace：点击后原地切到对应面板，目标文件
  * 直接复用当前 selection 内文件——不跨视图跳转、不重新上传、不重复解析。 */
 const isAuthenticated = inject('isAuthenticated', () => false)
@@ -437,7 +499,7 @@ watch(files, (next) => {
     <!-- Workspace：有文件（解析前也能直接进 AI/回放）或已有解析结果时可见；
          resp 依赖 files 才存在，故 files.length || resp 与真实状态机一致。 -->
     <template v-if="files.length || resp">
-      <div class="workspace-tabs tabs" role="tablist" aria-label="Workspace">
+      <div class="workspace-tabs" role="tablist" aria-label="Workspace">
         <button data-testid="workspace-results-tab" :class="{ active: workspaceTab === 'results' }" @click="selectWorkspaceTab('results')">{{ $t('workspace.tab_results') }}</button>
         <button data-testid="workspace-ai-tab" :class="{ active: workspaceTab === 'ai' }" @click="selectWorkspaceTab('ai')">{{ $t('action.ai_review') }}</button>
         <button data-testid="workspace-playback-tab" :class="{ active: workspaceTab === 'playback' }" @click="selectWorkspaceTab('playback')">{{ $t('action.battle_playback') }}</button>
@@ -508,8 +570,8 @@ watch(files, (next) => {
                 <svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" /></svg>{{ $t('action.select_cols') }} v
               </button>
               <ColumnPicker v-if="showColPicker" :scope="pickerScope" :order="currentOrder"
-                :visible="pickerScope === 'agg' ? aggVisibleKeys : visibleKeys"
-                :fixed-keys="pickerScope === 'player' && leagueMode ? ['nickname', 'league_rating'] : []"
+                :visible="pickerScope === 'agg' ? aggVisibleKeys : pickerScope === 'cw' ? cwVisibleKeys : visibleKeys"
+                :fixed-keys="(pickerScope === 'cw' || (pickerScope === 'player' && leagueMode)) ? ['nickname', 'league_rating'] : []"
                 @close="showColPicker = false" @toggle="toggleCol"
                 @select-all="selectAllCols" @reset="resetCols" @reorder="handleReorder" />
             </span>
@@ -529,20 +591,23 @@ watch(files, (next) => {
         <p v-if="!resp.battles.length && !resp.aggregate.length && !leagueData" class="replay-empty-note">{{ $t('replay.no_results') }}</p>
 
         <div v-show="activeTab === 'aggregate' && (resp.aggregate.length || leagueMode)" ref="aggregateRef">
-          <!-- 基础 Replay Aggregate：Replay Core 汇总，只要有多场数据就必须展示。
-               League Rating 存在与否都不隐藏它（plan §5/§6/§11）。 -->
-          <template v-if="resp.aggregate.length">
-            <h2 v-if="leagueMode" class="replay-section-title" data-testid="base-aggregate-title">{{ $t('result.base_summary_title') }}</h2>
+          <!-- 普通模式：基础 Replay Aggregate（Standard Replay 保持原语义）。 -->
+          <template v-if="!leagueMode && resp.aggregate.length">
+            <h2 class="replay-section-title" data-testid="base-aggregate-title">{{ $t('result.base_summary_title') }}</h2>
             <AggregateTable :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
           </template>
-          <!-- League Rating 汇总：附加分析，不替代基础汇总；全空时给明确 neutral 空态。 -->
+          <!-- CW 模式：统一玩家主表（Replay Aggregate ∪ League Rating 按 accountId，
+               缺失 League 补 "--"）+ 战队独立表。不允许再出现两张平级玩家表。 -->
           <template v-if="leagueMode">
             <h2 class="replay-section-title" data-testid="league-summary-title">{{ $t('league.summary.section_title') }}</h2>
-            <template v-if="leagueHasSummaries">
-              <LeagueSummaryTable :title="$t('league.summary.title_player')" type="player"
-                :rows="leagueData?.playerSummaries || []" :columns="leagueData?.playerSummaryColumns || []"
-                :team-names="summaryTeamNames" @update-summary-team-name="updateSummaryTeamName" />
-              <LeagueSummaryTable :title="$t('league.summary.title_team')" type="team"
+            <CwPlayerSummaryTable :title="$t('league.summary.title_player')"
+              :rows="unifiedRows" :columns="unifiedShownCols"
+              :league-columns="leagueData?.columns || []" :league-mode="true"
+              :active="activeTab === 'aggregate'"
+              :selected-account-id="selectedPlayer?.accountId ?? null"
+              @select-player="selectPlayer" />
+            <template v-if="(leagueData?.teamSummaries?.length || 0) > 0">
+              <LeagueSummaryTable :title="$t('league.summary.title_team')"
                 :rows="leagueData?.teamSummaries || []" :columns="leagueData?.teamSummaryColumns || []"
                 :team-names="summaryTeamNames" @update-summary-team-name="updateSummaryTeamName" />
             </template>
@@ -553,8 +618,12 @@ watch(files, (next) => {
         <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i"
              :ref="(el) => setBattleRef(el, i)">
           <BattleTable :battle="b" :shown-cols="shownCols"
-            :league="b.league" :league-columns="leagueData?.columns || []"
-            :team-names="battleTeamNames" @update-team-name="updateBattleTeamName" />
+            :active="activeTab === 'b' + i"
+            :league-mode="leagueMode" :league="b.league" :league-columns="leagueData?.columns || []"
+            :team-names="battleTeamNames" @update-team-name="updateBattleTeamName"
+            :selected-account-id="selectedPlayer?.accountId ?? null"
+            :selected-arena-id="selectedPlayer?.arenaId ?? null"
+            @select-player="selectPlayer" />
         </div>
         </template>
       </div>
@@ -576,13 +645,17 @@ watch(files, (next) => {
       @cancel="cancelExportJob" @download="downloadExportResult" @dismiss="dismissExportJob" />
 
     <RemoveConfirmModal :pending="pendingRemove" @confirm="confirmRemove" @cancel="cancelRemove" />
+    <PlayerDetailDrawer :context="drawerOpen ? selectedPlayerContext : null" :player="drawerPlayer"
+                        :league-columns="leagueData?.columns || []"
+                        @close="closeDrawer" />
   </div>
 </template>
 
 <style>
-/* Workspace 一级能力切换（解析结果 / AI 复盘 / 战局回放）：复用全局 .tabs 视觉 */
-.workspace-tabs { margin-top: 16px; }
-/* 汇总 Tab 双区块（plan §7）：基础 Replay Aggregate 与 League Rating 汇总并列，
+/* Workspace 一级能力切换（解析结果 / AI 复盘 / 战局回放）：紧凑单行一级导航。
+   视觉样式在 showcase-workspaces.css（.layout-data-workspace .workspace-tabs），
+   不复用 restoolbar 的 battle 分栏 .tabs。 */
+/* 汇总 Tab 双区块：基础 Replay Aggregate 与 League Rating 汇总并列，
    各自独立标题，League Rating 是附加分析不是替代品。 */
 .replay-section-title {
   margin: 18px 0 8px;
@@ -625,7 +698,7 @@ watch(files, (next) => {
 }
 .battle-action.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-text); }
 .replay-empty-note { padding: 18px 4px; color: var(--text-muted); font-size: .85rem; }
-/* League Rating 校验失败汇总（plan §17/§18）：warning 语义，可展开，不铺满超长文件名 */
+/* League Rating 校验失败汇总：warning 语义，可展开，不铺满超长文件名 */
 .league-failure-summary { margin-top: 10px; padding: 10px 14px; }
 .league-failure-head {
   display: flex;
@@ -707,7 +780,7 @@ watch(files, (next) => {
   line-height: 1.5;
   max-width: none;
 }
-/* PNG 导出：取消 sticky 定位，避免固定列覆盖其他列（plan §19） */
+/* PNG 导出：取消 sticky 定位，避免固定列覆盖其他列 */
 .replay-export-root .sticky-col {
   position: static !important;
 }

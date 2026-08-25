@@ -1,11 +1,9 @@
 package com.wotb.core.league;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,14 +38,8 @@ public final class LeagueRatingBatchAggregator {
                 acc.clan = p.clan();
                 acc.battles++;
                 acc.ratings.add(p.finalRating());
-                acc.dims.add(p.damageScore());
-                acc.dims.add(p.assistScore());
-                acc.dims.add(p.killScore());
-                acc.dims.add(p.exchangeScore());
-                acc.dims.add(p.blockedScore());
-                acc.dims.add(p.survivalTradeScore());
-                acc.dims.add(p.shootingScore());
-                acc.dims.add(p.objectiveScore());
+                // 七维顺序单一来源：dimensionScores()（与 LeagueColumns.DIM_KEYS 严格一致）
+                acc.dims.addAll(p.dimensionScores());
                 if (p.mvp()) {
                     acc.mvpCount++;
                 }
@@ -123,12 +115,14 @@ public final class LeagueRatingBatchAggregator {
         return (sorted.get(mid - 1) + sorted.get(mid)) / 2.0;
     }
 
-    /** 把扁平维度值列表（每场 8 个）按维度分组求中位数。 */
+    /** 把扁平维度值列表（每场 dimensionCount 个）按维度分组求中位数；维度数取
+     * canonical {@link LeagueColumns#DIM_KEYS}，禁止复制 magic number。 */
     private static List<Double> chunkMedians(final List<Double> dims) {
-        final List<Double> out = new ArrayList<>(8);
-        for (int d = 0; d < 8; d++) {
+        final int dimensionCount = LeagueColumns.DIM_KEYS.size();
+        final List<Double> out = new ArrayList<>(dimensionCount);
+        for (int d = 0; d < dimensionCount; d++) {
             final List<Double> perDim = new ArrayList<>();
-            for (int i = d; i < dims.size(); i += 8) {
+            for (int i = d; i < dims.size(); i += dimensionCount) {
                 perDim.add(dims.get(i));
             }
             out.add(median(perDim));

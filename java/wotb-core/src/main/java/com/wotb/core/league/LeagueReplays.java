@@ -13,18 +13,19 @@ import java.util.function.Consumer;
 /**
  * League Rating 模式的批次收集：解析全部输入 → 模式判定 → 去重/冲突 → 完整性校验 → 评分。
  *
- * <p><b>领域分离（P0 修复）</b>：{@link LeagueCollectResult#battles()} 返回<b>全部</b>成功解析
- * 并通过去重/冲突规则的 Battle（可进入 Preview/Export 的基础数据）；League Rating <b>只</b>对
- * 通过 {@link LeagueRatingValidator} 完整性校验的场次计算（{@link LeagueRatingBatch#battleResults()}
- * 与汇总均只含 eligible 场次）。Rating 校验失败<b>不得</b>把 Battle 从结果中移除（plan：replay
- * parsing validity != league rating eligibility），失败以 {@link LeagueFailure} 稳定错误码返回。</p>
+ * <p><b>Replay Core validity and League Rating eligibility are independent domains</b>：
+ * {@link LeagueCollectResult#battles()} 返回<b>全部</b>成功解析并通过去重/冲突规则的 Battle
+ * （可进入 Preview/Export 的基础数据）；League Rating <b>只</b>对通过
+ * {@link LeagueRatingValidator} 完整性校验的场次计算（{@link LeagueRatingBatch#battleResults()}
+ * 与汇总均只含 eligible 场次）。Rating-ineligible parsed battles remain valid Replay results——
+ * Rating 校验失败<b>不得</b>把 Battle 从结果中移除，失败以 {@link LeagueFailure} 稳定错误码返回。</p>
  *
  * <p>普通模式（{@code STANDARD_REPLAY}）复用 {@link Replays} 既有 arenaId 去重语义，
  * 普通回放契约零回归；混合模式（{@code MIXED_UNSUPPORTED}）同普通模式返回全部可解析
  * battles（League Rating 不支持混合批次聚合，League Analysis unavailable 由调用方提示，
- * plan §21：禁止 mixed League eligibility 污染 Replay Parser）。</p>
+ * 禁止 mixed League eligibility 污染 Replay Parser。</p>
  *
- * <p>league 去重范围仅限当前上传批次（plan §4）：同一 arenaId 多份回放关键事实一致 →
+ * <p>league 去重范围仅限当前上传批次：同一 arenaId 多份回放关键事实一致 →
  * 只计一份、其余进 duplicates；不一致 → 该场全部副本拒绝评分（{@code CONFLICTING_REPLAYS_FOR_ARENA}）。
  * 不采用第一份、不自动选择「字段更多」的副本；不建立持久化记录。</p>
  */
@@ -71,7 +72,7 @@ public final class LeagueReplays {
                 .map(Replays.ParsedEntry::battle).toList());
         if (mode == LeagueRatingMode.MIXED_UNSUPPORTED) {
             // 混合批次（普通 + 训练赛/联赛混传）：League Rating 不支持混合批次聚合，
-            // 但<b>不得污染 Replay Parser</b>（plan §21 / Case I）——所有可解析回放仍按
+            // 但<b>不得污染 Replay Parser</b>——所有可解析回放仍按
             // 普通回放语义成功返回（标准 arenaId 去重，progress 真实 outcome），League
             // Analysis unavailable 由调用方以 leagueUnavailableCode 提示，不再整体拒绝。
             final com.wotb.core.model.Collected c = Replays.dedupe(entries, log, progress);
@@ -91,7 +92,7 @@ public final class LeagueReplays {
      *
      * <p>返回的 battles = 去重/冲突后<b>全部</b>成功解析的 Battle（Rating 不合格也保留，
      * 只进 leagueFailures）；ratedBattles/ratedNames/results 仅用于 League Rating 计算与
-     * 批次聚合（plan §6：aggregate 只基于 eligible 场次）。</p>
+     * 批次聚合（aggregate 只基于 eligible 场次）。</p>
      */
     private static LeagueCollectResult collectLeague(final List<Replays.ParsedEntry> entries,
                                                      final Replays.ReplayProgressListener progress) {

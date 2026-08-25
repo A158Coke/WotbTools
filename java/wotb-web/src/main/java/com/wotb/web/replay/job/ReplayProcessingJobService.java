@@ -36,24 +36,24 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Replay Processing Job 编排（plan §5–§11 / §21–§22 / §34–§38）。
+ * Replay Processing Job 编排（lifecycle / 进度 / 取消 / 复用 / TTL）。
  *
  * <p><b>为什么是 Job</b>：把「上传多个 replay → 解析预览」从长同步 HTTP 改为异步
  * Processing Job——create 快速返回 202 + jobId，worker 在全局 replay 容量内串行
- * processFull（每个 replay 恰好一次，plan §56），产出 {@link ProcessedDataset}
- * 供 Preview / Export / Aggregate 复用（plan §27：不再 Preview ×34 后又 Export ×34）。</p>
+ * processFull（每个 replay 恰好一次），产出 {@link ProcessedDataset}
+ * 供 Preview / Export / Aggregate 复用（不再 Preview ×34 后又 Export ×34）。</p>
  *
  * <p>Create（request 线程）：校验 → 把上传输入持久化到 job 临时目录（绝不在异步
- * worker 持有 {@code MultipartFile}，plan §6）→ 注册 job → 提交有界 worker 池
- * （复用 {@link ReplayExportWorkerExecutor}，plan §35：同一 bounded queue，不复制
- * 两套 worker executor）→ 202。Worker：全局容量许可（plan §34：max-concurrent-jobs=2
- * 不提高）→ 逐文件 full processing（与 preview 同一 authoritative 链，plan §26）→
- * 真实进度（processed/total + valid/duplicates/failures，plan §10/§11）→ READY +
- * 内存态 ProcessedDataset（Strategy A，TTL 与 Job 一致，plan §24）。</p>
+ * worker 持有 {@code MultipartFile}）→ 注册 job → 提交有界 worker 池
+ * （复用 {@link ReplayExportWorkerExecutor}：同一 bounded queue，不复制
+ * 两套 worker executor）→ 202。Worker：全局容量许可（max-concurrent-jobs=2
+ * 不提高）→ 逐文件 full processing（与 preview 同一 authoritative 链）→
+ * 真实进度（processed/total + valid/duplicates/failures）→ READY +
+ * 内存态 ProcessedDataset（TTL 与 Job 一致）。</p>
  *
- * <p>状态机 / 进度 / 取消 / 终态 observability 对齐 PR #118 Export Job（共用
- * {@link ReplayJobState} 与 {@link ReplayJobStorage}）；QUEUED 取消立即释放
- * executor queue slot（plan §36），PROCESSING 协作取消（plan §37）。</p>
+ * <p>状态机 / 进度 / 取消 / 终态 observability 与 Export Job 共用同一基础设施
+ * （{@link ReplayJobState} 与 {@link ReplayJobStorage}）；QUEUED 取消立即释放
+ * executor queue slot，PROCESSING 协作取消。</p>
  */
 @Service
 public class ReplayProcessingJobService {
@@ -63,7 +63,7 @@ public class ReplayProcessingJobService {
     private final ReplayCapacityLimiter capacityLimiter;
     private final DefaultReplayProcessingFacade processingFacade;
     private final ReplayProcessingJobStore store;
-    /** 与 Export Job 共用的有界 worker 池（plan §35：同一队列容量，不复制两套 executor）。 */
+    /** 与 Export Job 共用的有界 worker 池（同一队列容量，不复制两套 executor）。 */
     private final ReplayExportWorkerExecutor workerExecutor;
     private final MeterRegistry meterRegistry;
     private final Tankopedia tankopedia = Tankopedia.load();
@@ -142,7 +142,7 @@ public class ReplayProcessingJobService {
     }
 
     /**
-     * READY 后返回 Preview 数据（plan §21：GET result 不再重新 process replay）。
+     * READY 后返回 Preview 数据（GET result 不再重新 process replay）。
      * 未 READY / 已清理返回 409 JOB_NOT_READY。
      */
     public PreviewResponse result(final String jobId) {
@@ -181,7 +181,7 @@ public class ReplayProcessingJobService {
                 return;
             }
             LOGGER.info(logLine("processing_job_started", job.jobId(), "total", job.total()));
-            // 全局 replay 容量仍然生效（plan §34）：job 化不绕过 max-concurrent-jobs=2。
+            // 全局 replay 容量仍然生效：job 化不绕过 max-concurrent-jobs=2。
             capacityLimiter.acquire();
             try {
                 processJob(job, inputDir);
@@ -214,8 +214,8 @@ public class ReplayProcessingJobService {
     /**
      * 核心处理：与 preview 同一 authoritative full processing 链（processFull =
      * reconstruction + ObservedMaxHp + DeathTimeReconciler），按上传顺序串行
-     * （plan §55 禁止 batch 内并发），真实进度（每个输入成功/重复/失败都推进
-     * processed，plan §10），完成后 enrich 一次并保存 ProcessedDataset（plan §21/§22）。
+     * （禁止 batch 内并发），真实进度（每个输入成功/重复/失败都推进
+     * processed），完成后 enrich 一次并保存 ProcessedDataset。
      */
     private void processJob(final ReplayProcessingJob job, final Path inputDir) throws Exception {
         final List<Path> inputs = ReplayJobFiles.listInputsInOrder(inputDir);
@@ -231,14 +231,14 @@ public class ReplayProcessingJobService {
             job.updateProgress(counters[0], counters[1], counters[2]);
             LOGGER.debug(logLine("processing_job_progress", job.jobId(), "processed", counters[0],
                     "duplicates", counters[1], "failures", counters[2], "total", job.total()));
-            // 安全 checkpoint：每个 replay 完成后检查取消（plan §37）。
+            // 安全 checkpoint：每个 replay 完成后检查取消。
             if (job.isCancelled()) {
                 throw new JobCancelledException();
             }
         };
         final LeagueReplays.LeagueCollectResult c = LeagueReplays.collect(
                 ReplayJobFiles.lazySources(inputs), source -> {
-                    // 当前处理文件（前端截断显示；不作为 metric tag，plan §12/§47）。
+                    // 当前处理文件（前端截断显示；不作为 metric tag）。
                     job.setCurrentFile(source.name());
                     return processFullTracked(source);
                 }, null, progress);
@@ -248,26 +248,27 @@ public class ReplayProcessingJobService {
         if (c.battles().isEmpty()) {
             throw new NoValidReplaysException();
         }
-        // 混合批次不再整体拒绝（plan §21）：League Rating 不聚合混合批次，battles 仍按
+        // 混合批次不再整体拒绝：League Rating 不聚合混合批次，battles 仍按
         // 普通回放语义成功返回并 READY，leagueUnavailableCode 提示 League Analysis unavailable。
         final String leagueUnavailableCode = c.mode() == LeagueRatingMode.MIXED_UNSUPPORTED
                 ? "MIXED_LEAGUE_AND_STANDARD_REPLAYS" : null;
-        // 事实层 enrich 一次：Preview / Export 直接消费已 enrich 的 authoritative Battle（plan §21/§27）。
-        // League 模式不调用 PerformanceMetricsCalculator（旧 contribution/kast/impact 完全移除）。
+        // 事实层 enrich 一次：Preview / Export 直接消费已 enrich 的 authoritative Battle。
+        // League 模式同样回填单场 Performance Metrics（contribution/kast/impact 在 CW 保留，
+        // 表现指标 ≠ Rating 维度；from-result Preview/Export 同源。
         PotentialDamage.apply(c.battles(), tankopedia);
+        for (final Battle battle : c.battles()) {
+            PerformanceMetricsCalculator.populateBattle(battle);
+        }
         if (c.mode() == LeagueRatingMode.LEAGUE_RATING) {
             job.markReady(new ProcessedDataset(c.battles(), c.battleSourceNames(),
                     c.duplicates(), c.failures(), c.leagueBatch(), null));
             return;
         }
-        for (final Battle battle : c.battles()) {
-            PerformanceMetricsCalculator.populateBattle(battle);
-        }
         job.markReady(new ProcessedDataset(c.battles(), c.battleSourceNames(),
                 c.duplicates(), c.failures(), null, leagueUnavailableCode));
     }
 
-    /** 与 preview/export 完全相同的 authoritative full processing 链（plan §26，禁止 raw parse 回归）。 */
+    /** 与 preview/export 完全相同的 authoritative full processing 链（禁止 raw parse 回归）。 */
     private Battle processFull(final Source source) {
         final ReplayProcessingResult result = processingFacade.process(source, ReplayProcessingOptions.full());
         if (result.battle() != null) {
@@ -278,7 +279,7 @@ public class ReplayProcessingJobService {
         throw new IllegalArgumentException(message);
     }
 
-    /** 单文件处理 + 逐文件耗时指标（低基数，无 filename tag，plan §48）。 */
+    /** 单文件处理 + 逐文件耗时指标（低基数，无 filename tag）。 */
     private Battle processFullTracked(final Source source) {
         if (meterRegistry == null) {
             return processFull(source);
@@ -383,7 +384,7 @@ public class ReplayProcessingJobService {
     private static final class JobCancelledException extends RuntimeException {
     }
 
-    /** 0 场有效回放（plan §39）：终态 FAILED + NO_VALID_REPLAYS。 */
+    /** 0 场有效回放：终态 FAILED + NO_VALID_REPLAYS。 */
     private static final class NoValidReplaysException extends RuntimeException {
     }
 }

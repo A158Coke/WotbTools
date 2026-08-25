@@ -9,15 +9,23 @@ import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.web.replay.LeagueTestReplays;
+import com.wotb.web.replay.dto.AggRow;
 import com.wotb.web.replay.dto.BattleDto;
 import com.wotb.web.replay.dto.ExportResult;
 import com.wotb.web.replay.dto.PreviewResponse;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -30,7 +38,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/** League Rating 模式矩阵：preview / aggregate export / each export 规则一致（plan §21.3）。 */
+/** League Rating 模式矩阵：preview / aggregate export / each export 规则一致。 */
 class ReplayServiceLeagueTest {
 
     private static MockMultipartFile file(final String name, final byte[] bytes) {
@@ -76,14 +84,19 @@ class ReplayServiceLeagueTest {
         assertNotNull(r.battles().getFirst().league());
         assertNotNull(r.battles().getFirst().league().team1());
         assertNotNull(r.battles().getFirst().league().team2());
-        // League 模式玩家列不含旧三指标
-        assertFalse(r.playerColumns().stream().anyMatch(c -> c.key().equals("contribution")));
-        assertFalse(r.playerColumns().stream().anyMatch(c -> c.key().equals("kast")));
-        assertFalse(r.playerColumns().stream().anyMatch(c -> c.key().equals("impact")));
+        // Performance Metrics（contribution/kast/impact）必须保留在 CW 单场
+        assertTrue(r.playerColumns().stream().anyMatch(c -> c.key().equals("contribution")));
+        assertTrue(r.playerColumns().stream().anyMatch(c -> c.key().equals("kast")));
+        assertTrue(r.playerColumns().stream().anyMatch(c -> c.key().equals("impact")));
         assertTrue(r.playerColumns().stream().anyMatch(c -> c.key().equals("league_rating")));
-        // 玩家单元格含 Rating 维度
+        // 玩家单元格含 Rating 维度 + 单场 Performance Metrics
         assertTrue(r.battles().getFirst().players().getFirst().cells().containsKey("league_rating"));
         assertTrue(r.battles().getFirst().players().getFirst().cells().containsKey("league_damage_score"));
+        assertTrue(r.battles().getFirst().players().getFirst().cells().containsKey("contribution"));
+        assertTrue(r.battles().getFirst().players().getFirst().cells().containsKey("kast"));
+        assertTrue(r.battles().getFirst().players().getFirst().cells().containsKey("impact"));
+        // leagueMode 与 league 结果存在性分离（CW 批次 leagueMode=true）
+        assertTrue(r.leagueMode(), "CW 批次 leagueMode 必须为 true（即使个别场次 Rating-ineligible）");
         // 固定列元数据
         assertTrue(r.league().columns().stream().anyMatch(c -> c.key().equals("league_rating") && c.fixed()));
         assertEquals(1000, r.league().columns().stream()
@@ -114,7 +127,7 @@ class ReplayServiceLeagueTest {
 
     @Test
     void mixedBatchPreviewKeepsBattlesAndReportsLeagueUnavailable() throws Exception {
-        // plan §21/Case I：混合批次不再 HTTP 400——League Rating 不聚合（league=null），
+        // Case I：混合批次不再 HTTP 400——League Rating 不聚合（league=null），
         // battles 按普通回放语义成功返回，leagueUnavailableCode 携带混合码。
         final Battle training = LeagueTestReplays.sevenVsSeven(1);
         training.arenaId = "111";
@@ -129,6 +142,7 @@ class ReplayServiceLeagueTest {
         assertNull(r.league(), "混合批次不产生 League Rating 元数据");
         assertEquals(2, r.battles().size(), "混合批次所有可解析 Battle 必须保留在 Preview");
         assertEquals("MIXED_LEAGUE_AND_STANDARD_REPLAYS", r.leagueUnavailableCode());
+        assertFalse(r.leagueMode(), "混合批次按普通回放语义，leagueMode 必须为 false");
         assertTrue(r.failures().isEmpty(), "混合批次无解析失败时 failures 必须为空");
     }
 
@@ -162,6 +176,51 @@ class ReplayServiceLeagueTest {
         assertTrue(result.filename().endsWith(".xlsx"));
     }
 
+    // ---- multi aggregate export filename contract（Standard / League / Mixed 单一规则）----
+
+    @Test
+    void standardMultiExportUsesStandardAggregateFilename() throws Exception {
+        final Battle b1 = LeagueTestReplays.sevenVsSeven(1);
+        b1.arenaId = "111";
+        b1.arenaBonusType = 1;
+        final Battle b2 = LeagueTestReplays.sevenVsSeven(1);
+        b2.arenaId = "222";
+        b2.arenaBonusType = 1;
+        final ReplayService service = perFileService(List.of(b1, b2));
+        final ExportResult result = service.export(new MockMultipartFile[]{
+                file("s1.wotbreplay", new byte[]{1}), file("s2.wotbreplay", new byte[]{2})}, "aggregate");
+        assertNotNull(result);
+        assertEquals("回放汇总.xlsx", result.filename(), "multi Standard 必须用标准汇总文件名");
+    }
+
+    @Test
+    void leagueMultiExportUsesLeagueAggregateFilename() throws Exception {
+        final Battle b1 = LeagueTestReplays.sevenVsSeven(1);
+        b1.arenaId = "111";
+        final Battle b2 = LeagueTestReplays.sevenVsSeven(1);
+        b2.arenaId = "222";
+        final ReplayService service = perFileService(List.of(b1, b2));
+        final ExportResult result = service.export(new MockMultipartFile[]{
+                file("c1.wotbreplay", new byte[]{1}), file("c2.wotbreplay", new byte[]{2})}, "aggregate");
+        assertNotNull(result);
+        assertEquals("联赛汇总.xlsx", result.filename(), "multi 纯 CW 必须用联赛汇总文件名");
+    }
+
+    @Test
+    void mixedMultiExportUsesStandardAggregateFilename() throws Exception {
+        final Battle training = LeagueTestReplays.sevenVsSeven(1);
+        training.arenaId = "111";
+        training.arenaBonusType = 2;
+        final Battle random = LeagueTestReplays.sevenVsSeven(1);
+        random.arenaId = "222";
+        random.arenaBonusType = 1;
+        final ReplayService service = perFileService(List.of(training, random));
+        final ExportResult result = service.export(new MockMultipartFile[]{
+                file("t.wotbreplay", new byte[]{1}), file("r.wotbreplay", new byte[]{2})}, "aggregate");
+        assertNotNull(result, "混合批次 aggregate 导出必须正常（League Rating unavailable 不影响 Replay 导出）");
+        assertEquals("回放汇总.xlsx", result.filename(), "multi Mixed 必须用标准汇总文件名");
+    }
+
     @Test
     void leagueEachExportUsesPeekModeAndWritesLeagueWorkbook() throws Exception {
         final Battle battle = LeagueTestReplays.sevenVsSeven(1);
@@ -176,7 +235,7 @@ class ReplayServiceLeagueTest {
 
     @Test
     void leagueEachExportMixedBatchWritesStandardWorkbooks() throws Exception {
-        // plan §21/§13：混合批次 each 导出按普通回放逐场生成标准单场工作簿（League Analysis unavailable）
+        // 混合批次 each 导出按普通回放逐场生成标准单场工作簿（League Analysis unavailable）
         final Battle training = LeagueTestReplays.sevenVsSeven(1);
         training.arenaId = "111";
         training.arenaBonusType = 2;
@@ -193,6 +252,88 @@ class ReplayServiceLeagueTest {
     }
 
     @Test
+    void leagueEachExportKeepsRatingIneligibleParsedBattleAsStandardWorkbook() throws Exception {
+        // 纯 CW 2 场：1 场可评分（7v7）、1 场解析成功但 Rating-ineligible（13 人）。
+        // 每场都必须进入 ZIP——已评分 → League 单场工作簿；未评分 → 标准单场工作簿
+        // （Replay facts / Performance Metrics 保留，不跳过）。
+        final Battle rated = LeagueTestReplays.sevenVsSeven(1);
+        rated.arenaId = "111";
+        final Battle ineligible = LeagueTestReplays.sevenVsSeven(1);
+        ineligible.arenaId = "222";
+        ineligible.players.remove(0); // 13 人 → NOT_SEVEN_VS_SEVEN，Rating-ineligible
+        final ReplayService service = perFileService(List.of(rated, ineligible));
+        final ExportResult result = service.export(new MockMultipartFile[]{
+                file("rated.wotbreplay", LeagueTestReplays.replayBytes(rated, 2)),
+                file("unrated.wotbreplay", LeagueTestReplays.replayBytes(ineligible, 2))}, "each");
+        assertNotNull(result);
+        assertTrue(result.filename().endsWith(".zip"));
+        final List<String> names = new ArrayList<>();
+        final List<String> texts = new ArrayList<>();
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(result.data()))) {
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(zip.readAllBytes()))) {
+                    texts.add(workbookText(wb));
+                }
+                names.add(entry.getName());
+            }
+        }
+        assertEquals(2, names.size(), "纯 CW each 必须导出 2 个 XLSX（1 League + 1 Standard，不得丢弃 ineligible 场）");
+        assertTrue(texts.get(0).contains("战队Rating"), "rated 场应为 League 单场工作簿");
+        assertFalse(texts.get(1).contains("战队Rating"), "ineligible 场应为标准单场工作簿（无 Rating 块）");
+        assertTrue(texts.get(1).contains("P1002"), "标准工作簿仍保留 Replay facts / 玩家身份");
+    }
+
+    private static String workbookText(final Workbook wb) {
+        final StringBuilder sb = new StringBuilder();
+        for (int s = 0; s < wb.getNumberOfSheets(); s++) {
+            final var sheet = wb.getSheetAt(s);
+            for (int rr = 0; rr <= sheet.getLastRowNum(); rr++) {
+                final var row = sheet.getRow(rr);
+                if (row == null) {
+                    continue;
+                }
+                for (int c = 0; c < row.getLastCellNum(); c++) {
+                    final var cell = row.getCell(c);
+                    if (cell != null && cell.getCellType() == org.apache.poi.ss.usermodel.CellType.STRING) {
+                        sb.append(cell.getStringCellValue());
+                    }
+                }
+            }
+        }
+        return sb.toString();
+    }
+
+    @Test
+    void leagueEachExportEnrichesPotentialDamage() throws Exception {
+        // 纯 CW each 必须与 preview/standard export 同一 authoritative enrichment：
+        // PotentialDamage.apply 后 潜在伤害 = 实际伤害 + supplement（fixture 无 killVictims → = damageDealt；
+        // 未 enrich 时默认 0——证明同步 pure-League each 不再缺失 Potential Damage）。
+        final Battle battle = LeagueTestReplays.sevenVsSeven(1);
+        battle.arenaId = "111";
+        final ReplayService service = leagueService(battle);
+        final ExportResult result = service.export(new MockMultipartFile[]{
+                file("a.wotbreplay", LeagueTestReplays.replayBytes(battle, 2))}, "each");
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(result.data()))) {
+            final ZipEntry entry = zip.getNextEntry();
+            assertNotNull(entry);
+            try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(zip.readAllBytes()))) {
+                final Sheet players = wb.getSheet("玩家数据");
+                final Row header = players.getRow(0);
+                int potentialCol = -1;
+                for (int c = 0; c < header.getLastCellNum(); c++) {
+                    if ("潜在伤害".equals(header.getCell(c).getStringCellValue())) {
+                        potentialCol = c;
+                    }
+                }
+                assertTrue(potentialCol >= 0, "玩家数据必须含 潜在伤害 列");
+                assertTrue(players.getRow(1).getCell(potentialCol).getNumericCellValue() > 0,
+                        "潜在伤害必须被 PotentialDamage enrichment 填充（>0），不得是未 enrich 默认值");
+            }
+        }
+    }
+
+    @Test
     void leagueValidationFailureReportedWithCode() throws Exception {
         final Battle bad = LeagueTestReplays.sevenVsSeven(1);
         bad.arenaId = "111";
@@ -201,13 +342,13 @@ class ReplayServiceLeagueTest {
         final PreviewResponse r = leagueService(bad).preview(new MockMultipartFile[]{
                 file("bad.wotbreplay", new byte[]{1})});
         assertNotNull(r.league());
-        assertEquals(1, r.battles().size(), "Rating 不合格的单场也必须保留在 Preview（领域分离，P0）");
+        assertEquals(1, r.battles().size(), "Rating 不合格的单场也必须保留在 Preview（领域分离）");
         assertNull(r.battles().getFirst().league(), "未评分场不得被绑定任何 Rating");
         assertTrue(r.league().failures().stream()
                 .anyMatch(f -> f.code().equals(LeagueFailure.Code.NOT_SEVEN_VS_SEVEN)));
     }
 
-    // ---- P0 回归：partial League Rating（battles 保留全部，Rating 只对 eligible）----
+    // ---- partial League Rating（battles 保留全部，Rating 只对 eligible）----
 
     @Test
     void partialLeaguePreviewKeepsAllBattlesAndRatingOnlyForEligible() throws Exception {
@@ -224,7 +365,7 @@ class ReplayServiceLeagueTest {
                 file("g.wotbreplay", new byte[]{1}), file("b.wotbreplay", new byte[]{2})});
         assertEquals("LEAGUE_RATING", r.league().mode());
         assertEquals(2, r.battles().size(), "Rating-ineligible Battle 必须保留在 Preview");
-        // identity 绑定（plan §9）：eligible 场带 Rating，ineligible 场 league==null，不得 index 错绑
+        // identity 绑定：eligible 场带 Rating，ineligible 场 league==null，不得 index 错绑
         final BattleDto goodDto = r.battles().get(0);
         final BattleDto badDto = r.battles().get(1);
         assertEquals("111", goodDto.arenaId());
@@ -236,9 +377,9 @@ class ReplayServiceLeagueTest {
 
     @Test
     void leaguePreviewCarriesBaseReplayAggregateAlongsideLeagueSummary() throws Exception {
-        // plan §5/§6：League Rating Summary 是附加分析，不替代基础 Replay Aggregate。
+        // League Rating Summary 是附加分析，不替代基础 Replay Aggregate。
         // 多场 League 批次的 resp.aggregate 必须包含标准基础汇总（0 场可评分 ≠ Replay 没数据）；
-        // 列边界不变（aggregateColumns 仍为 League 变体，不含旧三指标，PR #131）。
+        // League aggregateColumns 保留跨场 contribution/kast/impact。
         final Battle good = LeagueTestReplays.sevenVsSeven(1);
         good.arenaId = "111";
         good.arenaBonusType = 2;
@@ -253,8 +394,85 @@ class ReplayServiceLeagueTest {
         assertEquals("LEAGUE_RATING", r.league().mode());
         assertFalse(r.aggregate().isEmpty(), "League 模式也必须输出基础 Replay Aggregate（跨场汇总）");
         assertFalse(r.league().playerSummaries().isEmpty(), "League 汇总同时存在（不是二选一）");
-        assertFalse(r.aggregateColumns().stream().anyMatch(c -> c.key().equals("contribution")),
-                "基础汇总列仍是 League 变体（PR #131 列边界不变）");
+        // CW 汇总列必须保留跨场 contribution/kast/impact
+        assertTrue(r.aggregateColumns().stream().anyMatch(c -> c.key().equals("contribution")),
+                "CW 汇总列必须含跨场 contribution（Performance Metrics 保留）");
+        assertTrue(r.aggregateColumns().stream().anyMatch(c -> c.key().equals("kast")));
+        assertTrue(r.aggregateColumns().stream().anyMatch(c -> c.key().equals("impact")));
+        // 汇总行 cells 含跨场表现指标（HP 已知场非 null）
+        final AggRow first = r.aggregate().getFirst();
+        assertTrue(first.cells().containsKey("contribution"), "汇总行必须输出 contribution 列值");
+        assertTrue(first.cells().containsKey("impact"), "汇总行必须输出 impact 列值");
+        // league playerSummary 列与值含跨场 Performance Metrics
+        assertTrue(r.league().playerSummaryColumns().stream().anyMatch(c -> c.key().equals("kast")),
+                "league.playerSummaryColumns 必须含 kast");
+        // rated_battles 必须进入生产 playerSummaryColumns（ColumnDef 链）
+        assertTrue(r.league().playerSummaryColumns().stream().anyMatch(c -> c.key().equals("rated_battles")),
+                "league.playerSummaryColumns 必须含 rated_battles（评分场次列契约）");
+        assertTrue(r.league().playerSummaries().stream()
+                        .anyMatch(s -> s.impact() != null),
+                "league.playerSummaries 必须携带跨场 impact");
+    }
+
+    // ---- CW/League 单场也生成基础 Replay Aggregate row ----
+
+    @Test
+    void singleCwBattlePreviewCarriesBaseAggregateFacts() throws Exception {
+        // CW 单场：Unified Summary 的 damage_avg/assisted_avg/kills_avg/earned_avg 由 Replay Core
+        // 权威事实得出（battles=1 → avg=本场值），禁止伪装成 unavailable（'--'）。
+        final Battle battle = LeagueTestReplays.sevenVsSeven(1);
+        battle.arenaId = "111";
+        battle.arenaBonusType = 2;
+        final PreviewResponse r = leagueService(battle).preview(new MockMultipartFile[]{
+                file("a.wotbreplay", new byte[]{1})});
+        assertNotNull(r.league());
+        assertFalse(r.aggregate().isEmpty(), "CW 单场必须生成基础 Replay Aggregate row（Unified Summary 事实源）");
+        // Team1 首名（accountId 1001）：damage=450 / assist=100 / kills=2 / earned=0
+        final AggRow row = r.aggregate().stream()
+                .filter(a -> ((Number) a.cells().get("account_id")).longValue() == 1001L)
+                .findFirst().orElseThrow();
+        assertEquals(1, ((Number) row.cells().get("battles")).intValue(), "解析场次 = 1");
+        assertEquals(450.0, ((Number) row.cells().get("damage_avg")).doubleValue(), 0.01);
+        assertEquals(100.0, ((Number) row.cells().get("assisted_avg")).doubleValue(), 0.01);
+        assertEquals(2.0, ((Number) row.cells().get("kills_avg")).doubleValue(), 0.01);
+        assertEquals(0.0, ((Number) row.cells().get("earned_avg")).doubleValue(), 0.01);
+        // rated_battles = League Player Summary 评分场次（独立于解析场次 battles）
+        assertTrue(r.league().playerSummaries().stream()
+                        .anyMatch(s -> s.accountId() == 1001L && s.battles() == 1),
+                "CW 单场评分场次 = 1");
+    }
+
+    @Test
+    void singleCwIneligibleBattleStillCarriesAggregateFacts() throws Exception {
+        // Rating-ineligible CW 单场：基础 aggregate facts 仍生成（Replay Core），Rating/七维为 null（UI '--'）
+        final Battle bad = LeagueTestReplays.sevenVsSeven(1);
+        bad.arenaId = "111";
+        bad.arenaBonusType = 2;
+        bad.settlementAccountsCoveredByRoster = false;
+        final PreviewResponse r = leagueService(bad).preview(new MockMultipartFile[]{
+                file("bad.wotbreplay", new byte[]{1})});
+        assertNotNull(r.league(), "ineligible 场仍是 CW 批次（leagueMode=true）");
+        assertNull(r.battles().getFirst().league(), "未评分场不得绑定 Rating");
+        assertFalse(r.aggregate().isEmpty(), "Rating-ineligible CW 单场仍生成基础 aggregate facts（不丢事实）");
+        final AggRow row = r.aggregate().stream()
+                .filter(a -> ((Number) a.cells().get("account_id")).longValue() == 1001L)
+                .findFirst().orElseThrow();
+        assertEquals(450.0, ((Number) row.cells().get("damage_avg")).doubleValue(), 0.01);
+        assertEquals(2.0, ((Number) row.cells().get("kills_avg")).doubleValue(), 0.01);
+        // 该场无评分 → 不产生评分汇总行（rated_battles 空，Rating 由前端统一显示 '--'）
+        assertTrue(r.league().playerSummaries().isEmpty(), "ineligible 场不得产生评分汇总行");
+    }
+
+    @Test
+    void standardSingleBattleAggregateStaysEmpty() throws Exception {
+        // Standard（Random）单场：aggregate 保持空（旧语义；不得回归）
+        final Battle battle = LeagueTestReplays.sevenVsSeven(1);
+        battle.arenaId = "333";
+        battle.arenaBonusType = 1;
+        final PreviewResponse r = leagueService(battle).preview(new MockMultipartFile[]{
+                file("c.wotbreplay", new byte[]{3})});
+        assertNull(r.league());
+        assertTrue(r.aggregate().isEmpty(), "Standard 单场 aggregate 必须为空（多场才跨场汇总）");
     }
 
     @Test

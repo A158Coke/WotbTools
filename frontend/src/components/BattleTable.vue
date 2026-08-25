@@ -1,8 +1,10 @@
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { fmtDuration, mapLabel } from '../utils/helpers.js'
+import { fmtDuration, mapLabel, leagueMaxByKey, ratingCellText, ratingTotalText } from '../utils/helpers.js'
 import { replayValueLabel } from '../utils/display.js'
+import { stableSortRows } from '../utils/tableSort.js'
+import { useStickyColumns } from '../utils/stickyColumns.js'
 
 const { locale, t, te } = useI18n()
 const LOCALIZED_VALUE_KEYS = new Set(['tank_type', 'tank_nation', 'potential_damage_detail'])
@@ -13,16 +15,35 @@ const props = defineProps({
   shownCols: Array,
   /** League 模式：resp.league.columns（key/max/fixed/group 元数据）。 */
   leagueColumns: { type: Array, default: () => [] },
-  /** League 模式：resp.league 单场元数据（team ratings / MVP / 队内最佳）。 */
+  /**
+   * League 模式单场元数据（team ratings / MVP / 队内最佳）。仅决定本场<b>是否有 Rating 结果</b>，
+   * 不决定 CW UI（leagueMode 与 league 是两个独立状态）。
+   */
   league: { type: Object, default: null },
-  /** 战队名称覆盖：{arenaId:team: name}（仅当前页面内存，plan §12）。 */
+  /** 战队名称覆盖：{arenaId:team: name}（仅当前页面内存）。 */
   teamNames: { type: Object, default: () => ({}) },
+  /**
+   * 本表是否当前可见（父组件拥有真实 activeTab；BattleTable 不通过 DOM 猜 visibility）。
+   * active=false（v-show hidden）时禁止测量：hidden DOM width=0 不得覆盖有效 sticky offset。
+   */
+  active: { type: Boolean, default: true },
+  /**
+   * CW（League Rating）模式：决定这是 CW UI（CW 列契约 / Player Drawer / sticky pair /
+   * Rating 列存在）。Rating-ineligible 场次 league==null 但 leagueMode=true —— 该场仍是
+   * CW：Replay facts / Performance metrics 正常显示，Rating/七维显示 "--"，
+   * 点击玩家仍打开 Drawer。
+   */
+  leagueMode: { type: Boolean, default: false },
+  /** Drawer 选中玩家 identity：accountId + arenaId（Battle scope 必须双匹配；排序后跟随同一账号）。
+   * Drawer 关闭 → null → 清除 highlight。 */
+  selectedAccountId: { type: [Number, String], default: null },
+  selectedArenaId: { type: [Number, String], default: null },
 })
-const emit = defineEmits(['update-team-name'])
+const emit = defineEmits(['update-team-name', 'select-player'])
 
-const isLeague = computed(() => !!props.league)
-const leagueMaxByKey = computed(() =>
-  Object.fromEntries((props.leagueColumns || []).map(c => [c.key, c.max])))
+/** CW UI 开关（显式 leagueMode；不再从 league != null 推断）。 */
+const isLeague = computed(() => props.leagueMode)
+const maxByKey = computed(() => leagueMaxByKey(props.leagueColumns))
 
 function percentCell(value) {
   if (value == null || value === '') return '--'
@@ -32,17 +53,29 @@ function percentCell(value) {
 const sortKey = ref('')
 const sortReverse = ref(false)
 
+/** 战队名称按用户最终看到的名（override → autoName）排序，不按隐藏 teamKey。 */
+function teamNameValue(row) {
+  const teamNumber = row.team
+  const key = props.battle.arenaId + ':' + teamNumber
+  const override = props.teamNames ? props.teamNames[key] : undefined
+  if (override) return override
+  return teamNumber === 1 ? props.league?.team1?.autoName : props.league?.team2?.autoName
+}
+
 const sorted = computed(() => {
   if (!sortKey.value) return props.battle.players
-  const arr = [...props.battle.players]
   const col = props.shownCols.find(c => c.key === sortKey.value)
-  arr.sort((ra, rb) => {
-    let a = ra.cells[sortKey.value], b = rb.cells[sortKey.value]
-    if (col?.num) { a = Number(a) || 0; b = Number(b) || 0; return a - b }
-    return String(a).localeCompare(String(b))
+  const isTeamName = sortKey.value === 'team_name'
+  const valueGetter = isTeamName ? teamNameValue : undefined
+  return stableSortRows(props.battle.players, {
+    key: sortKey.value,
+    direction: sortReverse.value ? -1 : 1,
+    num: isTeamName ? false : !!col?.num,
+    locale: locale.value,
+    valueGetter,
+    // accountId 兜底保持稳定（同分不跳行）
+    tiebreakGetter: row => row.cells?.account_id,
   })
-  if (sortReverse.value) arr.reverse()
-  return arr
 })
 
 function sortBy(col) {
@@ -68,21 +101,9 @@ function survivalLabel(value) {
 
 // ---- League Rating 概览 ----
 
-function round1(v) {
-  const n = Number(v) || 0
-  return Math.round(n * 10) / 10
-}
-
-function ratingText(rating, max) {
-  const v = Number(rating) || 0
-  const m = Number(max) || 1000
-  const pct = m > 0 ? Math.round(1000 * v / m) / 10 : 0
-  return Math.round(v) + ' · ' + pct + '%'
-}
-
 function teamRatingText(team) {
   if (!team) return '--'
-  return ratingText(team.teamRating, 1000)
+  return ratingTotalText(team.teamRating)
 }
 
 function teamName(teamNumber) {
@@ -98,17 +119,29 @@ function onTeamNameInput(teamNumber, event) {
   emit('update-team-name', { arenaId: props.battle.arenaId, team: teamNumber, name: event.target.value })
 }
 
-// ---- Rating 单元格（总分「927 · 92.7%」；维度「342 / 400 · 85.5%」） ----
-
-function ratingCellText(value, key) {
-  const v = Number(value) || 0
-  const max = Number(leagueMaxByKey.value[key]) || 0
-  if (max <= 0) return String(v)
-  const pct = Math.round(1000 * v / max) / 10
-  // 总 Rating 显示「927 · 92.7%」；维度显示「342 / 400 · 85.5%」
-  if (key === 'league_rating') return Math.round(v) + ' · ' + pct + '%'
-  return Math.round(v) + ' / ' + max + ' · ' + pct + '%'
+/** 点击玩家行 → 打开选手 Drawer（CW 单场 BattleTable 支持；selection = accountId）。
+ * CW UI（leagueMode）即支持——Rating-ineligible 场次（league=null）同样打开 Drawer。 */
+function onRowClick(row) {
+  if (!isLeague.value) return
+  emit('select-player', {
+    scope: 'battle',
+    accountId: Number(row.cells.account_id),
+    arenaId: props.battle.arenaId,
+  })
 }
+
+/** 选中行判定：accountId + 本场 arenaId 双匹配（禁止 row index；排序后 highlight 跟随同一账号）。 */
+function isSelectedRow(row) {
+  if (!isLeague.value) return false
+  const selId = props.selectedAccountId
+  const selArena = props.selectedArenaId
+  if (selId == null || selId === '' || selArena == null || selArena === '') return false
+  return String(props.battle.arenaId) === String(selArena)
+    && Number(row.cells.account_id) === Number(selId)
+}
+
+// ---- Rating 单元格（总分「927」；维度「342 / 400 · 85.5%」；缺失 → '--'）----
+// 格式 contract 在 helpers.js 唯一实现（单场表 / CW 统一玩家表 / PNG 导出共用）。
 
 function rowFlags(row) {
   if (!isLeague.value) return { mvp: false, teamBest: false }
@@ -120,32 +153,17 @@ function rowFlags(row) {
   return { mvp, teamBest }
 }
 
-// ---- sticky 列（League 模式：玩家 + 总 Rating 固定，左偏移响应真实列宽） ----
-
-const headerRefs = ref({})
-const stickyLeft = ref({ nickname: 0, league_rating: 0 })
-
-function measureSticky() {
-  if (!isLeague.value) return
-  nextTick(() => {
-    const nickEl = headerRefs.value['nickname']
-    const nickW = nickEl ? nickEl.offsetWidth : 130
-    stickyLeft.value = { nickname: 0, league_rating: nickW }
-  })
-}
-
-watch(() => props.shownCols, measureSticky, { deep: true })
-watch(isLeague, measureSticky)
-// 排序箭头会改变表头宽度 → 昵称列宽可能变化 → Rating sticky 左偏移必须重测（plan §21）
-watch([sortKey, sortReverse], measureSticky)
-onMounted(() => {
-  measureSticky()
-  window.addEventListener('resize', measureSticky)
+// ---- sticky 列（CW 模式：玩家 + 总 Rating 固定，左偏移响应真实列宽）----
+// invariant：nickname.left = 0；league_rating.left = 真实可见 nickname 列宽（>0）。
+// 复用 useStickyColumns（抽取自本组件验证过的 sticky lifecycle）。
+const { headerRefs, isStickyCol, colStyle, schedule } = useStickyColumns({
+  enabled: isLeague,
+  active: computed(() => props.active),
+  watchCols: computed(() => props.shownCols),
 })
-onBeforeUnmount(() => window.removeEventListener('resize', measureSticky))
 
-const isStickyCol = key => isLeague.value && (key === 'nickname' || key === 'league_rating')
-const colStyle = key => isStickyCol(key) ? { left: (stickyLeft.value[key] || 0) + 'px' } : {}
+// 排序箭头变化可能改昵称列宽 → 重新调度测量
+watch([sortKey, sortReverse], schedule)
 </script>
 
 <template>
@@ -157,7 +175,7 @@ const colStyle = key => isStickyCol(key) ? { left: (stickyLeft.value[key] || 0) 
       <div class="mc"><div class="k">{{ $t('metric.player_count') }}</div><div class="v">{{ battle.players.length }}</div></div>
     </div>
 
-    <!-- League Rating 概览（训练赛/联赛专属；概览卡下方、玩家表上方） -->
+    <!-- League Rating 概览（CW 专属；Rating-ineligible 场次 league=null → 显示 "--" 不伪造） -->
     <div v-if="isLeague" class="league-overview">
       <div class="league-head">
         <span class="league-title">{{ $t('league.title') }}</span>
@@ -171,15 +189,15 @@ const colStyle = key => isStickyCol(key) ? { left: (stickyLeft.value[key] || 0) 
                  :placeholder="t('league.team_name_pending')"
                  :title="t('league.edit_hint')"
                  @input="onTeamNameInput(tn, $event)" />
-          <span class="league-team-rating">{{ teamRatingText(tn === 1 ? league.team1 : league.team2) }}</span>
+          <span class="league-team-rating">{{ teamRatingText(tn === 1 ? league?.team1 : league?.team2) }}</span>
         </div>
       </div>
       <div class="league-mvp">
         <span class="lm-label">{{ $t('league.mvp') }}</span>
-        <b class="lm-value">{{ league.mvpNickname || '--' }}</b>
+        <b class="lm-value">{{ league?.mvpNickname || '--' }}</b>
         <span class="lm-label">{{ $t('league.team_best') }}</span>
-        <b class="lm-value">{{ $t('league.team1') }}: {{ league.team1BestNickname || '--' }}</b>
-        <b class="lm-value">{{ $t('league.team2') }}: {{ league.team2BestNickname || '--' }}</b>
+        <b class="lm-value">{{ $t('league.team1') }}: {{ league?.team1BestNickname || '--' }}</b>
+        <b class="lm-value">{{ $t('league.team2') }}: {{ league?.team2BestNickname || '--' }}</b>
       </div>
       <div class="league-note">{{ $t('league.points_note') }}</div>
     </div>
@@ -192,12 +210,14 @@ const colStyle = key => isStickyCol(key) ? { left: (stickyLeft.value[key] || 0) 
               :class="{ 'sticky-col': isStickyCol(c.key) }" :style="colStyle(c.key)"
               @click="sortBy(c)"
               :title="c.key === 'survival_time' ? $t('player_labels.survival_time_tip')
-                : (isLeague && leagueMaxByKey[c.key] > 0 ? $t('player_labels.' + c.key + '_tip') : undefined)">
+                : (isLeague && maxByKey[c.key] > 0 ? $t('player_labels.' + c.key + '_tip') : undefined)">
             {{ $t('player_labels.' + c.key) }}{{ arrow(c.key) }}
           </th>
         </tr></thead>
         <tbody>
-          <tr v-for="(row, ri) in sorted" :key="ri" :class="row.team === 1 ? 't1' : 't2'">
+          <tr v-for="row in sorted" :key="row.cells.account_id"
+              :class="[row.team === 1 ? 't1' : 't2', isLeague ? 'player-row' : '', { selected: isSelectedRow(row) }]"
+              @click="onRowClick(row)">
             <td v-for="c in shownCols" :key="c.key"
                 :class="{ 'sticky-col': isStickyCol(c.key), 'sticky-t1': isStickyCol(c.key) && row.team === 1, 'sticky-t2': isStickyCol(c.key) && row.team === 2 }"
                 :style="colStyle(c.key)">
@@ -206,11 +226,11 @@ const colStyle = key => isStickyCol(key) ? { left: (stickyLeft.value[key] || 0) 
               <span v-else-if="LOCALIZED_VALUE_KEYS.has(c.key)">{{ replayValueLabel(t, te, row.cells[c.key]) }}</span>
               <span v-else-if="PERCENT_KEYS.has(c.key)">{{ percentCell(row.cells[c.key]) }}</span>
               <span v-else-if="c.key === 'league_rating'" class="league-rating-cell">
-                {{ ratingCellText(row.cells[c.key], c.key) }}
+                {{ ratingCellText(row.cells[c.key], c.key, maxByKey) }}
                 <span v-if="rowFlags(row).mvp" class="mvp-badge" :title="$t('league.mvp')">MVP</span>
                 <span v-else-if="rowFlags(row).teamBest" class="team-best-badge" :title="$t('league.team_best')">★</span>
               </span>
-              <span v-else-if="isLeague && leagueMaxByKey[c.key] > 0">{{ ratingCellText(row.cells[c.key], c.key) }}</span>
+              <span v-else-if="isLeague && maxByKey[c.key] > 0">{{ ratingCellText(row.cells[c.key], c.key, maxByKey) }}</span>
               <span v-else>{{ row.cells[c.key] }}</span>
             </td>
           </tr>
@@ -253,7 +273,7 @@ const colStyle = key => isStickyCol(key) ? { left: (stickyLeft.value[key] || 0) 
 .league-note { margin-top: 6px; font-size: .72rem; color: var(--text-sub); }
 
 /* League 表格：玩家 + 总 Rating sticky；其余列横向滚动。
-   z-index 层级（plan §17）：tbody normal < tbody sticky(3) < thead normal(5) < thead sticky(7)。
+   z-index 层级：tbody normal < tbody sticky(3) < thead normal(5) < thead sticky(7)。
    此处 scoped 特异性高于全局 showcase 规则，必须显式对齐全局层级——
    否则普通表头(5)画在 sticky 表头(3)之上，横向滚动时普通表头会覆盖固定玩家/Rating 列。 */
 .league-table th.sticky-col, .league-table td.sticky-col {
@@ -264,6 +284,17 @@ const colStyle = key => isStickyCol(key) ? { left: (stickyLeft.value[key] || 0) 
 .league-table td.sticky-col.sticky-t1 { background: color-mix(in srgb, var(--bg-t1) 64%, var(--bg-card)); }
 .league-table td.sticky-col.sticky-t2 { background: color-mix(in srgb, var(--bg-t2) 64%, var(--bg-card)); }
 .league-table tr:hover td.sticky-col { background: var(--bg-list-hover); }
+
+/* 玩家行点击（Drawer 打开；header click 排序、row click 选人，互不触发） */
+.league-table .player-row { cursor: pointer; }
+.league-table tr.player-row:hover td { background: var(--bg-list-hover); }
+/* Drawer 选中玩家行 highlight：accent 浅染，覆盖 hover 与 sticky 底色 */
+.league-table tr.player-row.selected td { background: color-mix(in srgb, var(--accent) 16%, var(--bg-card)); }
+.league-table tr.player-row.selected td.sticky-t1 { background: color-mix(in srgb, var(--accent) 16%, var(--bg-t1)); }
+.league-table tr.player-row.selected td.sticky-t2 { background: color-mix(in srgb, var(--accent) 16%, var(--bg-t2)); }
+.league-table tr.player-row.selected:hover td { background: color-mix(in srgb, var(--accent) 24%, var(--bg-card)); }
+.league-table tr.player-row.selected:hover td.sticky-t1 { background: color-mix(in srgb, var(--accent) 24%, var(--bg-t1)); }
+.league-table tr.player-row.selected:hover td.sticky-t2 { background: color-mix(in srgb, var(--accent) 24%, var(--bg-t2)); }
 
 /* Rating 单元格 + 徽标（固定尺寸避免列宽跳动） */
 .league-rating-cell { display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; }
