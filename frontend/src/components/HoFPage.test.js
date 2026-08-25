@@ -108,6 +108,22 @@ describe('HoFPage', () => {
     await flushPromises()
   }
 
+  function stubDeferredFileReader() {
+    const readers = []
+    class DeferredFileReader {
+      constructor() {
+        this.onload = null
+        this.onerror = null
+        this.result = null
+        readers.push(this)
+      }
+
+      readAsDataURL() {}
+    }
+    vi.stubGlobal('FileReader', DeferredFileReader)
+    return readers
+  }
+
   async function openSingleUpload(wrapper) {
     await wrapper.find('.lb-submit-row button.filebtn').trigger('click')
     await flushPromises()
@@ -451,9 +467,7 @@ describe('HoFPage', () => {
 
     await modal.find('.h100-mode-wg').trigger('click')
     modal = wrapper.find('.h100-modal')
-    expect(modal.findAll('input[type="file"]')).toHaveLength(0)
-    expect(modal.text()).not.toContain('proof.png')
-    expect(modal.text()).not.toContain('manual-draft.wotbreplay')
+    expect(modal.find('.h100-manual-evidence').attributes('style')).toContain('display: none')
 
     await modal.find('.h100-modal-submit').trigger('click')
     await flushPromises()
@@ -546,8 +560,8 @@ describe('HoFPage', () => {
     await setFiles(fileInputs[1], [replay])
 
     expect(modal.text()).toContain('battle-1.wotbreplay')
-    await wrapper.find('.modal-overlay').trigger('click')
-    expect(wrapper.find('.h100-modal').exists()).toBe(false)
+    await wrapper.find('.h100-submit-overlay').trigger('click')
+    expect(wrapper.find('.h100-submit-overlay').attributes('style')).toContain('display: none')
 
     const filters = wrapper.findAll('.h100-filter select')
     await filters[0].setValue('UK')
@@ -563,6 +577,95 @@ describe('HoFPage', () => {
     expect(reopened.find('select').findAll('option').map(option => option.text())).toContain('Progetto 65')
     expect(reopened.text()).toContain('proof.png')
     expect(reopened.text()).toContain('battle-1.wotbreplay')
+  })
+
+  it('preserves a pending hundred-battle screenshot read after closing the modal', async () => {
+    const readers = stubDeferredFileReader()
+    try {
+      const wrapper = mountPage()
+      await flushPromises()
+      await openHundredSubmit(wrapper)
+      await setFiles(
+        wrapper.find('.h100-modal').findAll('input[type="file"]')[0],
+        [new File(['proof'], 'late-proof.png', { type: 'image/png', lastModified: 1 })]
+      )
+      expect(readers).toHaveLength(1)
+      expect(wrapper.find('.h100-file-reading').exists()).toBe(true)
+
+      await wrapper.find('.h100-submit-overlay').trigger('click')
+      expect(wrapper.find('.h100-submit-overlay').attributes('style')).toContain('display: none')
+      readers[0].result = 'data:image/png;base64,AAAA'
+      readers[0].onload()
+      await flushPromises()
+
+      await openHundredSubmit(wrapper)
+      const reopened = wrapper.find('.h100-modal')
+      expect(reopened.text()).toContain('late-proof.png')
+      expect(reopened.find('.h100-file-reading').exists()).toBe(false)
+      expect(reopened.find('.h100-modal-submit').attributes('disabled')).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('preserves a pending hundred-battle screenshot read while switching to WG verification', async () => {
+    tokenClaims = {
+      wotb_verified: true, wotb_region: 'EU',
+      wotb_account_id: '572253806', wotb_nickname: 'WgPlayer',
+    }
+    const readers = stubDeferredFileReader()
+    try {
+      const wrapper = mountPage()
+      await flushPromises()
+      await openHundredSubmit(wrapper)
+      const modal = wrapper.find('.h100-modal')
+      await setFiles(
+        modal.findAll('input[type="file"]')[0],
+        [new File(['proof'], 'late-wg-proof.png', { type: 'image/png', lastModified: 1 })]
+      )
+      expect(readers).toHaveLength(1)
+
+      await modal.find('.h100-mode-wg').trigger('click')
+      expect(modal.find('.h100-manual-evidence').attributes('style')).toContain('display: none')
+      readers[0].result = 'data:image/png;base64,AAAA'
+      readers[0].onload()
+      await flushPromises()
+
+      await modal.find('.h100-mode-manual').trigger('click')
+      expect(modal.text()).toContain('late-wg-proof.png')
+      expect(modal.find('.h100-file-reading').exists()).toBe(false)
+      expect(modal.find('.h100-modal-submit').attributes('disabled')).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('invalidates a pending hundred-battle screenshot read when clearing the draft', async () => {
+    const readers = stubDeferredFileReader()
+    try {
+      const wrapper = mountPage()
+      await flushPromises()
+      await openHundredSubmit(wrapper)
+      const modal = wrapper.find('.h100-modal')
+      await modal.find('#h100-submit-damage').setValue('4200')
+      await setFiles(
+        modal.findAll('input[type="file"]')[0],
+        [new File(['proof'], 'cleared-proof.png', { type: 'image/png', lastModified: 1 })]
+      )
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+      await modal.find('.h100-clear-draft').trigger('click')
+      readers[0].result = 'data:image/png;base64,AAAA'
+      readers[0].onload()
+      await flushPromises()
+
+      expect(modal.find('.h100-file-reading').exists()).toBe(false)
+      expect(modal.find('.h100-selected-file').exists()).toBe(false)
+      expect(modal.text()).not.toContain('cleared-proof.png')
+      confirm.mockRestore()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('appends replay selections in batches, ignores duplicates, and preserves old files on overflow', async () => {
@@ -617,18 +720,7 @@ describe('HoFPage', () => {
   })
 
   it('invalidates an older pending screenshot read when a later invalid file is selected', async () => {
-    const readers = []
-    class DeferredFileReader {
-      constructor() {
-        this.onload = null
-        this.onerror = null
-        this.result = null
-        readers.push(this)
-      }
-
-      readAsDataURL() {}
-    }
-    vi.stubGlobal('FileReader', DeferredFileReader)
+    const readers = stubDeferredFileReader()
     try {
       const wrapper = mountPage()
       await flushPromises()
@@ -689,13 +781,14 @@ describe('HoFPage', () => {
 
     await wrapper.find('.h100-modal-submit').trigger('click')
     await flushPromises()
-    expect(wrapper.find('.h100-modal').exists()).toBe(false)
+    expect(wrapper.find('.h100-submit-overlay').attributes('style')).toContain('display: none')
 
     await wrapper.find('.h100-submit-btn').trigger('click')
     await flushPromises()
-    expect(wrapper.find('#h100-submit-damage').element.value).toBe('')
-    expect(wrapper.find('.h100-selected-files').exists()).toBe(false)
-    expect(wrapper.find('.h100-selected-file').exists()).toBe(false)
+    const reopened = wrapper.find('.h100-modal')
+    expect(reopened.find('#h100-submit-damage').element.value).toBe('')
+    expect(reopened.find('.h100-selected-files').exists()).toBe(false)
+    expect(reopened.find('.h100-selected-file').exists()).toBe(false)
   })
 
   it('loads Mark 3 rows with the same category filters and preserves server competition ranks', async () => {
@@ -763,6 +856,92 @@ describe('HoFPage', () => {
     expect(formData.getAll('replays')).toHaveLength(5)
   })
 
+  it('rejects over-limit Mark 3 screenshots before opening FileReaders', async () => {
+    const readers = stubDeferredFileReader()
+    try {
+      const wrapper = mountPage()
+      await flushPromises()
+      await openMark3Submit(wrapper)
+      const modal = wrapper.find('.mark3-modal')
+
+      await setFiles(modal.findAll('input[type="file"]')[0], [
+        new File(['one'], 'one.png', { type: 'image/png' }),
+        new File(['two'], 'two.png', { type: 'image/png' }),
+        new File(['three'], 'three.png', { type: 'image/png' }),
+      ])
+
+      expect(readers).toHaveLength(0)
+      expect(modal.find('.h100-err').text()).toContain('mark3.screenshotLimit')
+      expect(modal.findAll('.mark3-proof-item')).toHaveLength(0)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('invalidates a pending Mark 3 read when removing an existing screenshot', async () => {
+    const readers = stubDeferredFileReader()
+    try {
+      const wrapper = mountPage()
+      await flushPromises()
+      await openMark3Submit(wrapper)
+      const modal = wrapper.find('.mark3-modal')
+      const screenshots = modal.findAll('input[type="file"]')[0]
+      const first = new File(['first'], 'first.png', { type: 'image/png', lastModified: 1 })
+
+      await setFiles(screenshots, [first])
+      readers[0].result = 'data:image/png;base64,AAAA'
+      readers[0].onload()
+      await vi.waitFor(() => expect(modal.findAll('.mark3-proof-item')).toHaveLength(1))
+
+      await setFiles(screenshots, [first])
+      expect(readers).toHaveLength(1)
+      expect(modal.find('.h100-err').text()).toContain('mark3.screenshotDuplicateIgnored')
+
+      await setFiles(screenshots, [
+        new File(['second'], 'second.png', { type: 'image/png', lastModified: 2 })
+      ])
+      expect(readers).toHaveLength(2)
+      await modal.find('.mark3-proof-item .h100-remove-file').trigger('click')
+      readers[1].result = 'data:image/png;base64,BBBB'
+      readers[1].onload()
+      await flushPromises()
+
+      expect(modal.find('.h100-file-reading').exists()).toBe(false)
+      expect(modal.findAll('.mark3-proof-item')).toHaveLength(0)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('preserves a pending Mark 3 screenshot read after closing the modal', async () => {
+    const readers = stubDeferredFileReader()
+    try {
+      const wrapper = mountPage()
+      await flushPromises()
+      await openMark3Submit(wrapper)
+      await setFiles(
+        wrapper.find('.mark3-modal').findAll('input[type="file"]')[0],
+        [new File(['proof'], 'late-mark3.png', { type: 'image/png', lastModified: 1 })]
+      )
+      expect(readers).toHaveLength(1)
+      expect(wrapper.find('.h100-file-reading').exists()).toBe(true)
+
+      await wrapper.find('.mark3-submit-overlay').trigger('click')
+      expect(wrapper.find('.mark3-submit-overlay').attributes('style')).toContain('display: none')
+      readers[0].result = 'data:image/png;base64,AAAA'
+      readers[0].onload()
+      await flushPromises()
+
+      await openMark3Submit(wrapper)
+      const reopened = wrapper.find('.mark3-modal')
+      expect(reopened.text()).toContain('late-mark3.png')
+      expect(reopened.find('.h100-file-reading').exists()).toBe(false)
+      expect(reopened.find('.mark3-modal-submit').attributes('disabled')).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('rejects a Mark 3 win rate with more than two decimal places before upload', async () => {
     const wrapper = mountPage()
     await flushPromises()
@@ -795,7 +974,7 @@ describe('HoFPage', () => {
     await wrapper.find('.mark3-submit-btn').trigger('click')
 
     expect(api.login).toHaveBeenCalledWith('hof')
-    expect(wrapper.find('.mark3-modal').exists()).toBe(false)
+    expect(wrapper.find('.mark3-submit-overlay').attributes('style')).toContain('display: none')
   })
 
   it('blocks a second Mark 3 submission for a vehicle with a CURRENT record', async () => {

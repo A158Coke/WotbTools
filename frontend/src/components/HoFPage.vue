@@ -801,16 +801,16 @@ function clearMark3Draft() {
   resetMark3Draft()
 }
 
-function mark3FileKey(file) {
-  return file.key || [file.name, file.size, file.lastModified].join('\u0000')
+function mark3ReplayFileKey(file) {
+  return [file.name, file.size, file.lastModified].join('\u0000')
 }
 
-function collectUniqueMark3Files(files, existingKeys) {
-  const knownKeys = new Set(existingKeys)
+function collectUniqueMark3Replays(files) {
+  const knownKeys = new Set(mark3SubmitForm.replays.map(mark3ReplayFileKey))
   const additions = []
   let duplicateCount = 0
   for (const file of files) {
-    const key = mark3FileKey(file)
+    const key = mark3ReplayFileKey(file)
     if (knownKeys.has(key)) {
       duplicateCount++
       continue
@@ -821,20 +821,13 @@ function collectUniqueMark3Files(files, existingKeys) {
   return { additions, duplicateCount }
 }
 
-function onMark3ScreenshotsSelected(screenshots) {
+function onMark3ScreenshotsSelected(screenshots, duplicateCount) {
   mark3ScreenshotErr.value = ''
-  const { additions, duplicateCount } = collectUniqueMark3Files(
-    screenshots, mark3SubmitForm.proofScreenshots.map(mark3FileKey)
-  )
-  if (!additions.length) {
+  if (!screenshots.length) {
     mark3ScreenshotErr.value = duplicateCount ? t('mark3.screenshotDuplicateIgnored') : ''
     return
   }
-  if (mark3SubmitForm.proofScreenshots.length + additions.length > 2) {
-    mark3ScreenshotErr.value = t('mark3.screenshotLimit')
-    return
-  }
-  mark3SubmitForm.proofScreenshots.push(...additions)
+  mark3SubmitForm.proofScreenshots.push(...screenshots)
   mark3ScreenshotErr.value = duplicateCount ? t('mark3.screenshotDuplicateIgnored') : ''
 }
 
@@ -842,6 +835,7 @@ function onMark3ScreenshotUploadError(code) {
   const errorKey = {
     'invalid-type': 'mark3.invalidImageType',
     'too-large': 'mark3.invalidImageSize',
+    'too-many': 'mark3.screenshotLimit',
   }[code] || 'mark3.imageReadError'
   mark3ScreenshotErr.value = t(errorKey)
 }
@@ -851,6 +845,7 @@ function onMark3ScreenshotsReading(reading) {
 }
 
 function removeMark3Screenshot(index) {
+  mark3ScreenshotUploader.value?.invalidatePendingRead()
   mark3SubmitForm.proofScreenshots.splice(index, 1)
   mark3ScreenshotErr.value = ''
 }
@@ -864,9 +859,7 @@ function onMark3ReplaysChange(event) {
     mark3ReplayErr.value = t('mark3.invalidReplayType')
     return
   }
-  const { additions, duplicateCount } = collectUniqueMark3Files(
-    files, mark3SubmitForm.replays.map(mark3FileKey)
-  )
+  const { additions, duplicateCount } = collectUniqueMark3Replays(files)
   if (mark3SubmitForm.replays.length + additions.length > 5) {
     mark3ReplayErr.value = t('mark3.replayLimit')
     return
@@ -1369,7 +1362,7 @@ function fmtDate(s) {
       </div>
     </div>
 
-    <div v-if="showSubmit" class="modal-overlay" @click.self="closeSubmit">
+    <div v-show="showSubmit" class="modal-overlay h100-submit-overlay" @click.self="closeSubmit">
       <div class="modal h100-modal">
         <h2>{{ $t('hundred.submitTitle') }}</h2>
         <p>{{ $t(submitMode === SUBMIT_MODE_WARGAMING ? 'hundred.wgSubmitDesc' : 'hundred.submitDesc') }}</p>
@@ -1426,7 +1419,7 @@ function fmtDate(s) {
           <small>{{ $t(submitMode === SUBMIT_MODE_WARGAMING ? 'hundred.wgClaimedBattlesHint' : 'hundred.claimedBattlesHint') }}</small>
         </div>
 
-        <template v-if="submitMode === SUBMIT_MODE_MANUAL">
+        <div v-show="submitMode === SUBMIT_MODE_MANUAL" class="h100-manual-evidence">
           <div class="h100-field">
             <span class="h100-field-label">{{ $t('hundred.screenshotLabel') }}</span>
           <ImageDataUploader ref="screenshotUploader"
@@ -1457,7 +1450,7 @@ function fmtDate(s) {
             </ul>
             <p v-if="replayErr" class="h100-err">{{ replayErr }}</p>
           </div>
-        </template>
+        </div>
 
         <p v-if="needProfile" class="h100-need-profile">
           {{ submitError }} <a href="/?view=profile">{{ $t('hundred.goProfile') }}</a>
@@ -1475,7 +1468,7 @@ function fmtDate(s) {
       </div>
     </div>
 
-    <div v-if="showMark3Submit" class="modal-overlay" @click.self="closeMark3Submit">
+    <div v-show="showMark3Submit" class="modal-overlay mark3-submit-overlay" @click.self="closeMark3Submit">
       <div class="modal h100-modal mark3-modal">
         <h2>{{ $t('mark3.submitTitle') }}</h2>
         <p>{{ $t('mark3.submitDesc') }}</p>
@@ -1511,7 +1504,8 @@ function fmtDate(s) {
           <span class="h100-field-label">{{ $t('mark3.screenshotLabel') }}
             <span class="h100-counter">{{ $t('mark3.screenshotCounter', { current: mark3SubmitForm.proofScreenshots.length }) }}</span>
           </span>
-          <ImageDataUploader ref="mark3ScreenshotUploader" multiple
+          <ImageDataUploader ref="mark3ScreenshotUploader" multiple :max-files="2"
+                              :existing-keys="mark3SubmitForm.proofScreenshots.map(screenshot => screenshot.key)"
                               @selected="onMark3ScreenshotsSelected"
                               @error="onMark3ScreenshotUploadError"
                               @reading="onMark3ScreenshotsReading" />
@@ -1535,7 +1529,7 @@ function fmtDate(s) {
           <input ref="mark3ReplaysInput" type="file" accept=".wotbreplay" multiple @change="onMark3ReplaysChange" />
           <small>{{ $t('mark3.replaysHint') }}</small>
           <ul v-if="mark3SubmitForm.replays.length" class="h100-selected-files">
-            <li v-for="(replay, index) in mark3SubmitForm.replays" :key="mark3FileKey(replay)" class="h100-selected-file">
+            <li v-for="(replay, index) in mark3SubmitForm.replays" :key="mark3ReplayFileKey(replay)" class="h100-selected-file">
               <span class="h100-file-index">{{ index + 1 }}</span>
               <span class="h100-selected-name" :title="replay.name">{{ replay.name }}</span>
               <button type="button" class="h100-remove-file" :aria-label="$t('mark3.removeFile', { name: replay.name })" @click="removeMark3Replay(index)">×</button>
