@@ -155,10 +155,10 @@ class LeagueRatingBatchAggregatorTest {
 
     @Test
     void sparseAssistMedianCollapseFixedByMean() {
-        // 158布丁 型回归：同账号 6 场 rated，Assist Score = [0,0,0,0,100,100]
-        // （4 场 assist=0 → score 0；2 场 assist=5000 全场唯一 → score 100）。
-        // median = 0（超过一半场为 0）会把 Radar 画成 0/100；
-        // dimensionMeans 必须 = (0+0+0+0+100+100)/6 = 33.333...（真实 0 进 mean，不过滤）。
+        // 158布丁 型回归：同账号 6 场 rated，Assist Score = [0,0,0,0,110,110]
+        // （4 场 assist=0 → score 0；2 场 assist=5000 全场唯一 → score 110 = MAX_ASSIST）。
+        // median = 0（超过一半场为 0）会把 Radar 画成 0/110；
+        // dimensionMeans 必须 = (0+0+0+0+110+110)/6 = 36.666...（真实 0 进 mean，不过滤）。
         final List<LeagueRatingResult> results = new java.util.ArrayList<>();
         for (int i = 0; i < 6; i++) {
             final List<LeagueTestBattles.PlayerSpec> specs = LeagueTestBattles.defaultSevenVsSeven();
@@ -172,7 +172,7 @@ class LeagueRatingBatchAggregatorTest {
         assertEquals(6, summary.battles());
         assertEquals(0.0, summary.dimensionMedians().get(1), 1e-9,
                 "Assist median 仍 = 0（Table 典型比赛得分契约保留）");
-        assertEquals(100.0 / 3.0, summary.dimensionMeans().get(1), 1e-9,
+        assertEquals(110.0 / 3.0, summary.dimensionMeans().get(1), 1e-9,
                 "Assist mean 必须 > 0（Radar 平均能力画像；真实 0 参与平均）");
         assertTrue(summary.dimensionMeans().get(1) > 0, "Radar Assist 不得因 median-collapse 显示 0");
     }
@@ -200,7 +200,7 @@ class LeagueRatingBatchAggregatorTest {
         final PlayerLeagueSummary summary = batch.playerSummaries().stream()
                 .filter(p -> p.accountId() == 1001L).findFirst().orElseThrow();
         assertEquals(2, summary.battles(), "battles = rated-only");
-        assertEquals(100.0, summary.dimensionMeans().get(1), 1e-9,
-                "ineligible 场不进入 mean 分母（2 场都是 100 → mean 仍 100，不是 66.67）");
+        assertEquals(110.0, summary.dimensionMeans().get(1), 1e-9,
+                "ineligible 场不进入 mean 分母（2 场都是 110 → mean 仍 110，不是 73.33）");
     }
 }

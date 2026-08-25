@@ -5,6 +5,15 @@
 ## [Unreleased]
 
 ### Added
+- **League Rating V4.1 算法迁移**：七维满分由 400/100/100/150/50/100/100 精确调整为
+  365/110/110/180/50/75/110（总分 1000 不变）；射击效率由 pure Wilson 迁移为
+  Soft Wilson（`0.9×Wilson95%下界 + 0.1×raw`，命中 30% / 击穿 70% 合成）；存活/互换 RC
+  改为「胜方存活 75 / directional trade 50 / 其它 0」，彻底删除 `LOSER_TOP4`
+  （`STATE_LOSER_TOP4`、loser top4 集合/排序/相关测试与文档）；`TradeFacts` 由 symmetric
+  ±10s 迁移为 directional `[0, +5s]`（`TRADE_AFTER_DEATH_WINDOW_SEC = 5.0`，共享事实源
+  自动同步 League RC / Performance KAST / traded_deaths）；败方存活恒 0（回归测试锁定，
+  永久防止 LOSER_TOP4 回归）。DIM_WEIGHTS / Normalization / Exchange / Team Rating /
+  batch median / winner ×1.05 保持不动。文档 `league-rating.md`、`performance.md` 同步。
 - **Replay Processing Pipeline V2**：回放处理链重构为「一次上传 → 一次 full process →
   多消费者复用」：
   - 全局 `ReplayParseScheduler`（默认并发 2，`REPLAY_PARSE_MAX_CONCURRENT`；job-aware
@@ -155,15 +164,17 @@
     不一致即 conflict；代码注释明确 hard-conflict vs evidence-reconciliation 分类。
   - 回归测试：三副本 6 排列全部 conflict / 全部 not-conflict + canonical 一致；每个上传顺序测试
     使用全新 Battle 实例（canonicalization 原地 mutate，禁止复用已收口对象）。
-- **互换击杀窗口 ±5s → ±10s（用户批准）**：`TradeFacts.TRADE_WINDOW_SEC = 10.0`，
-  边界包含（T±10.0 算 trade、T±10.01 不算）；League Survival/Trade、Performance KAST、
+- **互换击杀窗口迁移为 directional 0..+5s（V4.1，取代早期 ±10s symmetric 决策）**：
+  `TradeFacts.TRADE_AFTER_DEATH_WINDOW_SEC = 5.0`，玩家死亡 ≤ 敌方死亡 ≤ 玩家死亡+5s
+  （边界包含，敌方早于玩家死亡不计）；League Survival/Trade、Performance KAST、
   tradedDeaths 共享同一事实源自动同步。duplicate 死亡时间证据容差仍为 1s，两参数明确独立。
 - **原始射击比例语义修正（UI 真实百分比）**：`hit_rate = hits/shots`、
   `pen_rate = penetrations/hits`（分母是命中次数，不是射击次数；单场 `Columns.STAT` 与跨场
   `Agg`/`AggregateColumns` 单一事实源同步）。denominator == 0 → null（API null / Excel 空单元格 /
   UI "--"，禁止 0/0 伪装 0%）；numerator == 0 且 denominator > 0 → 合法 0%。跨场基于总量
   sum(pens)/sum(hits)，不是各场平均。**UI raw rate ≠ Rating shooting**：League Rating 射击维度
-  内部仍为 Wilson 95% 置信下界合成（30% 命中 / 70% 击穿），未因 UI 显示真实百分比而改裸比例。
+  内部为 Soft Wilson（90% Wilson 95% 置信下界 + 10% raw rate，30% 命中 / 70% 击穿），
+  未因 UI 显示真实百分比而改纯裸比例。
 - **全局移除 Potential Damage / 潜在伤害指标**（用户正式决策，非仅 League）：
   - 删除 `PotentialDamage` 计算类、`PlayerResult.potentialDamage*` 字段、
     `Columns.PLAYER` / `AggregateColumns` / `Agg` / `PerformanceMetricsCalculator.Row`

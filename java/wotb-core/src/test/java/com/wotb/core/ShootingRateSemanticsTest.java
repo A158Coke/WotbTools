@@ -19,7 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * </pre>
  * denominator == 0 → null（unavailable，API null / Excel 空单元格 / UI "--"，禁止 0/0 伪装 0%）；
  * numerator == 0 且 denominator &gt; 0 → 合法 0。跨场基于总量 sum(pens)/sum(hits)，不是各场平均。
- * 与 Rating 内部 shooting 维度（Wilson confidence）是两个不同语义，本测试不涉及 Rating。
+     * 与 Rating 内部 shooting 维度（Soft Wilson：90% Wilson 下界 + 10% raw）是两个不同语义，
+     * 本测试不涉及 Rating。
  */
 class ShootingRateSemanticsTest {
 
@@ -121,11 +122,13 @@ class ShootingRateSemanticsTest {
     }
 
     @Test
-    void leagueRatingShootingStillUsesWilsonNotRawRate() {
-        // 分层契约：UI raw rate = 真实比例；Rating shooting = Wilson confidence。
-        // 本测试锁定 LeagueRatingCalculator 仍消费 wilsonLowerBound（不是裸比例）。
+    void leagueRatingShootingStillUsesWilsonWithinSoftWilson() {
+        // 分层契约：UI raw rate = 真实比例；Rating shooting = Soft Wilson
+        // （90% Wilson 95% 下界 + 10% raw 比例）。
+        // 本测试锁定 LeagueRatingCalculator 仍消费 wilsonLowerBound（不是纯裸比例）。
         // （细节公式在 LeagueRatingCalculatorTest；这里验证 LeagueRatingNormalizer API 仍存在且被使用）
         final double wilson = LeagueRatingNormalizer.wilsonLowerBound(5, 10);
-        assertTrue(wilson >= 0 && wilson <= 1, "Wilson 下界是 confidence ∈ [0,1]，与 raw rate(50%) 是两套语义");
+        assertTrue(wilson >= 0 && wilson <= 1,
+                "Wilson 下界是 confidence ∈ [0,1]，Soft Wilson 中仍承担 90% 权重");
     }
 }
