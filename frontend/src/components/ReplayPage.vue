@@ -113,8 +113,9 @@ const drawerPlayer = computed(() => {
       accountId: row.cells.account_id,
       nickname: row.cells.nickname,
       clan: row.cells.clan || '',
+      // V5：批次主 Rating = league_rating（Evidence Adjustment 后）；rawMedian 为观察中位数
       rating: row.cells.league_rating,
-      ratingMedian: row.cells.league_rating,
+      rawMedian: row.cells.league_rating_raw_median,
       // Summary Radar 七维 = league playerSummary 的 dimensionMeans（rated-battle 算术平均；
       // 与 Table 的 dimensionMedians 严格分离）。aggregate-only 玩家（row.league null）→
       // undefined → Radar 轴 unavailable（"--"），不冒充 0。

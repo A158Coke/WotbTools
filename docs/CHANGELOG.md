@@ -5,6 +5,21 @@
 ## [Unreleased]
 
 ### Added
+- **League Rating V5 Batch Evidence Adjustment（后端 + 前端 + 导出）**：
+  - 新增纯 domain `LeagueBatchPlayerRatingCalculator`（无 Spring/DB/IO）：`E(n)=1-exp(-n/6)`、
+    Anchor=450、单边调整（raw≤450 完全不加分）、0–1000 clamp、`n<=0`/非有限 raw fail closed；
+    常量 `V5_EVIDENCE_ANCHOR` / `EVIDENCE_TIME_CONSTANT` 单一事实源。
+  - `LeagueRatingBatchAggregator` 保留 Raw Batch Median，主 Rating 走 Evidence Adjustment；
+    七维 median/mean 与 Team Rating 硬边界不动。
+  - API contract 迁移（一次性收口，无双语义）：`LeaguePlayerSummaryDto` 由 `ratingMedian`
+    拆为 `ratingV5`（主 Rating）+ `ratingRawMedian`（Raw Observed Median）；列契约新增
+    `league_rating_raw_median`（`LeagueColumns.RATING_RAW_MEDIAN`，默认可隐藏）。
+  - Excel 批量选手汇总：主列「总Rating」= V5，新增「原始中位数」；单场明细仍 V4.1。
+  - 前端：统一玩家表主 Rating=V5 + Observed Median 列（可隐藏）；Drawer summary 显示
+    Observed Median；三语 i18n（zh/en/ru）。
+  - 测试：纯函数（Evidence/Anchor/产品案例/低分不加分/clamp/数值安全）、聚合器
+    （V5 主 Rating、Team/七维不动、轮换 n、顺序不变性、批次无关性）、Excel scope；
+    全量 `mvn -s settings.xml test` + `npm test` + `npm run build` 通过。
 - **League Rating V5 算法说明入口（前端）**：新增 `?view=rating-docs` 页面，构建期以
   `?raw` 将 `docs/WotBTools_League_Rating_V5.md`（canonical 单一事实源）纳入独立 chunk，
   复用 `MarkdownContent.vue` 渲染；ReplayPage 结果工具栏在 League 模式显示「算法说明」按钮，

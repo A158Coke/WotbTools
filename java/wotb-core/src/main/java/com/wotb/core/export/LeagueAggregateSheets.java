@@ -58,7 +58,9 @@ final class LeagueAggregateSheets {
         header.add(new String[]{"战队", "10"});
         // rated-only sample：League 专属 summary 的场次是评分样本，与 Replay 汇总的解析场次区分
         header.add(new String[]{"评分场次", "8"});
-        header.add(new String[]{"总Rating中位数", "12"});
+        // V5：主 Rating = Batch Player Rating（Evidence Adjustment）；Raw Median 是 explainability
+        header.add(new String[]{"总Rating", "12"});
+        header.add(new String[]{"原始中位数", "12"});
         // 七维标题单一来源：LeagueExcelColumns.dimensionTitle（key 由 LeagueColumns.DIM_KEYS 驱动）
         for (final String key : LeagueColumns.DIM_KEYS) {
             header.add(new String[]{LeagueExcelColumns.dimensionTitle(key) + "中位数", "10"});
@@ -76,7 +78,8 @@ final class LeagueAggregateSheets {
             styles.setCell(row.createCell(c++), s.nickname(), styles.plain(), "nickname");
             styles.setCell(row.createCell(c++), s.clan(), styles.plain(), "clan");
             styles.setCell(row.createCell(c++), s.battles(), styles.plain(), "battles");
-            styles.setCell(row.createCell(c++), ExcelStyles.r1(s.ratingMedian()), styles.plain(), "league_rating");
+            styles.setCell(row.createCell(c++), ExcelStyles.r1(s.batchRatingV5()), styles.plain(), "league_rating");
+            styles.setCell(row.createCell(c++), ExcelStyles.r1(s.ratingMedian()), styles.plain(), "league_rating_raw_median");
             for (final Double d : s.dimensionMedians()) {
                 styles.setCell(row.createCell(c++), ExcelStyles.r1(d), styles.plain(), "league_score");
             }

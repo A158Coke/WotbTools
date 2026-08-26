@@ -8,11 +8,11 @@ describe('mergeCwPlayerRows', () => {
     { team: 1, cells: { account_id: 3001, nickname: 'C', battles: 4, damage_avg: 600, earned_avg: 120 } },
   ]
   const summaries = [
-    { accountId: 1001, nickname: 'A', clan: 'AAA', battles: 3, ratingMedian: 850.4,
+    { accountId: 1001, nickname: 'A', clan: 'AAA', battles: 3, ratingV5: 779.3, ratingRawMedian: 850.4,
       dimensionMedians: [300.2, 60, 70, 110, 40, 80, 100],
       dimensionMeans: [250, 40, 30, 75, 10, 50, 65], mvpCount: 2,
       contribution: 22.4, kast: 100, impact: 151.2 },
-    { accountId: 2001, nickname: 'B', clan: 'BBB', battles: 2, ratingMedian: 720.1,
+    { accountId: 2001, nickname: 'B', clan: 'BBB', battles: 2, ratingV5: 666.4, ratingRawMedian: 720.1,
       dimensionMedians: [250, 50, 60, 90, 30, 70, 80], mvpCount: 0,
       contribution: 18.1, kast: 80, impact: 120.5 },
   ]
@@ -24,7 +24,9 @@ describe('mergeCwPlayerRows', () => {
     expect(a.league.accountId).toBe(1001)
     // Radar mean 契约原样透传（Table 的 dimensionMedians 语义不受影响）
     expect(a.league.dimensionMeans).toEqual([250, 40, 30, 75, 10, 50, 65])
-    expect(a.cells.league_rating).toBe(850.4)
+    // V5：主 Rating = ratingV5；Raw Observed Median 独立透传（explainability）
+    expect(a.cells.league_rating).toBe(779.3)
+    expect(a.cells.league_rating_raw_median).toBe(850.4)
     expect(a.cells.league_damage_score).toBe(300.2)
     expect(a.cells.league_shooting_score).toBe(100)
     expect(a.cells.mvp_count).toBe(2)
@@ -53,7 +55,8 @@ describe('mergeCwPlayerRows', () => {
       { team: 1, cells: { account_id: 1001, nickname: 'A', clan: 'AAA', battles: 1, wins: 1, damage_avg: 500, assisted_avg: 100, kills_avg: 2, earned_avg: 80, contribution: 22.4, kast: 100, impact: 151.2 } },
     ], summaries)
     const a = rows.find(r => r.cells.account_id === 1001)
-    expect(a.cells.league_rating).toBe(850.4)
+    expect(a.cells.league_rating).toBe(779.3)
+    expect(a.cells.league_rating_raw_median).toBe(850.4)
     expect(a.cells.damage_avg).toBe(500)
     expect(a.cells.assisted_avg).toBe(100)
     expect(a.cells.kills_avg).toBe(2)
@@ -69,7 +72,8 @@ describe('mergeCwPlayerRows', () => {
     const rows = mergeCwPlayerRows([], summaries)
     expect(rows).toHaveLength(2)
     const a = rows.find(r => r.cells.account_id === 1001)
-    expect(a.cells.league_rating).toBe(850.4)
+    expect(a.cells.league_rating).toBe(779.3)
+    expect(a.cells.league_rating_raw_median).toBe(850.4)
     expect(a.cells.nickname).toBe('A')
     expect(a.cells.damage_avg == null).toBe(true) // aggregate 缺失 → UI '--'（仅防御路径）
     expect(a.cells.rated_battles).toBe(3)
@@ -82,7 +86,7 @@ describe('mergeCwPlayerRows', () => {
     ]
     // league summary 携带 rated-only 样本（不同样本，数值不同）
     const rows = mergeCwPlayerRows(aggWithPerf, [{
-      accountId: 1001, nickname: 'A', clan: 'AAA', battles: 8, ratingMedian: 850,
+      accountId: 1001, nickname: 'A', clan: 'AAA', battles: 8, ratingV5: 779.3, ratingRawMedian: 850,
       dimensionMedians: [300, 60, 70, 110, 40, 80, 100], mvpCount: 2,
       contribution: 30.0, kast: 99, impact: 200.0,
     }])
