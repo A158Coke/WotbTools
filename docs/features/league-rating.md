@@ -416,6 +416,12 @@ Team Rating 计算；Radar aggregation 只发生在多场 player summary visuali
   `vehicle-portraits/runtime.js` 的 `loadVehiclePortrait` 按 tankId 懒加载），
   **禁止浏览器运行时请求 BlitzKit**；快速切换选手用 token 防旧异步结果覆盖。
   缺图 / 非 Tier X 时保留名称与统计、隐藏图片区、不显示破图图标，不影响雷达与 Drawer。
+- **展示位置与侧栏交互**：采用可靠 `mostUsedVehicle`（名称非空、非 `#<tankId>` 占位名）时，坦克卡
+  渲染在 Rating 信息与雷达图**之间**。选手 Drawer 桌面/平板端是**非模态侧栏**（backdrop
+  `pointer-events:none` 且不压暗，Drawer 自身 `pointer-events:auto`），打开后左侧 Grid 保持可交互：
+  点击其它玩家原地切换、Drawer 不关闭、表格高亮与左右箭头同步（复用 `select-player` →
+  `selectedPlayerContext` → `navOrder/navIndex`）；移动端(<768px)恢复 modal 遮罩与点击关闭，
+  `aria-modal` 仅在移动端为 true。
 
 ## Potential Damage（潜在伤害）
 

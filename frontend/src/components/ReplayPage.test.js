@@ -11,6 +11,12 @@ const i18n = vi.hoisted(() => ({
     : key)
 }))
 
+// 坦克贴图 runtime mock：缺图场景（portrait=null）——完整数据链测试聚焦文字卡（名称/场次/比例），
+// 不依赖真实 webp 资产，也避免把贴图 runtime 静态拉进 ReplayPage 测试。
+vi.mock('../vehicle-portraits/runtime.js', () => ({
+  loadVehiclePortrait: vi.fn(() => Promise.resolve(null)),
+}))
+
 const h2c = vi.hoisted(() => {
   const calls = []
   let impl
@@ -332,7 +338,8 @@ function mountPage(overrides = {}) {
             '<p class="scroll-hint">Scroll</p></div>'
         },
         RemoveConfirmModal: { template: '<div class="remove-modal-stub" />' },
-        PlayerDetailDrawer: { props: ['context', 'player'], template: '<div class="drawer-stub">{{ context ? "open:" + context.accountId + ":" + JSON.stringify(player || {}) : "closed" }}</div>' },
+        // realDrawer=true 时不 stub PlayerDetailDrawer：让真实 Drawer 渲染，用于「完整数据链」验收。
+        ...(overrides.realDrawer ? {} : { PlayerDetailDrawer: { props: ['context', 'player'], template: '<div class="drawer-stub">{{ context ? "open:" + context.accountId + ":" + JSON.stringify(player || {}) : "closed" }}</div>' } }),
         ...(overrides.stubs || {})
       }
     }
@@ -2363,6 +2370,47 @@ describe('ReplayPage Drawer 玩家坦克数据透传', () => {
     const player = JSON.parse(drawer.text().replace(/^open:\d+:/, ''))
     expect(player.mostUsedVehicle).toEqual({ tankId: 7169, tankName: 'IS-7', battles: 3 })
     expect(player.ratedBattles).toBe(8)
+    wrapper.unmount()
+  })
+
+  it('完整数据链：真实 backend playerSummaries → mergeCwPlayerRows → 点击 Summary Grid 行 → 真实 Drawer 显示坦克名称/场次/比例', async () => {
+    // 「不能只构造一个直接带 mostUsedVehicle 的 Drawer fixture」——从真实后端响应出发，
+    // 走 ReplayPage 的 mergeCwPlayerRows + 真实 CwPlayerSummaryTable 行点击 + 真实 PlayerDetailDrawer 渲染。
+    state.init.resp = makeResp({
+      aggregate: [{ team: 1, cells: { account_id: 1001, nickname: 'Alpha', clan: 'AAA', battles: 12 } }],
+      battles: [],
+      leagueMode: true,
+      league: {
+        mode: 'LEAGUE_RATING',
+        columns: [{ key: 'league_rating', max: 1000, fixed: true }],
+        playerSummaries: [
+          { accountId: 1001, nickname: 'Alpha', clan: 'AAA', battles: 8, ratingV5: 850, ratingRawMedian: 850,
+            dimensionMedians: [1, 2, 3, 4, 5, 6, 7], dimensionMeans: [2, 3, 4, 5, 6, 7, 8],
+            mostUsedVehicle: { tankId: 7169, tankName: 'IS-7', battles: 3 } },
+        ],
+        playerSummaryColumns: [], teamSummaries: [], teamSummaryColumns: [], failures: [],
+      }
+    })
+    state.init.activeTab = 'aggregate'
+    window.__testCwVisible = ['nickname', 'league_rating']
+    const wrapper = mountPage({
+      realDrawer: true,
+      stubs: {
+        PlayerRatingRadar: { props: ['metrics', 'reference', 'referenceLabel'], template: '<div class="radar-stub" />' },
+        teleport: true,
+      }
+    })
+    await flushPromises()
+    const rows = wrapper.findAll('.cw-player-summary tbody tr')
+    expect(rows.length).toBe(1)
+    await rows[0].trigger('click')
+    await flushPromises()
+    // 真实 Drawer（Teleport 已就地渲染）显示坦克文字卡：名称 + 使用场次 + 占比（3/8=37.5%）
+    const vehicle = wrapper.find('[data-testid="player-vehicle"]')
+    expect(vehicle.exists()).toBe(true)
+    expect(vehicle.text()).toContain('IS-7')
+    expect(vehicle.text()).toContain('league.drawer.vehicle_battles')
+    expect(wrapper.find('[data-testid="player-vehicle-rate"]').text()).toBe('37.5%')
     wrapper.unmount()
   })
 
