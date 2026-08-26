@@ -275,31 +275,73 @@ onMounted(() => { window.addEventListener('keydown', onKeydown) })
 onBeforeUnmount(() => { window.removeEventListener('keydown', onKeydown) })
 
 // ---- 导出 Rating Profile PNG（§41-48）：专用卡片（非 Drawer 截图）----
+// 导出前捕获不可变快照，offscreen 卡只消费快照——导出期间切换玩家不产生“新玩家数据 + 旧坦克图”混合 PNG。
 const exportingProfile = ref(false)
 const exportCardRef = ref(null)
 const exportPortrait = ref(null)
-const cardPlayerPoints = computed(() => polygonPoints(radarMetrics.value.map(m => m.normalized), radarMetrics.value.length))
-const cardRefPoints = computed(() => polygonPoints(referenceSeries.value.map(m => m.normalized), referenceSeries.value.length))
-const cardGrids = computed(() => RADAR.GRID_LEVELS.map(ratio => ({ ratio, points: gridPolygonPoints(radarMetrics.value.length, ratio) })))
-const cardAxes = computed(() => Array.from({ length: radarMetrics.value.length }, (_, i) => axisRay(i, radarMetrics.value.length)))
-const cardLabels = computed(() => Array.from({ length: radarMetrics.value.length }, (_, i) => {
-  const [x, y] = axisPoint(i, radarMetrics.value.length, RADAR.LABEL_RADIUS, RADAR)
-  const m = radarMetrics.value[i]
-  return { x, y, label: m?.label || '', tip: m?.tip || '' }
-}))
-const cardScaleTicks = computed(() => RADAR.GRID_LEVELS.map(ratio => ({ ratio, p: scaleTickPosition(radarMetrics.value.length, ratio) })))
-const cardDetailRows = computed(() => radarMetrics.value.map((m, i) => {
-  const ref = referenceSeries.value[i]
+const exportSnapshot = ref(null)
+
+// 出口卡只消费 exportSnapshot（快照未建时为空/占位），禁止再读实时 props/vehicle/radarMetrics/referenceSeries。
+const snapIsSummary = computed(() => !!exportSnapshot.value?.isSummary)
+const snapNickname = computed(() => exportSnapshot.value?.nickname || '--')
+const snapRating = computed(() => exportSnapshot.value?.rating || '--')
+const snapRawMedian = computed(() => exportSnapshot.value?.rawMedian ?? null)
+const snapRatedBattles = computed(() => exportSnapshot.value?.ratedBattles ?? null)
+const snapReferenceLabel = computed(() => exportSnapshot.value?.referenceLabel || '')
+const snapVehicle = computed(() => exportSnapshot.value?.vehicle || null)
+const snapMetrics = computed(() => exportSnapshot.value?.metrics || [])
+const snapRefs = computed(() => exportSnapshot.value?.refs || [])
+const snapPlayerPoints = computed(() => exportSnapshot.value?.playerPoints || [])
+const snapRefPoints = computed(() => exportSnapshot.value?.refPoints || [])
+const snapGrids = computed(() => exportSnapshot.value?.grids || [])
+const snapAxes = computed(() => exportSnapshot.value?.axes || [])
+const snapLabels = computed(() => exportSnapshot.value?.labels || [])
+const snapScaleTicks = computed(() => exportSnapshot.value?.scaleTicks || [])
+const snapDetailRows = computed(() => exportSnapshot.value?.detailRows || [])
+
+/** 从当前实时状态构建导出所需数据的一次性不可变快照（在任何 await 之前调用）。 */
+function buildExportSnapshot() {
+  const p = props.player
+  const v = vehicle.value
+  const metrics = radarMetrics.value.map(m => ({ ...m }))
+  const refs = referenceSeries.value.map(m => ({ ...m }))
   return {
-    label: m.label, tip: m.tip || '',
-    player: m.displayValue || '--',
-    reference: (ref && ref.available) ? ref.displayValue : '--',
+    isSummary: isSummary.value,
+    nickname: p.nickname,
+    rating: ratingLine().rating,
+    rawMedian: p.rawMedian,
+    ratedBattles: p.cells?.rated_battles ?? null,
+    referenceLabel: referenceLabel.value,
+    vehicle: v ? { ...v } : null,
+    metrics,
+    refs,
+    playerPoints: polygonPoints(metrics.map(m => m.normalized), metrics.length),
+    refPoints: polygonPoints(refs.map(m => m.normalized), refs.length),
+    grids: RADAR.GRID_LEVELS.map(ratio => ({ ratio, points: gridPolygonPoints(metrics.length, ratio) })),
+    axes: Array.from({ length: metrics.length }, (_, i) => axisRay(i, metrics.length)),
+    scaleTicks: RADAR.GRID_LEVELS.map(ratio => ({ ratio, p: scaleTickPosition(metrics.length, ratio) })),
+    labels: Array.from({ length: metrics.length }, (_, i) => {
+      const [x, y] = axisPoint(i, metrics.length, RADAR.LABEL_RADIUS, RADAR)
+      const m = metrics[i]
+      return { x, y, label: m?.label || '', tip: m?.tip || '' }
+    }),
+    detailRows: metrics.map((m, i) => {
+      const ref = refs[i]
+      return {
+        label: m.label, tip: m.tip || '',
+        player: m.displayValue || '--',
+        reference: (ref && ref.available) ? ref.displayValue : '--',
+      }
+    }),
   }
-}))
+}
 
 async function exportProfile() {
   if (exportingProfile.value || !props.player) return
   exportingProfile.value = true
+  // 任何 await 之前固定快照：导出卡/图片/文件名全部来自它，抵御导出期间父组件 props / Tab / selection 变化。
+  exportSnapshot.value = buildExportSnapshot()
+  exportPortrait.value = null
   try {
     await nextTick()
     await ensureVehiclePortraitForExport()
@@ -310,19 +352,21 @@ async function exportProfile() {
     })
     const blob = await new Promise(r => canvas.toBlob(r, 'image/png'))
     if (!blob) throw new Error('toBlob returned null')
-    const base = 'wotbtools-rating-profile-' + sanitizeFilename(props.player.nickname || 'player')
+    const base = 'wotbtools-rating-profile-' + sanitizeFilename(exportSnapshot.value.nickname || 'player')
     await downloadBlob(blob, base + '.png')
   } catch (e) {
     console.error(e)
   } finally {
+    exportSnapshot.value = null
     exportPortrait.value = null
     exportingProfile.value = false
   }
 }
 
-/** 导出卡坦克图：先懒加载 URL，再确认图片已解码；失败/缺图返回 null（文字版导出，不阻塞 PNG）。 */
+/** 导出卡坦克图：先懒加载 URL，再确认图片已解码；失败/缺图返回 null（文字版导出，不阻塞 PNG）。
+ * 只消费导出快照中的 vehicle，避免异步恢复后读到已切换选手的车辆。 */
 async function ensureVehiclePortraitForExport() {
-  const v = vehicle.value
+  const v = exportSnapshot.value?.vehicle
   if (!v || v.tankId == null) {
     exportPortrait.value = null
     return
@@ -454,53 +498,53 @@ function ensureImageLoaded(url) {
     </div>
   </Teleport>
 
-  <!-- 导出专用 Rating Profile 卡（offscreen，非 Drawer 截图；实色 token 规避 color-mix 兼容） -->
+  <!-- 导出专用 Rating Profile 卡（offscreen 不可变快照；实色 token 规避 color-mix 兼容） -->
   <Teleport to="body">
     <div v-if="exportingProfile" class="rp-export" ref="exportCardRef">
       <div class="rp-card">
-        <div class="rp-brand">WotBTools · League Rating{{ isSummary ? ' V5' : '' }}</div>
-        <div class="rp-player">{{ player?.nickname || '--' }}<span class="rp-scope">{{ referenceLabel }}</span></div>
+        <div class="rp-brand">WotBTools · League Rating{{ snapIsSummary ? ' V5' : '' }}</div>
+        <div class="rp-player">{{ snapNickname }}<span class="rp-scope">{{ snapReferenceLabel }}</span></div>
         <div class="rp-headline">
           <div class="rp-rating">
             <span class="rp-rating-label">{{ t('league.drawer.rating_label') }}</span>
-            <span class="rp-rating-value">{{ ratingLine().rating }}</span>
+            <span class="rp-rating-value">{{ snapRating }}</span>
           </div>
-          <div v-if="isSummary" class="rp-headline-extra">
-            <span class="rp-extra">{{ t('league.drawer.observed_median') }}: <b>{{ num(player?.rawMedian) }}</b></span>
-            <span class="rp-extra">{{ t('league.drawer.rated_battles') }}: <b>{{ player?.cells?.rated_battles ?? '--' }}</b></span>
+          <div v-if="snapIsSummary" class="rp-headline-extra">
+            <span class="rp-extra">{{ t('league.drawer.observed_median') }}: <b>{{ num(snapRawMedian) }}</b></span>
+            <span class="rp-extra">{{ t('league.drawer.rated_battles') }}: <b>{{ snapRatedBattles ?? '--' }}</b></span>
           </div>
         </div>
-        <!-- 导出卡坦克区（与 Drawer 同数据；缺图时文字版，不阻塞 PNG） -->
-        <div v-if="vehicle" class="rp-vehicle">
-          <div class="rp-vehicle-label">{{ vehicle.label }}</div>
+        <!-- 导出卡坦克区（消费快照；缺图时文字版，不阻塞 PNG） -->
+        <div v-if="snapVehicle" class="rp-vehicle">
+          <div class="rp-vehicle-label">{{ snapVehicle.label }}</div>
           <div class="rp-vehicle-body">
-            <img v-if="exportPortrait" :src="exportPortrait" :alt="vehicle.tankName" class="rp-vehicle-img" />
+            <img v-if="exportPortrait" :src="exportPortrait" :alt="snapVehicle.tankName" class="rp-vehicle-img" />
             <div class="rp-vehicle-meta">
-              <div class="rp-vehicle-name">{{ vehicle.tankName }}</div>
-              <div v-if="vehicle.battleText || vehicle.rateText" class="rp-vehicle-stats">
-                <span v-if="vehicle.battleText">{{ vehicle.battleText }}</span>
-                <span v-if="vehicle.rateText">{{ vehicle.rateText }}</span>
+              <div class="rp-vehicle-name">{{ snapVehicle.tankName }}</div>
+              <div v-if="snapVehicle.battleText || snapVehicle.rateText" class="rp-vehicle-stats">
+                <span v-if="snapVehicle.battleText">{{ snapVehicle.battleText }}</span>
+                <span v-if="snapVehicle.rateText">{{ snapVehicle.rateText }}</span>
               </div>
             </div>
           </div>
         </div>
         <div class="rp-radar">
           <svg :viewBox="'0 0 340 340'" class="rp-radar-svg">
-            <polygon v-for="g in cardGrids" :key="'g' + g.ratio" :points="g.points" class="rp-grid" :class="{ 'rp-grid-outer': g.ratio === 1 }" />
-            <line v-for="(r, i) in cardAxes" :key="'a' + i" :x1="RADAR.CENTER" :y1="RADAR.CENTER" :x2="r.x" :y2="r.y" class="rp-axis" />
-            <text v-for="t in cardScaleTicks" :key="'t' + t.ratio" :x="t.p.x" :y="t.p.y" text-anchor="middle" dominant-baseline="middle" class="rp-scale">{{ Math.round(t.ratio * 100) }}</text>
-            <polygon v-if="referenceSeries.length" :points="cardRefPoints" class="rp-ref" />
-            <polygon :points="cardPlayerPoints" class="rp-data" />
-            <circle v-for="(m, i) in radarMetrics" :key="'d' + i" v-if="radarMetrics[i]?.available"
-                    :cx="axisPoint(i, radarMetrics.length, radarMetrics[i].normalized)[0]"
-                    :cy="axisPoint(i, radarMetrics.length, radarMetrics[i].normalized)[1]" r="3" class="rp-dot" />
-            <text v-for="(p, i) in cardLabels" :key="'l' + i" :x="p.x" :y="p.y" text-anchor="middle" dominant-baseline="middle" class="rp-label">{{ p.label }}</text>
+            <polygon v-for="g in snapGrids" :key="'g' + g.ratio" :points="g.points" class="rp-grid" :class="{ 'rp-grid-outer': g.ratio === 1 }" />
+            <line v-for="(r, i) in snapAxes" :key="'a' + i" :x1="RADAR.CENTER" :y1="RADAR.CENTER" :x2="r.x" :y2="r.y" class="rp-axis" />
+            <text v-for="t in snapScaleTicks" :key="'t' + t.ratio" :x="t.p.x" :y="t.p.y" text-anchor="middle" dominant-baseline="middle" class="rp-scale">{{ Math.round(t.ratio * 100) }}</text>
+            <polygon v-if="snapRefs.length" :points="snapRefPoints" class="rp-ref" />
+            <polygon :points="snapPlayerPoints" class="rp-data" />
+            <circle v-for="(m, i) in snapMetrics" :key="'d' + i" v-if="snapMetrics[i]?.available"
+                    :cx="axisPoint(i, snapMetrics.length, snapMetrics[i].normalized)[0]"
+                    :cy="axisPoint(i, snapMetrics.length, snapMetrics[i].normalized)[1]" r="3" class="rp-dot" />
+            <text v-for="(p, i) in snapLabels" :key="'l' + i" :x="p.x" :y="p.y" text-anchor="middle" dominant-baseline="middle" class="rp-label">{{ p.label }}</text>
           </svg>
         </div>
         <table class="rp-detail">
-          <thead><tr><th>{{ t('radar_lbl.dimension') }}</th><th>{{ t('radar_lbl.player') }}</th><th>{{ referenceLabel }}</th></tr></thead>
+          <thead><tr><th>{{ t('radar_lbl.dimension') }}</th><th>{{ t('radar_lbl.player') }}</th><th>{{ snapReferenceLabel }}</th></tr></thead>
           <tbody>
-            <tr v-for="(row, i) in cardDetailRows" :key="i">
+            <tr v-for="(row, i) in snapDetailRows" :key="i">
               <td>{{ row.label }}</td><td>{{ row.player }}</td><td>{{ row.reference }}</td>
             </tr>
           </tbody>

@@ -2,7 +2,7 @@
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import PlayerDetailDrawer from './PlayerDetailDrawer.vue'
 import { loadVehiclePortrait } from '../vehicle-portraits/runtime.js'
@@ -15,6 +15,27 @@ vi.mock('vue-i18n', () => ({
 vi.mock('../vehicle-portraits/runtime.js', () => ({
   loadVehiclePortrait: vi.fn(() => Promise.resolve(null)),
 }))
+
+// html2canvas / downloadBlob mock harness（导出行为测试，捕获 offscreen 卡与文件名）。
+const h2c = vi.hoisted(() => {
+  const calls = []
+  let impl
+  return {
+    setImpl: (fn) => { impl = fn },
+    getCalls: () => calls,
+    resetCalls: () => { calls.length = 0 },
+    call: (...args) => {
+      calls.push(args)
+      return impl ? impl(...args) : Promise.resolve({ toBlob: (cb) => cb('blob:data') })
+    },
+  }
+})
+const dl = vi.hoisted(() => ({ downloadBlob: vi.fn(() => Promise.resolve()) }))
+vi.mock('html2canvas', () => ({ default: (...args) => h2c.call(...args) }))
+vi.mock('../utils/exportReplayPng.js', async (importOriginal) => {
+  const orig = await importOriginal()
+  return { ...orig, sanitizeFilename: (s) => (s || 'player'), downloadBlob: dl.downloadBlob }
+})
 
 const SUMMARY_PLAYER = {
   accountId: 1001,
@@ -495,5 +516,104 @@ describe('PlayerDetailDrawer 坦克展示（Summary=最常使用；Battle=本场
     await flushPromises()
     expect(wrapper.find('[data-testid="player-vehicle"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('IS-7')
+  })
+})
+
+describe('Rating Profile PNG 导出不可变快照', () => {
+  // happy-dom 不加载图片，stub 全局 Image 使 onload 触发，否则 ensureImageLoaded 悬挂卡住导出。
+  class MockImage {
+    set src(v) { this._src = v; queueMicrotask(() => this.onload && this.onload()) }
+    get src() { return this._src }
+  }
+  beforeEach(() => {
+    h2c.resetCalls()
+    dl.downloadBlob.mockClear()
+    h2c.setImpl(null)
+    vi.stubGlobal('Image', MockImage)
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('导出期间切换玩家：offscreen 卡与文件名仍为玩家 A（不混入玩家 B）', async () => {
+    const deferred = {}
+    loadVehiclePortrait.mockImplementation((tankId) => new Promise((resolve) => { deferred[tankId] = resolve }))
+    const playerA = { ...SUMMARY_PLAYER, mostUsedVehicle: { tankId: 7169, tankName: 'IS-7', battles: 3 }, ratedBattles: 8 }
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, playerA)
+    await flushPromises()
+
+    await wrapper.find('[data-testid="export-profile"]').trigger('click')
+    await flushPromises()
+    expect(typeof deferred[7169]).toBe('function') // 导出正在等待坦克 A 图
+
+    // 导出等待期间切换为玩家 B（坦克 B=9999 "Maus"）
+    const playerB = { ...SUMMARY_PLAYER, nickname: 'Beta', mostUsedVehicle: { tankId: 9999, tankName: 'Maus', battles: 1 }, ratedBattles: 8 }
+    await wrapper.setProps({ player: playerB })
+    await flushPromises()
+
+    // resolve 坦克 A 的图
+    deferred[7169]('http://a.png')
+    await flushPromises()
+
+    expect(h2c.getCalls().length).toBe(1)
+    const card = h2c.getCalls()[0][0]
+    const cardText = card.textContent
+    expect(cardText).toContain('Alpha') // 玩家 A
+    expect(cardText).toContain('IS-7')  // 坦克 A
+    expect(cardText).toContain('850')   // 玩家 A 总 Rating
+    expect(cardText).not.toContain('Beta')
+    expect(cardText).not.toContain('Maus')
+    const img = card.querySelector('img.rp-vehicle-img')
+    expect(img).toBeTruthy()
+    expect(img.getAttribute('src')).toBe('http://a.png') // 坦克 A 图
+
+    expect(dl.downloadBlob.mock.calls.length).toBe(1)
+    expect(dl.downloadBlob.mock.calls[0][1]).toContain('Alpha') // 文件名用玩家 A
+    wrapper.unmount()
+  })
+
+  it('导出图片失败：仍导出玩家 A 纯文字版（不阻塞 PNG，不含破图）', async () => {
+    loadVehiclePortrait.mockResolvedValue(null)
+    const playerA = { ...SUMMARY_PLAYER, mostUsedVehicle: { tankId: 7169, tankName: 'IS-7', battles: 3 }, ratedBattles: 8 }
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, playerA)
+    await flushPromises()
+
+    await wrapper.find('[data-testid="export-profile"]').trigger('click')
+    await flushPromises()
+
+    expect(h2c.getCalls().length).toBe(1)
+    const card = h2c.getCalls()[0][0]
+    expect(card.textContent).toContain('Alpha')
+    expect(card.textContent).toContain('IS-7')
+    expect(card.querySelector('img.rp-vehicle-img')).toBeNull() // 纯文字降级
+    expect(dl.downloadBlob).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('导出失败：snapshot/portrait/exporting 状态清理后可再次导出（同一玩家）', async () => {
+    const spyErr = vi.spyOn(console, 'error').mockImplementation(() => {})
+    loadVehiclePortrait.mockResolvedValue(null)
+    let fail = true
+    h2c.setImpl(() => {
+      if (fail) return Promise.reject(new Error('boom'))
+      return Promise.resolve({ toBlob: (cb) => cb('blob:data') })
+    })
+    const playerA = { ...SUMMARY_PLAYER, mostUsedVehicle: { tankId: 7169, tankName: 'IS-7', battles: 3 }, ratedBattles: 8 }
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, playerA)
+    await flushPromises()
+
+    await wrapper.find('[data-testid="export-profile"]').trigger('click')
+    await flushPromises()
+    expect(dl.downloadBlob).not.toHaveBeenCalled()
+
+    // 首次失败后状态被清理，可再次导出
+    fail = false
+    const btn = wrapper.find('[data-testid="export-profile"]')
+    expect(btn.attributes('disabled')).toBeUndefined()
+    await btn.trigger('click')
+    await flushPromises()
+    expect(dl.downloadBlob).toHaveBeenCalled()
+    expect(dl.downloadBlob.mock.calls[0][1]).toContain('Alpha')
+    wrapper.unmount()
+    h2c.setImpl(null)
+    spyErr.mockRestore()
   })
 })
