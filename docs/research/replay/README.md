@@ -38,7 +38,8 @@
 - `adrenaline-and-gun-feed.md`：单发/弹夹负控制、Adrenaline 快装填效应、不同供弹系统状态族。
 - `projectile-lifecycle.md`：shotId、projectile/tracer launch、`stopTracer` endpoint 与 terminal-resolution companion。
 - `type32-entity-effects.md`：Type32 实体级长度前缀 auxiliary blob；旧 `kind` / runtime-double 解释已废弃。
-- `consumable-lifecycle.md`：Type32 mobile `flag=0` 消耗品初始化、激活、持续结束/冷却与 teardown 状态流。
+- `consumable-lifecycle.md`：Type32 mobile `flag=0` 消耗品初始化、激活、持续结束/冷却与 teardown 状态流；已闭环 First Aid / Repair / Multi-Purpose Restoration Pack。
+- `fire-and-repair-states.md`：Type32 mobile short `...04` 火灾关联、fire-DOT、0x0B/0x0D 灭火差分、Vehicle prop8 recoverable-state token 与机械修复行为。
 
 ## 当前 canonical 结论摘要
 
@@ -60,7 +61,9 @@
 - 单发车辆 `field2=3` 与 shot count / reload duration 闭环；约 `0.853` 动态快档在当前 corpus 中行为上可确定为 Adrenaline reload effect，低 HP 技能解释已由高血量反例排除。
 - Kranvagn/Felice 不允许 Adrenaline 且不使用单发 `field2=3` family；其 `field2=7` 与 shots 呈一对一/仅缺失的关系并携带稳定的 gun-cycle timer，证明 wrapper15 是供弹机制感知的状态机。
 - Avatar method20 为 `stopTracer(shotId,endPoint)`；method29 为 projectile/tracer launch family，其 launch vector 与 `endPoint-startPoint` 在约 98.8% 样本中方向余弦 >0.99。
-- Type32 为 `entityId + flag + bodyLength + body`；16,850/16,850 长度闭合并同时路由到 Type5 mobile/static 实体。mobile `flag=0` 长 body 含 `float64` event clock，并已闭环 Adrenaline、Engine Power Boost、Multi-Purpose Restoration Pack、Improved Engine Power Boost、Reticle Calibration、Reactive Armor、Tungsten Shells 等消耗品生命周期。
+- Type32 为 `entityId + flag + bodyLength + body`；16,850/16,850 长度闭合并同时路由到 Type5 mobile/static 实体。mobile `flag=0` 长 body 含 `float64` event clock，并已闭环 Adrenaline、Engine Power Boost、Multi-Purpose Restoration Pack、First Aid Kit、Repair Kit、Improved Engine Power Boost、Reticle Calibration、Reactive Armor、Tungsten Shells 等消耗品生命周期。
+- Type32 mobile `flag=1` short `...04` family 与火灾闭环：4/4 settlement fire death 的终末燃烧链出现该 family；`0x0B` 会终止周期 fire-DOT，而 `0x0D` 不会。
+- Vehicle prop8 是 count-prefixed recoverable/negative-state token collection；部分 token 可被 `0x0B` 与 `0x0D` 共同清除，另一些当前只观察到 `0x0B` 清除，因此不能简化成单一 `damagedModules` 列表。
 
 ### 仍需研究
 
