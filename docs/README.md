@@ -27,6 +27,7 @@
 | `features/hall-of-fame.md` | 改名人堂时 |
 | `features/team-ai-review.md` | 改团队复盘产品语义时 |
 | `features/league-rating.md` | 改训练赛/联赛评分（League Rating）公式 / 模式 / 完整性门槛 / 导出时 |
+| `WotBTools_League_Rating_V5.md` | 改 League Rating V5 批次证据评分算法 / 回放解析「算法说明」入口正文时 |
 
 ## Research（逆向研究）
 

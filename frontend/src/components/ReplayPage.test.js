@@ -2494,3 +2494,32 @@ describe('ReplayPage Workspace Dataset generation ownership（BLOCKER 1）', () 
     wrapper.unmount()
   })
 })
+
+describe('ReplayPage League 算法说明入口', () => {
+  afterEach(() => {
+    state.clear()
+    state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en' }
+    vi.restoreAllMocks()
+  })
+
+  it('普通模式不显示算法说明按钮', () => {
+    state.init = { activeTab: 'aggregate', resp: makeResp(), error: '', loading: false, locale: 'en' }
+    const wrapper = mountPage()
+    expect(wrapper.find('[data-testid="league-docs-btn"]').exists()).toBe(false)
+  })
+
+  it('League 模式显示算法说明按钮，点击跳转 rating-docs', async () => {
+    const navigate = vi.fn()
+    state.init = {
+      activeTab: 'aggregate',
+      resp: makeResp({ leagueMode: true, league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSummaries: [], failures: [] } }),
+      error: '', loading: false, locale: 'en',
+    }
+    const wrapper = mountPage({ navigate })
+    await flushPromises()
+    const btn = wrapper.find('[data-testid="league-docs-btn"]')
+    expect(btn.exists()).toBe(true)
+    await btn.trigger('click')
+    expect(navigate).toHaveBeenCalledWith('rating-docs')
+  })
+})
