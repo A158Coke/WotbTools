@@ -112,3 +112,76 @@ describe('Classic Profile — 真浅色主题契约（Theme 计划：Classic=Lig
     expect(css).not.toMatch(/display:\s*none/)
   })
 })
+
+describe('Classic 深色冲突 selector→declaration 绑定（Blocker 1/2：白底浅字 / 深色残留）', () => {
+  const css = stripComments(classic)
+  // 找到 selector 含 frag 且带 html[data-ui-profile 前缀的规则体（隔离我追加的覆盖，避开旧「去 AI 背景」的 background:none 规则）。
+  const declOf = (frag) => {
+    for (const preferHtml of [true, false]) {
+      for (const chunk of css.split(/}/).filter((c2) => c2.includes('{'))) {
+        const sel = chunk.slice(0, chunk.indexOf('{'))
+        if (sel.includes(frag) && (preferHtml ? sel.includes('html[data-ui-profile') : sel.includes('[data-ui-profile'))) {
+          return chunk.slice(chunk.indexOf('{') + 1)
+        }
+      }
+    }
+    throw new Error('selector not found in classic-profile.css: ' + frag)
+  }
+  const has = (frag, re) => {
+    const body = declOf(frag)
+    expect(body, 'selector ' + frag + ' 缺规则声明').toMatch(re)
+  }
+
+  it('Home：hero 标题/副标题/次级 CTA/Record Card 白底配深色字 + 浅边框', () => {
+    has('.showcase-hero h1', /color:\s*var\(--text-heading\)\s*;\s*text-shadow:\s*none/)
+    has('.hero-subtitle', /color:\s*var\(--text-sub\)/)
+    has('.hero-btn.secondary', /background:\s*var\(--bg-card\)\s*;\s*color:\s*var\(--text\)/)
+    has('.record-card', /background:\s*var\(--bg-card\)\s*;\s*color:\s*var\(--text-heading\)/)
+    has('.record-card > span', /color:\s*var\(--text-sub\)/)
+    has('.mini-action', /background:\s*var\(--bg-card\)\s*;\s*color:\s*var\(--text\)/)
+  })
+
+  it('用户菜单：菜单项/Hover/Danger/分段控件 用浅色底+深色字', () => {
+    has('.user-menu-panel .user-menu-item', /color:\s*var\(--text\)\s*!important/)
+    has('.user-menu-panel .user-menu-item:hover', /background:\s*var\(--bg-list-hover\)\s*!important/)
+    has('.user-menu-panel .user-menu-item.danger', /color:\s*var\(--delete\)\s*!important/)
+    has('.ui-profile-option.active', /background:\s*var\(--accent\)\s*;\s*color:\s*var\(--accent-text\)/)
+  })
+
+  it('Replay 上传区：Heading/Card/Filebar/Tablewrap/Ghost 按钮 浅色底+深色字', () => {
+    has('.uploadhead h1', /color:\s*var\(--text-heading\)\s*!important/)
+    has('.uploadcard', /background:\s*var\(--bg-upload\)\s*!important/)
+    has('.uploadcard .up-title', /color:\s*var\(--text-heading\)\s*!important/)
+    has('.filebar', /background:\s*var\(--bg-upload\)\s*!important/)
+    has('.tablewrap', /background:\s*var\(--bg-card\)/)
+    has('.filebtn.ghost', /background:\s*var\(--bg-card\)\s*!important\s*;\s*color:\s*var\(--text\)\s*!important/)
+    has('.tabs button', /color:\s*var\(--text-sub\)/)
+  })
+
+  it('Boost：Topbar/Tabs/Card/List 浅色底+深色字', () => {
+    has('.boost-topbar', /background:\s*var\(--bg-card\)\s*!important/)
+    has('.boost-tabs button', /color:\s*var\(--text-sub\)\s*!important/)
+    has('.boost-card', /background:\s*var\(--bg-card\)\s*!important/)
+    has('.boost-page :is(.boost-list, .request-list, .booster-list, .admin-list)', /background:\s*var\(--bg-card\)\s*!important/)
+  })
+
+  it('HoF：Toolbar/Table Header/Upload Modal 浅色', () => {
+    has('.lb-toolbar', /background:\s*color-mix\(in srgb, var\(--bg-card\) 94%, transparent\)\s*!important/)
+    has('.lb-wrap thead th', /background:\s*var\(--bg-card2\)\s*!important/)
+    has('.hof-upload-modal', /background:\s*var\(--bg-card\)\s*!important/)
+  })
+
+  it('HoF Admin：Tabs/Filters/Table/Button/Pagination 浅色', () => {
+    has('.hof-admin-tabs button.active', /color:\s*var\(--accent-dark\)/)
+    has('.hof-admin-filters :is(input, select)', /background:\s*var\(--bg-card\)\s*!important/)
+    has('admin-hof-page) thead th', /background:\s*var\(--bg-card2\)\s*!important/)
+    has('.hof-admin .pagination button', /background:\s*var\(--bg-card\)\s*;\s*color:\s*var\(--text-sub\)/)
+  })
+
+  it('Version/Contact/Admin/Player Drawer 浅色', () => {
+    has('.version-page .ver', /background:\s*var\(--bg-card\)\s*!important/)
+    has('.contact-card', /background:\s*var\(--bg-card\)\s*!important/)
+    has('.admin-table th', /background:\s*var\(--bg-card2\)\s*!important/)
+    has('.player-drawer .pd-vehicle', /background:\s*var\(--bg-card\)\s*;\s*border-color:\s*var\(--border-light\)/)
+  })
+})
