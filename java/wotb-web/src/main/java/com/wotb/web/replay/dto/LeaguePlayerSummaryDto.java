@@ -9,7 +9,8 @@ import java.util.List;
  * {@code contribution/kast/impact} 为跨场 Performance Metrics（与 resp.aggregate 同一
  * 全部已解析场次样本；HP 全 UNKNOWN 时 contribution/kast 为 null，UI 显示 "--"）。
  * {@code dimensionMeans} 仅供 Summary Radar 使用（arithmetic mean of rated-battle
- * scores），与 {@code dimensionMedians}（Table 典型比赛得分）语义严格分离。</p>
+ * scores），与 {@code dimensionMedians}（Table 典型比赛得分）语义严格分离。
+ * {@code mostUsedVehicle} 为当前批次 rated-only 最常使用坦克；无可靠数据时为 null。</p>
  */
 public record LeaguePlayerSummaryDto(
         long accountId,
@@ -29,5 +30,6 @@ public record LeaguePlayerSummaryDto(
         long killsTotal,
         Double contribution,
         Double kast,
-        Double impact) {
+        Double impact,
+        LeagueVehicleUsageDto mostUsedVehicle) {
 }

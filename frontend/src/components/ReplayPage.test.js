@@ -2324,6 +2324,81 @@ describe('ReplayPage CW unified table column contract + CW/Rating boundary', () 
     wrapper.unmount()
   })
 })
+describe('ReplayPage Drawer 玩家坦克数据透传', () => {
+  beforeEach(() => {
+    state.clear()
+    state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'zh', files: [] }
+  })
+  afterEach(() => { delete window.__testCwVisible })
+
+  it('Summary Drawer：透传 playerSummary 的 mostUsedVehicle + ratedBattles（数据源 row.league，不解析 cells.tanks）', async () => {
+    state.init.resp = makeResp({
+      aggregate: [{ team: 1, cells: { account_id: 1001, nickname: 'Alpha', clan: 'AAA', battles: 12 } }],
+      battles: [],
+      leagueMode: true,
+      league: {
+        mode: 'LEAGUE_RATING', columns: [],
+        playerSummaries: [
+          { accountId: 1001, nickname: 'Alpha', clan: 'AAA', battles: 8, ratingV5: 850, ratingRawMedian: 850,
+            dimensionMedians: [1, 2, 3, 4, 5, 6, 7], dimensionMeans: [2, 3, 4, 5, 6, 7, 8],
+            mostUsedVehicle: { tankId: 7169, tankName: 'IS-7', battles: 3 } },
+        ],
+        playerSummaryColumns: [], teamSummaries: [], teamSummaryColumns: [], failures: [],
+      }
+    })
+    state.init.activeTab = 'aggregate'
+    window.__testCwVisible = ['nickname', 'league_rating']
+    const wrapper = mountPage({
+      stubs: {
+        CwPlayerSummaryTable: {
+          emits: ['select-player'],
+          template: '<div class="cw-sum-stub" data-testid="cw-sum-stub" @click="$emit(&quot;select-player&quot;, { scope: &apos;summary&apos;, accountId: 1001 })">sum</div>'
+        }
+      }
+    })
+    await flushPromises()
+    await wrapper.find('[data-testid="cw-sum-stub"]').trigger('click')
+    const drawer = wrapper.find('.drawer-stub')
+    expect(drawer.text()).toContain('open:1001')
+    const player = JSON.parse(drawer.text().replace(/^open:\d+:/, ''))
+    expect(player.mostUsedVehicle).toEqual({ tankId: 7169, tankName: 'IS-7', battles: 3 })
+    expect(player.ratedBattles).toBe(8)
+    wrapper.unmount()
+  })
+
+  it('Battle Drawer：透传本场 tank_id/tank_name（battles=1）', async () => {
+    state.init.resp = makeResp({
+      aggregate: [],
+      battles: [
+        { arenaId: '111', mapName: 'Lagoon', league: {}, players: [
+          { team: 1, cells: { account_id: 1001, nickname: 'P1', clan: 'AAA', tank_id: 7169, tank_name: 'IS-7', damage_dealt: 5000 } },
+        ] },
+      ],
+      leagueMode: true,
+      league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], playerSummaryColumns: [], teamSummaries: [], teamSummaryColumns: [], failures: [] }
+    })
+    state.init.activeTab = 'b0'
+    window.__testCwVisible = ['nickname', 'league_rating']
+    const wrapper = mountPage({
+      stubs: {
+        BattleTable: {
+          emits: ['select-player'],
+          template: '<div class="battle-stub" data-testid="battle-stub" @click="$emit(&quot;select-player&quot;, { scope: &apos;battle&apos;, accountId: 1001, arenaId: &apos;111&apos; })">battle</div>'
+        }
+      }
+    })
+    await flushPromises()
+    await wrapper.find('[data-testid="battle-stub"]').trigger('click')
+    const drawer = wrapper.find('.drawer-stub')
+    expect(drawer.text()).toContain('open:1001')
+    const player = JSON.parse(drawer.text().replace(/^open:\d+:/, ''))
+    expect(player.tankId).toBe(7169)
+    expect(player.tankName).toBe('IS-7')
+    expect(player.tankBattles).toBe(1)
+    wrapper.unmount()
+  })
+})
+
 describe('ReplayPage League failure UX separation', () => {
   beforeEach(() => {
     state.clear()

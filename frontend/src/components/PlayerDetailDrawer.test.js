@@ -3,11 +3,17 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import PlayerDetailDrawer from './PlayerDetailDrawer.vue'
+import { loadVehiclePortrait } from '../vehicle-portraits/runtime.js'
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key, locale: { value: 'zh' } })
+}))
+
+// 坦克贴图懒加载 mock 成可控 promise（未知 tankId → null，缺图文字降级）。
+vi.mock('../vehicle-portraits/runtime.js', () => ({
+  loadVehiclePortrait: vi.fn(() => Promise.resolve(null)),
 }))
 
 const SUMMARY_PLAYER = {
@@ -75,7 +81,11 @@ function mountDrawer(context, player, extraProps = {}) {
   })
 }
 
-beforeEach(() => { localStorage.clear() })
+beforeEach(() => {
+  localStorage.clear()
+  loadVehiclePortrait.mockReset()
+  loadVehiclePortrait.mockResolvedValue(null)
+})
 
 describe('PlayerDetailDrawer', () => {
   it('closed when context or player is null', () => {
@@ -376,5 +386,83 @@ describe('Radar scope-aware data source contract', () => {
     expect(values.league_damage_score.normalized).toBeCloseTo(0.8, 3)
     expect(values.league_assist_score.rawValue).not.toBe(2)
     expect(values.league_kill_score.rawValue).not.toBe(10)
+  })
+})
+
+describe('PlayerDetailDrawer 坦克展示（Summary=最常使用；Battle=本场）', () => {
+  it('Summary：显示最常使用坦克（名称 + 场次 + 比例 = battles/ratedBattles）', async () => {
+    const player = {
+      ...SUMMARY_PLAYER,
+      mostUsedVehicle: { tankId: 7169, tankName: 'IS-7', battles: 3 },
+      ratedBattles: 8,
+    }
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, player)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="player-vehicle"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('league.drawer.most_used_vehicle')
+    expect(wrapper.text()).toContain('IS-7')
+    expect(wrapper.text()).toContain('league.drawer.vehicle_battles')
+    // 3 / 8 = 37.5%
+    expect(wrapper.find('[data-testid="player-vehicle-rate"]').text()).toBe('37.5%')
+  })
+
+  it('Battle：显示本场坦克；不显示 1场·100%', async () => {
+    const player = { ...BATTLE_PLAYER, tankId: 4481, tankName: 'Heavy Tank', tankBattles: 1 }
+    const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, player)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="player-vehicle"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('league.drawer.battle_vehicle')
+    expect(wrapper.text()).toContain('Heavy Tank')
+    // 单场不显示无意义的“1 场 · 100%”
+    expect(wrapper.find('[data-testid="player-vehicle-battles"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="player-vehicle-rate"]').exists()).toBe(false)
+  })
+
+  it('无坦克数据 → 不渲染坦克区', async () => {
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="player-vehicle"]').exists()).toBe(false)
+  })
+
+  it('缺图/非 Tier X → 仅文字降级，无破图图标，名称与统计保留', async () => {
+    loadVehiclePortrait.mockResolvedValue(null)
+    const player = {
+      ...SUMMARY_PLAYER,
+      mostUsedVehicle: { tankId: 999999, tankName: 'Strange', battles: 2 },
+      ratedBattles: 8,
+    }
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, player)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="player-vehicle-img"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="player-vehicle"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Strange')
+    expect(wrapper.find('[data-testid="player-vehicle-rate"]').text()).toBe('25%')
+  })
+
+  it('异步加载不闪回上一位玩家图片（token 防旧结果覆盖）', async () => {
+    const deferred = {}
+    loadVehiclePortrait.mockImplementation((tankId) => new Promise((resolve) => {
+      deferred[tankId] = resolve
+    }))
+    const playerA = { ...SUMMARY_PLAYER, mostUsedVehicle: { tankId: 111, tankName: 'A', battles: 3 }, ratedBattles: 8 }
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, playerA)
+    // 切到玩家 B
+    const playerB = { ...SUMMARY_PLAYER, mostUsedVehicle: { tankId: 222, tankName: 'B', battles: 2 }, ratedBattles: 8 }
+    await wrapper.setProps({ player: playerB })
+    // 旧玩家 A 的图晚到：必须被丢弃
+    deferred[111]('http://a.png')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="player-vehicle-img"]').exists()).toBe(false)
+    // 新玩家 B 的图到：正确显示
+    deferred[222]('http://b.png')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="player-vehicle-img"]').attributes('src')).toBe('http://b.png')
+  })
+
+  it('导出卡包含坦克信息（与 Drawer 同数据源）', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/PlayerDetailDrawer.vue'), 'utf8')
+    expect(source).toContain('rp-vehicle')
+    expect(source).toContain('exportPortrait')
+    expect(source).toContain('ensureVehiclePortraitForExport')
   })
 })

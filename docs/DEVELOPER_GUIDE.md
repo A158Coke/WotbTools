@@ -146,6 +146,14 @@ Lease（读取期间 TTL 不清）。
 
 训练房 `arenaBonusType=2` 与联赛/锦标赛 `=4` 才启用 0–1000 League Rating。普通回放不显示 Rating；混合普通 + League 批次 League Rating 不聚合（`league=null` + `leagueUnavailableCode=MIXED_LEAGUE_AND_STANDARD_REPLAYS`，battles 仍按普通回放语义成功返回，plan §21）。评分、完整性校验、批次中位数和 Excel 必须复用 core 单一公式。
 
+选手 Drawer 的「最常使用坦克」是纯展示（不参与 Rating / 七维 / MVP / Team Rating）：Core
+`LeagueRatingBatchAggregator` 在 rated-only 循环里按 accountId 关联 `PlayerResult.tankId` 累计为
+`PlayerLeagueSummary.vehicleUsage`（`List<PlayerVehicleUsage>`，只有 tankId + battles，Core 不复制
+Tankopedia）；Web `Mapper` 消费 `Tankopedia` 选最常使用（场次降序 → 官方名忽略大小写升序 → tankId
+升序；无可靠名称返回 null），生成 `LeaguePlayerSummaryDto.mostUsedVehicle`
+（`LeagueVehicleUsageDto`）。前端 Drawer 渲染贴图（本地 Tier X WebP，缺图/非 Tier X 文字降级）与占比；
+Battle 直接取该场 `tank_id`/`tank_name`（来源 `PlayerResult.tankId`）。
+
 ### Hall of Fame / Hundred Battles
 
 单场 HoF 仅允许录像者本人随机战 `arenaBonusType=1` 或游戏内 Rating `=7`，其它模式拒绝且零持久化。

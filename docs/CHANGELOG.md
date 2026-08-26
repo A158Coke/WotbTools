@@ -5,6 +5,26 @@
 ## [Unreleased]
 
 ### Added
+- **选手 Rating 画像新增「最常使用坦克」**（后端 + 前端 + 导出）：
+  - Core：`PlayerLeagueSummary` 新增 `vehicleUsage`（`List<PlayerVehicleUsage>`，tankId + battles），
+    `LeagueRatingBatchAggregator` 在 rated-only 循环中按 accountId 关联 `PlayerResult.tankId` 累计；
+    新增不可变模型 `com.wotb.core.league.PlayerVehicleUsage`；Core 不复制 Tankopedia。
+  - Web：`LeaguePlayerSummaryDto` 新增可空 `mostUsedVehicle`（`LeagueVehicleUsageDto`：tankId/tankName/battles）；
+    `Mapper` 消费现有 `Tankopedia` 单一事实源选择最常使用坦克（场次降序 → 官方名忽略大小写升序 →
+    tankId 升序；无可靠名称返回 null），`Mapper.selectMostUsedVehicle` 提炼为 package-private 纯函数。
+  - 前端：`ReplayPage.drawerPlayer` 透传 `mostUsedVehicle`/`ratedBattles`（Summary）与
+    `tankId`/`tankName`（Battle）；`PlayerDetailDrawer` 在 Rating 区与雷达之间渲染坦克展示区——
+    Summary 显示最常使用（贴图/名称/场次/比例 `battles/ratedBattles`），Battle 显示本场坦克；贴图经
+    `vehicle-portraits/runtime.js` 按 tankId 懒加载，token 防旧异步覆盖；缺图/非 Tier X 文字降级
+    （不破图、不影响雷达）；导出画像 PNG 等待图片或确认失败后包含坦克区，缺图不阻塞。
+  - i18n：zh/en/ru 新增 `league.drawer.most_used_vehicle` / `battle_vehicle` / `vehicle_battles` /
+    `vehicle_usage_rate`。
+  - 测试：`LeagueRatingBatchAggregatorTest`（rated-only 累计、ineligible 排除）、`ReplayMapperTest`
+    （场次降序/名称忽略大小写/名称相同 tankId 升序/无名称 null）、`PlayerDetailDrawer.test.js`
+    （Summary/Battle 显示、比例、无数据隐藏、缺图文字降级、token 防闪回）、`ReplayPage.test.js`
+    （Summary 透传 mostUsedVehicle/ratedBattles、Battle 透传 tank_id/tank_name）。
+  - 文档：`docs/features/league-rating.md` 新增「最常使用坦克」节；功能不参与 Rating / 七维 /
+    MVP / Team Rating 计算，不改 Excel 列/宽表。
 - **Player Detail Drawer Rating Profile 升级（纯前端，零后端改动）**：
   - Radar 只保留 League Rating 七维（移除 contribution/kast 作为 Radar 轴，归 Performance Metrics）；
     新增 Battle/Global Average 参考多边形（新 `frontend/src/utils/radarReference.js` 纯函数：selected
