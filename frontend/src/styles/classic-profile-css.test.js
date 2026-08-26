@@ -72,3 +72,43 @@ describe('Classic Profile CSS contract', () => {
     expect(classicIdx).toBeGreaterThan(lastShowcase)
   })
 })
+
+describe('Classic Profile — 真浅色主题契约（Theme 计划：Classic=Light, Showcase=Dark）', () => {
+  const css = stripComments(classic)
+  const tokenBlock = (css.match(/html\[data-ui-profile="classic"\]\s*\{[\s\S]*?\}/) || [])[0] || ''
+
+  it('完整浅色语义 token:color-scheme light + 浅色背景/卡片/深色文字/浅边框/橙金强调', () => {
+    expect(tokenBlock).toContain('color-scheme: light')
+    expect(tokenBlock).toContain('--bg: #f4f5f2')
+    expect(tokenBlock).toContain('--bg-card: #ffffff')
+    expect(tokenBlock).toContain('--text: #2a2f28')
+    expect(tokenBlock).toContain('--text-heading: #11140f')
+    expect(tokenBlock).toContain('--border: #d9dde3')
+    expect(tokenBlock).toContain('--accent: #c9762e')
+    // 阵营战术色保持 hue(不反色、不变蓝),提高对比
+    expect(tokenBlock).toContain('--friendly: #a9661a')
+    expect(tokenBlock).toContain('--enemy: #2e7ea8')
+  })
+
+  it('同步 --showcase-tactical* 浅色 token(Reconstruction/地图外围面板)', () => {
+    expect(css).toContain('--showcase-tactical: linear-gradient(160deg, #fbfbf9')
+    expect(css).toContain('--showcase-tactical-heading: #1c2018')
+    expect(css).toContain('--showcase-tactical-soft-2: rgba(255, 255, 255, .85)')
+  })
+
+  it('禁止 filter:invert / 全局 html * 覆盖(性能与脏覆盖)', () => {
+    expect(css).not.toMatch(/filter:\s*invert/)
+    expect(css).not.toMatch(/^\s*html\s+\*/m)
+    expect(css).not.toMatch(/\b\*\s*\{/)
+  })
+
+  it('覆盖核心页面面:topbar/user-menu/tabs/table/form/modal 均带 namespace 且不隐藏业务', () => {
+    expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.topbar\s*\{/)
+    expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.user-menu-panel\s*\{/)
+    expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.modal\s*\{/)
+    expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.layout-data-workspace\s+:is\(input, select, textarea\)/)
+    expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.layout-data-workspace\s+table\s+thead\s+th/)
+    // 不隐藏业务组件(白底白字/低对比风险用 token 覆盖,而非 display:none)
+    expect(css).not.toMatch(/display:\s*none/)
+  })
+})

@@ -7,9 +7,11 @@ import {
   toggleUiProfile,
   applyUiProfile,
   isUiProfile,
+  themeForProfile,
   DEFAULT_UI_PROFILE,
   UI_PROFILES,
   UI_PROFILE_STORAGE_KEY,
+  UI_THEME_ATTR,
 } from './useUiProfile.js'
 
 function freshStorage() {
@@ -27,6 +29,7 @@ describe('useUiProfile', () => {
   beforeEach(() => {
     freshStorage()
     document.documentElement.removeAttribute('data-ui-profile')
+    document.documentElement.removeAttribute('data-theme')
   })
 
   it('暴露常量:合法值为 classic/showcase,默认 showcase', () => {
@@ -102,5 +105,53 @@ describe('useUiProfile', () => {
     toggleUiProfile()
     expect(reload).not.toHaveBeenCalled()
     reload.mockRestore()
+  })
+})
+
+describe('useUiProfile → data-theme 派生（Theme 计划）', () => {
+  beforeEach(() => {
+    freshStorage()
+    document.documentElement.removeAttribute('data-ui-profile')
+    document.documentElement.removeAttribute('data-theme')
+  })
+
+  it('themeForProfile:showcase→dark,classic→light', () => {
+    expect(themeForProfile('showcase')).toBe('dark')
+    expect(themeForProfile('classic')).toBe('light')
+    expect(themeForProfile('legacy')).toBe('dark')
+  })
+
+  it('默认 showcase:data-ui-profile=showcase 且 data-theme=dark', () => {
+    useUiProfile()
+    expect(document.documentElement.getAttribute('data-ui-profile')).toBe('showcase')
+    expect(document.documentElement.getAttribute(UI_THEME_ATTR)).toBe('dark')
+  })
+
+  it('storage=classic:data-ui-profile=classic 且 data-theme=light,无独立 theme storage', () => {
+    window.localStorage.setItem(UI_PROFILE_STORAGE_KEY, 'classic')
+    useUiProfile()
+    expect(document.documentElement.getAttribute('data-ui-profile')).toBe('classic')
+    expect(document.documentElement.getAttribute(UI_THEME_ATTR)).toBe('light')
+    // 不得新增第二个持久化 key（no wotb-theme）
+    expect(window.localStorage.getItem(UI_PROFILE_STORAGE_KEY)).toBe('classic')
+    expect(window.localStorage.getItem('wotb-theme')).toBeNull()
+  })
+
+  it('setUiProfile(classic/showcase) 同步两个 attribute 派生主题', () => {
+    setUiProfile('classic')
+    expect(document.documentElement.getAttribute('data-ui-profile')).toBe('classic')
+    expect(document.documentElement.getAttribute(UI_THEME_ATTR)).toBe('light')
+    setUiProfile('showcase')
+    expect(document.documentElement.getAttribute('data-ui-profile')).toBe('showcase')
+    expect(document.documentElement.getAttribute(UI_THEME_ATTR)).toBe('dark')
+  })
+
+  it('非法值回退 showcase→dark,不写非法 key 值', () => {
+    setUiProfile('legacy')
+    const { uiProfile } = useUiProfile()
+    expect(uiProfile.value).toBe('showcase')
+    expect(document.documentElement.getAttribute('data-ui-profile')).toBe('showcase')
+    expect(document.documentElement.getAttribute(UI_THEME_ATTR)).toBe('dark')
+    expect(window.localStorage.getItem(UI_PROFILE_STORAGE_KEY)).toBe('showcase')
   })
 })

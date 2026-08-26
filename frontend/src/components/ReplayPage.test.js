@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, ref, computed, toRaw, watch, onMounted, onUnmounted } from 'vue'
 import ReplayPage from './ReplayPage.vue'
+import { setUiProfile } from '../composables/useUiProfile.js'
 
 const i18n = vi.hoisted(() => ({
   t: vi.fn((key, values) => values
@@ -526,6 +527,26 @@ describe('ReplayPage PNG export', () => {
       wrapper = mountPage()
       await pngButton(wrapper).trigger('click')
       await flushPromises()
+      expect(h2c.getCalls()[0][1].backgroundColor).toBe('#1e1e1e')
+    })
+
+    it('uses profile-derived theme:classic→light, showcase→dark (data-theme 由 useUiProfile 派生)', async () => {
+      state.init.resp = makeResp()
+      // classic → data-theme=light → 浅色导出
+      setUiProfile('classic')
+      h2c.resetCalls()
+      wrapper = mountPage()
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
+      expect(document.documentElement.getAttribute('data-theme')).toBe('light')
+      expect(h2c.getCalls()[0][1].backgroundColor).toBe('#ffffff')
+      // showcase → data-theme=dark → 深色导出
+      setUiProfile('showcase')
+      h2c.resetCalls()
+      wrapper = mountPage()
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
+      expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
       expect(h2c.getCalls()[0][1].backgroundColor).toBe('#1e1e1e')
     })
   })

@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.41",
+    "date": "2026-08-26",
+    "tag": "chg",
+    "zh": "界面风格升级：Classic 简约改为真正的浅色主题（柔和浅灰页面背景、白色卡片/表格/菜单/弹窗、深色标题与正文、浅灰边框与轻量阴影，橙金色仅作品牌强调），不再是「深色去背景」；Showcase 沉浸保持现有深色与 AI/战场背景、渐变、阴影不变，仍为默认。用户菜单切换 Profile 即时生效，不刷新、不重载，不影响已解析回放、战局回放进度、AI 复盘、名人堂草稿、登录状态与任何数据；页面布局、密度、导航、表格列、评分算法与导出不变（PNG 导出按当前主题浅色/深色）。",
+    "en": "Interface style upgrade: the Classic profile is now a genuine light theme (soft light-gray page background, white cards/tables/menus/modals, dark headings and body text, light borders and subtle shadows, with orange-gold as brand accent only) instead of dark-minus-backgrounds. Showcase keeps the current dark immersive look with AI/battle backgrounds, gradients and shadows, and remains the default. Switching profiles from the user menu takes effect immediately with no reload or remount, preserving parsed replays, battle playback progress, AI review, Hall-of-Fame drafts, login state and all data; layout, density, navigation, table columns, rating algorithm and exports are unchanged (PNG export follows the active light/dark theme).",
+    "ru": "Обновление стиля интерфейса: профиль Classic теперь — настоящая светлая тема (мягкий светло-серый фон, белые карточки/таблицы/меню/модальные окна, тёмные заголовки и текст, светлые рамки и лёгкие тени, оранжево-золотой только как акцент бренда) вместо «тёмный без фонов». Showcase сохраняет текущий тёмный иммерсивный вид с AI/боевыми фонами, градиентами и тенями и остаётся по умолчанию. Переключение профиля из меню пользователя применяется мгновенно, без перезагрузки и перемонтирования, сохраняя разобранные реплеи, прогресс воспроизведения боя, AI-обзор, черновик Зала славы, состояние входа и все данные; макет, плотность, навигация, столбцы таблиц, алгоритм рейтинга и экспорт (PNG по активной теме light/dark) не меняются."
+  },
+  {
     "v": "2.12.40",
     "date": "2026-08-26",
     "tag": "fix",
