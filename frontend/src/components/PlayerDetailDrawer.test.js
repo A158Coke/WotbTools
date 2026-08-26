@@ -286,8 +286,8 @@ describe('PlayerDetailDrawer reference average', () => {
 
   it('battle: reference passed = Battle Average（battle_average label）, selected player included', () => {
     const players = [
-      { cells: { account_id: 2001, league_damage_score: 320, league_assist_score: 55, league_kill_score: 70, league_exchange_score: 110, league_blocked_score: 40, league_survival_score: 75, league_shooting_score: 82 } },
-      { cells: { account_id: 2002, league_damage_score: 200, league_assist_score: 45, league_kill_score: 50, league_exchange_score: 90, league_blocked_score: 30, league_survival_score: 55, league_shooting_score: 40 } },
+      { cells: { account_id: 2001, league_rating: 812.6, league_damage_score: 320, league_assist_score: 55, league_kill_score: 70, league_exchange_score: 110, league_blocked_score: 40, league_survival_score: 75, league_shooting_score: 82 } },
+      { cells: { account_id: 2002, league_rating: 780, league_damage_score: 200, league_assist_score: 45, league_kill_score: 50, league_exchange_score: 90, league_blocked_score: 30, league_survival_score: 55, league_shooting_score: 40 } },
     ]
     const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, BATTLE_PLAYER, { scopePlayers: players })
     const ref = radarReference(wrapper)

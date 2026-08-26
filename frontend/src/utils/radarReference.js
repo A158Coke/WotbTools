@@ -1,14 +1,19 @@
 /**
  * Radar 参考多边形（Battle Average / Global Average）纯函数计算。
  * 契约（计划 §13-14, §25, §57-61）：
- * - Battle Average = 当前 battle scope 里"所选维度全部完整"的 valid 评分玩家
- *   （selected 玩家包含在内）逐个归一化后按维度取均值；不硬编码 14 人。
- * - Global Average = 当前 summary scope 按 accountId 去重的 unique 玩家，
- *   每人用其 dimensionMeans profile，等权（weight=1）按维度取均值；不按出场次数加权。
- * - 恒定 cohort 跨维度（§25）：任一玩家缺任一所选维 → 整体 unavailable
- *   （禁止跨 cohort 拼接、禁止按维换样本）。
+ * - 先确定"谁属于 valid rated reference population"（membership），再校验
+ *   cohort 完整性——禁止用"所选维度是否完整"来定义 membership（否则会静默缩小 cohort）。
+ * - Battle Average = 当前 battle scope 里被评分的 valid rated 玩家（selected 包含在内），
+ *   每维取 cells[key]（league_*_score）；不硬编码 14 人。
+ * - Global Average = 当前 summary scope 里"有 League PlayerSummary"的 rated unique 玩家，
+ *   按 accountId 去重，每人用其 dimensionMeans profile，等权（weight=1）；不按出场次数加权。
+ * - cohort 完整性（§25）：cohort 一旦确定，所有 selected Radar dimensions 必须由同一
+ *   完整 cohort 支持——任一成员缺任一所选维 → 整个 reference unavailable（禁止静默过滤该玩家、
+ *   禁止跨维换 cohort、禁止 missing 当 0、禁止制造假闭合多边形）。
+ * - 非成员（rating-ineligible / aggregate-only / league==null 行）不属于 rated cohort，
+ *   直接排除，不因其缺 dimensionMeans 就让 reference unavailable。
  * - 确定性（§59）：聚合前按 accountId 排序，与输入顺序/表格排序/选中玩家无关。
- * - V5 隔离（§65）：只消费 dimensionMeans，与 ratingV5/ratingRawMedian/battles 无关。
+ * - V5 隔离（§65）：只消费 dimensionMeans / 单场 score，与 ratingV5/ratingRawMedian/battles 无关。
  */
 
 import { CW_DIM_KEYS } from './playerSummaryMerge.js'
@@ -18,33 +23,48 @@ function isRawValid(v) {
   return v != null && v !== '' && Number.isFinite(Number(v))
 }
 
+function unavailable(dims) {
+  return {
+    available: false,
+    axes: dims.map(d => ({ key: d.key, rawValue: null, normalized: null, available: false })),
+  }
+}
+
 /**
- * 通用聚合：对 dimKeys 每个维度，用同一 valid cohort 的"已归一化值"取均值。
- * @param {Array} players 玩家/行数组
+ * 通用聚合：入参必须是已确定的 membership（valid rated cohort）。
+ * @param {Array} members 已确定的 valid rated 玩家/行（非成员应在 wrapper 中先排除）
  * @param {{dimKeys:string[], maxByKey:Object, idOf:(p)=>string|number, getRaw:(p,key)=>number|null}} opts
  * @returns {{available:boolean, axes:Array<{key,rawValue,normalized,available}>}}
  */
-function aggregate(players, { dimKeys, maxByKey, idOf, getRaw }) {
+function aggregate(members, { dimKeys, maxByKey, idOf, getRaw }) {
   const dims = dimKeys.map(key => ({ key, max: Number(maxByKey[key]) }))
   // 确定性：按 accountId 排序（均值本身与顺序无关，排序保证稳定迭代/同输入同输出，§59）
-  const ordered = (players || [])
+  const ordered = (members || [])
     .slice()
     .sort((a, b) => {
       const ia = String(idOf(a))
       const ib = String(idOf(b))
       return ia < ib ? -1 : ia > ib ? 1 : 0
     })
-  // valid cohort = 所有所选维度都完整 且 max 有效 的玩家（恒定 cohort，§25）
-  const valid = ordered.filter(p =>
-    dims.every(d => Number.isFinite(d.max) && d.max > 0 && isRawValid(getRaw(p, d.key))))
-  if (!valid.length) {
-    return {
-      available: false,
-      axes: dims.map(d => ({ key: d.key, rawValue: null, normalized: null, available: false })),
-    }
+
+  // Step 2a：任一 selected dimension 的 metadata（max）缺失/非法 → 整个 reference unavailable
+  if (!dims.every(d => Number.isFinite(d.max) && d.max > 0)) {
+    return unavailable(dims)
   }
+  // Step 2b：cohort 为空 → unavailable
+  if (!ordered.length) {
+    return unavailable(dims)
+  }
+  // Step 2c：cohort 任一成员缺任一 selected dimension → 整个 reference unavailable
+  //（禁止为凑平均而静默过滤该成员，也禁止 per-dimension 换 cohort）
+  const incomplete = ordered.some(p => dims.some(d => !isRawValid(getRaw(p, d.key))))
+  if (incomplete) {
+    return unavailable(dims)
+  }
+
+  // Step 3：cohort 完整 → 用同一恒定 cohort 计算平均
   const axes = dims.map(d => {
-    const raws = valid.map(p => Number(getRaw(p, d.key)))
+    const raws = ordered.map(p => Number(getRaw(p, d.key)))
     const rawValue = raws.reduce((a, b) => a + b, 0) / raws.length
     // §57：平均 normalized 值（线性 raw/max 下等价 mean(raw)/max）
     const normalized = raws.reduce((a, b) => a + clamp01(b / d.max), 0) / raws.length
@@ -54,13 +74,14 @@ function aggregate(players, { dimKeys, maxByKey, idOf, getRaw }) {
 }
 
 /**
- * Battle Average（计划 §13/§57）：当前 battle 的 valid 评分玩家（selected 包含），
- * 每维取字段 cells[key]（league_*_score）。
+ * Battle Average（计划 §13/§57）：当前 battle 的 valid rated 玩家（selected 包含）。
+ * membership = 本场被评分的玩家（cells.league_rating 有值 = V4.1 finalRating）。
  * @param {Array<{cells:Object}>} players
  * @param {{dimKeys:string[], maxByKey:Object}} opts
  */
 export function battleAverage(players, { dimKeys, maxByKey }) {
-  return aggregate(players || [], {
+  const members = (players || []).filter(p => isRawValid(p?.cells?.league_rating))
+  return aggregate(members, {
     dimKeys,
     maxByKey,
     idOf: p => p?.cells?.account_id,
@@ -69,13 +90,15 @@ export function battleAverage(players, { dimKeys, maxByKey }) {
 }
 
 /**
- * Global Average（计划 §14/§58）：summary scope 按 accountId 去重，每人用其
- * league.dimensionMeans profile，等权（weight=1）按维度取均值。
+ * Global Average（计划 §14/§58）：summary scope 里"有 League PlayerSummary"的 rated unique 玩家，
+ * 按 accountId 去重，每人用其 league.dimensionMeans profile，等权（weight=1）。
+ * membership = row.league != null（有 League PlayerSummary = 被评分；aggregate-only/league==null 行排除）。
  * @param {Array<{cells:Object, league:Object|null}>} rows
  * @param {{dimKeys:string[], maxByKey:Object}} opts
  */
 export function globalAverage(rows, { dimKeys, maxByKey }) {
-  const unique = dedupeByAccountId(rows || [])
+  const rated = (rows || []).filter(r => r?.league != null)
+  const unique = dedupeByAccountId(rated)
   return aggregate(unique, {
     dimKeys,
     maxByKey,
