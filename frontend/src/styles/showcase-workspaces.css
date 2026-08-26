@@ -101,6 +101,9 @@
   display: flex !important;
   flex-wrap: wrap;
   align-items: center;
+  /* 选中 battle 后工具栏变高（battle tab + 追加 action 按钮）；这里随文档流，
+     禁用 showcase.css 的 position:sticky，避免 sticky 高盒在滚动时盖住下方 metric 卡/表格。 */
+  position: static !important;
   gap: 10px 12px;
   margin: 14px 0 !important;
 }
