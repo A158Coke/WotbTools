@@ -18,6 +18,8 @@ const PlaybackQaPage = defineAsyncComponent(() => import('./components/PlaybackQ
 // League Rating V5 算法说明页：异步加载（含 canonical Markdown raw 资源），
 // 只有打开文档时才进入 bundle，不影响普通用户初始加载。
 const RatingDocsPage = defineAsyncComponent(() => import('./components/RatingDocsPage.vue'))
+// 隐藏管理员灰度页（?view=rating-v2）：复用 Processing Job，不进入普通用户初始 bundle 或导航。
+const RatingV2AdminPage = defineAsyncComponent(() => import('./components/RatingV2AdminPage.vue'))
 
 const { initPromise, login, logout, isAuthenticated, userName, tokenParsed } = useAuth()
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
@@ -51,7 +53,7 @@ const viewParam = rawViewParam === 'leaderboard' ? 'hof'
 const ALLOWED_VIEWS = [
   'home', 'replay', 'hof', 'hof-admin',
   'profile', 'boost', 'admin-users', 'reconstruction', 'version', 'contact',
-  'playback-qa', 'rating-docs',
+  'playback-qa', 'rating-docs', 'rating-v2',
 ]
 const activeTool = ref(ALLOWED_VIEWS.includes(viewParam) ? viewParam : defaultView)
 
@@ -69,7 +71,8 @@ const VIEW_COMPONENTS = {
   version: VersionPage,
   contact: ContactPage,
   'playback-qa': PlaybackQaPage,
-  'rating-docs': RatingDocsPage
+  'rating-docs': RatingDocsPage,
+  'rating-v2': RatingV2AdminPage,
 }
 const currentView = computed(() => VIEW_COMPONENTS[activeTool.value] || ReplayPage)
 

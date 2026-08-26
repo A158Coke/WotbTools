@@ -87,6 +87,23 @@ class ReplayProcessingJobServiceTest {
     }
 
     @Test
+    void readyDatasetUsesTheExistingReadyAndNotReadySemantics() {
+        final ReplayProcessingJob job = new ReplayProcessingJob("ready-dataset", 1);
+        store.register(job);
+
+        final ResponseStatusException notReady = assertThrows(ResponseStatusException.class,
+                () -> service.readyDataset("ready-dataset"));
+        assertEquals(HttpStatus.CONFLICT, notReady.getStatusCode());
+        assertEquals("409 CONFLICT \"JOB_NOT_READY\"", notReady.getMessage());
+
+        final ProcessedDataset expected = new ProcessedDataset(List.of(), List.of(), List.of(), List.of(), null, null);
+        assertTrue(job.startProcessing());
+        assertTrue(job.markReady(expected));
+
+        assertEquals(expected, service.readyDataset("ready-dataset"));
+    }
+
+    @Test
     void aggregateDeduplicatesAndCountsProgress() throws Exception {
         stubFacadeBattles();  // same arena for all names
         final String jobId = service.createJob(new MultipartFile[]{

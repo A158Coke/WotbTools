@@ -1,0 +1,220 @@
+# Rating V2 算法规范（管理员灰度）
+
+> **维护状态：** 历史算法的受控灰度实现。后续任何 Rating V2 公式、阈值、输出字段或比较口径的变更，先更新本文件和回归测试，再修改代码。
+>
+> **实现单一事实源：** `java/wotb-core/src/main/java/com/wotb/core/stats/RatingV2Calculator.java`。
+> **历史基线：** Git commit `37a0c0ec`（删除前最后的 Rating V2 实现）；平均 HP 修正来自 `d4b0dd19`。
+
+## 1. 定位与边界
+
+Rating V2 是一套历史综合评分，用于管理员在 `?view=rating-v2` 灰度核验。它不是当前公开产品的
+League Rating，也不是当前回放页的战斗表现指标。
+
+| 项目 | Rating V2 规则 |
+| --- | --- |
+| 页面 | 隐藏深链 `?view=rating-v2`，没有首页、顶栏或用户菜单入口 |
+| 权限 | 前端与后端均要求 `wotbtools-admin` |
+| API | `POST /api/admin/rating-v2/processing-jobs/{jobId}` |
+| 输入 | 当前 Processing Job 已 READY 的 `ProcessedDataset` |
+| 生命周期 | 只读 job 的 TTL 内数据；未 READY 返回 `JOB_NOT_READY`，过期/不存在返回 `JOB_NOT_FOUND` |
+| 非目标 | 不恢复公开 `/api/rating`、`/extended`、`common/rating.json`、评分列、Excel 或导出 |
+
+**隔离不变式：** 计算过程不得新建 full processing，不得修改共享 `Battle` / `PlayerResult`，不得改变
+`PerformanceMetricsCalculator`、League Rating、公开回放页面或 `GET /api/columns`。
+
+## 2. 数据输入与输出
+
+### 2.1 输入事实
+
+V2 消费 Processing Job 已完成 full processing 的 `Battle` / `PlayerResult`。每名玩家使用：
+
+- `damageDealt`、`damageAssisted`、`kills`、`survived`、`survivalTimeSec`；
+- `team`、`winnerTeam`、`startTime`、昵称和战队；
+- `entryHpSource` / `entryHp` 与 Tankopedia 的 `maxHp`；
+- `killVictims` 与 Tankopedia 的 `alphaDamage`。
+
+`killVictims` 是击杀前直接伤害明细；它并非所有回放都完整，因此潜在伤害是历史评分的局部推导，
+不是当前事实链的公开字段。
+
+### 2.2 管理员 API 输出
+
+响应为 `rows`、`duplicates`、`failures`、`columns`。每行只含稳定英文 key：
+
+```text
+nickname, clan, battles, wins, win_rate, rating, kast, contribution, impact,
+damage_avg, potential_damage_avg, potential_damage_supplement_avg, assist_avg,
+multi_damage_rate, kills, kills_avg
+```
+
+`account_id` 与内部 `average_hp` 不对页面输出。前端仅在隐藏页面使用 `ratingV2.labels` 的三语文案。
+输出默认按 `rating` 降序；同分保持首次进入聚合结果的顺序。
+
+## 3. 基础约定
+
+### 3.1 截断函数
+
+```text
+cap(x, max) = 0                         (x 非有限或 x <= 0)
+              min(x, max)               (其它情况)
+```
+
+### 3.2 历史本局平均 HP
+
+每场所有玩家共用同一个 `average_hp`：
+
+```text
+average_hp = sum(hp(player for team 1/2)) / 14
+```
+
+逐车 `hp(player)` 的优先级：
+
+1. `entryHpSource == OBSERVED_EXACT` 且 `entryHp > 0`：使用已证明的进场满血；
+2. 否则：使用 Tankopedia `maxHp`；
+3. 单车 Tankopedia HP 缺失：仅该车回退 `2400`。
+
+这是**历史兼容口径**：分母恒为 14，即使异常输入缺少参战玩家也不会改成按实际人数除。
+若累计总 HP 不为正，内部平均 HP 回退 2400。
+
+它与当前 `BattleHpFacts` 的 fail-closed 口径不同：当前战斗表现遇到 HP UNKNOWN 会产出 unavailable；
+V2 为复现历史结果而使用上述回退，且结果只留在 V2 局部输出中。
+
+## 4. 潜在伤害（Potential Damage）
+
+对每个玩家、每个 `KillVictim`：
+
+```text
+minimum_damage = 0.9 * alpha_damage * penetrations
+supplement(victim) = ceil(minimum_damage - victim.damage)    (victim.damage < minimum_damage)
+                     0                                       (其它情况)
+
+potential_damage = damage_dealt + sum(supplement)
+```
+
+只有 `alpha_damage > 0` 且存在 `killVictims` 时才计算补增；没有 alpha、没有明细或明细无效时：
+
+```text
+potential_damage = damage_dealt
+potential_damage_supplement = 0
+```
+
+输入 `damage_dealt < 0` 是非法数据，算法稳定拒绝。补增值不会写回 `PlayerResult`。
+
+## 5. 单场指标
+
+### 5.1 贡献率（仅展示，不参与综合 Rating）
+
+```text
+round_contribution = damage + assist + kills * average_hp / 7
+contribution = player(round_contribution) / team(round_contribution) * 100
+```
+
+跨场 `contribution` 的分子、分母分别累加后再求比例。
+
+### 5.2 KAST
+
+`traded_death` 为：玩家已阵亡、死亡时间有效，且其死亡时间前后 5 秒（含边界）内至少有一名敌方阵亡。
+这是 Rating V2 的历史对称窗口，不等同于当前 `TradeFacts` 的 directional `[0, +5s]` 口径。
+
+```text
+KAST_battle = 100 * max(
+  damage / (average_hp * 1.15),
+  assist / (average_hp * 1.25),
+  win && survived ? 1 : 0,
+  traded_death ? 1 : 0,
+  (damage + assist) / (average_hp * 1.20)
+)
+
+KAST = cap(avg(KAST_battle), 100)
+```
+
+### 5.3 Impact
+
+```text
+damage_assist_share = (damage + assist) / battle(sum(damage + assist))
+damage_assist_index = damage_assist_share / (1 / 14)
+impact_battle = 100 * (0.75 * damage_assist_index + 0.25 * kills)
+impact = avg(impact_battle)
+```
+
+`impact` 对赢、输场次都计算，并以两位小数百分数字符串输出。
+
+### 5.4 多伤率
+
+一场满足任一条件即计一次：
+
+```text
+damage >= average_hp * 1.5
+damage >= average_hp * 1.2 && kills >= 1
+damage >= average_hp && kills >= 2
+kills >= 3
+```
+
+```text
+multi_damage_rate = multi_damage_battles / battles * 100
+```
+
+## 6. 综合 Rating
+
+先计算跨场均值：
+
+```text
+potential_dpb = avg(potential_damage)
+assist_dpb = avg(assist)
+kills_dpb = avg(kills)
+average_hp = avg(battle.average_hp)
+```
+
+再得到有上限的指数：
+
+| 指数 | 公式 | 上限 | 权重 |
+| --- | --- | ---: | ---: |
+| Potential | `100 * potential_dpb / average_hp` | 250 | 0.70 |
+| KAST | `kast` | 250 | 0.15 |
+| Impact | `impact` | 250 | 0.25 |
+| AST | `100 * assist_dpb / average_hp` | 200 | 0.30 |
+| 多伤率 | `multi_damage_rate` | 无额外截断 | 0.10 |
+| 击杀 | `100 * kills_dpb` | 250 | 0.10 |
+
+```text
+weighted = 0.70 * potential_index
+         + 0.15 * cap(kast, 250)
+         + 0.25 * cap(impact, 250)
+         + 0.30 * ast_index
+         + 0.10 * multi_damage_rate
+         + 0.10 * kill_index
+
+rating = round(weighted * 10)
+```
+
+分数通常处于约 1000 的量级。`contribution`、`damage_avg` 与 `win_rate` 是解释性展示字段，
+不直接进入上式。
+
+## 7. 修改与维护规则
+
+后续升级 V2 时按以下顺序执行：
+
+1. 先在本文件的「算法变更记录」说明目标、公式/参数差异、兼容性和是否需要重新解释历史结果；
+2. 同步修改 `RatingV2Calculator`，不得通过当前 Performance 或 League 代码间接改写 V2；
+3. 更新 `RatingV2CalculatorTest` 的精确公式、边界和零写回断言；影响 API 时同步 DTO/mapper、
+   三语文案、安全契约和前端测试；
+4. 若希望把变更公开给普通用户，必须另立方案，不能仅放宽本灰度页权限；
+5. 全量通过 Java、前端、ArchUnit 与文档审查后再合并。
+
+### 算法变更记录
+
+| 日期 | 版本/变更 | 说明 |
+| --- | --- | --- |
+| 2026-08-26 | V2 灰度恢复基线 | 以 `37a0c0ec` 的最终公式为准；平均 HP 保留 `d4b0dd19` 的双方 14 车总 HP / 14 修正；仅管理员灰度。 |
+
+## 8. 回归基线
+
+`RatingV2CalculatorTest` 至少必须覆盖：
+
+- KAST 的击杀/协助/存活/对称 trade 边界；
+- `OBSERVED_EXACT`、Tankopedia、单车 2400 fallback 与固定 `/14`；
+- 潜在伤害补增与缺 alpha 的回退；
+- 空白昵称、非法负伤害、综合分数尺度与排序；
+- 调用前后 `PlayerResult` 不被写回。
+
+`RatingV2AdminControllerContractTest`、`RatingV2AdminServiceTest`、`SecurityConfigTest` 还必须证明：
+只读取 READY dataset、API key 纯英文、匿名/普通用户拒绝、管理员允许。

@@ -74,6 +74,17 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
     expect(wrapper.find('.markdown-content').exists()).toBe(true)
     expect(wrapper.text()).toContain('league.docs_page_title')
   })
+
+  it('?view=rating-v2 解析隐藏管理员灰度页，但顶栏不出现入口', async () => {
+    window.history.replaceState({}, '', '/?view=rating-v2')
+    const wrapper = mountApp()
+    await vi.waitFor(() => {
+      expect(wrapper.find('.rating-v2-page').exists()).toBe(true)
+    })
+    await flushPromises()
+    expect(wrapper.find('nav').text()).not.toContain('ratingV2.title')
+    expect(wrapper.text()).toContain('ratingV2.login')
+  })
 })
 
 describe('App user menu（V2：Teleport 到 body，脱离 .topbar overflow 裁切）', () => {
