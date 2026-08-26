@@ -1530,8 +1530,6 @@
             "radar_done": "Done",
             "radar_min_hint": "Radar needs at least {n} metrics",
             "radar_max_hint": "Radar supports up to {n} metrics",
-            "radar_partial": "Some metrics have no rating data",
-            "radar_unavailable": "No rating data",
             "radar_move_up": "Move up",
             "radar_move_down": "Move down",
             "perf_title": "Performance Metrics",
@@ -1555,7 +1553,28 @@
             "hits": "Hits",
             "pens": "Pens",
             "points_earned": "Points Earned",
-            "survived": "Status"
+            "survived": "Status",
+            "rating_label": "Rating",
+            "battle_average": "Battle Average",
+            "global_average": "Global Average",
+            "radar_dim_unavailable": "Some rating dimensions are missing - radar unavailable",
+            "ref_unavailable": "Reference average unavailable for the selected dimensions",
+            "prev_player": "Previous Player",
+            "next_player": "Next Player",
+            "export_profile": "Export Player Profile"
         }
+    },
+    "radar_lbl": {
+        "dimension": "Dimension",
+        "player": "Player"
+    },
+    "radar_labels": {
+        "league_damage_score": "Damage",
+        "league_shooting_score": "Shooting",
+        "league_kill_score": "Kill",
+        "league_survival_score": "RC",
+        "league_blocked_score": "Blocked",
+        "league_exchange_score": "Exchange",
+        "league_assist_score": "Assist"
     }
 }

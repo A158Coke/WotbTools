@@ -82,12 +82,41 @@ const unifiedShownCols = computed(() => {
 // ---- Player Detail Drawer（只存 identity，不存 mutable row；刷新后按 accountId 重新 resolve） ----
 const selectedPlayerContext = ref(null)
 
+// ---- Player Detail Drawer 导航：跟随当前可见表格顺序（§29），scope 不跨界（§30）----
+const navOrder = ref([])
+const navIndex = ref(-1)
+
 function selectPlayer(context) {
   selectedPlayerContext.value = context
+  const order = Array.isArray(context.order) ? context.order.map(Number) : []
+  navOrder.value = order
+  navIndex.value = order.indexOf(Number(context.accountId))
 }
 
 function closeDrawer() {
   selectedPlayerContext.value = null
+  navOrder.value = []
+  navIndex.value = -1
+}
+
+/** 前后导航可用性（§31）：首位 prev 禁用、末位 next 禁用，不循环。 */
+const hasPrevPlayer = computed(() => navOrder.value.length > 0 && navIndex.value > 0)
+const hasNextPlayer = computed(() => navOrder.value.length > 0 && navIndex.value >= 0 && navIndex.value < navOrder.value.length - 1)
+
+function goPrevPlayer() {
+  const ctx = selectedPlayerContext.value
+  if (!ctx || !hasPrevPlayer.value) return
+  const target = navOrder.value[navIndex.value - 1]
+  selectedPlayerContext.value = { scope: ctx.scope, accountId: target, arenaId: ctx.arenaId }
+  navIndex.value = navIndex.value - 1
+}
+
+function goNextPlayer() {
+  const ctx = selectedPlayerContext.value
+  if (!ctx || !hasNextPlayer.value) return
+  const target = navOrder.value[navIndex.value + 1]
+  selectedPlayerContext.value = { scope: ctx.scope, accountId: target, arenaId: ctx.arenaId }
+  navIndex.value = navIndex.value + 1
 }
 
 /** Drawer 打开状态：context 存在即打开（默认关闭）。 */
@@ -144,11 +173,24 @@ const drawerPlayer = computed(() => {
 /** selection 变化（上传/删除/替换/clear/新 batch）→ 关闭 Drawer 防旧数据污染。 */
 watch(selectionRevision, () => {
   selectedPlayerContext.value = null
+  navOrder.value = []
+  navIndex.value = -1
 })
 
 /** Tab 切换（汇总 ↔ Battle 或 Battle ↔ Battle）→ 关闭 Drawer 避免上下文混淆。 */
 watch(activeTab, () => {
   selectedPlayerContext.value = null
+  navOrder.value = []
+  navIndex.value = -1
+})
+
+/** 当前 scope 的玩家集合（summary=unifiedRows；battle=本场 players），供 Drawer 计算参考平均。 */
+const drawerScopePlayers = computed(() => {
+  const ctx = selectedPlayerContext.value
+  if (!ctx) return []
+  if (ctx.scope === 'summary') return unifiedRows.value
+  const battle = (resp.value?.battles || []).find(b => b.arenaId === ctx.arenaId)
+  return battle ? battle.players : []
 })
 
 // ---- League Rating 校验失败展示（neutral/warning 语义 + 可展开汇总，
@@ -739,7 +781,8 @@ watch(files, (next) => {
     <RemoveConfirmModal :pending="pendingRemove" @confirm="confirmRemove" @cancel="cancelRemove" />
     <PlayerDetailDrawer :context="drawerOpen ? selectedPlayerContext : null" :player="drawerPlayer"
                         :league-columns="leagueData?.columns || []"
-                        @close="closeDrawer" />
+                        :scope-players="drawerScopePlayers" :has-prev="hasPrevPlayer" :has-next="hasNextPlayer"
+                        @close="closeDrawer" @prev="goPrevPlayer" @next="goNextPlayer" />
   </div>
 </template>
 
