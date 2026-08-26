@@ -47,6 +47,12 @@ const open = computed(() => !!props.context && !!props.player)
 const closeBtn = ref(null)
 const isSummary = computed(() => props.context?.scope === 'summary')
 
+// 桌面/平板非模态侧栏，移动端(<768px)保持 modal：复用现有 mobile 断点（max-width: 767px）。
+const isMobile = ref(typeof window !== 'undefined' ? window.innerWidth <= 767 : false)
+function updateViewport() { isMobile.value = window.innerWidth <= 767 }
+function bindMobile() { updateViewport(); window.addEventListener('resize', updateViewport) }
+function unbindMobile() { window.removeEventListener('resize', updateViewport) }
+
 function num(v) {
   return (v == null || v === '' || !Number.isFinite(Number(v))) ? '--' : String(Math.round(Number(v) * 10) / 10)
 }
@@ -271,8 +277,8 @@ watch(open, (v) => {
   if (v) nextTick(() => closeBtn.value?.focus?.())
 })
 
-onMounted(() => { window.addEventListener('keydown', onKeydown) })
-onBeforeUnmount(() => { window.removeEventListener('keydown', onKeydown) })
+onMounted(() => { window.addEventListener('keydown', onKeydown); bindMobile() })
+onBeforeUnmount(() => { window.removeEventListener('keydown', onKeydown); unbindMobile() })
 
 // ---- 导出 Rating Profile PNG（§41-48）：专用卡片（非 Drawer 截图）----
 // 导出前捕获不可变快照，offscreen 卡只消费快照——导出期间切换玩家不产生“新玩家数据 + 旧坦克图”混合 PNG。
@@ -387,8 +393,8 @@ function ensureImageLoaded(url) {
 
 <template>
   <Teleport to="body">
-    <div v-if="open || closing" class="drawer-backdrop" @click.self="requestClose">
-      <aside class="player-drawer" :class="{ 'pd-closing': closing }" role="dialog" aria-modal="true"
+    <div v-if="open || closing" class="drawer-backdrop" :class="{ 'pd-modal': isMobile }" @click.self="isMobile ? requestClose() : null">
+      <aside class="player-drawer" :class="{ 'pd-closing': closing }" role="dialog" :aria-modal="isMobile ? 'true' : undefined"
              :aria-labelledby="'pd-title-' + (player?.accountId ?? 'x')">
         <button ref="closeBtn" class="pd-close pd-close-abs" :aria-label="t('league.drawer.close')"
                 @click="requestClose">✕</button>
@@ -556,8 +562,15 @@ function ensureImageLoaded(url) {
 </template>
 
 <style scoped>
+/* 非模态侧栏：桌面/平板 backdrop 不拦截 Grid 点击（pointer-events:none），
+   Drawer 自身恢复可交互；移动端(<768px)再切回 modal veil（.pd-modal）。 */
 .drawer-backdrop {
   position: fixed; inset: 0; z-index: 60;
+  pointer-events: none;
+  background: none;
+}
+.drawer-backdrop.pd-modal {
+  pointer-events: auto;
   background: color-mix(in srgb, #000 35%, transparent);
 }
 .player-drawer {
@@ -565,6 +578,7 @@ function ensureImageLoaded(url) {
   background: var(--bg-card2); border: 1px solid var(--border); border-radius: 12px;
   box-shadow: var(--surface-shadow); overflow-y: auto; padding: 16px;
   animation: pd-slide-in .22s ease-out;
+  pointer-events: auto;
 }
 .player-drawer.pd-closing { animation: pd-slide-out .17s ease-in forwards; }
 @keyframes pd-slide-in { from { transform: translateX(30px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
