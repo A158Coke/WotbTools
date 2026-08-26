@@ -319,6 +319,28 @@ function createExportClone(target, theme) {
   return { clone, container }
 }
 
+/**
+ * Make the export clone a deterministic, html2canvas-safe static snapshot.
+ * - Remove interaction-only state (drawer/hover .selected) so the cursor or a
+ *   lingering selection never changes the PNG.
+ * - Disable fixed (sticky) columns for full-width table export (no column
+ *   overlap / stale left offsets). The .replay-export-root CSS also forces
+ *   position:static via !important; the inline override is belt-and-suspenders
+ *   and directly testable in happy-dom.
+ */
+function prepareReplayExportClone(clone) {
+  if (!clone) return
+  for (const el of clone.querySelectorAll('.selected')) {
+    el.classList.remove('selected')
+  }
+  for (const el of clone.querySelectorAll('.sticky-col')) {
+    el.style.position = 'static'
+    el.style.left = 'auto'
+    el.style.right = 'auto'
+    el.style.zIndex = 'auto'
+  }
+}
+
 function expandExportTables(clone) {
   for (const wrap of clone.querySelectorAll('.tablewrap')) {
     wrap.style.overflow = 'visible'
@@ -407,6 +429,7 @@ async function downloadResultPng() {
 
   try {
     cloneCtx = createExportClone(target, exportTheme)
+    prepareReplayExportClone(cloneCtx.clone)
     expandExportTables(cloneCtx.clone)
     // PNG = 当前视图（所见即所得）：克隆当前 DOM 即得到当前 ColumnPicker 可见列与顺序、
     // 当前排序与战队名称覆盖，不做任何全量列替换（XLSX 才是完整数据导出，与前端偏好解耦）。
@@ -424,11 +447,12 @@ async function downloadResultPng() {
     })
 
     const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
-    if (!blob) throw new Error('toBlob returned null')
+    if (!blob) throw new Error('Replay PNG export: canvas.toBlob returned null')
 
     const filename = exportPngFilename(exportTab, isNaN(exportBattleIdx) ? 0 : exportBattleIdx, exportMapName)
     await downloadBlob(blob, filename)
   } catch (e) {
+    console.error('[Replay PNG Export] failed', e)
     error.value = t('replay.png_export_failed')
   } finally {
     if (cloneCtx) cleanupExportClone(cloneCtx.container)
@@ -917,9 +941,12 @@ watch(files, (next) => {
   line-height: 1.5;
   max-width: none;
 }
-/* PNG 导出：取消 sticky 定位，避免固定列覆盖其他列 */
+/* PNG 导出：取消 sticky 定位 + 清除偏移，避免固定列覆盖其他列（完整宽表导出） */
 .replay-export-root .sticky-col {
   position: static !important;
+  left: auto !important;
+  right: auto !important;
+  z-index: auto !important;
 }
 /* PNG 导出：League 概览与汇总表样式（深色/浅色均可读） */
 .replay-export-root .league-overview {
@@ -987,7 +1014,7 @@ watch(files, (next) => {
   background: var(--exp-bg);
 }
 .replay-export-root th {
-  background: var(--exp-header-bg);
+  background: var(--exp-header-bg) !important;
   color: var(--exp-text);
   padding: 6px 10px;
   border: 1px solid var(--exp-border);
@@ -1000,10 +1027,10 @@ watch(files, (next) => {
   color: var(--exp-text);
 }
 .replay-export-root tbody tr.t1 td {
-  background: var(--exp-t1-bg);
+  background: var(--exp-t1-bg) !important;
 }
 .replay-export-root tbody tr.t2 td {
-  background: var(--exp-t2-bg);
+  background: var(--exp-t2-bg) !important;
 }
 .replay-export-root .alive {
   display: inline-flex;
@@ -1026,6 +1053,19 @@ watch(files, (next) => {
   font-weight: 700;
   background: var(--exp-destroyed);
   color: var(--exp-bg);
+}
+/* PNG 导出：确定性静态快照。禁用动画/过渡/滤镜/backdrop-filter，
+   避免 html2canvas 解析或时序不稳定的 CSS（以及 hover/animation 干扰画面）。 */
+.replay-export-root * {
+  animation: none !important;
+  transition: none !important;
+  backdrop-filter: none !important;
+  filter: none !important;
+}
+/* PNG 导出：汇总空态也使用实色（替代 color-mix），避免导出失败 */
+.replay-export-root .league-summary-empty {
+  background: var(--exp-card-bg) !important;
+  color: var(--exp-text-sub) !important;
 }
 .replay-export-root .scroll-hint {
   display: none;
