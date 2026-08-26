@@ -1,0 +1,32 @@
+/* WotBTools Classic Profile — 仅「从简」视觉精简。
+ *
+ * 范围(D1):布局/结构/间距/密度/组件/列/导航与 Showcase 完全一致。
+ * 本文件只在 html[data-ui-profile="classic"] 命中时生效;Showcase(默认)完全不受影响。
+ *
+ * 机制说明:Showcase 是全屏 AI/装饰性背景 + 渐变遮罩这些「展示层」。Classic 只关闭这些
+ * 展示层(全屏路景 ::after、readability veil ::before、装饰性 hero/uploadcard surface),
+ * 让页面落回产品原有的平暗表面。用 [data-ui-profile="classic"] namespace(比展示层 specificity
+ * 高),而非把现有 showcase 全局样式重排进 @layer——后者会因文档内联 :root/组件 scoped 样式为
+ * unlayered 而反向覆盖,威胁 §21/§47 的 Showcase 零回归硬约束。完整 @layer 重排留作后续。
+ */
+
+/* 1) 关闭全屏 AI 路景背景(::after)与 readability 渐变遮罩(::before) */
+[data-ui-profile="classic"] :is(.layout-content,.layout-wide,.layout-data-workspace,.admin-page,.profile-page,.boost-page,.version-page,.contact-page,.hof-page,.hof-wrap,.hall-page,.lb-wrap,.hof-admin-page,.hofadmin-page,.admin-hof-page,.hof-admin,.rating-page,.rating-section,.rating-workspace,.recon-page,.homepage-showcase)::after,
+[data-ui-profile="classic"] :is(.layout-content,.layout-wide,.layout-data-workspace,.admin-page,.profile-page,.boost-page,.version-page,.contact-page,.hof-page,.hof-wrap,.hall-page,.lb-wrap,.hof-admin-page,.hofadmin-page,.admin-hof-page,.hof-admin,.rating-page,.rating-section,.rating-workspace,.recon-page,.homepage-showcase)::before {
+  content: none;
+}
+
+/* 2) 装饰性 hero / 上传 / profile-hero 表面:去掉 AI 图,落回平暗(保留结构) */
+[data-ui-profile="classic"] .homepage-showcase .showcase-hero,
+[data-ui-profile="classic"] .layout-data-workspace .uploadwrap,
+[data-ui-profile="classic"] .layout-data-workspace .uploadcard,
+[data-ui-profile="classic"] .profile-page .profile-hero {
+  background: none !important;
+  box-shadow: none !important;
+}
+
+/* 3) showcase-cohesion.css 的装饰性 ::after/::before 叠加层 */
+[data-ui-profile="classic"] .layout-data-workspace .uploadwrap::after,
+[data-ui-profile="classic"] .layout-data-workspace .uploadcard::before {
+  content: none;
+}

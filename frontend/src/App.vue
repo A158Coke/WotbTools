@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, provide, ref } from 'vue'
 import { useAuth } from './composables/useAuth.js'
 import { useError } from './composables/useError.js'
+import { useUiProfile } from './composables/useUiProfile.js'
 import HomePage from './components/HomePage.vue'
 import ReplayPage from './components/ReplayPage.vue'
 import HoFPage from './components/HoFPage.vue'
@@ -23,6 +24,7 @@ const RatingV2AdminPage = defineAsyncComponent(() => import('./components/Rating
 
 const { initPromise, login, logout, isAuthenticated, userName, tokenParsed } = useAuth()
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
+const { uiProfile, setUiProfile } = useUiProfile()
 
 const languageOptions = [
   { key: 'zh', label: '中文' },
@@ -166,6 +168,15 @@ onBeforeUnmount(() => {
       <!-- Teleport 到 body：fixed 定位在触发按钮下方，脱离 .topbar overflow 裁切 -->
       <Teleport to="body">
         <div v-if="userMenuOpen" ref="userMenuPanelEl" class="user-menu-panel" :style="{ top: userMenuPos.top + 'px', right: userMenuPos.right + 'px' }" role="menu">
+            <div class="user-menu-section" :aria-label="$t('uiProfile.title')">
+              <div class="user-menu-section-title">{{ $t('uiProfile.title') }}</div>
+              <div class="ui-profile-segmented" role="group" :aria-label="$t('uiProfile.title')">
+                <button class="ui-profile-option" :class="{ active: uiProfile === 'classic' }" :aria-pressed="uiProfile === 'classic'" @click="setUiProfile('classic')">{{ $t('uiProfile.classic') }}</button>
+                <button class="ui-profile-option" :class="{ active: uiProfile === 'showcase' }" :aria-pressed="uiProfile === 'showcase'" @click="setUiProfile('showcase')">{{ $t('uiProfile.showcase') }}</button>
+              </div>
+            </div>
+            <div class="user-menu-divider"></div>
+
           <template v-if="isAuthenticated()">
             <button class="user-menu-item" role="menuitem" @click="go('profile')">{{ $t('app.profile') }}</button>
             <button v-if="isAdmin" class="user-menu-item" role="menuitem" @click="go('admin-users')">{{ $t('admin.title') }}</button>
@@ -281,6 +292,14 @@ h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
 .user-menu-item:hover { background: var(--bg-list-hover); color: var(--text-heading); text-decoration: none; }
 .user-menu-item.danger { color: var(--error); }
 .user-menu-item.danger:hover { background: var(--status-err-bg); color: var(--status-err-fg); }
+.user-menu-section { padding: 2px 4px 0; }
+.user-menu-section-title { font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin: 4px 8px 6px; }
+.user-menu-divider { margin: 4px; border-top: 1px solid var(--border); }
+.ui-profile-segmented { display: flex; gap: 3px; margin: 0 4px 6px; padding: 3px; background: var(--bg-card2); border: 1px solid var(--border); border-radius: 7px; }
+.ui-profile-option { flex: 1; padding: 6px 8px; border: 0; border-radius: 5px; background: transparent; color: var(--text-sub); font-size: .82rem; font-family: inherit; cursor: pointer; }
+.ui-profile-option:hover { color: var(--text-heading); }
+.ui-profile-option.active { background: var(--bg-elevated); color: var(--text-heading); box-shadow: inset 0 0 0 1px var(--border-header); }
+.ui-profile-option:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 .tabs { display: flex; gap: 4px; margin-bottom: 12px; background: rgba(13,18,22,.92); border: 1px solid rgba(58,69,76,.5); border-radius: 9px; padding: 3px; }
 .tabs button { flex: 1; padding: 8px 0; border: none; border-radius: 7px;
   background: transparent; color: #b5b2aa; cursor: pointer; font-size: .85rem; font-family: inherit; font-weight: 500; }
