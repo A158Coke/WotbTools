@@ -35,7 +35,8 @@ The repository's current consumable catalog independently supplies activation ty
 | `0x09` | Adrenaline | 20.0 / 26.6 | 80.0 / 68.376 | 414 |
 | `0x0A` | Engine Power Boost | 12.0 | 55.556 | 32 |
 | `0x0B` | Multi-Purpose Restoration Pack | 0.0 | 100.0 / 85.470 | 368 |
-| `0x0C` / `0x0D` | First Aid Kit / Repair Kit pair; exact code assignment unresolved | 0.0 | 75.0 / 64.103 | 215 combined |
+| `0x0C` | First Aid Kit | 0.0 | 75.0 / 64.103 | 5 |
+| `0x0D` | Repair Kit | 0.0 | 75.0 / 64.103 | 210 |
 | `0x3D` | Improved Engine Power Boost | 15.0 / 19.95 | 65.0 / 55.556 | 167 |
 | `0x3E` | Reticle Calibration | 20.0 / 26.6 | 55.0 / 47.009 | 111 |
 | `0x42` | Reactive Armor | 10.0 | 55.556 | 11 |
@@ -62,6 +63,72 @@ The alternate cooldown family is consistently approximately `0.8547x` base:
 ```
 
 This proves that `param` carries effective battle configuration, not only catalog base values. The exact modifier stack responsible for the observed cooldown ratio should remain provenance-aware rather than being inferred from the number alone.
+
+## `0x0C` / `0x0D` assignment closure
+
+The earlier archive kept the `0x0C` / `0x0D` First Aid Kit / Repair Kit pair unresolved because cooldown/duration alone cannot distinguish the two instant consumables. The strict 34-arena corpus now provides an independent behavioral discriminator.
+
+### `0x0D` clears Repair-Kit-compatible vehicle states
+
+Type7 Vehicle prop8 exposes count-prefixed recoverable state-token snapshots. For observable token removals in the `0x21..0x26` family, every closed removal is aligned to either Multi-Purpose Restoration Pack `0x0B` or `0x0D` activation; `0x0D` accounts for many exact-clock clears, including all observed removals of some sparse tokens.
+
+For example:
+
+```text
+prop8 token 0x21 removals:
+  0x0B activation : 9
+  0x0D activation : 9
+  other           : 0
+```
+
+This establishes that `0x0D` operates the mechanical/Repair-Kit-compatible state subsystem.
+
+### `0x0D` does not extinguish the proven fire-DOT family
+
+Type32 mobile short `...04` is independently closed as fire-associated by 4/4 settlement `deathReason=1` fire deaths and repeated periodic HP-loss sequences.
+
+Two observed cases use `0x0D` during an active `...04` fire sequence. In both cases, periodic small HP-loss ticks continue after activation at roughly 0.5-second cadence, with no corresponding direct-hit method8 event:
+
+```text
+example A:
+  ...04 fire
+  HP 1461
+  0x0D activation
+  HP 1407 -> 1362 -> 1326
+
+example B:
+  ...04 fire
+  HP 2293
+  0x0D activation
+  HP 2236 -> 2188 -> 2149 -> 2120
+```
+
+Therefore `0x0D` is not another all-purpose restoration packet and does not extinguish fire in the observed corpus.
+
+Verdict:
+
+> `0x0D` = **Repair Kit — PROVEN behavioral identity** for Blitz 11.19 China current corpus.
+
+### `0x0B` is the all-purpose restoration positive control
+
+Among 14 observed `...04` fire sequences followed within 3 seconds by `0x0B`, 13/14 have no subsequent independent periodic HP-loss tick after activation once new direct-hit method8 events are excluded. The remaining case has one loss exactly at the activation clock, consistent with the already-in-flight fire tick.
+
+Thus `0x0B` independently exhibits both:
+
+- repair-state clearing; and
+- fire extinguishing.
+
+This behavior closes its catalog identity as **Multi-Purpose Restoration Pack** independently of cooldown matching.
+
+### `0x0C` is First Aid Kit
+
+The version-matched item catalog had already reduced the equal-duration/cooldown `0x0C` / `0x0D` pair to First Aid Kit and Repair Kit. Once `0x0D` is independently closed as Repair Kit, the remaining assignment is unique:
+
+> `0x0C` = **First Aid Kit — PROVEN by pair elimination**.
+
+Only five `0x0C` activations exist in the current corpus, so the exact replay property/method representing injured crew remains unresolved. Do not infer a crew token from mere timing proximity to those five uses.
+
+Detailed fire/state evidence is archived in [`fire-and-repair-states.md`](fire-and-repair-states.md).
 
 ## Duration closure
 
@@ -103,16 +170,16 @@ ConsumableLifecycleEvent {
 
 Safe uses:
 
-- AI Review: cite an observed Adrenaline, Reticle Calibration, Reactive Armor, engine boost or Tungsten activation at a specific time;
+- AI Review: cite an observed Adrenaline, First Aid Kit, Repair Kit, Multi-Purpose Restoration Pack, Reticle Calibration, Reactive Armor, engine boost or Tungsten activation at a specific time;
 - battle playback: show actual observed active windows and cooldown transitions;
-- combat analysis: join Adrenaline windows to wrapper15 reload telemetry and Reticle Calibration windows to Type31/Type39 aim behavior;
+- combat analysis: join Adrenaline windows to wrapper15 reload telemetry and recovery consumables to proven damage/state evidence;
 - configuration inference: retain effective duration/cooldown without pretending the complete equipment loadout is known.
 
 Do not expose raw wire codes to users when the version mapping is absent.
 
 ## Remaining work
 
-1. distinguish `0x0C` First Aid Kit from `0x0D` Repair Kit using controlled crew/module damage and activation probes;
+1. locate and decode the direct crew-injury state surface underlying `0x0C` First Aid Kit;
 2. map remaining initialization/teardown-only control prefixes;
 3. validate code stability on Blitz versions outside 11.19 China;
 4. close the exact cooldown modifier provenance against explicit equipment/configuration data;
