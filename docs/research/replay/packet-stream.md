@@ -74,7 +74,7 @@ Counts below are across all 44 replay files.
 | 28 | 460 | 4 B, values 0/1/2 | `PROVEN structure / UNKNOWN semantic` |
 | 29 | 176 | 1 B, always `01` | `PROVEN structure / PARTIAL lifecycle semantic` |
 | 31 | 183,147 | 4 B float | `PROVEN` recorder dispersion/aim-circle decay stream in validated samples |
-| 32 | 22,066 | 11–27 B | `PARTIAL`; client-runtime-related event family |
+| 32 | 22,066 | 11–27 B | `PROVEN envelope / UNKNOWN body semantics`; entity-scoped length-prefixed auxiliary blob |
 | 33 | 4,869 | 12 B | `PROVEN structure` entity enter-world confirmation |
 | 35 | 118,416 | 1 B | `PROVEN structure / PARTIAL semantic` ~10 Hz incrementing counter |
 | 36 | 44 | 4 B | `PROVEN structure / UNKNOWN semantic`; one near stream initialization per replay |
