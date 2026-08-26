@@ -126,6 +126,17 @@ function onResizeKey(delta) {
   setDrawerWidth(drawerWidth.value + delta)
 }
 
+/** Side Panel 真 reflow（计划 §7）：桌面(>=1200px)开启时把抽屉宽度暴露成 CSS 变量，
+ * 供 .layout-data-workspace 预留右侧空间，主内容随之收窄/扩展，不再被 fixed overlay 覆盖；
+ * tablet/mobile 保持原有 overlay 行为（offset=0px）。 */
+const workspaceOffset = computed(() =>
+  isDesktop.value && open.value ? (drawerWidth.value + 8) + 'px' : '0px')
+watch([isDesktop, open, drawerWidth], () => {
+  if (typeof document !== 'undefined') {
+    document.documentElement.style.setProperty('--pd-drawer-offset', workspaceOffset.value)
+  }
+}, { immediate: true })
+
 function updateViewport() {
   const w = window.innerWidth
   isMobile.value = w <= 767
@@ -367,6 +378,7 @@ onBeforeUnmount(() => {
   unbindMobile()
   document.body.style.userSelect = ''
   document.body.classList.remove('pd-resizing')
+  if (typeof document !== 'undefined') document.documentElement.style.removeProperty('--pd-drawer-offset')
 })
 
 // ---- 导出 Rating Profile PNG（§41-48）：专用卡片（非 Drawer 截图）----

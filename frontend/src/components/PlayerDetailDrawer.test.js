@@ -722,4 +722,22 @@ describe('PlayerDetailDrawer Side Panel resize（仅桌面，计划 §4-14）', 
     expect(widthNum(wrapper)).toBe(380)
     expect(wrapper.emitted('prev')).toBeFalsy()
   })
+
+  it('reflow（计划 §7）：桌面开启时暴露 --pd-drawer-offset 供 workspace 预留；拖宽后同步；mobile 恒 0px；unmount 清除', async () => {
+    window.innerWidth = 1400
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await flushPromises()
+    expect(document.documentElement.style.getPropertyValue('--pd-drawer-offset')).toBe('388px')
+    const resizer = wrapper.find('[data-testid="drawer-resizer"]')
+    await resizer.trigger('pointerdown', { clientX: 320, pointerId: 1 })
+    await resizer.trigger('pointermove', { clientX: 260 })
+    await resizer.trigger('pointerup')
+    expect(document.documentElement.style.getPropertyValue('--pd-drawer-offset')).toBe('448px')
+    wrapper.unmount()
+    expect(document.documentElement.style.getPropertyValue('--pd-drawer-offset')).toBe('')
+    window.innerWidth = 1024
+    const tablet = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await flushPromises()
+    expect(document.documentElement.style.getPropertyValue('--pd-drawer-offset')).toBe('0px')
+  })
 })
