@@ -73,9 +73,15 @@ public final class LeagueRatingBatchAggregator {
         final List<PlayerLeagueSummary> playerSummaries = new ArrayList<>();
         for (final Map.Entry<Long, PlayerAcc> e : players.entrySet()) {
             final PlayerAcc acc = e.getValue();
+            // V5：Raw Batch Median 保持原样，主 Rating 走 Evidence Adjustment
+            // （只修正最终 Batch Player Rating；七维 median/mean 与 Team Rating 不动）。
+            final double rawMedian = median(acc.ratings);
+            final double batchRatingV5 =
+                    LeagueBatchPlayerRatingCalculator.apply(rawMedian, acc.battles);
             playerSummaries.add(new PlayerLeagueSummary(
                     e.getKey(), acc.nickname, acc.clan, acc.battles,
-                    median(acc.ratings), chunkMedians(acc.dims), chunkMeans(acc.dims),
+                    rawMedian, batchRatingV5,
+                    chunkMedians(acc.dims), chunkMeans(acc.dims),
                     acc.mvpCount, acc.wins, acc.damageTotal, acc.assistTotal, acc.killsTotal));
         }
         final List<TeamLeagueSummary> teamSummaries = new ArrayList<>();

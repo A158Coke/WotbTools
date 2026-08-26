@@ -16,6 +16,10 @@ public final class LeagueColumns {
     /** 总 Rating 列 key（固定显示，不允许被 ColumnPicker 隐藏）。 */
     public static final String RATING = "league_rating";
 
+    /** Raw Batch Median 列 key（V5 explainability：玩家自己的单场 V4.1 Rating 中位数；
+     *  默认可隐藏，不是主 Rating）。 */
+    public static final String RATING_RAW_MEDIAN = "league_rating_raw_median";
+
     /** 七个 Rating 维度列 key（顺序与 {@link #DIM_MAX} 对齐）。 */
     public static final List<String> DIM_KEYS = List.of(
             "league_damage_score",

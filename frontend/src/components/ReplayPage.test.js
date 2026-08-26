@@ -1045,7 +1045,7 @@ describe('ReplayPage PNG export', () => {
             { key: 'league_damage_score', max: 400 },
           ],
           playerSummaries: [
-            { accountId: 1001, nickname: 'Alpha', clan: 'AAA', battles: 1, ratingMedian: 927.4,
+            { accountId: 1001, nickname: 'Alpha', clan: 'AAA', battles: 1, ratingV5: 927.4, ratingRawMedian: 927.4,
               dimensionMedians: [342, 60, 70, 110, 40, 80, 100], mvpCount: 1, wins: 1,
               contribution: 22.4, kast: 100, impact: 151.2 },
           ],
@@ -1827,7 +1827,7 @@ describe('ReplayPage result visibility (no blank results; league mode from resp.
       league: {
         mode: 'LEAGUE_RATING',
         columns: [],
-        playerSummaries: [{ nickname: 'P1', ratingMedian: 1500, battles: 5, wins: 3, damageTotal: 25000, killsTotal: 10, dimensionMedians: [] }],
+        playerSummaries: [{ nickname: 'P1', ratingV5: 1000, ratingRawMedian: 1500, battles: 5, wins: 3, damageTotal: 25000, killsTotal: 10, dimensionMedians: [] }],
         playerSummaryColumns: [{ key: 'nickname', label: '昵称' }, { key: 'league_rating', label: 'Rating' }],
         teamSummaries: [],
         teamSummaryColumns: [],
@@ -1856,7 +1856,7 @@ describe('ReplayPage result visibility (no blank results; league mode from resp.
       league: {
         mode: 'LEAGUE_RATING',
         columns: [],
-        playerSummaries: [{ nickname: 'P1', ratingMedian: 900, battles: 2, wins: 1, damageTotal: 9000, killsTotal: 4, dimensionMedians: [] }],
+        playerSummaries: [{ nickname: 'P1', ratingV5: 795.7, ratingRawMedian: 900, battles: 2, wins: 1, damageTotal: 9000, killsTotal: 4, dimensionMedians: [] }],
         playerSummaryColumns: [{ key: 'nickname', label: '昵称' }, { key: 'league_rating', label: 'Rating' }],
         teamSummaries: [],
         teamSummaryColumns: [],
@@ -1999,7 +1999,7 @@ describe('ReplayPage Player Detail Drawer', () => {
         mode: 'LEAGUE_RATING',
         columns: [{ key: 'league_rating', max: 1000, fixed: true }],
         playerSummaries: [
-          { accountId: 1001, nickname: 'Alpha', clan: 'AAA', battles: 3, ratingMedian: 850.4,
+          { accountId: 1001, nickname: 'Alpha', clan: 'AAA', battles: 3, ratingV5: 779.3, ratingRawMedian: 850.4,
             dimensionMedians: [342, 60, 70, 110, 40, 80, 100],
             dimensionMeans: [250, 40, 30, 75, 10, 50, 65], mvpCount: 2, wins: 2 },
         ],
@@ -2154,7 +2154,7 @@ describe('ReplayPage CW unified table column contract + CW/Rating boundary', () 
           { key: 'league_shooting_score', max: 100 },
         ],
         playerSummaries: [
-          { accountId: 1001, nickname: 'Alpha', clan: 'AAA', battles: 8, ratingMedian: 850.4, dimensionMedians: [342, 60, 70, 110, 40, 80, 100], mvpCount: 2, wins: 8, contribution: 22.4, kast: 100, impact: 151.2 },
+          { accountId: 1001, nickname: 'Alpha', clan: 'AAA', battles: 8, ratingV5: 826.1, ratingRawMedian: 850.4, dimensionMedians: [342, 60, 70, 110, 40, 80, 100], mvpCount: 2, wins: 8, contribution: 22.4, kast: 100, impact: 151.2 },
         ],
         playerSummaryColumns: [
           { key: 'nickname', num: false }, { key: 'clan', num: false }, { key: 'battles', num: true },

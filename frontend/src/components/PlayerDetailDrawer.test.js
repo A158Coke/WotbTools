@@ -14,7 +14,8 @@ const SUMMARY_PLAYER = {
   accountId: 1001,
   nickname: 'Alpha',
   clan: 'AAA',
-  ratingMedian: 850.4,
+  rating: 850.4,
+  rawMedian: 850.4,
   dimensionMedians: [342, 60, 70, 110, 40, 80, 100],
   // 与 medians 故意不同：Radar 必须用 mean（40/30/10/50 等），不能被 median 的 0 覆盖
   dimensionMeans: [250, 40, 30, 75, 10, 50, 65],
@@ -125,7 +126,7 @@ describe('PlayerDetailDrawer', () => {
 
   it('shows -- for missing rating instead of 0', () => {
     const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 },
-      { ...SUMMARY_PLAYER, ratingMedian: null })
+      { ...SUMMARY_PLAYER, rating: null })
     expect(wrapper.text()).toContain('--')
     expect(wrapper.text()).not.toMatch(/\b0\b ·/)
   })
@@ -140,6 +141,7 @@ describe('PlayerDetailDrawer scope semantics', () => {
     // 场次（解析 12）与评分场次（rated 8）分开显示
     expect(text).toContain('league.drawer.battles')
     expect(text).toContain('league.drawer.rated_battles')
+    expect(text).toContain('league.drawer.observed_median')
     expect(text).toContain('12')
     expect(text).toContain('8')
   })
@@ -368,7 +370,7 @@ describe('PlayerDetailDrawer custom Radar', () => {
       // 6 场 rated，assist scores [0,0,0,0,80,90] → median=0，mean=28.333...
       const sparse = {
         ...SUMMARY_PLAYER,
-        ratingMedian: 742.6,
+        rating: 742.6,
         dimensionMedians: [240, 0, 0, 70, 0, 0, 60],
         dimensionMeans: [250, 28.333333333333332, 30, 75, 10, 50, 65],
       }

@@ -160,7 +160,7 @@ describe('ReplayPage READY 第一帧渲染（同一提交周期内结果立即�
       league: {
         mode: 'LEAGUE_RATING',
         columns: [],
-        playerSummaries: [{ nickname: 'P1', ratingMedian: 900 }],
+        playerSummaries: [{ nickname: 'P1', ratingV5: 795.7, ratingRawMedian: 900 }],
         teamSummaries: [{ teamKey: 'clan:AAA', ratingMedian: 850 }],
         failures: [],
       },

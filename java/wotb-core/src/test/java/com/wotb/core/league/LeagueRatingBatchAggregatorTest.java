@@ -203,4 +203,126 @@ class LeagueRatingBatchAggregatorTest {
         assertEquals(110.0, summary.dimensionMeans().get(1), 1e-9,
                 "ineligible 场不进入 mean 分母（2 场都是 110 → mean 仍 110，不是 73.33）");
     }
+
+    // ---- League Rating V5 Batch Evidence Adjustment（计划 §7/§12/§13/§33–§36）----
+
+    @Test
+    void v5AdjustsMainRatingAndPreservesRawMedian() {
+        final List<LeagueTestBattles.PlayerSpec> low = LeagueTestBattles.defaultSevenVsSeven();
+        low.getFirst().damage(300);
+        final List<LeagueTestBattles.PlayerSpec> mid = LeagueTestBattles.defaultSevenVsSeven();
+        mid.getFirst().damage(1500);
+        final List<LeagueTestBattles.PlayerSpec> high = LeagueTestBattles.defaultSevenVsSeven();
+        high.getFirst().damage(3000);
+        final LeagueRatingResult rLow = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, low));
+        final LeagueRatingResult rMid = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, mid));
+        final LeagueRatingResult rHigh = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, high));
+        final double midRating = rMid.byAccount(1001).finalRating();
+        assertTrue(midRating > LeagueBatchPlayerRatingCalculator.V5_EVIDENCE_ANCHOR,
+                "测试样本必须落在 raw>450 区间，V5 才走 evidence（当前 mid=" + midRating + "）");
+
+        final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(
+                List.of(new Battle(), new Battle(), new Battle()),
+                List.of(rLow, rMid, rHigh), List.of());
+        final PlayerLeagueSummary summary = batch.playerSummaries().stream()
+                .filter(p -> p.accountId() == 1001L).findFirst().orElseThrow();
+        final double rawMedian = summary.ratingMedian();
+        assertEquals(midRating, rawMedian, 1e-9, "ratingMedian = Raw Batch Median（不变）");
+        assertEquals(LeagueBatchPlayerRatingCalculator.apply(rawMedian, summary.battles()),
+                summary.batchRatingV5(), 1e-9, "batchRatingV5 = Evidence Adjustment 后的主 Rating");
+        assertTrue(summary.batchRatingV5() < rawMedian,
+                "raw>450 时 V5 必须单边保守（低于 raw）");
+    }
+
+    @Test
+    void teamAndDimensionAggregatesUnaffectedByV5() {
+        final LeagueRatingResult a = rated(1, 0);
+        final Battle dummy = new Battle();
+        final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(
+                List.of(dummy, dummy), List.of(a, a), List.of());
+        // Team Rating 硬边界：仍然等于战队分中位数，不应用 evidence
+        final TeamLeagueSummary team = batch.teamSummaries().stream()
+                .filter(t -> t.teamKey().equals("clan:AAA")).findFirst().orElseThrow();
+        assertEquals(a.team1().teamRating(), team.ratingMedian(), 1e-9,
+                "Team Rating 不得被 V5 evidence 修改");
+        // 七维 median/mean 与 Radar 数据不动（V5 只修正最终 Batch Player Rating）
+        final PlayerLeagueSummary p = batch.playerSummaries().stream()
+                .filter(s -> s.accountId() == 1001L).findFirst().orElseThrow();
+        final PlayerLeagueRating plr = a.byAccount(1001);
+        for (int d = 0; d < LeagueColumns.DIM_KEYS.size(); d++) {
+            assertEquals(plr.dimensionScores().get(d), p.dimensionMedians().get(d), 1e-9,
+                    "dimensionMedians 不得被 V5 修改（维度 " + d + "）");
+            assertEquals(plr.dimensionScores().get(d), p.dimensionMeans().get(d), 1e-9,
+                    "dimensionMeans 不得被 V5 修改（维度 " + d + "）");
+        }
+    }
+
+    @Test
+    void rotationPlayersUseOwnRatedBattleCount() {
+        // 轮换选手：1001 打 2 场（off 0），101001 只打 1 场（off 100000）→ n 各自独立
+        final LeagueRatingResult a = rated(1, 0);
+        final LeagueRatingResult b = rated(1, 0);
+        final LeagueRatingResult c = rated(2, 100000);
+        final Battle dummy = new Battle();
+        final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(
+                List.of(dummy, dummy, dummy), List.of(a, b, c), List.of());
+        final PlayerLeagueSummary p1001 = batch.playerSummaries().stream()
+                .filter(p -> p.accountId() == 1001L).findFirst().orElseThrow();
+        final PlayerLeagueSummary p101001 = batch.playerSummaries().stream()
+                .filter(p -> p.accountId() == 101001L).findFirst().orElseThrow();
+        assertEquals(2, p1001.battles(), "1001 参加 2 场");
+        assertEquals(1, p101001.battles(), "轮换 101001 只参加 1 场");
+        assertEquals(LeagueBatchPlayerRatingCalculator.apply(p1001.ratingMedian(), 2),
+                p1001.batchRatingV5(), 1e-9, "1001 用 n=2");
+        assertEquals(LeagueBatchPlayerRatingCalculator.apply(p101001.ratingMedian(), 1),
+                p101001.batchRatingV5(), 1e-9, "轮换选手用 n=1，不得使用全批次场数");
+    }
+
+    @Test
+    void uploadOrderDoesNotChangeRawOrV5() {
+        final List<LeagueTestBattles.PlayerSpec> low = LeagueTestBattles.defaultSevenVsSeven();
+        low.getFirst().damage(300);
+        final List<LeagueTestBattles.PlayerSpec> mid = LeagueTestBattles.defaultSevenVsSeven();
+        mid.getFirst().damage(1500);
+        final List<LeagueTestBattles.PlayerSpec> high = LeagueTestBattles.defaultSevenVsSeven();
+        high.getFirst().damage(3000);
+        final LeagueRatingResult rLow = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, low));
+        final LeagueRatingResult rMid = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, mid));
+        final LeagueRatingResult rHigh = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, high));
+        final LeagueRatingBatch forward = LeagueRatingBatchAggregator.aggregate(
+                List.of(new Battle(), new Battle(), new Battle()),
+                List.of(rLow, rMid, rHigh), List.of());
+        final LeagueRatingBatch reversed = LeagueRatingBatchAggregator.aggregate(
+                List.of(new Battle(), new Battle(), new Battle()),
+                List.of(rHigh, rMid, rLow), List.of());
+        final PlayerLeagueSummary f = forward.playerSummaries().stream()
+                .filter(p -> p.accountId() == 1001L).findFirst().orElseThrow();
+        final PlayerLeagueSummary r = reversed.playerSummaries().stream()
+                .filter(p -> p.accountId() == 1001L).findFirst().orElseThrow();
+        assertEquals(f.ratingMedian(), r.ratingMedian(), 1e-9, "上传顺序不得改变 Raw Median");
+        assertEquals(f.batchRatingV5(), r.batchRatingV5(), 1e-9, "上传顺序不得改变 V5");
+    }
+
+    @Test
+    void cohortIndependenceV5DependsOnlyOnOwnRatings() {
+        // Player A（1001）两场分数完全一致；场景 2 额外加入其他战队的玩家（off 100000）。
+        // A 的 raw / n / V5 必须完全一致——V5 不得引入动态 batch prior。
+        final LeagueRatingResult a = rated(1, 0);
+        final LeagueRatingResult b = rated(1, 0);
+        final LeagueRatingResult extra = rated(2, 100000);
+        final Battle dummy = new Battle();
+        final LeagueRatingBatch withoutExtra = LeagueRatingBatchAggregator.aggregate(
+                List.of(dummy, dummy), List.of(a, b), List.of());
+        final LeagueRatingBatch withExtra = LeagueRatingBatchAggregator.aggregate(
+                List.of(dummy, dummy, dummy), List.of(a, b, extra), List.of());
+        final PlayerLeagueSummary base = withoutExtra.playerSummaries().stream()
+                .filter(p -> p.accountId() == 1001L).findFirst().orElseThrow();
+        final PlayerLeagueSummary cohort = withExtra.playerSummaries().stream()
+                .filter(p -> p.accountId() == 1001L).findFirst().orElseThrow();
+        assertEquals(base.battles(), cohort.battles(), "同批其他玩家不得改变 n");
+        assertEquals(base.ratingMedian(), cohort.ratingMedian(), 1e-9,
+                "同批其他玩家不得改变 Raw Median");
+        assertEquals(base.batchRatingV5(), cohort.batchRatingV5(), 1e-9,
+                "同批其他玩家不得改变 V5（无 batch prior）");
+    }
 }
