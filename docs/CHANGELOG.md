@@ -5,6 +5,14 @@
 ## [Unreleased]
 
 ### Added
+- **双 UI Profile（Classic/Showcase）运行时与 CSS 门控**（纯前端）:
+  - 新增 `src/composables/useUiProfile.js`：唯一状态源（reactive ref + `localStorage["wotb-ui-profile"]` 持久化 + `<html data-ui-profile>` 投影），非法值统一回退 `showcase`；`setUiProfile`/`toggleUiProfile` O(1) 切换，不 reload/remount。
+  - `frontend/index.html` 首屏防 FOUC：默认 `data-ui-profile="showcase"` + 内联脚本按存储恢复 `classic`（与 `data-theme="dark"` 并存）。
+  - `App.vue` 用户菜单新增「界面风格」分段控件（简约/沉浸，`aria-pressed`），登录/未登录均可用。
+  - 新增 `src/styles/classic-profile.css`（main.js 最后导入）：按 `[data-ui-profile="classic"]` namespace 关闭全屏 AI 路景背景（`::after`/`::before content:none`）与装饰性 hero/uploadcard surface；Showcase（默认）零回归，无 `!important` 泛滥、无 specificity 堆叠。
+  - i18n：`feature-messages.json` 新增 zh/en/ru `uiProfile.*`。
+  - 测试：`useUiProfile.test.js` + `classic-profile-css.test.js`（§43A/B/D CSS source contract）；前端全量测试与 build 通过。
+  - 说明：Classic 只去 AI/装饰背景与视觉噪音（视觉皮肤），结构/密度/布局与 Showcase 完全一致（见 docs/current-plan.md D1）；完整 `@layer` 三层重排留作后续低风险优化。
 - **选手 Rating 画像新增「最常使用坦克」**（后端 + 前端 + 导出）：
   - Core：`PlayerLeagueSummary` 新增 `vehicleUsage`（`List<PlayerVehicleUsage>`，tankId + battles），
     `LeagueRatingBatchAggregator` 在 rated-only 循环中按 accountId 关联 `PlayerResult.tankId` 累计；
