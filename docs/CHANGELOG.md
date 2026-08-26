@@ -5,9 +5,11 @@
 ## [Unreleased]
 
 ### Fixed
+- **雷达图恢复最外围 100% 边界线**：`PlayerRatingRadar` 最外围网格层引用 `--border-light-strong`，但该 token 从未定义（无效变量引用令 `stroke: none`，导致 100% 边界在 show/classic 等主题下均不可见）；已在 `tokens.css`/`showcase.css`/`classic-profile.css` 三处按主题补齐该 token（视觉强于内部 `--border-light` 网格、弱于玩家数据线），最外围 polygon 恢复完整闭合可见。
 - **Classic Profile 名人堂公开页残留深色表面（PR #151 收尾）**：`styles/classic-profile.css` 补 `html[data-ui-profile="classic"] .lb-wrap` 的提交记录行、排行榜普通行基础背景/行分隔线、百场/三环 pending 状态卡、下载按钮、分页按钮与错误态覆盖（`var(--...)` + `!important`），清除 Classic 下 HoF 仍残留的 Showcase 深灰/黑块（如 `tbody` 深色行、提交记录区深底）；Showcase（默认）零回归；`classic-profile-css.test.js` 同步 selector→declaration 绑定回归（单场/百场/三环共用表面）。
 
 ### Added
+- **选手详情侧栏桌面端自由 resize**：`PlayerDetailDrawer` 在桌面(>=1200px)侧栏左缘新增 resize handle（视觉 2px 线、12px hit 区、`cursor: col-resize`），pointer capture 连续拖动；min 320px / 默认 380px / max ≈45% 视口动态钳制；宽度经 `localStorage["radarSidePanelWidth"]` 持久化，恢复时与窗口缩放时按当前视口重新 clamp（存过大值自适应）；键盘 ←/→ 每次 20px；tablet(<1200)/mobile 保持原有行为无 handle。
 - **Classic Profile 真浅色主题（Theme 计划）**：`useUiProfile` 现在把 profile 唯一派生到 `data-theme`（showcase→dark, classic→light），首屏内联脚本同步设置 `data-ui-profile` + `data-theme`（无 FOUC）；`styles/classic-profile.css` 由「仅去 AI 背景」升级为「完整浅色语义 token + namespace 覆盖」（`html[data-ui-profile="classic"]` 提供浅色 bg/card/text/border/accent/status/rating/tactical/scroll/shadow + `color-scheme:light`；同步 `--showcase-tactical*`；覆盖 topbar/user-menu/表单/表格 sticky/管理表/restoolbar 等写死深色面）；Showcase（默认）零回归；`data-theme` 不另立主题状态/开关/第二 localStorage key（禁 `useTheme`）。
 - **选手详情侧栏非模态修复**：`PlayerDetailDrawer` 桌面/平板 backdrop 改 `pointer-events:none`（click-through）并移除 `aria-modal="true"`，移动端(<768px)经 `pd-modal` 恢复 modal veil+点击关闭；Grid 行 `select-player` 直达 `selectedPlayerContext`，Drawer 内容切换/表格高亮/左右箭头与导出快照同步。
 - **双 UI Profile（Classic/Showcase）运行时与 CSS 门控**（纯前端）:
