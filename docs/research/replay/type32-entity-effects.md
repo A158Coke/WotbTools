@@ -36,7 +36,7 @@ Observed length and flag combinations:
 | 17 |   459 | 1 |
 | 18 | 2,470 | 1 |
 
-The values `2/3/4/5/6/15/16/17/18` are therefore observed **body sizes**, not symbolic effect IDs. Packet length alone cannot select a semantic event decoder.
+The values `2/3/4/5/6/15/16/17/18` are observed **body sizes**, not symbolic effect IDs. Packet length alone cannot select a semantic event decoder.
 
 ## Entity routing
 
@@ -53,9 +53,7 @@ Type5 entityTypeId=3 static family    : 428
 
 All 540 Type32 entities in the Type5 mobile family also have Type10 transform streams. The other 428 route to Type5 `entityTypeId=3`, which the current corpus classifies as the static/non-vehicle family and which has no normal Type10 stream.
 
-This disproves a vehicle-only damage/effect envelope. Type32 is a generic entity-side auxiliary update family that can target both mobile and static materialized entities.
-
-The entity class also cleanly constrains the observed wire layouts:
+The entity class cleanly constrains the observed wire layouts:
 
 | Type5 family | flag | bodyLength | packet count |
 |---|---:|---|---:|
@@ -66,8 +64,6 @@ The entity class also cleanly constrains the observed wire layouts:
 There are no other class/flag/length combinations in the strict corpus. Body decoding must therefore be conditioned on at least entity class, flag and length; a top-level length-to-event-name table is invalid.
 
 ## Body diversity
-
-The body is not a fixed scalar:
 
 | bodyLength | distinct bodies | packet count |
 |---:|---:|---:|
@@ -81,7 +77,7 @@ The body is not a fixed scalar:
 | 17 | 459   |   459 |
 | 18 | 2,470 | 2,470 |
 
-The short repeated bodies and the longer high-cardinality bodies are consistent with a compact/bit-packed or variant update stream. This is a structural observation only; no current evidence identifies individual body fields.
+The short repeated bodies and longer high-cardinality bodies are compact/variant update families rather than one scalar schema.
 
 ## Mobile `flag=0` long-body structure
 
@@ -93,7 +89,7 @@ eventClockRaw : f64 LE at body[-12 .. -4)
 parameterRaw  : f32 LE at body[-4 .. end)
 ```
 
-For every non-zero `eventClockRaw`, define:
+For every non-zero `eventClockRaw`:
 
 ```text
 offsetSec = eventClockRaw - packet.rawClockSec
@@ -110,13 +106,110 @@ max within-replay offset standard deviation: 0.070 s
 per-replay mean offset range               : 39,155.5 .. 54,344.9 s
 ```
 
-This proves that `eventClockRaw` is a replay-local/session-local monotonic time reference. The small residual is consistent with packet clock sampling.
+This proves that `eventClockRaw` is a replay/session-local monotonic time reference. The exact epoch/source remains `PARTIAL`. Zero occurs in 4,888 mobile `flag=0` records and behaves as an absent/uninitialized value for this relation.
 
-The exact epoch/source remains `PARTIAL`: current evidence does not distinguish client process time, engine session time or another monotonic reference. Values of zero occur in 4,888 mobile `flag=0` records and act as an absent/uninitialized sentinel for this relation.
+The final float32 is layout-specific. In the proven consumable subset it carries effective active-duration/cooldown configuration. Closed mappings are recorded in [`consumable-lifecycle.md`](consumable-lifecycle.md).
 
-The final four-byte `parameterRaw` is layout-family specific. For the proven consumable lifecycle subset it carries effective duration/cooldown values; other control prefixes remain unresolved.
+## Mobile `flag=1`, 18-byte body — damage/hit presentation side-channel
 
-The closed wire-code/state mappings and duration checks are recorded in [`consumable-lifecycle.md`](consumable-lifecycle.md).
+The 18-byte mobile family is not merely near HP changes. It is directly joined to Vehicle method8 damage notifications at byte level.
+
+For 2,359 uniquely paired records with:
+
+```text
+same replay
+same target entity
+same rawClock
+Type32 flag=1 bodyLength=18
+Vehicle Type8 method8
+```
+
+shared protocol bytes close exactly:
+
+```text
+Type32 body[3..9]  == method8 args[10..16] : 2,359 / 2,359
+Type32 body[10]    == method8 args[9]       : 2,359 / 2,359
+```
+
+This is stronger than timing correlation.
+
+Verdict:
+
+> mobile `flag=1`, bodyLength=18 = **damage/hit presentation side-channel — PROVEN relationship / field semantics PARTIAL**.
+
+The method8 raw numerical value is still not authoritative HP loss; Type7 Vehicle prop3 deltas remain authoritative for observed HP changes.
+
+Safe event layering is therefore:
+
+```text
+Vehicle method8
+  -> attacker/victim and damage-protocol evidence
+
+Type7 prop3
+  -> authoritative resulting current HP / observed HP delta
+
+Type32 flag1 len18
+  -> parallel damage/hit presentation metadata sharing the method8 core
+```
+
+## Mobile `flag=1` short bodies — compact damage/effect state family
+
+The common 2/3-byte mobile bodies contain repeated patterns such as:
+
+```text
+a4 22
+9c 22
+a0 22
+a4 23
+9c 23
+a1 80 21
+9c 04
+9d 80 04
+```
+
+They show strong compact/bit-packed structure, but the exact field boundaries remain unresolved.
+
+Important negative results:
+
+- the last byte is **not proven** to be a global component/device ID;
+- interpreting the entire family as one universal LEB128/varint fails on many bodies that do not terminate as one value;
+- decomposing selected bodies into 7-bit chunks reveals stable patterns but does not close direct equality to Type7 prop8 transition tokens;
+- historical Wargaming `damageIndex + extraIndex` layouts are structural clues only and cannot be transplanted numerically into Blitz 11.19.
+
+Consumers must therefore preserve the entire short body until a version-matched field layout is recovered.
+
+## Fire-associated short `...04` family
+
+A specific mobile short-body family is now behaviorally closed to fire.
+
+The strict corpus contains four settlement deaths with `deathReason=1`, independently proven as fire deaths. All four show Type32 short `...04` during the final repeated burn-HP sequence:
+
+```text
+settlement fire deaths checked : 4
+with mobile short ...04         : 4 / 4
+```
+
+Representative forms:
+
+```text
+9c 04
+9d 80 04
+```
+
+The associated Type7 prop3 stream shows small repeated losses at approximately 0.4–0.5 s cadence instead of one direct-shot delta.
+
+An independent consumable differential strengthens the identity:
+
+- `0x0B` Multi-Purpose Restoration Pack stops the periodic burn sequence in 13/14 matched cases after excluding new direct-hit method8 events; the remaining loss occurs exactly at activation time;
+- `0x0D` Repair Kit is observed twice during active fire and in both cases the periodic fire HP ticks continue for multiple ticks afterward.
+
+Verdict:
+
+> Type32 mobile short `...04` = **fire-associated damage/effect family — PROVEN behavioral association**.
+
+This does **not** yet prove whether a given `...04` packet means ignition, one fire-DOT tick, fire state refresh, or another fire-side presentation event. In particular, consumers must not use the first observed `...04` as exact ignition time without further closure.
+
+Detailed evidence is archived in [`fire-and-repair-states.md`](fire-and-repair-states.md).
 
 ## Flag boundary
 
@@ -127,33 +220,34 @@ flag=0 -> bodyLength 15 or 16 only
 flag=1 -> bodyLength 2..6, 17 or 18 only
 ```
 
-This proves two encoding/layout families. It does **not** prove activation/deactivation, add/remove, compression polarity, or an effect state. The raw flag must be preserved until a producer/schema or controlled probe closes its meaning.
+This proves two layout families, but not a generic semantic such as activation/deactivation. `flag=0` contains the consumable control family; `flag=1` contains several mobile/static presentation/state families whose semantics depend on class and body layout.
 
 ## Why earlier interpretations are rejected
 
 ### Not an effect `kind`
 
-The alleged `kind` equals the remaining body length in every packet. Treating it as both an enum and a coincidentally identical byte count adds an unsupported field and hides the actual length prefix.
+The alleged `kind` equals the remaining body length in every packet. Treating it as both enum and byte count hides the actual length prefix.
 
 ### Not one top-level client-runtime `double`
 
-Earlier diagnostics read eight bytes at a fixed absolute offset and sometimes obtained runtime-like numbers. That offset crosses differently sized, variable bodies; arbitrary eight-byte interpretations also produce huge and subnormal values. No fixed scalar schema is valid across this family.
+Earlier diagnostics read eight bytes at a fixed absolute offset across variable bodies. No fixed global-double schema survives class/layout gating. The real f64 clock exists only in the scoped mobile `flag=0` long-body decoder.
 
-The scoped mobile `flag=0` decoder above does recover a real `float64` clock after class/layout gating. This does not restore the rejected global-double interpretation.
+### Not globally “damage” merely from HP proximity
 
-### HP proximity is not semantic identity
+Type32 also targets 428 static-family entity occurrences. The damage/hit identity applies only to the independently closed mobile `flag=1` 18-byte subset; the top-level Type32 packet remains a generic entity auxiliary envelope.
 
-Some Type32 packets occur near Type7 current-HP updates, but the family also targets 428 static-family entity occurrences and carries highly diverse bodies. Timing proximity can nominate body-level probes; it cannot promote the whole top-level packet to damage, HP, critical-module, or effect semantics.
+## Historical parser/client clues
 
-## Historical parser clue
+Historical Wargaming clients expose separate concepts for vehicle damage presentation, damaged/destroyed devices, fire, crew and recovery. Those interfaces are useful structural guidance because the current replay similarly shows multiple compact/state subfamilies.
 
-An older World of Tanks PC parser described packet `0x20` as a tank track-status packet and read status bytes after the entity-scoped prefix. This is useful only as a research lead:
+However:
 
-- the client family and version differ from Blitz 11.19;
-- the current Type32 family also targets static entities;
-- current bodies are variable and appear compactly encoded.
+- client/version differ;
+- numeric method/property/extra indices drift;
+- current Type32 also covers static entities;
+- current short bodies are compact and not field-for-field matched yet.
 
-Therefore no PC field offsets or symbolic name are transplanted into the Blitz schema.
+No historical numeric offset/name is promoted without current Blitz evidence.
 
 ## Safe parser model
 
@@ -168,26 +262,40 @@ EntityAuxiliaryBlobRaw {
 
 MobileFlag0LongBodyPartial {
     controlPrefix
-    eventClockRaw      // PROVEN physical clock relation when non-zero
-    parameterRaw       // semantics depend on control prefix
+    eventClockRaw
+    parameterRaw
+}
+
+MobileFlag1DamagePresentationRaw {
+    rawClockSec
+    entityId
+    bodyBytes
+    sharedMethod8CoreBytes
+}
+
+MobileFlag1ShortEffectRaw {
+    rawClockSec
+    entityId
+    bodyBytes
+    fireAssociated // only when version-gated ...04 family evidence applies
 }
 ```
 
 Requirements:
 
 1. validate `bodyLength == remaining payload bytes`;
-2. preserve `flag` and body bytes losslessly;
-3. route through the Type5 entity class/version context;
-4. decode the `float64` event clock only for mobile `flag=0` bodies of length 15/16;
-5. add other semantic sub-decoders only after independent closure;
-6. do not expose body length or raw bytes as user-facing effect names.
+2. preserve flag/body bytes losslessly;
+3. route by client version + Type5 entity class + flag + body length;
+4. decode f64 event clock only for the proven mobile `flag=0` long-body family;
+5. do not reinterpret method8 raw values as authoritative HP loss;
+6. do not expose unclosed short-body bytes as named modules/components;
+7. version-gate any fire or consumable semantic decoder.
 
 ## Remaining work
 
-1. recover the Blitz 11.19 producer or transport schema for Type32;
-2. determine the exact meaning of `flag`;
-3. recover the exact epoch/source of the mobile `flag=0` event clock;
-4. cluster remaining bodies by Type5 entity class, length, prefix bits and lifecycle phase;
-5. run controlled probes for track destruction/repair, static collision/destruction, fire, ramming and module damage;
-6. compare same-arena multi-POV bodies to separate server facts from client-local representation;
-7. validate any body decoder on additional client versions before promotion.
+1. recover the Blitz 11.19 producer/transport schema for Type32;
+2. identify the exact mobile short-body bit layout and distinguish fire-start, fire-tick and fire-stop variants;
+3. decode remaining 17-byte mobile flag1 variants and static 3/4/5/6-byte families;
+4. recover exact vehicle module/crew/effect indices from a current Blitz schema or controlled probes;
+5. compare same-arena multi-POV bodies to separate server facts from client-local presentation;
+6. validate all sub-decoders on additional client versions before production promotion.
