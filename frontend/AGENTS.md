@@ -13,8 +13,9 @@
 - 入口 `index.html`（Vue SPA）；`homepage/` 只保留独立赞助页及其运行时配置，不再维护旧静态主页/个人中心副本。
 - `src/composables/`（useReplay/useColumns/useAuth 等）、`src/utils/`、`src/components/`、`src/styles/`、`src/data/`。
 - **主题策略**：产品只支持暗色。`frontend/index.html` 在首屏固定 `data-theme="dark"`，不读取系统主题、不保存主题偏好、不提供主题切换器；禁止重新引入 `useTheme`、`utils/theme.js` 或 `wotbtools-theme` cookie/localStorage。
+- **UI Profile（展示风格，非主题）**：用户可经菜单在 `showcase`（沉浸，默认）/ `classic`（简约）间切换，仅改变 Presentation 层视觉；业务组件/状态/API/结构**不得**按 Profile fork。`html[data-ui-profile]`（首屏由 `index.html` 内联脚本定，与 `data-theme="dark"` 并存）+ `useUiProfile` composable 是唯一状态源；Classic 只经 `styles/classic-profile.css` 的 `[data-ui-profile="classic"]` 关闭全屏 AI/装饰背景与视觉噪音，不改 spacing/density/layout；禁止 `:key="uiProfile"` 触发组件重建，禁止新建 `classic/`、`showcase/` 双套业务组件。产品仍只支持暗色，**禁止**把 Classic 当 Light theme、禁止恢复 `useTheme`。
 - **i18n**：基础文案在 `src/locales/{zh,en,ru}.json`；按功能追加的文案放 `feature-messages.json`，由 `messages.js` 深合并且不得修改基础 locale 对象。三语必须同步；显示名在 `player_labels`/`agg_labels`；稳定错误码走 `api_errors.*`；禁止在 `main.js` 或组件启动阶段动态 patch locale 对象。
-- **跨站偏好**：当前只持久化语言 `wotb-lang`；主题没有用户偏好状态。
+- **跨站偏好**：当前只持久化语言 `wotb-lang` 与 UI 风格 `wotb-ui-profile`（设于 `html[data-ui-profile]`）；主题没有用户偏好状态。
 - **versions.json**（`src/data/`）：仅用户可见变更新增条目；`v` 递增不跳号、三语同条目、顶部追加、不改历史条目；纯技术/CI 变更不写。
 - 测试文件与组件同目录（`*.test.js`），`// @vitest-environment happy-dom` 按需声明。
 - **Tier X 专属车型系统**（`src/vehicle-models/`）：Tankopedia Tier X 100% 覆盖由

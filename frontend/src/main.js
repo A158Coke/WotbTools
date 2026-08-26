@@ -9,6 +9,7 @@ import './styles/showcase-backgrounds.css'
 import './styles/showcase-backgrounds-v3.css'
 import './styles/showcase-cohesion.css'
 import './styles/showcase-regressions.css'
+import './styles/classic-profile.css'
 import { messages } from './locales/messages.js'
 
 // Build identity（vite define 注入）：生产环境可立即确认实际运行的 bundle 版本，
