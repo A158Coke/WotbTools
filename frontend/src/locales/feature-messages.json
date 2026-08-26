@@ -43,6 +43,25 @@
     },
     "result": {
       "base_summary_title": "基础战斗汇总"
+    },
+    "ratingV2": {
+      "kicker": "管理员 · 灰度",
+      "title": "Rating V2 灰度核验",
+      "description": "仅管理员可见。复用当前回放处理结果，不影响公开评分、战斗表现或 League Rating。",
+      "login": "正在跳转管理员登录…",
+      "denied": "此灰度页仅对 wotbtools-admin 开放。",
+      "run": "解析并计算 Rating V2",
+      "calculating": "正在计算 Rating V2…",
+      "readyDatasetHint": "仅在当前 Processing Job 就绪后读取同一份数据集。",
+      "results": "历史 Rating V2 结果",
+      "rows": "{count} 名玩家",
+      "empty": "选择回放后开始解析与计算。",
+      "labels": {
+        "nickname": "玩家", "clan": "战队", "battles": "场次", "wins": "胜场", "win_rate": "胜率%",
+        "rating": "Rating", "kast": "KAST%", "contribution": "贡献率%", "impact": "Impact%",
+        "damage_avg": "均伤", "potential_damage_avg": "潜在均伤", "potential_damage_supplement_avg": "场均补增",
+        "assist_avg": "场均协助", "multi_damage_rate": "多伤率%", "kills": "人头", "kills_avg": "场均人头"
+      }
     }
   },
   "en": {
@@ -89,6 +108,25 @@
     },
     "result": {
       "base_summary_title": "Base Battle Summary"
+    },
+    "ratingV2": {
+      "kicker": "ADMIN · GRAY",
+      "title": "Rating V2 Gray Validation",
+      "description": "Admin-only. It reuses the current replay processing result without changing public scoring, battle performance, or League Rating.",
+      "login": "Redirecting to administrator sign-in…",
+      "denied": "This gray page is available only to wotbtools-admin.",
+      "run": "Parse and calculate Rating V2",
+      "calculating": "Calculating Rating V2…",
+      "readyDatasetHint": "Reads the same dataset only after the current Processing Job is ready.",
+      "results": "Historical Rating V2 Results",
+      "rows": "{count} players",
+      "empty": "Select replay files, then start parsing and calculation.",
+      "labels": {
+        "nickname": "Player", "clan": "Clan", "battles": "Battles", "wins": "Wins", "win_rate": "Win rate %",
+        "rating": "Rating", "kast": "KAST %", "contribution": "Contribution %", "impact": "Impact %",
+        "damage_avg": "Avg damage", "potential_damage_avg": "Potential DPB", "potential_damage_supplement_avg": "Avg supplement",
+        "assist_avg": "Avg assist", "multi_damage_rate": "Multi-damage %", "kills": "Kills", "kills_avg": "Avg kills"
+      }
     }
   },
   "ru": {
@@ -135,6 +173,25 @@
     },
     "result": {
       "base_summary_title": "Сводка по боям"
+    },
+    "ratingV2": {
+      "kicker": "АДМИН · СЕРАЯ ПРОВЕРКА",
+      "title": "Серая проверка Rating V2",
+      "description": "Только для администратора. Повторно используется текущий результат обработки реплея без изменения публичных оценок, боевых показателей или League Rating.",
+      "login": "Переход к входу администратора…",
+      "denied": "Эта серая страница доступна только wotbtools-admin.",
+      "run": "Разобрать и рассчитать Rating V2",
+      "calculating": "Расчёт Rating V2…",
+      "readyDatasetHint": "Используется тот же набор данных только после готовности текущей задачи обработки.",
+      "results": "Исторические результаты Rating V2",
+      "rows": "Игроков: {count}",
+      "empty": "Выберите реплеи, затем запустите обработку и расчёт.",
+      "labels": {
+        "nickname": "Игрок", "clan": "Клан", "battles": "Бои", "wins": "Победы", "win_rate": "Победы %",
+        "rating": "Rating", "kast": "KAST %", "contribution": "Вклад %", "impact": "Impact %",
+        "damage_avg": "Средний урон", "potential_damage_avg": "Потенциальный DPB", "potential_damage_supplement_avg": "Среднее добавление",
+        "assist_avg": "Средняя помощь", "multi_damage_rate": "Мульти-урон %", "kills": "Фраги", "kills_avg": "Средние фраги"
+      }
     }
   }
 }

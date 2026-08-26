@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.33",
+    "date": "2026-08-26",
+    "tag": "add",
+    "zh": "管理员现可在 Rating V2 灰度核验页上传回放并查看历史综合评分；该能力与 League Rating、战斗表现、公开解析和导出相互隔离，不会改变普通用户页面或现有评分结果。",
+    "en": "Administrators can now upload replays in the Rating V2 validation page to inspect the historical composite score. It is isolated from League Rating, battle performance, public analysis, and exports, so it does not change ordinary user pages or existing rating results.",
+    "ru": "Администраторы теперь могут загружать реплеи на странице проверки Rating V2 и просматривать историческую комплексную оценку. Эта возможность изолирована от League Rating, боевых показателей, публичного анализа и экспорта, поэтому не меняет обычные страницы пользователей и существующие результаты оценивания."
+  },
+  {
     "v": "2.12.32",
     "date": "2026-08-26",
     "tag": "chg",

@@ -19,6 +19,12 @@
     handler 移入 hof 域（路径与响应不变，前端零改动）。
   - 行为不变：以上均为包移动/依赖方向调整，全量测试回归兜底；文档同步
     `DEVELOPER_GUIDE.md` / `java/AGENTS.md` / `java/README.md`。
+- **管理员历史 Rating V2 灰度核验**：恢复删除前最终 V2 公式（潜在伤害、KAST、Impact、贡献率、
+  多伤率与综合 Rating），但隔离为 `RatingV2Calculator` 与 `POST /api/admin/rating-v2/processing-jobs/{jobId}`。
+  只允许 `wotbtools-admin` 访问，页面仅有隐藏 `?view=rating-v2` 深链且异步拆包；计算只读现有 READY
+  `ProcessedDataset`，不新建 full processing、不写回 `Battle` / `PlayerResult`，也不恢复公开 `/api/rating`、
+  `/extended`、`rating.json`、评分列、Excel 或 League/Performance 算法；后续迭代以独立
+  `docs/features/rating-v2.md` 算法规格为维护基线。
 - **League Rating V4.1 算法迁移**：七维满分由 400/100/100/150/50/100/100 精确调整为
   365/110/110/180/50/75/110（总分 1000 不变）；射击效率由 pure Wilson 迁移为
   Soft Wilson（`0.9×Wilson95%下界 + 0.1×raw`，命中 30% / 击穿 70% 合成）；存活/互换 RC

@@ -18,7 +18,12 @@ function makeFiles(count, size = 1024) {
 function mountUploader(files = [], loading = false, options = {}) {
   return {
     wrapper: mount(FileUploader, {
-      props: { files, loading, confirmRemove: false },
+      props: {
+        files,
+        loading,
+        confirmRemove: false,
+        ...(options.showWorkspaceActions === undefined ? {} : { showWorkspaceActions: options.showWorkspaceActions })
+      },
       global: {
         mocks: { $t: i18n.t },
         provide: {
@@ -94,6 +99,13 @@ describe('FileUploader 文件列表与回放工作台', () => {
     const { wrapper } = mountUploader(makeFiles(1), true)
     const previewBtn = wrapper.findAll('button').find(b => b.text().includes('action.preview'))
     expect(previewBtn.attributes('disabled')).toBeDefined()
+  })
+
+  it('allows the hidden Rating V2 page to reuse validation without exposing workspace actions', () => {
+    const { wrapper } = mountUploader(makeFiles(1), false, { showWorkspaceActions: false })
+    expect(wrapper.find('.replay-workspace-actions').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="direct-ai-btn"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="direct-playback-btn"]').exists()).toBe(false)
   })
 
   it('单文件无需先解析即可直接进入 AI 复盘（emit workspace-action 原地切换）', async () => {

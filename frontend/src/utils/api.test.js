@@ -20,6 +20,7 @@ import {
   hofHundredSubmitWargaming,
   hofMark3Submit,
   hofUpload,
+  ratingV2Admin,
   createProcessingJob,
 } from './api.js'
 
@@ -191,6 +192,29 @@ describe('authenticated HoF API requests (real api.js, fetch mocked)', () => {
     const [, options] = vi.mocked(fetch).mock.calls[0]
     expect(options).not.toHaveProperty('body')
     expect(options.headers).not.toHaveProperty('Content-Type')
+  })
+
+  it('requests Rating V2 only through the admin job endpoint with a Bearer token', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { rows: [], columns: [] }))
+
+    const result = await ratingV2Admin('ready-job')
+
+    expect(result).toEqual({ rows: [], columns: [] })
+    expect(auth.ensureToken).toHaveBeenCalledWith(30)
+    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+      '/api/admin/rating-v2/processing-jobs/ready-job',
+      expect.objectContaining({ method: 'POST', headers: { Authorization: 'Bearer test-token' } }),
+    )
+  })
+
+  it('Rating V2 401 returns to the hidden deep link', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(401, { error: 'unauthorized' }))
+
+    const err = await ratingV2Admin('ready-job').catch(error => error)
+
+    expect(auth.login).toHaveBeenCalledWith('rating-v2')
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err).toMatchObject({ code: 'AUTH_REQUIRED', status: 401 })
   })
 })
 
