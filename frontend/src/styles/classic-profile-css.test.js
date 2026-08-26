@@ -201,6 +201,17 @@ describe('Classic 深色冲突 selector→declaration 绑定（须带 !important
     ])
   })
 
+  it('回归：HoF Admin 表格行基础背景 / denied 标题 / dmg 值 浅色 token + !important（Blocker 3 收尾）', () => {
+    has('hof-admin-table tbody tr', ['background: var(--bg-card) !important'])
+    has('hof-admin-denied h2', ['color: var(--text-heading) !important'])
+    has('admin-hof-page) .dmg', ['color: var(--accent-dark) !important'])
+  })
+
+  it('回归：选择 battle 后动态 .mcards/.mc 指标卡 浅色 token + !important（Blocker 2，防 App.vue 深色卡残留）', () => {
+    has('.layout-data-workspace .mc', ['background: var(--bg-card) !important', 'border-color: var(--border) !important', 'box-shadow: var(--surface-shadow) !important'])
+    has('.layout-data-workspace .mc .v', ['color: var(--text-heading) !important'])
+  })
+
   it('HoF 公开页残留缺口：submit row/普通行基础背景/分隔线/pending/下载/分页 浅色 !important（PR #151 收尾）', () => {
     // 提交记录行（showcase-cohesion .lb-submit-row rgba(10,16,19,.50) !important）
     has('.lb-wrap .lb-submit-row', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
