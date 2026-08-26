@@ -48,7 +48,8 @@ const isSummary = computed(() => props.context?.scope === 'summary')
 function ratingLine() {
   const p = props.player
   if (!p) return { rating: '--' }
-  return { rating: ratingTotalText(p.rating ?? p.ratingMedian) }
+  // rating 语义由父组件按 scope 提供：summary = V5 Batch Player Rating，battle = V4.1 单场
+  return { rating: ratingTotalText(p.rating) }
 }
 
 // ---- Radar Metric Selection：默认七维，用户可自定义指标与顺序 ----
@@ -147,6 +148,8 @@ const facts = computed(() => {
   if (isSummary.value) {
     rows.push([t('league.drawer.battles'), p.cells?.battles ?? '--'])
     rows.push([t('league.drawer.rated_battles'), p.cells?.rated_battles ?? '--'])
+    // V5 explainability：Raw Observed Median（与主 Rating 严格区分）
+    rows.push([t('league.drawer.observed_median'), num(p.rawMedian)])
     rows.push([t('league.drawer.wins'), p.cells?.wins ?? '--'])
     if (p.cells?.win_rate != null) rows.push([t('league.drawer.win_rate'), num(p.cells.win_rate) + '%'])
     if (p.mvpCount != null) rows.push([t('league.drawer.mvp'), p.mvpCount])

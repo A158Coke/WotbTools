@@ -30,7 +30,9 @@ export const CW_DIM_KEYS = [
 /** League 特有、aggregate 不持有的列（统一表列定义中前置插入）。
  * rated_battles 也来自 league.playerSummaryColumns（评分场次 ≠ 解析场次），
  * 必须进入 cw 列 universe（ColumnPicker 可显示/隐藏/reorder）。 */
-const LEAGUE_ONLY_KEYS = new Set(['league_rating', ...CW_DIM_KEYS, 'mvp_count', 'rated_battles'])
+const LEAGUE_ONLY_KEYS = new Set([
+  'league_rating', 'league_rating_raw_median', ...CW_DIM_KEYS, 'mvp_count', 'rated_battles',
+])
 
 /**
  * 合并统一玩家行（union：Aggregate ∪ League，按 accountId）。
@@ -38,7 +40,7 @@ const LEAGUE_ONLY_KEYS = new Set(['league_rating', ...CW_DIM_KEYS, 'mvp_count', 
  * - 有 League 无 Aggregate：防御兜底——保留评分玩家，Aggregate 字段补 null（当前 contract 下
  *   CW 批次必生成 aggregate，正常不触发）。
  * @param {Array} aggregateRows resp.aggregate（每行 {team, cells}，cells 含 account_id）
- * @param {Array} playerSummaries league.playerSummaries（每项 accountId/nickname/clan/battles/ratingMedian/
+ * @param {Array} playerSummaries league.playerSummaries（每项 accountId/nickname/clan/battles/ratingV5/ratingRawMedian/
  *   dimensionMedians/dimensionMeans/mvpCount/wins；dimensionMeans 原样透传到 row.league 供 Summary Radar）
  * @returns {Array<{team:number, cells:Object, league:Object|null}>}
  */
@@ -73,12 +75,16 @@ export function mergeCwPlayerRows(aggregateRows, playerSummaries) {
   return rows
 }
 
-/** 把 League summary 字段写入统一行 cells（Rating 中位数 / 七维中位数 / MVP 次数 / 评分场次；
+/** 把 League summary 字段写入统一行 cells（V5 主 Rating / Raw Observed Median / 七维中位数 /
+ * MVP 次数 / 评分场次；
  * includePerf=true 时附加跨场 Performance Metrics，仅用于 aggregate 未覆盖的兜底行，
  * 绝不覆盖 aggregate 样本）。
  */
 function fillLeagueCells(cells, summary, includePerf = false) {
-  cells.league_rating = summary?.ratingMedian ?? null
+  // V5：league_rating = Batch Player Rating（Evidence Adjustment 后主 Rating）；
+  // league_rating_raw_median = Raw Observed Median（explainability，可隐藏）。
+  cells.league_rating = summary?.ratingV5 ?? null
+  cells.league_rating_raw_median = summary?.ratingRawMedian ?? null
   const dims = summary?.dimensionMedians || []
   CW_DIM_KEYS.forEach((key, i) => { cells[key] = dims[i] ?? null })
   cells.mvp_count = summary?.mvpCount ?? null

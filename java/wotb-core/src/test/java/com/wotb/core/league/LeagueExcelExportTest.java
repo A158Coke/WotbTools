@@ -517,6 +517,41 @@ class LeagueExcelExportTest {
     }
 
     @Test
+    void aggregatePlayerExportUsesV5MainRatingAndKeepsRawMedian() throws Exception {
+        // V5：批次选手汇总主 Rating = Evidence Adjustment 后；原始中位数独立列。
+        // 单场明细仍 = V4.1 finalRating（battle scope 不得被 V5 污染）。
+        final Battle battle = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        final LeagueRatingResult result = LeagueRatingCalculator.calculate(battle);
+        final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(
+                List.of(battle), List.of(result), List.of());
+        final PlayerLeagueSummary s = batch.playerSummaries().stream()
+                .filter(p -> p.accountId() == 1001L).findFirst().orElseThrow();
+
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ExcelExporter.writeAggregateLeague(List.of(battle), List.of("one.wotbreplay"),
+                List.of(), batch, Tankopedia.load(), out);
+        try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()))) {
+            final Sheet players = wb.getSheet("选手汇总");
+            final String header = headerText(players);
+            assertTrue(header.contains("总Rating"), "选手汇总主列必须为 总Rating（V5），实际：" + header);
+            assertTrue(header.contains("原始中位数"), "选手汇总必须含 Raw Observed Median 列，实际：" + header);
+            // 行值：总Rating = batchRatingV5；原始中位数 = ratingMedian
+            final Row row = players.getRow(1);
+            assertEquals(Math.round(s.batchRatingV5() * 10) / 10.0,
+                    row.getCell(3).getNumericCellValue(), 1e-9, "总Rating 列必须 = V5");
+            assertEquals(Math.round(s.ratingMedian() * 10) / 10.0,
+                    row.getCell(4).getNumericCellValue(), 1e-9, "原始中位数列必须 = Raw Median");
+            // 单场明细：Rating 仍为 V4.1 finalRating（不得显示 V5）
+            final Sheet detail = wb.getSheet("每场明细");
+            final String detailHeader = headerText(detail);
+            assertTrue(detailHeader.contains("总Rating"), "单场明细保留 总Rating 列（V4.1 语义）");
+            assertEquals(Math.round(result.byAccount(1001).finalRating() * 10) / 10.0,
+                    detail.getRow(1).getCell(6).getNumericCellValue(), 1e-9,
+                    "单场明细 Rating 必须 = V4.1 finalRating");
+        }
+    }
+
+    @Test
     void leagueSummaryDimensionMedianCountMatchesCanonicalDimensionKeys() throws Exception {
         final Battle battle = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         final LeagueRatingResult result = LeagueRatingCalculator.calculate(battle);
@@ -538,8 +573,8 @@ class LeagueExcelExportTest {
             int medianCount = 0;
             for (int c = 0; c < header.getLastCellNum(); c++) {
                 final String title = header.getCell(c).getStringCellValue();
-                // 维度中位数列（排除 总Rating中位数 / 战队Rating中位数 这两个汇总分中位数）
-                if (title.endsWith("中位数") && !title.equals("总Rating中位数")
+                // 维度中位数列（排除 原始中位数（V5 explainability）与 战队Rating中位数）
+                if (title.endsWith("中位数") && !title.equals("原始中位数")
                         && !title.equals("战队Rating中位数")) {
                     medianCount++;
                 }

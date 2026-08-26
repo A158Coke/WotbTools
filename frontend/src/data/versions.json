@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.35",
+    "date": "2026-08-26",
+    "tag": "chg",
+    "zh": "训练赛/联赛批次评分升级为 V5：批次主 Rating 增加证据修正——只对高于 450 的原始中位数按 E(n)=1-e^(-n/6) 向 450 方向保守修正（该玩家的有效评分场次越多越接近原始值），低于或等于 450 完全不变；同批其他玩家、战队强弱或赛事阶段不影响个人结果。汇总表新增「原始中位数」列（可隐藏），选手详情显示 Observed Median；战队 Rating、七维评分与雷达图保持不变，单场 Rating 仍为 V4.1。",
+    "en": "Training/tournament batch ratings upgraded to V5: the batch rating now applies evidence adjustment — raw medians above 450 are conservatively pulled toward 450 by E(n)=1-e^(-n/6) (the more rated battles a player has, the closer the result is to the raw median), while values at or below 450 stay unchanged; other players in the same batch, team strength or tournament stage do not affect your result. A hideable \"Observed Median\" column was added to the summary table and the player details now show Observed Median; Team Rating, the seven dimension scores and the radar stay unchanged, and single-battle rating remains V4.1.",
+    "ru": "Пакетный рейтинг тренировочных/турнирных боёв обновлён до V5: к основному рейтингу добавлена поправка на объём данных — сырые медианы выше 450 консервативно приближаются к 450 по формуле E(n)=1-e^(-n/6) (чем больше оценённых боёв у игрока, тем ближе результат к исходной медиане), значения 450 и ниже не меняются; другие игроки того же набора, сила команд или этап турнира не влияют на результат. В сводную таблицу добавлен скрываемый столбец «Наблюдаемая медиана», в карточке игрока тоже показана наблюдаемая медиана; рейтинг команды, семь измерений и радар не меняются, а рейтинг отдельного боя остаётся V4.1."
+  },
+  {
     "v": "2.12.34",
     "date": "2026-08-26",
     "tag": "add",
