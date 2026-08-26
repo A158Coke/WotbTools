@@ -2,8 +2,8 @@ package com.wotb.core.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.processing.PlayerSideResolver;
-import com.wotb.core.processing.PlayerSideResolver.Side;
+import com.wotb.core.replay.processing.PlayerSideResolver;
+import com.wotb.core.replay.processing.PlayerSideResolver.Side;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.evidence.ObservedMaxHp;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;

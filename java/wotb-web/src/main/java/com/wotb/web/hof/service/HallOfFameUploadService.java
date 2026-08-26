@@ -4,12 +4,13 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.web.hof.dto.ReplayFileMeta;
-import com.wotb.web.hof.storage.HallOfFameReplayStorage;
+import com.wotb.web.replayfile.HallOfFameReplayStorage;
+import com.wotb.web.replayfile.ReplayHashLock;
+import com.wotb.web.replayfile.ReplayFileNames;
 import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import com.wotb.web.util.JwtUtil;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.security.MessageDigest;
@@ -26,8 +27,6 @@ import java.util.Optional;
  */
 @Service
 public class HallOfFameUploadService {
-
-    private static final int MAX_ORIGINAL_NAME = 255;
 
     private final HallOfFameService hallOfFameService;
     private final ReplayCapacityLimiter capacityLimiter;
@@ -65,7 +64,7 @@ public class HallOfFameUploadService {
             }
 
             final String hash = sha256(bytes);
-            final ReplayFileMeta meta = new ReplayFileMeta(hash, originalName(file), bytes.length, uploadedBy);
+            final ReplayFileMeta meta = new ReplayFileMeta(hash, ReplayFileNames.originalName(file), bytes.length, uploadedBy);
 
             // P1 preflight：写文件前确定无需落盘的 SKIPPED，避免正常请求稳定制造 orphan。
             final Optional<RecordOutcome> preflight = hallOfFameService.preflightReplay(battle, meta);
@@ -106,25 +105,6 @@ public class HallOfFameUploadService {
         } catch (final Exception e) {
             throw new IllegalArgumentException("INVALID_REPLAY_FILE");
         }
-    }
-
-    /**
-     * 原始文件名仅用于 Content-Disposition：取 basename 并限长（≤255），绝不参与文件路径。
-     * 无有效 basename（如 "/"、""、纯分隔符、空白）→ 安全 fallback "replay.wotbreplay"。
-     * public 供百场 evidence 复用（同语义，避免两处漂移）。
-     */
-    public static String originalName(final MultipartFile file) {
-        final String name = file.getOriginalFilename();
-        String base = "";
-        if (name != null) {
-            final int slash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
-            base = slash >= 0 ? name.substring(slash + 1) : name;
-        }
-        if (!StringUtils.hasText(base)) {
-            return "replay.wotbreplay";
-        }
-        return base.length() <= MAX_ORIGINAL_NAME
-                ? base : base.substring(0, MAX_ORIGINAL_NAME);
     }
 
     private static String sha256(final byte[] data) {

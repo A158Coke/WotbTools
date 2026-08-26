@@ -3,9 +3,9 @@ package com.wotb.web.replay.ai;
 import java.util.List;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.processing.RecorderEntityMapping;
-import com.wotb.core.processing.ReplayPerspectiveGroup;
-import com.wotb.core.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
+import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;

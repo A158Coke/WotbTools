@@ -9,8 +9,20 @@
 
 ## 模块边界（真实职责）
 
-- **wotb-core**：纯 Java 库，**无 Spring / 无 web 依赖**。包 `com.wotb.core`：`parse/`（解析）、`stats/`、`export/`（POI）、`ref/`（车辆库/地图名查表）、`model/`（record 模型）、`processing/`（统一门面 + 视角解析）、`replay/`（stream/decoder/event/reconstruction/feature/evidence/map）。确定性战斗语义只放这里。
-- **wotb-web**：Spring Boot 4（入口 `WotbWebApplication`）。**domain 分包**：`user/ hof/ replay/ boost/ admin/`，每域内 `controller/ service/ entity/ repository/ dto/`（+ `mapper/ enums/ exception/` 按需）；共享的 `config/ util/` 例外。禁止层分包。
+- **wotb-core**：纯 Java 库，**无 Spring Web/Boot 与容器注解依赖**（`spring-core` 工具类
+  `StringUtils`/`Resource` 允许）。包 `com.wotb.core`：`parse/`（解析）、`stats/`、`export/`（POI）、
+  `ref/`（车辆库/地图名查表）、`model/`（record 模型；不得反向依赖上层包）、`replay/`
+  （stream/decoder/event/reconstruction/feature/evidence/map/**processing**——统一门面与视角解析
+  已并入 replay）。确定性战斗语义只放这里。
+- **wotb-web**：Spring Boot 4（入口 `WotbWebApplication`）。**domain 分包**：`user/ hof/ replay/ boost/ admin/`
+  （+ `hundred/ mark3/`），每域内 `controller/ service/ entity/ repository/ dto/`
+  （+ `mapper/ enums/ exception/` 按需）；共享例外包：`config/`（含 KeycloakAdminUserService）、
+  `util/`、`exceptionhandler/`（GlobalExceptionHandler）、`replayfile/`（跨域回放文件存储/锁/DTO）。
+  禁止层分包。
+- **架构测试（ArchUnit）**：`wotb-core/src/test/java/com/wotb/core/architecture/CoreArchitectureTest.java`
+  与 `wotb-web/src/test/java/com/wotb/web/architecture/WebArchitectureTest.java` 随 `mvn test` 自动执行，
+  守护上两条边界（依赖方向、domain 分包、禁字段注入/Lombok、顶层包无循环）；改动包结构/跨域依赖时
+  必须先保证架构测试全绿。`import *` 不在 ArchUnit 能力内（imports 不进 class 依赖），需另用源码扫描。
 
 ## 分层与风格（硬性）
 

@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.wotb.core.processing.AiNotConfiguredException;
+import com.wotb.core.replay.processing.AiNotConfiguredException;
 import com.wotb.core.replay.timeline.TimelineError;
 import com.wotb.web.replay.MapOverviewQueryService;
 import com.wotb.web.replay.ai.AiReplayReviewService;

@@ -3,10 +3,10 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
-import com.wotb.core.processing.ReplayAnalysisScope;
-import com.wotb.core.processing.ReplayPerspectiveGroup;
-import com.wotb.core.processing.ReplayProcessingResult;
-import com.wotb.core.processing.ReplayProcessingStatus;
+import com.wotb.core.replay.processing.ReplayAnalysisScope;
+import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
@@ -73,7 +73,7 @@ class AiReplayAnalysisServiceFacadeTest {
     void analyzeSingleTeamContextAndBuildSingleTeamContextDelegateToTeamService() {
         gateway.configured = true;
         final ReplayProcessingResult result = teamResultStub();
-        final var group = new com.wotb.core.processing.BatchAnalyzer()
+        final var group = new com.wotb.core.replay.processing.BatchAnalyzer()
                 .analyze(List.of(result)).groups().getFirst();
         final var ctx = facade().buildSingleTeamContext(group);
         assertNotNull(ctx.analysisUnitId());
@@ -100,11 +100,11 @@ class AiReplayAnalysisServiceFacadeTest {
         final var ally = player(1001L, "Ally", 1, 1500);
         final var enemy = player(2001L, "Enemy", 2, 900);
         battle.players = List.of(ally, enemy);
-        final var capabilities = new com.wotb.core.processing.ReplayProcessingCapabilities(
+        final var capabilities = new com.wotb.core.replay.processing.ReplayProcessingCapabilities(
                 true, true, false, false, false, true, false, false);
         return new ReplayProcessingResult(
                 "stub.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
-                new com.wotb.core.processing.ReplayIdentity(
+                new com.wotb.core.replay.processing.ReplayIdentity(
                         "h", "stub", "11.0", "team_map", 1001L, null),
                 battle, (ReplayReconstruction) null, null, capabilities, null, null);
     }

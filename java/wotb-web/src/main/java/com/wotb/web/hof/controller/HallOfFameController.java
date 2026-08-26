@@ -3,7 +3,7 @@ package com.wotb.web.hof.controller;
 import com.wotb.web.config.ApiPaths;
 import com.wotb.web.hof.dto.HallOfFamePageDto;
 import com.wotb.web.hof.dto.HofVehicleOptionDto;
-import com.wotb.web.hof.dto.ReplayDownload;
+import com.wotb.web.replayfile.ReplayDownload;
 import com.wotb.web.hof.service.HallOfFameService;
 import com.wotb.web.hof.service.HallOfFameUploadService;
 import org.springframework.http.ContentDisposition;

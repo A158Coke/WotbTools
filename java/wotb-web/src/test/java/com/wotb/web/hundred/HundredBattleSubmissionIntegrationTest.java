@@ -1,6 +1,6 @@
 package com.wotb.web.hundred;
 
-import com.wotb.web.hof.dto.ReplayDownload;
+import com.wotb.web.replayfile.ReplayDownload;
 import com.wotb.web.hundred.dto.HundredReplayEvidenceDto;
 import com.wotb.web.hundred.entity.HundredBattleReplayEvidence;
 import com.wotb.web.hundred.entity.HundredBattleSubmission;

@@ -1,5 +1,6 @@
 package com.wotb.web.mark3.service;
 
+import com.wotb.web.replayfile.ReplayFileNames;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.TankInfo;
@@ -7,7 +8,7 @@ import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.ref.VehicleCodes;
 import com.wotb.web.hof.service.HallOfFameUploadService;
-import com.wotb.web.hof.service.ReplayHashLock;
+import com.wotb.web.replayfile.ReplayHashLock;
 import com.wotb.web.mark3.dto.Mark3AdminDetailDto;
 import com.wotb.web.mark3.dto.Mark3AdminPageDto;
 import com.wotb.web.mark3.dto.Mark3CreateResult;
@@ -178,7 +179,7 @@ public class Mark3SubmissionService {
                 throw new IllegalArgumentException("MARK3_REPLAY_DUPLICATE_BATTLE");
             }
             pendingReplays.add(new Mark3ReplayEvidenceService.PendingReplay(
-                    slot, HallOfFameUploadService.originalName(file), sha256(bytes), bytes.length,
+                    slot, ReplayFileNames.originalName(file), sha256(bytes), bytes.length,
                     battle.arenaId, bytes));
         }
         if (arenaIds.size() != REPLAY_COUNT) {

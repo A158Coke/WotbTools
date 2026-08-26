@@ -1,12 +1,12 @@
 package com.wotb.core.replay.facts;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.processing.ReplayIdentity;
-import com.wotb.core.processing.ReplayProcessingCapabilities;
-import com.wotb.core.processing.ReplayProcessingDiagnostics;
-import com.wotb.core.processing.ReplayProcessingError;
-import com.wotb.core.processing.ReplayProcessingResult;
-import com.wotb.core.processing.ReplayProcessingStatus;
+import com.wotb.core.replay.processing.ReplayIdentity;
+import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
+import com.wotb.core.replay.processing.ReplayProcessingDiagnostics;
+import com.wotb.core.replay.processing.ReplayProcessingError;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 
 /**

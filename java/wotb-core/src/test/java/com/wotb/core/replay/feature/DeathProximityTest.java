@@ -1,8 +1,8 @@
 package com.wotb.core.replay.feature;
 
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.processing.TeamEntityIdentity;
-import com.wotb.core.processing.TeamEntityMapping;
+import com.wotb.core.replay.processing.TeamEntityIdentity;
+import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;

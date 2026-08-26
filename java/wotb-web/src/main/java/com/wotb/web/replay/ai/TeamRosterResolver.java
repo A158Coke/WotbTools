@@ -2,7 +2,7 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.processing.TeamPerspectiveLabelResolver;
+import com.wotb.core.replay.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
@@ -54,7 +54,7 @@ final class TeamRosterResolver {
     static String resolveOpponentDisplayLabel(final Battle battle, final int perspectiveTeam) {
         if (battle == null || battle.players == null) return "";
         final List<PlayerResult> opponents = battle.players.stream()
-                .filter(p -> com.wotb.core.processing.PlayerSideResolver.isValidRawTeam(p.team)
+                .filter(p -> com.wotb.core.replay.processing.PlayerSideResolver.isValidRawTeam(p.team)
                         && p.team != perspectiveTeam)
                 .toList();
         if (opponents.isEmpty()) return "";

@@ -1,5 +1,6 @@
 package com.wotb.web.admin.service;
 
+import com.wotb.web.config.KeycloakAdminUserService;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.Test;

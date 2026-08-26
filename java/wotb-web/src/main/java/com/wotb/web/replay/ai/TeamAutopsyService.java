@@ -1,8 +1,8 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
-import com.wotb.core.processing.FriendlyEnemyResult.Winner;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.TeamBattleWinner;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.feature.TeamAutopsyStats;
 import com.wotb.core.replay.feature.TeamAutopsyStatsBuilder;
@@ -91,7 +91,7 @@ public class TeamAutopsyService {
             return null;
         }
         if (winner == null || winner.winner() == Winner.DRAW_OR_UNKNOWN
-                || !com.wotb.core.processing.PlayerSideResolver.isValidRawTeam(recorderTeam)) {
+                || !com.wotb.core.replay.processing.PlayerSideResolver.isValidRawTeam(recorderTeam)) {
             return null;
         }
         if (callTimeoutSec <= 0) {

@@ -1,7 +1,5 @@
 package com.wotb.web.user.controller;
 
-import com.wotb.web.hof.dto.HallOfFameRecordDto;
-import com.wotb.web.hof.service.HallOfFameService;
 import com.wotb.web.user.dto.UpdateWotbAccountRequest;
 import com.wotb.web.user.dto.UserProfileDto;
 import com.wotb.web.user.service.UserProfileService;
@@ -17,20 +15,15 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
-
 @RestController
 @RequestMapping(ApiPaths.USERS)
 @CrossOrigin(origins = "*")
 public class UserProfileController {
 
     private final UserProfileService service;
-    private final HallOfFameService hallOfFameService;
 
-    public UserProfileController(final UserProfileService service,
-                                  final HallOfFameService hallOfFameService) {
+    public UserProfileController(final UserProfileService service) {
         this.service = service;
-        this.hallOfFameService = hallOfFameService;
     }
 
     /** 查询当前用户资料。未创建 → 404。 */
@@ -65,13 +58,4 @@ public class UserProfileController {
         return service.deleteWotbAccount(JwtUtil.requireUserId());
     }
 
-    /** 当前用户的个人名人堂战绩。 */
-    @GetMapping("/profile/records")
-    public List<HallOfFameRecordDto> myRecords() {
-        final var profileOpt = service.findByKeycloakUserId(JwtUtil.requireUserId());
-        if (profileOpt.isEmpty() || profileOpt.get().wotbAccountId() == null) {
-            return List.of();
-        }
-        return hallOfFameService.recordsByAccountId(profileOpt.get().wotbAccountId(), 50);
-    }
 }

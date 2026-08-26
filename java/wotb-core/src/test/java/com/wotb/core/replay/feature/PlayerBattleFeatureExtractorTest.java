@@ -1,7 +1,7 @@
 package com.wotb.core.replay.feature;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.processing.RecorderEntityMapping;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;

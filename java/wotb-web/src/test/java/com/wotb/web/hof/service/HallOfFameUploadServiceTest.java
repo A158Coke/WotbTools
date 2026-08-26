@@ -1,12 +1,14 @@
 package com.wotb.web.hof.service;
 
+import com.wotb.web.replayfile.ReplayFileNames;
+import com.wotb.web.replayfile.ReplayHashLock;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.web.hof.dto.ReplayFileMeta;
-import com.wotb.web.hof.exception.HallOfFameStorageException;
-import com.wotb.web.hof.storage.HallOfFameReplayStorage;
+import com.wotb.web.replayfile.HallOfFameStorageException;
+import com.wotb.web.replayfile.HallOfFameReplayStorage;
 import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import org.mockito.ArgumentMatchers;
 import java.util.function.Supplier;
@@ -260,27 +262,27 @@ class HallOfFameUploadServiceTest {
 
     @Test
     void originalNameFallsBackWhenNoValidBasename() {
-        assertEquals("replay.wotbreplay", HallOfFameUploadService.originalName(
+        assertEquals("replay.wotbreplay", ReplayFileNames.originalName(
                 new MockMultipartFile("file", "/", "application/octet-stream", new byte[]{1})));
-        assertEquals("replay.wotbreplay", HallOfFameUploadService.originalName(
+        assertEquals("replay.wotbreplay", ReplayFileNames.originalName(
                 new MockMultipartFile("file", "\\", "application/octet-stream", new byte[]{1})));
-        assertEquals("replay.wotbreplay", HallOfFameUploadService.originalName(
+        assertEquals("replay.wotbreplay", ReplayFileNames.originalName(
                 new MockMultipartFile("file", "foo/", "application/octet-stream", new byte[]{1})));
-        assertEquals("replay.wotbreplay", HallOfFameUploadService.originalName(
+        assertEquals("replay.wotbreplay", ReplayFileNames.originalName(
                 new MockMultipartFile("file", "foo\\", "application/octet-stream", new byte[]{1})));
-        assertEquals("replay.wotbreplay", HallOfFameUploadService.originalName(
+        assertEquals("replay.wotbreplay", ReplayFileNames.originalName(
                 new MockMultipartFile("file", "   ", "application/octet-stream", new byte[]{1})));
     }
 
     @Test
     void originalNameKeepsBasenameAndTrimsOverlong() {
-        assertEquals("battle.wotbreplay", HallOfFameUploadService.originalName(file()));
-        assertEquals("b.wotbreplay", HallOfFameUploadService.originalName(
+        assertEquals("battle.wotbreplay", ReplayFileNames.originalName(file()));
+        assertEquals("b.wotbreplay", ReplayFileNames.originalName(
                 new MockMultipartFile("file", "dir/b.wotbreplay", "application/octet-stream", new byte[]{1})));
-        assertEquals("c.wotbreplay", HallOfFameUploadService.originalName(
+        assertEquals("c.wotbreplay", ReplayFileNames.originalName(
                 new MockMultipartFile("file", "a\\b\\c.wotbreplay", "application/octet-stream", new byte[]{1})));
         final String longName = "x".repeat(300) + ".wotbreplay";
-        assertEquals(255, HallOfFameUploadService.originalName(
+        assertEquals(255, ReplayFileNames.originalName(
                 new MockMultipartFile("file", longName, "application/octet-stream", new byte[]{1})).length());
     }
 

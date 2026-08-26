@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.evidence.EntryHpSource;
+import com.wotb.core.model.EntryHpSource;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.evidence.TankTacticalProfileRegistry;
 import com.wotb.core.replay.map.MapTacticalSemantics;

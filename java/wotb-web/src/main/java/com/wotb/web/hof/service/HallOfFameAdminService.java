@@ -6,8 +6,9 @@ import com.wotb.web.hof.entity.HallOfFameAdminLog;
 import com.wotb.web.hof.entity.HallOfFameRecord;
 import com.wotb.web.hof.repository.HallOfFameAdminLogRepository;
 import com.wotb.web.hof.repository.HallOfFameRecordRepository;
-import com.wotb.web.hof.storage.HallOfFameReplayStorage;
-import com.wotb.web.hundred.service.HundredReplayEvidenceService;
+import com.wotb.web.replayfile.HallOfFameReplayStorage;
+import com.wotb.web.replayfile.ReplayHashLock;
+import com.wotb.web.replayfile.HundredReplayReferenceCounter;
 import com.wotb.web.util.JwtUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,7 +44,7 @@ public class HallOfFameAdminService {
     private final HallOfFameReplayStorage storage;
     private final ReplayHashLock replayHashLock;
     private final HallOfFameService hallOfFameService;
-    private final HundredReplayEvidenceService hundredEvidenceService;
+    private final HundredReplayReferenceCounter hundredReplayReferenceCounter;
     private final TransactionTemplate transactionTemplate;
 
     public HallOfFameAdminService(final HallOfFameRecordRepository repository,
@@ -53,7 +54,7 @@ public class HallOfFameAdminService {
                                   final HallOfFameReplayStorage storage,
                                   final ReplayHashLock replayHashLock,
                                   final HallOfFameService hallOfFameService,
-                                  final HundredReplayEvidenceService hundredEvidenceService,
+                                  final HundredReplayReferenceCounter hundredReplayReferenceCounter,
                                   final PlatformTransactionManager transactionManager) {
         this.repository = repository;
         this.recordMapper = recordMapper;
@@ -62,7 +63,7 @@ public class HallOfFameAdminService {
         this.storage = storage;
         this.replayHashLock = replayHashLock;
         this.hallOfFameService = hallOfFameService;
-        this.hundredEvidenceService = hundredEvidenceService;
+        this.hundredReplayReferenceCounter = hundredReplayReferenceCounter;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -170,16 +171,17 @@ public class HallOfFameAdminService {
 
     /**
      * commit 后文件清理：<b>跨域引用计数</b>（hall_of_fame_record + hundred_battle_replay_evidence
-     * 均无引用）才删除物理文件。TOTAL REFERENCES 由 {@code HundredReplayEvidenceService.countReferences}
-     * 统一提供（一次且仅一次 = HoF refs + Hundred refs）——防止重复计算 HoF refs，也防止删除
-     * 最后一个 HoF record 后误删仍被 Hundred evidence 引用的文件（Hundred admin download 404）。
+     * 均无引用）才删除物理文件。HoF 侧用本域 repository 自数，Hundred 侧通过
+     * {@code HundredReplayReferenceCounter} 接口获取——防止重复计算，也防止删除最后一个
+     * HoF record 后误删仍被 Hundred evidence 引用的文件（Hundred admin download 404）。
      * 失败仅 WARN，orphan 保留。
      */
     private void cleanupReplayFile(final DeletedEntry deleted) {
         if (deleted.replayHash() == null) {
             return;
         }
-        final long refs = hundredEvidenceService.countReferences(deleted.replayHash());
+        final long refs = repository.countByReplayHash(deleted.replayHash())
+                + hundredReplayReferenceCounter.countHundredReferences(deleted.replayHash());
         if (refs > 0) {
             log.info("HoF admin delete: replay {} still referenced by {} total reference(s), file retained",
                     deleted.replayHash(), refs);

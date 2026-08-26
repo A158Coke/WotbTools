@@ -40,7 +40,7 @@ class Mark3ReplayEvidenceServiceTest {
     Mark3SubmissionRepository submissionRepository;
 
     @Mock
-    com.wotb.web.hof.service.ReplayHashLock replayHashLock;
+    com.wotb.web.replayfile.ReplayHashLock replayHashLock;
 
     Mark3ReplayEvidenceService service;
 

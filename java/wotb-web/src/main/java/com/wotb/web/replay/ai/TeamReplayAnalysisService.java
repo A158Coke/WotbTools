@@ -8,10 +8,10 @@ import java.util.Map;
 import java.util.Set;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.processing.AiNotConfiguredException;
-import com.wotb.core.processing.FriendlyEnemyResult;
-import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
-import com.wotb.core.processing.ReplayPerspectiveGroup;
+import com.wotb.core.replay.processing.AiNotConfiguredException;
+import com.wotb.core.replay.processing.FriendlyEnemyResult;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.TeamBattleWinner;
+import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
 import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator;
 import com.wotb.core.replay.evidence.TeamGroundingFacts;
 import com.wotb.core.replay.evidence.TeamReviewEnvelope;

@@ -1,6 +1,6 @@
 package com.wotb.web.mark3.service;
 
-import com.wotb.web.hof.storage.HallOfFameReplayStorage;
+import com.wotb.web.replayfile.HallOfFameReplayStorage;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 

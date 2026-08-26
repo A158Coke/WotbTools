@@ -255,6 +255,7 @@ mvn -s settings.xml test
 
 - `wotb-core` 的 `ParityTest`：集成测试，覆盖解析、字段不变量、去重、汇总、xlsx 导出。
 - `wotb-web` 的 boost / hof / security / API 契约单元测试都会执行；无需数据库的 controller 契约已拆出，始终运行。
+- 架构测试：`CoreArchitectureTest` / `WebArchitectureTest`（ArchUnit）守护模块边界与分层，随 `mvn test` 自动执行。
 - `WebApiTest` 只保留 PostgreSQL/真实回放集成路径；无 Docker 或无 `common/data` 时按条件跳过。
 
 测试样本来自仓库根目录的 `common/data/`。

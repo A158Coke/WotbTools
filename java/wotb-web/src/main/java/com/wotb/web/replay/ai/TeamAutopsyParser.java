@@ -1,6 +1,6 @@
 package com.wotb.web.replay.ai;
 
-import com.wotb.core.processing.FriendlyEnemyResult.Winner;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.Winner;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 

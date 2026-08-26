@@ -30,7 +30,7 @@ import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 import reactor.core.publisher.Flux;
 
-import com.wotb.core.processing.AiNotConfiguredException;
+import com.wotb.core.replay.processing.AiNotConfiguredException;
 
 /**
  * {@link AiChatGateway#stream} unit tests: token callback order, final

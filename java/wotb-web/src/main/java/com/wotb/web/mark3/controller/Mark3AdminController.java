@@ -1,7 +1,7 @@
 package com.wotb.web.mark3.controller;
 
 import com.wotb.web.config.ApiPaths;
-import com.wotb.web.hof.dto.ReplayDownload;
+import com.wotb.web.replayfile.ReplayDownload;
 import com.wotb.web.mark3.dto.Mark3AdminDetailDto;
 import com.wotb.web.mark3.dto.Mark3AdminPageDto;
 import com.wotb.web.mark3.dto.Mark3DeleteRequest;

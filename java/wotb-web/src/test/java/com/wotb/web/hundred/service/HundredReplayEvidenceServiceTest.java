@@ -1,10 +1,10 @@
 package com.wotb.web.hundred.service;
 
-import com.wotb.web.hof.dto.ReplayDownload;
-import com.wotb.web.hof.exception.HallOfFameStorageException;
-import com.wotb.web.hof.service.HallOfFameService;
-import com.wotb.web.hof.service.ReplayHashLock;
-import com.wotb.web.hof.storage.HallOfFameReplayStorage;
+import com.wotb.web.replayfile.ReplayDownload;
+import com.wotb.web.replayfile.HallOfFameStorageException;
+import com.wotb.web.replayfile.HofReplayReferenceCounter;
+import com.wotb.web.replayfile.ReplayHashLock;
+import com.wotb.web.replayfile.HallOfFameReplayStorage;
 import com.wotb.web.hundred.dto.HundredReplayEvidenceDto;
 import com.wotb.web.hundred.entity.HundredBattleReplayEvidence;
 import com.wotb.web.hundred.repository.HundredBattleReplayEvidenceRepository;
@@ -59,7 +59,7 @@ class HundredReplayEvidenceServiceTest {
     HundredBattleSubmissionRepository submissionRepository;
 
     @Mock
-    HallOfFameService hallOfFameService;
+    HofReplayReferenceCounter hofReplayReferenceCounter;
 
     @Mock
     ReplayHashLock replayHashLock;
@@ -70,7 +70,7 @@ class HundredReplayEvidenceServiceTest {
     void setUp() {
         service = new HundredReplayEvidenceService(
                 storage, repository, submissionRepository, new HundredBattleMapper(),
-                hallOfFameService, replayHashLock);
+                hofReplayReferenceCounter, replayHashLock);
         lenient().doAnswer(invocation -> {
             ((Runnable) invocation.getArgument(1)).run();
             return null;
@@ -117,7 +117,7 @@ class HundredReplayEvidenceServiceTest {
         when(storage.store(any(), eq(SHA_B)))
                 .thenThrow(new HallOfFameStorageException("REPLAY_STORAGE_ERROR", HttpStatus.INTERNAL_SERVER_ERROR, "boom"));
         when(repository.countBySha256(anyString())).thenReturn(0L);
-        when(hallOfFameService.countReplayHashReferences(anyString())).thenReturn(0L);
+        when(hofReplayReferenceCounter.countHofReferences(anyString())).thenReturn(0L);
 
         assertThatThrownBy(() -> service.storeAll(List.of(
                 pending(1, SHA_A, new byte[]{1}), pending(2, SHA_B, new byte[]{2}))))
@@ -158,7 +158,7 @@ class HundredReplayEvidenceServiceTest {
         when(repository.findBySubmissionId(10L)).thenReturn(List.of(
                 evidenceRow(1L, 10L, 1, SHA_A), evidenceRow(2L, 10L, 2, SHA_B)));
         when(repository.countBySha256(anyString())).thenReturn(0L);
-        when(hallOfFameService.countReplayHashReferences(anyString())).thenReturn(0L);
+        when(hofReplayReferenceCounter.countHofReferences(anyString())).thenReturn(0L);
 
         service.discardForSubmission(10L);
 
@@ -172,7 +172,7 @@ class HundredReplayEvidenceServiceTest {
         when(repository.findBySubmissionId(10L))
                 .thenReturn(List.of(evidenceRow(1L, 10L, 1, SHA_A)));
         when(repository.countBySha256(SHA_A)).thenReturn(0L);
-        when(hallOfFameService.countReplayHashReferences(SHA_A)).thenReturn(1L);
+        when(hofReplayReferenceCounter.countHofReferences(SHA_A)).thenReturn(1L);
 
         service.discardForSubmission(10L);
 
@@ -351,13 +351,11 @@ class HundredReplayEvidenceServiceTest {
     }
 
     @Test
-    void countReferencesSumsHundredAndHofExactlyOnce() {
+    void countHundredReferencesReturnsOwnCountOnly() {
         when(repository.countBySha256(SHA_A)).thenReturn(1L);
-        when(hallOfFameService.countReplayHashReferences(SHA_A)).thenReturn(1L);
-        assertThat(service.countReferences(SHA_A)).isEqualTo(2L);
+        assertThat(service.countHundredReferences(SHA_A)).isEqualTo(1L);
 
         when(repository.countBySha256(SHA_A)).thenReturn(0L);
-        when(hallOfFameService.countReplayHashReferences(SHA_A)).thenReturn(0L);
-        assertThat(service.countReferences(SHA_A)).isZero();
+        assertThat(service.countHundredReferences(SHA_A)).isZero();
     }
 }

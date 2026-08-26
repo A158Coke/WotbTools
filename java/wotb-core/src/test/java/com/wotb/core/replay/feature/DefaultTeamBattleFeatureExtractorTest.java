@@ -2,8 +2,8 @@ package com.wotb.core.replay.feature;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.processing.TeamPerspectiveResolution;
-import com.wotb.core.processing.TeamPerspectiveResolver;
+import com.wotb.core.replay.processing.TeamPerspectiveResolution;
+import com.wotb.core.replay.processing.TeamPerspectiveResolver;
 import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
