@@ -1,7 +1,7 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.processing.PlayerSideResolver;
+import com.wotb.core.replay.processing.PlayerSideResolver;
 import com.wotb.core.replay.evidence.EnemyLastKnownPositionResolver;
 import com.wotb.core.replay.evidence.EnemyLastKnownPositionResolver.EnemyLastKnownPosition;
 import com.wotb.core.replay.evidence.EnemyLastKnownPositionResolver.EnemyLastKnownPositionResult;

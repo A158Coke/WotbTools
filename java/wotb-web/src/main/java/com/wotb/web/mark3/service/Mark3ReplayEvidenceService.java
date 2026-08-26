@@ -1,7 +1,7 @@
 package com.wotb.web.mark3.service;
 
-import com.wotb.web.hof.dto.ReplayDownload;
-import com.wotb.web.hof.service.ReplayHashLock;
+import com.wotb.web.replayfile.ReplayDownload;
+import com.wotb.web.replayfile.ReplayHashLock;
 import com.wotb.web.mark3.dto.Mark3ReplayEvidenceDto;
 import com.wotb.web.mark3.entity.Mark3ReplayEvidence;
 import com.wotb.web.mark3.repository.Mark3ReplayEvidenceRepository;

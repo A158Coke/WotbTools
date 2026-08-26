@@ -5,6 +5,20 @@
 ## [Unreleased]
 
 ### Added
+- **ArchUnit 架构测试 + 存量架构违规重构**：
+  - `wotb-core` / `wotb-web` 引入 `com.tngtech.archunit:archunit-junit5`（test scope，版本 parent 统一管理），
+    新增 `CoreArchitectureTest` / `WebArchitectureTest`，随 `mvn test` 自动执行（CI 零改动）。
+  - core 消除 8 处顶层包循环：`model.PlayerResult.entryHpSource` 的 `EntryHpSource` 移入 `com.wotb.core.model`
+    （model 不再反向依赖 replay）；`com.wotb.core.processing` 并入 `com.wotb.core.replay.processing`
+    （统一门面与视角解析归属 replay 流水线）。
+  - web 消除 3 处域循环：新增共享包 `com.wotb.web.replayfile`（`ReplayHashLock` /
+    `HallOfFameReplayStorage` / `HallOfFameStorageException` / `ReplayDownload` / `ReplayFileNames.originalName`），
+    跨域引用计数改为 DIP 接口（`HofReplayReferenceCounter` / `HundredReplayReferenceCounter`，
+    HoF/Hundred 各数各域，删除时由 hof admin 汇总）；`KeycloakAdminUserService` 下沉 `config`；
+    `GlobalExceptionHandler` 移入 `com.wotb.web.exceptionhandler`；`GET /api/users/profile/records`
+    handler 移入 hof 域（路径与响应不变，前端零改动）。
+  - 行为不变：以上均为包移动/依赖方向调整，全量测试回归兜底；文档同步
+    `DEVELOPER_GUIDE.md` / `java/AGENTS.md` / `java/README.md`。
 - **League Rating V4.1 算法迁移**：七维满分由 400/100/100/150/50/100/100 精确调整为
   365/110/110/180/50/75/110（总分 1000 不变）；射击效率由 pure Wilson 迁移为
   Soft Wilson（`0.9×Wilson95%下界 + 0.1×raw`，命中 30% / 击穿 70% 合成）；存活/互换 RC

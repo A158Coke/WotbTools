@@ -1,11 +1,11 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Source;
-import com.wotb.core.processing.BatchAnalyzer;
-import com.wotb.core.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.processing.ReplayPerspectiveGroup;
-import com.wotb.core.processing.ReplayProcessingOptions;
-import com.wotb.core.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.BatchAnalyzer;
+import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
+import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
+import com.wotb.core.replay.processing.ReplayProcessingOptions;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.web.config.AiModelProperties;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import com.wotb.web.replay.ai.gateway.SpringAiChatGateway;

@@ -1,9 +1,9 @@
 package com.wotb.core.replay.facts;
 
 import com.wotb.core.model.Source;
-import com.wotb.core.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.processing.ReplayProcessingOptions;
-import com.wotb.core.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
+import com.wotb.core.replay.processing.ReplayProcessingOptions;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.Test;

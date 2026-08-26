@@ -22,6 +22,7 @@
         <javafx.version>21.0.4</javafx.version>
         <springboot.version>4.1.0</springboot.version>
         <springai.version>2.0.0</springai.version>
+        <archunit.version>1.4.2</archunit.version>
     </properties>
 
     <dependencyManagement>

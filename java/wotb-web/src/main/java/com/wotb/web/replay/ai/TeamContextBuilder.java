@@ -1,12 +1,12 @@
 package com.wotb.web.replay.ai;
 
-import com.wotb.core.processing.BattleCategory;
-import com.wotb.core.processing.BattleCategoryUtils;
-import com.wotb.core.processing.PerspectiveTeamNotResolvedException;
-import com.wotb.core.processing.ReplayPerspectiveGroup;
-import com.wotb.core.processing.ReplayProcessingResult;
-import com.wotb.core.processing.TeamPerspectiveResolution;
-import com.wotb.core.processing.TeamPerspectiveResolver;
+import com.wotb.core.replay.processing.BattleCategory;
+import com.wotb.core.replay.processing.BattleCategoryUtils;
+import com.wotb.core.replay.processing.PerspectiveTeamNotResolvedException;
+import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.TeamPerspectiveResolution;
+import com.wotb.core.replay.processing.TeamPerspectiveResolver;
 import com.wotb.core.replay.feature.DefaultTeamBattleFeatureExtractor;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;

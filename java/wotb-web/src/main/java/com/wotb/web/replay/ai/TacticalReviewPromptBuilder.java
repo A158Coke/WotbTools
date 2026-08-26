@@ -3,7 +3,7 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.processing.RecorderEntityMapping;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.evidence.AiEvidence;
 import com.wotb.core.replay.evidence.EvidenceSkillResult;

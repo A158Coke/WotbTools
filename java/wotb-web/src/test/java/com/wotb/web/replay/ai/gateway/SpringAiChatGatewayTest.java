@@ -49,7 +49,7 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 
-import com.wotb.core.processing.AiNotConfiguredException;
+import com.wotb.core.replay.processing.AiNotConfiguredException;
 import com.wotb.web.config.AiModelProperties;
 
 /**

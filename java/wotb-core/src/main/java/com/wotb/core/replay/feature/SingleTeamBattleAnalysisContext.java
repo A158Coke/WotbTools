@@ -1,8 +1,8 @@
 package com.wotb.core.replay.feature;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.processing.BattleCategory;
-import com.wotb.core.processing.BattleIdentity;
+import com.wotb.core.replay.processing.BattleCategory;
+import com.wotb.core.replay.processing.BattleIdentity;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 

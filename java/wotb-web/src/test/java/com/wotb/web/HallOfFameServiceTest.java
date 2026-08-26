@@ -11,7 +11,7 @@ import com.wotb.web.hof.service.HallOfFameRecordMapper;
 import com.wotb.web.hof.service.HallOfFameService;
 import com.wotb.web.hof.policy.HallOfFameBattleTypePolicy;
 import com.wotb.web.hof.service.RecordOutcome;
-import com.wotb.web.hof.storage.HallOfFameReplayStorage;
+import com.wotb.web.replayfile.HallOfFameReplayStorage;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;

@@ -1,9 +1,9 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Source;
-import com.wotb.core.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.processing.ReplayProcessingOptions;
-import com.wotb.core.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
+import com.wotb.core.replay.processing.ReplayProcessingOptions;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.web.replay.dto.MapOverview;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;

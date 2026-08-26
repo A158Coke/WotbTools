@@ -3,11 +3,11 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
-import com.wotb.core.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.processing.ReplayProcessingOptions;
-import com.wotb.core.processing.ReplayProcessingResult;
-import com.wotb.core.processing.TeamEntityMapper;
-import com.wotb.core.processing.TeamEntityMapping;
+import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
+import com.wotb.core.replay.processing.ReplayProcessingOptions;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.TeamEntityMapper;
+import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
@@ -207,7 +207,7 @@ class InitialHpProtocolProbeTest {
         }
         hpSamples.sort(Comparator.comparingDouble(a -> a[0]));
         Double firstDamageSec = null;
-        final com.wotb.core.processing.TeamEntityMapping dmgMapping = DamageEventIdentityResolver.mapping(battle, recon);
+        final com.wotb.core.replay.processing.TeamEntityMapping dmgMapping = DamageEventIdentityResolver.mapping(battle, recon);
         if (recon.events() != null) {
             for (final ReplayEvent event : recon.events()) {
                 if (event instanceof DamageEvent d && d.damage() > 0

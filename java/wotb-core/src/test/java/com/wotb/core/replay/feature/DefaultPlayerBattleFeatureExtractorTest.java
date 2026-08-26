@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wotb.core.replay.reconstruction.Vector3;
 
-import com.wotb.core.processing.RecorderEntityMapping;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;

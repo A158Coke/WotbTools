@@ -2,9 +2,9 @@ package com.wotb.core;
 
 import com.wotb.core.model.Source;
 import com.wotb.core.parse.ReplayArchiveReader;
-import com.wotb.core.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.processing.ReplayProcessingOptions;
-import com.wotb.core.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
+import com.wotb.core.replay.processing.ReplayProcessingOptions;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.decoder.EntityMethodDecoder;
 import com.wotb.core.replay.decoder.ReplayDecodeContext;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;

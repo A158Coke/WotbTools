@@ -2,9 +2,9 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.processing.TeamEntityIdentity;
-import com.wotb.core.processing.TeamEntityMapper;
-import com.wotb.core.processing.TeamEntityMapping;
+import com.wotb.core.replay.processing.TeamEntityIdentity;
+import com.wotb.core.replay.processing.TeamEntityMapper;
+import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.EntityRemovedEvent;

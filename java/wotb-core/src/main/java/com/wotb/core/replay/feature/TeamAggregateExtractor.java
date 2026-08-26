@@ -2,9 +2,9 @@ package com.wotb.core.replay.feature;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.processing.FriendlyEnemyResult;
-import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
-import com.wotb.core.processing.TeamEntityIdentity;
+import com.wotb.core.replay.processing.FriendlyEnemyResult;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.TeamBattleWinner;
+import com.wotb.core.replay.processing.TeamEntityIdentity;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.util.PlayerResultFormat;

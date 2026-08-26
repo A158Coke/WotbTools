@@ -8,10 +8,10 @@ import static org.mockito.Mockito.when;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.processing.ReplayIdentity;
-import com.wotb.core.processing.ReplayProcessingCapabilities;
-import com.wotb.core.processing.ReplayProcessingResult;
-import com.wotb.core.processing.ReplayProcessingStatus;
+import com.wotb.core.replay.processing.ReplayIdentity;
+import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.facts.AiReplayFacts;
 import com.wotb.core.replay.timeline.TimelineError;
 import com.wotb.web.replay.exception.AiTimelineUnusableException;
