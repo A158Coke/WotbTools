@@ -1530,8 +1530,6 @@
             "radar_done": "Готово",
             "radar_min_hint": "Для радара нужно минимум {n} показателей",
             "radar_max_hint": "Радар поддерживает до {n} показателей",
-            "radar_partial": "Часть показателей без данных рейтинга",
-            "radar_unavailable": "Нет данных рейтинга",
             "radar_move_up": "Вверх",
             "radar_move_down": "Вниз",
             "perf_title": "Показатели игры",
@@ -1555,7 +1553,28 @@
             "hits": "Попадания",
             "pens": "Пробития",
             "points_earned": "Очки за базу",
-            "survived": "Статус"
+            "survived": "Статус",
+            "rating_label": "Рейтинг",
+            "battle_average": "Среднее по бою",
+            "global_average": "Общее среднее",
+            "radar_dim_unavailable": "Некоторые параметры рейтинга отсутствуют - радар недоступен",
+            "ref_unavailable": "Среднее недоступно для выбранных параметров",
+            "prev_player": "Предыдущий игрок",
+            "next_player": "Следующий игрок",
+            "export_profile": "Экспорт профиля игрока"
         }
+    },
+    "radar_lbl": {
+        "dimension": "Параметр",
+        "player": "Игрок"
+    },
+    "radar_labels": {
+        "league_damage_score": "Урон",
+        "league_shooting_score": "Стрельба",
+        "league_kill_score": "Убийства",
+        "league_survival_score": "RC",
+        "league_blocked_score": "Блок",
+        "league_exchange_score": "Обмен",
+        "league_assist_score": "Помощь"
     }
 }

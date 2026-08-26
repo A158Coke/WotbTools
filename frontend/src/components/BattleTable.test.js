@@ -331,7 +331,8 @@ describe('BattleTable League Rating', () => {
     await rowA.trigger('click')
     const emitted = wrapper.emitted('select-player')
     expect(emitted).toBeTruthy()
-    expect(emitted[0][0]).toEqual({ scope: 'battle', accountId: 1001, arenaId: '111' })
+    expect(emitted[0][0]).toMatchObject({ scope: 'battle', accountId: 1001, arenaId: '111' })
+    expect(emitted[0][0].order).toEqual([1001, 2001])
   })
 
   it('does not emit select-player in standard (non-league) mode', async () => {
@@ -371,7 +372,8 @@ describe('BattleTable League Rating', () => {
     await rowA.trigger('click')
     const emitted = wrapper.emitted('select-player')
     expect(emitted).toBeTruthy()
-    expect(emitted[0][0]).toEqual({ scope: 'battle', accountId: 1001, arenaId: '111' })
+    expect(emitted[0][0]).toMatchObject({ scope: 'battle', accountId: 1001, arenaId: '111' })
+    expect(emitted[0][0].order).toEqual([1001, 2001])
   })
 
   it('Rating-ineligible 场 Rating 单元格显示 -- 而不是 0（不冒充 0）', async () => {

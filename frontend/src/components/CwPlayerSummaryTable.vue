@@ -82,8 +82,13 @@ function cellDisplay(row, col) {
 }
 
 function onRowClick(row) {
-  // identity = accountId；scope 标记汇总（drawerPlayer 按 scope + accountId 重新 resolve）
-  emit('select-player', { scope: 'summary', accountId: Number(row.cells.account_id) })
+  // identity = accountId；scope 标记汇总（drawerPlayer 按 scope + accountId 重新 resolve）；
+  // order = 当前可见顺序（排序后），供 Drawer 前后导航（§29）。
+  emit('select-player', {
+    scope: 'summary',
+    accountId: Number(row.cells.account_id),
+    order: sortedRows.value.map(r => Number(r.cells.account_id)),
+  })
 }
 
 /** 选中行判定按 accountId（禁止 row index；排序后 highlight 跟随同一玩家）。 */

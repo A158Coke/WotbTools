@@ -1530,8 +1530,6 @@
             "radar_done": "完成",
             "radar_min_hint": "雷达至少需要 {n} 个指标",
             "radar_max_hint": "雷达最多 {n} 个指标",
-            "radar_partial": "部分指标无评分数据",
-            "radar_unavailable": "无评分数据",
             "radar_move_up": "上移",
             "radar_move_down": "下移",
             "perf_title": "表现指标",
@@ -1555,7 +1553,28 @@
             "hits": "命中",
             "pens": "击穿",
             "points_earned": "获取点数",
-            "survived": "存活状态"
+            "survived": "存活状态",
+            "rating_label": "评级",
+            "battle_average": "本场平均",
+            "global_average": "全局平均",
+            "radar_dim_unavailable": "部分评分维度缺失 - 雷达不可用",
+            "ref_unavailable": "所选维度的参考平均不可用",
+            "prev_player": "上一位玩家",
+            "next_player": "下一位玩家",
+            "export_profile": "导出玩家画像"
         }
+    },
+    "radar_lbl": {
+        "dimension": "维度",
+        "player": "玩家"
+    },
+    "radar_labels": {
+        "league_damage_score": "伤害",
+        "league_shooting_score": "射击",
+        "league_kill_score": "击杀",
+        "league_survival_score": "RC",
+        "league_blocked_score": "阻挡",
+        "league_exchange_score": "换血",
+        "league_assist_score": "助攻"
     }
 }

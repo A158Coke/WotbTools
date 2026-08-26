@@ -1,0 +1,63 @@
+/**
+ * Radar 几何纯函数：组件（PlayerRatingRadar）与导出卡（exportRatingProfilePng）共用，
+ * 保证数据模型/维度顺序/归一化/几何完全同构（计划 §48），避免导出截图整 Drawer。
+ * 只负责坐标计算，不含业务公式与 SVG 标签。
+ */
+
+/** 几何常量（计划 §51：为短标签留 breathing room；导出与组件共用）。 */
+export const RADAR = Object.freeze({
+  VIEW: 340,
+  CENTER: 170,
+  RADIUS: 120,
+  LABEL_RADIUS: 1.16,
+  /** 网格层级（计划 §17）：25 / 50 / 75 / 100（0..1 归一化几何，不截断）。 */
+  GRID_LEVELS: [0.25, 0.5, 0.75, 1],
+})
+
+/** 第 i 个轴的角度（从 12 点方向顺时针）。 */
+function axisAngle(i, count) {
+  return (Math.PI * 2 * i) / Math.max(count, 1) - Math.PI / 2
+}
+
+/** 第 i 个轴 ratio 处的坐标 [x, y]。 */
+export function axisPoint(i, count, ratio, g = RADAR) {
+  const r = g.RADIUS * ratio
+  const a = axisAngle(i, count)
+  return [g.CENTER + r * Math.cos(a), g.CENTER + r * Math.sin(a)]
+}
+
+/** 把归一化值数组转成 SVG polygon points 字符串（null/undefined 用 callers 过滤）。 */
+export function polygonPoints(values, count, g = RADAR) {
+  return values
+    .map((ratio, i) => ({ i, ratio }))
+    .filter(p => ratioIsFinite(p.ratio))
+    .map(p => axisPoint(p.i, count, p.ratio, g).join(','))
+    .join(' ')
+}
+
+function ratioIsFinite(v) {
+  return v != null && Number.isFinite(Number(v))
+}
+
+/** 某归一化网格层的 polygon points（全部轴）。 */
+export function gridPolygonPoints(count, ratio, g = RADAR) {
+  return Array.from({ length: count }, (_, i) => axisPoint(i, count, ratio, g).join(',')).join(' ')
+}
+
+/** 第 i 个轴的半径端点（用于画轴线）。 */
+export function axisRay(i, count, g = RADAR) {
+  return {
+    x: axisPoint(i, count, 1, g)[0],
+    y: axisPoint(i, count, 1, g)[1],
+  }
+}
+
+/** 单侧刻度标签位置：从 12 点方向（第一个轴）向外延伸，避让轴线。 */
+export function scaleTickPosition(count, ratio, g = RADAR) {
+  //
+  const r = g.RADIUS * ratio
+  const a = axisAngle(0, count)
+  const x = g.CENTER + (r + 8) * Math.cos(a)
+  const y = g.CENTER + (r + 8) * Math.sin(a)
+  return { x, y }
+}
