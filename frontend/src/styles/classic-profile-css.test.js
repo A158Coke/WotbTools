@@ -192,6 +192,15 @@ describe('Classic 深色冲突 selector→declaration 绑定（须带 !important
     has('admin-hof-page) tbody td', ['color: var(--text) !important'])
   })
 
+  it('回归：HoF Admin .tablewrap 必须 background/border-color/color/box-shadow 全带 !important（防浅色主题残留深色边框/阴影）', () => {
+    has(':is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .tablewrap', [
+      'background: var(--bg-card) !important',
+      'border-color: var(--border) !important',
+      'color: var(--text) !important',
+      'box-shadow: var(--surface-shadow) !important',
+    ])
+  })
+
   it('HoF 公开页残留缺口：submit row/普通行基础背景/分隔线/pending/下载/分页 浅色 !important（PR #151 收尾）', () => {
     // 提交记录行（showcase-cohesion .lb-submit-row rgba(10,16,19,.50) !important）
     has('.lb-wrap .lb-submit-row', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
