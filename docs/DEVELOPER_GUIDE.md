@@ -334,6 +334,7 @@ cd frontend && npm test && npm run build
 | 回放重建流水线 | `docs/architecture/replay-pipeline.md` |
 | 地图鸟瞰 / 战局回放 | `docs/features/battle-playback.md` |
 | 战斗表现 | `docs/features/performance.md` |
+| 历史 Rating V2（管理员灰度） | `docs/features/rating-v2.md` |
 | League Rating | `docs/features/league-rating.md` |
 | 名人堂 / 百场 | `docs/features/hall-of-fame.md` |
 | Team AI Review | `docs/features/team-ai-review.md` |
