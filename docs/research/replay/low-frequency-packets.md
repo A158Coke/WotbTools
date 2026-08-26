@@ -125,7 +125,7 @@ This is an early session/initialization value. It is not a battle-start marker; 
 
 Verdict: `PROVEN structure and initialization position / UNKNOWN semantic`.
 
-## Type 28 — recorder-local three-state control
+## Type 28 — recorder ammunition-slot selection
 
 Corpus facts:
 
@@ -136,30 +136,88 @@ u32 values  = 0 (224), 1 (204), 2 (32)
 clock       ≈ 8.4–406 s
 ```
 
-Unlike Types 17/29/36, Type28 spans active battle and behaves as a small recorder-local state/control value.
+The current evidence closes this packet as the recorder's **ammunition/shell-slot selection index** rather than a camera or aiming mode.
 
-### Correlation with firing
-
-Distance to the nearest recorder Type23 firing/projectile event:
+Independent Wargaming replay code exposes a native replay-manager callback:
 
 ```text
-value 0 : median |Δt| ≈ 2.37 s; 88.8% within 5 s
-value 1 : median |Δt| ≈ 1.26 s; 91.2% within 5 s
-value 2 : median |Δt| ≈ 0.67 s; 100% within 5 s; 81.25% within 2 s
+ammoButtonPressedCallback(idx)
 ```
 
-The relationship is strong enough to classify Type28 as a firing/weapon-control-adjacent state, but not strong enough to distinguish among hypotheses such as:
+and forwards that exact index to the client ammunition-selection path. A three-slot `0/1/2` domain is therefore an explicit independent schema candidate.
 
-- shell/ammunition slot selection;
-- aiming/control mode;
-- weapon/gun state;
-- another recorder-only combat UI/control state.
+The decisive evidence, however, is projectile physics from the current Blitz corpus.
 
-Different recorder vehicles show different transition patterns (e.g. repeated `1↔0`, `2↔0`, occasional use of all three states), which is compatible with several hypotheses.
+### Projectile-velocity closure
 
-Verdict: `PARTIAL firing/weapon-control-adjacent three-state value`; exact semantic `UNKNOWN`.
+Avatar method29 independently provides a proven projectile launch-velocity vector. For recorder-fired projectiles, the most recent Type28 value before the shot was joined to the method29 launch-vector magnitude.
 
-No production decoder should expose `0/1/2` as a shell type or aiming mode until an independent client schema or controlled replay closes the mapping.
+The same vehicle produces discrete and completely stable projectile-speed families per Type28 state.
+
+Representative current results:
+
+```text
+SPHT
+  state 0 : n=127  projectile speed = 760.0
+  state 1 : n= 61  projectile speed = 560.0
+  state 2 : n=  7  projectile speed = 560.0
+  before the first Type28 event:
+            n= 20  projectile speed = 760.0
+
+Maus
+  state 0 : n=42   projectile speed ~= 680.0
+  state 1 : n= 9   projectile speed ~= 1032.0
+
+Ho-Ri
+  state 0 : n=8    projectile speed ~= 972.0
+  state 1 : n=9    projectile speed ~= 1026.0
+
+FV215b
+  state 0 : n=10   projectile speed ~= 1152.36
+  state 1 : n= 2   projectile speed ~= 1440.72
+  state 2 : n=13   projectile speed ~= 1152.36
+  before the first Type28 event:
+            n= 7   projectile speed ~= 1152.36
+```
+
+The important properties are:
+
+1. changing Type28 changes the subsequent physical projectile-speed family for the same vehicle;
+2. each vehicle/state pair is internally stable rather than a camera-dependent continuum;
+3. before the first explicit Type28 event, projectile behavior matches slot 0 in the validated vehicles, consistent with the default selected ammunition slot;
+4. different slots are allowed to share the same projectile speed (for example SPHT 1/2 and FV215b 0/2), so projectile speed is supporting identity evidence, not a globally unique shell-type code.
+
+A camera/control-mode interpretation cannot explain deterministic changes in actual projectile launch velocity.
+
+Verdict:
+
+> Type28 is **recorder ammunition/shell-slot selection (`ammoButtonPressed` index)** — `PROVEN behavioral identity` for the current corpus.
+
+### Important semantic boundary
+
+The values are **slot indices**, not universal shell-kind enums.
+
+```text
+0 != globally AP
+1 != globally APCR
+2 != globally HE
+```
+
+The actual ammunition/shell type must be resolved against the vehicle's version-matched gun/ammunition configuration.
+
+Safe current state model:
+
+```text
+currentAmmoSlot = 0   // default before any Type28 event, where supported by vehicle initialization
+
+on Type28(index):
+    currentAmmoSlot = index
+
+on recorder projectile launch:
+    shot.ammoSlot = currentAmmoSlot
+```
+
+Any production implementation should still preserve whether the initial slot was explicit or inferred from default initialization semantics.
 
 ## Stream terminator `0xFFFFFFFF`
 
@@ -185,5 +243,5 @@ The constant payload is version-scoped; parsers should not assume it is immutabl
 2. Low-frequency packet semantics must be kept separate from framing semantics.
 3. Type14 is the current stream-close marker, not an authoritative gameplay finish event.
 4. Early deterministic controls (17/29/36) are poor battle-start candidates.
-5. Type28 is high-value for recorder weapon-state reconstruction but remains deliberately unnamed.
+5. Type28 is a proven recorder ammunition-slot transition and should be joined to projectile events rather than exposed as a generic integer control.
 6. Any future corpus introducing a new top-level type must enter this inventory as `UNKNOWN` before being assigned a semantic.
