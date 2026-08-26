@@ -72,7 +72,7 @@ Current method29 body length is 37 bytes. Empirical parsing exposes:
 - a second VECTOR3-like vector;
 - a final float32 scalar.
 
-The structure is strongly projectile-like for three independent reasons.
+The structure is strongly projectile-like for four independent reasons.
 
 ### 1. Shot-ID lifecycle closure
 
@@ -93,15 +93,32 @@ The first VECTOR3-like point lies close to the shooter vehicle's position at the
 
 That is consistent with a gun/muzzle/reference launch position rather than an arbitrary arena vector.
 
-### 3. Velocity-like vector
+### 3. Projectile launch velocity / direction vector
 
 The second VECTOR3-like vector has magnitude in the observed range:
 
 ```text
 ~480 .. 1,441
+median ~760
 ```
 
-with a median around the mid-hundreds of units per second. The magnitude distribution is compatible with shell/projectile velocity rather than normalized direction, map position or camera orientation.
+More importantly, it aligns with the independently observed terminal displacement from method29 start point to method20 `stopTracer` endpoint.
+
+Across all 4,244 matched method29→method20 observations:
+
+```text
+cos(angle(launchVector, endPoint - startPoint)) > 0.90 : ~99.3%
+cos(angle(launchVector, endPoint - startPoint)) > 0.99 : ~98.8%
+median cosine                                     : ~0.9999998
+```
+
+Restricting to records where method29 and method20 have different packet clocks produces the same directional result.
+
+This closes the vector's physical family far more strongly than magnitude alone:
+
+> method29's second VECTOR3 is the **projectile launch velocity/direction vector** — `PROVEN physical meaning` for the current corpus.
+
+Its magnitude is speed-like and consistent with shell velocities, but exact coordinate units and whether the vector is the initial server simulation velocity or a client tracer velocity remain version-specific implementation details.
 
 The final float32 scalar is strikingly invariant:
 
@@ -112,7 +129,7 @@ The final float32 scalar is strikingly invariant:
 
 This is consistent with a shared ballistic/gravity-like parameter, although the exact symbolic field name and units remain unproven.
 
-### Launch-before-end timing
+### 4. Launch-before-end ordering
 
 For the 4,161 shot IDs shared by method29 and method20:
 
@@ -122,13 +139,59 @@ median : 0 s
 min    : about -1.117 s
 ```
 
-3,499 pairs share the same recorded packet clock; the remaining population has method29 preceding method20 by up to roughly 1.12 s. That one-sided relation is consistent with projectile launch/in-flight followed by tracer termination, with batching causing many same-clock deliveries.
+3,499 pairs share the same recorded packet clock; the remaining population has method29 preceding method20 by up to roughly 1.12 s.
+
+This one-sided ordering is consistent with projectile launch followed by tracer termination, but it also reveals an important timing limitation.
+
+## Packet rawClock is not projectile simulation time
+
+A direct kinematic test compared:
+
+```text
+geometric distance = |endPoint - startPoint|
+reported vector magnitude = |launchVector|
+packet clock delta = method20.rawClock - method29.rawClock
+```
+
+For the 697 records with a positive packet-clock delta greater than 1 ms, a naive ballistic estimate:
+
+```text
+distance / (|launchVector| * packetClockDelta)
+```
+
+has median roughly `2.15`, not `1`, with a wide distribution. Meanwhile the vector direction itself is extremely well aligned with the endpoint displacement.
+
+Therefore the failure is not a spatial interpretation problem. The replay `rawClock` timestamps these network/replay deliveries and can batch launch and terminal RPCs onto the same tick; it is **not a reliable per-projectile simulation-time clock**.
 
 Verdict:
 
-> Avatar method29 is a **projectile/tracer launch-family event** — `PROVEN behavioral family / PARTIAL symbolic schema`.
+> `method20.rawClock - method29.rawClock` must **not** be presented as exact projectile flight time.
 
-Do **not** assign a historical PC method number/name solely from this numeric ID. Current Blitz entity-method numbering is version/component-order dependent. The launch geometry and shot-ID lifecycle are proven; exact flag/scalar names remain PARTIAL.
+A future flight-time reconstruction requires either a simulation timestamp carried inside an RPC, ballistic integration from a proven velocity/gravity schema, or another independently timestamped projectile event.
+
+## Method 29 verdict
+
+> Avatar method29 is a **projectile/tracer launch-family event** — `PROVEN behavioral/physical family / PARTIAL symbolic schema`.
+
+Current proven fields/relationships:
+
+```text
+shooter/entity relationship
+shot/projectile ID
+launch/reference point family
+projectile launch velocity/direction vector
+method29 -> method20 shot lifecycle
+```
+
+Still PARTIAL:
+
+```text
+small flag/code
+the invariant 6.278400421 scalar's exact name/units
+current Blitz symbolic RPC name
+```
+
+Do **not** assign a historical PC method number/name solely from this numeric ID. Current Blitz entity-method numbering is version/component-order dependent.
 
 ## Method 27 — same-tick projectile resolution family
 
@@ -199,6 +262,7 @@ The current protocol does **not** justify these shortcuts:
 - `stopTracer endpoint == penetration point`;
 - `method27 == damage`;
 - `method28 == targetingInfo` from payload length alone;
+- `method20.rawClock - method29.rawClock == true shell flight time`;
 - numeric Avatar method IDs from a different Wargaming version == current Blitz numeric IDs;
 - projectile visual events == authoritative HP loss.
 
@@ -206,8 +270,8 @@ Authoritative observed HP loss continues to come from Type7 current-HP deltas; s
 
 ## Remaining work
 
-1. Decode every field in method29 and recover a version-matched symbolic launch RPC if available.
+1. Recover a version-matched symbolic method29 launch RPC and exact names for its flag/scalar fields.
 2. Decode method27 against projectile terminal/explosion/hit-result schemas and determine why only a subset of shots carry it.
 3. Determine method28's event family through identifier and geometry joins, not payload-size matching.
-4. Join method29 launch point/vector and method20 endpoint to map coordinates to derive measured projectile flight vector, distance and flight time.
+4. Investigate whether method29's velocity vector plus a proven ballistic constant can reconstruct simulation flight time independently of packet rawClock.
 5. Correlate projectile resolution with Type8 damage methods, HP deltas and settlement hit/penetration counts while preserving the distinction between visual projectile state and authoritative damage.
