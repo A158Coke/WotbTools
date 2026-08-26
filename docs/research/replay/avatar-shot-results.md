@@ -67,6 +67,113 @@ The small per-arena redistribution is consistent with replay timestamp/event bat
 
 Together with the 295/295 recorder-attacker closure, this proves the method's current behavioral identity as recorder hit/shot-result feedback.
 
+## Experimental validation against the projectile lifecycle
+
+A second-pass experiment tested method38 at the individual projectile level rather than relying only on event totals.
+
+Recorder vehicle identity was first inferred independently from the attacker field of same-clock direct-hit method8 events associated with method38; that vehicle ID was then used to select recorder-owned Avatar method29 launch records. Each method29 shot ID was closed to its Avatar method20 terminal endpoint.
+
+Observed strict-corpus totals:
+
+```text
+settlement shots                    : 324
+recorder method29 launch records    : 326
+arenas launch-count == shots exactly: 32 / 34
+remaining launch deltas             : +1, +1
+
+settlement hits                     : 295
+method38 events                     : 295
+
+recorder projectile terminals with
+method38 at the same/near terminal  : 294
+recorder projectile terminals with
+no method38                         : 32
+```
+
+Using a conservative `<= 0.21 s` terminal-to-feedback window:
+
+```text
+30 / 34 arenas: projectile-classified hit count == settlement hits exactly
+remaining hit-count deltas: +1, +1, -1, -2
+```
+
+No recorder launch lacked a matching method20 terminal record in this experiment.
+
+The two extra method29 launch records and the few per-arena hit-classification deltas are retained as boundary evidence rather than discarded; they likely reflect duplicated/batched launch observations or same-clock result packing and require separate closure before constructing a one-to-one production shot ledger.
+
+Verdict:
+
+> The projectile-level experiment independently confirms that **method38 is present on the recorder hit path and absent on the overwhelming majority of recorder miss/environment-terminal paths**. This supports the `showShotResults`-family interpretation at the behavioral level.
+
+### Negative control: method27 / environment-terminal path
+
+Avatar method27 is independently established as an `explodeProjectile` / miss-environment terminal family. The recorder projectile experiment separates the two paths:
+
+```text
+method29 launch
+  -> method20 terminal
+      -> method38 on recorder-hit path
+      -> method27 on many miss/environment-terminal paths
+```
+
+The two methods are therefore not alternative encodings of the same result event.
+
+## Header experiment: penetration hypothesis remains PARTIAL
+
+The four-byte method38 header was tested against two independent result dimensions:
+
+1. exact same-clock Type7 prop3 HP loss; and
+2. settlement `hits - penetrations` counts.
+
+Among the 295 method38 records:
+
+```text
+213 : same-clock positive observed HP delta
+ 82 : no usable same-clock positive HP delta
+```
+
+The first header byte strongly separates some of those cases. In particular:
+
+```text
+header[0] = 0x10 : 184 total; 160 with exact positive HP loss
+header[0] = 0x20 :  33 total;   3 with exact positive HP loss
+header[0] = 0x30 :  34 total;  31 with exact positive HP loss
+header[0] = 0x60 :   5 total;   0 with exact positive HP loss
+```
+
+This proves that the header carries real shot-result state rather than arbitrary padding.
+
+However, exact HP observation is AoI/sample limited, so `no same-clock HP delta` is not equivalent to `no penetration`.
+
+Settlement gives:
+
+```text
+hits         : 295
+penetrations : 270
+non-penetrating hits = 25
+```
+
+A tempting aggregate coincidence (`header0=0x00` + `header0=0x11` totals 25) fails per-arena validation and is **REJECTED**.
+
+`header0=0x20` is the strongest current non-penetration/no-HP candidate:
+
+```text
+header0=0x20 total                : 33
+arenas where count exactly equals
+settlement hits-penetrations      : 25 / 34
+mean absolute per-arena error     : ~0.41 shots
+```
+
+But `33 != 25` globally, and three `0x20` events have an exact observed positive HP delta. Therefore:
+
+> `header0=0x20 == non-penetration` is **NOT PROVEN**.
+
+The safer conclusion is:
+
+> the header contains one or more hit-result flags that strongly distinguish HP-damaging/piercing-like results from no-HP/special/module-only result families — `PROVEN relationship / PARTIAL bit semantics`.
+
+Historical `showShotResults` code independently supports this architecture: its result flags distinguish piercing, no-piercing, gun damage, chassis damage and fire-start outcomes. Current Blitz numeric bits must still be recovered from current behavior rather than transplanted from historical constants.
+
 ## Main wire variant
 
 Argument lengths in the strict corpus:
@@ -252,8 +359,8 @@ Unsafe until further closure:
 ## Remaining work
 
 1. Recover a version-matched Blitz 11.19 Avatar/entity definition for the exact method38 RPC symbol and field codecs.
-2. Decode the four-byte header and determine whether it carries the base hit-result/penetration flags corresponding to historical `showShotResults`.
+2. Decode the four-byte header bit layout; current experiments prove a hit-result dimension but do not yet prove individual penetration/no-penetration bits.
 3. Close `rawState=0/1/2` against controlled common-vs-critical/destroyed module outcomes.
 4. Map token IDs to actual vehicle `extras[]` entries.
 5. Decode the 14-record extended variant.
-6. Join method38 to method29/20 shot IDs so each recorder hit receives a single canonical shot-result record even under same-clock batching.
+6. Explain the two extra recorder method29 launch observations and the four per-arena projectile-classification boundary cases before building a production one-shot/one-result ledger.
