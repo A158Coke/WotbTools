@@ -188,11 +188,22 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
   优先按多数军团标签或用户确认的名称作为批次 team key，无法确定跨场身份时保持为
   `arenaId:team` 行。
 
-## 批次汇总（中位数）
+## 批次汇总（V5 Batch Player Rating + Raw Median）
+
+> 当前版本：**League Rating V5**。单场评分继续使用 V4.1；V5 只新增 Batch Player
+> Evidence Adjustment。完整算法定义（canonical 唯一正文）见
+> `docs/WotBTools_League_Rating_V5.md`，本文件只记录与实现相关的契约要点。
 
 - 选手汇总按 accountId：参赛场次、finalRating 中位数、七维度中位数、MVP 次数（仅展示）、
   胜场与关键原始统计总量/均值、获取点数/场（客观统计）。
 - 战队汇总按批次 team key：参赛场次、单场 teamRating 中位数、七维度中位数、胜场。
+- **V5 Batch Player Rating（主 Rating）**：`raw = 玩家自己的单场 V4.1 Final Rating
+  中位数`；`E(n)=1-exp(-n/6)`（`n` = 该玩家自己的有效评分场次数）；`raw <= 450` 时
+  V5 = raw（单边，不加分）；`raw > 450` 时 `V5 = 450 + E(n)·(raw-450)`，最后 clamp
+  到 0–1000。Anchor=450、tau=6 为冻结常量；无动态 batch prior、无 series/opponent/map
+  factor、无 hard release threshold。七维 median/mean 与 Team Rating **不应用** V5。
+- **Raw Observed Median**：`ratingMedian` 保留为 explainability 信息（列
+  `league_rating_raw_median`，默认可隐藏），与主 Rating 严格区分。
 - CW 汇总页（League 模式）：玩家信息合并为**一张统一玩家表**（Replay Aggregate 为基底，
   按 accountId join League Player Summary；有 Aggregate 无 Rating 的玩家保留并补 "--"）。
   **列契约**：只有「玩家 + 总 Rating」固定（sticky 核心对），其余列（七维 / MVP / 表现指标 /
@@ -356,7 +367,8 @@ Team Rating 计算；Radar aggregation 只发生在多场 player summary visuali
 
 | Context   | 指标        | 数据来源                                |
 | --------- | ----------- | --------------------------------------- |
-| Summary   | Final Rating | `ratingMedian`（跨场中位数，不改 mean）   |
+| Summary   | Final Rating | `batchRatingV5`（V5 Evidence Adjustment 后主 Rating） |
+| Summary   | Raw Median   | `ratingMedian`（Raw Observed Median，explainability） |
 | Summary   | League 七维  | `dimensionMeans`（rated-battle 算术平均） |
 | Battle    | Final Rating | 当前单场 `league_rating`                 |
 | Battle    | League 七维  | 当前单场 `league_*_score`（`dimensionScores`） |

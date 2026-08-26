@@ -118,6 +118,8 @@ public final class Mapper {
         // 评分场次（rated-only 样本，与 Replay Aggregate 的解析场次 battles 分开）
         out.add(new ColumnDef("rated_battles", true));
         out.add(new ColumnDef(LeagueColumns.RATING, true));
+        // V5 explainability：Raw Observed Median（默认可隐藏，非主 Rating）
+        out.add(new ColumnDef(LeagueColumns.RATING_RAW_MEDIAN, true));
         for (final String key : LeagueColumns.DIM_KEYS) {
             out.add(new ColumnDef(key, true));
         }
@@ -350,6 +352,7 @@ public final class Mapper {
             final PerformanceMetricsCalculator.Row perf = perfById.get(s.accountId());
             players.add(new LeaguePlayerSummaryDto(
                     s.accountId(), s.nickname(), s.clan(), s.battles(),
+                    r1(s.batchRatingV5()),
                     r1(s.ratingMedian()),
                     s.dimensionMedians().stream().map(Mapper::r1).toList(),
                     s.dimensionMeans().stream().map(Mapper::r1).toList(),
