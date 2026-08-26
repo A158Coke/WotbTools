@@ -1,8 +1,8 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
-import com.wotb.core.processing.FriendlyEnemyResult.Winner;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.TeamBattleWinner;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.model.Battle;
 import com.wotb.core.replay.evidence.AiEvidence;
 import com.wotb.core.replay.feature.TeamAutopsyStats;
@@ -200,7 +200,7 @@ public final class TeamAutopsyPromptBuilder {
             case DRAW_OR_UNKNOWN -> "未知";
         };
         // 全歼双向语义（结算存活状态，与 resultSource 无关）；battle 缺失时保持纯胜负标签。
-        final String annihilation = com.wotb.core.processing.FriendlyEnemyResult.annihilationSuffix(
+        final String annihilation = com.wotb.core.replay.processing.FriendlyEnemyResult.annihilationSuffix(
                 battle, perspectiveTeam, winner.winner());
         if (!annihilation.isEmpty()) {
             return base + annihilation;

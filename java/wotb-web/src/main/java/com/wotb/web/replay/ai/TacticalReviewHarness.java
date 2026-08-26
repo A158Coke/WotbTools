@@ -1,7 +1,7 @@
 package com.wotb.web.replay.ai;
 
-import com.wotb.core.processing.RecorderEntityMapping;
-import com.wotb.core.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.evidence.EvidenceSkillContext;
 import com.wotb.core.replay.evidence.EvidenceSkillEngine;
 import com.wotb.core.replay.evidence.EvidenceSkillResult;

@@ -43,7 +43,7 @@ import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.http.okhttp.OpenAiHttpClientBuilderCustomizer;
 import org.springframework.util.StringUtils;
 
-import com.wotb.core.processing.AiNotConfiguredException;
+import com.wotb.core.replay.processing.AiNotConfiguredException;
 import com.wotb.web.config.AiModelProperties;
 import com.wotb.web.replay.ai.AiReviewEventLog;
 /**

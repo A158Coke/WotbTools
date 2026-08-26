@@ -2,7 +2,7 @@ package com.wotb.core.replay.facts;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.evidence.EntryHpSource;
+import com.wotb.core.model.EntryHpSource;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;

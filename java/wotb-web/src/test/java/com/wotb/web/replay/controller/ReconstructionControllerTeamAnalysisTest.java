@@ -1,8 +1,8 @@
 package com.wotb.web.replay.controller;
 
-import com.wotb.core.processing.AiNotConfiguredException;
-import com.wotb.core.processing.MixedAnalysisScopesException;
-import com.wotb.core.processing.PerspectiveTeamNotResolvedException;
+import com.wotb.core.replay.processing.AiNotConfiguredException;
+import com.wotb.core.replay.processing.MixedAnalysisScopesException;
+import com.wotb.core.replay.processing.PerspectiveTeamNotResolvedException;
 import com.wotb.web.replay.MapOverviewQueryService;
 import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;

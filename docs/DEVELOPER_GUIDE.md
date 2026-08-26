@@ -104,8 +104,7 @@ Wargaming ASIA/EU/NA 登录与百场 WG 官方认证需要 Keycloak 和 backend 
        ↓
  wotb-core
   ├─ parse / model / ref / stats / export
-  ├─ processing
-  └─ replay/{stream,decoder,event,reconstruction,feature,evidence,map}
+  └─ replay/{stream,decoder,event,reconstruction,feature,evidence,map,processing}
        ↓
  wotb-web
  controller → service → mapper → dto
@@ -310,6 +309,10 @@ Sponsor QR 不进仓库/镜像：生产使用 `/opt/wotb/config/sponsor-config.j
 
 - Java：JUnit 5 / Mockito；业务单测不要启动真实 Keycloak。
 - Keycloak Admin API 通过 `KeycloakAdminUserService` 封装后 mock。
+- **架构测试（ArchUnit）**：`wotb-core` 与 `wotb-web` 各含 `*ArchitectureTest`
+  （`com.wotb.core.architecture` / `com.wotb.web.architecture`），随 `mvn test` 自动执行；
+  守护模块边界（core 禁 Spring Web/Boot 与反向依赖 web、web domain 分包与分层、
+  禁字段注入/Lombok、顶层包无循环依赖）。规则失败即构建失败。
 - 前端：Vitest + happy-dom（按需声明）。
 - Replay/League/UI regression 必须补针对真实 invariant 的测试，而不是只验证函数被调用。
 

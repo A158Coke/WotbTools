@@ -2,10 +2,10 @@ package com.wotb.web.replay.job;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.processing.ReplayProcessingCapabilities;
-import com.wotb.core.processing.ReplayProcessingDiagnostics;
-import com.wotb.core.processing.ReplayProcessingResult;
-import com.wotb.core.processing.ReplayProcessingStatus;
+import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
+import com.wotb.core.replay.processing.ReplayProcessingDiagnostics;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.facts.AiReplayFacts;
 import com.wotb.web.replay.dto.MapOverview;
 import org.junit.jupiter.api.Test;

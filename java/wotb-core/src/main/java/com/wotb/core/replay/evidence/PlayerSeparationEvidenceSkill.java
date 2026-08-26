@@ -1,7 +1,7 @@
 package com.wotb.core.replay.evidence;
 
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.processing.RecorderEntityMapping;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.BattlePhaseType;

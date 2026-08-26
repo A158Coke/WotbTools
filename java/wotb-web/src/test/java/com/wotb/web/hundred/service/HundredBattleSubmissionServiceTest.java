@@ -3,7 +3,7 @@ package com.wotb.web.hundred.service;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.ReplayParser;
-import com.wotb.web.hof.exception.HallOfFameStorageException;
+import com.wotb.web.replayfile.HallOfFameStorageException;
 import com.wotb.web.hundred.dto.HundredLeaderboardPageDto;
 import com.wotb.web.hundred.dto.HundredSubmissionSummaryDto;
 import com.wotb.web.hundred.dto.HundredWargamingSubmissionResult;
@@ -70,7 +70,7 @@ class HundredBattleSubmissionServiceTest {
     HundredReplayEvidenceService evidenceService;
 
     @Mock
-    com.wotb.web.hof.service.ReplayHashLock replayHashLock;
+    com.wotb.web.replayfile.ReplayHashLock replayHashLock;
 
     @Mock
     org.springframework.transaction.PlatformTransactionManager transactionManager;

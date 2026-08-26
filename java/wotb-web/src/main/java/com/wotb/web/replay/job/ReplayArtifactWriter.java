@@ -1,6 +1,6 @@
 package com.wotb.web.replay.job;
 
-import com.wotb.core.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.facts.AiReplayFacts;
 import com.wotb.core.replay.facts.ReplayFactsCodec;
 import com.wotb.web.replay.dto.MapOverview;

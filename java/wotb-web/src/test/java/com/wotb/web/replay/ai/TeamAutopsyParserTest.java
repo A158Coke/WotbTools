@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.wotb.core.processing.FriendlyEnemyResult.Winner;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.Winner;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;

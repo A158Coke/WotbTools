@@ -2,9 +2,9 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.processing.TeamEntityMapping;
+import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
-import com.wotb.core.replay.evidence.EntryHpSource;
+import com.wotb.core.model.EntryHpSource;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 
 import java.util.ArrayList;
@@ -19,7 +19,7 @@ import java.util.Set;
  * <p>真实 {@link com.wotb.core.replay.decoder.EntityMethodDecoder} 生成的 {@link DamageEvent} 中
  * {@code attackerAccountId/victimAccountId} 恒为 null，必须沿
  * {@link com.wotb.core.replay.event.ParticipantMappingEvent} 建立 entityId → accountId 映射
- * （复用 {@link com.wotb.core.processing.TeamEntityMapper} 的确定性解析）后，
+ * （复用 {@link com.wotb.core.replay.processing.TeamEntityMapper} 的确定性解析）后，
  * 按 {@code attackerEid/victimEid} 解析身份。
  * 不假设 decoder 在解析 DamageEvent 时已拿到完整参与者映射；同一事件流只解析一次。</p>
  *

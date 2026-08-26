@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.processing.TeamEntityIdentity;
+import com.wotb.core.replay.processing.TeamEntityIdentity;
 import com.wotb.core.replay.event.DecodeConfidence;
 import org.junit.jupiter.api.Test;
 

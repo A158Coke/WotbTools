@@ -20,7 +20,7 @@ import java.util.Set;
  * （负值 / 非有限 / 命中&gt;射击 / 击穿&gt;命中）。</p>
  *
  * <p><b>死亡时间 UNKNOWN ≠ 数据非法</b>：阵亡玩家 {@code survivalTimeSec == 0} 表示
- * 精确死亡时刻无法从回放可靠证明（{@link com.wotb.core.processing.DeathTimeReconciler}
+ * 精确死亡时刻无法从回放可靠证明（{@link com.wotb.core.replay.processing.DeathTimeReconciler}
  * 的 fail-closed 结果），这是合法状态——整场仍允许评分，该玩家仅在依赖死亡时刻的
  * Survival/Trade 维度保守得 0 分。{@code survivalTimeSec < 0} / NaN / Infinity /
  * 明显超过战斗时长仍为 {@code INVALID_STAT_FACTS}，整场拒绝评分。</p>

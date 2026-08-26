@@ -67,7 +67,7 @@ class Mark3SubmissionServiceTest {
     Mark3ReplayEvidenceService evidenceService;
 
     @Mock
-    com.wotb.web.hof.service.ReplayHashLock replayHashLock;
+    com.wotb.web.replayfile.ReplayHashLock replayHashLock;
 
     @Mock
     PlatformTransactionManager transactionManager;

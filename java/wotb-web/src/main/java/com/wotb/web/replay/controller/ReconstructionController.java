@@ -1,10 +1,10 @@
 package com.wotb.web.replay.controller;
 
-import com.wotb.core.processing.AiNotConfiguredException;
-import com.wotb.core.processing.MixedAnalysisScopesException;
-import com.wotb.core.processing.MixedRandomBattleRecordersException;
-import com.wotb.core.processing.PerspectiveTeamNotResolvedException;
-import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
+import com.wotb.core.replay.processing.AiNotConfiguredException;
+import com.wotb.core.replay.processing.MixedAnalysisScopesException;
+import com.wotb.core.replay.processing.MixedRandomBattleRecordersException;
+import com.wotb.core.replay.processing.PerspectiveTeamNotResolvedException;
+import com.wotb.core.replay.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiReviewEventLog;
 import com.wotb.web.replay.ai.AiReviewStreamListener;
