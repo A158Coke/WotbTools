@@ -72,3 +72,130 @@ describe('Classic Profile CSS contract', () => {
     expect(classicIdx).toBeGreaterThan(lastShowcase)
   })
 })
+
+describe('Classic Profile — 真浅色主题契约（Theme 计划：Classic=Light, Showcase=Dark）', () => {
+  const css = stripComments(classic)
+  const tokenBlock = (css.match(/html\[data-ui-profile="classic"\]\s*\{[\s\S]*?\}/) || [])[0] || ''
+
+  it('完整浅色语义 token:color-scheme light + 浅色背景/卡片/深色文字/浅边框/橙金强调', () => {
+    expect(tokenBlock).toContain('color-scheme: light')
+    expect(tokenBlock).toContain('--bg: #f4f5f2')
+    expect(tokenBlock).toContain('--bg-card: #ffffff')
+    expect(tokenBlock).toContain('--text: #2a2f28')
+    expect(tokenBlock).toContain('--text-heading: #11140f')
+    expect(tokenBlock).toContain('--border: #d9dde3')
+    expect(tokenBlock).toContain('--accent: #c9762e')
+    // 阵营战术色保持 hue(不反色、不变蓝),提高对比
+    expect(tokenBlock).toContain('--friendly: #a9661a')
+    expect(tokenBlock).toContain('--enemy: #2e7ea8')
+  })
+
+  it('同步 --showcase-tactical* 浅色 token(Reconstruction/地图外围面板)', () => {
+    expect(css).toContain('--showcase-tactical: linear-gradient(160deg, #fbfbf9')
+    expect(css).toContain('--showcase-tactical-heading: #1c2018')
+    expect(css).toContain('--showcase-tactical-soft-2: rgba(255, 255, 255, .85)')
+  })
+
+  it('禁止 filter:invert / 全局 html * 覆盖(性能与脏覆盖)', () => {
+    expect(css).not.toMatch(/filter:\s*invert/)
+    expect(css).not.toMatch(/^\s*html\s+\*/m)
+    expect(css).not.toMatch(/\b\*\s*\{/)
+  })
+
+  it('覆盖核心页面面:topbar/user-menu/tabs/table/form/modal 均带 namespace 且不隐藏业务', () => {
+    expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.topbar\s*\{/)
+    expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.user-menu-panel\s*\{/)
+    expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.modal\s*\{/)
+    expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.layout-data-workspace\s+:is\(input, select, textarea\)/)
+    expect(css).toMatch(/\[data-ui-profile="classic"\]\s+\.layout-data-workspace\s+table\s+thead\s+th/)
+    // 不隐藏业务组件(白底白字/低对比风险用 token 覆盖,而非 display:none)
+    expect(css).not.toMatch(/display:\s*none/)
+  })
+})
+
+describe('Classic 深色冲突 selector→declaration 绑定（须带 !important 战胜 Showcase 深色）', () => {
+  const css = stripComments(classic)
+  const declOf = (frag) => {
+    for (const preferHtml of [true, false]) {
+      for (const chunk of css.split(/}/).filter((c2) => c2.includes('{'))) {
+        const sel = chunk.slice(0, chunk.indexOf('{'))
+        if (sel.includes(frag) && (preferHtml ? sel.includes('html[data-ui-profile') : sel.includes('[data-ui-profile'))) {
+          return chunk.slice(chunk.indexOf('{') + 1)
+        }
+      }
+    }
+    throw new Error('selector not found in classic-profile.css: ' + frag)
+  }
+  // 断言声明体含片段（值必须带 !important，证明最终级联战胜 Showcase 的 !important 深色规则）。
+  const has = (frag, subs) => {
+    const body = declOf(frag)
+    for (const sub of subs) expect(body + '', 'selector ' + frag + ' 缺 ' + sub).toContain(sub)
+  }
+
+  it('Home：hero 标题/副标题/次级 CTA/Record Card 白底深字且带 !important', () => {
+    has('.showcase-hero h1', ['color: var(--text-heading) !important', 'text-shadow: none !important'])
+    has('.hero-subtitle', ['color: var(--text-sub) !important'])
+    has('.hero-btn.secondary', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
+    has('.record-card', ['background: var(--bg-card) !important', 'color: var(--text-heading) !important'])
+    has('.record-card > span', ['color: var(--text-sub) !important'])
+    has('.mini-action', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
+  })
+
+  it('用户菜单：菜单项/Hover/Danger/分段控件 浅底深字 !important', () => {
+    has('.user-menu-panel .user-menu-item', ['color: var(--text) !important'])
+    has('.user-menu-panel .user-menu-item:hover', ['background: var(--bg-list-hover) !important'])
+    has('.user-menu-panel .user-menu-item.danger', ['color: var(--delete) !important'])
+    has('.ui-profile-option.active', ['background: var(--accent) !important', 'color: var(--accent-text) !important'])
+  })
+
+  it('Replay 上传区：Heading/Card/Filebar/Ghost 按钮 浅底深字 !important', () => {
+    has('.uploadhead h1', ['color: var(--text-heading) !important'])
+    has('.uploadcard', ['background: var(--bg-upload) !important'])
+    has('.uploadcard .up-title', ['color: var(--text-heading) !important'])
+    has('.filebar', ['background: var(--bg-upload) !important'])
+    has('.filebtn.ghost', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
+    has('.tabs button', ['color: var(--text-sub) !important'])
+    has('.upload-points span', ['background:', 'border-color:', 'color: var(--text-sub) !important'])
+  })
+
+  it('回归：Replay .tablewrap 必须 background/border-color/color/box-shadow 全带 !important', () => {
+    has('.layout-data-workspace .tablewrap', [
+      'background: var(--bg-card) !important',
+      'border-color: var(--border) !important',
+      'color: var(--text) !important',
+      'box-shadow: var(--surface-shadow) !important',
+    ])
+  })
+
+  it('Boost：Topbar/Tabs/Card/List 浅底深字 !important', () => {
+    has('.boost-topbar', ['background: var(--bg-card) !important'])
+    has('.boost-tabs button', ['color: var(--text-sub) !important'])
+    has('.boost-card', ['background: var(--bg-card) !important'])
+    has('.boost-page :is(.boost-list, .request-list, .booster-list, .admin-list)', ['background: var(--bg-card) !important'])
+  })
+
+  it('HoF：Toolbar/Table Header/Upload Modal 浅色 !important', () => {
+    has('.lb-toolbar', ['background: color-mix(in srgb, var(--bg-card) 94%, transparent) !important'])
+    has('.lb-wrap thead th', ['background: var(--bg-card2) !important'])
+    has('.hof-upload-modal', ['background: var(--bg-card) !important'])
+  })
+
+  it('HoF Admin：Tabs(默认+active)/Filters/Table/Pagination 浅色 !important', () => {
+    has('.hof-admin-tabs button', ['color: var(--text-sub) !important'])
+    has('.hof-admin-tabs button.active', ['color: var(--accent-dark) !important'])
+    has('.hof-admin-filters :is(input, select)', ['background: var(--bg-card) !important'])
+    has('admin-hof-page) thead th', ['background: var(--bg-card2) !important'])
+    has('.hof-admin .pagination button', ['background: var(--bg-card) !important', 'color: var(--text-sub) !important'])
+  })
+
+  it('回归：HoF Admin tbody td 必须 color var(--text) !important（防白底浅字）', () => {
+    has('admin-hof-page) tbody td', ['color: var(--text) !important'])
+  })
+
+  it('Version/Contact/Admin/Player Drawer 浅色 !important', () => {
+    has('.version-page .ver', ['background: var(--bg-card) !important'])
+    has('.contact-card', ['background: var(--bg-card) !important'])
+    has('.admin-table th', ['background: var(--bg-card2) !important'])
+    has('.player-drawer .pd-vehicle', ['background: var(--bg-card) !important', 'border-color: var(--border-light) !important'])
+  })
+})

@@ -1,48 +1,388 @@
-/* WotBTools Classic Profile — 仅「从简」视觉精简。
+/* WotBTools Classic Profile — 真浅色简约界面（D1 结构/间距/密度/组件/列/导航不变）。
  *
- * 范围(D1):布局/结构/间距/密度/组件/列/导航与 Showcase 完全一致。
+ * 范围:布局/结构/间距/密度/组件/列/导航与 Showcase 完全一致。
  * 本文件只在 html[data-ui-profile="classic"] 命中时生效;Showcase(默认)完全不受影响。
  *
- * 机制说明:Showcase 是全屏 AI/装饰性背景 + 渐变遮罩这些「展示层」。Classic 只关闭这些
- * 展示层(全屏路景 ::after、readability veil ::before、装饰性 hero/uploadcard surface),
- * 让页面落回产品原有的平暗表面。用 [data-ui-profile="classic"] namespace(比展示层 specificity
- * 高),而非把现有 showcase 全局样式重排进 @layer——后者会因文档内联 :root/组件 scoped 样式为
- * unlayered 而反向覆盖,威胁 §21/§47 的 Showcase 零回归硬约束。完整 @layer 重排留作后续。
+ * 机制:
+ * 1) 完整浅色语义 token:html[data-ui-profile="classic"] 覆盖 :root 的 dark-only token
+ *    (bg/card/text/border/accent/status/rating/tactical/scroll/shadow/color-scheme),
+ *    让绝大多数消费 var(--*) 的组件直接落浅色。data-theme 由 useUiProfile 按 profile 派生。
+ * 2) 同步 --showcase-tactical* :Reconstruction/战术地图外围面板落浅色(地图本体保留游戏视觉)。
+ * 3) namespace 覆盖:对 showcase*.css 里写死的深色 hex/rgba/color-mix 叠加有限的
+ *    [data-ui-profile="classic"] 规则(topbar/user-menu/表单/表格 sticky/管理表),用比
+ *    展示层更高的 specificity 覆盖,不重排现有 showcase 全局样式。
+ * 4) 关闭全屏 AI/装饰性展示层(沿用原「从简」规则)与 Home 四张 AI 装饰卡图。
+ *
+ * 约束(对应计划 §43 A/B/D + §Classic):每条规则都带 [data-ui-profile="classic"] 前缀;
+ * 禁 display:none 隐藏业务;禁 filter:invert / 全局 opacity / html *;不 fork 业务组件。
  */
 
-/* 1) 关闭全屏 AI 路景背景(::after)与 readability 渐变遮罩(::before) */
-[data-ui-profile="classic"] :is(.layout-content,.layout-wide,.layout-data-workspace,.admin-page,.profile-page,.boost-page,.version-page,.contact-page,.hof-page,.hof-wrap,.hall-page,.lb-wrap,.hof-admin-page,.hofadmin-page,.admin-hof-page,.hof-admin,.rating-page,.rating-section,.rating-workspace,.recon-page,.homepage-showcase)::after,
-[data-ui-profile="classic"] :is(.layout-content,.layout-wide,.layout-data-workspace,.admin-page,.profile-page,.boost-page,.version-page,.contact-page,.hof-page,.hof-wrap,.hall-page,.lb-wrap,.hof-admin-page,.hofadmin-page,.admin-hof-page,.hof-admin,.rating-page,.rating-section,.rating-workspace,.recon-page,.homepage-showcase)::before {
-  content: none;
+/* 1) 完整浅色语义 token(覆盖 :root dark-only) */
+html[data-ui-profile="classic"] {
+  color-scheme: light;
+  --bg: #f4f5f2;
+  --bg-card: #ffffff;
+  --bg-card2: #ffffff;
+  --bg-card-hover: #eceeeb;
+  --bg-blue: #eaf0e6;
+  --bg-blue-light: #eef1ec;
+  --bg-upload: #eef0f0;
+  --bg-elevated: #fbfbfa;
+  --bg-chip: #f2efe8;
+  --bg-list-hover: #eceeeb;
+  --bg-rating: #f8f4ea;
+  --bg-t1: #e8f1e8;
+  --bg-t2: #f6ece7;
+  --tag-bg: #eef2ea;
+  --text: #2a2f28;
+  --text-heading: #11140f;
+  --text-sub: #5c665a;
+  --text-secondary: #5c665a;
+  --text-muted: #7a837a;
+  --text-label: #3f463f;
+  --text-upload: #22261f;
+  --text-upload-sub: #6a736a;
+  --text-modal: #262a24;
+  --text-rating: #3c423a;
+  --text-code: #1c201b;
+  --border: #d9dde3;
+  --border-header: #e6e8eb;
+  --border-ghost: #d9dde3;
+  --border-dashed: #c2c8bf;
+  --border-chip: #ddd0b8;
+  --border-col: #ccd2c8;
+  --border-light: #e3e6e1;
+  --border-heavy: #bac4b4;
+  --border-warn: #c98a2e;
+  --border-tab-active: #c9762e;
+  --border-rating: #e8dcbf;
+  --accent: #c9762e;
+  --accent-hover: #d98c45;
+  --accent-dark: #a95c1c;
+  --accent-light: #e0a05c;
+  --accent-icon: #c9762e;
+  --accent-shadow: rgba(201, 118, 46, .18);
+  --accent-text: #ffffff;
+  --hero-fg-rgb: 34 36 30;
+  --surface-shadow: 0 8px 24px rgba(0, 0, 0, .08);
+  --hard-shadow: 0 18px 42px rgba(0, 0, 0, .12);
+  --error: #d1242f;
+  --warn-text: #a46a15;
+  --warn-bg: #fdf3e0;
+  --delete: #cf3a45;
+  --scroll-fade: #f4f5f2;
+  --rating-elite-bg: #f0b33e;
+  --rating-elite-fg: #3a2600;
+  --rating-great-bg: #d79a2a;
+  --rating-great-fg: #3a2600;
+  --rating-good-bg: #e8c27a;
+  --rating-good-fg: #4a3410;
+  --rating-mid-bg: #d4c9ac;
+  --rating-mid-fg: #4a4234;
+  --rating-poor-bg: #c9c4ba;
+  --rating-poor-fg: #5a564c;
+  --status-info-bg: #e2eef3;
+  --status-info-fg: #1f5566;
+  --status-warn-bg: #fdf3e0;
+  --status-warn-fg: #9a6000;
+  --status-ok-bg: #e5f2e6;
+  --status-ok-fg: #1f7a33;
+  --status-err-bg: #fbe5e4;
+  --status-err-fg: #a3232e;
+  --danger-solid-fg: #ffffff;
+  --focus-ring: rgba(201, 118, 46, .38);
+  /* Tactical 阵营色(地图领域):浅色下保持可读(不变 hue,加深提高对比,不反色) */
+  --friendly: #a9661a;
+  --friendly-strong: #c9762e;
+  --friendly-fg: #ffffff;
+  --enemy: #2e7ea8;
+  --enemy-strong: #3b93c0;
+  --enemy-fg: #ffffff;
 }
 
-/* 2) 装饰性 hero / 上传 / profile-hero 表面:去掉 AI 图,落回平暗(保留结构) */
+/* 2) 同步 Showcase 战术/地图外围面板 token(地图本体保留游戏视觉) */
+html[data-ui-profile="classic"] {
+  --showcase-tactical: linear-gradient(160deg, #fbfbf9 0%, #eef0ec 100%);
+  --showcase-tactical-2: linear-gradient(165deg, #f6f7f4 0%, #ecefee 100%);
+  --showcase-tactical-border: #d5d9d3;
+  --showcase-tactical-border-strong: rgba(201, 118, 46, .4);
+  --showcase-tactical-heading: #1c2018;
+  --showcase-tactical-text: #3a4038;
+  --showcase-tactical-muted: #7a837a;
+  --showcase-tactical-soft: rgba(255, 255, 255, .7);
+  --showcase-tactical-soft-2: rgba(255, 255, 255, .85);
+}
+
+/* 3) namespace 覆盖:写死深色的高层级展示面(topbar / 菜单 / 表单 / 表格 / 管理表) */
+[data-ui-profile="classic"] .topbar {background: color-mix(in srgb, #fbfbfa 94%, transparent) !important; border-bottom: 1px solid #d9dde3 !important; box-shadow: 0 6px 22px rgba(0, 0, 0, .06) !important}
+[data-ui-profile="classic"] .topbar nav button {color: #3f463f !important}
+[data-ui-profile="classic"] .topbar nav button:hover {background: rgba(0, 0, 0, .04) !important; color: #11140f !important}
+[data-ui-profile="classic"] .topbar nav button.active {background: linear-gradient(180deg, rgba(201, 118, 46, .04), rgba(201, 118, 46, .1)) !important; color: #a95c1c !important; border-bottom-color: var(--accent) !important}
+[data-ui-profile="classic"] .lang-select,
+[data-ui-profile="classic"] .auth-btn.ghost,
+[data-ui-profile="classic"] .user-menu-trigger {border-color: #cbd0c9 !important; background: #ffffff !important; color: #2a2f28 !important}
+[data-ui-profile="classic"] .user-menu-panel {border: 1px solid #d9dde3 !important; background: #ffffff !important; box-shadow: 0 16px 40px rgba(0, 0, 0, .12) !important}
+[data-ui-profile="classic"] .layout-content :is(input, select, textarea),
+[data-ui-profile="classic"] .layout-wide :is(input, select, textarea),
+[data-ui-profile="classic"] .layout-data-workspace :is(input, select, textarea),
+[data-ui-profile="classic"] .admin-page :is(input, select, textarea) {border-color: #c8cec5 !important; background: #ffffff !important; color: #2a2f28 !important}
+[data-ui-profile="classic"] .battle-action {border-color: #ccd2c8 !important; background: #fbfbfa !important}
+[data-ui-profile="classic"] .layout-data-workspace table thead th,
+[data-ui-profile="classic"] .layout-wide table thead th {background: color-mix(in srgb, var(--bg-card2) 94%, #e3e6e1) !important}
+[data-ui-profile="classic"] .admin-table th {background: var(--bg-card2) !important; color: var(--text-heading) !important}
+[data-ui-profile="classic"] .admin-table td {color: var(--text) !important}
+[data-ui-profile="classic"] .admin-table tbody tr:hover {background: var(--bg-list-hover) !important}
+[data-ui-profile="classic"] .modal {border-color: #d9dde3 !important}
+[data-ui-profile="classic"] .restoolbar {background: color-mix(in srgb, #ffffff 96%, transparent) !important; box-shadow: 0 8px 22px rgba(0, 0, 0, .07) !important}
+
+/* 4) 关闭全屏 AI 路景背景(::after)与 readability 渐变遮罩(::before) */
+[data-ui-profile="classic"] :is(.layout-content,.layout-wide,.layout-data-workspace,.admin-page,.profile-page,.boost-page,.version-page,.contact-page,.hof-page,.hof-wrap,.hall-page,.lb-wrap,.hof-admin-page,.hofadmin-page,.admin-hof-page,.hof-admin,.rating-page,.rating-section,.rating-workspace,.recon-page,.homepage-showcase)::after,
+[data-ui-profile="classic"] :is(.layout-content,.layout-wide,.layout-data-workspace,.admin-page,.profile-page,.boost-page,.version-page,.contact-page,.hof-page,.hof-wrap,.hall-page,.lb-wrap,.hof-admin-page,.hofadmin-page,.admin-hof-page,.hof-admin,.rating-page,.rating-section,.rating-workspace,.recon-page,.homepage-showcase)::before {content: none}
+
+/* 5) 装饰性 hero / 上传 / profile-hero 表面:去掉 AI 图,落回浅色(保留结构) */
 [data-ui-profile="classic"] .layout-data-workspace .uploadwrap,
 [data-ui-profile="classic"] .layout-data-workspace .uploadcard,
-[data-ui-profile="classic"] .profile-page .profile-hero {
-  background: none !important;
-  box-shadow: none !important;
-}
+[data-ui-profile="classic"] .profile-page .profile-hero {background: none !important; box-shadow: none !important}
 
-/* 3) showcase-cohesion.css 的装饰性 ::after/::before 叠加层 */
+/* 6) showcase-cohesion.css 的装饰性 ::after/::before 叠加层 */
 [data-ui-profile="classic"] .layout-data-workspace .uploadwrap::after,
-[data-ui-profile="classic"] .layout-data-workspace .uploadcard::before {
-  content: none;
-}
+[data-ui-profile="classic"] .layout-data-workspace .uploadcard::before {content: none}
 
-/* 4) 首页 Home:Classic 去掉四张 AI 装饰卡片图 + 装饰渐变,保留卡片/标题/编号/跳转结构 */
-[data-ui-profile="classic"] .homepage-showcase .showcase-hero {
-  background: var(--bg-card) !important;
-}
-[data-ui-profile="classic"] .homepage-showcase .showcase-hero::before {
-  content: none;
-}
-[data-ui-profile="classic"] .homepage-showcase .feature-visual {
-  background: var(--bg-card);
-}
-[data-ui-profile="classic"] .homepage-showcase .feature-visual::after {
-  content: none;
-}
-[data-ui-profile="classic"] .homepage-showcase .feature-visual img {
-  visibility: hidden;
-}
+/* 7) 首页 Home:Classic 去掉四张 AI 装饰卡片图 + 装饰渐变,保留卡片/标题/编号/跳转结构 */
+[data-ui-profile="classic"] .homepage-showcase .showcase-hero {background: var(--bg-card) !important}
+[data-ui-profile="classic"] .homepage-showcase .showcase-hero::before {content: none}
+[data-ui-profile="classic"] .homepage-showcase .feature-visual {background: var(--bg-card) !important}
+[data-ui-profile="classic"] .homepage-showcase .feature-visual::after {content: none}
+[data-ui-profile="classic"] .homepage-showcase .feature-visual img {visibility: hidden}
+
+
+/* =====================================================================
+ * 8) 逐页 namespace 覆盖：清掉写死的深色面/浅色文字（Blocker 1/2）
+ *    用 html[data-ui-profile="classic"] 前缀提高 specificity，碾压组件 scoped
+ *    与 showcase 全局深色规则（只覆盖颜色/边框/阴影，不动布局/间距/结构）。
+ * ===================================================================== */
+
+/* ---- 全局：页面根文字 / tabs / 卡片 / 表单 / modal / sticky / 状态 ---- */
+html[data-ui-profile="classic"] .layout-content,
+html[data-ui-profile="classic"] .layout-wide,
+html[data-ui-profile="classic"] .layout-data-workspace,
+html[data-ui-profile="classic"] .layout-full-workspace {color: var(--text) !important}
+
+html[data-ui-profile="classic"] .tabs {background: var(--bg-card) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .tabs button {color: var(--text-sub) !important; background: var(--bg-card) !important; border-color: var(--border-light) !important}
+html[data-ui-profile="classic"] .tabs button:hover:not(.active) {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .tabs button.active {background: color-mix(in srgb, var(--accent) 12%, var(--bg-card)) !important; border-color: color-mix(in srgb, var(--accent) 45%, var(--border)) !important; color: var(--accent-dark) !important; border-bottom-color: var(--accent) !important}
+
+html[data-ui-profile="classic"] :is(.card, .panel, .section-card, .profile-card, .account-card, .modal, .dropdown, .popover, .tooltip) {border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important}
+html[data-ui-profile="classic"] .modal {background: var(--bg-card) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] :is(.modal, .dropdown, .popover, .tooltip) :is(h1, h2, h3, .title) {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] :is(.modal, .dropdown, .popover, .tooltip) p, html[data-ui-profile="classic"] .muted {color: var(--text-sub) !important}
+
+html[data-ui-profile="classic"] :is(input, select, textarea) {color: var(--text) !important; background-color: var(--bg-card) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] :is(input, select, textarea)::placeholder {color: var(--text-muted) !important}
+
+html[data-ui-profile="classic"] .pagination button {border-color: var(--border) !important; color: var(--text-sub) !important; background: var(--bg-card) !important}
+html[data-ui-profile="classic"] .pagination button:hover:not(:disabled) {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--accent) !important}
+html[data-ui-profile="classic"] .pagination button:disabled {opacity: .45}
+
+/* ---- Home（HomePage.vue scoped 深色文字/硬编码背景） ---- */
+html[data-ui-profile="classic"] .showcase-hero {background: var(--bg-card) !important; box-shadow: var(--surface-shadow) !important}
+html[data-ui-profile="classic"] .hero-copy {color: var(--text) !important}
+html[data-ui-profile="classic"] .showcase-hero h1 {color: var(--text-heading) !important; text-shadow: none !important}
+html[data-ui-profile="classic"] .hero-subtitle {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .hero-kicker {color: var(--accent-dark) !important}
+html[data-ui-profile="classic"] .hero-btn.secondary {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important; backdrop-filter: none}
+html[data-ui-profile="classic"] .hero-btn.secondary:hover {color: var(--accent-dark) !important; border-color: var(--accent) !important}
+html[data-ui-profile="classic"] .record-card {background: var(--bg-card) !important; color: var(--text-heading) !important; border-color: var(--border-rating) !important; box-shadow: var(--surface-shadow) !important; backdrop-filter: none}
+html[data-ui-profile="classic"] .record-card > span {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .record-card > strong {color: var(--accent) !important}
+html[data-ui-profile="classic"] .record-meta {border-top-color: var(--border-light) !important}
+html[data-ui-profile="classic"] .record-meta small {color: var(--text-muted) !important}
+html[data-ui-profile="classic"] .mini-action {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .mini-action:hover {color: var(--accent-dark) !important; border-color: var(--accent) !important}
+html[data-ui-profile="classic"] .mini-action.primary {background: var(--accent) !important; color: var(--accent-text) !important}
+html[data-ui-profile="classic"] .feature-visual {background: var(--bg-elevated) !important; border-bottom-color: var(--border-light) !important}
+html[data-ui-profile="classic"] .feature-visual:after {background: none !important}
+html[data-ui-profile="classic"] .feature-action {color: var(--accent-dark) !important}
+html[data-ui-profile="classic"] .feature-card {border-color: var(--showcase-tactical-border) !important}
+
+/* ---- 用户菜单（showcase-backgrounds.css 写死浅字/深底） ---- */
+html[data-ui-profile="classic"] .user-menu-panel .user-menu-item {color: var(--text) !important}
+html[data-ui-profile="classic"] .user-menu-panel .user-menu-item:hover {background: var(--bg-list-hover) !important; color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .user-menu-panel .user-menu-item.danger {color: var(--delete) !important}
+html[data-ui-profile="classic"] .user-menu-panel .user-menu-item.danger:hover {background: var(--status-err-bg) !important; color: var(--status-err-fg) !important}
+html[data-ui-profile="classic"] .user-menu-panel .user-menu-section-title,
+html[data-ui-profile="classic"] .user-menu-panel .user-menu-divider,
+html[data-ui-profile="classic"] .user-menu-panel .user-menu-separator,
+html[data-ui-profile="classic"] .user-menu-panel hr {color: var(--text-muted) !important; border-color: var(--border-light) !important}
+html[data-ui-profile="classic"] .ui-profile-segmented {border-color: var(--border-light) !important}
+html[data-ui-profile="classic"] .ui-profile-option {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .ui-profile-option.active {background: var(--accent) !important; color: var(--accent-text) !important}
+
+/* ---- Replay 上传区（showcase-cohesion/workspaces 写死浅字/深底） ---- */
+html[data-ui-profile="classic"] .layout-data-workspace {color: var(--text) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .uploadwrap {background: var(--bg-card) !important; border-color: color-mix(in srgb, var(--accent) 30%, var(--border)) !important; box-shadow: var(--surface-shadow) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .uploadhead h1 {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .uploadhead p {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .upload-kicker {color: var(--accent-dark) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .upload-points span {background: color-mix(in srgb, var(--accent) 8%, var(--bg-card2)) !important; border-color: color-mix(in srgb, var(--accent) 25%, var(--border)) !important; color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .uploadcard {border-color: var(--border) !important; background: var(--bg-upload) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .uploadcard.dragging {border-color: var(--accent) !important; background: color-mix(in srgb, var(--accent) 10%, var(--bg-upload)) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .uploadcard .up-title {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .uploadcard .up-sub,
+html[data-ui-profile="classic"] .layout-data-workspace .uploadcard .muted {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .uploadcard .up-icon {color: var(--accent) !important; background: color-mix(in srgb, var(--accent) 12%, var(--bg-card)) !important; opacity: 1}
+html[data-ui-profile="classic"] .layout-data-workspace .filebtn,
+html[data-ui-profile="classic"] .layout-data-workspace .actionrow .lg {background: linear-gradient(180deg, var(--accent-light), var(--accent)) !important; border-color: var(--accent) !important; color: var(--accent-text) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .filebtn.ghost,
+html[data-ui-profile="classic"] .layout-data-workspace button.ghost {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .filebtn.ghost:hover,
+html[data-ui-profile="classic"] .layout-data-workspace button.ghost:hover {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--accent) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .filebar {background: var(--bg-upload) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .chip {background: color-mix(in srgb, var(--accent) 6%, var(--bg-chip)) !important; border-color: color-mix(in srgb, var(--accent) 22%, var(--border)) !important; color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .restoolbar {background: color-mix(in srgb, var(--bg-card) 96%, transparent) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .tablewrap {background: var(--bg-card) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] .layout-data-workspace table thead th,
+html[data-ui-profile="classic"] .layout-data-workspace table thead th:first-child {background: var(--bg-card2) !important; color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .layout-data-workspace table tbody td {color: var(--text) !important}
+html[data-ui-profile="classic"] .layout-data-workspace table tbody tr {background: var(--bg-card) !important}
+html[data-ui-profile="classic"] .layout-data-workspace table tbody tr:hover {background: var(--bg-list-hover) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .error {background: var(--status-err-bg) !important; color: var(--status-err-fg) !important; border-color: var(--error) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .warn {background: var(--status-warn-bg) !important; color: var(--status-warn-fg) !important; border-color: var(--border-warn) !important}
+
+/* ---- League Rating / Player Drawer / Radar / Column Picker ---- */
+html[data-ui-profile="classic"] .rating-page, html[data-ui-profile="classic"] .rating-section, html[data-ui-profile="classic"] .rating-workspace {color: var(--text) !important}
+html[data-ui-profile="classic"] .rating-page table thead th, html[data-ui-profile="classic"] .rating-workspace table thead th {background: var(--bg-card2) !important; color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .rating-page table tbody tr:hover, html[data-ui-profile="classic"] .rating-workspace table tbody tr:hover {background: var(--bg-list-hover) !important}
+html[data-ui-profile="classic"] .layout-data-workspace table tbody tr.t1 td:first-child {background: color-mix(in srgb, var(--bg-t1) 64%, var(--bg-card)) !important}
+html[data-ui-profile="classic"] .layout-data-workspace table tbody tr.t2 td:first-child {background: color-mix(in srgb, var(--bg-t2) 64%, var(--bg-card)) !important}
+html[data-ui-profile="classic"] .player-drawer {background: var(--bg-card2) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important}
+html[data-ui-profile="classic"] .player-drawer :is(h1, .pd-title, .pd-name, .pd-head *) {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .player-drawer .pd-sub {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .player-drawer .pd-facts dt {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .player-drawer .pd-facts dd {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .player-drawer .pd-vehicle {background: var(--bg-card) !important; border-color: var(--border-light) !important}
+html[data-ui-profile="classic"] .player-drawer .pd-vehicle-name {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .player-drawer .pd-vehicle-stats {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .player-drawer .radar-picker {background: var(--bg-card) !important; border-color: var(--border-light) !important}
+html[data-ui-profile="classic"] .player-drawer .radar-picker-list li:not(.checked) .rp-item {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .player-drawer .pd-nav-btn {background: var(--bg-card) !important; color: var(--text-sub) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .player-drawer .pd-nav-btn:not(:disabled):hover {color: var(--accent-dark) !important; border-color: var(--accent) !important}
+html[data-ui-profile="classic"] .player-drawer .pd-close {background: var(--bg-card) !important; color: var(--text-sub) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .player-drawer .pd-linkbtn {background: var(--bg-card) !important; color: var(--text-sub) !important; border-color: var(--border-light) !important}
+html[data-ui-profile="classic"] .player-drawer .pd-section, html[data-ui-profile="classic"] .player-drawer .pd-extra {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .col-picker, html[data-ui-profile="classic"] .column-picker {background: var(--bg-card) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .col-picker :is(.col-item, .col-toggle) {color: var(--text) !important; border-color: var(--border-light) !important}
+
+/* ---- Boost（showcase-pages.css 整页深色） ---- */
+html[data-ui-profile="classic"] .boost-page {color: var(--text) !important}
+html[data-ui-profile="classic"] .boost-topbar {background: var(--bg-card) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important}
+html[data-ui-profile="classic"] .boost-tabs {background: var(--bg-card) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .boost-tabs button {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .boost-tabs button:hover {background: var(--bg-list-hover) !important; color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .boost-tabs button.active {background: color-mix(in srgb, var(--accent) 16%, var(--bg-card)) !important; border-color: color-mix(in srgb, var(--accent) 50%, var(--border)) !important; color: var(--accent-dark) !important}
+html[data-ui-profile="classic"] .boost-card {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important}
+html[data-ui-profile="classic"] .boost-card .card-title {color: var(--text-heading) !important; border-bottom-color: var(--border-light) !important}
+html[data-ui-profile="classic"] .boost-card :is(label, .form-label, .hint, .muted, p) {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .boost-card label {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .boost-warning {background: var(--warn-bg) !important; border-color: rgba(201, 118, 46, .4) !important; color: var(--warn-text) !important}
+html[data-ui-profile="classic"] .boost-form :is(input, select, textarea) {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] .boost-form :is(input, textarea)::placeholder {color: var(--text-muted) !important}
+html[data-ui-profile="classic"] .boost-page :is(.boost-list, .request-list, .booster-list, .admin-list) {background: var(--bg-card) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .boost-page table {color: var(--text) !important}
+html[data-ui-profile="classic"] .boost-page table thead th {background: var(--bg-card2) !important; color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .boost-page table td {color: var(--text) !important}
+html[data-ui-profile="classic"] .boost-page :is(.modal, .booster-editor) {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important; box-shadow: var(--hard-shadow) !important}
+html[data-ui-profile="classic"] .booster-editor :is(.ro-value, .readonly, .ro) {color: var(--text) !important}
+html[data-ui-profile="classic"] .boost-page .search-item, html[data-ui-profile="classic"] .boost-page .result-item {background: var(--bg-card) !important; border-color: var(--border-light) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] .boost-page .search-item:hover, html[data-ui-profile="classic"] .boost-page .result-item:hover {background: var(--bg-list-hover) !important}
+
+
+/* ---- HoF（showcase-rankings.css 榜单整页深色） ---- */
+html[data-ui-profile="classic"] .lb-wrap {color: var(--text) !important}
+html[data-ui-profile="classic"] .lb-wrap > .tabs {background: color-mix(in srgb, var(--bg-card) 94%, transparent) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important}
+html[data-ui-profile="classic"] .lb-wrap > .tabs button {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .lb-wrap > .tabs button:hover:not(.active) {background: var(--bg-list-hover) !important; color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .lb-wrap > .tabs button.active {background: color-mix(in srgb, var(--accent) 14%, var(--bg-card)) !important; color: var(--accent-dark) !important; border-color: color-mix(in srgb, var(--accent) 45%, var(--border)) !important}
+html[data-ui-profile="classic"] .lb-wrap .lb-head {background: linear-gradient(110deg, color-mix(in srgb, var(--accent) 7%, var(--bg-card)), var(--bg-card) 46%) !important; border-color: color-mix(in srgb, var(--accent) 28%, var(--border)) !important; color: var(--text) !important; box-shadow: var(--surface-shadow) !important}
+html[data-ui-profile="classic"] .lb-wrap .lb-head h1 {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .lb-wrap .lb-head p {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .lb-wrap .lb-toolbar {background: color-mix(in srgb, var(--bg-card) 94%, transparent) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] .lb-wrap .lb-toolbar :is(select, input) {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] .lb-wrap .tablewrap {background: var(--bg-card) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] .lb-wrap table {color: var(--text) !important}
+html[data-ui-profile="classic"] .lb-wrap thead th {background: var(--bg-card2) !important; color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .lb-wrap tbody td {color: var(--text) !important}
+html[data-ui-profile="classic"] .lb-wrap tbody tr:hover {background: var(--bg-list-hover) !important}
+html[data-ui-profile="classic"] .lb-wrap .hof-upload-modal {background: var(--bg-card) !important; border-color: var(--border) !important; box-shadow: var(--hard-shadow) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] .lb-wrap .hof-upload-modal :is(h1, h2, h3) {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .lb-wrap .hof-upload-modal p, html[data-ui-profile="classic"] .lb-wrap .hof-upload-modal .muted {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .lb-wrap .lb-limit label, html[data-ui-profile="classic"] .lb-wrap .lb-filter label {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .lb-wrap .lb-head .lb-kicker {color: var(--accent-dark) !important}
+html[data-ui-profile="classic"] .lb-wrap .lb-dmg {color: var(--accent-dark) !important}
+
+/* ---- HoF 状态（Pending/Warning/Error） ---- */
+html[data-ui-profile="classic"] :is(.of-status, .status-pending, .pending) {background: var(--status-warn-bg) !important; color: var(--status-warn-fg) !important}
+html[data-ui-profile="classic"] :is(.of-status, .status-rejected, .rejected) {background: var(--status-err-bg) !important; color: var(--status-err-fg) !important}
+html[data-ui-profile="classic"] :is(.of-status, .status-approved, .approved) {background: var(--status-ok-bg) !important; color: var(--status-ok-fg) !important}
+
+/* ---- HoF Admin（showcase-pages.css 三个 Tab / 表格 / 筛选 / 分页） ---- */
+html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) {color: var(--text) !important}
+html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .hof-admin-tabs,
+html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .hof-admin-filters,
+html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .tablewrap {background: var(--bg-card) !important}
+html[data-ui-profile="classic"] :is(.hof-admin-tabs) {border-color: var(--border) !important}
+html[data-ui-profile="classic"] .hof-admin-tabs button {color: var(--text-sub) !important; background: var(--bg-card) !important; border-color: var(--border-light) !important}
+html[data-ui-profile="classic"] .hof-admin-tabs button:hover {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .hof-admin-tabs button.active {background: color-mix(in srgb, var(--accent) 14%, var(--bg-card)) !important; color: var(--accent-dark) !important; border-color: color-mix(in srgb, var(--accent) 45%, var(--border)) !important}
+html[data-ui-profile="classic"] .hof-admin-filters {border-color: var(--border) !important; background: var(--bg-card) !important}
+html[data-ui-profile="classic"] .hof-admin-filters :is(input, select) {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) :is(input, select, textarea) {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) table {color: var(--text) !important}
+html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) thead th {background: var(--bg-card2) !important; color: var(--text-sub) !important}
+html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) tbody td {color: var(--text) !important}
+html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) tbody tr:hover {background: var(--bg-list-hover) !important}
+html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .btn-sm {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .btn-sm:hover {border-color: var(--accent) !important; color: var(--accent-dark) !important}
+html[data-ui-profile="classic"] :is(.admin-page, .hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .btn-danger {background: var(--status-err-bg) !important; color: var(--status-err-fg) !important; border-color: var(--error) !important}
+html[data-ui-profile="classic"] .hof-admin .pagination button {background: var(--bg-card) !important; color: var(--text-sub) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .hof-admin .pagination button:hover:not(:disabled) {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--accent) !important}
+html[data-ui-profile="classic"] .hof-admin .page-size select {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .denied, html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .login {color: var(--text) !important}
+html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .review-modal, html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .approve-modal {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important; box-shadow: var(--hard-shadow) !important}
+
+/* ---- 管理 / Profile / Admin Users / Version / Contact / Rating Docs ---- */
+html[data-ui-profile="classic"] :is(.admin-page, .profile-page, .version-page, .contact-page, .rating-docs-page, .admin-users-page) {color: var(--text) !important}
+html[data-ui-profile="classic"] .version-page-title {color: var(--text-heading) !important; border-bottom-color: color-mix(in srgb, var(--accent) 28%, var(--border)) !important}
+html[data-ui-profile="classic"] .version-page .ver {background: var(--bg-card) !important; color: var(--text) !important; border-left-color: var(--border) !important; border-bottom-color: var(--border-light) !important}
+html[data-ui-profile="classic"] .version-page .ver:first-of-type {border-top-color: var(--border) !important}
+html[data-ui-profile="classic"] .version-page .ver-num {color: var(--accent-dark) !important}
+html[data-ui-profile="classic"] .version-page .ver-date {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .version-page .ver p {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] :is(.version-page, .rating-docs-page) pre, html[data-ui-profile="classic"] :is(.version-page, .rating-docs-page) code {background: var(--bg-elevated) !important; color: var(--text-code) !important; border-color: var(--border-light) !important}
+html[data-ui-profile="classic"] .contact-page {color: var(--text) !important}
+html[data-ui-profile="classic"] .contact-title {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .contact-subtitle {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .contact-card {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important}
+html[data-ui-profile="classic"] .contact-card :is(h2, h3) {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .contact-hint {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .rating-docs-page {color: var(--text) !important}
+html[data-ui-profile="classic"] .rating-docs-page :is(h1, h2, h3) {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .rating-docs-page p, html[data-ui-profile="classic"] .rating-docs-page li {color: var(--text) !important}
+html[data-ui-profile="classic"] .admin-page :is(.admin-search, .admin-table-wrap) {background: var(--bg-card) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .profile-page .profile-hero {background: var(--bg-card) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] .profile-page .profile-hero :is(h1, h2) {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .profile-page .profile-card {background: var(--bg-card) !important}
+html[data-ui-profile="classic"] .profile-page .profile-card .card-title {color: var(--text-heading) !important}
+
+/* ---- Battle Reconstruction 外围 UI（地图本体保留游戏视觉） ---- */
+html[data-ui-profile="classic"] .recon-page {color: var(--text) !important}
+html[data-ui-profile="classic"] .recon-page .recon-toolbar,
+html[data-ui-profile="classic"] .recon-toolbar {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important; box-shadow: var(--surface-shadow) !important}
+html[data-ui-profile="classic"] .recon-page .recon-sidebar, html[data-ui-profile="classic"] .recon-sidebar {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] .recon-page .details-panel, html[data-ui-profile="classic"] .recon-details, html[data-ui-profile="classic"] .battle-details {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .recon-page .timeline, html[data-ui-profile="classic"] .recon-timeline {color: var(--text) !important; border-color: var(--border-light) !important; background: var(--bg-elevated) !important}
+html[data-ui-profile="classic"] :is(.recon-page .recon-control, .recon-page button, .recon-toolbar button, .recon-control) {background: var(--bg-card) !important; color: var(--text-sub) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] :is(.recon-page .recon-control, .recon-page button, .recon-toolbar button, .recon-control):hover {color: var(--text-heading) !important; border-color: var(--accent) !important; background: var(--bg-list-hover) !important}
+html[data-ui-profile="classic"] :is(.recon-page, .recon-workspace) .map-stage {filter: none}
+html[data-ui-profile="classic"] :is(.recon-page, .recon-workspace) :is(svg.map, .map, .map-container) * {filter: none}

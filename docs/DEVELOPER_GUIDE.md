@@ -175,19 +175,18 @@ Battle 直接取该场 `tank_id`/`tank_name`（来源 `PlayerResult.tankId`）�
 
 ## 前端架构
 
-### Dark-only 是产品策略
+### UI Profile 与主题（showcase=dark, classic=light）
 
-**产品只支持暗色主题。**
+**`data-theme` 不是独立主题偏好，而是 UI Profile 唯一派生。**
 
-- `frontend/index.html` 首屏固定 `data-theme="dark"`。
-- `frontend/src/styles/tokens.css :root` 是基础视觉 token 单一事实源。
+- `showcase` → `data-ui-profile="showcase"` + `data-theme="dark"` + `color-scheme:dark`（默认，保持生产深色沉浸视觉：AI 背景/渐变/阴影）。
+- `classic` → `data-ui-profile="classic"` + `data-theme="light"` + `color-scheme:light`（真浅色简约：浅灰底/白卡片/深色文字/浅边框/轻阴影/橙金强调）。
+- `frontend/index.html` 首屏内联脚本按 `wotb-ui-profile` 同时设置 `data-ui-profile` 与派生的 `data-theme`（无 FOUC）；`src/styles/tokens.css :root` 仍是 dark 基础视觉 token 单一事实源，Classic 由 `styles/classic-profile.css` 的 `html[data-ui-profile="classic"]` 覆盖浅色语义 token + namespace 覆盖（该文件必须最后导入）。
+- 唯一持久化状态 `wotb-ui-profile`（只存 profile，不存主题）；不读取 `prefers-color-scheme`；不保存独立 `wotbtools-theme` cookie/localStorage；不存在独立 `useTheme` / `utils/theme.js`。
 - 当前 Showcase Topbar 高度为 **60px**，`--topbar-h` 也必须保持 60px；full-workspace viewport 依赖这个 token。
-- 不读取 `prefers-color-scheme`。
-- 不保存 `wotbtools-theme` cookie/localStorage。
-- 不存在运行时 `useTheme` / `utils/theme.js`，也不提供主题切换按钮。
-- Sponsor 独立静态页同样固定暗色。
+- Sponsor 独立静态页（homepage/）固定暗色，不经 Profile 派生。
 
-不要重新引入 Light/Auto compatibility layer。
+约定：`data-theme` 由 `useUiProfile.themeForProfile` 派生；禁止手工 set `data-theme` 或另立 theme 状态；Classic 只改 Presentation 层，不改 layout/density/spacing/结构/业务组件；禁止 `filter:invert` / 全局 opacity / `html *` / 双套业务组件 / `:key="uiProfile"` 触发重建。
 
 ### i18n
 
