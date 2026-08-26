@@ -48,11 +48,11 @@ Observed subtype set:
 | 16 | 467 | 22 B | UNKNOWN semantic |
 | 17 | 2,724 | 24 B | UNKNOWN semantic |
 | 19 | 171 | 25 B | UNKNOWN semantic |
-| 20 | 5,750 | 28 B | UNKNOWN semantic |
+| 20 | 5,750 | 28 B | **PROVEN** Avatar `stopTracer` family on current corpus; see `projectile-lifecycle.md` |
 | 25 | 117 | 44 B | UNKNOWN semantic |
-| 27 | 702 | 46 B | UNKNOWN semantic |
-| 28 | 30 | 48 B | UNKNOWN semantic |
-| 29 | 5,602 | 49 B | UNKNOWN semantic |
+| 27 | 702 | 46 B | **PROVEN relationship / PARTIAL semantic** projectile terminal-resolution companion |
+| 28 | 30 | 48 B | UNKNOWN/PARTIAL; 36-byte args, size-only `updateTargetingInfo` hypothesis rejected |
+| 29 | 5,602 | 49 B | **PROVEN behavioral family / PARTIAL symbolic schema** projectile/tracer launch family |
 | 35 | 318 | 25 B | UNKNOWN semantic |
 | 36 | 1,142 | 104 B normally; 44×86 B | UNKNOWN semantic |
 | 38 | 391 | 22/24/26/28/30 B | UNKNOWN semantic |
@@ -60,11 +60,21 @@ Observed subtype set:
 | 43 | 15 | 28–43 B | UNKNOWN semantic |
 | 44 | 44 | 28 B | UNKNOWN semantic |
 | 46 | 103 | 32/33/44 B | UNKNOWN semantic |
-| 47 | 1,845 | ~58–517 B | **version-drift surface**; old UpdateArena schema does not describe current 11.19 payloads |
+| 47 | 1,845 | ~58–517 B | **PROVEN current 11.19 chat-action family**; historical numbering differs |
 | 48 | 27,180 | variable, 16 B to ~7 KB | **PROVEN wrapper container / PARTIAL wrapper semantics** |
-| 49 | 44 | ~3.2–3.8 KB | UNKNOWN semantic; one large initialization blob per replay |
+| 49 | 44 | ~3.2–3.8 KB | **PROVEN behavioral role / PARTIAL RPC symbol** synchronized client/UI/control options |
 
 No other Type 8 subtype was observed after strict packet framing was applied.
+
+## Entity-class routing is mandatory
+
+Method/subtype numbers are not global protocol names. Current evidence requires dispatch by at least:
+
+```text
+(clientVersion, targetEntityClass, methodId)
+```
+
+The same numeric method IDs are observed on different target classes with incompatible payloads. Historical PC/Wargaming method numbering is useful for structural comparison, but numeric equality alone is never enough to assign a current Blitz symbol.
 
 ## subtype 1 — health/state + killer relationship
 
@@ -85,25 +95,75 @@ Supported current direct variant provides attacker/victim identity. The protocol
 
 Short and non-direct subtype-8 variants remain evidence-bearing but partially decoded. They must not be silently discarded because their presence can invalidate a unique-attacker attribution window.
 
-See `protocol.md` and `health-damage-death` material in this archive for the evidence rules.
+See `protocol.md` and the death/combat material in this archive for the evidence rules.
 
-## subtype 47 — historical UpdateArena vs current 11.19
+## subtype 20 / 27 / 29 — projectile lifecycle
 
-An older open-source Blitz parser maps **subtype 47** to `UpdateArena`, using an inner length, wrapper field number and protobuf message containing roster data. That is valuable evidence for historical protocol versions.
+These current Avatar-targeted methods form a shot-ID-linked projectile family. The detailed evidence is kept in `projectile-lifecycle.md`.
 
-However, the supplied 11.19 corpus does **not** conform to that old subtype-47 schema. Current subtype-47 payloads are a different variable structure and old `parseUpdateArena()` assumptions do not decode them.
+Safe current facts:
+
+```text
+method20
+  -> SHOT_ID + VECTOR3
+  -> stopTracer / terminal endpoint
+  -> PROVEN
+
+method29
+  -> launch-family event
+  -> launch/reference point near shooter
+  -> projectile velocity/direction vector
+  -> every observed launch shotId closes to method20
+  -> PROVEN behavioral family
+
+method27
+  -> same-shot terminal/resolution companion
+  -> exact symbolic method/field schema PARTIAL
+```
+
+Replay packet `rawClock` is a delivery/recording timestamp and cannot be treated as exact projectile-simulation flight time; batching produces many launch/end RPCs at the same recorded clock.
+
+## subtype 47 — current 11.19 chat action, historical numbering drift
+
+Historical open-source Blitz material assigned numeric subtype 47 to an arena-update method. That historical observation is valid for its own version family but is **not** valid for the supplied 11.19 corpus.
+
+Current 11.19 subtype47 has been fully parsed as a `CHAT_ACTION_DATA`-shaped message containing:
+
+```text
+requestID
+action
+actionResponse
+time
+sentTime
+channel
+originator
+originatorNickName
+group
+Python/pickle data
+flags
+```
+
+Observed action codes independently close to chat/channel actions including enter, broadcast, leave, self-enter/self-leave and command/system-message families.
 
 Verdict:
 
-- historical subtype47=UpdateArena: `PROVEN` for the older parser/version family;
-- current 11.19 subtype47 semantics: `UNKNOWN/PARTIAL`;
-- reusing the historical decoder against current data without version gating is forbidden.
+> current Blitz 11.19 Avatar subtype47 = **chat-action family — PROVEN**.
 
-Current 11.19 wrapped arena updates are carried by subtype 48.
+This is direct evidence that numeric method IDs drift with version/component layout. Historical subtype47 arena decoders must be version-gated and must not be applied to 11.19.
+
+## subtype 49 — synchronized client options
+
+One Avatar-targeted method49 appears in every source replay. Its argument body contains a fixed outer prefix followed by a zlib stream; decompression yields a Python pickle dictionary containing synchronized player/client options such as controls, camera inversion, aiming/UI, minimap/chat settings and platform form-factor data.
+
+Verdict:
+
+> subtype49 = **synchronized client/UI/control-options family — PROVEN behavioral role / PARTIAL exact RPC symbol**.
+
+See `avatar-synchronized-options.md`.
 
 ## subtype 48 — wrapped arena-update messages
 
-The current decoder already identifies the envelope family. Observed wrapper IDs are exactly:
+Observed wrapper IDs are exactly:
 
 ```text
 1,3,4,5,6,7,12,13,15,16,17,18,23,25
@@ -117,11 +177,11 @@ Counts:
 | 3 | 172 | 3 | **PROVEN** arena period update |
 | 4 | 44 | 4 | **PROVEN structure** entity-ID roster/set snapshot; exact method name PARTIAL |
 | 5 | 374 | 5 | **PROVEN** vehicle frag/kill-count update |
-| 6 | 551 | 6 | **PROVEN/PARTIAL** vehicle alive/death-info update family |
+| 6 | 551 | 6 | **PROVEN/PARTIAL** `VEHICLE_KILLED` / death-info family; optional secondary attribution field unresolved |
 | 7 | 794 | 7 | PARTIAL entity-ID lifecycle/setup notification |
-| 12 | 6,723 | 11 | UNKNOWN/PARTIAL small battle-state event family |
+| 12 | 6,723 | 11 | PARTIAL active battle-state / equipment-adjacent family; exact record semantics unresolved |
 | 13 | 9,265 | 12 | **PROVEN** realtime supremacy points |
-| 15 | 8,050 | 14 | PARTIAL entity state/value event family; visibility hypothesis not yet proven |
+| 15 | 8,050 | 14 | **PROVEN/PARTIAL** own-team weapon/feed/reload telemetry; see dedicated docs |
 | 16 | 987 | 15 | PARTIAL entity state event family |
 | 17 | 44 | 16 | PARTIAL initialization snapshot with entity IDs + float/state |
 | 18 | 44 | 17 | **PROVEN structure / PARTIAL field semantics** training/pre-battle configuration |
@@ -130,22 +190,11 @@ Counts:
 
 ### wrapper 1 — roster/entity mapping
 
-Root field 1 contains repeated player/entity records. Stable fields in the corpus include:
-
-```text
-1  entity/result ID
-3  nickname
-4  team
-7  account ID
-8  clan tag (when present)
-...
-```
-
-The snapshot can include non-combatant/observer entities in addition to the 14 settled combatants, therefore protocol identity inventory and business battle-roster validation must remain separate concepts.
+Root field 1 contains repeated player/entity records. Stable current fields include entity/result ID, nickname, team, account ID, clan information and additional player metadata. The snapshot can contain observers/non-combatants in addition to settled combatants; protocol identity and business battle-roster validation must remain separate.
 
 ### wrapper 3 — arena period
 
-Observed nested field 1 values are exactly periods 1,2,3,4. Independent Wargaming client constants define:
+Observed period values follow the independently known Wargaming lifecycle:
 
 ```text
 0 IDLE
@@ -155,97 +204,120 @@ Observed nested field 1 values are exactly periods 1,2,3,4. Independent Wargamin
 4 AFTERBATTLE
 ```
 
-Current records include, for example:
-
-```text
-period=1  remaining~60 s
-period=2  7 s
-period=3  420 s
-period=4  60 s
-```
-
-Nested fields 2 and 3 represent period timing/length in float64/integer forms. Fields 4–6 are optional period flags/reasons whose exact names remain `PARTIAL`.
-
-The period=3 broadcast is the client-observed active-battle start anchor used in `death-and-battle-clock.md`.
+The period=3 update is the client-observed battle-start anchor used by `death-and-battle-clock.md`. Current payload also carries period timing/length values; optional flag/reason fields remain PARTIAL.
 
 ### wrapper 4 — entity-ID set snapshot
 
-44/44 replays contain exactly one wrapper-4 snapshot at initialization. For every replay, the set of entity IDs in wrapper 4 is exactly equal to the entity-ID set in wrapper 1.
-
-Therefore the relationship to the arena entity roster is `PROVEN`. The exact server method/property name is not yet independently established, so the semantic name remains intentionally generic.
+44/44 source replays contain one initialization wrapper4. Its entity-ID set is exactly equal to wrapper1's entity-ID set in every replay. The roster/set relationship is PROVEN; the precise symbolic server label remains PARTIAL.
 
 ### wrapper 5 — frag count
 
-Payload shape:
+Current payload:
 
 ```text
 field1 = vehicle/entity ID
 field2 = cumulative frag count
 ```
 
-Replay correlation shows wrapper 5 emitted after kills and field2 increments for repeat killers (`1 → 2 ...`). This matches the independent client-side `updateVehiclesFrags(vehicleID, fragsCount)` arena API shape.
+Values increment after kills and close against settlement/kill events. Verdict: **PROVEN vehicle frag-count broadcast**.
 
-Verdict: `PROVEN` vehicle frag-count broadcast.
+### wrapper 6 — `VEHICLE_KILLED` / death-info family
 
-### wrapper 6 — alive/death-info update family
-
-Observed fields:
+For post-start validated deaths, current Blitz fields close as:
 
 ```text
 field1 = victim/vehicle entity ID
 field2 = killer entity ID
-field3 = optional related/equipment/entity value
-field4 = optional deathReason ID
-field5 = optional value (single observation in corpus)
+field3 = optional secondary combat-attribution entity (semantic PARTIAL)
+field4 = optional/non-default deathReason ID
+field5 = optional value, very sparse
 ```
 
-For validated deaths, wrapper 6 aligns with the terminal subtype-1/Type-7 event and settlement facts. Optional field4 occurs exactly in the non-default death-reason cases in the corpus and matches the independently verified fire/ramming/world-collision reason IDs.
-
-Independent Wargaming client code consumes vehicle death info as:
+Current death correlation is exact for the authoritative fields:
 
 ```text
-victimID, killerID, equipmentID, reasonID, numVehiclesAffected
+victim vs settled dead player : 375 / 375
+killer vs settlement killerID : 375 / 375
+reason vs settlement reason   : 375 / 375
 ```
 
-This makes `field3=equipmentID` and `field5=numVehiclesAffected` strong schema hypotheses, but this corpus does not independently close those two optional values. They remain `PARTIAL`.
+#### Important version divergence: field3 is NOT current Blitz `equipmentID`
 
-Important: wrapper 6 is an **alive/death-info update family**, not “every wrapper-6 packet equals a combat death”. Early initialization records exist (including self/self entity values), so consumers must use state/evidence context rather than count every wrapper-6 record as a kill.
+Historical PC `ClientArena.__onVehicleKilled()` decodes its version's tuple as:
+
+```text
+(victimID, killerID, equipmentID, reason, numVehiclesAffected)
+```
+
+That historical third-field name does **not** fit the current Blitz 11.19 corpus.
+
+For the current optional field3 observations:
+
+```text
+field3 values are valid current arena participant/entity IDs
+field3 != killer in every observed field3 death
+55 / 56 are on the killer's team
+```
+
+The sole team-side exception is the independently verified `world_collision` self-death: `killerID=self`, while field3 points to an enemy vehicle that had attacked the victim earlier. This is physically incompatible with an ordinary small equipment identifier and proves a current-version schema divergence from the historical PC tuple.
+
+On the strict 34-arena subset where the supported direct-damage stream provides usable attack histories, 46 field3 deaths can be examined further:
+
+```text
+field3 entity had attacked victim previously       : 46 / 46
+field3 == previous non-killer attacker              : 30 / 46
+field3 == first attacker                            : 30 / 46
+field3 == first non-killer attacker                 : 33 / 46
+field3 == non-killer with most direct attack events : 43 / 46
+field3 == final direct attacker                     :  4 / 46
+```
+
+Therefore field3 is strongly a **secondary combat-attribution entity**, not a duplicate killer and not the historical PC equipmentID. The exact current rule — assist credit, spotting/track attribution, contribution ranking, or another combat-credit relation — remains `PARTIAL` because the supported direct-damage stream is incomplete and its raw numerical value is not authoritative damage.
+
+Safe verdict:
+
+> wrapper6 field3 = **secondary combat-attribution participant/entity — PARTIAL**.
+
+Do not expose a user-facing `assistant`, `spotter`, `lastAttacker`, or `equipmentID` name until a current Blitz schema or a complete assist-attribution closure proves one of those meanings.
+
+Early initialization wrapper6 records also exist; consumers must use arena-period/lifecycle context and not count every wrapper6 as a post-start kill.
 
 ### wrapper 7
 
-Contains an entity ID and occurs only in the early setup window (~1.5–23.7 s in this corpus). It is clearly an entity lifecycle/setup notification but its exact method name is not proven.
+Contains an entity ID and occurs in setup/lifecycle windows. Exact symbolic meaning remains PARTIAL.
 
 ### wrapper 12
 
-Root field 11 carries small records dominated by fields 1/2/3 and an integer field 4 with a broader domain. It spans active battle time. No user-facing semantic is assigned yet.
+The historical Wargaming `ARENA_UPDATE` enum contains `COMBAT_EQUIPMENT_USED` at update ID 12. Current wrapper12 is therefore equipment/combat-state relevant, but current records have not yet been field-for-field closed to a per-player consumable activation identity. In particular it must **not** be labelled as an Adrenaline activation packet merely from timing correlation.
 
 ### wrapper 13 — supremacy points
 
 Repeated record:
 
 ```text
-field1 = team (1 or 2)
+field1 = team
 field2 = current points
 ```
 
-Point values evolve during battle and correlate with the Supremacy score. Verdict: `PROVEN` realtime Supremacy points.
+Values evolve with the Supremacy score. Verdict: **PROVEN realtime supremacy points**.
 
-### wrapper 15
+### wrapper 15 — own-team gun/feed/reload telemetry
 
-Root field14 records carry:
+The earlier visibility hypothesis is rejected: all 8,050 current wrapper15 records target the recorder's own team.
 
-```text
-field1 entity ID
-field2 small state/type (5 is common)
-field3 optional float32
-field4 small flag/state
-```
+Dedicated studies prove multiple gun-feed state families, including:
 
-This is a high-value candidate for visibility/distance/state reconstruction, but current evidence does not distinguish those hypotheses. Keep `PARTIAL`.
+- conventional single-shot shot/reload telemetry;
+- actual reload/gun-cycle duration in field3;
+- a dynamic ~0.853 duration mode identified behaviorally as the Adrenaline reload effect in eligible single-shot vehicles;
+- distinct Kranvagn/Felice non-single-shot state codes and feed-stage timers;
+- a terminal/death reaction state emitted after own-team vehicle death.
+
+See `team-weapon-telemetry.md` and `adrenaline-and-gun-feed.md`. Individual symbolic state enum labels remain version-scoped/PARTIAL where no current Blitz enum has been recovered.
 
 ### wrapper 16
 
-Observed form:
+Current form:
 
 ```text
 field1 entity/result ID
@@ -253,58 +325,29 @@ field2 = 1
 field3 = 1 normally, 8 in a small minority
 ```
 
-Active-battle entity state family; exact meaning `PARTIAL`.
+Active-battle entity state family; exact meaning PARTIAL.
 
 ### wrapper 17
 
-One initialization snapshot per replay. Repeated records include:
-
-```text
-field1 entity ID
-field3 float32
-field4 state (1 or 3 observed)
-```
-
-The floats repeat across tank/entity classes and appear configuration-like. Exact semantic remains `PARTIAL`.
+One initialization snapshot per replay. Repeated records include entity ID, float32 value and small state. Exact semantic remains PARTIAL.
 
 ### wrapper 18 — training configuration
 
-One initialization message per replay. Current corpus is uniform:
-
-```text
-field5  = "training"
-field9  = 1
-field10 = 300
-field11 = 1000
-field12 = 1
-```
-
-This proves a training/pre-battle configuration block. Individual numeric field names are not promoted without independent evidence.
+One initialization message per replay. Current training corpus is uniform on key values and includes literal `"training"`; this closes the block as training/pre-battle configuration. Individual numeric field names remain PARTIAL.
 
 ### wrapper 23 — tutorial/hint state
 
-Nested payload contains literal client hint identifiers such as:
-
-```text
-back_to_garage
-armor_highlight_hint
-armor_highlight_fast_hint
-sniper_mode_hint
-shell_select_hint
-player_armor_hint
-movement...
-```
-
-Verdict: `PROVEN` client tutorial/hint configuration/state. This is not battle-physics evidence.
+Payload carries literal client hint IDs such as `back_to_garage`, armor highlight, sniper mode, shell-selection and movement hints. Verdict: **PROVEN client tutorial/hint configuration/state**, not battle physics.
 
 ### wrapper 25
 
-One initialization message per replay; nested fields 1–7 are all `1` in the current corpus. It is a feature/configuration bit/flag block, but exact field meanings are `UNKNOWN/PARTIAL`.
+One initialization message per replay; current nested fields are feature/configuration flags. Exact names remain PARTIAL.
 
 ## Research constraints
 
-1. subtype numbers and wrapper IDs are version-sensitive protocol indices;
-2. historical subtype47 mappings must not be applied to 11.19 without version gating;
+1. subtype numbers and wrapper IDs are version-sensitive and entity-class scoped;
+2. historical numeric mappings must not be transplanted into Blitz 11.19 without current evidence;
 3. unknown methods must retain raw argument bytes;
 4. structural decoding and semantic decoding are separate promotion steps;
-5. a method is not user-facing evidence until identity, time and semantic confidence are established.
+5. a method is not user-facing evidence until identity, time and semantic confidence are established;
+6. when current replay behavior contradicts a historical PC field name, the current corpus wins and the divergence must be documented explicitly.
