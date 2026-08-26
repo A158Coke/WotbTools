@@ -83,19 +83,20 @@ The body is not a fixed scalar:
 
 The short repeated bodies and the longer high-cardinality bodies are consistent with a compact/bit-packed or variant update stream. This is a structural observation only; no current evidence identifies individual body fields.
 
-## Mobile `flag=0` scaled-clock field
+## Mobile `flag=0` long-body structure
 
-The mobile `flag=0` 15/16-byte bodies contain one independently closed subfield:
+The mobile `flag=0` 15/16-byte bodies contain this partial structure:
 
 ```text
-scaledClockRaw : f32 LE at body[-8 .. -4)
+controlPrefix : 3 or 4 bytes
+eventClockRaw : f64 LE at body[-12 .. -4)
+parameterRaw  : f32 LE at body[-4 .. end)
 ```
 
-For every non-zero value, define:
+For every non-zero `eventClockRaw`, define:
 
 ```text
-scaledClockSec = scaledClockRaw * 65536
-offsetSec      = scaledClockSec - packet.rawClockSec
+offsetSec = eventClockRaw - packet.rawClockSec
 ```
 
 Full-corpus result:
@@ -103,17 +104,19 @@ Full-corpus result:
 ```text
 replays with non-zero samples             : 34 / 34
 non-zero samples                           : 2,892
-max within-replay offset spread            : 0.331 s
-median within-replay offset spread         : 0.166 s
-max within-replay offset standard deviation: 0.072 s
-per-replay mean offset range               : 465,139.5 .. 480,328.9 s
+max within-replay offset spread            : 0.312 s
+median within-replay offset spread         : 0.153 s
+max within-replay offset standard deviation: 0.070 s
+per-replay mean offset range               : 39,155.5 .. 54,344.9 s
 ```
 
-This proves that the field is a replay-local/session-local monotonic time reference encoded at a scale of `1/65536` seconds. The small residual is consistent with float32 quantization and packet clock sampling.
+This proves that `eventClockRaw` is a replay-local/session-local monotonic time reference. The small residual is consistent with packet clock sampling.
 
 The exact epoch/source remains `PARTIAL`: current evidence does not distinguish client process time, engine session time or another monotonic reference. Values of zero occur in 4,888 mobile `flag=0` records and act as an absent/uninitialized sentinel for this relation.
 
-The final four bytes of the same bodies form a separate float32-shaped value with domains including `-1`, `0`, and multiple positive values. Its meaning is not closed and must not be named as reload duration, effect strength or percentage without a controlled correlation.
+The final four-byte `parameterRaw` is layout-family specific. For the proven consumable lifecycle subset it carries effective duration/cooldown values; other control prefixes remain unresolved.
+
+The closed wire-code/state mappings and duration checks are recorded in [`consumable-lifecycle.md`](consumable-lifecycle.md).
 
 ## Flag boundary
 
@@ -136,7 +139,7 @@ The alleged `kind` equals the remaining body length in every packet. Treating it
 
 Earlier diagnostics read eight bytes at a fixed absolute offset and sometimes obtained runtime-like numbers. That offset crosses differently sized, variable bodies; arbitrary eight-byte interpretations also produce huge and subnormal values. No fixed scalar schema is valid across this family.
 
-The scoped mobile `flag=0` decoder above does recover a real scaled `float32` clock after class/layout gating. This does not restore the rejected global-double interpretation.
+The scoped mobile `flag=0` decoder above does recover a real `float64` clock after class/layout gating. This does not restore the rejected global-double interpretation.
 
 ### HP proximity is not semantic identity
 
@@ -164,8 +167,9 @@ EntityAuxiliaryBlobRaw {
 }
 
 MobileFlag0LongBodyPartial {
-    scaledClockRaw     // PROVEN physical clock relation when non-zero
-    trailingFloatRaw   // UNKNOWN semantic
+    controlPrefix
+    eventClockRaw      // PROVEN physical clock relation when non-zero
+    parameterRaw       // semantics depend on control prefix
 }
 ```
 
@@ -174,7 +178,7 @@ Requirements:
 1. validate `bodyLength == remaining payload bytes`;
 2. preserve `flag` and body bytes losslessly;
 3. route through the Type5 entity class/version context;
-4. decode the scaled clock only for mobile `flag=0` bodies of length 15/16;
+4. decode the `float64` event clock only for mobile `flag=0` bodies of length 15/16;
 5. add other semantic sub-decoders only after independent closure;
 6. do not expose body length or raw bytes as user-facing effect names.
 
@@ -182,7 +186,7 @@ Requirements:
 
 1. recover the Blitz 11.19 producer or transport schema for Type32;
 2. determine the exact meaning of `flag`;
-3. recover the exact epoch/source of the mobile `flag=0` scaled clock and the meaning of its trailing float;
+3. recover the exact epoch/source of the mobile `flag=0` event clock;
 4. cluster remaining bodies by Type5 entity class, length, prefix bits and lifecycle phase;
 5. run controlled probes for track destruction/repair, static collision/destruction, fire, ramming and module damage;
 6. compare same-arena multi-POV bodies to separate server facts from client-local representation;
