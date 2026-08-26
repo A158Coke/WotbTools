@@ -145,6 +145,25 @@ export async function getProcessingJobResult(jobId) {
   return r.json()
 }
 
+/**
+ * Historical Rating V2 gray analysis for an existing READY processing dataset.
+ * The endpoint is admin-only; 401 returns the user to the hidden deep link.
+ */
+export async function ratingV2Admin(jobId) {
+  const { token, ensureToken, login } = useAuth()
+  await ensureToken(30)
+  const r = await fetch(`/api/admin/rating-v2/processing-jobs/${encodeURIComponent(jobId)}`, {
+    method: 'POST',
+    headers: token() ? { Authorization: `Bearer ${token()}` } : {},
+  })
+  if (r.status === 401) {
+    login('rating-v2')
+    throw new ApiError('AUTH_REQUIRED', 401)
+  }
+  await requireOk(r)
+  return r.json()
+}
+
 /** READY 后下载 artifact（后端 FileSystemResource server-side streaming；前端 blob 缓冲后触发下载）。 */
 export async function downloadExportJob(jobId, fallbackName) {
   const r = await requireOk(await fetch(`/api/replay/export-jobs/${encodeURIComponent(jobId)}/download`))
