@@ -126,6 +126,75 @@ Verdict:
 
 The physical quantity is closed to the reload/gun-cycle family by shot-count identity, vehicle-stable duration clusters and repeated common modifier ratio. The exact UI/server name and whether the scalar is nominal reload, post-resolution reload telemetry, or a related gun-cycle timer remains `PARTIAL` until a current Blitz schema symbol is recovered.
 
+## The ~0.853 fast mode — Adrenaline correlation
+
+A targeted follow-up tested whether the repeated fast reload mode could instead be the conditional low-HP crew skill commonly described as Adrenaline Rush / Desperate (`破釜沉舟`). The current corpus rejects that hypothesis.
+
+For recorder vehicles with both a dynamic normal/fast reload mode and usable HP observations:
+
+```text
+32 fast-mode sessions have a reliable pre-session HP ratio
+0 / 32 occur at <= 15% HP
+0 / 32 occur at <= 10% HP
+0 / 32 occur at <= 7% HP
+29 / 32 occur above 25% HP
+```
+
+Several sessions begin at effectively full observed HP; others begin around 70–90% HP. Therefore the ~0.853 mode cannot be caused by a low-HP-only crew skill in this corpus.
+
+The observed effective reload-speed increase is:
+
+```text
+normalDuration / fastDuration - 1
+
+mean   ≈ +17.223%
+median ≈ +17.229%
+range  ≈ +17.129% ... +17.259%
+```
+
+Independent World of Tanks Blitz balance documentation specifies Adrenaline as a temporary **+17% gun reload-speed** consumable with a **20 s** active duration in the relevant modern balance family. A +17% speed modifier predicts a duration multiplier of:
+
+```text
+1 / 1.17 ≈ 0.85470
+```
+
+The replay-observed multiplier is:
+
+```text
+mean   ≈ 0.85307
+median ≈ 0.85303
+range  ≈ 0.85281 ... 0.85376
+```
+
+This is within roughly two-tenths of one percentage point in speed-space and is stable across unrelated vehicles/base reload values.
+
+A duration-window test was also applied to recorder fast-mode sessions that have both a preceding normal shot and a following normal shot. For each session we ask whether there exists a single 20-second active interval such that all observed fast shots are inside the interval while the adjacent normal shots are outside it:
+
+```text
+20 s window feasible: 33 / 33 sessions
+15 s window feasible: 30 / 33
+26 s window feasible: 21 / 33
+```
+
+The 20-second model is therefore the only tested fixed duration that explains all fully bounded recorder sessions in this corpus.
+
+Verdict:
+
+> The ~0.853 dynamic fast mode is **strongly identified with the Adrenaline consumable effect** and the low-HP crew-skill hypothesis is `REJECTED` for this corpus.
+
+Promotion is intentionally kept at `PROVEN correlation / PARTIAL protocol identity`, not final symbolic `PROVEN`, because the replay event that explicitly carries the consumable/equipment identifier has not yet been independently decoded and linked to each activation. In particular, wrapper12 must **not** currently be labelled as an Adrenaline activation stream merely because historical `ARENA_UPDATE` enum value 12 is named `COMBAT_EQUIPMENT_USED`; the observed wrapper12 sequences do not provide stable per-player activation alignment in this corpus.
+
+Safe consumer statement today:
+
+```text
+wrapper15 field2=3 field3 fast mode
+  -> temporary ~17.2% reload-speed increase
+  -> behavior and 20 s window match modern Blitz Adrenaline
+  -> not a low-HP-only crew-skill effect
+```
+
+The remaining protocol task is to recover the explicit consumable/equipment activation identity and join it to this reload telemetry.
+
 ## field2 = 5 — death/terminal weapon-state transition
 
 A second strong relationship exists with own-team vehicle deaths.
@@ -185,7 +254,8 @@ Wrapper15 is **not** currently supported as:
 - a generic enemy visibility/spotted stream — all current targets are own-team;
 - an authoritative shot timestamp — field2=3 arrives around projectile resolution, not the initial Type23 firing transition;
 - authoritative damage/penetration evidence — shot-count correlation does not encode HP loss;
-- an independent death source — field2=5 is downstream of the already-authoritative death chain.
+- an independent death source — field2=5 is downstream of the already-authoritative death chain;
+- a low-HP crew-skill stream for the ~0.853 fast mode — high-HP/full-HP counterexamples reject that explanation.
 
 ## Consumer guidance
 
@@ -195,6 +265,7 @@ Current safe facts:
 wrapper15 / field2=3
   -> observed own-team shot telemetry
   -> field3 is reload/gun-cycle-duration family
+  -> dynamic ~0.853 mode matches the modern Adrenaline reload-speed effect
 
 wrapper15 / field2=5
   -> own-team terminal/death reaction state
