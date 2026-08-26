@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.38",
+    "date": "2026-08-26",
+    "tag": "add",
+    "zh": "选手详情新增「最常使用坦克」：批次视图在 Rating 下方显示该批次最常使用的坦克（贴图 + 名称 + 使用场次 + 占比，只统计已评分场次；并列时按坦克官方名排序，名称相同再按车辆 ID），单场视图显示该场实际使用的坦克；坦克图仅使用站内已有 Tier X 贴图，缺图/非 Tier X 时纯文字展示；导出画像 PNG 同步包含坦克信息。该展示不参与 Rating 计算。",
+    "en": "Player details now show the most-used tank: the batch view displays the tank used most often in that batch (portrait + name + battles + share, counting only rated battles; ties are broken by official tank name, then by tank ID), and the single-battle view shows that battle's actual tank. Portraits use only the bundled Tier X images; when missing or non-Tier X, it degrades to text. The Rating Profile PNG export includes the tank info. This display does not affect Rating.",
+    "ru": "В карточке игрока теперь отображается наиболее часто используемый танк: в пакетном виде — танк, используемый чаще всего в этом наборе (портрет + название + количество боёв + доля, учитываются только оценённые бои; при равенстве сортировка по официальному названию танка, затем по ID), а в виде отдельного боя — фактически используемый танк. Портреты берутся только из встроенных изображений Tier X; при отсутствии или для не-Tier X — текстовый режим. Экспорт профиля в PNG включает информацию о танке. На расчёт Rating это не влияет."
+  },
+  {
     "v": "2.12.37",
     "date": "2026-08-26",
     "tag": "fix",

@@ -40,5 +40,7 @@ public record PlayerLeagueSummary(
         int wins,
         long damageTotal,
         long assistTotal,
-        long killsTotal) {
+        long killsTotal,
+        // 每辆坦克的使用场次直方图（tankId -> battles，仅 rated-only 样本；不含 Tankopedia 名称）
+        List<PlayerVehicleUsage> vehicleUsage) {
 }

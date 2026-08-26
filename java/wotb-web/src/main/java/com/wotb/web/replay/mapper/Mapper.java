@@ -10,9 +10,11 @@ import com.wotb.core.league.PlayerLeagueRating;
 import com.wotb.core.league.PlayerLeagueSummary;
 import com.wotb.core.league.TeamLeagueRating;
 import com.wotb.core.league.TeamLeagueSummary;
+import com.wotb.core.league.PlayerVehicleUsage;
 import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.model.TankInfo;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.ref.VehicleCodes;
 import com.wotb.core.stats.Aggregator;
@@ -26,6 +28,7 @@ import com.wotb.web.replay.dto.LeaguePlayerSummaryDto;
 import com.wotb.web.replay.dto.LeagueRatingDto;
 import com.wotb.web.replay.dto.LeagueRatingQualityDto;
 import com.wotb.web.replay.dto.LeagueTeamDto;
+import com.wotb.web.replay.dto.LeagueVehicleUsageDto;
 import com.wotb.web.replay.dto.LeagueTeamSummaryDto;
 import com.wotb.web.replay.dto.PreviewResponse;
 import com.wotb.web.replay.dto.BattleDto;
@@ -33,6 +36,7 @@ import com.wotb.web.replay.dto.ColumnDef;
 import com.wotb.web.replay.dto.PlayerRow;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -266,6 +270,63 @@ public final class Mapper {
         return Math.round(v * 10) / 10.0;
     }
 
+    /** 经 Tankopedia 选择最常使用坦克（选择逻辑见 {@link #selectMostUsedVehicle}）。 */
+    private static LeagueVehicleUsageDto mostUsedVehicle(final PlayerLeagueSummary s, final Tankopedia tp) {
+        return selectMostUsedVehicle(s.vehicleUsage(), id -> vehicleName(id, tp));
+    }
+
+    /** 从已累计的坦克使用直方图中选出「最常使用坦克」（可独立单测，不依赖 Tankopedia）。
+     * 规则：先确定最大使用场次，只处理使用次数等于最大的候选；每个候选只解析一次官方名；
+     * 排除 null / 空白 / 占位名（如 {@code #<tankId>}）等非权威名称；剩余候选按官方名
+     * 忽略大小写升序 → tankId 升序。若无任何可可靠命名的最大次数候选 → null；
+     * 不退回使用次数较少的坦克（不伪造坦克，不参与 Rating 计算）。
+     */
+    static LeagueVehicleUsageDto selectMostUsedVehicle(final List<PlayerVehicleUsage> usage,
+                                                       final Function<Long, String> nameOf) {
+        if (usage == null || usage.isEmpty()) {
+            return null;
+        }
+        final int maxBattles = usage.stream().mapToInt(PlayerVehicleUsage::battles).max().orElse(-1);
+        final List<VehicleCandidate> candidates = usage.stream()
+                .filter(u -> u.battles() == maxBattles)
+                .map(u -> new VehicleCandidate(u.tankId(), u.battles(), nameOf.apply(u.tankId())))
+                .filter(c -> isAuthoritativeName(c.name))
+                .sorted(Comparator
+                        .comparing((VehicleCandidate c) -> c.name, String.CASE_INSENSITIVE_ORDER)
+                        .thenComparingLong(VehicleCandidate::tankId))
+                .toList();
+        if (candidates.isEmpty()) {
+            return null;
+        }
+        final VehicleCandidate best = candidates.get(0);
+        return new LeagueVehicleUsageDto(best.tankId, best.name, best.battles);
+    }
+
+    /** 是否为可靠官方坦克名：非 null、非空白、非占位名（Tankopedia 对未知 ID 返回 {@code "#<tankId>"}）。 */
+    private static boolean isAuthoritativeName(final String name) {
+        if (name == null) {
+            return false;
+        }
+        final String trimmed = name.trim();
+        return !trimmed.isEmpty() && !trimmed.startsWith("#");
+    }
+
+    /** 最常使用坦克候选：tankId + 使用场次 + 已解析官方名（可能为 null/占位，由调用方过滤）。 */
+    private record VehicleCandidate(long tankId, int battles, String name) {
+    }
+
+    /** 经单一事实源 Tankopedia 解析坦克官方名；无该车、未加载或为占位名（#<tankId>）时返回 null。 */
+    static String vehicleName(final long tankId, final Tankopedia tp) {
+        if (tp == null) {
+            return null;
+        }
+        final TankInfo info = tp.info(tankId);
+        if (info == null) {
+            return null;
+        }
+        return isAuthoritativeName(info.name()) ? info.name() : null;
+    }
+
     private static Object playerValue(final Columns.Column column, final PlayerResult player) {
         return switch (column.key()) {
             case "tank_type" -> VehicleCodes.classCode(player.tankType);
@@ -338,7 +399,7 @@ public final class Mapper {
         if (league != null) {
             // leagueMode=true：CW UI 存在（含 Rating-ineligible 场次）；league 仅决定本场 Rating 结果
             return new PreviewResponse(battlesDto, aggregate, duplicates, failures,
-                    leaguePlayerColumns(), leagueAggregateColumns(), leagueDto(league, perfById),
+                    leaguePlayerColumns(), leagueAggregateColumns(), leagueDto(league, perfById, tp),
                     null, true);
         }
         return new PreviewResponse(battlesDto, aggregate, duplicates, failures,
@@ -346,7 +407,8 @@ public final class Mapper {
     }
 
     private static LeagueRatingDto leagueDto(final LeagueRatingBatch league,
-                                              final Map<Long, PerformanceMetricsCalculator.Row> perfById) {
+                                              final Map<Long, PerformanceMetricsCalculator.Row> perfById,
+                                              final Tankopedia tp) {
         final List<LeaguePlayerSummaryDto> players = new ArrayList<>();
         for (final PlayerLeagueSummary s : league.playerSummaries()) {
             final PerformanceMetricsCalculator.Row perf = perfById.get(s.accountId());
@@ -361,7 +423,8 @@ public final class Mapper {
                     // HP 全部 UNKNOWN → contribution/kast null（UI "--"），impact 恒有值
                     perf == null || !perf.hpEligible ? null : r1(perf.contribution),
                     perf == null || !perf.hpEligible ? null : r1(perf.kast),
-                    perf == null ? null : r1(perf.impactValue)));
+                    perf == null ? null : r1(perf.impactValue),
+                    mostUsedVehicle(s, tp)));
         }
         final List<LeagueTeamSummaryDto> teams = new ArrayList<>();
         for (final TeamLeagueSummary s : league.teamSummaries()) {
