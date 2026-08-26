@@ -40,6 +40,7 @@
 - `type32-entity-effects.md`：Type32 实体级长度前缀 auxiliary blob；旧 `kind` / runtime-double 解释已废弃。
 - `consumable-lifecycle.md`：Type32 mobile `flag=0` 消耗品初始化、激活、持续结束/冷却与 teardown 状态流；已闭环 First Aid / Repair / Multi-Purpose Restoration Pack。
 - `fire-and-repair-states.md`：Type32 mobile short `...04` 火灾关联、fire-DOT、0x0B/0x0D 灭火差分、Vehicle prop8 recoverable-state token 与机械修复行为。
+- `crew-injury-candidates.md`：0x0C First Aid 前置受击、Type32 short packed event-family、0x27/0x29/0x2B crew/tankman-extra 候选与负证据边界。
 
 ## 当前 canonical 结论摘要
 
@@ -64,6 +65,7 @@
 - Type32 为 `entityId + flag + bodyLength + body`；16,850/16,850 长度闭合并同时路由到 Type5 mobile/static 实体。mobile `flag=0` 长 body 含 `float64` event clock，并已闭环 Adrenaline、Engine Power Boost、Multi-Purpose Restoration Pack、First Aid Kit、Repair Kit、Improved Engine Power Boost、Reticle Calibration、Reactive Armor、Tungsten Shells 等消耗品生命周期。
 - Type32 mobile `flag=1` short `...04` family 与火灾闭环：4/4 settlement fire death 的终末燃烧链出现该 family；`0x0B` 会终止周期 fire-DOT，而 `0x0D` 不会。
 - Vehicle prop8 是 count-prefixed recoverable/negative-state token collection；部分 token 可被 `0x0B` 与 `0x0D` 共同清除，另一些当前只观察到 `0x0B` 清除，因此不能简化成单一 `damagedModules` 列表。
+- `0x0C` First Aid 的 5/5 当前样本均在约 0.8–2.2 秒前有同实体真实 method8 damage event；但 prop8、method8 `(1,3,2)` 粗字段与 Type32 long `body[2]=2` 均已被全量反证为非 crew-specific，具体 injured crew wire surface 仍为 PARTIAL。
 
 ### 仍需研究
 
