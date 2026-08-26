@@ -152,6 +152,9 @@ const drawerPlayer = computed(() => {
       mvpCount: row.cells.mvp_count,
       battles: row.cells.battles,
       wins: row.cells.wins,
+      // 当前批次 rated-only 最常使用坦克（后端唯一结果；无可靠数据为 null）
+      mostUsedVehicle: row.league?.mostUsedVehicle ?? null,
+      ratedBattles: row.cells?.rated_battles ?? null,
       cells: row.cells,
     }
   }
@@ -166,6 +169,10 @@ const drawerPlayer = computed(() => {
     rating: row.cells.league_rating,
     // Battle Radar 七维 = 本场 league_*_score（禁止命名/复用跨场 dimensionMedians/Means）
     dimensionScores: CW_DIM_KEYS.map(k => row.cells[k]),
+    // 本场实际坦克（cells.tank_id 来自后端 PlayerResult，可靠；非解析 cells.tanks 字符串）
+    tankId: row.cells?.tank_id ?? null,
+    tankName: row.cells?.tank_name ?? '',
+    tankBattles: 1,
     cells: row.cells,
   }
 })

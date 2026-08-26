@@ -13,6 +13,7 @@ import {
   RADAR, axisPoint, axisRay, polygonPoints, gridPolygonPoints, scaleTickPosition,
 } from '../utils/radarGeometry.js'
 import { sanitizeFilename, downloadBlob } from '../utils/exportReplayPng.js'
+import { loadVehiclePortrait } from '../vehicle-portraits/runtime.js'
 
 /**
  * 选手详情 Side Drawer。
@@ -184,6 +185,44 @@ const facts = computed(() => {
   return rows
 })
 
+// ---- 坦克展示（Summary=当前批次最常使用；Battle=本场坦克）----
+const vehicle = computed(() => {
+  const p = props.player
+  if (!p) return null
+  if (isSummary.value) {
+    const muv = p.mostUsedVehicle
+    if (!muv || muv.tankId == null) return null
+    const rate = (p.ratedBattles && p.ratedBattles > 0) ? (muv.battles / p.ratedBattles) : null
+    return {
+      label: t('league.drawer.most_used_vehicle'),
+      tankName: muv.tankName || '',
+      battleText: t('league.drawer.vehicle_battles', { n: muv.battles }),
+      rateText: rate != null ? (Math.round(rate * 1000) / 10) + '%' : '',
+      tankId: muv.tankId,
+    }
+  }
+  if (p.tankId == null) return null
+  return {
+    label: t('league.drawer.battle_vehicle'),
+    tankName: p.tankName || '',
+    battleText: '',
+    rateText: '',
+    tankId: p.tankId,
+  }
+})
+
+// 懒加载坦克贴图，token 防止快速切换选手时旧异步结果覆盖新选手。
+const vehiclePortrait = ref(null)
+const vehiclePortraitToken = ref(0)
+watch(vehicle, async (v) => {
+  const token = ++vehiclePortraitToken.value
+  vehiclePortrait.value = null
+  if (!v || v.tankId == null) return
+  const url = await loadVehiclePortrait(v.tankId)
+  if (token !== vehiclePortraitToken.value) return
+  vehiclePortrait.value = url
+}, { immediate: true })
+
 // ---- 前后导航（方向驱动切换动画）----
 const navDir = ref('next')
 function onPrev() { navDir.value = 'prev'; emit('prev') }
@@ -222,6 +261,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKeydown) })
 // ---- 导出 Rating Profile PNG（§41-48）：专用卡片（非 Drawer 截图）----
 const exportingProfile = ref(false)
 const exportCardRef = ref(null)
+const exportPortrait = ref(null)
 const cardPlayerPoints = computed(() => polygonPoints(radarMetrics.value.map(m => m.normalized), radarMetrics.value.length))
 const cardRefPoints = computed(() => polygonPoints(referenceSeries.value.map(m => m.normalized), referenceSeries.value.length))
 const cardGrids = computed(() => RADAR.GRID_LEVELS.map(ratio => ({ ratio, points: gridPolygonPoints(radarMetrics.value.length, ratio) })))
@@ -246,6 +286,8 @@ async function exportProfile() {
   exportingProfile.value = true
   try {
     await nextTick()
+    await ensureVehiclePortraitForExport()
+    await nextTick()
     const html2canvas = (await import('html2canvas')).default
     const canvas = await html2canvas(exportCardRef.value, {
       scale: 2, useCORS: true, backgroundColor: '#14161a',
@@ -257,8 +299,29 @@ async function exportProfile() {
   } catch (e) {
     console.error(e)
   } finally {
+    exportPortrait.value = null
     exportingProfile.value = false
   }
+}
+
+/** 导出卡坦克图：先懒加载 URL，再确认图片已解码；失败/缺图返回 null（文字版导出，不阻塞 PNG）。 */
+async function ensureVehiclePortraitForExport() {
+  const v = vehicle.value
+  if (!v || v.tankId == null) {
+    exportPortrait.value = null
+    return
+  }
+  const url = await loadVehiclePortrait(v.tankId)
+  exportPortrait.value = url ? await ensureImageLoaded(url) : null
+}
+
+function ensureImageLoaded(url) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => resolve(url)
+    img.onerror = () => resolve(null)
+    img.src = url
+  })
 }
 </script>
 
@@ -295,6 +358,23 @@ async function exportProfile() {
             <div v-if="isSummary" class="pd-rating-extra">
               <span class="pd-extra">{{ t('league.drawer.observed_median') }}: <b>{{ num(player?.rawMedian) }}</b></span>
               <span class="pd-extra">{{ t('league.drawer.rated_battles') }}: <b>{{ player?.cells?.rated_battles ?? '--' }}</b></span>
+            </div>
+
+            <!-- 坦克展示（Summary=最常使用；Battle=本场坦克；缺图时仅文字降级） -->
+            <div v-if="vehicle" class="pd-vehicle" data-testid="player-vehicle">
+              <div class="pd-vehicle-label">{{ vehicle.label }}</div>
+              <div class="pd-vehicle-body">
+                <img v-if="vehiclePortrait" :src="vehiclePortrait" :alt="vehicle.tankName"
+                     class="pd-vehicle-img" :title="vehicle.tankName" data-testid="player-vehicle-img" />
+                <div class="pd-vehicle-meta">
+                  <div class="pd-vehicle-name" :title="vehicle.tankName">{{ vehicle.tankName }}</div>
+                  <div v-if="vehicle.battleText || vehicle.rateText" class="pd-vehicle-stats">
+                    <span v-if="vehicle.battleText" data-testid="player-vehicle-battles">{{ vehicle.battleText }}</span>
+                    <span v-if="vehicle.rateText" data-testid="player-vehicle-rate"
+                          :aria-label="t('league.drawer.vehicle_usage_rate') + ': ' + vehicle.rateText">{{ vehicle.rateText }}</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <!-- 七维 / 自定义 Radar -->
@@ -372,6 +452,20 @@ async function exportProfile() {
           <div v-if="isSummary" class="rp-headline-extra">
             <span class="rp-extra">{{ t('league.drawer.observed_median') }}: <b>{{ num(player?.rawMedian) }}</b></span>
             <span class="rp-extra">{{ t('league.drawer.rated_battles') }}: <b>{{ player?.cells?.rated_battles ?? '--' }}</b></span>
+          </div>
+        </div>
+        <!-- 导出卡坦克区（与 Drawer 同数据；缺图时文字版，不阻塞 PNG） -->
+        <div v-if="vehicle" class="rp-vehicle">
+          <div class="rp-vehicle-label">{{ vehicle.label }}</div>
+          <div class="rp-vehicle-body">
+            <img v-if="exportPortrait" :src="exportPortrait" :alt="vehicle.tankName" class="rp-vehicle-img" />
+            <div class="rp-vehicle-meta">
+              <div class="rp-vehicle-name">{{ vehicle.tankName }}</div>
+              <div v-if="vehicle.battleText || vehicle.rateText" class="rp-vehicle-stats">
+                <span v-if="vehicle.battleText">{{ vehicle.battleText }}</span>
+                <span v-if="vehicle.rateText">{{ vehicle.rateText }}</span>
+              </div>
+            </div>
           </div>
         </div>
         <div class="rp-radar">
@@ -469,6 +563,14 @@ async function exportProfile() {
 .pd-facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: .82rem; }
 .pd-facts dt { color: var(--text-sub); font-weight: 600; }
 .pd-facts dd { margin: 0; color: var(--text-heading); font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+.pd-vehicle { margin: 12px 0 2px; padding: 10px 12px; border: 1px solid var(--border-light); border-radius: 10px; background: var(--bg-card); }
+.pd-vehicle-label { font-size: .72rem; font-weight: 800; color: var(--text-sub); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+.pd-vehicle-body { display: flex; align-items: center; gap: 12px; }
+.pd-vehicle-img { width: 150px; height: auto; border-radius: 6px; flex: none; }
+.pd-vehicle-meta { min-width: 0; }
+.pd-vehicle-name { font-size: .95rem; font-weight: 800; color: var(--text-heading); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pd-vehicle-stats { display: flex; gap: 10px; margin-top: 3px; font-size: .78rem; color: var(--text-sub); font-variant-numeric: tabular-nums; }
+@media (max-width: 768px) { .pd-vehicle-img { width: 100px; } }
 
 /* 切换动画（§35/§38）：next 旧左出新右入；prev 旧右出新左入；reduced-motion 关闭（§40） */
 .pd-dir-next-enter-from { transform: translateX(28px); opacity: 0; }
@@ -497,6 +599,13 @@ async function exportProfile() {
 .rp-headline-extra { display: flex; gap: 16px; margin-top: 2px; }
 .rp-extra { font-size: .8rem; color: #9aa0a6; }
 .rp-extra b { color: #e8e8e8; font-variant-numeric: tabular-nums; }
+.rp-vehicle { margin: 10px 0 4px; padding: 10px 12px; border: 1px solid #3a3f45; border-radius: 8px; background: #17191d; }
+.rp-vehicle-label { font-size: .72rem; font-weight: 800; color: #9aa0a6; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+.rp-vehicle-body { display: flex; align-items: center; gap: 12px; }
+.rp-vehicle-img { width: 140px; height: auto; border-radius: 6px; flex: none; }
+.rp-vehicle-meta { min-width: 0; }
+.rp-vehicle-name { font-size: 1.05rem; font-weight: 800; color: #fff; }
+.rp-vehicle-stats { display: flex; gap: 12px; margin-top: 3px; font-size: .82rem; color: #9aa0a6; font-variant-numeric: tabular-nums; }
 .rp-radar { margin: 10px auto 4px; width: 340px; }
 .rp-radar-svg { width: 340px; height: 340px; }
 .rp-grid { fill: none; stroke: #3a3f45; stroke-width: 1; }

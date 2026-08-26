@@ -393,6 +393,28 @@ Team Rating 计算；Radar aggregation 只发生在多场 player summary visuali
 - **Impact 不入 Radar**（无稳定 normalization contract）；hit_rate / pen_rate
   也不入 Radar candidate。
 
+## 最常使用坦克（选手 Drawer）
+
+> Summary 与 Battle 两个 scope 的坦克展示，纯 presentation / profile 信息，**不参与任何
+> Rating / 七维 / MVP / Team Rating 计算**；不写入数据库或历史赛季。
+
+- **Summary**：显示当前上传批次中该选手的 **rated-only** 场次里使用最多的坦克
+  （贴图 + 官方名 + 使用场次 + 使用比例 `mostUsed.battles / ratedBattles`）。
+- **判定**：只统计 rated battle；按 `tankId` 累计场次；场次最多者胜出。**并列时**按
+  Tankopedia 官方 `tankName` 忽略大小写升序选择第一辆；名称仍相同再按 `tankId` 升序
+  稳定兜底。不使用最近出场时间 / Rating / 胜率 / 伤害打破平局。
+- **Battle**：直接显示该场玩家行的 `tank_id` / `tank_name`（来源 `PlayerResult.tankId`），
+  不执行统计、不显示无意义的 `1 场 · 100%`。
+- **数据流**：Core 聚合器在 rated-only 循环中把 `(tankId, 场次)` 直方图累计进
+  `PlayerLeagueSummary.vehicleUsage`（`List<PlayerVehicleUsage>`，只有 tankId + battles，
+  Core 不复制 Tankopedia）；Web `Mapper` 消费现有 `Tankopedia` 单一事实源做最终选择并
+  生成 `LeagueVehicleUsageDto(tankId, tankName, battles)`。API 只回 key + 数据；
+  **无可靠车辆数据时返回 null，不得伪造坦克**。
+- **贴图**：只用随前端发布的本地 WebP（`frontend/src/assets/tank-portraits/tier-x/`，经
+  `vehicle-portraits/runtime.js` 的 `loadVehiclePortrait` 按 tankId 懒加载），
+  **禁止浏览器运行时请求 BlitzKit**；快速切换选手用 token 防旧异步结果覆盖。
+  缺图 / 非 Tier X 时保留名称与统计、隐藏图片区、不显示破图图标，不影响雷达与 Drawer。
+
 ## Potential Damage（潜在伤害）
 
 Potential Damage / 潜在伤害指标已从当前产品整体移除：不再计算、不再进入 Replay data

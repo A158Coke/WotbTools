@@ -1,5 +1,6 @@
 package com.wotb.web.replay.mapper;
 
+import com.wotb.core.league.PlayerVehicleUsage;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Agg;
@@ -7,6 +8,7 @@ import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
 import com.wotb.web.replay.dto.AggRow;
 import com.wotb.web.replay.dto.BattleDto;
+import com.wotb.web.replay.dto.LeagueVehicleUsageDto;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -205,6 +207,69 @@ class ReplayMapperTest {
                 .players().getFirst().cells();
         assertEquals(50.0, ((Number) c2.get("hit_rate")).doubleValue(), 1e-9);
         assertEquals(80.0, ((Number) c2.get("pen_rate")).doubleValue(), 1e-9);
+    }
+
+    // ---- 最常使用坦克选择（Mapper.selectMostUsedVehicle）----
+
+    @Test
+    void selectsMostUsedVehicleByCountThenNameThenTankId() {
+        // 三辆坦克使用次数相同（3 场），按官方名忽略大小写字母表升序 → E 100（E < I < M）。
+        final List<PlayerVehicleUsage> usage = List.of(
+                new PlayerVehicleUsage(1, 3),  // Maus
+                new PlayerVehicleUsage(2, 3),  // IS-7
+                new PlayerVehicleUsage(3, 3)); // E 100
+        final java.util.Map<Long, String> names = java.util.Map.of(1L, "Maus", 2L, "IS-7", 3L, "E 100");
+        final LeagueVehicleUsageDto dto = Mapper.selectMostUsedVehicle(usage, names::get);
+        assertEquals(3, dto.tankId(), "名称字母表第一辆（E 100）");
+        assertEquals("E 100", dto.tankName());
+        assertEquals(3, dto.battles());
+    }
+
+    @Test
+    void selectsByBattlesCountDescendingFirst() {
+        // 4 场 > 3 场：优先场次最多的坦克，不看名称。
+        final List<PlayerVehicleUsage> usage = List.of(
+                new PlayerVehicleUsage(1, 3),
+                new PlayerVehicleUsage(2, 4));
+        final java.util.Map<Long, String> names = java.util.Map.of(1L, "Maus", 2L, "IS-7");
+        final LeagueVehicleUsageDto dto = Mapper.selectMostUsedVehicle(usage, names::get);
+        assertEquals(2, dto.tankId(), "场次最多获胜");
+        assertEquals(4, dto.battles());
+    }
+
+    @Test
+    void selectsByTankNameIgnoringCase() {
+        // 名称仅大小写不同（忽略大小写视为相等）→ 按 tankId 升序稳定选择。
+        final List<PlayerVehicleUsage> usage = List.of(
+                new PlayerVehicleUsage(10, 2),
+                new PlayerVehicleUsage(20, 2));
+        final java.util.Map<Long, String> names = java.util.Map.of(10L, "Alpha", 20L, "alpha");
+        final LeagueVehicleUsageDto dto = Mapper.selectMostUsedVehicle(usage, names::get);
+        assertEquals(10, dto.tankId(), "忽略大小写相等 → tankId 升序");
+    }
+
+    @Test
+    void selectsByTankIdAscendingWhenNamesIdentical() {
+        final List<PlayerVehicleUsage> usage = List.of(
+                new PlayerVehicleUsage(5, 2),
+                new PlayerVehicleUsage(7, 2));
+        final java.util.Map<Long, String> names = java.util.Map.of(5L, "IS-7", 7L, "IS-7");
+        final LeagueVehicleUsageDto dto = Mapper.selectMostUsedVehicle(usage, names::get);
+        assertEquals(5, dto.tankId(), "名称完全相同 → tankId 升序");
+    }
+
+    @Test
+    void returnsNullWhenVehicleNameUnavailable() {
+        // 最常使用坦克的官方名无法解析 → 返回 null（不得伪造坦克、不回退下一辆）。
+        final List<PlayerVehicleUsage> usage = List.of(new PlayerVehicleUsage(1, 5));
+        final java.util.function.Function<Long, String> nameOf = id -> id == 1L ? null : "Other";
+        assertEquals(null, Mapper.selectMostUsedVehicle(usage, nameOf));
+    }
+
+    @Test
+    void returnsNullWhenNoVehicleUsage() {
+        assertEquals(null, Mapper.selectMostUsedVehicle(List.of(), id -> "X"));
+        assertEquals(null, Mapper.selectMostUsedVehicle(null, id -> "X"));
     }
 
     private static PlayerResult player(final long accountId, final boolean survived) {

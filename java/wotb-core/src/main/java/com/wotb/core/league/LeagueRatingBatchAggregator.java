@@ -1,9 +1,11 @@
 package com.wotb.core.league;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +34,13 @@ public final class LeagueRatingBatchAggregator {
                 continue;
             }
             final Integer winner = battle.winnerTeam;
+            // 本场 PlayerResult 按 accountId 关联，用于累计每名已评分选手的真实坦克使用。
+            final Map<Long, PlayerResult> playerByAccount = new HashMap<>();
+            if (battle.players != null) {
+                for (final PlayerResult pr : battle.players) {
+                    playerByAccount.put(pr.accountId, pr);
+                }
+            }
             for (final PlayerLeagueRating p : result.players()) {
                 final PlayerAcc acc = players.computeIfAbsent(p.accountId(), k -> new PlayerAcc());
                 acc.nickname = p.nickname();
@@ -49,6 +58,10 @@ public final class LeagueRatingBatchAggregator {
                 acc.damageTotal += p.damageDealt();
                 acc.assistTotal += p.damageAssisted();
                 acc.killsTotal += p.kills();
+                final PlayerResult pr = playerByAccount.get(p.accountId());
+                if (pr != null) {
+                    acc.vehicleCounts.merge(pr.tankId, 1, Integer::sum);
+                }
             }
             for (final TeamLeagueRating team : new TeamLeagueRating[]{result.team1(), result.team2()}) {
                 if (team == null || team.players().isEmpty()) {
@@ -78,11 +91,17 @@ public final class LeagueRatingBatchAggregator {
             final double rawMedian = median(acc.ratings);
             final double batchRatingV5 =
                     LeagueBatchPlayerRatingCalculator.apply(rawMedian, acc.battles);
+            // 坦克使用直方图（tankId -> battles），按 tankId 升序保证稳定；最终选择在 Web Mapper。
+            final List<PlayerVehicleUsage> vehicleUsage = acc.vehicleCounts.entrySet().stream()
+                    .map(en -> new PlayerVehicleUsage(en.getKey(), en.getValue()))
+                    .sorted(Comparator.comparingLong(PlayerVehicleUsage::tankId))
+                    .toList();
             playerSummaries.add(new PlayerLeagueSummary(
                     e.getKey(), acc.nickname, acc.clan, acc.battles,
                     rawMedian, batchRatingV5,
                     chunkMedians(acc.dims), chunkMeans(acc.dims),
-                    acc.mvpCount, acc.wins, acc.damageTotal, acc.assistTotal, acc.killsTotal));
+                    acc.mvpCount, acc.wins, acc.damageTotal, acc.assistTotal, acc.killsTotal,
+                    vehicleUsage));
         }
         final List<TeamLeagueSummary> teamSummaries = new ArrayList<>();
         for (final Map.Entry<String, TeamAcc> e : teams.entrySet()) {
@@ -208,6 +227,7 @@ public final class LeagueRatingBatchAggregator {
         long damageTotal;
         long assistTotal;
         long killsTotal;
+        final Map<Long, Integer> vehicleCounts = new HashMap<>();
     }
 
     private static final class TeamAcc {
