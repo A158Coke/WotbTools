@@ -5,6 +5,27 @@
 ## [Unreleased]
 
 ### Added
+- **Player Detail Drawer Rating Profile 升级（纯前端，零后端改动）**：
+  - Radar 只保留 League Rating 七维（移除 contribution/kast 作为 Radar 轴，归 Performance Metrics）；
+    新增 Battle/Global Average 参考多边形（新 `frontend/src/utils/radarReference.js` 纯函数：selected
+    玩家必含、accountId 去重等权、恒定 cohort 跨维（§25）、按 accountId 排序保证确定性、V5 隔离）。
+  - 几何抽到 `frontend/src/utils/radarGeometry.js`（组件 + 导出共用，§48）；4 层网格 25/50/75/100 +
+    单侧刻度（§17-18）；轴标签仅维度名、不印数值（§19）；三列 detail（Dimension/Player/avg，
+    score/max 无百分比、无差值列，§20-21）。
+  - 缺维契约（§24/§67）：player 缺任一所选维 → 整图 unavailable；reference cohort 不完整 →
+    reference 不可用（不制造假闭合多边形）。
+  - Header scope（§6/§7）：单场 = V4.1；批次 = V5 Rating + Observed Median + Rated Battles（次级）。
+  - 导航（§28-32）：表格 `select-player` 提供当前可见顺序（order），ReplayPage prev/next 跟随表格
+    排序、边界禁用、scope 不跨界；键盘 ←/→/Esc（避开输入控件）。
+  - 动画（§34-40）：Drawer 关闭 slide-out（先出屏再卸载）、player 切换方向两段式、rapid-safe
+    （Vue Transition 中断）、`prefers-reduced-motion` 关闭。
+  - 导出（§41-48）：Drawer 内「导出画像 PNG」——专用 offscreen 卡片（非截 Drawer），复用
+    radarGeometry，实色 token 规避 color-mix 在 html2canvas 的兼容问题；单场 V4.1 + Battle Avg、
+    批次 V5 + Median + Battles + Global Avg。
+  - 旧 Radar 偏好含 contribution/kast/impact 被静默过滤（§66），无迁移代码、无双路径；i18n
+    zh/en/ru 新增 `radar_labels`/`radar_lbl` 与 `league.drawer.*` 文案。
+  - 测试：`radarReference.test.js`（+`radarMetrics.test.js` 更新）、`PlayerRatingRadar.test.js`、
+    `PlayerDetailDrawer.test.js`、`BattleTable.test.js`；`npm test`（1199）与 `npm run build` 通过。
 - **League Rating V5 Batch Evidence Adjustment（后端 + 前端 + 导出）**：
   - 新增纯 domain `LeagueBatchPlayerRatingCalculator`（无 Spring/DB/IO）：`E(n)=1-exp(-n/6)`、
     Anchor=450、单边调整（raw≤450 完全不加分）、0–1000 clamp、`n<=0`/非有限 raw fail closed；
