@@ -400,9 +400,11 @@ Team Rating 计算；Radar aggregation 只发生在多场 player summary visuali
 
 - **Summary**：显示当前上传批次中该选手的 **rated-only** 场次里使用最多的坦克
   （贴图 + 官方名 + 使用场次 + 使用比例 `mostUsed.battles / ratedBattles`）。
-- **判定**：只统计 rated battle；按 `tankId` 累计场次；场次最多者胜出。**并列时**按
-  Tankopedia 官方 `tankName` 忽略大小写升序选择第一辆；名称仍相同再按 `tankId` 升序
-  稳定兜底。不使用最近出场时间 / Rating / 胜率 / 伤害打破平局。
+- **判定**：只统计 rated battle；按 `tankId` 累计场次；场次最多者胜出。**并列时**只对具有
+  可靠官方名的坦克按 `tankName` 忽略大小写升序选择第一辆，名称仍相同再按 `tankId` 升序
+  稳定兜底。Tankopedia 对未知 ID 返回的 `#<tankId>` 占位名视作「无可靠名称」——不参与排序、
+  不伪造坦克；若全部最大次数候选均无可靠名称则返回 null。不使用最近出场时间 / Rating /
+  胜率 / 伤害打破平局，也不退回使用次数较少的坦克。
 - **Battle**：直接显示该场玩家行的 `tank_id` / `tank_name`（来源 `PlayerResult.tankId`），
   不执行统计、不显示无意义的 `1 场 · 100%`。
 - **数据流**：Core 聚合器在 rated-only 循环中把 `(tankId, 场次)` 直方图累计进

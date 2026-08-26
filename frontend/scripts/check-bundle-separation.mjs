@@ -22,6 +22,8 @@ import { fileURLToPath } from 'node:url'
 
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist')
 const ASSET_MARK = 'vehicle-models/assets'
+// vehicle-portraits/runtime.js 的坦克贴图 glob 相对键前缀（构建后键含 "tank-portraits"）
+const PORTRAIT_MARK = 'tank-portraits'
 // runtime.js 的 import.meta.glob 相对键前缀（构建后保留，如 "./assets/maus/metadata.json"）
 const RUNTIME_GLOB_MARK = './assets/'
 
@@ -43,11 +45,12 @@ function main() {
   const entryJs = fs.readFileSync(entryPath, 'utf8')
   let failures = 0
 
-  if (entryJs.includes(ASSET_MARK)) {
-    console.error(`[FAIL] 主入口 ${entryName} 包含车型资产标记（${ASSET_MARK}）——资产被静态 import 进主 bundle`)
+  if (entryJs.includes(ASSET_MARK) || entryJs.includes(PORTRAIT_MARK)) {
+    const marks = [ASSET_MARK, PORTRAIT_MARK].filter((m) => entryJs.includes(m)).join(', ')
+    console.error(`[FAIL] 主入口 ${entryName} 包含车型/贴图资产标记（${marks}）——资产被静态 import 进主 bundle`)
     failures += 1
   } else {
-    console.log(`[PASS] 主入口 ${entryName} 不含车型资产标记`)
+    console.log(`[PASS] 主入口 ${entryName} 不含车型/坦克贴图资产标记`)
   }
 
   const assetsDir = path.join(DIST, 'assets')
@@ -63,6 +66,20 @@ function main() {
     console.log(`[PASS] 车型资产引用已分离到独立 chunk（生产 runtime）：${runtimeChunks.join(', ')}`)
   } else {
     console.error(`[FAIL] 未找到包含车型资产引用的独立 chunk（${RUNTIME_GLOB_MARK} + metadata.json）——代码分割失效`)
+    failures += 1
+  }
+
+  // tank-portraits 运行时 chunk：非主入口 chunk 含坦克贴图 glob 引用 → 生产 runtime 动态分离成立
+  const portraitChunks = allJs.filter((f) => {
+    const abs = path.join(assetsDir, f)
+    if (abs === entryPathAbs) return false
+    const c = fs.readFileSync(abs, 'utf8')
+    return c.includes(PORTRAIT_MARK)
+  })
+  if (portraitChunks.length > 0) {
+    console.log(`[PASS] 坦克贴图 glob 引用已分离到独立 chunk：${portraitChunks.join(', ')}`)
+  } else {
+    console.error(`[FAIL] 未找到包含坦克贴图 glob 引用的独立 chunk（${PORTRAIT_MARK}）——贴图 runtime 被静态拉入主加载路径`)
     failures += 1
   }
 

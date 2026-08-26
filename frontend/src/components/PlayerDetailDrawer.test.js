@@ -446,10 +446,14 @@ describe('PlayerDetailDrawer 坦克展示（Summary=最常使用；Battle=本场
     }))
     const playerA = { ...SUMMARY_PLAYER, mostUsedVehicle: { tankId: 111, tankName: 'A', battles: 3 }, ratedBattles: 8 }
     const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, playerA)
+    await flushPromises() // 动态 import 完成，loadVehiclePortrait(111) 已注册
+    expect(typeof deferred[111]).toBe('function')
     // 切到玩家 B
     const playerB = { ...SUMMARY_PLAYER, mostUsedVehicle: { tankId: 222, tankName: 'B', battles: 2 }, ratedBattles: 8 }
     await wrapper.setProps({ player: playerB })
-    // 旧玩家 A 的图晚到：必须被丢弃
+    await flushPromises()
+    expect(typeof deferred[222]).toBe('function')
+    // 旧玩家 A 的图晚到：必须被丢弃（token 已变）
     deferred[111]('http://a.png')
     await flushPromises()
     expect(wrapper.find('[data-testid="player-vehicle-img"]').exists()).toBe(false)
@@ -459,10 +463,37 @@ describe('PlayerDetailDrawer 坦克展示（Summary=最常使用；Battle=本场
     expect(wrapper.find('[data-testid="player-vehicle-img"]').attributes('src')).toBe('http://b.png')
   })
 
-  it('导出卡包含坦克信息（与 Drawer 同数据源）', () => {
+  it('导出卡包含坦克信息（与 Drawer 同数据源）+ 动态 import runtime', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/PlayerDetailDrawer.vue'), 'utf8')
     expect(source).toContain('rp-vehicle')
     expect(source).toContain('exportPortrait')
     expect(source).toContain('ensureVehiclePortraitForExport')
+    // Blocker 2：不得顶层静态 import vehicle-portraits runtime（须动态 import 保持分离）
+    expect(source).not.toContain("import { loadVehiclePortrait } from '../vehicle-portraits/runtime.js'")
+    expect(source).toContain("import('../vehicle-portraits/runtime.js')")
+  })
+
+  it('Battle：tankId=0 / null / 空名 / 占位名 不渲染坦克区（无空卡片）', async () => {
+    const cases = [
+      { tankId: 0, tankName: 'Zero' },
+      { tankId: null, tankName: 'Null' },
+      { tankId: 4481, tankName: '' },
+      { tankId: 4481, tankName: '#4481' },
+    ]
+    for (const c of cases) {
+      const player = { ...BATTLE_PLAYER, tankId: c.tankId, tankName: c.tankName }
+      const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, player)
+      await flushPromises()
+      expect(wrapper.find('[data-testid="player-vehicle"]').exists()).toBe(false)
+      wrapper.unmount()
+    }
+  })
+
+  it('Battle：合法 tankId + 名称 正常显示', async () => {
+    const player = { ...BATTLE_PLAYER, tankId: 7169, tankName: 'IS-7' }
+    const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, player)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="player-vehicle"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('IS-7')
   })
 })

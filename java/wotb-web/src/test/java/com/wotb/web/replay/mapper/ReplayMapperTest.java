@@ -272,6 +272,39 @@ class ReplayMapperTest {
         assertEquals(null, Mapper.selectMostUsedVehicle(null, id -> "X"));
     }
 
+    @Test
+    void realTankopediaUnknownIdYieldsNullDto() {
+        // 未知 tankId → Tankopedia.info 返回 "#<id>" 占位名 → 不视为可靠官方名 → DTO null（不伪造）。
+        final Tankopedia tp = Tankopedia.load();
+        final List<PlayerVehicleUsage> usage = List.of(new PlayerVehicleUsage(99999999L, 3));
+        assertEquals(null, Mapper.selectMostUsedVehicle(usage, id -> Mapper.vehicleName(id, tp)));
+    }
+
+    @Test
+    void unknownNameTiePrefersKnownCandidate() {
+        // 并列最多：未知（占位名）与已知官方名 → 剔除占位名后选择已知名候选。
+        final List<PlayerVehicleUsage> usage = List.of(
+                new PlayerVehicleUsage(99999999L, 3),
+                new PlayerVehicleUsage(1, 3));
+        final java.util.Map<Long, String> names = java.util.Map.of(99999999L, "#99999999", 1L, "Maus");
+        final LeagueVehicleUsageDto dto = Mapper.selectMostUsedVehicle(usage, names::get);
+        assertNotNull(dto, "剔除占位名后应选择已知名候选");
+        assertEquals(1, dto.tankId(), "选择已知官方名候选");
+        assertEquals("Maus", dto.tankName());
+        assertEquals(3, dto.battles());
+    }
+
+    @Test
+    void uniqueMaxUnknownNameReturnsNullAndNoFallback() {
+        // 唯一最多候选名称未知（占位名）→ null，不退回使用次数较少的坦克。
+        final List<PlayerVehicleUsage> usage = List.of(
+                new PlayerVehicleUsage(99999999L, 5),
+                new PlayerVehicleUsage(1, 2));
+        final java.util.Map<Long, String> names = java.util.Map.of(99999999L, "#99999999", 1L, "Maus");
+        assertEquals(null, Mapper.selectMostUsedVehicle(usage, names::get),
+                "最大次数候选无可靠名称时不退回低次数候选");
+    }
+
     private static PlayerResult player(final long accountId, final boolean survived) {
         final PlayerResult player = new PlayerResult();
         player.accountId = accountId;
