@@ -113,9 +113,8 @@ describe('Classic Profile — 真浅色主题契约（Theme 计划：Classic=Lig
   })
 })
 
-describe('Classic 深色冲突 selector→declaration 绑定（Blocker 1/2：白底浅字 / 深色残留）', () => {
+describe('Classic 深色冲突 selector→declaration 绑定（须带 !important 战胜 Showcase 深色）', () => {
   const css = stripComments(classic)
-  // 找到 selector 含 frag 且带 html[data-ui-profile 前缀的规则体（隔离我追加的覆盖，避开旧「去 AI 背景」的 background:none 规则）。
   const declOf = (frag) => {
     for (const preferHtml of [true, false]) {
       for (const chunk of css.split(/}/).filter((c2) => c2.includes('{'))) {
@@ -127,61 +126,76 @@ describe('Classic 深色冲突 selector→declaration 绑定（Blocker 1/2：白
     }
     throw new Error('selector not found in classic-profile.css: ' + frag)
   }
-  const has = (frag, re) => {
+  // 断言声明体含片段（值必须带 !important，证明最终级联战胜 Showcase 的 !important 深色规则）。
+  const has = (frag, subs) => {
     const body = declOf(frag)
-    expect(body, 'selector ' + frag + ' 缺规则声明').toMatch(re)
+    for (const sub of subs) expect(body + '', 'selector ' + frag + ' 缺 ' + sub).toContain(sub)
   }
 
-  it('Home：hero 标题/副标题/次级 CTA/Record Card 白底配深色字 + 浅边框', () => {
-    has('.showcase-hero h1', /color:\s*var\(--text-heading\)\s*;\s*text-shadow:\s*none/)
-    has('.hero-subtitle', /color:\s*var\(--text-sub\)/)
-    has('.hero-btn.secondary', /background:\s*var\(--bg-card\)\s*;\s*color:\s*var\(--text\)/)
-    has('.record-card', /background:\s*var\(--bg-card\)\s*;\s*color:\s*var\(--text-heading\)/)
-    has('.record-card > span', /color:\s*var\(--text-sub\)/)
-    has('.mini-action', /background:\s*var\(--bg-card\)\s*;\s*color:\s*var\(--text\)/)
+  it('Home：hero 标题/副标题/次级 CTA/Record Card 白底深字且带 !important', () => {
+    has('.showcase-hero h1', ['color: var(--text-heading) !important', 'text-shadow: none !important'])
+    has('.hero-subtitle', ['color: var(--text-sub) !important'])
+    has('.hero-btn.secondary', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
+    has('.record-card', ['background: var(--bg-card) !important', 'color: var(--text-heading) !important'])
+    has('.record-card > span', ['color: var(--text-sub) !important'])
+    has('.mini-action', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
   })
 
-  it('用户菜单：菜单项/Hover/Danger/分段控件 用浅色底+深色字', () => {
-    has('.user-menu-panel .user-menu-item', /color:\s*var\(--text\)\s*!important/)
-    has('.user-menu-panel .user-menu-item:hover', /background:\s*var\(--bg-list-hover\)\s*!important/)
-    has('.user-menu-panel .user-menu-item.danger', /color:\s*var\(--delete\)\s*!important/)
-    has('.ui-profile-option.active', /background:\s*var\(--accent\)\s*;\s*color:\s*var\(--accent-text\)/)
+  it('用户菜单：菜单项/Hover/Danger/分段控件 浅底深字 !important', () => {
+    has('.user-menu-panel .user-menu-item', ['color: var(--text) !important'])
+    has('.user-menu-panel .user-menu-item:hover', ['background: var(--bg-list-hover) !important'])
+    has('.user-menu-panel .user-menu-item.danger', ['color: var(--delete) !important'])
+    has('.ui-profile-option.active', ['background: var(--accent) !important', 'color: var(--accent-text) !important'])
   })
 
-  it('Replay 上传区：Heading/Card/Filebar/Tablewrap/Ghost 按钮 浅色底+深色字', () => {
-    has('.uploadhead h1', /color:\s*var\(--text-heading\)\s*!important/)
-    has('.uploadcard', /background:\s*var\(--bg-upload\)\s*!important/)
-    has('.uploadcard .up-title', /color:\s*var\(--text-heading\)\s*!important/)
-    has('.filebar', /background:\s*var\(--bg-upload\)\s*!important/)
-    has('.tablewrap', /background:\s*var\(--bg-card\)/)
-    has('.filebtn.ghost', /background:\s*var\(--bg-card\)\s*!important\s*;\s*color:\s*var\(--text\)\s*!important/)
-    has('.tabs button', /color:\s*var\(--text-sub\)/)
+  it('Replay 上传区：Heading/Card/Filebar/Ghost 按钮 浅底深字 !important', () => {
+    has('.uploadhead h1', ['color: var(--text-heading) !important'])
+    has('.uploadcard', ['background: var(--bg-upload) !important'])
+    has('.uploadcard .up-title', ['color: var(--text-heading) !important'])
+    has('.filebar', ['background: var(--bg-upload) !important'])
+    has('.filebtn.ghost', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
+    has('.tabs button', ['color: var(--text-sub) !important'])
+    has('.upload-points span', ['background:', 'border-color:', 'color: var(--text-sub) !important'])
   })
 
-  it('Boost：Topbar/Tabs/Card/List 浅色底+深色字', () => {
-    has('.boost-topbar', /background:\s*var\(--bg-card\)\s*!important/)
-    has('.boost-tabs button', /color:\s*var\(--text-sub\)\s*!important/)
-    has('.boost-card', /background:\s*var\(--bg-card\)\s*!important/)
-    has('.boost-page :is(.boost-list, .request-list, .booster-list, .admin-list)', /background:\s*var\(--bg-card\)\s*!important/)
+  it('回归：Replay .tablewrap 必须 background/border-color/color/box-shadow 全带 !important', () => {
+    has('.layout-data-workspace .tablewrap', [
+      'background: var(--bg-card) !important',
+      'border-color: var(--border) !important',
+      'color: var(--text) !important',
+      'box-shadow: var(--surface-shadow) !important',
+    ])
   })
 
-  it('HoF：Toolbar/Table Header/Upload Modal 浅色', () => {
-    has('.lb-toolbar', /background:\s*color-mix\(in srgb, var\(--bg-card\) 94%, transparent\)\s*!important/)
-    has('.lb-wrap thead th', /background:\s*var\(--bg-card2\)\s*!important/)
-    has('.hof-upload-modal', /background:\s*var\(--bg-card\)\s*!important/)
+  it('Boost：Topbar/Tabs/Card/List 浅底深字 !important', () => {
+    has('.boost-topbar', ['background: var(--bg-card) !important'])
+    has('.boost-tabs button', ['color: var(--text-sub) !important'])
+    has('.boost-card', ['background: var(--bg-card) !important'])
+    has('.boost-page :is(.boost-list, .request-list, .booster-list, .admin-list)', ['background: var(--bg-card) !important'])
   })
 
-  it('HoF Admin：Tabs/Filters/Table/Button/Pagination 浅色', () => {
-    has('.hof-admin-tabs button.active', /color:\s*var\(--accent-dark\)/)
-    has('.hof-admin-filters :is(input, select)', /background:\s*var\(--bg-card\)\s*!important/)
-    has('admin-hof-page) thead th', /background:\s*var\(--bg-card2\)\s*!important/)
-    has('.hof-admin .pagination button', /background:\s*var\(--bg-card\)\s*;\s*color:\s*var\(--text-sub\)/)
+  it('HoF：Toolbar/Table Header/Upload Modal 浅色 !important', () => {
+    has('.lb-toolbar', ['background: color-mix(in srgb, var(--bg-card) 94%, transparent) !important'])
+    has('.lb-wrap thead th', ['background: var(--bg-card2) !important'])
+    has('.hof-upload-modal', ['background: var(--bg-card) !important'])
   })
 
-  it('Version/Contact/Admin/Player Drawer 浅色', () => {
-    has('.version-page .ver', /background:\s*var\(--bg-card\)\s*!important/)
-    has('.contact-card', /background:\s*var\(--bg-card\)\s*!important/)
-    has('.admin-table th', /background:\s*var\(--bg-card2\)\s*!important/)
-    has('.player-drawer .pd-vehicle', /background:\s*var\(--bg-card\)\s*;\s*border-color:\s*var\(--border-light\)/)
+  it('HoF Admin：Tabs(默认+active)/Filters/Table/Pagination 浅色 !important', () => {
+    has('.hof-admin-tabs button', ['color: var(--text-sub) !important'])
+    has('.hof-admin-tabs button.active', ['color: var(--accent-dark) !important'])
+    has('.hof-admin-filters :is(input, select)', ['background: var(--bg-card) !important'])
+    has('admin-hof-page) thead th', ['background: var(--bg-card2) !important'])
+    has('.hof-admin .pagination button', ['background: var(--bg-card) !important', 'color: var(--text-sub) !important'])
+  })
+
+  it('回归：HoF Admin tbody td 必须 color var(--text) !important（防白底浅字）', () => {
+    has('admin-hof-page) tbody td', ['color: var(--text) !important'])
+  })
+
+  it('Version/Contact/Admin/Player Drawer 浅色 !important', () => {
+    has('.version-page .ver', ['background: var(--bg-card) !important'])
+    has('.contact-card', ['background: var(--bg-card) !important'])
+    has('.admin-table th', ['background: var(--bg-card2) !important'])
+    has('.player-drawer .pd-vehicle', ['background: var(--bg-card) !important', 'border-color: var(--border-light) !important'])
   })
 })
