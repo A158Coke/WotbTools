@@ -16,8 +16,9 @@ import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
-import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noFields;
+import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_USE_FIELD_INJECTION;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -54,7 +55,7 @@ class WebArchitectureTest {
                     "com.wotb.web..entity..");
 
     @ArchTest
-    static final ArchRule SERVICES_USE_ONLY_OWN_DOMAIN_REPOSITORIES = noClasses()
+    static final ArchRule SERVICES_USE_ONLY_OWN_DOMAIN_REPOSITORIES = classes()
             .that().resideInAPackage("com.wotb.web..service..")
             .should(new ArchCondition<>("only depend on repositories of their own domain") {
                 @Override
@@ -80,8 +81,7 @@ class WebArchitectureTest {
             });
 
     @ArchTest
-    static final ArchRule NO_FIELD_INJECTION = noFields()
-            .should().beAnnotatedWith(org.springframework.beans.factory.annotation.Autowired.class);
+    static final ArchRule NO_FIELD_INJECTION = NO_CLASSES_SHOULD_USE_FIELD_INJECTION;
 
     @ArchTest
     static final ArchRule NO_LOMBOK = noClasses()
@@ -108,13 +108,15 @@ class WebArchitectureTest {
 
     private static String domainOf(final JavaClass clazz) {
         final String pkg = clazz.getPackageName();
-        for (final String domain : DOMAINS) {
-            if (pkg.equals("com.wotb.web." + domain)
-                    || pkg.startsWith("com.wotb.web." + domain + ".")) {
-                return domain;
-            }
+        final String prefix = "com.wotb.web.";
+        if (!pkg.startsWith(prefix)) {
+            return null;
         }
-        return null;
+        final int serviceIdx = pkg.indexOf(".service", prefix.length());
+        if (serviceIdx < 0) {
+            return null;
+        }
+        return pkg.substring(prefix.length(), serviceIdx);
     }
 
     private static boolean isRepositoryPackage(final String pkg) {
