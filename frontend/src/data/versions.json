@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.39",
+    "date": "2026-08-26",
+    "tag": "add",
+    "zh": "新增「界面风格」切换：可从用户菜单在「简约 / 沉浸」两种展示风格间切换（默认沉浸）。简约风格保留现有布局与结构，只去掉全屏 AI 背景与装饰性展示元素，视觉更克制；偏好保存在本机浏览器，切换不影响已解析的回放、AI 复盘、战局回放进度、名人堂表单、权限或数据。",
+    "en": "New Interface style switcher: toggle between Simplified and Immersive presentation from the user menu (default Immersive). Simplified keeps the exact layout and structure, only dropping the full-screen AI backgrounds and decorative showcase elements for a more restrained look. The preference is stored locally in your browser; switching does not affect parsed replays, AI review, battle playback progress, Hall-of-Fame draft, permissions, or data.",
+    "ru": "Новый переключатель «Стиль интерфейса»: выбор между «Упрощённый» и «Иммерсивный» видами через меню пользователя (по умолчанию «Иммерсивный»). Упрощённый сохраняет прежнюю структуру и макет, лишь убирая полноэкранные AI-фоны и декоративные элементы для более сдержанного вида. Настройка хранится локально в браузере; переключение не влияет на разобранные реплеи, AI-обзор, прогресс воспроизведения боя, черновик Зала славы, права или данные."
+  },
+  {
     "v": "2.12.38",
     "date": "2026-08-26",
     "tag": "add",

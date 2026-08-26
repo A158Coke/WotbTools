@@ -5,6 +5,8 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
+import { setUiProfile } from './composables/useUiProfile.js'
 
 // 重视图 mock 为轻组件（本测试只验证 view 解析，不挂载重型页面）
 vi.mock('./components/ReplayPage.vue', () => ({ default: { name: 'ReplayPageMock', template: '<div data-test="view-replay" />' } }))
@@ -84,6 +86,30 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
     await flushPromises()
     expect(wrapper.find('nav').text()).not.toContain('ratingV2.title')
     expect(wrapper.text()).toContain('ratingV2.login')
+  })
+
+  it('§39 切换 UI Profile 不得 navigate / remount / 改变当前视图', async () => {
+    const wrapper = mountApp()
+    await flushPromises()
+    // localhost → 默认回放视图
+    expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(true)
+
+    // 切 Classic：只改 data-ui-profile + localStorage + 状态,视图/activeTool 不变
+    setUiProfile('classic')
+    await nextTick()
+    expect(document.documentElement.getAttribute('data-ui-profile')).toBe('classic')
+    expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="view-home"]').exists()).toBe(false)
+
+    // 切回 Showcase
+    setUiProfile('showcase')
+    await nextTick()
+    expect(document.documentElement.getAttribute('data-ui-profile')).toBe('showcase')
+    expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(true)
+
+    // 清理
+    document.documentElement.removeAttribute('data-ui-profile')
+    window.localStorage.removeItem('wotb-ui-profile')
   })
 })
 
