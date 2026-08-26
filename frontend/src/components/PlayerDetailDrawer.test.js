@@ -123,16 +123,27 @@ describe('PlayerDetailDrawer', () => {
     expect(wrapper.find('.radar-stub').exists()).toBe(true)
   })
 
-  it('emits close on backdrop click（先 slide-out 再 emit close，§34）', async () => {
-    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+  it('mobile(≤767px) backdrop 点击关闭（modal，§34）；desktop backdrop 点击不关闭（非模态）', async () => {
+    // 桌面：backdrop 是 click-through，点击不应关闭
+    window.innerWidth = 1024
+    const desktop = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await desktop.find('.drawer-backdrop').trigger('click')
+    expect(desktop.find('.player-drawer').classes()).not.toContain('pd-closing')
+    expect(desktop.emitted('close')).toBeFalsy()
+    expect(desktop.find('.drawer-backdrop').classes()).not.toContain('pd-modal')
+
+    // 移动端：isMobile=true → modal backdrop 点击关闭（slide-out 后 emit close）
+    window.innerWidth = 375
+    const mobile = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
     vi.useFakeTimers()
-    await wrapper.find('.drawer-backdrop').trigger('click')
-    // 关闭动画期间 drawer 仍在 DOM，带 pd-closing
-    expect(wrapper.find('.player-drawer').exists()).toBe(true)
-    expect(wrapper.find('.player-drawer').classes()).toContain('pd-closing')
+    await mobile.find('.drawer-backdrop').trigger('click')
+    expect(mobile.find('.player-drawer').exists()).toBe(true)
+    expect(mobile.find('.player-drawer').classes()).toContain('pd-closing')
+    expect(mobile.find('.drawer-backdrop').classes()).toContain('pd-modal')
     vi.advanceTimersByTime(220)
-    expect(wrapper.emitted('close')).toBeTruthy()
+    expect(mobile.emitted('close')).toBeTruthy()
     vi.useRealTimers()
+    window.innerWidth = 1024
   })
 
   it('emits close on Escape keydown', async () => {
@@ -368,6 +379,18 @@ describe('Drawer stacking / layout contract', () => {
     const mobileBlock = source.match(/@media \(max-width: 1080px\) \{[\s\S]*?\n\}/)?.[0] || ''
     expect(mobileBlock).toContain('.drawer-backdrop { z-index: var(--z-modal); }')
     expect(mobileBlock).toContain('.player-drawer { top: 8px; }')
+  })
+
+  it('aria-modal 只在移动端 modal 生效（桌面非模态，不误导辅助技术）', async () => {
+    window.innerWidth = 1024
+    const desktop = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await flushPromises()
+    expect(desktop.find('.player-drawer').attributes('aria-modal')).toBeUndefined()
+    window.innerWidth = 375
+    const mobile = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await flushPromises()
+    expect(mobile.find('.player-drawer').attributes('aria-modal')).toBe('true')
+    window.innerWidth = 1024
   })
 
   it('关闭按钮保留在 drawer（退出动画期间仍可关闭）', () => {
