@@ -59,7 +59,7 @@
 - 单发车辆 `field2=3` 与 shot count / reload duration 闭环；约 `0.853` 动态快档在当前 corpus 中行为上可确定为 Adrenaline reload effect，低 HP 技能解释已由高血量反例排除。
 - Kranvagn/Felice 不允许 Adrenaline 且不使用单发 `field2=3` family；其 `field2=7` 与 shots 呈一对一/仅缺失的关系并携带稳定的 gun-cycle timer，证明 wrapper15 是供弹机制感知的状态机。
 - Avatar method20 为 `stopTracer(shotId,endPoint)`；method29 为 projectile/tracer launch family，其 launch vector 与 `endPoint-startPoint` 在约 98.8% 样本中方向余弦 >0.99。
-- Type32 为 `entityId + flag + bodyLength + body`；16,850/16,850 长度闭合，且同时路由到 Type5 mobile/static 实体，body 语义仍未知。
+- Type32 为 `entityId + flag + bodyLength + body`；16,850/16,850 长度闭合并同时路由到 Type5 mobile/static 实体。mobile `flag=0` 长 body 已证明含 `float32*65536` 缩放时钟，其余 body 语义仍为 PARTIAL/UNKNOWN。
 
 ### 仍需研究
 

@@ -52,7 +52,7 @@ The raw clock includes pre-battle time. It must not be equated directly with bat
 | 28 | UNKNOWN | small packet, rarely/never present in current primary corpus. |
 | 29 | UNKNOWN | low-frequency marker/end packet. |
 | 31 | PROVEN on current samples | recorder dispersion/aim-circle decay stream after firing. |
-| 32 | PROVEN envelope / UNKNOWN body semantics | entity-scoped `entityId + flag + bodyLength + body`; length prefix closes exactly on every current packet and targets both mobile and static Type5 entity families. |
+| 32 | PROVEN envelope / PARTIAL body semantics | entity-scoped `entityId + flag + bodyLength + body`; mobile `flag=0` long bodies contain a proven scaled monotonic-clock field, while remaining body semantics stay unknown. |
 | 33 | PROVEN structure | entity enter-world confirmation. |
 | 35 | PROVEN structure / PARTIAL semantic | ~10 Hz incrementing tick/counter; not a battle-start marker. |
 | 36 | UNKNOWN | low-frequency marker/end packet. |
