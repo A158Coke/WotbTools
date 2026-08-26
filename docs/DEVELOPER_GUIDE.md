@@ -243,6 +243,7 @@ Processing/Export task notification 必须低于 Modal stacking level；移动�
 - `?view=version`：版本历史。
 - `?view=contact`：联系页。
 - `?view=playback-qa`：隐藏 QA 页（admin）。
+- `?view=rating-v2`：隐藏历史 Rating V2 灰度页（仅 `wotbtools-admin`，只读 READY Processing Job）。
 
 旧 `?view=leaderboard` canonicalize 到 `hof`，旧 `?view=extended` canonicalize 到 `replay`。
 

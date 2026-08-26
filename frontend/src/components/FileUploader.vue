@@ -11,7 +11,12 @@ import {
 } from '../utils/replayUpload.js'
 
 const emit = defineEmits(['update:files', 'preview', 'remove-request', 'workspace-action'])
-const props = defineProps({ files: Array, loading: Boolean, confirmRemove: Boolean })
+const props = defineProps({
+  files: Array,
+  loading: Boolean,
+  confirmRemove: Boolean,
+  showWorkspaceActions: { type: Boolean, default: true }
+})
 const dragging = ref(false)
 const listOpen = ref(false)
 const actionFileKey = ref('')
@@ -197,7 +202,7 @@ function openReplayAction(mode) {
       </div>
     </div>
 
-    <div v-if="files.length" class="replay-workspace-actions">
+    <div v-if="files.length && showWorkspaceActions" class="replay-workspace-actions">
       <select v-if="files.length > 1" v-model="actionFileKey" class="replay-action-file" :aria-label="$t('upload.action_replay_selector')">
         <option value="" disabled>{{ $t('upload.action_replay_placeholder') }}</option>
         <option v-for="f in files" :key="fileKey(f)" :value="fileKey(f)">{{ displayName(f) }}</option>
