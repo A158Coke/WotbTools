@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.40",
+    "date": "2026-08-26",
+    "tag": "fix",
+    "zh": "修复选手详情侧栏：打开侧栏后不再遮挡左侧的选手表格，可直接点击表格在不同选手间切换（桌面端侧栏改为非模态面板，仅移动端保留全屏弹窗）；切换时左右箭头与表格高亮同步，数据与导出快照不受影响。",
+    "en": "Fixed the player details side panel: opening it no longer blocks the player table on the left, so you can click the table to switch between players (the desktop panel is now non-modal; only mobile keeps the full-screen overlay). Arrow navigation and table highlight stay in sync; data and export snapshots are unaffected.",
+    "ru": "Исправлена боковая панель игрока: при открытии она больше не блокирует таблицу игроков слева — теперь можно кликать по таблице и напрямую переключаться между игроками (на десктопе панель немодальная; только на мобильных остаётся полноэкранный оверлей). Стрелки и подсветка в таблице остаются синхронными; данные и снимки экспорта не затрагиваются."
+  },
+  {
     "v": "2.12.39",
     "date": "2026-08-26",
     "tag": "add",

@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- **选手详情侧栏非模态修复**：`PlayerDetailDrawer` 桌面/平板 backdrop 改 `pointer-events:none`（click-through）并移除 `aria-modal="true"`，移动端(<768px)经 `pd-modal` 恢复 modal veil+点击关闭；Grid 行 `select-player` 直达 `selectedPlayerContext`，Drawer 内容切换/表格高亮/左右箭头与导出快照同步。
 - **双 UI Profile（Classic/Showcase）运行时与 CSS 门控**（纯前端）:
   - 新增 `src/composables/useUiProfile.js`：唯一状态源（reactive ref + `localStorage["wotb-ui-profile"]` 持久化 + `<html data-ui-profile>` 投影），非法值统一回退 `showcase`；`setUiProfile`/`toggleUiProfile` O(1) 切换，不 reload/remount。
   - `frontend/index.html` 首屏防 FOUC：默认 `data-ui-profile="showcase"` + 内联脚本按存储恢复 `classic`（与 `data-theme="dark"` 并存）。
