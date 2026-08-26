@@ -135,6 +135,8 @@ function onRowClick(row) {
     scope: 'battle',
     accountId: Number(row.cells.account_id),
     arenaId: props.battle.arenaId,
+    // order = 当前可见顺序（排序后），供 Drawer 前后导航（§29）。
+    order: sorted.value.map(p => Number(p.cells.account_id)),
   })
 }
 

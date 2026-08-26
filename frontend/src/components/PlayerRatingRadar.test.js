@@ -8,104 +8,114 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key })
 }))
 
-/** 构造 metrics 轴数据（组件只消费 normalized，不负责任何业务公式）。 */
-function metric(key, label, rawValue, normalized, displayValue, available = true) {
-  return { key, label, rawValue, normalized, displayValue, available }
+/** 构造 metrics 轴对象（组件只消费 normalized，不负责任何业务公式）。 */
+function metric(key, label, rawValue, normalized, displayValue, available = true, tip = '') {
+  return { key, label, rawValue, normalized, displayValue, available, tip }
 }
 
 const SEVEN = [
-  metric('league_damage_score', '伤害', 200, 0.5, '200 / 400 · 50%'),
-  metric('league_assist_score', '助攻', 50, 0.5, '50 / 100 · 50%'),
-  metric('league_kill_score', '击杀', 50, 0.5, '50 / 100 · 50%'),
-  metric('league_exchange_score', '换血', 75, 0.5, '75 / 150 · 50%'),
-  metric('league_blocked_score', '阻挡', 25, 0.5, '25 / 50 · 50%'),
-  metric('league_survival_score', '存活/互换', 50, 0.5, '50 / 100 · 50%'),
-  metric('league_shooting_score', '射击', 50, 0.5, '50 / 100 · 50%'),
+  metric('league_damage_score', 'Damage', 200, 0.5, '200 / 400'),
+  metric('league_shooting_score', 'Shooting', 50, 0.5, '50 / 100'),
+  metric('league_kill_score', 'Kill', 50, 0.5, '50 / 100'),
+  metric('league_survival_score', 'RC', 50, 0.5, '50 / 100', true, 'Survival/Trade tip'),
+  metric('league_blocked_score', 'Blocked', 25, 0.5, '25 / 50'),
+  metric('league_exchange_score', 'Exchange', 75, 0.5, '75 / 150'),
+  metric('league_assist_score', 'Assist', 50, 0.5, '50 / 100'),
 ]
 
-function mountRadar(metrics) {
+const REF = SEVEN.map(m => ({ ...m, rawValue: 150, normalized: 0.375, displayValue: '150 / 400' }))
+
+function mountRadar(metrics, reference = null, props = {}) {
   return mount(PlayerRatingRadar, {
-    props: { metrics: metrics || SEVEN },
+    props: { metrics: metrics || SEVEN, reference, referenceLabel: 'Battle Average', playerLabel: 'Alpha', ...props },
     global: { mocks: { $t: key => key } }
   })
 }
 
 describe('PlayerRatingRadar', () => {
-  it('renders axes per metrics length (default 7) with fixed 300×300 viewBox', () => {
-    const wrapper = mountRadar()
+  it('renders 7 axes / 4 grid levels / player+reference polygons / dots / labels', () => {
+    const wrapper = mountRadar(SEVEN, REF)
     expect(wrapper.findAll('.radar-axis')).toHaveLength(7)
+    expect(wrapper.findAll('.radar-grid')).toHaveLength(4)
     expect(wrapper.findAll('.radar-dot')).toHaveLength(7)
     expect(wrapper.findAll('.radar-label')).toHaveLength(7)
     expect(wrapper.find('.radar-data').exists()).toBe(true)
-    // geometry 固定（CENTER=150 / RADIUS=120），不暴露可配置 size API
-    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 300 300')
+    expect(wrapper.find('.radar-ref').exists()).toBe(true)
+    expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 340 340')
   })
 
-  it('custom selection: axisCount = metrics.length, order follows metrics array', () => {
+  it('custom selection: axisCount = metrics.length, order follows metrics array (no perf metrics)', () => {
     const custom = [
-      metric('kast', 'KAST', 78.4, 0.784, '78.4%'),
-      metric('contribution', '贡献度', 22.4, 0.224, '22.4%'),
-      metric('league_damage_score', '伤害', 342, 0.855, '342 / 400 · 85.5%'),
-      metric('league_kill_score', '击杀', 70, 0.7, '70 / 100 · 70%'),
+      metric('league_damage_score', 'Damage', 342, 0.855, '342 / 400'),
+      metric('league_kill_score', 'Kill', 70, 0.7, '70 / 100'),
     ]
     const wrapper = mountRadar(custom)
-    expect(wrapper.findAll('.radar-axis')).toHaveLength(4)
+    expect(wrapper.findAll('.radar-axis')).toHaveLength(2)
     const labels = wrapper.findAll('.radar-label').map(n => n.text())
-    expect(labels).toEqual(['KAST', '贡献度', '伤害', '击杀'])
+    expect(labels).toEqual(['Damage', 'Kill'])
   })
 
-  it('normalizes by score/max: 200/400 and 50/100 both map to 50% radius', () => {
-    const wrapper = mountRadar()
-    const pts = wrapper.find('.radar-data').attributes('points').split(' ').map(p => p.split(',').map(Number))
-    const CENTER = 150
-    const dist0 = Math.hypot(pts[0][0] - CENTER, pts[0][1] - CENTER)
-    const dist1 = Math.hypot(pts[1][0] - CENTER, pts[1][1] - CENTER)
-    expect(dist0).toBeCloseTo(60, 1)
-    expect(dist1).toBeCloseTo(60, 1) // 50/100 = 50% → 与 200/400 半径一致
+  it('reference: dashed no-fill no-dots (class present); player gets dots', () => {
+    const wrapper = mountRadar(SEVEN, REF)
+    expect(wrapper.find('.radar-ref').exists()).toBe(true)
+    expect(wrapper.findAll('.radar-dot')).toHaveLength(7) // 仅 player 有点
   })
 
-  it('full scores map to outer ring radius', () => {
-    const wrapper = mountRadar(SEVEN.map(m => ({ ...m, rawValue: m.rawValue * 2, normalized: 1 })))
-    const pts = wrapper.find('.radar-data').attributes('points').split(' ').map(p => p.split(',').map(Number))
-    expect(Math.hypot(pts[0][0] - 150, pts[0][1] - 150)).toBeCloseTo(120, 1)
+  it('grid scale labels: single side 25/50/75/100', () => {
+    const wrapper = mountRadar(SEVEN, REF)
+    const scales = wrapper.findAll('.radar-scale').map(n => n.text())
+    expect(scales).toEqual(['25', '50', '75', '100'])
   })
 
-  it('unavailable axis: not drawn on polygon, detail shows -- (不冒充 0%)', () => {
+  it('vertex text only shows dimension name, no numeric value', () => {
+    const wrapper = mountRadar(SEVEN, REF)
+    const labelText = wrapper.findAll('.radar-label').map(n => n.text()).join(',')
+    expect(labelText).not.toMatch(/\d/)
+    // RC 短标签 + native title 提示全称
+    expect(labelText).toContain('RC')
+    expect(labelText).toContain('Survival/Trade tip')
+  })
+
+  it('missing player dimension -> 整图 unavailable（不制造假闭合多边形）', () => {
     const mixed = [
-      metric('kast', 'KAST', 78.4, 0.784, '78.4%'),
-      metric('league_damage_score', '伤害', null, null, '--', false), // Rating-ineligible 场
-      metric('impact', 'Impact', 151.2, 0.756, '151.2%'),
+      metric('league_damage_score', 'Damage', 300, 0.75, '300 / 400'),
+      metric('league_kill_score', 'Kill', null, null, '--', false),
     ]
     const wrapper = mountRadar(mixed)
-    // polygon 只连接 available 顶点
-    const pts = wrapper.find('.radar-data').attributes('points').split(' ').map(p => p.split(',').map(Number))
-    expect(pts).toHaveLength(2)
-    expect(wrapper.findAll('.radar-dot')).toHaveLength(2)
-    // detail 显示 '--'，不冒充 0/0%
-    const text = wrapper.text()
-    expect(text).toContain('--')
-    expect(text).not.toContain('0%')
+    expect(wrapper.find('[data-testid="radar-unavailable"]').exists()).toBe(true)
+    expect(wrapper.find('.radar-data').exists()).toBe(false)
+    expect(wrapper.find('.radar-detail').exists()).toBe(false)
   })
 
-  it('renders detail list with displayValue (score/max/percentage)', () => {
-    const wrapper = mountRadar([
-      metric('league_damage_score', '伤害', 342, 0.855, '342 / 400 · 85.5%'),
-      metric('league_shooting_score', '射击', 100, 1, '100 / 100 · 100%'),
-    ])
-    const text = wrapper.text()
-    expect(text).toContain('342 / 400')
-    expect(text).toContain('85.5%')
-    expect(text).toContain('100 / 100')
-  })
-
-  it('reorder: SVG / labels order follows metrics array', () => {
-    const reordered = [
-      metric('impact', 'Impact', 151.2, 0.756, '151.2%'),
-      metric('league_damage_score', '伤害', 200, 0.5, '200 / 400 · 50%'),
-      metric('kast', 'KAST', 78.4, 0.784, '78.4%'),
+  it('reference incomplete -> 不画 reference 多边形 + 提示 + detail 参考列 --', () => {
+    const incompleteRef = [
+      metric('league_damage_score', 'Damage', 300, 0.75, '300 / 400'),
+      metric('league_kill_score', 'Kill', null, null, '--', false),
     ]
-    const wrapper = mountRadar(reordered)
-    const labels = wrapper.findAll('.radar-label').map(n => n.text())
-    expect(labels).toEqual(['Impact', '伤害', 'KAST'])
+    const wrapper = mountRadar(SEVEN.slice(0, 2), incompleteRef)
+    expect(wrapper.find('[data-testid="radar-ref-missing"]').exists()).toBe(true)
+    expect(wrapper.find('.radar-ref').exists()).toBe(false)
+    const rows = wrapper.findAll('.radar-detail tbody tr')
+    expect(rows).toHaveLength(2)
+    // 参考列（第二个数据列）显示 --
+    const cells = rows[1].findAll('td')
+    expect(cells[2].text()).toBe('--')
+  })
+
+  it('detail table shows score / max (no percentage), three columns Dimension/Player/Reference', () => {
+    const wrapper = mountRadar(SEVEN, REF)
+    const head = wrapper.findAll('.radar-detail thead th').map(n => n.text())
+    expect(head).toEqual(['radar_lbl.dimension', 'radar_lbl.player', 'Battle Average'])
+    const text = wrapper.text()
+    expect(text).toContain('200 / 400')
+    expect(text).not.toContain('%')
+    expect(text).toContain('150 / 400')
+  })
+
+  it('no reference prop -> only player polygon, no ref column header', () => {
+    const wrapper = mountRadar(SEVEN)
+    expect(wrapper.find('.radar-ref').exists()).toBe(false)
+    const head = wrapper.findAll('.radar-detail thead th').map(n => n.text())
+    expect(head).toEqual(['radar_lbl.dimension', 'radar_lbl.player'])
   })
 })

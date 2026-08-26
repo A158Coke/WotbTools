@@ -7,6 +7,7 @@ import {
   RADAR_AVAILABLE_KEYS,
   RADAR_MIN_AXES,
   RADAR_MAX_AXES,
+  RADAR_DEFAULT_ORDER,
   loadRadarPreference,
   saveRadarPreference,
   resolveRadarMetric,
@@ -28,18 +29,19 @@ function freshStorage() {
 describe('Radar League 维度 normalization 使用后端 metadata（禁止 frontend hardcoded domain max）', () => {
   beforeEach(() => { freshStorage(); vi.clearAllMocks() })
 
-  it('提供 metadata：league_damage_score max=400 → 342 归一化 0.855，显示 "342 / 400 · 85.5%"', () => {
+  it('提供 metadata：league_damage_score max=400 → 342 归一化 0.855，显示 "342 / 400"（无百分比）', () => {
     const m = resolveRadarMetric('league_damage_score', 342, { league_damage_score: 400 })
     expect(m.available).toBe(true)
     expect(m.normalized).toBeCloseTo(0.855, 3)
-    expect(m.displayValue).toBe('342 / 400 \u00B7 85.5%')
+    expect(m.displayValue).toBe('342 / 400')
+    expect(m.displayValue).not.toContain('%')
   })
 
   it('把测试 metadata 改成 max=500：Radar 自动使用 500（证明 frontend 无 hardcoded max）', () => {
     const m = resolveRadarMetric('league_damage_score', 342, { league_damage_score: 500 })
     expect(m.available).toBe(true)
     expect(m.normalized).toBeCloseTo(0.684, 3)
-    expect(m.displayValue).toBe('342 / 500 \u00B7 68.4%')
+    expect(m.displayValue).toBe('342 / 500')
   })
 
   it('后端未提供满分（max 缺失/非有限/<=0）→ unavailable "--"，不伪造 0/0%', () => {
@@ -57,15 +59,6 @@ describe('Radar League 维度 normalization 使用后端 metadata（禁止 front
     expect(m.displayValue).toBe('--')
   })
 
-  it('Performance（contribution/kast）继续按 /100 归一化', () => {
-    const c = resolveRadarMetric('contribution', 22.4, {})
-    expect(c.normalized).toBeCloseTo(0.224, 3)
-    expect(c.displayValue).toBe('22.4%')
-    const k = resolveRadarMetric('kast', 100, {})
-    expect(k.normalized).toBe(1)
-    expect(k.displayValue).toBe('100%')
-  })
-
   it('七维 invariant：League source 维度恰好 7 个，顺序与 CW_DIM_KEYS 一致', () => {
     expect(CW_DIM_KEYS).toHaveLength(7)
     const leagueKeys = Object.entries(RADAR_METRIC_DEFS)
@@ -75,20 +68,38 @@ describe('Radar League 维度 normalization 使用后端 metadata（禁止 front
     expect(leagueKeys).toHaveLength(7)
   })
 
-  it('Impact 不在 Radar picker（无稳定 normalization contract），贡献度/KAST 在', () => {
-    expect(RADAR_AVAILABLE_KEYS).toEqual([...CW_DIM_KEYS, 'contribution', 'kast'])
+  it('仅 League 七维可选进 Radar：contribution/kast/impact 不在 picker（属于 Performance Metrics）', () => {
+    expect(RADAR_AVAILABLE_KEYS).toEqual(CW_DIM_KEYS)
+    expect(RADAR_AVAILABLE_KEYS).not.toContain('contribution')
+    expect(RADAR_AVAILABLE_KEYS).not.toContain('kast')
     expect(RADAR_AVAILABLE_KEYS).not.toContain('impact')
   })
 
-  it('axis 数量约束 min 3 / max 8', () => {
+  it('axis 数量约束 min 3 / max 7', () => {
     expect(RADAR_MIN_AXES).toBe(3)
-    expect(RADAR_MAX_AXES).toBe(8)
+    expect(RADAR_MAX_AXES).toBe(7)
   })
 
-  it('偏好加载：非法 key 被过滤；不足 min → fallback 默认七维', () => {
-    saveRadarPreference(['removed_metric', 'kast'])
-    expect(loadRadarPreference()).toEqual(CW_DIM_KEYS)
-    saveRadarPreference(['kast', 'contribution', 'league_damage_score', 'league_kill_score'])
-    expect(loadRadarPreference()).toEqual(['kast', 'contribution', 'league_damage_score', 'league_kill_score'])
+  it('默认顺序 = 计划 §10：Damage/Shooting/Kill/RC/Blocked/Exchange/Assist', () => {
+    expect(RADAR_DEFAULT_ORDER).toEqual([
+      'league_damage_score',
+      'league_shooting_score',
+      'league_kill_score',
+      'league_survival_score',
+      'league_blocked_score',
+      'league_exchange_score',
+      'league_assist_score',
+    ])
+  })
+
+  it('偏好加载：旧值 contribution/kast/impact 被静默过滤（§66）；不足 min → fallback 默认七维', () => {
+    saveRadarPreference(['removed_metric', 'contribution', 'kast', 'impact'])
+    expect(loadRadarPreference()).toEqual(RADAR_DEFAULT_ORDER)
+    saveRadarPreference(['league_damage_score', 'league_kill_score', 'league_assist_score'])
+    expect(loadRadarPreference()).toEqual(['league_damage_score', 'league_kill_score', 'league_assist_score'])
+  })
+
+  it('无偏好时 fallback 默认顺序', () => {
+    expect(loadRadarPreference()).toEqual(RADAR_DEFAULT_ORDER)
   })
 })

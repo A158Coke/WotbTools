@@ -1,8 +1,8 @@
 /**
  * Radar Metric Registry：
- * Player Detail Drawer 雷达图的指标注册表——每个可选指标必须自带明确、稳定的
- * normalization contract（原始值 → 0..1），组件（PlayerRatingRadar）只消费 normalized
- * ratio，禁止组件内硬编码业务公式。
+ * 选手画像雷达图只允许 League Rating 七维（计划 §8），禁止 contribution/kast/impact 进入 Radar。
+ * 每个 League 维度自带 normalization contract：normalized = raw / 后端 column.max，clamp 0..1。
+ * PlayerDetailDrawer 只消费本 registry + resolveRadarMetric，组件不硬编码业务公式。
  *
  * 架构边界：
  * - Radar selection 是 presentation-only 的 visualization preference；
@@ -12,57 +12,65 @@
  * - 禁止复制后端 domain max 常量：League 维度满分由后端 resp.league.columns
  *   （key/max 元数据）提供，resolveRadarMetric 必须消费该 metadata（缺失 → 该轴
  *   unavailable "--"，不伪造 0/0%）。
- * - Contribution / KAST 是 Performance Metrics，可作 Radar axes，但永远不是
- *   League Rating 维度；不得因为可进 Radar 就重新算进 final Rating。
- * - Impact：当前仓库没有已确认的 Impact 稳定 normalization contract
- *   （PerformanceMetricsCalculator 无 cap、Impact 可显著大于 100），因此
- *   Impact 不是 Radar axis candidate——它继续完整保留在表格 / Drawer
- *   表现指标区 / 排序 / ColumnPicker / 导出，只是不入 Radar。
+ * - V5 Evidence Adjustment 只作用于 Batch Player Rating，绝不影响 Radar 几何
+ *   （dimensionMeans）；Radar 与 V5 严格分离（计划 §27）。
  */
 
 import { CW_DIM_KEYS } from './playerSummaryMerge.js'
 
-/** Radar 轴数量约束：min 3 / max 8 / 默认 7。 */
+/** Radar 轴数量约束（计划 §9）：min 3 / max 7。 */
 export const RADAR_MIN_AXES = 3
-export const RADAR_MAX_AXES = 8
+export const RADAR_MAX_AXES = 7
 
 /** Radar 偏好 localStorage key（独立于 table column preference）。 */
 const RADAR_PREF_KEY = 'wotb-radar-metric-order'
 
-const clamp01 = v => Math.max(0, Math.min(1, v))
+export const clamp01 = v => Math.max(0, Math.min(1, v))
 
-/**
- * 指标定义：
- * - key: 数据 key（League 维度 / performance 指标）
- * - labelKey: 显示名 i18n key（player_labels.*）
- * - source: 'league'（scope-aware：summary → player.dimensionMeans[i]，
- *   battle → player.dimensionScores[i]；禁止 battle 复用跨场字段）|
- *   'performance'（contribution/kast cells）
- * League 维度的 normalize/format 不在此闭包——满分来自后端 metadata（maxByKey），
- * 由 resolveRadarMetric 按 raw / column.max 计算（后端唯一事实源）。
- */
-const PERF_PCT = {
-  normalize: v => clamp01(Number(v) / 100),
-  format: v => (Math.round(Number(v) * 10) / 10) + '%',
+/** 七维在 Radar 上的 presentation-only 短标签（计划 §10/§11：RC 短标签 + tip）。 */
+const DIM_LABEL_KEY = {
+  league_damage_score: 'radar_labels.league_damage_score',
+  league_assist_score: 'radar_labels.league_assist_score',
+  league_kill_score: 'radar_labels.league_kill_score',
+  league_exchange_score: 'radar_labels.league_exchange_score',
+  league_blocked_score: 'radar_labels.league_blocked_score',
+  league_survival_score: 'radar_labels.league_survival_score',
+  league_shooting_score: 'radar_labels.league_shooting_score',
 }
 
-export const RADAR_METRIC_DEFS = Object.freeze({
-  // ---- League Rating 七维（默认；normalize = raw / 后端 column.max）----
-  ...Object.fromEntries(CW_DIM_KEYS.map(key => [key, {
+/**
+ * 指标定义（仅 League 七维）：
+ * - key: 数据 key（League 维度）
+ * - labelKey: Radar 短标签 i18n key（radar_labels.*）
+ * - source: 'league'（scope-aware：summary → player.dimensionMeans[i]，
+ *   battle → player.dimensionScores[i]；禁止 battle 复用跨场字段）
+ * - tipKey（仅 RC）：解释 RC 全称 Surivival/Trade，native title/tooltip，不占用 SVG 空间。
+ */
+export const RADAR_METRIC_DEFS = Object.freeze(
+  Object.fromEntries(CW_DIM_KEYS.map(key => [key, {
     key,
-    labelKey: 'player_labels.' + key,
+    labelKey: DIM_LABEL_KEY[key],
     source: 'league',
-  }])),
-  // ---- Performance Metrics（可作 Radar axes，但永远不是 Rating 维度；Impact 无稳定 contract 不入 Radar）----
-  contribution: { key: 'contribution', labelKey: 'player_labels.contribution', source: 'performance', ...PERF_PCT },
-  kast: { key: 'kast', labelKey: 'player_labels.kast', source: 'performance', ...PERF_PCT },
-})
+    ...(key === 'league_survival_score'
+      ? { tipKey: 'player_labels.league_survival_score_tip' }
+      : {}),
+  }]))
+)
 
-/** 默认 Radar 指标顺序 = 七维（无偏好时默认体验不变）。 */
-const RADAR_DEFAULT_ORDER = [...CW_DIM_KEYS]
+/** 默认 Radar 顺序（计划 §10）：Damage / Shooting / Kill / RC / Blocked / Exchange / Assist。
+ *  仅 presentation order，不修改后端 canonical dimension 顺序。 */
+export const RADAR_DEFAULT_ORDER = [
+  'league_damage_score',
+  'league_shooting_score',
+  'league_kill_score',
+  'league_survival_score',
+  'league_blocked_score',
+  'league_exchange_score',
+  'league_assist_score',
+]
 
-/** 全部可选的 Radar 指标 key（picker 显示；不含 impact）。 */
-export const RADAR_AVAILABLE_KEYS = [...CW_DIM_KEYS, 'contribution', 'kast']
+/** 全部可选的 Radar 指标 key（picker 显示；仅七维，贡献度/KAST 属于 Performance Metrics，不入 Radar）。 */
+export const RADAR_AVAILABLE_KEYS = [...CW_DIM_KEYS]
 
 function readStoredList() {
   try {
@@ -76,7 +84,8 @@ function readStoredList() {
 }
 
 /**
- * 加载并净化 Radar 偏好：过滤无效/已移除 key；过滤后不足 min → fallback 默认七维。
+ * 加载并净化 Radar 偏好：过滤无效/已移除 key（contribution/kast/impact 等旧值被静默淘汰，
+ * 计划 §66）；过滤后不足 min → fallback 默认七维。
  */
 export function loadRadarPreference() {
   const stored = readStoredList()
@@ -103,7 +112,7 @@ export function saveRadarPreference(order) {
  * @param {string} key
  * @param {*} raw 原始值（null = unavailable）
  * @param {Object} [maxByKey] league 列满分元数据 {key: max}
- * @returns {{key,label,rawValue,normalized,displayValue,available}}
+ * @returns {{key,label,rawValue,normalized,displayValue,available,tip?}}
  */
 export function resolveRadarMetric(key, raw, maxByKey = {}) {
   const def = RADAR_METRIC_DEFS[key]
@@ -112,27 +121,17 @@ export function resolveRadarMetric(key, raw, maxByKey = {}) {
     return { key, label, rawValue: null, normalized: null, displayValue: '--', available: false }
   }
   const v = Number(raw)
-  if (def.source === 'league') {
-    const max = Number(maxByKey[key])
-    if (!Number.isFinite(max) || max <= 0) {
-      return { key, label, rawValue: v, normalized: null, displayValue: '--', available: false }
-    }
-    const pct = Math.round(1000 * v / max) / 10
-    return {
-      key,
-      label,
-      rawValue: v,
-      normalized: clamp01(v / max),
-      displayValue: Math.round(v) + ' / ' + max + ' \u00B7 ' + pct + '%',
-      available: true,
-    }
+  const max = Number(maxByKey[key])
+  if (!Number.isFinite(max) || max <= 0) {
+    return { key, label, rawValue: v, normalized: null, displayValue: '--', available: false }
   }
   return {
     key,
     label,
     rawValue: v,
-    normalized: def.normalize(v),
-    displayValue: def.format(v),
+    normalized: clamp01(v / max),
+    // §20：detail 只显示 score / max，不追加百分比。
+    displayValue: Math.round(v) + ' / ' + max,
     available: true,
   }
 }

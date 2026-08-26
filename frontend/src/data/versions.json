@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.36",
+    "date": "2026-08-26",
+    "tag": "chg",
+    "zh": "选手详情画像升级：雷达图叠加「本场/全局平均」参考多边形、四层刻度与单侧 25/50/75/100 标尺，下方改为三列明细（维度 / 玩家 / 平均，分数/满分，不再显示百分比与差值列）；批次详情头部显示 V5 Rating + Observed Median + Rated Battles，单场仍为 V4.1；支持 ←/→ 前后切换玩家（跟随当前表格排序）与专属「导出画像 PNG」。",
+    "en": "Player detail profile upgraded: the radar now overlays a Battle/Global Average reference polygon, a four-layer grid with a single-side 25/50/75/100 scale, and a three-column detail (Dimension / Player / Average; score/max, no percentage or difference column). The batch detail header shows V5 Rating + Observed Median + Rated Battles; single battle stays V4.1. Navigate players with ←/→ (following the current table sort) and export a dedicated Rating Profile PNG.",
+    "ru": "Профиль игрока обновлён: радар теперь накладывает опорный многоугольник «Среднее по бою / Общее среднее», четырёхуровневую сетку со шкалой 25/50/75/100 с одной стороны и трёхколоночную таблицу (Параметр / Игрок / Среднее; балл/макс, без процентов и колонки разницы). В шапке пакетного профиля показываются V5 Rating, наблюдаемая медиана и оценённые бои; для одиночного боя остаётся V4.1. Доступно переключение игроков ←/→ (по текущей сортировке таблицы) и отдельный экспорт Rating Profile в PNG."
+  },
+  {
     "v": "2.12.35",
     "date": "2026-08-26",
     "tag": "chg",
