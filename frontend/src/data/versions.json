@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.37",
+    "date": "2026-08-26",
+    "tag": "fix",
+    "zh": "修复回放解析 League Rating 汇总页「下载为 PNG」导出失败：导出快照改用与「导出画像 PNG」一致的实色令牌（战队行/表头/空态），规避 html2canvas 对现代颜色函数（color-mix 被浏览器计算为 color(srgb)）的解析限制；同时取消固定（sticky）列与交互选中态，确保 34 场等超宽完整表格、队伍底色、Rating/七维与深/浅色主题均能正常导出。",
+    "en": "Fixed the \"Download as PNG\" export failing on the League Rating summary page: the export snapshot now uses the same solid-color tokens as the Rating Profile PNG (team rows/header/empty state), avoiding html2canvas parsing limits on modern color functions (color-mix computed as color(srgb)); sticky columns and the interactive selected state are also disabled so full wide tables (e.g. 34 battles), team colors, Rating/seven dimensions and dark/light themes export correctly.",
+    "ru": "Исправлен экспорт \"Скачать как PNG\" на сводной странице League Rating: снимок экспорта теперь использует те же непрозрачные цветовые токены, что и экспорт профиля рейтинга (ряды команд/шапка/пустое состояние), что обходит ограничение html2canvas на современные цветовые функции (color-mix, вычисляемый браузером как color(srgb)); закреплённые колонки и интерактивное состояние выбора также отключены, поэтому полные широкие таблицы (например, 34 боя), цвета команд, рейтинг/семь измерений и тёмная/светлая темы экспортируются корректно."
+  },
+  {
     "v": "2.12.36",
     "date": "2026-08-26",
     "tag": "chg",
