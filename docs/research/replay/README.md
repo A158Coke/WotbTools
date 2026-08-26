@@ -37,6 +37,7 @@
 - `team-weapon-telemetry.md`：wrapper15 本方武器/装填状态流。
 - `adrenaline-and-gun-feed.md`：单发/弹夹负控制、Adrenaline 快装填效应、不同供弹系统状态族。
 - `projectile-lifecycle.md`：shotId、projectile/tracer launch、`stopTracer` endpoint 与 terminal-resolution companion。
+- `type32-entity-effects.md`：Type32 实体级长度前缀 auxiliary blob；旧 `kind` / runtime-double 解释已废弃。
 
 ## 当前 canonical 结论摘要
 
@@ -58,6 +59,7 @@
 - 单发车辆 `field2=3` 与 shot count / reload duration 闭环；约 `0.853` 动态快档在当前 corpus 中行为上可确定为 Adrenaline reload effect，低 HP 技能解释已由高血量反例排除。
 - Kranvagn/Felice 不允许 Adrenaline 且不使用单发 `field2=3` family；其 `field2=7` 与 shots 呈一对一/仅缺失的关系并携带稳定的 gun-cycle timer，证明 wrapper15 是供弹机制感知的状态机。
 - Avatar method20 为 `stopTracer(shotId,endPoint)`；method29 为 projectile/tracer launch family，其 launch vector 与 `endPoint-startPoint` 在约 98.8% 样本中方向余弦 >0.99。
+- Type32 为 `entityId + flag + bodyLength + body`；16,850/16,850 长度闭合，且同时路由到 Type5 mobile/static 实体，body 语义仍未知。
 
 ### 仍需研究
 

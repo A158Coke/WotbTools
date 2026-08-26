@@ -1,140 +1,138 @@
-# Type32 — polymorphic entity-side state/effect envelope
+# Type32 — length-prefixed entity auxiliary blob
 
 > Corpus: strict-framing 34 unique arenas, Blitz 11.19.0 China.
 >
-> Earlier probes treated a fixed offset inside some Type32 packets as a client-runtime `double`. That model is superseded by complete length/kind inventory: Type32 is a polymorphic envelope whose body schema depends on a small integer kind ID.
+> Correction: the `u32` at payload offset 5 was previously described as an effect `kind`. Full-corpus validation proves that it is the exact byte length of the remaining body. The former kind/effect interpretation is **SUPERSEDED**.
 
-## Envelope
+## Proven envelope
 
-Every current Type32 packet is consistent with:
-
-```text
-entityId : u32 LE
-flag     : u8
-kind     : u32 LE
-body     : kind-specific bytes
-```
-
-Observed kinds are exactly:
+Every current Type32 packet has this structure:
 
 ```text
-2, 3, 4, 5, 6, 15, 16, 17, 18
+entityId   : u32 LE
+flag       : u8
+bodyLength : u32 LE
+body       : bodyLength bytes
 ```
 
-The packet length is tightly determined by kind:
-
-| kind | total payload length | body length | observed count | flag domain |
-|---:|---:|---:|---:|---|
-| 2  | 11 B | 2 B  | 3,516 | 1 |
-| 3  | 12 B | 3 B  |   673 | 1 |
-| 4  | 13 B | 4 B  |    24 | 1 |
-| 5  | 14 B | 5 B  | 1,104 | 1 |
-| 6  | 15 B | 6 B  |   824 | 1 |
-| 15 | 24 B | 15 B |   366 | 0 |
-| 16 | 25 B | 16 B | 7,414 | 0 |
-| 17 | 26 B | 17 B |   459 | 1 |
-| 18 | 27 B | 18 B | 2,470 | 1 |
-
-This regular `9 + kind-specific-body-length` family proves that Type32 must be decoded by `kind`; no single fixed-offset scalar schema is valid across the family.
-
-## Strong combat-state correlation
-
-Several kinds are tightly synchronized with authoritative Vehicle HP/property updates.
-
-Nearest same-entity Type7 `propId=3` HP event in the current strict corpus:
+Across all 16,850 Type32 packets in the strict corpus:
 
 ```text
-kind 2 : 2,552 / 3,490 within 0.1 s
-kind 3 :   417 /   494 within 0.1 s
-kind 17:   371 /   457 within 0.1 s
-kind 18: 2,143 / 2,469 within 0.1 s
+bodyLength == payloadLength - 9 : 16,850 / 16,850
+mismatches                       : 0
 ```
 
-Many are exactly the same replay clock.
+Observed length and flag combinations:
 
-This establishes that the family participates in vehicle combat/state/effect processing rather than being a generic replay wall-clock channel.
+| bodyLength | packet count | flag |
+|---:|---:|---:|
+| 2  | 3,516 | 1 |
+| 3  |   673 | 1 |
+| 4  |    24 | 1 |
+| 5  | 1,104 | 1 |
+| 6  |   824 | 1 |
+| 15 |   366 | 0 |
+| 16 | 7,414 | 0 |
+| 17 |   459 | 1 |
+| 18 | 2,470 | 1 |
 
-## Why the old `runtime double` interpretation is superseded
+The values `2/3/4/5/6/15/16/17/18` are therefore observed **body sizes**, not symbolic effect IDs. Packet length alone cannot select a semantic event decoder.
 
-Some prior diagnostics read eight bytes beginning at a constant absolute offset (for example offset 13) and observed values that occasionally resembled a runtime-like quantity.
+## Entity routing
 
-The complete corpus shows that:
+Type32 is scoped to materialized entities, not only combat vehicles.
 
-- Type32 has nine distinct kind schemas;
-- the same absolute offset crosses different logical fields for different kinds;
-- arbitrary 8-byte interpretation across those layouts yields nonsensical huge/subnormal values as often as plausible values;
-- body length is deterministic from the kind family.
-
-Therefore:
-
-> `Type32 == one client-runtime double event` is **SUPERSEDED/REJECTED**.
-
-Any meaningful scalar inside Type32 must first be located inside a specific kind schema.
-
-## Candidate physical family
-
-The envelope shape is compatible with a native entity-side **extra/effect/state** mechanism:
+Per-replay distinct-entity aggregation across the 34 arenas gives:
 
 ```text
-entityId
-activation/state flag
-small effect/extra kind
-kind-specific parameters
+Type32 entity occurrences             : 968
+also present in Type5 materialization : 968 / 968
+Type5 entityTypeId=2 mobile family    : 540
+Type5 entityTypeId=3 static family    : 428
 ```
 
-This is also consistent with the current Wargaming vehicle client architecture, where vehicle `extras` are started/stopped around shooting, damage and other effects.
+All 540 Type32 entities in the Type5 mobile family also have Type10 transform streams. The other 428 route to Type5 `entityTypeId=3`, which the current corpus classifies as the static/non-vehicle family and which has no normal Type10 stream.
 
-However, the current corpus has not yet recovered a version-matched Blitz enum mapping:
+This disproves a vehicle-only damage/effect envelope. Type32 is a generic entity-side auxiliary update family that can target both mobile and static materialized entities.
+
+## Body diversity
+
+The body is not a fixed scalar:
+
+| bodyLength | distinct bodies | packet count |
+|---:|---:|---:|
+| 2  | 29    | 3,516 |
+| 3  | 222   |   673 |
+| 4  | 24    |    24 |
+| 5  | 1,102 | 1,104 |
+| 6  | 824   |   824 |
+| 15 | 13    |   366 |
+| 16 | 3,021 | 7,414 |
+| 17 | 459   |   459 |
+| 18 | 2,470 | 2,470 |
+
+The short repeated bodies and the longer high-cardinality bodies are consistent with a compact/bit-packed or variant update stream. This is a structural observation only; no current evidence identifies individual body fields.
+
+## Flag boundary
+
+In the current corpus:
 
 ```text
-kind 2  -> symbolic effect ?
-kind 3  -> symbolic effect ?
-...
-kind 18 -> symbolic effect ?
+flag=0 -> bodyLength 15 or 16 only
+flag=1 -> bodyLength 2..6, 17 or 18 only
 ```
 
-Therefore the umbrella name `entity-side state/effect envelope` is `PROVEN structural/behavioral family`; exact symbolic extra/effect identity remains `PARTIAL`.
+This proves two encoding/layout families. It does **not** prove activation/deactivation, add/remove, compression polarity, or an effect state. The raw flag must be preserved until a producer/schema or controlled probe closes its meaning.
 
-## Current observed behavioral groups
+## Why earlier interpretations are rejected
 
-### HP/damage-adjacent
+### Not an effect `kind`
 
-Kinds `2`, `3`, `17`, and `18` are especially strongly concentrated at HP-change times.
+The alleged `kind` equals the remaining body length in every packet. Treating it as both an enum and a coincidentally identical byte count adds an unsupported field and hides the actual length prefix.
 
-They are priority candidates for damage/hit visual-state, critical/module effect, or related vehicle extra families. They must **not** be interpreted as authoritative HP loss; Type7 HP deltas remain authoritative.
+### Not one client-runtime `double`
 
-### State-rich kind 16
+Earlier diagnostics read eight bytes at a fixed absolute offset and sometimes obtained runtime-like numbers. That offset crosses differently sized, variable bodies; arbitrary eight-byte interpretations also produce huge and subnormal values. No fixed scalar schema is valid across this family.
 
-Kind 16 is the largest family (`7,414` records) and has a 16-byte body with repeated structured state patterns. It spans initialization and active combat. It is not sufficiently isolated to assign a specific symbolic extra name yet.
+### HP proximity is not semantic identity
 
-### Kind 15
+Some Type32 packets occur near Type7 current-HP updates, but the family also targets 428 static-family entity occurrences and carries highly diverse bodies. Timing proximity can nominate body-level probes; it cannot promote the whole top-level packet to damage, HP, critical-module, or effect semantics.
 
-Kind 15 always uses `flag=0` in the current corpus and a 15-byte body. It is frequently HP-adjacent but less common than kind16. The complementary flag/kind pattern is evidence for a start/stop or state-transition style subsystem, but exact polarity is not proven.
+## Historical parser clue
+
+An older World of Tanks PC parser described packet `0x20` as a tank track-status packet and read status bytes after the entity-scoped prefix. This is useful only as a research lead:
+
+- the client family and version differ from Blitz 11.19;
+- the current Type32 family also targets static entities;
+- current bodies are variable and appear compactly encoded.
+
+Therefore no PC field offsets or symbolic name are transplanted into the Blitz schema.
 
 ## Safe parser model
 
-A research/production-safe structural representation is:
-
 ```text
-EntityEffectRaw {
+EntityAuxiliaryBlobRaw {
     rawClockSec
     entityId
     flag
-    kind
+    bodyLength
     bodyBytes
 }
 ```
 
-with version-gated kind decoders added only after individual closure.
+Requirements:
 
-Do not expose kind IDs as user-facing damage/effect names yet.
+1. validate `bodyLength == remaining payload bytes`;
+2. preserve `flag` and body bytes losslessly;
+3. route through the Type5 entity class/version context;
+4. add semantic sub-decoders only after independent closure;
+5. do not expose body length or raw bytes as user-facing effect names.
 
 ## Remaining work
 
-1. recover the Blitz/BigWorld enum or native producer for Type32 kinds;
-2. decode each kind body field-by-field;
-3. correlate HP-adjacent kinds against shot damage, fire, ramming, module damage and collision events;
-4. test whether `flag` is activation/deactivation, add/remove, or another state bit for each kind;
-5. correlate kind16/15 transition pairs and entity lifecycle;
-6. search special death-reason samples for unique kind fingerprints;
-7. validate all mappings on additional versions before assigning stable symbolic names.
+1. recover the Blitz 11.19 producer or transport schema for Type32;
+2. determine the exact meaning of `flag`;
+3. cluster bodies by Type5 entity class, length, prefix bits and lifecycle phase;
+4. run controlled probes for track destruction/repair, static collision/destruction, fire, ramming and module damage;
+5. compare same-arena multi-POV bodies to separate server facts from client-local representation;
+6. validate any body decoder on additional client versions before promotion.
