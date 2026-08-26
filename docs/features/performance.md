@@ -163,21 +163,11 @@ killer 级 trade 语义应在事实层扩展，不在 metrics 层重推。
 ## 管理员灰度：历史 Rating V2
 
 历史 Rating V2 不是当前产品评分体系。它只以隐藏深链 `?view=rating-v2` 提供给
-`wotbtools-admin`，且后端仅接受：
+`wotbtools-admin`，只读 READY `ProcessedDataset`，不恢复公开 `/api/rating`、`/extended`、Excel 列或
+`/api/columns` 变更。
 
-```text
-POST /api/admin/rating-v2/processing-jobs/{jobId}
-```
-
-该接口只读取同一 `jobId` 的 READY `ProcessedDataset`；未 READY 仍返回 `JOB_NOT_READY`，过期 job
-仍返回 `JOB_NOT_FOUND`。没有公开导航、公开 `/api/rating`、`/extended`、Excel 列或 `/api/columns`
-变更。
-
-公式以删除前最终提交 `37a0c0ec` 为准，由 `RatingV2Calculator` 单独实现：潜在伤害、KAST、Impact、
-贡献率、多伤率和综合 Rating 都只在局部只读投影中计算。它的历史平均 HP 口径是双方 14 车总 HP
-除以 14：`OBSERVED_EXACT` 进场 HP 优先，其余取 Tankopedia 基础 HP，只有单车缺失时才回退 2400。
-该回退**不属于**当前 `BattleHpFacts` 的 fail-closed 语义，也绝不写回 `PlayerResult`、当前列、导出
-或 League Rating。
+完整的算法、输入口径、输出契约、历史兼容边界和后续迭代规则以
+[Rating V2 算法规范](rating-v2.md) 为准；不要在本战斗表现文档复制或演化 V2 公式。
 
 ## 测试
 
@@ -191,6 +181,5 @@ POST /api/admin/rating-v2/processing-jobs/{jobId}
   无 `performance` 字段）。
 - 单一事实源回归必须保证：Playback 伤害 == Performance Metrics 输入伤害
   （同一 `PlayerResult.damageDealt`）。
-- `RatingV2CalculatorTest` 锁定历史 V2 的 KAST/trade、潜在伤害补增、14 车 HP、
-  `OBSERVED_EXACT`、Tankopedia/2400 fallback 与零写回；`RatingV2AdminControllerContractTest` /
-  `SecurityConfigTest` 锁定 READY job 接缝和管理员门禁。
+- 历史 V2 的算法和回归维护基线见 [Rating V2 算法规范](rating-v2.md)；不要把其
+  公式或测试规则回写进本战斗表现文档。
