@@ -34,13 +34,15 @@ public final class LeagueRatingCalculator {
             {0.70, 0.30},   // 阻挡
     };
 
+    /** RC 冻结分（V4.1）：胜方存活 = {@link PlayerLeagueRating#MAX_SURVIVAL_TRADE}（75）；有效互换 = 50；其它 = 0。 */
+    private static final double RC_TRADE = 50.0;
+
     private LeagueRatingCalculator() {
     }
 
     /** 存活状态稳定英文码。 */
     public static final String STATE_WIN_SURVIVED = "WIN_SURVIVED";
     public static final String STATE_TRADE = "TRADE";
-    public static final String STATE_LOSER_TOP4 = "LOSER_TOP4";
     public static final String STATE_NONE = "NONE";
 
     /**
@@ -102,10 +104,13 @@ public final class LeagueRatingCalculator {
             exchangeEff[i] = oe <= 0 ? 0 : (o / oe) * participation;
             allExchange.add(exchangeEff[i]);
 
-            // 射击效率：命中 30% / 击穿 70% 的 Wilson 下界合成 × 伤害参与
-            final double acc = LeagueRatingNormalizer.wilsonLowerBound(p.nHitsDealt, p.nShots);
-            final double pen = LeagueRatingNormalizer.wilsonLowerBound(p.nPenetrationsDealt, p.nHitsDealt);
-            final double shootingConfidence = 0.30 * acc + 0.70 * pen;
+            // 射击效率 V4.1：Soft Wilson = 90% Wilson 95% 下界 + 10% 原始比例，
+            // 再按命中 30% / 击穿 70% 合成 × 伤害参与
+            final double softAcc = 0.90 * LeagueRatingNormalizer.wilsonLowerBound(p.nHitsDealt, p.nShots)
+                    + 0.10 * rawRate(p.nHitsDealt, p.nShots);
+            final double softPen = 0.90 * LeagueRatingNormalizer.wilsonLowerBound(p.nPenetrationsDealt, p.nHitsDealt)
+                    + 0.10 * rawRate(p.nPenetrationsDealt, p.nHitsDealt);
+            final double shootingConfidence = 0.30 * softAcc + 0.70 * softPen;
             damageParticipation[i] = LeagueRatingNormalizer.finitePositive(teamAvgDamage[t])
                     ? Math.min(1.0, p.damageDealt / teamAvgDamage[t]) : 0;
             shooting[i] = PlayerLeagueRating.MAX_SHOOTING
@@ -135,30 +140,13 @@ public final class LeagueRatingCalculator {
                     LeagueRatingNormalizer.globalIndex(exchangeEff[i], allExchange));
         }
 
-        // ---- preliminary（不含存活分与胜方倍率）+ 败方存活前四 ----
+        // ---- preliminary（六个非 RC 维度之和，不含存活分与胜方倍率）----
         final double[] preliminary = new double[n];
-        final List<List<Integer>> loserSurvived = new ArrayList<>();
-        loserSurvived.add(new ArrayList<>());
-        loserSurvived.add(new ArrayList<>());
-        loserSurvived.add(new ArrayList<>());
         for (int i = 0; i < n; i++) {
             preliminary[i] = damage[i] + assist[i] + kill[i] + exchange[i] + blocked[i] + shooting[i];
-            final PlayerResult p = players.get(i);
-            if (p.team != winner && p.survived) {
-                loserSurvived.get(p.team).add(i);
-            }
-        }
-        final int[][] loserTop4 = new int[3][];
-        for (final int t : new int[]{1, 2}) {
-            final List<Integer> idx = loserSurvived.get(t);
-            idx.sort(top4Comparator(players, preliminary));
-            loserTop4[t] = new int[Math.min(4, idx.size())];
-            for (int k = 0; k < loserTop4[t].length; k++) {
-                loserTop4[t][k] = idx.get(k);
-            }
         }
 
-        // ---- 存活状态分 + 最终分 ----
+        // ---- RC V4.1（胜方存活 75 / 有效互换 50 / 其它 0，优先级自上而下）+ 最终分 ----
         final List<PlayerLeagueRating> built = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
             final PlayerResult p = players.get(i);
@@ -166,14 +154,11 @@ public final class LeagueRatingCalculator {
             final double survival;
             final String state;
             if (win && p.survived) {
-                survival = PlayerLeagueRating.MAX_SURVIVAL_TRADE;
+                survival = PlayerLeagueRating.MAX_SURVIVAL_TRADE; // 75
                 state = STATE_WIN_SURVIVED;
             } else if (!p.survived && TradeFacts.tradedDeaths(p, players) > 0) {
-                survival = 0.75 * PlayerLeagueRating.MAX_SURVIVAL_TRADE;
+                survival = RC_TRADE; // 50
                 state = STATE_TRADE;
-            } else if (!win && p.survived && inTop4(loserTop4[p.team], i)) {
-                survival = 0.50 * PlayerLeagueRating.MAX_SURVIVAL_TRADE;
-                state = STATE_LOSER_TOP4;
             } else {
                 survival = 0;
                 state = STATE_NONE;
@@ -232,6 +217,18 @@ public final class LeagueRatingCalculator {
         return p.damageDealt + 0.60 * p.damageAssisted + 0.35 * p.damageBlocked;
     }
 
+    /**
+     * 原始比例 {@code successes / trials}，clamp 到 [0,1]；zero-safe：
+     * 非有限 / 非正 trials 或非正 successes → 0（Soft Wilson 的 10% raw 分量）。
+     */
+    static double rawRate(final double successes, final double trials) {
+        if (!Double.isFinite(successes) || !Double.isFinite(trials)
+                || trials <= 0 || successes <= 0) {
+            return 0;
+        }
+        return Math.max(0.0, Math.min(1.0, successes / trials));
+    }
+
     /** 每队（1/2）平均值；[0] 不使用。 */
     private static double[] teamAverages(final List<PlayerResult> players,
                                          final ToDoubleFunction<PlayerResult> getter) {
@@ -274,15 +271,6 @@ public final class LeagueRatingCalculator {
         return null;
     }
 
-    private static boolean inTop4(final int[] top4, final int index) {
-        for (final int t : top4) {
-            if (t == index) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private static PlayerLeagueRating withFlags(final PlayerLeagueRating p,
                                                 final boolean mvp, final boolean teamBest) {
         return new PlayerLeagueRating(p.accountId(), p.nickname(), p.clan(), p.team(),
@@ -294,22 +282,6 @@ public final class LeagueRatingCalculator {
     }
 
     // ---- 排序 ----
-
-    /** 败方存活前四：preliminary → damageDealt → damageAssisted → kills → accountId（稳定技术排序）。 */
-    private static Comparator<Integer> top4Comparator(final List<PlayerResult> players,
-                                                      final double[] preliminary) {
-        return (a, b) -> {
-            int c = Double.compare(preliminary[b], preliminary[a]);
-            if (c != 0) return c;
-            c = Integer.compare(players.get(b).damageDealt, players.get(a).damageDealt);
-            if (c != 0) return c;
-            c = Integer.compare(players.get(b).damageAssisted, players.get(a).damageAssisted);
-            if (c != 0) return c;
-            c = Integer.compare(players.get(b).kills, players.get(a).kills);
-            if (c != 0) return c;
-            return Long.compare(players.get(a).accountId, players.get(b).accountId);
-        };
-    }
 
     /** MVP/队内最佳排序：finalRating → 胜方优先 → damageDealt → damageAssisted → kills → accountId。 */
     static Comparator<PlayerLeagueRating> mvpComparator(final int winnerTeam) {
