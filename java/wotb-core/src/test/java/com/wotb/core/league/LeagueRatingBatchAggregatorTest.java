@@ -325,4 +325,58 @@ class LeagueRatingBatchAggregatorTest {
         assertEquals(base.batchRatingV5(), cohort.batchRatingV5(), 1e-9,
                 "同批其他玩家不得改变 V5（无 batch prior）");
     }
+
+    // ---- 最常使用坦克：rated-only 场次的坦克使用直方图（最终选择在 Web Mapper）----
+
+    /** 构造一场 battle，指定玩家 1001（specs 首位，team1）的坦克 tankId。 */
+    private static Battle battleWithTank(final int winner, final long tankId) {
+        final List<LeagueTestBattles.PlayerSpec> specs = LeagueTestBattles.defaultSevenVsSeven();
+        specs.getFirst().tankId = tankId;
+        return LeagueTestBattles.battle(winner, specs);
+    }
+
+    private static int usageCount(final List<PlayerVehicleUsage> usage, final long tankId) {
+        return usage.stream().filter(u -> u.tankId() == tankId)
+                .mapToInt(PlayerVehicleUsage::battles).findFirst().orElse(0);
+    }
+
+    @Test
+    void vehicleUsageAccumulatesTankCountsAcrossRatedBattles() {
+        final Battle b1 = battleWithTank(1, 100);
+        final Battle b2 = battleWithTank(1, 100);
+        final Battle b3 = battleWithTank(1, 200);
+        final LeagueRatingResult r1 = LeagueRatingCalculator.calculate(b1);
+        final LeagueRatingResult r2 = LeagueRatingCalculator.calculate(b2);
+        final LeagueRatingResult r3 = LeagueRatingCalculator.calculate(b3);
+        final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(
+                List.of(b1, b2, b3), List.of(r1, r2, r3), List.of());
+
+        final PlayerLeagueSummary s = batch.playerSummaries().stream()
+                .filter(x -> x.accountId() == 1001L).findFirst().orElseThrow();
+        assertEquals(3, s.battles());
+        assertEquals(2, usageCount(s.vehicleUsage(), 100), "tank100 使用 2 场");
+        assertEquals(1, usageCount(s.vehicleUsage(), 200), "tank200 使用 1 场");
+        // 其他玩家默认 tank4481，每场必出现 → 3 场
+        final PlayerLeagueSummary other = batch.playerSummaries().stream()
+                .filter(x -> x.accountId() == 1002L).findFirst().orElseThrow();
+        assertEquals(3, usageCount(other.vehicleUsage(), 4481), "其他玩家 tank4481 使用 3 场");
+    }
+
+    @Test
+    void vehicleUsageSkipsRatingIneligibleBattles() {
+        final Battle b1 = battleWithTank(1, 100);
+        final Battle b2 = battleWithTank(1, 200);
+        final LeagueRatingResult r1 = LeagueRatingCalculator.calculate(b1);
+        final LeagueRatingResult r2 = LeagueRatingCalculator.calculate(b2);
+        // 把 b2 的结果复制为 ineligible（rated=false），aggregator 必须跳过该场
+        final LeagueRatingResult ineligible = new LeagueRatingResult(r2.arenaId(), r2.players(),
+                r2.team1(), r2.team2(), r2.mvp(), false);
+        final LeagueRatingBatch batch = LeagueRatingBatchAggregator.aggregate(
+                List.of(b1, b2), List.of(r1, ineligible), List.of());
+        final PlayerLeagueSummary s = batch.playerSummaries().stream()
+                .filter(x -> x.accountId() == 1001L).findFirst().orElseThrow();
+        assertEquals(1, s.battles(), "battles = rated-only");
+        assertEquals(1, usageCount(s.vehicleUsage(), 100), "仅 rated 场计入");
+        assertEquals(0, usageCount(s.vehicleUsage(), 200), "ineligible 场不计入坦克");
+    }
 }
