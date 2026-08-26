@@ -246,6 +246,7 @@ Processing/Export task notification 必须低于 Modal stacking level；移动�
   `docs/WotBTools_League_Rating_V5.md`，canonical 单一事实源；ReplayPage League 模式
   「算法说明」按钮跳转进入，返回时经 KeepAlive 保留解析状态）。
 - `?view=playback-qa`：隐藏 QA 页（admin）。
+- `?view=rating-v2`：隐藏历史 Rating V2 灰度页（仅 `wotbtools-admin`，只读 READY Processing Job）。
 
 旧 `?view=leaderboard` canonicalize 到 `hof`，旧 `?view=extended` canonicalize 到 `replay`。
 
@@ -336,6 +337,7 @@ cd frontend && npm test && npm run build
 | 回放重建流水线 | `docs/architecture/replay-pipeline.md` |
 | 地图鸟瞰 / 战局回放 | `docs/features/battle-playback.md` |
 | 战斗表现 | `docs/features/performance.md` |
+| 历史 Rating V2（管理员灰度） | `docs/features/rating-v2.md` |
 | League Rating | `docs/features/league-rating.md` |
 | 名人堂 / 百场 | `docs/features/hall-of-fame.md` |
 | Team AI Review | `docs/features/team-ai-review.md` |

@@ -183,14 +183,24 @@ public class ReplayProcessingJobService {
      * 未 READY / 已清理返回 409 JOB_NOT_READY。
      */
     public PreviewResponse result(final String jobId) {
+        final ProcessedDataset ds = readyDataset(jobId);
+        return Mapper.toPreviewResponse(ds.battles(), ds.battleSourceNames(),
+                ds.duplicates(), ds.failures(), tankopedia, ds.league(), ds.leagueUnavailableCode());
+    }
+
+    /**
+     * Returns the current job's authoritative READY dataset for a read-only downstream analysis.
+     *
+     * <p>The returned dataset is shared by Preview and Export. Consumers must only derive values from
+     * it; they must not enrich or mutate its Battle graph.</p>
+     */
+    public ProcessedDataset readyDataset(final String jobId) {
         final ReplayProcessingJob job = requireJob(jobId);
         final ReplayProcessingJob.Snapshot snap = job.snapshot();
         if (snap.status() != ReplayProcessingJob.Status.READY || job.result() == null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "JOB_NOT_READY");
         }
-        final ProcessedDataset ds = job.result();
-        return Mapper.toPreviewResponse(ds.battles(), ds.battleSourceNames(),
-                ds.duplicates(), ds.failures(), tankopedia, ds.league(), ds.leagueUnavailableCode());
+        return job.result();
     }
 
     private ReplayProcessingJob requireJob(final String jobId) {
