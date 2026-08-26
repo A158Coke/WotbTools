@@ -13,7 +13,6 @@ import {
   RADAR, axisPoint, axisRay, polygonPoints, gridPolygonPoints, scaleTickPosition,
 } from '../utils/radarGeometry.js'
 import { sanitizeFilename, downloadBlob } from '../utils/exportReplayPng.js'
-import { loadVehiclePortrait } from '../vehicle-portraits/runtime.js'
 
 /**
  * 选手详情 Side Drawer。
@@ -186,39 +185,56 @@ const facts = computed(() => {
 })
 
 // ---- 坦克展示（Summary=当前批次最常使用；Battle=本场坦克）----
+// 可靠坦克名：非空、非占位名（Tankopedia 对未知 ID 返回 "#<tankId>"）；不满足则视为无可靠车辆。
+const isReliableTankName = (name) => {
+  const s = (name || '').trim()
+  return !!s && !s.startsWith('#')
+}
 const vehicle = computed(() => {
   const p = props.player
   if (!p) return null
   if (isSummary.value) {
     const muv = p.mostUsedVehicle
-    if (!muv || muv.tankId == null) return null
+    if (!muv || muv.tankId == null || !isReliableTankName(muv.tankName)) return null
     const rate = (p.ratedBattles && p.ratedBattles > 0) ? (muv.battles / p.ratedBattles) : null
     return {
       label: t('league.drawer.most_used_vehicle'),
-      tankName: muv.tankName || '',
+      tankName: (muv.tankName || '').trim(),
       battleText: t('league.drawer.vehicle_battles', { n: muv.battles }),
       rateText: rate != null ? (Math.round(rate * 1000) / 10) + '%' : '',
       tankId: muv.tankId,
     }
   }
-  if (p.tankId == null) return null
+  const tankId = Number(p.tankId)
+  if (!Number.isFinite(tankId) || tankId <= 0 || !isReliableTankName(p.tankName)) return null
   return {
     label: t('league.drawer.battle_vehicle'),
-    tankName: p.tankName || '',
+    tankName: (p.tankName || '').trim(),
     battleText: '',
     rateText: '',
-    tankId: p.tankId,
+    tankId,
   }
 })
 
-// 懒加载坦克贴图，token 防止快速切换选手时旧异步结果覆盖新选手。
+// 懒加载坦克贴图：动态 import 保持 vehicle-portraits/runtime.js 独立 lazy chunk；
+// token 防止快速切换选手时旧异步结果覆盖新选手。
 const vehiclePortrait = ref(null)
 const vehiclePortraitToken = ref(0)
+let portraitRuntimePromise = null
+function loadPortrait(tankId) {
+  if (tankId == null) return Promise.resolve(null)
+  if (!portraitRuntimePromise) {
+    portraitRuntimePromise = import('../vehicle-portraits/runtime.js')
+  }
+  return portraitRuntimePromise
+    .then((m) => m.loadVehiclePortrait(tankId))
+    .catch(() => null)
+}
 watch(vehicle, async (v) => {
   const token = ++vehiclePortraitToken.value
   vehiclePortrait.value = null
   if (!v || v.tankId == null) return
-  const url = await loadVehiclePortrait(v.tankId)
+  const url = await loadPortrait(v.tankId)
   if (token !== vehiclePortraitToken.value) return
   vehiclePortrait.value = url
 }, { immediate: true })
@@ -311,7 +327,7 @@ async function ensureVehiclePortraitForExport() {
     exportPortrait.value = null
     return
   }
-  const url = await loadVehiclePortrait(v.tankId)
+  const url = await loadPortrait(v.tankId)
   exportPortrait.value = url ? await ensureImageLoaded(url) : null
 }
 

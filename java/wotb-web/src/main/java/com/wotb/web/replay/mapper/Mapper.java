@@ -40,7 +40,6 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.function.Function;
 
 /** model -> 前端 DTO（复用 core 列 key；展示值转换为稳定英文码）。 */
@@ -277,8 +276,10 @@ public final class Mapper {
     }
 
     /** 从已累计的坦克使用直方图中选出「最常使用坦克」（可独立单测，不依赖 Tankopedia）。
-     * 规则：使用场次降序 → 官方名称忽略大小写升序 → tankId 升序；
-     * 无可靠车辆数据（名称为 null）时返回 null（不伪造坦克，不参与 Rating 计算）。
+     * 规则：先确定最大使用场次，只处理使用次数等于最大的候选；每个候选只解析一次官方名；
+     * 排除 null / 空白 / 占位名（如 {@code #<tankId>}）等非权威名称；剩余候选按官方名
+     * 忽略大小写升序 → tankId 升序。若无任何可可靠命名的最大次数候选 → null；
+     * 不退回使用次数较少的坦克（不伪造坦克，不参与 Rating 计算）。
      */
     static LeagueVehicleUsageDto selectMostUsedVehicle(final List<PlayerVehicleUsage> usage,
                                                        final Function<Long, String> nameOf) {
@@ -286,27 +287,44 @@ public final class Mapper {
             return null;
         }
         final int maxBattles = usage.stream().mapToInt(PlayerVehicleUsage::battles).max().orElse(-1);
-        return usage.stream()
+        final List<VehicleCandidate> candidates = usage.stream()
                 .filter(u -> u.battles() == maxBattles)
+                .map(u -> new VehicleCandidate(u.tankId(), u.battles(), nameOf.apply(u.tankId())))
+                .filter(c -> isAuthoritativeName(c.name))
                 .sorted(Comparator
-                        .comparing((PlayerVehicleUsage u) -> Objects.toString(nameOf.apply(u.tankId()), ""),
-                                String.CASE_INSENSITIVE_ORDER)
-                        .thenComparingLong(PlayerVehicleUsage::tankId))
-                .findFirst()
-                .map(u -> {
-                    final String name = nameOf.apply(u.tankId());
-                    return name == null ? null : new LeagueVehicleUsageDto(u.tankId(), name, u.battles());
-                })
-                .orElse(null);
+                        .comparing((VehicleCandidate c) -> c.name, String.CASE_INSENSITIVE_ORDER)
+                        .thenComparingLong(VehicleCandidate::tankId))
+                .toList();
+        if (candidates.isEmpty()) {
+            return null;
+        }
+        final VehicleCandidate best = candidates.get(0);
+        return new LeagueVehicleUsageDto(best.tankId, best.name, best.battles);
     }
 
-    /** 经单一事实源 Tankopedia 解析坦克官方名；无该车或未加载时返回 null。 */
-    private static String vehicleName(final long tankId, final Tankopedia tp) {
+    /** 是否为可靠官方坦克名：非 null、非空白、非占位名（Tankopedia 对未知 ID 返回 {@code "#<tankId>"}）。 */
+    private static boolean isAuthoritativeName(final String name) {
+        if (name == null) {
+            return false;
+        }
+        final String trimmed = name.trim();
+        return !trimmed.isEmpty() && !trimmed.startsWith("#");
+    }
+
+    /** 最常使用坦克候选：tankId + 使用场次 + 已解析官方名（可能为 null/占位，由调用方过滤）。 */
+    private record VehicleCandidate(long tankId, int battles, String name) {
+    }
+
+    /** 经单一事实源 Tankopedia 解析坦克官方名；无该车、未加载或为占位名（#<tankId>）时返回 null。 */
+    static String vehicleName(final long tankId, final Tankopedia tp) {
         if (tp == null) {
             return null;
         }
         final TankInfo info = tp.info(tankId);
-        return info == null ? null : info.name();
+        if (info == null) {
+            return null;
+        }
+        return isAuthoritativeName(info.name()) ? info.name() : null;
     }
 
     private static Object playerValue(final Columns.Column column, final PlayerResult player) {
