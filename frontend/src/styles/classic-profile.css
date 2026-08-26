@@ -17,7 +17,6 @@
 }
 
 /* 2) 装饰性 hero / 上传 / profile-hero 表面:去掉 AI 图,落回平暗(保留结构) */
-[data-ui-profile="classic"] .homepage-showcase .showcase-hero,
 [data-ui-profile="classic"] .layout-data-workspace .uploadwrap,
 [data-ui-profile="classic"] .layout-data-workspace .uploadcard,
 [data-ui-profile="classic"] .profile-page .profile-hero {
@@ -29,4 +28,21 @@
 [data-ui-profile="classic"] .layout-data-workspace .uploadwrap::after,
 [data-ui-profile="classic"] .layout-data-workspace .uploadcard::before {
   content: none;
+}
+
+/* 4) 首页 Home:Classic 去掉四张 AI 装饰卡片图 + 装饰渐变,保留卡片/标题/编号/跳转结构 */
+[data-ui-profile="classic"] .homepage-showcase .showcase-hero {
+  background: var(--bg-card) !important;
+}
+[data-ui-profile="classic"] .homepage-showcase .showcase-hero::before {
+  content: none;
+}
+[data-ui-profile="classic"] .homepage-showcase .feature-visual {
+  background: var(--bg-card);
+}
+[data-ui-profile="classic"] .homepage-showcase .feature-visual::after {
+  content: none;
+}
+[data-ui-profile="classic"] .homepage-showcase .feature-visual img {
+  visibility: hidden;
 }
