@@ -28,6 +28,7 @@
 - `entity-methods.md`：Type8 method 全量 inventory、subtype48 wrapper inventory。
 - `chat-actions.md`：当前 11.19 Avatar method47 / `CHAT_ACTION_DATA`。
 - `avatar-synchronized-options.md`：Avatar method49 zlib + Python-pickle 同步客户端配置。
+- `avatar-damaged-device-feedback.md`：Avatar method38 结构化 damaged-device feedback、Type32 short token/state 关联与 historical `showOtherVehicleDamagedDevices` 候选。
 
 ### 战斗事实
 
@@ -66,6 +67,7 @@
 - Type32 mobile `flag=1` short `...04` family 与火灾闭环：4/4 settlement fire death 的终末燃烧链出现该 family；`0x0B` 会终止周期 fire-DOT，而 `0x0D` 不会。
 - Vehicle prop8 是 count-prefixed recoverable/negative-state token collection；部分 token 可被 `0x0B` 与 `0x0D` 共同清除，另一些当前只观察到 `0x0B` 清除，因此不能简化成单一 `damagedModules` 列表。
 - `0x0C` First Aid 的 5/5 当前样本均在约 0.8–2.2 秒前有同实体真实 method8 damage event；但 prop8、method8 `(1,3,2)` 粗字段与 Type32 long `body[2]=2` 均已被全量反证为非 crew-specific，具体 injured crew wire surface 仍为 PARTIAL。
+- Avatar method38 在严格 34-arena corpus 中是 vehicle-scoped structured device-damage feedback family；主 variant 281/295 可解析为 `vehicleId + 4-byte header + count + repeated(token,state) + tail`，并与同钟 Type32 damage-short token/state family 高度闭合；确切 historical RPC symbol 仍为 PARTIAL。
 
 ### 仍需研究
 
