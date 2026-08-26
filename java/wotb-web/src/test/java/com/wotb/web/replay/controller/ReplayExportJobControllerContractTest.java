@@ -1,6 +1,6 @@
 package com.wotb.web.replay.controller;
 
-import com.wotb.web.controller.GlobalExceptionHandler;
+import com.wotb.web.exceptionhandler.GlobalExceptionHandler;
 import com.wotb.web.replay.job.ExportJob;
 import com.wotb.web.replay.job.ReplayExportJobService;
 import org.junit.jupiter.api.BeforeEach;

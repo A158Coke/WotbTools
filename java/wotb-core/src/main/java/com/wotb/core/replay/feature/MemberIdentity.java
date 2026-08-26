@@ -1,7 +1,7 @@
 package com.wotb.core.replay.feature;
 
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.processing.TeamEntityIdentity;
+import com.wotb.core.replay.processing.TeamEntityIdentity;
 import org.springframework.util.StringUtils;
 
 import java.util.List;

@@ -9,7 +9,7 @@ import java.util.List;
  *
  * <p>业务语义（V4.1 冻结）：玩家死亡后 {@code [0, +TRADE_AFTER_DEATH_WINDOW_SEC]} 秒内
  * （边界包含，directional）存在敌方死亡 → 视为 traded。依赖
- * {@link com.wotb.core.processing.DeathTimeReconciler} 校准后的权威
+ * {@link com.wotb.core.replay.processing.DeathTimeReconciler} 校准后的权威
  * {@link PlayerResult#survivalTimeSec}；玩家存活或死亡时刻未知时 fail-closed 返回 0，
  * 绝不猜测。</p>
  *

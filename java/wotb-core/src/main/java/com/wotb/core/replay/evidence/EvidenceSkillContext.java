@@ -1,7 +1,7 @@
 package com.wotb.core.replay.evidence;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.processing.RecorderEntityMapping;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 

@@ -4,13 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.wotb.core.processing.FriendlyEnemyResult.Winner;
-import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
-import com.wotb.core.processing.FriendlyEnemyResult.WinnerSource;
-import com.wotb.core.processing.FriendlyEnemyResult.PointsEndReason;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.Winner;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.TeamBattleWinner;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.WinnerSource;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.PointsEndReason;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.evidence.EntryHpSource;
+import com.wotb.core.model.EntryHpSource;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.event.DamageEvent;

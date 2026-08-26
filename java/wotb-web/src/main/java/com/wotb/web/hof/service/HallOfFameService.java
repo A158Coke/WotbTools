@@ -8,14 +8,15 @@ import com.wotb.core.ref.VehicleCodes;
 import com.wotb.web.hof.dto.HallOfFamePageDto;
 import com.wotb.web.hof.dto.HallOfFameRecordDto;
 import com.wotb.web.hof.dto.HofVehicleOptionDto;
-import com.wotb.web.hof.dto.ReplayDownload;
+import com.wotb.web.replayfile.ReplayDownload;
 import com.wotb.web.hof.dto.ReplayFileMeta;
 import com.wotb.web.hof.entity.HallOfFameRecord;
 import com.wotb.web.hof.policy.HallOfFameBattleType;
 import com.wotb.web.hof.policy.HallOfFameBattleTypePolicy;
 import com.wotb.web.hof.repository.HallOfFameRecordRepository;
 import com.wotb.web.hof.repository.HofVehicleProjection;
-import com.wotb.web.hof.storage.HallOfFameReplayStorage;
+import com.wotb.web.replayfile.HallOfFameReplayStorage;
+import com.wotb.web.replayfile.HofReplayReferenceCounter;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -42,7 +43,7 @@ import java.util.Optional;
  * 成绩所有权 = 回放录像者（recorder），uploadedBy 仅表示谁上传了回放。
  */
 @Service
-public class HallOfFameService {
+public class HallOfFameService implements HofReplayReferenceCounter {
 
     private static final int MAX_LIMIT = 200;
     private static final int DEFAULT_LIMIT = 50;
@@ -81,7 +82,8 @@ public class HallOfFameService {
      * 某回放 hash 在名人堂记录中的引用数（百场 evidence 物理文件清理时的跨域引用计数）。
      * 百场与名人堂共享同一内容寻址存储目录，删除文件前必须确认两个域都无引用。
      */
-    public long countReplayHashReferences(final String sha256) {
+    @Override
+    public long countHofReferences(final String sha256) {
         return repository.countByReplayHash(sha256);
     }
 

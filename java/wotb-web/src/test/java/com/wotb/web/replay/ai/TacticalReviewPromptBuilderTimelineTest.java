@@ -33,7 +33,7 @@ import com.wotb.core.replay.evidence.EvidenceProvenance;
 import com.wotb.core.replay.evidence.EvidenceSkillResult;
 import com.wotb.core.replay.evidence.EvidenceType;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
-import com.wotb.core.processing.RecorderEntityMapping;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;

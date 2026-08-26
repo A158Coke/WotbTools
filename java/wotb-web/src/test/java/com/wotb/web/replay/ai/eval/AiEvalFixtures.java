@@ -2,9 +2,9 @@ package com.wotb.web.replay.ai.eval;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.processing.BattleCategory;
-import com.wotb.core.processing.BattleCategoryUtils;
-import com.wotb.core.processing.RecorderEntityMapping;
+import com.wotb.core.replay.processing.BattleCategory;
+import com.wotb.core.replay.processing.BattleCategoryUtils;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.DamageEvent;

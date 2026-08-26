@@ -4,7 +4,7 @@ import com.wotb.web.config.ApiPaths;
 import com.wotb.web.hof.dto.HofAdminAuditPageDto;
 import com.wotb.web.hof.dto.HofAdminPageDto;
 import com.wotb.web.hof.dto.HofVehicleOptionDto;
-import com.wotb.web.hof.dto.ReplayDownload;
+import com.wotb.web.replayfile.ReplayDownload;
 import com.wotb.web.hof.service.HallOfFameAdminService;
 import com.wotb.web.hof.service.HallOfFameService;
 import org.springframework.http.ContentDisposition;

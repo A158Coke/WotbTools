@@ -13,11 +13,11 @@ import java.util.stream.Stream;
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.processing.BatchAnalyzer;
-import com.wotb.core.processing.ReplayPerspectiveGroup;
-import com.wotb.core.processing.ReplayProcessingCapabilities;
-import com.wotb.core.processing.ReplayProcessingResult;
-import com.wotb.core.processing.ReplayProcessingStatus;
+import com.wotb.core.replay.processing.BatchAnalyzer;
+import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
+import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
@@ -242,7 +242,7 @@ class AllowedLanguagePromptTest {
                 true, true, false, false, false, true, false, false);
         final ReplayProcessingResult result = new ReplayProcessingResult(
                 "stub.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
-                new com.wotb.core.processing.ReplayIdentity(
+                new com.wotb.core.replay.processing.ReplayIdentity(
                         "h", "stub", "11.0", "team_map", 1001L, null),
                 battle, teamRecon(), null, capabilities, null, null);
         return new BatchAnalyzer().analyze(List.of(result)).groups().getFirst();

@@ -1,7 +1,7 @@
 package com.wotb.web.hundred.controller;
 
 import com.wotb.web.config.ApiPaths;
-import com.wotb.web.hof.dto.ReplayDownload;
+import com.wotb.web.replayfile.ReplayDownload;
 import com.wotb.web.hundred.dto.HundredAdminDetailDto;
 import com.wotb.web.hundred.dto.HundredAdminPageDto;
 import com.wotb.web.hundred.dto.HundredDeleteRequest;

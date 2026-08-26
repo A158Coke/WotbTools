@@ -1,6 +1,6 @@
 package com.wotb.web.replay.controller;
 
-import com.wotb.core.processing.DefaultReplayProcessingFacade;
+import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
 import com.wotb.web.replay.MapOverviewQueryService;
 import com.wotb.web.replay.ReplayLegacyEndpoints;
 import com.wotb.web.replay.ai.AiReplayReviewService;

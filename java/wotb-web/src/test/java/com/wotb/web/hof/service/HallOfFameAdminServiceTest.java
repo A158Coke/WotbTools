@@ -1,10 +1,11 @@
 package com.wotb.web.hof.service;
 
+import com.wotb.web.replayfile.ReplayHashLock;
 import com.wotb.web.hof.entity.HallOfFameAdminLog;
 import com.wotb.web.hof.entity.HallOfFameRecord;
 import com.wotb.web.hof.repository.HallOfFameAdminLogRepository;
 import com.wotb.web.hof.repository.HallOfFameRecordRepository;
-import com.wotb.web.hof.storage.HallOfFameReplayStorage;
+import com.wotb.web.replayfile.HallOfFameReplayStorage;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Page;
@@ -44,15 +45,15 @@ class HallOfFameAdminServiceTest {
     private final HallOfFameReplayStorage storage = mock(HallOfFameReplayStorage.class);
     private final ReplayHashLock replayHashLock = mock(ReplayHashLock.class);
     private final HallOfFameService hallOfFameService = mock(HallOfFameService.class);
-    private final com.wotb.web.hundred.service.HundredReplayEvidenceService hundredEvidenceService =
-            mock(com.wotb.web.hundred.service.HundredReplayEvidenceService.class);
+    private final com.wotb.web.replayfile.HundredReplayReferenceCounter hundredReplayReferenceCounter =
+            mock(com.wotb.web.replayfile.HundredReplayReferenceCounter.class);
     private final PlatformTransactionManager txManager = mock(PlatformTransactionManager.class);
 
     private HallOfFameAdminService service() {
         // mock txManager.getTransaction → null：TransactionTemplate.execute 仍会执行回调（单事务语义由真实 Spring 管理，
         // 单元测试只验证回调内的业务编排：audit+delete 顺序与失败传播）。
         return new HallOfFameAdminService(repository, recordMapper, auditRepository,
-                auditMapper, storage, replayHashLock, hallOfFameService, hundredEvidenceService, txManager);
+                auditMapper, storage, replayHashLock, hallOfFameService, hundredReplayReferenceCounter, txManager);
     }
 
     @AfterEach
@@ -152,7 +153,8 @@ class HallOfFameAdminServiceTest {
         runLockInline();
         final HallOfFameRecord r = record(42L, "c".repeat(64));
         when(repository.findById(42L)).thenReturn(Optional.of(r));
-        when(hundredEvidenceService.countReferences("c".repeat(64))).thenReturn(1L);
+        when(repository.countByReplayHash("c".repeat(64))).thenReturn(1L);
+        when(hundredReplayReferenceCounter.countHundredReferences("c".repeat(64))).thenReturn(0L);
 
         service().deleteEntry(42L);
 
@@ -168,7 +170,7 @@ class HallOfFameAdminServiceTest {
         runLockInline();
         final HallOfFameRecord r = record(42L, "d".repeat(64));
         when(repository.findById(42L)).thenReturn(Optional.of(r));
-        when(hundredEvidenceService.countReferences("d".repeat(64))).thenReturn(0L);
+        when(hundredReplayReferenceCounter.countHundredReferences("d".repeat(64))).thenReturn(0L);
 
         service().deleteEntry(42L);
 
@@ -182,7 +184,7 @@ class HallOfFameAdminServiceTest {
         runLockInline();
         final HallOfFameRecord r = record(42L, "e".repeat(64));
         when(repository.findById(42L)).thenReturn(Optional.of(r));
-        when(hundredEvidenceService.countReferences("e".repeat(64))).thenReturn(1L);
+        when(hundredReplayReferenceCounter.countHundredReferences("e".repeat(64))).thenReturn(1L);
 
         service().deleteEntry(42L);
 
@@ -198,7 +200,8 @@ class HallOfFameAdminServiceTest {
         runLockInline();
         final HallOfFameRecord r = record(42L, "f".repeat(64));
         when(repository.findById(42L)).thenReturn(Optional.of(r));
-        when(hundredEvidenceService.countReferences("f".repeat(64))).thenReturn(2L);
+        when(repository.countByReplayHash("f".repeat(64))).thenReturn(1L);
+        when(hundredReplayReferenceCounter.countHundredReferences("f".repeat(64))).thenReturn(1L);
 
         service().deleteEntry(42L);
 

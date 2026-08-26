@@ -85,6 +85,13 @@
             <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <!-- 架构测试（随 mvn test 执行）：domain 分包 + 分层 + 无循环依赖 -->
+            <version>${archunit.version}</version>
+            <scope>test</scope>
+        </dependency>
         <!-- Admin Client 独立使用 26.0.x 发布线；representation model 跟随后端 Keycloak Core。 -->
         <dependency>
             <groupId>org.keycloak</groupId>

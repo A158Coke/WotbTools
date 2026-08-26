@@ -1,6 +1,6 @@
 package com.wotb.web.boost.service;
 
-import com.wotb.web.admin.service.KeycloakAdminUserService;
+import com.wotb.web.config.KeycloakAdminUserService;
 import com.wotb.web.boost.dto.BoosterDto;
 import com.wotb.web.boost.entity.BoosterApplication;
 import com.wotb.web.boost.entity.BoosterProfile;

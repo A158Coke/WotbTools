@@ -1,9 +1,10 @@
 package com.wotb.web.hundred.service;
 
-import com.wotb.web.hof.dto.ReplayDownload;
-import com.wotb.web.hof.service.HallOfFameService;
-import com.wotb.web.hof.service.ReplayHashLock;
-import com.wotb.web.hof.storage.HallOfFameReplayStorage;
+import com.wotb.web.replayfile.ReplayDownload;
+import com.wotb.web.replayfile.HofReplayReferenceCounter;
+import com.wotb.web.replayfile.HundredReplayReferenceCounter;
+import com.wotb.web.replayfile.ReplayHashLock;
+import com.wotb.web.replayfile.HallOfFameReplayStorage;
 import com.wotb.web.hundred.dto.HundredReplayEvidenceDto;
 import com.wotb.web.hundred.entity.HundredBattleReplayEvidence;
 import com.wotb.web.hundred.repository.HundredBattleReplayEvidenceRepository;
@@ -38,7 +39,7 @@ import java.util.List;
  * best-effort 清理物理文件（失败仅 WARN，orphan 保留，与 HoF admin delete 同语义）。</p>
  */
 @Service
-public class HundredReplayEvidenceService {
+public class HundredReplayEvidenceService implements HundredReplayReferenceCounter {
 
     private static final Logger log = LoggerFactory.getLogger(HundredReplayEvidenceService.class);
 
@@ -49,20 +50,20 @@ public class HundredReplayEvidenceService {
     private final HundredBattleReplayEvidenceRepository repository;
     private final HundredBattleSubmissionRepository submissionRepository;
     private final HundredBattleMapper mapper;
-    private final HallOfFameService hallOfFameService;
+    private final HofReplayReferenceCounter hofReplayReferenceCounter;
     private final ReplayHashLock replayHashLock;
 
     public HundredReplayEvidenceService(final HallOfFameReplayStorage storage,
                                         final HundredBattleReplayEvidenceRepository repository,
                                         final HundredBattleSubmissionRepository submissionRepository,
                                         final HundredBattleMapper mapper,
-                                        final HallOfFameService hallOfFameService,
+                                        final HofReplayReferenceCounter hofReplayReferenceCounter,
                                         final ReplayHashLock replayHashLock) {
         this.storage = storage;
         this.repository = repository;
         this.submissionRepository = submissionRepository;
         this.mapper = mapper;
-        this.hallOfFameService = hallOfFameService;
+        this.hofReplayReferenceCounter = hofReplayReferenceCounter;
         this.replayHashLock = replayHashLock;
     }
 
@@ -174,13 +175,10 @@ public class HundredReplayEvidenceService {
         }
     }
 
-    /**
-     * 跨域引用计数（HoF admin delete 复用）：hall_of_fame_record + 本表均引用数之和。
-     * 所有删除共享 replay storage 物理文件的路径都必须以此 TOTAL REFERENCES 为准——
-     * 只有总和为 0 才允许 storage.delete(hash)，保证「DB 引用 H ⇒ 物理 H 存在」双向一致。
-     */
-    public long countReferences(final String sha256) {
-        return repository.countBySha256(sha256) + hallOfFameService.countReplayHashReferences(sha256);
+    /** 本域（hundred evidence）对某 replay hash 的引用数；HoF 侧计数由 {@link HofReplayReferenceCounter} 提供。 */
+    @Override
+    public long countHundredReferences(final String sha256) {
+        return repository.countBySha256(sha256);
     }
 
     /**
@@ -239,7 +237,7 @@ public class HundredReplayEvidenceService {
         if (repository.countBySha256(hash) > 0) {
             return;
         }
-        if (hallOfFameService.countReplayHashReferences(hash) > 0) {
+        if (hofReplayReferenceCounter.countHofReferences(hash) > 0) {
             return;
         }
         try {

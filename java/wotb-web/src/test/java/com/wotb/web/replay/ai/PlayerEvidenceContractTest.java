@@ -2,8 +2,8 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.processing.BattleIdentity;
-import com.wotb.core.processing.RecorderEntityMapping;
+import com.wotb.core.replay.processing.BattleIdentity;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;

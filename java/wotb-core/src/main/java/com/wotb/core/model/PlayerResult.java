@@ -1,6 +1,5 @@
 package com.wotb.core.model;
 
-import com.wotb.core.replay.evidence.EntryHpSource;
 
 import java.util.ArrayList;
 import java.util.List;

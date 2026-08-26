@@ -5,8 +5,8 @@ import java.util.Map;
 
 import com.wotb.core.ai.EvidenceDensity;
 import com.wotb.core.model.Battle;
-import com.wotb.core.processing.AiNotConfiguredException;
-import com.wotb.core.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.AiNotConfiguredException;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;

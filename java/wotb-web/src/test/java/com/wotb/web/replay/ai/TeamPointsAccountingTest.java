@@ -2,7 +2,7 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.processing.FriendlyEnemyResult;
+import com.wotb.core.replay.processing.FriendlyEnemyResult;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
