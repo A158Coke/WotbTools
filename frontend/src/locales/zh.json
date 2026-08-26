@@ -1527,6 +1527,7 @@
             "radar_title_summary": "Rating 维度（批次中位数）",
             "radar_title_battle": "本场 Rating 维度",
             "radar_settings": "设置指标",
+            "resize_panel": "调整面板宽度",
             "radar_done": "完成",
             "radar_min_hint": "雷达至少需要 {n} 个指标",
             "radar_max_hint": "雷达最多 {n} 个指标",

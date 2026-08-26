@@ -52,6 +52,7 @@ html[data-ui-profile="classic"] {
   --border-chip: #ddd0b8;
   --border-col: #ccd2c8;
   --border-light: #e3e6e1;
+  --border-light-strong: #c2c8bd;
   --border-heavy: #bac4b4;
   --border-warn: #c98a2e;
   --border-tab-active: #c9762e;
