@@ -14,8 +14,8 @@ Type8 / Vehicle method8 / argLen=21
 args[0..4)  : attackerEntityId  u32 LE
 args[4..8)  : victimEntityId    u32 LE
 args[8]     : constant 1 in current corpus
-args[9]     : hit/result-category candidate
-args[10]    : secondary hit/result-category candidate
+args[9]     : primary hit/result category
+args[10]    : secondary hit/result category
 args[11..]  : additional packed hit metadata, only partially decoded
 args[20]    : small categorical flag, exact meaning PARTIAL
 ```
@@ -35,8 +35,8 @@ For each player, direct method8 records are grouped by attacker and replay `rawC
 Across 476 player-game rows:
 
 ```text
-settlement hits                       = 3788
-observed unique attacker/method8 clock = 3775
+settlement hits                        = 3788
+observed unique attacker/method8 clocks = 3775
 ```
 
 Player-row comparison:
@@ -94,6 +94,33 @@ Method8 supplies hit/attacker/victim/result metadata; Type7 prop3 supplies absol
 
 Consumers must not expose an arbitrary method8 raw integer as `damage`.
 
+## Exact observed damage attribution
+
+When a Type7 prop3 decrease has a known previous positive HP value and the same victim/rawClock has exactly one supported method8 attacker, that HP loss can be attributed fail-closed to that attacker.
+
+Across the strict 34-arena corpus:
+
+```text
+settlement total damageDealt       = 1,233,475
+exact observed attributed HP loss  = 1,029,610
+```
+
+The event-stream reconstruction therefore captures a large but incomplete single-POV subset of authoritative damage. Median per-player observed/settlement damage coverage is approximately `0.85`.
+
+Victim-side HP reconstruction is independently strong:
+
+```text
+settlement total damageReceived = 1,233,736
+observed prop3 HP loss          = 1,048,967
+correlation by player row       ≈ 0.987
+```
+
+Missing coverage is expected from AoI boundaries, unknown initial HP before the first observed state, fire/special-damage paths and ambiguous same-clock attribution.
+
+Safe rule:
+
+> individual observed HP deltas can be `EXACT`; single-POV event-stream aggregate damage is **not** a replacement for settlement totals.
+
 ## Independent shot-lifecycle support
 
 The projectile stream provides an independent hit/miss relationship:
@@ -113,7 +140,7 @@ tracks settlement hits very strongly. Across all 476 rows the correlation is app
 
 This supports the method8 closure from a separate protocol surface.
 
-## Penetration/result candidate in `args[9]`
+## Primary result category `args[9]`
 
 `args[9]` is a small categorical field with current values:
 
@@ -131,61 +158,104 @@ Distribution over the 3822 direct records:
 4 : 356
 ```
 
-The `{3,4}` family is strongly associated with actual HP reduction when the victim's previous HP is observable.
+The categories have sharply different HP behavior.
 
 With prior victim HP known:
 
 ```text
-args[9] in {3,4}:
-  same-clock HP loss     : 2695
-  no same-clock HP update:  190
-
-args[9] in {0,1,2}:
-  same-clock HP loss     :   29
-  no same-clock HP update:  293
+sub=1 : 224 total; only 1 known same-clock HP-loss sample
+sub=2 : 168 total; only 3 known same-clock HP-loss samples
+sub=3 : 2941 total; 2463 / 2516 known-HP samples lose HP
+sub=4 : 356 total; 231 / 310 known-HP samples lose HP
 ```
 
-Thus `args[9]` is strongly a **hit/damage-result category** rather than an arbitrary payload byte.
+All categories remain strongly shot-associated, so `1/2` are not simply unrelated state packets. They are hit-result families that usually do not produce direct HP reduction, while `3/4` are strongly damaging/penetrating families.
 
-### Settlement penetration comparison
+## Penetration family — stronger current behavioral closure
 
-Counting direct method8 events with:
+A recorder-only natural experiment removes most AoI ambiguity. Several recorder battles have:
+
+```text
+settlement hits == settlement penetrations
+```
+
+meaning every recorded hit in that player-game must belong to the settlement penetration set.
+
+Those all-penetration battles contain method8 hits with:
+
+```text
+args[9]  = 2
+args[10] = 0
+```
+
+Therefore `(2,0)` cannot be classified as a generic non-penetration merely because it often has no same-clock HP loss. It belongs to the penetration family and is a strong candidate for a penetration/module-only or other non-HP penetration result.
+
+Current coarse penetration predicate:
 
 ```text
 args[9] in {3,4}
+OR
+(args[9] == 2 AND args[10] == 0)
 ```
 
-against settlement `penetrations` gives:
+Across all 476 player-game rows:
 
 ```text
-exact player-row equality : 373 / 476
-observed candidate total  : 3297
-settlement penetrations   : 3415
+exact settlement penetration count : 420 / 476
+candidate total                     : 3375
+settlement penetrations             : 3415
+correlation                         : ~0.992
 ```
 
-Recorder-only comparison removes most AoI uncertainty:
+Recorder-only validation:
 
 ```text
 34 recorder rows:
-exact equality : 26
--1             :  7
--2             :  1
+exact equality : 32
+-1             : 1
+-2             : 1
 positive over-counts: 0
 ```
 
-This is strong evidence that values `3/4` belong to a penetration/damaging-hit result family, but it is not yet enough to assign exact symbolic enum names or prove that every settlement penetration is represented solely by this predicate.
+The `-2` recorder row also under-observes method8 hits by two, so its penetration deficit is explained by missing hit events. The remaining complete-observation `-1` row proves that one additional penetration subtype is encoded in finer metadata and that the coarse predicate is not yet a complete universal decoder.
 
 Verdict:
 
-> `args[9] in {3,4}` = **penetration/damaging-hit result family candidate — PARTIAL (strong)**.
+> `{sub=3, sub=4, sub=2+secondary=0}` = **penetration-family classifier — PROVEN behavioral subset / PARTIAL complete enum** for current Blitz 11.19 corpus.
 
-Do **not** yet implement `penetrated = args[9] == 3 || args[9] == 4` as an unconditional cross-version production rule.
+Do not yet expose the individual symbolic names of result values `0..4`, and do not assume the predicate is complete across versions.
 
-## Rejected overfit rule
+## Important distinction: penetration != HP loss
 
-A brute-force statistical search can improve settlement agreement by combining unrelated categorical conditions, for example adding an `args[10] == 0` branch. That rule produces very high aggregate agreement but fails the independent HP-behavior test: many such additional records have no HP change.
+The all-penetration recorder samples prove that some `sub=2, secondary=0` hits are settlement penetrations despite often producing no observable same-clock HP decrease.
 
-Therefore statistical fit alone is insufficient. The archive explicitly rejects using such an OR rule as protocol semantics.
+Therefore battle reconstruction must keep separate facts:
+
+```text
+hit
+penetration/result family
+observed HP loss
+module/critical side effect
+```
+
+They are related but not interchangeable.
+
+A penetration can belong to a non-HP/module-only family; conversely raw packed method8 bytes must never be treated as direct damage amount.
+
+## Module-only penetration boundary
+
+One fully observed recorder battle has:
+
+```text
+11 hits
+9 settlement penetrations
+11 observed method8 hit bundles
+8 coarse penetration candidates
+```
+
+Among the three coarse non-candidates, one `sub=2, secondary=3` event has a same-clock Type32 short component event (`a18024`) while the other two do not. This is consistent with a module-only penetration candidate, but adding "any Type32 short event" to the global penetration predicate over-counts six other recorder battles.
+
+Therefore the example is retained as a **PARTIAL module-only penetration clue**, not a production rule.
 
 ## Safe battle reconstruction today
 
@@ -196,8 +266,9 @@ HitEvent {
     rawClockSec
     attackerEntityId
     victimEntityId
-    resultCategoryRaw      // args[9], retain raw/version-gated
-    secondaryCategoryRaw   // args[10]
+    primaryResultRaw      // args[9]
+    secondaryResultRaw    // args[10]
+    penetrationFamily     // version-gated behavioral classifier, confidence-aware
     packedMetadataRaw
 }
 ```
@@ -210,16 +281,17 @@ HitEvent + HP delta > 0
 
 HitEvent + no HP reduction
   -> observed hit with no observed HP damage
-     (ricochet / non-penetration / module-only / other result remains to be decoded)
+     (may be non-penetration, ricochet, module-only penetration, track/device hit, etc.)
 ```
 
-The second branch must not be labelled `ricochet` until the result enum is closed.
+The second branch must not be labelled `ricochet` until the complete result enum is closed.
 
 ## Next combat priorities
 
-1. close the exact symbolic meaning of method8 `args[9]` values `0..4`;
-2. determine whether `args[10]` is armor-hit subtype, critical/module result or another damage-result dimension;
-3. join method8 events to projectile `shotId` reliably enough to produce per-shot hit result;
+1. close exact symbolic meanings for method8 primary result values `0..4` and secondary values;
+2. decode the remaining module-only penetration subtype using packed metadata + Type32 component evidence;
+3. join method8 events to projectile `shotId` reliably enough to produce a per-shot result chain;
 4. close module/critical-event codes in Type32 short bodies;
-5. separate penetration-with-HP-loss, module-only hits, non-penetrations and ricochets using independent evidence;
-6. retain AoI/provenance flags so absence of an enemy event is never treated as proof that no event occurred.
+5. recover realtime fire/ram/world-collision damage attribution beyond settlement-only reason codes;
+6. decode wrapper6 secondary combat attribution against settlement assist fields;
+7. retain AoI/provenance flags so absence of an enemy event is never treated as proof that no event occurred.
