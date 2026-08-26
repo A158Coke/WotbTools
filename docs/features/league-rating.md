@@ -40,7 +40,8 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
   选择进入自定义 Radar，Impact 无稳定 normalization contract 暂不入 Radar）。
 - 全部结果（评分、战队名称覆盖、MVP）只存在于当前 HTTP 请求与前端页面内存中；
   刷新 / 重新上传 / 服务重启后不保留。不写数据库、localStorage、服务端文件。
-- 复用 `TradeFacts`（±10 秒互换窗口，时间窗口启发式，非精确 killer attribution）。
+- 复用 `TradeFacts`（V4.1 directional 互换窗口：玩家死亡后 `[0, +5]` 秒内存在敌方死亡，
+  时间窗口启发式，非精确 killer attribution）。
 
 ## 严格完整性门槛（7v7）
 
@@ -53,8 +54,8 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 
 **死亡时间 UNKNOWN ≠ 数据非法**：阵亡玩家 `survivalTimeSec == 0` 表示精确死亡时刻无法从
 回放可靠证明（`DeathTimeReconciler` 的 fail-closed 结果），这是**合法状态**——整场仍允许评分；
-该玩家仅在依赖死亡时刻的 Survival/Trade 维度按 0 分保守计算（`TradeFacts` 无法建立 ±10s
-死亡窗口即 fail-closed 返回 0，绝不猜测），其它六维按真实 Replay facts 正常评分，
+该玩家仅在依赖死亡时刻的 Survival/Trade 维度按 0 分保守计算（`TradeFacts` 无法建立
+`[0, +5s]` directional 死亡窗口即 fail-closed 返回 0，绝不猜测），其它六维按真实 Replay facts 正常评分，
 总分保持 0–1000 不重新归一化。`survivalTimeSec < 0` / NaN / Infinity /
 明显超过战斗时长（`> duration + 1s`）仍为非法 stat facts（`LEAGUE_INVALID_STAT_FACTS`），
 整场拒绝评分。
@@ -107,13 +108,13 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 
 | 维度 | 满分 | 本队贡献 | 全场排名 |
 |---|---:|---:|---:|
-| 伤害 | 400 | 60% | 40% |
-| 助攻 | 100 | 70% | 30% |
-| 击杀 | 100 | 40% | 60% |
-| 换血效率 | 150 | 30% | 70% |
+| 伤害 | 365 | 60% | 40% |
+| 助攻 | 110 | 70% | 30% |
+| 击杀 | 110 | 40% | 60% |
+| 换血效率 | 180 | 30% | 70% |
 | 阻挡 | 50 | 70% | 30% |
-| 存活/互换 | 100 | 状态分 | — |
-| 射击效率 | 100 | 特殊公式 | 特殊公式 |
+| 存活/互换 | 75 | 状态分 | — |
+| 射击效率 | 110 | 特殊公式 | 特殊公式 |
 
 > 历史：Rating 原为八维（含「争霸占点」50 分，合计 1000）。2026-08 收口为七维：
 > 删除争霸占点评分维度，射击效率满分从 50 提至 100 补位，总分保持 1000。
@@ -125,13 +126,17 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
   唯一最后=0、全场全零=0；用未取整值计算排序。
 - **换血效率**：O = dmg + 0.6×assist + 0.35×blocked；参与度 = min(1, O/teamAvgEff)；
   效率 = O/(O+received) × 参与度（零安全；少量输出+零承伤不能满分；承伤不直接奖励/扣分）。
-- **存活/互换**：胜方存活 100；阵亡且 ±10s 内有互换 75；败方存活且 preliminary 进入本队前四 50；
-  其他 0。preliminary = **六个非存活维度之和**（伤害/助攻/击杀/换血/阻挡/射击，不含存活分与
-  胜方倍率）；base = preliminary + survival；第四名同分依次按
-  preliminary → damageDealt → damageAssisted → kills → accountId。
-- **射击效率**：命中 30% / 击穿 70% 的 **Wilson 95% 置信下界**合成 × 伤害参与
-  （min(1, dmg/teamAvgDamage)）；只给正向奖励（0–100），一发一中一穿不得接近满分，
-  高效率无伤害参与不给高分。
+- **存活/互换（RC，V4.1）**：胜方存活 75；阵亡且死亡后 `[0, +5]` 秒内存在敌方死亡
+  （directional，边界包含）50；败方存活 0；其它 0。优先级自上而下
+  （胜方存活 > 有效互换 > 0；胜方阵亡但发生互换仍为 50）。
+  preliminary = **六个非 RC 维度之和**（伤害/助攻/击杀/换血/阻挡/射击，不含存活分与
+  胜方倍率）；base = preliminary + RC。
+- **射击效率（V4.1 Soft Wilson）**：`rawAcc = hits/shots`、`rawPen = pens/hits`
+  （zero-safe，clamp [0,1]）；`softAcc = 0.9×Wilson95%下界(acc) + 0.1×rawAcc`、
+  `softPen = 0.9×Wilson95%下界(pen) + 0.1×rawPen`；置信度 = 命中 30% / 击穿 70% 合成，
+  射击分 = 110 × min(1, 置信度/0.70) × 伤害参与（min(1, dmg/teamAvgDamage)）。
+  只给正向奖励，一发一中一穿不得接近满分，高效率无伤害参与不给高分；
+  相比 pure Wilson 缓解低射速/高 Alpha 车辆的 sample-size 机械偏差。
 - **争霸占点（不评分）**：`victoryPointsEarned/Seized` 仅作为客观统计展示；**不参与任何
   Rating 维度**。单场 UI 显示「获取点数」（raw `victoryPointsEarned`），批次汇总显示
   「获取点数/场」（`earnedTotal / battles` 算术平均）。`victoryPointsSeized` 保留为
@@ -141,7 +146,35 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 - **最终分**：base = 七维之和；胜方 min(1000, base × 1.05)，败方 = base（不扣分）。
   最终计算保留高精度；API 返回未取整值；**总 Rating 页面只显示整数（如 `927`）**，
   不显示 /1000 换算的冗余完成度百分比（`927 · 92.7%` 会被误读为百分位/胜率）；
-  七维维度仍显示 `342 / 400 · 85.5%`。排名 / MVP / 中位数一律使用未取整分数。
+  七维维度仍显示 `实际分 / 维度满分 · 百分比`（如 `342 / 365 · 93.7%`，满分来自后端
+  `league.columns` metadata）。排名 / MVP / 中位数一律使用未取整分数。
+
+### V4.1 冻结规范速查
+
+```text
+TOTAL = 1000
+Damage 365 / Assist 110 / Kill 110 / Exchange 180 / Blocked 50 / RC 75 / Shooting 110
+
+Damage:   365 × (0.60T + 0.40G)
+Assist:   110 × (0.70T + 0.30G)
+Kill:     110 × (0.40T + 0.60G)
+Exchange: 180 × (0.30T + 0.70G)
+          O = dmg + 0.6×assist + 0.35×blocked
+          participation = min(1, O / teamAvgO)
+          efficiency = O / (O + received) × participation（零安全）
+Blocked:  50 × (0.70T + 0.30G)
+RC:       winner survived = 75；dead + enemy death ∈ [playerDeath, playerDeath+5s] = 50；否则 0
+Shooting: rawAcc = hits/shots；rawPen = pens/hits（zero-safe，clamp [0,1]）
+          softAcc = 0.9×Wilson95%(hits,shots) + 0.1×rawAcc
+          softPen = 0.9×Wilson95%(pens,hits) + 0.1×rawPen
+          conf = 0.3×softAcc + 0.7×softPen
+          score = 110 × min(1, conf/0.70) × min(1, dmg/teamAvgDamage)
+
+Winner final = min(1000, base × 1.05)；Loser final = base
+单场 Team Rating = 本队 7 人 finalRating 算术平均；batch（选手/战队）= median
+Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 killer attribution
+禁止：Tankopedia HP normalization / role bonus / LOSER_TOP4 / dual algorithm / 调参
+```
 
 ## MVP 与战队 Rating
 
@@ -238,8 +271,11 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 
 ## 测试
 
-- core 单测：T/G 边界、七维度满分/零分、换血（零承伤/零输出/参与度限制/高助攻/高阻挡）、
-  Wilson（0/0、1/1 不得满分、多次高效、高效率低参与）、存活状态、败方前四与第四名同分、
+- core 单测：T/G 边界、七维度满分/零分（V4.1 精确 365/110/110/180/50/75/110）、
+  换血（零承伤/零输出/参与度限制/高助攻/高阻挡）、Soft Wilson（0/0、1/1 不得满分、
+  多次高效、高效率低参与、精确公式、低/高样本机械偏差收敛）、存活状态
+  （胜方存活 75 / directional trade 50 / 败方存活恒 0 —— LOSER_TOP4 回归锁）、
+  trade 边界（[0,+5s] 含边界、敌方早死不计、同队/存活/UNKNOWN 不计）、
   胜方 ×1.05 与 1000 封顶、MVP/队内最佳/重复徽标、战队七人平均、七维满分总和=1000、
   争霸点数不影响 Rating（points independence）、奇数/偶数中位数。
 - 完整性：标准 7v7、13/15 人、非 7/7、重复账号、缺 tankId、roster 不完整、队伍冲突、
@@ -270,8 +306,11 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 2. **本队指数与全场排名分别解决什么问题**：本队贡献指数把「在 7 人小队的相对输出」归一化，
    不受车辆/版本差异影响；全场排名指数给出 14 人内的相对位置。两者加权可以同时表达
    「对本队的价值」与「全场压过多少人」，且天然都是 [0,1] 可合成。
-3. **为什么射击效率需要 Wilson 修正**：一发一中一穿在经典命中率口径下是 100%，
+3. **为什么射击效率用 Soft Wilson（V4.1）**：一发一中一穿在经典命中率口径下是 100%，
    会过度奖励小样本；Wilson 95% 下界让小样本置信度显著低于大样本，多次高效射击才接近满分。
+   但 pure Wilson 对低射速 / 高 Alpha 车辆存在 sample-size 机械偏差（同 raw 比例下
+   射击次数越多分数越高），V4.1 冻结为 **90% Wilson 下界 + 10% 原始比例**：保留小样本
+   保守性，同时让低射速车辆获得更公平评价。
 4. **为什么承伤不能直接奖励**：承伤本身可能是错误走位的代价；本公式只把承伤作为
    「输出/(输出+承伤)」的分母（换血效率），并叠加参与度限制——少量输出零承伤不能拿满分，
    承伤不作为直接奖励或扣分。
@@ -306,9 +345,9 @@ pen_rate  = penetrations / hits （击穿率——分母是命中次数，不是
 - numerator == 0 且 denominator > 0 → **合法 0%**（有射击全未命中 / 有命中全未击穿）。
 - 跨场（aggregate）基于**总量**：`sum(pens) / sum(hits)`、`sum(hits) / sum(shots)`，
   不是各场比例的简单平均。
-- **UI raw rate ≠ Rating shooting score**：League Rating 射击维度内部仍使用
-  Wilson 95% 置信下界合成（命中 30% / 击穿 70%，见 LeagueRatingCalculator），
-  不因 UI 显示真实百分比而改成裸比例。
+- **UI raw rate ≠ Rating shooting score**：League Rating 射击维度内部使用
+  Soft Wilson（90% Wilson 95% 置信下界 + 10% raw rate，命中 30% / 击穿 70%，
+  见 LeagueRatingCalculator），不因 UI 显示真实百分比而改成纯裸比例。
 
 ## Player Radar 数据契约（Summary mean / Battle 单场）
 

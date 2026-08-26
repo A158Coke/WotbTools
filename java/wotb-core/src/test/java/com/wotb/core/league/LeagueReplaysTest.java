@@ -270,7 +270,7 @@ class LeagueReplaysTest {
     @Test
     void unknownPlusKnownReconciledDeterministicallyRegardlessOfUploadOrder() {
         // 同一 arenaId 两份一致副本：玩家 1001 死亡时间一份 UNKNOWN(0)、一份 KNOWN 128.12；
-        // 敌方 2001 在两份中都于 128.5s 阵亡（±10s 窗口内 → TRADE）。
+        // 敌方 2001 在两份中都于 128.5s 阵亡（玩家 128.12s 死亡后 0..+5s 窗口内 → TRADE）。
         // UNKNOWN+KNOWN 不是 conflict；canonical 使用 KNOWN；上传顺序不影响最终 Rating。
         // 每个顺序必须用<b>全新构造</b>的 Battle（上一轮 canonicalization 会原地 mutate
         // 保留副本的 survivalTimeSec——复用对象会让第二顺序变成 KNOWN+KNOWN，测不出顺序独立性）。
@@ -297,7 +297,7 @@ class LeagueReplaysTest {
         final PlayerLeagueRating p1 = rr1.byAccount(1001);
         final PlayerLeagueRating p2 = rr2.byAccount(1001);
         assertEquals(LeagueRatingCalculator.STATE_TRADE, p1.survivalState(),
-                "KNOWN 128.12 ±10s 内存在敌方死亡 → TRADE");
+                "KNOWN 128.12 死亡后 0..+5s 内存在敌方死亡（128.5）→ TRADE");
         assertEquals(p1.survivalState(), p2.survivalState());
         assertEquals(p1.survivalTradeScore(), p2.survivalTradeScore(), 1e-9);
         assertEquals(p1.finalRating(), p2.finalRating(), 1e-9);

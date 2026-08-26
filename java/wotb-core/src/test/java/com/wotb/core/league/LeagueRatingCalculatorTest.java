@@ -4,6 +4,7 @@ import com.wotb.core.model.Battle;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -43,16 +44,20 @@ class LeagueRatingCalculatorTest {
     void identicalStatsProduceExpectedDimensionScores() {
         final LeagueRatingResult r = LeagueRatingCalculator.calculate(identicalBattle(1, false));
         final PlayerLeagueRating p = r.byAccount(1001);
-        // T=0.5、G=0.5 → damage=400×0.5=200 / assist=50 / kill=50 / blocked=25 / exchange=75
-        assertEquals(200, p.damageScore(), 1e-6);
-        assertEquals(50, p.assistScore(), 1e-6);
-        assertEquals(50, p.killScore(), 1e-6);
+        // T=0.5、G=0.5 → damage=365×0.5=182.5 / assist=55 / kill=55 / blocked=25 / exchange=90
+        assertEquals(182.5, p.damageScore(), 1e-6);
+        assertEquals(55, p.assistScore(), 1e-6);
+        assertEquals(55, p.killScore(), 1e-6);
         assertEquals(25, p.blockedScore(), 1e-6);
-        assertEquals(75, p.exchangeScore(), 1e-6);
-        // 射击：participation=1，conf=0.3×wilson(8,10)+0.7×wilson(6,8)
-        final double conf = 0.3 * LeagueRatingNormalizer.wilsonLowerBound(8, 10)
-                + 0.7 * LeagueRatingNormalizer.wilsonLowerBound(6, 8);
-        assertEquals(100 * Math.min(1, conf / 0.70), p.shootingScore(), 1e-6);
+        assertEquals(90, p.exchangeScore(), 1e-6);
+        // 射击 V4.1：Soft Wilson（90% Wilson 下界 + 10% raw）× 伤害参与=1，
+        // conf=0.3×softAcc+0.7×softPen
+        final double softAcc = 0.90 * LeagueRatingNormalizer.wilsonLowerBound(8, 10)
+                + 0.10 * LeagueRatingCalculator.rawRate(8, 10);
+        final double softPen = 0.90 * LeagueRatingNormalizer.wilsonLowerBound(6, 8)
+                + 0.10 * LeagueRatingCalculator.rawRate(6, 8);
+        final double conf = 0.3 * softAcc + 0.7 * softPen;
+        assertEquals(110 * Math.min(1, conf / 0.70), p.shootingScore(), 1e-6);
         // 全部维度在 [0, max]
         assertTrue(p.damageScore() <= PlayerLeagueRating.MAX_DAMAGE);
         assertTrue(p.shootingScore() <= PlayerLeagueRating.MAX_SHOOTING);
@@ -84,18 +89,19 @@ class LeagueRatingCalculatorTest {
     }
 
     @Test
-    void winnerGetsSurvivalHundredAndMultiplier() {
+    void winnerSurvivedGetsSeventyFiveAndMultiplier() {
         final LeagueRatingResult r = LeagueRatingCalculator.calculate(identicalBattle(1, false));
         final PlayerLeagueRating winner = r.byAccount(1001);
         final PlayerLeagueRating loser = r.byAccount(2001);
         assertEquals(LeagueRatingCalculator.STATE_WIN_SURVIVED, winner.survivalState());
-        assertEquals(100, winner.survivalTradeScore(), 1e-9);
-        // 胜方 ×1.05：base = prelim + 100 → final = base × 1.05（未到 1000 封顶）
-        final double expectedWinner = (winner.preliminary() + 100) * 1.05;
+        assertEquals(75, winner.survivalTradeScore(), 1e-9);
+        // 胜方 ×1.05：base = prelim + 75 → final = base × 1.05（未到 1000 封顶）
+        final double expectedWinner = (winner.preliminary() + 75) * 1.05;
         assertEquals(expectedWinner, winner.finalRating(), 1e-9);
-        // 败方前四 +50，无倍率
-        assertEquals(50, loser.survivalTradeScore(), 1e-9);
-        assertEquals(loser.preliminary() + 50, loser.finalRating(), 1e-9);
+        // 败方存活 V4.1：LOSER_TOP4 已删除，RC 恒 0、state=NONE，无倍率
+        assertEquals(0, loser.survivalTradeScore(), 1e-9);
+        assertEquals(LeagueRatingCalculator.STATE_NONE, loser.survivalState());
+        assertEquals(loser.preliminary(), loser.finalRating(), 1e-9);
         assertTrue(winner.finalRating() > loser.finalRating());
     }
 
@@ -107,7 +113,7 @@ class LeagueRatingCalculatorTest {
             s.shots = 0; s.hits = 0; s.pens = 0; s.received = 0; s.points(0, 0);
         }
         final Battle battle = LeagueTestBattles.battle(1, specs);
-        // 全员存活 → 胜方 100、败方前四 50；其余维度全 0
+        // 全员存活 → 胜方 RC 75、败方 RC 0；其余六维全 0
         final LeagueRatingResult r = LeagueRatingCalculator.calculate(battle);
         for (final PlayerLeagueRating p : r.players()) {
             assertEquals(0, p.damageScore(), 1e-9);
@@ -204,48 +210,162 @@ class LeagueRatingCalculatorTest {
                 "多次高效射击应接近满分，实际 " + r.byAccount(1001).shootingScore());
     }
 
+    // ---- Soft Wilson 精确公式与机械偏差回归（V4.1 核心）----
+
+    @Test
+    void softWilsonExactFormula() {
+        // 固定样本 shots=8 / hits=7 / pens=6，高伤害参与（DP=1）：
+        // softAcc = 0.9×wilson(7,8) + 0.1×raw(7/8)
+        // softPen = 0.9×wilson(6,7) + 0.1×raw(6/7)
+        // conf = 0.3×softAcc + 0.7×softPen；score = 110×min(1, conf/0.7)×DP
+        final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
+        specs.get(0).damage = 20000; // DP=1
+        specs.get(0).shots = 8;
+        specs.get(0).hits = 7;
+        specs.get(0).pens = 6;
+        final LeagueRatingResult r = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, specs));
+        final double softAcc = 0.90 * LeagueRatingNormalizer.wilsonLowerBound(7, 8)
+                + 0.10 * LeagueRatingCalculator.rawRate(7, 8);
+        final double softPen = 0.90 * LeagueRatingNormalizer.wilsonLowerBound(6, 7)
+                + 0.10 * LeagueRatingCalculator.rawRate(6, 7);
+        final double conf = 0.30 * softAcc + 0.70 * softPen;
+        final double expected = PlayerLeagueRating.MAX_SHOOTING * Math.min(1.0, conf / 0.70);
+        assertEquals(expected, r.byAccount(1001).shootingScore(), 1e-9,
+                "Shooting 必须精确按 Soft Wilson 公式计算（0.9 Wilson + 0.1 raw，30/70 合成）");
+    }
+
+    @Test
+    void softWilsonMechanicalBiasGapSmallerThanPureWilson() {
+        // 低样本 8/7/7 vs 高样本 16/14/14：raw accuracy / raw penetration / DP 全部相同，
+        // 纯 Wilson 的机械偏差被 Soft Wilson 收敛（softGap < pureWilsonGap），
+        // 但小样本仍保持保守（lowShotSoft <= highShotSoft）。
+        final List<LeagueTestBattles.PlayerSpec> low = defaultSevenVsSeven();
+        low.get(0).damage = 20000;
+        low.get(0).shots = 8;
+        low.get(0).hits = 7;
+        low.get(0).pens = 7;
+        final List<LeagueTestBattles.PlayerSpec> high = defaultSevenVsSeven();
+        high.get(0).damage = 20000;
+        high.get(0).shots = 16;
+        high.get(0).hits = 14;
+        high.get(0).pens = 14;
+        final double lowSoft = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, low))
+                .byAccount(1001).shootingScore();
+        final double highSoft = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, high))
+                .byAccount(1001).shootingScore();
+
+        final double lowPureConf = 0.30 * LeagueRatingNormalizer.wilsonLowerBound(7, 8)
+                + 0.70 * LeagueRatingNormalizer.wilsonLowerBound(7, 7);
+        final double highPureConf = 0.30 * LeagueRatingNormalizer.wilsonLowerBound(14, 16)
+                + 0.70 * LeagueRatingNormalizer.wilsonLowerBound(14, 14);
+        final double lowSoftConf = 0.30 * (0.90 * LeagueRatingNormalizer.wilsonLowerBound(7, 8)
+                + 0.10 * LeagueRatingCalculator.rawRate(7, 8))
+                + 0.70 * (0.90 * LeagueRatingNormalizer.wilsonLowerBound(7, 7)
+                + 0.10 * LeagueRatingCalculator.rawRate(7, 7));
+        final double highSoftConf = 0.30 * (0.90 * LeagueRatingNormalizer.wilsonLowerBound(14, 16)
+                + 0.10 * LeagueRatingCalculator.rawRate(14, 16))
+                + 0.70 * (0.90 * LeagueRatingNormalizer.wilsonLowerBound(14, 14)
+                + 0.10 * LeagueRatingCalculator.rawRate(14, 14));
+
+        assertTrue((highSoftConf - lowSoftConf) < (highPureConf - lowPureConf),
+                "Soft Wilson 必须缩小低/高样本的机械偏差：softGap="
+                        + (highSoftConf - lowSoftConf) + " pureGap=" + (highPureConf - lowPureConf));
+        assertTrue(lowSoft <= highSoft + 1e-9,
+                "小样本仍应保持保守：lowShotSoft=" + lowSoft + " highShotSoft=" + highSoft);
+    }
+
+    // ---- Adversarial 哲学回归（plan §62：只锁排序关系，不锁具体分数）----
+
+    @Test
+    void highDamageZeroKillLoserCanOutscoreOrdinaryWinnerAndBeTeamTop() {
+        // §62.1/62.2：败方高伤 0 kill 的 carry 玩家应高于普通胜方玩家，并成为本队最佳。
+        final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
+        for (int i = 0; i < 7; i++) {
+            specs.get(i).damage = 600; // 胜方本队平均输出（普通档位）
+        }
+        // 败方 2001：全场最高伤害 + 高助攻/阻挡/射击效率，但 0 kill、存活
+        specs.get(7).damage(20000).assist(5000).blocked(5000)
+                .shots(100).hits(100).pens(100).received(100);
+        final LeagueRatingResult r = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, specs));
+        final PlayerLeagueRating loser = r.byAccount(2001);
+        assertEquals(0, loser.kills(), "构造前提：0 kill");
+        final double winnerMax = r.players().stream()
+                .filter(p -> p.team() == 1)
+                .mapToDouble(PlayerLeagueRating::finalRating)
+                .max().orElseThrow();
+        assertTrue(loser.finalRating() > winnerMax,
+                "败方高伤 0 kill 应高于普通胜方玩家（只锁排序关系）");
+        assertEquals(2001L, r.team2().teamBest().accountId(),
+                "高伤 0 kill 玩家应能成为本队最佳");
+    }
+
+    @Test
+    void lowDamageTradeDoesNotPushPlayerIntoTopThree() {
+        // §62.6：RC=50 不能把明显低贡献玩家推成本队 Top3。
+        final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
+        specs.get(0).damage = 5;
+        specs.get(0).assist = 0;
+        specs.get(0).blocked = 0;
+        specs.get(0).kills = 0;
+        specs.get(0).shots = 0;
+        specs.get(0).hits = 0;
+        specs.get(0).pens = 0;
+        specs.get(0).dead(100.0);
+        specs.get(7).dead(101.0); // 有效 trade → RC 50
+        final LeagueRatingResult r = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, specs));
+        final PlayerLeagueRating p = r.byAccount(1001);
+        assertEquals(LeagueRatingCalculator.STATE_TRADE, p.survivalState());
+        assertEquals(50, p.survivalTradeScore(), 1e-9);
+        final List<PlayerLeagueRating> team1Sorted = r.players().stream()
+                .filter(q -> q.team() == 1)
+                .sorted(Comparator.comparingDouble(PlayerLeagueRating::finalRating).reversed())
+                .toList();
+        final int rank = team1Sorted.indexOf(p);
+        assertTrue(rank >= 3, "低贡献 + RC=50 不得进入本队 Top3，实际 rank=" + rank);
+    }
+
     // ---- 存活 / 互换 ----
 
     @Test
-    void deadWithTradeGetsSeventyFive() {
-        // 让 1001 阵亡，且其死亡 ±10s 内有敌方阵亡 → TRADE
+    void deadWithTradeGetsFifty() {
+        // 让 1001 阵亡，且其死亡后 0..+5s 内有敌方阵亡 → TRADE
         final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
         specs.get(0).dead(100.0);
-        specs.get(7).dead(101.0);   // 敌方死亡在 ±10s 窗口内
+        specs.get(7).dead(101.0);   // 敌方死亡在 [0,+5s] 窗口内
         final LeagueRatingResult r = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, specs));
         final PlayerLeagueRating p = r.byAccount(1001);
-        assertEquals(75, p.survivalTradeScore(), 1e-9);
+        assertEquals(50, p.survivalTradeScore(), 1e-9);
         assertEquals(LeagueRatingCalculator.STATE_TRADE, p.survivalState());
     }
 
     @Test
-    void loserSurvivedTopFourGetsFifty() {
-        // 队2 全存活（败方），仅前四各 +50（同分按稳定排序选出）
-        final LeagueRatingResult r = LeagueRatingCalculator.calculate(identicalBattle(1, false));
-        long top4 = r.players().stream()
-                .filter(p -> p.team() == 2 && p.survivalTradeScore() == 50
-                        && LeagueRatingCalculator.STATE_LOSER_TOP4.equals(p.survivalState()))
-                .count();
-        assertEquals(4, top4);
-    }
+    void loserSurvivedAlwaysZeroRegardlessOfStanding() {
+        // V4.1 业务锁：败方存活（即使 Damage 全场第一）RC 恒 0、state=NONE，
+        // 永久防止 LOSER_TOP4 回归。
+        final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
+        specs.get(7).damage(20000); // 败方 Damage 全场最高
+        final LeagueRatingResult r = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, specs));
+        final PlayerLeagueRating loser = r.byAccount(2001);
+        assertEquals(0, loser.survivalTradeScore(), 1e-9, "败方存活 RC 必须 0");
+        assertEquals(LeagueRatingCalculator.STATE_NONE, loser.survivalState(), "败方存活 state 必须 NONE");
 
-    @Test
-    void loserSurvivedBeyondTopFourGetsZero() {
-        // 队2 7 人全存活且全部同分 → 前四由 accountId 稳定选出，其余 3 人 0
-        final LeagueRatingResult r = LeagueRatingCalculator.calculate(identicalBattle(1, false));
-        long top4 = r.players().stream()
-                .filter(p -> p.team() == 2 && p.survivalTradeScore() == 50).count();
-        assertEquals(4, top4);
-        long zero = r.players().stream()
-                .filter(p -> p.team() == 2 && p.survivalTradeScore() == 0).count();
-        assertEquals(3, zero);
+        // 整队唯一幸存者同样拿 0（LOSER_TOP4 时代会因 top4 给分）
+        final List<LeagueTestBattles.PlayerSpec> onlySurvivor = defaultSevenVsSeven();
+        for (int i = 8; i < 14; i++) {
+            onlySurvivor.get(i).dead(50.0 + i);
+        }
+        onlySurvivor.get(7).survived = true;
+        onlySurvivor.get(7).damage(20000);
+        final LeagueRatingResult r2 = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, onlySurvivor));
+        assertEquals(0, r2.byAccount(2001).survivalTradeScore(), 1e-9);
+        assertEquals(LeagueRatingCalculator.STATE_NONE, r2.byAccount(2001).survivalState());
     }
 
     @Test
     void deadNoTradeNoSurvivalScore() {
         final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
         specs.get(0).dead(100.0);
-        // 无敌方在 ±10s 内死亡
+        // 无敌方在死亡后 0..+5s 内死亡
         final LeagueRatingResult r = LeagueRatingCalculator.calculate(LeagueTestBattles.battle(1, specs));
         assertEquals(0, r.byAccount(1001).survivalTradeScore(), 1e-9);
     }
@@ -370,15 +490,21 @@ class LeagueRatingCalculatorTest {
 
     // ---- 七维回归 ----
 
-    /** 七维满分总和必须保持 1000（Objective 50 删除后 Shooting 50→100 补位）。 */
+    /** V4.1 七维满分必须精确为 365/110/110/180/50/75/110，总和 1000（防未来单独改一维忘记总分）。 */
     @Test
     void sevenDimensionMaxesSumToThousand() {
+        assertEquals(365, PlayerLeagueRating.MAX_DAMAGE, 1e-9);
+        assertEquals(110, PlayerLeagueRating.MAX_ASSIST, 1e-9);
+        assertEquals(110, PlayerLeagueRating.MAX_KILL, 1e-9);
+        assertEquals(180, PlayerLeagueRating.MAX_EXCHANGE, 1e-9);
+        assertEquals(50, PlayerLeagueRating.MAX_BLOCKED, 1e-9);
+        assertEquals(75, PlayerLeagueRating.MAX_SURVIVAL_TRADE, 1e-9);
+        assertEquals(110, PlayerLeagueRating.MAX_SHOOTING, 1e-9);
         final double total = PlayerLeagueRating.MAX_DAMAGE + PlayerLeagueRating.MAX_ASSIST
                 + PlayerLeagueRating.MAX_KILL + PlayerLeagueRating.MAX_EXCHANGE
                 + PlayerLeagueRating.MAX_BLOCKED + PlayerLeagueRating.MAX_SURVIVAL_TRADE
                 + PlayerLeagueRating.MAX_SHOOTING;
         assertEquals(1000, total, 1e-9);
-        assertEquals(100, PlayerLeagueRating.MAX_SHOOTING, 1e-9);
         assertEquals(7, LeagueColumns.DIM_KEYS.size(), "Rating 必须只有七维");
         assertEquals(7, LeagueColumns.DIM_MAX.size(), "DIM_MAX 必须与 DIM_KEYS 对齐");
         for (int d = 0; d < LeagueColumns.DIM_KEYS.size(); d++) {
