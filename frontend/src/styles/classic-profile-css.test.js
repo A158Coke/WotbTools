@@ -192,6 +192,25 @@ describe('Classic 深色冲突 selector→declaration 绑定（须带 !important
     has('admin-hof-page) tbody td', ['color: var(--text) !important'])
   })
 
+  it('HoF 公开页残留缺口：submit row/普通行基础背景/分隔线/pending/下载/分页 浅色 !important（PR #151 收尾）', () => {
+    // 提交记录行（showcase-cohesion .lb-submit-row rgba(10,16,19,.50) !important）
+    has('.lb-wrap .lb-submit-row', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
+    // 普通排名行基础背景（showcase-cohesion .lb-wrap table tbody tr rgba(13,19,22,.86)）
+    has('.lb-wrap table tbody tr', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
+    // 行分隔线（浅灰）
+    has('.lb-wrap table tbody td', ['border-bottom: 1px solid var(--border-light) !important'])
+    // 行 hover（showcase-cohesion 深色 hover 必须被覆盖）
+    has('.lb-wrap tbody tr:hover', ['background: var(--bg-list-hover) !important'])
+    // 表头 sticky（不透明浅色 + 次级文字）
+    has('.lb-wrap thead th', ['background: var(--bg-card2) !important', 'color: var(--text-sub) !important'])
+    // 百场/三环 pending 状态卡
+    has('.lb-wrap .h100-pending-card', ['background: var(--bg-card) !important'])
+    has('.lb-wrap .h100-pending-meta strong', ['color: var(--accent-dark) !important'])
+    // 下载 / 分页
+    has('.lb-wrap .lb-download', ['background: var(--bg-card) !important', 'color: var(--text) !important'])
+    has('.lb-wrap .pagination button', ['background: var(--bg-card) !important', 'color: var(--text-sub) !important'])
+  })
+
   it('Version/Contact/Admin/Player Drawer 浅色 !important', () => {
     has('.version-page .ver', ['background: var(--bg-card) !important'])
     has('.contact-card', ['background: var(--bg-card) !important'])
