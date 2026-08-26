@@ -5,6 +5,13 @@
 ## [Unreleased]
 
 ### Added
+- **League Rating V5 算法说明入口（前端）**：新增 `?view=rating-docs` 页面，构建期以
+  `?raw` 将 `docs/WotBTools_League_Rating_V5.md`（canonical 单一事实源）纳入独立 chunk，
+  复用 `MarkdownContent.vue` 渲染；ReplayPage 结果工具栏在 League 模式显示「算法说明」按钮，
+  经 App.vue 注入的 `navigate` 跳转；ReplayPage 加入 KeepAlive，返回时保留解析结果与当前 tab。
+  三语 i18n（zh/en/ru）走 `feature-messages.json`，无第二份人工正文副本。生产构建链路同步：
+  `docker/Dockerfile.frontend` COPY 文档到镜像、`.dockerignore` 显式放行该 md、
+  `deploy.yml` 变更过滤纳入 `docs/WotBTools_League_Rating_V5.md`（文档更新即触发前端重建）。
 - **ArchUnit 架构测试 + 存量架构违规重构**：
   - `wotb-core` / `wotb-web` 引入 `com.tngtech.archunit:archunit-junit5`（test scope，版本 parent 统一管理），
     新增 `CoreArchitectureTest` / `WebArchitectureTest`，随 `mvn test` 自动执行（CI 零改动）。

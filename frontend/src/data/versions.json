@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.34",
+    "date": "2026-08-26",
+    "tag": "add",
+    "zh": "训练赛/联赛评分新增「算法说明」入口：回放解析结果（League 模式）工具栏出现「算法说明」按钮，点击进入 League Rating V5 文档页，可阅读批次证据评分的完整公式与规则；单场评分仍为 V4.1，文档正文只有一份权威来源。打开文档后返回不会丢失已解析结果与当前选中的场次。",
+    "en": "Training/tournament rating now has an \"Algorithm docs\" entry: in replay results (League mode) a toolbar button opens the League Rating V5 documentation page with the full batch evidence formula and rules; single-battle scoring stays V4.1 and the document body has a single authoritative source. Going back from the docs keeps your parsed results and the currently selected battle.",
+    "ru": "У рейтинга тренировочных/турнирных боёв появился раздел «Описание алгоритма»: в результатах разбора (режим League) кнопка на панели инструментов открывает страницу документации League Rating V5 с полной формулой пакетной оценки и правилами; оценка одиночного боя остаётся V4.1, а текст документа имеет единственный авторитетный источник. Возврат из документа сохраняет результаты разбора и выбранный бой."
+  },
+  {
     "v": "2.12.33",
     "date": "2026-08-26",
     "tag": "add",

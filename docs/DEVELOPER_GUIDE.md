@@ -242,6 +242,9 @@ Processing/Export task notification 必须低于 Modal stacking level；移动�
 - `?view=reconstruction`：AI 复盘 / 地图 / 战局回放 workspace。
 - `?view=version`：版本历史。
 - `?view=contact`：联系页。
+- `?view=rating-docs`：League Rating V5 算法说明页（构建期以 `?raw` 读取
+  `docs/WotBTools_League_Rating_V5.md`，canonical 单一事实源；ReplayPage League 模式
+  「算法说明」按钮跳转进入，返回时经 KeepAlive 保留解析状态）。
 - `?view=playback-qa`：隐藏 QA 页（admin）。
 - `?view=rating-v2`：隐藏历史 Rating V2 灰度页（仅 `wotbtools-admin`，只读 READY Processing Job）。
 

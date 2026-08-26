@@ -15,6 +15,9 @@ import ContactPage from './components/ContactPage.vue'
 // 隐藏 QA 页（?view=playback-qa，仅 wotbtools-admin）：PR4 固定 14 车标签碰撞场景，
 // 复用生产 BattlePlayback（异步加载，不拖进普通用户初始 bundle）
 const PlaybackQaPage = defineAsyncComponent(() => import('./components/PlaybackQaPage.vue'))
+// League Rating V5 算法说明页：异步加载（含 canonical Markdown raw 资源），
+// 只有打开文档时才进入 bundle，不影响普通用户初始加载。
+const RatingDocsPage = defineAsyncComponent(() => import('./components/RatingDocsPage.vue'))
 // 隐藏管理员灰度页（?view=rating-v2）：复用 Processing Job，不进入普通用户初始 bundle 或导航。
 const RatingV2AdminPage = defineAsyncComponent(() => import('./components/RatingV2AdminPage.vue'))
 
@@ -50,7 +53,7 @@ const viewParam = rawViewParam === 'leaderboard' ? 'hof'
 const ALLOWED_VIEWS = [
   'home', 'replay', 'hof', 'hof-admin',
   'profile', 'boost', 'admin-users', 'reconstruction', 'version', 'contact',
-  'playback-qa', 'rating-v2',
+  'playback-qa', 'rating-docs', 'rating-v2',
 ]
 const activeTool = ref(ALLOWED_VIEWS.includes(viewParam) ? viewParam : defaultView)
 
@@ -68,7 +71,8 @@ const VIEW_COMPONENTS = {
   version: VersionPage,
   contact: ContactPage,
   'playback-qa': PlaybackQaPage,
-  'rating-v2': RatingV2AdminPage
+  'rating-docs': RatingDocsPage,
+  'rating-v2': RatingV2AdminPage,
 }
 const currentView = computed(() => VIEW_COMPONENTS[activeTool.value] || ReplayPage)
 
@@ -80,9 +84,11 @@ function navigate(view) {
   window.history.replaceState({}, '', url.toString())
 }
 // 注入登录态与 login：Battle action（战局回放 / AI 复盘）需登录，ReplayPage / FileUploader
-// 在未登录时明确提示而非静默跳转（单页 Workspace 改造后不再需要跨视图 navigate 注入）。
+// 在未登录时明确提示而非静默跳转（单页 Workspace 内切换不再跨视图 navigate）。
 provide('isAuthenticated', isAuthenticated)
 provide('login', login)
+// 跨视图导航注入：ReplayPage 的「算法说明」入口跳转 rating-docs 页使用。
+provide('navigate', navigate)
 
 function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
 
@@ -181,7 +187,8 @@ onBeforeUnmount(() => {
   </div>
 
   <div class="tb-content">
-    <KeepAlive :include="['ReconstructionPage']">
+    <!-- ReplayPage 保持存活：打开文档/其他页面后返回不丢已解析结果与当前 tab -->
+    <KeepAlive :include="['ReconstructionPage', 'ReplayPage']">
       <component :is="currentView" />
     </KeepAlive>
   </div>
