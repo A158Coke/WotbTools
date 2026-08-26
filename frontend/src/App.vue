@@ -15,6 +15,8 @@ import ContactPage from './components/ContactPage.vue'
 // 隐藏 QA 页（?view=playback-qa，仅 wotbtools-admin）：PR4 固定 14 车标签碰撞场景，
 // 复用生产 BattlePlayback（异步加载，不拖进普通用户初始 bundle）
 const PlaybackQaPage = defineAsyncComponent(() => import('./components/PlaybackQaPage.vue'))
+// 隐藏管理员灰度页（?view=rating-v2）：复用 Processing Job，不进入普通用户初始 bundle 或导航。
+const RatingV2AdminPage = defineAsyncComponent(() => import('./components/RatingV2AdminPage.vue'))
 
 const { initPromise, login, logout, isAuthenticated, userName, tokenParsed } = useAuth()
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
@@ -48,7 +50,7 @@ const viewParam = rawViewParam === 'leaderboard' ? 'hof'
 const ALLOWED_VIEWS = [
   'home', 'replay', 'hof', 'hof-admin',
   'profile', 'boost', 'admin-users', 'reconstruction', 'version', 'contact',
-  'playback-qa',
+  'playback-qa', 'rating-v2',
 ]
 const activeTool = ref(ALLOWED_VIEWS.includes(viewParam) ? viewParam : defaultView)
 
@@ -65,7 +67,8 @@ const VIEW_COMPONENTS = {
   reconstruction: ReconstructionPage,
   version: VersionPage,
   contact: ContactPage,
-  'playback-qa': PlaybackQaPage
+  'playback-qa': PlaybackQaPage,
+  'rating-v2': RatingV2AdminPage
 }
 const currentView = computed(() => VIEW_COMPONENTS[activeTool.value] || ReplayPage)
 

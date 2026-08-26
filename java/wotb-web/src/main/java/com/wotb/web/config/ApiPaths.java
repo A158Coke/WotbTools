@@ -25,6 +25,7 @@ public final class ApiPaths {
     public static final String BOOSTER = "/api/booster";
     public static final String ADMIN = "/api/admin";
     public static final String ADMIN_USERS = "/api/admin/users";
+    public static final String ADMIN_RATING_V2 = "/api/admin/rating-v2";
     public static final String ADMIN_BOOST = "/api/admin/boost";
     public static final String ADMIN_BOOST_REQUESTS = "/api/admin/boost/requests";
     public static final String ADMIN_BOOST_BOOSTERS = "/api/admin/boost/boosters";
@@ -59,6 +60,8 @@ public final class ApiPaths {
     public static final String REPLAY_PROCESSING_JOB_STATUS = "/api/replay/processing-jobs/{jobId}";
     public static final String REPLAY_PROCESSING_JOB_RESULT = "/api/replay/processing-jobs/{jobId}/result";
     public static final String REPLAY_PROCESSING_JOBS_PATTERN = "/api/replay/processing-jobs/**";
+    public static final String ADMIN_RATING_V2_PROCESSING_JOB =
+            ADMIN_RATING_V2 + "/processing-jobs/{jobId}";
 
     // ---- 安全匹配模式（/** 通配，仅 SecurityConfig 使用） ----
     public static final String API_PATTERN = "/api/**";

@@ -23,15 +23,16 @@ PerformanceMetricsCalculator（纯派生计算，只读）
 ```
 
 Battle Playback / AI Review / Performance Metrics 全部消费同一 `Battle` / `PlayerResult`
-事实；编排层（`ReplayService`）在 metrics 之前完成回放管线 enrich，metrics 不再
-mutate 任何字段，也不再自行解析回放或查询 Tankopedia。
+事实；`ReplayProcessingJobService` 在 worker 中完成 full processing，并在 READY 前只调用一次
+`PerformanceMetricsCalculator.populateBattle`。之后 Preview、Export、AI Review 与 Playback 都只读消费
+同一 `ProcessedDataset`，不会为任一消费者再次 full process 或重算事实。
 
 ## 集成方式
 
 战斗表现不再有独立页面/独立端点，也没有独立 tab：**指标直接成为回放解析结果的一部分**。
-用户上传一次回放，同一请求生命周期内每个 replay 只做一次完整处理
+用户创建一个 Processing Job 后，每个 replay 只在 worker 中做一次完整处理
 （`DefaultReplayProcessingFacade` full：parse + reconstruction + `ObservedMaxHp` +
-`DeathTimeReconciler`），随后一次计算同时映射到：
+`DeathTimeReconciler`）；finalize 阶段统一回填表现指标并保存 READY `ProcessedDataset`，随后映射到：
 
 - `battles[].players[].cells`：单场玩家表直接包含 `contribution` / `kast` / `impact`
   （`PerformanceMetricsCalculator.battleMetrics` → `populateBattle` 写入 PlayerResult，
@@ -43,12 +44,10 @@ mutate 任何字段，也不再自行解析回放或查询 Tankopedia。
 **不再存在** `performance` 数组 / `performanceColumns` / `PerformanceRow` /
 `PerformanceTable` 组件——用户上传一次即可在单场表与汇总表直接看到这些指标。
 
-**Preview / Excel export / mode=each 三条输出链使用同一条 authoritative full processing**：
-`ReplayService` 的 preview 与 export（含 `mode=each`）都经 `Replays.collect(..., processFull, ...)`
-加载，即同一 `DefaultReplayProcessingFacade.process(Source, full())`（parse + reconstruction +
-`ObservedMaxHp` + `DeathTimeReconciler`），随后 `populateBattle` 再映射/导出。同一输出请求中
-每份 replay 只 full process 一次，Excel 单场「玩家数据」/汇总「汇总」/逐场导出与网页完全同源，
-Contribution/KAST/Impact 数值一致（不允许 export 走 raw parse 造成 preview/Excel 差异）。
+**Preview / Excel export / mode=each 三条输出链使用同一 READY dataset**：浏览器先
+`POST /api/replay/processing-jobs`，再在 READY 后读取 result 或创建 Export Job；三者都只读
+`ReplayProcessingJobService` 已生成的 `ProcessedDataset`。因此网页与 Excel 同源，且每份 replay
+只 full process 一次（不允许 export 走 raw parse 造成 Preview/Excel 差异）。
 
 ## 输出列
 
@@ -153,13 +152,32 @@ killer 级 trade 语义应在事实层扩展，不在 metrics 层重推。
 
 ## API
 
-- `POST /api/preview`：唯一入口。同一请求内每个 replay 只做一次完整处理，同时返回
-  `battles`（单场玩家 cells 含 contribution/kast/impact）+ `aggregate`（含跨场
-  contribution/kast/impact/multi_damage_rate/traded_deaths）+ `playerColumns` /
-  `aggregateColumns` + `duplicates` / `failures`；重建不可用时保留结算战绩并回退车辆库基础 HP。
-- 已删除独立 `POST /api/performance` 端点与 `/extended` 页面（不再存在第二套 pipeline），
-  也**不再有独立的 `performance` 数组 / `performanceColumns` 字段**。
+- `POST /api/replay/processing-jobs` 创建异步处理；`GET /api/replay/processing-jobs/{jobId}/result`
+  在 READY 后返回 `battles`（单场 players cells 含 contribution/kast/impact）+
+  `aggregate`（含跨场 contribution/kast/impact/multi_damage_rate/traded_deaths）+
+  `playerColumns` / `aggregateColumns` + `duplicates` / `failures`。
+- `POST /api/preview`、`POST /api/export` 和已删除的 `POST /api/performance` 都不是当前处理入口；
+  前两者为稳定的 legacy 410，`/extended` 页面也不再存在。
 - 列 key 纯英文 + 是否数值，显示名由前端三语 `player_labels` / `agg_labels` 映射。
+
+## 管理员灰度：历史 Rating V2
+
+历史 Rating V2 不是当前产品评分体系。它只以隐藏深链 `?view=rating-v2` 提供给
+`wotbtools-admin`，且后端仅接受：
+
+```text
+POST /api/admin/rating-v2/processing-jobs/{jobId}
+```
+
+该接口只读取同一 `jobId` 的 READY `ProcessedDataset`；未 READY 仍返回 `JOB_NOT_READY`，过期 job
+仍返回 `JOB_NOT_FOUND`。没有公开导航、公开 `/api/rating`、`/extended`、Excel 列或 `/api/columns`
+变更。
+
+公式以删除前最终提交 `37a0c0ec` 为准，由 `RatingV2Calculator` 单独实现：潜在伤害、KAST、Impact、
+贡献率、多伤率和综合 Rating 都只在局部只读投影中计算。它的历史平均 HP 口径是双方 14 车总 HP
+除以 14：`OBSERVED_EXACT` 进场 HP 优先，其余取 Tankopedia 基础 HP，只有单车缺失时才回退 2400。
+该回退**不属于**当前 `BattleHpFacts` 的 fail-closed 语义，也绝不写回 `PlayerResult`、当前列、导出
+或 League Rating。
 
 ## 测试
 
@@ -173,3 +191,6 @@ killer 级 trade 语义应在事实层扩展，不在 metrics 层重推。
   无 `performance` 字段）。
 - 单一事实源回归必须保证：Playback 伤害 == Performance Metrics 输入伤害
   （同一 `PlayerResult.damageDealt`）。
+- `RatingV2CalculatorTest` 锁定历史 V2 的 KAST/trade、潜在伤害补增、14 车 HP、
+  `OBSERVED_EXACT`、Tankopedia/2400 fallback 与零写回；`RatingV2AdminControllerContractTest` /
+  `SecurityConfigTest` 锁定 READY job 接缝和管理员门禁。

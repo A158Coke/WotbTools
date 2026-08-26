@@ -136,6 +136,20 @@ class SecurityConfigTest {
     }
 
     @Test
+    void ratingV2GrayEndpointShouldRequireTheSuperAdminRole() throws Exception {
+        final String path = "/api/admin/rating-v2/processing-jobs/probe";
+
+        mvc.perform(get(path))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get(path).with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_wotbtools-user"))))
+                .andExpect(status().isForbidden());
+        mvc.perform(get(path).with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void unmatchedApiShouldBeDeniedEvenWhenAuthenticated() throws Exception {
         final SimpleGrantedAuthority role = new SimpleGrantedAuthority("ROLE_wotbtools-admin");
 
@@ -249,6 +263,7 @@ class SecurityConfigTest {
                 "/api/hof/hundred/submissions/wargaming",
                 "/api/admin/hof/probe",
                 "/api/admin/hof/audit",
+                "/api/admin/rating-v2/processing-jobs/probe",
                 "/static-probe"
         })
         String probe() {
