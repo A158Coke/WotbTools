@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN" data-theme="dark" data-ui-profile="showcase">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -19,6 +19,19 @@
     @keyframes lds-ring{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
     .loader-text{font-size:1.2rem;font-weight:600;color:var(--text-sub);letter-spacing:2px}
   </style>
+  <script>
+    (function () {
+      // 首屏防 FOUC:在任何渲染前按 localStorage 设置 html[data-ui-profile]。
+      // 与 src/composables/useUiProfile.js 的 key/校验/默认保持一致。
+      try {
+        var p = localStorage.getItem('wotb-ui-profile')
+        if (p !== 'classic' && p !== 'showcase') p = 'showcase'
+        document.documentElement.setAttribute('data-ui-profile', p)
+      } catch (e) {
+        document.documentElement.setAttribute('data-ui-profile', 'showcase')
+      }
+    })()
+  </script>
 </head>
 <body>
   <div id="app">

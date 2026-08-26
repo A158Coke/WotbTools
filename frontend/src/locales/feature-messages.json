@@ -1,5 +1,13 @@
 {
   "zh": {
+    "uiProfile": {
+      "title": "界面风格",
+      "classic": "简约",
+      "showcase": "沉浸",
+      "classicDescription": "简约，去除装饰性背景，视觉更克制",
+      "showcaseDescription": "丰富的视觉层级与展示效果"
+    },
+
     "home": {
       "boostDesc": "专业陪练服务，提升战斗技巧与实战表现。"
     },
@@ -75,6 +83,14 @@
     }
   },
   "en": {
+    "uiProfile": {
+      "title": "Interface Style",
+      "classic": "Classic",
+      "showcase": "Showcase",
+      "classicDescription": "Simplified, removes decorative backgrounds, more restrained",
+      "showcaseDescription": "Rich visual hierarchy and showcase effect"
+    },
+
     "home": {
       "boostDesc": "Coaching sessions to improve gameplay and battle performance."
     },
@@ -150,6 +166,14 @@
     }
   },
   "ru": {
+    "uiProfile": {
+      "title": "Стиль интерфейса",
+      "classic": "Классический",
+      "showcase": "Showcase",
+      "classicDescription": "Упрощённый, без декоративных фонов, сдержаннее",
+      "showcaseDescription": "Богатая визуальная иерархия и эффект показа"
+    },
+
     "home": {
       "boostDesc": "Тренировки для улучшения игровых навыков и эффективности в бою."
     },
