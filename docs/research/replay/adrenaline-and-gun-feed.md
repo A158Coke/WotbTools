@@ -68,10 +68,51 @@ Felice (20097)
 This is a strong negative control against the interpretation that wrapper15 `field2=3` is a universal firing event for every gun-feed system. The current evidence instead supports a **gun-feed-family-specific state machine**:
 
 - `field2=3` is the observed single-shot reload/gun-cycle family;
-- non-single-shot/magazine-style vehicles can use different state codes (`6/7` strongly represented here);
+- non-single-shot/magazine-style vehicles use different state codes (`6/7` strongly represented here);
 - the exact symbolic names of `6/7` remain `PARTIAL` until independently schematized.
 
-The fixed `field2=7` durations are consistent with an intra-magazine / intra-cycle timer family, but this semantic is **not yet promoted to PROVEN**.
+### field2=7 is shot-associated in the non-single-shot family
+
+A second pass compared the non-single-shot `field2=7` count against authoritative settlement `shots`, restricting the comparison to player/replay rows where the own-team telemetry stream actually contains records for that vehicle.
+
+For Kranvagn there are 29 visible player/replay rows:
+
+```text
+field2=7 count - settlement shots
+
+ 0 : 6 rows
+-1 : 8 rows
+-2 : 8 rows
+-3 : 3 rows
+larger shortfalls : only a few rows
+```
+
+For Felice there are 10 visible player/replay rows:
+
+```text
+field2=7 count - settlement shots
+
+ 0 : 4 rows
+-1 : 5 rows
+-3 : 1 row
+```
+
+The one-sided nature of the mismatch matters: where counts differ, the replay-observed field2=7 count is normally **shorter** than settlement rather than greater. That is the same signature already seen elsewhere when a POV stream starts late, terminates early or simply does not receive every team-side event. It is not the signature of an unrelated high-frequency status timer.
+
+Together with the vehicle-specific invariant duration:
+
+```text
+Kranvagn field2=7 field3 = 2.627 s  (232 / 232)
+Felice   field2=7 field3 = 4.400 s   (73 / 73)
+```
+
+this closes an additional relationship:
+
+> `field2=7` is **shot-associated non-single-shot gun-cycle telemetry** — `PROVEN relationship` for these current samples.
+
+The exact symbolic interpretation remains deliberately `PARTIAL`. In particular, the current corpus alone does not yet prove whether the value is named intra-clip reload, shell-cycle time, magazine shot cooldown, or another server gun-state timer. Those names must not be emitted as canonical protocol symbols without an independent current Blitz schema or controlled feed-mechanism sample.
+
+`field2=6` is also strongly concentrated on Kranvagn/Felice and commonly occurs at counts near or above shots, but its state role is not yet isolated. It remains a non-single-shot/magazine weapon-state family with `PARTIAL` semantics.
 
 ## Positive control: Adrenaline-capable single-shot vehicles
 
@@ -164,9 +205,15 @@ field2=4
   -> generic weapon/reload-state transition
   -> NOT an Adrenaline-only activation marker
 
-field2=6 / field2=7 on Kranvagn/Felice
+non-single-shot field2=7 + field3
+  -> shot-associated gun-cycle telemetry
+  -> Kranvagn current invariant = 2.627 s
+  -> Felice current invariant   = 4.400 s
+  -> exact symbolic timer name still PARTIAL
+
+field2=6
   -> non-single-shot/magazine weapon-state family
-  -> exact symbolic meanings still PARTIAL
+  -> exact semantics PARTIAL
 ```
 
 ## Remaining work
@@ -174,5 +221,5 @@ field2=6 / field2=7 on Kranvagn/Felice
 1. Resolve settlement vehicle ID `19969` against a version-matched Blitz vehicle definition.
 2. Recover the current Blitz symbolic enum/schema for wrapper15 state codes.
 3. Decode the explicit consumable/equipment activation identity if present elsewhere in the stream.
-4. Acquire additional autoloader/autoreloader/magazine replay samples to distinguish `field2=6` vs `field2=7` semantics.
+4. Acquire additional autoloader/autoreloader/magazine replay samples to distinguish `field2=6` vs `field2=7` semantics and test whether the timer meaning generalizes across feed systems.
 5. Keep gun-feed classification version-gated; do not infer future protocol semantics from 11.19 state numbers alone.
