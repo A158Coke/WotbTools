@@ -321,6 +321,22 @@ html[data-ui-profile="classic"] .lb-wrap .lb-limit label, html[data-ui-profile="
 html[data-ui-profile="classic"] .lb-wrap .lb-head .lb-kicker {color: var(--accent-dark) !important}
 html[data-ui-profile="classic"] .lb-wrap .lb-dmg {color: var(--accent-dark) !important}
 
+/* PR #151 残留缺口:showcase-cohesion.css 仍对下列 .lb-wrap 表面写死深色,Classic 必须补覆盖 */
+html[data-ui-profile="classic"] .lb-wrap .lb-submit-row {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] .lb-wrap table tbody tr {background: var(--bg-card) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] .lb-wrap table tbody td {border-bottom: 1px solid var(--border-light) !important}
+html[data-ui-profile="classic"] .lb-wrap .h100-pending-card {background: var(--bg-card) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] .lb-wrap .h100-pending-title {color: var(--accent-dark) !important}
+html[data-ui-profile="classic"] .lb-wrap .h100-pending-meta {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .lb-wrap .h100-pending-meta strong {color: var(--accent-dark) !important}
+html[data-ui-profile="classic"] .lb-wrap .h100-pending-time {color: var(--text-muted) !important}
+html[data-ui-profile="classic"] .lb-wrap .lb-download {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] .lb-wrap .lb-download:hover:not(:disabled) {background: var(--bg-list-hover) !important; color: var(--accent-dark) !important}
+html[data-ui-profile="classic"] .lb-wrap .pagination button {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .lb-wrap .pagination button:hover:not(:disabled) {background: var(--bg-list-hover) !important; color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .lb-wrap .error {background: var(--status-err-bg) !important; border: 1px solid var(--error) !important; color: var(--status-err-fg) !important}
+html[data-ui-profile="classic"] .lb-wrap .lb-upload-msg.err {color: var(--error) !important}
+
 /* ---- HoF 状态（Pending/Warning/Error） ---- */
 html[data-ui-profile="classic"] :is(.of-status, .status-pending, .pending) {background: var(--status-warn-bg) !important; color: var(--status-warn-fg) !important}
 html[data-ui-profile="classic"] :is(.of-status, .status-rejected, .rejected) {background: var(--status-err-bg) !important; color: var(--status-err-fg) !important}
