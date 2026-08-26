@@ -18,6 +18,15 @@ const mainJs = read('../main.js')
 
 const stripComments = (css) => css.replace(/\/\*[\s\S]*?\*\//g, '')
 
+// 提取第一条 selector 片段包含 fragment 的规则体,把 selector 与其声明绑定。
+function ruleBody(css, selectorFragment) {
+  const start = css.indexOf(selectorFragment)
+  expect(start, 'selector ' + selectorFragment + ' must exist').toBeGreaterThan(-1)
+  const open = css.indexOf('{', start)
+  const close = css.indexOf('}', open)
+  return css.slice(open + 1, close)
+}
+
 // 收集 main.js 中按顺序导入的所有 css。
 const stylesheetImports = [...mainJs.matchAll(/import\s+['"]([^'"]+\.css)['"]/g)].map((m) => m[1])
 
@@ -43,6 +52,16 @@ describe('Classic Profile CSS contract', () => {
     expect(rule, 'should contain a backdrop-pseudo rule that removes the AI backdrop').toBeTruthy()
     expect(rule).toMatch(/data-ui-profile/)
     expect(rule).toMatch(/layout-data-workspace/)
+  })
+
+  it('Classic 去掉首页四张 AI 装饰卡片图并清除装饰渐变(Home)', () => {
+    const css = stripComments(classic)
+    // 去图:.feature-visual img 用 visibility:hidden(保留盒子 -> 不改卡片结构/尺寸/间距)
+    expect(ruleBody(css, '.feature-visual img')).toContain('visibility: hidden')
+    // 清除 .feature-visual::after 装饰渐变
+    expect(ruleBody(css, '.feature-visual::after')).toContain('content: none')
+    // 清除 .showcase-hero::before 装饰渐变
+    expect(ruleBody(css, '.showcase-hero::before')).toContain('content: none')
   })
 
   it('在 main.js 中必须最后导入(§43D / §33 顺序契约)', () => {
