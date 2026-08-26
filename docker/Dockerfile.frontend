@@ -9,6 +9,8 @@ COPY common/map_names.json /common/map_names.json
 # 隐藏 QA 页（?view=vehicle-models）动态 import Tankopedia 车辆库（仅 tier10）
 COPY common/tankopedia-tier10.json /common/tankopedia-tier10.json
 COPY common/assets /common/assets
+# League Rating V5 canonical 文档：RatingDocsPage 构建期以 ?raw 读取（.dockerignore 显式放行）
+COPY docs/WotBTools_League_Rating_V5.md /docs/WotBTools_League_Rating_V5.md
 ENV BUILD_COMMIT=${BUILD_COMMIT}
 RUN npm run build
 

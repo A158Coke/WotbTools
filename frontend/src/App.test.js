@@ -63,6 +63,17 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
     await flushPromises()
     expect(wrapper.text()).toContain('adminPreview.loading')
   })
+
+  it('?view=rating-docs 解析 RatingDocsPage（异步加载 canonical 文档）', async () => {
+    window.history.replaceState({}, '', '/?view=rating-docs')
+    const wrapper = mountApp()
+    await vi.waitFor(() => {
+      expect(wrapper.find('.rating-docs-page').exists()).toBe(true)
+    })
+    await flushPromises()
+    expect(wrapper.find('.markdown-content').exists()).toBe(true)
+    expect(wrapper.text()).toContain('league.docs_page_title')
+  })
 })
 
 describe('App user menu（V2：Teleport 到 body，脱离 .topbar overflow 裁切）', () => {
