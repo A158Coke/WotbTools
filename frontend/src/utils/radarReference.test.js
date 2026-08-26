@@ -16,20 +16,29 @@ const MAX = {
   [D]: 400, [A]: 100, [K]: 100, [E]: 150, [B]: 50, [S]: 100, [SH]: 100,
 }
 
-/** 构造 battle player（cells 含 league_*_score）。 */
-function bp(accountId, scores) {
-  return { cells: { account_id: accountId, ...scores } }
+/** 构造 battle player（cells 含 league_*_score）。rated=true → league_rating 有值（V4.1 finalRating），
+ *  表明属于 valid rated population；rated=false → league_rating null（本场未评分 → 非成员）。 */
+function bp(accountId, scores, { rated = true } = {}) {
+  return {
+    cells: {
+      account_id: accountId,
+      ...(rated ? { league_rating: 800 } : { league_rating: null }),
+      ...scores,
+    },
+  }
 }
 
-/** 构造 summary row（league.dimensionMeans 按 CW_DIM_KEYS 顺序）。 */
-function sr(accountId, means) {
+/** 构造 summary row。rated=true → league 有 PlayerSummary（dimensionMeans 按 CW_DIM_KEYS 顺序），
+ *  表明属于 rated unique player；rated=false → league null（aggregate-only / 未评分 → 非成员）。 */
+function sr(accountId, means, { rated = true } = {}) {
+  if (!rated) return { cells: { account_id: accountId }, league: null }
   const keys = [D, A, K, E, B, S, SH]
   return { cells: { account_id: accountId }, league: { dimensionMeans: keys.map(k => means[k] ?? null) } }
 }
 
 describe('battleAverage（计划 §13/§57）', () => {
   it('selected 玩家包含在内；不硬编码 14 人', () => {
-    // 3 人：damage 300/200/100 → meanRaw 200, normalized 0.5
+    // 3 名 rated 玩家：damage 300/200/100 → meanRaw 200, normalized 0.5
     const players = [bp(1, { [D]: 300 }), bp(2, { [D]: 200 }), bp(3, { [D]: 100 })]
     const res = battleAverage(players, { dimKeys: [D], maxByKey: MAX })
     expect(res.available).toBe(true)
@@ -49,8 +58,8 @@ describe('battleAverage（计划 §13/§57）', () => {
     expect(r1.axes).toEqual(r2.axes)
   })
 
-  it('用同一 cohort 聚合，不跨维换样本；群体缺所选维（全员缺）→ unavailable', () => {
-    // 只有 damage + shooting 完整的人进 cohort；全员缺 shooting → cohort 空 → unavailable
+  it('cohort 任一 rated 成员缺任一所选维（全员缺）→ unavailable（不跨维换 cohort）', () => {
+    // 两名 rated 成员都缺 shooting → cohort 不完整 → unavailable
     const players = [bp(1, { [D]: 300 }), bp(2, { [D]: 200 })]
     const res = battleAverage(players, { dimKeys: [D, SH], maxByKey: MAX })
     expect(res.available).toBe(false)
@@ -62,11 +71,32 @@ describe('battleAverage（计划 §13/§57）', () => {
     const res = battleAverage(players, { dimKeys: [D], maxByKey: {} })
     expect(res.available).toBe(false)
   })
+
+  it('partial incomplete cohort：某 rated 成员缺任一所选维 → 整图 unavailable（禁止静默缩小 cohort）', () => {
+    // A/B 完整，C 也是 rated（league_rating 有值）但缺 Shooting → 不得用 A+B 凑平均
+    const players = [
+      bp(1, { [D]: 300, [SH]: 60 }),
+      bp(2, { [D]: 200, [SH]: 40 }),
+      bp(3, { [D]: 100 }), // rated 但 Shooting missing
+    ]
+    const res = battleAverage(players, { dimKeys: [D, SH], maxByKey: MAX })
+    expect(res.available).toBe(false)
+    expect(res.axes.every(a => !a.available)).toBe(true)
+    // 绝不允许 A+B 平均（rawValue 必须 null，不得为 (300+200)/2=250）
+    expect(res.axes[0].rawValue).toBeNull()
+  })
+
+  it('非成员（本场存在但未评分 league_rating=null）被排除，不使 Battle Average unavailable', () => {
+    // 只有 A 是 rated 成员且完整；B 是本场出现但未评分 → 非成员，排除
+    const players = [bp(1, { [D]: 300, [SH]: 60 }), bp(2, { [D]: 200, [SH]: 40 }, { rated: false })]
+    const res = battleAverage(players, { dimKeys: [D, SH], maxByKey: MAX })
+    expect(res.available).toBe(true)
+    expect(res.axes[0].rawValue).toBeCloseTo(300, 6) // cohort 只有 A
+  })
 })
 
 describe('globalAverage（计划 §14/§58）', () => {
   it('rotation 场景：12/12/3 场次等权（每人 weight=1，不按出场数加权）', () => {
-    // A/B 12 场、C 3 场，dimensionMeans 不同 → 均值 = (A+B+C)/3
     const rows = [
       sr(1, { [D]: 300, [A]: 60 }),
       sr(2, { [D]: 200, [A]: 40 }),
@@ -74,14 +104,14 @@ describe('globalAverage（计划 §14/§58）', () => {
     ]
     const res = globalAverage(rows, { dimKeys: [D, A], maxByKey: MAX })
     expect(res.available).toBe(true)
-    expect(res.axes[0].rawValue).toBeCloseTo(200, 6) // (300+200+100)/3
-    expect(res.axes[1].rawValue).toBeCloseTo(40, 6)  // (60+40+20)/3
+    expect(res.axes[0].rawValue).toBeCloseTo(200, 6)
+    expect(res.axes[1].rawValue).toBeCloseTo(40, 6)
   })
 
   it('按 accountId 去重：重复行只计一次（weight=1）', () => {
     const rows = [
       sr(1, { [D]: 300 }),
-      sr(1, { [D]: 300 }), // 重复 accountId
+      sr(1, { [D]: 300 }),
       sr(2, { [D]: 200 }),
     ]
     const res = globalAverage(rows, { dimKeys: [D], maxByKey: MAX })
@@ -105,12 +135,36 @@ describe('globalAverage（计划 §14/§58）', () => {
     expect(r1.axes).toEqual(r2.axes)
   })
 
-  it('aggregate-only（无 dimensionMeans）玩家被排除；全员缺 → unavailable', () => {
+  it('partial incomplete cohort：某 rated unique player 缺任一所选维 → Global Average unavailable（禁止静默排除）', () => {
     const rows = [
-      { cells: { account_id: 1 }, league: null }, // aggregate-only
-      { cells: { account_id: 2 }, league: { dimensionMeans: [null, null, null, null, null, null, null] } },
+      sr(1, { [D]: 300, [SH]: 60 }),
+      sr(2, { [D]: 200, [SH]: 40 }),
+      sr(3, { [D]: 100 }), // rated 但 Shooting missing → 不得排除后用 A+B 凑平均
     ]
-    const res = globalAverage(rows, { dimKeys: [D], maxByKey: MAX })
+    const res = globalAverage(rows, { dimKeys: [D, SH], maxByKey: MAX })
+    expect(res.available).toBe(false)
+    expect(res.axes.every(a => !a.available)).toBe(true)
+    expect(res.axes[0].rawValue).toBeNull()
+  })
+
+  it('非成员（aggregate-only / league==null）不属于 rated cohort，不使 Global Average unavailable', () => {
+    // 只有 A 是 rated 且完整；B 是 aggregate-only（league null）→ 非成员，排除
+    const rows = [
+      sr(1, { [D]: 300, [SH]: 60 }),
+      { cells: { account_id: 2 }, league: null },
+    ]
+    const res = globalAverage(rows, { dimKeys: [D, SH], maxByKey: MAX })
+    expect(res.available).toBe(true)
+    expect(res.axes[0].rawValue).toBeCloseTo(300, 6) // cohort 只有 A
+  })
+
+  it('rated-but-incomplete 与 unrated 区分：rated 成员缺维 → unavailable，即便存在 unrated 行', () => {
+    // A 是 rated 但缺 Shooting；B 是 aggregate-only（league null）→ 因 A 是不完整成员 → unavailable
+    const rows = [
+      sr(1, { [D]: 100 }, { rated: true }), // rated 但缺 SH
+      { cells: { account_id: 2 }, league: null }, // unrated 非成员
+    ]
+    const res = globalAverage(rows, { dimKeys: [D, SH], maxByKey: MAX })
     expect(res.available).toBe(false)
   })
 })
