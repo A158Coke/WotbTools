@@ -146,6 +146,15 @@
 .version-page .ver-date { color: #a4a9a3 !important; }
 .version-page .ver p { color: #c3c0b8 !important; }
 
+/* Rating docs（League Rating V5 算法说明） */
+.rating-docs-page {
+  width: min(1120px, calc(100vw - var(--showcase-gutter) * 2)) !important;
+  max-width: none !important;
+  margin: 0 auto !important;
+  padding: 28px 0 64px !important;
+  color: #c9c5bb !important;
+}
+
 /* Contact */
 .contact-page {
   width: min(1280px, calc(100vw - var(--showcase-gutter) * 2)) !important;
@@ -229,6 +238,7 @@
 @media (max-width:767px) {
   .boost-page,
   .version-page,
+  .rating-docs-page,
   .contact-page,
   .hof-admin,
   .hof-admin-page,

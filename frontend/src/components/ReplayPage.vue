@@ -399,6 +399,12 @@ async function downloadResultPng() {
  * 直接复用当前 selection 内文件——不跨视图跳转、不重新上传、不重复解析。 */
 const isAuthenticated = inject('isAuthenticated', () => false)
 const login = inject('login', null)
+const navigate = inject('navigate', null)
+
+/** League Rating 算法说明入口：跳转独立文档页（App.vue 注册的 rating-docs 视图）。 */
+function openRatingDocs() {
+  navigate && navigate('rating-docs')
+}
 
 function currentBattleFile() {
   if (activeTab.value === 'aggregate') return null
@@ -639,6 +645,9 @@ watch(files, (next) => {
             </button>
           </div>
           <div class="resactions">
+            <button v-if="leagueMode" class="ghost sm" data-testid="league-docs-btn" @click="openRatingDocs">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15zM4 19.5A2.5 2.5 0 0 0 6.5 22H20" /></svg>{{ $t('league.docs_button') }}
+            </button>
             <template v-if="activeTab !== 'aggregate'">
               <button class="battle-action" data-testid="battle-playback-btn" @click="openBattlePlayback">
                 <svg class="ic" viewBox="0 0 24 24"><path d="M3 5l6 3-6 3zM15 5l6 3-6 3zM9 8h6M9 8v8M9 16l6-3M9 13l6-3" /></svg>{{ $t('action.battle_playback') }}
