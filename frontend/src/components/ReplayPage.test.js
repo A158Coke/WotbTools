@@ -888,6 +888,87 @@ describe('ReplayPage PNG export', () => {
     })
   })
 
+  describe('export clone html2canvas-safe preparation (regression: color-mix -> color(srgb) PNG failure)', () => {
+    function leagueResp() {
+      return makeResp({
+        aggregate: [],
+        battles: [{ mapName: 'Lagoon', players: [], league: null }],
+        playerColumns: [], aggregateColumns: [],
+        leagueMode: true,
+        league: { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], playerSummaryColumns: [], teamSummaries: [], teamSummaryColumns: [], failures: [] },
+      })
+    }
+
+    function captureClone() {
+      let clone = null
+      interceptAppendChild(node => {
+        const c = node.querySelector?.('.replay-export-root')
+        if (c) clone = c
+      })
+      return () => clone
+    }
+
+    // 视图忠实 stub：渲染 sticky 列 + selected 行（正是 color-mix 所在 selector），
+    // 用于验证 prepareReplayExportClone 把 clone 变成确定性静态快照。
+    function safeStubs() {
+      return {
+        CwPlayerSummaryTable: {
+          props: ['columns'],
+          template: '<div class="cw-player-summary"><div class="tablewrap"><table>' +
+            '<thead><tr><th class="sticky-col">nickname</th><th>rating</th></tr></thead>' +
+            '<tbody><tr class="t1 selected"><td class="sticky-col sticky-t1">A</td><td>1</td></tr>' +
+            '<tr class="t2"><td class="sticky-col sticky-t2">B</td><td>2</td></tr>' +
+            '</tbody></table></div></div>'
+        },
+      }
+    }
+
+    it('clone is a static snapshot: sticky neutralized, selected removed, export theme applied', async () => {
+      state.init.resp = leagueResp()
+      state.init.activeTab = 'aggregate'
+      wrapper = mountPage({ stubs: safeStubs() })
+      const getClone = captureClone()
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
+      const clone = getClone()
+      expect(clone).toBeTruthy()
+      const classes = clone.className.split(' ').filter(Boolean)
+      expect(classes).toContain('replay-export-root')
+      expect(classes).toContain('replay-export-light')
+      const sticky = clone.querySelectorAll('.sticky-col')
+      expect(sticky.length).toBeGreaterThan(0)
+      for (const el of sticky) {
+        expect(el.style.position).toBe('static')
+        expect(el.style.left).toBe('auto')
+        expect(el.style.right).toBe('auto')
+        expect(el.style.zIndex).toBe('auto')
+      }
+      expect(clone.querySelector('.selected')).toBeNull()
+    })
+
+    it('logs a detailed console.error with the real exception when html2canvas rejects', async () => {
+      const err = new Error('unsupported color function color')
+      h2c.setImpl(() => Promise.reject(err))
+      state.init.resp = makeResp()
+      wrapper = mountPage()
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
+      expect(spy).toHaveBeenCalled()
+      expect(spy.mock.calls[0][0]).toContain('[Replay PNG Export]')
+      expect(spy.mock.calls[0][1]).toBe(err)
+      spy.mockRestore()
+    })
+
+    it('export-safe CSS overrides every color-mix-bearing table cell/header selector', async () => {
+      const src = (await import('./ReplayPage.vue?raw')).default
+      expect(src).toMatch(/\.replay-export-root \.sticky-col \{[\s\S]*?position: static !important;/)
+      expect(src).toMatch(/\.replay-export-root tbody tr\.t1 td \{[\s\S]*?background: var\(--exp-t1-bg\) !important;/)
+      expect(src).toMatch(/\.replay-export-root tbody tr\.t2 td \{[\s\S]*?background: var\(--exp-t2-bg\) !important;/)
+      expect(src).toMatch(/\.replay-export-root \.league-summary-empty \{[\s\S]*?background: var\(--exp-card-bg\) !important;/)
+    })
+  })
+
   describe('league PNG export（PNG = 当前视图，所见即所得）', () => {
     afterEach(() => {
       delete window.__testCwVisible

@@ -211,6 +211,7 @@
 ### Fixed
 - **统一图片 data URL 上传链路**：新增无业务文案的前端 `ImageDataUploader`，替换百场、三环和陪练申请中重复的 `FileReader` 实现；统一校验图片 MIME、4 MiB 上限和最终 `data:image/` 值，读取失败或非图片 data URL 在浏览器侧拒绝，不再把无效值提交给后端。临时关闭百场/三环弹窗、在 MANUAL/WG 间切换或切换陪练页内部 Tab 时保留正在读取的截图，回到原表单后继续写入同一页草稿；仅用户重选、移除、清空草稿、成功提交 reset 或整页卸载会作废过期回调。三环的总图片数与已有图片去重在 FileReader 前门禁，超限时零读取；不改 API 或后端存储契约。
 - **百场管理员审核摘要改用认证数值**：`GET /api/admin/hof/hundred/submissions` 只返回 `certifiedAverageDamage` 和 `certifiedBattleCount`；WG 官方认证映射冻结的官方快照，人工审核映射已通过数值。申报值继续仅在详情接口保留。
+- **Replay「下载为 PNG」导出回归修复（html2canvas 无法解析 color(srgb)）**：真实根因是 Chrome 在 computed-value 阶段把 `color-mix()` 计算为 CSS Color 4 的 `color(...)` 函数，而 html2canvas 1.4.1 的 `SUPPORTED_COLOR_FUNCTIONS` 仅支持 hsl/hsla/rgb/rgba，导出克隆中表格单元格（战队行、sticky、selected）保留的 `color-mix()` 背景因此抛 "unsupported color function" 导致整张 PNG 失败。本次在 `.replay-export-root` 导出域内把战队行/表头/空态背景强制为实色 `var(--exp-*)`（`!important`），并新增 `prepareReplayExportClone()` 剔除 `.selected`、把 `.sticky-col` 置 static、禁用 `animation/transition/filter/backdrop-filter`，生成确定性静态快照；正常页面 CSS/视觉不变，仅导出克隆改变。新增 ReplayPage PNG DOM 回归测试（sticky/selected/export-safe CSS 覆盖）。
 
 ### Changed
 - **League Rating：canonical 收口升级为 group-level all-pairs（上传顺序无关，UNKNOWN 不是 wildcard）**：
