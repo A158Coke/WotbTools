@@ -2,8 +2,14 @@ import { ref } from 'vue'
 
 export const UI_PROFILE_STORAGE_KEY = 'wotb-ui-profile'
 export const UI_PROFILE_ATTR = 'data-ui-profile'
+export const UI_THEME_ATTR = 'data-theme'
 export const UI_PROFILES = ['classic', 'showcase']
 export const DEFAULT_UI_PROFILE = 'showcase'
+
+/** Profile → 主题映射：showcase=深色沉浸，classic=浅色简约。唯一事实源。 */
+export function themeForProfile(profile) {
+  return profile === 'classic' ? 'light' : 'dark'
+}
 
 export function isUiProfile(value) {
   return UI_PROFILES.includes(value)
@@ -20,13 +26,15 @@ export function readStoredUiProfile() {
 }
 
 /**
- * 投影到 <html data-ui-profile>。
+ * 投影到 <html data-ui-profile> 与派生的 <html data-theme>。
  * CSS namespace 的唯一事实源;业务组件不得直接操作 localStorage 或 html attribute。
+ * data-theme 只由 profile 派生（showcase→dark, classic→light），不设独立主题状态。
  */
 export function applyUiProfile(profile) {
   const next = isUiProfile(profile) ? profile : DEFAULT_UI_PROFILE
   if (typeof document !== 'undefined' && document.documentElement) {
     document.documentElement.setAttribute(UI_PROFILE_ATTR, next)
+    document.documentElement.setAttribute(UI_THEME_ATTR, themeForProfile(next))
   }
   return next
 }

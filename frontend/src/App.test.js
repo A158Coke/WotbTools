@@ -94,21 +94,25 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
     // localhost → 默认回放视图
     expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(true)
 
-    // 切 Classic：只改 data-ui-profile + localStorage + 状态,视图/activeTool 不变
+    // 切 Classic：只改 data-ui-profile + 派生的 data-theme + localStorage + 状态,视图/activeTool 不变
     setUiProfile('classic')
     await nextTick()
     expect(document.documentElement.getAttribute('data-ui-profile')).toBe('classic')
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light')
     expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="view-home"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="view-replay"]').element).not.toBeNull()
 
     // 切回 Showcase
     setUiProfile('showcase')
     await nextTick()
     expect(document.documentElement.getAttribute('data-ui-profile')).toBe('showcase')
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
     expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(true)
 
     // 清理
     document.documentElement.removeAttribute('data-ui-profile')
+    document.documentElement.removeAttribute('data-theme')
     window.localStorage.removeItem('wotb-ui-profile')
   })
 })
