@@ -1,13 +1,13 @@
 name: Update Crew Skills
+run-name: Sync Crew Skills from BlitzKit by @${{ github.actor }}
 
-# 手动触发：从 BlitzKit 的 SkillDefinitions protobuf 同步成员技能目录。
-# 数据源不需要 secret；脚本只落档 BlitzKit 明确提供的车型 -> canonical skill id，
-# 不根据网页文案猜测技能名称、描述或效果数值。
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
 
 permissions:
   contents: write
+  pull-requests: write
+  actions: write
 
 concurrency:
   group: update-crew-skills
@@ -16,31 +16,53 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
 
       - name: Sync crew skills from BlitzKit
         run: |
-          set -e
+          set -euo pipefail
           python3 common/python/update_crew_skills.py --output /tmp/crew-skills.json
           python3 -m json.tool /tmp/crew-skills.json >/dev/null
           mv /tmp/crew-skills.json common/crew-skills.json
 
-      - name: Commit updated crew skills
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { execSync } = require('node:child_process');
-            const changed = execSync(
-              'git status --porcelain -- common/crew-skills.json',
-              { encoding: 'utf8' }
-            ).trim();
-            if (!changed) {
-              console.log('crew skills unchanged; nothing to commit.');
-              return;
-            }
-            execSync('git config user.name "github-actions[bot]"');
-            execSync('git config user.email "41898282+github-actions[bot]@users.noreply.github.com"');
-            execSync('git add common/crew-skills.json');
-            execSync('git commit -m "chore(data): 同步 BlitzKit 成员技能"');
-            execSync('git push');
+      - name: Validate generated crew skills
+        run: |
+          set -euo pipefail
+          python3 -m unittest common.python.tests.test_update_crew_skills
+          git diff --check
+
+      - name: Commit data branch and open/update PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: automation/update-crew-skills
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- common/crew-skills.json; then
+            echo "Crew skills unchanged; nothing to publish."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git add common/crew-skills.json
+          git commit -m "chore(data): sync BlitzKit crew skills"
+          git push --force-with-lease origin "HEAD:$BRANCH"
+
+          pr_number="$(gh pr list --base main --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [[ -z "$pr_number" ]]; then
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "chore(data): sync BlitzKit crew skills" \
+              --body $'Automated crew-skill sync from BlitzKit.\n\n- Parses canonical TankClass → skill IDs from definitions/skills.pb\n- Rejects missing classes, suspicious skill-count drops, invalid IDs, and duplicates\n- Updates common/crew-skills.json only\n- Runs generator tests and git diff checks\n- Explicitly dispatches normal CI for this automation branch\n- Never auto-merges'
+          else
+            echo "Updated existing PR #$pr_number"
+          fi
+
+          gh workflow run ci.yml --ref "$BRANCH"
