@@ -17,13 +17,12 @@
     el.setAttribute('data-theme', theme);
     var btn = document.getElementById('wbtb-theme-toggle');
     if (btn) {
-      if (theme === 'dark') {
-        btn.setAttribute('aria-label', 'Switch to light theme');
-        btn.setAttribute('title', 'Switch to light theme');
-      } else {
-        btn.setAttribute('aria-label', 'Switch to dark (Battlefield) theme');
-        btn.setAttribute('title', 'Switch to dark (Battlefield) theme');
-      }
+      // Labels come from the FTL-localized data attributes; never hardcode a language.
+      var label = theme === 'dark'
+        ? (btn.getAttribute('data-label-to-light') || btn.getAttribute('title') || btn.getAttribute('aria-label'))
+        : (btn.getAttribute('data-label-to-dark') || btn.getAttribute('title') || btn.getAttribute('aria-label'));
+      btn.setAttribute('aria-label', label);
+      btn.setAttribute('title', label);
     }
     try { window.localStorage.setItem(STORAGE_KEY, theme); } catch (e) { }
   }
