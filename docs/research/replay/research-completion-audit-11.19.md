@@ -1,362 +1,364 @@
 # Blitz 11.19 China replay research — completion audit
 
-> Canonical corpus: 34 unique arenas / 476 settled player results.
+> Base canonical corpus: 34 unique arenas / 476 settled player results.
 >
-> Scope: PR147 protocol-research archive only. This audit judges whether the **current observed corpus** is research-complete under the archive's own evidence rules. It does not claim that every private Blitz symbol or future-version enum has been recovered.
+> Scope: PR147 protocol-research archive plus the subsequent controlled 11.19 probes recorded specifically to close low-frequency/current-behavior boundaries.
+>
+> This audit judges whether the currently observed 11.19 surfaces are sufficiently closed for production use. It does not claim recovery of every private Wargaming source symbol.
 
 ## Executive verdict
 
-**Current-corpus research blockers: 0.**
+**Research blockers: 0. Documentation-convergence blockers: 0 after this revision.**
 
-The Blitz 11.19 China canonical corpus is now **RESEARCH-COMPLETE for observed surfaces**, subject to version gating and the explicit information/sample boundaries below.
+The current 11.19 replay model is **RESEARCH-COMPLETE / PRODUCTION-USABLE for observed surfaces**, subject to explicit version gating, raw preservation, and single-POV information boundaries.
 
 This verdict means:
 
-1. every observed top-level packet/property/method/wrapper/settlement surface is inventoried;
-2. business/combat-relevant surfaces have either a proven semantic role or an explicitly bounded PARTIAL/UNKNOWN role;
-3. disproved hypotheses are marked REJECTED/SUPERSEDED;
-4. unresolved raw values remain preserved;
-5. remaining exact symbolic names require evidence that is **not present in this corpus** rather than more inference over the same samples;
-6. no production consumer should use a PARTIAL/UNKNOWN semantic as if it were PROVEN.
-
-It does **not** mean “100% of internal Wargaming source names recovered”.
+1. all observed container/packet/property/method/wrapper/settlement surfaces are inventoried or structurally bounded;
+2. business/combat-critical surfaces have a PROVEN role or an explicit bounded UNKNOWN/PARTIAL boundary;
+3. controlled probes have replaced several earlier correlation-only hypotheses;
+4. stale interpretations are moved to REJECTED/SUPERSEDED history rather than described as current production facts;
+5. unknown values remain raw-preserved;
+6. remaining work requires genuinely new evidence, exact private schema/string recovery, or future-version regression.
 
 ## Canonical consistency gates
 
-### Replay count
-
 ```text
-unique arenas = 34
-settled players = 476
+unique arenas                         34
+settled players                       476
+unique recorder method29 shotIds     324
+settlement recorder shots            324
+method38 recorder hit feedback       295
+settlement recorder hits             295
+settled dead combatants              287
+live sub-second terminal closure     283 / 287 = 98.61%
+settlement-second fallback             4 / 287 = 1.39%
 ```
 
-Multi-POV duplicates are cross-validation only and are not counted as extra battles.
+The old 341-shot Type28 aggregate is `SUPERSEDED`.
 
-### Recorder shot ledger
+## Controlled probes added after the base corpus
 
-After the Type28 re-audit:
+The following are no longer “remaining work”; they are completed evidence acquisitions:
 
-```text
-unique recorder method29 shotIds = 324
-settlement recorder shots        = 324
-```
+- drowning / positive-HP terminal death;
+- FV215b repeated ammunition switching;
+- Tungsten-only controlled damage windows;
+- Precision Fire controlled proc evidence;
+- simultaneous Precision Fire + Tungsten on one hit;
+- WZ-120 movement/targeting phase isolation;
+- Maus Fuel Tank / Observation Device direct positive samples;
+- TVP ricochet / spaced-armor / mantlet cases;
+- WZ-120 HE direct-pen / thick-armor / track / spaced/mantlet / ground-splash matrix;
+- vertical gun-pitch saturation for method36 `root.field4`.
 
-The stale earlier per-vehicle table that summed to 341 has been superseded.
+## HP / damage / death closure
 
-Current recorder-shot totals:
+Current production-safe facts:
 
-```text
-A178_SPHT 222
-FV215b      32
-Ho-Ri       17
-Maus        49
-VK 72.01     4
-TOTAL      324
-```
+- Type5 materialization actual current HP — PROVEN relationship;
+- Avatar method5 recorder opening actual HP — PROVEN;
+- Vehicle prop3 current HP / terminal sentinel family — PROVEN;
+- settlement initial/final HP cross-check — production-usable;
+- Vehicle method1 source-attributed HP-loss family — PROVEN;
+- Tankopedia base HP as replay actual HP source — `REJECTED`.
 
-### Recorder hit ledger
-
-```text
-method38 recorder hit-feedback records = 295
-settlement recorder hits               = 295
-```
-
-Known duplicate/batched feedback boundaries are retained rather than silently discarded.
-
-### Death precision
+Vehicle method1 cause map:
 
 ```text
-settled dead combatants = 287
-live terminal closure   = 283
-sub-second live coverage = 98.61%
-settlement-second fallback = 4 / 287
+0 direct/default combat damage     PROVEN
+1 fire                             PROVEN
+2 ramming                          PROVEN
+3 world/self-environment impact    PROVEN
+4 UNKNOWN                          preserve raw
+5 drowning                         PROVEN controlled
 ```
 
-The remaining four are a real single-POV/AoI information boundary, not a parser blocker.
-
-## Combat protocol closure
-
-### HP and damage
-
-PROVEN current facts include:
-
-- Type5 materialization actual HP;
-- Avatar method5 recorder opening actual HP;
-- Vehicle prop3 current HP + terminal sentinel family;
-- settlement reconstruction of initial actual HP;
-- Vehicle method1 direct/fire/ram/world damage causes;
-- source-attributed HP-loss ledger where observable.
-
-Tankopedia base HP is not used when replay actual HP exists.
-
-### Component namespace
-
-Mechanical domain is fully closed and oriented:
+Controlled drowning additionally closes:
 
 ```text
-31 Engine
-32 Ammo Rack
-33 Fuel Tank
-34 Right Track
-35 Left Track
-36 Gun
-37 Turret Rotator
-38 Observation Device
+wrapper6 / settlement deathReason=5 -> DROWNING
+vehicle can terminate at positive HP
 ```
 
-Crew:
+Therefore `dead == HP<=0` is `REJECTED` as a universal rule. Terminal/death state is authoritative.
+
+Single-POV death precision remains honestly bounded at 98.61% live sub-second closure in the base corpus; four deaths require settlement-second fallback.
+
+## Component namespace / lifecycle closure
+
+Current component namespace:
 
 ```text
-39 Commander
-40 Driver
-41 Gunner
-43 Loader
-42 unobserved / reserved-or-other UNKNOWN
+31 Engine              PROVEN
+32 Ammo Rack           PROVEN
+33 Fuel Tank           PROVEN direct controlled
+34 Right Track         PROVEN
+35 Left Track          PROVEN
+36 Gun                 PROVEN
+37 Turret Rotator      PROVEN version-scoped
+38 Observation Device  PROVEN direct controlled
+39 Commander           PROVEN
+40 Driver              PROVEN
+41 Gunner              PROVEN
+42 UNKNOWN/unobserved  preserve raw
+43 Loader              PROVEN
 ```
 
-The `34/35` exact orientation is independently closed from target-local method8 hit geometry.
-
-### Damage-state lifecycle
+Current method16 lifecycle:
 
 ```text
-mechanical codeA4  -> damaged/degraded
-mechanical codeA5  -> critical/disabled
-mechanical codeA18 -> automatic critical self-repair to damaged
-mechanical codeA19 -> fully repaired/clear
-crew codeA10       -> injured/shell-shocked
-crew codeA22       -> healed/clear
+mechanical codeA4  -> damaged/degraded operational        PROVEN
+mechanical codeA5  -> critical/disabled                   PROVEN
+mechanical codeA18 -> automatic critical self-repair      PROVEN physical role
+mechanical codeA19 -> full repair/clear                   PROVEN
+crew codeA10       -> injured/shell-shocked               PROVEN
+crew codeA22       -> healed/clear                        PROVEN
 ```
 
-Other sparse `codeA` presentation values remain raw/PARTIAL because the current corpus does not isolate their exact symbolic names.
-
-### method38 component result state
-
-Current physical mapping:
+Controlled Maus closure:
 
 ```text
-rawState0 -> component was involved/hit; module-damage probability did not create a new persistent negative state
-             VERY STRONG physical role / exact enum unknown
-rawState1 -> module damaged / crew injured
-             PROVEN relationship
-rawState2 -> critical / disabled
-             PROVEN relationship
+codeB33 = Fuel Tank
+codeA8 with codeB33 = ignition/fire-start transition family
+codeB38 = Observation Device
 ```
 
-The distinction between module **hit** and module **damage** is essential: a single shell may traverse multiple components and resolve the damage probability independently for each.
+Exact private symbol for `codeA8` remains unresolved; physical behavior is closed for the controlled Fuel Tank context.
 
-## method38 hit flags
+## method38 current wire structure — CLOSED
 
-Current behaviorally reconstructed facts:
+The earlier model:
 
 ```text
-0x0001 direct terminal shell kill                         PROVEN
-0x0002 target already dead before attack                 PROVEN sample / low-N global boundary
-0x0004 fire started                                      PROVEN current samples
-0x0008 ricochet                                          high-confidence PARTIAL; geometry control still missing
-0x0010 projectile penetration/material-positive branch  PROVEN relationship
-0x0020 non-penetration/material-stop branch              VERY STRONG relationship
-0x0100 internal component/device involvement             PROVEN relationship
-0x0400 track/chassis damaged result                      PROVEN relationship
-0x0800 Gun-damaged result                                PROVEN current samples / n=2 global boundary
-0x1000 special/HE-family explosion material branch       VERY STRONG relationship
-0x2000 special/HE-family explosion armor branch          PARTIAL n=1
-0x4000 special/HE-family internal-component branch       PROVEN relationship
+tail + optional single extension
 ```
 
-The current Blitz upper-bit behavior is **not** copied ordinally from historical PC `VEHICLE_HIT_FLAGS`.
+is `SUPERSEDED`.
 
-The current data behaves like a compacted/reorganized descendant. The exact implementation-history explanation remains hypothesis; the current behavioral decoder does not depend on it.
-
-### Special-result extension
+Current controlled wire structure:
 
 ```text
-extension=1 -> Precision Fire proc candidate
-               VERY STRONG / near-PROVEN
-extension=2 -> Tungsten/special-damage provenance candidate
-               VERY STRONG PARTIAL, n=1
+victimVehicleId  u32
+resultFlags16    u16
+headerHi16Raw    u16
+resultCount      u8
+repeat resultCount:
+    componentToken u8
+    rawState       u8
+modifierCount    u8
+repeat modifierCount:
+    modifierId     u32 LE
 ```
 
-`extension=1` current evidence:
+The modifier tail is therefore a repeatable list, not a mutually exclusive single enum.
 
-- all 12 non-HE-family samples are exact maximum damage or terminal-HP capped;
-- the FV215b HE-family sample is compatible with Precision Fire followed by HE-specific penetration/armor/explosion-radius resolution;
-- direct schema/string or a controlled skill probe is still required for production-PROVEN naming.
+## method38 low-16 hit-flag closure
 
-`extension=2` cannot be upgraded from one Tungsten-active recorder hit without new samples.
+Current behaviorally reconstructed map:
 
-## Ammunition selection
+```text
+0x0001 direct terminal shell kill                                      PROVEN
+0x0002 target already dead before attack                               PROVEN sample / low-N
+0x0004 fire started                                                     PROVEN
+0x0008 ricochet                                                         PROVEN controlled
+0x0010 positive material/vehicle penetration by projectile              PROVEN
+0x0020 projectile non-penetration / material stop                       PROVEN controlled
+0x0040 zero-DF / spaced-armor layer pierced by projectile               PROVEN controlled
+0x0080 zero-DF / spaced-armor layer not pierced                         PROVEN controlled
+0x0100 internal component/device pierced/involved by projectile         PROVEN relationship
+0x0200 no current positive sample                                       UNKNOWN / preserve raw
+0x0400 chassis/track damaged by projectile                              PROVEN
+0x0800 Gun damaged by projectile                                        PROVEN current samples / low-N
+0x1000 positive-DF material resolved/penetrated by explosion             PROVEN controlled
+0x2000 zero-DF/spaced armor resolved/penetrated by explosion             PROVEN controlled sample / low-N
+0x4000 internal component/device involved by explosion                   PROVEN controlled
+0x8000 internal component/device damaged by explosion                    PROVEN controlled
+```
+
+### Controlled flag evidence now completed
+
+TVP probe:
+
+```text
+repeated ricochet: 0x0028 = 0x0020 | 0x0008
+spaced-armor penetration: 0x0050 = 0x0010 | 0x0040
+mantlet/multi-layer stop: 0x00C0 = 0x0040 | 0x0080
+```
+
+WZ-120 HE probe:
+
+```text
+direct HE pen          0xD010 = 0x8000|0x4000|0x1000|0x0010
+thick armor no-pen     0x0020
+track hit              0x1500 = 0x1000|0x0400|0x0100
+spaced/mantlet HE      0x6080 = 0x4000|0x2000|0x0080
+ground splash          0xD000 = 0x8000|0x4000|0x1000
+ground no effect       0x0000
+```
+
+The pure splash case proves the high family is explosion-resolution state independent of projectile-penetration bits.
+
+## method38 component result state
+
+```text
+rawState0 -> component hit/involved; no newly observed persistent negative state
+             VERY STRONG physical role / exact private enum unknown
+rawState1 -> module damaged / crew injured     PROVEN
+rawState2 -> critical / disabled               PROVEN
+```
+
+Module hit is not equivalent to module damage.
+
+## method38 special modifier list — CLOSED
+
+Current controlled semantics:
+
+```text
+modifierId=1 -> Precision Fire proc    PROVEN
+modifierId=2 -> Tungsten Shells        PROVEN
+```
+
+Dedicated simultaneous-proc sample:
+
+```text
+shot1 [2]
+shot2 [2]
+shot3 [2]
+shot4 [1,2]
+```
+
+This closes all of the following:
+
+```text
+modifier list repeatability                  PROVEN
+Precision Fire + Tungsten coexistence        PROVEN
+Precision Fire overwrites Tungsten           REJECTED
+Tungsten overwrites Precision Fire           REJECTED
+combined state is modifier 3                 REJECTED current controlled sample
+single-extension current model               SUPERSEDED
+```
+
+The exact private enum symbol names may still differ from user-facing names, but the current gameplay semantics and list structure are production-closed.
+
+## Ammunition selection closure
 
 Type28 = recorder ammunition-selection state — PROVEN.
 
-Important boundary:
-
-> wire values `0/1/2` are selection IDs, not automatically UI list indices.
-
-For FV215b:
+Safe production chain:
 
 ```text
-selectionValue1 projectile velocity ~=1440.72 -> APCR family
-selectionValue2 hit behavior -> HE-family strongly established
+Type28 selectionValue
+-> method17 shellDescriptor
+-> version-matched shell catalog
 ```
 
-Exact descriptor-to-display-name mapping remains version gated.
+FV215b controlled repeated switching closes the current mapping:
 
-## Projectile / aim / replay reconstruction
+```text
+0 -> 0x003C5A0A -> AP
+1 -> 0x00465A0A -> APCR
+2 -> 0x003B5A0A -> HESH / HE-family
+```
 
-PROVEN or approved high-confidence surfaces include:
+This remains vehicle/version scoped rather than a global wire-slot rule.
 
-- method29 launch + shotId + launch point/velocity;
+## Projectile / targeting / visibility closure
+
+PROVEN/high-confidence production surfaces include:
+
+- method29 launch + shotId + launch geometry/velocity;
 - method20 terminal endpoint;
-- method27 explosion/environment-terminal family;
-- Type31 live aim-circle size;
-- Type39 world aim ray and gun geometry;
-- method36 targeting snapshots with exact PRE -> launch -> POST ordering;
-- method36 dynamic dispersion/bloom family;
-- Gun damage exact ×2 dispersion-like penalty and Repair Kit restoration;
-- Type10 vehicle transforms;
-- method8 target-local compact hit segment;
-- Type4 -> hidden AoI -> Type33/Type5 re-entry visibility lifecycle.
+- method27 terminal/explosion family;
+- Type31 aiming-circle size;
+- Type39 high-rate gun/aim geometry;
+- method36 PRE -> launch -> POST snapshots;
+- Type10 transforms;
+- Vehicle method8 target-local hit geometry;
+- Type4 -> hidden AoI -> Type33/Type5 re-entry lifecycle.
 
-Remaining exact method36 scalar names/units are source-schema bounded; their raw values are preserved.
+`Type4 == death` remains explicitly `REJECTED`.
 
-## Consumables / recovery / fire
-
-Current mapped Type32 consumables:
+### method36 closed fields
 
 ```text
-Adrenaline
-Engine Power Boost
-Multi-Purpose Restoration Pack
-First Aid Kit
-Repair Kit
-Improved Engine Power Boost
-Reticle Calibration
-Reactive Armor
-Tungsten Shells
+root.field1 = recorder turret/gun relative yaw              PROVEN
+root.field2 = recorder gun pitch                            PROVEN
+root.field3 = max horizontal turret/gun angular speed       PROVEN controlled, rad/s
+root.field4 = max vertical gun angular speed                PROVEN controlled, rad/s
 ```
 
-Repair/crew/fire discriminators are behaviorally closed for the mapped current codes.
+The vertical controlled test matches the Type39 pitch derivative to method36 `root.field4` within ~0.000064% on the clean long segment.
 
-## Kill and assistance attribution
+`field6.field1` is a dispersion/accuracy-family scalar: every recorder shot raises it and Gun damage makes it exactly ×2 until repaired. Exact private symbol/unit remains bounded.
 
-wrapper6 core:
+## Settlement / assistance closure
+
+Known settlement-facing facts include:
 
 ```text
-field1 victim
-field2 killer
-field3 optional majority-damage assister
-field4 optional non-default deathReason
+method12 baseType15 / settlement field119 = Destruction Assistance count PROVEN
+settlement field120 = Gun Marks count PROVEN
+wrapper6.field3 = >50% prior-damage secondary kill-notification assister PROVEN
 ```
 
-`wrapper6.field3` exact current eligibility is already PROVEN:
+`field118 / method12 baseType12` remains a **closed UNKNOWN boundary**. Old base-defense/dropped-capture semantics are `REJECTED`.
+
+## Genuine remaining boundaries — not blockers
+
+Only genuinely unresolved work remains here:
+
+### Current semantic/private-symbol boundaries
+
+- method38 `0x0200` positive sample / exact current role;
+- method38 rawState0 exact private enum name;
+- component ID42 exact identity/private symbol;
+- method16 sparse transition-code exact private symbols;
+- method36 remaining coefficient private names/units;
+- settlement field118/baseType12 exact statistic name;
+- complete Vehicle prop7/8/9 token namespaces;
+- some method17 initialization/feed-tail fields;
+- unobserved deathReason/causeFlag values.
+
+### Lower-value / structural / future-version boundaries
+
+- observer-only/cosmetic/platform state exact names;
+- exact current private protobuf/enum symbols where gameplay semantics are already closed;
+- cross-version numeric stability and future client regression.
+
+Completed controlled probes are intentionally **not** listed as remaining work.
+
+## Stale/rejected interpretations that must never return as current facts
 
 ```text
-field3 positives                 46
-field3 == highest non-killer     46/46
-prior damage / actual initial HP > 50% 46/46
-negative population with observed non-killer >50% 0/237
+Type4 == death                                             REJECTED
+Type28 == target lock / auto aim                          REJECTED
+41 == Radioman / 42 == Gunner                             SUPERSEDED
+34/35 exact side unresolved                               SUPERSEDED
+baseType12 == base defended / dropped capture points      REJECTED
+all method38 32 header bits == one homogeneous hit enum   REJECTED
+historical PC upper hit-flag ordinals == current Blitz    REJECTED
+method38 0x1000 == universal Gun-damage bit               REJECTED
+Tankopedia base HP == replay actual HP source             REJECTED as primary source
+one replay POV guarantees 100% sub-second death           REJECTED
+method38 tail == one optional u32 extension               SUPERSEDED
+extension=1/2 single-extension current model              SUPERSEDED
+Precision Fire/Tungsten mutually exclusive                REJECTED
+combined Precision Fire+Tungsten == modifier3             REJECTED current sample
 ```
 
-This is distinct from Destruction Assistance:
-
-```text
-method12 baseType15 / settlement field119
-= cumulative Destruction Assistance count
-```
-
-Do not merge the >50% kill-notification assister with the lower-threshold Destruction Assistance statistic.
-
-## Settlement field118 / method12 baseType12
-
-This family is now a **closed UNKNOWN boundary**.
-
-Current author population:
-
-```text
-baseType12 present : 10/34
-field118 present   : 10/34
-presence mismatch  : 0
-```
-
-method12:
-
-```text
-value always 0
-count 1..3
-```
-
-field118 observed values:
-
-```text
-12,20,32,34,48,67,103,124,124,195
-```
-
-The old base-defense/dropped-capture interpretation is REJECTED.
-
-No current hit/kill/module/capture/known-settlement correlation uniquely identifies the statistic. Public typed Blitz parsers also leave tag118 unnamed.
-
-Required promotion evidence is explicitly bounded to:
-
-- version-matched schema/client symbol; or
-- controlled gameplay contrasts/new corpus samples.
-
-This field therefore does not block current-corpus completion.
-
-## Remaining exact-name boundaries — not blockers
-
-The following are retained because the evidence required to close them is absent from the canonical corpus.
-
-### Requires direct schema/string or controlled samples
-
-- method38 rawState0 exact internal enum;
-- method38 extension1/2 exact internal enum names;
-- method38 low-N `0x0008`, `0x0800`, `0x2000` global validation;
-- method36 remaining targeting scalar exact names/units;
-- settlement field118/baseType12 exact name;
-- unobserved component ID42 identity;
-- unobserved deathReason values;
-- complete Vehicle prop7/8/9 token namespaces.
-
-### Structurally bounded, low product value
-
-- Vehicle prop0 exact alternating-state name;
-- Vehicle prop4 exact symbolic tuple;
-- Vehicle method2 two-float config symbol;
-- Avatar method3 exact two-byte state symbol;
-- Avatar method43 exact UI/tactical symbol;
-- Type11 exact session/space-config body naming;
-- Type13 exact in-stream settlement serialization naming;
-- settlement field116 exact cosmetic/customization item class;
-- root11/150/302/303 exact low-level subfield names;
-- observer/BPC/static/special-entity variants.
-
-All remain preserved raw with structure/evidence boundaries documented.
-
-## Stale/rejected interpretations that must never return
-
-At completion time the following are explicitly invalid:
-
-```text
-Type4 == death                                      REJECTED
-Type28 == target lock / auto aim                   REJECTED
-41 == Radioman / 42 == Gunner                      SUPERSEDED
-baseType12 == base defended / dropped capture      REJECTED
-all method38 32 header bits == one hit-flag enum   REJECTED
-historical PC high hit-flag ordinal mapping == current Blitz mapping  REJECTED
-Tankopedia base HP == replay actual HP             REJECTED as primary source
-one replay POV can guarantee 100% sub-second death REJECTED
-```
+Historical research notes may retain these hypotheses only when clearly marked as historical / SUPERSEDED / REJECTED.
 
 ## Production gate
 
-Production implementation may consume only:
+Production consumers may use:
 
 ```text
 PROVEN current-version facts
-or explicitly approved PARTIAL facts with confidence/version metadata
+or explicitly approved PARTIAL facts carrying confidence/version metadata
 ```
 
-Every UNKNOWN/low-N field must retain raw provenance and must not silently become a user-facing deterministic fact.
+UNKNOWN values must preserve raw provenance and must not silently become deterministic user-facing claims.
 
 ## Final audit status
 
@@ -364,10 +366,11 @@ Every UNKNOWN/low-N field must retain raw provenance and must not silently becom
 Observed-surface inventory blockers       0
 Canonical-count contradiction blockers   0
 Business-critical semantic blockers      0
-Known single-POV information blockers     documented boundaries
-Exact private-symbol recovery blockers    external evidence required, non-blocking
+Documentation-convergence blockers       0
+Single-POV information boundaries        documented
+Exact private-symbol boundaries           documented / non-blocking
 
-CURRENT 11.19 CORPUS STATUS: RESEARCH-COMPLETE
+CURRENT 11.19 STATUS: RESEARCH-COMPLETE / PRODUCTION-USABLE
 ```
 
-Future work is now **new evidence acquisition**, not unfinished interpretation of the same canonical 34 replays.
+Future work is new evidence acquisition or version regression, not unfinished interpretation of the already-controlled cases.
