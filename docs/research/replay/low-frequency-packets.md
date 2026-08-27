@@ -1,247 +1,222 @@
 # Low-frequency / control packet inventory
 
-> Corpus: 44 replay files / 34 unique arenas, Blitz 11.19.0 China.
+> Corpus: canonical 34 unique Blitz 11.19.0 China arenas, with pre-dedup source files used only for cross-validation.
 >
-> This chapter exists because low-frequency control packets are easy to misclassify as noise. The current corpus was parsed with **strict contiguous framing**; zero-length packets are legal and no byte-by-byte resynchronization was used.
+> This file is the summary inventory. Detailed evidence lives in the dedicated per-packet documents and takes precedence if future work changes a verdict.
 
-## Strict-framing prerequisite
+## Current top-level type set
 
-The real observed top-level packet-type set is:
+Strict contiguous framing observes:
 
 ```text
 0,1,2,4,5,7,8,10,11,13,14,17,23,26,28,29,31,32,33,35,36,39,0xFFFFFFFF
 ```
 
-A prior reader rule treating `payloadLen <= 0` as malformed is invalid for this corpus because Type 17 is a legitimate zero-payload packet. Rejecting it shifts the cursor into packet headers and manufactures fake large packet-type IDs.
+Zero-length packets are legal: Type17 has an empty payload. Parsers must not treat `payloadLen == 0` as automatic framing corruption.
 
-Allowing `payloadLen == 0` yields 44/44 streams that parse contiguously from the header to the terminator with no resynchronization.
+## Type14 — replay event-stream close marker
 
-## Type 14 — stream-close marker
-
-Corpus facts:
+Current facts:
 
 ```text
-count        = 44 (exactly one per replay)
-payload len  = 1
-payload      = 00 in 44/44
-clock range  ≈ 165–413 s
+one per replay
+payload = 00
+last ordinary packet in 34/34 canonical arenas
+followed only by 0xFFFFFFFF file terminator
+clock = maximum ordinary stream clock
 ```
-
-The packet-order relationship is deterministic across all 44 source replay files:
-
-```text
-previous ordinary packet : Type39   (44/44)
-Type14                    : payload 00
-next packet               : 0xFFFFFFFF terminator (44/44)
-```
-
-There are no ordinary replay packets after Type14 in the current corpus.
 
 Verdict:
 
-> Type14 is the current replay **event-stream closing marker** — `PROVEN physical role / PARTIAL symbolic name`.
+> Type14 = **replay packet-stream end/stop marker — PROVEN physical role**.
 
-This is stronger than merely "battle-end adjacent", but it still must not be interpreted as the authoritative server battle-finish timestamp or win/loss event. It closes the recorded event stream; settlement / arena-period / finish-reason facts are independent protocol layers.
+It is not the authoritative battle finish reason; Avatar method4 / wrapper3 / settlement provide battle-end semantics.
 
-## Type 17 — legal zero-length packet
+## Type17 — recorder-local aim/control initialization boundary
 
-Corpus facts:
-
-```text
-count        = 44 (exactly one per replay)
-payload len  = 0
-clock range  ≈ 1.7–7.3 s
-```
-
-The crucial result is structural, not semantic:
-
-> **Zero-length replay packets are legal.**
-
-This invalidates parser code that treats `length == 0` as framing corruption.
-
-On the strict 34-arena set its local ordering is also stable:
+Current facts:
 
 ```text
-previous packet : Type10
-Type17          : zero payload
-next packet     : Type23
+payload = empty
+one per replay
+Type23=1 at exactly the same raw clock
+first Type39 aim/camera sample ≈ Type17 + 0.100 s in 34/34
+Type10 and Type35 are already active before Type17
 ```
-
-for 34/34 files. That establishes a deterministic early initialization/control boundary in the current corpus, but the exact subsystem/method name remains unknown.
-
-Verdict: `PROVEN framing/control relationship / UNKNOWN symbolic semantic`.
-
-## Type 29
-
-Corpus facts:
-
-```text
-count        = 176 = exactly 4 per replay
-payload len  = 1
-payload      = 01 in 176/176
-clock range  ≈ 0–7.7 s
-```
-
-The four records follow a repeatable two-pair initialization pattern:
-
-```text
-pair A:
-  first two packets in each replay
-  Type29(01), Type29(01)
-  raw clock = 0
-
-pair B:
-  two more Type29(01) at the same later initialization tick
-  normally interleaved with Type8 initialization traffic
-  current observed clock roughly 2–4 s for most files
-```
-
-The fixed multiplicity, fixed payload and early timing prove a deterministic initialization/control sequence. No user-facing semantic name is justified yet.
-
-Verdict: `PROVEN structure and initialization pattern / UNKNOWN symbolic semantic`.
-
-## Type 36
-
-Corpus facts:
-
-```text
-count        = 44 (exactly one per replay)
-payload len  = 4
-clock        ≈ 0–0.23 s
-value        = variable little-endian u32-sized payload
-```
-
-On the strict current corpus its packet neighbors are deterministic:
-
-```text
-Type35 -> Type36 -> Type1
-```
-
-for every replay inspected.
-
-The payload is not constant; examples interpreted as unsigned little-endian integers fall in the several-hundred-thousand range (for example ~400k–526k in representative files). No stable relation to battle-relative time has been proven.
-
-This is an early session/initialization value. It is not a battle-start marker; active battle begins substantially later and is independently represented by arena-period `BATTLE` transition evidence.
-
-Verdict: `PROVEN structure and initialization position / UNKNOWN semantic`.
-
-## Type 28 — recorder ammunition-slot selection
-
-Corpus facts:
-
-```text
-count       = 460
-payload len = 4
-u32 values  = 0 (224), 1 (204), 2 (32)
-clock       ≈ 8.4–406 s
-```
-
-The current evidence closes this packet as the recorder's **ammunition/shell-slot selection index** rather than a camera or aiming mode.
-
-Independent Wargaming replay code exposes a native replay-manager callback:
-
-```text
-ammoButtonPressedCallback(idx)
-```
-
-and forwards that exact index to the client ammunition-selection path. A three-slot `0/1/2` domain is therefore an explicit independent schema candidate.
-
-The decisive evidence, however, is projectile physics from the current Blitz corpus.
-
-### Projectile-velocity closure
-
-Avatar method29 independently provides a proven projectile launch-velocity vector. For recorder-fired projectiles, the most recent Type28 value before the shot was joined to the method29 launch-vector magnitude.
-
-The same vehicle produces discrete and completely stable projectile-speed families per Type28 state.
-
-Representative current results:
-
-```text
-SPHT
-  state 0 : n=127  projectile speed = 760.0
-  state 1 : n= 61  projectile speed = 560.0
-  state 2 : n=  7  projectile speed = 560.0
-  before the first Type28 event:
-            n= 20  projectile speed = 760.0
-
-Maus
-  state 0 : n=42   projectile speed ~= 680.0
-  state 1 : n= 9   projectile speed ~= 1032.0
-
-Ho-Ri
-  state 0 : n=8    projectile speed ~= 972.0
-  state 1 : n=9    projectile speed ~= 1026.0
-
-FV215b
-  state 0 : n=10   projectile speed ~= 1152.36
-  state 1 : n= 2   projectile speed ~= 1440.72
-  state 2 : n=13   projectile speed ~= 1152.36
-  before the first Type28 event:
-            n= 7   projectile speed ~= 1152.36
-```
-
-The important properties are:
-
-1. changing Type28 changes the subsequent physical projectile-speed family for the same vehicle;
-2. each vehicle/state pair is internally stable rather than a camera-dependent continuum;
-3. before the first explicit Type28 event, projectile behavior matches slot 0 in the validated vehicles, consistent with the default selected ammunition slot;
-4. different slots are allowed to share the same projectile speed (for example SPHT 1/2 and FV215b 0/2), so projectile speed is supporting identity evidence, not a globally unique shell-type code.
-
-A camera/control-mode interpretation cannot explain deterministic changes in actual projectile launch velocity.
 
 Verdict:
 
-> Type28 is **recorder ammunition/shell-slot selection (`ammoButtonPressed` index)** — `PROVEN behavioral identity` for the current corpus.
+> Type17 = **recorder-local aim/camera/projectile-control initialization boundary — PROVEN relationship / PARTIAL exact symbolic semantic**.
 
-### Important semantic boundary
+Do not label it global client-ready or battle-start.
 
-The values are **slot indices**, not universal shell-kind enums.
+## Type29 — duplicated recorder/client-options initialization companion flag
 
-```text
-0 != globally AP
-1 != globally APCR
-2 != globally HE
-```
-
-The actual ammunition/shell type must be resolved against the vehicle's version-matched gun/ammunition configuration.
-
-Safe current state model:
+Current facts:
 
 ```text
-currentAmmoSlot = 0   // default before any Type28 event, where supported by vehicle initialization
-
-on Type28(index):
-    currentAmmoSlot = index
-
-on recorder projectile launch:
-    shot.ammoSlot = currentAmmoSlot
+payload = 01
+exactly four per replay
+first pair = first two framed packets at rawClock 0
+second pair = same clock as Avatar method49 synchronized client-options snapshot in 34/34
 ```
 
-Any production implementation should still preserve whether the initial slot was explicit or inferred from default initialization semantics.
+Verdict:
+
+> Type29 = **duplicated recorder/client-options/replay-control initialization companion flag — PROVEN lifecycle relationship / PARTIAL exact setting**.
+
+Historical PC-only labels such as sniper mode or target lock are not assigned without current mobile evidence.
+
+## Type28 — recorder ammunition-slot selection
+
+Current payload:
+
+```text
+u32 slotIndex
+observed domain 0,1,2
+```
+
+Current mobile evidence closes it independently of PC control semantics:
+
+- recorder projectile launches are first isolated through current recorder identity;
+- slot state predicts stable shell/projectile descriptor and velocity families per vehicle;
+- method17 ammunition-state descriptors join the same shots;
+- different vehicles expose different slot-to-shell physics while preserving the `0/1/2` selection domain.
+
+Verdict:
+
+> Type28 = **recorder ammunition/shell-slot selection index — PROVEN current corpus**.
+
+The number is a slot index, not a universal AP/APCR/HE enum.
+
+## Type35 — rolling low byte of session monotonic deciseconds
+
+Current facts:
+
+```text
+payload : u8
+records : 90,318 canonical
+adjacent sequence:
+next == (current + 1) mod 256
+90,284 / 90,284 exact
+median packet spacing ≈ 0.10002 s
+```
+
+Exact Type36 closure:
+
+```text
+Type35.value == (Type36.sessionClockDeciseconds & 0xFF)
+34 / 34 arenas
+```
+
+Verdict:
+
+> Type35 = **low 8 bits of the client/session monotonic decisecond counter — PROVEN**.
+
+It is not a generic heartbeat, packet sequence or battle-relative timer.
+
+## Type36 — full-width session monotonic decisecond anchor
+
+Current shape:
+
+```text
+payload : u32 LE
+one near initialization per replay
+```
+
+Interpretation:
+
+```text
+sessionClockSec = u32 / 10.0
+```
+
+This closes against the independently proven Type32 mobile-long-body f64 session clock in 34/34 arenas, with only expected quantization/timestamp residual.
+
+It also closes to Type35 at initialization through the exact low-byte identity above.
+
+Verdict:
+
+> Type36 = **client/session monotonic timebase initialization/sample — PROVEN relationship**.
+
+Do not interpret it as arena ID, Unix time or battle start.
+
+## Type31 — recorder arcade gun-marker size
+
+Type31 is high-frequency rather than low-frequency, but is retained here as an important control surface:
+
+```text
+payload : float32
+```
+
+Verdict:
+
+> Type31 = **recorded arcade gun-marker / aiming-circle size scalar — PROVEN behavioral identity**.
+
+It is not itself a server RNG/penetration probability or guaranteed physical dispersion angle.
+
+## Type39 — recorder aim/camera stream
+
+Current fixed body:
+
+```text
+7 x float32
+```
+
+Closed current physical roles include world aim/gun-ray yaw/pitch, world-space point on the aim/projectile ray, and recorder-local gun/turret control-angle families. Type39 is the high-rate recorder aiming geometry surface.
+
+See `type39-aim-camera.md` and targeting-info follow-ups for field-level evidence.
 
 ## Stream terminator `0xFFFFFFFF`
 
-Corpus facts:
+Current corpus:
 
 ```text
 type         = 0xFFFFFFFF
-count        = 44 (exactly one per replay)
-payload len  = 16
+one per replay
 clock        = 0
-payload      = b7b1e314614cf326c6e2b6eba1540682 in 44/44
+constant 16-byte payload in this client version
 ```
 
-This is the deterministic stream terminator/signature for the current corpus.
+Verdict:
 
-Verdict: `PROVEN current-version stream terminator`.
+> **deterministic file/stream terminator — PROVEN current version**.
 
-The constant payload is version-scoped; parsers should not assume it is immutable across all future Blitz versions without revalidation.
+Keep the constant payload version-scoped.
+
+## Startup time/control hierarchy
+
+Current safe startup ordering:
+
+```text
+rawClock 0
+  Type29=1
+  Type29=1
+
+~0..0.23 s
+  Type35 low-byte session clock
+  Type36 full u32 session decisecond anchor
+
+later setup
+  Type17
+  Type23=1 same clock
+
+~Type17 + 0.100 s
+  Type39 recorder aim/camera begins
+
+~Type17 + 0.38..0.92 s
+  Type29=1
+  Type29=1
+  Avatar method49 synchronized client-options snapshot
+```
+
+This is a replay/control initialization timeline, not the battle-start timeline. Battle start is independently represented by the arena-period `BATTLE` transition.
 
 ## Research implications
 
-1. Framing validity must be decided from length/bounds and known terminator rules, not from `length > 0`.
-2. Low-frequency packet semantics must be kept separate from framing semantics.
-3. Type14 is the current stream-close marker, not an authoritative gameplay finish event.
-4. Early deterministic controls (17/29/36) are poor battle-start candidates.
-5. Type28 is a proven recorder ammunition-slot transition and should be joined to projectile events rather than exposed as a generic integer control.
-6. Any future corpus introducing a new top-level type must enter this inventory as `UNKNOWN` before being assigned a semantic.
+1. framing semantics and gameplay semantics must remain separate;
+2. zero-length Type17 must parse legally;
+3. Type14 and `0xFFFFFFFF` are stream lifecycle, not win/loss facts;
+4. Type35/36/32 share a client/session monotonic clock domain;
+5. Type28 is ammunition selection and must not regress to the superseded PC target-lock hypothesis;
+6. initialization packets must not be used as battle-start markers;
+7. every new client version must revalidate numeric packet IDs before widening decoder support.
