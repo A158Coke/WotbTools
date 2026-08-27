@@ -17,7 +17,7 @@
     el.setAttribute('data-theme', theme);
     var btn = document.getElementById('wbtb-theme-toggle');
     if (btn) {
-      // Labels come from the FTL-localized data attributes; never hardcode a language.
+      // Labels are hardcoded in template.ftl (i18n removed); swap the destination label per direction.
       var label = theme === 'dark'
         ? (btn.getAttribute('data-label-to-light') || btn.getAttribute('title') || btn.getAttribute('aria-label'))
         : (btn.getAttribute('data-label-to-dark') || btn.getAttribute('title') || btn.getAttribute('aria-label'));
