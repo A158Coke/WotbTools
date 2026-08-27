@@ -16,7 +16,7 @@ field2 : ownerTeam        // 0 neutral / 1 / 2
 field3 : capturingTeam    // 0 none / 1 / 2
 field4 : captureProgress  // 0..99; default 0 omitted
 field5 : boolean-like auxiliary capture state, PARTIAL
-field6 : recorder-local participation/friendly-capture auxiliary state, STRONG PARTIAL
+field6 : recorder-local capture participation flag, STRONG PARTIAL
 ```
 
 The first four fields are behaviorally closed strongly enough for protocol consumers to reconstruct base ownership and capture progress over time.
@@ -81,13 +81,6 @@ Map-level coverage supports this interpretation:
 - maps with three Supremacy points expose indices `0,1,2`;
 - maps with four Supremacy points expose indices `0,1,2,3`.
 
-In the 18 distinct maps represented by the canonical corpus, examples include:
-
-```text
-canal / faust / idle / plant -> 0,1,2,3
-desert_train / erlenberg / forgecity / holland / italy / ... -> 0,1,2
-```
-
 Verdict:
 
 > `field1 = zero-based Supremacy base index` — **PROVEN behavioral identity**.
@@ -118,8 +111,6 @@ Verdict:
 >
 > `field4 = base capture progress` — **PROVEN**.
 
-The stream preserves actual observed progress rather than requiring a synthetic timer.
-
 ## `field2` = current owner team
 
 After an active capture reaches the high-90s, wrapper12 switches the same base to an owner-state record carrying `field2` equal to the previously capturing team.
@@ -129,24 +120,8 @@ Across the canonical corpus, 113 independent ownership transitions were closed t
 ```text
 previous capture progress before owner transition:
 95..99 in 113 / 113 closures
-
-most common final observed value:
-99
-
-median delay from final high-progress sample to owner state:
-~0.50 s
+median delay from final high-progress sample to owner state: ~0.50 s
 ```
-
-Representative sequence:
-
-```text
-base B, capturingTeam=1, progress=96
-base B, capturingTeam=1, progress=99
-~0.5 s
-base B, ownerTeam=1
-```
-
-The same relationship occurs for team 2.
 
 Verdict:
 
@@ -168,57 +143,59 @@ The progress stream can fall or reset within the same base/capturing-team episod
 
 This is consistent with live Supremacy capture disruption and means a consumer can reconstruct more than merely final ownership.
 
-The official Blitz capture rules independently state that capture can be suspended when opposing teams are simultaneously in a capture circle and that damage to a capturing vehicle can reduce/reset capture contribution. Wrapper12 exposes the resulting state changes, but the packet alone does not yet distinguish every physical cause of a progress reduction.
-
-Reference:
-
-- Wargaming Support, `Gameplay: Victory Conditions`, World of Tanks Blitz.
-
 ## `field6` — recorder-local capture participation family
 
-Wrapper1 provides an independent recorder account/team mapping. Joining this to wrapper12 gives a strong invariant:
+Wrapper1 provides an independent recorder account/team mapping. Joining this to wrapper12 gives a strict invariant:
 
 ```text
 field6=1 records : 322
 capturingTeam == recorderTeam : 322 / 322
 ```
 
-However, many friendly capture updates do **not** carry field6, so it is not merely a redundant `isFriendlyCapture` bit.
+Many friendly capture updates do not carry field6, so it is not merely a redundant `isFriendlyCapture` bit.
 
-This strongly suggests a recorder-local role such as:
+### Port / Harbor Town single-capturer control sample
 
-- recorder is personally participating in this capture;
-- recorder is inside / contributing to the relevant capture zone;
-- another equivalent local-player capture participation state.
+Replay:
 
-Current verdict:
+```text
+20260822_1237__CHRD-A158布丁_Maus_1161443361459633110
+mapName = port
+vehicle = Maus
+```
 
-> `field6 = recorder-local friendly capture participation/state family` — **STRONG PARTIAL**.
+The replay owner independently confirmed that the recorder Maus was **the sole vehicle capturing B** during the initial B capture.
 
-Do not expose the exact label `recorderInCaptureCircle` until it is closed against recorder Type10 position and map base geometry or an independent current-version producer schema.
+The wrapper12 sequence is:
+
+```text
+rawClock ~140.317 s
+baseIndex=1 (B), capturingTeam=recorderTeam, progress=3,  field6=1
+...
+progress 7,10,14,17,...,96,99 with field6=1 throughout
+rawClock ~154.314 s
+ownerTeam=recorderTeam, capturingTeam=0, progress=0, field6 absent
+```
+
+Thus in a known single-capturer episode, `field6=1` continuously marks the recorder's own capture episode and disappears when ownership completes.
+
+Combined with the 322/322 team invariant, this materially strengthens the semantic family:
+
+> `field6 = recorder-local capture participation / recorder-is-capturing flag` — **STRONG PARTIAL, near-PROVEN behavioral identity**.
+
+It is still kept below exact `PROVEN` because one controlled single-capturer confirmation does not yet distinguish the exact producer condition among "inside circle", "actively contributing points", and an equivalent local capture-participation UI state.
 
 ## `field5` — contested / blocked candidate, not yet closed
 
 `field5=1` occurs only 60 times. It is heavily concentrated in states where one team owns a base while the opposite team is trying to capture it, and it frequently accompanies a progress pause or reduction.
 
-This makes a contested/blocked/interruption state plausible, but the current packet-only evidence cannot distinguish:
-
-- both teams simultaneously occupying the circle;
-- progress blocked for another rule reason;
-- a local UI state related to capture interruption;
-- another auxiliary base-state flag.
-
 Verdict:
 
 > `field5` — **PARTIAL / contested-or-interruption candidate**.
 
-It must remain raw in production-facing protocol models until controlled geometry or current schema closes the exact condition.
-
 ## Important correction to earlier capture research
 
 `capture-probe.md` correctly proved that Type31 and the tested Type7 properties were not the capture timeline. Its broader conclusion that replay data lacked a realtime capture timeline is now **SUPERSEDED**.
-
-The missing surface was Avatar method48 wrapper12.
 
 Current corrected hierarchy:
 
@@ -228,50 +205,31 @@ wrapper13            = realtime team Supremacy score
 settlement #32/#33   = authoritative final per-player victory-points totals
 ```
 
-These are complementary rather than competing sources.
-
 ## Safe reconstruction model
 
 ```text
 SupremacyBaseStateEvent {
     rawClockSec
     baseIndex
-    ownerTeam          // 0/1/2
-    capturingTeam      // 0/1/2
-    captureProgress    // 0..99 observed; 0 may be omitted on wire
-    auxiliaryFlag5     // nullable / PARTIAL
-    localCaptureFlag6  // nullable / STRONG PARTIAL
+    ownerTeam
+    capturingTeam
+    captureProgress
+    auxiliaryFlag5
+    recorderCaptureFlag6
 }
 ```
 
 Safe immediate uses after version gating:
 
 - battle playback: show A/B/C/D ownership and live capture bars;
-- AI Review: identify when a base started being taken, changed owner, was interrupted, or was retaken;
-- tactical analysis: join wrapper12 with wrapper13 to explain score swings;
-- post-battle evidence: compare objective pressure against settlement victory-point totals.
+- AI Review: identify capture starts, ownership changes, interruptions and retakes;
+- tactical analysis: join wrapper12 with wrapper13 score accrual;
+- recorder-local analysis: use field6 as strong evidence that the recorder is personally participating in the capture, while retaining its evidence grade.
 
-Do not infer the exact vehicle(s) causing a capture-progress delta unless player-position/base-geometry evidence is independently available.
+Do not infer all capturing vehicles from wrapper12 alone.
 
 ## Relationship to method12 baseType12 / settlement field118
 
-The newly decoded timeline provides a much better control surface for field118 research, but current evidence does **not** close field118 yet.
+The newly decoded timeline provides a much better control surface for field118 research. The Port sample additionally supplies a clean defense-reset episode documented in `method12-spotted-and-assist-counters.md`.
 
-In particular, Avatar method12 baseType12 events do not consistently occur at wrapper12 capture completion and do not consistently coincide with field6 participation windows. Therefore these shortcuts are currently rejected:
-
-```text
-baseType12 == base captured count
-baseType12 == recorder entered capture circle
-field118 == simple wrapper12 progress total
-```
-
-Some baseType12 events do occur near capture progress reductions, while others occur during unrelated ongoing progress or with no nearby wrapper12 change. The exact method12/field118 statistic therefore remains `PARTIAL` and requires another discriminator.
-
-## Remaining work
-
-1. close field6 against recorder Type10 position and known map base centers;
-2. close field5 with controlled contested/base-reset scenarios;
-3. derive explicit capture episodes and interruption causes from the state machine;
-4. join wrapper12 episodes to wrapper13 score accrual and settlement #32/#33;
-5. continue field118/baseType12 research without forcing the old `droppedCapturePoints` hypothesis;
-6. validate wrapper12 numeric field stability outside Blitz 11.19 China before production reuse.
+The current best hypothesis is now the base-defense / dropped-capture-points family, but exact field-level symbolic identity remains separately evidence-graded.
