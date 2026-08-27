@@ -1,22 +1,31 @@
 # Avatar method 36 — recorder targeting / aim-state protobuf
 
-> Corpus: strict-framing 34 unique arenas, Blitz 11.19.0 China.
+> Base corpus: strict-framing 34 unique arenas, Blitz 11.19.0 China.
 >
-> Numeric method IDs are entity-class and version scoped. This document describes the current Avatar-targeted 11.19 corpus only.
+> Additional controlled probes: WZ-120 horizontal turret-rotation experiment and Maus vertical gun-pitch saturation experiment.
+>
+> Numeric method IDs and protobuf field numbers are entity-class/version scoped.
 
 ## Executive verdict
 
-Avatar method 36 is no longer UNKNOWN. The current corpus proves that it carries the recorder's targeting / aiming state and forms an exact pre-shot / post-shot snapshot pair around every recorder projectile launch.
+Avatar method36 is the recorder targeting / aim-state/config snapshot family — **PROVEN behavioral identity / PARTIAL exact private schema**.
 
-Verdict:
+Current field-level closures:
 
-> `Avatar method36` = **recorder targeting / aim-state family — PROVEN behavioral identity / PARTIAL exact current symbolic schema**.
+```text
+root.field1 = recorder turret/gun relative yaw               PROVEN
+root.field2 = recorder gun pitch                             PROVEN
+root.field3 = maximum horizontal turret/gun angular speed    PROVEN controlled, rad/s
+root.field4 = maximum vertical gun angular speed             PROVEN controlled, rad/s
+```
 
-The earlier temporary `battle events / battle feedback` hypothesis is REJECTED by stronger corpus evidence.
+The remaining coefficients belong to targeting/dispersion/config state but their exact private names/units are not all closed.
 
-## Two wire variants
+The old `method36 = battle feedback/events` hypothesis is `REJECTED`.
 
-Strict 34-arena counts:
+## Wire variants
+
+Original strict 34-arena corpus:
 
 ```text
 method36 total : 858
@@ -24,20 +33,14 @@ method36 total : 858
 74-byte body   :  34
 ```
 
-Both variants are one-byte length-prefixed protobuf messages:
+Both are one-byte length-prefixed protobuf bodies:
 
 ```text
 92-byte body: first byte 0x5B = 91 remaining bytes
 74-byte body: first byte 0x49 = 73 remaining bytes
 ```
 
-The remaining bytes parse cleanly as standard protobuf wire types.
-
-## Protobuf scalar surface
-
-The 92-byte variant exposes nine scalar `fixed64` / double-like values through a nested message shape.
-
-Conceptually:
+Conceptual scalar tree:
 
 ```text
 root.field1 : fixed64
@@ -57,171 +60,188 @@ root.field6 {
 }
 ```
 
-The 74-byte variant has the same static/configuration subtree but omits `root.field1` and `root.field2`.
+The 74-byte initialization/config variant omits dynamic `root.field1/root.field2`.
 
-Exactly one 74-byte record occurs per arena (`34 / 34`), consistent with an initialization/configuration snapshot before dynamic gun angles are supplied.
+## root.field1 — turret/gun relative yaw
 
-## root.field1 = recorder turret-relative yaw
-
-Across the 824 dynamic records, `root.field1` is angle-shaped:
+Across the original dynamic records, `root.field1` is angle-shaped and uniquely cross-correlates with Type39 `f5`.
 
 ```text
-range approximately -2.65 .. +3.06 rad
-```
-
-It was independently compared with the nearest Type39 seven-float recorder aim/camera stream.
-
-The best and overwhelmingly unique match is Type39 `f5`, already behaviorally identified as the recorder gun/turret-relative yaw candidate.
-
-```text
-median circular error root.field1 vs Type39.f5 : ~0.00575 rad
-p90                                        : ~0.06294 rad
-```
-
-No other Type39 field is remotely comparable.
-
-Verdict:
-
-> `method36.root.field1` = **recorder turret/gun relative yaw — PROVEN relationship**.
-
-## root.field2 = recorder gun pitch
-
-`root.field2` lies in a gun-elevation-like interval:
-
-```text
-approximately -0.30 .. +0.14 rad
-```
-
-Nearest-Type39 comparison again gives one unique match:
-
-```text
-median absolute error root.field2 vs Type39.f6 : ~0.00181 rad
-p90                                             : ~0.01224 rad
+median circular error root.field1 vs Type39.f5 ~0.00575 rad
+p90                                             ~0.06294 rad
 ```
 
 Verdict:
 
-> `method36.root.field2` = **recorder gun pitch — PROVEN relationship**.
+> `root.field1 = recorder turret/gun relative yaw` — **PROVEN relationship**.
+
+## root.field2 — gun pitch
+
+`root.field2` uniquely cross-correlates with Type39 `f6`:
+
+```text
+median absolute error root.field2 vs Type39.f6 ~0.00181 rad
+p90                                            ~0.01224 rad
+```
+
+Verdict:
+
+> `root.field2 = recorder gun pitch` — **PROVEN relationship**.
+
+## root.field3 — maximum horizontal turret/gun angular speed
+
+A controlled WZ-120 replay isolated these phases:
+
+- stationary;
+- forward/back only;
+- hull rotation;
+- turret-only rotation;
+- hull + turret;
+- stationary shot boundary.
+
+method36 configuration contained:
+
+```text
+root.field3 = 0.879154807353631 rad/s
+```
+
+The controlled turret-only phase physically reached approximately the same horizontal relative-yaw rate (~0.86 rad/s, about 49–50 deg/s), independently matching the current vehicle's horizontal gun/turret traverse behavior.
+
+Verdict:
+
+> `root.field3 = maximum horizontal turret/gun angular speed` — **PROVEN controlled physical role**, unit `rad/s`.
+
+This field is not a live movement-dispersion stream; method36 did not continuously emit through the movement phases.
+
+## root.field4 — maximum vertical gun angular speed
+
+A dedicated Maus controlled replay kept the vehicle/horizontal turret state stable while repeatedly sweeping the gun from maximum depression to maximum elevation and back.
+
+method36 configuration:
+
+```text
+root.field4 = 0.49951977690547217 rad/s
+```
+
+Observed Type39 `f6` gun-pitch derivatives on saturated linear movement:
+
+```text
+18.310070–18.335108s   +0.499521541 rad/s
+30.907492–30.940794s   -0.499526029 rad/s
+40.328415–40.478512s   -0.499520098 rad/s
+```
+
+The clean long-segment difference is approximately:
+
+```text
+0.000000322 rad/s
+~0.000064%
+```
+
+Verdict:
+
+> `root.field4 = maximum vertical gun elevation/depression angular speed` — **PROVEN controlled physical role**, unit `rad/s`.
+
+This is direct physical closure from live gun-pitch derivative, not historical schema-order inference.
 
 ## Exact pre-shot / post-shot pairing
 
-Recorder identity is inferred independently from the dominant method29 shooter that closes against recorder settlement shots.
-
-Across the strict corpus:
+Original strict corpus:
 
 ```text
 recorder method29 launches examined : 326
 launches with method36 pair          : 326 / 326
 ```
 
-For every recorder launch, packet order is exactly:
+Every recorder launch is ordered:
 
 ```text
-method36 snapshot A
-  -> method29 projectile launch
-  -> method36 snapshot B
+method36 PRE snapshot
+-> method29 projectile launch
+-> method36 POST snapshot
 ```
-
-Result:
 
 ```text
 sandwich ordering : 326 / 326
 exceptions        : 0
 ```
 
-At each recorder shot clock there are exactly two 92-byte method36 records.
+## field6.field1 — dispersion/accuracy family
 
-There are also 176 additional single-snapshot method36 clocks not tied to a recorder shot.
-
-A strong arena-level identity holds for all 34 arenas:
-
-```text
-method36_92B_event_count
-  = method36_92B_unique_clock_groups
-  + recorder_method29_launch_count
-```
-
-This is exactly what is expected when normal update clocks contain one snapshot and every shot clock contains one additional post-shot snapshot.
-
-## What changes across the shot
-
-Comparing the two method36 messages surrounding each of the 326 recorder launches:
+Across the 326 original shot pairs:
 
 ```text
 nested field6.field1 changes : 326 / 326
-root field3 also changes     :   2 / 326
-all other decoded scalar fields remain identical for the shot pair
+post-shot delta is always positive
 ```
 
-The nested `field6.field1` delta is always positive in the observed corpus:
+Observed delta range:
 
 ```text
-post-shot minus pre-shot
-min    : ~+0.0543
-median : ~+0.0642
-max    : ~+0.1228
+min    ~+0.0543
+median ~+0.0642
+max    ~+0.1228
 ```
 
-This is strongly consistent with an instantaneous post-shot dispersion/bloom factor.
+Independent Gun-damage closure:
 
-Exact symbolic naming remains PARTIAL until a version-matched Blitz schema is recovered, so production should expose it as a targeting/dispersion scalar rather than hard-code a historical PC field name.
+```text
+baseline -> exactly ×2 while Gun damaged -> baseline after Repair Kit
+```
 
-## Historical schema cross-check
+Therefore `field6.field1` is safely modeled as a **dispersion/accuracy/bloom-family scalar**. Exact private field name and normalized unit remain unresolved.
 
-Independent Wargaming Avatar client code exposes replay-visible `updateTargetingInfo(...)` data containing:
+## Controlled Adrenaline negative control
 
-- turret yaw;
-- gun pitch;
-- turret/gun rotation limits;
-- shot-dispersion multiplier/factors;
-- aiming time.
+In the WZ-120 controlled movement replay, Adrenaline activated between two shots. The tested method36 targeting/config scalar set did not change because of Adrenaline.
 
-The current method36 protobuf contains exactly nine scalar values, the first two independently close to turret yaw and gun pitch, and the remaining values are slow-changing or configuration-like numbers in plausible targeting/dispersion/aim-time ranges.
+Safe conclusion:
 
-This is strong architectural support for the `targeting-info` family, but historical flat argument ordering must not be transplanted onto the current Blitz nested protobuf without field-level current-version proof.
+> Adrenaline's observed effect belongs to reload/gun-cycle behavior rather than this method36 targeting/config scalar set.
 
-## Rejected hypothesis: method36 = battle feedback/events
+## Historical architecture cross-check
 
-The earlier provisional hypothesis was motivated by the frequent same-clock relationship with method38 hit feedback.
+Historical Wargaming targeting APIs contain concepts such as turret yaw, gun pitch, rotation limits, dispersion factors and aiming time. That architecture is compatible with the current nested protobuf.
 
-The complete shot-level analysis rejects it:
+Correct use:
 
-- method36 pairs exist for **every recorder launch**, not only hits;
-- 326/326 recorder launches are exactly bracketed by method36 snapshots;
-- the decoded first two fields are physical gun yaw/pitch;
-- the only universal pre/post-shot change is a dispersion-like scalar.
+```text
+current replay behavior -> field semantic closure
+historical schema        -> architecture cross-check only
+```
 
-Therefore:
+Do not transplant historical flat argument ordering into current Blitz.
 
-> `method36 = battleEvents / battle feedback` — **REJECTED / SUPERSEDED**.
+## Rejected/superseded interpretations
 
-## Safe consumer model
+```text
+method36 == battle feedback/events                     REJECTED
+root.field3 remains one of seven wholly-unmapped scalars SUPERSEDED
+root.field4 remains an unproven rotation-speed candidate SUPERSEDED
+method36 is a continuous movement-dispersion stream      REJECTED by controlled movement probe
+```
+
+## Production-safe model
 
 ```text
 TargetingInfoSnapshot {
     rawClockSec
-    phase               // NORMAL / PRE_SHOT / POST_SHOT when derivable
-    turretYawRad        // proven
-    gunPitchRad         // proven
-    configScalarsRaw    // remaining decoded protobuf fixed64 values
-    dispersionLikeRaw   // nested field that increases after every shot
+    phase                  // NORMAL / PRE_SHOT / POST_SHOT
+    turretYawRad           // root.field1, PROVEN
+    gunPitchRad            // root.field2, PROVEN
+    maxHorizontalRateRadS  // root.field3, PROVEN controlled
+    maxVerticalRateRadS    // root.field4, PROVEN controlled
+    dispersionLikeRaw      // field6.field1, physical family closed
+    remainingConfigRaw     // preserve remaining coefficients
     source = AVATAR_METHOD36
 }
 ```
 
-Safe uses:
-
-- reconstruct recorder gun orientation more precisely;
-- mark exact pre/post-shot targeting state;
-- improve AI Review evidence around aimed vs snap-shot behavior once the dispersion scalar receives a stable semantic calibration;
-- cross-check Type39 gun-angle telemetry.
-
-Do not expose historical field names for the remaining seven scalars until current-version evidence closes them.
-
 ## Remaining work
 
-1. map the remaining seven scalars against tank gun parameters and Type39/other targeting telemetry;
-2. identify whether the universal post-shot-changing scalar is dispersion angle, multiplier, bloom, or another normalized quantity;
-3. recover a version-matched Blitz targeting protobuf definition;
-4. determine why two shot pairs also change root field3;
-5. validate the same schema on non-11.19 clients before widening version support.
+Only the genuinely unresolved targeting boundaries remain:
+
+1. identify exact private names/units for `root.field5`, `field6.field1`, `field6.field2` and the two deepest nested scalars;
+2. explain the small number of historical shot pairs where root.field3 changed at a shot boundary without contradicting its configuration role;
+3. recover a version-matched Blitz protobuf definition if available;
+4. validate numeric/schema stability on later client versions before widening support.
