@@ -1,4 +1,4 @@
-# Avatar method 19 — vehicle misc-status / repair-progress family
+# Avatar method19 — vehicle misc-status / repair-progress / observed-by-enemy family
 
 > Corpus: strict-framing 34 unique arenas, Blitz 11.19.0 China.
 >
@@ -17,7 +17,7 @@ floatArg  : f32 LE
 
 Total body length: `13 bytes`.
 
-The current behavior and Blitz/Wargaming method-family precedent identify this as:
+The current behavior and Wargaming method-family evidence identify this as:
 
 > Avatar method19 = **vehicle miscellaneous status / `updateVehicleMiscStatus` family — PROVEN behavioral/signature identity**.
 
@@ -28,7 +28,80 @@ code 1 : 89
 code 7 : 58
 ```
 
-## code 7 — destroyed-device repairing progress
+# code 1 — `IS_OBSERVED_BY_ENEMY`
+
+Current corpus structure:
+
+```text
+records                    : 89
+vehicleId == recorder car  : 89 / 89
+intArg resolves enemy car  : 89 / 89
+floatArg                   : 0 in 89 / 89
+```
+
+No code1 record points to an ally.
+
+The same recorder/enemy pair may re-trigger later, but never inside the ordinary 10-second spotting-persistence window:
+
+```text
+same recorder↔enemy pair repeat intervals:
+count  : 17
+min    : ~11.882 s
+median : ~35.631 s
+max    : ~276.817 s
+```
+
+This is incompatible with collision, direct damage, firing, or ordinary aim-target state, and is strongly consistent with a spotting/observation onset that can only fire again after the prior observed state has expired and a new observation occurs.
+
+## Exact companion relationship to wrapper16 state1
+
+Every current method19 code1 event is followed by a wrapper16 state1 broadcast for the recorder's vehicle:
+
+```text
+method19 code1 records                       : 89
+followed by wrapper16 field3=1 same vehicle : 89 / 89
+```
+
+Observed delay:
+
+```text
+~0.06 .. 0.14 s
+median ~0.100 s
+```
+
+This proves that method19 code1 and wrapper16 field3=1 are two surfaces of the same observation/spot-state family:
+
+```text
+method19 code1
+  -> recorder-local status including enemy entity identity
+
+wrapper16 field3=1
+  -> own-team vehicle observation-state broadcast
+```
+
+## Symbolic enum closure
+
+Independent Wargaming `VEHICLE_MISC_STATUS` constants expose:
+
+```text
+OTHER_VEHICLE_DAMAGED_DEVICES_VISIBLE = 0
+IS_OBSERVED_BY_ENEMY                  = 1
+_NOT_USED                             = 2
+VEHICLE_IS_OVERTURNED                 = 3
+VEHICLE_DROWN_WARNING                 = 4
+IN_DEATH_ZONE                         = 5
+DESTROYED_DEVICE_IS_REPAIRING         = 7
+```
+
+The same enum value `7` independently closes against the current method19 repair-progress behavior, giving a strong anchor that this status-number family is structurally stable enough to use as supporting evidence for code1.
+
+Combined with the current 89/89 enemy-entity relationship and the >10-second repeat boundary:
+
+> current `method19 code=1` = **`IS_OBSERVED_BY_ENEMY` / recorder vehicle observed by enemy — PROVEN behavioral identity + strong symbolic closure**.
+
+`intArg` is the enemy entity associated with that observation notification in the current corpus. The exact producer-side wording of whether it is the original spotter, current observer, or notification-source enemy remains version-gated; consumers may safely expose the entity as `observerEnemyEntityIdRaw` rather than overstate server internals.
+
+# code 7 — destroyed-device repairing progress
 
 For `code=7`:
 
@@ -45,6 +118,12 @@ Representative ladder:
 0x2E22 -> extraIndex 0x22, progress 46%, timeLeft 2.261s
 0x4622 -> extraIndex 0x22, progress 70%, timeLeft 1.261s
 0x5D22 -> extraIndex 0x22, progress 93%, timeLeft 0.261s
+```
+
+Independent `VEHICLE_MISC_STATUS` constants name value 7 as:
+
+```text
+DESTROYED_DEVICE_IS_REPAIRING = 7
 ```
 
 Verdict:
@@ -71,14 +150,12 @@ preceding method16 same vehicle + same codeB + codeA=5 : 30 / 31
 following method16 same vehicle + same codeB + codeA=19: 26 / 31
 ```
 
-The missing boundaries concentrate in replay/AoI or externally interrupted repair windows rather than contradictory device IDs.
-
-This proves that:
+This proves:
 
 ```text
 method19.code7.extraIndex
 ==
-method16.codeB device identifier namespace
+method16.codeB device namespace
 ```
 
 for the current mechanical-device population.
@@ -87,11 +164,7 @@ Verdict:
 
 > **same device namespace — PROVEN current corpus**.
 
-This matters because method16 gives the instantaneous damage/repair transition while method19 gives the server/client-observed self-repair countdown for a destroyed device.
-
 ## Current proven / high-confidence device anchors
-
-From independent physical behavior:
 
 ```text
 32 = ammo rack                  PROVEN
@@ -104,54 +177,23 @@ From independent physical behavior:
 One current natural episode has the complete chain:
 
 ```text
-method16 codeA=5, codeB=37       // severe/destroyed device state
-method19 code=7, extraIndex=37   // repair-progress countdown
+method16 codeA=5, codeB=37
+method19 code=7, extraIndex=37
 ~0.98 s later
-method16 codeA=19, codeB=37      // repaired/clear
+method16 codeA=19, codeB=37
 ```
 
-Vehicle movement remains substantial during the disabled interval (approximately 12 m/s), excluding a generic track/engine immobilization interpretation.
-
-Using independently proven Vehicle prop2 turret-relative yaw, observed turret angular velocity changes from approximately:
+Vehicle movement remains substantial during the disabled interval (~12 m/s), while independently proven Vehicle prop2 turret-relative yaw shows turret angular velocity collapse from approximately:
 
 ```text
-pre-damage median   ~0.80 rad/s
-disabled interval   ~0.0018 rad/s
-post-repair          resumes non-zero rotation
+pre-damage median : ~0.80 rad/s
+disabled interval : ~0.0018 rad/s
+post-repair        : resumes non-zero rotation
 ```
-
-Thus the turret is effectively locked while the chassis can continue moving.
-
-This is the defining physical behavior of the turret-rotation device.
 
 Verdict:
 
 > current `device extraIndex/codeB 37` = **turret rotator / turret rotation mechanism — PROVEN on the available natural sample, version-scoped**.
-
-Sample count is one complete natural destruction/repair episode, so future versions/corpora should revalidate the numeric ID even though the present event is physically decisive.
-
-## code 1
-
-For all 89 `code=1` records:
-
-```text
-vehicleId = recorder's own vehicle in 89 / 89
-intArg    = another valid enemy combat vehicle in 89 / 89
-floatArg  = 0
-```
-
-Additional negatives:
-
-- no allied target IDs;
-- target distance is broad (~23..270 m), excluding collision/proximity-only semantics;
-- no exact relationship to Type4/Type33/Type5 visibility lifecycle;
-- no unique identity with simple aim-target geometry.
-
-Verdict:
-
-> `code=1` = **recorder-own-vehicle -> enemy misc relation/state — PROVEN shape / UNKNOWN exact semantic**.
-
-Do not borrow an old numeric status name merely because a historical `updateVehicleMiscStatus` enum contains a value 1.
 
 ## Product model
 
@@ -163,22 +205,24 @@ VehicleMiscStatusEvent {
     intArgRaw
     floatArgRaw
 
-    repairDeviceId?       // code7
-    repairProgressPct?    // code7
-    repairTimeLeftSec?    // code7
+    observedByEnemy?        // code1
+    observerEnemyEntityId?  // code1, preserve as raw relationship
+
+    repairDeviceId?         // code7
+    repairProgressPct?      // code7
+    repairTimeLeftSec?      // code7
 }
 ```
 
 Safe uses:
 
-- Battle Playback: display automatic repair progress for destroyed devices;
-- AI Review: explain periods where a destroyed track/turret mechanism remained under repair;
-- cross-check method16 damage-state transitions;
-- preserve exact module/device IDs even when symbolic role is still PARTIAL.
+- AI Review / playback: mark the recorder's ordinary observed-by-enemy onset and associated enemy source identity;
+- combine with wrapper16 state1 for own-team spotting-state reconstruction;
+- display destroyed-device automatic repair progress;
+- cross-check method16 device state transitions.
 
 ## Important boundaries
 
-- numeric device IDs are version-scoped;
-- current proof of `37=turret rotator` is behaviorally strong but N=1 complete episode;
-- `code1` remains unnamed;
-- do not map unproven device IDs solely from PC or old Blitz enum ordering.
+- ordinary observation-state duration is inferred from current event re-trigger behavior and known Blitz spotting persistence; the packet itself is an onset/status event, not a literal countdown;
+- do not confuse ordinary `code1 / wrapper16 state1` with Tracer Shell forced-spot `wrapper16 state8`;
+- numeric device IDs remain version-scoped.
