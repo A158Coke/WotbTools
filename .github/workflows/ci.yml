@@ -39,6 +39,14 @@ jobs:
           for tier in 7 8 9 10; do
             python3 -m json.tool "/tmp/tankopedia-ci/tankopedia-tier${tier}.json" >/dev/null
           done
+      - name: Validate live BlitzKit crew skill contract
+        run: |
+          set -euo pipefail
+          python3 common/python/update_crew_skills.py \
+            --existing common/crew-skills.json \
+            --output /tmp/crew-skills.json
+          python3 -m json.tool /tmp/crew-skills.json >/dev/null
+          diff -u common/crew-skills.json /tmp/crew-skills.json
 
   backend:
     name: Backend tests
