@@ -168,6 +168,13 @@ def parse_equipment_details(pb_bytes):
     return details
 
 
+def grid_position(index):
+    """Decode BlitzKit's row-major 3x3 equipment grid into group and slot."""
+    if index < 0 or index >= 9:
+        raise RuntimeError("BLITZKIT_PRESET_LAYOUT_UNSUPPORTED: slot=%d" % index)
+    return GRID_GROUPS[index % 3], index // 3 + 1
+
+
 def parse_equipment_placements(pb_bytes, used_presets):
     placements = {}
     root = decode_protobuf(pb_bytes)
@@ -178,11 +185,11 @@ def parse_equipment_placements(pb_bytes, used_presets):
             continue
         preset = decode_protobuf(f1(kv, 2, b""))
         for index, raw_slot in enumerate(preset.get(1, [])):
-            if index >= 9:
-                raise RuntimeError("BLITZKIT_PRESET_LAYOUT_UNSUPPORTED: %s slot=%d" % (preset_name, index))
+            try:
+                position = grid_position(index)
+            except RuntimeError as error:
+                raise RuntimeError("%s preset=%s" % (error, preset_name)) from error
             slot = decode_protobuf(raw_slot)
-            group = GRID_GROUPS[index // 3]
-            position = (group, index % 3 + 1)
             for field, side in ((1, "LEFT"), (2, "RIGHT")):
                 equipment_id = as_int(f1(slot, field))
                 if equipment_id:
