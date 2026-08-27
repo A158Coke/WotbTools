@@ -1,23 +1,20 @@
 #!/usr/bin/env python3
-"""Safely sync the WotB equipment catalog from reviewed BlitzKit sources.
+"""Safely sync the WotB equipment catalog from BlitzKit.
 
-The updater deliberately separates two classes of equipment:
+The updater separates two equipment classes:
 
-* FULLY_MODELED_CODES: every catalog effect for the item is derived from a
-  reviewed BlitzKit calculation source.
-* LOCKED_CODES: WotBTools models the item, but BlitzKit does not expose every
-  effect through calculation code. These items are never partially rewritten;
-  their reviewed description fingerprints, exact game build, and reviewed
-  equipment protobuf snapshot are enforced by validate_locked_equipment_contract.py.
+* FULLY_MODELED_CODES: effects are derived from current BlitzKit calculation
+  sources and may update automatically when the parser still understands them.
+* LOCKED_CODES: WotBTools cannot derive every effect. Those items keep local
+  reviewed effects and are guarded by item-scoped description fingerprints.
 
-The workflow validates every equipment ID referenced by tier 7-10 vehicle
-presets. The complete reviewed equipment.pb fingerprint fail-closes any upstream
-preset/layout change; structural validation then rejects missing, new, removed,
-or renamed catalog equipment without assuming that raw special-preset indexes
-form one universal 3x3 equipment grid.
+A new WoTB game version, changed protobuf snapshot, renamed known equipment, or
+preset-layout change is not itself an error. The sync fails closed only when new
+upstream data cannot be represented safely: for example, a newly referenced
+equipment ID has no local model, a known item disappears, a locked item changes,
+or a calculation source no longer matches the supported parser contract.
 """
 
-import argparse
 import base64
 import json
 import re
@@ -38,18 +35,9 @@ from update_tankopedia import (
 
 BLITZKIT_REPO = "blitzkit/blitzkit"
 SOURCE_FILES = {
-    "characteristics": (
-        "packages/website/src/core/blitzkit/tankCharacteristics.ts",
-        "d9d04109829c1095c6c51edd50bd3adf29097b0f",
-    ),
-    "penetration": (
-        "packages/core/src/blitzkit/resolvePenetrationCoefficient.ts",
-        "56dcb256083b25a6902c73126faeb08065351d69",
-    ),
-    "armor": (
-        "packages/website/src/components/Armor/components/StaticArmorSceneComponent.tsx",
-        "37173d1972d84c210a5765be9af3baff7d255252",
-    ),
+    "characteristics": "packages/website/src/core/blitzkit/tankCharacteristics.ts",
+    "penetration": "packages/core/src/blitzkit/resolvePenetrationCoefficient.ts",
+    "armor": "packages/website/src/components/Armor/components/StaticArmorSceneComponent.tsx",
 }
 
 FULLY_MODELED_CODES = {
@@ -87,16 +75,15 @@ def fetch(url, binary=False):
     return data if binary else data.decode("utf-8")
 
 
-def fetch_reviewed_source(path, expected_blob_sha):
-    """Fetch main only when the exact reviewed blob is still current."""
+def fetch_source(path):
+    """Fetch the current BlitzKit source file from main.
+
+    Source blob changes are expected over time. Safety comes from strict parsers:
+    if a supported calculation no longer has the expected shape, the sync raises
+    BLITZKIT_PATTERN_MISSING instead of guessing.
+    """
     url = f"https://api.github.com/repos/{BLITZKIT_REPO}/contents/{path}?ref=main"
     payload = json.loads(fetch(url))
-    actual_sha = payload.get("sha")
-    if actual_sha != expected_blob_sha:
-        raise RuntimeError(
-            "BLITZKIT_SOURCE_CHANGED: %s expected=%s actual=%s; review upstream and update the lock"
-            % (path, expected_blob_sha, actual_sha)
-        )
     content = payload.get("content")
     if not content:
         raise RuntimeError("BLITZKIT_SOURCE_MISSING_CONTENT: " + path)
@@ -180,8 +167,8 @@ def required_business_equipment_ids(vehicles, presets):
     return preset_names, required_ids
 
 
-def validate_upstream_contract(payload, equipment_pb, tanks_pb):
-    """Validate catalog coverage after the reviewed protobuf snapshot is accepted."""
+def sync_upstream_metadata(payload, equipment_pb, tanks_pb):
+    """Import supported structural changes and reject unsupported new models."""
     presets, equipment_names = parse_equipment_defs(equipment_pb)
     vehicles = filter_to_business_tiers(parse_tanks(tanks_pb))
     _, required_ids = required_business_equipment_ids(vehicles, presets)
@@ -190,18 +177,18 @@ def validate_upstream_contract(payload, equipment_pb, tanks_pb):
     missing = sorted(required_ids - set(catalog_by_id))
     if missing:
         rendered = [f"{item_id}:{equipment_names.get(item_id, '?')}" for item_id in missing]
-        raise RuntimeError("BLITZKIT_NEW_BUSINESS_EQUIPMENT: " + ", ".join(rendered))
+        raise RuntimeError(
+            "BLITZKIT_NEW_BUSINESS_EQUIPMENT_UNMODELED: " + ", ".join(rendered)
+            + "; add a complete local effect model before accepting this equipment"
+        )
 
     for item in payload["items"]:
         equipment_id = item["id"]
         upstream_name = equipment_names.get(equipment_id)
         if upstream_name is None:
             raise RuntimeError("BLITZKIT_EQUIPMENT_REMOVED: %s id=%s" % (item["code"], equipment_id))
-        if upstream_name != item.get("nameEn"):
-            raise RuntimeError(
-                "BLITZKIT_EQUIPMENT_RENAMED: %s catalog=%r upstream=%r"
-                % (item["code"], item.get("nameEn"), upstream_name)
-            )
+        if upstream_name and upstream_name != item.get("nameEn"):
+            item["nameEn"] = upstream_name
 
     codes = {item["code"] for item in payload["items"]}
     modeled = FULLY_MODELED_CODES | LOCKED_CODES
@@ -290,8 +277,6 @@ def validate(payload):
 
 
 def main():
-    # Keep the historical CLI entry point safe by delegating to the snapshot-aware
-    # updater, which enforces the reviewed build/snapshot/description contracts.
     from sync_equipment_snapshot import main as snapshot_main
 
     return snapshot_main()
