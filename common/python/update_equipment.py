@@ -7,8 +7,8 @@ The updater deliberately separates two classes of equipment:
   reviewed BlitzKit calculation source.
 * LOCKED_CODES: WotBTools models the item, but BlitzKit does not expose every
   effect through calculation code. These items are never partially rewritten;
-  their live English description is checked for the numeric/semantic markers
-  that back the current catalog values.
+  their reviewed description-template fingerprints and reviewed game version
+  are enforced by validate_locked_equipment_contract.py.
 
 The workflow also validates all equipment referenced by tier 7-10 vehicle
 presets. New, removed, renamed, or moved equipment therefore fails closed
@@ -65,24 +65,17 @@ FULLY_MODELED_CODES = {
     "ENGINE_ACCELERATOR",
 }
 
-# These are intentionally not partially updated. The markers are extracted
-# from the live English equipment description in equipment.pb; if WG/BlitzKit
-# changes a locked effect, the updater stops and asks for a reviewed mapping.
-LOCKED_DESCRIPTION_NUMBERS = {
-    "SUPERCHARGER": {35.0, 60.0},
-    "IMPROVED_VERTICAL_STABILIZER": {4.0, 3.0},
-    "IMPROVED_SUSPENSION": {20.0, 15.0, 30.0},
-    "IMPROVED_MODULES": {20.0, 40.0},
-    "DEFENSE_SYSTEM": {10.0, 15.0, 25.0},
-    "ENHANCED_TRACKS": set(),
-    "TOOLBOX": {20.0},
-    "CONSUMABLE_DELIVERY_SYSTEM": {12.0},
-    "HIGH_END_CONSUMABLES": {33.0},
+LOCKED_CODES = {
+    "SUPERCHARGER",
+    "IMPROVED_VERTICAL_STABILIZER",
+    "IMPROVED_SUSPENSION",
+    "IMPROVED_MODULES",
+    "DEFENSE_SYSTEM",
+    "ENHANCED_TRACKS",
+    "TOOLBOX",
+    "CONSUMABLE_DELIVERY_SYSTEM",
+    "HIGH_END_CONSUMABLES",
 }
-LOCKED_DESCRIPTION_KEYWORDS = {
-    "ENHANCED_TRACKS": {"track", "repair"},
-}
-LOCKED_CODES = set(LOCKED_DESCRIPTION_NUMBERS)
 GRID_GROUPS = ("FIREPOWER", "VITALITY", "SPECIALIZATION")
 
 
@@ -210,7 +203,6 @@ def required_business_equipment_ids(vehicles, presets):
 
 def validate_upstream_contract(payload, equipment_pb, tanks_pb):
     presets, equipment_names = parse_equipment_defs(equipment_pb)
-    details = parse_equipment_details(equipment_pb)
     vehicles = filter_to_business_tiers(parse_tanks(tanks_pb))
     used_presets, required_ids = required_business_equipment_ids(vehicles, presets)
     placements = parse_equipment_placements(equipment_pb, used_presets)
@@ -248,35 +240,6 @@ def validate_upstream_contract(payload, equipment_pb, tanks_pb):
             "CATALOG_MODEL_COVERAGE_MISMATCH: missing_models=%s stale_models=%s"
             % (sorted(codes - modeled), sorted(modeled - codes))
         )
-
-    validate_locked_descriptions(payload, details)
-
-
-def extract_numbers(text):
-    return {abs(float(value)) for value in re.findall(r"(?<!\w)-?\d+(?:\.\d+)?", text or "")}
-
-
-def validate_locked_descriptions(payload, details):
-    for code in sorted(LOCKED_CODES):
-        item = item_by_code(payload, code)
-        detail = details.get(item["id"])
-        if not detail:
-            raise RuntimeError("BLITZKIT_EQUIPMENT_DESCRIPTION_MISSING: " + code)
-        description = detail.get("description") or ""
-        numbers = extract_numbers(description)
-        expected_numbers = LOCKED_DESCRIPTION_NUMBERS[code]
-        if not expected_numbers.issubset(numbers):
-            raise RuntimeError(
-                "BLITZKIT_LOCKED_EFFECT_CHANGED: %s expected_numbers=%s upstream_numbers=%s"
-                % (code, sorted(expected_numbers), sorted(numbers))
-            )
-        lowered = description.lower()
-        expected_keywords = LOCKED_DESCRIPTION_KEYWORDS.get(code, set())
-        if not all(keyword in lowered for keyword in expected_keywords):
-            raise RuntimeError(
-                "BLITZKIT_LOCKED_EFFECT_CHANGED: %s missing_keywords=%s"
-                % (code, sorted(expected_keywords))
-            )
 
 
 def sync_values(payload, characteristics, penetration, armor):
@@ -356,28 +319,12 @@ def validate(payload):
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--catalog", default="common/wotb-item-catalog-json/equipment.json")
-    args = parser.parse_args()
+    # Keep the historical CLI entry point safe by delegating to the snapshot-aware
+    # updater, which enforces the game-version and locked-description contracts.
+    from sync_equipment_snapshot import main as snapshot_main
 
-    with open(args.catalog, encoding="utf-8") as file:
-        payload = json.load(file)
-
-    equipment_pb = fetch(EQUIPMENT_URL, binary=True)
-    tanks_pb = fetch(PB_URL, binary=True)
-    validate_upstream_contract(payload, equipment_pb, tanks_pb)
-
-    sources = {
-        name: fetch_reviewed_source(path, sha)
-        for name, (path, sha) in SOURCE_FILES.items()
-    }
-    sync_values(payload, sources["characteristics"], sources["penetration"], sources["armor"])
-    validate(payload)
-
-    with open(args.catalog, "w", encoding="utf-8", newline="\n") as file:
-        json.dump(payload, file, ensure_ascii=False, indent=2)
-        file.write("\n")
+    return snapshot_main()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
