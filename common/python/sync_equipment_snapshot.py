@@ -6,7 +6,10 @@ import json
 
 import update_equipment as ue
 from blitzkit_snapshot import GAME_URL, fetch_stable_snapshot, parse_game_version
-from validate_locked_equipment_contract import validate_locked_contract_from_pb
+from validate_locked_equipment_contract import (
+    validate_locked_contract_from_pb,
+    validate_reviewed_game_version,
+)
 
 
 def main(argv=None):
@@ -29,6 +32,7 @@ def main(argv=None):
     game_version = parse_game_version(
         snapshots["game"], ue.decode_protobuf, ue.f1, ue.as_str
     )
+    validate_reviewed_game_version(game_version)
     print(
         "stable equipment snapshot: game_version=%s %s"
         % (
@@ -53,7 +57,6 @@ def main(argv=None):
         sources["armor"],
     )
     ue.validate(payload)
-    validate_locked_contract_from_pb(payload, equipment_pb)
 
     with open(args.catalog, "w", encoding="utf-8", newline="\n") as file:
         json.dump(payload, file, ensure_ascii=False, indent=2)
