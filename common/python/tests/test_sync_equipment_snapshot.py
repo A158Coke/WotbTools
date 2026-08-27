@@ -27,9 +27,22 @@ class EquipmentSnapshotContractTest(unittest.TestCase):
             patch.object(sync.ue, "FULLY_MODELED_CODES", {"A"}),
             patch.object(sync.ue, "LOCKED_CODES", {"B"}),
         ):
-            self.assertTrue(sync.ue.validate_upstream_contract(payload, b"equipment", b"tanks"))
+            self.assertTrue(sync.ue.sync_upstream_metadata(payload, b"equipment", b"tanks"))
 
-    def test_unknown_business_equipment_fails_closed(self):
+    def test_known_upstream_rename_is_imported(self):
+        payload = {"items": [{"id": 100, "code": "A", "nameEn": "Old Name"}]}
+        vehicles = {"1": {"_equipmentPreset": "standard"}}
+        with (
+            patch.object(sync.ue, "parse_equipment_defs", return_value=({"standard": {100}}, {100: "New Name"})),
+            patch.object(sync.ue, "parse_tanks", return_value=vehicles),
+            patch.object(sync.ue, "filter_to_business_tiers", return_value=vehicles),
+            patch.object(sync.ue, "FULLY_MODELED_CODES", {"A"}),
+            patch.object(sync.ue, "LOCKED_CODES", set()),
+        ):
+            sync.ue.sync_upstream_metadata(payload, b"equipment", b"tanks")
+        self.assertEqual("New Name", payload["items"][0]["nameEn"])
+
+    def test_unknown_business_equipment_fails_closed_until_modeled(self):
         payload = {"items": [{"id": 100, "code": "A", "nameEn": "Alpha"}]}
         vehicles = {"1": {"_equipmentPreset": "special"}}
         with (
@@ -39,8 +52,8 @@ class EquipmentSnapshotContractTest(unittest.TestCase):
             patch.object(sync.ue, "FULLY_MODELED_CODES", {"A"}),
             patch.object(sync.ue, "LOCKED_CODES", set()),
         ):
-            with self.assertRaisesRegex(RuntimeError, "BLITZKIT_NEW_BUSINESS_EQUIPMENT"):
-                sync.ue.validate_upstream_contract(payload, b"equipment", b"tanks")
+            with self.assertRaisesRegex(RuntimeError, "BLITZKIT_NEW_BUSINESS_EQUIPMENT_UNMODELED"):
+                sync.ue.sync_upstream_metadata(payload, b"equipment", b"tanks")
 
     def test_camouflage_effects_have_stable_catalog_order(self):
         effects = []
