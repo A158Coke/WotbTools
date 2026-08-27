@@ -38,9 +38,7 @@ field6.field1
 = PROVEN physical role
 ```
 
-The unresolved boundary is the private/current protobuf naming and the display/UI formulas for some scalars, not the physical roles above.
-
-The old `method36 = battle feedback/events` hypothesis is `REJECTED`.
+The unresolved boundary is private/current protobuf naming and the exact display/UI formula for some scalars, not the physical roles above.
 
 ## Wire variants
 
@@ -134,8 +132,6 @@ Verdict:
 
 > `root.field4 = max vertical gun angular speed` — **PROVEN controlled**, physical unit `rad/s`.
 
-This is direct current-version physical closure, not historical schema-order inference.
-
 ## root.field5 — aiming-time physical scalar
 
 Reticle Calibration provides an exact reversible boundary:
@@ -147,13 +143,11 @@ ratio                     0.70
 end                       exact baseline restoration
 ```
 
-The consumable's current aiming-time modifier is `-30%`, and no other decoded method36 scalar matching this role changes at that boundary.
-
 Verdict:
 
 > `root.field5 = aiming-time physical scalar` — **PROVEN physical role**.
 
-The exact Wargaming private protobuf symbol and exact UI/display conversion formula remain unknown/partial.
+The exact private protobuf symbol and exact UI/display conversion formula remain UNKNOWN/PARTIAL.
 
 ## Exact pre-shot / post-shot pairing
 
@@ -196,39 +190,11 @@ Verdict:
 
 > `field6.field1 = dynamic gun dispersion / bloom scalar` — **PROVEN physical role**.
 
-The exact private protobuf field symbol and exact display/UI unit/formula remain unknown/partial. In particular, do not automatically equate the raw scalar with the user-facing `dispersion at 100m` number.
+The exact private protobuf symbol and exact display/UI unit/formula remain UNKNOWN/PARTIAL. Do not automatically equate the raw scalar with the user-facing `dispersion at 100m` number.
 
-## Controlled Adrenaline negative control
+## Adrenaline control
 
-In the WZ-120 controlled movement replay, Adrenaline activated between two shots. The tested method36 targeting/config scalar set did not change because of Adrenaline.
-
-Safe conclusion:
-
-> Adrenaline's observed effect belongs to reload/gun-cycle behavior rather than this method36 targeting/config scalar set.
-
-## Historical architecture cross-check
-
-Historical Wargaming targeting APIs contain turret yaw, gun pitch, rotation limits, dispersion factors and aiming time. That architecture is compatible with the current nested protobuf.
-
-Correct use:
-
-```text
-current replay behavior -> physical-role closure
-historical schema        -> architecture cross-check only
-```
-
-Do not transplant historical flat argument ordering into current Blitz.
-
-## Rejected/superseded interpretations
-
-```text
-method36 == battle feedback/events                       REJECTED
-root.field3 remains an unmapped targeting scalar         SUPERSEDED
-root.field4 remains a rotation-speed candidate           SUPERSEDED
-root.field5 remains an unresolved targeting scalar       SUPERSEDED
-field6.field1 remains VERY STRONG PARTIAL only            SUPERSEDED
-method36 is a continuous movement-dispersion stream      REJECTED
-```
+In the controlled WZ-120 sample, Adrenaline activation does not change the tested method36 targeting/config scalar set. Its observed effect is carried by reload/gun-cycle telemetry rather than these targeting scalars.
 
 ## Production-safe model
 
@@ -257,4 +223,8 @@ field6.field2 and deepest static coefficients             PARTIAL
 cross-version numeric/schema stability                   UNKNOWN until regression-tested
 ```
 
-Do not downgrade a proven physical role merely because Wargaming's private field name is still unknown.
+The evidence distinction is explicit:
+
+> **physical role: PROVEN**
+>
+> **private Wargaming field symbol: UNKNOWN**
