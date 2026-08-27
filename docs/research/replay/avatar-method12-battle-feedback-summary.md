@@ -1,195 +1,178 @@
 # Avatar method12 — cumulative battle-feedback summary
 
-> Corpus: 34 unique-arena Blitz 11.19.0 China replays.
+> Corpus: canonical 34 unique Blitz 11.19.0 China arenas.
 >
-> Scope: current Avatar-targeted method12 6-byte body. Exact current Blitz symbolic event names are only assigned where independent replay facts close them.
+> This is the synchronized broad summary. Exact proof chains live in the dedicated method12 / settlement notes.
 
-## Verdict
+## Wire shape
 
-Avatar method12 is a **PROVEN cumulative battle-feedback / combat-summary surface**.
-
-Every observed body is exactly 6 bytes:
+Every current body is exactly 6 bytes:
 
 ```text
 eventCode : u16 LE
 count     : u16 LE
 value     : u16 LE
-```
 
-Observed events:
-
-```text
-method12 total = 587
-body length     = 6 bytes in 587/587
-```
-
-`eventCode` has a stable low-byte family plus a high-byte stage/tier component:
-
-```text
 baseType = eventCode & 0x00ff
 tierRaw  = eventCode >> 8
 ```
 
-Examples for the same cumulative damage family:
+Observed method12 records:
 
 ```text
-0x0001 -> count 1..5
-0x0101 -> later count values
-0x0201 / 0x0301 -> higher stages in some arenas
+total = 587
+body length = 6 bytes in 587/587
 ```
 
-The exact UI meaning of `tierRaw` is not yet proven and must remain raw.
+`count` is normally a cumulative/ribbon progression dimension. `value` is used by numeric cumulative families and is zero for several event-count families. `tierRaw` is a feedback/presentation stage; exact private UI meaning remains PARTIAL.
 
-## baseType 1 — cumulative damage dealt
+## Current synchronized mapping
 
-This family is independently closed against Avatar Type7 `prop10`, already proven to mirror recorder cumulative settlement `damageDealt`.
+| baseType | Verdict | Current meaning |
+|---:|---|---|
+| 1 | PROVEN | cumulative damage dealt |
+| 2 | PROVEN | cumulative enemies spotted |
+| 3 | PROVEN | cumulative kills / enemies destroyed |
+| 4 | UNKNOWN | zero-value count family; raw preserved |
+| 5 | PROVEN | cumulative damage blocked |
+| 6 | PROVEN current samples / limited-N | enemy ignition / set-on-fire count family |
+| 8 | PARTIAL | critical/module result inflicted family |
+| 12 | closed UNKNOWN exact semantic | same gameplay-stat family as settlement field118; old base-defense interpretation REJECTED |
+| 15 | PROVEN | Destruction Assistance count/ribbon progression |
+| 16 | PARTIAL | critical/device damage received family |
+| 17 | PROVEN | cumulative total assist damage |
 
-Example sequence:
+## baseType1 — damage dealt
+
+Closed against Avatar prop10 and settlement damageDealt.
 
 ```text
-prop10 clock/value      method12 clock/code/count/value
-64.202 / 376            64.902 / 0x0001 / 1 / 376
-75.198 / 436            75.907 / 0x0001 / 2 / 436
-83.201 / 821            83.944 / 0x0001 / 3 / 821
-92.189 / 1321           92.905 / 0x0001 / 4 / 1321
-101.193 / 1693          101.901 / 0x0001 / 5 / 1693
-110.196 / 2105          110.913 / 0x0101 / 6 / 2105
-...
-153.206 / 3708          153.898 / 0x0101 / 10 / 3708
+method12 base1 value = recorder cumulative damageDealt
 ```
 
-Thus:
+The method12 update is delayed relative to the lower-level HP/damage stream, so it is a feedback summary rather than the authoritative hit clock.
+
+## baseType2 — enemies spotted
+
+Dedicated current-corpus work closes the count against settlement PlayerResults field16 (`enemies spotted`) and recorder visibility/spotting facts.
 
 ```text
-baseType 1 value = recorder cumulative damageDealt
+baseType2 count = cumulative enemies spotted
 ```
 
-The method12 update is normally delayed by roughly UI/feedback latency relative to the authoritative live counter; it is a summary surface, not the earliest damage clock.
+Verdict: **PROVEN current corpus**.
+
+## baseType3 — kills
+
+Final method12 count closes against settlement field18 in every applicable recorder sample.
+
+```text
+baseType3 count = cumulative kills / enemies destroyed
+```
 
 Verdict: **PROVEN**.
 
-## baseType 5 — cumulative damage blocked
+## baseType5 — damage blocked
 
-Non-zero baseType-5 `value` tracks Avatar `prop11`, independently proven as cumulative damage blocked.
-
-Across current event-level joins, the value relationship is clean; final replay values also match settlement field117 (`damageBlocked`) except known replay-stream truncation boundaries.
-
-Examples:
+Closed against Avatar prop11 and settlement field117.
 
 ```text
-300 -> 710 -> 1120
-340 -> 680
-340 -> 680 -> ... -> 2380
+baseType5 value = cumulative damage blocked
 ```
+
+Verdict: **PROVEN**.
+
+## baseType6 — enemy ignition
+
+Current sparse events align with independently proven fire-start evidence and recorder-caused ignition samples.
 
 Verdict:
 
+> baseType6 = **enemy ignition / set-on-fire feedback family — PROVEN on current observed samples, limited-N global confidence**.
+
+Preserve the raw eventCode/tier because the corpus does not span every fire mechanic/version branch.
+
+## baseType8 — critical/module inflicted
+
+Current behavior associates baseType8 with outgoing critical/module result activity, but the exact private scoring/ribbon rule is not uniquely closed.
+
+Verdict: **PARTIAL**. Do not convert it into a precise user-facing critical-count statistic without a controlled/schema closure.
+
+## baseType12 ↔ settlement field118
+
+Current author population:
+
 ```text
-baseType 5 value = cumulative damage blocked
+baseType12 present : 10 / 34
+field118 present   : 10 / 34
+presence mismatch  : 0
 ```
 
-**PROVEN current corpus**.
-
-## baseType 17 — total cumulative assist damage
-
-Avatar `prop12` and `prop13` are two independently proven assist-damage subtype counters, although their exact subtype labels remain unresolved.
-
-method12 baseType17 combines them into one UI/feedback value:
+Every baseType12 event has:
 
 ```text
-method12.value = prop12 + prop13
+value = 0
+count = 1..3
 ```
 
-Observed non-zero baseType17 events: 25.
-
-23/25 match the sum using a narrow preceding-update window directly. The remaining two are also exact once the already-existing value from the other assist subtype is retained instead of resetting an absent recent update to zero:
+Author field118 values are:
 
 ```text
-arena 8958401623634049:
-prop13 = 588
-later prop12 = 124
-method12 = 712
-
-arena 8965453959931566:
-prop13 = 386
-later prop12 = 133
-method12 = 519
+12,20,32,34,48,67,103,124,124,195
 ```
 
-Therefore:
+Therefore field118 is not a copy of count/value.
+
+The old `base defended / droppedCapturePoints` interpretation is **REJECTED/SUPERSEDED** by mode/event controls.
+
+Current status:
 
 ```text
-baseType 17 value = cumulative total assist damage
-                  = assistSubtypeA + assistSubtypeB
+same gameplay-stat family relationship = PROVEN
+exact statistic name                    = CLOSED UNKNOWN
+```
+
+See `field118-basetype12-boundary.md`. Promotion requires a version-matched schema/client symbol or controlled/new samples; more correlation mining over the same 10 positives is non-authoritative.
+
+## baseType15 — Destruction Assistance
+
+Current behavior and settlement closure prove:
+
+```text
+final method12 base15 count == PlayerResults field119
+```
+
+including zero-by-absence across the canonical corpus.
+
+Independent gameplay/event attribution separates this statistic from wrapper6 field3 majority-damage kill notification:
+
+```text
+baseType15 / field119
+= cumulative Destruction Assistance
+
+wrapper6.field3
+= per-kill >50% prior-damage secondary notification assister
+```
+
+Verdict: **PROVEN current corpus**.
+
+## baseType16 — critical/device received
+
+Current samples associate this count family with incoming critical/device outcomes, but exact current symbolic rule remains PARTIAL.
+
+Preserve raw values and do not expose a more specific user-facing label without new evidence.
+
+## baseType17 — total assist damage
+
+Avatar prop12 and prop13 are independently closed as two assist-damage subtype counters. method12 combines the retained current values:
+
+```text
+baseType17 value = prop12 + prop13
 ```
 
 Verdict: **PROVEN relationship**.
 
-## baseType 3 — kill/destroy count
-
-For every replay where baseType3 appears, the final method12 `count` equals recorder settlement field18 (`enemiesDestroyed` / kills):
-
-```text
-15 / 15 replay-level exact
-```
-
-Observed examples include cumulative counts 1, 2, 3 and 4.
-
-Verdict:
-
-```text
-baseType 3 count = cumulative kills / enemies destroyed
-```
-
-**PROVEN current corpus**.
-
-## baseType 15 ↔ settlement field119
-
-A new independent relationship was discovered for the previously unresolved settlement field119.
-
-For every replay where method12 baseType15 appears:
-
-```text
-final method12 baseType15 count == settlement field119
-20 / 20 arenas
-```
-
-Both surfaces use small cumulative values in the observed range 1..3.
-
-This proves that field119 is the settlement form of the same battle-feedback fact represented by method12 baseType15.
-
-However, the gameplay meaning of baseType15 itself is not yet behaviorally closed. It must remain:
-
-```text
-baseType15 / settlement field119 = PROVEN same semantic fact
-exact symbolic gameplay name     = UNKNOWN/PARTIAL
-```
-
-Do not name it `spotted`, `capture`, `critical`, etc. until an independent event/control experiment closes it.
-
-## Other observed base types
-
-Current low-byte base types are exactly:
-
-```text
-1, 2, 3, 4, 5, 6, 8, 12, 15, 16, 17
-```
-
-Current status:
-
-| baseType | Current meaning | Status |
-|---:|---|---|
-| 1 | cumulative damage dealt | PROVEN |
-| 3 | cumulative kills | PROVEN |
-| 5 | cumulative damage blocked | PROVEN |
-| 17 | cumulative total assist damage | PROVEN relationship |
-| 15 | same fact as settlement field119 | PROVEN relationship / UNKNOWN symbolic name |
-| 2 | unresolved zero-value count event | UNKNOWN |
-| 4 | unresolved zero-value count event | UNKNOWN |
-| 6 | unresolved rare zero-value count event | UNKNOWN |
-| 8 | unresolved zero-value count event | UNKNOWN |
-| 12 | unresolved zero-value count event | UNKNOWN |
-| 16 | unresolved zero-value count event | UNKNOWN |
+The exact names of the two underlying assist subtypes remain version-sensitive unless separately closed.
 
 ## Safe model
 
@@ -199,13 +182,20 @@ BattleFeedbackSummaryUpdate {
     tierRaw  : u8
     count    : u16
     value    : u16
+    semantic
+    confidence
 }
 ```
 
-This surface is useful for UI/AI facts, but authoritative event timing should still come from the lower-level HP/projectile/damage/property streams because method12 behaves like a delayed cumulative feedback update.
+Authoritative timing for damage/projectile/death still comes from lower-level event surfaces. method12 is a delayed cumulative feedback/ribbon surface.
 
-## Historical cross-version note
+## Rejected/superseded interpretations
 
-Historical Wargaming clients define battle feedback and battle-event summary structures, but their numeric `BATTLE_EVENT_TYPE` assignments do **not** match the current Blitz method12 base codes. For example, historical PC event type 1 is radio assist while current method12 baseType1 is behaviorally proven cumulative damage dealt.
+```text
+historical PC BATTLE_EVENT_TYPE numeric table == current Blitz method12 numbering  REJECTED
+baseType12 == base defended / droppedCapturePoints                         REJECTED
+baseType15 exact meaning UNKNOWN                                           SUPERSEDED; Destruction Assistance PROVEN
+baseType2 exact meaning UNKNOWN                                            SUPERSEDED; enemies spotted PROVEN
+```
 
-Therefore historical event-number tables must not be transplanted into Blitz 11.19.
+Historical Wargaming battle-event tables are architectural context only; current Blitz numeric IDs are behaviorally decoded from current evidence.
