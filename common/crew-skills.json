@@ -1,0 +1,123 @@
+{
+  "meta": {
+    "source": "https://assets.blitzkit.app/definitions/skills.pb",
+    "sourceProject": "blitzkit/blitzkit",
+    "generatedAt": "2026-08-27T18:32:57Z",
+    "count": 20,
+    "sourceGameVersion": "11.19.0.834_7320229",
+    "sourceHash": "07be612fc0a2fe0b7b59a7903ee8a1b74e15b328bc7da3100b86c5fe6a28445b"
+  },
+  "semantics": {
+    "trainingEligibility": "class_specific",
+    "effectScope": "all_vehicles",
+    "defaultSkillLevel": 7,
+    "maxSkillLevel": 7,
+    "effectValuePolicy": "use_max_level_bonus"
+  },
+  "classes": {
+    "light": {
+      "classId": 0,
+      "name": "Light tank",
+      "skills": [
+        {
+          "id": "lucky_shot",
+          "icon": "https://api.blitzkit.app/icons/skills/lucky_shot.webp"
+        },
+        {
+          "id": "surrounded_by_enemy",
+          "icon": "https://api.blitzkit.app/icons/skills/surrounded_by_enemy.webp"
+        },
+        {
+          "id": "soft_recoil",
+          "icon": "https://api.blitzkit.app/icons/skills/soft_recoil.webp"
+        },
+        {
+          "id": "skilled_ranging",
+          "icon": "https://api.blitzkit.app/icons/skills/skilled_ranging.webp"
+        },
+        {
+          "id": "fast_capture",
+          "icon": "https://api.blitzkit.app/icons/skills/fast_capture.webp"
+        }
+      ]
+    },
+    "medium": {
+      "classId": 1,
+      "name": "Medium tank",
+      "skills": [
+        {
+          "id": "battle_rage",
+          "icon": "https://api.blitzkit.app/icons/skills/battle_rage.webp"
+        },
+        {
+          "id": "armour_piercing",
+          "icon": "https://api.blitzkit.app/icons/skills/armour_piercing.webp"
+        },
+        {
+          "id": "tutor",
+          "icon": "https://api.blitzkit.app/icons/skills/tutor.webp"
+        },
+        {
+          "id": "smooth_driving",
+          "icon": "https://api.blitzkit.app/icons/skills/smooth_driving.webp"
+        },
+        {
+          "id": "smooth_turret",
+          "icon": "https://api.blitzkit.app/icons/skills/smooth_turret.webp"
+        }
+      ]
+    },
+    "heavy": {
+      "classId": 2,
+      "name": "Heavy tank",
+      "skills": [
+        {
+          "id": "skilled_repairer",
+          "icon": "https://api.blitzkit.app/icons/skills/skilled_repairer.webp"
+        },
+        {
+          "id": "close_combat_master",
+          "icon": "https://api.blitzkit.app/icons/skills/close_combat_master.webp"
+        },
+        {
+          "id": "fire_fighting",
+          "icon": "https://api.blitzkit.app/icons/skills/fire_fighting.webp"
+        },
+        {
+          "id": "desperado",
+          "icon": "https://api.blitzkit.app/icons/skills/desperado.webp"
+        },
+        {
+          "id": "repair",
+          "icon": "https://api.blitzkit.app/icons/skills/repair.webp"
+        }
+      ]
+    },
+    "tank_destroyer": {
+      "classId": 3,
+      "name": "Tank destroyer",
+      "skills": [
+        {
+          "id": "sniper",
+          "icon": "https://api.blitzkit.app/icons/skills/sniper.webp"
+        },
+        {
+          "id": "deadly_accuracy",
+          "icon": "https://api.blitzkit.app/icons/skills/deadly_accuracy.webp"
+        },
+        {
+          "id": "camouflage",
+          "icon": "https://api.blitzkit.app/icons/skills/camouflage.webp"
+        },
+        {
+          "id": "virtuoso",
+          "icon": "https://api.blitzkit.app/icons/skills/virtuoso.webp"
+        },
+        {
+          "id": "smooth_turn",
+          "icon": "https://api.blitzkit.app/icons/skills/smooth_turn.webp"
+        }
+      ]
+    }
+  }
+}
