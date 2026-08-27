@@ -43,6 +43,30 @@ class EquipmentSnapshotContractTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "BLITZKIT_NEW_BUSINESS_EQUIPMENT"):
                 sync.validate_structural_catalog_contract(payload, b"equipment", b"tanks")
 
+    def test_camouflage_effects_have_stable_catalog_order(self):
+        effects = []
+        for vehicle_class in ("LIGHT", "MEDIUM", "HEAVY", "TANK_DESTROYER"):
+            effects.append({
+                "stat": "camouflageRatingBonus",
+                "conditions": {"vehicleClasses": [vehicle_class]},
+            })
+            effects.append({
+                "stat": "camouflageRatingBonus",
+                "conditions": {
+                    "vehicleClasses": [vehicle_class],
+                    "stationarySecondsAtLeast": 3,
+                },
+            })
+        payload = {"items": [{"code": "CAMOUFLAGE_NET", "effects": effects}]}
+        sync.stabilize_generated_effect_order(payload)
+        ordered = payload["items"][0]["effects"]
+        self.assertEqual(
+            ["LIGHT", "MEDIUM", "HEAVY", "TANK_DESTROYER"],
+            [effect["conditions"]["vehicleClasses"][0] for effect in ordered[:4]],
+        )
+        self.assertTrue(all("stationarySecondsAtLeast" not in e["conditions"] for e in ordered[:4]))
+        self.assertTrue(all("stationarySecondsAtLeast" in e["conditions"] for e in ordered[4:]))
+
 
 if __name__ == "__main__":
     unittest.main()
