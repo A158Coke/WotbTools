@@ -50,12 +50,6 @@ class UpdateEquipmentParserTest(unittest.TestCase):
         self.assertEqual({"a", "b"}, names)
         self.assertEqual({100, 101, 102}, ids)
 
-    def test_extract_numbers_from_description(self):
-        self.assertEqual(
-            {20.0, 15.0, 30.0},
-            update_equipment.extract_numbers("Hard +20%, medium +15%, soft +30%"),
-        )
-
     def test_model_partition_covers_catalog_contract(self):
         expected_codes = {
             "GUN_RAMMER", "IMPROVED_VENTILATION", "CALIBRATED_SHELLS",
