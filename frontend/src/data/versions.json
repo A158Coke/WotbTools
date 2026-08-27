@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.43",
+    "date": "2026-08-27",
+    "tag": "fix",
+    "zh": "修复回放解析结果页「选择列」面板被表格遮挡：点击「选择列」后，弹出的列选择面板现完整显示在选手数据表最上层，可正常勾选、全选、重置、拖拽排序，并点「完成」保存。",
+    "en": "Fixed the Columns panel on the replay results page being hidden behind the player data table: after clicking Columns, the panel now renders fully on top of the table, so you can tick, select-all, reset and drag-reorder columns, then press Done.",
+    "ru": "Исправлено перекрытие панели «Колонки» на странице результатов реплея таблицей данных игроков: после нажатия «Колонки» панель теперь отображается поверх таблицы, позволяя отмечать, выбирать все, сбрасывать и перетаскивать колонки, а затем нажать «Готово»."
+  },
+  {
     "v": "2.12.42",
     "date": "2026-08-27",
     "tag": "add",

@@ -734,11 +734,15 @@ watch(files, (next) => {
               <button class="ghost sm" @click="toggleColPicker">
                 <svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" /></svg>{{ $t('action.select_cols') }} v
               </button>
+              <Teleport to="body">
+              <!-- Teleport 到 body：脱离 .restoolbar 的 backdrop-filter 层级上下文 / containing block，
+                   否则 fixed 的 .colpanel 会被其 stacking context 锁住，被下方结果表（同样 backdrop-filter）盖住。 -->
               <ColumnPicker v-if="showColPicker" :scope="pickerScope" :order="currentOrder"
                 :visible="pickerScope === 'agg' ? aggVisibleKeys : pickerScope === 'cw' ? cwVisibleKeys : visibleKeys"
                 :fixed-keys="(pickerScope === 'cw' || (pickerScope === 'player' && leagueMode)) ? ['nickname', 'league_rating'] : []"
                 @close="showColPicker = false" @toggle="toggleCol"
                 @select-all="selectAllCols" @reset="resetCols" @reorder="handleReorder" />
+              </Teleport>
             </span>
             <button class="sm" :disabled="loading || exportingPng || exportActive" @click="startExportJob('aggregate', teamNamesPayload())">
               <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_aggregate') }}
