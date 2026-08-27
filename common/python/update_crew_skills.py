@@ -2,9 +2,10 @@
 # -*- coding: utf-8 -*-
 """Generate common/crew-skills.json from stable BlitzKit skill definitions.
 
-BlitzKit currently exposes canonical TankClass -> skill id[] membership. This
-sync records only those structured facts plus derived icon URLs; it deliberately
-does not invent display names, descriptions, or effect values.
+BlitzKit exposes canonical TankClass -> skill id[] membership. Tank class is the
+training eligibility boundary only: once trained, crew-skill bonuses apply to
+all vehicles. This sync records that distinction explicitly and does not invent
+display names, descriptions, or effect values.
 """
 
 import argparse
@@ -34,6 +35,10 @@ CLASS_META = {
 EXPECTED_CLASS_IDS = set(CLASS_META)
 MIN_SKILLS_PER_CLASS = 4
 SKILL_ID_RE = re.compile(r"^[a-z0-9_]+$")
+SEMANTICS = {
+    "trainingEligibility": "class_specific",
+    "effectScope": "all_vehicles",
+}
 
 
 def _read_varint(buf, i):
@@ -53,7 +58,6 @@ def _read_varint(buf, i):
 
 
 def decode_protobuf(buf):
-    """Minimal protobuf wire decoder returning {field_number: [values]}."""
     fields = {}
     i = 0
     while i < len(buf):
@@ -98,7 +102,6 @@ def _as_str(value):
 
 
 def parse_skill_definitions(data):
-    """Parse SkillDefinitions.proto: map<uint32, Skill> classes = 1."""
     root = decode_protobuf(data)
     result = {}
     for raw_entry in root.get(1, []):
@@ -152,10 +155,7 @@ def build_classes_document(classes):
             "classId": class_id,
             "name": name,
             "skills": [
-                {
-                    "id": skill_id,
-                    "icon": f"{ICON_BASE_URL}/{skill_id}.webp",
-                }
+                {"id": skill_id, "icon": f"{ICON_BASE_URL}/{skill_id}.webp"}
                 for skill_id in classes[class_id]
             ],
         }
@@ -174,7 +174,7 @@ def build_document(classes, game_version=None, skills_hash=None, generated_at=No
         meta["sourceGameVersion"] = game_version
     if skills_hash:
         meta["sourceHash"] = skills_hash
-    return {"meta": meta, "classes": class_documents}
+    return {"meta": meta, "semantics": dict(SEMANTICS), "classes": class_documents}
 
 
 def reconcile_document(existing, classes, game_version, skills_hash, generated_at=None):
@@ -182,11 +182,11 @@ def reconcile_document(existing, classes, game_version, skills_hash, generated_a
     class_documents = build_classes_document(classes)
     existing_meta = (existing or {}).get("meta") or {}
     existing_classes = (existing or {}).get("classes")
+    existing_semantics = (existing or {}).get("semantics")
 
-    # Once trace metadata exists, identical skill semantics are a true no-op even
-    # when game.pb or protobuf serialization changes independently of skill data.
     if (
         existing_classes == class_documents
+        and existing_semantics == SEMANTICS
         and existing_meta.get("sourceHash")
         and existing_meta.get("sourceGameVersion")
     ):
@@ -220,8 +220,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     snapshots, hashes = fetch_stable_snapshot(
-        {"game": GAME_URL, "skills": PB_URL},
-        fetch_bytes,
+        {"game": GAME_URL, "skills": PB_URL}, fetch_bytes
     )
     game_version = parse_game_version(
         snapshots["game"], decode_protobuf, _first, _as_str
@@ -229,10 +228,7 @@ def main(argv=None):
     classes = parse_skill_definitions(snapshots["skills"])
     existing_path = args.existing or (args.output if os.path.exists(args.output) else None)
     document, changed = reconcile_document(
-        load_existing(existing_path),
-        classes,
-        game_version,
-        hashes["skills"],
+        load_existing(existing_path), classes, game_version, hashes["skills"]
     )
 
     if not changed and os.path.abspath(args.output) == os.path.abspath(existing_path):
