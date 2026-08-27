@@ -1,225 +1,627 @@
-# Replay protocol inventory
+# Replay protocol inventory — Blitz 11.19 China canonical corpus
 
-> Purpose: enumerate every currently observed replay structure and assign an evidence state. This is a research inventory, not an implementation contract.
+> Purpose: enumerate every currently observed replay surface and assign its latest evidence state.
+>
+> Corpus: 34 unique arenas. Multi-POV duplicates are used only for cross-validation, not as additional battles.
 
 ## Evidence states
 
-- `PROVEN`: semantic meaning closed by replay behavior and/or independent protocol/schema evidence.
-- `PARTIAL`: structure or relationship is known but full semantic meaning is not.
-- `UNKNOWN`: observed but semantic meaning is not yet established.
-- `SUPERSEDED`: prior interpretation invalidated by stronger evidence.
-- `DEPRECATED`: old research path retained only for history.
+- `PROVEN`: semantic/physical role closed by current replay behavior and/or independent schema evidence.
+- `PARTIAL`: structure or family known; exact symbolic name/enum/rule incomplete.
+- `UNKNOWN`: observed but semantic meaning not yet established.
+- `SUPERSEDED`: older interpretation disproved by stronger evidence.
+- `DEPRECATED`: retained only for historical research context.
 
-## Container level
+# Container
 
-| Component | Status | Notes |
+| Component | Status | Current meaning |
 |---|---|---|
-| `.wotbreplay` ZIP container | PROVEN | Holds replay metadata, packet stream, battle results. |
-| `meta.json` | PARTIAL | Many user-visible metadata fields are known; must not be treated as authoritative for every timing fact. |
-| `data.wotreplay` | PROVEN framing / PARTIAL semantics | Packet stream framing is known; some packet types/subtypes remain unresolved. |
-| `battle_results.dat` | PROVEN container / PARTIAL schema | Settlement protobuf is authoritative for many final battle facts; substantial field surface is still unmapped. |
+| `.wotbreplay` ZIP | PROVEN | contains `meta.json`, `data.wotreplay`, `battle_results.dat` |
+| `meta.json` | PROVEN/PARTIAL | authoritative for many replay metadata/config facts, not every battle timing fact |
+| `data.wotreplay` | PROVEN framing | replay packet stream |
+| `battle_results.dat` | PROVEN container / broad schema | Python pickle protocol-2 tuple `(arenaUniqueId, protobufBytes)` |
 
-## `data.wotreplay` framing
-
-```text
-header
-then repeated:
-  payload_len : u32 little-endian
-  type        : u32 little-endian
-  rawClockSec : f32 little-endian
-  payload     : payload_len bytes
-```
-
-The raw clock includes pre-battle time. It must not be equated directly with battle-relative time.
-
-## Packet-type inventory
-
-| Type | Current verdict | Current semantic |
-|---:|---|---|
-| 0 | PROVEN/PARTIAL | base player create + arena pickle; authoritative roster/team metadata present. |
-| 1 | PARTIAL | entity creation / avatar-cell related data. |
-| 2 | PARTIAL | entity creation / avatar-cell related data. |
-| 4 | PROVEN structure | EntityLeave / entity removal; **not equivalent to death**. |
-| 5 | UNKNOWN/PARTIAL | enterWorld/lifecycle-related packet; structure not fully decoded. |
-| 7 | PROVEN/PARTIAL | EntityProperty. `propId=2` turret-relative yaw; `propId=3` current HP. Other properties unresolved. |
-| 8 | PROVEN/PARTIAL | EntityMethod. Several subtypes/wrappers known; large surface remains. |
-| 10 | PROVEN | vehicle position packet. |
-| 11 | PARTIAL | space information; map/space string observed. |
-| 13 | PROVEN | battle-results dump; byte-equivalent settlement payload path. |
-| 14 | UNKNOWN | low-frequency marker/end packet. |
-| 23 | PROVEN on current samples | recorder shot/projectile lifecycle toggle. |
-| 26 | PROVEN on current samples | incoming hostile shell warning/event for recorder. |
-| 28 | UNKNOWN | small packet, rarely/never present in current primary corpus. |
-| 29 | UNKNOWN | low-frequency marker/end packet. |
-| 31 | PROVEN on current samples | recorder dispersion/aim-circle decay stream after firing. |
-| 32 | PROVEN envelope / PARTIAL body semantics | entity-scoped `entityId + flag + bodyLength + body`; mobile `flag=0` long bodies contain a proven `float64` event clock and multiple version-mapped consumable lifecycle families. |
-| 33 | PROVEN structure | entity enter-world confirmation. |
-| 35 | PROVEN structure / PARTIAL semantic | ~10 Hz incrementing tick/counter; not a battle-start marker. |
-| 36 | UNKNOWN | low-frequency marker/end packet. |
-| 39 | PARTIAL | recorder camera/aim state stream; several float meanings identified, full schema incomplete. |
-
-Any packet type observed later but not listed here must enter the inventory as `UNKNOWN` before semantic promotion.
-
-## Type 7 — EntityProperty
-
-Observed payload framing:
+## `data.wotreplay` header/framing
 
 ```text
-entityId : u32 LE
-propId   : u32 LE
-valueLen : u32 LE
-value    : valueLen bytes
+magic                  : u32 LE = 0x12345678
+unknownHeader          : 8 bytes
+clientHashLength       : u8
+clientHash
+clientVersionLength    : u8
+clientVersion
+padding                 : u8
+
+repeated packets:
+payloadLen              : u32 LE
+type                    : u32 LE
+rawClockSec             : f32 LE
+payload                 : payloadLen bytes
 ```
 
-| propId | Verdict | Meaning |
+Important:
+
+- zero-length packet payloads are legal (`Type17`);
+- raw replay clock contains pre-battle time;
+- packet numeric IDs are client-version scoped.
+
+# Top-level packet inventory
+
+Observed type set:
+
+```text
+0,1,2,4,5,7,8,10,11,13,14,17,23,26,28,29,31,32,33,35,36,39,0xFFFFFFFF
+```
+
+| Type | Verdict | Current semantic |
 |---:|---|---|
-| 0 | UNKNOWN/PARTIAL | small boolean/flag-like value; not HP. |
-| 2 | PROVEN | turret-relative yaw; `deg = raw * 360 / 65536 - 180`. |
-| 3 | PROVEN | current HP, signed-i16 interpretation for sentinel handling. Positive values are real current HP. |
-| 4 | UNKNOWN/PARTIAL | high-frequency state/mode bit-like value; not HP. |
-| 8 | UNKNOWN/PARTIAL | flag/state-like value. |
-| 9 | UNKNOWN/PARTIAL | float/value family; not HP. |
+| 0 | PROVEN/PARTIAL | base-player creation / arena metadata family |
+| 1 | PARTIAL | entity/avatar-cell creation/init family |
+| 2 | PARTIAL | entity/avatar-cell creation/init family |
+| 4 | PROVEN | enemy leaves client-observed entity/AoI set; **not death** |
+| 5 | PROVEN relationship / PARTIAL full body | entity materialization/re-entry body following Type33 |
+| 7 | PROVEN envelope / broad semantics | EntityProperty |
+| 8 | PROVEN envelope / broad semantics | EntityMethod |
+| 10 | PROVEN | 49-byte vehicle transform/position/orientation packet |
+| 11 | PARTIAL | early space/map/session information |
+| 13 | PROVEN family / PARTIAL serialization | in-stream battle-results/settlement dump path; present only when end tail is recorded |
+| 14 | PROVEN | replay event-stream close marker |
+| 17 | PROVEN relationship / PARTIAL symbol | recorder-local aim/camera/projectile-control initialization boundary |
+| 23 | PROVEN current corpus | recorder shot/projectile lifecycle toggle |
+| 26 | PROVEN current corpus | incoming hostile-shell warning/event family |
+| 28 | PROVEN | recorder ammunition/shell-slot selection index |
+| 29 | PROVEN lifecycle / PARTIAL setting | duplicated recorder/client-options initialization companion flag |
+| 31 | PROVEN | recorded arcade gun-marker / aiming-circle size |
+| 32 | PROVEN envelope / multiple proven subfamilies | entity auxiliary/effect/state transport |
+| 33 | PROVEN relationship | pre-materialization/re-entry packet paired 1:1 with Type5 |
+| 35 | PROVEN | low 8 bits of client/session monotonic decisecond clock |
+| 36 | PROVEN relationship | full-width client/session monotonic decisecond anchor |
+| 39 | PROVEN family / PARTIAL some fields | recorder high-rate aim/camera/gun geometry stream |
+| `0xFFFFFFFF` | PROVEN | deterministic current-version file/stream terminator |
 
-### `propId=3` sentinel inventory
+# Type7 — EntityProperty
 
-| Raw | Current status | Interpretation |
+Envelope:
+
+```text
+entityId : u32
+propId   : u32
+valueLen : u32
+value    : bytes[valueLen]
+```
+
+Numeric property IDs are **entity-class scoped**.
+
+## Vehicle properties
+
+| propId | Verdict | Current semantic |
+|---:|---|---|
+| 0 | PROVEN shape / UNKNOWN semantic | 1-byte alternating `0/1` sequence-like state; not movement/visibility/firing/death |
+| 1 | PROVEN behavioral family / STRONG PARTIAL exact symbol | terminal active/crew-active boolean; current observations are `00` exactly on terminal prop3 boundary |
+| 2 | PROVEN | turret yaw relative to hull; `rad = rawU16 * 2π / 65536 - π` |
+| 3 | PROVEN | current HP / terminal sentinel family |
+| 4 | PROVEN structure / STRONG PARTIAL | two-u8 discrete vehicle/engine/movement-mode tuple |
+| 7 | PROVEN structure / PARTIAL semantic | count-prefixed compact u8 state array |
+| 8 | PROVEN structure / strong effect relationship / PARTIAL tokens | count-prefixed compact u8 state/effect array |
+| 9 | PROVEN structure / PARTIAL semantic | count-prefixed compact u8 state array |
+
+## Avatar property9
+
+Same numeric propId, different class schema:
+
+```text
+float32 yawRad
+```
+
+Verdict:
+
+> Avatar prop9 = **recorder own-vehicle turret-relative yaw mirror — PROVEN**.
+
+It closes tightly against recorder Vehicle prop2 and strengthens Type39 f5 interpretation.
+
+## Vehicle prop3 sentinels
+
+| Raw | Verdict | Meaning |
 |---|---|---|
-| positive signed i16 | PROVEN | actual current HP |
-| `0x0000` | PROVEN | terminal death HP=0 |
-| `0xFFFD` | PROVEN on current corpus | death-associated terminal sentinel; documentation/constant naming in main is inconsistent and must be corrected when implemented |
-| `0xFFFE` | PROVEN for at least one closed death sample; global meaning PARTIAL | terminal death state in the Intotherainy evidence chain |
-| `0xFFFF` and other negative sentinels | UNKNOWN | never infer death without independent evidence |
+| positive signed i16 | PROVEN | real current HP |
+| `0x0000` | PROVEN | terminal HP=0 |
+| `0xFFFD` | PROVEN current corpus | death-associated terminal sentinel |
+| `0xFFFE` | PROVEN terminal on verified sample / PARTIAL global | terminal state observed in closed death chain |
+| `0xFFFF` | UNKNOWN exact meaning | preserve raw; never infer death alone |
 
-## Type 8 — EntityMethod
+# Type8 — EntityMethod
 
-Current payload begins with:
-
-```text
-entityId : u32/i32 LE
-subtype  : u32 LE
-body     : remaining bytes
-```
-
-### Known subtypes
-
-| subtype | Verdict | Meaning |
-|---:|---|---|
-| 1 | PROVEN on current terminal-death corpus / PARTIAL full schema | health/state + attacker/killer relationship; terminal event aligns with Type 7 HP terminal state and settlement killer. |
-| 8 | PROVEN identity / PARTIAL value semantics | damage-method notification. attacker/victim identity can be reliable in supported variants; raw damage value is **not authoritative HP loss**. |
-| 47 | UNKNOWN for current 11.19 semantics | old parser assumptions about a protobuf alive-roster snapshot do not fit current corpus; must be re-reversed, not reused blindly. |
-| 48 | PROVEN wrapper container / PARTIAL wrapper surface | updateArena2-style wrapped protobuf messages. |
-
-### subtype 48 wrapper inventory
-
-| wrapper | Verdict | Meaning |
-|---:|---|---|
-| 1 | PROVEN | roster / entity-account mapping |
-| 3 | PROVEN on current corpus | arena-period update; period=3 means BATTLE |
-| 13 | PROVEN | realtime supremacy points |
-| 18 | PARTIAL/PROVEN structure | pre-battle/config data already identified in existing protocol research; field-level semantics remain incomplete |
-| other observed wrapper values | UNKNOWN until explicitly inventoried and decoded | do not infer by nearby field numbers |
-
-## Arena lifecycle
-
-Independent Wargaming enum:
+Current envelope:
 
 ```text
-0 IDLE
-1 WAITING
-2 PREBATTLE
-3 BATTLE
-4 AFTERBATTLE
+entityId : u32
+methodId : u32
+argLen   : u32
+args     : bytes[argLen]
 ```
 
-Current replay corpus confirms wrapper-3 period transitions consistent with this lifecycle. `BATTLE` packets provide a direct client-observed start marker, but some POVs omit the transition entirely.
+Method IDs are **target-entity-class + version scoped**.
 
-## Battle clock
+## High-value closed method families
 
-| Fact | Verdict |
-|---|---|
-| raw packet clock includes pre-battle time | PROVEN |
-| period=3 is an independent client-observed battle-start anchor | PROVEN on current corpus |
-| client-observed start may have sub-second receive/record jitter vs latent server start | PROVEN |
-| settlement `lifeTime` is nearest-integer server battle-relative lifetime | PROVEN on current corpus |
-| exact sub-second server death can always be reconstructed from one POV | FALSE |
-| multi-POV raw clocks can be aligned within small tolerance | PROVEN on available multi-POV arenas |
+| Method | Verdict | Current semantic |
+|---:|---|---|
+| Vehicle 0 / 1B | PROVEN | observed vehicle firing signal |
+| Vehicle 1 / 7B | PROVEN | live `currentHpRaw:u16 + sourceEntity:u32 + causeFlag:u8` |
+| Vehicle 2 / 8B | PROVEN structure / PARTIAL semantic | two-float vehicle-specific config/parameter family; old `onPushed` hypothesis rejected |
+| Vehicle 4 / 16B | PROVEN | vehicle↔vehicle collision contact geometry |
+| Vehicle 6 / 29B | PROVEN physical role | static/world collision contact geometry |
+| Vehicle 8 / 21B common | PROVEN identity / PARTIAL raw-value semantics | direct-damage notification; attacker/victim identity reliable in supported form |
+| Avatar 4 / 2B | PROVEN | round finished: winnerTeam + finishReason |
+| Avatar 5 / 3B | PROVEN | recorder own-health mirror / opening HP seed |
+| Avatar 12 / 6B | PROVEN counter framework | cumulative battle-feedback/ribbon counters |
+| Avatar 13 / 9B | PROVEN gun-cycle family | vehicle gun/reload state telemetry |
+| Avatar 16 / 10B | PROVEN family | vehicle damage/module/crew presentation info |
+| Avatar 17 / 12B | PROVEN/PARTIAL | ammunition state/descriptor family |
+| Avatar 19 / 13B | PROVEN family | vehicle misc status; code7 destroyed-device repair progress PROVEN |
+| Avatar 20 / 16B | PROVEN | shotId + stopTracer terminal endpoint |
+| Avatar 25 / 32B | PROVEN/PARTIAL | recorder own-vehicle pose/state family |
+| Avatar 27 / 34B | PROVEN family | projectile explosion / terminal-resolution family |
+| Avatar 28 / 36B | PROVEN behavioral family | recorder death/death-view incoming projectile geometry |
+| Avatar 29 / 37B | PROVEN | projectile/tracer launch family; shotId + launch geometry/velocity |
+| Avatar 35 / 13B | PROVEN physical role | vehicle full reload-duration/config update |
+| Avatar 36 / 74/92B | PROVEN targeting family | recorder targeting/aim-state snapshots; shot clocks are pre/post-sandwiched |
+| Avatar 38 / variable | PROVEN shot-result family / PARTIAL bits | recorder outgoing shot-result feedback |
+| Avatar 39 / 2B | PROVEN cadence / PARTIAL symbol | fixed `0000` recorder/avatar ~10-second heartbeat/control RPC |
+| Avatar 44 / 16B | PROVEN config family | client platform/build initialization snapshot; low business value |
+| Avatar 46 | PROVEN family | team tactical-marker/ping surface |
+| Avatar 48 | PROVEN wrapper container | live arena-update protobuf wrappers |
+| Avatar 49 | PROVEN family | synchronized client-options snapshot |
 
-## Battle results / settlement
+## Vehicle method1 cause map
 
-The current parser consumes only part of the settlement protobuf. The settlement layer must be treated as a first-class protocol surface rather than a final-statistics afterthought.
+```text
+currentHpRaw : u16
+sourceEntity : u32
+causeFlag    : u8
+```
 
-### Player-result fields confirmed in this research
+Current cause identity:
+
+| causeFlag | Verdict | Current meaning |
+|---:|---|---|
+| 0 | PROVEN | direct/default combat damage family |
+| 1 | PROVEN | fire |
+| 2 | PROVEN | ramming |
+| 3 | PROVEN | world/self-environment collision family |
+
+Evidence includes exact settlement terminal closure:
+
+```text
+ordinary/default deaths 276/276 -> 0
+fire deaths               4/4   -> 1
+ramming deaths             2/2   -> 2
+world_collision            1/1   -> 3
+```
+
+## Avatar method16 device/crew namespace
+
+Current proven anchors:
+
+| codeB | Verdict | Meaning |
+|---:|---|---|
+| 32 | PROVEN | ammo rack |
+| 34/35 | PROVEN family | two track-side modules; exact left/right assignment PARTIAL |
+| 43 | PROVEN | Loader |
+
+Strong current sequence candidates, not promoted solely from historical ordering:
+
+```text
+31 engine            STRONG PARTIAL
+33 fuel tank         STRONG PARTIAL
+36 gun               STRONG PARTIAL
+37 turret rotator    STRONG PARTIAL
+38 surveying device STRONG PARTIAL
+39 commander         STRONG PARTIAL
+40 driver            STRONG PARTIAL
+41 radioman          STRONG PARTIAL
+42 gunner            STRONG PARTIAL / sparse-current evidence
+```
+
+Current lifecycle codes:
+
+```text
+mechanical codeA=4  -> damaged/critical        PROVEN family
+mechanical codeA=5  -> destroyed/severely disabled PROVEN family
+mechanical codeA=19 -> repaired/clear          PROVEN family
+crew codeA=10       -> injured/shell-shocked   PROVEN family
+crew codeA=22       -> healed/clear             PROVEN family
+```
+
+### Ammo rack closure
+
+```text
+(codeA=4, codeB=32) -> reload duration ×1.65 in 12/12 current samples
+(codeA=19,codeB=32) -> Repair Kit/MPRP clear + reload recovery
+```
+
+### Loader closure
+
+```text
+(codeA=10,codeB=43) -> reload degradation
+(codeA=22,codeB=43) -> First Aid/MPRP clear + reload recovery
+```
+
+## Avatar method12 feedback counters
+
+Current closed/near-closed base types:
+
+| baseType | Verdict | Meaning |
+|---:|---|---|
+| 1 | PROVEN | cumulative damage dealt |
+| 2 | PROVEN | cumulative enemies spotted |
+| 3 | PROVEN | cumulative kills |
+| 5 | PROVEN | cumulative damage blocked |
+| 6 | PROVEN current samples / limited-N | enemy ignition/set-on-fire feedback |
+| 8 | PARTIAL | critical/module result inflicted family |
+| 12 | VERY STRONG PARTIAL | base-defense / dropped-capture-points feedback family |
+| 15 | PROVEN | Destruction Assistance count/ribbon progression; current rule aligns with ≥25% damage then teammate destroys target |
+| 16 | PARTIAL | critical/device damage received family |
+| 17 | PROVEN | cumulative total assist damage |
+
+# Avatar method48 wrapper inventory
+
+Current high-value wrappers include:
+
+| Wrapper | Verdict | Meaning |
+|---:|---|---|
+| 1 | PROVEN | roster / entity-account/team/player snapshot |
+| 3 | PROVEN | arena-period lifecycle update |
+| 6 | PROVEN kill-feed core / PARTIAL optional field3 | vehicle-killed feed; victim/killer/deathReason; optional secondary attribution |
+| 7 | PROVEN behavior | vehicle/avatar-ready lifecycle notification |
+| 12 | PROVEN state machine | realtime Supremacy base ownership/capture progress |
+| 13 | PROVEN | realtime Supremacy team score |
+| 15 | PROVEN gun-feed family / PARTIAL enum labels | own-team weapon/reload telemetry |
+| 16 | STRONG PARTIAL | damage-triggered state/event branch |
+| 18 | PARTIAL | prebattle/configuration data |
+
+## Wrapper12 — Supremacy capture state
+
+```text
+field1 = base index                 PROVEN
+field2 = owner team                 PROVEN
+field3 = capturing team             PROVEN
+field4 = capture progress 0..99      PROVEN
+field5 = capture suspended/blocked   PROVEN behavioral identity
+field6 = recorder capture participation / recorder-is-capturing STRONG PARTIAL near-PROVEN
+```
+
+`field5` is consistent with current Blitz contested-base rules: progress freezes when opposing teams contest the circle.
+
+# Type10 — position/transform
+
+Current complete 49-byte structure:
+
+```text
+entityId   : i32
+spaceId    : i32
+vehicleId  : i32
+position   : 3xf32
+error      : 3xf32
+yaw         : f32
+pitch       : f32
+roll        : f32
+errorFlag   : i8
+```
+
+Verdict: **PROVEN wire structure / primary transform meaning**.
+
+# Type31 — arcade gun marker
+
+```text
+float32 markerSize
+```
+
+Verdict:
+
+> **recorded arcade gun-marker / aiming-circle size scalar — PROVEN**.
+
+Do not convert it directly into penetration probability or an unvalidated dispersion angle.
+
+# Type32 — entity auxiliary/effects
+
+Envelope:
+
+```text
+entityId   : u32
+flag       : u8
+bodyLength : u32
+body       : bytes[bodyLength]
+```
+
+Current proven subfamilies:
+
+- mobile `flag=0` long body: consumable/control family with session-local f64 clock;
+- consumable lifecycle states and wire codes for Adrenaline, Engine Power Boost, MPRP, First Aid, Repair Kit, Improved Engine Boost, Reticle Calibration, Reactive Armor, Tungsten Shells;
+- mobile `flag=1` len18: damage/hit presentation side-channel with byte-level identity to Vehicle method8;
+- short `...04`: fire-associated damage/effect family;
+- static entity short-body families remain only structurally classified.
+
+Important:
+
+> Vehicle prop7/8/9 compact arrays are related effect/state surfaces but are **not** simple literal mirrors of method16 codeB or Type32 bytes.
+
+# Type35 / Type36 / Type32 clock domain
+
+Current closure:
+
+```text
+Type36 = u32 session monotonic deciseconds anchor
+Type35 = low8(Type36/session decisecond stream), advancing +1 mod256
+Type32 long-body eventClockRaw = high-precision sample in same client/session monotonic time domain
+```
+
+Verdict: **PROVEN current corpus relationship**.
+
+# Type39 / targeting geometry
+
+Current Type39 body:
+
+```text
+7 x float32
+```
+
+Closed roles:
+
+- `f0`: world aim/gun-ray yaw;
+- `f1`: negated world aim/gun-ray pitch;
+- `f2,f3,f4`: world-space point on aim/projectile ray;
+- `f5`: recorder relative aim/turret-control yaw family, strongly related to Avatar prop9/Vehicle prop2 but not a literal mirror at all times;
+- `f6`: vehicle-local gun/barrel vertical angle physical role, proven at real shot moments; exact producer symbol PARTIAL.
+
+Avatar method36 provides lower-rate structured targeting snapshots and brackets every recorder shot with pre/post state.
+
+# Projectile lifecycle
+
+Current high-confidence chain:
+
+```text
+Vehicle method0 observed firing
+        |
+Avatar method29 launch + shotId + launch geometry/velocity
+        |
+        +-------------------------+
+        |                         |
+Avatar method20              Avatar method27
+stopTracer endpoint          terminal/explosion resolution
+        |
+        +--> method28 recorder death/death-view geometry when applicable
+```
+
+Method28 correction:
+
+- 24 current events;
+- terminal endpoint equals same-clock method20 endpoint 24/24;
+- first two VECTOR3 are equal 23/24, **not 24/24**;
+- the one non-duplicate sample is a same-clock multi-projectile terminal edge case.
+
+# Visibility/AoI lifecycle
+
+Current proven enemy lifecycle:
+
+```text
+observed
+  -> Type4
+hidden / no Type7,Type8,Type10
+  -> Type33
+  -> Type5
+observed again
+```
+
+Closed current facts:
+
+```text
+Type4 enemy-only in canonical corpus
+485/503 later re-enter
+0 property/method/position updates inside closed hidden intervals
+last Type10 before Type4 is a tight last-known position
+```
+
+Type4 must never be used as a death proxy.
+
+# Settlement / `battle_results.dat`
+
+Root observed fields:
+
+```text
+1,2,3,4,5,8,9,11,150,201,301,302,303
+```
+
+High-value root identities:
+
+```text
+1   mode/map compound
+2   battle Unix timestamp
+3   winner team
+4   finish reason
+5   result-layer battle duration
+8   author result block
+9   room type
+201 participant roster
+301 settled combatant results
+```
+
+## PlayerResults high-value mapping
 
 | field | Verdict | Meaning |
 |---:|---|---|
+| 1 | PROVEN | final hitpointsLeft / terminal sentinel family |
+| 4 | PROVEN | shots fired |
+| 5 | PROVEN | hits dealt |
+| 6 | PARTIAL | HE/splash-hit family |
+| 7 | PROVEN | penetrations dealt |
+| 8 | PROVEN | damage dealt |
+| 9 | PROVEN family / PARTIAL subtype name | assist damage subtype A |
+| 10 | PROVEN family / PARTIAL subtype name | assist damage subtype B |
+| 11 | PROVEN | damage received |
+| 12 | PROVEN | hits/shots received |
+| 13 | PROVEN | non-penetrating hits received |
+| 14 | PARTIAL | HE/splash-received family |
+| 15 | PROVEN | penetrations received |
+| 16 | PROVEN current corpus | enemies spotted |
+| 17 | PROVEN | enemies damaged |
+| 18 | PROVEN | enemies destroyed/kills |
+| 23 | PROVEN | XP result; exact premium/base naming version-sensitive |
 | 24 | PROVEN | `lifeTime` |
 | 25 | PROVEN | `killerID` |
-| 105 | PROVEN | `deathReason` / alive sentinel semantics in current result model |
+| 32 | PROVEN | Supremacy/victory points earned |
+| 33 | PROVEN | Supremacy/victory points seized |
+| 101 | PROVEN | account ID |
+| 102 | PROVEN | team |
+| 103 | PROVEN | vehicle/tank compact descriptor ID |
+| 105 | PROVEN | deathReason / alive sentinel family |
+| 106 | PROVEN | credits result |
+| 107 | PROVEN/PARTIAL display semantic | matchmaking/rating float |
+| 116 | PROVEN cross-surface config identity / PARTIAL exact cosmetic symbol | same as loading-roster player field16; customization/display descriptor family; low business value |
+| 117 | PROVEN | damage blocked |
+| 118 | VERY STRONG PARTIAL near-PROVEN | base-defense / dropped-capture-points magnitude |
+| 119 | PROVEN | Destruction Assistance count |
+| 120 | PROVEN | Gun Marks count `0..3` |
 
-Existing known fields for account/team/tank/shots/hits/penetrations/damage/assist/received/kills/blocked/xp/credits/etc remain documented in parser code and existing replay-data references; a future complete settlement schema document should consolidate all of them in one table rather than duplicate mappings across code and docs.
+## field118 / baseType12
 
-### Death reasons validated in current corpus
+Current evidence:
 
-| value | Verdict | Meaning |
-|---:|---|---|
-| alive sentinel | PROVEN | survivor |
-| 1 | PROVEN on current samples | fire |
-| 2 | PROVEN on current samples | ramming |
-| 3 | PROVEN on current sample | world_collision |
-| additional values | UNKNOWN until real sample closure | Wargaming enums provide hypotheses, but Blitz mapping must be validated before `PROVEN` |
+```text
+field118 > 0 iff method12 baseType12 present : 34/34 recorder arenas
+```
 
-## Multi-POV handling
+Port / Harbor Town natural control:
 
-Multi-POV duplicates must be separated from business deduplication:
+```text
+enemy captures owned B
+recorder damages capturing enemy
+baseType12 increments
+public B progress resets to 0 shortly after
+settlement field118 = 12
+```
 
-- Rating / leaderboard aggregation: one `arenaId` = one battle.
-- protocol reconstruction: additional POVs are independent observation sources and can fill missing event evidence.
+Verdict:
 
-Observed settlement facts (`lifeTime`, `killerID`, etc.) are stable across validated POV duplicates.
+> **base-defense / dropped-capture-points family — VERY STRONG PARTIAL, near-PROVEN**.
 
-## High-value unresolved research queue
+Exact symbolic promotion awaits a current schema or another clean numerical single-capturer closure.
 
-### Priority A — semantic gaps that directly unlock canonical replay facts
+## field119
 
-- Type 8 subtype 47 current Blitz 11.19 structure.
-- remaining subtype 48 wrapper values and nested schemas.
-- full Type 8 subtype 1 schema, including all non-terminal states and sentinel behavior.
-- global semantics of `0xFFFE`, `0xFFFF`, and other negative HP sentinels.
-- authoritative arena-period packet schema, including period length/end-time fields.
-- complete settlement player/common protobuf schema, including all currently unnamed fields.
+```text
+final method12 base15 count == field119
+34/34 including zero-by-absence
+```
 
-### Priority B — combat reconstruction
+Ribbon tier progression:
 
-- exact shot/hit/penetration relation beyond recorder-only Type 23/26 streams.
-- fire lifecycle and periodic-damage representation.
-- ramming/collision event schema.
-- drowning/overturn/death-zone event representation and Blitz `deathReason` validation.
-- visibility/spotted/unspotted lifecycle and last-known position semantics.
-- shell identity, shell type, hit result, critical/module damage, equipment effects.
+```text
+1st -> eventCode 0x000F, count1
+2nd -> eventCode 0x010F, count2
+3rd -> eventCode 0x020F, count3
+```
 
-### Priority C — movement and presentation
+Current Blitz Destruction Assistance rule closes the previously missing eligibility condition: sufficient damage contribution before teammate destruction.
 
-- complete Type 10 position schema fields beyond current coordinates/orientation consumption.
-- complete Type 39 camera/aim schema.
-- hull/turret/world orientation normalization across all vehicle classes.
-- enterWorld/leaveWorld state machine (types 4/5/33) and relation to visibility vs physical existence.
+Verdict:
 
-### Priority D — low-frequency and end-of-battle packets
+> **Destruction Assistance count — PROVEN**.
 
-- Type 14.
-- Type 29.
-- Type 36.
-- any packet types present only in special modes or newer versions.
+## field120
 
-## Research completion definition
+Cross-surface closure:
 
-This inventory is considered complete for a given corpus/version only when:
+```text
+wrapper1 player field26 == settlement field120
+476 / 476 exact including protobuf default zero
+```
 
-1. every observed packet type is listed;
-2. every observed Type 7 propId is listed;
-3. every observed Type 8 subtype is listed;
-4. every observed subtype48 wrapper is listed;
-5. every settlement root/player field is structurally inventoried;
-6. every item has a verdict and evidence note;
-7. no `PROVEN` item depends only on naming intuition or a single unsupported guess;
-8. unknowns remain explicitly unknown rather than being silently discarded.
+Value distribution:
+
+```text
+0:371
+1:3
+2:4
+3:98
+```
+
+Together with current Blitz loading/results Gun Marks behavior:
+
+> **field120 = Gun Marks count — PROVEN**.
+
+# Death-time precision
+
+Canonical deaths:
+
+```text
+settled dead combatants : 287
+live Type7 terminal     : 283
+live method1 terminal   : 283
+both live surfaces      : 283
+```
+
+Thus:
+
+```text
+EVENT_SUBSECOND coverage = 283/287 = 98.61%
+SETTLEMENT_SECOND fallback = 4/287 = 1.39%
+```
+
+The four fallback deaths also lack wrapper6 and useful death-time Type33 events. This is a true single-POV/AoI observation limit, not a decoder gap.
+
+100% sub-second coverage requires multi-POV fusion where available; otherwise explicit settlement-second precision is the correct fallback.
+
+# Current genuinely unresolved / low-confidence queue
+
+## Priority A — business-relevant remaining semantics
+
+1. `field118/baseType12` exact symbolic closure (`droppedCapturePoints` candidate near-PROVEN).
+2. method16 remaining exact device/crew IDs:
+   - engine;
+   - fuel tank;
+   - gun;
+   - turret rotator;
+   - surveying device;
+   - commander/driver/radioman/gunner.
+   Current ordering is STRONG PARTIAL but exact names must not be promoted only from historical PC enums.
+3. Vehicle prop7/8/9 element namespaces.
+4. exact method38 shot-result bit semantics beyond already proven flags/families.
+5. Type32 compact module/effect token layout and remaining fire lifecycle distinctions.
+6. wrapper6 optional secondary attribution exact eligibility rule.
+7. Type39 `f5` exact producer meaning and method36 remaining targeting scalar names.
+8. uncommon deathReason values absent from the 34-arena corpus (drowning, overturn, death-zone, etc.) require new real samples.
+
+## Priority B — structurally known but lower product value
+
+1. Vehicle prop0 exact alternating-state meaning.
+2. Vehicle prop4 exact current symbolic tuple (`engineMode` strong historical candidate).
+3. Vehicle method2 two-float config semantics.
+4. Avatar method3 two-byte state family.
+5. Avatar method19 `code=1`: recorder vehicle + enemy vehicle relation; not visibility/aim/collision; exact semantic unknown.
+6. Avatar method43 player-name notification/tactical UI family.
+7. Type11 exact space/config body.
+8. Type13 exact in-stream settlement serialization.
+9. settlement field116 exact cosmetic/customization item class — intentionally deprioritized.
+
+## Priority C — special entity / non-combat variants
+
+- 28-byte Vehicle method0 class-specific variant on non-settled/special entities;
+- 18-byte method5 rare non-Avatar variant;
+- static Type32 entity families;
+- other observer/BPC-specific payloads.
+
+# Research completion definition
+
+This version/corpus is research-complete only when:
+
+1. every observed top-level packet type is inventoried;
+2. every observed Type7 property is class-scoped and inventoried;
+3. every observed Type8 method is class-scoped and inventoried;
+4. every observed method48 wrapper is structurally inventoried;
+5. settlement root/player fields are structurally inventoried;
+6. every surface has an explicit evidence grade;
+7. superseded hypotheses are marked rather than silently reused;
+8. unknowns remain explicitly unknown when the corpus cannot prove more;
+9. low-business cosmetic/platform surfaces do not block completion once safely classified;
+10. product-facing decoders consume only version-gated PROVEN/approved PARTIAL facts.
