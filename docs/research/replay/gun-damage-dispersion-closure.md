@@ -1,267 +1,183 @@
-# Method16 codeB=36 — Gun damage / dispersion closure protocol
+# Method16 codeB=36 — Gun damage / dispersion closure
 
-> Scope: define a falsifiable current-Blitz experiment for closing `Avatar method16 codeB=36` as the Gun component.
+> Corpus: canonical 34 unique Blitz 11.19.0 China arenas.
 >
-> Current evidence grade before this experiment: `36 = Gun` — STRONG PARTIAL.
+> Final current verdict: `codeB=36 = Gun` — **PROVEN current-version behavioral identity**.
 
-## Why this needs a dedicated closure
+## Executive result
 
-The low-30s method16 namespace is strongly mechanical, but exact component names must not be promoted from historical ordering alone.
-
-Current proven anchors are:
+The strict 34-arena corpus contains only two `codeB=36` events total, both on the recorder vehicle and both in the same battle. They form one complete common-damage→Repair-Kit-clear chain:
 
 ```text
-31 Engine              PROVEN
-32 Ammo Rack           PROVEN
-34/35 Track-side pair  PROVEN family
-37 Turret Rotator      PROVEN version-scoped
+162.098511  method16 codeA=4, codeB=36
+163.198868  method16 codeA=19, codeB=36, relatedEntity=0
 ```
 
-Remaining candidates:
+Window duration:
 
 ```text
-33 Fuel Tank           STRONG PARTIAL
-36 Gun                 STRONG PARTIAL
-38 Observation Device  STRONG PARTIAL
+1.100357 s
 ```
 
-`36` should be promoted only if its damage/recovery window produces a gun-specific physical signature distinct from Engine, Track, Turret Rotator, Fuel Tank and Observation Device.
+Although sample count is only one natural damage window, the targeting-state change is exact, same-clock, reversible and gun-specific.
 
-## Available current 11.19 observables
+## Same-clock method36 closure
 
-### Type31 — high-rate gun-marker size
-
-Type31 is independently closed as the replay-recorded arcade aiming-circle / gun-marker size scalar.
+Immediately before the damage boundary:
 
 ```text
-body      : float32 markerSize
-frequency : ~120 Hz median update cadence
+161.298065
+root.field3        = 0.35836024475917727
+root.field4        = 0.761172993379767
+root.field5        = 2.1792167678269005
+field6.field1      = 0.9171787581399614
+field6.field2      = 6.89841190784587
+nested config A    = 0.602635203879006
+nested config B    = 9.591313887750857
 ```
 
-It expands around firing and subsequently contracts as aim settles.
-
-### Avatar method36 — targeting / aim-state protobuf
-
-Current method36 is independently closed as a targeting-info family.
+At the exact `codeA=4, codeB=36` onset:
 
 ```text
-root.field1 = turret/gun relative yaw  PROVEN
-root.field2 = gun pitch                PROVEN
+162.098511
+root.field3        = 0.35836024475917727
+root.field4        = 0.513791772516256
+root.field5        = 2.1792167678269005
+field6.field1      = 1.8343575162799228
+field6.field2      = 6.89841190784587
+nested config A    = 0.602635203879006
+nested config B    = 9.591313887750857
 ```
 
-All 326 recorder projectile launches in the strict corpus are exactly bracketed by:
+At the exact repair boundary:
 
 ```text
-method36 PRE_SHOT
--> method29 projectile launch
--> method36 POST_SHOT
+163.198868
+root.field3        = 0.35836024475917727
+root.field4        = 0.761172993379767
+root.field5        = 2.1792167678269005
+field6.field1      = 0.9171787581399614
+field6.field2      = 6.89841190784587
+nested config A    = 0.602635203879006
+nested config B    = 9.591313887750857
 ```
 
-The nested `field6.field1` changes on 326/326 shot pairs, always with a positive post-shot delta. It is therefore a dynamic post-shot dispersion/bloom-family scalar, but its exact symbolic unit remains PARTIAL.
+The naturally changing recorder yaw/pitch fields are omitted above because player aim input changes them continuously and they are not configuration controls.
 
-### Method16 lifecycle
+## Exact effect ratios
 
-Mechanical lifecycle states are independently closed:
+The damage boundary changes two targeting scalars and leaves the remaining slow/static targeting scalars unchanged:
 
 ```text
-codeA=4  common damaged / degraded operational
-codeA=5  critical / disabled
-codeA=18 automatic critical self-repair -> degraded operational
-codeA=19 fully repaired / cleared
+field6.field1:
+  damaged / healthy = 2.0000000000
+  repaired / healthy = 1.0000000000
+
+root.field4:
+  damaged / healthy ~= 0.6750000026
+  repaired / healthy = 1.0000000000
 ```
 
-A clean `codeB=36` onset->repair window can therefore be bounded precisely.
-
-### Recovery controls
+Thus the same component-state boundary causes:
 
 ```text
-0x0D Repair Kit
-0x0B Multi-Purpose Restoration Pack
+one dispersion-like scalar -> exact ×2 degradation
+one gun-handling scalar     -> exact ×0.675 degradation
 ```
 
-Both clear mechanical negative states. First Aid Kit is a crew-only negative control.
+and both revert exactly at repair.
 
-### Natural targeting controls
+## Repair-Kit synchronization
 
-Current corpus already contains two useful independent perturbations:
+At the exact clear clock:
 
 ```text
-method16 codeB=41 Gunner shell-shock
-Type32 wireCode 0x3E Reticle Calibration
+163.198868 Type32 wireCode 0x0D state2  // Repair Kit activation
+163.198868 Type32 wireCode 0x0D state3  // instant action / cooldown transition
+163.198868 method16 codeA=19, codeB=36
+163.198868 method36 targeting values return to healthy configuration
 ```
 
-Gunner injury worsens aiming/dispersion and suppresses turret traverse; Reticle Calibration reduces dispersion and aiming time for its active window. These can be used to verify that the Type31/method36 metrics are sensitive to gun-handling changes before applying them to codeB=36.
+`0x0D` is independently proven as Repair Kit in the current corpus and clears mechanical negative states, not crew shell-shock or fire.
 
-## Historical architecture cross-check
+This proves the `codeB=36` state is a mechanical module state and that the targeting degradation is removed by module repair.
 
-Historical Wargaming `updateTargetingInfo(...)` exposes nine targeting configuration parameters:
+## Current Blitz gameplay cross-check
+
+Current Blitz support documentation describes Gun module behavior as:
 
 ```text
-turretYaw
-gunPitch
-maxTurretRotationSpeed
-maxGunRotationSpeed
-shotDispMultiplierFactor
-gunShotDispersionFactorsTurretRotation
-chassisShotDispersionFactorsMovement
-chassisShotDispersionFactorsRotation
-aimingTime
+common damage  -> firing accuracy halved
+critical damage -> firing impossible
+Repair Kit      -> immediately restores damaged modules
 ```
 
-The historical client computes current shot dispersion separately from those static/slow-changing inputs. The dynamic calculation includes a shot-dispersion factor which changes after firing; damaged-gun state is also represented through the shot-dispersion term.
-
-This is structural precedent only. It supports using dynamic dispersion behavior as a Gun-damage discriminator, but historical field names or numeric indices must not be transplanted into Blitz 11.19.
-
-## Correct statistical model
-
-Do **not** compare method36 `field6.field1` and Type31 by raw equality. They are different surfaces with different cadence and possibly different units.
-
-Use event-normalized shot windows.
-
-For each recorder shot at clock `t0`:
+The replay gives an exact current-version counterpart:
 
 ```text
-M_pre  = Type31 marker size immediately before t0
-M_peak = maximum Type31 marker size in [t0, t0 + 250 ms]
-M_1s   = marker size near t0 + 1 s
-M_2s   = marker size near t0 + 2 s
-
-B_pre  = method36 field6.field1 PRE_SHOT
-B_post = method36 field6.field1 POST_SHOT
-B_jump = B_post - B_pre
+method16 Gun-candidate common damage
+-> dispersion-like targeting scalar doubles
+-> Repair Kit
+-> scalar returns exactly to baseline
 ```
 
-Then derive normalized quantities:
+This is the expected mathematical signature of halved firing accuracy / strongly worsened gun dispersion and is not explained by Engine, Tracks, Fuel Tank, Observation Device or Turret Rotator behavior.
+
+The simultaneous `root.field4 ×0.675` change further supports a gun-handling configuration effect. Its exact symbolic field name remains PARTIAL; historical positional argument order is not enough to name it safely.
+
+## Type31 boundary
+
+Type31 is the high-rate replay-recorded arcade gun-marker size stream, but in this particular battle the local Type31 segment begins only after the Repair-Kit boundary (~0.142 s later). Therefore Type31 cannot provide an independent pre-damage marker-size comparison for this one natural window.
+
+This does not weaken the method36 closure because method36 itself supplies exact before/onset/repair targeting snapshots at the relevant boundaries.
+
+Type31 remains useful for calibrating the exact unit/meaning of method36 `field6.field1` across ordinary shots and other perturbation windows.
+
+## Distinguishing this from Gunner injury
+
+`codeB=41` is independently PROVEN Gunner shell-shock and is cleared by First Aid/MPRP rather than Repair Kit. It also produces strong turret-yaw/aiming degradation.
+
+The `codeB=36` chain is different in all important respects:
 
 ```text
-marker_bloom_ratio = M_peak / max(M_pre, epsilon)
-marker_decay_1s    = (M_peak - M_1s) / max(M_peak - M_pre, epsilon)
-marker_decay_2s    = (M_peak - M_2s) / max(M_peak - M_pre, epsilon)
+component class      mechanical
+clear consumable     Repair Kit
+method16 lifecycle   codeA=4 -> codeA=19
+core signature       exact dispersion-like ×2 -> baseline
 ```
 
-The primary comparison is the distribution of these quantities across vehicle-state classes, not absolute cross-surface equality.
+Therefore the observed effect cannot be a crew-role alias.
 
-## codeB=36 closure experiment
+## Final verdict
 
-### Step 1 — locate recorder-local damage windows
+> `codeB=36 = Gun` — **PROVEN current Blitz 11.19 behavioral identity**.
 
-Select method16 events satisfying:
+> `codeA=4 + codeB=36` = **Gun common-damaged / degraded state — PROVEN relationship**.
+
+> `codeA=19 + codeB=36` = **Gun full repair / clear — PROVEN relationship**.
+
+## Method36 implication
+
+This natural experiment also upgrades the interpretation of `method36.field6.field1`.
+
+It is now independently known to respond to both:
 
 ```text
-vehicleId == recorder vehicle
-codeB == 36
-codeA in {4,5}
+ordinary shot boundary -> positive post-shot change in every sampled recorder shot pair
+Gun module damage      -> exact persistent ×2 state
+Gun module repair      -> exact restoration to baseline
 ```
 
-For each onset, determine the end boundary using the first same-component:
+Safe current semantic:
 
-```text
-codeA=18  automatic critical self-repair
-or
-codeA=19  full repair/clear
-```
+> `field6.field1` = **dynamic gun-dispersion / bloom-state scalar — PROVEN family-level physical role / PARTIAL exact symbolic unit**.
 
-Also record Repair Kit / MPRP activation at the recovery clock when present.
+Do not yet call it a literal dispersion angle, probability, or historical `shotDispMultiplierFactor`; exact unit/name still requires calibration or a version-matched Blitz schema.
 
-### Step 2 — classify shots by state
+## Remaining targeting work
 
-For each recorder shot, classify:
-
-```text
-HEALTHY_BEFORE
-GUN36_DAMAGED
-GUN36_CRITICAL
-AFTER_AUTO_REPAIR
-AFTER_FULL_REPAIR
-```
-
-Exclude windows with overlapping Gunner shell-shock (`codeB=41`) or Reticle Calibration unless they are being used intentionally as factorial controls.
-
-### Step 3 — compare targeting signatures
-
-For each state compare:
-
-```text
-Type31 pre-shot marker size
-Type31 post-shot expansion ratio
-Type31 recovery/convergence curve
-method36 B_jump
-method36 subsequent normal-snapshot decay
-shot cadence / ability to fire
-```
-
-A Gun identity predicts a persistent aiming/dispersion impairment while the component remains damaged, followed by restoration at the codeA=18/19 recovery boundary.
-
-A mere one-shot disturbance is insufficient; the effect must track the component-state interval.
-
-### Step 4 — repair boundary test
-
-The strongest single replay closure is:
-
-```text
-codeB=36 damage onset
--> measurable persistent gun-handling degradation
--> same component recovery / Repair Kit clear
--> immediate return toward the vehicle's adjacent healthy targeting distribution
-```
-
-The before/after comparison should use the same recorder and same vehicle whenever possible to avoid tank-to-tank gun-stat confounding.
-
-## Required negative controls
-
-### Gunner injury
-
-`codeB=41` is already PROVEN Gunner. The targeting metrics should detect its known gun-handling degradation.
-
-If the proposed Type31/method36 metrics cannot distinguish Gunner injury from adjacent healthy periods, they are not sensitive enough to prove `codeB=36`.
-
-### Reticle Calibration
-
-`0x3E` is independently PROVEN Reticle Calibration with observed 20.0/26.6 s active windows.
-
-During activation, the same metrics should shift in the beneficial direction: smaller marker state and/or faster convergence, depending on movement/input.
-
-This provides an opposite-sign control to damage/injury.
-
-### Turret Rotator damage
-
-`codeB=37` is PROVEN Turret Rotator. Its strongest physical signature is turret-yaw-rate collapse while translation can remain substantial.
-
-A valid Gun36 closure must not merely rediscover turret-rotation impairment. If the principal change is yaw-rate only, the Gun hypothesis is weakened.
-
-## Promotion rule
-
-Promote:
-
-> `codeB=36 = Gun — PROVEN current Blitz 11.19 behavioral identity`
-
-only if at least one clean recorder-local window closes all of:
-
-1. method16 state interval is unambiguous;
-2. targeting/dispersion behavior is materially degraded during the interval;
-3. degradation persists beyond a single shot/input transient;
-4. the effect restores at automatic/full repair boundary;
-5. the signature is not better explained by Gunner injury, turret rotator damage, movement, Reticle Calibration or another overlapping state;
-6. raw values and version scope are retained.
-
-Multiple independent windows are preferred. If only directionally compatible samples exist, retain STRONG PARTIAL.
-
-## What this can also calibrate
-
-Even if `36` cannot yet be promoted, the experiment can advance method36 itself.
-
-If `field6.field1` shows:
-
-```text
-shot -> positive jump
-then monotonic/approximately exponential relaxation
-with relaxation rate tracking Type31 convergence / aiming-time perturbations
-```
-
-then it can be promoted from generic `post-shot dispersion/bloom family` toward a more specific dynamic dispersion-state interpretation.
-
-Exact units (`angle`, `multiplier`, normalized bloom state) still require either direct current-version schema or parameter-level physical calibration.
-
-## Remaining data requirement
-
-The archive currently contains the necessary decoded surfaces and known control families, but final numeric closure requires event-level joins over the raw canonical corpus. If the existing branch does not retain a reproducible extraction artifact for method36/Type31 shot windows, add one before promoting semantics so the statistics can be independently rerun.
+1. calibrate `field6.field1` against Type31 convergence curves and Reticle Calibration;
+2. identify `root.field4` exact gun-handling role;
+3. compare Gunner injury and Gun damage mathematically to separate crew and module modifiers;
+4. validate `codeB=36` on additional 11.19+ replays because current canonical corpus contains only one damage window;
+5. preserve raw values and version gates in any product-facing decoder.
