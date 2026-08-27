@@ -41,6 +41,40 @@ Current recorder-local `33` population contains six `codeA=4` onsets and six `co
 
 Detailed evidence: [`fuel-tank-observation-device-closure.md`](fuel-tank-observation-device-closure.md).
 
+### `codeB=34` — Right Track
+
+`34/35` are independently proven as the symmetric track pair from their damage/repair lifecycle and movement suppression. Exact orientation is closed by current 11.19 target-local hit geometry in Vehicle method8.
+
+The compact BigWorld hit segment strongly separates the two IDs:
+
+```text
+component 34:
+  n = 46
+  median segment-start local X = 0
+  start-X <= 64 : 40 / 46
+  start-X >=191 : 1 / 46
+
+component 35:
+  n = 25
+  median segment-start local X = 255
+  start-X <= 64 : 0 / 25
+  start-X >=191 : 25 / 25
+```
+
+BigWorld vehicle-local coordinates use `+X = left`, so minimum-X is the vehicle's right side and maximum-X is the left side.
+
+> `codeB=34 = Right Track` — **PROVEN current Blitz 11.19 geometric identity**.
+
+Detailed evidence: [`track-side-orientation-closure.md`](track-side-orientation-closure.md).
+
+### `codeB=35` — Left Track
+
+The same target-local geometry closure gives:
+
+> `codeB=35 = Left Track` — **PROVEN current Blitz 11.19 geometric identity**.
+
+Detailed evidence: [`track-side-orientation-closure.md`](track-side-orientation-closure.md).
+
 ### `codeB=36` — Gun
 
 The canonical corpus contains only one recorder-local `codeB=36` damage→repair window, but it provides a direct current-version physical closure.
@@ -160,28 +194,20 @@ This proves current crew shell-shock tokens share the method16 component namespa
 
 Do not generalize this to every prop8 element; prop8 is a broader mixed recoverable-state collection.
 
-## Track pair
-
-`codeB=34` and `codeB=35` form a symmetric mechanical pair with the same damage/repair family and severe movement suppression.
-
-> `codeB=34/35 = two track-side modules` — **PROVEN family-level**.
->
-> Exact left/right ordering remains **PARTIAL**.
-
 ## Mechanical namespace — current complete identity map
 
 ```text
 31 engine              PROVEN
 32 ammo rack           PROVEN
 33 fuel tank           PROVEN
-34 track side A        PROVEN family / side PARTIAL
-35 track side B        PROVEN family / side PARTIAL
+34 right track         PROVEN
+35 left track          PROVEN
 36 gun                 PROVEN
 37 turret rotator      PROVEN version-scoped
 38 observation device  PROVEN
 ```
 
-All observed mechanical component identities are now closed for Blitz 11.19; only exact left/right orientation of the 34/35 pair remains unresolved.
+All observed mechanical component identities and both track orientations are closed for Blitz 11.19.
 
 ## Blitz crew namespace
 
@@ -201,8 +227,8 @@ Historical PC/WoT Radioman ordering is rejected for current Blitz shell-shock se
 31 -> ENGINE              PROVEN
 32 -> AMMO_RACK           PROVEN
 33 -> FUEL_TANK           PROVEN
-34 -> TRACK_SIDE_UNKNOWN  PROVEN family
-35 -> TRACK_SIDE_UNKNOWN  PROVEN family
+34 -> RIGHT_TRACK         PROVEN
+35 -> LEFT_TRACK          PROVEN
 36 -> GUN                 PROVEN
 37 -> TURRET_ROTATOR      PROVEN version-scoped
 38 -> OBSERVATION_DEVICE  PROVEN
@@ -215,10 +241,9 @@ Historical PC/WoT Radioman ordering is rejected for current Blitz shell-shock se
 
 Consumers must preserve `rawCodeB` for every event and retain version gating even for PROVEN current identities.
 
-## Next closure targets
+## Remaining evidence boundaries
 
-1. exact left/right orientation for `34/35` tracks;
-2. determine whether `42` is unused/reserved or appears in larger/current-version corpora;
-3. calibrate method36 `field6.field1` exact unit/semantic beyond its proven dynamic gun-dispersion role;
-4. map remaining Type32/prop8 mechanical token paths;
-5. validate the complete component map outside Blitz 11.19 China.
+1. determine whether `42` is unused/reserved or appears in larger/current-version corpora;
+2. calibrate method36 `field6.field1` exact unit/semantic beyond its proven dynamic gun-dispersion role;
+3. map remaining Type32/prop8 mechanical token paths beyond the already-closed component namespace;
+4. validate the complete component map outside Blitz 11.19 China.
