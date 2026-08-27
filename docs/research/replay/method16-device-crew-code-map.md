@@ -10,122 +10,125 @@
 
 A recorder-local natural critical-damage chain closes the identity physically.
 
-Current sequence:
-
 ```text
 202.527 s  method16 codeA=5, codeB=31
-           Type32 nested token 0x1F (= decimal 31)
-
-205.48 .. 206.68 s
-           Type10 translation is effectively zero
-
+205.48..206.68 s translation effectively zero
 206.726 s  method16 codeA=18, codeB=31
-           Type32 nested transition on token 0x1F
-
-206.78 s+  vehicle translation resumes immediately
+206.78 s+   translation resumes without Repair Kit
 ```
 
-This matches the current Blitz module mechanic:
-
-```text
-Engine common damage   -> engine power halved
-Engine critical damage -> movement/traverse impossible
-critical module         -> self-repairs after time into common-damaged state
-```
-
-The temporary immobilization followed by an automatic non-consumable recovery transition distinguishes this from ammo rack, gun, turret rotator, observation device and fuel tank behavior. Track-side IDs are independently closed at 34/35.
-
-Verdict:
+This matches the current Blitz Engine critical-damage/self-repair lifecycle.
 
 > `codeB=31 = Engine` — **PROVEN current 11.19 behavioral identity**.
 
-The same event also strongly closes mechanical `codeA=18` as the **critical self-repair / restored-to-common-damaged transition** for the current device family. The exact symbolic enum name remains version-gated.
+### `codeB=32` — Ammo Rack
 
-### `codeB=32` — ammo rack
+`codeA=4, codeB=32` produces the persistent reload-duration penalty visible in Avatar method35; current clean samples show approximately `×1.65`. `codeA=19, codeB=32` at Repair Kit/MPRP restores normal reload duration.
 
-`codeA=4, codeB=32` causes the current vehicle reload-duration configuration (`Avatar method35`) to jump to the persistent damaged state. Clean current samples show the expected approximately `×1.65` reload-duration penalty.
+> `codeB=32 = Ammo Rack` — **PROVEN current corpus**.
 
-`codeA=19, codeB=32` occurs at Repair Kit / Multi-Purpose Restoration Pack recovery and restores normal reload duration.
+### `codeB=36` — Gun
+
+The canonical corpus contains only one recorder-local `codeB=36` damage→repair window, but it is unusually clean and provides a direct current-version physical closure.
+
+Observed chain:
+
+```text
+161.298065  healthy method36 snapshot
+            root.field4   = 0.761172993379767
+            field6.field1 = 0.9171787581399614
+
+162.098511  method16 codeA=4, codeB=36
+            root.field4   = 0.513791772516256
+            field6.field1 = 1.8343575162799228
+
+163.198868  Type32 0x0D Repair Kit state2/state3
+163.198868  method16 codeA=19, codeB=36, relatedEntity=0
+            root.field4   = 0.761172993379767
+            field6.field1 = 0.9171787581399614
+```
+
+Exact ratios:
+
+```text
+damage field6.field1 / healthy = 2.0000000000
+repair field6.field1 / healthy = 1.0000000000
+
+damage root.field4 / healthy  ~= 0.6750000026
+repair root.field4 / healthy   = 1.0000000000
+```
+
+Other slow/static targeting scalars in the same snapshots remain unchanged across the module boundary:
+
+```text
+root.field3
+root.field5
+field6.field2
+field6.field3... nested config values
+```
+
+Only recorder gun yaw/pitch vary naturally with player aiming.
+
+Independent current Blitz module documentation states that ordinary Gun damage halves firing accuracy, critical Gun damage disables firing, and Repair Kit immediately restores damaged modules. The exact `×2` degradation of the current method36 dispersion-like state at the method16 onset, followed by exact same-clock restoration at Repair Kit, is therefore a gun-specific physical signature rather than historical numeric-order inference.
+
+The simultaneous `root.field4 ×0.675` change is an additional targeting/gun-handling effect; its exact symbolic field name remains PARTIAL and must not be positional-transplanted from historical schemas.
 
 Verdict:
 
-> `codeB=32 = ammo rack` — **PROVEN current corpus**.
+> `codeB=36 = Gun` — **PROVEN current Blitz 11.19 behavioral identity**.
+
+> `codeA=4 + codeB=36` = **Gun common-damaged/degraded state — PROVEN relationship**.
+
+> `codeA=19 + codeB=36` = **Gun full repair/clear — PROVEN relationship**.
+
+Detailed evidence: [`gun-damage-dispersion-closure.md`](gun-damage-dispersion-closure.md).
+
+### `codeB=37` — Turret Rotator
+
+A complete damage→automatic-repair→repair chain plus independent turret-yaw-rate collapse while vehicle translation remains substantial closes the identity.
+
+> `codeB=37 = Turret Rotator` — **PROVEN version-scoped**.
 
 ### `codeB=39` — Commander
 
-Two recorder-local natural injury→heal samples provide a role-specific physical closure:
+Two recorder-local natural injury→heal samples show a small, repeatable cross-role reload degradation while injured, consistent with loss of the Commander bonus.
 
 ```text
-sample A
-injured full reload = 12.821728 s
-healed  full reload = 12.257659 s
-ratio               = 1.046018
-
-sample B
-injured full reload = 11.025887 s
-healed  full reload = 10.547556 s
-ratio               = 1.045350
+sample A injured/healed reload ratio = 1.046018
+sample B injured/healed reload ratio = 1.045350
 ```
-
-The slower reload exists during `codeA=10, codeB=39` and disappears at the same vehicle's `codeA=22` heal boundary.
-
-This is the expected signature of a shell-shocked Commander in Blitz: the Commander bonus to the effectiveness of the rest of the crew is lost, causing a small cross-role reload degradation even though the Loader is not directly shell-shocked.
-
-Verdict:
 
 > `codeB=39 = Commander` — **PROVEN current 11.19 behavioral identity**.
 
-### `codeB=41` — Gunner
-
-Current Blitz shell-shock rules define the Gunner-specific penalty as increased dispersion plus halved aiming/turret-traverse performance.
-
-Three recorder-local `codeA=10, codeB=41` injury windows have enough Vehicle prop2 turret-relative-yaw telemetry to compare injury against adjacent healthy windows.
-
-```text
-sample A injured max yaw / healthy max ~= 0.560
-sample B injured max yaw / healthy max ~= 0.338
-sample C injured max yaw / healthy max ~= 0.121
-```
-
-Natural player input means the commanded yaw is not necessarily saturated throughout a short injury interval, so ratios can fall below the configured ceiling. The important discriminator is consistent strong turret-yaw suppression and First Aid restoration; recorder-local `codeB=40` negative controls do not show the same pattern.
-
-Verdict:
-
-> `codeB=41 = Gunner` — **PROVEN current 11.19 behavioral identity**.
-
 ### `codeB=40` — Driver
 
-Current Blitz shell-shock role domain has four gameplay roles:
-
-```text
-Commander / Driver / Gunner / Loader
-```
-
-The current method16 shell-shock (`codeA=10`) domain is exactly:
-
-```text
-39, 40, 41, 43
-```
-
-with no `42` shell-shock event in the canonical corpus. The other three are independently closed as Commander, Gunner and Loader; therefore `40` is the sole remaining current role.
-
-The longest recorder-local `40` injury window lasts about 27.4 seconds and Type10 movement is directionally compatible with severe mobility degradation, while turret-yaw behavior does not show the Gunner-specific suppression.
-
-Verdict:
+The current shell-shock domain is exactly `39,40,41,43`; Commander, Gunner and Loader are independently closed, leaving `40` as the sole Driver role. The longest recorder-local injury window is also mobility-compatible and lacks the Gunner-specific turret-yaw suppression.
 
 > `codeB=40 = Driver` — **PROVEN by exhaustive current Blitz role closure with compatible mobility behavior**.
 
+### `codeB=41` — Gunner
+
+Three recorder-local `codeA=10, codeB=41` windows show strong turret-yaw suppression versus adjacent healthy windows:
+
+```text
+injured max yaw / healthy max ~= 0.560
+injured max yaw / healthy max ~= 0.338
+injured max yaw / healthy max ~= 0.121
+```
+
+This matches current Gunner shell-shock gun-handling degradation and clears with First Aid/MPRP.
+
+> `codeB=41 = Gunner` — **PROVEN current 11.19 behavioral identity**.
+
 ### `codeB=43` — Loader
 
-`codeA=10, codeB=43` causes a strong persistent reload-speed penalty. `codeA=22, codeB=43` at First Aid Kit / Multi-Purpose Restoration Pack recovery restores the reload state.
-
-Verdict:
+`codeA=10, codeB=43` produces strong reload degradation; `codeA=22, codeB=43` at First Aid/MPRP restores reload performance.
 
 > `codeB=43 = Loader` — **PROVEN current corpus**.
 
 ## Crew token namespace cross-surface closure
 
-The Type32 nested/recoverable crew-state token family uses the same numeric values as method16 `codeB` for current crew injuries:
+Type32 nested/recoverable crew-state tokens use the same numeric component values as method16 `codeB`:
 
 ```text
 method16 codeB=39 <-> Type32 token 0x27
@@ -134,15 +137,13 @@ method16 codeB=41 <-> Type32 token 0x29
 method16 codeB=43 <-> Type32 token 0x2B
 ```
 
-This proves current crew shell-shock tokens share the method16 component ID namespace.
+This proves current crew shell-shock tokens share the method16 component namespace.
 
 Do not generalize this to every prop8 element; prop8 is a broader mixed recoverable-state collection.
 
 ## Track pair
 
 `codeB=34` and `codeB=35` form a symmetric mechanical pair with the same damage/repair family and severe movement suppression.
-
-Verdict:
 
 > `codeB=34/35 = two track-side modules` — **PROVEN family-level**.
 >
@@ -158,12 +159,10 @@ Current state:
 33 fuel tank           STRONG PARTIAL
 34 track side A        PROVEN family / side PARTIAL
 35 track side B        PROVEN family / side PARTIAL
-36 gun                 STRONG PARTIAL
+36 gun                 PROVEN
 37 turret rotator      PROVEN version-scoped
 38 observation device  STRONG PARTIAL
 ```
-
-The `37` closure is supported by a complete damage→automatic-repair→repair chain plus independent turret-yaw-rate collapse while vehicle translation remains substantial.
 
 ## Blitz crew namespace
 
@@ -184,6 +183,7 @@ Historical PC/WoT Radioman ordering is rejected for current Blitz shell-shock se
 32 -> AMMO_RACK           PROVEN
 34 -> TRACK_SIDE_UNKNOWN  PROVEN family
 35 -> TRACK_SIDE_UNKNOWN  PROVEN family
+36 -> GUN                 PROVEN
 37 -> TURRET_ROTATOR      PROVEN version-scoped
 39 -> COMMANDER           PROVEN
 40 -> DRIVER              PROVEN
@@ -191,7 +191,6 @@ Historical PC/WoT Radioman ordering is rejected for current Blitz shell-shock se
 43 -> LOADER              PROVEN
 
 33 -> FUEL_TANK           PARTIAL
-36 -> GUN                 PARTIAL
 38 -> OBSERVATION_DEVICE  PARTIAL
 42 -> UNKNOWN             UNKNOWN
 ```
@@ -200,8 +199,8 @@ Consumers must preserve `rawCodeB` for every event and expose exact semantics on
 
 ## Next closure targets
 
-1. `36` Gun — dispersion/aiming impairment and Repair Kit restoration;
-2. `38` Observation Device — view-range/spotting effect or current schema;
-3. `33` Fuel Tank — current physical/schema closure without relying only on fire probability;
-4. exact left/right orientation for `34/35` tracks;
-5. determine whether `42` is unused/reserved or appears in larger/current-version corpora.
+1. `38` Observation Device — view-range/spotting effect or current schema;
+2. `33` Fuel Tank — current physical/schema closure without relying only on fire probability;
+3. exact left/right orientation for `34/35` tracks;
+4. determine whether `42` is unused/reserved or appears in larger/current-version corpora;
+5. calibrate method36 `field6.field1` exact unit/semantic beyond the now-proven gun-damage relationship.
