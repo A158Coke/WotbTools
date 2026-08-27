@@ -9,7 +9,10 @@
   },
   "semantics": {
     "trainingEligibility": "class_specific",
-    "effectScope": "all_vehicles"
+    "effectScope": "all_vehicles",
+    "defaultSkillLevel": 7,
+    "maxSkillLevel": 7,
+    "effectValuePolicy": "use_max_level_bonus"
   },
   "classes": {
     "light": {
