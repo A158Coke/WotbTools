@@ -6,23 +6,21 @@
 
 ## Executive verdict
 
-Avatar method28 is a fixed 36-byte / 9-float32 geometry event tied to projectile-caused recorder death.
+Avatar method28 is a fixed 36-byte / 9-float32 geometry event tied to projectile-caused recorder death / immediate post-mortem projectile handling.
 
 Current body:
 
 ```text
-A : VECTOR3
-A : VECTOR3   // exact duplicate of first vector in 24 / 24
-B : VECTOR3
+P1 : VECTOR3
+P2 : VECTOR3
+B  : VECTOR3
 ```
 
-`B` is the projectile terminal endpoint from Avatar method20, while `A -> B` is an approximately 100-world-unit segment aligned almost perfectly with the projectile launch velocity.
-
-Across the current corpus, method28 appears exactly around recorder direct-projectile death / immediate post-mortem projectile handling. It does not occur for surviving recorders or the observed ramming death.
+`B` is the projectile terminal endpoint from Avatar method20. In the ordinary single-projectile terminal case `P1 == P2`, but a newly isolated same-clock multi-projectile edge case proves that equality is **not a protocol invariant**.
 
 Verdict:
 
-> method28 = **incoming death-projectile / death-view terminal trajectory geometry family — PROVEN behavioral identity / PARTIAL symbolic RPC name**.
+> method28 = **incoming death-projectile / death-view terminal trajectory geometry family — PROVEN behavioral identity / PARTIAL exact symbolic RPC name**.
 
 ## Geometry closure
 
@@ -32,115 +30,103 @@ Observed method28 packets:
 count      : 24
 arg length : 36 bytes for 24 / 24
 layout     : 9 x float32 LE
-A1 == A2   : 24 / 24 exact
+P1 == P2   : 23 / 24 exact
 ```
 
-For every event, the third VECTOR3 `B` is compared with the same-clock Avatar method20 `stopTracer` endpoint.
+For every event, the third VECTOR3 `B` exactly equals a same-clock Avatar method20 `stopTracer` endpoint:
 
 ```text
 method28 B == method20 terminal endpoint : 24 / 24
 coordinate error                         : 0
 ```
 
-For the 23 events with a same-shot method29 launch available, the vector `B - A` is compared with method29 projectile launch velocity.
+For ordinary single-projectile terminal samples, the segment from the repeated `P1/P2` point to `B` is approximately 100 world units and aligns almost perfectly with the matching method29 projectile velocity. This remains the dominant current behavior.
+
+## The 1/24 non-duplicate edge case
+
+Replay:
 
 ```text
-|B - A| range        : ~99.68 .. 104.04 world units
-median                : ~101.35
-
-cos(B-A, launchVel)
-min                   : ~0.999958
-median                : ~0.9999976
-max                   : ~0.99999995
+20260822_1231__CHRD-A158布丁_VK7201_1161440170298931846
+rawClock ≈ 138.187 s
 ```
 
-Therefore `A -> B` is a short terminal trajectory segment immediately preceding the projectile endpoint, not an arbitrary target/camera vector.
+At this exact clock the recorder stream contains **two method29 projectile-launch records** plus multiple same-clock damage records around the terminal boundary.
+
+For this one method28 body:
+
+```text
+P1 != P2
+```
+
+and `P2` is essentially identical to the second same-clock method29 launch-position vector, while `P1 -> B` remains aligned with the other projectile trajectory family.
+
+This disproves the earlier archive statement:
+
+```text
+P1 == P2 in 24 / 24
+```
+
+That statement is **SUPERSEDED**.
+
+Safe conclusion:
+
+> method28 can carry two distinct projectile/death-view geometry points when multiple projectile events overlap at the same terminal clock. Consumers must preserve all three vectors losslessly and must not normalize `P2 = P1`.
 
 ## Recorder-death closure
 
-The 34 arenas split cleanly by recorder outcome.
+The 34 arenas split as:
 
-- 23 arenas: recorder dies to a direct projectile/vehicle-shot family.
-- 10 arenas: recorder survives.
-- 1 arena: recorder dies by ramming (`deathReason=2`).
+- direct-projectile recorder deaths;
+- recorder survivors;
+- one recorder ramming death.
 
-Observed method28 coverage:
+method28 is confined to the direct-projectile death / immediate post-mortem projectile boundary in the current corpus. It does not occur for the observed recorder survivor set or ramming death.
 
-```text
-direct-projectile death arenas with method28 : 23 / 23
-surviving recorder arenas with method28       :  0 / 10
-ramming-death arena with method28              :  0 / 1
-```
-
-Twenty-two of the 23 direct-projectile death arenas have a recoverable same-shot method29 launch. In all 22:
-
-```text
-method29 shooter == settlement killerID : 22 / 22
-```
-
-The remaining direct-death arena lacks the method29 launch boundary but still has method20/method28 terminal evidence.
-
-## Last-hit ordering
-
-For every arena carrying method28, the event occurs on the recorder's final observed Vehicle method8 damage boundary.
-
-Most arenas contain exactly one method28 event.
-
-One arena contains two events separated by ~0.18 s:
-
-- the first projectile is from the settlement killer;
-- the second projectile arrives immediately after the lethal boundary from another shooter.
-
-This indicates that the family is associated with death/death-view incoming projectile geometry rather than a strict single-record `killerShotOnly` model. A consumer should therefore retain every observed method28 around the terminal window rather than arbitrarily dropping post-mortem geometry.
+One arena carries two method28 events separated by roughly 0.18 s: the first is on the lethal projectile boundary and the second is an immediate post-mortem incoming projectile. Therefore this is a death-view terminal projectile family rather than a strict `killerShotOnly` packet.
 
 ## Relationship to other projectile events
 
-Current terminal chain for this family:
+Safe current chain:
 
 ```text
-non-recorder Vehicle method0 showShooting
+Vehicle firing observation
         |
-Avatar method29 launch (23 / 24 available)
-        | shotId
+Avatar method29 projectile launch
+        | shot/projectile identity
         v
 Avatar method20 stopTracer / terminal endpoint
         |
-        +--> Vehicle method8 damage on recorder
+        +--> Vehicle method8 / method1 damage-terminal evidence
         |
-        +--> Avatar method28 terminal ~100m trajectory segment
+        +--> Avatar method28 terminal/death-view geometry
 ```
 
-method28 is not method27 `explodeProjectile`: the current 24 method28 events have no same-clock method27 event.
+method28 is distinct from method27 `explodeProjectile` and from recorder-outgoing method38 shot-result feedback.
 
-It is also not recorder method38 shot-result feedback; method38 is recorder-outgoing shot feedback, whereas method28 describes incoming terminal geometry at recorder death.
-
-## Symbolic-name boundary
-
-Historical Wargaming interfaces contain projectile/hitting-area/death-view presentation RPCs, but the current 36-byte `3 x VECTOR3` Blitz layout has not yet been matched to a version-identical symbolic `.def` declaration.
-
-Therefore do not hardcode an old PC method name solely from conceptual similarity.
-
-Safe schema:
+## Safe schema
 
 ```text
 DeathProjectileGeometryEvent {
     rawClockSec
-    segmentStart
-    segmentEnd
-    terminalEndpoint = segmentEnd
-    shotId?          // joined through same-clock method20
-    shooterEntityId? // joined through method29 when available
+    point1
+    point2
+    terminalEndpoint
+    joinedShotId?
+    joinedShooterEntityId?
     confidence
 }
 ```
+
+Do **not** collapse `point1` and `point2` merely because 23/24 current samples happen to be equal.
 
 ## Product value
 
 Safe uses:
 
-- Battle Playback: draw the final incoming projectile segment that killed the replay author;
-- AI Review: identify the direction/source of the lethal incoming shot when shooter linkage exists;
-- death analysis: distinguish projectile death from ramming/fire/world-collision using settlement plus event geometry;
-- multi-POV analysis: preserve the recorder-specific nature of this death-view event.
+- Battle Playback: render terminal incoming projectile/death-view geometry;
+- AI Review: recover lethal incoming direction/source when shooter linkage exists;
+- death analysis: distinguish projectile death from ramming/fire/environment using settlement + live geometry;
+- preserve overlapping post-mortem projectile events rather than dropping them as duplicates.
 
-Do not generalize method28 to every incoming shot: only the terminal/death boundary is proven in the current corpus.
+Do not generalize method28 to every incoming shot; current proof is terminal/death-view scoped.
