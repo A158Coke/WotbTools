@@ -6,6 +6,8 @@
     .wbtb-card { padding: 22px 20px 22px; }
     .wbtb-shell__topbar { padding: 14px 18px; }
     .wbtb-shell__brand-logo { height: 28px; }
+    /* Mobile touch target ≥40px while the visible switch stays 44×26. */
+    .wbtb-theme-toggle::after { content: ""; position: absolute; inset: -9px 0; }
     .wbtb-shell__footer { padding: 12px 18px 16px; }
     .wbtb-idp-grid { grid-template-columns: 1fr 1fr; }
 }
