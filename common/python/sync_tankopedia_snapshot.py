@@ -12,15 +12,44 @@ from blitzkit_snapshot import GAME_URL, fetch_stable_snapshot, parse_game_versio
 from validate_tankopedia_equipment import validate_vehicle_equipment_coverage
 
 
+FIELD_ITEM_GAME_MODE_EXCLUSIVE = 5
+
+
 def fetch_bytes(url):
     with urllib.request.urlopen(url, timeout=60) as response:
         return response.read()
 
 
+def parse_item_defs_with_scope(pb_bytes):
+    """Parse item definitions including BlitzKit's game_mode_exclusive boundary."""
+    items = []
+    for entry in ut.decode_protobuf(pb_bytes).get(ut.FIELD_MAP_KEY, []):
+        kv = ut.decode_protobuf(entry)
+        item_id = ut.as_int(ut.f1(kv, ut.FIELD_MAP_KEY))
+        if item_id is None:
+            continue
+        msg = ut.decode_protobuf(ut.f1(kv, ut.FIELD_MAP_VALUE, b""))
+        name = ut.i18n_en(ut.f1(msg, ut.FIELD_ITEM_NAME, b""))
+        if not name:
+            continue
+        items.append({
+            "id": item_id,
+            "name": name,
+            "gameModeExclusive": bool(
+                ut.as_int(ut.f1(msg, FIELD_ITEM_GAME_MODE_EXCLUSIVE, 0), 0)
+            ),
+            "include": ut.parse_filters(msg.get(ut.FIELD_ITEM_INCLUDE, [])),
+            "exclude": ut.parse_filters(msg.get(ut.FIELD_ITEM_EXCLUDE, [])),
+        })
+    return items
+
+
 def validate_item_catalog_coverage(vehicles, item_defs, item_map, kind):
-    """Reject applicable upstream items that the local catalog would silently omit."""
+    """Reject unknown normal-battle items that would otherwise be silently omitted."""
     missing = []
     for item in item_defs:
+        if item.get("gameModeExclusive"):
+            continue
         item_id = item["id"]
         if item_id in item_map:
             continue
@@ -71,8 +100,8 @@ def main(argv=None):
     total = len(vehicles)
 
     provision_map, consumable_map = ut.load_catalog()
-    provision_defs = ut.parse_item_defs(snapshots["provisions"])
-    consumable_defs = ut.parse_item_defs(snapshots["consumables"])
+    provision_defs = parse_item_defs_with_scope(snapshots["provisions"])
+    consumable_defs = parse_item_defs_with_scope(snapshots["consumables"])
     validate_item_catalog_coverage(vehicles, provision_defs, provision_map, "provision")
     validate_item_catalog_coverage(vehicles, consumable_defs, consumable_map, "consumable")
     vehicles = ut.apply_items(
