@@ -1,164 +1,189 @@
-# Type28 — recorder ammunition slot / selection index
+# Type28 — recorder ammunition selection state
 
 > Corpus: canonical 34 unique Blitz 11.19.0 China arenas.
 >
-> This semantic identity is derived from current China Blitz mobile replay data only. It does not depend on the historical PC target-lock callback path; that hypothesis is retained separately as SUPERSEDED.
+> Numeric slot values are current-version wire values. Do not assume they equal the user-facing shell-list index without descriptor closure.
 
 ## Wire shape
 
-Current Type28:
-
 ```text
-payload : u32 LE slotIndex
+payload : u32 LE selectionValue
 ```
 
-Canonical corpus:
+Observed current domain:
 
 ```text
-arenas with Type28 : 33 / 34
-records            : 320
-observed values    : 0, 1, 2
+0, 1, 2
 ```
 
-The value changes recurrently during battle and behaves like the recorder's current ammunition selection state.
+## Recorder-shot population
 
-## Step 1 — identify the recorder vehicle independently
+Recorder identity is resolved independently from recorder-scoped Avatar/Vehicle relationships and same-clock shot-result attacker closure.
 
-Avatar property9 has already been proven as a recorder-local mirror of the recorder vehicle's Type7 property2 turret-relative yaw.
-
-For each replay, exactly one Vehicle entity produces the near-identity property2 ↔ Avatar-property9 relationship. That entity is used as the recorder vehicle for the joins below.
-
-This avoids assuming that all Avatar method29 projectile launches belong to the recorder; method29 is a global projectile feed.
-
-## Step 2 — isolate recorder-owned projectile launches
-
-Filter Avatar method29 to:
+Filter:
 
 ```text
-method29.shooterId == recorderVehicleEntity
+Avatar method29.shooterId == recorderVehicleEntity
 ```
 
-Current result:
+Deduplicate by:
+
+```text
+(arena, shotId)
+```
+
+Current strict corpus:
 
 ```text
 method29 recorder-owned RPC records : 326
-unique (replay, shotId)             : 324
+unique recorder shotIds             : 324
 settlement recorder shots fired     : 324
 ```
 
-The two extra RPC records are duplicate/repeated delivery observations; the semantic unique-shot count closes exactly against settlement.
+The two extra method29 records are duplicate delivery observations. The semantic own-shot population closes exactly against settlement.
 
-Therefore the resulting 324 shot IDs are a strongly validated recorder-owned shot population.
+## Corrected per-vehicle shot audit
 
-## Step 3 — Type28 splits own shots into stable ammunition/velocity families
+A previous version of this document contained a stale per-vehicle Type28 table whose counts summed to more than the proven 324 recorder-shot total. That table is SUPERSEDED.
 
-For each recorder-owned method29 shot, carry forward the current Type28 value and inspect the independently proven method29 projectile launch-velocity magnitude.
-
-Observed current-corpus families:
+Rebuilding from the raw 34 replays with arena-local Type28 state and unique recorder shotIds gives:
 
 ```text
-vehicle 3937  Ho-Ri
-  slot 0 : 11 shots, velocity ≈ 972
-  slot 1 :  2 shots, velocity ≈ 1026
-
-vehicle 6225  FV215b
-  slot 0 : 55 shots, velocity ≈ 1152.36
-  slot 1 :  1 shot,  velocity ≈ 1440.72
-  slot 2 :  3 shots, velocity ≈ 1152.36
-
-vehicle 6929  Maus
-  slot 0 : 54 shots, velocity ≈ 680
-  slot 1 :  5 shots, velocity ≈ 1032
-
-vehicle 29985 A178_SPHT
-  slot 0 : 188 shots, velocity ≈ 760
-  slot 1 :   6 shots, velocity ≈ 560
-  slot 2 :   1 shot,  velocity ≈ 560
-
-vehicle 58641 VK 72.01
-  slot 0 : 13 shots, velocity ≈ 600
-  slot 1 :  2 shots, velocity ≈ 552
+A178_SPHT       : 222 shots
+GB13_FV215b     :  32
+J20_Ho_Ri_type3 :  17
+Maus            :  49
+VK 72.01        :   4
+----------------------
+total           : 324
 ```
 
-Within a vehicle, Type28 selection state therefore partitions the recorder's shots into discrete ballistic families rather than camera/target-lock states.
+Some shots occur before the first explicit Type28 selection packet in their arena. Those must remain UNKNOWN rather than inheriting state across an arena/init boundary.
 
-## Step 4 — independent closure with Avatar method17 ammunition descriptors
-
-Avatar method17 is independently proven as recorder ammunition state. Its current 12-byte body includes:
+### Selection-value distribution
 
 ```text
-shellDescriptor : u32 LE at body[0..4]
-quantity        : least-byte quantity field in current schema
+A178_SPHT
+  unknown-before-first-selection : 27
+  value 0                        : 127
+  value 1                        : 61
+  value 2                        : 7
+
+GB13_FV215b
+  unknown-before-first-selection : 7
+  value 0                        : 10
+  value 1                        : 2
+  value 2                        : 13
+
+J20_Ho_Ri_type3
+  value 0 : 8
+  value 1 : 9
+
+Maus
+  value 0 : 40
+  value 1 : 9
+
+VK 72.01
+  unknown-before-first-selection : 2
+  value 0                        : 1
+  value 1                        : 1
 ```
 
-Join recorder-owned method29 shots to same-clock method17 ammunition-state records.
+## Ballistic closure
 
-Stable Type28 slot → descriptor relationships are observed:
+For each unique recorder-owned method29 launch, carry forward the current arena-local Type28 value at the **launch clock** and inspect the independently decoded launch-velocity magnitude.
+
+Corrected current families:
 
 ```text
-A178_SPHT 29985
-  slot 0 -> 139733514
-  slot 1 -> 139799050
-  slot 2 -> 139864586
+A178_SPHT
+  value 0 : n=127, velocity ~760
+  value 1 : n=61,  velocity ~560
+  value 2 : n=7,   velocity ~560
 
-Maus 6929
-  slot 0 -> 4628490
-  slot 1 -> 4694026
+GB13_FV215b
+  value 0 : n=10, velocity ~1152.36
+  value 1 : n=2,  velocity ~1440.72
+  value 2 : n=13, velocity ~1152.36
 
-Ho-Ri 3937
-  slot 0 -> 5595146
-  slot 1 -> 5660682
+J20_Ho_Ri_type3
+  value 0 : n=8, velocity ~972
+  value 1 : n=9, velocity ~1026
 
-VK 72.01 58641
-  slot 0 -> 1002954
-  slot 1 -> 1068490
+Maus
+  value 0 : n=40, velocity ~680
+  value 1 : n=9,  velocity ~1032
+
+VK 72.01
+  value 0 : n=1, velocity ~600
+  value 1 : n=1, velocity ~552
 ```
 
-In each of those vehicles, adjacent slot descriptors differ by:
+Within each vehicle, Type28 partitions recorder shots into stable ammunition/ballistic families. This is incompatible with the old target-lock/auto-aim hypothesis.
+
+## Relationship to method17 shell descriptors
+
+Avatar method17 is independently proven as recorder ammunition state and exposes a current shell descriptor family.
+
+The correct production path is:
 
 ```text
-0x00010000
+Type28 selectionValue
+-> method17 shellDescriptor
+-> version-matched shell catalog
+-> user-facing shell name/type
 ```
 
-which is exactly the shape expected from discrete ammunition entries within one vehicle/gun descriptor namespace.
+Do **not** hardcode:
 
-FV215b likewise shows stable slot-linked descriptors, with slot2 occasionally resolving to another descriptor after ammunition-state changes/exhaustion. That is compatible with selection/fallback behavior and is not compatible with a PC target-lock state interpretation.
+```text
+wire value 0 == first UI shell
+wire value 1 == second UI shell
+wire value 2 == third UI shell
+```
+
+without descriptor-level closure for that vehicle/version.
+
+For FV215b, current gameplay shell families are AP / APCR / HE-family. Replay ballistics independently identify the 1440.72 m/s family as the high-velocity APCR selection, while the two 1152.36 m/s selections require descriptor/damage behavior to distinguish AP from HE-family.
 
 ## Verdict
 
-> Type28 = **recorder current ammunition slot / selection index — PROVEN for the current Blitz 11.19 China mobile corpus**.
+> Type28 = **recorder ammunition selection state — PROVEN current Blitz 11.19 behavioral identity**.
 
 Proven facts:
 
 ```text
-payload type      : u32 LE
+payload codec     : u32 LE
 observed domain   : {0,1,2}
 recorder-local    : yes
-semantic family   : ammunition selection
-own-shot closure  : 324 unique method29 shotIds == 324 settlement shots
-method17 closure  : stable slot ↔ shell descriptor families
-ballistic closure : stable slot ↔ projectile velocity families per vehicle
+own-shot closure  : 324 unique shotIds == 324 settlement shots
+ballistic closure : stable selectionValue -> projectile velocity family
 ```
 
-The exact UI numbering convention is version/client scoped. Do not assume every future vehicle exposes exactly three slots or that all indices are populated.
+Still version-scoped / not globally safe:
+
+```text
+selectionValue -> UI slot number
+selectionValue -> exact shell name/type without method17/catalog join
+```
 
 ## Safe event model
 
 ```text
-AmmunitionSlotChanged {
+AmmunitionSelectionChanged {
     rawClockSec
-    slotIndex : u32
+    selectionValue : u32
 }
 ```
 
-Safe production uses include:
+When associating a shot:
 
-- reconstruct the recorder's selected ammunition slot over time;
-- associate own shots with ammunition selection;
-- cross-check method17 shell descriptors and ammunition quantity;
-- improve AI Review analysis of ammunition choice;
-- battle playback/UI reconstruction.
+```text
+selection = latest Type28 value in the same arena at launchClock
+```
+
+If no Type28 value exists yet in that arena, preserve `selection = UNKNOWN`.
 
 ## Important negative conclusion
 
-Type28 must not be labeled as target lock, auto-aim, target lost, sniper mode, or another PC control-state enum. That interpretation was a historical numeric coincidence and is explicitly SUPERSEDED.
+Type28 must not be labeled as target lock, auto-aim, target lost, sniper mode or another historical PC control-state enum. That interpretation is SUPERSEDED.
