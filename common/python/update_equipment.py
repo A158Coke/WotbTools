@@ -27,6 +27,7 @@ from update_tankopedia import (
     EQUIPMENT_URL,
     PB_URL,
     as_int,
+    as_str,
     decode_protobuf,
     f1,
     filter_to_business_tiers,
