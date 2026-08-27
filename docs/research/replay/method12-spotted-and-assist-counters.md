@@ -184,22 +184,107 @@ final method12 baseType15.count == PlayerResults field119
 
 Realtime baseType15 increments cluster after allied destruction of enemy vehicles for which the recorder had prior combat involvement. However it is **not identical** to wrapper6 field3.
 
+### 58-candidate eligibility split
+
+Using strict current-corpus vehicle method8 attacker/victim identity plus wrapper6 death records, the 34 arenas contain 58 cases with this shape:
+
+```text
+recorder attacked enemy victim
+→ later a recorder teammate killed that victim
+```
+
+The split is:
+
+```text
+baseType15 increment after kill : 28
+no baseType15 increment         : 30
+```
+
+Therefore the old broad hypothesis:
+
+```text
+"recorder damaged/attacked target and teammate later killed it"
+```
+
+is **REJECTED as sufficient eligibility**.
+
+### Direct-attack count is necessary in this sample, not sufficient
+
+For those 58 candidates:
+
+```text
+positive baseType15 cases: direct recorder attack count min = 2
+negative cases:            direct recorder attack count min = 1
+```
+
+All 28 positives have at least two supported direct method8 attack events against the victim. But 17 negatives also have at least two such attacks.
+
+Thus:
+
+```text
+>=2 direct attacks
+```
+
+is a useful discriminator in this corpus but **not** the exact rule.
+
+### Observable damage and timing separate the populations but do not close a threshold
+
+Using same-clock victim prop3 current-HP changes to estimate recorder-attributed observable damage:
+
+```text
+positive median observable damage ≈ 1119 HP
+negative median observable damage ≈  418 HP
+```
+
+The positive population is therefore substantially more contribution-heavy. Time since the recorder's last supported direct attack to teammate kill also differs:
+
+```text
+positive median ≈  8.8 s
+negative median ≈ 23.1 s
+```
+
+But neither dimension is a hard threshold:
+
+- positive cases include long delays;
+- positive observable damage share can be as low as roughly 11% of the victim's maximum observed HP;
+- negative cases can exceed roughly 27% observable share;
+- therefore neither a fixed recent-hit timer nor a simple `>40%` damage-share threshold explains baseType15.
+
+This is especially important because wrapper6 field3 has a separate kill-feed secondary-attribution behavior and must not be used as a proxy for baseType15.
+
+### Current safe interpretation
+
+The strongest current model is:
+
+```text
+baseType15 / field119
+= cumulative assisted-destruction / combat-contribution feedback family
+  with an additional eligibility rule not yet recovered
+```
+
+Verdict:
+
+> relationship to teammate destruction after recorder contribution: **PROVEN family-level**
+>
+> exact qualification rule / user-facing stat name: **PARTIAL**
+
 Important distinction:
 
-- wrapper6 field3 is an optional participant/entity attached to a specific vehicle-killed record and is now a strong kill-feed assister candidate;
+- wrapper6 field3 is an optional participant/entity attached to a specific vehicle-killed record and is a separate strong kill-feed assister candidate;
 - method12 baseType15 is a cumulative recorder feedback counter;
 - many baseType15 increments occur when wrapper6 field3 is another player, so the two surfaces must not be merged.
-
-The exact qualification rule for baseType15 / field119 remains PARTIAL.
 
 ## Controlled validation target for baseType15
 
 A later controlled corpus should independently vary:
 
 1. non-killer damage share to the victim;
-2. whether the non-killer appears by name in the kill notification;
-3. wrapper6 field3;
-4. method12 baseType15 increment;
-5. settlement field119.
+2. number of separate damaging hits;
+3. time from last contribution to teammate kill;
+4. tracking/spotting assist state;
+5. whether the non-killer appears by name in the kill notification;
+6. wrapper6 field3;
+7. method12 baseType15 increment;
+8. settlement field119.
 
 This will determine whether field119 is a separate assisted-destruction/ribbon counter, a broader combat-contribution counter, or another kill-related feedback class.
