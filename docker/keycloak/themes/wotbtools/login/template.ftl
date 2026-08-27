@@ -27,6 +27,28 @@
             <script src="${url.resourcesPath}/${script}" type="text/javascript"></script>
         </#list>
     </#if>
+    <script type="importmap">
+        {
+            "imports": {
+                "rfc4648": "${url.resourcesCommonPath}/vendor/rfc4648/rfc4648.js"
+            }
+        }
+    </script>
+    <script src="${url.resourcesPath}/js/menu-button-links.js" type="module"></script>
+    <#if scripts??>
+        <#list scripts as script>
+            <script src="${script}" type="text/javascript"></script>
+        </#list>
+    </#if>
+    <script type="module">
+        <#outputformat "JavaScript">
+        import { startSessionPolling } from ${(url.resourcesPath + "/js/authChecker.js")?c};
+
+        startSessionPolling(
+            ${url.ssoLoginInOtherTabsUrl?c}
+        );
+        </#outputformat>
+    </script>
     <script type="text/javascript">
         // Inline theme bootstrap to avoid a flash of the wrong theme.
         (function () {
@@ -47,6 +69,17 @@
             link.setAttribute("aria-disabled", "true");
         });
     </script>
+    <#if authenticationSession??>
+        <script type="module">
+            <#outputformat "JavaScript">
+            import { checkAuthSession } from ${(url.resourcesPath + "/js/authChecker.js")?c};
+
+            checkAuthSession(
+                ${authenticationSession.authSessionIdHash?c}
+            );
+            </#outputformat>
+        </script>
+    </#if>
 </head>
 <body class="${properties.kcBodyClass!}" data-page-id="login-${pageId}">
 <div class="${properties.kcLoginClass!}">
@@ -74,7 +107,7 @@
                 </div>
               </div>
             </#if>
-            <button tabindex="0" id="wbtb-theme-toggle" class="wbtb-theme-toggle" type="button" aria-label="${msg('wbtbThemeToggle')}" title="${msg('wbtbThemeToggleTitle')}">
+            <button tabindex="0" id="wbtb-theme-toggle" class="wbtb-theme-toggle" type="button" data-label-to-light="${msg('wbtbThemeToggleToLight')}" data-label-to-dark="${msg('wbtbThemeToggleToDark')}" aria-label="${msg('wbtbThemeToggleToLight')}" title="${msg('wbtbThemeToggleToLight')}">
                 <span class="wbtb-theme-toggle__sun" aria-hidden="true"></span>
                 <span class="wbtb-theme-toggle__moon" aria-hidden="true"></span>
             </button>
