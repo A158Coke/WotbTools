@@ -2,8 +2,10 @@
   "meta": {
     "source": "https://assets.blitzkit.app/definitions/skills.pb",
     "sourceProject": "blitzkit/blitzkit",
-    "generatedAt": "2026-08-27T17:38:00Z",
-    "count": 20
+    "generatedAt": "2026-08-27T18:32:57Z",
+    "count": 20,
+    "sourceGameVersion": "11.19.0.834_7320229",
+    "sourceHash": "07be612fc0a2fe0b7b59a7903ee8a1b74e15b328bc7da3100b86c5fe6a28445b"
   },
   "classes": {
     "light": {
