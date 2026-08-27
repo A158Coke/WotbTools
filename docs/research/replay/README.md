@@ -1,315 +1,190 @@
 # WoT Blitz Replay Protocol Research Archive
 
-本目录系统记录 WotBTools 对 `.wotbreplay` 的逆向研究。
+本目录记录 WotBTools 对 WoT Blitz `.wotbreplay` 的逆向研究。
 
-> 基础 canonical corpus：34 个唯一 Blitz `11.19.0_china` arena。
+> Scope: Blitz `11.19.0_china` / `11.19.0_china_apple`.
 >
-> 后续 controlled probes：drowning、FV215b 弹种切换、Tungsten、Precision Fire + Tungsten 同时触发、Maus Observation Device/Fuel Tank、TVP ricochet/spaced armor/mantlet、WZ-120 HE matrix、method36 horizontal/vertical angular-speed probes 等。
+> Base canonical corpus: 34 unique arenas / 476 settled players.
 >
-> 当前状态：**PRODUCTION-USABLE REFERENCE FOR OBSERVED 11.19 SURFACES**。
+> Current research gate: **P0=0 / P1=0**.
 >
-> 这里的 complete/usable 不代表拿到了所有 Wargaming 私有变量名；它表示当前高价值 gameplay surfaces 已有足够证据用于 parser、battle reconstruction、HP/death、shot result、module/crew、ammo、targeting 与 AI Review fact extraction。
+> Status: **CORE PROTOCOL RESEARCH COMPLETE / PRODUCTION-USABLE FOR CURRENT 11.19 OBSERVED AND CONTROLLED SURFACES**.
+
+这里的 complete 不表示拿到了全部 Wargaming 私有变量名，也不表示单 POV replay 是 omniscient telemetry。它表示当前 WotBTools 高价值 replay surfaces 已经没有已知 P0/P1 语义 blocker；剩余工作属于 P2/P3 私有符号、低频 enum、实现收敛和未来版本回归。
 
 ## 权威读取顺序
 
-后续实现、审查和继续研究必须按以下顺序读：
+后续实现、审查和研究必须按以下优先级读取：
 
-1. **`WOTB_REPLAY_PROTOCOL_11_19_COMPLETE_REFERENCE.md`** — 当前完整 implementation-oriented reference；新维护者优先读这一份。
-2. `inventory.md` — 原 34-arena canonical ledger 与 surface inventory。
-3. `research-completion-audit-11.19.md` — 原 corpus completion gate 与 evidence boundaries。
-4. 对应专项 closure 文档 — 某个字段/机制的完整证据链、controlled probe 和 counterexample。
-5. `protocol.md`、早期 broad summary/probe 文档 — 研究轨迹与历史上下文；若冲突，以 1–4 为准。
+1. **`WOTB_REPLAY_PROTOCOL_11_19_BILINGUAL_COMPLETE_REFERENCE.md`** — 新的中英双语顶层权威文档；同时区分 protocol truth 与 `main` 当前实现状态。
+2. 当前 focused closure 文档，例如 `type10-movement-transform-closure.md`、`method38-0200-device-not-pierced-closure.md`、method36 / HP / ammo / component 专项 closure。
+3. `inventory.md` — canonical fact ledger。
+4. `research-completion-audit-11.19.md` — completion gate / remaining-boundary audit。
+5. `WOTB_REPLAY_PROTOCOL_11_19_COMPLETE_REFERENCE.md` — 较早英文综合参考；若与 1–4 冲突，以 1–4 为准。
+6. `protocol.md` 和早期 broad probe notes — 研究轨迹与历史上下文。
 
-早期文档允许保留当时的错误假设，前提是已经被后续 closure 标记为 `SUPERSEDED/REJECTED`。不要脱离权威读取顺序单独把旧笔记当生产事实。
+`main/docs/reference/replay-data.md` 等 11.18-era production docs 不能覆盖 PR147 current controlled evidence；其中部分 Type4、Type10 tail、legacy direct-damage 解释已被后续研究推翻或收敛。
 
 ## 研究原则
 
-- 语义等级：`PROVEN / VERY STRONG PARTIAL / PARTIAL / UNKNOWN / SUPERSEDED / REJECTED`。
-- `PROVEN` 必须依赖当前 replay 行为闭环；历史 PC/WoT schema 只能做架构 cross-check。
-- numeric packet/method/property/component ID 全部按 client version + entity class 解释。
-- UNKNOWN 不为了业务方便强行命名。
-- raw fields 必须保留。
-- single-POV/AoI 是真实信息边界，不伪造 omniscient telemetry。
+- Evidence grades: `PROVEN / VERY STRONG PARTIAL / PARTIAL / UNKNOWN / SUPERSEDED / REJECTED`.
+- `PROVEN` 必须依赖当前 replay 行为；历史 PC/WoT/BigWorld 只做 architecture cross-check。
+- numeric IDs 全部 version + entity-class scoped。
+- UNKNOWN 默认 raw-preserve，不为了业务完整度强行命名。
+- single POV / AoI 是真实信息边界。
 - controlled replay 优先于相关性猜测。
+- non-blocking != low-value。
 
-## 当前核心事实摘要
-
-### Container / framing
-
-```text
-.wotbreplay = ZIP
-meta.json
-data.wotreplay
-battle_results.dat
-```
-
-`data.wotreplay` packet framing：
+## Current P0/P1 closure summary
 
 ```text
-payloadLen  u32 LE
-type        u32 LE
-rawClockSec f32 LE
-payload     bytes[payloadLen]
+P0 = 0
+P1 = 0
+
+Type10 movement / physical units      CLOSED
+Type10 vertical/airborne movement     CLOSED
+Type10 trailing byte == onGround      REJECTED and corrected
+method36 high-value targeting roles   CLOSED
+method38 0x0200 positive sample       CLOSED
 ```
 
-Header 长度动态，不能 hard-code packet-stream offset。
+### Type10 movement
 
-### Projectile / shot lifecycle
+Current 49-byte layout:
 
 ```text
-Vehicle method0 firing
--> Avatar method29 launch + shotId + launchPoint + launchVelocity
--> Avatar method20 terminal endpoint
--> Avatar method27 explosion/terminal-resolution branch when present
+0x00 entityId
+0x04 spaceId
+0x08 attachment/parent entity ID
+0x0C position x,y,z
+0x18 position/filter-error x,y,z
+0x24 hull yaw,pitch,roll
+0x30 trailingStateRaw  // semantic UNKNOWN; NOT onGround
 ```
 
-method29 是全局 observed projectile feed；必须先过滤 recorder shooter identity。
+Canonical population: `1,287,221 / 1,287,221` Type10 packets are 49 bytes.
 
-### Ammunition
+Controlled speed calibration:
 
 ```text
-Type28 = recorder ammunition selection state          PROVEN
-Avatar method17 = shell descriptor / ammo inventory  PROVEN behavioral identity
+Kanonenjagdpanzer 105 forward  15.8364 unit/s -> 57.011 km/h
+Kanonenjagdpanzer 105 reverse   5.5804 unit/s -> 20.089 km/h
 ```
 
-FV215b controlled 11.19 mapping：
+Therefore `1 Type10 position unit ~= 1 meter` is PROVEN controlled for current 11.19.
+
+Rhm airborne controlled replay independently gives a ballistic Type10-Y trajectory with ~`-9.74 unit/s²` vertical acceleration, while the trailing byte remains `1` for `369/369` recorder samples. Therefore `offset 0x30 == onGround` is REJECTED.
+
+### method38 resultFlags16
 
 ```text
-Type28=0 -> 0x003C5A0A -> AP
-Type28=1 -> 0x00465A0A -> APCR
-Type28=2 -> 0x003B5A0A -> HESH / HE-family
+0x0001 direct terminal shell kill                                      PROVEN
+0x0002 target already dead before attack                               PROVEN sample / low-N
+0x0004 fire started                                                     PROVEN
+0x0008 ricochet                                                         PROVEN controlled
+0x0010 positive material/vehicle penetration by projectile              PROVEN
+0x0020 projectile non-penetration / material stop                       PROVEN controlled
+0x0040 zero-DF/spaced layer pierced by projectile                       PROVEN controlled
+0x0080 zero-DF/spaced layer not pierced                                 PROVEN controlled
+0x0100 internal device/module pierced/involved by projectile            PROVEN
+0x0200 internal device/module not pierced by projectile                 PROVEN controlled
+0x0400 chassis/track damaged by projectile                              PROVEN
+0x0800 Gun damaged by projectile                                        PROVEN
+0x1000 positive-DF material explosion branch                            PROVEN controlled
+0x2000 zero-DF/spaced layer explosion branch                            PROVEN controlled low-N
+0x4000 component/device involved by explosion                           PROVEN controlled
+0x8000 component/device damaged by explosion                            PROVEN controlled
 ```
 
-不要把该映射推广为所有车辆的 UI-slot rule。
+`0x0200` closure comes from the controlled Quby -> Maus replay: first 15 projectiles aimed at the Gun/barrel, second 15 at the Fuel Tank, with `30/30` recorder method29 launches paired same-clock to method38. The critical Gun-phase sample is `0x0240 = 0x0200 | 0x0040`; the same phase also contains `0x0100 + component36`, while the Fuel Tank control repeatedly produces `0x0110 + component33`.
 
-### Component namespace
+### Components / crew
 
 ```text
-31 Engine              PROVEN
-32 Ammo Rack           PROVEN
-33 Fuel Tank           PROVEN direct controlled
-34 Right Track         PROVEN
-35 Left Track          PROVEN
-36 Gun                 PROVEN
-37 Turret Rotator      PROVEN version-scoped
-38 Observation Device  PROVEN direct controlled
-39 Commander           PROVEN
-40 Driver              PROVEN
-41 Gunner               PROVEN
-42 UNKNOWN / unobserved
-43 Loader               PROVEN
+31 Engine
+32 Ammo Rack
+33 Fuel Tank
+34 Right Track
+35 Left Track
+36 Gun
+37 Turret Rotator
+38 Observation Device
+39 Commander
+40 Driver
+41 Gunner
+42 UNKNOWN/unobserved
+43 Loader
 ```
 
-### method16 state lifecycle
+### method16 lifecycle
 
 ```text
 4  damaged/degraded operational
 5  critical/disabled
 18 automatic critical self-repair -> damaged
-19 fully repaired/cleared
+19 full repair/clear
 10 crew injured/shell-shocked
-22 crew healed/cleared
-```
-
-Controlled Fuel Tank probe also establishes：
-
-```text
-codeA=8 with component33
--> Fuel Tank ignition / fire-start transition family
-```
-
-### method38 current structure
-
-旧的 “optional single extension” 模型已 `SUPERSEDED`。
-
-Current safe model：
-
-```text
-victimVehicleId  u32
-resultFlags16    u16
-headerHi16Raw    u16
-resultCount      u8
-repeat resultCount:
-  componentToken u8
-  rawState       u8
-modifierCount    u8
-repeat modifierCount:
-  modifierId     u32 LE
-```
-
-### method38 resultFlags16
-
-```text
-0x0001 direct terminal shell kill                         PROVEN
-0x0002 target already dead before attack                  PROVEN sample / low-N
-0x0004 fire started                                       PROVEN
-0x0008 ricochet                                           PROVEN controlled
-0x0010 positive projectile material/vehicle penetration   PROVEN
-0x0020 projectile non-penetration/material stop           PROVEN controlled
-0x0040 zero-DF/spaced armor layer pierced                 PROVEN controlled
-0x0080 zero-DF/spaced armor layer not pierced             PROVEN controlled
-0x0100 internal component/device involved by projectile   PROVEN
-0x0200 UNKNOWN / no positive current sample               preserve raw
-0x0400 chassis/track damaged by projectile                PROVEN
-0x0800 Gun damaged by projectile                          PROVEN current samples / low-N
-0x1000 positive-DF material explosion branch              PROVEN controlled
-0x2000 zero-DF/spaced armor explosion branch              PROVEN controlled sample / low-N
-0x4000 component/device involved by explosion             PROVEN controlled
-0x8000 component/device damaged by explosion              PROVEN controlled
-```
-
-### method38 rawState
-
-```text
-0 -> component hit/involved; no newly observed persistent negative state
-1 -> module damaged / crew injured
-2 -> critical / disabled
-```
-
-Module hit != module damage；damage probability 按 component 独立 resolve。
-
-### method38 special modifiers
-
-Controlled replay 已关闭：
-
-```text
-modifierId 1 = Precision Fire  PROVEN
-modifierId 2 = Tungsten Shells PROVEN
-```
-
-同一发可以同时出现：
-
-```text
-modifierCount=2
-modifiers=[1,2]
-```
-
-因此：
-
-```text
-single optional extension                       SUPERSEDED
-Precision Fire / Tungsten mutually exclusive    REJECTED
-combined proc encoded as 3                      REJECTED current controlled sample
+22 crew healed/clear
 ```
 
 ### Targeting
 
 ```text
-Type31 = aiming-circle size                     PROVEN
-Type39 f5 = turret/gun relative yaw family      PROVEN relationship
-Type39 f6 = local gun pitch                     PROVEN relationship
+Type31 = aiming-circle/gun-marker size                     PROVEN
+Type39 f5 = turret/gun relative yaw family                 PROVEN relationship
+Type39 f6 = local gun pitch                                PROVEN relationship
+
+method36.root.field1 = turret/gun relative yaw             PROVEN
+method36.root.field2 = gun pitch                           PROVEN
+method36.root.field3 = max horizontal angular speed        PROVEN controlled
+method36.root.field4 = max vertical angular speed          PROVEN controlled
+method36.root.field5 = aiming-time physical scalar         PROVEN
+method36.field6.field1 = dynamic gun dispersion/bloom      PROVEN
 ```
 
-Avatar method36：
-
-```text
-root.field1 = current turret/gun relative yaw        PROVEN
-root.field2 = current gun pitch                      PROVEN
-root.field3 = max horizontal turret/gun angular speed PROVEN controlled, rad/s
-root.field4 = max vertical gun angular speed          PROVEN controlled, rad/s
-```
-
-Gun damage 使 method36 dispersion-like scalar精确 ×2，Repair Kit 恢复 baseline。
+Gun damage makes `field6.field1 ×2`; Reticle Calibration makes both aiming-time and bloom scalars exactly `×0.70` and they restore at the end boundary.
 
 ### HP / death
 
-Actual replay HP 优先于 Tankopedia base HP。
-
-Death 不得定义成 `HP<=0`。Controlled drowning：
-
 ```text
-causeFlag=5  = DROWNING
- deathReason=5 = DROWNING
-terminal HP 仍为正数
+causeFlag 0 = direct/default
+causeFlag 1 = fire
+causeFlag 2 = ramming
+causeFlag 3 = world/self-environment
+causeFlag 4 = UNKNOWN
+causeFlag 5 = drowning
 ```
 
-原 canonical corpus death precision：
+Controlled drowning proves positive-HP terminal death and `deathReason=5 = DROWNING`; therefore `death == HP<=0` is REJECTED.
+
+### Ammunition / special modifiers
 
 ```text
-settled dead combatants 287
-live sub-second terminal 283 = 98.61%
-settlement-second fallback 4 = 1.39%
+Type28 = recorder ammo selection state       PROVEN
+method17 = shell descriptor/inventory        PROVEN
+modifier 1 = Precision Fire                  PROVEN
+modifier 2 = Tungsten Shells                 PROVEN
+[1,2] on one hit                             PROVEN
 ```
 
-single POV 不得声称 100% 亚秒 death time。
+## Remaining bounded research
 
-### Visibility / AoI
-
-```text
-Type4 -> leaves recorder-observed AoI
-Type33 + Type5 -> later materialization/re-entry
-```
-
-`Type4 == death` 已 `REJECTED`。
-
-## Canonical consistency
+Not P0/P1 blockers:
 
 ```text
-unique arenas                     34
-settled players                  476
-unique recorder shots            324
-settlement recorder shots        324
-method38 recorder hits           295
-settlement recorder hits         295
-```
-
-旧 Type28 per-vehicle 表（总和 341）已 `SUPERSEDED`。
-
-## 已明确推翻、不得恢复的解释
-
-```text
-Type4 == death                                             REJECTED
-Type28 == target lock / auto aim                          REJECTED
-41 == Radioman / 42 == Gunner                             SUPERSEDED
-34/35 exact side unresolved                               SUPERSEDED
-baseType12 == base defended / dropped capture points      REJECTED
-all method38 32 header bits == one homogeneous hit enum   REJECTED
-historical PC upper hit-flag ordinals == current Blitz    REJECTED
-method38 0x1000 == universal Gun-damage bit               REJECTED
-Tankopedia base HP == replay actual HP source             REJECTED as primary
-single replay POV guarantees 100% sub-second death        REJECTED
-method38 tail == one optional u32 extension               SUPERSEDED
-Precision Fire/Tungsten mutually exclusive                REJECTED
-combined Precision Fire + Tungsten == modifier3           REJECTED current probe
-```
-
-## 当前剩余边界
-
-这些不是 parser/business blocker：
-
-```text
-method38 0x0200 positive sample
-component ID42 exact identity/private symbol
-method36 remaining scalar private names/units
-method38 rawState0 exact private enum name
+component42 exact private identity
+method38 rawState0 exact enum symbol
 method16 sparse transition-code private names
-settlement field118/baseType12 exact statistic name
-Vehicle prop7/8/9 complete token namespaces
-method17 initialization/feed tail exact fields
-unobserved deathReason/causeFlag values
-observer-only/cosmetic/platform symbols
-cross-version numeric stability
+method36 remaining static coefficient exact names/units
+Vehicle prop7/8/9 complete namespaces
+method17 init/feed-tail exact fields
+unobserved cause/death enum values
+Type10 trailingStateRaw exact semantic
+Type10 positionError exact generation rule
+observer/cosmetic/platform private names
+future-version numeric stability
 ```
 
-未来新 evidence 应 raw-preserve、version-gate，并同步更新 focused closure + `WOTB_REPLAY_PROTOCOL_11_19_COMPLETE_REFERENCE.md`。
+## Maintenance rule
 
-## 当前结论
-
-当前 11.19 replay research 已足够支持：
-
-```text
-回放解析
-战局重建
-HP 时间线
-死亡时间/死亡原因
-弹种与 ammunition state
-projectile lifecycle
-跳弹/未穿/间隙装甲/炮盾/HE splash
-模块/乘员 hit/damage/critical/repair
-Precision Fire / Tungsten
-瞄准方向与炮口俯仰
-visibility/AoI boundary
-AI Review authoritative fact extraction
-```
-
-剩余主要是 **私有命名、低频未见值和未来版本验证**，而不是核心 replay telemetry 缺失。
+任何新的 current-version PROVEN 事实必须同步：focused closure + bilingual complete reference + inventory；若影响 completion gate，再同步 completion audit。UNKNOWN 必须继续 raw-preserve/version-gate。
