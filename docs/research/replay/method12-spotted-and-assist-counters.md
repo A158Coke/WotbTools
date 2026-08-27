@@ -141,8 +141,6 @@ mapId         = 15
 recorder team = 1
 ```
 
-The same replay independently supplies a known single-capturer B episode for wrapper12 field6 validation.
-
 Later in the battle B is owned by team 1 and team 2 attempts to recapture it. Near the sole baseType12 increment:
 
 ```text
@@ -158,7 +156,7 @@ Later in the battle B is owned by team 1 and team 2 attempts to recapture it. Ne
 235.314  wrapper12 B -> owner=1, capturingTeam=2, progress=0, field5=1
 ```
 
-The final recorder settlement contains:
+Final recorder settlement:
 
 ```text
 field118 = 12
@@ -168,78 +166,113 @@ baseType12 final count = 1
 This is the cleanest current-corpus closure for the historical base-defense interpretation:
 
 ```text
-enemy is actively capturing owned B
-→ recorder fires / damages enemy vehicle
+enemy actively capturing owned B
+→ recorder damages enemy vehicle
 → baseType12 defense-family feedback increments
-→ public B capture progress is reset to zero ~0.2 s later
-→ settlement field118 records a positive magnitude (12)
+→ B capture progress resets to zero ~0.2 s later
+→ settlement field118 records positive magnitude 12
 ```
 
-The visible wrapper12 progress immediately before the reset is `10`, not `12`. This difference does not invalidate the relation because wrapper12 is a sampled aggregate base-progress stream while defense points operate on individual capturer contribution/server state. The last visible public sample can lag the actual contribution at the damaging event.
-
-### Important gameplay causality
-
-A capturing vehicle losing HP or receiving qualifying module damage can lose/reset its personal capture contribution. Therefore the relevant causal path is:
-
-```text
-capturer personal contribution
-→ qualifying recorder damage/module event
-→ contribution reset/reduction
-→ aggregate wrapper12 base progress reacts
-→ live baseType12 feedback
-→ field118 settlement magnitude
-```
-
-When multiple vehicles are capturing simultaneously, resetting one vehicle's contribution may be partly hidden by continued contribution from the others. Consequently, absence of a visible aggregate wrapper12 decrease is not valid negative evidence against this statistic.
+The last visible public progress is 10 rather than 12; wrapper12 is a sampled aggregate base-progress stream, whereas dropped/base-defense points act on server-side personal capture contribution. A two-point difference is therefore not contradictory.
 
 ### Updated verdict
 
-Combining:
-
-1. exact 34/34 presence relation between field118 and baseType12;
-2. small live occurrence count vs larger settlement magnitude;
-3. independently decoded wrapper12 Supremacy capture state;
-4. the Port defense-reset sequence above;
-5. historical/current Blitz result terminology exposing a separate dropped/base-defense capture statistic;
-
-supports:
+Combining the exact 34/34 presence relation, wrapper12 capture-state closure, the Port reset episode, and the distinct current Blitz dropped/base-defense statistic family supports:
 
 > `field118 / method12 baseType12` = **base-defense / dropped-capture-points family — VERY STRONG PARTIAL, near-PROVEN behavioral identity**.
 
-Exact current Blitz 11.19 symbolic identity `droppedCapturePoints` is deliberately kept below PROVEN until either:
+Exact current Blitz 11.19 symbolic identity `droppedCapturePoints` remains below PROVEN until another clean single-capturer defense sample closes the exact magnitude or a current schema names field118 directly.
 
-- a current-version schema names field118 directly; or
-- another clean single-capturer defense sample closes the numerical magnitude against the exact pre-hit personal contribution.
+## baseType15 and PlayerResults field119 — Destruction assistance
 
-The Port sample is sufficient to reject ordinary capture contribution, critical-hit count, kill count and ordinary Supremacy score as primary identities.
+This family is now closed.
 
-## baseType15 and PlayerResults field119
+### Final count equality
 
-A separate exact relation is already proven:
+Across all canonical arenas, including zero-by-absence:
 
 ```text
 final method12 baseType15.count == PlayerResults field119
-34 / 34 arenas including zero-by-absence
+34 / 34
 ```
 
-Realtime baseType15 increments cluster after allied destruction of enemy vehicles for which the recorder had prior combat involvement. It is not identical to wrapper6 field3.
+Positive author settlement values are only small integer counts (`1..3` in this corpus), and every live stream progresses monotonically by one eligible destroyed vehicle.
 
-### 58-candidate eligibility split
+### Exact ribbon-tier progression
+
+The method12 event code proves that the high byte is a ribbon/progression tier for baseType15.
+
+Observed progression:
 
 ```text
-recorder attacked enemy victim
-→ later a recorder teammate killed that victim
+first eligible vehicle:
+  eventCode = 0x000F
+  tierRaw   = 0
+  count     = 1
+
+second eligible vehicle:
+  eventCode = 0x010F
+  tierRaw   = 1
+  count     = 2
+
+third eligible vehicle:
+  eventCode = 0x020F
+  tierRaw   = 2
+  count     = 3
 ```
 
-Current split:
+Every current multi-increment stream follows this exact sequence; no counterexample occurs.
+
+### Current Blitz ribbon definition
+
+Wargaming's current Blitz ribbon documentation defines **Destruction assistance** as:
 
 ```text
-baseType15 increment after kill : 28
-no baseType15 increment         : 30
+player inflicts at least 25% of an enemy vehicle's HP
+→ that vehicle is subsequently destroyed by the player's allies
 ```
 
-All 28 positives have at least two supported direct recorder attacks, but 17 negatives also do. Observable damage and recency separate the populations statistically but do not define a hard threshold.
+Ribbon tiers are:
 
-Current safest model:
+```text
+1 eligible destroyed vehicle -> Common
+2                            -> Rare
+3                            -> Epic
+4+                           -> Legendary
+```
 
-> `baseType15 / field119` = **assisted-destruction / combat-contribution feedback family with additional eligibility rule — PROVEN family-level / PARTIAL exact rule**.
+That is exactly the behavioral and tier shape observed for baseType15.
+
+### Why earlier positive/negative analysis looked fuzzy
+
+The previous 58-candidate test used replay-observable damage reconstructed from method8/HP observations:
+
+```text
+recorder attacked enemy
+→ teammate later killed enemy
+```
+
+28 cases emitted baseType15 and 30 did not. Positive cases were much more contribution-heavy, but some reconstructed shares appeared below 25%.
+
+That does not contradict the ribbon rule because the old damage estimator was observation-limited:
+
+- an enemy may enter the recorder's observable HP stream after already taking recorder damage;
+- AoI/visibility gaps can hide intermediate HP states;
+- maximum observed HP is not guaranteed to be true battle-start HP;
+- packet pairing can undercount damage around visibility/state boundaries.
+
+The official 25% rule explains why simple "any prior damage" and "two hits" heuristics failed.
+
+### Final verdict
+
+> method12 `baseType15` = **cumulative Destruction assistance eligible-vehicle count — PROVEN current Blitz semantic identity**.
+>
+> PlayerResults `field119` = **final Destruction assistance count — PROVEN current corpus**.
+
+The current 34 arenas demonstrate counts up to 3; the official ribbon definition predicts the next tier at 4+.
+
+Important distinction:
+
+- wrapper6 field3 remains a separate per-kill secondary attribution/assister surface;
+- baseType15/field119 is the cumulative **Destruction assistance ribbon/statistic** governed by the ≥25% damage eligibility rule;
+- these surfaces must not be merged.
