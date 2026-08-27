@@ -1,6 +1,6 @@
 # Entity materialization and transform bootstrap
 
-> Corpus: strict-framing 34 unique arenas from the 44-file Blitz 11.19.0 China research corpus.
+> Corpus: strict-framing 34 unique arenas from the 44-file Blitz 11.19.0 China research corpus, with one independent T-100 LT sample used for later loadout closure.
 >
 > This document records the relationship between Type33, Type5 and Type10. The goal is to separate an entity's **transport/materialization lifecycle** from combat death and from later continuous position streaming.
 
@@ -17,7 +17,7 @@ Type5(
     entityId,
     entityTypeId,
     initial transform/state block,
-    optional entity-class-specific initialization payload
+    entity-class-specific initialization payload
 )
     |
     | for mobile entityTypeId=2, normal Type10 follows
@@ -25,7 +25,15 @@ Type5(
 Type10 continuous transform/position stream
 ```
 
-Type5 is therefore not an opaque "enterWorld-ish" packet anymore. Its current physical role is **entity materialization with an initial transform/state snapshot and optional class-specific initialization data**.
+Type5 is therefore not an opaque "enterWorld-ish" packet anymore. Its current physical role is **entity materialization with an initial transform/state snapshot and class-specific initialization data**.
+
+For current combat vehicles, part of that class-specific initialization is now independently decoded as the battle loadout:
+
+```text
+3 consumable descriptors
+3 provision descriptors
+9 equipment IDs
+```
 
 Exact historical BigWorld symbolic message names remain `PARTIAL` until a version-matched transport schema is recovered.
 
@@ -68,7 +76,7 @@ All current Type5 records begin with:
 ```text
 entityId     : u32 LE
 entityTypeId : u16 LE
-...          : transform/state bootstrap + optional class-specific initialization
+...          : transform/state bootstrap + class-specific initialization
 ```
 
 Observed `entityTypeId` domain:
@@ -128,7 +136,7 @@ Verdict:
 
 ## Variable payload size separates transform from class initialization
 
-Type5 record lengths split into two broad families.
+Type5 record lengths split into broad families.
 
 ### `entityTypeId=3` / static-family records
 
@@ -160,7 +168,54 @@ Their first transform/state region is followed by additional entity-specific dat
 
 Verdict:
 
-> Type5 consists of a **common materialization transform prefix plus entity-class-specific initialization data** — `PROVEN structure / PARTIAL field-level schema`.
+> Type5 consists of a **common materialization transform prefix plus entity-class-specific initialization data** — `PROVEN structure / PARTIAL complete field-level schema`.
+
+## Decoded combat-vehicle loadout tail
+
+Current combat-vehicle Type5 payloads expose a stable loadout tail:
+
+```text
+0A 06
+  6 × 14-byte item descriptors
+0B 09
+  9 equipment-ID bytes
+```
+
+Across the current 34-arena corpus plus one independent T-100 LT sample:
+
+```text
+Type5 payloads with valid 9-byte equipment surface : 1,097
+full six-item combat-loadout family                : 1,037
+four-item observer/non-combat family               :    60
+```
+
+For all 1,037 full combat loadouts:
+
+```text
+item[0..2] = consumable slots : 1,037 / 1,037
+item[3..5] = provision slots  : 1,037 / 1,037
+```
+
+The nine equipment bytes are direct numeric equipment IDs:
+
+```text
+equipmentId = unsignedByte(rawEquipmentBytes[slot])
+```
+
+Twenty distinct current equipment IDs were naturally observed and all satisfy the byte=ID rule with the expected equipment-grid slot position.
+
+Enemy re-materialization independently proves this is not recorder-only:
+
+```text
+enemy Type5 re-materializations inspected : 683
+complete 3+3+9 loadout surface            : 683 / 683
+```
+
+See `loadout-materialization.md` for the full equipment table, provision/consumable wire-code inventory and versioning rules.
+
+Verdict:
+
+> current combat Vehicle Type5 carries **battle loadout materialization — PROVEN**.
 
 ## Relationship to enemy visibility/AoI lifecycle
 
@@ -187,6 +242,8 @@ Death            = independent settlement / HP / kill fact
 
 These concerns must not be collapsed into one "entity gone" state.
 
+A useful consequence of loadout materialization is that re-entering enemy vehicles re-send their current initialization/loadout surface rather than requiring the recorder to retain an inferred hidden-state configuration.
+
 ## Consumer guidance
 
 A safe reconstruction state machine is:
@@ -199,7 +256,13 @@ on Type5(eid, type, initialState, initPayload):
     entity.lifecycle = MATERIALIZED
     entity.entityTypeId = type
     seed transform/state from Type5
-    preserve raw class-specific initialization bytes until decoded
+
+    if supported combat-loadout tail exists:
+        decode 3 consumable wire descriptors
+        decode 3 provision wire descriptors
+        decode 9 direct equipment IDs
+
+    preserve all remaining undecoded initialization bytes
 
 on Type10(eid, transform):
     entity.lifecycle = ACTIVE_OBSERVED
@@ -214,8 +277,9 @@ on Type4(enemy eid):
 
 1. Exact symbolic BigWorld/Blitz names for Type33 and Type5.
 2. Complete byte-level field map of the common transform/state block beyond the already consumed Type10 coordinates/orientation.
-3. Complete class-specific initialization payload for `entityTypeId=2` vehicle materialization.
-4. Meaning of the 136 non-settlement `entityTypeId=2` entities.
-5. Full semantics of `entityTypeId=3` static entities and whether additional entity type IDs appear in other game modes/maps.
+3. Remaining vehicle-specific initialization fields outside the now-proven HP/loadout surfaces.
+4. Exact provision wire-code -> logical provision mapping inside the three provision descriptors.
+5. Meaning of the 136 non-settlement `entityTypeId=2` entities, including the smaller four-item initialization family.
+6. Full semantics of `entityTypeId=3` static entities and whether additional entity type IDs appear in other game modes/maps.
 
 Until these are closed, preserve unknown initialization bytes rather than discarding them or guessing names.
