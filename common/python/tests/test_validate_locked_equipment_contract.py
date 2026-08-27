@@ -59,10 +59,12 @@ class LockedEquipmentContractTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "BLITZKIT_LOCKED_DESCRIPTION_CHANGED"):
             validator.validate_locked_contract(payload, details)
 
-    def test_game_version_must_be_reviewed(self):
-        self.assertTrue(validator.validate_reviewed_game_version("11.19.0"))
+    def test_game_version_must_be_exact_reviewed_build(self):
+        self.assertTrue(
+            validator.validate_reviewed_game_version("11.19.0.834_7320229")
+        )
         with self.assertRaisesRegex(RuntimeError, "BLITZKIT_LOCKED_REVIEW_REQUIRED"):
-            validator.validate_reviewed_game_version("11.20.0")
+            validator.validate_reviewed_game_version("11.19.0.835_9999999")
 
 
 if __name__ == "__main__":
