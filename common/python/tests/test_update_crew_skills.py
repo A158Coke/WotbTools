@@ -70,6 +70,10 @@ class CrewSkillsTest(unittest.TestCase):
         self.assertEqual(16, document["meta"]["count"])
         self.assertEqual("11.19.0", document["meta"]["sourceGameVersion"])
         self.assertEqual("abc123", document["meta"]["sourceHash"])
+        self.assertEqual(
+            {"trainingEligibility": "class_specific", "effectScope": "all_vehicles"},
+            document["semantics"],
+        )
         self.assertEqual(0, document["classes"]["light"]["classId"])
         self.assertEqual(
             "https://api.blitzkit.app/icons/skills/light_a.webp",
@@ -95,6 +99,26 @@ class CrewSkillsTest(unittest.TestCase):
         self.assertIs(existing, document)
         self.assertEqual("2026-08-20T00:00:00Z", document["meta"]["generatedAt"])
         self.assertEqual("old-hash", document["meta"]["sourceHash"])
+
+    def test_missing_semantics_is_upgraded_once(self):
+        classes = sample_classes()
+        existing = ucs.build_document(
+            classes,
+            game_version="11.19.0",
+            skills_hash="old-hash",
+            generated_at="2026-08-20T00:00:00Z",
+        )
+        del existing["semantics"]
+        document, changed = ucs.reconcile_document(
+            existing,
+            classes,
+            game_version="11.19.0",
+            skills_hash="old-hash",
+            generated_at="2026-08-27T00:00:00Z",
+        )
+        self.assertTrue(changed)
+        self.assertEqual("class_specific", document["semantics"]["trainingEligibility"])
+        self.assertEqual("all_vehicles", document["semantics"]["effectScope"])
 
     def test_new_skill_is_imported(self):
         old_classes = sample_classes()
