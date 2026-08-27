@@ -2,6 +2,11 @@
  * Replay parser + battle reconstruction. Visual/UX composition only.
  */
 
+/* Side Panel（PlayerDetailDrawer）桌面端真 reflow：工作区按抽屉宽度预留右侧空间
+   （--pd-drawer-offset 由组件设置，tablet/mobile 恒为 0px 走原有 overlay），主内容随之收窄/扩展，
+   不被 fixed overlay 覆盖（计划 §7）。 */
+.layout-data-workspace { padding-right: var(--pd-drawer-offset, 0px) !important; }
+
 /* ========== Replay parser ========== */
 .layout-data-workspace .uploadwrap {
   position: relative;
@@ -96,6 +101,9 @@
   display: flex !important;
   flex-wrap: wrap;
   align-items: center;
+  /* 选中 battle 后工具栏变高（battle tab + 追加 action 按钮）；这里随文档流，
+     禁用 showcase.css 的 position:sticky，避免 sticky 高盒在滚动时盖住下方 metric 卡/表格。 */
+  position: static !important;
   gap: 10px 12px;
   margin: 14px 0 !important;
 }

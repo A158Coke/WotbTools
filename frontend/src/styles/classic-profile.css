@@ -52,6 +52,7 @@ html[data-ui-profile="classic"] {
   --border-chip: #ddd0b8;
   --border-col: #ccd2c8;
   --border-light: #e3e6e1;
+  --border-light-strong: #c2c8bd;
   --border-heavy: #bac4b4;
   --border-warn: #c98a2e;
   --border-tab-active: #c9762e;
@@ -346,7 +347,7 @@ html[data-ui-profile="classic"] :is(.of-status, .status-approved, .approved) {ba
 html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) {color: var(--text) !important}
 html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .hof-admin-tabs,
 html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .hof-admin-filters,
-html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .tablewrap {background: var(--bg-card) !important}
+html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .tablewrap {background: var(--bg-card) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important; color: var(--text) !important}
 html[data-ui-profile="classic"] :is(.hof-admin-tabs) {border-color: var(--border) !important}
 html[data-ui-profile="classic"] .hof-admin-tabs button {color: var(--text-sub) !important; background: var(--bg-card) !important; border-color: var(--border-light) !important}
 html[data-ui-profile="classic"] .hof-admin-tabs button:hover {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--border) !important}
@@ -366,6 +367,15 @@ html[data-ui-profile="classic"] .hof-admin .pagination button:hover:not(:disable
 html[data-ui-profile="classic"] .hof-admin .page-size select {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important}
 html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .denied, html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .login {color: var(--text) !important}
 html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .review-modal, html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .approve-modal {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important; box-shadow: var(--hard-shadow) !important}
+/* HoF Admin 收尾（Blocker 3）：表格行基础背景 / denied 标题 / dmg 数值色 跟随浅色 token（防深色行 / 近白字残留） */
+html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .hof-admin-table tbody tr {background: var(--bg-card) !important}
+html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .hof-admin-denied h2 {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] :is(.hof-admin, .hof-admin-page, .hofadmin-page, .admin-hof-page) .dmg {color: var(--accent-dark) !important}
+
+/* Blocker 2 — 选择 battle 后动态出现的 .mcards/.mc 指标卡（App.vue 全局深色）必须跟随浅色 token */
+html[data-ui-profile="classic"] .layout-data-workspace .mc {background: var(--bg-card) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .mc .k {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .layout-data-workspace .mc .v {color: var(--text-heading) !important}
 
 /* ---- 管理 / Profile / Admin Users / Version / Contact / Rating Docs ---- */
 html[data-ui-profile="classic"] :is(.admin-page, .profile-page, .version-page, .contact-page, .rating-docs-page, .admin-users-page) {color: var(--text) !important}

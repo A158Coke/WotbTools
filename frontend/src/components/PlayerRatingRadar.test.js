@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PlayerRatingRadar from './PlayerRatingRadar.vue'
@@ -117,5 +119,19 @@ describe('PlayerRatingRadar', () => {
     expect(wrapper.find('.radar-ref').exists()).toBe(false)
     const head = wrapper.findAll('.radar-detail thead th').map(n => n.text())
     expect(head).toEqual(['radar_lbl.dimension', 'radar_lbl.player'])
+  })
+
+  it('outer 100% grid polygon renders with radar-grid-outer + uses a defined border token（回归：最外围边界不可再消失）', () => {
+    const wrapper = mountRadar(SEVEN)
+    const outer = wrapper.findAll('.radar-grid').find(n => n.classes().includes('radar-grid-outer'))
+    expect(outer).toBeTruthy()
+    const comp = readFileSync(resolve(process.cwd(), 'src/components/PlayerRatingRadar.vue'), 'utf8')
+    expect(comp).toContain('var(--border-light-strong)')
+    const tokens = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8')
+    const showcase = readFileSync(resolve(process.cwd(), 'src/styles/showcase.css'), 'utf8')
+    const classic = readFileSync(resolve(process.cwd(), 'src/styles/classic-profile.css'), 'utf8')
+    expect(tokens).toContain('--border-light-strong:')
+    expect(showcase).toContain('--border-light-strong:')
+    expect(classic).toContain('--border-light-strong:')
   })
 })

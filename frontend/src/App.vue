@@ -325,10 +325,10 @@ tr:hover td { background: var(--bg-list-hover); }
   margin-left: 4px; border-radius: 50%; font-size: 12px; font-weight: 700; line-height: 1;
   color: var(--text-sub); background: transparent; cursor: pointer; transition: all .12s; }
 .tabx:hover { background: var(--error); color: var(--danger-solid-fg); }
-.mcards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
-.mc { background: rgba(16,22,26,.94); border: 1px solid rgba(58,69,76,.55); border-radius: 8px; padding: 14px 16px; text-align: center; box-shadow: var(--surface-shadow); }
+.mcards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.mc { min-width: 0; background: rgba(16,22,26,.94); border: 1px solid rgba(58,69,76,.55); border-radius: 8px; padding: 14px 16px; text-align: center; box-shadow: var(--surface-shadow); }
 .mc .k { font-size: .78rem; color: #a3a6a0; margin-bottom: 4px; }
-.mc .v { font-size: 1.4rem; font-weight: 700; color: #f6f1e7; font-variant-numeric: tabular-nums; }
+.mc .v { font-size: 1.4rem; font-weight: 700; color: #f6f1e7; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 /* 页面级提示条（V2）：不依赖 .wrap 容器，任何 Layout Primitive 下均可复用。 */
 .warn, .error { display: block; padding: 10px 16px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; line-height: 1.55; }
 .warn { background: var(--warn-bg); border: 1px solid var(--border-warn); color: var(--warn-text); }
@@ -441,7 +441,7 @@ tr:hover td { background: var(--bg-list-hover); }
 .colitem { min-width: 0; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cat { color: #9aa09c; font-size: 11px; }
 @media (max-width: 768px) {
-  .mcards { grid-template-columns: repeat(2, 1fr); }
+  .mcards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .filebar { flex-wrap: wrap; }
   th, td { padding: 5px 8px; font-size: 12px; }
   .tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }

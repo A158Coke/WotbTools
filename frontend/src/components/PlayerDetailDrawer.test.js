@@ -640,3 +640,104 @@ describe('Rating Profile PNG 导出不可变快照', () => {
     spyErr.mockRestore()
   })
 })
+
+describe('PlayerDetailDrawer Side Panel resize（仅桌面，计划 §4-14）', () => {
+  const DEFAULT_W = 380
+  function widthNum(wrapper) {
+    const st = wrapper.find('.player-drawer').attributes('style') || ''
+    const m = st.match(/width:\s*(\d+)px/)
+    return m ? parseInt(m[1], 10) : null
+  }
+  afterEach(() => { localStorage.clear(); window.innerWidth = 1024 })
+
+  it('Desktop >=1200 shows resizer; drag widens panel and persists width', async () => {
+    window.innerWidth = 1400
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    const resizer = wrapper.find('[data-testid="drawer-resizer"]')
+    expect(resizer.exists()).toBe(true)
+    expect(resizer.attributes('role')).toBe('separator')
+    expect(widthNum(wrapper)).toBe(DEFAULT_W)
+    await resizer.trigger('pointerdown', { clientX: 320, pointerId: 1 })
+    await resizer.trigger('pointermove', { clientX: 260 })
+    await resizer.trigger('pointerup')
+    expect(widthNum(wrapper)).toBe(DEFAULT_W + 60)
+    expect(localStorage.getItem('radarSidePanelWidth')).toBe(String(DEFAULT_W + 60))
+  })
+
+  it('clamps to min(320) and dynamic max(≈45% viewport)', async () => {
+    window.innerWidth = 1400
+    const max = Math.floor(1400 * 0.45)
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    const resizer = wrapper.find('[data-testid="drawer-resizer"]')
+    await resizer.trigger('pointerdown', { clientX: 500, pointerId: 1 })
+    await resizer.trigger('pointermove', { clientX: 5000 })
+    await resizer.trigger('pointerup')
+    expect(widthNum(wrapper)).toBe(320)
+    await resizer.trigger('pointerdown', { clientX: 400, pointerId: 1 })
+    await resizer.trigger('pointermove', { clientX: -5000 })
+    await resizer.trigger('pointerup')
+    expect(widthNum(wrapper)).toBe(max)
+  })
+
+  it('restores saved width clamped to current viewport max', async () => {
+    window.innerWidth = 1400
+    const max = Math.floor(1400 * 0.45)
+    localStorage.setItem('radarSidePanelWidth', '800')
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await flushPromises() // onMounted 异步写入 drawerWidth，需 flush 后读取
+    expect(widthNum(wrapper)).toBe(max)
+  })
+
+  it('tablet(<=1199) and mobile(<768) hide resizer and keep fixed width (no inline width)', () => {
+    window.innerWidth = 1024
+    const tablet = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    expect(tablet.find('[data-testid="drawer-resizer"]').exists()).toBe(false)
+    expect(widthNum(tablet)).toBe(null)
+    window.innerWidth = 375
+    const mobile = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    expect(mobile.find('[data-testid="drawer-resizer"]').exists()).toBe(false)
+    expect(widthNum(mobile)).toBe(null)
+  })
+
+  it('resize then switch player keeps user width (不恢复默认宽度)', async () => {
+    window.innerWidth = 1400
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    const resizer = wrapper.find('[data-testid="drawer-resizer"]')
+    await resizer.trigger('pointerdown', { clientX: 300, pointerId: 1 })
+    await resizer.trigger('pointermove', { clientX: 200 })
+    await resizer.trigger('pointerup')
+    expect(widthNum(wrapper)).toBe(480)
+    await wrapper.setProps({ player: { ...SUMMARY_PLAYER, accountId: 2001, nickname: 'Beta' } })
+    expect(widthNum(wrapper)).toBe(480)
+  })
+
+  it('resizer keyboard ArrowLeft/Right adjusts width and does not trigger player switch', async () => {
+    window.innerWidth = 1400
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    const resizer = wrapper.find('[data-testid="drawer-resizer"]')
+    await resizer.trigger('keydown', { key: 'ArrowRight' })
+    expect(widthNum(wrapper)).toBe(400)
+    expect(wrapper.emitted('next')).toBeFalsy()
+    await resizer.trigger('keydown', { key: 'ArrowLeft' })
+    expect(widthNum(wrapper)).toBe(380)
+    expect(wrapper.emitted('prev')).toBeFalsy()
+  })
+
+  it('reflow（计划 §7）：桌面开启时暴露 --pd-drawer-offset 供 workspace 预留；拖宽后同步；mobile 恒 0px；unmount 清除', async () => {
+    window.innerWidth = 1400
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await flushPromises()
+    expect(document.documentElement.style.getPropertyValue('--pd-drawer-offset')).toBe('388px')
+    const resizer = wrapper.find('[data-testid="drawer-resizer"]')
+    await resizer.trigger('pointerdown', { clientX: 320, pointerId: 1 })
+    await resizer.trigger('pointermove', { clientX: 260 })
+    await resizer.trigger('pointerup')
+    expect(document.documentElement.style.getPropertyValue('--pd-drawer-offset')).toBe('448px')
+    wrapper.unmount()
+    expect(document.documentElement.style.getPropertyValue('--pd-drawer-offset')).toBe('')
+    window.innerWidth = 1024
+    const tablet = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await flushPromises()
+    expect(document.documentElement.style.getPropertyValue('--pd-drawer-offset')).toBe('0px')
+  })
+})
