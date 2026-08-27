@@ -3,8 +3,8 @@
 > 日期：2026-08-12。样本：用户提供的 4 个训练房回放（Downloads）+ 2 个随机战对照。
 > 探测工具：`CaptureTimelineProbeTest`（`@Tag("ai-capture-probe")`，默认排除）。
 > 复跑：`mvn -s settings.xml -pl wotb-web -am test -Dtest=CaptureTimelineProbeTest -Dai.probe.excludedGroups= -Dai.capture.replayDir=<目录>`
-
-> **VERDICT: UNKNOWN** —— Type 31/7 与 battle_results 均无可靠的时间线级基地归属信号；不升级 CAPTURE_TIMELINE，占点复盘维持「结算级（占点分 + 点数胜负）+ 静态语义（占领点区域）」。详见文末「结论」。
+>
+> **SUPERSEDED NOTICE (2026-08-27):** 本报告关于 `Type31/Type7` 的负结论仍有效，但“回放中不存在实时占点时间线 / 不升级 CAPTURE_TIMELINE”的更广泛结论已经被 canonical 34 场协议逆向推翻。Avatar method48 **wrapper12** 已被闭环为 Supremacy 基地实时 owner / capturingTeam / captureProgress 状态机。当前结论见 [`wrapper12-supremacy-capture-state.md`](wrapper12-supremacy-capture-state.md)。
 
 ## 目的
 
@@ -21,28 +21,60 @@
 | random-battle-example（对照） | rift | 1（随机） | 302.7 | 0 / 0 |
 | random_game（对照） | milbase | 1 | 209.4 | 0 / 0 |
 
-## 发现
+## 当时的发现
 
 ### 1. 占点分（权威结算）确认有效
 
 - 4 个训练房回放均为 supremacy（`arenaBonusType` 2/4），`victoryPointsEarned` 427–1126、`victoryPointsSeized` 160–280；随机战对照恒为 0。
-- 逐人 `PlayerResult.victoryPointsEarned/Seized`（protobuf #32/#33）可作为「被偷家 / 点数胜负」的权威依据（**总量**，无时间线）。
+- 逐人 `PlayerResult.victoryPointsEarned/Seized`（protobuf #32/#33）可作为权威结算总量。
 
-### 2. Type 31（Tracked/State）：无占点时间线结构
+### 2. Type 31：不是占点时间线
 
-- 每场 1800–5300 个 Type 31 包，但 **payload 全部为 4 字节**，且以 ~8ms 间隔成簇出现；值恒为 ~53.9（float 位模式，如 `4257e6a5`），与战斗时钟/占点进度无对应关系。
-- 结论：Type 31 不是基地/旗子状态载体，**不可**用于 CAPTURE_TIMELINE。
+- 每场 1800–5300 个 Type31 包，但 payload 全部为 4 字节，且以高频固定模式变化；与基地占领进度无对应关系。
+- 这个负结论在后续研究中仍成立。
 
-### 3. Type 7（EntityProperty）：propId 无占点证据
+### 3. 当时探测的 Type 7 property：没有找到占点时间线
 
-- 观测到 propId ∈ {0, 1, 2, 3, 4, 9}；其中 **propId=3 = 当前血量**（已确认），其余未解且出现次数少（1–31 次/场），未发现与占点进度匹配的字段。
+- 当时观测到的 Type7 property 没有形成基地 owner/progress 状态机。
+- 这个负结论也仍成立：真正的占点时间线不在 Type7。
 
-### 4. battle_results raw 字段
+### 4. battle_results 仅提供结算层信息
 
-- raw 字段号未含明显的逐人占点明细（#32/#33 已映射为权威总量）；无团队级占点时间线字段。
+- #32/#33 是逐人 victory-points 总量，不是实时基地状态时间线。
+- 这个结论仍成立。
 
-## 结论
+## 2026-08-27 后续纠正
 
-- **不升级 CAPTURE_TIMELINE**：Type 31/7 与 battle_results 均无可靠的时间线级基地归属信号；占点复盘维持「结算级（占点分 + 点数胜负）+ 静态语义（占领点区域）」。
-- 若未来仍需时间线：候选方向为 **Type 32 / Type 33**（每场 287–537 / 80–134 包，supremacy 与随机战都存在，含义未逆向）或其他未解 bucket，需另立逆向任务。
-- 生产反馈闭环不依赖时间线：`CAPTURE_AND_POINTS`（逐人/双方占点分、pointsDecided、占领点区域）已足够支撑「集中一波→被偷家」「残局守家 vs 占点」复盘。
+canonical 34 场重新枚举所有 Avatar method48 wrapper 后，发现此前探测漏掉了真正的 Supremacy 状态流：**wrapper12**。
+
+当前已证明：
+
+```text
+wrapper12 field1 = zero-based base index          PROVEN
+wrapper12 field2 = current owner team             PROVEN
+wrapper12 field3 = current capturing team         PROVEN
+wrapper12 field4 = realtime capture progress      PROVEN
+wrapper12 field5 = contested/interruption candidate PARTIAL
+wrapper12 field6 = recorder-local capture participation family STRONG PARTIAL
+```
+
+113 个独立基地易主事件都能从高位 captureProgress (`95..99`) 闭环到随后约 0.5 秒的 ownerTeam 切换。
+
+因此当前协议层结论已经变成：
+
+```text
+CAPTURE_TIMELINE = AVAILABLE in replay stream
+source           = Avatar method48 wrapper12
+team score       = wrapper13
+final player totals = settlement #32/#33
+```
+
+## 当前结论
+
+本文件保留作为研究历史和负控：它证明 Type31/Type7 不是正确方向。但下面这条旧结论已经 **SUPERSEDED**：
+
+```text
+“不升级 CAPTURE_TIMELINE；回放只有结算级占点信息”
+```
+
+正确的新结论请以 [`wrapper12-supremacy-capture-state.md`](wrapper12-supremacy-capture-state.md) 为准。
