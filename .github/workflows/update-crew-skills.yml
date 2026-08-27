@@ -23,10 +23,12 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Sync crew skills from BlitzKit
+      - name: Sync crew skills from stable BlitzKit snapshot
         run: |
           set -euo pipefail
-          python3 common/python/update_crew_skills.py --output /tmp/crew-skills.json
+          python3 common/python/update_crew_skills.py \
+            --existing common/crew-skills.json \
+            --output /tmp/crew-skills.json
           python3 -m json.tool /tmp/crew-skills.json >/dev/null
           mv /tmp/crew-skills.json common/crew-skills.json
 
@@ -60,7 +62,7 @@ jobs:
               --base main \
               --head "$BRANCH" \
               --title "chore(data): sync BlitzKit crew skills" \
-              --body $'Automated crew-skill sync from BlitzKit.\n\n- Parses canonical TankClass → skill IDs from definitions/skills.pb\n- Rejects missing classes, suspicious skill-count drops, invalid IDs, and duplicates\n- Updates common/crew-skills.json only\n- Runs generator tests and git diff checks\n- Explicitly dispatches normal CI for this automation branch\n- Never auto-merges'
+              --body $'Automated crew-skill sync from BlitzKit.\n\n- Reads stable game.pb + skills.pb snapshots\n- Imports newly supported canonical skill IDs automatically\n- Rejects missing/new tank classes, suspicious count drops, invalid IDs, and duplicates\n- Records game version and skills.pb SHA-256 when skill semantics actually change\n- Does not create timestamp-only or metadata-only PRs\n- Runs generator tests and explicitly dispatches normal CI\n- Never auto-merges'
           else
             echo "Updated existing PR #$pr_number"
           fi
