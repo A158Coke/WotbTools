@@ -13,7 +13,12 @@ Current Vehicle Type5 materialization does not carry only transform/HP state. Fo
 9-byte equipment-selection string
 ```
 
-The six-item surface cross-closes with Type32 item initialization/lifecycle traffic and behaves as the vehicle's 3 consumable + 3 provision slots.
+The six-item surface cross-closes with Type32 item initialization/lifecycle traffic and is now positionally closed as:
+
+```text
+item[0..2] = three consumable slots
+item[3..5] = three provision slots
+```
 
 The nine-byte equipment surface is stronger than a symbolic slot code: **each byte is the equipment numeric ID itself, represented as one ASCII character**.
 
@@ -24,6 +29,8 @@ equipmentId = unsignedByte(equipmentString[slot])
 Verdict:
 
 > **battle loadout is directly materialized in the replay — PROVEN structural/behavioral family**.
+>
+> **3 consumable + 3 provision positional ordering — PROVEN on current combat Type5 population**.
 >
 > **equipment selection is directly decodable by byte value / ASCII code point — PROVEN on current 11.19 corpus**.
 
@@ -79,9 +86,15 @@ The final nine bytes decode as ASCII `dmrhotiqe`, but the byte values themselves
 
 ## Combat vs non-combat Type5 distinction
 
-The full 6+9 shape belongs to current combat vehicles.
+Current equipment-string scan:
 
-A smaller observed Type5 family uses `0A 04` with four item descriptors; current examples belong to non-combat/observer-style entities and must not be interpreted as a normal player battle loadout.
+```text
+Type5 payloads with valid 9-byte equipment string : 1,097
+full `0A 06` six-item combat-loadout family       : 1,037
+smaller `0A 04` four-item family                  :    60
+```
+
+The `0A 04` examples belong to non-settlement / observer-style entities and must not be interpreted as a normal player battle loadout.
 
 Safe parser rule:
 
@@ -94,6 +107,26 @@ other counts
 ```
 
 # Six item descriptors — consumables + provisions
+
+## Positional closure
+
+Across all 1,037 current full six-item combat loadouts:
+
+```text
+item[0] consumable-family code : 1,037 / 1,037
+item[1] consumable-family code : 1,037 / 1,037
+item[2] consumable-family code : 1,037 / 1,037
+
+item[3] provision/static code  : 1,037 / 1,037
+item[4] provision/static code  : 1,037 / 1,037
+item[5] provision/static code  : 1,037 / 1,037
+```
+
+No positional counterexample exists in the studied 11.19 population.
+
+Verdict:
+
+> Type5 six-item ordering = **three consumables followed by three provisions — PROVEN current corpus**.
 
 ## T-100 LT natural sample
 
@@ -116,7 +149,7 @@ The first three are independently closed through Type32 dynamic lifecycle behavi
 0x0B = Multi-Purpose Restoration Pack
 ```
 
-The remaining three have the static/provision descriptor shape in this sample:
+The remaining three occupy the proven provision slots:
 
 ```text
 0x10
@@ -126,28 +159,28 @@ The remaining three have the static/provision descriptor shape in this sample:
 
 Their descriptor payload ends in `80 BF` (`f32 -1.0` in the current tail position), while normal initialized consumables predominantly begin with a zeroed dynamic-state payload before later Type32 transitions.
 
-## Corpus-level dynamic/static split
+## Corpus-level dynamic/static code inventory
 
-Across current six-item combat loadouts, observed dynamic consumable-family codes include:
+Observed consumable-slot codes:
 
 ```text
 08 09 0A 0B 0C 0D 3D 3E 42 69
 ```
 
-Observed static/provision-shape codes include:
+Observed provision-slot codes:
 
 ```text
 0E 0F 10 11 12 13 16 17 18 19 1A 1C 1D 1E
 44 45 46 47 49 6B 6C
 ```
 
-Exact static code -> provision symbolic identities remain item-specific research. Do not assume these wire codes equal catalog `sourceIds`; the dynamic consumable family already proves that the replay wire namespace is not simply the public catalog ID namespace.
+Exact provision code -> symbolic item identities remain item-specific research. Do not assume these wire codes equal catalog `sourceIds`; the dynamic consumable family already proves that the replay wire namespace is not simply the public catalog ID namespace.
 
 Verdict:
 
 > Type5 six-item descriptor = **consumable/provision battle-loadout surface — PROVEN family**.
 >
-> Dynamic-vs-static classification = **PROVEN behavioral family**.
+> Exact consumable/provision slot ordering = **PROVEN**.
 >
 > Exact provision wire-code names = **PARTIAL** until independently mapped.
 
@@ -158,9 +191,11 @@ Verdict:
 Across the current 34-arena corpus plus the independent T-100 LT sample:
 
 ```text
-combat Type5 equipment strings inspected : 1,097
-string length                            : 9 / 9
-observed distinct equipment IDs          : 20
+Type5 equipment strings inspected      : 1,097
+full six-item combat loadout strings   : 1,037
+four-item non-combat/observer strings  :    60
+string length                          : 9 / 9
+observed distinct equipment IDs        : 20
 ```
 
 For every observed character in every slot:
@@ -244,7 +279,7 @@ with full six-item combat descriptor      : 683 / 683
 
 Therefore:
 
-> **when an enemy combat vehicle materializes into the replay POV, its current Type5 payload carries the same complete 6-item + 9-equipment loadout descriptor — PROVEN current corpus**.
+> **when an enemy combat vehicle materializes into the replay POV, its current Type5 payload carries the same complete 3-consumable + 3-provision + 9-equipment loadout descriptor — PROVEN current corpus**.
 
 This does not mean an enemy that never materializes can be reconstructed; absence remains absence of replay evidence.
 
@@ -273,11 +308,17 @@ VehicleBattleLoadout {
     entityId
     replayVersion
 
-    itemDescriptors[6] {
+    consumables[3] {
         wireCode
         stateRaw
         payloadRaw[12]
-        classification // CONSUMABLE / PROVISION / UNKNOWN
+        logicalItemId? // only when proven/version-mapped
+    }
+
+    provisions[3] {
+        wireCode
+        stateRaw
+        payloadRaw[12]
         logicalItemId? // only when proven/version-mapped
     }
 
@@ -307,8 +348,8 @@ Do not:
 
 # Remaining work
 
-1. map static/provision wire codes to current logical provision IDs using current Blitz definitions plus replay behavior;
-2. map any still-unclosed consumable wire codes in the six-item descriptor family;
+1. map provision-slot wire codes to current logical provision IDs using current Blitz definitions plus replay behavior;
+2. map any still-unclosed consumable wire codes in the first three item slots;
 3. verify the 6+9 tail on non-Tier-X combat vehicles / random battles before widening production version gates;
 4. validate future Blitz versions before assuming the Type5 relative tail structure is unchanged;
 5. retain raw 14-byte item descriptor payloads until their internal timers/state fields are fully decoded.
