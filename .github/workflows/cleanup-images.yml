@@ -1,36 +1,44 @@
 name: Cleanup GHCR Images
-run-name: Cleanup GHCR (keep N versions per package)
+run-name: Cleanup GHCR (keep ${{ inputs.keep || '10' }} versions per package)
 
 on:
   workflow_dispatch:
     inputs:
       keep:
         description: "每个镜像包保留的版本数"
+        required: false
         default: "10"
   schedule:
-    - cron: '0 3 * * 1'
+    - cron: "0 3 * * 1"
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ghcr-cleanup
+  cancel-in-progress: false
 
 jobs:
   cleanup:
     runs-on: ubuntu-latest
-    permissions:
-      packages: write
+    timeout-minutes: 15
     steps:
       - name: Prune backend versions
         uses: actions/delete-package-versions@v5
         with:
           package-name: wotbtools-backend
           package-type: container
-          min-versions-to-keep: ${{ github.event.inputs.keep || '10' }}
+          min-versions-to-keep: ${{ inputs.keep || '10' }}
       - name: Prune frontend versions
         uses: actions/delete-package-versions@v5
         with:
           package-name: wotbtools-frontend
           package-type: container
-          min-versions-to-keep: ${{ github.event.inputs.keep || '10' }}
+          min-versions-to-keep: ${{ inputs.keep || '10' }}
       - name: Prune keycloak versions
         uses: actions/delete-package-versions@v5
         with:
           package-name: wotbtools-keycloak
           package-type: container
-          min-versions-to-keep: ${{ github.event.inputs.keep || '10' }}
+          min-versions-to-keep: ${{ inputs.keep || '10' }}
