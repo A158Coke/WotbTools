@@ -4,7 +4,43 @@
 
 ## [Unreleased]
 
+### Fixed
+- **雷达图恢复最外围 100% 边界线**：`PlayerRatingRadar` 最外围网格层引用 `--border-light-strong`，但该 token 从未定义（无效变量引用令 `stroke: none`，导致 100% 边界在 show/classic 等主题下均不可见）；已在 `tokens.css`/`showcase.css`/`classic-profile.css` 三处按主题补齐该 token（视觉强于内部 `--border-light` 网格、弱于玩家数据线），最外围 polygon 恢复完整闭合可见。
+- **Classic Profile 名人堂公开页残留深色表面（PR #151 收尾）**：`styles/classic-profile.css` 补 `html[data-ui-profile="classic"] .lb-wrap` 的提交记录行、排行榜普通行基础背景/行分隔线、百场/三环 pending 状态卡、下载按钮、分页按钮与错误态覆盖（`var(--...)` + `!important`），清除 Classic 下 HoF 仍残留的 Showcase 深灰/黑块（如 `tbody` 深色行、提交记录区深底）；Showcase（默认）零回归；`classic-profile-css.test.js` 同步 selector→declaration 绑定回归（单场/百场/三环共用表面）。
+- **名人堂管理（HoF Admin）Classic 浅色残留（Blocker 4）**：`showcase-rankings.css` 仍对 `.hof-admin .hof-admin-denied p`（无权限提示段落）与 `.hof-admin .hof-admin-login`（登录态）写死 `#9aa09c`、对 `.hof-admin-table td` 写死行分隔线 `#263136`；main 的 `classic-profile.css` 用 `.denied/.login` 选择器与真实类 `.hof-admin-denied/.hof-admin-login` 失配（未命中）。已补 `html[data-ui-profile="classic"]` 覆盖：把 `.denied/.login` 修正为真实类、`.hof-admin-denied p` 用 `var(--text-sub)`、`.hof-admin-table td` 用 `var(--border-light)`，修复 Classic 下无权限/登录态与行分隔线偏深/低对比；Showcase（默认）零回归。
+
 ### Added
+- **选手详情侧栏桌面端自由 resize**：`PlayerDetailDrawer` 在桌面(>=1200px)侧栏左缘新增 resize handle（视觉 2px 线、12px hit 区、`cursor: col-resize`），pointer capture 连续拖动；min 320px / 默认 380px / max ≈45% 视口动态钳制；宽度经 `localStorage["radarSidePanelWidth"]` 持久化，恢复时与窗口缩放时按当前视口重新 clamp（存过大值自适应）；键盘 ←/→ 每次 20px；tablet(<1200)/mobile 保持原有行为无 handle。
+- **Classic Profile 真浅色主题（Theme 计划）**：`useUiProfile` 现在把 profile 唯一派生到 `data-theme`（showcase→dark, classic→light），首屏内联脚本同步设置 `data-ui-profile` + `data-theme`（无 FOUC）；`styles/classic-profile.css` 由「仅去 AI 背景」升级为「完整浅色语义 token + namespace 覆盖」（`html[data-ui-profile="classic"]` 提供浅色 bg/card/text/border/accent/status/rating/tactical/scroll/shadow + `color-scheme:light`；同步 `--showcase-tactical*`；覆盖 topbar/user-menu/表单/表格 sticky/管理表/restoolbar 等写死深色面）；Showcase（默认）零回归；`data-theme` 不另立主题状态/开关/第二 localStorage key（禁 `useTheme`）。
+- **选手详情侧栏非模态修复**：`PlayerDetailDrawer` 桌面/平板 backdrop 改 `pointer-events:none`（click-through）并移除 `aria-modal="true"`，移动端(<768px)经 `pd-modal` 恢复 modal veil+点击关闭；Grid 行 `select-player` 直达 `selectedPlayerContext`，Drawer 内容切换/表格高亮/左右箭头与导出快照同步。
+- **双 UI Profile（Classic/Showcase）运行时与 CSS 门控**（纯前端）:
+  - 新增 `src/composables/useUiProfile.js`：唯一状态源（reactive ref + `localStorage["wotb-ui-profile"]` 持久化 + `<html data-ui-profile>` 投影），非法值统一回退 `showcase`；`setUiProfile`/`toggleUiProfile` O(1) 切换，不 reload/remount。
+  - `frontend/index.html` 首屏防 FOUC：默认 `data-ui-profile="showcase"` + 内联脚本按存储恢复 `classic`（与 `data-theme="dark"` 并存）。
+  - `App.vue` 用户菜单新增「界面风格」分段控件（简约/沉浸，`aria-pressed`），登录/未登录均可用。
+  - 新增 `src/styles/classic-profile.css`（main.js 最后导入）：按 `[data-ui-profile="classic"]` namespace 关闭全屏 AI 路景背景（`::after`/`::before content:none`）与装饰性 hero/uploadcard surface；Showcase（默认）零回归，无 `!important` 泛滥、无 specificity 堆叠。
+  - i18n：`feature-messages.json` 新增 zh/en/ru `uiProfile.*`。
+  - 测试：`useUiProfile.test.js` + `classic-profile-css.test.js`（§43A/B/D CSS source contract）；前端全量测试与 build 通过。
+  - 说明：Classic 只去 AI/装饰背景与视觉噪音（视觉皮肤），结构/密度/布局与 Showcase 完全一致（见 docs/current-plan.md D1）；完整 `@layer` 三层重排留作后续低风险优化。
+- **选手 Rating 画像新增「最常使用坦克」**（后端 + 前端 + 导出）：
+  - Core：`PlayerLeagueSummary` 新增 `vehicleUsage`（`List<PlayerVehicleUsage>`，tankId + battles），
+    `LeagueRatingBatchAggregator` 在 rated-only 循环中按 accountId 关联 `PlayerResult.tankId` 累计；
+    新增不可变模型 `com.wotb.core.league.PlayerVehicleUsage`；Core 不复制 Tankopedia。
+  - Web：`LeaguePlayerSummaryDto` 新增可空 `mostUsedVehicle`（`LeagueVehicleUsageDto`：tankId/tankName/battles）；
+    `Mapper` 消费现有 `Tankopedia` 单一事实源选择最常使用坦克（场次降序 → 官方名忽略大小写升序 →
+    tankId 升序；无可靠名称返回 null），`Mapper.selectMostUsedVehicle` 提炼为 package-private 纯函数。
+  - 前端：`ReplayPage.drawerPlayer` 透传 `mostUsedVehicle`/`ratedBattles`（Summary）与
+    `tankId`/`tankName`（Battle）；`PlayerDetailDrawer` 在 Rating 区与雷达之间渲染坦克展示区——
+    Summary 显示最常使用（贴图/名称/场次/比例 `battles/ratedBattles`），Battle 显示本场坦克；贴图经
+    `vehicle-portraits/runtime.js` 按 tankId 懒加载，token 防旧异步覆盖；缺图/非 Tier X 文字降级
+    （不破图、不影响雷达）；导出画像 PNG 等待图片或确认失败后包含坦克区，缺图不阻塞。
+  - i18n：zh/en/ru 新增 `league.drawer.most_used_vehicle` / `battle_vehicle` / `vehicle_battles` /
+    `vehicle_usage_rate`。
+  - 测试：`LeagueRatingBatchAggregatorTest`（rated-only 累计、ineligible 排除）、`ReplayMapperTest`
+    （场次降序/名称忽略大小写/名称相同 tankId 升序/无名称 null）、`PlayerDetailDrawer.test.js`
+    （Summary/Battle 显示、比例、无数据隐藏、缺图文字降级、token 防闪回）、`ReplayPage.test.js`
+    （Summary 透传 mostUsedVehicle/ratedBattles、Battle 透传 tank_id/tank_name）。
+  - 文档：`docs/features/league-rating.md` 新增「最常使用坦克」节；功能不参与 Rating / 七维 /
+    MVP / Team Rating 计算，不改 Excel 列/宽表。
 - **Player Detail Drawer Rating Profile 升级（纯前端，零后端改动）**：
   - Radar 只保留 League Rating 七维（移除 contribution/kast 作为 Radar 轴，归 Performance Metrics）；
     新增 Battle/Global Average 参考多边形（新 `frontend/src/utils/radarReference.js` 纯函数：selected

@@ -1527,6 +1527,7 @@
             "radar_title_summary": "Rating dimensions (batch medians)",
             "radar_title_battle": "This battle's rating dimensions",
             "radar_settings": "Set metrics",
+            "resize_panel": "Resize panel",
             "radar_done": "Done",
             "radar_min_hint": "Radar needs at least {n} metrics",
             "radar_max_hint": "Radar supports up to {n} metrics",

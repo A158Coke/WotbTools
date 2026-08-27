@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN" data-theme="dark" data-ui-profile="showcase">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -8,6 +8,8 @@
   <title>WoT Blitz 回放数据提取</title>
   <style>
     :root{color-scheme:dark;--bg:#0d1117;--bg-card:#161b22;--bg-card2:#21262d;--text:#c9d1d9;--text-heading:#f0f6fc;--text-sub:#8b949e;--text-muted:#8b949e;--text-label:#8b949e;--border:#30363d;--border-header:#21262d;--border-ghost:#30363d;--accent:#58a6ff;--accent-hover:#79c0ff;--accent-dark:#58a6ff;--error:#f85149}
+    /* Classic 浅色首屏 loader（data-theme 由 useUiProfile 按 profile 派生；避免 FOUC） */
+    html[data-theme="light"]{color-scheme:light;--bg:#f4f5f2;--bg-card:#ffffff;--bg-card2:#ffffff;--text:#1f2328;--text-heading:#111418;--text-sub:#57606a;--text-muted:#57606a;--text-label:#57606a;--border:#d9dde3;--border-header:#e6e8eb;--border-ghost:#d9dde3;--accent:#c9762e;--accent-hover:#d98c45;--accent-dark:#c9762e;--error:#d1242f}
     body{margin:0;font-family:"Segoe UI","Microsoft YaHei",sans-serif;color:var(--text);background:var(--bg)}
     #app:has(.app-loader){display:flex;align-items:center;justify-content:center;min-height:100vh}
     .app-loader{display:flex;flex-direction:column;align-items:center;gap:16px}
@@ -19,6 +21,21 @@
     @keyframes lds-ring{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
     .loader-text{font-size:1.2rem;font-weight:600;color:var(--text-sub);letter-spacing:2px}
   </style>
+  <script>
+    (function () {
+      // 首屏防 FOUC:在任何渲染前按 localStorage 设置 html[data-ui-profile]。
+      // 与 src/composables/useUiProfile.js 的 key/校验/默认保持一致。
+      try {
+        var p = localStorage.getItem('wotb-ui-profile')
+        if (p !== 'classic' && p !== 'showcase') p = 'showcase'
+        document.documentElement.setAttribute('data-ui-profile', p)
+        document.documentElement.setAttribute('data-theme', p === 'classic' ? 'light' : 'dark')
+      } catch (e) {
+        document.documentElement.setAttribute('data-ui-profile', 'showcase')
+        document.documentElement.setAttribute('data-theme', 'dark')
+      }
+    })()
+  </script>
 </head>
 <body>
   <div id="app">

@@ -1,5 +1,45 @@
 [
   {
+    "v": "2.12.42",
+    "date": "2026-08-27",
+    "tag": "add",
+    "zh": "雷达图恢复最外围 100% 边界线（浅色/深色/简约三种界面风格均可见）；选手详情侧栏桌面端新增自由拖拽调整宽度（最小 320px、最大约窗口 45%），宽度会被记住并在切换玩家/关闭重开/窗口尺寸变化后自动适配；平板与手机端保持原有行为。",
+    "en": "The radar chart's outermost 100% boundary line is restored (visible in light/dark/simplified themes); the player-detail side panel on desktop now supports free drag-resize (min 320px, max about 45% of the window). The width is remembered and auto-adjusts after switching players, reopening the panel, or resizing the window; tablet and mobile behavior is unchanged.",
+    "ru": "Восстановлена внешняя граница 100% на лепестковой диаграмме (видна в светлой/тёмной/упрощённой темах); боковая панель игрока на десктопе теперь позволяет свободно менять ширину перетаскиванием (мин. 320px, макс. около 45% окна). Ширина запоминается и автоматически подстраивается при переключении игрока, повторном открытии панели или изменении размера окна; на планшете и телефоне поведение прежнее."
+  },
+  {
+    "v": "2.12.41",
+    "date": "2026-08-26",
+    "tag": "chg",
+    "zh": "界面风格升级：Classic 简约改为真正的浅色主题（柔和浅灰页面背景、白色卡片/表格/菜单/弹窗、深色标题与正文、浅灰边框与轻量阴影，橙金色仅作品牌强调），不再是「深色去背景」；Showcase 沉浸保持现有深色与 AI/战场背景、渐变、阴影不变，仍为默认。用户菜单切换 Profile 即时生效，不刷新、不重载，不影响已解析回放、战局回放进度、AI 复盘、名人堂草稿、登录状态与任何数据；页面布局、密度、导航、表格列、评分算法与导出不变（PNG 导出按当前主题浅色/深色）。",
+    "en": "Interface style upgrade: the Classic profile is now a genuine light theme (soft light-gray page background, white cards/tables/menus/modals, dark headings and body text, light borders and subtle shadows, with orange-gold as brand accent only) instead of dark-minus-backgrounds. Showcase keeps the current dark immersive look with AI/battle backgrounds, gradients and shadows, and remains the default. Switching profiles from the user menu takes effect immediately with no reload or remount, preserving parsed replays, battle playback progress, AI review, Hall-of-Fame drafts, login state and all data; layout, density, navigation, table columns, rating algorithm and exports are unchanged (PNG export follows the active light/dark theme).",
+    "ru": "Обновление стиля интерфейса: профиль Classic теперь — настоящая светлая тема (мягкий светло-серый фон, белые карточки/таблицы/меню/модальные окна, тёмные заголовки и текст, светлые рамки и лёгкие тени, оранжево-золотой только как акцент бренда) вместо «тёмный без фонов». Showcase сохраняет текущий тёмный иммерсивный вид с AI/боевыми фонами, градиентами и тенями и остаётся по умолчанию. Переключение профиля из меню пользователя применяется мгновенно, без перезагрузки и перемонтирования, сохраняя разобранные реплеи, прогресс воспроизведения боя, AI-обзор, черновик Зала славы, состояние входа и все данные; макет, плотность, навигация, столбцы таблиц, алгоритм рейтинга и экспорт (PNG по активной теме light/dark) не меняются."
+  },
+  {
+    "v": "2.12.40",
+    "date": "2026-08-26",
+    "tag": "fix",
+    "zh": "修复选手详情侧栏：打开侧栏后不再遮挡左侧的选手表格，可直接点击表格在不同选手间切换（桌面端侧栏改为非模态面板，仅移动端保留全屏弹窗）；切换时左右箭头与表格高亮同步，数据与导出快照不受影响。",
+    "en": "Fixed the player details side panel: opening it no longer blocks the player table on the left, so you can click the table to switch between players (the desktop panel is now non-modal; only mobile keeps the full-screen overlay). Arrow navigation and table highlight stay in sync; data and export snapshots are unaffected.",
+    "ru": "Исправлена боковая панель игрока: при открытии она больше не блокирует таблицу игроков слева — теперь можно кликать по таблице и напрямую переключаться между игроками (на десктопе панель немодальная; только на мобильных остаётся полноэкранный оверлей). Стрелки и подсветка в таблице остаются синхронными; данные и снимки экспорта не затрагиваются."
+  },
+  {
+    "v": "2.12.39",
+    "date": "2026-08-26",
+    "tag": "add",
+    "zh": "新增「界面风格」切换：可从用户菜单在「简约 / 沉浸」两种展示风格间切换（默认沉浸）。简约风格保留现有布局与结构，只去掉全屏 AI 背景与装饰性展示元素，视觉更克制；偏好保存在本机浏览器，切换不影响已解析的回放、AI 复盘、战局回放进度、名人堂表单、权限或数据。",
+    "en": "New Interface style switcher: toggle between Simplified and Immersive presentation from the user menu (default Immersive). Simplified keeps the exact layout and structure, only dropping the full-screen AI backgrounds and decorative showcase elements for a more restrained look. The preference is stored locally in your browser; switching does not affect parsed replays, AI review, battle playback progress, Hall-of-Fame draft, permissions, or data.",
+    "ru": "Новый переключатель «Стиль интерфейса»: выбор между «Упрощённый» и «Иммерсивный» видами через меню пользователя (по умолчанию «Иммерсивный»). Упрощённый сохраняет прежнюю структуру и макет, лишь убирая полноэкранные AI-фоны и декоративные элементы для более сдержанного вида. Настройка хранится локально в браузере; переключение не влияет на разобранные реплеи, AI-обзор, прогресс воспроизведения боя, черновик Зала славы, права или данные."
+  },
+  {
+    "v": "2.12.38",
+    "date": "2026-08-26",
+    "tag": "add",
+    "zh": "选手详情新增「最常使用坦克」：批次视图在 Rating 下方显示该批次最常使用的坦克（贴图 + 名称 + 使用场次 + 占比，只统计已评分场次；并列时按坦克官方名排序，名称相同再按车辆 ID），单场视图显示该场实际使用的坦克；坦克图仅使用站内已有 Tier X 贴图，缺图/非 Tier X 时纯文字展示；导出画像 PNG 同步包含坦克信息。该展示不参与 Rating 计算。",
+    "en": "Player details now show the most-used tank: the batch view displays the tank used most often in that batch (portrait + name + battles + share, counting only rated battles; ties are broken by official tank name, then by tank ID), and the single-battle view shows that battle's actual tank. Portraits use only the bundled Tier X images; when missing or non-Tier X, it degrades to text. The Rating Profile PNG export includes the tank info. This display does not affect Rating.",
+    "ru": "В карточке игрока теперь отображается наиболее часто используемый танк: в пакетном виде — танк, используемый чаще всего в этом наборе (портрет + название + количество боёв + доля, учитываются только оценённые бои; при равенстве сортировка по официальному названию танка, затем по ID), а в виде отдельного боя — фактически используемый танк. Портреты берутся только из встроенных изображений Tier X; при отсутствии или для не-Tier X — текстовый режим. Экспорт профиля в PNG включает информацию о танке. На расчёт Rating это не влияет."
+  },
+  {
     "v": "2.12.37",
     "date": "2026-08-26",
     "tag": "fix",
