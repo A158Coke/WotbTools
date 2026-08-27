@@ -78,7 +78,7 @@ Exact user-facing counter names remain PARTIAL.
 
 ## baseType12 and PlayerResults field118
 
-A new strict-corpus pass closes the relationship between live method12 baseType12 and settlement PlayerResults field118, while also rejecting several overly simple semantic interpretations.
+A strict-corpus pass closes the relationship between live method12 baseType12 and settlement PlayerResults field118. New wrapper12 Supremacy capture-timeline evidence materially strengthens the historical **base-defense / dropped-capture-points** hypothesis, but still does not justify exact symbolic promotion without a controlled or schema-level closure.
 
 ### Recorder presence closure
 
@@ -90,7 +90,7 @@ method12 baseType12 present    : 10 / 34 replay authors
 presence relation              : 34 / 34 exact
 ```
 
-There are 12 live baseType12 RPCs in total. Their payload behavior is unusually sparse:
+There are 12 live baseType12 RPCs in total. Their payload behavior is sparse:
 
 ```text
 baseType12 value               : 0 / 12 non-zero
@@ -111,7 +111,7 @@ field118 != baseType12.count
 field118 != baseType12.value
 ```
 
-The safest current model is:
+The safe structural model remains:
 
 ```text
 field118
@@ -121,11 +121,11 @@ baseType12.count
   = cumulative battle-feedback/ribbon occurrences for that same family
 ```
 
-That cross-surface relationship is **PROVEN current corpus**. The exact gameplay/stat name remains **PARTIAL/UNKNOWN**.
+That cross-surface relationship is **PROVEN current corpus**.
 
 ### Full settled-player distribution
 
-The same field is not recorder-only. Across the canonical 34-arena settlement set:
+Across the canonical 34-arena settlement set:
 
 ```text
 settled combatants             : 476
@@ -137,7 +137,7 @@ This supports a genuine per-player battle statistic rather than an author/UI-onl
 
 ### Not ordinary Supremacy victory points
 
-PlayerResults fields32/33 are already independently closed as victory/Supremacy points earned/seized. field118 does not reduce to either field:
+PlayerResults fields32/33 are independently closed as victory/Supremacy points earned/seized. field118 does not reduce to either field:
 
 - 6 / 10 field118-positive replay authors have both field32=0 and field33=0;
 - other positive cases carry unrelated field32/33 magnitudes;
@@ -147,31 +147,89 @@ Verdict:
 
 > `field118/baseType12` is **not** the ordinary `victoryPointsEarned / victoryPointsSeized` surface.
 
-### Nearby combat feedback is not an exact identity
+### Wrapper12 changes the interpretation of capture evidence
 
-Some baseType12 events share a clock with baseType8 critical/module feedback or occur near kills, but this is not universal. Therefore neither `critical hit count` nor `kill count` is supported as an exact semantic identity.
-
-### Historical/cross-project candidate: base-defense magnitude
-
-Independent Blitz tooling and Wargaming-facing result terminology expose separate `base_capture_points` and `base_defend_points` / `droppedCapturePoints` statistics in addition to Supremacy/victory-point fields. The observed field118/baseType12 shape is compatible with a family of that kind: a potentially large accumulated result magnitude paired with a small number of live feedback/ribbon occurrences.
-
-However no current Blitz 11.19 field-level schema or controlled replay yet proves:
+Avatar method48 wrapper12 is now independently decoded as the realtime Supremacy base state machine:
 
 ```text
-field118 == baseDefendPoints / droppedCapturePoints
+field1 = base index
+field2 = owner team
+field3 = capturing team
+field4 = public/base capture progress
 ```
 
-So that label remains a **candidate only** and must not be promoted into the production decoder.
+This provides the first direct capture-timeline control surface for field118 research.
 
-### Controlled validation target
+The important gameplay rule is that a capturing vehicle can lose/reset its own capture contribution when it receives qualifying HP/module damage. Therefore this causal chain is plausible:
 
-To close baseType12/field118 exactly, capture controlled replays that independently vary base interaction while minimizing damage/kill/module confounders, then compare:
+```text
+enemy vehicle contributes capture points
+→ recorder damages / critically affects that capturing vehicle
+→ that vehicle's personal contribution is reset/reduced
+→ public wrapper12 aggregate progress may drop, pause, or continue depending on other simultaneous capturers
+→ recorder receives baseType12 feedback
+→ field118 accumulates the magnitude of capture points defended/reset
+```
 
-1. base capture progress made;
-2. enemy capture progress reset/defended;
-3. live baseType12 increments;
-4. settlement field118 magnitude;
-5. fields32/33 and wrapper13 Supremacy points as negative controls.
+This means a lack of a visible aggregate wrapper12 decrease at exactly the baseType12 clock is **not sufficient negative evidence** against `droppedCapturePoints`: wrapper12 is a public aggregate base-progress stream, while the reset rule acts on one capturer's personal contribution and other capturers may continue adding progress.
+
+### Current event-level evidence
+
+Of the 12 baseType12 RPCs, several occur immediately around recorder projectile/damage activity; examples include recorder projectile launches and victim method8 damage within roughly 0.0–0.1 seconds in the same local event cluster. Other baseType12 RPCs do not have a same-clock projectile, consistent with the method12 surface behaving as cumulative/UI feedback rather than a raw damage notification.
+
+Separately, wrapper12 shows real capture-progress disruptions in the same battles, including high-to-low progress resets and interrupted enemy captures.
+
+These observations are **compatible** with a base-defense statistic but do not yet identify which exact prior damaging event generated every baseType12 increment.
+
+### Why simple aggregate-progress arithmetic does not close field118
+
+Summing visible wrapper12 public progress drops does not equal field118 in several battles. This does not by itself reject dropped capture points because:
+
+1. wrapper12 is aggregate base progress, not per-capturer contribution;
+2. simultaneous capturers can continue to add while one player's contribution is reset;
+3. packet sampling is roughly 0.5 s, so a reset and ongoing accumulation can be partially or completely hidden between samples;
+4. a single combat event may affect more than one capturing vehicle in splash/multi-target situations;
+5. method12 is a feedback counter, not guaranteed to be emitted at the exact server-side state-change sample.
+
+Therefore these shortcuts are rejected:
+
+```text
+field118 == sum(all visible wrapper12 negative deltas)
+baseType12 clock == exact wrapper12 reset packet clock
+```
+
+### Historical/cross-project candidate: droppedCapturePoints / base defense points
+
+Independent Blitz/Wargaming statistics expose a distinct `dropped_capture_points` / base-defense statistic alongside ordinary `capture_points`. BlitzKit's current regular-tank-statistics format also preserves both `capturePoints` and `droppedCapturePoints` as separate persistent counters.
+
+The current replay shape is highly compatible with that family:
+
+```text
+field118            = potentially large per-battle defense magnitude
+baseType12.count    = small cumulative live feedback occurrence count
+field118 presence   ↔ baseType12 presence exactly 34/34
+wrapper12           = independently proven live base-capture state
+```
+
+Updated verdict:
+
+> `field118/baseType12` = **base-defense / dropped-capture-points family — STRONG PARTIAL**.
+>
+> Exact current Blitz 11.19 symbolic identity `droppedCapturePoints` remains **NOT YET PROVEN**.
+
+The earlier interpretation that wrapper12 non-decrease was strong evidence against this hypothesis is **SUPERSEDED**.
+
+### Remaining closure target
+
+The cleanest decisive validation is a controlled mobile replay where exactly one enemy captures a neutral/owned base and the recorder damages that capturer at a known contribution amount. Record:
+
+1. wrapper12 progress before damage;
+2. victim HP/module event;
+3. wrapper12 progress after damage;
+4. method12 baseType12 increment;
+5. settlement field118.
+
+Repeat with two simultaneous enemy capturers to distinguish personal reset magnitude from public aggregate progress.
 
 ## baseType15 and PlayerResults field119
 
