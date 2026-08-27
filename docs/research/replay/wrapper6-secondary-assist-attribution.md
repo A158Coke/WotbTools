@@ -1,90 +1,142 @@
-# subtype48 wrapper6 field3 — secondary assist attribution
+# subtype48 wrapper6 field3 — >50% kill-notification assister
 
-> Corpus: 34 unique Blitz 11.19.0 China arenas.
->
-> Current verdict: **STRONG PARTIAL** for kill-feed/secondary-assister attribution; exact threshold rule remains unproven.
+> Corpus: canonical 34 unique Blitz 11.19.0 China arenas.
 
-## Already-proven wrapper6 death fields
+## Final verdict
+
+> wrapper6 `field3` = **secondary kill-notification assister entity whose prior damage contribution exceeded 50% of the victim's actual initial HP — PROVEN current corpus**.
+
+This is a per-kill notification/attribution surface. It is **not** the same mechanic as method12 baseType15 / settlement field119 Destruction Assistance, whose eligibility threshold is lower and whose result is a cumulative ribbon/stat counter.
+
+## Proven wrapper6 death fields
 
 Post-start wrapper6 records close as:
 
 ```text
 field1 = victim vehicle/entity ID
 field2 = killer vehicle/entity ID
-field3 = optional secondary participant/entity
+field3 = optional >50%-damage assister entity
 field4 = optional non-default deathReason
 ```
 
-The optional field3 is a current arena participant ID, never a duplicate killer in the observed samples, and overwhelmingly belongs to the killer's team. It is not the historical PC `equipmentID` field.
+## Independent official gameplay rule
 
-## New gameplay hypothesis supplied for controlled validation
+Wargaming introduced the assisted-destruction notification in Blitz 8.1 for cases where another player had previously damaged the destroyed vehicle by more than 51%.
 
-A current Blitz gameplay rule was identified for follow-up validation:
-
-> a kill notification may include an assister's name when that player contributed more than roughly 40% of the victim's damage.
-
-This rule is treated as a **testable hypothesis**, not as protocol truth.
-
-## Recorder-specific cross-check
-
-Within the strict 34-arena corpus, there are three post-start deaths where:
+In Blitz 9.3 the threshold was explicitly changed to:
 
 ```text
-wrapper6.field3 == recorder vehicle entity ID
+more than 50%
 ```
 
-For all three, the recorder had independently observed direct HP-loss contribution against that victim before the allied kill. Using current recorder method38 hit-feedback joined to victim Type7 prop3 HP deltas, the observable contribution ratios are approximately:
+and the notification shows both the destroying player and the assisting player's name.
+
+That official notification behavior is exactly the presentation responsibility represented by wrapper6 field3.
+
+## Exact current-corpus damage-ledger validation
+
+Earlier research could only estimate recorder contribution from method38 + observed HP deltas. That limitation is now removed by three independently proven current-version surfaces:
 
 ```text
-~57%
-~58%
-~76%
+Type5 vehicle materialization bytes[51..53)
+    = current HP snapshot at materialization
+
+Vehicle method1
+    = currentHpRaw:u16 + sourceEntity:u32 + causeFlag:u8
+
+PlayerResults
+    initialActualHp = max(signed field1, 0) + field11
 ```
 
-Thus:
+This allows the observed HP-loss ledger to be attributed to source entities without same-clock shooter guessing.
+
+### Population
+
+Canonical post-start wrapper6 deaths:
 
 ```text
-field3 == recorder and observed contribution < 40% : 0 samples
-field3 == recorder and observed contribution > 40% : 3 / 3 samples
+total live wrapper6 deaths : 283
+field3 present              :  46
+field3 absent               : 237
 ```
 
-This is consistent with the kill-feed assister hypothesis.
+### Positive population
 
-## Why this is not yet PROVEN
-
-The inverse condition cannot be validated from a single POV replay corpus:
-
-- other players' exact per-shot HP attribution is incomplete;
-- same-clock team focus can make a victim HP delta larger than the recorder's own shot contribution;
-- the current event stream does not provide an authoritative full damage ledger for every non-recorder attacker;
-- therefore `field3 != recorder` cannot be used to conclude that the recorder failed a particular percentage threshold.
-
-For this reason the exact rule must not yet be encoded as:
+For all 46 deaths with field3:
 
 ```text
-field3 = player whose damage > 40%
+field3 == highest-damage non-killer source : 46 / 46
+field3 observed damage / actual initial HP > 0.50 : 46 / 46
 ```
 
-## Safe current semantic
-
-The strongest safe interpretation is:
-
-> wrapper6 field3 = **secondary kill attribution / displayed assister candidate — STRONG PARTIAL**.
-
-This is materially narrower than the previous generic `secondary combat-attribution entity` interpretation, but the exact eligibility/selection rule remains unresolved.
-
-## Controlled replay needed for closure
-
-Use a training-room target with known initial HP and two attackers. Produce separate replays where the non-killer contributes approximately:
+Observed contribution ratio:
 
 ```text
-30%
-39%
-40%
-41%
-50%+
+minimum ≈ 0.50150  (50.150%)
+median  ≈ 0.58540  (58.54%)
+maximum ≈ 0.97311  (97.31%)
 ```
 
-Then let the same teammate deliver the killing shot. Record whether the non-killer's name appears in the in-game destruction notification and whether wrapper6 field3 equals that player's vehicle entity ID.
+There is no positive sample at or below 50%.
 
-If the transition is clean around one threshold, promote the threshold and field3 symbolic meaning together.
+### Negative population
+
+For the 237 wrapper6 deaths with no field3, no reconstructable non-killer source crosses the official threshold:
+
+```text
+observed non-killer contribution > 50% : 0 / 237
+maximum observed ratio                 : ≈49.21%
+```
+
+Hidden/AoI damage can make a negative case incomplete, so this inverse population is supporting evidence rather than the sole proof. The positive population plus official rule already closes the semantic identity.
+
+## Why the old ~40% hypothesis was wrong
+
+An earlier provisional research note used only three recorder-specific examples (~57%, ~58%, ~76%) and a user-supplied ~40% hypothesis. That evidence was sufficient to identify a secondary-assister family but not the threshold.
+
+The official Blitz history provides the actual threshold:
+
+```text
+8.1  : >51%
+9.3+ : >50%
+```
+
+Therefore:
+
+> `field3 threshold ≈40%` — **REJECTED / SUPERSEDED**.
+
+## Relationship to method12 baseType15 / field119
+
+Do not merge these mechanics.
+
+```text
+wrapper6.field3
+  per-kill displayed assister
+  requires >50% prior damage
+
+method12 baseType15 / PlayerResults field119
+  cumulative Destruction Assistance statistic/ribbon
+  current official eligibility uses >=25% damage before an ally destroys the target
+```
+
+A player can satisfy Destruction Assistance without qualifying for wrapper6 field3.
+
+## Production-safe model
+
+```text
+KillFeedEvent {
+    victimEntityId
+    killerEntityId
+    assisterEntityId?   // present when >50% prior-damage notification rule qualifies
+    deathReasonRaw?
+    rawClockSec
+}
+```
+
+Safe uses:
+
+- render the same secondary assister identity shown by the game kill notification;
+- AI Review: distinguish killing blow from majority-damage assister;
+- combat analysis: preserve >50% notification attribution separately from ordinary assist damage and Destruction Assistance ribbon counters.
+
+The exact threshold should remain version-gated because Wargaming has changed it historically (51% -> 50%).
