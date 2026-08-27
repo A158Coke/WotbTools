@@ -1,99 +1,98 @@
 # Avatar method16 — `codeA` damage-state lifecycle
 
-> Corpus: canonical 34 unique Blitz 11.19.0 China arenas.
+> Base corpus: canonical 34 unique Blitz 11.19.0 China arenas.
 >
-> This note describes the state/action role of method16 `codeA`, independently from the device/crew identity carried by `codeB`.
+> Additional controlled evidence: Maus Fuel Tank / Observation Device probe on `11.19.0_china_apple`.
+>
+> `codeA` is interpreted together with `codeB`; do not assume every numeric state has identical semantics for every component family.
 
 ## Mechanical device lifecycle
 
-Current mechanical `codeB` values occupy the `31..38` family. The most useful state anchors come from the independently proven engine (`31`), ammo rack (`32`), track pair (`34/35`) and turret rotator (`37`).
-
 ### `codeA=4` — common damaged / degraded but operational
 
-For track-side events with `codeA=4`:
-
-```text
-usable kinematic samples : 38
-median post-event speed   : ~3.15 m/s
-median post/pre speed ratio: ~1.01
-```
-
-The vehicle commonly remains mobile. This is inconsistent with a fully destroyed track state.
-
-For ammo-rack `codeB=32`, `codeA=4` produces the persistent reload-duration penalty proven through Avatar method35 while leaving the weapon operational.
-
-Current Blitz module rules describe this family as common damage: the module remains operational with reduced performance.
+Independent physical anchors include tracks, Ammo Rack and other modules. Vehicles remain operational with degraded performance.
 
 Verdict:
 
 > mechanical `codeA=4` = **common damaged / degraded operational state — PROVEN family-level physical role**.
 
+The controlled Maus replay independently reproduces this on Fuel Tank:
+
+```text
+62.243s  codeA=4, codeB=33 Fuel Tank
+86.843s  codeA=4, codeB=33 Fuel Tank
+```
+
 ### `codeA=5` — critical / disabled module state
 
-For track-side events with `codeA=5`:
-
-```text
-usable kinematic samples : 31
-median post-event speed   : ~0.70 m/s
-median post/pre speed ratio: ~0.31
-```
-
-The lower quartile contains near-zero movement ratios, matching a broken-track immobilization state. Player input and momentum prevent every short post-hit window from becoming exactly zero immediately.
-
-The engine anchor gives a second role-specific closure:
-
-```text
-202.527 s  codeA=5, codeB=31 Engine
-205.48 .. 206.68 s  translation effectively zero
-```
-
-Current Blitz rules define critical Engine damage as movement/traverse impossible.
+Track and Engine samples independently show severe functional loss; current module mechanics match a critical/disabled state.
 
 Verdict:
 
 > mechanical `codeA=5` = **critical / disabled device state — PROVEN family-level physical role**.
 
-### `codeA=18` — automatic critical self-repair to degraded/common-damaged state
-
-A current recorder-local Engine chain supplies the clearest natural closure:
+The controlled Maus Observation Device probe gives another direct sample:
 
 ```text
-202.527 s  codeA=5, codeB=31  // Engine critical/disabled
-           Type32 token 0x1F
-
-205.48 .. 206.68 s
-           vehicle translation effectively zero
-
-206.726 s  codeA=18, codeB=31
-           Type32 transition on token 0x1F
-
-206.78 s+
-           translation resumes without Repair Kit activation
+38.441s  codeA=5, codeB=38 Observation Device
+44.844s  codeA=18, codeB=38
 ```
 
-Current Blitz module mechanics state that a critically damaged module self-repairs after a period into the common-damaged state: it becomes operational again but remains degraded until a Repair Kit fully restores it.
+### `codeA=8` — Fuel Tank ignition / fire-start transition
 
-The observed non-consumable transition from immobilized Engine to moving vehicle matches that lifecycle directly.
+This state was not closed in the original 34-arena corpus. A controlled Maus Fuel Tank probe now supplies a direct positive chain:
+
+```text
+62.243s  codeA=4, codeB=33
+         Fuel Tank damaged
+
+65.342s  codeA=8, codeB=33
+         Type32 short state `9c04`
+
+65.843s  Vehicle method1 causeFlag=1
+66.343s  Vehicle method1 causeFlag=1
+         consecutive fire-DOT HP losses
+```
+
+The `codeA=8` event therefore occurs at the Fuel Tank transition that initiates the observed fire family.
+
+Safe current interpretation:
+
+> `codeA=8` **when paired with `codeB=33 Fuel Tank` = Fuel Tank ignition / fire-start transition — PROVEN controlled physical relationship**.
+
+The exact private enum name is still unknown.
+
+Important boundary:
+
+- do **not** generalize `codeA=8` as a universal mechanical state;
+- no controlled evidence yet shows what `codeA=8` would mean on another component, or whether another component can emit it at all.
+
+### `codeA=18` — automatic critical self-repair to degraded/common-damaged state
+
+Canonical Engine behavior already closes the state physically. The controlled Observation Device replay independently reproduces the same lifecycle:
+
+```text
+38.441s  codeA=5,  codeB=38
+44.844s  codeA=18, codeB=38
+```
+
+No Repair Kit boundary is required for this transition.
 
 Verdict:
 
-> mechanical `codeA=18` = **automatic recovery from critical/disabled to common-damaged operational state — PROVEN behavioral role on current Engine sample / version-scoped**.
-
-The exact internal enum symbol is still unknown; consumer semantics should describe the physical transition rather than invent a historical constant name.
+> mechanical `codeA=18` = **automatic recovery from critical/disabled to common-damaged operational state — PROVEN behavioral role / version-scoped**.
 
 ### `codeA=19` — full repair / clear
 
-For proven mechanical codes, source-less `codeA=19` events occur at the module recovery boundary and are repeatedly synchronized with:
+Source-less `codeA=19` events synchronize with Repair Kit / Multi-Purpose Restoration Pack boundaries and clear persistent module damage.
+
+The controlled Maus replay includes:
 
 ```text
-Repair Kit
-or
-Multi-Purpose Restoration Pack
+66.643s  codeA=19, codeB=33 Fuel Tank
+66.643s  codeA=19, codeB=38 Observation Device
+95.939s  codeA=19, codeB=33 Fuel Tank
 ```
-
-For ammo rack, method35 reload duration returns to its normal configuration after the clear.
-
-Unlike `codeA=18`, this is the explicit full-repair path rather than automatic critical self-repair into a still-damaged state.
 
 Verdict:
 
@@ -101,23 +100,9 @@ Verdict:
 
 ## Crew lifecycle
 
-The current Blitz crew-shell-shock component IDs are independently closed as:
-
-```text
-39 Commander
-40 Driver
-41 Gunner
-43 Loader
-```
-
 ### `codeA=10` — crew shell-shocked / injured
 
-Role-specific physical closures include:
-
-- Commander: loss of commander bonus causes small cross-role reload degradation;
-- Driver: current four-role closure plus mobility-compatible behavior;
-- Gunner: strong turret-yaw suppression;
-- Loader: strong reload-speed penalty.
+Current crew IDs are independently closed as Commander, Driver, Gunner and Loader. Role-specific degradation closes this state.
 
 Verdict:
 
@@ -125,15 +110,7 @@ Verdict:
 
 ### `codeA=22` — crew healed / clear
 
-The sampled crew codes clear through source-less `codeA=22`, synchronized with:
-
-```text
-First Aid Kit
-or
-Multi-Purpose Restoration Pack
-```
-
-Role-specific degraded behavior disappears after the heal boundary.
+Observed source-less transitions synchronize with First Aid Kit / Multi-Purpose Restoration Pack and remove role degradation.
 
 Verdict:
 
@@ -141,13 +118,13 @@ Verdict:
 
 ## Other `codeA` values
 
-Observed mechanical codes also include values such as:
+Other observed values such as:
 
 ```text
 0, 1, 6, 7
 ```
 
-These remain presentation/severity/transition candidates without enough isolated current physical evidence for exact symbolic labels.
+remain presentation/severity/transition candidates without isolated current physical closure.
 
 Keep them raw/PARTIAL.
 
@@ -157,7 +134,8 @@ Keep them raw/PARTIAL.
 mechanical:
     codeA=4  -> DAMAGED_DEGRADED
     codeA=5  -> CRITICAL_DISABLED
-    codeA=18 -> AUTO_REPAIRED_TO_DAMAGED   // version-scoped behavioral name
+    codeA=8  -> FUEL_TANK_IGNITION_OR_FIRE_START   // only proven with codeB=33
+    codeA=18 -> AUTO_REPAIRED_TO_DAMAGED
     codeA=19 -> FULLY_REPAIRED_CLEAR
 
 crew:
@@ -165,4 +143,4 @@ crew:
     codeA=22 -> CREW_HEALED
 ```
 
-Consumers must still retain raw `codeA` and `codeB` for version gating and unclosed states.
+Consumers must retain raw `codeA`, `codeB`, client version, and confidence for unclosed combinations.
