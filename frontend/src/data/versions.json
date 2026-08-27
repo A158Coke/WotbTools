@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.42",
+    "date": "2026-08-27",
+    "tag": "add",
+    "zh": "雷达图恢复最外围 100% 边界线（浅色/深色/简约三种界面风格均可见）；选手详情侧栏桌面端新增自由拖拽调整宽度（最小 320px、最大约窗口 45%），宽度会被记住并在切换玩家/关闭重开/窗口尺寸变化后自动适配；平板与手机端保持原有行为。",
+    "en": "The radar chart's outermost 100% boundary line is restored (visible in light/dark/simplified themes); the player-detail side panel on desktop now supports free drag-resize (min 320px, max about 45% of the window). The width is remembered and auto-adjusts after switching players, reopening the panel, or resizing the window; tablet and mobile behavior is unchanged.",
+    "ru": "Восстановлена внешняя граница 100% на лепестковой диаграмме (видна в светлой/тёмной/упрощённой темах); боковая панель игрока на десктопе теперь позволяет свободно менять ширину перетаскиванием (мин. 320px, макс. около 45% окна). Ширина запоминается и автоматически подстраивается при переключении игрока, повторном открытии панели или изменении размера окна; на планшете и телефоне поведение прежнее."
+  },
+  {
     "v": "2.12.41",
     "date": "2026-08-26",
     "tag": "chg",

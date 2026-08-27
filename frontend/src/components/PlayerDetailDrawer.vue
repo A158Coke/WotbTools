@@ -49,7 +49,102 @@ const isSummary = computed(() => props.context?.scope === 'summary')
 
 // 桌面/平板非模态侧栏，移动端(<768px)保持 modal：复用现有 mobile 断点（max-width: 767px）。
 const isMobile = ref(typeof window !== 'undefined' ? window.innerWidth <= 767 : false)
-function updateViewport() { isMobile.value = window.innerWidth <= 767 }
+// 仅 Desktop (>=1200px) 提供自由 resize；Tablet/Mobile 保持原有行为（计划 §15）。
+const isDesktop = ref(typeof window !== 'undefined' ? window.innerWidth >= 1200 : true)
+const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1440)
+
+// ---- Side Panel 自由 Resize（仅桌面；计划 §5/§8/§12-14）----
+const DRAWER_MIN = 320
+const DRAWER_DEFAULT = 380
+const DRAWER_MAX_RATIO = 0.45
+const DRAWER_WIDTH_KEY = 'radarSidePanelWidth'
+const drawerWidth = ref(DRAWER_DEFAULT)
+const isResizing = ref(false)
+const resizeStartX = ref(0)
+const resizeStartWidth = ref(0)
+const resizeHandle = ref(null)
+
+/** 动态 max-width：约 45% 视口，且至少 min、绝不超过视口已留边（保证主内容不被完全挤没）。 */
+function drawerMaxWidth() {
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1440
+  return Math.max(DRAWER_MIN, Math.min(Math.floor(vw * DRAWER_MAX_RATIO), vw - 16))
+}
+function clampDrawerWidth(w) {
+  return Math.max(DRAWER_MIN, Math.min(drawerMaxWidth(), w))
+}
+function loadDrawerWidth() {
+  try {
+    const raw = localStorage.getItem(DRAWER_WIDTH_KEY)
+    if (raw == null) return DRAWER_DEFAULT
+    const n = Number(raw)
+    return Number.isFinite(n) ? clampDrawerWidth(n) : DRAWER_DEFAULT
+  } catch (_) {
+    return DRAWER_DEFAULT
+  }
+}
+function saveDrawerWidth(w) {
+  try { localStorage.setItem(DRAWER_WIDTH_KEY, String(w)) } catch (_) { /* 忽略持久化失败 */ }
+}
+/** 仅更新内存宽度（拖动中高频调用，不写 localStorage）。 */
+function applyDrawerWidth(w) {
+  drawerWidth.value = clampDrawerWidth(w)
+}
+function setDrawerWidth(w) {
+  applyDrawerWidth(w)
+  saveDrawerWidth(drawerWidth.value)
+}
+const resizerLeftPx = computed(() =>
+  isDesktop.value ? Math.max(0, viewportWidth.value - drawerWidth.value - 8) : 0)
+
+function onResizeStart(e) {
+  if (!isDesktop.value || !open.value) return
+  e.preventDefault()
+  resizeStartX.value = e.clientX
+  resizeStartWidth.value = drawerWidth.value
+  isResizing.value = true
+  const h = resizeHandle.value
+  if (h && typeof h.setPointerCapture === 'function') {
+    try { h.setPointerCapture(e.pointerId) } catch (_) { /* happy-dom 无 Pointer Capture */ }
+  }
+  document.body.style.userSelect = 'none'
+  document.body.classList.add('pd-resizing')
+}
+function onResizeMove(e) {
+  if (!isResizing.value) return
+  applyDrawerWidth(resizeStartWidth.value + (resizeStartX.value - e.clientX))
+}
+function onResizeEnd() {
+  if (!isResizing.value) return
+  isResizing.value = false
+  saveDrawerWidth(drawerWidth.value) // 拖动结束才持久化一次
+  document.body.style.userSelect = ''
+  document.body.classList.remove('pd-resizing')
+}
+/** 键盘调整（计划 §16）：每次 20px。 */
+function onResizeKey(delta) {
+  if (!isDesktop.value) return
+  setDrawerWidth(drawerWidth.value + delta)
+}
+
+/** Side Panel 真 reflow（计划 §7）：桌面(>=1200px)开启时把抽屉宽度暴露成 CSS 变量，
+ * 供 .layout-data-workspace 预留右侧空间，主内容随之收窄/扩展，不再被 fixed overlay 覆盖；
+ * tablet/mobile 保持原有 overlay 行为（offset=0px）。 */
+const workspaceOffset = computed(() =>
+  isDesktop.value && open.value ? (drawerWidth.value + 8) + 'px' : '0px')
+watch([isDesktop, open, drawerWidth], () => {
+  if (typeof document !== 'undefined') {
+    document.documentElement.style.setProperty('--pd-drawer-offset', workspaceOffset.value)
+  }
+}, { immediate: true })
+
+function updateViewport() {
+  const w = window.innerWidth
+  isMobile.value = w <= 767
+  isDesktop.value = w >= 1200
+  viewportWidth.value = w
+  // 屏幕尺寸变化时自动 clamp 当前宽度（计划 §14），不强制写回 localStorage。
+  drawerWidth.value = clampDrawerWidth(drawerWidth.value)
+}
 function bindMobile() { updateViewport(); window.addEventListener('resize', updateViewport) }
 function unbindMobile() { window.removeEventListener('resize', updateViewport) }
 
@@ -277,8 +372,14 @@ watch(open, (v) => {
   if (v) nextTick(() => closeBtn.value?.focus?.())
 })
 
-onMounted(() => { window.addEventListener('keydown', onKeydown); bindMobile() })
-onBeforeUnmount(() => { window.removeEventListener('keydown', onKeydown); unbindMobile() })
+onMounted(() => { window.addEventListener('keydown', onKeydown); drawerWidth.value = loadDrawerWidth(); bindMobile() })
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown)
+  unbindMobile()
+  document.body.style.userSelect = ''
+  document.body.classList.remove('pd-resizing')
+  if (typeof document !== 'undefined') document.documentElement.style.removeProperty('--pd-drawer-offset')
+})
 
 // ---- 导出 Rating Profile PNG（§41-48）：专用卡片（非 Drawer 截图）----
 // 导出前捕获不可变快照，offscreen 卡只消费快照——导出期间切换玩家不产生“新玩家数据 + 旧坦克图”混合 PNG。
@@ -395,7 +496,8 @@ function ensureImageLoaded(url) {
   <Teleport to="body">
     <div v-if="open || closing" class="drawer-backdrop" :class="{ 'pd-modal': isMobile }" @click.self="isMobile ? requestClose() : null">
       <aside class="player-drawer" :class="{ 'pd-closing': closing }" role="dialog" :aria-modal="isMobile ? 'true' : undefined"
-             :aria-labelledby="'pd-title-' + (player?.accountId ?? 'x')">
+             :aria-labelledby="'pd-title-' + (player?.accountId ?? 'x')"
+             :style="{ width: isDesktop ? drawerWidth + 'px' : undefined }">
         <button ref="closeBtn" class="pd-close pd-close-abs" :aria-label="t('league.drawer.close')"
                 @click="requestClose">✕</button>
 
@@ -501,6 +603,18 @@ function ensureImageLoaded(url) {
           </div>
         </Transition>
       </aside>
+      <div v-if="isDesktop && open" class="pd-resizer" role="separator" aria-orientation="vertical"
+           tabindex="0" data-testid="drawer-resizer"
+           :aria-label="t('league.drawer.resize_panel')"
+           :aria-valuenow="Math.round(drawerWidth)" :aria-valuemin="DRAWER_MIN"
+           :aria-valuemax="Math.round(drawerMaxWidth())"
+           :style="{ left: resizerLeftPx + 'px' }"
+           ref="resizeHandle"
+           @pointerdown="onResizeStart" @pointermove="onResizeMove" @pointerup="onResizeEnd"
+           @pointercancel="onResizeEnd"
+           @keydown.left.stop.prevent="onResizeKey(-20)" @keydown.right.stop.prevent="onResizeKey(20)">
+        <span class="pd-resizer-line"></span>
+      </div>
     </div>
   </Teleport>
 
@@ -583,6 +697,38 @@ function ensureImageLoaded(url) {
 .player-drawer.pd-closing { animation: pd-slide-out .17s ease-in forwards; }
 @keyframes pd-slide-in { from { transform: translateX(30px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 @keyframes pd-slide-out { from { transform: translateX(0); opacity: 1; } to { transform: translateX(30px); opacity: 0; } }
+
+/* Side Panel resize handle（桌面）：视觉 2px 线，实际 12px hit 区；默认不显，hover/拖动时高亮。 */
+.pd-resizer {
+  position: absolute;
+  top: calc(var(--topbar-h) + 8px);
+  bottom: 8px;
+  width: 12px;
+  margin-left: -5px;
+  z-index: 2;
+  cursor: col-resize;
+  touch-action: none;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity .15s ease;
+}
+.pd-resizer:hover,
+body.pd-resizing .pd-resizer { opacity: 1; }
+.pd-resizer:focus-visible { opacity: 1; }
+.pd-resizer-line {
+  width: 2px;
+  height: 52px;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background .15s ease, height .15s ease;
+}
+.pd-resizer:hover .pd-resizer-line,
+body.pd-resizing .pd-resizer-line,
+.pd-resizer:focus-visible .pd-resizer-line { background: var(--accent); height: 72px; }
+@media (max-width: 1199px) { .pd-resizer { display: none; } }
 @media (max-width: 1080px) {
   .drawer-backdrop { z-index: var(--z-modal); }
   .player-drawer { top: 8px; }
