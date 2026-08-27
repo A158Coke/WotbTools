@@ -1,68 +1,170 @@
 # Death, lifetime and battle-clock protocol research
 
-> Scope: WotBTools real replay corpus used during 2026-08-26 research, primarily Blitz 11.18/11.19. 34 unique arena IDs were used for production-equivalent analysis; the pre-dedup corpus also contained multi-POV duplicates and was used only for protocol cross-validation.
+> Scope: WotBTools real replay corpus used during 2026-08-26/27 research, primarily Blitz 11.18/11.19. 34 unique arena IDs are the canonical production-equivalent corpus; pre-dedup multi-POV duplicates are used only for protocol cross-validation.
 
 ## Verdict matrix
 
 | Fact | Verdict | Evidence summary |
 |---|---|---|
-| player result field 24 = `lifeTime` | PROVEN | 476/476 player results present; all survivors in a battle share the terminal lifetime; 282 precise death events align after battle-clock normalization; Wargaming battle-results model independently contains `lifeTime` adjacent to `killerID`. |
-| player result field 25 = `killerID` | PROVEN | present for dead players, absent for survivors in the corpus; maps to valid result/entity IDs; enemy attribution in normal kills and self attribution in the world-collision sample. |
-| player result field 105 = `deathReason` | PROVEN | values cross-validated against terminal event shape and Wargaming attack-reason enum. |
-| `deathReason=1` = fire | PROVEN on current samples | delayed terminal HP after hostile damage, consistent with FIRE semantics. |
-| `deathReason=2` = ramming | PROVEN on current samples | killer is another vehicle, no direct-shot terminal notification, consistent with RAM. |
-| `deathReason=3` = world_collision | PROVEN on current sample | unique self-attributed death; terminal attacker/self ID; no hostile direct damage at death; Wargaming enum index 3 = world_collision. |
-| Type 7 `propId=3` = current HP | PROVEN | real absolute HP, terminal 0, positive values track observed health; existing protocol probes. |
-| `0xFFFD` is death-associated terminal HP sentinel | PROVEN on current samples | terminal state co-occurs with destruction evidence. Name must not imply generic unknown HP. |
-| `0xFFFE` can be terminal death state | PROVEN for the verified Intotherainy sample | settlement killer/lifetime, Type 7 sentinel, subtype-1 state and attacker all close the same death event. Global sentinel semantics still require more samples. |
-| Type 8 subtype 1 carries health/state + attacker/killer relation | PROVEN on current death corpus | 282/282 known terminal events align with Type 7 terminal time; attacker/result ID matches settlement killer ID in the verified corpus. |
-| Type 8 subtype 48 wrapper 3 = arena-period update | PROVEN on current samples | decoded period values match Wargaming `ARENA_PERIOD`; period 3 is battle. |
-| `ARENA_PERIOD.BATTLE = 3` | PROVEN | Wargaming client enum. |
-| `lifeTime` is nearest-integer battle-relative lifetime, not floor | PROVEN on current corpus | period=3 independent start marker + 204 precise death samples: residuals center around 0 within approximately ±0.5 s; floor model is shifted by ~0.5 s and rejected. |
-| single-POV precise sub-second death exists for every dead player | FALSE | four verified deaths occur after the recorded event stream has already ended. Missing event evidence is physical data absence, not decoder failure. |
+| player result field 24 = `lifeTime` | PROVEN | 476/476 player results present; survivor/death timing and independent result-layout evidence close the field. |
+| player result field 25 = `killerID` | PROVEN | present for dead players/default-omitted for survivors; maps to valid result/entity IDs; normal hostile kills and self-attributed world-collision sample close behavior. |
+| player result field 105 = `deathReason` | PROVEN | values cross-validated against live terminal cause and Wargaming attack-reason family. |
+| `deathReason=1` = fire | PROVEN current samples | 4/4 current fire deaths close to live method1 causeFlag=1. |
+| `deathReason=2` = ramming | PROVEN current samples | 2/2 current ramming deaths close to method1 causeFlag=2 and nearby Vehicle method4 vehicle-contact evidence. |
+| `deathReason=3` = world_collision | PROVEN current sample | 1/1 current sample closes to method1 causeFlag=3 with self/environment source behavior. |
+| Type7 Vehicle prop3 = current HP | PROVEN | absolute HP plus terminal sentinel family; current corpus closure. |
+| Vehicle method1 = live HP + source + cause family | PROVEN | 3471/3471 HP word equals same-clock prop3; direct subset source closes to method8 attacker; flags 1/2/3 close fire/ramming/environment. |
+| single-POV precise sub-second death exists for every dead player | FALSE | canonical 34 arenas contain 287 deaths; 283 have live terminal clock and 4 have no live death surface in that POV. |
+| canonical single-POV sub-second death coverage | PROVEN current corpus | 283/287 = **98.61%**; remaining 4 require settlement-second fallback. |
+| `lifeTime` is nearest-integer battle-relative lifetime, not floor | PROVEN current corpus | period-3 battle-start anchor plus precise death samples center residuals around nearest integer rather than floor. |
+
+## Vehicle method1 live death/cause surface
+
+Current Vehicle-targeted method1 is a fixed 7-byte live state body:
+
+```text
+currentHpRaw : u16 LE
+sourceEntity : u32 LE
+causeFlag    : u8
+```
+
+Across the canonical 34 arenas:
+
+```text
+method1 records                         : 3,471
+currentHpRaw == same-clock prop3 raw16  : 3,471 / 3,471
+```
+
+For supported direct-damage records:
+
+```text
+causeFlag = 0
+sourceEntity == Vehicle method8 attacker : 3,225 / 3,225
+```
+
+Terminal method1 events joined to settlement death reason close exactly in the current corpus:
+
+```text
+ordinary/default shot death : 276 -> causeFlag 0   276 / 276
+fire                        :   4 -> causeFlag 1     4 / 4
+ramming                     :   2 -> causeFlag 2     2 / 2
+world collision             :   1 -> causeFlag 3     1 / 1
+```
+
+Non-terminal samples preserve the same physical family:
+
+```text
+causeFlag 1 fire-family samples      : 64/64 sourceEntity != victim
+causeFlag 2 ramming-family samples   : 96/96 sourceEntity != victim
+causeFlag 3 environment/self samples : 17/17 sourceEntity == victim
+```
+
+Current safe cause map:
+
+```text
+0 = direct/default combat damage
+1 = fire
+2 = ramming
+3 = world/self-environment collision family
+```
+
+This is a live-stream source; settlement remains authoritative for final `killerID` and final `deathReason` when available.
+
+## Canonical single-POV death-time coverage
+
+The canonical 34-arena settlement contains:
+
+```text
+dead settled combatants : 287
+```
+
+Live terminal coverage:
+
+```text
+with Type7 prop3 terminal      : 283 / 287
+with Vehicle method1 terminal  : 283 / 287
+with both live surfaces        : 283 / 287
+
+EVENT_SUBSECOND coverage       : 98.61%
+```
+
+The remaining four deaths were checked against other plausible live surfaces:
+
+```text
+terminal prop3 near death      : absent
+terminal Vehicle method1       : absent
+wrapper6 vehicle-killed feed   : absent
+useful Type33 removal at death : absent
+```
+
+All four are ordinary/default-shot deaths in settlement. Their absence across multiple independent packet families means this is not a decoder-specific gap. The single recorder POV simply did not contain a usable live terminal death observation for those remote entities.
+
+Therefore the production-safe precision model is:
+
+```text
+283 / 287 deaths
+  -> EVENT_SUBSECOND
+  -> precise replay raw clock available
+
+4 / 287 deaths
+  -> SETTLEMENT_SECOND
+  -> use authoritative lifeTime integer
+  -> approximately ±0.5 s quantization uncertainty
+```
+
+A parser must not invent sub-second timestamps for the four fallback cases.
+
+## Why 100% sub-second precision is impossible from one POV in this corpus
+
+The four uncovered deaths do not expose an alternative packet that can be decoded into the missing time. They are a physical observation/AoI coverage limitation.
+
+Consequently:
+
+> **100% sub-second death timing from every single `.wotbreplay` POV is not achievable for the canonical corpus.**
+
+Two valid strategies remain:
+
+1. accept explicit `SETTLEMENT_SECOND` fallback for uncovered players;
+2. when multiple POV recordings of the same `arenaUniqueId` exist, fuse them after battle-clock alignment and use another POV's live terminal event when available.
+
+This is a data-availability boundary, not an invitation to synthesize a timestamp.
 
 ## Canonical time domains
 
-WotBTools must distinguish three time concepts:
+WotBTools must distinguish:
 
-1. **raw replay clock** — the `f32` packet timestamp stored in `data.wotreplay`.
-2. **client-observed battle start** — the raw timestamp at which the replay records the server arena-period transition to `BATTLE`.
-3. **server battle-relative lifetime** — the settlement lifetime used by battle results and quantized to the nearest integer second.
+1. **raw replay clock** — packet `f32` timestamp in `data.wotreplay`;
+2. **client-observed battle start** — wrapper3 arena-period transition to `BATTLE`;
+3. **server battle-relative lifetime** — settlement `lifeTime`, nearest-integer seconds.
 
-The correct model is therefore not:
-
-```text
-rawClock == battleRelativeSec
-```
-
-but conceptually:
+Conceptually:
 
 ```text
 preciseBattleRelativeSec ~= rawClockSec - serverBattleStartRawClock
-lifeTimeSec = nearestInteger(preciseBattleRelativeSec)
+lifeTimeSec              = nearestInteger(preciseBattleRelativeSec)
 ```
 
-The client-observed period-3 packet is a direct protocol anchor, but it can differ from the latent server start by network/recording jitter. Across the validated sample this jitter is sub-second and the death-derived start estimate aligns tightly with the period transition in aggregate.
+The period-3 packet is a direct protocol anchor. Small client/network timing differences remain sub-second.
 
 ## Multi-POV validation
 
-The pre-dedup corpus contains several arenas recorded by different players. The same terminal death event across two POVs has raw-clock differences typically on the order of only a few hundredths of a second, generally below roughly 0.1 s in the observed sample.
+The pre-dedup corpus contains same-arena recordings from different players. Matching terminal deaths across POVs differ in raw clock by only small fractions of a second in observed samples, commonly below roughly 0.1 s after alignment.
 
-Therefore multiple POVs can be fused onto one battle timeline after small alignment tolerance. They must still count as one battle for Rating and aggregation.
+Thus multi-POV fusion is viable for improving observation coverage, while `arenaUniqueId` deduplication must still ensure one physical battle is counted only once for Rating/aggregation.
 
 ## Precision model
 
-A death fact must not be represented as an unqualified `double`.
+A death fact must not be represented as an unqualified floating-point timestamp.
 
-Recommended research model:
+Recommended model:
 
 ```text
 DeathFact
   accountId
   survived
-  serverLifeTimeSec       // settlement integer second
-  preciseEventRawClockSec // when a terminal event exists
-  battleRelativeExactSec  // only when start + event can be resolved sufficiently
+  serverLifeTimeSec
+  preciseEventRawClockSec
+  battleRelativeExactSec
   lowerBoundSec
   upperBoundSec
   killerId
@@ -73,12 +175,16 @@ DeathFact
   evidence[]
 ```
 
-Suggested precision categories:
+Precision categories:
 
-- `EVENT_SUBSECOND`: terminal replay event exists and maps reliably to the player.
-- `SETTLEMENT_SECOND`: server `lifeTime` exists; semantic time uncertainty is approximately ±0.5 s due to nearest-integer quantization.
-- `BOUNDED`: only an interval can be proven.
-- `UNKNOWN`: evidence is insufficient; never fabricate a timestamp.
+```text
+EVENT_SUBSECOND
+SETTLEMENT_SECOND
+BOUNDED
+UNKNOWN
+```
+
+`UNKNOWN` must never be replaced by a fabricated exact time.
 
 ## The former five UNKNOWN deaths
 
@@ -86,50 +192,48 @@ Production previously reported five dead players without reliable exact death ti
 
 Research root cause:
 
-- one case (`Intotherainy`) has a terminal `0xFFFE` state that the current decoder treats as unknown; settlement killer/lifetime plus Type 8 subtype-1 closes the exact death event for this sample;
-- four cases have no sub-second terminal death packet because their `data.wotreplay` event stream ends before the server settlement `lifeTime` at which they die.
+- one (`Intotherainy`) uses a terminal `0xFFFE` state that older decoder logic treated as unknown; settlement + live terminal method1/prop3 evidence closes it;
+- four have no live terminal death packet in the recorder POV and therefore require settlement `lifeTime` fallback.
 
-Therefore the correct distinction is:
+Correct distinction:
 
-- **death is known from settlement for all validated dead players**;
-- **sub-second replay-event death is not available for every player in a single POV**.
+- death fact is known from settlement for all validated dead players;
+- sub-second live-event time exists for **283/287 (98.61%)**, not every player in one POV.
 
 ## Self-attributed death investigation
 
-The single sample where `killerID == victim/self` is not a fire death.
+The sole `killerID == victim/self` case is not generic suicide/fire:
 
-Evidence:
+```text
+settlement deathReason = 3
+method1 causeFlag       = 3
+sourceEntity            = victim/self
+```
 
-- settlement `deathReason=3`;
-- Wargaming `ATTACK_REASONS[3] = world_collision`;
-- terminal state attributes attacker/result ID to self;
-- no hostile direct-damage notification at terminal time;
-- the player was still attacking an enemy shortly before destruction.
-
-Verdict: self-attributed world-collision death, not a generic "suicide" label and not fire.
+Verdict: world/self-environment collision death family.
 
 ## Consumer implications
 
 ### League Rating
 
-Trade logic should consume death facts/intervals, not force every participant to have a fake exact timestamp. If the interval proves whether an enemy death is within the 5-second trade window, the result can be deterministic. Ambiguous boundary cases must fail closed.
+Trade logic should consume a precision-bearing death fact. If an EVENT_SUBSECOND clock exists, use it. If only settlement-second precision exists, use interval reasoning and fail closed on ambiguous threshold boundaries.
 
-### AI review
+### AI Review
 
-AI facts should prefer precise event time when available and otherwise state settlement-second timing without pretending sub-second precision. `killerID` and `deathReason` should become canonical evidence to avoid inventing death cause.
+Prefer exact event time when present. For fallback cases, state the settlement-backed second-level timing rather than inventing decimal precision. `killerID`, `deathReason`, method1 source/cause and collision/fire evidence should be canonical facts.
 
 ### Battle playback
 
-Playback should use `EVENT_SUBSECOND` for precise visual destruction when available. When only settlement lifetime exists, a server-backed second-level death is better than leaving the vehicle alive past its actual death, but the precision/source should remain explicit in the DTO/fact layer.
+Use live terminal time for 98.61% current-corpus deaths. For settlement-only cases, placing destruction at the server lifetime second is preferable to keeping the tank alive incorrectly, but source/precision must remain visible in the fact/DTO layer.
 
-## Known code gaps in current main
+## Known implementation boundary
 
-At the time of this research, current main does not consume all validated evidence:
+Protocol conclusions and production support are separate. Main-branch code must explicitly consume:
 
-- `ReplayPacketStreamReader` reports `battleStartIdentified=false` and `battleStartRawClockSec=null` rather than consuming arena-period evidence.
-- `EntityMethodDecoder` consumes subtype48 wrappers for roster and supremacy points but does not yet expose wrapper-3 arena-period events.
-- subtype1 terminal health/killer semantics are not yet modeled as canonical events.
-- player-result fields 24/25/105 are not yet modeled as canonical `lifeTime`/`killerID`/`deathReason` facts.
-- the constant/comment around `0xFFFD` must be made semantically consistent with the decoder behavior.
+- wrapper3 battle-start/period events;
+- Vehicle method1 HP/source/cause semantics;
+- settlement fields 24/25/105;
+- Type7 terminal sentinel family;
+- precision-aware settlement fallback.
 
-These are implementation gaps, not reasons to downgrade the protocol conclusions above.
+Missing implementation is not a reason to downgrade the protocol evidence.
