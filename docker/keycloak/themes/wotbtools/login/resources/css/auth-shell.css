@@ -20,7 +20,7 @@ html[data-theme="light"] .wbtb-shell:before { content: ""; position: fixed; inse
 
 .wbtb-shell__topbar { position: relative; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 28px; }
 .wbtb-shell__brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; cursor: pointer; }
-.wbtb-shell__brand-logo { display: block; height: 34px; width: auto; object-fit: contain; }
+.wbtb-shell__brand-logo { display: block; height: 36px; width: auto; object-fit: contain; }
 .wbtb-shell__topbar-actions { display: inline-flex; align-items: center; gap: 10px; }
 
 .wbtb-shell__main { position: relative; z-index: 2; flex: 1 1 auto; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 24px; padding: 24px clamp(24px, 6vw, 84px) 36px; }

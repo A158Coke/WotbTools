@@ -18,6 +18,7 @@
     .wbtb-hero__title { font-size: 34px; }
     .wbtb-hero__chips { font-size: 12.5px; }
     .wbtb-shell__auth { width: min(420px, 100%); justify-self: center; }
+    .wbtb-shell__brand-logo { height: 28px; }
 }
 @media (min-width: 768px) and (max-width: 1179px) {
     .wbtb-shell__main { gap: 20px; padding: 20px 28px 32px; }
