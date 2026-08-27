@@ -1,38 +1,111 @@
 #!/usr/bin/env python3
-"""Sync the equipment catalog from current BlitzKit sources.
+"""Safely sync the WotB equipment catalog from reviewed BlitzKit sources.
 
-BlitzKit's equipment.pb is authoritative for equipment IDs/names/presets while
-its public calculation code is authoritative for the numerical effects used by
-Tankopedia. This updater intentionally fails closed if an expected source
-pattern disappears instead of guessing a value.
+The updater deliberately separates two classes of equipment:
+
+* FULLY_MODELED_CODES: every catalog effect for the item is derived from a
+  reviewed BlitzKit calculation source.
+* LOCKED_CODES: WotBTools models the item, but BlitzKit does not expose every
+  effect through calculation code. These items are never partially rewritten;
+  their live English description is checked for the numeric/semantic markers
+  that back the current catalog values.
+
+The workflow also validates all equipment referenced by tier 7-10 vehicle
+presets. New, removed, renamed, or moved equipment therefore fails closed
+instead of being silently omitted.
 """
 
 import argparse
+import base64
 import json
-import os
 import re
 import urllib.request
 
-from update_tankopedia import EQUIPMENT_URL, parse_equipment_defs
+from update_tankopedia import (
+    EQUIPMENT_URL,
+    PB_URL,
+    as_int,
+    as_str,
+    decode_protobuf,
+    f1,
+    filter_to_business_tiers,
+    i18n_en,
+    parse_equipment_defs,
+    parse_tanks,
+)
 
-TANK_CHARACTERISTICS_URL = (
-    "https://raw.githubusercontent.com/blitzkit/blitzkit/main/"
-    "packages/website/src/core/blitzkit/tankCharacteristics.ts"
-)
-PENETRATION_URL = (
-    "https://raw.githubusercontent.com/blitzkit/blitzkit/main/"
-    "packages/core/src/blitzkit/resolvePenetrationCoefficient.ts"
-)
-ARMOR_URL = (
-    "https://raw.githubusercontent.com/blitzkit/blitzkit/main/"
-    "packages/website/src/components/Armor/components/StaticArmorSceneComponent.tsx"
-)
+BLITZKIT_REPO = "blitzkit/blitzkit"
+SOURCE_FILES = {
+    "characteristics": (
+        "packages/website/src/core/blitzkit/tankCharacteristics.ts",
+        "d9d04109829c1095c6c51edd50bd3adf29097b0f",
+    ),
+    "penetration": (
+        "packages/core/src/blitzkit/resolvePenetrationCoefficient.ts",
+        "56dcb256083b25a6902c73126faeb08065351d69",
+    ),
+    "armor": (
+        "packages/website/src/components/Armor/components/StaticArmorSceneComponent.tsx",
+        "37173d1972d84c210a5765be9af3baff7d255252",
+    ),
+}
+
+FULLY_MODELED_CODES = {
+    "GUN_RAMMER",
+    "IMPROVED_VENTILATION",
+    "CALIBRATED_SHELLS",
+    "ENHANCED_GUN_LAYING_DRIVE",
+    "VERTICAL_STABILIZER",
+    "REFINED_GUN",
+    "ENHANCED_ARMOR",
+    "IMPROVED_ASSEMBLY",
+    "IMPROVED_OPTICS",
+    "CAMOUFLAGE_NET",
+    "IMPROVED_CONTROL",
+    "ENGINE_ACCELERATOR",
+}
+
+# These are intentionally not partially updated. The markers are extracted
+# from the live English equipment description in equipment.pb; if WG/BlitzKit
+# changes a locked effect, the updater stops and asks for a reviewed mapping.
+LOCKED_DESCRIPTION_NUMBERS = {
+    "SUPERCHARGER": {35.0, 60.0},
+    "IMPROVED_VERTICAL_STABILIZER": {4.0, 3.0},
+    "IMPROVED_SUSPENSION": {20.0, 15.0, 30.0},
+    "IMPROVED_MODULES": {20.0, 40.0},
+    "DEFENSE_SYSTEM": {10.0, 15.0, 25.0},
+    "ENHANCED_TRACKS": set(),
+    "TOOLBOX": {20.0},
+    "CONSUMABLE_DELIVERY_SYSTEM": {12.0},
+    "HIGH_END_CONSUMABLES": {33.0},
+}
+LOCKED_DESCRIPTION_KEYWORDS = {
+    "ENHANCED_TRACKS": {"track", "repair"},
+}
+LOCKED_CODES = set(LOCKED_DESCRIPTION_NUMBERS)
+GRID_GROUPS = ("FIREPOWER", "VITALITY", "SPECIALIZATION")
 
 
 def fetch(url, binary=False):
-    with urllib.request.urlopen(url, timeout=30) as response:
+    request = urllib.request.Request(url, headers={"User-Agent": "WotBTools-data-sync"})
+    with urllib.request.urlopen(request, timeout=30) as response:
         data = response.read()
     return data if binary else data.decode("utf-8")
+
+
+def fetch_reviewed_source(path, expected_blob_sha):
+    url = f"https://api.github.com/repos/{BLITZKIT_REPO}/contents/{path}?ref=main"
+    payload = json.loads(fetch(url))
+    actual_sha = payload.get("sha")
+    if actual_sha != expected_blob_sha:
+        raise RuntimeError(
+            "BLITZKIT_SOURCE_CHANGED: %s expected=%s actual=%s; review upstream and update the lock"
+            % (path, expected_blob_sha, actual_sha)
+        )
+    content = payload.get("content")
+    if not content:
+        raise RuntimeError("BLITZKIT_SOURCE_MISSING_CONTENT: " + path)
+    return base64.b64decode(content).decode("utf-8")
 
 
 def coefficient(text, variable):
@@ -61,23 +134,9 @@ def set_single_multiplier(payload, code, stat, value):
     item["effects"] = [{"stat": stat, "operation": "MULTIPLY", "value": round(value, 6)}]
 
 
-def sync_ids(payload, equipment_names):
-    ids_by_name = {}
-    for equipment_id, name in equipment_names.items():
-        if name:
-            ids_by_name.setdefault(name, []).append(equipment_id)
-    for item in payload["items"]:
-        name = item.get("nameEn")
-        matches = ids_by_name.get(name, [])
-        if len(matches) != 1:
-            raise RuntimeError("BLITZKIT_ID_MATCH_FAILED: %s -> %s" % (name, matches))
-        item["id"] = matches[0]
-
-
 def parse_calibrated(text):
     values = re.findall(r"SHELL_TYPE_(APCR|HEAT|AP)\s*\n?\s*\?\s*(1\.\d+)", text)
     result = {kind: float(value) for kind, value in values}
-    # Final fallback branch is HE/HEP/HESH.
     tail = re.search(r"SHELL_TYPE_HEAT[\s\S]*?\?\s*(1\.\d+)\s*\n?\s*:\s*(1\.\d+)\s*\n?\s*:\s*1", text)
     if not {"AP", "APCR", "HEAT"}.issubset(result) or not tail:
         raise RuntimeError("BLITZKIT_PATTERN_MISSING: calibrated shells")
@@ -92,12 +151,133 @@ def parse_class_values(block):
         if not match:
             raise RuntimeError("BLITZKIT_PATTERN_MISSING: class " + cls)
         result[cls] = float(match.group(1))
-    # The final else in these BlitzKit ternaries is Tank Destroyer.
     matches = re.findall(r":\s*(0\.\d+)\s*,", block)
     if not matches:
         raise RuntimeError("BLITZKIT_PATTERN_MISSING: tank destroyer class value")
     result["TANK_DESTROYER"] = float(matches[-1])
     return result
+
+
+def parse_equipment_details(pb_bytes):
+    """Return {id: {name, description}} from EquipmentDefinitions.equipments."""
+    details = {}
+    root = decode_protobuf(pb_bytes)
+    for raw_equipment in root.get(2, []):
+        kv = decode_protobuf(raw_equipment)
+        equipment_id = as_int(f1(kv, 1))
+        if equipment_id is None:
+            continue
+        equipment = decode_protobuf(f1(kv, 2, b""))
+        details[equipment_id] = {
+            "name": i18n_en(f1(equipment, 1, b"")),
+            "description": i18n_en(f1(equipment, 2, b"")),
+        }
+    return details
+
+
+def parse_equipment_placements(pb_bytes, used_presets):
+    """Return {equipment_id: {(group, slot, side)}} for used tier 7-10 presets."""
+    placements = {}
+    root = decode_protobuf(pb_bytes)
+    for raw_preset in root.get(1, []):
+        kv = decode_protobuf(raw_preset)
+        preset_name = as_str(f1(kv, 1, b""))
+        if preset_name not in used_presets:
+            continue
+        preset = decode_protobuf(f1(kv, 2, b""))
+        for index, raw_slot in enumerate(preset.get(1, [])):
+            if index >= 9:
+                raise RuntimeError("BLITZKIT_PRESET_LAYOUT_UNSUPPORTED: %s slot=%d" % (preset_name, index))
+            slot = decode_protobuf(raw_slot)
+            group = GRID_GROUPS[index // 3]
+            position = (group, index % 3 + 1)
+            for field, side in ((1, "LEFT"), (2, "RIGHT")):
+                equipment_id = as_int(f1(slot, field))
+                if equipment_id:
+                    placements.setdefault(equipment_id, set()).add(position + (side,))
+    return placements
+
+
+def required_business_equipment_ids(vehicles, presets):
+    preset_names = {v.get("_equipmentPreset") for v in vehicles.values() if v.get("_equipmentPreset")}
+    missing_presets = sorted(name for name in preset_names if name not in presets)
+    if missing_presets:
+        raise RuntimeError("BLITZKIT_PRESET_MISSING: " + ", ".join(missing_presets))
+    required_ids = set()
+    for name in preset_names:
+        required_ids.update(presets[name])
+    return preset_names, required_ids
+
+
+def validate_upstream_contract(payload, equipment_pb, tanks_pb):
+    presets, equipment_names = parse_equipment_defs(equipment_pb)
+    details = parse_equipment_details(equipment_pb)
+    vehicles = filter_to_business_tiers(parse_tanks(tanks_pb))
+    used_presets, required_ids = required_business_equipment_ids(vehicles, presets)
+    placements = parse_equipment_placements(equipment_pb, used_presets)
+
+    catalog_by_id = {item["id"]: item for item in payload["items"]}
+    missing = sorted(required_ids - set(catalog_by_id))
+    if missing:
+        rendered = [f"{item_id}:{equipment_names.get(item_id, '?')}" for item_id in missing]
+        raise RuntimeError("BLITZKIT_NEW_BUSINESS_EQUIPMENT: " + ", ".join(rendered))
+
+    for item in payload["items"]:
+        equipment_id = item["id"]
+        upstream_name = equipment_names.get(equipment_id)
+        if upstream_name is None:
+            raise RuntimeError("BLITZKIT_EQUIPMENT_REMOVED: %s id=%s" % (item["code"], equipment_id))
+        if upstream_name != item.get("nameEn"):
+            raise RuntimeError(
+                "BLITZKIT_EQUIPMENT_RENAMED: %s catalog=%r upstream=%r"
+                % (item["code"], item.get("nameEn"), upstream_name)
+            )
+        if equipment_id in required_ids:
+            local_grid = item.get("grid") or {}
+            expected = (local_grid.get("group"), local_grid.get("slot"), local_grid.get("side"))
+            actual = placements.get(equipment_id, set())
+            if actual != {expected}:
+                raise RuntimeError(
+                    "BLITZKIT_EQUIPMENT_GRID_CHANGED: %s catalog=%s upstream=%s"
+                    % (item["code"], expected, sorted(actual))
+                )
+
+    codes = {item["code"] for item in payload["items"]}
+    modeled = FULLY_MODELED_CODES | LOCKED_CODES
+    if codes != modeled:
+        raise RuntimeError(
+            "CATALOG_MODEL_COVERAGE_MISMATCH: missing_models=%s stale_models=%s"
+            % (sorted(codes - modeled), sorted(modeled - codes))
+        )
+
+    validate_locked_descriptions(payload, details)
+
+
+def extract_numbers(text):
+    return {float(value) for value in re.findall(r"(?<!\w)-?\d+(?:\.\d+)?", text or "")}
+
+
+def validate_locked_descriptions(payload, details):
+    for code in sorted(LOCKED_CODES):
+        item = item_by_code(payload, code)
+        detail = details.get(item["id"])
+        if not detail:
+            raise RuntimeError("BLITZKIT_EQUIPMENT_DESCRIPTION_MISSING: " + code)
+        description = detail.get("description") or ""
+        numbers = extract_numbers(description)
+        expected_numbers = LOCKED_DESCRIPTION_NUMBERS[code]
+        if not expected_numbers.issubset(numbers):
+            raise RuntimeError(
+                "BLITZKIT_LOCKED_EFFECT_CHANGED: %s expected_numbers=%s upstream_numbers=%s"
+                % (code, sorted(expected_numbers), sorted(numbers))
+            )
+        lowered = description.lower()
+        expected_keywords = LOCKED_DESCRIPTION_KEYWORDS.get(code, set())
+        if not all(keyword in lowered for keyword in expected_keywords):
+            raise RuntimeError(
+                "BLITZKIT_LOCKED_EFFECT_CHANGED: %s missing_keywords=%s"
+                % (code, sorted(expected_keywords))
+            )
 
 
 def sync_values(payload, characteristics, penetration, armor):
@@ -118,9 +298,6 @@ def sync_values(payload, characteristics, penetration, armor):
         "aimTime",
         1 + coefficient(characteristics, "hasEnhancedGunLayingDrive"),
     )
-    item_by_code(payload, "SUPERCHARGER")["effects"][0]["value"] = round(
-        1 + coefficient(characteristics, "hasSupercharger"), 6
-    )
 
     vertical = round(1 + coefficient(characteristics, "hasVerticalStabilizer"), 6)
     for effect in item_by_code(payload, "VERTICAL_STABILIZER")["effects"]:
@@ -138,8 +315,7 @@ def sync_values(payload, characteristics, penetration, armor):
 
     optics_block = characteristics.split("const viewRangeCoefficient =", 1)[1].split("const fireChanceCoefficient", 1)[0]
     optics = parse_class_values(optics_block)
-    optics_item = item_by_code(payload, "IMPROVED_OPTICS")
-    for effect in optics_item["effects"]:
+    for effect in item_by_code(payload, "IMPROVED_OPTICS")["effects"]:
         cls = effect["conditions"]["vehicleClasses"][0]
         effect["value"] = round(1 + optics[cls], 6)
 
@@ -185,22 +361,23 @@ def main():
     parser.add_argument("--catalog", default="common/wotb-item-catalog-json/equipment.json")
     args = parser.parse_args()
 
-    with open(args.catalog, encoding="utf-8") as f:
-        payload = json.load(f)
+    with open(args.catalog, encoding="utf-8") as file:
+        payload = json.load(file)
 
-    _, equipment_names = parse_equipment_defs(fetch(EQUIPMENT_URL, binary=True))
-    sync_ids(payload, equipment_names)
-    sync_values(
-        payload,
-        fetch(TANK_CHARACTERISTICS_URL),
-        fetch(PENETRATION_URL),
-        fetch(ARMOR_URL),
-    )
+    equipment_pb = fetch(EQUIPMENT_URL, binary=True)
+    tanks_pb = fetch(PB_URL, binary=True)
+    validate_upstream_contract(payload, equipment_pb, tanks_pb)
+
+    sources = {
+        name: fetch_reviewed_source(path, sha)
+        for name, (path, sha) in SOURCE_FILES.items()
+    }
+    sync_values(payload, sources["characteristics"], sources["penetration"], sources["armor"])
     validate(payload)
 
-    with open(args.catalog, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-        f.write("\n")
+    with open(args.catalog, "w", encoding="utf-8", newline="\n") as file:
+        json.dump(payload, file, ensure_ascii=False, indent=2)
+        file.write("\n")
 
 
 if __name__ == "__main__":
