@@ -251,6 +251,32 @@ html[data-ui-profile="classic"] .layout-data-workspace table tbody tr:hover {bac
 html[data-ui-profile="classic"] .layout-data-workspace .error {background: var(--status-err-bg) !important; color: var(--status-err-fg) !important; border-color: var(--error) !important}
 html[data-ui-profile="classic"] .layout-data-workspace .warn {background: var(--status-warn-bg) !important; color: var(--status-warn-fg) !important; border-color: var(--border-warn) !important}
 
+/* ---- Replay 处理面板 / Export 任务卡（ReplayProcessingPanel .rpp-* / ReplayTaskCard .etc-*
+   scoped 写死 showcase 深色：面板底/进度条/按钮。Classic 落浅色并跟随 token ---- */
+html[data-ui-profile="classic"] .replay-processing-panel {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important; box-shadow: var(--surface-shadow) !important}
+html[data-ui-profile="classic"] .replay-processing-panel .rpp-title {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .replay-processing-panel .rpp-ok {color: var(--status-ok-fg) !important}
+html[data-ui-profile="classic"] .replay-processing-panel .rpp-err {color: var(--status-err-fg) !important}
+html[data-ui-profile="classic"] .replay-processing-panel .rpp-sub {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .replay-processing-panel .rpp-counts {color: var(--accent-dark) !important}
+html[data-ui-profile="classic"] .replay-processing-panel .rpp-bar {background: var(--border) !important}
+html[data-ui-profile="classic"] .replay-processing-panel .rpp-bar-fill {background: var(--accent) !important}
+html[data-ui-profile="classic"] .replay-processing-panel .rpp-btn {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .replay-processing-panel .rpp-btn:hover {border-color: var(--accent) !important; color: var(--accent-dark) !important}
+html[data-ui-profile="classic"] .replay-processing-panel .rpp-error {color: var(--status-err-fg) !important}
+html[data-ui-profile="classic"] .replay-task-card {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important; box-shadow: var(--surface-shadow) !important}
+html[data-ui-profile="classic"] .replay-task-card .etc-title {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .replay-task-card .etc-ok {color: var(--status-ok-fg) !important}
+html[data-ui-profile="classic"] .replay-task-card .etc-err {color: var(--status-err-fg) !important}
+html[data-ui-profile="classic"] .replay-task-card .etc-sub {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .replay-task-card .etc-counts {color: var(--accent-dark) !important}
+html[data-ui-profile="classic"] .replay-task-card .etc-bar {background: var(--border) !important}
+html[data-ui-profile="classic"] .replay-task-card .etc-bar-fill {background: var(--accent) !important}
+html[data-ui-profile="classic"] .replay-task-card .etc-btn {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .replay-task-card .etc-btn:hover {border-color: var(--accent) !important; color: var(--accent-dark) !important}
+html[data-ui-profile="classic"] .replay-task-card .etc-btn.primary {background: var(--accent) !important; border-color: var(--accent) !important; color: var(--accent-text) !important}
+html[data-ui-profile="classic"] .replay-task-card .etc-error {color: var(--status-err-fg) !important}
+
 /* ---- League Rating / Player Drawer / Radar / Column Picker ---- */
 html[data-ui-profile="classic"] .rating-page, html[data-ui-profile="classic"] .rating-section, html[data-ui-profile="classic"] .rating-workspace {color: var(--text) !important}
 html[data-ui-profile="classic"] .rating-page table thead th, html[data-ui-profile="classic"] .rating-workspace table thead th {background: var(--bg-card2) !important; color: var(--text-sub) !important}
@@ -415,3 +441,21 @@ html[data-ui-profile="classic"] :is(.recon-page .recon-control, .recon-page butt
 html[data-ui-profile="classic"] :is(.recon-page .recon-control, .recon-page button, .recon-toolbar button, .recon-control):hover {color: var(--text-heading) !important; border-color: var(--accent) !important; background: var(--bg-list-hover) !important}
 html[data-ui-profile="classic"] :is(.recon-page, .recon-workspace) .map-stage {filter: none}
 html[data-ui-profile="classic"] :is(.recon-page, .recon-workspace) :is(svg.map, .map, .map-container) * {filter: none}
+
+/* ---- Boost 分页 / Profile .btn-ghost（scoped 写死深底/深边框/深 hover，Classic 补覆盖） ---- */
+html[data-ui-profile="classic"] .boost-page .pager button {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .boost-page .pager button:hover:not(:disabled) {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--accent) !important}
+html[data-ui-profile="classic"] .boost-page .pager button:disabled {opacity: .45}
+html[data-ui-profile="classic"] .profile-page .btn-ghost {border-color: var(--border) !important; color: var(--text) !important}
+html[data-ui-profile="classic"] .profile-page .btn-ghost:hover {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--accent) !important}
+html[data-ui-profile="classic"] .profile-page .btn-ghost:disabled {background: var(--bg-list-hover) !important}
+
+/* ---- ContactPage copy 按钮 / Profile 通知行（scoped 写死深底/深 hover，Classic 补覆盖） ---- */
+html[data-ui-profile="classic"] .contact-page .copy-btn {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important}
+html[data-ui-profile="classic"] .contact-page .copy-btn:hover {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--accent) !important}
+html[data-ui-profile="classic"] .profile-page .notification-item {background: var(--bg-card) !important; border-color: var(--border-light) !important}
+html[data-ui-profile="classic"] .profile-page .notification-item:hover {background: var(--bg-list-hover) !important}
+html[data-ui-profile="classic"] .profile-page .notification-item.unread {background: color-mix(in srgb, var(--accent) 8%, var(--bg-card)) !important; border-color: var(--accent) !important}
+html[data-ui-profile="classic"] .profile-page .notification-item .notification-title {color: var(--text-heading) !important}
+html[data-ui-profile="classic"] .profile-page .notification-item .notification-msg {color: var(--text-sub) !important}
+html[data-ui-profile="classic"] .profile-page .notification-item .notification-time {color: var(--text-muted) !important}
