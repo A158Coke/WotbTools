@@ -95,6 +95,45 @@ Verdict:
 
 > Vehicle method4 = **vehicle-to-vehicle collision/contact notification family — PROVEN physical relationship for current corpus**.
 
+## Ramming-death closure
+
+Settlement `PlayerResults.field105=2` is independently proven as ramming death. The canonical 34-arena corpus contains two such deaths.
+
+For both ramming deaths, the victim vehicle has a method4 collision-contact event immediately before its terminal Vehicle property3 HP state:
+
+```text
+ramming deaths with method4 within ±1.0 s of terminal HP : 2 / 2
+```
+
+In both cases method4 precedes terminal HP by approximately:
+
+```text
+~0.317 s
+```
+
+As a negative control, among 202 ordinary/default deaths with a comparable terminal property3 sample:
+
+```text
+ordinary deaths with method4 within ±1.0 s : 2 / 202
+```
+
+This makes method4 strong independent supporting evidence for a ramming death chain, while settlement remains authoritative for the final death reason.
+
+Safe hierarchy:
+
+```text
+method4
+  -> vehicle-to-vehicle physical contact evidence
+
+Vehicle prop3 terminal HP
+  -> observed terminal vehicle state/time
+
+settlement field105=2
+  -> authoritative ramming death reason
+```
+
+Method4 must not be used by itself to claim that the collision caused damage or death.
+
 ## `sharedScalar`
 
 The first float is identical across both participants in every clean paired collision sample. Its observed magnitude does not track replay raw clock and does not correlate cleanly with a simple finite-difference relative-speed estimate.
