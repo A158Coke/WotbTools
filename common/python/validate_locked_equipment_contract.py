@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
-"""Fail-closed locks for equipment whose numeric effects are not fully modeled."""
+"""Fail-closed locks for equipment whose effects are not fully modeled."""
 
 import hashlib
 
 from update_equipment import item_by_code, parse_equipment_details
 
-# Locked effects cannot be derived completely from BlitzKit calculation code. The live
-# equipment protobuf contains description templates (often with %(...) placeholders),
-# so wording fingerprints alone cannot prove numeric values. A reviewed game-version
-# lock therefore forces manual re-review whenever BlitzKit moves to another client build.
+# BlitzKit exposes the client build in game.pb. Keep the exact reviewed build so a
+# new WoTB build always requires an explicit equipment review before automation can
+# publish data for it.
 REVIEWED_GAME_VERSION = "11.19.0.834_7320229"
 
-# SHA-256 of the normalized English description templates observed from the live
-# BlitzKit equipment.pb while reviewing the build above. Any template change fails closed.
+# SHA-256 of the complete live BlitzKit equipment.pb reviewed for the build above.
+# This is deliberately stronger than trying to infer a universal 3x3 grid from
+# preset slot indexes: special vehicle presets legitimately move/replace equipment
+# in those raw slots. Locking the complete protobuf means any ID, name, description,
+# preset membership, or preset-layout change fails closed and requires review.
+REVIEWED_EQUIPMENT_SHA256 = "036f2c0c7bb97a5f8678f04a5ed9d6809f02e4563ea952f109305f208560cd9c"
+
+# Defense-in-depth fingerprints of the normalized English description templates for
+# equipment whose effects are not completely derived from reviewed calculation code.
 LOCKED_DESCRIPTION_SHA256 = {
     "SUPERCHARGER": "51344707bc61af4ae26a44a0cafe8bea5a672806724431dd8c0de6a6644f575a",
     "IMPROVED_VERTICAL_STABILIZER": "e99db56a71da9091425e87f0abfe79ed0093c956ea0da4354d281f829d365df6",
@@ -39,8 +45,19 @@ def validate_reviewed_game_version(game_version):
     if game_version != REVIEWED_GAME_VERSION:
         raise RuntimeError(
             "BLITZKIT_LOCKED_REVIEW_REQUIRED: reviewed_game_version=%s upstream_game_version=%s; "
-            "manually review locked equipment effects before updating the lock"
+            "manually review equipment before updating the lock"
             % (REVIEWED_GAME_VERSION, game_version)
+        )
+    return True
+
+
+def validate_reviewed_equipment_snapshot(equipment_pb):
+    actual_hash = hashlib.sha256(equipment_pb).hexdigest()
+    if actual_hash != REVIEWED_EQUIPMENT_SHA256:
+        raise RuntimeError(
+            "BLITZKIT_EQUIPMENT_SNAPSHOT_CHANGED: reviewed=%s upstream=%s; "
+            "manually review equipment definitions and presets before updating the lock"
+            % (REVIEWED_EQUIPMENT_SHA256, actual_hash)
         )
     return True
 
