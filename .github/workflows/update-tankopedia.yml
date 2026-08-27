@@ -31,6 +31,11 @@ jobs:
             --existing-dir common \
             --output-dir /tmp/wotb-tankopedia-out
 
+      - name: Verify equipment coverage for tier 7-10 vehicles
+        run: |
+          set -euo pipefail
+          python3 common/python/validate_tankopedia_equipment.py
+
       - name: Verify extraInfo preservation before commit
         run: |
           set -euo pipefail
@@ -85,7 +90,7 @@ jobs:
               --base main \
               --head "$BRANCH" \
               --title "chore(data): sync BlitzKit Tankopedia" \
-              --body $'Automated Tankopedia sync from BlitzKit.\n\n- Generates tier 7-10 data\n- Preserves existing extraInfo\n- Runs integrity gates and Python tests\n- Explicitly dispatches normal CI for this automation branch\n- Never auto-merges'
+              --body $'Automated Tankopedia sync from BlitzKit.\n\n- Generates tier 7-10 data\n- Fails closed if a new vehicle preset references equipment missing from the local catalog\n- Preserves existing extraInfo\n- Runs integrity gates and Python tests\n- Explicitly dispatches normal CI for this automation branch\n- Never auto-merges'
           else
             echo "Updated existing PR #$pr_number"
           fi
