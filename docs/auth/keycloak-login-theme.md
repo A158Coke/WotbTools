@@ -13,17 +13,18 @@ docker/keycloak/themes/wotbtools/login/
 └── resources/
     ├── css/{tokens,auth-shell,prism,components,responsive}.css
     ├── js/theme.js           # theme toggle + localStorage["wotbtools-theme"] 持久化 + 防闪烁
-    └── img/login-battlefield.webp(1920×1080 <500KB) / -mobile.webp(900×1600 <300KB) / login-favicon.svg / wotbtoolslogo.png(主站官方 Logo)
+    └── img/login-battlefield.webp(1920×1080 <500KB) / -mobile.webp(900×1600 <300KB) / login-favicon.svg / wotbtoolslogo.png(256px/37KB 优化版，白底不透明)
 ```
 
 ## 设计要点
 
 - 深色 = Battlefield：全屏战火背景（`login-battlefield.webp`，src `frontend/src/assets/showcase/home/hero-v4.png` 转码）；浅色 = Minimal：无背景图。
-- 登录卡 = **clear transparent prism，无 blur**：`background: rgba(5,8,12,0.05~0.12)`（token `--auth-prism-alpha`），允许极弱 amber edge highlight / subtle shadow；**CSS 无 `backdrop-filter` / `filter: blur`**（回归守卫）。
+- 登录卡 = **dark 局部毛玻璃 / light 透明 prism**：深色 `background: rgba(8,12,16,0.34)` + `backdrop-filter: blur(10px) saturate(120%)`，仅作用于 `html[data-theme="dark"] .wbtb-card`（token `--auth-card-bg/border/shadow/blur`），保留极弱 amber 高光；浅色 `rgba(255,255,255,0.72)`、`--auth-card-blur: none`。回归守卫：`backdrop-filter` 只允许出现在 dark `.wbtb-card` 作用域。
 - IdP 按 Keycloak `social.providers` 动态渲染，位于账号密码下方；无 Self Registration（realm 关闭）；无 `More sign-in options`。
-- 品牌：topbar 复用主站官方 Logo（`common/assets/wotbtoolslogo.png` 打包至 `resources/img/`，删除主题内临时 CSS mark 与 `--auth-logo` token）。
+- 品牌：topbar 复用主站官方 Logo（`resources/img/wotbtoolslogo.png`，256px/37KB 优化版）。白底来自图片本身且仓库无透明源，**不裁切、不拉伸、不换源**，仅以固定显示高度收敛视觉面积——desktop 36px、mobile(≤767)/tablet-portrait 28px；brand 无额外背景/padding。
+- 主题切换：右上 pill 内用 CSS 绘制 Sun（圆+8 射线）与 Moon（月牙）双图标，双图标常显、当前主题态高亮另一态置灰；aria-label/title/data-label-* 中文硬编码，切换后 JS 同步指向「下一目标主题」；dark/light 两主题均有 `:focus-visible`；mobile(≤767) 点击区域经 `::after` 扩至 ≥40px（视觉保持 44×26）。
 - Locale：登录页不提供语言选择器；主题自创文案（theme toggle aria/tooltip）中文硬编码；登录表单字段仍由 Keycloak 基础包按浏览器语言本地化。
-- Dark readability：Battlefield 深色下 `.wbtb-shell__auth::before` 局部软径向 dark veil（无 blur、无硬矩形/左右分区）+ 提升 input/eye/IdP/divider 对比（dark-only），light 零回归。
+- Dark readability：深色登录卡自带局部毛玻璃承载面；`.wbtb-shell__auth::before` 软径向 dark veil 保留但强度下调（中心 0.12 / 边缘 0.05，避免与毛玻璃双重黑化，无硬矩形/左右分区）+ 提升 input/eye/IdP/divider 对比（dark-only），light 零回归。
 - 三端破点：Phone ≤767 / Tablet 768–1179 / Tablet-portrait / Desktop ≥1180；Mobile 隐藏大 Hero、auth first；长页可滚动（`min-height:100dvh`）。
 - 主题初始化：`template.ftl` head 内联脚本读 `localStorage["wotbtools-theme"]` 设 `data-theme`（防闪烁）。
 
@@ -38,4 +39,6 @@ docker/keycloak/themes/wotbtools/login/
 ## 验证
 
 - 镜像构建：`docker build -f docker/Dockerfile.keycloak -t wotbtools-keycloak:local .`。
+- 视觉清单：dark/light × desktop(≥1180)/tablet-portrait/mobile(≤767)——brand 尺寸、toggle 双图标与焦点环、卡片毛玻璃可读性、无左右分区。
+- CSS 守卫：`rg -n "backdrop-filter" resources/css` 应只命中 `prism.css` 的 `html[data-theme="dark"] .wbtb-card`。
 - 主题随 `docker/keycloak/themes/**` 变化被 `deploy.yml` 路径检测覆盖，触发 keycloak 镜像重建。
