@@ -1,173 +1,139 @@
 # Avatar method38 shot-result bitfield — current Blitz 11.19 evidence
 
-> Corpus: strict 34 unique-arena Blitz 11.19.0 China replay subset.
+> Canonical corpus: 34 unique Blitz 11.19.0 China arenas.
 >
-> Scope: recorder-Avatar Type8 `methodId=38`. Numeric method IDs are entity-class/version scoped. This chapter extends `avatar-shot-results.md` and records bit-level findings that reached an evidence threshold after corpus-wide validation.
+> Scope: recorder Avatar `methodId=38` low-16 result bits. Numeric IDs are version/entity-class scoped. Historical PC/WoT constants are comparison evidence only and are never promoted by ordinal coincidence alone.
 
-## Executive verdict
+## Structural verdict
 
-Current method38 remains the recorder's shot-result / hit-feedback family. The newly important structural correction is:
+The four bytes after `victimVehicleId` are **not** one homogeneous u32 hit-flag enum.
 
-> the previously described four-byte `header` must **not** be treated blindly as one homogeneous 32-bit hit-flag word.
+Current safe decomposition:
+
+```text
+victimVehicleId : u32 LE
+resultFlags16   : u16 LE
+headerHi16Raw   : u16 LE
+count           : u8
+repeat count times:
+    componentToken : u8
+    rawState       : u8
+tail            : u8
+optionalExtension : u32 LE when present
+```
 
 Across 295 method38 records:
 
 ```text
-header[2..3] interpreted as u16 LE:
-  0x0002 : 293 / 295
-  0x0012 :   1 / 295
-  0x0028 :   1 / 295
+headerHi16Raw:
+0x0002 : 293
+0x0012 :   1
+0x0028 :   1
 ```
 
-The two non-`0x0002` values belong to the same known duplicate/batched feedback boundary in one Maus arena.
+The two non-0x0002 values occur on the known duplicate/batched Maus feedback boundary. `headerHi16Raw` remains PARTIAL/UNKNOWN and must be preserved raw.
 
-By contrast, the low 16 bits contain the variable result-bit surface and match the historical `VEHICLE_HIT_FLAGS` numeric layout at multiple independently validated positions.
+## Historical layout — comparison only
 
-Therefore the safe current decomposition is:
+Historical Wargaming clients contain bit positions named approximately:
 
 ```text
-victimVehicleId : u32 LE
-resultFlags16   : u16 LE          // current behavioral bitfield, decoded below
-headerHi16Raw   : u16 LE          // usually 0x0002; semantic still PARTIAL/UNKNOWN
-count           : u8
-repeat count times:
-    token       : u8
-    rawState    : u8
-tail            : u8
-optional extension bytes
+0x0001 vehicle killed
+0x0002 vehicle already dead
+0x0004 fire started
+0x0008 ricochet
+0x0010 material pierced by projectile
+0x0020 material not pierced by projectile
+0x0040 zero-DF armor pierced by projectile
+0x0080 zero-DF armor not pierced by projectile
+0x0100 device pierced by projectile
+0x0200 device not pierced by projectile
+0x0400 device damaged by projectile
+0x0800 chassis damaged by projectile
+0x1000 gun damaged by projectile
+0x2000 material pierced by explosion
+0x4000 zero-DF armor pierced by explosion
+0x8000 device pierced by explosion
 ```
 
-`headerHi16Raw` must remain raw until independently closed.
+Important:
 
-## Low-16-bit result flags
+> This table is **not** the current Blitz decoder. Current names below are promoted only where 11.19 behavior independently supports them. In particular, the current high-bit evidence contradicts blindly treating `0x1000` as a universal Gun-damage bit.
 
-Historical Wargaming client constants expose the following projectile hit flags:
+# Individually closed / bounded low bits
 
-```text
-0x0001 VEHICLE_KILLED
-0x0002 VEHICLE_WAS_DEAD_BEFORE_ATTACK
-0x0004 FIRE_STARTED
-0x0008 RICOCHET
-0x0010 MATERIAL_WITH_POSITIVE_DF_PIERCED_BY_PROJECTILE
-0x0020 MATERIAL_WITH_POSITIVE_DF_NOT_PIERCED_BY_PROJECTILE
-0x0040 ARMOR_WITH_ZERO_DF_PIERCED_BY_PROJECTILE
-0x0080 ARMOR_WITH_ZERO_DF_NOT_PIERCED_BY_PROJECTILE
-0x0100 DEVICE_PIERCED_BY_PROJECTILE
-0x0200 DEVICE_NOT_PIERCED_BY_PROJECTILE
-0x0400 DEVICE_DAMAGED_BY_PROJECTILE
-0x0800 CHASSIS_DAMAGED_BY_PROJECTILE
-0x1000 GUN_DAMAGED_BY_PROJECTILE
-0x2000 MATERIAL_WITH_POSITIVE_DF_PIERCED_BY_EXPLOSION
-0x4000 ARMOR_WITH_ZERO_DF_PIERCED_BY_EXPLOSION
-0x8000 DEVICE_PIERCED_BY_EXPLOSION
-```
-
-The current Blitz corpus is not promoted solely from those historical names. Each bit is classified below from current behavior plus the historical numeric cross-check.
-
-### `0x0001` — direct vehicle kill
+## `0x0001` — direct shell terminal kill
 
 Current corpus:
 
 ```text
-bit-set method38 feedback : 22
-victim whose settlement killer == recorder : 22 / 22
-counterexamples : 0
+bit-set events                              : 22
+victim settlement killer == recorder        : 22 / 22
+counterexamples                             : 0
+recorder settlement kills                   : 24
+non-bit recorder kills                      : delayed fire + ramming
 ```
 
-Recorder settlement kills across all 34 arenas = 24. The two recorder kills without this bit are independently special-cause deaths:
+Verdict:
 
-- one delayed fire death;
-- one ramming death.
+> direct shell terminal kill — **PROVEN current corpus**.
 
-Those are not a shell's immediate terminal hit result.
+## `0x0002` — target already dead before attack
+
+One current sample carries the bit; the victim reached terminal HP about 0.3 s earlier.
 
 Verdict:
 
-> `0x0001 = VEHICLE_KILLED / direct shot terminal kill` — **PROVEN on current corpus**.
+> target already dead before this attack — **PROVEN observed sample / PARTIAL global due n=1**.
 
-### `0x0002` — vehicle was already dead before attack
-
-Only one current sample carries the bit. The victim has already reached a terminal HP state roughly 0.3 s before the method38 feedback.
-
-Verdict:
-
-> `0x0002 = target already dead before this attack` — **PROVEN on observed sample / PARTIAL global due sample size**.
-
-### `0x0004` — fire started by shot
-
-Current corpus:
+## `0x0004` — fire started
 
 ```text
-bit-set method38 feedback : 2
-same-clock proven Type32 ignition `...04` event : 2 / 2
-false positives among all other method38 events : 0
+bit-set events                           : 2
+same-clock proven Type32 ignition event : 2 / 2
+false positives                          : 0
 ```
 
-Both are recorder hits and both carry positive observed HP loss.
+Verdict:
+
+> fire started by shot — **PROVEN observed samples / PARTIAL global due n=2**.
+
+## `0x0008` — ricochet candidate
+
+Current two samples both have:
+
+- no usable exact same-clock positive HP loss;
+- no structured component token results;
+- the same historical numeric position used for ricochet.
+
+The current corpus does not yet provide a full armor-normal/material collision closure for these two impacts.
 
 Verdict:
 
-> `0x0004 = FIRE_STARTED` — **PROVEN on current observed samples / PARTIAL global due n=2**.
+> ricochet — **high-confidence PARTIAL**, not PROVEN.
 
-### `0x0008` — ricochet
+# Piercing-like semantic mask
 
-Two current events carry the bit. Both have:
-
-- no exact same-clock positive HP loss;
-- no method38 module-result tokens;
-- historical numeric identity `RICOCHET = 0x0008`.
-
-The current corpus lacks an independent impact-normal/armor-angle geometric closure for those two shells.
-
-Verdict:
-
-> `0x0008 = ricochet` — **high-confidence PARTIAL**, not yet PROVEN.
-
-## Piercing classification
-
-### Low-bit piercing mask
-
-The following current low-16-bit OR mask is behaviorally important:
+Current behaviorally useful mask:
 
 ```text
 CURRENT_PIERCING_LIKE_MASK = 0x1110
-
-0x0010
-| 0x0100
-| 0x1000
+= 0x0010 | 0x0100 | 0x1000
 ```
 
 At raw RPC level:
 
 ```text
-method38 events                  : 295
-mask true                        : 269
-mask false                       : 26
+method38 events                   : 295
+mask true                         : 269
+mask false                        : 26
 settlement recorder penetrations : 270
-settlement hits-penetrations      : 25
+settlement hits - penetrations    : 25
 ```
 
-A naive event-level comparison is therefore off by exactly one in each class.
+The one-count discrepancy is explained by the known Maus duplicate/batched feedback pair at identical `(arena, rawClock, victim)`.
 
-### Duplicate-feedback boundary explains the mismatch
-
-Arena `1161438817384243971` (Maus) contains two method38 feedback records at the same replay clock and same victim:
-
-```text
-rawClock  = 179.031326
-victimEid = 280828258
-```
-
-The same arena has:
-
-```text
-method38 RPC count = 12
-settlement hits     = 11
-```
-
-Thus this clock/victim pair is a duplicate/batched feedback boundary, not two independent settlement hits.
-
-After semantic grouping by the proven hit identity boundary `(arena, rawClock, victim)`:
+After semantic hit grouping:
 
 ```text
 non-piercing-like semantic groups = 25
@@ -177,27 +143,13 @@ per-arena exact                    = 34 / 34
 
 Verdict:
 
-> `0x1110` is a **PROVEN current-corpus piercing-like mask at semantic-hit level**.
+> `0x1110` = **PROVEN current-corpus piercing-like OR relationship at semantic-hit level**.
 
-Important implementation rule:
+Do not turn this into one fictional `penetrationBit`; preserve constituent flags.
 
-> method38 RPC cardinality must not be assumed to equal physical/settlement hit cardinality without semantic grouping/dedup.
+# Individual-bit occurrence counts
 
-### Why the mask is not a single `penetration` bit
-
-The three constituent bits have different result relationships:
-
-- `0x0010` is extremely common on ordinary HP-damaging shots;
-- `0x0100` is strongly coupled to non-empty module/critical token lists;
-- `0x1000` is sparse and concentrated in a subset of gun/special-result cases.
-
-Historical Wargaming constants likewise model piercing as an OR across material/armor/device outcomes rather than one boolean bit.
-
-Therefore consumers should preserve the individual bitset even if they expose a derived `piercingLike` boolean.
-
-## Current individual-bit statistics
-
-Across 295 method38 events, low-16 individual bit occurrence includes:
+Across 295 method38 records:
 
 ```text
 0x0001 : 22
@@ -215,74 +167,135 @@ Across 295 method38 events, low-16 individual bit occurrence includes:
 0x4000 :  7
 ```
 
-`0x0080`, `0x0200` and `0x8000` are not observed in this strict subset.
-
-These counts are intentionally recorded separately from semantic names so future controlled samples can validate missing branches.
-
-## Module-result relationship
-
-`0x0100` and `0x0400` are strongly associated with the method38 repeated `(token,rawState)` result list:
+Not observed:
 
 ```text
-0x0100 set : 104 events; 104/104 have non-empty result list
-0x0400 set :  58 events;  58/58 have non-empty result list
+0x0080
+0x0200
+0x8000
 ```
 
-This is strong current evidence that those bits belong to the device/module-result surface, consistent with the historical names `DEVICE_PIERCED_BY_PROJECTILE` and `DEVICE_DAMAGED_BY_PROJECTILE`.
+Counts are recorded independently from exact symbolic names.
 
-However, a token is not itself a flag bit: one hit may carry multiple tokens/states and multiple hit flags.
+# Component-result relationships
+
+## `0x0100`
+
+```text
+bit set                  : 104
+non-empty component list : 104 / 104
+```
 
 Verdict:
 
-- `0x0100`: **PROVEN module/device piercing relationship / PARTIAL exact symbolic carry-over**;
-- `0x0400`: **PROVEN module/device damage relationship / PARTIAL exact symbolic carry-over**.
+> **PROVEN component/device-result piercing relationship / PARTIAL exact symbolic name**.
 
-## `0x0800` and `0x1000`
-
-Current sample sizes are small:
+## `0x0400`
 
 ```text
-0x0800 : 2 events
-0x1000 : 13 events
+bit set                  : 58
+non-empty component list : 58 / 58
 ```
 
-Historical names are `CHASSIS_DAMAGED_BY_PROJECTILE` and `GUN_DAMAGED_BY_PROJECTILE` respectively. Current token/result correlations are compatible with a specialized module outcome, but there is not yet a version-matched Blitz entity/schema or controlled damaged-track/damaged-gun closure for all samples.
+It is strongly coupled to actual component-result state, including many track outcomes.
 
-Verdict: **PARTIAL**.
+Verdict:
 
-## Explosion-family bits
+> **PROVEN module/device damage relationship / PARTIAL exact symbolic name**.
 
-Current strict subset contains:
+The repeated list itself uses the fully closed current component namespace (`31..43`, with 42 unobserved/unknown); see `method38-component-token-namespace.md`.
+
+# `rawState` is no longer unresolved
+
+Current result-state family:
 
 ```text
-0x2000 : 1 event
-0x4000 : 7 events
+rawState=0 -> component hit/involved, no newly observed persistent negative module state
+              VERY STRONG physical role / exact enum PARTIAL
+rawState=1 -> damaged module / injured crew
+              PROVEN relationship
+rawState=2 -> critical / disabled module
+              PROVEN relationship
 ```
 
-These numerically match historical explosion piercing-family bits. They are disproportionately present on the FV215b subset, consistent with special shell/explosion mechanics, but current behavior is not sufficient to assign exact material-vs-armor explosion semantics without a shell/config join.
+Module hit and module damage are distinct probability outcomes. Do not infer a persistent damaged module merely because a component token is present.
 
-Verdict: **PARTIAL**.
+See `method38-result-state-closure.md` and `method38-module-damage-probability.md`.
 
-## Rejected interpretation: treating all 32 header bits as one flag enum
+# Current high-bit correction — `0x1000 / 0x2000 / 0x4000`
 
-`headerHi16Raw` is `0x0002` in 293/295 records. Interpreting that as a universal high-order hit flag would imply an implausible special result on nearly every hit and conflicts with the observed low-bit behavior.
-
-The two high-half exceptions are exactly the known duplicate/batched Maus boundary:
+A strict re-audit joined method38 to the corrected recorder own-shot ledger:
 
 ```text
-headerHi16Raw = 0x0012
-headerHi16Raw = 0x0028
+324 unique recorder method29 shotIds
+= 324 settlement recorder shots
+```
+
+At shot launch, Type28 is independently proven as recorder ammunition-selection state.
+
+Current result:
+
+```text
+0x1000 : 13 / 13 -> Type28 selectionValue=2
+0x2000 :  1 /  1 -> Type28 selectionValue=2
+0x4000 :  7 /  7 -> Type28 selectionValue=2
+
+non-selectionValue2 occurrences across these bits : 0
 ```
 
 Therefore:
 
-> `u32(header[0..3]) == one homogeneous VEHICLE_HIT_FLAGS word` is **REJECTED**.
+> `0x1000/0x2000/0x4000` belong to a **selectionValue=2 special-ammunition/result-resolution branch — PROVEN current relationship**.
 
-The low 16 bits are the current validated hit-result bitfield; the high 16 bits must remain a separate raw field until closed.
+This directly invalidates the earlier current-version hypothesis:
 
-## Consumer guidance
+```text
+0x1000 == universal Gun-damaged result
+```
 
-Safe current model:
+That interpretation is **SUPERSEDED/REJECTED for current Blitz 11.19**.
+
+For FV215b, selectionValue1 is strongly APCR-family by projectile velocity, while selectionValue2 shows HE-family combat behavior. Exact descriptor→shell name and individual high-bit semantics still require descriptor/version-matched shell resolution; wire value must not be blindly treated as a UI list index.
+
+Possible individual current meanings inside the selectionValue2 branch include direct HE/HESH penetration, non-penetrating explosion/material resolution, armor resolution, or related special-shell outcomes. Current sample size does not uniquely distinguish them.
+
+# `0x0800`
+
+Only two current events carry `0x0800`. Both are specialized component-result cases, but current 11.19 evidence is insufficient to assign an exact universal symbolic name.
+
+Historical `CHASSIS_DAMAGED_BY_PROJECTILE` is retained only as a comparison candidate, not current truth.
+
+Verdict: **PARTIAL**.
+
+# Extension is a separate field, not a hit flag
+
+Fourteen records carry a separate trailing `u32` extension:
+
+```text
+extension=1 : 13
+extension=2 :  1
+```
+
+Current evidence:
+
+- extension1 = Precision Fire proc **VERY STRONG / near-PROVEN**, with HE-specific post-proc damage resolution caveat;
+- extension2 = Tungsten/special-damage provenance **VERY STRONG PARTIAL, n=1**.
+
+These values must not be OR-ed into `resultFlags16`.
+
+See `precision-fire-method38-extension.md`.
+
+# Rejected interpretations
+
+The following are explicitly rejected/superseded:
+
+1. `u32(header[0..3])` as one homogeneous current hit-flag enum;
+2. blind transplantation of all historical PC upper-bit names to current Blitz;
+3. current `0x1000 == universal Gun damage`;
+4. treating method38 token IDs as anonymous/unmappable — their current component namespace is now closed;
+5. treating `rawState=0/1/2` as completely unknown — state families are substantially closed.
+
+# Safe consumer model
 
 ```text
 ShotResultFeedback {
@@ -290,30 +303,32 @@ ShotResultFeedback {
     resultFlags16
     headerHi16Raw
     resultTokens[] {
-        token
+        componentIdRaw
+        componentNameNullable
         rawState
+        stateFamilyNullable
     }
-    extensionRaw[]
+    extensionRawNullable
 }
 ```
 
-Safe derived facts, version gated to current evidence:
+Safe derived facts:
 
 ```text
-directKill     = flags & 0x0001 != 0
-fireStarted    = flags & 0x0004 != 0     // current-sample proven, low n
-ricochetLike   = flags & 0x0008 != 0     // PARTIAL until geometric closure
-piercingLike   = flags & 0x1110 != 0     // after semantic hit grouping
+directKill   = flags & 0x0001 != 0
+fireStarted  = flags & 0x0004 != 0        // low-n version-gated proof
+ricochetLike = flags & 0x0008 != 0        // PARTIAL
+piercingLike = flags & 0x1110 != 0        // semantic-hit grouped
 ```
 
-Do not yet expose exact user-facing names for every remaining bit without evidence-level metadata.
+Do not expose exact individual names for unresolved bits without evidence metadata.
 
-## Remaining work
+# Remaining bounded work
 
-1. Recover a version-matched Blitz 11.19 Avatar entity definition and exact `showShotResults` codec.
-2. Join `0x0800` to independently proven track/chassis state transitions.
-3. Join `0x1000` to independently proven gun-damage state transitions.
-4. Join `0x2000/0x4000` to shell slot + version-matched shell explosion mechanics.
-5. Decode `headerHi16Raw`, especially the duplicate boundary values `0x0012` and `0x0028`.
-6. Map method38 token IDs to actual module/crew identities.
-7. Close `rawState=0/1/2` with controlled damaged-vs-destroyed-vs-crew outcomes.
+1. recover a version-matched Blitz method38 entity/schema definition;
+2. identify `headerHi16Raw` exact role, including duplicate-boundary values 0x0012/0x0028;
+3. split selectionValue2 `0x1000/0x2000/0x4000` into exact special-shell result meanings using controlled HE/HESH samples or current shell/schema definitions;
+4. geometrically close `0x0008` ricochet against armor/material normals if version-matched collision data becomes available;
+5. identify exact `0x0800` current meaning from additional controlled samples.
+
+These are bounded future probes; token namespace and rawState severity are no longer blockers.
