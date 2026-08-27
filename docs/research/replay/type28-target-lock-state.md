@@ -1,12 +1,12 @@
-# Type28 — recorder target-lock / auto-aim feedback state
+# Type28 — recorder-local 3-state packet
 
 > Corpus: canonical 34 unique Blitz 11.19.0 China arenas.
 >
-> Numeric packet type is version-scoped. The semantic promotion below is based on current replay behavior plus an independent Wargaming replay/client callback chain.
+> Important correction: a previous note promoted this packet to PC-style target-lock/auto-aim feedback by matching it to historical Wargaming `AimSound` / `BattleReplay.lockTargetCallback`. That promotion is **SUPERSEDED** because the supplied China Blitz corpus is mobile-client gameplay and does not provide evidence that the PC right-click target-lock recording path exists or is triggerable in this client/version.
 
 ## Wire shape
 
-Current Type28 is structurally trivial:
+Current Type28 is structurally:
 
 ```text
 payload : u32 LE state
@@ -27,7 +27,7 @@ No other value occurs.
 
 ## State-transition behavior
 
-Type28 forms an explicit small state machine rather than an arbitrary counter.
+Type28 forms a small recurrent state machine rather than an arbitrary counter.
 
 Observed adjacent transitions:
 
@@ -41,24 +41,11 @@ Observed adjacent transitions:
 0 -> 0 :   1
 ```
 
-Most non-zero episodes terminate at zero. The common active-window durations are on the order of seconds, although some lock windows can persist much longer.
+Most non-zero episodes terminate at zero. This proves only that Type28 is a recorder-local three-state surface with recurring active/inactive-like transitions.
 
-This is consistent with a user-facing target-lock state rather than a shot, damage, reload or one-shot configuration packet.
+## Rejected / superseded PC mapping
 
-## Independent Wargaming replay callback chain
-
-Historical/current-lineage Wargaming client code exposes the exact replay path:
-
-```text
-BattleReplay.ReplayManager.lockTargetCallback
-    -> BattleReplay.onLockTarget(state, playVoiceNotifications)
-
-recording path:
-PlayerAvatar.onLockTarget(state, playVoiceNotifications)
-    -> ReplayManager.onLockTarget(state, playVoiceNotifications)
-```
-
-The state itself is independently enumerated by `AimSound`:
+Historical Wargaming PC client code contains:
 
 ```text
 TARGET_UNLOCKED = 0
@@ -66,63 +53,33 @@ TARGET_LOCKED   = 1
 TARGET_LOST     = 2
 ```
 
-These are exactly the only three integer values observed in current Blitz Type28.
+and a replay `lockTargetCallback` recording path. The numeric domain matches Type28 exactly.
 
-This is substantially stronger than a generic payload-size or timing match: the current replay contains precisely the same state domain, and its transition behavior matches the replay callback's target-lock role.
+However, this is **not sufficient current Blitz evidence**. The canonical corpus is WoT Blitz China mobile-client gameplay; the PC right-click target-lock UX/path is not known to exist or be triggerable in that environment. Therefore numeric-domain equality is treated only as historical coincidence/candidate evidence and must not be used as the current semantic identity.
 
-## Current semantic mapping
-
-Safe current mapping:
+The previous claims:
 
 ```text
-Type28 state 0 -> target unlocked
-Type28 state 1 -> target locked
-Type28 state 2 -> target lost
+Type28 = target-lock / auto-aim feedback
+0 = unlocked
+1 = locked
+2 = target lost
 ```
 
-Verdict:
+are **SUPERSEDED / NOT PROVEN**.
 
-> Type28 = **recorder target-lock / auto-aim feedback state — PROVEN behavioral identity for current corpus**.
-
-The exact low-level Blitz C++ ReplayManager packet symbol is not available in the corpus, so the packet-number-to-C++-symbol spelling remains version-scoped.
-
-## Relationship to auto-aim
-
-The client `PlayerAvatar.autoAim(...)` path sets `AIMING_MODE.TARGET_LOCK` when a vehicle is locked and produces target lock feedback. The replay callback therefore belongs to the same player target-lock/auto-aim UX family.
-
-However Type28 itself carries the **feedback state**, not the target vehicle entity ID. Its four-byte body contains only `0/1/2` in the current corpus.
-
-Do not invent a target ID from Type28. Target identity, when needed, requires a separate target-selection/aim/visibility source.
-
-## Shot relationship
-
-Type28 is not a shot packet. Recorder shots can occur both while state=0 and inside state=1/2 windows.
-
-The non-zero windows nevertheless overlap many firing sequences, which is expected for target lock usage. This supports the behavioral family but must not be used to derive hit or penetration facts.
-
-## Production-safe event
+## Current verdict
 
 ```text
-TargetLockStateChanged {
-    rawClockSec
-    stateRaw : u32
-    state :
-      UNLOCKED // 0
-      LOCKED   // 1
-      LOST     // 2
-      UNKNOWN(raw)
-}
+Type28 structure       = PROVEN
+payload width          = PROVEN u32 LE
+observed state domain  = PROVEN {0,1,2}
+recurring state-family = PROVEN behavioral shape
+exact semantic         = UNKNOWN/PARTIAL
 ```
 
-Consumers may safely use this for:
+Do not expose Type28 to AI Review or Battle Playback under a target-lock label until a Blitz 11.19 mobile-client producer path, controlled mobile replay probe, or independent current-version schema closes the meaning.
 
-- AI Review: whether the recorder was using/losing target lock around a decision window;
-- Battle Playback: reconstruct the recorder's lock feedback state;
-- aim analysis: join lock state to Type39 aim-ray data and projectile launch data.
+## Research rule reinforced by this correction
 
-Consumers must not infer:
-
-- target entity identity from Type28 alone;
-- a shot/hit from a lock transition;
-- exact server-side target visibility from the feedback state;
-- future enum values without version gating.
+Historical PC Wargaming replay/client code may supply structural hypotheses, but semantic promotion for WoT Blitz requires current Blitz evidence. A matching enum domain or callback shape alone is insufficient when the gameplay/control surface is platform-specific.
