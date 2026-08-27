@@ -5,7 +5,7 @@
 ## 数据文件与更新方式（经真实文件核对）
 
 - **车辆库**：`tankopedia-tier{7,8,9,10}.json`（4 个文件，无 `tankopedia.json`）。数据源 blitzkit（`assets.blitzkit.app/definitions/*.pb`）；更新走 `.github/workflows/update-tankopedia.yml`（手动触发，自动提交）或本地 `cd common/python && python update_tankopedia.py`；写入前有完整性门禁（总量/tier 骤降、重复 id、缺 id/name/hp/gun 即失败）。
-- **成员技能**：`crew-skills.json`。数据源 BlitzKit `assets.blitzkit.app/definitions/skills.pb`（`SkillDefinitions`：车型 class → canonical skill id）；更新走 `.github/workflows/update-crew-skills.yml`（手动触发，自动提交）或本地 `python common/python/update_crew_skills.py`。当前仅落档 BlitzKit 明确提供的车型归属、skill id 与可推导 icon URL，不猜测显示名/描述/效果数值；写入前校验四个车型、每类最小技能数、id 格式与重复项。
+- **成员技能**：`crew-skills.json`。数据源 BlitzKit `assets.blitzkit.app/definitions/skills.pb`（`SkillDefinitions`：车型 class → canonical skill id）；更新走 `.github/workflows/update-crew-skills.yml`（手动触发，自动提交）或本地 `python common/python/update_crew_skills.py`。当前仅落档 BlitzKit 明确提供的车型归属、skill id 与可推导 icon URL，不猜测显示名/描述/效果数值；写入前校验四个车型、每类最小技能数、id 格式与重复项。**车型归属只表示训练资格：必须使用对应类型车辆训练该类技能；技能一旦训练，其加成对所有车辆生效，消费端禁止按当前车辆类型过滤已训练技能效果。** `crew-skills.json.semantics` 固定记录 `trainingEligibility=class_specific` 与 `effectScope=all_vehicles`，修改该语义必须显式 review。
 - **地图三语名** `map_names.json`：内部名(小写) → {zh,en,ru}；导出端 `MapNames.cn()` 与前端 `mapLabel()` 共用。
 - **地图语义** `map-semantics/*.semantic.json`：由 `map-semanticizer/` 生成（覆盖式）；**已人工核验的地图严禁整份重跑语义化器**（会覆盖手工修正），改语义 JSON 时同步 `docs/reference/maps.md` 与 `MapTacticalSemanticsRegistryTest` 断言。
 - **坦克战术画像** `tank_tactical_profiles.json`：AI 复盘注入用；十级车全覆盖有回归测试守卫。
