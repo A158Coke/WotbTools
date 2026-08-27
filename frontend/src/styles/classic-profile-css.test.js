@@ -207,6 +207,12 @@ describe('Classic 深色冲突 selector→declaration 绑定（须带 !important
     has('admin-hof-page) .dmg', ['color: var(--accent-dark) !important'])
   })
 
+  it('回归：HoF Admin denied 提示段落 / 登录态 / 表格行分隔线 浅色 token + !important（Blocker 4；.denied/.login 选择器修正为真实类防不命中）', () => {
+    has('admin-hof-page) .hof-admin-login', ['color: var(--text) !important'])
+    has('admin-hof-page) .hof-admin-denied p', ['color: var(--text-sub) !important'])
+    has('admin-hof-page) .hof-admin-table td', ['border-bottom-color: var(--border-light) !important'])
+  })
+
   it('回归：选择 battle 后动态 .mcards/.mc 指标卡 浅色 token + !important（Blocker 2，防 App.vue 深色卡残留）', () => {
     has('.layout-data-workspace .mc', ['background: var(--bg-card) !important', 'border-color: var(--border) !important', 'box-shadow: var(--surface-shadow) !important'])
     has('.layout-data-workspace .mc .v', ['color: var(--text-heading) !important'])
