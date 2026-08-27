@@ -1,12 +1,12 @@
 # Blitz 11.19 replay documentation convergence audit
 
-> Purpose: final PR147 contradiction audit after the Type10 movement, airborne counterexample, method36 targeting, and method38 `0x0200` controlled closures.
+> Purpose: final PR147 contradiction audit after the Type10 movement, method38 `0x0200`, and method36 targeting closures.
 >
-> Scope: **current authoritative documentation**. Historical research notes may retain old hypotheses only when explicitly marked `SUPERSEDED` / `REJECTED` or clearly presented as historical context.
+> Scope: **current authoritative documentation and current focused closure documents**. Historical research notes may retain old hypotheses only when explicitly marked `SUPERSEDED` / `REJECTED` or clearly presented as historical context.
 
 ## Current authority set
 
-The current read order is:
+Read order:
 
 1. `WOTB_REPLAY_PROTOCOL_11_19_BILINGUAL_COMPLETE_REFERENCE.md`
 2. focused current-version closure documents
@@ -14,9 +14,7 @@ The current read order is:
 4. `research-completion-audit-11.19.md`
 5. older English complete reference and historical notes
 
-`README.md` and the PR147 body both declare this precedence.
-
-The older `WOTB_REPLAY_PROTOCOL_11_19_COMPLETE_REFERENCE.md` remains useful research history but is no longer the highest-precedence authority when a newer controlled closure exists.
+`README.md` and the PR147 body declare this precedence.
 
 ## Current research gate
 
@@ -37,43 +35,101 @@ method38 0x0200 current positive sample        CLOSED
 
 ## Audit terms
 
-Current authority was converged specifically around:
+The current directory was checked around at least:
 
 ```text
-Type10
-onGround
-trailingStateRaw
-positionError
-world unit
-meter
-km/h
-airborne
-0x0008
-0x0040
-0x0080
-0x0100
-0x0200
-0x0400
-0x0800
-0x1000
-0x2000
-0x4000
-0x8000
-modifierCount
-modifierId
-Precision Fire
-Tungsten
-Type4 == death
-Tankopedia base HP
-causeFlag=5
-deathReason=5
-method36 root.field3
-method36 root.field4
-method36 root.field5
-method36 field6.field1
-P0
-P1
+root.field3
+root.field4
+root.field5
+field6.field1
+PARTIAL
+VERY STRONG PARTIAL
+candidate
+remaining targeting work
+Reticle Calibration
 ```
+
+The convergence rule is:
+
+> **A proven physical role stays PROVEN even when the exact Wargaming private protobuf member name is UNKNOWN.**
+
+Do not merge these two evidence questions into one `PARTIAL` label.
+
+# method36 convergence
+
+Current field map:
+
+```text
+root.field1
+= turret/gun relative yaw
+= PROVEN
+
+root.field2
+= gun pitch
+= PROVEN
+
+root.field3
+= max horizontal turret/gun angular speed
+= PROVEN controlled
+
+root.field4
+= max vertical gun angular speed
+= PROVEN controlled
+
+root.field5
+= aiming-time physical scalar
+= PROVEN
+
+field6.field1
+= dynamic gun dispersion / bloom scalar
+= PROVEN physical role
+```
+
+Controlled/current-version evidence:
+
+```text
+root.field1 <-> Type39 f5                           current replay correlation
+root.field2 <-> Type39 f6                           current replay correlation
+root.field3 -> controlled horizontal angular limit  current physical closure
+root.field4 -> controlled vertical angular limit    current physical closure
+shot boundary -> field6.field1 positive bloom jump  326 / 326
+Gun damage -> field6.field1 ×2                      exact reversible boundary
+Gun damage -> root.field4 ×0.675                    exact reversible boundary
+Reticle Calibration -> root.field5 ×0.70            exact reversible boundary
+Reticle Calibration -> field6.field1 ×0.70          exact reversible boundary
+Reticle end -> exact baseline restoration           current replay boundary
+```
+
+### Allowed remaining uncertainty
+
+The following are still valid:
+
+```text
+exact private protobuf symbol                          UNKNOWN
+root.field5 exact display/UI conversion formula        UNKNOWN/PARTIAL
+field6.field1 exact display/UI unit/formula            UNKNOWN/PARTIAL
+field6.field2 exact physical role/private symbol       PARTIAL
+remaining static/nested coefficients                   PARTIAL
+cross-version numeric/schema stability                 UNKNOWN until regression-tested
+```
+
+These are private naming/display/static-coefficient boundaries. They do not reopen the six high-value physical roles above.
+
+### Focused-doc convergence performed
+
+The final method36 pass synchronizes the current focused documents so they no longer present closed roles as current candidates or `VERY STRONG PARTIAL`:
+
+```text
+avatar-method36-targeting-crosswalk.md
+avatar-method36-targeting-info.md
+controlled-wz120-movement-dispersion-probe.md
+method36-horizontal-vertical-rotation-speed-closure.md
+method36-vertical-gun-speed-controlled-closure.md
+gun-damage-dispersion-closure.md
+reticle-calibration-method36-closure.md
+```
+
+Historical statements may still appear when explicitly described as the state of evidence at the time of that experiment or as `SUPERSEDED`/`REJECTED`; they are not current semantic claims.
 
 # Type10 convergence
 
@@ -98,24 +154,11 @@ speedKmh = speedMps * 3.6                PROVEN controlled-derived
 vertical airborne trajectory             PROVEN controlled
 ```
 
-Controlled Kanonenjagdpanzer 105 speed plateaus independently match 57 km/h forward and 20 km/h reverse.
+Controlled airborne evidence rejects `trailingStateRaw == onGround`. `positionError` is not velocity.
 
-Controlled Rhm airborne replay produces a ballistic Type10-Y trajectory while the recorder Type10 trailing byte remains `1` for `369/369` samples.
+# method38 convergence
 
-Therefore:
-
-```text
-Type10 trailing byte == onGround    REJECTED controlled
-Type10 trailing byte exact meaning  UNKNOWN / raw-preserve
-```
-
-Current authority must use a neutral field name such as `trailingStateRaw`, not `onGroundRaw`.
-
-`positionError` is a filter/error vector and is not velocity.
-
-# method38 low16 convergence
-
-Current map:
+Current `resultFlags16` map includes:
 
 ```text
 0x0001 direct terminal shell kill                                      PROVEN
@@ -136,91 +179,19 @@ Current map:
 0x8000 internal component/device damaged by explosion                   PROVEN controlled
 ```
 
-## `0x0200` current positive sample
-
-Controlled Quby -> Maus replay:
-
-```text
-phase 1: Gun/barrel, 15 projectiles
-phase 2: Fuel Tank, 15 projectiles
-method29/method38 same-clock pairs = 30/30
-```
-
-Critical Gun/barrel result:
-
-```text
-0x0240 = 0x0200 | 0x0040
-```
-
-Same phase also contains:
-
-```text
-0x0100 + component36 + rawState0
-```
-
-Fuel Tank control repeatedly contains:
-
-```text
-0x0110 = 0x0010 | 0x0100
-component33 rawState0/1
-```
-
-Therefore `0x0200` must no longer be listed as UNKNOWN/unobserved/P1 in current authority.
-
-Safe physical label:
-
-```text
-PROJECTILE_DEVICE_NOT_PIERCED
-```
-
-Historical `DEVICE_NOT_PIERCED_BY_PROJECTILE` naming is corroborative only.
-
-# method38 modifier convergence
-
-Current wire tail:
+Current modifier tail:
 
 ```text
 modifierCount u8
 repeat modifierCount:
     modifierId u32 LE
-```
 
-```text
 modifierId=1 -> Precision Fire   PROVEN controlled
 modifierId=2 -> Tungsten Shells  PROVEN controlled
+same-hit [1,2]                   PROVEN controlled
 ```
-
-Combined controlled sample includes `[1,2]` on the same hit.
-
-Therefore current authority must not describe method38 as a single nullable extension or Precision Fire/Tungsten as mutually exclusive.
-
-# method36 convergence
-
-Current high-value closed fields:
-
-```text
-root.field1 = turret/gun relative yaw               PROVEN
-root.field2 = gun pitch                             PROVEN
-root.field3 = max horizontal angular speed          PROVEN controlled
-root.field4 = max vertical angular speed            PROVEN controlled
-root.field5 = aiming-time physical scalar           PROVEN
-field6.field1 = dynamic gun dispersion/bloom        PROVEN
-```
-
-Controlled perturbations include:
-
-```text
-Gun damage          -> field6.field1 ×2; root.field4 ×0.675
-Repair              -> exact baseline restoration
-Reticle Calibration -> root.field5 ×0.70; field6.field1 ×0.70
-Reticle end          -> exact baseline restoration
-```
-
-Remaining static/nested method36 coefficients are P2/private-name work, not P1 blockers.
 
 # HP / death convergence
-
-Current facts:
 
 ```text
 Type4 = leaves recorder-observed AoI                 PROVEN
@@ -232,34 +203,20 @@ positive-HP terminal death exists                    PROVEN controlled
 single POV guarantees 100% sub-second death          REJECTED
 ```
 
-# Current main implementation boundary
-
-The current `main` implementation intentionally lags some research closures. This is not a documentation contradiction when clearly labeled as implementation debt.
-
-Known convergence work includes:
-
-```text
-Type10 parser: expose positionError + neutral trailingStateRaw
-remove stale onGround/is_error semantic assumptions
-avoid treating legacy Type8 raw direct-damage value as universal exact HP delta
-consume Type4 as AoI/lifecycle evidence, not deterministic death
-version-gate current 11.19 numeric mappings
-expose additional method38/method36 facts only with evidence metadata
-```
-
 # Historical wording policy
 
-The following may exist only in historical notes or explicitly rejected/superseded sections:
+The following may exist only in historical notes, experiment-at-the-time descriptions, or explicitly rejected/superseded sections:
 
 ```text
+root.field3 current role is only PARTIAL/candidate
+root.field4 current role is only PARTIAL/candidate
+root.field5 current role is unresolved/candidate
+field6.field1 current role is VERY STRONG PARTIAL/candidate
+method36 high-value coefficients are entirely unmapped
 0x0200 unobserved / UNKNOWN
 Type10 trailing byte = onGround
-Type10 positionError = velocity
 method38 has one optional extension
-Precision Fire and Tungsten are mutually exclusive
 Type4 means death
-Tankopedia base HP is authoritative battle HP
-method36 high-value coefficients are entirely unmapped
 P1 > 0
 ```
 
@@ -267,21 +224,21 @@ They must not be presented as current authoritative truth.
 
 # Final convergence verdict
 
-Current top-level authority, README, inventory, completion audit and PR body agree on:
+Current authority and the synchronized focused method36 docs agree on:
 
 ```text
 P0 = 0
 P1 = 0
-Type10 onGround hypothesis = REJECTED
-Type10 movement P1 = CLOSED
+method36 six high-value physical roles = CLOSED
+method36 exact private symbols = UNKNOWN where unrecovered
+method36 remaining static coefficients = PARTIAL
 method38 0x0200 = PROVEN controlled
-method36 high-value semantics = CLOSED
+Type10 movement P1 = CLOSED
 ```
-
-Older research files are intentionally subordinate and may preserve historical hypotheses with provenance.
 
 ```text
 AUTHORITATIVE DOCUMENT CONTRADICTION BLOCKERS: 0
+METHOD36 DOCUMENTATION CONVERGENCE BLOCKERS: 0
 DOCUMENTATION CONVERGENCE STATUS: PASS
 CORE PROTOCOL RESEARCH STATUS: COMPLETE FOR CURRENT 11.19 P0/P1 SCOPE
 ```
