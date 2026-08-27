@@ -28,6 +28,17 @@ jobs:
           cp common/wotb-item-catalog-json/equipment.json /tmp/equipment.json
           python3 common/python/sync_equipment_snapshot.py --catalog /tmp/equipment.json
           diff -u common/wotb-item-catalog-json/equipment.json /tmp/equipment.json
+      - name: Validate live BlitzKit Tankopedia contract
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/tankopedia-ci
+          mkdir -p /tmp/tankopedia-ci
+          python3 common/python/sync_tankopedia_snapshot.py \
+            --existing-dir common \
+            --output-dir /tmp/tankopedia-ci
+          for tier in 7 8 9 10; do
+            python3 -m json.tool "/tmp/tankopedia-ci/tankopedia-tier${tier}.json" >/dev/null
+          done
 
   backend:
     name: Backend tests
