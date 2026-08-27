@@ -34,10 +34,17 @@ class TankopediaEquipmentCoverageTest(unittest.TestCase):
             validator.validate_vehicle_equipment_coverage(vehicles, {}, {100: "RAMMER"})
         self.assertIn("brandNewPreset", str(ctx.exception))
 
-    def test_vehicle_without_preset_is_allowed(self):
+    def test_vehicle_without_preset_fails_closed(self):
+        vehicles = {"99": {"id": 99, "_equipmentPreset": ""}}
+        with self.assertRaisesRegex(RuntimeError, "TANKOPEDIA_VEHICLE_EQUIPMENT_PRESET_MISSING"):
+            validator.validate_vehicle_equipment_coverage(vehicles, {}, {})
+
+    def test_reviewed_vehicle_without_preset_can_be_allowlisted(self):
         vehicles = {"99": {"id": 99, "_equipmentPreset": ""}}
         self.assertTrue(
-            validator.validate_vehicle_equipment_coverage(vehicles, {}, {})
+            validator.validate_vehicle_equipment_coverage(
+                vehicles, {}, {}, allowed_missing_preset_ids={99}
+            )
         )
 
 
