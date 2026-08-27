@@ -7,12 +7,14 @@ The updater deliberately separates two classes of equipment:
   reviewed BlitzKit calculation source.
 * LOCKED_CODES: WotBTools models the item, but BlitzKit does not expose every
   effect through calculation code. These items are never partially rewritten;
-  their reviewed description-template fingerprints and reviewed game version
-  are enforced by validate_locked_equipment_contract.py.
+  their reviewed description fingerprints, exact game build, and reviewed
+  equipment protobuf snapshot are enforced by validate_locked_equipment_contract.py.
 
-The workflow also validates all equipment referenced by tier 7-10 vehicle
-presets. New, removed, renamed, or moved equipment therefore fails closed
-instead of being silently omitted.
+The workflow validates every equipment ID referenced by tier 7-10 vehicle
+presets. The complete reviewed equipment.pb fingerprint fail-closes any upstream
+preset/layout change; structural validation then rejects missing, new, removed,
+or renamed catalog equipment without assuming that raw special-preset indexes
+form one universal 3x3 equipment grid.
 """
 
 import argparse
@@ -25,7 +27,6 @@ from update_tankopedia import (
     EQUIPMENT_URL,
     PB_URL,
     as_int,
-    as_str,
     decode_protobuf,
     f1,
     filter_to_business_tiers,
@@ -76,7 +77,6 @@ LOCKED_CODES = {
     "CONSUMABLE_DELIVERY_SYSTEM",
     "HIGH_END_CONSUMABLES",
 }
-GRID_GROUPS = ("FIREPOWER", "VITALITY", "SPECIALIZATION")
 
 
 def fetch(url, binary=False):
@@ -168,35 +168,6 @@ def parse_equipment_details(pb_bytes):
     return details
 
 
-def grid_position(index):
-    """Decode BlitzKit's row-major 3x3 equipment grid into group and slot."""
-    if index < 0 or index >= 9:
-        raise RuntimeError("BLITZKIT_PRESET_LAYOUT_UNSUPPORTED: slot=%d" % index)
-    return GRID_GROUPS[index % 3], index // 3 + 1
-
-
-def parse_equipment_placements(pb_bytes, used_presets):
-    placements = {}
-    root = decode_protobuf(pb_bytes)
-    for raw_preset in root.get(1, []):
-        kv = decode_protobuf(raw_preset)
-        preset_name = as_str(f1(kv, 1, b""))
-        if preset_name not in used_presets:
-            continue
-        preset = decode_protobuf(f1(kv, 2, b""))
-        for index, raw_slot in enumerate(preset.get(1, [])):
-            try:
-                position = grid_position(index)
-            except RuntimeError as error:
-                raise RuntimeError("%s preset=%s" % (error, preset_name)) from error
-            slot = decode_protobuf(raw_slot)
-            for field, side in ((1, "LEFT"), (2, "RIGHT")):
-                equipment_id = as_int(f1(slot, field))
-                if equipment_id:
-                    placements.setdefault(equipment_id, set()).add(position + (side,))
-    return placements
-
-
 def required_business_equipment_ids(vehicles, presets):
     preset_names = {v.get("_equipmentPreset") for v in vehicles.values() if v.get("_equipmentPreset")}
     missing_presets = sorted(name for name in preset_names if name not in presets)
@@ -209,10 +180,10 @@ def required_business_equipment_ids(vehicles, presets):
 
 
 def validate_upstream_contract(payload, equipment_pb, tanks_pb):
+    """Validate catalog coverage after the reviewed protobuf snapshot is accepted."""
     presets, equipment_names = parse_equipment_defs(equipment_pb)
     vehicles = filter_to_business_tiers(parse_tanks(tanks_pb))
-    used_presets, required_ids = required_business_equipment_ids(vehicles, presets)
-    placements = parse_equipment_placements(equipment_pb, used_presets)
+    _, required_ids = required_business_equipment_ids(vehicles, presets)
 
     catalog_by_id = {item["id"]: item for item in payload["items"]}
     missing = sorted(required_ids - set(catalog_by_id))
@@ -230,15 +201,6 @@ def validate_upstream_contract(payload, equipment_pb, tanks_pb):
                 "BLITZKIT_EQUIPMENT_RENAMED: %s catalog=%r upstream=%r"
                 % (item["code"], item.get("nameEn"), upstream_name)
             )
-        if equipment_id in required_ids:
-            local_grid = item.get("grid") or {}
-            expected = (local_grid.get("group"), local_grid.get("slot"), local_grid.get("side"))
-            actual = placements.get(equipment_id, set())
-            if actual != {expected}:
-                raise RuntimeError(
-                    "BLITZKIT_EQUIPMENT_GRID_CHANGED: %s catalog=%s upstream=%s"
-                    % (item["code"], expected, sorted(actual))
-                )
 
     codes = {item["code"] for item in payload["items"]}
     modeled = FULLY_MODELED_CODES | LOCKED_CODES
@@ -247,6 +209,7 @@ def validate_upstream_contract(payload, equipment_pb, tanks_pb):
             "CATALOG_MODEL_COVERAGE_MISMATCH: missing_models=%s stale_models=%s"
             % (sorted(codes - modeled), sorted(modeled - codes))
         )
+    return True
 
 
 def sync_values(payload, characteristics, penetration, armor):
@@ -327,7 +290,7 @@ def validate(payload):
 
 def main():
     # Keep the historical CLI entry point safe by delegating to the snapshot-aware
-    # updater, which enforces the game-version and locked-description contracts.
+    # updater, which enforces the reviewed build/snapshot/description contracts.
     from sync_equipment_snapshot import main as snapshot_main
 
     return snapshot_main()
