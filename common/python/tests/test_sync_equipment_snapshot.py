@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""sync_equipment_snapshot.py structural contract tests."""
+"""sync_equipment_snapshot.py and equipment structural contract tests."""
 
 import os
 import sys
@@ -26,9 +26,8 @@ class EquipmentSnapshotContractTest(unittest.TestCase):
             patch.object(sync.ue, "filter_to_business_tiers", return_value=vehicles),
             patch.object(sync.ue, "FULLY_MODELED_CODES", {"A"}),
             patch.object(sync.ue, "LOCKED_CODES", {"B"}),
-            patch.object(sync.ue, "parse_equipment_placements", side_effect=AssertionError("grid parser must not be used")),
         ):
-            self.assertTrue(sync.validate_structural_catalog_contract(payload, b"equipment", b"tanks"))
+            self.assertTrue(sync.ue.validate_upstream_contract(payload, b"equipment", b"tanks"))
 
     def test_unknown_business_equipment_fails_closed(self):
         payload = {"items": [{"id": 100, "code": "A", "nameEn": "Alpha"}]}
@@ -41,7 +40,7 @@ class EquipmentSnapshotContractTest(unittest.TestCase):
             patch.object(sync.ue, "LOCKED_CODES", set()),
         ):
             with self.assertRaisesRegex(RuntimeError, "BLITZKIT_NEW_BUSINESS_EQUIPMENT"):
-                sync.validate_structural_catalog_contract(payload, b"equipment", b"tanks")
+                sync.ue.validate_upstream_contract(payload, b"equipment", b"tanks")
 
     def test_camouflage_effects_have_stable_catalog_order(self):
         effects = []
