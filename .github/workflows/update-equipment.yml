@@ -23,7 +23,7 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Sync equipment catalog from one BlitzKit snapshot
+      - name: Sync equipment catalog from reviewed BlitzKit snapshot
         run: |
           set -euo pipefail
           python3 common/python/sync_equipment_snapshot.py
@@ -59,7 +59,7 @@ jobs:
               --base main \
               --head "$BRANCH" \
               --title "chore(data): sync reviewed BlitzKit equipment values" \
-              --body $'Automated equipment update from reviewed BlitzKit sources.\n\n- Uses one protobuf snapshot per run\n- Validates every equipment used by tier 7-10 presets\n- Fails on new/removed/renamed/moved equipment\n- Fully rewrites only effects backed by reviewed BlitzKit calculation sources\n- Requires exact percentage/semantic contracts for locked effects\n- Explicitly dispatches normal CI for this automation branch\n- Never auto-merges'
+              --body $'Automated equipment update from reviewed BlitzKit sources.\n\n- Requires the exact reviewed WoTB client build and full equipment.pb SHA-256\n- Any equipment definition or preset-layout change fails closed for manual review\n- Validates all tier 7-10 preset equipment IDs plus catalog names/model coverage\n- Fully rewrites only effects backed by reviewed BlitzKit calculation-source blobs\n- Fingerprints description templates for partially modeled locked equipment\n- Avoids rewriting the catalog when generated semantics are unchanged\n- Explicitly dispatches normal CI for this automation branch\n- Never auto-merges'
           else
             echo "Updated existing PR #$pr_number"
           fi
