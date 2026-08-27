@@ -3,10 +3,6 @@ name: Build & Deploy
 # 宿主 Caddy /mcp 路由与 Grafana MCP Service Account 由人工清理。
 run-name: Deploy ${{ github.ref_name }} by @${{ github.actor }} to Production
 
-concurrency:
-  group: production-maintenance
-  cancel-in-progress: false
-
 on:
   push:
     branches: [main]
@@ -25,13 +21,21 @@ on:
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: production-maintenance
+  cancel-in-progress: false
+
 env:
   GHCR_IMAGE_PREFIX: ghcr.io/a158coke/wotbtools
 
 jobs:
-  # ── 路径检测：仅用于测试门禁与 tag 计算；镜像三件套每次生产部署统一构建 ──
+  # 路径检测仅用于测试门禁与 tag 计算；生产部署仍统一构建三件套镜像。
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
@@ -67,7 +71,7 @@ jobs:
             backend=false
             frontend=false
 
-            if grep -Eq '^(java/|common/(tankopedia-tier(7|8|9|10)\.json|rating\.json|map_names\.json|map-semantics/)|docker/Dockerfile\.backend$|\.dockerignore$)' <<< "$changed_files"; then
+            if grep -Eq '^(java/|common/(tankopedia-tier(7|8|9|10)\.json|rating\.json|map_names\.json|map-semantics/|wotb-item-catalog-json/)|docker/Dockerfile\.backend$|\.dockerignore$)' <<< "$changed_files"; then
               backend=true
             fi
             if grep -Eq '^(frontend/|common/map_names\.json$|common/assets/|docker/Dockerfile\.frontend$|deploy/nginx/|docs/WotBTools_League_Rating_V5\.md$|\.dockerignore$)' <<< "$changed_files"; then
@@ -84,8 +88,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v4
@@ -105,13 +108,14 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci --no-audit --no-fund
@@ -122,14 +126,12 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-  # ── 构建后端 ────────────────────────────────────────────────────
   build-backend:
     needs: [changes, test-backend]
-    # 生产部署统一构建三件套 SHA 镜像：只要 workflow 运行（即生产部署），backend 必建；
-    # 未改动时测试 job 为 skipped，构建仍须放行。
     if: always() && needs.changes.result == 'success' &&
         (needs.test-backend.result == 'success' || needs.test-backend.result == 'skipped')
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -154,12 +156,12 @@ jobs:
           provenance: false
           sbom: false
 
-  # ── 构建前端 ────────────────────────────────────────────────────
   build-frontend:
     needs: [changes, test-frontend]
     if: always() && needs.changes.result == 'success' &&
         (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped')
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -179,7 +181,6 @@ jobs:
           tags: |
             ${{ env.GHCR_IMAGE_PREFIX }}-frontend:${{ needs.changes.outputs.tag }}
             ${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest
-          # Build identity：镜像内 /version.json 与 console 记录真实 git commit（Docker 上下文无 .git）
           build-args: |
             BUILD_COMMIT=${{ needs.changes.outputs.tag }}
           cache-from: type=gha
@@ -187,11 +188,11 @@ jobs:
           provenance: false
           sbom: false
 
-  # ── 构建 Keycloak ───────────────────────────────────────────────
   build-keycloak:
     needs: changes
     if: needs.changes.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -218,7 +219,6 @@ jobs:
         env:
           KEYCLOAK_BUILD_FILE: ${{ github.workspace }}/keycloak-juhe-qq-provider
 
-  # ── 部署：三个 SHA 镜像已全部构建，统一 pull + restart ──
   deploy:
     needs: [changes, test-backend, test-frontend, build-backend, build-frontend, build-keycloak]
     if: >-
@@ -287,35 +287,8 @@ jobs:
           AI_REASONING_EFFORT: ${{ vars.AI_REASONING_EFFORT || 'max' }}
           AI_REVIEW_WORKER_MAX_CONCURRENT: ${{ vars.AI_REVIEW_WORKER_MAX_CONCURRENT || '4' }}
           AI_REVIEW_WORKER_QUEUE_CAPACITY: ${{ vars.AI_REVIEW_WORKER_QUEUE_CAPACITY || '4' }}
-          # 固定对齐前端 1100s / nginx 1120s（deploy.sh 对覆盖值 fail-fast 校验）
           AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC: '1100'
           REPLAY_COORDINATE_HALF_EXTENT: ${{ vars.REPLAY_COORDINATE_HALF_EXTENT || '250' }}
           REPLAY_COORDINATE_CLAMP_TOLERANCE: ${{ vars.REPLAY_COORDINATE_CLAMP_TOLERANCE || '12.5' }}
           GRAFANA_ROOT_URL: ${{ vars.GRAFANA_ROOT_URL || 'https://monitor.wotbtools.com' }}
           OBSERVABILITY_ENVIRONMENT: ${{ vars.OBSERVABILITY_ENVIRONMENT || 'production' }}
-  # ── 清理 GHCR（独立 job，清理失败不影响部署） ──────────────────
-  cleanup-ghcr:
-    needs: deploy
-    if: success()
-    runs-on: ubuntu-latest
-    permissions:
-      packages: write
-    steps:
-      - name: Prune backend versions (keep 5)
-        uses: actions/delete-package-versions@v5
-        with:
-          package-name: wotbtools-backend
-          package-type: container
-          min-versions-to-keep: 5
-      - name: Prune frontend versions (keep 5)
-        uses: actions/delete-package-versions@v5
-        with:
-          package-name: wotbtools-frontend
-          package-type: container
-          min-versions-to-keep: 5
-      - name: Prune keycloak versions (keep 5)
-        uses: actions/delete-package-versions@v5
-        with:
-          package-name: wotbtools-keycloak
-          package-type: container
-          min-versions-to-keep: 5
