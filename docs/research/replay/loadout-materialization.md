@@ -176,13 +176,98 @@ Observed provision-slot codes:
 
 Exact provision code -> symbolic item identities remain item-specific research. Do not assume these wire codes equal catalog `sourceIds`; the dynamic consumable family already proves that the replay wire namespace is not simply the public catalog ID namespace.
 
+# Proven provision wire-code mappings
+
+## `0x44` = Sandbag Armor
+
+Maus supplies a clean same-vehicle HP control. Restricting to samples with equipment ID110 `ENHANCED_ARMOR` removes the equipment HP-bonus branch.
+
+Current Maus base HP is 2900. Observed opening actual HP:
+
+```text
+provision 0x44 -> 2987 HP
+2900 × 1.03    -> 2987
+```
+
+The current provision catalog defines Sandbag Armor as a +3% HP provision for supported vehicles.
+
 Verdict:
 
-> Type5 six-item descriptor = **consumable/provision battle-loadout surface — PROVEN family**.
->
-> Exact consumable/provision slot ordering = **PROVEN**.
->
-> Exact provision wire-code names = **PARTIAL** until independently mapped.
+> `0x44 = SANDBAG_ARMOR` — **PROVEN current 11.19 behavioral mapping**.
+
+## `0x45` = Enhanced Sandbag Armor
+
+Same Maus control:
+
+```text
+provision 0x45 -> 3074 HP
+2900 × 1.06    -> 3074
+```
+
+The current provision catalog defines Enhanced Sandbag Armor as +6% HP.
+
+The relationship also fits independent Kranvagn/FV215b/Rhm natural samples when combined with their observed equipment HP modifiers.
+
+Verdict:
+
+> `0x45 = ENHANCED_SANDBAG_ARMOR` — **PROVEN current 11.19 behavioral mapping**.
+
+## `0x6C` = Improved Gunpowder
+
+VK 72.01 K provides a clean projectile-velocity natural contrast. It is the current corpus vehicle whose allowed provision set includes Improved Gunpowder, and the compared loadouts differ on the relevant provision code while retaining the same shell-speed producer family.
+
+Avatar method29 independently carries projectile launch velocity at the current body vector beginning at byte offset 21. Observed VK 72.01 K launch-speed pairs include:
+
+```text
+without 0x6C : 600.0
+with    0x6C : 810.0
+ratio         : 1.3500
+
+without 0x6C : 552.0
+with    0x6C : 745.2
+ratio         : 1.3500
+```
+
+The current provision catalog defines Improved Gunpowder as shell velocity ×1.35.
+
+Verdict:
+
+> `0x6C = IMPROVED_GUNPOWDER` — **PROVEN current 11.19 behavioral mapping**.
+
+This independently strengthens method29's launch-vector magnitude interpretation as physical shell-velocity telemetry.
+
+# Strong provision families not yet promoted
+
+Several provision codes show highly structured nation/item-family patterns but remain below `PROVEN` until physical effects or a direct current schema close them.
+
+Observed first-provision patterns include:
+
+```text
+Germany  : 0x0E
+USA      : 0x0F
+USSR     : 0x10
+UK       : 0x11
+Japan    : 0x12
+European nation-specific branches include 0x46 / 0x49
+```
+
+These align strongly with nation-specific food families. Separate codes such as `0x16/0x17/0x18/0x19/...` form a plausible second food-size family.
+
+A SPHT natural reload contrast is especially suggestive for `0x16`:
+
+```text
+same SPHT family + 0x16 -> initial full reload ~= 8.6918 s
+comparison branch       -> initial full reload ~= 8.8049 s
+ratio                    -> ~0.98715
+```
+
+That magnitude is consistent with a small crew-mastery food effect, but the exact crew formula and hidden loadout interactions mean `0x16 = SMALL_FOOD` remains **VERY STRONG PARTIAL**, not yet `PROVEN`.
+
+Common codes `0x1C/0x1D/0x1E` are strong candidates for Standard Fuel / Improved Fuel / Protective Kit, but current movement/turret-speed natural samples are still too player-input-dependent to assign exact identities without overclaiming.
+
+Verdict:
+
+> keep food/fuel/protective exact symbolic mappings `PARTIAL` until stronger controlled closure.
 
 # Nine equipment bytes — direct equipment IDs
 
@@ -348,7 +433,7 @@ Do not:
 
 # Remaining work
 
-1. map provision-slot wire codes to current logical provision IDs using current Blitz definitions plus replay behavior;
+1. close the remaining food/fuel/protective provision wire codes with controlled physical effects or a current schema;
 2. map any still-unclosed consumable wire codes in the first three item slots;
 3. verify the 6+9 tail on non-Tier-X combat vehicles / random battles before widening production version gates;
 4. validate future Blitz versions before assuming the Type5 relative tail structure is unchanged;
