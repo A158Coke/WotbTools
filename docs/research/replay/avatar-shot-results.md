@@ -1,182 +1,42 @@
 # Avatar method38 — recorder shot-result / hit-feedback family
 
-> Corpus: strict 34 unique-arena Blitz 11.19.0 China subset from the replay research archive.
+> Canonical corpus: 34 unique Blitz 11.19.0 China arenas.
 >
-> Scope: current Avatar-targeted Type8 `methodId=38`. Numeric method IDs are version- and entity-class-scoped.
+> Numeric method IDs are entity-class and version scoped. This file is the synchronized method38 overview; focused evidence lives in the linked closure notes.
 
 ## Executive verdict
 
-Current Avatar method38 is the recorder's **shot-result / hit-feedback family — PROVEN behavioral identity**.
+Avatar `methodId=38` is the replay recorder's **outgoing shot-result / hit-feedback family — PROVEN behavioral identity**.
 
-Historical Wargaming client code exposes `showShotResults(results)`, which is now the strongest symbolic RPC candidate. The exact Blitz 11.19 method symbol and field codec remain `PARTIAL` until a version-matched entity definition is recovered.
-
-An earlier hypothesis that method38 might be `showOtherVehicleDamagedDevices(vehicleID, damagedExtras, destroyedExtras)` is **SUPERSEDED**: the strict corpus proves method38 is emitted one-for-one with the recorder's actual hit stream, not as an arbitrary monitored-target device snapshot.
-
-## Recorder identity is independently resolved
-
-For each replay, recorder vehicle identity is resolved without using method38:
+Current corpus anchors:
 
 ```text
-meta.json.dbid
-  -> subtype48 wrapper1 player record field7 account DBID
-  -> wrapper1 field1 vehicle/entity ID
+settlement recorder shots : 324
+settlement recorder hits  : 295
+method38 events           : 295
 ```
 
-This gives the current replay recorder's combat entity ID independently of projectile or hit-feedback hypotheses.
+Every method38 event is recorder-Avatar scoped and joins a recorder→victim direct-hit path. It is not general world-damage telemetry.
 
-## Method38 is recorder-hit scoped
+Historical `showShotResults(results)` remains the strongest symbolic candidate, but exact current Blitz RPC symbol/schema is still PARTIAL until version-matched definitions are recovered.
 
-On the strict 34-arena corpus:
+## Safe current wire model
+
+Main structure:
 
 ```text
-method38 total                                      : 295
-method38 targeted at recorder Avatar                : 295 / 295
-method38 args begin with valid victim vehicle ID    : 295 / 295
-method38 with same-clock Vehicle method8 direct hit
-whose attacker == independently resolved recorder   : 295 / 295
-counterexamples                                     : 0
+victimVehicleId : u32 LE
+resultFlags16   : u16 LE
+headerHi16Raw   : u16 LE
+count           : u8
+repeat count times:
+    componentToken : u8
+    rawState       : u8
+tail            : u8
+optionalExtension : u32 LE when present
 ```
 
-Four clocks contain an additional attacker damage RPC batched at the same replay timestamp, but every method38 event still has a same-clock recorder->victim damage RPC. Therefore batching does not break the recorder attribution.
-
-Verdict:
-
-> method38 is not general world damage telemetry. It is **feedback for a hit produced by the replay recorder's own vehicle — PROVEN**.
-
-## Settlement cardinality closure
-
-Recorder settlement fields independently provide shot/hit counts.
-
-Across the strict 34 arenas:
-
-```text
-recorder settlement shots : 324
-recorder settlement hits  : 295
-Avatar method38 events    : 295
-```
-
-Per arena:
-
-```text
-31 / 34 arenas: method38 count == settlement hits exactly
-remaining deltas: +1, +1, -2
-corpus total delta: 0
-```
-
-The small per-arena redistribution is consistent with replay timestamp/event batching and multi-target/result packing boundaries; the complete corpus cardinality is exact.
-
-Together with the 295/295 recorder-attacker closure, this proves the method's current behavioral identity as recorder hit/shot-result feedback.
-
-## Experimental validation against the projectile lifecycle
-
-A second-pass experiment tested method38 at the individual projectile level rather than relying only on event totals.
-
-Recorder vehicle identity was first inferred independently from the attacker field of same-clock direct-hit method8 events associated with method38; that vehicle ID was then used to select recorder-owned Avatar method29 launch records. Each method29 shot ID was closed to its Avatar method20 terminal endpoint.
-
-Observed strict-corpus totals:
-
-```text
-settlement shots                    : 324
-recorder method29 launch records    : 326
-arenas launch-count == shots exactly: 32 / 34
-remaining launch deltas             : +1, +1
-
-settlement hits                     : 295
-method38 events                     : 295
-
-recorder projectile terminals with
-method38 at the same/near terminal  : 294
-recorder projectile terminals with
-no method38                         : 32
-```
-
-Using a conservative `<= 0.21 s` terminal-to-feedback window:
-
-```text
-30 / 34 arenas: projectile-classified hit count == settlement hits exactly
-remaining hit-count deltas: +1, +1, -1, -2
-```
-
-No recorder launch lacked a matching method20 terminal record in this experiment.
-
-The two extra method29 launch records and the few per-arena hit-classification deltas are retained as boundary evidence rather than discarded; they likely reflect duplicated/batched launch observations or same-clock result packing and require separate closure before constructing a one-to-one production shot ledger.
-
-Verdict:
-
-> The projectile-level experiment independently confirms that **method38 is present on the recorder hit path and absent on the overwhelming majority of recorder miss/environment-terminal paths**. This supports the `showShotResults`-family interpretation at the behavioral level.
-
-### Negative control: method27 / environment-terminal path
-
-Avatar method27 is independently established as an `explodeProjectile` / miss-environment terminal family. The recorder projectile experiment separates the two paths:
-
-```text
-method29 launch
-  -> method20 terminal
-      -> method38 on recorder-hit path
-      -> method27 on many miss/environment-terminal paths
-```
-
-The two methods are therefore not alternative encodings of the same result event.
-
-## Header experiment: penetration hypothesis remains PARTIAL
-
-The four-byte method38 header was tested against two independent result dimensions:
-
-1. exact same-clock Type7 prop3 HP loss; and
-2. settlement `hits - penetrations` counts.
-
-Among the 295 method38 records:
-
-```text
-213 : same-clock positive observed HP delta
- 82 : no usable same-clock positive HP delta
-```
-
-The first header byte strongly separates some of those cases. In particular:
-
-```text
-header[0] = 0x10 : 184 total; 160 with exact positive HP loss
-header[0] = 0x20 :  33 total;   3 with exact positive HP loss
-header[0] = 0x30 :  34 total;  31 with exact positive HP loss
-header[0] = 0x60 :   5 total;   0 with exact positive HP loss
-```
-
-This proves that the header carries real shot-result state rather than arbitrary padding.
-
-However, exact HP observation is AoI/sample limited, so `no same-clock HP delta` is not equivalent to `no penetration`.
-
-Settlement gives:
-
-```text
-hits         : 295
-penetrations : 270
-non-penetrating hits = 25
-```
-
-A tempting aggregate coincidence (`header0=0x00` + `header0=0x11` totals 25) fails per-arena validation and is **REJECTED**.
-
-`header0=0x20` is the strongest current non-penetration/no-HP candidate:
-
-```text
-header0=0x20 total                : 33
-arenas where count exactly equals
-settlement hits-penetrations      : 25 / 34
-mean absolute per-arena error     : ~0.41 shots
-```
-
-But `33 != 25` globally, and three `0x20` events have an exact observed positive HP delta. Therefore:
-
-> `header0=0x20 == non-penetration` is **NOT PROVEN**.
-
-The safer conclusion is:
-
-> the header contains one or more hit-result flags that strongly distinguish HP-damaging/piercing-like results from no-HP/special/module-only result families — `PROVEN relationship / PARTIAL bit semantics`.
-
-Historical `showShotResults` code independently supports this architecture: its result flags distinguish piercing, no-piercing, gun damage, chassis damage and fire-start outcomes. Current Blitz numeric bits must still be recovered from current behavior rather than transplanted from historical constants.
-
-## Main wire variant
-
-Argument lengths in the strict corpus:
+Argument lengths in the canonical corpus:
 
 ```text
 10 bytes : 173
@@ -186,181 +46,210 @@ Argument lengths in the strict corpus:
 18 bytes :   2
 ```
 
-For 281/295 records, this structural decoder closes exactly:
+The extra four-byte extension occurs in 14 records.
+
+Important correction:
+
+> the four bytes after `victimVehicleId` must not be interpreted as one homogeneous u32 flag enum.
+
+The low 16 bits are the behaviorally validated result-bit surface. `headerHi16Raw` is usually `0x0002` and remains raw/PARTIAL.
+
+## Recorder-hit scope and semantic hit grouping
+
+The strict corpus closes method38 against recorder hit totals, but transport cardinality is not always one physical hit per RPC. A known Maus boundary contains duplicate/batched feedback at the same `(arena, rawClock, victim)`.
+
+Consumers constructing a physical hit ledger must semantic-group/deduplicate rather than assume one RPC equals one settlement hit.
+
+## Current low-16 result facts
 
 ```text
-victimVehicleId : u32 LE
-header          : 4 bytes, semantics PARTIAL
-count           : u8
-repeat count times:
-    token       : u8
-    rawState    : u8
-tail            : u8
+0x0001 -> direct shell terminal kill
+          PROVEN current corpus
+
+0x0002 -> target already dead before attack
+          PROVEN observed sample / PARTIAL global
+
+0x0004 -> fire started by shot
+          PROVEN observed samples / PARTIAL global
+
+0x0008 -> ricochet
+          high-confidence PARTIAL; current armor-normal geometry closure still absent
+
+0x1110 -> piercing-like OR relationship
+          PROVEN current corpus after semantic-hit grouping
 ```
 
-with:
+`0x0010`, `0x0100`, `0x0400` and other individual bit semantics are preserved separately in `avatar-shot-result-bitfield.md` with their own evidence grades.
+
+Re-audited current special-ammunition relationship:
 
 ```text
-argLength == 10 + 2 * count
-count in 0..4
+0x1000 : 13/13 -> Type28 selectionValue=2
+0x2000 :  1/1  -> Type28 selectionValue=2
+0x4000 :  7/7  -> Type28 selectionValue=2
 ```
 
-The remaining 14 records retain the recognizable main prefix/list material and carry an additional four-byte extension. The extension remains `UNKNOWN`; consumers must preserve it raw.
+This proves a selection-value-2 special ammunition/result-resolution branch, but does **not** justify transplanting historical PC upper-bit names into current Blitz.
 
-Representative bodies:
+## Component-token namespace — now closed
+
+The repeated `componentToken` is not an anonymous critical token anymore. It reuses the current component namespace independently closed across method16 and Type32.
+
+Current version-gated map:
 
 ```text
-<victim> 10 05 02 00 01 22 01 00
-<victim> 10 01 02 00 01 21 01 00
-<victim> 00 05 02 00 02 22 02 23 02 00
-<victim> 20 05 02 00 01 22 02 00
+31 Engine
+32 Ammo Rack
+33 Fuel Tank
+34 Right Track
+35 Left Track
+36 Gun
+37 Turret Rotator
+38 Observation Device
+39 Commander
+40 Driver
+41 Gunner
+42 UNKNOWN / unobserved-reserved
+43 Loader
 ```
 
-The four-byte `header`, final tail byte and extended-variant extra bytes remain unresolved at field-name level.
+Thus consumers may decode known tokens to component names for Blitz 11.19 while preserving the raw value and version gate.
 
-## Structured critical/module result list
+## `rawState` severity/result family — substantially closed
 
-Every non-empty main-variant method38 record is same-clock with a Vehicle method8 direct hit on the same victim.
-
-The repeated token/state list is strongly correlated with Type32 mobile `flag=1` short damage/effect events for that victim.
-
-For 108 main-variant records with a non-empty result list:
+Current safe mapping:
 
 ```text
-method38 token set == same-clock Type32 short suffix set : 86 / 108
-method38 token set subset of short suffix set            : 90 / 108
-at least one token/suffix intersection                   : 96 / 108
+rawState=0
+    component hit/involved in resolution
+    but no newly observed persistent negative module state
+    VERY STRONG physical role / exact internal enum PARTIAL
+
+rawState=1
+    mechanical component damaged OR crew member injured
+    PROVEN relationship
+
+rawState=2
+    mechanical component critical / disabled
+    PROVEN relationship
 ```
 
-Examples:
+Independent method16→Type32 anchors:
 
 ```text
-method38 token 0x22, rawState1
-same clock Type32 short: a0 22
-
-method38 token 0x21, rawState1
-same clock Type32 short: a0 21
-
-method38 token 0x22, rawState2
-same clock Type32 short family includes: a4 22 / 9c 22
-
-method38 tokens 0x22 rawState2, 0x23 rawState2
-same clock Type32 short family contains ...22 and ...23
+method16 codeA=4  common damage -> Type32 a0/a180/a140 : 69/69
+method16 codeA=5  critical      -> Type32 a4/9c        : 65/65
+method16 codeA=10 crew injury   -> Type32 a0/a180     : 24/24
 ```
 
-This proves that the list carries **structured per-hit module/extra/critical-result evidence**, while Type32 short bodies carry a related presentation/event encoding.
+Method38 then reproduces the same state families on same-component result tokens.
 
-It does not yet prove exact token-to-component names.
+### Why rawState=0 is not light damage
 
-## rawState-to-Type32 prefix separation
+Current `rawState=0` population has explicit component tokens but no same-clock matching persistent negative-state mutation. Mixed single-shell results show that one shell can hit several internal components and independently succeed/fail their module-damage probability checks, e.g. components with state0 in the same hit as another crew/module result with state1.
 
-For method38 `(token,rawState)` entries with a same-clock Type32 short ending in the same token:
+Therefore module hit and module damage are distinct. Do not expose rawState0 as `damaged`.
 
-### `rawState=1`
+The exact internal enum name (`unchanged`, `hit-no-damage`, etc.) remains unknown.
+
+## Extended result field
+
+Current population:
 
 ```text
-a0   : 52
- a180: 17
- a140:  2
- a1e0:  1
+extension=1 : 13
+extension=2 :  1
 ```
 
-### `rawState=2`
+### extension=1
 
-```text
-a4   : 29
-9c   : 26
-a580 :  1
-9d80 :  1
-```
+`extension=1` is a **VERY STRONG Precision Fire proc candidate / near-PROVEN**, but remains provenance-aware rather than production-PROVEN without controlled/schema closure.
 
-### `rawState=0`
+Current evidence:
 
-No equivalent stable same-clock short-prefix family is observed in the current subset.
+- all 12 non-HE-family samples produce exact maximum ordinary damage or target-HP-capped terminal damage;
+- exact SPHT 500-damage samples: 9/9 carry extension1;
+- exact Ho-Ri 700-damage samples: 2/2 carry extension1;
+- the SPHT 415 terminal sample had exactly 415 HP before the hit, so observable loss is HP-capped;
+- the lone FV215b HE-family sample is not a contradiction: Precision Fire may establish the HE maximum-damage proc before HE penetration/armor/explosion-radius resolution determines final HP loss.
+
+Do not infer Precision Fire solely from final damage magnitude. See `precision-fire-method38-extension.md`.
+
+### extension=2
+
+The only current recorder-owned Tungsten-active hit carries `extension=2` approximately 0.5 seconds after activation; no non-Tungsten hit carries that extension.
 
 Verdict:
 
-> method38 `rawState` and Type32 compact prefix encode a shared **hit-result severity/state dimension — PROVEN relationship**.
+> Tungsten/special-damage provenance candidate — **VERY STRONG PARTIAL, n=1**.
 
-Exact labels such as `common damage`, `critical/destroyed`, `crew`, `repaired` remain `PARTIAL/UNKNOWN` until independently closed.
+Additional controlled samples are required before exact naming.
 
-## Historical client evidence and candidate symbol
+## Type28 relationship
 
-Historical Wargaming `Avatar.py` exposes both:
-
-```text
-showShotResults(results)
-showOtherVehicleDamagedDevices(vehicleID, damagedExtras, destroyedExtras)
-```
-
-`showShotResults` processes the player's shot feedback, including penetration/module/chassis/gun/fire-related result flags and sounds. That behavior fits the current 295/295 recorder-hit relationship and exact corpus-level settlement-hit cardinality.
-
-`showOtherVehicleDamagedDevices`, by contrast, is tied to monitoring the currently targeted vehicle and forwards damaged/destroyed device collections to UI feedback. That behavioral contract does not explain the 295/295 recorder-hit alignment.
-
-Therefore:
+Type28 is independently proven as recorder ammunition-selection state. A strict re-audit reconstructs:
 
 ```text
-current physical identity : recorder shot-result / hit-feedback — PROVEN
-historical symbolic candidate: showShotResults — PARTIAL
-old showOtherVehicleDamagedDevices candidate: SUPERSEDED
+324 unique recorder method29 shotIds
+= 324 settlement recorder shots
 ```
 
-## Rejected method35 hypothesis
+Do not assume wire selection values `0/1/2` equal UI shell-list indices without method17 descriptor closure.
 
-Current Avatar method35 was also tested against historical `showVehicleDamageInfo(vehicleID, damageIndex, extraIndex, entityID, equipmentID)`.
+For FV215b, current launch velocity strongly identifies wire value1 as the APCR family. Wire value2 has HE-family combat behavior and is the only value associated with the current `0x1000/0x2000/0x4000` high-result branch, but production naming still belongs behind descriptor/version gating.
 
-Its current 13-byte argument form is instead structurally:
-
-```text
-vehicleId : u32
-value     : f32
-zeroTail  : 5 bytes in the observed main family
-```
-
-and only a minority of occurrences coincide with Type32 damage-short events.
-
-Therefore:
-
-> `method35 == showVehicleDamageInfo` is **REJECTED** for current Blitz 11.19.
-
-## Consumer guidance
-
-A safe research/decoder model is:
+## Safe decoder model
 
 ```text
 ShotResultFeedback {
     rawClockSec
     victimVehicleEntityId
-    headerRaw[4]
+    resultFlags16
+    headerHi16Raw
     results[] {
-        token
+        componentIdRaw
+        componentNameNullable
         rawState
+        stateFamilyNullable
+        confidence
     }
-    extensionRaw[]
+    extensionRawNullable
     recorderScoped = true
-    confidence
 }
 ```
 
-Safe current uses after version gating:
+Safe current uses:
 
-- establish that the recorder's shell registered a hit-result feedback event;
-- attach raw module/critical result tokens to that hit;
-- correlate those tokens with Type32 short damage effects and later recovery state;
-- preserve a hit even when exact module names are unknown.
+- identify a recorder shell hit/result feedback event;
+- derive current-corpus direct kill, fire-start and piercing-like facts;
+- attach version-gated module/crew identities;
+- distinguish no-new-module-damage vs damaged/injured vs critical/disabled component result families;
+- preserve extension provenance and raw flags for future schema closure.
 
-Unsafe until further closure:
+Still unsafe:
 
-- naming token `0x21/0x22/...` as a specific engine/track/gun/crew member;
-- exposing rawState `0/1/2` as user-facing severity labels;
-- interpreting the four-byte header as penetration, blocked damage or material without proof;
-- treating method38 as all-player/global hit telemetry: it is recorder-scoped.
+- treating `headerHi16Raw` as a decoded hit flag;
+- naming every low-16 bit from historical PC constants;
+- naming rawState0 with an exact internal enum;
+- globally naming extension2 as Tungsten from a single sample;
+- treating method38 as all-player/global telemetry.
 
-## Remaining work
+## Current remaining work
 
-1. Recover a version-matched Blitz 11.19 Avatar/entity definition for the exact method38 RPC symbol and field codecs.
-2. Decode the four-byte header bit layout; current experiments prove a hit-result dimension but do not yet prove individual penetration/no-penetration bits.
-3. Close `rawState=0/1/2` against controlled common-vs-critical/destroyed module outcomes.
-4. Map token IDs to actual vehicle `extras[]` entries.
-5. Decode the 14-record extended variant.
-6. Explain the two extra recorder method29 launch observations and the four per-arena projectile-classification boundary cases before building a production one-shot/one-result ledger.
+These are bounded research gaps, not blockers to current-corpus structural completion:
+
+1. recover version-matched Blitz method38 schema/symbol names;
+2. close exact rawState0 internal enum naming with a controlled module-hit/no-damage probe;
+3. split selectionValue2 high result bits into exact HE/special-shell resolution meanings;
+4. obtain more Tungsten-active recorder hits for extension2;
+5. validate mappings on future Blitz versions behind version gates.
+
+## Canonical supporting notes
+
+- `avatar-shot-result-bitfield.md`
+- `method38-result-state-closure.md`
+- `method38-component-token-namespace.md`
+- `method38-module-damage-probability.md`
+- `precision-fire-method38-extension.md`
+- `type28-ammunition-slot.md`
+- `track-side-orientation-closure.md`
