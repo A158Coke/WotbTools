@@ -6,6 +6,7 @@ import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
+import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.event.UnsupportedDamageEvent;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.springframework.util.StringUtils;
@@ -42,6 +43,18 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     @Override
     public ReplayDecodeResult decode(ReplayDecodeContext context, RawReplayPacket packet) {
         final byte[] payload = packet.payload();
+        // 版本门禁（计划 §A2）：method 子类型 closed semantics 只在已知版本族上 AFFIRMED；
+        // 未知版本 → raw-preserve（UnknownReplayEvent）+ diagnostics。
+        if (!ReplayVersionGate.closedSemanticsAllowed(context.clientVersion())) {
+            final ReplayTimestamp unsupportedTs = new ReplayTimestamp(packet.rawClockSec(), null);
+            return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
+                    List.of(new UnknownReplayEvent(
+                            packet.sequence(), unsupportedTs, packet.type(),
+                            payload.length, "VERSION_UNSUPPORTED", DecodeConfidence.UNKNOWN)),
+                    List.of(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
+                            "EntityMethod closed semantics not affirmed for client version: "
+                                    + context.clientVersion())));
+        }
         if (payload.length < 8) {
             return new ReplayDecodeResult(DecodeStatus.MALFORMED, List.of(),
                     List.of(new ReplayDecodeWarning("TRUNCATED_PAYLOAD",

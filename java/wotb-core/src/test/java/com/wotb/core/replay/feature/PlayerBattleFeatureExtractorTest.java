@@ -30,7 +30,7 @@ class PlayerBattleFeatureExtractorTest {
 
     private static PositionChangedEvent pos(int seq, float time, int entityId, float x, float z) {
         return new PositionChangedEvent(seq, new ReplayTimestamp(time, null), 10, DecodeConfidence.EXACT,
-                entityId, 0, 0, x, 0, z, 0, 0, 0, 0, 0, 0, (byte) 0);
+                entityId, 0, 0, x, 0, z, 0, 0, 0, 0, 0, 0, 0);
     }
 
     private static DamageEvent dmg(int seq, float time, int attacker, int victim, int damage) {

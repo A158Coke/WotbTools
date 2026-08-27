@@ -70,7 +70,7 @@ class TimelineFocusWindowSelectorTest {
 
     private static PositionChangedEvent position(final int eid, final double battleSec, final float x, final float z) {
         return new PositionChangedEvent(seq++, ts(battleSec), 10, DecodeConfidence.EXACT,
-                eid, 0, 0, x, 0f, z, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0);
+                eid, 0, 0, x, 0f, z, 0f, 0f, 0f, 0f, 0f, 0f, 0);
     }
 
     private static HealthChangedEvent health(final int eid, final double battleSec,

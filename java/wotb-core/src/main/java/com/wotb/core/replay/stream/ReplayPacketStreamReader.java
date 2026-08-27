@@ -10,11 +10,13 @@ import java.util.Objects;
 /**
  * 从 data.wotreplay 字节数组中完整扫描事件包数据流。
  * <p>
- * 职责：
+ * <p>职责：</p>
  * <ul>
  *   <li>解析文件头（{@link ReplayStreamHeader}）</li>
  *   <li>从头到尾扫描所有合法事件包</li>
- *   <li>错误容忍：坏包时跳过 1 字节尝试重同步</li>
+ *   <li>strict contiguous framing（PR147）：包连续排列、{@code payloadLen == 0} 合法、
+ *       terminator（{@code type == 0xFFFFFFFF}）后停止；framing corruption 直接抛异常，
+ *       绝不逐 byte resync（恢复扫描仅用于 diagnostics/research）</li>
  *   <li>记录完整诊断信息（{@link ReplayStreamDiagnostics}）</li>
  *   <li>保留原始包顺序和 sequence 编号</li>
  *   <li>不因 {@code battleDuration} 提前停止</li>
@@ -30,8 +32,8 @@ public final class ReplayPacketStreamReader {
     private static final int MAX_PAYLOAD_LEN = 200_000;
     private static final float MAX_SANE_CLOCK = 5000f;
     private static final int MAX_PACKETS = 200_000;
-    private static final int MAX_SCAN_STEPS = 1_000_000;
-    private static final int MAX_RESYNC_STEPS = 10_000;
+    /** 当前版本流 terminator（PROVEN：payloadLen=16、rawClock=0；packet-stream.md）。 */
+    private static final int TERMINATOR_TYPE = 0xFFFFFFFF;
 
     private final byte[] source;
     private final int sourceSize;
@@ -61,7 +63,8 @@ public final class ReplayPacketStreamReader {
      * @param data data.wotreplay 的完整字节内容
      * @return 读取结果，包含头部、包列表和诊断信息
      * @throws ReplayHeaderException 如果头部非法
-     * @throws IllegalArgumentException 如果超出安全限制
+     * @throws IllegalArgumentException 如果 framing corruption（超出安全限制 / 非法长度 /
+     *                                  截断包 / terminator 后残留数据 / 非法时钟）
      */
     public static ReplayStreamResult read(byte[] data) {
         final ReplayPacketStreamReader reader = new ReplayPacketStreamReader(data);
@@ -77,49 +80,35 @@ public final class ReplayPacketStreamReader {
         int offset = header.packetStreamOffset();
         scannedBytes = offset;
 
-        // 2. 遍历事件包
-        boolean inResync = false;
-        int resyncStepCount = 0;
+        // 2. 遍历事件包：strict contiguous framing
 
         while (offset + 12 <= sourceSize) {
             if (packets.size() >= MAX_PACKETS) {
                 throw new IllegalArgumentException("REPLAY_PACKET_LIMIT_EXCEEDED");
             }
-            if (inResync) {
-                resyncStepCount++;
-                if (resyncStepCount > MAX_RESYNC_STEPS) {
-                    throw new IllegalArgumentException("REPLAY_MAX_RESYNC_EXCEEDED");
-                }
-            }
 
             final int payloadLen = readU32LE(source, offset);
 
-            // 非法长度 —— 跳过 1 字节
-            if (payloadLen <= 0 || payloadLen > MAX_PAYLOAD_LEN) {
-                offset = advanceWithResync(offset, inResync);
-                inResync = true;
-                continue;
+            // 非法长度（payloadLen == 0 合法；u32 负数 = 超出 int 范围）—— FAIL
+            if (payloadLen < 0 || payloadLen > MAX_PAYLOAD_LEN) {
+                throw new IllegalArgumentException(
+                        "REPLAY_INVALID_PAYLOAD_LEN at offset " + offset);
             }
 
-            // payload 超出文件范围 —— 跳过 1 字节
+            // payload 超出文件范围 —— FAIL
             if (offset + 12 + payloadLen > sourceSize) {
-                offset = advanceWithResync(offset, inResync);
-                inResync = true;
-                continue;
+                throw new IllegalArgumentException("REPLAY_TRUNCATED_PACKET at offset " + offset);
             }
 
             final int type = readU32LE(source, offset + 4);
             final float clockSecs = Float.intBitsToFloat(readU32LE(source, offset + 8));
 
-            // 时钟无效 —— 跳过 1 字节
+            // 时钟无效 —— FAIL（strict framing 不允许按时钟猜测跳过）
             if (Float.isNaN(clockSecs) || clockSecs < 0 || clockSecs > MAX_SANE_CLOCK) {
-                offset = advanceWithResync(offset, inResync);
-                inResync = true;
-                continue;
+                throw new IllegalArgumentException("REPLAY_INVALID_CLOCK at offset " + offset);
             }
 
             // 成功读取一个包
-            final PacketReadStatus status = inResync ? PacketReadStatus.RESYNC_RECOVERED : PacketReadStatus.NORMAL;
             final int sequence = packets.size();
 
             packets.add(new RawReplayPacket(
@@ -128,17 +117,13 @@ public final class ReplayPacketStreamReader {
                     payloadLen,
                     type,
                     clockSecs,
-                    status,
+                    PacketReadStatus.NORMAL,
                     source,
                     offset + 12
             ));
 
             // 更新统计
-            if (status == PacketReadStatus.NORMAL) {
-                normalPacketCount++;
-            } else {
-                recoveredPacketCount++;
-            }
+            normalPacketCount++;
 
             typeStats.computeIfAbsent(type, k -> new PacketTypeStats()).increment(clockSecs);
 
@@ -157,16 +142,20 @@ public final class ReplayPacketStreamReader {
 
             offset += 12 + payloadLen;
             scannedBytes = offset;
-            inResync = false;
-            resyncStepCount = 0;
+            if (type == TERMINATOR_TYPE) {
+                // terminator 之后不得再解析任何数据
+                break;
+            }
         }
 
-        // 尾部剩余字节
+        // 严格契约：terminator 之后（或流末尾）不允许残留任何字节
+        if (offset < sourceSize) {
+            throw new IllegalArgumentException(
+                    "REPLAY_TRAILING_DATA after terminator at offset " + offset);
+        }
         trailingByteCount = sourceSize - offset;
         scannedBytes = offset;
-        // while 循环仅在 offset+12 > sourceSize（末尾不足一个包头）时正常退出；
-        // 超出包数/重同步硬上限会在循环内抛异常，不会走到这里。
-        final boolean reachedPhysicalEnd = offset + 12 > sourceSize;
+        final boolean reachedPhysicalEnd = true;
 
         // 构建诊断
         final Map<Integer, PacketTypeDiagnostics> diagTypes = new HashMap<>();
@@ -203,17 +192,6 @@ public final class ReplayPacketStreamReader {
         );
 
         return new ReplayStreamResult(header, Collections.unmodifiableList(packets), diagnostics);
-    }
-
-    /**
-     * 执行重同步：跳过 1 字节。
-     */
-    private int advanceWithResync(int offset, boolean alreadyInResync) {
-        if (!alreadyInResync) {
-            resyncCount++;
-        }
-        skippedByteCount++;
-        return offset + 1;
     }
 
     // ---- 结果封装 ----
