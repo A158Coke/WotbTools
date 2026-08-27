@@ -1,0 +1,64 @@
+name: Update Equipment
+run-name: Sync equipment from BlitzKit by @${{ github.actor }}
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-equipment
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Sync equipment catalog from BlitzKit
+        run: |
+          set -euo pipefail
+          python3 common/python/update_equipment.py
+
+      - name: Validate catalog and generators
+        run: |
+          set -euo pipefail
+          python3 -m json.tool common/wotb-item-catalog-json/equipment.json >/dev/null
+          python3 -m unittest discover -s common/python/tests -p 'test_*.py'
+          git diff --check
+
+      - name: Commit data branch and open/update PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: automation/update-equipment
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- common/wotb-item-catalog-json/equipment.json; then
+            echo "Equipment catalog unchanged; nothing to publish."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git add common/wotb-item-catalog-json/equipment.json
+          git commit -m "chore(data): sync BlitzKit equipment catalog"
+          git push --force-with-lease origin "HEAD:$BRANCH" || git push --force origin "HEAD:$BRANCH"
+
+          pr_number="$(gh pr list --base main --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [[ -z "$pr_number" ]]; then
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "chore(data): sync BlitzKit equipment catalog" \
+              --body $'Automated equipment sync from current BlitzKit sources.\n\n- Syncs equipment IDs from equipment.pb\n- Syncs modeled numerical effects from BlitzKit calculation code\n- Fails closed when expected upstream patterns disappear\n- Requires normal PR CI/review before merge'
+          else
+            echo "Updated existing PR #$pr_number"
+          fi
