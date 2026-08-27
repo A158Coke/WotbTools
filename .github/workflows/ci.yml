@@ -1,9 +1,10 @@
 name: CI
-run-name: CI for PR #${{ github.event.pull_request.number }}
+run-name: CI ${{ github.event_name == 'pull_request' && format('for PR #{0}', github.event.pull_request.number) || format('for {0}', github.ref_name) }}
 
 on:
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
