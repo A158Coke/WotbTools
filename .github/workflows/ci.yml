@@ -1,11 +1,10 @@
 name: CI
+run-name: "CI for ${{ github.ref_name }}"
 
-# deploy.yml 只在 push 到 main 时跑测试(main 由其覆盖)，PR 上原本看不到检查。
-# 本 workflow 仅在 PR(目标 main)时运行后端测试 + 前端测试/构建，作为 PR 合并检查
-# (对应 review P3#13)。只监听 pull_request，避免与 push 触发重复跑。
 on:
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,31 +15,56 @@ concurrency:
 
 jobs:
   python:
-    name: Python (tankopedia generator) tests
+    name: Python data generator tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Python unit tests
         run: python3 -m unittest discover -s common/python/tests -p 'test_*.py'
+      - name: Validate live BlitzKit equipment contract
+        run: |
+          set -euo pipefail
+          cp common/wotb-item-catalog-json/equipment.json /tmp/equipment.json
+          python3 common/python/sync_equipment_snapshot.py --catalog /tmp/equipment.json
+          diff -u common/wotb-item-catalog-json/equipment.json /tmp/equipment.json
+      - name: Validate live BlitzKit Tankopedia contract
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/tankopedia-ci
+          mkdir -p /tmp/tankopedia-ci
+          python3 common/python/sync_tankopedia_snapshot.py \
+            --existing-dir common \
+            --output-dir /tmp/tankopedia-ci
+          for tier in 7 8 9 10; do
+            python3 -m json.tool "/tmp/tankopedia-ci/tankopedia-tier${tier}.json" >/dev/null
+          done
 
   backend:
-    name: Backend (wotb-core + wotb-web) tests
+    name: Backend tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "21"
+      - uses: actions/cache@v4
+        with:
+          path: java/.m2repo
+          key: ${{ runner.os }}-maven-${{ hashFiles('java/**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-maven-
       - name: Maven test
         working-directory: java
         run: mvn --batch-mode --no-transfer-progress -s settings.xml -Dmaven.repo.local=.m2repo test
 
   keycloak-providers:
-    name: Keycloak providers tests
+    name: Keycloak provider tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -55,12 +79,15 @@ jobs:
   frontend:
     name: Frontend test, build, and Docker build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - name: Install (npm ci, matching production lockfile)
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
         working-directory: frontend
         run: npm ci --no-audit --no-fund
       - name: Unit tests
@@ -69,48 +96,44 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npm run build
-      - name: Bundle separation check (vehicle QA assets must stay out of initial bundle)
+      - name: Bundle separation check
         working-directory: frontend
         run: node scripts/check-bundle-separation.mjs
-      - name: Alpine Docker build (verify lockfile + native deps)
+      - name: Alpine Docker build
         run: docker build -f docker/Dockerfile.frontend -t wotbtools-frontend:pr .
 
-
   observability-config:
-    name: Observability config validation (compose/prometheus/loki/alloy/grafana)
+    name: Observability config validation
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-
-      - name: docker compose config (local, with required Grafana vars)
+      - uses: actions/checkout@v5
+      - name: docker compose config
         working-directory: docker/online
         env:
           GRAFANA_ADMIN_USER: ci-test-user
           GRAFANA_ADMIN_PASSWORD: ci-test-password
         run: docker compose config --quiet
-
-      - name: Prometheus promtool check config
+      - name: Prometheus config validation
         run: >-
           docker run --rm --entrypoint promtool
           -v "$PWD/deploy/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
           prom/prometheus:v2.55.1 check config /etc/prometheus/prometheus.yml
-
       - name: Loki config validation
         run: >-
           docker run --rm --entrypoint loki
           -v "$PWD/deploy/observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro"
           grafana/loki:3.3.2 --config.file=/etc/loki/loki-config.yml --verify-config
-
-      - name: Alloy config format check (fmt -t)
+      - name: Alloy config format check
         run: >-
           docker run --rm --entrypoint alloy
           -v "$PWD/deploy/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro"
           grafana/alloy:v1.4.2 fmt -t /etc/alloy/config.alloy
-
-      - name: Validate Grafana provisioning + dashboard JSON
+      - name: Validate Grafana provisioning and dashboards
         run: |
+          set -euo pipefail
           python - <<'PY'
-          import json, yaml, glob
+          import glob, json, yaml
           for p in glob.glob("deploy/observability/grafana/provisioning/**/*.yml", recursive=True):
               yaml.safe_load(open(p, encoding="utf-8"))
           for p in glob.glob("deploy/observability/grafana/dashboards/*.json"):
@@ -118,39 +141,34 @@ jobs:
               assert d.get("panels"), "empty dashboard " + p
           print("provisioning yml + dashboards json OK")
           PY
-
       - name: No host port mappings for observability/backend management
         working-directory: docker/online
         env:
           GRAFANA_ADMIN_USER: ci-test-user
           GRAFANA_ADMIN_PASSWORD: ci-test-password
         run: |
+          set -euo pipefail
           docker compose config --format json > /tmp/compose.json
           python - <<'PY'
           import json
           with open('/tmp/compose.json', encoding='utf-8') as f:
               svc = json.load(f)["services"]
-          # Observability services and backend management port: NO host ports mapping allowed.
-          # Assert ports list is empty entirely (catches "18088:8088" target bypass too).
-          # frontend 8088:80 is a legitimate external entry, not in this list.
           no_host_ports = {"prometheus", "loki", "alloy", "grafana", "wotb-backend"}
           for name, s in svc.items():
               if name in no_host_ports:
-                  assert not s.get("ports"), (
-                      "service " + name + " must not expose any host port: " + str(s.get("ports")))
+                  assert not s.get("ports"), f"service {name} must not expose host ports: {s.get('ports')}"
           print("no host exposure of observability/backend-management ports")
           PY
 
   deploy-smoke:
-    name: Deploy/rollback + nginx rate-limit smoke
+    name: Deploy/rollback and nginx smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-
+      - uses: actions/checkout@v5
       - name: bash -n deploy.sh
         run: bash -n deploy/deploy.sh
-
-      - name: Production compose config validation (rendered template)
+      - name: Production compose config validation
         env:
           TAG: sha-ci
           DB_PASSWORD: ci
@@ -161,8 +179,7 @@ jobs:
           GRAFANA_ADMIN_USER: ci
           GRAFANA_ADMIN_PASSWORD: ci
         run: docker compose -f deploy/docker-compose.prod.yml config --quiet
-
-      - name: Production compose must not expose Grafana MCP (P0 regression)
+      - name: Production compose must not expose Grafana MCP
         env:
           TAG: sha-ci
           DB_PASSWORD: ci
@@ -173,6 +190,7 @@ jobs:
           GRAFANA_ADMIN_USER: ci
           GRAFANA_ADMIN_PASSWORD: ci
         run: |
+          set -euo pipefail
           docker compose -f deploy/docker-compose.prod.yml config --format json > /tmp/compose.json
           python - <<'PY'
           import json
@@ -184,9 +202,7 @@ jobs:
                   assert "8000" not in str(p), f"service {name} must not publish port 8000: {p}"
           print("no Grafana MCP service / port 8000 in production compose")
           PY
-
-      - name: Deploy/rollback smoke (fake docker, sandboxed)
+      - name: Deploy/rollback smoke
         run: bash deploy/test-deploy-rollback.sh
-
       - name: nginx rate-limit real-IP smoke
         run: bash deploy/test-nginx-ratelimit.sh

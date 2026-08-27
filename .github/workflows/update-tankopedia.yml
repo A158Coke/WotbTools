@@ -1,20 +1,13 @@
 name: Update Tankopedia
+run-name: Sync Tankopedia from BlitzKit by @${{ github.actor }}
 
-# 手动触发：直接从 blitzkit（assets.blitzkit.app/definitions/tanks.pb + consumables.pb +
-# provisions.pb，游戏客户端数据）同步车辆库，把生成的 4 个等级文件
-# common/tankopedia-tier{7,8,9,10}.json 提交回当前分支（merge 后为 main）。
-#
-# 为什么不再走 VPS / WG API：数据源已全面切换为 blitzkit（WG 百科滞后游戏版本，
-# 如 11.19 的 SPHT / AC Atlas 缺失，且 application_id 有 IP 白名单限制）；
-# blitzkit 是公开 CDN，GitHub Actions runner 可直接访问，无需任何 secret。
-#
-# 额外知识保护：脚本 --existing-dir / --output-dir 路径分离，提交前再次用
-# verify_knowledge_preservation 校验，仍存在的车辆 extraInfo 丢失会中止提交。
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
 
 permissions:
   contents: write
+  pull-requests: write
+  actions: write
 
 concurrency:
   group: update-tankopedia
@@ -23,20 +16,24 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
 
-      - name: Sync tankopedia from blitzkit
+      - name: Sync and validate Tankopedia from one BlitzKit snapshot
         run: |
-          set -e
+          set -euo pipefail
           mkdir -p /tmp/wotb-tankopedia-out
-          python3 common/python/update_tankopedia.py \
+          python3 common/python/sync_tankopedia_snapshot.py \
             --existing-dir common \
             --output-dir /tmp/wotb-tankopedia-out
 
       - name: Verify extraInfo preservation before commit
         run: |
-          set -e
+          set -euo pipefail
           python3 - <<'PY'
           import sys
           sys.path.insert(0, "common/python")
@@ -46,33 +43,51 @@ jobs:
           ok, old_count, preserved = verify_knowledge_preservation(old, new)
           print("existing_knowledge=%d preserved_knowledge=%d" % (old_count, preserved))
           if not ok:
-              print("::error::extraInfo preservation check failed; aborting commit.")
+              print("::error::extraInfo preservation check failed; aborting update.")
               sys.exit(1)
           PY
 
       - name: Replace tier files
         run: |
-          set -e
+          set -euo pipefail
           cp /tmp/wotb-tankopedia-out/tankopedia-tier7.json common/tankopedia-tier7.json
           cp /tmp/wotb-tankopedia-out/tankopedia-tier8.json common/tankopedia-tier8.json
           cp /tmp/wotb-tankopedia-out/tankopedia-tier9.json common/tankopedia-tier9.json
           cp /tmp/wotb-tankopedia-out/tankopedia-tier10.json common/tankopedia-tier10.json
 
-      - name: Commit updated tankopedia files
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { execSync } = require('node:child_process');
-            const changed = execSync(
-              'git status --porcelain -- common/tankopedia-tier*.json',
-              { encoding: 'utf8' }
-            ).trim();
-            if (!changed) {
-              console.log('tankopedia tier files unchanged; nothing to commit.');
-              return;
-            }
-            execSync('git config user.name "github-actions[bot]"');
-            execSync('git config user.email "41898282+github-actions[bot]@users.noreply.github.com"');
-            execSync('git add common/tankopedia-tier7.json common/tankopedia-tier8.json common/tankopedia-tier9.json common/tankopedia-tier10.json');
-            execSync('git commit -m "chore(data): 同步 blitzkit 车辆库（tier 7-10）"');
-            execSync('git push');
+      - name: Validate generated files
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s common/python/tests -p 'test_*.py'
+          git diff --check
+
+      - name: Commit data branch and open/update PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: automation/update-tankopedia
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- common/tankopedia-tier7.json common/tankopedia-tier8.json common/tankopedia-tier9.json common/tankopedia-tier10.json; then
+            echo "Tankopedia unchanged; nothing to publish."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git add common/tankopedia-tier7.json common/tankopedia-tier8.json common/tankopedia-tier9.json common/tankopedia-tier10.json
+          git commit -m "chore(data): sync BlitzKit Tankopedia"
+          git push --force-with-lease origin "HEAD:$BRANCH"
+
+          pr_number="$(gh pr list --base main --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [[ -z "$pr_number" ]]; then
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "chore(data): sync BlitzKit Tankopedia" \
+              --body $'Automated Tankopedia sync from BlitzKit.\n\n- Generates and validates tier 7-10 data from one upstream snapshot\n- Fails closed when a vehicle has no reviewed equipment preset\n- Fails closed when a preset references unknown equipment\n- Preserves existing extraInfo\n- Runs integrity gates and Python tests\n- Explicitly dispatches normal CI for this automation branch\n- Never auto-merges'
+          else
+            echo "Updated existing PR #$pr_number"
+          fi
+
+          gh workflow run ci.yml --ref "$BRANCH"
