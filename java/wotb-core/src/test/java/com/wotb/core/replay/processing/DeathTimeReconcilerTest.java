@@ -1,6 +1,7 @@
 package com.wotb.core.replay.processing;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
@@ -24,9 +25,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@link DeathTimeReconciler} 回归测试。
  *
  * <p>身份解析只复用 {@link TeamEntityMapper} 的权威 {@link TeamEntityMapping}
- * （冲突/低置信实体证据被拒绝，nickname fallback 复用），死亡时刻优先级：
- * 结算 deathTimeMillis &gt; EXACT alive=false（HP=0）&gt; legacy（且不得早于最后一条
- * EXACT alive=true，被证伪则置 UNKNOWN=0）。</p>
+ * （冲突/低置信实体证据被拒绝，nickname fallback 复用），死亡时刻 authority 链（§B1）：
+ * 结算 deathTimeMillis &gt; EXACT alive=false（HP=0）&gt; UNKNOWN=0；
+ * legacy 启发式不再兜底（§B2）。</p>
  */
 class DeathTimeReconcilerTest {
 
@@ -186,10 +187,10 @@ class DeathTimeReconcilerTest {
 
     // ================= Blocker 2：EXACT alive=true 否决更早的 legacy death =================
 
-    /** 96.9 的 legacy 死亡被 121.23s EXACT alive=true 证伪 → UNKNOWN（deathSec=0 → playback deathSec=null，无 X）。 */
+    /** 无最终 EXACT alive=false 证据 → UNKNOWN=0（legacy 不再兜底，§B2）。 */
     @Test
-    void laterExactAliveInvalidatesEarlierLegacyDeath() {
-        final PlayerResult p = deadPlayer(3117015664L, "Fe1ix_k2x", 1, 96.9);
+    void noFinalDeathEvidenceIsUnknown() {
+        final PlayerResult p = deadPlayer(3117015664L, "Fe1ix_k2x", 1, 0.0);
         final Battle battle = battle(218.4, p);
         final int eid = 280127282;
 
@@ -202,17 +203,17 @@ class DeathTimeReconcilerTest {
         reconcile(battle, events, resolveMapping(battle, events));
 
         assertEquals(0.0, p.survivalTimeSec, 1e-9,
-                "legacy 96.9s 已被 121.23s EXACT alive=true 证伪，必须置 UNKNOWN");
+                "无最终 EXACT 死亡证据 → UNKNOWN=0（legacy 启发式不再兜底，§B2）");
+        assertEquals(DeathTimeSource.UNKNOWN, p.deathTimeSource);
         assertEquals(0.0, PlayerResultFormat.deathSec(p), 1e-9);
-        // playback 契约：resolveDeathSec 只返回 >0 → deathSec=null → 96.9/111/121.23 均不显示死亡 X
         assertTrue(PlayerResultFormat.deathSec(p) <= 0,
-                "被否决的 legacy 不得保留为死亡时刻，也不得伪造 121.23/121.23+ε");
+                "不得伪造死亡时刻（121.23 alive 不是死亡）");
     }
 
-    /** legacy 晚于最后一条 alive=true → 未被否决，保留 legacy。 */
+    /** 仅有 alive 证据 → 无死亡 authority → UNKNOWN=0（legacy 不参与）。 */
     @Test
-    void aliveEvidenceBeforeLegacyKeepsLegacy() {
-        final PlayerResult p = deadPlayer(1001L, "A", 1, 96.9);
+    void aliveOnlyEvidenceIsUnknown() {
+        final PlayerResult p = deadPlayer(1001L, "A", 1, 0.0);
         final Battle battle = battle(300.0, p);
 
         final List<ReplayEvent> events = new ArrayList<>();
@@ -221,8 +222,9 @@ class DeathTimeReconcilerTest {
 
         reconcile(battle, events, resolveMapping(battle, events));
 
-        assertEquals(96.9, p.survivalTimeSec, 1e-9,
-                "alive 证据早于 legacy，不构成否决");
+        assertEquals(0.0, p.survivalTimeSec, 1e-9,
+                "仅有 alive 证据不是死亡 → UNKNOWN=0（legacy 启发式不参与，§B2）");
+        assertEquals(DeathTimeSource.UNKNOWN, p.deathTimeSource);
     }
 
     // ================= 最后权威 lifecycle state：旧 death 不能压过更晚的 alive =================
@@ -282,7 +284,7 @@ class DeathTimeReconcilerTest {
 
     @Test
     void is4RealReplayFixtureDeathSecIs128_12Not96_9() {
-        final PlayerResult p = deadPlayer(3117015664L, "Fe1ix_k2x", 1, 96.9);
+        final PlayerResult p = deadPlayer(3117015664L, "Fe1ix_k2x", 1, 0.0);
         p.damageReceived = 2783;
         final Battle battle = battle(218.4, p);
         final int eid = 280127282;
@@ -309,6 +311,7 @@ class DeathTimeReconcilerTest {
         // rawClockSec 为 float，128.12f → double 128.119995...；容差 0.01 即可区分 96.9
         assertEquals(128.12, PlayerResultFormat.deathSec(p), 0.01,
                 "IS-4 真实死亡时刻应为 128.12s（HP=0），不是 legacy 估算的 96.9s");
+        assertEquals(DeathTimeSource.LIVE_EXACT, p.deathTimeSource);
         assertTrue(PlayerResultFormat.deathSec(p) > 111.0,
                 "01:51（111s）时 IS-4 不得显示为阵亡");
     }
@@ -317,7 +320,7 @@ class DeathTimeReconcilerTest {
 
     @Test
     void unknownSentinelOnEntityADoesNotLeakDeathFromEntityB() {
-        final PlayerResult a = deadPlayer(1001L, "A", 1, 40.0);
+        final PlayerResult a = deadPlayer(1001L, "A", 1, 0.0);
         final PlayerResult b = deadPlayer(2002L, "B", 2, 95.0);
         final Battle battle = battle(300.0, a, b);
 
@@ -329,9 +332,11 @@ class DeathTimeReconcilerTest {
 
         reconcile(battle, events, resolveMapping(battle, events));
 
-        assertEquals(40.0, PlayerResultFormat.deathSec(a), 1e-9,
-                "A 的 ambiguous sentinel 不得变成死亡，也不得借用 B 的证据");
+        assertEquals(0.0, PlayerResultFormat.deathSec(a), 1e-9,
+                "A 的 ambiguous sentinel 不得变成死亡，也不得借用 B 的证据（UNKNOWN=0）");
+        assertEquals(DeathTimeSource.UNKNOWN, a.deathTimeSource);
         assertEquals(100.0, PlayerResultFormat.deathSec(b), 1e-9);
+        assertEquals(DeathTimeSource.LIVE_EXACT, b.deathTimeSource);
     }
 
     @Test
@@ -347,15 +352,17 @@ class DeathTimeReconcilerTest {
 
     @Test
     void unknownHpSentinelIsNotDeathEvidence() {
-        final PlayerResult p = deadPlayer(1001L, "A", 1, 80.0);
+        final PlayerResult p = deadPlayer(1001L, "A", 1, 0.0);
+        p.deathTimeSource = DeathTimeSource.UNKNOWN; // ReplayParser 对结算缺失玩家总是写入 UNKNOWN
         final Battle battle = battle(300.0, p);
         final List<ReplayEvent> events = List.of(
                 mappingEvent(1, 101, 1001L),
                 hp(2, 60f, 101, null, null, DecodeConfidence.PARTIAL), // 0xFFFF 语义
                 hp(3, 90f, 101, null, null, DecodeConfidence.PARTIAL));
         reconcile(battle, events, resolveMapping(battle, events));
-        assertEquals(80.0, PlayerResultFormat.deathSec(p), 1e-9,
-                "unknown HP 不得无依据变成死亡");
+        assertEquals(0.0, PlayerResultFormat.deathSec(p), 1e-9,
+                "unknown HP 不得无依据变成死亡（UNKNOWN=0）");
+        assertEquals(DeathTimeSource.UNKNOWN, p.deathTimeSource);
     }
 
     @Test

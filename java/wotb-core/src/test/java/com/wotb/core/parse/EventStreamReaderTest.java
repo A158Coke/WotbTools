@@ -32,12 +32,13 @@ class EventStreamReaderTest {
                 packets, entityToAccount, Map.of(2L, 600), 420.0);
         assertEquals(3.0, deathTimes.get(2L));
 
-        final Map<Long, List<EventStreamReader.KillVictimDamage>> victims =
-                EventStreamReader.extractKillVictims(packets, entityToAccount, Map.of(2L, 600));
-        final List<EventStreamReader.KillVictimDamage> kills = victims.get(1L);
+        final Map<Long, List<EventStreamReader.LegacyKillVictimDamage>> victims =
+                EventStreamReader.extractLegacyKillVictimAttribution(
+                        packets, entityToAccount, Map.of(2L, 600));
+        final List<EventStreamReader.LegacyKillVictimDamage> kills = victims.get(1L);
         assertNotNull(kills);
         assertEquals(1, kills.size());
-        final EventStreamReader.KillVictimDamage kill = kills.get(0);
+        final EventStreamReader.LegacyKillVictimDamage kill = kills.get(0);
         assertEquals(2L, kill.victimAccountId());
         assertEquals(500, kill.damage());
         assertEquals(2, kill.penetrations());
