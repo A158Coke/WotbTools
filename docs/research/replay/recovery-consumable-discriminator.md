@@ -2,108 +2,168 @@
 
 > Corpus: strict 34 unique-arena Blitz 11.19 China replay set.
 >
-> This note records a gameplay-semantic discriminator supplied by observed Blitz consumable behavior and applies it conservatively to replay-wire hypotheses.
+> This note records the recovery-consumable discriminator used to classify negative-state families. It has been updated to incorporate the later method16/Type32/prop8 namespace closures; earlier text that kept crew tokens merely as candidates is superseded.
 
 ## Gameplay behavior used as discriminator
 
 For the current Blitz behavior model:
 
-- `0x0B` Multi-Purpose Restoration Pack clears **all negative effects**: crew injury, module negative states and fire.
-- `0x0C` First Aid Kit clears **injured crew only**. Crew are modeled as injured/restored, not dead.
-- `0x0D` Repair Kit clears **module negative states only**. It does not heal crew and does not extinguish fire.
+- `0x0B` Multi-Purpose Restoration Pack clears **all negative effects**: crew injury, module negative states and fire;
+- `0x0C` First Aid Kit clears **injured crew only**;
+- `0x0D` Repair Kit clears **module negative states only** and does not heal crew or extinguish fire.
 
-This gives three useful supervised classes:
-
-```text
-cleared/associated with 0x0B + 0x0C, not 0x0D -> crew-injury candidate
-cleared/associated with 0x0B + 0x0D, not 0x0C -> module-state candidate
-terminated by 0x0B, not 0x0C/0x0D           -> fire candidate
-```
-
-The rule is evidence guidance, not permission to infer a state from consumable timing alone: one hit can create multiple simultaneous negative effects and the player may choose only one consumable.
-
-## Consequence for Vehicle prop8
-
-Vehicle `prop8` is a count-prefixed recoverable-state token collection. Existing exact-clock removal evidence strongly favors the **module-state subsystem**:
+This gives three supervised recovery classes:
 
 ```text
-token 0x21 removals:
-  0x0B activation : 9
-  0x0D activation : 9
-  other           : 0
+cleared by 0x0B + 0x0C, not 0x0D -> crew-injury state
+cleared by 0x0B + 0x0D, not 0x0C -> module negative state
+terminated by 0x0B, not 0x0C/0x0D -> fire family
 ```
 
-In contrast, the five First Aid activations do not expose a stable prop8 crew token:
+The rule is evidence guidance, not permission to infer a state from timing alone: one hit can create multiple simultaneous negative effects.
+
+## Crew namespace — now PROVEN for current 11.19
+
+Later current-corpus work closed the crew recoverable-token namespace against same-clock Avatar method16 component IDs and role-specific physical effects.
+
+Current identities:
 
 ```text
-prop8 at 0x0C activation:
-01 20
-00
-00
-01 23
-01 20
+0x27 / 39 = Commander  PROVEN
+0x28 / 40 = Driver     PROVEN
+0x29 / 41 = Gunner     PROVEN
+0x2B / 43 = Loader     PROVEN
 ```
 
-Only 2/5 contain `0x20`; 3/5 have no such token. Therefore prop8 must not be used as the canonical injured-crew collection.
-
-Current verdict:
-
-> Vehicle `prop8` = recoverable negative-state collection with strong **module-state** evidence; specific token names remain PARTIAL.
-
-## Consequence for Type32 short hit families
-
-The strongest current crew-injury candidates remain Type32 mobile `flag=1` short-body hit families associated with First Aid use:
+At injury onset, method16 and Type32 short nested mutations align on the same vehicle and clock using numerically identical component IDs:
 
 ```text
-a029
-a18027
-a18029
-a1802b
+method16 codeB=39 <-> Type32 token 0x27
+method16 codeB=40 <-> Type32 token 0x28
+method16 codeB=41 <-> Type32 token 0x29
+method16 codeB=43 <-> Type32 token 0x2B
 ```
 
-Observed recovery-consumable association within 3 seconds:
+These are not inferred from historical PC ordering. They are current-Blitz closures:
+
+- Commander: loss of commander bonus causes a small cross-role reload degradation;
+- Driver: exhaustive four-role closure plus mobility-compatible behavior;
+- Gunner: strong turret-yaw suppression and worsened aiming/dispersion behavior;
+- Loader: strong reload-speed degradation.
+
+First Aid / MPRP removes these shell-shock states; Repair Kit does not.
+
+## Prop8 — mixed recoverable-state collection
+
+Vehicle `prop8` is a count-prefixed full byte-list snapshot:
 
 ```text
-(32, 0x29): 0x0B=25, 0x0C=2, 0x0D=0
-(33, 0x27): 0x0B= 7, 0x0C=1, 0x0D=0
-(33, 0x29): 0x0B= 9, 0x0C=1, 0x0D=0
-(33, 0x2B): 0x0B=11, 0x0C=1, 0x0D=1
+count : u8
+tokens[count] : u8
 ```
 
-The first three families fit the crew-vs-module discriminator cleanly. The single `0x0D`-adjacent `(33,0x2B)` sample is not sufficient to reject the crew hypothesis because simultaneous module + crew damage can make Repair Kit usage adjacent to a crew event.
+Later evidence shows that prop8 can contain proven crew tokens as well as mechanical/recoverable tokens. Therefore the earlier statement that prop8 is not a crew-state surface is superseded.
 
-Verdict:
+The correct current conclusion is:
 
-> `0x27 / 0x29 / 0x2B` short-tail families remain **crew/tankman-extra candidates — PARTIAL**, now with a stronger consumable-class discriminator.
+> Vehicle `prop8` = **mixed recoverable negative-state collection — PROVEN structural role / PARTIAL complete token namespace**.
 
-They must not yet be mapped to commander/gunner/driver/loader roles without a controlled known-role injury sample or version-matched extras mapping.
+For the proven crew subset:
 
-## Mobility interpretation constraint
+```text
+0x27 COMMANDER_SHELL_SHOCKED
+0x28 DRIVER_SHELL_SHOCKED
+0x29 GUNNER_SHELL_SHOCKED
+0x2B LOADER_SHELL_SHOCKED
+```
 
-Movement behavior must not conflate ordinary track damage with track destruction.
+Do **not** generalize this into `every prop8 byte == method16 codeB`. Prop8 contains a broader mixed state collection; only independently closed tokens should be named.
 
-- ordinary track damage: no required mobility penalty;
-- track destroyed/broken: vehicle loses movement until repaired/restored;
-- engine damage or driver injury: produces noticeable mobility degradation but is not necessarily an instantaneous hard stop.
+## Repair Kit vs First Aid vs MPRP negative control
 
-Therefore a speed drop can support a **severe mobility-disabled state**, but cannot by itself label an ordinary track-damage token.
+A particularly strong mixed-state control is that Repair Kit can clear a simultaneous mechanical state while leaving a proven crew token behind.
 
-For token `0x21`, current onset samples show a strong mobility collapse and all closed removals are via `0x0B/0x0D`, not First Aid. This makes `0x21` a strong **mechanical severe-mobility-state** candidate and argues against driver injury. Exact identity (track destroyed vs engine destroyed/critical) remains PARTIAL.
+Examples already archived elsewhere include:
+
+```text
+Rift:
+  mechanical state
+  Loader shell-shock (0x2B)
+  Repair Kit -> prop8 still [0x2B]
+  later MPRP -> prop8 []
+
+Karelia:
+  mechanical state
+  Driver shell-shock (0x28)
+  Repair Kit -> prop8 still [0x28]
+```
+
+This independently validates both the consumable discriminator and the crew-token classification.
+
+## Mechanical family
+
+Current method16 mechanical component namespace:
+
+```text
+31 Engine              PROVEN
+32 Ammo Rack           PROVEN
+33 Fuel Tank           STRONG PARTIAL
+34/35 Track-side pair  PROVEN family / side PARTIAL
+36 Gun                 STRONG PARTIAL
+37 Turret Rotator      PROVEN version-scoped
+38 Observation Device  STRONG PARTIAL
+```
+
+Mechanical lifecycle states currently closed:
+
+```text
+codeA=4  common damaged / degraded operational
+codeA=5  critical / disabled
+codeA=18 automatic critical self-repair -> degraded operational
+codeA=19 fully repaired / cleared
+```
+
+The `0x0D` Repair Kit / `0x0B` MPRP discriminator remains useful for closing `33/36/38`, but exact component identity still requires an independent physical signature.
+
+## Fire family
+
+Type32 mobile short `...04` is independently closed as fire-associated through periodic HP-loss sequences and settlement fire deaths.
+
+Observed behavior remains:
+
+- `0x0D` Repair Kit does not stop the fire-DOT sequence;
+- `0x0C` First Aid Kit is not a fire clear;
+- `0x0B` MPRP acts as the all-purpose restoration positive control and extinguishes the fire family.
+
+Thus fire remains a distinct negative-state class rather than a module/crew token.
 
 ## Safe decoding guidance
-
-Until token identities close:
 
 ```text
 NegativeStateEvidence {
     entityId
     rawClockSec
-    surface        // prop8 / Type32 short / hit-result list
+    surface        // prop8 / Type32 short / method16 / hit-result list
     tokenRaw
     stateRaw
-    classCandidate // CREW / MODULE / FIRE / UNKNOWN
+    class          // CREW / MODULE / FIRE / UNKNOWN
+    exactName      // nullable, version-gated
     confidence
 }
 ```
 
-Do not expose specific component or crew-role names solely from timing or speed correlation.
+Safe current rules:
+
+- expose the four closed crew identities above;
+- expose only PROVEN mechanical identities by exact name;
+- retain `33/36/38` as PARTIAL candidates;
+- preserve all raw values and version gating;
+- never infer a component solely from one nearby consumable activation.
+
+## Remaining work
+
+1. physically close `36` Gun using targeting/dispersion impairment and Repair Kit restoration;
+2. close `38` Observation Device using view-range/spotting or a version-matched schema;
+3. close `33` Fuel Tank without relying only on ignition probability;
+4. map the remaining prop8 / Type32 mechanical tokens while preserving the mixed-collection model;
+5. validate token stability outside Blitz 11.19 China.
