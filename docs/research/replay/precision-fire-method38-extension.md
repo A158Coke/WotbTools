@@ -1,217 +1,199 @@
-# Method38 extended result — Precision Fire / special damage provenance
+# Method38 special-modifier list — Precision Fire / Tungsten closure
 
-> Corpus: canonical 34 unique Blitz 11.19.0 China arenas.
+> Base corpus: canonical 34 unique Blitz 11.19.0 China arenas.
 >
-> Scope: Avatar method38 extended variants where the normal shot-result payload carries an additional `u32` extension field.
+> Additional controlled probes include recorder-owned Tungsten hits and a Jagdpanzer controlled battle where the fourth shot triggered Precision Fire while Tungsten was still active.
+>
+> Numeric values are current Blitz 11.19 evidence and remain version-gated.
 
 ## Executive verdict
 
-Current evidence supports:
+The former `variantTail` interpretation is superseded.
+
+Current wire behavior proves that the byte after the repeated `(componentToken, rawState)` list is a **special-modifier count**, followed by that many `u32 LE` modifier IDs:
 
 ```text
-extension_u32 = 1
--> Precision Fire proc marker
--> VERY STRONG / near-PROVEN current behavioral identity
-
-extension_u32 = 2
--> Tungsten / special-damage provenance candidate
--> VERY STRONG PARTIAL, n=1
+victimVehicleId : u32 LE
+headerFlags     : u32 LE
+resultCount     : u8
+repeat resultCount:
+    token       : u8
+    rawState    : u8
+modifierCount   : u8
+repeat modifierCount:
+    modifierId  : u32 LE
 ```
 
-The exact internal enum symbol remains unknown and all semantics must remain version-gated.
-
-## Why the temporary FV215b counterexample is not a real counterexample
-
-One current FV215b record initially appeared to invalidate the Precision Fire hypothesis:
+Controlled current mapping:
 
 ```text
-rawClock       = 229.826416 s
-extension      = 1
-shell family   = HE-family
-average damage = 515
-observed loss  = 500
-pre-hit HP     = 1025
-post-hit HP    = 525
+modifierId = 1 -> Precision Fire proc   PROVEN current behavior
+modifierId = 2 -> Tungsten Shells shot PROVEN current behavior
 ```
 
-A naive interpretation would expect a maximum roll of approximately:
+A single shot may contain multiple modifier IDs.
+
+## Decisive combined controlled probe
+
+Replay metadata:
 
 ```text
-515 * 1.25 = 643.75
+version  = 11.19.0_china_apple
+vehicle  = G112_JagdPanzer_105
+arenaId  = 55719776455008280
 ```
 
-and would therefore reject Precision Fire because the final HP loss is only 500.
+The recorder activates Tungsten before the first tested hit and the effect remains active through all four hits.
 
-That rejection is incorrect for HE.
+Observed method38 records:
 
-Wargaming's published Precision Fire mechanics explicitly state that the skill also works for HE shells, but after the next shot is set to maximum possible damage, the **final inflicted HE damage still depends on penetration, armor thickness at the impact point and burst radius**.
+```text
+28.723053s
+flags         = 0x0030
+resultCount   = 0
+modifierCount = 1
+modifiers     = [2]
+
+33.425980s
+flags         = 0x0010
+resultCount   = 0
+modifierCount = 1
+modifiers     = [2]
+
+38.119728s
+flags         = 0x0010
+resultCount   = 0
+modifierCount = 1
+modifiers     = [2]
+
+42.921677s
+flags         = 0x0010
+resultCount   = 0
+modifierCount = 2
+modifiers     = [1, 2]
+```
+
+The fourth shot is the user-controlled Precision Fire proc while Tungsten is still active.
+
+This directly rejects all of the following models:
+
+```text
+one mutually-exclusive extension enum
+Precision Fire overriding Tungsten
+Tungsten overriding Precision Fire
+combined value 3
+opaque one-off extended variant
+```
+
+The protocol instead carries an additive list of active shot-result modifiers.
+
+## Tungsten state closure
+
+The same replay shows the recorder-side Tungsten effect transition before the tested shots and its end after them. All four tested hits occur inside the active window.
+
+The first three hits carry exactly:
+
+```text
+[2]
+```
+
+The fourth hit, where Precision Fire also procs, carries:
+
+```text
+[1, 2]
+```
+
+Together with the earlier independent VK 72.01 Tungsten sample, this is sufficient to promote:
+
+> `modifierId=2 = Tungsten Shells shot/result provenance` — **PROVEN current 11.19 behavior**.
+
+The exact private Wargaming enum symbol remains unknown.
+
+## Precision Fire closure
+
+The canonical corpus previously supplied 13 `modifierId=1` samples:
+
+- 12 non-HE samples were exact maximum damage or HP-capped terminal results;
+- one FV215b HE-family sample was compatible with HE post-processing after a Precision Fire proc.
+
+The combined controlled probe now supplies a stronger causal discriminator: on the fourth shot, while Tungsten remains active, a new modifier is added rather than replacing Tungsten:
+
+```text
+previous Tungsten shots : [2]
+Precision Fire + Tungsten: [1,2]
+```
 
 Therefore:
 
+> `modifierId=1 = Precision Fire proc` — **PROVEN current 11.19 behavior**.
+
+The exact private enum symbol remains unknown.
+
+## HP evidence in the combined probe
+
+Authoritative target HP transitions at the four method38 clocks are:
+
 ```text
-Precision Fire internal max-damage selection
--> HE penetration/explosion resolution
--> final observable HP loss may be lower than raw 125% shell alpha
+28.723053s -> HP 2326
+33.425980s -> HP 2011
+38.119728s -> HP 1660
+42.921677s -> HP 1222
 ```
 
-The FV 500-damage HE record is therefore compatible with Precision Fire and must not be treated as a negative control.
+Observed losses between the visible states are consistent with all four being real damaging hits. The fourth shot is the user-labeled maximum-damage Precision Fire proc and is the only shot that adds modifier `1`.
 
-The target did not have a recorded Reactive Armor activation around the hit, so Reactive Armor is not needed to explain the difference; ordinary HE damage resolution is sufficient as a known mechanic branch.
+The modifier-list proof does not depend on deriving the vehicle's private damage-roll formula from these HP numbers.
 
-## Non-HE numeric closure
+## FV215b HE boundary retained
 
-The remaining extension=1 population gives a much stronger invariant.
+The current FV215b HE-family `modifierId=1` sample remains valid evidence rather than a counterexample. Precision Fire selects the maximum-damage branch, while final HE damage can still be altered by HE penetration/explosion resolution.
 
-### SPHT standard-shell family
+Do not require final observed HE HP loss to equal `averageDamage * 1.25` before recognizing modifier `1`.
 
-For current SPHT wire slot0 hit results:
+## Forced low-HP Precision Fire rule
 
-```text
-exact observed 500-damage hits : 9
-extension=1                    : 9 / 9
-extension absent on exact 500  : 0
-```
+A gameplay rule supplied during protocol research states that an eligible Precision Fire shot is guaranteed when the target HP is below the shell's ordinary minimum roll.
 
-A further extension=1 terminal hit removes only 415 HP because the target had exactly 415 HP immediately before the shot:
+This branch is still not independently controlled in replay evidence. It is no longer needed to identify modifier `1`, but remains a separate gameplay-rule probe target.
+
+## Production-safe model
 
 ```text
-pre-hit HP  = 415
-post-hit HP = 0
-extension   = 1
-```
-
-Thus the observable loss is HP-capped and does not contradict a 500 maximum roll.
-
-### Ho-Ri standard-shell family
-
-```text
-exact observed 700-damage hits : 2
-extension=1                    : 2 / 2
-extension absent on exact 700  : 0
-```
-
-### Combined non-HE extension=1 population
-
-```text
-SPHT exact maximum         : 9
-SPHT HP-capped terminal    : 1
-Ho-Ri exact maximum        : 2
-------------------------------
-non-HE compatible samples  : 12 / 12
-```
-
-Every non-HE extension=1 event is therefore either:
-
-- exact ordinary maximum damage; or
-- an HP-capped terminal result whose potential damage is above the remaining HP.
-
-The sole HE-family extension=1 event is compatible with Wargaming's documented HE-specific post-processing rule.
-
-## Current population
-
-```text
-extension=1 : 13 records
-extension=2 :  1 record
-```
-
-Current `extension=1` vehicles:
-
-```text
-A178_SPHT       : 10
-J20_Ho_Ri_type3 :  2
-GB13_FV215b     :  1
-```
-
-## Precision Fire streak reconstruction boundary
-
-Do not attempt to reconstruct the three-shot charge state solely from:
-
-```text
-same-clock observed HP loss > 0
-```
-
-The live HP surface is recorder/AoI/sample scoped. Some proven piercing-like method38 hits have no usable same-clock HP delta.
-
-A naive HP-delta streak state machine therefore produces false negatives and false eligibility windows.
-
-The extension field itself is currently a better direct proc signal than a reconstructed streak from incomplete HP telemetry.
-
-## Forced low-HP activation rule
-
-A gameplay rule supplied during current protocol research is:
-
-> once Precision Fire is eligible, if the target's remaining HP is below the shell's ordinary minimum roll, activation is guaranteed rather than probability-based.
-
-The current canonical 13 extension=1 records do not contain a clean controlled sample proving that forced branch.
-
-Keep this as a probe target rather than claiming current replay proof.
-
-## `extension=2` — Tungsten candidate
-
-The only current `extension=2` event is:
-
-```text
-vehicle              = VK 72.01
-Tungsten activation  = 62.980843 s
-hit                   = 63.481049 s
-activation -> hit     = ~0.500 s
-observed damage       = 723
-extension             = 2
-```
-
-After the Tungsten active window ends, later recorder hits do not carry extension=2.
-
-Current corpus:
-
-```text
-recorder-owned Tungsten-active hits = 1
-extension=2 among them              = 1 / 1
-non-Tungsten extension=2 hits       = 0
-```
-
-Verdict:
-
-> `extension=2` = **Tungsten / special damage-roll provenance candidate — VERY STRONG PARTIAL, n=1**.
-
-Additional controlled Tungsten hits are required for PROVEN status.
-
-## Ammunition-selection caution
-
-Type28 is proven recorder ammunition selection, but the raw values `0/1/2` must not automatically be labeled as user-facing shell-list indices until the current method17 shell descriptor is resolved.
-
-For FV215b, current replay ballistics distinguish:
-
-- one 1440.72 m/s family corresponding to the APCR family;
-- two 1152.36 m/s families corresponding to the remaining AP and HE-family selections.
-
-Damage-result distributions distinguish the HE-like selection, but production naming should ultimately join Type28 -> method17 shell descriptor -> version-matched shell catalog.
-
-A previous aggregate Type28 per-vehicle count table was also found internally inconsistent with the independently closed 324 unique recorder-shot total. Future joins must use arena-local state and unique recorder shot IDs rather than the stale aggregate table.
-
-## Safe current model
-
-```text
-ShotResultSpecialModifier {
-    extensionRaw
-    semantic
-    confidence
+ShotResultSpecialModifiers {
+    count
+    rawIds[]
+    decoded[]
 }
 
-extensionRaw=1:
-    semantic   = PRECISION_FIRE_PROC
-    confidence = VERY_STRONG_CURRENT_RELATIONSHIP
-
-extensionRaw=2:
-    semantic   = TUNGSTEN_OR_SPECIAL_DAMAGE_PROVENANCE_CANDIDATE
-    confidence = VERY_STRONG_PARTIAL_N1
+1 -> PRECISION_FIRE_PROC
+2 -> TUNGSTEN_SHELLS
 ```
 
-Always preserve the raw extension and current-version provenance.
+Decoder rule:
+
+```text
+modifierCount = byte after repeated result pairs
+for i in 0..<modifierCount:
+    modifierId = u32 LE
+```
+
+Do not model this field as a single nullable `extensionRaw` value.
+
+Unknown future modifier IDs must be preserved raw rather than rejected.
+
+## Superseded conclusions
+
+```text
+variantTail is an opaque tail byte                         SUPERSEDED
+optional extension is exactly one u32                     SUPERSEDED
+extension=2 is only a Tungsten candidate / n=1            SUPERSEDED
+extension IDs are mutually exclusive                       REJECTED
+Precision Fire and Tungsten cannot coexist in one result  REJECTED
+```
 
 ## Remaining work
 
-1. obtain a controlled Precision Fire HE sample to verify that extension=1 survives HE post-processing exactly as expected;
-2. obtain a forced low-HP Precision Fire activation sample;
-3. obtain more recorder-owned Tungsten-active hits for extension=2;
-4. recover the current Blitz enum/schema/string resource for exact symbolic names;
-5. repair the stale Type28 aggregate table using the canonical 324-shot reconstruction.
+1. recover the exact current private enum/type names for modifier IDs;
+2. obtain controlled samples for any additional modifier IDs if they appear;
+3. test the forced low-HP Precision Fire gameplay branch independently;
+4. validate the same modifier-list schema on future client versions before widening numeric support.
