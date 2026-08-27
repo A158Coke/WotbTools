@@ -29,6 +29,7 @@
 - `chat-actions.md`：当前 11.19 Avatar method47 / `CHAT_ACTION_DATA`。
 - `avatar-synchronized-options.md`：Avatar method49 zlib + Python-pickle 同步客户端配置。
 - `avatar-shot-results.md`：Avatar method38 recorder shot-result/hit-feedback、settlement hits 一致性、结构化 critical/module token-state 结果。
+- `loadout-materialization.md`：Vehicle Type5 的 6-item consumable/provision descriptor、9-char equipment-slot 编码及当前已闭环映射。
 
 ### 战斗事实
 
@@ -39,7 +40,9 @@
 - `adrenaline-and-gun-feed.md`：单发/弹夹负控制、Adrenaline 快装填效应、不同供弹系统状态族。
 - `projectile-lifecycle.md`：shotId、projectile/tracer launch、`stopTracer` endpoint 与 terminal-resolution companion。
 - `type32-entity-effects.md`：Type32 实体级长度前缀 auxiliary blob；旧 `kind` / runtime-double 解释已废弃。
-- `consumable-lifecycle.md`：Type32 mobile `flag=0` 消耗品初始化、激活、持续结束/冷却与 teardown 状态流；已闭环 First Aid / Repair / Multi-Purpose Restoration Pack。
+- `consumable-lifecycle.md`：Type32 mobile `flag=0` 消耗品初始化、激活、持续结束/冷却与 teardown 状态流。
+- `wrapper7-avatar-ready-wrapper16-state.md`：wrapper16 ordinary observed-by-enemy state1、Tracer/forced-observation state8 与 T-100 LT/Rhm 方向性研究。
+- `avatar-method19-vehicle-misc-status.md`：method19 code1 `IS_OBSERVED_BY_ENEMY` 与 code7 自动修复进度。
 - `fire-and-repair-states.md`：Type32 mobile short `...04` 火灾关联、fire-DOT、0x0B/0x0D 灭火差分、Vehicle prop8 recoverable-state token 与机械修复行为。
 - `crew-injury-candidates.md`：0x0C First Aid 前置受击、Type32 short packed event-family、0x27/0x29/0x2B crew/tankman-extra 候选与负证据边界。
 
@@ -48,27 +51,29 @@
 ### 已证明
 
 - `.wotbreplay` 为 ZIP 容器，核心成员包括 `meta.json`、`data.wotreplay`、`battle_results.dat`。
-- `data.wotreplay` packet framing 为 `payload_len(u32 LE) + type(u32 LE) + rawClock(f32 LE) + payload`；零长度 payload 合法，Type17 在当前 corpus 中 44/44 出现。
+- `data.wotreplay` packet framing 为 `payload_len(u32 LE) + type(u32 LE) + rawClock(f32 LE) + payload`；零长度 payload 合法。
 - Type7 / Type8 数字索引必须结合 entity class 与版本解释。
-- Type 7 / Vehicle `propId=3` 为当前血量；正值为实际 HP，`0` 为死亡终态；部分负 sentinel 需要单独建模。
-- Type 8 / current Avatar method47 为 `CHAT_ACTION_DATA`；method49 为压缩的同步客户端/UI/控制配置。
-- Type 8 / subtype48 提供 arena-update protobuf wrapper；已证明 roster、period、frag-count、death-info 与实时争霸点数等多个 family。
+- Vehicle `propId=3` 为当前 HP；Type5 materialization 同样提供当前/开局实际 HP，包括配置带来的 HP 变化。
+- Type8 subtype48 提供 arena-update protobuf wrapper；已证明 roster、period、frag-count、death-info、争霸占领以及 observation-state family。
 - `ARENA_PERIOD.BATTLE = 3`。
-- battle results player field24 为 `lifeTime`，field25 为 `killerID`，field105 为 `deathReason`。
-- 当前真实样本中 `deathReason=1/2/3` 分别闭环为 fire / ramming / world_collision。
-- `lifeTime` 是服务器结算的最近整数秒生存时长，而不是 floor；客户端观察到的 arena-period packet 存在亚秒级接收/记录抖动。
-- 单 POV replay 无法保证每个阵亡玩家都有亚秒级死亡 event；settlement `lifeTime` 可提供服务器整数秒级死亡事实。
-- 相同 arena 的多 POV 事件时钟基本共享同一时间轴，已观测对应死亡事件差异通常小于约 0.1 秒。
-- wrapper15 是本方 gun-feed/weapon telemetry，而不是敌方 visibility stream；单发与非单发车辆使用不同状态族。
-- 单发车辆 `field2=3` 与 shot count / reload duration 闭环；约 `0.853` 动态快档在当前 corpus 中行为上可确定为 Adrenaline reload effect，低 HP 技能解释已由高血量反例排除。
-- Kranvagn/Felice 不允许 Adrenaline 且不使用单发 `field2=3` family；其 `field2=7` 与 shots 呈一对一/仅缺失的关系并携带稳定的 gun-cycle timer，证明 wrapper15 是供弹机制感知的状态机。
-- Avatar method20 为 `stopTracer(shotId,endPoint)`；method29 为 projectile/tracer launch family，其 launch vector 与 `endPoint-startPoint` 在约 98.8% 样本中方向余弦 >0.99。
-- Type32 为 `entityId + flag + bodyLength + body`；16,850/16,850 长度闭合并同时路由到 Type5 mobile/static 实体。mobile `flag=0` 长 body 含 `float64` event clock，并已闭环 Adrenaline、Engine Power Boost、Multi-Purpose Restoration Pack、First Aid Kit、Repair Kit、Improved Engine Power Boost、Reticle Calibration、Reactive Armor、Tungsten Shells 等消耗品生命周期。
-- Type32 mobile `flag=1` short `...04` family 与火灾闭环：4/4 settlement fire death 的终末燃烧链出现该 family；`0x0B` 会终止周期 fire-DOT，而 `0x0D` 不会。
-- Vehicle prop8 是 count-prefixed recoverable/negative-state token collection；部分 token 可被 `0x0B` 与 `0x0D` 共同清除，另一些当前只观察到 `0x0B` 清除，因此不能简化成单一 `damagedModules` 列表。
-- `0x0C` First Aid 的 5/5 当前样本均在约 0.8–2.2 秒前有同实体真实 method8 damage event；但 prop8、method8 `(1,3,2)` 粗字段与 Type32 long `body[2]=2` 均已被全量反证为非 crew-specific，具体 injured crew wire surface 仍为 PARTIAL。
-- Avatar method38 是 recorder shot-result/hit-feedback family：严格 34-arena corpus 中 295/295 method38 都与同钟 recorder→victim direct-damage RPC 对齐，且全 corpus method38 总数 295 与 recorder settlement hits 295 精确相等；主 variant 281/295 可解析为 `victimVehicleId + 4-byte header + count + repeated(token,rawState) + tail`。
+- battle results player field24 为 `lifeTime`，field25 为 `killerID`，field105 为 `deathReason`；当前 `deathReason=1/2/3` 分别闭环为 fire / ramming / world_collision。
+- 单 POV replay 无法保证每个阵亡玩家都有亚秒级死亡 event；settlement `lifeTime` 可作为整数秒级 fallback。
+- wrapper15 是本方 gun-feed/weapon telemetry；Avatar method35 是当前 effective full reload-duration/config update。
+- Avatar method20 为 `stopTracer(shotId,endPoint)`；method29 为 global projectile launch family。
+- Type32 mobile 已闭环 Adrenaline、Engine Power Boost、Multi-Purpose Restoration Pack、First Aid Kit、Repair Kit、Improved Engine Power Boost、Reticle Calibration、Reactive Armor、Tungsten Shells 等动态道具生命周期。
+- Avatar method19 code1 = recorder vehicle observed by enemy；wrapper16 state1 = own-team ordinary observed-by-enemy entry/re-entry event。
+- wrapper16 state8 = recipient-side forced-observation state family；Rhm. Pzw. valid surviving hit 23/23 触发；T-100 LT shooter POV 进一步证明 state8 不是 shooter acknowledgement。
+- Vehicle Type5 直接携带 battle loadout：6-item consumable/provision descriptor + 9-character equipment-selection string；当前已闭环 equipment slot4 与 slot8 的行为映射。
+- Vehicle prop8 是 count-prefixed recoverable/negative-state token collection，不能简单等同单一 damagedModules 列表。
+- Avatar method38 是 recorder shot-result/hit-feedback family，并与 recorder settlement hits 高度闭环。
 
-### 仍需研究
+### 当前业务优先级
 
-见 `inventory.md` 以及各专题文档的 `Remaining work`。未知项必须保持 UNKNOWN/PARTIAL，直到获得足够证据。
+PR147 不以“所有 cosmetic/profile 字段全部命名”为完成标准。优先继续解决会影响 WotBTools 业务事实的内容：
+
+1. loadout raw code -> 11.19 当前装备/物资名称映射；
+2. method16 剩余高价值 module / crew device IDs；
+3. 少量会改变 AI Review / Battle Playback 事实的特殊 combat state；
+4. 对未知业务字段保持 fail-safe raw-preserve，而不是猜 semantic。
+
+外观、profile、cosmetics、纯客户端常量等低业务价值字段可留给 future research，不阻塞当前协议研究收口。
