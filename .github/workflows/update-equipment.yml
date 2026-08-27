@@ -23,10 +23,10 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Sync equipment catalog from BlitzKit
+      - name: Sync equipment catalog from one BlitzKit snapshot
         run: |
           set -euo pipefail
-          python3 common/python/update_equipment.py
+          python3 common/python/sync_equipment_snapshot.py
 
       - name: Validate catalog and generators
         run: |
@@ -51,7 +51,7 @@ jobs:
           git switch -C "$BRANCH"
           git add common/wotb-item-catalog-json/equipment.json
           git commit -m "chore(data): sync reviewed BlitzKit equipment values"
-          git push --force-with-lease origin "HEAD:$BRANCH" || git push --force origin "HEAD:$BRANCH"
+          git push --force-with-lease origin "HEAD:$BRANCH"
 
           pr_number="$(gh pr list --base main --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
           if [[ -z "$pr_number" ]]; then
@@ -59,11 +59,9 @@ jobs:
               --base main \
               --head "$BRANCH" \
               --title "chore(data): sync reviewed BlitzKit equipment values" \
-              --body $'Automated equipment update from reviewed BlitzKit sources.\n\n- Validates every equipment used by tier 7-10 presets\n- Fails on new/removed/renamed/moved equipment\n- Fully rewrites only effects backed by reviewed BlitzKit calculation sources\n- Locks unsupported effects to live description markers instead of partially updating them\n- Explicitly dispatches normal CI for this automation branch\n- Never auto-merges'
+              --body $'Automated equipment update from reviewed BlitzKit sources.\n\n- Uses one protobuf snapshot per run\n- Validates every equipment used by tier 7-10 presets\n- Fails on new/removed/renamed/moved equipment\n- Fully rewrites only effects backed by reviewed BlitzKit calculation sources\n- Requires exact percentage/semantic contracts for locked effects\n- Explicitly dispatches normal CI for this automation branch\n- Never auto-merges'
           else
             echo "Updated existing PR #$pr_number"
           fi
 
-          # Events created with GITHUB_TOKEN are not relied on to trigger PR CI.
-          # workflow_dispatch is explicitly allowed and attaches the run to this head ref.
           gh workflow run ci.yml --ref "$BRANCH"
