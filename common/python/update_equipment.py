@@ -9,10 +9,10 @@ The updater separates two equipment classes:
   reviewed effects and are guarded by item-scoped description fingerprints.
 
 A new WoTB game version, changed protobuf snapshot, renamed known equipment, or
-preset-layout change is not itself an error. The sync fails closed only when new
-upstream data cannot be represented safely: for example, a newly referenced
-equipment ID has no local model, a known item disappears, a locked item changes,
-or a calculation source no longer matches the supported parser contract.
+special-preset layout change is not itself an error. The canonical catalog grid
+is synchronized only from BlitzKit's standard ``defaultPreset``; special vehicle
+presets may legitimately substitute equipment at different raw slot indexes.
+The sync fails closed when new upstream data cannot be represented safely.
 """
 
 import base64
@@ -39,6 +39,7 @@ SOURCE_FILES = {
     "penetration": "packages/core/src/blitzkit/resolvePenetrationCoefficient.ts",
     "armor": "packages/website/src/components/Armor/components/StaticArmorSceneComponent.tsx",
 }
+CANONICAL_GRID_GROUPS = ("FIREPOWER", "VITALITY", "SPECIALIZATION")
 
 FULLY_MODELED_CODES = {
     "GUN_RAMMER",
@@ -156,6 +157,45 @@ def parse_equipment_details(pb_bytes):
     return details
 
 
+def parse_canonical_grid(pb_bytes, preset_name="defaultPreset"):
+    """Return canonical equipment positions from the standard BlitzKit preset.
+
+    BlitzKit serializes the standard 3x3 grid column-first:
+    F1,V1,S1,F2,V2,S2,F3,V3,S3. Special vehicle presets may replace entries at
+    those indexes, so only ``defaultPreset`` is authoritative for catalog grid
+    metadata.
+    """
+    root = decode_protobuf(pb_bytes)
+    for raw_preset in root.get(1, []):
+        kv = decode_protobuf(raw_preset)
+        if as_str(f1(kv, 1, b"")) != preset_name:
+            continue
+        preset = decode_protobuf(f1(kv, 2, b""))
+        slots = preset.get(1, [])
+        if len(slots) != 9:
+            raise RuntimeError(
+                "BLITZKIT_DEFAULT_PRESET_LAYOUT_UNSUPPORTED: slots=%d" % len(slots)
+            )
+        positions = {}
+        for index, raw_slot in enumerate(slots):
+            slot = decode_protobuf(raw_slot)
+            group = CANONICAL_GRID_GROUPS[index % 3]
+            grid_slot = index // 3 + 1
+            for field, side in ((1, "LEFT"), (2, "RIGHT")):
+                equipment_id = as_int(f1(slot, field))
+                if not equipment_id:
+                    continue
+                position = {"group": group, "slot": grid_slot, "side": side}
+                previous = positions.get(equipment_id)
+                if previous is not None and previous != position:
+                    raise RuntimeError(
+                        "BLITZKIT_DEFAULT_PRESET_DUPLICATE_EQUIPMENT: id=%s" % equipment_id
+                    )
+                positions[equipment_id] = position
+        return positions
+    raise RuntimeError("BLITZKIT_DEFAULT_PRESET_MISSING: " + preset_name)
+
+
 def required_business_equipment_ids(vehicles, presets):
     preset_names = {v.get("_equipmentPreset") for v in vehicles.values() if v.get("_equipmentPreset")}
     missing_presets = sorted(name for name in preset_names if name not in presets)
@@ -189,6 +229,14 @@ def sync_upstream_metadata(payload, equipment_pb, tanks_pb):
             raise RuntimeError("BLITZKIT_EQUIPMENT_REMOVED: %s id=%s" % (item["code"], equipment_id))
         if upstream_name and upstream_name != item.get("nameEn"):
             item["nameEn"] = upstream_name
+
+    # Synchronize only the standard preset's canonical grid. Special presets are
+    # vehicle-specific substitutions and must never redefine global catalog slots.
+    canonical_grid = parse_canonical_grid(equipment_pb)
+    for equipment_id, grid in canonical_grid.items():
+        item = catalog_by_id.get(equipment_id)
+        if item is not None and item.get("grid") != grid:
+            item["grid"] = grid
 
     codes = {item["code"] for item in payload["items"]}
     modeled = FULLY_MODELED_CODES | LOCKED_CODES
