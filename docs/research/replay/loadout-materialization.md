@@ -1,29 +1,97 @@
 # Vehicle loadout materialization — Type5 / Type32 consumables, provisions and equipment
 
-> Scope: Blitz 11.19 China replay corpus plus one independent T-100 LT replay sample.
+> Scope: Blitz 11.19 China canonical replay corpus plus one independent T-100 LT replay sample.
 >
-> This document records only loadout structure that is directly supported by replay bytes and behavioral closure. Exact item names remain version-gated where the current catalog mapping is not yet refreshed for 11.19.
+> This document records battle-loadout structure directly supported by replay bytes and behavioral closure. Numeric equipment effect values are maintained separately in the current item catalog and must not be inferred from historical replay assumptions.
 
 ## Executive verdict
 
-Current Vehicle Type5 materialization does not carry only transform/HP state. It also exposes a compact battle-loadout descriptor.
-
-For currently studied Tier X vehicle materializations, two immediately useful surfaces are present:
+Current Vehicle Type5 materialization does not carry only transform/HP state. For combat vehicles it directly exposes battle loadout:
 
 ```text
-6 × compact item descriptors
-9-character ASCII equipment-selection string
+6 × 14-byte item descriptors
+9-byte equipment-selection string
 ```
 
-The first surface cross-closes with Type32 item initialization/lifecycle traffic and behaves as the vehicle's 3 consumable + 3 provision slots.
+The six-item surface cross-closes with Type32 item initialization/lifecycle traffic and behaves as the vehicle's 3 consumable + 3 provision slots.
 
-The second surface is exactly 9 characters long and behaves as the 9 equipment-choice slots.
+The nine-byte equipment surface is stronger than a symbolic slot code: **each byte is the equipment numeric ID itself, represented as one ASCII character**.
+
+```text
+equipmentId = unsignedByte(equipmentString[slot])
+```
 
 Verdict:
 
 > **battle loadout is directly materialized in the replay — PROVEN structural/behavioral family**.
 >
-> This is materially stronger than inferring loadout only from derived stats such as HP/reload.
+> **equipment selection is directly decodable by byte value / ASCII code point — PROVEN on current 11.19 corpus**.
+
+This supersedes the earlier need to infer equipment identity slot-by-slot from derived effects such as HP or consumable duration.
+
+# Exact Type5 tail structure for combat vehicles
+
+For every currently decoded combat-vehicle Type5 payload carrying the full loadout, the equipment string is part of a stable tail structure:
+
+```text
+0A 06
+  6 × 14-byte item descriptor
+0B 09
+  9 raw equipment-ID bytes
+... trailing vehicle state
+```
+
+Each item descriptor currently has:
+
+```text
+itemWireCode : u8
+state        : u8
+payload      : 12 bytes
+```
+
+Representative T-100 LT recorder materialization:
+
+```text
+0A 06
+0B 01 000000000000000000000000
+0A 01 000000000000000000000000
+09 01 000000000000000000000000
+10 01 0000000000000000000080BF
+1D 01 0000000000000000000080BF
+17 01 0000000000000000000080BF
+0B 09
+64 6D 72 68 6F 74 69 71 65
+```
+
+The final nine bytes decode as ASCII `dmrhotiqe`, but the byte values themselves are the authoritative equipment IDs:
+
+```text
+64h = 100
+6Dh = 109
+72h = 114
+68h = 104
+6Fh = 111
+74h = 116
+69h = 105
+71h = 113
+65h = 101
+```
+
+## Combat vs non-combat Type5 distinction
+
+The full 6+9 shape belongs to current combat vehicles.
+
+A smaller observed Type5 family uses `0A 04` with four item descriptors; current examples belong to non-combat/observer-style entities and must not be interpreted as a normal player battle loadout.
+
+Safe parser rule:
+
+```text
+0A 06 + six descriptors + 0B 09 + nine equipment bytes
+  -> supported combat-vehicle loadout surface
+
+other counts
+  -> preserve raw; do not coerce to normal 3+3 player loadout
+```
 
 # Six item descriptors — consumables + provisions
 
@@ -32,17 +100,15 @@ Verdict:
 The independent T-100 LT replay contains six Type5 item descriptors for the recorder vehicle:
 
 ```text
-09
-0A
 0B
+0A
+09
 10
-17
 1D
+17
 ```
 
-The same six wire codes are represented by Type32 initialization/state traffic for that vehicle.
-
-Known dynamic identities from independent lifecycle closure:
+The first three are independently closed through Type32 dynamic lifecycle behavior:
 
 ```text
 0x09 = Adrenaline
@@ -50,163 +116,182 @@ Known dynamic identities from independent lifecycle closure:
 0x0B = Multi-Purpose Restoration Pack
 ```
 
-The remaining three codes have initialization/static behavior rather than activation/end lifecycle in this sample and are therefore provision-slot candidates:
+The remaining three have the static/provision descriptor shape in this sample:
 
 ```text
 0x10
-0x17
 0x1D
+0x17
 ```
 
-Exact provision names are intentionally deferred until the refreshed 11.19 item catalog is available and the wire-code mapping is independently closed.
+Their descriptor payload ends in `80 BF` (`f32 -1.0` in the current tail position), while normal initialized consumables predominantly begin with a zeroed dynamic-state payload before later Type32 transitions.
 
-## Structural interpretation
+## Corpus-level dynamic/static split
 
-The six-item shape is consistent with the current Blitz battle-loadout model:
+Across current six-item combat loadouts, observed dynamic consumable-family codes include:
 
 ```text
-3 consumable slots
-3 provision slots
+08 09 0A 0B 0C 0D 3D 3E 42 69
 ```
 
-A safe classification rule is behavioral rather than numeric:
+Observed static/provision-shape codes include:
 
 ```text
-Type32 item with activation/active-end lifecycle
-  -> consumable
-
-Type32 init/static-only item without activation lifecycle
-  -> provision candidate
+0E 0F 10 11 12 13 16 17 18 19 1A 1C 1D 1E
+44 45 46 47 49 6B 6C
 ```
 
-This avoids hard-coding unsupported names from stale catalog values.
+Exact static code -> provision symbolic identities remain item-specific research. Do not assume these wire codes equal catalog `sourceIds`; the dynamic consumable family already proves that the replay wire namespace is not simply the public catalog ID namespace.
 
 Verdict:
 
 > Type5 six-item descriptor = **consumable/provision battle-loadout surface — PROVEN family**.
 >
-> Exact per-code symbolic mapping remains item-specific and version-gated.
+> Dynamic-vs-static classification = **PROVEN behavioral family**.
+>
+> Exact provision wire-code names = **PARTIAL** until independently mapped.
 
-# Nine-character equipment selection string
+# Nine equipment bytes — direct equipment IDs
 
-Immediately after the six-item descriptor family, current vehicle Type5 materialization contains an ASCII string of length 9.
+## Full-corpus proof
 
-Across the studied allied Tier X population:
-
-```text
-observed strings : 245
-length == 9      : 245 / 245
-```
-
-Representative T-100 LT value:
+Across the current 34-arena corpus plus the independent T-100 LT sample:
 
 ```text
-dmrhotiqe
+combat Type5 equipment strings inspected : 1,097
+string length                            : 9 / 9
+observed distinct equipment IDs          : 20
 ```
 
-Each character position has a very small stable value domain, consistent with one selection value per equipment slot.
-
-Observed positional domains in the current corpus include:
+For every observed character in every slot:
 
 ```text
-slot0: d / g
-slot1: l / m
-slot2: r / s / {
-slot3: h / k
-slot4: n / o
-slot5: t / u
-slot6: i / j
-slot7: p / q
-slot8: e / v
+ord(character) == current equipment numeric ID
 ```
 
-Some positions can carry vehicle-specific alternatives, so a position may have more than the normal left/right pair.
+The byte's slot position also matches the equipment grid position.
+
+Observed mapping:
+
+| replay slot | byte / ASCII | decimal ID | equipment |
+|---:|---|---:|---|
+| 0 | `d` | 100 | GUN_RAMMER |
+| 0 | `f` | 102 | IMPROVED_VENTILATION |
+| 0 | `g` | 103 | CALIBRATED_SHELLS |
+| 1 | `l` | 108 | ENHANCED_GUN_LAYING_DRIVE |
+| 1 | `m` | 109 | SUPERCHARGER |
+| 2 | `r` | 114 | VERTICAL_STABILIZER |
+| 2 | `s` | 115 | REFINED_GUN |
+| 2 | `{` | 123 | IMPROVED_SUSPENSION |
+| 3 | `h` | 104 | IMPROVED_MODULES |
+| 3 | `k` | 107 | DEFENSE_SYSTEM |
+| 4 | `n` | 110 | ENHANCED_ARMOR |
+| 4 | `o` | 111 | IMPROVED_ASSEMBLY |
+| 5 | `t` | 116 | ENHANCED_TRACKS |
+| 5 | `u` | 117 | TOOLBOX |
+| 6 | `i` | 105 | IMPROVED_OPTICS |
+| 6 | `j` | 106 | CAMOUFLAGE_NET |
+| 7 | `p` | 112 | IMPROVED_CONTROL |
+| 7 | `q` | 113 | ENGINE_ACCELERATOR |
+| 8 | `e` | 101 | HIGH_END_CONSUMABLES |
+| 8 | `v` | 118 | CONSUMABLE_DELIVERY_SYSTEM |
+
+Equipment ID 122 (`IMPROVED_VERTICAL_STABILIZER`, byte `z`) is present in the current catalog but was not naturally selected in the studied replay corpus. The general byte=ID encoding rule is nevertheless independently closed across the other 20 observed IDs; unsupported/unseen IDs should still be raw-preserved and catalog-resolved rather than hard-coded as a finite character enum.
 
 Verdict:
 
-> 9-char string = **nine equipment-slot selections — PROVEN behavioral structure**.
+> `equipmentIds[slot] = unsignedByte(rawEquipmentBytes[slot])` — **PROVEN current 11.19 encoding**.
 
-Exact char -> equipment symbolic mapping is being closed slot by slot.
+## Why earlier behavioral mappings still matter
 
-# Proven equipment slot mappings
+Earlier effect-based natural experiments remain valuable as independent validation:
 
-## slot4 — Vitality slot 2 family
+### ID 111 / Improved Assembly
 
-A natural SPHT population provides a clean HP contrast.
-
-```text
-equipmentString[4] = n
-opening actual HP  = 3400
-13 / 13
-
-equipmentString[4] = o
-opening actual HP  = 3570
-96 / 96
-```
-
-The current equipment grid's Vitality slot 2 alternatives are Enhanced Armor vs Improved Assembly, and only the assembly branch directly increases vehicle HP.
-
-Therefore current behavioral mapping is:
+SPHT natural population:
 
 ```text
-slot4 n = ENHANCED_ARMOR
-slot4 o = IMPROVED_ASSEMBLY
+slot4 byte `n` / ID110 -> opening actual HP 3400 : 13 / 13
+slot4 byte `o` / ID111 -> opening actual HP 3570 : 96 / 96
 ```
 
-Verdict:
+This independently confirms ID111 is the HP-increasing branch. The observed 11.19 uplift is approximately +5%, matching the current 11.19 balance update rather than the older catalog value.
 
-> **PROVEN behavioral mapping for current corpus/version**.
+### ID 101 / High-End Consumables
 
-The observed SPHT and T-100 LT HP uplift is approximately 5% in current 11.19 replay evidence. Catalog numeric values must be refreshed independently rather than forcing an older percentage onto the replay.
-
-## slot8 — Specialization slot 3 family
-
-The current slot alternatives are the consumable-duration branch and consumable-cooldown branch.
-
-T-100 LT sample:
+T-100 LT:
 
 ```text
-equipmentString[8] = e
-Adrenaline state2 -> state3 active window ~= 26.5 s
+slot8 byte `e` / ID101
+Adrenaline state2 -> state3 ~= 26.5 s
 ```
 
-A 20-second base duration multiplied by the High-End Consumables duration modifier is consistent with this observed active window.
+This independently matches the extended consumable-duration branch.
 
-Current corpus records using the alternate character show the ordinary ~20-second Adrenaline active window.
+These are validation probes, not required for primary equipment identity decoding now that the direct byte=ID encoding is known.
+
+# Enemy loadout visibility
+
+The loadout surface is not recorder-only.
+
+Enemy vehicles are independently identified through the proven Type4 leave -> later Type5 re-materialization lifecycle. Across the current corpus plus T-100 LT sample:
+
+```text
+enemy Type5 re-materializations inspected : 683
+with complete 9-byte equipment string     : 683 / 683
+with full six-item combat descriptor      : 683 / 683
+```
 
 Therefore:
 
-```text
-slot8 e = HIGH_END_CONSUMABLES
-slot8 v = CONSUMABLE_DELIVERY_SYSTEM
-```
+> **when an enemy combat vehicle materializes into the replay POV, its current Type5 payload carries the same complete 6-item + 9-equipment loadout descriptor — PROVEN current corpus**.
 
-Verdict:
+This does not mean an enemy that never materializes can be reconstructed; absence remains absence of replay evidence.
 
-> **PROVEN behavioral mapping for current corpus/version**.
+# 11.19 equipment rebalance boundary
 
-# Important product consequence
+WoT Blitz 11.19 changed several equipment **effect values** without changing the equipment numeric IDs or grid positions used by this replay corpus.
 
-WotBTools no longer needs to treat equipment/provision reconstruction as purely statistical inference.
-
-The safe architecture is now:
+Therefore replay decoding should separate:
 
 ```text
-Replay Type5
-  -> raw loadout descriptor
-     -> six item wire codes
-     -> nine equipment selection chars
+replay wire
+  -> equipment IDs / selected slots
 
-Type32 / HP / reload / movement / consumable timing
-  -> behavioral validation and exact effect reconstruction
+versioned item catalog
+  -> current effect values
 ```
 
-This enables future product features such as:
+Do not bake equipment percentages into the replay protocol decoder.
 
-- display actual battle consumables/provisions/equipment when mappings are proven;
-- explain observed HP/reload/consumable-duration differences using the real loadout;
-- avoid guessing equipment solely from final stats;
-- preserve unknown raw codes until a current-version mapping is proven.
+The replay should produce IDs such as `111`; the 11.19 catalog should determine that ID111 currently means Improved Assembly with the current 11.19 modifier.
+
+# Safe consumer model
+
+```text
+VehicleBattleLoadout {
+    entityId
+    replayVersion
+
+    itemDescriptors[6] {
+        wireCode
+        stateRaw
+        payloadRaw[12]
+        classification // CONSUMABLE / PROVISION / UNKNOWN
+        logicalItemId? // only when proven/version-mapped
+    }
+
+    equipmentIds[9] // direct u8 IDs from Type5
+}
+```
+
+Safe uses:
+
+- display actual battle equipment for any materialized combat vehicle;
+- display consumables/provisions once their wire codes are version-mapped;
+- explain observed HP/reload/aim/movement/consumable-duration differences using the actual equipment ID plus a versioned catalog;
+- preserve unknown raw item codes without inventing names;
+- support enemy loadout only when corresponding enemy Type5 materialization exists.
 
 # Scope boundary
 
@@ -214,16 +299,16 @@ This PR remains protocol research, not production implementation.
 
 Do not:
 
-- expose stale catalog names/percentages as 11.19 truth;
-- guess provision names from old IDs;
-- assume equipment character mappings are stable across future client versions;
-- infer an enemy loadout from absence of Type5 materialization.
+- hard-code 11.19 equipment percentages into packet decoding;
+- assume future client versions retain the same tail framing without version validation;
+- guess provision names solely from similar numeric IDs;
+- infer a never-materialized enemy loadout;
+- reduce equipment decoding to a closed ASCII enum when the byte value itself is the equipment ID.
 
 # Remaining work
 
-1. refresh against the current 11.19 `equipment.json` / `provisions.json` catalog once available;
-2. map the remaining equipment slots `0/1/2/3/5/6/7` using physical replay effects and vehicle availability constraints;
-3. map provision wire codes such as `0x10/0x17/0x1D` to current logical provision IDs;
-4. validate whether enemy Type5 materialization carries the same complete 6+9 loadout descriptor;
-5. establish exact byte offsets/version gates for the loadout section within each Type5 vehicle payload variant;
-6. preserve raw descriptor values for unsupported versions rather than silently translating them.
+1. map static/provision wire codes to current logical provision IDs using current Blitz definitions plus replay behavior;
+2. map any still-unclosed consumable wire codes in the six-item descriptor family;
+3. verify the 6+9 tail on non-Tier-X combat vehicles / random battles before widening production version gates;
+4. validate future Blitz versions before assuming the Type5 relative tail structure is unchanged;
+5. retain raw 14-byte item descriptor payloads until their internal timers/state fields are fully decoded.
