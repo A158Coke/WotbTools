@@ -1,0 +1,70 @@
+name: Update Crew Skills
+run-name: Sync Crew Skills from BlitzKit by @${{ github.actor }}
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: update-crew-skills
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Sync crew skills from stable BlitzKit snapshot
+        run: |
+          set -euo pipefail
+          python3 common/python/update_crew_skills.py \
+            --existing common/crew-skills.json \
+            --output /tmp/crew-skills.json
+          python3 -m json.tool /tmp/crew-skills.json >/dev/null
+          mv /tmp/crew-skills.json common/crew-skills.json
+
+      - name: Validate generated crew skills
+        run: |
+          set -euo pipefail
+          python3 -m unittest common.python.tests.test_update_crew_skills
+          git diff --check
+
+      - name: Commit data branch and open/update PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: automation/update-crew-skills
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- common/crew-skills.json; then
+            echo "Crew skills unchanged; nothing to publish."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git add common/crew-skills.json
+          git commit -m "chore(data): sync BlitzKit crew skills"
+          git push --force-with-lease origin "HEAD:$BRANCH"
+
+          pr_number="$(gh pr list --base main --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [[ -z "$pr_number" ]]; then
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "chore(data): sync BlitzKit crew skills" \
+              --body $'Automated crew-skill sync from BlitzKit.\n\n- Reads stable game.pb + skills.pb snapshots\n- Imports newly supported canonical skill IDs automatically\n- Rejects missing/new tank classes, suspicious count drops, invalid IDs, and duplicates\n- Records game version and skills.pb SHA-256 when skill semantics actually change\n- Does not create timestamp-only or metadata-only PRs\n- Runs generator tests and explicitly dispatches normal CI\n- Never auto-merges'
+          else
+            echo "Updated existing PR #$pr_number"
+          fi
+
+          gh workflow run ci.yml --ref "$BRANCH"

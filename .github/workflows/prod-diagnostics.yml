@@ -1,15 +1,20 @@
 name: Production Diagnostics
+run-name: Production diagnostics by @${{ github.actor }}
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/prod-diagnostics.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-diagnostics
+  cancel-in-progress: false
 
 jobs:
   backend-logs:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Collect backend diagnostics
         uses: appleboy/ssh-action@v1
@@ -18,8 +23,9 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 8m
           script: |
-            set -e
+            set -euo pipefail
             cd /opt/wotb
             echo "== docker compose ps =="
             docker compose ps

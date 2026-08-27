@@ -278,6 +278,8 @@ JWT mapper 提供 `wotb_region / wotb_account_id / wotb_nickname / wotb_verified
 
 IdP 部署步骤见 `docs/auth/wargaming-asia-deployment.md`。
 
+Keycloak 登录页为 V8 Unified Theme（深色=Battlefield/浅色=Minimal、深色登录卡局部毛玻璃 dark-only、浅色无 blur、IdP 动态渲染、`registrationAllowed:false`）；主题文件在 `docker/keycloak/themes/wotbtools/login/`，仅覆盖 `template.ftl`（其余认证页经 `registrationLayout` 共享），生产 realm 需手动设 `loginTheme=wotbtools` 并关闭 Registration（见 `docs/auth/keycloak-login-theme.md`）。
+
 ---
 
 ## i18n / DTO 约定

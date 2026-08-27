@@ -13,4 +13,7 @@ FROM quay.io/keycloak/keycloak:26.6.4
 COPY --from=build /build/keycloak-juhe-qq-provider/target/keycloak-juhe-qq-provider.jar /opt/keycloak/providers/
 COPY --from=build /build/keycloak-wargaming-provider/target/keycloak-wargaming-provider.jar /opt/keycloak/providers/
 
+# WotBTools custom login theme (V8 Unified Layout)
+COPY docker/keycloak/themes/wotbtools /opt/keycloak/themes/wotbtools
+
 RUN /opt/keycloak/bin/kc.sh build

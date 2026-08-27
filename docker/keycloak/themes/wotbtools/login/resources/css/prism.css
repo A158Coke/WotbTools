@@ -1,0 +1,22 @@
+/* Login card: dark = local glass (backdrop-filter allowed ONLY here), light = clear prism (no blur). */
+.wbtb-card {
+    position: relative;
+    background: var(--auth-card-bg);
+    border: 1px solid var(--auth-card-border);
+    border-radius: var(--auth-radius);
+    padding: 28px 28px 26px;
+    box-shadow: var(--auth-card-shadow);
+    overflow: hidden;
+    color: var(--auth-text);
+}
+.wbtb-card:before { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(160deg, var(--auth-prism-highlight) 0%, transparent 42%); }
+.wbtb-card > * { position: relative; z-index: 1; }
+/* Dark-only local glass: blurs the Battlefield artwork behind the card, not the whole screen. */
+html[data-theme="dark"] .wbtb-card {
+    backdrop-filter: var(--auth-card-blur);
+    -webkit-backdrop-filter: var(--auth-card-blur);
+}
+
+.wbtb-card__header h1#kc-page-title { font-size: 22px; font-weight: 700; margin: 0 0 6px; letter-spacing: -.01em; }
+.wbtb-card__header .subtitle { font-size: 12.5px; color: var(--auth-muted); }
+.wbtb-card__header #kc-username { margin: 4px 0 6px; font-size: 14px; color: var(--auth-muted); }
