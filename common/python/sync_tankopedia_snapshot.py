@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Tankopedia from one BlitzKit snapshot and validate that exact snapshot."""
+"""Generate Tankopedia from one stable BlitzKit definition snapshot."""
 
 import argparse
 import os
@@ -8,6 +8,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 import update_tankopedia as ut
+from blitzkit_snapshot import fetch_stable_snapshot
 from validate_tankopedia_equipment import validate_vehicle_equipment_coverage
 
 
@@ -22,15 +23,16 @@ def main(argv=None):
     parser.add_argument("--output-dir", default=ut.REPO_COMMON_DIR)
     args = parser.parse_args(argv)
 
-    snapshots = {
-        "tanks": fetch_bytes(ut.PB_URL),
-        "consumables": fetch_bytes(ut.CONSUMABLES_URL),
-        "provisions": fetch_bytes(ut.PROVISIONS_URL),
-        "equipment": fetch_bytes(ut.EQUIPMENT_URL),
+    resources = {
+        "tanks": ut.PB_URL,
+        "consumables": ut.CONSUMABLES_URL,
+        "provisions": ut.PROVISIONS_URL,
+        "equipment": ut.EQUIPMENT_URL,
     }
+    snapshots, hashes = fetch_stable_snapshot(resources, fetch_bytes)
     print(
-        "snapshot bytes: tanks=%d consumables=%d provisions=%d equipment=%d"
-        % tuple(len(snapshots[key]) for key in ("tanks", "consumables", "provisions", "equipment"))
+        "stable snapshot: %s"
+        % " ".join("%s=%s" % (name, hashes[name][:12]) for name in sorted(hashes))
     )
 
     old_data = ut.load_existing_data_dir(args.existing_dir)
@@ -73,7 +75,8 @@ def main(argv=None):
             new_data[str(vehicle["id"])] = vehicle
         ut.write_json(os.path.join(args.output_dir, ut.TIER_FILES[tier]), {
             "meta": {
-                "source": "blitzkit snapshot (assets.blitzkit.app/definitions)",
+                "source": "blitzkit stable snapshot (assets.blitzkit.app/definitions)",
+                "source_hashes": hashes,
                 "tier": tier,
                 "generated_at": generated_at,
                 "count": len(tier_vehicles),

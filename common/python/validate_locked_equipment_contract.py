@@ -5,86 +5,105 @@ import re
 
 from update_equipment import item_by_code, parse_equipment_details
 
-# Exact percentage magnitudes expected in the live English description.
-# Using a sorted list (not a set) also detects duplicate/new percentage-bearing effects.
-LOCKED_PERCENTAGES = {
-    "SUPERCHARGER": [35.0, 60.0],
-    "IMPROVED_VERTICAL_STABILIZER": [3.0, 4.0],
-    "IMPROVED_SUSPENSION": [15.0, 20.0, 30.0],
-    "IMPROVED_MODULES": [20.0, 40.0],
-    "DEFENSE_SYSTEM": [10.0, 15.0, 25.0],
-    "ENHANCED_TRACKS": [],
-    "TOOLBOX": [20.0],
-    "CONSUMABLE_DELIVERY_SYSTEM": [12.0],
-    "HIGH_END_CONSUMABLES": [33.0],
-}
+INCREASE_WORDS = r"(?:increase(?:s|d)?|improve(?:s|d)?|boost(?:s|ed)?|raise(?:s|d)?)"
+DECREASE_WORDS = r"(?:decrease(?:s|d)?|reduce(?:s|d)?|lower(?:s|ed)?|cut(?:s)?)"
 
-# Semantic anchors: a description can only pass when it still talks about the
-# reviewed mechanics. This intentionally errs on the side of stopping updates.
-LOCKED_KEYWORDS = {
-    "SUPERCHARGER": ("shell", "velocity", "penetration"),
-    "IMPROVED_VERTICAL_STABILIZER": ("gun",),
-    "IMPROVED_SUSPENSION": ("terrain",),
-    "IMPROVED_MODULES": ("module", "ramming"),
-    "DEFENSE_SYSTEM": ("engine", "crew", "ammo"),
-    "ENHANCED_TRACKS": ("track", "repair"),
-    "TOOLBOX": ("repair",),
-    "CONSUMABLE_DELIVERY_SYSTEM": ("consumable",),
-    "HIGH_END_CONSUMABLES": ("consumable",),
-}
-
-# Explicit reversals that would otherwise preserve all numeric markers.
-FORBIDDEN_PHRASES = {
+# Each locked effect is matched as one reviewed semantic clause: direction + subject + value.
+# A wording/meaning/value change therefore fails closed instead of being inferred from loose markers.
+LOCKED_EFFECTS = {
     "SUPERCHARGER": (
-        "decrease shell velocity",
-        "reduce shell velocity",
-        "increase penetration loss",
+        ("increase", 35.0, ("shell", "velocity")),
+        ("decrease", 60.0, ("penetration", "loss")),
     ),
-    "IMPROVED_MODULES": ("increase ramming damage",),
+    "IMPROVED_VERTICAL_STABILIZER": (
+        ("increase", 4.0, ("gun", "elevation")),
+        ("increase", 3.0, ("gun", "depression")),
+    ),
+    "IMPROVED_SUSPENSION": (
+        ("increase", 20.0, ("terrain", "hard")),
+        ("increase", 15.0, ("terrain", "medium")),
+        ("increase", 30.0, ("terrain", "soft")),
+    ),
+    "IMPROVED_MODULES": (
+        ("increase", 20.0, ("module", "durability")),
+        ("decrease", 40.0, ("ramming", "damage")),
+    ),
     "DEFENSE_SYSTEM": (
-        "increase engine damage chance",
-        "increase crew injury chance",
-        "increase ammo rack explosion chance",
+        ("decrease", 10.0, ("engine", "damage")),
+        ("decrease", 15.0, ("crew", "injury")),
+        ("decrease", 25.0, ("ammo", "explosion")),
     ),
-    "TOOLBOX": ("decrease repair speed", "reduce repair speed"),
+    "TOOLBOX": (("increase", 20.0, ("repair", "speed")),),
+    "CONSUMABLE_DELIVERY_SYSTEM": (("decrease", 12.0, ("consumable", "cooldown")),),
+    "HIGH_END_CONSUMABLES": (("increase", 33.0, ("consumable", "duration")),),
+}
+
+# Non-percentage semantic contract. Any rewording that removes these reviewed mechanics stops the sync.
+LOCKED_TEXT_ONLY = {
+    "ENHANCED_TRACKS": ("track", "repair", "durability"),
 }
 
 
-def extract_percentage_magnitudes(description):
-    values = re.findall(r"[+-]?(\d+(?:\.\d+)?)\s*%", description or "")
-    return sorted(float(value) for value in values)
+def normalize(description):
+    return " ".join((description or "").lower().split())
+
+
+def percentage_values(description):
+    return sorted(float(value) for value in re.findall(r"[+-]?(\d+(?:\.\d+)?)\s*%", description or ""))
+
+
+def clause_matches(description, direction, value, keywords):
+    """Match one semantic effect inside a sentence-like clause, not across the full description."""
+    direction_pattern = INCREASE_WORDS if direction == "increase" else DECREASE_WORDS
+    value_pattern = r"(?:[+-]?%s(?:\.0+)?)\s*%%" % re.escape(str(value).rstrip("0").rstrip("."))
+    clauses = [normalize(part) for part in re.split(r"[.;\n]+", description or "") if part.strip()]
+    for clause in clauses:
+        if not re.search(direction_pattern, clause):
+            continue
+        if not re.search(value_pattern, clause):
+            continue
+        if all(keyword in clause for keyword in keywords):
+            return True
+    return False
 
 
 def validate_locked_contract(payload, details):
-    for code, expected_percentages in LOCKED_PERCENTAGES.items():
+    for code, effects in LOCKED_EFFECTS.items():
         item = item_by_code(payload, code)
         detail = details.get(item["id"])
         if not detail:
             raise RuntimeError("BLITZKIT_EQUIPMENT_DESCRIPTION_MISSING: " + code)
         description = detail.get("description") or ""
-        actual_percentages = extract_percentage_magnitudes(description)
+
+        expected_percentages = sorted(value for _, value, _ in effects)
+        actual_percentages = percentage_values(description)
         if actual_percentages != expected_percentages:
             raise RuntimeError(
                 "BLITZKIT_LOCKED_EFFECT_CHANGED: %s expected_percentages=%s upstream_percentages=%s"
                 % (code, expected_percentages, actual_percentages)
             )
 
-        lowered = " ".join(description.lower().split())
-        missing_keywords = [
-            keyword for keyword in LOCKED_KEYWORDS.get(code, ()) if keyword not in lowered
+        missing_effects = [
+            "%s %.6g%% %s" % (direction, value, "/".join(keywords))
+            for direction, value, keywords in effects
+            if not clause_matches(description, direction, value, keywords)
         ]
-        if missing_keywords:
+        if missing_effects:
             raise RuntimeError(
-                "BLITZKIT_LOCKED_EFFECT_CHANGED: %s missing_keywords=%s"
-                % (code, missing_keywords)
+                "BLITZKIT_LOCKED_EFFECT_CHANGED: %s missing_semantic_effects=%s"
+                % (code, missing_effects)
             )
-        forbidden = [
-            phrase for phrase in FORBIDDEN_PHRASES.get(code, ()) if phrase in lowered
-        ]
-        if forbidden:
+
+    for code, keywords in LOCKED_TEXT_ONLY.items():
+        item = item_by_code(payload, code)
+        detail = details.get(item["id"])
+        if not detail:
+            raise RuntimeError("BLITZKIT_EQUIPMENT_DESCRIPTION_MISSING: " + code)
+        lowered = normalize(detail.get("description"))
+        missing = [keyword for keyword in keywords if keyword not in lowered]
+        if missing:
             raise RuntimeError(
-                "BLITZKIT_LOCKED_EFFECT_CHANGED: %s forbidden_phrases=%s"
-                % (code, forbidden)
+                "BLITZKIT_LOCKED_EFFECT_CHANGED: %s missing_keywords=%s" % (code, missing)
             )
     return True
 

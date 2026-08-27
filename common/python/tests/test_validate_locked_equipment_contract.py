@@ -12,21 +12,22 @@ import validate_locked_equipment_contract as validator
 
 class LockedEquipmentContractTest(unittest.TestCase):
     def payload(self):
+        codes = list(validator.LOCKED_EFFECTS) + list(validator.LOCKED_TEXT_ONLY)
         return {
             "items": [
                 {"id": item_id, "code": code}
-                for item_id, code in enumerate(validator.LOCKED_PERCENTAGES, start=1000)
+                for item_id, code in enumerate(codes, start=1000)
             ]
         }
 
     def details(self, payload):
         descriptions = {
             "SUPERCHARGER": "Increases shell velocity by 35%. Reduces penetration loss by 60%.",
-            "IMPROVED_VERTICAL_STABILIZER": "Improves gun elevation by 4% and depression by 3%.",
-            "IMPROVED_SUSPENSION": "Improves terrain performance by 20%, 15%, and 30%.",
+            "IMPROVED_VERTICAL_STABILIZER": "Increases gun elevation by 4%. Increases gun depression by 3%.",
+            "IMPROVED_SUSPENSION": "Improves terrain performance on hard ground by 20%. Improves terrain performance on medium ground by 15%. Improves terrain performance on soft ground by 30%.",
             "IMPROVED_MODULES": "Increases module durability by 20%. Reduces ramming damage by 40%.",
-            "DEFENSE_SYSTEM": "Reduces engine damage by 10%, crew injury by 15%, and ammo explosion by 25%.",
-            "ENHANCED_TRACKS": "Track repair restores durability.",
+            "DEFENSE_SYSTEM": "Reduces engine damage by 10%. Reduces crew injury by 15%. Reduces ammo explosion chance by 25%.",
+            "ENHANCED_TRACKS": "Track repair restores full durability.",
             "TOOLBOX": "Increases repair speed by 20%.",
             "CONSUMABLE_DELIVERY_SYSTEM": "Reduces consumable cooldown by 12%.",
             "HIGH_END_CONSUMABLES": "Increases consumable duration by 33%.",
@@ -49,17 +50,27 @@ class LockedEquipmentContractTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "BLITZKIT_LOCKED_EFFECT_CHANGED"):
             validator.validate_locked_contract(payload, details)
 
-    def test_semantic_reversal_fails_closed(self):
+    def test_semantic_reversal_with_unlisted_wording_fails_closed(self):
         payload = self.payload()
         details = self.details(payload)
         item = next(item for item in payload["items"] if item["code"] == "SUPERCHARGER")
         details[item["id"]]["description"] = (
-            "Decrease shell velocity by 35%. Reduces penetration loss by 60%."
+            "Lowers shell velocity by 35%. Reduces penetration loss by 60%."
         )
-        with self.assertRaisesRegex(RuntimeError, "forbidden_phrases"):
+        with self.assertRaisesRegex(RuntimeError, "missing_semantic_effects"):
             validator.validate_locked_contract(payload, details)
 
-    def test_missing_semantic_anchor_fails_closed(self):
+    def test_effect_value_cannot_be_swapped_between_subjects(self):
+        payload = self.payload()
+        details = self.details(payload)
+        item = next(item for item in payload["items"] if item["code"] == "SUPERCHARGER")
+        details[item["id"]]["description"] = (
+            "Increases shell velocity by 60%. Reduces penetration loss by 35%."
+        )
+        with self.assertRaisesRegex(RuntimeError, "missing_semantic_effects"):
+            validator.validate_locked_contract(payload, details)
+
+    def test_missing_text_only_semantic_anchor_fails_closed(self):
         payload = self.payload()
         details = self.details(payload)
         item = next(item for item in payload["items"] if item["code"] == "ENHANCED_TRACKS")
