@@ -4,7 +4,7 @@
 >
 > Additional evidence: controlled 11.19 replays for drowning, ammunition switching, Precision Fire/Tungsten, module damage, ricochet/spaced armor/mantlet, HE resolution, movement/targeting and gun-pitch speed.
 >
-> Status: **RESEARCH-COMPLETE / PRODUCTION-USABLE for the observed 11.19 surfaces**. Numeric packet/property/method/component IDs remain version- and entity-class-scoped.
+> Status: **CORE BUSINESS CLOSED; RESEARCH CONTINUES UNTIL P1=0**. Numeric packet/property/method/component IDs remain version- and entity-class-scoped.
 >
 > `WOTB_REPLAY_PROTOCOL_11_19_COMPLETE_REFERENCE.md` is the implementation-oriented top-level reference. This file is the synchronized fact ledger.
 
@@ -76,7 +76,7 @@ Rules: dynamic stream offset; zero-length payloads legal; strict contiguous fram
 | 5 | materialization/re-entry + transform/state/loadout/current HP | PROVEN relationship |
 | 7 | EntityProperty | PROVEN envelope |
 | 8 | EntityMethod | PROVEN envelope |
-| 10 | vehicle transform | PROVEN |
+| 10 | BigWorld movement/filter input: entity/space/parent + position + positionError + hull yaw/pitch/roll + onGround | **PROVEN current structure / physical semantics** |
 | 13 | in-stream settlement/result family | PROVEN family |
 | 23 | recorder shot/projectile lifecycle toggle | PROVEN |
 | 26 | incoming hostile-shell warning | PROVEN family |
@@ -87,6 +87,81 @@ Rules: dynamic stream offset; zero-length payloads legal; strict contiguous fram
 | 35 | low 8 bits of monotonic decisecond clock | PROVEN |
 | 36 | full-width monotonic decisecond anchor | PROVEN |
 | 39 | high-rate aim/camera/gun geometry | PROVEN family |
+
+# Type10 movement / transform
+
+Canonical structural population:
+
+```text
+Type10 packets total       1,287,221
+49-byte payload            1,287,221 / 1,287,221
+other payload lengths      0
+```
+
+Current wire layout:
+
+```text
+offset  size  type       meaning
+0x00    4     u32 LE     entityId
+0x04    4     u32 LE     spaceId
+0x08    4     u32 LE     vehicleId / attachment parent
+0x0C    12    3*f32 LE   position x,y,z
+0x18    12    3*f32 LE   positionError x,y,z
+0x24    12    3*f32 LE   hull yaw,pitch,roll
+0x30    1     u8          onGroundRaw
+```
+
+Cross-surface closure:
+
+```text
+Type10 spaceId == Type11 spaceId                  34 / 34 arenas
+non-zero parent/vehicle refs point to Type10 eid  90,075 / 90,075
+attached-child Type10 position                    exactly (0,0,0) in observed population
+method25 f0..f2 == recorder Type10 position       PROVEN / sub-mm-scale numerical error
+method25 f3..f5 == Type10 yaw,pitch,roll           PROVEN / tiny angular error
+```
+
+Type10 middle VECTOR3 is **positionError, not velocity**. In the controlled WZ-120 movement replay it remains constant across acceleration, reverse, hull rotation, stationary periods and renewed movement. The exact field order independently matches the BigWorld movement-filter `spaceID + vehicleID + position + positionError + yaw/pitch/roll` architecture.
+
+Observed same-entity short-interval cadence in the canonical corpus:
+
+```text
+median Δt              ~0.1000595 s
+median arena-level Δt  ~0.1000528 s
+```
+
+Thus movement telemetry is effectively ~10 Hz while an entity is observed.
+
+Current heading convention from the controlled forward/back phase:
+
+```text
+forwardWorld = (sin(hullYaw), 0, cos(hullYaw))
+```
+
+Safe derived movement:
+
+```text
+vx = Δx / Δt
+vy = Δy / Δt
+vz = Δz / Δt
+planarSpeed = sqrt(vx² + vz²)
+hullYawRate = wrapPi(yaw2 - yaw1) / Δt
+signedForwardSpeed = (Δx*sin(yaw) + Δz*cos(yaw)) / Δt
+```
+
+The WZ-120 pure forward/back phase has maximum lateral residual only ~0.0019 world-units/s, independently validating the heading/sign model.
+
+Production distinction:
+
+```text
+raw replay fact     = sampled Type10 transform
+speed/yaw-rate/etc  = DERIVED_FROM_TYPE10
+interpolation       = presentation/reconstruction, not observed fact
+```
+
+AoI rule: never interpolate an enemy path across `Type4 -> hidden -> Type33/Type5 re-entry` and present it as observed truth.
+
+Focused authority: `type10-movement-transform-closure.md`.
 
 # HP / death
 
@@ -146,7 +221,7 @@ Tankopedia base HP is `REJECTED` as the primary replay HP source; actual replay 
 38 Observation Device  PROVEN direct controlled
 39 Commander           PROVEN
 40 Driver              PROVEN
-41 Gunner              PROVEN
+41 Gunner               PROVEN
 42 UNKNOWN/unobserved  preserve raw
 43 Loader              PROVEN
 ```
@@ -238,7 +313,7 @@ repeat modifierCount:
 | `0x0040` | zero-DF / spaced-armor layer pierced by projectile | **PROVEN controlled** |
 | `0x0080` | zero-DF / spaced-armor layer not pierced | **PROVEN controlled** |
 | `0x0100` | internal component/device pierced or involved by projectile | PROVEN relationship |
-| `0x0200` | no current positive sample | **UNKNOWN / preserve raw** |
+| `0x0200` | no current positive sample | **UNKNOWN / P1 research target** |
 | `0x0400` | chassis/track damaged by projectile | PROVEN |
 | `0x0800` | Gun damaged by projectile | PROVEN current samples / low-N |
 | `0x1000` | positive-DF material resolved/penetrated by explosion | **PROVEN controlled** |
@@ -317,7 +392,7 @@ root.field4 = maximum vertical gun angular speed             PROVEN controlled, 
 
 Controlled vertical test closes `root.field4`: measured Type39 gun-pitch derivative matches `0.4995197769 rad/s` within ~0.000064% on the clean long segment.
 
-`field6.field1` is a dispersion/accuracy-family scalar: it rises at every shot boundary and becomes exactly ×2 while Gun is damaged, restoring after Repair Kit. Exact private symbol remains unresolved.
+`field6.field1` is a dispersion/accuracy-family scalar: it rises at every shot boundary and becomes exactly ×2 while Gun is damaged, restoring after Repair Kit. Exact role/name remains a **P1 research target** because it can materially improve aimed-vs-snapshot AI Review semantics.
 
 # Visibility / AoI
 
@@ -361,21 +436,35 @@ method38 tail == one optional u32 extension               SUPERSEDED
 extension=1/2 is the current single-extension model       SUPERSEDED
 Precision Fire and Tungsten are mutually exclusive        REJECTED
 combined Precision Fire + Tungsten == modifier 3          REJECTED
+Type10 middle VECTOR3 == vehicle velocity                 REJECTED
+```
+
+# Research priority gate
+
+The archive is no longer allowed to declare final research completion while P1 remains.
+
+Current gate:
+
+```text
+P0 = 0
+P1-A method38 0x0200 exact current role                   OPEN
+P1-B method36 remaining business-useful coefficients      OPEN
+P1-C Type10 movement/transform full closure               CLOSED
 ```
 
 # Remaining bounded unknowns
 
-These are the genuine remaining research boundaries:
+Non-P1 research boundaries currently include:
 
-- method38 `0x0200` current positive sample / exact role;
 - component ID42 exact identity/private symbol;
 - method38 rawState0 exact private enum name;
 - method16 sparse transition-code exact private symbols;
-- method36 remaining coefficient private names/units;
 - settlement field118/baseType12 exact statistic name;
 - complete Vehicle prop7/8/9 token namespaces;
 - some method17 initialization/feed-tail fields;
 - unobserved deathReason/causeFlag values;
+- Type10 positionError exact generation semantics;
+- Type10 onGround deliberate airborne controlled proof;
 - observer/cosmetic/platform-only surfaces;
 - exact current private protobuf/enum symbols;
 - cross-version numeric stability.
@@ -385,10 +474,10 @@ These are the genuine remaining research boundaries:
 Production consumers may use PROVEN current-version facts directly and explicitly approved PARTIAL facts only with confidence/version metadata. Unknown values must preserve raw provenance.
 
 ```text
-observed-surface blockers                 0
-canonical-count contradiction blockers   0
-business-critical semantic blockers      0
-production-code scope violations          0
+business-critical blockers                 0
+canonical-count contradiction blockers     0
+Type10 movement closure                    PASS
+research-finalization gate                 BLOCKED WHILE P1 > 0
 
-STATUS: RESEARCH-COMPLETE / PRODUCTION-USABLE FOR 11.19 OBSERVED SURFACES
+STATUS: CORE BUSINESS CLOSED / RESEARCH CONTINUES
 ```
