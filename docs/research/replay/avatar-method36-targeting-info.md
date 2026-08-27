@@ -2,24 +2,43 @@
 
 > Base corpus: strict-framing 34 unique arenas, Blitz 11.19.0 China.
 >
-> Additional controlled probes: WZ-120 horizontal turret-rotation experiment and Maus vertical gun-pitch saturation experiment.
+> Additional controlled probes: WZ-120 horizontal turret rotation, controlled vertical gun-pitch saturation, Gun damage/repair and Reticle Calibration.
 >
 > Numeric method IDs and protobuf field numbers are entity-class/version scoped.
 
 ## Executive verdict
 
-Avatar method36 is the recorder targeting / aim-state/config snapshot family — **PROVEN behavioral identity / PARTIAL exact private schema**.
+Avatar method36 is the recorder targeting / aim-state/config snapshot family — **PROVEN behavioral identity**.
 
-Current field-level closures:
+Current physical-role closures:
 
 ```text
-root.field1 = recorder turret/gun relative yaw               PROVEN
-root.field2 = recorder gun pitch                             PROVEN
-root.field3 = maximum horizontal turret/gun angular speed    PROVEN controlled, rad/s
-root.field4 = maximum vertical gun angular speed             PROVEN controlled, rad/s
+root.field1
+= turret/gun relative yaw
+= PROVEN
+
+root.field2
+= gun pitch
+= PROVEN
+
+root.field3
+= max horizontal turret/gun angular speed
+= PROVEN controlled
+
+root.field4
+= max vertical gun angular speed
+= PROVEN controlled
+
+root.field5
+= aiming-time physical scalar
+= PROVEN
+
+field6.field1
+= dynamic gun dispersion / bloom scalar
+= PROVEN physical role
 ```
 
-The remaining coefficients belong to targeting/dispersion/config state but their exact private names/units are not all closed.
+The unresolved boundary is the private/current protobuf naming and the display/UI formulas for some scalars, not the physical roles above.
 
 The old `method36 = battle feedback/events` hypothesis is `REJECTED`.
 
@@ -64,7 +83,7 @@ The 74-byte initialization/config variant omits dynamic `root.field1/root.field2
 
 ## root.field1 — turret/gun relative yaw
 
-Across the original dynamic records, `root.field1` is angle-shaped and uniquely cross-correlates with Type39 `f5`.
+Across the original dynamic records, `root.field1` uniquely cross-correlates with Type39 `f5`.
 
 ```text
 median circular error root.field1 vs Type39.f5 ~0.00575 rad
@@ -73,7 +92,7 @@ p90                                             ~0.06294 rad
 
 Verdict:
 
-> `root.field1 = recorder turret/gun relative yaw` — **PROVEN relationship**.
+> `root.field1 = recorder turret/gun relative yaw` — **PROVEN**.
 
 ## root.field2 — gun pitch
 
@@ -86,63 +105,55 @@ p90                                            ~0.01224 rad
 
 Verdict:
 
-> `root.field2 = recorder gun pitch` — **PROVEN relationship**.
+> `root.field2 = recorder gun pitch` — **PROVEN**.
 
-## root.field3 — maximum horizontal turret/gun angular speed
+## root.field3 — max horizontal turret/gun angular speed
 
-A controlled WZ-120 replay isolated these phases:
-
-- stationary;
-- forward/back only;
-- hull rotation;
-- turret-only rotation;
-- hull + turret;
-- stationary shot boundary.
-
-method36 configuration contained:
+A controlled WZ-120 replay isolated a stationary turret-only rotation phase.
 
 ```text
 root.field3 = 0.879154807353631 rad/s
 ```
 
-The controlled turret-only phase physically reached approximately the same horizontal relative-yaw rate (~0.86 rad/s, about 49–50 deg/s), independently matching the current vehicle's horizontal gun/turret traverse behavior.
+The measured live relative-yaw rate reaches the same physical limit within replay sampling/control tolerance.
 
 Verdict:
 
-> `root.field3 = maximum horizontal turret/gun angular speed` — **PROVEN controlled physical role**, unit `rad/s`.
+> `root.field3 = max horizontal turret/gun angular speed` — **PROVEN controlled**, physical unit `rad/s`.
 
-This field is not a live movement-dispersion stream; method36 did not continuously emit through the movement phases.
+## root.field4 — max vertical gun angular speed
 
-## root.field4 — maximum vertical gun angular speed
-
-A dedicated Maus controlled replay kept the vehicle/horizontal turret state stable while repeatedly sweeping the gun from maximum depression to maximum elevation and back.
-
-method36 configuration:
+A controlled vertical gun-pitch sweep independently measured Type39 `f6` derivatives at the saturation plateau.
 
 ```text
-root.field4 = 0.49951977690547217 rad/s
-```
-
-Observed Type39 `f6` gun-pitch derivatives on saturated linear movement:
-
-```text
-18.310070–18.335108s   +0.499521541 rad/s
-30.907492–30.940794s   -0.499526029 rad/s
-40.328415–40.478512s   -0.499520098 rad/s
-```
-
-The clean long-segment difference is approximately:
-
-```text
-0.000000322 rad/s
-~0.000064%
+method36.root.field4 = 0.49951977690547217 rad/s
+observed pitch-rate  ~= ±0.49952 rad/s
 ```
 
 Verdict:
 
-> `root.field4 = maximum vertical gun elevation/depression angular speed` — **PROVEN controlled physical role**, unit `rad/s`.
+> `root.field4 = max vertical gun angular speed` — **PROVEN controlled**, physical unit `rad/s`.
 
-This is direct physical closure from live gun-pitch derivative, not historical schema-order inference.
+This is direct current-version physical closure, not historical schema-order inference.
+
+## root.field5 — aiming-time physical scalar
+
+Reticle Calibration provides an exact reversible boundary:
+
+```text
+baseline                 2.158029879254315
+Reticle Calibration      1.5106208897522997
+ratio                     0.70
+end                       exact baseline restoration
+```
+
+The consumable's current aiming-time modifier is `-30%`, and no other decoded method36 scalar matching this role changes at that boundary.
+
+Verdict:
+
+> `root.field5 = aiming-time physical scalar` — **PROVEN physical role**.
+
+The exact Wargaming private protobuf symbol and exact UI/display conversion formula remain unknown/partial.
 
 ## Exact pre-shot / post-shot pairing
 
@@ -151,6 +162,7 @@ Original strict corpus:
 ```text
 recorder method29 launches examined : 326
 launches with method36 pair          : 326 / 326
+sandwich-order exceptions            : 0
 ```
 
 Every recorder launch is ordered:
@@ -161,35 +173,30 @@ method36 PRE snapshot
 -> method36 POST snapshot
 ```
 
-```text
-sandwich ordering : 326 / 326
-exceptions        : 0
-```
-
-## field6.field1 — dispersion/accuracy family
+## field6.field1 — dynamic gun dispersion / bloom scalar
 
 Across the 326 original shot pairs:
 
 ```text
-nested field6.field1 changes : 326 / 326
-post-shot delta is always positive
+field6.field1 changes : 326 / 326
+post-shot delta       : always positive
 ```
 
-Observed delta range:
+Independent perturbations:
 
 ```text
-min    ~+0.0543
-median ~+0.0642
-max    ~+0.1228
+ordinary shot       -> immediate positive bloom increase
+Gun damage          -> field6.field1 ×2
+Repair Kit          -> exact baseline restoration
+Reticle Calibration -> field6.field1 ×0.70
+Reticle end         -> exact baseline restoration
 ```
 
-Independent Gun-damage closure:
+Verdict:
 
-```text
-baseline -> exactly ×2 while Gun damaged -> baseline after Repair Kit
-```
+> `field6.field1 = dynamic gun dispersion / bloom scalar` — **PROVEN physical role**.
 
-Therefore `field6.field1` is safely modeled as a **dispersion/accuracy/bloom-family scalar**. Exact private field name and normalized unit remain unresolved.
+The exact private protobuf field symbol and exact display/UI unit/formula remain unknown/partial. In particular, do not automatically equate the raw scalar with the user-facing `dispersion at 100m` number.
 
 ## Controlled Adrenaline negative control
 
@@ -201,12 +208,12 @@ Safe conclusion:
 
 ## Historical architecture cross-check
 
-Historical Wargaming targeting APIs contain concepts such as turret yaw, gun pitch, rotation limits, dispersion factors and aiming time. That architecture is compatible with the current nested protobuf.
+Historical Wargaming targeting APIs contain turret yaw, gun pitch, rotation limits, dispersion factors and aiming time. That architecture is compatible with the current nested protobuf.
 
 Correct use:
 
 ```text
-current replay behavior -> field semantic closure
+current replay behavior -> physical-role closure
 historical schema        -> architecture cross-check only
 ```
 
@@ -215,10 +222,12 @@ Do not transplant historical flat argument ordering into current Blitz.
 ## Rejected/superseded interpretations
 
 ```text
-method36 == battle feedback/events                     REJECTED
-root.field3 remains one of seven wholly-unmapped scalars SUPERSEDED
-root.field4 remains an unproven rotation-speed candidate SUPERSEDED
-method36 is a continuous movement-dispersion stream      REJECTED by controlled movement probe
+method36 == battle feedback/events                       REJECTED
+root.field3 remains an unmapped targeting scalar         SUPERSEDED
+root.field4 remains a rotation-speed candidate           SUPERSEDED
+root.field5 remains an unresolved targeting scalar       SUPERSEDED
+field6.field1 remains VERY STRONG PARTIAL only            SUPERSEDED
+method36 is a continuous movement-dispersion stream      REJECTED
 ```
 
 ## Production-safe model
@@ -231,17 +240,21 @@ TargetingInfoSnapshot {
     gunPitchRad            // root.field2, PROVEN
     maxHorizontalRateRadS  // root.field3, PROVEN controlled
     maxVerticalRateRadS    // root.field4, PROVEN controlled
-    dispersionLikeRaw      // field6.field1, physical family closed
-    remainingConfigRaw     // preserve remaining coefficients
+    aimingTimeScalarRaw    // root.field5, PROVEN physical role
+    dispersionBloomRaw     // field6.field1, PROVEN physical role
+    remainingConfigRaw     // remaining static coefficients, PARTIAL
     source = AVATAR_METHOD36
 }
 ```
 
-## Remaining work
+## Remaining boundaries
 
-Only the genuinely unresolved targeting boundaries remain:
+```text
+exact private protobuf symbols                           UNKNOWN
+root.field5 exact display/UI conversion formula          UNKNOWN/PARTIAL
+field6.field1 exact display/UI unit/formula              UNKNOWN/PARTIAL
+field6.field2 and deepest static coefficients             PARTIAL
+cross-version numeric/schema stability                   UNKNOWN until regression-tested
+```
 
-1. identify exact private names/units for `root.field5`, `field6.field1`, `field6.field2` and the two deepest nested scalars;
-2. explain the small number of historical shot pairs where root.field3 changed at a shot boundary without contradicting its configuration role;
-3. recover a version-matched Blitz protobuf definition if available;
-4. validate numeric/schema stability on later client versions before widening support.
+Do not downgrade a proven physical role merely because Wargaming's private field name is still unknown.
