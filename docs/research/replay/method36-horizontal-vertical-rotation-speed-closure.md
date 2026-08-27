@@ -10,21 +10,21 @@ Current controlled evidence closes:
 
 ```text
 method36.root.field3
-= maximum horizontal turret/gun rotation speed
-= PROVEN physical identity
+= max horizontal turret/gun angular speed
+= PROVEN controlled
 
 method36.root.field4
-= maximum vertical gun pitch/elevation rotation speed
-= PROVEN physical identity
+= max vertical gun angular speed
+= PROVEN controlled
 ```
 
-Both identities are established by replay-measured angular-rate plateaus that match the method36 configuration scalar in the same battle.
+Both physical roles are established by replay-measured angular-rate plateaus that match the method36 configuration scalars in the same battles.
 
 ## Horizontal rotation — WZ-120 controlled probe
 
 Controlled replay phases included a clean vehicle-stationary / turret-only rotation interval.
 
-Observed Type10/Type39 behavior:
+Observed live behavior:
 
 ```text
 vehicle speed      ~= 0
@@ -43,78 +43,60 @@ The measured reachable horizontal turret rate is consistent with the configured 
 
 Verdict:
 
-> `root.field3` = **maximum horizontal turret/gun rotation speed — PROVEN physical role**.
+> `root.field3 = max horizontal turret/gun angular speed` — **PROVEN controlled**.
 
-The same replay also showed that movement/hull/turret motion does not cause continuous method36 emissions; method36 behaves as angle/configuration plus shot-boundary targeting state rather than a continuously sampled movement-dispersion stream.
+## Vertical rotation — controlled pitch probe
 
-## Vertical rotation — A178_SPHT controlled pitch probe
+A dedicated controlled replay repeatedly drove the gun through saturated elevation/depression motion while Type39 `f6` supplied the independently closed local gun-pitch stream.
 
-Controlled replay:
-
-```text
-20260827_2154__CHRD-A158布丁_A178_SPHT_1177260957212120593.wotbreplay
-```
-
-The player repeatedly drove the gun from depression toward elevation and back while the vehicle remained suitable for a clean gun-pitch-rate measurement.
-
-Type39 field6 is independently proven as vehicle-local gun pitch. Differentiating the 120 Hz-ish Type39 stream gives a stable maximum absolute pitch-rate plateau:
+Representative closure:
 
 ```text
-max observed |d(gunPitch)/dt| ~= 0.7613 rad/s
-                               ~= 43.62 deg/s
+method36.root.field4 = 0.49951977690547217 rad/s
+observed Type39 pitch slopes ~= +0.499521541 / -0.499526029 / -0.499520098 rad/s
 ```
 
-Same-battle method36 configuration:
-
-```text
-root.field4 = 0.761172993379767 rad/s
-            ~= 43.612 deg/s
-```
-
-Representative instantaneous derivatives repeatedly reach:
-
-```text
-+0.761337 rad/s
--0.761317 rad/s
--0.761305 rad/s
-```
-
-The agreement is approximately 0.02% at the observed plateau and occurs in both elevation and depression directions.
-
-This is a direct numeric closure, not a historical schema-order inference.
+The longest clean segment differs from the method36 scalar by roughly `0.000064%`.
 
 Verdict:
 
-> `method36.root.field4` = **maximum vertical gun pitch/elevation rotation speed — PROVEN current Blitz 11.19 physical identity**.
+> `root.field4 = max vertical gun angular speed` — **PROVEN controlled**.
 
-## Current method36 scalar map
+## Current method36 physical-role map
 
 ```text
-root.field1  turret/gun relative yaw                         PROVEN
-root.field2  gun pitch                                       PROVEN
-root.field3  maximum horizontal turret/gun rotation speed    PROVEN
-root.field4  maximum vertical gun rotation speed              PROVEN
-root.field5  unresolved targeting/config scalar               PARTIAL
-field6.1     dynamic gun-dispersion/bloom family              VERY STRONG physical role
-field6.2     unresolved targeting/config scalar               PARTIAL
-nested A     unresolved targeting/config scalar               PARTIAL
-nested B     unresolved targeting/config scalar               PARTIAL
+root.field1   turret/gun relative yaw                    PROVEN
+root.field2   gun pitch                                  PROVEN
+root.field3   max horizontal turret/gun angular speed    PROVEN controlled
+root.field4   max vertical gun angular speed             PROVEN controlled
+root.field5   aiming-time physical scalar                PROVEN
+field6.field1 dynamic gun dispersion / bloom scalar      PROVEN physical role
 ```
 
-## Consequence for historical crosswalk
+Remaining method36 static coefficients may remain `PARTIAL` until their exact physical role is isolated.
 
-Historical Wargaming targeting-info APIs contain horizontal turret rotation speed and vertical gun rotation speed parameters. The current controlled probes now independently establish the same two physical roles in the Blitz protobuf.
+## Important semantic boundary
 
-Historical ordering remains non-authoritative for the still-unresolved fields; each remaining scalar still requires a current-version behavioral or numeric closure.
+The archive distinguishes two different questions:
 
-## Next best probes
+```text
+physical role of root.field3/root.field4  -> PROVEN controlled
+exact Wargaming private protobuf symbol   -> UNKNOWN
+```
 
-High-value controlled experiments for the remaining fields:
+The same distinction applies to already-closed `root.field5` and `field6.field1`: unknown private naming does not reduce the proven physical role to PARTIAL.
 
-1. aiming-time / stationary shrink probe with and without Reticle Calibration;
-2. chassis-only forward movement at several stable speeds;
-3. chassis-only rotation at stable angular rates;
-4. turret-only rotation at multiple controlled rates below maximum;
-5. fire -> fully stationary shrink-to-baseline sequence with dense Type31 capture.
+## Historical crosswalk
 
-These should be used to separate aiming time, movement-dispersion, chassis-rotation dispersion, turret-rotation dispersion and any normalized shot-dispersion multiplier.
+Historical Wargaming targeting-info APIs contain horizontal turret rotation speed and vertical gun rotation speed parameters. That is compatible with the current result but is only architecture cross-check. Current field identities come from current-version physical measurements.
+
+## Remaining bounded work
+
+```text
+exact private protobuf symbols                           UNKNOWN
+exact display/UI formulas for aiming/bloom scalars       UNKNOWN/PARTIAL
+field6.field2 and deepest static coefficients             PARTIAL
+cross-version schema/numeric stability                    UNKNOWN until regression-tested
+```
+
+No further horizontal/vertical rotation experiment is required for the current 11.19 physical-role closure.
