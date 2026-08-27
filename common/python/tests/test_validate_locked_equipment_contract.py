@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """validate_locked_equipment_contract.py unit tests."""
 
+import hashlib
 import os
 import sys
 import unittest
@@ -65,6 +66,17 @@ class LockedEquipmentContractTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(RuntimeError, "BLITZKIT_LOCKED_REVIEW_REQUIRED"):
             validator.validate_reviewed_game_version("11.19.0.835_9999999")
+
+    def test_complete_equipment_snapshot_hash_fails_closed(self):
+        reviewed = b"reviewed equipment protobuf"
+        original = validator.REVIEWED_EQUIPMENT_SHA256
+        validator.REVIEWED_EQUIPMENT_SHA256 = hashlib.sha256(reviewed).hexdigest()
+        try:
+            self.assertTrue(validator.validate_reviewed_equipment_snapshot(reviewed))
+            with self.assertRaisesRegex(RuntimeError, "BLITZKIT_EQUIPMENT_SNAPSHOT_CHANGED"):
+                validator.validate_reviewed_equipment_snapshot(reviewed + b" changed")
+        finally:
+            validator.REVIEWED_EQUIPMENT_SHA256 = original
 
 
 if __name__ == "__main__":
