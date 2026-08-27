@@ -2,7 +2,7 @@
 
 > Corpus: canonical 34 unique Blitz 11.19.0 China arenas.
 >
-> This note follows the strict current-version rule: historical Wargaming numeric names are accepted only when the current 11.19 wire shape and replay behavior independently agree.
+> Historical numeric names are accepted only when current 11.19 wire shape and replay behavior independently agree.
 
 ## wrapper7 — vehicle/avatar-ready notification
 
@@ -27,46 +27,19 @@ unique IDs per arena:
   16 :  4 arenas
 ```
 
-The important identity closure is stronger than raw cardinality:
+All 14 settled combatant entity IDs are present in wrapper7 in 34/34 arenas. Extra IDs are observer/non-combatant entities.
 
-```text
-all 14 settled combatant entity IDs are present in wrapper7
-34 / 34 arenas
-```
-
-Where wrapper7 has 15 or 16 unique IDs, the extras are outside root-301 settled combatants and therefore fit the already-proven fact that the live arena can also contain observer/non-combatant entities.
-
-Timing is likewise lifecycle-specific. wrapper7 appears only in the initial setup/ready window in this corpus, before active combat telemetry dominates. A typical arena emits one wrapper7 record for every combat vehicle plus repeated records for one entity; repeated notification is therefore idempotent lifecycle evidence, not an independent combat counter.
-
-### Independent historical schema/client evidence
-
-Historical Wargaming constants define:
-
-```text
-ARENA_UPDATE.AVATAR_READY = 7
-```
-
-and the corresponding `ClientArena.__onAvatarReady(argStr)` decodes exactly one `vehicleID`, sets:
-
-```text
-vehInfo['isAvatarReady'] = True
-```
-
-and emits `onAvatarReady(vehicleID)`.
-
-This independently matches both the current one-ID payload and its prebattle/setup behavior.
+Historical Wargaming lineage exposes `ARENA_UPDATE.AVATAR_READY = 7` with a one-vehicle-ID payload and matching setup behavior.
 
 Verdict:
 
-> wrapper7 = **vehicle/avatar-ready lifecycle notification — PROVEN behavioral family for current corpus**.
+> wrapper7 = **vehicle/avatar-ready lifecycle notification — PROVEN behavioral family**.
 >
 > child field1 = **vehicle/entity ID — PROVEN**.
 
-The symbolic spelling `AVATAR_READY` is supported by independent Wargaming lineage plus current behavior, but remains version-scoped rather than assumed globally stable.
+## wrapper16 — vehicle special-state broadcast family
 
-## wrapper16 — active entity-state family
-
-Current wrapper16 shape remains:
+Current wrapper16 shape:
 
 ```text
 root field15
@@ -75,7 +48,7 @@ root field15
   child field3 = state/event code
 ```
 
-Canonical 34-arena counts:
+Canonical counts:
 
 ```text
 records total : 741
@@ -83,51 +56,109 @@ field3 = 1    : 718
 field3 = 8    :  23
 ```
 
-The rare `field3=8` branch now has a strong event-level discriminator.
+The rare `field3=8` branch is now much more narrowly closed than the earlier generic `damage-triggered` label.
 
-### field3=8 is damage-adjacent
+# field3=8 — enemy Rhm. Pzw. hit-applied special state
 
-For all 23 `field3=8` records:
+## Arena/tank identity closure
 
-```text
-same-entity Vehicle method8 direct-damage event within ±0.15 s : 23 / 23
-same-entity Vehicle method1 HP/state event within ±0.15 s      : 17 / 23
-```
+All 23 `field3=8` records occur in exactly two arenas.
 
-By contrast, for `field3=1`:
+In each arena, the nearby damage source is one specific enemy combat vehicle. Settlement tank-ID resolution gives:
 
 ```text
-same-entity method8 within ±0.15 s : 12 / 718
-same-entity method1 within ±0.15 s : 13 / 718
+arena A attacker tankId = 28689
+arena B attacker tankId = 28689
 ```
 
-Neither state branch aligns with enemy Type5 observation entry, Type4 observation leave, or wrapper6 death records at the same clock.
+Current tank identity:
 
-Therefore `field3=8` is not a generic visibility or death marker. It is strongly a **damage-triggered entity-state subfamily**.
+```text
+28689 = Rhm. Pzw.
+```
 
-The 23 events occur in only two current arenas, so this is not enough evidence to assign a user-facing symbolic label such as damaged-module, hit reaction, stun, or another specific status.
+Both Rhm. Pzw. attackers are on the **enemy team** relative to the replay recorder.
+
+The corpus also contains five additional arenas with a Rhm. Pzw., but in all five cases that Rhm. Pzw. is on the recorder's own team:
+
+```text
+friendly-Rhm arenas : 5
+field3=8 records     : 0
+```
+
+Therefore field3=8 is not a generic Rhm-presence flag. It is a recipient-side state visible to the replay client when an **enemy** Rhm. Pzw. applies its hit-related effect to the recorder's team.
+
+## Hit-level closure
+
+Across the two enemy-Rhm arenas, the Rhm. Pzw. produces 25 current-corpus Vehicle method8 HP-damage hits.
+
+Split by victim outcome:
+
+```text
+non-terminal Rhm hits                         : 23
+same-victim wrapper16 field3=8 within ±0.15s : 23 / 23
+
+terminal/lethal Rhm hits                      :  2
+field3=8 after terminal victim                :  0 / 2
+```
+
+Thus every observed **surviving** victim of enemy-Rhm HP damage receives field3=8.
+
+All 23 state8 victims are on the recorder's team. None is the recorder's own vehicle; recorder-local presentation may use a separate surface, while wrapper16 is an arena/team state broadcast.
+
+No other attacker/tank in the canonical corpus generates field3=8.
+
+Verdict:
+
+> wrapper16 `field3=8` = **enemy Rhm. Pzw. hit-applied surviving-target special state — PROVEN behavioral identity for the current corpus**.
+
+## Tracer Shell / forced-spot hypothesis
+
+Current Rhm. Pzw. gameplay references describe it as carrying a spotting-oriented special-mechanic package including Tracer Shell behavior. Current Blitz Tracer Shell rules describe a hit-applied state that keeps a target spotted for an extended period, with special client indication and non-applicability on certain invalid/blind/splash cases.
+
+The replay behavior is highly compatible:
+
+```text
+enemy Rhm hit
+  -> victim survives
+  -> wrapper16 field3=8
+```
+
+and the state is only broadcast for the recorder's own team, consistent with a team-visible enemy-applied spotting/debuff state.
+
+However, the exact 11.19 wrapper enum symbol has not been recovered from a version-identical Blitz schema.
+
+Therefore:
+
+> `field3=8 == Tracer Shell / forced-spot active` = **VERY STRONG PARTIAL exact symbolic identity**.
+
+Do not expose the literal enum name as protocol-guaranteed until a current schema or another tracer-equipped tank provides independent closure.
+
+## field3=1
+
+The dominant field3=1 branch remains unresolved at exact semantic level.
+
+It is not simply ordinary damage: only a tiny fraction of its 718 records are damage-adjacent.
 
 Verdict:
 
 ```text
-wrapper16 overall         = active entity-state/event family — PARTIAL
-wrapper16 field1          = entity / vehicle ID — PROVEN structure
-wrapper16 field2          = constant 1 in current corpus — raw-preserve
-wrapper16 field3=8        = damage-triggered state/event branch — STRONG PARTIAL
-wrapper16 field3=1        = dominant state/event branch — PARTIAL
+wrapper16 overall  = vehicle special-state/event broadcast family — PARTIAL
+field1             = vehicle/entity ID — PROVEN
+field2             = constant 1 in current corpus — raw-preserve
+field3=8           = enemy-Rhm hit-applied surviving-target state — PROVEN behavior
+                       Tracer Shell/forced-spot symbolic identity — VERY STRONG PARTIAL
+field3=1           = dominant vehicle state/event branch — PARTIAL
 ```
 
-### Historical numeric mapping is rejected as a direct name
+## Historical numeric mapping warning
 
-A historical Wargaming `ARENA_UPDATE` table assigns numeric update 16 to `FLAG_TEAMS`. That name does not match the current Blitz 11.19 wrapper16 payload or its damage-adjacent behavior.
+A historical PC `ARENA_UPDATE` table assigns numeric update 16 to `FLAG_TEAMS`. That does not fit current Blitz 11.19 behavior and remains rejected.
 
-Therefore this is another explicit version/schema-divergence case:
-
-> do **not** label current Blitz wrapper16 as `FLAG_TEAMS` merely from historical numeric equality.
+Numeric wrapper equality across products/versions must not override current mobile evidence.
 
 ## Product implications
 
-- wrapper7 can safely support prebattle entity-ready/lifecycle reconstruction.
-- wrapper7 must not be treated as a 14-player-only business roster because observer/non-combatant IDs can be present.
-- wrapper16 `field3=8` is useful as evidence around damage reactions, but is not yet safe for a specific UI status.
-- raw wrapper16 fields must remain preserved until a controlled or independent current-version schema closes the exact enum.
+- wrapper7 safely supports prebattle vehicle-ready lifecycle reconstruction.
+- wrapper16 field3=8 can support AI/playback evidence that a teammate was placed under the Rhm hit-applied special spotting/debuff state.
+- until the exact symbol is recovered, user-facing text should prefer a version-gated label such as `RHM_HIT_APPLIED_SPOTTING_STATE` rather than hard-code an unsupported internal enum name.
