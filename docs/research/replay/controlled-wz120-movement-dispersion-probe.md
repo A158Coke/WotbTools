@@ -2,7 +2,7 @@
 
 > Controlled replay: `20260827_2131__CHRD-A158布丁_Ch18_WZ-120_1168508771640578177.wotbreplay`.
 >
-> User-declared experiment: item 9 movement-dispersion probe. Adrenaline was intentionally activated only at the end and is treated as a separate contamination/negative-control window.
+> User-declared experiment: movement-dispersion probe. Adrenaline was intentionally activated only at the end and is treated as a separate negative-control window.
 
 ## Replay facts
 
@@ -13,41 +13,23 @@ client       11.19.0_china_apple
 battle type  training
 ```
 
-Recorder vehicle entity is independently recovered from method29 shooter identity.
-
 ## Controlled phase reconstruction
 
-Type10 hull transform + Type7 prop2 turret-relative yaw reconstruct the user-performed phases without relying on remembered timestamps.
+Type10 hull transform + Type7 prop2 turret-relative yaw reconstruct the phases:
 
 ```text
 ~9–13 s    fully stationary baseline
-
 ~14–20 s   forward/back movement only
-            hull translation substantial
-            hull yaw ~= 0
-            turret-relative yaw ~= 0
-
 ~21–34 s   sustained hull rotation
-            hull yaw rate about 1.1 rad/s
-            turret-relative yaw compensates strongly
-
 ~35–51 s   turret-only rotation
-            hull speed ~= 0
-            hull yaw rate ~= 0
-            turret-relative yaw stable magnitude about 0.859 rad/s
-
 ~52–58 s   hull + turret movement together
-
 59 s+      stationary again
-
 62.402657  shot 1
-65.712090  Adrenaline Type32 0x09 activation
+65.712090  Adrenaline activation
 70.505692  shot 2 while Adrenaline active
 ```
 
 ## Method36 population
-
-This replay contains only six Avatar method36 snapshots:
 
 ```text
 2.203987   74-byte initialization/config snapshot
@@ -60,37 +42,31 @@ This replay contains only six Avatar method36 snapshots:
 
 No method36 snapshots are emitted during the clean movement/rotation phases from ~14–58 s.
 
-This is an important negative result:
+Therefore:
 
-> method36 is not a continuous live movement-dispersion stream. Its remaining slow scalars behave as configuration/limit coefficients, while live movement/aim geometry is carried by other high-rate surfaces such as Type10/Type39/Type7 prop2.
+> method36 is not a continuous live movement-dispersion stream. Live movement/aim geometry is carried by high-rate surfaces such as Type10/Type39/Type7 prop2, while method36 carries angle/configuration plus shot-boundary targeting state.
 
-## root.field3 — maximum turret/gun horizontal rotation speed
-
-Decoded current WZ-120 method36 value:
+## root.field3 — max horizontal turret/gun angular speed
 
 ```text
 root.field3 = 0.879154807353631 rad/s
             ~= 50.37 deg/s
 ```
 
-During the controlled turret-only phase, Type7 prop2 gives a sustained observed relative turret-yaw speed of approximately:
+During the controlled turret-only phase, Type7 prop2 reaches approximately:
 
 ```text
 ~0.859 rad/s
 ~49.2 deg/s
 ```
 
-The current public WZ-120 stat is approximately 51 deg/s turret traverse.
-
-The replay scalar is therefore the only method36 configuration field directly matching the experimentally isolated physical limit and the version-current vehicle stat.
-
 Verdict:
 
-> `method36.root.field3` = **maximum turret/gun horizontal rotation speed — PROVEN physical role for current 11.19 evidence model**.
+> `method36.root.field3 = max horizontal turret/gun angular speed` — **PROVEN controlled physical role**.
 
-Exact private protobuf field name remains version scoped.
+Exact private protobuf member name remains `UNKNOWN`.
 
-## Other current WZ-120 method36 scalars
+## Other method36 scalars in this replay
 
 Stable post-initialization values:
 
@@ -110,19 +86,45 @@ field6.field1 PRE  = 0.8529762465052021
 field6.field1 POST = 0.9171787581399614
 ```
 
-This is consistent with the already-closed dynamic gun-dispersion/bloom role of field6.field1.
+This replay by itself originally did not close the other physical roles. Later controlled probes did, so the current archive-wide status is:
 
-The current probe does not isolate vertical gun movement, so `root.field4` must not yet be promoted to a max gun-pitch rate solely from historical argument ordering.
+```text
+root.field1
+= turret/gun relative yaw
+= PROVEN
+
+root.field2
+= gun pitch
+= PROVEN
+
+root.field3
+= max horizontal turret/gun angular speed
+= PROVEN controlled
+
+root.field4
+= max vertical gun angular speed
+= PROVEN controlled
+
+root.field5
+= aiming-time physical scalar
+= PROVEN
+
+field6.field1
+= dynamic gun dispersion / bloom scalar
+= PROVEN physical role
+```
+
+The later evidence does not change the historical fact that this WZ-120 replay alone only directly closed `root.field3`; it changes the current canonical interpretation of the fields.
 
 ## Adrenaline negative control
 
-Type32 identifies activation exactly:
+Type32 activation:
 
 ```text
 65.712090  consumable 0x09 Adrenaline state2
 ```
 
-Comparing the method36 pair before activation (62.402657) with the pair during the active window (70.505692):
+Comparing method36 before and during the active window:
 
 ```text
 root.field3                  identical
@@ -136,11 +138,16 @@ field6.field1 PRE/POST pair  identical
 
 Verdict:
 
-> Adrenaline does **not** modify this method36 targeting/config scalar set in the controlled sample. Its effect belongs to reload/gun-cycle telemetry.
+> Adrenaline does not modify this method36 targeting/config scalar set in the controlled sample. Its observed effect belongs to reload/gun-cycle telemetry.
 
-## Next controlled probes enabled by this result
+## Current bounded remainder
 
-1. vertical-only gun elevation/depression at maximum input — test whether `root.field4` is max gun pitch speed;
-2. Reticle Calibration while completely stationary — test which remaining coefficient/aim-time surface changes;
-3. repeat movement/hull/turret phases on a second vehicle with very different dispersion coefficients — cross-vehicle regression for the remaining nested scalars;
-4. use a client/UI or other replay surface that exposes live aim-circle radius during the same phases, if available, to calibrate the static movement/rotation coefficients.
+```text
+exact private protobuf symbols                           UNKNOWN
+root.field5 exact display/UI conversion formula          UNKNOWN/PARTIAL
+field6.field1 exact display/UI unit/formula              UNKNOWN/PARTIAL
+field6.field2 and remaining static coefficients          PARTIAL
+cross-version stability                                  UNKNOWN until regression-tested
+```
+
+No current method36 high-value physical role listed above remains a candidate or VERY STRONG PARTIAL.
