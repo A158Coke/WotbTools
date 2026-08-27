@@ -17,44 +17,6 @@ from validate_locked_equipment_contract import (
 CLASS_ORDER = {"LIGHT": 0, "MEDIUM": 1, "HEAVY": 2, "TANK_DESTROYER": 3}
 
 
-def validate_structural_catalog_contract(payload, equipment_pb, tanks_pb):
-    """Validate IDs/names/coverage without inventing one universal preset grid.
-
-    BlitzKit special vehicle presets legitimately substitute equipment at raw preset
-    indexes, so raw index is not a canonical catalog coordinate. Preset/layout drift is
-    guarded by the reviewed full equipment.pb fingerprint instead.
-    """
-    presets, equipment_names = ue.parse_equipment_defs(equipment_pb)
-    vehicles = ue.filter_to_business_tiers(ue.parse_tanks(tanks_pb))
-    _, required_ids = ue.required_business_equipment_ids(vehicles, presets)
-
-    catalog_by_id = {item["id"]: item for item in payload["items"]}
-    missing = sorted(required_ids - set(catalog_by_id))
-    if missing:
-        rendered = [f"{item_id}:{equipment_names.get(item_id, '?')}" for item_id in missing]
-        raise RuntimeError("BLITZKIT_NEW_BUSINESS_EQUIPMENT: " + ", ".join(rendered))
-
-    for item in payload["items"]:
-        equipment_id = item["id"]
-        upstream_name = equipment_names.get(equipment_id)
-        if upstream_name is None:
-            raise RuntimeError("BLITZKIT_EQUIPMENT_REMOVED: %s id=%s" % (item["code"], equipment_id))
-        if upstream_name != item.get("nameEn"):
-            raise RuntimeError(
-                "BLITZKIT_EQUIPMENT_RENAMED: %s catalog=%r upstream=%r"
-                % (item["code"], item.get("nameEn"), upstream_name)
-            )
-
-    codes = {item["code"] for item in payload["items"]}
-    modeled = ue.FULLY_MODELED_CODES | ue.LOCKED_CODES
-    if codes != modeled:
-        raise RuntimeError(
-            "CATALOG_MODEL_COVERAGE_MISMATCH: missing_models=%s stale_models=%s"
-            % (sorted(codes - modeled), sorted(modeled - codes))
-        )
-    return True
-
-
 def stabilize_generated_effect_order(payload):
     """Keep generated camouflage effects in the catalog's canonical order.
 
@@ -110,7 +72,7 @@ def main(argv=None):
         )
     )
 
-    validate_structural_catalog_contract(payload, equipment_pb, tanks_pb)
+    ue.validate_upstream_contract(payload, equipment_pb, tanks_pb)
     validate_locked_contract_from_pb(payload, equipment_pb)
 
     sources = {
