@@ -7,6 +7,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 concurrency:
   group: update-equipment
@@ -49,7 +50,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -C "$BRANCH"
           git add common/wotb-item-catalog-json/equipment.json
-          git commit -m "chore(data): sync BlitzKit equipment catalog"
+          git commit -m "chore(data): sync reviewed BlitzKit equipment values"
           git push --force-with-lease origin "HEAD:$BRANCH" || git push --force origin "HEAD:$BRANCH"
 
           pr_number="$(gh pr list --base main --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
@@ -57,8 +58,12 @@ jobs:
             gh pr create \
               --base main \
               --head "$BRANCH" \
-              --title "chore(data): sync BlitzKit equipment catalog" \
-              --body $'Automated equipment sync from current BlitzKit sources.\n\n- Syncs equipment IDs from equipment.pb\n- Syncs modeled numerical effects from BlitzKit calculation code\n- Fails closed when expected upstream patterns disappear\n- Requires normal PR CI/review before merge'
+              --title "chore(data): sync reviewed BlitzKit equipment values" \
+              --body $'Automated equipment update from reviewed BlitzKit sources.\n\n- Validates every equipment used by tier 7-10 presets\n- Fails on new/removed/renamed/moved equipment\n- Fully rewrites only effects backed by reviewed BlitzKit calculation sources\n- Locks unsupported effects to live description markers instead of partially updating them\n- Explicitly dispatches normal CI for this automation branch\n- Never auto-merges'
           else
             echo "Updated existing PR #$pr_number"
           fi
+
+          # Events created with GITHUB_TOKEN are not relied on to trigger PR CI.
+          # workflow_dispatch is explicitly allowed and attaches the run to this head ref.
+          gh workflow run ci.yml --ref "$BRANCH"
