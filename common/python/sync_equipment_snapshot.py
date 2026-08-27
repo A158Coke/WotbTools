@@ -13,7 +13,10 @@ import json
 
 import update_equipment as ue
 from blitzkit_snapshot import GAME_URL, fetch_stable_snapshot, parse_game_version
-from validate_locked_equipment_contract import validate_locked_contract_from_pb
+from validate_locked_equipment_contract import (
+    locked_definition_hashes,
+    validate_locked_contract_from_pb,
+)
 
 
 CLASS_ORDER = {"LIGHT": 0, "MEDIUM": 1, "HEAVY": 2, "TANK_DESTROYER": 3}
@@ -66,19 +69,16 @@ def main(argv=None):
         )
     )
 
-    # Structural contract: known catalog items may receive updated names/values,
-    # existing presets may change, and new game versions are allowed. New equipment
-    # IDs still fail until WotBTools has a complete local model for their effects.
     ue.sync_upstream_metadata(payload, equipment_pb, tanks_pb)
 
-    # Locked items are only the effects that we cannot fully derive. Their own
-    # description templates remain the human-review boundary; unrelated upstream
-    # changes do not block the pipeline.
+    # Locked equipment needs a narrower guard than a whole-file fingerprint.
+    # Log each complete definition hash so reviewed item-level locks can be updated
+    # without blocking unrelated new vehicles, presets, equipment, or game builds.
+    for code, definition_hash in sorted(locked_definition_hashes(payload, equipment_pb).items()):
+        print("locked_definition_sha256 %s=%s" % (code, definition_hash))
+
     validate_locked_contract_from_pb(payload, equipment_pb)
 
-    # Fully modeled effects are re-derived from the current BlitzKit source. Source
-    # edits are accepted when the parsers still recognize the expected semantics;
-    # parser-pattern failures remain fail-closed.
     sources = {
         name: ue.fetch_source(path)
         for name, path in ue.SOURCE_FILES.items()
