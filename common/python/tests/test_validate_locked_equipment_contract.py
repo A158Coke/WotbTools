@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """validate_locked_equipment_contract.py unit tests."""
 
-import hashlib
 import os
 import sys
 import unittest
@@ -52,7 +51,7 @@ class LockedEquipmentContractTest(unittest.TestCase):
             validator.LOCKED_DESCRIPTION_SHA256["SUPERCHARGER"],
         )
 
-    def test_any_template_change_fails_closed(self):
+    def test_locked_template_change_fails_closed(self):
         payload = self.payload()
         details = self.details(payload)
         item = next(item for item in payload["items"] if item["code"] == "SUPERCHARGER")
@@ -60,23 +59,15 @@ class LockedEquipmentContractTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "BLITZKIT_LOCKED_DESCRIPTION_CHANGED"):
             validator.validate_locked_contract(payload, details)
 
-    def test_game_version_must_be_exact_reviewed_build(self):
-        self.assertTrue(
-            validator.validate_reviewed_game_version("11.19.0.834_7320229")
-        )
-        with self.assertRaisesRegex(RuntimeError, "BLITZKIT_LOCKED_REVIEW_REQUIRED"):
-            validator.validate_reviewed_game_version("11.19.0.835_9999999")
-
-    def test_complete_equipment_snapshot_hash_fails_closed(self):
-        reviewed = b"reviewed equipment protobuf"
-        original = validator.REVIEWED_EQUIPMENT_SHA256
-        validator.REVIEWED_EQUIPMENT_SHA256 = hashlib.sha256(reviewed).hexdigest()
-        try:
-            self.assertTrue(validator.validate_reviewed_equipment_snapshot(reviewed))
-            with self.assertRaisesRegex(RuntimeError, "BLITZKIT_EQUIPMENT_SNAPSHOT_CHANGED"):
-                validator.validate_reviewed_equipment_snapshot(reviewed + b" changed")
-        finally:
-            validator.REVIEWED_EQUIPMENT_SHA256 = original
+    def test_unrelated_upstream_changes_do_not_require_a_global_version_lock(self):
+        payload = self.payload()
+        details = self.details(payload)
+        # The locked contract is deliberately item-scoped. Game-version changes,
+        # unrelated new equipment, and preset-layout changes are handled elsewhere
+        # and must not block sync when the locked descriptions remain unchanged.
+        self.assertTrue(validator.validate_locked_contract(payload, details))
+        self.assertFalse(hasattr(validator, "REVIEWED_GAME_VERSION"))
+        self.assertFalse(hasattr(validator, "REVIEWED_EQUIPMENT_SHA256"))
 
 
 if __name__ == "__main__":
