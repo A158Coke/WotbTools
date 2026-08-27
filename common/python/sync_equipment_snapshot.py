@@ -2,6 +2,7 @@
 """Sync equipment from one stable BlitzKit definition set plus reviewed source locks."""
 
 import argparse
+import copy
 import json
 
 import update_equipment as ue
@@ -11,6 +12,9 @@ from validate_locked_equipment_contract import (
     validate_reviewed_equipment_snapshot,
     validate_reviewed_game_version,
 )
+
+
+CLASS_ORDER = {"LIGHT": 0, "MEDIUM": 1, "HEAVY": 2, "TANK_DESTROYER": 3}
 
 
 def validate_structural_catalog_contract(payload, equipment_pb, tanks_pb):
@@ -51,6 +55,26 @@ def validate_structural_catalog_contract(payload, equipment_pb, tanks_pb):
     return True
 
 
+def stabilize_generated_effect_order(payload):
+    """Keep generated camouflage effects in the catalog's canonical order.
+
+    sync_values derives the same eight effects by class but builds them interleaved
+    moving/stationary. The catalog stores all moving bonuses first and stationary
+    increments second. Stabilizing that order prevents semantically empty diffs.
+    """
+    item = ue.item_by_code(payload, "CAMOUFLAGE_NET")
+
+    def key(effect):
+        conditions = effect.get("conditions") or {}
+        classes = conditions.get("vehicleClasses") or []
+        vehicle_class = classes[0] if classes else ""
+        stationary = 1 if "stationarySecondsAtLeast" in conditions else 0
+        return stationary, CLASS_ORDER.get(vehicle_class, 99)
+
+    item["effects"].sort(key=key)
+    return payload
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--catalog", default="common/wotb-item-catalog-json/equipment.json")
@@ -58,6 +82,7 @@ def main(argv=None):
 
     with open(args.catalog, encoding="utf-8") as file:
         payload = json.load(file)
+    original_payload = copy.deepcopy(payload)
 
     resources = {
         "game": GAME_URL,
@@ -98,7 +123,12 @@ def main(argv=None):
         sources["penetration"],
         sources["armor"],
     )
+    stabilize_generated_effect_order(payload)
     ue.validate(payload)
+
+    if payload == original_payload:
+        print("equipment catalog already matches the reviewed upstream contract")
+        return 0
 
     with open(args.catalog, "w", encoding="utf-8", newline="\n") as file:
         json.dump(payload, file, ensure_ascii=False, indent=2)
