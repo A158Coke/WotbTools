@@ -32,10 +32,45 @@ class UpdateEquipmentParserTest(unittest.TestCase):
             update_equipment.parse_calibrated(text),
         )
 
-    def test_sync_ids_matches_english_name(self):
-        payload = {"items": [{"id": 999, "code": "GUN_RAMMER", "nameEn": "Gun Rammer", "effects": [{}]}]}
-        update_equipment.sync_ids(payload, {100: "Gun Rammer"})
-        self.assertEqual(100, payload["items"][0]["id"])
+    def test_required_business_equipment_ids_rejects_missing_preset(self):
+        vehicles = {"1": {"_equipmentPreset": "missing"}}
+        with self.assertRaisesRegex(RuntimeError, "BLITZKIT_PRESET_MISSING"):
+            update_equipment.required_business_equipment_ids(vehicles, {})
+
+    def test_required_business_equipment_ids_unions_used_presets(self):
+        vehicles = {
+            "1": {"_equipmentPreset": "a"},
+            "2": {"_equipmentPreset": "b"},
+            "3": {"_equipmentPreset": "a"},
+        }
+        names, ids = update_equipment.required_business_equipment_ids(
+            vehicles,
+            {"a": {100, 101}, "b": {101, 102}, "unused": {999}},
+        )
+        self.assertEqual({"a", "b"}, names)
+        self.assertEqual({100, 101, 102}, ids)
+
+    def test_extract_numbers_from_description(self):
+        self.assertEqual(
+            {20.0, 15.0, 30.0},
+            update_equipment.extract_numbers("Hard +20%, medium +15%, soft +30%"),
+        )
+
+    def test_model_partition_covers_catalog_contract(self):
+        expected_codes = {
+            "GUN_RAMMER", "IMPROVED_VENTILATION", "CALIBRATED_SHELLS",
+            "ENHANCED_GUN_LAYING_DRIVE", "SUPERCHARGER", "VERTICAL_STABILIZER",
+            "REFINED_GUN", "IMPROVED_VERTICAL_STABILIZER", "IMPROVED_SUSPENSION",
+            "IMPROVED_MODULES", "DEFENSE_SYSTEM", "ENHANCED_ARMOR",
+            "IMPROVED_ASSEMBLY", "ENHANCED_TRACKS", "TOOLBOX", "IMPROVED_OPTICS",
+            "CAMOUFLAGE_NET", "IMPROVED_CONTROL", "ENGINE_ACCELERATOR",
+            "CONSUMABLE_DELIVERY_SYSTEM", "HIGH_END_CONSUMABLES",
+        }
+        self.assertEqual(
+            expected_codes,
+            update_equipment.FULLY_MODELED_CODES | update_equipment.LOCKED_CODES,
+        )
+        self.assertFalse(update_equipment.FULLY_MODELED_CODES & update_equipment.LOCKED_CODES)
 
 
 if __name__ == "__main__":
