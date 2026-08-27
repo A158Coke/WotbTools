@@ -1,0 +1,28 @@
+/* Responsive: phone <=767, tablet 768-1179, tablet-portrait, desktop >=1180. */
+@media (max-width: 767px) {
+    .wbtb-shell__main { grid-template-columns: 1fr; align-items: start; padding: 12px 18px 28px; gap: 4px; }
+    .wbtb-shell__hero { display: none; }
+    .wbtb-shell__auth { width: 100%; }
+    .wbtb-card { padding: 22px 20px 22px; }
+    .wbtb-shell__topbar { padding: 14px 18px; }
+    .wbtb-shell__footer { padding: 12px 18px 16px; }
+    .wbtb-idp-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 390px) {
+    .wbtb-idp-grid { grid-template-columns: 1fr; }
+}
+@media (min-width: 768px) and (max-width: 1179px) and (orientation: portrait) {
+    .wbtb-shell__main { grid-template-columns: 1fr; align-items: start; gap: 16px; padding: 8px 24px 36px; }
+    .wbtb-shell__hero { max-width: 100%; margin-top: 12px; }
+    .wbtb-hero__title { font-size: 34px; }
+    .wbtb-hero__chips { font-size: 12.5px; }
+    .wbtb-shell__auth { width: min(420px, 100%); justify-self: center; }
+}
+@media (min-width: 768px) and (max-width: 1179px) {
+    .wbtb-shell__main { gap: 20px; padding: 20px 28px 32px; }
+    .wbtb-hero__title { font-size: clamp(32px, 4.2vw, 44px); }
+    .wbtb-shell__auth { width: min(400px, 48vw); }
+}
+@media (min-width: 1180px) {
+    .wbtb-shell__main { padding: 24px clamp(32px, 6vw, 96px) 40px; }
+}
