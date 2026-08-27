@@ -1,160 +1,139 @@
-# Method38 extended result — Precision Fire closure
+# Method38 extended result — special damage modifier research
 
 > Corpus: canonical 34 unique Blitz 11.19.0 China arenas.
 >
 > Scope: Avatar method38 extended variants where the main shot-result payload carries an additional `u32` extension field.
 
-## Executive verdict
+## Executive correction
 
-The current corpus strongly closes:
+The earlier conclusion
 
-> `method38 extension_u32 = 1` = **Precision Fire maximum-damage proc marker — PROVEN current 11.19 behavioral identity**.
+```text
+extension_u32 = 1 == Precision Fire maximum-damage proc
+```
 
-The conclusion is based on current replay behavior, not merely on historical skill documentation.
+is **SUPERSEDED / REJECTED as an exact identity**.
 
-## Current population
+A current FV215b counterexample breaks the required maximum-damage invariant:
 
-Extended method38 records:
+```text
+vehicle        = GB13_FV215b
+rawClock       = 229.826416 s
+extension_u32  = 1
+observedHpLoss = 500
+current third-shell average damage = 515
+ordinary maximum roll              = 515 * 1.25 = 643.75
+```
+
+The 500 HP result is neither the ordinary maximum roll nor an HP-cap case. Therefore `extension=1` cannot safely mean `PRECISION_FIRE_MAX_DAMAGE_PROC` globally.
+
+This correction takes precedence over the previous 13-record interpretation.
+
+## Current extension population
 
 ```text
 extension=1 : 13 records
 extension=2 :  1 record
 ```
 
-The `extension=1` records occur on:
+The `extension=1` population is concentrated on SPHT, Ho-Ri and FV215b and frequently coincides with conspicuously high / exact-looking damage values, but the FV215b 515-average-shell counterexample proves that exact maximum damage is not the invariant encoded by this value.
+
+The previous 415-damage SPHT terminal sample remains correctly interpreted as HP-capped observed loss:
 
 ```text
-A178_SPHT       maximum ordinary AP-family damage = 500
-J20_Ho_Ri_type3 maximum ordinary AP-family damage = 700
-GB13_FV215b     maximum ordinary AP-family damage = 500
+preHitHp = 415
+postHitHp = 0
+observedHpLoss = 415
+extension=1
 ```
 
-Observed `extension=1` HP-loss results:
+but that sample alone cannot identify the extension semantic.
+
+## Precision Fire remains a gameplay hypothesis, not the field identity
+
+Precision Fire is still relevant to this research because some extension=1 shots numerically resemble skill-forced maximum rolls.
+
+However:
 
 ```text
-12 / 13 = exact vehicle/shell maximum damage
-1 / 13  = 415 HP terminal kill where target had exactly 415 HP before the shot
+some extension=1 samples compatible with Precision Fire
+!=
+extension=1 means Precision Fire
 ```
 
-Thus every `extension=1` event satisfies:
+A correct future closure must prove either:
+
+1. all `extension=1` events share another common gameplay state or damage-resolution branch; or
+2. the extension is a broader provenance/annotation enum whose value 1 can be emitted for multiple special-damage causes.
+
+Until then, do not expose Precision Fire from this field in production.
+
+## `extension=2`
+
+The sole current `extension=2` event remains:
 
 ```text
-observedHpLoss = min(maximumDamageRoll, targetPreHitHp)
+vehicle       = VK 72.01
+Tungsten activation -> ~0.500 s -> hit
+observed damage = 723
+extension=2
 ```
 
-for the current samples.
+The next post-Tungsten shot lacks the extension.
 
-## The apparent 415-damage counterexample is actually a terminal-HP cap
-
-Replay:
+Current evidence:
 
 ```text
-arenaUniqueId = 8965612873726874
-recorder      = A178_SPHT
-shot clock    = 139.121658 s
-victim entity = 11668277
+recorder-owned Tungsten-active hits = 1
+extension=2 among them              = 1 / 1
+non-Tungsten extension=2 hits       = 0
 ```
 
-Victim HP chain immediately before the hit:
+Verdict:
+
+> `extension=2` = **Tungsten / special-damage provenance candidate — VERY STRONG PARTIAL, n=1**.
+
+Do not promote to PROVEN without additional controlled samples.
+
+## Ammunition-state caution discovered during re-audit
+
+Type28 is proven to represent recorder ammunition selection, but the wire values `0/1/2` must not be assumed to equal the user-facing shell-list order without descriptor closure.
+
+For FV215b, current replay evidence distinguishes three ammunition families by Type28 + method17 shell descriptor + launch velocity. The user-facing shell set is AP / APCR / HE-family, while the exact wire-value-to-shell-name mapping requires descriptor-level closure.
+
+During re-audit, an older per-vehicle Type28 shot-count table was found internally inconsistent with the proven 324 unique recorder-shot total. All future extension/ammunition joins must therefore use:
 
 ```text
-130.540207  HP = 811
-135.837708  HP = 415
-139.121658  recorder hit
-139.121658  HP = 0
+method29.shooterId == recorderVehicleEntity
+unique (arena, shotId)
+Type28 state scoped within the same arena
+slot state sampled at launch time
 ```
 
-Method38 on the terminal shot carries:
-
-```text
-extension_u32 = 1
-direct-kill bit 0x0001 = set
-observed HP loss = 415
-```
-
-The SPHT maximum roll in this family is 500. The replay can only observe 415 HP removed because the victim had only 415 HP remaining. Therefore this sample is not a 415 damage roll; it is a maximum-damage proc whose observable HP subtraction is capped by remaining target HP.
-
-This removes the only apparent numeric counterexample in the 13-record `extension=1` population.
-
-## Independent gameplay rule cross-check
-
-Wargaming's published Precision Fire rule states that after three consecutive shots that each cause damage, the next shot has a skill-level-dependent chance to deal the maximum possible damage. The normal random damage range is ±25% around average damage.
-
-This predicts exactly the observed `extension=1` damage families:
-
-```text
-400 average -> 500 maximum
-560 average -> 700 maximum
-```
-
-Historical/public rules are used only as independent semantic support; the current replay behavior above is the primary closure.
-
-## Important streak-counter boundary
-
-Do **not** reconstruct Precision Fire readiness solely from:
-
-```text
-same-clock observed HP loss > 0
-```
-
-for the previous three method38 records.
-
-The replay's live HP surface is client/AoI/sample scoped. Some piercing-like method38 hits have no usable same-clock HP delta even though the hit may have caused real damage. A naive rolling HP-loss counter therefore creates false streak failures and false eligibility windows.
-
-A correct future streak model needs one of:
-
-1. authoritative current skill-state transport if found;
-2. a complete semantic shot ledger combining method38, settlement-compatible damage evidence and HP visibility boundaries;
-3. controlled replay probes where all four shots and target HP are continuously observable.
-
-## User-reported current gameplay rule requiring controlled validation
-
-A current gameplay behavior reported during protocol research is:
-
-> when Precision Fire is already eligible/charged and the target's remaining HP is below the shell's minimum ordinary damage, the skill is guaranteed to activate rather than using the normal probability.
-
-This is retained as a **current gameplay hypothesis / probe target**, not yet promoted from the canonical corpus.
-
-The existing 13 `extension=1` samples contain no clean case where the target pre-hit HP is below the represented gun's minimum ordinary damage, so the forced-execution branch cannot yet be independently closed from these samples.
-
-The right controlled probe is:
-
-```text
-Precision Fire readiness known with certainty
--> target HP deliberately reduced below minimum roll
--> fire eligible shot
--> verify extension=1 appears 100%
--> repeat negative control with target HP above minimum roll
-```
-
-## `extension=2` remains separate
-
-The sole `extension=2` event occurs on a VK 72.01 shot roughly 0.5 seconds after recorder Tungsten Shells activation and produces an elevated 723-damage result. The next post-Tungsten shot no longer carries the extension.
-
-This is strong evidence for a different special-damage modifier/provenance branch, but `extension=2 = Tungsten Shells` remains PARTIAL because `n=1`.
-
-Do not merge `extension=1` and `extension=2` into one generic boolean.
+rather than reusing the stale aggregate table.
 
 ## Safe current model
 
 ```text
 ShotResultSpecialModifier {
     extensionRaw
-    semantic
+    semantic        // nullable
     confidence
 }
 
-extensionRaw=1 -> PRECISION_FIRE_MAX_DAMAGE_PROC  PROVEN current 11.19
-extensionRaw=2 -> SPECIAL_DAMAGE_MODIFIER         PARTIAL; Tungsten candidate n=1
+extensionRaw=1 -> UNKNOWN_SPECIAL_DAMAGE_OR_RESULT_PROVENANCE
+                  exact Precision Fire identity REJECTED
+
+extensionRaw=2 -> TUNGSTEN_OR_SPECIAL_DAMAGE_PROVENANCE_CANDIDATE
+                  VERY_STRONG_PARTIAL, n=1
 ```
 
-Consumers must still retain the raw extension and version-gate the semantic mapping.
+Always preserve the raw extension.
 
-## Product value
+## Remaining work
 
-This can support:
-
-- AI Review: explain that a maximum-damage roll was skill-forced rather than normal RNG;
-- battle playback: annotate Precision Fire proc shots;
-- replay analytics: avoid treating skill-forced max rolls as ordinary damage-roll luck;
-- protocol research: separate special damage provenance from penetration/module hit flags.
+1. rebuild all 13 `extension=1` events against authoritative per-shot ammunition descriptor and shell family;
+2. compare them against Precision Fire readiness, consumables, special equipment and shell mechanics;
+3. obtain additional Tungsten-active recorder hits to test extension=2;
+4. search current Blitz client/schema/string resources for the extension enum;
+5. never infer a skill proc solely from final damage magnitude.
