@@ -4,8 +4,10 @@
 
 BlitzKit exposes canonical TankClass -> skill id[] membership. Tank class is the
 training eligibility boundary only: once trained, crew-skill bonuses apply to
-all vehicles. This sync records that distinction explicitly and does not invent
-display names, descriptions, or effect values.
+all vehicles. WotBTools models all crew skills as fully trained at level 7 and
+therefore consumes the highest available bonus for every skill. This sync
+records those semantics explicitly and does not invent display names,
+descriptions, or effect values.
 """
 
 import argparse
@@ -38,6 +40,9 @@ SKILL_ID_RE = re.compile(r"^[a-z0-9_]+$")
 SEMANTICS = {
     "trainingEligibility": "class_specific",
     "effectScope": "all_vehicles",
+    "defaultSkillLevel": 7,
+    "maxSkillLevel": 7,
+    "effectValuePolicy": "use_max_level_bonus",
 }
 
 
