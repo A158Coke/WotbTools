@@ -17,6 +17,30 @@ def fetch_bytes(url):
         return response.read()
 
 
+def validate_item_catalog_coverage(vehicles, item_defs, item_map, kind):
+    """Reject applicable upstream items that the local catalog would silently omit."""
+    missing = []
+    for item in item_defs:
+        item_id = item["id"]
+        if item_id in item_map:
+            continue
+        vehicle_ids = sorted(
+            vehicle.get("id")
+            for vehicle in vehicles.values()
+            if ut.item_allowed(vehicle, item)
+        )
+        if vehicle_ids:
+            missing.append((item_id, item.get("name"), vehicle_ids[:10]))
+
+    if missing:
+        details = ", ".join(
+            "id=%s name=%r vehicles=%s" % (item_id, name, vehicle_ids)
+            for item_id, name, vehicle_ids in missing[:20]
+        )
+        raise RuntimeError("TANKOPEDIA_UNKNOWN_%s_ID: %s" % (kind.upper(), details))
+    return True
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--existing-dir", default=ut.REPO_COMMON_DIR)
@@ -47,10 +71,14 @@ def main(argv=None):
     total = len(vehicles)
 
     provision_map, consumable_map = ut.load_catalog()
+    provision_defs = ut.parse_item_defs(snapshots["provisions"])
+    consumable_defs = ut.parse_item_defs(snapshots["consumables"])
+    validate_item_catalog_coverage(vehicles, provision_defs, provision_map, "provision")
+    validate_item_catalog_coverage(vehicles, consumable_defs, consumable_map, "consumable")
     vehicles = ut.apply_items(
         vehicles,
-        ut.parse_item_defs(snapshots["provisions"]),
-        ut.parse_item_defs(snapshots["consumables"]),
+        provision_defs,
+        consumable_defs,
         provision_map,
         consumable_map,
     )
