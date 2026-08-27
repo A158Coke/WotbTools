@@ -58,9 +58,9 @@ field3 = 8    :  23
 
 The rare `field3=8` branch is now much more narrowly closed than the earlier generic `damage-triggered` label.
 
-# field3=8 — enemy Rhm. Pzw. hit-applied special state
+# field3=8 — Tracer Shell / forced-spot hit-applied state family
 
-## Arena/tank identity closure
+## Current-corpus attacker closure
 
 All 23 `field3=8` records occur in exactly two arenas.
 
@@ -79,14 +79,21 @@ Current tank identity:
 
 Both Rhm. Pzw. attackers are on the **enemy team** relative to the replay recorder.
 
-The corpus also contains five additional arenas with a Rhm. Pzw., but in all five cases that Rhm. Pzw. is on the recorder's own team:
+The corpus contains five additional arenas with a Rhm. Pzw., but in all five cases that Rhm. Pzw. is on the recorder's own team:
 
 ```text
 friendly-Rhm arenas : 5
 field3=8 records     : 0
 ```
 
-Therefore field3=8 is not a generic Rhm-presence flag. It is a recipient-side state visible to the replay client when an **enemy** Rhm. Pzw. applies its hit-related effect to the recorder's team.
+The same canonical corpus contains **no T-100 LT battle participant**:
+
+```text
+T-100 LT tankId = 24321
+settled occurrences in canonical 34 arenas = 0
+```
+
+Therefore current 11.19 replay evidence can directly validate the Rhm. Pzw. producer path, but cannot yet perform an in-corpus T-100 LT cross-check.
 
 ## Hit-level closure
 
@@ -110,45 +117,59 @@ No other attacker/tank in the canonical corpus generates field3=8.
 
 Verdict:
 
-> wrapper16 `field3=8` = **enemy Rhm. Pzw. hit-applied surviving-target special state — PROVEN behavioral identity for the current corpus**.
+> wrapper16 `field3=8` = **enemy Tracer-Shell-capable Rhm. Pzw. hit-applied surviving-target state — PROVEN behavioral identity for the current corpus**.
 
-## Tracer Shell / forced-spot hypothesis
+## Tracer Shell / 20-second forced visibility
 
-Current Rhm. Pzw. gameplay references describe it as carrying a spotting-oriented special-mechanic package including Tracer Shell behavior. Current Blitz Tracer Shell rules describe a hit-applied state that keeps a target spotted for an extended period, with special client indication and non-applicability on certain invalid/blind/splash cases.
+Current Blitz gameplay references identify **Tracer Shells** as a hit-applied spotting mechanic that keeps the target visible to allies for **20 seconds instead of the standard 10-second post-spot persistence**. T-100 LT is a canonical Tracer Shell vehicle; current Rhm. Pzw. gameplay references likewise list Tracer Shells as part of its spotting-mechanic package.
 
-The replay behavior is highly compatible:
+This matches the current replay pattern precisely at the event boundary:
 
 ```text
-enemy Rhm hit
+enemy Rhm. Pzw. hit
   -> victim survives
   -> wrapper16 field3=8
+  -> special spotting/debuff state is broadcast to recorder team
 ```
 
-and the state is only broadcast for the recorder's own team, consistent with a team-visible enemy-applied spotting/debuff state.
+The product/gameplay-level interpretation is therefore much narrower than the old generic `damage-triggered state` hypothesis.
 
-However, the exact 11.19 wrapper enum symbol has not been recovered from a version-identical Blitz schema.
+Current evidence grading:
 
-Therefore:
+```text
+field3=8 = forced-spot / Tracer-Shell hit-applied state family
+  behavioral identity in Rhm current corpus : PROVEN
+  exact 11.19 internal enum symbol           : VERY STRONG PARTIAL
 
-> `field3=8 == Tracer Shell / forced-spot active` = **VERY STRONG PARTIAL exact symbolic identity**.
+T-100 LT producer path
+  gameplay mechanism                         : independently known
+  current canonical replay validation        : NOT SAMPLED (0 T-100 LT vehicles)
+```
 
-Do not expose the literal enum name as protocol-guaranteed until a current schema or another tracer-equipped tank provides independent closure.
+Do not encode the producer as `RHM_ONLY`. The safe semantic family is **Tracer Shell / forced-spot state**; Rhm. Pzw. is simply the only Tracer-Shell producer represented in the canonical 34-arena research corpus.
 
 ## field3=1
 
-The dominant field3=1 branch remains unresolved at exact semantic level.
+The dominant field3=1 branch is independent from the Tracer-Shell state and is being researched separately.
 
-It is not simply ordinary damage: only a tiny fraction of its 718 records are damage-adjacent.
-
-Verdict:
+Current structural facts:
 
 ```text
-wrapper16 overall  = vehicle special-state/event broadcast family — PARTIAL
+field3=1 records : 718
+all target vehicles belong to recorder team : 718 / 718
+```
+
+A recorder-local companion relationship also exists with Avatar method19 `code=1`: all 89 current method19-code1 records identify the recorder vehicle plus an enemy entity, and each is followed ~0.1 s later by a wrapper16 field3=1 state for the recorder vehicle. This strongly suggests an observed-by-enemy / ordinary-spot-state family, but exact semantic closure is documented separately only after the remaining negative controls are complete.
+
+Verdict for now:
+
+```text
+wrapper16 overall  = own-team vehicle visibility/special-state broadcast family — PARTIAL
 field1             = vehicle/entity ID — PROVEN
 field2             = constant 1 in current corpus — raw-preserve
-field3=8           = enemy-Rhm hit-applied surviving-target state — PROVEN behavior
-                       Tracer Shell/forced-spot symbolic identity — VERY STRONG PARTIAL
-field3=1           = dominant vehicle state/event branch — PARTIAL
+field3=8           = Tracer-Shell / forced-spot hit-applied state family — PROVEN behavior
+                       exact internal enum symbol — VERY STRONG PARTIAL
+field3=1           = own-team ordinary observation/spot-state candidate — STRONG PARTIAL
 ```
 
 ## Historical numeric mapping warning
@@ -160,5 +181,6 @@ Numeric wrapper equality across products/versions must not override current mobi
 ## Product implications
 
 - wrapper7 safely supports prebattle vehicle-ready lifecycle reconstruction.
-- wrapper16 field3=8 can support AI/playback evidence that a teammate was placed under the Rhm hit-applied special spotting/debuff state.
-- until the exact symbol is recovered, user-facing text should prefer a version-gated label such as `RHM_HIT_APPLIED_SPOTTING_STATE` rather than hard-code an unsupported internal enum name.
+- wrapper16 field3=8 can support AI/playback evidence that an allied vehicle was placed under a Tracer Shell / extended forced-spot state.
+- do not hard-code `RHM_HIT_APPLIED_SPOTTING_STATE`; use a producer-agnostic version-gated semantic such as `TRACER_FORCED_SPOT_STATE`.
+- T-100 LT should be validated immediately when a current 11.19/current-version replay sample becomes available.
