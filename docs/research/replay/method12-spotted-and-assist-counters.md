@@ -15,7 +15,7 @@ baseType = eventCode & 0xFF
 tierRaw  = eventCode >> 8
 ```
 
-The high byte changes at ribbon/progression boundaries and must not be treated as a different base event type.
+The high byte changes at feedback/ribbon progression boundaries and must not be treated as a different base event type.
 
 ## baseType2 — enemies spotted
 
@@ -98,13 +98,13 @@ Safe current structural model:
 
 ```text
 baseType12.count
-  = cumulative feedback/ribbon occurrence count in one gameplay family
+  = cumulative live feedback occurrence count in one gameplay family
 
 field118
   = final magnitude/statistic in that same gameplay family
 ```
 
-This relation is **PROVEN current corpus**.
+This cross-surface relation is **PROVEN current corpus**.
 
 Across all 476 settled combatants:
 
@@ -113,30 +113,64 @@ field118 non-zero : 63 / 476
 positive range    : 6 .. 283
 ```
 
-It is therefore a genuine per-player battle statistic rather than a recorder/UI artifact.
+It is therefore a real per-player battle statistic rather than a recorder/UI artifact.
 
-## Not ordinary Supremacy points
+## Base-defense / dropped-capture-points hypothesis — REJECTED for this corpus
 
-Fields32/33 are independently proven victory/Supremacy points earned/seized. field118 is distinct from both and can be non-zero when 32/33 are zero.
-
-## Wrapper12 capture-state evidence
-
-Wrapper12 is independently proven as the realtime Supremacy base state machine:
+An earlier research path proposed:
 
 ```text
-field1 base index
-field2 owner team
-field3 capturing team
-field4 capture progress
-field5 capture suspended/blocked
-field6 recorder capture-participation family
+field118 / baseType12 == base-defense / droppedCapturePoints
 ```
 
-This makes a base-defense / dropped-capture-points interpretation structurally plausible, and current Blitz statistics expose a distinct dropped/base-defense point family separate from ordinary Supremacy scoring.
+That interpretation is no longer supportable.
 
-However, **the earlier Port/Harbor Town attribution chain was overstated**.
+### 1. Current official Blitz mode rule is incompatible
 
-### Port sample — corrected evidence boundary
+Current Wargaming Blitz ribbon documentation states that **Base defended** and **Capture assistance** ribbons are awarded in Encounter battles. The canonical corpus used here is Supremacy tournament/training-room combat, not Encounter.
+
+Therefore a live baseType12 family occurring in 10/34 of these Supremacy replays cannot safely be identified as the current `Base defended` ribbon merely because capture-reset activity also exists in the battle.
+
+Verdict:
+
+> `baseType12 == Base defended ribbon` — **REJECTED / SUPERSEDED**.
+
+### 2. Ribbon-tier thresholds do not match field118
+
+The current official Base defended ribbon thresholds are based on dropped capture points:
+
+```text
+1..49   -> Common
+50..79  -> Rare
+80..99  -> Epic
+100+    -> Legendary
+```
+
+If method12 `tierRaw` represented that ribbon tier and field118 represented dropped capture points, the two should be monotonically determined by these thresholds.
+
+Actual recorder samples:
+
+```text
+field118  tierRaw observed
+12        0
+20        0
+32        0
+34        0
+48        0
+67        0
+103       0
+124       0   // one arena
+124       1   // another arena
+195       1
+```
+
+The same final `field118=124` appears with both `tierRaw=0` and `tierRaw=1`, and values above 100 do not map to a unique legendary-tier code.
+
+Therefore:
+
+> `tierRaw = Base defended tier derived from field118` — **REJECTED**.
+
+### 3. Harbor Town temporal association remains correlation only
 
 Replay:
 
@@ -165,47 +199,33 @@ field118 = 12
 baseType12 final count = 1
 ```
 
-This is a strong **temporal association between baseType12 and a real enemy capture-reset episode**.
+This remains a real temporal association, but it is not causal proof of base defense. The same-clock projectile previously attributed to the recorder is independently proven to have a different shooter entity. Global projectile traffic must not be assigned to the replay author without shooter identity closure.
 
-But the earlier archive text additionally claimed:
-
-```text
-235.214 recorder projectile
-235.214 recorder -> enemy method8 damage
-```
-
-That recorder attribution is **NOT PROVEN**. Avatar method29 is a global projectile feed, and same-clock method8 records at this boundary do not resolve to the recorder as attacker under the current validated identity decoder. Treating all same-clock projectile/damage events as recorder-owned was an observation-attribution error.
-
-Therefore the following stronger causal statement is **SUPERSEDED**:
-
-```text
-"the recorder shot the capturing enemy in this exact packet cluster"
-```
-
-What remains valid is:
-
-```text
-baseType12 feedback
-+ enemy capture episode
-+ public progress interruption/reset shortly afterward
-+ positive field118 settlement magnitude
-```
+Thus the Harbor Town sequence is retained as correlation/negative-control history only.
 
 ## Current verdict for field118/baseType12
 
-The best hypothesis remains:
+The exact symbolic gameplay identity is now:
 
-> `field118 / baseType12` = **base-defense / dropped-capture-points family — STRONG PARTIAL**.
+> **UNKNOWN/PARTIAL semantic, PROVEN cross-surface relationship**.
 
-It is **not** currently near-PROVEN because the clean recorder→capturer damage attribution has not been closed from current mobile packet identity.
+What is safe:
 
-Required promotion evidence:
+```text
+field118 > 0  <-> baseType12 present   // 34/34 authors
+baseType12.count = cumulative occurrence count
+field118 = separate final magnitude/statistic in same family
+```
 
-1. a current-version schema naming field118; or
-2. a controlled/single-capturer replay where recorder attacker identity is independently proven and the defender reset magnitude closes numerically; or
-3. another current-mobile protocol surface directly linking baseType12 to a dropped-capture ribbon/stat name.
+What is unsafe:
 
-Until then production should preserve field118 and baseType12 as linked raw/base-defense-candidate facts rather than expose the exact label `droppedCapturePoints` as guaranteed.
+```text
+field118 == droppedCapturePoints
+baseType12 == Base defended ribbon
+field118 thresholds determine tierRaw
+```
+
+Promotion now requires current-version schema/string/resource evidence or a distinct current-mobile behavioral invariant that is not mode-incompatible.
 
 # baseType15 and PlayerResults field119 — Destruction Assistance
 
