@@ -37,27 +37,9 @@
     });
   }
 
-  function bindLocale() {
-    var btn = document.getElementById('kc-current-locale-link');
-    var list = document.getElementById('language-switch1');
-    if (!btn || !list) return;
-    btn.addEventListener('click', function (ev) {
-      ev.preventDefault();
-      var open = list.classList.toggle('is-open');
-      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    });
-    document.addEventListener('click', function (ev) {
-      if (!list.contains(ev.target) && !btn.contains(ev.target)) {
-        list.classList.remove('is-open');
-        btn.setAttribute('aria-expanded', 'false');
-      }
-    });
-  }
-
   function init() {
     apply(readTheme());
     bind();
-    bindLocale();
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);

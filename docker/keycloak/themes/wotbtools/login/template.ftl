@@ -86,28 +86,11 @@
     <div class="wbtb-shell__bg" aria-hidden="true"></div>
 
     <div class="wbtb-shell__topbar">
-        <a class="wbtb-shell__brand" href="${url.loginUrl}">
-            <span class="wbtb-shell__brand-mark" aria-hidden="true"></span>
-            <span class="wbtb-shell__brand-name">WotBTools</span>
+        <a class="wbtb-shell__brand" href="${url.loginUrl}" aria-label="WotBTools">
+            <img class="wbtb-shell__brand-logo" src="${url.resourcesPath}/img/wotbtoolslogo.png" alt="WotBTools">
         </a>
         <div class="wbtb-shell__topbar-actions">
-            <#if realm.internationalizationEnabled && locale.supported?size gt 1>
-              <div class="${properties.kcLocaleMainClass!}" id="kc-locale">
-                <div class="${properties.kcLocaleWrapperClass!}" id="kc-locale-wrapper">
-                  <button tabindex="1" id="kc-current-locale-link" class="wbtb-locale__button" aria-haspopup="true" aria-expanded="false" aria-controls="language-switch1" aria-label="${msg('languages')}">${locale.current}</button>
-                  <ul role="menu" tabindex="-1" aria-labelledby="kc-current-locale-link" id="language-switch1" class="${properties.kcLocaleListClass!}">
-                    <#assign i = 1>
-                    <#list locale.supported as l>
-                      <li class="${properties.kcLocaleListItemClass!}" role="none">
-                        <a role="menuitem" id="language-${i}" class="${properties.kcLocaleItemClass!}" href="${l.url}">${l.label}</a>
-                      </li>
-                      <#assign i++>
-                    </#list>
-                  </ul>
-                </div>
-              </div>
-            </#if>
-            <button tabindex="0" id="wbtb-theme-toggle" class="wbtb-theme-toggle" type="button" data-label-to-light="${msg('wbtbThemeToggleToLight')}" data-label-to-dark="${msg('wbtbThemeToggleToDark')}" aria-label="${msg('wbtbThemeToggleToLight')}" title="${msg('wbtbThemeToggleToLight')}">
+            <button tabindex="0" id="wbtb-theme-toggle" class="wbtb-theme-toggle" type="button" data-label-to-light="切换到浅色主题" data-label-to-dark="切换到深色 Battlefield 主题" aria-label="切换到浅色主题" title="切换到浅色主题">
                 <span class="wbtb-theme-toggle__sun" aria-hidden="true"></span>
                 <span class="wbtb-theme-toggle__moon" aria-hidden="true"></span>
             </button>

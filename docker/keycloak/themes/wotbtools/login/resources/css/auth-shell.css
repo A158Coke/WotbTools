@@ -19,10 +19,8 @@ html[data-theme="light"] .wbtb-shell:before { content: ""; position: fixed; inse
 }
 
 .wbtb-shell__topbar { position: relative; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 28px; }
-.wbtb-shell__brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--auth-logo); cursor: pointer; }
-.wbtb-shell__brand-mark { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(135deg, var(--auth-amber) 0%, #d98524 100%); display: inline-flex; align-items: center; justify-content: center; }
-.wbtb-shell__brand-mark:after { content: ""; width: 12px; height: 12px; border-radius: 3px; background: rgba(255,255,255,0.85); }
-.wbtb-shell__brand-name { font-weight: 700; letter-spacing: .3px; font-size: 17px; }
+.wbtb-shell__brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; cursor: pointer; }
+.wbtb-shell__brand-logo { display: block; height: 34px; width: auto; object-fit: contain; }
 .wbtb-shell__topbar-actions { display: inline-flex; align-items: center; gap: 10px; }
 
 .wbtb-shell__main { position: relative; z-index: 2; flex: 1 1 auto; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 24px; padding: 24px clamp(24px, 6vw, 84px) 36px; }
@@ -34,7 +32,17 @@ html[data-theme="light"] .wbtb-shell:before { content: ""; position: fixed; inse
 .wbtb-hero__chips li { font-size: 13.5px; font-weight: 600; color: var(--auth-text); padding: 8px 14px; border: 1px solid var(--auth-border); border-radius: 999px; background: rgba(255,255,255,0.04); }
 html[data-theme="light"] .wbtb-hero__chips li { background: rgba(20,28,40,0.04); }
 
-.wbtb-shell__auth { width: var(--auth-card-width); max-width: 100%; transition: width .2s ease; }
+.wbtb-shell__auth { width: var(--auth-card-width); max-width: 100%; transition: width .2s ease; position: relative; }
+.wbtb-shell__auth > .wbtb-card { position: relative; z-index: 1; }
+/* Local dark readability veil: soft radial, NO blur, NO hard rectangle/pane. Dark theme only. */
+html[data-theme="dark"] .wbtb-shell__auth::before {
+    content: "";
+    position: absolute;
+    inset: -36px -56px;   /* bleed past the card so the falloff never reads as a pane edge */
+    z-index: 0;
+    pointer-events: none;
+    background: radial-gradient(58% 64% at 50% 50%, rgba(4, 7, 10, 0.20) 0%, rgba(4, 7, 10, 0.09) 55%, rgba(4, 7, 10, 0) 78%);
+}
 
 .wbtb-shell__footer { position: relative; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 28px 18px; font-size: 12.5px; color: var(--auth-muted); }
 .wbtb-shell__footer-domain { opacity: .8; }
