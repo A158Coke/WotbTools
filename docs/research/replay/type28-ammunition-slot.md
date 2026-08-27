@@ -1,8 +1,8 @@
 # Type28 — recorder ammunition selection state
 
-> Corpus: canonical 34 unique Blitz 11.19.0 China arenas.
+> Corpus: canonical 34 unique Blitz 11.19.0 China arenas plus controlled 11.19 training-room probes where explicitly noted.
 >
-> Numeric slot values are current-version wire values. Do not assume they equal the user-facing shell-list index without descriptor closure.
+> Numeric slot values are current-version wire values. Do not assume they equal the user-facing shell-list index globally without descriptor closure.
 
 ## Wire shape
 
@@ -112,7 +112,7 @@ J20_Ho_Ri_type3
 
 Maus
   value 0 : n=40, velocity ~680
-  value 1 : n=9,  velocity ~1032
+  value 1 : n=9, velocity ~1032
 
 VK 72.01
   value 0 : n=1, velocity ~600
@@ -134,7 +134,7 @@ Type28 selectionValue
 -> user-facing shell name/type
 ```
 
-Do **not** hardcode:
+Do **not** globally hardcode:
 
 ```text
 wire value 0 == first UI shell
@@ -142,9 +142,79 @@ wire value 1 == second UI shell
 wire value 2 == third UI shell
 ```
 
-without descriptor-level closure for that vehicle/version.
+unless that vehicle/version has been descriptor-closed.
 
-For FV215b, current gameplay shell families are AP / APCR / HE-family. Replay ballistics independently identify the 1440.72 m/s family as the high-velocity APCR selection, while the two 1152.36 m/s selections require descriptor/damage behavior to distinguish AP from HE-family.
+## Controlled FV215b ammunition-switch closure
+
+A dedicated Blitz 11.19 training-room replay was recorded specifically to switch FV215b ammunition repeatedly and fire after each selection.
+
+Controlled arena:
+
+```text
+vehicle : GB13_FV215b
+shots   : 12
+```
+
+The resulting Type28 -> method17 -> method29 mapping is exact:
+
+```text
+first/default shot before any explicit Type28:
+  descriptor 0x003C5A0A
+  velocity   ~1152.360
+
+Type28 value 0:
+  shots      4 / 4
+  descriptor 0x003C5A0A  4 / 4
+  velocity   ~1152.360   4 / 4
+
+Type28 value 1:
+  shots      4 / 4
+  descriptor 0x00465A0A  4 / 4
+  velocity   ~1440.721   4 / 4
+
+Type28 value 2:
+  shots      4 / 4
+  descriptor 0x003B5A0A  4 / 4
+  velocity   ~1152.360   4 / 4
+```
+
+The deliberate back-and-forth switching sequence preserves the same mapping every time, ruling out transient initialization/order artifacts.
+
+Current FV215b gameplay ammunition is exactly:
+
+```text
+AP-T L1   = AP
+APDS L1   = APCR gameplay family
+HESH-T L1 = HESH / HE-family
+```
+
+Current public shell speeds are 1067 / 1334 / 1067. The controlled replay carries an effective ×1.08 projectile-speed multiplier:
+
+```text
+1067 * 1.08 = 1152.36
+1334 * 1.08 = 1440.72
+```
+
+Therefore the current 11.19 FV215b mapping closes as:
+
+```text
+Type28 value 0
+  -> descriptor 0x003C5A0A
+  -> AP-T L1 / AP
+  -> PROVEN current controlled identity
+
+Type28 value 1
+  -> descriptor 0x00465A0A
+  -> APDS L1 / APCR gameplay family
+  -> PROVEN current controlled identity
+
+Type28 value 2
+  -> descriptor 0x003B5A0A
+  -> HESH-T L1 / HESH-HE family
+  -> PROVEN current controlled identity
+```
+
+This is vehicle/version-scoped evidence. It does not license assuming that every tank globally uses the same wire-value/UI-order relationship.
 
 ## Verdict
 
@@ -158,12 +228,13 @@ observed domain   : {0,1,2}
 recorder-local    : yes
 own-shot closure  : 324 unique shotIds == 324 settlement shots
 ballistic closure : stable selectionValue -> projectile velocity family
+FV215b closure    : exact value -> descriptor -> AP/APCR/HESH mapping in controlled 11.19 probe
 ```
 
 Still version-scoped / not globally safe:
 
 ```text
-selectionValue -> UI slot number
+selectionValue -> UI slot number for an untested vehicle/version
 selectionValue -> exact shell name/type without method17/catalog join
 ```
 
@@ -182,7 +253,7 @@ When associating a shot:
 selection = latest Type28 value in the same arena at launchClock
 ```
 
-If no Type28 value exists yet in that arena, preserve `selection = UNKNOWN`.
+If no Type28 value exists yet in that arena, preserve `selection = UNKNOWN` unless a separately proven initialization/default-shell rule for that vehicle/version is available.
 
 ## Important negative conclusion
 
