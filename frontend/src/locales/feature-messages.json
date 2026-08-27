@@ -1,5 +1,13 @@
 {
   "zh": {
+    "uiProfile": {
+      "title": "界面风格",
+      "classic": "简约",
+      "showcase": "沉浸",
+      "classicDescription": "简约浅色主题，去除 AI/装饰背景，视觉更克制",
+      "showcaseDescription": "丰富的视觉层级与展示效果"
+    },
+
     "home": {
       "boostDesc": "专业陪练服务，提升战斗技巧与实战表现。"
     },
@@ -40,6 +48,12 @@
       "docs_page_title": "League Rating V5 算法说明",
       "docs_page_sub": "训练赛 / 联赛批次证据评分 · 单场评分沿用 V4.1",
       "docs_back": "返回解析",
+      "drawer": {
+        "most_used_vehicle": "最常使用",
+        "battle_vehicle": "本场坦克",
+        "vehicle_battles": "{n} 场",
+        "vehicle_usage_rate": "使用占比"
+      },
       "summary": {
         "section_title": "League Rating 汇总",
         "no_rateable": "暂无可评分场次"
@@ -69,6 +83,14 @@
     }
   },
   "en": {
+    "uiProfile": {
+      "title": "Interface Style",
+      "classic": "Classic",
+      "showcase": "Showcase",
+      "classicDescription": "Simplified light theme; drops AI/decorative backgrounds for a calmer look",
+      "showcaseDescription": "Rich visual hierarchy and showcase effect"
+    },
+
     "home": {
       "boostDesc": "Coaching sessions to improve gameplay and battle performance."
     },
@@ -109,6 +131,12 @@
       "docs_page_title": "League Rating V5 — Algorithm Guide",
       "docs_page_sub": "Batch evidence scoring for Training / Tournament replays · single-battle scoring stays V4.1",
       "docs_back": "Back to analysis",
+      "drawer": {
+        "most_used_vehicle": "Most used",
+        "battle_vehicle": "Battle vehicle",
+        "vehicle_battles": "{n} battles",
+        "vehicle_usage_rate": "Usage rate"
+      },
       "summary": {
         "section_title": "League Rating Summary",
         "no_rateable": "No rateable battles yet"
@@ -138,6 +166,14 @@
     }
   },
   "ru": {
+    "uiProfile": {
+      "title": "Стиль интерфейса",
+      "classic": "Классический",
+      "showcase": "Showcase",
+      "classicDescription": "Упрощённая светлая тема, без AI/декоративных фонов, сдержаннее",
+      "showcaseDescription": "Богатая визуальная иерархия и эффект показа"
+    },
+
     "home": {
       "boostDesc": "Тренировки для улучшения игровых навыков и эффективности в бою."
     },
@@ -178,6 +214,12 @@
       "docs_page_title": "League Rating V5 — описание алгоритма",
       "docs_page_sub": "Пакетная оценка для тренировочных / турнирных реплеев · оценка одиночного боя остаётся V4.1",
       "docs_back": "Назад к анализу",
+      "drawer": {
+        "most_used_vehicle": "Самый используемый",
+        "battle_vehicle": "Танк боя",
+        "vehicle_battles": "{n} боев",
+        "vehicle_usage_rate": "Доля использования"
+      },
       "summary": {
         "section_title": "Сводка League Rating",
         "no_rateable": "Нет подходящих боёв для рейтинга"

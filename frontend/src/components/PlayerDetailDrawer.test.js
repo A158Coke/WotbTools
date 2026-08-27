@@ -2,13 +2,40 @@
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mount, flushPromises } from '@vue/test-utils'
 import PlayerDetailDrawer from './PlayerDetailDrawer.vue'
+import { loadVehiclePortrait } from '../vehicle-portraits/runtime.js'
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key, locale: { value: 'zh' } })
 }))
+
+// 坦克贴图懒加载 mock 成可控 promise（未知 tankId → null，缺图文字降级）。
+vi.mock('../vehicle-portraits/runtime.js', () => ({
+  loadVehiclePortrait: vi.fn(() => Promise.resolve(null)),
+}))
+
+// html2canvas / downloadBlob mock harness（导出行为测试，捕获 offscreen 卡与文件名）。
+const h2c = vi.hoisted(() => {
+  const calls = []
+  let impl
+  return {
+    setImpl: (fn) => { impl = fn },
+    getCalls: () => calls,
+    resetCalls: () => { calls.length = 0 },
+    call: (...args) => {
+      calls.push(args)
+      return impl ? impl(...args) : Promise.resolve({ toBlob: (cb) => cb('blob:data') })
+    },
+  }
+})
+const dl = vi.hoisted(() => ({ downloadBlob: vi.fn(() => Promise.resolve()) }))
+vi.mock('html2canvas', () => ({ default: (...args) => h2c.call(...args) }))
+vi.mock('../utils/exportReplayPng.js', async (importOriginal) => {
+  const orig = await importOriginal()
+  return { ...orig, sanitizeFilename: (s) => (s || 'player'), downloadBlob: dl.downloadBlob }
+})
 
 const SUMMARY_PLAYER = {
   accountId: 1001,
@@ -75,7 +102,11 @@ function mountDrawer(context, player, extraProps = {}) {
   })
 }
 
-beforeEach(() => { localStorage.clear() })
+beforeEach(() => {
+  localStorage.clear()
+  loadVehiclePortrait.mockReset()
+  loadVehiclePortrait.mockResolvedValue(null)
+})
 
 describe('PlayerDetailDrawer', () => {
   it('closed when context or player is null', () => {
@@ -92,16 +123,27 @@ describe('PlayerDetailDrawer', () => {
     expect(wrapper.find('.radar-stub').exists()).toBe(true)
   })
 
-  it('emits close on backdrop click（先 slide-out 再 emit close，§34）', async () => {
-    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+  it('mobile(≤767px) backdrop 点击关闭（modal，§34）；desktop backdrop 点击不关闭（非模态）', async () => {
+    // 桌面：backdrop 是 click-through，点击不应关闭
+    window.innerWidth = 1024
+    const desktop = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await desktop.find('.drawer-backdrop').trigger('click')
+    expect(desktop.find('.player-drawer').classes()).not.toContain('pd-closing')
+    expect(desktop.emitted('close')).toBeFalsy()
+    expect(desktop.find('.drawer-backdrop').classes()).not.toContain('pd-modal')
+
+    // 移动端：isMobile=true → modal backdrop 点击关闭（slide-out 后 emit close）
+    window.innerWidth = 375
+    const mobile = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
     vi.useFakeTimers()
-    await wrapper.find('.drawer-backdrop').trigger('click')
-    // 关闭动画期间 drawer 仍在 DOM，带 pd-closing
-    expect(wrapper.find('.player-drawer').exists()).toBe(true)
-    expect(wrapper.find('.player-drawer').classes()).toContain('pd-closing')
+    await mobile.find('.drawer-backdrop').trigger('click')
+    expect(mobile.find('.player-drawer').exists()).toBe(true)
+    expect(mobile.find('.player-drawer').classes()).toContain('pd-closing')
+    expect(mobile.find('.drawer-backdrop').classes()).toContain('pd-modal')
     vi.advanceTimersByTime(220)
-    expect(wrapper.emitted('close')).toBeTruthy()
+    expect(mobile.emitted('close')).toBeTruthy()
     vi.useRealTimers()
+    window.innerWidth = 1024
   })
 
   it('emits close on Escape keydown', async () => {
@@ -339,6 +381,18 @@ describe('Drawer stacking / layout contract', () => {
     expect(mobileBlock).toContain('.player-drawer { top: 8px; }')
   })
 
+  it('aria-modal 只在移动端 modal 生效（桌面非模态，不误导辅助技术）', async () => {
+    window.innerWidth = 1024
+    const desktop = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await flushPromises()
+    expect(desktop.find('.player-drawer').attributes('aria-modal')).toBeUndefined()
+    window.innerWidth = 375
+    const mobile = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await flushPromises()
+    expect(mobile.find('.player-drawer').attributes('aria-modal')).toBe('true')
+    window.innerWidth = 1024
+  })
+
   it('关闭按钮保留在 drawer（退出动画期间仍可关闭）', () => {
     const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
     const close = wrapper.find('.pd-close')
@@ -376,5 +430,314 @@ describe('Radar scope-aware data source contract', () => {
     expect(values.league_damage_score.normalized).toBeCloseTo(0.8, 3)
     expect(values.league_assist_score.rawValue).not.toBe(2)
     expect(values.league_kill_score.rawValue).not.toBe(10)
+  })
+})
+
+describe('PlayerDetailDrawer 坦克展示（Summary=最常使用；Battle=本场）', () => {
+  it('Summary：显示最常使用坦克（名称 + 场次 + 比例 = battles/ratedBattles）', async () => {
+    const player = {
+      ...SUMMARY_PLAYER,
+      mostUsedVehicle: { tankId: 7169, tankName: 'IS-7', battles: 3 },
+      ratedBattles: 8,
+    }
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, player)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="player-vehicle"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('league.drawer.most_used_vehicle')
+    expect(wrapper.text()).toContain('IS-7')
+    expect(wrapper.text()).toContain('league.drawer.vehicle_battles')
+    // 3 / 8 = 37.5%
+    expect(wrapper.find('[data-testid="player-vehicle-rate"]').text()).toBe('37.5%')
+  })
+
+  it('Battle：显示本场坦克；不显示 1场·100%', async () => {
+    const player = { ...BATTLE_PLAYER, tankId: 4481, tankName: 'Heavy Tank', tankBattles: 1 }
+    const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, player)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="player-vehicle"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('league.drawer.battle_vehicle')
+    expect(wrapper.text()).toContain('Heavy Tank')
+    // 单场不显示无意义的“1 场 · 100%”
+    expect(wrapper.find('[data-testid="player-vehicle-battles"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="player-vehicle-rate"]').exists()).toBe(false)
+  })
+
+  it('无坦克数据 → 不渲染坦克区', async () => {
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="player-vehicle"]').exists()).toBe(false)
+  })
+
+  it('缺图/非 Tier X → 仅文字降级，无破图图标，名称与统计保留', async () => {
+    loadVehiclePortrait.mockResolvedValue(null)
+    const player = {
+      ...SUMMARY_PLAYER,
+      mostUsedVehicle: { tankId: 999999, tankName: 'Strange', battles: 2 },
+      ratedBattles: 8,
+    }
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, player)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="player-vehicle-img"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="player-vehicle"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Strange')
+    expect(wrapper.find('[data-testid="player-vehicle-rate"]').text()).toBe('25%')
+  })
+
+  it('异步加载不闪回上一位玩家图片（token 防旧结果覆盖）', async () => {
+    const deferred = {}
+    loadVehiclePortrait.mockImplementation((tankId) => new Promise((resolve) => {
+      deferred[tankId] = resolve
+    }))
+    const playerA = { ...SUMMARY_PLAYER, mostUsedVehicle: { tankId: 111, tankName: 'A', battles: 3 }, ratedBattles: 8 }
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, playerA)
+    await flushPromises() // 动态 import 完成，loadVehiclePortrait(111) 已注册
+    expect(typeof deferred[111]).toBe('function')
+    // 切到玩家 B
+    const playerB = { ...SUMMARY_PLAYER, mostUsedVehicle: { tankId: 222, tankName: 'B', battles: 2 }, ratedBattles: 8 }
+    await wrapper.setProps({ player: playerB })
+    await flushPromises()
+    expect(typeof deferred[222]).toBe('function')
+    // 旧玩家 A 的图晚到：必须被丢弃（token 已变）
+    deferred[111]('http://a.png')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="player-vehicle-img"]').exists()).toBe(false)
+    // 新玩家 B 的图到：正确显示
+    deferred[222]('http://b.png')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="player-vehicle-img"]').attributes('src')).toBe('http://b.png')
+  })
+
+  it('导出卡包含坦克信息（与 Drawer 同数据源）+ 动态 import runtime', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/PlayerDetailDrawer.vue'), 'utf8')
+    expect(source).toContain('rp-vehicle')
+    expect(source).toContain('exportPortrait')
+    expect(source).toContain('ensureVehiclePortraitForExport')
+    // Blocker 2：不得顶层静态 import vehicle-portraits runtime（须动态 import 保持分离）
+    expect(source).not.toContain("import { loadVehiclePortrait } from '../vehicle-portraits/runtime.js'")
+    expect(source).toContain("import('../vehicle-portraits/runtime.js')")
+  })
+
+  it('Battle：tankId=0 / null / 空名 / 占位名 不渲染坦克区（无空卡片）', async () => {
+    const cases = [
+      { tankId: 0, tankName: 'Zero' },
+      { tankId: null, tankName: 'Null' },
+      { tankId: 4481, tankName: '' },
+      { tankId: 4481, tankName: '#4481' },
+    ]
+    for (const c of cases) {
+      const player = { ...BATTLE_PLAYER, tankId: c.tankId, tankName: c.tankName }
+      const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, player)
+      await flushPromises()
+      expect(wrapper.find('[data-testid="player-vehicle"]').exists()).toBe(false)
+      wrapper.unmount()
+    }
+  })
+
+  it('Battle：合法 tankId + 名称 正常显示', async () => {
+    const player = { ...BATTLE_PLAYER, tankId: 7169, tankName: 'IS-7' }
+    const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, player)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="player-vehicle"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('IS-7')
+  })
+})
+
+describe('Rating Profile PNG 导出不可变快照', () => {
+  // happy-dom 不加载图片，stub 全局 Image 使 onload 触发，否则 ensureImageLoaded 悬挂卡住导出。
+  class MockImage {
+    set src(v) { this._src = v; queueMicrotask(() => this.onload && this.onload()) }
+    get src() { return this._src }
+  }
+  beforeEach(() => {
+    h2c.resetCalls()
+    dl.downloadBlob.mockClear()
+    h2c.setImpl(null)
+    vi.stubGlobal('Image', MockImage)
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('导出期间切换玩家：offscreen 卡与文件名仍为玩家 A（不混入玩家 B）', async () => {
+    const deferred = {}
+    loadVehiclePortrait.mockImplementation((tankId) => new Promise((resolve) => { deferred[tankId] = resolve }))
+    const playerA = { ...SUMMARY_PLAYER, mostUsedVehicle: { tankId: 7169, tankName: 'IS-7', battles: 3 }, ratedBattles: 8 }
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, playerA)
+    await flushPromises()
+
+    await wrapper.find('[data-testid="export-profile"]').trigger('click')
+    await flushPromises()
+    expect(typeof deferred[7169]).toBe('function') // 导出正在等待坦克 A 图
+
+    // 导出等待期间切换为玩家 B（坦克 B=9999 "Maus"）
+    const playerB = { ...SUMMARY_PLAYER, nickname: 'Beta', mostUsedVehicle: { tankId: 9999, tankName: 'Maus', battles: 1 }, ratedBattles: 8 }
+    await wrapper.setProps({ player: playerB })
+    await flushPromises()
+
+    // resolve 坦克 A 的图
+    deferred[7169]('http://a.png')
+    await flushPromises()
+
+    expect(h2c.getCalls().length).toBe(1)
+    const card = h2c.getCalls()[0][0]
+    const cardText = card.textContent
+    expect(cardText).toContain('Alpha') // 玩家 A
+    expect(cardText).toContain('IS-7')  // 坦克 A
+    expect(cardText).toContain('850')   // 玩家 A 总 Rating
+    expect(cardText).not.toContain('Beta')
+    expect(cardText).not.toContain('Maus')
+    const img = card.querySelector('img.rp-vehicle-img')
+    expect(img).toBeTruthy()
+    expect(img.getAttribute('src')).toBe('http://a.png') // 坦克 A 图
+
+    expect(dl.downloadBlob.mock.calls.length).toBe(1)
+    expect(dl.downloadBlob.mock.calls[0][1]).toContain('Alpha') // 文件名用玩家 A
+    wrapper.unmount()
+  })
+
+  it('导出图片失败：仍导出玩家 A 纯文字版（不阻塞 PNG，不含破图）', async () => {
+    loadVehiclePortrait.mockResolvedValue(null)
+    const playerA = { ...SUMMARY_PLAYER, mostUsedVehicle: { tankId: 7169, tankName: 'IS-7', battles: 3 }, ratedBattles: 8 }
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, playerA)
+    await flushPromises()
+
+    await wrapper.find('[data-testid="export-profile"]').trigger('click')
+    await flushPromises()
+
+    expect(h2c.getCalls().length).toBe(1)
+    const card = h2c.getCalls()[0][0]
+    expect(card.textContent).toContain('Alpha')
+    expect(card.textContent).toContain('IS-7')
+    expect(card.querySelector('img.rp-vehicle-img')).toBeNull() // 纯文字降级
+    expect(dl.downloadBlob).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('导出失败：snapshot/portrait/exporting 状态清理后可再次导出（同一玩家）', async () => {
+    const spyErr = vi.spyOn(console, 'error').mockImplementation(() => {})
+    loadVehiclePortrait.mockResolvedValue(null)
+    let fail = true
+    h2c.setImpl(() => {
+      if (fail) return Promise.reject(new Error('boom'))
+      return Promise.resolve({ toBlob: (cb) => cb('blob:data') })
+    })
+    const playerA = { ...SUMMARY_PLAYER, mostUsedVehicle: { tankId: 7169, tankName: 'IS-7', battles: 3 }, ratedBattles: 8 }
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, playerA)
+    await flushPromises()
+
+    await wrapper.find('[data-testid="export-profile"]').trigger('click')
+    await flushPromises()
+    expect(dl.downloadBlob).not.toHaveBeenCalled()
+
+    // 首次失败后状态被清理，可再次导出
+    fail = false
+    const btn = wrapper.find('[data-testid="export-profile"]')
+    expect(btn.attributes('disabled')).toBeUndefined()
+    await btn.trigger('click')
+    await flushPromises()
+    expect(dl.downloadBlob).toHaveBeenCalled()
+    expect(dl.downloadBlob.mock.calls[0][1]).toContain('Alpha')
+    wrapper.unmount()
+    h2c.setImpl(null)
+    spyErr.mockRestore()
+  })
+})
+
+describe('PlayerDetailDrawer Side Panel resize（仅桌面，计划 §4-14）', () => {
+  const DEFAULT_W = 380
+  function widthNum(wrapper) {
+    const st = wrapper.find('.player-drawer').attributes('style') || ''
+    const m = st.match(/width:\s*(\d+)px/)
+    return m ? parseInt(m[1], 10) : null
+  }
+  afterEach(() => { localStorage.clear(); window.innerWidth = 1024 })
+
+  it('Desktop >=1200 shows resizer; drag widens panel and persists width', async () => {
+    window.innerWidth = 1400
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    const resizer = wrapper.find('[data-testid="drawer-resizer"]')
+    expect(resizer.exists()).toBe(true)
+    expect(resizer.attributes('role')).toBe('separator')
+    expect(widthNum(wrapper)).toBe(DEFAULT_W)
+    await resizer.trigger('pointerdown', { clientX: 320, pointerId: 1 })
+    await resizer.trigger('pointermove', { clientX: 260 })
+    await resizer.trigger('pointerup')
+    expect(widthNum(wrapper)).toBe(DEFAULT_W + 60)
+    expect(localStorage.getItem('radarSidePanelWidth')).toBe(String(DEFAULT_W + 60))
+  })
+
+  it('clamps to min(320) and dynamic max(≈45% viewport)', async () => {
+    window.innerWidth = 1400
+    const max = Math.floor(1400 * 0.45)
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    const resizer = wrapper.find('[data-testid="drawer-resizer"]')
+    await resizer.trigger('pointerdown', { clientX: 500, pointerId: 1 })
+    await resizer.trigger('pointermove', { clientX: 5000 })
+    await resizer.trigger('pointerup')
+    expect(widthNum(wrapper)).toBe(320)
+    await resizer.trigger('pointerdown', { clientX: 400, pointerId: 1 })
+    await resizer.trigger('pointermove', { clientX: -5000 })
+    await resizer.trigger('pointerup')
+    expect(widthNum(wrapper)).toBe(max)
+  })
+
+  it('restores saved width clamped to current viewport max', async () => {
+    window.innerWidth = 1400
+    const max = Math.floor(1400 * 0.45)
+    localStorage.setItem('radarSidePanelWidth', '800')
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await flushPromises() // onMounted 异步写入 drawerWidth，需 flush 后读取
+    expect(widthNum(wrapper)).toBe(max)
+  })
+
+  it('tablet(<=1199) and mobile(<768) hide resizer and keep fixed width (no inline width)', () => {
+    window.innerWidth = 1024
+    const tablet = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    expect(tablet.find('[data-testid="drawer-resizer"]').exists()).toBe(false)
+    expect(widthNum(tablet)).toBe(null)
+    window.innerWidth = 375
+    const mobile = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    expect(mobile.find('[data-testid="drawer-resizer"]').exists()).toBe(false)
+    expect(widthNum(mobile)).toBe(null)
+  })
+
+  it('resize then switch player keeps user width (不恢复默认宽度)', async () => {
+    window.innerWidth = 1400
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    const resizer = wrapper.find('[data-testid="drawer-resizer"]')
+    await resizer.trigger('pointerdown', { clientX: 300, pointerId: 1 })
+    await resizer.trigger('pointermove', { clientX: 200 })
+    await resizer.trigger('pointerup')
+    expect(widthNum(wrapper)).toBe(480)
+    await wrapper.setProps({ player: { ...SUMMARY_PLAYER, accountId: 2001, nickname: 'Beta' } })
+    expect(widthNum(wrapper)).toBe(480)
+  })
+
+  it('resizer keyboard ArrowLeft/Right adjusts width and does not trigger player switch', async () => {
+    window.innerWidth = 1400
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    const resizer = wrapper.find('[data-testid="drawer-resizer"]')
+    await resizer.trigger('keydown', { key: 'ArrowRight' })
+    expect(widthNum(wrapper)).toBe(400)
+    expect(wrapper.emitted('next')).toBeFalsy()
+    await resizer.trigger('keydown', { key: 'ArrowLeft' })
+    expect(widthNum(wrapper)).toBe(380)
+    expect(wrapper.emitted('prev')).toBeFalsy()
+  })
+
+  it('reflow（计划 §7）：桌面开启时暴露 --pd-drawer-offset 供 workspace 预留；拖宽后同步；mobile 恒 0px；unmount 清除', async () => {
+    window.innerWidth = 1400
+    const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await flushPromises()
+    expect(document.documentElement.style.getPropertyValue('--pd-drawer-offset')).toBe('388px')
+    const resizer = wrapper.find('[data-testid="drawer-resizer"]')
+    await resizer.trigger('pointerdown', { clientX: 320, pointerId: 1 })
+    await resizer.trigger('pointermove', { clientX: 260 })
+    await resizer.trigger('pointerup')
+    expect(document.documentElement.style.getPropertyValue('--pd-drawer-offset')).toBe('448px')
+    wrapper.unmount()
+    expect(document.documentElement.style.getPropertyValue('--pd-drawer-offset')).toBe('')
+    window.innerWidth = 1024
+    const tablet = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
+    await flushPromises()
+    expect(document.documentElement.style.getPropertyValue('--pd-drawer-offset')).toBe('0px')
   })
 })
