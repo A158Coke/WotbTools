@@ -23,7 +23,7 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Sync equipment catalog from reviewed BlitzKit snapshot
+      - name: Sync equipment catalog from stable BlitzKit data
         run: |
           set -euo pipefail
           python3 common/python/sync_equipment_snapshot.py
@@ -50,7 +50,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -C "$BRANCH"
           git add common/wotb-item-catalog-json/equipment.json
-          git commit -m "chore(data): sync reviewed BlitzKit equipment values"
+          git commit -m "chore(data): sync BlitzKit equipment values"
           git push --force-with-lease origin "HEAD:$BRANCH"
 
           pr_number="$(gh pr list --base main --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
@@ -58,8 +58,8 @@ jobs:
             gh pr create \
               --base main \
               --head "$BRANCH" \
-              --title "chore(data): sync reviewed BlitzKit equipment values" \
-              --body $'Automated equipment update from reviewed BlitzKit sources.\n\n- Requires the exact reviewed WoTB client build and full equipment.pb SHA-256\n- Any equipment definition or preset-layout change fails closed for manual review\n- Validates all tier 7-10 preset equipment IDs plus catalog names/model coverage\n- Fully rewrites only effects backed by reviewed BlitzKit calculation-source blobs\n- Fingerprints description templates for partially modeled locked equipment\n- Avoids rewriting the catalog when generated semantics are unchanged\n- Explicitly dispatches normal CI for this automation branch\n- Never auto-merges'
+              --title "chore(data): sync BlitzKit equipment values" \
+              --body $'Automated equipment update from current BlitzKit data.\n\n- Accepts new WoTB builds and changed protobuf snapshots when existing parsers can fully understand them\n- Imports supported metadata/value changes into the generated catalog\n- Allows preset/layout changes without assuming one universal equipment grid\n- Fails closed for newly referenced equipment IDs until a complete local effect model exists\n- Fails closed when a partially modeled locked item changes\n- Calculation-source changes are accepted only while strict extraction patterns still match\n- Uses stable-snapshot reads and records upstream hashes in logs\n- Avoids rewriting the catalog when generated semantics are unchanged\n- Explicitly dispatches normal CI for this automation branch\n- Never auto-merges'
           else
             echo "Updated existing PR #$pr_number"
           fi
