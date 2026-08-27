@@ -32,6 +32,16 @@ class UpdateEquipmentParserTest(unittest.TestCase):
             update_equipment.parse_calibrated(text),
         )
 
+    def test_grid_position_uses_row_major_layout(self):
+        self.assertEqual(("FIREPOWER", 1), update_equipment.grid_position(0))
+        self.assertEqual(("VITALITY", 1), update_equipment.grid_position(1))
+        self.assertEqual(("SPECIALIZATION", 1), update_equipment.grid_position(2))
+        self.assertEqual(("FIREPOWER", 2), update_equipment.grid_position(3))
+        self.assertEqual(("VITALITY", 3), update_equipment.grid_position(7))
+        self.assertEqual(("SPECIALIZATION", 3), update_equipment.grid_position(8))
+        with self.assertRaisesRegex(RuntimeError, "BLITZKIT_PRESET_LAYOUT_UNSUPPORTED"):
+            update_equipment.grid_position(9)
+
     def test_required_business_equipment_ids_rejects_missing_preset(self):
         vehicles = {"1": {"_equipmentPreset": "missing"}}
         with self.assertRaisesRegex(RuntimeError, "BLITZKIT_PRESET_MISSING"):
