@@ -4,7 +4,7 @@
 >
 > Numeric property IDs are entity-class and version scoped.
 
-## Vehicle property1 — terminal inactive / crew-active-false family
+## Vehicle property1 — `isAlive` false boundary
 
 Current property1 observations:
 
@@ -34,21 +34,33 @@ The terminal prop3 distribution paired with property1 is:
 
 Therefore property1 is not a generic periodic flag; it changes to false exactly on the vehicle terminal/deactivation boundary.
 
-Historical Wargaming `Vehicle.def` independently contains an ALL_CLIENTS boolean property named `isCrewActive`. A transition to false on the same clock as terminal health is structurally and behaviorally compatible with that semantic family.
+### Blitz-native symbolic evidence
+
+An old **World of Tanks Blitz replay-code property inventory** independently lists a replay property named:
+
+```text
+isAlive
+```
+
+alongside other replay properties that are already independently recovered in the current 11.19 corpus (`health`, `engineMode`, `criticalDevices`, `destroyedDevices`, `publicStateModifiers`, etc.).
+
+That Blitz-native evidence is materially stronger than importing a PC-only `isCrewActive` name. The current behavior also fits `isAlive` more directly: the only observed property1 transition is `false` exactly at terminal vehicle state.
 
 Verdict:
 
-> Vehicle property1 = **terminal active/crew-active boolean family — PROVEN behavioral relationship / STRONG PARTIAL exact symbolic name**.
+> Vehicle property1 = **vehicle alive-state false boundary — PROVEN behavioral identity / VERY STRONG PARTIAL exact current symbolic name `isAlive`**.
+
+Why the exact name remains one level below unqualified PROVEN:
+
+- the symbolic source is an older Blitz replay implementation rather than the exact 11.19 producer schema;
+- numeric property indices can drift when entity definitions change.
 
 Safe use:
 
-- treat `property1=0` as independent terminal/inactive evidence when version-gated to this corpus;
+- treat `property1=0` as independent terminal/not-alive evidence for the current version family;
 - combine with property3 terminal HP and Vehicle method1 for death-state reconstruction.
 
-Unsafe without current-version schema:
-
-- expose the exact user-facing/internal symbol `isCrewActive` as guaranteed across Blitz versions;
-- infer a specific death reason from property1 alone.
+Do not infer a specific death reason from property1 alone.
 
 ## Vehicle property7 — compact u8 state-array family
 
@@ -86,11 +98,11 @@ Observed examples:
 
 Property7 is strongly event/effect adjacent: 287/307 records share the same entity and raw clock with at least one Type32 entity-auxiliary packet.
 
+The Blitz-native replay property inventory contains several array/state families including `criticalDevices`, `destroyedDevices`, `publicStateModifiers`, and `activeEquipments`. That makes one of these families a plausible symbolic source, but the current corpus does **not** uniquely map property7 to one exact name.
+
 Verdict:
 
 > Vehicle property7 = **compact u8 enum/state array — PROVEN structure / PARTIAL semantic**.
-
-The element namespace is not yet closed.
 
 ## Vehicle property8 — compact u8 state-array family
 
@@ -105,7 +117,7 @@ payload lengths:
   4 byte :   5
 ```
 
-Every payload satisfies the same count-prefix invariant:
+Every payload satisfies:
 
 ```text
 payload[0] == payload.length - 1
@@ -130,28 +142,25 @@ Representative examples:
 03 2b 25 20 -> [0x2b, 0x25, 0x20]
 ```
 
-The array ordering is preserved as observed; consumers must not sort or collapse the raw element list until the current Blitz producer semantics are known.
-
-Property8 is even more tightly coupled to Type32 auxiliary/effect traffic:
+Property8 is tightly coupled to Type32 auxiliary/effect traffic:
 
 ```text
 property8 records sharing same entity + raw clock with Type32 : 789 / 790
 ```
 
-This proves that property8 belongs to an entity effect/state surface, but does not prove the symbolic meaning of each element.
-
-A direct assumption that the Type32 short body contains the same element byte fails globally; same-clock joins only occasionally share a literal byte. Therefore property8 and Type32 are related state/effect surfaces, not one simple duplicated byte list.
+It also reacts frequently on method16 module/crew repair/heal boundaries, but a direct literal `property8 element == method16 codeB` decoder fails. Therefore property8 is a related effect/device/state surface, not a simple list of method16 component IDs.
 
 Verdict:
 
-> Vehicle property8 = **compact u8 enum/state array — PROVEN structure / strong effect-state relationship / PARTIAL element semantics**.
+> Vehicle property8 = **compact u8 enum/state array — PROVEN structure / strong effect-state relationship / PARTIAL symbolic identity and element semantics**.
 
 ## Important negative results
 
 - property7/property8 are not arbitrary opaque blobs;
 - their first byte is a count, not an enum value;
-- individual elements must not be named as modules, consumables, buffs, crew states, or device IDs from historical tables without current Blitz closure;
-- Type32 same-clock coupling is strong, but literal byte equality is not a valid universal decoder.
+- individual elements must not be named as modules, consumables, buffs, crew states, or device IDs from historical tables without current closure;
+- Type32 same-clock coupling is strong, but literal byte equality is not a valid universal decoder;
+- the older Blitz names `criticalDevices` / `destroyedDevices` / `publicStateModifiers` are useful candidate families, but current numeric property-to-name assignment is not yet uniquely proven.
 
 ## Safe parser model
 
@@ -163,4 +172,4 @@ VehicleCompactStateArray {
 }
 ```
 
-Preserve the raw ordered elements and event clock for future joins against current-version effect/module schemas.
+Preserve the raw ordered elements and event clock for future version-matched schema joins.
