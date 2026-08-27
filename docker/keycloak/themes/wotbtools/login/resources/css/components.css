@@ -48,14 +48,31 @@ html[data-theme="dark"] .wbtb-idp-btn:focus-visible,
 html[data-theme="dark"] .wbtb-theme-toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(255,184,77,0.30); border-color: var(--auth-focus); }
 html[data-theme="dark"] .wbtb-idp-section { border-top-color: rgba(255,255,255,0.22); }
 html[data-theme="dark"] .wbtb-idp-section h2 { color: #bcc7d4; }
-/* Theme toggle */
+/* Theme toggle: Sun (light) + Moon (dark) icons drawn in CSS, both always visible.
+   Active theme icon is highlighted, the other is dimmed. */
 .wbtb-theme-toggle { position: relative; width: 44px; height: 26px; border-radius: 999px; border: 1px solid var(--auth-border); background: rgba(255,255,255,0.06); cursor: pointer; transition: background .2s ease; }
 html[data-theme="light"] .wbtb-theme-toggle { background: rgba(20,28,40,0.06); }
-.wbtb-theme-toggle__sun, .wbtb-theme-toggle__moon { position: absolute; top: 50%; width: 16px; height: 16px; border-radius: 50%; transform: translateY(-50%); }
-.wbtb-theme-toggle__sun { left: 5px; background: var(--auth-amber-strong); display: none; }
-.wbtb-theme-toggle__moon { right: 4px; background: #cdd6e2; }
-html[data-theme="dark"] .wbtb-theme-toggle__sun { display: block; }
-html[data-theme="dark"] .wbtb-theme-toggle__moon { display: none; }
+.wbtb-theme-toggle__sun, .wbtb-theme-toggle__moon { position: absolute; top: 50%; transform: translateY(-50%); }
+
+/* Sun: 10px core circle + 8 ray dots via box-shadow. */
+.wbtb-theme-toggle__sun { left: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--auth-amber-strong); opacity: .38; }
+.wbtb-theme-toggle__sun::before { content: ""; position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px; border-radius: 50%; background: var(--auth-amber-strong); box-shadow:
+    0 -6px 0 0 var(--auth-amber-strong),
+    0 6px 0 0 var(--auth-amber-strong),
+    -6px 0 0 0 var(--auth-amber-strong),
+    6px 0 0 0 var(--auth-amber-strong),
+    -4.2px -4.2px 0 0 var(--auth-amber-strong),
+    4.2px -4.2px 0 0 var(--auth-amber-strong),
+    -4.2px 4.2px 0 0 var(--auth-amber-strong),
+    4.2px 4.2px 0 0 var(--auth-amber-strong);
+}
+html[data-theme="light"] .wbtb-theme-toggle__sun { opacity: 1; }
+
+/* Moon: 12px crescent (radial bite opens top-right). */
+.wbtb-theme-toggle__moon { right: 5px; width: 12px; height: 12px; border-radius: 50%; background: radial-gradient(circle at 72% 28%, transparent 0 30%, #cdd6e2 34% 100%); opacity: 1; }
+html[data-theme="light"] .wbtb-theme-toggle__moon { background: radial-gradient(circle at 72% 28%, transparent 0 30%, var(--auth-muted) 34% 100%); opacity: .38; }
+
+html[data-theme="light"] .wbtb-theme-toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(201,122,18,0.22); border-color: var(--auth-focus); }
 /* Signup / info / try-another-way */
 .wbtb-signup { font-size: 13.5px; margin-top: 16px; text-align: center; color: var(--auth-muted); }
 .wbtb-info { font-size: 13.5px; color: var(--auth-muted); }
