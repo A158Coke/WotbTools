@@ -3,6 +3,7 @@ package com.wotb.core.replay.decoder;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.stream.RawReplayPacket;
 
 import java.util.ArrayList;
@@ -11,8 +12,9 @@ import java.util.List;
 /**
  * Type 10 (Position) 解码器。
  * <p>
- * BigWorld 格式：entityId(i32) + spaceId(i32) + vehicleId(i32)
- * + position(3xf32) + positionError(3xf32) + yaw/pitch/roll(3xf32) + errorFlag(i8) = 49B。
+ * BigWorld 格式：entityId(i32) + spaceId(i32) + attachmentParentEntityId(i32)
+ * + position(3xf32) + positionError(3xf32) + yaw/pitch/roll(3xf32) + trailingStateRaw(u8) = 49B。
+ * trailingStateRaw semantic = UNKNOWN（绝非 onGround / isError）。
  * 所有数值必须是有限浮点数，拒绝 NaN 和 Infinity。
  * </p>
  */
@@ -28,6 +30,18 @@ public class PositionDecoder implements ReplayPacketDecoder {
     @Override
     public ReplayDecodeResult decode(ReplayDecodeContext context, RawReplayPacket packet) {
         final byte[] payload = packet.payload();
+        // 版本门禁（计划 §A2）：Type10 closed semantics 只在已知版本族上 AFFIRMED；
+        // 未知版本 → raw-preserve（UnknownReplayEvent）+ diagnostics。
+        if (!ReplayVersionGate.closedSemanticsAllowed(context.clientVersion())) {
+            final ReplayTimestamp unsupportedTs = new ReplayTimestamp(packet.rawClockSec(), null);
+            return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
+                    List.of(new UnknownReplayEvent(
+                            packet.sequence(), unsupportedTs, packet.type(),
+                            payload.length, "VERSION_UNSUPPORTED", DecodeConfidence.UNKNOWN)),
+                    List.of(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
+                            "Type10 closed semantics not affirmed for client version: "
+                                    + context.clientVersion())));
+        }
         if (payload.length < 45) {
             return new ReplayDecodeResult(DecodeStatus.MALFORMED, List.of(),
                     List.of(new ReplayDecodeWarning("TRUNCATED_PAYLOAD",
@@ -38,7 +52,7 @@ public class PositionDecoder implements ReplayPacketDecoder {
 
         final int entityId = readI32LE(payload, 0);
         final int spaceId = readI32LE(payload, 4);
-        final int vehicleId = readI32LE(payload, 8);
+        final int attachmentParentEntityId = readI32LE(payload, 8);
         final float x = Float.intBitsToFloat(readU32LE(payload, 12));
         final float y = Float.intBitsToFloat(readU32LE(payload, 16));
         final float z = Float.intBitsToFloat(readU32LE(payload, 20));
@@ -49,7 +63,7 @@ public class PositionDecoder implements ReplayPacketDecoder {
         final float yaw = payload.length >= 40 ? Float.intBitsToFloat(readU32LE(payload, 36)) : 0f;
         final float pitch = payload.length >= 44 ? Float.intBitsToFloat(readU32LE(payload, 40)) : 0f;
         final float roll = payload.length >= 48 ? Float.intBitsToFloat(readU32LE(payload, 44)) : 0f;
-        final byte errorFlag = payload.length >= 49 ? payload[48] : 0;
+        final int trailingStateRaw = payload.length >= 49 ? (payload[48] & 0xFF) : 0;
 
         DecodeConfidence confidence = DecodeConfidence.EXACT;
 
@@ -77,7 +91,7 @@ public class PositionDecoder implements ReplayPacketDecoder {
                             + x + "," + y + "," + z));
         }
 
-        // 完整 Type 10 包为 49 字节；45–48 字节时 roll/errorFlag 等尾部字段缺失，
+        // 完整 Type 10 包为 49 字节；45–48 字节时 roll/trailingStateRaw 等尾部字段缺失，
         // 被填成默认 0。这属于"字段不存在"而非"真实值为 0"，不能标记为 EXACT。
         if (payload.length < 49 && confidence == DecodeConfidence.EXACT) {
             warnings.add(new ReplayDecodeWarning("TRUNCATED_POSITION",
@@ -89,8 +103,8 @@ public class PositionDecoder implements ReplayPacketDecoder {
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
         final PositionChangedEvent event = new PositionChangedEvent(
                 packet.sequence(), ts, packet.type(), confidence,
-                entityId, spaceId, vehicleId,
-                x, y, z, errX, errY, errZ, yaw, pitch, roll, errorFlag);
+                entityId, spaceId, attachmentParentEntityId,
+                x, y, z, errX, errY, errZ, yaw, pitch, roll, trailingStateRaw);
 
         final DecodeStatus status = confidence == DecodeConfidence.EXACT
                 ? DecodeStatus.SUCCESS : DecodeStatus.PARTIAL;

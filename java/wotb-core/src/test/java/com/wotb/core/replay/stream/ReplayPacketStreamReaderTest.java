@@ -125,19 +125,78 @@ class ReplayPacketStreamReaderTest {
     }
 
     @Test
-    void recoversFromBadPacket() {
-        // 一个坏包后恢复
+    void acceptsZeroLengthPayload() {
+        // PR147：payloadLen == 0 合法（Type 17）
+        final byte[] data = createHeaderWithPackets(packetBytes(0, 17, 5.0f));
+        final var result = ReplayPacketStreamReader.read(data);
+        assertEquals(1, result.packets().size());
+        assertEquals(17, result.packets().getFirst().type());
+        assertEquals(0, result.packets().getFirst().payloadLength());
+        assertEquals(PacketReadStatus.NORMAL, result.packets().getFirst().readStatus());
+    }
+
+    @Test
+    void stopsAtTerminator() {
+        final byte[] data = createHeaderWithPackets(
+                packetBytes(4, 4, 5.0f),
+                packetBytes(16, 0xFFFFFFFF, 0.0f)  // terminator
+        );
+        final var result = ReplayPacketStreamReader.read(data);
+        assertEquals(2, result.packets().size());
+        assertEquals(0xFFFFFFFF, result.packets().get(1).type());
+        assertEquals(16, result.packets().get(1).payloadLength());
+        assertEquals(0, result.diagnostics().trailingByteCount());
+        assertTrue(result.diagnostics().streamComplete());
+    }
+
+    @Test
+    void rejectsTrailingDataAfterTerminator() {
+        final byte[] header = createHeaderBytes();
+        final byte[] terminator = packetBytes(16, 0xFFFFFFFF, 0.0f);
+        final byte[] garbage = new byte[]{1, 2, 3, 4};
+        final byte[] data = concat(header, terminator, garbage);
+
+        final IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> ReplayPacketStreamReader.read(data));
+        assertTrue(error.getMessage().contains("REPLAY_TRAILING_DATA"));
+    }
+
+    @Test
+    void rejectsTruncatedPacket() {
+        final byte[] header = createHeaderBytes();
+        final byte[] full = packetBytes(10, 4, 5.0f);
+        final byte[] truncated = new byte[full.length - 5];
+        System.arraycopy(full, 0, truncated, 0, truncated.length);
+
+        final byte[] data = concat(header, truncated);
+        final IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> ReplayPacketStreamReader.read(data));
+        assertTrue(error.getMessage().contains("REPLAY_TRUNCATED_PACKET"));
+    }
+
+    @Test
+    void rejectsOversizedPayload() {
+        final byte[] data = createHeaderWithPackets(
+                packetBytes(200_001, 4, 5.0f)
+        );
+        final IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> ReplayPacketStreamReader.read(data));
+        assertTrue(error.getMessage().contains("REPLAY_INVALID_PAYLOAD_LEN"));
+    }
+
+    @Test
+    void rejectsGarbageBetweenPackets() {
+        // strict framing：坏字节后不得逐 byte resync 找 plausible packet → FAIL
         final byte[] header = createHeaderBytes();
         final byte[] good1 = packetBytes(20, 4, 5.0f);
-        final byte[] bad = new byte[]{1, 2, 3}; // 不完整的包
+        final byte[] bad = new byte[]{1, 2, 3}; // 非法 payloadLen 前缀
         final byte[] good2 = packetBytes(20, 10, 10.0f);
 
         final byte[] data = concat(header, good1, bad, good2);
-        final var result = ReplayPacketStreamReader.read(data);
-        assertEquals(2, result.packets().size());
-
-        assertEquals(1, result.diagnostics().resyncCount());
-        assertEquals(PacketReadStatus.RESYNC_RECOVERED, result.packets().get(1).readStatus());
+        final IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> ReplayPacketStreamReader.read(data));
+        assertTrue(error.getMessage().contains("REPLAY_INVALID_PAYLOAD_LEN")
+                || error.getMessage().contains("REPLAY_TRUNCATED_PACKET"));
     }
 
     @Test
@@ -203,17 +262,32 @@ class ReplayPacketStreamReaderTest {
     }
 
     @Test
-    void readerSkipsInvalidClock() {
-        // 无效时钟（NaN）的包应该被跳过
+    void rejectsInvalidClock() {
+        // strict framing：无效时钟不再跳过，直接 FAIL
         final byte[] header = createHeaderBytes();
         final byte[] badClockPkt = createRawPacket(10, 4, Float.NaN);
-        final byte[] goodPkt = packetBytes(10, 10, 30.0f);
 
-        final byte[] data = concat(header, badClockPkt, goodPkt);
+        final byte[] data = concat(header, badClockPkt);
+        final IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> ReplayPacketStreamReader.read(data));
+        assertTrue(error.getMessage().contains("REPLAY_INVALID_CLOCK"));
+    }
+
+    @Test
+    void normalPathHasNoResyncRecovery() {
+        final byte[] data = createHeaderWithPackets(
+                packetBytes(0, 17, 2.0f),
+                packetBytes(4, 4, 5.0f),
+                packetBytes(12, 10, 30.0f),
+                packetBytes(16, 0xFFFFFFFF, 0.0f)
+        );
         final var result = ReplayPacketStreamReader.read(data);
-        // 注意：badClockPkt 的 payloadLen 可能不合法，所以被跳过
-        // 但至少 goodPkt 应该被正常读取
-        assertTrue(result.diagnostics().packetCount() >= 1);
+        assertEquals(0, result.diagnostics().resyncCount());
+        assertEquals(0, result.diagnostics().skippedByteCount());
+        assertEquals(0, result.diagnostics().recoveredPacketCount());
+        assertEquals(4, result.packets().size());
+        assertTrue(result.packets().stream()
+                .allMatch(p -> p.readStatus() == PacketReadStatus.NORMAL));
     }
 
     @Test

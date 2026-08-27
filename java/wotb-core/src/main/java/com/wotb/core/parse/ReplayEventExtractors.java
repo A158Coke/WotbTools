@@ -47,19 +47,20 @@ final class ReplayEventExtractors {
 
     /**
      * 提取所有 Position 数据。
-     * BigWorld 格式含 space_id: entityId(i32) + spaceId(i32) + vehicleId(i32)
-     * + position(3xf32) + positionError(3xf32) + yaw/pitch/roll(3xf32) + is_error(i8) = 49B。
+     * BigWorld 格式含 space_id: entityId(i32) + spaceId(i32) + attachmentParentEntityId(i32)
+     * + position(3xf32) + positionError(3xf32) + yaw/pitch/roll(3xf32) + trailingStateRaw(u8) = 49B。
+     * trailingStateRaw semantic = UNKNOWN（绝非 onGround / is_error，type10 closure §13）。
      */
     public static List<EventStreamReader.PositionData> extractPositions(List<EventStreamReader.ParsedPacket> packets) {
         final List<EventStreamReader.PositionData> positions = new ArrayList<>();
         for (final EventStreamReader.ParsedPacket pkt : packets) {
-            if (pkt.type != TYPE_POSITION || pkt.payload.length < 45) {
+            if (pkt.type != TYPE_POSITION || pkt.payload.length < 49) {
                 continue;
             }
             final byte[] pl = pkt.payload;
             final int eid = ReplayPacketParser.readI32LE(pl, 0);
             final int sid = ReplayPacketParser.readI32LE(pl, 4);
-            final int vid = ReplayPacketParser.readI32LE(pl, 8);
+            final int attachmentParentEntityId = ReplayPacketParser.readI32LE(pl, 8);
             final float x = Float.intBitsToFloat(ReplayPacketParser.readU32LE(pl, 12));
             final float y = Float.intBitsToFloat(ReplayPacketParser.readU32LE(pl, 16));
             final float z = Float.intBitsToFloat(ReplayPacketParser.readU32LE(pl, 20));
@@ -69,7 +70,7 @@ final class ReplayEventExtractors {
             if (Math.abs(x) > 5000 || Math.abs(z) > 5000 || Math.abs(y) > 200) {
                 continue;
             }
-            positions.add(new EventStreamReader.PositionData(pkt.clockSecs, eid, sid, vid,
+            positions.add(new EventStreamReader.PositionData(pkt.clockSecs, eid, sid, attachmentParentEntityId,
                     x, y, z, yaw, pitch, roll));
         }
         return positions;

@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 class EntityPropertyDecoderTest {
 
     private final EntityPropertyDecoder decoder = new EntityPropertyDecoder();
-    private final ReplayDecodeContext context = new ReplayDecodeContext("test");
+    private final ReplayDecodeContext context = new ReplayDecodeContext("11.19.0_china");
 
     private static RawReplayPacket packet(final int propId, final byte[] value) {
         final byte[] payload = new byte[12 + value.length];

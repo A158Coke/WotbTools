@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class EntityMethodDecoderTest {
 
     private final EntityMethodDecoder decoder = new EntityMethodDecoder();
-    private final ReplayDecodeContext context = new ReplayDecodeContext("test");
+    private final ReplayDecodeContext context = new ReplayDecodeContext("11.19.0_china");
 
     /** 伤害方法包（type 8 / sub 8）：payload[0..3]=entityId、[4..7]=subtype、body[4..7]=攻击者 eid(LE)、
      *  body[8..11]=目标 eid(LE)、body[13]=伤害子类型、body[14..15]=伤害（u16 BE：高字节在前）。 */

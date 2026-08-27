@@ -1159,7 +1159,7 @@ class DefaultTeamBattleFeatureExtractorTest {
         return new PositionChangedEvent(
                 sequence, new ReplayTimestamp(time, null), 10,
                 confidence, entityId, 0, 0,
-                x, 0, z, 0, 0, 0, 0, 0, 0, (byte) 0);
+                x, 0, z, 0, 0, 0, 0, 0, 0, 0);
     }
 
     private static PositionChangedEvent positionWithElevation(

@@ -82,8 +82,10 @@ public class ReplayReconstructionService {
                     + lastClock + " exceeds allowed max=" + allowedMax);
         }
 
-        // 4. 解码所有包
-        final ReplayDecodeContext decodeContext = new ReplayDecodeContext(metadata.clientVersion());
+        // 4. 解码所有包：版本门禁使用 data.wotreplay 流头内的权威 clientVersion
+        //    （meta.json#clientVersionFromExe 经常为空；与 ReplayParser.battle.clientVersion 同源）。
+        final ReplayDecodeContext decodeContext =
+                new ReplayDecodeContext(streamResult.header().clientVersion());
         final List<ReplayEvent> allEvents = new ArrayList<>();
         final Map<Integer, TypeDecodeStats> typeDecodeStats = new HashMap<>();
 
