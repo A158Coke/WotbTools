@@ -2,27 +2,26 @@
 
 > Canonical corpus: 34 unique Blitz 11.19.0 China arenas.
 >
-> Numeric method IDs are entity-class and version scoped. This file is the synchronized method38 overview; focused evidence lives in the linked closure notes.
+> Numeric method IDs are entity-class/version scoped. This is the synchronized method38 broad overview; detailed proof lives in the focused closure notes.
 
 ## Executive verdict
 
-Avatar `methodId=38` is the replay recorder's **outgoing shot-result / hit-feedback family — PROVEN behavioral identity**.
+Avatar `methodId=38` is the recorder's **outgoing shot-result / hit-feedback family — PROVEN behavioral identity**.
 
-Current corpus anchors:
+Canonical anchors:
 
 ```text
-settlement recorder shots : 324
-settlement recorder hits  : 295
-method38 events           : 295
+unique recorder shots      324
+settlement recorder shots  324
+method38 events            295
+settlement recorder hits   295
 ```
 
-Every method38 event is recorder-Avatar scoped and joins a recorder→victim direct-hit path. It is not general world-damage telemetry.
+Every current method38 event is recorder-Avatar scoped and joins the recorder→victim hit path. It is not global world-damage telemetry.
 
-Historical `showShotResults(results)` remains the strongest symbolic candidate, but exact current Blitz RPC symbol/schema is still PARTIAL until version-matched definitions are recovered.
+Historical `showShotResults(results)` remains the strongest symbolic RPC candidate, but the production decoder does not depend on the historical function name.
 
-## Safe current wire model
-
-Main structure:
+## Wire model
 
 ```text
 victimVehicleId : u32 LE
@@ -36,7 +35,7 @@ tail            : u8
 optionalExtension : u32 LE when present
 ```
 
-Argument lengths in the canonical corpus:
+Observed argument lengths:
 
 ```text
 10 bytes : 173
@@ -46,56 +45,60 @@ Argument lengths in the canonical corpus:
 18 bytes :   2
 ```
 
-The extra four-byte extension occurs in 14 records.
+14 records carry the extra four-byte extension.
 
-Important correction:
+The four bytes following victim ID are **not** one homogeneous u32 hit-flag word. Low16 is the validated result bitfield. `headerHi16Raw` is `0x0002` in 293/295 records; the two exceptions belong to the known duplicate/batched Maus boundary and remain raw.
 
-> the four bytes after `victimVehicleId` must not be interpreted as one homogeneous u32 flag enum.
+## Physical hit grouping
 
-The low 16 bits are the behaviorally validated result-bit surface. `headerHi16Raw` is usually `0x0002` and remains raw/PARTIAL.
+A known same-clock/same-victim Maus boundary contains duplicate/batched method38 transport feedback. Consumers must semantic-group/deduplicate when constructing a settlement-compatible physical hit ledger rather than assuming every RPC is one independent physical hit.
 
-## Recorder-hit scope and semantic hit grouping
+## Current low-16 result reconstruction
 
-The strict corpus closes method38 against recorder hit totals, but transport cardinality is not always one physical hit per RPC. A known Maus boundary contains duplicate/batched feedback at the same `(arena, rawClock, victim)`.
+| Bit | Verdict | Current physical role |
+|---:|---|---|
+| `0x0001` | PROVEN | direct terminal shell kill |
+| `0x0002` | PROVEN sample / PARTIAL global | target already dead before attack |
+| `0x0004` | PROVEN current samples / low-N global | fire started |
+| `0x0008` | high-confidence PARTIAL | ricochet-like; exact current armor-normal closure missing |
+| `0x0010` | PROVEN relationship | projectile penetration/material-positive branch |
+| `0x0020` | VERY STRONG PARTIAL | projectile non-penetration/material-stop branch |
+| `0x0040` | PARTIAL | additional projectile/material/armor branch |
+| `0x0100` | PROVEN relationship | internal component/device penetration/involvement |
+| `0x0400` | PROVEN relationship | track/chassis-damaged result family |
+| `0x0800` | PROVEN current samples / PARTIAL global n=2 | Gun-damaged result |
+| `0x1000` | VERY STRONG PARTIAL | special/HE-family explosion-material resolution branch |
+| `0x2000` | PARTIAL n=1 | special/HE-family explosion-armor branch |
+| `0x4000` | PROVEN relationship | special/HE-family explosion internal-component/device branch |
 
-Consumers constructing a physical hit ledger must semantic-group/deduplicate rather than assume one RPC equals one settlement hit.
-
-## Current low-16 result facts
+Current semantic-hit penetration-like derivation:
 
 ```text
-0x0001 -> direct shell terminal kill
-          PROVEN current corpus
-
-0x0002 -> target already dead before attack
-          PROVEN observed sample / PARTIAL global
-
-0x0004 -> fire started by shot
-          PROVEN observed samples / PARTIAL global
-
-0x0008 -> ricochet
-          high-confidence PARTIAL; current armor-normal geometry closure still absent
-
-0x1110 -> piercing-like OR relationship
-          PROVEN current corpus after semantic-hit grouping
+CURRENT_PIERCING_LIKE_MASK = 0x1110
 ```
 
-`0x0010`, `0x0100`, `0x0400` and other individual bit semantics are preserved separately in `avatar-shot-result-bitfield.md` with their own evidence grades.
+This closes against settlement penetrations after semantic hit grouping.
 
-Re-audited current special-ammunition relationship:
+Historical PC/WoT upper-bit ordinal names are **not authoritative** for current Blitz 11.19. Current behavior looks like a compacted/reorganized descendant, but that implementation-history explanation is only a hypothesis.
+
+See `method38-current-hit-flag-reconstruction.md` for the current bit truth source.
+
+## Type28 selectionValue=2 relationship
+
+Strict 324-shot re-audit:
 
 ```text
 0x1000 : 13/13 -> Type28 selectionValue=2
 0x2000 :  1/1  -> Type28 selectionValue=2
 0x4000 :  7/7  -> Type28 selectionValue=2
+non-value-2 occurrences = 0
 ```
 
-This proves a selection-value-2 special ammunition/result-resolution branch, but does **not** justify transplanting historical PC upper-bit names into current Blitz.
+For FV215b, value2 has HE-family combat behavior. Do not treat wire values as UI shell indices; use Type28 -> method17 descriptor -> versioned shell catalog for final display naming.
 
-## Component-token namespace — now closed
+## Component-token namespace
 
-The repeated `componentToken` is not an anonymous critical token anymore. It reuses the current component namespace independently closed across method16 and Type32.
-
-Current version-gated map:
+`componentToken` reuses the current namespace independently closed across method16 and Type32:
 
 ```text
 31 Engine
@@ -109,50 +112,42 @@ Current version-gated map:
 39 Commander
 40 Driver
 41 Gunner
-42 UNKNOWN / unobserved-reserved
+42 UNKNOWN / unobserved
 43 Loader
 ```
 
-Thus consumers may decode known tokens to component names for Blitz 11.19 while preserving the raw value and version gate.
+This relationship is **PROVEN current 11.19**. Preserve raw token and version gate even when a name is known.
 
-## `rawState` severity/result family — substantially closed
-
-Current safe mapping:
+## rawState
 
 ```text
 rawState=0
-    component hit/involved in resolution
-    but no newly observed persistent negative module state
-    VERY STRONG physical role / exact internal enum PARTIAL
+    component was hit/involved in resolution
+    but module-damage probability did not create a newly observed persistent negative state
+    VERY STRONG physical role / exact private enum unknown
 
 rawState=1
-    mechanical component damaged OR crew member injured
+    mechanical module damaged OR crew member injured
     PROVEN relationship
 
 rawState=2
-    mechanical component critical / disabled
+    mechanical module critical / disabled
     PROVEN relationship
 ```
 
-Independent method16→Type32 anchors:
+Independent anchors:
 
 ```text
-method16 codeA=4  common damage -> Type32 a0/a180/a140 : 69/69
-method16 codeA=5  critical      -> Type32 a4/9c        : 65/65
-method16 codeA=10 crew injury   -> Type32 a0/a180     : 24/24
+method16 codeA4  common damage -> Type32 a0/a180/a140 : 69/69
+method16 codeA5  critical      -> Type32 a4/9c        : 65/65
+method16 codeA10 crew injury   -> Type32 a0/a180      : 24/24
 ```
 
-Method38 then reproduces the same state families on same-component result tokens.
+A single shell may list multiple internal components and produce state0 on some while state1/2 occurs on another. **Module hit does not guarantee module damage**; each component resolves its damage probability separately.
 
-### Why rawState=0 is not light damage
+See `method38-component-hit-damage-roll.md` and `method38-result-state-closure.md`.
 
-Current `rawState=0` population has explicit component tokens but no same-clock matching persistent negative-state mutation. Mixed single-shell results show that one shell can hit several internal components and independently succeed/fail their module-damage probability checks, e.g. components with state0 in the same hit as another crew/module result with state1.
-
-Therefore module hit and module damage are distinct. Do not expose rawState0 as `damaged`.
-
-The exact internal enum name (`unchanged`, `hit-no-damage`, etc.) remains unknown.
-
-## Extended result field
+## Optional extension
 
 Current population:
 
@@ -163,40 +158,25 @@ extension=2 :  1
 
 ### extension=1
 
-`extension=1` is a **VERY STRONG Precision Fire proc candidate / near-PROVEN**, but remains provenance-aware rather than production-PROVEN without controlled/schema closure.
+**VERY STRONG Precision Fire proc candidate / near-PROVEN**.
 
 Current evidence:
 
-- all 12 non-HE-family samples produce exact maximum ordinary damage or target-HP-capped terminal damage;
-- exact SPHT 500-damage samples: 9/9 carry extension1;
-- exact Ho-Ri 700-damage samples: 2/2 carry extension1;
-- the SPHT 415 terminal sample had exactly 415 HP before the hit, so observable loss is HP-capped;
-- the lone FV215b HE-family sample is not a contradiction: Precision Fire may establish the HE maximum-damage proc before HE penetration/armor/explosion-radius resolution determines final HP loss.
+- all 12 non-HE-family samples are exact ordinary maximum damage or terminal-HP capped;
+- SPHT exact 500-damage shots: 9/9 extension1;
+- Ho-Ri exact 700-damage shots: 2/2 extension1;
+- SPHT 415 terminal sample had exactly 415 HP before the hit;
+- lone FV215b HE-family sample remains compatible because HE can undergo penetration/armor/explosion-radius final resolution after the Precision Fire proc.
 
-Do not infer Precision Fire solely from final damage magnitude. See `precision-fire-method38-extension.md`.
+Production-PROVEN exact enum naming still requires controlled or direct current schema/string evidence.
 
 ### extension=2
 
-The only current recorder-owned Tungsten-active hit carries `extension=2` approximately 0.5 seconds after activation; no non-Tungsten hit carries that extension.
+Only current recorder-owned Tungsten-active hit carries value2 about 0.5 s after `0x69` activation; no non-Tungsten method38 hit carries value2.
 
-Verdict:
+Verdict: **VERY STRONG PARTIAL Tungsten/special-damage provenance candidate, n=1**.
 
-> Tungsten/special-damage provenance candidate — **VERY STRONG PARTIAL, n=1**.
-
-Additional controlled samples are required before exact naming.
-
-## Type28 relationship
-
-Type28 is independently proven as recorder ammunition-selection state. A strict re-audit reconstructs:
-
-```text
-324 unique recorder method29 shotIds
-= 324 settlement recorder shots
-```
-
-Do not assume wire selection values `0/1/2` equal UI shell-list indices without method17 descriptor closure.
-
-For FV215b, current launch velocity strongly identifies wire value1 as the APCR family. Wire value2 has HE-family combat behavior and is the only value associated with the current `0x1000/0x2000/0x4000` high-result branch, but production naming still belongs behind descriptor/version gating.
+A second positive controlled sample is required before exact naming.
 
 ## Safe decoder model
 
@@ -220,36 +200,37 @@ ShotResultFeedback {
 
 Safe current uses:
 
-- identify a recorder shell hit/result feedback event;
-- derive current-corpus direct kill, fire-start and piercing-like facts;
-- attach version-gated module/crew identities;
-- distinguish no-new-module-damage vs damaged/injured vs critical/disabled component result families;
-- preserve extension provenance and raw flags for future schema closure.
+- identify recorder hit/result feedback;
+- derive version-gated direct-kill, fire-start, penetration-like and proven module-result facts;
+- attach closed module/crew identities;
+- distinguish hit-with-no-new-damage vs damaged/injured vs critical/disabled;
+- preserve raw flags/header/extension for future schema closure.
 
-Still unsafe:
+Unsafe:
 
-- treating `headerHi16Raw` as a decoded hit flag;
-- naming every low-16 bit from historical PC constants;
-- naming rawState0 with an exact internal enum;
-- globally naming extension2 as Tungsten from a single sample;
-- treating method38 as all-player/global telemetry.
+- decode `headerHi16Raw` as a known hit flag;
+- transplant historical PC bit positions wholesale;
+- call rawState0 an exact private enum;
+- globally call extension2 Tungsten from `n=1`;
+- use method38 as global/all-player telemetry.
 
-## Current remaining work
+## Bounded future work
 
-These are bounded research gaps, not blockers to current-corpus structural completion:
+Not blockers to current-corpus completion:
 
-1. recover version-matched Blitz method38 schema/symbol names;
-2. close exact rawState0 internal enum naming with a controlled module-hit/no-damage probe;
-3. split selectionValue2 high result bits into exact HE/special-shell resolution meanings;
-4. obtain more Tungsten-active recorder hits for extension2;
-5. validate mappings on future Blitz versions behind version gates.
+1. direct current schema/string names;
+2. controlled rawState0 module-hit/no-damage probe;
+3. larger low-N flag samples (`0x0008`, `0x0800`, `0x2000`);
+4. more Tungsten-active recorder hits;
+5. future-version validation behind version gates.
 
-## Canonical supporting notes
+## Current supporting notes
 
+- `method38-current-hit-flag-reconstruction.md`
 - `avatar-shot-result-bitfield.md`
 - `method38-result-state-closure.md`
 - `method38-component-token-namespace.md`
-- `method38-module-damage-probability.md`
+- `method38-component-hit-damage-roll.md`
 - `precision-fire-method38-extension.md`
 - `type28-ammunition-slot.md`
 - `track-side-orientation-closure.md`
