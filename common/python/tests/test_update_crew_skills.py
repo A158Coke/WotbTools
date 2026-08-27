@@ -71,7 +71,13 @@ class CrewSkillsTest(unittest.TestCase):
         self.assertEqual("11.19.0", document["meta"]["sourceGameVersion"])
         self.assertEqual("abc123", document["meta"]["sourceHash"])
         self.assertEqual(
-            {"trainingEligibility": "class_specific", "effectScope": "all_vehicles"},
+            {
+                "trainingEligibility": "class_specific",
+                "effectScope": "all_vehicles",
+                "defaultSkillLevel": 7,
+                "maxSkillLevel": 7,
+                "effectValuePolicy": "use_max_level_bonus",
+            },
             document["semantics"],
         )
         self.assertEqual(0, document["classes"]["light"]["classId"])
@@ -119,6 +125,30 @@ class CrewSkillsTest(unittest.TestCase):
         self.assertTrue(changed)
         self.assertEqual("class_specific", document["semantics"]["trainingEligibility"])
         self.assertEqual("all_vehicles", document["semantics"]["effectScope"])
+        self.assertEqual(7, document["semantics"]["defaultSkillLevel"])
+        self.assertEqual(7, document["semantics"]["maxSkillLevel"])
+        self.assertEqual("use_max_level_bonus", document["semantics"]["effectValuePolicy"])
+
+    def test_semantics_change_from_non_max_level_is_not_noop(self):
+        classes = sample_classes()
+        existing = ucs.build_document(
+            classes,
+            game_version="11.19.0",
+            skills_hash="old-hash",
+            generated_at="2026-08-20T00:00:00Z",
+        )
+        existing["semantics"]["defaultSkillLevel"] = 6
+        existing["semantics"]["effectValuePolicy"] = "scale_by_level"
+        document, changed = ucs.reconcile_document(
+            existing,
+            classes,
+            game_version="11.19.0",
+            skills_hash="old-hash",
+            generated_at="2026-08-27T00:00:00Z",
+        )
+        self.assertTrue(changed)
+        self.assertEqual(7, document["semantics"]["defaultSkillLevel"])
+        self.assertEqual("use_max_level_bonus", document["semantics"]["effectValuePolicy"])
 
     def test_new_skill_is_imported(self):
         old_classes = sample_classes()
