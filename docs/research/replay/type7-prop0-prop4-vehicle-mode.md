@@ -17,7 +17,7 @@ values      : 0 or 1 only
 1 : 31,250
 ```
 
-The important behavioral fact is that the value almost always alternates on every update for the same vehicle:
+The value almost always alternates on every update for the same vehicle:
 
 ```text
 1 -> 0 : 31,161
@@ -41,17 +41,15 @@ value 1 median speed ≈ 4.86 m/s
 
 The distributions overlap heavily.
 
-It is also not a direct copy of Type10 `errorFlag`: the current 49-byte Type10 records use `errorFlag=1` at both property0 values.
+It is also not a direct copy of Type10 `errorFlag`, and same-clock joins with firing, static collision and damage do not produce a unique state interpretation.
 
-Same-clock joins with Vehicle method0 shooting, method6 static collision and method8 damage do not produce a unique state interpretation.
+An older Blitz-native replay property inventory contains a boolean `isStrafing`, but current property0 behavior does not justify equating the two merely because both are boolean. That candidate remains unpromoted.
 
 Verdict:
 
 > Vehicle property0 = **alternating boolean/sequence-like vehicle state — PROVEN shape / UNKNOWN exact semantic**.
 
-Do not expose it as movement, visibility, firing, collision or alive state.
-
-## Vehicle property4 — two-u8 discrete vehicle-mode tuple
+## Vehicle property4 — `engineMode` family
 
 Current property4:
 
@@ -93,7 +91,7 @@ which is consistent with a compact composite/discrete mode rather than a continu
 
 ### Movement relationship
 
-Joining property4 updates to bracketing Type10 movement shows a clear but non-exclusive kinematic relationship.
+Joining property4 updates to bracketing Type10 movement gives a clear but non-exclusive kinematic relationship.
 
 Median estimated speed by `modeA`:
 
@@ -104,39 +102,43 @@ modeA 2 : ~4.71 m/s
 modeA 3 : ~1.31 m/s
 ```
 
-`modeA=2` therefore occurs disproportionately in higher-motion periods, but every mode has overlapping speeds. This rules out a simple direct `modeA == moving` boolean/ordinal interpretation.
+`modeA=2` occurs disproportionately in higher-motion periods, but every mode has overlapping speeds. Therefore the tuple is not a simple ordinal speed state.
 
-Median estimated speed also varies by `modeB`; states `1/5/9` are concentrated at higher-motion samples than `0/2/4/8`, supporting a vehicle drivetrain/movement-mode family without closing exact labels.
+### Blitz-native symbolic evidence
 
-### Historical schema candidate
+Two independent symbolic sources now point to the same family:
 
-Historical Wargaming `Vehicle.def` contains a replay-exposed property:
+1. historical Wargaming `Vehicle.def` exposes:
 
 ```text
 engineMode : TUPLE<UINT8, size=2>
 ```
 
-The current Blitz property4 normal body is exactly two uint8 values, and its behavior is compatible with a discrete engine/movement state family.
+2. an older **World of Tanks Blitz replay-code property inventory** independently lists:
 
-However property indices drift across entity-definition versions and the current corpus lacks a Blitz 11.19 symbolic producer schema.
+```text
+engineMode
+```
+
+The current 11.19 property4 normal body is exactly the same two-u8 shape and its real movement behavior is consistent with an engine/drivetrain mode tuple.
 
 Verdict:
 
-> Vehicle property4 = **two-u8 discrete vehicle mode tuple — PROVEN structure / STRONG PARTIAL engine-or-movement-mode family**.
->
-> historical `engineMode` = strong schema candidate, **not promoted to exact current symbolic identity**.
+> Vehicle property4 = **`engineMode` family — PROVEN structure + behavior / VERY STRONG PARTIAL exact current symbolic identity**.
+
+The exact current symbolic name remains one evidence level below unqualified PROVEN only because the available Blitz symbolic listing is from an older client and property indices can drift across entity-definition revisions.
 
 ## Parser guidance
 
 ```text
 VehicleProperty0Raw {
-    state : u8 // observed 0/1
+    state : u8
 }
 
-VehicleProperty4Mode {
+VehicleEngineModeCandidate {
     modeA : u8
     modeB : u8
 }
 ```
 
-Preserve raw values and version-gate future semantic labels.
+For 11.19 consumers, `engineMode` is a safe internal family label when explicitly version-scoped; preserve both raw bytes rather than assigning unsupported sub-mode names.
