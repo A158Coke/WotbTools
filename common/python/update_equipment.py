@@ -94,6 +94,7 @@ def fetch(url, binary=False):
 
 
 def fetch_reviewed_source(path, expected_blob_sha):
+    """Fetch main only when the exact reviewed blob is still current."""
     url = f"https://api.github.com/repos/{BLITZKIT_REPO}/contents/{path}?ref=main"
     payload = json.loads(fetch(url))
     actual_sha = payload.get("sha")
@@ -159,7 +160,6 @@ def parse_class_values(block):
 
 
 def parse_equipment_details(pb_bytes):
-    """Return {id: {name, description}} from EquipmentDefinitions.equipments."""
     details = {}
     root = decode_protobuf(pb_bytes)
     for raw_equipment in root.get(2, []):
@@ -176,7 +176,6 @@ def parse_equipment_details(pb_bytes):
 
 
 def parse_equipment_placements(pb_bytes, used_presets):
-    """Return {equipment_id: {(group, slot, side)}} for used tier 7-10 presets."""
     placements = {}
     root = decode_protobuf(pb_bytes)
     for raw_preset in root.get(1, []):
@@ -254,7 +253,7 @@ def validate_upstream_contract(payload, equipment_pb, tanks_pb):
 
 
 def extract_numbers(text):
-    return {float(value) for value in re.findall(r"(?<!\w)-?\d+(?:\.\d+)?", text or "")}
+    return {abs(float(value)) for value in re.findall(r"(?<!\w)-?\d+(?:\.\d+)?", text or "")}
 
 
 def validate_locked_descriptions(payload, details):
