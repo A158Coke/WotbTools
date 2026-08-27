@@ -1,196 +1,145 @@
 # Method16 codeB=33 / 38 — Fuel Tank and Observation Device closure
 
-> Corpus: canonical 34 unique Blitz 11.19.0 China arenas.
+> Base corpus: canonical 34 unique Blitz 11.19.0 China arenas.
 >
-> Final current verdict:
->
-> - `codeB=33 = Fuel Tank` — **PROVEN by exhaustive current mechanical-domain closure + current critical-behavior discriminator**.
-> - `codeB=38 = Observation Device` — **PROVEN by exhaustive current mechanical-domain closure + current critical-behavior discriminator**.
+> Additional controlled replay: Maus module probe recorded on `11.19.0_china_apple`.
 
-## Mechanical component domain
-
-Avatar method16 uses a contiguous current mechanical component namespace:
+## Final verdict
 
 ```text
-31..38
+codeB=33 = Fuel Tank           PROVEN direct controlled ignition closure
+codeB=38 = Observation Device  PROVEN direct controlled positive sample
 ```
 
-Independent current-version closures now establish:
+These identities were already proven from exhaustive current mechanical-domain closure plus a critical-behavior discriminator. The Maus controlled replay now supplies direct positive samples for both remaining module identities.
+
+## Current mechanical component map
 
 ```text
 31 Engine              PROVEN
 32 Ammo Rack           PROVEN
-34 Track side A        PROVEN family / side PARTIAL
-35 Track side B        PROVEN family / side PARTIAL
+33 Fuel Tank           PROVEN
+34 Right Track         PROVEN
+35 Left Track          PROVEN
 36 Gun                 PROVEN
 37 Turret Rotator      PROVEN version-scoped
+38 Observation Device  PROVEN
 ```
 
-Only `33` and `38` remain after those independent physical closures.
+## Controlled Observation Device sample
 
-Current Blitz support documentation lists the relevant damageable mechanical modules as:
+The replay was deliberately used to test the observation-device hit region.
+
+Observed lifecycle:
 
 ```text
-Engine
-Gun
-Ammo rack
-Turret
-Right track
-Left track
-Observation devices
-Fuel tank
+38.441s
+method16 codeA=5, codeB=38
+Type32 short token includes 0x26 (=38)
+
+44.844s
+method16 codeA=18, codeB=38
 ```
 
-and explicitly notes that Radio is not damaged.
-
-Thus after the six already-closed IDs, the remaining current component-name domain is exactly:
+Independent lifecycle semantics are already proven as:
 
 ```text
-{ Fuel Tank, Observation Device }
+codeA=5  -> critical / disabled device state
+codeA=18 -> automatic recovery to damaged/degraded operational state
 ```
 
-for numeric IDs:
+Therefore this controlled positive sample directly validates:
+
+> `codeB=38 = Observation Device` — **PROVEN current 11.19**.
+
+This replaces the earlier situation where `38` was identified primarily by exhaustive-domain elimination plus the absence of Fuel-Tank-style ignition at a critical boundary.
+
+## Controlled Fuel Tank ignition sample
+
+The same Maus replay deliberately tests the fuel-tank region.
+
+Observed sequence:
 
 ```text
-{ 33, 38 }
+62.243s
+method16 codeA=4, codeB=33
+Type32 short state on token 33
+=> common damaged/degraded Fuel Tank
+
+65.342s
+method16 codeA=8, codeB=33
+Type32 short state `9c04`
+
+65.843s
+Vehicle method1 causeFlag=1
+=> fire damage tick
+
+66.343s
+Vehicle method1 causeFlag=1
+=> second fire damage tick
 ```
 
-The pair still requires a current behavioral discriminator to determine orientation; historical numeric ordering alone is not accepted.
+The codeA=8 transition immediately precedes the periodic fire-DOT sequence.
 
-## codeB=38 critical sample
+This provides the previously missing direct physical closure:
 
-The canonical corpus contains one recorder-local `codeB=38` critical→clear chain:
+> `codeB=33 = Fuel Tank` — **PROVEN direct controlled ignition behavior**.
+
+It also establishes a new state/action relationship:
 
 ```text
-128.587601  method16 codeA=5, codeB=38, source=10470087
-128.587601  Type32 nested mutation ending in component token 0x26 (= 38)
-
-129.382904  method16 codeA=19, codeB=38, relatedEntity=0
-129.382904  Multi-Purpose Restoration Pack 0x0B activation
+codeA=8 when codeB=33
+-> Fuel Tank ignition / fire-start transition family
 ```
 
-Window duration:
+The exact private enum symbol is still unknown. Do not generalize `codeA=8` to every module until another component emits the same code under controlled conditions.
+
+## Repair boundary in the controlled replay
+
+At `66.643s`, the replay emits full repair/clear events for both components:
 
 ```text
-~0.795303 s
+method16 codeA=19, codeB=33
+method16 codeA=19, codeB=38
 ```
 
-The same MPRP boundary also heals a previously shell-shocked Gunner (`codeB=41`), providing an internal positive control that the restoration event is being decoded correctly.
+This is consistent with the independently proven `codeA=19 = fully repaired / cleared device state` family and provides a useful internal positive control for the component decoding.
 
-## Fuel-Tank critical behavior discriminator
-
-Current Blitz support documentation defines the two remaining candidates differently at critical damage:
+Later the Fuel Tank is damaged again:
 
 ```text
-Fuel Tank critical damage:
-    fire begins
-    fuel-tank icon remains orange
-
-Observation Device critical damage:
-    view range halved
+86.843s  codeA=4, codeB=33
+95.939s  codeA=19, codeB=33
 ```
 
-Therefore a genuine `codeA=5` critical sample provides a direct discriminator: if `38` were Fuel Tank, the critical boundary should initiate the current fire family.
+which reproduces the same module identity independently within the same controlled battle.
 
-## No fire at the codeB=38 critical boundary
+## Historical corpus evidence retained
 
-The recorder event stream around the complete `38` critical window was rescanned from raw `data.wotreplay`.
+Before the controlled replay, the proof used these current-version constraints:
 
-Observed at/after `128.587601` until the MPRP clear:
+1. method16 mechanical IDs occupy the contiguous `31..38` domain;
+2. six of eight components were independently closed physically;
+3. current Blitz damageable-module rules leave only Fuel Tank and Observation Device for `33/38`;
+4. a canonical `38` critical sample did not start a fire, excluding Fuel Tank and orienting `38` as Observation Device.
+
+That reasoning remains valid, but the controlled replay is now the stronger direct evidence.
+
+## Production-safe mapping
+
+For Blitz 11.19 China:
 
 ```text
-no recorder Vehicle method1 causeFlag=1 fire HP-damage event
-no proven Type32 mobile short ...04 fire-associated state
-no periodic fire-DOT HP-loss sequence
+33 -> FUEL_TANK
+38 -> OBSERVATION_DEVICE
 ```
 
-The actual nearby HP update is earlier, at `127.778130`, and has:
+Preserve raw component IDs and client-version provenance for future versions.
 
-```text
-causeFlag=0
-```
+## Remaining work
 
-It is the direct hit that also shell-shocks the Gunner, not a fire-DOT tick.
+The identities are closed. Remaining research is narrower:
 
-Thus the real current `codeB=38, codeA=5` critical event does **not** exhibit the mandatory Fuel-Tank-critical `fire begins` signature.
-
-Verdict:
-
-> `codeB=38 = Fuel Tank` — **REJECTED by current critical-behavior evidence**.
-
-Given the exhaustive two-name remaining domain:
-
-> `codeB=38 = Observation Device` — **PROVEN current 11.19 identity**.
-
-## codeB=33 pair closure
-
-Once `38` is independently oriented as Observation Device, the sole remaining current mechanical identity is Fuel Tank:
-
-> `codeB=33 = Fuel Tank` — **PROVEN by exhaustive current domain closure**.
-
-This assignment is also behaviorally compatible with the recorder-local `33` population.
-
-Current recorder-local observations:
-
-```text
-codeA=4 onset : 6
-codeA=19 clear: 6
-```
-
-No recorder-local `codeA=5` Fuel Tank critical sample exists in the current 34-arena corpus, so the expected direct ignition closure cannot be observed for `33` itself.
-
-That absence is why `33` previously remained STRONG PARTIAL. The identity becomes PROVEN only after the independent `38` critical negative control closes the final two-member domain.
-
-## codeB=33 targeting negative control
-
-`33` does not show the gun-specific targeting signature that independently closed `36 = Gun`.
-
-One `33` onset occurs exactly at a normal recorder shot clock. Method36 there shows the ordinary pre/post-shot dispersion-state change:
-
-```text
-field6.field1 pre-shot  = 0.8529762465052021
-field6.field1 post-shot = 0.9171787581399614
-```
-
-There is no persistent `×2` module-state transition like the proven Gun damage sample.
-
-Across the current `33` windows there is likewise no independent Engine/Track/Turret-Rotator physical signature.
-
-This is a compatibility/negative control, not the primary identity proof.
-
-## Why pair elimination is valid here
-
-This is not historical-order inference.
-
-The proof uses three current constraints:
-
-1. **current observed numeric domain**: mechanical method16 IDs occupy `31..38`;
-2. **independent current physical closures**: six of the eight positions are already named without relying on ordering;
-3. **current gameplay critical discriminator**: the only two remaining names have different critical behavior, and the observed `38` critical sample rejects Fuel Tank.
-
-The conclusion therefore follows by exhaustive current-domain elimination, not by assuming old PC/WoT enum positions.
-
-## Safe current mechanical map
-
-```text
-31 Engine              PROVEN
-32 Ammo Rack           PROVEN
-33 Fuel Tank           PROVEN exhaustive-domain closure
-34 Track side A        PROVEN family / side PARTIAL
-35 Track side B        PROVEN family / side PARTIAL
-36 Gun                 PROVEN
-37 Turret Rotator      PROVEN version-scoped
-38 Observation Device  PROVEN exhaustive-domain + critical discriminator
-```
-
-## Remaining mechanical work
-
-The component identities are now closed for all observed `31..38` positions. Remaining work is narrower:
-
-1. assign exact left/right ordering for `34/35`;
-2. map every related Type32/prop8 mechanical token and compressed property path;
-3. obtain an additional `33` critical replay to directly observe the Fuel Tank ignition boundary;
-4. obtain a longer `38` critical replay to measure the predicted view-range/spotting impairment directly;
-5. validate numeric stability outside Blitz 11.19 China.
-
-Until cross-version validation exists, all numeric mappings remain explicitly version-gated.
+1. recover exact private enum name for Fuel-Tank `codeA=8`;
+2. directly measure Observation Device view-range impairment with a controlled spotting-distance setup;
+3. validate numeric stability on non-11.19 clients.
