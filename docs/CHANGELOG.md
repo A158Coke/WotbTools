@@ -7,6 +7,7 @@
 ### Fixed
 - **雷达图恢复最外围 100% 边界线**：`PlayerRatingRadar` 最外围网格层引用 `--border-light-strong`，但该 token 从未定义（无效变量引用令 `stroke: none`，导致 100% 边界在 show/classic 等主题下均不可见）；已在 `tokens.css`/`showcase.css`/`classic-profile.css` 三处按主题补齐该 token（视觉强于内部 `--border-light` 网格、弱于玩家数据线），最外围 polygon 恢复完整闭合可见。
 - **Classic Profile 名人堂公开页残留深色表面（PR #151 收尾）**：`styles/classic-profile.css` 补 `html[data-ui-profile="classic"] .lb-wrap` 的提交记录行、排行榜普通行基础背景/行分隔线、百场/三环 pending 状态卡、下载按钮、分页按钮与错误态覆盖（`var(--...)` + `!important`），清除 Classic 下 HoF 仍残留的 Showcase 深灰/黑块（如 `tbody` 深色行、提交记录区深底）；Showcase（默认）零回归；`classic-profile-css.test.js` 同步 selector→declaration 绑定回归（单场/百场/三环共用表面）。
+- **名人堂管理（HoF Admin）Classic 浅色残留（Blocker 4）**：`showcase-rankings.css` 仍对 `.hof-admin .hof-admin-denied p`（无权限提示段落）与 `.hof-admin .hof-admin-login`（登录态）写死 `#9aa09c`、对 `.hof-admin-table td` 写死行分隔线 `#263136`；main 的 `classic-profile.css` 用 `.denied/.login` 选择器与真实类 `.hof-admin-denied/.hof-admin-login` 失配（未命中）。已补 `html[data-ui-profile="classic"]` 覆盖：把 `.denied/.login` 修正为真实类、`.hof-admin-denied p` 用 `var(--text-sub)`、`.hof-admin-table td` 用 `var(--border-light)`，修复 Classic 下无权限/登录态与行分隔线偏深/低对比；Showcase（默认）零回归。
 
 ### Added
 - **选手详情侧栏桌面端自由 resize**：`PlayerDetailDrawer` 在桌面(>=1200px)侧栏左缘新增 resize handle（视觉 2px 线、12px hit 区、`cursor: col-resize`），pointer capture 连续拖动；min 320px / 默认 380px / max ≈45% 视口动态钳制；宽度经 `localStorage["radarSidePanelWidth"]` 持久化，恢复时与窗口缩放时按当前视口重新 clamp（存过大值自适应）；键盘 ←/→ 每次 20px；tablet(<1200)/mobile 保持原有行为无 handle。
