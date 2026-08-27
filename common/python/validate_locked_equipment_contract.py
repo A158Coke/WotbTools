@@ -8,11 +8,11 @@ from update_equipment import item_by_code, parse_equipment_details
 # Locked effects cannot be derived completely from BlitzKit calculation code. The live
 # equipment protobuf contains description templates (often with %(...) placeholders),
 # so wording fingerprints alone cannot prove numeric values. A reviewed game-version
-# lock therefore forces manual re-review whenever BlitzKit moves to another client version.
-REVIEWED_GAME_VERSION = "11.19.0"
+# lock therefore forces manual re-review whenever BlitzKit moves to another client build.
+REVIEWED_GAME_VERSION = "11.19.0.834_7320229"
 
 # SHA-256 of the normalized English description templates observed from the live
-# BlitzKit equipment.pb while reviewing WoTB 11.19. Any template change fails closed.
+# BlitzKit equipment.pb while reviewing the build above. Any template change fails closed.
 LOCKED_DESCRIPTION_SHA256 = {
     "SUPERCHARGER": "51344707bc61af4ae26a44a0cafe8bea5a672806724431dd8c0de6a6644f575a",
     "IMPROVED_VERTICAL_STABILIZER": "e99db56a71da9091425e87f0abfe79ed0093c956ea0da4354d281f829d365df6",
