@@ -235,7 +235,13 @@ final class ReplayEventExtractors {
         return events;
     }
 
-    public static Map<Long, List<EventStreamReader.KillVictimDamage>> extractKillVictims(
+    /**
+     * legacy damage-threshold 击杀归因（§B3）：累计 direct damage 达到结算 damageReceived
+     * 阈值后把攻击者推成 killer candidate。该结果<b>不是权威 kill/death evidence</b>
+     * （Type4 / last position / damage threshold 均不得作为死亡 authority，§B2），
+     * 仅作为 legacy/non-authoritative derived combat attribution 供 RatingV2 等旧消费者。
+     */
+    public static Map<Long, List<EventStreamReader.LegacyKillVictimDamage>> extractLegacyKillVictimAttribution(
             final List<EventStreamReader.ParsedPacket> packets,
             final Map<Integer, Long> entityToAccount,
             final Map<Long, Integer> accountToThreshold) {
@@ -249,7 +255,7 @@ final class ReplayEventExtractors {
 
         final Map<Long, Integer> cumulativeByVictim = new HashMap<>();
         final Map<DamagePair, DamageBucket> damageByPair = new HashMap<>();
-        final Map<Long, List<EventStreamReader.KillVictimDamage>> victimsByKiller = new HashMap<>();
+        final Map<Long, List<EventStreamReader.LegacyKillVictimDamage>> victimsByKiller = new HashMap<>();
         final Set<Long> completedVictims = new HashSet<>();
         for (final EventStreamReader.DirectDamageEvent event : events) {
             final long victimAccountId = event.victimAccountId();
@@ -291,7 +297,7 @@ final class ReplayEventExtractors {
                 continue;
             }
             victimsByKiller.computeIfAbsent(killerAccountId, ignored -> new ArrayList<>())
-                    .add(new EventStreamReader.KillVictimDamage(killerAccountId, victimAccountId,
+                    .add(new EventStreamReader.LegacyKillVictimDamage(killerAccountId, victimAccountId,
                             bucket.damage, bucket.penetrations));
         }
         return victimsByKiller;

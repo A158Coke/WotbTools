@@ -219,13 +219,12 @@ public final class ReplayParser {
             }
         }
 
-        // 存活时间: 存活=战斗时长, 阵亡=4 层 fallback
+        // 存活时间: 存活=战斗时长；阵亡=结算 deathTimeMillis（权威）或 UNKNOWN=0。
+        // legacy 启发式（damage-threshold / EntityLeave / Position 停止）不再写入 PlayerResult
+        // （§B2）——死亡 authority 链由 DefaultReplayProcessingFacade 的 DeathTimeReconciler
+        // 以 live EXACT 证据继续收口：LIVE EXACT → SETTLEMENT → UNKNOWN。
         final double bd = battle.durationS != null ? battle.durationS : 0;
-        Map<Long, Double> deathTimesByDamage = Map.of();
-        Map<Long, Double> deathTimesByEntityLeave = Map.of();
-        Map<Long, Double> deathTimesByPosition = Map.of();
         if (!esPackets.isEmpty()) {
-            // 第 1 层: data.wotreplay 事件流 Type 8 EntityMethod 伤害子类型 3 (直接HP伤害)
             final Map<Integer, Long> e2a = EventStreamReader.extractEntityToAccountMap(esPackets);
             final Map<Long, Integer> threshold = new HashMap<>();
             for (final PlayerResult pr : players) {
@@ -237,44 +236,29 @@ public final class ReplayParser {
             final Map<Long, PlayerResult> playersByAccount = players.stream()
                     .collect(Collectors.toMap(player -> player.accountId,
                             Function.identity(), (first, ignored) -> first));
-            final Map<Long, List<EventStreamReader.KillVictimDamage>> killVictims =
-                    EventStreamReader.extractKillVictims(esPackets, e2a, threshold);
-            for (final Map.Entry<Long, List<EventStreamReader.KillVictimDamage>> entry : killVictims.entrySet()) {
+            final Map<Long, List<EventStreamReader.LegacyKillVictimDamage>> killVictims =
+                    EventStreamReader.extractLegacyKillVictimAttribution(esPackets, e2a, threshold);
+            for (final Map.Entry<Long, List<EventStreamReader.LegacyKillVictimDamage>> entry
+                    : killVictims.entrySet()) {
                 final PlayerResult killer = playersByAccount.get(entry.getKey());
                 if (killer == null) {
                     continue;
                 }
-                for (final EventStreamReader.KillVictimDamage victim : entry.getValue()) {
+                for (final EventStreamReader.LegacyKillVictimDamage victim : entry.getValue()) {
                     killer.killVictims.add(new com.wotb.core.model.KillVictim(
                             victim.victimAccountId(), victim.damage(), victim.penetrations()));
                 }
             }
-            deathTimesByDamage = EventStreamReader.estimateDeathTimesByDamage(esPackets, e2a, threshold, bd);
-
-            deathTimesByEntityLeave = EventStreamReader.estimateDeathTimesByEntityLeaves(esPackets, bd);
-            deathTimesByPosition = EventStreamReader.estimateDeathTimesByPositions(esPackets, bd);
         }
         for (final PlayerResult pr : players) {
             if (pr.survived) {
                 pr.survivalTimeSec = bd;
             } else {
                 double st = pr.deathTimeMillis / 1000.0;
-                if (st <= 0) {
-                    st = deathTimesByDamage.getOrDefault(pr.accountId, 0.0);
-                }
-                if (st <= 0) {
-                    final double el = deathTimesByEntityLeave.getOrDefault(pr.accountId, 0.0);
-                    final double pos = deathTimesByPosition.getOrDefault(pr.accountId, 0.0);
-                    // EntityLeave 常出现假阳性(临时离场而非阵亡), 若 Position 数据显著晚于
-                    // EntityLeave 且 >0, 取 Position 作为更可靠的死亡时间
-                    if (el > 0 && pos > 0 && pos > el + 5.0) {
-                        st = pos;
-                    } else if (el > 0) {
-                        st = el;
-                    } else {
-                        st = pos;
-                    }
-                }
+                // 结算死亡时刻是权威；缺失 → UNKNOWN=0（由 DeathTimeReconciler 用 live EXACT 填补）
+                pr.deathTimeSource = st > 0
+                        ? com.wotb.core.model.DeathTimeSource.SETTLEMENT_SECOND
+                        : com.wotb.core.model.DeathTimeSource.UNKNOWN;
                 pr.survivalTimeSec = st > 0 ? Math.min(st, bd) : 0;
             }
         }

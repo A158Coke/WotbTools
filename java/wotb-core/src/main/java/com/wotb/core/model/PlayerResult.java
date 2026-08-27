@@ -30,7 +30,9 @@ public class PlayerResult {
     public int xp;
     public int credits;
 
-    // 击杀前伤害明细（killer attribution 证据链；AI 复盘消费）
+    // 击杀前伤害明细（legacy/non-authoritative derived combat attribution；§B3。
+    // 由 damage-threshold 启发式产出，供 RatingV2 potentialDamage 与旧导出消费；
+    // 不得作为权威 kill/death evidence —— 权威击杀以结算 kills / settlement 为准）
     public final List<KillVictim> killVictims = new ArrayList<>();
 
     // 名册信息
@@ -65,8 +67,11 @@ public class PlayerResult {
     // 原始死亡时刻(ms; proto #104; 存活/未知=0)
     public long deathTimeMillis;
 
-    // 存活时间(秒, 由 ReplayParser 计算)
+    // 存活时间(秒, 由 ReplayParser 计算；0 = UNKNOWN，绝不伪造)
     public double survivalTimeSec;
+
+    /** 死亡时刻 provenance（§B1/D2；null = 未回填，按 UNKNOWN 处理）。 */
+    public DeathTimeSource deathTimeSource;
 
     // 完整原始字段 (字段号 -> 值列表), 供"原始字段"表/排查
     public Map<Integer, List<Object>> raw;
