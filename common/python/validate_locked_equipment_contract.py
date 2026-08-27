@@ -1,22 +1,28 @@
 #!/usr/bin/env python3
-"""Fail-closed fingerprint checks for equipment whose effects are not fully modeled."""
+"""Fail-closed locks for equipment whose numeric effects are not fully modeled."""
 
 import hashlib
 
 from update_equipment import item_by_code, parse_equipment_details
 
-# Reviewed normalized English descriptions for locked equipment.
-# Any upstream wording/value/semantic change must be explicitly reviewed and this lock updated.
+# Locked effects cannot be derived completely from BlitzKit calculation code. The live
+# equipment protobuf contains description templates (often with %(...) placeholders),
+# so wording fingerprints alone cannot prove numeric values. A reviewed game-version
+# lock therefore forces manual re-review whenever BlitzKit moves to another client version.
+REVIEWED_GAME_VERSION = "11.19.0"
+
+# SHA-256 of the normalized English description templates observed from the live
+# BlitzKit equipment.pb while reviewing WoTB 11.19. Any template change fails closed.
 LOCKED_DESCRIPTION_SHA256 = {
-    "SUPERCHARGER": "f8018df6dd484975dcd8bf05eecda9fff30a212770649943a58c0f27ea6a7c76",
-    "IMPROVED_VERTICAL_STABILIZER": "8d6644034eade961804892cb67b23177f7a020e44e95e0eb90ecd2f68b9b810c",
-    "IMPROVED_SUSPENSION": "990b7596cdccd60d39fba81cd3f416fb31298565c3700b06c3cd3f7f3fa48b60",
-    "IMPROVED_MODULES": "586a173bed0b5dd2a0fc74d8224e39947c90a9d04f58dec19585b3e60a43b933",
-    "DEFENSE_SYSTEM": "bcfd48169de5bbe67c78244d122c4a15fd17358197f904b0e3728c8a036a1d18",
-    "ENHANCED_TRACKS": "0aa99b68b0bd2a9821e37482d5128da157b0949eeb8a69089a06ab7a686ba8f9",
-    "TOOLBOX": "7a5f59c269a2105b76363f268bf8d51354a59733bbdf24f1852ea4ceafac916e",
-    "CONSUMABLE_DELIVERY_SYSTEM": "ad53eeb8e6638a25044f198564dce9844f2567fda79c8c3bd492372469e32ebc",
-    "HIGH_END_CONSUMABLES": "8ec81e08de6bc56f40a9020f3cd4223b68e219935aae676e91fc47792b5fde27",
+    "SUPERCHARGER": "51344707bc61af4ae26a44a0cafe8bea5a672806724431dd8c0de6a6644f575a",
+    "IMPROVED_VERTICAL_STABILIZER": "e99db56a71da9091425e87f0abfe79ed0093c956ea0da4354d281f829d365df6",
+    "IMPROVED_SUSPENSION": "86c68c7d39be2a1111a4cec5edb04157651acbf78aafc798540c6c88bee56880",
+    "IMPROVED_MODULES": "203575a1c698227f9328adb7adcc20eed98c94b12fe7c72e23408d60fe06006c",
+    "DEFENSE_SYSTEM": "66170c6b2d7dbf32dd30c74b49cde61541a6eb471787f74671e43ca279d39dc2",
+    "ENHANCED_TRACKS": "afd8eaa78b9325fd0b1d7d85717305fc64cf30d663f345d16779d5b9c7f06486",
+    "TOOLBOX": "7a7c914b72b1fd0701c87fa52ea90933dc9b9bc98d94f5770f92cc751dd919e1",
+    "CONSUMABLE_DELIVERY_SYSTEM": "388a9a50bed0d24c46128af2e6665555260dc4e9fdd4e1d7ff80a72690e6efdf",
+    "HIGH_END_CONSUMABLES": "95ce345dddfd159bfe5234bc475a861e55480e738379bde0c43f28b792d53107",
 }
 
 
@@ -27,6 +33,16 @@ def normalize_description(description):
 def description_sha256(description):
     normalized = normalize_description(description)
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def validate_reviewed_game_version(game_version):
+    if game_version != REVIEWED_GAME_VERSION:
+        raise RuntimeError(
+            "BLITZKIT_LOCKED_REVIEW_REQUIRED: reviewed_game_version=%s upstream_game_version=%s; "
+            "manually review locked equipment effects before updating the lock"
+            % (REVIEWED_GAME_VERSION, game_version)
+        )
+    return True
 
 
 def validate_locked_contract(payload, details):
