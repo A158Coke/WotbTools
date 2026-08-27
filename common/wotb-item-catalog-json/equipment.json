@@ -59,9 +59,7 @@
           "operation": "MULTIPLY",
           "value": 1.06,
           "conditions": {
-            "shellTypes": [
-              "AP"
-            ]
+            "shellTypes": ["AP"]
           }
         },
         {
@@ -69,9 +67,7 @@
           "operation": "MULTIPLY",
           "value": 1.06,
           "conditions": {
-            "shellTypes": [
-              "APCR"
-            ]
+            "shellTypes": ["APCR"]
           }
         },
         {
@@ -79,9 +75,7 @@
           "operation": "MULTIPLY",
           "value": 1.07,
           "conditions": {
-            "shellTypes": [
-              "HEAT"
-            ]
+            "shellTypes": ["HEAT"]
           }
         },
         {
@@ -89,17 +83,13 @@
           "operation": "MULTIPLY",
           "value": 1.07,
           "conditions": {
-            "shellTypes": [
-              "HE",
-              "HEP",
-              "HESH"
-            ]
+            "shellTypes": ["HE", "HEP", "HESH"]
           }
         }
       ]
     },
     {
-      "id": 108,
+      "id": 104,
       "code": "ENHANCED_GUN_LAYING_DRIVE",
       "nameZh": "改进型炮控系统",
       "nameEn": "Enhanced Gun Laying Drive",
@@ -112,14 +102,14 @@
       },
       "effects": [
         {
-          "stat": "aimingSpeed",
+          "stat": "aimTime",
           "operation": "MULTIPLY",
-          "value": 1.12
+          "value": 0.88
         }
       ]
     },
     {
-      "id": 109,
+      "id": 107,
       "code": "SUPERCHARGER",
       "nameZh": "超级充能器",
       "nameEn": "Supercharger",
@@ -141,16 +131,13 @@
           "operation": "MULTIPLY",
           "value": 0.4,
           "conditions": {
-            "shellTypes": [
-              "AP",
-              "APCR"
-            ]
+            "shellTypes": ["AP", "APCR"]
           }
         }
       ]
     },
     {
-      "id": 114,
+      "id": 105,
       "code": "VERTICAL_STABILIZER",
       "nameZh": "垂直稳定器",
       "nameEn": "Vertical Stabilizer",
@@ -165,22 +152,22 @@
         {
           "stat": "dispersionWhileMoving",
           "operation": "MULTIPLY",
-          "value": 0.88
+          "value": 0.83
         },
         {
           "stat": "dispersionWhileHullTraversing",
           "operation": "MULTIPLY",
-          "value": 0.88
+          "value": 0.83
         },
         {
           "stat": "dispersionWhileTurretTraversing",
           "operation": "MULTIPLY",
-          "value": 0.88
+          "value": 0.83
         }
       ]
     },
     {
-      "id": 115,
+      "id": 106,
       "code": "REFINED_GUN",
       "nameZh": "精密火炮",
       "nameEn": "Refined Gun",
@@ -195,7 +182,7 @@
         {
           "stat": "baseDispersion",
           "operation": "MULTIPLY",
-          "value": 0.85
+          "value": 0.89
         }
       ]
     },
@@ -258,7 +245,7 @@
       ]
     },
     {
-      "id": 104,
+      "id": 108,
       "code": "IMPROVED_MODULES",
       "nameZh": "改进型模块",
       "nameEn": "Improved Modules",
@@ -276,6 +263,16 @@
           "value": 1.2
         },
         {
+          "stat": "fuelTankDurability",
+          "operation": "MULTIPLY",
+          "value": 1.2
+        },
+        {
+          "stat": "ammoRackDurability",
+          "operation": "MULTIPLY",
+          "value": 1.2
+        },
+        {
           "stat": "rammingDamageReceived",
           "operation": "MULTIPLY",
           "value": 0.6
@@ -283,7 +280,7 @@
       ]
     },
     {
-      "id": 107,
+      "id": 109,
       "code": "DEFENSE_SYSTEM",
       "nameZh": "防护系统",
       "nameEn": "Defense System",
@@ -354,7 +351,7 @@
       ]
     },
     {
-      "id": 116,
+      "id": 112,
       "code": "ENHANCED_TRACKS",
       "nameZh": "强化履带",
       "nameEn": "Enhanced Tracks",
@@ -374,7 +371,7 @@
       ]
     },
     {
-      "id": 117,
+      "id": 113,
       "code": "TOOLBOX",
       "nameZh": "工具箱",
       "nameEn": "Toolbox",
@@ -394,7 +391,7 @@
       ]
     },
     {
-      "id": 105,
+      "id": 114,
       "code": "IMPROVED_OPTICS",
       "nameZh": "改进型光学系统",
       "nameEn": "Improved Optics",
@@ -411,9 +408,7 @@
           "operation": "MULTIPLY",
           "value": 1.11,
           "conditions": {
-            "vehicleClasses": [
-              "LIGHT"
-            ]
+            "vehicleClasses": ["LIGHT"]
           }
         },
         {
@@ -421,9 +416,7 @@
           "operation": "MULTIPLY",
           "value": 1.08,
           "conditions": {
-            "vehicleClasses": [
-              "MEDIUM"
-            ]
+            "vehicleClasses": ["MEDIUM"]
           }
         },
         {
@@ -431,9 +424,7 @@
           "operation": "MULTIPLY",
           "value": 1.06,
           "conditions": {
-            "vehicleClasses": [
-              "HEAVY"
-            ]
+            "vehicleClasses": ["HEAVY"]
           }
         },
         {
@@ -441,15 +432,13 @@
           "operation": "MULTIPLY",
           "value": 1.04,
           "conditions": {
-            "vehicleClasses": [
-              "TANK_DESTROYER"
-            ]
+            "vehicleClasses": ["TANK_DESTROYER"]
           }
         }
       ]
     },
     {
-      "id": 106,
+      "id": 115,
       "code": "CAMOUFLAGE_NET",
       "nameZh": "伪装网",
       "nameEn": "Camouflage Net",
@@ -466,9 +455,7 @@
           "operation": "ADD_PERCENTAGE_POINTS",
           "value": 6.0,
           "conditions": {
-            "vehicleClasses": [
-              "LIGHT"
-            ]
+            "vehicleClasses": ["LIGHT"]
           }
         },
         {
@@ -476,9 +463,7 @@
           "operation": "ADD_PERCENTAGE_POINTS",
           "value": 4.0,
           "conditions": {
-            "vehicleClasses": [
-              "MEDIUM"
-            ]
+            "vehicleClasses": ["MEDIUM"]
           }
         },
         {
@@ -486,9 +471,7 @@
           "operation": "ADD_PERCENTAGE_POINTS",
           "value": 2.0,
           "conditions": {
-            "vehicleClasses": [
-              "HEAVY"
-            ]
+            "vehicleClasses": ["HEAVY"]
           }
         },
         {
@@ -496,23 +479,49 @@
           "operation": "ADD_PERCENTAGE_POINTS",
           "value": 7.0,
           "conditions": {
-            "vehicleClasses": [
-              "TANK_DESTROYER"
-            ]
+            "vehicleClasses": ["TANK_DESTROYER"]
           }
         },
         {
-          "stat": "camouflageNetBonus",
-          "operation": "MULTIPLY",
+          "stat": "camouflageRatingBonus",
+          "operation": "ADD_PERCENTAGE_POINTS",
+          "value": 8.0,
+          "conditions": {
+            "vehicleClasses": ["LIGHT"],
+            "stationarySecondsAtLeast": 3
+          }
+        },
+        {
+          "stat": "camouflageRatingBonus",
+          "operation": "ADD_PERCENTAGE_POINTS",
+          "value": 4.0,
+          "conditions": {
+            "vehicleClasses": ["MEDIUM"],
+            "stationarySecondsAtLeast": 3
+          }
+        },
+        {
+          "stat": "camouflageRatingBonus",
+          "operation": "ADD_PERCENTAGE_POINTS",
           "value": 2.0,
           "conditions": {
+            "vehicleClasses": ["HEAVY"],
+            "stationarySecondsAtLeast": 3
+          }
+        },
+        {
+          "stat": "camouflageRatingBonus",
+          "operation": "ADD_PERCENTAGE_POINTS",
+          "value": 13.0,
+          "conditions": {
+            "vehicleClasses": ["TANK_DESTROYER"],
             "stationarySecondsAtLeast": 3
           }
         }
       ]
     },
     {
-      "id": 112,
+      "id": 116,
       "code": "IMPROVED_CONTROL",
       "nameZh": "改进型操控",
       "nameEn": "Improved Control",
@@ -532,7 +541,7 @@
       ]
     },
     {
-      "id": 113,
+      "id": 117,
       "code": "ENGINE_ACCELERATOR",
       "nameZh": "发动机加速器",
       "nameEn": "Engine Accelerator",
@@ -547,24 +556,7 @@
         {
           "stat": "enginePower",
           "operation": "MULTIPLY",
-          "value": 1.05,
-          "conditions": {
-            "vehicleClasses": [
-              "LIGHT",
-              "MEDIUM"
-            ]
-          }
-        },
-        {
-          "stat": "enginePower",
-          "operation": "MULTIPLY",
-          "value": 1.06,
-          "conditions": {
-            "vehicleClasses": [
-              "HEAVY",
-              "TANK_DESTROYER"
-            ]
-          }
+          "value": 1.06
         }
       ]
     },
