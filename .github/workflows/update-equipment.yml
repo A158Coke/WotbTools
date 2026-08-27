@@ -1,0 +1,67 @@
+name: Update Equipment
+run-name: Sync equipment from BlitzKit by @${{ github.actor }}
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: update-equipment
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Sync equipment catalog from stable BlitzKit data
+        run: |
+          set -euo pipefail
+          python3 common/python/sync_equipment_snapshot.py
+
+      - name: Validate catalog and generators
+        run: |
+          set -euo pipefail
+          python3 -m json.tool common/wotb-item-catalog-json/equipment.json >/dev/null
+          python3 -m unittest discover -s common/python/tests -p 'test_*.py'
+          git diff --check
+
+      - name: Commit data branch and open/update PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: automation/update-equipment
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- common/wotb-item-catalog-json/equipment.json; then
+            echo "Equipment catalog unchanged; nothing to publish."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git add common/wotb-item-catalog-json/equipment.json
+          git commit -m "chore(data): sync BlitzKit equipment values"
+          git push --force-with-lease origin "HEAD:$BRANCH"
+
+          pr_number="$(gh pr list --base main --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [[ -z "$pr_number" ]]; then
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "chore(data): sync BlitzKit equipment values" \
+              --body $'Automated equipment update from current BlitzKit data.\n\n- Accepts new WoTB builds and changed protobuf snapshots when existing parsers can fully understand them\n- Imports supported metadata/value changes into the generated catalog\n- Allows preset/layout changes without assuming one universal equipment grid\n- Fails closed for newly referenced equipment IDs until a complete local effect model exists\n- Fails closed when a partially modeled locked item changes\n- Calculation-source changes are accepted only while strict extraction patterns still match\n- Uses stable-snapshot reads and records upstream hashes in logs\n- Avoids rewriting the catalog when generated semantics are unchanged\n- Explicitly dispatches normal CI for this automation branch\n- Never auto-merges'
+          else
+            echo "Updated existing PR #$pr_number"
+          fi
+
+          gh workflow run ci.yml --ref "$BRANCH"
