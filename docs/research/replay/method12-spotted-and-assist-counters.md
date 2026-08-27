@@ -2,7 +2,7 @@
 
 > Corpus: 34 unique Blitz 11.19.0 China arenas.
 >
-> This note records the method12 counter families that are already behaviorally closed, plus the unresolved distinction between baseType15 and wrapper6 kill-feed assistance.
+> This note records the method12 counter families that are already behaviorally closed, plus unresolved settlement relationships that still require current-version semantic proof.
 
 ## Wire shape
 
@@ -76,6 +76,103 @@ baseType16 -> critical/device-damage received family
 
 Exact user-facing counter names remain PARTIAL.
 
+## baseType12 and PlayerResults field118
+
+A new strict-corpus pass closes the relationship between live method12 baseType12 and settlement PlayerResults field118, while also rejecting several overly simple semantic interpretations.
+
+### Recorder presence closure
+
+Across the canonical 34 unique arenas:
+
+```text
+settlement field118 > 0        : 10 / 34 replay authors
+method12 baseType12 present    : 10 / 34 replay authors
+presence relation              : 34 / 34 exact
+```
+
+There are 12 live baseType12 RPCs in total. Their payload behavior is unusually sparse:
+
+```text
+baseType12 value               : 0 / 12 non-zero
+observed cumulative count      : 1 .. 3
+one stream emits count=2 directly without an earlier visible count=1 RPC
+```
+
+The corresponding positive author field118 values are:
+
+```text
+12, 20, 32, 34, 48, 67, 103, 124, 124, 195
+```
+
+Therefore:
+
+```text
+field118 != baseType12.count
+field118 != baseType12.value
+```
+
+The safest current model is:
+
+```text
+field118
+  = final magnitude/statistic in one gameplay family
+
+baseType12.count
+  = cumulative battle-feedback/ribbon occurrences for that same family
+```
+
+That cross-surface relationship is **PROVEN current corpus**. The exact gameplay/stat name remains **PARTIAL/UNKNOWN**.
+
+### Full settled-player distribution
+
+The same field is not recorder-only. Across the canonical 34-arena settlement set:
+
+```text
+settled combatants             : 476
+field118 non-zero              : 63 / 476
+positive range                 : 6 .. 283
+```
+
+This supports a genuine per-player battle statistic rather than an author/UI-only artifact.
+
+### Not ordinary Supremacy victory points
+
+PlayerResults fields32/33 are already independently closed as victory/Supremacy points earned/seized. field118 does not reduce to either field:
+
+- 6 / 10 field118-positive replay authors have both field32=0 and field33=0;
+- other positive cases carry unrelated field32/33 magnitudes;
+- baseType12 event clocks do not have a universal one-for-one join with wrapper13 realtime team-score changes.
+
+Verdict:
+
+> `field118/baseType12` is **not** the ordinary `victoryPointsEarned / victoryPointsSeized` surface.
+
+### Nearby combat feedback is not an exact identity
+
+Some baseType12 events share a clock with baseType8 critical/module feedback or occur near kills, but this is not universal. Therefore neither `critical hit count` nor `kill count` is supported as an exact semantic identity.
+
+### Historical/cross-project candidate: base-defense magnitude
+
+Independent Blitz tooling and Wargaming-facing result terminology expose separate `base_capture_points` and `base_defend_points` / `droppedCapturePoints` statistics in addition to Supremacy/victory-point fields. The observed field118/baseType12 shape is compatible with a family of that kind: a potentially large accumulated result magnitude paired with a small number of live feedback/ribbon occurrences.
+
+However no current Blitz 11.19 field-level schema or controlled replay yet proves:
+
+```text
+field118 == baseDefendPoints / droppedCapturePoints
+```
+
+So that label remains a **candidate only** and must not be promoted into the production decoder.
+
+### Controlled validation target
+
+To close baseType12/field118 exactly, capture controlled replays that independently vary base interaction while minimizing damage/kill/module confounders, then compare:
+
+1. base capture progress made;
+2. enemy capture progress reset/defended;
+3. live baseType12 increments;
+4. settlement field118 magnitude;
+5. fields32/33 and wrapper13 Supremacy points as negative controls.
+
 ## baseType15 and PlayerResults field119
 
 A separate exact relation is already proven:
@@ -95,7 +192,7 @@ Important distinction:
 
 The exact qualification rule for baseType15 / field119 remains PARTIAL.
 
-## Controlled validation target
+## Controlled validation target for baseType15
 
 A later controlled corpus should independently vary:
 
