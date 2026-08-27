@@ -1,35 +1,19 @@
-# Arena wrapper7 `AVATAR_READY` and wrapper16 state-family research
+# Arena wrapper7 `AVATAR_READY` and wrapper16 observation-state research
 
-> Corpus: canonical 34 unique Blitz 11.19.0 China arenas.
+> Corpus: canonical 34 unique Blitz 11.19.0 China arenas plus one independent T-100 LT replay sample.
 >
-> Historical numeric names are accepted only when current 11.19 wire shape and replay behavior independently agree.
+> Historical numeric names are accepted only when current wire shape and replay behavior independently agree.
 
 ## wrapper7 — vehicle/avatar-ready notification
 
-Current subtype48 wrapper7 has a minimal protobuf shape:
+Current subtype48 wrapper7:
 
 ```text
 root field7
   -> child field1 = entity / vehicle ID
 ```
 
-Across the canonical 34 arenas:
-
-```text
-wrapper7 records per arena:
-  18 : 31 arenas
-  16 :  2 arenas
-  20 :  1 arena
-
-unique IDs per arena:
-  14 : 26 arenas
-  15 :  4 arenas
-  16 :  4 arenas
-```
-
-All 14 settled combatant entity IDs are present in wrapper7 in 34/34 arenas. Extra IDs are observer/non-combatant entities.
-
-Historical Wargaming lineage exposes `ARENA_UPDATE.AVATAR_READY = 7` with a one-vehicle-ID payload and matching setup behavior.
+Across the canonical 34 arenas all 14 settled combatant entity IDs are present in wrapper7 in 34/34 arenas; extra IDs are observer/non-combatant entities.
 
 Verdict:
 
@@ -37,9 +21,9 @@ Verdict:
 >
 > child field1 = **vehicle/entity ID — PROVEN**.
 
-## wrapper16 — vehicle special-state broadcast family
+# wrapper16 — own-team observation-state broadcast family
 
-Current wrapper16 shape:
+Current shape:
 
 ```text
 root field15
@@ -48,7 +32,7 @@ root field15
   child field3 = state/event code
 ```
 
-Canonical counts:
+Canonical 34-arena counts:
 
 ```text
 records total : 741
@@ -56,131 +40,230 @@ field3 = 1    : 718
 field3 = 8    :  23
 ```
 
-The rare `field3=8` branch is now much more narrowly closed than the earlier generic `damage-triggered` label.
+All current wrapper16 targets belong to the recorder's team. The two observed branches correspond to ordinary observed-by-enemy state and a special forced-observation state.
 
-# field3=8 — Tracer Shell / forced-spot hit-applied state family
+# field3=1 — ordinary observed-by-enemy entry/re-entry
 
-## Current-corpus attacker closure
-
-All 23 `field3=8` records occur in exactly two arenas.
-
-In each arena, the nearby damage source is one specific enemy combat vehicle. Settlement tank-ID resolution gives:
+Canonical corpus:
 
 ```text
-arena A attacker tankId = 28689
-arena B attacker tankId = 28689
+field3=1 records                       : 718
+recorder-team targets                  : 718 / 718
+enemy targets                          :   0 / 718
 ```
 
-Current tank identity:
+For the recorder vehicle, Avatar method19 `code=1` is the local companion surface:
 
 ```text
-28689 = Rhm. Pzw.
+method19 code1 records                       : 89
+vehicleId == recorder vehicle                : 89 / 89
+intArg resolves an enemy entity              : 89 / 89
+followed by wrapper16 state1 same vehicle    : 89 / 89
 ```
 
-Both Rhm. Pzw. attackers are on the **enemy team** relative to the replay recorder.
-
-The corpus contains five additional arenas with a Rhm. Pzw., but in all five cases that Rhm. Pzw. is on the recorder's own team:
+Delay:
 
 ```text
-friendly-Rhm arenas : 5
-field3=8 records     : 0
+~0.06 .. 0.14 s
+median ~0.100 s
 ```
 
-The same canonical corpus contains **no T-100 LT battle participant**:
+This proves that method19 code1 and wrapper16 field3=1 are two surfaces of the same observation-state family:
 
 ```text
-T-100 LT tankId = 24321
-settled occurrences in canonical 34 arenas = 0
+method19 code1
+  -> recorder-local observed-by-enemy notification
+     including an associated enemy entity
+
+wrapper16 state1
+  -> own-team ordinary observed-by-enemy broadcast
 ```
 
-Therefore current 11.19 replay evidence can directly validate the Rhm. Pzw. producer path, but cannot yet perform an in-corpus T-100 LT cross-check.
+## 10-second re-trigger boundary
 
-## Hit-level closure
+The canonical corpus contains hundreds of repeated state1 events for the same allied target.
 
-Across the two enemy-Rhm arenas, the Rhm. Pzw. produces 25 current-corpus Vehicle method8 HP-damage hits.
-
-Split by victim outcome:
+For repeated same-target state1 intervals:
 
 ```text
-non-terminal Rhm hits                         : 23
-same-victim wrapper16 field3=8 within ±0.15s : 23 / 23
-
-terminal/lethal Rhm hits                      :  2
-field3=8 after terminal victim                :  0 / 2
+no repeat inside the ordinary ~10-second spotting-persistence window
 ```
 
-Thus every observed **surviving** victim of enemy-Rhm HP damage receives field3=8.
+The independent T-100 LT replay contains an especially clean natural sample for the recorder vehicle:
 
-All 23 state8 victims are on the recorder's team. None is the recorder's own vehicle; recorder-local presentation may use a separate surface, while wrapper16 is an arena/team state broadcast.
+```text
+method19 code1:
+129.610 -> enemy E
+139.728 -> same enemy E
+Delta ~= 10.118 s
 
-No other attacker/tank in the canonical corpus generates field3=8.
+wrapper16 state1:
+129.716
+139.817
+Delta ~= 10.101 s
+```
+
+This strongly supports state1 as an **entry/re-entry transition/event**, not a periodic heartbeat or persistent boolean packet.
+
+Safe behavioral state machine:
+
+```text
+UNOBSERVED
+  -> enemy observation begins
+  -> state1 emitted
+  -> ordinary visible/persistence window
+  -> observation expires
+  -> later observation can emit state1 again
+```
 
 Verdict:
 
-> wrapper16 `field3=8` = **enemy Tracer-Shell-capable Rhm. Pzw. hit-applied surviving-target state — PROVEN behavioral identity for the current corpus**.
+> wrapper16 `field3=1` = **ordinary observed-by-enemy entry/re-entry event — PROVEN behavioral identity**.
 
-## Tracer Shell / 20-second forced visibility
+# Avatar method19 code1 direction — enemy observes recorder
 
-Current Blitz gameplay references identify **Tracer Shells** as a hit-applied spotting mechanic that keeps the target visible to allies for **20 seconds instead of the standard 10-second post-spot persistence**. T-100 LT is a canonical Tracer Shell vehicle; current Rhm. Pzw. gameplay references likewise list Tracer Shells as part of its spotting-mechanic package.
-
-This matches the current replay pattern precisely at the event boundary:
+A major ambiguity was whether:
 
 ```text
-enemy Rhm. Pzw. hit
-  -> victim survives
-  -> wrapper16 field3=8
-  -> special spotting/debuff state is broadcast to recorder team
+vehicleId = recorder
+intArg    = enemy
 ```
 
-The product/gameplay-level interpretation is therefore much narrower than the old generic `damage-triggered state` hypothesis.
+meant recorder-observes-enemy or enemy-observes-recorder.
 
-Current evidence grading:
+Current negative controls close the direction.
+
+In canonical samples, method19 code1 can reference an enemy that has not yet materialized into the recorder's observed Type33/Type5 entity set. Therefore code1 cannot require the recorder to currently see that enemy.
+
+The opposite direction remains physically consistent:
 
 ```text
-field3=8 = forced-spot / Tracer-Shell hit-applied state family
-  behavioral identity in Rhm current corpus : PROVEN
-  exact 11.19 internal enum symbol           : VERY STRONG PARTIAL
-
-T-100 LT producer path
-  gameplay mechanism                         : independently known
-  current canonical replay validation        : NOT SAMPLED (0 T-100 LT vehicles)
+enemy exists server-side
+-> enemy can observe recorder
+-> recorder receives observed-by-enemy notification
+-> recorder may still not observe that enemy
 ```
 
-Do not encode the producer as `RHM_ONLY`. The safe semantic family is **Tracer Shell / forced-spot state**; Rhm. Pzw. is simply the only Tracer-Shell producer represented in the canonical 34-arena research corpus.
+Combined with the numeric/symbolic Wargaming status family containing `IS_OBSERVED_BY_ENEMY = 1`:
 
-## field3=1
+> Avatar method19 `code=1` = **recorder vehicle observed by enemy — PROVEN behavioral identity + strong symbolic closure**.
 
-The dominant field3=1 branch is independent from the Tracer-Shell state and is being researched separately.
+The `intArg` enemy is safely preserved as an associated observer/source entity; exact server wording such as original spotter vs current observer remains version-gated.
 
-Current structural facts:
+# field3=8 — Tracer Shell / forced-observation state
+
+## Rhm. Pzw. current-corpus closure
+
+All 23 canonical state8 records occur in two arenas containing an enemy Rhm. Pzw. (`tankId=28689`). Five other arenas contain a friendly Rhm. Pzw. and produce zero state8 records.
+
+Across the two enemy-Rhm arenas:
 
 ```text
-field3=1 records : 718
-all target vehicles belong to recorder team : 718 / 718
+valid Rhm hit where target survives             : 23
+same-victim wrapper16 state8 within ~0.15 s     : 23 / 23
+
+lethal Rhm hit                                  : 2
+state8 on terminal target                       : 0 / 2
 ```
 
-A recorder-local companion relationship also exists with Avatar method19 `code=1`: all 89 current method19-code1 records identify the recorder vehicle plus an enemy entity, and each is followed ~0.1 s later by a wrapper16 field3=1 state for the recorder vehicle. This strongly suggests an observed-by-enemy / ordinary-spot-state family, but exact semantic closure is documented separately only after the remaining negative controls are complete.
+The triggering set includes hit-result families that do not necessarily produce HP loss. Therefore the precise behavioral wording is **valid hit-applied**, not `HP-damage hit-applied`.
 
-Verdict for now:
+Verdict:
+
+> field3=8 = **enemy special forced-observation effect applied by a valid Rhm. Pzw. hit to a surviving recorder-team target — PROVEN behavioral identity**.
+
+## Recipient-side direction proven by T-100 LT shooter POV
+
+A separate Blitz 11.19 T-100 LT replay was added after the canonical corpus.
+
+Recorder:
 
 ```text
-wrapper16 overall  = own-team vehicle visibility/special-state broadcast family — PARTIAL
-field1             = vehicle/entity ID — PROVEN
-field2             = constant 1 in current corpus — raw-preserve
-field3=8           = Tracer-Shell / forced-spot hit-applied state family — PROVEN behavior
-                       exact internal enum symbol — VERY STRONG PARTIAL
-field3=1           = own-team ordinary observation/spot-state candidate — STRONG PARTIAL
+vehicle = T-100 LT
+tankId  = 24321
 ```
 
-## Historical numeric mapping warning
+The recorder produces 10 observed method8 hits against enemy vehicles, but the replay contains:
 
-A historical PC `ARENA_UPDATE` table assigns numeric update 16 to `FLAG_TEAMS`. That does not fit current Blitz 11.19 behavior and remains rejected.
+```text
+wrapper16 state8 = 0
+```
 
-Numeric wrapper equality across products/versions must not override current mobile evidence.
+This is not a contradiction. Instead it proves the direction of the surface:
 
-## Product implications
+```text
+state8 is not shooter-side:
+  "my Tracer Shell hit an enemy"
 
-- wrapper7 safely supports prebattle vehicle-ready lifecycle reconstruction.
-- wrapper16 field3=8 can support AI/playback evidence that an allied vehicle was placed under a Tracer Shell / extended forced-spot state.
-- do not hard-code `RHM_HIT_APPLIED_SPOTTING_STATE`; use a producer-agnostic version-gated semantic such as `TRACER_FORCED_SPOT_STATE`.
-- T-100 LT should be validated immediately when a current 11.19/current-version replay sample becomes available.
+state8 is recipient/team-side:
+  "a vehicle on my team has received the enemy forced-observation effect"
+```
+
+The recorder does not receive the enemy team's team-state broadcast after applying its own Tracer Shell effect.
+
+Verdict:
+
+> wrapper16 state8 = **recipient-side / recorder-team forced-observation broadcast — PROVEN directionality**.
+
+## Tracer Shell exact identity
+
+Current gameplay behavior aligns strongly with the Tracer Shell mechanic:
+
+```text
+valid hit
+-> surviving target receives extended forced visibility
+-> repeated valid hits can re-apply/refresh the state
+```
+
+Rhm. Pzw. supplies the current recipient-side natural closure. T-100 LT supplies an independent shooter-side negative control proving that wrapper16 is not a shooter acknowledgement.
+
+Evidence grading:
+
+```text
+field3=8 behavioral forced-observation family      : PROVEN
+recipient-side/team-side direction                 : PROVEN
+Rhm valid-hit producer closure                     : PROVEN
+exact internal Tracer Shell enum/symbol            : VERY STRONG PARTIAL
+```
+
+One ideal remaining natural sample would be:
+
+```text
+recorder is not T-100 LT
+enemy T-100 LT hits a surviving recorder-team vehicle
+-> same victim emits state8
+```
+
+That would provide the cross-vehicle recipient-side closure for the exact Tracer Shell identity.
+
+# Unified observation model
+
+Current safest model:
+
+```text
+wrapper16 observation-state family
+|
+|-- field3=1
+|   ordinary observed-by-enemy entry/re-entry
+|   paired with recorder-local method19 code1
+|
+`-- field3=8
+    special forced-observation / Tracer-Shell-compatible state
+    recipient-side team broadcast
+```
+
+Do not collapse these into one generic `visible` flag. They have different trigger semantics and gameplay persistence rules.
+
+# Product implications
+
+- Battle Playback can represent ordinary `observed-by-enemy` onset separately from enemy-visibility/AoI Type4/Type5 lifecycle.
+- AI Review can distinguish normal spotting from an enemy-applied forced-spot effect.
+- state8 must use a producer-agnostic semantic such as `FORCED_OBSERVATION_STATE`; do not hard-code `RHM_ONLY`.
+- method19 code1's enemy entity can be preserved as observation-source evidence without claiming it is necessarily the only/current spotter.
+
+# Remaining work
+
+1. obtain an enemy-T-100-LT recipient-side state8 natural sample if available;
+2. recover a current-version Blitz enum/schema for the exact state8 symbolic name;
+3. keep normal observed-by-enemy events distinct from Type4/Type33/Type5 recorder-POV enemy visibility lifecycle;
+4. validate the same model on random battles/future versions before widening the version gate.
