@@ -1,21 +1,42 @@
-# Avatar method36 — targeting-info historical crosswalk
+# Avatar method36 — targeting-info crosswalk
 
-> Scope: structural cross-check for the Blitz 11.19 China `Avatar method36` targeting protobuf. This note does **not** transplant historical PC/WoT numeric IDs or flat argument ordering into current Blitz.
+> Scope: Blitz 11.19 China `Avatar method36` targeting protobuf.
+>
+> Historical Wargaming targeting APIs are architecture cross-checks only. Current Blitz field semantics below come from current replay behavior and controlled probes.
 
-## Current 11.19 evidence
+## Current 11.19 physical-role map
 
-Current corpus evidence already establishes:
+```text
+root.field1
+= turret/gun relative yaw
+= PROVEN
 
-- `Avatar method36` is a recorder targeting / aim-state family;
-- 858 total records across 34 unique arenas;
-- 824 dynamic 92-byte records and 34 initialization-like 74-byte records;
-- the dynamic protobuf exposes exactly **nine fixed64/double-like scalar values**;
-- `root.field1` closes against Type39 `f5` as recorder turret/gun-relative yaw;
-- `root.field2` closes against Type39 `f6` as recorder gun pitch;
-- all 326 recorder projectile launches are exactly bracketed by a pre-shot and post-shot method36 snapshot;
-- `field6.field1` changes on **326 / 326** shot pairs and its post-shot delta is always positive in the observed corpus.
+root.field2
+= gun pitch
+= PROVEN
 
-The current shape is conceptually:
+root.field3
+= max horizontal turret/gun angular speed
+= PROVEN controlled
+
+root.field4
+= max vertical gun angular speed
+= PROVEN controlled
+
+root.field5
+= aiming-time physical scalar
+= PROVEN
+
+field6.field1
+= dynamic gun dispersion / bloom scalar
+= PROVEN physical role
+```
+
+These statements describe the **physical roles carried by the current replay fields**. They do not claim recovery of Wargaming's private protobuf member names.
+
+## Current protobuf shape
+
+The dynamic method36 protobuf exposes nine fixed64/double-like scalars:
 
 ```text
 root.field1 : fixed64
@@ -35,135 +56,90 @@ root.field6 {
 }
 ```
 
-Total scalar count: **9**.
-
-## Historical Wargaming targeting surface
-
-Historical Wargaming client `Avatar.updateTargetingInfo(...)` exposes exactly nine targeting arguments:
+Original 34-arena corpus:
 
 ```text
-turretYaw
-gunPitch
-maxTurretRotationSpeed
-maxGunRotationSpeed
-shotDispMultiplierFactor
-gunShotDispersionFactorsTurretRotation
-chassisShotDispersionFactorsMovement
-chassisShotDispersionFactorsRotation
-aimingTime
+method36 total                     858
+dynamic 92-byte records            824
+initialization-like 74-byte records 34
+recorder launches bracketed by PRE/POST method36 snapshots 326 / 326
 ```
 
-The client uses them in two groups:
+## Evidence for the closed physical roles
+
+### root.field1 / root.field2
+
+Current replay correlation with the independent Type39 aim/gun stream closes:
 
 ```text
-gunRotator.update(
-    turretYaw,
-    gunPitch,
-    maxTurretRotationSpeed,
-    maxGunRotationSpeed
-)
+root.field1 <-> Type39 f5 -> turret/gun relative yaw   PROVEN
+root.field2 <-> Type39 f6 -> gun pitch                 PROVEN
 ```
 
-and stores:
+### root.field3 / root.field4
+
+Controlled angular-rate probes independently match the method36 values:
 
 ```text
-shotDispMultiplierFactor
-gunShotDispersionFactorsTurretRotation
-chassisShotDispersionFactorsMovement
-chassisShotDispersionFactorsRotation
-aimingTime
+root.field3 -> horizontal turret/gun angular-speed limit   PROVEN controlled
+root.field4 -> vertical gun angular-speed limit            PROVEN controlled
 ```
 
-as aiming/dispersion configuration.
+The vertical closure uses the Type39 gun-pitch derivative and matches the method36 scalar to replay clock/sampling tolerance.
 
-Historical `updateGunMarker(shotPos, shotVec, dispersionAngle)` is a separate surface, which is consistent with the current archive treating Type31 gun-marker size separately from method36 targeting configuration/state.
+### root.field5
 
-## Strong structural conclusion
-
-There is a high-value architectural isomorphism:
+Reticle Calibration supplies an exact reversible perturbation:
 
 ```text
-historical updateTargetingInfo scalar count = 9
-current Blitz 11.19 method36 scalar count   = 9
+baseline -> active -> baseline
+root.field5 ×0.70 during active window
 ```
 
-The first two current values independently close to the first two historical roles:
+This matches the aiming-time mechanic and closes:
 
 ```text
-current root.field1 -> turret-relative yaw  PROVEN relationship
-current root.field2 -> gun pitch            PROVEN relationship
+root.field5 = aiming-time physical scalar   PROVEN
 ```
 
-This strongly supports the current symbolic family:
+### field6.field1
 
-> `Avatar method36` is the modern Blitz descendant/equivalent of a targeting-info transport surface.
-
-This is **structural support**, not proof that current protobuf field ordering equals the historical flat argument order.
-
-## Critical negative control: do not positional-transplant the remaining seven values
-
-The current 11.19 protobuf is not behaviorally compatible with a naive positional copy of the historical argument list.
-
-Most importantly:
+Three independent current-version behaviors close the physical role:
 
 ```text
-current nested field6.field1 changes after every recorder shot
-326 / 326 shot pairs
-post - pre is always positive
+ordinary shot       -> immediate positive bloom increase
+Gun damage          -> field6.field1 ×2
+Repair              -> exact baseline restoration
+Reticle Calibration -> field6.field1 ×0.70
+Reticle end         -> exact baseline restoration
 ```
-
-Historical dispersion-factor inputs such as:
-
-```text
-gunShotDispersionFactorsTurretRotation
-chassisShotDispersionFactorsMovement
-chassisShotDispersionFactorsRotation
-aimingTime
-```
-
-are configuration-like values in the old client implementation, not values expected to receive an instantaneous positive jump after every shot.
 
 Therefore:
 
-> `current field6.field1 = historical argument #6` solely by ordinal position — **REJECTED**.
-
-The current Blitz protobuf likely reorganizes static targeting configuration together with dynamic dispersion/bloom state into a nested message. The exact schema must be recovered from current behavior or a version-matched Blitz definition.
-
-## Current safe semantic grading
-
 ```text
-root.field1          turret/gun relative yaw             PROVEN relationship
-root.field2          gun pitch                           PROVEN relationship
-root.field3          targeting/config scalar             PARTIAL
-root.field4          targeting/config scalar             PARTIAL
-root.field5          targeting/config scalar             PARTIAL
-field6.field1        post-shot dispersion/bloom family   VERY STRONG PARTIAL
-field6 remaining     targeting/dispersion/aiming family  PARTIAL
+field6.field1 = dynamic gun dispersion / bloom scalar
+              = PROVEN physical role
 ```
 
-`field6.field1` may represent a dispersion angle, normalized bloom state, multiplier, or another dynamic aiming scalar. Do not choose among those names without current-version calibration.
+## Historical architecture cross-check
 
-## Why this matters for WotBTools
+Historical Wargaming targeting APIs expose the same broad family of concepts: turret yaw, gun pitch, horizontal/vertical rotation limits, dispersion factors and aiming time. This supports the family-level interpretation of method36 but is not used to assign current fields by ordinal position.
 
-Once `field6.field1` is calibrated, method36 can provide much stronger evidence for AI Review than merely knowing the shot direction:
+## Remaining schema boundaries
 
 ```text
-pre-shot aim state
--> projectile launch
--> immediate post-shot bloom state
+exact private Wargaming protobuf symbols                 UNKNOWN
+exact display/UI formula for root.field5                 UNKNOWN/PARTIAL
+exact display/UI unit/formula for field6.field1          UNKNOWN/PARTIAL
+field6.field2 exact physical role/private symbol         PARTIAL
+remaining nested static coefficient roles/private names  PARTIAL
+cross-version numeric/schema stability                   UNKNOWN until regression-tested
 ```
 
-This can eventually support evidence-backed classification of aimed shots versus snap shots and improve replay reconstruction around gun handling.
+The key distinction is intentional:
 
-Until calibration is closed, production should retain the raw double and expose only a generic `dispersionLikeRaw` / targeting scalar with confidence metadata.
+> **physical role: PROVEN**
+>
+> **private Wargaming field symbol: UNKNOWN**
 
-## Next evidence required
-
-1. Compare `field6.field1` absolute values and deltas against Type31 gun-marker size around the same 326 shots.
-2. Compare recovery curves after shots to infer whether the quantity decays according to aiming time.
-3. Compare tanks with materially different dispersion / aiming-time parameters.
-4. Use Gunner injury (`method16 codeB=41`) as a natural perturbation: current Blitz Gunner shell-shock worsens aiming/dispersion behavior.
-5. Use Reticle Calibration activation as an independent negative/positive control where present.
-6. Recover a version-matched Blitz protobuf/schema if available.
-
-Only promote an exact field name after at least one current-version physical closure or direct schema match.
+Production may use the proven physical roles while preserving raw protobuf values and version provenance.
