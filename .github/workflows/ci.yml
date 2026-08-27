@@ -22,23 +22,12 @@ jobs:
       - uses: actions/checkout@v5
       - name: Python unit tests
         run: python3 -m unittest discover -s common/python/tests -p 'test_*.py'
-      - name: Probe live BlitzKit locked descriptions
+      - name: Validate live BlitzKit equipment contract
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import sys
-          sys.path.insert(0, "common/python")
-          import update_equipment as ue
-          import validate_locked_equipment_contract as lock
-          pb = ue.fetch(ue.EQUIPMENT_URL, binary=True)
-          details = ue.parse_equipment_details(pb)
-          payload = __import__('json').load(open('common/wotb-item-catalog-json/equipment.json', encoding='utf-8'))
-          for code in lock.LOCKED_DESCRIPTION_SHA256:
-              item = ue.item_by_code(payload, code)
-              detail = details.get(item['id']) or {}
-              description = detail.get('description') or ''
-              print(f"LIVE_LOCK {code} sha256={lock.description_sha256(description)} normalized={lock.normalize_description(description)!r}")
-          PY
+          cp common/wotb-item-catalog-json/equipment.json /tmp/equipment.json
+          python3 common/python/sync_equipment_snapshot.py --catalog /tmp/equipment.json
+          diff -u common/wotb-item-catalog-json/equipment.json /tmp/equipment.json
 
   backend:
     name: Backend tests
