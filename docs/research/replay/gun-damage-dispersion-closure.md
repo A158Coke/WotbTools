@@ -1,29 +1,27 @@
 # Method16 codeB=36 — Gun damage / dispersion closure
 
-> Corpus: canonical 34 unique Blitz 11.19.0 China arenas.
+> Corpus: canonical 34 unique Blitz 11.19.0 China arenas plus controlled 11.19 training-room probes.
 >
 > Final current verdict: `codeB=36 = Gun` — **PROVEN current-version behavioral identity**.
 
 ## Executive result
 
-The strict 34-arena corpus contains only two `codeB=36` events total, both on the recorder vehicle and both in the same battle. They form one complete common-damage→Repair-Kit-clear chain:
+The original canonical corpus contained one natural recorder-local common-damage→Repair-Kit-clear chain:
 
 ```text
 162.098511  method16 codeA=4, codeB=36
 163.198868  method16 codeA=19, codeB=36, relatedEntity=0
 ```
 
-Window duration:
+That natural window already closed Gun physically because method36 changed exactly and reversibly at the module state boundary.
 
-```text
-1.100357 s
-```
+A later controlled Progetto 65 training-room replay independently repeats the same signature across multiple Gun states, including critical damage, automatic self-repair, full repair and repeated common damage.
 
-Although sample count is only one natural damage window, the targeting-state change is exact, same-clock, reversible and gun-specific.
+Therefore this identity no longer depends on a single natural damage window.
 
-## Same-clock method36 closure
+## Canonical natural-window closure
 
-Immediately before the damage boundary:
+Immediately before the natural damage boundary:
 
 ```text
 161.298065
@@ -62,122 +60,197 @@ nested config A    = 0.602635203879006
 nested config B    = 9.591313887750857
 ```
 
+Exact ratios:
+
+```text
+field6.field1 damaged / healthy = 2.0000000000
+root.field4 damaged / healthy  ~= 0.6750000026
+```
+
 The naturally changing recorder yaw/pitch fields are omitted above because player aim input changes them continuously and they are not configuration controls.
 
-## Exact effect ratios
+## Controlled Progetto 65 closure
 
-The damage boundary changes two targeting scalars and leaves the remaining slow/static targeting scalars unchanged:
-
-```text
-field6.field1:
-  damaged / healthy = 2.0000000000
-  repaired / healthy = 1.0000000000
-
-root.field4:
-  damaged / healthy ~= 0.6750000026
-  repaired / healthy = 1.0000000000
-```
-
-Thus the same component-state boundary causes:
+Controlled replay:
 
 ```text
-one dispersion-like scalar -> exact ×2 degradation
-one gun-handling scalar     -> exact ×0.675 degradation
+vehicle : It08_Progetto_M40_mod65
+version : 11.19.0_china_apple
+arenaId : 1177261227795059340
+purpose : repeated Gun / barrel damage-state probe
 ```
 
-and both revert exactly at repair.
+Observed recorder-local method16 timeline:
 
-## Repair-Kit synchronization
+```text
+34.811146  codeA=5   codeB=36  Gun critical
+39.004589  codeA=18  codeB=36  automatic critical self-repair -> damaged
+47.808376  codeA=19  codeB=36  full repair / clear
 
-At the exact clear clock:
+63.506565  codeA=4   codeB=36  common damaged
+64.807091  codeA=5   codeB=36  escalates to critical
+69.008949  codeA=18  codeB=36  automatic critical self-repair -> damaged
+76.011772  codeA=19  codeB=36  full repair / clear
+
+82.906303  codeA=4   codeB=36  common damaged again
+```
+
+The same method36 targeting signature repeats throughout the controlled sequence.
+
+Healthy/full-repair baseline:
+
+```text
+root.field4   = 0.666026369
+field6.field1 = 0.917178758
+```
+
+Gun negative state (`codeA=4`, `5`, or post-`18` degraded state):
+
+```text
+root.field4   = 0.449567801
+field6.field1 = 1.834357516
+```
+
+Exact ratios:
+
+```text
+0.449567801 / 0.666026369 = 0.675
+1.834357516 / 0.917178758 = 2.0
+```
+
+Every full-repair boundary returns both values exactly to baseline.
+
+This is a stronger closure than the original natural sample because it demonstrates the same module-specific physical transform across repeated state transitions and independent attackers.
+
+## codeA lifecycle upgraded by controlled evidence
+
+The Progetto probe independently reinforces the Gun-specific lifecycle:
+
+```text
+codeA=4  -> common damaged / degraded operational
+codeA=5  -> critical / disabled
+codeA=18 -> automatic self-repair from critical to degraded operational
+codeA=19 -> full repair / clear
+```
+
+In particular, the sequence:
+
+```text
+5 -> 18 -> 19
+```
+
+appears twice in the controlled probe and reproduces the same method36 state transition each time.
+
+## Repair synchronization
+
+In the original natural window:
 
 ```text
 163.198868 Type32 wireCode 0x0D state2  // Repair Kit activation
-163.198868 Type32 wireCode 0x0D state3  // instant action / cooldown transition
+163.198868 Type32 wireCode 0x0D state3
 163.198868 method16 codeA=19, codeB=36
 163.198868 method36 targeting values return to healthy configuration
 ```
 
-`0x0D` is independently proven as Repair Kit in the current corpus and clears mechanical negative states, not crew shell-shock or fire.
+The controlled Progetto replay also contains full-repair boundaries whose method36 values return exactly to the healthy baseline.
 
-This proves the `codeB=36` state is a mechanical module state and that the targeting degradation is removed by module repair.
+`0x0D` is independently proven as Repair Kit in the current corpus and clears mechanical negative states rather than crew shell shock.
 
 ## Current Blitz gameplay cross-check
 
-Current Blitz support documentation describes Gun module behavior as:
+Current Blitz Gun behavior is consistent with:
 
 ```text
-common damage  -> firing accuracy halved
-critical damage -> firing impossible
-Repair Kit      -> immediately restores damaged modules
+common damage  -> strongly degraded firing accuracy / handling
+critical damage -> firing disabled
+Repair Kit      -> restores damaged modules
 ```
 
-The replay gives an exact current-version counterpart:
+The replay gives an exact current-version mathematical counterpart:
 
 ```text
-method16 Gun-candidate common damage
--> dispersion-like targeting scalar doubles
--> Repair Kit
--> scalar returns exactly to baseline
+Gun negative state
+-> field6.field1 ×2
+-> root.field4 ×0.675
+
+full repair
+-> both return exactly to baseline
 ```
 
-This is the expected mathematical signature of halved firing accuracy / strongly worsened gun dispersion and is not explained by Engine, Tracks, Fuel Tank, Observation Device or Turret Rotator behavior.
+This physical signature is not explained by Engine, Tracks, Fuel Tank, Observation Device or Turret Rotator behavior.
 
-The simultaneous `root.field4 ×0.675` change further supports a gun-handling configuration effect. Its exact symbolic field name remains PARTIAL; historical positional argument order is not enough to name it safely.
+## Reticle Calibration cross-check
+
+A separate controlled Kranvagn Reticle Calibration probe independently shows:
+
+```text
+Reticle Calibration active:
+root.field5   ×0.70
+field6.field1 ×0.70
+
+Reticle Calibration end:
+both restore exactly
+```
+
+Therefore `field6.field1` is now independently perturbed by three different causes:
+
+```text
+ordinary shot      -> instantaneous positive bloom change
+Gun damage         -> persistent ×2 degradation
+Reticle Calibration -> ×0.70 improvement
+```
+
+This substantially upgrades its physical identity beyond the original natural Gun-damage closure.
 
 ## Type31 boundary
 
-Type31 is the high-rate replay-recorded arcade gun-marker size stream, but in this particular battle the local Type31 segment begins only after the Repair-Kit boundary (~0.142 s later). Therefore Type31 cannot provide an independent pre-damage marker-size comparison for this one natural window.
+Type31 is the high-rate replay-recorded arcade gun-marker size stream. The original natural Gun-damage window did not include a useful pre/onset Type31 comparison, so method36 remains the authoritative exact damage-state closure.
 
-This does not weaken the method36 closure because method36 itself supplies exact before/onset/repair targeting snapshots at the relevant boundaries.
-
-Type31 remains useful for calibrating the exact unit/meaning of method36 `field6.field1` across ordinary shots and other perturbation windows.
+Controlled targeting probes should continue to use Type31 for calibration of user-visible reticle size and convergence, but the Gun identity itself no longer depends on obtaining more Type31 samples.
 
 ## Distinguishing this from Gunner injury
 
-`codeB=41` is independently PROVEN Gunner shell-shock and is cleared by First Aid/MPRP rather than Repair Kit. It also produces strong turret-yaw/aiming degradation.
+`codeB=41` is independently PROVEN Gunner shell-shock and is cleared by First Aid/MPRP rather than Repair Kit. It also produces gun-handling degradation, but the lifecycle and recovery path differ.
 
-The `codeB=36` chain is different in all important respects:
+The `codeB=36` chain is distinct:
 
 ```text
 component class      mechanical
-clear consumable     Repair Kit
-method16 lifecycle   codeA=4 -> codeA=19
-core signature       exact dispersion-like ×2 -> baseline
+clear consumable     Repair Kit / MPRP mechanical repair path
+method16 lifecycle   4 / 5 / 18 / 19
+core signature       field6.field1 ×2 + root.field4 ×0.675
 ```
 
-Therefore the observed effect cannot be a crew-role alias.
+Therefore Gun and Gunner are independently distinguishable on both namespace and physical lifecycle.
 
 ## Final verdict
 
 > `codeB=36 = Gun` — **PROVEN current Blitz 11.19 behavioral identity**.
 
-> `codeA=4 + codeB=36` = **Gun common-damaged / degraded state — PROVEN relationship**.
+> `codeA=4 + codeB=36` = **Gun common-damaged / degraded state — PROVEN**.
 
-> `codeA=19 + codeB=36` = **Gun full repair / clear — PROVEN relationship**.
+> `codeA=5 + codeB=36` = **Gun critical / disabled state — PROVEN**.
+
+> `codeA=18 + codeB=36` = **automatic critical self-repair to degraded operational state — PROVEN current/version**.
+
+> `codeA=19 + codeB=36` = **Gun full repair / clear — PROVEN**.
 
 ## Method36 implication
 
-This natural experiment also upgrades the interpretation of `method36.field6.field1`.
-
-It is now independently known to respond to both:
-
-```text
-ordinary shot boundary -> positive post-shot change in every sampled recorder shot pair
-Gun module damage      -> exact persistent ×2 state
-Gun module repair      -> exact restoration to baseline
-```
+`method36.field6.field1` now has independent controlled perturbations from ordinary firing, Gun damage and Reticle Calibration.
 
 Safe current semantic:
 
-> `field6.field1` = **dynamic gun-dispersion / bloom-state scalar — PROVEN family-level physical role / PARTIAL exact symbolic unit**.
+> `field6.field1` = **dynamic gun-dispersion / bloom-state scalar — PROVEN physical role / exact private unit-name still version-scoped**.
 
-Do not yet call it a literal dispersion angle, probability, or historical `shotDispMultiplierFactor`; exact unit/name still requires calibration or a version-matched Blitz schema.
+`method36.root.field4` is also a Gun-handling scalar because Gun negative state applies an exact persistent `×0.675` transform and repair restores baseline. Its exact private name remains unresolved.
+
+Do not call either field a probability or import a historical flat-argument symbolic name without current-version proof.
 
 ## Remaining targeting work
 
-1. calibrate `field6.field1` against Type31 convergence curves and Reticle Calibration;
-2. identify `root.field4` exact gun-handling role;
-3. compare Gunner injury and Gun damage mathematically to separate crew and module modifiers;
-4. validate `codeB=36` on additional 11.19+ replays because current canonical corpus contains only one damage window;
+1. identify `root.field4` exact gun-handling role;
+2. calibrate `field6.field1` numerical unit against Type31 reticle size/convergence;
+3. compare Gunner injury and Gun damage quantitatively where controlled probes allow;
+4. recover a version-matched Blitz targeting protobuf definition;
 5. preserve raw values and version gates in any product-facing decoder.
