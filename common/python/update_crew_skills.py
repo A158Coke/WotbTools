@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""从 BlitzKit skills.pb 生成 common/crew-skills.json。
+"""Generate common/crew-skills.json from stable BlitzKit skill definitions.
 
-数据边界：BlitzKit 的 SkillDefinitions 只提供 TankClass -> canonical skill id 列表。
-本脚本因此只落档可验证的结构化事实，不猜测技能显示名、描述或效果数值。
-
-用法：
-    python common/python/update_crew_skills.py
-    python common/python/update_crew_skills.py --output /tmp/crew-skills.json
+BlitzKit currently exposes canonical TankClass -> skill id[] membership. This
+sync records only those structured facts plus derived icon URLs; it deliberately
+does not invent display names, descriptions, or effect values.
 """
 
 import argparse
@@ -17,6 +14,8 @@ import re
 import struct
 import urllib.request
 from datetime import datetime, timezone
+
+from blitzkit_snapshot import GAME_URL, fetch_stable_snapshot, parse_game_version
 
 PB_URL = "https://assets.blitzkit.app/definitions/skills.pb"
 ICON_BASE_URL = "https://api.blitzkit.app/icons/skills"
@@ -54,7 +53,7 @@ def _read_varint(buf, i):
 
 
 def decode_protobuf(buf):
-    """最小 protobuf wire decoder，返回 {field_number: [values]}。"""
+    """Minimal protobuf wire decoder returning {field_number: [values]}."""
     fields = {}
     i = 0
     while i < len(buf):
@@ -92,8 +91,14 @@ def _first(fields, field, default=None):
     return values[0] if values else default
 
 
+def _as_str(value):
+    if isinstance(value, bytes):
+        return value.decode("utf-8")
+    return str(value) if value is not None else ""
+
+
 def parse_skill_definitions(data):
-    """解析 BlitzKit SkillDefinitions.proto: map<uint32, Skill> classes = 1。"""
+    """Parse SkillDefinitions.proto: map<uint32, Skill> classes = 1."""
     root = decode_protobuf(data)
     result = {}
     for raw_entry in root.get(1, []):
@@ -102,8 +107,13 @@ def parse_skill_definitions(data):
         raw_skill = _first(entry, 2)
         if not isinstance(class_id, int) or not isinstance(raw_skill, (bytes, bytearray)):
             raise ValueError("malformed SkillDefinitions classes entry")
+        if class_id in result:
+            raise ValueError(f"duplicate tank class entry: {class_id}")
         skill_message = decode_protobuf(raw_skill)
-        skills = [raw.decode("utf-8") for raw in skill_message.get(1, [])]
+        try:
+            skills = [raw.decode("utf-8") for raw in skill_message.get(1, [])]
+        except UnicodeDecodeError as error:
+            raise ValueError("invalid UTF-8 skill id") from error
         result[class_id] = skills
     return result
 
@@ -133,35 +143,61 @@ def validate(classes):
         raise ValueError("same skill id appears in multiple tank classes")
 
 
-def build_document(classes):
+def build_classes_document(classes):
     validate(classes)
-    class_documents = {}
-    total = 0
+    result = {}
     for class_id in sorted(classes):
         key, name = CLASS_META[class_id]
-        skills = [
-            {
-                "id": skill_id,
-                "icon": f"{ICON_BASE_URL}/{skill_id}.webp",
-            }
-            for skill_id in classes[class_id]
-        ]
-        total += len(skills)
-        class_documents[key] = {
+        result[key] = {
             "classId": class_id,
             "name": name,
-            "skills": skills,
+            "skills": [
+                {
+                    "id": skill_id,
+                    "icon": f"{ICON_BASE_URL}/{skill_id}.webp",
+                }
+                for skill_id in classes[class_id]
+            ],
         }
+    return result
 
-    return {
-        "meta": {
-            "source": PB_URL,
-            "sourceProject": "blitzkit/blitzkit",
-            "generatedAt": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-            "count": total,
-        },
-        "classes": class_documents,
+
+def build_document(classes, game_version=None, skills_hash=None, generated_at=None):
+    class_documents = build_classes_document(classes)
+    meta = {
+        "source": PB_URL,
+        "sourceProject": "blitzkit/blitzkit",
+        "generatedAt": generated_at or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "count": sum(len(value["skills"]) for value in class_documents.values()),
     }
+    if game_version:
+        meta["sourceGameVersion"] = game_version
+    if skills_hash:
+        meta["sourceHash"] = skills_hash
+    return {"meta": meta, "classes": class_documents}
+
+
+def reconcile_document(existing, classes, game_version, skills_hash, generated_at=None):
+    """Return (document, changed), avoiding timestamp-only/update-metadata-only PRs."""
+    class_documents = build_classes_document(classes)
+    existing_meta = (existing or {}).get("meta") or {}
+    existing_classes = (existing or {}).get("classes")
+
+    # Once trace metadata exists, identical skill semantics are a true no-op even
+    # when game.pb or protobuf serialization changes independently of skill data.
+    if (
+        existing_classes == class_documents
+        and existing_meta.get("sourceHash")
+        and existing_meta.get("sourceGameVersion")
+    ):
+        return existing, False
+
+    return build_document(
+        classes,
+        game_version=game_version,
+        skills_hash=skills_hash,
+        generated_at=generated_at,
+    ), True
 
 
 def fetch_bytes(url):
@@ -170,23 +206,60 @@ def fetch_bytes(url):
         return response.read()
 
 
-def main():
+def load_existing(path):
+    if not path or not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
-    args = parser.parse_args()
+    parser.add_argument("--existing", default=None)
+    args = parser.parse_args(argv)
 
-    data = fetch_bytes(PB_URL)
-    document = build_document(parse_skill_definitions(data))
+    snapshots, hashes = fetch_stable_snapshot(
+        {"game": GAME_URL, "skills": PB_URL},
+        fetch_bytes,
+    )
+    game_version = parse_game_version(
+        snapshots["game"], decode_protobuf, _first, _as_str
+    )
+    classes = parse_skill_definitions(snapshots["skills"])
+    existing_path = args.existing or (args.output if os.path.exists(args.output) else None)
+    document, changed = reconcile_document(
+        load_existing(existing_path),
+        classes,
+        game_version,
+        hashes["skills"],
+    )
+
+    if not changed and os.path.abspath(args.output) == os.path.abspath(existing_path):
+        print(
+            "crew skills unchanged: game_version=%s skills=%d hash=%s"
+            % (game_version, document["meta"]["count"], hashes["skills"][:12])
+        )
+        return 0
+
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
-    with open(args.output, "w", encoding="utf-8") as handle:
+    with open(args.output, "w", encoding="utf-8", newline="\n") as handle:
         json.dump(document, handle, ensure_ascii=False, indent=2)
         handle.write("\n")
 
     print(
-        "crew skills updated: classes=%d skills=%d output=%s"
-        % (len(document["classes"]), document["meta"]["count"], args.output)
+        "crew skills %s: game_version=%s classes=%d skills=%d hash=%s output=%s"
+        % (
+            "updated" if changed else "unchanged",
+            game_version,
+            len(document["classes"]),
+            document["meta"]["count"],
+            hashes["skills"][:12],
+            args.output,
+        )
     )
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
