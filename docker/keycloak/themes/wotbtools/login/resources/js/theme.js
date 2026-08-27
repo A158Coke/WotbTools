@@ -17,7 +17,7 @@
     el.setAttribute('data-theme', theme);
     var btn = document.getElementById('wbtb-theme-toggle');
     if (btn) {
-      // Labels come from the FTL-localized data attributes; never hardcode a language.
+      // Labels are hardcoded in template.ftl (i18n removed); swap the destination label per direction.
       var label = theme === 'dark'
         ? (btn.getAttribute('data-label-to-light') || btn.getAttribute('title') || btn.getAttribute('aria-label'))
         : (btn.getAttribute('data-label-to-dark') || btn.getAttribute('title') || btn.getAttribute('aria-label'));
@@ -37,27 +37,9 @@
     });
   }
 
-  function bindLocale() {
-    var btn = document.getElementById('kc-current-locale-link');
-    var list = document.getElementById('language-switch1');
-    if (!btn || !list) return;
-    btn.addEventListener('click', function (ev) {
-      ev.preventDefault();
-      var open = list.classList.toggle('is-open');
-      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    });
-    document.addEventListener('click', function (ev) {
-      if (!list.contains(ev.target) && !btn.contains(ev.target)) {
-        list.classList.remove('is-open');
-        btn.setAttribute('aria-expanded', 'false');
-      }
-    });
-  }
-
   function init() {
     apply(readTheme());
     bind();
-    bindLocale();
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
