@@ -22,24 +22,12 @@ jobs:
       - uses: actions/checkout@v5
       - name: Python unit tests
         run: python3 -m unittest discover -s common/python/tests -p 'test_*.py'
-      - name: Capture live BlitzKit equipment snapshot hash
+      - name: Validate live BlitzKit equipment contract
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import hashlib, sys
-          sys.path.insert(0, 'common/python')
-          import update_equipment as ue
-          from blitzkit_snapshot import GAME_URL, fetch_stable_snapshot, parse_game_version
-          snapshot, hashes = fetch_stable_snapshot(
-              {'game': GAME_URL, 'equipment': ue.EQUIPMENT_URL, 'tanks': ue.PB_URL},
-              lambda url: ue.fetch(url, binary=True),
-              max_rounds=3,
-          )
-          version = parse_game_version(snapshot['game'], ue.decode_protobuf, ue.f1, ue.as_str)
-          print('REVIEWED_GAME_VERSION=' + version)
-          print('REVIEWED_EQUIPMENT_SHA256=' + hashes['equipment'])
-          print('REVIEWED_TANKS_SHA256=' + hashes['tanks'])
-          PY
+          cp common/wotb-item-catalog-json/equipment.json /tmp/equipment.json
+          python3 common/python/sync_equipment_snapshot.py --catalog /tmp/equipment.json
+          diff -u common/wotb-item-catalog-json/equipment.json /tmp/equipment.json
 
   backend:
     name: Backend tests
