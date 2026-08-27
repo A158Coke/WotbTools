@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """validate_locked_equipment_contract.py unit tests."""
 
+import hashlib
 import os
 import sys
 import unittest
@@ -21,6 +22,32 @@ REVIEWED_DESCRIPTIONS = {
     "CONSUMABLE_DELIVERY_SYSTEM": "allows consumables and abilities in modes to be used more often. %(equipmentreloadboost) to cooldown speed of consumables and abilities.",
     "HIGH_END_CONSUMABLES": "allows bonuses from consumables and bonuses from abilities in modes to last longer. %(equipmentdurationfactor) to the duration of consumables and abilities.",
 }
+
+
+def encode_varint(value):
+    out = bytearray()
+    while True:
+        byte = value & 0x7F
+        value >>= 7
+        if value:
+            out.append(byte | 0x80)
+        else:
+            out.append(byte)
+            return bytes(out)
+
+
+def field_varint(field, value):
+    return encode_varint((field << 3) | 0) + encode_varint(value)
+
+
+def field_bytes(field, value):
+    value = bytes(value)
+    return encode_varint((field << 3) | 2) + encode_varint(len(value)) + value
+
+
+def equipment_pb(item_id, definition):
+    entry = field_varint(1, item_id) + field_bytes(2, definition)
+    return field_bytes(2, entry)
 
 
 class LockedEquipmentContractTest(unittest.TestCase):
@@ -59,12 +86,29 @@ class LockedEquipmentContractTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "BLITZKIT_LOCKED_DESCRIPTION_CHANGED"):
             validator.validate_locked_contract(payload, details)
 
-    def test_unrelated_upstream_changes_do_not_require_a_global_version_lock(self):
+    def test_complete_locked_definition_change_fails_even_when_description_could_stay_same(self):
+        code = "SUPERCHARGER"
+        item_id = 1000
+        payload = {"items": [{"id": item_id, "code": code}]}
+        reviewed = b"definition-with-hidden-numeric-fields"
+        changed = reviewed + b"-changed"
+        original_definitions = validator.LOCKED_DEFINITION_SHA256
+        original_descriptions = validator.LOCKED_DESCRIPTION_SHA256
+        try:
+            validator.LOCKED_DEFINITION_SHA256 = {code: hashlib.sha256(reviewed).hexdigest()}
+            validator.LOCKED_DESCRIPTION_SHA256 = {code: "unused-in-this-test"}
+            self.assertTrue(
+                validator.validate_locked_definition_contract(payload, equipment_pb(item_id, reviewed))
+            )
+            with self.assertRaisesRegex(RuntimeError, "BLITZKIT_LOCKED_DEFINITION_CHANGED"):
+                validator.validate_locked_definition_contract(payload, equipment_pb(item_id, changed))
+        finally:
+            validator.LOCKED_DEFINITION_SHA256 = original_definitions
+            validator.LOCKED_DESCRIPTION_SHA256 = original_descriptions
+
+    def test_unrelated_upstream_changes_do_not_require_global_version_or_file_lock(self):
         payload = self.payload()
         details = self.details(payload)
-        # The locked contract is deliberately item-scoped. Game-version changes,
-        # unrelated new equipment, and preset-layout changes are handled elsewhere
-        # and must not block sync when the locked descriptions remain unchanged.
         self.assertTrue(validator.validate_locked_contract(payload, details))
         self.assertFalse(hasattr(validator, "REVIEWED_GAME_VERSION"))
         self.assertFalse(hasattr(validator, "REVIEWED_EQUIPMENT_SHA256"))
