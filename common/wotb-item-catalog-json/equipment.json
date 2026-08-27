@@ -57,7 +57,7 @@
         {
           "stat": "penetration",
           "operation": "MULTIPLY",
-          "value": 1.08,
+          "value": 1.06,
           "conditions": {
             "shellTypes": [
               "AP"
@@ -67,7 +67,7 @@
         {
           "stat": "penetration",
           "operation": "MULTIPLY",
-          "value": 1.05,
+          "value": 1.06,
           "conditions": {
             "shellTypes": [
               "APCR"
@@ -77,7 +77,7 @@
         {
           "stat": "penetration",
           "operation": "MULTIPLY",
-          "value": 1.13,
+          "value": 1.07,
           "conditions": {
             "shellTypes": [
               "HEAT"
@@ -87,7 +87,7 @@
         {
           "stat": "penetration",
           "operation": "MULTIPLY",
-          "value": 1.08,
+          "value": 1.07,
           "conditions": {
             "shellTypes": [
               "HE",
@@ -114,7 +114,7 @@
         {
           "stat": "aimingSpeed",
           "operation": "MULTIPLY",
-          "value": 1.15
+          "value": 1.12
         }
       ]
     },
@@ -328,7 +328,7 @@
         {
           "stat": "nominalArmorThickness",
           "operation": "MULTIPLY",
-          "value": 1.03,
+          "value": 1.04,
           "applyBefore": "ARMOR_SIMULATION"
         }
       ]
@@ -349,7 +349,7 @@
         {
           "stat": "hitPoints",
           "operation": "MULTIPLY",
-          "value": 1.04
+          "value": 1.05
         }
       ]
     },
@@ -464,7 +464,7 @@
         {
           "stat": "camouflageRatingBonus",
           "operation": "ADD_PERCENTAGE_POINTS",
-          "value": 7.0,
+          "value": 6.0,
           "conditions": {
             "vehicleClasses": [
               "LIGHT"
@@ -494,7 +494,7 @@
         {
           "stat": "camouflageRatingBonus",
           "operation": "ADD_PERCENTAGE_POINTS",
-          "value": 10.0,
+          "value": 7.0,
           "conditions": {
             "vehicleClasses": [
               "TANK_DESTROYER"
@@ -527,7 +527,7 @@
         {
           "stat": "hullTraverseSpeed",
           "operation": "MULTIPLY",
-          "value": 1.11
+          "value": 1.12
         }
       ]
     },
@@ -547,7 +547,7 @@
         {
           "stat": "enginePower",
           "operation": "MULTIPLY",
-          "value": 1.04,
+          "value": 1.05,
           "conditions": {
             "vehicleClasses": [
               "LIGHT",
@@ -558,7 +558,7 @@
         {
           "stat": "enginePower",
           "operation": "MULTIPLY",
-          "value": 1.05,
+          "value": 1.06,
           "conditions": {
             "vehicleClasses": [
               "HEAVY",
