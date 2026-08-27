@@ -40,14 +40,14 @@ html[data-theme="light"] .alert-error.wbtb-alert { border-color: rgba(192,57,43,
 .wbtb-idp-btn:hover { border-color: var(--auth-border-strong); }
 .wbtb-idp-btn.is-disabled { opacity: .55; cursor: default; }
 .wbtb-idp-btn__label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-/* Locale */
-.wbtb-locale { position: relative; }
-.wbtb-locale__button { background: transparent; border: 1px solid var(--auth-border); color: var(--auth-text); border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 13px; }
-.wbtb-locale__list { position: absolute; right: 0; margin: 6px 0 0; padding: 6px; list-style: none; background: var(--auth-input-bg); border: 1px solid var(--auth-input-border); border-radius: 8px; display: none; z-index: 20; min-width: 120px; }
-.wbtb-locale__list.is-open { display: block; }
-.wbtb-locale__link { display: block; padding: 7px 12px; color: var(--auth-text); text-decoration: none; border-radius: 6px; font-size: 14px; }
-.wbtb-locale__link:hover { background: rgba(255,255,255,0.08); }
-html[data-theme="light"] .wbtb-locale__link:hover { background: rgba(20,28,40,0.06); }
+/* Dark (Battlefield) readability — control boundaries & secondary text. Light theme unaffected. */
+html[data-theme="dark"] .wbtb-input-toggle { color: var(--auth-text); }
+html[data-theme="dark"] .wbtb-input-toggle:hover { color: var(--auth-amber-strong); border-color: var(--auth-border-strong); }
+html[data-theme="dark"] .wbtb-input-toggle:focus-visible,
+html[data-theme="dark"] .wbtb-idp-btn:focus-visible,
+html[data-theme="dark"] .wbtb-theme-toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(255,184,77,0.30); border-color: var(--auth-focus); }
+html[data-theme="dark"] .wbtb-idp-section { border-top-color: rgba(255,255,255,0.22); }
+html[data-theme="dark"] .wbtb-idp-section h2 { color: #bcc7d4; }
 /* Theme toggle */
 .wbtb-theme-toggle { position: relative; width: 44px; height: 26px; border-radius: 999px; border: 1px solid var(--auth-border); background: rgba(255,255,255,0.06); cursor: pointer; transition: background .2s ease; }
 html[data-theme="light"] .wbtb-theme-toggle { background: rgba(20,28,40,0.06); }
