@@ -2,9 +2,19 @@
 
 > Base corpus: 34 unique arenas / 476 settled players.
 >
-> Scope: PR147 research archive + all current-version controlled probes used to close P0/P1 replay-protocol semantics.
+> Scope: PR147 research archive + current-version controlled probes used to close P0/P1 replay-protocol semantics.
 >
 > Top-level authority: `WOTB_REPLAY_PROTOCOL_11_19_BILINGUAL_COMPLETE_REFERENCE.md`.
+
+## Evidence policy
+
+Current authoritative documentation uses only:
+
+- `AFFIRMED`
+- `GUESS`
+- `UNKNOWN`
+
+Historical interpretations that have been disproved are intentionally omitted from this audit.
 
 ## Executive verdict
 
@@ -17,7 +27,7 @@ Current status:
 
 > **CORE PROTOCOL RESEARCH COMPLETE / PRODUCTION-USABLE FOR CURRENT 11.19 OBSERVED AND CONTROLLED SURFACES**
 
-This does **not** claim recovery of every private Wargaming symbol, complete omniscient battle state, or cross-version ordinal stability. Remaining boundaries are P2/P3/private-schema work, low-frequency/unobserved enums, implementation convergence, and future-version regression.
+This does not claim recovery of every private Wargaming symbol, omniscient battle state, or cross-version ordinal stability. Remaining boundaries are P2/P3/private-schema work, low-frequency or unobserved enums, implementation convergence, and future-version regression.
 
 ## Canonical consistency
 
@@ -33,11 +43,9 @@ live sub-second terminal closure     283 / 287 = 98.61%
 settlement-second fallback             4 / 287 = 1.39%
 ```
 
-Old 341-shot aggregate is `SUPERSEDED`.
-
 ## P1 closure ledger
 
-### P1 — Type10 movement / transform: CLOSED
+### Type10 movement / transform — CLOSED
 
 Canonical Type10 population:
 
@@ -46,28 +54,29 @@ Canonical Type10 population:
 49-byte payload 1,287,221 / 1,287,221
 ```
 
-Closed current fields:
+Current field model:
 
 ```text
-entityId
-spaceId
-attachment/parent entity ID
-position x/y/z
-position/filter-error vector structural role
-hull yaw/pitch/roll
-~10 Hz sampling
+entityId                              AFFIRMED
+spaceId                               AFFIRMED
+attachment/parent entity ID           AFFIRMED
+position x/y/z                        AFFIRMED
+position/filter-error vector          AFFIRMED structural role; exact generation UNKNOWN
+hull yaw/pitch/roll                   AFFIRMED
+trailingStateRaw                      UNKNOWN exact semantic
+~10 Hz sampling                       AFFIRMED
 ```
 
 Controlled movement facts:
 
 ```text
-forward/reverse classification      CLOSED
-hull rotation                       CLOSED
-hull vs turret separation           CLOSED
-linear speed                        CLOSED derived
-physical meter scale                CLOSED controlled
-vertical/airborne movement          CLOSED controlled
-AoI continuity boundary             CLOSED
+forward/reverse classification      AFFIRMED derived
+hull rotation                       AFFIRMED derived
+hull vs turret separation           AFFIRMED
+linear speed                        AFFIRMED derived
+physical meter scale                AFFIRMED controlled
+vertical/airborne movement          AFFIRMED controlled
+AoI continuity boundary             AFFIRMED
 ```
 
 Physical scale controlled by Kanonenjagdpanzer 105:
@@ -77,29 +86,23 @@ Physical scale controlled by Kanonenjagdpanzer 105:
 5.5804 unit/s  -> 20.089 km/h reverse
 ```
 
-Therefore `1 Type10 position unit ~= 1 meter` is PROVEN controlled.
-
-Rhm airborne replay supplies a ballistic Type10-Y trajectory with fitted vertical acceleration around `-9.74 unit/s²`.
-
-Critical correction:
+Current physical scale:
 
 ```text
-Type10 trailing byte == onGround   REJECTED
+1 Type10 position unit ~= 1 meter   AFFIRMED controlled
 ```
 
-The Rhm recorder remains `raw=1` for `369/369` Type10 samples across the controlled airborne trajectory. The byte is now `trailingStateRaw` with UNKNOWN exact semantic.
+Rhm airborne replay provides an independent Type10-Y ballistic trajectory with fitted vertical acceleration around `-9.74 unit/s²`. In that replay `trailingStateRaw=1` for `369/369` recorder Type10 samples; the exact meaning of the byte remains `UNKNOWN`.
 
-### P1 — method36 high-value targeting semantics: CLOSED
-
-Closed fields:
+### method36 high-value targeting semantics — CLOSED
 
 ```text
-root.field1 = turret/gun relative yaw               PROVEN
-root.field2 = gun pitch                             PROVEN
-root.field3 = max horizontal angular speed          PROVEN controlled
-root.field4 = max vertical angular speed            PROVEN controlled
-root.field5 = aiming-time physical scalar           PROVEN
-field6.field1 = dynamic gun dispersion/bloom        PROVEN
+root.field1 = turret/gun relative yaw               AFFIRMED
+root.field2 = gun pitch                             AFFIRMED
+root.field3 = max horizontal angular speed          AFFIRMED controlled
+root.field4 = max vertical angular speed            AFFIRMED controlled
+root.field5 = aiming-time physical scalar           AFFIRMED
+field6.field1 = dynamic gun dispersion/bloom        AFFIRMED
 ```
 
 Independent perturbations:
@@ -112,9 +115,9 @@ Reticle Calibration  -> root.field5 ×0.70; field6.field1 ×0.70
 Reticle end           -> exact baseline restore
 ```
 
-Three remaining static/nested coefficients lack exact private names/units, but no longer block current high-value AI Review or battle-reconstruction facts. They are P2/private-schema recovery.
+Remaining static/nested coefficients have `GUESS/UNKNOWN` exact private names/units and do not block current high-value AI Review or battle-reconstruction facts.
 
-### P1 — method38 `0x0200`: CLOSED
+### method38 `0x0200` — CLOSED
 
 Controlled replay:
 
@@ -127,186 +130,154 @@ phase 2  = Fuel Tank, 15 projectiles
 method29/method38 same-clock pairs = 30/30
 ```
 
-Critical Gun/barrel result:
+Key Gun/barrel result:
 
 ```text
 0x0240 = 0x0200 | 0x0040
 ```
 
-Same Gun phase also contains:
+Same Gun phase:
 
 ```text
 0x0100 + component36 + rawState0
 ```
 
-Fuel Tank control repeatedly contains:
+Fuel Tank control:
 
 ```text
 0x0110 = 0x0010 | 0x0100
 component33 rawState0/1
 ```
 
-Therefore:
+Current physical meaning:
 
 ```text
-0x0200 = internal device/module not pierced by projectile
-       = PROJECTILE_DEVICE_NOT_PIERCED
-       = PROVEN controlled current physical role
+0x0200 = PROJECTILE_DEVICE_NOT_PIERCED
+       = internal device/module not pierced by projectile
+       = AFFIRMED controlled
 ```
-
-It must not be listed as UNKNOWN/unobserved/P1 in current authoritative docs.
 
 ## Complete method38 low16 map
 
 ```text
-0x0001 direct terminal shell kill                                      PROVEN
-0x0002 target already dead before attack                               PROVEN sample / low-N
-0x0004 fire started                                                     PROVEN
-0x0008 ricochet                                                         PROVEN controlled
-0x0010 positive material/vehicle penetration by projectile              PROVEN
-0x0020 projectile non-penetration / material stop                       PROVEN controlled
-0x0040 zero-DF/spaced layer pierced by projectile                       PROVEN controlled
-0x0080 zero-DF/spaced layer not pierced                                 PROVEN controlled
-0x0100 internal device/module pierced/involved by projectile            PROVEN
-0x0200 internal device/module not pierced by projectile                 PROVEN controlled
-0x0400 chassis/track damaged by projectile                              PROVEN
-0x0800 Gun damaged by projectile                                        PROVEN
-0x1000 positive-DF material explosion branch                            PROVEN controlled
-0x2000 zero-DF/spaced-layer explosion branch                            PROVEN controlled low-N
-0x4000 component/device involved by explosion                           PROVEN controlled
-0x8000 component/device damaged by explosion                            PROVEN controlled
+0x0001 direct terminal shell kill                                      AFFIRMED
+0x0002 target already dead before attack                               AFFIRMED sample / low-N
+0x0004 fire started                                                     AFFIRMED
+0x0008 ricochet                                                         AFFIRMED controlled
+0x0010 positive material/vehicle penetration by projectile              AFFIRMED
+0x0020 projectile non-penetration / material stop                       AFFIRMED controlled
+0x0040 zero-DF/spaced layer pierced by projectile                       AFFIRMED controlled
+0x0080 zero-DF/spaced layer not pierced                                 AFFIRMED controlled
+0x0100 internal device/module pierced/involved by projectile            AFFIRMED
+0x0200 internal device/module not pierced by projectile                 AFFIRMED controlled
+0x0400 chassis/track damaged by projectile                              AFFIRMED
+0x0800 Gun damaged by projectile                                        AFFIRMED
+0x1000 positive-DF material explosion branch                            AFFIRMED controlled
+0x2000 zero-DF/spaced-layer explosion branch                            AFFIRMED controlled / low-N
+0x4000 component/device involved by explosion                           AFFIRMED controlled
+0x8000 component/device damaged by explosion                            AFFIRMED controlled
 ```
 
 ## HP / death gate
 
-Current safe facts include:
+Current safe facts:
 
 ```text
-actual replay HP surfaces outrank Tankopedia base HP
-Vehicle prop3 current HP / terminal family
-Vehicle method1 source/cause updates
-causeFlag 0 direct/default
-causeFlag 1 fire
-causeFlag 2 ramming
-causeFlag 3 world/self-environment
-causeFlag 5 drowning
-wrapper/settlement deathReason5 drowning
-positive-HP terminal death possible
+Vehicle prop3 current HP / terminal family                 AFFIRMED
+Vehicle method1 source/cause updates                       AFFIRMED
+causeFlag 0 direct/default                                 AFFIRMED
+causeFlag 1 fire                                           AFFIRMED
+causeFlag 2 ramming                                        AFFIRMED
+causeFlag 3 world/self-environment                         AFFIRMED
+causeFlag 4                                                UNKNOWN
+causeFlag 5 drowning                                       AFFIRMED controlled
+wrapper/settlement deathReason5 drowning                   AFFIRMED controlled
+positive-HP terminal death possible                        AFFIRMED controlled
 ```
 
-Therefore:
-
-```text
-death == HP<=0 universally   REJECTED
-```
-
-Single-POV live death precision is explicitly bounded at 283/287 sub-second closures. Four settlement-second fallbacks are observation boundaries, not fabricated live facts.
+Live terminal state and HP are modeled as separate facts. Single-POV live death precision is explicitly bounded at 283/287 sub-second closures; four settlement-second fallbacks are observation boundaries.
 
 ## Component / crew gate
 
 ```text
-31 Engine
-32 Ammo Rack
-33 Fuel Tank
-34 Right Track
-35 Left Track
-36 Gun
-37 Turret Rotator
-38 Observation Device
-39 Commander
-40 Driver
-41 Gunner
+31 Engine              AFFIRMED
+32 Ammo Rack           AFFIRMED
+33 Fuel Tank           AFFIRMED
+34 Right Track         AFFIRMED
+35 Left Track          AFFIRMED
+36 Gun                 AFFIRMED
+37 Turret Rotator      AFFIRMED version-scoped
+38 Observation Device  AFFIRMED
+39 Commander           AFFIRMED
+40 Driver              AFFIRMED
+41 Gunner               AFFIRMED
 42 UNKNOWN/unobserved
-43 Loader
+43 Loader               AFFIRMED
 ```
 
 Core method16 lifecycle:
 
 ```text
-4 damaged
-5 critical
-18 automatic critical self-repair -> damaged
-19 full repair
-10 crew injured
-22 crew healed
+4 damaged/degraded                         AFFIRMED
+5 critical/disabled                        AFFIRMED
+18 automatic critical self-repair          AFFIRMED physical role
+19 full repair                             AFFIRMED
+10 crew injured                            AFFIRMED
+22 crew healed                             AFFIRMED
 ```
 
-Fuel Tank `codeA=8` ignition/fire-start physical relationship is controlled-closed.
+Fuel Tank `codeA=8` has an `AFFIRMED` ignition/fire-start physical relationship.
 
-## Projectile / ammunition / special modifier gate
-
-Closed:
+## Projectile / ammunition / modifier gate
 
 ```text
-method29 launch + shooter + shotId + launch geometry/velocity
-method20 terminal endpoint
-method27 terminal/explosion family
-Type28 recorder ammunition selection
-method17 shell descriptor/inventory
-Precision Fire modifier1
-Tungsten Shells modifier2
-simultaneous [1,2] modifier list
+method29 launch + shooter + shotId + launch geometry/velocity   AFFIRMED
+method20 terminal endpoint                                      AFFIRMED
+method27 terminal/explosion family                              AFFIRMED
+Type28 recorder ammunition selection                            AFFIRMED
+method17 shell descriptor/inventory                             AFFIRMED
+modifier1 Precision Fire                                        AFFIRMED
+modifier2 Tungsten Shells                                       AFFIRMED
+same-hit modifier list [1,2]                                   AFFIRMED
 ```
 
-FV215b controlled current mapping remains vehicle/version scoped.
+FV215b controlled mapping remains vehicle/version scoped.
 
 ## AoI / POV gate
 
 ```text
-Type4 = leaves recorder-observed AoI     PROVEN
-Type4 == death                           REJECTED
+Type4 = leaves recorder-observed AoI       AFFIRMED
 ```
 
-Hidden intervals remain UNKNOWN. No interpolation across hidden intervals may be labeled observed truth.
+Hidden intervals are `UNKNOWN_AOI`. No interpolation across a hidden interval may be labeled observed truth.
 
 ## Main implementation convergence boundary
 
-The current `main` implementation is not identical to the now-closed research model. Known implementation debt includes:
+The current `main` implementation does not yet expose every closed research field. Known convergence work includes:
 
-- Type10 parser does not yet expose positionError or neutral trailingStateRaw;
-- older docs/comments still use `is_error/onGround` language for the Type10 tail;
-- legacy direct-damage raw-value decoding is not a universal HP authority;
-- some death fallbacks still reflect older Type4/damage heuristics;
-- current production DTOs do not yet expose all closed method38/method36 semantics.
+- expose Type10 `positionError` and neutral `trailingStateRaw` if needed by production;
+- align older Type10 comments/DTO names with neutral current semantics;
+- keep live HP/terminal facts distinct from legacy direct-damage heuristics;
+- reduce dependence on coarse death fallbacks as new live facts are implemented;
+- expose closed method38/method36 semantics in production DTOs where useful.
 
 These are implementation-convergence tasks, not open protocol P1 research blockers.
-
-## Explicit rejected/superseded interpretations
-
-```text
-Type4 == death                                             REJECTED
-Type28 == target lock / auto aim                          REJECTED
-41 == Radioman / 42 == Gunner                             SUPERSEDED
-34/35 exact side unresolved                               SUPERSEDED
-baseType12 == base defended / dropped capture points      REJECTED
-all method38 32 header bits == homogeneous hit enum       REJECTED
-method38 0x1000 == universal Gun-damage bit               REJECTED
-Tankopedia base HP == actual replay HP                    REJECTED as primary
-single POV guarantees 100% sub-second death               REJECTED
-method38 tail == one optional u32 extension               SUPERSEDED
-Precision Fire/Tungsten mutually exclusive                REJECTED
-combined Precision Fire+Tungsten == modifier3             REJECTED
-Type10 trailing byte == onGround                          REJECTED controlled
-Type10 positionError == velocity                          REJECTED
-```
 
 ## Remaining P2/P3 boundaries
 
 ```text
-component42 exact private identity
-method38 rawState0 exact enum name
-method16 sparse transition private names
-method36 remaining static coefficient exact names/units
-Vehicle prop7/8/9 complete namespaces
-method17 init/feed-tail exact fields
-unobserved cause/death enum values
-Type10 trailingStateRaw exact semantic
-Type10 positionError exact generation rule
-observer/cosmetic/platform private names
-future-version numeric stability
+component42 exact private identity                         UNKNOWN
+method38 rawState0 exact enum name                         UNKNOWN
+method16 sparse transition private names                   UNKNOWN
+method36 remaining static coefficient exact names/units    GUESS/UNKNOWN
+Vehicle prop7/8/9 complete namespaces                      GUESS/UNKNOWN
+method17 init/feed-tail exact fields                       UNKNOWN
+unobserved cause/death enum values                         UNKNOWN
+Type10 trailingStateRaw exact semantic                     UNKNOWN
+Type10 positionError exact generation rule                 UNKNOWN
+observer/cosmetic/platform private names                   UNKNOWN
+future-version numeric stability                           UNKNOWN until regression-tested
 ```
-
-These are raw-preserved/version-gated and do not reopen P0/P1.
 
 ## Final audit
 
