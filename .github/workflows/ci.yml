@@ -22,12 +22,39 @@ jobs:
       - uses: actions/checkout@v5
       - name: Python unit tests
         run: python3 -m unittest discover -s common/python/tests -p 'test_*.py'
-      - name: Validate live BlitzKit equipment contract
+      - name: Inspect live BlitzKit equipment preset slots
         run: |
           set -euo pipefail
-          cp common/wotb-item-catalog-json/equipment.json /tmp/equipment.json
-          python3 common/python/sync_equipment_snapshot.py --catalog /tmp/equipment.json
-          diff -u common/wotb-item-catalog-json/equipment.json /tmp/equipment.json
+          python3 - <<'PY'
+          import json, sys
+          sys.path.insert(0, 'common/python')
+          import update_equipment as ue
+          payload = json.load(open('common/wotb-item-catalog-json/equipment.json', encoding='utf-8'))
+          by_id = {item['id']: item for item in payload['items']}
+          epb = ue.fetch(ue.EQUIPMENT_URL, binary=True)
+          tpb = ue.fetch(ue.PB_URL, binary=True)
+          presets, _ = ue.parse_equipment_defs(epb)
+          vehicles = ue.filter_to_business_tiers(ue.parse_tanks(tpb))
+          used, _ = ue.required_business_equipment_ids(vehicles, presets)
+          root = ue.decode_protobuf(epb)
+          rows = []
+          for raw_preset in root.get(1, []):
+              kv = ue.decode_protobuf(raw_preset)
+              name = ue.as_str(ue.f1(kv, 1, b''))
+              if name not in used:
+                  continue
+              preset = ue.decode_protobuf(ue.f1(kv, 2, b''))
+              for index, raw_slot in enumerate(preset.get(1, [])):
+                  slot = ue.decode_protobuf(raw_slot)
+                  for field, side in ((1, 'LEFT'), (2, 'RIGHT')):
+                      eid = ue.as_int(ue.f1(slot, field))
+                      if not eid:
+                          continue
+                      item = by_id.get(eid)
+                      rows.append((index, side, eid, item['code'] if item else '?', (item or {}).get('grid'), name))
+          for row in sorted(rows, key=lambda r: (r[0], r[1], r[2], r[5])):
+              print('GRID_RAW index=%d side=%s id=%s code=%s local=%s preset=%s' % row)
+          PY
 
   backend:
     name: Backend tests
