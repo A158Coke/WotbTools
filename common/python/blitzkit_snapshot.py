@@ -3,6 +3,8 @@
 
 import hashlib
 
+GAME_URL = "https://assets.blitzkit.app/definitions/game.pb"
+
 
 def sha256_bytes(value):
     return hashlib.sha256(value).hexdigest()
@@ -13,20 +15,17 @@ def snapshot_hashes(snapshot):
 
 
 def fetch_stable_snapshot(resources, fetch_bytes, max_rounds=3):
-    """Return a set of resources only after two consecutive full reads are byte-identical.
+    """Return resources only after two consecutive complete reads are byte-identical.
 
-    BlitzKit's public definitions CDN does not currently expose a repository-side release
-    manifest that this project can pin. The safest available boundary is therefore a
-    stability barrier: read the entire resource set repeatedly and accept it only when
-    two consecutive complete sets have identical per-resource SHA-256 hashes.
-
-    If a release rolls out between files or between rounds, at least one hash changes and
-    the sync aborts/retries instead of publishing a mixed transition snapshot.
+    BlitzKit exposes game.pb with the client game version, but no public manifest
+    binding each definition protobuf to a release revision. We therefore use two
+    defenses together: a stability barrier across the whole resource set and a
+    recorded game version/hash identity for traceability. This is deliberately
+    described as a stable snapshot, not an atomic release guarantee.
     """
     if max_rounds < 2:
         raise ValueError("max_rounds must be at least 2")
 
-    previous = None
     previous_hashes = None
     history = []
 
@@ -36,14 +35,19 @@ def fetch_stable_snapshot(resources, fetch_bytes, max_rounds=3):
         history.append(current_hashes)
         if previous_hashes == current_hashes:
             return current, current_hashes
-        previous = current
         previous_hashes = current_hashes
 
-    changed = []
-    if len(history) >= 2:
-        before, after = history[-2], history[-1]
-        changed = sorted(name for name in resources if before.get(name) != after.get(name))
+    before, after = history[-2], history[-1]
+    changed = sorted(name for name in resources if before.get(name) != after.get(name))
     raise RuntimeError(
         "BLITZKIT_SNAPSHOT_UNSTABLE: no two consecutive complete reads matched; changed=%s hashes=%s"
         % (changed, history)
     )
+
+
+def parse_game_version(game_pb, decode_protobuf, f1, as_str):
+    root = decode_protobuf(game_pb)
+    version = as_str(f1(root, 1, b""))
+    if not version:
+        raise RuntimeError("BLITZKIT_GAME_VERSION_MISSING")
+    return version

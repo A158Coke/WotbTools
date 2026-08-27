@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Tankopedia from one stable BlitzKit definition snapshot."""
+"""Generate Tankopedia from one stable BlitzKit definition set."""
 
 import argparse
 import os
@@ -8,7 +8,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 import update_tankopedia as ut
-from blitzkit_snapshot import fetch_stable_snapshot
+from blitzkit_snapshot import GAME_URL, fetch_stable_snapshot, parse_game_version
 from validate_tankopedia_equipment import validate_vehicle_equipment_coverage
 
 
@@ -24,15 +24,22 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     resources = {
+        "game": GAME_URL,
         "tanks": ut.PB_URL,
         "consumables": ut.CONSUMABLES_URL,
         "provisions": ut.PROVISIONS_URL,
         "equipment": ut.EQUIPMENT_URL,
     }
     snapshots, hashes = fetch_stable_snapshot(resources, fetch_bytes)
+    game_version = parse_game_version(
+        snapshots["game"], ut.decode_protobuf, ut.f1, ut.as_str
+    )
     print(
-        "stable snapshot: %s"
-        % " ".join("%s=%s" % (name, hashes[name][:12]) for name in sorted(hashes))
+        "stable snapshot: game_version=%s %s"
+        % (
+            game_version,
+            " ".join("%s=%s" % (name, hashes[name][:12]) for name in sorted(hashes)),
+        )
     )
 
     old_data = ut.load_existing_data_dir(args.existing_dir)
@@ -75,7 +82,8 @@ def main(argv=None):
             new_data[str(vehicle["id"])] = vehicle
         ut.write_json(os.path.join(args.output_dir, ut.TIER_FILES[tier]), {
             "meta": {
-                "source": "blitzkit stable snapshot (assets.blitzkit.app/definitions)",
+                "source": "blitzkit stable definitions",
+                "source_game_version": game_version,
                 "source_hashes": hashes,
                 "tier": tier,
                 "generated_at": generated_at,
@@ -89,8 +97,9 @@ def main(argv=None):
         print("ERROR: extraInfo preservation failed.", file=sys.stderr)
         return 1
     print(
-        "SAFE_RESULTS snapshot_vehicles=%d %s existing_knowledge=%d preserved_knowledge=%d"
+        "SAFE_RESULTS game_version=%s snapshot_vehicles=%d %s existing_knowledge=%d preserved_knowledge=%d"
         % (
+            game_version,
             total,
             " ".join("tier%d=%d" % (tier, len(per_tier[tier])) for tier in sorted(per_tier)),
             old_knowledge,

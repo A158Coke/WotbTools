@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Sync equipment from one stable BlitzKit protobuf snapshot plus reviewed source locks."""
+"""Sync equipment from one stable BlitzKit definition set plus reviewed source locks."""
 
 import argparse
 import json
 
 import update_equipment as ue
-from blitzkit_snapshot import fetch_stable_snapshot
+from blitzkit_snapshot import GAME_URL, fetch_stable_snapshot, parse_game_version
 from validate_locked_equipment_contract import validate_locked_contract_from_pb
 
 
@@ -18,6 +18,7 @@ def main(argv=None):
         payload = json.load(file)
 
     resources = {
+        "game": GAME_URL,
         "equipment": ue.EQUIPMENT_URL,
         "tanks": ue.PB_URL,
     }
@@ -25,9 +26,15 @@ def main(argv=None):
         resources,
         lambda url: ue.fetch(url, binary=True),
     )
+    game_version = parse_game_version(
+        snapshots["game"], ue.decode_protobuf, ue.f1, ue.as_str
+    )
     print(
-        "stable equipment snapshot: %s"
-        % " ".join("%s=%s" % (name, hashes[name][:12]) for name in sorted(hashes))
+        "stable equipment snapshot: game_version=%s %s"
+        % (
+            game_version,
+            " ".join("%s=%s" % (name, hashes[name][:12]) for name in sorted(hashes)),
+        )
     )
 
     equipment_pb = snapshots["equipment"]
