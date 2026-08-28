@@ -2,14 +2,22 @@ package com.wotb.core.replay.decoder;
 
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.AmmunitionStateEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
+import com.wotb.core.replay.event.ProjectileLaunchedEvent;
+import com.wotb.core.replay.event.ProjectileResolutionEvent;
+import com.wotb.core.replay.event.ProjectileTerminalEvent;
 import com.wotb.core.replay.event.RecorderHealthChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.event.ShotResultEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
+import com.wotb.core.replay.event.TargetingInfoSnapshotEvent;
 import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.event.UnsupportedDamageEvent;
+import com.wotb.core.replay.event.VehicleFiredEvent;
 import com.wotb.core.replay.event.VehicleHealthStateEvent;
+import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.springframework.util.StringUtils;
 
@@ -40,8 +48,28 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     static final int SUBTYPE_VEHICLE_HEALTH_STATE = 1;
     /** Avatar-targeted method5 3-byte variant（PROVEN）：currentHp(u16) + flag(u8)。 */
     static final int SUBTYPE_RECORDER_OWN_HEALTH = 5;
+    /** Vehicle-targeted method0（1-byte args=01）：observed vehicle firing（PROVEN）。 */
+    static final int SUBTYPE_VEHICLE_FIRED = 0;
+    /** Avatar-targeted method17（12-byte args）：recorder ammunition state（PROVEN）。 */
+    static final int SUBTYPE_AMMUNITION_STATE = 17;
+    /** Avatar-targeted method20（28-byte args）：stopTracer 终点（PROVEN）。 */
+    static final int SUBTYPE_PROJECTILE_TERMINAL = 20;
+    /** Avatar-targeted method27（34-byte args）：弹丸终末/爆炸解析（PROVEN family）。 */
+    static final int SUBTYPE_PROJECTILE_RESOLUTION = 27;
+    /** Avatar-targeted method29（37-byte args）：弹丸发射（PROVEN family）。 */
+    static final int SUBTYPE_PROJECTILE_LAUNCH = 29;
+    /** Avatar-targeted method36（92/74-byte protobuf）：瞄准/瞄准状态快照（PROVEN）。 */
+    static final int SUBTYPE_TARGETING_SNAPSHOT = 36;
+    /** Avatar-targeted method38（14..22-byte args）：射击结果 bitfield（PROVEN）。 */
+    static final int SUBTYPE_SHOT_RESULT = 38;
     static final int AVATAR_METHOD5_ARGS_LEN = 3;
     static final int VEHICLE_METHOD1_ARGS_LEN = 7;
+    static final int VEHICLE_METHOD0_ARGS_LEN = 1;
+    static final int AMMUNITION_STATE_ARGS_LEN = 12;
+    /** method20 args：shotId(u32) + endpoint(3×f32) = 16 B（packet = 28 B）。 */
+    static final int PROJECTILE_TERMINAL_ARGS_LEN = 16;
+    static final int PROJECTILE_RESOLUTION_ARGS_LEN = 34;
+    static final int PROJECTILE_LAUNCH_ARGS_LEN = 37;
 
     @Override
     public boolean supports(ReplayDecodeContext context, RawReplayPacket packet) {
@@ -71,36 +99,133 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
 
         final int entityId = readI32LE(payload, 0);
         final int subType = readU32LE(payload, 4);
+        // Type8 envelope（research entity-methods.md）：entityId(u32) + subtype(u32) +
+        // argLen(u32) + args；真实 args 从 payload[12..) 开始。
+        final int argLen = readU32LE(payload, 8);
+        final boolean envelopeValid = payload.length == 12 + argLen;
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
 
         final List<ReplayEvent> events = new ArrayList<>();
         final List<ReplayDecodeWarning> warnings = new ArrayList<>();
 
         switch (subType) {
+            case SUBTYPE_VEHICLE_FIRED -> {
+                // Vehicle method0：observed firing（args=01 4,154/4,154）。
+                if (envelopeValid && argLen == VEHICLE_METHOD0_ARGS_LEN) {
+                    events.add(new VehicleFiredEvent(
+                            packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
+                            entityId, payload[12] & 0xFF));
+                } else {
+                    warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
+                            "Vehicle method0 variant argLen=" + argLen
+                                    + " not decoded (expected " + VEHICLE_METHOD0_ARGS_LEN + ")"));
+                }
+            }
+            case SUBTYPE_AMMUNITION_STATE -> {
+                if (envelopeValid && argLen == AMMUNITION_STATE_ARGS_LEN) {
+                    final int descriptor = readU32LE(payload, 12);
+                    final int flag = payload[16] & 0xFF;
+                    final int quantity = payload[17] & 0xFF;
+                    final byte[] variantRaw = new byte[6];
+                    System.arraycopy(payload, 18, variantRaw, 0, variantRaw.length);
+                    events.add(new AmmunitionStateEvent(
+                            packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
+                            entityId, descriptor, flag, quantity, variantRaw));
+                } else {
+                    warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
+                            "Avatar method17 variant argLen=" + argLen
+                                    + " not decoded (expected " + AMMUNITION_STATE_ARGS_LEN + ")"));
+                }
+            }
+            case SUBTYPE_PROJECTILE_TERMINAL -> {
+                if (envelopeValid && argLen == PROJECTILE_TERMINAL_ARGS_LEN) {
+                    final int shotId = readU32LE(payload, 12);
+                    final Vector3 endpoint = readVector3(payload, 16);
+                    if (endpoint == null) {
+                        warnings.add(new ReplayDecodeWarning("NON_FINITE_VECTOR",
+                                "method20 endpoint non-finite at shot " + shotId));
+                    } else {
+                        events.add(new ProjectileTerminalEvent(
+                                packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
+                                shotId, endpoint));
+                    }
+                } else {
+                    warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
+                            "Avatar method20 variant argLen=" + argLen
+                                    + " not decoded (expected " + PROJECTILE_TERMINAL_ARGS_LEN + ")"));
+                }
+            }
+            case SUBTYPE_PROJECTILE_RESOLUTION -> {
+                if (envelopeValid && argLen == PROJECTILE_RESOLUTION_ARGS_LEN) {
+                    final int shotId = readU32LE(payload, 12);
+                    final int field47 = readU32LE(payload, 16);
+                    final int materialLike = payload[20] & 0xFF;
+                    final Vector3 terminal = readVector3(payload, 21);
+                    final Vector3 vectorLike = readVector3(payload, 33);
+                    final int flagLike = payload[45] & 0xFF;
+                    if (terminal == null || vectorLike == null) {
+                        warnings.add(new ReplayDecodeWarning("NON_FINITE_VECTOR",
+                                "method27 non-finite vector at shot " + shotId));
+                    } else {
+                        events.add(new ProjectileResolutionEvent(
+                                packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
+                                shotId, field47, materialLike, terminal, vectorLike, flagLike));
+                    }
+                } else {
+                    warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
+                            "Avatar method27 variant argLen=" + argLen
+                                    + " not decoded (expected " + PROJECTILE_RESOLUTION_ARGS_LEN + ")"));
+                }
+            }
+            case SUBTYPE_PROJECTILE_LAUNCH -> {
+                if (envelopeValid && argLen == PROJECTILE_LAUNCH_ARGS_LEN) {
+                    final int shooterEntityId = readI32LE(payload, 12);
+                    final int shotId = readU32LE(payload, 16);
+                    final int flag = payload[20] & 0xFF;
+                    final Vector3 launchPoint = readVector3(payload, 21);
+                    final Vector3 launchVelocity = readVector3(payload, 33);
+                    final float invariant = Float.intBitsToFloat(readI32LE(payload, 45));
+                    if (launchPoint == null || launchVelocity == null) {
+                        warnings.add(new ReplayDecodeWarning("NON_FINITE_VECTOR",
+                                "method29 non-finite vector at shot " + shotId));
+                    } else {
+                        events.add(new ProjectileLaunchedEvent(
+                                packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
+                                shooterEntityId, shotId, flag, launchPoint, launchVelocity,
+                                invariant));
+                    }
+                } else {
+                    warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
+                            "Avatar method29 variant argLen=" + argLen
+                                    + " not decoded (expected " + PROJECTILE_LAUNCH_ARGS_LEN + ")"));
+                }
+            }
+            case SUBTYPE_TARGETING_SNAPSHOT -> decodeTargetingSnapshot(payload, packet, ts, events, warnings);
+            case SUBTYPE_SHOT_RESULT -> decodeShotResult(payload, packet, ts, events, warnings);
             case SUBTYPE_VEHICLE_HEALTH_STATE -> {
                 // Vehicle-targeted method1：7-byte args（currentHpRaw + sourceEntity + causeFlag）。
                 // 当前 corpus 3,471/3,471 currentHpRaw 与同刻 prop3 raw16 一致；causeFlag
                 // 0/1/2/3/5 PROVEN（含 drowning 控制样本）。非 7-byte 变体 → 不臆测，保留 raw。
-                if (payload.length == 8 + VEHICLE_METHOD1_ARGS_LEN) {
-                    final int currentHpRaw = readU16LE(payload, 8);
-                    final int sourceEntity = readI32LE(payload, 10);
-                    final int causeFlag = payload[14] & 0xFF;
+                if (envelopeValid && argLen == VEHICLE_METHOD1_ARGS_LEN) {
+                    final int currentHpRaw = readU16LE(payload, 12);
+                    final int sourceEntity = readI32LE(payload, 14);
+                    final int causeFlag = payload[18] & 0xFF;
                     events.add(new VehicleHealthStateEvent(
                             packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
                             entityId, currentHpRaw, sourceEntity, causeFlag,
                             VehicleHealthStateEvent.causeOf(causeFlag)));
                 } else {
                     warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
-                            "Vehicle method1 variant argsLen=" + (payload.length - 8)
+                            "Vehicle method1 variant argLen=" + argLen
                                     + " not decoded (expected " + VEHICLE_METHOD1_ARGS_LEN + ")"));
                 }
             }
             case SUBTYPE_RECORDER_OWN_HEALTH -> {
                 // Avatar-targeted method5 3-byte variant：recorder own-health mirror。
                 // 18-byte variant 属其它实体族，不得按 u16+flag 解码（entity-class routing）。
-                if (payload.length == 8 + AVATAR_METHOD5_ARGS_LEN) {
-                    final int currentHp = readU16LE(payload, 8);
-                    final int flagRaw = payload[10] & 0xFF;
+                if (envelopeValid && argLen == AVATAR_METHOD5_ARGS_LEN) {
+                    final int currentHp = readU16LE(payload, 12);
+                    final int flagRaw = payload[14] & 0xFF;
                     events.add(new RecorderHealthChangedEvent(
                             packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
                             entityId, currentHp, flagRaw));
@@ -157,6 +282,127 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
 
         final DecodeStatus status = warnings.isEmpty() ? DecodeStatus.SUCCESS : DecodeStatus.PARTIAL;
         return new ReplayDecodeResult(status, events, warnings);
+    }
+
+    /**
+     * Avatar method36：瞄准/瞄准状态 protobuf（92-byte：0x5B 前缀 + 91；74-byte：0x49 + 73）。
+     * root.field1-5 与 field6.field1 为 fixed64（physical roles PROVEN）。
+     */
+    private void decodeTargetingSnapshot(
+            final byte[] payload,
+            final RawReplayPacket packet,
+            final ReplayTimestamp ts,
+            final List<ReplayEvent> events,
+            final List<ReplayDecodeWarning> warnings) {
+        final int argLen = readU32LE(payload, 8);
+        if (payload.length != 12 + argLen || argLen < 2) {
+            warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
+                    "Avatar method36 envelope mismatch: len=" + payload.length
+                            + " argLen=" + argLen));
+            return;
+        }
+        final byte[] args = new byte[argLen];
+        System.arraycopy(payload, 12, args, 0, args.length);
+        if (args.length < 2) {
+            warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
+                    "Avatar method36 args too short: " + args.length));
+            return;
+        }
+        final int protoLen = args[0] & 0xFF;
+        if (args.length != 1 + protoLen) {
+            warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
+                    "Avatar method36 length prefix mismatch: len=" + args.length
+                            + " prefix=" + protoLen));
+            return;
+        }
+        final byte[] proto = new byte[protoLen];
+        System.arraycopy(args, 1, proto, 0, protoLen);
+        final Map<Integer, List<Object>> root;
+        try {
+            root = ProtobufDecoder.decode(proto);
+        } catch (Exception e) {
+            warnings.add(new ReplayDecodeWarning("MALFORMED_PROTOBUF",
+                    "method36 protobuf decode failed: " + e.getMessage()));
+            return;
+        }
+        final Double yaw = fixed64(root, 1);
+        final Double pitch = fixed64(root, 2);
+        final Double maxH = fixed64(root, 3);
+        final Double maxV = fixed64(root, 4);
+        final Double aim = fixed64(root, 5);
+        Double bloom = null;
+        final Object field6Raw = ProtobufDecoder.first(root, 6);
+        if (field6Raw instanceof byte[] field6) {
+            final Map<Integer, List<Object>> nested = ProtobufDecoder.decode(field6);
+            bloom = fixed64(nested, 1);
+        }
+        final boolean corePresent = maxH != null && maxV != null && aim != null;
+        events.add(new TargetingInfoSnapshotEvent(
+                packet.sequence(), ts, packet.type(),
+                corePresent && bloom != null ? DecodeConfidence.EXACT : DecodeConfidence.PARTIAL,
+                yaw, pitch, maxH, maxV, aim, bloom, proto));
+    }
+
+    /** fixed64 字段 → double；缺失 → null。 */
+    private static Double fixed64(final Map<Integer, List<Object>> fields, final int fieldNumber) {
+        final List<Object> values = fields.get(fieldNumber);
+        if (values == null || values.isEmpty() || !(values.getFirst() instanceof Long l)) {
+            return null;
+        }
+        return Double.longBitsToDouble(l);
+    }
+
+    /**
+     * Avatar method38：射击结果 bitfield。
+     * args = victim(u32) + headerFlags32(u32) + resultCount(u8) +
+     * count×(token,state) + modifierCount(u8) + modifierCount×modifierId(u32 LE)。
+     */
+    private void decodeShotResult(
+            final byte[] payload,
+            final RawReplayPacket packet,
+            final ReplayTimestamp ts,
+            final List<ReplayEvent> events,
+            final List<ReplayDecodeWarning> warnings) {
+        final int argLen = readU32LE(payload, 8);
+        final int argsLen = payload.length == 12 + argLen ? argLen : -1;
+        if (argsLen < 10) {
+            warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
+                    "Avatar method38 envelope mismatch: len=" + payload.length
+                            + " argLen=" + argLen));
+            return;
+        }
+        final int victim = readI32LE(payload, 12);
+        final int header = readU32LE(payload, 16);
+        final int flags16 = header & 0xFFFF;
+        final int headerHi16 = header >>> 16;
+        // args-relative 布局：victim[0..4) header[4..8) count[8] pairs[9..) modCount[9+2c] mods[10+2c..)
+        final int count = payload[20] & 0xFF; // args[8]
+        if (10 + count * 2 > argsLen) {
+            warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
+                    "Avatar method38 truncated components: argsLen=" + argsLen
+                            + " count=" + count));
+            return;
+        }
+        final List<ShotResultEvent.ComponentResult> components = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            components.add(new ShotResultEvent.ComponentResult(
+                    payload[21 + i * 2] & 0xFF, payload[22 + i * 2] & 0xFF));
+        }
+        final int modifierCount = payload[21 + count * 2] & 0xFF; // args[9+2c]
+        if (10 + count * 2 + modifierCount * 4 != argsLen) {
+            warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
+                    "Avatar method38 length mismatch: argsLen=" + argsLen
+                            + " count=" + count + " modifierCount=" + modifierCount));
+            return;
+        }
+        final List<Integer> modifierIds = new ArrayList<>(modifierCount);
+        for (int i = 0; i < modifierCount; i++) {
+            modifierIds.add(readU32LE(payload, 22 + count * 2 + i * 4));
+        }
+        events.add(new ShotResultEvent(
+                packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
+                victim, flags16, headerHi16, List.copyOf(components),
+                List.copyOf(modifierIds)));
     }
 
     /**
@@ -416,6 +662,17 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
 
     static int readU16LE(byte[] buf, int i) {
         return (buf[i] & 0xFF) | ((buf[i + 1] & 0xFF) << 8);
+    }
+
+    /** 读取 VECTOR3（3×f32 LE）；非有限值返回 null（调用方按损坏处理，不产出假坐标）。 */
+    private static Vector3 readVector3(final byte[] buf, final int i) {
+        final float x = Float.intBitsToFloat(readI32LE(buf, i));
+        final float y = Float.intBitsToFloat(readI32LE(buf, i + 4));
+        final float z = Float.intBitsToFloat(readI32LE(buf, i + 8));
+        if (!Float.isFinite(x) || !Float.isFinite(y) || !Float.isFinite(z)) {
+            return null;
+        }
+        return new Vector3(x, y, z);
     }
 
     static long[] readVarint(byte[] buf, int i) {
