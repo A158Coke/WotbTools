@@ -212,7 +212,7 @@ watch(labelPrefs, (p) => {
   }
 }, { deep: true })
 
-// ---- PR5（docs/current-plan.md §4.3）：单车 HP HUD 显示开关（默认开启，localStorage 持久化）。
+// ---- PR5（docs/features/battle-playback.md §4.3）：单车 HP HUD 显示开关（默认开启，localStorage 持久化）。
 // 关闭后隐藏地图 HP 数字/bar/ghost；floating damage / destroyed ✕ / sidebar HP / combat state /
 // kill feed / timeline 正确性均不受影响；重新开启立即按当前 timestamp 显示正确 HP（纯派生，不重头累计）。
 const HP_PREFS_KEY = 'wotb.pb.hp-prefs'

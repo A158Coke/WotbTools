@@ -65,7 +65,7 @@ final class PlayerSummaryBuilder {
                 : PointsSituationEvidence.renderSection(
                         battle, recon, recorderTeam, true, "你的队伍", "敌方");
         // Canonical Timeline 段：fallback 不再是 settlement-only——时间线化主叙事注入
-        // （docs/current-plan.md §3/§33；recon 或 recorder 缺失时自动省略）
+        // （docs/architecture/ai-review.md §3/§33；recon 或 recorder 缺失时自动省略）
         final String timelineSection = timelineSection(battle, recon);
         final String summary = buildSummary(battle, recon, keyEvents)
                 + (phaseSection.isEmpty() ? "" : "\n" + phaseSection)

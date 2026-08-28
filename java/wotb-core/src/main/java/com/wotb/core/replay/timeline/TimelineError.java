@@ -1,7 +1,7 @@
 package com.wotb.core.replay.timeline;
 
 /**
- * BattleTimeline validation 错误码（docs/current-plan.md §4）。
+ * BattleTimeline validation 错误码（docs/architecture/battle-timeline.md §4）。
  * <p>只针对真正影响 Timeline / AI 判断可靠性的关键条件；完全 optional 字段缺失不拒绝。</p>
  */
 public enum TimelineError {

@@ -5,7 +5,7 @@ import com.wotb.core.replay.timeline.TimelineError;
 import java.util.List;
 
 /**
- * Canonical BattleTimeline 无法构建/校验失败时拒绝 AI Review（docs/current-plan.md §3/§4）。
+ * Canonical BattleTimeline 无法构建/校验失败时拒绝 AI Review（docs/architecture/battle-timeline.md §3/§4）。
  * <p>稳定错误码 {@link #STABLE_ERROR_CODE}（SSE error 事件传达）；细节通过日志/validation
  * 消息保留，前端按稳定码本地化。禁止 settlement-only fallback 继续调用 AI。</p>
  * <p>SSE 错误契约（PR #102 review）：{@code error} 事件对任何本异常只输出

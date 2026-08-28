@@ -24,7 +24,7 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * BattlePlaybackAdapter（docs/current-plan.md §40/§42）：从 Canonical BattleTimeline 派生
+ * BattlePlaybackAdapter（docs/features/battle-playback.md §40/§42）：从 Canonical BattleTimeline 派生
  * {@link MapOverview.Playback} 契约（duration / positionIntervals / hpSamples / directionSamples /
  * deathSec / events / pointsSamples），不再独立重扫 raw events 形成第二套事实模型。
  * <p>与 {@link MapOverviewBuilder} 同一 battle-relative 时钟口径；位置上报区间 =
@@ -344,7 +344,7 @@ public final class BattlePlaybackAdapter {
     }
 
     /**
-     * 车辆类型统一 fallback（docs/current-plan.md §8）：replay/player 权威 tankType →
+     * 车辆类型统一 fallback（docs/features/battle-playback.md §8）：replay/player 权威 tankType →
      * tankopedia class（英文，API 纯英文契约）→ 空串（前端展示 —）。
      */
     private static String tankTypeOf(final PlayerResult player) {

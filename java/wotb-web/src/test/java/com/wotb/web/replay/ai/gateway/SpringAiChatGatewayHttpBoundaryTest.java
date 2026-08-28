@@ -266,7 +266,7 @@ class SpringAiChatGatewayHttpBoundaryTest {
 
     private record CapturedRequest(String path, String authorization, String body) {
     }
-    // ===== docs/current-plan.md §24：response_format 请求体边界契约 =====
+    // ===== docs/architecture/ai-review.md §24：response_format 请求体边界契约 =====
 
     @Test
     void jsonObjectResponseFormatSendsResponseFormatInRequestBody() throws Exception {

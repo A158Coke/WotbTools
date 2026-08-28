@@ -77,7 +77,7 @@ public class PlayerReplayAnalysisService {
      * {@code analyzePlayerContext(ctx[, recon], ...)} 重载只被历史测试/兼容 API 使用；
      * production 个人复盘必须走 {@link #analyzePlayerOrFallback}（其中无重建 / 录像者未解析 /
      * canonical timeline 不可用 → {@code AiTimelineUnusableException} hard reject，见
-     * docs/current-plan.md §3）。若未来出现 production caller，必须先执行 canonical
+     * docs/architecture/ai-review.md §3）。若未来出现 production caller，必须先执行 canonical
      * Timeline hard gate，否则构成 hard-gate bypass。</p>
      */
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx) {
@@ -147,7 +147,7 @@ public class PlayerReplayAnalysisService {
                                                  final AllowedLanguage language,
                                                  final AiReviewStreamListener listener) {
         if (result.battle() == null) throw new IllegalArgumentException("NO_BATTLE_DATA");
-        // docs/current-plan.md §3：无法构建 canonical BattleTimeline → 拒绝 AI Review，
+        // docs/architecture/ai-review.md §3：无法构建 canonical BattleTimeline → 拒绝 AI Review，
         // 禁止 settlement-only fallback 仍然调用 AI。
         if (result.reconstruction() == null) {
             throw new AiTimelineUnusableException("NO_RECONSTRUCTION");

@@ -208,7 +208,7 @@ public final class TacticalReviewPromptBuilder {
     }
 
     /**
-     * 低基数 context section token 估算（docs/current-plan.md §38）：system / battle_context /
+     * 低基数 context section token 估算（docs/architecture/ai-review.md §38）：system / battle_context /
      * prior / timeline / task。不含 battleId/accountId 等高基数字段。
      */
     private static java.util.Map<String, Integer> sectionTokenEstimates(
@@ -252,7 +252,7 @@ public final class TacticalReviewPromptBuilder {
     ) {
         final StringBuilder sb = new StringBuilder(baseContent);
         if (includeTimeline && !timelineSection.isBlank()) {
-            // 时间有序主叙事：PRIOR 之后立即给出整场章节（docs/current-plan.md §33）
+            // 时间有序主叙事：PRIOR 之后立即给出整场章节（docs/architecture/ai-review.md §33）
             sb.append("\n======================== TACTICAL TIMELINE（时间有序战局章节·battle-relative 确定性） ========================\n");
             sb.append(timelineSection);
         }

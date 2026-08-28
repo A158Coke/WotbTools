@@ -4,7 +4,7 @@ import com.wotb.web.replay.ai.gateway.AiRequestContext;
 import org.springframework.util.StringUtils;
 
 /**
- * AI Review 全链路结构化事件日志工具（docs/current-plan.md §38-§60）。
+ * AI Review 全链路结构化事件日志工具（docs/architecture/ai-review.md §38-§60）。
  * <p>统一格式：{@code event=<eventName> correlationId=<cid> key=value key=value}，
  * 与现有 Spring Boot logstash structured logging 兼容，可用 Loki 按
  * {@code |= "event=team_review_validation"} / {@code |= "correlationId=<id>"} 检索。</p>

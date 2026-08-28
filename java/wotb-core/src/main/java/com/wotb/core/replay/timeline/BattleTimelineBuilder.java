@@ -25,7 +25,7 @@ import java.util.Set;
 /**
  * Canonical BattleTimeline 构建器。
  * <p>数据流：ReplayEvent → BattleStateReconstructor → BattleTimelineBuilder → BattleTimeline。
- * Timeline 一律 battle-relative 时间（docs/current-plan.md §2.3/§2.4）；时钟无法可靠建立时
+ * Timeline 一律 battle-relative 时间（docs/architecture/battle-timeline.md §2.3/§2.4）；时钟无法可靠建立时
  * Timeline = INVALID，该 replay 不进入 AI Review（§3，禁止 settlement-only fallback）。</p>
  * <p>Anti-future-leak invariant（§10）：任意 frame second=N 的状态只使用 battle-relative
  * time ≤ N 的事件信息，绝不使用未来信息（含 battle_results 最终状态）。</p>

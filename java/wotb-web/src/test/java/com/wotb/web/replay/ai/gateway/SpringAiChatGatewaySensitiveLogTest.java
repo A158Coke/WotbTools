@@ -22,7 +22,7 @@ import org.slf4j.LoggerFactory;
 import com.wotb.web.config.AiModelProperties;
 
 /**
- * docs/current-plan.md §57/§61 敏感数据回归：AI Review 全链路事件日志（ai_upstream_call_* /
+ * docs/architecture/ai-review.md §57/§61 敏感数据回归：AI Review 全链路事件日志（ai_upstream_call_* /
  * AI usage / AI provider failure）必须不含 API key、Authorization、prompt、completion、
  * 回放内容等敏感文本；只记录低基数 metadata。
  */

@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Anti-future-leak invariant（docs/current-plan.md §10/§52.2）：
+ * Anti-future-leak invariant（docs/architecture/battle-timeline.md §10/§52.2）：
  * 敌方 HP 1500 于 t=100 观测 → 失联 → t=140 重亮 HP=600。
  * contextAt(120) 绝不能出现 600；contextAt(145) 才可出现重亮与 bounded retrospective delta。
  */

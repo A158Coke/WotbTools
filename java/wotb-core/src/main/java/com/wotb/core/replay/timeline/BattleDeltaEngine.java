@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 帧间确定性变化引擎：Frame(t-1) → Frame(t) 的重要变化（docs/current-plan.md §15）。
+ * 帧间确定性变化引擎：Frame(t-1) → Frame(t) 的重要变化（docs/architecture/battle-timeline.md §15）。
  * <p>只产生有战术意义的 delta，不把每个微小 Position packet 变成 AI delta；
  * 所有 delta 结构化、可测试，供 AI Context Compiler 渲染。</p>
  */

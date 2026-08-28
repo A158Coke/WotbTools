@@ -237,7 +237,7 @@ class TacticalReviewHarnessTest {
 
     @Test
     void noReconstructionRejectsWithTimelineUnusable() {
-        // docs/current-plan.md §3：无 canonical timeline → 拒绝 AI Review（不走 settlement-only fallback）
+        // docs/architecture/ai-review.md §3：无 canonical timeline → 拒绝 AI Review（不走 settlement-only fallback）
         final com.wotb.web.replay.exception.AiTimelineUnusableException e = assertThrows(
                 com.wotb.web.replay.exception.AiTimelineUnusableException.class,
                 () -> harness(gateway(PRIOR_JSON)).analyze(result(null), AllowedLanguage.ZH));

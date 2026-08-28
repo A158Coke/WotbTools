@@ -38,7 +38,7 @@ class AiEvalHarnessTest {
 
     @Test
     void teamSystemPromptCarriesEvidenceContractAndBansCausalOverreach() {
-        // AI Review V2.1 Quality Gate（docs/current-plan.md §12）：真实失败案例
+        // AI Review V2.1 Quality Gate（docs/architecture/ai-review.md §12）：真实失败案例
         // 20260817 WildCat SPHT 回放暴露的因果过度断言，必须在 prompt 契约层被禁止。
         final String zh = AiPromptLibrary.zh("team/single");
         assertTrue(zh.contains("证据契约（强制）：FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN"),

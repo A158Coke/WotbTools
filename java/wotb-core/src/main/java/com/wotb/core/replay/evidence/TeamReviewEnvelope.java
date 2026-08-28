@@ -3,7 +3,7 @@ package com.wotb.core.replay.evidence;
 import java.util.List;
 
 /**
- * Team Call #2 结构化 envelope（内部 grounding 契约，docs/current-plan.md Natural Coach 轮）。
+ * Team Call #2 结构化 envelope（内部 grounding 契约，docs/features/team-ai-review.md Natural Coach 轮）。
  * <p>这是 Call #2 的<b>唯一输出格式</b>：{@code reviewMarkdown} 是用户看到的完整自然语言复盘
  * （Backend 绝不自行拼接主体）；{@code primaryDiagnosis} 强制 LLM 选出唯一主判断；
  * {@code claims} 是 machine-readable grounding 元数据（数值/时间/位置/玩家事件类陈述引用

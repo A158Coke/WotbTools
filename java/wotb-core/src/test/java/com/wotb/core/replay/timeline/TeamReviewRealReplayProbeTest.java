@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 真实失败回放 Golden Probe（docs/current-plan.md §12/§13-G，可重复运行、无样本自动跳过）：
+ * 真实失败回放 Golden Probe（docs/architecture/battle-timeline.md §12/§13-G，可重复运行、无样本自动跳过）：
  * 样本 `20260817_2021____WildCat__A178_SPHT_1161423218062589123(2).wotbreplay` 应放置于
  * `common/data/`（本地样本目录，不入库）。
  * <p><b>PR #103 review §7：Golden acceptance 必须是 assertion，不是 println。</b>

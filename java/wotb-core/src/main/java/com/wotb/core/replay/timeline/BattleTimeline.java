@@ -7,7 +7,7 @@ import java.util.List;
 /**
  * Canonical BattleTimeline：battle-relative 时间统一、1 秒 BattleFrame、精确事件保留。
  * <p>时间轴事实的唯一入口：Battle Playback / Personal AI / Team AI 都消费此模型，
- * 禁止各模块自行重新解释 raw events 形成互相不同的事实模型（docs/current-plan.md §1）。</p>
+ * 禁止各模块自行重新解释 raw events 形成互相不同的事实模型（docs/architecture/battle-timeline.md §1）。</p>
  *
  * @param mapCode               地图内部 code（meta.json mapName，全小写）
  * @param durationSec           battle-relative 总时长（秒）
@@ -30,7 +30,7 @@ public record BattleTimeline(
 ) {
     /**
      * 按 battle-relative 秒查询 frame；越界时返回最近 frame；空 timeline 返回 null。
-     * 结果 deterministic 且可测试（docs/current-plan.md §45）。
+     * 结果 deterministic 且可测试（docs/architecture/battle-timeline.md §45）。
      */
     public BattleFrame frameAt(final double battleClockSec) {
         if (frames == null || frames.isEmpty()) {

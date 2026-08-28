@@ -3,7 +3,7 @@ package com.wotb.web.replay.job;
 import java.nio.file.Path;
 
 /**
- * Replay Export Job 运行态（内存态，单实例部署；见 docs/current-plan.md §38）。
+ * Replay Export Job 运行态（内存态，单实例部署；见 docs/architecture/replay-pipeline.md §38）。
  *
  * <p>状态机（终态 exactly once，见 §9）：
  * <pre>

@@ -1,7 +1,7 @@
 package com.wotb.web.replay.ai.gateway;
 
 /**
- * 供应商无关的 AI 输出格式契约（docs/current-plan.md §5）。
+ * 供应商无关的 AI 输出格式契约（docs/architecture/ai-review.md §5）。
  * <p>业务层只表达「这个调用期望什么输出形态」，由 {@link SpringAiChatGateway}
  * 映射为 provider 具体参数：{@link #JSON_OBJECT} → {@code response_format=json_object}，
  * {@link #TEXT} 不发送任何 response_format（保持最小 provider surface）。</p>

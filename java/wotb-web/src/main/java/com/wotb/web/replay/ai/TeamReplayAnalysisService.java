@@ -297,7 +297,7 @@ public class TeamReplayAnalysisService {
 
     /**
      * Team Call #2 编排（Natural Coach 轮）：envelope 解析 + 事实一致性校验 + LLM 自修循环。
-     * <p>流程（docs/current-plan.md §13/§14）：Draft → validate；FAIL → targeted rewrite；
+     * <p>流程（docs/features/team-ai-review.md §13/§14）：Draft → validate；FAIL → targeted rewrite；
      * FAIL → full rewrite；仍 FAIL → fail-safe（{@code AI_REVIEW_GROUNDING_FAILED}）。
      * Backend 绝不代改句子；校验通过后才把 {@code reviewMarkdown} 以 token 增量转给前端
      * （避免把待改写的草稿暴露给用户）。</p>
@@ -326,7 +326,7 @@ public class TeamReplayAnalysisService {
                         context.perspectiveTeam());
         final String correlationId = AiRequestContext.correlationId();
         final long reviewStartNanos = nanoTimeSource.getAsLong();
-        // docs/current-plan.md §48：只记录低基数 grounding facts 计数（不打印事实内容）。
+        // docs/features/team-ai-review.md §48：只记录低基数 grounding facts 计数（不打印事实内容）。
         logGroundingReady(facts, correlationId);
         final String groundingSection = TeamGroundingFacts.renderGroundingSection(facts);
         final String baseUser = input.content()
@@ -427,7 +427,7 @@ public class TeamReplayAnalysisService {
                     "checks", checks,
                     "durationMs", elapsedMillis(validationStartNanos)));
             countValidationAttempt(hardConflicts ? "validation_failed" : "metadata_only_pass");
-            // docs/current-plan.md §47：DEBUG 级安全化冲突明细（只记录 check/reasonCode 低基数
+            // docs/features/team-ai-review.md §47：DEBUG 级安全化冲突明细（只记录 check/reasonCode 低基数
             // 分类，不记录完整冲突 message / AI 原句 / Grounding Fact 内容）。
             if (LOGGER.isDebugEnabled()) {
                 for (final TeamFactualConsistencyValidator.FactConflict c : conflicts) {
@@ -465,7 +465,7 @@ public class TeamReplayAnalysisService {
                         cumulativeCompletionTokens, "GROUNDING_FAILED", reviewStartNanos);
                 throw new AiUpstreamException("AI_REVIEW_GROUNDING_FAILED", 502, correlationId);
             }
-            // docs/current-plan.md §43：validation retry（业务返工）与 transport retry（网关退避）区分记录。
+            // docs/features/team-ai-review.md §43：validation retry（业务返工）与 transport retry（网关退避）区分记录。
             LOGGER.warn(AiReviewEventLog.line("ai_validation_retry", correlationId,
                     "stage", "TEAM_CALL_2",
                     "validationAttempt", attempt + 1,
@@ -541,7 +541,7 @@ public class TeamReplayAnalysisService {
                 config.contextWindowTokens(),
                 maxOutput,
                 config.promptSafetyMarginTokens());
-        // docs/current-plan.md §49：发送前记录 prompt 预算（~234k×3 的 token amplification 必须可观测）。
+        // docs/features/team-ai-review.md §49：发送前记录 prompt 预算（~234k×3 的 token amplification 必须可观测）。
         LOGGER.info(AiReviewEventLog.line("ai_prompt_budget", AiRequestContext.correlationId(),
                 "stage", "TEAM_CALL_2",
                 "attempt", attempt,
@@ -549,7 +549,7 @@ public class TeamReplayAnalysisService {
                 "maxOutputTokens", maxOutput,
                 "contextWindowTokens", config.contextWindowTokens(),
                 "remainingBudgetSec", callTimeoutSec));
-        // docs/current-plan.md §7：仅 Team Call #2（SINGLE_TEAM_BATTLE Natural Coach Call #2）
+        // docs/features/team-ai-review.md §7：仅 Team Call #2（SINGLE_TEAM_BATTLE Natural Coach Call #2）
         // 显式使用 JSON_OBJECT；输出格式属于 request contract，不由 analysisMode 隐式推断。
         final AiChatRequest request = new AiChatRequest(
                 systemPrompt,
@@ -645,7 +645,7 @@ public class TeamReplayAnalysisService {
         }
     }
 
-    // ===== AI Review 全链路事件日志与指标（docs/current-plan.md §44-§50、§16/§59） =====
+    // ===== AI Review 全链路事件日志与指标（docs/features/team-ai-review.md §44-§50、§16/§59） =====
 
     /** §48：只记录低基数 grounding facts 计数（不打印事实内容）。 */
     private void logGroundingReady(final TeamGroundingFacts.GroundingFacts facts,

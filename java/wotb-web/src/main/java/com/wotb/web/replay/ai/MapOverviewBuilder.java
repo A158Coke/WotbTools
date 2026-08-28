@@ -868,7 +868,7 @@ public final class MapOverviewBuilder {
     }
 
     /**
-     * 车辆类型统一 fallback（docs/current-plan.md §8）：replay/player 权威 tankType →
+     * 车辆类型统一 fallback（docs/features/battle-playback.md §8）：replay/player 权威 tankType →
      * tankopedia class（英文，API 纯英文契约）→ 空串（前端展示 —）。
      */
     private static String tankTypeOf(final PlayerResult player) {

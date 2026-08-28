@@ -54,7 +54,7 @@ class PersonalAiContextCompilerTest {
         assertTrue(section.contains("EPISODE 1"), "必须渲染 EPISODE 章节");
         assertTrue(section.contains("BEFORE friendly_alive="), "必须包含双方世界状态（BEFORE）");
         assertTrue(section.contains("AFTER friendly_alive="), "必须包含双方世界状态（AFTER）");
-        assertTrue(section.contains("enemy_unknown="), "必须显式表达未知敌人数（docs/current-plan.md §9.2）");
+        assertTrue(section.contains("enemy_unknown="), "必须显式表达未知敌人数（docs/architecture/ai-review.md §9.2）");
         assertTrue(section.contains("战斗总时长"), "必须给出战斗总时长");
         // 时间格式必须为 X分XX秒（AI 复盘约定），不得出现裸秒数时间轴
         assertTrue(section.contains("分"), "时间必须使用分秒格式");

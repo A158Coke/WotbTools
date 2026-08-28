@@ -1,4 +1,4 @@
-// CSS source contract guard for Classic Profile (docs/current-plan.md D1/D2).
+// CSS source contract guard for Classic Profile (frontend/AGENTS.md D1/D2).
 //
 // Classic = 仅「从简」视觉精简(结构性不变,D1)。本文件用 [data-ui-profile="classic"]
 // namespace 关闭 Showcase 的全屏 AI/装饰性背景、readability veil、装饰性 hero surface。

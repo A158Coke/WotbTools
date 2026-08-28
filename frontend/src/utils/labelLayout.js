@@ -1,5 +1,5 @@
 /**
- * PR4（§26–§35）+ 本任务（docs/current-plan.md §21–§28）+ PR #107 Blocker 1 —— Battle Playback 标签布局与碰撞纯函数。
+ * PR4（§26–§35）+ 本任务（docs/features/battle-playback.md §21–§28）+ PR #107 Blocker 1 —— Battle Playback 标签布局与碰撞纯函数。
  *
  * 坐标系：全部为**屏幕像素**（相对地图容器，y 向下）。调用方把 marker 的地图坐标经
  * viewport 变换（translate + scale(view.scale)）换算成屏幕坐标后传入。

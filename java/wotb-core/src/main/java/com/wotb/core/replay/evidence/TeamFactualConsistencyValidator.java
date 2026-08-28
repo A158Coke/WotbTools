@@ -12,7 +12,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Team Review 事实一致性 Validator（确定性，docs/current-plan.md Natural Coach 轮 §11–§15）。
+ * Team Review 事实一致性 Validator（确定性，docs/features/team-ai-review.md Natural Coach 轮 §11–§15）。
  * <p>它<b>不是</b>第二个战术模型：只检查「LLM 有没有改写 Backend 事实」，绝不判断战术观点
  * （「这局主要问题是第一次正面交换」「应该先回收」这类 coaching judgment 一律放行）。</p>
  * <p>检查项：</p>
@@ -48,7 +48,7 @@ public final class TeamFactualConsistencyValidator {
     /**
      * 一条校验冲突（checkId = V1..V6 / BINDING / EVIDENCE / OUTPUT / DIAGNOSIS / CONTRACT / INTERNAL；
      * message 面向 LLM 反馈，自然中文）。
-     * <p>reasonCode（docs/current-plan.md §47）：机器可分类的冲突原因（UNKNOWN_EVIDENCE /
+     * <p>reasonCode（docs/features/team-ai-review.md §47）：机器可分类的冲突原因（UNKNOWN_EVIDENCE /
      * EVIDENCE_TYPE_MISMATCH / SUBJECT_MISMATCH / TIME_MISMATCH / REGION_MISMATCH /
      * KNOWLEDGE_MISMATCH / COUNT_MISMATCH / UNSUPPORTED_HARD_FACT / TEMPORAL_OWNERSHIP 等），
      * 供 production 直接判断 validator 为什么失败；2 参构造器按 checkId 推断（BINDING 类冲突

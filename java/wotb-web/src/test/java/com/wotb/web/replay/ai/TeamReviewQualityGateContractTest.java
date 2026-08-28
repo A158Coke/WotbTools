@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * AI Review V2.1 Team Review Quality Gate — Prompt Contract（docs/current-plan.md §13-A）。
+ * AI Review V2.1 Team Review Quality Gate — Prompt Contract（docs/features/team-ai-review.md §13-A）。
  * <p>新 Team Prompt 必须：不再强制 10 个固定章节；不再规定「开局散开就是图控/拿视野」；
  * 明确 FACT / SUPPORTED INFERENCE / UNKNOWN 契约；明确禁止 unsupported terrain/LOS/visibility
  * 推断与 magic-number coaching；不再强制「做得好的行为」；训练建议必须对应可确认问题；
