@@ -506,6 +506,8 @@ const workspaceFile = ref(null)
 const playbackSeek = ref(null)
 /** 当前 workspace 文件对应的 Dataset 引用（{processingJobId, sourceId}；换文件即失效）。 */
 const datasetRef = ref(null)
+/** Dataset 准备失败（prepare failure）时的已本地化错误；空 = 无。 */
+const datasetError = ref('')
 /**
  * Workspace Dataset 请求 generation（BLOCKER 1）：每次目标变化（workspaceFile 或新的
  * ensureDatasetFor 调用）自增；requestDirectAction 是异步的，返回后必须校验 revision +
@@ -543,6 +545,7 @@ async function ensureDatasetFor(file) {
       return null
     }
     datasetRef.value = ref
+    datasetError.value = ''
     return ref
   } catch (e) {
     const current = workspaceFile.value
@@ -552,11 +555,21 @@ async function ensureDatasetFor(file) {
       if (e && e.name !== 'AbortError' && e?.message !== 'SOURCE_POLL_CANCELLED') {
         // 用户取消上传（UPLOADING/REGISTERING cancel）与 source poll 本地取消
         // （selection / workspace target / teardown）：不显示错误。
-        processingError.value = e?.message || String(e)
+        // Dataset 准备失败属于数据集生命周期，不是 AI 模型错误：本地化提示，绝不裸抛内部错误码。
+        datasetError.value = t('workspace.dataset_prepare_failed')
       }
     }
     return null
   }
+}
+
+/** Dataset 可恢复错误（job/dataset 引用过期）：清空失效引用并重新建立 Dataset（自动恢复一次）。 */
+async function onDatasetRecover() {
+  const f = workspaceFile.value
+  if (!f) return
+  datasetRef.value = null
+  datasetError.value = ''
+  await ensureDatasetFor(f)
 }
 
 async function openWorkspacePlayback(file) {
@@ -585,11 +598,14 @@ async function selectWorkspaceTab(tab) {
   if (tab === 'ai' || tab === 'playback') {
     if (!workspaceFile.value && files.value.length === 1) {
       if (!requireLoginForBattleAction()) return
-      workspaceFile.value = files.value[0]
-      await ensureDatasetFor(files.value[0])
     }
   }
+  // workspace 立即切换（panel 进入 PREPARING，直到 Dataset source READY），不阻塞页面。
   workspaceTab.value = tab
+  if ((tab === 'ai' || tab === 'playback') && !workspaceFile.value && files.value.length === 1) {
+    workspaceFile.value = files.value[0]
+    ensureDatasetFor(files.value[0]) // fire-and-forget：面板显示 PREPARING，READY 后绑定引用
+  }
 }
 
 /** FileUploader 直接入口（单文件 / 显式选择）上抛：原地切到对应面板。 */
@@ -799,13 +815,14 @@ watch(files, (next) => {
 
       <div v-show="workspaceTab === 'ai'" data-test="workspace-ai-panel">
         <AiReviewPanel :file="workspaceFile" :processing-job-id="datasetRef?.processingJobId ?? null"
-          :source-id="datasetRef?.sourceId ?? null" login-view="replay" @seek="onAiSeek" />
+          :source-id="datasetRef?.sourceId ?? null" :dataset-error="datasetError" login-view="replay"
+          @seek="onAiSeek" @dataset-recover="onDatasetRecover" />
       </div>
       <div v-show="workspaceTab === 'playback'" data-test="workspace-playback-panel">
         <!-- active=进入战局回放 capability 时面板才自动加载地图；AI 复盘期间保持挂载但不发请求 -->
         <BattlePlaybackPanel :file="workspaceFile" :processing-job-id="datasetRef?.processingJobId ?? null"
-          :source-id="datasetRef?.sourceId ?? null" :active="workspaceTab === 'playback'"
-          :seek-to="playbackSeek" login-view="replay" />
+          :source-id="datasetRef?.sourceId ?? null" :dataset-error="datasetError" :active="workspaceTab === 'playback'"
+          :seek-to="playbackSeek" login-view="replay" @dataset-recover="onDatasetRecover" />
       </div>
     </template>
 

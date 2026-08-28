@@ -1474,14 +1474,23 @@
             "REPLAY_FILE_COUNT_EXCEEDED": "At most {max} replay files can be uploaded at once.",
             "TOTAL_REQUEST_TOO_LARGE": "The combined upload size exceeds the limit.",
             "UNKNOWN_LOCALE": "Invalid language setting. Please refresh the page and try again.",
-            "AI_REVIEW_BUSY": "AI review service is currently busy. Please try again later."
+            "AI_REVIEW_BUSY": "AI review service is currently busy. Please try again later.",
+            "DATASET_UNAVAILABLE": "Replay data is unavailable.",
+            "DATASET_REFERENCE_REQUIRED": "Replay data reference is missing. Please re-select the replay.",
+            "JOB_NOT_FOUND": "Replay data has expired. Please re-parse.",
+            "SOURCE_NOT_FOUND": "The corresponding replay source was not found.",
+            "SOURCE_NOT_READY": "Replay data is still being prepared. Please wait.",
+            "SOURCE_PROCESSING_FAILED": "Replay parsing failed. Please re-parse."
         }
     },
     "workspace": {
         "tab_results": "Parse Results",
         "results_hint": "Run 'Parse & Preview' to see the parsed results here",
         "ai_empty": "Select a replay to start AI review",
-        "playback_empty": "Select a replay to view battle playback"
+        "playback_empty": "Select a replay to view battle playback",
+        "dataset_preparing": "Preparing replay data…",
+        "dataset_expired": "Replay data has expired. Re-preparing…",
+        "dataset_prepare_failed": "Could not prepare replay data. Please try again."
     },
     "league": {
         "title": "League Rating",
