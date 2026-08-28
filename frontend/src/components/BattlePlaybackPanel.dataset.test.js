@@ -82,6 +82,32 @@ describe('BattlePlaybackPanel dataset request', () => {
     expect(wrapper.find('[data-test="map-dataset-status"]').text()).toContain('workspace.dataset_preparing')
     vi.unstubAllGlobals()
   })
+
+  it('datasetError 非空 → 不显示 spinner、显示失败文案（与 PREPARING 明确区分）', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(BattlePlaybackPanel, {
+      props: {
+        file: { name: 'a.wotbreplay' }, processingJobId: null, sourceId: null,
+        datasetError: 'workspace.dataset_prepare_failed', active: true, loginView: 'replay'
+      },
+      global: {
+        mocks: { $t: key => key },
+        stubs: { MapOverview: { template: '<div class="map-stub" />' } }
+      }
+    })
+
+    await new Promise(r => setTimeout(r, 20))
+    await new Promise(r => setTimeout(r, 20))
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    const status = wrapper.find('[data-test="map-dataset-status"]')
+    expect(status.exists()).toBe(true)
+    expect(status.find('.map-status-spinner').exists()).toBe(false, 'FAILURE 状态不得显示 spinner')
+    expect(status.text()).toContain('workspace.dataset_prepare_failed')
+    expect(status.find('.map-dataset-error').exists()).toBe(true, 'FAILURE 应使用错误色文案')
+    vi.unstubAllGlobals()
+  })
 })
 
 // ---- BLOCKER 1.2：effective Dataset identity（file + processingJobId + sourceId）变化必须真正 reset ----
