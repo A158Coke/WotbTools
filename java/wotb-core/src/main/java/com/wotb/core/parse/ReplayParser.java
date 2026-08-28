@@ -14,7 +14,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -208,55 +207,30 @@ public final class ReplayParser {
         battle.rosterComplete = resolveRosterComplete(roster.keySet(), rosterTeamByAcc, players);
 
         // ---- data.wotreplay 事件流 ----
+        // ReplayParser 仅从这里读取 clientVersion。PR147 之前基于 direct-damage 累计达到
+        // settlement damageReceived 阈值来生成 PlayerResult.killVictims 的逻辑已移除：
+        // damageReceived 不是本局最大 HP，也不能证明 lethal boundary / killer identity。
+        // 击杀归因必须由 canonical terminal lifecycle + 可靠 damage backing 产生；无法证明则 UNKNOWN。
         final byte[] eventData = entries.get("data.wotreplay");
-        List<EventStreamReader.ParsedPacket> esPackets = List.of();
         if (eventData != null) {
             try {
                 final EventStreamReader.EventStream es = EventStreamReader.read(eventData);
                 battle.clientVersion = es.clientVersion;
-                esPackets = es.packets;
             } catch (Exception ignored) {
+                // Summary parsing remains settlement-usable when the live stream is unavailable/corrupt.
             }
         }
 
-        // 存活时间: 存活=战斗时长；阵亡=结算 deathTimeMillis（权威）或 UNKNOWN=0。
-        // legacy 启发式（damage-threshold / EntityLeave / Position 停止）不再写入 PlayerResult
-        // （§B2）——死亡 authority 链由 DefaultReplayProcessingFacade 的 DeathTimeReconciler
-        // 以 live EXACT 证据继续收口：LIVE EXACT → SETTLEMENT → UNKNOWN。
+        // 存活时间: 存活=战斗时长；阵亡=结算 deathTimeMillis 或 UNKNOWN=0。
+        // legacy 启发式（damage-threshold / EntityLeave / Position 停止）不得写入 PlayerResult。
+        // 死亡 authority 链由 DefaultReplayProcessingFacade 的 DeathTimeReconciler 继续收口：
+        // LIVE_EXACT → SETTLEMENT_SECOND → UNKNOWN。
         final double bd = battle.durationS != null ? battle.durationS : 0;
-        if (!esPackets.isEmpty()) {
-            final Map<Integer, Long> e2a = EventStreamReader.extractEntityToAccountMap(esPackets);
-            final Map<Long, Integer> threshold = new HashMap<>();
-            for (final PlayerResult pr : players) {
-                // 用 damageReceived 作阈值: 阵亡玩家所受总伤害 ≈ 坦克最大 HP
-                if (!pr.survived && pr.damageReceived > 0) {
-                    threshold.put(pr.accountId, pr.damageReceived);
-                }
-            }
-            final Map<Long, PlayerResult> playersByAccount = players.stream()
-                    .collect(Collectors.toMap(player -> player.accountId,
-                            Function.identity(), (first, ignored) -> first));
-            final Map<Long, List<EventStreamReader.LegacyKillVictimDamage>> killVictims =
-                    EventStreamReader.extractLegacyKillVictimAttribution(esPackets, e2a, threshold);
-            for (final Map.Entry<Long, List<EventStreamReader.LegacyKillVictimDamage>> entry
-                    : killVictims.entrySet()) {
-                final PlayerResult killer = playersByAccount.get(entry.getKey());
-                if (killer == null) {
-                    continue;
-                }
-                for (final EventStreamReader.LegacyKillVictimDamage victim : entry.getValue()) {
-                    killer.killVictims.add(new com.wotb.core.model.KillVictim(
-                            victim.victimAccountId(), victim.damage(), victim.penetrations()));
-                }
-            }
-        }
         for (final PlayerResult pr : players) {
             if (pr.survived) {
                 pr.survivalTimeSec = bd;
             } else {
-                double st = pr.deathTimeMillis / 1000.0;
-                // 初始按结算 deathTimeMillis 标记 SETTLEMENT_SECOND；随后 DeathTimeReconciler
-                // 会用 live EXACT 死亡证据覆盖为 LIVE_EXACT（§B1 权威链 LIVE_EXACT > SETTLEMENT_SECOND > UNKNOWN）
+                final double st = pr.deathTimeMillis / 1000.0;
                 pr.deathTimeSource = st > 0
                         ? com.wotb.core.model.DeathTimeSource.SETTLEMENT_SECOND
                         : com.wotb.core.model.DeathTimeSource.UNKNOWN;
