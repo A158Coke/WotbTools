@@ -32,7 +32,7 @@ public final class DeathTimeReconciler {
         final Double start = battleStartRawClockSec == null
                 ? null : battleStartRawClockSec.doubleValue();
         final Map<Long, ReplayTerminalLifecycle.Evidence> finalLive =
-                events == null || mapping == null
+                events == null || events.isEmpty() || mapping == null
                         ? Map.of()
                         : ReplayTerminalLifecycle.finalStateByAccount(events, mapping, start);
         final double duration = battle.durationS != null && battle.durationS > 0
@@ -42,20 +42,37 @@ public final class DeathTimeReconciler {
             if (player.survived) {
                 continue;
             }
+
             final ReplayTerminalLifecycle.Evidence evidence = finalLive.get(player.accountId);
             if (evidence != null && evidence.terminal()) {
                 player.survivalTimeSec = Math.min(evidence.timeSec(), duration);
                 player.deathTimeSource = DeathTimeSource.LIVE_EXACT;
                 continue;
             }
+
             if (player.deathTimeMillis > 0) {
                 final double st = player.deathTimeMillis / 1000.0;
                 player.survivalTimeSec = st > 0 ? Math.min(st, duration) : 0;
                 player.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
-            } else {
+                continue;
+            }
+
+            if (evidence != null || hasAuthoritativeMapping(player, mapping)) {
+                // We had an authoritative live identity surface but no final terminal: the time is unknown.
                 player.survivalTimeSec = 0;
                 player.deathTimeSource = DeathTimeSource.UNKNOWN;
             }
+            // No trustworthy mapping/evidence: fail closed by leaving the model untouched. Consumers must
+            // honor deathTimeSource and never reinterpret a legacy survivalTimeSec as an authoritative death.
         }
+    }
+
+    private static boolean hasAuthoritativeMapping(
+            final PlayerResult player,
+            final TeamEntityMapping mapping) {
+        if (mapping == null || player == null) {
+            return false;
+        }
+        return !mapping.entityIds(player.accountId, player.nickname).isEmpty();
     }
 }

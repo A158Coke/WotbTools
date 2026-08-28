@@ -20,10 +20,13 @@ import java.util.Map;
  * Canonical live lifecycle for alive/terminal facts.
  *
  * <p>PR147 production rule: HP timeline and terminal/death state are independent facts. Positive HP
- * therefore cannot erase a same-clock terminal (controlled drowning keeps positive HP). A strictly
- * later trusted positive/rematerialization sample can still prove re-entry/respawn and negate an earlier death.</p>
+ * therefore cannot erase an explicit same-clock terminal such as drowning/terminal sentinels. A strictly
+ * later trusted positive/rematerialization sample can prove re-entry/respawn and negate an earlier death.
+ * Repeated terminal mirrors after a death do not move the authoritative death time forward.</p>
  */
 public final class ReplayTerminalLifecycle {
+
+    private static final double SAME_CLOCK_EPSILON = 1e-6;
 
     public enum State {
         ALIVE,
@@ -133,12 +136,18 @@ public final class ReplayTerminalLifecycle {
                     event.sequence(), state, kind));
         }
         out.sort(Comparator.comparingDouble(Evidence::timeSec)
-                .thenComparingInt(e -> e.state() == State.TERMINAL ? 1 : 0)
                 .thenComparingInt(Evidence::sequence));
         return List.copyOf(out);
     }
 
-    /** Final live state per account. Same-clock terminal outranks positive HP; later clock always wins. */
+    /**
+     * Final live state per account.
+     *
+     * <p>A later ALIVE sample can prove respawn/re-entry. Repeated TERMINAL mirrors within the same
+     * terminal run preserve the first terminal timestamp. At an identical clock, ordinary HP-zero/alive
+     * mirrors follow packet sequence; explicit non-HP terminal evidence (drowning/FFFD/verified FFFE)
+     * outranks a positive-HP mirror because PR147 proves terminal state is independent from HP amount.</p>
+     */
     public static Map<Long, Evidence> finalStateByAccount(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping,
@@ -150,15 +159,34 @@ public final class ReplayTerminalLifecycle {
         return Map.copyOf(finalState);
     }
 
-    private static Evidence later(final Evidence a, final Evidence b) {
-        final double delta = a.timeSec() - b.timeSec();
-        if (Math.abs(delta) > 1e-6) {
-            return delta > 0 ? a : b;
+    private static Evidence later(final Evidence current, final Evidence incoming) {
+        final double delta = incoming.timeSec() - current.timeSec();
+        if (delta > SAME_CLOCK_EPSILON) {
+            if (current.terminal() && incoming.terminal()) {
+                // Duplicate terminal mirrors must not move death time forward.
+                return current;
+            }
+            return incoming;
         }
-        if (a.state() != b.state()) {
-            return a.state() == State.TERMINAL ? a : b;
+        if (delta < -SAME_CLOCK_EPSILON) {
+            return current;
         }
-        return a.sequence() >= b.sequence() ? a : b;
+
+        if (current.state() == incoming.state()) {
+            return incoming.sequence() >= current.sequence() ? incoming : current;
+        }
+
+        final Evidence terminal = current.terminal() ? current : incoming;
+        if (isExplicitTerminalIndependentOfHp(terminal)) {
+            return terminal;
+        }
+        return incoming.sequence() >= current.sequence() ? incoming : current;
+    }
+
+    private static boolean isExplicitTerminalIndependentOfHp(final Evidence evidence) {
+        return evidence.terminalKind() == TerminalKind.DROWNING
+                || evidence.terminalKind() == TerminalKind.DEATH_SENTINEL_FFFD
+                || evidence.terminalKind() == TerminalKind.VERIFIED_TERMINAL_FFFE;
     }
 
     private static TerminalKind terminalKind(final HpRawState state) {

@@ -2,6 +2,7 @@ package com.wotb.core.replay.decoder;
 
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
+import com.wotb.core.replay.event.HpRawState;
 import com.wotb.core.replay.event.TurretDirectionChangedEvent;
 import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.stream.PacketReadStatus;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class EntityPropertyDecoderTest {
 
@@ -29,7 +31,6 @@ class EntityPropertyDecoderTest {
 
     @Test
     void propId3DecodesCurrentHpAsLeU16() {
-        // value = 0x0b96 (LE) = 2966
         final byte[] value = {(byte) 0x96, 0x0b};
         final ReplayDecodeResult result = decoder.decode(context, packet(3, value));
         assertEquals(DecodeStatus.SUCCESS, result.status());
@@ -49,11 +50,11 @@ class EntityPropertyDecoderTest {
                 HealthChangedEvent.class, result.events().getFirst());
         assertEquals(0, event.currentHealth());
         assertEquals(Boolean.FALSE, event.alive());
+        assertEquals(HpRawState.HP_ZERO_TERMINAL, event.rawState());
     }
 
     @Test
     void propId2DecodesTurretRelativeYawDeg() {
-        // 0x0000 = 0 -> -180.0；0x8000 = 32768 -> 0.0；0xFFFF = 65535 -> +179.9945
         final ReplayDecodeResult zero = decoder.decode(context, packet(2, new byte[]{0x00, 0x00}));
         assertEquals(DecodeStatus.SUCCESS, zero.status());
         final TurretDirectionChangedEvent e0 = assertInstanceOf(
@@ -77,7 +78,6 @@ class EntityPropertyDecoderTest {
 
     @Test
     void propId2WrongValueLenStaysUnknown() {
-        // valueLen=1 不符合 u16 契约：保守不输出方向事件
         final ReplayDecodeResult result = decoder.decode(context, packet(2, new byte[]{0x01}));
         assertEquals(DecodeStatus.PARTIAL, result.status());
         assertInstanceOf(UnknownReplayEvent.class, result.events().getFirst());
@@ -91,28 +91,28 @@ class EntityPropertyDecoderTest {
         assertInstanceOf(UnknownReplayEvent.class, result.events().getFirst());
     }
 
-
     @Test
-    void propId3FdFfDeathSentinelNormalizesToZero() {
-        // 0xFFFD（signed -3）：已证明与击毁 ±40 点同刻的死亡 sentinel，绝不解析为 65533
+    void propId3FdFfDeathSentinelPreservesTerminalWithoutInventingHpZero() {
         final byte[] value = {(byte) 0xfd, (byte) 0xff};
         final ReplayDecodeResult result = decoder.decode(context, packet(3, value));
         final HealthChangedEvent event = assertInstanceOf(
                 HealthChangedEvent.class, result.events().getFirst());
-        assertEquals(0, event.currentHealth(), "死亡 sentinel 归一化为 HP=0");
+        assertNull(event.currentHealth(), "0xFFFD is terminal state, not observed HP=0");
         assertEquals(Boolean.FALSE, event.alive());
+        assertEquals(0xFFFD, event.rawCurrentHealth());
+        assertEquals(HpRawState.DEATH_TERMINAL_FFFD, event.rawState());
         assertEquals(DecodeConfidence.EXACT, event.confidence());
     }
 
     @Test
     void propId3FfFfUnknownSentinelIsNullNot65535() {
-        // 0xFFFF（signed -1）：UNKNOWN sentinel，不得当作 65535 HP、也不得当作死亡
         final byte[] value = {(byte) 0xff, (byte) 0xff};
         final ReplayDecodeResult result = decoder.decode(context, packet(3, value));
         final HealthChangedEvent event = assertInstanceOf(
                 HealthChangedEvent.class, result.events().getFirst());
-        assertEquals(null, event.currentHealth());
-        assertEquals(null, event.alive());
+        assertNull(event.currentHealth());
+        assertNull(event.alive());
+        assertEquals(HpRawState.UNKNOWN_FFFF, event.rawState());
         assertEquals(DecodeConfidence.PARTIAL, event.confidence());
     }
 
