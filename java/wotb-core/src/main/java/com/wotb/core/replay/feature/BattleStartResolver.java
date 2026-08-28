@@ -1,8 +1,8 @@
 package com.wotb.core.replay.feature;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
 
 import java.util.List;
@@ -40,7 +40,7 @@ public final class BattleStartResolver {
         if (battle != null && battle.durationS != null && Float.isFinite(battle.durationS.floatValue()) && battle.durationS > 0
                 && events != null) {
             for (final ReplayEvent event : events) {
-                if (event instanceof BattleEndedEvent be) {
+                if (event instanceof RoundFinishedEvent be) {
                     final float raw = be.timestamp().rawClockSec();
                     if (Float.isFinite(raw) && raw >= 0) {
                         final float battleStart = raw - battle.durationS.floatValue();

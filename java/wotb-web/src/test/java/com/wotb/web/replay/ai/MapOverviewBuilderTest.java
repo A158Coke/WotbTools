@@ -7,7 +7,7 @@ import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.processing.ReplayProcessingOptions;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
-import com.wotb.core.replay.event.BattleEndedEvent;
+import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
@@ -429,8 +429,8 @@ class MapOverviewBuilderTest {
         final ReplayProcessingResult result = processFixture();
         final ReplayReconstruction recon = result.reconstruction();
         final List<ReplayEvent> events = new ArrayList<>(recon.events());
-        // 合成 BattleEndedEvent（battle-relative 150s），早于位置流最后时刻（≈302s）
-        events.add(new BattleEndedEvent(
+        // 合成 RoundFinishedEvent（battle-relative 150s），早于位置流最后时刻（≈302s）
+        events.add(RoundFinishedEvent.of(
                 999_999, new ReplayTimestamp(0f, 150f), 14,
                 DecodeConfidence.EXACT, 2));
         result.battle().durationS = null;

@@ -3,7 +3,7 @@ package com.wotb.core.replay.timeline;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.event.BattleEndedEvent;
+import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.EntityCreatedEvent;
@@ -102,8 +102,8 @@ final class TimelineTestFixtures {
                 attackerEid, victimEid, null, null, amount, false);
     }
 
-    static BattleEndedEvent battleEnded(final double battleSec) {
-        return new BattleEndedEvent(seq++, ts(battleSec), 14, DecodeConfidence.EXACT, 1);
+    static RoundFinishedEvent battleEnded(final double battleSec) {
+        return RoundFinishedEvent.of(seq++, ts(battleSec), 14, DecodeConfidence.EXACT, 1);
     }
 
     static ReplayReconstruction recon(final double durationSec, final List<ReplayEvent> events) {

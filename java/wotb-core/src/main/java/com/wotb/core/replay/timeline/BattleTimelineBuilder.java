@@ -7,9 +7,9 @@ import com.wotb.core.replay.facts.ReplayAoiLifecycle;
 import com.wotb.core.replay.processing.TeamEntityMapper;
 import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
-import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.reconstruction.LifeState;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
@@ -322,7 +322,7 @@ public final class BattleTimelineBuilder {
         if (battle != null && battle.durationS != null
                 && Float.isFinite(battle.durationS.floatValue()) && battle.durationS > 0) {
             for (final ReplayEvent e : recon.events()) {
-                if (e instanceof BattleEndedEvent be && be.timestamp() != null) {
+                if (e instanceof RoundFinishedEvent be && be.timestamp() != null) {
                     final float raw = be.timestamp().rawClockSec();
                     if (Float.isFinite(raw) && raw >= 0) {
                         final double estimatedStart = raw - battle.durationS.doubleValue();

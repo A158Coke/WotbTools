@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.wotb.core.replay.reconstruction.Vector3;
 
 import com.wotb.core.replay.processing.RecorderEntityMapping;
-import com.wotb.core.replay.event.BattleEndedEvent;
+import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
@@ -52,8 +52,8 @@ class DefaultPlayerBattleFeatureExtractorTest {
         return new HealthChangedEvent(seq, ts(raw, battle), 7, DecodeConfidence.EXACT, eid, hp, null, true);
     }
 
-    private static BattleEndedEvent battleEnd(final int seq, final float time) {
-        return new BattleEndedEvent(seq, ts(time), 14, DecodeConfidence.EXACT, 1);
+    private static RoundFinishedEvent battleEnd(final int seq, final float time) {
+        return RoundFinishedEvent.of(seq, ts(time), 14, DecodeConfidence.EXACT, 1);
     }
 
     private static ParticipantMappingEvent mapping(final int seq, final int eid, final long aid) {

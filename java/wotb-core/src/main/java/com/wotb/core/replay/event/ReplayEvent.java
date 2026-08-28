@@ -17,7 +17,6 @@ public sealed interface ReplayEvent
                 MaterializationEvent,
                 EntityRemovedEvent,
                 VehicleDestroyedEvent,
-                BattleEndedEvent,
                 UnknownReplayEvent,
                 ParticipantMappingEvent,
                 TurretDirectionChangedEvent,
@@ -38,7 +37,8 @@ public sealed interface ReplayEvent
                 UnsupportedDamageEvent,
                 SessionDecisecondLowByteEvent,
                 ArenaPeriodChangedEvent,
-                RoundFinishedEvent {
+                RoundFinishedEvent,
+                ReplayStreamClosedEvent {
 
     int sequence();
     ReplayTimestamp timestamp();

@@ -97,7 +97,7 @@ public class DefaultPlayerBattleFeatureExtractor {
                         firstContactTime = res.battleRelativeSec();
                     }
                 }
-                case com.wotb.core.replay.event.BattleEndedEvent ignored -> {
+                case com.wotb.core.replay.event.RoundFinishedEvent ignored -> {
                     if (Float.isNaN(battleEndClock)) {
                         if (res.isUsable()) {
                             battleEndClock = res.battleRelativeSec();

@@ -27,6 +27,17 @@ public record RoundFinishedEvent(
         UNKNOWN
     }
 
+    /** 便捷工厂（合成/测试场景）：默认 finishReason=1（ELIMINATION）。生产必须用主构造器携带原始 finishReason。 */
+    public static RoundFinishedEvent of(
+            final int sequence,
+            final ReplayTimestamp timestamp,
+            final int packetType,
+            final DecodeConfidence confidence,
+            final int winnerTeam) {
+        return new RoundFinishedEvent(sequence, timestamp, packetType, confidence,
+                winnerTeam, 1, FinishCause.ELIMINATION);
+    }
+
     /** finishReasonRaw → safe semantic；未证明值 → UNKNOWN（不按序号臆测命名）。 */
     public static FinishCause causeOf(final int raw) {
         return switch (raw) {

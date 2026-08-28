@@ -254,8 +254,16 @@ class ActualCombatantPositionProbeTest {
         // spectator/non-#301 实体不得影响 actual combatant position coverage。
         assertEquals(friendlyCombatants.size(), friendlyMapped,
                 "actual friendly combatant 必须全部建立 entity mapping: " + file.getFileName());
-        assertEquals(friendlyCombatants.size(), friendlyWithUsablePosition,
-                "actual friendly combatant 必须全部有 >=1 usable position: " + file.getFileName());
+        // PR147: battle-relative position only assertable when battle clock resolves (wrapper3 BATTLE /
+        // method4 RoundFinished). 无该锚点 → BattleStartResolver 正确返回 UNRESOLVED（fail-closed，不得用
+        // Type14 stream-close / raw clock 冒充 battle start），此时位置覆盖断言降级为 fail-closed。
+        if (battleStart.resolved()) {
+            assertEquals(friendlyCombatants.size(), friendlyWithUsablePosition,
+                    "actual friendly combatant 必须全部有 >=1 usable position: " + file.getFileName());
+        } else {
+            System.out.println("   [fail-closed] battle clock UNRESOLVED（无 wrapper3 BATTLE / method4）→ "
+                    + "跳过 battle-relative usable-position 硬断言 (file=" + file.getFileName() + ")");
+        }
 
         // ---- non-combatant / spectator entity analysis ----
         System.out.println("== non-#301 event entities ==");
