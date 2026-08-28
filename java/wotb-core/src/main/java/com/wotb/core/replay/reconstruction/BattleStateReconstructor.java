@@ -6,68 +6,42 @@ import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.EntityCreatedEvent;
 import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.HealthChangedEvent;
+import com.wotb.core.replay.event.HpRawState;
 import com.wotb.core.replay.event.MaterializationEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.RecorderHealthChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
-import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.event.VehicleHealthStateEvent;
 import com.wotb.core.replay.event.VehicleDestroyedEvent;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
-/**
- * 战场状态重建器。
- * <p>
- * 按时间和原始顺序依次应用领域事件，重建整场回放的战场状态。
- * 同时维护 checkpoint 以支持快速任意时刻状态查询。
- * </p>
- */
+/** 按领域事件重建战场状态；只消费 canonical world-position / HP / terminal semantics。 */
 public class BattleStateReconstructor {
 
-    /** 默认 checkpoint 间隔（秒） */
     static final float DEFAULT_CHECKPOINT_INTERVAL_SEC = 1.0f;
-
-    /** 默认事件数量间隔 checkpoint */
     static final int DEFAULT_CHECKPOINT_EVENT_INTERVAL = 500;
 
     private final float checkpointIntervalSec;
     private final int checkpointEventInterval;
     private final Float battleStartRawClockSec;
 
-    /**
-     * 创建重建器。
-     *
-     * @param battleStartRawClockSec 战斗开始原始时钟（可为 null）
-     * @param checkpointIntervalSec  checkpoint 时间间隔（秒）
-     * @param checkpointEventInterval checkpoint 事件数量间隔
-     */
     public BattleStateReconstructor(
-            Float battleStartRawClockSec,
-            float checkpointIntervalSec,
-            int checkpointEventInterval) {
+            final Float battleStartRawClockSec,
+            final float checkpointIntervalSec,
+            final int checkpointEventInterval) {
         this.battleStartRawClockSec = battleStartRawClockSec;
         this.checkpointIntervalSec = checkpointIntervalSec;
         this.checkpointEventInterval = checkpointEventInterval;
     }
 
-    /**
-     * 使用默认 checkpoint 配置创建重建器。
-     */
     public BattleStateReconstructor() {
         this(null, DEFAULT_CHECKPOINT_INTERVAL_SEC, DEFAULT_CHECKPOINT_EVENT_INTERVAL);
     }
 
-    /**
-     * 重建战场状态。
-     *
-     * @param events 按时间和原始顺序排列的领域事件列表
-     * @return 重建结果，包含最终状态和 checkpoint 列表
-     */
-    public ReconstructionResult reconstruct(List<ReplayEvent> events) {
+    public ReconstructionResult reconstruct(final List<ReplayEvent> events) {
         final BattleState state = new BattleState();
         final List<ReplayEvent> processedEvents = new ArrayList<>();
         final List<BattleStateCheckpoint> checkpoints = new ArrayList<>();
@@ -75,48 +49,31 @@ public class BattleStateReconstructor {
         int lastCheckpointEventIndex = 0;
 
         checkpoints.add(new BattleStateCheckpoint(0f, 0, BattleStateSnapshot.from(state)));
-
         for (final ReplayEvent event : events) {
             applyEvent(state, event);
             processedEvents.add(event);
-
-            // 更新 state 时钟
             final float rawClockSec = event.timestamp().rawClockSec();
             state.setRawClockSec(rawClockSec);
             if (battleStartRawClockSec != null) {
                 state.setBattleClockSec(rawClockSec - battleStartRawClockSec);
             }
-
-            // 判断是否需要生成 checkpoint
             final boolean timeBased = rawClockSec - lastCheckpointClock >= checkpointIntervalSec;
             final boolean eventBased = processedEvents.size() - lastCheckpointEventIndex >= checkpointEventInterval;
-
             if (timeBased || eventBased) {
-                checkpoints.add(new BattleStateCheckpoint(
-                        rawClockSec,
-                        processedEvents.size(),
+                checkpoints.add(new BattleStateCheckpoint(rawClockSec, processedEvents.size(),
                         BattleStateSnapshot.from(state)));
                 lastCheckpointClock = rawClockSec;
                 lastCheckpointEventIndex = processedEvents.size();
             }
         }
-
-        // 终态 checkpoint
         final BattleStateSnapshot finalSnapshot = BattleStateSnapshot.from(state);
         if (checkpoints.isEmpty() || checkpoints.getLast().eventIndex() < processedEvents.size()) {
-            checkpoints.add(new BattleStateCheckpoint(
-                    state.getRawClockSec(),
-                    processedEvents.size(),
-                    finalSnapshot));
+            checkpoints.add(new BattleStateCheckpoint(state.getRawClockSec(), processedEvents.size(), finalSnapshot));
         }
-
         return new ReconstructionResult(state, finalSnapshot, processedEvents, checkpoints);
     }
 
-    /**
-     * 应用单个事件到战场状态。
-     */
-    private void applyEvent(BattleState state, ReplayEvent event) {
+    private void applyEvent(final BattleState state, final ReplayEvent event) {
         switch (event) {
             case PositionChangedEvent e -> applyPosition(state, e);
             case DamageEvent e -> applyDamage(state, e);
@@ -129,76 +86,58 @@ public class BattleStateReconstructor {
             case VehicleHealthStateEvent e -> applyVehicleHealthState(state, e);
             case EntityCreatedEvent e -> applyEntityCreated(state, e);
             case ParticipantMappingEvent e -> applyMapping(state, e);
-            default -> {
-                // UnknownReplayEvent 等不需要改变状态
-            }
+            default -> { }
         }
     }
 
-    private void applyPosition(BattleState state, PositionChangedEvent e) {
+    private void applyPosition(final BattleState state, final PositionChangedEvent e) {
         final VehicleState vs = state.getOrCreateVehicle(e.entityId(), e.timestamp().rawClockSec());
         vs.setLastObservedAt(e.timestamp().rawClockSec());
-
-        // 如果已经确认为 DESTROYED，低置信度（PARTIAL/UNKNOWN）位置更新不得覆盖，
-        // 只接受高置信度（EXACT/INFERRED）数据。与 applyVehicleDestroyed/applyHealth 的处理一致。
-        if (vs.lifeState() == LifeState.DESTROYED
-                && DecodeConfidenceHelper.isLowConfidence(e.confidence())) {
+        if (vs.lifeState() == LifeState.DESTROYED && DecodeConfidenceHelper.isLowConfidence(e.confidence())) {
             return;
         }
-
         try {
             vs.setPosition(new Vector3(e.x(), e.y(), e.z()));
-        } catch (IllegalArgumentException ignored) {
-            // NaN/Infinity position — skip
-        }
+        } catch (IllegalArgumentException ignored) { }
         try {
             vs.setRotation(new Rotation(e.yaw(), e.pitch(), e.roll()));
-        } catch (IllegalArgumentException ignored) {
-        }
-
-        if (vs.observationState() == ObservationState.UNKNOWN) {
-            vs.setObservationState(ObservationState.OBSERVED);
-        }
-        // 如果已被移除但出现新位置，更新状态
-        if (vs.observationState() == ObservationState.REMOVED) {
+        } catch (IllegalArgumentException ignored) { }
+        if (vs.observationState() == ObservationState.UNKNOWN
+                || vs.observationState() == ObservationState.REMOVED) {
             vs.setObservationState(ObservationState.OBSERVED);
         }
     }
 
-    private void applyDamage(BattleState state, DamageEvent e) {
-        // 攻击者
+    private void applyDamage(final BattleState state, final DamageEvent e) {
         if (e.attackerEid() != e.victimEid()) {
             final VehicleState attacker = state.getOrCreateVehicle(e.attackerEid(), e.timestamp().rawClockSec());
             attacker.setLastObservedAt(e.timestamp().rawClockSec());
             attacker.addDamageDealt(e.damage());
         }
-
-        // 受击者
         final VehicleState victim = state.getOrCreateVehicle(e.victimEid(), e.timestamp().rawClockSec());
         victim.setLastObservedAt(e.timestamp().rawClockSec());
         victim.addDamageReceived(e.damage());
     }
 
-    private void applyEntityRemoved(BattleState state, EntityRemovedEvent e) {
+    private void applyEntityRemoved(final BattleState state, final EntityRemovedEvent e) {
         final VehicleState vs = state.getVehicle(e.entityId());
         if (vs != null) {
             vs.setRemovedAt(e.timestamp().rawClockSec());
-            // 注意：不能设置 DESTROYED，EntityLeave 不等同于阵亡
+            // Type4 is AoI leave, never death.
             vs.setObservationState(ObservationState.REMOVED);
         }
     }
 
-    private void applyVehicleDestroyed(BattleState state, VehicleDestroyedEvent e) {
+    private void applyVehicleDestroyed(final BattleState state, final VehicleDestroyedEvent e) {
         final VehicleState vs = state.getOrCreateVehicle(e.entityId(), e.timestamp().rawClockSec());
         if (vs.lifeState() == LifeState.DESTROYED && e.inferred()) {
-            return; // 已确认击毁，低置信度事件不能覆盖
+            return;
         }
         vs.setLastObservedAt(e.timestamp().rawClockSec());
-        vs.setLifeState(LifeState.DESTROYED);
-        vs.setObservationState(ObservationState.REMOVED);
+        markDestroyed(vs);
     }
 
-    private void applyBattleEnded(BattleState state, BattleEndedEvent e) {
+    private void applyBattleEnded(final BattleState state, final BattleEndedEvent e) {
         state.setBattleEnded(true);
         state.setLifecycle(BattleLifecycle.FINISHED);
         if (e.winnerTeam() != null) {
@@ -206,49 +145,45 @@ public class BattleStateReconstructor {
         }
     }
 
-    private void applyHealth(BattleState state, HealthChangedEvent e) {
+    private void applyHealth(final BattleState state, final HealthChangedEvent e) {
         final VehicleState vs = state.getOrCreateVehicle(e.entityId(), e.timestamp().rawClockSec());
         vs.setLastObservedAt(e.timestamp().rawClockSec());
-
         if (e.currentHealth() != null) {
-            if (DecodeConfidenceHelper.isLowConfidence(e.confidence())
-                    && vs.lifeState() == LifeState.DESTROYED) {
-                // 低置信度不得覆盖已确认阵亡状态，无论是否已有 currentHealth
-            } else {
+            if (!(DecodeConfidenceHelper.isLowConfidence(e.confidence())
+                    && vs.lifeState() == LifeState.DESTROYED)) {
                 vs.setCurrentHealth(e.currentHealth());
             }
         }
         if (e.maxHealth() != null) {
-            // maxHealth is a structural property (like entityId), not a runtime state value.
-            // It is always applied regardless of confidence, unlike currentHealth and alive.
             vs.setMaxHealth(e.maxHealth());
+        }
+        if (e.confidence() == DecodeConfidence.EXACT && e.rawState() != null && e.rawState().terminal()) {
+            // FFFD/FFFE can be terminal without a trustworthy HP=0 value.
+            markDestroyed(vs);
+            return;
         }
         if (e.alive() != null) {
             if (!e.alive() && vs.lifeState() != LifeState.DESTROYED) {
-                vs.setLifeState(LifeState.DESTROYED);
-                vs.setObservationState(ObservationState.REMOVED);
+                markDestroyed(vs);
             } else if (e.alive() && !(vs.lifeState() == LifeState.DESTROYED
                     && DecodeConfidenceHelper.isLowConfidence(e.confidence()))) {
+                // A later exact alive/materialization may represent a real respawn/re-entry lifecycle.
                 vs.setLifeState(LifeState.ALIVE);
             }
         }
     }
 
-    private void applyEntityCreated(BattleState state, EntityCreatedEvent e) {
+    private void applyEntityCreated(final BattleState state, final EntityCreatedEvent e) {
         state.getOrCreateVehicle(e.entityId(), e.timestamp().rawClockSec());
     }
 
-    /**
-     * Type5 物化：实体进入 replay POV 观测集（AoI 段开始）。
-     * 物化 HP 快照（entityTypeId=2，version-gated）作为当前 HP 种子——
-     * 敌方 re-entry 时可能已在 AoI 外掉血，必须以 Type5 快照为准，
-     * 不得沿用 stale last-known HP（research entity-presence-aoi-lifecycle.md）。
-     */
-    private void applyMaterialization(BattleState state, MaterializationEvent e) {
+    private void applyMaterialization(final BattleState state, final MaterializationEvent e) {
         final VehicleState vs = state.getOrCreateVehicle(e.entityId(), e.timestamp().rawClockSec());
         vs.setLastObservedAt(e.timestamp().rawClockSec());
         if (e.currentHp() != null && e.confidence() == DecodeConfidence.EXACT) {
             vs.setCurrentHealth(e.currentHp());
+            // A later exact materialization with positive HP is affirmative alive evidence.
+            vs.setLifeState(LifeState.ALIVE);
         }
         if (vs.observationState() == ObservationState.REMOVED
                 || vs.observationState() == ObservationState.UNKNOWN) {
@@ -256,81 +191,67 @@ public class BattleStateReconstructor {
         }
     }
 
-    /** Avatar method5（recorder own-health mirror）：当前 HP 镜像，与 prop3 同刻一致。 */
-    private void applyRecorderHealth(BattleState state, RecorderHealthChangedEvent e) {
+    private void applyRecorderHealth(final BattleState state, final RecorderHealthChangedEvent e) {
         final VehicleState vs = state.getOrCreateVehicle(e.entityId(), e.timestamp().rawClockSec());
         vs.setLastObservedAt(e.timestamp().rawClockSec());
         if (e.confidence() == DecodeConfidence.EXACT
                 && e.currentHp() > 0 && e.currentHp() < 0xFF00) {
             vs.setCurrentHealth(e.currentHp());
+            vs.setLifeState(LifeState.ALIVE);
         }
     }
 
-    /** Vehicle method1：选中 HP 转变（currentHpRaw 与同刻 prop3 raw16 一致）。 */
-    private void applyVehicleHealthState(BattleState state, VehicleHealthStateEvent e) {
+    private void applyVehicleHealthState(final BattleState state, final VehicleHealthStateEvent e) {
         final VehicleState vs = state.getOrCreateVehicle(e.entityId(), e.timestamp().rawClockSec());
         vs.setLastObservedAt(e.timestamp().rawClockSec());
         if (e.confidence() != DecodeConfidence.EXACT) {
             return;
         }
-        // 与 prop3 归一化口径一致：0 = 阵亡归零；0xFFFD = 死亡 sentinel → 0；
-        // 正 HP 直接采用；其它 ≤0 高位值 = UNKNOWN sentinel，不写。
-        final int raw = e.currentHpRaw();
-        if (raw == 0 || raw == HealthChangedEvent.SENTINEL_UNKNOWN_HP) {
+        final HpRawState rawState = HpRawState.classify(e.currentHpRaw(), true);
+        if (rawState == HpRawState.CURRENT_HP) {
+            // Positive HP is a current-HP fact, not a universal alive predicate. Drowning may terminal here.
+            vs.setCurrentHealth((short) (e.currentHpRaw() & 0xFFFF));
+        } else if (rawState == HpRawState.HP_ZERO_TERMINAL) {
             vs.setCurrentHealth(0);
-            if (vs.lifeState() != LifeState.DESTROYED) {
-                vs.setLifeState(LifeState.DESTROYED);
-                vs.setObservationState(ObservationState.REMOVED);
-            }
-        } else if (raw > 0 && raw < 0xFF00) {
-            vs.setCurrentHealth(raw);
+        }
+        if (rawState.terminal() || e.cause() == VehicleHealthStateEvent.Cause.DROWNING) {
+            markDestroyed(vs);
         }
     }
 
-    private void applyMapping(BattleState state, ParticipantMappingEvent e) {
+    private static void markDestroyed(final VehicleState vs) {
+        vs.setLifeState(LifeState.DESTROYED);
+        vs.setObservationState(ObservationState.REMOVED);
+    }
+
+    private void applyMapping(final BattleState state, final ParticipantMappingEvent e) {
         if (e.accountId() > 0) {
             state.registerMapping(e.entityId(), e.accountId());
         }
     }
 
-    /**
-     * 在给定时间点查询战场状态。
-     * <p>
-     * 无时钟回退时使用 checkpoint 快速查询；
-     * 存在时钟回退时使用安全全量重放。
-     * </p>
-     *
-     * @param targetClockSec      目标时间（原始时钟）
-     * @param events              全部领域事件列表
-     * @param checkpoints         checkpoint 列表
-     * @param hasClockRegression  是否存在时钟回退
-     * @return 目标时间的战场状态快照
-     */
     public static BattleStateSnapshot stateAt(
-            float targetClockSec,
-            List<ReplayEvent> events,
-            List<BattleStateCheckpoint> checkpoints,
-            boolean hasClockRegression) {
-
+            final float targetClockSec,
+            final List<ReplayEvent> events,
+            final List<BattleStateCheckpoint> checkpoints,
+            final boolean hasClockRegression) {
         if (!hasClockRegression && checkpoints != null && !checkpoints.isEmpty()) {
             return stateAtWithCheckpoints(targetClockSec, events, checkpoints);
         }
         return stateAtSafe(targetClockSec, events);
     }
 
-    /** 向下兼容（默认安全全量重放）。 */
     public static BattleStateSnapshot stateAt(
-            float targetClockSec,
-            List<ReplayEvent> events,
-            List<BattleStateCheckpoint> checkpoints) {
+            final float targetClockSec,
+            final List<ReplayEvent> events,
+            final List<BattleStateCheckpoint> checkpoints) {
         return stateAt(targetClockSec, events, checkpoints, true);
     }
 
-    /** 使用 checkpoint 快速查询。 */
     private static BattleStateSnapshot stateAtWithCheckpoints(
-            float targetClockSec,
-            List<ReplayEvent> events,
-            List<BattleStateCheckpoint> checkpoints) {
+            final float targetClockSec,
+            final List<ReplayEvent> events,
+            final List<BattleStateCheckpoint> checkpoints) {
         BattleStateCheckpoint nearest = checkpoints.getFirst();
         for (final BattleStateCheckpoint cp : checkpoints) {
             if (cp.rawClockSec() <= targetClockSec) nearest = cp;
@@ -348,9 +269,8 @@ public class BattleStateReconstructor {
         return BattleStateSnapshot.from(state);
     }
 
-    /** 安全全量重放。 */
     private static BattleStateSnapshot stateAtSafe(
-            float targetClockSec, List<ReplayEvent> events) {
+            final float targetClockSec, final List<ReplayEvent> events) {
         final BattleState state = new BattleState();
         final BattleStateReconstructor replayer = new BattleStateReconstructor();
         float maxClock = 0f;
@@ -359,14 +279,16 @@ public class BattleStateReconstructor {
             final float clock = event.timestamp().rawClockSec();
             if (clock > targetClockSec) continue;
             replayer.applyEvent(state, event);
-            if (!any || clock > maxClock) { maxClock = clock; any = true; }
+            if (!any || clock > maxClock) {
+                maxClock = clock;
+                any = true;
+            }
         }
         state.setRawClockSec(any ? maxClock : 0f);
         return BattleStateSnapshot.from(state);
     }
 
-    /** 将不可变快照转换为可变状态。 */
-    private static BattleState snapshotToMutable(BattleStateSnapshot snapshot) {
+    private static BattleState snapshotToMutable(final BattleStateSnapshot snapshot) {
         final BattleState state = new BattleState();
         state.setRawClockSec(snapshot.rawClockSec());
         state.setBattleClockSec(snapshot.battleClockSec());
