@@ -74,6 +74,18 @@
       "results": "历史 Rating V2 结果",
       "rows": "{count} 名玩家",
       "empty": "选择回放后开始解析与计算。",
+      "radar": {
+        "title": "V2 指标雷达图",
+        "open": "查看 {player} 的 V2 雷达图",
+        "close": "关闭 V2 雷达图",
+        "batchAverage": "批次平均",
+        "unavailable": "该玩家缺少完整的 V2 雷达数据。",
+        "referenceUnavailable": "该批次的平均雷达数据不完整。",
+        "labels": {
+          "potential_damage_avg": "潜在伤害/场", "kast": "KAST", "impact": "Impact",
+          "assist_avg": "协助/场", "multi_damage_rate": "多伤率", "kills_avg": "击杀/场"
+        }
+      },
       "labels": {
         "nickname": "玩家", "clan": "战队", "battles": "场次", "wins": "胜场", "win_rate": "胜率%",
         "rating": "Rating", "kast": "KAST%", "contribution": "贡献率%", "impact": "Impact%",
@@ -157,6 +169,18 @@
       "results": "Historical Rating V2 Results",
       "rows": "{count} players",
       "empty": "Select replay files, then start parsing and calculation.",
+      "radar": {
+        "title": "V2 Metric Radar",
+        "open": "Open {player}'s V2 radar chart",
+        "close": "Close V2 radar chart",
+        "batchAverage": "Batch Average",
+        "unavailable": "This player does not have a complete V2 radar profile.",
+        "referenceUnavailable": "The batch-average radar profile is incomplete.",
+        "labels": {
+          "potential_damage_avg": "Potential / Battle", "kast": "KAST", "impact": "Impact",
+          "assist_avg": "Assist / Battle", "multi_damage_rate": "Multi-damage", "kills_avg": "Kills / Battle"
+        }
+      },
       "labels": {
         "nickname": "Player", "clan": "Clan", "battles": "Battles", "wins": "Wins", "win_rate": "Win rate %",
         "rating": "Rating", "kast": "KAST %", "contribution": "Contribution %", "impact": "Impact %",
@@ -240,6 +264,18 @@
       "results": "Исторические результаты Rating V2",
       "rows": "Игроков: {count}",
       "empty": "Выберите реплеи, затем запустите обработку и расчёт.",
+      "radar": {
+        "title": "Радар метрик V2",
+        "open": "Открыть радар V2 игрока {player}",
+        "close": "Закрыть радар V2",
+        "batchAverage": "Среднее по пакету",
+        "unavailable": "Для этого игрока нет полного профиля радара V2.",
+        "referenceUnavailable": "Профиль среднего по пакету неполный.",
+        "labels": {
+          "potential_damage_avg": "Потенциал / бой", "kast": "KAST", "impact": "Impact",
+          "assist_avg": "Помощь / бой", "multi_damage_rate": "Мульти-урон", "kills_avg": "Фраги / бой"
+        }
+      },
       "labels": {
         "nickname": "Игрок", "clan": "Клан", "battles": "Бои", "wins": "Победы", "win_rate": "Победы %",
         "rating": "Rating", "kast": "KAST %", "contribution": "Вклад %", "impact": "Impact %",

@@ -189,14 +189,43 @@ rating = round(weighted * 10)
 分数通常处于约 1000 的量级。`contribution`、`damage_avg` 与 `win_rate` 是解释性展示字段，
 不直接进入上式。
 
-## 7. 修改与维护规则
+## 7. 雷达展示口径（管理员灰度）
+
+V2 雷达图只出现在隐藏的管理员页面 `?view=rating-v2`。它复用 V5 的通用雷达几何、网格与「玩家 / 批次平均」
+双多边形展示，但不是 League V5 的七维，也不参与 V2 综合 Rating 的计算。
+
+每个 `RatingV2Calculator.Row` 在完成原有评分后，额外生成只读的 `radar` 投影。投影由后端给出原始值、
+`0..1` 归一化值与可用性；前端只能翻译/格式化/对同一 V2 批次求平均，**不得**用表格中已圆整的字段或
+`impact` 百分数字符串重新计算。
+
+| 雷达轴 key | 明细显示的原始值 | 图形归一化 |
+| --- | --- | --- |
+| `potential_damage_avg` | 场均潜在伤害 | `cap(100 * potential_dpb / average_hp, 250) / 250` |
+| `kast` | KAST% | `cap(kast, 100) / 100`（KAST 在其历史定义中已经封顶 100；综合公式的 `cap(kast, 250)` 不会再改变它） |
+| `impact` | 数值型 Impact% | `cap(impact, 250) / 250` |
+| `assist_avg` | 场均协助 | `cap(100 * assist_dpb / average_hp, 200) / 200` |
+| `multi_damage_rate` | 多伤率% | `cap(multi_damage_rate, 100) / 100` |
+| `kills_avg` | 场均击杀 | `cap(100 * kills_dpb, 250) / 250` |
+
+虚线「批次平均」的成员是当前 admin API 返回的全部 V2 行（包含选中玩家）。所有成员必须都有同一组六轴；
+任何一轴缺失时不以 0 补齐、不按轴过滤玩家，整条参考多边形隐藏并显示不可用提示。选中玩家缺轴时同样不绘制
+伪闭合图形。
+
+### 展示变更记录
+
+| 日期 | 变更 | 说明 |
+| --- | --- | --- |
+| 2026-08-28 | V2 雷达展示 | 复用 V5 通用雷达组件；新增 V2 六轴只读投影与同批次平均，未修改任何 V2 评分公式或权重。 |
+
+## 8. 修改与维护规则
 
 后续升级 V2 时按以下顺序执行：
 
 1. 先在本文件的「算法变更记录」说明目标、公式/参数差异、兼容性和是否需要重新解释历史结果；
 2. 同步修改 `RatingV2Calculator`，不得通过当前 Performance 或 League 代码间接改写 V2；
 3. 更新 `RatingV2CalculatorTest` 的精确公式、边界和零写回断言；影响 API 时同步 DTO/mapper、
-   三语文案、安全契约和前端测试；
+   三语文案、安全契约和前端测试。若触及 `radar` 投影或其六轴口径，还必须同步本节、
+   `ratingV2Radar` 前端测试与批次平均缺失契约；
 4. 若希望把变更公开给普通用户，必须另立方案，不能仅放宽本灰度页权限；
 5. 全量通过 Java、前端、ArchUnit 与文档审查后再合并。
 
@@ -206,7 +235,7 @@ rating = round(weighted * 10)
 | --- | --- | --- |
 | 2026-08-26 | V2 灰度恢复基线 | 以 `37a0c0ec` 的最终公式为准；平均 HP 保留 `d4b0dd19` 的双方 14 车总 HP / 14 修正；仅管理员灰度。 |
 
-## 8. 回归基线
+## 9. 回归基线
 
 `RatingV2CalculatorTest` 至少必须覆盖：
 
@@ -214,7 +243,8 @@ rating = round(weighted * 10)
 - `OBSERVED_EXACT`、Tankopedia、单车 2400 fallback 与固定 `/14`；
 - 潜在伤害补增与缺 alpha 的回退；
 - 空白昵称、非法负伤害、综合分数尺度与排序；
+- 六轴 radar 的 key/顺序、精确归一化、0 值可用性，且新增展示投影前后综合 Rating 不变；
 - 调用前后 `PlayerResult` 不被写回。
 
 `RatingV2AdminControllerContractTest`、`RatingV2AdminServiceTest`、`SecurityConfigTest` 还必须证明：
-只读取 READY dataset、API key 纯英文、匿名/普通用户拒绝、管理员允许。
+只读取 READY dataset、API key 纯英文、`radar` 只在管理员响应中追加、匿名/普通用户拒绝、管理员允许。

@@ -2,6 +2,7 @@ package com.wotb.web.replay.mapper;
 
 import com.wotb.core.stats.RatingV2Calculator;
 import com.wotb.web.replay.dto.ColumnDef;
+import com.wotb.web.replay.dto.RatingV2RadarAxis;
 import com.wotb.web.replay.dto.RatingV2Row;
 
 import java.util.ArrayList;
@@ -58,7 +59,10 @@ public final class RatingV2Mapper {
             cells.put("multi_damage_rate", r1(rating.multiDamageRate));
             cells.put("kills", rating.kills);
             cells.put("kills_avg", r2(rating.killsAvg));
-            rows.add(new RatingV2Row(cells));
+            rows.add(new RatingV2Row(cells, rating.radarAxes().stream()
+                    .map(axis -> new RatingV2RadarAxis(
+                            axis.key(), axis.rawValue(), axis.normalized(), axis.available()))
+                    .toList()));
         }
         return rows;
     }

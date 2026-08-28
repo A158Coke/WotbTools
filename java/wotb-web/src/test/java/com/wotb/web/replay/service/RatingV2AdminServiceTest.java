@@ -36,6 +36,9 @@ class RatingV2AdminServiceTest {
         assertEquals(1, result.failures().size());
         assertTrue(result.columns().stream().anyMatch(column -> column.key().equals("rating")));
         assertTrue(result.columns().stream().noneMatch(column -> column.key().equals("account_id")));
+        assertEquals(6, result.rows().getFirst().radar().size());
+        assertEquals("potential_damage_avg", result.rows().getFirst().radar().getFirst().key());
+        assertTrue(result.rows().getFirst().radar().stream().allMatch(axis -> axis.available()));
     }
 
     private static PlayerResult player(final long accountId, final int team, final int damage) {
