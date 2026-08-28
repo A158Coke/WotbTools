@@ -151,10 +151,9 @@ class PersonalAiContextCompilerTest {
                 40f, 1000f, List.of(), events, List.of(),
                 com.wotb.core.replay.reconstruction.BattleStateSnapshot.empty(),
                 new com.wotb.core.replay.reconstruction.ReplayCoverage(
-                        true, 1, 1, 0, 0, 0, 1.0, Map.of()),
+                        1, 1, 0, 0, 0, 1.0, Map.of()),
                 new com.wotb.core.replay.stream.ReplayStreamDiagnostics(
-                        0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(),
-                        true));
+                        0, 0, 0f, 0f, 0, Map.of()));
 
         final BattleTimelineResult tl = BattleTimelineBuilder.build(
                 b, recon, TimelinePerspective.personal(1001L, 1));

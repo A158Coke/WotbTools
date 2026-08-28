@@ -61,7 +61,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
     }
 
     private static ReplayReconstruction recon(final Float battleStartRaw, final List<ReplayEvent> events) {
-        final ReplayCoverage coverage = new ReplayCoverage(true, events.size(), events.size(), 0, 0, 0, 1.0, Map.of());
+        final ReplayCoverage coverage = new ReplayCoverage(events.size(), events.size(), 0, 0, 0, 1.0, Map.of());
         return new ReplayReconstruction(null, null, 120f, battleStartRaw,
                 List.of(
                         new com.wotb.core.replay.reconstruction.BattleParticipant(1001L, "Recorder", 1, 1, "T-34", true),

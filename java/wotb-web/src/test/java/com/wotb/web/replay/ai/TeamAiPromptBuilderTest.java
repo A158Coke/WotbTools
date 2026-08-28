@@ -193,7 +193,7 @@ class TeamAiPromptBuilderTest {
                         DecodeConfidence.EXACT, 0, 0, 20_001L, 10_001L, 300, false));
         final SingleTeamBattleAnalysisContext context = new SingleTeamBattleAnalysisContext(
                 "unit-A", null, "f.wotbreplay", null, battle, 1, features,
-                new ReplayCoverage(false, 0, 0, 0, 0, 0, 0.0, Map.of()),
+                new ReplayCoverage(0, 0, 0, 0, 0, 0.0, Map.of()),
                 List.of(), recon);
 
         final String content = TeamAiPromptBuilder.single(context).content();
@@ -205,7 +205,7 @@ class TeamAiPromptBuilderTest {
         // 事件流覆盖不全时抑制数字（与 OBSERVED_EVENT_SUBSET 同口径）
         final SingleTeamBattleAnalysisContext partial = new SingleTeamBattleAnalysisContext(
                 "unit-A", null, "f.wotbreplay", null, battle, 1, features,
-                new ReplayCoverage(false, 0, 0, 0, 0, 0, 0.0, Map.of()),
+                new ReplayCoverage(0, 0, 0, 0, 0, 0.0, Map.of()),
                 List.of("OBSERVED_DAMAGE_IS_PARTIAL"), recon);
         final String partialContent = TeamAiPromptBuilder.single(partial).content();
         assertTrue(partialContent.contains("MEMBER_DAMAGE_RECEIVED_WINDOWS ===\n"
@@ -328,7 +328,7 @@ class TeamAiPromptBuilderTest {
                 TeamFeatureCoverage.empty(), List.of(), true);
         final SingleTeamBattleAnalysisContext context = new SingleTeamBattleAnalysisContext(
                 "unit-A", null, "f.wotbreplay", null, battle, 1, features,
-                new ReplayCoverage(false, 0, 0, 0, 0, 0, 0.0, Map.of()), List.of(), null);
+                new ReplayCoverage(0, 0, 0, 0, 0, 0.0, Map.of()), List.of(), null);
 
         final String content = TeamAiPromptBuilder.single(context).content();
 
@@ -764,8 +764,7 @@ class TeamAiPromptBuilderTest {
                 1, List.of(), aggregate, TeamObservedAggregate.empty(),
                 List.of(), List.of(engagement), List.of(), List.of(),
                 TeamFeatureCoverage.empty(), List.of(), true);
-        final ReplayCoverage coverage = new ReplayCoverage(
-                false, 0, 0, 0, 0, 0, 0.0, Map.of());
+        final ReplayCoverage coverage = new ReplayCoverage(0, 0, 0, 0, 0, 0.0, Map.of());
 
         // partial：TEAM_ENGAGEMENTS 不得输出 dealtSubset/receivedSubset 等事件流伤害数字
         final SingleTeamBattleAnalysisContext partial = new SingleTeamBattleAnalysisContext(

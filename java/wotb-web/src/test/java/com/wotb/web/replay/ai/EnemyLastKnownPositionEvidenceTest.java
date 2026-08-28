@@ -111,8 +111,8 @@ class EnemyLastKnownPositionEvidenceTest {
                 List.of(),
                 List.of(new BattleStateCheckpoint(START_RAW + 300f, 0, snapshot)),
                 snapshot,
-                new ReplayCoverage(true, 1, 1, 0, 0, 0, 1.0, Map.of()),
-                new ReplayStreamDiagnostics(0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true));
+                new ReplayCoverage(1, 1, 0, 0, 0, 1.0, Map.of()),
+                new ReplayStreamDiagnostics(0, 0, 0f, 0f, 0, Map.of()));
     }
 
     private static String sectionOf(final String content) {
@@ -283,7 +283,7 @@ class EnemyLastKnownPositionEvidenceTest {
                 null, battle(), new PlayerBattleFeatureSet(
                         List.of(), List.of(), List.of(), List.of(), List.of(), true),
                 new RecorderEntityMapping(1001L, 4481, 1, "rec1", 1, 4481, DecodeConfidence.EXACT),
-                new ReplayCoverage(true, 1, 1, 0, 0, 0, 1.0, Map.of()), List.of());
+                new ReplayCoverage(1, 1, 0, 0, 0, 1.0, Map.of()), List.of());
         final PreparedAiPrompt prepared = PlayerReplayPromptBuilder.prepareFull(
                 ctx, recon(), ESTIMATOR, 100_000, 131_072, 8192, 1000);
         final String content = prepared.userPrompt();

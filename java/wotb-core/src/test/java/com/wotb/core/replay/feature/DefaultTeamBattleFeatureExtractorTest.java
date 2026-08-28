@@ -264,7 +264,7 @@ class DefaultTeamBattleFeatureExtractorTest {
         final ReplayReconstruction reconstruction = new ReplayReconstruction(
                 null, null, 60f, 0f, participants, events,
                 List.of(), null,
-                new ReplayCoverage(true, events.size(), events.size(),
+                new ReplayCoverage(events.size(), events.size(),
                         0, 0, 0, 1.0, Map.of()),
                 null);
         final TeamPerspectiveResolution perspective =
@@ -1007,8 +1007,7 @@ class DefaultTeamBattleFeatureExtractorTest {
             final List<? extends ReplayEvent> events,
             final Float battleStartRaw
     ) {
-        final ReplayCoverage coverage = new ReplayCoverage(
-                true, events.size(), events.size(), 0, 0, 0, 1.0, Map.of());
+        final ReplayCoverage coverage = new ReplayCoverage(events.size(), events.size(), 0, 0, 0, 1.0, Map.of());
         final ReplayReconstruction reconstruction = new ReplayReconstruction(
                 null, null, 300f, battleStartRaw,
                 fixture.participants(), List.copyOf(events), List.of(), null,
@@ -1208,8 +1207,7 @@ class DefaultTeamBattleFeatureExtractorTest {
             final Fixture fixture,
             final List<? extends ReplayEvent> events
     ) {
-        final ReplayCoverage coverage = new ReplayCoverage(
-                true, events.size(), events.size(), 0, 0, 0,
+        final ReplayCoverage coverage = new ReplayCoverage(events.size(), events.size(), 0, 0, 0,
                 1.0, Map.of());
         return new ReplayReconstruction(
                 null, null, 120f, 0f,

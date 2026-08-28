@@ -179,7 +179,7 @@ public class BatchAnalyzer {
     }
 
     /**
-     * 选择代表回放：按质量降序排列：reconstruction → streamComplete → decodedRatio → failedPackets → unknownPackets。
+     * 选择代表回放：按质量降序排列：reconstruction → decodedRatio → failedPackets → unknownPackets。
      */
     static ScopedResult selectRepresentative(final List<ScopedResult> group) {
         if (group.size() == 1) return group.getFirst();
@@ -189,7 +189,6 @@ public class BatchAnalyzer {
     private static java.util.Comparator<ScopedResult> representativeComparator() {
         return java.util.Comparator
                 .<ScopedResult>comparingInt(s -> hasReconstruction(s) ? 0 : 1)
-                .thenComparing((s -> isStreamComplete(s) ? 0 : 1))
                 .thenComparing(
                         java.util.Comparator.comparingDouble(
                                 BatchAnalyzer::decodedRatio).reversed())
@@ -200,11 +199,6 @@ public class BatchAnalyzer {
     private static boolean hasReconstruction(final ScopedResult s) {
         final var caps = s.result().capabilities();
         return caps != null && caps.reconstructionAvailable();
-    }
-
-    private static boolean isStreamComplete(final ScopedResult s) {
-        final var diag = s.result().diagnostics();
-        return diag != null && diag.diagnostics() != null && diag.diagnostics().streamComplete();
     }
 
     private static ReplayCoverage coverage(final ScopedResult s) {

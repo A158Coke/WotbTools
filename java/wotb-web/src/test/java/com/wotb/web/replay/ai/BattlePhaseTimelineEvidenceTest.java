@@ -294,7 +294,7 @@ class BattlePhaseTimelineEvidenceTest {
                 null, battle(), new PlayerBattleFeatureSet(
                         List.of(), List.of(), phasesWithSurvival(), List.of(), List.of(), true),
                 new RecorderEntityMapping(1001L, 4481, 1, "rec1", 1, 4481, DecodeConfidence.EXACT),
-                new ReplayCoverage(true, 1, 1, 0, 0, 0, 1.0, Map.of()), List.of());
+                new ReplayCoverage(1, 1, 0, 0, 0, 1.0, Map.of()), List.of());
         final PreparedAiPrompt prepared = PlayerReplayPromptBuilder.prepareFull(
                 ctx, null, ESTIMATOR, 100_000, 131_072, 8192, 1000);
         final String content = prepared.userPrompt();

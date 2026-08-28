@@ -29,6 +29,13 @@ class EntityMethodDecoderVersionGateTest {
 
     private final EntityMethodDecoder decoder = new EntityMethodDecoder();
 
+    /** method1 是 Vehicle 系方法：class 需先由独立生命周期/物化证据建立（P0-1），此处预标记 Vehicle(10)。 */
+    private static ReplayDecodeContext vehicleCtx(final String version) {
+        final ReplayDecodeContext c = new ReplayDecodeContext(version);
+        c.entityClassRegistry().markVehicle(10);
+        return c;
+    }
+
     /** method1 packet: entityId + subtype(=1) + argLen(=7) + currentHpRaw(u16) + source(u32) + causeFlag(u8). */
     private static RawReplayPacket method1(final int seq, final float clock,
                                            final int currentHpRaw, final int causeFlag) {
@@ -55,7 +62,7 @@ class EntityMethodDecoderVersionGateTest {
     @Test
     void currentVersionFffeIsVerifiedTerminal() {
         // 11.19: 0xFFFE is a verified terminal on the current-version chain.
-        final ReplayDecodeResult r = decoder.decode(new ReplayDecodeContext("11.19.0_china_apple"),
+        final ReplayDecodeResult r = decoder.decode(vehicleCtx("11.19.0_china_apple"),
                 method1(1, 1f, 0xFFFE, 0));
         final VehicleHealthStateEvent e = assertInstanceOf(VehicleHealthStateEvent.class, r.events().get(0));
         assertEquals(HpRawState.VERIFIED_TERMINAL_FFFE, e.rawState());
@@ -64,7 +71,7 @@ class EntityMethodDecoderVersionGateTest {
     @Test
     void legacyVersionFffeStaysUnknown() {
         // 11.18: only the layout is proved; 0xFFFE must NOT be upgraded to a terminal.
-        final ReplayDecodeResult r = decoder.decode(new ReplayDecodeContext("11.18.0_china"),
+        final ReplayDecodeResult r = decoder.decode(vehicleCtx("11.18.0_china"),
                 method1(1, 1f, 0xFFFE, 0));
         final VehicleHealthStateEvent e = assertInstanceOf(VehicleHealthStateEvent.class, r.events().get(0));
         assertEquals(HpRawState.UNKNOWN_OTHER, e.rawState(), "11.18 must not treat 0xFFFE as a verified terminal");
@@ -75,7 +82,7 @@ class EntityMethodDecoderVersionGateTest {
     @Test
     void legacyVersionCauseSemanticsUnknown() {
         // 11.18 proves layout only — cause semantics are UNKNOWN (raw causeFlag preserved).
-        final ReplayDecodeResult r = decoder.decode(new ReplayDecodeContext("11.18.0_china"),
+        final ReplayDecodeResult r = decoder.decode(vehicleCtx("11.18.0_china"),
                 method1(1, 1f, 2700, 5));
         final VehicleHealthStateEvent e = assertInstanceOf(VehicleHealthStateEvent.class, r.events().get(0));
         assertEquals(VehicleHealthStateEvent.Cause.UNKNOWN, e.cause(),
@@ -85,7 +92,7 @@ class EntityMethodDecoderVersionGateTest {
 
     @Test
     void currentVersionCauseSemanticsProven() {
-        final ReplayDecodeResult r = decoder.decode(new ReplayDecodeContext("11.19.0_china"),
+        final ReplayDecodeResult r = decoder.decode(vehicleCtx("11.19.0_china"),
                 method1(1, 1f, 2700, 5));
         final VehicleHealthStateEvent e = assertInstanceOf(VehicleHealthStateEvent.class, r.events().get(0));
         assertEquals(VehicleHealthStateEvent.Cause.DROWNING, e.cause());
@@ -96,7 +103,7 @@ class EntityMethodDecoderVersionGateTest {
         // PR162 forward compatibility: method1 layout is structural (envelope/HP u16) so a future version
         // with the exact 7-byte shape still decodes structurally; the version-scoped CAUSE semantic is gated
         // (closed semantics) → UNKNOWN, never a fabricatied DROWNING/DIRECT claim.
-        final ReplayDecodeResult r = decoder.decode(new ReplayDecodeContext("11.20.0_china"),
+        final ReplayDecodeResult r = decoder.decode(vehicleCtx("11.20.0_china"),
                 method1(1, 1f, 2700, 0));
         final VehicleHealthStateEvent e = assertInstanceOf(VehicleHealthStateEvent.class, r.events().get(0));
         assertEquals(HpRawState.CURRENT_HP, e.rawState(), "正 HP 结构值可前向解析");

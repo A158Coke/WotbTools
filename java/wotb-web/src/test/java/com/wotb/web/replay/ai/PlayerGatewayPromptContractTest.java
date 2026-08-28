@@ -114,8 +114,7 @@ class PlayerGatewayPromptContractTest {
                 123, DecodeConfidence.EXACT);
         final PlayerBattleFeatureSet features = new PlayerBattleFeatureSet(
                 List.of(), List.of(), List.of(), List.of(), List.of(), true);
-        final ReplayCoverage coverage = new ReplayCoverage(
-                true, 100, 100, 0, 0, 0, 1.0, Map.of());
+        final ReplayCoverage coverage = new ReplayCoverage(100, 100, 0, 0, 0, 1.0, Map.of());
         return new SinglePlayerBattleAnalysisContext(
                 null, battle, features, mapping, coverage, List.of("TEST_LIMITATION"));
     }
@@ -224,7 +223,7 @@ class PlayerGatewayPromptContractTest {
         final SinglePlayerBattleAnalysisContext ctx = new SinglePlayerBattleAnalysisContext(
                 null, battle, features,
                 new RecorderEntityMapping(1001L, 501, 42, "RecorderPlayer", 1, 123, DecodeConfidence.EXACT),
-                new ReplayCoverage(true, 100, 100, 0, 0, 0, 1.0, Map.of()),
+                new ReplayCoverage(100, 100, 0, 0, 0, 1.0, Map.of()),
                 List.of("TEST_LIMITATION"));
         service().analyzePlayerContext(ctx);
         final String body = lastUser();
