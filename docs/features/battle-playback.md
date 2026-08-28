@@ -3,6 +3,7 @@
 > 用户可见契约：AI 复盘页面（ReconstructionPage）的独立「地图鸟瞰」区块
 > （热力 + 路线 + 战局回放三视图），**不依赖 AI 复盘**——不跑 AI 也能看图。
 > 数据来源与素材权威见 `docs/reference/maps.md`（内部 code ↔ 展示名 ↔ 语义 mapId ↔ 素材）。
+> 生产状态：回放 timeline 事实按 canonical 语义（AFFIRMED）；AoI hidden=UNKNOWN、禁止跨 AoI gap 插值、死亡 clamp 到权威死亡时刻。
 
 ## 地图鸟瞰（Map Overview）
 
