@@ -247,7 +247,6 @@ Processing/Export task notification 必须低于 Modal stacking level；移动�
 - `?view=boost`：陪练。
 - `?view=profile`：个人中心。
 - `?view=admin-users`：用户管理。
-- `?view=reconstruction`：AI 复盘 / 地图 / 战局回放 workspace。
 - `?view=version`：版本历史。
 - `?view=contact`：联系页。
 - `?view=rating-docs`：League Rating V5 算法说明页（构建期以 `?raw` 读取
@@ -256,11 +255,11 @@ Processing/Export task notification 必须低于 Modal stacking level；移动�
 - `?view=playback-qa`：隐藏 QA 页（admin）。
 - `?view=rating-v2`：隐藏历史 Rating V2 灰度页（仅 `wotbtools-admin`，只读 READY Processing Job）。
 
-旧 `?view=leaderboard` canonicalize 到 `hof`，旧 `?view=extended` canonicalize 到 `replay`。
+旧 `?view=leaderboard` canonicalize 到 `hof`；旧 `?view=extended` / `?view=reconstruction` canonicalize 到 `replay`。
 
 ### AI Review / Battle Playback
 
-主入口在 `?view=replay` 的 Battle Workspace：`ReplayPage` 下半部分原地切换「解析结果 / AI 复盘 / 战局回放」三个面板（`v-show` 保持状态，不跨视图跳转）。`AiReviewPanel`（SSE 分析流 + 结果）与 `BattlePlaybackPanel`（`/api/replay/map-overview` + MapOverview）是单一事实源实现；独立深链 `?view=reconstruction` 由 `ReconstructionPage` 登录门控后组合同一对面板。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，由 BlitzKit 确定性生成，production 不访问 BlitzKit。
+主入口在 `?view=replay` 的 Battle Workspace：`ReplayPage` 下半部分原地切换「解析结果 / AI 复盘 / 战局回放」三个面板（`v-show` 保持状态，不跨视图跳转）。`AiReviewPanel`（SSE 分析流 + 结果）与 `BattlePlaybackPanel`（`/api/replay/map-overview` + MapOverview）是单一事实源实现，二者复用同一 Processing Dataset（processingJobId + sourceId）、绝不 multipart 重传/重解析；旧 `?view=reconstruction` 已合并到 `?view=replay`。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，由 BlitzKit 确定性生成，production 不访问 BlitzKit。
 
 地图鸟瞰/战局回放契约见 `docs/features/battle-playback.md`；AI 双 Call、Team Review、Evidence/Validator 契约见 `docs/architecture/ai-review.md` 与 `docs/features/team-ai-review.md`。
 

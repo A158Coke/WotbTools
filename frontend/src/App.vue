@@ -10,7 +10,6 @@ import HoFAdminPage from './components/HoFAdminPage.vue'
 import ProfilePage from './components/ProfilePage.vue'
 import BoostPage from './components/BoostPage.vue'
 import AdminUsersPage from './components/AdminUsersPage.vue'
-import ReconstructionPage from './components/ReconstructionPage.vue'
 import VersionPage from './components/VersionPage.vue'
 import ContactPage from './components/ContactPage.vue'
 // 隐藏 QA 页（?view=playback-qa，仅 wotbtools-admin）：PR4 固定 14 车标签碰撞场景，
@@ -42,19 +41,20 @@ if (rawViewParam === 'leaderboard') {
   url.searchParams.set('view', 'hof')
   window.history.replaceState({}, '', url.toString())
 }
-// 旧书签兼容：?view=extended → ?view=replay（战斗表现已并入回放解析，不再有独立页面/第二套 pipeline）
-if (rawViewParam === 'extended') {
+// 旧书签兼容：?view=extended / ?view=reconstruction → ?view=replay
+//（战斗表现已并入回放解析；AI 复盘 / 战局回放已并入 ReplayPage Workspace，不再有独立页面/第二套 Dataset pipeline）
+if (rawViewParam === 'extended' || rawViewParam === 'reconstruction') {
   const url = new URL(window.location.href)
   url.searchParams.set('view', 'replay')
   window.history.replaceState({}, '', url.toString())
 }
-const viewParam = rawViewParam === 'leaderboard' ? 'hof'
-  : (rawViewParam === 'extended' ? 'replay' : rawViewParam)
-// AI 复盘入口随时可见：视图列表不再依赖鉴权，未登录也能进入（含深链），
-// 由 ReconstructionPage 自行检查登录状态并跳转登录页。
+const viewParam = (rawViewParam === 'leaderboard' || rawViewParam === 'extended' || rawViewParam === 'reconstruction')
+  ? 'replay'
+  : rawViewParam
+// AI 复盘 / 战局回放已并入 ReplayPage Workspace（?view=replay），不再有独立的 reconstruction 深链。
 const ALLOWED_VIEWS = [
   'home', 'replay', 'hof', 'hof-admin',
-  'profile', 'boost', 'admin-users', 'reconstruction', 'version', 'contact',
+  'profile', 'boost', 'admin-users', 'version', 'contact',
   'playback-qa', 'rating-docs', 'rating-v2',
 ]
 const activeTool = ref(ALLOWED_VIEWS.includes(viewParam) ? viewParam : defaultView)
@@ -69,7 +69,6 @@ const VIEW_COMPONENTS = {
   profile: ProfilePage,
   boost: BoostPage,
   'admin-users': AdminUsersPage,
-  reconstruction: ReconstructionPage,
   version: VersionPage,
   contact: ContactPage,
   'playback-qa': PlaybackQaPage,
@@ -199,7 +198,7 @@ onBeforeUnmount(() => {
 
   <div class="tb-content">
     <!-- ReplayPage 保持存活：打开文档/其他页面后返回不丢已解析结果与当前 tab -->
-    <KeepAlive :include="['ReconstructionPage', 'ReplayPage']">
+    <KeepAlive :include="['ReplayPage']">
       <component :is="currentView" />
     </KeepAlive>
   </div>

@@ -76,7 +76,7 @@ class AiReplayReviewServiceTimelineUnusableMetricTest {
     /** 构造 service 并初始化 metrics（@PostConstruct 语义，否则 aiReviewDuration 为 null）。 */
     private static AiReplayReviewService serviceWithMetrics(final SimpleMeterRegistry registry,
                                                             final AiReplayAnalysisService aiService) {
-        final AiReplayReviewService service = new AiReplayReviewService(aiService, null, registry);
+        final AiReplayReviewService service = new AiReplayReviewService(aiService, null, registry, null);
         service.initMetrics();
         return service;
     }

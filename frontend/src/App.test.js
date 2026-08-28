@@ -54,6 +54,15 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
     expect(wrapper.find('[data-test="view-home"]').exists()).toBe(false)
   })
 
+  it('?view=reconstruction 不再是独立视图 → canonicalize/回退到 replay（不加载已删除的 ReconstructionPage）', async () => {
+    window.history.replaceState({}, '', '/?view=reconstruction')
+    const wrapper = mountApp()
+    await flushPromises()
+    // ReconstructionPage 已删除：?view=reconstruction 必须回退/跳转至 ReplayPage，而非渲染死页面。
+    expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('recon-page')
+  })
+
   it('?view=playback-qa 解析 PlaybackQaPage（异步加载）', async () => {
     window.history.replaceState({}, '', '/?view=playback-qa')
     const wrapper = mountApp()

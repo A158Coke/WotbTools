@@ -49,7 +49,9 @@ import java.util.concurrent.RejectedExecutionException;
  * AI 复盘与批量处理 REST API。
  * <p>
  * 需要 wotbtools-user 或 wotbtools-admin 角色（见 {@code SecurityConfig}）。
- * 回放重建不再单独暴露端点，由 {@code /analyze} 在内部完成。
+ * AI Review 只消费 Processing Dataset（JSON body：{@code processingJobId + sourceId}），
+ * 由 {@link AiReplayReviewService#analyzeFacts} 读 derived {@code ai-facts.json}，
+ * <b>不</b>重新上传 / 不重新 full-process（multipart Analyze 已废弃为 410 兼容 shim）。
  * </p>
  */
 @RestController
@@ -88,34 +90,27 @@ public class ReconstructionController {
     }
 
     /**
-     * AI 复盘（SSE 流式）：阶段事件 + 主复盘 token 逐段到达，{@code done} 事件
-     * 携带最终 {@code analysis} / {@code preBattleSection}（阶段 3 双字段契约）。
-     * <p>异步模型：request 线程只做白名单/文件参数校验，然后注册 cancellation、
-     * 创建 {@link SseEmitter}、注册生命周期回调并把完整 AI 复盘提交到
-     * {@link AiReviewWorkerExecutor}，立即返回 emitter——servlet request 线程
-     * 不被整个 AI Review 生命周期占住。真正的分析（含回放解析与上游流式调用）
-     * 在 worker 线程执行，{@link com.wotb.web.replay.ai.gateway.AiRequestContext}
-     * 在 worker 线程内 set/clear，cancellation 在 worker 真正结束后才 unregister，
-     * 保证 cancel 端点在整个流式期间都能找到并取消进行中的请求。</p>
-     * <p>异常传达规则（异步化后统一走 SSE 事件）：任何在 worker 内发生的失败
-     * 都以 {@code error} 事件携带稳定错误码传达（无论是否已发送过事件），前端
-     * 在收到事件前无法感知失败；客户端断开时立即调用 cancel 语义（取消上游调用），
-     * 不向已断开的连接写入。</p>
+     * Legacy multipart Analyze —— 固定的 410 兼容 shim（AI Review 已完全改为
+     * Processing Dataset 引用，见 {@link #analyzeDataset} JSON 路径）。此端点绝不
+     * 重新上传 / 重新 full-process，只返回 {@code REPLAY_LEGACY_DEPRECATED}。
      */
     @PostMapping(value = ApiPaths.REPLAY_ANALYZE, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public SseEmitter analyze(
             @RequestParam("files") final MultipartFile[] files,
             @RequestParam(name = "lang", required = true) final String lang,
             @RequestParam(name = "correlationId", required = false) final String correlationId) {
-        // V2：multipart 上传的 analyze 已废弃（AI 只走 Processing Dataset 引用，
-        // 见 analyzeDataset JSON 路径）。稳定 410，绝不在此 full process。
         throw ReplayLegacyEndpoints.gone();
     }
 
     /**
      * AI 复盘 Dataset 路径（plan §36–§38）：请求体为 {@code {processingJobId, sourceId,
      * lang, correlationId}}，AI 只读 derived {@code ai-facts.json}，<b>不</b>重新上传 /
-     * 不重新 full process（BLOCKER A）。SSE 生命周期与 multipart 路径完全一致。
+     * 不重新 full process（BLOCKER A）。
+     * <p>SSE 异步模型：request 线程只做 reference / {@code lang} / {@code correlationId}
+     * 校验，注册 cancellation、创建 {@link SseEmitter} 并把分析提交到
+     * {@link AiReviewWorkerExecutor} 后立即返回。worker 线程内 acquire Processing
+     * Dataset lease → {@link com.wotb.web.replay.job.ReplayArtifactWriter#readAiFacts}
+     * → AI pipeline → 流式 SSE → release lease；失败以 {@code error} 事件携带稳定错误码传达。</p>
      */
     @PostMapping(value = ApiPaths.REPLAY_ANALYZE, consumes = MediaType.APPLICATION_JSON_VALUE)
     public SseEmitter analyzeDataset(@RequestBody final AnalyzeDatasetRequest request) {

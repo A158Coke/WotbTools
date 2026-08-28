@@ -55,31 +55,15 @@ public class AiReplayReviewService {
 
     private final AtomicInteger aiReviewInFlight = new AtomicInteger();
     private Timer aiReviewDuration;
-    public AiReplayReviewService(final AiReplayAnalysisService aiAnalysisService) {
-        this(aiAnalysisService, null, null, null);
-    }
-
-    @Autowired
     public AiReplayReviewService(
             final AiReplayAnalysisService aiAnalysisService,
             final TacticalReviewHarness tacticalReviewHarness,
             @Autowired(required = false) final MeterRegistry meterRegistry,
-            // BLOCKER：ReplayProcessingJobStore 是 AI Dataset 路径的 mandatory dependency——
-            // production 装配缺失时必须 fail-fast（Spring 启动失败），而不是启动成功后运行时
-            // 才返回 DATASET_UNAVAILABLE。测试便利构造器仍可显式传 null。
-            @Autowired final ReplayProcessingJobStore processingStore) {
+            final ReplayProcessingJobStore processingStore) {
         this.aiAnalysisService = aiAnalysisService;
         this.tacticalReviewHarness = tacticalReviewHarness;
         this.meterRegistry = meterRegistry;
         this.processingStore = processingStore;
-    }
-
-    /** 测试/旧调用便利构造器（无 Dataset lease 提供方）。 */
-    public AiReplayReviewService(
-            final AiReplayAnalysisService aiAnalysisService,
-            final TacticalReviewHarness tacticalReviewHarness,
-            final MeterRegistry meterRegistry) {
-        this(aiAnalysisService, tacticalReviewHarness, meterRegistry, null);
     }
 
     /**
@@ -91,9 +75,6 @@ public class AiReplayReviewService {
                                         final AllowedLanguage language,
                                         final AiReviewStreamListener listener) throws IOException {
         requireDatasetReference(processingJobId, sourceIndex);
-        if (processingStore == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "DATASET_UNAVAILABLE");
-        }
         final ReplayProcessingJob job = processingStore.acquireForSource(processingJobId);
         if (job == null) {
             datasetCache("ai", false);
