@@ -166,6 +166,12 @@ public final class MapOverviewBuilder {
                         events, mapping,
                         battleStartRawClockSec == null ? 0.0 : battleStartRawClockSec.doubleValue(),
                         duration);
+        // §B9：结算缺失但回放已证明击毁（combat.destroyed）时，位置覆盖不得越过该击毁时刻（禁阵亡后残余位置）。
+        // 与 BattlePlaybackAdapter 的 AoI-aware 停机口保持同源（此 map 用 raw 时钟域，与 Positions 一致）。
+        final Map<Long, Double> destroyRawByAccount = new HashMap<>();
+        for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Destroyed d : combat.destroyed()) {
+            destroyRawByAccount.putIfAbsent(d.victimAccountId(), d.timeSec());
+        }
         final List<MapOverview.PlaybackVehicle> vehicles = new ArrayList<>();
         for (final PlayerResult player : battle.players) {
             if (player.team <= 0 || player.accountId <= 0) {
@@ -178,8 +184,9 @@ public final class MapOverviewBuilder {
             }
             final Double rawDeath = resolveDeathSec(player);
             final Double deathSec = rawDeath == null ? null : Math.min(rawDeath, duration);
-            final List<MapOverview.PositionInterval> intervals = positionIntervals(
+            List<MapOverview.PositionInterval> intervals = positionIntervals(
                     entityIds, positions, events, battleStartRawClockSec, deathSec, duration);
+            intervals = clampIntervalsToDestroyed(intervals, destroyRawByAccount.get(player.accountId));
             final List<MapOverview.DirectionSample> directionSamples = directionSamples(
                     entityIds, positions, events, battleStartRawClockSec, deathSec, intervals, duration);
             final List<MapOverview.HpSample> hpSamples = hpSamplesByAccount(
@@ -580,6 +587,28 @@ public final class MapOverviewBuilder {
         return bounded;
     }
 
+
+    /**
+     * §B9：把位置上报区间按「权威击毁时刻」收口——击毁后的区间整体剔除、跨越击毁的区间末端 clamp，
+     * 避免回放显示阵亡后的残余服务器位置。destroyRaw == null 时原样返回（未经击毁）。
+     */
+    private static List<MapOverview.PositionInterval> clampIntervalsToDestroyed(
+            final List<MapOverview.PositionInterval> intervals, final Double destroyRaw) {
+        if (destroyRaw == null || intervals == null || intervals.isEmpty()) {
+            return intervals;
+        }
+        final List<MapOverview.PositionInterval> out = new ArrayList<>();
+        for (final MapOverview.PositionInterval it : intervals) {
+            if (it.startSec() > destroyRaw + 1e-6) {
+                continue;
+            }
+            final double end = Math.min(it.endSec(), destroyRaw);
+            if (end >= it.startSec() - 1e-6) {
+                out.add(new MapOverview.PositionInterval(it.startSec(), Math.max(it.startSec(), end)));
+            }
+        }
+        return out;
+    }
     private static long accountOf(final int entityId, final TeamEntityMapping mapping) {
         if (entityId <= 0) {
             return 0L;
