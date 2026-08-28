@@ -16,6 +16,8 @@ public class ReplayPacketDecoderRegistry {
     public static ReplayPacketDecoderRegistry createDefault() {
         final ReplayPacketDecoderRegistry registry = new ReplayPacketDecoderRegistry();
         registry.register(new PositionDecoder());
+        // Specialized Type8 methods must precede the generic EntityMethod decoder.
+        registry.register(new VehicleModuleCrewStateDecoder());
         registry.register(new EntityMethodDecoder());
         registry.register(new EntityLeaveDecoder());
         registry.register(new BattleEndDecoder());
@@ -24,10 +26,8 @@ public class ReplayPacketDecoderRegistry {
         registry.register(new MaterializationDecoder());
         registry.register(new AmmunitionSelectionDecoder());
         registry.register(new EntityPropertyDecoder());
-        // PR147 current-version recorder targeting surfaces.
         registry.register(new GunMarkerSizeDecoder());
         registry.register(new AimRayStateDecoder());
-        // Type35 remains raw/placeholder until a production consumer needs the decisecond clock surface.
         registry.register(new PlaceholderDecoder(35));
         return registry;
     }

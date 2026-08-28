@@ -123,7 +123,6 @@ public class BattleStateReconstructor {
         final VehicleState vs = state.getVehicle(e.entityId());
         if (vs != null) {
             vs.setRemovedAt(e.timestamp().rawClockSec());
-            // Type4 is AoI leave, never death.
             vs.setObservationState(ObservationState.REMOVED);
         }
     }
@@ -158,7 +157,6 @@ public class BattleStateReconstructor {
             vs.setMaxHealth(e.maxHealth());
         }
         if (e.confidence() == DecodeConfidence.EXACT && e.rawState() != null && e.rawState().terminal()) {
-            // FFFD/FFFE can be terminal without a trustworthy HP=0 value.
             markDestroyed(vs);
             return;
         }
@@ -167,7 +165,6 @@ public class BattleStateReconstructor {
                 markDestroyed(vs);
             } else if (e.alive() && !(vs.lifeState() == LifeState.DESTROYED
                     && DecodeConfidenceHelper.isLowConfidence(e.confidence()))) {
-                // A later exact alive/materialization may represent a real respawn/re-entry lifecycle.
                 vs.setLifeState(LifeState.ALIVE);
             }
         }
@@ -182,7 +179,6 @@ public class BattleStateReconstructor {
         vs.setLastObservedAt(e.timestamp().rawClockSec());
         if (e.currentHp() != null && e.confidence() == DecodeConfidence.EXACT) {
             vs.setCurrentHealth(e.currentHp());
-            // A later exact materialization with positive HP is affirmative alive evidence.
             vs.setLifeState(LifeState.ALIVE);
         }
         if (vs.observationState() == ObservationState.REMOVED
@@ -209,8 +205,7 @@ public class BattleStateReconstructor {
         }
         final HpRawState rawState = HpRawState.classify(e.currentHpRaw(), true);
         if (rawState == HpRawState.CURRENT_HP) {
-            // Positive HP is a current-HP fact, not a universal alive predicate. Drowning may terminal here.
-            vs.setCurrentHealth((short) (e.currentHpRaw() & 0xFFFF));
+            vs.setCurrentHealth((int) (short) (e.currentHpRaw() & 0xFFFF));
         } else if (rawState == HpRawState.HP_ZERO_TERMINAL) {
             vs.setCurrentHealth(0);
         }

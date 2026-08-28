@@ -24,6 +24,7 @@ public sealed interface ReplayEvent
                 SupremacyPointsChangedEvent,
                 RecorderHealthChangedEvent,
                 VehicleHealthStateEvent,
+                VehicleModuleCrewStateEvent,
                 VehicleFiredEvent,
                 ProjectileLaunchedEvent,
                 ProjectileTerminalEvent,
@@ -36,15 +37,8 @@ public sealed interface ReplayEvent
                 AmmunitionStateEvent,
                 UnsupportedDamageEvent {
 
-    /** 事件在原始流中的稳定顺序 */
     int sequence();
-
-    /** 事件的时间戳（原始时钟 + 战斗时钟） */
     ReplayTimestamp timestamp();
-
-    /** 来源的原始 packet type */
     int packetType();
-
-    /** 解码置信度 */
     DecodeConfidence confidence();
 }
