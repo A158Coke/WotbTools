@@ -9,7 +9,7 @@ const JOB_ACTIVE = new Set(['QUEUED', 'PROCESSING'])
 const JOB_POLL_MS = 1500
 
 /** 处理中 UI 状态（单一事实源，plan §58；UPLOADING/REGISTERING 为前端本地态）。 */
-export const PROCESSING_UI_STATES = Object.freeze({
+const PROCESSING_UI_STATES = Object.freeze({
   EMPTY: 'EMPTY',
   FILES_SELECTED: 'FILES_SELECTED',
   UPLOADING: 'UPLOADING',
