@@ -525,6 +525,7 @@ let workspaceDatasetRevision = 0
  */
 watch(workspaceFile, () => {
   datasetRef.value = null
+  datasetError.value = ''
 })
 
 /**

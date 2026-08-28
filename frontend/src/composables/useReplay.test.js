@@ -399,6 +399,36 @@ describe('useReplay 最终终审 lifecycle（BLOCKER 1/2/3）', () => {
     expect(api.createProcessingJob).toHaveBeenCalledTimes(1)
     expect(ref).toEqual({ processingJobId: 'p2', sourceId: 'r0' })
   })
+
+  it('TTL expired：processingJob snapshot 也指向过期 p1 → 强制失效 snapshot，重建 p2 且绝不再返回 p1', async () => {
+    // 完整复现生产 TTL-expiry：processingJobId 与 processingJob.value 都持有 p1 READY snapshot。
+    // 旧实现只清 processingJobId，随后步骤 2 会从 READY snapshot 重新返回已过期的 p1。
+    replay.processingJobId.value = 'p1'
+    replay.processingJob.value = {
+      jobId: 'p1', status: 'READY', total: 1,
+      sources: [{ sourceId: 'r0', status: 'READY' }]
+    }
+    replay.resp.value = { battles: [{ mapName: 'ORIGINAL_P1_RESULT' }] }
+    api.getProcessingJob
+      .mockRejectedValueOnce(apiError('JOB_NOT_FOUND', 404)) // authoritative GET p1 → expired
+      .mockResolvedValue({
+        jobId: 'p2', status: 'READY', total: 1,
+        sources: [{ sourceId: 'r0', status: 'READY' }]
+      })
+    api.createProcessingJob.mockResolvedValue({ jobId: 'p2', status: 'QUEUED', total: 1 })
+
+    const ref = await replay.requestDirectAction(replay.files.value[0], 'ai')
+
+    expect(api.createProcessingJob).toHaveBeenCalledTimes(1, 'TTL 过期重建只 create 一次（single-flight）')
+    expect(ref).toEqual({ processingJobId: 'p2', sourceId: 'r0' }, '必须返回 p2/r0，绝不能再返回 p1')
+
+    // p1 永远不能重新成为 Dataset reference / processingJob snapshot
+    expect(replay.processingJob.value?.jobId).toBe('p2', 'processingJob snapshot 必须是重建后的 p2，不是过期 p1')
+    expect(replay.processingJobId.value).not.toBe('p1', 'Dataset reference 不得回指过期 p1')
+
+    // resp 保留（TTL 过期不无必要清空用户已展示的解析结果）
+    expect(replay.resp.value).not.toBeNull('过期只失效 dataset identity，不清空 resp')
+  })
 })
 
 // ---- BLOCKER：pollSourceReady 取消必须 exactly-once settle（绝不永久 pending / 双 terminal）----
