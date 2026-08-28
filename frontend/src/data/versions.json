@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.44",
+    "date": "2026-08-28",
+    "tag": "add",
+    "zh": "隐藏的管理员 Rating V2 灰度页新增六轴雷达图：选择玩家即可将场均潜在伤害、KAST、Impact、场均协助、多伤率、场均击杀与当前批次平均形状对照；雷达只解释已有 V2 结果，不改变 V2 总分、League V5 雷达、公开页面或导出。",
+    "en": "The hidden admin Rating V2 gray page now has a six-axis radar: select a player to compare potential damage per battle, KAST, Impact, assist per battle, multi-damage rate and kills per battle against the current batch average. It only explains existing V2 results; V2 scores, the League V5 radar, public pages and exports are unchanged.",
+    "ru": "На скрытой административной серой странице Rating V2 появился радар из шести осей: выберите игрока, чтобы сравнить потенциальный урон за бой, KAST, Impact, помощь за бой, мульти-урон и фраги за бой со средним по текущему пакету. Это только объяснение результатов V2: балл V2, радар League V5, публичные страницы и экспорт не меняются."
+  },
+  {
     "v": "2.12.43",
     "date": "2026-08-27",
     "tag": "fix",

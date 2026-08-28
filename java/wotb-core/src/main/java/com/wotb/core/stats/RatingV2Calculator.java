@@ -30,6 +30,13 @@ public final class RatingV2Calculator {
     private static final double AST_WEIGHT = 0.30;
     private static final double MULTI_DAMAGE_WEIGHT = 0.10;
     private static final double KILLS_WEIGHT = 0.10;
+    private static final double POTENTIAL_INDEX_MAX = 250.0;
+    private static final double KAST_INDEX_MAX = 250.0;
+    private static final double KAST_VALUE_MAX = 100.0;
+    private static final double IMPACT_INDEX_MAX = 250.0;
+    private static final double AST_INDEX_MAX = 200.0;
+    private static final double MULTI_DAMAGE_INDEX_MAX = 100.0;
+    private static final double KILLS_INDEX_MAX = 250.0;
     private static final double FALLBACK_TANK_HP = 2400.0;
     private static final double MIN_ALPHA_RATIO = 0.9;
 
@@ -94,19 +101,51 @@ public final class RatingV2Calculator {
         }
 
         private int finalRating() {
-            final double hp = averageHp > 0 ? averageHp : 1;
-            final double potentialIndex = cap(100.0 * potentialDamageAvg / hp, 250.0);
-            final double astIndex = cap(100.0 * assistAvg / hp, 200.0);
-            final double impactIndex = cap(impactValue, 250.0);
-            final double killIndex = cap(100.0 * killsAvg, 250.0);
-            final double weighted = POTENTIAL_WEIGHT * potentialIndex
-                    + KAST_WEIGHT * cap(kast, 250.0)
-                    + IMPACT_WEIGHT * impactIndex
-                    + AST_WEIGHT * astIndex
-                    + MULTI_DAMAGE_WEIGHT * multiDamageRate
-                    + KILLS_WEIGHT * killIndex;
+            final RatingIndexes indexes = ratingIndexes();
+            final double weighted = POTENTIAL_WEIGHT * indexes.potential()
+                    + KAST_WEIGHT * indexes.kast()
+                    + IMPACT_WEIGHT * indexes.impact()
+                    + AST_WEIGHT * indexes.assist()
+                    + MULTI_DAMAGE_WEIGHT * indexes.multiDamage()
+                    + KILLS_WEIGHT * indexes.kills();
             return (int) Math.round(weighted * 10.0);
         }
+
+        /**
+         * Presentation-only V2 axes. Raw values remain the historical output fields while geometry uses the
+         * same capped indexes as the composite rating. This never writes back to replay facts or changes rating.
+         */
+        public List<RadarAxis> radarAxes() {
+            final RatingIndexes indexes = ratingIndexes();
+            return List.of(
+                    radarAxis("potential_damage_avg", potentialDamageAvg, indexes.potential(), POTENTIAL_INDEX_MAX),
+                    radarAxis("kast", kast, indexes.kast(), KAST_VALUE_MAX),
+                    radarAxis("impact", impactValue, indexes.impact(), IMPACT_INDEX_MAX),
+                    radarAxis("assist_avg", assistAvg, indexes.assist(), AST_INDEX_MAX),
+                    radarAxis("multi_damage_rate", multiDamageRate, indexes.multiDamage(), MULTI_DAMAGE_INDEX_MAX),
+                    radarAxis("kills_avg", killsAvg, indexes.kills(), KILLS_INDEX_MAX)
+            );
+        }
+
+        private RatingIndexes ratingIndexes() {
+            final double hp = averageHp > 0 ? averageHp : 1;
+            return new RatingIndexes(
+                    cap(100.0 * potentialDamageAvg / hp, POTENTIAL_INDEX_MAX),
+                    cap(kast, KAST_INDEX_MAX),
+                    cap(impactValue, IMPACT_INDEX_MAX),
+                    cap(100.0 * assistAvg / hp, AST_INDEX_MAX),
+                    multiDamageRate,
+                    cap(100.0 * killsAvg, KILLS_INDEX_MAX)
+            );
+        }
+    }
+
+    /** One V2 radar axis, sent through the admin API as a read-only display projection. */
+    public record RadarAxis(String key, double rawValue, double normalized, boolean available) {
+    }
+
+    private record RatingIndexes(double potential, double kast, double impact,
+                                 double assist, double multiDamage, double kills) {
     }
 
     /** Computes Rating V2 without mutating the supplied battles or player results. */
@@ -274,6 +313,14 @@ public final class RatingV2Calculator {
             return 0;
         }
         return Math.min(max, value);
+    }
+
+    private static RadarAxis radarAxis(final String key, final double rawValue,
+                                       final double indexValue, final double max) {
+        final boolean available = Double.isFinite(rawValue) && rawValue >= 0
+                && Double.isFinite(indexValue) && Double.isFinite(max) && max > 0;
+        final double normalized = available ? Math.max(0, Math.min(1, indexValue / max)) : 0;
+        return new RadarAxis(key, rawValue, normalized, available);
     }
 
     private static int safeTeam(final int team) {

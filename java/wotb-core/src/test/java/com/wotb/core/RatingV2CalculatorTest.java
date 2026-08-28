@@ -106,6 +106,53 @@ class RatingV2CalculatorTest {
     }
 
     @Test
+    void keepsTheHistoricalCompositeResultWhenTheRadarProjectionIsPresent() {
+        final List<PlayerResult> players = new ArrayList<>();
+        for (int index = 0; index < 14; index++) {
+            players.add(player(index + 1L, index < 7 ? 1 : 2, index == 0 ? 4800 : 0,
+                    0, 0, true, 0, -1));
+        }
+        final Battle battle = new Battle();
+        battle.winnerTeam = 1;
+        battle.players = players;
+
+        final RatingV2Calculator.Row result = row(RatingV2Calculator.compute(List.of(battle), Tankopedia.load()), 1);
+
+        assertEquals(2275, result.rating);
+    }
+
+    @Test
+    void exposesTheSixV2RadarAxesWithTheHistoricalScoringCaps() {
+        final RatingV2Calculator.Row result = new RatingV2Calculator.Row();
+        result.averageHp = 2000;
+        result.potentialDamageAvg = 4000;
+        result.kast = 75;
+        result.impactValue = 300;
+        result.assistAvg = 3000;
+        result.multiDamageRate = 55;
+        result.killsAvg = 1.5;
+
+        final List<RatingV2Calculator.RadarAxis> axes = result.radarAxes();
+
+        assertEquals(List.of("potential_damage_avg", "kast", "impact", "assist_avg", "multi_damage_rate", "kills_avg"),
+                axes.stream().map(RatingV2Calculator.RadarAxis::key).toList());
+        assertAxis(axes, "potential_damage_avg", 4000, 0.8);
+        assertAxis(axes, "kast", 75, 0.75);
+        assertAxis(axes, "impact", 300, 1.0);
+        assertAxis(axes, "assist_avg", 3000, 0.75);
+        assertAxis(axes, "multi_damage_rate", 55, 0.55);
+        assertAxis(axes, "kills_avg", 1.5, 0.6);
+    }
+
+    @Test
+    void keepsZeroValueRadarAxesAvailableInsteadOfPretendingTheyAreMissing() {
+        final List<RatingV2Calculator.RadarAxis> axes = new RatingV2Calculator.Row().radarAxes();
+
+        assertTrue(axes.stream().allMatch(RatingV2Calculator.RadarAxis::available));
+        assertTrue(axes.stream().allMatch(axis -> axis.normalized() == 0));
+    }
+
+    @Test
     void calculatesPotentialDamageLocallyWithoutMutatingTheSharedBattle() {
         final PlayerResult player = player(1, 1, 100, 0, 0, true, 0, 4481);
         final KillVictim victim = new KillVictim(7, 100, 1);
@@ -137,6 +184,17 @@ class RatingV2CalculatorTest {
 
     private static RatingV2Calculator.Row row(final List<RatingV2Calculator.Row> rows, final long accountId) {
         return rows.stream().filter(value -> value.accountId == accountId).findFirst().orElseThrow();
+    }
+
+    private static void assertAxis(final List<RatingV2Calculator.RadarAxis> axes, final String key,
+                                   final double rawValue, final double normalized) {
+        final RatingV2Calculator.RadarAxis axis = axes.stream()
+                .filter(value -> value.key().equals(key))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(rawValue, axis.rawValue(), 0.0001);
+        assertEquals(normalized, axis.normalized(), 0.0001);
+        assertTrue(axis.available());
     }
 
     private static PlayerResult player(final long accountId, final int team, final int damage,
