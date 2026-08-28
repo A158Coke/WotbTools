@@ -4,7 +4,7 @@
  */
 
 /** 相邻可信位置的最大间隔（秒）；超过则断线，禁止穿线插值。 */
-export const OBSERVED_GAP_SEC = 5
+const OBSERVED_GAP_SEC = 5
 
 /**
  * 某时刻车辆位置：
@@ -344,20 +344,20 @@ export function trustedPositionAt(points, t) {
 
 /** 炮线可见窗口基础时长（真实秒）：实际窗口 = TRACER_BASE_SEC × 播放倍速——1×/2×/4× 各约 0.4s 真实时间
  * （游戏时间窗口 = 0.4 × speed）。短 shot effect：命中后 ≈400ms 完全消失，不再挂在地图上整秒。 */
-export const TRACER_BASE_SEC = 0.4
+const TRACER_BASE_SEC = 0.4
 
 /** 炮线全亮保持期（真实秒）：激光「先亮后淡」——保持 0.15s 后快速线性淡出到窗口结束（≈0.4s 完全消失）。 */
-export const TRACER_HOLD_REAL_SEC = 0.15
+const TRACER_HOLD_REAL_SEC = 0.15
 
 /** 命中闪光生命周期（真实秒）：0.35s 内完成「扩散 + 峰值→淡出」，短于炮线本体（≈0.35s 完全消失）。 */
-export const TRACER_FLASH_REAL_SEC = 0.35
+const TRACER_FLASH_REAL_SEC = 0.35
 
 /** 命中闪光到达峰值的时间（真实秒）：前 0.1s 由 0 升至峰值（0.9），之后线性淡出到 0——短促冲击闪光，
  * 不再出现长时间实体圆球/孤立 waypoint 感。 */
-export const TRACER_FLASH_PEAK_REAL_SEC = 0.1
+const TRACER_FLASH_PEAK_REAL_SEC = 0.1
 
 /** 同一次射击的判同窗口（秒）：同 attacker/target 且时间差 ≤ 该值的 DAMAGE/KILL 只画一条炮线。 */
-export const SAME_SHOT_WINDOW_SEC = 0.25
+const SAME_SHOT_WINDOW_SEC = 0.25
 
 /**
  * 已知射击事件 → 当前可见炮线（纯函数：只依赖 now/speed，seek 与倍速天然正确，无一次性定时器）。
@@ -456,8 +456,8 @@ export function tracerLines(events, routesByAccount, nowSec, speed) {
 }
 
 /** 地图视图缩放范围。 */
-export const VIEW_MIN_SCALE = 1
-export const VIEW_MAX_SCALE = 4
+const VIEW_MIN_SCALE = 1
+const VIEW_MAX_SCALE = 4
 
 /**
  * 以屏幕锚点 (px, py)（相对地图容器左上的**屏幕坐标**，即 clientX/Y − getBoundingClientRect().left/top，
@@ -754,7 +754,7 @@ export const BURST_MS = 700
 /** kill feed 生命周期（真实 ms；计划 §16.2：约 4–6s）。 */
 export const KILL_FEED_MS = 5000
 /** kill feed 同时最多条数（§16.2：最多 3 条，队列，新进挤最旧）。 */
-export const KILL_FEED_MAX = 3
+const KILL_FEED_MAX = 3
 
 /**
  * 过滤仍未过期的 transient 项：item 需携带 bornRealMs（performance.now 基准）与 durationMs。
