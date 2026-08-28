@@ -4,7 +4,6 @@ import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HpRawState;
 import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.event.VehicleHealthStateEvent;
-import com.wotb.core.replay.stream.PacketReadStatus;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
 
@@ -41,7 +40,7 @@ class EntityMethodDecoderVersionGateTest {
         putU32(payload, 14, 20);
         payload[18] = (byte) causeFlag;
         return new RawReplayPacket(seq, 0, payload.length, EntityMethodDecoder.TYPE_ENTITY_METHOD,
-                clock, PacketReadStatus.NORMAL, payload, 0);
+                clock, payload, 0);
     }
 
     private static RawReplayPacket method(final int seq, final int subtype) {
@@ -50,7 +49,7 @@ class EntityMethodDecoderVersionGateTest {
         putU32(payload, 4, subtype);
         putU32(payload, 8, 21);
         return new RawReplayPacket(seq, 0, payload.length, EntityMethodDecoder.TYPE_ENTITY_METHOD,
-                1f, PacketReadStatus.NORMAL, payload, 0);
+                1f, payload, 0);
     }
 
     @Test

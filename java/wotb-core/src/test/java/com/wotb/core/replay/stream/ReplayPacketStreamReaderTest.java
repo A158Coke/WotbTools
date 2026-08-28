@@ -85,7 +85,6 @@ class ReplayPacketStreamReaderTest {
         assertEquals(0, pkt.sequence());
         assertEquals(10, pkt.type());
         assertEquals(30.5f, pkt.rawClockSec(), 0.001f);
-        assertEquals(PacketReadStatus.NORMAL, pkt.readStatus());
         assertEquals(100, pkt.payloadLength());
     }
 
@@ -132,7 +131,6 @@ class ReplayPacketStreamReaderTest {
         assertEquals(1, result.packets().size());
         assertEquals(17, result.packets().getFirst().type());
         assertEquals(0, result.packets().getFirst().payloadLength());
-        assertEquals(PacketReadStatus.NORMAL, result.packets().getFirst().readStatus());
     }
 
     @Test
@@ -282,12 +280,7 @@ class ReplayPacketStreamReaderTest {
                 packetBytes(16, 0xFFFFFFFF, 0.0f)
         );
         final var result = ReplayPacketStreamReader.read(data);
-        assertEquals(0, result.diagnostics().resyncCount());
-        assertEquals(0, result.diagnostics().skippedByteCount());
-        assertEquals(0, result.diagnostics().recoveredPacketCount());
         assertEquals(4, result.packets().size());
-        assertTrue(result.packets().stream()
-                .allMatch(p -> p.readStatus() == PacketReadStatus.NORMAL));
     }
 
     @Test

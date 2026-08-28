@@ -8,7 +8,6 @@ import com.wotb.core.replay.feature.BattleStartResolution;
 import com.wotb.core.replay.feature.BattleStartResolver;
 import com.wotb.core.replay.reconstruction.BattleStateReconstructor;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
-import com.wotb.core.replay.stream.PacketReadStatus;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
 
@@ -35,7 +34,7 @@ class BattleEndDecoderRawPreserveTest {
         payload[2] = (byte) ((first4 >> 16) & 0xFF);
         payload[3] = (byte) ((first4 >> 24) & 0xFF);
         return new RawReplayPacket(seq, 0, payload.length, BattleEndDecoder.TYPE_BATTLE_END,
-                clock, PacketReadStatus.NORMAL, payload, 0);
+                clock, payload, 0);
     }
 
     @Test

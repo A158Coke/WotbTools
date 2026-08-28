@@ -12,9 +12,6 @@ import java.util.Map;
  * @param scannedBytes       实际扫描的字节数
  * @param packetCount        总包数
  * @param normalPacketCount  正常读取的包数
- * @param recoveredPacketCount 重同步恢复的包数
- * @param resyncCount        重同步次数
- * @param skippedByteCount  因错误跳过的字节数
  * @param trailingByteCount  尾部无法解析的剩余字节数
  * @param firstClockSec      首包时钟
  * @param lastClockSec       尾包时钟
@@ -25,15 +22,15 @@ import java.util.Map;
  * @param reachedPhysicalEnd 扫描是否推进到数据物理末尾（末尾仅剩不足一个包头的字节）。
  *                           由扫描器根据循环退出条件显式给出；超出包数/重同步硬上限时读取器
  *                           直接抛异常（不会返回半截诊断），因此正常返回即代表扫描未被硬上限中断。
+ *
+ * <p>PR147/PR162: strict contiguous framing 已是 production contract —— 不再 byte-by-byte resync，
+ * 因此 {@code recoveredPacketCount/resyncCount/skippedByteCount} 与单值 readStatus/PacketReadStatus 均已删除。</p>
  */
 public record ReplayStreamDiagnostics(
         int sourceSize,
         int scannedBytes,
         int packetCount,
         int normalPacketCount,
-        int recoveredPacketCount,
-        int resyncCount,
-        int skippedByteCount,
         int trailingByteCount,
         float firstClockSec,
         float lastClockSec,

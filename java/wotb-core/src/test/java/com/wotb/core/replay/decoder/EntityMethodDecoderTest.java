@@ -8,7 +8,6 @@ import com.wotb.core.replay.event.UnsupportedDamageEvent;
 import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.event.VehicleFiredEvent;
 import com.wotb.core.replay.event.VehicleHitEvent;
-import com.wotb.core.replay.stream.PacketReadStatus;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
 
@@ -65,7 +64,7 @@ class EntityMethodDecoderTest {
         payload[22] = (byte) ((damage >> 8) & 0xFF); // u16 高字节在前（网络序），非 LE
         payload[23] = (byte) (damage & 0xFF);
         return new RawReplayPacket(seq, 0, payload.length, EntityMethodDecoder.TYPE_ENTITY_METHOD,
-                clock, PacketReadStatus.NORMAL, payload, 0);
+                clock, payload, 0);
     }
 
     @Test
@@ -84,7 +83,7 @@ class EntityMethodDecoderTest {
         System.arraycopy(root, 0, payload, 14, root.length);
         final RawReplayPacket packet = new RawReplayPacket(
                 7, 0, payload.length, EntityMethodDecoder.TYPE_ENTITY_METHOD,
-                1.0f, PacketReadStatus.NORMAL, payload, 0);
+                1.0f, payload, 0);
 
         final ReplayDecodeResult result = decoder.decode(context, packet);
         final ParticipantMappingEvent event =
@@ -210,7 +209,7 @@ class EntityMethodDecoderTest {
         payload[4] = EntityMethodDecoder.SUBTYPE_ENTITY_METHOD_DAMAGE;
         payload[8] = 0x05;
         final RawReplayPacket packet = new RawReplayPacket(1, 0, payload.length,
-                EntityMethodDecoder.TYPE_ENTITY_METHOD, 10f, PacketReadStatus.NORMAL, payload, 0);
+                EntityMethodDecoder.TYPE_ENTITY_METHOD, 10f, payload, 0);
         final ReplayDecodeResult result = decoder.decode(context, packet);
         assertEquals(DecodeStatus.PARTIAL, result.status());
         assertEquals(1, result.events().size(), "短体变体必须产出冲突证据事件（不能只有 warning）");
@@ -228,7 +227,7 @@ class EntityMethodDecoderTest {
     void truncatedPacketIsMalformedNotVariant() {
         final byte[] payload = new byte[5];
         final RawReplayPacket packet = new RawReplayPacket(1, 0, payload.length,
-                EntityMethodDecoder.TYPE_ENTITY_METHOD, 10f, PacketReadStatus.NORMAL, payload, 0);
+                EntityMethodDecoder.TYPE_ENTITY_METHOD, 10f, payload, 0);
         final ReplayDecodeResult result = decoder.decode(context, packet);
         assertEquals(DecodeStatus.MALFORMED, result.status());
         assertTrue(result.events().isEmpty());
@@ -369,7 +368,7 @@ class EntityMethodDecoderTest {
         putU32(payload, 8, args.length);
         System.arraycopy(args, 0, payload, 12, args.length);
         return new RawReplayPacket(seq, 0, payload.length,
-                EntityMethodDecoder.TYPE_ENTITY_METHOD, 10f, PacketReadStatus.NORMAL, payload, 0);
+                EntityMethodDecoder.TYPE_ENTITY_METHOD, 10f, payload, 0);
     }
 
     private static void putU32(final byte[] buf, final int i, final int v) {
@@ -432,6 +431,6 @@ class EntityMethodDecoderTest {
         payload[13] = (byte) root.length;
         System.arraycopy(root, 0, payload, 14, root.length);
         return new RawReplayPacket(7, 0, payload.length,
-                EntityMethodDecoder.TYPE_ENTITY_METHOD, 56.233f, PacketReadStatus.NORMAL, payload, 0);
+                EntityMethodDecoder.TYPE_ENTITY_METHOD, 56.233f, payload, 0);
     }
 }

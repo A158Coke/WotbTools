@@ -3,7 +3,6 @@ package com.wotb.core.replay.decoder;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.SessionDecisecondLowByteEvent;
 import com.wotb.core.replay.event.UnknownReplayEvent;
-import com.wotb.core.replay.stream.PacketReadStatus;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
 
@@ -17,7 +16,7 @@ class SessionDecisecondLowByteDecoderTest {
 
     private static RawReplayPacket packet(final byte[] payload) {
         return new RawReplayPacket(0, 0, payload.length, 35, 1.0f,
-                PacketReadStatus.NORMAL, payload, 0);
+                payload, 0);
     }
 
     @Test

@@ -9,7 +9,6 @@ import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ShotResultEvent;
 import com.wotb.core.replay.event.TargetingInfoSnapshotEvent;
 import com.wotb.core.replay.event.VehicleFiredEvent;
-import com.wotb.core.replay.stream.PacketReadStatus;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
 
@@ -36,7 +35,7 @@ class CombatMethodDecoderTest {
         ByteBuffer.wrap(payload, 8, 4).order(ByteOrder.LITTLE_ENDIAN).putInt(args.length);
         System.arraycopy(args, 0, payload, 12, args.length);
         return new RawReplayPacket(1, 0, payload.length,
-                EntityMethodDecoder.TYPE_ENTITY_METHOD, 10f, PacketReadStatus.NORMAL, payload, 0);
+                EntityMethodDecoder.TYPE_ENTITY_METHOD, 10f, payload, 0);
     }
 
     private static byte[] le32(final int v) {
@@ -158,7 +157,7 @@ class CombatMethodDecoderTest {
     @Test
     void type28DecodesSelectionValue() {
         final RawReplayPacket packet = new RawReplayPacket(1, 0, 4,
-                28, 10f, PacketReadStatus.NORMAL, le32(2), 0);
+                28, 10f, le32(2), 0);
         final ReplayDecodeResult r = type28.decode(ctx, packet);
         final AmmunitionSelectionChangedEvent e =
                 (AmmunitionSelectionChangedEvent) r.events().get(0);
@@ -169,7 +168,7 @@ class CombatMethodDecoderTest {
     @Test
     void type28OutOfDomainIsPartialNotExact() {
         final RawReplayPacket packet = new RawReplayPacket(1, 0, 4,
-                28, 10f, PacketReadStatus.NORMAL, le32(9), 0);
+                28, 10f, le32(9), 0);
         final ReplayDecodeResult r = type28.decode(ctx, packet);
         assertEquals(DecodeStatus.PARTIAL, r.status());
         final AmmunitionSelectionChangedEvent e =

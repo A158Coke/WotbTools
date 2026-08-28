@@ -88,7 +88,7 @@ class BattleStartResolverTest {
     @Test
     void diagnosticsIdentifiedTakesPriority() {
         final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, null, true, 75f, false
+                0, 0, 0, 0, 0, 0f, 0f, 0, null, true, 75f, false
         );
         final BattleStartResolution r = BattleStartResolver.resolve(null, diag, List.of(), null);
         assertEquals(BattleStartResolution.Status.IDENTIFIED, r.status());
@@ -98,7 +98,7 @@ class BattleStartResolverTest {
     @Test
     void diagnosticsUnresolvedContinuesToEndEvent() {
         final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, null, false, null, false
+                0, 0, 0, 0, 0, 0f, 0f, 0, null, false, null, false
         );
         final Battle battle = new Battle();
         battle.durationS = 60.0;

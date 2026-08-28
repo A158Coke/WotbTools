@@ -3,7 +3,6 @@ package com.wotb.core.replay.decoder;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.UnknownReplayEvent;
-import com.wotb.core.replay.stream.PacketReadStatus;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +19,7 @@ class PositionDecoderTest {
     private static RawReplayPacket positionPacket(final int payloadLen) {
         final byte[] payload = new byte[payloadLen];
         return new RawReplayPacket(0, 0, payloadLen, 10, 1.0f,
-                PacketReadStatus.NORMAL, payload, 0);
+                payload, 0);
     }
 
     @Test

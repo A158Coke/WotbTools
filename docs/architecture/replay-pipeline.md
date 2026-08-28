@@ -52,7 +52,6 @@ ReplayReconstruction 输出
 
 **stream 包**:
 
-- `replay/stream/PacketReadStatus.java` — 包读取状态枚举
 - `replay/stream/RawReplayPacket.java` — 原始包 record（共享 source 数组）
 - `replay/stream/ReplayStreamHeader.java` — 流头部模型
 - `replay/stream/ReplayHeaderException.java` — 头部异常

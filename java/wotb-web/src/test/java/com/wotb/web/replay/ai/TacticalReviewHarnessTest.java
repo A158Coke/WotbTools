@@ -169,7 +169,7 @@ class TacticalReviewHarnessTest {
         final ReplayCoverage coverage = new ReplayCoverage(
                 true, 2, 2, 0, 0, 0, 1.0, Map.of());
         final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(),
+                0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(),
                 true, 1000f, true);
         // 事件流必须足以构建 canonical timeline：映射 + 位置 + 血量 + 伤害
         final List<com.wotb.core.replay.event.ReplayEvent> events = List.of(

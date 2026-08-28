@@ -153,7 +153,7 @@ class PersonalAiContextCompilerTest {
                 new com.wotb.core.replay.reconstruction.ReplayCoverage(
                         true, 1, 1, 0, 0, 0, 1.0, Map.of()),
                 new com.wotb.core.replay.stream.ReplayStreamDiagnostics(
-                        0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(),
+                        0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(),
                         true, 1000f, true));
 
         final BattleTimelineResult tl = BattleTimelineBuilder.build(
