@@ -300,7 +300,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | 子字段    | 常量              | 类型           | 示例值            | 说明            | 是否解析                         |
 |--------|-----------------|--------------|----------------|---------------|------------------------------|
 | **#1** | `R_NICK = 1`    | bytes(UTF-8) | `"田_..."`      | **昵称**        | 是 → `PlayerResult.nickname`  |
-| **#2** | `R_PLATOON = 2` | varint       | `281447127`    | **组队 ID**     | 是 → `PlayerResult.platoonId` |
+| **#2** | `R_PREBATTLE_GROUP = 2` | varint       | `281447127`    | **prebattle/training-room 分组 ID**（PR147: NOT a platoon ID，见 battle-results.md） → `PlayerResult.prebattleGroupId` |
 | **#3** | —               | varint       | `1` / `2`      | **队伍**（名册来源）  | 是 → 结算阵容完整性校验（与战绩 #301→#2→#102 对比；全局 `Battle.rosterComplete` 要求全集合一致，League Rating 走 League 专属证据 `settlementAccountsCoveredByRoster` / `settlementRosterTeamConsistent`，见 protocol.md「SPECTATOR / NON-COMBATANT ENTITY」） |
 | **#4** | —               | varint       | `380362`       | 未知 — 车辆相关 ID？ | 否                            |
 | **#5** | `R_CLAN = 5`    | bytes(UTF-8) | `"猫猫乐坏"`       | **战队标签**      | 是 → `PlayerResult.clan`      |
@@ -480,7 +480,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `n_hits_received`             | 整数  | `PlayerResult.nHitsReceived`             | 次数    | #12                                                                             |
 | `n_penetrations_received`     | 整数  | `PlayerResult.nPenetrationsReceived`     | 次数    | #15                                                                             |
 | `n_enemies_damaged`           | 整数  | `PlayerResult.nEnemiesDamaged`           | 人数    | #17                                                                             |
-| `platoon_label`               | 文本  | `PlayerResult.platoonLabel`              | —     | 组队标记（名册 #201→#2→#2 推导）                                                          |
+| ~~`platoon_label`~~             | —     | 已删除（PR147：field2 是 prebattle/training-room 分组 ID，非排/小队；A/B/C 排标签为错误业务语义） | — |推导）                                                          |
 | `tank_id`                     | 长整数 | `PlayerResult.tankId`                    | —     | #103                                                                            |
 | `account_id`                  | 长整数 | `PlayerResult.accountId`                 | —     | #101                                                                            |
 

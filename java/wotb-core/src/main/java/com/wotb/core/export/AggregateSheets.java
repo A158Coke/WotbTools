@@ -187,8 +187,6 @@ final class AggregateSheets {
             final Integer winner = b.winnerTeam;
             final String sourceName = i < sourceNames.size() ? sourceNames.get(i) : "";
             final String mapName = MapNames.cn(b.mapName);
-            // 每场独立 platoon labeler：跨 battle 不共享 platoonId → 字母映射
-            final Function<Long, String> platoon = Players.platoonLabeler();
             final List<DCol> head = List.of(
                     new DCol("文件名", 40, "nickname", p -> sourceName),
                     new DCol("竞技场ID", 22, "x", p -> b.arenaId),
@@ -198,7 +196,6 @@ final class AggregateSheets {
             );
             for (final PlayerResult p : Players.sorted(b.players)) {
                 Players.enrich(p, tp);
-                p.platoonLabel = platoon.apply(p.platoonId);
                 final Row row = ws.createRow(rIdx++);
                 int c = 0;
                 for (final DCol d : head) {

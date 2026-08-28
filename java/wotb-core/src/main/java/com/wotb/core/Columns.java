@@ -51,7 +51,6 @@ public final class Columns {
     );
 
     public static final List<Column> TAIL = List.of(
-            new Column("排", "platoon_label", 6, false, p -> p.platoonLabel),
             new Column("军阶", "rank", 6, true, p -> p.rank),
             new Column("车辆ID", "tank_id", 9, true, p -> p.tankId),
             new Column("账号ID", "account_id", 12, true, p -> p.accountId)

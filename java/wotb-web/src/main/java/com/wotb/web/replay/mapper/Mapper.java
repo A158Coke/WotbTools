@@ -170,7 +170,6 @@ public final class Mapper {
      */
     public static BattleDto toBattle(final Battle b, final String sourceName, final Tankopedia tp,
                                      final LeagueRatingResult league, final boolean leagueMode) {
-        final Function<Long, String> platoon = Players.platoonLabeler();
         final List<PlayerRow> rows = new ArrayList<>();
         final Map<Long, PlayerLeagueRating> leagueByAccount = new LinkedHashMap<>();
         if (league != null) {
@@ -180,7 +179,6 @@ public final class Mapper {
         }
         for (final PlayerResult p : Players.sorted(b.players)) {
             Players.enrich(p, tp);
-            p.platoonLabel = platoon.apply(p.platoonId);
             final Map<String, Object> cells = new LinkedHashMap<>();
             for (final Columns.Column c : Columns.PLAYER) {
                 // 单场 Performance Metrics（contribution/kast/impact）在 League 模式同样保留
