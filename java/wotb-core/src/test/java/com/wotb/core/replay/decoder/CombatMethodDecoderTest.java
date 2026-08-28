@@ -52,6 +52,7 @@ class CombatMethodDecoderTest {
 
     @Test
     void method0DecodesVehicleFired() {
+        ctx.entityClassRegistry().markVehicle(7);
         final ReplayDecodeResult r = decoder.decode(ctx, method(0, new byte[]{1}));
         final VehicleFiredEvent e = (VehicleFiredEvent) r.events().get(0);
         assertEquals(DecodeConfidence.EXACT, e.confidence());
@@ -60,6 +61,7 @@ class CombatMethodDecoderTest {
 
     @Test
     void method29DecodesLaunchGeometry() {
+        ctx.entityClassRegistry().markAvatar(7);
         final byte[] args = concat(le32(100), le32(9001), new byte[]{0},
                 floats(1f, 2f, 3f), floats(100f, 0f, 0f), floats(0.5f));
         final ReplayDecodeResult r = decoder.decode(ctx, method(29, args));
@@ -72,6 +74,7 @@ class CombatMethodDecoderTest {
 
     @Test
     void method20DecodesTerminalEndpoint() {
+        ctx.entityClassRegistry().markAvatar(7);
         final byte[] args = concat(le32(9001), floats(50f, 10f, 20f));
         final ReplayDecodeResult r = decoder.decode(ctx, method(20, args));
         final ProjectileTerminalEvent e = (ProjectileTerminalEvent) r.events().get(0);
@@ -81,6 +84,7 @@ class CombatMethodDecoderTest {
 
     @Test
     void method38DecodesFullBitfieldWithComponentsAndModifiers() {
+        ctx.entityClassRegistry().markAvatar(7);
         // victim + header(hi16=0x0002, low16=0x0210) + count=2 + (36,1)(34,2) + modCount=2 + [1,2]
         final byte[] args = concat(le32(55), le32(0x00020210),
                 new byte[]{2, 36, 1, 34, 2, 2, 1, 0, 0, 0, 2, 0, 0, 0});
@@ -101,6 +105,7 @@ class CombatMethodDecoderTest {
 
     @Test
     void method38LengthMismatchIsRawPreserved() {
+        ctx.entityClassRegistry().markAvatar(7);
         // PR162：count=5 但只有 0 个 component 字节 → shape 不符 → raw-preserve（UnknownReplayEvent，非 warning-only）
         final byte[] args = concat(le32(55), le32(0), new byte[]{5, 0});
         final ReplayDecodeResult r = decoder.decode(ctx, method(38, args));
@@ -112,6 +117,7 @@ class CombatMethodDecoderTest {
 
     @Test
     void method36DecodesTargetingScalars() {
+        ctx.entityClassRegistry().markAvatar(7);
         // root.field1..5 fixed64 + field6{field1 fixed64}
         final byte[] proto = concat(
                 fixed64(1, 0.1), fixed64(2, -0.05), fixed64(3, 0.879154807353631),
@@ -133,6 +139,7 @@ class CombatMethodDecoderTest {
 
     @Test
     void method36InitVariantOmitsDynamicYawAndPitch() {
+        ctx.entityClassRegistry().markAvatar(7);
         final byte[] proto = concat(
                 fixed64(3, 0.8), fixed64(4, 0.5), fixed64(5, 2.0),
                 delimited(6, fixed64(1, 1.0)));
@@ -148,6 +155,7 @@ class CombatMethodDecoderTest {
 
     @Test
     void method17DecodesAmmoDescriptorAndQuantity() {
+        ctx.entityClassRegistry().markAvatar(7);
         final byte[] args = concat(le32(0x003C5A0A), new byte[]{0, 9, 0, 0, 0, 0, 0, 0});
         final ReplayDecodeResult r = decoder.decode(ctx, method(17, args));
         final AmmunitionStateEvent e = (AmmunitionStateEvent) r.events().get(0);

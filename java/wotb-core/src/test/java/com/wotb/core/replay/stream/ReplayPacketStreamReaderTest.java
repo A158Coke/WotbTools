@@ -73,7 +73,7 @@ class ReplayPacketStreamReaderTest {
         assertNotNull(result.header());
         assertTrue(result.packets().isEmpty());
         assertEquals(0, result.diagnostics().packetCount());
-        assertEquals(data.length, result.diagnostics().scannedBytes());
+        assertEquals(data.length, result.diagnostics().sourceSize());
     }
 
     @Test
@@ -146,8 +146,6 @@ class ReplayPacketStreamReaderTest {
         assertEquals(2, result.packets().size());
         assertEquals(0xFFFFFFFF, result.packets().get(1).type());
         assertEquals(16, result.packets().get(1).payloadLength());
-        assertEquals(0, result.diagnostics().trailingByteCount());
-        assertTrue(result.diagnostics().streamComplete());
     }
 
     @Test
@@ -246,9 +244,7 @@ class ReplayPacketStreamReaderTest {
         assertEquals(4, diag.packetCount());
         assertEquals(data.length, diag.sourceSize());
         assertEquals(0f, diag.firstClockSec(), 0.001f);
-        assertEquals(45.2f, diag.lastClockSec(), 0.001f);
-        assertEquals(0, diag.trailingByteCount());
-        assertTrue(diag.streamComplete());
+        assertEquals(45.2f, diag.maxObservedRawClockSec(), 0.001f);
     }
 
     @Test
@@ -294,7 +290,7 @@ class ReplayPacketStreamReaderTest {
                 packetBytes(10, 14, 455.0f)
         );
         final var result = ReplayPacketStreamReader.read(data);
-        assertEquals(455.0f, result.diagnostics().lastClockSec(), 0.001f);
+        assertEquals(455.0f, result.diagnostics().maxObservedRawClockSec(), 0.001f);
         assertEquals(3, result.packets().size());
     }
 

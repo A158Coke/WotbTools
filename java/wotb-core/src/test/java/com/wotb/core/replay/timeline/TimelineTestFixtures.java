@@ -111,10 +111,8 @@ final class TimelineTestFixtures {
                 "arena", "middleburg", "1", "1", 1, "rec1", "", durationSec, 0L);
         final ReplayStreamHeader header = new ReplayStreamHeader(
                 0x12345678L, new byte[8], "h", "v", 15);
-        final ReplayCoverage coverage = new ReplayCoverage(
-                true, 1, 1, 0, 0, 0, 1.0, Map.of());
-        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true);
+        final ReplayCoverage coverage = new ReplayCoverage(1, 1, 0, 0, 0, 1.0, Map.of());
+        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(0, 0, 0f, 0f, 0, Map.of());
         final BattleStateSnapshot finalState = BattleStateSnapshot.empty();
         return new ReplayReconstruction(
                 meta, header, (float) durationSec, START_RAW, List.of(),

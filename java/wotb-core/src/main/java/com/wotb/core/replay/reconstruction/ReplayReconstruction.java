@@ -11,9 +11,9 @@ import java.util.List;
  *
  * <p>PR147 时钟域拆分：{@code battleDurationSec} 是<b>战斗时长</b>（battle-relative 跨度，来自
  * settlement root5 或 {@code lastClock - battleStartRawClockSec}），<b>不是</b> 原始 session 时钟。
- * 原始流最后一个事件包的时钟在 {@link #streamLastRawClockSec()}（即 {@code diagnostics().lastClockSec()}）。
+ * 原始流观测到的最大 raw clock 在 {@link #streamMaxRawClockSec()}（即 {@code diagnostics().maxObservedRawClockSec()}）。
  * 需要 battle-relative 真相的 consumer 必须消费 {@code battleDurationSec} + {@code battleStartRawClockSec}
- * （start 未解析时 fail-closed），绝不能把 {@code streamLastRawClockSec()} 当战斗时长。</p>
+ * （start 未解析时 fail-closed），绝不能把 {@code streamMaxRawClockSec()} 当战斗时长。</p>
  *
  * @param metadata            回放元数据（来自 meta.json 和 battle_results.dat）
  * @param streamHeader        data.wotreplay 头部
@@ -38,8 +38,8 @@ public record ReplayReconstruction(
         ReplayCoverage coverage,
         ReplayStreamDiagnostics diagnostics
 ) {
-    /** 原始流最后一个合法事件包的实际时钟（raw session clock；非战斗时长）。 */
-    public float streamLastRawClockSec() {
-        return diagnostics == null ? Float.NaN : diagnostics.lastClockSec();
+    /** 原始流观测到的最大 raw clock（reada 允许时钟回退并单独计数；非战斗时长）。 */
+    public float streamMaxRawClockSec() {
+        return diagnostics == null ? Float.NaN : diagnostics.maxObservedRawClockSec();
     }
 }

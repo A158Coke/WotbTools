@@ -93,26 +93,6 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     static final int PROJECTILE_RESOLUTION_ARGS_LEN = 34;
     static final int PROJECTILE_LAUNCH_ARGS_LEN = 37;
 
-    /**
-     * 100% Avatar-targeted methodId（docs/research/replay/entity-routing.md）：调用本身即 Avatar 化类证据
-     * （不靠 method-shape 反推）。method16 由专门的 {@link VehicleModuleCrewStateDecoder} 处理。
-     */
-    private static final Set<Integer> AVATAR_PROVEN_METHODS = Set.of(
-            SUBTYPE_AMMUNITION_STATE,
-            SUBTYPE_PROJECTILE_TERMINAL,
-            SUBTYPE_PROJECTILE_RESOLUTION,
-            SUBTYPE_PROJECTILE_LAUNCH,
-            SUBTYPE_TARGETING_SNAPSHOT,
-            SUBTYPE_SHOT_RESULT,
-            SUBTYPE_UPDATE_ARENA,
-            SUBTYPE_UPDATE_ARENA2,
-            49);
-
-    /** Vehicle-family（0% Avatar）methodId：调用即 Vehicle 化类证据。 */
-    private static final Set<Integer> VEHICLE_PROVEN_METHODS = Set.of(
-            SUBTYPE_VEHICLE_FIRED,
-            SUBTYPE_VEHICLE_HEALTH_STATE);
-
     @Override
     public boolean supports(ReplayDecodeContext context, RawReplayPacket packet) {
         return packet.type() == TYPE_ENTITY_METHOD;
@@ -124,7 +104,9 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
         // §A2/P0-3：method0/1/5/17/20/27/29 是 legacy-compatible 观测布局 —— 仅当前 canonical
         // 版本族（11.19）+ 明确 legacy 证明的 11.18 允许解码为 EXACT（methodLayoutAllowed）；
         // 未知/未来版本 raw-preserve，绝不无条件沿用 EXACT 语义。
-        if (payload.length < 8) {
+        // Type8 envelope 至少 12B（entityId u32 + subtype u32 + argLen u32）；在读取
+        // entityId(offset0)/subtype(offset4)/argLen(offset8) 前必须保证 12B，否则数组越界。
+        if (payload.length < 12) {
             return new ReplayDecodeResult(DecodeStatus.MALFORMED, List.of(),
                     List.of(new ReplayDecodeWarning("TRUNCATED_PAYLOAD",
                             "EntityMethod packet too short: " + payload.length)));
@@ -457,28 +439,14 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     }
 
     /**
-     * PR162：解析 entityClass（通过 {@link EntityClassRegistry}），并仅对<b>证明单类</b>的 method
-     * 作「调用即类证据」标记（100% Avatar / 0% Avatar Vehicle 族）。class-colliding method
-     * （method4/5/8/2）绝不由此反推 class —— 它们必须已有 registry 类证据；UNKNOWN → raw-preserve。
+     * PR162/P0-1：EntityMethod 是 entity class 的<b>纯消费者</b>。class 只来自独立的生命周期/身份证据
+     * （Type5 materialization entityTypeId → Vehicle/Other；subtype-49 recorder sync-options 身份锚点
+     * → Avatar），由 {@code ReplayReconstructionService} 在语义解码前的 prepass 建立，绝不在此
+     * 由 methodId 自证 class。UNKNOWN → 上层 raw-preserve（UnknownReplayEvent），不借用其它类语义。
      */
     private static EntityClass entityClassFor(final ReplayDecodeContext context,
                                               final int subType, final int entityId) {
-        final EntityClassRegistry registry = context.entityClassRegistry();
-        // Avatar-proven method（100% Avatar-targeted）总是标记并返回 Avatar（粘性，覆盖 Vehicle）：
-        // 录像者 Avatar 实体同时具有载具物理性质与独立协议 Avatar 角色，必须按 Avatar 分派（method4 2B round-finished）。
-        if (AVATAR_PROVEN_METHODS.contains(subType)) {
-            registry.markAvatar(entityId);
-            return EntityClass.AVATAR;
-        }
-        final EntityClass existing = registry.resolve(entityId);
-        if (existing != EntityClass.UNKNOWN) {
-            return existing;
-        }
-        if (VEHICLE_PROVEN_METHODS.contains(subType)) {
-            registry.markVehicle(entityId);
-            return registry.resolve(entityId);
-        }
-        return EntityClass.UNKNOWN;
+        return context.entityClassRegistry().resolve(entityId);
     }
 
     /** 版本门禁 raw-preserve（原始 reasonCode "VERSION_UNSUPPORTED_METHODn"，保持既有契约）。 */

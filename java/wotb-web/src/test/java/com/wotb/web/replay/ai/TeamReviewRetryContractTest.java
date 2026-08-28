@@ -238,9 +238,8 @@ class TeamReviewRetryContractTest {
         final ReplayMetadata meta = new ReplayMetadata(
                 "arena", "team_map", "1", "1", 2, "rec1", "", 120.0, 0L);
         final ReplayStreamHeader header = new ReplayStreamHeader(0x12345678L, new byte[8], "h", "v", 15);
-        final ReplayCoverage coverage = new ReplayCoverage(true, 10, 10, 0, 0, 0, 1.0, Map.of());
-        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true);
+        final ReplayCoverage coverage = new ReplayCoverage(10, 10, 0, 0, 0, 1.0, Map.of());
+        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(0, 0, 0f, 0f, 0, Map.of());
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(mapping(0, 1, 1001L));
         events.add(mapping(1, 2, 1002L));

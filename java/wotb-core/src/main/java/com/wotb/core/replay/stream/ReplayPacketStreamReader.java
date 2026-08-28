@@ -44,13 +44,10 @@ public final class ReplayPacketStreamReader {
     private final List<RawReplayPacket> packets = new ArrayList<>();
     private final Map<Integer, PacketTypeStats> typeStats = new HashMap<>();
 
-    private int scannedBytes;
-    private int trailingByteCount;
     private float firstClockSec = Float.NaN;
-    private float lastClockSec = Float.NaN;
+    private float maxObservedRawClockSec = Float.NaN;
     private float previousClockSec = Float.NaN;
     private int clockRegressionCount;
-    private int normalPacketCount;
 
     private ReplayPacketStreamReader(byte[] data) {
         this.source = Objects.requireNonNull(data, "data must not be null");
@@ -78,8 +75,6 @@ public final class ReplayPacketStreamReader {
         // 1. 解析头部
         final ReplayStreamHeader header = ReplayStreamHeader.parse(source);
         int offset = header.packetStreamOffset();
-        scannedBytes = offset;
-
         // 2. 遍历事件包：strict contiguous framing
 
         while (offset + 12 <= sourceSize) {
@@ -122,25 +117,23 @@ public final class ReplayPacketStreamReader {
             ));
 
             // 更新统计
-            normalPacketCount++;
 
             typeStats.computeIfAbsent(type, k -> new PacketTypeStats()).increment(clockSecs);
 
             if (Float.isNaN(firstClockSec) || clockSecs < firstClockSec) {
                 firstClockSec = clockSecs;
             }
-            if (Float.isNaN(lastClockSec) || clockSecs >= lastClockSec) {
-                if (!Float.isNaN(lastClockSec) && clockSecs < previousClockSec) {
+            if (Float.isNaN(maxObservedRawClockSec) || clockSecs >= maxObservedRawClockSec) {
+                if (!Float.isNaN(maxObservedRawClockSec) && clockSecs < previousClockSec) {
                     clockRegressionCount++;
                 }
-                lastClockSec = clockSecs;
+                maxObservedRawClockSec = clockSecs;
             } else if (clockSecs < previousClockSec) {
                 clockRegressionCount++;
             }
             previousClockSec = clockSecs;
 
             offset += 12 + payloadLen;
-            scannedBytes = offset;
             if (type == TERMINATOR_TYPE) {
                 // terminator 之后不得再解析任何数据
                 break;
@@ -152,9 +145,6 @@ public final class ReplayPacketStreamReader {
             throw new IllegalArgumentException(
                     "REPLAY_TRAILING_DATA after terminator at offset " + offset);
         }
-        trailingByteCount = sourceSize - offset;
-        scannedBytes = offset;
-        final boolean reachedPhysicalEnd = true;
 
         // 构建诊断
         final Map<Integer, PacketTypeDiagnostics> diagTypes = new HashMap<>();
@@ -168,21 +158,17 @@ public final class ReplayPacketStreamReader {
                     s.count, // unknownCount – 初始视为未知
                     0, // decodeFailureCount
                     s.firstClockSec,
-                    s.lastClockSec
+                    s.maxObservedRawClockSec
             ));
         }
 
         final ReplayStreamDiagnostics diagnostics = new ReplayStreamDiagnostics(
                 sourceSize,
-                scannedBytes,
                 packets.size(),
-                normalPacketCount,
-                trailingByteCount,
                 Float.isNaN(firstClockSec) ? 0f : firstClockSec,
-                Float.isNaN(lastClockSec) ? 0f : lastClockSec,
+                Float.isNaN(maxObservedRawClockSec) ? 0f : maxObservedRawClockSec,
                 clockRegressionCount,
-                Collections.unmodifiableMap(diagTypes),
-                reachedPhysicalEnd
+                Collections.unmodifiableMap(diagTypes)
         );
 
         return new ReplayStreamResult(header, Collections.unmodifiableList(packets), diagnostics);
@@ -205,15 +191,15 @@ public final class ReplayPacketStreamReader {
     private static final class PacketTypeStats {
         int count;
         float firstClockSec = Float.NaN;
-        float lastClockSec = Float.NaN;
+        float maxObservedRawClockSec = Float.NaN;
 
         void increment(float clockSec) {
             count++;
             if (Float.isNaN(firstClockSec) || clockSec < firstClockSec) {
                 firstClockSec = clockSec;
             }
-            if (Float.isNaN(lastClockSec) || clockSec > lastClockSec) {
-                lastClockSec = clockSec;
+            if (Float.isNaN(maxObservedRawClockSec) || clockSec > maxObservedRawClockSec) {
+                maxObservedRawClockSec = clockSec;
             }
         }
     }
@@ -225,11 +211,4 @@ public final class ReplayPacketStreamReader {
                 | ((buf[i + 2] & 0xFF) << 16) | ((buf[i + 3] & 0xFF) << 24);
     }
 
-    /**
-     * 工厂方法：从字节数组读取完整数据流。
-     * 供外部调用，与内部 read() 等效。
-     */
-    public static ReplayStreamResult readStream(byte[] data) {
-        return read(data);
-    }
 }

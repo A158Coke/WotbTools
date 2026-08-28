@@ -231,16 +231,12 @@ public class DefaultTeamBattleFeatureExtractor {
         final boolean fullFeaturesAvailable = reconstructionAvailable
                 && mappedMembers > 0
                 && (observedPositionEventCount > 0 || !engagements.isEmpty());
-        final boolean streamComplete = reconstructionAvailable
-                && reconstruction.coverage() != null
-                && reconstruction.coverage().streamComplete();
         final double decodedRatio = reconstructionAvailable
                 && reconstruction.coverage() != null
                 ? reconstruction.coverage().decodedPacketRatio() : 0.0;
         final TeamFeatureCoverage coverage = new TeamFeatureCoverage(
                 authoritativeAggregate != null,
                 reconstructionAvailable,
-                streamComplete,
                 authoritativeMembers.size(),
                 mappedMembers,
                 observedPositionEventCount,
@@ -295,9 +291,6 @@ public class DefaultTeamBattleFeatureExtractor {
         }
         if (invalidTimestampEventCount > 0) {
             limitations.add("INVALID_EVENT_TIMESTAMPS_IGNORED");
-        }
-        if (reconstructionAvailable && reconstruction.coverage() != null && !streamComplete) {
-            limitations.add("REPLAY_STREAM_PARTIAL");
         }
         limitations.addAll(timeLimitations);
         if (battleEndResolved.limitation() != null) {

@@ -40,18 +40,21 @@ public final class VehicleModuleCrewStateDecoder implements ReplayPacketDecoder 
             return malformed(packet, ts, payload.length, "METHOD16_ENVELOPE_TRUNCATED");
         }
         final int avatarEntityId = readI32LE(payload, 0);
-        // PR162 entity-class scoping：method16 是 Avatar-proven 方法。目标实体若已证明为 Vehicle/Other
-        //（class mismatch）→ raw-preserve，不得借用 Avatar 语义；UNKNOWN 时以 method16 作为 Avatar 化类证据标记。
+        // PR162/P0-1 entity-class scoping：method16 是 Avatar 系方法，class 只由独立生命周期/身份证据
+        //（prepass）建立。class != AVATAR（含 UNKNOWN/VEHICLE/OTHER）→ raw-preserve，不得借用 Avatar 语义，
+        // 也绝不在此由 method16 自证 class。
         final EntityClass entityClass = context.entityClassRegistry().resolve(avatarEntityId);
-        if (entityClass == EntityClass.VEHICLE || entityClass == EntityClass.OTHER) {
+        if (entityClass != EntityClass.AVATAR) {
             return new ReplayDecodeResult(DecodeStatus.PARTIAL,
                     List.of(new UnknownReplayEvent(packet.sequence(), ts, packet.type(), payload.length,
                             "METHOD16_CLASS_MISMATCH", DecodeConfidence.UNKNOWN)),
                     List.of(new ReplayDecodeWarning("ENTITY_CLASS_MISMATCH",
-                            "Avatar method16 on non-Avatar entity " + avatarEntityId)));
+                            "Avatar method16 on non-Avatar entity " + avatarEntityId
+                                    + " (class=" + entityClass + ")")));
         }
-        // method16（100% Avatar-targeted）作为 Avatar 化类证据（不靠 method-shape 反推）。
-        context.entityClassRegistry().markAvatar(avatarEntityId);
+        if (payload.length < 12) {
+            return malformed(packet, ts, payload.length, "METHOD16_ENVELOPE_TRUNCATED");
+        }
         final int argLen = readU32LE(payload, 8);
         if (argLen != ARG_LEN || payload.length != 12 + ARG_LEN) {
             return malformed(packet, ts, payload.length, "METHOD16_LAYOUT_MISMATCH");

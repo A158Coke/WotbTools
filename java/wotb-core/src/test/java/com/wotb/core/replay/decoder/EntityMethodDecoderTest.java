@@ -81,6 +81,7 @@ class EntityMethodDecoderTest {
 
     @Test
     void updateArenaKeepsNicknameEvidenceWhenAccountIdIsMissing() {
+        context.entityClassRegistry().markAvatar(0);
         final byte[] player = new byte[]{
                 0x08, 0x0A,
                 0x1A, 0x04, 'A', 'l', 'l', 'y',
@@ -275,6 +276,7 @@ class EntityMethodDecoderTest {
 
     @Test
     void updateArena2Field12DecodesRealtimeSupremacyPointsForBothTeams() {
+        context.entityClassRegistry().markAvatar(0);
         final RawReplayPacket packet = pointsPacket(1, 56.233f, 1, 303, 2, 306);
         final ReplayDecodeResult result = decoder.decode(context, packet);
         final List<SupremacyPointsChangedEvent> points = result.events().stream()
@@ -295,6 +297,7 @@ class EntityMethodDecoderTest {
 
     @Test
     void wrapper13MalformedField12DoesNotProduceExactPointEvent() {
+        context.entityClassRegistry().markAvatar(0);
         // wrapper=13 但：team=9（非法）→ 跳过；points=负数 → 跳过；缺 field2 → 跳过
         final byte[] badTeam = fieldDelimited(12, teamPointsMessage(9, 100));
         final byte[] badPoints = fieldDelimited(12, teamPointsMessage(1, -5));
@@ -395,6 +398,7 @@ class EntityMethodDecoderTest {
     @Test
     void futureVersionLayoutMethodStructurallyDecodes() {
         final ReplayDecodeContext future = new ReplayDecodeContext("11.20.0_china");
+        future.entityClassRegistry().markVehicle(12345);
         final ReplayDecodeResult result = decoder.decode(future,
                 methodPacket(1, EntityMethodDecoder.SUBTYPE_VEHICLE_FIRED, new byte[]{0x01}));
         assertEquals(DecodeStatus.SUCCESS, result.status(),
@@ -410,6 +414,7 @@ class EntityMethodDecoderTest {
     @Test
     void futureVersionProjectileLaunchStructurallyDecodes() {
         final ReplayDecodeContext future = new ReplayDecodeContext("12.0.0_eu");
+        future.entityClassRegistry().markAvatar(12345);
         final byte[] args = new byte[37]; // PROJECTILE_LAUNCH_ARGS_LEN
         final ReplayDecodeResult result = decoder.decode(future,
                 methodPacket(1, EntityMethodDecoder.SUBTYPE_PROJECTILE_LAUNCH, args));
@@ -423,6 +428,7 @@ class EntityMethodDecoderTest {
     /** P0-3：当前 canonical 11.19 仍解码 method29 为 EXACT（不因 gate 回归）。 */
     @Test
     void currentVersionLayoutMethodStillDecodesExact() {
+        context.entityClassRegistry().markAvatar(12345);
         final byte[] args = new byte[37];
         args[0] = 0x01;
         args[1] = 0x02;
@@ -532,12 +538,13 @@ class EntityMethodDecoderTest {
     }
 
     @Test
-    void avatarProvenMethodUpgradesMaterializedVehicleToAvatar() {
-        // 录像者实体先被物化为 Vehicle（entityTypeId==2），随后 method48（Avatar-proven）升级为 Avatar；
-        // 之后 method4+2B 必须按 Avatar 分派为 RoundFinished（不允许因「先 Vehicle」而 raw-preserve）。
+    void recorderAvatarIdentityOverridesMaterializedVehicleClass() {
+        // PR162/P0-1：Avatar 类只由独立身份/生命周期证据建立（此处 markAvatar 模拟 subtype-49 recorder
+        // sync-options 身份锚点）；先物化为 Vehicle（markVehicle）不会把已证明的 Avatar 降级（粘性）。
+        // method4+2B 必须按 Avatar 分派为 RoundFinished（不允许因「先 Vehicle」而 raw-preserve）。
         final ReplayDecodeContext ctx = new ReplayDecodeContext("11.19.0_china");
         ctx.entityClassRegistry().markVehicle(910);
-        decoder.decode(ctx, rawPacket48For(EntityMethodDecoder.WRAPPER_ARENA_PERIOD, new byte[]{0x18, 0x03}, 910));
+        ctx.entityClassRegistry().markAvatar(910);
         final ReplayDecodeResult r = decoder.decode(ctx,
                 methodPacketOn(1, 910, EntityMethodDecoder.SUBTYPE_ROUND_FINISHED, new byte[]{2, 1}));
         final RoundFinishedEvent e = assertInstanceOf(RoundFinishedEvent.class, r.events().get(0));

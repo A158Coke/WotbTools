@@ -896,8 +896,7 @@ class AiReplayAnalysisServiceTest {
                 123,
                 DecodeConfidence.EXACT
         );
-        final ReplayCoverage coverage = new ReplayCoverage(
-                true, 100, 100, 0, 0, 0, 1.0, Map.of());
+        final ReplayCoverage coverage = new ReplayCoverage(100, 100, 0, 0, 0, 1.0, Map.of());
         return new SinglePlayerBattleAnalysisContext(
                 null, battle, features, recorderMapping, coverage, List.of("TEST_LIMITATION"));
     }
@@ -925,8 +924,7 @@ class AiReplayAnalysisServiceTest {
                 rec != null ? rec.accountId : 0L, 501, 42, "RecorderPlayer",
                 rec != null && PlayerSideResolver.isValidRawTeam(rec.team) ? rec.team : null,
                 123, DecodeConfidence.EXACT);
-        final ReplayCoverage coverage = new ReplayCoverage(
-                true, 100, 100, 0, 0, 0, 1.0, Map.of());
+        final ReplayCoverage coverage = new ReplayCoverage(100, 100, 0, 0, 0, 1.0, Map.of());
         return new SinglePlayerBattleAnalysisContext(
                 null, battle, features, recorderMapping, coverage, List.of("TEST_LIMITATION"));
     }
@@ -1002,9 +1000,8 @@ class AiReplayAnalysisServiceTest {
         final ReplayMetadata meta = new ReplayMetadata(
                 "arena", "team_map", "1", "1", 2, "rec1", "", 300.0, 0L);
         final ReplayStreamHeader header = new ReplayStreamHeader(0x12345678L, new byte[8], "h", "v", 15);
-        final ReplayCoverage coverage = new ReplayCoverage(true, 8, 8, 0, 0, 0, 1.0, Map.of());
-        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true);
+        final ReplayCoverage coverage = new ReplayCoverage(8, 8, 0, 0, 0, 1.0, Map.of());
+        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(0, 0, 0f, 0f, 0, Map.of());
         final List<ReplayEvent> events = new ArrayList<>();
         int seq = 0;
         int eid = 1;

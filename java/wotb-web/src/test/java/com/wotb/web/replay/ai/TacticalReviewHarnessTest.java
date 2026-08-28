@@ -166,10 +166,8 @@ class TacticalReviewHarnessTest {
                 "arena", "middleburg", "1", "1", 1, "rec1", "", 300.0, 0L);
         final ReplayStreamHeader header = new ReplayStreamHeader(
                 0x12345678L, new byte[8], "h", "v", 15);
-        final ReplayCoverage coverage = new ReplayCoverage(
-                true, 2, 2, 0, 0, 0, 1.0, Map.of());
-        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true);
+        final ReplayCoverage coverage = new ReplayCoverage(2, 2, 0, 0, 0, 1.0, Map.of());
+        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(0, 0, 0f, 0f, 0, Map.of());
         // 事件流必须足以构建 canonical timeline：映射 + 位置 + 血量 + 伤害
         final List<com.wotb.core.replay.event.ReplayEvent> events = List.of(
                 new ParticipantMappingEvent(

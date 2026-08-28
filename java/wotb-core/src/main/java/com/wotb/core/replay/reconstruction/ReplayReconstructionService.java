@@ -10,6 +10,8 @@ import com.wotb.core.parse.SettlementFacts;
 import com.wotb.core.replay.decoder.ReplayDecodeContext;
 import com.wotb.core.replay.decoder.ReplayDecodeResult;
 import com.wotb.core.replay.decoder.ReplayPacketDecoderRegistry;
+import com.wotb.core.replay.decoder.EntityClass;
+import com.wotb.core.replay.decoder.EntityClassRegistry;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ArenaPeriodChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
@@ -77,18 +79,23 @@ public class ReplayReconstructionService {
             throw new IOException("Failed to read data.wotreplay stream: " + e.getMessage(), e);
         }
 
-        // 3. 检查 450 秒限制
-        final float lastClock = streamResult.diagnostics().lastClockSec();
+        // 3. 检查 450 秒限制（max observed raw clock；strict reader 只返回成功流）
+        final float maxClock = streamResult.diagnostics().maxObservedRawClockSec();
         final float allowedMax = maxClockSec + clockToleranceSec;
-        if (lastClock > allowedMax && !Float.isNaN(lastClock)) {
-            throw new IllegalArgumentException("REPLAY_DURATION_EXCEEDED: lastClock="
-                    + lastClock + " exceeds allowed max=" + allowedMax);
+        if (maxClock > allowedMax && !Float.isNaN(maxClock)) {
+            throw new IllegalArgumentException("REPLAY_DURATION_EXCEEDED: maxClock="
+                    + maxClock + " exceeds allowed max=" + allowedMax);
         }
 
         // 4. 解码所有包：版本门禁使用 data.wotreplay 流头内的权威 clientVersion
         //    （meta.json#clientVersionFromExe 经常为空；与 ReplayParser.battle.clientVersion 同源）。
+        //    PR162/P0-1：entity class 由独立生命周期/身份证据（Type5 entityTypeId → Vehicle/Other；
+        //    Type8 subtype-49 recorder sync-options → Avatar）在 prepass 建立，method decoder 纯消费，
+        //    不再由 methodId 自证 class。
+        final EntityClassRegistry entityClassRegistry =
+                buildEntityClassRegistry(streamResult.packets());
         final ReplayDecodeContext decodeContext =
-                new ReplayDecodeContext(streamResult.header().clientVersion());
+                new ReplayDecodeContext(streamResult.header().clientVersion(), entityClassRegistry);
         final List<ReplayEvent> allEvents = new ArrayList<>();
         final Map<Integer, TypeDecodeStats> typeDecodeStats = new HashMap<>();
 
@@ -110,22 +117,15 @@ public class ReplayReconstructionService {
         }
 
         // PR147 resolved battle start: wrapper3 ARENA_PERIOD.BATTLE anchor, else RoundFinishedEvent
-        // (method4/AFTERBATTLE) rawClock minus SETTLEMENT duration (battle_results root5), else an
-        // ESTIMATED fallback of lastClock - settlementDurationSec. This single resolved value is what the
-        // timeline / adapter / legacy producers agree on; it is NEVER Type14 (stream-close) or a raw
-        // session clock. It reuses the settlement duration so it matches the canonical BattleTimeline
-        // clock (which uses battle.durationS = settlement root5). The last fallback is version-agnostic
-        // structural data (no version if/else) so a verified-family replay whose decoded semantic anchor
-        // is gated still gets a consistent battle-relative clock.
+        // (method4/AFTERBATTLE) rawClock minus SETTLEMENT duration (battle_results root5), else null/UNKNOWN.
+        // This single resolved value is what timeline / adapter / legacy producers agree on; it is NEVER
+        // Type14 (stream-close), a raw session clock, or "stream max/last clock - settlement duration"
+        // (that fabricated fallback has no PR147 authority and must not synthesize battle-start).
         // battle_results.dat 的唯一 production 解码权威（SettlementFacts）：reconstruction 不再自行
         // PickleReader.loads + Protobuf.decode；缺失/损坏时 fail-closed → null。
         final SettlementFacts settlementFacts = settlementFacts(entries);
         final Double settledDur = settlementFacts == null ? null : settlementFacts.settlementDurationSec();
-        Float battleStartResolved = resolveBattleStartRawClock(allEvents, settledDur);
-        if (battleStartResolved == null && settledDur != null && settledDur > 0
-                && Float.isFinite(lastClock) && lastClock > settledDur) {
-            battleStartResolved = (float) (lastClock - settledDur);
-        }
+        final Float battleStartResolved = resolveBattleStartRawClock(allEvents, settledDur);
 
         // 5. 重建战场状态
         final BattleStateReconstructor reconstructor = new BattleStateReconstructor();
@@ -143,10 +143,10 @@ public class ReplayReconstructionService {
                 streamResult.diagnostics(), typeDecodeStats);
 
         // 9. 组装结果 —— PR147 时钟域拆分：battleDurationSec 是「战斗时长」（battle-relative 跨度），
-        // 绝不等于原始 session 最后一个包的时钟（那是 streamLastRawClockSec = diagnostics().lastClockSec()）。
-        // 权威顺序：settlement root5 战斗时长 → (lastClock - battleStartResolved) → metadata battleDuration。
+        // 绝不等于原始 session 的最大观测时钟（那是 maxObservedRawClockSec / streamLastRawClockSec）。
+        // 权威顺序：settlement root5 战斗时长 → (maxClock - battleStartResolved) → metadata battleDuration。
         final float battleDurationSec = resolveBattleDurationSec(
-                settledDur, battleStartResolved, lastClock, metadata);
+                settledDur, battleStartResolved, maxClock, metadata);
 
         return new ReplayReconstruction(
                 metadata,
@@ -239,10 +239,11 @@ public class ReplayReconstructionService {
 
     /**
      * PR147 battle-relative duration authority chain. This is the <b>battle duration</b>, never the raw
-     * session last-clock (that is {@code diagnostics().lastClockSec()} / {@link ReplayReconstruction#streamLastRawClockSec()}).
+     * session max raw clock (that is {@code diagnostics().maxObservedRawClockSec()} /
+     * {@link ReplayReconstruction#streamLastRawClockSec()}).
      * <ol>
      *   <li>settlement root5 (battle_results.dat; the authoritative battle duration);</li>
-     *   <li>{@code lastClock - battleStartRawClockSec} when the battle start is resolved;</li>
+     *   <li>{@code maxClock - battleStartRawClockSec} when the battle start is resolved;</li>
      *   <li>meta.json#battleDuration;</li>
      *   <li>0f (unknown → consumers needing battle-relative truth must fail closed).</li>
      * </ol>
@@ -250,14 +251,14 @@ public class ReplayReconstructionService {
     private static float resolveBattleDurationSec(
             final Double settlementDurationSec,
             final Float battleStartResolved,
-            final float lastClock,
+            final float maxClock,
             final ReplayMetadata metadata) {
         if (settlementDurationSec != null && settlementDurationSec > 0) {
             return settlementDurationSec.floatValue();
         }
         if (battleStartResolved != null && Float.isFinite(battleStartResolved) && battleStartResolved >= 0
-                && Float.isFinite(lastClock) && lastClock > battleStartResolved) {
-            return lastClock - battleStartResolved;
+                && Float.isFinite(maxClock) && maxClock > battleStartResolved) {
+            return maxClock - battleStartResolved;
         }
         if (metadata.battleDurationSec() != null && metadata.battleDurationSec() > 0) {
             return metadata.battleDurationSec().floatValue();
@@ -327,7 +328,6 @@ public class ReplayReconstructionService {
         final double overallRatio = total > 0 ? (double) decoded / total : 0;
 
         return new ReplayCoverage(
-                diagnostics.streamComplete(),
                 total, decoded, partial, unknown, failed,
                 overallRatio,
                 typeCoverage
@@ -346,20 +346,19 @@ public class ReplayReconstructionService {
                         pt.type(), stats.total,
                         stats.decoded, stats.partial,
                         stats.unknown, stats.failed,
-                        pt.firstClockSec(), pt.lastClockSec()));
+                        pt.firstClockSec(), pt.maxObservedRawClockSec()));
             } else {
                 updatedTypes.put(pt.type(), pt);
             }
         }
 
         return new ReplayStreamDiagnostics(
-                diagnostics.sourceSize(), diagnostics.scannedBytes(),
-                diagnostics.packetCount(), diagnostics.normalPacketCount(),
-                diagnostics.trailingByteCount(),
-                diagnostics.firstClockSec(), diagnostics.lastClockSec(),
+                diagnostics.sourceSize(),
+                diagnostics.packetCount(),
+                diagnostics.firstClockSec(),
+                diagnostics.maxObservedRawClockSec(),
                 diagnostics.clockRegressionCount(),
-                updatedTypes,
-                diagnostics.reachedPhysicalEnd()
+                updatedTypes
         );
     }
 
@@ -398,6 +397,55 @@ public class ReplayReconstructionService {
 
     private static Map<String, byte[]> unzip(byte[] data) throws IOException {
         return ReplayArchiveReader.read(data);
+    }
+
+    /**
+     * PR162/P0-1：由<b>独立的生命周期/身份证据</b>建立 entity class，而非由 methodId 推断（禁止 method
+     * decoder 自证 semantic namespace）。
+     * <ul>
+     *   <li>Type5 materialization：{@code entityTypeId==2 → Vehicle}；{@code ==3 → Other}；</li>
+     *   <li>Type8 subtype-49 synchronized-options（每场唯一，recorder-local，见
+     *       entity-routing.md）：其 outer entityId 即录像者 Avatar —— 身份锚点，不属 method 族推断。</li>
+     * </ul>
+     * 只读 wire 结构；无法独立证明的 entityId 保持 {@link EntityClass#UNKNOWN}，语义解码时 raw-preserve。
+     */
+    static EntityClassRegistry buildEntityClassRegistry(final List<RawReplayPacket> packets) {
+        final EntityClassRegistry registry = new EntityClassRegistry();
+        if (packets == null) {
+            return registry;
+        }
+        for (final RawReplayPacket p : packets) {
+            final byte[] payload = p.payload();
+            final int type = p.type();
+            if (type == 5 && payload.length >= 6) {
+                final int entityId = readI32LE(payload, 0);
+                final int entityTypeId = readU16LE(payload, 4);
+                if (entityTypeId == 2) {
+                    registry.markVehicle(entityId);
+                } else if (entityTypeId == 3) {
+                    registry.markOther(entityId);
+                }
+            } else if (type == 8 && payload.length >= 12) {
+                final int subType = readU32LE(payload, 4);
+                if (subType == 49) {
+                    registry.markAvatar(readI32LE(payload, 0));
+                }
+            }
+        }
+        return registry;
+    }
+
+    private static int readI32LE(final byte[] buf, final int i) {
+        return (buf[i] & 0xFF) | ((buf[i + 1] & 0xFF) << 8)
+                | ((buf[i + 2] & 0xFF) << 16) | (buf[i + 3] << 24);
+    }
+
+    private static int readU32LE(final byte[] buf, final int i) {
+        return readI32LE(buf, i);
+    }
+
+    private static int readU16LE(final byte[] buf, final int i) {
+        return (buf[i] & 0xFF) | ((buf[i + 1] & 0xFF) << 8);
     }
 
     private static final class TypeDecodeStats {
