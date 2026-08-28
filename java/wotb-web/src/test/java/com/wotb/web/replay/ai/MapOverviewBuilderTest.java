@@ -312,6 +312,20 @@ class MapOverviewBuilderTest {
             }
             filtered.add(e);
         }
+        // P0-1：canonical AoI gap 需要 Type4 leave 才成立（位置流中断 ≠ 灭点，也不再按 5s 分段）。
+        // 在 gapStart 为每个有位置的实体注入 leave，使 observed segment 关闭 → gap 内无区间/方向样本。
+        final java.util.Set<Integer> posEntityIds = new java.util.HashSet<>();
+        for (final ReplayEvent e : filtered) {
+            if (e instanceof PositionChangedEvent pos) {
+                posEntityIds.add(pos.entityId());
+            }
+        }
+        int leaveSeq = 1_000_000;
+        for (final int eid : posEntityIds) {
+            filtered.add(new EntityRemovedEvent(leaveSeq++,
+                    new ReplayTimestamp(battleStart + (float) gapStart, null), 4,
+                    DecodeConfidence.EXACT, eid));
+        }
         final MapOverview overview = MapOverviewBuilder.build(
                 result.battle(), filteredRecon(recon, filtered));
         assertNotNull(overview);
@@ -384,8 +398,18 @@ class MapOverviewBuilderTest {
         }
         byEntity.put(100, pts);
         final MapOverviewBuilder.Positions positions = new MapOverviewBuilder.Positions(byEntity);
-        final List<ReplayEvent> events = List.of(new EntityRemovedEvent(
-                1, new ReplayTimestamp(60f, null), 4, DecodeConfidence.EXACT, 100));
+        // canonical AoI：位置事件打开观测段，leave@60 收段 [..,60)，70 重报重开新段 [70,..)。
+        final List<ReplayEvent> events = new ArrayList<>();
+        int seq = 0;
+        for (double t = 10; t <= 60 + 1e-6; t += 5) {
+            events.add(new PositionChangedEvent(seq++, new ReplayTimestamp((float) t, null), 10,
+                    DecodeConfidence.EXACT, 100, 0, 0, 100f, 0f, 100f, 0f, 0f, 0f, 0f, 0f, 0f, 0));
+        }
+        for (double t = 70; t <= 120 + 1e-6; t += 5) {
+            events.add(new PositionChangedEvent(seq++, new ReplayTimestamp((float) t, null), 10,
+                    DecodeConfidence.EXACT, 100, 0, 0, 200f, 0f, 200f, 0f, 0f, 0f, 0f, 0f, 0f, 0));
+        }
+        events.add(new EntityRemovedEvent(seq++, new ReplayTimestamp(60f, null), 4, DecodeConfidence.EXACT, 100));
         final List<MapOverview.PositionInterval> intervals = MapOverviewBuilder.positionIntervals(
                 List.of(100), positions, events, 0f, null, 300.0);
         for (final MapOverview.PositionInterval iv : intervals) {
@@ -394,9 +418,10 @@ class MapOverviewBuilderTest {
         assertTrue(intervals.stream().anyMatch(iv -> Math.abs(iv.startSec() - 10.0) < 1e-6
                         && Math.abs(iv.endSec() - 60.0) < 1e-6),
                 "leave 前区间必须保留: " + intervals);
+        // 同一 open segment（[70,..) 无再次 leave）内不因静止 >5s 而分裂，区间延伸至段末（battleEnd）。
         assertTrue(intervals.stream().anyMatch(iv -> Math.abs(iv.startSec() - 70.0) < 1e-6
-                        && Math.abs(iv.endSec() - 120.0) < 1e-6),
-                "EntityLeave 后同一实体再上报的区间必须保留（否则车标不再点亮）: " + intervals);
+                        && Math.abs(iv.endSec() - 300.0) < 1e-6),
+                "EntityLeave 后同一实体再上报的区间必须保留（延续至段末）: " + intervals);
     }
 
     @Test

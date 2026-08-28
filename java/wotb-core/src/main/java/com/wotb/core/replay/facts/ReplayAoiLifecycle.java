@@ -89,6 +89,38 @@ public final class ReplayAoiLifecycle {
         return List.copyOf(result);
     }
 
+    /**
+     * 将观测段按 entityId 分组索引（构建一次，后续帧查询 O(k)）。
+     * 这是 BattleTimeline / Playback / MapOverview / FormationDepth 的
+     * 唯一 AoI segment 查询入口（canonical authority）。
+     */
+    public static Map<Integer, List<AoiObservationSegment>> indexByEntity(
+            final List<AoiObservationSegment> segments) {
+        final Map<Integer, List<AoiObservationSegment>> byEntity = new HashMap<>();
+        if (segments != null) {
+            for (final AoiObservationSegment s : segments) {
+                byEntity.computeIfAbsent(s.entityId(), k -> new ArrayList<>()).add(s);
+            }
+        }
+        return byEntity;
+    }
+
+    /**
+     * 查询实体在 t 时刻所处的观测段；段间 gap（UNKNOWN_AOI）/ 未观测 → null。
+     * 每实体观测段互不重叠（段间即 gap），最多一个段 observesAt(t)。
+     */
+    public static AoiObservationSegment segmentAt(
+            final Map<Integer, List<AoiObservationSegment>> byEntity,
+            final int entityId,
+            final double t) {
+        for (final AoiObservationSegment s : byEntity.getOrDefault(entityId, List.of())) {
+            if (s.observesAt(t)) {
+                return s;
+            }
+        }
+        return null;
+    }
+
     /** battle-relative 时间；无 battle start 时退回 raw（与 ReplayHpTimeline 同语义）。 */
     private static double clockOf(final ReplayEvent event, final double startRawClockSec) {
         final Float battle = event.timestamp().battleClockSec();

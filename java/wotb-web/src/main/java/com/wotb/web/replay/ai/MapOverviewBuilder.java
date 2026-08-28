@@ -136,16 +136,11 @@ public final class MapOverviewBuilder {
                 playback);
     }
 
-    /**
-     * 位置流连续上报的最大间隔（秒）；超过则视为位置上报中断，重新出现时新开区间。
-     * 语义 = 服务器位置流覆盖，不等于「对录像者可见/点亮」（type-10 与点亮无关）。
-     */
-    private static final double POSITION_GAP_SEC = 5.0;
 
     /**
      * 战局回放数据：车辆（位置复用路线点，这里只补充位置上报区间）+
      * 时间轴事件（DAMAGE/DESTROYED/KILL/POSITION_REPORTED/POSITION_STALE，按 battle-relative 秒）。
-     * POSITION_REPORTED/STALE 只表达服务器位置流覆盖变化，不是点亮/失察（见 POSITION_GAP_SEC）。
+     * POSITION_REPORTED/STALE 只表达回放 POV 观测覆盖变化（canonical AoI），不是点亮/失察。
      * 无法可靠解析身份的伤害/击毁不输出对应事件，绝不编造。
      */
     private static MapOverview.Playback buildPlayback(
@@ -481,11 +476,11 @@ public final class MapOverviewBuilder {
     }
 
     /**
-     * 车辆位置上报区间：按位置事件时间线聚类（gap ≤ 5s 视为连续上报），
-     * EntityLeave(type-4) 是 coverage 的 hard segment boundary——每一次 leave 都强制
-     * 结束当前 coverage run，leave 后的第一条 position（无论 gap 是 0.5s 还是 20s）
-     * 开启新 run；阵亡时刻（deathSec）最后 clamp，阵亡后的 interval 不出现。
-     * re-entry 跨实体区间合并。语义 = 服务器位置流覆盖，不代表录像者点亮/可见性。
+     * 车辆位置上报区间 = canonical AoI observed segment（{@link ReplayAoiLifecycle}）
+     * ∩ 实际位置存在范围，再经 deathSec / duration clamp。同一 open segment 内<b>不再</b>
+     * 做 5 秒 packet-gap splitting（静止车辆即使 &gt;5s 无 Type10 也不产生 POSITION_STALE）
+     * ——与 {@link BattlePlaybackAdapter} 同源（{@link AoiPositionCoverage}）。段段之间
+     * （UNKNOWN_AOI gap）不产生区间。
      */
     static List<MapOverview.PositionInterval> positionIntervals(
             final List<Integer> entityIds,
@@ -494,97 +489,18 @@ public final class MapOverviewBuilder {
             final Float battleStartRawClockSec,
             final Double deathSec,
             final double duration) {
-        final List<MapOverview.PositionInterval> raw = new ArrayList<>();
+        final List<com.wotb.core.replay.facts.AoiObservationSegment> aoiSegments =
+                com.wotb.core.replay.facts.ReplayAoiLifecycle.build(
+                        events, battleStartRawClockSec == null
+                                ? null : battleStartRawClockSec.doubleValue());
+        final List<Double> positionTimes = new ArrayList<>();
         for (final int entityId : entityIds) {
-            final List<Position> pts = positions.byEntity().getOrDefault(entityId, List.of());
-            if (pts.isEmpty()) {
-                continue;
-            }
-            // 该实体全部 EntityLeave 时刻（按时间升序），逐个消费；leave 不属于某一次
-            // 生命周期的最小值，而是按时间顺序的硬分段点。
-            final List<Double> leaves = new ArrayList<>();
-            for (final ReplayEvent event : events) {
-                if (event instanceof EntityRemovedEvent removed && removed.entityId() == entityId) {
-                    leaves.add(relativeSec(removed, battleStartRawClockSec));
-                }
-            }
-            leaves.sort(Comparator.naturalOrder());
-            int leaveIdx = 0;
-            double runStart = Double.NaN;
-            double runEnd = Double.NaN;
-            for (final Position p : pts) {
-                final double t = p.timeSec;
-                if (Double.isNaN(runStart)) {
-                    runStart = t;
-                    runEnd = t;
-                    continue;
-                }
-                // leave 在 (runEnd, t) 之间 → 强制关段（end = leave 时刻），t 开启新 run；
-                // leave == runEnd（与最后一个 position 同刻）也关闭该段（leave 在后）。
-                if (leaveIdx < leaves.size()
-                        && leaves.get(leaveIdx) >= runEnd
-                        && leaves.get(leaveIdx) < t) {
-                    raw.add(new MapOverview.PositionInterval(runStart, leaves.get(leaveIdx)));
-                    runStart = t;
-                    runEnd = t;
-                    leaveIdx++;
-                    continue;
-                }
-                // 无 leave：保留 gap > 5s 分段语义
-                if (t - runEnd > POSITION_GAP_SEC) {
-                    raw.add(new MapOverview.PositionInterval(runStart, runEnd));
-                    runStart = t;
-                    runEnd = t;
-                    continue;
-                }
-                runEnd = t;
-            }
-            if (!Double.isNaN(runStart)) {
-                raw.add(new MapOverview.PositionInterval(runStart, runEnd));
+            for (final Position p : positions.byEntity().getOrDefault(entityId, List.of())) {
+                positionTimes.add(p.timeSec);
             }
         }
-        raw.sort(Comparator.comparingDouble(MapOverview.PositionInterval::startSec));
-        final List<MapOverview.PositionInterval> merged = new ArrayList<>();
-        for (final MapOverview.PositionInterval interval : raw) {
-            if (merged.isEmpty()
-                    || interval.startSec() - merged.get(merged.size() - 1).endSec() > 1e-6) {
-                merged.add(interval);
-            } else {
-                final MapOverview.PositionInterval last = merged.get(merged.size() - 1);
-                merged.set(merged.size() - 1, new MapOverview.PositionInterval(
-                        last.startSec(), Math.max(last.endSec(), interval.endSec())));
-            }
-        }
-        if (deathSec != null) {
-            // 阵亡时刻最终优先级：start > deathSec 的区间（阵亡后重新出现）整体剔除；
-            // 其余区间末端 clamp 到 deathSec。
-            final List<MapOverview.PositionInterval> deathClamped = new ArrayList<>();
-            for (final MapOverview.PositionInterval interval : merged) {
-                if (interval.startSec() > deathSec + 1e-6) {
-                    continue;
-                }
-                final double end = Math.min(interval.endSec(), deathSec);
-                if (end >= interval.startSec() - 1e-6) {
-                    deathClamped.add(new MapOverview.PositionInterval(
-                            interval.startSec(), Math.max(interval.startSec(), end)));
-                }
-            }
-            merged.clear();
-            merged.addAll(deathClamped);
-        }
-        // 时间契约：区间不得越过 playback duration；起点越界的区间整体剔除。
-        final List<MapOverview.PositionInterval> bounded = new ArrayList<>();
-        for (final MapOverview.PositionInterval interval : merged) {
-            if (interval.startSec() > duration + 1e-6) {
-                continue;
-            }
-            final double end = Math.min(interval.endSec(), duration);
-            if (end >= interval.startSec() - 1e-6) {
-                bounded.add(new MapOverview.PositionInterval(
-                        interval.startSec(), Math.max(interval.startSec(), end)));
-            }
-        }
-        return bounded;
+        positionTimes.sort(Comparator.naturalOrder());
+        return AoiPositionCoverage.intervals(aoiSegments, entityIds, positionTimes, deathSec, duration);
     }
 
 

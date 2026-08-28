@@ -6,6 +6,7 @@ import com.wotb.core.model.KillVictim;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.TankInfo;
 import com.wotb.core.ref.Tankopedia;
+import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -230,15 +231,28 @@ public final class RatingV2Calculator {
         return player.damageDealt + player.damageAssisted + player.kills * averageHp / 7.0;
     }
 
+    /**
+     * 互换击杀判定：使用 canonical {@link PlayerResultFormat#deathSec}（source-aware,
+     * LIVE_EXACT &gt; SETTLEMENT_SECOND &gt; UNKNOWN）。UNKNOWN 的 residual survivalTimeSec 不得
+     * 被当成 KNOWN 死亡时刻（P0-2 provenance）。窗口保持 V2 定义：双方死亡时刻差 ±5s。
+     */
     private static boolean tradedDeath(final PlayerResult player, final List<PlayerResult> players) {
-        if (player.survived || player.survivalTimeSec <= 0) {
+        if (player == null || player.survived) {
             return false;
         }
-        final double from = player.survivalTimeSec - 5.0;
-        final double to = player.survivalTimeSec + 5.0;
+        final double deathSec = PlayerResultFormat.deathSec(player);
+        if (!(deathSec > 0) || !Double.isFinite(deathSec)) {
+            return false;
+        }
+        final double from = deathSec - 5.0;
+        final double to = deathSec + 5.0;
         for (final PlayerResult other : players) {
-            if (other.team != player.team && !other.survived && other.survivalTimeSec > 0
-                    && other.survivalTimeSec >= from && other.survivalTimeSec <= to) {
+            if (other == null || other.team == player.team || other.survived) {
+                continue;
+            }
+            final double otherDeathSec = PlayerResultFormat.deathSec(other);
+            if (Double.isFinite(otherDeathSec) && otherDeathSec > 0
+                    && otherDeathSec >= from && otherDeathSec <= to) {
                 return true;
             }
         }

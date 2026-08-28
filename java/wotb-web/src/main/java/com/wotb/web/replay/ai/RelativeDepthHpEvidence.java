@@ -233,12 +233,17 @@ final class RelativeDepthHpEvidence {
                 lastLeaveByEntity.merge(removed.entityId(), t, Math::max);
             }
         }
+        // Canonical AoI authority：phase 位置参考的 CURRENT/LAST_KNOWN 判定依据（P0-1）。
+        final Map<Integer, List<com.wotb.core.replay.facts.AoiObservationSegment>> aoiByEntity =
+                com.wotb.core.replay.facts.ReplayAoiLifecycle.indexByEntity(
+                        com.wotb.core.replay.facts.ReplayAoiLifecycle.build(
+                                recon.events(), battleStart == null ? null : battleStart.doubleValue()));
         final List<PhaseHit> hits = new ArrayList<>();
         final StringBuilder sb = new StringBuilder();
         for (final FormationDepthEvidence.PhaseRange phase : phases) {
             final PhaseResult result = renderPhase(phase, tracks, hpSamples, attacks, teamByAccount,
                     playersByAccount, profiles, targets, selfAccountId != null, observedDamagePartial,
-                    mapping, lastLeaveByEntity);
+                    mapping, lastLeaveByEntity, aoiByEntity);
             if (result.text() != null) {
                 sb.append(result.text());
             }
@@ -277,7 +282,8 @@ final class RelativeDepthHpEvidence {
             final boolean playerPath,
             final boolean observedDamagePartial,
             final TeamEntityMapping mapping,
-            final Map<Integer, Double> lastLeaveByEntity
+            final Map<Integer, Double> lastLeaveByEntity,
+            final Map<Integer, List<com.wotb.core.replay.facts.AoiObservationSegment>> aoiByEntity
     ) {
         final List<PhaseHit> hits = new ArrayList<>();
         final int ownTeam = teamByAccount.getOrDefault(targets.get(0), 0);
@@ -286,8 +292,7 @@ final class RelativeDepthHpEvidence {
         }
         final int enemyTeam = 3 - ownTeam;
         // 阶段位置参考（带知识状态）：复用 FormationDepthEvidence 的 canonical 同口径解析
-        // （friendly actual combatant carry-forward=CURRENT；enemy 按 phase 末最后观测
-        // age ≤ canonical 当前阈值判定 CURRENT，否则 LAST_KNOWN）。
+        // （phase end 位于 observed segment=CURRENT；位于 UNKNOWN_AOI gap / 跨 gap=LAST_KNOWN，P0-1）。
         // 相对纵深/血量呈现为确定性距离测量 → 只允许 CURRENT 参考参与 exact 距离；
         // enemy LAST_KNOWN 不得生成仿佛当前精确位置的 memberDist/referenceDist/relativeDepthM
         // （fail-closed，不 future-leak）。
@@ -298,7 +303,7 @@ final class RelativeDepthHpEvidence {
                     FormationDepthEvidence.resolvePhasePosition(
                             entry.getKey(), team, entry.getValue(),
                             phase.start(), phase.end(), playersByAccount,
-                            mapping, lastLeaveByEntity, ownTeam);
+                            mapping, lastLeaveByEntity, aoiByEntity, ownTeam);
             if (ref != null) {
                 refsByAccount.put(entry.getKey(), ref);
             }
