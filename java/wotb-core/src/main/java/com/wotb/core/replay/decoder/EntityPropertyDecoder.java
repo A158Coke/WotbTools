@@ -58,6 +58,9 @@ public class EntityPropertyDecoder implements ReplayPacketDecoder {
         if (propId == PROP_CURRENT_HP && valueLen == 2) {
             final int raw = readU16LE(payload, 12);
             final HpRawState rawState = HpRawState.classify(raw,
+                    ReplayProtocolProfile.levelOf(context.clientVersion(),
+                            ReplayProtocolProfile.Capability.TERMINAL_FFFD)
+                            == ReplayProtocolProfile.Level.VERIFIED,
                     ReplayVersionGate.verifiedFffeTerminalAllowed(context.clientVersion()));
             final List<ReplayDecodeWarning> warnings = new ArrayList<>();
             final HealthChangedEvent event;

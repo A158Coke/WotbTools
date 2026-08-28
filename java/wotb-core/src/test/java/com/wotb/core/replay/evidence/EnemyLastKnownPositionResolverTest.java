@@ -229,7 +229,7 @@ class EnemyLastKnownPositionResolverTest {
                         observedVehicle(3, 2001, 2, 250f, 0f, START_RAW + 95f))));
         // 伪造 battleStartRawClockSec 缺失：构造无 battleStart 的重建
         final ReplayReconstruction noStart = new ReplayReconstruction(
-                recon.metadata(), recon.streamHeader(), recon.replayDurationSec(),
+                recon.metadata(), recon.streamHeader(), recon.battleDurationSec(),
                 null, recon.participants(), recon.events(), recon.checkpoints(),
                 recon.finalState(), recon.coverage(), recon.diagnostics());
 

@@ -66,7 +66,7 @@ class ReplayFactsCodecTest {
         assertEquals(result.reconstruction().coverage(), round.reconstruction().coverage());
         assertEquals(result.reconstruction().diagnostics(), round.reconstruction().diagnostics());
         assertEquals(result.reconstruction().checkpoints().size(), round.reconstruction().checkpoints().size());
-        assertEquals(result.reconstruction().replayDurationSec(), round.reconstruction().replayDurationSec());
+        assertEquals(result.reconstruction().battleDurationSec(), round.reconstruction().battleDurationSec());
         assertEquals(result.reconstruction().battleStartRawClockSec(), round.reconstruction().battleStartRawClockSec());
         assertEquals(result.reconstruction().metadata(), round.reconstruction().metadata());
         assertEquals(result.reconstruction().streamHeader().clientVersion(),

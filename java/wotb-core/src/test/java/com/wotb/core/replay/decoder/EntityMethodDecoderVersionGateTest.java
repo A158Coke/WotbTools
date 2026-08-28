@@ -93,12 +93,16 @@ class EntityMethodDecoderVersionGateTest {
     }
 
     @Test
-    void futureVersionRawPreservesMethod1() {
+    void futureVersionDecodesMethod1StructurallyButNotCauseSemantic() {
+        // PR162 forward compatibility: method1 layout is structural (envelope/HP u16) so a future version
+        // with the exact 7-byte shape still decodes structurally; the version-scoped CAUSE semantic is gated
+        // (closed semantics) → UNKNOWN, never a fabricatied DROWNING/DIRECT claim.
         final ReplayDecodeResult r = decoder.decode(new ReplayDecodeContext("11.20.0_china"),
                 method1(1, 1f, 2700, 0));
-        final UnknownReplayEvent u = assertInstanceOf(UnknownReplayEvent.class, r.events().get(0));
-        assertEquals("VERSION_UNSUPPORTED_METHOD1", u.reasonCode());
-        assertEquals(DecodeConfidence.UNKNOWN, u.confidence());
+        final VehicleHealthStateEvent e = assertInstanceOf(VehicleHealthStateEvent.class, r.events().get(0));
+        assertEquals(HpRawState.CURRENT_HP, e.rawState(), "正 HP 结构值可前向解析");
+        assertEquals(VehicleHealthStateEvent.Cause.UNKNOWN, e.cause(), "未认证 cause 语义不得继承");
+        assertEquals(2700, e.currentHpRaw());
     }
 
     @Test

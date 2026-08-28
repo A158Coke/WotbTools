@@ -113,12 +113,17 @@ public record BattlePhaseSummary(
         if (phases.isEmpty() || survival == null) {
             return phases;
         }
-        final boolean friendlyKnown = survival.friendlyRosterSize() > 0
+        // PR147 §C precision-aware: a SETTLEMENT_SECOND death is an interval [rep-0.5, rep+0.5], not a
+        // point. When such an interval straddles a phase boundary the exact alive count is UNKNOWN
+        // (fail-closed) rather than forced to a naked-float verdict.
+        final List<PlayerResultFormat.DeathTimeEvidence> friendlySorted =
+                sortedCopy(survival.friendlyDeathTimes());
+        final List<PlayerResultFormat.DeathTimeEvidence> enemySorted =
+                sortedCopy(survival.enemyDeathTimes());
+        final boolean friendlyAliveKnown = survival.friendlyRosterSize() > 0
                 && survival.friendlyUnknownDeaths() == 0;
-        final boolean enemyKnown = survival.enemyRosterSize() > 0
+        final boolean enemyAliveKnown = survival.enemyRosterSize() > 0
                 && survival.enemyUnknownDeaths() == 0;
-        final List<Float> friendlySorted = sortedCopy(survival.friendlyDeathTimes());
-        final List<Float> enemySorted = sortedCopy(survival.enemyDeathTimes());
         final List<BattlePhaseSummary> result = new ArrayList<>(phases.size());
         for (final BattlePhaseSummary phase : phases) {
             result.add(new BattlePhaseSummary(
@@ -126,8 +131,8 @@ public record BattlePhaseSummary(
                     phase.endTime(),
                     phase.type(),
                     phase.confidence(),
-                    friendlyKnown ? aliveCount(friendlySorted, survival.friendlyRosterSize(), phase.endTime()) : null,
-                    enemyKnown ? aliveCount(enemySorted, survival.enemyRosterSize(), phase.endTime()) : null,
+                    friendlyAliveKnown ? aliveCount(friendlySorted, survival.friendlyRosterSize(), phase.endTime()) : null,
+                    enemyAliveKnown ? aliveCount(enemySorted, survival.enemyRosterSize(), phase.endTime()) : null,
                     isDenseKillWindow(phase, survival)));
         }
         return result;
@@ -166,39 +171,52 @@ public record BattlePhaseSummary(
         return phases;
     }
 
-    private static int aliveCount(
-            final List<Float> sortedDeathTimes,
+    /**
+     * PR147 §C precision-aware alive count at a phase boundary. A death counts as dead only when the whole
+     * evidence interval is {@code <= endTime}; alive only when the whole interval is {@code > endTime}.
+     * If any interval straddles the boundary the exact count is unavailable → {@code null} (fail-closed,
+     * consumers must not force a "already dead/alive at the boundary" verdict from insufficient evidence).
+     */
+    private static Integer aliveCount(
+            final List<PlayerResultFormat.DeathTimeEvidence> sortedDeaths,
             final int rosterSize,
             final float endTime
     ) {
         int deaths = 0;
-        for (final float deathTime : sortedDeathTimes) {
-            if (deathTime <= endTime) {
+        for (final PlayerResultFormat.DeathTimeEvidence ev : sortedDeaths) {
+            if (ev.upperBoundSec() <= endTime) {
                 deaths++;
-            } else {
+            } else if (ev.lowerBoundSec() > endTime) {
                 break;
+            } else {
+                return null;   // interval straddles the boundary → exact count unknown
             }
         }
         return rosterSize - deaths;
     }
 
+    /**
+     * Dense-kill window over death intervals. A kill is eligible when its interval intersects the phase
+     * {@code [start, end]} (PR147 §C precision-aware — never a naked-float boundary cut).
+     */
     private static boolean isDenseKillWindow(
             final BattlePhaseSummary phase,
             final SurvivalTimeline survival
     ) {
-        final List<Float> times = new ArrayList<>(survival.friendlyDeathTimes());
+        final List<PlayerResultFormat.DeathTimeEvidence> times = new ArrayList<>(survival.friendlyDeathTimes());
         times.addAll(survival.enemyDeathTimes());
         if (times.size() < MIN_DENSE_KILLS) {
             return false;
         }
-        final List<Float> inPhase = times.stream()
-                .filter(t -> t >= phase.startTime() && t <= phase.endTime())
+        final List<Double> starts = times.stream()
+                .filter(ev -> ev.upperBoundSec() >= phase.startTime() && ev.lowerBoundSec() <= phase.endTime())
+                .map(PlayerResultFormat.DeathTimeEvidence::lowerBoundSec)
                 .sorted()
                 .toList();
-        for (int i = 0; i < inPhase.size(); i++) {
-            final float windowEnd = inPhase.get(i) + DENSE_KILL_WINDOW_SEC;
+        for (int i = 0; i < starts.size(); i++) {
+            final double windowEnd = starts.get(i) + DENSE_KILL_WINDOW_SEC;
             int count = 0;
-            for (int j = i; j < inPhase.size() && inPhase.get(j) <= windowEnd; j++) {
+            for (int j = i; j < starts.size() && starts.get(j) <= windowEnd; j++) {
                 count++;
             }
             if (count >= MIN_DENSE_KILLS) {
@@ -208,8 +226,10 @@ public record BattlePhaseSummary(
         return false;
     }
 
-    private static List<Float> sortedCopy(final List<Float> times) {
-        return times.stream().sorted().toList();
+    private static List<PlayerResultFormat.DeathTimeEvidence> sortedCopy(
+            final List<PlayerResultFormat.DeathTimeEvidence> times) {
+        return times.stream().sorted(java.util.Comparator.comparingDouble(
+                PlayerResultFormat.DeathTimeEvidence::lowerBoundSec)).toList();
     }
 
     /**
@@ -218,8 +238,8 @@ public record BattlePhaseSummary(
      * make exact per-phase alive counts unavailable for that side.
      */
     public record SurvivalTimeline(
-            List<Float> friendlyDeathTimes,
-            List<Float> enemyDeathTimes,
+            List<PlayerResultFormat.DeathTimeEvidence> friendlyDeathTimes,
+            List<PlayerResultFormat.DeathTimeEvidence> enemyDeathTimes,
             int friendlyRosterSize,
             int enemyRosterSize,
             int friendlyUnknownDeaths,
@@ -242,8 +262,8 @@ public record BattlePhaseSummary(
                     || perspectiveTeam == null || !PlayerSideResolver.isValidRawTeam(perspectiveTeam)) {
                 return new SurvivalTimeline(List.of(), List.of(), 0, 0, 0, 0);
             }
-            final List<Float> friendlyTimes = new ArrayList<>();
-            final List<Float> enemyTimes = new ArrayList<>();
+            final List<PlayerResultFormat.DeathTimeEvidence> friendlyTimes = new ArrayList<>();
+            final List<PlayerResultFormat.DeathTimeEvidence> enemyTimes = new ArrayList<>();
             int friendlyRoster = 0;
             int enemyRoster = 0;
             int friendlyUnknown = 0;
@@ -261,9 +281,9 @@ public record BattlePhaseSummary(
                 if (p.survived) {
                     continue;
                 }
-                final double deathSec = PlayerResultFormat.deathSec(p);
-                if (deathSec > 0) {
-                    (friendly ? friendlyTimes : enemyTimes).add((float) deathSec);
+                final PlayerResultFormat.DeathTimeEvidence evidence = PlayerResultFormat.deathEvidence(p);
+                if (evidence != null) {
+                    (friendly ? friendlyTimes : enemyTimes).add(evidence);
                 } else if (friendly) {
                     friendlyUnknown++;
                 } else {

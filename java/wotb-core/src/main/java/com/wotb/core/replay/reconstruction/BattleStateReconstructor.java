@@ -12,6 +12,7 @@ import com.wotb.core.replay.event.MaterializationEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.RecorderHealthChangedEvent;
+import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.VehicleHealthStateEvent;
 import com.wotb.core.replay.event.VehicleDestroyedEvent;
@@ -78,6 +79,7 @@ public class BattleStateReconstructor {
         switch (event) {
             case PositionChangedEvent e -> applyPosition(state, e);
             case DamageEvent e -> applyDamage(state, e);
+            case VehicleHitEvent e -> applyHit(state, e);
             case EntityRemovedEvent e -> applyEntityRemoved(state, e);
             case VehicleDestroyedEvent e -> applyVehicleDestroyed(state, e);
             case RoundFinishedEvent e -> applyRoundFinished(state, e);
@@ -118,13 +120,24 @@ public class BattleStateReconstructor {
         // NOT a canonical damage fact. This playback state does NOT accumulate a second
         // damageDealt/damageReceived authority (those fields were removed from VehicleState).
         // Only last-observed is updated for both sides.
-        if (e.attackerEid() != e.victimEid() && e.attackerEid() > 0) {
-            final VehicleState attacker = state.getOrCreateVehicle(e.attackerEid(), e.timestamp().rawClockSec());
-            attacker.setLastObservedAt(e.timestamp().rawClockSec());
+        applyEngagement(state, e.attackerEid(), e.victimEid(), e.timestamp().rawClockSec());
+    }
+
+    /** PR147 §33: method8 is a hit/result-feedback family (VehicleHitEvent) — a proven hit still
+     *  updates last-observed for attacker/victim (engagement evidence); no damage magnitude is used. */
+    private void applyHit(final BattleState state, final VehicleHitEvent e) {
+        applyEngagement(state, e.attackerEntityId(), e.victimEntityId(), e.timestamp().rawClockSec());
+    }
+
+    private void applyEngagement(final BattleState state, final int attackerEid, final int victimEid,
+                                 final float rawClockSec) {
+        if (attackerEid != victimEid && attackerEid > 0) {
+            final VehicleState attacker = state.getOrCreateVehicle(attackerEid, rawClockSec);
+            attacker.setLastObservedAt(rawClockSec);
         }
-        if (e.victimEid() > 0) {
-            final VehicleState victim = state.getOrCreateVehicle(e.victimEid(), e.timestamp().rawClockSec());
-            victim.setLastObservedAt(e.timestamp().rawClockSec());
+        if (victimEid > 0) {
+            final VehicleState victim = state.getOrCreateVehicle(victimEid, rawClockSec);
+            victim.setLastObservedAt(rawClockSec);
         }
     }
 

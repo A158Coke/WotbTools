@@ -99,8 +99,8 @@ final class DamageWindowClusterer {
         // Type-8 rawProtocolValue 语义未证明，不得作为窗口掉血量。
         final TeamEntityMapping mapping = DamageEventIdentityResolver.mapping(battle, recon);
         final Float battleStart = recon.battleStartRawClockSec();
-        final double duration = recon.replayDurationSec() > 0
-                ? recon.replayDurationSec()
+        final double duration = recon.battleDurationSec() > 0
+                ? recon.battleDurationSec()
                 : (battle != null && battle.durationS != null && battle.durationS > 0
                         ? battle.durationS : 0.0);
         final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =

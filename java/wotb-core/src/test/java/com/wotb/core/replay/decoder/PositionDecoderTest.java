@@ -48,4 +48,18 @@ class PositionDecoderTest {
         assertEquals(DecodeStatus.MALFORMED, r.status());
         assertInstanceOf(UnknownReplayEvent.class, r.events().getFirst());
     }
+
+    /**
+     * PR162 forward compatibility: a future client version whose exact 49B transform layout is
+     * structurally valid must STILL decode (structural capability, layer B) — never a hard
+     * UNKNOWN solely because the version is newer.
+     */
+    @Test
+    void futureVersionDecodesStructuralTransform() {
+        for (final String v : new String[]{"11.22.0_china", "11.20.0_china", "12.0.0_eu"}) {
+            final ReplayDecodeResult r = decoder.decode(new ReplayDecodeContext(v), positionPacket(49));
+            assertEquals(DecodeStatus.SUCCESS, r.status(), "版本 " + v + " 不得拒绝稳定 49B 布局");
+            assertInstanceOf(PositionChangedEvent.class, r.events().getFirst(), "版本 " + v);
+        }
+    }
 }

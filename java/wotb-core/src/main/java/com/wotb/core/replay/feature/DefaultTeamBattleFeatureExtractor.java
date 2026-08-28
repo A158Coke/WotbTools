@@ -92,8 +92,8 @@ public class DefaultTeamBattleFeatureExtractor {
         // Type-8 rawProtocolValue 语义未证明，不得作为 dealt/received/关键事件伤害。
         final Float battleStartRaw = reconstruction == null ? null
                 : reconstruction.battleStartRawClockSec();
-        final double duration = reconstruction != null && reconstruction.replayDurationSec() > 0
-                ? reconstruction.replayDurationSec()
+        final double duration = reconstruction != null && reconstruction.battleDurationSec() > 0
+                ? reconstruction.battleDurationSec()
                 : (battle != null && battle.durationS != null && battle.durationS > 0
                         ? battle.durationS : 0.0);
         final PlaybackCombatReconstruction.Result combat = PlaybackCombatReconstruction.derive(

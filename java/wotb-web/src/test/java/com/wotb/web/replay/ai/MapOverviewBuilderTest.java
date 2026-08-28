@@ -288,7 +288,7 @@ class MapOverviewBuilderTest {
     private static ReplayReconstruction filteredRecon(
             final ReplayReconstruction recon, final List<ReplayEvent> events) {
         return new ReplayReconstruction(
-                recon.metadata(), recon.streamHeader(), recon.replayDurationSec(),
+                recon.metadata(), recon.streamHeader(), recon.battleDurationSec(),
                 recon.battleStartRawClockSec(), recon.participants(), events,
                 recon.checkpoints(), recon.finalState(), recon.coverage(), recon.diagnostics());
     }

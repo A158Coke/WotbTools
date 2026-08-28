@@ -257,7 +257,7 @@ class BattleTimelineBuilderTest {
         final ReplayReconstruction recon = TimelineTestFixtures.recon(60.0, events);
         // 清掉 IDENTIFIED start：重建 null start + 事件 battleClock 为 null
         final ReplayReconstruction noStart = new ReplayReconstruction(
-                recon.metadata(), recon.streamHeader(), recon.replayDurationSec(), null,
+                recon.metadata(), recon.streamHeader(), recon.battleDurationSec(), null,
                 recon.participants(), recon.events(), recon.checkpoints(),
                 recon.finalState(), recon.coverage(), recon.diagnostics());
 

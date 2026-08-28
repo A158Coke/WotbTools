@@ -1,11 +1,13 @@
 package com.wotb.core.replay.decoder;
 
-import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
+import com.wotb.core.replay.event.ProjectileLaunchedEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.event.UnsupportedDamageEvent;
 import com.wotb.core.replay.event.UnknownReplayEvent;
+import com.wotb.core.replay.event.VehicleFiredEvent;
+import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.stream.PacketReadStatus;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
@@ -14,7 +16,6 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -97,17 +98,21 @@ class EntityMethodDecoderTest {
     }
 
     @Test
-    void directDamageDecodesSingleDamageEventWithExactFields() {
+    void directDamageDecodesSingleVehicleHitEventWithExactFields() {
+        // PR147 §33: method8 direct = hit/result-feedback (VehicleHitEvent), NOT HP damage. The raw u16
+        // "damage" is not an HP delta; authoritative HP loss = Type7 prop3 deltas.
         final ReplayDecodeResult result = decoder.decode(context,
                 damageMethodPacket(1, 10f, 0xFC6017, 0xFC6018, 0xFC6017,
                         EntityMethodDecoder.DAMAGE_SUB_DIRECT, 500));
         assertEquals(DecodeStatus.SUCCESS, result.status());
         assertTrue(result.warnings().isEmpty());
         assertEquals(1, result.events().size());
-        final DamageEvent event = (DamageEvent) result.events().getFirst();
-        assertEquals(0xFC6018, event.attackerEid(), "攻击者 eid 按 LE u32 解码");
-        assertEquals(0xFC6017, event.victimEid());
-        assertEquals(500, event.damage(), "伤害 u16 高字节在前（0x01F4），不得按 LE 误读为 62465");
+        final VehicleHitEvent event = (VehicleHitEvent) result.events().getFirst();
+        assertEquals(0xFC6018, event.attackerEntityId(), "攻击者 eid 按 LE u32 解码");
+        assertEquals(0xFC6017, event.victimEntityId());
+        assertEquals(3, event.primaryResultRaw(), "direct 变体 primary=body[13]=3");
+        assertEquals(1, event.secondaryResultRaw(), "secondary=body[14]=damage 高字节(0x01F4 -> 1)");
+        assertEquals(VehicleHitEvent.PenetrationFamily.PENETRATION, event.penetrationFamily());
         assertEquals(DecodeConfidence.EXACT, event.confidence());
         assertEquals(10f, event.timestamp().rawClockSec());
     }
@@ -145,58 +150,52 @@ class EntityMethodDecoderTest {
     }
 
     @Test
-    void directSubWithZeroRawDamageProducesConflictEvidence() {
-        // direct 变体但 raw == 0：raw 不是权威 HP delta（protocol.md），不得仅凭 0 判定
-        // 「无伤害」→ 作为 unsupported/conflict 证据保留（身份可解析则填写；供 attribution fail-closed）
+    void directSubWithZeroRawDamageStillProducesVehicleHitEvent() {
+        // direct 变体但 raw "damage" == 0：method8 是 hit/result-feedback 家族，raw 值不是数值伤害——
+        // 仍产出 EXACT VehicleHitEvent（attacker/victim + result 分类），非冲突证据。
         final ReplayDecodeResult result = decoder.decode(context,
                 damageMethodPacket(1, 10f, 0xFC6017, 0xFC6018, 0xFC6017,
                         EntityMethodDecoder.DAMAGE_SUB_DIRECT, 0));
-        assertEquals(DecodeStatus.PARTIAL, result.status());
-        assertEquals(1, result.events().size(), "direct raw=0 必须产出冲突证据事件（不能只有 warning）");
-        final UnsupportedDamageEvent ev = (UnsupportedDamageEvent) result.events().getFirst();
-        assertEquals(0xFC6018, ev.attackerEid(), "身份可解析则填写");
-        assertEquals(0xFC6017, ev.victimEid());
-        assertEquals(DecodeConfidence.PARTIAL, ev.confidence(), "不得标 EXACT/PROVEN");
-        assertEquals("ZERO_RAW_DAMAGE", ev.variant());
-        assertEquals(10f, ev.timestamp().rawClockSec(), 1e-6);
-        assertEquals("UNSUPPORTED_DAMAGE_VARIANT", result.warnings().getFirst().code(),
-                "warning 保留作诊断（但不是唯一输出）");
+        assertEquals(DecodeStatus.SUCCESS, result.status());
+        assertEquals(1, result.events().size());
+        final VehicleHitEvent ev = (VehicleHitEvent) result.events().getFirst();
+        assertEquals(0xFC6018, ev.attackerEntityId());
+        assertEquals(0xFC6017, ev.victimEntityId());
+        assertEquals(3, ev.primaryResultRaw());
+        assertEquals(0, ev.secondaryResultRaw());
+        assertEquals(DecodeConfidence.EXACT, ev.confidence());
     }
 
     @Test
     void zeroRawDamageWithMissingVictimEidFallsBackToOuterEntityId() {
-        // direct raw=0 且 body 内 victim eid 缺失（0）：victim 用可靠 outer entityId 回退
+        // direct 且 body 内 victim eid 缺失（0）：仍产出 EXACT VehicleHitEvent，victim 用可靠 outer entityId。
         final ReplayDecodeResult result = decoder.decode(context,
                 damageMethodPacket(1, 10f, 0xFC6017, 0xFC6018, 0,
                         EntityMethodDecoder.DAMAGE_SUB_DIRECT, 0));
-        assertEquals(DecodeStatus.PARTIAL, result.status());
+        assertEquals(DecodeStatus.SUCCESS, result.status());
         assertEquals(1, result.events().size());
-        final UnsupportedDamageEvent ev = (UnsupportedDamageEvent) result.events().getFirst();
-        assertEquals(0xFC6017, ev.victimEid(), "victim eid 缺失时用 outer entityId 作 victim 证据");
-        assertEquals(0xFC6018, ev.attackerEid());
-        assertEquals("ZERO_RAW_DAMAGE", ev.variant());
+        final VehicleHitEvent ev = (VehicleHitEvent) result.events().getFirst();
+        assertEquals(0xFC6017, ev.victimEntityId(), "victim eid 缺失时用 outer entityId 作 victim 证据");
+        assertEquals(0xFC6018, ev.attackerEntityId());
+        assertEquals(3, ev.primaryResultRaw());
+        assertEquals(DecodeConfidence.EXACT, ev.confidence());
     }
 
     @Test
-    void directDamageWithMissingVictimEidFallsBackToUnsupported() {
-        // direct raw>0 但 body 内 victim eid 缺失（0）：不能保证完整 direct identity——
-        // 降级为 UnsupportedDamageEvent（PARTIAL，victim 用可靠 outer entityId），
-        // 绝不产出 victim=0 的 EXACT DamageEvent（否则重建无法映射 victim 会静默丢弃 → 窗口「无冲突」）
+    void directDamageWithMissingVictimEidFallsBackToOuterEntityId() {
+        // direct 且 body 内 victim eid 缺失（0）：仍产出 EXACT VehicleHitEvent，victim 用可靠 outer entityId
+        // （方法调用目标实体）——整个 direct 分支产出 hit-feedback 证据，非冲突/降级。
         final ReplayDecodeResult result = decoder.decode(context,
                 damageMethodPacket(1, 10f, 0xFC6017, 0xFC6018, 0,
                         EntityMethodDecoder.DAMAGE_SUB_DIRECT, 500));
-        assertEquals(DecodeStatus.PARTIAL, result.status());
+        assertEquals(DecodeStatus.SUCCESS, result.status());
         assertEquals(1, result.events().size());
-        assertTrue(result.events().getFirst() instanceof UnsupportedDamageEvent,
-                "direct raw>0 且 victim eid 缺失必须降级为冲突证据事件（不是 victim=0 的 EXACT DamageEvent）");
-        final UnsupportedDamageEvent ev = (UnsupportedDamageEvent) result.events().getFirst();
-        assertEquals(0xFC6018, ev.attackerEid(), "攻击者 eid 仍可解析则填写");
-        assertEquals(0xFC6017, ev.victimEid(), "victim 用可靠 outer entityId（方法调用目标实体）");
-        assertEquals(DecodeConfidence.PARTIAL, ev.confidence(), "不得标 EXACT/PROVEN");
-        assertEquals("DIRECT_VICTIM_UNKNOWN", ev.variant());
-        assertEquals(10f, ev.timestamp().rawClockSec(), 1e-6);
-        assertEquals("UNSUPPORTED_DAMAGE_VARIANT", result.warnings().getFirst().code(),
-                "warning 保留作诊断（但不是唯一输出）");
+        final VehicleHitEvent ev = (VehicleHitEvent) result.events().getFirst();
+        assertEquals(0xFC6018, ev.attackerEntityId(), "攻击者 eid 仍可解析");
+        assertEquals(0xFC6017, ev.victimEntityId(), "victim 用可靠 outer entityId（方法调用目标实体）");
+        assertEquals(3, ev.primaryResultRaw());
+        assertEquals(1, ev.secondaryResultRaw());
+        assertEquals(DecodeConfidence.EXACT, ev.confidence());
     }
 
     @Test
@@ -380,30 +379,34 @@ class EntityMethodDecoderTest {
         buf[i + 3] = (byte) (v >>> 24);
     }
 
-    /** P0-3：future/unknown 版本不得对 legacy-compatible 观测 method（method0）无条件产出 EXACT 事件 → raw-preserve + 诊断。 */
+    /** PR162 前向兼容：method0（VehicleFired）布局是结构（envelope + 1-byte arg）——
+     *  未来版本用精确 1-byte shape 仍结构化解为 EXACT VehicleFiredEvent（观测开火是结构事实）。 */
     @Test
-    void futureVersionLayoutMethodRawPreserves() {
+    void futureVersionLayoutMethodStructurallyDecodes() {
         final ReplayDecodeContext future = new ReplayDecodeContext("11.20.0_china");
-        // method0（SUBTYPE_VEHICLE_FIRED, 1-byte arg）在 11.20 未证明 → UnknownReplayEvent
         final ReplayDecodeResult result = decoder.decode(future,
                 methodPacket(1, EntityMethodDecoder.SUBTYPE_VEHICLE_FIRED, new byte[]{0x01}));
-        assertEquals(DecodeStatus.PARTIAL, result.status());
-        assertInstanceOf(UnknownReplayEvent.class, result.events().getFirst(),
-                "future method0 不得解码为 EXACT VehicleFiredEvent");
-        assertTrue(result.warnings().stream()
-                .anyMatch(w -> w.code().equals("VERSION_UNSUPPORTED")), "future 版本必须提供 VERSION_UNSUPPORTED 诊断");
+        assertEquals(DecodeStatus.SUCCESS, result.status(),
+                "future method0 structural layout decodes exact");
+        assertEquals(1, result.events().size());
+        final VehicleFiredEvent fired = (VehicleFiredEvent) result.events().getFirst();
+        assertEquals(DecodeConfidence.EXACT, fired.confidence());
+        assertEquals(12345, fired.entityId(), "methodPacket 外层 entityId 按 u32 LE 解码");
     }
 
-    /** P0-3：method29（ProjectileLaunched）在未知版本同样 raw-preserve。 */
+    /** PR162 前向兼容：method29（ProjectileLaunched）布局是结构（37-byte shape）——
+     *  未来版本用精确 shape 仍结构化解为 EXACT ProjectileLaunchedEvent（发射点/速度是结构事实）。 */
     @Test
-    void futureVersionProjectileLaunchRawPreserves() {
+    void futureVersionProjectileLaunchStructurallyDecodes() {
         final ReplayDecodeContext future = new ReplayDecodeContext("12.0.0_eu");
         final byte[] args = new byte[37]; // PROJECTILE_LAUNCH_ARGS_LEN
         final ReplayDecodeResult result = decoder.decode(future,
                 methodPacket(1, EntityMethodDecoder.SUBTYPE_PROJECTILE_LAUNCH, args));
-        assertEquals(DecodeStatus.PARTIAL, result.status());
-        assertInstanceOf(UnknownReplayEvent.class, result.events().getFirst(),
-                "future method29 不得解码为 EXACT ProjectileLaunchedEvent");
+        assertEquals(DecodeStatus.SUCCESS, result.status(),
+                "future method29 structural layout decodes exact");
+        assertEquals(1, result.events().size());
+        final ProjectileLaunchedEvent launched = (ProjectileLaunchedEvent) result.events().getFirst();
+        assertEquals(DecodeConfidence.EXACT, launched.confidence());
     }
 
     /** P0-3：当前 canonical 11.19 仍解码 method29 为 EXACT（不因 gate 回归）。 */

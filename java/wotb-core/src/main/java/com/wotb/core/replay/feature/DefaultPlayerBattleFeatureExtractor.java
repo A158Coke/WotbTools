@@ -2,6 +2,7 @@ package com.wotb.core.replay.feature;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
@@ -51,8 +52,8 @@ public class DefaultPlayerBattleFeatureExtractor {
 
         final TeamEntityMapping mapping = TeamEntityMapper.resolve(battle, reconstruction);
         final Float battleStartRaw = reconstruction.battleStartRawClockSec();
-        final double duration = reconstruction.replayDurationSec() > 0
-                ? reconstruction.replayDurationSec()
+        final double duration = reconstruction.battleDurationSec() > 0
+                ? reconstruction.battleDurationSec()
                 : (battle != null && battle.durationS != null && battle.durationS > 0
                         ? battle.durationS : 0.0);
         final PlaybackCombatReconstruction.Result combat = PlaybackCombatReconstruction.derive(
@@ -92,6 +93,16 @@ public class DefaultPlayerBattleFeatureExtractor {
                 case DamageEvent d -> {
                     final boolean recorderIsAttacker = d.attackerEid() == recorderEid;
                     final boolean recorderIsVictim = d.victimEid() == recorderEid;
+                    if ((recorderIsAttacker || recorderIsVictim) && res.isUsable()
+                            && firstContactTime < 0) {
+                        firstContactTime = res.battleRelativeSec();
+                    }
+                }
+                case VehicleHitEvent h -> {
+                    // PR147 §33: method8 is a hit/result-feedback family — a proven hit still marks first
+                    // contact (attacker/victim engagement); no damage magnitude is used.
+                    final boolean recorderIsAttacker = h.attackerEntityId() == recorderEid;
+                    final boolean recorderIsVictim = h.victimEntityId() == recorderEid;
                     if ((recorderIsAttacker || recorderIsVictim) && res.isUsable()
                             && firstContactTime < 0) {
                         firstContactTime = res.battleRelativeSec();

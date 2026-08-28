@@ -86,9 +86,10 @@ class BattlePhaseSurvivalTest {
         assertEquals(7, opening.friendlyAlive());
         assertEquals(7, opening.enemyAlive());
 
-        // 首次接敌 [50,60]：我方 60s 阵亡 1 → 6；敌方尚无阵亡 → 7
+        // 首次接敌 [50,60]：我方 60s 阵亡——SETTLEMENT_SECOND 区间 [59.5,60.5] 跨 60s 边界，
+        // PR147 §C 证据不足 → friendlyAlive 未知（不得强制「60s 已死=6」）；敌方尚无阵亡 → 7
         final BattlePhaseSummary firstContact = phase(phases, BattlePhaseType.FIRST_CONTACT);
-        assertEquals(6, firstContact.friendlyAlive());
+        assertNull(firstContact.friendlyAlive());
         assertEquals(7, firstContact.enemyAlive());
 
         // 残局（battleEnd 零长标记）→ 与结算一致：5 打 4
@@ -173,7 +174,12 @@ class BattlePhaseSurvivalTest {
         final List<BattlePhaseSummary> phases = phasesWithSurvival(b);
         for (final BattlePhaseSummary p : phases) {
             assertNull(p.enemyAlive(), "存在未知死亡时刻 → 敌方人数不可算：" + p);
-            assertTrue(p.friendlyAlive() != null, "我方时间线完整 → 人数可算：" + p);
+            if (p.type() == BattlePhaseType.FIRST_CONTACT) {
+                // 我方 60s 阵亡区间 [59.5,60.5] 跨 60s 边界 → PR147 §C 证据不足 → 未知
+                assertNull(p.friendlyAlive(), "settlement 区间跨边界 → 我方人数不可算：" + p);
+            } else {
+                assertTrue(p.friendlyAlive() != null, "我方时间线完整且无跨边界 → 人数可算：" + p);
+            }
         }
     }
 
@@ -270,6 +276,13 @@ class BattlePhaseSurvivalTest {
         assertEquals(1, timeline.friendlyRosterSize());
         assertEquals(1, timeline.enemyRosterSize());
         assertEquals(0, timeline.enemyUnknownDeaths());
-        assertEquals(List.of(60.0f), timeline.enemyDeathTimes());
+        // PR147 §C precision-aware: a SETTLEMENT_SECOND death is an interval [rep-0.5, rep+0.5], not a point.
+        assertEquals(1, timeline.enemyDeathTimes().size());
+        final com.wotb.core.util.PlayerResultFormat.DeathTimeEvidence ev =
+                timeline.enemyDeathTimes().get(0);
+        assertEquals(DeathTimeSource.SETTLEMENT_SECOND, ev.source());
+        assertEquals(60.0, ev.representativeSec(), 1e-9);
+        assertEquals(59.5, ev.lowerBoundSec(), 1e-9);
+        assertEquals(60.5, ev.upperBoundSec(), 1e-9);
     }
 }

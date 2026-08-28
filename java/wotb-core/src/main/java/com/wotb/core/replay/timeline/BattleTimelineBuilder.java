@@ -333,6 +333,9 @@ public final class BattleTimelineBuilder {
                     }
                 }
             }
+            // The battle-start is resolved once in ReplayReconstructionService (incl. an ESTIMATED
+            // lastClock - duration fallback), so recon.battleStartRawClockSec is the single agreed start;
+            // the timeline reuses it directly (IDENTIFIED) and never derives a different one.
         }
         return new ClockResult(Double.NaN, BattleTimelineClock.UNRESOLVED);
     }

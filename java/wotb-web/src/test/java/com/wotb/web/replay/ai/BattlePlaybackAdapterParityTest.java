@@ -167,10 +167,13 @@ class BattlePlaybackAdapterParityTest {
             } else {
                 assertEquals(null, v.entryHp(), "非 OBSERVED_EXACT 不得冒充进场满血: " + v.accountId());
             }
-            // 阵亡车辆必须有 0 血量采样（击毁 = 权威 0，前端不得靠猜测）
+            // PR147：HP timeline 与 terminal/death lifecycle 是两条独立权威事实——阵亡由 deathSec
+            // 表达，绝不因阵亡事实向 HP timeline 注入 0（受控溺水=保留正 HP 阵亡，HP<=0 不是死亡谓词）。
+            // 真实 HP 0 采样仍可存在（受击毁损），但不允许依赖「阵亡 → 必有 0」。此处约束：阵亡车辆
+            // 的 HP 采样（若存在）必须仍然是纯观测结果——observedCapacityHp = hpSamples 纯观测最大值。
             if (v.deathSec() != null) {
-                assertTrue(v.hpSamples().stream().anyMatch(s -> s.hp() == 0),
-                        "阵亡车辆必须有 0 采样: " + v.accountId());
+                assertEquals(MapOverview.observedCapacityHpOf(v.hpSamples()), v.observedCapacityHp(),
+                        "阵亡车辆 observedCapacityHp 仍必须是纯观测最大值: " + v.accountId());
             }
         }
         // KILL 广播 provenance（docs/current-plan.md §15）：KILL 的 attacker/victim 必须来自

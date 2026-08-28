@@ -416,7 +416,7 @@ class InitialHpProtocolProbeTest {
                                           final TeamEntityMapping mapping, final long accountId) {
         int total = 0;
         final Float start = recon.battleStartRawClockSec();
-        final double duration = recon.replayDurationSec() > 0 ? recon.replayDurationSec() : 0.0;
+        final double duration = recon.battleDurationSec() > 0 ? recon.battleDurationSec() : 0.0;
         final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
                 com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
                         recon.events(), mapping,
