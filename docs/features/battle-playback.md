@@ -227,7 +227,7 @@
   -300..300，即完整世界坐标截图；新图以各自语义 JSON 为准，逐图校准）。渲染统一用
   `coordinateBounds`，不得用 `playableBounds` 铺满图片（会越靠近边缘偏移越大）。无
   `coordinateBounds` 的旧配置按兼容策略回退 `playableBounds`。
-### 单车血量 HUD / 战斗反馈 / 车辆详情面板（PR5，docs/current-plan.md §4–§16）
+### 单车血量 HUD / 战斗反馈 / 车辆详情面板（PR5）
 
 - **HP 数据优先级与 provenance 状态（确定性重建，PR #107 扩展 + Blocker 3 收口）**：`hpDisplay`
   （`utils/battlePlayback.js`）按状态机输出（`state` 字段，替代单一黑条/UNKNOWN 语义）：

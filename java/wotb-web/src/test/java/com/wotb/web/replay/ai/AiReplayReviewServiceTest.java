@@ -18,6 +18,8 @@ import com.wotb.web.replay.job.ProcessedDataset;
 import com.wotb.web.replay.job.ReplayArtifactWriter;
 import com.wotb.web.replay.job.ReplayProcessingJob;
 import com.wotb.web.replay.job.ReplayProcessingJobStore;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -229,6 +232,44 @@ class AiReplayReviewServiceTest {
 
             assertNotNull(response);
             assertTrue(response.analysis().contains("dataset-analysis"));
+        } finally {
+            store.close();
+            try (var walk = Files.walk(dir)) {
+                walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                    try {
+                        Files.deleteIfExists(p);
+                    } catch (final Exception ignored) {
+                        // best-effort test cleanup
+                    }
+                });
+            }
+        }
+    }
+
+    @Test
+    void corruptAiFactsArtifactReturnsDatasetUnavailableNotJobNotFound() throws Exception {
+        final Path dir = Files.createTempDirectory("wotb-ai-corrupt");
+        final ReplayProcessingJobStore store = new ReplayProcessingJobStore(dir, 60);
+        try {
+            final ReplayProcessingResult result = randomResult();
+            final ReplayProcessingJob job = new ReplayProcessingJob("j1", List.of("a.wotbreplay"));
+            job.startProcessing();
+            job.markSourceProcessing(0, "a.wotbreplay");
+            ReplayArtifactWriter.writeAiFacts(store.jobDir("j1"), 0, result);
+            // 覆盖为 corrupt ai-facts.json（ReplayFactsCodec 反序列化失败 → IOException）
+            Files.writeString(ReplayArtifactWriter.aiFactsPath(store.jobDir("j1"), 0), "{not-valid-json");
+            job.markSourceReady(0);
+            job.updateProgress(1, 0, 0);
+            job.markReady(new ProcessedDataset(List.of(result.battle()), List.of("a.wotbreplay"),
+                    List.of(), List.of(), null, null));
+            store.register(job);
+            service = new AiReplayReviewService(aiAnalysisService, null, null, store);
+
+            final ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                    () -> service.analyzeFacts("j1", 0, AllowedLanguage.ZH, AiReviewStreamListener.NOOP));
+            // BLOCKER 3：artifact 解码/存储故障 ≠ 「job 不存在」——必须是不可恢复的 503 DATASET_UNAVAILABLE
+            assertEquals(HttpStatus.SERVICE_UNAVAILABLE, e.getStatusCode());
+            assertEquals("DATASET_UNAVAILABLE", e.getReason());
         } finally {
             store.close();
             try (var walk = Files.walk(dir)) {

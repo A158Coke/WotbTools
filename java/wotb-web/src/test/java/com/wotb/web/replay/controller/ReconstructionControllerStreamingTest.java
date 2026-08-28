@@ -92,14 +92,7 @@ class ReconstructionControllerStreamingTest {
             listener.onStage("evidence_done");
             listener.onToken("hello ");
             listener.onToken("world");
-            return new AnalyzeResponse("full analysis", "## 赛前预测",
-                    new com.wotb.web.replay.dto.MapOverview(
-                            "desert_train", "Desert Sands",
-                            Map.of("zh", "黄沙荒漠", "en", "Desert Sands", "ru", "Пустынные пески"),
-                            2,
-                            new com.wotb.web.replay.dto.MapOverview.Bounds(-256, 260, -251, 254.3),
-                            List.of(), null, List.of(), List.of(), null, List.of(),
-                            null, null, null));
+            return new AnalyzeResponse("full analysis", "## 赛前预测");
         }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         final String body = drainUntilTerminal(analyzeDirect("zh", null));
@@ -113,7 +106,8 @@ class ReconstructionControllerStreamingTest {
         assertTrue(body.contains("event:done"), body);
         assertTrue(body.contains("\"analysis\":\"full analysis\""), body);
         assertTrue(body.contains("\"preBattleSection\":\"## 赛前预测\""), body);
-        assertTrue(body.contains("\"mapOverview\":{\"mapCode\":\"desert_train\""), body);
+        // BLOCKER 2：AI done 载荷不再携带 mapOverview（地图由独立 Processing Job artifact 承载）。
+        assertFalse(body.contains("\"mapOverview\""), body);
     }
 
     @Test

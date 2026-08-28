@@ -320,7 +320,6 @@ async function readAnalyzeStream(r, run) {
         break
       case 'done':
         if (typeof data.analysis === 'string' && data.analysis.trim()) {
-          // done 载荷的 mapOverview 不再消费：地图已拆为独立战局回放面板（BattlePlaybackPanel）。
           analysisResult.value = {
             analysis: data.analysis,
             preBattleSection: data.preBattleSection
@@ -416,7 +415,7 @@ onBeforeUnmount(() => {
         <ReplayAnalysisAction :analyzing="analyzing" :disabled="!datasetReady" @analyze="runAnalyze" @cancel="cancelAnalyze" />
       </div>
 
-      <!-- dataset 未就绪（PREPARING_DATASET / DATASET_EXPIRED / FAILURE）：AI Analyze 禁用，显示准备/失败状态 -->
+      <!-- dataset 未就绪（PREPARING_DATASET / JOB_NOT_FOUND / FAILURE）：AI Analyze 禁用，显示准备/失败状态 -->
       <div v-if="!datasetReady" class="ai-dataset-status" data-test="ai-dataset-status">
         <span v-if="!datasetError" class="stream-spinner" aria-hidden="true"></span>
         <span :class="{ 'ai-dataset-error': !!datasetError }">{{ datasetMessage }}</span>

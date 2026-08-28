@@ -347,7 +347,7 @@ sum by (type) (rate(wotb_ai_review_errors_total[5m]))
 > **AI 全链路超时与无效消耗**：整体 deadline 默认 1100s（团队 3 次 AI 调用 + 余量，`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）→ 前端 analyze 安全超时 1100s → 容器 nginx `/api/replay/analyze` 1120s → 后端 AI 单次预算 `AI_CALL_TIMEOUT_SEC=315s` + 解析余量。**host 级 Caddy/Nginx 反代必须允许 ≥1120s**（Nginx 默认 60s 会提前 504，用户重试即产生重复 API 消耗）。取消语义：**应用内路由切换因 `App.vue` 的 `<KeepAlive>` 缓存 AI 复盘页而不会取消进行中的复盘**（SSE 流继续）；只有**手动取消按钮、关闭/刷新浏览器页面（`beforeunload`）或前端安全超时**才会经 `POST /api/replay/analyze/cancel` 中断 in-flight 上游调用。`AI_TIMEOUT` 不再自动重试（上游可能已计费）。Broken pipe 已在 `GlobalExceptionHandler` 降级为 WARN，不再产生 Unhandled exception 堆栈。
 ### AI Review 全链路事件日志（按 correlationId 追踪）
 
-> 随 AI Review JSON Output 任务（docs/current-plan.md §38-§60）落地：AI Review 全链路结构化事件日志，
+> 随 AI Review JSON Output 任务（见 docs/architecture/ai-review.md）落地：AI Review 全链路结构化事件日志，
 > 统一格式 `event=<eventName> correlationId=<id> key=value key=value`，与 logstash structured logging 兼容，
 > Loki 可直接按字段过滤。**一次 AI Review 从进入 backend 到结束可用单个 correlationId 重建完整时间线**
 >（correlationId 即前端 cancel 用的请求 id，见 `ReconstructionController`）。

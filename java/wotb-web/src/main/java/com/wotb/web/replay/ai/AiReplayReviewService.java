@@ -95,10 +95,14 @@ public class AiReplayReviewService {
                     ReplayArtifactWriter.readAiFacts(processingStore.jobDir(processingJobId), sourceIndex);
             datasetCache("ai", true);
             return analyzeFacts(facts, language, listener);
-        } catch (final java.io.IOException e) {
+        } catch (final java.io.IOException | tools.jackson.core.JacksonException e) {
             datasetCache("ai", false);
-            // artifact 缺失 = dataset 已过期 → 404（BLOCKER 4 稳定语义）。
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "JOB_NOT_FOUND");
+            // BLOCKER 3：artifact 读取 / 解码 / 存储 I/O 故障（含 ai-facts.json 缺失、corrupt
+            // JSON、permission / disk error）。这些<b>不是</b>「job 不存在」——映射为不可恢复的
+            // 503 DATASET_UNAVAILABLE（否则前端会误触发 exactly-once full-process recovery，
+            // 浪费 CPU 并掩盖真实存储故障）。job 缺失 / source 缺失 / source 未 READY 各自有
+            // 专门的稳定码（JOB_NOT_FOUND / SOURCE_NOT_FOUND / SOURCE_NOT_READY·SOURCE_PROCESSING_FAILED）。
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "DATASET_UNAVAILABLE");
         } finally {
             processingStore.release(processingJobId);
         }
@@ -248,8 +252,7 @@ public class AiReplayReviewService {
                         battle), battle);
                 yield new AnalyzeResponse(
                         withDisclaimerFooter(corrected.get(0), language),
-                        corrected.get(1),
-                        MapOverviewBuilder.build(battle, representative.reconstruction()));
+                        corrected.get(1));
             }
             case SINGLE_TEAM_BATTLE -> {
                 final TeamAnalyzeResult teamResult = aiAnalysisService
@@ -260,8 +263,7 @@ public class AiReplayReviewService {
                         teamResult.analysis().analysis(), teamResult.preBattleSection()), battle), battle);
                 yield new AnalyzeResponse(
                         withDisclaimerFooter(corrected.get(0), language),
-                        corrected.get(1),
-                        MapOverviewBuilder.build(battle, first.reconstruction()));
+                        corrected.get(1));
             }
             case NONE -> throw new IllegalArgumentException("NO_BATTLE_DATA");
             default -> throw new UnsupportedReplayAnalysisModeException("UNSUPPORTED_BATTLE_CATEGORY");

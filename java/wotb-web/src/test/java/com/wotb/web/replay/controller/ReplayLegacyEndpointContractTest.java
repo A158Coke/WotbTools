@@ -11,7 +11,6 @@ import com.wotb.web.replay.job.ReplayParseScheduler;
 import com.wotb.web.replay.service.ReplayService;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
-import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -197,7 +196,4 @@ class ReplayLegacyEndpointContractTest {
                 type.getSimpleName() + "." + name + "() 已随 legacy 端点删除");
     }
 
-    private static MultipartFile file() {
-        return new MockMultipartFile("files", "a.wotbreplay", "application/octet-stream", new byte[]{1});
-    }
 }

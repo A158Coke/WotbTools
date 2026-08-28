@@ -80,7 +80,8 @@ describe('replay export job api', () => {
 
   it('createExportJob propagates 503 EXPORT_QUEUE_FULL as ApiError', async () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse(503, { error: 'EXPORT_QUEUE_FULL' }))
-    const err = await createExportJob('aggregate').catch(e => e)
+    // 真实 request shape：携带 processingJobId（缺失会先走 410，根本到不了 Export queue）。
+    const err = await createExportJob('aggregate', 'p1').catch(e => e)
     expect(err).toBeInstanceOf(ApiError)
     expect(err.code).toBe('EXPORT_QUEUE_FULL')
     expect(err.status).toBe(503)
