@@ -9,12 +9,12 @@ import com.wotb.core.replay.processing.TeamEntityMapper;
 import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.replay.processing.TeamPerspectiveResolution;
 import com.wotb.core.replay.processing.TeamPerspectiveResolver;
-import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
+import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.event.TurretDirectionChangedEvent;
@@ -359,7 +359,7 @@ public final class MapOverviewBuilder {
         }
         double battleEnd = Double.NaN;
         for (final ReplayEvent event : events) {
-            if (event instanceof BattleEndedEvent ended) {
+            if (event instanceof RoundFinishedEvent ended) {
                 final double t = relativeSec(ended, battleStartRawClockSec);
                 if (Double.isFinite(t) && t > 0) {
                     battleEnd = Double.isNaN(battleEnd) ? t : Math.min(battleEnd, t);

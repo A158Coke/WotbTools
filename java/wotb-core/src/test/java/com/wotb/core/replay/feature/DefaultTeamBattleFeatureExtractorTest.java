@@ -5,7 +5,7 @@ import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.processing.TeamPerspectiveResolution;
 import com.wotb.core.replay.processing.TeamPerspectiveResolver;
-import com.wotb.core.replay.event.BattleEndedEvent;
+import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
@@ -626,11 +626,11 @@ class DefaultTeamBattleFeatureExtractorTest {
     void replayBattleEndKeepsItsSourceAndConfidence() {
         final Fixture fixture = fixture();
         fixture.battle().durationS = null;
-        // Non-zero battle start (raw 30): BattleEndedEvent raw 120 must convert to relative 90,
+        // Non-zero battle start (raw 30): RoundFinishedEvent raw 120 must convert to relative 90,
         // proving the conversion actually runs rather than being hidden by a zero clock.
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),
-                new BattleEndedEvent(
+                RoundFinishedEvent.of(
                         2, new ReplayTimestamp(120f, null), 14,
                         DecodeConfidence.INFERRED, 1));
 
@@ -701,10 +701,10 @@ class DefaultTeamBattleFeatureExtractorTest {
     void replayBattleEndConvertedToBattleRelativeClock() {
         final Fixture fixture = fixture();
         fixture.battle().durationS = null;   // force replay-event battle end
-        // battle start raw = 60, BattleEndedEvent raw = 240 -> relative end 180.
+        // battle start raw = 60, RoundFinishedEvent raw = 240 -> relative end 180.
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),
-                new BattleEndedEvent(2, new ReplayTimestamp(240f, null), 14,
+                RoundFinishedEvent.of(2, new ReplayTimestamp(240f, null), 14,
                         DecodeConfidence.INFERRED, 1));
 
         final TeamBattleFeatureSet features = extractWithStart(fixture, events, 60f);
@@ -723,7 +723,7 @@ class DefaultTeamBattleFeatureExtractorTest {
     @Test
     void lastObservedClockFallbackIsBattleRelative() {
         final Fixture fixture = fixture();
-        fixture.battle().durationS = null;   // no authoritative duration, no BattleEndedEvent
+        fixture.battle().durationS = null;   // no authoritative duration, no RoundFinishedEvent
         // battle start raw = 60, last observed raw = 150 -> relative fallback 90.
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),

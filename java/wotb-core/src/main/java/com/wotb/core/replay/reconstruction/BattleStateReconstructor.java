@@ -1,6 +1,7 @@
 package com.wotb.core.replay.reconstruction;
 
-import com.wotb.core.replay.event.BattleEndedEvent;
+import com.wotb.core.replay.event.ReplayStreamClosedEvent;
+import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.EntityCreatedEvent;
@@ -79,7 +80,8 @@ public class BattleStateReconstructor {
             case DamageEvent e -> applyDamage(state, e);
             case EntityRemovedEvent e -> applyEntityRemoved(state, e);
             case VehicleDestroyedEvent e -> applyVehicleDestroyed(state, e);
-            case BattleEndedEvent e -> applyBattleEnded(state, e);
+            case RoundFinishedEvent e -> applyRoundFinished(state, e);
+            case ReplayStreamClosedEvent ignored -> { /* Type14 = stream close only */ }
             case HealthChangedEvent e -> applyHealth(state, e);
             case MaterializationEvent e -> applyMaterialization(state, e);
             case RecorderHealthChangedEvent e -> applyRecorderHealth(state, e);
@@ -143,10 +145,12 @@ public class BattleStateReconstructor {
         markDestroyed(vs);
     }
 
-    private void applyBattleEnded(final BattleState state, final BattleEndedEvent e) {
+    // PR147: lifecycle comes from the canonical RoundFinishedEvent (Avatar method4 / wrapper3
+    // AFTERBATTLE), NOT the Type14 stream-close marker.
+    private void applyRoundFinished(final BattleState state, final RoundFinishedEvent e) {
         state.setBattleEnded(true);
         state.setLifecycle(BattleLifecycle.FINISHED);
-        if (e.winnerTeam() != null) {
+        if (e.winnerTeam() == 1 || e.winnerTeam() == 2) {
             state.setWinnerTeam(e.winnerTeam());
         }
     }

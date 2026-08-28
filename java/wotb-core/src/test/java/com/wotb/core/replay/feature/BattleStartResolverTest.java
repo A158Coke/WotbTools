@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.replay.event.BattleEndedEvent;
+import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
@@ -103,7 +103,7 @@ class BattleStartResolverTest {
         final Battle battle = new Battle();
         battle.durationS = 60.0;
         final List<ReplayEvent> events = List.of(
-                new BattleEndedEvent(1, new ReplayTimestamp(120f, null), 14, DecodeConfidence.EXACT, 1)
+                RoundFinishedEvent.of(1, new ReplayTimestamp(120f, null), 14, DecodeConfidence.EXACT, 1)
         );
         final BattleStartResolution r = BattleStartResolver.resolve(null, diag, events, battle);
         assertEquals(BattleStartResolution.Status.ESTIMATED, r.status());
@@ -121,7 +121,7 @@ class BattleStartResolverTest {
         final Battle battle = new Battle();
         battle.durationS = 60.0;
         final List<ReplayEvent> events = List.of(
-                new BattleEndedEvent(1, new ReplayTimestamp(120f, null), 14, DecodeConfidence.EXACT, 1)
+                RoundFinishedEvent.of(1, new ReplayTimestamp(120f, null), 14, DecodeConfidence.EXACT, 1)
         );
         final BattleStartResolution r = BattleStartResolver.resolve(null, null, events, battle);
         assertEquals(BattleStartResolution.Status.ESTIMATED, r.status());
@@ -134,7 +134,7 @@ class BattleStartResolverTest {
         final Battle battle = new Battle();
         battle.durationS = 60.0;
         final List<ReplayEvent> events = List.of(
-                new BattleEndedEvent(1, new ReplayTimestamp(30f, null), 14, DecodeConfidence.EXACT, 1)
+                RoundFinishedEvent.of(1, new ReplayTimestamp(30f, null), 14, DecodeConfidence.EXACT, 1)
         );
         final BattleStartResolution r = BattleStartResolver.resolve(null, null, events, battle);
         assertEquals(BattleStartResolution.Status.UNRESOLVED, r.status());
@@ -145,7 +145,7 @@ class BattleStartResolverTest {
         final Battle battle = new Battle();
         battle.durationS = Double.NaN;
         final List<ReplayEvent> events = List.of(
-                new BattleEndedEvent(1, new ReplayTimestamp(120f, null), 14, DecodeConfidence.EXACT, 1)
+                RoundFinishedEvent.of(1, new ReplayTimestamp(120f, null), 14, DecodeConfidence.EXACT, 1)
         );
         final BattleStartResolution r = BattleStartResolver.resolve(null, null, events, battle);
         assertEquals(BattleStartResolution.Status.UNRESOLVED, r.status());
@@ -156,7 +156,7 @@ class BattleStartResolverTest {
         final Battle battle = new Battle();
         battle.durationS = 60.0;
         final List<ReplayEvent> events = List.of(
-                new BattleEndedEvent(1, new ReplayTimestamp(Float.NaN, null), 14, DecodeConfidence.EXACT, 1)
+                RoundFinishedEvent.of(1, new ReplayTimestamp(Float.NaN, null), 14, DecodeConfidence.EXACT, 1)
         );
         final BattleStartResolution r = BattleStartResolver.resolve(null, null, events, battle);
         assertEquals(BattleStartResolution.Status.UNRESOLVED, r.status());
@@ -167,8 +167,8 @@ class BattleStartResolverTest {
         final Battle battle = new Battle();
         battle.durationS = 60.0;
         final List<ReplayEvent> events = List.of(
-                new BattleEndedEvent(1, new ReplayTimestamp(Float.NaN, null), 14, DecodeConfidence.EXACT, 1),
-                new BattleEndedEvent(2, new ReplayTimestamp(120f, null), 14, DecodeConfidence.EXACT, 1)
+                RoundFinishedEvent.of(1, new ReplayTimestamp(Float.NaN, null), 14, DecodeConfidence.EXACT, 1),
+                RoundFinishedEvent.of(2, new ReplayTimestamp(120f, null), 14, DecodeConfidence.EXACT, 1)
         );
         final BattleStartResolution r = BattleStartResolver.resolve(null, null, events, battle);
         assertEquals(BattleStartResolution.Status.ESTIMATED, r.status());
@@ -180,7 +180,7 @@ class BattleStartResolverTest {
         final Battle battle = new Battle();
         battle.durationS = 0.0;
         final List<ReplayEvent> events = List.of(
-                new BattleEndedEvent(1, new ReplayTimestamp(120f, null), 14, DecodeConfidence.EXACT, 1)
+                RoundFinishedEvent.of(1, new ReplayTimestamp(120f, null), 14, DecodeConfidence.EXACT, 1)
         );
         final BattleStartResolution r = BattleStartResolver.resolve(null, null, events, battle);
         assertEquals(BattleStartResolution.Status.UNRESOLVED, r.status());

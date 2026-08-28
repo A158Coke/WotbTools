@@ -6,9 +6,9 @@ import com.wotb.core.replay.processing.FriendlyEnemyResult;
 import com.wotb.core.replay.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.replay.processing.PlayerSideResolver;
 import com.wotb.core.replay.processing.TeamEntityMapping;
-import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
 import com.wotb.core.replay.reconstruction.ObservationState;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
@@ -235,8 +235,8 @@ final class TeamKeyEventsExtractor {
             final Map<ReplayEvent, TacticalTimeResolution> resolutionByEvent
     ) {
         return events.stream()
-                .filter(BattleEndedEvent.class::isInstance)
-                .map(BattleEndedEvent.class::cast)
+                .filter(RoundFinishedEvent.class::isInstance)
+                .map(RoundFinishedEvent.class::cast)
                 .filter(event -> {
                     final TacticalTimeResolution res = resolutionByEvent.get(event);
                     return res != null && res.isUsable();
@@ -252,8 +252,8 @@ final class TeamKeyEventsExtractor {
             final Map<ReplayEvent, TacticalTimeResolution> resolutionByEvent
     ) {
         return events.stream()
-                .filter(BattleEndedEvent.class::isInstance)
-                .map(BattleEndedEvent.class::cast)
+                .filter(RoundFinishedEvent.class::isInstance)
+                .map(RoundFinishedEvent.class::cast)
                 .filter(event -> {
                     final TacticalTimeResolution res = resolutionByEvent.get(event);
                     return res != null && res.isUsable();
