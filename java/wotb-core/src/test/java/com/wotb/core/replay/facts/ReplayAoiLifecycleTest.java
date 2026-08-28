@@ -81,6 +81,7 @@ class ReplayAoiLifecycleTest {
         // collapsed the whole Type5 into PARTIAL and silently dropped this observed interval.
         final List<ReplayEvent> events = new ArrayList<>();
         final int eid = 11;
+        events.add(pos(0, 10f, eid));                                // observed from 10 (opens segment 1)
         events.add(new EntityRemovedEvent(1, ts(20f), 4, DecodeConfidence.EXACT, eid)); // leave @20
         events.add(new MaterializationEvent(2, ts(31f), 5, DecodeConfidence.EXACT,
                 eid, 2, null, new byte[8], new byte[0]));    // presence EXACT, HP UNKNOWN

@@ -15,12 +15,19 @@ import com.wotb.core.replay.event.RecorderHealthChangedEvent;
 import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.VehicleHealthStateEvent;
-import com.wotb.core.replay.event.VehicleDestroyedEvent;
 
 import java.util.ArrayList;
 import java.util.List;
 
-/** 按领域事件重建战场状态；只消费 canonical world-position / HP / terminal semantics。 */
+/**
+ * 按领域事件重建战场状态；只消费 canonical world-position / HP / terminal semantics。
+ *
+ * <p>§21 (PR162): this is NOT a second terminal/death authority. Destroyed/death life state is derived
+ * only from the canonical terminal surfaces {@code ReplayTerminalLifecycle} consumes — the
+ * version-scoped {@code rawState.terminal()} ({@code HealthChangedEvent}/{@code VehicleHealthStateEvent}),
+ * an explicit drowning cause, and {@code alive==false} legacy exact — never from the derived
+ * {@code VehicleDestroyedEvent} or a raw HP&lt;=0 re-derivation.</p>
+ */
 public class BattleStateReconstructor {
 
     static final float DEFAULT_CHECKPOINT_INTERVAL_SEC = 1.0f;
@@ -81,7 +88,6 @@ public class BattleStateReconstructor {
             case DamageEvent e -> applyDamage(state, e);
             case VehicleHitEvent e -> applyHit(state, e);
             case EntityRemovedEvent e -> applyEntityRemoved(state, e);
-            case VehicleDestroyedEvent e -> applyVehicleDestroyed(state, e);
             case RoundFinishedEvent e -> applyRoundFinished(state, e);
             case ReplayStreamClosedEvent ignored -> { /* Type14 = stream close only */ }
             case HealthChangedEvent e -> applyHealth(state, e);
@@ -147,15 +153,6 @@ public class BattleStateReconstructor {
             vs.setRemovedAt(e.timestamp().rawClockSec());
             vs.setObservationState(ObservationState.REMOVED);
         }
-    }
-
-    private void applyVehicleDestroyed(final BattleState state, final VehicleDestroyedEvent e) {
-        final VehicleState vs = state.getOrCreateVehicle(e.entityId(), e.timestamp().rawClockSec());
-        if (vs.lifeState() == LifeState.DESTROYED && e.inferred()) {
-            return;
-        }
-        vs.setLastObservedAt(e.timestamp().rawClockSec());
-        markDestroyed(vs);
     }
 
     // PR147: lifecycle comes from the canonical RoundFinishedEvent (Avatar method4 / wrapper3

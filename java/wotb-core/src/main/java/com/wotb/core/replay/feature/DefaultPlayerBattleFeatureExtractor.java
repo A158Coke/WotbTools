@@ -42,7 +42,7 @@ public class DefaultPlayerBattleFeatureExtractor {
         final List<ReplayEvent> events = reconstruction.events();
         final BattleStartResolution battleStartRes = BattleStartResolver.resolve(
                 reconstruction.battleStartRawClockSec(),
-                reconstruction.diagnostics(), reconstruction.events(), battle);
+                reconstruction.events(), battle);
 
         final List<TimedPosition> positions = new ArrayList<>();
         final List<TimedHpLoss> damages = new ArrayList<>();

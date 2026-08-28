@@ -430,9 +430,9 @@ class MapOverviewBuilderTest {
         final ReplayReconstruction recon = result.reconstruction();
         final List<ReplayEvent> events = new ArrayList<>(recon.events());
         // 合成 RoundFinishedEvent（battle-relative 150s），早于位置流最后时刻（≈302s）
-        events.add(RoundFinishedEvent.of(
+        events.add(new RoundFinishedEvent(
                 999_999, new ReplayTimestamp(0f, 150f), 14,
-                DecodeConfidence.EXACT, 2));
+                DecodeConfidence.EXACT, 2, 1, RoundFinishedEvent.FinishCause.ELIMINATION));
         result.battle().durationS = null;
         final MapOverview overview = MapOverviewBuilder.build(
                 result.battle(), filteredRecon(recon, events));

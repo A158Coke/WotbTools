@@ -89,4 +89,15 @@ public final class ReplayVersionGate {
     public static boolean verifiedFffeTerminalAllowed(final String clientVersion) {
         return closedSemanticsAllowed(clientVersion);
     }
+
+    /**
+     * Type14 packet-stream end/stop marker: a Layer B structural invariant (container/framing), so it is
+     * VERIFIED for the verified families and STRUCTURALLY_COMPATIBLE for any shape-compatible version; only
+     * a profile {@code UNKNOWN} (never for a structural capability) would raw-preserve. Wired here so the
+     * capability/profile is actually consulted rather than the decoder unconditionally decoding Type14.
+     */
+    public static boolean type14StreamCloseAllowed(final String clientVersion) {
+        return ReplayProtocolProfile.levelOf(clientVersion, ReplayProtocolProfile.Capability.TYPE14_STREAM_CLOSE)
+                != ReplayProtocolProfile.Level.UNKNOWN;
+    }
 }

@@ -96,7 +96,7 @@ class ActualCombatantPositionProbeTest {
         final TeamPerspectiveResolution perspective = TeamPerspectiveResolver.resolve(battle, recon);
         final TeamEntityMapping mapping = TeamEntityMapper.resolve(battle, recon);
         final BattleStartResolution battleStart = BattleStartResolver.resolve(
-                recon.battleStartRawClockSec(), recon.diagnostics(), recon.events(), battle);
+                recon.battleStartRawClockSec(), recon.events(), battle);
 
         final int perspectiveTeam = perspective.perspectiveTeam() != null
                 ? perspective.perspectiveTeam() : 0;

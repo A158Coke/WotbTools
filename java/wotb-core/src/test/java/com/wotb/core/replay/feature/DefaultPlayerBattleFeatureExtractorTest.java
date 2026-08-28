@@ -53,7 +53,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
     }
 
     private static RoundFinishedEvent battleEnd(final int seq, final float time) {
-        return RoundFinishedEvent.of(seq, ts(time), 14, DecodeConfidence.EXACT, 1);
+        return new RoundFinishedEvent(seq, ts(time), 14, DecodeConfidence.EXACT, 1, 1, RoundFinishedEvent.FinishCause.ELIMINATION);
     }
 
     private static ParticipantMappingEvent mapping(final int seq, final int eid, final long aid) {

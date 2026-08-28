@@ -17,8 +17,6 @@ import java.util.Map;
  * @param lastClockSec       尾包时钟
  * @param clockRegressionCount 时钟回退次数（后包时钟 < 前包时钟）
  * @param packetTypes        各 packet type 的详细诊断
- * @param battleStartIdentified 是否已识别出战斗开始时刻
- * @param battleStartRawClockSec 识别的战斗开始原始时钟（如果有）
  * @param reachedPhysicalEnd 扫描是否推进到数据物理末尾（末尾仅剩不足一个包头的字节）。
  *                           由扫描器根据循环退出条件显式给出；超出包数/重同步硬上限时读取器
  *                           直接抛异常（不会返回半截诊断），因此正常返回即代表扫描未被硬上限中断。
@@ -36,8 +34,6 @@ public record ReplayStreamDiagnostics(
         float lastClockSec,
         int clockRegressionCount,
         Map<Integer, PacketTypeDiagnostics> packetTypes,
-        boolean battleStartIdentified,
-        Float battleStartRawClockSec,
         boolean reachedPhysicalEnd
 ) {
 

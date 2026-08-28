@@ -81,7 +81,7 @@ class RepresentativeComparatorTest {
         var coverage = new ReplayCoverage(
                 complete, 100, (int) (ratio * 100), 0, unknown, failed, ratio, Map.of());
         var diag = new ReplayStreamDiagnostics(
-                0, 0, 100, 100 - failed - unknown, 0, 0f, 0f, 0, Map.of(), false, null, complete);
+                0, 0, 100, 100 - failed - unknown, 0, 0f, 0f, 0, Map.of(), complete);
         var processingDiag = new ReplayProcessingDiagnostics(
                 true, complete, recon, diag);
         var reconstruction = recon

@@ -65,7 +65,7 @@ class BattleEndDecoderRawPreserveTest {
         battle.durationS = 90.0;
         final List<ReplayEvent> events = List.<ReplayEvent>of(
                 decoder.decode(new ReplayDecodeContext("11.19.0_china"), type14(1, 120f, 1)).events().get(0));
-        final BattleStartResolution res = BattleStartResolver.resolve(null, null, events, battle);
+        final BattleStartResolution res = BattleStartResolver.resolve(null, events, battle);
         assertEquals(BattleStartResolution.Status.UNRESOLVED, res.status(),
                 "Type14 is a stream-close marker, NOT a battle-end/finish anchor -> must not estimate a start");
     }
