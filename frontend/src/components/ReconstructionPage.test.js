@@ -39,7 +39,7 @@ vi.mock('../composables/useAuth.js', () => ({
 }))
 
 vi.mock('vue-i18n', () => ({
-  useI18n: () => ({ t: i18n.t, locale: i18nLocale })
+  useI18n: () => ({ t: i18n.t, te: () => true, locale: i18nLocale })
 }))
 
 /** Dataset 自动准备（plan §50）：mock api 使测试环境不依赖真实后端。 */
@@ -331,6 +331,83 @@ describe('ReconstructionPage selection lifecycle（BLOCKER 2）', () => {
     expect(apiMock.cancelProcessingJob).toHaveBeenCalledWith('pA')
     expect(wrapper.vm.processingJobId).toBeNull()
     expect(wrapper.vm.sourceId).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('dataset-recover（AI analyze JOB_NOT_FOUND）→ invalidate p1、create p2 exactly once、panel 绑定 p2/r0', async () => {
+    apiMock.createProcessingJob
+      .mockResolvedValueOnce({ jobId: 'p1', status: 'QUEUED', total: 1 })
+      .mockResolvedValueOnce({ jobId: 'p2', status: 'QUEUED', total: 1 })
+    apiMock.getProcessingJob.mockResolvedValue({
+      jobId: 'x', status: 'READY', total: 1,
+      sources: [{ sourceId: 'r0', status: 'READY' }]
+    })
+    const fetchMock = vi.fn((url) => {
+      if (String(url).includes('/api/replay/analyze')) {
+        return Promise.resolve({ ok: false, status: 404, text: async () => 'JOB_NOT_FOUND' })
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({}) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountedPage()
+
+    await selectReplays(wrapper, ['a.wotbreplay'])
+    await flushPromises()
+    expect(wrapper.vm.processingJobId).toBe('p1')
+    expect(wrapper.vm.sourceId).toBe('r0')
+
+    // 点击「AI 战术复盘」→ 后端 JOB_NOT_FOUND → emit dataset-recover → 重建 p2
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.createProcessingJob).toHaveBeenCalledTimes(2, 'p1 initial + p2 recovery = exactly once recovery')
+    expect(wrapper.vm.processingJobId).toBe('p2')
+    expect(wrapper.vm.sourceId).toBe('r0')
+    expect(wrapper.vm.datasetError).toBe('')
+    vi.unstubAllGlobals()
+    wrapper.unmount()
+  })
+
+  it('BattlePlaybackPanel dataset-recover 同样触发重建 p2（同一 recovery contract）', async () => {
+    apiMock.createProcessingJob
+      .mockResolvedValueOnce({ jobId: 'p1', status: 'QUEUED', total: 1 })
+      .mockResolvedValueOnce({ jobId: 'p2', status: 'QUEUED', total: 1 })
+    apiMock.getProcessingJob.mockResolvedValue({
+      jobId: 'x', status: 'READY', total: 1,
+      sources: [{ sourceId: 'r0', status: 'READY' }]
+    })
+    const wrapper = mountedPage()
+
+    await selectReplays(wrapper, ['a.wotbreplay'])
+    await flushPromises()
+    expect(wrapper.vm.processingJobId).toBe('p1')
+
+    // BattlePlaybackPanel 经 loadMapOverview 撞到 JOB_NOT_FOUND → emit dataset-recover
+    wrapper.findComponent({ name: 'BattlePlaybackPanel' }).vm.$emit('dataset-recover', 'JOB_NOT_FOUND')
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.createProcessingJob).toHaveBeenCalledTimes(2)
+    expect(wrapper.vm.processingJobId).toBe('p2')
+    expect(wrapper.vm.sourceId).toBe('r0')
+    wrapper.unmount()
+  })
+
+  it('source FAILED → 本地化 datasetError、不裸展示内部 code、poll 停止（不永久准备中）', async () => {
+    apiMock.createProcessingJob.mockResolvedValue({ jobId: 'p1', status: 'QUEUED', total: 1 })
+    apiMock.getProcessingJob.mockResolvedValue({
+      jobId: 'p1', status: 'PROCESSING', total: 1,
+      sources: [{ sourceId: 'r0', status: 'FAILED' }]
+    })
+    const wrapper = mountedPage()
+
+    await selectReplays(wrapper, ['a.wotbreplay'])
+    await flushPromises()
+
+    expect(wrapper.vm.datasetError).toBe('recon.errors.SOURCE_PROCESSING_FAILED', '必须是已本地化 key，而非裸内部码')
+    expect(wrapper.vm.datasetError).not.toBe('SOURCE_PROCESSING_FAILED')
+    expect(wrapper.vm.sourceId).toBeNull('source 未 READY，不得绑定 dataset')
     wrapper.unmount()
   })
 

@@ -13,6 +13,7 @@ import AiReviewPanel from './AiReviewPanel.vue'
 import BattlePlaybackPanel from './BattlePlaybackPanel.vue'
 import ReplayInputPanel from './ReplayInputPanel.vue'
 import { displayName, fileKey } from '../utils/helpers.js'
+import { apiErrorLabel } from '../utils/display.js'
 import {
   MAX_REPLAY_FILES,
   MAX_REPLAY_TOTAL_BYTES,
@@ -23,7 +24,7 @@ import {
 // KeepAlive include 匹配组件名：App.vue 仅缓存本页，切走视图时保持面板状态存活。
 defineOptions({ name: 'ReconstructionPage' })
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const { initPromise, login, authenticated } = useAuth()
 
 /** 登录后回跳到本页而不是个人中心。 */
@@ -54,6 +55,11 @@ const error = ref('')
 /** Dataset 引用（plan §50）：独立深链同样走 Processing Pipeline，不重新上传/full process。 */
 const processingJobId = ref(null)
 const sourceId = ref(null)
+/** Dataset 生命周期错误（准备失败 / source 处理失败 / recovery 失败）的已本地化消息；空 = 无。 */
+const datasetError = ref('')
+/** exactly-once recovery（BLOCKER @164）：每个 selection / dataset generation 最多自动恢复一次。 */
+let datasetRecoveryAttempted = false
+let datasetRecoveryInFlight = false
 /**
  * selection generation（BLOCKER 2）：任何文件选择变化（select / replace / remove / clear）
  * 自增。createProcessingJob 是异步的——返回后必须校验 generation + file identity 仍属于
@@ -119,6 +125,9 @@ function clearFile() {
 /** 文件选择变化：新 generation + 立即失效旧 owned Dataset（含 best-effort cancel）。 */
 function selectionChanged() {
   datasetRevision++
+  // recovery budget 是 per-selection / per-dataset-generation：换重放/新选择后重置。
+  datasetRecoveryAttempted = false
+  datasetRecoveryInFlight = false
   invalidateDataset()
 }
 
@@ -170,11 +179,37 @@ async function ensureDataset() {
     if (datasetRevision !== revision || !current || fileKey(current) !== targetKey) {
       return // stale error：不得污染当前 selection
     }
-    error.value = e?.message || String(e)
+    // Dataset 准备失败属于数据集生命周期，不是用户输入错误：本地化，绝不裸抛内部错误码。
+    datasetError.value = apiErrorLabel(t, te, e)
+  }
+}
+
+/** Dataset 可恢复错误（JOB_NOT_FOUND）：失效 stale 引用并重建 p2；exactly-once（最多自动恢复一次）。 */
+async function onDatasetRecover() {
+  const file = files.value[0]
+  if (!file) return
+  if (datasetRecoveryInFlight) return // 同一 recovery in-flight：合并/忽略重复事件
+  if (datasetRecoveryAttempted) {
+    // 第二次 JOB_NOT_FOUND：不再 create 新 Processing Job，结束为本地化 FAILURE。
+    datasetError.value = t('workspace.dataset_prepare_failed')
+    invalidateDataset()
+    return
+  }
+  datasetRecoveryAttempted = true
+  datasetRecoveryInFlight = true
+  datasetError.value = ''
+  try {
+    await ensureDataset()
+  } finally {
+    datasetRecoveryInFlight = false
   }
 }
 
 function pollSourceReady(jobId, revision) {
+  const stop = () => {
+    datasetPollTimer = null
+    datasetPollJobId = null
+  }
   const poll = async () => {
     if (datasetRevision !== revision || datasetPollJobId !== jobId) return
     try {
@@ -183,26 +218,27 @@ function pollSourceReady(jobId, revision) {
       const s = (data.sources || []).find(x => x.sourceId === 'r0')
       if (s && s.status === 'READY') {
         sourceId.value = 'r0'
-        datasetPollTimer = null
-        datasetPollJobId = null
+        stop()
         return
       }
       if (s && s.status === 'FAILED') {
-        error.value = 'SOURCE_PROCESSING_FAILED'
-        datasetPollTimer = null
-        datasetPollJobId = null
+        // 本地化 source 处理失败，绝不裸展示内部稳定码；停止 poll（否则永久「准备中」）。
+        datasetError.value = t('recon.errors.SOURCE_PROCESSING_FAILED')
+        stop()
         return
       }
       if (['READY', 'FAILED', 'CANCELLED'].includes(data.status)) {
-        datasetPollTimer = null
-        datasetPollJobId = null
+        // job 已终态但本 source 未 READY：停止 poll 并本地化为失败，不得永久停留在「准备中」。
+        datasetError.value = t('recon.errors.SOURCE_NOT_READY')
+        stop()
         return
       }
       datasetPollTimer = setTimeout(poll, 750)
     } catch {
+      // network / GET 失败：停止 poll 并本地化，不得留下「准备中」或无错误码。
       if (datasetRevision === revision && datasetPollJobId === jobId) {
-        datasetPollTimer = null
-        datasetPollJobId = null
+        datasetError.value = t('workspace.dataset_prepare_failed')
+        stop()
       }
     }
   }
@@ -255,8 +291,10 @@ async function onAiSeek(sec) {
           :file="files[0] || null"
           :processing-job-id="processingJobId"
           :source-id="sourceId"
+          :dataset-error="datasetError"
           :seek-to="mapSeek"
           login-view="reconstruction"
+          @dataset-recover="onDatasetRecover"
         />
       </div>
 
@@ -264,8 +302,10 @@ async function onAiSeek(sec) {
         :file="files[0] || null"
         :processing-job-id="processingJobId"
         :source-id="sourceId"
+        :dataset-error="datasetError"
         login-view="reconstruction"
         @seek="onAiSeek"
+        @dataset-recover="onDatasetRecover"
       />
     </template>
   </main>

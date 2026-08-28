@@ -288,6 +288,9 @@ function teamNamesPayload() {
 watch(selectionRevision, () => {
   battleTeamNames.value = {}
   summaryTeamNames.value = {}
+  // 新 selection：重置 exactly-once recovery budget。
+  datasetRecoveryAttempted = false
+  datasetRecoveryInFlight = false
 })
 const exportingPng = ref(false)
 const aggregateRef = ref(null)
@@ -508,6 +511,9 @@ const playbackSeek = ref(null)
 const datasetRef = ref(null)
 /** Dataset 准备失败（prepare failure）时的已本地化错误；空 = 无。 */
 const datasetError = ref('')
+/** exactly-once recovery（BLOCKER @164）：每个 selection / dataset generation 最多自动恢复一次。 */
+let datasetRecoveryAttempted = false
+let datasetRecoveryInFlight = false
 /**
  * Workspace Dataset 请求 generation（BLOCKER 1）：每次目标变化（workspaceFile 或新的
  * ensureDatasetFor 调用）自增；requestDirectAction 是异步的，返回后必须校验 revision +
@@ -526,6 +532,9 @@ let workspaceDatasetRevision = 0
 watch(workspaceFile, () => {
   datasetRef.value = null
   datasetError.value = ''
+  // 换 target / 新 selection：重置 exactly-once recovery budget。
+  datasetRecoveryAttempted = false
+  datasetRecoveryInFlight = false
 })
 
 /**
@@ -564,13 +573,27 @@ async function ensureDatasetFor(file) {
   }
 }
 
-/** Dataset 可恢复错误（job/dataset 引用过期）：清空失效引用并重新建立 Dataset（自动恢复一次）。 */
+/** Dataset 可恢复错误（job/dataset 引用过期）：清空失效引用并重建 Dataset，exactly-once。
+ * 每个 selection / dataset generation 最多自动恢复一次：recovery in-flight 时重复事件合并/忽略；
+ * 第二次 JOB_NOT_FOUND 不再 create 新 Processing Job，结束为本地化 FAILURE。 */
 async function onDatasetRecover() {
   const f = workspaceFile.value
   if (!f) return
+  if (datasetRecoveryInFlight) return // 同一 recovery in-flight：合并/忽略
+  if (datasetRecoveryAttempted) {
+    datasetRef.value = null
+    datasetError.value = t('workspace.dataset_prepare_failed')
+    return
+  }
+  datasetRecoveryAttempted = true
+  datasetRecoveryInFlight = true
   datasetRef.value = null
   datasetError.value = ''
-  await ensureDatasetFor(f)
+  try {
+    await ensureDatasetFor(f)
+  } finally {
+    datasetRecoveryInFlight = false
+  }
 }
 
 async function openWorkspacePlayback(file) {

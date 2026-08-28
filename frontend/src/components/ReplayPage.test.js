@@ -2718,6 +2718,100 @@ describe('ReplayPage Workspace Dataset generation ownership（BLOCKER 1）', () 
     expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'p1', sourceId: 'r0' })
     wrapper.unmount()
   })
+
+  it('Playback exactly-once：第一次 JOB_NOT_FOUND recover p2、第二次不再 create p3、结束为本地化 FAILURE', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) }))
+    const file = new File(['a'], 'a.wotbreplay')
+    let call = 0
+    directActionHolder.setImpl(() => (++call === 1
+      ? Promise.resolve({ processingJobId: 'p1', sourceId: 'r0' })
+      : call === 2
+        ? Promise.resolve({ processingJobId: 'p2', sourceId: 'r0' })
+        : Promise.resolve({ processingJobId: 'p3', sourceId: 'r0' })))
+    const wrapper = mountWithFilesLocal([file])
+
+    await wrapper.vm.openWorkspacePlayback(file)
+    await flushPromises()
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'p1', sourceId: 'r0' })
+
+    // 第一次 JOB_NOT_FOUND → 自动恢复 p2
+    wrapper.findComponent({ name: 'BattlePlaybackPanel' }).vm.$emit('dataset-recover', 'JOB_NOT_FOUND')
+    await flushPromises()
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'p2', sourceId: 'r0' })
+
+    // 第二次 JOB_NOT_FOUND（p2 也过期）→ 不再 create p3，结束为本地化 FAILURE
+    wrapper.findComponent({ name: 'BattlePlaybackPanel' }).vm.$emit('dataset-recover', 'JOB_NOT_FOUND')
+    await flushPromises()
+    expect(wrapper.vm.datasetRef).toBeNull('第二次必须清空引用，不再绑定新 dataset')
+    expect(wrapper.vm.datasetRef).not.toEqual({ processingJobId: 'p3', sourceId: 'r0' })
+    expect(wrapper.vm.datasetError).toBe('workspace.dataset_prepare_failed')
+    vi.unstubAllGlobals()
+    wrapper.unmount()
+  })
+
+  it('两面板快速 emit dataset-recover → recovery single-flight（只触发一次恢复，不双创建）', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) }))
+    const file = new File(['a'], 'a.wotbreplay')
+    const d1 = deferred()
+    const d2 = deferred()
+    const d3 = deferred()
+    let call = 0
+    directActionHolder.setImpl(() => (++call === 1 ? d1.promise : call === 2 ? d2.promise : d3.promise))
+    const wrapper = mountWithFilesLocal([file])
+    const p1 = wrapper.vm.openWorkspacePlayback(file)
+    d1.resolve({ processingJobId: 'p1', sourceId: 'r0' })
+    await flushPromises()
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'p1', sourceId: 'r0' })
+
+    // 两个面板几乎同时 emit dataset-recover：recovery in-flight，第二个合并/忽略
+    wrapper.findComponent({ name: 'AiReviewPanel' }).vm.$emit('dataset-recover', 'JOB_NOT_FOUND')
+    wrapper.findComponent({ name: 'BattlePlaybackPanel' }).vm.$emit('dataset-recover', 'JOB_NOT_FOUND')
+    await flushPromises()
+
+    d2.resolve({ processingJobId: 'p2', sourceId: 'r0' })
+    await flushPromises()
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'p2', sourceId: 'r0' })
+    expect(wrapper.vm.datasetRef).not.toEqual({ processingJobId: 'p3', sourceId: 'r0' },
+      '不得触发第二次恢复（若双创建会走到 d3 → p3）')
+    await p1
+    vi.unstubAllGlobals()
+    wrapper.unmount()
+  })
+
+  it('selection A recovery in-flight 时切 B：A 迟到结果 pure discard、B 不绑定 A、A 不消耗 B 的 budget', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) }))
+    const fileA = new File(['a'], 'a.wotbreplay')
+    const fileB = new File(['b'], 'b.wotbreplay')
+    const d1 = deferred()
+    const dARec = deferred()
+    const dB = deferred()
+    let call = 0
+    directActionHolder.setImpl(() => (++call === 1 ? d1.promise : call === 2 ? dARec.promise : dB.promise))
+    const wrapper = mountWithFilesLocal([fileA, fileB])
+    const pA = wrapper.vm.openWorkspaceAi(fileA)
+    d1.resolve({ processingJobId: 'p1', sourceId: 'r0' })
+    await flushPromises()
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'p1', sourceId: 'r0' })
+
+    // A 触发 recovery（in-flight，dARec pending）
+    wrapper.findComponent({ name: 'AiReviewPanel' }).vm.$emit('dataset-recover', 'JOB_NOT_FOUND')
+    await flushPromises()
+
+    // A recovery 未返回前切到 B（workspaceFile 变化 → 重置 budget；B 使用第 3 次调用）
+    const pB = wrapper.vm.openWorkspaceAi(fileB)
+    dB.resolve({ processingJobId: 'pB', sourceId: 'r0' })
+    await flushPromises()
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r0' })
+
+    // A 的 recovery 迟到返回 → pure discard（revision guard），不得覆盖 B / 回指 A
+    dARec.resolve({ processingJobId: 'pA2', sourceId: 'r0' })
+    await flushPromises()
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'pB', sourceId: 'r0' }, 'A 的迟到恢复不得覆盖 B')
+    await pA
+    await pB
+    vi.unstubAllGlobals()
+    wrapper.unmount()
+  })
 })
 
 describe('ReplayPage League 算法说明入口', () => {

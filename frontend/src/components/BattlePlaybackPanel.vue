@@ -218,8 +218,8 @@ onBeforeUnmount(() => {
     <div v-else class="panel map-panel" data-test="map-panel" ref="mapPanelEl">
       <!-- dataset 未就绪（PREPARING_DATASET / FAILURE）：不读 cached artifact，显示准备/失败状态 -->
       <div v-if="!datasetReady" class="map-dataset-status" data-test="map-dataset-status">
-        <span class="map-status-spinner" aria-hidden="true"></span>
-        <span>{{ datasetError || $t('workspace.dataset_preparing') }}</span>
+        <span v-if="!datasetError" class="map-status-spinner" aria-hidden="true"></span>
+        <span :class="{ 'map-dataset-error': !!datasetError }">{{ datasetError || $t('workspace.dataset_preparing') }}</span>
       </div>
       <template v-else>
         <div class="map-panel-head">
@@ -279,6 +279,10 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 @keyframes map-status-spin { to { transform: rotate(360deg); } }
+/* FAILURE：与 PREPARING 明确区分——无 spinner、错误色文本 */
+.map-dataset-status .map-dataset-error {
+  color: var(--error);
+}
 
 .panel {
   background: rgba(13, 18, 22, .94);
