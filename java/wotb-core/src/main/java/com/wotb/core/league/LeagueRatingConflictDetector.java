@@ -290,8 +290,8 @@ public final class LeagueRatingConflictDetector {
                 continue; // 全部 UNKNOWN：保持原值（绝不清洗，绝不从 residual raw 恢复）
             }
             if (best.source() == DeathTimeSource.LIVE_EXACT) {
-                // LIVE_EXACT：只写 canonical survivalTimeSec + source；原始结算 #104 deathTimeMillis
-                // 是「原始 proto #104」字段，不得把 live-derived canonical fact 写回（数据完整性）。
+                // LIVE_EXACT：只写 canonical survivalTimeSec + source；原始结算 evidence（field24 lifeTime）
+                // 是 raw settlement evidence，不得把 live-derived canonical fact 写回（数据完整性）。
                 p.survivalTimeSec = best.timeSec();
                 p.deathTimeSource = DeathTimeSource.LIVE_EXACT;
             } else {
