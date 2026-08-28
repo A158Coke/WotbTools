@@ -18,6 +18,10 @@ import com.wotb.core.replay.feature.MapCoordinateResolution;
 import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
+import com.wotb.core.replay.facts.ShotFact;
+import com.wotb.core.replay.facts.ShotResolution;
+import com.wotb.core.replay.facts.TargetingShotPair;
+import com.wotb.core.replay.event.ShotResultEvent;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.util.PlayerResultFormat;
 
@@ -25,6 +29,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -734,6 +739,9 @@ final class PlayerEvidenceFormatter {
         appendRecorderMovementEvidence(sb, features.movements(),
                 battle == null ? null : battle.mapName);
 
+        // ====== RECORDER_COMBAT_FACTS_BACKEND_COMPUTED（你的射击/命中事实·后端计算） ======
+        appendRecorderShotEvidence(sb, features.shots(), features.targetingPairs());
+
         // ====== KEY_EVENTS_BACKEND_COMPUTED ======
         if (features.keyEvents() != null && !features.keyEvents().isEmpty()) {
             sb.append("\n=== KEY_EVENTS_BACKEND_COMPUTED（关键事件·后端计算） ===\n");
@@ -863,6 +871,110 @@ final class PlayerEvidenceFormatter {
             }
             sb.append('\n');
         }
+    }
+
+    /**
+     * 录像者射击事实（§C1/C6/C7 canonical facts）：仅输出已闭合为录像者射击的 ShotFact，
+     * 未知项如实标注 UNKNOWN（不得补全为 0 / 无事件 / 满血 / 静止）。
+     * 无射击事实时不输出；method38 结果仅在窗口内唯一配对时出现。
+     */
+    static void appendRecorderShotEvidence(final StringBuilder sb,
+                                           final List<ShotFact> shots,
+                                           final List<TargetingShotPair> targetingPairs) {
+        if (shots == null || shots.isEmpty()) {
+            return;
+        }
+        final java.util.Map<Integer, TargetingShotPair> pairs = new java.util.HashMap<>();
+        if (targetingPairs != null) {
+            for (final TargetingShotPair p : targetingPairs) {
+                pairs.put(p.shotId(), p);
+            }
+        }
+        final StringBuilder section = new StringBuilder();
+        section.append("\n=== RECORDER_COMBAT_FACTS_BACKEND_COMPUTED（你的射击/命中事实·后端计算） ===\n");
+        section.append("说明: 回放协议已证明的射击/命中观测; 未知项标注 UNKNOWN, 不得补全为 0 或「无事件」.\n");
+        int shown = 0;
+        for (final ShotFact shot : shots) {
+            if (!shot.recorderShot()) {
+                continue;
+            }
+            shown++;
+            section.append("  ").append(PlayerAnalysisTerms.battleClock((float) shot.launchTimeSec()))
+                    .append(" 发射");
+            if (shot.ammoSelection() != null) {
+                section.append(" | 弹药选择=").append(shot.ammoSelection());
+            } else {
+                section.append(" | 弹药选择=UNKNOWN");
+            }
+            if (shot.ammoDescriptorRaw() != null) {
+                section.append(" | 弹种描述符=0x")
+                        .append(Integer.toHexString(shot.ammoDescriptorRaw()).toUpperCase(Locale.ROOT));
+            }
+            final TargetingShotPair pair = pairs.get(shot.shotId());
+            if (pair != null) {
+                section.append(" | 开火前散布=").append(pair.dispersionBloomBefore() == null
+                        ? "UNKNOWN" : String.format(Locale.ROOT, "%.4f", pair.dispersionBloomBefore()));
+                if (pair.bloomIncreaseAfterShot() != null) {
+                    section.append(" 开火后散布增量=+")
+                            .append(String.format(Locale.ROOT, "%.4f", pair.bloomIncreaseAfterShot()));
+                }
+                if (pair.turretYawBeforeShotRad() != null) {
+                    section.append(" 开火前炮塔相对偏航=")
+                            .append(String.format(Locale.ROOT, "%.3f", pair.turretYawBeforeShotRad()));
+                }
+                if (pair.gunPitchBeforeShotRad() != null) {
+                    section.append(" 开火前炮管俯仰=")
+                            .append(String.format(Locale.ROOT, "%.3f", pair.gunPitchBeforeShotRad()));
+                }
+            }
+            if (shot.terminalPosition() != null) {
+                section.append(" | 命中终点");
+            }
+            if (shot.resolution() != null) {
+                section.append(" | 命中结果: ").append(shotResultLabel(shot.resolution()));
+            } else {
+                section.append(" | 命中结果=UNKNOWN");
+            }
+            section.append('\n');
+        }
+        if (shown > 0) {
+            sb.append(section);
+        }
+    }
+
+    /** method38 结果渲染（正交多 bit，不折叠成单一命中/未命中）。 */
+    private static String shotResultLabel(final ShotResolution r) {
+        final java.util.ArrayList<String> parts = new java.util.ArrayList<>();
+        if (r.directKill()) parts.add("直接击杀");
+        if (r.targetAlreadyDead()) parts.add("目标已阵亡");
+        if (r.fireStarted()) parts.add("起火");
+        if (r.ricochet()) parts.add("跳弹");
+        if (r.projectileMaterialPierced()) parts.add("弹体击穿");
+        if (r.projectileMaterialStopped()) parts.add("弹体未击穿");
+        if (r.projectileZeroDfArmorPierced()) parts.add("间隙装甲击穿");
+        if (r.projectileZeroDfArmorNotPierced()) parts.add("间隙装甲未击穿");
+        if (r.projectileComponentInvolvement()) parts.add("组件波及");
+        if (r.projectileTrackChassisDamage()) parts.add("履带受损");
+        if (r.projectileGunDamage()) parts.add("炮管受损");
+        if (r.explosionMaterialPositiveDf()) parts.add("爆炸-材料分支");
+        if (r.explosionZeroDfArmor()) parts.add("爆炸-间隙装甲分支");
+        if (r.explosionComponentInvolvement()) parts.add("爆炸-组件波及");
+        if (r.explosionComponentDamage()) parts.add("爆炸-组件损坏");
+        if (!r.modifierIds().isEmpty()) {
+            final java.util.ArrayList<String> mods = new java.util.ArrayList<>();
+            for (final Integer m : r.modifierIds()) {
+                mods.add(m == 1 ? "精准射击" : m == 2 ? "钨芯弹" : "modifier#" + m);
+            }
+            parts.add("特殊弹药: " + String.join("+", mods));
+        }
+        for (final ShotResultEvent.ComponentResult c : r.components()) {
+            final String kind = ShotResultEvent.ComponentKind.of(c.token()) == ShotResultEvent.ComponentKind.UNKNOWN
+                    ? "组件#" + c.token() : ShotResultEvent.ComponentKind.of(c.token()).name().toLowerCase(Locale.ROOT);
+            final String state = c.state() == 2 ? "瘫痪" : c.state() == 1 ? "损坏" : "波及";
+            parts.add(kind + ":" + state);
+        }
+        return parts.isEmpty() ? "无解析事实(原始flags=0x" + Integer.toHexString(r.rawFlags16()) + ")"
+                : String.join("、", parts);
     }
 
 }

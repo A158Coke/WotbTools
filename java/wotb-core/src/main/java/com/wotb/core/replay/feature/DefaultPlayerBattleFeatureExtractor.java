@@ -11,6 +11,11 @@ import com.wotb.core.replay.processing.TeamEntityMapper;
 import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.Vector3;
+import com.wotb.core.util.PlayerResultFormat;
+import com.wotb.core.replay.facts.ShotFact;
+import com.wotb.core.replay.facts.ShotLifecycle;
+import com.wotb.core.replay.facts.TargetingDerivedFacts;
+import com.wotb.core.replay.facts.TargetingShotPair;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -179,7 +184,14 @@ public class DefaultPlayerBattleFeatureExtractor {
                     + " — entity ID may be unreliable");
         }
 
+        // §C1/C6/C7：canonical 射击事实 + 瞄准 PRE/POST 派生（recorder 过滤在 ShotLifecycle 内）
+        final double startRaw = battleStartRaw == null ? 0.0 : battleStartRaw.doubleValue();
+        final List<ShotFact> shots = ShotLifecycle.build(
+                events, mapping, PlayerResultFormat.recorderAccountId(battle), startRaw);
+        final List<TargetingShotPair> targetingPairs = TargetingDerivedFacts.pair(
+                shots, events, startRaw);
         return new PlayerBattleFeatureSet(movements, engagements, phases, keyEvents,
+                shots, targetingPairs,
                 limitations, hasRealFeatures);
     }
 
