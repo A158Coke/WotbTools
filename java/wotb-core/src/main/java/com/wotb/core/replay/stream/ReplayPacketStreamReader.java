@@ -42,15 +42,12 @@ public final class ReplayPacketStreamReader {
     private final Map<Integer, PacketTypeStats> typeStats = new HashMap<>();
 
     private int scannedBytes;
-    private int skippedByteCount;
-    private int resyncCount;
     private int trailingByteCount;
     private float firstClockSec = Float.NaN;
     private float lastClockSec = Float.NaN;
     private float previousClockSec = Float.NaN;
     private int clockRegressionCount;
     private int normalPacketCount;
-    private int recoveredPacketCount;
 
     private ReplayPacketStreamReader(byte[] data) {
         this.source = Objects.requireNonNull(data, "data must not be null");
@@ -117,7 +114,6 @@ public final class ReplayPacketStreamReader {
                     payloadLen,
                     type,
                     clockSecs,
-                    PacketReadStatus.NORMAL,
                     source,
                     offset + 12
             ));
@@ -178,9 +174,6 @@ public final class ReplayPacketStreamReader {
                 scannedBytes,
                 packets.size(),
                 normalPacketCount,
-                recoveredPacketCount,
-                resyncCount,
-                skippedByteCount,
                 trailingByteCount,
                 Float.isNaN(firstClockSec) ? 0f : firstClockSec,
                 Float.isNaN(lastClockSec) ? 0f : lastClockSec,

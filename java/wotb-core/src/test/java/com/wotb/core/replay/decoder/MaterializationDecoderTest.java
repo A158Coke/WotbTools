@@ -5,7 +5,6 @@ import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.MaterializationAnnouncedEvent;
 import com.wotb.core.replay.event.MaterializationEvent;
 import com.wotb.core.replay.event.UnknownReplayEvent;
-import com.wotb.core.replay.stream.PacketReadStatus;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
 
@@ -25,7 +24,7 @@ class MaterializationDecoderTest {
 
     private static RawReplayPacket packet(final int type, final byte[] payload) {
         return new RawReplayPacket(0, 0, payload.length, type, 1.0f,
-                PacketReadStatus.NORMAL, payload, 0);
+                payload, 0);
     }
 
     private static byte[] vehicleType5(final int entityId, final int entityTypeId, final int hp) {

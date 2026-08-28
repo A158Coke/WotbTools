@@ -1004,7 +1004,7 @@ class AiReplayAnalysisServiceTest {
         final ReplayStreamHeader header = new ReplayStreamHeader(0x12345678L, new byte[8], "h", "v", 15);
         final ReplayCoverage coverage = new ReplayCoverage(true, 8, 8, 0, 0, 0, 1.0, Map.of());
         final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true, 1000f, true);
+                0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true, 1000f, true);
         final List<ReplayEvent> events = new ArrayList<>();
         int seq = 0;
         int eid = 1;

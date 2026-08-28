@@ -3,7 +3,6 @@ package com.wotb.core.replay.decoder;
 import com.wotb.core.replay.event.ArenaPeriodChangedEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.RoundFinishedEvent;
-import com.wotb.core.replay.stream.PacketReadStatus;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
 
@@ -33,7 +32,7 @@ class BattleClockPhaseBTest {
         payload[13] = (byte) root.length;
         System.arraycopy(root, 0, payload, 14, root.length);
         return new RawReplayPacket(7, 0, payload.length,
-                EntityMethodDecoder.TYPE_ENTITY_METHOD, 56.233f, PacketReadStatus.NORMAL, payload, 0);
+                EntityMethodDecoder.TYPE_ENTITY_METHOD, 56.233f, payload, 0);
     }
 
     private static RawReplayPacket method(final int subtype, final byte[] args) {
@@ -42,7 +41,7 @@ class BattleClockPhaseBTest {
         payload[8] = (byte) args.length;
         System.arraycopy(args, 0, payload, 12, args.length);
         return new RawReplayPacket(1, 0, payload.length,
-                EntityMethodDecoder.TYPE_ENTITY_METHOD, 10f, PacketReadStatus.NORMAL, payload, 0);
+                EntityMethodDecoder.TYPE_ENTITY_METHOD, 10f, payload, 0);
     }
 
     @Test

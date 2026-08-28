@@ -359,8 +359,7 @@ public class ReplayReconstructionService {
         return new ReplayStreamDiagnostics(
                 diagnostics.sourceSize(), diagnostics.scannedBytes(),
                 diagnostics.packetCount(), diagnostics.normalPacketCount(),
-                diagnostics.recoveredPacketCount(), diagnostics.resyncCount(),
-                diagnostics.skippedByteCount(), diagnostics.trailingByteCount(),
+                diagnostics.trailingByteCount(),
                 diagnostics.firstClockSec(), diagnostics.lastClockSec(),
                 diagnostics.clockRegressionCount(),
                 updatedTypes,

@@ -5,7 +5,6 @@ import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.HpRawState;
 import com.wotb.core.replay.event.TurretDirectionChangedEvent;
 import com.wotb.core.replay.event.UnknownReplayEvent;
-import com.wotb.core.replay.stream.PacketReadStatus;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
 
@@ -26,7 +25,7 @@ class EntityPropertyDecoderTest {
         System.arraycopy(value, 0, payload, 12, value.length);
         return new RawReplayPacket(
                 1, 0, payload.length, EntityPropertyDecoder.TYPE_ENTITY_PROPERTY,
-                10.0f, PacketReadStatus.NORMAL, payload, 0);
+                10.0f, payload, 0);
     }
 
     @Test

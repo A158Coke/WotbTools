@@ -192,12 +192,15 @@ positionErr_z: f32    // 4 字节
 yaw:           f32    // 4 字节
 pitch:         f32    // 4 字节
 roll:          f32    // 4 字节
-is_error:      i8     // 1 字节
+trailingByte:  u8     // 1 字节; PR147 controlled evidence: semantic UNKNOWN（绝非 onGround / isError）
 ====================
 合计: 49 字节
 ```
 
-实测 `position_x` 和 `position_z` 对应游戏世界 XZ 坐标（范围约 ±1000），`position_y` 对应高度。
+PR147/PR162 canonical：Type10 为精确 49-byte transform 布局；`payload[4..12)` 的第三个 int 为
+attachment parent entity id；最后 1 字节 trailing byte 的 semantic **UNKNOWN**（已被受控空中回放驳回
+`onGround` 猜想，见 docs/research/replay/type10-movement-transform-closure.md）。实测 `position_x` 和
+`position_z` 对应游戏世界 XZ 坐标（范围约 ±1000），`position_y` 对应高度。
 
 ### 第 1 包 vs 错误容忍
 
@@ -215,19 +218,25 @@ EventStream → Type 8 sub_type 48 (updateArena2)
   → Map<Integer, Long> entityToAccount
 ```
 
-## 死亡时间推算（3 层 fallback + 假阳性检测）
+## 死亡时间 authority（PR147/PR162 canonical）
 
 ```
-survivalTimeSec:
-  if survived → battleDuration (meta.json)
-  else:
-    1. deathTimeMillis / 1000  (proto #104; v11.18 实测不存在)
-    2. damageDeathTimes         (Type 8 sub_type 8, sub=3 累计 HP 伤害达 threshold)
-    3. hybrid EntityLeave / Position:
-       a) EntityLeave > 0 且 Position > 0 且 Position > EntityLeave + 5s → Position
-       b) EntityLeave > 0 → EntityLeave
-       c) 否则 → Position
+死亡权威链（PlayerResultFormat.deathSec() / deathEvidence()）:
+  LIVE_EXACT         回放 live EXACT（sub-second）
+      >
+  SETTLEMENT_SECOND 结算 field24 lifeTime（秒，dead=阵亡秒；survivor=battle duration；±0.5s 精度）
+      >
+  UNKNOWN
+
+死亡时间 = PlayerResultFormat.deathSec()（canonical），绝不重读 raw field24 / #104 / EntityLeave /
+damage threshold / last HP update 自行计算。
 ```
+
+PR147 authoritative settlement facts：
+- **field24**（`lifeTime` 秒）：dead → settlement death second；survivor → battle duration。
+- **field25**：killer **result/entity ID**（非 accountId），经 canonical result-id mapping 解析。
+- **field105**（`deathReason`）：survivor sentinel `-1`。
+- **不存在 field #104 deathTimeMillis**；`deathTimeMillis` 是派生兼容值（由 field24 lifeTime 求得），非 raw #104。
 
 **Layer 2 (damageDeathTimes)：** 遍历 Type 8 subtype 8 body[13]=3 (direct HP damage) 事件，按时间累计 victimEid→accountId
 的 HP 伤害量。threshold = min(proto.damageReceived, sub3_total) — 当累计值首次 ≥ threshold 时，该事件时钟即为死亡时间；当前事件的
@@ -347,8 +356,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | **#101** | `F_ACCOUNT = 101`    | varint  | —  | `3100730745`             | **accountId**（Wargaming ID） | 是                     |
 | **#102** | `F_TEAM = 102`       | varint  | —  | `1` / `2`                | **队伍**                      | 是                     |
 | **#103** | `F_TANK = 103`       | varint  | —  | `4481`                   | **车辆 ID**（tankId）           | 是                     |
-| **#104** | `F_DEATH_TIME = 104` | varint  | 毫秒 | `0`（默认）                  | ⚠️ **死亡时刻**（存活/缺失=0）        | 是 → `deathTimeMillis` |
-| **#105** | `F_SURVIVED = 105`   | varint  | —  | `0xFFFFFFFFFFFFFFFF`(-1) | **存活标志**：`-1`=存活，缺失=阵亡      | 是                     |
+| **#105** | `F_DEATH_REASON = 105` | varint | — | `-1`（存活 sentinel）      | **deathReason**：`-1`=存活 sentinel，其它=阵亡原因 | 是 → `deathReasonRaw` |
 | **#106** | —                    | varint  | 银币 | `68600`-`542712`         | **获得银币**                    | 否（已移除）                |
 | **#107** | —                    | varint  | —  | `1104555167`             | 未知 — 大整数，类似哈希               | 否                     |
 | **#116** | —                    | varint  | —  | `262392`                 | 未知                          | 否                     |
@@ -358,8 +366,9 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | **#120** | —                    | varint  | —  | `2` / `3`                | 未知 — 部分存活玩家有                | 否                     |
 | **#122** | —                    | sub_msg | —  | `{#5:5}`                 | 未知 — 单字段子消息                 | 否                     |
 
-> **⚠️ 字段 #104 现状：** 在 v11.18 sample 回放的 `PlayerResultInfo` 中 **实际不存在**（protobuf 字节级确认无 #104 标签）。
-`Protobuf.firstLong(…,0)` 返回默认值 `0`，因此 fallback 自动落到第 2 层（Damage）。此字段可能在新版本回放中存在，代码保持兼容。
+> **⚠️ PR147/PR162 权威：** 结算中没有 field #104 deathTimeMillis。死亡时刻由 **field24（lifeTime 秒）** 派生
+> （dead=settlement death second；survivor=battle duration），`PlayerResult.deathTimeMillis` 是派生兼容值。
+> `field25` 是 killer result/entity ID（非 accountId）；`field105` 是 deathReason（survivor sentinel `-1`）。
 
 ### 字段 #106 说明
 
@@ -534,17 +543,18 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 
 ## 已知问题
 
-### 1. 死亡时间估算精度
+### 1. 死亡时间 authority（PR147/PR162 canonical）
 
-字段 #104（`F_DEATH_TIME`）在 v11.18 sample 回放的 `PlayerResultInfo`（#301→#2）中 **实际不存在**。
+无 field #104 deathTimeMillis。死亡权威链为：
 
-当前 fallback 方案：
+| 层级 | 来源                                  | 精度               |
+|----|-------------------------------------|------------------|
+| LIVE_EXACT       | 回放 live EXACT 死亡证据                 | sub-second       |
+| SETTLEMENT_SECOND | 结算 field24 lifeTime（dead=死亡秒；survivor=battle duration） | ±0.5s（保留 second-level uncertainty） |
+| UNKNOWN          | 无可信证据                             | —                |
 
-| 层级 | 来源                              | 适用场景                           | 精度         |
-|----|---------------------------------|--------------------------------|------------|
-| 1  | proto #104                      | 新版本回放（含此字段）                    | 精确 ms      |
-| 2  | Damage (Type 8 sub 8 sub=3)     | 所有受到直接 HP 伤害的阵亡玩家              | 秒级（伤害事件间隔） |
-| 3  | EntityLeave / Position (hybrid) | EntityLeave 有假阳性时以 Position 为准 | 秒级         |
+死亡时间统一经 `PlayerResultFormat.deathSec()` / `deathEvidence()`（canonical），
+消费方绝不重读 raw field24 / #104 / EntityLeave / damage threshold 自行计算。
 
 Layer 2 为 **2026-06 新增**，解决了旧方法的两个缺陷：
 
