@@ -346,7 +346,7 @@ public final class MapOverviewBuilder {
 
     /**
      * playback 时长（秒）：① finite 且 >0 的 battle.durationS；② 合法 battle-relative 的
-     * BattleEndedEvent（取最早一个）；③ 位置流最后可信时刻；全无 → 0。
+     * RoundFinishedEvent（method4/AFTERBATTLE，取最早一个）；③ 位置流最后可信时刻；全无 → 0。
      */
     private static double resolveDurationSec(
             final Battle battle,

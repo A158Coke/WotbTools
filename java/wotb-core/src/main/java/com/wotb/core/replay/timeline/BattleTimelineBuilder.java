@@ -66,7 +66,7 @@ public final class BattleTimelineBuilder {
         if (clock.resolution() == BattleTimelineClock.UNRESOLVED) {
             return new BattleTimelineResult(null, BattleTimelineValidationResult.invalid(
                     TimelineError.TIMELINE_CLOCK_UNRESOLVED,
-                    "battle-relative clock could not be resolved (no battle start, no BattleEndedEvent, no duration)"));
+                    "battle-relative clock could not be resolved (no battle start (wrapper3 BATTLE), no RoundFinishedEvent (method4), no duration)"));
         }
 
         final double duration = resolveDurationSec(battle, recon, clock.startRawClockSec());

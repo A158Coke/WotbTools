@@ -163,7 +163,7 @@ final class AggregateSheets {
      * 完整 canonical {@link Columns#PLAYER}（玩家/战队/车辆/等级/类型/国家/炮伤/单场 stats/
      * 被命中/被击穿/击伤/排/军阶/车辆ID/账号ID——单一 schema 源，不复制字段列表）。
      *
-     * <p>排标签（{@link Players#platoonLabeler}）按单场 Battle 独立：platoonId → A/B/C
+     * <p>（PR147：field2 为 prebattle/training-room 分组 ID，非排/小队；A/B/C 排标签已删除。）
      * 映射只在该场有效，不同 replay 的排号重新从 A 开始（排号不是跨场身份）。</p>
      */
     private static void detail(final ExcelStyles styles, final List<Battle> battles, final List<String> sourceNames,
