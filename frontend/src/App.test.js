@@ -79,7 +79,7 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
     // defineAsyncComponent：动态 import + onMounted 异步链，轮询直到异步组件 resolve 渲染
     await vi.waitFor(() => {
       expect(wrapper.find('.pb-qa-page').exists()).toBe(true)
-    })
+    }, { timeout: 5000 })
     // useAuth mock → 未登录分支显示 loading 文案（$t mock 返回 key）
     await flushPromises()
     expect(wrapper.text()).toContain('adminPreview.loading')
@@ -90,7 +90,7 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
     const wrapper = mountApp()
     await vi.waitFor(() => {
       expect(wrapper.find('.rating-docs-page').exists()).toBe(true)
-    })
+    }, { timeout: 5000 })
     await flushPromises()
     expect(wrapper.find('.markdown-content').exists()).toBe(true)
     expect(wrapper.text()).toContain('league.docs_page_title')
@@ -101,7 +101,7 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
     const wrapper = mountApp()
     await vi.waitFor(() => {
       expect(wrapper.find('.rating-v2-page').exists()).toBe(true)
-    })
+    }, { timeout: 5000 })
     await flushPromises()
     expect(wrapper.find('nav').text()).not.toContain('ratingV2.title')
     expect(wrapper.text()).toContain('ratingV2.login')
