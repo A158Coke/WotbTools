@@ -851,14 +851,14 @@ watch(files, (next) => {
 
       <div v-show="workspaceTab === 'ai'" data-test="workspace-ai-panel">
         <AiReviewPanel :file="workspaceFile" :processing-job-id="datasetRef?.processingJobId ?? null"
-          :source-id="datasetRef?.sourceId ?? null" :dataset-error="datasetError" login-view="replay"
+          :source-id="datasetRef?.sourceId ?? null" :dataset-error="datasetError"
           @seek="onAiSeek" @dataset-recover="onDatasetRecover" />
       </div>
       <div v-show="workspaceTab === 'playback'" data-test="workspace-playback-panel">
         <!-- active=进入战局回放 capability 时面板才自动加载地图；AI 复盘期间保持挂载但不发请求 -->
         <BattlePlaybackPanel :file="workspaceFile" :processing-job-id="datasetRef?.processingJobId ?? null"
           :source-id="datasetRef?.sourceId ?? null" :dataset-error="datasetError" :active="workspaceTab === 'playback'"
-          :seek-to="playbackSeek" login-view="replay" @dataset-recover="onDatasetRecover" />
+          :seek-to="playbackSeek" @dataset-recover="onDatasetRecover" />
       </div>
     </template>
 

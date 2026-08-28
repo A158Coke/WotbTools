@@ -187,7 +187,7 @@ public class ReconstructionController {
                 && !AiCancellationRegistry.isValidCorrelationId(correlationId);
     }
 
-    /** worker 内 AI 复盘执行器（multipart / dataset 共用同一生命周期）。 */
+    /** worker 内 Dataset AI 复盘执行器（acquire dataset lease → read ai-facts → AI pipeline → SSE；multipart analyze 已 410，不会进入 worker）。 */
     @FunctionalInterface
     private interface AnalysisInvoker {
         AnalyzeResponse invoke(AiReviewStreamListener listener) throws IOException;

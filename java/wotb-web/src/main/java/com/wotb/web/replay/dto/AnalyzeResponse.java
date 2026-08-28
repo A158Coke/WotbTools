@@ -2,7 +2,7 @@ package com.wotb.web.replay.dto;
 
 /**
  * AI 战术复盘响应：复盘正文 + 可选的「赛前预测」区块。
- * <p>前端 {@code ReconstructionPage.vue} / {@code AnalysisResultPanel.vue} 消费
+ * <p>前端 {@code AnalysisResultPanel.vue} 消费
  * {@code analysis}（复盘正文）与 {@code preBattleSection}（Call #1 赛前预测的用户
  * 可见中文渲染，后端生成）；Call #1 失败/降级/非中文时 {@code preBattleSection} 为
  * {@code null}，前端不显示该区块。{@code mapOverview} 为可空的「地图鸟瞰」数据

@@ -308,10 +308,10 @@ function mountPage(overrides = {}) {
           template: '<div class="file-uploader-stub"><button class="preview-stub" @click="$emit(&quot;preview&quot;)">action.preview</button>' +
             '<button class="ai-action-stub" @click="$emit(&quot;workspace-action&quot;, { file: files[0], mode: &apos;ai&apos; })">ai</button></div>'
         },
-        AiReviewPanel: { name: 'AiReviewPanel', props: ['file', 'loginView'], template: '<div class="ai-panel-stub" />' },
+        AiReviewPanel: { name: 'AiReviewPanel', props: ['file'], template: '<div class="ai-panel-stub" />' },
         ...(overrides.realPlayback
           ? (overrides.mapStub ? { MapOverview: overrides.mapStub } : {})
-          : { BattlePlaybackPanel: { name: 'BattlePlaybackPanel', props: ['file', 'active', 'seekTo', 'loginView'], template: '<div class="playback-panel-stub" />' } }),
+          : { BattlePlaybackPanel: { name: 'BattlePlaybackPanel', props: ['file', 'active', 'seekTo'], template: '<div class="playback-panel-stub" />' } }),
         ColumnPicker: { template: '<div class="col-picker-stub" />' },
         AggregateTable: {
           template: '<div class="agg-table-stub" data-export-role="aggregate">' +
@@ -1265,7 +1265,6 @@ describe('ReplayPage Battle context actions（V2：登录门控 + Workspace 原�
     expect(panelDisplay(wrapper, 'workspace-playback-panel')).toBe('none')
     const panel = wrapper.findComponent({ name: 'AiReviewPanel' })
     expect(panel.props('file')?.name).toBe('lagoon.wotbreplay')
-    expect(panel.props('loginView')).toBe('replay')
   })
 
   it('未登录点击「战局回放」→ confirm 提示 + login，不切换 Workspace（不静默丢文件）', async () => {

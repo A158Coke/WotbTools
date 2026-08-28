@@ -35,6 +35,11 @@ function mountApp() {
   return mount(App, { global: { mocks: { $t: (key) => key, $i18n: { locale: { value: 'zh' } } } } })
 }
 
+/** 读取当前 URL 的 ?view 参数（断言 canonicalization 后 URL 已被 replaceState 重写）。 */
+function currentViewParam() {
+  return new URL(window.location.href).searchParams.get('view')
+}
+
 describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回归）', () => {
   afterEach(() => {
     window.history.replaceState({}, '', '/')
@@ -71,6 +76,31 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
     // leaderboard 是旧书签 → 必须跳转 Hof 页，而不是被上一轮 canonicalization 误映射成 replay。
     expect(wrapper.find('[data-test="view-hof"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(false)
+  })
+
+  it('旧书签别名矩阵：单一来源 LEGACY_VIEW_ALIASES 统一 canonicalize（URL + 视图一致）', async () => {
+    const cases = [
+      { in: 'leaderboard', out: 'hof', test: 'view-hof' },
+      { in: 'extended', out: 'replay', test: 'view-replay' },
+      { in: 'reconstruction', out: 'replay', test: 'view-replay' },
+      { in: 'hof', out: 'hof', test: 'view-hof' },
+      { in: 'replay', out: 'replay', test: 'view-replay' },
+    ]
+    for (const c of cases) {
+      window.history.replaceState({}, '', `/?view=${c.in}`)
+      const wrapper = mountApp()
+      await flushPromises()
+      expect(currentViewParam()).toBe(c.out) // URL 已 canonicalize
+      expect(wrapper.find(`[data-test="${c.test}"]`).exists()).toBe(true)
+      wrapper.unmount()
+    }
+    // 未知默认值：非别名不重写 URL，回退默认视图
+    window.history.replaceState({}, '', '/?view=vehicle-models')
+    const w = mountApp()
+    await flushPromises()
+    expect(currentViewParam()).toBe('vehicle-models')
+    expect(w.find('[data-test="view-replay"]').exists()).toBe(true)
+    w.unmount()
   })
 
   it('?view=playback-qa 解析 PlaybackQaPage（异步加载）', async () => {

@@ -35,25 +35,16 @@ const params = new URLSearchParams(window.location.search)
 const isHomeHost = window.location.hostname === 'wotbtools.com' || window.location.hostname === 'www.wotbtools.com'
 const defaultView = isHomeHost ? 'home' : 'replay'
 const rawViewParam = params.get('view')
-// 旧书签兼容：?view=leaderboard → canonicalize 为 ?view=hof（一次轻量重定向，不建双轨）
-if (rawViewParam === 'leaderboard') {
+// 旧书签兼容：单一来源别名映射（leaderboard → hof；extended / reconstruction → replay），
+// 一次轻量 replaceState 重定向为 canonical view，不建第二套 Dataset pipeline。
+const LEGACY_VIEW_ALIASES = Object.freeze({ leaderboard: 'hof', extended: 'replay', reconstruction: 'replay' })
+const canonicalView = LEGACY_VIEW_ALIASES[rawViewParam] ?? rawViewParam
+if (canonicalView !== rawViewParam) {
   const url = new URL(window.location.href)
-  url.searchParams.set('view', 'hof')
+  url.searchParams.set('view', canonicalView)
   window.history.replaceState({}, '', url.toString())
 }
-// 旧书签兼容：?view=extended / ?view=reconstruction → ?view=replay
-//（战斗表现已并入回放解析；AI 复盘 / 战局回放已并入 ReplayPage Workspace，不再有独立页面/第二套 Dataset pipeline）
-if (rawViewParam === 'extended' || rawViewParam === 'reconstruction') {
-  const url = new URL(window.location.href)
-  url.searchParams.set('view', 'replay')
-  window.history.replaceState({}, '', url.toString())
-}
-// viewParam 依据「原始」rawViewParam 做旧书签映射：leaderboard → hof，extended / reconstruction → replay。
-const viewParam = rawViewParam === 'leaderboard'
-  ? 'hof'
-  : (rawViewParam === 'extended' || rawViewParam === 'reconstruction')
-    ? 'replay'
-    : rawViewParam
+const viewParam = canonicalView
 // AI 复盘 / 战局回放已并入 ReplayPage Workspace（?view=replay），不再有独立的 reconstruction 深链。
 const ALLOWED_VIEWS = [
   'home', 'replay', 'hof', 'hof-admin',
