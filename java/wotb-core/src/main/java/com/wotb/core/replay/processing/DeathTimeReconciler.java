@@ -51,6 +51,9 @@ public final class DeathTimeReconciler {
             }
 
             if (player.deathTimeMillis > 0) {
+                // PR147: deathTimeMillis is now the canonical SETTLEMENT_SECOND quantity, derived by
+                // ReplayParser from battle_results.dat field24 lifeTime (seconds; the 11.19 corpus has no
+                // #104). LIVE_EXACT above already overrides precision; this is the settlement fallback.
                 final double st = player.deathTimeMillis / 1000.0;
                 player.survivalTimeSec = st > 0 ? Math.min(st, duration) : 0;
                 player.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;

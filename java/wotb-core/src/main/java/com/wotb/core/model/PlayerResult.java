@@ -58,8 +58,24 @@ public class PlayerResult {
     public Object alphaDamage = "";
     public String platoonLabel = "";
 
-    // 原始死亡时刻(ms; proto #104; 存活/未知=0)
+    /**
+     * 死亡时刻(ms)。PR147 后该字段为 <b>canonical 结算死亡时间</b>（由 settlement field24 lifeTime 派生，
+     * 存活=0）；不再是 proto #104（11.19 corpus 中 #104 不存在）。原始 settlement 证据见
+     * {@link #settlementLifeTimeSec} / {@link #settlementDeathReasonRaw}。
+     */
     public long deathTimeMillis;
+
+    // ---- PR147 settlement 原始证据（battle_results.dat #301；均未 reconciliation，只保留 raw）----
+    /** #301 <b>outer</b> field1 = result/entity ID（killerID 与 field25 用同一 namespace，经此映射到 accountId）。 */
+    public long settlementResultEntityId;
+    /** #301 inner field24 = lifeTime（秒；阵亡时=结算死亡秒；存活时=整场时长；未证明时 0）。 */
+    public double settlementLifeTimeSec;
+    /** #301 inner field25 = 击杀者 result/entity ID（非 accountId；用 {@link #settlementResultEntityId} namespace 解析；缺失=null。 */
+    public Long settlementKillerResultEntityId;
+    /** #301 inner field105 = deathReason 原始值（-1=幸存 sentinel；其它=死亡原因 raw；缺失=null）。 */
+    public Integer settlementDeathReasonRaw;
+    /** 由 field25 killer result id 经 result/entity-id → accountId 映射得到的击杀者账号（=0/null 表示无法证明/环境击杀）。 */
+    public Long killerAccountId;
 
     // 存活时间(秒, 由 ReplayParser 计算；0 = UNKNOWN，绝不伪造)
     public double survivalTimeSec;
