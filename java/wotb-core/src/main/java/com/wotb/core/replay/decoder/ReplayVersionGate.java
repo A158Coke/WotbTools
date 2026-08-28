@@ -35,6 +35,12 @@ public final class ReplayVersionGate {
         return v != null && (matches(v, CURRENT_PREFIXES) || matches(v, LEGACY_BASIC_PREFIXES));
     }
 
+    /** EntityMethod envelope + method0/1/5/17/20/27/29 observed layouts: current + proved 11.18 legacy only. */
+    public static boolean methodLayoutAllowed(final String clientVersion) {
+        final String v = normalize(clientVersion);
+        return v != null && (matches(v, CURRENT_PREFIXES) || matches(v, LEGACY_BASIC_PREFIXES));
+    }
+
     /** Whether the current-version 0xFFFE terminal classification may be used. */
     public static boolean verifiedFffeTerminalAllowed(final String clientVersion) {
         return closedSemanticsAllowed(clientVersion);

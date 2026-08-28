@@ -54,6 +54,10 @@ class BattlePhaseSurvivalTest {
         p.tankName = "Kranvagn";
         p.survived = survived;
         p.deathTimeMillis = survived ? 0L : (long) (deathSec * 1000);
+        if (!survived) {
+            p.deathTimeSource = deathSec > 0
+                    ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
+        }
         return p;
     }
 

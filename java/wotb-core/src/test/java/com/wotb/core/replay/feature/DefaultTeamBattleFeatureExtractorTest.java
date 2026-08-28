@@ -1,6 +1,7 @@
 package com.wotb.core.replay.feature;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.processing.TeamPerspectiveResolution;
 import com.wotb.core.replay.processing.TeamPerspectiveResolver;
@@ -1122,6 +1123,10 @@ class DefaultTeamBattleFeatureExtractorTest {
         player.kills = 1;
         player.survived = survived;
         player.deathTimeMillis = deathTimeMillis;
+        if (!survived) {
+            player.deathTimeSource = deathTimeMillis > 0
+                    ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
+        }
         player.tankId = accountId + 1;
         player.tankName = "tank-" + accountId;
         return player;
