@@ -133,7 +133,7 @@ final class RelativeDepthHpEvidence {
         }
 
 
-        final Map<Long, List<double[]>> tracks = new LinkedHashMap<>();
+        final Map<Long, List<FormationDepthEvidence.PositionSample>> tracks = new LinkedHashMap<>();
         final Map<Long, List<double[]>> hpSamples = new LinkedHashMap<>();
         final Map<Long, List<Double>> attacks = new LinkedHashMap<>();
         final Map<Long, Integer> teamByAccount = new LinkedHashMap<>();
@@ -160,7 +160,7 @@ final class RelativeDepthHpEvidence {
                     continue; // 阵亡后的服务器位置流残留不得进入位置证据
                 }
                 tracks.computeIfAbsent(identity.accountId(), k -> new ArrayList<>())
-                        .add(new double[]{t, pos.x(), pos.z()});
+                        .add(new FormationDepthEvidence.PositionSample(pos.entityId(), t, pos.x(), pos.z()));
                 teamByAccount.putIfAbsent(identity.accountId(), identity.team());
             } else if (event instanceof HealthChangedEvent hp) {
                 final TeamEntityIdentity identity = mapping.identity(hp.entityId());
@@ -262,7 +262,7 @@ final class RelativeDepthHpEvidence {
 
     private static PhaseResult renderPhase(
             final FormationDepthEvidence.PhaseRange phase,
-            final Map<Long, List<double[]>> tracks,
+            final Map<Long, List<FormationDepthEvidence.PositionSample>> tracks,
             final Map<Long, List<double[]>> hpSamples,
             final Map<Long, List<Double>> attacks,
             final Map<Long, Integer> teamByAccount,
@@ -286,7 +286,7 @@ final class RelativeDepthHpEvidence {
         // enemy LAST_KNOWN 不得生成仿佛当前精确位置的 memberDist/referenceDist/relativeDepthM
         // （fail-closed，不 future-leak）。
         final Map<Long, FormationDepthEvidence.PhasePositionReference> refsByAccount = new LinkedHashMap<>();
-        for (final Map.Entry<Long, List<double[]>> entry : tracks.entrySet()) {
+        for (final Map.Entry<Long, List<FormationDepthEvidence.PositionSample>> entry : tracks.entrySet()) {
             final int team = teamByAccount.getOrDefault(entry.getKey(), 0);
             final FormationDepthEvidence.PhasePositionReference ref =
                     FormationDepthEvidence.resolvePhasePosition(

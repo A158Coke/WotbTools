@@ -5,6 +5,16 @@
 ## [Unreleased]
 
 ### Fixed
+- **Replay 版本作用域 / 权威收敛 + 平行 parser 清除（PR162 deep review · P0/P1 全清）**：
+  ① **method1 版本 provenance**：HP raw 分类改在 decoder/evidence 边界一次完成并随 `VehicleHealthStateEvent.rawState` 传播（0xFFFE 仅在 `verifiedFffeTerminalAllowed` 时成 VERIFIED_TERMINAL_FFFE），`ReplayHpTimeline`/`ReplayTerminalLifecycle`/`BattleStateReconstructor` 不再 `HpRawState.classify(raw,true)`；method1 cause 语义仅 current version family 证明（11.18 保留 raw causeFlag / semantic UNKNOWN）。
+  ② **BattleStateReconstructor 收敛**：删除 `VehicleState` 由 `DamageEvent.raw` 累计的 `damageDealt/damageReceived` 及其 add/get/copy plumbing；PARTIAL `PositionChangedEvent` 不再把 `ObservationState` 升为 OBSERVED；AoI/terminal/HP 分别由 `ReplayAoiLifecycle`/`ReplayTerminalLifecycle`/`ReplayHpTimeline` 唯一 authority。
+  ③ **EntityMethod 完整版本门禁**：subtype 8/47/48（damage/updateArena/updateArena2）对未知/未来版本 raw-preserve，绝不产出 current-version semantic event（DamageEvent/ParticipantMappingEvent/SupremacyPointsChangedEvent）。
+  ④ **Type14 不再伪造胜方**：`BattleEndDecoder` 恒产出 `BattleEndedEvent(winnerTeam=null, confidence=PARTIAL)`，不再根据 payload[0..4]==1/2 生成 winnerTeam EXACT（battle-start clock 只用 raw framing 时间 + proven 结算 duration）。
+  ⑤ **清除 main-source 平行 parser**：`EventStreamReader`/`ReplayEventExtractors`/`ReplayPacketParser` 移入 test-probe 范围（研究/逆向工具），生产解析只经 `ReplayPacketStreamReader`(framing/header) + `ReplayPacketDecoderRegistry`(canonical decoder)；`ReplayParser` 仅内联读 header 的 clientVersion（避免 parse↔replay 包级循环）。
+  ⑥ **Type33/Type4 shape 收紧**：仅精确命中已证明 shape（Type33=12B all-zero zeroTail；Type4=4B）才 EXACT，其余 raw-preserve。
+  ⑦ **RatingV2 HP 分母**：恒为静态 tankopedia baseline（绝不切到 replay actual entryHp）。
+  ⑧ **FormationDepthEvidence/RelativeDepthHpEvidence entity provenance**：改为 per-entity `PositionSample(entityId,t,x,z)`，被测 AoI segment 只消费同 entity 样本（多实体/重入生命周期不混坐标）。
+  测试：`EntityMethodDecoderVersionGateTest`/`BattleEndDecoderRawPreserveTest`/`MaterializationDecoderTest`(shape)/`FormationDepthEvidenceTest`(re-entry)/`RatingV2CalculatorTest`；wotb-core 全量 1267 绿 + wotb-web 受影响测试绿（Mockito 需 CI javaagent）。
 - **Replay AoI 唯一 authority + death provenance source-aware（PR162 deep review blockers）**：
   ① **AoI 唯一 authority**：`ReplayAoiLifecycle` 成为 AoI observed/hidden 唯一 authority——`BattleTimelineBuilder`（frame vehicle 用 `segmentAt(entityId, t)` 判 CURRENT/LAST_KNOWN，删除 `POSITION_GAP_SEC`/5s packet-age 推断）、`BattlePlaybackAdapter`/`MapOverviewBuilder`（共享 `AoiPositionCoverage`，区间 = AoI observed segment ∩ 实际位置存在 ∩ death/duration clamp，同一 open segment 内静止 >5s 无 Type10 不再产生 POSITION_STALE）、`FormationDepthEvidence`/`RelativeDepthHpEvidence`（`resolvePhasePosition` 先定位 phaseEnd 的 segment，只用该 segment ∩ phase 的样本计算 CURRENT 参考，禁止跨 UNKNOWN_AOI gap 混坐标；gap 内 fail-closed，不产出 CURRENT exact geometry）。
   ② **死亡 provenance source-aware**：`LeagueRatingConflictDetector` 改用 `DeathEvidence`（LIVE_EXACT > SETTLEMENT_SECOND > UNKNOWN），reconcile 不再跨 source `Math::min`（LIVE_EXACT 128.50 不被 settlement 128.00 覆盖）；`LeagueRatingValidator`/`BattlePhaseSummary` 改用 canonical `PlayerResultFormat.deathSec`；UNKNOWN source 的 residual `survivalTimeSec`/`deathTimeMillis` 永不成 KNOWN；`RatingV2Calculator.tradedDeath` 也用 canonical deathSec。

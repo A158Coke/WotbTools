@@ -10,7 +10,7 @@
 | 条目                   | 说明                          | 本工具使用                |
 |----------------------|-----------------------------|----------------------|
 | `meta.json`          | JSON 元数据（战斗信息/录像者）          | 是                    |
-| `data.wotreplay`     | 原始游戏事件数据（BigWorld 包序列）      | 是（EventStreamReader） |
+| `data.wotreplay`     | 原始游戏事件数据（BigWorld 包序列）      | 是（ReplayPacketStreamReader 生产 framing + canonical decoder；EventStreamReader 仅研究/probe 工具） |
 | `battle_results.dat` | Python pickle → protobuf 战绩 | 是                    |
 
 ### 解析安全预算

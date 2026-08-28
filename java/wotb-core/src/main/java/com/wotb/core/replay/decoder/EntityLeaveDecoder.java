@@ -47,8 +47,17 @@ public class EntityLeaveDecoder implements ReplayPacketDecoder {
                     List.of(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
                             "Type4 leave layout not affirmed: " + context.clientVersion())));
         }
-        final int entityId = readI32LE(payload, 0);
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
+        // §P1: only the exact proven Type4 shape (entityId i32 LE = 4 bytes) produces an EXACT leave;
+        // any other length is raw-preserved, never upgraded to an EXACT semantic event.
+        if (payload.length != 4) {
+            return new ReplayDecodeResult(DecodeStatus.PARTIAL,
+                    List.of(new UnknownReplayEvent(packet.sequence(), ts, packet.type(),
+                            payload.length, "TYPE4_SHAPE_MISMATCH", DecodeConfidence.UNKNOWN)),
+                    List.of(new ReplayDecodeWarning("TYPE4_SHAPE_MISMATCH",
+                            "Type4 len=" + payload.length + " != proven 4; raw-preserved")));
+        }
+        final int entityId = readI32LE(payload, 0);
         final EntityRemovedEvent event = new EntityRemovedEvent(
                 packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT, entityId);
 

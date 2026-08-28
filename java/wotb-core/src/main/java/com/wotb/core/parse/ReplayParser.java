@@ -65,6 +65,38 @@ public final class ReplayParser {
         return meta.get("arenaBonusType").asInt();
     }
 
+    /**
+     * 读取 data.wotreplay 文件头的 clientVersion 字符串（PR147：仅读头部字段，不做任何语义解析）。
+     * 头部格式与 {@code com.wotb.core.replay.stream.ReplayStreamHeader} 一致：
+     * {@code magic(4B) + unknown(8B) + hashLen(1B) + hash + versionLen(1B) + version}。
+     * 缺失/非法 → null（调用方按未知版本 fail-closed）。
+     *
+     * <p>保留在 parse 包内是为了不让 parse 反向依赖 replay.*（replay 处理已经依赖 parse；
+     * 若 parse 再依赖 replay.stream 则 core 层形成包级循环，被 {@code CoreArchitectureTest} 拒绝）。</p>
+     */
+    private static String readDataWotreplayClientVersion(final byte[] data) {
+        if (data == null || data.length < 15) {
+            return null;
+        }
+        int off = 4 + 8; // magic + unknown
+        if (off >= data.length) {
+            return null;
+        }
+        final int hashLen = data[off++] & 0xFF;
+        if (off + hashLen > data.length) {
+            return null;
+        }
+        off += hashLen;
+        if (off >= data.length) {
+            return null;
+        }
+        final int versionLen = data[off++] & 0xFF;
+        if (versionLen < 0 || off + versionLen > data.length) {
+            return null;
+        }
+        return new String(data, off, versionLen, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
     public static Battle parse(final byte[] replayBytes) throws IOException {
         try {
             return parse(unzip(replayBytes));
@@ -213,13 +245,19 @@ public final class ReplayParser {
         // 击杀归因必须由 canonical terminal lifecycle + 可靠 damage backing 产生；无法证明则 UNKNOWN。
         final byte[] eventData = entries.get("data.wotreplay");
         if (eventData != null) {
+            // PR147: production framing/header is the canonical ReplayPacketStreamReader/ReplayStreamHeader.
+            // The EventStreamReader parallel raw semantic parser is research/probe tooling only (moved out
+            // of the production path). This parser reads ONLY the header's clientVersion (nothing else),
+            // with a minimal inline header-version read so the parse package stays free of a replay.*
+            // dependency (replay processing already depends on parse, so parse must not depend on replay —
+            // otherwise the core layer would form a package cycle).
             try {
-                final EventStreamReader.EventStream es = EventStreamReader.read(eventData);
-                battle.clientVersion = es.clientVersion;
+                battle.clientVersion = readDataWotreplayClientVersion(eventData);
             } catch (Exception ignored) {
                 // Summary parsing remains settlement-usable when the live stream is unavailable/corrupt.
             }
         }
+
 
         // 存活时间: 存活=战斗时长；阵亡=结算 deathTimeMillis 或 UNKNOWN=0。
         // legacy 启发式（damage-threshold / EntityLeave / Position 停止）不得写入 PlayerResult。

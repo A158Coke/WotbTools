@@ -1,6 +1,6 @@
 package com.wotb.core;
 
-import com.wotb.core.parse.EventStreamReader;
+import com.wotb.core.parse.probe.EventStreamReader;
 import com.wotb.core.parse.Protobuf;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;

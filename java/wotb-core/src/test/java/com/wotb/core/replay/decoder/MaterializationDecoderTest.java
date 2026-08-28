@@ -110,4 +110,36 @@ class MaterializationDecoderTest {
         assertEquals(8, e.zeroTail().length);
         assertEquals(DecodeConfidence.EXACT, e.confidence());
     }
+
+    @Test
+    void type33NonExactShapeRawPreserves() {
+        // P1: only the exact proven 12-byte shape emits EXACT; 13-byte is raw-preserved (UNKNOWN).
+        final byte[] payload = new byte[13];
+        payload[0] = 42;
+        final ReplayDecodeResult r = announcedDecoder.decode(ctx, packet(33, payload));
+        assertEquals(DecodeStatus.PARTIAL, r.status());
+        assertEquals("TYPE33_SHAPE_MISMATCH", ((UnknownReplayEvent) r.events().get(0)).reasonCode());
+        assertEquals(DecodeConfidence.UNKNOWN, r.events().get(0).confidence());
+    }
+
+    @Test
+    void type33NonzeroTailRawPreserves() {
+        // P1: zeroTail must be all-zero; a nonzero byte is raw-preserved, not upgraded to EXACT.
+        final byte[] payload = new byte[12];
+        payload[0] = 42;
+        payload[11] = 0x01; // nonzero zero-tail byte
+        final ReplayDecodeResult r = announcedDecoder.decode(ctx, packet(33, payload));
+        assertEquals(DecodeStatus.PARTIAL, r.status());
+        assertEquals("TYPE33_ZERO_TAIL_NONZERO", ((UnknownReplayEvent) r.events().get(0)).reasonCode());
+    }
+
+    @Test
+    void type4NonExactShapeRawPreserves() {
+        // P1: Type4 exact proven shape is a single i32 entityId (4 bytes); 5 bytes is raw-preserved.
+        final byte[] payload = new byte[5];
+        payload[0] = 9;
+        final ReplayDecodeResult r = leaveDecoder.decode(ctx, packet(4, payload));
+        assertEquals(DecodeStatus.PARTIAL, r.status());
+        assertEquals("TYPE4_SHAPE_MISMATCH", ((UnknownReplayEvent) r.events().get(0)).reasonCode());
+    }
 }
