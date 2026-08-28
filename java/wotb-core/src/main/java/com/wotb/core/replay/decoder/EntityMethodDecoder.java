@@ -79,18 +79,9 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     @Override
     public ReplayDecodeResult decode(ReplayDecodeContext context, RawReplayPacket packet) {
         final byte[] payload = packet.payload();
-        // 版本门禁（计划 §A2）：method 子类型 closed semantics 只在已知版本族上 AFFIRMED；
-        // 未知版本 → raw-preserve（UnknownReplayEvent）+ diagnostics。
-        if (!ReplayVersionGate.closedSemanticsAllowed(context.clientVersion())) {
-            final ReplayTimestamp unsupportedTs = new ReplayTimestamp(packet.rawClockSec(), null);
-            return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
-                    List.of(new UnknownReplayEvent(
-                            packet.sequence(), unsupportedTs, packet.type(),
-                            payload.length, "VERSION_UNSUPPORTED", DecodeConfidence.UNKNOWN)),
-                    List.of(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
-                            "EntityMethod closed semantics not affirmed for client version: "
-                                    + context.clientVersion())));
-        }
+        // §A2：method0/1/5/17/20/27/29 等观测布局 11.18/11.19 稳定（legacy-compatible），不限版本族；
+        // method38 low16/modifier/component 与 method36 field semantics 是 PR147 仅 11.19 controlled
+        // 证明的 closed semantics（见下方 switch 内 per-subtype 门禁）。
         if (payload.length < 8) {
             return new ReplayDecodeResult(DecodeStatus.MALFORMED, List.of(),
                     List.of(new ReplayDecodeWarning("TRUNCATED_PAYLOAD",
@@ -200,8 +191,31 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                                     + " not decoded (expected " + PROJECTILE_LAUNCH_ARGS_LEN + ")"));
                 }
             }
-            case SUBTYPE_TARGETING_SNAPSHOT -> decodeTargetingSnapshot(payload, packet, ts, events, warnings);
-            case SUBTYPE_SHOT_RESULT -> decodeShotResult(payload, packet, ts, events, warnings);
+            case SUBTYPE_TARGETING_SNAPSHOT -> {
+                // §A2：method36 field semantics 是 PR147 仅 11.19 controlled 证明的 closed semantics；
+                // 非 11.19 → raw-preserve（UnknownReplayEvent）+ diagnostics，不伪造 numeric semantic。
+                if (ReplayVersionGate.closedSemanticsAllowed(context.clientVersion())) {
+                    decodeTargetingSnapshot(payload, packet, ts, events, warnings);
+                } else {
+                    events.add(new UnknownReplayEvent(
+                            packet.sequence(), ts, packet.type(), payload.length,
+                            "VERSION_UNSUPPORTED_METHOD36", DecodeConfidence.UNKNOWN));
+                    warnings.add(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
+                            "method36 closed semantics not affirmed: " + context.clientVersion()));
+                }
+            }
+            case SUBTYPE_SHOT_RESULT -> {
+                // §A2：method38 low16/modifier/component namespace 是 PR147 仅 11.19 controlled 证明的 closed semantics。
+                if (ReplayVersionGate.closedSemanticsAllowed(context.clientVersion())) {
+                    decodeShotResult(payload, packet, ts, events, warnings);
+                } else {
+                    events.add(new UnknownReplayEvent(
+                            packet.sequence(), ts, packet.type(), payload.length,
+                            "VERSION_UNSUPPORTED_METHOD38", DecodeConfidence.UNKNOWN));
+                    warnings.add(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
+                            "method38 closed semantics not affirmed: " + context.clientVersion()));
+                }
+            }
             case SUBTYPE_VEHICLE_HEALTH_STATE -> {
                 // Vehicle-targeted method1：7-byte args（currentHpRaw + sourceEntity + causeFlag）。
                 // 当前 corpus 3,471/3,471 currentHpRaw 与同刻 prop3 raw16 一致；causeFlag

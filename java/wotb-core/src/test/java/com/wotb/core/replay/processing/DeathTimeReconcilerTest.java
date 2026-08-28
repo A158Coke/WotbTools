@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>身份解析只复用 {@link TeamEntityMapper} 的权威 {@link TeamEntityMapping}
  * （冲突/低置信实体证据被拒绝，nickname fallback 复用），死亡时刻 authority 链（§B1）：
- * 结算 deathTimeMillis &gt; EXACT alive=false（HP=0）&gt; UNKNOWN=0；
+ * EXACT alive=false（HP=0）&gt; 结算 deathTimeMillis &gt; UNKNOWN=0；
  * legacy 启发式不再兜底（§B2）。</p>
  */
 class DeathTimeReconcilerTest {
@@ -391,15 +391,43 @@ class DeathTimeReconcilerTest {
     }
 
     @Test
-    void settlementDeathTimeMillisTakesPriority() {
+    void liveExactOverridesSettlementDeathTimeMillis() {
         final PlayerResult p = player(1001L, "A", 1, false, 111_000L, 111.0);
         final Battle battle = battle(300.0, p);
         final List<ReplayEvent> events = List.of(
                 mappingEvent(1, 101, 1001L),
                 exactDeath(2, 128.12f, 101));
         reconcile(battle, events, resolveMapping(battle, events));
+        assertEquals(128.12, PlayerResultFormat.deathSec(p), 0.01,
+                "§B1 LIVE_EXACT > SETTLEMENT_SECOND：live EXACT 精确阵亡时刻覆盖结算秒级时间");
+        assertEquals(DeathTimeSource.LIVE_EXACT, p.deathTimeSource);
+    }
+
+    @Test
+    void liveUnavailableFallsBackToSettlementSecond() {
+        final PlayerResult p = player(1001L, "A", 1, false, 111_000L, 111.0);
+        final Battle battle = battle(300.0, p);
+        final List<ReplayEvent> events = List.of(
+                mappingEvent(1, 101, 1001L),
+                exactAlive(2, 50f, 101, 2000)); // 仅有 alive，无最终 live 死亡证据
+        reconcile(battle, events, resolveMapping(battle, events));
         assertEquals(111.0, PlayerResultFormat.deathSec(p), 1e-9,
-                "结算 deathTimeMillis>0 是权威，事件流证据不得覆盖");
+                "无有效 live EXACT + 结算 deathTimeMillis>0 → SETTLEMENT_SECOND（±0.5s 量化）");
+        assertEquals(DeathTimeSource.SETTLEMENT_SECOND, p.deathTimeSource);
+    }
+
+    @Test
+    void liveTerminalNegatedByLaterAliveFallsBackToSettlementSecond() {
+        final PlayerResult p = player(1001L, "A", 1, false, 111_000L, 111.0);
+        final Battle battle = battle(300.0, p);
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(mappingEvent(1, 101, 1001L));
+        events.add(exactDeath(2, 60f, 101));      // 早期死亡
+        events.add(exactAlive(3, 70f, 101, 2000)); // 复生，之后无新的 alive=false
+        reconcile(battle, events, resolveMapping(battle, events));
+        assertEquals(111.0, PlayerResultFormat.deathSec(p), 1e-9,
+                "60s 早期死亡已被 70s 复生否决；无最终 live EXACT → 回退结算 SETTLEMENT_SECOND");
+        assertEquals(DeathTimeSource.SETTLEMENT_SECOND, p.deathTimeSource);
     }
 
     // ---- 空输入 / 无映射幂等 ----
