@@ -28,13 +28,16 @@ public final class PlayerResultFormat {
      * 死亡时刻（秒），按 §B1 deathTimeSource 权威链：
      * LIVE_EXACT → {@code survivalTimeSec}（回放精确 sub-second，覆盖结算）；
      * SETTLEMENT_SECOND → {@code deathTimeMillis / 1000}（±0.5s 量化）；
-     * UNKNOWN → 0（绝不把旧 heuristic survivalTimeSec 泄漏成权威死亡时刻）。
+     * 无 source 但 {@code survivalTimeSec > 0} → {@code survivalTimeSec}（canonical 收口后的
+     * KNOWN 死亡时刻：生产上非存活且 {@code survivalTimeSec > 0} 只由 ReplayParser 结算
+     * 或 DeathTimeReconciler LIVE_EXACT 写入，绝不来自 legacy 启发式）；
+     * 存活 / 全 UNKNOWN → 0（绝不伪造死亡时刻）。
      *
-     * <p>为兼容尚未经过 reconciler 的 settlement-only DTO，deathTimeMillis>0 仍可作为
-     * SETTLEMENT_SECOND fallback；没有 source 且没有 settlement 时一律 UNKNOWN=0。</p>
+     * <p>这是所有 Trade/KAST/League/AI 死亡时刻消费方的唯一入口（§6 集中 eligibility），
+     * 业务层禁止各自从 {@code survivalTimeSec}/{@code deathTimeMillis} 重新推断。</p>
      */
     public static double deathSec(final PlayerResult p) {
-        if (p == null) {
+        if (p == null || p.survived) {
             return 0;
         }
         if (p.deathTimeSource == DeathTimeSource.LIVE_EXACT) {
@@ -46,7 +49,7 @@ public final class PlayerResultFormat {
         if (p.deathTimeMillis > 0) {
             return p.deathTimeMillis / 1000.0;
         }
-        return 0;
+        return p.survivalTimeSec > 0 ? p.survivalTimeSec : 0;
     }
 
     /** 存活/阵亡文本（含秒数）；死亡时刻未知（deathSec<=0）时如实标注，绝不伪造 0.0s。 */
