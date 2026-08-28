@@ -146,7 +146,7 @@ class PersonalAiContextCompilerTest {
         final ReplayReconstruction recon = new ReplayReconstruction(
                 new com.wotb.core.replay.reconstruction.ReplayMetadata(
                         "arena", "middleburg", "1", "1", 1, "rec1", "", 40.0, 0L),
-                new com.wotb.core.replay.stream.ReplayStreamHeader(
+                new com.wotb.core.parse.ReplayStreamHeader(
                         0x12345678L, new byte[8], "h", "v", 15),
                 40f, 1000f, List.of(), events, List.of(),
                 com.wotb.core.replay.reconstruction.BattleStateSnapshot.empty(),

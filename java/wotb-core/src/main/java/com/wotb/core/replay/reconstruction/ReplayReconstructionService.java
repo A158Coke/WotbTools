@@ -5,9 +5,8 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.parse.PickleReader;
-import com.wotb.core.parse.Protobuf;
 import com.wotb.core.parse.ReplayArchiveReader;
+import com.wotb.core.parse.SettlementFacts;
 import com.wotb.core.replay.decoder.ReplayDecodeContext;
 import com.wotb.core.replay.decoder.ReplayDecodeResult;
 import com.wotb.core.replay.decoder.ReplayPacketDecoderRegistry;
@@ -118,7 +117,10 @@ public class ReplayReconstructionService {
         // clock (which uses battle.durationS = settlement root5). The last fallback is version-agnostic
         // structural data (no version if/else) so a verified-family replay whose decoded semantic anchor
         // is gated still gets a consistent battle-relative clock.
-        final Double settledDur = settlementDurationSec(entries);
+        // battle_results.dat 的唯一 production 解码权威（SettlementFacts）：reconstruction 不再自行
+        // PickleReader.loads + Protobuf.decode；缺失/损坏时 fail-closed → null。
+        final SettlementFacts settlementFacts = settlementFacts(entries);
+        final Double settledDur = settlementFacts == null ? null : settlementFacts.settlementDurationSec();
         Float battleStartResolved = resolveBattleStartRawClock(allEvents, settledDur);
         if (battleStartResolved == null && settledDur != null && settledDur > 0
                 && Float.isFinite(lastClock) && lastClock > settledDur) {
@@ -144,7 +146,7 @@ public class ReplayReconstructionService {
         // 绝不等于原始 session 最后一个包的时钟（那是 streamLastRawClockSec = diagnostics().lastClockSec()）。
         // 权威顺序：settlement root5 战斗时长 → (lastClock - battleStartResolved) → metadata battleDuration。
         final float battleDurationSec = resolveBattleDurationSec(
-                settlementDurationSec(entries), battleStartResolved, lastClock, metadata);
+                settledDur, battleStartResolved, lastClock, metadata);
 
         return new ReplayReconstruction(
                 metadata,
@@ -219,24 +221,19 @@ public class ReplayReconstructionService {
     }
 
     /**
-     * Settlement battle duration from battle_results.dat root5 (PR147); null when missing/corrupt.
-     * Reuses the same pickle/protobuf decode as the canonical settlement parser (single source).
+     * Settlement facts from battle_results.dat (PR147); null when missing/corrupt. The single production
+     * decode authority is {@link SettlementFacts#decode}; this is a fail-closed convenience for the
+     * reconstruction path (never throws; a corrupt/missing settlement simply yields null so consumers
+     * fall back to the duration authority chain).
      */
-    static Double settlementDurationSec(final Map<String, byte[]> entries) {
+    static SettlementFacts settlementFacts(final Map<String, byte[]> entries) {
         try {
             final byte[] dat = entries.get("battle_results.dat");
             if (dat == null) {
                 return null;
             }
-            final Object pickle = PickleReader.loads(dat);
-            if (!(pickle instanceof Object[] tuple) || tuple.length != 2
-                    || !(tuple[1] instanceof byte[] pb)) {
-                return null;
-            }
-            final Map<Integer, List<Object>> root = Protobuf.decode(pb);
-            final Object dur = Protobuf.first(root, 5);
-            return dur instanceof Number n ? n.doubleValue() : null;
-        } catch (RuntimeException e) {
+            return SettlementFacts.decode(dat);
+        } catch (final RuntimeException e) {
             return null;
         }
     }

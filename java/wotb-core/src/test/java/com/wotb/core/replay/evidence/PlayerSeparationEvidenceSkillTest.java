@@ -26,7 +26,7 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.VehicleState;
 import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
-import com.wotb.core.replay.stream.ReplayStreamHeader;
+import com.wotb.core.parse.ReplayStreamHeader;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;

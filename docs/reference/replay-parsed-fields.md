@@ -73,7 +73,7 @@
 | `DamageEvent` | `attackerEid`/`victimEid` (+`accountId`), `damage`, `lethal` | 单次伤害 | 交火段、集火候选、对炮明细、伤害贡献（非死亡权威） |
 | `HealthChangedEvent` | `entityId`, `currentHealth`, `maxHealth`, `alive` | HP 变化 | HP 动量（只取两端共同可靠观察） |
 | `VehicleDestroyedEvent` | `entityId`, `killerEid`, `inferred` | 车辆被击毁 | 击毁观测（非死亡权威；死亡仅 LIVE EXACT / SETTLEMENT / UNKNOWN） |
-| `BattleEndedEvent` | `winnerTeam` | 战斗结束 | battle-end 兜底 |
+| `ReplayStreamClosedEvent` | — | packet stream 关闭/停止 marker（Type14） | Type14 = stream close；不推导 winner / finish reason / battle start |
 | `EntityCreatedEvent` / `EntityRemovedEvent` | `entityId`（+未解析 `unknownInitData`） | 实体生命周期 | 覆盖统计 |
 | `UnknownReplayEvent` | — | 未解码包 | 覆盖率（decodedRatio） |
 
