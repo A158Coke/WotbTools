@@ -100,11 +100,13 @@ class CombatMethodDecoderTest {
     }
 
     @Test
-    void method38LengthMismatchIsNotDecoded() {
-        // count=5 但只有 0 个 component 字节 → 结构不匹配
+    void method38LengthMismatchIsRawPreserved() {
+        // PR162：count=5 但只有 0 个 component 字节 → shape 不符 → raw-preserve（UnknownReplayEvent，非 warning-only）
         final byte[] args = concat(le32(55), le32(0), new byte[]{5, 0});
         final ReplayDecodeResult r = decoder.decode(ctx, method(38, args));
-        assertTrue(r.events().isEmpty());
+        assertTrue(r.events().size() == 1);
+        assertTrue(r.events().getFirst() instanceof com.wotb.core.replay.event.UnknownReplayEvent,
+                "shape 不符必须 raw-preserve 为 UnknownReplayEvent");
         assertTrue(r.warnings().stream().anyMatch(w -> "UNKNOWN_SUBTYPE_VARIANT".equals(w.code())));
     }
 

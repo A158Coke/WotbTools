@@ -38,6 +38,9 @@ public class MaterializationDecoder implements ReplayPacketDecoder {
     /** combat vehicle entityTypeId（当前 11.19 corpus，version/class scoped）。 */
     static final int ENTITY_TYPE_COMBAT_VEHICLE = 2;
 
+    /** static family entityTypeId（当前 11.19 corpus，version/class scoped）。 */
+    static final int ENTITY_TYPE_STATIC_FAMILY = 3;
+
     /** 当前 HP 字段偏移（u16 LE），仅 entityTypeId=2 有效（11.19/类作用域）。 */
     static final int HP_OFFSET = 51;
 
@@ -71,6 +74,15 @@ public class MaterializationDecoder implements ReplayPacketDecoder {
         final int entityId = readU32LE(payload, 0);
         final int entityTypeId = readU16LE(payload, 4);
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
+
+        // PR162 entity-class registry：只从真实生命周期证据（entityTypeId）建立 class，不靠 method-shape 反推。
+        // entityTypeId==2 → Vehicle；entityTypeId==3 → Other（static family）。
+        final EntityClassRegistry classRegistry = context.entityClassRegistry();
+        if (entityTypeId == ENTITY_TYPE_COMBAT_VEHICLE) {
+            classRegistry.markVehicle(entityId);
+        } else if (entityTypeId == ENTITY_TYPE_STATIC_FAMILY) {
+            classRegistry.markOther(entityId);
+        }
 
         Integer currentHp = null;
         final List<ReplayDecodeWarning> warnings = new java.util.ArrayList<>();

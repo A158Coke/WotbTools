@@ -21,6 +21,7 @@ import com.wotb.core.replay.event.UnsupportedDamageEvent;
 import com.wotb.core.replay.event.VehicleFiredEvent;
 import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.event.VehicleHealthStateEvent;
+import com.wotb.core.replay.event.VehicleVehicleCollisionEvent;
 import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.springframework.util.StringUtils;
@@ -29,15 +30,23 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Type 8 (EntityMethod) 解码器。
- * <p>
- * 复用现有解析逻辑：
+ *
+ * <p><b>PR162 entity-class scoped</b>：method ID 是 entity-class scoped，不是全局 methodId namespace。
+ * 反例：Avatar method4 2B = RoundFinished；Vehicle method4 16B = vehicle-to-vehicle collision/contact。
+ * 安全 semantic key = version/capability + entityClass + methodId + exact arg layout。不能只靠
+ * methodId+argLen 猜 entityClass。因此每个语义 method 先经 {@link EntityClassRegistry} 解析
+ * entityClass（来自真实 lifecycle 证据，不靠 method-shape 反推）；UNKNOWN class → raw-preserve
+ * （UnknownReplayEvent），再按 {@code (entityClass, methodId, argShape)} 分派。</p>
+ *
+ * <p>复用现有解析逻辑：
  * <ul>
  *   <li>entity/account 映射（subtype 48 updateArena2）</li>
- *   <li>direct HP damage（subtype 8 damage, sub 3 direct）</li>
- *   <li>updateArena（subtype 47）</li>
+ *   <li>direct HP damage（subtype 8 damage, sub 3 direct）→ VehicleHitEvent（hit/result-feedback）</li>
+ *   <li>updateArena（subtype 47）→ 已知但未实现 → raw-preserve</li>
  * </ul>
  * </p>
  */
@@ -74,6 +83,8 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     static final int ARENA_PERIOD_ROOT_FIELD = 3;
     static final int AVATAR_METHOD5_ARGS_LEN = 3;
     static final int ROUND_FINISHED_ARGS_LEN = 2;
+    /** Vehicle method4 16-byte collision/contact args：sharedScalar(f32) + contactPoint(3×f32)。 */
+    static final int VEHICLE_VEHICLE_COLLISION_ARGS_LEN = 16;
     static final int VEHICLE_METHOD1_ARGS_LEN = 7;
     static final int VEHICLE_METHOD0_ARGS_LEN = 1;
     static final int AMMUNITION_STATE_ARGS_LEN = 12;
@@ -81,6 +92,26 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     static final int PROJECTILE_TERMINAL_ARGS_LEN = 16;
     static final int PROJECTILE_RESOLUTION_ARGS_LEN = 34;
     static final int PROJECTILE_LAUNCH_ARGS_LEN = 37;
+
+    /**
+     * 100% Avatar-targeted methodId（docs/research/replay/entity-routing.md）：调用本身即 Avatar 化类证据
+     * （不靠 method-shape 反推）。method16 由专门的 {@link VehicleModuleCrewStateDecoder} 处理。
+     */
+    private static final Set<Integer> AVATAR_PROVEN_METHODS = Set.of(
+            SUBTYPE_AMMUNITION_STATE,
+            SUBTYPE_PROJECTILE_TERMINAL,
+            SUBTYPE_PROJECTILE_RESOLUTION,
+            SUBTYPE_PROJECTILE_LAUNCH,
+            SUBTYPE_TARGETING_SNAPSHOT,
+            SUBTYPE_SHOT_RESULT,
+            SUBTYPE_UPDATE_ARENA,
+            SUBTYPE_UPDATE_ARENA2,
+            49);
+
+    /** Vehicle-family（0% Avatar）methodId：调用即 Vehicle 化类证据。 */
+    private static final Set<Integer> VEHICLE_PROVEN_METHODS = Set.of(
+            SUBTYPE_VEHICLE_FIRED,
+            SUBTYPE_VEHICLE_HEALTH_STATE);
 
     @Override
     public boolean supports(ReplayDecodeContext context, RawReplayPacket packet) {
@@ -93,8 +124,6 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
         // §A2/P0-3：method0/1/5/17/20/27/29 是 legacy-compatible 观测布局 —— 仅当前 canonical
         // 版本族（11.19）+ 明确 legacy 证明的 11.18 允许解码为 EXACT（methodLayoutAllowed）；
         // 未知/未来版本 raw-preserve，绝不无条件沿用 EXACT 语义。
-        // method38 low16/modifier/component 与 method36 field semantics 是 PR147 仅 11.19 controlled
-        // 证明的 closed semantics（见下方 switch 内 per-subtype 门禁）。
         if (payload.length < 8) {
             return new ReplayDecodeResult(DecodeStatus.MALFORMED, List.of(),
                     List.of(new ReplayDecodeWarning("TRUNCATED_PAYLOAD",
@@ -142,18 +171,22 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
         switch (subType) {
             case SUBTYPE_VEHICLE_FIRED -> {
                 // Vehicle method0：observed firing（args=01 4,154/4,154）。
-                if (envelopeValid && argLen == VEHICLE_METHOD0_ARGS_LEN) {
+                if (entityClassFor(context, subType, entityId) != EntityClass.VEHICLE
+                        || !envelopeValid || argLen != VEHICLE_METHOD0_ARGS_LEN) {
+                    rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                            "METHOD0_CLASS_OR_SHAPE");
+                } else {
                     events.add(new VehicleFiredEvent(
                             packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
                             entityId, payload[12] & 0xFF));
-                } else {
-                    warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
-                            "Vehicle method0 variant argLen=" + argLen
-                                    + " not decoded (expected " + VEHICLE_METHOD0_ARGS_LEN + ")"));
                 }
             }
             case SUBTYPE_AMMUNITION_STATE -> {
-                if (envelopeValid && argLen == AMMUNITION_STATE_ARGS_LEN) {
+                if (entityClassFor(context, subType, entityId) != EntityClass.AVATAR
+                        || !envelopeValid || argLen != AMMUNITION_STATE_ARGS_LEN) {
+                    rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                            "METHOD17_CLASS_OR_SHAPE");
+                } else {
                     final int descriptor = readU32LE(payload, 12);
                     final int flag = payload[16] & 0xFF;
                     final int quantity = payload[17] & 0xFF;
@@ -162,32 +195,32 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                     events.add(new AmmunitionStateEvent(
                             packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
                             entityId, descriptor, flag, quantity, variantRaw));
-                } else {
-                    warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
-                            "Avatar method17 variant argLen=" + argLen
-                                    + " not decoded (expected " + AMMUNITION_STATE_ARGS_LEN + ")"));
                 }
             }
             case SUBTYPE_PROJECTILE_TERMINAL -> {
-                if (envelopeValid && argLen == PROJECTILE_TERMINAL_ARGS_LEN) {
+                if (entityClassFor(context, subType, entityId) != EntityClass.AVATAR
+                        || !envelopeValid || argLen != PROJECTILE_TERMINAL_ARGS_LEN) {
+                    rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                            "METHOD20_CLASS_OR_SHAPE");
+                } else {
                     final int shotId = readU32LE(payload, 12);
                     final Vector3 endpoint = readVector3(payload, 16);
                     if (endpoint == null) {
-                        warnings.add(new ReplayDecodeWarning("NON_FINITE_VECTOR",
-                                "method20 endpoint non-finite at shot " + shotId));
+                        rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                                "METHOD20_NON_FINITE_VECTOR");
                     } else {
                         events.add(new ProjectileTerminalEvent(
                                 packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
                                 shotId, endpoint));
                     }
-                } else {
-                    warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
-                            "Avatar method20 variant argLen=" + argLen
-                                    + " not decoded (expected " + PROJECTILE_TERMINAL_ARGS_LEN + ")"));
                 }
             }
             case SUBTYPE_PROJECTILE_RESOLUTION -> {
-                if (envelopeValid && argLen == PROJECTILE_RESOLUTION_ARGS_LEN) {
+                if (entityClassFor(context, subType, entityId) != EntityClass.AVATAR
+                        || !envelopeValid || argLen != PROJECTILE_RESOLUTION_ARGS_LEN) {
+                    rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                            "METHOD27_CLASS_OR_SHAPE");
+                } else {
                     final int shotId = readU32LE(payload, 12);
                     final int field47 = readU32LE(payload, 16);
                     final int materialLike = payload[20] & 0xFF;
@@ -195,21 +228,21 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                     final Vector3 vectorLike = readVector3(payload, 33);
                     final int flagLike = payload[45] & 0xFF;
                     if (terminal == null || vectorLike == null) {
-                        warnings.add(new ReplayDecodeWarning("NON_FINITE_VECTOR",
-                                "method27 non-finite vector at shot " + shotId));
+                        rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                                "METHOD27_NON_FINITE_VECTOR");
                     } else {
                         events.add(new ProjectileResolutionEvent(
                                 packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
                                 shotId, field47, materialLike, terminal, vectorLike, flagLike));
                     }
-                } else {
-                    warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
-                            "Avatar method27 variant argLen=" + argLen
-                                    + " not decoded (expected " + PROJECTILE_RESOLUTION_ARGS_LEN + ")"));
                 }
             }
             case SUBTYPE_PROJECTILE_LAUNCH -> {
-                if (envelopeValid && argLen == PROJECTILE_LAUNCH_ARGS_LEN) {
+                if (entityClassFor(context, subType, entityId) != EntityClass.AVATAR
+                        || !envelopeValid || argLen != PROJECTILE_LAUNCH_ARGS_LEN) {
+                    rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                            "METHOD29_CLASS_OR_SHAPE");
+                } else {
                     final int shooterEntityId = readI32LE(payload, 12);
                     final int shotId = readU32LE(payload, 16);
                     final int flag = payload[20] & 0xFF;
@@ -217,50 +250,56 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                     final Vector3 launchVelocity = readVector3(payload, 33);
                     final float invariant = Float.intBitsToFloat(readI32LE(payload, 45));
                     if (launchPoint == null || launchVelocity == null) {
-                        warnings.add(new ReplayDecodeWarning("NON_FINITE_VECTOR",
-                                "method29 non-finite vector at shot " + shotId));
+                        rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                                "METHOD29_NON_FINITE_VECTOR");
                     } else {
                         events.add(new ProjectileLaunchedEvent(
                                 packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
                                 shooterEntityId, shotId, flag, launchPoint, launchVelocity,
                                 invariant));
                     }
-                } else {
-                    warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
-                            "Avatar method29 variant argLen=" + argLen
-                                    + " not decoded (expected " + PROJECTILE_LAUNCH_ARGS_LEN + ")"));
                 }
             }
             case SUBTYPE_TARGETING_SNAPSHOT -> {
                 // §A2：method36 field semantics 是 PR147 仅 11.19 controlled 证明的 closed semantics；
                 // 非 11.19 → raw-preserve（UnknownReplayEvent）+ diagnostics，不伪造 numeric semantic。
-                if (ReplayVersionGate.closedSemanticsAllowed(context.clientVersion())) {
-                    decodeTargetingSnapshot(payload, packet, ts, events, warnings);
+                if (!ReplayVersionGate.closedSemanticsAllowed(context.clientVersion())) {
+                    versionRawPreserve(events, warnings, packet, ts, subType, "VERSION_UNSUPPORTED_METHOD36");
+                } else if (entityClassFor(context, subType, entityId) != EntityClass.AVATAR) {
+                    rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                            "METHOD36_CLASS_MISMATCH");
                 } else {
-                    events.add(new UnknownReplayEvent(
-                            packet.sequence(), ts, packet.type(), payload.length,
-                            "VERSION_UNSUPPORTED_METHOD36", DecodeConfidence.UNKNOWN));
-                    warnings.add(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
-                            "method36 closed semantics not affirmed: " + context.clientVersion()));
+                    final int before = events.size();
+                    decodeTargetingSnapshot(payload, packet, ts, events, warnings);
+                    if (events.size() == before) {
+                        rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                                "METHOD36_SHAPE_MISMATCH");
+                    }
                 }
             }
             case SUBTYPE_SHOT_RESULT -> {
                 // §A2：method38 low16/modifier/component namespace 是 PR147 仅 11.19 controlled 证明的 closed semantics。
-                if (ReplayVersionGate.closedSemanticsAllowed(context.clientVersion())) {
-                    decodeShotResult(payload, packet, ts, events, warnings);
+                if (!ReplayVersionGate.closedSemanticsAllowed(context.clientVersion())) {
+                    versionRawPreserve(events, warnings, packet, ts, subType, "VERSION_UNSUPPORTED_METHOD38");
+                } else if (entityClassFor(context, subType, entityId) != EntityClass.AVATAR) {
+                    rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                            "METHOD38_CLASS_MISMATCH");
                 } else {
-                    events.add(new UnknownReplayEvent(
-                            packet.sequence(), ts, packet.type(), payload.length,
-                            "VERSION_UNSUPPORTED_METHOD38", DecodeConfidence.UNKNOWN));
-                    warnings.add(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
-                            "method38 closed semantics not affirmed: " + context.clientVersion()));
+                    final int before = events.size();
+                    decodeShotResult(payload, packet, ts, events, warnings);
+                    if (events.size() == before) {
+                        rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                                "METHOD38_SHAPE_MISMATCH");
+                    }
                 }
             }
             case SUBTYPE_VEHICLE_HEALTH_STATE -> {
                 // Vehicle-targeted method1：7-byte args（currentHpRaw + sourceEntity + causeFlag）。
-                // 当前 corpus 3,471/3,471 currentHpRaw 与同刻 prop3 raw16 一致；causeFlag
-                // 0/1/2/3/5 PROVEN（含 drowning 控制样本）。非 7-byte 变体 → 不臆测，保留 raw。
-                if (envelopeValid && argLen == VEHICLE_METHOD1_ARGS_LEN) {
+                if (entityClassFor(context, subType, entityId) != EntityClass.VEHICLE
+                        || !envelopeValid || argLen != VEHICLE_METHOD1_ARGS_LEN) {
+                    rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                            "METHOD1_CLASS_OR_SHAPE");
+                } else {
                     final int currentHpRaw = readU16LE(payload, 12);
                     final int sourceEntity = readI32LE(payload, 14);
                     final int causeFlag = payload[18] & 0xFF;
@@ -282,53 +321,65 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                     events.add(new VehicleHealthStateEvent(
                             packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
                             entityId, currentHpRaw, sourceEntity, causeFlag, cause, hpRawState));
-                } else {
-                    warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
-                            "Vehicle method1 variant argLen=" + argLen
-                                    + " not decoded (expected " + VEHICLE_METHOD1_ARGS_LEN + ")"));
                 }
             }
             case SUBTYPE_RECORDER_OWN_HEALTH -> {
                 // Avatar-targeted method5 3-byte variant：recorder own-health mirror。
-                // 18-byte variant 属其它实体族，不得按 u16+flag 解码（entity-class routing）。
-                if (envelopeValid && argLen == AVATAR_METHOD5_ARGS_LEN) {
+                // method5 是 class-colliding index（99.2% Avatar / 0.8% Vehicle），故必须由 registry 类证据
+                // 决定 class，绝不能由 methodId+argLen 反推。18-byte variant 属其它实体族。
+                if (entityClassFor(context, subType, entityId) != EntityClass.AVATAR
+                        || !envelopeValid || argLen != AVATAR_METHOD5_ARGS_LEN) {
+                    rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                            "METHOD5_CLASS_OR_SHAPE");
+                } else {
                     final int currentHp = readU16LE(payload, 12);
                     final int flagRaw = payload[14] & 0xFF;
                     events.add(new RecorderHealthChangedEvent(
                             packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
                             entityId, currentHp, flagRaw));
-                } else {
-                    warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
-                            "Avatar method5 variant argsLen=" + (payload.length - 8)
-                                    + " not decoded (expected " + AVATAR_METHOD5_ARGS_LEN + ")"));
                 }
             }
             case SUBTYPE_ROUND_FINISHED -> {
-                // Avatar method4 = round finished (winnerTeam u8 + finishReason u8, PROVEN 2-byte).
-                if (envelopeValid && argLen == ROUND_FINISHED_ARGS_LEN) {
+                // §P1/PR162：method4 是 class-colliding index。Avatar method4（2-byte）= RoundFinished；
+                // Vehicle method4（16-byte）= vehicle-to-vehicle collision/contact。必须由 registry 类证据分派，
+                // 绝不因 argLen 猜测 class。其余（shape/class 不符）→ UnknownReplayEvent。
+                final EntityClass entityClass = entityClassFor(context, subType, entityId);
+                if (entityClass == EntityClass.AVATAR
+                        && envelopeValid && argLen == ROUND_FINISHED_ARGS_LEN) {
                     final int winnerTeam = payload[12] & 0xFF;
                     final int finishReasonRaw = payload[13] & 0xFF;
                     events.add(new RoundFinishedEvent(
                             packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
                             winnerTeam, finishReasonRaw,
                             RoundFinishedEvent.causeOf(finishReasonRaw)));
+                } else if (entityClass == EntityClass.VEHICLE
+                        && envelopeValid && argLen == VEHICLE_VEHICLE_COLLISION_ARGS_LEN) {
+                    final float sharedScalar = Float.intBitsToFloat(readI32LE(payload, 12));
+                    final Vector3 contact = readVector3(payload, 16);
+                    if (contact == null) {
+                        rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                                "METHOD4_NON_FINITE_CONTACT");
+                    } else {
+                        events.add(new VehicleVehicleCollisionEvent(
+                                packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
+                                entityId, sharedScalar, contact));
+                    }
                 } else {
-                    warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
-                            "Avatar method4 variant argLen=" + argLen
-                                    + " not decoded (expected " + ROUND_FINISHED_ARGS_LEN + ")"));
+                    rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                            "METHOD4_CLASS_OR_SHAPE");
                 }
             }
             case SUBTYPE_ENTITY_METHOD_DAMAGE -> {
                 // PR147: method8 damage-frame layout (attacker/victim/raw damage value/timing) is proven for
                 // the verified families (11.18 + 11.19) — decoded as a structural observation frame (raw value
                 // is non-authoritative; authoritative HP loss = Type7 prop3 deltas). Unverified future
-                // versions raw-preserve (never a version if/else).
+                // versions raw-preserve (never a version if/else). method8 是 class-colliding index（92.7% Vehicle /
+                // 7.3% Avatar）——必须由 registry 类证据（Vehicle=物化 entityTypeId==2）决定，不靠 argLen 反推。
                 if (!ReplayVersionGate.damageLayoutAllowed(context.clientVersion())) {
-                    events.add(new UnknownReplayEvent(
-                            packet.sequence(), ts, packet.type(), payload.length,
-                            "VERSION_UNSUPPORTED_METHOD8", DecodeConfidence.UNKNOWN));
-                    warnings.add(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
-                            "EntityMethod subtype 8 layout not affirmed: " + context.clientVersion()));
+                    versionRawPreserve(events, warnings, packet, ts, subType, "VERSION_UNSUPPORTED_METHOD8");
+                } else if (entityClassFor(context, subType, entityId) != EntityClass.VEHICLE) {
+                    rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                            "METHOD8_CLASS_MISMATCH");
                 } else {
                     // damage event（outer entityId = 方法调用目标实体，供 victim 证据回退）。
                     // 只要包头已确认 damage method（payload ≥ 8 且 subtype == 8），parseDamage 必产出
@@ -362,11 +413,10 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 // is gated by the capability VERIFIED == verified family, NEVER a version if/else. The
                 // closed-semantic supremacy-points value (wrapper=13) stays 11.19-only.
                 if (!ReplayVersionGate.participantMappingLayoutAllowed(context.clientVersion())) {
-                    events.add(new UnknownReplayEvent(
-                            packet.sequence(), ts, packet.type(), payload.length,
-                            "VERSION_UNSUPPORTED_METHOD48", DecodeConfidence.UNKNOWN));
-                    warnings.add(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
-                            "EntityMethod subtype 48 layout not affirmed: " + context.clientVersion()));
+                    versionRawPreserve(events, warnings, packet, ts, subType, "VERSION_UNSUPPORTED_METHOD48");
+                } else if (entityClassFor(context, subType, entityId) != EntityClass.AVATAR) {
+                    rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                            "METHOD48_CLASS_MISMATCH");
                 } else {
                     // entity/account mapping
                     final ParticipantMappingResult mapping = parseUpdateArena2(payload, entityId, packet, ts);
@@ -382,18 +432,82 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 }
             }
             case SUBTYPE_UPDATE_ARENA -> {
-                // updateArena - 暂时不做实体映射，现有功能已覆盖
-                // 后续可以解析 arena snapshot
+                // updateArena（Avatar method47，当前 11.19 chat-action family —— 已知但本 decoder 未实现）。
+                // entity-class scoped + 未实现 → raw-preserve（UnknownReplayEvent），非 warning-only。
+                if (entityClassFor(context, subType, entityId) != EntityClass.AVATAR) {
+                    rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                            "METHOD47_CLASS_MISMATCH");
+                } else {
+                    rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                            "METHOD47_NOT_IMPLEMENTED");
+                }
             }
             default ->
-                // 未知 subtype，记录 unknown 事件
-                    warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE",
-                            "Unknown EntityMethod subtype: " + subType));
+                // 未知/未实现 subtype：raw-preserve 为 UnknownReplayEvent（带 entity/method/argLen debug），
+                // 绝不能 warning-only（item 6）。Avatar-proven 未知方法先借此标记 Avatar 化类证据。
+                rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
+                        entityClassFor(context, subType, entityId) != EntityClass.UNKNOWN
+                                ? "METHOD" + subType + "_NOT_IMPLEMENTED"
+                                : "METHOD" + subType + "_UNKNOWN");
 
         }
 
         final DecodeStatus status = warnings.isEmpty() ? DecodeStatus.SUCCESS : DecodeStatus.PARTIAL;
         return new ReplayDecodeResult(status, events, warnings);
+    }
+
+    /**
+     * PR162：解析 entityClass（通过 {@link EntityClassRegistry}），并仅对<b>证明单类</b>的 method
+     * 作「调用即类证据」标记（100% Avatar / 0% Avatar Vehicle 族）。class-colliding method
+     * （method4/5/8/2）绝不由此反推 class —— 它们必须已有 registry 类证据；UNKNOWN → raw-preserve。
+     */
+    private static EntityClass entityClassFor(final ReplayDecodeContext context,
+                                              final int subType, final int entityId) {
+        final EntityClassRegistry registry = context.entityClassRegistry();
+        // Avatar-proven method（100% Avatar-targeted）总是标记并返回 Avatar（粘性，覆盖 Vehicle）：
+        // 录像者 Avatar 实体同时具有载具物理性质与独立协议 Avatar 角色，必须按 Avatar 分派（method4 2B round-finished）。
+        if (AVATAR_PROVEN_METHODS.contains(subType)) {
+            registry.markAvatar(entityId);
+            return EntityClass.AVATAR;
+        }
+        final EntityClass existing = registry.resolve(entityId);
+        if (existing != EntityClass.UNKNOWN) {
+            return existing;
+        }
+        if (VEHICLE_PROVEN_METHODS.contains(subType)) {
+            registry.markVehicle(entityId);
+            return registry.resolve(entityId);
+        }
+        return EntityClass.UNKNOWN;
+    }
+
+    /** 版本门禁 raw-preserve（原始 reasonCode "VERSION_UNSUPPORTED_METHODn"，保持既有契约）。 */
+    private static void versionRawPreserve(final List<ReplayEvent> events,
+                                           final List<ReplayDecodeWarning> warnings,
+                                           final RawReplayPacket packet,
+                                           final ReplayTimestamp ts,
+                                           final int subType,
+                                           final String reason) {
+        events.add(new UnknownReplayEvent(
+                packet.sequence(), ts, packet.type(), packet.payloadLength(), reason, DecodeConfidence.UNKNOWN));
+        warnings.add(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
+                "EntityMethod subtype " + subType + " layout not affirmed"));
+    }
+
+    /** 未知/未实现/class 或 shape 不符 EntityMethod → raw-preserve（UnknownReplayEvent，带足够 debug）。 */
+    private static void rawPreserve(final List<ReplayEvent> events,
+                                    final List<ReplayDecodeWarning> warnings,
+                                    final RawReplayPacket packet,
+                                    final ReplayTimestamp ts,
+                                    final int entityId,
+                                    final int subType,
+                                    final int argLen,
+                                    final String reason) {
+        final String detail = reason + "|e:" + entityId + "|m:" + subType + "|len:" + argLen;
+        events.add(new UnknownReplayEvent(
+                packet.sequence(), ts, packet.type(), packet.payloadLength(), detail, DecodeConfidence.UNKNOWN));
+        warnings.add(new ReplayDecodeWarning("ENTITY_METHOD_UNDECODED",
+                detail + "|seq:" + packet.sequence()));
     }
 
     /**
