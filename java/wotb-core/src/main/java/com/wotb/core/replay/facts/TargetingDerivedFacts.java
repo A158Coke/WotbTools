@@ -1,5 +1,7 @@
 package com.wotb.core.replay.facts;
 
+import com.wotb.core.replay.event.AimRayStateEvent;
+import com.wotb.core.replay.event.GunMarkerSizeEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.TargetingInfoSnapshotEvent;
 
@@ -7,25 +9,15 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/**
- * 瞄准派生事实构建器（计划 §C6/C7，deterministic facts only）。
- *
- * <p>对每个 recorder 射击（ShotFact）配对 method36 PRE（发射前最近）与 POST
- * （发射后最近），产出物理 role 已 PROVEN 的 scalar；不做 AI 判断
- * （不判 bad snapshot / poor aim / wrong shot）。</p>
- */
+/** Recorder targeting fact joiner: method36 + Type31 marker size + Type39 aim-ray geometry. */
 public final class TargetingDerivedFacts {
+
+    /** Type31/39 run at ~120 Hz; older samples than this are not attached to a shot. */
+    static final double HIGH_RATE_PRE_SHOT_MAX_AGE_SEC = 0.10;
 
     private TargetingDerivedFacts() {
     }
 
-    /**
-     * 为每个 recorder 射击构建瞄准 PRE/POST 配对。
-     *
-     * @param shots    canonical ShotFact 列表（仅 recorderShot=true 的会被配对）
-     * @param events   全部领域事件（用于查找 method36）
-     * @param startRawClockSec battle start 原始时钟（可为 null → 退回 raw）
-     */
     public static List<TargetingShotPair> pair(
             final List<ShotFact> shots,
             final List<ReplayEvent> events,
@@ -34,53 +26,93 @@ public final class TargetingDerivedFacts {
             return List.of();
         }
         final List<TargetingInfoSnapshotEvent> snapshots = new ArrayList<>();
+        final List<GunMarkerSizeEvent> markerSamples = new ArrayList<>();
+        final List<AimRayStateEvent> aimSamples = new ArrayList<>();
         for (final ReplayEvent e : events) {
-            if (e instanceof TargetingInfoSnapshotEvent t) {
-                snapshots.add(t);
+            switch (e) {
+                case TargetingInfoSnapshotEvent t -> snapshots.add(t);
+                case GunMarkerSizeEvent g -> markerSamples.add(g);
+                case AimRayStateEvent a -> aimSamples.add(a);
+                default -> { }
             }
         }
-        snapshots.sort(Comparator.comparingDouble((TargetingInfoSnapshotEvent t) ->
-                        clockOf(t, startRawClockSec))
-                .thenComparingInt(TargetingInfoSnapshotEvent::sequence));
+        final Comparator<ReplayEvent> byTime = Comparator
+                .comparingDouble((ReplayEvent e) -> clockOf(e, startRawClockSec))
+                .thenComparingInt(ReplayEvent::sequence);
+        snapshots.sort(byTime);
+        markerSamples.sort(byTime);
+        aimSamples.sort(byTime);
 
         final List<TargetingShotPair> out = new ArrayList<>();
         for (final ShotFact shot : shots) {
             if (!shot.recorderShot() || !Double.isFinite(shot.launchTimeSec())) {
                 continue;
             }
-            TargetingInfoSnapshotEvent pre = null;
-            TargetingInfoSnapshotEvent post = null;
-            for (final TargetingInfoSnapshotEvent t : snapshots) {
-                final double tSec = clockOf(t, startRawClockSec);
-                if (tSec <= shot.launchTimeSec() + 1e-9) {
-                    pre = t;
-                } else {
-                    post = t;
-                    break;
-                }
-            }
-            if (pre == null) {
+            final TargetingInfoSnapshotEvent pre36 = latestAtOrBefore(snapshots, shot.launchTimeSec(), startRawClockSec);
+            final TargetingInfoSnapshotEvent post36 = firstAfter(snapshots, shot.launchTimeSec(), startRawClockSec);
+            final GunMarkerSizeEvent marker = latestAtOrBefore(markerSamples, shot.launchTimeSec(), startRawClockSec);
+            final AimRayStateEvent aim = latestAtOrBefore(aimSamples, shot.launchTimeSec(), startRawClockSec);
+
+            final Double before = pre36 == null ? null : pre36.dispersionBloomRaw();
+            final Double after = post36 == null ? null : post36.dispersionBloomRaw();
+            final Double increase = before != null && after != null ? after - before : null;
+
+            final boolean markerFresh = marker != null
+                    && shot.launchTimeSec() - clockOf(marker, startRawClockSec) <= HIGH_RATE_PRE_SHOT_MAX_AGE_SEC;
+            final boolean aimFresh = aim != null
+                    && shot.launchTimeSec() - clockOf(aim, startRawClockSec) <= HIGH_RATE_PRE_SHOT_MAX_AGE_SEC;
+
+            if (pre36 == null && !markerFresh && !aimFresh) {
                 continue;
             }
-            final Double before = pre.dispersionBloomRaw();
-            final Double after = post == null ? null : post.dispersionBloomRaw();
-            final Double increase = before != null && after != null
-                    ? after - before : null;
             out.add(new TargetingShotPair(
                     shot.shotId(),
-                    pre.turretYawRad(),
-                    pre.gunPitchRad(),
-                    pre.aimingTimeScalarRaw(),
+                    pre36 == null ? null : pre36.turretYawRad(),
+                    pre36 == null ? null : pre36.gunPitchRad(),
+                    pre36 == null ? null : pre36.aimingTimeScalarRaw(),
                     before,
                     after,
-                    increase));
+                    increase,
+                    markerFresh ? marker.markerSizeRaw() : null,
+                    aimFresh ? aim.worldYawDeg() : null,
+                    aimFresh ? aim.worldPitchDeg() : null,
+                    aimFresh ? aim.aimRayPointX() : null,
+                    aimFresh ? aim.aimRayPointY() : null,
+                    aimFresh ? aim.aimRayPointZ() : null));
         }
         out.sort(Comparator.comparingInt(TargetingShotPair::shotId));
         return List.copyOf(out);
     }
 
-    private static double clockOf(final TargetingInfoSnapshotEvent e,
-                                  final Double startRawClockSec) {
+    private static <T extends ReplayEvent> T latestAtOrBefore(
+            final List<T> events,
+            final double time,
+            final Double startRawClockSec) {
+        T latest = null;
+        for (final T event : events) {
+            final double t = clockOf(event, startRawClockSec);
+            if (t <= time + 1e-9) {
+                latest = event;
+            } else {
+                break;
+            }
+        }
+        return latest;
+    }
+
+    private static <T extends ReplayEvent> T firstAfter(
+            final List<T> events,
+            final double time,
+            final Double startRawClockSec) {
+        for (final T event : events) {
+            if (clockOf(event, startRawClockSec) > time + 1e-9) {
+                return event;
+            }
+        }
+        return null;
+    }
+
+    private static double clockOf(final ReplayEvent e, final Double startRawClockSec) {
         if (e.timestamp() == null) {
             return Double.NaN;
         }
