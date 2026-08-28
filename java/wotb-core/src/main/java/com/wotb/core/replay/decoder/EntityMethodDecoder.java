@@ -3,7 +3,9 @@ package com.wotb.core.replay.decoder;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.AmmunitionStateEvent;
+import com.wotb.core.replay.event.ArenaPeriodChangedEvent;
 import com.wotb.core.replay.event.HpRawState;
+import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ProjectileLaunchedEvent;
 import com.wotb.core.replay.event.ProjectileResolutionEvent;
@@ -63,7 +65,14 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     static final int SUBTYPE_TARGETING_SNAPSHOT = 36;
     /** Avatar-targeted method38（14..22-byte args）：射击结果 bitfield（PROVEN）。 */
     static final int SUBTYPE_SHOT_RESULT = 38;
+    /** Avatar-targeted method4 (2-byte args)：round finished（winnerTeam u8 + finishReason u8，PROVEN）。 */
+    static final int SUBTYPE_ROUND_FINISHED = 4;
+    /** subtype48 wrapper=3 = ARENA_PERIOD 更新（root field3 = period；PROVEN）。 */
+    public static final long WRAPPER_ARENA_PERIOD = 3L;
+    /** wrapper3 root field：arena period 值。 */
+    static final int ARENA_PERIOD_ROOT_FIELD = 3;
     static final int AVATAR_METHOD5_ARGS_LEN = 3;
+    static final int ROUND_FINISHED_ARGS_LEN = 2;
     static final int VEHICLE_METHOD1_ARGS_LEN = 7;
     static final int VEHICLE_METHOD0_ARGS_LEN = 1;
     static final int AMMUNITION_STATE_ARGS_LEN = 12;
@@ -290,6 +299,21 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                                     + " not decoded (expected " + AVATAR_METHOD5_ARGS_LEN + ")"));
                 }
             }
+            case SUBTYPE_ROUND_FINISHED -> {
+                // Avatar method4 = round finished (winnerTeam u8 + finishReason u8, PROVEN 2-byte).
+                if (envelopeValid && argLen == ROUND_FINISHED_ARGS_LEN) {
+                    final int winnerTeam = payload[12] & 0xFF;
+                    final int finishReasonRaw = payload[13] & 0xFF;
+                    events.add(new RoundFinishedEvent(
+                            packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
+                            winnerTeam, finishReasonRaw,
+                            RoundFinishedEvent.causeOf(finishReasonRaw)));
+                } else {
+                    warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
+                            "Avatar method4 variant argLen=" + argLen
+                                    + " not decoded (expected " + ROUND_FINISHED_ARGS_LEN + ")"));
+                }
+            }
             case SUBTYPE_ENTITY_METHOD_DAMAGE -> {
                 // damage event（outer entityId = 方法调用目标实体，供 victim 证据回退）。
                 // 只要包头已确认 damage method（payload ≥ 8 且 subtype == 8），parseDamage 必产出
@@ -323,6 +347,8 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 }
                 // 争霸赛实时点数（root field 12，保守结构校验；结构不合法/数值非法 → 跳过）
                 events.addAll(parseSupremacyPoints(payload, packet, ts));
+                // PR147 wrapper=3 ARENA_PERIOD（root field3 = period）；period=3 BATTLE = battle-start anchor。
+                events.addAll(parseArenaPeriod(payload, packet, ts));
             }
             case SUBTYPE_UPDATE_ARENA -> {
                 // updateArena - 暂时不做实体映射，现有功能已覆盖
@@ -669,6 +695,35 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * 解析 subtype48 wrapper=3 ARENA_PERIOD（root field3 = period；PR147 entity-methods.md）。
+     * 仅 wrapperFieldNumber == 3 且 root field3 存在才产出 arena-period 事件；period=3 BATTLE 是
+     * battle-start anchor（battle-relative 时间权威起点）。结构/值非法 → 不产出。
+     */
+    private List<ArenaPeriodChangedEvent> parseArenaPeriod(
+            byte[] payload, RawReplayPacket packet, ReplayTimestamp ts) {
+        final DecodedUpdateArena2 decoded = decodeUpdateArena2(payload);
+        if (decoded == null || decoded.wrapperFieldNumber() != WRAPPER_ARENA_PERIOD) {
+            return List.of();
+        }
+        final Map<Integer, List<Object>> root = decoded.root();
+        final List<Object> periodVals = root.get(ARENA_PERIOD_ROOT_FIELD);
+        if (periodVals == null || periodVals.isEmpty()) {
+            return List.of();
+        }
+        final Object first = periodVals.getFirst();
+        if (!(first instanceof Number n)) {
+            return List.of();
+        }
+        final int periodRaw = n.intValue();
+        if (periodRaw < 0 || periodRaw > 4) {
+            return List.of();
+        }
+        return List.of(new ArenaPeriodChangedEvent(
+                packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
+                periodRaw, ArenaPeriodChangedEvent.periodOf(periodRaw)));
     }
 
     /** 供探针/诊断读取 subtype48 的 wrapper field_number（复用生产提取；-1=结构不完整）。 */
