@@ -46,7 +46,7 @@ public final class ReplayParser {
     static final int F_KILLER = 25;             // killer result/entity-id (非 accountId)
     static final int F_RESULT_ENTITY = 1;       // #301 outer field1 = result/entity id
     // 名册 PlayerInfo (#201 -> #2)
-    static final int R_NICK = 1, R_PLATOON = 2, R_CLAN = 5, R_RANK = 9;
+    static final int R_NICK = 1, R_PREBATTLE_GROUP = 2, R_CLAN = 5, R_RANK = 9;
     static final int R_TEAM = 3;                // 名册来源队伍（1/2；用于结算阵容完整性校验）
 
     private ReplayParser() {
@@ -135,7 +135,7 @@ public final class ReplayParser {
 
         // ---- 名册 #201 ----
         final Map<Long, String[]> roster = new HashMap<>();   // acc -> [nickname, clan]
-        final Map<Long, Long> platoonByAcc = new HashMap<>();
+        final Map<Long, Long> prebattleGroupByAcc = new HashMap<>();
         final Map<Long, Long> rankByAcc = new HashMap<>();
         final Map<Long, Integer> rosterTeamByAcc = new HashMap<>();  // acc -> 名册队伍(#201→#2→#3)
         final List<Object> rosterEntries = root.getOrDefault(201, List.of());
@@ -154,9 +154,9 @@ public final class ReplayParser {
             if (team instanceof Number) {
                 rosterTeamByAcc.put(acc, ((Number) team).intValue());
             }
-            final Object pl = Protobuf.first(info, R_PLATOON);
+            final Object pl = Protobuf.first(info, R_PREBATTLE_GROUP);
             if (pl instanceof Number) {
-                platoonByAcc.put(acc, ((Number) pl).longValue());
+                prebattleGroupByAcc.put(acc, ((Number) pl).longValue());
             }
             final Object rank = Protobuf.first(info, R_RANK);
             if (rank instanceof Number) {
@@ -248,7 +248,7 @@ public final class ReplayParser {
             pr.nickname = (info != null && StringUtils.hasText(info[0]))
                     ? info[0] : String.valueOf(pr.accountId);
             pr.clan = (info != null && info[1] != null) ? info[1] : "";
-            pr.platoonId = platoonByAcc.get(pr.accountId);
+            pr.prebattleGroupId = prebattleGroupByAcc.get(pr.accountId);
             pr.rank = rankByAcc.get(pr.accountId);
         }
 

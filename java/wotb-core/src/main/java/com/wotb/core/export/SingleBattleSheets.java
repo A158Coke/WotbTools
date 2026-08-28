@@ -110,10 +110,8 @@ final class SingleBattleSheets {
         styles.writeHeader(ws, header);
 
         final List<PlayerResult> players = Players.sorted(b.players);
-        final Function<Long, String> platoon = Players.platoonLabeler();
         for (final PlayerResult p : players) {
             Players.enrich(p, tp);
-            p.platoonLabel = platoon.apply(p.platoonId);
         }
         int rIdx = 1;
         for (final PlayerResult p : players) {

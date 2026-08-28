@@ -32,7 +32,8 @@ public class PlayerResult {
     // 名册信息
     public String nickname = "";
     public String clan = "";
-    public Long platoonId;
+    /** #201 field2 = prebattle/training-room grouping ID（PR147: NOT a platoon ID；battle-results.md）。 */
+    public Long prebattleGroupId;
     public Long rank;
 
     // 展示派生字段 (enrich)
@@ -56,7 +57,6 @@ public class PlayerResult {
     public String tankType = "";
     public String tankNation = "";
     public Object alphaDamage = "";
-    public String platoonLabel = "";
 
     /**
      * 死亡时刻(ms)。PR147 后该字段为 <b>canonical 结算死亡时间</b>（由 settlement field24 lifeTime 派生，
