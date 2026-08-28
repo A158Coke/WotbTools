@@ -75,10 +75,8 @@ public record BattlePhaseSummary(
                 anyLiveExact = true;
             } else if (p.deathTimeSource == DeathTimeSource.SETTLEMENT_SECOND) {
                 anySettlement = true;
-            } else if (p.deathTimeMillis > 0) {
-                // Compatibility DTO not yet passed through reconciler: this is settlement-only evidence.
-                anySettlement = true;
             } else {
+                // UNKNOWN（无 source）：residual deathTimeMillis 绝不算 KNOWN（P0-2 provenance）。
                 return "未知";
             }
         }

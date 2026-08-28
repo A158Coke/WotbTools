@@ -630,9 +630,15 @@ class RelativeDepthHpEvidenceTest {
         events.add(pos(12, 40f, 11, -90f, 0f));    // 1002 t=20
         events.add(pos(20, 30f, 20, 200f, 0f));    // 2001 t=10（stale）
         events.add(pos(21, 30f, 21, 230f, 50f));   // 2002 t=10（stale）
+        // P0-1：canonical AoI gap 需要 Type4 leave。enemy 在 t=20 离开 → segment [10,20) 关闭 →
+        // opening 末（45）位于 UNKNOWN_AOI gap → LAST_KNOWN（fail-closed，不产生 exact 距离）。
+        events.add(new com.wotb.core.replay.event.EntityRemovedEvent(55, new ReplayTimestamp(40f, null), 4,
+                DecodeConfidence.EXACT, 20));
+        events.add(new com.wotb.core.replay.event.EntityRemovedEvent(56, new ReplayTimestamp(40f, null), 4,
+                DecodeConfidence.EXACT, 21));
         events.add(hp(30, 30f, 10, 1800));
         events.add(hp(31, 30f, 11, 1000));
-        // 交火 t=30 → opening [0,45] / mid [45,85] / late [85,100]：enemy 全程 stale
+        // 交火 t=30 → opening [0,45] / mid [45,85] / late [85,100]：enemy 全程位于 gap
         events.add(dmg(40, 50f, 10, 20));
         final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
                 events, List.of(), null, null, null);

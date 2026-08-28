@@ -2,6 +2,8 @@ package com.wotb.core.replay.timeline;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.replay.facts.AoiObservationSegment;
+import com.wotb.core.replay.facts.ReplayAoiLifecycle;
 import com.wotb.core.replay.processing.TeamEntityMapper;
 import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
@@ -39,9 +41,6 @@ import java.util.Set;
  */
 public final class BattleTimelineBuilder {
 
-    /** 位置流中断阈值（秒）：超过则位置转为 last-known；与 playback POSITION_GAP_SEC 对齐。
-     * public：证据层（FormationDepth/RelativeDepth）复用同一 canonical 阈值判定 enemy CURRENT/LAST_KNOWN。 */
-    public static final double POSITION_GAP_SEC = 5.0;
     /** 位置显著变化阈值（canonical 米）。 */
     static final double POSITION_CHANGE_THRESHOLD_M = 5.0;
     /** 防御性帧数上限（450s 战斗约 451 帧；超长异常拒绝而非 OOM）。 */
@@ -124,6 +123,13 @@ public final class BattleTimelineBuilder {
 
         final List<ReplayEvent> orderedEvents = orderedEvents(recon.events(), clock.startRawClockSec());
 
+        // Canonical AoI authority：构建 frames 之前建立 ReplayAoiLifecycle，frame knowledge
+        // 用 entityId + frame time 查询 observed segment / UNKNOWN_AOI gap（禁止再靠 5s/age 推断）。
+        final List<AoiObservationSegment> aoiSegments =
+                ReplayAoiLifecycle.build(recon.events(), clock.startRawClockSec());
+        final Map<Integer, List<AoiObservationSegment>> aoiByEntity =
+                ReplayAoiLifecycle.indexByEntity(aoiSegments);
+
         final List<BattleFrame> frames = new ArrayList<>(maxSecond + 1);
         final Map<Integer, Integer> prevHp = new HashMap<>();
         final Map<Integer, Double> prevHpObservedAt = new HashMap<>();
@@ -155,7 +161,7 @@ public final class BattleTimelineBuilder {
             for (final int entityId : index.knownEntityIdsAt(t)) {
                 if (actualCombatantEntityIds.contains(entityId)) {
                     vehicles.add(frameVehicle(entityId, t, index, mapping, battle,
-                            perspectiveTeam, enricher));
+                            perspectiveTeam, enricher, aoiByEntity));
                 }
             }
             vehicles.sort(Comparator.comparingInt(FrameVehicle::entityId));
@@ -232,8 +238,7 @@ public final class BattleTimelineBuilder {
                 clock.resolution(),
                 List.copyOf(frames),
                 List.copyOf(orderedEvents),
-                com.wotb.core.replay.facts.ReplayAoiLifecycle.build(
-                        recon.events(), clock.startRawClockSec()),
+                aoiSegments,
                 BattleTimelineValidationResult.ok(),
                 List.copyOf(limitations));
         return new BattleTimelineResult(timeline, timeline.validation());
@@ -394,17 +399,14 @@ public final class BattleTimelineBuilder {
             final TeamEntityMapping mapping,
             final Battle battle,
             final int perspectiveTeam,
-            final TimelineMapEnricher enricher) {
+            final TimelineMapEnricher enricher,
+            final Map<Integer, List<AoiObservationSegment>> aoiByEntity) {
 
         final Identity identity = identityOf(entityId, mapping, battle);
         final boolean friendly = identity.team() != null && identity.team() == perspectiveTeam;
 
-        // position knowledge
+        // position knowledge（canonical AoI authority，禁止再用 5s/packet-age 推断）
         final EntityIndex.PosSample pos = index.lastPositionAtOrBefore(entityId, t);
-        // EntityLeave 是服务器位置流的硬中断（type-4；leave 后重新上报即 re-entry 新段）
-        final Double lastLeave = index.lastLeaveAtOrBefore(entityId, t);
-        final boolean interruptedByLeave = pos != null && lastLeave != null
-                && lastLeave >= pos.clock() - 1e-9;
         FramePosition position;
         VehicleKnowledgeState knowledge;
         if (pos == null) {
@@ -412,11 +414,15 @@ public final class BattleTimelineBuilder {
             knowledge = VehicleKnowledgeState.UNKNOWN;
         } else {
             final double age = t - pos.clock();
-            // 己方 actual combatant：服务器持续下发完整位置 state，静止时不重复发同坐标包；
-            // last position + 无 EntityLeave + 未 destroyed = 可 carry-forward 的当前位置，
-            // 不因 age > POSITION_GAP_SEC 降级为 LAST_KNOWN（2026-08-19 真实样本：存活己方静止 10.8s 无新位置）。
-            // 敌方保持 anti-future-leak / observation semantics（LAST_KNOWN）。
-            final boolean active = !interruptedByLeave && (friendly || age <= POSITION_GAP_SEC);
+            // 当前帧是否位于 open observed segment（entityId + frame time 查询）：
+            // - 位于 observed segment 且位置样本来自本段（observedFrom ≤ pos.clock）→
+            //   CURRENT carry-forward（静止车辆即使 >5s 无 Type10 也不降级）；
+            // - 位于 UNKNOWN_AOI gap / 位置样本跨 gap（来自上一段）→ LAST_KNOWN
+            //   （不插值、不前进；closed segment 不允许把 last-known 当 current）。
+            final AoiObservationSegment aoiSeg =
+                    ReplayAoiLifecycle.segmentAt(aoiByEntity, entityId, t);
+            final boolean active = aoiSeg != null
+                    && pos.clock() >= aoiSeg.observedFromSec() - 1e-9;
             final PositionKnowledge pk = active
                     ? PositionKnowledge.CURRENT : PositionKnowledge.LAST_KNOWN;
             final PositionSource source = age <= 1e-3

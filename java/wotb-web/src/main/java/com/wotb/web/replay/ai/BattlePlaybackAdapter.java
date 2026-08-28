@@ -14,14 +14,14 @@ import com.wotb.core.replay.event.VehicleDestroyedEvent;
 import com.wotb.core.replay.timeline.BattleFrame;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.FrameVehicle;
-import com.wotb.core.replay.timeline.PositionKnowledge;
-import com.wotb.core.replay.timeline.VehicleKnowledgeState;
 import com.wotb.core.util.PlayerResultFormat;
 import com.wotb.web.replay.dto.MapOverview;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * BattlePlaybackAdapter（docs/current-plan.md §40/§42）：从 Canonical BattleTimeline 派生
@@ -51,6 +51,13 @@ public final class BattlePlaybackAdapter {
         final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
                 com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
                         timeline.events(), mapping, timeline.battleStartRawClockSec(), duration);
+        // §B9：结算缺失但回放已证明击毁（combat.destroyed）时，位置覆盖不得越过该击毁时刻
+        // （禁阵亡后残余位置），与 MapOverviewBuilder 同源。
+        final Map<Long, Double> destroyByAccount = new HashMap<>();
+        for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Destroyed d
+                : combat.destroyed()) {
+            destroyByAccount.putIfAbsent(d.victimAccountId(), d.timeSec());
+        }
         final List<MapOverview.PlaybackVehicle> vehicles = new ArrayList<>();
         for (final PlayerResult player : battle.players) {
             if (player.team <= 0 || player.accountId <= 0) {
@@ -64,7 +71,9 @@ public final class BattlePlaybackAdapter {
             final Double rawDeath = player.survived ? null : deathSec(player);
             final Double deathSec = rawDeath == null ? null : Math.min(rawDeath, duration);
             final List<MapOverview.PositionInterval> intervals =
-                    positionIntervals(timeline, entityIds, deathSec, duration);
+                    clampIntervalsToDestroyed(
+                            positionIntervals(timeline, entityIds, deathSec, duration),
+                            destroyByAccount.get(player.accountId));
             final List<MapOverview.DirectionSample> directions =
                     directionSamples(timeline, entityIds, deathSec, duration);
             final List<MapOverview.HpSample> hpSamples =
@@ -153,78 +162,60 @@ public final class BattlePlaybackAdapter {
     }
 
     /**
-     * 位置上报区间 = 服务器位置流覆盖（packet gap > 5s 即中断），与 MapOverviewBuilder 的 gap 聚类等价；
-     * 阵亡时刻最终 clamp（阵亡后不出现区间）。
-     * <p>PR #103 起己方 FrameVehicle 知识 carry-forward 为 CURRENT（静止不降级），但 playback 覆盖语义
-     * 仍是「有包才算覆盖」，故区间判定额外要求 positionAgeSec ≤ POSITION_GAP_SEC（≠ AI 知识状态）。</p>
+     * 位置上报区间 = canonical AoI observed segment（ReplayAoiLifecycle）∩ 实际位置存在范围，
+     * 再经 deathSec / duration clamp。同一 open segment 内<b>不再</b>做 5 秒 packet-gap splitting
+     * （静止车辆即使 >5s 无 Type10 也不产生 POSITION_STALE）——与 MapOverviewBuilder 同源
+     * （{@link AoiPositionCoverage}）。
      */
-    private static final double POSITION_GAP_SEC = 5.0;
-
     static List<MapOverview.PositionInterval> positionIntervals(
             final BattleTimeline timeline,
             final List<Integer> entityIds,
             final Double deathSec,
             final double duration) {
-        final List<MapOverview.PositionInterval> raw = new ArrayList<>();
-        for (final int entityId : entityIds) {
-            Double runStart = null;
-            Double runLastObserved = null;
+        final List<Double> positionTimes = positionTimes(timeline, entityIds);
+        return AoiPositionCoverage.intervals(
+                timeline.aoiSegments(), entityIds, positionTimes, deathSec, duration);
+    }
+
+    /** 该账号全部实体的位置样本时刻（battle-relative，去重升序）。 */
+    private static List<Double> positionTimes(
+            final BattleTimeline timeline, final List<Integer> entityIds) {
+        final java.util.Set<Integer> idSet = java.util.Set.copyOf(entityIds);
+        final java.util.TreeSet<Double> times = new java.util.TreeSet<>();
+        if (timeline.frames() != null) {
             for (final BattleFrame frame : timeline.frames()) {
-                final FrameVehicle v = vehicleIn(frame, entityId);
-                // 位置上报区间 = 服务器位置流覆盖（packet gap > 5s 即中断），不是 AI 知识状态：
-                // PR #103 起己方 FrameVehicle 知识 carry-forward 为 CURRENT（静止不降级），
-                // 但 playback 覆盖语义仍是「有包才算覆盖」，与 MapOverviewBuilder gap 聚类保持一致。
-                final boolean active = v != null && v.position() != null
-                        && v.position().position() != null
-                        && v.position().knowledge() == PositionKnowledge.CURRENT
-                        && v.knowledgeState() == VehicleKnowledgeState.POSITION_STREAM_ACTIVE
-                        && v.position().positionAgeSec() != null
-                        && v.position().positionAgeSec() <= POSITION_GAP_SEC;
-                if (active) {
-                    final double observed = v.position().positionObservedAtSec();
-                    if (runStart == null) {
-                        runStart = observed;
+                for (final FrameVehicle v : frame.vehicles()) {
+                    if (v == null || !idSet.contains(v.entityId())
+                            || v.position() == null || v.position().position() == null) {
+                        continue;
                     }
-                    runLastObserved = Math.max(runLastObserved == null ? observed : runLastObserved, observed);
-                } else if (runStart != null) {
-                    raw.add(new MapOverview.PositionInterval(runStart, runLastObserved));
-                    runStart = null;
-                    runLastObserved = null;
+                    final Double at = v.position().positionObservedAtSec();
+                    if (at != null && Double.isFinite(at)) {
+                        times.add(at);
+                    }
                 }
             }
-            if (runStart != null) {
-                raw.add(new MapOverview.PositionInterval(runStart, runLastObserved));
-            }
         }
-        raw.sort(Comparator.comparingDouble(MapOverview.PositionInterval::startSec));
-        final List<MapOverview.PositionInterval> merged = new ArrayList<>();
-        for (final MapOverview.PositionInterval interval : raw) {
-            if (merged.isEmpty()
-                    || interval.startSec() - merged.get(merged.size() - 1).endSec() > 1e-6) {
-                merged.add(interval);
-            } else {
-                final MapOverview.PositionInterval last = merged.get(merged.size() - 1);
-                merged.set(merged.size() - 1, new MapOverview.PositionInterval(
-                        last.startSec(), Math.max(last.endSec(), interval.endSec())));
-            }
+        return new ArrayList<>(times);
+    }
+
+    /** §B9：把位置覆盖区间按「权威击毁时刻」收口（击毁后整体剔除、跨越击毁末端 clamp），与 MapOverviewBuilder 同源。 */
+    private static List<MapOverview.PositionInterval> clampIntervalsToDestroyed(
+            final List<MapOverview.PositionInterval> intervals, final Double destroySec) {
+        if (destroySec == null || intervals == null || intervals.isEmpty()) {
+            return intervals;
         }
-        final List<MapOverview.PositionInterval> clamped = new ArrayList<>();
-        for (final MapOverview.PositionInterval interval : merged) {
-            if (deathSec != null && interval.startSec() > deathSec + 1e-6) {
+        final List<MapOverview.PositionInterval> out = new ArrayList<>();
+        for (final MapOverview.PositionInterval it : intervals) {
+            if (it.startSec() > destroySec + 1e-6) {
                 continue;
             }
-            final double end = deathSec == null ? interval.endSec()
-                    : Math.min(interval.endSec(), deathSec);
-            if (interval.startSec() > duration + 1e-6) {
-                continue;
-            }
-            final double boundedEnd = Math.min(end, duration);
-            if (boundedEnd >= interval.startSec() - 1e-6) {
-                clamped.add(new MapOverview.PositionInterval(
-                        interval.startSec(), Math.max(interval.startSec(), boundedEnd)));
+            final double end = Math.min(it.endSec(), destroySec);
+            if (end >= it.startSec() - 1e-6) {
+                out.add(new MapOverview.PositionInterval(it.startSec(), Math.max(it.startSec(), end)));
             }
         }
-        return clamped;
+        return out;
     }
 
     /** 方向采样：每帧 orientation（hull + turret 世界角），约 1s 一次，≤deathSec，段末冻结。 */

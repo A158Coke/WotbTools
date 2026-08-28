@@ -2,6 +2,7 @@ package com.wotb.core.league;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.util.PlayerResultFormat;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -123,10 +124,16 @@ public final class LeagueRatingValidator {
         boolean contradictoryTime = false;
         final Double duration = battle.durationS;
         for (final PlayerResult p : players) {
-            if (!p.survived && Double.isFinite(p.survivalTimeSec)
-                    && duration != null && Double.isFinite(duration)
-                    && p.survivalTimeSec > duration + DEATH_TIME_TOLERANCE_SEC) {
-                contradictoryTime = true;
+            // 「死亡时间是否明显超过 duration」的业务语义基于 canonical source-aware evidence：
+            // UNKNOWN 的 residual survivalTimeSec/deathTimeMillis 不得成为 authoritative death fact。
+            if (!p.survived && duration != null && Double.isFinite(duration)
+                    && Double.isFinite(p.survivalTimeSec)) {
+                // 仅对 structurally-valid（finite survivalTimeSec）的玩家做「超过 duration」判定；
+                // infinite/NaN 由 hasInvalidStatFacts 统一 fail-closed，避免重复报错。
+                final double deathSec = PlayerResultFormat.deathSec(p);
+                if (deathSec > 0 && deathSec > duration + DEATH_TIME_TOLERANCE_SEC) {
+                    contradictoryTime = true;
+                }
             }
         }
         if (contradictoryTime) {

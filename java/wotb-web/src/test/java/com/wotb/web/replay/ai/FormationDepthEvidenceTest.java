@@ -1,6 +1,7 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
@@ -180,6 +181,12 @@ class FormationDepthEvidenceTest {
         events.add(pos(11, 30f, 11, -200f, 0f));   // 1002 t=10
         events.add(pos(12, 28f, 20, 200f, 0f));    // 2001 t=8
         events.add(pos(13, 28f, 21, 230f, 50f));   // 2002 t=8
+        // P0-1：enemy 在 t=20 离开（Type4）→ observed segment [8,20) 关闭 → mid 末（25）位于
+        // UNKNOWN_AOI gap → enemy carry-forward 必须 LAST_KNOWN（fail-closed，不进 exact geometry）。
+        events.add(new com.wotb.core.replay.event.EntityRemovedEvent(40, new ReplayTimestamp(40f, null), 4,
+                DecodeConfidence.EXACT, 20));
+        events.add(new com.wotb.core.replay.event.EntityRemovedEvent(41, new ReplayTimestamp(40f, null), 4,
+                DecodeConfidence.EXACT, 21));
         // 交火 t=0.5 → opening [0,15.5] / mid [15.5,25] / late [25,40]
         events.add(new com.wotb.core.replay.event.DamageEvent(30, new ReplayTimestamp(20.5f, null), 8,
                 DecodeConfidence.EXACT, 11, 20, null, null, 200, false));
@@ -189,7 +196,7 @@ class FormationDepthEvidenceTest {
 
         assertTrue(section.contains("phase=mid"), section);
         final String mid = midBlock(section);
-        // friendly carry-forward 仍 CURRENT（ownRef=2/2），enemy stale → LAST_KNOWN（enemyRef=0/2）
+        // friendly carry-forward 仍 CURRENT（ownRef=2/2），enemy 位于 UNKNOWN_AOI gap → LAST_KNOWN（enemyRef=0/2）
         assertTrue(mid.contains("POSITION_COVERAGE_INSUFFICIENT：ownRef=2/2 enemyRef=0/2"), mid);
         // LAST_KNOWN 只作为独立信息：account + region + observedAtSec + ageSec + knowledge=LAST_KNOWN
         assertTrue(mid.contains("ENEMY_LAST_KNOWN_POSITION_REFERENCES"), mid);
@@ -371,6 +378,7 @@ class FormationDepthEvidenceTest {
             if (pl.accountId == 1001L) {
                 pl.survived = false;
                 pl.deathTimeMillis = 50_000L; // deathSec = 50
+                pl.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
             }
         }
         final List<ReplayEvent> events = new ArrayList<>();
@@ -413,6 +421,7 @@ class FormationDepthEvidenceTest {
             if (pl.accountId == 1001L) {
                 pl.survived = false;
                 pl.deathTimeMillis = 10_000L; // deathSec = 10
+                pl.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
             }
         }
         final List<ReplayEvent> events = new ArrayList<>();
@@ -585,6 +594,9 @@ class FormationDepthEvidenceTest {
         events.add(pos(12, 28f, 20, 200f, 0f));    // 2001 t=8
         events.add(pos(13, 28f, 21, 230f, 50f));   // 2002 t=8
         events.add(pos(14, 44f, 20, 200f, 0f));    // 2001 t=24
+        // P0-1：2002 在 t=20 离开（Type4）→ segment [8,20) 关闭 → mid 末（25）位于 gap → LAST_KNOWN。
+        events.add(new com.wotb.core.replay.event.EntityRemovedEvent(31, new ReplayTimestamp(40f, null), 4,
+                DecodeConfidence.EXACT, 21));
         // 交火 t=0.5 → opening [0,15.5] / mid [15.5,25] / late [25,40]
         events.add(new com.wotb.core.replay.event.DamageEvent(30, new ReplayTimestamp(20.5f, null), 8,
                 DecodeConfidence.EXACT, 11, 20, null, null, 200, false));
@@ -603,6 +615,42 @@ class FormationDepthEvidenceTest {
         assertFalse(mid.contains("GEOMETRIC_REAR="), "partial enemy CURRENT 不得输出 GEOMETRIC_REAR: " + mid);
         assertFalse(mid.contains("ownWeightedCoverageScore="), "partial enemy CURRENT 不得输出 own 分数: " + mid);
         assertFalse(mid.contains("enemyWeightedCoverageScore="), "partial enemy CURRENT 不得输出 enemy 分数: " + mid);
+    }
+
+    @Test
+    void enemyInOpenObservedSegmentStaysCurrentBeyondAgeThreshold() {
+        // P0-1 回归：enemy 位置在 opening t=8，mid 末（25）远大于 5s（age=17），无 Type4 →
+        // observed segment [8,..) 保持打开 → enemy 仍 CURRENT（不得因 age>5s 被踢出 exact geometry）。
+        final Battle battle = battle();
+        battle.durationS = 40d;
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 10, 1001L));
+        events.add(new ParticipantMappingEvent(2, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 11, 1002L));
+        events.add(new ParticipantMappingEvent(3, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 20, 2001L));
+        events.add(new ParticipantMappingEvent(4, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 21, 2002L));
+        events.add(pos(10, 30f, 10, -100f, 0f));   // 1001 t=10
+        events.add(pos(11, 30f, 11, -200f, 0f));   // 1002 t=10
+        events.add(pos(12, 28f, 20, 200f, 0f));    // 2001 t=8
+        events.add(pos(13, 28f, 21, 230f, 50f));   // 2002 t=8
+        // 无 Type4（leave）→ enemy observed segment 持续打开；carry-forward 的 enemy 在 mid[CURRENT]
+        events.add(new com.wotb.core.replay.event.DamageEvent(30, new ReplayTimestamp(20.5f, null), 8,
+                DecodeConfidence.EXACT, 11, 20, null, null, 200, false));
+        final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
+                events, List.of(), null, null, null);
+        final String section = FormationDepthEvidence.renderSection(battle, recon, 1, MAP);
+        assertTrue(section.contains("phase=mid"), section);
+        final String mid = midBlock(section);
+        // enemy 位于 open observed segment（age=17 > 5s）→ 仍 CURRENT，完整 → 不 fail-close，输出 exact 分数
+        assertTrue(mid.contains("coverageCompleteness=ownRef=2/2 enemyRef=2/2"),
+                "open segment 内 age>5s 的 enemy 不得被踢出 exact geometry: " + mid);
+        assertTrue(mid.contains("ownWeightedCoverageScore="), mid);
+        assertTrue(mid.contains("enemyWeightedCoverageScore="), mid);
+        assertFalse(mid.contains("POSITION_COVERAGE_INSUFFICIENT"),
+                "open segment 内 enemy age>5s 不得误报 INSUFFICIENT: " + mid);
     }
 
     @Test
