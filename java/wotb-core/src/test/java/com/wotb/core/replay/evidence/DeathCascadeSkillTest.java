@@ -3,6 +3,8 @@ package com.wotb.core.replay.evidence;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
+import com.wotb.core.model.PlayerResult;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -11,7 +13,7 @@ import java.util.List;
 class DeathCascadeSkillTest {
 
     private static Battle battleWithDeaths() {
-        final List<com.wotb.core.model.PlayerResult> players = new ArrayList<>();
+        final List<PlayerResult> players = new ArrayList<>();
         players.add(EvidenceTestFixtures.player(1001, 1, 4481, "Kranvagn", false, 100));
         players.add(EvidenceTestFixtures.player(1002, 1, 4481, "Kranvagn", false, 108));
         players.add(EvidenceTestFixtures.player(1003, 1, 4481, "Kranvagn", false, 130));
@@ -33,6 +35,7 @@ class DeathCascadeSkillTest {
         assertEquals(2.0, friendly.numbers().get("friendlyDeaths"));
         assertEquals(100f, friendly.startSec());
         assertEquals(108f, friendly.endSec());
+        assertEquals(EvidenceProvenance.BACKEND_SKILL, friendly.provenance());
 
         final AiEvidence enemy = cascades.stream()
                 .filter(e -> "TEAM_2".equals(e.labels().get("team")))
@@ -49,5 +52,20 @@ class DeathCascadeSkillTest {
                 .filter(e -> "TEAM_1".equals(e.labels().get("team")))
                 .findFirst().orElseThrow();
         assertEquals(2.0, enemyCascade.numbers().get("enemyDeaths"));
+    }
+
+    @Test
+    void unknownDeathTimesNeverCreateOpeningCascade() {
+        final PlayerResult a = EvidenceTestFixtures.player(1001, 1, 4481, "Kranvagn", false, 100);
+        final PlayerResult b = EvidenceTestFixtures.player(1002, 1, 4481, "Kranvagn", false, 108);
+        a.deathTimeMillis = 0;
+        a.survivalTimeSec = 0;
+        a.deathTimeSource = DeathTimeSource.UNKNOWN;
+        b.deathTimeMillis = 0;
+        b.survivalTimeSec = 0;
+        b.deathTimeSource = DeathTimeSource.UNKNOWN;
+        final Battle battle = EvidenceTestFixtures.battle(List.of(a, b));
+
+        assertEquals(List.of(), new DeathCascadeSkill().detect(battle, 1));
     }
 }

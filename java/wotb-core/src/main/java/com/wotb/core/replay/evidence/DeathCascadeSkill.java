@@ -15,8 +15,9 @@ import java.util.Map;
 
 /**
  * 阵亡连锁 Skill：同一方在短时间窗口内连续阵亡产生证据。
- * <p>时间来自权威结算（deathTimeMillis），provenance 为 AUTHORITATIVE_SETTLEMENT；
- * 只描述"发生了什么"，不判断是否犯错。</p>
+ * <p>时间统一消费 {@link PlayerResultFormat#deathSec(PlayerResult)} 的 canonical death authority；
+ * UNKNOWN（deathSec<=0）不得进入聚类，避免伪造“0 秒阵亡”。Skill 只描述发生了什么，
+ * 不判断是否犯错。</p>
  */
 public final class DeathCascadeSkill {
 
@@ -39,6 +40,7 @@ public final class DeathCascadeSkill {
                         p.accountId,
                         p.tankId,
                         ReplayDisplayNames.tankName(p.tankId, p.tankName)))
+                .filter(d -> d.sec() > 0f && Float.isFinite(d.sec()))
                 .sorted(Comparator.comparingDouble(Death::sec))
                 .toList();
         if (deaths.isEmpty()) {
@@ -109,7 +111,7 @@ public final class DeathCascadeSkill {
                     Map.of("team", teamLabel),
                     DecodeConfidence.EXACT,
                     cascade.size() >= 3 ? EvidencePriority.CRITICAL : EvidencePriority.IMPORTANT,
-                    EvidenceProvenance.AUTHORITATIVE_SETTLEMENT,
+                    EvidenceProvenance.BACKEND_SKILL,
                     summary));
         }
         return result;
