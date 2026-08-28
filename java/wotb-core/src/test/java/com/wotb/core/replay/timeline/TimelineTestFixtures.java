@@ -103,7 +103,7 @@ final class TimelineTestFixtures {
     }
 
     static RoundFinishedEvent battleEnded(final double battleSec) {
-        return RoundFinishedEvent.of(seq++, ts(battleSec), 14, DecodeConfidence.EXACT, 1);
+        return new RoundFinishedEvent(seq++, ts(battleSec), 14, DecodeConfidence.EXACT, 1, 1, RoundFinishedEvent.FinishCause.ELIMINATION);
     }
 
     static ReplayReconstruction recon(final double durationSec, final List<ReplayEvent> events) {
@@ -114,8 +114,7 @@ final class TimelineTestFixtures {
         final ReplayCoverage coverage = new ReplayCoverage(
                 true, 1, 1, 0, 0, 0, 1.0, Map.of());
         final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(),
-                true, START_RAW, true);
+                0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true);
         final BattleStateSnapshot finalState = BattleStateSnapshot.empty();
         return new ReplayReconstruction(
                 meta, header, (float) durationSec, START_RAW, List.of(),

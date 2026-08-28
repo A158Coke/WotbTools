@@ -266,7 +266,7 @@ public final class AiEvalFixtures {
         final ReplayCoverage coverage = new ReplayCoverage(
                 true, rawClocks.length, rawClocks.length, 0, 0, 0, 1.0, Map.of());
         final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true, 1000f, true);
+                0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true);
         final List<com.wotb.core.replay.event.ReplayEvent> events = List.of(
                 new ParticipantMappingEvent(
                         0, new ReplayTimestamp(1000f, 0f), 8, DecodeConfidence.EXACT, 1, 1001L),

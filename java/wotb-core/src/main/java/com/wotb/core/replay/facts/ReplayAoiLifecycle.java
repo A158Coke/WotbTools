@@ -18,10 +18,12 @@ import java.util.Map;
  *
  * <p>状态机（research entity-presence-aoi-lifecycle.md）：
  * <pre>
- *   on Type33(eid):   pending entry（pre-materialization announcement）
+ *   on Type33(eid):   pending entry（pre-materialization announcement，不开启观察）
  *   on Type5(eid):    open OBSERVED_SEGMENT（observedFrom = Type5 时刻）
- *   on Type10(eid):   确保段已开（fallback：无物化事件时的首个位置）
- *   on Type4(eid):    close OBSERVED_SEGMENT（absentFrom = Type4 时刻）→ UNKNOWN_AOI
+ *   on Type10(eid):   仅 world-coordinate（attachmentParentEntityId==0）确保段已开；
+ *                      attached/local（parent != 0）不得开启 world AoI 段
+ *   on Type4(eid):    close OBSERVED_SEGMENT（absentFrom = Type4 时刻）→ UNKNOWN_AOI；
+ *                    无开段记录的 orphan Type4 忽略（不伪造零长段）
  * </pre>
  * 段间 gap 是 UNKNOWN_AOI：不得跨 gap 插值，也不得把 last-known 当真实当前位置。</p>
  *
@@ -69,8 +71,14 @@ public final class ReplayAoiLifecycle {
                 }
                 case MaterializationEvent m -> openSegment(segmentsByEntity, openFrom,
                         m.entityId(), t, m.confidence());
-                case PositionChangedEvent p -> openSegment(segmentsByEntity, openFrom,
-                        p.entityId(), t, p.confidence());
+                case PositionChangedEvent p -> {
+                    // attached/local transform (attachmentParentEntityId != 0) is a parented/local
+                    // frame, not a world-coordinate observation; must not open a world AoI segment.
+                    if (p.attachmentParentEntityId() == 0) {
+                        openSegment(segmentsByEntity, openFrom,
+                                p.entityId(), t, p.confidence());
+                    }
+                }
                 case EntityRemovedEvent removed ->
                         closeSegment(segmentsByEntity, openFrom, removed.entityId(), t);
                 default -> {
@@ -157,9 +165,8 @@ public final class ReplayAoiLifecycle {
             final double t) {
         final Double from = openFrom.remove(entityId);
         if (from == null) {
-            // 无开段记录的 Type4：仍记录一个零长段（Type4 != death，但观测边界存在）
-            segmentsByEntity.computeIfAbsent(entityId, k -> new ArrayList<>())
-                    .add(new AoiObservationSegment(entityId, t, t, SOURCE_REPLAY_POV));
+            // orphan Type4 (no open observed segment): keep as leave-boundary evidence only — do NOT
+            // fabricate a zero-length observed-from-t-to-t interval (that would be a fake AoI segment).
             return;
         }
         segmentsByEntity.computeIfAbsent(entityId, k -> new ArrayList<>())

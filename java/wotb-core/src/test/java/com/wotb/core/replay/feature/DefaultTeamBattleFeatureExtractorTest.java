@@ -630,9 +630,9 @@ class DefaultTeamBattleFeatureExtractorTest {
         // proving the conversion actually runs rather than being hidden by a zero clock.
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),
-                RoundFinishedEvent.of(
+                new RoundFinishedEvent(
                         2, new ReplayTimestamp(120f, null), 14,
-                        DecodeConfidence.INFERRED, 1));
+                        DecodeConfidence.INFERRED, 1, 1, RoundFinishedEvent.FinishCause.ELIMINATION));
 
         final KeyBattleEvent battleEnd = extractWithStart(fixture, events, 30f).keyEvents().stream()
                 .filter(event -> "BATTLE_END".equals(event.type()))
@@ -704,8 +704,8 @@ class DefaultTeamBattleFeatureExtractorTest {
         // battle start raw = 60, RoundFinishedEvent raw = 240 -> relative end 180.
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),
-                RoundFinishedEvent.of(2, new ReplayTimestamp(240f, null), 14,
-                        DecodeConfidence.INFERRED, 1));
+                new RoundFinishedEvent(2, new ReplayTimestamp(240f, null), 14,
+                        DecodeConfidence.INFERRED, 1, 1, RoundFinishedEvent.FinishCause.ELIMINATION));
 
         final TeamBattleFeatureSet features = extractWithStart(fixture, events, 60f);
 

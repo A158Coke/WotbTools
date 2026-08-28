@@ -14,6 +14,12 @@ import com.wotb.core.replay.stream.RawReplayPacket;
  * {@code RoundFinishedEvent}（Avatar method4 / wrapper3 AFTERBATTLE）与 settlement root3/4。</p>
  *
  * <p>payload 未证明 → raw-preserve（{@code UNKNOWN} + 诊断），不产出具象的 {@code BattleEndedEvent}。</p>
+ *
+ * <p><b>§25 (PR162)</b>: Type14 stream-close is a Layer B structural invariant expressed through the
+ * {@link ReplayProtocolProfile.Capability#TYPE14_STREAM_CLOSE} capability / {@link ReplayVersionGate
+ * #type14StreamCloseAllowed}. The decoder never unconditionally reinterprets future payloads as a current
+ * semantic; when the profile says {@code UNKNOWN} the registry raw-preserves (via {@code supports()}).
+ * </p>
  */
 public class BattleEndDecoder implements ReplayPacketDecoder {
 
@@ -21,7 +27,8 @@ public class BattleEndDecoder implements ReplayPacketDecoder {
 
     @Override
     public boolean supports(ReplayDecodeContext context, RawReplayPacket packet) {
-        return packet.type() == TYPE_BATTLE_END;
+        return packet.type() == TYPE_BATTLE_END
+                && ReplayVersionGate.type14StreamCloseAllowed(context.clientVersion());
     }
 
     @Override

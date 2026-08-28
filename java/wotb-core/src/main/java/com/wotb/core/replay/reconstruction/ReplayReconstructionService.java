@@ -152,9 +152,7 @@ public class ReplayReconstructionService {
                 metadata,
                 streamResult.header(),
                 battleDurationSec,
-                battleStartResolved != null
-                        ? battleStartResolved
-                        : streamResult.diagnostics().battleStartRawClockSec(),
+                battleStartResolved,
                 participants,
                 List.copyOf(allEvents),
                 reconstructionResult.checkpoints(),
@@ -172,10 +170,10 @@ public class ReplayReconstructionService {
 
     /**
      * PR147 battle-start anchor: first wrapper3 ARENA_PERIOD.BATTLE event's rawClock.
-     * Returns null when no BATTLE period transition is decoded (caller falls back to diagnostics).
+     * Returns null when no BATTLE period transition is decoded. This is a package-private internal
+     * sub-step of {@link #resolveBattleStartRawClock}, not a public testing API.
      */
-    /** Public for direct unit-testing of the battle-start anchor logic. */
-    public static Float battleStartRawClockFromArenaPeriod(final List<ReplayEvent> events) {
+    static Float battleStartRawClockFromArenaPeriod(final List<ReplayEvent> events) {
         if (events == null) {
             return null;
         }
@@ -194,9 +192,10 @@ public class ReplayReconstructionService {
     /**
      * PR147 resolved battle-start raw clock: ① wrapper3 ARENA_PERIOD.BATTLE anchor; ② else the first
      * {@code RoundFinishedEvent} (method4/AFTERBATTLE) rawClock minus the SETTLEMENT duration
-     * (battle_results root5); ③ else null. Never Type14/raw-session-clock. Public for unit-testing.
+     * (battle_results root5); ③ else null. Never Type14/raw-session-clock. Single internal authority
+     * for {@code ReplayReconstruction.battleStartRawClockSec}; not a public testing API.
      */
-    public static Float resolveBattleStartRawClock(
+    private static Float resolveBattleStartRawClock(
             final List<ReplayEvent> events, final Double settlementDurationSec) {
         final Float anchor = battleStartRawClockFromArenaPeriod(events);
         if (anchor != null) {
@@ -360,8 +359,6 @@ public class ReplayReconstructionService {
                 diagnostics.firstClockSec(), diagnostics.lastClockSec(),
                 diagnostics.clockRegressionCount(),
                 updatedTypes,
-                diagnostics.battleStartIdentified(),
-                diagnostics.battleStartRawClockSec(),
                 diagnostics.reachedPhysicalEnd()
         );
     }

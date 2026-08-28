@@ -378,8 +378,7 @@ class BattleTimelineBuilderTest {
         final ReplayCoverage coverage = new ReplayCoverage(
                 true, 1, 1, 0, 0, 0, 1.0, Map.of());
         final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(),
-                true, TimelineTestFixtures.START_RAW, true);
+                0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true);
         final BattleStateSnapshot finalState = BattleStateSnapshot.empty();
         return new ReplayReconstruction(
                 meta, header, (float) durationSec, TimelineTestFixtures.START_RAW,

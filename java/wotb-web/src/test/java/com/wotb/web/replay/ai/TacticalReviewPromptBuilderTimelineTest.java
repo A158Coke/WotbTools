@@ -86,7 +86,7 @@ class TacticalReviewPromptBuilderTimelineTest {
         final ReplayStreamHeader header = new ReplayStreamHeader(0x12345678L, new byte[8], "h", "v", 15);
         final ReplayCoverage coverage = new ReplayCoverage(true, 6, 6, 0, 0, 0, 1.0, Map.of());
         final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true, 1000f, true);
+                0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true);
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(0, new ReplayTimestamp(1000f, 0f), 8,
                 DecodeConfidence.EXACT, 1, 1001));

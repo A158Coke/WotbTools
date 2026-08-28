@@ -112,8 +112,7 @@ class EnemyLastKnownPositionEvidenceTest {
                 List.of(new BattleStateCheckpoint(START_RAW + 300f, 0, snapshot)),
                 snapshot,
                 new ReplayCoverage(true, 1, 1, 0, 0, 0, 1.0, Map.of()),
-                new ReplayStreamDiagnostics(0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(),
-                        true, START_RAW, true));
+                new ReplayStreamDiagnostics(0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true));
     }
 
     private static String sectionOf(final String content) {

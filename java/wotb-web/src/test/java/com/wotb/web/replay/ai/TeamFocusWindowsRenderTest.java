@@ -94,7 +94,7 @@ class TeamFocusWindowsRenderTest {
         final ReplayStreamHeader header = new ReplayStreamHeader(0x12345678L, new byte[8], "h", "v", 15);
         final ReplayCoverage coverage = new ReplayCoverage(true, 8, 8, 0, 0, 0, 1.0, Map.of());
         final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true, START_RAW, true);
+                0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true);
         final BattleStateCheckpoint cp = new BattleStateCheckpoint(START_RAW, 0, BattleStateSnapshot.empty());
         return new ReplayReconstruction(meta, header, (float) durationSec, START_RAW, List.of(),
                 events, List.of(cp), BattleStateSnapshot.empty(), coverage, diag);

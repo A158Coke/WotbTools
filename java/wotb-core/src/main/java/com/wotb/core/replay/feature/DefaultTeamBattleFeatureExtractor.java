@@ -48,7 +48,6 @@ public class DefaultTeamBattleFeatureExtractor {
         final int perspectiveTeam = perspective.perspectiveTeam();
         final BattleStartResolution battleStartRes = BattleStartResolver.resolve(
                 reconstruction != null ? reconstruction.battleStartRawClockSec() : null,
-                reconstruction != null ? reconstruction.diagnostics() : null,
                 reconstruction != null && reconstruction.events() != null ? reconstruction.events() : List.of(),
                 battle);
         final List<ReplayEvent> events = reconstruction != null && reconstruction.events() != null
