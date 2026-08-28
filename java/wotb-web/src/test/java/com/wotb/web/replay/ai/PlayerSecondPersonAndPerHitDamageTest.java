@@ -3,6 +3,7 @@ import com.wotb.web.replay.ai.TeamReplayAnalysisService;
 import com.wotb.web.replay.ai.PlayerReplayPromptBuilder;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
@@ -248,10 +249,13 @@ class PlayerSecondPersonAndPerHitDamageTest {
         battle.durationS = 420.0;
         battle.players.get(0).survived = false;   // 你
         battle.players.get(0).deathTimeMillis = 192_000L;
+        battle.players.get(0).deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
         battle.players.get(1).survived = false;   // 敌方
         battle.players.get(1).deathTimeMillis = 200_000L;
+        battle.players.get(1).deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
         battle.players.get(2).survived = false;   // 队友
         battle.players.get(2).deathTimeMillis = 210_000L;
+        battle.players.get(2).deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
 
         final StringBuilder sb = new StringBuilder();
         PlayerReplayPromptBuilder.appendDeathTimeline(sb, battle);
@@ -274,11 +278,13 @@ class PlayerSecondPersonAndPerHitDamageTest {
         battle.durationS = 420.0;
         battle.players.get(0).survived = false;   // 你，已知
         battle.players.get(0).deathTimeMillis = 192_000L;
+        battle.players.get(0).deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
         battle.players.get(1).survived = false;   // 敌方，时刻未知
         battle.players.get(1).deathTimeMillis = 0L;
         battle.players.get(1).survivalTimeSec = 0.0;
         battle.players.get(2).survived = false;   // 队友，已知
         battle.players.get(2).deathTimeMillis = 210_000L;
+        battle.players.get(2).deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
 
         final StringBuilder sb = new StringBuilder();
         PlayerReplayPromptBuilder.appendDeathTimeline(sb, battle);

@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.event.DecodeConfidence;
@@ -73,6 +74,10 @@ class BattlePhaseTimelineEvidenceTest {
         p.nickname = accountId == 1001L ? "rec1" : "p" + accountId;
         p.survived = survived;
         p.deathTimeMillis = survived ? 0L : (long) (deathSec * 1000);
+        if (!survived) {
+            p.deathTimeSource = deathSec > 0
+                    ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
+        }
         p.damageDealt = 1000;
         return p;
     }

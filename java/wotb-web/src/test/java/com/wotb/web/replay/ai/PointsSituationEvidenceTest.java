@@ -1,6 +1,7 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.processing.TeamEntityMapper;
 import com.wotb.core.replay.event.DamageEvent;
@@ -66,6 +67,7 @@ class PointsSituationEvidenceTest {
         battle.mapName = MAP;
         final PlayerResult ally = player(1001L, 1, "Ally", false);
         ally.deathTimeMillis = 60_000L; // 60s 阵亡
+        ally.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
         battle.players = List.of(ally, player(2001L, 2, "EnemyA", true));
         return battle;
     }

@@ -1,5 +1,6 @@
 package com.wotb.core.replay.facts;
 
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import org.junit.jupiter.api.Test;
 
@@ -17,6 +18,13 @@ class TradeFactsTest {
         p.team = team;
         p.survived = survived;
         p.survivalTimeSec = survivalTimeSec;
+        // 已知死亡（survivalTimeSec>0）携带 canonical SETTLEMENT_SECOND 证据；dead=0=UNKNOWN。
+        if (!survived && survivalTimeSec > 0) {
+            p.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+            p.deathTimeMillis = Math.round(survivalTimeSec * 1000.0);
+        } else if (!survived) {
+            p.deathTimeSource = DeathTimeSource.UNKNOWN;
+        }
         return p;
     }
 

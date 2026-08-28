@@ -5,6 +5,7 @@ import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.event.UnsupportedDamageEvent;
+import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.stream.PacketReadStatus;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -358,6 +360,65 @@ class EntityMethodDecoderTest {
         return rawPacket48(EntityMethodDecoder.WRAPPER_SUPREMACY_POINTS,
                 concat(fieldDelimited(12, teamPointsMessage(team1, p1)),
                         fieldDelimited(12, teamPointsMessage(team2, p2))));
+    }
+
+    /** 通用 EntityMethod 包：entityId + subtype + argLen + args（P0-3 版本门禁测试）。 */
+    private static RawReplayPacket methodPacket(final int seq, final int subtype, final byte[] args) {
+        final byte[] payload = new byte[12 + args.length];
+        putU32(payload, 0, 12345);
+        putU32(payload, 4, subtype);
+        putU32(payload, 8, args.length);
+        System.arraycopy(args, 0, payload, 12, args.length);
+        return new RawReplayPacket(seq, 0, payload.length,
+                EntityMethodDecoder.TYPE_ENTITY_METHOD, 10f, PacketReadStatus.NORMAL, payload, 0);
+    }
+
+    private static void putU32(final byte[] buf, final int i, final int v) {
+        buf[i] = (byte) v;
+        buf[i + 1] = (byte) (v >>> 8);
+        buf[i + 2] = (byte) (v >>> 16);
+        buf[i + 3] = (byte) (v >>> 24);
+    }
+
+    /** P0-3：future/unknown 版本不得对 legacy-compatible 观测 method（method0）无条件产出 EXACT 事件 → raw-preserve + 诊断。 */
+    @Test
+    void futureVersionLayoutMethodRawPreserves() {
+        final ReplayDecodeContext future = new ReplayDecodeContext("11.20.0_china");
+        // method0（SUBTYPE_VEHICLE_FIRED, 1-byte arg）在 11.20 未证明 → UnknownReplayEvent
+        final ReplayDecodeResult result = decoder.decode(future,
+                methodPacket(1, EntityMethodDecoder.SUBTYPE_VEHICLE_FIRED, new byte[]{0x01}));
+        assertEquals(DecodeStatus.PARTIAL, result.status());
+        assertInstanceOf(UnknownReplayEvent.class, result.events().getFirst(),
+                "future method0 不得解码为 EXACT VehicleFiredEvent");
+        assertTrue(result.warnings().stream()
+                .anyMatch(w -> w.code().equals("VERSION_UNSUPPORTED")), "future 版本必须提供 VERSION_UNSUPPORTED 诊断");
+    }
+
+    /** P0-3：method29（ProjectileLaunched）在未知版本同样 raw-preserve。 */
+    @Test
+    void futureVersionProjectileLaunchRawPreserves() {
+        final ReplayDecodeContext future = new ReplayDecodeContext("12.0.0_eu");
+        final byte[] args = new byte[37]; // PROJECTILE_LAUNCH_ARGS_LEN
+        final ReplayDecodeResult result = decoder.decode(future,
+                methodPacket(1, EntityMethodDecoder.SUBTYPE_PROJECTILE_LAUNCH, args));
+        assertEquals(DecodeStatus.PARTIAL, result.status());
+        assertInstanceOf(UnknownReplayEvent.class, result.events().getFirst(),
+                "future method29 不得解码为 EXACT ProjectileLaunchedEvent");
+    }
+
+    /** P0-3：当前 canonical 11.19 仍解码 method29 为 EXACT（不因 gate 回归）。 */
+    @Test
+    void currentVersionLayoutMethodStillDecodesExact() {
+        final byte[] args = new byte[37];
+        args[0] = 0x01;
+        args[1] = 0x02;
+        args[2] = 0x03;
+        args[3] = 0x04;
+        // other bytes zero -> launchPoint=(0,0,0), velocity=(0,0,0), invariant=0 (finite)
+        final ReplayDecodeResult result = decoder.decode(context,
+                methodPacket(1, EntityMethodDecoder.SUBTYPE_PROJECTILE_LAUNCH, args));
+        assertEquals(DecodeStatus.SUCCESS, result.status(), "11.19 method29 仍应解码 EXACT");
+        assertEquals(1, result.events().size());
     }
 
     /** subtype48 载荷：body[0..3] 固定字段 + varint(wrapperFieldNumber) + msgLen + protoData（root 直接放入）。 */

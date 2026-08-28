@@ -2,6 +2,7 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.replay.processing.BatchAnalyzer;
@@ -573,6 +574,7 @@ class TeamAiPromptBuilderTest {
         allyKnown.survived = false;
         allyKnown.deathTimeMillis = 62_000L;
         allyKnown.survivalTimeSec = 62.0;
+        allyKnown.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
         final PlayerResult allyUnknown = new PlayerResult();
         allyUnknown.accountId = 10_002L;
         allyUnknown.nickname = "AllyUnknown";
@@ -833,6 +835,7 @@ class TeamAiPromptBuilderTest {
             player.team = 1;
             player.survived = false;
             player.deathTimeMillis = 40_000L + index * 5_000L;
+        player.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
             players.add(player);
         }
         for (int index = 0; index < 7; index++) {

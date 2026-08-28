@@ -1,6 +1,7 @@
 package com.wotb.core.league;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 
 import java.util.HashMap;
@@ -223,8 +224,12 @@ public final class LeagueRatingConflictDetector {
             }
             final Double minKnown = minKnownByAccount.get(p.accountId);
             if (minKnown != null) {
-                // UNKNOWN + KNOWN → KNOWN；KNOWN + KNOWN → 最小 KNOWN（确定性，与上传顺序无关）
+                // UNKNOWN + KNOWN → KNOWN；KNOWN + KNOWN → 最小 KNOWN（确定性，与上传顺序无关）。
+                // 收口后的 KNOWN 死亡时刻必须携带 canonical source（严格 deathSec 只按 source 消费，
+                // 不得靠裸 survivalTimeSec 偷渡）：这里统一标为 SETTLEMENT_SECOND + 同步 deathTimeMillis。
                 p.survivalTimeSec = minKnown;
+                p.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+                p.deathTimeMillis = Math.round(minKnown * 1000.0);
             }
             // 没有任何 KNOWN 证据 → 保持原值（一致性已保证只可能是 UNKNOWN(0)；
             // INVALID 已在 validateAndReconcile 阶段 fail-closed 拒绝，绝不清洗）

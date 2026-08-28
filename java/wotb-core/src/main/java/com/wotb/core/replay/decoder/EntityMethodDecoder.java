@@ -79,7 +79,9 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     @Override
     public ReplayDecodeResult decode(ReplayDecodeContext context, RawReplayPacket packet) {
         final byte[] payload = packet.payload();
-        // §A2：method0/1/5/17/20/27/29 等观测布局 11.18/11.19 稳定（legacy-compatible），不限版本族；
+        // §A2/P0-3：method0/1/5/17/20/27/29 是 legacy-compatible 观测布局 —— 仅当前 canonical
+        // 版本族（11.19）+ 明确 legacy 证明的 11.18 允许解码为 EXACT（methodLayoutAllowed）；
+        // 未知/未来版本 raw-preserve，绝不无条件沿用 EXACT 语义。
         // method38 low16/modifier/component 与 method36 field semantics 是 PR147 仅 11.19 controlled
         // 证明的 closed semantics（见下方 switch 内 per-subtype 门禁）。
         if (payload.length < 8) {
@@ -98,6 +100,18 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
 
         final List<ReplayEvent> events = new ArrayList<>();
         final List<ReplayDecodeWarning> warnings = new ArrayList<>();
+
+        // §A2/P0-3：method0/1/5/17/20/27/29（legacy-compatible 观测布局）不得对未知/未来版本
+        // 无条件产出 EXACT 语义事件 —— raw-preserve + VERSION_UNSUPPORTED 诊断。
+        if (isLayoutMethod(subType)
+                && !ReplayVersionGate.methodLayoutAllowed(context.clientVersion())) {
+            events.add(new UnknownReplayEvent(
+                    packet.sequence(), ts, packet.type(), payload.length,
+                    "VERSION_UNSUPPORTED_METHOD" + subType, DecodeConfidence.UNKNOWN));
+            warnings.add(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
+                    "EntityMethod subtype " + subType + " layout not affirmed: " + context.clientVersion()));
+            return new ReplayDecodeResult(DecodeStatus.PARTIAL, events, warnings);
+        }
 
         switch (subType) {
             case SUBTYPE_VEHICLE_FIRED -> {
@@ -662,6 +676,17 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     }
 
     private record ParticipantMappingResult(List<ParticipantMappingEvent> mappingEvents) {
+    }
+
+    /** 是否 legacy-compatible 观测布局 method（P0-3 版本门禁范围）。 */
+    private static boolean isLayoutMethod(final int subType) {
+        return subType == SUBTYPE_VEHICLE_FIRED
+                || subType == SUBTYPE_VEHICLE_HEALTH_STATE
+                || subType == SUBTYPE_RECORDER_OWN_HEALTH
+                || subType == SUBTYPE_AMMUNITION_STATE
+                || subType == SUBTYPE_PROJECTILE_TERMINAL
+                || subType == SUBTYPE_PROJECTILE_RESOLUTION
+                || subType == SUBTYPE_PROJECTILE_LAUNCH;
     }
 
     static int readU32LE(byte[] buf, int i) {
