@@ -19,8 +19,9 @@
 - `meta.json` / `battle_results.dat` / `data.wotreplay` 分别不超过 1 / 8 / 20 MiB，总解压不超过 24 MiB。
 - pickle：输入/二进制 8 MiB、文本 1 MiB、LONG 128 B、栈 4096、opcode 100000。
 - protobuf：消息和 length-delimited 8 MiB、值数 16384、field number ≤ 2²⁹−1、varint ≤ 10 B。
-- 单回放 `#201` 名册与 `#301` 战绩各最多 64 项；事件流最多保留 200000 个包（高于已观察约 112K 合法样本），并限制为 1000000
-  次扫描/重同步。
+- 单回放 `#201` 名册与 `#301` 战绩各最多 64 项；事件流最多保留 200000 个包（高于已观察约 112K 合法样本）。
+  事件流解析使用<b>严格连续 framing</b>：包长度非法、时钟异常、payload 截断、或尾部剩余不足一个完整包
+  时直接失败（fail closed），不做逐字节 resync，也不「继续寻找下一个看起来合理的包」。
 - ZIP/结构错误抛稳定英文 `IOException`；pickle/protobuf 的非法长度、截断和溢出在 `ReplayParser` 边界统一包装为
   `Invalid replay data: ...`。
 
@@ -49,7 +50,9 @@ clock:       f32 LE   // 从 0 起始的战斗计时（秒）
 payload:     [u8; payload_len]  // 负载
 ```
 
-**错误容忍：** 遇到坏包（长度异常/时钟异常）时跳 1 字节继续。整个文件都是有效包序列。
+**错误容忍：** 采用<b>严格连续 framing</b>（strict contiguous framing）。包长度非法、时钟回退/异常、
+payload 截断、或尾部剩余不足一个完整包时直接失败（fail closed）并记录诊断；不做逐字节 resync，也
+不「继续寻找下一个看起来合理的包」。整个文件必须是连续的有效包序列，任何 framing 损坏都终止解析。
 
 ### 已观察到的包类型
 
@@ -59,18 +62,18 @@ payload:     [u8; payload_len]  // 负载
 | 1  | `0x01` | **CellCreate**           | domain_id(u32) + entity_id(i32) + init_props_flat                                   | 1                 |
 | 2  | `0x02` | **Control/PlayerCreate** | init_props_flat                                                                     | 1                 |
 | 4  | `0x04` | **EntityLeave**          | entity_id(i32 LE)                                                                   | 13–21             |
-| 5  | `0x05` | **Spotting**             | undefined                                                                           | ~100              |
+| 5  | `0x05` | **Materialization**      | 物化/重物化（初始 transform 快照 + 类专属初始化负载）                                              | ~100              |
 | 7  | `0x07` | **EntityProperty**       | `entity_id(u32)+propId(u32)+valueLen(u32)+value`（结构已确认；血量语义未解，见下）                   | 13K–29K           |
 | 8  | `0x08` | **EntityMethod**（RPC 调用） | entity_id(i32) + sub_type(u32) + args                                               | 630–700           |
 | 10 | `0x0A` | **Position**（坐标）         | 49 字节（见下）                                                                           | 14K–29K           |
 | 11 | `0x0B` | Entity method（未知）        | —                                                                                   | 2                 |
-| 14 | `0x0E` | **BattleEnd**            | —                                                                                   | 1                 |
+| 14 | `0x0E` | **Stream close / stop**   | —                                                                                   | 1                 |
 | 23 | `0x17` | Game-specific            | —                                                                                   | ~32               |
 | 29 | `0x1D` | Game-specific            | —                                                                                   | 2                 |
-| 31 | `0x1F` | **Tracked/State**        | —                                                                                   | ~2.7K             |
+| 31 | `0x1F` | 未知（语义未证明）           | —                                                                                   | ~2.7K             |
 | 32 | `0x20` | Game-specific            | —                                                                                   | ~223              |
-| 35 | `0x23` | **Chat**（聊天消息）           | —                                                                                   | 1.4K–2K           |
-| 39 | `0x27` | **Map/NestedProperty**   | 最多（24K–35K/场）                                                                       | 16K–35K           |
+| 35 | `0x23` | 未知（语义未证明）           | —                                                                                   | 1.4K–2K           |
+| 39 | `0x27` | 未知/部分语义              | 最多（24K–35K/场）                                                                       | 16K–35K           |
 
 ### Type 0：BasePlayerCreate
 
@@ -93,9 +96,12 @@ payload:     [u8; payload_len]  // 负载
 
 ### Type 4：EntityLeave
 
-死亡/离开检测。负载 = entity_id (i32 LE)。
+负载 = entity_id (i32 LE)。
 
-**用途：** 实体可能多次离开/重回战场（反复出现 EntityLeave）。取**最后**一次 leave 时刻作为大致死亡时间。
+**语义（PR147/PR162 canonical）：** EntityLeave = AoI（视野/兴趣区域）离开，<b>不是死亡</b>。实体可能多次
+离开/重回战场（反复出现 EntityLeave）。死亡 authority 独立（见「死亡时间 authority」）；EntityLeave 只用于
+关闭 AoI 观测段（`ReplayAoiLifecycle`），段间为 `UNKNOWN_AOI`。不得把 EntityLeave 当作死亡、也不得据此
+推断死亡时刻。
 
 ### Type 7：EntityProperty（结构已确认，血量语义未解）
 
@@ -108,18 +114,16 @@ value_len: u32 LE   // 值字节数，观察到 ∈ {1, 2, 4}（对应包总长 
 value:     [u8; value_len]
 ```
 
-该结构在 11.18 样本上 100% 干净解析。**但 `prop_id → 语义`（尤其血量）尚未可靠逆向**：
-
-- `prop_id=4` 表面像血量（战斗结束时归零），但把 2 字节 value 当 int16 读时，
-  与 type 8 直接伤害的前后差值**对不齐**（普通场 0/46 精确吻合），且差值多为 2048/1024/512 这类 2 的幂，
-  说明 value 存在位标志、真实位布局需要客户端属性定义（`.def`）级参考才能确定，单靠回放样本无法收敛。
-- 因此解码器（`EntityPropertyDecoder`）**只保留结构信息**（记录 `prop_id`/`value_len`），
-  **不臆断血量/存活**，避免向上层与 AI 提供伪造数据。
+该结构在 11.18 样本上 100% 干净解析。`prop_id → 语义` 的<b>逐属性 mapping 已按 PR147 收敛</b>：普通正数 HP 由
+回放结构包（Type5 物化当前 HP / Avatar method5 / Vehicle prop3 / Vehicle method1）产生，终结哨兵（FFFD/FFFE）
+与 HP 版本作用域在 `ReplayVersionGate` / `ReplayProtocolProfile` 中以 capability 表达。EntityProperty
+解码器保留结构（`prop_id`/`value_len`）+ 已证明的 HP/property 语义；<b>未证明</b>的 prop_id 语义仍标
+`UNKNOWN`，绝不臆断血量/存活。
 
 > **可靠的血量/伤害/助攻/格挡/击杀/存活/死亡时刻请以 `battle_results.dat`（`Battle`/`PlayerResult`）为准**——
-> 见 `docs/architecture/ai-review.md`。逐帧血量时间线属于已知限制，待拿到属性定义参考后再实现。
+> 见 `docs/architecture/ai-review.md`。逐帧 HP 时间线由 canonical HP facts（`ReplayHpTimeline`）提供。
 
-> **死亡时刻口径（AI 复盘）**：死亡权威链为 `LIVE_EXACT`（回放 live EXACT，sub-second）→ `SETTLEMENT_SECOND`（结算 `deathTimeMillis`(#104)，±0.5s）→ `UNKNOWN`（`survivalTimeSec=0`，绝不伪造）；`PlayerResultFormat.deathSec` 按 `deathTimeSource` 消费。EntityLeave / 最后位置 / damage threshold 不再是死亡 authority（legacy 启发式仅存于 diagnostics）。
+> **死亡时刻口径（AI 复盘）**：死亡权威链为 `LIVE_EXACT`（回放 live EXACT，sub-second）→ `SETTLEMENT_SECOND`（结算 `deathTimeMillis`——由 field24 lifeTime 派生，11.19 corpus 无 #104，±0.5s）→ `UNKNOWN`（`survivalTimeSec=0`，绝不伪造）；`PlayerResultFormat.deathSec` 按 `deathTimeSource` 消费。EntityLeave / 最后位置 / damage threshold 不再是死亡 authority（legacy 启发式仅存于 diagnostics）。
 > 不得把估算数据当作权威；阶段存活人数明确为「至阶段末」，并注入双方逐车阵亡时间线。
 
 > **观测伤害抑制（AI 复盘）**：事件流伤害仅为观测子集（`DamageEvent`），覆盖未达 100% 时后端标记
@@ -172,8 +176,10 @@ args (25B body):
   flag:        u8          // 末尾标志 (01=正常, 03=致命一击?)
 ```
 
-方法调用在 victim 实体上（methodEid == victimEid）。sub=3 事件累计到达 `damageReceived` 阈值时即判定为阵亡；同一事件流也会累计
-killer→victim 的 direct damage / penetrations，用于填充 `PlayerResult.killVictims` 并驱动潜在均伤。
+方法调用在 victim 实体上（methodEid == victimEid）。**PR147/PR162：** damage 事件只是<b>观测</b>子集
+（`DamageEvent`），覆盖未达 100% 时标记 `OBSERVED_DAMAGE_IS_PARTIAL`；它<b>不是</b>死亡 authority，不再累计
+到 `damageReceived` 阈值推断阵亡，也不再填充 `PlayerResult.killVictims`（该字段与 `DeathTimeEstimator`
+已从生产移除）。击杀归因由 canonical terminal lifecycle + 可靠 damage backing 产生；无法证明则 `UNKNOWN`。
 
 ### Type 10：Position（含 space_id）
 
@@ -181,8 +187,8 @@ BigWorld 标准位置格式 **含 space_id**（WoT PC 共享此格式）：
 
 ```
 entity_id:     i32    // 4 字节
-space_id:      i32    // 4 字节（= vehicle_id 的 4 字节体？）
-vehicle_id:    i32    // 4 字节
+space_id:      i32    // 4 字节
+attachmentParentEntityId: i32  // 4 字节；=0 表示 world 坐标；≠0 为挂接/本地相对坐标系
 position_x:    f32    // 4 字节
 position_y:    f32    // 4 字节
 position_z:    f32    // 4 字节
@@ -204,8 +210,10 @@ attachment parent entity id；最后 1 字节 trailing byte 的 semantic **UNKNO
 
 ### 第 1 包 vs 错误容忍
 
-旧解析在第 1 个坏包处停止，导致只读前 ~28KB（0–2.4s，仅 Type 0/1/2/部分 39）。**错误容忍** 下，全部 ~72K–112K
-包覆盖整场战斗（210s–310s），Type 10/4/7/31/35 数据完整可用。
+**严格连续 framing**：生产 reader（`ReplayPacketStreamReader`）按「头 → 包 → 下一个包正好在上一个包结束处」
+连续解析直到 terminator（type `0xFFFFFFFF`）。任何 framing 损坏（长度非法 / 截断 / 时钟异常 / 尾部垃圾）
+都<b>直接失败</b>并记录诊断，不再「跳 1 字节重同步」，也不再维护 1,000,000 次扫描上限。因此正常路径下
+不会只读前 ~28KB——整场包序列被完整、严格地消费，Type 10/4/7/31/35 数据按 production decoder 结果可用。
 
 ---
 
@@ -238,13 +246,11 @@ PR147 authoritative settlement facts：
 - **field105**（`deathReason`）：survivor sentinel `-1`。
 - **不存在 field #104 deathTimeMillis**；`deathTimeMillis` 是派生兼容值（由 field24 lifeTime 求得），非 raw #104。
 
-**Layer 2 (damageDeathTimes)：** 遍历 Type 8 subtype 8 body[13]=3 (direct HP damage) 事件，按时间累计 victimEid→accountId
-的 HP 伤害量。threshold = min(proto.damageReceived, sub3_total) — 当累计值首次 ≥ threshold 时，该事件时钟即为死亡时间；当前事件的
-attacker 会被推断为 killer，并把该 killer 对 victim 的累计 direct damage / penetrations 写入 `killVictims`。这解决旧
-EntityLeave 假阳性（临时离场而非阵亡）和 Position 在部分模式中实体不停止的问题；特殊伤害缺失时仍保守回退。
-
-**Layer 3 假阳性检测：** EntityLeave 常有临时离场事件被误判为阵亡。若同玩家有 EntityLeave 和 Position 数据，且最后 Position
-时间比最后 EntityLeave 晚 5 秒以上，以 Position 为准。
+> **已删除的旧 death 启发式（不再作为权威）：** 早期实现曾用「Type 8 subtype 8 累计 direct HP 伤害 ≥
+> `damageReceived` 阈值 → 推断阵亡 + killer」以及「EntityLeave + Position 停止 / 最后位置 / 离开时间」
+> 估算死亡时刻。这些启发式（damage-threshold / EntityLeave / last-position / last-attacker）在
+> PR147/PR162 后<b>不再写入 `PlayerResult`</b>；`PlayerResult.killVictims` 与 `DeathTimeEstimator` 已从生产
+> 移除。死亡时刻只允许由 canonical 死亡 authority（`LIVE_EXACT → SETTLEMENT_SECOND → UNKNOWN`）给出。
 
 ---
 
@@ -480,7 +486,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `impact`                     | 浮点数 | `PerformanceMetricsCalculator.battleMetrics` → `PlayerResult.impact`        | %  | 单场 Impact（派生，不依赖 HP，恒有值）                                                     |
 | `damage_received`             | 整数  | `PlayerResult.damageReceived`            | HP    | #11                                                                             |
 | `damage_blocked`              | 整数  | `PlayerResult.damageBlocked`             | HP    | #117                                                                            |
-| `survival_time`               | 浮点数 | `PlayerResult.survivalTimeSec`           | 秒     | 存活者=durationS，阵亡者=#104>Damage>hybrid EntityLeave/Position                       |
+| `survival_time`               | 浮点数 | `PlayerResult.survivalTimeSec`           | 秒     | 存活者=durationS；阵亡者=representative deathSec（deathTimeSource：LIVE_EXACT → SETTLEMENT_SECOND(field24 lifeTime 派生) → UNKNOWN），见 replay-parsed-fields.md |
 | `n_shots`                     | 整数  | `PlayerResult.nShots`                    | 次数    | #4                                                                              |
 | `n_hits_dealt`                | 整数  | `PlayerResult.nHitsDealt`                | 次数    | #5                                                                              |
 | `n_penetrations_dealt`        | 整数  | `PlayerResult.nPenetrationsDealt`        | 次数    | #7                                                                              |
@@ -531,7 +537,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | 含义    | 单位         | 说明                                                    |
 |-------|------------|-------------------------------------------------------|
 | 伤害值   | **HP**     | 游戏内生命值点数                                              |
-| 存活时间  | **秒**      | 3 层 fallback（#104→Damage→hybrid EntityLeave/Position） |
+| 存活时间  | **秒**      | representative deathSec（deathTimeSource 链：LIVE_EXACT → SETTLEMENT_SECOND(field24 lifeTime 派生) → UNKNOWN） |
 | 战斗时长  | **秒**      | `meta.json#battleDuration`（浮点）                        |
 | 时间戳   | **Unix 秒** | 自 1970-01-01 起的秒数                                     |
 | 次数/计数 | **次**      | 射击/命中/击杀/人数                                           |
@@ -556,17 +562,11 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 死亡时间统一经 `PlayerResultFormat.deathSec()` / `deathEvidence()`（canonical），
 消费方绝不重读 raw field24 / #104 / EntityLeave / damage threshold 自行计算。
 
-Layer 2 为 **2026-06 新增**，解决了旧方法的两个缺陷：
-
-- EntityLeave 假阳性（实体临时离场被误判为阵亡）
-- Position 在一些模式里实体坐标持续更新至战斗结束（spectator 实体，阵亡不停止）
-
-**EntityLeave 限制：** EntityLeave（type 4）并非所有阵亡玩家都触发——约 30-50% 的死亡对应的实体不产生 leave 事件。需要
-entity_id↔account_id 映射（来自 method 48 updateArena2 protobuf）。某些实体会多次 leave/enter，取最后一次 keep。部分 leave 是
-**假阳性**（临时离场而非阵亡），通过 Position 识别：若 Position 最后时间显著晚于 EntityLeave（>5s），以 Position 为准。
-
-**Position 补充：** Position（type 10）覆盖大多数玩家实体，是比 EntityLeave 更可靠的死亡指标。阵亡后实体停止发送坐标更新。Damage
-层已在第 2 层优先处理，EntityLeave/Position 仅作为第 3 层兜底。
+> **旧启发式已移除：** 早期用「Type 8 subtype 8 累计 direct HP 伤害 ≥ `damageReceived` 阈值」的 damageDeathTimes，
+> 以及「EntityLeave + Position 停止 / 最后位置 / 离开时间」的 EntityLeave/Position 兜底估算死亡时刻。这些
+> 启发式（damage-threshold / EntityLeave / last-position / last-attacker）在 PR147/PR162 后<b>不再是死亡
+> authority</b>——它们是假阳性来源（临时离场、spectator 实体坐标继续更新），且无法证明 lethal boundary /
+> killer identity。生产死亡时刻只来自 canonical 死亡 authority；EntityLeave 仅用于 AoI 观测段收口。
 
 ### 2. 战斗时长上限
 

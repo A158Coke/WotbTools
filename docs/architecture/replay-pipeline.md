@@ -70,7 +70,7 @@ ReplayReconstruction 输出
 - `replay/event/EntityCreatedEvent.java` — 实体创建
 - `replay/event/EntityRemovedEvent.java` — 实体移除
 - `replay/event/VehicleDestroyedEvent.java` — 车辆击毁
-- `replay/event/BattleEndedEvent.java` — 战斗结束
+- `replay/event/RoundFinishedEvent.java` — 战斗结束（Avatar method4 / wrapper3 AFTERBATTLE；`ReplayStreamClosedEvent`(Type14) 只表达 stream-close）
 - `replay/event/UnknownReplayEvent.java` — 未知事件
 - `replay/event/ParticipantMappingEvent.java` — 账号映射
 
