@@ -71,8 +71,9 @@ public final class DeathTimeReconciler {
     }
 
     /**
-     * 校准 {@code battle.players} 中非存活且结算无死亡时刻玩家的 {@code survivalTimeSec} 与
-     * {@code deathTimeSource}（§B1：LIVE EXACT → SETTLEMENT → UNKNOWN，无 legacy 兜底）。
+     * 校准 {@code battle.players} 中<b>所有非存活玩家</b>（含结算已提供 {@code deathTimeMillis}
+     * 的玩家）的 {@code survivalTimeSec} 与 {@code deathTimeSource}
+     * （§B1：LIVE EXACT → SETTLEMENT_SECOND → UNKNOWN，无 legacy 兜底）。
      *
      * @param battle                已解析战绩（players 会被原地校准）
      * @param events                重建事件流（可能为 null）
@@ -125,23 +126,35 @@ public final class DeathTimeReconciler {
 
         final double duration = battle.durationS != null && battle.durationS > 0
                 ? battle.durationS : Double.POSITIVE_INFINITY;
+        // §B1 死亡权威链：LIVE_EXACT > SETTLEMENT_SECOND > UNKNOWN。
+        // 对所有阵亡玩家（含结算已提供 deathTimeMillis 的玩家）先检查最终 live EXACT terminal，
+        // 证明的 sub-second 精确时刻覆盖结算秒级时间；无 live EXACT 才回退结算/UNKNOWN。
         for (final PlayerResult player : battle.players) {
-            // 存活玩家（survivalTimeSec=战斗时长）与结算已提供死亡时刻的玩家不校准
-            if (player.survived || player.deathTimeMillis > 0) {
+            // 幸存玩家不校准（survivalTimeSec=战斗时长，由 ReplayParser 设置）
+            if (player.survived) {
                 continue;
             }
             final HealthEvidence death = lastDeathByAccount.get(player.accountId);
             final HealthEvidence alive = lastAliveByAccount.get(player.accountId);
             if (death != null && (alive == null || death.after(alive))) {
-                // 规则 2：dead 是最后权威 lifecycle 状态（含从未复生）→ 最后一条 alive=false 即最终阵亡
+                // 规则 2：dead 是最后权威 lifecycle 状态（含从未复生）→ live EXACT 精确阵亡时刻
+                //（sub-second battle-relative）覆盖 settlement 秒级时间。
                 player.survivalTimeSec = Math.min(death.timeSec(), duration);
                 player.deathTimeSource = DeathTimeSource.LIVE_EXACT;
                 continue;
             }
-            // 规则 3：无最终 EXACT 死亡证据（早期死亡被复生否决 / 仅有 alive 证据 / 无证据）
-            // → UNKNOWN=0（ReplayParser 已不再写入 legacy 启发式，§B2）
-            player.survivalTimeSec = 0;
-            player.deathTimeSource = DeathTimeSource.UNKNOWN;
+            // 无最终 live EXACT 死亡证据（早期死亡被复生否决 / 仅有 alive 证据 / 无 live 证据）
+            if (player.deathTimeMillis > 0) {
+                // 规则 1：结算死亡时刻（秒级，±0.5s 量化）作为二级权威，不假装 sub-second。
+                final double st = player.deathTimeMillis / 1000.0;
+                player.survivalTimeSec = st > 0 ? Math.min(st, duration) : 0;
+                player.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+            } else {
+                // 规则 3：无任何权威证据 → UNKNOWN=0（ReplayParser 已不再写入 legacy 启发式，§B2，
+                // 绝不伪造新时刻）
+                player.survivalTimeSec = 0;
+                player.deathTimeSource = DeathTimeSource.UNKNOWN;
+            }
         }
     }
 

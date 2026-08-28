@@ -6,24 +6,24 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 版本门禁（计划 §A2）：closed semantics 只对已知版本族 AFFIRMED。
+ * 版本门禁（§A2 / PR162 repair Blocker 2）：PR147 closed semantics 只对
+ * {@code 11.19.0_china*} canonical 家族 AFFIRMED；11.18 仅 container/settlement 兼容，
+ * 不得自动获得 PR147 closed numeric meanings（method38 位图 / modifier / component 命名空间 /
+ * method36 字段语义等）；unknown/future 版本 raw-preserve，不 crash、不伪造语义。
  */
 class ReplayVersionGateTest {
 
     @Test
-    void allowsCurrentFamily() {
+    void allowsCurrentNonAppleAndAppleFamily() {
         assertTrue(ReplayVersionGate.closedSemanticsAllowed("11.19.0_china"));
         assertTrue(ReplayVersionGate.closedSemanticsAllowed("11.19.0_china_apple"));
-        assertTrue(ReplayVersionGate.isCurrentFamily("11.19.0_china"));
-        assertTrue(ReplayVersionGate.isCurrentFamily("11.19.0_china_apple"));
     }
 
     @Test
-    void allowsLegacyCompatibleFamily() {
-        // 仓库既有 fixtures 实测同布局（common/fixtures/replays/cw-training-15-14-example.wotbreplay）
-        assertTrue(ReplayVersionGate.closedSemanticsAllowed("11.18.0_china"));
-        assertTrue(ReplayVersionGate.closedSemanticsAllowed("11.18.0_china_apple"));
-        assertFalse(ReplayVersionGate.isCurrentFamily("11.18.0_china_apple"));
+    void rejectsLegacyCompatibleFamilyForClosedSemantics() {
+        // 仓库既有 fixtures 结构兼容（container/settlement），但 PR147 closed decoder 不对 11.18 开放
+        assertFalse(ReplayVersionGate.closedSemanticsAllowed("11.18.0_china"));
+        assertFalse(ReplayVersionGate.closedSemanticsAllowed("11.18.0_china_apple"));
     }
 
     @Test
@@ -38,7 +38,6 @@ class ReplayVersionGateTest {
 
     @Test
     void prefixMatchingIsBoundarySafe() {
-        // 不能把 "11.19.0_china_fake_build" 之外的同前缀变体误判（仅下划线子构建）
         assertTrue(ReplayVersionGate.closedSemanticsAllowed("11.19.0_china_apple_beta"));
         assertFalse(ReplayVersionGate.closedSemanticsAllowed("11.19.0_chin"));
         assertFalse(ReplayVersionGate.closedSemanticsAllowed("11.19.0_chinaX"));

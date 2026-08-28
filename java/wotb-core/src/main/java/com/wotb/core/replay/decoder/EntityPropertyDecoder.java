@@ -53,17 +53,8 @@ public class EntityPropertyDecoder implements ReplayPacketDecoder {
     @Override
     public ReplayDecodeResult decode(ReplayDecodeContext context, RawReplayPacket packet) {
         final byte[] payload = packet.payload();
-        // 版本门禁（计划 §A2）：propId=2/3 closed semantics 只在已知版本族上 AFFIRMED。
-        if (!ReplayVersionGate.closedSemanticsAllowed(context.clientVersion())) {
-            final ReplayTimestamp unsupportedTs = new ReplayTimestamp(packet.rawClockSec(), null);
-            return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
-                    List.of(new UnknownReplayEvent(
-                            packet.sequence(), unsupportedTs, packet.type(),
-                            payload.length, "VERSION_UNSUPPORTED", DecodeConfidence.UNKNOWN)),
-                    List.of(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
-                            "EntityProperty closed semantics not affirmed for client version: "
-                                    + context.clientVersion())));
-        }
+        // EntityProperty（propId=2 炮塔偏航 / propId=3 当前 HP / propId=1,7,8）：11.18/11.19 布局稳定，
+        // legacy-compatible，不限版本族（PR147 已证明稳定，见 docs/research/replay）。
 
         // 载荷结构（已从 11.18 样本逆向确认，稳定）：
         //   entityId(u32) + propId(u32) + valueLen(u32) + value(valueLen 字节)

@@ -30,18 +30,8 @@ public class PositionDecoder implements ReplayPacketDecoder {
     @Override
     public ReplayDecodeResult decode(ReplayDecodeContext context, RawReplayPacket packet) {
         final byte[] payload = packet.payload();
-        // 版本门禁（计划 §A2）：Type10 closed semantics 只在已知版本族上 AFFIRMED；
-        // 未知版本 → raw-preserve（UnknownReplayEvent）+ diagnostics。
-        if (!ReplayVersionGate.closedSemanticsAllowed(context.clientVersion())) {
-            final ReplayTimestamp unsupportedTs = new ReplayTimestamp(packet.rawClockSec(), null);
-            return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
-                    List.of(new UnknownReplayEvent(
-                            packet.sequence(), unsupportedTs, packet.type(),
-                            payload.length, "VERSION_UNSUPPORTED", DecodeConfidence.UNKNOWN)),
-                    List.of(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
-                            "Type10 closed semantics not affirmed for client version: "
-                                    + context.clientVersion())));
-        }
+        // Type10 49B 物理坐标（§A3/A4）：11.18/11.19 布局稳定（PR147 已证实），不限版本族；
+        // 仅数值需为有限浮点，拒绝 NaN/Infinity。
         if (payload.length < 45) {
             return new ReplayDecodeResult(DecodeStatus.MALFORMED, List.of(),
                     List.of(new ReplayDecodeWarning("TRUNCATED_PAYLOAD",

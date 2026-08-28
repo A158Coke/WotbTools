@@ -1,6 +1,7 @@
 package com.wotb.core.util;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 
 /**
@@ -23,9 +24,19 @@ public final class PlayerResultFormat {
         return PromptDataQuoter.quote(s, "?");
     }
 
-    /** 死亡时刻（秒）：优先 deathTimeMillis，回退 survivalTimeSec。 */
+    /**
+     * 死亡时刻（秒），按 §B1 deathTimeSource 权威链：
+     * LIVE_EXACT → {@code survivalTimeSec}（回放精确 sub-second，覆盖结算）；
+     * SETTLEMENT_SECOND → {@code deathTimeMillis / 1000}（±0.5s 量化）；
+     * UNKNOWN / 无来源 → {@code survivalTimeSec}（0=未知，绝不伪造）。
+     */
     public static double deathSec(final PlayerResult p) {
-        if (p.deathTimeMillis > 0) return p.deathTimeMillis / 1000.0;
+        if (p.deathTimeSource == DeathTimeSource.LIVE_EXACT) {
+            return p.survivalTimeSec;
+        }
+        if (p.deathTimeMillis > 0) {
+            return p.deathTimeMillis / 1000.0;
+        }
         return p.survivalTimeSec;
     }
 

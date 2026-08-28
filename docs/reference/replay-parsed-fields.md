@@ -29,7 +29,7 @@
 | `victoryPointsSeized` | int | 战绩 `#33` | 占点占领分 | supremacy 争霸赛逐人 |
 | `survived` | boolean | 战绩 | 是否存活 | |
 | `deathTimeMillis` | long | 战绩 `#104` | 死亡时刻（毫秒，battle-relative） | 权威；存活/未知=0 → 权威链 LIVE EXACT → SETTLEMENT → UNKNOWN（由 DeathTimeReconciler 用 live EXACT 填补，不伪造） |
-| `survivalTimeSec` | double | 派生 | 存活时间（秒） | 结算 deathTimeMillis 优先；缺失时由 DeathTimeReconciler 用 live EXACT 死亡证据校准为 0=UNKNOWN（LIVE_EXACT/SETTLEMENT_SECOND/UNKNOWN） |
+| `survivalTimeSec` | double | 派生 | 存活时间（秒） | 权威链 LIVE_EXACT（回放精确 sub-second）> SETTLEMENT_SECOND（结算，±0.5s）> UNKNOWN=0（由 DeathTimeReconciler 校准；legacy 启发式不作为权威，§B2） |
 | `xp` / `credits` | int | 战绩 | 经验/银币 | 展示用 |
 | `tankName` / `tankTier` / `tankType` / `tankNation` / `alphaDamage` | String | tankopedia 映射 | 展示派生字段 | 非回放原始值 |
 

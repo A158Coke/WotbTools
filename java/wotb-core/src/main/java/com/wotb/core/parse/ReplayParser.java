@@ -255,7 +255,8 @@ public final class ReplayParser {
                 pr.survivalTimeSec = bd;
             } else {
                 double st = pr.deathTimeMillis / 1000.0;
-                // 结算死亡时刻是权威；缺失 → UNKNOWN=0（由 DeathTimeReconciler 用 live EXACT 填补）
+                // 初始按结算 deathTimeMillis 标记 SETTLEMENT_SECOND；随后 DeathTimeReconciler
+                // 会用 live EXACT 死亡证据覆盖为 LIVE_EXACT（§B1 权威链 LIVE_EXACT > SETTLEMENT_SECOND > UNKNOWN）
                 pr.deathTimeSource = st > 0
                         ? com.wotb.core.model.DeathTimeSource.SETTLEMENT_SECOND
                         : com.wotb.core.model.DeathTimeSource.UNKNOWN;

@@ -119,8 +119,7 @@ value:     [u8; value_len]
 > **可靠的血量/伤害/助攻/格挡/击杀/存活/死亡时刻请以 `battle_results.dat`（`Battle`/`PlayerResult`）为准**——
 > 见 `docs/architecture/ai-review.md`。逐帧血量时间线属于已知限制，待拿到属性定义参考后再实现。
 
-> **死亡时刻口径（AI 复盘）**：部分回放 `battle_results` 的 `deathTimeMillis`(#104) 为 0，系统回退事件流估算
-> （damage threshold → entity leave → position）。AI prompt 通过 `DEATH_SOURCE` 标注来源（权威结算 / 事件流估算），
+> **死亡时刻口径（AI 复盘）**：死亡权威链为 `LIVE_EXACT`（回放 live EXACT，sub-second）→ `SETTLEMENT_SECOND`（结算 `deathTimeMillis`(#104)，±0.5s）→ `UNKNOWN`（`survivalTimeSec=0`，绝不伪造）；`PlayerResultFormat.deathSec` 按 `deathTimeSource` 消费。EntityLeave / 最后位置 / damage threshold 不再是死亡 authority（legacy 启发式仅存于 diagnostics）。
 > 不得把估算数据当作权威；阶段存活人数明确为「至阶段末」，并注入双方逐车阵亡时间线。
 
 > **观测伤害抑制（AI 复盘）**：事件流伤害仅为观测子集（`DamageEvent`），覆盖未达 100% 时后端标记
