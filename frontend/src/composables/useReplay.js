@@ -503,18 +503,29 @@ export function useReplay() {
    * selection 的 in-flight create（single-flight）→ 4) 才创建。同一 selection 的所有
    * Direct Action 共享同一个 backend Processing Job（绝无 p1/p2 双 job）。
    */
-  async function requestDirectAction(file, mode) {
+  async function requestDirectAction(file) {
     const idx = files.value.findIndex(f => fileKey(f) === fileKey(file))
     if (idx < 0) throw new Error('NO_REPLAY_FILE')
     const sourceId = `r${idx}`
-    // 1) 已有 READY dataset（dismiss 面板后仍可复用，不重新 full process）
-    if (processingJobId.value) {
+    // 1) 已有 READY dataset（dismiss 面板后仍可复用，不重新 full process）。
+    //    进入该 async 分支时立即 capture 不可变 datasetJobId；整个分支（GET / READY return /
+    //    poll / JOB_NOT_FOUND invalidate）只操作该 job——绝不跨 await 再用 mutable
+    //    processingJobId.value 判定「这个 response 属于哪个 job」（BLOCKER 1）。
+    const datasetJobId = processingJobId.value
+    if (datasetJobId) {
       try {
-        const data = await api.getProcessingJob(processingJobId.value)
+        const data = await api.getProcessingJob(datasetJobId)
         const s = (data.sources || []).find(x => x.sourceId === sourceId)
-        if (s && s.status === 'READY') return { processingJobId: processingJobId.value, sourceId }
-        if (data.status === 'QUEUED' || data.status === 'PROCESSING') {
-          return pollSourceReady(processingJobId.value, sourceId)
+        if (s && s.status === 'READY') {
+          // ownership guard：await 期间 current Dataset 若已换成别的 job，则该成功 response
+          // 已 stale——绝不伪装成 current identity 返回（防 p1 READY 混入 p2 identity），
+          // 而是 discard 后继续向下找 current job（复用 branch 2 的 current active job）。
+          if (processingJobId.value === datasetJobId) {
+            return { processingJobId: datasetJobId, sourceId }
+          }
+        } else if (data.status === 'QUEUED' || data.status === 'PROCESSING') {
+          // poll 绑定至 capture 的 datasetJobId：即使 current 后来切到 p2，p1 poll 只影响 p1。
+          return pollSourceReady(datasetJobId, sourceId)
         }
       } catch (e) {
         // BLOCKER 3B：只有稳定 not-found（404 / JOB_NOT_FOUND）才 invalidate 并允许重建；
@@ -524,9 +535,9 @@ export function useReplay() {
         if (!expired) {
           throw e
         }
-        // authoritative GET 已确认该 job 过期：走单一权威失效（processingJobId / snapshot /
-        // 绑定 poll 均失效），不清空 resp（保留仍可安全展示的用户解析结果）。
-        invalidateProcessingDatasetJob(processingJobId.value)
+        // authoritative GET 已确认该 job 过期：只失效 capture 的 datasetJobId（p1），
+        // 绝不 invalidate await 期间后来居上的 p2（BLOCKER 1）；不清空 resp。
+        invalidateProcessingDatasetJob(datasetJobId)
       }
     }
     // 2) 当前 active job：source READY 直接返回；仍在处理则等自己的 sourceId
@@ -649,7 +660,7 @@ export function useReplay() {
     exportError.value = ''
     try {
       const teamNamesJson = teamNamesOverrides ? JSON.stringify(teamNamesOverrides) : null
-      const created = await api.createExportJob(null, mode, processingJobId.value, teamNamesJson)
+      const created = await api.createExportJob(mode, processingJobId.value, teamNamesJson)
       exportJob.value = {
         jobId: created.jobId,
         status: created.status || 'QUEUED',

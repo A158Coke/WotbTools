@@ -551,7 +551,7 @@ async function ensureDatasetFor(file) {
   const revision = ++workspaceDatasetRevision
   const targetKey = fileKey(file)
   try {
-    const ref = await requestDirectAction(file, workspaceTab.value)
+    const ref = await requestDirectAction(file)
     const current = workspaceFile.value
     if (revision !== workspaceDatasetRevision || !current || fileKey(current) !== targetKey) {
       // stale response：不属于当前 workspace generation，直接丢弃。

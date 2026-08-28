@@ -1,6 +1,5 @@
 package com.wotb.web.replay;
 
-import com.wotb.web.replay.ai.MapOverviewBuilder;
 import com.wotb.web.replay.dto.MapOverview;
 import com.wotb.web.replay.job.ReplayArtifactWriter;
 import com.wotb.web.replay.job.ReplayProcessingJob;
@@ -8,8 +7,6 @@ import com.wotb.web.replay.job.ReplayProcessingJobStore;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
-
-import java.io.IOException;
 
 /**
  * 地图鸟瞰查询服务（V2 收口，BLOCKER 2）：只读 Processing Job 的 cached
@@ -52,7 +49,10 @@ public class MapOverviewQueryService {
             }
             return ReplayArtifactWriter.readMapOverview(processingStore.jobDir(processingJobId), sourceIndex);
         } catch (final java.io.IOException e) {
-            // artifact 缺失 = dataset 已过期 → 404（BLOCKER 4 稳定语义）。
+            // BLOCKER 4：文件不存在不会进入 catch（readMapOverview 缺文件返回 null → 调用方 204
+            // capability unavailable）；此处 catch 代表 artifact 路径 / 读取 / 存储 I/O 故障，
+            // 映射为稳定的 404 JOB_NOT_FOUND（保持既有错误 contract，避免把真实存储失败
+            // 误当「正常不可用」静默吞掉）。
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "JOB_NOT_FOUND");
         } finally {
             processingStore.release(processingJobId);

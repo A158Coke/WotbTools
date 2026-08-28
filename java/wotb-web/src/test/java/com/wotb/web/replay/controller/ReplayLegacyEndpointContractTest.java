@@ -96,7 +96,7 @@ class ReplayLegacyEndpointContractTest {
     void exportJobWithoutProcessingJobIdReturnsStableGone() {
         final ReplayExportJobService service = new ReplayExportJobService(null, null, null, null);
         final ResponseStatusException e = assertThrows(ResponseStatusException.class,
-                () -> service.createJob(new MultipartFile[]{file()}, "aggregate", null, (String) null));
+                () -> service.createJob("aggregate", null));
         assertEquals(HttpStatus.GONE, e.getStatusCode());
         assertEquals(GONE, e.getReason());
     }
@@ -165,7 +165,7 @@ class ReplayLegacyEndpointContractTest {
                         if (isGone(e)) gone.incrementAndGet();
                     }
                     try {
-                        exportService.createJob(files, "aggregate", null, (String) null);
+                        exportService.createJob("aggregate", null);
                     } catch (final ResponseStatusException e) {
                         if (isGone(e)) gone.incrementAndGet();
                     }

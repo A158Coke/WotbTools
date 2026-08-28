@@ -364,7 +364,7 @@ describe('useReplay 最终终审 lifecycle（BLOCKER 1/2/3）', () => {
     expect(replay.processingJobId.value).toBe('p1')
 
     const callsBefore = api.createProcessingJob.mock.calls.length
-    const ref = await replay.requestDirectAction(replay.files.value[0], 'ai')
+    const ref = await replay.requestDirectAction(replay.files.value[0])
     expect(ref).toEqual({ processingJobId: 'p1', sourceId: 'r0' })
     expect(api.createProcessingJob.mock.calls.length).toBe(callsBefore)
   })
@@ -372,7 +372,7 @@ describe('useReplay 最终终审 lifecycle（BLOCKER 1/2/3）', () => {
   it('GET p1 transient 502：传播错误、不重建 Dataset、processingJobId 保留', async () => {
     replay.processingJobId.value = 'p1'
     api.getProcessingJob.mockRejectedValue(apiError('HTTP_502', 502))
-    await expect(replay.requestDirectAction(replay.files.value[0], 'ai')).rejects.toMatchObject({ code: 'HTTP_502' })
+    await expect(replay.requestDirectAction(replay.files.value[0])).rejects.toMatchObject({ code: 'HTTP_502' })
     expect(api.createProcessingJob).not.toHaveBeenCalled()
     expect(replay.processingJobId.value).toBe('p1')
   })
@@ -380,7 +380,7 @@ describe('useReplay 最终终审 lifecycle（BLOCKER 1/2/3）', () => {
   it('GET p1 network failure：同样传播、不重建', async () => {
     replay.processingJobId.value = 'p1'
     api.getProcessingJob.mockRejectedValue(new TypeError('Failed to fetch'))
-    await expect(replay.requestDirectAction(replay.files.value[0], 'ai')).rejects.toThrow()
+    await expect(replay.requestDirectAction(replay.files.value[0])).rejects.toThrow()
     expect(api.createProcessingJob).not.toHaveBeenCalled()
     expect(replay.processingJobId.value).toBe('p1')
   })
@@ -395,7 +395,7 @@ describe('useReplay 最终终审 lifecycle（BLOCKER 1/2/3）', () => {
       })
     api.createProcessingJob.mockResolvedValue({ jobId: 'p2', status: 'QUEUED', total: 1 })
 
-    const ref = await replay.requestDirectAction(replay.files.value[0], 'ai')
+    const ref = await replay.requestDirectAction(replay.files.value[0])
     expect(api.createProcessingJob).toHaveBeenCalledTimes(1)
     expect(ref).toEqual({ processingJobId: 'p2', sourceId: 'r0' })
   })
@@ -417,7 +417,7 @@ describe('useReplay 最终终审 lifecycle（BLOCKER 1/2/3）', () => {
       })
     api.createProcessingJob.mockResolvedValue({ jobId: 'p2', status: 'QUEUED', total: 1 })
 
-    const ref = await replay.requestDirectAction(replay.files.value[0], 'ai')
+    const ref = await replay.requestDirectAction(replay.files.value[0])
 
     expect(api.createProcessingJob).toHaveBeenCalledTimes(1, 'TTL 过期重建只 create 一次（single-flight）')
     expect(ref).toEqual({ processingJobId: 'p2', sourceId: 'r0' }, '必须返回 p2/r0，绝不能再返回 p1')
@@ -512,7 +512,7 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
     const dGet = deferred()
     api.getProcessingJob.mockReturnValueOnce(dGet.promise)
 
-    const pDirect = replay.requestDirectAction(replay.files.value[0], 'ai')
+    const pDirect = replay.requestDirectAction(replay.files.value[0])
     expect(api.getProcessingJob).toHaveBeenCalledTimes(1, 'pollSourceReady 已发起第一次 GET')
 
     let settledWith = null
@@ -536,7 +536,7 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
     const dGet = deferred()
     api.getProcessingJob.mockReturnValueOnce(dGet.promise)
 
-    const pDirect = replay.requestDirectAction(replay.files.value[0], 'ai')
+    const pDirect = replay.requestDirectAction(replay.files.value[0])
     pDirect.catch(() => {}) // 预挂 handler：abort 先于断言触发时避免 unhandled rejection
     replay.updateFiles([new File(['b'], 'b.wotbreplay')]) // abort
 
@@ -553,7 +553,7 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
       sources: [{ sourceId: 'r0', status: 'PROCESSING' }]
     })
 
-    const pDirect = replay.requestDirectAction(replay.files.value[0], 'ai')
+    const pDirect = replay.requestDirectAction(replay.files.value[0])
     await vi.advanceTimersByTimeAsync(0) // 第一次 GET → QUEUED → 注册 750ms timer
     const callsBefore = api.getProcessingJob.mock.calls.length
 
@@ -572,7 +572,7 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
     // 4a：READY resolve 先于 abort → resolve；随后的 abort 不得改 terminal
     const dReady = deferred()
     api.getProcessingJob.mockReturnValueOnce(dReady.promise)
-    const pReady = replay.requestDirectAction(replay.files.value[0], 'ai')
+    const pReady = replay.requestDirectAction(replay.files.value[0])
     dReady.resolve({ jobId: 'p1', status: 'READY', sources: [{ sourceId: 'r0', status: 'READY' }] })
     await vi.advanceTimersByTimeAsync(0) // poll 续体先于 abort 运行 → READY resolve
     replay.updateFiles([new File(['b'], 'b.wotbreplay')]) // abort 迟到 → 不得二次 terminal
@@ -582,7 +582,7 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
     replay.processingJob.value = activeJob('p1') // updateFiles 已清空，重建当前 active job
     const dAbort = deferred()
     api.getProcessingJob.mockReturnValueOnce(dAbort.promise)
-    const pAbort = replay.requestDirectAction(replay.files.value[0], 'ai')
+    const pAbort = replay.requestDirectAction(replay.files.value[0])
     pAbort.catch(() => {}) // 预挂 handler：abort 先于断言触发时避免 unhandled rejection
     replay.updateFiles([new File(['c'], 'c.wotbreplay')]) // abort 先到
     dAbort.resolve({ jobId: 'p1', status: 'READY', sources: [{ sourceId: 'r0', status: 'READY' }] }) // 迟到 READY
@@ -606,8 +606,8 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
 
     const abortSpy = vi.spyOn(AbortController.prototype, 'abort')
     try {
-      const pA = replay.requestDirectAction(fileA, 'ai')
-      const pB = replay.requestDirectAction(fileB, 'playback')
+      const pA = replay.requestDirectAction(fileA)
+      const pB = replay.requestDirectAction(fileB)
       expect(api.getProcessingJob).toHaveBeenCalledTimes(2)
 
       const results = []
@@ -640,7 +640,7 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
     mountedReplay.processingJob.value = activeJob('p1')
     api.getProcessingJob.mockReturnValue(new Promise(() => {}))
 
-    const pDirect = mountedReplay.requestDirectAction(mountedReplay.files.value[0], 'ai')
+    const pDirect = mountedReplay.requestDirectAction(mountedReplay.files.value[0])
     pDirect.catch(() => {}) // 预挂 handler：unmount 的 abort 先于断言触发时避免 unhandled rejection
     wrapper.unmount() // onUnmounted → stopSourcePolls → abort
     await vi.advanceTimersByTimeAsync(0)
@@ -652,7 +652,7 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
       jobId: 'p1', status: 'PROCESSING',
       sources: [{ sourceId: 'r0', status: 'FAILED' }]
     })
-    await expect(replay.requestDirectAction(replay.files.value[0], 'ai'))
+    await expect(replay.requestDirectAction(replay.files.value[0]))
       .rejects.toMatchObject({ message: 'SOURCE_PROCESSING_FAILED' })
   })
 
@@ -661,13 +661,13 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
       jobId: 'p1', status: 'READY',
       sources: [{ sourceId: 'r0', status: 'PROCESSING' }]
     })
-    await expect(replay.requestDirectAction(replay.files.value[0], 'ai'))
+    await expect(replay.requestDirectAction(replay.files.value[0]))
       .rejects.toMatchObject({ message: 'SOURCE_NOT_READY' })
   })
 
   it('GET 网络失败未取消 → 原样传播（不是 cancellation）', async () => {
     api.getProcessingJob.mockRejectedValue(new TypeError('Failed to fetch'))
-    await expect(replay.requestDirectAction(replay.files.value[0], 'ai')).rejects.toThrow('Failed to fetch')
+    await expect(replay.requestDirectAction(replay.files.value[0])).rejects.toThrow('Failed to fetch')
   })
 
   // ---- BLOCKER 3.2：authoritative invalidate（invalidateProcessingDatasetJob）与 source poll 的确定性并发 ----
@@ -677,7 +677,7 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
     replay.processingJob.value = { jobId: 'p1', status: 'PROCESSING', total: 1, sources: [{ sourceId: 'r0', status: 'PROCESSING' }] }
     api.getProcessingJob.mockReturnValueOnce(dP1.promise) // 该 poll 的第一次 GET 挂起
 
-    const pDirect = replay.requestDirectAction(replay.files.value[0], 'ai') // path2 → pollSourceReady('p1','r0')
+    const pDirect = replay.requestDirectAction(replay.files.value[0]) // path2 → pollSourceReady('p1','r0')
     expect(api.getProcessingJob).toHaveBeenCalledTimes(1)
 
     let settled = null
@@ -698,11 +698,11 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
       .mockResolvedValueOnce({ jobId: 'p2', status: 'READY', sources: [{ sourceId: 'r0', status: 'READY' }] }) // p2 poll 2nd GET
 
     replay.processingJob.value = { jobId: 'p1', status: 'PROCESSING', total: 1, sources: [{ sourceId: 'r0', status: 'PROCESSING' }] }
-    const pP1 = replay.requestDirectAction(fileA, 'ai') // pollSourceReady('p1')
+    const pP1 = replay.requestDirectAction(fileA) // pollSourceReady('p1')
     expect(api.getProcessingJob).toHaveBeenCalledTimes(1)
 
     replay.processingJob.value = { jobId: 'p2', status: 'PROCESSING', total: 1, sources: [{ sourceId: 'r0', status: 'PROCESSING' }] }
-    const pP2 = replay.requestDirectAction(fileA, 'ai') // pollSourceReady('p2')
+    const pP2 = replay.requestDirectAction(fileA) // pollSourceReady('p2')
     expect(api.getProcessingJob).toHaveBeenCalledTimes(2)
 
     let p1Settled = null
@@ -721,7 +721,7 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
     const dP1 = deferred()
     replay.processingJob.value = { jobId: 'p1', status: 'PROCESSING', total: 1, sources: [{ sourceId: 'r0', status: 'PROCESSING' }] }
     api.getProcessingJob.mockReturnValueOnce(dP1.promise)
-    const pP1 = replay.requestDirectAction(replay.files.value[0], 'ai') // 造一个 stale p1 poll
+    const pP1 = replay.requestDirectAction(replay.files.value[0]) // 造一个 stale p1 poll
     expect(api.getProcessingJob).toHaveBeenCalledTimes(1)
 
     replay.processingJobId.value = 'p2'
@@ -737,6 +737,83 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
     expect(replay.processingJobId.value).toBe('p2') // Dataset identity p2 不受 stale 失效影响
     expect(replay.processingJob.value?.jobId).toBe('p2') // p2 snapshot 保留
     expect(replay.resp.value).toEqual({ battles: [{ mapName: 'A' }] }) // resp 保留
+  })
+
+  // ---- BLOCKER 1（本轮）：requestDirectAction 跨 await 的 dataset generation ownership race ----
+  // path 1 在 GET(p1) pending 期间切换到 p2，迟到的 p1 响应（404 / READY / PROCESSING）
+  // 必须只作用于 p1（invalidate / discard / poll 绑定 p1），绝不 invalidate p2、绝不把
+  // p1 response 混入 p2 identity。
+
+  it('BLOCKER1-A — p1 迟到 404 不得 invalidate 当前 p2（generation ownership）', async () => {
+    const dGet = deferred()
+    replay.processingJobId.value = 'p1'
+    api.getProcessingJob.mockReturnValueOnce(dGet.promise)
+    const pDirect = replay.requestDirectAction(replay.files.value[0]) // path1: GET(p1) pending
+    expect(api.getProcessingJob).toHaveBeenCalledTimes(1)
+
+    // await 期间当前 Dataset 切换到 p2（READY）
+    replay.processingJobId.value = 'p2'
+    replay.processingJob.value = { jobId: 'p2', status: 'READY', total: 1, sources: [{ sourceId: 'r0', status: 'READY' }] }
+    replay.resp.value = { battles: [{ mapName: 'A' }] }
+    const respBefore = replay.resp.value
+
+    // p1 迟到 reject JOB_NOT_FOUND（authoritative 404）——只允许失效 p1
+    dGet.reject({ status: 404, code: 'JOB_NOT_FOUND' })
+    await vi.advanceTimersByTimeAsync(0)
+
+    // 不得 invalidate p2 / 清空 resp（BLOCKER 1：只失效 capture 的 datasetJobId）
+    expect(replay.processingJobId.value).toBe('p2')
+    expect(replay.processingJob.value?.jobId).toBe('p2')
+    expect(replay.resp.value).toBe(respBefore)
+    // p1 已确认过期（非当前），path1 discard → path2 复用 p2 READY identity
+    await expect(pDirect).resolves.toEqual({ processingJobId: 'p2', sourceId: 'r0' })
+  })
+
+  it('BLOCKER1-B — p1 迟到 READY 不得混入 p2 identity（stale p1 discard + 复用 p2）', async () => {
+    const dGet = deferred()
+    replay.processingJobId.value = 'p1'
+    api.getProcessingJob.mockReturnValueOnce(dGet.promise)
+    const pDirect = replay.requestDirectAction(replay.files.value[0]) // path1: GET(p1) pending
+
+    // await 期间当前 Dataset 切换到 p2（仍 PROCESSING——p2 本身不是 READY）
+    replay.processingJobId.value = 'p2'
+    replay.processingJob.value = { jobId: 'p2', status: 'PROCESSING', total: 1, sources: [{ sourceId: 'r0', status: 'PROCESSING' }] }
+
+    // p1 迟到 resolve READY（p1 视角 r0 READY）——此响应已 stale
+    dGet.resolve({ jobId: 'p1', status: 'READY', sources: [{ sourceId: 'r0', status: 'READY' }] })
+    await vi.advanceTimersByTimeAsync(0)
+
+    let resolved = null
+    pDirect.then(v => { resolved = v }, () => {}) // 忽略 afterEach abort 的 rejection
+    await vi.advanceTimersByTimeAsync(0)
+    // 禁止用 p1 READY response + p2 identity 伪装成 {p2, r0}：stale p1 被 discard
+    expect(resolved).toBeNull()
+    // current p2 generation 保留；path1 discard → path2 复用 p2 → pollSourceReady 绑定 p2
+    expect(replay.processingJobId.value).toBe('p2')
+    expect(replay.processingJob.value?.jobId).toBe('p2')
+    expect(api.getProcessingJob).toHaveBeenCalledTimes(2)
+    expect(api.getProcessingJob.mock.calls[1][0]).toBe('p2')
+  })
+
+  it('BLOCKER1-C — p1 GET 返回 PROCESSING → pollSourceReady 绑定 p1，即使 current 切换到 p2', async () => {
+    const dGet = deferred()
+    replay.processingJobId.value = 'p1'
+    api.getProcessingJob.mockReturnValueOnce(dGet.promise)
+    const pDirect = replay.requestDirectAction(replay.files.value[0]) // path1: GET(p1) pending
+
+    // await 期间 current 切换到 p2（PROCESSING）
+    replay.processingJobId.value = 'p2'
+    replay.processingJob.value = { jobId: 'p2', status: 'PROCESSING', total: 1, sources: [{ sourceId: 'r0', status: 'PROCESSING' }] }
+
+    // p1 GET resolve PROCESSING → pollSourceReady 必须绑定 capture 的 p1，而非读取 mutable p2
+    dGet.resolve({ jobId: 'p1', status: 'PROCESSING', sources: [{ sourceId: 'r0', status: 'PROCESSING' }] })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(api.getProcessingJob).toHaveBeenCalledTimes(2)
+    expect(api.getProcessingJob.mock.calls[1][0]).toBe('p1') // poll 绑定 p1（不是 p2）
+    expect(replay.processingJobId.value).toBe('p2') // current gen p2 不被 p1 poll 影响
+    expect(replay.processingJob.value?.jobId).toBe('p2')
+    pDirect.catch(() => {}) // 忽略 afterEach abort 的 rejection（poll 仍 pending）
   })
 })
 
@@ -785,8 +862,8 @@ describe('useReplay Processing create single-flight（BLOCKER 1）', () => {
     api.createProcessingJob.mockReturnValueOnce(dCreate.promise)
     api.getProcessingJob.mockResolvedValue(readyJobPoll('p1', 2))
 
-    const pA = replay.requestDirectAction(fileA, 'ai')
-    const pB = replay.requestDirectAction(fileB, 'playback')
+    const pA = replay.requestDirectAction(fileA)
+    const pB = replay.requestDirectAction(fileB)
     expect(api.createProcessingJob).toHaveBeenCalledTimes(1)
 
     dCreate.resolve({ jobId: 'p1', status: 'QUEUED', total: 2 })
@@ -805,7 +882,7 @@ describe('useReplay Processing create single-flight（BLOCKER 1）', () => {
     api.getProcessingJob.mockResolvedValue(readyJobPoll('p1', 1))
 
     const pManual = replay.startProcessingJob(null)
-    const pDirect = replay.requestDirectAction(file, 'ai')
+    const pDirect = replay.requestDirectAction(file)
     expect(api.createProcessingJob).toHaveBeenCalledTimes(1)
 
     dCreate.resolve({ jobId: 'p1', status: 'QUEUED', total: 1 })
@@ -902,8 +979,8 @@ describe('useReplay Processing create single-flight（BLOCKER 1）', () => {
 
     const intervalSpy = vi.spyOn(globalThis, 'setInterval')
     try {
-      const pA = replay.requestDirectAction(fileA, 'ai')
-      const pB = replay.requestDirectAction(fileB, 'playback')
+      const pA = replay.requestDirectAction(fileA)
+      const pB = replay.requestDirectAction(fileB)
       dCreate.resolve({ jobId: 'p1', status: 'QUEUED', total: 2 })
       await vi.advanceTimersByTimeAsync(0) // doCreate 绑定 + 主 poll 立即 tick + source polls 立即 tick
 
@@ -1087,7 +1164,7 @@ describe('useReplay processing job flow', () => {
     })
     replay.files.value = [new File(['a'], 'a.wotbreplay'), new File(['b'], 'b.wotbreplay')]
 
-    const ref = await replay.requestDirectAction(replay.files.value[1], 'ai')
+    const ref = await replay.requestDirectAction(replay.files.value[1])
 
     expect(ref).toEqual({ processingJobId: 'p1', sourceId: 'r1' })
     const fd = api.createProcessingJob.mock.calls[0][0]
@@ -1104,7 +1181,7 @@ describe('useReplay processing job flow', () => {
     api.getExportJob.mockResolvedValue({ jobId: 'e1', status: 'READY', phase: null, total: 2, processed: 2, duplicates: 0, failures: 0, filename: 'x.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     await replay.startExportJob('aggregate')
     // 关键：不重新上传（body=null）、带 processingJobId；无覆盖时 teamNamesJson=null
-    expect(api.createExportJob).toHaveBeenCalledWith(null, 'aggregate', 'p1', null)
+    expect(api.createExportJob).toHaveBeenCalledWith('aggregate', 'p1', null)
     await vi.advanceTimersByTimeAsync(0)
     expect(replay.exportJob.value.status).toBe('READY')
   })
@@ -1120,8 +1197,7 @@ describe('useReplay processing job flow', () => {
       summary: { 'clan:CHRD': 'CHRD A队' }
     })
     expect(api.createExportJob).toHaveBeenCalledTimes(1)
-    const [body, mode, jobId, teamNamesJson] = api.createExportJob.mock.calls[0]
-    expect(body).toBeNull() // 复用 processingJobId：不重新上传
+    const [mode, jobId, teamNamesJson] = api.createExportJob.mock.calls[0]
     expect(mode).toBe('aggregate')
     expect(jobId).toBe('p1')
     expect(JSON.parse(teamNamesJson)).toEqual({
