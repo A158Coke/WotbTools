@@ -1,6 +1,6 @@
 <!--
   AI 复盘 Workspace 面板（单页 Workspace 改造）。
-  从 ReconstructionPage 抽出的 AI 复盘核心：SSE 分析流（call1/evidence/call2/autopsy）+ 流式进度 + 结果面板。
+  AI 复盘核心（ReplayPage Workspace 内联）：SSE 分析流（call1/evidence/call2/autopsy）+ 流式进度 + 结果面板。
   不负责页面级登录门禁/自动跳转（由宿主入口把关）；仅在发起请求时经 authedFetch 兜底
   ensureToken + 401/403 处理。目标文件由父组件以 prop 传入（文件始终在 ReplayPage 内存中，
   不重新上传、不跨视图交接）。
@@ -19,8 +19,6 @@ const props = defineProps({
   /** Dataset 引用（plan §36–§37）：两者齐备时走 derived ai-facts，不再上传 replay。 */
   processingJobId: { type: String, default: null },
   sourceId: { type: String, default: null },
-  /** 未登录/401 时回跳视图（ReplayPage Workspace=replay）。 */
-  loginView: { type: String, default: 'replay' },
   /** Dataset 准备失败（父组件 ensureDatasetFor 未能建立引用）时的已本地化错误；空 = 无。 */
   datasetError: { type: String, default: '' }
 })
@@ -98,7 +96,7 @@ watch(() => [props.file, props.processingJobId, props.sourceId], () => {
 async function authedFetch(url, body, { signal } = {}) {
   const valid = await ensureToken(30)
   if (!valid) {
-    login(props.loginView)
+    login('replay')
     throw new Error(t('recon.auth_required'))
   }
   const accessToken = token()
@@ -106,7 +104,7 @@ async function authedFetch(url, body, { signal } = {}) {
   if (typeof body === 'string') headers['Content-Type'] = 'application/json'
   const r = await fetch(url, { method: 'POST', headers, body, signal })
   if (r.status === 401) {
-    login(props.loginView)
+    login('replay')
     throw new Error(t('recon.auth_required'))
   }
   if (r.status === 403) {

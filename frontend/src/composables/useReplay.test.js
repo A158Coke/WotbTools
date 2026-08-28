@@ -669,6 +669,75 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
     api.getProcessingJob.mockRejectedValue(new TypeError('Failed to fetch'))
     await expect(replay.requestDirectAction(replay.files.value[0], 'ai')).rejects.toThrow('Failed to fetch')
   })
+
+  // ---- BLOCKER 3.2：authoritative invalidate（invalidateProcessingDatasetJob）与 source poll 的确定性并发 ----
+
+  it('A — invalidate p1：acknowledged p1 poll settle SOURCE_POLL_CANCELLED (exactly once)', async () => {
+    const dP1 = deferred()
+    replay.processingJob.value = { jobId: 'p1', status: 'PROCESSING', total: 1, sources: [{ sourceId: 'r0', status: 'PROCESSING' }] }
+    api.getProcessingJob.mockReturnValueOnce(dP1.promise) // 该 poll 的第一次 GET 挂起
+
+    const pDirect = replay.requestDirectAction(replay.files.value[0], 'ai') // path2 → pollSourceReady('p1','r0')
+    expect(api.getProcessingJob).toHaveBeenCalledTimes(1)
+
+    let settled = null
+    pDirect.catch(e => { settled = e.message })
+    replay.invalidateExpiredProcessingDataset('p1') // authoritative 失效 p1 → 终止 p1 poll
+    await vi.advanceTimersByTimeAsync(0)
+    expect(settled).toBe('SOURCE_POLL_CANCELLED')
+    await expect(pDirect).rejects.toMatchObject({ message: 'SOURCE_POLL_CANCELLED' })
+  })
+
+  it('B — invalidate p1 只终止 p1 poll，p2 poll 存活并 resolve READY', async () => {
+    const fileA = new File(['a'], 'a.wotbreplay')
+    replay.files.value = [fileA]
+    const dP1 = deferred()
+    api.getProcessingJob
+      .mockImplementationOnce(() => dP1.promise) // p1 poll GET (pending)
+      .mockResolvedValueOnce({ jobId: 'p2', status: 'PROCESSING', sources: [{ sourceId: 'r0', status: 'PROCESSING' }] }) // p2 poll 1st GET
+      .mockResolvedValueOnce({ jobId: 'p2', status: 'READY', sources: [{ sourceId: 'r0', status: 'READY' }] }) // p2 poll 2nd GET
+
+    replay.processingJob.value = { jobId: 'p1', status: 'PROCESSING', total: 1, sources: [{ sourceId: 'r0', status: 'PROCESSING' }] }
+    const pP1 = replay.requestDirectAction(fileA, 'ai') // pollSourceReady('p1')
+    expect(api.getProcessingJob).toHaveBeenCalledTimes(1)
+
+    replay.processingJob.value = { jobId: 'p2', status: 'PROCESSING', total: 1, sources: [{ sourceId: 'r0', status: 'PROCESSING' }] }
+    const pP2 = replay.requestDirectAction(fileA, 'ai') // pollSourceReady('p2')
+    expect(api.getProcessingJob).toHaveBeenCalledTimes(2)
+
+    let p1Settled = null
+    pP1.catch(e => { p1Settled = e.message })
+    replay.invalidateExpiredProcessingDataset('p1') // stale p1 失效
+    await vi.advanceTimersByTimeAsync(0)
+    expect(p1Settled).toBe('SOURCE_POLL_CANCELLED') // 只有 p1 poll 被终止
+
+    expect(replay.processingJob.value?.jobId).toBe('p2') // p2 仍为当前 snapshot
+    await vi.advanceTimersByTimeAsync(750) // p2 1st GET PROCESSING → 750ms timer；再触发 2nd GET READY
+    await expect(pP2).resolves.toEqual({ processingJobId: 'p2', sourceId: 'r0' })
+    expect(replay.processingJobId.value).toBeNull()
+  })
+
+  it('C — 失效 stale p1 不影响当前 p2 + resp', async () => {
+    const dP1 = deferred()
+    replay.processingJob.value = { jobId: 'p1', status: 'PROCESSING', total: 1, sources: [{ sourceId: 'r0', status: 'PROCESSING' }] }
+    api.getProcessingJob.mockReturnValueOnce(dP1.promise)
+    const pP1 = replay.requestDirectAction(replay.files.value[0], 'ai') // 造一个 stale p1 poll
+    expect(api.getProcessingJob).toHaveBeenCalledTimes(1)
+
+    replay.processingJobId.value = 'p2'
+    replay.processingJob.value = { jobId: 'p2', status: 'READY', total: 1, sources: [{ sourceId: 'r0', status: 'READY' }] }
+    replay.resp.value = { battles: [{ mapName: 'A' }] }
+
+    let p1Settled = null
+    pP1.catch(e => { p1Settled = e.message })
+    replay.invalidateExpiredProcessingDataset('p1') // stale p1，与 p2 无关
+    await vi.advanceTimersByTimeAsync(0)
+    expect(p1Settled).toBe('SOURCE_POLL_CANCELLED')
+
+    expect(replay.processingJobId.value).toBe('p2') // Dataset identity p2 不受 stale 失效影响
+    expect(replay.processingJob.value?.jobId).toBe('p2') // p2 snapshot 保留
+    expect(replay.resp.value).toEqual({ battles: [{ mapName: 'A' }] }) // resp 保留
+  })
 })
 
 // ---- BLOCKER 1：Processing create single-flight（同一 selection 至多一个 backend Job）----

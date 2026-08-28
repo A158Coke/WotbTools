@@ -1,10 +1,11 @@
 <!--
   战局回放 / 战局重建 Workspace 面板（单页 Workspace 改造）。
-  从 ReconstructionPage 抽出的地图区块核心：/api/replay/map-overview 只解析回放、不调 AI；
+  Dataset-only：读已解析 Processing Job 的 cached map-overview.json（processingJobId + sourceId），
+  不重新上传 replay / 不重新 full process（multipart map-overview 已随 /api/replay/map-overview 废弃为 410）。
   热力/路线/战局回放（MapOverview）。与 AI 复盘解耦——不想跑 AI 复盘时也能看图。
   目标文件由父组件以 prop 传入；file identity 与「是否开始加载」解耦：仅当宿主声明
   active=true（战局回放 capability 已进入，如 ReplayPage 切到 playback tab）且该文件尚未
-  尝试加载时才自动请求 /api/replay/map-overview；独立页默认手动加载。
+  尝试加载时才自动请求 cached map-overview；独立页默认手动加载。
   seekTo 支持 AI 报告时间链接（未加载先拉取、自动展开折叠，MapOverview 收到 seek 后切回放视图）。
 -->
 <script setup>
@@ -27,8 +28,6 @@ const props = defineProps({
   active: { type: Boolean, default: false },
   /** AI 报告时间跳转（秒）；宿主切换到本面板后传入。 */
   seekTo: { type: Number, default: null },
-  /** 未登录/401 时回跳视图。 */
-  loginView: { type: String, default: 'replay' },
   /** Dataset 准备失败（父组件 ensureDatasetFor 未能建立引用）时的已本地化错误；空 = 无。 */
   datasetError: { type: String, default: '' }
 })
@@ -46,7 +45,7 @@ const datasetReady = computed(() => !!props.file && !!props.processingJobId && !
 async function authedFetch(url, body, { signal } = {}) {
   const valid = await ensureToken(30)
   if (!valid) {
-    login(props.loginView)
+    login('replay')
     throw new Error(t('recon.auth_required'))
   }
   const accessToken = token()
@@ -54,7 +53,7 @@ async function authedFetch(url, body, { signal } = {}) {
   if (typeof body === 'string') headers['Content-Type'] = 'application/json'
   const r = await fetch(url, { method: 'POST', headers, body, signal })
   if (r.status === 401) {
-    login(props.loginView)
+    login('replay')
     throw new Error(t('recon.auth_required'))
   }
   if (r.status === 403) {

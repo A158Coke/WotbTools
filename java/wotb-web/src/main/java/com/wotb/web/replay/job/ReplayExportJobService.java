@@ -153,9 +153,6 @@ public class ReplayExportJobService {
             // 绝不在此创建 scheduler 之外的 full processing。
             throw ReplayLegacyEndpoints.gone();
         }
-        if (processingStore == null) {
-            throw new IllegalStateException("PROCESSING_STORE_UNAVAILABLE");
-        }
         final ReplayProcessingJob acquiredJob = processingStore.acquireForExport(processingJobId);
         if (acquiredJob == null) {
             final ReplayProcessingJob existing = processingStore.get(processingJobId);
@@ -227,7 +224,7 @@ public class ReplayExportJobService {
                 // QUEUED 任务已被从 executor queue 移除、Runnable 永不执行 → worker 不会调用
                 // finishTerminal；在请求线程直接记录终态 observability（exactly once），
                 // 并释放对 Processing result 的引用（worker 不会运行来 release）。
-                if (job.processingJobId() != null && processingStore != null) {
+                if (job.processingJobId() != null) {
                     processingStore.release(job.processingJobId());
                 }
                 finishTerminalQueuedCancel(job);
@@ -320,9 +317,7 @@ public class ReplayExportJobService {
             finishTerminal(job, startNanos);
         } finally {
             // Export 终态（含取消/失败）后释放引用，允许 Processing result 被 TTL 清理。
-            if (processingStore != null) {
-                processingStore.release(processingJob.jobId());
-            }
+            processingStore.release(processingJob.jobId());
         }
     }
 

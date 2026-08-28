@@ -82,8 +82,7 @@ export function useReplay() {
    */
   let processingStart = null
   /** source-ready poll 生命周期注册表（BLOCKER：selection change / cancel / teardown 后全部终止）。 */
-  const sourcePollTimers = new Set()
-  const sourcePollAborts = new Set()
+  const sourcePolls = new Set()
   /** 已完成解析的 Processing Job id（供 Export 复用 result，不重新上传/processFull）。 */
   const processingJobId = ref(null)
   let processingPollTimer = null
@@ -128,7 +127,7 @@ export function useReplay() {
    * 当前展示的 result 是否与当前 files selection 一致（export eligibility）：
    * processingJobId 与 resp 只会在「READY 自动加载」时成对设置、在 updateFiles 时成对清除，
    * 因此非 null 即代表「当前结果 = 当前文件选择」，可安全复用该 dataset 导出；
-   * 否则 Export 必须走 multipart 上传当前 files 路径，绝不静默导出旧 dataset。
+   * 否则（processingJobId 为空）Export 拒绝（require_processing），无 multipart 回退。
    */
   const resultMatchesSelection = computed(() => !!processingJobId.value && !!resp.value)
 
@@ -159,7 +158,7 @@ export function useReplay() {
     activeTab.value = 'aggregate'
     processingError.value = ''
     stopProcessingPolling()
-    stopSourcePolls()
+    stopAllSourcePolls()
     const job = processingJob.value
     processingJob.value = null
     if (processingStart) {
@@ -191,15 +190,23 @@ export function useReplay() {
   }
 
   /** 终止全部 source-ready poll（timer + abort），旧 poll 不得再写当前状态。 */
-  function stopSourcePolls() {
-    for (const timer of sourcePollTimers) {
-      clearTimeout(timer)
+  function stopAllSourcePolls() {
+    for (const entry of [...sourcePolls]) {
+      if (entry.timer) clearTimeout(entry.timer)
+      entry.controller.abort()
     }
-    sourcePollTimers.clear()
-    for (const ac of sourcePollAborts) {
-      ac.abort()
+    sourcePolls.clear()
+  }
+
+  /** 终止指定 Processing Job 的 source-ready poll（其余 job 的 poll 不受影响）。 */
+  function stopSourcePollsForJob(jobId) {
+    for (const entry of [...sourcePolls]) {
+      if (entry.jobId === jobId) {
+        if (entry.timer) clearTimeout(entry.timer)
+        entry.controller.abort()
+        sourcePolls.delete(entry)
+      }
     }
-    sourcePollAborts.clear()
   }
 
   async function pollProcessingJob(onColumnsInit) {
@@ -350,7 +357,7 @@ export function useReplay() {
         return { jobId: created.jobId, stale: true }
       }
       stopProcessingPolling() // BLOCKER 1.5：新主 poll 前确保旧 interval 已终止（无 lost interval）
-      stopSourcePolls() // 新 job 绑定：终止任何旧 source-ready poll（其 jobId 已失效）
+      stopAllSourcePolls() // 新 job 绑定：终止任何旧 source-ready poll（其 jobId 已失效）
       processingJob.value = {
         jobId: created.jobId,
         status: created.status || 'QUEUED',
@@ -410,40 +417,36 @@ export function useReplay() {
 
   /** 轮询直到指定 source READY（Direct Capability，plan §40–§43）。 */
   function pollSourceReady(jobId, sourceId) {
-    const ac = new AbortController()
-    sourcePollAborts.add(ac)
-    let timer = null
-    let settled = false
+    const entry = { jobId, sourceId, controller: new AbortController(), timer: null, settled: false }
+    sourcePolls.add(entry)
     let resolve
     let reject
     const cleanup = () => {
-      sourcePollAborts.delete(ac)
-      if (timer) {
-        sourcePollTimers.delete(timer)
-        timer = null
+      sourcePolls.delete(entry)
+      if (entry.timer) {
+        entry.timer = null
       }
     }
     /** 唯一 terminal：resolve 至多一次，settle 后立即释放 registry（timer + abort）。 */
     const resolveOnce = (value) => {
-      if (settled) return
-      settled = true
+      if (entry.settled) return
+      entry.settled = true
       cleanup()
       resolve(value)
     }
     /** 唯一 terminal：reject 至多一次，settle 后立即释放 registry（timer + abort）。 */
     const rejectOnce = (error) => {
-      if (settled) return
-      settled = true
+      if (entry.settled) return
+      entry.settled = true
       cleanup()
       reject(error)
     }
-    // 取消（stopSourcePolls / teardown）必须立刻 settle：GET pending、timer 等待期间
-    // abort 都不能让外层 Promise 永久 pending（迟到 response 一律 pure discard）。
-    ac.signal.addEventListener('abort', () => {
-      if (timer) {
-        clearTimeout(timer)
-        sourcePollTimers.delete(timer)
-        timer = null
+    // 取消（stopAllSourcePolls / stopSourcePollsForJob / teardown）必须立刻 settle：GET pending、
+    // timer 等待期间 abort 都不能让外层 Promise 永久 pending（迟到 response 一律 pure discard）。
+    entry.controller.signal.addEventListener('abort', () => {
+      if (entry.timer) {
+        clearTimeout(entry.timer)
+        entry.timer = null
       }
       rejectOnce(new Error('SOURCE_POLL_CANCELLED'))
     }, { once: true })
@@ -451,7 +454,7 @@ export function useReplay() {
       resolve = res
       reject = rej
       const poll = async () => {
-        if (ac.signal.aborted) {
+        if (entry.controller.signal.aborted) {
           rejectOnce(new Error('SOURCE_POLL_CANCELLED'))
           return
         }
@@ -461,7 +464,7 @@ export function useReplay() {
         } catch (e) {
           // GET 失败：取消已发生 → 一律以本地 cancellation settle（迟到 reject 不得把
           // 网络错误写成当前用户错误）；未取消 → 原样传播。
-          if (ac.signal.aborted) {
+          if (entry.controller.signal.aborted) {
             rejectOnce(new Error('SOURCE_POLL_CANCELLED'))
           } else {
             rejectOnce(e)
@@ -469,7 +472,7 @@ export function useReplay() {
           return
         }
         // 迟到响应（await 期间已取消）：pure discard，外层 Promise 以 cancellation settle。
-        if (ac.signal.aborted) {
+        if (entry.controller.signal.aborted) {
           rejectOnce(new Error('SOURCE_POLL_CANCELLED'))
           return
         }
@@ -486,8 +489,7 @@ export function useReplay() {
           rejectOnce(new Error('SOURCE_NOT_READY'))
           return
         }
-        timer = setTimeout(poll, 750)
-        sourcePollTimers.add(timer)
+        entry.timer = setTimeout(poll, 750)
       }
       poll()
     })
@@ -522,18 +524,9 @@ export function useReplay() {
         if (!expired) {
           throw e
         }
-        // authoritative GET 已确认该 job 过期：processingJobId（dataset reference）必须失效。
-        // 若当前 processingJob snapshot 也指向同一 jobId，它已不可信，必须一并失效并终止其
-        // poll / source-ready poll；否则下一步会从 READY snapshot 重新返回已过期的 p1。
-        // 仅失效 dataset identity，不清空 resp（保留仍可安全展示的用户解析结果）。
-        const expiredJobId = processingJobId.value
-        processingJobId.value = null
-        const snapshot = processingJob.value
-        if (snapshot && snapshot.jobId === expiredJobId) {
-          processingJob.value = null
-          stopProcessingPolling()
-          stopSourcePolls()
-        }
+        // authoritative GET 已确认该 job 过期：走单一权威失效（processingJobId / snapshot /
+        // 绑定 poll 均失效），不清空 resp（保留仍可安全展示的用户解析结果）。
+        invalidateProcessingDatasetJob(processingJobId.value)
       }
     }
     // 2) 当前 active job：source READY 直接返回；仍在处理则等自己的 sourceId
@@ -577,7 +570,7 @@ export function useReplay() {
     try {
       await api.cancelProcessingJob(job.jobId)
       stopProcessingPolling()
-      stopSourcePolls()
+      stopAllSourcePolls()
       processingJob.value = { ...job, status: 'CANCELLED' }
       loading.value = false
     } catch (e) {
@@ -587,29 +580,33 @@ export function useReplay() {
 
   function dismissProcessingJob() {
     stopProcessingPolling()
-    stopSourcePolls()
+    stopAllSourcePolls()
     processingJob.value = null
     processingError.value = ''
     // 注意：processingJobId 保留（READY 后供 Export 复用）；重新解析时会覆盖。
   }
 
   /**
-   * 权威 Dataset 失效（BLOCKER @164）：后端已用 JOB_NOT_FOUND authoritatively 证明该 job 不存在。
-   * 仅当 jobId 命中当前 Dataset identity（processingJobId）或当前 processingJob snapshot 时才失效，
-   * 绝不影响其它 generation/job。保留 resp（仍可安全展示已解析结果）；不改 files / selectionRevision；
-   * 不自动 create 新 Processing Job。
+   * 权威 Dataset 失效（单点，BLOCKER 3.1）：后端已用 JOB_NOT_FOUND authoritatively 证明该 job 不存在。
+   * 仅当 jobId 命中当前 Dataset identity（processingJobId）、当前 processingJob snapshot 或仍在
+   * poll 绑定的 job 时才失效，绝不影响其它 generation/job。保留 resp（仍可安全展示已解析结果）；
+   * 不改 files / selectionRevision；不自动 create 新 Processing Job。
    */
-  function invalidateExpiredProcessingDataset(jobId) {
+  function invalidateProcessingDatasetJob(jobId) {
     if (!jobId) return
     const wasCurrentDataset = processingJobId.value === jobId
     const hadSnapshot = processingJob.value?.jobId === jobId
     if (wasCurrentDataset) processingJobId.value = null
     if (hadSnapshot) processingJob.value = null
     if (hadSnapshot || processingPollJobId === jobId) {
-      // 终止属于该过期 job 的 processing / source poll（仅当 poll 绑定该 jobId）。
       stopProcessingPolling()
-      stopSourcePolls()
     }
+    stopSourcePollsForJob(jobId)
+  }
+
+  /** 权威 Dataset 失效（别名，兼容外部调用点）。 */
+  function invalidateExpiredProcessingDataset(jobId) {
+    invalidateProcessingDatasetJob(jobId)
   }
 
   // ---- Export Job 流程 ----
@@ -704,7 +701,7 @@ export function useReplay() {
 
   onUnmounted(() => {
     stopProcessingPolling()
-    stopSourcePolls()
+    stopAllSourcePolls()
     stopExportPolling()
     // BLOCKER 1C：owned 非终态 active Job（QUEUED/PROCESSING）必须 best-effort cancel；
     // READY 不 cancel（已不消耗 parse CPU，由 TTL lifecycle 管理）。

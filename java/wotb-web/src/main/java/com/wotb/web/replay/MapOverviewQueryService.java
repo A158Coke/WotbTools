@@ -5,7 +5,6 @@ import com.wotb.web.replay.dto.MapOverview;
 import com.wotb.web.replay.job.ReplayArtifactWriter;
 import com.wotb.web.replay.job.ReplayProcessingJob;
 import com.wotb.web.replay.job.ReplayProcessingJobStore;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -22,9 +21,7 @@ public class MapOverviewQueryService {
 
     private final ReplayProcessingJobStore processingStore;
 
-    @Autowired
-    public MapOverviewQueryService(
-            @Autowired(required = false) final ReplayProcessingJobStore processingStore) {
+    public MapOverviewQueryService(final ReplayProcessingJobStore processingStore) {
         this.processingStore = processingStore;
     }
 
@@ -37,9 +34,6 @@ public class MapOverviewQueryService {
         // BLOCKER 4：缺失引用 → 400（controller 已前置校验；此处为防御，杜绝 null 进 store NPE→500）。
         if (processingJobId == null || processingJobId.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "DATASET_REFERENCE_REQUIRED");
-        }
-        if (processingStore == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "DATASET_UNAVAILABLE");
         }
         final ReplayProcessingJob job = processingStore.acquireForSource(processingJobId);
         if (job == null) {

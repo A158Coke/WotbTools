@@ -81,7 +81,7 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 未显式声明的 `/api/**` 默认拒绝；`boost-manager` 仅能访问 `/api/admin/boost/**`。
 
 
-列定义由后端 `/api/preview` 响应中的 `playerColumns`/`aggregateColumns` 字段和 `/api/columns` 提供（纯英文 key）。
+列定义由后端 `GET /api/replay/processing-jobs/{jobId}/result` 响应中的 `playerColumns`/`aggregateColumns` 字段和 `/api/columns` 提供（纯英文 key）。
 前端用 `vue-i18n` 三语 locale（`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`）映射显示名，
 导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx 表头。回放页列选择器会把单场/汇总两套列顺序与可见性记到 `localStorage`，
 并在后端新增列时自动补齐缺失键。详见 [DEVELOPER_GUIDE.md](../docs/DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
@@ -95,7 +95,9 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 单场玩家表直接包含 `contribution`/`kast`/`impact` 列，汇总表包含跨场 `contribution`/`kast`/`impact`/`multi_damage_rate`/`traded_deaths`，
 不存在独立 `/extended` 页面、`/api/performance` 端点或「战斗表现」tab。
 
-### `POST /api/preview`
+### `POST /api/preview`（**已废弃** → `410 REPLAY_LEGACY_DEPRECATED`）
+
+> **已废弃**：同步 `/api/preview` 已随 Replay Processing V2 移除（返回 `410 REPLAY_LEGACY_DEPRECATED`）。列定义 / 战绩 / 跨场汇总 / League Rating 一律由 `POST /api/replay/processing-jobs` 创建 Job + `GET /api/replay/processing-jobs/{jobId}/result` 读取（见下文）。以下为原契约（保留作历史参考）。
 
 `multipart/form-data`，字段名为 `files`，可上传一个或多个 `.wotbreplay`。
 每个文件走统一完整处理链（`DefaultReplayProcessingFacade` full），同一请求生命周期内只解析一次：
@@ -123,21 +125,9 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 > 评分 core 见 `wotb-core/.../league/`（LeagueRatingCalculator 等），
 > preview/Excel 复用同一评分结果。
 
-### `POST /api/preview`
+### `POST /api/export`（**已废弃** → `410 REPLAY_LEGACY_DEPRECATED`）
 
-`multipart/form-data`，字段名为 `files`，可上传一个或多个 `.wotbreplay`。
-
-入口限制：最多 100 个文件，单文件不超过 20 MiB，请求合计不超过 200 MiB；每个应用实例默认最多同时处理 2 个解析任务（`REPLAY_MAX_CONCURRENT_JOBS` 可调），容量满返回 HTTP 503 + `REPLAY_BUSY`。ZIP、pickle、protobuf、单场玩家数与事件流包/扫描次数另有独立预算。
-
-返回：
-
-- 去重后的战斗列表。
-- 每场玩家数据。
-- 多场上传时的跨场汇总。
-- 重复文件与失败文件信息。
-- 列定义。
-
-### `POST /api/export`
+> **已废弃**：同步 `/api/export` 已随 Replay Processing V2 移除（返回 `410 REPLAY_LEGACY_DEPRECATED`）。导出一律用 `POST /api/replay/export-jobs` 异步 Job（复用 Processing Job result，不重新上传 / 重新 processFull）。以下为原契约（保留作历史参考）。
 
 `multipart/form-data`，字段名为 `files`。可选 `?mode=aggregate`（默认）或 `?mode=each`。
 
@@ -177,7 +167,10 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 TTL 随 job 目录清理）。Dataset Lease：Export / AI / Playback 读取前 `acquire`（引用计数
 +1，TTL 清理跳过），结束后 `release`；acquire 后任何失败都释放引用（不泄漏 refcount）。
 临时输入目录由 `REPLAY_PROCESSING_JOB_DIR` 管理（TTL 清理 + 启动孤儿清理）。旧同步
-`POST /api/preview` 保留（向后兼容，deprecated）。
+`POST /api/preview` / `POST /api/export` 已随 V2 移除（返回 `410 REPLAY_LEGACY_DEPRECATED`；
+导出改走 `/api/replay/export-jobs` 异步 Job）。
+
+> **容量边界**：全局 `ReplayCapacityLimiter`（`REPLAY_MAX_CONCURRENT_JOBS`，默认 2，与 HoF/Hundred/Mark3 共享）是「同一实例同一时刻执行回放解析任务」的独立许可，容量满由 `/api/replay/*` 返回 `503 REPLAY_BUSY`；它与 Processing 调度器解析容量（`REPLAY_PARSE_MAX_CONCURRENT`）是**两个不同维度**——前者限制产品域全量解析，后者只限制 Processing Job 的 parse worker，不重复计费、不存在第二套并行处理。
 
 ### AI 复盘与批量处理（wotbtools-user / wotbtools-admin）
 

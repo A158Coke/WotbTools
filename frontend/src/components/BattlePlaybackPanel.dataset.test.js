@@ -26,8 +26,7 @@ describe('BattlePlaybackPanel dataset request', () => {
         file: { name: 'a.wotbreplay' },
         processingJobId: 'p1',
         sourceId: 'r0',
-        active: true,
-        loginView: 'replay'
+        active: true
       },
       global: {
         mocks: { $t: key => key },
@@ -66,7 +65,7 @@ describe('BattlePlaybackPanel dataset request', () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 })
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mount(BattlePlaybackPanel, {
-      props: { file: { name: 'a.wotbreplay' }, processingJobId: null, sourceId: null, active: true, loginView: 'replay' },
+      props: { file: { name: 'a.wotbreplay' }, processingJobId: null, sourceId: null, active: true },
       global: {
         mocks: { $t: key => key },
         stubs: { MapOverview: { template: '<div class="map-stub" />' } }
@@ -89,7 +88,7 @@ describe('BattlePlaybackPanel dataset request', () => {
     const wrapper = mount(BattlePlaybackPanel, {
       props: {
         file: { name: 'a.wotbreplay' }, processingJobId: null, sourceId: null,
-        datasetError: 'workspace.dataset_prepare_failed', active: true, loginView: 'replay'
+        datasetError: 'workspace.dataset_prepare_failed', active: true
       },
       global: {
         mocks: { $t: key => key },
@@ -127,7 +126,6 @@ describe('BattlePlaybackPanel Dataset identity reset（BLOCKER 1.2）', () => {
         processingJobId: 'p1',
         sourceId: 'r0',
         active: true,
-        loginView: 'replay',
         ...props
       },
       global: {
