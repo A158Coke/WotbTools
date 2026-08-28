@@ -39,7 +39,7 @@ public record AiChatRequest(
         if (callTimeoutSec != null && callTimeoutSec <= 0) {
             throw new IllegalArgumentException("callTimeoutSec must be positive when provided");
         }
-        // 输出格式契约（docs/current-plan.md §6）：未显式指定一律 TEXT，
+        // 输出格式契约（docs/architecture/ai-review.md §6）：未显式指定一律 TEXT，
         // 保证存量请求（Player/Pre-battle/Harness/Autopsy）行为等价，绝不静默进入 JSON mode。
         responseFormat = responseFormat == null ? AiResponseFormat.TEXT : responseFormat;
     }

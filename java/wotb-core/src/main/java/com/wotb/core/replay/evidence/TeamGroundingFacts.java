@@ -21,7 +21,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Team Review Grounding Facts（确定性，Backend 唯一事实源投影，docs/current-plan.md
+ * Team Review Grounding Facts（确定性，Backend 唯一事实源投影，docs/features/team-ai-review.md
  * Natural Coach 轮 §9/§10/§11）。
  * <p>从权威结算 + 已验证 canonical {@link BattleTimeline} 提取<b>带稳定证据编号</b>的
  * 事实清单，供：① 输入 prompt（渲染 GROUNDING FACTS 段，LLM 在 structured claims 中引用

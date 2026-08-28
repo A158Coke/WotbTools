@@ -611,7 +611,7 @@ public class SpringAiChatGateway implements AiChatGateway {
             recordRetryOutcome(request.analysisMode(),
                     retryCount == 0 ? "no_retry" : "failure_after_retry");
         }
-        // 终态失败事件（docs/current-plan.md §42）：attempt 为该请求已执行的尝试数。
+        // 终态失败事件（docs/architecture/ai-review.md §42）：attempt 为该请求已执行的尝试数。
         logUpstreamFailed(request, failure, retryCount + 1);
         return failure;
     }
@@ -686,7 +686,7 @@ public class SpringAiChatGateway implements AiChatGateway {
         options.model(model);
         options.maxTokens(request.maxOutputTokens());
         options.extraBody(extraBody);
-        // Per-request output format（docs/current-plan.md §8/§10）：JSON_OBJECT → 原生
+        // Per-request output format（docs/architecture/ai-review.md §8/§10）：JSON_OBJECT → 原生
         // response_format=json_object；TEXT 不发送 response_format（最小 provider surface，
         // 绝不全局污染连接级 model options，§9）。
         if (request.responseFormat() == AiResponseFormat.JSON_OBJECT) {
@@ -948,7 +948,7 @@ public class SpringAiChatGateway implements AiChatGateway {
     }
 
 
-    // ===== AI Review 全链路事件日志（docs/current-plan.md §42/§43） =====
+    // ===== AI Review 全链路事件日志（docs/architecture/ai-review.md §42/§43） =====
 
     private void logUpstreamStarted(final AiChatRequest request, final String model,
                                     final String correlationId, final int attempt,

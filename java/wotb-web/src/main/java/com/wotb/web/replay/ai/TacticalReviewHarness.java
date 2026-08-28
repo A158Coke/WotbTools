@@ -33,7 +33,7 @@ import java.util.function.LongSupplier;
  * 以结算级独立 TEAM_AUTOPSY 调用执行。</p>
  * <p>降级阶梯：非 ZH / 特征不可用 / Call #1 失败 / 无证据 → 旧路径（保持现有单 Call
  * 路径为兜底，用户可感知行为不倒退）。</p>
- * <p><b>hard reject（docs/current-plan.md §3，PR #102 review 已确认）</b>：无重建 /
+ * <p><b>hard reject（docs/architecture/ai-review.md §3，PR #102 review 已确认）</b>：无重建 /
  * 录像者未解析 / canonical timeline 不可用 → 抛 {@code AiTimelineUnusableException}，
  * <b>不</b>走旧路径、<b>不</b>调用 LLM（禁止 settlement-only fallback）。</p>
  */
@@ -118,7 +118,7 @@ public class TacticalReviewHarness {
         if (!preBattleService.isConfigured()) {
             return new HarnessOutcome(fallback(result, language, "AI_NOT_CONFIGURED", listener), null);
         }
-        // docs/current-plan.md §3：无 canonical timeline 可用 → 拒绝 AI Review（不走 settlement-only fallback）
+        // docs/architecture/ai-review.md §3：无 canonical timeline 可用 → 拒绝 AI Review（不走 settlement-only fallback）
         if (result.reconstruction() == null) {
             LOGGER.info("Harness rejecting AI review: NO_RECONSTRUCTION (timeline unusable)");
             throw new AiTimelineUnusableException("NO_RECONSTRUCTION");
@@ -190,7 +190,7 @@ public class TacticalReviewHarness {
                 config.contextWindowTokens(),
                 config.maxOutputTokens(),
                 config.promptSafetyMarginTokens());
-        // Context 可观测性（docs/current-plan.md 38/39）：低基数 section token 估算 + 完成计数
+        // Context 可观测性（docs/architecture/ai-review.md 38/39）：低基数 section token 估算 + 完成计数
         if (meterRegistry != null && prepared.sectionTokens() != null) {
             prepared.sectionTokens().forEach((section, tokens) ->
                     meterRegistry.counter(

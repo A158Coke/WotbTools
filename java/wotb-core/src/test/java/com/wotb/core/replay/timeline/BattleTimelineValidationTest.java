@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Timeline validation（docs/current-plan.md §4）：关键条件缺失 → 拒绝，不进入 AI Review。
+ * Timeline validation（docs/architecture/battle-timeline.md §4）：关键条件缺失 → 拒绝，不进入 AI Review。
  */
 class BattleTimelineValidationTest {
 

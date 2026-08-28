@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * EpisodeDetector（docs/current-plan.md §23/§24）：覆盖整场、连续、无重叠、deterministic、
+ * EpisodeDetector（docs/architecture/battle-timeline.md §23/§24）：覆盖整场、连续、无重叠、deterministic、
  * 不机械固定 30 秒切块；Episode 与 Window 分离。
  */
 class EpisodeDetectorTest {

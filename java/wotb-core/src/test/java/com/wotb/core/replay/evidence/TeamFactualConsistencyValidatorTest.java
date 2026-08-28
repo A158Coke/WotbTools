@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Natural Coach 轮：Team Review 事实一致性 Validator（G1–G5 golden cases + V1–V6 检查项）。
- * <p>核心原则（docs/current-plan.md §11–§15）：Validator 只检查「LLM 有没有改写 Backend 事实」，
+ * <p>核心原则（docs/features/team-ai-review.md §11–§15）：Validator 只检查「LLM 有没有改写 Backend 事实」，
  * 绝不判断战术观点——G3/G5 与「应该先回收/保持分兵/换血」等 coaching judgment 必须 PASS。</p>
  */
 class TeamFactualConsistencyValidatorTest {
@@ -879,7 +879,7 @@ class TeamFactualConsistencyValidatorTest {
         final List<FactConflict> conflicts = TeamFactualConsistencyValidator.validate(env, facts());
         assertTrue(hasCheck(conflicts, "OUTPUT"), "空正文必须 FAIL: " + conflicts);
     }
-    // ===== docs/current-plan.md §47：conflict reasonCode 机器分类 =====
+    // ===== docs/features/team-ai-review.md §47：conflict reasonCode 机器分类 =====
 
     @Test
     void unknownEvidenceConflictCarriesReasonCode() {

@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 确定性 Episode 切分器（docs/current-plan.md §23）。
+ * 确定性 Episode 切分器（docs/architecture/battle-timeline.md §23）。
  * <p>禁止固定 30 秒机械切块；关键战术变化优先于固定长度：
  * 强信号（首次接敌/阵亡/存活人数变化/点数变化/信息空窗 HP 差异）触发切分，
  * 同时受时长约束（首选 15–45s，硬最小 8s，硬最大 60s）。覆盖整场、连续、无重叠。</p>

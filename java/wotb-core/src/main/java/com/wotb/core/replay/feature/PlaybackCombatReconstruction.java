@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Playback 战斗事实重建（docs/current-plan.md §11–§17）：把「攻击通知（Type-8，raw 值语义未证明）」
+ * Playback 战斗事实重建（docs/features/battle-playback.md §11–§17）：把「攻击通知（Type-8，raw 值语义未证明）」
  * 与「权威 HP 变化（Type-7 propId=3，signed i16 绝对当前 HP）」在语义上分离。
  *
  * <p>产出：</p>

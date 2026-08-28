@@ -19,7 +19,7 @@ import java.util.Map;
 /**
  * 按实体聚合的 battle-relative 事件采样索引（构建 Timeline 的确定性事实源）。
  * <p>所有采样按 battle-relative 时间升序排序；查询 lastAtOrBefore 只返回 time ≤ t 的采样——
- * 天然满足 anti-future-leak invariant（docs/current-plan.md §10）。</p>
+ * 天然满足 anti-future-leak invariant（docs/architecture/battle-timeline.md §10）。</p>
  */
 final class EntityIndex {
 

@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * TimelineFocusWindowSelector（docs/current-plan.md §4/§5/§13-B/C/D）：
+ * TimelineFocusWindowSelector（docs/architecture/battle-timeline.md §4/§5/§13-B/C/D）：
  * 连续减员窗口必须成为 Top Focus Window；正常交火/点数 swing 也能选出有意义窗口；
  * 稀疏证据不编造；不重复 delta、不 future leak。
  */
