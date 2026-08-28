@@ -253,7 +253,7 @@ final class PlayerSummaryBuilder {
         final StringBuilder sb = new StringBuilder(4096);
         final var battle = ctx.battle();
         final var features = ctx.features();
-        // 基础 summary 构建期就统一读取 partial 门禁：killVictims 等事件流观测伤害段一并抑制
+        // 基础 summary 构建期就统一读取 partial 门禁：事件流观测伤害段一并抑制
         final boolean observedDamagePartial = hasObservedDamagePartial(ctx);
 
         int authoritativeDealt = 0;

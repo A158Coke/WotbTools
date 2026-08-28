@@ -6,6 +6,7 @@ import com.wotb.web.replay.dto.MapOverview;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -27,7 +28,8 @@ public final class AoiPositionCoverage {
      *
      * @param allSegments  全部 canonical AoI 观测段（battle-relative；来源 ReplayAoiLifecycle.build）
      * @param entityIds    该账号的实体 ID 集合
-     * @param positionTimes 该账号实体的位置样本时间（battle-relative，升序，可含跨实体）
+     * @param positionTimesByEntity 各实体的位置样本时间（battle-relative，升序；按 entityId 分组，
+     *                             保留 entity provenance——段只与<b>同 entity</b> 的样本相交，绝不跨实体替证）
      * @param deathSec     阵亡时刻（可为 null = 未阵亡/未知）
      * @param duration     战斗时长（秒）
      * @return 位置覆盖区间（按 start 升序、互相不重叠）
@@ -35,11 +37,11 @@ public final class AoiPositionCoverage {
     public static List<MapOverview.PositionInterval> intervals(
             final List<AoiObservationSegment> allSegments,
             final List<Integer> entityIds,
-            final List<Double> positionTimes,
+            final Map<Integer, List<Double>> positionTimesByEntity,
             final Double deathSec,
             final double duration) {
         if (allSegments == null || entityIds == null || entityIds.isEmpty()
-                || positionTimes == null || positionTimes.isEmpty()) {
+                || positionTimesByEntity == null || positionTimesByEntity.isEmpty()) {
             return List.of();
         }
         final Set<Integer> idSet = Set.copyOf(entityIds);
@@ -58,9 +60,11 @@ public final class AoiPositionCoverage {
             if (!(segEnd > segStart - 1e-9)) {
                 continue; // 零长段（无观测）/段被 duration 截到空
             }
-            // 实际位置存在（该段内第一条位置样本）；段内无位置 → 不产生区间
+            // 实际位置存在（该段内第一条<b>同 entity</b> 位置样本）；段内无该实体位置 → 不产生区间。
+            // §P1-1: 只在同 entity 的 sample 中找，防止因 re-entry 出现多个 entity ID 时，另一实体的
+            // position 替本实体证明覆盖（provenance loss）。
             Double firstPos = null;
-            for (final double pt : positionTimes) {
+            for (final double pt : positionTimesByEntity.getOrDefault(seg.entityId(), List.of())) {
                 if (pt < segStart - 1e-9) {
                     continue;
                 }

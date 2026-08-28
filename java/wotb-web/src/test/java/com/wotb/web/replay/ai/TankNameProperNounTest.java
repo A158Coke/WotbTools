@@ -166,7 +166,6 @@ class TankNameProperNounTest {
         victim.team = 2;
         battle.players = List.of(recorder, victim);
         battle.winnerTeam = 1;
-        recorder.killVictims.add(new com.wotb.core.model.KillVictim(2L, 780, 2));
 
         final StringBuilder sb = new StringBuilder();
         PlayerReplayPromptBuilder.appendRecorderDamageExchange(sb, battle, dealtRecon(), recorder);

@@ -28,7 +28,8 @@ public class ReplayPacketDecoderRegistry {
         registry.register(new EntityPropertyDecoder());
         registry.register(new GunMarkerSizeDecoder());
         registry.register(new AimRayStateDecoder());
-        registry.register(new PlaceholderDecoder(35));
+        // §P1-2: Type35 is PROVEN (session decisecond counter low byte); replace the placeholder.
+        registry.register(new SessionDecisecondLowByteDecoder());
         return registry;
     }
 

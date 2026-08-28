@@ -173,16 +173,16 @@ public final class BattlePlaybackAdapter {
             final List<Integer> entityIds,
             final Double deathSec,
             final double duration) {
-        final List<Double> positionTimes = positionTimes(timeline, entityIds);
+        final Map<Integer, List<Double>> positionTimesByEntity = positionTimesByEntity(timeline, entityIds);
         return AoiPositionCoverage.intervals(
-                timeline.aoiSegments(), entityIds, positionTimes, deathSec, duration);
+                timeline.aoiSegments(), entityIds, positionTimesByEntity, deathSec, duration);
     }
 
-    /** 该账号全部实体的位置样本时刻（battle-relative，去重升序）。 */
-    private static List<Double> positionTimes(
+    /** 该账号各实体的位置样本时刻（battle-relative，按 entityId 分组、各自去重升序；保留 entity provenance）。 */
+    private static Map<Integer, List<Double>> positionTimesByEntity(
             final BattleTimeline timeline, final List<Integer> entityIds) {
         final java.util.Set<Integer> idSet = java.util.Set.copyOf(entityIds);
-        final java.util.TreeSet<Double> times = new java.util.TreeSet<>();
+        final Map<Integer, java.util.TreeSet<Double>> byEntity = new HashMap<>();
         if (timeline.frames() != null) {
             for (final BattleFrame frame : timeline.frames()) {
                 for (final FrameVehicle v : frame.vehicles()) {
@@ -192,12 +192,14 @@ public final class BattlePlaybackAdapter {
                     }
                     final Double at = v.position().positionObservedAtSec();
                     if (at != null && Double.isFinite(at)) {
-                        times.add(at);
+                        byEntity.computeIfAbsent(v.entityId(), k -> new java.util.TreeSet<>()).add(at);
                     }
                 }
             }
         }
-        return new ArrayList<>(times);
+        final Map<Integer, List<Double>> out = new HashMap<>();
+        byEntity.forEach((eid, times) -> out.put(eid, new ArrayList<>(times)));
+        return out;
     }
 
     /** §B9：把位置覆盖区间按「权威击毁时刻」收口（击毁后整体剔除、跨越击毁末端 clamp），与 MapOverviewBuilder 同源。 */

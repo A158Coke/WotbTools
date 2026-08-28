@@ -1,7 +1,6 @@
 package com.wotb.core.parse;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Arrays;
@@ -10,7 +9,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 事件流类型提取器：EntityLeave/Position/updateArena/EntityMethod 伤害与击杀归因提取，
+ * 事件流类型提取器：EntityLeave/Position/updateArena/EntityMethod 伤害提取，
  * 含 protobuf 嵌套解析。
  * <p>从 {@link EventStreamReader} 拆出，纯静态工具类。</p>
  */
@@ -235,74 +234,6 @@ final class ReplayEventExtractors {
         return events;
     }
 
-    /**
-     * legacy damage-threshold 击杀归因（§B3）：累计 direct damage 达到结算 damageReceived
-     * 阈值后把攻击者推成 killer candidate。该结果<b>不是权威 kill/death evidence</b>
-     * （Type4 / last position / damage threshold 均不得作为死亡 authority，§B2），
-     * 仅作为 legacy/non-authoritative derived combat attribution 供 RatingV2 等旧消费者。
-     */
-    public static Map<Long, List<EventStreamReader.LegacyKillVictimDamage>> extractLegacyKillVictimAttribution(
-            final List<EventStreamReader.ParsedPacket> packets,
-            final Map<Integer, Long> entityToAccount,
-            final Map<Long, Integer> accountToThreshold) {
-        final List<EventStreamReader.DirectDamageEvent> events = extractDirectDamageEvents(packets, entityToAccount);
-        events.sort(Comparator.comparingDouble(EventStreamReader.DirectDamageEvent::clockSecs));
-
-        final Map<Long, Integer> directTotalByVictim = new HashMap<>();
-        for (final EventStreamReader.DirectDamageEvent event : events) {
-            directTotalByVictim.merge(event.victimAccountId(), event.damage(), Integer::sum);
-        }
-
-        final Map<Long, Integer> cumulativeByVictim = new HashMap<>();
-        final Map<DamagePair, DamageBucket> damageByPair = new HashMap<>();
-        final Map<Long, List<EventStreamReader.LegacyKillVictimDamage>> victimsByKiller = new HashMap<>();
-        final Set<Long> completedVictims = new HashSet<>();
-        for (final EventStreamReader.DirectDamageEvent event : events) {
-            final long victimAccountId = event.victimAccountId();
-            if (completedVictims.contains(victimAccountId)) {
-                continue;
-            }
-
-            final int previousDamage = cumulativeByVictim.getOrDefault(victimAccountId, 0);
-            final int nextDamage = previousDamage + event.damage();
-            cumulativeByVictim.put(victimAccountId, nextDamage);
-
-            if (event.attackerAccountId() != victimAccountId) {
-                final DamagePair pair = new DamagePair(event.attackerAccountId(), victimAccountId);
-                final DamageBucket bucket = damageByPair.computeIfAbsent(pair, ignored -> new DamageBucket());
-                bucket.damage += event.damage();
-                bucket.penetrations++;
-            }
-
-            final Integer receivedThreshold = accountToThreshold.get(victimAccountId);
-            if (receivedThreshold == null || receivedThreshold <= 0) {
-                continue;
-            }
-            final int directTotal = directTotalByVictim.getOrDefault(victimAccountId, 0);
-            if (directTotal < receivedThreshold) {
-                continue;
-            }
-            final int threshold = receivedThreshold;
-            if (threshold <= 0 || previousDamage >= threshold || nextDamage < threshold) {
-                continue;
-            }
-            completedVictims.add(victimAccountId);
-
-            final long killerAccountId = event.attackerAccountId();
-            if (killerAccountId == victimAccountId) {
-                continue;
-            }
-            final DamageBucket bucket = damageByPair.get(new DamagePair(killerAccountId, victimAccountId));
-            if (bucket == null || bucket.damage <= 0 || bucket.penetrations <= 0) {
-                continue;
-            }
-            victimsByKiller.computeIfAbsent(killerAccountId, ignored -> new ArrayList<>())
-                    .add(new EventStreamReader.LegacyKillVictimDamage(killerAccountId, victimAccountId,
-                            bucket.damage, bucket.penetrations));
-        }
-        return victimsByKiller;
-    }
-
     private static EventStreamReader.DirectDamageEvent parseDirectDamageEvent(
             final EventStreamReader.ParsedPacket packet,
             final Map<Integer, Long> entityToAccount) {
@@ -330,14 +261,6 @@ final class ReplayEventExtractors {
             return null;
         }
         return new EventStreamReader.DirectDamageEvent(packet.clockSecs, attackerAccountId, victimAccountId, damage);
-    }
-
-    private record DamagePair(long attackerAccountId, long victimAccountId) {
-    }
-
-    private static final class DamageBucket {
-        private int damage;
-        private int penetrations;
     }
 
     // ---- EntityMethod 解析 ----

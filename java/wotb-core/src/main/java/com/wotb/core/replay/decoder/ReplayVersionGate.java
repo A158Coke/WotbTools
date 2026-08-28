@@ -41,6 +41,14 @@ public final class ReplayVersionGate {
         return v != null && (matches(v, CURRENT_PREFIXES) || matches(v, LEGACY_BASIC_PREFIXES));
     }
 
+    /** Entity-lifecycle observer layout (Type4 leave / Type5 materialization / Type33 announcement):
+     *  current + explicit proved 11.18 legacy only. Unknown/future versions must raw-preserve, not
+     *  unconditionally decode type=4/5/33 into EXACT semantic events that feed canonical AoI. */
+    public static boolean entityLifecycleLayoutAllowed(final String clientVersion) {
+        final String v = normalize(clientVersion);
+        return v != null && (matches(v, CURRENT_PREFIXES) || matches(v, LEGACY_BASIC_PREFIXES));
+    }
+
     /** Whether the current-version 0xFFFE terminal classification may be used. */
     public static boolean verifiedFffeTerminalAllowed(final String clientVersion) {
         return closedSemanticsAllowed(clientVersion);

@@ -461,9 +461,9 @@ public final class BattleTimelineBuilder {
                     Math.max(pos.clock(), turret == null ? -1 : turret.clock()));
         }
 
-        // cumulative damage
-        final int dealt = index.damageDealtAt(entityId, t);
-        final int received = index.damageReceivedAt(entityId, t);
+        // §P0-3: no cumulative damage on the canonical vehicle frame. DamageEvent raw value is NOT
+        // authoritative HP delta; authoritative HP loss lives in PlaybackCombatReconstruction. The
+        // cumulative dealt/received that previously lived here were write-only and never consumed.
 
         final FrameMapState mapState = enricher.enrich(pos);
 
@@ -483,8 +483,6 @@ public final class BattleTimelineBuilder {
                 orientation,
                 mapState,
                 knowledge,
-                dealt,
-                received,
                 destroyed.destroyed() ? destroyed.destroyedAtSec() : null,
                 List.of());
     }

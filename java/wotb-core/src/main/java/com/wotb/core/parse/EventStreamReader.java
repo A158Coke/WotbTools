@@ -25,12 +25,6 @@ public final class EventStreamReader {
                                     long victimAccountId, int damage) {
     }
 
-    /** Damage dealt by one attacker to one victim before the victim is inferred dead
-     * （legacy/non-authoritative derived combat attribution，§B3；不得作为权威 kill evidence）。 */
-    public record LegacyKillVictimDamage(long killerAccountId, long victimAccountId,
-                                         int damage, int penetrations) {
-    }
-
     public static final class EventStream {
         public final String clientVersion;
         public final String clientHash;
@@ -117,7 +111,7 @@ public final class EventStreamReader {
 
     static final int MAX_PACKETS = ReplayPacketParser.MAX_PACKETS;
 
-    // ===== forwarder：解析逻辑已拆至 ReplayPacketParser / ReplayEventExtractors / DeathTimeEstimator =====
+    // ===== forwarder：解析逻辑已拆至 ReplayPacketParser / ReplayEventExtractors =====
 
     public static EventStream read(byte[] data) {
         return ReplayPacketParser.read(data);
@@ -131,12 +125,6 @@ public final class EventStreamReader {
         return ReplayEventExtractors.extractPositions(packets);
     }
 
-    public static double estimateDeathTimeByEntity(
-            int entityId, double battleDurationS, List<EntityLeaveEvent> leaves) {
-        return LegacyDeathHeuristicDiagnostics.estimateDeathTimeByEntity(
-                entityId, battleDurationS, leaves);
-    }
-
     public static Map<Integer, Long> extractEntityToAccountMap(List<ParsedPacket> packets) {
         return ReplayEventExtractors.extractEntityToAccountMap(packets);
     }
@@ -145,50 +133,14 @@ public final class EventStreamReader {
         return ReplayEventExtractors.extractArenaInfo(packets);
     }
 
-    public static Map<Long, Double> estimateDeathTimesByEntityLeaves(
-            List<ParsedPacket> packets, double battleDurationS) {
-        return LegacyDeathHeuristicDiagnostics.estimateDeathTimesByEntityLeaves(
-                packets, battleDurationS);
-    }
-
-    public static Map<Long, Double> estimateDeathTimesByPositions(
-            List<ParsedPacket> packets, double battleDurationS) {
-        return LegacyDeathHeuristicDiagnostics.estimateDeathTimesByPositions(
-                packets, battleDurationS);
-    }
-
-    public static Map<Long, Double> estimateDeathTimesByDamage(
-            final List<ParsedPacket> packets,
-            final Map<Integer, Long> entityToAccount,
-            final Map<Long, Integer> accountToThreshold,
-            final double battleDurationS) {
-        return LegacyDeathHeuristicDiagnostics.estimateDeathTimesByDamage(
-                packets, entityToAccount, accountToThreshold, battleDurationS);
-    }
-
     public static List<DirectDamageEvent> extractDirectDamageEvents(
             final List<ParsedPacket> packets,
             final Map<Integer, Long> entityToAccount) {
         return ReplayEventExtractors.extractDirectDamageEvents(packets, entityToAccount);
     }
 
-    public static Map<Long, List<LegacyKillVictimDamage>> extractLegacyKillVictimAttribution(
-            final List<ParsedPacket> packets,
-            final Map<Integer, Long> entityToAccount,
-            final Map<Long, Integer> accountToThreshold) {
-        return ReplayEventExtractors.extractLegacyKillVictimAttribution(
-                packets, entityToAccount, accountToThreshold);
-    }
-
     public static List<ArenaSnapshot> extractArenaSnapshots(List<ParsedPacket> packets) {
         return ReplayEventExtractors.extractArenaSnapshots(packets);
-    }
-
-    public static double estimateDeathTime(
-            long accountId, boolean survived, double battleDurationS,
-            List<ArenaSnapshot> snapshots) {
-        return LegacyDeathHeuristicDiagnostics.estimateDeathTime(
-                accountId, survived, battleDurationS, snapshots);
     }
 
 }

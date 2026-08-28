@@ -493,14 +493,18 @@ public final class MapOverviewBuilder {
                 com.wotb.core.replay.facts.ReplayAoiLifecycle.build(
                         events, battleStartRawClockSec == null
                                 ? null : battleStartRawClockSec.doubleValue());
-        final List<Double> positionTimes = new ArrayList<>();
+        // §P1-1: 按 entityId 保留位置 provenance（每实体独立升序），段只与同 entity 的样本相交，
+        // 防止 re-entry 多 entity 时另一实体的 position 替本实体证明覆盖。
+        final Map<Integer, List<Double>> positionTimesByEntity = new LinkedHashMap<>();
         for (final int entityId : entityIds) {
+            final List<Double> times = new ArrayList<>();
             for (final Position p : positions.byEntity().getOrDefault(entityId, List.of())) {
-                positionTimes.add(p.timeSec);
+                times.add(p.timeSec);
             }
+            times.sort(Comparator.naturalOrder());
+            positionTimesByEntity.put(entityId, times);
         }
-        positionTimes.sort(Comparator.naturalOrder());
-        return AoiPositionCoverage.intervals(aoiSegments, entityIds, positionTimes, deathSec, duration);
+        return AoiPositionCoverage.intervals(aoiSegments, entityIds, positionTimesByEntity, deathSec, duration);
     }
 
 

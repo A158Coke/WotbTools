@@ -229,7 +229,6 @@ class PlayerSecondPersonAndPerHitDamageTest {
     void aggregateSummaryIsExplicitlyLabelledAsAggregate() {
         final Battle battle = battle();
         final PlayerResult recorder = battle.players.get(0);
-        recorder.killVictims.add(new com.wotb.core.model.KillVictim(ENEMY, 780, 2));
 
         final StringBuilder sb = new StringBuilder();
         PlayerReplayPromptBuilder.appendRecorderDamageExchange(

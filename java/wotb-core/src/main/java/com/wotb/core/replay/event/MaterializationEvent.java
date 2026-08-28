@@ -15,12 +15,13 @@ package com.wotb.core.replay.event;
  * Type5 不等于一次性创建（同一 combat vehicle 可多次物化），也不等于死亡。</p>
  *
  * <p>版本/类作用域：{@code entityTypeId} 与字节偏移 51 是 11.19/类作用域的；
- * 非 {@code entityTypeId=2} 或未知版本只保留 raw，不臆测 HP。</p>
+ * 非 {@code entityTypeId=2} 或未知版本只保留 raw，不臆测 HP。置信度只描述物化 presence
+ * （结构解码成功即 EXACT），与 HP 是否可解独立。</p>
  *
  * @param sequence        事件顺序号
  * @param timestamp       时间戳
  * @param packetType      来源原始 packet type（=5）
- * @param confidence      解码置信度（结构 EXACT；HP 仅在 entityTypeId=2 且版本门禁允许时为 EXACT）
+ * @param confidence      物化 presence 置信度（结构解码成功即 EXACT）；HP 为独立维度（见 currentHp）
  * @param entityId        实体 ID
  * @param entityTypeId    实体类型 ID（2 = combat vehicle；3 = static family；其它未观测）
  * @param currentHp       物化时的当前 HP 快照；null = 未解码/不可信（非 entityTypeId=2 或版本未允许）
