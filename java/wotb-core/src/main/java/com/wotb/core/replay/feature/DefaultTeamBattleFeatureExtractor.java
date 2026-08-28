@@ -162,9 +162,24 @@ public class DefaultTeamBattleFeatureExtractor {
         ).toList();
         final boolean hasUsableTimedEvent = !acceptedEvents.isEmpty();
 
+        // AoI 离开边界（Type4）：成员移动段必须在离开时刻断开（禁止跨 AoI gap 合并/插值）
+        final Map<Integer, List<Double>> leaveTimesByEntity = new LinkedHashMap<>();
+        for (final ReplayEvent event : events) {
+            if (!(event instanceof com.wotb.core.replay.event.EntityRemovedEvent removed)) {
+                continue;
+            }
+            final TacticalTimeResolution res = resolutionByEvent.get(event);
+            if (res == null || !res.isUsable()) {
+                continue;
+            }
+            leaveTimesByEntity.computeIfAbsent(removed.entityId(), k -> new ArrayList<>())
+                    .add((double) res.battleRelativeSec());
+        }
+
         final List<TeamMemberFeatureSet> members = authoritativeMembers.stream()
                 .map(player -> buildMember(
-                        player, entityMapping, timedPositionsByEntity, timedDamages, teamLosses,
+                        player, entityMapping, timedPositionsByEntity, leaveTimesByEntity,
+                        timedDamages, teamLosses,
                         authoritativeMembers, mapCode,
                         deathProxByAcc.getOrDefault(player.accountId, null)))
                 .sorted(Comparator.comparingLong(TeamMemberFeatureSet::accountId)
@@ -431,6 +446,7 @@ public class DefaultTeamBattleFeatureExtractor {
             final PlayerResult player,
             final TeamEntityMapping mapping,
             final Map<Integer, List<TimedTeamPosition>> timedPositionsByEntity,
+            final Map<Integer, List<Double>> leaveTimesByEntity,
             final List<TimedTeamDamage> damageEvents,
             final List<AttributedHpLoss> teamLosses,
             final List<PlayerResult> authoritativeMembers,
@@ -442,14 +458,16 @@ public class DefaultTeamBattleFeatureExtractor {
         final MemberIdentity memberId = MemberIdentity.resolve(player, authoritativeMembers);
         final List<Integer> entityIds =
                 mapping.entityIds(player.accountId, player.nickname);
-        final List<MovementSegment> movements = entityIds.stream()
-                .map(entityId -> timedPositionsByEntity.getOrDefault(entityId, List.of()))
-                .flatMap(timedPositions ->
-                    DefaultPlayerBattleFeatureExtractor
-                            .compressMovements(convertTimedPositions(timedPositions), mapCode).stream())
-                .sorted(Comparator.comparingDouble(MovementSegment::startTime)
-                        .thenComparingDouble(MovementSegment::endTime))
-                .toList();
+        final List<MovementSegment> movements = new ArrayList<>();
+        for (final int entityId : entityIds) {
+            final List<TimedTeamPosition> timedPositions =
+                    timedPositionsByEntity.getOrDefault(entityId, List.of());
+            movements.addAll(DefaultPlayerBattleFeatureExtractor.compressMovements(
+                    convertTimedPositions(timedPositions), mapCode,
+                    leaveTimesByEntity.getOrDefault(entityId, List.of())));
+        }
+        movements.sort(Comparator.comparingDouble(MovementSegment::startTime)
+                .thenComparingDouble(MovementSegment::endTime));
         final DecodeConfidence mappingConfidence = entityIds.stream()
                 .map(mapping::identity)
                 .filter(Objects::nonNull)

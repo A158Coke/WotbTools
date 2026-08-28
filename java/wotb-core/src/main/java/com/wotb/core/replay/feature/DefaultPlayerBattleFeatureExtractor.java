@@ -185,20 +185,69 @@ public class DefaultPlayerBattleFeatureExtractor {
 
     static List<MovementSegment> compressMovements(final List<TimedPosition> positions,
                                                    final String mapCode) {
+        return compressMovements(positions, mapCode, List.of());
+    }
+
+    /**
+     * 压缩移动段（计划 §B10/B9）。
+     *
+     * @param leaveTimes 该实体 Type4 离开时刻（battle-relative 秒，升序）；段在离开边界断开，
+     *                   禁止跨 AoI gap 合并/插值（re-entry 后新位置开启新段）
+     */
+    static List<MovementSegment> compressMovements(final List<TimedPosition> positions,
+                                                   final String mapCode,
+                                                   final List<Double> leaveTimes) {
         // Keep only positions with a resolvable canonical coordinate.
         // INVALID positions (non-finite / beyond clamp tolerance) are unusable movement
         // evidence and must not create fake distance/speed.
         final List<TimedPosition> usable = positions.stream()
                 .filter(tp -> MapRegionResolver.resolve(tp.event().x(), tp.event().z(), mapCode).usable())
+                .sorted(Comparator.comparingDouble(TimedPosition::battleRelativeSec))
                 .toList();
         if (usable.isEmpty()) return List.of();
+        final List<Double> sortedLeaves = leaveTimes == null ? List.of()
+                : leaveTimes.stream().filter(Double::isFinite).sorted().toList();
+        // 按 leave 边界分组：位置时刻严格晚于某个 leave 即进入新观测段
+        final List<List<TimedPosition>> groups = new ArrayList<>();
+        List<TimedPosition> current = new ArrayList<>();
+        int prevLeaveIdx = 0;
+        for (final TimedPosition p : usable) {
+            int leaveIdx = 0;
+            while (leaveIdx < sortedLeaves.size()
+                    && sortedLeaves.get(leaveIdx) < p.battleRelativeSec() - 1e-9) {
+                leaveIdx++;
+            }
+            if (!current.isEmpty() && leaveIdx != prevLeaveIdx) {
+                groups.add(current);
+                current = new ArrayList<>();
+            }
+            current.add(p);
+            prevLeaveIdx = leaveIdx;
+        }
+        if (!current.isEmpty()) {
+            groups.add(current);
+        }
+        final List<MovementSegment> result = new ArrayList<>();
+        for (final List<TimedPosition> group : groups) {
+            result.addAll(compressGroup(group, mapCode));
+        }
+        return result;
+    }
+
+    /** 压缩单个连续观测组（无 AoI gap）为移动段。 */
+    private static List<MovementSegment> compressGroup(final List<TimedPosition> usable,
+                                                       final String mapCode) {
+        if (usable.isEmpty()) {
+            return List.of();
+        }
         if (usable.size() == 1) {
             final TimedPosition only = usable.get(0);
             final float t = only.battleRelativeSec();
             final Vector3 pos = new Vector3(only.event().x(), only.event().y(), only.event().z());
-            return List.of(new MovementSegment(t, t,
+            return List.of(MovementSegment.derived(t, t,
                     MovementType.STATIONARY, pos, pos,
-                    0f, 0f, positionConfidence(usable.subList(0, 1))));
+                    0f, 0f, positionConfidence(usable.subList(0, 1)),
+                    only.event().yaw(), only.event().yaw()));
         }
 
         final List<MovementSegment> result = new ArrayList<>();
@@ -224,14 +273,15 @@ public class DefaultPlayerBattleFeatureExtractor {
                 if (stationary == nextStationary && i - start > 1) continue;
             }
 
-            result.add(new MovementSegment(
+            result.add(MovementSegment.derived(
                     usable.get(start).battleRelativeSec(),
                     usable.get(i).battleRelativeSec(),
                     stationary ? MovementType.STATIONARY : MovementType.MOVING,
                     new Vector3(usable.get(start).event().x(), usable.get(start).event().y(), usable.get(start).event().z()),
                     new Vector3(usable.get(i).event().x(), usable.get(i).event().y(), usable.get(i).event().z()),
                     totalDist, totalDist / segmentTime,
-                    positionConfidence(usable.subList(start, i + 1))));
+                    positionConfidence(usable.subList(start, i + 1)),
+                    usable.get(start).event().yaw(), usable.get(i).event().yaw()));
             start = i;
         }
         return result;

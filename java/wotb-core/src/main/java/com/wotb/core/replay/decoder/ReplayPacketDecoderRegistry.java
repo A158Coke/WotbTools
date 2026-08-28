@@ -30,10 +30,12 @@ public class ReplayPacketDecoderRegistry {
         registry.register(new EntityLeaveDecoder());
         registry.register(new BattleEndDecoder());
         registry.register(new EntityCreateDecoder());
+        // Type 33/5 物化与 AoI 生命周期（materialization + 重物化 HP 快照）
+        registry.register(new MaterializationAnnouncedDecoder());
+        registry.register(new MaterializationDecoder());
         // EntityProperty（Type 7）— 第一阶段做占位
         registry.register(new EntityPropertyDecoder());
-        // Type 5/31/35/39 占位
-        registry.register(new PlaceholderDecoder(5));
+        // Type 31/35/39 占位
         registry.register(new PlaceholderDecoder(31));
         registry.register(new PlaceholderDecoder(35));
         registry.register(new PlaceholderDecoder(39));

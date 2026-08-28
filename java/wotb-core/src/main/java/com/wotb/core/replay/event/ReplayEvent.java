@@ -12,6 +12,8 @@ public sealed interface ReplayEvent
                 HealthChangedEvent,
                 DamageEvent,
                 EntityCreatedEvent,
+                MaterializationAnnouncedEvent,
+                MaterializationEvent,
                 EntityRemovedEvent,
                 VehicleDestroyedEvent,
                 BattleEndedEvent,
@@ -19,6 +21,8 @@ public sealed interface ReplayEvent
                 ParticipantMappingEvent,
                 TurretDirectionChangedEvent,
                 SupremacyPointsChangedEvent,
+                RecorderHealthChangedEvent,
+                VehicleHealthStateEvent,
                 UnsupportedDamageEvent {
 
     /** 事件在原始流中的稳定顺序 */

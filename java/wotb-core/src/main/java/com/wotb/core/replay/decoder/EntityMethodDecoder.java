@@ -3,11 +3,13 @@ package com.wotb.core.replay.decoder;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
+import com.wotb.core.replay.event.RecorderHealthChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.event.UnsupportedDamageEvent;
+import com.wotb.core.replay.event.VehicleHealthStateEvent;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.springframework.util.StringUtils;
 
@@ -34,6 +36,12 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     static final int SUBTYPE_UPDATE_ARENA2 = 48;
     static final int SUBTYPE_ENTITY_METHOD_DAMAGE = 8;
     static final int DAMAGE_SUB_DIRECT = 3;
+    /** Vehicle-targeted method1（7-byte args，PROVEN）：currentHpRaw(u16) + sourceEntity(u32) + causeFlag(u8)。 */
+    static final int SUBTYPE_VEHICLE_HEALTH_STATE = 1;
+    /** Avatar-targeted method5 3-byte variant（PROVEN）：currentHp(u16) + flag(u8)。 */
+    static final int SUBTYPE_RECORDER_OWN_HEALTH = 5;
+    static final int AVATAR_METHOD5_ARGS_LEN = 3;
+    static final int VEHICLE_METHOD1_ARGS_LEN = 7;
 
     @Override
     public boolean supports(ReplayDecodeContext context, RawReplayPacket packet) {
@@ -69,6 +77,39 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
         final List<ReplayDecodeWarning> warnings = new ArrayList<>();
 
         switch (subType) {
+            case SUBTYPE_VEHICLE_HEALTH_STATE -> {
+                // Vehicle-targeted method1：7-byte args（currentHpRaw + sourceEntity + causeFlag）。
+                // 当前 corpus 3,471/3,471 currentHpRaw 与同刻 prop3 raw16 一致；causeFlag
+                // 0/1/2/3/5 PROVEN（含 drowning 控制样本）。非 7-byte 变体 → 不臆测，保留 raw。
+                if (payload.length == 8 + VEHICLE_METHOD1_ARGS_LEN) {
+                    final int currentHpRaw = readU16LE(payload, 8);
+                    final int sourceEntity = readI32LE(payload, 10);
+                    final int causeFlag = payload[14] & 0xFF;
+                    events.add(new VehicleHealthStateEvent(
+                            packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
+                            entityId, currentHpRaw, sourceEntity, causeFlag,
+                            VehicleHealthStateEvent.causeOf(causeFlag)));
+                } else {
+                    warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
+                            "Vehicle method1 variant argsLen=" + (payload.length - 8)
+                                    + " not decoded (expected " + VEHICLE_METHOD1_ARGS_LEN + ")"));
+                }
+            }
+            case SUBTYPE_RECORDER_OWN_HEALTH -> {
+                // Avatar-targeted method5 3-byte variant：recorder own-health mirror。
+                // 18-byte variant 属其它实体族，不得按 u16+flag 解码（entity-class routing）。
+                if (payload.length == 8 + AVATAR_METHOD5_ARGS_LEN) {
+                    final int currentHp = readU16LE(payload, 8);
+                    final int flagRaw = payload[10] & 0xFF;
+                    events.add(new RecorderHealthChangedEvent(
+                            packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
+                            entityId, currentHp, flagRaw));
+                } else {
+                    warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
+                            "Avatar method5 variant argsLen=" + (payload.length - 8)
+                                    + " not decoded (expected " + AVATAR_METHOD5_ARGS_LEN + ")"));
+                }
+            }
             case SUBTYPE_ENTITY_METHOD_DAMAGE -> {
                 // damage event（outer entityId = 方法调用目标实体，供 victim 证据回退）。
                 // 只要包头已确认 damage method（payload ≥ 8 且 subtype == 8），parseDamage 必产出

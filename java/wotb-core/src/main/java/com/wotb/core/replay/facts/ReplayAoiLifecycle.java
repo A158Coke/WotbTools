@@ -1,0 +1,136 @@
+package com.wotb.core.replay.facts;
+
+import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.EntityRemovedEvent;
+import com.wotb.core.replay.event.MaterializationAnnouncedEvent;
+import com.wotb.core.replay.event.MaterializationEvent;
+import com.wotb.core.replay.event.PositionChangedEvent;
+import com.wotb.core.replay.event.ReplayEvent;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 实体观测（AoI）生命周期构建器（计划 §B8/B9）。
+ *
+ * <p>状态机（research entity-presence-aoi-lifecycle.md）：
+ * <pre>
+ *   on Type33(eid):   pending entry（pre-materialization announcement）
+ *   on Type5(eid):    open OBSERVED_SEGMENT（observedFrom = Type5 时刻）
+ *   on Type10(eid):   确保段已开（fallback：无物化事件时的首个位置）
+ *   on Type4(eid):    close OBSERVED_SEGMENT（absentFrom = Type4 时刻）→ UNKNOWN_AOI
+ * </pre>
+ * 段间 gap 是 UNKNOWN_AOI：不得跨 gap 插值，也不得把 last-known 当真实当前位置。</p>
+ *
+ * <p>对盟友（corpus 238/238 仅入场一次、无 Type4）观测近似连续；
+ * 反复 leave→re-entry 是敌方专属（485/485）。</p>
+ */
+public final class ReplayAoiLifecycle {
+
+    /** 观测来源语义：replay POV（非服务器全局 spotted）。 */
+    public static final String SOURCE_REPLAY_POV = "REPLAY_POV";
+
+    private ReplayAoiLifecycle() {
+    }
+
+    /**
+     * 构建所有实体的观测段（battle-relative 秒升序；按事件 (time, seq) 处理）。
+     *
+     * @param events 全部领域事件
+     * @param startRawClockSec battle start 原始时钟（可为 NaN → 退回 raw）
+     * @return 观测段列表（按 entityId 分组、段内按 observedFrom 升序）
+     */
+    public static List<AoiObservationSegment> build(
+            final List<ReplayEvent> events,
+            final Double startRawClockSec) {
+        if (events == null) {
+            return List.of();
+        }
+        final double start = startRawClockSec != null && Double.isFinite(startRawClockSec)
+                ? startRawClockSec : Double.NaN;
+        final List<ReplayEvent> ordered = events.stream()
+                .filter(e -> e != null && e.timestamp() != null)
+                .filter(e -> Double.isFinite(clockOf(e, start)))
+                .sorted(Comparator.comparingDouble((ReplayEvent e) -> clockOf(e, start))
+                        .thenComparingInt(ReplayEvent::sequence))
+                .toList();
+
+        final Map<Integer, Double> openFrom = new HashMap<>();
+        final Map<Integer, List<AoiObservationSegment>> segmentsByEntity = new HashMap<>();
+
+        for (final ReplayEvent event : ordered) {
+            final double t = clockOf(event, start);
+            switch (event) {
+                case MaterializationAnnouncedEvent ignored -> {
+                    // pre-materialization announcement：段由 Type5 真正打开
+                }
+                case MaterializationEvent m -> openSegment(segmentsByEntity, openFrom,
+                        m.entityId(), t, m.confidence());
+                case PositionChangedEvent p -> openSegment(segmentsByEntity, openFrom,
+                        p.entityId(), t, p.confidence());
+                case EntityRemovedEvent removed ->
+                        closeSegment(segmentsByEntity, openFrom, removed.entityId(), t);
+                default -> {
+                    // 其它事件不影响观测段
+                }
+            }
+        }
+
+        // 战斗结束时仍打开的段：absentFrom = null
+        final List<AoiObservationSegment> result = new ArrayList<>();
+        openFrom.forEach((entityId, from) ->
+                result.add(new AoiObservationSegment(entityId, from, null, SOURCE_REPLAY_POV)));
+        segmentsByEntity.values().forEach(result::addAll);
+        result.sort(Comparator.comparingInt(AoiObservationSegment::entityId)
+                .thenComparingDouble(AoiObservationSegment::observedFromSec));
+        return List.copyOf(result);
+    }
+
+    /** battle-relative 时间；无 battle start 时退回 raw（与 ReplayHpTimeline 同语义）。 */
+    private static double clockOf(final ReplayEvent event, final double startRawClockSec) {
+        final Float battle = event.timestamp().battleClockSec();
+        if (battle != null && Float.isFinite(battle)) {
+            return battle;
+        }
+        if (!Double.isFinite(startRawClockSec)) {
+            return event.timestamp().rawClockSec();
+        }
+        return event.timestamp().rawClockSec() - startRawClockSec;
+    }
+
+    private static void openSegment(
+            final Map<Integer, List<AoiObservationSegment>> segmentsByEntity,
+            final Map<Integer, Double> openFrom,
+            final int entityId,
+            final double t,
+            final DecodeConfidence confidence) {
+        // 低置信度位置不得开启观测段（防止损坏/噪声位置打开假段）
+        if (confidence == DecodeConfidence.PARTIAL || confidence == DecodeConfidence.UNKNOWN) {
+            return;
+        }
+        // 已在段中：忽略重复进入（Type33/Type5 配对内只开一次）
+        if (openFrom.containsKey(entityId)) {
+            return;
+        }
+        openFrom.put(entityId, t);
+    }
+
+    private static void closeSegment(
+            final Map<Integer, List<AoiObservationSegment>> segmentsByEntity,
+            final Map<Integer, Double> openFrom,
+            final int entityId,
+            final double t) {
+        final Double from = openFrom.remove(entityId);
+        if (from == null) {
+            // 无开段记录的 Type4：仍记录一个零长段（Type4 != death，但观测边界存在）
+            segmentsByEntity.computeIfAbsent(entityId, k -> new ArrayList<>())
+                    .add(new AoiObservationSegment(entityId, t, t, SOURCE_REPLAY_POV));
+            return;
+        }
+        segmentsByEntity.computeIfAbsent(entityId, k -> new ArrayList<>())
+                .add(new AoiObservationSegment(entityId, from, t, SOURCE_REPLAY_POV));
+    }
+}
