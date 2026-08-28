@@ -7,9 +7,6 @@ import com.wotb.core.league.LeagueRatingCalculator;
 import com.wotb.core.league.LeagueRatingResult;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.replay.processing.ReplayProcessingOptions;
-import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
@@ -45,12 +42,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 /** Export Job 编排回归：lifecycle / progress / artifact / 失败 / 取消。 */
 class ReplayExportJobServiceTest {
@@ -58,7 +49,8 @@ class ReplayExportJobServiceTest {
     private Path tmpDir;
     private ExportJobStore store;
     private ReplayExportJobService service;
-    private DefaultReplayProcessingFacade facade;
+    private ReplayProcessingJobStore processingStore;
+    private Path processingStoreDir;
     private ReplayExportWorkerExecutor executor;
     private SimpleMeterRegistry meterRegistry;
 
@@ -66,16 +58,21 @@ class ReplayExportJobServiceTest {
     void setUp() throws Exception {
         tmpDir = Files.createTempDirectory("wotb-export-job-test");
         store = new ExportJobStore(tmpDir.toString(), 60);
-        facade = mock(DefaultReplayProcessingFacade.class);
         executor = new ReplayExportWorkerExecutor(2, 4);
         meterRegistry = new SimpleMeterRegistry();
-        service = new ReplayExportJobService(store, executor, null, meterRegistry);
+        // mandatory ReplayProcessingJobStore：不构造 null SUT（与 production invariants 一致）。
+        processingStoreDir = Files.createTempDirectory("wotb-export-setup-store");
+        processingStore = new ReplayProcessingJobStore(processingStoreDir, 60);
+        service = new ReplayExportJobService(store, executor, processingStore, meterRegistry);
     }
 
     @AfterEach
     void tearDown() {
         executor.close();
         deleteDir(tmpDir);
+        if (processingStoreDir != null) {
+            deleteDir(processingStoreDir);
+        }
     }
 
 
@@ -117,8 +114,6 @@ class ReplayExportJobServiceTest {
             assertEquals(1, snap.duplicates());
             assertEquals(1, snap.failures());
 
-            // 关键验收：facade.processFull 必须零次调用（Export 不再 processFull）
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
 
             // artifact 可打开、filename 正确
             final Path artifact = store.get(jobId).artifactPath();
@@ -157,7 +152,6 @@ class ReplayExportJobServiceTest {
             final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
             assertEquals(ExportJob.Status.READY, snap.status());
             assertEquals("application/zip", snap.contentType());
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             assertEquals(List.of("one.xlsx", "two.xlsx"), zipEntryNames(jobId));
             processingStore.release(pJobId);
         } finally {
@@ -219,7 +213,6 @@ class ReplayExportJobServiceTest {
             assertEquals(2, snap.processed(), "processed 最终 = valid + failures = 2（不得减 failures）");
             assertEquals(1, snap.failures(), "failures 只用于终态统计，不影响 valid 判断");
             assertEquals(List.of("one.xlsx"), zipEntryNames(jobId), "ZIP 只含 1 个有效场 entry");
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             processingStore.release(pJobId);
         } finally {
             deleteDir(processingStore.jobDir("proc-1v1f").getParent());
@@ -245,7 +238,6 @@ class ReplayExportJobServiceTest {
             assertEquals(3, snap.processed());
             assertEquals(2, snap.failures());
             assertEquals(List.of("one.xlsx"), zipEntryNames(jobId));
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             processingStore.release(pJobId);
         } finally {
             deleteDir(processingStore.jobDir("proc-1v2f").getParent());
@@ -273,7 +265,6 @@ class ReplayExportJobServiceTest {
             assertEquals(7, snap.processed(), "processed 最终 = 2 valid + 5 failures = 7");
             assertEquals(5, snap.failures());
             assertEquals(List.of("one.xlsx", "two.xlsx"), zipEntryNames(jobId), "ZIP 含全部有效场");
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             processingStore.release(pJobId);
         } finally {
             deleteDir(processingStore.jobDir("proc-2v5f").getParent());
@@ -296,7 +287,6 @@ class ReplayExportJobServiceTest {
             final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
             assertEquals(ExportJob.Status.FAILED, snap.status(), "validCount == 0 必须 NO_VALID_REPLAYS");
             assertEquals("NO_VALID_REPLAYS", snap.errorCode());
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             processingStore.release(pJobId);
         } finally {
             deleteDir(processingStore.jobDir("proc-0v").getParent());
@@ -319,7 +309,6 @@ class ReplayExportJobServiceTest {
             final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
             assertEquals(ExportJob.Status.FAILED, snap.status());
             assertEquals("NO_VALID_REPLAYS", snap.errorCode());
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             processingStore.release(pJobId);
         } finally {
             deleteDir(processingStore.jobDir("proc-0v-agg").getParent());
@@ -355,7 +344,6 @@ class ReplayExportJobServiceTest {
             assertEquals(null, b.players.getFirst().contribution,
                     "populateBattle 不得在 from-result 路径再次执行（HP 已知场会回填 contribution）");
             assertEquals(null, b.players.getFirst().kast);
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             processingStore.release(pJobId);
         } finally {
             deleteDir(processingStore.jobDir("proc-nomutate").getParent());
@@ -391,7 +379,6 @@ class ReplayExportJobServiceTest {
             assertEquals(ExportJob.Status.READY, awaitTerminal(eachJob, 10_000).status());
             assertEquals(5000, b.players.getFirst().damageDealt);
             assertNotNull(b.players.getFirst().contribution);
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             processingStore.release(pJobId);
         } finally {
             deleteDir(processingStore.jobDir("proc-parity").getParent());
@@ -626,7 +613,6 @@ class ReplayExportJobServiceTest {
             final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
             assertEquals(ExportJob.Status.READY, snap.status());
             // Test 2：复用路径不重新 process replay
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             try (Workbook wb = new XSSFWorkbook(Files.newInputStream(store.get(jobId).artifactPath()))) {
                 final String text = workbookText(wb);
                 assertTrue(text.contains("CHRD Test"),
@@ -653,7 +639,6 @@ class ReplayExportJobServiceTest {
                     "{\"summary\":{\"clan:AAA\":\"CHRD A队\"}}");
             final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
             assertEquals(ExportJob.Status.READY, snap.status());
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             try (Workbook wb = new XSSFWorkbook(Files.newInputStream(store.get(jobId).artifactPath()))) {
                 final Sheet sheet = wb.getSheet("战队汇总");
                 assertNotNull(sheet, "aggregate League 必须含战队汇总表");
@@ -856,7 +841,6 @@ class ReplayExportJobServiceTest {
             final String jobId = service.createJob("each", pJobId);
             final ExportJob.Snapshot snap = awaitTerminal(jobId, 10_000);
             assertEquals(ExportJob.Status.READY, snap.status());
-            verify(facade, times(0)).process(any(), eq(ReplayProcessingOptions.full()));
             // ZIP 必须含 2 个 XLSX（1 League + 1 Standard）
             assertEquals(List.of("arena-1.xlsx", "arena-2.xlsx"), zipEntryNames(jobId));
             final List<String> texts = new ArrayList<>();

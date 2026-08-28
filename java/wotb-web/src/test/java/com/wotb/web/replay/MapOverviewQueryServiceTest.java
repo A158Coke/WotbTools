@@ -174,4 +174,25 @@ class MapOverviewQueryServiceTest {
             cleanup(dir, store);
         }
     }
+
+    @Test
+    void corruptMapOverviewArtifactReturnsDatasetUnavailableNotJobNotFound() throws Exception {
+        final Path dir = Files.createTempDirectory("wotb-map-corrupt");
+        final ReplayProcessingJobStore store = storeWithJob(dir, ReplayProcessingJob.SourceStatus.READY, false);
+        try {
+            // 手动写入 corrupt map-overview.json（readMapOverview 反序列化失败 → IOException）。
+            // BLOCKER 3：这<b>不是</b>「job 不存在」——必须映射不可恢复的 503 DATASET_UNAVAILABLE，
+            // 绝不 JOB_NOT_FOUND（否则前端会误触发 exactly-once full-process recovery）。
+            final Path artifact = ReplayArtifactWriter.mapOverviewPath(store.jobDir("j1"), 0);
+            Files.createDirectories(artifact.getParent());
+            Files.writeString(artifact, "{not-valid-json");
+            final MapOverviewQueryService service = new MapOverviewQueryService(store);
+            final ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                    () -> service.buildOverviewFromDataset("j1", 0));
+            assertEquals(HttpStatus.SERVICE_UNAVAILABLE, e.getStatusCode());
+            assertEquals("DATASET_UNAVAILABLE", e.getReason());
+        } finally {
+            cleanup(dir, store);
+        }
+    }
 }

@@ -48,12 +48,13 @@ public class MapOverviewQueryService {
                                 ? "SOURCE_PROCESSING_FAILED" : "SOURCE_NOT_READY");
             }
             return ReplayArtifactWriter.readMapOverview(processingStore.jobDir(processingJobId), sourceIndex);
-        } catch (final java.io.IOException e) {
-            // BLOCKER 4：文件不存在不会进入 catch（readMapOverview 缺文件返回 null → 调用方 204
-            // capability unavailable）；此处 catch 代表 artifact 路径 / 读取 / 存储 I/O 故障，
-            // 映射为稳定的 404 JOB_NOT_FOUND（保持既有错误 contract，避免把真实存储失败
-            // 误当「正常不可用」静默吞掉）。
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "JOB_NOT_FOUND");
+        } catch (final java.io.IOException | tools.jackson.core.JacksonException e) {
+            // BLOCKER 3：文件不存在不会进入 catch（readMapOverview 缺文件返回 null → 调用方 204
+            // capability unavailable）；此处 catch 代表 artifact 路径 / 读取 / 存储 I/O 故障
+            // 或 JSON 解码/反序列化失败（permission / disk I/O / corrupt JSON）。这些<b>不是</b>
+            // 「job 不存在」——映射为不可恢复的 503 DATASET_UNAVAILABLE，绝不 JOB_NOT_FOUND
+            // （否则前端会误触发 exactly-once full-process recovery，浪费 CPU 并掩盖真实存储故障）。
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "DATASET_UNAVAILABLE");
         } finally {
             processingStore.release(processingJobId);
         }

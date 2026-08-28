@@ -2,7 +2,7 @@
 
 > 本文档描述 V2 引入的唯一权威时间线模型：com.wotb.core.replay.timeline。
 > Battle Playback / Personal AI Review / Team AI Review 共享同一套战场事实，禁止各模块
-> 自行重新解释 raw events 形成互相不同的事实模型（docs/current-plan.md §1/§43）。
+> 自行重新解释 raw events 形成互相不同的事实模型（见本文件 §1/§43）。
 
 ## 数据流
 

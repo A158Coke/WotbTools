@@ -29,10 +29,12 @@ import java.util.Map;
  * DELETE /api/replay/export-jobs/{jobId}    → 204（取消）
  * GET    /api/replay/export-jobs/{jobId}/download → streaming artifact
  * </pre>
- * 创建即持久化输入并返回 jobId；真实进度经 status 轮询；下载走 resource streaming
- * （不 readAllBytes / 大 byte[] 重新复制）。错误码：EXPORT_QUEUE_FULL(503) /
- * JOB_NOT_FOUND(404) / JOB_NOT_READY(409)，job 内失败经 status.errorCode 返回
- * （如 NO_VALID_REPLAYS）。
+ * Dataset-only 创建：引用 READY Processing Job 的 {@code ProcessedDataset}（不接收 replay
+ * files / 不上传输入），注册 Export Job 后由 worker 生成 XLSX/ZIP artifact；真实进度经
+ * status 轮询；下载走 resource streaming（不 readAllBytes / 大 byte[] 重新复制）。
+ * Create 错误码：PROCESSING_JOB_NOT_FOUND(404) / PROCESSING_JOB_NOT_READY(409) /
+ * EXPORT_QUEUE_FULL(503)；Export Job status/download 错误码：JOB_NOT_FOUND(404) /
+ * JOB_NOT_READY(409)；job 内失败经 status.errorCode 返回（如 NO_VALID_REPLAYS）。
  */
 @RestController
 @CrossOrigin(origins = "*")

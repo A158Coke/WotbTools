@@ -38,7 +38,8 @@ const LOCALIZED_ERROR_CODES = new Set([
 /**
  * Dataset 生命周期可恢复错误码（唯一 = JOB_NOT_FOUND：job/dataset 已过期，可由原 replay File
  * 重新建立 Processing Job）。其它内部稳定码<b>不得</b>走自动 full-process 恢复：
- * - {@code DATASET_UNAVAILABLE}：backend processingStore / 基础设施配置问题，重跑无法修复；
+ * - {@code DATASET_UNAVAILABLE}：Dataset artifact 存储 / 读取不可用（permission / disk I/O /
+ *   corrupt artifact），重跑 full-process 无法修复；
  * - {@code DATASET_REFERENCE_REQUIRED}：前端契约违规，不能用重新上传掩盖；
  * - {@code SOURCE_NOT_FOUND}：source identity / 契约问题，除非能证明是过期 Dataset；
  * - {@code SOURCE_NOT_READY} / {@code SOURCE_PROCESSING_FAILED}：保持各自稳定语义。

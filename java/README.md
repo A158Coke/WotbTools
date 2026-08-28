@@ -148,12 +148,12 @@ TTL 随 job 目录清理）。Dataset Lease：Export / AI / Playback 读取前 `
 
 ### AI 复盘与批量处理（wotbtools-user / wotbtools-admin）
 
-完整战斗重建：读取 `data.wotreplay` 全部事件包 → 解码为领域事件 → 重建战场状态。
-重建不单独暴露端点，由 `/analyze` 在内部完成。
+完整战斗重建（parse + reconstruction + enrich）在 Processing Job 的 per-source
+`processFull` 阶段完成（`ReplayParseScheduler` → `DefaultReplayProcessingFacade`），产出
+`ai-facts.json` / `map-overview.json` 等 derived artifact。AI / 战局回放只读这些 artifact，
+**不在** `/analyze` 内部做 reconstruction，也绝不重新上传 / 重新 full process。
 
-- `POST /api/replay/reconstruct-batch` — 批量重建（单文件 ≤ 20 MiB、请求合计 ≤ 200 MiB），返回 `ReplayBatchProcessingResult`（含 `suggestedAnalysisMode`、逐文件 `ReplayProcessingResult`）。
-- `POST /api/replay/process?reconstruct=false` — 通用批量处理，可选开启重建。
-- `POST /api/replay/analyze` — **Dataset 路径（推荐）**：JSON body `{processingJobId, sourceId, lang, correlationId}`，只读 derived `ai-facts.json`（**不再重新上传 / 重新 full process**）；legacy multipart `files[]` 路径已废弃（410 `REPLAY_LEGACY_DEPRECATED`）。**单文件限制（`AiReplayBatchPolicy.MAX_FILES=1`）**，仅 `SINGLE_PLAYER_BATTLE` / `SINGLE_TEAM_BATTLE` 模式。表单/JSON 字段 `lang`（必填，白名单 `zh`/`en`/`ru`）控制输出语言；缺失返回 `400`，空白或未知值返回 `400 UNKNOWN_LOCALE`。可选 `correlationId` 用于客户端取消；`POST /api/replay/analyze/cancel?correlationId=...` 中断 in-flight 上游调用（返回 `204`，未注册返回 `404`）。稳定错误码含 `JOB_NOT_FOUND` / `SOURCE_NOT_FOUND` / `SOURCE_NOT_READY` / `SOURCE_PROCESSING_FAILED` / `DATASET_EXPIRED`。`POST /api/replay/map-overview` — Dataset 路径 JSON body `{processingJobId, sourceId}` 读 cached `map-overview.json`（不重新 full process）；legacy multipart 路径已废弃（410 `REPLAY_LEGACY_DEPRECATED`）。地图不可构建返回 `204`。**响应为 SSE 流式**：事件 `call1_start` / `call1_done` / `evidence_done` / `call2_token`（`{"delta"}`）/ `autopsy_start` / `autopsy_done` / `done`（`{"analysis","preBattleSection","mapOverview"}`）/ `error`（`{"code"}`）；request-envelope 校验与 worker 池饱和在返回 `SseEmitter` 前由 HTTP 状态码 + 稳定错误码文本返回（400/503）。完整协议见 `docs/features/team-ai-review.md` §8。
+- `POST /api/replay/analyze` — **Dataset 路径（唯一）**：JSON body `{processingJobId, sourceId, lang, correlationId}`，只读 derived `ai-facts.json`（**不重新上传 / 不重新 full process / 不执行 reconstruction**）；legacy multipart `files[]` 路径已废弃（410 `REPLAY_LEGACY_DEPRECATED`）。**单文件限制（`AiReplayBatchPolicy.MAX_FILES=1`）**，仅 `SINGLE_PLAYER_BATTLE` / `SINGLE_TEAM_BATTLE` 模式。表单/JSON 字段 `lang`（必填，白名单 `zh`/`en`/`ru`）控制输出语言；缺失返回 `400`，空白或未知值返回 `400 UNKNOWN_LOCALE`。可选 `correlationId` 用于客户端取消；`POST /api/replay/analyze/cancel?correlationId=...` 中断 in-flight 上游调用（返回 `204`，未注册返回 `404`）。稳定错误码：`JOB_NOT_FOUND`（job/dataset 已 TTL 清理，可重建）/`SOURCE_NOT_FOUND` / `SOURCE_NOT_READY` / `SOURCE_PROCESSING_FAILED` / `DATASET_UNAVAILABLE`（artifact 读取/存储故障，**不可**按过期 dataset 自动重建）。`POST /api/replay/map-overview` — Dataset 路径 JSON body `{processingJobId, sourceId}` 读 cached `map-overview.json`（不重新 full process）；legacy multipart 路径已废弃（410 `REPLAY_LEGACY_DEPRECATED`）。地图不可构建返回 `204`。**响应为 SSE 流式**：事件 `call1_start` / `call1_done` / `evidence_done` / `call2_token`（`{"delta"}`）/ `autopsy_start` / `autopsy_done` / `done`（`{"analysis","preBattleSection"}`）/ `error`（`{"code"}`）；request-envelope 校验与 worker 池饱和在返回 `SseEmitter` 前由 HTTP 状态码 + 稳定错误码文本返回（400/503）。完整协议见 `docs/features/team-ai-review.md` §8。
 
 **策略**：上传文件先统一校验扩展名、空文件和单文件大小；通过预校验后，解析/重建错误才按文件隔离。系统执行 SHA-256 精确去重，并按 battle + perspective 分组。随机战斗分析录像者个人；训练房/联赛分析录像者所在整队，录像者只用于解析 `perspectiveTeam`。同场同队回放只选一个代表，同场双方保持独立；未点亮敌人仍未知，不能跨录像补全视野。
 

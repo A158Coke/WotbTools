@@ -1,6 +1,6 @@
 # Tier X 专属俯视车型系统（Battle Playback Vehicle Marker System V2）
 
-> 总计划：docs/current-plan.md（PR1–PR4）。本目录是 Tier X 车型系统的文档与资产生成规范。
+> 总体路线：docs/ROADMAP.md（PR1–PR4）。本目录是 Tier X 车型系统的文档与资产生成规范。
 > 当前状态：**PR2 DONE** —— 正式资产 = Source-faithful PBR top-view
 > WebP（BlitzKit LOD0 geometry + 内嵌纹理确定性 bake）；**Battle Playback 已集成 dedicated
 > models**（VehicleMarker + 战局级 preload + 单车 fallback；非 Tier X 继续 generic）；

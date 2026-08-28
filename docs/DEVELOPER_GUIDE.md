@@ -61,7 +61,7 @@ Wargaming ASIA/EU/NA 登录与百场 WG 官方认证需要 Keycloak 和 backend 
 - **单一数据源**：车辆库为 `common/tankopedia-tier{7,8,9,10}.json`，地图名为 `common/map_names.json`；禁止模块内复制一份。
 - 不引入 Lombok；record 用于不可变模型；Controller 只处理 HTTP，业务逻辑进入 service/core。
 - 跨层联动必须执行 `wotb-sync`。
-- **UI Profile（展示风格，非主题）**：`showcase`（沉浸，默认）/ `classic`（简约）是 Presentation Profile，共用同一套业务组件/状态/API；Classic 只通过 `frontend/src/styles/classic-profile.css`（`[data-ui-profile="classic"]`）去掉全屏 AI/装饰背景与视觉噪音，不改结构/密度/布局。业务组件不得按 Profile fork，禁止 `:key="uiProfile"` 触发组件重建。详见 `frontend/AGENTS.md` 与 `docs/current-plan.md` D1/D2。
+- **UI Profile（展示风格，非主题）**：`showcase`（沉浸，默认）/ `classic`（简约）是 Presentation Profile，共用同一套业务组件/状态/API；Classic 只通过 `frontend/src/styles/classic-profile.css`（`[data-ui-profile="classic"]`）去掉全屏 AI/装饰背景与视觉噪音，不改结构/密度/布局。业务组件不得按 Profile fork，禁止 `:key="uiProfile"` 触发组件重建。详见 `frontend/AGENTS.md` 的 UI Profile 约定。
 
 ---
 
