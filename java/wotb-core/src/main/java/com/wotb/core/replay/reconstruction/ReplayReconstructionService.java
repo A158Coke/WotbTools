@@ -5,6 +5,8 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.parse.PickleReader;
+import com.wotb.core.parse.Protobuf;
 import com.wotb.core.parse.ReplayArchiveReader;
 import com.wotb.core.replay.decoder.ReplayDecodeContext;
 import com.wotb.core.replay.decoder.ReplayDecodeResult;
@@ -12,6 +14,7 @@ import com.wotb.core.replay.decoder.ReplayPacketDecoderRegistry;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ArenaPeriodChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.stream.PacketTypeDiagnostics;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import com.wotb.core.replay.stream.ReplayPacketStreamReader;
@@ -107,10 +110,12 @@ public class ReplayReconstructionService {
             allEvents.addAll(result.events());
         }
 
-        // PR147: subtype48 wrapper3 ARENA_PERIOD.BATTLE is the client-observed battle-start anchor.
-        // Use its rawClock when present as the authority for battle-relative time (the stream heuristic
-        // below only fills diagnostics; the anchor is the canonical source of battlesStartRawClockSec).
-        final Float battleStartAnchorRawClock = battleStartRawClockFromArenaPeriod(allEvents);
+        // PR147 resolved battle start: wrapper3 ARENA_PERIOD.BATTLE anchor, else RoundFinishedEvent
+        // (method4/AFTERBATTLE) rawClock minus SETTLEMENT duration (battle_results root5), else null.
+        // This single resolved value is what the timeline / adapter / legacy producers agree on; it is
+        // NEVER Type14 (stream-close) or a raw session clock. reuses the settlement duration so it matches
+        // the canonical BattleTimeline clock (which uses battle.durationS = settlement root5).
+        final Float battleStartResolved = resolveBattleStartRawClock(allEvents, settlementDurationSec(entries));
 
         // 5. 重建战场状态
         final BattleStateReconstructor reconstructor = new BattleStateReconstructor();
@@ -141,8 +146,8 @@ public class ReplayReconstructionService {
                 metadata,
                 streamResult.header(),
                 replayDuration,
-                battleStartAnchorRawClock != null
-                        ? battleStartAnchorRawClock
+                battleStartResolved != null
+                        ? battleStartResolved
                         : streamResult.diagnostics().battleStartRawClockSec(),
                 participants,
                 List.copyOf(allEvents),
@@ -178,6 +183,58 @@ public class ReplayReconstructionService {
             }
         }
         return null;
+    }
+
+    /**
+     * PR147 resolved battle-start raw clock: ① wrapper3 ARENA_PERIOD.BATTLE anchor; ② else the first
+     * {@code RoundFinishedEvent} (method4/AFTERBATTLE) rawClock minus the SETTLEMENT duration
+     * (battle_results root5); ③ else null. Never Type14/raw-session-clock. Public for unit-testing.
+     */
+    public static Float resolveBattleStartRawClock(
+            final List<ReplayEvent> events, final Double settlementDurationSec) {
+        final Float anchor = battleStartRawClockFromArenaPeriod(events);
+        if (anchor != null) {
+            return anchor;
+        }
+        if (events == null) {
+            return null;
+        }
+        for (final ReplayEvent event : events) {
+            if (event instanceof RoundFinishedEvent rf && rf.timestamp() != null) {
+                final float raw = rf.timestamp().rawClockSec();
+                if (Float.isFinite(raw) && raw >= 0f && settlementDurationSec != null
+                        && settlementDurationSec > 0) {
+                    final double start = raw - settlementDurationSec;
+                    if (Double.isFinite(start) && start >= 0) {
+                        return (float) start;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Settlement battle duration from battle_results.dat root5 (PR147); null when missing/corrupt.
+     * Reuses the same pickle/protobuf decode as the canonical settlement parser (single source).
+     */
+    static Double settlementDurationSec(final Map<String, byte[]> entries) {
+        try {
+            final byte[] dat = entries.get("battle_results.dat");
+            if (dat == null) {
+                return null;
+            }
+            final Object pickle = PickleReader.loads(dat);
+            if (!(pickle instanceof Object[] tuple) || tuple.length != 2
+                    || !(tuple[1] instanceof byte[] pb)) {
+                return null;
+            }
+            final Map<Integer, List<Object>> root = Protobuf.decode(pb);
+            final Object dur = Protobuf.first(root, 5);
+            return dur instanceof Number n ? n.doubleValue() : null;
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     private static JsonNode parseMeta(Map<String, byte[]> entries) throws IOException {
