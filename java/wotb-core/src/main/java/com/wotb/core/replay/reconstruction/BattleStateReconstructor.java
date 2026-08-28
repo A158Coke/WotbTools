@@ -6,10 +6,13 @@ import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.EntityCreatedEvent;
 import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.HealthChangedEvent;
+import com.wotb.core.replay.event.MaterializationEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
+import com.wotb.core.replay.event.RecorderHealthChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.event.VehicleHealthStateEvent;
 import com.wotb.core.replay.event.VehicleDestroyedEvent;
 
 import java.util.ArrayList;
@@ -121,6 +124,9 @@ public class BattleStateReconstructor {
             case VehicleDestroyedEvent e -> applyVehicleDestroyed(state, e);
             case BattleEndedEvent e -> applyBattleEnded(state, e);
             case HealthChangedEvent e -> applyHealth(state, e);
+            case MaterializationEvent e -> applyMaterialization(state, e);
+            case RecorderHealthChangedEvent e -> applyRecorderHealth(state, e);
+            case VehicleHealthStateEvent e -> applyVehicleHealthState(state, e);
             case EntityCreatedEvent e -> applyEntityCreated(state, e);
             case ParticipantMappingEvent e -> applyMapping(state, e);
             default -> {
@@ -230,6 +236,55 @@ public class BattleStateReconstructor {
 
     private void applyEntityCreated(BattleState state, EntityCreatedEvent e) {
         state.getOrCreateVehicle(e.entityId(), e.timestamp().rawClockSec());
+    }
+
+    /**
+     * Type5 物化：实体进入 replay POV 观测集（AoI 段开始）。
+     * 物化 HP 快照（entityTypeId=2，version-gated）作为当前 HP 种子——
+     * 敌方 re-entry 时可能已在 AoI 外掉血，必须以 Type5 快照为准，
+     * 不得沿用 stale last-known HP（research entity-presence-aoi-lifecycle.md）。
+     */
+    private void applyMaterialization(BattleState state, MaterializationEvent e) {
+        final VehicleState vs = state.getOrCreateVehicle(e.entityId(), e.timestamp().rawClockSec());
+        vs.setLastObservedAt(e.timestamp().rawClockSec());
+        if (e.currentHp() != null && e.confidence() == DecodeConfidence.EXACT) {
+            vs.setCurrentHealth(e.currentHp());
+        }
+        if (vs.observationState() == ObservationState.REMOVED
+                || vs.observationState() == ObservationState.UNKNOWN) {
+            vs.setObservationState(ObservationState.OBSERVED);
+        }
+    }
+
+    /** Avatar method5（recorder own-health mirror）：当前 HP 镜像，与 prop3 同刻一致。 */
+    private void applyRecorderHealth(BattleState state, RecorderHealthChangedEvent e) {
+        final VehicleState vs = state.getOrCreateVehicle(e.entityId(), e.timestamp().rawClockSec());
+        vs.setLastObservedAt(e.timestamp().rawClockSec());
+        if (e.confidence() == DecodeConfidence.EXACT
+                && e.currentHp() > 0 && e.currentHp() < 0xFF00) {
+            vs.setCurrentHealth(e.currentHp());
+        }
+    }
+
+    /** Vehicle method1：选中 HP 转变（currentHpRaw 与同刻 prop3 raw16 一致）。 */
+    private void applyVehicleHealthState(BattleState state, VehicleHealthStateEvent e) {
+        final VehicleState vs = state.getOrCreateVehicle(e.entityId(), e.timestamp().rawClockSec());
+        vs.setLastObservedAt(e.timestamp().rawClockSec());
+        if (e.confidence() != DecodeConfidence.EXACT) {
+            return;
+        }
+        // 与 prop3 归一化口径一致：0 = 阵亡归零；0xFFFD = 死亡 sentinel → 0；
+        // 正 HP 直接采用；其它 ≤0 高位值 = UNKNOWN sentinel，不写。
+        final int raw = e.currentHpRaw();
+        if (raw == 0 || raw == HealthChangedEvent.SENTINEL_UNKNOWN_HP) {
+            vs.setCurrentHealth(0);
+            if (vs.lifeState() != LifeState.DESTROYED) {
+                vs.setLifeState(LifeState.DESTROYED);
+                vs.setObservationState(ObservationState.REMOVED);
+            }
+        } else if (raw > 0 && raw < 0xFF00) {
+            vs.setCurrentHealth(raw);
+        }
     }
 
     private void applyMapping(BattleState state, ParticipantMappingEvent e) {

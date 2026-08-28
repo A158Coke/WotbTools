@@ -232,6 +232,8 @@ public final class BattleTimelineBuilder {
                 clock.resolution(),
                 List.copyOf(frames),
                 List.copyOf(orderedEvents),
+                com.wotb.core.replay.facts.ReplayAoiLifecycle.build(
+                        recon.events(), clock.startRawClockSec()),
                 BattleTimelineValidationResult.ok(),
                 List.copyOf(limitations));
         return new BattleTimelineResult(timeline, timeline.validation());

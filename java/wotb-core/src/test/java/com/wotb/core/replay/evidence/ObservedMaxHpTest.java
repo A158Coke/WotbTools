@@ -133,6 +133,27 @@ class ObservedMaxHpTest {
     }
 
     @Test
+    void recorderOpeningHpFromMethod5IsAffirmedEvenBelowTankopediaBase() {
+        // 录像者：Avatar method5 初始化 HP = opening HP 种子（34/34 == 首个 Type5 hpRaw）；
+        // 即使 opening HP（3200）< tankopedia base（3400）也 AFFIRMED（装备/物资加成与 base 无关）
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(5f, null), 8,
+                DecodeConfidence.EXACT, 10, 1001L));
+        events.add(new com.wotb.core.replay.event.RecorderHealthChangedEvent(
+                2, new ReplayTimestamp(8f, null), 8,
+                DecodeConfidence.EXACT, 10, 3200, 1));
+        final Battle battle = battle();
+        battle.recorder = "rec"; // PlayerResultFormat.recorderAccountId 需要 nickname 匹配
+        battle.players.getFirst().nickname = "rec";
+        ObservedMaxHp.populate(battle, events,
+                TeamEntityMapper.resolve(battle, recon(events)));
+        final PlayerResult p = battle.players.getFirst();
+        assertEquals(EntryHpSource.OBSERVED_EXACT, p.entryHpSource,
+                "recorder own-health mirror 是客户端直接权威，无需 damage coverage");
+        assertEquals(3200, p.entryHp);
+    }
+
+    @Test
     void unobservedEarlyDamageMakesCoveragePartialAndFailsClosed() {
         // 用户反例：base=2400（Kranvagn 4481）、真实 entry=2600；
         // 3s 发生未被事件流观察到的 100 伤害；10s sample=2500；20s 才观察到首次伤害 100。
