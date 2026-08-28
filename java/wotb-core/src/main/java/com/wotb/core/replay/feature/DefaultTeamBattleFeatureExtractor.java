@@ -162,18 +162,17 @@ public class DefaultTeamBattleFeatureExtractor {
         ).toList();
         final boolean hasUsableTimedEvent = !acceptedEvents.isEmpty();
 
-        // AoI 离开边界（Type4）：成员移动段必须在离开时刻断开（禁止跨 AoI gap 合并/插值）
+        // AoI 离开边界（Type4）：从 canonical ReplayAoiLifecycle 获取（facts 只定义一次，
+        // 禁止从 raw EntityRemovedEvent 重建第二套 Type4 时间表——P1 architecture convergence）。
+        final Double teamStartRaw = battleStartRaw == null ? null : battleStartRaw.doubleValue();
         final Map<Integer, List<Double>> leaveTimesByEntity = new LinkedHashMap<>();
-        for (final ReplayEvent event : events) {
-            if (!(event instanceof com.wotb.core.replay.event.EntityRemovedEvent removed)) {
-                continue;
+        for (final com.wotb.core.replay.facts.AoiObservationSegment segment
+                : com.wotb.core.replay.facts.ReplayAoiLifecycle.build(events, teamStartRaw)) {
+            if (segment.absentFromSec() == null) {
+                continue; // 未关闭段（直到战斗结束仍被观测）
             }
-            final TacticalTimeResolution res = resolutionByEvent.get(event);
-            if (res == null || !res.isUsable()) {
-                continue;
-            }
-            leaveTimesByEntity.computeIfAbsent(removed.entityId(), k -> new ArrayList<>())
-                    .add((double) res.battleRelativeSec());
+            leaveTimesByEntity.computeIfAbsent(segment.entityId(), k -> new ArrayList<>())
+                    .add(segment.absentFromSec());
         }
 
         final List<TeamMemberFeatureSet> members = authoritativeMembers.stream()

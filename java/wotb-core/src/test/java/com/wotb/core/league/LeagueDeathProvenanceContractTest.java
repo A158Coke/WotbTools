@@ -96,4 +96,27 @@ class LeagueDeathProvenanceContractTest {
                 "LIVE_EXACT 优先于 SETTLEMENT_SECOND，即使 settlement 数值更小");
         assertEquals(DeathTimeSource.LIVE_EXACT, a.players.get(0).deathTimeSource);
     }
+
+    @Test
+    void reconcilePreservesRawDeathTimeMillisForLiveExact() {
+        // P1 数据完整性：LIVE_EXACT 收口时不得把 live-derived canonical fact 写回
+        // 原始 proto #104 deathTimeMillis（该字段语义 = 原始结算，不是 canonical time）。
+        final com.wotb.core.model.Battle a =
+                LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        a.players.get(0).survived = false;
+        a.players.get(0).deathTimeSource = DeathTimeSource.LIVE_EXACT;
+        a.players.get(0).survivalTimeSec = 128.543;
+        a.players.get(0).deathTimeMillis = 128_000L; // 原始结算 #104
+        final com.wotb.core.model.Battle b =
+                LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
+        b.players.get(0).survived = false;
+        b.players.get(0).deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+        b.players.get(0).deathTimeMillis = 128_000L;
+        b.players.get(0).survivalTimeSec = 128.00;
+        LeagueRatingConflictDetector.reconcileDeathTimes(a, List.of(a, b));
+        assertEquals(128.543, a.players.get(0).survivalTimeSec, 1e-9);
+        assertEquals(DeathTimeSource.LIVE_EXACT, a.players.get(0).deathTimeSource);
+        assertEquals(128_000L, a.players.get(0).deathTimeMillis,
+                "LIVE_EXACT 收口不得改写原始 #104 deathTimeMillis（保留 settlement 原始值）");
+    }
 }

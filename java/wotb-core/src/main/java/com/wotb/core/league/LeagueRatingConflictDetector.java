@@ -289,9 +289,17 @@ public final class LeagueRatingConflictDetector {
             if (best == null) {
                 continue; // 全部 UNKNOWN：保持原值（绝不清洗，绝不从 residual raw 恢复）
             }
-            p.survivalTimeSec = best.timeSec();
-            p.deathTimeMillis = Math.round(best.timeSec() * 1000.0);
-            p.deathTimeSource = best.source();
+            if (best.source() == DeathTimeSource.LIVE_EXACT) {
+                // LIVE_EXACT：只写 canonical survivalTimeSec + source；原始结算 #104 deathTimeMillis
+                // 是「原始 proto #104」字段，不得把 live-derived canonical fact 写回（数据完整性）。
+                p.survivalTimeSec = best.timeSec();
+                p.deathTimeSource = DeathTimeSource.LIVE_EXACT;
+            } else {
+                // SETTLEMENT_SECOND：对齐 canonical settlement（source + 原字段）。
+                p.survivalTimeSec = best.timeSec();
+                p.deathTimeMillis = Math.round(best.timeSec() * 1000.0);
+                p.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+            }
         }
     }
 
