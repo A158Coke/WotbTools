@@ -8,7 +8,9 @@ import com.wotb.core.replay.processing.TeamEntityIdentity;
 import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.facts.HpObservation;
 import com.wotb.core.replay.facts.HpObservationKind;
 import com.wotb.core.replay.facts.ReplayHpTimeline;
@@ -263,14 +265,21 @@ public final class ObservedMaxHp {
             return out;
         }
         for (final ReplayEvent event : events) {
-            if (!(event instanceof DamageEvent damage) || damage.damage() <= 0) {
+            // PR147 §33: method8 is a hit/result-feedback family (VehicleHitEvent), not a damage number;
+            // a hit on the victim is engagement signal regardless of the old fabricated damage value.
+            final int victimEid;
+            if (event instanceof VehicleHitEvent hit && hit.confidence() == DecodeConfidence.EXACT) {
+                victimEid = hit.victimEntityId();
+            } else if (event instanceof DamageEvent damage && damage.damage() > 0) {
+                victimEid = damage.victimEid();
+            } else {
                 continue;
             }
-            final TeamEntityIdentity identity = mapping.identity(damage.victimEid());
+            final TeamEntityIdentity identity = mapping.identity(victimEid);
             if (identity == null || identity.accountId() <= 0) {
                 continue;
             }
-            final double t = relativeSec(damage);
+            final double t = relativeSec(event);
             out.merge(identity.accountId(), t, Math::min);
         }
         return out;

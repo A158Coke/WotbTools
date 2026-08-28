@@ -19,6 +19,7 @@ import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.event.TurretDirectionChangedEvent;
 import com.wotb.core.replay.event.VehicleDestroyedEvent;
+import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.model.EntryHpSource;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.map.MapGridProfile;
@@ -94,7 +95,7 @@ public final class MapOverviewBuilder {
         // 战斗事实重建（§11–§17 唯一可信伤害源）：热力图伤害用权威 HP loss，不用 Type-8 raw
         final double duration = battle.durationS != null && battle.durationS > 0
                 ? battle.durationS.doubleValue()
-                : Math.max(0.0, reconstruction.replayDurationSec());
+                : Math.max(0.0, reconstruction.battleDurationSec());
         final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
                 com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
                         events, mapping,
@@ -185,7 +186,7 @@ public final class MapOverviewBuilder {
             final List<MapOverview.DirectionSample> directionSamples = directionSamples(
                     entityIds, positions, events, battleStartRawClockSec, deathSec, intervals, duration);
             final List<MapOverview.HpSample> hpSamples = hpSamplesByAccount(
-                    events, mapping, player.accountId, deathSec, duration, battleStartRawClockSec);
+                    events, mapping, player.accountId, duration, battleStartRawClockSec);
             vehicles.add(new MapOverview.PlaybackVehicle(
                     player.accountId, player.nickname, player.tankId,
                     ReplayDisplayNames.tankName(player.tankId, player.tankName), player.team,
@@ -221,6 +222,22 @@ public final class MapOverviewBuilder {
                         attacker > 0 ? attacker : null, victim, damage.damage(),
                         com.wotb.core.replay.feature.PlaybackCombatReconstruction
                                 .observedHpLossAt(combat, victim, t)));
+            } else if (event instanceof VehicleHitEvent hit) {
+                // PR147 §33: method8 is a hit/result-feedback family (VehicleHitEvent); a proven hit is the
+                // engagement marker. The authoritative HP-loss (Type7 delta) is exposed as the DAMAGE value;
+                // the raw method8 value is never used as a damage fact.
+                final long victim = accountOf(hit.victimEntityId(), mapping);
+                if (victim <= 0) {
+                    continue;
+                }
+                final long attacker = accountOf(hit.attackerEntityId(), mapping);
+                final double t = relativeSec(hit, battleStartRawClockSec);
+                final Integer hpLoss = com.wotb.core.replay.feature.PlaybackCombatReconstruction
+                        .observedHpLossAt(combat, victim, t);
+                playbackEvents.add(new MapOverview.PlaybackEvent(
+                        "DAMAGE", t,
+                        attacker > 0 ? attacker : null, victim,
+                        hpLoss == null ? 0 : hpLoss, hpLoss));
             } else if (event instanceof VehicleDestroyedEvent destroyed) {
                 final long victim = accountOf(destroyed.entityId(), mapping);
                 if (victim <= 0) {
@@ -274,13 +291,17 @@ public final class MapOverviewBuilder {
 
     /**
      * 车辆回放实测血量采样（battle-relative 秒升序）：过滤 type-7 propId=3 HealthChangedEvent
-     * （EXACT 置信度），按实体→账号映射合并 re-entry，保留 [0, duration] 内样本（含阵亡到 0）。
+     * （EXACT 置信度），按实体→账号映射合并 re-entry，保留 [0, duration] 内样本。
+     *
+     * <p>PR147：HP timeline 与 terminal/death lifecycle 是<b>两条独立权威事实</b>——HP 只由真实
+     * Type-7 positive/0 采样产生，绝不因 destroyed/terminal 事实人工注入 0。受控溺水证明车辆可在
+     * 保留正 HP 时阵亡（deathReason=5），因此「阵亡 → 注入 0」是对 HP fact 的篡改（HP <= 0 不是
+     * 死亡谓词）。阵亡由 {@code deathSec} 与 DESTROYED/KILL 事件表达，与 HP timeline 分离。</p>
      */
     private static List<MapOverview.HpSample> hpSamplesByAccount(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping,
             final long accountId,
-            final Double deathSec,
             final double duration,
             final Float battleStartRawClockSec) {
         final List<MapOverview.HpSample> samples = new ArrayList<>();
@@ -307,12 +328,8 @@ public final class MapOverviewBuilder {
             }
             samples.add(new MapOverview.HpSample(t, hp.currentHealth()));
         }
-        // PR147: destroyed = authoritative 0, same as the canonical adapter (terminal sentinel HP -> null
-        // is dropped above); inject the 0 at deathSec so a destroyed vehicle always has a 0 sample.
-        if (deathSec != null && deathSec >= 0 && deathSec <= duration + 1e-6
-                && samples.stream().noneMatch(s -> s.hp() == 0)) {
-            samples.add(new MapOverview.HpSample(deathSec, 0));
-        }
+        // PR147: HP timeline 只由真实 Type-7 采样组成，不因 destroyed/terminal 事实注入 0
+        // （受控溺水=保留正 HP 阵亡，HP<=0 不是死亡谓词；阵亡由 deathSec / DESTROYED 事件表达）。
         samples.sort(Comparator.comparingDouble(MapOverview.HpSample::timeSec));
         return samples;
     }

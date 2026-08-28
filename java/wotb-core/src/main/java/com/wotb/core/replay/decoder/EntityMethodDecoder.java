@@ -19,6 +19,7 @@ import com.wotb.core.replay.event.TargetingInfoSnapshotEvent;
 import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.event.UnsupportedDamageEvent;
 import com.wotb.core.replay.event.VehicleFiredEvent;
+import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.event.VehicleHealthStateEvent;
 import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.replay.stream.RawReplayPacket;
@@ -123,13 +124,13 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
             return new ReplayDecodeResult(DecodeStatus.PARTIAL, events, warnings);
         }
 
-        // §P1: semantic methods（subtype 8/47/48 —— damage / updateArena / updateArena2）produce
-        // PR147 semantic events (DamageEvent, ParticipantMappingEvent, SupremacyPointsChangedEvent).
-        // These layouts are fixture-proven for the current family AND the explicit 11.18 legacy fixtures
-        // (see ReplayVersionGate.methodLayoutAllowed); unknown/future versions must raw-preserve and
-        // never emit a current-version semantic event for an unaffirmed version.
+        // §P1: closed-semantic methods（subtype 4/8 —— roundFinished/damage）produce version-scoped
+        // PR147 semantic events (RoundFinishedEvent, DamageEvent). The structural EntityMethod envelope is
+        // forward-compatible, but these CLOSED semantics are strictly evidence-gated: unknown/future
+        // versions raw-preserve and never emit a current-version semantic for an unaffirmed version.
+        // (method48 participant-mapping/ARENA_PERIOD are structural — gated inside the subtype48 branch.)
         if (isSemanticMethod(subType)
-                && !ReplayVersionGate.methodLayoutAllowed(context.clientVersion())) {
+                && !ReplayVersionGate.methodSemanticsAllowed(context.clientVersion())) {
             events.add(new UnknownReplayEvent(
                     packet.sequence(), ts, packet.type(), payload.length,
                     "VERSION_UNSUPPORTED_METHOD" + subType, DecodeConfidence.UNKNOWN));
@@ -267,6 +268,9 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                     // boundary (knows clientVersion); consumers consume the propagated rawState and
                     // never re-classify (0xFFFE gated by verifiedFffeTerminalAllowed only).
                     final HpRawState hpRawState = HpRawState.classify(currentHpRaw,
+                            ReplayProtocolProfile.levelOf(context.clientVersion(),
+                                    ReplayProtocolProfile.Capability.TERMINAL_FFFD)
+                                    == ReplayProtocolProfile.Level.VERIFIED,
                             ReplayVersionGate.verifiedFffeTerminalAllowed(context.clientVersion()));
                     // §P0-1: method1 cause semantics are PR147 closed semantics proven only on the
                     // current version family. 11.18 proves only the layout -> keep raw causeFlag,
@@ -315,40 +319,67 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 }
             }
             case SUBTYPE_ENTITY_METHOD_DAMAGE -> {
-                // damage event（outer entityId = 方法调用目标实体，供 victim 证据回退）。
-                // 只要包头已确认 damage method（payload ≥ 8 且 subtype == 8），parseDamage 必产出
-                // 带时间戳的冲突证据事件（短体/非 direct/zero-raw → UnsupportedDamageEvent；
-                // direct & raw>0 → DamageEvent）——warning 只作诊断、绝不能是唯一输出。
-                final List<ReplayEvent> damageEvents = parseDamage(payload, entityId, packet, ts);
-                if (damageEvents.isEmpty()) {
-                    // 防御：理论上不可达（payload ≥ 8 已保证）——保留 warning 作为兜底，不算
-                    // 解析失败，区别于真正的 MALFORMED/TRUNCATED。
-                    warnings.add(new ReplayDecodeWarning("UNSUPPORTED_DAMAGE_VARIANT",
-                            "Undecoded damage-method variant at seq " + packet.sequence()
-                                    + " (payloadLen=" + payload.length + ")"));
+                // PR147: method8 damage-frame layout (attacker/victim/raw damage value/timing) is proven for
+                // the verified families (11.18 + 11.19) — decoded as a structural observation frame (raw value
+                // is non-authoritative; authoritative HP loss = Type7 prop3 deltas). Unverified future
+                // versions raw-preserve (never a version if/else).
+                if (!ReplayVersionGate.damageLayoutAllowed(context.clientVersion())) {
+                    events.add(new UnknownReplayEvent(
+                            packet.sequence(), ts, packet.type(), payload.length,
+                            "VERSION_UNSUPPORTED_METHOD8", DecodeConfidence.UNKNOWN));
+                    warnings.add(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
+                            "EntityMethod subtype 8 layout not affirmed: " + context.clientVersion()));
                 } else {
-                    // direct damage → DamageEvent；其余（短体/非 direct/zero-raw）→
-                    // UnsupportedDamageEvent（语义未解码的证据事件，不产生精确伤害数字，
-                    // 供 HP-loss/killer attribution fail-closed）
-                    events.addAll(damageEvents);
-                    if (damageEvents.size() == 1
-                            && damageEvents.get(0) instanceof UnsupportedDamageEvent) {
+                    // damage event（outer entityId = 方法调用目标实体，供 victim 证据回退）。
+                    // 只要包头已确认 damage method（payload ≥ 8 且 subtype == 8），parseDamage 必产出
+                    // 带时间戳的冲突证据事件（短体/非 direct/zero-raw → UnsupportedDamageEvent；
+                    // direct & raw>0 → DamageEvent）——warning 只作诊断、绝不能是唯一输出。
+                    final List<ReplayEvent> damageEvents = parseDamage(payload, entityId, packet, ts);
+                    if (damageEvents.isEmpty()) {
+                        // 防御：理论上不可达（payload ≥ 8 已保证）——保留 warning 作为兜底，不算
+                        // 解析失败，区别于真正的 MALFORMED/TRUNCATED。
                         warnings.add(new ReplayDecodeWarning("UNSUPPORTED_DAMAGE_VARIANT",
-                                "Unsupported damage-method variant at seq " + packet.sequence()
+                                "Undecoded damage-method variant at seq " + packet.sequence()
                                         + " (payloadLen=" + payload.length + ")"));
+                    } else {
+                        // direct damage → DamageEvent；其余（短体/非 direct/zero-raw）→
+                        // UnsupportedDamageEvent（语义未解码的证据事件，不产生精确伤害数字，
+                        // 供 HP-loss/killer attribution fail-closed）
+                        events.addAll(damageEvents);
+                        if (damageEvents.size() == 1
+                                && damageEvents.get(0) instanceof UnsupportedDamageEvent) {
+                            warnings.add(new ReplayDecodeWarning("UNSUPPORTED_DAMAGE_VARIANT",
+                                    "Unsupported damage-method variant at seq " + packet.sequence()
+                                            + " (payloadLen=" + payload.length + ")"));
+                        }
                     }
                 }
             }
             case SUBTYPE_UPDATE_ARENA2 -> {
-                // entity/account mapping
-                final ParticipantMappingResult mapping = parseUpdateArena2(payload, entityId, packet, ts);
-                if (mapping != null) {
-                    events.addAll(mapping.mappingEvents());
+                // PR147: method48 updateArena2 carries structural roster (participant mapping, wrapper=1) +
+                // ARENA_PERIOD anchor (wrapper=3), proven for the verified families (11.18 + 11.19). Decoding
+                // these is essential for 11.18 fixtures (entity→account mapping + battle-start clock anchor) and
+                // is gated by the capability VERIFIED == verified family, NEVER a version if/else. The
+                // closed-semantic supremacy-points value (wrapper=13) stays 11.19-only.
+                if (!ReplayVersionGate.participantMappingLayoutAllowed(context.clientVersion())) {
+                    events.add(new UnknownReplayEvent(
+                            packet.sequence(), ts, packet.type(), payload.length,
+                            "VERSION_UNSUPPORTED_METHOD48", DecodeConfidence.UNKNOWN));
+                    warnings.add(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
+                            "EntityMethod subtype 48 layout not affirmed: " + context.clientVersion()));
+                } else {
+                    // entity/account mapping
+                    final ParticipantMappingResult mapping = parseUpdateArena2(payload, entityId, packet, ts);
+                    if (mapping != null) {
+                        events.addAll(mapping.mappingEvents());
+                    }
+                    // 争霸赛实时点数（root field 12，保守结构校验；闭合语义 → 11.19 家族才解）
+                    if (ReplayVersionGate.methodSemanticsAllowed(context.clientVersion())) {
+                        events.addAll(parseSupremacyPoints(payload, packet, ts));
+                    }
+                    // PR147 wrapper=3 ARENA_PERIOD（root field3 = period）；period=3 BATTLE = battle-start anchor。
+                    events.addAll(parseArenaPeriod(payload, packet, ts));
                 }
-                // 争霸赛实时点数（root field 12，保守结构校验；结构不合法/数值非法 → 跳过）
-                events.addAll(parseSupremacyPoints(payload, packet, ts));
-                // PR147 wrapper=3 ARENA_PERIOD（root field3 = period）；period=3 BATTLE = battle-start anchor。
-                events.addAll(parseArenaPeriod(payload, packet, ts));
             }
             case SUBTYPE_UPDATE_ARENA -> {
                 // updateArena - 暂时不做实体映射，现有功能已覆盖
@@ -549,30 +580,20 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                     attackerEid, effectiveVictim, null, null, "DAMAGE_METHOD_VARIANT"));
         }
 
-        final int damage = (body[14] & 0xFF) << 8 | (body[15] & 0xFF);
-        if (damage <= 0) {
-            // direct 变体但 raw == 0：raw 数值不是权威 HP delta（protocol.md），不得仅凭 raw=0
-            // 判定「无伤害」→ 作为 unsupported/conflict 证据保留（身份可解析则填写，victim 缺失
-            // 回退 outer entityId）——否则该通知会被当作「无冲突」，窗口内另一条 direct DAMAGE
-            // 可能被错判为攻击者/击杀者。
-            final int effectiveVictim = victimEid > 0 ? victimEid : outerEntityId;
-            return List.of(new UnsupportedDamageEvent(
-                    packet.sequence(), ts, packet.type(), DecodeConfidence.PARTIAL,
-                    attackerEid, effectiveVictim, null, null, "ZERO_RAW_DAMAGE"));
+        // PR147 §33: the method8 21-byte variant is a hit/result-feedback family — its packed bytes are
+        // NOT HP damage. Produce VehicleHitEvent (attacker/victim + primary/secondary result + packed
+        // metadata + conservative penetrationFamily); authoritative HP loss comes from Type7 prop3 deltas.
+        final int primary = body[13] & 0xFF;
+        final int secondary = body[14] & 0xFF;
+        final byte[] packed = new byte[Math.max(0, body.length - 11)];
+        if (packed.length > 0) {
+            System.arraycopy(body, 11, packed, 0, packed.length);
         }
-        if (victimEid <= 0) {
-            // direct raw>0 但 body 内 victim eid 缺失/无效：不能保证完整 direct identity——
-            // 降级为 UnsupportedDamageEvent（PARTIAL，victim 用可靠 outer entityId），
-            // 绝不产出 victim=0 的 EXACT DamageEvent（否则 PlaybackCombatReconstruction 无法
-            // 映射 victim 会静默 continue，窗口被当作「无冲突」→ 错误归属/错误 killer）。
-            return List.of(new UnsupportedDamageEvent(
-                    packet.sequence(), ts, packet.type(), DecodeConfidence.PARTIAL,
-                    attackerEid, outerEntityId, null, null, "DIRECT_VICTIM_UNKNOWN"));
-        }
-
-        return List.of(new DamageEvent(
+        final int effectiveVictim = victimEid > 0 ? victimEid : outerEntityId;
+        return List.of(new VehicleHitEvent(
                 packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
-                attackerEid, victimEid, null, null, damage, false));
+                attackerEid, effectiveVictim, primary, secondary, packed,
+                VehicleHitEvent.penetrationFamily(primary, secondary)));
     }
 
     /**
@@ -760,11 +781,13 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     private record ParticipantMappingResult(List<ParticipantMappingEvent> mappingEvents) {
     }
 
-    /** 是否 current-version-only 语义 method（P1 版本门禁：8/47/48 —— damage/updateArena/updateArena2）。 */
+    /** 是否 current-version scoped 闭语义 method（版本门禁：4 ——
+     *  roundFinished winnerTeam/finishReason）。这些 closed numeric 语义未知/未来版本必须 raw-preserve。
+     *  method8 damage-frame 是结构层（见 ReplayVersionGate.damageLayoutAllowed，11.18/11.19 解码）；
+     *  method48 participant-mapping / ARENA_PERIOD 是结构层（participantMappingLayoutAllowed）；
+     *  method47 updateArena 不产出事件。 */
     private static boolean isSemanticMethod(final int subType) {
-        return subType == SUBTYPE_ENTITY_METHOD_DAMAGE
-                || subType == SUBTYPE_UPDATE_ARENA
-                || subType == SUBTYPE_UPDATE_ARENA2;
+        return subType == SUBTYPE_ROUND_FINISHED;
     }
 
     /** 是否 legacy-compatible 观测布局 method（P0-3 版本门禁范围）。 */

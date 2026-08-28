@@ -5,6 +5,7 @@ import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.UnsupportedDamageEvent;
+import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.facts.ReplayTerminalLifecycle;
 import com.wotb.core.replay.processing.TeamEntityIdentity;
 import com.wotb.core.replay.processing.TeamEntityMapping;
@@ -90,7 +91,28 @@ public final class PlaybackCombatReconstruction {
                 }
                 samples.computeIfAbsent(account, k -> new ArrayList<>())
                         .add(new double[]{t, current});
+            } else if (event instanceof VehicleHitEvent hit) {
+                // PR147 §33: method8 is a hit/result-feedback family (VehicleHitEvent), NOT a damage number.
+                // A proven hit is the attacker→victim engagement signal for attribution; authoritative HP
+                // loss is derived from the Type7 samples (above), never from a method8 magnitude.
+                if (hit.confidence() != DecodeConfidence.EXACT) {
+                    continue;
+                }
+                final double t = battleClockOf(hit, battleStartRawClockSec);
+                if (!inBattle(t, duration)) {
+                    continue;
+                }
+                final Long attackerL = accountOf(hit.attackerEntityId(), mapping);
+                final double attacker = attackerL == null ? 0.0 : attackerL;
+                final Long victim = accountOf(hit.victimEntityId(), mapping);
+                if (victim == null || victim <= 0) {
+                    unsupportedUnresolved.add(new double[]{t, attacker});
+                    continue;
+                }
+                damagesByVictim.computeIfAbsent(victim, k -> new ArrayList<>())
+                        .add(new double[]{t, attacker});
             } else if (event instanceof DamageEvent damage) {
+                // legacy DamageEvent consumers (non-method8 sources, if any) keep attribution semantics.
                 if (damage.damage() <= 0) {
                     continue;
                 }

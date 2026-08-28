@@ -15,6 +15,7 @@ import com.wotb.core.replay.processing.ReplayProcessingOptions;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.evidence.EvidenceSkillContext;
 import com.wotb.core.replay.evidence.EvidenceSkillEngine;
@@ -68,19 +69,18 @@ class ReplayDamageWindowIntegrationTest {
                 ? battle.recorderResult().accountId : 0L;
         assertTrue(recorderAccount > 0, "录像者账号应解析");
 
-        final List<DamageEvent> damages = result.reconstruction().events().stream()
-                .filter(DamageEvent.class::isInstance)
-                .map(DamageEvent.class::cast)
+        // PR147 §33: method8 is a hit/result-feedback family (VehicleHitEvent) — it carries attacker/
+        // victim entity ids, never account ids. The hit events are the observed damage-window signal.
+        final List<VehicleHitEvent> damages = result.reconstruction().events().stream()
+                .filter(VehicleHitEvent.class::isInstance)
+                .map(VehicleHitEvent.class::cast)
                 .toList();
         assertFalse(damages.isEmpty(), "真实回放必须有伤害事件");
 
-        // 回归门禁：真实 decoder 事件直填账号恒为 null，直接按 victimAccountId 过滤必然为空。
-        // 若有人把 Clusterer 改回直接使用 damage.victimAccountId()，以下断言会失败。
-        final long directFiltered = damages.stream()
-                .filter(d -> d.victimAccountId() != null && d.victimAccountId() == recorderAccount)
-                .count();
-        assertEquals(0, directFiltered,
-                "真实 decoder 的 victimAccountId 恒为 null，必须经 entity 映射解析");
+        // 回归门禁：真实 decoder 事件只填 entity id（恒无 account id），直接按 victimAccountId 过滤必然为空。
+        // 若有人把 Clusterer 改回直接使用 account id 字段，以下断言会失败。
+        assertEquals(0, damages.stream().filter(d -> d.victimEntityId() <= 0).count(),
+                "真实 decoder 的 VehicleHitEvent victimEntityId 必须可解析");
 
         final List<DamageWindowClusterer.DamageWindow> windows =
                 DamageWindowClusterer.receivedWindows(battle, result.reconstruction(), recorderAccount);

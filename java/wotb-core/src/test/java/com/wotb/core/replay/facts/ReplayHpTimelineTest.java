@@ -4,6 +4,7 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
+import com.wotb.core.replay.event.HpRawState;
 import com.wotb.core.replay.event.MaterializationEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.RecorderHealthChangedEvent;
@@ -57,7 +58,8 @@ class ReplayHpTimelineTest {
         events.add(new RecorderHealthChangedEvent(4, new ReplayTimestamp(9f, null), 8,
                 DecodeConfidence.EXACT, 10, 3570, 1));
         events.add(new VehicleHealthStateEvent(5, new ReplayTimestamp(10f, null), 8,
-                DecodeConfidence.EXACT, 10, 2700, 20, 0, VehicleHealthStateEvent.Cause.DIRECT));
+                DecodeConfidence.EXACT, 10, 2700, 20, 0, VehicleHealthStateEvent.Cause.DIRECT,
+                HpRawState.CURRENT_HP));
 
         final List<HpObservation> timeline =
                 ReplayHpTimeline.build(events, mapping(), 0.0);

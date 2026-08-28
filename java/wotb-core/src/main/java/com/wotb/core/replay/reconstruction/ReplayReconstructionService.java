@@ -111,11 +111,19 @@ public class ReplayReconstructionService {
         }
 
         // PR147 resolved battle start: wrapper3 ARENA_PERIOD.BATTLE anchor, else RoundFinishedEvent
-        // (method4/AFTERBATTLE) rawClock minus SETTLEMENT duration (battle_results root5), else null.
-        // This single resolved value is what the timeline / adapter / legacy producers agree on; it is
-        // NEVER Type14 (stream-close) or a raw session clock. reuses the settlement duration so it matches
-        // the canonical BattleTimeline clock (which uses battle.durationS = settlement root5).
-        final Float battleStartResolved = resolveBattleStartRawClock(allEvents, settlementDurationSec(entries));
+        // (method4/AFTERBATTLE) rawClock minus SETTLEMENT duration (battle_results root5), else an
+        // ESTIMATED fallback of lastClock - settlementDurationSec. This single resolved value is what the
+        // timeline / adapter / legacy producers agree on; it is NEVER Type14 (stream-close) or a raw
+        // session clock. It reuses the settlement duration so it matches the canonical BattleTimeline
+        // clock (which uses battle.durationS = settlement root5). The last fallback is version-agnostic
+        // structural data (no version if/else) so a verified-family replay whose decoded semantic anchor
+        // is gated still gets a consistent battle-relative clock.
+        final Double settledDur = settlementDurationSec(entries);
+        Float battleStartResolved = resolveBattleStartRawClock(allEvents, settledDur);
+        if (battleStartResolved == null && settledDur != null && settledDur > 0
+                && Float.isFinite(lastClock) && lastClock > settledDur) {
+            battleStartResolved = (float) (lastClock - settledDur);
+        }
 
         // 5. 重建战场状态
         final BattleStateReconstructor reconstructor = new BattleStateReconstructor();
@@ -132,20 +140,16 @@ public class ReplayReconstructionService {
         final ReplayStreamDiagnostics updatedDiagnostics = updateDiagnostics(
                 streamResult.diagnostics(), typeDecodeStats);
 
-        // 9. 组装结果
-        final float replayDuration;
-        if (!Float.isNaN(lastClock) && lastClock > 0) {
-            replayDuration = lastClock;
-        } else if (metadata.battleDurationSec() != null && metadata.battleDurationSec() > 0) {
-            replayDuration = metadata.battleDurationSec().floatValue();
-        } else {
-            replayDuration = 0f;
-        }
+        // 9. 组装结果 —— PR147 时钟域拆分：battleDurationSec 是「战斗时长」（battle-relative 跨度），
+        // 绝不等于原始 session 最后一个包的时钟（那是 streamLastRawClockSec = diagnostics().lastClockSec()）。
+        // 权威顺序：settlement root5 战斗时长 → (lastClock - battleStartResolved) → metadata battleDuration。
+        final float battleDurationSec = resolveBattleDurationSec(
+                settlementDurationSec(entries), battleStartResolved, lastClock, metadata);
 
         return new ReplayReconstruction(
                 metadata,
                 streamResult.header(),
-                replayDuration,
+                battleDurationSec,
                 battleStartResolved != null
                         ? battleStartResolved
                         : streamResult.diagnostics().battleStartRawClockSec(),
@@ -235,6 +239,34 @@ public class ReplayReconstructionService {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    /**
+     * PR147 battle-relative duration authority chain. This is the <b>battle duration</b>, never the raw
+     * session last-clock (that is {@code diagnostics().lastClockSec()} / {@link ReplayReconstruction#streamLastRawClockSec()}).
+     * <ol>
+     *   <li>settlement root5 (battle_results.dat; the authoritative battle duration);</li>
+     *   <li>{@code lastClock - battleStartRawClockSec} when the battle start is resolved;</li>
+     *   <li>meta.json#battleDuration;</li>
+     *   <li>0f (unknown → consumers needing battle-relative truth must fail closed).</li>
+     * </ol>
+     */
+    private static float resolveBattleDurationSec(
+            final Double settlementDurationSec,
+            final Float battleStartResolved,
+            final float lastClock,
+            final ReplayMetadata metadata) {
+        if (settlementDurationSec != null && settlementDurationSec > 0) {
+            return settlementDurationSec.floatValue();
+        }
+        if (battleStartResolved != null && Float.isFinite(battleStartResolved) && battleStartResolved >= 0
+                && Float.isFinite(lastClock) && lastClock > battleStartResolved) {
+            return lastClock - battleStartResolved;
+        }
+        if (metadata.battleDurationSec() != null && metadata.battleDurationSec() > 0) {
+            return metadata.battleDurationSec().floatValue();
+        }
+        return 0f;
     }
 
     private static JsonNode parseMeta(Map<String, byte[]> entries) throws IOException {

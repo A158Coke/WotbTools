@@ -15,19 +15,22 @@ Replay archive reader (ReplayReconstructionService)
 ReplayPacketStreamReader  (stream 包)
     │  ├── ReplayStreamHeader 解析
     │  ├── 从头到尾扫描所有合法包
-    │  ├── 错误容忍 / 重同步
+    │  ├── 头部版本读出（供版本门禁；见 ReplayVersionGate）
     │  └── ReplayStreamDiagnostics 输出
     │
     ▼
 ReplayPacketDecoderRegistry  (decoder 包)
     │  ├── ReplayPacketDecoder 接口
     │  ├── PositionDecoder (Type 10)
-    │  ├── EntityMethodDecoder (Type 8)
+    │  ├── EntityMethodDecoder (Type 8, method0/1/4/5/8/17/20/27/29/36/38)
     │  ├── EntityLeaveDecoder (Type 4)
-    │  ├── BattleEndDecoder (Type 14)
+    │  ├── BattleEndDecoder (Type 14 → ReplayStreamClosedEvent，仅流关闭)
     │  ├── EntityCreateDecoder (Type 0/1/2)
-    │  ├── EntityPropertyDecoder (Type 7, 占位)
-    │  └── PlaceholderDecoder (Type 5/31/35/39)
+    │  ├── MaterializationDecoder (Type 5) + MaterializationAnnouncedDecoder (Type 33)
+    │  ├── EntityPropertyDecoder (Type 7, prop2/prop3 HP)
+    │  ├── GunMarkerSizeDecoder (Type 31) / AimRayStateDecoder (Type 39)
+    │  ├── SessionDecisecondLowByteDecoder (Type 35) / AmmunitionSelectionDecoder
+    │  └── VehicleModuleCrewStateDecoder (method8 专用子型前置)
     │
     ▼
 BattleStateReconstructor  (reconstruction 包)
@@ -131,17 +134,17 @@ ReplayReconstruction 输出
 | 4    | EntityLeave          | EXACT         | entityId 精确提取            |
 | 8    | EntityMethod         | EXACT         | damage + updateArena2 映射 |
 | 10   | Position             | EXACT         | 完整位置解析，NaN/Infinity 验证   |
-| 14   | BattleEnd            | EXACT/PARTIAL | 结束状态 + 胜方尝试              |
+| 14   | StreamClose         | EXACT         | data.wotreplay 流关闭（ReplayStreamClosedEvent） |
 
 ### 部分支持的 packet type
 
 | Type | 含义                 | 状态      | 说明                |
 |------|--------------------|---------|-------------------|
-| 7    | EntityProperty     | PARTIAL | 属性块结构识别中，血量/存活待研究 |
-| 5    | Spotting           | UNKNOWN | 占位                |
-| 31   | Tracked/State      | UNKNOWN | 占位                |
-| 35   | Chat               | UNKNOWN | 占位                |
-| 39   | Map/NestedProperty | UNKNOWN | 占位                |
+| 7    | EntityProperty     | EXACT   | propId=3 当前 HP / propId=2 炮塔方向（PR147 证明） |
+| 5    | Materialization    | EXACT/PARTIAL | Type 5 实体物化（payload 长度门禁，非 Spotting） |
+| 31   | GunMarkerSize      | EXACT   | 炮口大小（closed semantics 版本门禁） |
+| 35   | SessionDecisecond  | EXACT   | 秒级 decisecond 低字节（PR147 证明） |
+| 39   | AimRayState        | EXACT   | 瞄准射线状态（method36 protobuf） |
 
 ### 尚未支持的 packet type
 
@@ -188,7 +191,7 @@ Body: file=<单个 .wotbreplay>
 
 ```json
 {
-  "replayDurationSec": 327.42,
+  "battleDurationSec": 327.42,
   "battleStartRawClockSec": null,
   "packetCount": 98341,
   "decodedPacketCount": 52100,

@@ -101,6 +101,22 @@ public final class ReplayParser {
         return new String(data, off, versionLen, java.nio.charset.StandardCharsets.UTF_8);
     }
 
+    /**
+     * PR147 settlement version gate (P0-3): whether the battle_results.dat numeric semantics of
+     * {@code #24/#25/#105} and {@code root2/4/5} are affirmed (11.19 current family, plus the explicit
+     * 11.18 legacy family that repository fixtures independently proved). Unknown/future versions are
+     * <b>not</b> affirmed → the parser raw-preserves the settlement fields and fails closed on every
+     * derived conclusion (survived / death time / killer id).
+     *
+     * <p>This is a parse-local copy of the {@code com.wotb.core.replay.decoder.ReplayVersionGate} prefix
+     * set. The parse package cannot depend on {@code replay.*} (CoreArchitectureTest rejects the cycle);
+     * consolidating both onto a neutral package is tracked as the stream-header version-grammar debt.</p>
+     */
+    private static boolean isAffirmedSettlementSchema(final String clientVersion) {
+        final String v = clientVersion == null ? "" : clientVersion.trim().toLowerCase(java.util.Locale.ROOT);
+        return v.startsWith("11.19.0_china") || v.startsWith("11.18.0_china");
+    }
+
     public static Battle parse(final byte[] replayBytes) throws IOException {
         try {
             return parse(unzip(replayBytes));
@@ -120,6 +136,13 @@ public final class ReplayParser {
         } else {
             meta = MAPPER.createObjectNode();
         }
+        // PR147 settlement version gate (P0-3): the 11.19/11.18 numeric semantics of #24/#25/#105 and
+        // root2/4/5 are version-scoped. Read the authoritative clientVersion from data.wotreplay BEFORE
+        // deriving any settlement conclusion so an unknown/future version is raw-preserved rather than
+        // interpreted with current-version settlement numerics (fail-closed).
+        final byte[] eventData = entries.get("data.wotreplay");
+        final String clientVersion = readDataWotreplayClientVersion(eventData);
+        final boolean settlementSchemaAffirmed = isAffirmedSettlementSchema(clientVersion);
         final byte[] dat = entries.get("battle_results.dat");
         if (dat == null) {
             throw new IOException("Replay is missing battle_results.dat");
@@ -224,21 +247,34 @@ public final class ReplayParser {
             pr.settlementDeathReasonRaw = deathReasonRaw instanceof Number
                     ? ((Number) deathReasonRaw).intValue() : null;
             // survived is derived from deathReason (== -1 survivor sentinel); NOT a survived field.
-            pr.survived = pr.settlementDeathReasonRaw != null
-                    && pr.settlementDeathReasonRaw == -1;
-            // deathTimeMillis = canonical settlement death ms (derived from field24 lifeTime; #104
-            // does not exist in 11.19). Survived = 0.
-            final long lifeMs = pr.settlementLifeTimeSec > 0
-                    ? Math.round(pr.settlementLifeTimeSec * 1000.0) : 0L;
-            pr.deathTimeMillis = pr.survived ? 0L : lifeMs;
+            if (settlementSchemaAffirmed) {
+                // Affirmed 11.19/11.18 settlement schema: derive the concrete survivor/dead + death-time
+                // conclusion from the proven numeric semantics (#105 deathReason / #24 lifeTime).
+                pr.survived = pr.settlementDeathReasonRaw != null
+                        && pr.settlementDeathReasonRaw == -1;
+                // deathTimeMillis = canonical settlement death ms (derived from field24 lifeTime; #104
+                // does not exist in 11.19). Survived = 0.
+                final long lifeMs = pr.settlementLifeTimeSec > 0
+                        ? Math.round(pr.settlementLifeTimeSec * 1000.0) : 0L;
+                pr.deathTimeMillis = pr.survived ? 0L : lifeMs;
+            } else {
+                // Unknown/future version: settlement numeric semantics NOT affirmed (P0-3). Raw-preserve
+                // the #24/#25/#105 fields above but fail-closed on the derived conclusion — never turn a
+                // missing/unsupported deathReason into an affirmed "dead" or a fabricated death time.
+                pr.survived = false;
+                pr.deathTimeMillis = 0L;
+            }
             pr.raw = info;
             players.add(pr);
         }
-        // Map killer result/entity-id -> killer accountId (PR147 namespace).
-        for (final PlayerResult pr : players) {
-            if (pr.settlementKillerResultEntityId != null) {
-                final Long ka = resultToAccount.get(pr.settlementKillerResultEntityId);
-                pr.killerAccountId = ka != null && ka > 0 ? ka : null;
+        // Map killer result/entity-id -> killer accountId (PR147 namespace). Only under an affirmed
+        // settlement schema; an unknown/future version's #25 is raw-preserved and never mis-attributed.
+        if (settlementSchemaAffirmed) {
+            for (final PlayerResult pr : players) {
+                if (pr.settlementKillerResultEntityId != null) {
+                    final Long ka = resultToAccount.get(pr.settlementKillerResultEntityId);
+                    pr.killerAccountId = ka != null && ka > 0 ? ka : null;
+                }
             }
         }
 
@@ -295,24 +331,12 @@ public final class ReplayParser {
         battle.rosterComplete = resolveRosterComplete(roster.keySet(), rosterTeamByAcc, players);
 
         // ---- data.wotreplay 事件流 ----
-        // ReplayParser 仅从这里读取 clientVersion。PR147 之前基于 direct-damage 累计达到
-        // settlement damageReceived 阈值来生成 PlayerResult.killVictims 的逻辑已移除：
-        // damageReceived 不是本局最大 HP，也不能证明 lethal boundary / killer identity。
-        // 击杀归因必须由 canonical terminal lifecycle + 可靠 damage backing 产生；无法证明则 UNKNOWN。
-        final byte[] eventData = entries.get("data.wotreplay");
-        if (eventData != null) {
-            // PR147: production framing/header is the canonical ReplayPacketStreamReader/ReplayStreamHeader.
-            // The EventStreamReader parallel raw semantic parser is research/probe tooling only (moved out
-            // of the production path). This parser reads ONLY the header's clientVersion (nothing else),
-            // with a minimal inline header-version read so the parse package stays free of a replay.*
-            // dependency (replay processing already depends on parse, so parse must not depend on replay —
-            // otherwise the core layer would form a package cycle).
-            try {
-                battle.clientVersion = readDataWotreplayClientVersion(eventData);
-            } catch (Exception ignored) {
-                // Summary parsing remains settlement-usable when the live stream is unavailable/corrupt.
-            }
-        }
+        // clientVersion 已在方法开头读取（header 内权威版本），这里仅回填到 Battle。
+        // ReplayParser 之前基于 direct-damage 累计达到 settlement damageReceived 阈值来生成
+        // PlayerResult.killVictims 的逻辑已移除：damageReceived 不是本局最大 HP，也不能证明 lethal
+        // boundary / killer identity。击杀归因必须由 canonical terminal lifecycle + 可靠 damage backing
+        // 产生；无法证明则 UNKNOWN。
+        battle.clientVersion = clientVersion == null ? "" : clientVersion;
 
 
         // 存活时间: 存活=战斗时长；阵亡=senttlement field24 lifeTime 或 UNKNOWN=0。
@@ -324,8 +348,13 @@ public final class ReplayParser {
             if (pr.survived) {
                 pr.survivalTimeSec = bd;
             } else {
-                final double st = pr.settlementLifeTimeSec;
-                pr.deathTimeSource = st > 0
+                // Death authority fail-closed: only an affirmed settlement schema produces
+                // SETTLEMENT_SECOND (lifeTime is the proven settlement death second). An unknown/future
+                // version is never given a fabricated death time — consumers must honor UNKNOWN.
+                final boolean settlementDeathAffirmed = settlementSchemaAffirmed
+                        && pr.settlementLifeTimeSec > 0;
+                final double st = settlementDeathAffirmed ? pr.settlementLifeTimeSec : 0;
+                pr.deathTimeSource = settlementDeathAffirmed
                         ? com.wotb.core.model.DeathTimeSource.SETTLEMENT_SECOND
                         : com.wotb.core.model.DeathTimeSource.UNKNOWN;
                 pr.survivalTimeSec = st > 0 ? Math.min(st, bd) : 0;

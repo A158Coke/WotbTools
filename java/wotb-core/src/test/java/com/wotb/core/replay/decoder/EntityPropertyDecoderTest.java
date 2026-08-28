@@ -76,6 +76,31 @@ class EntityPropertyDecoderTest {
         assertEquals(12_345, eMax.entityId());
     }
 
+    /**
+     * PR162 forward compatibility: an ordinary positive HP is a structural value decodable for a future
+     * version, while the special sentinels (0xFFFE / 0xFFFD) are version-scoped closed semantics that a
+     * future version must NOT inherit → raw/UNKNOWN, never terminal.
+     */
+    @Test
+    void futureVersionDecodesStructuralHpButNotSpecialSentinel() {
+        final ReplayDecodeContext future = new ReplayDecodeContext("11.22.0_china");
+        // ordinary positive HP → EXACT CURRENT_HP
+        final ReplayDecodeResult hp = decoder.decode(future, packet(3, new byte[]{(byte) 0x96, 0x0b}));
+        final HealthChangedEvent hpEvent = assertInstanceOf(HealthChangedEvent.class, hp.events().getFirst());
+        assertEquals(2966, hpEvent.currentHealth());
+        assertEquals(HpRawState.CURRENT_HP, hpEvent.rawState());
+        assertEquals(DecodeConfidence.EXACT, hpEvent.confidence(), "普通正 HP 结构值保留 EXACT");
+        // 0xFFFE special sentinel → must NOT inherit 11.19 terminal meaning
+        final ReplayDecodeResult fffe = decoder.decode(future, packet(3, new byte[]{(byte) 0xFE, (byte) 0xFF}));
+        final HealthChangedEvent fffeEvent = assertInstanceOf(HealthChangedEvent.class, fffe.events().getFirst());
+        assertEquals(HpRawState.UNKNOWN_OTHER, fffeEvent.rawState(), "未认证特殊 sentinel 不得继承 terminal");
+        assertEquals(DecodeConfidence.PARTIAL, fffeEvent.confidence());
+        // 0xFFFD special sentinel → likewise raw/UNKNOWN
+        final ReplayDecodeResult fffd = decoder.decode(future, packet(3, new byte[]{(byte) 0xFD, (byte) 0xFF}));
+        final HealthChangedEvent fffdEvent = assertInstanceOf(HealthChangedEvent.class, fffd.events().getFirst());
+        assertEquals(HpRawState.UNKNOWN_OTHER, fffdEvent.rawState());
+    }
+
     @Test
     void propId2WrongValueLenStaysUnknown() {
         final ReplayDecodeResult result = decoder.decode(context, packet(2, new byte[]{0x01}));

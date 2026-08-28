@@ -72,22 +72,6 @@ public record VehicleHealthStateEvent(
         };
     }
 
-    /** 兼容便捷构造器（合成/测试场景）：按 canonical current-version 语义分类。生产必须用带 rawState 的主构造器。 */
-    public VehicleHealthStateEvent(
-            final int sequence,
-            final ReplayTimestamp timestamp,
-            final int packetType,
-            final DecodeConfidence confidence,
-            final int entityId,
-            final int currentHpRaw,
-            final int sourceEntity,
-            final int causeFlag,
-            final Cause cause) {
-        this(sequence, timestamp, packetType, confidence, entityId,
-                currentHpRaw, sourceEntity, causeFlag, cause,
-                HpRawState.classify(currentHpRaw, true));
-    }
-
     public VehicleHealthStateEvent {
         rawState = rawState == null ? HpRawState.UNKNOWN_OTHER : rawState;
         cause = cause == null ? Cause.UNKNOWN : cause;
