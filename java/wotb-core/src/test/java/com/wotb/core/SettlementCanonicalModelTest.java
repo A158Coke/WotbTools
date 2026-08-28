@@ -4,7 +4,12 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.ReplayParser;
+import com.wotb.core.replay.event.ArenaPeriodChangedEvent;
+import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.processing.DeathTimeReconciler;
+import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -111,6 +116,27 @@ class SettlementCanonicalModelTest {
         assertEquals(DeathTimeSource.SETTLEMENT_SECOND, dead.deathTimeSource);
         assertEquals(128.0, dead.survivalTimeSec, 0.001);
         assertNull(alive.deathTimeSource, "幸存者无死亡证据");
+    }
+
+    @Test
+    void battleStartAnchorIsWrapper3BattleFirst() {
+        // PR147: battle-relative time anchor = first wrapper3 ARENA_PERIOD.BATTLE rawClock.
+        final ReplayTimestamp pre = new ReplayTimestamp(100f, null);
+        final ReplayTimestamp battleAnchor = new ReplayTimestamp(200f, null);
+        final ReplayTimestamp after = new ReplayTimestamp(210f, null);
+        final List<ReplayEvent> events = List.of(
+                new ArenaPeriodChangedEvent(1, pre, 8, DecodeConfidence.EXACT, 2,
+                        ArenaPeriodChangedEvent.Period.PREBATTLE),
+                new ArenaPeriodChangedEvent(2, battleAnchor, 8, DecodeConfidence.EXACT, 3,
+                        ArenaPeriodChangedEvent.Period.BATTLE),
+                new ArenaPeriodChangedEvent(3, after, 8, DecodeConfidence.EXACT, 4,
+                        ArenaPeriodChangedEvent.Period.AFTERBATTLE));
+        assertEquals(200f, ReplayReconstructionService.battleStartRawClockFromArenaPeriod(events), 0.001f,
+                "wrapper3 BATTLE (not PREBATTLE/AFTERBATTLE) is the battle-start anchor");
+        // No BATTLE transition -> null (caller falls back to diagnostics).
+        assertEquals(null, ReplayReconstructionService.battleStartRawClockFromArenaPeriod(
+                List.of(new ArenaPeriodChangedEvent(1, pre, 8, DecodeConfidence.EXACT, 2,
+                        ArenaPeriodChangedEvent.Period.PREBATTLE))));
     }
 
     private static void assertNotEquals(final long a, final long b, final String msg) {
