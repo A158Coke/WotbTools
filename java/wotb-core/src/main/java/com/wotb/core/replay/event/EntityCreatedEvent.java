@@ -7,7 +7,7 @@ package com.wotb.core.replay.event;
  * @param timestamp     时间戳
  * @param packetType    来源原始 packet type
  * @param confidence    解码置信度
- * @param entityId      实体 ID
+ * @param entityId      实体 ID；当格式未证明时为 UNRESOLVED(-1)，消费者对 &lt;=0 一律视为未解析
  * @param unknownInitData 无法解析的初始化数据（格式待研究）
  */
 public record EntityCreatedEvent(

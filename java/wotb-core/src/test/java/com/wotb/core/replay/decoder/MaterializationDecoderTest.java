@@ -3,6 +3,7 @@ package com.wotb.core.replay.decoder;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.MaterializationAnnouncedEvent;
 import com.wotb.core.replay.event.MaterializationEvent;
+import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.stream.PacketReadStatus;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,7 @@ class MaterializationDecoderTest {
 
     private final MaterializationDecoder decoder = new MaterializationDecoder();
     private final MaterializationAnnouncedDecoder announcedDecoder = new MaterializationAnnouncedDecoder();
+    private final EntityLeaveDecoder leaveDecoder = new EntityLeaveDecoder();
     private final ReplayDecodeContext ctx = new ReplayDecodeContext("11.19.0_china");
 
     private static RawReplayPacket packet(final int type, final byte[] payload) {
@@ -53,25 +55,48 @@ class MaterializationDecoderTest {
         final ReplayDecodeResult r = decoder.decode(ctx, packet(5, payload));
         final MaterializationEvent e = (MaterializationEvent) r.events().get(0);
         assertNull(e.currentHp(), "non-entityTypeId=2 must not expose HP (version/class scoped)");
-        assertEquals(DecodeConfidence.PARTIAL, e.confidence());
+        assertEquals(DecodeConfidence.EXACT, e.confidence(),
+                "presence EXACT independent of HP class scope");
     }
 
     @Test
-    void hpOffsetIsVersionGated() {
-        // 未知版本：raw-preserve，不得按 11.19 偏移 51 臆测 HP
+    void unknownVersionRawPreservesType5Materialization() {
+        // §P0-2：未知版本整体 raw-preserve（UNKNOWN + VERSION_UNSUPPORTED_TYPE5），不得解出语义物化
         final ReplayDecodeContext unknown = new ReplayDecodeContext("11.20.0_china");
         final ReplayDecodeResult r = decoder.decode(unknown, packet(5, vehicleType5(123, 2, 3570)));
-        final MaterializationEvent e = (MaterializationEvent) r.events().get(0);
-        assertNull(e.currentHp(), "unknown version must not apply offset-51 semantics");
+        assertEquals(DecodeStatus.UNSUPPORTED, r.status(),
+                "unknown version must raw-preserve, not decode semantic materialization");
+        final UnknownReplayEvent u = (UnknownReplayEvent) r.events().get(0);
+        assertEquals("VERSION_UNSUPPORTED_TYPE5", u.reasonCode());
+        assertEquals(DecodeConfidence.UNKNOWN, u.confidence());
     }
 
     @Test
-    void hpSentinelStaysUnknownNotExact() {
+    void materializationPresenceExactEvenWhenHpSentinel() {
+        // §P0-1: HP sentinel means HP unknown, but materialization presence is still PROVEN (EXACT),
+        // so the AoI observed segment must still open.
         final byte[] payload = vehicleType5(123, 2, 0xFFFD); // death sentinel family: not a real HP
         final ReplayDecodeResult r = decoder.decode(ctx, packet(5, payload));
         final MaterializationEvent e = (MaterializationEvent) r.events().get(0);
-        assertNull(e.currentHp());
-        assertEquals(DecodeConfidence.PARTIAL, e.confidence());
+        assertNull(e.currentHp(), "sentinel HP must stay unknown");
+        assertEquals(DecodeConfidence.EXACT, e.confidence(),
+                "HP unknown must not downgrade proven materialization presence");
+    }
+
+    @Test
+    void unknownVersionRawPreservesType4AndType33() {
+        final ReplayDecodeContext unknown = new ReplayDecodeContext("12.0.0_eu");
+        final byte[] four = new byte[4];
+        four[0] = 9;
+        final ReplayDecodeResult r4 = leaveDecoder.decode(unknown, packet(4, four));
+        assertEquals(DecodeStatus.UNSUPPORTED, r4.status());
+        assertEquals("VERSION_UNSUPPORTED_TYPE4", ((UnknownReplayEvent) r4.events().get(0)).reasonCode());
+
+        final byte[] thirtyThree = new byte[12];
+        thirtyThree[0] = 42;
+        final ReplayDecodeResult r33 = announcedDecoder.decode(unknown, packet(33, thirtyThree));
+        assertEquals(DecodeStatus.UNSUPPORTED, r33.status());
+        assertEquals("VERSION_UNSUPPORTED_TYPE33", ((UnknownReplayEvent) r33.events().get(0)).reasonCode());
     }
 
     @Test

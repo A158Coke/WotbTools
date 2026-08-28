@@ -240,19 +240,16 @@ class ReplayDamageWindowIntegrationTest {
     }
 
     @Test
-    void fallbackKillVictimSectionsSuppressedWhenPartial() throws Exception {
+    void killAttributionIdentityRetainedFromCanonicalTerminalWhenPartial() throws Exception {
         final ReplayProcessingResult result = processFixture();
         final Battle battle = result.battle();
         final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(result);
         assertTrue(recorder.resolved());
         final PlayerResult rec = battle.recorderResult();
         assertNotNull(rec);
-        final PlayerResult enemy = battle.players.stream()
-                .filter(p -> p != null && p.team != recorder.team())
-                .findFirst().orElseThrow();
-        // 构造双方 killVictims（事件流观测数据）：累计伤害 780 / 击穿 2、650 / 3
-        rec.killVictims.add(new com.wotb.core.model.KillVictim(enemy.accountId, 780, 2));
-        enemy.killVictims.add(new com.wotb.core.model.KillVictim(rec.accountId, 650, 3));
+        // §P0-5: killer identity derives from canonical terminal evidence (combat.destroyed()); the
+        // former killVictims construction is removed. The recorder survives in this fixture, so there is
+        // no "击杀你的是" entry — that would only have been fabricated by stale killVictims data.
 
         final PlayerBattleFeatureSet features = new DefaultPlayerBattleFeatureExtractor()
                 .extract(result.reconstruction(), recorder, battle);
@@ -264,9 +261,8 @@ class ReplayDamageWindowIntegrationTest {
                 partialCtx, result.reconstruction(), ESTIMATOR, 100_000, 131_072, 8192, 1000,
                 AllowedLanguage.ZH);
         final String zhPrompt = zh.userPrompt();
-        assertKillVictimNumbersSuppressed(zhPrompt);
-        assertTrue(zhPrompt.contains("你击杀了"), "partial 下应保留击杀身份: " + zhPrompt);
-        assertTrue(zhPrompt.contains("击杀你的是"), "partial 下应保留击杀身份: " + zhPrompt);
+        assertKillAttributionNumbersSuppressed(zhPrompt);
+        assertTrue(zhPrompt.contains("你击杀了"), "partial 下应保留 canonical 击杀身份: " + zhPrompt);
         assertTrue(zhPrompt.contains("你的战绩"), "权威结算段不得被误删: " + zhPrompt);
         assertTrue(zhPrompt.contains("DAMAGE_EXCHANGE_AGGREGATED_OBSERVED ===\n"
                 + "UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)"), zhPrompt);
@@ -275,9 +271,9 @@ class ReplayDamageWindowIntegrationTest {
         final var en = PlayerReplayPromptBuilder.prepareFull(
                 partialCtx, result.reconstruction(), ESTIMATOR, 100_000, 131_072, 8192, 1000,
                 AllowedLanguage.EN);
-        assertKillVictimNumbersSuppressed(en.userPrompt());
+        assertKillAttributionNumbersSuppressed(en.userPrompt());
 
-        // complete coverage：累计伤害与击杀归因明细正常输出
+        // complete coverage：canonical 击杀归因可正常输出，但 fabricated killVictims 数字绝不得出现
         final PlayerBattleFeatureSet completeFeatures = new PlayerBattleFeatureSet(
                 features.movements(), features.engagements(), features.phases(),
                 features.keyEvents(), List.of(), features.hasFeatures());
@@ -288,17 +284,13 @@ class ReplayDamageWindowIntegrationTest {
                 completeCtx, result.reconstruction(), ESTIMATOR, 100_000, 131_072, 8192, 1000,
                 AllowedLanguage.ZH);
         final String completePrompt = complete.userPrompt();
-        // hpLoss 语义：数字来自权威掉血推导（本夹具录像者对击杀目标未造成可证明掉血 → 0），
-        // 身份线索来自 killVictims；不得再输出 raw 或 killVictims 构造数字。
-        assertTrue(completePrompt.contains("累计直接伤害"), completePrompt);
-        assertTrue(completePrompt.contains("致死前累计承受你"), completePrompt);
-        assertTrue(completePrompt.contains("致死前对你累计造成"), completePrompt);
+        assertTrue(completePrompt.contains("你击杀了"), "complete 下 canonical 击杀身份应保留: " + completePrompt);
         assertFalse(completePrompt.contains("累计直接伤害780"), "构造的 killVictims 数字不得进入 prompt: " + completePrompt);
         assertFalse(completePrompt.contains("致死前累计承受你780"), completePrompt);
         assertFalse(completePrompt.contains("致死前对你累计造成650"), completePrompt);
     }
 
-    private static void assertKillVictimNumbersSuppressed(final String prompt) {
+    private static void assertKillAttributionNumbersSuppressed(final String prompt) {
         assertFalse(prompt.contains("累计直接伤害"), prompt);
         assertFalse(prompt.contains("累计直接伤害780"), prompt);
         assertFalse(prompt.contains("致死前累计承受你"), prompt);

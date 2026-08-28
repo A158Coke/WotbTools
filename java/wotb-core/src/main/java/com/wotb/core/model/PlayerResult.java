@@ -1,7 +1,6 @@
 package com.wotb.core.model;
 
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -29,11 +28,6 @@ public class PlayerResult {
     public boolean survived;
     public int xp;
     public int credits;
-
-    // 击杀前伤害明细（legacy/non-authoritative derived combat attribution；§B3。
-    // 由 damage-threshold 启发式产出，供 RatingV2 potentialDamage 与旧导出消费；
-    // 不得作为权威 kill/death evidence —— 权威击杀以结算 kills / settlement 为准）
-    public final List<KillVictim> killVictims = new ArrayList<>();
 
     // 名册信息
     public String nickname = "";

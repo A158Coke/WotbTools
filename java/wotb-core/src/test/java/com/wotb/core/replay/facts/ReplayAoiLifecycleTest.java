@@ -73,4 +73,25 @@ class ReplayAoiLifecycleTest {
                 0f, 0f, 0f, 0f, 0f, 0f, 0));
         assertEquals(0, ReplayAoiLifecycle.build(events, 0.0).size());
     }
+
+    @Test
+    void materializationPresenceWithUnknownHpStillOpensSegment() {
+        // §P0-1: presence proven (EXACT) + HP unknown (currentHp null) must still open the AoI
+        // observed segment. Old bug tied presence confidence to HP decode, so an HP sentinel/unknown
+        // collapsed the whole Type5 into PARTIAL and silently dropped this observed interval.
+        final List<ReplayEvent> events = new ArrayList<>();
+        final int eid = 11;
+        events.add(new EntityRemovedEvent(1, ts(20f), 4, DecodeConfidence.EXACT, eid)); // leave @20
+        events.add(new MaterializationEvent(2, ts(31f), 5, DecodeConfidence.EXACT,
+                eid, 2, null, new byte[8], new byte[0]));    // presence EXACT, HP UNKNOWN
+        events.add(pos(3, 35f, eid));                        // position stream continues
+
+        final List<AoiObservationSegment> segments = ReplayAoiLifecycle.build(events, 0.0);
+        final List<AoiObservationSegment> mine = segments.stream()
+                .filter(s -> s.entityId() == eid).toList();
+        assertEquals(2, mine.size(), "leave@20 + re-materialize@31 must produce two segments");
+        assertEquals(31.0, mine.get(1).observedFromSec(), 1e-9,
+                "presence proven with unknown HP must open segment @31");
+        assertNull(mine.get(1).absentFromSec(), "re-entry 后未离开 → 段保持打开");
+    }
 }

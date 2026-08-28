@@ -7,14 +7,15 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class EventStreamReaderTest {
 
     @Test
-    void extractsKillVictimsFromDirectDamageThreshold() {
+    void extractsDirectDamageEvents() {
+        // §P0-4: legacy damage-threshold death/killer attribution removed from production. Only the plain
+        // raw direct-damage extraction is preserved (non-authoritative damage number, not a death truth).
         final Map<Integer, Long> entityToAccount = Map.of(10, 1L, 20, 2L, 30, 3L);
         final List<EventStreamReader.ParsedPacket> packets = List.of(
                 directDamagePacket(1.0f, 10, 20, 300),
@@ -27,22 +28,6 @@ class EventStreamReaderTest {
         assertEquals(1L, damageEvents.get(0).attackerAccountId());
         assertEquals(2L, damageEvents.get(0).victimAccountId());
         assertEquals(300, damageEvents.get(0).damage());
-
-        final Map<Long, Double> deathTimes = EventStreamReader.estimateDeathTimesByDamage(
-                packets, entityToAccount, Map.of(2L, 600), 420.0);
-        assertEquals(3.0, deathTimes.get(2L));
-
-        final Map<Long, List<EventStreamReader.LegacyKillVictimDamage>> victims =
-                EventStreamReader.extractLegacyKillVictimAttribution(
-                        packets, entityToAccount, Map.of(2L, 600));
-        final List<EventStreamReader.LegacyKillVictimDamage> kills = victims.get(1L);
-        assertNotNull(kills);
-        assertEquals(1, kills.size());
-        final EventStreamReader.LegacyKillVictimDamage kill = kills.get(0);
-        assertEquals(2L, kill.victimAccountId());
-        assertEquals(500, kill.damage());
-        assertEquals(2, kill.penetrations());
-
     }
 
     @Test

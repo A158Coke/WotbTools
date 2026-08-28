@@ -48,6 +48,29 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
                         new com.wotb.core.replay.event.HealthChangedEvent(8, new ReplayTimestamp(12f, null), 7, DecodeConfidence.EXACT, 1, 1360, null, true)),
                 List.of(), null, null, null);
     }
+    /** §P0-5 canonical kill attribution fixture: both sides terminal + reliable cross-attribution. */
+    private static ReplayReconstruction dualKillRecon() {
+        return new ReplayReconstruction(null, null, 120f, 0f, List.of(),
+                List.of(
+                        new com.wotb.core.replay.event.ParticipantMappingEvent(1, new ReplayTimestamp(1f, null), 8, DecodeConfidence.EXACT, 1, 1L),
+                        new com.wotb.core.replay.event.ParticipantMappingEvent(2, new ReplayTimestamp(2f, null), 8, DecodeConfidence.EXACT, 2, 2L),
+                        // recorder(1) -> enemy(2): 900 HP loss @10
+                        new com.wotb.core.replay.event.HealthChangedEvent(3, new ReplayTimestamp(9f, null), 7, DecodeConfidence.EXACT, 2, 2000, null, true),
+                        new DamageEvent(4, new ReplayTimestamp(10f, null), 8, DecodeConfidence.EXACT, 1, 2, null, null, 999, false),
+                        new com.wotb.core.replay.event.HealthChangedEvent(5, new ReplayTimestamp(10f, null), 7, DecodeConfidence.EXACT, 2, 1100, null, true),
+                        // enemy(2) -> recorder(1): 640 HP loss @12
+                        new com.wotb.core.replay.event.HealthChangedEvent(6, new ReplayTimestamp(11f, null), 7, DecodeConfidence.EXACT, 1, 2000, null, true),
+                        new DamageEvent(7, new ReplayTimestamp(12f, null), 8, DecodeConfidence.EXACT, 2, 1, null, null, 999, false),
+                        new com.wotb.core.replay.event.HealthChangedEvent(8, new ReplayTimestamp(12f, null), 7, DecodeConfidence.EXACT, 1, 1360, null, true),
+                        // enemy terminal @14, killed by recorder(1)
+                        new com.wotb.core.replay.event.HealthChangedEvent(9, new ReplayTimestamp(14f, null), 7, DecodeConfidence.EXACT, 2, null, null, false),
+                        new DamageEvent(10, new ReplayTimestamp(14f, null), 8, DecodeConfidence.EXACT, 1, 2, null, null, 999, false),
+                        // recorder terminal @15, killed by enemy(2)
+                        new com.wotb.core.replay.event.HealthChangedEvent(11, new ReplayTimestamp(15f, null), 7, DecodeConfidence.EXACT, 1, null, null, false),
+                        new DamageEvent(12, new ReplayTimestamp(15f, null), 8, DecodeConfidence.EXACT, 2, 1, null, null, 999, false)),
+                List.of(), null, null, null);
+    }
+
     private static Stream<String> allSystemPrompts() {
         return Stream.of(
                 PlayerReplayPromptBuilder.SYSTEM_PROMPT,
@@ -124,14 +147,13 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
 
     @Test
     void killAttributionNamesBothDirections() {
+        // §P0-5: killer identity derives from canonical terminal evidence (combat.destroyed());
+        // the stale PlayerResult.killVictims model is removed.
         final Battle battle = battleWithRecorderAndEnemy();
         final PlayerResult recorder = battle.players.get(0);
-        final PlayerResult enemyPlayer = battle.players.get(1);
-        recorder.killVictims.add(new com.wotb.core.model.KillVictim(ENEMY_ACCOUNT, 900, 3));
-        enemyPlayer.killVictims.add(new com.wotb.core.model.KillVictim(RECORDER_ACCOUNT, 640, 2));
 
         final StringBuilder sb = new StringBuilder();
-        final boolean written = PlayerReplayPromptBuilder.appendKillAttribution(sb, battle, killRecon(), recorder);
+        final boolean written = PlayerReplayPromptBuilder.appendKillAttribution(sb, battle, dualKillRecon(), recorder);
         final String evidence = sb.toString();
 
         assertTrue(written);
@@ -198,9 +220,8 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
     @Test
     void damageExchangeIncludesOpponentsThatWereNeverKilled() {
         final Battle battle = battleWithRecorderAndEnemy();
-        // 敌人存活：killVictims 一定为空，只有事件流能提供这条对炮信息
+        // 敌人存活：事件流仍能提供这条对炮信息（不依赖 killVictims 归属）。
         battle.players.get(1).survived = true;
-        assertTrue(battle.players.get(0).killVictims.isEmpty());
 
         final StringBuilder sb = new StringBuilder();
         PlayerReplayPromptBuilder.appendDamageExchangeByOpponent(

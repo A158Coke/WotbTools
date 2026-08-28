@@ -3,7 +3,6 @@ package com.wotb.core;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.EntryHpSource;
-import com.wotb.core.model.KillVictim;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.RatingV2Calculator;
@@ -13,7 +12,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -89,7 +87,9 @@ class RatingV2CalculatorTest {
     }
 
     @Test
-    void fallsBackTo2400OnlyForTheMissingVehicle() {
+    void fallsBackToStaticBaselineOnlyForTheMissingVehicle() {
+        // tankopedia data missing → STATIC_BASELINE fallback for the historical gray-page V2 formula.
+        // This is a static baseline, not replay actual-HP truth (see RatingV2Calculator JavaDoc).
         final Battle battle = new Battle();
         battle.players = List.of(player(1, 1, 0, 0, 0, true, 0, -1));
 
@@ -128,9 +128,8 @@ class RatingV2CalculatorTest {
 
     @Test
     void calculatesPotentialDamageLocallyWithoutMutatingTheSharedBattle() {
+        // §P0-6: no killVictims supplement anymore — potential damage is observed damage only.
         final PlayerResult player = player(1, 1, 100, 0, 0, true, 0, 4481);
-        final KillVictim victim = new KillVictim(7, 100, 1);
-        player.killVictims.add(victim);
         player.contribution = 11.0;
         player.kast = 22.0;
         player.impact = 33.0;
@@ -139,9 +138,8 @@ class RatingV2CalculatorTest {
 
         final RatingV2Calculator.Row result = RatingV2Calculator.compute(List.of(battle), Tankopedia.load()).getFirst();
 
-        assertEquals(369.0, result.potentialDamageAvg, 0.01);
-        assertEquals(269.0, result.potentialDamageSupplementAvg, 0.01);
-        assertSame(victim, player.killVictims.getFirst());
+        assertEquals(100.0, result.potentialDamageAvg, 0.01);
+        assertEquals(0.0, result.potentialDamageSupplementAvg, 0.01);
         assertEquals(11.0, player.contribution);
         assertEquals(22.0, player.kast);
         assertEquals(33.0, player.impact);

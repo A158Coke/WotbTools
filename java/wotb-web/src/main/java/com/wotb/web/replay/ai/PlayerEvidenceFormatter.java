@@ -83,24 +83,6 @@ final class PlayerEvidenceFormatter {
         return total;
     }
 
-    private static double deathSecOrEnd(final PlayerResult target,
-                                        final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat) {
-        if (target != null) {
-            final double death = PlayerResultFormat.deathSec(target);
-            if (death > 0) {
-                return death;
-            }
-        }
-        double last = 0;
-        for (final java.util.Map.Entry<Long, List<com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss>> e
-                : combat.lossesByVictim().entrySet()) {
-            for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss l : e.getValue()) {
-                last = Math.max(last, l.toSec());
-            }
-        }
-        return last;
-    }
-
     static boolean appendRecorderDamageExchange(final StringBuilder sb,
                                                 final Battle battle,
                                                 final ReplayReconstruction recon,
@@ -421,23 +403,35 @@ final class PlayerEvidenceFormatter {
         for (final PlayerResult p : battle.players) {
             byAccount.putIfAbsent(p.accountId, p);
         }
+        // §P0-5: killer identity derives ONLY from canonical terminal evidence
+        // (PlaybackCombatReconstruction.destroyed: timeSec + victimAccountId + reliable killerAccountId).
+        // The stale PlayerResult.killVictims (damage-threshold heuristic) is removed; a terminal with no
+        // reliably attributed killer is reported as UNKNOWN, never guessed from cumulative damage.
         final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat = combat(battle, recon);
-        for (final com.wotb.core.model.KillVictim victim : rec.killVictims) {
-            final PlayerResult target = byAccount.get(victim.victimAccountId());
-            if (target == null) continue;
-            final int lethalTotal = dealtTo(combat, rec.accountId,
-                    victim.victimAccountId(), deathSecOrEnd(target, combat));
-            recorderKills.add(EntityIdentityResolver.label(battle, target, rec.accountId)
-                    + (suppressObservedNumbers ? "" : " 致死前累计承受你" + lethalTotal + "点伤害"));
-        }
-        for (final PlayerResult other : battle.players) {
-            if (PlayerAnalysisPromptFormatter.isSamePlayer(other, rec)) continue;
-            for (final com.wotb.core.model.KillVictim victim : other.killVictims) {
-                if (victim.victimAccountId() != rec.accountId) continue;
-                final int lethalTotal = dealtTo(combat, other.accountId,
-                        rec.accountId, deathSecOrEnd(rec, combat));
-                killersOfRecorder.add(EntityIdentityResolver.label(battle, other, rec.accountId)
-                        + (suppressObservedNumbers ? "" : " 致死前对你累计造成" + lethalTotal + "点伤害"));
+        for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Destroyed destroyed
+                : combat.destroyed()) {
+            if (destroyed.victimAccountId() == rec.accountId) {
+                final PlayerResult killer = destroyed.killerAccountId() == null
+                        ? null : byAccount.get(destroyed.killerAccountId());
+                final String killerLabel = killer != null
+                        ? EntityIdentityResolver.label(battle, killer, rec.accountId) : "UNKNOWN";
+                if (killer != null) {
+                    final int lethalTotal = dealtTo(combat, destroyed.killerAccountId(),
+                            rec.accountId, destroyed.timeSec());
+                    killersOfRecorder.add(killerLabel + (suppressObservedNumbers ? ""
+                            : " 致死前对你累计造成" + lethalTotal + "点伤害"));
+                } else {
+                    // canonical terminal without reliable attacker attribution: honest UNKNOWN
+                    killersOfRecorder.add(killerLabel);
+                }
+            } else if (destroyed.killerAccountId() != null
+                    && destroyed.killerAccountId() == rec.accountId) {
+                final PlayerResult victim = byAccount.get(destroyed.victimAccountId());
+                if (victim == null) continue;
+                final int lethalTotal = dealtTo(combat, rec.accountId,
+                        destroyed.victimAccountId(), destroyed.timeSec());
+                recorderKills.add(EntityIdentityResolver.label(battle, victim, rec.accountId)
+                        + (suppressObservedNumbers ? "" : " 致死前累计承受你" + lethalTotal + "点伤害"));
             }
         }
         if (recorderKills.isEmpty() && killersOfRecorder.isEmpty()) {

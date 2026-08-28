@@ -2,9 +2,7 @@ package com.wotb.core.stats;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.EntryHpSource;
-import com.wotb.core.model.KillVictim;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.model.TankInfo;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.util.PlayerResultFormat;
 
@@ -20,6 +18,12 @@ import java.util.Map;
  * <p>This calculator deliberately consumes the already processed replay facts as read-only input. In
  * particular, potential damage is calculated locally instead of being written back to {@link PlayerResult},
  * so invoking the admin-only V2 gray page cannot alter Preview, Export, AI, or Playback data.</p>
+ *
+ * <p><b>STATIC_BASELINE (not replay actual-HP truth)</b>: the V2 composite's HP denominator is a static
+ * baseline (tankopedia max HP; {@code STATIC_BASELINE_TANK_HP} only when tankopedia data is missing). It is
+ * NOT the replay's actual HP — it must never be presented as an observed HP fact. §P0-6: the old
+ * alpha-damage potential-damage supplement driven by {@code PlayerResult.killVictims} is removed because
+ * that field has no authoritative producer.</p>
  */
 public final class RatingV2Calculator {
 
@@ -31,8 +35,8 @@ public final class RatingV2Calculator {
     private static final double AST_WEIGHT = 0.30;
     private static final double MULTI_DAMAGE_WEIGHT = 0.10;
     private static final double KILLS_WEIGHT = 0.10;
-    private static final double FALLBACK_TANK_HP = 2400.0;
-    private static final double MIN_ALPHA_RATIO = 0.9;
+    /** STATIC_BASELINE fallback HP for the historical gray-page V2 formula (NOT replay actual-HP). */
+    private static final double STATIC_BASELINE_TANK_HP = 2400.0;
 
     private RatingV2Calculator() {
     }
@@ -155,7 +159,7 @@ public final class RatingV2Calculator {
         final boolean traded = tradedDeath(player, battle.players);
         final double kastBattle = singleBattleKast(player, win, traded, averageHp);
         final double impactValue = singleBattleImpact(player, context);
-        final PotentialDamage potential = potentialDamage(player, tankopedia);
+        final PotentialDamage potential = potentialDamage(player);
 
         row.battles++;
         if (win) {
@@ -177,26 +181,14 @@ public final class RatingV2Calculator {
         }
     }
 
-    private static PotentialDamage potentialDamage(final PlayerResult player, final Tankopedia tankopedia) {
+    private static PotentialDamage potentialDamage(final PlayerResult player) {
         if (player.damageDealt < 0) {
             throw new IllegalArgumentException("actualDamage must be >= 0");
         }
-        final TankInfo info = tankopedia.info(player.tankId);
-        final Integer alphaDamage = info.alphaDamage();
-        if (alphaDamage == null || alphaDamage <= 0 || player.killVictims.isEmpty()) {
-            return new PotentialDamage(player.damageDealt, 0);
-        }
-        int supplement = 0;
-        for (final KillVictim victim : player.killVictims) {
-            if (victim == null || victim.damage() < 0 || victim.penetrations() <= 0) {
-                continue;
-            }
-            final double minimum = victim.penetrations() * alphaDamage * MIN_ALPHA_RATIO;
-            if (victim.damage() < minimum) {
-                supplement += (int) Math.ceil(minimum - victim.damage());
-            }
-        }
-        return new PotentialDamage(player.damageDealt + supplement, supplement);
+        // §P0-6: the former alpha-damage supplement was driven by PlayerResult.killVictims, produced by a
+        // damage-threshold heuristic with no authoritative producer (the parser no longer emits it). Remove
+        // that stale input; potential damage is the observed damage only (no fabricated supplement).
+        return new PotentialDamage(player.damageDealt, 0);
     }
 
     private static double singleBattleImpact(final PlayerResult player, final BattleContext context) {
@@ -265,7 +257,7 @@ public final class RatingV2Calculator {
             return player.entryHp;
         }
         final Integer maxHp = tankopedia.info(player.tankId).maxHp();
-        return maxHp != null && maxHp > 0 ? maxHp : FALLBACK_TANK_HP;
+        return maxHp != null && maxHp > 0 ? maxHp : STATIC_BASELINE_TANK_HP;
     }
 
     private static double ratio(final double numerator, final double denominator) {
@@ -320,7 +312,7 @@ public final class RatingV2Calculator {
         }
 
         private double averageHp() {
-            return battleAverageHp > 0 ? battleAverageHp : FALLBACK_TANK_HP;
+            return battleAverageHp > 0 ? battleAverageHp : STATIC_BASELINE_TANK_HP;
         }
     }
 }

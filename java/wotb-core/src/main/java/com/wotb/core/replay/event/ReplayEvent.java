@@ -35,7 +35,8 @@ public sealed interface ReplayEvent
                 AimRayStateEvent,
                 AmmunitionSelectionChangedEvent,
                 AmmunitionStateEvent,
-                UnsupportedDamageEvent {
+                UnsupportedDamageEvent,
+                SessionDecisecondLowByteEvent {
 
     int sequence();
     ReplayTimestamp timestamp();

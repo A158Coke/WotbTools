@@ -171,6 +171,10 @@ public class BattleStateReconstructor {
     }
 
     private void applyEntityCreated(final BattleState state, final EntityCreatedEvent e) {
+        // §P1-3: unproven/guessed entityId must not create a phantom vehicle.
+        if (e.entityId() <= 0) {
+            return;
+        }
         state.getOrCreateVehicle(e.entityId(), e.timestamp().rawClockSec());
     }
 

@@ -56,4 +56,19 @@ class ReplayVersionGateTest {
         assertFalse(ReplayVersionGate.methodLayoutAllowed("11.17.0_china"));
         assertFalse(ReplayVersionGate.methodLayoutAllowed(null));
     }
+
+    // ---- P0-2：Type4/Type5/Type33 entity-lifecycle 观测布局版本门禁 ----
+
+    @Test
+    void entityLifecycleLayoutAllowedCoversCurrentAndLegacyOnly() {
+        assertTrue(ReplayVersionGate.entityLifecycleLayoutAllowed("11.19.0_china"));
+        assertTrue(ReplayVersionGate.entityLifecycleLayoutAllowed("11.19.0_china_apple"));
+        assertTrue(ReplayVersionGate.entityLifecycleLayoutAllowed("11.18.0_china_apple"));
+        assertFalse(ReplayVersionGate.entityLifecycleLayoutAllowed("11.20.0_china"),
+                "future 不得自动获得 entity-lifecycle 布局语义");
+        assertFalse(ReplayVersionGate.entityLifecycleLayoutAllowed("12.0.0_eu"));
+        assertFalse(ReplayVersionGate.entityLifecycleLayoutAllowed("11.17.0_china"));
+        assertFalse(ReplayVersionGate.entityLifecycleLayoutAllowed(null));
+        assertFalse(ReplayVersionGate.entityLifecycleLayoutAllowed(""));
+    }
 }
