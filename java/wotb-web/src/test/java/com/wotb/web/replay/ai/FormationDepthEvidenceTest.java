@@ -4,16 +4,25 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.EntityRemovedEvent;
+import com.wotb.core.replay.event.MaterializationEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.facts.AoiObservationSegment;
+import com.wotb.core.replay.facts.ReplayAoiLifecycle;
+import com.wotb.core.replay.processing.TeamEntityMapper;
+import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.replay.timeline.PositionKnowledge;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -651,6 +660,67 @@ class FormationDepthEvidenceTest {
         assertTrue(mid.contains("enemyWeightedCoverageScore="), mid);
         assertFalse(mid.contains("POSITION_COVERAGE_INSUFFICIENT"),
                 "open segment 内 enemy age>5s 不得误报 INSUFFICIENT: " + mid);
+    }
+
+    @Test
+    void phasePositionDoesNotMixCoordinatesAcrossAoiGap() {
+        // P0-1（Deep Review）：phase [0,60]，敌方实体在 segment A（t=0, x=0）→ Type4@10 →
+        // UNKNOWN_AOI gap → Type5@50 re-entry → segment B（t=55, x=100）。phaseEnd=60 属 segment B。
+        // resolvePhasePosition 的 CURRENT 参考必须只来自 segment B（x≈100），不得把 A+B 平均（x≈50）。
+        final Battle battle = battle();
+        battle.durationS = 60d;
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 20, 2001L));
+        events.add(pos(10, 20f, 20, 0f, 0f));                     // t=0   segment A x=0
+        events.add(new EntityRemovedEvent(11, new ReplayTimestamp(30f, null), 4,
+                DecodeConfidence.EXACT, 20));                    // leave@10
+        events.add(new MaterializationEvent(12, new ReplayTimestamp(70f, null), 5,
+                DecodeConfidence.EXACT, 20, 2, null, new byte[0], new byte[0])); // re-enter@50
+        events.add(pos(13, 75f, 20, 100f, 0f));                   // t=55   segment B x=100
+        final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f,
+                List.of(), events, List.of(), null, null, null);
+        final TeamEntityMapping mapping = TeamEntityMapper.resolve(battle, recon);
+        final Map<Integer, List<AoiObservationSegment>> aoiByEntity = ReplayAoiLifecycle.indexByEntity(
+                ReplayAoiLifecycle.build(recon.events(), 20.0));
+        final Map<Long, PlayerResult> playersByAccount = Map.of(2001L, player(2001L, 2, "EnemyA", 9297L));
+        final List<double[]> track = List.of(new double[]{0.0, 0.0, 0.0}, new double[]{55.0, 100.0, 0.0});
+
+        final FormationDepthEvidence.PhasePositionReference ref =
+                FormationDepthEvidence.resolvePhasePosition(
+                        2001L, 2, track, 0.0, 60.0,
+                        playersByAccount, mapping, aoiByEntity, 1);
+        assertEquals(PositionKnowledge.CURRENT, ref.knowledge(),
+                "phaseEnd 属 segment B → CURRENT");
+        assertEquals(100.0, ref.x(), 1e-6,
+                "CURRENT 参考必须只来自 phaseEnd 的 observed segment（segment B），不得与 segment A 平均成 50");
+    }
+
+    @Test
+    void phasePositionInAoiGapIsNotCurrent() {
+        // P0-1：phaseEnd ∈ UNKNOWN_AOI gap（无 observed segment）→ 不产出 CURRENT exact geometry。
+        final Battle battle = battle();
+        battle.durationS = 40d;
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 20, 2001L));
+        events.add(pos(10, 20f, 20, 0f, 0f));                     // t=0   segment A x=0
+        events.add(new EntityRemovedEvent(11, new ReplayTimestamp(30f, null), 4,
+                DecodeConfidence.EXACT, 20));                    // leave@10
+        final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f,
+                List.of(), events, List.of(), null, null, null);
+        final TeamEntityMapping mapping = TeamEntityMapper.resolve(battle, recon);
+        final Map<Integer, List<AoiObservationSegment>> aoiByEntity = ReplayAoiLifecycle.indexByEntity(
+                ReplayAoiLifecycle.build(recon.events(), 20.0));
+        final Map<Long, PlayerResult> playersByAccount = Map.of(2001L, player(2001L, 2, "EnemyA", 9297L));
+        final List<double[]> track = List.of(new double[]{0.0, 0.0, 0.0});
+        // phaseEnd=30 处于 leave 之后（segment A [0,10) 已关闭）→ UNKNOWN_AOI gap → 非 CURRENT（LAST_KNOWN）
+        final FormationDepthEvidence.PhasePositionReference ref =
+                FormationDepthEvidence.resolvePhasePosition(
+                        2001L, 2, track, 0.0, 30.0,
+                        playersByAccount, mapping, aoiByEntity, 1);
+        assertEquals(PositionKnowledge.LAST_KNOWN, ref.knowledge(),
+                "phaseEnd ∈ UNKNOWN_AOI gap → 不产出 CURRENT（LAST_KNOWN，fail-closed）");
     }
 
     @Test

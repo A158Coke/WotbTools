@@ -225,14 +225,6 @@ final class RelativeDepthHpEvidence {
         if (targets.isEmpty()) {
             return "";
         }
-        // entity -> 最后一次 EntityLeave（battle-relative）；carry-forward 位置 state 的终止边界
-        final Map<Integer, Double> lastLeaveByEntity = new HashMap<>();
-        for (final ReplayEvent event : recon.events()) {
-            if (event instanceof EntityRemovedEvent removed) {
-                final double t = FormationDepthEvidence.relativeSec(removed, battleStart);
-                lastLeaveByEntity.merge(removed.entityId(), t, Math::max);
-            }
-        }
         // Canonical AoI authority：phase 位置参考的 CURRENT/LAST_KNOWN 判定依据（P0-1）。
         final Map<Integer, List<com.wotb.core.replay.facts.AoiObservationSegment>> aoiByEntity =
                 com.wotb.core.replay.facts.ReplayAoiLifecycle.indexByEntity(
@@ -243,7 +235,7 @@ final class RelativeDepthHpEvidence {
         for (final FormationDepthEvidence.PhaseRange phase : phases) {
             final PhaseResult result = renderPhase(phase, tracks, hpSamples, attacks, teamByAccount,
                     playersByAccount, profiles, targets, selfAccountId != null, observedDamagePartial,
-                    mapping, lastLeaveByEntity, aoiByEntity);
+                    mapping, aoiByEntity);
             if (result.text() != null) {
                 sb.append(result.text());
             }
@@ -282,7 +274,6 @@ final class RelativeDepthHpEvidence {
             final boolean playerPath,
             final boolean observedDamagePartial,
             final TeamEntityMapping mapping,
-            final Map<Integer, Double> lastLeaveByEntity,
             final Map<Integer, List<com.wotb.core.replay.facts.AoiObservationSegment>> aoiByEntity
     ) {
         final List<PhaseHit> hits = new ArrayList<>();
@@ -303,7 +294,7 @@ final class RelativeDepthHpEvidence {
                     FormationDepthEvidence.resolvePhasePosition(
                             entry.getKey(), team, entry.getValue(),
                             phase.start(), phase.end(), playersByAccount,
-                            mapping, lastLeaveByEntity, aoiByEntity, ownTeam);
+                            mapping, aoiByEntity, ownTeam);
             if (ref != null) {
                 refsByAccount.put(entry.getKey(), ref);
             }

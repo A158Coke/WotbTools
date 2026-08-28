@@ -139,15 +139,6 @@ final class FormationDepthEvidence {
 
         final List<PhaseRange> phases = buildPhases(firstDamageTime(recon.events(), battleStart), battleEnd);
 
-        // entity -> 最后一次 EntityLeave（battle-relative）；carry-forward 位置 state 的终止边界
-        final Map<Integer, Double> lastLeaveByEntity = new HashMap<>();
-        for (final ReplayEvent event : recon.events()) {
-            if (event instanceof EntityRemovedEvent removed) {
-                final double t = relativeSec(removed, battleStart);
-                lastLeaveByEntity.merge(removed.entityId(), t, Math::max);
-            }
-        }
-
         // Canonical AoI authority：AoI observed segment 索引（Type4 收段 / Type33+Type5 重入；段间 UNKNOWN_AOI）。
         final Map<Integer, List<AoiObservationSegment>> aoiByEntity =
                 ReplayAoiLifecycle.indexByEntity(ReplayAoiLifecycle.build(
@@ -155,7 +146,7 @@ final class FormationDepthEvidence {
 
         final StringBuilder sb = new StringBuilder();
         for (final PhaseRange phase : phases) {
-            sb.append(renderPhase(phase, tracks, teamByAccount, perspectiveTeam, mapCode, playersByAccount, accountProfiles, mapping, lastLeaveByEntity, aoiByEntity));
+            sb.append(renderPhase(phase, tracks, teamByAccount, perspectiveTeam, mapCode, playersByAccount, accountProfiles, mapping, aoiByEntity));
         }
         return sb.isEmpty() ? "" : "\n=== FORMATION_DEPTH（阵型深度·确定性） ===\n" + sb;
     }
@@ -170,7 +161,6 @@ final class FormationDepthEvidence {
             final Map<Long, PlayerResult> playersByAccount,
             final Map<Long, TankTacticalProfile> profiles,
             final TeamEntityMapping mapping,
-            final Map<Integer, Double> lastLeaveByEntity,
             final Map<Integer, List<AoiObservationSegment>> aoiByEntity
     ) {
         // 阶段位置参考（带知识状态）：每个 eligible 车辆解析 phase 位置 + CURRENT/LAST_KNOWN。
@@ -183,7 +173,7 @@ final class FormationDepthEvidence {
             final PhasePositionReference ref = resolvePhasePosition(
                     entry.getKey(), team, entry.getValue(),
                     phase.start(), phase.end(), playersByAccount,
-                    mapping, lastLeaveByEntity, aoiByEntity, perspectiveTeam);
+                    mapping, aoiByEntity, perspectiveTeam);
             if (ref != null) {
                 refsByAccount.put(entry.getKey(), ref);
             }
@@ -363,14 +353,17 @@ final class FormationDepthEvidence {
     }
 
     /**
-     * 解析某账号在 [phaseStart, phaseEnd] 的阶段位置参考（canonical knowledge 同口径）：
+     * 解析某账号在 [phaseStart, phaseEnd] 的阶段位置参考（canonical knowledge 同口径）。
+     * <p><b>P0-1 禁止跨 UNKNOWN_AOI gap 混坐标</b>：先定位 phaseEnd 所属 canonical AoI
+     * observed segment，再<b>只</b>允许该 segment ∩ phase 的 position samples 进入 CURRENT 参考；
+     * 若 phaseEnd ∈ UNKNOWN_AOI gap（或当前 segment 内无样本且 last-known 跨 gap）→
+     * LAST_KNOWN / 不产出 CURRENT exact geometry。绝不把 gap 两边互相独立的 observed segments
+     * 混成一个 exact 坐标。</p>
      * <ul>
-     *   <li>阶段内有观测样本 → 阶段均值（观测窗口事实），observedAt=最后阶段内样本时刻；</li>
-     *   <li>阶段内无样本 → carry-forward 最后位置（无 EntityLeave、未阵亡），observedAt=该样本时刻；</li>
-     *   <li>存活门禁：phase 末已阵亡 → 位置 state 终止 → null（不参与当前几何）；</li>
-     *   <li>knowledge（canonical AoI authority，P0-1）：phase end 位于 observed segment 且位置参考
-     *       来自本段（observedFrom ≤ observedAt）→ CURRENT；位于 UNKNOWN_AOI gap 或位置参考跨 gap
-     *       → LAST_KNOWN（不跨 Type4→Type5 gap 插值，不因 age>5s 降级）。</li>
+     *   <li>存活门禁：phase 末已阵亡 → null（不参与当前几何）；</li>
+     *   <li>segment ∩ phase 内有样本 → 该窗口均值（CURRENT），observedAt=窗口内最后样本时刻；</li>
+     *   <li>segment ∩ phase 无样本 → carry-forward 最后位置；仅当其位于 phaseEnd 的 observed
+     *       segment 内（不跨 gap）才 CURRENT，否则 LAST_KNOWN。</li>
      * </ul>
      */
     static PhasePositionReference resolvePhasePosition(
@@ -381,32 +374,45 @@ final class FormationDepthEvidence {
             final double phaseEnd,
             final Map<Long, PlayerResult> playersByAccount,
             final TeamEntityMapping mapping,
-            final Map<Integer, Double> lastLeaveByEntity,
             final Map<Integer, List<AoiObservationSegment>> aoiByEntity,
             final int perspectiveTeam) {
+        // 存活门禁：phase 末已阵亡 → 位置 state 终止 → null（不参与当前几何）
+        if (!isAliveAt(playersByAccount, accountId, phaseEnd)) {
+            return null;
+        }
+        // Canonical AoI authority：先定位 phaseEnd 所属 observed segment，再只允许该 segment ∩ phase 的
+        // 位置样本进入 CURRENT 参考（禁止跨 gap 把互相独立的 observed segments 混成一个坐标）。
+        final AoiObservationSegment seg = observedSegmentAt(aoiByEntity, mapping, accountId, phaseEnd);
         double sx = 0, sz = 0;
         int n = 0;
-        double lastInPhase = -1;
-        for (final double[] sample : track) {
-            if (sample[0] < phaseStart || sample[0] > phaseEnd) {
-                continue;
+        double lastInWindow = -1;
+        if (seg != null) {
+            final double segStart = Math.max(phaseStart, seg.observedFromSec());
+            final double segEnd = seg.absentFromSec() != null
+                    ? Math.min(phaseEnd, seg.absentFromSec()) : phaseEnd;
+            for (final double[] sample : track) {
+                if (sample[0] < segStart || sample[0] > segEnd) {
+                    continue;
+                }
+                sx += sample[1];
+                sz += sample[2];
+                n++;
+                lastInWindow = Math.max(lastInWindow, sample[0]);
             }
-            sx += sample[1];
-            sz += sample[2];
-            n++;
-            lastInPhase = Math.max(lastInPhase, sample[0]);
         }
         final double x;
         final double z;
         final double observedAt;
+        final PositionKnowledge knowledge;
         if (n > 0) {
+            // 样本来自 phaseEnd 的 observed segment ∩ phase → CURRENT（exact 几何可消费）
             x = sx / n;
             z = sz / n;
-            observedAt = lastInPhase;
+            observedAt = lastInWindow;
+            knowledge = PositionKnowledge.CURRENT;
         } else {
-            if (!isAliveAt(playersByAccount, accountId, phaseEnd)) {
-                return null;
-            }
+            // 当前 segment 内无样本（或 phaseEnd ∈ UNKNOWN_AOI gap）：carry-forward last-known；
+            // 仅当 last-known 位于 phaseEnd 的 observed segment（不跨 gap）才 CURRENT，否则 LAST_KNOWN。
             final double[] carry = carriedForwardReference(track, phaseEnd);
             if (carry == null) {
                 return null;
@@ -414,38 +420,30 @@ final class FormationDepthEvidence {
             x = carry[1];
             z = carry[2];
             observedAt = carry[0];
+            knowledge = (seg != null && observedAt >= seg.observedFromSec() - 1e-9
+                    && (seg.absentFromSec() == null || observedAt < seg.absentFromSec() - 1e-9))
+                    ? PositionKnowledge.CURRENT : PositionKnowledge.LAST_KNOWN;
         }
-        if (!isAliveAt(playersByAccount, accountId, phaseEnd)) {
-            return null; // phase 末已阵亡：位置 state 终止，不参与当前几何
-        }
-        // Canonical AoI authority：phase end 位于 observed segment 且位置参考来自本段
-        // （observedFrom ≤ observedAt）→ CURRENT（exact 几何可消费）；位于 UNKNOWN_AOI gap /
-        // 位置参考跨 gap（来自上一段）→ LAST_KNOWN（fail-closed，不进 exact 几何）。
-        // 不再用「age ≤ 5s / 超过 5 秒无 Type10」推断 current（P0-1）。
-        final PositionKnowledge knowledge = observedInCanonicalSegment(
-                mapping, aoiByEntity, accountId, observedAt, phaseEnd)
-                ? PositionKnowledge.CURRENT : PositionKnowledge.LAST_KNOWN;
         return new PhasePositionReference(
                 accountId, team, x, z, knowledge, observedAt, phaseEnd - observedAt);
     }
 
-    /** 该账号任一实体在 phaseEnd 处于 observed segment，且位置参考 observedAt 来自本段（不跨 gap）。 */
-    private static boolean observedInCanonicalSegment(
-            final TeamEntityMapping mapping,
+    /** 该账号任一实体在 phaseEnd 所处的 observed segment（∈ UNKNOWN_AOI gap / 未观测 → null）。 */
+    private static AoiObservationSegment observedSegmentAt(
             final Map<Integer, List<AoiObservationSegment>> aoiByEntity,
+            final TeamEntityMapping mapping,
             final long accountId,
-            final double observedAt,
             final double phaseEnd) {
         if (mapping == null || aoiByEntity == null) {
-            return false;
+            return null;
         }
         for (final int eid : mapping.entityIds(accountId)) {
             final AoiObservationSegment seg = ReplayAoiLifecycle.segmentAt(aoiByEntity, eid, phaseEnd);
-            if (seg != null && observedAt >= seg.observedFromSec() - 1e-9) {
-                return true;
+            if (seg != null) {
+                return seg;
             }
         }
-        return false;
+        return null;
     }
 
     /** 参考位置所属九宫格 region（0 = 不可用）。 */

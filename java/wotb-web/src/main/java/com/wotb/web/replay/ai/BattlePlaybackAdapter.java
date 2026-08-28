@@ -28,7 +28,8 @@ import java.util.Map;
  * {@link MapOverview.Playback} 契约（duration / positionIntervals / hpSamples / directionSamples /
  * deathSec / events / pointsSamples），不再独立重扫 raw events 形成第二套事实模型。
  * <p>与 {@link MapOverviewBuilder} 同一 battle-relative 时钟口径；位置上报区间 =
- * frame 知识状态（POSITION_STREAM_ACTIVE）连续段（gap>5s 即 LAST_KNOWN），阵亡/时长 clamp 一致。</p>
+ * canonical AoI observed segment（{@link AoiPositionCoverage}）∩ 实际位置存在，阵亡/时长 clamp 一致；
+ * 同一 open segment 内不再按 5s packet-gap 切分（P0-1 AoI 唯一 authority）。</p>
  */
 public final class BattlePlaybackAdapter {
 
