@@ -39,7 +39,8 @@ public sealed interface ReplayEvent
                 ArenaPeriodChangedEvent,
                 RoundFinishedEvent,
                 ReplayStreamClosedEvent,
-                VehicleHitEvent {
+                VehicleHitEvent,
+                VehicleVehicleCollisionEvent {
 
     int sequence();
     ReplayTimestamp timestamp();

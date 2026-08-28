@@ -6,15 +6,20 @@ import com.wotb.core.replay.event.ProjectileLaunchedEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.event.UnsupportedDamageEvent;
 import com.wotb.core.replay.event.UnknownReplayEvent;
+import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.event.VehicleFiredEvent;
 import com.wotb.core.replay.event.VehicleHitEvent;
+import com.wotb.core.replay.event.VehicleVehicleCollisionEvent;
+import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.replay.stream.RawReplayPacket;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -37,6 +42,13 @@ class EntityMethodDecoderTest {
 
     private final EntityMethodDecoder decoder = new EntityMethodDecoder();
     private final ReplayDecodeContext context = new ReplayDecodeContext("11.19.0_china");
+
+    /** PR162 entity-class scoped：method8 的 outer entityId（受击者）需先由 MaterializationEvent(entityTypeId==2) 证明为 Vehicle。 */
+    @BeforeEach
+    void registerVehicleDamageTarget() {
+        // 0xFC6017 是 method8 测试的 outer entityId（受击者）。真实 lifecycle 证据：entityTypeId==2 → Vehicle。
+        context.entityClassRegistry().markVehicle(0xFC6017);
+    }
 
     /** 伤害方法包（type 8 / sub 8）：payload[0..3]=entityId、[4..7]=subtype、body[4..7]=攻击者 eid(LE)、
      *  body[8..11]=目标 eid(LE)、body[13]=伤害子类型、body[14..15]=伤害（u16 BE：高字节在前）。 */
@@ -421,6 +433,127 @@ class EntityMethodDecoderTest {
                 methodPacket(1, EntityMethodDecoder.SUBTYPE_PROJECTILE_LAUNCH, args));
         assertEquals(DecodeStatus.SUCCESS, result.status(), "11.19 method29 仍应解码 EXACT");
         assertEquals(1, result.events().size());
+    }
+
+    // ---- PR162 entity-class scoped contract（method4：Avatar 2B=RoundFinished；Vehicle 16B=collision）----
+
+    /** 指定 entityId 的 EntityMethod 包（type 8）：entityId + subtype + argLen + args。 */
+    private static RawReplayPacket methodPacketOn(final int seq, final int entityId,
+                                                  final int subtype, final byte[] args) {
+        final byte[] payload = new byte[12 + args.length];
+        putU32(payload, 0, entityId);
+        putU32(payload, 4, subtype);
+        putU32(payload, 8, args.length);
+        System.arraycopy(args, 0, payload, 12, args.length);
+        return new RawReplayPacket(seq, 0, payload.length,
+                EntityMethodDecoder.TYPE_ENTITY_METHOD, 10f, payload, 0);
+    }
+
+    /** f32 LE 字节。 */
+    private static byte[] f32(final float v) {
+        final int bits = Float.floatToIntBits(v);
+        return new byte[]{(byte) (bits & 0xFF), (byte) ((bits >>> 8) & 0xFF),
+                (byte) ((bits >>> 16) & 0xFF), (byte) ((bits >>> 24) & 0xFF)};
+    }
+
+    /** Vehicle method4 16-byte collision/contact args：sharedScalar + contactPoint(3×f32)。 */
+    private static byte[] vehicleCollisionArgs(final float scalar, final float x, final float y, final float z) {
+        return concat(f32(scalar), f32(x), f32(y), f32(z));
+    }
+
+    @Test
+    void avatarMethod4TwoByteDecodesRoundFinishedNotCollision() {
+        final ReplayDecodeContext ctx = new ReplayDecodeContext("11.19.0_china");
+        ctx.entityClassRegistry().markAvatar(900);
+        final ReplayDecodeResult r = decoder.decode(ctx,
+                methodPacketOn(1, 900, EntityMethodDecoder.SUBTYPE_ROUND_FINISHED, new byte[]{2, 1}));
+        assertEquals(1, r.events().size());
+        final RoundFinishedEvent e = assertInstanceOf(RoundFinishedEvent.class, r.events().get(0));
+        assertEquals(2, e.winnerTeam());
+        assertEquals(1, e.finishReasonRaw());
+        assertEquals(RoundFinishedEvent.FinishCause.ELIMINATION, e.finishCause());
+        assertTrue(r.events().stream().noneMatch(VehicleVehicleCollisionEvent.class::isInstance),
+                "Avatar method4 2B 禁止生 VehicleVehicleCollisionEvent");
+    }
+
+    @Test
+    void vehicleMethod4SixteenByteDecodesCollisionNotRoundFinished() {
+        final ReplayDecodeContext ctx = new ReplayDecodeContext("11.19.0_china");
+        ctx.entityClassRegistry().markVehicle(901);
+        final ReplayDecodeResult r = decoder.decode(ctx,
+                methodPacketOn(1, 901, EntityMethodDecoder.SUBTYPE_ROUND_FINISHED,
+                        vehicleCollisionArgs(1.5f, 2f, 3f, 4f)));
+        assertEquals(1, r.events().size());
+        final VehicleVehicleCollisionEvent e =
+                assertInstanceOf(VehicleVehicleCollisionEvent.class, r.events().get(0));
+        assertEquals(901, e.vehicleEntityId());
+        assertEquals(1.5f, e.sharedScalar(), 1e-6f);
+        assertEquals(2f, e.contactPointWorld().x(), 1e-6f);
+        assertEquals(3f, e.contactPointWorld().y(), 1e-6f);
+        assertEquals(4f, e.contactPointWorld().z(), 1e-6f);
+        assertEquals(DecodeConfidence.EXACT, e.confidence());
+        assertTrue(r.events().stream().noneMatch(RoundFinishedEvent.class::isInstance),
+                "Vehicle method4 16B 禁止生 RoundFinishedEvent");
+    }
+
+    @Test
+    void unknownClassMethod4TwoByteRawPreserves() {
+        // UnknownEntity（无类证据）method4+2B → UnknownReplayEvent，不得因 shape 猜 class
+        final ReplayDecodeContext ctx = new ReplayDecodeContext("11.19.0_china");
+        final ReplayDecodeResult r = decoder.decode(ctx,
+                methodPacketOn(1, 902, EntityMethodDecoder.SUBTYPE_ROUND_FINISHED, new byte[]{2, 1}));
+        assertInstanceOf(UnknownReplayEvent.class, r.events().getFirst());
+        assertTrue(r.events().stream().noneMatch(RoundFinishedEvent.class::isInstance));
+        assertTrue(r.events().stream().noneMatch(VehicleVehicleCollisionEvent.class::isInstance));
+    }
+
+    @Test
+    void vehicleClassMethod4TwoByteRawPreserves() {
+        // Vehicle 类 method4+2B（shape 不符，Vehicle collision 需 16B）→ UnknownReplayEvent
+        final ReplayDecodeContext ctx = new ReplayDecodeContext("11.19.0_china");
+        ctx.entityClassRegistry().markVehicle(903);
+        final ReplayDecodeResult r = decoder.decode(ctx,
+                methodPacketOn(1, 903, EntityMethodDecoder.SUBTYPE_ROUND_FINISHED, new byte[]{2, 1}));
+        assertInstanceOf(UnknownReplayEvent.class, r.events().getFirst());
+        assertTrue(r.events().stream().noneMatch(RoundFinishedEvent.class::isInstance));
+    }
+
+    @Test
+    void avatarClassMethod4SixteenByteRawPreserves() {
+        // Avatar 类 method4+16B（shape 不符，Avatar round finished 需 2B）→ UnknownReplayEvent
+        final ReplayDecodeContext ctx = new ReplayDecodeContext("11.19.0_china");
+        ctx.entityClassRegistry().markAvatar(904);
+        final ReplayDecodeResult r = decoder.decode(ctx,
+                methodPacketOn(1, 904, EntityMethodDecoder.SUBTYPE_ROUND_FINISHED,
+                        vehicleCollisionArgs(1.5f, 2f, 3f, 4f)));
+        assertInstanceOf(UnknownReplayEvent.class, r.events().getFirst());
+        assertTrue(r.events().stream().noneMatch(RoundFinishedEvent.class::isInstance));
+        assertTrue(r.events().stream().noneMatch(VehicleVehicleCollisionEvent.class::isInstance));
+    }
+
+    @Test
+    void avatarProvenMethodUpgradesMaterializedVehicleToAvatar() {
+        // 录像者实体先被物化为 Vehicle（entityTypeId==2），随后 method48（Avatar-proven）升级为 Avatar；
+        // 之后 method4+2B 必须按 Avatar 分派为 RoundFinished（不允许因「先 Vehicle」而 raw-preserve）。
+        final ReplayDecodeContext ctx = new ReplayDecodeContext("11.19.0_china");
+        ctx.entityClassRegistry().markVehicle(910);
+        decoder.decode(ctx, rawPacket48For(EntityMethodDecoder.WRAPPER_ARENA_PERIOD, new byte[]{0x18, 0x03}, 910));
+        final ReplayDecodeResult r = decoder.decode(ctx,
+                methodPacketOn(1, 910, EntityMethodDecoder.SUBTYPE_ROUND_FINISHED, new byte[]{2, 1}));
+        final RoundFinishedEvent e = assertInstanceOf(RoundFinishedEvent.class, r.events().get(0));
+        assertEquals(2, e.winnerTeam());
+    }
+
+    /** subtype48 载荷（指定 entityId）：body[0..3] 固定字段 + varint(wrapperFieldNumber) + msgLen + protoData。 */
+    private static RawReplayPacket rawPacket48For(final long wrapperFieldNumber, final byte[] root, final int entityId) {
+        final byte[] payload = new byte[8 + 4 + 1 + 1 + root.length];
+        putU32(payload, 0, entityId);
+        payload[4] = EntityMethodDecoder.SUBTYPE_UPDATE_ARENA2;
+        payload[12] = (byte) wrapperFieldNumber;
+        payload[13] = (byte) root.length;
+        System.arraycopy(root, 0, payload, 14, root.length);
+        return new RawReplayPacket(7, 0, payload.length,
+                EntityMethodDecoder.TYPE_ENTITY_METHOD, 56.233f, payload, 0);
     }
 
     /** subtype48 载荷：body[0..3] 固定字段 + varint(wrapperFieldNumber) + msgLen + protoData（root 直接放入）。 */

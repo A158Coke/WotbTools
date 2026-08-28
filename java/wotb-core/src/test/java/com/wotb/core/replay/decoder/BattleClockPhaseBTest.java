@@ -4,6 +4,7 @@ import com.wotb.core.replay.event.ArenaPeriodChangedEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.stream.RawReplayPacket;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -23,6 +24,12 @@ class BattleClockPhaseBTest {
 
     private final EntityMethodDecoder decoder = new EntityMethodDecoder();
     private final ReplayDecodeContext ctx = new ReplayDecodeContext("11.19.0_china");
+
+    /** PR162 entity-class scoped：Avatar method4 (2-byte) 的 outer entityId=0 需先证明为 Avatar（method48/49 类证据）。 */
+    @BeforeEach
+    void registerRoundFinishedAvatar() {
+        ctx.entityClassRegistry().markAvatar(0);
+    }
 
     /** subtype48 payload：body[0..3]=固定字段 + varint(wrapper) + msgLen + protoData（root 直接放入）。 */
     private static RawReplayPacket rawPacket48(final long wrapper, final byte[] root) {
