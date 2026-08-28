@@ -34,7 +34,7 @@ const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateF
   uploadState, cancelProcessing,
   requestDirectAction,
   exportJob, exportError, exportActive,
-  startProcessingJob, dismissProcessingJob,
+  startProcessingJob, dismissProcessingJob, invalidateExpiredProcessingDataset,
   startExportJob, cancelExportJob, downloadExportResult, dismissExportJob,
   askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove } = replay
 /**
@@ -290,7 +290,7 @@ watch(selectionRevision, () => {
   summaryTeamNames.value = {}
   // 新 selection：重置 exactly-once recovery budget。
   datasetRecoveryAttempted = false
-  datasetRecoveryInFlight = false
+  datasetRecoveryInFlightToken = null
 })
 const exportingPng = ref(false)
 const aggregateRef = ref(null)
@@ -511,9 +511,12 @@ const playbackSeek = ref(null)
 const datasetRef = ref(null)
 /** Dataset 准备失败（prepare failure）时的已本地化错误；空 = 无。 */
 const datasetError = ref('')
-/** exactly-once recovery（BLOCKER @164）：每个 selection / dataset generation 最多自动恢复一次。 */
+/** exactly-once recovery（BLOCKER @164）：每个 selection / dataset generation 最多自动恢复一次。
+ * recovery context 是 generation-owned（token + 当前 in-flight token）；stale recovery 的 finally
+ * 只有在自己仍是当前 owner 时才清 inFlight，绝不清新 generation 的 recovery 状态。 */
 let datasetRecoveryAttempted = false
-let datasetRecoveryInFlight = false
+let datasetRecoveryToken = 0
+let datasetRecoveryInFlightToken = null
 /**
  * Workspace Dataset 请求 generation（BLOCKER 1）：每次目标变化（workspaceFile 或新的
  * ensureDatasetFor 调用）自增；requestDirectAction 是异步的，返回后必须校验 revision +
@@ -534,7 +537,7 @@ watch(workspaceFile, () => {
   datasetError.value = ''
   // 换 target / 新 selection：重置 exactly-once recovery budget。
   datasetRecoveryAttempted = false
-  datasetRecoveryInFlight = false
+  datasetRecoveryInFlightToken = null
 })
 
 /**
@@ -575,24 +578,33 @@ async function ensureDatasetFor(file) {
 
 /** Dataset 可恢复错误（job/dataset 引用过期）：清空失效引用并重建 Dataset，exactly-once。
  * 每个 selection / dataset generation 最多自动恢复一次：recovery in-flight 时重复事件合并/忽略；
- * 第二次 JOB_NOT_FOUND 不再 create 新 Processing Job，结束为本地化 FAILURE。 */
+ * 第二次 JOB_NOT_FOUND 不再 create 新 Processing Job；authoritative 失效 Dataset identity 后结束为
+ * 本地化 FAILURE。recovery context 由 token 持有 generation ownership，stale finally 不清新 owner。 */
 async function onDatasetRecover() {
   const f = workspaceFile.value
   if (!f) return
-  if (datasetRecoveryInFlight) return // 同一 recovery in-flight：合并/忽略
+  if (datasetRecoveryInFlightToken != null) return // 同一 recovery in-flight：合并/忽略
   if (datasetRecoveryAttempted) {
+    // 第二次 JOB_NOT_FOUND：authoritative 证明 job 不存在——失效 useReplay 的 processingJobId /
+    // processingJob snapshot（不清空 resp），仅清 workspace 引用，结束为本地化 FAILURE。
+    const expiredJobId = datasetRef.value?.processingJobId || null
     datasetRef.value = null
+    if (expiredJobId) invalidateExpiredProcessingDataset(expiredJobId)
     datasetError.value = t('workspace.dataset_prepare_failed')
     return
   }
   datasetRecoveryAttempted = true
-  datasetRecoveryInFlight = true
+  const token = ++datasetRecoveryToken
+  datasetRecoveryInFlightToken = token
   datasetRef.value = null
   datasetError.value = ''
   try {
     await ensureDatasetFor(f)
   } finally {
-    datasetRecoveryInFlight = false
+    // 只有自己仍是当前 recovery owner 时才清 inFlight；stale recovery 的 finally 不得清新 generation。
+    if (datasetRecoveryInFlightToken === token) {
+      datasetRecoveryInFlightToken = null
+    }
   }
 }
 

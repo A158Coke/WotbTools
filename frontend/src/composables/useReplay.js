@@ -593,6 +593,25 @@ export function useReplay() {
     // 注意：processingJobId 保留（READY 后供 Export 复用）；重新解析时会覆盖。
   }
 
+  /**
+   * 权威 Dataset 失效（BLOCKER @164）：后端已用 JOB_NOT_FOUND authoritatively 证明该 job 不存在。
+   * 仅当 jobId 命中当前 Dataset identity（processingJobId）或当前 processingJob snapshot 时才失效，
+   * 绝不影响其它 generation/job。保留 resp（仍可安全展示已解析结果）；不改 files / selectionRevision；
+   * 不自动 create 新 Processing Job。
+   */
+  function invalidateExpiredProcessingDataset(jobId) {
+    if (!jobId) return
+    const wasCurrentDataset = processingJobId.value === jobId
+    const hadSnapshot = processingJob.value?.jobId === jobId
+    if (wasCurrentDataset) processingJobId.value = null
+    if (hadSnapshot) processingJob.value = null
+    if (hadSnapshot || processingPollJobId === jobId) {
+      // 终止属于该过期 job 的 processing / source poll（仅当 poll 绑定该 jobId）。
+      stopProcessingPolling()
+      stopSourcePolls()
+    }
+  }
+
   // ---- Export Job 流程 ----
 
   function stopExportPolling() {
@@ -740,6 +759,7 @@ export function useReplay() {
     uploadState, processingUiState,
     exportJob, exportError, exportActive,
     startProcessingJob, cancelProcessingJob, cancelProcessing, dismissProcessingJob,
+    invalidateExpiredProcessingDataset,
     requestDirectAction,
     startExportJob, cancelExportJob, downloadExportResult, dismissExportJob,
     askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove, confirmRemoveBattle,

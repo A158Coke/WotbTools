@@ -57,9 +57,12 @@ const processingJobId = ref(null)
 const sourceId = ref(null)
 /** Dataset 生命周期错误（准备失败 / source 处理失败 / recovery 失败）的已本地化消息；空 = 无。 */
 const datasetError = ref('')
-/** exactly-once recovery（BLOCKER @164）：每个 selection / dataset generation 最多自动恢复一次。 */
+/** exactly-once recovery（BLOCKER @164）：每个 selection / dataset generation 最多自动恢复一次。
+ * recovery context 是 generation-owned（token + 当前 in-flight token）；stale recovery 的 finally
+ * 只有在自己仍是当前 owner 时才清 inFlight，绝不清新 generation 的 recovery 状态。 */
 let datasetRecoveryAttempted = false
-let datasetRecoveryInFlight = false
+let datasetRecoveryToken = 0
+let datasetRecoveryInFlightToken = null
 /**
  * selection generation（BLOCKER 2）：任何文件选择变化（select / replace / remove / clear）
  * 自增。createProcessingJob 是异步的——返回后必须校验 generation + file identity 仍属于
@@ -127,7 +130,8 @@ function selectionChanged() {
   datasetRevision++
   // recovery budget 是 per-selection / per-dataset-generation：换重放/新选择后重置。
   datasetRecoveryAttempted = false
-  datasetRecoveryInFlight = false
+  datasetRecoveryInFlightToken = null
+  datasetError.value = '' // 旧 selection 的 Dataset failure 不得泄漏到新 generation
   invalidateDataset()
 }
 
@@ -155,6 +159,7 @@ function invalidateDataset() {
 /** 选择回放后自动创建 Processing Job（priority=r0）并等待 source READY（plan §40/§50）。 */
 async function ensureDataset() {
   invalidateDataset()
+  datasetError.value = '' // 新 generation 开始：旧 failure 不泄漏
   const file = files.value[0]
   if (!file) return
   const revision = datasetRevision
@@ -188,20 +193,25 @@ async function ensureDataset() {
 async function onDatasetRecover() {
   const file = files.value[0]
   if (!file) return
-  if (datasetRecoveryInFlight) return // 同一 recovery in-flight：合并/忽略重复事件
+  if (datasetRecoveryInFlightToken != null) return // 同一 recovery in-flight：合并/忽略重复事件
   if (datasetRecoveryAttempted) {
-    // 第二次 JOB_NOT_FOUND：不再 create 新 Processing Job，结束为本地化 FAILURE。
+    // 第二次 JOB_NOT_FOUND：不再 create 新 Processing Job；authoritative 失效 Dataset identity
+    // （processingJobId / sourceId），结束为本地化 FAILURE。
     datasetError.value = t('workspace.dataset_prepare_failed')
     invalidateDataset()
     return
   }
   datasetRecoveryAttempted = true
-  datasetRecoveryInFlight = true
+  const token = ++datasetRecoveryToken
+  datasetRecoveryInFlightToken = token
   datasetError.value = ''
   try {
     await ensureDataset()
   } finally {
-    datasetRecoveryInFlight = false
+    // 只有自己仍是当前 recovery owner 时才清 inFlight；stale recovery 的 finally 不得清新 generation。
+    if (datasetRecoveryInFlightToken === token) {
+      datasetRecoveryInFlightToken = null
+    }
   }
 }
 
@@ -218,6 +228,7 @@ function pollSourceReady(jobId, revision) {
       const s = (data.sources || []).find(x => x.sourceId === 'r0')
       if (s && s.status === 'READY') {
         sourceId.value = 'r0'
+        datasetError.value = '' // READY 成功即清除任何旧 failure
         stop()
         return
       }

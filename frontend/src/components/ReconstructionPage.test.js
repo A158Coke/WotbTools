@@ -411,6 +411,30 @@ describe('ReconstructionPage selection lifecycle（BLOCKER 2）', () => {
     wrapper.unmount()
   })
 
+  it('datasetError ownership：A source FAILED → 选 B → B 准备/READY 不泄漏 A failure', async () => {
+    apiMock.createProcessingJob
+      .mockResolvedValueOnce({ jobId: 'pA', status: 'QUEUED', total: 1 })
+      .mockResolvedValueOnce({ jobId: 'pB', status: 'QUEUED', total: 1 })
+    apiMock.getProcessingJob.mockImplementation((jobId) =>
+      Promise.resolve({
+        jobId, status: 'PROCESSING', total: 1,
+        sources: [{ sourceId: 'r0', status: jobId === 'pA' ? 'FAILED' : 'READY' }]
+      }))
+    const wrapper = mountedPage()
+
+    await selectReplays(wrapper, ['a.wotbreplay'])
+    await flushPromises()
+    expect(wrapper.vm.datasetError).toBe('recon.errors.SOURCE_PROCESSING_FAILED', 'A source FAILED')
+
+    await selectReplays(wrapper, ['b.wotbreplay'])
+    await flushPromises()
+    // selectionChanged / ensureDataset 新 generation 已清 A 的 failure；B READY 后 datasetError 必须为空
+    expect(wrapper.vm.datasetError).toBe('', 'B 准备/READY 期间不得显示 A 的 failure')
+    expect(wrapper.vm.processingJobId).toBe('pB')
+    expect(wrapper.vm.sourceId).toBe('r0')
+    wrapper.unmount()
+  })
+
   it('rapid A/B/C：只保留 C，A/B 全部 cancel、无 orphan poll', async () => {
     const dA = deferred()
     const dB = deferred()
