@@ -126,7 +126,7 @@ Canonical BattleTimeline 的 tactical FrameVehicle universe 从源头按 #301 �
 
 `BattleEndResolver.resolve()` 按优先级：
 1. `battle.durationS`（finite 且 > 0）
-2. BattleEndedEvent（battle-relative）
+2. RoundFinishedEvent（battle-relative）
 3. Scope-local evidence（该 perspective 的最后有效 position/damage）
 4. UNKNOWN（返回 BATTLE_END_UNRESOLVED limitation，phases 为空）
 
