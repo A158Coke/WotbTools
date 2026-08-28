@@ -233,19 +233,24 @@ public final class RatingV2Calculator {
         if (player == null || player.survived) {
             return false;
         }
-        final double deathSec = PlayerResultFormat.deathSec(player);
-        if (!(deathSec > 0) || !Double.isFinite(deathSec)) {
+        final PlayerResultFormat.DeathTimeEvidence pEv = PlayerResultFormat.deathEvidence(player);
+        if (pEv == null || !pEv.known()) {
             return false;
         }
-        final double from = deathSec - 5.0;
-        final double to = deathSec + 5.0;
+        // PR147 §C precision-aware（V2 双向 ±5s 窗口）：SETTLEMENT_SECOND ±0.5s，不得用 midpoint。
+        // 只有 <b>所有</b> 真实死亡时刻组合的差都在 ±5s 内（max(eMax-pMin, pMax-eMin) ≤ 5）才判定
+        // traded；「有可能」但无法证明（ambiguous）→ fail-closed false。
         for (final PlayerResult other : players) {
             if (other == null || other.team == player.team || other.survived) {
                 continue;
             }
-            final double otherDeathSec = PlayerResultFormat.deathSec(other);
-            if (Double.isFinite(otherDeathSec) && otherDeathSec > 0
-                    && otherDeathSec >= from && otherDeathSec <= to) {
+            final PlayerResultFormat.DeathTimeEvidence oEv = PlayerResultFormat.deathEvidence(other);
+            if (oEv == null || !oEv.known()) {
+                continue;
+            }
+            final double worstGap = Math.max(oEv.upperBoundSec() - pEv.lowerBoundSec(),
+                    pEv.upperBoundSec() - oEv.lowerBoundSec());
+            if (worstGap <= 5.0 + 1e-9) {
                 return true;
             }
         }

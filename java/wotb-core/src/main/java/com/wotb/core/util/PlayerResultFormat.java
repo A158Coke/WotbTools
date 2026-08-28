@@ -51,6 +51,43 @@ public final class PlayerResultFormat {
         return 0;
     }
 
+    /**
+     * 死亡时刻 precision interval（PR147 §C）：SETTLEMENT_SECOND 有 ±0.5s 量化，consumer 不得当作
+     * exact point 用于 trade / 谁先死 / 5s 窗口 / phase boundary。保存代表值 + 上下界。
+     */
+    public record DeathTimeEvidence(
+            DeathTimeSource source,
+            double representativeSec,
+            double lowerBoundSec,
+            double upperBoundSec) {
+        public boolean known() {
+            return Double.isFinite(lowerBoundSec) && Double.isFinite(upperBoundSec);
+        }
+    }
+
+    /** SETTLEMENT_SECOND ±0.5s 量化（PR147 §C）。 */
+    public static final double SETTLEMENT_SECOND_QUANTIZATION_HALF = 0.5;
+
+    /**
+     * 死亡时刻 evidence（含代表值与 precision interval）：LIVE_EXACT 为点（lower==upper==rep）；
+     * SETTLEMENT_SECOND 为 [rep-0.5, rep+0.5]；存活 / UNKNOWN / 无 source → null（调用方 fail-closed）。
+     */
+    public static DeathTimeEvidence deathEvidence(final PlayerResult p) {
+        if (p == null || p.survived || p.deathTimeSource == null) {
+            return null;
+        }
+        if (p.deathTimeSource == DeathTimeSource.LIVE_EXACT && p.survivalTimeSec > 0) {
+            final double rep = p.survivalTimeSec;
+            return new DeathTimeEvidence(DeathTimeSource.LIVE_EXACT, rep, rep, rep);
+        }
+        if (p.deathTimeSource == DeathTimeSource.SETTLEMENT_SECOND && p.deathTimeMillis > 0) {
+            final double rep = p.deathTimeMillis / 1000.0;
+            return new DeathTimeEvidence(DeathTimeSource.SETTLEMENT_SECOND,
+                    rep, rep - SETTLEMENT_SECOND_QUANTIZATION_HALF, rep + SETTLEMENT_SECOND_QUANTIZATION_HALF);
+        }
+        return null;
+    }
+
     /** 存活/阵亡文本（含秒数）；死亡时刻未知（deathSec<=0）时如实标注，绝不伪造 0.0s。 */
     public static String deathDisplay(final PlayerResult p) {
         if (p.survived) {
