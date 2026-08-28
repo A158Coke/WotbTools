@@ -1,6 +1,7 @@
 # WOTB replay 回放数据字典
 
 > 基于 v11.18.0_china_apple 版本回放分析。字段号和含义可能随游戏版本变化。
+> 生产状态：文件结构/字段按 PR147 已证明事实（AFFIRMED）；未证明语义标 UNKNOWN（详见 `docs/reference/replay-parsed-fields.md`，不冒充实锤）。
 
 ## 文件结构
 
