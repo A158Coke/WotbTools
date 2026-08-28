@@ -1,5 +1,8 @@
 package com.wotb.core.replay.stream;
 
+import com.wotb.core.parse.ReplayHeaderException;
+import com.wotb.core.parse.ReplayStreamHeader;
+
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;

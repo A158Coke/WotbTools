@@ -70,35 +70,18 @@ public final class ReplayParser {
     }
 
     /**
-     * 读取 data.wotreplay 文件头的 clientVersion 字符串（PR147：仅读头部字段，不做任何语义解析）。
-     * 头部格式与 {@code com.wotb.core.replay.stream.ReplayStreamHeader} 一致：
-     * {@code magic(4B) + unknown(8B) + hashLen(1B) + hash + versionLen(1B) + version}。
-     * 缺失/非法 → null（调用方按未知版本 fail-closed）。
-     *
-     * <p>保留在 parse 包内是为了不让 parse 反向依赖 replay.*（replay 处理已经依赖 parse；
-     * 若 parse 再依赖 replay.stream 则 core 层形成包级循环，被 {@code CoreArchitectureTest} 拒绝）。</p>
+     * 从 data.wotreplay 文件头读取 clientVersion 字符串 —— 唯一权威 header 解析
+     * ({@link ReplayStreamHeader})。缺失/非法头部 → null（调用方按未知版本 fail-closed）。
      */
-    private static String readDataWotreplayClientVersion(final byte[] data) {
-        if (data == null || data.length < 15) {
+    private static String readClientVersionFromHeader(final byte[] data) {
+        if (data == null) {
             return null;
         }
-        int off = 4 + 8; // magic + unknown
-        if (off >= data.length) {
+        try {
+            return ReplayStreamHeader.parse(data).clientVersion();
+        } catch (final ReplayHeaderException e) {
             return null;
         }
-        final int hashLen = data[off++] & 0xFF;
-        if (off + hashLen > data.length) {
-            return null;
-        }
-        off += hashLen;
-        if (off >= data.length) {
-            return null;
-        }
-        final int versionLen = data[off++] & 0xFF;
-        if (versionLen < 0 || off + versionLen > data.length) {
-            return null;
-        }
-        return new String(data, off, versionLen, java.nio.charset.StandardCharsets.UTF_8);
     }
 
     /**
@@ -141,20 +124,18 @@ public final class ReplayParser {
         // deriving any settlement conclusion so an unknown/future version is raw-preserved rather than
         // interpreted with current-version settlement numerics (fail-closed).
         final byte[] eventData = entries.get("data.wotreplay");
-        final String clientVersion = readDataWotreplayClientVersion(eventData);
+        final String clientVersion = readClientVersionFromHeader(eventData);
         final boolean settlementSchemaAffirmed = isAffirmedSettlementSchema(clientVersion);
         final byte[] dat = entries.get("battle_results.dat");
         if (dat == null) {
             throw new IOException("Replay is missing battle_results.dat");
         }
 
-        final Object pickle = PickleReader.loads(dat);
-        if (!(pickle instanceof Object[] tuple) || tuple.length != 2 || !(tuple[1] instanceof byte[])) {
-            throw new IOException("Invalid battle_results.dat: expected (arenaId, protobufBytes)");
-        }
-        final Object arenaId = tuple[0];
-        final byte[] pb = (byte[]) tuple[1];
-        final Map<Integer, List<Object>> root = Protobuf.decode(pb);
+        // battle_results.dat 的唯一 production 解码权威（SettlementFacts）：ReplayParser 与
+        // ReplayReconstructionService 都经此消费，不再各自 PickleReader.loads + Protobuf.decode。
+        final SettlementFacts facts = SettlementFacts.decode(dat);
+        final Object arenaId = facts.arenaId();
+        final Map<Integer, List<Object>> root = facts.root();
 
         // ---- 名册 #201 ----
         final Map<Long, String[]> roster = new HashMap<>();   // acc -> [nickname, clan]
@@ -293,12 +274,9 @@ public final class ReplayParser {
         final Object win = Protobuf.first(root, 3);
         battle.winnerTeam = (win instanceof Number) ? ((Number) win).intValue() : null;
         // PR147 settlement root facts (RAW preserved): root2=battle unix ts, root4=finishReason, root5=duration.
-        final Object rootStart = Protobuf.first(root, 2);
-        battle.settlementStartTime = rootStart instanceof Number ? ((Number) rootStart).longValue() : null;
-        final Object rootFinish = Protobuf.first(root, 4);
-        battle.settlementFinishReasonRaw = rootFinish instanceof Number ? ((Number) rootFinish).intValue() : null;
-        final Object rootDur = Protobuf.first(root, 5);
-        battle.settlementDurationSec = rootDur instanceof Number ? ((Number) rootDur).doubleValue() : null;
+        battle.settlementStartTime = facts.battleStartTimestampSec();
+        battle.settlementFinishReasonRaw = facts.finishReasonRaw();
+        battle.settlementDurationSec = facts.settlementDurationSec();
         battle.version = text(meta, "version");
         battle.mapName = text(meta, "mapName");
         // Settlement duration/timestamp are the primary authority (root5/root2); meta only a fallback/cross-check.

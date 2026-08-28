@@ -1,5 +1,8 @@
 package com.wotb.core.replay.stream;
 
+import com.wotb.core.parse.ReplayHeaderException;
+import com.wotb.core.parse.ReplayStreamHeader;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;

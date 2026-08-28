@@ -1,4 +1,4 @@
-package com.wotb.core.replay.stream;
+package com.wotb.core.parse;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -91,14 +91,6 @@ public record ReplayStreamHeader(
         offset += 1;
 
         return new ReplayStreamHeader(magic, unknownHeaderBytes, clientHash, clientVersion, offset);
-    }
-
-    /**
-     * 获取 packet stream 数据部分的起始偏移。
-     */
-    @Override
-    public int packetStreamOffset() {
-        return packetStreamOffset;
     }
 
     private static int readU32LE(byte[] buf, int i) {

@@ -9,7 +9,7 @@
   ① **method1 版本 provenance**：HP raw 分类改在 decoder/evidence 边界一次完成并随 `VehicleHealthStateEvent.rawState` 传播（0xFFFE 仅在 `verifiedFffeTerminalAllowed` 时成 VERIFIED_TERMINAL_FFFE），`ReplayHpTimeline`/`ReplayTerminalLifecycle`/`BattleStateReconstructor` 不再 `HpRawState.classify(raw,true)`；method1 cause 语义仅 current version family 证明（11.18 保留 raw causeFlag / semantic UNKNOWN）。
   ② **BattleStateReconstructor 收敛**：删除 `VehicleState` 由 `DamageEvent.raw` 累计的 `damageDealt/damageReceived` 及其 add/get/copy plumbing；PARTIAL `PositionChangedEvent` 不再把 `ObservationState` 升为 OBSERVED；AoI/terminal/HP 分别由 `ReplayAoiLifecycle`/`ReplayTerminalLifecycle`/`ReplayHpTimeline` 唯一 authority。
   ③ **EntityMethod 完整版本门禁**：subtype 8/47/48（damage/updateArena/updateArena2）对未知/未来版本 raw-preserve，绝不产出 current-version semantic event（DamageEvent/ParticipantMappingEvent/SupremacyPointsChangedEvent）。
-  ④ **Type14 不再伪造胜方**：`BattleEndDecoder` 恒产出 `BattleEndedEvent(winnerTeam=null, confidence=PARTIAL)`，不再根据 payload[0..4]==1/2 生成 winnerTeam EXACT（battle-start clock 只用 raw framing 时间 + proven 结算 duration）。
+  ④ **Type14 = stream close（非 battle end）**：`BattleEndDecoder` 恒产出 `ReplayStreamClosedEvent`（packet stream 关闭/停止 marker），不推导 winner / finish reason / battle start；battle-start clock 只用 raw framing 时间 + proven 结算 duration。
   ⑤ **清除 main-source 平行 parser**：`EventStreamReader`/`ReplayEventExtractors`/`ReplayPacketParser` 移入 test-probe 范围（研究/逆向工具），生产解析只经 `ReplayPacketStreamReader`(framing/header) + `ReplayPacketDecoderRegistry`(canonical decoder)；`ReplayParser` 仅内联读 header 的 clientVersion（避免 parse↔replay 包级循环）。
   ⑥ **Type33/Type4 shape 收紧**：仅精确命中已证明 shape（Type33=12B all-zero zeroTail；Type4=4B）才 EXACT，其余 raw-preserve。
   ⑦ **RatingV2 HP 分母**：恒为静态 tankopedia baseline（绝不切到 replay actual entryHp）。
