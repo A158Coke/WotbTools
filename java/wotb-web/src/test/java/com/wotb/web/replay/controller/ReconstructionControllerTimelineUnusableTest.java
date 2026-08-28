@@ -186,7 +186,7 @@ class ReconstructionControllerTimelineUnusableTest {
         }
 
         private ThrowingReviewService(final RuntimeException failure) {
-            super(null);
+            super(null, null, null, null);
             this.failure = failure;
         }
 

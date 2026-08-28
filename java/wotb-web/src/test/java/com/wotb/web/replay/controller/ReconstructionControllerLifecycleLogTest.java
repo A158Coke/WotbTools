@@ -60,7 +60,7 @@ class ReconstructionControllerLifecycleLogTest {
     @BeforeEach
     void setUp() {
         aiService = mock(AiReplayAnalysisService.class);
-        reviewService = spy(new AiReplayReviewService(aiService));
+        reviewService = spy(new AiReplayReviewService(aiService, null, null, null));
         cancellationRegistry = spy(new AiCancellationRegistry());
         workerExecutor = new AiReviewWorkerExecutor();
         controller = new ReconstructionController(reviewService, cancellationRegistry,

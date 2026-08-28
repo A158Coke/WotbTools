@@ -1,16 +1,20 @@
 # 地图鸟瞰与战局回放（Battle Playback）
 
-> 用户可见契约：AI 复盘页面（ReconstructionPage）的独立「地图鸟瞰」区块
+> 用户可见契约：`ReplayPage` Workspace 的「战局回放」面板（`BattlePlaybackPanel.vue`）
 > （热力 + 路线 + 战局回放三视图），**不依赖 AI 复盘**——不跑 AI 也能看图。
 > 数据来源与素材权威见 `docs/reference/maps.md`（内部 code ↔ 展示名 ↔ 语义 mapId ↔ 素材）。
 
-## 地图鸟瞰（Map Overview）
+## 地图鸟瞰（Map Overview，Dataset-only）
 
-AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载地图」按钮 → `POST /api/replay/map-overview`
-（只解析回放、不调 AI，同步返回 `MapOverview` JSON；地图不可构建返回 204）→ 前端
-`MapOverview.vue` 纯 SVG 渲染（热力 + 路线 + 战局回放三视图）。AI 复盘 SSE `done` 载荷仍携带
-`mapOverview` 字段（后端兼容保留），但前端不再从复盘结果渲染地图——两处同源（同一
-`MapOverviewBuilder`），无数据漂移。
+战局回放面板读取同一 Processing Dataset 的 `map-overview.json` derived artifact：
+`POST /api/replay/map-overview`（`Content-Type: application/json`，body `{ processingJobId, sourceId }`）
+→ `MapOverviewQueryService.buildOverviewFromDataset` → `ReplayArtifactWriter.readMapOverview` →
+前端 `MapOverview.vue` 纯 SVG 渲染（热力 + 路线 + 战局回放三视图）。
+- **不重新上传 replay、不单独 full-process**：AI Review / Battle Playback / Export 共用同一 Processing Dataset。
+- 地图不可构建（未知地图/无语义网格/无名册/无观测/视角未解析）→ `mapOverview = null` → 204。
+- `JOB_NOT_FOUND`（Dataset TTL / artifact 过期）→ 触发前端 Dataset recovery（exactly-once + generation-owned + authoritative invalidation）。
+- `SOURCE_NOT_READY` / `SOURCE_PROCESSING_FAILED` / `DATASET_UNAVAILABLE` → 稳定错误码，经 i18n 本地化，不裸展示。
+- 旧的 multipart `POST /api/replay/map-overview`（`MultipartFile[]`）已废弃为 legacy 410 compatibility shim（`ReplayLegacyEndpoints`），不是业务入口。
 
 ### 数据链路
 

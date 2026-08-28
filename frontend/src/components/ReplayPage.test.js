@@ -1533,7 +1533,7 @@ describe('ReplayPage Workspace target resolution（唯一文件自动定位 / �
 })
 
 describe('ReplayPage playback 加载门控（file identity 与 active 解耦，真实 BattlePlaybackPanel）', () => {
-  /** /api/replay/map-overview 成功响应 mock（与 ReconstructionPage.test 同款契约）。 */
+  /** /api/replay/map-overview 成功响应 mock（Playback Dataset 契约）。 */
   function mapJsonResponse(overview) {
     return { ok: true, status: 200, json: vi.fn().mockResolvedValue(overview) }
   }

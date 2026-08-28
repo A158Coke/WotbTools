@@ -20,31 +20,41 @@
 - 同场双方 perspectives 各自独立分析，不得合并
 - Recorder 只用于确定视角，不被 AI 视为分析对象
 
-## 2. 入口和分层
+## 2. 入口和分层（Dataset-only）
 
 ```
-ReconstructionController.analyze()
-  -> AiReplayReviewService.analyze(MultipartFile[], AllowedLanguage)
-    -> validateBatchSize() [1-file guard]
-    -> file validation (extension/empty/size/total)
-    -> DefaultReplayProcessingFacade.process()
-    -> BatchAnalyzer.analyze()
-    -> AiReplayAnalysisService.analyzeTeamGroups(groups, AllowedLanguage)
-      -> buildSingleTeamContext()
-      -> buildPartitions() [complete-link]
-      -> TeamAiPromptBuilder.single()/multi()
-    -> AnalyzeResponse
+Replay selection
+  -> Processing Job (ReplayParseScheduler / full process，multipart 上传仅发生在此一次)
+  -> derived artifacts：
+       ai-facts.json       (ReplayArtifactWriter.writeAiFacts)
+       map-overview.json   (ReplayArtifactWriter.writeMapOverview)
+  -> source READY（r0）
+  -> authoritative Dataset identity = processingJobId + sourceId
+
+AI：
+  ReplayPage Workspace -> AiReviewPanel
+  -> POST /api/replay/analyze   (Content-Type: application/json)
+       { processingJobId, sourceId, lang, correlationId }
+  -> ReconstructionController.analyzeDataset
+  -> AiReplayReviewService.analyzeFacts(processingJobId, sourceIndex, language, listener)
+       -> ReplayProcessingJobStore.acquireForSource(processingJobId)   [Dataset lease]
+       -> ReplayArtifactWriter.readAiFacts(...)
+       -> AiReplayAnalysisService.analyzeTeamGroups / analyzePlayerOrFallback / TacticalReviewHarness
+  -> SSE 流式响应（call1 / evidence / call2 / autopsy 阶段事件 + call2_token 主复盘增量）
 ```
 
-Controller 只负责 HTTP binding + 委托 Service。Service 接管 validate / process / BatchAnalyzer / AI orchestration。
+- 不重新上传 replay、不重新 full-process：AI Review / Battle Playback / Export 全部消费同一 Processing Dataset。
+- multipart `POST /api/replay/analyze` 已废弃为 legacy 410 compatibility shim（`ReplayLegacyEndpoints`），不是业务入口。
 
-## 3. 上传边界
+## 3. 上传边界 / Dataset 边界
 
-- AI Review 单次最多 1 个原始回放文件
-- 原始数量检查早于 getBytes / hash / parsing
-- 空文件和重复文件计入原始数量
-- 单文件 <= 20MB，总请求 <= 200MB
-- `/api/replay/process` 和 `/api/replay/reconstruct-batch` 不受 1 文件限制
+- 用户选择回放 → 创建 Processing Job（multipart 上传在此发生一次；upload/process once → derived artifacts 复用）
+- AI Review 单次分析 1 个 source（`sourceId` 形如 `r0`，对应 Processing Job sources[i]）
+- source 未 READY → `PREPARING_DATASET`（前端禁用 Analyze，显示「正在准备回放数据…」）
+- Dataset 过期（`JOB_NOT_FOUND`）→ 前端可自动恢复一次（exactly-once + generation-owned + authoritative invalidation，保留已有 `resp`）
+- `DATASET_UNAVAILABLE` / `DATASET_REFERENCE_REQUIRED` / `SOURCE_NOT_FOUND` 不是可恢复的过期信号：本地化展示，绝不静默 full-process
+- `SOURCE_NOT_READY` / `SOURCE_PROCESSING_FAILED` 保持稳定语义
+- `/api/replay/analyze`（AI）与 `/api/replay/map-overview`（Playback）走同一 Dataset 引用，绝无 multipart AI/Playback 回退
 
 ## 4. Grouping 与 Partition
 

@@ -44,7 +44,7 @@ const LOCALIZED_ERROR_CODES = new Set([
  * - {@code SOURCE_NOT_READY} / {@code SOURCE_PROCESSING_FAILED}：保持各自稳定语义。
  * 这些码一律 {@link localizeAiError} 本地化后作为用户可读错误展示，绝不静默 full-process。
  */
-export const RECOVERABLE_DATASET_CODES = new Set([
+const RECOVERABLE_DATASET_CODES = new Set([
   'JOB_NOT_FOUND'
 ])
 

@@ -22,7 +22,7 @@ const props = defineProps({
   processingJobId: { type: String, default: null },
   sourceId: { type: String, default: null },
   /** 宿主声明「战局回放 capability 已进入」：仅当 active=true 且该文件尚未尝试加载时自动请求
-   * （ReplayPage 传入 workspaceTab === 'playback'；独立 reconstruction 页默认 false = 手动加载）。
+   * （ReplayPage 传入 workspaceTab === 'playback'）。
    * 不再把「file prop 变化」当作「用户要求加载 playback」——两个状态相互独立。 */
   active: { type: Boolean, default: false },
   /** AI 报告时间跳转（秒）；宿主切换到本面板后传入。 */

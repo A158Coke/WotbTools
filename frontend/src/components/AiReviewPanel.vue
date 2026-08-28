@@ -19,7 +19,7 @@ const props = defineProps({
   /** Dataset 引用（plan §36–§37）：两者齐备时走 derived ai-facts，不再上传 replay。 */
   processingJobId: { type: String, default: null },
   sourceId: { type: String, default: null },
-  /** 未登录/401 时回跳视图：ReplayPage Workspace=replay，独立 reconstruction 页=reconstruction。 */
+  /** 未登录/401 时回跳视图（ReplayPage Workspace=replay）。 */
   loginView: { type: String, default: 'replay' },
   /** Dataset 准备失败（父组件 ensureDatasetFor 未能建立引用）时的已本地化错误；空 = 无。 */
   datasetError: { type: String, default: '' }
@@ -65,16 +65,11 @@ const partialAnalysis = ref('')
 // 超时链对齐：后端整体 deadline=1100s < nginx analyze 1120s；前端 1100s 在 nginx 之前给出干净 AI_TIMEOUT。
 const AI_ANALYZE_TIMEOUT_MS = 1_100_000
 /**
- * Dataset 请求代际（BLOCKER 1.1）：authoritative input = file + processingJobId + sourceId
- * 三者。任一变化（含 Dataset identity 单独变化）都使在途分析作废——迟到响应不得写
- * analysisResult / partialAnalysis / error，也不得覆盖新 generation 的 loading/finally。
- */
-let datasetRevision = 0
-/**
  * 当前 AI analysis run（BLOCKER 2）：每次 runAnalyze 创建独立 run context
- * {revision, controller, correlationId, startedAt, timeoutTimer, cancelRequested, timedOut}。
- * 跨 generation 不再共享任何 mutable request 字段——旧 A 永远只能操作 A 自己的
- * controller / timer / correlationId，绝不可能清掉 B 的 timer 或 cancel B 的请求。
+ * {controller, correlationId, startedAt, timeoutTimer, cancelRequested, timedOut}。
+ * Dataset identity 变化（file / processingJobId / sourceId）只取消旧 activeRun（它自己
+ * 的 timer / correlationId / controller），再解除 active ownership 并重置共享 UI 状态；
+ * stale run 通过 activeRun === run 判定作废，绝不修改新 generation 的状态。
  */
 let activeRun = null
 
@@ -87,7 +82,6 @@ function resetResults() {
 // 目标 file 或 Dataset identity 变化：只取消 oldRun（自己的 timer/correlationId/controller），
 // 再解除 active ownership；新 B run 不得被 oldRun 的异步 unwind 影响。
 watch(() => [props.file, props.processingJobId, props.sourceId], () => {
-  datasetRevision++
   datasetRecovering.value = false
   const oldRun = activeRun
   if (oldRun) {
@@ -168,7 +162,6 @@ async function runAnalyze() {
   // Dataset 尚未就绪属于状态机问题（PREPARING_DATASET），不是用户错误：不发请求、不显示裸错误码。
   if (!datasetReady.value) return
   const run = {
-    revision: datasetRevision,
     controller: new AbortController(),
     correlationId: newCorrelationId(),
     startedAt: Date.now(),

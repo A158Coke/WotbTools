@@ -6,7 +6,6 @@ import java.util.Map;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.replay.processing.ReplayIdentity;
 import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
@@ -37,8 +36,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -46,13 +43,10 @@ import static org.mockito.Mockito.when;
  * {@code analyzeFacts(AiReplayFacts, ...)} 是唯一 AI 复盘入口（读 Processing Job
  * derived facts，不重新 full process）。本测试覆盖 AI 链：preBattleSection 渲染、
  * tank-name correction package 传播、team/player 分支、listener 事件转发与 Dataset
- * artifact 读取（processingFacade 零调用）。
+ * artifact 读取（只读 ReplayProcessingJobStore / ReplayArtifactWriter，不依赖 full-processing facade）。
  */
 @ExtendWith(MockitoExtension.class)
 class AiReplayReviewServiceTest {
-
-    @Mock
-    private DefaultReplayProcessingFacade processingFacade;
 
     @Mock
     private AiReplayAnalysisService aiAnalysisService;
@@ -61,7 +55,7 @@ class AiReplayReviewServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AiReplayReviewService(aiAnalysisService);
+        service = new AiReplayReviewService(aiAnalysisService, null, null, null);
     }
 
     @Test
@@ -192,7 +186,7 @@ class AiReplayReviewServiceTest {
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.ZH), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("harness-text"), PRIOR));
-        service = new AiReplayReviewService(aiAnalysisService, harness, null);
+        service = new AiReplayReviewService(aiAnalysisService, harness, null, null);
 
         final AnalyzeResponse response = analyzeResult(randomResult());
 
@@ -209,10 +203,10 @@ class AiReplayReviewServiceTest {
         assertFalse(section.contains("TEAM_A"), "internal team tokens must be replaced");
     }
 
-    // ---- plan §36–§38/§87：Dataset 路径只读 ai-facts，不得调用 processingFacade ----
+    // ---- plan §36–§38/§87：Dataset 路径只读 ai-facts（ReplayProcessingJobStore / ReplayArtifactWriter） ----
 
     @Test
-    void analyzeFactsFromDatasetReadsArtifactWithoutProcessingFacade() throws Exception {
+    void analyzeFactsFromDatasetReadsAiFactsArtifactFromStore() throws Exception {
         final Path dir = Files.createTempDirectory("wotb-ai-dataset-test");
         final ReplayProcessingJobStore store = new ReplayProcessingJobStore(dir, 60);
         try {
@@ -235,7 +229,6 @@ class AiReplayReviewServiceTest {
 
             assertNotNull(response);
             assertTrue(response.analysis().contains("dataset-analysis"));
-            verify(processingFacade, never()).process(any(), any());
         } finally {
             store.close();
             try (var walk = Files.walk(dir)) {
@@ -256,7 +249,7 @@ class AiReplayReviewServiceTest {
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.ZH), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("harness-text"), null));
-        service = new AiReplayReviewService(aiAnalysisService, harness, null);
+        service = new AiReplayReviewService(aiAnalysisService, harness, null, null);
 
         final AnalyzeResponse response = analyzeResult(randomResult());
 
@@ -272,7 +265,7 @@ class AiReplayReviewServiceTest {
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.EN), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("fallback-text"), null));
-        service = new AiReplayReviewService(aiAnalysisService, harness, null);
+        service = new AiReplayReviewService(aiAnalysisService, harness, null, null);
 
         final AnalyzeResponse response = analyzeResult(randomResult(), AllowedLanguage.EN);
 
@@ -319,7 +312,7 @@ class AiReplayReviewServiceTest {
                     return new TacticalReviewHarness.HarnessOutcome(
                             new AnalyzeResult("harness-text"), PRIOR);
                 });
-        service = new AiReplayReviewService(aiAnalysisService, harness, null);
+        service = new AiReplayReviewService(aiAnalysisService, harness, null, null);
 
         final StringBuilder events = new StringBuilder();
         final AnalyzeResponse response = analyzeResult(randomResult(), AllowedLanguage.ZH,
@@ -348,7 +341,7 @@ class AiReplayReviewServiceTest {
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.ZH), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("harness-text"), PRIOR));
-        service = new AiReplayReviewService(aiAnalysisService, harness, null);
+        service = new AiReplayReviewService(aiAnalysisService, harness, null, null);
 
         final AnalyzeResponse response = analyzeResult(randomResultWithReconstruction());
 
