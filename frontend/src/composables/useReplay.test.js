@@ -429,6 +429,39 @@ describe('useReplay 最终终审 lifecycle（BLOCKER 1/2/3）', () => {
     // resp 保留（TTL 过期不无必要清空用户已展示的解析结果）
     expect(replay.resp.value).not.toBeNull('过期只失效 dataset identity，不清空 resp')
   })
+
+  it('invalidateExpiredProcessingDataset：authoritative 失效 stale p2、保留 resp、Export 不再 eligible、preview 可建 p3 exactly once', async () => {
+    replay.processingJobId.value = 'p2'
+    replay.processingJob.value = {
+      jobId: 'p2', status: 'READY', total: 1,
+      sources: [{ sourceId: 'r0', status: 'READY' }]
+    }
+    replay.resp.value = { battles: [{ mapName: 'A' }] }
+
+    replay.invalidateExpiredProcessingDataset('p2')
+    expect(replay.processingJobId.value).toBeNull('authoritative 失效后不得继续把 p2 当有效 Dataset')
+    expect(replay.processingJob.value).toBeNull('stale processingJob snapshot 必须清除')
+    expect(replay.resp.value).toEqual({ battles: [{ mapName: 'A' }] }, 'resp 保留，继续展示已解析结果')
+    expect(replay.files.value.length).toBe(1)
+
+    // Export 不再把失效 p2 视为 eligible Dataset（processingJobId 已为 null）
+    await replay.startExportJob('aggregate')
+    expect(replay.exportJob.value).toBeNull()
+    expect(replay.exportError.value).toBe('replay.export_job.require_processing')
+
+    // 用户随后主动「解析预览」→ processingJobId 已为 null → 可建 p3 exactly once
+    api.createProcessingJob.mockResolvedValue({ jobId: 'p3', status: 'QUEUED', total: 1 })
+    api.getProcessingJob.mockResolvedValue({
+      jobId: 'p3', status: 'READY', total: 1,
+      sources: [{ sourceId: 'r0', status: 'READY' }]
+    })
+    api.getProcessingJobResult.mockResolvedValue({ battles: [{ mapName: 'A' }] })
+    const onColumnsInit = vi.fn()
+    await replay.startProcessingJob(onColumnsInit)
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(api.createProcessingJob).toHaveBeenCalledTimes(1, '失效后 preview 重建只 create 一次')
+    expect(replay.processingJobId.value).toBe('p3')
+  })
 })
 
 // ---- BLOCKER：pollSourceReady 取消必须 exactly-once settle（绝不永久 pending / 双 terminal）----
