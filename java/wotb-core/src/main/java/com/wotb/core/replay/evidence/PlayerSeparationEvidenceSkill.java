@@ -16,6 +16,7 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.VehicleState;
 import com.wotb.core.replay.map.MapTacticalSemantics;
 import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
+import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -30,7 +31,8 @@ import java.util.Set;
  * 目标点邻近关系）。<b>不输出任何战术判断</b>——「拖延 / 脱节 / 有效牵制 / 图控 / 拿视野」都是
  * LLM 基于这些事实做出的 supported tactical inference，不是 Backend label。</p>
  * <p>时间口径：接火/承伤/阵亡/距离增长只使用与当前窗口重叠的证据；整场承伤/最终存活不作为
- * 早期窗口依据。未知不等于结论：移动覆盖不足 ≠ MOVING，region/语义缺失 ≠ 远离目标点。</p>
+ * 早期窗口依据。未知不等于结论：移动覆盖不足 ≠ MOVING，region/语义缺失 ≠ 远离目标点；
+ * 阵亡时间只消费 canonical {@link PlayerResultFormat#deathSec(PlayerResult)}，UNKNOWN 不得伪装为 0 秒。</p>
  * <p>开局分散（中性 signal）：OPENING 窗口（缺失时回退 45s 安全上限）内未接火/未阵亡；
  * 只证明位置/队形分离，不证明拿视野/点亮/侦察；后续掉血/阵亡不抑制已成立的早期分散。</p>
  */
@@ -78,7 +80,6 @@ public final class PlayerSeparationEvidenceSkill {
             final float distanceM = window.numbers().getOrDefault("distanceM", 150.0)
                     .floatValue();
             final int objectiveProximity = objectiveProximity(region, controlPointRegions);
-            // 单一数据源：AiEvidence.numbers 与 summary 都从同一组实际窗口测量生成
             final java.util.Map<String, Double> numbers = java.util.Map.of(
                     "distanceM", (double) distanceM,
                     "distanceGrowthM", distanceGrowth == null ? -1.0 : distanceGrowth,
@@ -108,14 +109,6 @@ public final class PlayerSeparationEvidenceSkill {
         return List.copyOf(result);
     }
 
-    /**
-     * 中性结构分类（不是战术 verdict）：
-     * <ul>
-     *   <li>{@code OPENING_SPREAD}：开局窗口内、未接火未阵亡的空间分离结构（中性）；</li>
-     *   <li>{@code SEPARATION_WINDOW}：其余有效分离窗口（只给事实）；</li>
-     *   <li>{@code null}：与开局窗口部分重叠或交火无法可靠归属，不硬出。</li>
-     * </ul>
-     */
     private static String kindOf(
             final AiEvidence window,
             final Double stationaryRatio,
@@ -136,21 +129,17 @@ public final class PlayerSeparationEvidenceSkill {
             return null;
         }
         if (partialOverlap) {
-            // 录像者自身存在与窗口部分重叠的交火：交火压力/损失血量无法可靠归属，
-            // 不得依靠其他强信号（移动/距离/阵亡/承伤）硬生成任何结论。
             return null;
         }
-        // 有效分离窗口：输出事实，战术解释交给 LLM
         return "SEPARATION_WINDOW";
     }
 
     private static boolean memberDeadIn(final PlayerResult recorder, final AiEvidence window) {
-        if (recorder == null) {
+        if (recorder == null || recorder.survived) {
             return false;
         }
-        final double deathSec = recorder.deathTimeMillis > 0
-                ? recorder.deathTimeMillis / 1000.0 : -1.0;
-        return !recorder.survived && deathSec >= 0
+        final double deathSec = PlayerResultFormat.deathSec(recorder);
+        return deathSec > 0 && Double.isFinite(deathSec)
                 && deathSec >= window.startSec() && deathSec <= window.endSec();
     }
 
@@ -161,7 +150,6 @@ public final class PlayerSeparationEvidenceSkill {
                 ? "录像者" : recorder.nickname;
         final String stationary = stationaryRatio == null
                 ? "移动覆盖不足" : String.format("静止占比 %.0f%%", stationaryRatio * 100);
-        // 单一数据源：与 AiEvidence.numbers 同一组 inWindowDealt/inWindowDamage 测量
         final double dealt = numbers.getOrDefault("damageDealtDuringSpan", 0.0);
         final double received = numbers.getOrDefault("damageReceivedDuringSpan", 0.0);
         return switch (kind) {
@@ -177,7 +165,6 @@ public final class PlayerSeparationEvidenceSkill {
         };
     }
 
-    /** battle-relative 秒 → X分XX秒。 */
     private static String battleRange(final float startSec, final float endSec) {
         return battleClock(startSec) + "-" + battleClock(endSec);
     }
@@ -195,7 +182,6 @@ public final class PlayerSeparationEvidenceSkill {
                 }
             }
         }
-        // 阶段缺失时使用明确的 45s 安全回退（与 RouteSkill.OPENING_END_SEC 一致）
         return RouteSkill.OPENING_END_SEC;
     }
 
@@ -265,7 +251,6 @@ public final class PlayerSeparationEvidenceSkill {
         return damage;
     }
 
-    /** 是否存在与窗口相交但不完全包含的交火：无法可靠归属，禁止据此下结论。 */
     private static boolean hasPartialOverlapEngagement(final PlayerBattleFeatureSet features,
                                                        final float start, final float end) {
         for (final EngagementSummary engagement : features.engagements()) {
@@ -283,13 +268,11 @@ public final class PlayerSeparationEvidenceSkill {
                 && engagement.endTime() <= end + 0.01f;
     }
 
-    /** 事件流观测伤害覆盖不完整时，否定判断（“窗口内未接火”）不可靠。 */
     private static boolean observedDamageIsPartial(final PlayerBattleFeatureSet features) {
         return features.limitations() != null
                 && features.limitations().contains(TeamSeparationEvidenceSkill.OBSERVED_DAMAGE_IS_PARTIAL);
     }
 
-    /** 窗口内距离增长：由 checkpoints 的录像者-友军质心距离序列首尾差得出；不足 2 点返回 null。 */
     private static Float distanceGrowthMeters(final EvidenceSkillContext ctx,
                                               final float start, final float end) {
         final ReplayReconstruction recon = ctx.recon();
@@ -369,7 +352,6 @@ public final class PlayerSeparationEvidenceSkill {
         return region > 0 ? region : null;
     }
 
-    /** 目标点关系三态：1=邻近 / 0=已知不在 / -1=未知（region 缺失或无语义，不等于远离）。 */
     private static int objectiveProximity(final Integer region, final Set<String> controlPointRegions) {
         if (region == null || controlPointRegions.isEmpty()) {
             return -1;
