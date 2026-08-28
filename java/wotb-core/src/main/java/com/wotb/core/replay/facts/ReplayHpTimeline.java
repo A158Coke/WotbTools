@@ -3,6 +3,7 @@ package com.wotb.core.replay.facts;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
+import com.wotb.core.replay.event.HpRawState;
 import com.wotb.core.replay.event.MaterializationEvent;
 import com.wotb.core.replay.event.RecorderHealthChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
@@ -15,29 +16,14 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * 统一 HP canonical timeline（计划 §B4/B5）。
- *
- * <p>整合 surface：Type5 materialization（MATERIALIZATION_HP）、Avatar method5
- * （RECORDER_HP_MIRROR）、Vehicle Type7 propId=3（CURRENT_HP / TERMINAL_ZERO /
- * TERMINAL_SENTINEL）、Vehicle method1（METHOD1_HP）、settlement cross-check
- * （{@link #settlementInitialHp}）。</p>
- *
- * <p>生产规则（§B5）：录像者 opening HP 可被 method5/首个 Type5 快照 AFFIRMED；
- * 盟友 opening chain 可证明 OBSERVED_EXACT；敌方首次物化前可能已掉血，first observed
- * HP 只是 AFFIRMED current HP，不是 guaranteed starting max——必须 fail closed。</p>
+ * Unified HP timeline. HP observations deliberately preserve terminal-sentinel provenance and do not
+ * define death by themselves; terminal/death consumers use {@link ReplayTerminalLifecycle}.
  */
 public final class ReplayHpTimeline {
 
     private ReplayHpTimeline() {
     }
 
-    /**
-     * 构建统一 HP 观测时间线（battle-relative 秒升序；事件顺序同 sequence）。
-     *
-     * @param events 全部领域事件
-     * @param mapping entity→account 映射（可为 null；未映射实体 accountId=0）
-     * @param startRawClockSec battle start 原始时钟（battle-relative 换算；可为 NaN）
-     */
     public static List<HpObservation> build(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping,
@@ -52,22 +38,7 @@ public final class ReplayHpTimeline {
                 continue;
             }
             switch (event) {
-                case HealthChangedEvent h -> {
-                    final long account = accountOf(mapping, h.entityId());
-                    if (h.confidence() == DecodeConfidence.EXACT && h.currentHealth() != null) {
-                        final int hp = h.currentHealth();
-                        final HpObservationKind kind;
-                        if (hp > 0 && hp < 0xFF00) {
-                            kind = HpObservationKind.CURRENT_HP;
-                        } else if (hp == 0) {
-                            kind = HpObservationKind.TERMINAL_ZERO;
-                        } else {
-                            kind = HpObservationKind.TERMINAL_SENTINEL;
-                        }
-                        out.add(new HpObservation(h.entityId(), account, t, hp, kind,
-                                ReplayFactSource.OBSERVED_EXACT));
-                    }
-                }
+                case HealthChangedEvent h -> appendProp3(out, h, mapping, t);
                 case MaterializationEvent m -> {
                     if (m.currentHp() != null && m.confidence() == DecodeConfidence.EXACT) {
                         out.add(new HpObservation(m.entityId(), accountOf(mapping, m.entityId()),
@@ -75,18 +46,17 @@ public final class ReplayHpTimeline {
                                 ReplayFactSource.OBSERVED_EXACT));
                     }
                 }
-                case RecorderHealthChangedEvent r -> out.add(new HpObservation(
-                        r.entityId(), accountOf(mapping, r.entityId()), t, r.currentHp(),
-                        HpObservationKind.RECORDER_HP_MIRROR, ReplayFactSource.OBSERVED_EXACT));
-                case VehicleHealthStateEvent v -> {
-                    if (v.confidence() == DecodeConfidence.EXACT) {
-                        out.add(new HpObservation(v.entityId(), accountOf(mapping, v.entityId()),
-                                t, v.currentHpRaw(), HpObservationKind.METHOD1_HP,
+                case RecorderHealthChangedEvent r -> {
+                    if (r.confidence() == DecodeConfidence.EXACT
+                            && HealthChangedEvent.isPlausibleHp(r.currentHp())) {
+                        out.add(new HpObservation(r.entityId(), accountOf(mapping, r.entityId()), t,
+                                r.currentHp(), HpObservationKind.RECORDER_HP_MIRROR,
                                 ReplayFactSource.OBSERVED_EXACT));
                     }
                 }
+                case VehicleHealthStateEvent v -> appendMethod1(out, v, mapping, t);
                 default -> {
-                    // 其它事件不影响 HP 时间线
+                    // no HP surface
                 }
             }
         }
@@ -95,16 +65,72 @@ public final class ReplayHpTimeline {
         return List.copyOf(out);
     }
 
-    /**
-     * 结算交叉验证：settlement-derived initial actual HP（research
-     * actual-hp-type5-settlement.md）：{@code max(signed field1, 0) + field11(damageReceived)}。
-     *
-     * <p>field1 从 {@link PlayerResult#raw} 读取（signed i32 语义；负数 = terminal sentinel，
-     * 归零参与）；raw 缺失时退回 {@code damageReceived}（无法还原存活者的剩余 HP）。</p>
-     *
-     * <p>仅用于交叉验证/诊断；生产 entry-HP 规则按 §B5（recorder/ally 证据链，enemy fail-closed），
-     * 结算推导不得成为 enemy opening HP 的自动来源。</p>
-     */
+    private static void appendProp3(
+            final List<HpObservation> out,
+            final HealthChangedEvent h,
+            final TeamEntityMapping mapping,
+            final double t) {
+        final HpRawState state = h.rawState() == null ? HpRawState.UNKNOWN_OTHER : h.rawState();
+        final long account = accountOf(mapping, h.entityId());
+        switch (state) {
+            case CURRENT_HP -> {
+                if (h.confidence() == DecodeConfidence.EXACT
+                        && HealthChangedEvent.isPlausibleHp(h.currentHealth())) {
+                    out.add(new HpObservation(h.entityId(), account, t, h.currentHealth(),
+                            HpObservationKind.CURRENT_HP, ReplayFactSource.OBSERVED_EXACT));
+                }
+            }
+            case HP_ZERO_TERMINAL -> out.add(new HpObservation(h.entityId(), account, t, 0,
+                    HpObservationKind.TERMINAL_ZERO, ReplayFactSource.OBSERVED_EXACT));
+            case DEATH_TERMINAL_FFFD -> out.add(new HpObservation(h.entityId(), account, t, null,
+                    HpObservationKind.TERMINAL_FFFD, ReplayFactSource.OBSERVED_EXACT));
+            case VERIFIED_TERMINAL_FFFE -> out.add(new HpObservation(h.entityId(), account, t, null,
+                    HpObservationKind.TERMINAL_FFFE, ReplayFactSource.OBSERVED_EXACT));
+            case UNKNOWN_FFFF, UNKNOWN_OTHER -> {
+                if (h.rawCurrentHealth() != null) {
+                    out.add(new HpObservation(h.entityId(), account, t, null,
+                            HpObservationKind.UNKNOWN_SENTINEL, ReplayFactSource.UNKNOWN));
+                } else if (h.confidence() == DecodeConfidence.EXACT && h.currentHealth() != null) {
+                    // Backward-compatible synthetic event without raw provenance.
+                    final int hp = h.currentHealth();
+                    if (HealthChangedEvent.isPlausibleHp(hp)) {
+                        out.add(new HpObservation(h.entityId(), account, t, hp,
+                                HpObservationKind.CURRENT_HP, ReplayFactSource.OBSERVED_EXACT));
+                    } else if (hp == 0) {
+                        out.add(new HpObservation(h.entityId(), account, t, 0,
+                                HpObservationKind.TERMINAL_ZERO, ReplayFactSource.OBSERVED_EXACT));
+                    }
+                }
+            }
+        }
+    }
+
+    private static void appendMethod1(
+            final List<HpObservation> out,
+            final VehicleHealthStateEvent v,
+            final TeamEntityMapping mapping,
+            final double t) {
+        if (v.confidence() != DecodeConfidence.EXACT) {
+            return;
+        }
+        final HpRawState state = HpRawState.classify(v.currentHpRaw(), true);
+        final long account = accountOf(mapping, v.entityId());
+        switch (state) {
+            case CURRENT_HP -> out.add(new HpObservation(v.entityId(), account, t,
+                    (int) (short) (v.currentHpRaw() & 0xFFFF), HpObservationKind.METHOD1_HP,
+                    ReplayFactSource.OBSERVED_EXACT));
+            case HP_ZERO_TERMINAL -> out.add(new HpObservation(v.entityId(), account, t, 0,
+                    HpObservationKind.TERMINAL_ZERO, ReplayFactSource.OBSERVED_EXACT));
+            case DEATH_TERMINAL_FFFD -> out.add(new HpObservation(v.entityId(), account, t, null,
+                    HpObservationKind.TERMINAL_FFFD, ReplayFactSource.OBSERVED_EXACT));
+            case VERIFIED_TERMINAL_FFFE -> out.add(new HpObservation(v.entityId(), account, t, null,
+                    HpObservationKind.TERMINAL_FFFE, ReplayFactSource.OBSERVED_EXACT));
+            case UNKNOWN_FFFF, UNKNOWN_OTHER -> out.add(new HpObservation(v.entityId(), account, t, null,
+                    HpObservationKind.UNKNOWN_SENTINEL, ReplayFactSource.UNKNOWN));
+        }
+    }
+
+    /** Settlement-derived initial actual HP cross-check only; not an enemy opening-HP authority. */
     public static Integer settlementInitialHp(final PlayerResult player) {
         if (player == null) {
             return null;
@@ -127,7 +153,7 @@ public final class ReplayHpTimeline {
         if (values == null || values.isEmpty()) {
             return null;
         }
-        final Object v = values.get(0);
+        final Object v = values.getFirst();
         if (v instanceof Integer i) {
             return i;
         }
@@ -146,7 +172,6 @@ public final class ReplayHpTimeline {
             return battle;
         }
         if (startRawClockSec == null || !Double.isFinite(startRawClockSec)) {
-            // 无 battle start：退回 raw 时钟（与 ObservedMaxHp.relativeSec 旧语义一致）
             return e.timestamp().rawClockSec();
         }
         return e.timestamp().rawClockSec() - startRawClockSec;

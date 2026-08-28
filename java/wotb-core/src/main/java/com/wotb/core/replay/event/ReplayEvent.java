@@ -9,6 +9,7 @@ package com.wotb.core.replay.event;
  */
 public sealed interface ReplayEvent
         permits PositionChangedEvent,
+                AttachedTransformEvent,
                 HealthChangedEvent,
                 DamageEvent,
                 EntityCreatedEvent,
@@ -29,6 +30,8 @@ public sealed interface ReplayEvent
                 ProjectileResolutionEvent,
                 ShotResultEvent,
                 TargetingInfoSnapshotEvent,
+                GunMarkerSizeEvent,
+                AimRayStateEvent,
                 AmmunitionSelectionChangedEvent,
                 AmmunitionStateEvent,
                 UnsupportedDamageEvent {
