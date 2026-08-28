@@ -5,7 +5,7 @@
   热力/路线/战局回放（MapOverview）。与 AI 复盘解耦——不想跑 AI 复盘时也能看图。
   目标文件由父组件以 prop 传入；file identity 与「是否开始加载」解耦：仅当宿主声明
   active=true（战局回放 capability 已进入，如 ReplayPage 切到 playback tab）且该文件尚未
-  尝试加载时才自动请求 cached map-overview；独立页默认手动加载。
+  尝试加载时才自动请求 cached map-overview；capability 未进入（active=false）时不请求；手动按钮仅用于重试 / 用户主动加载当前 Dataset artifact（宿主为 ReplayPage Workspace，无 standalone host）。
   seekTo 支持 AI 报告时间链接（未加载先拉取、自动展开折叠，MapOverview 收到 seek 后切回放视图）。
 -->
 <script setup>
