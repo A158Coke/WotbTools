@@ -185,7 +185,7 @@ public final class MapOverviewBuilder {
             final List<MapOverview.DirectionSample> directionSamples = directionSamples(
                     entityIds, positions, events, battleStartRawClockSec, deathSec, intervals, duration);
             final List<MapOverview.HpSample> hpSamples = hpSamplesByAccount(
-                    events, mapping, player.accountId, duration, battleStartRawClockSec);
+                    events, mapping, player.accountId, deathSec, duration, battleStartRawClockSec);
             vehicles.add(new MapOverview.PlaybackVehicle(
                     player.accountId, player.nickname, player.tankId,
                     ReplayDisplayNames.tankName(player.tankId, player.tankName), player.team,
@@ -280,6 +280,7 @@ public final class MapOverviewBuilder {
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping,
             final long accountId,
+            final Double deathSec,
             final double duration,
             final Float battleStartRawClockSec) {
         final List<MapOverview.HpSample> samples = new ArrayList<>();
@@ -305,6 +306,12 @@ public final class MapOverviewBuilder {
                 continue;
             }
             samples.add(new MapOverview.HpSample(t, hp.currentHealth()));
+        }
+        // PR147: destroyed = authoritative 0, same as the canonical adapter (terminal sentinel HP -> null
+        // is dropped above); inject the 0 at deathSec so a destroyed vehicle always has a 0 sample.
+        if (deathSec != null && deathSec >= 0 && deathSec <= duration + 1e-6
+                && samples.stream().noneMatch(s -> s.hp() == 0)) {
+            samples.add(new MapOverview.HpSample(deathSec, 0));
         }
         samples.sort(Comparator.comparingDouble(MapOverview.HpSample::timeSec));
         return samples;

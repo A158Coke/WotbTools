@@ -78,7 +78,7 @@ public final class BattlePlaybackAdapter {
             final List<MapOverview.DirectionSample> directions =
                     directionSamples(timeline, entityIds, deathSec, duration);
             final List<MapOverview.HpSample> hpSamples =
-                    hpSamples(timeline, entityIds, player.accountId, duration);
+                    hpSamples(timeline, entityIds, player.accountId, deathSec, duration);
             vehicles.add(new MapOverview.PlaybackVehicle(
                     player.accountId, player.nickname, player.tankId,
                     ReplayDisplayNames.tankName(player.tankId, player.tankName), player.team,
@@ -261,6 +261,7 @@ public final class BattlePlaybackAdapter {
             final BattleTimeline timeline,
             final List<Integer> entityIds,
             final long accountId,
+            final Double deathSec,
             final double duration) {
         final List<MapOverview.HpSample> samples = new ArrayList<>();
         if (timeline.events() == null) {
@@ -283,6 +284,14 @@ public final class BattlePlaybackAdapter {
                 continue;
             }
             samples.add(new MapOverview.HpSample(t, hp.currentHealth()));
+        }
+        // PR147: destroyed = authoritative 0. If the vehicle is dead but the terminal HP is a non-zero
+        // sentinel (0xFFFD/0xFFFE -> currentHealth=null, dropped) or no 0 sample exists, inject the
+        // authoritative 0 at deathSec so a destroyed vehicle always has a 0 sample (frontend must not
+        // guess from the last observed positive HP).
+        if (deathSec != null && deathSec >= 0 && deathSec <= duration + 1e-6
+                && samples.stream().noneMatch(s -> s.hp() == 0)) {
+            samples.add(new MapOverview.HpSample(deathSec, 0));
         }
         samples.sort(Comparator.comparingDouble(MapOverview.HpSample::timeSec));
         return samples;

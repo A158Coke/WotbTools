@@ -206,11 +206,13 @@ class BattlePlaybackAdapterParityTest {
     private static void assertCloseToShifted(
             final double legacyTime, final double adaptedTime,
             final BattleTimeline timeline, final String message) {
-        final double shifted = legacyTime - timeline.battleStartRawClockSec();
-        final double clamped = Math.max(0, shifted);
+        // PR147 battle-clock convergence: both the legacy MapOverviewBuilder (uses recon resolved start)
+        // and the canonical BattlePlaybackAdapter (uses the timeline start) now share the SAME resolved
+        // battle-start, so both already produce battle-relative times — no additional shift (that would
+        // be a double shift). This holds once recon.battleStartRawClockSec == timeline.battleStartRawClockSec.
+        final double clamped = Math.max(0, legacyTime);
         assertTrue(Math.abs(clamped - adaptedTime) < 2.0,
-                message + " legacy=" + legacyTime + " start=" + timeline.battleStartRawClockSec()
-                        + " adapted=" + adaptedTime);
+                message + " legacy=" + legacyTime + " adapted=" + adaptedTime);
     }
 
     private static long countType(final List<MapOverview.PlaybackEvent> events, final String type) {
