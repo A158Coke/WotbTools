@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>身份解析只复用 {@link TeamEntityMapper} 的权威 {@link TeamEntityMapping}
  * （冲突/低置信实体证据被拒绝，nickname fallback 复用），死亡时刻 authority 链（§B1）：
- * EXACT alive=false（HP=0）&gt; 结算 deathTimeMillis &gt; UNKNOWN=0；
+ * EXACT alive=false（HP=0）&gt; 结算 deathTimeMillis（SETTLEMENT_SECOND，由 field24 lifeTime 派生）&gt; UNKNOWN=0；
  * legacy 启发式不再兜底（§B2）。</p>
  */
 class DeathTimeReconcilerTest {

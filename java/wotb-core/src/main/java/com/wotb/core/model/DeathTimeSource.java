@@ -12,7 +12,7 @@ package com.wotb.core.model;
  * （§B2），仅存在于 LegacyReplayHeuristicDiagnostics（research/diagnostics）。</p>
  */
 public enum DeathTimeSource {
-    /** 结算 battle_results.dat deathTimeMillis（ms → /1000 秒）。 */
+    /** 结算 battle_results.dat field24 lifeTime（秒 → 死亡时刻，±0.5s 量化；非 #104 ms）。 */
     SETTLEMENT_SECOND,
     /** 回放事件流 EXACT alive=false（HP=0 / 死亡 sentinel），battle-relative 秒。 */
     LIVE_EXACT,

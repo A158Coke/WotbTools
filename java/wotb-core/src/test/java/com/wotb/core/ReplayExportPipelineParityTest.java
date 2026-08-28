@@ -2,13 +2,13 @@ package com.wotb.core;
 
 import com.wotb.core.export.ExcelExporter;
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.replay.processing.ReplayProcessingOptions;
 import com.wotb.core.ref.Tankopedia;
-import com.wotb.core.replay.facts.TradeFacts;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -70,18 +70,15 @@ class ReplayExportPipelineParityTest {
         assertTrue(survivalDiffers,
                 "夹具必须证明 raw parse 与 full processing 的死亡时间不同（否则无法验证 pipeline 差异）");
 
-        // 至少一名玩家 tradedDeaths 不同 → KAST tradeScore / 互换击杀列会随 pipeline 变化
-        boolean tradeDiffers = false;
-        for (int i = 0; i < raw.players.size(); i++) {
-            final int rawTraded = TradeFacts.tradedDeaths(raw.players.get(i), raw.players);
-            final int fullTraded = TradeFacts.tradedDeaths(full.players.get(i), full.players);
-            if (rawTraded != fullTraded) {
-                tradeDiffers = true;
-                break;
-            }
-        }
-        assertTrue(tradeDiffers,
-                "夹具必须证明 raw 与 full 的互换击杀判定不同（tradedDeaths 随 pipeline 变化）");
+        // PR147: raw parse now produces authoritative settlement death (field24 lifeTime whole-second),
+        // full processing refines to LIVE_EXACT (sub-second). The export/preview must both use the refined
+        // full-processing Battle, so at least one dead player must be refined to LIVE_EXACT (not settlement).
+        final boolean anyLiveExact = full.players.stream()
+                .anyMatch(p -> p.deathTimeSource == DeathTimeSource.LIVE_EXACT);
+        assertTrue(anyLiveExact,
+                "夹具必须证明 full processing 把至少一名阵亡玩家精化到 LIVE_EXACT（否则 export 与 preview 同源不成立）");
+        assertTrue(raw.players.stream().noneMatch(p -> p.deathTimeSource == DeathTimeSource.LIVE_EXACT),
+                "raw parse（settlement-only）不得声称 LIVE_EXACT 精化");
     }
 
     @Test

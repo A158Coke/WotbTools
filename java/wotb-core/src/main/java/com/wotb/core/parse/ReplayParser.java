@@ -39,8 +39,12 @@ public final class ReplayParser {
     static final int F_POINTS_EARNED = 32, F_POINTS_SEIZED = 33;
     static final int F_XP = 23, F_CREDITS = 106;
     static final int[] F_ASSIST = {9, 10};
-    static final int F_SURVIVED = 105;          // == -1 表示存活
-    static final int F_DEATH_TIME = 104;        // 死亡时刻(ms; 存活时=0)
+    // PR147 settlement: 11.19 corpus 无 #104 deathTimeMillis。#105 = deathReason(-1=幸存 sentinel)；
+    // #24 = lifeTime(秒)；#25 = killerID(result/entity-id namespace，#301 outer field1)。
+    static final int F_DEATH_REASON = 105;      // deathReason: -1 = 幸存 sentinel; 其它/缺失 = 阵亡
+    static final int F_LIFE_TIME = 24;          // lifeTime(秒): 阵亡=结算死亡秒; 幸存=整场时长
+    static final int F_KILLER = 25;             // killer result/entity-id (非 accountId)
+    static final int F_RESULT_ENTITY = 1;       // #301 outer field1 = result/entity id
     // 名册 PlayerInfo (#201 -> #2)
     static final int R_NICK = 1, R_PLATOON = 2, R_CLAN = 5, R_RANK = 9;
     static final int R_TEAM = 3;                // 名册来源队伍（1/2；用于结算阵容完整性校验）
@@ -166,6 +170,21 @@ public final class ReplayParser {
         if (resultEntries.size() > MAX_PLAYERS_PER_REPLAY) {
             throw new IOException("Replay results exceed player limit");
         }
+        // PR147: field25 killerID 与 #301 outer field1 用同一个 result/entity-id namespace；先收集
+        // result/entity-id -> accountId，再回填 killerAccountId（killerID 绝非 accountId）。
+        final Map<Long, Long> resultToAccount = new HashMap<>();
+        for (final Object rraw : resultEntries) {
+            if (!(rraw instanceof byte[] resultBytes)) {
+                throw new IOException("Invalid battle protobuf: field 301 must be length-delimited");
+            }
+            final Map<Integer, List<Object>> r = Protobuf.decode(resultBytes);
+            final Map<Integer, List<Object>> info = Protobuf.message(r, 2);
+            final long resultEntityId = Protobuf.firstLong(r, F_RESULT_ENTITY, 0);
+            final long accountId = Protobuf.firstLong(info, F_ACCOUNT, 0);
+            if (resultEntityId > 0 && accountId > 0) {
+                resultToAccount.put(resultEntityId, accountId);
+            }
+        }
         for (final Object rraw : resultEntries) {
             if (!(rraw instanceof byte[] resultBytes)) {
                 throw new IOException("Invalid battle protobuf: field 301 must be length-delimited");
@@ -195,11 +214,32 @@ public final class ReplayParser {
             pr.victoryPointsSeized = (int) Protobuf.firstLong(info, F_POINTS_SEIZED, 0);
             pr.xp = (int) Protobuf.firstLong(info, F_XP, 0);
             pr.credits = (int) Protobuf.firstLong(info, F_CREDITS, 0);
-            final Object killer = Protobuf.first(info, F_SURVIVED);
-            pr.survived = (killer instanceof Number) && ((Number) killer).longValue() == -1L;
-            pr.deathTimeMillis = Protobuf.firstLong(info, F_DEATH_TIME, 0);
+            // PR147 settlement raw evidence (#24 lifeTime / #25 killer / #105 deathReason / outer field1).
+            pr.settlementResultEntityId = Protobuf.firstLong(r, F_RESULT_ENTITY, 0);
+            pr.settlementLifeTimeSec = Protobuf.firstLong(info, F_LIFE_TIME, 0);
+            final Object killerRaw = Protobuf.first(info, F_KILLER);
+            pr.settlementKillerResultEntityId =
+                    killerRaw instanceof Number ? ((Number) killerRaw).longValue() : null;
+            final Object deathReasonRaw = Protobuf.first(info, F_DEATH_REASON);
+            pr.settlementDeathReasonRaw = deathReasonRaw instanceof Number
+                    ? ((Number) deathReasonRaw).intValue() : null;
+            // survived is derived from deathReason (== -1 survivor sentinel); NOT a survived field.
+            pr.survived = pr.settlementDeathReasonRaw != null
+                    && pr.settlementDeathReasonRaw == -1;
+            // deathTimeMillis = canonical settlement death ms (derived from field24 lifeTime; #104
+            // does not exist in 11.19). Survived = 0.
+            final long lifeMs = pr.settlementLifeTimeSec > 0
+                    ? Math.round(pr.settlementLifeTimeSec * 1000.0) : 0L;
+            pr.deathTimeMillis = pr.survived ? 0L : lifeMs;
             pr.raw = info;
             players.add(pr);
+        }
+        // Map killer result/entity-id -> killer accountId (PR147 namespace).
+        for (final PlayerResult pr : players) {
+            if (pr.settlementKillerResultEntityId != null) {
+                final Long ka = resultToAccount.get(pr.settlementKillerResultEntityId);
+                pr.killerAccountId = ka != null && ka > 0 ? ka : null;
+            }
         }
 
         // 合并名册
@@ -216,11 +256,27 @@ public final class ReplayParser {
         battle.arenaId = String.valueOf(arenaId);
         final Object win = Protobuf.first(root, 3);
         battle.winnerTeam = (win instanceof Number) ? ((Number) win).intValue() : null;
+        // PR147 settlement root facts (RAW preserved): root2=battle unix ts, root4=finishReason, root5=duration.
+        final Object rootStart = Protobuf.first(root, 2);
+        battle.settlementStartTime = rootStart instanceof Number ? ((Number) rootStart).longValue() : null;
+        final Object rootFinish = Protobuf.first(root, 4);
+        battle.settlementFinishReasonRaw = rootFinish instanceof Number ? ((Number) rootFinish).intValue() : null;
+        final Object rootDur = Protobuf.first(root, 5);
+        battle.settlementDurationSec = rootDur instanceof Number ? ((Number) rootDur).doubleValue() : null;
         battle.version = text(meta, "version");
         battle.mapName = text(meta, "mapName");
-        battle.durationS = meta.hasNonNull("battleDuration") ? Math.min(meta.get("battleDuration").asDouble(), 420) : null;
-        final Long startTime = parseLong(text(meta, "battleStartTime"));
-        battle.startTime = (startTime != null && startTime > 1388534400L) ? startTime : null;
+        // Settlement duration/timestamp are the primary authority (root5/root2); meta only a fallback/cross-check.
+        final Double metaDur = meta.hasNonNull("battleDuration") ? meta.get("battleDuration").asDouble() : null;
+        battle.durationS = null;
+        if (battle.settlementDurationSec != null && battle.settlementDurationSec > 0) {
+            battle.durationS = Math.min(battle.settlementDurationSec, 420);
+        } else if (metaDur != null) {
+            battle.durationS = Math.min(metaDur, 420);
+        }
+        final Long metaStart = parseLong(text(meta, "battleStartTime"));
+        battle.startTime = (battle.settlementStartTime != null && battle.settlementStartTime > 1388534400L)
+                ? battle.settlementStartTime
+                : (metaStart != null && metaStart > 1388534400L ? metaStart : null);
         battle.recorder = resolveRecorderNickname(text(meta, "playerName"), players);
         battle.recorderVehicle = text(meta, "playerVehicleName");
         battle.arenaBonusType = meta.hasNonNull("arenaBonusType") ? meta.get("arenaBonusType").asInt() : null;
@@ -259,16 +315,16 @@ public final class ReplayParser {
         }
 
 
-        // 存活时间: 存活=战斗时长；阵亡=结算 deathTimeMillis 或 UNKNOWN=0。
+        // 存活时间: 存活=战斗时长；阵亡=senttlement field24 lifeTime 或 UNKNOWN=0。
         // legacy 启发式（damage-threshold / EntityLeave / Position 停止）不得写入 PlayerResult。
         // 死亡 authority 链由 DefaultReplayProcessingFacade 的 DeathTimeReconciler 继续收口：
-        // LIVE_EXACT → SETTLEMENT_SECOND → UNKNOWN。
+        // LIVE_EXACT → SETTLEMENT_SECOND → UNKNOWN；settlement 只提供 SETTLEMENT_SECOND (±0.5s) 证据。
         final double bd = battle.durationS != null ? battle.durationS : 0;
         for (final PlayerResult pr : players) {
             if (pr.survived) {
                 pr.survivalTimeSec = bd;
             } else {
-                final double st = pr.deathTimeMillis / 1000.0;
+                final double st = pr.settlementLifeTimeSec;
                 pr.deathTimeSource = st > 0
                         ? com.wotb.core.model.DeathTimeSource.SETTLEMENT_SECOND
                         : com.wotb.core.model.DeathTimeSource.UNKNOWN;

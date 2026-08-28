@@ -14,6 +14,14 @@ public class Battle {
     public String mapName = "";
     public Double durationS;
     public Long startTime;
+
+    // ---- PR147 settlement 顶层事实（battle_results.dat root；RAW，保留原始值）----
+    /** root2 = battle Unix timestamp（秒）；缺失=null。 */
+    public Long settlementStartTime;
+    /** root4 = finishReason 原始值；缺失=null。未证明语义保持 raw。 */
+    public Integer settlementFinishReasonRaw;
+    /** root5 = settlement battle duration（秒）；缺失=null。 */
+    public Double settlementDurationSec;
     public String recorder = "";
     public String recorderVehicle = "";
     public String clientVersion = "";
