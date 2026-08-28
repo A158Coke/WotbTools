@@ -10,6 +10,7 @@ import com.wotb.core.replay.decoder.ReplayDecodeContext;
 import com.wotb.core.replay.decoder.ReplayDecodeResult;
 import com.wotb.core.replay.decoder.ReplayPacketDecoderRegistry;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
+import com.wotb.core.replay.event.ArenaPeriodChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.stream.PacketTypeDiagnostics;
 import com.wotb.core.replay.stream.RawReplayPacket;
@@ -106,6 +107,11 @@ public class ReplayReconstructionService {
             allEvents.addAll(result.events());
         }
 
+        // PR147: subtype48 wrapper3 ARENA_PERIOD.BATTLE is the client-observed battle-start anchor.
+        // Use its rawClock when present as the authority for battle-relative time (the stream heuristic
+        // below only fills diagnostics; the anchor is the canonical source of battlesStartRawClockSec).
+        final Float battleStartAnchorRawClock = battleStartRawClockFromArenaPeriod(allEvents);
+
         // 5. 重建战场状态
         final BattleStateReconstructor reconstructor = new BattleStateReconstructor();
         final ReconstructionResult reconstructionResult =
@@ -135,7 +141,9 @@ public class ReplayReconstructionService {
                 metadata,
                 streamResult.header(),
                 replayDuration,
-                streamResult.diagnostics().battleStartRawClockSec(),
+                battleStartAnchorRawClock != null
+                        ? battleStartAnchorRawClock
+                        : streamResult.diagnostics().battleStartRawClockSec(),
                 participants,
                 List.copyOf(allEvents),
                 reconstructionResult.checkpoints(),
@@ -150,6 +158,27 @@ public class ReplayReconstructionService {
     }
 
     // ---- 内部方法 ----
+
+    /**
+     * PR147 battle-start anchor: first wrapper3 ARENA_PERIOD.BATTLE event's rawClock.
+     * Returns null when no BATTLE period transition is decoded (caller falls back to diagnostics).
+     */
+    /** Public for direct unit-testing of the battle-start anchor logic. */
+    public static Float battleStartRawClockFromArenaPeriod(final List<ReplayEvent> events) {
+        if (events == null) {
+            return null;
+        }
+        for (final ReplayEvent event : events) {
+            if (event instanceof ArenaPeriodChangedEvent p
+                    && p.period() == ArenaPeriodChangedEvent.Period.BATTLE) {
+                final float raw = event.timestamp().rawClockSec();
+                if (Float.isFinite(raw) && raw >= 0f) {
+                    return raw;
+                }
+            }
+        }
+        return null;
+    }
 
     private static JsonNode parseMeta(Map<String, byte[]> entries) throws IOException {
         if (entries.containsKey("meta.json")) {
