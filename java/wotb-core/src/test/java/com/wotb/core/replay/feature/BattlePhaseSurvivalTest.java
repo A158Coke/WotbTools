@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import org.junit.jupiter.api.Test;
 
@@ -93,30 +94,30 @@ class BattlePhaseSurvivalTest {
     }
 
     @Test
-    void deathSourceLabelDistinguishesAuthoritativeEstimatedAndUnknown() {
-        final Battle authoritative = new Battle();
-        authoritative.players = List.of(
-                player(1L, 1, false, 62.0),
-                player(2L, 2, true, 0.0));
-        assertEquals("权威结算", BattlePhaseSummary.deathSourceLabel(authoritative));
+    void deathSourceLabelDistinguishesLiveExactSettlementUnknownAndNoDeaths() {
+        final PlayerResult liveExact = player(1L, 1, false, 62.0);
+        liveExact.deathTimeSource = DeathTimeSource.LIVE_EXACT;
+        liveExact.survivalTimeSec = 62.345;
+        final Battle liveExactBattle = new Battle();
+        liveExactBattle.players = List.of(liveExact);
+        assertEquals("回放精确", BattlePhaseSummary.deathSourceLabel(liveExactBattle));
 
-        final PlayerResult estimated = player(1L, 1, false, 83.0);
-        estimated.deathTimeMillis = 0L;   // 结算缺失死亡时刻
-        estimated.survivalTimeSec = 83.0; // 事件流 fallback 估出
-        final Battle estimatedBattle = new Battle();
-        estimatedBattle.players = List.of(estimated);
-        assertEquals("事件流估算", BattlePhaseSummary.deathSourceLabel(estimatedBattle));
+        final PlayerResult settlement = player(1L, 1, false, 62.0);
+        settlement.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+        final Battle settlementBattle = new Battle();
+        settlementBattle.players = List.of(settlement);
+        assertEquals("权威结算", BattlePhaseSummary.deathSourceLabel(settlementBattle));
 
-        final PlayerResult unknown = player(1L, 1, false, 0.0);
-        unknown.deathTimeMillis = 0L;     // 结算缺失 + 事件流未估出
-        unknown.survivalTimeSec = 0.0;
+        final PlayerResult legacyEstimateOnly = player(1L, 1, false, 83.0);
+        legacyEstimateOnly.deathTimeMillis = 0L;
+        legacyEstimateOnly.survivalTimeSec = 83.0;
         final Battle unknownBattle = new Battle();
-        unknownBattle.players = List.of(unknown);
+        unknownBattle.players = List.of(legacyEstimateOnly);
         assertEquals("未知", BattlePhaseSummary.deathSourceLabel(unknownBattle));
 
         final Battle noDead = new Battle();
         noDead.players = List.of(player(1L, 1, true, 0.0));
-        assertEquals("权威结算", BattlePhaseSummary.deathSourceLabel(noDead));
+        assertEquals("无阵亡", BattlePhaseSummary.deathSourceLabel(noDead));
     }
 
     @Test
