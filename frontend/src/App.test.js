@@ -11,6 +11,7 @@ import { setUiProfile } from './composables/useUiProfile.js'
 // 重视图 mock 为轻组件（本测试只验证 view 解析，不挂载重型页面）
 vi.mock('./components/ReplayPage.vue', () => ({ default: { name: 'ReplayPageMock', template: '<div data-test="view-replay" />' } }))
 vi.mock('./components/HomePage.vue', () => ({ default: { name: 'HomePageMock', template: '<div data-test="view-home" />' } }))
+vi.mock('./components/HoFPage.vue', () => ({ default: { name: 'HoFPageMock', template: '<div data-test="view-hof" />' } }))
 // PlaybackQaPage 真实异步解析；mock useAuth 让 QA 页走未登录分支（轻量，不加载 14 车场景）
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: (key) => key, locale: { value: 'zh' } }),
@@ -61,6 +62,15 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
     // ReconstructionPage 已删除：?view=reconstruction 必须回退/跳转至 ReplayPage，而非渲染死页面。
     expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('recon-page')
+  })
+
+  it('?view=leaderboard canonicalize 到 hof（旧书签兼容，不得误映射到 replay）', async () => {
+    window.history.replaceState({}, '', '/?view=leaderboard')
+    const wrapper = mountApp()
+    await flushPromises()
+    // leaderboard 是旧书签 → 必须跳转 Hof 页，而不是被上一轮 canonicalization 误映射成 replay。
+    expect(wrapper.find('[data-test="view-hof"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(false)
   })
 
   it('?view=playback-qa 解析 PlaybackQaPage（异步加载）', async () => {

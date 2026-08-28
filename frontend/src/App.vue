@@ -48,9 +48,12 @@ if (rawViewParam === 'extended' || rawViewParam === 'reconstruction') {
   url.searchParams.set('view', 'replay')
   window.history.replaceState({}, '', url.toString())
 }
-const viewParam = (rawViewParam === 'leaderboard' || rawViewParam === 'extended' || rawViewParam === 'reconstruction')
-  ? 'replay'
-  : rawViewParam
+// viewParam 依据「原始」rawViewParam 做旧书签映射：leaderboard → hof，extended / reconstruction → replay。
+const viewParam = rawViewParam === 'leaderboard'
+  ? 'hof'
+  : (rawViewParam === 'extended' || rawViewParam === 'reconstruction')
+    ? 'replay'
+    : rawViewParam
 // AI 复盘 / 战局回放已并入 ReplayPage Workspace（?view=replay），不再有独立的 reconstruction 深链。
 const ALLOWED_VIEWS = [
   'home', 'replay', 'hof', 'hof-admin',
