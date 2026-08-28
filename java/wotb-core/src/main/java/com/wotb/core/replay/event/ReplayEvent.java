@@ -23,6 +23,14 @@ public sealed interface ReplayEvent
                 SupremacyPointsChangedEvent,
                 RecorderHealthChangedEvent,
                 VehicleHealthStateEvent,
+                VehicleFiredEvent,
+                ProjectileLaunchedEvent,
+                ProjectileTerminalEvent,
+                ProjectileResolutionEvent,
+                ShotResultEvent,
+                TargetingInfoSnapshotEvent,
+                AmmunitionSelectionChangedEvent,
+                AmmunitionStateEvent,
                 UnsupportedDamageEvent {
 
     /** 事件在原始流中的稳定顺序 */

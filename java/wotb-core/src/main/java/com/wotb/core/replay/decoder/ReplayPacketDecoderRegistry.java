@@ -33,6 +33,8 @@ public class ReplayPacketDecoderRegistry {
         // Type 33/5 物化与 AoI 生命周期（materialization + 重物化 HP 快照）
         registry.register(new MaterializationAnnouncedDecoder());
         registry.register(new MaterializationDecoder());
+        // Type 28 录像者弹药选择状态
+        registry.register(new AmmunitionSelectionDecoder());
         // EntityProperty（Type 7）— 第一阶段做占位
         registry.register(new EntityPropertyDecoder());
         // Type 31/35/39 占位
