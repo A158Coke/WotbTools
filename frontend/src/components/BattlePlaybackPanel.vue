@@ -8,10 +8,10 @@
   seekTo 支持 AI 报告时间链接（未加载先拉取、自动展开折叠，MapOverview 收到 seek 后切回放视图）。
 -->
 <script setup>
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
-import { localizeAiError } from '../utils/reconstruction-analysis.js'
+import { localizeAiError, isRecoverableDatasetCode } from '../utils/reconstruction-analysis.js'
 import { fileKey } from '../utils/helpers.js'
 import MapOverview from './MapOverview.vue'
 
@@ -28,11 +28,18 @@ const props = defineProps({
   /** AI 报告时间跳转（秒）；宿主切换到本面板后传入。 */
   seekTo: { type: Number, default: null },
   /** 未登录/401 时回跳视图。 */
-  loginView: { type: String, default: 'replay' }
+  loginView: { type: String, default: 'replay' },
+  /** Dataset 准备失败（父组件 ensureDatasetFor 未能建立引用）时的已本地化错误；空 = 无。 */
+  datasetError: { type: String, default: '' }
 })
+
+const emit = defineEmits(['dataset-recover'])
 
 const { t } = useI18n()
 const { token, ensureToken, login } = useAuth()
+
+/** Dataset 就绪守卫（plan §39/§109）：战局回放只有拿到 authoritative processingJobId+sourceId 才读 cached artifact。 */
+const datasetReady = computed(() => !!props.file && !!props.processingJobId && !!props.sourceId)
 
 // 统一的受保护请求：确保带上有效的 Keycloak Bearer Token（/api/replay/* 需要角色），
 // 并统一处理 token 刷新失败 / 401 / 403。
@@ -77,12 +84,9 @@ let mapAbortController = null
  */
 async function loadMapOverview() {
   if (mapLoading.value || !props.file) return
-  // Dataset 路径（plan §39/§109）：必须携带 processingJobId+sourceId，绝不回退 multipart（BLOCKER B）
-  if (!props.processingJobId || !props.sourceId) {
-    mapError.value = 'DATASET_UNAVAILABLE'
-    mapLoaded.value = true
-    return
-  }
+  // Dataset 路径（plan §39/§109）：必须携带 processingJobId+sourceId，绝不回退 multipart（BLOCKER B）。
+  // 数据集未就绪属于状态机问题（PREPARING_DATASET）：不尝试加载、不设裸错误码；datasetReady 后自动重试。
+  if (!datasetReady.value) return
   const controller = new AbortController()
   mapAbortController = controller
   const requestSeq = ++mapRequestSeq
@@ -104,6 +108,12 @@ async function loadMapOverview() {
         } catch {
           // 保持纯文本错误码
         }
+      }
+      // 数据集引用过期（JOB_NOT_FOUND 等）：交给父组件重建，不显示裸错误码。
+      if (isRecoverableDatasetCode(errorData.code)) {
+        emit('dataset-recover', errorData.code)
+        mapLoaded.value = false
+        return
       }
       throw new Error(localizeAiError(errorData, r.status, t))
     } else {
@@ -206,43 +216,69 @@ onBeforeUnmount(() => {
   <div>
     <p v-if="!file" class="ws-note">{{ $t('workspace.playback_empty') }}</p>
     <div v-else class="panel map-panel" data-test="map-panel" ref="mapPanelEl">
-      <div class="map-panel-head">
-        <h2>{{ $t('recon.map.title') }}</h2>
-        <button
-          v-if="!mapOverview"
-          type="button"
-          class="map-load-btn"
-          data-test="map-load-btn"
-          :disabled="mapLoading"
-          @click="loadMapOverview"
-        >{{ $t(mapLoading ? 'recon.map.loading' : 'recon.map.load') }}</button>
-        <button
-          v-else
-          type="button"
-          class="map-load-btn"
-          data-test="toggle-map"
-          :aria-expanded="mapOpen"
-          @click="toggleMap"
-        >{{ $t(mapOpen ? 'recon.collapse' : 'recon.expand') }}</button>
+      <!-- dataset 未就绪（PREPARING_DATASET / FAILURE）：不读 cached artifact，显示准备/失败状态 -->
+      <div v-if="!datasetReady" class="map-dataset-status" data-test="map-dataset-status">
+        <span class="map-status-spinner" aria-hidden="true"></span>
+        <span>{{ datasetError || $t('workspace.dataset_preparing') }}</span>
       </div>
-      <p v-if="mapError" class="error map-error" data-test="map-error">{{ mapError }}</p>
-      <!-- 折叠用 v-show 而非 v-if：MapOverview 是否挂载只由 mapOverview 决定，折叠不销毁组件、保留视图/播放器状态 -->
-      <div v-show="mapOpen" data-test="map-body">
-        <MapOverview
-          v-if="mapOverview"
-          :overview="mapOverview"
-          :seek-to="mapSeek"
-        />
-        <p v-else-if="mapLoaded && !mapLoading" class="map-unavailable" data-test="map-unavailable">
-          {{ $t('recon.map.unavailable') }}
-        </p>
-      </div>
+      <template v-else>
+        <div class="map-panel-head">
+          <h2>{{ $t('recon.map.title') }}</h2>
+          <button
+            v-if="!mapOverview"
+            type="button"
+            class="map-load-btn"
+            data-test="map-load-btn"
+            :disabled="mapLoading"
+            @click="loadMapOverview"
+          >{{ $t(mapLoading ? 'recon.map.loading' : 'recon.map.load') }}</button>
+          <button
+            v-else
+            type="button"
+            class="map-load-btn"
+            data-test="toggle-map"
+            :aria-expanded="mapOpen"
+            @click="toggleMap"
+          >{{ $t(mapOpen ? 'recon.collapse' : 'recon.expand') }}</button>
+        </div>
+        <p v-if="mapError" class="error map-error" data-test="map-error">{{ mapError }}</p>
+        <!-- 折叠用 v-show 而非 v-if：MapOverview 是否挂载只由 mapOverview 决定，折叠不销毁组件、保留视图/播放器状态 -->
+        <div v-show="mapOpen" data-test="map-body">
+          <MapOverview
+            v-if="mapOverview"
+            :overview="mapOverview"
+            :seek-to="mapSeek"
+          />
+          <p v-else-if="mapLoaded && !mapLoading" class="map-unavailable" data-test="map-unavailable">
+            {{ $t('recon.map.unavailable') }}
+          </p>
+        </div>
+      </template>
     </div>
   </div>
 </template>
 
 <style scoped>
 .ws-note { margin: 18px 4px; color: var(--text-muted); font-size: .85rem; }
+
+/* Dataset 准备中/失败状态：非地图加载错误，显示 loading 文案（不设裸错误码） */
+.map-dataset-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .9rem;
+  color: var(--text-label);
+}
+.map-status-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: map-status-spin 0.9s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes map-status-spin { to { transform: rotate(360deg); } }
 
 .panel {
   background: rgba(13, 18, 22, .94);

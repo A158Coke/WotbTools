@@ -9,7 +9,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
-import { localizeAiError } from '../utils/reconstruction-analysis.js'
+import { localizeAiError, isRecoverableDatasetCode } from '../utils/reconstruction-analysis.js'
 import AnalysisResultPanel from './AnalysisResultPanel.vue'
 import ReplayAnalysisAction from './ReplayAnalysisAction.vue'
 
@@ -20,10 +20,12 @@ const props = defineProps({
   processingJobId: { type: String, default: null },
   sourceId: { type: String, default: null },
   /** 未登录/401 时回跳视图：ReplayPage Workspace=replay，独立 reconstruction 页=reconstruction。 */
-  loginView: { type: String, default: 'replay' }
+  loginView: { type: String, default: 'replay' },
+  /** Dataset 准备失败（父组件 ensureDatasetFor 未能建立引用）时的已本地化错误；空 = 无。 */
+  datasetError: { type: String, default: '' }
 })
 
-const emit = defineEmits(['seek'])
+const emit = defineEmits(['seek', 'dataset-recover'])
 
 const { t, locale } = useI18n()
 const { tokenParsed, token, ensureToken, login } = useAuth()
@@ -34,6 +36,20 @@ const canUseAiReview = computed(() => {
   return Array.isArray(roles) && (
     roles.includes('wotbtools-user') || roles.includes('wotbtools-admin')
   )
+})
+
+/**
+ * Dataset 就绪守卫（defense-in-depth，plan §36/§109）：AI Analyze 只有在 authoritative
+ * processingJobId + sourceId 都已绑定到面板后才能执行。file 已选但引用缺失 =
+ * PREPARING_DATASET（状态机问题），不是用户错误。
+ */
+const datasetReady = computed(() => !!props.file && !!props.processingJobId && !!props.sourceId)
+const datasetRecovering = ref(false)
+/** Dataset 准备中/过期重试/失败的用户可读文案（数据集生命周期，非 AI 模型错误）。 */
+const datasetMessage = computed(() => {
+  if (datasetRecovering.value) return t('workspace.dataset_expired')
+  if (props.datasetError) return props.datasetError
+  return t('workspace.dataset_preparing')
 })
 
 const error = ref('')
@@ -72,6 +88,7 @@ function resetResults() {
 // 再解除 active ownership；新 B run 不得被 oldRun 的异步 unwind 影响。
 watch(() => [props.file, props.processingJobId, props.sourceId], () => {
   datasetRevision++
+  datasetRecovering.value = false
   const oldRun = activeRun
   if (oldRun) {
     cancelRun(oldRun)
@@ -139,12 +156,17 @@ function newCorrelationId() {
   return `ai-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+/** 数据集可恢复错误（job/dataset 引用过期或缺失）：交给父组件重建引用，不当作最终用户错误。 */
+function handleDatasetRecover(code) {
+  datasetRecovering.value = true
+  error.value = ''
+  emit('dataset-recover', code)
+}
+
 async function runAnalyze() {
   if (analyzing.value) return
-  if (!props.file) {
-    error.value = t('recon.errors.NO_REPLAY_FILE')
-    return
-  }
+  // Dataset 尚未就绪属于状态机问题（PREPARING_DATASET），不是用户错误：不发请求、不显示裸错误码。
+  if (!datasetReady.value) return
   const run = {
     revision: datasetRevision,
     controller: new AbortController(),
@@ -181,6 +203,11 @@ async function runAnalyze() {
         } catch {
         }
       }
+      // 数据集引用过期/缺失（JOB_NOT_FOUND 等）：触发父组件重建，而非把错误码展示给用户。
+      if (isRecoverableDatasetCode(errorData.code)) {
+        handleDatasetRecover(errorData.code)
+        return
+      }
       throw new Error(localizeAiError(errorData, r.status, t))
     }
     // SSE 流式解析：阶段事件 + call2_token 主复盘增量 + done 收尾。
@@ -192,6 +219,11 @@ async function runAnalyze() {
   } catch (e) {
     // file / Dataset identity 已切换：本次分析作废，不写任何状态。
     if (activeRun !== run) return
+    // 数据集引用过期（后端稳定码 / SSE error 事件）：交回父组件重建，不显示裸错误码。
+    if (e && e.recoverableDatasource) {
+      handleDatasetRecover(e.message)
+      return
+    }
     if (e && e.name === 'AbortError') {
       error.value = run.timedOut ? t('recon.errors.AI_TIMEOUT') : t('recon.cancelled')
     } else if (run.cancelRequested) {
@@ -217,7 +249,9 @@ async function runAnalyze() {
  */
 function analyzeBody(correlationId) {
   if (!props.processingJobId || !props.sourceId) {
-    throw new Error('DATASET_UNAVAILABLE')
+    // 防御：runAnalyze 已用 datasetReady 守卫；此路径正常情况下不可达。绝不裸抛内部错误码，
+    // 以本地化消息兜底（状态机问题，非最终用户错误）。
+    throw new Error(t('recon.errors.DATASET_REFERENCE_REQUIRED'))
   }
   return JSON.stringify({
     processingJobId: props.processingJobId,
@@ -306,6 +340,12 @@ async function readAnalyzeStream(r, run) {
         break
       case 'error':
         // 流中途失败：以稳定错误码本地化后终止流。
+        // 数据集引用过期（JOB_NOT_FOUND 等）不是 AI 错误：作为可恢复信号向上传播。
+        if (isRecoverableDatasetCode(data.code)) {
+          const recoverable = new Error(data.code || 'JOB_NOT_FOUND')
+          recoverable.recoverableDatasource = true
+          throw recoverable
+        }
         const localized = new Error(localizeAiError({ code: data.code || '' }, 502, t))
         localized.isLocalized = true
         throw localized
@@ -351,6 +391,10 @@ async function readAnalyzeStream(r, run) {
       // error 事件已生成本地化消息：原样传播。
       throw e
     }
+    if (e && e.recoverableDatasource) {
+      // 数据集引用过期：交给 runAnalyze 的 recover 分支。
+      throw e
+    }
     throw new Error(t('recon.errors.AI_RESPONSE_INVALID'))
   } finally {
     reader.releaseLock?.()
@@ -378,7 +422,13 @@ onBeforeUnmount(() => {
     <p v-if="!file" class="ws-note">{{ $t('workspace.ai_empty') }}</p>
     <template v-else>
       <div v-if="canUseAiReview" class="ai-action-row">
-        <ReplayAnalysisAction :analyzing="analyzing" @analyze="runAnalyze" @cancel="cancelAnalyze" />
+        <ReplayAnalysisAction :analyzing="analyzing" :disabled="!datasetReady" @analyze="runAnalyze" @cancel="cancelAnalyze" />
+      </div>
+
+      <!-- dataset 未就绪（PREPARING_DATASET / DATASET_EXPIRED / FAILURE）：AI Analyze 禁用，显示准备/失败状态 -->
+      <div v-if="!datasetReady" class="ai-dataset-status" data-test="ai-dataset-status">
+        <span class="stream-spinner" aria-hidden="true"></span>
+        <span>{{ datasetMessage }}</span>
       </div>
 
       <p v-if="error" class="error">{{ error }}</p>
@@ -411,6 +461,16 @@ onBeforeUnmount(() => {
   margin: 16px 0;
 }
 .ws-note { margin: 18px 4px; color: var(--text-muted); font-size: .85rem; }
+
+/* Dataset 准备中/过期重试/失败状态：不是 AI 错误，显示 loading 文案（非红色错误） */
+.ai-dataset-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0;
+  font-size: .9rem;
+  color: var(--text-label);
+}
 
 /* 流式生成面板：阶段状态 + 主复盘 token 滚动预览 */
 .streaming-panel { margin-top: 16px; }

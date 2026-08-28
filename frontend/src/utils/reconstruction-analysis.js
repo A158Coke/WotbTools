@@ -26,8 +26,29 @@ const LOCALIZED_ERROR_CODES = new Set([
   'TOO_MANY_REPLAY_FILES',
   'REPLAY_FILE_COUNT_EXCEEDED',
   'TOTAL_REQUEST_TOO_LARGE',
-  'UNKNOWN_LOCALE'
+  'UNKNOWN_LOCALE',
+  'DATASET_UNAVAILABLE',
+  'DATASET_REFERENCE_REQUIRED',
+  'JOB_NOT_FOUND',
+  'SOURCE_NOT_FOUND',
+  'SOURCE_NOT_READY',
+  'SOURCE_PROCESSING_FAILED'
 ])
+
+/** Dataset 生命周期可恢复错误码：job/dataset 引用层面的过期或缺失（≠ source 真失败或
+ *  AI 模型问题）。前端可在仍持有原始 replay File 时丢弃过期引用并重新走 Direct Action
+ *  dataset preparation，而不是把它当作最终用户错误。 */
+export const RECOVERABLE_DATASET_CODES = new Set([
+  'DATASET_UNAVAILABLE',
+  'DATASET_REFERENCE_REQUIRED',
+  'JOB_NOT_FOUND',
+  'SOURCE_NOT_FOUND'
+])
+
+/** 判定某稳定错误码是否属于「数据集可恢复」类别（可由原 replay File 重新建立）。 */
+export function isRecoverableDatasetCode(code) {
+  return !!code && RECOVERABLE_DATASET_CODES.has(String(code))
+}
 
 export function localizeAiError(rawCode, status, t) {
   let code = ''

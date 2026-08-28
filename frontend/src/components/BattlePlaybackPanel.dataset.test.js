@@ -62,7 +62,7 @@ describe('BattlePlaybackPanel dataset request', () => {
     vi.unstubAllGlobals()
   })
 
-  it('无 dataset 引用时拒绝发起请求并提示（不再回退 multipart，BLOCKER B）', async () => {
+  it('无 dataset 引用时拒绝发起请求并显示准备态（不裸抛 DATASET_UNAVAILABLE，BLOCKER B）', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 })
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mount(BattlePlaybackPanel, {
@@ -77,7 +77,9 @@ describe('BattlePlaybackPanel dataset request', () => {
     await new Promise(r => setTimeout(r, 20))
 
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-test="map-error"]').text()).toContain('DATASET_UNAVAILABLE')
+    expect(wrapper.find('[data-test="map-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="map-dataset-status"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="map-dataset-status"]').text()).toContain('workspace.dataset_preparing')
     vi.unstubAllGlobals()
   })
 })
