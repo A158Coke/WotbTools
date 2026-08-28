@@ -1,4 +1,4 @@
-package com.wotb.core.parse;
+package com.wotb.core.parse.probe;
 
 import java.util.List;
 import java.util.Map;
@@ -109,7 +109,7 @@ public final class EventStreamReader {
     }
 
 
-    static final int MAX_PACKETS = ReplayPacketParser.MAX_PACKETS;
+    public static final int MAX_PACKETS = ReplayPacketParser.MAX_PACKETS;
 
     // ===== forwarder：解析逻辑已拆至 ReplayPacketParser / ReplayEventExtractors =====
 

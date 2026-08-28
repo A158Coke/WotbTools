@@ -99,7 +99,9 @@ public final class ReplayTerminalLifecycle {
                     state = State.TERMINAL;
                     kind = TerminalKind.DROWNING;
                 } else {
-                    final HpRawState rawState = HpRawState.classify(v.currentHpRaw(), true);
+                    // §P0-1: consume the decoder-classified rawState propagated with the event; never
+                    // re-classify the raw u16 here (0xFFFE version-scoped by decoder boundary).
+                    final HpRawState rawState = v.rawState() == null ? HpRawState.UNKNOWN_OTHER : v.rawState();
                     if (!rawState.terminal()) {
                         continue;
                     }

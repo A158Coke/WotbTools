@@ -1,7 +1,7 @@
 package com.wotb.core;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.parse.EventStreamReader;
+import com.wotb.core.parse.probe.EventStreamReader;
 import com.wotb.core.parse.Protobuf;
 import com.wotb.core.parse.ReplayParser;
 import org.junit.jupiter.api.Assumptions;

@@ -684,7 +684,9 @@ class FormationDepthEvidenceTest {
         final Map<Integer, List<AoiObservationSegment>> aoiByEntity = ReplayAoiLifecycle.indexByEntity(
                 ReplayAoiLifecycle.build(recon.events(), 20.0));
         final Map<Long, PlayerResult> playersByAccount = Map.of(2001L, player(2001L, 2, "EnemyA", 9297L));
-        final List<double[]> track = List.of(new double[]{0.0, 0.0, 0.0}, new double[]{55.0, 100.0, 0.0});
+        final List<FormationDepthEvidence.PositionSample> track = List.of(
+                new FormationDepthEvidence.PositionSample(20, 0.0, 0.0, 0.0),
+                new FormationDepthEvidence.PositionSample(20, 55.0, 100.0, 0.0));
 
         final FormationDepthEvidence.PhasePositionReference ref =
                 FormationDepthEvidence.resolvePhasePosition(
@@ -713,7 +715,8 @@ class FormationDepthEvidenceTest {
         final Map<Integer, List<AoiObservationSegment>> aoiByEntity = ReplayAoiLifecycle.indexByEntity(
                 ReplayAoiLifecycle.build(recon.events(), 20.0));
         final Map<Long, PlayerResult> playersByAccount = Map.of(2001L, player(2001L, 2, "EnemyA", 9297L));
-        final List<double[]> track = List.of(new double[]{0.0, 0.0, 0.0});
+        final List<FormationDepthEvidence.PositionSample> track = List.of(
+                new FormationDepthEvidence.PositionSample(20, 0.0, 0.0, 0.0));
         // phaseEnd=30 处于 leave 之后（segment A [0,10) 已关闭）→ UNKNOWN_AOI gap → 非 CURRENT（LAST_KNOWN）
         final FormationDepthEvidence.PhasePositionReference ref =
                 FormationDepthEvidence.resolvePhasePosition(
@@ -721,6 +724,95 @@ class FormationDepthEvidenceTest {
                         playersByAccount, mapping, aoiByEntity, 1);
         assertEquals(PositionKnowledge.LAST_KNOWN, ref.knowledge(),
                 "phaseEnd ∈ UNKNOWN_AOI gap → 不产出 CURRENT（LAST_KNOWN，fail-closed）");
+    }
+
+    @Test
+    void reentryOverlapUsesOnlySameEntitySamplesForCurrent() {
+        // Item P1 回归：account 2001 跨越两个实体生命周期（re-entry 重叠）。
+        // 实体 A(20) 观测段 [2,10)（t=2..8 有位置）→ Type4@10 关闭（terminal/destroyed）；
+        // 实体 B(25) 于 t=6 重入（Materialization）且延续到 t=14（Type4）→ B 观测段 [6,14)。
+        // phaseEnd=10 位于 B(25) 的 observed segment → CURRENT 参考必须只消费 B(25) 的样本（x=100/110 → 105），
+        // 不得把 A(20) 的 t=8 x=20 并入（旧的 accountId-flattened track 会把 A 的 x=20 一起平均成 76.67）。
+        final Battle battle = battle();
+        battle.durationS = 20d;
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(21f, null), 8,
+                DecodeConfidence.EXACT, 20, 2001L));
+        events.add(new ParticipantMappingEvent(2, new ReplayTimestamp(21f, null), 8,
+                DecodeConfidence.EXACT, 25, 2001L));
+        events.add(pos(10, 23f, 20, 10f, 0f));   // A t=2 x=10
+        events.add(pos(11, 29f, 20, 20f, 0f));   // A t=8 x=20
+        events.add(new MaterializationEvent(12, new ReplayTimestamp(27f, null), 5,
+                DecodeConfidence.EXACT, 25, 1, null, new byte[0], new byte[0])); // B re-enter t=6
+        events.add(pos(13, 28f, 25, 100f, 0f));  // B t=7 x=100
+        events.add(pos(14, 30f, 25, 110f, 0f));  // B t=9 x=110
+        events.add(new EntityRemovedEvent(15, new ReplayTimestamp(31f, null), 4,
+                DecodeConfidence.EXACT, 20));    // A terminal t=10
+        events.add(new EntityRemovedEvent(16, new ReplayTimestamp(35f, null), 4,
+                DecodeConfidence.EXACT, 25));    // B leave t=14
+        final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 21f,
+                List.of(), events, List.of(), null, null, null);
+        final TeamEntityMapping mapping = TeamEntityMapper.resolve(battle, recon);
+        final Map<Integer, List<AoiObservationSegment>> aoiByEntity = ReplayAoiLifecycle.indexByEntity(
+                ReplayAoiLifecycle.build(recon.events(), 21.0));
+        final Map<Long, PlayerResult> playersByAccount = Map.of(2001L, player(2001L, 2, "EnemyA", 9297L));
+        final List<FormationDepthEvidence.PositionSample> samples = List.of(
+                new FormationDepthEvidence.PositionSample(20, 2.0, 10.0, 0.0),
+                new FormationDepthEvidence.PositionSample(20, 8.0, 20.0, 0.0),
+                new FormationDepthEvidence.PositionSample(25, 7.0, 100.0, 0.0),
+                new FormationDepthEvidence.PositionSample(25, 9.0, 110.0, 0.0));
+
+        final FormationDepthEvidence.PhasePositionReference ref =
+                FormationDepthEvidence.resolvePhasePosition(
+                        2001L, 2, samples, 0.0, 10.0,
+                        playersByAccount, mapping, aoiByEntity, 1);
+        assertEquals(PositionKnowledge.CURRENT, ref.knowledge(),
+                "phaseEnd=10 位于 B(25) observed segment → CURRENT");
+        assertEquals(105.0, ref.x(), 1e-6,
+                "CURRENT 参考只消费 B(25) 样本（(100+110)/2=105），不得并入 A(20) 的 x=20");
+    }
+
+    @Test
+    void reentryGapAfterEntityCloseIsLastKnown() {
+        // Item P1 回归：phaseEnd=16 处于 B(25) 段关闭后的 UNKNOWN_AOI gap（A、B 均 Type4 关闭）
+        // → 同实体 carry-forward 退化为 LAST_KNOWN，不得当作 CURRENT（fail-closed）。
+        final Battle battle = battle();
+        battle.durationS = 20d;
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(21f, null), 8,
+                DecodeConfidence.EXACT, 20, 2001L));
+        events.add(new ParticipantMappingEvent(2, new ReplayTimestamp(21f, null), 8,
+                DecodeConfidence.EXACT, 25, 2001L));
+        events.add(pos(10, 23f, 20, 10f, 0f));   // A t=2 x=10
+        events.add(pos(11, 29f, 20, 20f, 0f));   // A t=8 x=20
+        events.add(new MaterializationEvent(12, new ReplayTimestamp(27f, null), 5,
+                DecodeConfidence.EXACT, 25, 1, null, new byte[0], new byte[0])); // B re-enter t=6
+        events.add(pos(13, 28f, 25, 100f, 0f));  // B t=7 x=100
+        events.add(pos(14, 30f, 25, 110f, 0f));  // B t=9 x=110
+        events.add(new EntityRemovedEvent(15, new ReplayTimestamp(31f, null), 4,
+                DecodeConfidence.EXACT, 20));    // A terminal t=10
+        events.add(new EntityRemovedEvent(16, new ReplayTimestamp(35f, null), 4,
+                DecodeConfidence.EXACT, 25));    // B leave t=14
+        final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 21f,
+                List.of(), events, List.of(), null, null, null);
+        final TeamEntityMapping mapping = TeamEntityMapper.resolve(battle, recon);
+        final Map<Integer, List<AoiObservationSegment>> aoiByEntity = ReplayAoiLifecycle.indexByEntity(
+                ReplayAoiLifecycle.build(recon.events(), 21.0));
+        final Map<Long, PlayerResult> playersByAccount = Map.of(2001L, player(2001L, 2, "EnemyA", 9297L));
+        final List<FormationDepthEvidence.PositionSample> samples = List.of(
+                new FormationDepthEvidence.PositionSample(20, 2.0, 10.0, 0.0),
+                new FormationDepthEvidence.PositionSample(20, 8.0, 20.0, 0.0),
+                new FormationDepthEvidence.PositionSample(25, 7.0, 100.0, 0.0),
+                new FormationDepthEvidence.PositionSample(25, 9.0, 110.0, 0.0));
+
+        final FormationDepthEvidence.PhasePositionReference ref =
+                FormationDepthEvidence.resolvePhasePosition(
+                        2001L, 2, samples, 0.0, 16.0,
+                        playersByAccount, mapping, aoiByEntity, 1);
+        assertEquals(PositionKnowledge.LAST_KNOWN, ref.knowledge(),
+                "phaseEnd=16 位于 UNKNOWN_AOI gap → LAST_KNOWN（fail-closed，不作 CURRENT）");
+        assertEquals(110.0, ref.x(), 1e-6,
+                "LAST_KNOWN 取 B(25) 最后一次样本（t=9 x=110），保持单实体来源");
     }
 
     @Test

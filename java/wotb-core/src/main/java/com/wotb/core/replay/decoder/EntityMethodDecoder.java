@@ -3,6 +3,7 @@ package com.wotb.core.replay.decoder;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.AmmunitionStateEvent;
+import com.wotb.core.replay.event.HpRawState;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ProjectileLaunchedEvent;
 import com.wotb.core.replay.event.ProjectileResolutionEvent;
@@ -104,6 +105,21 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
         // §A2/P0-3：method0/1/5/17/20/27/29（legacy-compatible 观测布局）不得对未知/未来版本
         // 无条件产出 EXACT 语义事件 —— raw-preserve + VERSION_UNSUPPORTED 诊断。
         if (isLayoutMethod(subType)
+                && !ReplayVersionGate.methodLayoutAllowed(context.clientVersion())) {
+            events.add(new UnknownReplayEvent(
+                    packet.sequence(), ts, packet.type(), payload.length,
+                    "VERSION_UNSUPPORTED_METHOD" + subType, DecodeConfidence.UNKNOWN));
+            warnings.add(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
+                    "EntityMethod subtype " + subType + " layout not affirmed: " + context.clientVersion()));
+            return new ReplayDecodeResult(DecodeStatus.PARTIAL, events, warnings);
+        }
+
+        // §P1: semantic methods（subtype 8/47/48 —— damage / updateArena / updateArena2）produce
+        // PR147 semantic events (DamageEvent, ParticipantMappingEvent, SupremacyPointsChangedEvent).
+        // These layouts are fixture-proven for the current family AND the explicit 11.18 legacy fixtures
+        // (see ReplayVersionGate.methodLayoutAllowed); unknown/future versions must raw-preserve and
+        // never emit a current-version semantic event for an unaffirmed version.
+        if (isSemanticMethod(subType)
                 && !ReplayVersionGate.methodLayoutAllowed(context.clientVersion())) {
             events.add(new UnknownReplayEvent(
                     packet.sequence(), ts, packet.type(), payload.length,
@@ -238,10 +254,21 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                     final int currentHpRaw = readU16LE(payload, 12);
                     final int sourceEntity = readI32LE(payload, 14);
                     final int causeFlag = payload[18] & 0xFF;
+                    // §P0-1: version-scoped HP raw classification done exactly once at the decoder
+                    // boundary (knows clientVersion); consumers consume the propagated rawState and
+                    // never re-classify (0xFFFE gated by verifiedFffeTerminalAllowed only).
+                    final HpRawState hpRawState = HpRawState.classify(currentHpRaw,
+                            ReplayVersionGate.verifiedFffeTerminalAllowed(context.clientVersion()));
+                    // §P0-1: method1 cause semantics are PR147 closed semantics proven only on the
+                    // current version family. 11.18 proves only the layout -> keep raw causeFlag,
+                    // semantic UNKNOWN (no independent cause-semantics proof for 11.18).
+                    final VehicleHealthStateEvent.Cause cause =
+                            ReplayVersionGate.closedSemanticsAllowed(context.clientVersion())
+                                    ? VehicleHealthStateEvent.causeOf(causeFlag)
+                                    : VehicleHealthStateEvent.Cause.UNKNOWN;
                     events.add(new VehicleHealthStateEvent(
                             packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
-                            entityId, currentHpRaw, sourceEntity, causeFlag,
-                            VehicleHealthStateEvent.causeOf(causeFlag)));
+                            entityId, currentHpRaw, sourceEntity, causeFlag, cause, hpRawState));
                 } else {
                     warnings.add(new ReplayDecodeWarning("UNKNOWN_SUBTYPE_VARIANT",
                             "Vehicle method1 variant argLen=" + argLen
@@ -676,6 +703,13 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     }
 
     private record ParticipantMappingResult(List<ParticipantMappingEvent> mappingEvents) {
+    }
+
+    /** 是否 current-version-only 语义 method（P1 版本门禁：8/47/48 —— damage/updateArena/updateArena2）。 */
+    private static boolean isSemanticMethod(final int subType) {
+        return subType == SUBTYPE_ENTITY_METHOD_DAMAGE
+                || subType == SUBTYPE_UPDATE_ARENA
+                || subType == SUBTYPE_UPDATE_ARENA2;
     }
 
     /** 是否 legacy-compatible 观测布局 method（P0-3 版本门禁范围）。 */

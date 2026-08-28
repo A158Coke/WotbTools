@@ -1,7 +1,6 @@
 package com.wotb.core.stats;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.EntryHpSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.util.PlayerResultFormat;
@@ -19,11 +18,13 @@ import java.util.Map;
  * particular, potential damage is calculated locally instead of being written back to {@link PlayerResult},
  * so invoking the admin-only V2 gray page cannot alter Preview, Export, AI, or Playback data.</p>
  *
- * <p><b>STATIC_BASELINE (not replay actual-HP truth)</b>: the V2 composite's HP denominator is a static
- * baseline (tankopedia max HP; {@code STATIC_BASELINE_TANK_HP} only when tankopedia data is missing). It is
- * NOT the replay's actual HP — it must never be presented as an observed HP fact. §P0-6: the old
- * alpha-damage potential-damage supplement driven by {@code PlayerResult.killVictims} is removed because
- * that field has no authoritative producer.</p>
+ * <p><b>STATIC_BASELINE (not replay actual-HP truth)</b>: the V2 composite's HP denominator is ALWAYS a static
+ * tankopedia baseline — {@code tankopedia.info(tankId).maxHp()} when positive, otherwise
+ * {@code STATIC_BASELINE_TANK_HP}. It is NEVER the replay's observed entry HP
+ * ({@code PlayerResult.entryHpSource == EntryHpSource.OBSERVED_EXACT} / {@code PlayerResult.entryHp}) and must
+ * never be presented as an observed HP fact. The single static-baseline formula must not switch denominator
+ * semantics based on evidence coverage. §P0-6: the old alpha-damage potential-damage supplement driven by
+ * {@code PlayerResult.killVictims} is removed because that field has no authoritative producer.</p>
  */
 public final class RatingV2Calculator {
 
@@ -251,11 +252,12 @@ public final class RatingV2Calculator {
         return false;
     }
 
+    /**
+     * Static baseline for the historical V2 HP denominator: {@code tankopedia} maxHp when positive, else the
+     * {@link #STATIC_BASELINE_TANK_HP} fallback. Never the replay's observed entry HP — the formula must not
+     * switch denominator semantics based on evidence coverage (see class JavaDoc).
+     */
     private static double estimatedHp(final PlayerResult player, final Tankopedia tankopedia) {
-        if (player.entryHpSource == EntryHpSource.OBSERVED_EXACT
-                && player.entryHp != null && player.entryHp > 0) {
-            return player.entryHp;
-        }
         final Integer maxHp = tankopedia.info(player.tankId).maxHp();
         return maxHp != null && maxHp > 0 ? maxHp : STATIC_BASELINE_TANK_HP;
     }

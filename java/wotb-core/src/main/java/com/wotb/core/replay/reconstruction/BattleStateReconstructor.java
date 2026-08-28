@@ -102,21 +102,28 @@ public class BattleStateReconstructor {
         try {
             vs.setRotation(new Rotation(e.yaw(), e.pitch(), e.roll()));
         } catch (IllegalArgumentException ignored) { }
-        if (vs.observationState() == ObservationState.UNKNOWN
-                || vs.observationState() == ObservationState.REMOVED) {
+        // §P1 (reconstructor convergence): PARTIAL/UNKNOWN PositionChangedEvent must not upgrade an
+        // entity to OBSERVED — only a trustworthy (EXACT/INFERRED) position marks it observed.
+        if (!DecodeConfidenceHelper.isLowConfidence(e.confidence())
+                && (vs.observationState() == ObservationState.UNKNOWN
+                    || vs.observationState() == ObservationState.REMOVED)) {
             vs.setObservationState(ObservationState.OBSERVED);
         }
     }
 
     private void applyDamage(final BattleState state, final DamageEvent e) {
-        if (e.attackerEid() != e.victimEid()) {
+        // §P1 (reconstructor convergence): raw DamageEvent.damage() is an observed (partial) value,
+        // NOT a canonical damage fact. This playback state does NOT accumulate a second
+        // damageDealt/damageReceived authority (those fields were removed from VehicleState).
+        // Only last-observed is updated for both sides.
+        if (e.attackerEid() != e.victimEid() && e.attackerEid() > 0) {
             final VehicleState attacker = state.getOrCreateVehicle(e.attackerEid(), e.timestamp().rawClockSec());
             attacker.setLastObservedAt(e.timestamp().rawClockSec());
-            attacker.addDamageDealt(e.damage());
         }
-        final VehicleState victim = state.getOrCreateVehicle(e.victimEid(), e.timestamp().rawClockSec());
-        victim.setLastObservedAt(e.timestamp().rawClockSec());
-        victim.addDamageReceived(e.damage());
+        if (e.victimEid() > 0) {
+            final VehicleState victim = state.getOrCreateVehicle(e.victimEid(), e.timestamp().rawClockSec());
+            victim.setLastObservedAt(e.timestamp().rawClockSec());
+        }
     }
 
     private void applyEntityRemoved(final BattleState state, final EntityRemovedEvent e) {
@@ -207,7 +214,9 @@ public class BattleStateReconstructor {
         if (e.confidence() != DecodeConfidence.EXACT) {
             return;
         }
-        final HpRawState rawState = HpRawState.classify(e.currentHpRaw(), true);
+        // §P0-1: consume the decoder-classified rawState propagated with the event; never
+        // re-classify the raw u16 here (0xFFFE version-scoped by decoder boundary).
+        final HpRawState rawState = e.rawState() == null ? HpRawState.UNKNOWN_OTHER : e.rawState();
         if (rawState == HpRawState.CURRENT_HP) {
             vs.setCurrentHealth((int) (short) (e.currentHpRaw() & 0xFFFF));
         } else if (rawState == HpRawState.HP_ZERO_TERMINAL) {

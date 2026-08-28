@@ -1,4 +1,4 @@
-package com.wotb.core.parse;
+package com.wotb.core.parse.probe;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;

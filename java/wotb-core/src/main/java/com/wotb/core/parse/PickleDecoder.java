@@ -21,7 +21,7 @@ import java.util.Map;
  * BINPUT / LONG_BINPUT / BINGET / LONG_BINGET. Unknown opcodes throw
  * {@link IllegalArgumentException} (fail-fast; do not guess).</p>
  */
-final class PickleDecoder {
+public final class PickleDecoder {
 
     private PickleDecoder() {
     }

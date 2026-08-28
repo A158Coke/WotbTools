@@ -1,6 +1,7 @@
 package com.wotb.core.parse;
 
 
+import com.wotb.core.parse.probe.EventStreamReader;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

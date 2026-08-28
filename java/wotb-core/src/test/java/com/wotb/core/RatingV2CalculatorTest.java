@@ -63,27 +63,44 @@ class RatingV2CalculatorTest {
     }
 
     @Test
-    void usesObservedEntryHpThenTankopediaAndDividesByFourteen() {
+    void usesStaticTankopediaBaselineAndDividesByFourteen() {
+        // The V2 HP denominator is a static tankopedia baseline (never replay actual-HP truth), divided
+        // over the standard 14 battle slots (see RatingV2Calculator JavaDoc).
         final Tankopedia tankopedia = Tankopedia.load();
         final List<PlayerResult> players = new ArrayList<>();
         for (int index = 0; index < 7; index++) {
-            final PlayerResult teamOne = player(index + 1L, 1, 0, 0, 0, true, 0, 4481);
-            if (index == 0) {
-                teamOne.entryHpSource = EntryHpSource.OBSERVED_EXACT;
-                teamOne.entryHp = 2600;
-            }
-            players.add(teamOne);
+            players.add(player(index + 1L, 1, 0, 0, 0, true, 0, 4481));
             players.add(player(index + 8L, 2, 0, 0, 0, true, 0, 19217));
         }
         final Battle battle = new Battle();
         battle.players = players;
 
-        final double expected = (2600.0 + 6.0 * tankopedia.info(4481L).maxHp()
+        final double expected = (7.0 * tankopedia.info(4481L).maxHp()
                 + 7.0 * tankopedia.info(19217L).maxHp()) / 14.0;
         final List<RatingV2Calculator.Row> rows = RatingV2Calculator.compute(List.of(battle), tankopedia);
 
         assertEquals(expected, row(rows, 1L).averageHp, 0.01);
         assertEquals(expected, row(rows, 8L).averageHp, 0.01);
+    }
+
+    @Test
+    void observedEntryHpDoesNotOverrideTheStaticBaselineDenominator() {
+        // A player whose entryHpSource == OBSERVED_EXACT (entryHp = 2600, conflicting with the tankopedia
+        // maxHp for tank 4481) must NOT switch the denominator to replay actual HP. Both players drive the
+        // same tank, so both share the identical tankopedia maxHp baseline — observed entry HP is ignored.
+        final Tankopedia tankopedia = Tankopedia.load();
+        final PlayerResult observed = player(1L, 1, 0, 0, 0, true, 0, 4481);
+        observed.entryHpSource = EntryHpSource.OBSERVED_EXACT;
+        observed.entryHp = 2600;
+        final PlayerResult baseline = player(2L, 1, 0, 0, 0, true, 0, 4481);
+        final Battle battle = new Battle();
+        battle.players = List.of(observed, baseline);
+
+        final double expected = 2.0 * tankopedia.info(4481L).maxHp() / 14.0;
+        final List<RatingV2Calculator.Row> rows = RatingV2Calculator.compute(List.of(battle), tankopedia);
+
+        assertEquals(expected, row(rows, 1L).averageHp, 0.01);
+        assertEquals(expected, row(rows, 2L).averageHp, 0.01);
     }
 
     @Test
