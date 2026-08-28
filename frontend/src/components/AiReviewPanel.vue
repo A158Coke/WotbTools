@@ -427,8 +427,8 @@ onBeforeUnmount(() => {
 
       <!-- dataset 未就绪（PREPARING_DATASET / DATASET_EXPIRED / FAILURE）：AI Analyze 禁用，显示准备/失败状态 -->
       <div v-if="!datasetReady" class="ai-dataset-status" data-test="ai-dataset-status">
-        <span class="stream-spinner" aria-hidden="true"></span>
-        <span>{{ datasetMessage }}</span>
+        <span v-if="!datasetError" class="stream-spinner" aria-hidden="true"></span>
+        <span :class="{ 'ai-dataset-error': !!datasetError }">{{ datasetMessage }}</span>
       </div>
 
       <p v-if="error" class="error">{{ error }}</p>
@@ -462,7 +462,7 @@ onBeforeUnmount(() => {
 }
 .ws-note { margin: 18px 4px; color: var(--text-muted); font-size: .85rem; }
 
-/* Dataset 准备中/过期重试/失败状态：不是 AI 错误，显示 loading 文案（非红色错误） */
+/* Dataset 准备中/过期重试状态：loading 文案（非红色错误） */
 .ai-dataset-status {
   display: flex;
   align-items: center;
@@ -470,6 +470,10 @@ onBeforeUnmount(() => {
   margin: 16px 0;
   font-size: .9rem;
   color: var(--text-label);
+}
+/* FAILURE：与 PREPARING 明确区分——无 spinner、错误色文本 */
+.ai-dataset-status .ai-dataset-error {
+  color: var(--error);
 }
 
 /* 流式生成面板：阶段状态 + 主复盘 token 滚动预览 */

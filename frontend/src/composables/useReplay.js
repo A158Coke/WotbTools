@@ -522,7 +522,18 @@ export function useReplay() {
         if (!expired) {
           throw e
         }
+        // authoritative GET 已确认该 job 过期：processingJobId（dataset reference）必须失效。
+        // 若当前 processingJob snapshot 也指向同一 jobId，它已不可信，必须一并失效并终止其
+        // poll / source-ready poll；否则下一步会从 READY snapshot 重新返回已过期的 p1。
+        // 仅失效 dataset identity，不清空 resp（保留仍可安全展示的用户解析结果）。
+        const expiredJobId = processingJobId.value
         processingJobId.value = null
+        const snapshot = processingJob.value
+        if (snapshot && snapshot.jobId === expiredJobId) {
+          processingJob.value = null
+          stopProcessingPolling()
+          stopSourcePolls()
+        }
       }
     }
     // 2) 当前 active job：source READY 直接返回；仍在处理则等自己的 sourceId

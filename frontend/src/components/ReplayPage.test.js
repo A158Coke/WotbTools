@@ -2670,6 +2670,54 @@ describe('ReplayPage Workspace Dataset generation ownership（BLOCKER 1）', () 
     expect(wsErrState.value).toBe('', '本地取消不得显示成用户业务错误')
     wrapper.unmount()
   })
+
+  it('dataset-recover（JOB_NOT_FOUND）→ onDatasetRecover 清空旧引用并重新绑定 p2（不回退 p1）', async () => {
+    const fileA = new File(['a'], 'a.wotbreplay')
+    const dA = deferred()
+    const dB = deferred()
+    let call = 0
+    directActionHolder.setImpl(() => (++call === 1 ? dA.promise : dB.promise))
+    const wrapper = mountWithFilesLocal([fileA])
+
+    const pA = wrapper.vm.openWorkspaceAi(fileA)
+    dA.resolve({ processingJobId: 'p1', sourceId: 'r0' })
+    await flushPromises()
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'p1', sourceId: 'r0' })
+    expect(wrapper.vm.datasetError).toBe('')
+
+    // AiReviewPanel 在 analyze 收到 backend JOB_NOT_FOUND → emit dataset-recover。
+    // （AiReviewPanel 的真实 emit 由 AiReviewPanel.test.js 覆盖；此处验证 ReplayPage 恢复链。）
+    wrapper.findComponent({ name: 'AiReviewPanel' }).vm.$emit('dataset-recover', 'JOB_NOT_FOUND')
+    await flushPromises()
+
+    // onDatasetRecover 应先清空旧引用与旧错误，再重新走 requestDirectAction（第 2 次调用返回 p2）
+    expect(wrapper.vm.datasetRef).toBeNull('恢复开始时应先清空旧 dataset 引用')
+    expect(wrapper.vm.datasetError).toBe('')
+
+    dB.resolve({ processingJobId: 'p2', sourceId: 'r0' })
+    await flushPromises()
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'p2', sourceId: 'r0' },
+      '恢复后必须绑定重建的 p2，绝不能再回退过期 p1')
+    await pA
+    wrapper.unmount()
+  })
+
+  it('workspaceFile 切换：旧 datasetRef 与旧 datasetError 同时清空（A 的失败不在 B 期间显示）', async () => {
+    const fileA = new File(['a'], 'a.wotbreplay')
+    const fileB = new File(['b'], 'b.wotbreplay')
+    directActionHolder.setImpl(() => ({ processingJobId: 'p1', sourceId: 'r0' }))
+    const wrapper = mountWithFilesLocal([fileA, fileB])
+
+    await wrapper.vm.openWorkspaceAi(fileA)
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'p1', sourceId: 'r0' })
+    wrapper.vm.datasetError = 'A_PREP_FAILED' // 模拟 A 的 Dataset preparation failure
+
+    // 切到 B：workspaceFile 变化 → 旧引用 + 旧错误同时清空，A 的失败不得在 B 期间显示
+    await wrapper.vm.openWorkspaceAi(fileB)
+    expect(wrapper.vm.datasetError).toBe('', 'A 的准备失败不得在 B 期间显示')
+    expect(wrapper.vm.datasetRef).toEqual({ processingJobId: 'p1', sourceId: 'r0' })
+    wrapper.unmount()
+  })
 })
 
 describe('ReplayPage League 算法说明入口', () => {

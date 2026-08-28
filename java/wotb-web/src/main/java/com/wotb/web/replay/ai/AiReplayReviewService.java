@@ -64,7 +64,10 @@ public class AiReplayReviewService {
             final AiReplayAnalysisService aiAnalysisService,
             final TacticalReviewHarness tacticalReviewHarness,
             @Autowired(required = false) final MeterRegistry meterRegistry,
-            @Autowired(required = false) final ReplayProcessingJobStore processingStore) {
+            // BLOCKER：ReplayProcessingJobStore 是 AI Dataset 路径的 mandatory dependency——
+            // production 装配缺失时必须 fail-fast（Spring 启动失败），而不是启动成功后运行时
+            // 才返回 DATASET_UNAVAILABLE。测试便利构造器仍可显式传 null。
+            @Autowired final ReplayProcessingJobStore processingStore) {
         this.aiAnalysisService = aiAnalysisService;
         this.tacticalReviewHarness = tacticalReviewHarness;
         this.meterRegistry = meterRegistry;

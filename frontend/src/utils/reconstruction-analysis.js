@@ -35,17 +35,20 @@ const LOCALIZED_ERROR_CODES = new Set([
   'SOURCE_PROCESSING_FAILED'
 ])
 
-/** Dataset 生命周期可恢复错误码：job/dataset 引用层面的过期或缺失（≠ source 真失败或
- *  AI 模型问题）。前端可在仍持有原始 replay File 时丢弃过期引用并重新走 Direct Action
- *  dataset preparation，而不是把它当作最终用户错误。 */
+/**
+ * Dataset 生命周期可恢复错误码（唯一 = JOB_NOT_FOUND：job/dataset 已过期，可由原 replay File
+ * 重新建立 Processing Job）。其它内部稳定码<b>不得</b>走自动 full-process 恢复：
+ * - {@code DATASET_UNAVAILABLE}：backend processingStore / 基础设施配置问题，重跑无法修复；
+ * - {@code DATASET_REFERENCE_REQUIRED}：前端契约违规，不能用重新上传掩盖；
+ * - {@code SOURCE_NOT_FOUND}：source identity / 契约问题，除非能证明是过期 Dataset；
+ * - {@code SOURCE_NOT_READY} / {@code SOURCE_PROCESSING_FAILED}：保持各自稳定语义。
+ * 这些码一律 {@link localizeAiError} 本地化后作为用户可读错误展示，绝不静默 full-process。
+ */
 export const RECOVERABLE_DATASET_CODES = new Set([
-  'DATASET_UNAVAILABLE',
-  'DATASET_REFERENCE_REQUIRED',
-  'JOB_NOT_FOUND',
-  'SOURCE_NOT_FOUND'
+  'JOB_NOT_FOUND'
 ])
 
-/** 判定某稳定错误码是否属于「数据集可恢复」类别（可由原 replay File 重新建立）。 */
+/** 判定某稳定错误码是否属于「数据集可恢复」类别（只有 JOB_NOT_FOUND 可由原 replay File 重建）。 */
 export function isRecoverableDatasetCode(code) {
   return !!code && RECOVERABLE_DATASET_CODES.has(String(code))
 }
