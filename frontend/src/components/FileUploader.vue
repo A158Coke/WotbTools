@@ -74,9 +74,15 @@ function addFiles(list) {
     validation.value = { noReplay: false, offending: [], tooMany: false, totalTooLarge: false, singleOnly: true }
     return
   }
-  const byKey = new Map(props.files.map(f => [fileKey(f), f]))
-  replays.forEach(f => byKey.set(fileKey(f), f))
-  const prospective = Array.from(byKey.values()).sort((a, b) => displayName(a).localeCompare(displayName(b)))
+  let prospective
+  if (props.allowFolder) {
+    const byKey = new Map(props.files.map(f => [fileKey(f), f]))
+    replays.forEach(f => byKey.set(fileKey(f), f))
+    prospective = Array.from(byKey.values()).sort((a, b) => displayName(a).localeCompare(displayName(b)))
+  } else {
+    // single-file：新选择 replace 当前文件（不合并 → 不会出现先得到 [A,B] 再报 single_replay_required）。
+    prospective = [replays[replays.length - 1]]
+  }
   const result = validateReplaySelection(prospective)
   if (!result.valid) {
     validation.value = result
@@ -198,7 +204,7 @@ function openReplayAction(mode) {
       </div>
 
       <div class="fb-actions">
-        <label class="filebtn ghost sm" :title="$t('upload.add_files_title')">
+        <label v-if="allowFolder" class="filebtn ghost sm" :title="$t('upload.add_files_title')">
           <svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>{{ $t('upload.add') }}
           <input type="file" :multiple="allowFolder" accept=".wotbreplay" data-testid="add-files-input" @change="onPick" />
         </label>
