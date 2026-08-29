@@ -10,9 +10,9 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key })
 }))
 
-/** 构造 metrics 轴对象（组件只消费 normalized，不负责任何业务公式）。 */
+/** 构造展示轴对象（组件消费 visualValue/normalized，不负责任何业务公式）。 */
 function metric(key, label, rawValue, normalized, displayValue, available = true, tip = '') {
-  return { key, label, rawValue, normalized, displayValue, available, tip }
+  return { key, label, rawValue, normalized, visualValue: normalized * 150, displayValue, available, tip }
 }
 
 const SEVEN = [
@@ -25,7 +25,7 @@ const SEVEN = [
   metric('league_assist_score', 'Assist', 50, 0.5, '50 / 100'),
 ]
 
-const REF = SEVEN.map(m => ({ ...m, rawValue: 150, normalized: 0.375, displayValue: '150 / 400' }))
+const REF = SEVEN.map(m => ({ ...m, rawValue: 150, normalized: 0.5, visualValue: 75, displayValue: '150 / 400' }))
 
 function mountRadar(metrics, reference = null, props = {}) {
   return mount(PlayerRatingRadar, {
@@ -41,6 +41,8 @@ describe('PlayerRatingRadar', () => {
     expect(wrapper.findAll('.radar-grid')).toHaveLength(3)
     expect(wrapper.findAll('.radar-dot')).toHaveLength(7)
     expect(wrapper.findAll('.radar-label')).toHaveLength(7)
+    expect(wrapper.findAll('.radar-score')).toHaveLength(7)
+    expect(wrapper.findAll('.radar-score-bg')).toHaveLength(7)
     expect(wrapper.find('.radar-data').exists()).toBe(true)
     expect(wrapper.find('.radar-ref').exists()).toBe(true)
     expect(wrapper.find('svg').attributes('viewBox')).toBe('0 0 340 340')
@@ -78,13 +80,19 @@ describe('PlayerRatingRadar', () => {
     expect(wrapper.findAll('.radar-scale').map(node => node.text())).not.toContain('150')
   })
 
-  it('vertex text only shows dimension name, no numeric value', () => {
+  it('axis labels only show dimension names; scores use separate badges', () => {
     const wrapper = mountRadar(SEVEN, REF)
     const labelText = wrapper.findAll('.radar-label').map(n => n.text()).join(',')
     expect(labelText).not.toMatch(/\d/)
     // RC 短标签 + native title 提示全称
     expect(labelText).toContain('RC')
     expect(labelText).toContain('Survival/Trade tip')
+  })
+
+  it('always labels player vertex scores from visualValue', () => {
+    const metrics = SEVEN.map((m, index) => ({ ...m, visualValue: 91 + index, normalized: (91 + index) / 150 }))
+    const wrapper = mountRadar(metrics, REF)
+    expect(wrapper.findAll('.radar-score').map(node => node.text())).toEqual(['91', '92', '93', '94', '95', '96', '97'])
   })
 
   it('missing player dimension -> 整图 unavailable（不制造假闭合多边形）', () => {
@@ -113,21 +121,25 @@ describe('PlayerRatingRadar', () => {
     expect(cells[2].text()).toBe('--')
   })
 
-  it('detail table shows score / max (no percentage), three columns Dimension/Player/Reference', () => {
+  it('detail defaults to score mode and can switch back to raw values', async () => {
     const wrapper = mountRadar(SEVEN, REF)
     const head = wrapper.findAll('.radar-detail thead th').map(n => n.text())
-    expect(head).toEqual(['radar_lbl.dimension', 'radar_lbl.player', 'Battle Average'])
-    const text = wrapper.text()
-    expect(text).toContain('200 / 400')
-    expect(text).not.toContain('%')
-    expect(text).toContain('150 / 400')
+    expect(head).toEqual(['radar_lbl.dimension', 'radarScale.playerScore', 'radarScale.averageScore'])
+    expect(wrapper.find('.radar-detail').text()).toContain('75')
+    const switches = wrapper.findAll('.radar-detail-switch button')
+    expect(switches[0].attributes('aria-pressed')).toBe('true')
+    await switches[1].trigger('click')
+    const rawHead = wrapper.findAll('.radar-detail thead th').map(n => n.text())
+    expect(rawHead).toEqual(['radar_lbl.dimension', 'radar_lbl.player', 'Battle Average'])
+    expect(wrapper.find('.radar-detail').text()).toContain('200 / 400')
+    expect(wrapper.find('.radar-detail').text()).toContain('150 / 400')
   })
 
   it('no reference prop -> only player polygon, no ref column header', () => {
     const wrapper = mountRadar(SEVEN)
     expect(wrapper.find('.radar-ref').exists()).toBe(false)
     const head = wrapper.findAll('.radar-detail thead th').map(n => n.text())
-    expect(head).toEqual(['radar_lbl.dimension', 'radar_lbl.player'])
+    expect(head).toEqual(['radar_lbl.dimension', 'radarScale.playerScore'])
   })
 
   it('100 strong grid is visible at 2/3 radius while no 150 outer boundary is rendered', () => {

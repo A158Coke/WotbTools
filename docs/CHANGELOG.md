@@ -5,10 +5,11 @@
 ## [Unreleased]
 
 ### Changed
-- **Rating V2 / League V5 雷达统一相对表现标尺**：两套雷达不再把互不等价的评分理论上限直接当作视觉满格；玩家每轴相对当前 Batch/Battle/Global Average 映射，平均固定为规则 75 环，2×平均为 100 强势线，4×为 125，8×以上在不可见 150 上限截断。可见 SVG 只保留 25/50/100 网格与 75 虚线平均环，玩家可进入 100 外侧留白；明细仍显示原始玩家值与真实平均，V2/V4.1/V5 公式、API、排序、Excel 均不变。V5 Rating Profile PNG 与页面复用同一 scale/geometry；League column max 仅控制 `score / max` 明细，缺失时降级为 raw score，不阻断 raw/reference 完整轴的相对几何。
+- **Rating V2 / League V5 雷达统一相对表现标尺与分数明细**：两套雷达不再把互不等价的评分理论上限直接当作视觉满格；玩家每轴相对当前 Batch/Battle/Global Average 映射，平均固定为规则 75 环，2×平均为 100 强势线，4×为 125，8×以上在不可见 150 上限截断。可见 SVG 只保留 25/50/100 网格与 75 虚线平均环，玩家可进入 100 外侧留白；每个玩家顶点常驻标注对应 0–150 视觉分，明细默认显示玩家/平均分数并可切换回原始玩家值与真实平均。V2/V4.1/V5 公式、API、排序、Excel 均不变。V5 Rating Profile PNG 与页面复用同一 scale/geometry/score-label 定位并默认输出分数明细；League column max 仅控制 raw 模式的 `score / max` 解释，缺失时降级为 raw score，不阻断 raw/reference 完整轴的相对几何。
 - **Rating V2 雷达改为右侧选手抽屉**：隐藏管理员灰度页不再把六轴雷达追加到长结果表底部；点击玩家昵称后通过 `Teleport` 打开固定右侧抽屉，桌面/平板保持非模态并可继续点击表格切换玩家，移动端使用遮罩面板。补齐 Esc 关闭、触发按钮焦点回收与 reduced-motion；V2 公式/API、共享雷达几何及 League V5 页面不变。
 
 ### Fixed
+- **Rating V2 移动端雷达抽屉焦点约束**：移动端以 `aria-modal=true` 打开雷达遮罩时，Tab / Shift+Tab 现在在抽屉可聚焦元素内循环，无法落到遮罩后的结果表；Escape 关闭与触发昵称焦点回收保持不变。桌面/平板非模态抽屉仍允许正常离开侧栏继续操作表格。
 - **回放解析预览按钮回归修复（P0）**：回放解析页选择文件后，「解析预览」按钮此前被 `showWorkspaceActions=false` 连带隐藏，导致无法启动解析任务（选完文件无任何操作入口）。现将解析按钮拆到独立的 `showPreview` 开关（默认开启），`showWorkspaceActions` 只控制 AI 复盘/战局回放快捷入口；`RatingV2AdminPage`/`ReplayCapabilityPage` 显式关闭预览以保持原有行为。
 - **管理员 Rating V2 结果表字段对齐修复**：表头现在复用 API 列元数据的 `num` 标记，数值表头与数值单元格统一右对齐，玩家/战队等文本列保持左对齐；新增 DOM 回归测试锁定表头与数据行使用同一对齐分类。列顺序、排序、数据与评分公式不变。
 - **Flyway 迁移不可变 + 部署失败诊断（Production Deploy Hotfix）**：修复 `main` 上已执行 Flyway V18 因文档注释漂移（`docs/current-plan.md` 误写回）导致的启动/健康检查失败风险。将 V18 恢复为 Git history 证明的 authoritative exact blob（`7e11d427` 的 `a7941f0d2…`，Flyway CRC32 `3353739529`），V1–V21 无其它 drift。

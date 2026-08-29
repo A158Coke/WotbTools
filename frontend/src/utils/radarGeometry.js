@@ -15,6 +15,11 @@ export const RADAR = Object.freeze({
   CENTER: 170,
   RADIUS: 120,
   LABEL_RADIUS: 1.16,
+  SCORE_BADGE_HEIGHT: 17,
+  SCORE_BADGE_RADIUS: 4,
+  SCORE_BADGE_MIN_RATIO: 0.25,
+  SCORE_BADGE_LOW_TOP_RATIO: 0.4,
+  SCORE_BADGE_TOP_SHIFT_X: 22,
   /** 150 仅是不可见坐标上限；可见网格不包含 75 reference 或 150 outer boundary。 */
   AVERAGE_VALUE: RADAR_AVERAGE_VALUE,
   STRONG_VALUE: RADAR_STRONG_VALUE,
@@ -41,6 +46,35 @@ export function radarScaleTicks(count, g = RADAR) {
     ratio: radarValueRatio(value, g),
     p: scaleTickPosition(count, radarValueRatio(value, g), g),
   }))
+}
+
+/**
+ * Score badge position follows the selected visual: top/bottom vertices use the
+ * free vertical margin, while side vertices move inward away from axis labels.
+ */
+export function radarScoreLabelPosition(index, count, ratio, g = RADAR) {
+  const numeric = Number(ratio)
+  const safeRatio = Number.isFinite(numeric) ? Math.min(1, Math.max(0, numeric)) : 0
+  const vertical = Math.abs(Math.sin(axisAngle(index, count))) >= 0.8
+  const offset = 12 / g.RADIUS
+  let labelRatio = vertical
+    ? Math.min(1.06, safeRatio + offset)
+    : safeRatio - offset
+  labelRatio = Math.max(g.SCORE_BADGE_MIN_RATIO, labelRatio)
+  const isTop = index === 0
+  if (isTop && safeRatio < g.SCORE_BADGE_MIN_RATIO) {
+    labelRatio = Math.max(labelRatio, g.SCORE_BADGE_LOW_TOP_RATIO)
+  }
+  const point = axisPoint(index, count, labelRatio, g)
+  const topNeedsTickClearance = isTop
+    && safeRatio <= radarValueRatio(g.STRONG_VALUE, g) + offset
+  const x = point[0] + (topNeedsTickClearance ? g.SCORE_BADGE_TOP_SHIFT_X : 0)
+  const y = point[1]
+  return { x, y, ratio: labelRatio }
+}
+
+export function radarScoreBadgeWidth(value) {
+  return Math.max(18, 8 + String(value ?? '--').length * 6)
 }
 
 /** 第 i 个轴的角度（从 12 点方向顺时针）。 */

@@ -759,11 +759,13 @@ Radar 仍然展示：
 - 批次：`dimensionMeans`（rated battle arithmetic mean）
 
 每轴与当前 Battle/Global Average 比较：平均映射为规则 75 环，2 倍平均为 100 强势线，4 倍为 125，
-8 倍及以上在不可见 150 上限截断。可见 SVG 不生成 150 边界/刻度/标签；明细继续显示原始 score/max 与真实平均。
+8 倍及以上在不可见 150 上限截断。可见 SVG 不生成 150 边界/刻度/标签；玩家顶点标注与半径同源的
+0–150 视觉分。明细默认显示玩家/平均视觉分，并可切换为原始 `score/max` 与真实平均；切换不改变图形。
+Rating Profile PNG 复用同一顶点标注位置并固定输出默认分数明细。
 该相对图形只回答“相对当前比较组的轮廓”，不承诺跨上传批次绝对可比。
 
-`resp.league.columns[].max` 只用于明细的 `score / max` 解释，不参与 reference membership 或 geometry availability；
-max 缺失/非法时明细降级为 raw score，只要 player/reference raw 完整，相对多边形仍必须可绘制。
+`resp.league.columns[].max` 只用于原始数值模式的 `score / max` 解释，不参与 reference membership 或 geometry availability；
+max 缺失/非法时原始模式降级为 raw score，只要 player/reference raw 完整，相对多边形仍必须可绘制。
 
 Evidence Adjustment 不作用于单个维度。
 
