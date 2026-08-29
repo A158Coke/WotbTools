@@ -17,7 +17,6 @@
  */
 
 import { CW_DIM_KEYS } from './playerSummaryMerge.js'
-import { clamp01 } from './radarMetrics.js'
 
 function isRawValid(v) {
   return v != null && v !== '' && Number.isFinite(Number(v))
@@ -26,18 +25,18 @@ function isRawValid(v) {
 function unavailable(dims) {
   return {
     available: false,
-    axes: dims.map(d => ({ key: d.key, rawValue: null, normalized: null, available: false })),
+    axes: dims.map(d => ({ key: d.key, rawValue: null, available: false })),
   }
 }
 
 /**
  * 通用聚合：入参必须是已确定的 membership（valid rated cohort）。
  * @param {Array} members 已确定的 valid rated 玩家/行（非成员应在 wrapper 中先排除）
- * @param {{dimKeys:string[], maxByKey:Object, idOf:(p)=>string|number, getRaw:(p,key)=>number|null}} opts
- * @returns {{available:boolean, axes:Array<{key,rawValue,normalized,available}>}}
+ * @param {{dimKeys:string[], idOf:(p)=>string|number, getRaw:(p,key)=>number|null}} opts
+ * @returns {{available:boolean, axes:Array<{key,rawValue,available}>}}
  */
-function aggregate(members, { dimKeys, maxByKey, idOf, getRaw }) {
-  const dims = dimKeys.map(key => ({ key, max: Number(maxByKey[key]) }))
+function aggregate(members, { dimKeys, idOf, getRaw }) {
+  const dims = dimKeys.map(key => ({ key }))
   // 确定性：按 accountId 排序（均值本身与顺序无关，排序保证稳定迭代/同输入同输出，§59）
   const ordered = (members || [])
     .slice()
@@ -47,15 +46,11 @@ function aggregate(members, { dimKeys, maxByKey, idOf, getRaw }) {
       return ia < ib ? -1 : ia > ib ? 1 : 0
     })
 
-  // Step 2a：任一 selected dimension 的 metadata（max）缺失/非法 → 整个 reference unavailable
-  if (!dims.every(d => Number.isFinite(d.max) && d.max > 0)) {
-    return unavailable(dims)
-  }
-  // Step 2b：cohort 为空 → unavailable
+  // Step 2a：cohort 为空 → unavailable
   if (!ordered.length) {
     return unavailable(dims)
   }
-  // Step 2c：cohort 任一成员缺任一 selected dimension → 整个 reference unavailable
+  // Step 2b：cohort 任一成员缺任一 selected dimension → 整个 reference unavailable
   //（禁止为凑平均而静默过滤该成员，也禁止 per-dimension 换 cohort）
   const incomplete = ordered.some(p => dims.some(d => !isRawValid(getRaw(p, d.key))))
   if (incomplete) {
@@ -66,9 +61,7 @@ function aggregate(members, { dimKeys, maxByKey, idOf, getRaw }) {
   const axes = dims.map(d => {
     const raws = ordered.map(p => Number(getRaw(p, d.key)))
     const rawValue = raws.reduce((a, b) => a + b, 0) / raws.length
-    // §57：平均 normalized 值（线性 raw/max 下等价 mean(raw)/max）
-    const normalized = raws.reduce((a, b) => a + clamp01(b / d.max), 0) / raws.length
-    return { key: d.key, rawValue, normalized: clamp01(normalized), available: true }
+    return { key: d.key, rawValue, available: true }
   })
   return { available: true, axes }
 }
@@ -77,13 +70,12 @@ function aggregate(members, { dimKeys, maxByKey, idOf, getRaw }) {
  * Battle Average：当前 battle 的 valid rated 玩家（selected 包含）。
  * membership = 本场被评分的玩家（cells.league_rating 有值 = V4.1 finalRating）。
  * @param {Array<{cells:Object}>} players
- * @param {{dimKeys:string[], maxByKey:Object}} opts
+ * @param {{dimKeys:string[]}} opts
  */
-export function battleAverage(players, { dimKeys, maxByKey }) {
+export function battleAverage(players, { dimKeys }) {
   const members = (players || []).filter(p => isRawValid(p?.cells?.league_rating))
   return aggregate(members, {
     dimKeys,
-    maxByKey,
     idOf: p => p?.cells?.account_id,
     getRaw: (p, key) => p?.cells?.[key],
   })
@@ -94,14 +86,13 @@ export function battleAverage(players, { dimKeys, maxByKey }) {
  * 按 accountId 去重，每人用其 league.dimensionMeans profile，等权（weight=1）。
  * membership = row.league != null（有 League PlayerSummary = 被评分；aggregate-only/league==null 行排除）。
  * @param {Array<{cells:Object, league:Object|null}>} rows
- * @param {{dimKeys:string[], maxByKey:Object}} opts
+ * @param {{dimKeys:string[]}} opts
  */
-export function globalAverage(rows, { dimKeys, maxByKey }) {
+export function globalAverage(rows, { dimKeys }) {
   const rated = (rows || []).filter(r => r?.league != null)
   const unique = dedupeByAccountId(rated)
   return aggregate(unique, {
     dimKeys,
-    maxByKey,
     idOf: r => r?.cells?.account_id,
     getRaw: (r, key) => {
       const idx = CW_DIM_KEYS.indexOf(key)

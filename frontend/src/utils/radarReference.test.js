@@ -12,10 +12,6 @@ const B = 'league_blocked_score'
 const S = 'league_survival_score'
 const SH = 'league_shooting_score'
 
-const MAX = {
-  [D]: 400, [A]: 100, [K]: 100, [E]: 150, [B]: 50, [S]: 100, [SH]: 100,
-}
-
 /** 构造 battle player（cells 含 league_*_score）。rated=true → league_rating 有值（V4.1 finalRating），
  *  表明属于 valid rated population；rated=false → league_rating null（本场未评分 → 非成员）。 */
 function bp(accountId, scores, { rated = true } = {}) {
@@ -38,38 +34,38 @@ function sr(accountId, means, { rated = true } = {}) {
 
 describe('battleAverage', () => {
   it('selected 玩家包含在内；不硬编码 14 人', () => {
-    // 3 名 rated 玩家：damage 300/200/100 → meanRaw 200, normalized 0.5
+    // 3 名 rated 玩家：damage 300/200/100 → meanRaw 200
     const players = [bp(1, { [D]: 300 }), bp(2, { [D]: 200 }), bp(3, { [D]: 100 })]
-    const res = battleAverage(players, { dimKeys: [D], maxByKey: MAX })
+    const res = battleAverage(players, { dimKeys: [D] })
     expect(res.available).toBe(true)
     expect(res.axes).toHaveLength(1)
     expect(res.axes[0].rawValue).toBeCloseTo(200, 6)
-    expect(res.axes[0].normalized).toBeCloseTo(0.5, 6)
     // 2 人 count 也可算（不固定 14）
-    const two = battleAverage([bp(1, { [D]: 400 }), bp(4, { [D]: 0 })], { dimKeys: [D], maxByKey: MAX })
+    const two = battleAverage([bp(1, { [D]: 400 }), bp(4, { [D]: 0 })], { dimKeys: [D] })
     expect(two.axes[0].rawValue).toBeCloseTo(200, 6)
   })
 
   it('确定性：输入顺序/不同玩家顺序不改变平均；选中玩家不影响坐标（同一 scope）', () => {
     const base = [bp(1, { [D]: 300, [SH]: 60 }), bp(2, { [D]: 200, [SH]: 40 }), bp(3, { [D]: 100, [SH]: 20 })]
     const shuffled = [bp(3, { [D]: 100, [SH]: 20 }), bp(1, { [D]: 300, [SH]: 60 }), bp(2, { [D]: 200, [SH]: 40 })]
-    const r1 = battleAverage(base, { dimKeys: [D, SH], maxByKey: MAX })
-    const r2 = battleAverage(shuffled, { dimKeys: [D, SH], maxByKey: MAX })
+    const r1 = battleAverage(base, { dimKeys: [D, SH] })
+    const r2 = battleAverage(shuffled, { dimKeys: [D, SH] })
     expect(r1.axes).toEqual(r2.axes)
   })
 
   it('cohort 任一 rated 成员缺任一所选维（全员缺）→ unavailable（不跨维换 cohort）', () => {
     // 两名 rated 成员都缺 shooting → cohort 不完整 → unavailable
     const players = [bp(1, { [D]: 300 }), bp(2, { [D]: 200 })]
-    const res = battleAverage(players, { dimKeys: [D, SH], maxByKey: MAX })
+    const res = battleAverage(players, { dimKeys: [D, SH] })
     expect(res.available).toBe(false)
     expect(res.axes.every(a => !a.available)).toBe(true)
   })
 
-  it('max 缺失/非有限 → 该维不能用，整体 unavailable', () => {
+  it('max metadata 缺失不影响完整 raw cohort 的 reference average', () => {
     const players = [bp(1, { [D]: 300 }), bp(2, { [D]: 200 })]
     const res = battleAverage(players, { dimKeys: [D], maxByKey: {} })
-    expect(res.available).toBe(false)
+    expect(res.available).toBe(true)
+    expect(res.axes[0]).toEqual({ key: D, rawValue: 250, available: true })
   })
 
   it('partial incomplete cohort：某 rated 成员缺任一所选维 → 整图 unavailable（禁止静默缩小 cohort）', () => {
@@ -79,7 +75,7 @@ describe('battleAverage', () => {
       bp(2, { [D]: 200, [SH]: 40 }),
       bp(3, { [D]: 100 }), // rated 但 Shooting missing
     ]
-    const res = battleAverage(players, { dimKeys: [D, SH], maxByKey: MAX })
+    const res = battleAverage(players, { dimKeys: [D, SH] })
     expect(res.available).toBe(false)
     expect(res.axes.every(a => !a.available)).toBe(true)
     // 绝不允许 A+B 平均（rawValue 必须 null，不得为 (300+200)/2=250）
@@ -89,7 +85,7 @@ describe('battleAverage', () => {
   it('非成员（本场存在但未评分 league_rating=null）被排除，不使 Battle Average unavailable', () => {
     // 只有 A 是 rated 成员且完整；B 是本场出现但未评分 → 非成员，排除
     const players = [bp(1, { [D]: 300, [SH]: 60 }), bp(2, { [D]: 200, [SH]: 40 }, { rated: false })]
-    const res = battleAverage(players, { dimKeys: [D, SH], maxByKey: MAX })
+    const res = battleAverage(players, { dimKeys: [D, SH] })
     expect(res.available).toBe(true)
     expect(res.axes[0].rawValue).toBeCloseTo(300, 6) // cohort 只有 A
   })
@@ -102,7 +98,7 @@ describe('globalAverage', () => {
       sr(2, { [D]: 200, [A]: 40 }),
       sr(3, { [D]: 100, [A]: 20 }),
     ]
-    const res = globalAverage(rows, { dimKeys: [D, A], maxByKey: MAX })
+    const res = globalAverage(rows, { dimKeys: [D, A] })
     expect(res.available).toBe(true)
     expect(res.axes[0].rawValue).toBeCloseTo(200, 6)
     expect(res.axes[1].rawValue).toBeCloseTo(40, 6)
@@ -114,13 +110,13 @@ describe('globalAverage', () => {
       sr(1, { [D]: 300 }),
       sr(2, { [D]: 200 }),
     ]
-    const res = globalAverage(rows, { dimKeys: [D], maxByKey: MAX })
+    const res = globalAverage(rows, { dimKeys: [D] })
     expect(res.axes[0].rawValue).toBeCloseTo(250, 6) // (300+200)/2
   })
 
   it('确定性：不同输入顺序 → 相同结果', () => {
-    const a = globalAverage([sr(1, { [D]: 300 }), sr(2, { [D]: 200 })], { dimKeys: [D], maxByKey: MAX })
-    const b = globalAverage([sr(2, { [D]: 200 }), sr(1, { [D]: 300 })], { dimKeys: [D], maxByKey: MAX })
+    const a = globalAverage([sr(1, { [D]: 300 }), sr(2, { [D]: 200 })], { dimKeys: [D] })
+    const b = globalAverage([sr(2, { [D]: 200 }), sr(1, { [D]: 300 })], { dimKeys: [D] })
     expect(a.axes).toEqual(b.axes)
   })
 
@@ -130,8 +126,8 @@ describe('globalAverage', () => {
       { ...sr(1, { [D]: 300 }), league: { ...sr(1, { [D]: 300 }).league, ratingV5: 1, ratingRawMedian: 2, battles: 99 } },
       { ...sr(2, { [D]: 200 }), league: { ...sr(2, { [D]: 200 }).league, ratingV5: 3, ratingRawMedian: 4, battles: 1 } },
     ]
-    const r1 = globalAverage(base, { dimKeys: [D], maxByKey: MAX })
-    const r2 = globalAverage(varied, { dimKeys: [D], maxByKey: MAX })
+    const r1 = globalAverage(base, { dimKeys: [D] })
+    const r2 = globalAverage(varied, { dimKeys: [D] })
     expect(r1.axes).toEqual(r2.axes)
   })
 
@@ -141,7 +137,7 @@ describe('globalAverage', () => {
       sr(2, { [D]: 200, [SH]: 40 }),
       sr(3, { [D]: 100 }), // rated 但 Shooting missing → 不得排除后用 A+B 凑平均
     ]
-    const res = globalAverage(rows, { dimKeys: [D, SH], maxByKey: MAX })
+    const res = globalAverage(rows, { dimKeys: [D, SH] })
     expect(res.available).toBe(false)
     expect(res.axes.every(a => !a.available)).toBe(true)
     expect(res.axes[0].rawValue).toBeNull()
@@ -153,7 +149,7 @@ describe('globalAverage', () => {
       sr(1, { [D]: 300, [SH]: 60 }),
       { cells: { account_id: 2 }, league: null },
     ]
-    const res = globalAverage(rows, { dimKeys: [D, SH], maxByKey: MAX })
+    const res = globalAverage(rows, { dimKeys: [D, SH] })
     expect(res.available).toBe(true)
     expect(res.axes[0].rawValue).toBeCloseTo(300, 6) // cohort 只有 A
   })
@@ -164,7 +160,7 @@ describe('globalAverage', () => {
       sr(1, { [D]: 100 }, { rated: true }), // rated 但缺 SH
       { cells: { account_id: 2 }, league: null }, // unrated 非成员
     ]
-    const res = globalAverage(rows, { dimKeys: [D, SH], maxByKey: MAX })
+    const res = globalAverage(rows, { dimKeys: [D, SH] })
     expect(res.available).toBe(false)
   })
 })
