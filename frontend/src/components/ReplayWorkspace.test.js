@@ -62,11 +62,11 @@ vi.mock('./ReplayTaskCard.vue', () => ({ default: { template: '<div data-test="t
 vi.mock('./RemoveConfirmModal.vue', () => ({ default: { template: '<div data-test="modal" />' } }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (k) => k, te: () => true }) }))
 
-function mountWorkspace(capability = 'data') {
+function mountWorkspace(capability = 'data', { authenticated = true, login = vi.fn() } = {}) {
   return mount(ReplayWorkspace, {
     props: { initialCapability: capability },
     global: {
-      provide: { isAuthenticated: () => true, login: vi.fn(), navigate: vi.fn() },
+      provide: { isAuthenticated: () => authenticated, login, navigate: vi.fn() },
       mocks: { $t: (k) => k },
     },
   })
@@ -125,5 +125,17 @@ describe('ReplayWorkspace', () => {
     expect(playback.exists()).toBe(true)
     // active capability 由 props 派发到 data-pane 以外的 pane；默认 data-pane 处于 v-show=false
     expect(wrapper.find('[data-test="data-pane"]').exists()).toBe(true)
+  })
+
+  it('未登录进入 ai/playback 会自动跳 Keycloak 并回原 capability', () => {
+    const login = vi.fn()
+    mountWorkspace('ai', { authenticated: false, login })
+    expect(login).toHaveBeenCalledWith('ai-review')
+  })
+
+  it('未登录进入 data 不触发登录（数据解析允许匿名）', () => {
+    const login = vi.fn()
+    mountWorkspace('data', { authenticated: false, login })
+    expect(login).not.toHaveBeenCalled()
   })
 })
