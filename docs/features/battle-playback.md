@@ -15,12 +15,14 @@
 - **数据源**：processing 阶段当 canonical `BattleTimeline` 可用时写出
   `battle-playback-v2.json`（`BattlePlaybackProjector.project` 纯投影）；timeline 不可用
   → 不写 artifact → 204（capability unavailable，非 parse failure）。
-- **前端守卫迁移**：`BattlePlaybackPanel` 优先拉取 V2 dataset（fire-and-forget），成功且
-  `== 200` 则为 `BattlePlayback` 注入 `playbackV2`，选中车辆显示 canonical 事实面板；
-  204/失败回退 legacy `MapOverview.Playback`（守卫期，短迁移 commit）。
+- **前端 V2-only**：`BattlePlaybackPanel` 拉取 V2 dataset 并注入 `playbackV2`；
+  `BattlePlayback.vue` 的 marker / HP HUD / Details Panel / team HP / 事件 feed 全部消费
+  canonical V2 事实（`healthAt` / `lifeAt` / `positionAtV2` / `orientationAtV2` /
+  `v2VehicleView`），不再回退 legacy `MapOverview.Playback`（已删除）。
 - **契约**：稀疏 transition tracks（`positionSegments` / `orientationSegments` /
   `healthTransitions` / `lifeTransitions` / `consumableTransitions` /
-  `moduleCrewTransitions` / `loadout` / `shots` / `pointsSamples`），每条带
+  `moduleCrewTransitions` / `loadout` + battle-level `events`(DAMAGE/KILL/DESTROYED/
+  POSITION_REPORTED/POSITION_STALE) / `shots` / `pointsSamples`），每条带
   `knowledge / provenance / observation boundary`。`displayCapacityHp` 是 presentation-only
   （anti-future-leak），非 canonical max HP；loadout 离开 AoI 仍 KNOWN；consumable runtime
   在 hidden interval = UNKNOWN。
