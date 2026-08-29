@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.51",
+    "date": "2026-08-30",
+    "tag": "fix",
+    "zh": "修复雷达缩放控件在手机端或较长语言文案下撑宽侧栏，以及七轴混合分数时顶部徽标可能与相邻徽标重叠的问题。缩放仍为 50%–150%，评分、明细与画像 PNG 均不改变。",
+    "en": "Fixed radar zoom controls widening the drawer on mobile or with longer translations, and a seven-axis mixed-score case where the top badge could overlap its neighbor. Zoom remains 50%–150%; ratings, details and Rating Profile PNGs are unchanged.",
+    "ru": "Исправлено расширение боковой панели элементами масштаба радара на телефоне и при длинных переводах, а также наложение верхней метки на соседнюю при смешанных значениях семи осей. Масштаб остаётся 50%–150%; рейтинг, детали и PNG-профиль не меняются."
+  },
+  {
     "v": "2.12.50",
     "date": "2026-08-30",
     "tag": "chg",
