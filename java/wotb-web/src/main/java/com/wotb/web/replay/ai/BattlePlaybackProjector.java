@@ -323,8 +323,9 @@ public final class BattlePlaybackProjector {
                     final double absent = seg.absentFromSec();
                     final boolean hadKnownBefore = hasObservationBefore(observations, absent);
                     // 仅在曾有过已知 runtime 观测的车辆上插入 UNKNOWN（未曾观测则保持 UNKNOWN 语义不变，
-                    // 不制造多余 transition）。含 teardown 之后不再插 UNKNOWN（teardown 已是终态）。
-                    if (hadKnownBefore && !hasTeardownAfter(observations, absent)) {
+                    // 不制造多余 transition）。AoI close @absent 只能使用 <=absent 的事实（anti-future-leak）；
+                    // 之后（如后续 TEARDOWN）由 lastAtOrBefore 自然覆盖，绝不读取未来 observation 决定当前状态。
+                    if (hadKnownBefore) {
                         out.add(new ConsumableTransition(absent, null, null, null,
                                 "UNKNOWN", com.wotb.web.replay.dto.BattlePlaybackDataset.ConfidenceDto.UNKNOWN));
                     }
@@ -345,21 +346,6 @@ public final class BattlePlaybackProjector {
             if (o.timeSec() < t - 1e-6
                     && (o.logicalItemId() != null
                         || o.state() != ConsumableLifecycleEvent.ConsumableLifecycleState.UNKNOWN)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** 在 t 之后（含）是否存在 teardown 终态观测（teardown 之后不应再被 UNKNOWN 覆盖成所谓 hidden）。 */
-    private static boolean hasTeardownAfter(
-            final List<ConsumableLifecycle.ConsumableObservation> observations, final double t) {
-        if (observations == null) {
-            return false;
-        }
-        for (final ConsumableLifecycle.ConsumableObservation o : observations) {
-            if (o.timeSec() >= t - 1e-6
-                    && o.state() == ConsumableLifecycleEvent.ConsumableLifecycleState.TEARDOWN) {
                 return true;
             }
         }
