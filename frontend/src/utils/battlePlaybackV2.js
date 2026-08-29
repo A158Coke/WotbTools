@@ -252,6 +252,12 @@ export function v2VehicleView(track) {
   if (!track) return null
   const lt = track.lifeTransitions || []
   const lastLife = lt[lt.length - 1] || null
+  // legacy 兼容视图字段（供 positionCoveredAt / interpolateDirection / victimFeedbackAllowed 复用）
+  const positionIntervals = (track.positionSegments || [])
+    .filter(s => s.knowledge === 'OBSERVED')
+    .map(s => ({ startSec: s.startSec, endSec: s.endSec }))
+  const directionSamples = (track.orientationSegments || [])
+    .flatMap(s => (s.samples || []).map(x => ({ timeSec: x.timeSec, hullYawDeg: x.hullYawDeg, turretRelativeYawDeg: x.turretRelativeYawDeg })))
   return {
     accountId: track.accountId,
     playerName: track.playerName || '',
@@ -262,7 +268,11 @@ export function v2VehicleView(track) {
     healthTransitions: track.healthTransitions || [],
     lifeTransitions: lt,
     deathSec: lastLife && lastLife.lifeState === 'DESTROYED' ? lastLife.destroyedKnownAtSec : null,
-    hpLosses: deriveHpLosses(track.healthTransitions, Number.POSITIVE_INFINITY),
+    hpLosses: Array.isArray(track.hpLosses) && track.hpLosses.length > 0
+      ? track.hpLosses
+      : deriveHpLosses(track.healthTransitions, Number.POSITIVE_INFINITY),
+    positionIntervals,
+    directionSamples,
     positionSegments: track.positionSegments || [],
     orientationSegments: track.orientationSegments || [],
     loadout: track.loadout || null,
