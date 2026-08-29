@@ -5,6 +5,26 @@
 > 数据来源与素材权威见 `docs/reference/maps.md`（内部 code ↔ 展示名 ↔ 语义 mapId ↔ 素材）。
 > 生产状态：回放 timeline 事实按 canonical 语义（AFFIRMED）；AoI hidden=UNKNOWN、禁止跨 AoI gap 插值、死亡 clamp 到权威死亡时刻。
 
+## Battle Playback V2（canonical 稀疏投影）
+
+> 增加 V2 契约 `BattlePlaybackDataset`：`POST /api/replay/battle-playback-v2`
+> （`Content-Type: application/json`，body `{ processingJobId, sourceId }`）→
+> `MapOverviewQueryService.buildBattlePlaybackFromDataset` → `ReplayArtifactWriter.readBattlePlaybackV2`
+> → 前端 `BattlePlayback.vue` 的 V2 检查器（`V2VehicleInspector`）。
+
+- **数据源**：processing 阶段当 canonical `BattleTimeline` 可用时写出
+  `battle-playback-v2.json`（`BattlePlaybackProjector.project` 纯投影）；timeline 不可用
+  → 不写 artifact → 204（capability unavailable，非 parse failure）。
+- **前端守卫迁移**：`BattlePlaybackPanel` 优先拉取 V2 dataset（fire-and-forget），成功且
+  `== 200` 则为 `BattlePlayback` 注入 `playbackV2`，选中车辆显示 canonical 事实面板；
+  204/失败回退 legacy `MapOverview.Playback`（守卫期，短迁移 commit）。
+- **契约**：稀疏 transition tracks（`positionSegments` / `orientationSegments` /
+  `healthTransitions` / `lifeTransitions` / `consumableTransitions` /
+  `moduleCrewTransitions` / `loadout` / `shots` / `pointsSamples`），每条带
+  `knowledge / provenance / observation boundary`。`displayCapacityHp` 是 presentation-only
+  （anti-future-leak），非 canonical max HP；loadout 离开 AoI 仍 KNOWN；consumable runtime
+  在 hidden interval = UNKNOWN。
+
 ## 地图鸟瞰（Map Overview，Dataset-only）
 
 战局回放面板读取同一 Processing Dataset 的 `map-overview.json` derived artifact：

@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### Added
+- **Battle Playback V2 — Canonical Replay Truth Convergence（后端 decoder → canonical facts → BattleTimeline → V2 稀疏投影）**：把战局重建从「decoder events → Playback/AI 各自重新解释 → frontend 再推理」收敛为「版本门禁解码 → canonical facts/lifecycles → BattleTimeline → thin projection」。本轮在已有 PR162 canonical Timeline 基础上新增：
+  - **P0-1 Type5 combat loadout**：`VehicleBattleLoadout`（3 consumable + 3 provision + 9 equipment，byte=ID 编码），挂到 `MaterializationEvent.loadout`；unknown provision wireCode 保持 `logicalItemId=null`+raw，非 9-equipment family fail-closed；version/class 门禁（仅 `entityTypeId==2` + lifecycle-affirmed 版本）。
+  - **P0-2 Type32 通用 auxiliary-blob envelope**：`EntityAuxiliaryBlobDecoder`（`entityId+flag+bodyLength+body`，校验 `bodyLength==payload.length-9`，malformed fail-closed + 诊断）＋ `ConsumableLifecycleEvent`（仅 `TYPE32_CONSUMABLE_LIFECYCLE VERIFIED` + VEHICLE + flag0 + 16B 组合才解码）；新增 `TYPE32_CONSUMABLE_LIFECYCLE` version capability（11.19 证明，11.18/future fail-closed）。
+  - **Canonical facts 层**：`VehicleLoadoutFacts`（loadout 持久配置，离开 AoI 仍 KNOWN）／`ConsumableLifecycle`（runtime AoI scoped，hidden interval=UNKNOWN）／`VehicleModuleCrewLifecycle`（method16 recorder-visible provenance）。
+  - **FrameHealth 简化**：统一 `currentHp` 权威；去掉 `baseHp/effectiveMaxHp` 业务语义；新增 `HealthKnowledge(CURRENT/LAST_KNOWN/UNKNOWN)` 与 presentation-only `displayCapacityHp`（anti-future-leak，只取 ≤t 观测）；`FrameOrientation` 新增 `OrientationKnowledge` + age（敌方离开 AoI → CURRENT→LAST_KNOWN）。
+  - **V2 `BattlePlaybackDataset`**：稀疏 transition tracks（positionSegments/orientationSegments/healthTransitions/lifeTransitions/consumableTransitions/moduleCrewTransitions/loadout/shots/pointsSamples），每条带 knowledge/provenance/observation boundary；`BattlePlaybackProjector` 纯投影（不重扫 raw/不自构 HP/AoI/death/direction truth）。
+  - **接入生产**：`battle-playback-v2.json` artifact（仅 timeline 可用时写出）＋ `/api/replay/battle-playback-v2` dataset endpoint（204=timeline 不可用）。
+  - **前端守卫迁移**：`battlePlaybackV2.js` 查询工具（`inspectVehicleAt`/`healthAt`/`lifeAt`/`positionCoveredAtV2`/`orientationKnownAt`/`consumableRuntimeAt`/`moduleCrewAt`）＋ `V2VehicleInspector.vue`（AC-4/5/6/7）；`BattlePlaybackPanel`/`MapOverview`/`BattlePlayback` 透传 `playbackV2`，timeline 不可用时回退 legacy `MapOverview.Playback`（守卫期，短迁移 commit）。
+  - 验证：wotb-core 全量 1318 green；wotb-web 相关单测 50 green；前端全量 1235 green + `npm run build` green。
+
 ### Fixed
 - **Flyway 迁移不可变 + 部署失败诊断（Production Deploy Hotfix）**：修复 `main` 上已执行 Flyway V18 因文档注释漂移（`docs/current-plan.md` 误写回）导致的启动/健康检查失败风险。将 V18 恢复为 Git history 证明的 authoritative exact blob（`7e11d427` 的 `a7941f0d2…`，Flyway CRC32 `3353739529`），V1–V21 无其它 drift。
   - **永久 policy**：`java/AGENTS.md` 明确既有 `V*.sql` 为 immutable historical artifact——禁止修改/重命名/删除/格式化/改注释/改换行/编码；schema 只能新增更高版本 forward-only `V<N>__*.sql`；仅当 Git history 证明生产已执行且发生 checksum drift 时才允许恢复 exact deployed blob。

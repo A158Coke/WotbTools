@@ -4,6 +4,41 @@
 > Battle Playback / Personal AI Review / Team AI Review 共享同一套战场事实，禁止各模块
 > 自行重新解释 raw events 形成互相不同的事实模型（见本文件 §1/§43）。
 
+## Battle Playback V2（Canonical Replay Truth Convergence）
+
+> 自 2026-08 起，Battle Playback 增加 V2 稀疏投影 `BattlePlaybackDataset`，由
+> `BattlePlaybackProjector.project` 从 canonical `BattleTimeline` + canonical facts 直接投影。
+> 目标原则：**Replay truth is decoded once, canonicalized once, and projected many times**。
+
+### 事实层（新增 canonical facts）
+
+- `VehicleLoadoutFacts`：materialized combat vehicle 的 battle loadout 是**持久配置**——
+  一旦观察到本场装备了什么，即使离开 AoI（Type4）仍 KNOWN，不随 AoI 消失变 UNKNOWN。
+- `ConsumableLifecycle`：consumable **runtime** 观测（wireCode/state/eventClock/param）。
+  与 loadout 不同，runtime 在 hidden interval（UNKNOWN_AOI）内 = UNKNOWN——不能因为
+  「没看到 activation」就显示 READY。
+- `VehicleModuleCrewLifecycle`：method16 为 **recorder-visible telemetry**，每条带
+  `recorderVisible` provenance；不得把 recorder 模块状态当全队事实。
+
+### HP / orientation 统一
+
+- **FrameHealth**：统一 `currentHp` 权威，去掉 `baseHp/effectiveMaxHp` 业务语义；
+  `baseHp` 属 `VehicleReferenceMetadata`（tankopedia 参考展示）。新增
+  `HealthKnowledge(CURRENT/LAST_KNOWN/UNKNOWN)` 与 presentation-only `displayCapacityHp`
+  （= 截至 t 的真实可信 currentHp 最大值，**anti-future-leak**，绝非 canonical max HP）。
+- **FrameOrientation**：新增 `OrientationKnowledge` + `ageSec`；敌方离开 AoI 后方向
+  `CURRENT → LAST_KNOWN`，不得继续表现为实时炮塔方向。
+
+### V2 投影契约（`BattlePlaybackDataset`)
+
+稀疏 transition tracks（非 450s × 10Hz × 14 车全量 snapshot）：每辆车的
+`positionSegments` / `orientationSegments` / `healthTransitions` / `lifeTransitions` /
+`consumableTransitions` / `moduleCrewTransitions` / `loadout`，加 battle 级
+`shots` / `pointsSamples`。每条 track 自带 `knowledge / provenance / observation boundary`。
+
+前端（`battlePlaybackV2.js` 查询 + `V2VehicleInspector`）**只消费**这些已标注事实，
+不再做 HP/AoI/death/loadout 推理，也**不**再以 5 秒 packet-gap 作为 observation authority。
+
 ## 数据流
 
     Replay archive
