@@ -351,7 +351,7 @@ class MainActivity : Activity() {
             if (awaitingUnknownSourcesPermission) {
                 // 仅从「未知来源」授权页返回才自动继续 installer；普通 Package Installer 返回不自动重开。
                 awaitingUnknownSourcesPermission = false
-                if (downloadedApk != null && canRequestPackageInstalls()) {
+                if (downloadedApk != null && packageManager.canRequestPackageInstalls()) {
                     installDownloadedApk()
                 } else if (downloadedApk != null) {
                     versionMessage.text = getString(R.string.update_unknown_source_hint)
