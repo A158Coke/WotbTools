@@ -92,6 +92,15 @@ classify_prod_apk "abc" "abc"
 classify_prod_apk "abc" "def"
 [ "$APK_STATE" = "apk_conflict" ] || fail "apk_conflict state"
 
+# --- classify_prod_apk reused for existing-release verification
+#     (actual production APK SHA vs production version.json.sha256) ---
+classify_prod_apk "" "abc123"
+[ "$APK_STATE" = "apk_absent" ] || fail "published APK missing -> absent"
+classify_prod_apk "abc123" "abc123"
+[ "$APK_STATE" = "apk_equal" ] || fail "published APK SHA == version.json SHA -> equal"
+classify_prod_apk "abc123" "def456"
+[ "$APK_STATE" = "apk_conflict" ] || fail "published APK SHA != version.json SHA -> conflict"
+
 # --- classify_tag (real `git ls-remote` format: "<sha>\trefs/tags/<tag>") ---
 classify_tag "" "android-v1.0.2" 1000002
 [ "$TAG_STATE" = "tag_absent" ] || fail "tag_absent state"
@@ -102,9 +111,11 @@ classify_tag $'abd123\trefs/tags/android-v1.0.2' "android-v1.0.2" "abd123"
 classify_tag $'abd123\trefs/tags/android-v1.0.2' "android-v1.0.2" "fff000"
 [ "$TAG_STATE" = "tag_conflict" ] || fail "tag_conflict state"
 
-# annotated tag emits a peeled ^{} line; the exact ref must still resolve to itself.
+# annotated tag emits a peeled ^{} COMMIT SHA; compare the commit, not the tag object.
+classify_tag $'abd123\trefs/tags/android-v1.0.2\nabc999\trefs/tags/android-v1.0.2^{}' "android-v1.0.2" "abc999"
+[ "$TAG_STATE" = "tag_equal" ] || fail "annotated tag_equal (peeled commit)"
 classify_tag $'abd123\trefs/tags/android-v1.0.2\nabc999\trefs/tags/android-v1.0.2^{}' "android-v1.0.2" "abd123"
-[ "$TAG_STATE" = "tag_equal" ] || fail "annotated tag_equal state"
+[ "$TAG_STATE" = "tag_conflict" ] || fail "annotated tag must compare peeled commit, not tag object"
 
 # a similar-but-different ref must NOT match (exact ref matching).
 classify_tag $'abd123\trefs/tags/android-v1.0.20' "android-v1.0.2" "abd123"

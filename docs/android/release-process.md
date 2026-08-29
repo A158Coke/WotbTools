@@ -12,8 +12,11 @@
 
 Workflow 自动完成（按真实执行顺序）：版本格式 fail-fast（含 minor/patch 0..999 与
 versionCode 范围校验）→ 固定使用 `main` HEAD → **preflight 幂等分类**（生产最新版本
-> 本次 → 回滚拒绝；== 本次且 metadata 一致 → `already-published` 安全成功，不再构建；
-== 但 metadata 不一致 → 拒绝；< 本次 → 进入发布）+ `minSupportedVersionCode` 校验 →
+> 本次 → 回滚拒绝；== 本次且 metadata 一致 → **进入既有发布核验**（apkUrl 可达、APK 非空、
+实际 APK SHA-256 == production version.json.sha256；dispatch 下 release tag 存在且指向
+expected commit），全部一致才 `already-published` no-op 成功，APK 缺失 / SHA 不匹配 /
+tag 冲突一律 fail-closed；== 但 metadata 不一致 → 拒绝；< 本次 → 进入发布）+
+`minSupportedVersionCode` 校验 →
 frontend 校验 → signing secret/keystore/alias fail-fast → `gradle assembleRelease` →
 `apksigner verify` + 签名证书 SHA-256 固定校验 → SHA-256 单源 → **生产 APK 幂等分类**
 （不存在 → 上传；存在且 SHA == 本次 → 复用不覆盖；存在但 SHA 不同 → immutable 冲突拒绝）
@@ -24,7 +27,9 @@ frontend 校验 → signing secret/keystore/alias fail-fast → `gradle assemble
 
 ### 失败重跑 / 幂等语义
 
-- 已完全发布：preflight 判定 `already-published` → 安全成功（no-op），不重新构建。
+- 已完全发布：preflight 判定 `already-published` → 需通过既有发布核验（APK 可达/非空/
+  SHA == version.json.sha256 + dispatch 下 tag 指向 expected commit）后才 no-op 成功；
+  核验失败即 fail-closed（APK 缺失 / SHA 不匹配 / tag 冲突）。
 - APK 上传后失败：重跑同一版本，生产 APK 已存在；若重构建 SHA 与原 APK 相同 → 复用；
   若不同 → 按 immutable 规则失败（不会覆盖、不会双写）。
 - tag 后失败：重跑时 tag 已存在且指向本次 commit → 复用；指向其它 commit → 失败。

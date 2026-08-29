@@ -10,8 +10,10 @@
   两条入口合并为同一套 `Resolve release metadata / fail-fast guards / 发布协议`。新增
   fail-closed + 幂等 guard：版本格式（每段 `0` 或非零开头整数，拒绝 `1.0.02`/`01.0.2`；
   `minor`/`patch` 0..999 且 versionCode 在 `1..2_100_000_000`）、发布源固定 `main` HEAD、
-  preflight 幂等分类（生产最新 > 本次 → 回滚拒绝；== 且 metadata 一致 → already-published
-  安全成功不重建；== 但不一致 → 拒绝；< 本次 → 发布）、`minSupportedVersionCode` 校验、
+  preflight 幂等分类（生产最新 > 本次 → 回滚拒绝；== 且 metadata 一致 → 进入既有发布核验
+  —— apkUrl 可达、APK 非空、实际 SHA == version.json.sha256、dispatch 下 tag 指向
+  expected commit，全部一致才 already-published no-op 成功，缺失/不匹配/冲突一律 fail-closed；
+  == 但不一致 → 拒绝；< 本次 → 发布）、`minSupportedVersionCode` 校验、
   `git ls-remote` 真实 ref 的 release tag 幂等（不存在 → 创建；指向本次 commit → 复用；
   指向其它 commit → 拒绝 repoint）、生产同版本 APK 幂等（不存在 → 上传；SHA 相同 → 复用；
   SHA 不同 → immutable 冲突拒绝）、`apksigner --print-certs` 签名证书 SHA-256 与
