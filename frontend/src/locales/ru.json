@@ -1432,7 +1432,12 @@
                 "vehicle_class_medium": "Средний танк",
                 "vehicle_class_light": "Лёгкий танк",
                 "vehicle_class_td": "ПТ-САУ",
-                "vehicle_class_spg": "САУ"
+                "vehicle_class_spg": "САУ",
+                "loadout": "Боевая загрузка",
+                "module_state": "Состояние модулей/экипажа",
+                "consumable": "Расходник",
+                "provision": "Провизия",
+                "equipment": "Оборудование"
             }
         },
         "stages": {

@@ -6,6 +6,7 @@ import { teamCssVars } from '../data/mapTeamColors'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
 import { createMapView } from '../utils/mapView'
 import VehicleMarker from './VehicleMarker.vue'
+import V2VehicleInspector from './V2VehicleInspector.vue'
 import enemyHull from '../assets/tank-icons/tank-marker-enemy-hull.png'
 import enemyTurret from '../assets/tank-icons/tank-marker-enemy-turret.png'
 import friendlyHull from '../assets/tank-icons/tank-marker-friendly-hull.png'
@@ -77,7 +78,9 @@ const props = defineProps({
   overview: { type: Object, required: true },
   seekTo: { type: Number, default: null },
   /** QA 场景循环播放（PR4 §49：时间线到末尾自动回到 0 继续） */
-  loop: { type: Boolean, default: false }
+  loop: { type: Boolean, default: false },
+  /** V2 canonical battle-playback-dataset（可选；迁移期守卫：present 时用 V2 检查器）。 */
+  playbackV2: { type: Object, default: null }
 })
 
 const { t } = useI18n()
@@ -1324,6 +1327,14 @@ const selectedState = computed(() => {
   return vehicleStates.value.find(st => st.vehicle.accountId === selectedAccountId.value) || null
 })
 
+// V2 守卫：当 playbackV2 dataset 存在时，定位选中车辆的 V2 track（按 accountId）。
+const selectedV2Track = computed(() => {
+  if (!props.playbackV2 || !selectedState.value) return null
+  const accountId = selectedState.value.vehicle.accountId
+  const tracks = props.playbackV2.vehicles || []
+  return tracks.find(t => t.accountId === accountId) || null
+})
+
 // Details Panel 车型图：仅在选中车辆后按 tankId 懒加载；图片随站点发布，production 不访问 BlitzKit。
 // token 防止快速切换车辆时旧请求覆盖新选择；非 Tier X / 缺图 / chunk 失败均静默降级为无图。
 const selectedPortraitUrl = ref(null)
@@ -1996,6 +2007,13 @@ const mapStyle = computed(() => ({
         <dt>{{ $t('recon.map.playback.kills') }}</dt>
         <dd>{{ selCurStats.kills }}</dd>
       </dl>
+      <!-- V2 守卫：canonical dataset present 时，选中车辆的 V2 事实面板（AC-4/5/6/7）。 -->
+      <V2VehicleInspector
+        v-if="selectedV2Track"
+        data-test="pb-sb-v2-inspector"
+        :track="selectedV2Track"
+        :time-sec="currentTime"
+      />
       <template v-if="selDamageLog.length">
         <div class="pb-sb-section">{{ $t('recon.map.playback.damage_log') }}</div>
         <ul class="pb-sb-log">
