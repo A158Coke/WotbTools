@@ -205,16 +205,22 @@ class BattlePlaybackProjectorTest {
                 Map.of(account, List.of(entityId)),
                 Map.of(), 0, List.of());
 
-        // timeline：敌方 AoI 观测段 [0,20)（Type4 absent=20 → hidden）；一个 consumable ACTIVATED @12s。
-        // 用非 zero battle-relative start 以区分 raw/battle 时钟（battleStartRaw=0 简化即可）。
+        // timeline：敌方 AoI 观测段 [0,20)（Type4 absent=20 → hidden）；consumable ACTIVATED @12s，
+        // 之后 TEARDOWN @25s。canonical truth：12-20 ACTIVATED，20-25 UNKNOWN，25+ TEARDOWN。
         final com.wotb.core.replay.event.ConsumableLifecycleEvent activate =
                 new com.wotb.core.replay.event.ConsumableLifecycleEvent(
                         1, new com.wotb.core.replay.event.ReplayTimestamp(12f, 12f), 32,
                         DecodeConfidence.EXACT, entityId, 12f, 0x0D, "REPAIR_KIT",
                         com.wotb.core.replay.event.ConsumableLifecycleEvent.ConsumableLifecycleState.ACTIVATED,
                         0, 0f);
+        final com.wotb.core.replay.event.ConsumableLifecycleEvent teardown =
+                new com.wotb.core.replay.event.ConsumableLifecycleEvent(
+                        2, new com.wotb.core.replay.event.ReplayTimestamp(25f, 25f), 32,
+                        DecodeConfidence.EXACT, entityId, 25f, 0x0D, "REPAIR_KIT",
+                        com.wotb.core.replay.event.ConsumableLifecycleEvent.ConsumableLifecycleState.TEARDOWN,
+                        0, 0f);
         final java.util.List<com.wotb.core.replay.event.ReplayEvent> events =
-                new ArrayList<>(List.of(activate));
+                new ArrayList<>(List.of(activate, teardown));
 
         final List<BattleFrame> frames = new ArrayList<>();
         for (int second = 0; second <= 2; second++) {
@@ -244,11 +250,27 @@ class BattlePlaybackProjectorTest {
         assertNotNull(ds);
         final BattlePlaybackDataset.VehiclePlaybackTrack track = ds.vehicles().stream()
                 .filter(v -> v.accountId() == account).findFirst().orElseThrow();
-        // hidden 区间 (20,30] 查询：必须命中 explicit UNKNOWN，而非残留 ACTIVATED。
-        final boolean hasPostCloseUnknown = track.consumableTransitions().stream()
-                .anyMatch(t -> t.timeSec() >= 20.0 - 1e-6
-                        && "UNKNOWN".equals(t.state()));
-        assertTrue(hasPostCloseUnknown,
-                "AoI 关闭后必须插入 explicit UNKNOWN consumable runtime transition（hidden=UNKNOWN contract）");
+        // 用前端同构的 lastAtOrBefore 解析三个时间点状态（anti-future-leak）。
+        assertEquals("ACTIVATED", stateAt(track.consumableTransitions(), 19.0),
+                "close 前（<=20 事实）必须仍是 ACTIVATED");
+        assertEquals("UNKNOWN", stateAt(track.consumableTransitions(), 22.0),
+                "AoI close @20 必须插入 explicit UNKNOWN，隐区间查询为 UNKNOWN，不得残留 ACTIVATED");
+        assertEquals("TEARDOWN", stateAt(track.consumableTransitions(), 26.0),
+                "后续 TEARDOWN @25 必须覆盖 UNKNOWN（25+ = TEARDOWN）");
+    }
+
+    /** 与前端 lastAtOrBefore 同构：返回 timeSec <= t 的最近一个 transition 的 state。 */
+    private static String stateAt(final List<BattlePlaybackDataset.ConsumableTransition> transitions,
+                                  final double t) {
+        BattlePlaybackDataset.ConsumableTransition last = null;
+        // transitions 已按 timeSec 升序（projector 已排序）
+        for (final BattlePlaybackDataset.ConsumableTransition tr : transitions) {
+            if (tr.timeSec() <= t + 1e-6) {
+                last = tr;
+            } else {
+                break;
+            }
+        }
+        return last == null ? "UNKNOWN" : last.state();
     }
 }
