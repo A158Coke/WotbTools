@@ -18,7 +18,6 @@ const props = defineProps({
   /** 初始能力：data / ai / playback（由路由 view 派生）。 */
   initialCapability: { type: String, default: 'data' },
 })
-const emit = defineEmits(['capability-change'])
 
 const { t } = useI18n()
 const isAuthenticated = inject('isAuthenticated', () => false)
@@ -84,9 +83,6 @@ const targetActiveFile = computed(() => {
 const aiReplay = useCapabilityReplay(replay)
 const playbackReplay = useCapabilityReplay(replay)
 
-const activeDatasetRef = computed(() => activeCapability.value === 'ai' ? aiReplay.datasetRef.value : playbackReplay.datasetRef.value)
-const activeDatasetError = computed(() => activeCapability.value === 'ai' ? aiReplay.datasetError.value : playbackReplay.datasetError.value)
-
 /** 切到 ai / playback 且目标文件确定时准备 Dataset（绝不重传 / 重 parse）。 */
 watch([activeCapability, targetActiveFile], ([cap, file]) => {
   if (cap !== 'ai' && cap !== 'playback') return
@@ -102,7 +98,6 @@ watch([activeCapability, targetActiveFile], ([cap, file]) => {
 function setCapability(key) {
   if (key === activeCapability.value) return
   activeCapability.value = key
-  emit('capability-change', key)
   if (key === 'ai' || key === 'playback') gateAuth(key)
   const viewMap = { data: 'replay', ai: 'ai-review', playback: 'battle-playback' }
   if (navigate) navigate(viewMap[key] || 'replay', null)

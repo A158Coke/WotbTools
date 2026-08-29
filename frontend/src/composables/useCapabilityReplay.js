@@ -16,18 +16,12 @@ import { fileKey } from '../utils/helpers.js'
  */
 export function useCapabilityReplay(replay) {
   const { t, te } = useI18n()
-  const { files, requestDirectAction } = replay
+  const { requestDirectAction } = replay
 
   const targetFile = ref(null)
   const datasetRef = ref(null)
   const datasetError = ref('')
   let prepareRevision = 0
-
-  function validRef(value) {
-    return !!value
-      && typeof value.processingJobId === 'string' && value.processingJobId.trim() !== ''
-      && typeof value.sourceId === 'string' && /^r\d+$/.test(value.sourceId)
-  }
 
   function reset() {
     prepareRevision++

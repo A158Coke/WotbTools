@@ -702,11 +702,11 @@ onMounted(() => {
 
     </template>
 
-    <ReplayTaskCard v-if="exportJob" :job="exportJob" :error="exportError"
+    <ReplayTaskCard v-if="!props.embedded && exportJob" :job="exportJob" :error="exportError"
       kind="export"
       @cancel="cancelExportJob" @download="downloadExportResult" @dismiss="dismissExportJob" />
 
-    <RemoveConfirmModal :pending="pendingRemove" @confirm="confirmRemove" @cancel="cancelRemove" />
+    <RemoveConfirmModal v-if="!props.embedded" :pending="pendingRemove" @confirm="confirmRemove" @cancel="cancelRemove" />
     <PlayerDetailDrawer :context="drawerOpen ? selectedPlayerContext : null" :player="drawerPlayer"
                         :league-columns="leagueData?.columns || []"
                         :scope-players="drawerScopePlayers" :has-prev="hasPrevPlayer" :has-next="hasNextPlayer"
