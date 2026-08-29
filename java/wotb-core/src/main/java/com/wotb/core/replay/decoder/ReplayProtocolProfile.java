@@ -63,47 +63,57 @@ public final class ReplayProtocolProfile {
     private ReplayProtocolProfile() {
     }
 
-    /** Level of a structural (Layer B) capability: VERIFIED for known families, STRUCTURALLY_COMPATIBLE otherwise. */
-    public static Level structuralLevel(final String clientVersion) {
-        final String f = ReplayVersionFamily.familyOf(clientVersion);
-        return (ReplayVersionFamily.CURRENT_VERIFIED_FAMILY.equals(f)
-                || ReplayVersionFamily.LEGACY_VERIFIED_FAMILY.equals(f))
-                ? Level.VERIFIED : Level.STRUCTURALLY_COMPATIBLE;
-    }
-
-    /** Level of a closed (Layer C) numeric-semantic capability: VERIFIED only for the current 11.19 family. */
-    public static Level closedSemanticLevel(final String clientVersion) {
-        return ReplayVersionFamily.isCurrentVerified(clientVersion)
-                ? Level.VERIFIED : Level.UNKNOWN;
-    }
-
-    /** Per-capability level resolution (single entry point for decoders/tests). */
+    /**
+     * PR162/P1-6 (per-capability evidence matrix): 每个 capability 的 level 按 evidence 单独决定，<b>不是</b>
+     * 「整个 family → 全部 VERIFIED」的 blanket。
+     *
+     * <ul>
+     *   <li><b>11.19 (current)</b>: PR147 primary corpus → 全部 capability VERIFIED。</li>
+     *   <li><b>11.18 (legacy)</b>: 仅 <b>独立 evidence</b>（PR147 corpus 为 11.18/11.19 + research/fixture/test）
+     *       证明的结构 capability 才 VERIFIED；无独立证据的闭式数值语义（FFFE / method36/38 / Type31/35 /
+     *       ammo / entityTypeId / method semantics / FFFD）不继承 → UNKNOWN。</li>
+     *   <li><b>future / unknown</b>: 仅 deliberate 结构前向 capability → STRUCTURALLY_COMPATIBLE；闭式语义 / setting
+     *       field-number 语义 → UNKNOWN。</li>
+     * </ul>
+     */
     public static Level levelOf(final String clientVersion, final Capability capability) {
+        if (ReplayVersionFamily.isCurrentVerified(clientVersion)) {
+            return Level.VERIFIED;
+        }
+        if (ReplayVersionFamily.isLegacyVerified(clientVersion)) {
+            return legacyVerified(capability) ? Level.VERIFIED : Level.UNKNOWN;
+        }
+        return forwardCompatible(capability) ? Level.STRUCTURALLY_COMPATIBLE : Level.UNKNOWN;
+    }
+
+    /**
+     * 11.18 legacy evidence（逐项可追）：
+     * PR147 research corpus 为 <b>11.18.0_china_apple + 11.19.0_china_apple</b>（protocol.md §2），并包含
+     * 11.18 样本对以下结构的独立证明：Type10（PositionDecoderTest 使用 11.18 上下文）、EntityProperty prop2
+     * valueLen=2 九年来稳定（visibility/turret-direction）、EntityMethod method1 布局（EntityMethodDecoderVersionGateTest
+     * 11.18）、entity-lifecycle（11.18 死亡/visibility 样本）、participant mapping（protocol.md #201 11.18 名册）、
+     * settlement #24/#25/#105（SettlementCanonicalModelTest 11.19/11.18 无 #104）、Type14 stream-close（framing
+     * 不变量）、正 HP 结构值。闭式数值语义（FFFE/method36/38/Type31/35/ammo/entityTypeId/method semantics/FFFD）
+     * 只有 11.19 PR147 证明，无独立 11.18 evidence → UNKNOWN。
+     */
+    private static boolean legacyVerified(final Capability capability) {
         return switch (capability) {
             case TYPE10_LAYOUT, ENTITY_PROPERTY_ENVELOPE, ENTITY_METHOD_ENVELOPE, ENTITY_LIFECYCLE_LAYOUT,
-                    PARTICIPANT_MAPPING, TYPE14_STREAM_CLOSE, SETTLEMENT_SCHEMA -> structuralLevel(clientVersion);
-            case HP_POSITIVE_VALUE ->
-                    // ordinary positive HP is a structural value (recovered from the u16 envelope); the
-                    // special sentinels are separate capabilities. Proven for the verified + legacy
-                    // families; STRUCTURALLY_COMPATIBLE (exact-shape) for other versions.
-                    (ReplayVersionFamily.isCurrentVerified(clientVersion)
-                            || ReplayVersionFamily.isLegacyVerified(clientVersion))
-                            ? Level.VERIFIED : Level.STRUCTURALLY_COMPATIBLE;
-            case TERMINAL_FFFD ->
-                    // FFFD death terminal proven for 11.19 + 11.18 legacy fixtures; never inherited by future.
-                    (ReplayVersionFamily.isCurrentVerified(clientVersion)
-                            || ReplayVersionFamily.isLegacyVerified(clientVersion))
-                            ? Level.VERIFIED : Level.UNKNOWN;
-            case TERMINAL_FFFE, METHOD_SEMANTICS, PROP_TURRET_YAW, METHOD36_AIM_RAY, METHOD38_SHOT_RESULT,
-                    TYPE31_GUN_MARKER, TYPE35_SESSION_DECISECOND, AMMO_SELECTION -> closedSemanticLevel(clientVersion);
-            case ENTITY_TYPE_ID_SEMANTIC ->
-                    // entityTypeId numeric meaning (2=combat vehicle, 3=static family) is a closed,
-                    // version-scoped class semantic. Future version keeps the Type5 envelope + raw entityTypeId
-                    // but must NOT auto-assign Vehicle/Other.
-                    (ReplayVersionFamily.isCurrentVerified(clientVersion)
-                            || ReplayVersionFamily.isLegacyVerified(clientVersion))
-                            ? Level.VERIFIED : Level.UNKNOWN;
+                    PARTICIPANT_MAPPING, TYPE14_STREAM_CLOSE, SETTLEMENT_SCHEMA,
+                    HP_POSITIVE_VALUE, PROP_TURRET_YAW -> true;
+            case TERMINAL_FFFD, TERMINAL_FFFE, ENTITY_TYPE_ID_SEMANTIC, METHOD_SEMANTICS, METHOD36_AIM_RAY,
+                    METHOD38_SHOT_RESULT, TYPE31_GUN_MARKER, TYPE35_SESSION_DECISECOND, AMMO_SELECTION -> false;
         };
     }
 
+    /** 仅 deliberate 结构前向 capability（Layer B 结构布局 + 正 HP 结构值）对 future 给 STRUCTURALLY_COMPATIBLE。 */
+    private static boolean forwardCompatible(final Capability capability) {
+        return switch (capability) {
+            case TYPE10_LAYOUT, ENTITY_PROPERTY_ENVELOPE, ENTITY_METHOD_ENVELOPE, ENTITY_LIFECYCLE_LAYOUT,
+                    TYPE14_STREAM_CLOSE, HP_POSITIVE_VALUE -> true;
+            case PARTICIPANT_MAPPING, SETTLEMENT_SCHEMA, PROP_TURRET_YAW, TERMINAL_FFFD, TERMINAL_FFFE,
+                    ENTITY_TYPE_ID_SEMANTIC, METHOD_SEMANTICS, METHOD36_AIM_RAY, METHOD38_SHOT_RESULT,
+                    TYPE31_GUN_MARKER, TYPE35_SESSION_DECISECOND, AMMO_SELECTION -> false;
+        };
+    }
 }
