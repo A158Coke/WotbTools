@@ -101,7 +101,7 @@ pull_compose() {
 # Health checks: backend /api/health, frontend nginx E2E, Keycloak realm availability
 wait_healthy() {
   for i in $(seq 1 "$HEALTH_RETRIES"); do
-    if docker compose ps | grep -E "wotb-backend|wotb-frontend|keycloak" | grep -qE "Restarting|Exited"; then
+    if docker compose ps -a | grep -E "wotb-backend|wotb-frontend|keycloak" | grep -qE "Restarting|Exited"; then
       sleep 2
       continue
     fi
@@ -118,13 +118,42 @@ wait_healthy() {
     if [ "$ok" = true ]; then
       return 0
     fi
+    if [ "$i" -eq "$HEALTH_RETRIES" ]; then
+      echo "Health check failed:"
+      report_health_status
+      return 1
+    fi
     sleep 2
   done
   return 1
 }
 
+report_health_status() {
+  local running
+  running="$(docker compose ps -a 2>/dev/null || true)"
+  probe() {
+    local state label="$1" service="$2"
+    shift 2
+    if ! grep -qE "${service}" <<<"$running"; then
+      state=SKIPPED
+      echo "  ${label}: ${state} (${service} container absent)"
+    elif docker compose exec -T "$@" >/dev/null 2>&1; then
+      state=PASS
+      echo "  ${label}: ${state}"
+    else
+      state=FAILED
+      echo "  ${label}: ${state}"
+    fi
+  }
+  probe backend wotb-backend wotb-backend wget -qO- http://127.0.0.1:8087/api/health
+  probe frontend wotb-frontend wotb-frontend wget -qO- http://127.0.0.1:80/api/health
+  probe keycloak keycloak wotb-backend wget -qO- http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration
+}
+
 dump_logs() {
-  docker compose ps || true
+  docker compose ps -a || true
+  echo "== container inspect =="
+  docker compose ps -aq | xargs -r docker inspect || true
   echo "== backend logs =="
   docker compose logs --tail 160 wotb-backend || true
   echo "== frontend logs =="
@@ -166,6 +195,9 @@ else
     docker builder prune -af
     echo "== DEPLOY OK: $TAG =="
     exit 0
+  else
+    echo "== NEW DEPLOY HEALTH CHECK FAILED =="
+    dump_logs
   fi
   rollback_needed=true
 fi
