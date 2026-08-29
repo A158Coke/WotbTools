@@ -8,9 +8,9 @@ import com.wotb.core.league.LeagueRatingBatchAggregator;
 import com.wotb.core.league.LeagueRatingResult;
 import com.wotb.core.league.PlayerLeagueRating;
 import com.wotb.core.league.PlayerLeagueSummary;
+import com.wotb.core.league.PlayerVehicleUsage;
 import com.wotb.core.league.TeamLeagueRating;
 import com.wotb.core.league.TeamLeagueSummary;
-import com.wotb.core.league.PlayerVehicleUsage;
 import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
@@ -21,6 +21,8 @@ import com.wotb.core.stats.Aggregator;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
 import com.wotb.core.stats.Players;
 import com.wotb.web.replay.dto.AggRow;
+import com.wotb.web.replay.dto.BattleDto;
+import com.wotb.web.replay.dto.ColumnDef;
 import com.wotb.web.replay.dto.LeagueBattleDto;
 import com.wotb.web.replay.dto.LeagueColumnDef;
 import com.wotb.web.replay.dto.LeagueFailureDto;
@@ -28,12 +30,10 @@ import com.wotb.web.replay.dto.LeaguePlayerSummaryDto;
 import com.wotb.web.replay.dto.LeagueRatingDto;
 import com.wotb.web.replay.dto.LeagueRatingQualityDto;
 import com.wotb.web.replay.dto.LeagueTeamDto;
-import com.wotb.web.replay.dto.LeagueVehicleUsageDto;
 import com.wotb.web.replay.dto.LeagueTeamSummaryDto;
-import com.wotb.web.replay.dto.PreviewResponse;
-import com.wotb.web.replay.dto.BattleDto;
-import com.wotb.web.replay.dto.ColumnDef;
+import com.wotb.web.replay.dto.LeagueVehicleUsageDto;
 import com.wotb.web.replay.dto.PlayerRow;
+import com.wotb.web.replay.dto.PreviewResponse;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -170,7 +170,6 @@ public final class Mapper {
      */
     public static BattleDto toBattle(final Battle b, final String sourceName, final Tankopedia tp,
                                      final LeagueRatingResult league, final boolean leagueMode) {
-        final Function<Long, String> platoon = Players.platoonLabeler();
         final List<PlayerRow> rows = new ArrayList<>();
         final Map<Long, PlayerLeagueRating> leagueByAccount = new LinkedHashMap<>();
         if (league != null) {
@@ -180,7 +179,6 @@ public final class Mapper {
         }
         for (final PlayerResult p : Players.sorted(b.players)) {
             Players.enrich(p, tp);
-            p.platoonLabel = platoon.apply(p.platoonId);
             final Map<String, Object> cells = new LinkedHashMap<>();
             for (final Columns.Column c : Columns.PLAYER) {
                 // 单场 Performance Metrics（contribution/kast/impact）在 League 模式同样保留

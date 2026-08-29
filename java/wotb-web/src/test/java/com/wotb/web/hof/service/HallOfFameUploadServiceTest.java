@@ -1,29 +1,27 @@
 package com.wotb.web.hof.service;
 
-import com.wotb.web.replayfile.ReplayFileNames;
-import com.wotb.web.replayfile.ReplayHashLock;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.web.hof.dto.ReplayFileMeta;
-import com.wotb.web.replayfile.HallOfFameStorageException;
-import com.wotb.web.replayfile.HallOfFameReplayStorage;
-import com.wotb.web.replay.service.ReplayCapacityLimiter;
-import org.mockito.ArgumentMatchers;
-import java.util.function.Supplier;
 import com.wotb.web.hof.repository.HallOfFameRecordRepository;
-import com.wotb.web.hof.service.HallOfFameRecordMapper;
+import com.wotb.web.replay.service.ReplayCapacityLimiter;
+import com.wotb.web.replayfile.HallOfFameReplayStorage;
+import com.wotb.web.replayfile.HallOfFameStorageException;
+import com.wotb.web.replayfile.ReplayFileNames;
+import com.wotb.web.replayfile.ReplayHashLock;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.nio.file.Files;
@@ -33,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Callable;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;

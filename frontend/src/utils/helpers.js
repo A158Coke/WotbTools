@@ -77,7 +77,7 @@ const COL_GROUP_CAT = {
   victory_points_earned: 'battle', victory_points_seized: 'battle',
   mvp_count: 'overview', damage_total: 'battle', assist_total: 'battle', kills_total: 'battle',
   team_name: 'identity',
-  platoon_label: 'extra', rank: 'extra',
+  rank: 'extra',
   battles: 'overview', wins: 'overview', win_rate: 'overview', survival_rate: 'overview',
   rated_battles: 'overview',
   kills_avg: 'battle', damage: 'battle', damage_avg: 'battle', assisted: 'battle', assisted_avg: 'battle',

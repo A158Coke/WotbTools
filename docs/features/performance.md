@@ -13,7 +13,7 @@ derived performance metrics**，不再属于任何 Rating 综合评分体系。
 ```text
 .wotbreplay
     ↓
-ReplayParser（结算战绩 + killVictims）
+ReplayParser（结算战绩）
     ↓
 DefaultReplayProcessingFacade（完整重建 + ObservedMaxHp.populate + DeathTimeReconciler）
     ↓
@@ -21,6 +21,10 @@ Battle / PlayerResult（唯一 authoritative facts 载体）
     ↓
 PerformanceMetricsCalculator（纯派生计算，只读）
 ```
+
+> `PlayerResult.killVictims`（damage-threshold 击杀前伤害明细）与 `DeathTimeEstimator` 已在 PR147/PR162 从生产
+> 移除（damageReceived 不是本局最大 HP，无法证明 lethal boundary / killer identity）；killer authority 为
+> settlement `field25`/result-id 映射。
 
 Battle Playback / AI Review / Performance Metrics 全部消费同一 `Battle` / `PlayerResult`
 事实；`ReplayProcessingJobService` 在 worker 中完成 full processing，并在 READY 前只调用一次

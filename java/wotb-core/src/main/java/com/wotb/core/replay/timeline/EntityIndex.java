@@ -39,10 +39,6 @@ final class EntityIndex {
     record TurretSample(double clock, double relYawDeg) {
     }
 
-    /** 伤害采样（累计用）。 */
-    record DmgSample(double clock, int amount) {
-    }
-
     /** 争霸赛点数采样。 */
     record PointsSample(double clock, int team, int points) {
     }
@@ -51,8 +47,6 @@ final class EntityIndex {
     private final Map<Integer, List<HpSample>> healths;
     private final Map<Integer, List<DestroySample>> destroys;
     private final Map<Integer, List<TurretSample>> turrets;
-    private final Map<Integer, List<DmgSample>> damageDealt;
-    private final Map<Integer, List<DmgSample>> damageReceived;
     private final List<PointsSample> points;
     private final Map<Integer, Double> firstObserved;
     private final Map<Integer, List<Double>> leaves;
@@ -63,8 +57,6 @@ final class EntityIndex {
             final Map<Integer, List<HpSample>> healths,
             final Map<Integer, List<DestroySample>> destroys,
             final Map<Integer, List<TurretSample>> turrets,
-            final Map<Integer, List<DmgSample>> damageDealt,
-            final Map<Integer, List<DmgSample>> damageReceived,
             final List<PointsSample> points,
             final Map<Integer, Double> firstObserved,
             final Map<Integer, List<Double>> leaves,
@@ -73,8 +65,6 @@ final class EntityIndex {
         this.healths = healths;
         this.destroys = destroys;
         this.turrets = turrets;
-        this.damageDealt = damageDealt;
-        this.damageReceived = damageReceived;
         this.points = points;
         this.firstObserved = firstObserved;
         this.leaves = leaves;
@@ -86,8 +76,6 @@ final class EntityIndex {
         final Map<Integer, List<HpSample>> healths = new HashMap<>();
         final Map<Integer, List<DestroySample>> destroys = new HashMap<>();
         final Map<Integer, List<TurretSample>> turrets = new HashMap<>();
-        final Map<Integer, List<DmgSample>> damageDealt = new HashMap<>();
-        final Map<Integer, List<DmgSample>> damageReceived = new HashMap<>();
         final List<PointsSample> points = new ArrayList<>();
         final Map<Integer, Double> firstObserved = new HashMap<>();
         final Map<Integer, List<Double>> leaves = new HashMap<>();
@@ -133,10 +121,8 @@ final class EntityIndex {
                             .add(new TurretSample(t, td.turretRelativeYawDeg()));
                 }
                 case DamageEvent d -> {
-                    damageDealt.computeIfAbsent(d.attackerEid(), k -> new ArrayList<>())
-                            .add(new DmgSample(t, d.damage()));
-                    damageReceived.computeIfAbsent(d.victimEid(), k -> new ArrayList<>())
-                            .add(new DmgSample(t, d.damage()));
+                    // §P0-3: DamageEvent raw value is NOT authoritative HP delta; never feed it into
+                    // canonical FrameVehicle damage totals. Only register entity observation.
                     firstObserved.merge(d.attackerEid(), t, Math::min);
                     firstObserved.merge(d.victimEid(), t, Math::min);
                 }
@@ -146,7 +132,12 @@ final class EntityIndex {
                         points.add(new PointsSample(t, sp.team(), sp.points()));
                     }
                 }
-                case EntityCreatedEvent ec -> firstObserved.merge(ec.entityId(), t, Math::min);
+                case EntityCreatedEvent ec -> {
+                    // §P1-3: unproven/guessed entityId must not enter canonical firstObserved.
+                    if (ec.entityId() > 0) {
+                        firstObserved.merge(ec.entityId(), t, Math::min);
+                    }
+                }
                 case com.wotb.core.replay.event.EntityRemovedEvent removed ->
                         leaves.computeIfAbsent(removed.entityId(), k -> new ArrayList<>()).add(t);
                 default -> {
@@ -160,12 +151,10 @@ final class EntityIndex {
         healths.values().forEach(l -> l.sort(Comparator.comparingDouble(HpSample::clock)));
         destroys.values().forEach(l -> l.sort(Comparator.comparingDouble(DestroySample::clock)));
         turrets.values().forEach(l -> l.sort(Comparator.comparingDouble(TurretSample::clock)));
-        damageDealt.values().forEach(l -> l.sort(Comparator.comparingDouble(DmgSample::clock)));
-        damageReceived.values().forEach(l -> l.sort(Comparator.comparingDouble(DmgSample::clock)));
         points.sort(Comparator.comparingDouble(PointsSample::clock));
 
         return new EntityIndex(positions, healths, destroys, turrets,
-                damageDealt, damageReceived, points, firstObserved, leaves, invalid);
+                points, firstObserved, leaves, invalid);
     }
 
     Map<Integer, List<PosSample>> positions() {
@@ -197,14 +186,6 @@ final class EntityIndex {
 
     TurretSample lastTurretAtOrBefore(final int entityId, final double t) {
         return lastAtOrBefore(turrets.get(entityId), t, TurretSample::clock);
-    }
-
-    int damageDealtAt(final int entityId, final double t) {
-        return sumUpTo(damageDealt.get(entityId), t, DmgSample::clock, DmgSample::amount);
-    }
-
-    int damageReceivedAt(final int entityId, final double t) {
-        return sumUpTo(damageReceived.get(entityId), t, DmgSample::clock, DmgSample::amount);
     }
 
     /** 截至 t 的最后一次 EntityLeave（位置流硬中断；无则 null）。 */
@@ -270,20 +251,4 @@ final class EntityIndex {
         return result;
     }
 
-    private static <T> int sumUpTo(
-            final List<T> list, final double t,
-            final java.util.function.ToDoubleFunction<T> clock,
-            final java.util.function.ToIntFunction<T> value) {
-        if (list == null || list.isEmpty()) {
-            return 0;
-        }
-        int sum = 0;
-        for (final T item : list) {
-            if (clock.applyAsDouble(item) > t) {
-                break;
-            }
-            sum += value.applyAsInt(item);
-        }
-        return sum;
-    }
 }

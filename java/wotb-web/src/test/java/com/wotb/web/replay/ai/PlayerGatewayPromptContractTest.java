@@ -2,13 +2,14 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.PlayerSideResolver;
-import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
+import com.wotb.core.replay.processing.PlayerSideResolver;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
@@ -100,6 +101,8 @@ class PlayerGatewayPromptContractTest {
         p.kills = team == 1 ? 2 : 1;
         p.survived = team == 1;
         p.deathTimeMillis = team == 1 ? 0 : 180_000;
+        p.deathTimeSource = p.deathTimeMillis > 0
+                ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
         return p;
     }
 
@@ -111,8 +114,7 @@ class PlayerGatewayPromptContractTest {
                 123, DecodeConfidence.EXACT);
         final PlayerBattleFeatureSet features = new PlayerBattleFeatureSet(
                 List.of(), List.of(), List.of(), List.of(), List.of(), true);
-        final ReplayCoverage coverage = new ReplayCoverage(
-                true, 100, 100, 0, 0, 0, 1.0, Map.of());
+        final ReplayCoverage coverage = new ReplayCoverage(100, 100, 0, 0, 0, 1.0, Map.of());
         return new SinglePlayerBattleAnalysisContext(
                 null, battle, features, mapping, coverage, List.of("TEST_LIMITATION"));
     }
@@ -221,7 +223,7 @@ class PlayerGatewayPromptContractTest {
         final SinglePlayerBattleAnalysisContext ctx = new SinglePlayerBattleAnalysisContext(
                 null, battle, features,
                 new RecorderEntityMapping(1001L, 501, 42, "RecorderPlayer", 1, 123, DecodeConfidence.EXACT),
-                new ReplayCoverage(true, 100, 100, 0, 0, 0, 1.0, Map.of()),
+                new ReplayCoverage(100, 100, 0, 0, 0, 1.0, Map.of()),
                 List.of("TEST_LIMITATION"));
         service().analyzePlayerContext(ctx);
         final String body = lastUser();

@@ -1,9 +1,9 @@
 package com.wotb.web.replay.mapper;
 
 import com.wotb.core.league.PlayerVehicleUsage;
+import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.model.Agg;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
 import com.wotb.web.replay.dto.AggRow;

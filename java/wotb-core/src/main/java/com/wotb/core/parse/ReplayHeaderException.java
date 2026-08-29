@@ -1,4 +1,4 @@
-package com.wotb.core.replay.stream;
+package com.wotb.core.parse;
 
 /**
  * 回放流头部解析异常。

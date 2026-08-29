@@ -2,6 +2,7 @@ package com.wotb.core.league;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -34,7 +35,6 @@ public final class LeagueRatingBatchAggregator {
                 continue;
             }
             final Integer winner = battle.winnerTeam;
-            // 本场 PlayerResult 按 accountId 关联，用于累计每名已评分选手的真实坦克使用。
             final Map<Long, PlayerResult> playerByAccount = new HashMap<>();
             if (battle.players != null) {
                 for (final PlayerResult pr : battle.players) {
@@ -47,7 +47,6 @@ public final class LeagueRatingBatchAggregator {
                 acc.clan = p.clan();
                 acc.battles++;
                 acc.ratings.add(p.finalRating());
-                // 七维顺序单一来源：dimensionScores()（与 LeagueColumns.DIM_KEYS 严格一致）
                 acc.dims.addAll(p.dimensionScores());
                 if (p.mvp()) {
                     acc.mvpCount++;
@@ -86,12 +85,8 @@ public final class LeagueRatingBatchAggregator {
         final List<PlayerLeagueSummary> playerSummaries = new ArrayList<>();
         for (final Map.Entry<Long, PlayerAcc> e : players.entrySet()) {
             final PlayerAcc acc = e.getValue();
-            // V5：Raw Batch Median 保持原样，主 Rating 走 Evidence Adjustment
-            // （只修正最终 Batch Player Rating；七维 median/mean 与 Team Rating 不动）。
             final double rawMedian = median(acc.ratings);
-            final double batchRatingV5 =
-                    LeagueBatchPlayerRatingCalculator.apply(rawMedian, acc.battles);
-            // 坦克使用直方图（tankId -> battles），按 tankId 升序保证稳定；最终选择在 Web Mapper。
+            final double batchRatingV5 = LeagueBatchPlayerRatingCalculator.apply(rawMedian, acc.battles);
             final List<PlayerVehicleUsage> vehicleUsage = acc.vehicleCounts.entrySet().stream()
                     .map(en -> new PlayerVehicleUsage(en.getKey(), en.getValue()))
                     .sorted(Comparator.comparingLong(PlayerVehicleUsage::tankId))
@@ -111,7 +106,6 @@ public final class LeagueRatingBatchAggregator {
                     median(acc.ratings), chunkMedians(acc.dims), acc.wins,
                     List.copyOf(acc.arenaTeams)));
         }
-        // 展示顺序稳定：选手按 accountId，战队按 key（不按 Rating 排名）
         playerSummaries.sort(Comparator.comparingLong(PlayerLeagueSummary::accountId));
         teamSummaries.sort(Comparator.comparing(TeamLeagueSummary::teamKey));
         return new LeagueRatingBatch(results, playerSummaries, teamSummaries,
@@ -120,11 +114,8 @@ public final class LeagueRatingBatchAggregator {
     }
 
     /**
-     * 统计已评分场次中「死亡时间 UNKNOWN」的阵亡玩家实例数（{@code survivalTimeSec == 0}
-     * 是项目既有 UNKNOWN 契约：精确死亡时刻无法从回放可靠证明；负数/非有限已被
-     * {@link LeagueRatingValidator} 拒绝，不会进入已评分场次）。
-     * 该数量是评分质量 limitation，不是 failure——这些玩家照常获得 Rating，
-     * 仅 Survival/Trade 维度按 0 分保守计算。
+     * 统计已评分场次中 canonical death time 为 UNKNOWN 的阵亡玩家实例数。
+     * UNKNOWN 是合法的评分质量 limitation，不是 failure；相关 Survival/Trade 维度继续 fail-closed。
      */
     private static LeagueRatingQuality ratingQuality(final List<Battle> battles) {
         int unknown = 0;
@@ -133,8 +124,8 @@ public final class LeagueRatingBatchAggregator {
                 if (battle == null || battle.players == null) {
                     continue;
                 }
-                for (final com.wotb.core.model.PlayerResult p : battle.players) {
-                    if (!p.survived && p.survivalTimeSec == 0) {
+                for (final PlayerResult p : battle.players) {
+                    if (!p.survived && PlayerResultFormat.deathSec(p) <= 0) {
                         unknown++;
                     }
                 }
@@ -151,7 +142,6 @@ public final class LeagueRatingBatchAggregator {
         return battle.arenaId + ":" + team.team();
     }
 
-    /** 中位数：奇数取中间，偶数取两个中间值平均；未取整。 */
     static double median(final List<Double> values) {
         if (values == null || values.isEmpty()) {
             return 0;
@@ -165,10 +155,6 @@ public final class LeagueRatingBatchAggregator {
         return (sorted.get(mid - 1) + sorted.get(mid)) / 2.0;
     }
 
-    /** 扁平维度值列表必须是完整场次交错（每场 dimensionCount 个），维度数取
-     * canonical {@link LeagueColumns#DIM_KEYS}，禁止复制 magic number；
-     * 非整场（size % dimensionCount != 0）→ invariant violation，fail fast
-     * （不允许残缺样本被静默当作 0 混入汇总）。 */
     private static void validateChunkStride(final List<Double> dims) {
         final int dimensionCount = LeagueColumns.DIM_KEYS.size();
         if (dims.size() % dimensionCount != 0) {
@@ -178,7 +164,6 @@ public final class LeagueRatingBatchAggregator {
         }
     }
 
-    /** 把扁平维度值列表（每场 dimensionCount 个）按维度分组求中位数。 */
     private static List<Double> chunkMedians(final List<Double> dims) {
         validateChunkStride(dims);
         final int dimensionCount = LeagueColumns.DIM_KEYS.size();
@@ -193,13 +178,6 @@ public final class LeagueRatingBatchAggregator {
         return out;
     }
 
-    /**
-     * 把扁平维度值列表（每场 dimensionCount 个）按维度分组求<b>算术平均</b>
-     * （Summary Radar 的「平均能力画像」契约；与 {@link #chunkMedians} 的中位数
-     * 「典型比赛得分」是两个明确不同的聚合语义）。只含 rated battles 样本
-     * （调用方在 aggregate 循环中已跳过 Rating-ineligible 场次）；
-     * 真实 0 分必须进入平均，缺失/非法在更早的 validator/calculator 已拒绝。
-     */
     static List<Double> chunkMeans(final List<Double> dims) {
         validateChunkStride(dims);
         final int dimensionCount = LeagueColumns.DIM_KEYS.size();

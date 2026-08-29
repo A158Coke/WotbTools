@@ -1,8 +1,8 @@
 package com.wotb.core.replay.facts;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.EntryHpSource;
+import com.wotb.core.model.PlayerResult;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;

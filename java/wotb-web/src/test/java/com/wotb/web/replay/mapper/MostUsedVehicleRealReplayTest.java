@@ -1,16 +1,15 @@
 package com.wotb.web.replay.mapper;
 
-import com.wotb.core.league.LeagueReplays;
 import com.wotb.core.league.LeagueRatingMode;
+import com.wotb.core.league.LeagueReplays;
 import com.wotb.core.model.Source;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.web.replay.dto.LeaguePlayerSummaryDto;
 import com.wotb.web.replay.dto.LeagueVehicleUsageDto;
 import com.wotb.web.replay.dto.PreviewResponse;
-import tools.jackson.databind.json.JsonMapper;
-
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,7 +17,10 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 真实 Tankopedia 全链路回归：提交入库的 League 回放夹具 → LeagueReplays.collect →

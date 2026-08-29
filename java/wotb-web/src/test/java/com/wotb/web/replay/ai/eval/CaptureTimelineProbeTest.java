@@ -92,7 +92,7 @@ class CaptureTimelineProbeTest {
         }
 
         final ReplayPacketStreamReader.ReplayStreamResult stream =
-                ReplayPacketStreamReader.readStream(eventBytes);
+                ReplayPacketStreamReader.read(eventBytes);
         final Map<Integer, Integer> typeCounts = new TreeMap<>();
         final List<RawReplayPacket> type31 = new ArrayList<>();
         final List<RawReplayPacket> type7 = new ArrayList<>();

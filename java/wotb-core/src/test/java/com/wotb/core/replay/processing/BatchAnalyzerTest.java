@@ -4,10 +4,9 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import org.junit.jupiter.api.Test;
 
 import java.util.List;
-
-import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;

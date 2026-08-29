@@ -3,6 +3,7 @@
 > 用户可见契约：AI 复盘页面（ReconstructionPage）的独立「地图鸟瞰」区块
 > （热力 + 路线 + 战局回放三视图），**不依赖 AI 复盘**——不跑 AI 也能看图。
 > 数据来源与素材权威见 `docs/reference/maps.md`（内部 code ↔ 展示名 ↔ 语义 mapId ↔ 素材）。
+> 生产状态：回放 timeline 事实按 canonical 语义（AFFIRMED）；AoI hidden=UNKNOWN、禁止跨 AoI gap 插值、死亡 clamp 到权威死亡时刻。
 
 ## 地图鸟瞰（Map Overview）
 
@@ -63,7 +64,7 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
     位置流中断期间不继续旋转炮塔、不跨 gap 取对侧 hull yaw，re-entry 后新段继续；
     每个可信方向段最后一个样本恒保留（冻结准确）。
     **时长契约**：playback `durationSec` 三优先级 = `battle.durationS`（finite>0）→
-    `BattleEndedEvent`（合法 battle-relative）→ 位置流最后时刻；全部 event/interval/
+    `RoundFinishedEvent`（合法 battle-relative）→ 位置流最后时刻；全部 event/interval/
     directionSample/deathSec 强制 `[0, durationSec]`。
   - **双层坦克标记**：前端 `BattlePlayback.vue` 用 PR #72 四张运行时 PNG
     （`frontend/src/assets/tank-icons/tank-marker-{friendly,enemy}-{hull,turret}.png`，512×512

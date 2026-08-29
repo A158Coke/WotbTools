@@ -1,16 +1,11 @@
 package com.wotb.core.replay.event;
 
 /**
- * 实体血量变化事件（对应 Packet Type 7 EntityProperty 的血量相关属性）。
+ * 实体血量变化事件（对应 Packet Type7 EntityProperty prop3）。
  *
- * @param sequence       事件顺序号
- * @param timestamp      时间戳
- * @param packetType     来源原始 packet type
- * @param confidence     解码置信度
- * @param entityId       实体 ID
- * @param currentHealth  当前血量；null 表示未知
- * @param maxHealth      最大血量；null 表示未知
- * @param alive          存活状态；true=存活, false=阵亡, null=未知
+ * <p>PR147：HP 与 terminal/death 是独立事实。{@code currentHealth} 表达可安全使用的
+ * 当前 HP 视图；{@code rawCurrentHealth}/{@code rawState} 保留原始 u16 分类，避免把
+ * 0xFFFD/0xFFFE 永久压扁成普通 HP=0。</p>
  */
 public record HealthChangedEvent(
         int sequence,
@@ -20,16 +15,30 @@ public record HealthChangedEvent(
         int entityId,
         Integer currentHealth,
         Integer maxHealth,
-        Boolean alive
+        Boolean alive,
+        Integer rawCurrentHealth,
+        HpRawState rawState
 ) implements ReplayEvent {
 
-    /** 已证明的 HP 未知 sentinel（原始 u16=0xFFFD，与争霸击毁 ±40 点事件重合；绝非 65533 HP）。 */
-    public static final int SENTINEL_UNKNOWN_HP = 0xFFFD;
+    /** Backward-compatible constructor for synthetic/tests that do not carry raw prop3 provenance. */
+    public HealthChangedEvent(
+            final int sequence,
+            final ReplayTimestamp timestamp,
+            final int packetType,
+            final DecodeConfidence confidence,
+            final int entityId,
+            final Integer currentHealth,
+            final Integer maxHealth,
+            final Boolean alive) {
+        this(sequence, timestamp, packetType, confidence, entityId,
+                currentHealth, maxHealth, alive, null, HpRawState.UNKNOWN_OTHER);
+    }
 
-    /**
-     * 保守归一化：可信正 HP 必须 >0 且 < 0xFF00。任何 ≥0xFF00 的 u16 高位值（含 0xFFFD）
-     * 都视为不可信 sentinel/损坏——不臆测其具体语义，但绝不作为真实血量进入任何计算。
-     */
+    public HealthChangedEvent {
+        rawState = rawState == null ? HpRawState.UNKNOWN_OTHER : rawState;
+    }
+
+    /** 保守当前 HP：只接受 signed-positive plausible values。 */
     public static boolean isPlausibleHp(final Integer hp) {
         return hp != null && hp > 0 && hp < 0xFF00;
     }

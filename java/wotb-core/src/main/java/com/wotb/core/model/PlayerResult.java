@@ -1,7 +1,6 @@
 package com.wotb.core.model;
 
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -30,13 +29,11 @@ public class PlayerResult {
     public int xp;
     public int credits;
 
-    // 击杀前伤害明细（killer attribution 证据链；AI 复盘消费）
-    public final List<KillVictim> killVictims = new ArrayList<>();
-
     // 名册信息
     public String nickname = "";
     public String clan = "";
-    public Long platoonId;
+    /** #201 field2 = prebattle/training-room grouping ID（PR147: NOT a platoon ID；battle-results.md）。 */
+    public Long prebattleGroupId;
     public Long rank;
 
     // 展示派生字段 (enrich)
@@ -60,13 +57,31 @@ public class PlayerResult {
     public String tankType = "";
     public String tankNation = "";
     public Object alphaDamage = "";
-    public String platoonLabel = "";
 
-    // 原始死亡时刻(ms; proto #104; 存活/未知=0)
+    /**
+     * 死亡时刻(ms)。PR147 后该字段为 <b>canonical 结算死亡时间</b>（由 settlement field24 lifeTime 派生，
+     * 存活=0）；不再是 proto #104（11.19 corpus 中 #104 不存在）。原始 settlement 证据见
+     * {@link #settlementLifeTimeSec} / {@link #settlementDeathReasonRaw}。
+     */
     public long deathTimeMillis;
 
-    // 存活时间(秒, 由 ReplayParser 计算)
+    // ---- PR147 settlement 原始证据（battle_results.dat #301；均未 reconciliation，只保留 raw）----
+    /** #301 <b>outer</b> field1 = result/entity ID（killerID 与 field25 用同一 namespace，经此映射到 accountId）。 */
+    public long settlementResultEntityId;
+    /** #301 inner field24 = lifeTime（秒；阵亡时=结算死亡秒；存活时=整场时长；未证明时 0）。 */
+    public double settlementLifeTimeSec;
+    /** #301 inner field25 = 击杀者 result/entity ID（非 accountId；用 {@link #settlementResultEntityId} namespace 解析；缺失=null。 */
+    public Long settlementKillerResultEntityId;
+    /** #301 inner field105 = deathReason 原始值（-1=幸存 sentinel；其它=死亡原因 raw；缺失=null）。 */
+    public Integer settlementDeathReasonRaw;
+    /** 由 field25 killer result id 经 result/entity-id → accountId 映射得到的击杀者账号（=0/null 表示无法证明/环境击杀）。 */
+    public Long killerAccountId;
+
+    // 存活时间(秒, 由 ReplayParser 计算；0 = UNKNOWN，绝不伪造)
     public double survivalTimeSec;
+
+    /** 死亡时刻 provenance（§B1/D2；null = 未回填，按 UNKNOWN 处理）。 */
+    public DeathTimeSource deathTimeSource;
 
     // 完整原始字段 (字段号 -> 值列表), 供"原始字段"表/排查
     public Map<Integer, List<Object>> raw;

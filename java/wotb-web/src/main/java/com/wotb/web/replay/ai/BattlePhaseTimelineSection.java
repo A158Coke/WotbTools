@@ -9,9 +9,10 @@ import java.util.List;
  * <p>团队复盘（single）与随机战（harness / fallback / 完整特征）共用同一渲染逻辑，
  * 只区分行风格：随机战行以「我方存活/敌方存活」中文标签（第二人称语境，不出现
  * 「录像者」），团队行沿用 OPPOSING_TEAM_LINEUP 的 friendly/enemy 机器键风格。
- * 人数来自 {@code SurvivalTimeline}（battle_results deathTimeMillis，缺失时事件流估算，
- * 来源见 DEATH_SOURCE 行），段内明确标注；某侧人数不可算时写「未知」/ UNKNOWN，
- * 禁止猜测；时间一律 X分XX秒，不出现裸秒数；不输出 raw team。</p>
+ * 人数来自 {@code SurvivalTimeline} 的 canonical death authority：
+ * LIVE_EXACT &gt; SETTLEMENT_SECOND &gt; UNKNOWN（来源见 DEATH_SOURCE 行）。
+ * 无法证明死亡时刻时保持 UNKNOWN，禁止恢复 PR147 之前的事件流估算；某侧人数不可算时
+ * 写「未知」/ UNKNOWN。时间一律 X分XX秒，不出现裸秒数；不输出 raw team。</p>
  */
 final class BattlePhaseTimelineSection {
 

@@ -1,9 +1,9 @@
 package com.wotb.web.replay.ai.gateway;
 
+import org.springframework.stereotype.Component;
+
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
-
-import org.springframework.stereotype.Component;
 
 /**
  * Registry of in-flight AI Review requests keyed by correlation id, so the

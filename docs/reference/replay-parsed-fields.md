@@ -3,7 +3,9 @@
 > 用途：记录本项目**已确认解析**的字段与含义，方便后人查阅，避免重复逆向。
 > 解析实现细节见 `docs/reference/replay-data.md`（文件结构/事件流逆向）与 `docs/research/replay/protocol.md`；
 > AI 证据链见 `docs/architecture/ai-review.md`。
-> 字段号基于 v11.18.0_china_apple 回放分析，可能随游戏版本变化。
+> 字段号基于 <b>PR147 11.19 corpus</b>（`11.19.0_china*`）分析；历史 11.18 观察不自动等于生产语义，
+> capacity 需独立 evidence。字段号可能随版本变化。
+> 生产状态：本文件字段/语义按 PR147 已证明事实标注（AFFIRMED）；尾部 `trailingStateRaw` 与未知系数标 UNKNOWN，不得冒充已证明语义。
 
 ## 1. 权威结算层（`battle_results.dat` → `PlayerResult`）
 
@@ -26,9 +28,12 @@
 | `kills` | int | 战绩 | 击杀数 | |
 | `victoryPointsEarned` | int | 战绩 `#32` | 占点得分 | supremacy 争霸赛逐人 |
 | `victoryPointsSeized` | int | 战绩 `#33` | 占点占领分 | supremacy 争霸赛逐人 |
-| `survived` | boolean | 战绩 | 是否存活 | |
-| `deathTimeMillis` | long | 战绩 `#104` | 死亡时刻（毫秒，battle-relative） | 存活/未知=0 → 事件流估算 |
-| `survivalTimeSec` | double | 派生 | 存活时间（秒） | ReplayParser 计算 |
+| `survived` | boolean | 派生 | 是否存活（= `settlementDeathReasonRaw == -1` 幸存 sentinel） | 由 field105 deathReason 派生，不是独立 survived 字段 |
+| `deathTimeMillis` | long | 派生 | canonical 结算死亡时刻（毫秒，由 settlement field24 lifeTime 派生；11.19 corpus <b>无 #104</b>） | 权威链 LIVE EXACT → SETTLEMENT（±0.5s）→ UNKNOWN；由 DeathTimeReconciler 用 live EXACT 覆盖 |
+| `settlementLifeTimeSec` | double | 战绩 `#24` | settlement lifeTime（秒；阵亡=结算死亡秒；幸存=整场时长） | raw settlement 证据，保留 |
+| `settlementKillerResultEntityId` | long? | 战绩 `#25` | 击杀者 result/entity-id（<b>非 accountId</b>，namespace == #301 outer field1） | 经 result/entity-id → accountId 映射得 `killerAccountId` |
+| `settlementDeathReasonRaw` | int? | 战绩 `#105` | deathReason 原始值（-1=幸存 sentinel；未证明值 raw 保留） | 已证明：5=drowning；其它 UNKNOWN |
+| `survivalTimeSec` | double | 派生 | 存活时间（秒） | 权威链 LIVE_EXACT（回放精确 sub-second）> SETTLEMENT_SECOND（结算，±0.5s）> UNKNOWN=0（由 DeathTimeReconciler 校准；legacy 启发式不作为权威，§B2） |
 | `xp` / `credits` | int | 战绩 | 经验/银币 | 展示用 |
 | `tankName` / `tankTier` / `tankType` / `tankNation` / `alphaDamage` | String | tankopedia 映射 | 展示派生字段 | 非回放原始值 |
 
@@ -65,11 +70,11 @@
 | 事件 | 已确认字段 | 含义 | AI 用途 |
 |---|---|---|---|
 | `ParticipantMappingEvent` | `entityId` ↔ `accountId` / `nickname` / `team` | 实体-玩家身份映射 | 视角解析、成员归属、录像者实体 |
-| `PositionChangedEvent` | `entityId`, `x/y/z`, `positionErrorX/Y/Z`, `yaw/pitch/roll`, `errorFlag` | 位置更新 | 移动段、阵型簇、脱节/接应/图控、最后已知位置 |
-| `DamageEvent` | `attackerEid`/`victimEid` (+`accountId`), `damage`, `lethal` | 单次伤害 | 交火段、集火候选、对炮明细、死亡估算 |
+| `PositionChangedEvent` | `entityId`, `spaceId`, `attachmentParentEntityId`, `x/y/z`, `positionErrorX/Y/Z`, `yaw/pitch/roll`, `trailingStateRaw` | 位置更新（Type10 49B 当前版 EXACT） | 移动段、阵型簇、脱节/接应/图控、最后已知位置；`trailingStateRaw` 语义=UNKNOWN（绝非 onGround/isError） |
+| `DamageEvent` | `attackerEid`/`victimEid` (+`accountId`), `damage`, `lethal` | 单次伤害 | 交火段、集火候选、对炮明细、伤害贡献（非死亡权威） |
 | `HealthChangedEvent` | `entityId`, `currentHealth`, `maxHealth`, `alive` | HP 变化 | HP 动量（只取两端共同可靠观察） |
-| `VehicleDestroyedEvent` | `entityId`, `killerEid`, `inferred` | 车辆被击毁 | 死亡事件流估算 |
-| `BattleEndedEvent` | `winnerTeam` | 战斗结束 | battle-end 兜底 |
+| `VehicleDestroyedEvent` | `entityId`, `killerEid`, `inferred` | 车辆被击毁 | 击毁观测（非死亡权威；死亡仅 LIVE EXACT / SETTLEMENT / UNKNOWN） |
+| `ReplayStreamClosedEvent` | — | packet stream 关闭/停止 marker（Type14） | Type14 = stream close；不推导 winner / finish reason / battle start |
 | `EntityCreatedEvent` / `EntityRemovedEvent` | `entityId`（+未解析 `unknownInitData`） | 实体生命周期 | 覆盖统计 |
 | `UnknownReplayEvent` | — | 未解码包 | 覆盖率（decodedRatio） |
 
@@ -92,7 +97,7 @@
 ## 5. 口径约定（易错点）
 
 - **录像者昵称**：`meta.json#playerName` 在部分版本中是「军团-昵称」拼接（如 `CHRD-A158布丁`），roster 的 nickname 是纯昵称。解析层 `ReplayParser.resolveRecorderNickname` 会先精确匹配 roster 昵称，再尝试「clan+分隔符+nickname」常见形式并唯一匹配时归一化为纯昵称；随机战斗复盘只使用玩家 nickname，不得把军团名当作玩家名。
-- **死亡时刻**：`deathTimeMillis=0`（存活/未知）→ 回退事件流估算；prompt 用 `DEATH_SOURCE=权威结算/事件流估算/未知` 标注，禁止把估算当权威。
+- **死亡时刻**：权威链 `LIVE EXACT`（live exact 死亡证据）→ `SETTLEMENT_SECOND`（<b>settlement field24 lifeTime</b>，±0.5s 量化）→ `UNKNOWN`（survivalTimeSec=0，绝不伪造）；11.19 corpus <b>无 #104</b>。禁止用 EntityLeave/最后位置/伤害阈值等 legacy 启发式当死亡权威。<b>precision</b>：SETTLEMENT_SECOND 不是 exact point——trade / 谁先死 / 5s 窗口 / phase boundary 必须用 `PlayerResultFormat.deathEvidence(PlayerResult)`（±0.5s interval，ambiguity fail-closed），不得用 midpoint 强判；简单展示用 `PlayerResultFormat.deathSec`（representative）。`PlayerResultFormat.deathSec` + `deathTimeSource` 标注。
 - **坐标**：优先使用每张地图 `map-semantics/*.semantic.json` 的 `playableBoundsMeters` 推导 `centerX/centerZ/halfExtent`，再映射到 500×500 canonical；只有语义缺失或边界无效时才回退中心原点、`halfExtent=250`。三态 `VALID/CLAMPED/INVALID`；九宫格 region 只描述方位，禁止用 region 差推断距离。
 - **时间**：派生证据优先使用可靠的 battle-relative 时间（`battleClockSec`）；战斗开始无法解析时 `tryRelative()` 返回 `UNRESOLVED_RAW_ONLY`，事件以 `UNRESOLVED_RAW_ONLY_EVENTS_IGNORED` 标记并从派生计算中排除（`rawClockSec` 仍保留，但不作为可用时间）；准备阶段事件排除。
 - **权威 vs 观测**：`battle_results` 是唯一可信口径；事件流数字只是观测子集。

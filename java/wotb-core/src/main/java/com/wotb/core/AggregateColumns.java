@@ -40,7 +40,7 @@ public final class AggregateColumns {
             new CoreColumn("wins", true, a -> a.wins),
             new CoreColumn("win_rate", true, a -> r1(a.winRate())),
             new CoreColumn("survival_rate", true, a -> r1(a.survivalRate())),
-            new CoreColumn("survival_avg", true, a -> a.avg(a.survivalSum)),
+            new CoreColumn("survival_avg", true, a -> a.survivalAvg() == null ? null : r1(a.survivalAvg())),
             new CoreColumn("kills", true, a -> a.kills),
             new CoreColumn("kills_avg", true, a -> r2(a.avg(a.kills))),
             new CoreColumn("damage", true, a -> a.damage),

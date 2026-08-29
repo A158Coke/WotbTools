@@ -115,6 +115,12 @@ public final class LeagueTestReplays {
         final String meta = "{\"version\":\"1.0\",\"mapName\":\"italy\",\"battleDuration\":300,"
                 + "\"battleStartTime\":1683152279,\"arenaBonusType\":" + arenaBonusType + "}";
         entries.put("meta.json", meta.getBytes(StandardCharsets.UTF_8));
+        // PR147 settlement version gate: the #24/#25/#105 numeric semantics are version-scoped, and the
+        // authoritative clientVersion comes from the data.wotreplay header. This synthetic League fixture
+        // represents an 11.19 training/CW replay, so it must carry an affirmed header — otherwise the
+        // parser fails-closed (survived=false for everyone) and the roster/end-reason contract would be
+        // misrepresented. data.wotreplay content beyond the version header is not consumed by ReplayParser.
+        entries.put("data.wotreplay", dataWotreplayHeader("11.19.0_china"));
         entries.put("battle_results.dat", pickle(battle.arenaId,
                 rootProtobuf(battle, extraRosterAccounts)));
         final ByteArrayOutputStream zip = new ByteArrayOutputStream();
@@ -126,6 +132,26 @@ public final class LeagueTestReplays {
             }
         }
         return zip.toByteArray();
+    }
+
+    /**
+     * data.wotreplay 头部（仅版本信息；不含 packet stream——ReplayParser 只读 header 的 clientVersion）。
+     * 格式：magic(4B LE) + unknown(8B) + hashLen(1B)+hash + versionLen(1B)+version + padding(1B).
+     */
+    static byte[] dataWotreplayHeader(final String clientVersion) {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        // magic = 0x12345678 (little-endian)
+        out.write(0x78);
+        out.write(0x56);
+        out.write(0x34);
+        out.write(0x12);
+        out.writeBytes(new byte[8]); // unknown header bytes
+        out.write(0); // hashLen = 0
+        final byte[] v = clientVersion.getBytes(StandardCharsets.UTF_8);
+        out.write(v.length);
+        out.writeBytes(v);
+        out.write(0); // padding
+        return out.toByteArray();
     }
 
     static byte[] rootProtobuf(final Battle battle) throws IOException {

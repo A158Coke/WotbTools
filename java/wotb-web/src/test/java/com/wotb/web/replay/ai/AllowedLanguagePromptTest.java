@@ -1,35 +1,26 @@
 package com.wotb.web.replay.ai;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Stream;
-
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.BatchAnalyzer;
-import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
-import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
-import com.wotb.core.replay.processing.ReplayProcessingStatus;
+import com.wotb.core.parse.ReplayStreamHeader;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.processing.BatchAnalyzer;
+import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
+import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
-import com.wotb.core.replay.stream.ReplayStreamHeader;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
@@ -37,6 +28,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 语言指令结构契约：EN/RU 最终 system prompt 不得包含互斥的中文输出强制句（简体中文、
@@ -253,9 +254,8 @@ class AllowedLanguagePromptTest {
         final ReplayMetadata meta = new ReplayMetadata(
                 "arena", "team_map", "1", "1", 2, "rec1", "", 300.0, 0L);
         final ReplayStreamHeader header = new ReplayStreamHeader(0x12345678L, new byte[8], "h", "v", 15);
-        final ReplayCoverage coverage = new ReplayCoverage(true, 4, 4, 0, 0, 0, 1.0, Map.of());
-        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true, 1000f, true);
+        final ReplayCoverage coverage = new ReplayCoverage(4, 4, 0, 0, 0, 1.0, Map.of());
+        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(0, 0, 0f, 0f, 0, Map.of());
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(0, new ReplayTimestamp(1000f, null), 8,
                 DecodeConfidence.EXACT, 1, 1001L));
@@ -282,6 +282,8 @@ class AllowedLanguagePromptTest {
         p.damageDealt = dmg;
         p.survived = team == 1;
         p.deathTimeMillis = team == 1 ? 0 : 180_000;
+        p.deathTimeSource = p.deathTimeMillis > 0
+                ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
         return p;
     }
 }
