@@ -8,12 +8,16 @@
 - **Android Release 一键发布入口（CI/CD）**：`android-release.yml` 新增
   `workflow_dispatch`（输入 `X.Y.Z`，推荐入口），保留 `android-v*` tag push（兼容入口），
   两条入口合并为同一套 `Resolve release metadata / fail-fast guards / 发布协议`。新增
-  fail-fast 校验：版本格式（每段 `0` 或非零开头整数，拒绝 `1.0.02`/`01.0.2`）、
-  发布源固定 `main` HEAD、生产 monotonic 防回退、`minSupportedVersionCode` 上界校验、
-  release tag 防重复 + `GITHUB_TOKEN` 自动建 tag（不回弹触发）、生产同版本 APK 不可变
-  防覆盖、`apksigner --print-certs` 签名证书 SHA-256 与 `ANDROID_SIGNING_CERT_SHA256`
-  Variable 固定比对、生产 APK HTTP 200 + 非空 + SHA 比对、生产 `version.json` jq 内容比对、
-  `$GITHUB_STEP_SUMMARY` 汇总。权限 `contents: read` → `contents: write`（最小必要）。
+  fail-closed + 幂等 guard：版本格式（每段 `0` 或非零开头整数，拒绝 `1.0.02`/`01.0.2`；
+  `minor`/`patch` 0..999 且 versionCode 在 `1..2_100_000_000`）、发布源固定 `main` HEAD、
+  preflight 幂等分类（生产最新 > 本次 → 回滚拒绝；== 且 metadata 一致 → already-published
+  安全成功不重建；== 但不一致 → 拒绝；< 本次 → 发布）、`minSupportedVersionCode` 校验、
+  `git ls-remote` 真实 ref 的 release tag 幂等（不存在 → 创建；指向本次 commit → 复用；
+  指向其它 commit → 拒绝 repoint）、生产同版本 APK 幂等（不存在 → 上传；SHA 相同 → 复用；
+  SHA 不同 → immutable 冲突拒绝）、`apksigner --print-certs` 签名证书 SHA-256 与
+  `ANDROID_SIGNING_CERT_SHA256` Variable 固定比对、生产 APK HTTP 200 + 非空 + SHA 比对、
+  生产 `version.json` jq 内容比对、`$GITHUB_STEP_SUMMARY` 汇总。
+  权限 `contents: read` → `contents: write`（最小必要）。
   新增 `scripts/android-release/`（`resolve-version.sh` / `check-release-guards.sh` /
   `test-release.sh`，纯逻辑无 secret），并在 `ci.yml` 加 `android-release-helpers` job
   （`bash -n` + 版本/守卫单测，不跑真实 release、不用 production signing secret）。

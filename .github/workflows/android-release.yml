@@ -2,6 +2,8 @@ name: Android Release
 # 一键发布（推荐）: Actions -> Android Release -> Run workflow -> 输入 X.Y.Z。
 # 兼容入口: `android-v*` tag push（自动发布，逻辑与 workflow_dispatch 完全一致）。
 # 两条入口统一走同一套 Resolve release metadata / fail-fast guards / 发布协议。
+# 发布全程 fail-closed + 幂等：APK/tag/version.json 任一步失败后重跑同一版本都安全，
+# 不会双写、不会覆盖 immutable APK、不会 repoint tag。
 on:
   push:
     tags:
@@ -73,35 +75,25 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Frontend tests + build validation
-        working-directory: frontend
-        run: |
-          npm ci --no-audit --no-fund
-          npm test
-          npm run build
-
-      - name: Validate production version guard (no rollback, minSupported)
+      - name: Preflight classify production state (safe + idempotent)
+        id: preflight
         shell: bash
         run: |
           set -euo pipefail
           VERSION_CODE="${{ steps.version.outputs.versionCode }}"
+          VERSION_NAME="${{ steps.version.outputs.versionName }}"
+          APK_NAME="${{ steps.version.outputs.apkName }}"
           PROD_JSON="$RUNNER_TEMP/prod-version.json"
           URL="https://wotbtools.com/download/android/version.json"
           CODE="$(curl -s -o "$PROD_JSON" -w '%{http_code}' "$URL")"
           . scripts/android-release/check-release-guards.sh
           case "$CODE" in
             404)
-              echo "First Android release: production version.json HTTP 404, allowing."
-              guard_monotonic "" "$VERSION_CODE"
+              echo "First Android release: production version.json HTTP 404."
+              PROD_STATE="prod_absent"
               ;;
             200)
-              guard_prod_monotonic_file "$PROD_JSON" "$VERSION_CODE"
+              classify_prod "$PROD_JSON" "$VERSION_CODE" "$VERSION_NAME" "$APK_NAME" "$ANDROID_MIN_SUPPORTED_VERSION_CODE"
               ;;
             *)
               echo "::error::Unexpected HTTP $CODE fetching production version.json" >&2
@@ -109,31 +101,59 @@ jobs:
               ;;
           esac
           guard_min_supported "$ANDROID_MIN_SUPPORTED_VERSION_CODE" "$VERSION_CODE"
+          echo "Production state: $PROD_STATE"
+          case "$PROD_STATE" in
+            prod_absent|prod_older)
+              echo "No conflicting production version; proceeding to release."
+              echo "releaseAction=publish" >> "$GITHUB_OUTPUT"
+              ;;
+            prod_equal_ok)
+              echo "Version already published and production metadata coherent; safe success (no-op)."
+              echo "releaseAction=already-published" >> "$GITHUB_OUTPUT"
+              ;;
+            prod_equal_conflict)
+              echo "::error::Production version.json for the same versionCode does not match release metadata." >&2
+              exit 1
+              ;;
+            prod_newer)
+              echo "::error::Android release rollback rejected: production latestVersionCode is newer than this version." >&2
+              exit 1
+              ;;
+          esac
 
-      - name: Validate release tag absent (workflow_dispatch)
-        if: github.event_name == 'workflow_dispatch'
-        shell: bash
+      - uses: actions/setup-node@v4
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend tests + build validation
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        working-directory: frontend
         run: |
-          set -euo pipefail
-          . scripts/android-release/check-release-guards.sh
-          TAG="${{ steps.version.outputs.tagName }}"
-          REFS="$(git ls-remote --tags origin "refs/tags/$TAG")"
-          guard_tag_absent "$REFS" "$TAG"
+          npm ci --no-audit --no-fund
+          npm test
+          npm run build
 
       - uses: actions/setup-java@v4
+        if: steps.preflight.outputs.releaseAction == 'publish'
         with:
           distribution: temurin
           java-version: "21"
 
       - uses: gradle/actions/setup-gradle@v4
+        if: steps.preflight.outputs.releaseAction == 'publish'
         with:
           gradle-version: "8.7"
 
       - name: Prepare staging directory (workspace-relative, 服务器路径严格)
+        if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
         run: mkdir -p release-staging
 
       - name: Validate signing config and restore keystore (fail-fast; secrets 不出现在日志)
+        if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
         run: |
           set -euo pipefail
@@ -166,6 +186,7 @@ jobs:
           echo "Signing config validated (alias present)."
 
       - name: Build signed release APK
+        if: steps.preflight.outputs.releaseAction == 'publish'
         working-directory: android
         shell: bash
         env:
@@ -181,6 +202,7 @@ jobs:
             -PwotbKeyPass="$ANDROID_KEY_PASSWORD"
 
       - name: Verify APK signature and signing certificate fingerprint
+        if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
         run: |
           set -euo pipefail
@@ -215,6 +237,7 @@ jobs:
           echo "Signing certificate SHA-256 verified (public fingerprint)."
 
       - name: Compute SHA-256 and stage APK
+        if: steps.preflight.outputs.releaseAction == 'publish'
         id: artifact
         shell: bash
         run: |
@@ -225,23 +248,35 @@ jobs:
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
           echo "apkName=$APK_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Validate production APK absent (immutable APK)
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          port: ${{ secrets.VPS_PORT }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          script: |
-            set -e
-            APK_NAME="${{ steps.version.outputs.apkName }}"
-            if [ -e "/opt/wotb/android-release/$APK_NAME" ]; then
-              echo "ERROR: APK already exists on production: $APK_NAME (immutable release, do not overwrite)" >&2
+      - name: Classify production APK (idempotent upload)
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        id: apkcheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          . scripts/android-release/check-release-guards.sh
+          APK_NAME="${{ steps.artifact.outputs.apkName }}"
+          BUILD_SHA="${{ steps.artifact.outputs.sha256 }}"
+          URL="https://wotbtools.com/download/android/$APK_NAME"
+          TMP_PROD="$RUNNER_TEMP/prod-apk-check.apk"
+          PROD_SHA=""
+          if curl -fsSL -o "$TMP_PROD" "$URL" 2>/dev/null; then
+            test -s "$TMP_PROD" || { echo "::error::Production APK exists but is empty" >&2; exit 1; }
+            PROD_SHA="$(sha256sum "$TMP_PROD" | awk '{print $1}')"
+          fi
+          classify_prod_apk "$PROD_SHA" "$BUILD_SHA"
+          case "$APK_STATE" in
+            apk_absent) echo "Production APK absent; will upload." ;;
+            apk_equal) echo "Production APK already matches build SHA-256; resuming (no upload)." ;;
+            apk_conflict)
+              echo "::error::Production APK already exists with a different SHA-256; immutable release conflict." >&2
               exit 1
-            fi
-            echo "Confirmed production APK absent: $APK_NAME"
+              ;;
+          esac
+          echo "apkState=$APK_STATE" >> "$GITHUB_OUTPUT"
 
       - name: Upload APK to VPS (bind-mount 目录)
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.apkState == 'apk_absent'
         uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -253,6 +288,7 @@ jobs:
           strip_components: 1
 
       - name: Ensure APK readable by nginx
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.apkState == 'apk_absent'
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -262,6 +298,7 @@ jobs:
           script: chmod 644 /opt/wotb/android-release/${{ steps.artifact.outputs.apkName }}
 
       - name: Verify production APK (HTTP 200 + non-empty + SHA matches)
+        if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
         run: |
           set -euo pipefail
@@ -279,20 +316,35 @@ jobs:
           fi
           echo "Production APK verified: HTTP 200, $SIZE bytes, SHA-256 $PROD_SHA"
 
-      - name: Create release tag (workflow_dispatch)
-        if: github.event_name == 'workflow_dispatch'
+      - name: Ensure release tag (workflow_dispatch, idempotent)
+        if: github.event_name == 'workflow_dispatch' && steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
         run: |
           set -euo pipefail
+          . scripts/android-release/check-release-guards.sh
           TAG="${{ steps.version.outputs.tagName }}"
           COMMIT_SHA="${{ steps.version.outputs.commit }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag "$TAG" "$COMMIT_SHA"
-          git push origin "$TAG"
-          echo "Created and pushed release tag: $TAG -> $COMMIT_SHA"
+          REFS="$(git ls-remote --tags origin "refs/tags/$TAG")"
+          classify_tag "$REFS" "$TAG" "$COMMIT_SHA"
+          case "$TAG_STATE" in
+            tag_absent)
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git tag "$TAG" "$COMMIT_SHA"
+              git push origin "$TAG"
+              echo "Created and pushed release tag: $TAG -> $COMMIT_SHA"
+              ;;
+            tag_equal)
+              echo "Release tag already points to this commit; resuming: $TAG -> $COMMIT_SHA"
+              ;;
+            tag_conflict)
+              echo "::error::Release tag $TAG points to a different commit; refusing to repoint." >&2
+              exit 1
+              ;;
+          esac
 
       - name: Write version.json (APK 可访问后才发布, LAST)
+        if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
         run: |
           VERSION_SHA="${{ steps.artifact.outputs.sha256 }}"
@@ -306,6 +358,7 @@ jobs:
           cat "release-staging/version.json"
 
       - name: Upload version.json to VPS (LAST)
+        if: steps.preflight.outputs.releaseAction == 'publish'
         uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -317,6 +370,7 @@ jobs:
           strip_components: 1
 
       - name: Verify production version.json matches release metadata
+        if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
         run: |
           set -euo pipefail
@@ -340,6 +394,7 @@ jobs:
             echo "# Android Release ${{ steps.version.outputs.versionName }}"
             echo ""
             echo "Status: ${{ job.status }}"
+            echo "Release Action: ${{ steps.preflight.outputs.releaseAction || 'n/a' }}"
             echo ""
             echo "Version Name: ${{ steps.version.outputs.versionName }}"
             echo "Version Code: ${{ steps.version.outputs.versionCode }}"

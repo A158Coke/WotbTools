@@ -37,7 +37,23 @@ fi
 
 # No leading zeros by construction, so arithmetic is decimal (never octal).
 IFS=. read -r MAJOR MINOR PATCH <<< "$VERSION"
+
+# versionCode = major*1_000_000 + minor*1_000 + patch.
+# Keep the mapping injective (no collisions) by bounding minor/patch to one 3-digit
+# slot each, and keep the final versionCode inside the Android/Play Store range.
+# Bound segment widths first so bash integer compare never overflows for absurd input.
+if [ "${#MAJOR}" -gt 4 ] || [ "${#MINOR}" -gt 3 ] || [ "${#PATCH}" -gt 3 ]; then
+  die "Invalid Android version: major<=4 digits, minor/patch<=3 digits (got '$VERSION')"
+fi
+if [ "$MINOR" -gt 999 ] || [ "$PATCH" -gt 999 ]; then
+  die "Invalid Android version: minor and patch must be 0..999 (got '$VERSION')"
+fi
+
 VERSION_CODE=$(( MAJOR * 1000000 + MINOR * 1000 + PATCH ))
+if [ "$VERSION_CODE" -lt 1 ] || [ "$VERSION_CODE" -gt 2100000000 ]; then
+  die "Invalid Android version: versionCode $VERSION_CODE out of range [1, 2100000000] (got '$VERSION')"
+fi
+
 TAG_NAME="android-v${VERSION}"
 APK_NAME="wotbtools-android-v${VERSION}.apk"
 
