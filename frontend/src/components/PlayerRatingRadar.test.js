@@ -135,6 +135,26 @@ describe('PlayerRatingRadar', () => {
     expect(wrapper.find('.radar-detail').text()).toContain('150 / 400')
   })
 
+  it('zooms only the radar canvas from 50% to 150% in 10% steps', async () => {
+    const wrapper = mountRadar(SEVEN, REF)
+    const slider = wrapper.find('[data-testid="radar-zoom"]')
+    const buttons = wrapper.findAll('.radar-zoom button')
+    expect(slider.attributes()).toMatchObject({ min: '50', max: '150', step: '10' })
+    expect(wrapper.find('.radar-zoom output').text()).toBe('100%')
+    expect(wrapper.find('.radar-svg').attributes('style')).toContain('width: 340px')
+
+    await slider.setValue(150)
+    expect(wrapper.find('.radar-zoom output').text()).toBe('150%')
+    expect(wrapper.find('.radar-svg').attributes('style')).toContain('width: 510px')
+    expect(buttons[1].attributes('disabled')).toBeDefined()
+
+    await slider.setValue(50)
+    expect(wrapper.find('.radar-zoom output').text()).toBe('50%')
+    expect(wrapper.find('.radar-svg').attributes('style')).toContain('width: 170px')
+    expect(buttons[0].attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.radar-detail').exists()).toBe(true)
+  })
+
   it('no reference prop -> only player polygon, no ref column header', () => {
     const wrapper = mountRadar(SEVEN)
     expect(wrapper.find('.radar-ref').exists()).toBe(false)

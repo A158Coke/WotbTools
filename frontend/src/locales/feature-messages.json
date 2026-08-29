@@ -99,7 +99,10 @@
       "scoreMode": "分数",
       "rawMode": "原始数值",
       "playerScore": "玩家分数",
-      "averageScore": "平均分数"
+      "averageScore": "平均分数",
+      "zoom": "雷达缩放",
+      "zoomOut": "缩小雷达图",
+      "zoomIn": "放大雷达图"
     },
     "ratingV2": {
       "kicker": "管理员 · 灰度",
@@ -233,7 +236,10 @@
       "scoreMode": "Scores",
       "rawMode": "Raw values",
       "playerScore": "Player score",
-      "averageScore": "Average score"
+      "averageScore": "Average score",
+      "zoom": "Radar zoom",
+      "zoomOut": "Zoom radar out",
+      "zoomIn": "Zoom radar in"
     },
     "ratingV2": {
       "kicker": "ADMIN · GRAY",
@@ -367,7 +373,10 @@
       "scoreMode": "Баллы",
       "rawMode": "Исходные значения",
       "playerScore": "Баллы игрока",
-      "averageScore": "Средний балл"
+      "averageScore": "Средний балл",
+      "zoom": "Масштаб радара",
+      "zoomOut": "Уменьшить радар",
+      "zoomIn": "Увеличить радар"
     },
     "ratingV2": {
       "kicker": "АДМИН · СЕРАЯ ПРОВЕРКА",

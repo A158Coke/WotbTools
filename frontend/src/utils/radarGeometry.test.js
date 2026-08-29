@@ -45,6 +45,14 @@ describe('radarGeometry visual scale', () => {
     expect(radarScoreBadgeWidth('138')).toBe(26)
   })
 
+  it.each([6, 7])('keeps capped %i-axis top badges clear of the top axis label', count => {
+    const labelY = axisPoint(0, count, RADAR.LABEL_RADIUS)[1]
+    for (const ratio of [149 / 150, 1]) {
+      const badge = radarScoreLabelPosition(0, count, ratio)
+      expect(badge.y - labelY).toBeGreaterThanOrEqual(RADAR.SCORE_BADGE_HEIGHT)
+    }
+  })
+
   it.each([6, 7])('keeps %i zero/near-zero score badges readable around the center', count => {
     for (const ratio of [0, 0.01]) {
       const badges = Array.from({ length: count }, (_, index) => {

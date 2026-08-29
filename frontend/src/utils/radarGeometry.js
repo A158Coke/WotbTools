@@ -14,7 +14,8 @@ export const RADAR = Object.freeze({
   VIEW: 340,
   CENTER: 170,
   RADIUS: 120,
-  LABEL_RADIUS: 1.16,
+  /** Keep axis names outside capped top badges while staying inside the 340px viewBox. */
+  LABEL_RADIUS: 1.22,
   SCORE_BADGE_HEIGHT: 17,
   SCORE_BADGE_RADIUS: 4,
   SCORE_BADGE_MIN_RATIO: 0.25,

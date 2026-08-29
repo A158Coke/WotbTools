@@ -324,7 +324,7 @@ onBeforeUnmount(() => {
 .rating-v2-radar-backdrop { position: fixed; inset: 0; z-index: 60; pointer-events: none; background: none; }
 .rating-v2-radar-drawer {
   position: fixed; top: calc(var(--topbar-h) + 8px); right: 8px; bottom: 8px;
-  width: min(380px, calc(100vw - 16px)); overflow-y: auto; padding: 16px;
+  width: min(560px, calc(100vw - 16px)); overflow-y: auto; padding: 16px;
   border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card2);
   box-shadow: var(--surface-shadow); pointer-events: auto; animation: rating-v2-drawer-in .22s ease-out;
 }
