@@ -156,10 +156,11 @@ public class ReplayReconstructionService {
                 streamResult.diagnostics(), typeDecodeStats);
 
         // 9. 组装结果 —— PR147 时钟域拆分：battleDurationSec 是「战斗时长」（battle-relative 跨度），
-        // 绝不等于原始 session 的最大观测时钟（那是 maxObservedRawClockSec / streamLastRawClockSec）。
-        // 权威顺序：settlement root5 战斗时长 → (maxClock - battleStartResolved) → metadata battleDuration。
-        final float battleDurationSec = resolveBattleDurationSec(
-                settledDur, battleStartResolved, maxClock, metadata);
+        // 绝不等于原始 session 的最大观测时钟（那是 maxObservedRawClockSec / streamMaxRawClockSec）。
+        // 权威顺序：settlement root5 战斗时长 → meta.json#battleDuration → 0(UNKNOWN, fail-closed)。
+        // P1-3：不再用 (max observed packet clock - battleStart) 作为未经标注的 estimate —— 包时钟不等同于
+        // 战斗结束，避免把 estimate 当权威时长。
+        final float battleDurationSec = resolveBattleDurationSec(settledDur, metadata);
 
         return new ReplayReconstruction(
                 metadata,
@@ -235,25 +236,18 @@ public class ReplayReconstructionService {
     /**
      * PR147 battle-relative duration authority chain. This is the <b>battle duration</b>, never the raw
      * session max raw clock (that is {@code diagnostics().maxObservedRawClockSec()} /
-     * {@link ReplayReconstruction#streamLastRawClockSec()}).
+     * {@link ReplayReconstruction#streamMaxRawClockSec()}).
      * <ol>
      *   <li>settlement root5 (battle_results.dat; the authoritative battle duration);</li>
-     *   <li>{@code maxClock - battleStartRawClockSec} when the battle start is resolved;</li>
-     *   <li>meta.json#battleDuration;</li>
+     *   <li>meta.json#battleDuration (metadata, weaker authority);</li>
      *   <li>0f (unknown → consumers needing battle-relative truth must fail closed).</li>
      * </ol>
      */
     private static float resolveBattleDurationSec(
             final Double settlementDurationSec,
-            final Float battleStartResolved,
-            final float maxClock,
             final ReplayMetadata metadata) {
         if (settlementDurationSec != null && settlementDurationSec > 0) {
             return settlementDurationSec.floatValue();
-        }
-        if (battleStartResolved != null && Float.isFinite(battleStartResolved) && battleStartResolved >= 0
-                && Float.isFinite(maxClock) && maxClock > battleStartResolved) {
-            return maxClock - battleStartResolved;
         }
         if (metadata.battleDurationSec() != null && metadata.battleDurationSec() > 0) {
             return metadata.battleDurationSec().floatValue();

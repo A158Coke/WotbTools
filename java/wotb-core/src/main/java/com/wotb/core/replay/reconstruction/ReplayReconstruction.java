@@ -9,8 +9,9 @@ import java.util.List;
 /**
  * 回放重建的完整输出结果。
  *
- * <p>PR147 时钟域拆分：{@code battleDurationSec} 是<b>战斗时长</b>（battle-relative 跨度，来自
- * settlement root5 或 {@code lastClock - battleStartRawClockSec}），<b>不是</b> 原始 session 时钟。
+ * <p>PR147 时钟域拆分：{@code battleDurationSec} 是<b>战斗时长</b>（battle-relative 跨度），权威来源为
+ * settlement root5（否则 meta.json#battleDuration，再否则 0=UNKNOWN/fail-closed）；<b>不是</b> 原始 session 时钟
+ * 也<b>不是</b> {@code maxClock - battleStartRawClockSec}（P1-3 已移除该未经标注的 estimate）。
  * 原始流观测到的最大 raw clock 在 {@link #streamMaxRawClockSec()}（即 {@code diagnostics().maxObservedRawClockSec()}）。
  * 需要 battle-relative 真相的 consumer 必须消费 {@code battleDurationSec} + {@code battleStartRawClockSec}
  * （start 未解析时 fail-closed），绝不能把 {@code streamMaxRawClockSec()} 当战斗时长。</p>
