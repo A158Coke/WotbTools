@@ -32,13 +32,12 @@ env:
   GHCR_IMAGE_PREFIX: ghcr.io/a158coke/wotbtools
 
 jobs:
-  # 路径检测仅用于测试门禁与 tag 计算；生产部署仍统一构建三件套镜像。
+  # 生产部署始终统一构建三件套镜像；tag 基于 main 提交哈希确定性计算。
+  # 代码质量验证由 PR CI 承担（merge gate），deploy 不再重复执行测试套件。
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
       tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v5
@@ -47,89 +46,10 @@ jobs:
       - name: Compute image tag
         id: tag
         run: echo "tag=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-      - name: Check complete push change range
-        id: filter
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
-          CURRENT_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          zero_sha="0000000000000000000000000000000000000000"
-
-          if [[ "$EVENT_NAME" == "workflow_dispatch" || -z "$BEFORE_SHA" || "$BEFORE_SHA" == "$zero_sha" ]]; then
-            backend=true
-            frontend=true
-          else
-            if ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
-              git fetch --no-tags --depth=1 origin "$BEFORE_SHA"
-            fi
-            changed_files="$(git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA")"
-            printf '%s\n' "$changed_files"
-
-            backend=false
-            frontend=false
-
-            if grep -Eq '^(java/|common/(tankopedia-tier(7|8|9|10)\.json|rating\.json|map_names\.json|map-semantics/|wotb-item-catalog-json/)|docker/Dockerfile\.backend$|\.dockerignore$)' <<< "$changed_files"; then
-              backend=true
-            fi
-            if grep -Eq '^(frontend/|common/map_names\.json$|common/assets/|docker/Dockerfile\.frontend$|deploy/nginx/|docs/WotBTools_League_Rating_V5\.md$|\.dockerignore$)' <<< "$changed_files"; then
-              frontend=true
-            fi
-          fi
-
-          {
-            echo "backend=$backend"
-            echo "frontend=$frontend"
-          } >> "$GITHUB_OUTPUT"
-
-  test-backend:
-    needs: changes
-    if: needs.changes.outputs.backend == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-      - uses: actions/cache@v4
-        with:
-          path: java/.m2repo
-          key: ${{ runner.os }}-maven-${{ hashFiles('java/**/pom.xml') }}
-          restore-keys: ${{ runner.os }}-maven-
-      - name: Run Java tests
-        working-directory: java
-        run: mvn --batch-mode --no-transfer-progress -s settings.xml -Dmaven.repo.local=.m2repo test
-
-  test-frontend:
-    needs: changes
-    if: needs.changes.outputs.frontend == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci --no-audit --no-fund
-      - name: Run frontend tests
-        working-directory: frontend
-        run: npm test
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build
 
   build-backend:
-    needs: [changes, test-backend]
-    if: always() && needs.changes.result == 'success' &&
-        (needs.test-backend.result == 'success' || needs.test-backend.result == 'skipped')
+    needs: [changes]
+    if: needs.changes.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -157,9 +77,8 @@ jobs:
           sbom: false
 
   build-frontend:
-    needs: [changes, test-frontend]
-    if: always() && needs.changes.result == 'success' &&
-        (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped')
+    needs: [changes]
+    if: needs.changes.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -220,7 +139,7 @@ jobs:
           KEYCLOAK_BUILD_FILE: ${{ github.workspace }}/keycloak-juhe-qq-provider
 
   deploy:
-    needs: [changes, test-backend, test-frontend, build-backend, build-frontend, build-keycloak]
+    needs: [changes, build-backend, build-frontend, build-keycloak]
     if: >-
       always() &&
       needs.changes.result == 'success' &&
