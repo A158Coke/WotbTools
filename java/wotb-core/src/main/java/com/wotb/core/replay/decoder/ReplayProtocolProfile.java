@@ -75,9 +75,11 @@ public final class ReplayProtocolProfile {
      *
      * <ul>
      *   <li><b>11.19 (current)</b>: PR147 primary corpus → 全部 capability VERIFIED。</li>
-     *   <li><b>11.18 (legacy)</b>: 仅 <b>独立 evidence</b>（PR147 corpus 为 11.18/11.19 + research/fixture/test）
-     *       证明的结构 capability 才 VERIFIED；无独立证据的闭式数值语义（FFFE / method36/38 / Type31/35 /
-     *       ammo / entityTypeId / method semantics / FFFD）不继承 → UNKNOWN。</li>
+     *   <li><b>11.18 (legacy)</b>: 由 <b>独立 evidence</b>（PR147 corpus 为 11.18/11.19 + research/fixture/test，
+     *       含 random-battle-example.wotbreplay = 11.18.0_china_apple）证明的 capability 才 VERIFIED —— 结构
+     *       caps + 正 HP + {@code PROP_TURRET_YAW} + {@code TERMINAL_FFFD} + {@code ENTITY_TYPE_ID_SEMANTIC}；
+     *       无独立 11.18 evidence 的闭式数值语义（{@code TERMINAL_FFFE / METHOD_SEMANTICS / METHOD36 / METHOD38 /
+     *       TYPE31 / TYPE35 / AMMO_SELECTION}）不继承 → UNKNOWN（11.19-only）。</li>
      *   <li><b>future / unknown</b>: 仅 deliberate 结构前向 capability → STRUCTURALLY_COMPATIBLE；闭式语义 / setting
      *       field-number 语义 → UNKNOWN。</li>
      * </ul>
