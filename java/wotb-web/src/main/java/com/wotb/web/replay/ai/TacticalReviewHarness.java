@@ -190,7 +190,7 @@ public class TacticalReviewHarness {
                 config.contextWindowTokens(),
                 config.maxOutputTokens(),
                 config.promptSafetyMarginTokens());
-        // Context 可观测性（docs/architecture/ai-review.md 38/39）：低基数 section token 估算 + 完成计数
+        // Context 可观测性：记录低基数 section token 估算与完成计数
         if (meterRegistry != null && prepared.sectionTokens() != null) {
             prepared.sectionTokens().forEach((section, tokens) ->
                     meterRegistry.counter(

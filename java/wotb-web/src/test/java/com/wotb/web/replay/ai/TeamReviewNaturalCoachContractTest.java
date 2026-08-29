@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Natural Coach Mode 提示词契约（docs/features/team-ai-review.md §6–§8/§16/§17/§18）。
+ * Natural Coach Mode 提示词契约。
  * <p>验证：主正文为自由组织的自然复盘（无固定章节模板）；必须有唯一 PRIMARY DIAGNOSIS；
  * Focus Window 是内部 attention 提示而非用户模板；GROUNDING FACTS 结构化输出契约；
  * 教练不是司法鉴定员；ZH/EN/RU 三语一致。</p>

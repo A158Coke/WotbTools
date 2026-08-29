@@ -339,7 +339,7 @@ AI 复盘区分两种 scope，互不混用：
 #### DeepSeek 官方 JSON Output（Team Call #2）
 
 - **目的**：消灭「非法 JSON / JSON 外多余文本 / JSON 格式漂移 → parser fail → 昂贵完整 LLM retry」这一类
-  syntax 层失败（docs/architecture/ai-review.md 方案 1）。**不是** Strict Function Calling / JSON Schema constrained generation
+  syntax 层失败。**不是** Strict Function Calling / JSON Schema constrained generation
   （明确不宣传为 strict schema output）。
 - **职责三层（不混用）**：
   - Provider JSON mode（`response_format=json_object`）= **syntax guarantee**（合法 JSON）；

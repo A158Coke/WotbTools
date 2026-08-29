@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * docs/architecture/ai-review.md §57/§61 敏感数据回归：AI Review 全链路事件日志（ai_upstream_call_* /
+ * 敏感数据回归：AI Review 全链路事件日志（ai_upstream_call_* /
  * AI usage / AI provider failure）必须不含 API key、Authorization、prompt、completion、
  * 回放内容等敏感文本；只记录低基数 metadata。
  */

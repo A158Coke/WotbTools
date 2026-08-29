@@ -28,7 +28,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * 非 CI 手动探针：真实回放的 HP / DAMAGE 数据链路调查（docs/features/battle-playback.md §37/§38）。
+ * 非 CI 手动探针：真实回放的 HP / DAMAGE 数据链路调查。
  *
  * <p>输出（stdout / surefire report）：</p>
  * <ul>
