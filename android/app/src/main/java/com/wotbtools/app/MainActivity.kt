@@ -21,7 +21,6 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
-import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import java.io.File
 import java.util.concurrent.ExecutorService
@@ -130,7 +129,7 @@ class MainActivity : Activity() {
             WebViewCompat.WebMessageListener { _, message, _, _, replyProxy ->
                 val data = message.data
                 if (data != null) {
-                    replyProxy.postMessage(WebMessageCompat(nativeBridge.handleMessage(data)))
+                    replyProxy.postMessage(nativeBridge.handleMessage(data))
                 }
             }
         )
