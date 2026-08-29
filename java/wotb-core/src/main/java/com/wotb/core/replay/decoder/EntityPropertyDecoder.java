@@ -91,7 +91,10 @@ public class EntityPropertyDecoder implements ReplayPacketDecoder {
                     List.of(event), warnings);
         }
 
-        if (propId == PROP_TURRET_RELATIVE_YAW && valueLen == 2) {
+        // PR162/P0-2：prop2 turret-relative yaw 语义必须由 PROP_TURRET_YAW capability 授权（不是 generic
+        // ENTITY_PROPERTY_ENVELOPE）。future 版本 prop2 只 raw-preserve，绝不自动产出 TurretDirectionChangedEvent。
+        if (propId == PROP_TURRET_RELATIVE_YAW && valueLen == 2
+                && ReplayVersionGate.turretYawAllowed(context.clientVersion())) {
             final int raw = readU16LE(payload, 12);
             final double deg = raw * TURRET_YAW_SCALE_DEG + TURRET_YAW_OFFSET_DEG;
             return ReplayDecodeResult.of(new TurretDirectionChangedEvent(

@@ -21,7 +21,7 @@ public final class GunMarkerSizeDecoder implements ReplayPacketDecoder {
     @Override
     public ReplayDecodeResult decode(final ReplayDecodeContext context, final RawReplayPacket packet) {
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
-        if (!ReplayVersionGate.closedSemanticsAllowed(context.clientVersion())) {
+        if (!ReplayVersionGate.gunMarkerAllowed(context.clientVersion())) {
             return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
                     List.of(new UnknownReplayEvent(packet.sequence(), ts, packet.type(),
                             packet.payloadLength(), "VERSION_UNSUPPORTED_TYPE31", DecodeConfidence.UNKNOWN)),

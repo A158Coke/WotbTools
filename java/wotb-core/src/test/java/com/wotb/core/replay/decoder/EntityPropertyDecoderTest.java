@@ -9,6 +9,7 @@ import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
@@ -105,6 +106,23 @@ class EntityPropertyDecoderTest {
         final ReplayDecodeResult result = decoder.decode(context, packet(2, new byte[]{0x01}));
         assertEquals(DecodeStatus.PARTIAL, result.status());
         assertInstanceOf(UnknownReplayEvent.class, result.events().getFirst());
+    }
+
+    /** PR162/P0-2：prop2 turret-yaw 语义由 PROP_TURRET_YAW 授权；future prop2 不得继承 turret semantic。 */
+    @Test
+    void prop2TurretYawIsCapabilityGated() {
+        final byte[] yaw = new byte[]{0x00, 0x00};
+        // 11.19 + 11.18（有独立 evidence）→ TurretDirectionChangedEvent EXACT
+        final TurretDirectionChangedEvent e19 = assertInstanceOf(TurretDirectionChangedEvent.class,
+                decoder.decode(new ReplayDecodeContext("11.19.0_china"), packet(2, yaw)).events().getFirst());
+        assertEquals(DecodeConfidence.EXACT, e19.confidence());
+        assertInstanceOf(TurretDirectionChangedEvent.class,
+                decoder.decode(new ReplayDecodeContext("11.18.0_china_apple"), packet(2, yaw)).events().getFirst());
+        // future 11.22 prop2 2B → 禁止产出 turret semantic（raw-preserve UnknownReplayEvent）
+        final ReplayDecodeResult future = decoder.decode(new ReplayDecodeContext("11.22.0_china"), packet(2, yaw));
+        assertInstanceOf(UnknownReplayEvent.class, future.events().getFirst(),
+                "future prop2 不得自动产出 TurretDirectionChangedEvent");
+        assertFalse(future.events().stream().anyMatch(TurretDirectionChangedEvent.class::isInstance));
     }
 
     @Test

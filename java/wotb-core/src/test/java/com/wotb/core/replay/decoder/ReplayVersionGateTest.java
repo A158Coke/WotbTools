@@ -98,6 +98,34 @@ class ReplayVersionGateTest {
         assertFalse(ReplayVersionGate.entityLifecycleLayoutAllowed(""));
     }
 
+    /** PR162/P0-1：method semantic 按 method 单独 gated；11.18 仅 method1 有独立 evidence。 */
+    @Test
+    void methodSemanticAllowedIsPerMethodNotPerEnvelope() {
+        // 11.19 current → 所有 method 语义
+        assertTrue(ReplayVersionGate.methodSemanticAllowed("11.19.0_china", 1));
+        assertTrue(ReplayVersionGate.methodSemanticAllowed("11.19.0_china_apple", 29));
+        // 11.18 legacy → 仅 method1（Vehicle health/state）有 evidence
+        assertTrue(ReplayVersionGate.methodSemanticAllowed("11.18.0_china", 1));
+        assertFalse(ReplayVersionGate.methodSemanticAllowed("11.18.0_china", 0), "11.18 method0 无独立证据");
+        assertFalse(ReplayVersionGate.methodSemanticAllowed("11.18.0_china", 5), "11.18 method5 无独立证据");
+        assertFalse(ReplayVersionGate.methodSemanticAllowed("11.18.0_china_apple", 17), "11.18 method17 无独立证据");
+        assertFalse(ReplayVersionGate.methodSemanticAllowed("11.18.0_china_apple", 29), "11.18 method29 无独立证据");
+        // future → 全部 raw
+        assertFalse(ReplayVersionGate.methodSemanticAllowed("11.22.0_china", 1));
+        assertFalse(ReplayVersionGate.methodSemanticAllowed("11.22.0_china", 29));
+        assertFalse(ReplayVersionGate.methodSemanticAllowed("12.0.0_eu", 17));
+    }
+
+    /** PR162/P0-2：prop2 turret-yaw 语义只由 PROP_TURRET_YAW 授权。 */
+    @Test
+    void turretYawAllowedIsCapabilityGated() {
+        assertTrue(ReplayVersionGate.turretYawAllowed("11.19.0_china"));
+        assertTrue(ReplayVersionGate.turretYawAllowed("11.18.0_china_apple"), "11.18 prop2 有独立 evidence");
+        assertFalse(ReplayVersionGate.turretYawAllowed("11.22.0_china"), "future prop2 不得继承 turret yaw 语义");
+        assertFalse(ReplayVersionGate.turretYawAllowed("12.0.0_eu"));
+        assertFalse(ReplayVersionGate.turretYawAllowed(null));
+    }
+
     @Test
     void verifiedFffeTerminalOnlyForCurrentFamily() {
         assertTrue(ReplayVersionGate.verifiedFffeTerminalAllowed("11.19.0_china"));
