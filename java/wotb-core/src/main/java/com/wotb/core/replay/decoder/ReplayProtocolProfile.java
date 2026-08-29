@@ -119,8 +119,10 @@ public final class ReplayProtocolProfile {
      * valueLen=2 九年来稳定（visibility/turret-direction）、EntityMethod method1 布局（EntityMethodDecoderVersionGateTest
      * 11.18）、entity-lifecycle（11.18 死亡/visibility 样本）、participant mapping（protocol.md #201 11.18 名册）、
      * settlement #24/#25/#105（SettlementCanonicalModelTest 11.19/11.18 无 #104）、Type14 stream-close（framing
-     * 不变量）、正 HP 结构值。闭式数值语义（FFFE/method36/38/Type31/35/ammo/entityTypeId/method semantics/FFFD）
-     * 只有 11.19 PR147 证明，无独立 11.18 evidence → UNKNOWN。
+     * 不变量）、正 HP 结构值、<b>FFFD 死亡终态</b> 与 <b>entityTypeId==2 → Vehicle 物化语义</b>
+     * （random-battle-example.wotbreplay 即 11.18；PR147 corpus = 11.18/11.19）。
+     * 仅以下闭式数值语义<b>无独立 11.18 evidence</b> → 11.18 保持 UNKNOWN（11.19-only）：
+     * {@code TERMINAL_FFFE / METHOD_SEMANTICS / METHOD36 / METHOD38 / TYPE31 / TYPE35 / AMMO_SELECTION}。
      */
     private static boolean legacyVerified(final Capability capability) {
         return switch (capability) {
