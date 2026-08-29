@@ -237,13 +237,18 @@ class EntityMethodDecoderTest {
     }
 
     @Test
-    void truncatedPacketIsMalformedNotVariant() {
+    void truncatedPacketIsMalformedButRawPreserved() {
+        // PR162/P1-4：known packet type + invalid semantic shape 不得 silent disappear —— 必须 raw-preserve
+        // 为 UnknownReplayEvent（保留 debug），而非旧「events 为空 + warning」。
         final byte[] payload = new byte[5];
         final RawReplayPacket packet = new RawReplayPacket(1, 0, payload.length,
                 EntityMethodDecoder.TYPE_ENTITY_METHOD, 10f, payload, 0);
         final ReplayDecodeResult result = decoder.decode(context, packet);
         assertEquals(DecodeStatus.MALFORMED, result.status());
-        assertTrue(result.events().isEmpty());
+        assertEquals(1, result.events().size(), "malformed 不得 silent disappear");
+        assertTrue(result.events().get(0) instanceof com.wotb.core.replay.event.UnknownReplayEvent);
+        assertEquals("TYPE8_ENVELOPE_TRUNCATED",
+                ((com.wotb.core.replay.event.UnknownReplayEvent) result.events().get(0)).reasonCode());
         assertEquals("TRUNCATED_PAYLOAD", result.warnings().getFirst().code());
     }
 

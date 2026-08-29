@@ -1,6 +1,6 @@
 package com.wotb.core.replay.decoder;
 
-import java.util.Locale;
+import com.wotb.core.parse.ReplayVersionFamily;
 
 /**
  * Capability-based replay protocol profile (replaces the "client-version allowlist" model).
@@ -40,6 +40,7 @@ public final class ReplayProtocolProfile {
         HP_POSITIVE_VALUE,
         TERMINAL_FFFD,
         TERMINAL_FFFE,
+        ENTITY_TYPE_ID_SEMANTIC,
         METHOD_SEMANTICS,
         PROP_TURRET_YAW,
         METHOD36_AIM_RAY,
@@ -59,23 +60,20 @@ public final class ReplayProtocolProfile {
         UNKNOWN
     }
 
-    // 单一版本家族定义（PR162/P1-2）：与 SettlementFacts 共享，避免多处 prefix copy。
-    private static final String CURRENT_VERIFIED_FAMILY = com.wotb.core.parse.SettlementFacts.CURRENT_VERIFIED_FAMILY;
-    private static final String LEGACY_VERIFIED_FAMILY = com.wotb.core.parse.SettlementFacts.LEGACY_VERIFIED_FAMILY;
-
     private ReplayProtocolProfile() {
     }
 
     /** Level of a structural (Layer B) capability: VERIFIED for known families, STRUCTURALLY_COMPATIBLE otherwise. */
     public static Level structuralLevel(final String clientVersion) {
-        final String f = familyOf(clientVersion);
-        return (CURRENT_VERIFIED_FAMILY.equals(f) || LEGACY_VERIFIED_FAMILY.equals(f))
+        final String f = ReplayVersionFamily.familyOf(clientVersion);
+        return (ReplayVersionFamily.CURRENT_VERIFIED_FAMILY.equals(f)
+                || ReplayVersionFamily.LEGACY_VERIFIED_FAMILY.equals(f))
                 ? Level.VERIFIED : Level.STRUCTURALLY_COMPATIBLE;
     }
 
     /** Level of a closed (Layer C) numeric-semantic capability: VERIFIED only for the current 11.19 family. */
     public static Level closedSemanticLevel(final String clientVersion) {
-        return CURRENT_VERIFIED_FAMILY.equals(familyOf(clientVersion))
+        return ReplayVersionFamily.isCurrentVerified(clientVersion)
                 ? Level.VERIFIED : Level.UNKNOWN;
     }
 
@@ -88,38 +86,24 @@ public final class ReplayProtocolProfile {
                     // ordinary positive HP is a structural value (recovered from the u16 envelope); the
                     // special sentinels are separate capabilities. Proven for the verified + legacy
                     // families; STRUCTURALLY_COMPATIBLE (exact-shape) for other versions.
-                    (isCurrent(clientVersion) || isLegacy(clientVersion))
+                    (ReplayVersionFamily.isCurrentVerified(clientVersion)
+                            || ReplayVersionFamily.isLegacyVerified(clientVersion))
                             ? Level.VERIFIED : Level.STRUCTURALLY_COMPATIBLE;
             case TERMINAL_FFFD ->
                     // FFFD death terminal proven for 11.19 + 11.18 legacy fixtures; never inherited by future.
-                    (isCurrent(clientVersion) || isLegacy(clientVersion))
+                    (ReplayVersionFamily.isCurrentVerified(clientVersion)
+                            || ReplayVersionFamily.isLegacyVerified(clientVersion))
                             ? Level.VERIFIED : Level.UNKNOWN;
             case TERMINAL_FFFE, METHOD_SEMANTICS, PROP_TURRET_YAW, METHOD36_AIM_RAY, METHOD38_SHOT_RESULT,
                     TYPE31_GUN_MARKER, TYPE35_SESSION_DECISECOND, AMMO_SELECTION -> closedSemanticLevel(clientVersion);
+            case ENTITY_TYPE_ID_SEMANTIC ->
+                    // entityTypeId numeric meaning (2=combat vehicle, 3=static family) is a closed,
+                    // version-scoped class semantic. Future version keeps the Type5 envelope + raw entityTypeId
+                    // but must NOT auto-assign Vehicle/Other.
+                    (ReplayVersionFamily.isCurrentVerified(clientVersion)
+                            || ReplayVersionFamily.isLegacyVerified(clientVersion))
+                            ? Level.VERIFIED : Level.UNKNOWN;
         };
     }
 
-    private static boolean isCurrent(final String clientVersion) {
-        return CURRENT_VERIFIED_FAMILY.equals(familyOf(clientVersion));
-    }
-
-    private static boolean isLegacy(final String clientVersion) {
-        return LEGACY_VERIFIED_FAMILY.equals(familyOf(clientVersion));
-    }
-
-    private static String familyOf(final String clientVersion) {
-        final String v = clientVersion == null ? "" : clientVersion.trim().toLowerCase(Locale.ROOT);
-        if (familyMatches(v, CURRENT_VERIFIED_FAMILY)) {
-            return CURRENT_VERIFIED_FAMILY;
-        }
-        if (familyMatches(v, LEGACY_VERIFIED_FAMILY)) {
-            return LEGACY_VERIFIED_FAMILY;
-        }
-        return v;
-    }
-
-    /** Boundary-safe family match: exact version or {@code family + "_"} (e.g. {@code 11.19.0_china_apple}). */
-    private static boolean familyMatches(final String v, final String family) {
-        return v.equals(family) || v.startsWith(family + "_");
-    }
 }

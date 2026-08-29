@@ -32,19 +32,13 @@ public record SettlementFacts(
         Map<Integer, List<Object>> root
 ) {
 
-    /** 当前 canonical 已验证家族（PR147 11.19 corpus authority）。 */
-    public static final String CURRENT_VERIFIED_FAMILY = "11.19.0_china";
-    /** 明确 legacy 验证的家族（repository fixtures/research 独立证明其 settlement 数值语义）。 */
-    public static final String LEGACY_VERIFIED_FAMILY = "11.18.0_china";
-
     /**
-     * PR162/P1-2：settlement schema 是否已验证的唯一权威（单一版本家族定义，供 {@link ReplayParser}
-     * 与 {@code com.wotb.core.replay.decoder.ReplayProtocolProfile} 共享，避免 parse-local copy）。
-     * 只有当前 canonical 家族 + 有独立 evidence 的 legacy 家族为真；未知/未来版本 fail-closed。
+     * PR162/P1-6：settlement schema 是否已验证的唯一权威 —— 委托给 <b>单一</b> boundary-safe 匹配器
+     * {@link ReplayVersionFamily#isAffirmedFamily}。避免裸 {@code startsWith} 误接受
+     * {@code 11.19.0_chinaX} 等畸形/未来 family。
      */
     public static boolean isAffirmedFamily(final String clientVersion) {
-        final String v = clientVersion == null ? "" : clientVersion.trim().toLowerCase(java.util.Locale.ROOT);
-        return v.startsWith(CURRENT_VERIFIED_FAMILY) || v.startsWith(LEGACY_VERIFIED_FAMILY);
+        return ReplayVersionFamily.isAffirmedFamily(clientVersion);
     }
 
     /**
