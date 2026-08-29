@@ -5,11 +5,10 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
-import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
-import com.wotb.core.replay.timeline.TimelinePerspective;
 import com.wotb.core.replay.timeline.TimelineError;
+import com.wotb.core.replay.timeline.TimelinePerspective;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;

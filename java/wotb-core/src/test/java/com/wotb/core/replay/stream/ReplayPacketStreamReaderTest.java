@@ -2,12 +2,14 @@ package com.wotb.core.replay.stream;
 
 import com.wotb.core.parse.ReplayHeaderException;
 import com.wotb.core.parse.ReplayStreamHeader;
-
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * ReplayPacketStreamReader 单元测试。

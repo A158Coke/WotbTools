@@ -1,20 +1,5 @@
 package com.wotb.web.replay.ai.gateway;
 
-import java.net.SocketTimeoutException;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.LongSupplier;
-
 import com.openai.core.JsonValue;
 import com.openai.core.Timeout;
 import com.openai.errors.OpenAIException;
@@ -22,6 +7,9 @@ import com.openai.errors.OpenAIInvalidDataException;
 import com.openai.errors.OpenAIIoException;
 import com.openai.errors.OpenAIServiceException;
 import com.openai.models.completions.CompletionUsage;
+import com.wotb.core.replay.processing.AiNotConfiguredException;
+import com.wotb.web.config.AiModelProperties;
+import com.wotb.web.replay.ai.AiReviewEventLog;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.observation.ObservationRegistry;
@@ -43,9 +31,21 @@ import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.http.okhttp.OpenAiHttpClientBuilderCustomizer;
 import org.springframework.util.StringUtils;
 
-import com.wotb.core.replay.processing.AiNotConfiguredException;
-import com.wotb.web.config.AiModelProperties;
-import com.wotb.web.replay.ai.AiReviewEventLog;
+import java.net.SocketTimeoutException;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.LongSupplier;
+
 /**
  * The only production AI transport adapter: maps {@link AiChatRequest} onto Spring AI
  * {@link OpenAiChatModel} (official OpenAI-compatible adapter) against

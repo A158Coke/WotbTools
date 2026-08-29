@@ -2,10 +2,10 @@ package com.wotb.core.replay.feature;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.replay.event.DamageEvent;
-import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.facts.ReplayAoiLifecycle;
 import com.wotb.core.replay.facts.ShotFact;
 import com.wotb.core.replay.facts.ShotLifecycle;

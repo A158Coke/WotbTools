@@ -1,6 +1,4 @@
 package com.wotb.web.replay.ai;
-import com.wotb.web.replay.ai.TeamReplayAnalysisService;
-import com.wotb.web.replay.ai.PlayerReplayPromptBuilder;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;

@@ -10,8 +10,8 @@ import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
-import com.wotb.core.replay.timeline.TimelinePerspective;
 import com.wotb.core.replay.timeline.TimelineError;
+import com.wotb.core.replay.timeline.TimelinePerspective;
 import com.wotb.web.replay.dto.MapOverview;
 import org.junit.jupiter.api.Test;
 

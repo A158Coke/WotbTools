@@ -2,11 +2,11 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.processing.FriendlyEnemyResult;
 import com.wotb.core.replay.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.replay.processing.PlayerSideResolver;
 import com.wotb.core.replay.processing.PlayerSideResolver.Side;
-import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.List;

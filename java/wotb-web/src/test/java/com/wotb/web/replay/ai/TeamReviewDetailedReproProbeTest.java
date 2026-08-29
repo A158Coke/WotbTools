@@ -2,14 +2,14 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Source;
+import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator;
+import com.wotb.core.replay.evidence.TeamGroundingFacts;
+import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.processing.BatchAnalyzer;
 import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
 import com.wotb.core.replay.processing.ReplayProcessingOptions;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
-import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator;
-import com.wotb.core.replay.evidence.TeamGroundingFacts;
-import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
@@ -26,7 +26,6 @@ import org.junit.jupiter.api.Test;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 真实 DeepSeek 细粒度复现探针：手动复刻 Team Call #2 retry loop，打印每一轮的

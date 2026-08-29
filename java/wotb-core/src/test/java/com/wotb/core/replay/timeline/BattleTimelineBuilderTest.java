@@ -1,6 +1,7 @@
 package com.wotb.core.replay.timeline;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.parse.ReplayStreamHeader;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
@@ -12,7 +13,6 @@ import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
-import com.wotb.core.parse.ReplayStreamHeader;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;

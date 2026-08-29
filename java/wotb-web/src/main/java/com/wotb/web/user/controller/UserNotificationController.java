@@ -1,10 +1,10 @@
 package com.wotb.web.user.controller;
 
+import com.wotb.web.config.ApiPaths;
 import com.wotb.web.user.dto.UnreadNotificationCountDto;
 import com.wotb.web.user.dto.UserNotificationDto;
 import com.wotb.web.user.service.UserNotificationService;
 import com.wotb.web.util.JwtUtil;
-import com.wotb.web.config.ApiPaths;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;

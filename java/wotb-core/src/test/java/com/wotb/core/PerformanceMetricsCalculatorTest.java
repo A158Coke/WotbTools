@@ -2,9 +2,9 @@ package com.wotb.core;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.DeathTimeSource;
+import com.wotb.core.model.EntryHpSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
-import com.wotb.core.model.EntryHpSource;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
 import org.junit.jupiter.api.Test;
 

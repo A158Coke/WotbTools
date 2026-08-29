@@ -1,7 +1,7 @@
 package com.wotb.core.replay.timeline;
 
-import com.wotb.core.replay.facts.AoiObservationSegment;
 import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.facts.AoiObservationSegment;
 
 import java.util.List;
 

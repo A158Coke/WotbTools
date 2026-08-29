@@ -1,14 +1,14 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.TeamEntityMapping;
-import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.model.EntryHpSource;
+import com.wotb.core.model.PlayerResult;
+import com.wotb.core.ref.ReplayDisplayNames;
+import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;

@@ -1,7 +1,6 @@
 package com.wotb.core.replay.evidence;
 
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.BattlePhaseType;
@@ -10,12 +9,12 @@ import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
+import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
 import com.wotb.core.replay.reconstruction.ObservationState;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.VehicleState;
-import com.wotb.core.replay.map.MapTacticalSemantics;
-import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;

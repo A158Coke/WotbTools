@@ -4,7 +4,6 @@ import com.wotb.core.AggregateColumns;
 import com.wotb.core.Columns;
 import com.wotb.core.export.ExcelExporter;
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;

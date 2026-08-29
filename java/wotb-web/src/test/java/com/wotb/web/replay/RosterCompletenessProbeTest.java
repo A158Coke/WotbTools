@@ -1,9 +1,6 @@
 package com.wotb.web.replay;
 
 import com.wotb.core.league.LeagueFailure;
-import com.wotb.core.league.LeagueRatingBatchAggregator;
-import com.wotb.core.league.LeagueRatingCalculator;
-import com.wotb.core.league.LeagueRatingMode;
 import com.wotb.core.league.LeagueRatingValidator;
 import com.wotb.core.league.LeagueReplays;
 import com.wotb.core.model.Battle;
@@ -11,11 +8,11 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
 import com.wotb.core.parse.PickleDecoder;
 import com.wotb.core.parse.PickleReader;
-import com.wotb.core.replay.stream.RawReplayPacket;
-import com.wotb.core.replay.stream.ReplayPacketStreamReader;
 import com.wotb.core.parse.Protobuf;
 import com.wotb.core.parse.ReplayArchiveReader;
 import com.wotb.core.parse.ReplayParser;
+import com.wotb.core.replay.stream.RawReplayPacket;
+import com.wotb.core.replay.stream.ReplayPacketStreamReader;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;

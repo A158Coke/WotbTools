@@ -1,22 +1,22 @@
 package com.wotb.web.replay.ai;
 
-import com.wotb.core.replay.processing.RecorderEntityMapping;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.evidence.EvidenceSkillContext;
 import com.wotb.core.replay.evidence.EvidenceSkillEngine;
 import com.wotb.core.replay.evidence.EvidenceSkillResult;
+import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
+import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
 import com.wotb.core.replay.timeline.TimelinePerspective;
-import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
-import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
-import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
+import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

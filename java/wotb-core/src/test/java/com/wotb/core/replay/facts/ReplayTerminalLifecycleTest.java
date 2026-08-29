@@ -1,21 +1,19 @@
 package com.wotb.core.replay.facts;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.HpRawState;
-import com.wotb.core.replay.event.MaterializationEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.event.VehicleHealthStateEvent;
 import com.wotb.core.replay.processing.TeamEntityIdentity;
 import com.wotb.core.replay.processing.TeamEntityMapping;
+import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
 
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * PR162 §31(c): canonical terminal contract tests on the facts layer.

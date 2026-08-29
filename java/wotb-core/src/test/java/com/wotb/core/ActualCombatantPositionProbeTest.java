@@ -7,11 +7,6 @@ import com.wotb.core.parse.PickleReader;
 import com.wotb.core.parse.Protobuf;
 import com.wotb.core.parse.ReplayArchiveReader;
 import com.wotb.core.parse.ReplayParser;
-import com.wotb.core.replay.processing.TeamEntityIdentity;
-import com.wotb.core.replay.processing.TeamEntityMapper;
-import com.wotb.core.replay.processing.TeamEntityMapping;
-import com.wotb.core.replay.processing.TeamPerspectiveResolution;
-import com.wotb.core.replay.processing.TeamPerspectiveResolver;
 import com.wotb.core.replay.event.EntityCreatedEvent;
 import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
@@ -22,10 +17,14 @@ import com.wotb.core.replay.feature.BattleStartResolver;
 import com.wotb.core.replay.feature.DefaultTeamBattleFeatureExtractor;
 import com.wotb.core.replay.feature.TacticalTimeResolution;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
+import com.wotb.core.replay.processing.TeamEntityIdentity;
+import com.wotb.core.replay.processing.TeamEntityMapper;
+import com.wotb.core.replay.processing.TeamEntityMapping;
+import com.wotb.core.replay.processing.TeamPerspectiveResolution;
+import com.wotb.core.replay.processing.TeamPerspectiveResolver;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import com.wotb.core.util.PlayerResultFormat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -40,6 +39,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * PR #103 调查探针（临时诊断，不修改业务逻辑）：
