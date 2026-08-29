@@ -1,5 +1,5 @@
 -- 名人堂「百场」排行榜 submission（单表承载完整生命周期：PENDING/CURRENT/SUPERSEDED/REJECTED/CANCELLED/DELETED）。
--- 业务规则见 docs/features/hall-of-fame.md（百场）：
+-- 业务规则见 docs/current-plan.md（百场）：
 --   * user + vehicle 最多一个 active PENDING（partial unique index）
 --   * user + vehicle 最多一个 CURRENT（partial unique index）
 --   * 身份/成绩快照在创建时冻结；claimed 与 approved 两套数据同时保留，排行榜只读 approved*
