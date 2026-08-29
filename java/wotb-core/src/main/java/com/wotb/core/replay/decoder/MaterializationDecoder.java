@@ -4,6 +4,7 @@ import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.MaterializationEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.event.UnknownReplayEvent;
+import com.wotb.core.replay.event.VehicleBattleLoadout;
 import com.wotb.core.replay.stream.RawReplayPacket;
 
 import java.util.List;
@@ -142,9 +143,19 @@ public class MaterializationDecoder implements ReplayPacketDecoder {
         // being unknown/sentinel must NOT downgrade the materialization presence confidence, else
         // ReplayAoiLifecycle would drop the observed segment for a proven presence.
         final DecodeConfidence confidence = DecodeConfidence.EXACT;
+        // PR147/WotbTools loadout productionization (plan P0-1):
+        // combat-vehicle Type5 class-specific init payload carries a battle loadout surface.
+        // Only decode when: supported (lifecycle-affirmed) version + combat vehicle + full 0A06/0B09
+        // framing validates. Any malformed/partial framing stays raw-preserved (loadout=null) and never
+        // falls back to guessing names. Unknown provision codes keep logicalItemId=null + raw.
+        final VehicleBattleLoadout loadout =
+                entityTypeId == ENTITY_TYPE_COMBAT_VEHICLE
+                        && ReplayVersionGate.entityLifecycleLayoutAllowed(context.clientVersion())
+                        ? VehicleBattleLoadout.parse(entityId, context.clientVersion(), initRaw)
+                        : null;
         final MaterializationEvent event = new MaterializationEvent(
                 packet.sequence(), ts, packet.type(), confidence,
-                entityId, entityTypeId, currentHp, transformRaw, initRaw);
+                entityId, entityTypeId, currentHp, transformRaw, initRaw, loadout);
         if (warnings.isEmpty()) {
             return ReplayDecodeResult.of(event);
         }

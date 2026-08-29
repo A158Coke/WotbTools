@@ -1,11 +1,12 @@
 <script setup>
-import { ref, computed, watch, nextTick, inject } from 'vue'
+import { ref, computed, watch, nextTick, inject, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { mapLabel, displayName } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { replayAggregatePlayerCount } from '../utils/replayView.js'
 import { useReplay } from '../composables/useReplay.js'
 import { useColumns } from '../composables/useColumns.js'
+import { useNativeReplayImport } from '../composables/useNativeReplayImport.js'
 import {
   getExportTarget,
   computeExportDimensions,
@@ -27,6 +28,8 @@ import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
 
 const { locale, t, te } = useI18n()
 const replay = useReplay()
+const { triggerFileInput } = useNativeReplayImport()
+onMounted(() => nextTick(triggerFileInput))
 const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateFiles, selectionRevision,
   processingJob, processingError, processingActive, processingJobId,
   uploadState, cancelProcessing,
