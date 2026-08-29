@@ -1,5 +1,21 @@
 [
   {
+    "v": "2.12.48",
+    "date": "2026-08-30",
+    "tag": "chg",
+    "zh": "Rating V2 与 League Rating V5 雷达改用统一的相对表现标尺：当前比较组平均固定为规则 75 环，100 为强势线，玩家表现可突破 100；原来因各维度理论上限不同而过度突出的 KAST、几乎贴近中心的协助现更容易横向理解。明细仍展示真实玩家值与平均值，评分结果、排序与导出数据不变。",
+    "en": "Rating V2 and League Rating V5 radars now share a relative-performance scale: the current comparison-group average forms a regular 75 ring, 100 is the strong-performance line, and player profiles may extend above 100. This makes dimensions easier to compare without KAST dominating or assist collapsing because of unrelated theoretical caps. Details still show real player and average values; ratings, ranking, and exported data are unchanged.",
+    "ru": "Радары Rating V2 и League Rating V5 теперь используют общую относительную шкалу: среднее текущей группы сравнения образует ровный контур 75, отметка 100 означает сильный уровень, а профиль игрока может выходить выше 100. Параметры легче сравнивать без искусственного доминирования KAST или почти нулевой помощи из-за разных теоретических максимумов. В деталях сохраняются реальные значения игрока и среднего; рейтинг, сортировка и экспортируемые данные не меняются."
+  },
+  {
+    "v": "2.12.47",
+    "date": "2026-08-29",
+    "tag": "chg",
+    "zh": "管理员 Rating V2 灰度页的六轴雷达从结果表底部移入右侧选手抽屉：点击昵称即可原地查看并继续切换其他玩家，多队伍或大型回放批次不再需要滚到表尾；桌面端保留表格交互，手机端使用遮罩面板。评分公式、数据和 League V5 页面均不改变。",
+    "en": "The hidden admin Rating V2 page now opens its six-axis radar in a right-side player drawer instead of below the results table. Select a nickname and keep switching players in place without scrolling to the end of large or multi-team batches; desktop keeps the table interactive and mobile uses an overlay panel. Rating formulas, data and the League V5 page are unchanged.",
+    "ru": "На скрытой административной странице Rating V2 шестиосевой радар теперь открывается в боковой панели игрока справа, а не под таблицей результатов. Можно выбрать имя и переключаться между игроками без прокрутки к концу большой выборки или набора с несколькими командами; на компьютере таблица остаётся доступной, на телефоне используется панель с затемнением. Формулы, данные и страница League V5 не изменены."
+  },
+  {
     "v": "2.12.46",
     "date": "2026-08-29",
     "tag": "fix",

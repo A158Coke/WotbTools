@@ -84,8 +84,11 @@ const FileUploaderStub = {
   template: '<button class="select-replays" :data-workspace-actions="showWorkspaceActions" @click="$emit(\'update:files\', [{ name: \'a.wotbreplay\', size: 1, lastModified: 1 }])">select</button>',
 }
 
-function mountPage() {
-  return mount(RatingV2AdminPage, {
+const mountedWrappers = []
+
+function mountPage(options = {}) {
+  const wrapper = mount(RatingV2AdminPage, {
+    ...options,
     global: {
       stubs: {
         FileUploader: FileUploaderStub,
@@ -93,11 +96,14 @@ function mountPage() {
         RatingV2RadarPanel: {
           props: ['row', 'rows'],
           emits: ['close'],
-          template: '<aside class="rating-v2-radar-stub">{{ row.cells.nickname }}<button class="close-radar" @click="$emit(\'close\')">close</button></aside>',
+          template: '<section class="rating-v2-radar-stub">{{ row.cells.nickname }}<button class="rating-v2-radar-close close-radar" @click="$emit(\'close\')">close</button></section>',
         },
+        teleport: true,
       },
     },
   })
+  mountedWrappers.push(wrapper)
+  return wrapper
 }
 
 describe('RatingV2AdminPage', () => {
@@ -116,6 +122,7 @@ describe('RatingV2AdminPage', () => {
   })
 
   afterEach(() => {
+    for (const wrapper of mountedWrappers.splice(0)) wrapper.unmount()
     vi.clearAllMocks()
   })
 
@@ -202,7 +209,7 @@ describe('RatingV2AdminPage', () => {
     expect(wrapper.findAll('tbody td').map(cell => cell.classes().includes('num'))).toEqual([false, true])
   })
 
-  it('opens a selected player radar and clears it with the next file selection', async () => {
+  it('opens a selected player radar in a side drawer and clears it with the next file selection', async () => {
     api.ratingV2Admin.mockResolvedValue({
       rows: [{ cells: { nickname: 'Pilot', rating: 1200 }, radar: [] }],
       duplicates: [], failures: [],
@@ -215,12 +222,36 @@ describe('RatingV2AdminPage', () => {
     await flushPromises()
 
     await wrapper.find('.rating-v2-player').trigger('click')
-    expect(wrapper.find('.rating-v2-radar-stub').text()).toContain('Pilot')
+    expect(wrapper.find('.rating-v2-radar-drawer .rating-v2-radar-stub').text()).toContain('Pilot')
+    expect(wrapper.find('.rating-v2-results .rating-v2-radar-stub').exists()).toBe(false)
     expect(wrapper.find('.rating-v2-player').attributes('aria-label')).toBe('ratingV2.radar.open:Pilot')
     expect(wrapper.find('.rating-v2-player').attributes('aria-pressed')).toBe('true')
 
     replayState.selectionRevision.value++
     await flushPromises()
     expect(wrapper.find('.rating-v2-radar-stub').exists()).toBe(false)
+  })
+
+  it('closes the radar drawer with Escape and restores focus to the player trigger', async () => {
+    api.ratingV2Admin.mockResolvedValue({
+      rows: [{ cells: { nickname: 'Pilot', rating: 1200 }, radar: [] }],
+      duplicates: [], failures: [],
+      columns: [{ key: 'nickname', num: false }, { key: 'rating', num: true }],
+    })
+    const wrapper = mountPage({ attachTo: document.body })
+    await flushPromises()
+    replayState.files.value = [new File(['x'], 'a.wotbreplay')]
+    replayState.processingJobId.value = 'ready-job'
+    await flushPromises()
+
+    const trigger = wrapper.find('.rating-v2-player')
+    await trigger.trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(wrapper.find('.rating-v2-radar-close').element)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+    expect(wrapper.find('.rating-v2-radar-drawer').exists()).toBe(false)
+    expect(document.activeElement).toBe(trigger.element)
   })
 })
