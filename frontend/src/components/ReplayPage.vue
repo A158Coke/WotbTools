@@ -6,7 +6,6 @@ import { apiErrorLabel } from '../utils/display.js'
 import { replayAggregatePlayerCount } from '../utils/replayView.js'
 import { useReplay } from '../composables/useReplay.js'
 import { useColumns } from '../composables/useColumns.js'
-import { useNativeReplayImport } from '../composables/useNativeReplayImport.js'
 import {
   getExportTarget,
   computeExportDimensions,
@@ -26,10 +25,17 @@ import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import ReplayTaskCard from './ReplayTaskCard.vue'
 import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
 
+defineOptions({ name: 'ReplayPage' })
+
+const props = defineProps({
+  /** 嵌入 Replay Workspace 时的结果 tab：不重复渲染上传器 / Processing 面板，使用 provide 的共享 selection。 */
+  embedded: { type: Boolean, default: false },
+})
+const emit = defineEmits(['register-cols-init', 'open-ai', 'open-playback'])
+
 const { locale, t, te } = useI18n()
-const replay = useReplay()
-const { triggerFileInput } = useNativeReplayImport()
-onMounted(() => nextTick(triggerFileInput))
+// Workspace 提供共享 selection / job；独立使用（旧路由）时回退到本地 useReplay。
+const replay = inject('replay', null) || useReplay()
 const { files, loading, error, resp, activeTab, aggStats, pendingRemove, updateFiles, selectionRevision,
   processingJob, processingError, processingActive, processingJobId,
   uploadState, cancelProcessing,
@@ -506,12 +512,20 @@ function requireLoginForBattleAction() {
 
 const datasetError = ref('')
 async function openBattlePlayback() {
+  if (props.embedded) {
+    emit('open-playback')
+    return
+  }
   if (!requireLoginForBattleAction()) return
   const ref = currentBattleRef()
   if (ref && navigate) navigate('battle-playback', ref)
 }
 
 async function openAiReview() {
+  if (props.embedded) {
+    emit('open-ai')
+    return
+  }
   if (!requireLoginForBattleAction()) return
   const ref = currentBattleRef()
   if (ref && navigate) navigate('ai-review', ref)
@@ -522,11 +536,19 @@ async function preview() {
 }
 
 function onFileRemoveRequest(f) { askRemoveFile(f) }
+
+// 嵌入 Workspace 时上报列初始化回调（Workspace 的单一上传器复用），并保留结果区域。
+onMounted(() => {
+  if (props.embedded && typeof cols.initFromResponse === 'function') {
+    emit('register-cols-init', cols.initFromResponse)
+  }
+})
 </script>
 
 <template>
-  <div class="layout-data-workspace">
-    <FileUploader :files="files" :loading="loading" :confirm-remove="!!resp"
+  <div :class="props.embedded ? 'replay-data-embedded' : 'layout-data-workspace'">
+    <!-- 独立使用（旧路由/测试）时保留上传器；嵌入 Workspace 时由 Workspace 提供单一上传器。 -->
+    <FileUploader v-if="!props.embedded" :files="files" :loading="loading" :confirm-remove="!!resp"
       @update:files="updateFiles" @preview="preview" @remove-request="onFileRemoveRequest"
       :show-workspace-actions="false" />
 
@@ -535,7 +557,7 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
     <!-- 主操作区 inline 进度面板：不依赖 files/resp 渲染条件，
          与 Export 任务卡各自独立，不再互斥隐藏。 -->
     <ReplayProcessingPanel
-      v-if="uploadState || processingJob"
+      v-if="!props.embedded && (uploadState || processingJob)"
       :upload-state="uploadState"
       :job="processingJob"
       :error="processingError"

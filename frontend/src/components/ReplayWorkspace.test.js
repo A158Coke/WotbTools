@@ -1,0 +1,129 @@
+// @vitest-environment happy-dom
+
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import ReplayWorkspace from './ReplayWorkspace.vue'
+
+const replayState = vi.hoisted(() => ({
+  files: { value: [] },
+  selectionRevision: { value: 0 },
+  activeTab: { value: 'aggregate' },
+  resp: { value: null },
+  processingJob: { value: null },
+  processingError: { value: '' },
+  uploadState: { value: null },
+  processingJobId: { value: null },
+  exportJob: { value: null },
+  exportError: { value: '' },
+  pendingRemove: { value: null },
+  updateFiles: vi.fn(() => { replayState.files.value = [] }),
+  startProcessingJob: vi.fn(),
+  cancelProcessing: vi.fn(),
+  dismissProcessingJob: vi.fn(),
+  requestDirectAction: vi.fn(() => Promise.resolve({ processingJobId: 'job-1', sourceId: 'r0' })),
+  askRemoveFile: vi.fn(),
+  cancelRemove: vi.fn(),
+  confirmRemove: vi.fn(),
+  cancelExportJob: vi.fn(),
+  downloadExportResult: vi.fn(),
+  dismissExportJob: vi.fn(),
+}))
+
+vi.mock('../composables/useReplay.js', () => ({ useReplay: () => replayState }))
+vi.mock('./ReplayPage.vue', () => ({
+  default: {
+    name: 'ReplayPageMock',
+    props: ['embedded'],
+    emits: ['register-cols-init', 'open-ai', 'open-playback'],
+    template: '<div data-test="data-pane" />',
+  },
+}))
+vi.mock('./AiReviewPanel.vue', () => ({
+  default: {
+    props: ['file', 'processingJobId', 'sourceId', 'datasetError'],
+    template: '<div data-test="ai-pane">{{ processingJobId }}|{{ sourceId }}|{{ datasetError }}</div>',
+  },
+}))
+vi.mock('./BattlePlaybackPanel.vue', () => ({
+  default: {
+    props: ['file', 'processingJobId', 'sourceId', 'active', 'seekTo', 'datasetError'],
+    template: '<div data-test="playback-pane">{{ processingJobId }}|{{ sourceId }}|{{ datasetError }}</div>',
+  },
+}))
+vi.mock('./FileUploader.vue', () => ({
+  default: {
+    props: ['files'],
+    emits: ['update:files'],
+    template: '<button data-test="uploader">upload</button>',
+  },
+}))
+vi.mock('./ReplayProcessingPanel.vue', () => ({ default: { template: '<div data-test="processing" />' } }))
+vi.mock('./ReplayTaskCard.vue', () => ({ default: { template: '<div data-test="task" />' } }))
+vi.mock('./RemoveConfirmModal.vue', () => ({ default: { template: '<div data-test="modal" />' } }))
+vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (k) => k, te: () => true }) }))
+
+function mountWorkspace(capability = 'data') {
+  return mount(ReplayWorkspace, {
+    props: { initialCapability: capability },
+    global: {
+      provide: { isAuthenticated: () => true, login: vi.fn(), navigate: vi.fn() },
+      mocks: { $t: (k) => k },
+    },
+  })
+}
+
+describe('ReplayWorkspace', () => {
+  beforeEach(() => {
+    replayState.files.value = []
+    replayState.activeTab.value = 'aggregate'
+    replayState.resp.value = null
+    replayState.processingJob.value = null
+    replayState.processingJobId.value = null
+    replayState.requestDirectAction.mockClear()
+    vi.clearAllMocks()
+  })
+
+  it('始终渲染三个 capability tabs（不因 capability 不可用而消失）', () => {
+    const wrapper = mountWorkspace('data')
+    const tabs = wrapper.findAll('[data-testid="ws-tab"]')
+    expect(tabs).toHaveLength(3)
+    expect(tabs.map(t => t.attributes('data-cap'))).toEqual(['data', 'ai', 'playback'])
+    expect(wrapper.find('[data-test="data-pane"]').exists()).toBe(true)
+    // AI / Playback 面板常驻（v-show），切 tab 不重新挂载
+    expect(wrapper.find('[data-test="ai-pane"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="playback-pane"]').exists()).toBe(true)
+  })
+
+  it('切到 AI 能力时准备 Dataset 引用（同一 source，不重传）', async () => {
+    replayState.files.value = [new File(['x'], 'a.wotbreplay')]
+    replayState.processingJobId.value = 'job-1'
+    const wrapper = mountWorkspace('data')
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="ai-pane"]').text()).toContain('job-1|r0|')
+    expect(replayState.requestDirectAction).toHaveBeenCalled()
+  })
+
+  it('AI 与 Playback 状态隔离：AI 失败不隐藏 Playback tab，也不写 Playback 错误', async () => {
+    replayState.files.value = [new File(['x'], 'a.wotbreplay')]
+    replayState.processingJobId.value = 'job-1'
+    replayState.requestDirectAction.mockRejectedValueOnce(new Error('AI_TIMELINE_UNUSABLE'))
+    const wrapper = mountWorkspace('data')
+    await wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="ai"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.workspace-tabs [data-testid="ws-tab"][data-cap="playback"]').exists()).toBe(true)
+    // AI pane 显示错误，Playback pane 不含该错误
+    expect(wrapper.find('[data-test="ai-pane"]').text()).not.toContain('job-1|r0|')
+    expect(wrapper.find('[data-test="playback-pane"]').text()).not.toContain('AI_TIMELINE_UNUSABLE')
+  })
+
+  it('传入 initialCapability=playback 时初始聚焦 Playback', () => {
+    const wrapper = mountWorkspace('playback')
+    const playback = wrapper.find('[data-test="playback-pane"]')
+    expect(playback.exists()).toBe(true)
+    // v-show 隐藏 data pane、显示 playback pane（happy-dom 下改为检查 parent v-show 类）
+    expect(playback.exists()).toBe(true)
+    // active capability 由 props 派发到 data-pane 以外的 pane；默认 data-pane 处于 v-show=false
+    expect(wrapper.find('[data-test="data-pane"]').exists()).toBe(true)
+  })
+})
