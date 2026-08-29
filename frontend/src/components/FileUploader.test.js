@@ -22,7 +22,8 @@ function mountUploader(files = [], loading = false, options = {}) {
         files,
         loading,
         confirmRemove: false,
-        ...(options.showWorkspaceActions === undefined ? {} : { showWorkspaceActions: options.showWorkspaceActions })
+        ...(options.showWorkspaceActions === undefined ? {} : { showWorkspaceActions: options.showWorkspaceActions }),
+        ...(options.showPreview === undefined ? {} : { showPreview: options.showPreview })
       },
       global: {
         mocks: { $t: i18n.t },
@@ -101,8 +102,18 @@ describe('FileUploader 文件列表与回放工作台', () => {
     expect(previewBtn.attributes('disabled')).toBeDefined()
   })
 
-  it('allows the hidden Rating V2 page to reuse validation without exposing workspace actions', () => {
+  it('allows the hidden Rating V2 page to reuse validation without exposing any action buttons', () => {
+    const { wrapper } = mountUploader(makeFiles(1), false, { showWorkspaceActions: false, showPreview: false })
+    expect(wrapper.find('.replay-primary-actions').exists()).toBe(false)
+    expect(wrapper.find('.replay-workspace-actions').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="direct-ai-btn"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="direct-playback-btn"]').exists()).toBe(false)
+  })
+
+  it('ReplayPage 场景（showWorkspaceActions=false）仍保留「解析预览」，但不渲染 workspace shortcut', () => {
     const { wrapper } = mountUploader(makeFiles(1), false, { showWorkspaceActions: false })
+    const previewBtn = wrapper.findAll('button').find(b => b.text().includes('action.preview'))
+    expect(previewBtn).toBeDefined()
     expect(wrapper.find('.replay-workspace-actions').exists()).toBe(false)
     expect(wrapper.find('[data-testid="direct-ai-btn"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="direct-playback-btn"]').exists()).toBe(false)
