@@ -28,11 +28,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Playback parity（docs/features/battle-playback.md §54）：同一真实夹具，canonical timeline 派生的
+ * Playback parity：同一真实夹具，canonical timeline 派生的
  * BattlePlaybackAdapter 与既有 MapOverviewBuilder 的用户契约必须一致。
  * <p>时钟口径：legacy playback 历史上把 raw clock 当 battle-relative（隐含 start=0，含开战前偏移）；
  * canonical timeline 的 ESTIMATED start = BattleEnded.raw − duration（真实 battle-relative，
- * docs/features/battle-playback.md §2.4）。parity 断言把 legacy 时间减去该偏移后对比——语义等价，
+ * docs/features/battle-playback.md）。parity 断言把 legacy 时间减去该偏移后对比——语义等价，
  * 数值（HP/maxHp/deathSec/事件计数/点数）必须严格一致。</p>
  */
 class BattlePlaybackAdapterParityTest {
@@ -155,7 +155,7 @@ class BattlePlaybackAdapterParityTest {
                     adapted.pointsSamples().get(i).timeSec(), timeline, "点数时间必须一致");
         }
 
-        // ---- 真实回放 QA（docs/features/battle-playback.md §24）：新字段在真实 fixture 上可用 ----
+        // ---- 真实回放 QA：新字段在真实 fixture 上可用 ----
         for (final MapOverview.PlaybackVehicle v : adapted.vehicles()) {
             assertNotNull(v.finalStats(), "finalStats 不得为 null: " + v.accountId());
             final PlayerResult player = playerOf(battle, v.accountId());
@@ -184,7 +184,7 @@ class BattlePlaybackAdapterParityTest {
                         "阵亡车辆 observedCapacityHp 仍必须是纯观测最大值: " + v.accountId());
             }
         }
-        // KILL 广播 provenance（docs/features/battle-playback.md §15）：KILL 的 attacker/victim 必须来自
+        // KILL 广播 provenance：KILL 的 attacker/victim 必须来自
         // 同一时刻（同炮窗口）的 DAMAGE 事件——击杀者身份只由客户端伤害通知证明，
         // 前端 kill feed 不得超出该证据范围（未证明全局广播 → 只显示受害者被击毁）。
         for (final MapOverview.PlaybackEvent kill : adapted.events()) {
@@ -212,7 +212,7 @@ class BattlePlaybackAdapterParityTest {
     /**
      * legacy raw 时间 − battle start ≈ adapter battle-relative 时间。
      * 区间边界容差 2.0s：adapter 以 1 秒 frame 粒度评估知识状态（运行段结束可能早 ~1s），
-     * 属「等价语义」（docs/features/battle-playback.md §54），事件/HP/点数用严格断言。
+     * 属「等价语义」，事件/HP/点数用严格断言。
      */
     private static void assertCloseToShifted(
             final double legacyTime, final double adaptedTime,

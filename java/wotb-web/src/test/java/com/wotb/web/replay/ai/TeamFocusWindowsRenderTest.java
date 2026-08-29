@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Team Review FOCUS WINDOWS 渲染（docs/features/team-ai-review.md §5/§13）：每个窗口必须输出
+ * Team Review FOCUS WINDOWS 渲染：每个窗口必须输出
  * BEFORE / EVENTS / AFTER / OBSERVED FACTS / EVIDENCE LIMITATIONS；不 future leak；
  * 稀疏证据不编造战术原因。
  */

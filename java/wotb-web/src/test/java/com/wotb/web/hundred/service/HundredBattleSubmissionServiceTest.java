@@ -46,7 +46,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * 百场 submission 业务契约测试（Mockito，无 DB，任何环境可跑）。
- * 覆盖 docs/features/hall-of-fame.md §52：submission 校验矩阵 / CURRENT 门槛 / snapshot /
+ * 覆盖：submission 校验矩阵 / CURRENT 门槛 / snapshot /
  * approval / terminal transition 竞争 / delete / rank / files。
  */
 @ExtendWith(MockitoExtension.class)

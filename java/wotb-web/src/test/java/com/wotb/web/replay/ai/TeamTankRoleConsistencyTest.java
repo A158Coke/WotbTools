@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
- * Tank role 一致性（docs/features/team-ai-review.md §8/§13-F）：tankName / vehicleClass / tier 必须
+ * Tank role 一致性：tankName / vehicleClass / tier 必须
  * 来自同一 backend canonical 来源（ReplayDisplayNames）；战术 Profile（TankTacticalProfileRegistry）
  * 是唯一角色语义来源；后端未提供角色时只写名称与车种。
  */

@@ -498,7 +498,7 @@ export function clampViewPan(view, viewW, viewH) {
   }
 }
 /**
- * HP 显示时刻的 knowledge projection（review Blocker 3 / docs/features/battle-playback.md §7.3/§10.1）：
+ * HP 显示时刻的 knowledge projection（docs/features/battle-playback.md HP 显示时刻）：
  * 敌方在位置流未覆盖（last-known）期间，HP 冻结在「进入 last-known 前最后一个允许知道的值」——
  * 即最后一个在 t 之前（含）结束的覆盖区间端点时刻的采样（区间端点 = 失察前最后可信时刻）；
  * 恢复覆盖后直接用 t（届时最新可信 HP，不补播 hidden interval 的历史伤害动画）。
@@ -563,7 +563,7 @@ function hpEvidenceConsistent(vehicle, t) {
 }
 
 /**
- * 单车 HP HUD 显示语义（docs/features/battle-playback.md §4/§5/§6/§7 + PR #107 HP provenance）：
+ * 单车 HP HUD 显示语义（docs/features/battle-playback.md HP HUD + PR #107 HP provenance）：
  *
  * <p>状态机（state 字段，替代把多种语义压进一个布尔/黑条）：</p>
  * <ul>
@@ -666,7 +666,7 @@ export function hpDisplay(vehicle, t, { friendly = false } = {}) {
 }
 
 /**
- * 某账号 t 时刻的累计战斗统计（确定性重建，docs/features/battle-playback.md §16/§17）：
+ * 某账号 t 时刻的累计战斗统计（确定性重建，docs/features/battle-playback.md）：
  * - dealt = Σ 可 attribution 的权威 HP loss（该账号为攻击者，来自车辆 hpLosses）；
  * - received = Σ 该车辆全部权威 HP loss（受害者侧，HP 采样推导，含无法 attribution 的掉血）；
  * - kills = Σ KILL（该账号为攻击者；KILL 只在击杀者身份可解析时产生）。
@@ -695,7 +695,7 @@ export function cumulativeStatsAt(events, accountId, t, vehicles = []) {
 }
 
 /**
- * 最近伤害记录（docs/features/battle-playback.md §19「最近伤害记录」）：全部车辆的权威 HP loss，
+ * 最近伤害记录（docs/features/battle-playback.md「最近伤害记录」）：全部车辆的权威 HP loss，
  * 只消费 toSec ≤ t 的记录（backward seek 后未来伤害记录不泄漏）。
  * - in：该车为受害者（attacker 不可证明时 label 走「来源未知」）；
  * - out：该车为攻击者（仅 attackerReliable 可归属时产生）。

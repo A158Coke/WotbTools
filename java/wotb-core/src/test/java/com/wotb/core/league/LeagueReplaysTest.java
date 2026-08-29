@@ -268,7 +268,7 @@ class LeagueReplaysTest {
     @Test
     void unknownPlusKnownReconciledDeterministicallyRegardlessOfUploadOrder() {
         // 同一 arenaId 两份一致副本：玩家 1001 死亡时间一份 UNKNOWN(0)、一份 KNOWN 128.12；
-        // 敌方 2001 在两份中都于 132.0s 阵亡——PR147 §C precision-aware：SETTLEMENT_SECOND ±0.5s 量化，
+        // 敌方 2001 在两份中都于 132.0s 阵亡——precision-aware：SETTLEMENT_SECOND ±0.5s 量化，
         // 该值区间 [131.5,132.5] 确定性落在玩家 [128.12, 133.12] 窗口内（enemy_min>=player_max）→ TRADE；
         // 原本 128.5 在 ±0.5 区间下与玩家 128.12 为 ambiguous（敌方可能 128.0<玩家）→ fails closed，不再用 midpoint 强判。
         // UNKNOWN+KNOWN 不是 conflict；canonical 使用 KNOWN；上传顺序不影响最终 Rating。

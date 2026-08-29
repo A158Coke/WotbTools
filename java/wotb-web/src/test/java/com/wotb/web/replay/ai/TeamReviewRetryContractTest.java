@@ -44,7 +44,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Natural Coach 轮：Team Call #2 事实一致性校验 + LLM 自修循环编排契约。
- * <p>流程（docs/features/team-ai-review.md §13/§14）：Draft → validate；FAIL → targeted rewrite；
+ * <p>流程：Draft → validate；FAIL → targeted rewrite；
  * FAIL → full rewrite；仍 FAIL → fail-safe（AI_REVIEW_GROUNDING_FAILED）。Backend 绝不代改句子。</p>
  */
 class TeamReviewRetryContractTest {
@@ -443,7 +443,7 @@ class TeamReviewRetryContractTest {
                 "HARD 冲突仍恰好 3 次尝试后 fail-safe");
     }
 
-    // ===== docs/features/team-ai-review.md §7/§25：只有 Team Call #2 使用 JSON_OBJECT =====
+    // ===== 只有 Team Call #2 使用 JSON_OBJECT =====
 
     @Test
     void teamCall2ExplicitlyUsesJsonObjectWhilePreBattleStaysText() {

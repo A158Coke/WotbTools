@@ -331,7 +331,7 @@ class AiReplayAnalysisServiceTest {
 
     @Test
     void playerRequestWithoutReconstructionRejectsAiReview() {
-        // docs/architecture/ai-review.md §3：无法构建 canonical timeline → 拒绝 AI Review，不走 settlement-only
+        // 无法构建 canonical timeline → 拒绝 AI Review，不走 settlement-only
         final var service = startService();
         final com.wotb.web.replay.exception.AiTimelineUnusableException e = assertThrows(
                 com.wotb.web.replay.exception.AiTimelineUnusableException.class,

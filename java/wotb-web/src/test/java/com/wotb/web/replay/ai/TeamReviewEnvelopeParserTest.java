@@ -263,7 +263,7 @@ class TeamReviewEnvelopeParserTest {
         assertNull(TeamReviewEnvelopeParser.parse(json),
                 "subjectAccountId 为字符串必须 reject（JSON number）");
     }
-    // ===== docs/features/team-ai-review.md §44/§45：可诊断 ParseResult + 稳定失败分类 =====
+    // ===== 可诊断 ParseResult + 稳定失败分类 =====
 
     @Test
     void parseDetailedReturnsOkWithEnvelope() {
@@ -361,7 +361,7 @@ class TeamReviewEnvelopeParserTest {
         assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.TOO_MANY_EVIDENCE_IDS, result.failureReason());
     }
 
-    /** docs/features/team-ai-review.md §26：合法 JSON 但业务 schema 违反 → parser 仍 FAIL（JSON syntax ≠ business schema）。 */
+    /** 合法 JSON 但业务 schema 违反 → parser 仍 FAIL（JSON syntax ≠ business schema）。 */
     @Test
     void jsonModeTypicalResponseWithWrongClaimsTypeFails() {
         final String wrong = "{\"primaryDiagnosis\": {\"title\": \"t\", \"reasoning\": \"r\"},"
@@ -371,7 +371,7 @@ class TeamReviewEnvelopeParserTest {
         assertEquals(TeamReviewEnvelopeParser.ParseFailureReason.INVALID_CLAIMS, result.failureReason());
     }
 
-    /** docs/features/team-ai-review.md §26：官方 JSON mode 典型响应正常解析 PASS。 */
+    /** 官方 JSON mode 典型响应正常解析 PASS。 */
     @Test
     void jsonModeTypicalResponseParsesPass() {
         final String typical = "{\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
