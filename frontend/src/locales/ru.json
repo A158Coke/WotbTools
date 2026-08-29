@@ -1437,7 +1437,11 @@
                 "module_state": "Состояние модулей/экипажа",
                 "consumable": "Расходник",
                 "provision": "Провизия",
-                "equipment": "Оборудование"
+                "equipment": "Оборудование",
+                "orientation": "Направление",
+                "recorder_visible": "Видно записывающему",
+                "orientation_current": "Текущее направление",
+                "orientation_last_known": "Последнее известное направление"
             }
         },
         "stages": {

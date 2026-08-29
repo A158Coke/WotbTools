@@ -289,23 +289,29 @@ public class ReplayProcessingJobService {
         if (battle == null || result == null || result.reconstruction() == null) {
             return null;
         }
-        final var recorder = battle.recorderResult();
-        if (recorder == null) {
+        try {
+            final var recorder = battle.recorderResult();
+            if (recorder == null) {
+                return null;
+            }
+            final com.wotb.core.replay.timeline.BattleTimelineResult tl =
+                    com.wotb.core.replay.timeline.BattleTimelineBuilder.build(
+                            battle, result.reconstruction(),
+                            com.wotb.core.replay.timeline.TimelinePerspective.personal(
+                                    recorder.accountId > 0 ? recorder.accountId : null, recorder.team));
+            if (!tl.usable()) {
+                return null;
+            }
+            final var mapping = com.wotb.core.replay.processing.TeamEntityMapper.resolve(
+                    battle, result.reconstruction());
+            return com.wotb.web.replay.ai.BattlePlaybackProjector.project(
+                    battle, tl.timeline(), mapping,
+                    recorder.accountId > 0 ? recorder.accountId : null);
+        } catch (final RuntimeException ex) {
+            // canonical timeline 构建/投影任何运行时异常 ≠ parse failure：
+            // V2 dataset 是能力增强，不可用即跳过（不判 source FAILED、不覆盖 MapOverview）。
             return null;
         }
-        final com.wotb.core.replay.timeline.BattleTimelineResult tl =
-                com.wotb.core.replay.timeline.BattleTimelineBuilder.build(
-                        battle, result.reconstruction(),
-                        com.wotb.core.replay.timeline.TimelinePerspective.personal(
-                                recorder.accountId > 0 ? recorder.accountId : null, recorder.team));
-        if (!tl.usable()) {
-            return null;
-        }
-        final var mapping = com.wotb.core.replay.processing.TeamEntityMapper.resolve(
-                battle, result.reconstruction());
-        return com.wotb.web.replay.ai.BattlePlaybackProjector.project(
-                battle, tl.timeline(), mapping,
-                recorder.accountId > 0 ? recorder.accountId : null);
     }
 
     /**

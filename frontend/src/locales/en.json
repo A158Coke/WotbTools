@@ -1437,7 +1437,11 @@
                 "module_state": "Module / crew state",
                 "consumable": "Consumable",
                 "provision": "Provision",
-                "equipment": "Equipment"
+                "equipment": "Equipment",
+                "orientation": "Orientation",
+                "recorder_visible": "Recorder-visible",
+                "orientation_current": "Current heading",
+                "orientation_last_known": "Last known heading"
             }
         },
         "stages": {
