@@ -24,6 +24,10 @@ public class ReplayPacketDecoderRegistry {
         registry.register(new EntityCreateDecoder());
         registry.register(new MaterializationAnnouncedDecoder());
         registry.register(new MaterializationDecoder());
+        // Type32 entity auxiliary blob: generic envelope + (version/class/flag/length scoped)
+        // consumable-lifecycle semantic routing. Registered after MaterializationDecoder so the
+        // entityClassRegistry already has VEHICLE marks from Type5 entityTypeId==2 for routing.
+        registry.register(new EntityAuxiliaryBlobDecoder());
         registry.register(new AmmunitionSelectionDecoder());
         registry.register(new EntityPropertyDecoder());
         registry.register(new GunMarkerSizeDecoder());

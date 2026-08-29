@@ -6,6 +6,24 @@
 /** 相邻可信位置的最大间隔（秒）；超过则断线，禁止穿线插值。 */
 const OBSERVED_GAP_SEC = 5
 
+/** 二分：最近一次 key <= t 的 transition（列表按 key 升序）。无 → null。 */
+function lastAtOrBefore(items, t, key) {
+  if (!Array.isArray(items) || items.length === 0) return null
+  let lo = 0
+  let hi = items.length - 1
+  let ans = null
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1
+    if (items[mid][key] <= t + 1e-6) {
+      ans = items[mid]
+      lo = mid + 1
+    } else {
+      hi = mid - 1
+    }
+  }
+  return ans
+}
+
 /**
  * 某时刻车辆位置：
  * - t 早于首点 → null（尚未观测，不显示）
@@ -64,6 +82,12 @@ export function positionCoveredAt(intervals, t) {
  */
 export function vehicleHpAt(vehicle, t, assumeFullWhenUnobserved = false) {
   if (!vehicle || !Number.isFinite(t)) return null
+  // V2 source-aware：carries canonical healthTransitions → 从 V2 读取（knowledge/provenance
+  // 已由后端标注，前端不再从 hpSamples/entryHp 推导）。
+  if (Array.isArray(vehicle.healthTransitions) && vehicle.healthTransitions.length > 0) {
+    const last = lastAtOrBefore(vehicle.healthTransitions, t, 'timeSec')
+    return last ? (last.currentHp ?? null) : null
+  }
   const samples = vehicle.hpSamples || []
   let hp = null
   for (const s of samples) {
@@ -109,6 +133,31 @@ export function vehicleHpAt(vehicle, t, assumeFullWhenUnobserved = false) {
  */
 export function teamHp(vehicles, team, t, assumeFullWhenUnobserved = false) {
   const teamVehicles = (vehicles || []).filter(v => v && v.team === team)
+  // V2 source-aware：team 车辆携带 canonical healthTransitions → 从 V2 聚合，
+  // 前端不再做 HP provenance 状态机推断。current=last<=t；total=ΣdisplayCapacityHp。
+  if (teamVehicles.length > 0 && teamVehicles.every(v => Array.isArray(v.healthTransitions))) {
+    let knownRemaining = 0
+    let totalCapacity = 0
+    let anyCapacity = false
+    for (const v of teamVehicles) {
+      const lt = lastAtOrBefore(v.healthTransitions, t, 'timeSec')
+      if (lt && Number.isFinite(lt.currentHp)) knownRemaining += lt.currentHp
+      const cap = lastAtOrBefore(v.healthTransitions, t, 'timeSec')?.displayCapacityHp ?? null
+      if (Number.isFinite(cap) && cap > 0) {
+        totalCapacity += cap
+        anyCapacity = true
+      }
+    }
+    const state = knownRemaining > 0 || anyCapacity ? 'EXACT' : 'UNKNOWN'
+    return {
+      totalMax: anyCapacity ? totalCapacity : 0,
+      knownRemaining,
+      unknownMax: 0,
+      spawnFullCount: 0,
+      openingFullCount: 0,
+      state,
+    }
+  }
   let totalMax = 0
   let knownRemaining = 0
   let unknownMax = 0
@@ -607,13 +656,31 @@ function hpEvidenceConsistent(vehicle, t) {
  */
 export function hpDisplay(vehicle, t, { friendly = false } = {}) {
   if (!vehicle || !Number.isFinite(t)) return null
-  const destroyed = vehicle.deathSec != null && t >= vehicle.deathSec - 1e-6
+  // V2：毁伤由图腾生命 transition 表达（lifeState=DESTROYED），不是 HP<=0 派生。
+  let destroyed
+  if (Array.isArray(vehicle.lifeTransitions)) {
+    const lt = lastAtOrBefore(vehicle.lifeTransitions, t, 'timeSec')
+    destroyed = lt != null && lt.lifeState === 'DESTROYED'
+  } else {
+    destroyed = vehicle.deathSec != null && t >= vehicle.deathSec - 1e-6
+  }
   if (destroyed) {
     return { current: 0, maxHp: null, pct: 0, destroyed: true, state: 'DESTROYED', fullState: false }
   }
   const knownT = hpKnowledgeTime(vehicle, t, friendly)
   const current = vehicleHpAt(vehicle, knownT, false)
   if (current != null) {
+    // V2：current 来自 canonical healthTransitions 时，knowledge 已由后端标注；
+    // LAST_KNOWN（hidden interval）→ state=LAST_KNOWN（前端不冒充 CURRENT）。
+    if (Array.isArray(vehicle.healthTransitions)) {
+      const lt = lastAtOrBefore(vehicle.healthTransitions, knownT, 'timeSec')
+      const knowledge = lt ? (lt.knowledge || 'UNKNOWN') : 'UNKNOWN'
+      return {
+        current, maxHp: null, pct: null, destroyed: false,
+        state: knowledge === 'CURRENT' ? 'CURRENT' : 'LAST_KNOWN',
+        fullState: false,
+      }
+    }
     // 有真实采样：
     // - OBSERVED_EXACT（进场满血已证明）→ current + 精确 maxHp/entryHp + pct；
     //   Blocker 3：任何 ≤t 可信采样超过 entryHp（矛盾证据）→ INCONSISTENT（保留真实 current、

@@ -221,7 +221,7 @@ public final class BattleTimelineBuilder {
             for (final FrameVehicle v : vehicles) {
                 prevHp.put(v.entityId(), v.health() == null ? null : v.health().currentHp());
                 prevHpObservedAt.put(v.entityId(),
-                        v.health() == null ? null : v.health().currentHpObservedAtSec());
+                        v.health() == null ? null : v.health().observedAtSec());
                 prevKnowledge.put(v.entityId(), v.knowledgeState());
                 prevPositions.put(v.entityId(), v.position());
                 prevRegions.put(v.entityId(),
@@ -440,7 +440,7 @@ public final class BattleTimelineBuilder {
 
         // health
         final EntityIndex.HpSample hp = index.lastHealthAtOrBefore(entityId, t);
-        final FrameHealth health = buildHealth(hp, t, identity.baseHp());
+        final FrameHealth health = buildHealth(hp, t, index, aoiByEntity, entityId);
 
         // destroyed-known (world fact at t): latest reliable life sample
         final var destroyed = index.destroyedInfoAt(entityId, t);
@@ -460,8 +460,17 @@ public final class BattleTimelineBuilder {
             final Float rel = turret == null ? null : (float) turret.relYawDeg();
             final Float world = rel == null ? null
                     : FrameOrientation.normalizeDeg(pos.yawDeg() + rel);
+            final double observed = Math.max(pos.clock(), turret == null ? -1 : turret.clock());
+            // 敌方离开 AoI → 方向降为 LAST_KNOWN（不能继续表现为实时炮塔方向）。
+            final AoiObservationSegment aoiSeg = ReplayAoiLifecycle.segmentAt(aoiByEntity, entityId, t);
+            final boolean active = aoiSeg != null
+                    && pos.clock() >= aoiSeg.observedFromSec() - 1e-9;
+            final FrameOrientation.OrientationKnowledge ok = active
+                    ? FrameOrientation.OrientationKnowledge.CURRENT
+                    : FrameOrientation.OrientationKnowledge.LAST_KNOWN;
             orientation = new FrameOrientation(pos.yawDeg(), rel, world,
-                    Math.max(pos.clock(), turret == null ? -1 : turret.clock()));
+                    observed, t - observed, ok,
+                    active ? Confidence.HIGH : Confidence.MEDIUM);
         }
 
         // no cumulative damage on the canonical vehicle frame. DamageEvent raw value is NOT
@@ -491,9 +500,13 @@ public final class BattleTimelineBuilder {
     }
 
     private static FrameHealth buildHealth(
-            final EntityIndex.HpSample hp, final double t, final Integer baseHp) {
+            final EntityIndex.HpSample hp,
+            final double t,
+            final EntityIndex index,
+            final Map<Integer, List<AoiObservationSegment>> aoiByEntity,
+            final int entityId) {
         if (hp == null) {
-            return FrameHealth.unknown(baseHp);
+            return FrameHealth.unknown();
         }
         final Integer current = hp.currentHp();
         final double age = t - hp.clock();
@@ -501,8 +514,15 @@ public final class BattleTimelineBuilder {
                 ? HpSource.EXACT_BATTLE_EVENT : HpSource.INFERRED;
         final Confidence conf = hp.confidence() == DecodeConfidence.EXACT
                 ? Confidence.HIGH : Confidence.MEDIUM;
-        return new FrameHealth(current, hp.clock(), age, source,
-                baseHp, null, HpSource.UNKNOWN, conf);
+        // HP knowledge 与 AoI observation boundary 一致：t 在 open observed segment 且采样来自本段
+        // → CURRENT；t 在 UNKNOWN_AOI gap / 采样跨 hidden interval → LAST_KNOWN。
+        final AoiObservationSegment aoiSeg = ReplayAoiLifecycle.segmentAt(aoiByEntity, entityId, t);
+        final boolean active = aoiSeg != null && hp.clock() >= aoiSeg.observedFromSec() - 1e-9;
+        final FrameHealth.HealthKnowledge knowledge = active
+                ? FrameHealth.HealthKnowledge.CURRENT
+                : FrameHealth.HealthKnowledge.LAST_KNOWN;
+        final Integer displayCapacity = index.displayCapacityHpAt(entityId, t);
+        return new FrameHealth(current, hp.clock(), age, source, knowledge, displayCapacity, conf);
     }
 
     record Identity(Long accountId, String nickname, Integer tankId,

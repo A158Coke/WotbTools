@@ -1432,7 +1432,16 @@
                 "vehicle_class_medium": "Medium tank",
                 "vehicle_class_light": "Light tank",
                 "vehicle_class_td": "Tank destroyer",
-                "vehicle_class_spg": "Self-propelled gun"
+                "vehicle_class_spg": "Self-propelled gun",
+                "loadout": "Battle loadout",
+                "module_state": "Module / crew state",
+                "consumable": "Consumable",
+                "provision": "Provision",
+                "equipment": "Equipment",
+                "orientation": "Orientation",
+                "recorder_visible": "Recorder-visible",
+                "orientation_current": "Current heading",
+                "orientation_last_known": "Last known heading"
             }
         },
         "stages": {

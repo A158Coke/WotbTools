@@ -38,6 +38,8 @@ public sealed interface ReplayEvent
                 SessionDecisecondLowByteEvent,
                 ArenaPeriodChangedEvent,
                 RoundFinishedEvent,
+                EntityAuxiliaryBlobEvent,
+                ConsumableLifecycleEvent,
                 ReplayStreamClosedEvent,
                 VehicleHitEvent,
                 VehicleVehicleCollisionEvent {

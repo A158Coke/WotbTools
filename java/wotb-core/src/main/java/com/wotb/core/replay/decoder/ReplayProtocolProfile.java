@@ -53,6 +53,8 @@ public final class ReplayProtocolProfile {
         METHOD38_SHOT_RESULT,
         TYPE31_GUN_MARKER,
         TYPE35_SESSION_DECISECOND,
+        /** Type32 mobile flag=0 16-byte consumable-lifecycle semantic (wireCode→identity), 11.19 corpus proven. */
+        TYPE32_CONSUMABLE_LIFECYCLE,
         AMMO_SELECTION
     }
 
@@ -135,7 +137,8 @@ public final class ReplayProtocolProfile {
                     // 独立证明：entityTypeId==2 vehicle materialization（Type5 物化）与 FFFD 死亡终态。
                     TERMINAL_FFFD, ENTITY_TYPE_ID_SEMANTIC -> true;
             case TERMINAL_FFFE, METHOD_SEMANTICS, METHOD36_AIM_RAY,
-                    METHOD38_SHOT_RESULT, TYPE31_GUN_MARKER, TYPE35_SESSION_DECISECOND, AMMO_SELECTION -> false;
+                    METHOD38_SHOT_RESULT, TYPE31_GUN_MARKER, TYPE35_SESSION_DECISECOND,
+                    TYPE32_CONSUMABLE_LIFECYCLE, AMMO_SELECTION -> false;
         };
     }
 
@@ -146,7 +149,8 @@ public final class ReplayProtocolProfile {
                     TYPE14_STREAM_CLOSE, HP_POSITIVE_VALUE -> true;
             case PARTICIPANT_MAPPING, SETTLEMENT_SCHEMA, PROP_TURRET_YAW, TERMINAL_FFFD, TERMINAL_FFFE,
                     ENTITY_TYPE_ID_SEMANTIC, METHOD_SEMANTICS, METHOD36_AIM_RAY, METHOD38_SHOT_RESULT,
-                    TYPE31_GUN_MARKER, TYPE35_SESSION_DECISECOND, AMMO_SELECTION -> false;
+                    TYPE31_GUN_MARKER, TYPE35_SESSION_DECISECOND,
+                    TYPE32_CONSUMABLE_LIFECYCLE, AMMO_SELECTION -> false;
         };
     }
 }
