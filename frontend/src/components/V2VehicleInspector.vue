@@ -21,8 +21,19 @@ const props = defineProps({
 
 const { t } = useI18n()
 
-const health = computed(() => healthAt(props.track, props.timeSec))
 const life = computed(() => lifeAt(props.track, props.timeSec))
+const health = computed(() => {
+  // 与 marker/HUD 一致：阵亡为权威事实，current=0（绝不显示阵亡前最后一次健康值）。
+  if (life.value?.lifeState === 'DESTROYED') {
+    return {
+      currentHp: 0,
+      knowledge: 'CURRENT',
+      displayCapacityHp: healthAt(props.track, props.timeSec)?.displayCapacityHp ?? null,
+      source: 'DESTROYED',
+    }
+  }
+  return healthAt(props.track, props.timeSec)
+})
 const covered = computed(() => positionCoveredAtV2(props.track.positionSegments, props.timeSec))
 const orientation = computed(() => orientationKnownAt(props.track, props.timeSec))
 const loadout = computed(() => props.track.loadout || null)
@@ -49,7 +60,8 @@ const modules = computed(() => moduleCrewAt(props.track.moduleCrewTransitions, p
 
 const stateLabel = computed(() => {
   if (life.value?.lifeState === 'DESTROYED') return t('recon.map.playback.state_destroyed')
-  if (covered.value) return t('recon.map.playback.state_detected')
+  // AoI/position coverage ≠ 点亮：CURRENT observation 表达「当前观测」，不用 Detected/已发现。
+  if (covered.value) return t('recon.map.playback.state_current_observation')
   if (valueSeen.value) return t('recon.map.playback.state_last_known')
   return t('recon.map.playback.unknown')
 })
@@ -61,14 +73,25 @@ const orientationLabel = computed(() => {
   if (orientation.value === 'LAST_KNOWN') return t('recon.map.playback.orientation_last_known')
   return t('recon.map.playback.unknown')
 })
+
+/** tankClass 为 canonical 英文 class（Heavy tank/Medium tank/...）；UI 用已有三语翻译，不裸显英文。 */
+const VEHICLE_CLASS_KEYS = {
+  'Heavy tank': 'recon.map.playback.vehicle_class_heavy',
+  'Medium tank': 'recon.map.playback.vehicle_class_medium',
+  'Light tank': 'recon.map.playback.vehicle_class_light',
+  'Tank destroyer': 'recon.map.playback.vehicle_class_td',
+  'SPG': 'recon.map.playback.vehicle_class_spg',
+}
+const tankClassLabel = computed(() => {
+  const cls = props.track.tankClass
+  if (!cls) return '—'
+  const key = VEHICLE_CLASS_KEYS[cls]
+  return key ? t(key) : cls
+})
 </script>
 
 <template>
   <div class="v2-inspector" data-test="v2-vehicle-inspector">
-    <div class="v2-inspector-title" data-test="v2-inspector-title">
-      {{ track.playerName || `#${track.accountId}` }} — {{ track.tankName || '—' }}
-    </div>
-
     <div class="v2-inspector-row" data-test="v2-inspector-hp">
       <span class="v2-inspector-key">{{ $t('recon.map.playback.current_hp') }}</span>
       <span class="v2-inspector-val">
@@ -89,14 +112,12 @@ const orientationLabel = computed(() => {
 
     <div class="v2-inspector-row" data-test="v2-inspector-knowledge">
       <span class="v2-inspector-key">{{ $t('recon.map.playback.vehicle_type') }}</span>
-      <span class="v2-inspector-val">{{ track.tankClass || '—' }}</span>
+      <span class="v2-inspector-val">{{ tankClassLabel }}</span>
     </div>
 
     <div class="v2-inspector-row" data-test="v2-inspector-orientation">
       <span class="v2-inspector-key">{{ $t('recon.map.playback.orientation') }}</span>
-      <span class="v2-inspector-val">
-        {{ orientation === 'CURRENT' ? $t('recon.map.playback.state_detected') : orientation }}
-      </span>
+      <span class="v2-inspector-val">{{ orientationLabel }}</span>
     </div>
 
     <template v-if="loadout">
@@ -151,7 +172,6 @@ const orientationLabel = computed(() => {
   padding: 10px 12px;
   font-size: 12px;
 }
-.v2-inspector-title { font-weight: 600; }
 .v2-inspector-section {
   margin-top: 6px;
   font-weight: 600;

@@ -82,66 +82,6 @@ class MapOverviewBuilderTest {
         assertFalse(overview.phases().isEmpty(), "应产出阶段切片");
         assertEquals("opening", overview.phases().get(0).key());
 
-        // 战局回放契约：时长/车辆/事件（真实夹具应有 DAMAGE 与可见性事件）
-        assertNotNull(overview.playback(), "rift 有观测与名册，playback 不应为 null");
-        assertTrue(overview.playback().durationSec() > 0);
-        assertFalse(overview.playback().vehicles().isEmpty());
-        // 坦克名权威解析（#6/#1）：playback.vehicles[].tankName 由 tankId → tankopedia 映射，
-        // 不再是空串（空串会让前端回退显示纯数字 tankId）。
-        for (final MapOverview.PlaybackVehicle v : overview.playback().vehicles()) {
-            assertFalse(v.tankName().isBlank(), "坦克名应权威解析，非空: " + v.playerName());
-            assertFalse(v.tankName().matches("\\d+"), "坦克名不应是纯数字 tankId: " + v.playerName());
-        }
-        // 回放实测血量（#2）：fixture 至少录像者有血量采样
-        assertTrue(overview.playback().vehicles().stream()
-                        .anyMatch(v -> !v.hpSamples().isEmpty()),
-                "fixture 应至少有一辆车（录像者）有回放实测血量采样");
-        // 争霸赛实时点数时间线契约（随机战 fixture 无 field12 广播 → 空列表而非 null）
-        assertNotNull(overview.playback().pointsSamples(), "pointsSamples 契约：非 null");
-        for (final MapOverview.PlaybackVehicle v : overview.playback().vehicles()) {
-            // PR #107 Blocker 3：baseHp 只来自 Tankopedia；observedCapacityHp 只来自真实可信
-            // Type-7 positive HP 采样最大值（纯回放观测；无可信 sample → null；绝不 max(观测, base)）
-            final Integer base = ReplayDisplayNames.tankMaxHpValue(v.tankId());
-            assertEquals(base, v.baseHp(), "baseHp 应为 tankopedia 静态参考: " + v.playerName());
-            assertEquals(MapOverview.observedCapacityHpOf(v.hpSamples()), v.observedCapacityHp(),
-                    "observedCapacityHp 必须与 hpSamples 纯观测最大值一致（无样本为 null）: "
-                            + v.playerName());
-        }
-        assertFalse(overview.playback().events().isEmpty());
-        assertTrue(overview.playback().events().stream()
-                        .anyMatch(e -> "DAMAGE".equals(e.type())),
-                "真实夹具应包含 DAMAGE 事件");
-        assertTrue(overview.playback().events().stream()
-                        .anyMatch(e -> "POSITION_REPORTED".equals(e.type()) || "POSITION_STALE".equals(e.type())),
-                "真实夹具应包含可见性事件");
-        for (final MapOverview.PlaybackEvent event : overview.playback().events()) {
-            assertTrue(event.timeSec() >= 0);
-            assertTrue(event.timeSec() <= overview.playback().durationSec() + 1);
-        }
-
-        // 方向采样契约：真实夹具（11.18 编码）应有炮塔相对方向样本
-        final List<MapOverview.PlaybackVehicle> withDirections = overview.playback().vehicles().stream()
-                .filter(v -> !v.directionSamples().isEmpty())
-                .toList();
-        assertFalse(withDirections.isEmpty(), "真实夹具至少一辆车有方向采样（type-7 propId=2 已破解）");
-        for (final MapOverview.PlaybackVehicle v : overview.playback().vehicles()) {
-            double lastT = -1;
-            for (final MapOverview.DirectionSample s : v.directionSamples()) {
-                assertTrue(Double.isFinite(s.timeSec()) && s.timeSec() >= 0);
-                assertTrue(s.timeSec() <= overview.playback().durationSec() + 1e-6,
-                        "方向采样不得越界");
-                assertTrue(s.timeSec() >= lastT, "方向采样按时间升序");
-                lastT = s.timeSec();
-                assertTrue(Double.isFinite(s.hullYawDeg()), "hull yaw 必须 finite");
-                assertTrue(Double.isFinite(s.turretRelativeYawDeg())
-                        && s.turretRelativeYawDeg() >= -180.0
-                        && s.turretRelativeYawDeg() < 180.0,
-                        "turretRelativeYawDeg ∈ [-180,180)");
-                if (v.deathSec() != null) {
-                    assertTrue(s.timeSec() <= v.deathSec() + 1e-6, "阵亡后不采样");
-                }
-            }
-        }
 
         assertEquals(14, overview.routes().size(), "双方 14 车");
         for (final MapOverview.Route route : overview.routes()) {
@@ -239,8 +179,7 @@ class MapOverviewBuilderTest {
                         List.of(new MapOverview.Point(0, 0, 1.5)),
                         0.8, 146.9, 115.0)),
                 1,
-                1L,
-                null);
+                1L);
         final Map<String, Object> payload = mapper.convertValue(overview, Map.class);
         assertEquals("desert_train", payload.get("mapCode"));
         assertEquals("Desert Sands", payload.get("displayName"));
@@ -258,8 +197,6 @@ class MapOverviewBuilderTest {
         assertTrue(payload.containsKey("recorderAccountId"));
         assertEquals(1, payload.get("arenaBonusType"));
         assertEquals(1L, payload.get("recorderAccountId"));
-        assertTrue(payload.containsKey("playback"));
-        assertNull(payload.get("playback"), "降级样例 playback 恒 null");
         @SuppressWarnings("unchecked")
         final Map<String, Object> route = (Map<String, Object>) ((List<?>) payload.get("routes")).get(0);
         assertTrue(route.containsKey("firstObservedSec"));
@@ -283,164 +220,4 @@ class MapOverviewBuilderTest {
         return p;
     }
 
-    // ===== 时间契约 + 方向跨 gap 边界回归 =====
-
-    private static ReplayReconstruction filteredRecon(
-            final ReplayReconstruction recon, final List<ReplayEvent> events) {
-        return new ReplayReconstruction(
-                recon.metadata(), recon.streamHeader(), recon.battleDurationSec(),
-                recon.battleStartRawClockSec(), recon.participants(), events,
-                recon.checkpoints(), recon.finalState(), recon.coverage(), recon.diagnostics());
-    }
-
-    @Test
-    void directionSamplesNeverCrossPositionGap() throws Exception {
-        final ReplayProcessingResult result = processFixture();
-        final ReplayReconstruction recon = result.reconstruction();
-        final float battleStart = recon.battleStartRawClockSec() != null
-                ? recon.battleStartRawClockSec() : 0f;
-        // 制造位置流中断：删除 (40s, 100s) 窗口内的全部位置（两侧保留；prop2 事件原样保留）
-        final double gapStart = 40.0;
-        final double gapEnd = 100.0;
-        final List<ReplayEvent> filtered = new ArrayList<>();
-        for (final ReplayEvent e : recon.events()) {
-            if (e instanceof PositionChangedEvent pos) {
-                final double t = pos.timestamp().rawClockSec() - battleStart;
-                if (t > gapStart && t < gapEnd) {
-                    continue;
-                }
-            }
-            filtered.add(e);
-        }
-        // P0-1：canonical AoI gap 需要 Type4 leave 才成立（位置流中断 ≠ 灭点，也不再按 5s 分段）。
-        // 在 gapStart 为每个有位置的实体注入 leave，使 observed segment 关闭 → gap 内无区间/方向样本。
-        final java.util.Set<Integer> posEntityIds = new java.util.HashSet<>();
-        for (final ReplayEvent e : filtered) {
-            if (e instanceof PositionChangedEvent pos) {
-                posEntityIds.add(pos.entityId());
-            }
-        }
-        int leaveSeq = 1_000_000;
-        for (final int eid : posEntityIds) {
-            filtered.add(new EntityRemovedEvent(leaveSeq++,
-                    new ReplayTimestamp(battleStart + (float) gapStart, null), 4,
-                    DecodeConfidence.EXACT, eid));
-        }
-        final MapOverview overview = MapOverviewBuilder.build(
-                result.battle(), filteredRecon(recon, filtered));
-        assertNotNull(overview);
-        assertNotNull(overview.playback());
-        for (final MapOverview.PlaybackVehicle v : overview.playback().vehicles()) {
-            // gap 内不得产生任何方向样本（prop2 在 gap 中继续广播也不得推动炮塔）
-            assertTrue(v.directionSamples().stream()
-                            .noneMatch(s -> s.timeSec() > gapStart + 1e-6
-                                    && s.timeSec() < gapEnd - 1e-6),
-                    "gap 内的 prop2 不得产生 direction sample: " + v.accountId());
-            // 时间升序
-            double last = -1;
-            for (final MapOverview.DirectionSample s : v.directionSamples()) {
-                assertTrue(s.timeSec() >= last);
-                last = s.timeSec();
-            }
-        }
-        // gap 前应有冻结点、re-entry 后方向段应继续（至少一辆有方向的车辆同时满足）
-        final List<MapOverview.PlaybackVehicle> withDirections = overview.playback().vehicles()
-                .stream().filter(v -> !v.directionSamples().isEmpty()).toList();
-        assertFalse(withDirections.isEmpty());
-        assertTrue(withDirections.stream().anyMatch(v -> v.directionSamples().stream()
-                        .anyMatch(s -> s.timeSec() <= gapStart + 1e-6)),
-                "gap 前应有方向样本（冻结点）");
-        assertTrue(withDirections.stream().anyMatch(v -> v.directionSamples().stream()
-                        .anyMatch(s -> s.timeSec() >= gapEnd - 1e-6)),
-                "re-entry 后方向段应继续");
-    }
-
-    @Test
-    void playbackTimesNeverExceedDuration() throws Exception {
-        final ReplayProcessingResult result = processFixture();
-        result.battle().durationS = 120.0; // 人为把权威时长压到尾部事件之前
-        final MapOverview overview = MapOverviewBuilder.build(
-                result.battle(), result.reconstruction());
-        assertNotNull(overview);
-        assertNotNull(overview.playback());
-        assertEquals(120.0, overview.playback().durationSec());
-        for (final MapOverview.PlaybackEvent e : overview.playback().events()) {
-            assertTrue(e.timeSec() >= 0 && e.timeSec() <= 120.0 + 1e-6,
-                    "event 越界: " + e);
-        }
-        for (final MapOverview.PlaybackVehicle v : overview.playback().vehicles()) {
-            for (final MapOverview.PositionInterval iv : v.positionIntervals()) {
-                assertTrue(iv.startSec() >= 0 && iv.endSec() <= 120.0 + 1e-6,
-                        "interval 越界: " + iv);
-            }
-            for (final MapOverview.DirectionSample s : v.directionSamples()) {
-                assertTrue(s.timeSec() >= 0 && s.timeSec() <= 120.0 + 1e-6,
-                        "direction 越界: " + s.timeSec());
-            }
-            if (v.deathSec() != null) {
-                assertTrue(v.deathSec() <= 120.0 + 1e-6, "deathSec 越界");
-            }
-        }
-    }
-
-    @Test
-    void sameEntityLeaveThenReReportKeepsLaterInterval() {
-        // 同一 entityId：10–60 位置上报 → EntityLeave@60（type-4 只表示实体离开/停止存在，不代表阵亡）
-        // → 70–120 重新上报（gap 10s > 5s → 新区间）。
-        // 修复前：末段被 removedAt=60 截断成倒置区间 [70,60]，前端 positionCoveredAt 永假 → 车标一直淡化。
-        final Map<Integer, List<MapOverviewBuilder.Position>> byEntity = new LinkedHashMap<>();
-        final List<MapOverviewBuilder.Position> pts = new ArrayList<>();
-        for (double t = 10; t <= 60 + 1e-6; t += 5) {
-            pts.add(new MapOverviewBuilder.Position(t, 100, 100, null));
-        }
-        for (double t = 70; t <= 120 + 1e-6; t += 5) {
-            pts.add(new MapOverviewBuilder.Position(t, 200, 200, null));
-        }
-        byEntity.put(100, pts);
-        final MapOverviewBuilder.Positions positions = new MapOverviewBuilder.Positions(byEntity);
-        // canonical AoI：位置事件打开观测段，leave@60 收段 [..,60)，70 重报重开新段 [70,..)。
-        final List<ReplayEvent> events = new ArrayList<>();
-        int seq = 0;
-        for (double t = 10; t <= 60 + 1e-6; t += 5) {
-            events.add(new PositionChangedEvent(seq++, new ReplayTimestamp((float) t, null), 10,
-                    DecodeConfidence.EXACT, 100, 0, 0, 100f, 0f, 100f, 0f, 0f, 0f, 0f, 0f, 0f, 0));
-        }
-        for (double t = 70; t <= 120 + 1e-6; t += 5) {
-            events.add(new PositionChangedEvent(seq++, new ReplayTimestamp((float) t, null), 10,
-                    DecodeConfidence.EXACT, 100, 0, 0, 200f, 0f, 200f, 0f, 0f, 0f, 0f, 0f, 0f, 0));
-        }
-        events.add(new EntityRemovedEvent(seq++, new ReplayTimestamp(60f, null), 4, DecodeConfidence.EXACT, 100));
-        final List<MapOverview.PositionInterval> intervals = MapOverviewBuilder.positionIntervals(
-                List.of(100), positions, events, 0f, null, 300.0);
-        for (final MapOverview.PositionInterval iv : intervals) {
-            assertTrue(iv.startSec() <= iv.endSec() + 1e-6, "不得产生倒置区间: " + iv);
-        }
-        assertTrue(intervals.stream().anyMatch(iv -> Math.abs(iv.startSec() - 10.0) < 1e-6
-                        && Math.abs(iv.endSec() - 60.0) < 1e-6),
-                "leave 前区间必须保留: " + intervals);
-        // 同一 open segment（[70,..) 无再次 leave）内不因静止 >5s 而分裂，区间延伸至段末（battleEnd）。
-        assertTrue(intervals.stream().anyMatch(iv -> Math.abs(iv.startSec() - 70.0) < 1e-6
-                        && Math.abs(iv.endSec() - 300.0) < 1e-6),
-                "EntityLeave 后同一实体再上报的区间必须保留（延续至段末）: " + intervals);
-    }
-
-    @Test
-    void durationPrefersBattleEndedOverLastPosition() throws Exception {
-        final ReplayProcessingResult result = processFixture();
-        final ReplayReconstruction recon = result.reconstruction();
-        final List<ReplayEvent> events = new ArrayList<>(recon.events());
-        // 合成 RoundFinishedEvent（battle-relative 150s），早于位置流最后时刻（≈302s）
-        events.add(new RoundFinishedEvent(
-                999_999, new ReplayTimestamp(0f, 150f), 14,
-                DecodeConfidence.EXACT, 2, 1, RoundFinishedEvent.FinishCause.ELIMINATION));
-        result.battle().durationS = null;
-        final MapOverview overview = MapOverviewBuilder.build(
-                result.battle(), filteredRecon(recon, events));
-        assertNotNull(overview);
-        assertNotNull(overview.playback());
-        assertEquals(150.0, overview.playback().durationSec(), 1e-6);
-        for (final MapOverview.PlaybackEvent e : overview.playback().events()) {
-            assertTrue(e.timeSec() <= 150.0 + 1e-6, "event 越过 BattleEnded 时长");
-        }
-    }
 }

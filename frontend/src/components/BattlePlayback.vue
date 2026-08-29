@@ -25,10 +25,6 @@ import {
   formatClock,
   ghostAround,
   hpDisplay,
-  interpolateDirection,
-  lastKnownPosition,
-  positionAt,
-  positionCoveredAt,
   pushFeed,
   recorderRelated,
   screenRotation,
@@ -47,6 +43,7 @@ import {
   orientationAtV2,
   healthAt,
   lifeAt,
+  v2VehicleView,
 } from '../utils/battlePlaybackV2'
 import {
   MARKER_CORE_PX,
@@ -101,7 +98,8 @@ watch(image, async (img) => {
   palette.value = paletteForLuminance(await luminanceOfImage(img))
 }, { immediate: true })
 
-const playback = computed(() => props.overview.playback || null)
+// V2 canonical dataset 是唯一 playback 事实源（cleanup：移除 legacy overview.playback）。
+const playback = computed(() => props.playbackV2 || null)
 /** V2 canonical tracks 按账号索引（迁移期守卫：present 时 marker/HUD 用 V2 事实源）。 */
 const v2TrackByAccount = computed(() => {
   const tracks = props.playbackV2?.vehicles || []
@@ -120,11 +118,11 @@ const preload = ref({ phase: 'idle', resolved: new Map(), failed: new Set(), byT
 // 竞态令牌：快速切换战局时，过期 preload 完成不得覆盖新战局结果
 let preloadToken = 0
 watch(
-  () => props.overview,
-  async (ov) => {
+  () => [props.overview, props.playbackV2],
+  async () => {
     const token = ++preloadToken
     preload.value = { phase: 'loading', resolved: new Map(), failed: new Set(), byTank: new Map() }
-    const vehicles = ov?.playback?.vehicles || []
+    const vehicles = props.playbackV2?.vehicles || []
     if (vehicles.length === 0) {
       preload.value = { phase: 'ready', resolved: new Map(), failed: new Set(), byTank: new Map() }
       return
@@ -153,7 +151,11 @@ watch(
 // legacy 仅当无 V2 时才进入 HP 状态机推理。
 const hpVehicles = computed(() => {
   if (props.playbackV2?.vehicles?.length) {
-    return props.playbackV2.vehicles.map(t => ({ team: t.team, healthTransitions: t.healthTransitions || [] }))
+    return props.playbackV2.vehicles.map(t => ({
+      team: t.team,
+      healthTransitions: t.healthTransitions || [],
+      lifeTransitions: t.lifeTransitions || [],
+    }))
   }
   return playback.value?.vehicles || []
 })
@@ -1080,7 +1082,8 @@ const routesByAccount = computed(() => {
 const vehiclesByAccount = computed(() => {
   const map = new Map()
   for (const vehicle of (playback.value ? playback.value.vehicles : [])) {
-    map.set(vehicle.accountId, vehicle)
+    // V2 canonical vehicle view（带 hpLosses/deathSec 供累计统计/伤害日志/teamRelated）
+    map.set(vehicle.accountId, v2VehicleView(vehicle))
   }
   return map
 })
@@ -1123,64 +1126,6 @@ const HULL_HITBOX = Object.freeze({
   generic: Object.freeze({ w: 0.58, h: 0.9 }),
 })
 
-function vehicleState(vehicle) {
-  const v2Track = v2TrackByAccount.value?.get(vehicle.accountId) || null
-  if (v2Track) {
-    return vehicleStateV2(vehicle, v2Track)
-  }
-  const route = routesByAccount.value.get(vehicle.accountId)
-  const points = route ? route.points : []
-  // 局部时间变量命名 time——避免遮蔽 setup 的 i18n t()（ariaLabel 需要）
-  const time = currentTime.value
-  const destroyed = vehicle.deathSec != null && time >= vehicle.deathSec
-  const displayT = destroyed ? Math.min(time, vehicle.deathSec) : time
-  const live = positionAt(points, displayT)
-  const last = live ? live : lastKnownPosition(points, displayT)
-  if (!last) return null // 从未有可信位置：不显示
-  const covered = positionCoveredAt(vehicle.positionIntervals, time)
-  const recorder = vehicle.accountId === props.overview.recorderAccountId
-  const direction = interpolateDirection(vehicle.directionSamples, displayT)
-  const friendly = vehicle.team === friendlyTeam.value
-  // 阵亡：恒渲染 hull+turret 双层（方向冻结在最后可信样本；无样本以素材默认 0° 渲染，不代表真实朝向）；
-  // 未阵亡：无可靠方向样本时不渲染车体（不伪造朝向），行为保持不变。
-  const hullDeg = direction ? screenRotation(direction.hullYawDeg) : null
-  const turretDeg = direction
-    ? screenRotation(turretWorldYawDeg(direction.hullYawDeg, direction.turretRelativeYawDeg))
-    : null
-  return {
-    vehicle,
-    pos: last,
-    covered,
-    destroyed,
-    recorder,
-    friendly,
-    direction,
-    // dedicated model（null = generic；turretless 无 turret 层，§14）
-    model: vehicleModel(vehicle),
-    hullImage: friendly ? friendlyHull : enemyHull,
-    turretImage: friendly ? friendlyTurret : enemyTurret,
-    hullScreenDeg: destroyed ? (hullDeg == null ? 0 : hullDeg) : hullDeg,
-    turretScreenDeg: destroyed ? (turretDeg == null ? 0 : turretDeg) : turretDeg,
-    // VehicleMarker 渲染用（位置/反缩放/无障碍标签在 view model 一次性算好）
-    markerStyle: { left: markerLeft(last.x), top: markerTop(last.y), transform: markerTransform.value },
-    overlayInverseScale: overlayInverseScale.value,
-    overlayInverse: overlayInverse.value, // 数值反缩放（VehicleMarker 用它反缩放 layout offset）
-    // PR4 §26：标签数据（playerName 可为空串；tankName 权威显示名回退 tankId）
-    playerName: vehicle.playerName || '',
-    tankName: vehicle.tankName || String(vehicle.tankId),
-    // PR4 §36：hull hitbox 占 marker 盒比例（随 marker 一起缩放；dedicated 车体≈88% 视觉、
-    // generic 车体 55%×88%；+小 padding 容错）。用于点击命中判定。
-    hitbox: vehicleModel(vehicle) ? HULL_HITBOX.dedicated : HULL_HITBOX.generic,
-    ariaLabel: `${vehicle.playerName}: ${t(destroyed ? 'recon.map.playback.state_destroyed' : (covered ? 'recon.map.playback.state_position_reported' : 'recon.map.playback.state_position_stale'))}`,
-    // lastKnown = 位置流未覆盖（covered=false）才淡化（最后已知位置）。
-    // 注意：covered 只是「服务器位置流当前覆盖」，不等于录像者客户端点亮/失察（无 authoritative
-    // spotting signal，不得声称已恢复点亮）；route 采样点稀疏（长局采样间隔 max(2, duration/200)
-    // 可 >5s）导致 live=null 不代表位置中断，不得借 !live 误判淡化。destroyed 是独立视觉状态，
-    // 阵亡车信息栏同样显示最后可信时间，但视觉 class 不再套用 pb-last-known
-    lastKnown: !covered
-  }
-}
-
 /** V2 车辆状态：只消费 canonical V2 track（positionSegments/orientationSegments/healthTransitions/
  * lifeTransitions），前端不再做 HP/AoI/death 推理。 */
 function vehicleStateV2(vehicle, track) {
@@ -1202,6 +1147,7 @@ function vehicleStateV2(vehicle, track) {
     pos: last,
     covered,
     destroyed,
+    destroyedKnownAtSec: life && life.lifeState === 'DESTROYED' ? life.destroyedKnownAtSec : null,
     recorder,
     friendly,
     direction,
@@ -1234,32 +1180,13 @@ function markerTop(y) {
 const vehicleStates = computed(() => {
   // preload 未完成（asset decision 未定）时不渲染车辆——禁止 generic 闪现后替换
   if (preload.value.phase !== 'ready') return []
-  // V2 为主：playbackV2 present 时以 V2 track 为事实源；legacy vehicle 仅提供
-  // identity/model/portrait（tankId/tankName/team），不参与 HP/AoI/death 推理。
-  if (props.playbackV2?.vehicles?.length) {
-    const legacyById = new Map((playback.value?.vehicles || []).map(v => [v.accountId, v]))
-    return props.playbackV2.vehicles
-      .map(track => {
-        const legacy = legacyById.get(track.accountId) || v2LegacyVehicle(track)
-        return vehicleStateV2(legacy, track)
-      })
-      .filter(Boolean)
-  }
-  const vehicles = playback.value ? playback.value.vehicles : []
-  return vehicles.map(vehicleState).filter(Boolean)
+  // V2-only：V2 track 为唯一事实源；无 V2 车辆 → 空（不再有 legacy overview.playback 兜底）。
+  const tracks = props.playbackV2?.vehicles || []
+  if (tracks.length === 0) return []
+  return tracks
+    .map(track => vehicleStateV2(v2VehicleView(track), track))
+    .filter(Boolean)
 })
-
-/** 无 legacy 对应时，用 V2 track 构造最小 identity vehicle（供 model/portrait/team）。 */
-function v2LegacyVehicle(track) {
-  return {
-    accountId: track.accountId,
-    playerName: track.playerName || '',
-    tankId: track.tankId,
-    tankName: track.tankName || '',
-    team: track.team,
-    tankType: track.tankClass || '',
-  }
-}
 
 const filteredEvents = computed(() => {
   const events = (playback.value ? playback.value.events : [])
@@ -1456,58 +1383,6 @@ function closeSidebar() {
   selectedAccountId.value = null
 }
 
-// ---- PR5 §8：detail sidebar（当前 playback 时间点的车辆战斗状态面板，非整场最终战绩面板）----
-const VEHICLE_CLASS_KEYS = {
-  'Heavy tank': 'recon.map.playback.vehicle_class_heavy',
-  'Medium tank': 'recon.map.playback.vehicle_class_medium',
-  'Light tank': 'recon.map.playback.vehicle_class_light',
-  'Tank destroyer': 'recon.map.playback.vehicle_class_td',
-  'SPG': 'recon.map.playback.vehicle_class_spg',
-}
-function vehicleTypeLabel(vehicle) {
-  // §8：后端已做统一 fallback（replay tankType → tankopedia class → 空串），
-  // 前端只做英文 class → 三语映射；全部 metadata 缺失才显示 —
-  const key = VEHICLE_CLASS_KEYS[vehicle.tankType]
-  return key ? t(key) : (vehicle.tankType || '—')
-}
-
-const selHp = computed(() => {
-  const st = selectedState.value
-  if (!st) return null
-  return hpDisplay(st.vehicle, currentTime.value, { friendly: st.vehicle.team === friendlyTeam.value })
-})
-// §6/§41 + PR #107 Blocker 1：Details Panel 当前 HP 按 provenance 显示：
-// - DESTROYED → 0（权威阵亡）；
-// - RULE_DERIVED_FULL_AT_SPAWN → 「100%」——这是「开局相对满血状态」的 UI 投影，
-//   不是具体 HP 数值、也不是从 tankopedia base 推导的百分比（只做 display projection，
-//   绝不写入 currentHp 数值字段）；
-// - OPENING_RELATIVE_FULL（己方开局有 current sample、max 未证明）→ 真实 current 数字
-//   （bar 仍 100% 实心、无斜纹；数字是真实采样，不伪造）；
-// - OBSERVED_EXACT / CURRENT_HP_EXACT_MAX_UNKNOWN / INCONSISTENT 且 current 有值 → 真实 current 数字；
-// - UNKNOWN → —。
-// tankopedia base HP 是车辆静态 metadata，不是本局最大/实际进场 HP，不得包装成「最大 HP」展示。
-const selHpText = computed(() => {
-  const d = selHp.value
-  if (!d) return '—'
-  if (d.destroyed) return '0'
-  if (d.state === 'RULE_DERIVED_FULL_AT_SPAWN') return '100%'
-  if (d.current != null) return String(d.current)
-  return '—'
-})
-const selHpLabel = computed(() => {
-  const st = selectedState.value
-  if (!st) return ''
-  if (st.destroyed) return 'recon.map.playback.current_hp'
-  if (st.lastKnown) return 'recon.map.playback.last_known_hp'
-  return 'recon.map.playback.current_hp'
-})
-const selStateLabel = computed(() => {
-  const st = selectedState.value
-  if (!st) return ''
-  if (st.destroyed) return 'recon.map.playback.state_destroyed'
-  if (st.lastKnown) return 'recon.map.playback.state_last_known'
-  return 'recon.map.playback.state_detected'
-})
 const selLastKnownSec = computed(() => {
   const st = selectedState.value
   return st && st.lastKnown && Number.isFinite(st.pos.timeSec) ? st.pos.timeSec : null
@@ -1521,7 +1396,7 @@ const selCurStats = computed(() => {
     authoritativeEvents.value,
     st.vehicle.accountId,
     currentTime.value,
-    playback.value ? playback.value.vehicles : []
+    Array.from(vehiclesByAccount.value.values())
   )
 })
 /** §12/§13/§19 最近伤害记录：全部车辆的权威 HP loss（Type-7 推导），attacker 不可证明时
@@ -1531,7 +1406,7 @@ const selDamageLog = computed(() => {
   const st = selectedState.value
   if (!st) return []
   const rows = damageLogAt(
-    playback.value ? playback.value.vehicles : [],
+    Array.from(vehiclesByAccount.value.values()),
     st.vehicle.accountId,
     currentTime.value,
     8
@@ -2081,19 +1956,13 @@ const mapStyle = computed(() => ({
       <dl class="pb-sb-grid">
         <dt>{{ $t('recon.map.playback.team') }}</dt>
         <dd>{{ $t(selectedState.vehicle.team === friendlyTeam ? 'recon.map.playback.team_friendly' : 'recon.map.playback.team_enemy') }}</dd>
-        <dt>{{ $t('recon.map.playback.vehicle_type') }}</dt>
-        <dd>{{ vehicleTypeLabel(selectedState.vehicle) }}</dd>
-        <dt>{{ $t('recon.map.playback.state') }}</dt>
-        <dd>{{ $t(selStateLabel) }}</dd>
         <template v-if="selLastKnownSec != null">
           <dt>{{ $t('recon.map.playback.last_spotted') }}</dt>
           <dd>{{ formatClock(selLastKnownSec) }}</dd>
         </template>
-        <dt>{{ $t(selHpLabel) }}</dt>
-        <dd data-test="pb-sb-hp">{{ selHpText }}</dd>
-        <template v-if="selectedState.destroyed && selectedState.vehicle.deathSec != null">
+        <template v-if="selectedState.destroyed && selectedState.destroyedKnownAtSec != null">
           <dt>{{ $t('recon.map.playback.destroyed_at') }}</dt>
-          <dd>{{ formatClock(selectedState.vehicle.deathSec) }}</dd>
+          <dd>{{ formatClock(selectedState.destroyedKnownAtSec) }}</dd>
         </template>
         <dt>{{ $t('recon.map.playback.playback_time') }}</dt>
         <dd>{{ formatClock(currentTime) }}</dd>

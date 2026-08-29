@@ -40,11 +40,11 @@ function track() {
   }
 }
 
-function mountInspector(timeSec) {
-  const i18n = createI18n({ legacy: false, locale: 'zh', messages: { zh, en, ru } })
+function mountInspector(timeSec, locale = 'zh', trackObj = track()) {
+  const i18n = createI18n({ legacy: false, locale, messages: { zh, en, ru } })
   return mount(V2VehicleInspector, {
     global: { plugins: [i18n] },
-    props: { track: track(), timeSec },
+    props: { track: trackObj, timeSec },
   })
 }
 
@@ -63,5 +63,47 @@ describe('V2VehicleInspector', () => {
     const w = mountInspector(150)
     const hp = w.get('[data-test="v2-inspector-hp"]').text()
     expect(hp).toContain('600')
+  })
+
+  it('orientation 用 orientationLabel：CURRENT/LAST_KNOWN/UNKNOWN 不裸显、不映射成 Detected', () => {
+    // CURRENT 朝向 → orientation_current（"当前朝向"），不再是 state_detected（"已发现"）
+    const w = mountInspector(95)
+    const orient = w.get('[data-test="v2-inspector-orientation"] .v2-inspector-val').text()
+    expect(orient).toBe('当前朝向')
+    expect(['CURRENT', 'LAST_KNOWN', 'UNKNOWN', '已发现', '位置上报中']).not.toContain(orient)
+    // LAST_KNOWN 朝向 → orientation_last_known
+    const t1 = track()
+    t1.orientationSegments = [{ startSec: 90, endSec: 100, knowledge: 'CURRENT', samples: [] }]
+    expect(mountInspector(120, 'zh', t1).get('[data-test="v2-inspector-orientation"] .v2-inspector-val').text()).toBe('最后已知朝向')
+    // 无朝向数据 → unknown（"未知"）
+    const t2 = track()
+    t2.orientationSegments = []
+    expect(mountInspector(95, 'zh', t2).get('[data-test="v2-inspector-orientation"] .v2-inspector-val').text()).toBe('未知')
+  })
+
+  it('state CURRENT observation：coverage ≠ 点亮，显示 "当前观测" 而非 "已发现"', () => {
+    const w = mountInspector(95)
+    const state = w.get('[data-test="v2-inspector-life"] .v2-inspector-val').text()
+    expect(state).toBe('当前观测')
+    expect(['已发现', 'Detected', 'Обнаружен']).not.toContain(state)
+  })
+
+  it.each(['zh', 'en', 'ru'])('locale %s：orientation/state 不裸显 raw CURRENT/LAST_KNOWN/UNKNOWN', (locale) => {
+    const rawOrDetected = ['CURRENT', 'LAST_KNOWN', 'UNKNOWN', '已发现', 'Detected', 'Обнаружен']
+    // CURRENT observation + orientation CURRENT
+    const wc = mountInspector(95, locale)
+    const orient = wc.get('[data-test="v2-inspector-orientation"] .v2-inspector-val').text()
+    const state = wc.get('[data-test="v2-inspector-life"] .v2-inspector-val').text()
+    expect(orient.length).toBeGreaterThan(0)
+    expect(state.length).toBeGreaterThan(0)
+    expect(rawOrDetected).not.toContain(orient)
+    expect(rawOrDetected).not.toContain(state)
+    // LAST_KNOWN orientation
+    const t = track()
+    t.orientationSegments = [{ startSec: 90, endSec: 100, knowledge: 'CURRENT', samples: [] }]
+    const wl = mountInspector(120, locale, t)
+    const olast = wl.get('[data-test="v2-inspector-orientation"] .v2-inspector-val').text()
+    expect(olast.length).toBeGreaterThan(0)
+    expect(rawOrDetected).not.toContain(olast)
   })
 })

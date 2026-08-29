@@ -16,7 +16,9 @@ const props = defineProps({
   loading: Boolean,
   confirmRemove: Boolean,
   showWorkspaceActions: { type: Boolean, default: true },
-  showPreview: { type: Boolean, default: true }
+  showPreview: { type: Boolean, default: true },
+  /** AI 复盘 / 战局重建 单文件语义时禁 folder（默认 true 兼容批处理）。 */
+  allowFolder: { type: Boolean, default: true }
 })
 const dragging = ref(false)
 const listOpen = ref(false)
@@ -63,12 +65,24 @@ function addFiles(list) {
   const picked = Array.from(list || [])
   const replays = picked.filter(f => isReplayFileName(f?.name))
   if (replays.length === 0) {
-    validation.value = { noReplay: true, offending: [], tooMany: false, totalTooLarge: false }
+    validation.value = { noReplay: true, offending: [], tooMany: false, totalTooLarge: false, singleOnly: false }
     return
   }
-  const byKey = new Map(props.files.map(f => [fileKey(f), f]))
-  replays.forEach(f => byKey.set(fileKey(f), f))
-  const prospective = Array.from(byKey.values()).sort((a, b) => displayName(a).localeCompare(displayName(b)))
+  // 单文件模式（AI 复盘 / 战局重建）：一次只接受一个回放——文件选择器已去 multiple；
+  // drag/drop 多文件直接拒绝，不静默取第一个。
+  if (!props.allowFolder && replays.length > 1) {
+    validation.value = { noReplay: false, offending: [], tooMany: false, totalTooLarge: false, singleOnly: true }
+    return
+  }
+  let prospective
+  if (props.allowFolder) {
+    const byKey = new Map(props.files.map(f => [fileKey(f), f]))
+    replays.forEach(f => byKey.set(fileKey(f), f))
+    prospective = Array.from(byKey.values()).sort((a, b) => displayName(a).localeCompare(displayName(b)))
+  } else {
+    // single-file：新选择 replace 当前文件（不合并 → 不会出现先得到 [A,B] 再报 single_replay_required）。
+    prospective = [replays[replays.length - 1]]
+  }
   const result = validateReplaySelection(prospective)
   if (!result.valid) {
     validation.value = result
@@ -132,7 +146,7 @@ function openReplayAction(mode) {
       <h1>{{ $t('upload.title') }}</h1>
       <p>{{ $t('upload.description') }}</p>
       <div class="upload-points">
-        <span>{{ $t('upload.multi') }}</span>
+        <span>{{ $t(allowFolder ? 'upload.multi' : 'upload.multi_single') }}</span>
         <span>{{ $t('upload.excel') }}</span>
         <span>{{ $t('upload.privacy') }}</span>
       </div>
@@ -140,6 +154,7 @@ function openReplayAction(mode) {
 
     <div v-if="validation" class="upload-errors" data-testid="upload-validation-error">
       <p v-if="validation.noReplay" class="upload-errors-hint">{{ $t('upload.reject_no_replay') }}</p>
+      <p v-if="validation.singleOnly" class="upload-errors-hint">{{ $t('upload.single_only') }}</p>
       <p v-if="validation.offending.length" class="upload-errors-title">{{ $t('upload.reject_offending_title') }}</p>
       <ul v-if="validation.offending.length" class="upload-errors-list">
         <li v-for="off in validation.offending" :key="fileKey(off.file)">
@@ -155,13 +170,13 @@ function openReplayAction(mode) {
     <div v-if="!files.length" class="uploadcard" :class="{ dragging }">
       <span class="up-icon"><svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg></span>
       <div class="up-title">{{ $t('upload.drop_hint') }}</div>
-          <div class="up-sub">{{ $t('upload.sub_hint') }}</div>
+          <div class="up-sub">{{ $t(allowFolder ? 'upload.sub_hint' : 'upload.sub_hint_single') }}</div>
           <div class="up-actions">
             <label class="filebtn">
               <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>{{ $t('upload.select_files') }}
-              <input type="file" multiple accept=".wotbreplay" data-testid="select-files-input" @change="onPick" />
+              <input type="file" :multiple="allowFolder" accept=".wotbreplay" data-testid="select-files-input" @change="onPick" />
             </label>
-            <label class="filebtn ghost">
+            <label v-if="allowFolder" class="filebtn ghost">
               <svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /></svg>{{ $t('upload.select_folder') }}
               <input type="file" multiple webkitdirectory data-testid="select-folder-input" @change="onPick" />
             </label>
@@ -189,11 +204,11 @@ function openReplayAction(mode) {
       </div>
 
       <div class="fb-actions">
-        <label class="filebtn ghost sm" :title="$t('upload.add_files_title')">
+        <label v-if="allowFolder" class="filebtn ghost sm" :title="$t('upload.add_files_title')">
           <svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>{{ $t('upload.add') }}
-          <input type="file" multiple accept=".wotbreplay" data-testid="add-files-input" @change="onPick" />
+          <input type="file" :multiple="allowFolder" accept=".wotbreplay" data-testid="add-files-input" @change="onPick" />
         </label>
-        <label class="filebtn ghost sm" :title="$t('upload.add_folder_title')">
+        <label v-if="allowFolder" class="filebtn ghost sm" :title="$t('upload.add_folder_title')">
           <svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /></svg>{{ $t('upload.folder') }}
           <input type="file" multiple webkitdirectory data-testid="add-folder-input" @change="onPick" />
         </label>

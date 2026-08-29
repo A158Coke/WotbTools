@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import FileUploader from './FileUploader.vue'
 
 const i18n = vi.hoisted(() => ({
@@ -22,6 +22,7 @@ function mountUploader(files = [], loading = false, options = {}) {
         files,
         loading,
         confirmRemove: false,
+        ...(options.allowFolder === undefined ? {} : { allowFolder: options.allowFolder }),
         ...(options.showWorkspaceActions === undefined ? {} : { showWorkspaceActions: options.showWorkspaceActions }),
         ...(options.showPreview === undefined ? {} : { showPreview: options.showPreview })
       },
@@ -360,5 +361,29 @@ describe('FileUploader 文件列表与回放工作台', () => {
     const emitted = wrapper.emitted('update:files')
     expect(emitted).toBeTruthy()
     expect(emitted[0][0].map(f => f.name)).toEqual(['b.wotbreplay'])
+  })
+
+  it('single-file 模式：已有文件时隐藏 Add/folder；新选文件 replace，绝不合成 [A,B]', async () => {
+    const a = makeFiles(1)[0]
+    const b = makeFiles(1)[0]
+    const { wrapper } = mountUploader([a], false, { allowFolder: false })
+    // filebar 展示时不应出现 Add / folder 入口（无法通过 UI 追加第二个）
+    expect(wrapper.find('[data-testid="add-files-input"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="add-folder-input"]').exists()).toBe(false)
+    // drag/drop 新文件 → replace 当前文件（emit [b]，仅 1 个，绝不先得到 [a,b] 再报 single_replay_required）
+    await wrapper.find('.uploadwrap').trigger('drop', { dataTransfer: { files: [b] } })
+    await flushPromises()
+    const emitted = wrapper.emitted('update:files')
+    const last = emitted[emitted.length - 1][0]
+    expect(last.length).toBe(1)
+    expect(last[0].name).toBe(b.name)
+  })
+
+  it('single-file 模式：drag/drop 多文件直接拒绝（singleOnly）', async () => {
+    const a = makeFiles(2)
+    const { wrapper } = mountUploader([makeFiles(1)[0]], false, { allowFolder: false })
+    await wrapper.find('.uploadwrap').trigger('drop', { dataTransfer: { files: a } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('upload.single_only')
   })
 })

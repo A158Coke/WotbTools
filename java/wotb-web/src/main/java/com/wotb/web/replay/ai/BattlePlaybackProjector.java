@@ -3,15 +3,19 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.ConsumableLifecycleEvent;
+import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.event.VehicleBattleLoadout;
+import com.wotb.core.replay.event.VehicleDestroyedEvent;
+import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.facts.ConsumableLifecycle;
 import com.wotb.core.replay.facts.AoiObservationSegment;
 import com.wotb.core.replay.facts.VehicleLoadoutFacts;
 import com.wotb.core.replay.facts.VehicleModuleCrewLifecycle;
 import com.wotb.core.replay.facts.VehicleModuleCrewLifecycle.ModuleCrewObservation;
+import com.wotb.core.replay.processing.TeamEntityIdentity;
 import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.replay.timeline.BattleFrame;
 import com.wotb.core.replay.timeline.BattleTimeline;
@@ -24,6 +28,8 @@ import com.wotb.core.replay.reconstruction.LifeState;
 import com.wotb.web.replay.dto.BattlePlaybackDataset;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.ConsumableTransition;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.ConfidenceDto;
+import com.wotb.web.replay.dto.BattlePlaybackDataset.BattleEvent;
+import com.wotb.web.replay.dto.BattlePlaybackDataset.ShotTrack;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.HealthTransition;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.LifeTransition;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.ModuleCrewTransition;
@@ -34,7 +40,6 @@ import com.wotb.web.replay.dto.BattlePlaybackDataset.PositionSample;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.PositionSegment;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.VehicleBattleLoadoutDto;
 import com.wotb.web.replay.dto.BattlePlaybackDataset.VehiclePlaybackTrack;
-import com.wotb.web.replay.dto.BattlePlaybackDataset.ShotTrack;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -110,6 +115,7 @@ public final class BattlePlaybackProjector {
                 friendlyTeam,
                 effectiveRecorder,
                 tracks,
+                events(timeline, mapping, tracks, effectiveRecorder, duration),
                 shots(timeline, mapping),
                 pointsSamples(timeline),
                 timeline.limitations());
@@ -368,6 +374,102 @@ public final class BattlePlaybackProjector {
         return out;
     }
 
+    /**
+     * battle-level 时间轴事件（canonical）：DAMAGE / DESTROYED / KILL / POSITION_REPORTED / POSITION_STALE。
+     * 伤害/击毁从 {@code PlaybackCombatReconstruction}（唯一伤害权威）与 canonical {@code timeline.events()}
+     * 推导，不重扫 raw、不使用 Type-8 raw 协议值。POSITION_* 来自 canonical AoI observed segment
+     * （{@code positionSegments} 每车的 OBSERVED 段起止），录像者自身不广播位置覆盖事件。
+     */
+    private static List<BattleEvent> events(final BattleTimeline timeline,
+                                            final TeamEntityMapping mapping,
+                                            final List<BattlePlaybackDataset.VehiclePlaybackTrack> tracks,
+                                            final Long recorderAccount,
+                                            final double duration) {
+        if (timeline.events() == null || mapping == null) {
+            return List.of();
+        }
+        final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
+                com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
+                        timeline.events(), mapping,
+                        Double.isFinite(timeline.battleStartRawClockSec())
+                                ? timeline.battleStartRawClockSec() : 0.0,
+                        duration);
+        final java.util.Set<Long> destroyedVictims = new java.util.HashSet<>();
+        final List<BattleEvent> out = new ArrayList<>();
+        for (final ReplayEvent event : timeline.events()) {
+            if (event instanceof DamageEvent damage) {
+                final long victim = accountOf(mapping, damage.victimEid());
+                if (victim <= 0) {
+                    continue;
+                }
+                final long attacker = accountOf(mapping, damage.attackerEid());
+                final double t = battleClockOf(event, timeline);
+                out.add(new BattleEvent("DAMAGE", t, attacker > 0 ? attacker : null, victim,
+                        com.wotb.core.replay.feature.PlaybackCombatReconstruction
+                                .observedHpLossAt(combat, victim, t)));
+            } else if (event instanceof VehicleHitEvent hit) {
+                final long victim = accountOf(mapping, hit.victimEntityId());
+                if (victim <= 0) {
+                    continue;
+                }
+                final long attacker = accountOf(mapping, hit.attackerEntityId());
+                final double t = battleClockOf(event, timeline);
+                out.add(new BattleEvent("DAMAGE", t, attacker > 0 ? attacker : null, victim,
+                        com.wotb.core.replay.feature.PlaybackCombatReconstruction
+                                .observedHpLossAt(combat, victim, t)));
+            } else if (event instanceof VehicleDestroyedEvent destroyed) {
+                final long victim = accountOf(mapping, destroyed.entityId());
+                if (victim <= 0) {
+                    continue;
+                }
+                destroyedVictims.add(victim);
+                out.add(new BattleEvent("DESTROYED", battleClockOf(event, timeline), victim, null, null));
+                final Integer killerEid = destroyed.killerEid();
+                final long killer = killerEid != null ? accountOf(mapping, killerEid) : 0L;
+                if (killer > 0 && killer != victim) {
+                    out.add(new BattleEvent("KILL", battleClockOf(event, timeline), killer, victim, null));
+                }
+            }
+        }
+        // 权威击毁推导（type-7 alive=false/HP=0）：不被显式 VehicleDestroyedEvent 覆盖的受害者
+        for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Destroyed d
+                : combat.destroyed()) {
+            if (destroyedVictims.contains(d.victimAccountId())) {
+                continue;
+            }
+            out.add(new BattleEvent("DESTROYED", d.timeSec(), d.victimAccountId(), null, null));
+            if (d.killerAccountId() != null && d.killerAccountId() != d.victimAccountId()) {
+                out.add(new BattleEvent("KILL", d.timeSec(), d.killerAccountId(), d.victimAccountId(), null));
+            }
+        }
+        // POSITION_*：canonical AoI observed segment 起止；录像者自身不广播
+        for (final BattlePlaybackDataset.VehiclePlaybackTrack track : tracks) {
+            if (recorderAccount != null && track.accountId() == recorderAccount) {
+                continue;
+            }
+            emitPositionEvents(out, track, duration);
+        }
+        out.sort(Comparator.comparingDouble(BattleEvent::timeSec));
+        return List.copyOf(out);
+    }
+
+    private static void emitPositionEvents(final List<BattleEvent> out,
+                                           final BattlePlaybackDataset.VehiclePlaybackTrack track,
+                                           final double duration) {
+        for (final BattlePlaybackDataset.PositionSegment seg : track.positionSegments()) {
+            if (seg.knowledge() == null || !"OBSERVED".equals(seg.knowledge())) {
+                continue;
+            }
+            final double start = Math.max(0, seg.startSec());
+            final double end = Math.min(duration, seg.endSec());
+            if (end < start || end < 0) {
+                continue;
+            }
+            out.add(new BattleEvent("POSITION_REPORTED", start, track.accountId(), null, null));
+            out.add(new BattleEvent("POSITION_STALE", end, track.accountId(), null, null));
+        }
+    }
+
     private static List<ShotTrack> shots(final BattleTimeline timeline, final TeamEntityMapping mapping) {
         // 射击轨道保留 ShotLifecycle 当前确定性 pairing（exact rawClock + sequence order）。
         // V2 只投影 launcher + 已知端点；不在此推导 intermediate shell path（那是 presentation）。
@@ -455,6 +557,12 @@ public final class BattlePlaybackProjector {
             }
         }
         return null;
+    }
+
+    /** entityId → accountId；无法解析或未映射为参战账号 → -1。 */
+    private static long accountOf(final TeamEntityMapping mapping, final int entityId) {
+        final TeamEntityIdentity identity = mapping.identity(entityId);
+        return identity != null && identity.accountId() > 0 ? identity.accountId() : -1L;
     }
 
     private static double battleClockOf(final ReplayEvent e, final BattleTimeline timeline) {

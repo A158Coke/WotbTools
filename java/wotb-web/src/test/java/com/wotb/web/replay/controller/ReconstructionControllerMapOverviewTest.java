@@ -36,7 +36,7 @@ class ReconstructionControllerMapOverviewTest {
             2,
             new MapOverview.Bounds(-256, 260, -251, 254.3),
             List.of(), null, List.of(), List.of(), null, List.of(),
-            null, null, null);
+            null, null);
 
     private ReconstructionController controller(final MapOverview overview) {
         final MapOverviewQueryService service = mock(MapOverviewQueryService.class);
