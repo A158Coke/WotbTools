@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  RADAR, axisPoint, axisRay, polygonPoints, gridPolygonPoints, scaleTickPosition,
+  RADAR, axisPoint, axisRay, polygonPoints, radarGridPolygons, radarScaleTicks,
 } from '../utils/radarGeometry.js'
 
 /**
@@ -48,9 +48,9 @@ const playerPoints = computed(() => polygonPoints(playerNormals.value, props.met
 const referencePoints = computed(() => polygonPoints(referenceNormals.value, props.metrics.length))
 
 const gridPolys = computed(() =>
-  (RADAR.GRID_LEVELS || []).map(ratio => ({
-    ratio,
-    points: gridPolygonPoints(props.metrics.length, ratio),
+  radarGridPolygons(props.metrics.length).map(grid => ({
+    ...grid,
+    isStrong: grid.value === RADAR.STRONG_VALUE,
   })))
 
 const axisRays = computed(() =>
@@ -63,7 +63,7 @@ const labelPositions = computed(() =>
   }))
 
 const scaleTicks = computed(() =>
-  (RADAR.GRID_LEVELS || []).map(ratio => ({ ratio, p: scaleTickPosition(props.metrics.length, ratio) })))
+  radarScaleTicks(props.metrics.length))
 
 /** detail 行：dimension / player / reference。 */
 const detailRows = computed(() =>
@@ -76,9 +76,6 @@ const detailRows = computed(() =>
       : '--',
   })))
 
-function fmtTick(ratio) {
-  return String(Math.round(ratio * 100))
-}
 </script>
 
 <template>
@@ -89,16 +86,17 @@ function fmtTick(ratio) {
     <template v-else>
       <svg :viewBox="'0 0 ' + RADAR.VIEW + ' ' + RADAR.VIEW" class="radar-svg"
            role="img" :aria-label="'Radar: ' + (metrics || []).map(m => m.label).join(', ')">
-        <!-- 4 层网格（25/50/75/100） -->
-        <polygon v-for="g in gridPolys" :key="'grid-' + g.ratio"
-                 :points="g.points" class="radar-grid" :class="{ 'radar-grid-outer': g.ratio === 1 }" />
+        <desc>{{ t('radarScale.ariaDescription', { label: referenceLabel }) }}</desc>
+        <!-- 可见网格：25/50/100；75 由规则 reference 环表达，150 边界不可见。 -->
+        <polygon v-for="g in gridPolys" :key="'grid-' + g.value"
+                 :points="g.points" class="radar-grid" :class="{ 'radar-grid-strong': g.isStrong }" />
         <!-- 轴线 -->
         <line v-for="(r, i) in axisRays" :key="'axis-' + i"
               :x1="RADAR.CENTER" :y1="RADAR.CENTER" :x2="r.x" :y2="r.y" class="radar-axis" />
         <!-- 单侧刻度（12 点方向） -->
-        <text v-for="t in scaleTicks" :key="'tick-' + t.ratio"
+        <text v-for="t in scaleTicks" :key="'tick-' + t.value"
               :x="t.p.x" :y="t.p.y" text-anchor="middle" dominant-baseline="middle"
-              class="radar-scale">{{ fmtTick(t.ratio) }}</text>
+              class="radar-scale">{{ t.value }}</text>
         <!-- reference 虚线多边形（无填充、无点） -->
         <polygon v-if="referenceComplete && props.reference && props.reference.length"
                  :points="referencePoints" class="radar-ref" />
@@ -121,8 +119,10 @@ function fmtTick(ratio) {
       <div class="radar-legend">
         <span class="lg-item"><span class="lg-swatch lg-swatch-player"></span>{{ playerLabel || '' }}</span>
         <span v-if="referenceComplete && props.reference && props.reference.length"
-              class="lg-item"><span class="lg-swatch lg-swatch-ref"></span>{{ referenceLabel }}</span>
+              class="lg-item"><span class="lg-swatch lg-swatch-ref"></span>{{ t('radarScale.average', { label: referenceLabel }) }}</span>
+        <span class="lg-item"><span class="lg-swatch lg-swatch-strong"></span>{{ t('radarScale.strong') }}</span>
       </div>
+      <p class="radar-scale-note">{{ t('radarScale.overflow') }}</p>
       <p v-if="referenceMissing" class="radar-ref-missing" data-testid="radar-ref-missing">
         {{ props.referenceUnavailableLabel || t('league.drawer.ref_unavailable') }}
       </p>
@@ -152,19 +152,21 @@ function fmtTick(ratio) {
 .player-radar { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
 .radar-svg { width: 100%; max-width: 340px; aspect-ratio: 1 / 1; }
 .radar-grid { fill: none; stroke: var(--border-light); stroke-width: 1; }
-.radar-grid-outer { stroke: var(--border-light-strong); stroke-width: 1.2; }
+.radar-grid-strong { stroke: var(--border-light-strong); stroke-width: 1.2; }
 .radar-axis { stroke: var(--border-light); stroke-width: 1; }
 .radar-scale { fill: var(--text-muted); font-size: 9px; font-weight: 600; }
-.radar-data { fill: color-mix(in srgb, var(--accent) 28%, transparent); stroke: var(--accent); stroke-width: 2; }
-.radar-ref { fill: none; stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 4 3; }
+.radar-data { fill: color-mix(in srgb, var(--accent) 22%, transparent); stroke: var(--accent); stroke-width: 2; }
+.radar-ref { fill: none; stroke: var(--text-muted); stroke-width: 1.3; stroke-dasharray: 4 3; }
 .radar-dot { fill: var(--accent); }
 .radar-label { fill: var(--text-sub); font-size: 12px; font-weight: 700; }
 .radar-unavailable { margin: 10px 0; padding: 14px; text-align: center; color: var(--text-muted); font-size: .8rem; border: 1px dashed var(--border); border-radius: 8px; width: 100%; }
-.radar-legend { display: flex; align-items: center; gap: 14px; font-size: .72rem; color: var(--text-sub); }
+.radar-legend { display: flex; align-items: center; justify-content: center; gap: 8px 14px; flex-wrap: wrap; font-size: .72rem; color: var(--text-sub); }
 .lg-item { display: inline-flex; align-items: center; gap: 6px; }
 .lg-swatch { width: 16px; height: 3px; border-radius: 2px; }
 .lg-swatch-player { background: var(--accent); }
 .lg-swatch-ref { background: var(--text-muted); border-top: 1px dashed currentColor; height: 0; }
+.lg-swatch-strong { background: var(--border-light-strong); height: 1px; }
+.radar-scale-note { margin: -2px 0 0; color: var(--text-muted); font-size: .68rem; text-align: center; }
 .radar-ref-missing { margin: 2px 0 0; font-size: .72rem; color: var(--warn-text); text-align: center; }
 .radar-detail { width: 100%; border-collapse: collapse; font-size: .76rem; margin-top: 2px; }
 .radar-detail th, .radar-detail td { padding: 4px 8px; text-align: left; }

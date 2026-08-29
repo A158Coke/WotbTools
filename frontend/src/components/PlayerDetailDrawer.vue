@@ -9,8 +9,9 @@ import {
   RADAR_METRIC_DEFS, RADAR_AVAILABLE_KEYS, RADAR_MIN_AXES, RADAR_MAX_AXES,
   loadRadarPreference, saveRadarPreference, resolveRadarMetric,
 } from '../utils/radarMetrics.js'
+import { scaleRadarSeries } from '../utils/radarScale.js'
 import {
-  RADAR, axisPoint, axisRay, polygonPoints, gridPolygonPoints, scaleTickPosition,
+  RADAR, axisPoint, axisRay, polygonPoints, radarGridPolygons, radarScaleTicks,
 } from '../utils/radarGeometry.js'
 import { sanitizeFilename, downloadBlob } from '../utils/exportReplayPng.js'
 
@@ -204,11 +205,11 @@ function moveRadarMetric(key, dir) {
 
 const maxByKey = computed(() => leagueMaxByKey(props.leagueColumns))
 
-/** player 雷达轴（顺序 = 用户偏好；league 维度按 scope 取数：
+/** player 雷达原始轴（顺序 = 用户偏好；league 维度按 scope 取数：
  *  summary → dimensionMeans[i]（rated-battle 算术平均），battle → dimensionScores[i]
- *  （本场七维）；均按后端 column.max 归一化。禁止 battle 复用跨场聚合字段、
+ *  （本场七维）；score/max 仅保留解释值，最终几何由 radarScale 相对 reference 生成。禁止 battle 复用跨场聚合字段、
  *  禁止 summary 用 median 冒充 mean。 */
-const radarMetrics = computed(() => {
+const rawRadarMetrics = computed(() => {
   const p = props.player
   if (!p) return []
   return radarOrder.value
@@ -224,16 +225,22 @@ const radarMetrics = computed(() => {
 })
 
 /** 参考多边形（Battle/Global Average）：不依赖选中玩家，只依赖 scope（§61）。 */
-const referenceSeries = computed(() => {
+const rawReferenceSeries = computed(() => {
   const ref = isSummary.value
-    ? globalAverage(props.scopePlayers, { dimKeys: radarOrder.value, maxByKey: maxByKey.value })
-    : battleAverage(props.scopePlayers, { dimKeys: radarOrder.value, maxByKey: maxByKey.value })
+    ? globalAverage(props.scopePlayers, { dimKeys: radarOrder.value })
+    : battleAverage(props.scopePlayers, { dimKeys: radarOrder.value })
   return ref.axes.map((a) => {
     const r = resolveRadarMetric(a.key, a.rawValue, maxByKey.value)
     const def = RADAR_METRIC_DEFS[a.key]
     return { ...r, label: t(r.label), tip: def.tipKey ? t(def.tipKey) : '' }
   })
 })
+
+const scaledRadarSeries = computed(() =>
+  scaleRadarSeries(rawRadarMetrics.value, rawReferenceSeries.value))
+
+const radarMetrics = computed(() => scaledRadarSeries.value.metrics)
+const referenceSeries = computed(() => scaledRadarSeries.value.reference)
 
 const referenceLabel = computed(() =>
   isSummary.value ? t('league.drawer.global_average') : t('league.drawer.battle_average'))
@@ -424,9 +431,9 @@ function buildExportSnapshot() {
     refs,
     playerPoints: polygonPoints(metrics.map(m => m.normalized), metrics.length),
     refPoints: polygonPoints(refs.map(m => m.normalized), refs.length),
-    grids: RADAR.GRID_LEVELS.map(ratio => ({ ratio, points: gridPolygonPoints(metrics.length, ratio) })),
+    grids: radarGridPolygons(metrics.length),
     axes: Array.from({ length: metrics.length }, (_, i) => axisRay(i, metrics.length)),
-    scaleTicks: RADAR.GRID_LEVELS.map(ratio => ({ ratio, p: scaleTickPosition(metrics.length, ratio) })),
+    scaleTicks: radarScaleTicks(metrics.length),
     labels: Array.from({ length: metrics.length }, (_, i) => {
       const [x, y] = axisPoint(i, metrics.length, RADAR.LABEL_RADIUS, RADAR)
       const m = metrics[i]
@@ -650,16 +657,23 @@ function ensureImageLoaded(url) {
         </div>
         <div class="rp-radar">
           <svg :viewBox="'0 0 340 340'" class="rp-radar-svg">
-            <polygon v-for="g in snapGrids" :key="'g' + g.ratio" :points="g.points" class="rp-grid" :class="{ 'rp-grid-outer': g.ratio === 1 }" />
+            <polygon v-for="g in snapGrids" :key="'g' + g.value" :points="g.points" class="rp-grid" :class="{ 'rp-grid-strong': g.value === RADAR.STRONG_VALUE }" />
             <line v-for="(r, i) in snapAxes" :key="'a' + i" :x1="RADAR.CENTER" :y1="RADAR.CENTER" :x2="r.x" :y2="r.y" class="rp-axis" />
-            <text v-for="t in snapScaleTicks" :key="'t' + t.ratio" :x="t.p.x" :y="t.p.y" text-anchor="middle" dominant-baseline="middle" class="rp-scale">{{ Math.round(t.ratio * 100) }}</text>
+            <text v-for="t in snapScaleTicks" :key="'t' + t.value" :x="t.p.x" :y="t.p.y" text-anchor="middle" dominant-baseline="middle" class="rp-scale">{{ t.value }}</text>
             <polygon v-if="snapRefs.length" :points="snapRefPoints" class="rp-ref" />
             <polygon :points="snapPlayerPoints" class="rp-data" />
-            <circle v-for="(m, i) in snapMetrics" :key="'d' + i" v-if="snapMetrics[i]?.available"
-                    :cx="axisPoint(i, snapMetrics.length, snapMetrics[i].normalized)[0]"
-                    :cy="axisPoint(i, snapMetrics.length, snapMetrics[i].normalized)[1]" r="3" class="rp-dot" />
+            <template v-for="(m, i) in snapMetrics" :key="'d' + i">
+              <circle v-if="m?.available"
+                      :cx="axisPoint(i, snapMetrics.length, m.normalized)[0]"
+                      :cy="axisPoint(i, snapMetrics.length, m.normalized)[1]" r="3" class="rp-dot" />
+            </template>
             <text v-for="(p, i) in snapLabels" :key="'l' + i" :x="p.x" :y="p.y" text-anchor="middle" dominant-baseline="middle" class="rp-label">{{ p.label }}</text>
           </svg>
+          <div class="rp-scale-legend">
+            <span>{{ t('radarScale.average', { label: snapReferenceLabel }) }}</span>
+            <span>{{ t('radarScale.strong') }}</span>
+          </div>
+          <div class="rp-scale-note">{{ t('radarScale.overflow') }}</div>
         </div>
         <table class="rp-detail">
           <thead><tr><th>{{ t('radar_lbl.dimension') }}</th><th>{{ t('radar_lbl.player') }}</th><th>{{ snapReferenceLabel }}</th></tr></thead>
@@ -685,7 +699,7 @@ function ensureImageLoaded(url) {
 }
 .drawer-backdrop.pd-modal {
   pointer-events: auto;
-  background: color-mix(in srgb, #000 35%, transparent);
+  background: color-mix(in srgb, var(--text-heading) 35%, transparent);
 }
 .player-drawer {
   position: fixed; top: calc(var(--topbar-h) + 8px); right: 8px; bottom: 8px; width: min(380px, calc(100vw - 16px));
@@ -828,12 +842,14 @@ body.pd-resizing .pd-resizer-line,
 .rp-vehicle-stats { display: flex; gap: 12px; margin-top: 3px; font-size: .82rem; color: #9aa0a6; font-variant-numeric: tabular-nums; }
 .rp-radar { margin: 10px auto 4px; width: 340px; }
 .rp-radar-svg { width: 340px; height: 340px; }
+.rp-scale-legend { display: flex; justify-content: center; gap: 16px; color: #9aa0a6; font-size: .7rem; }
+.rp-scale-note { margin-top: 3px; color: #9aa0a6; font-size: .66rem; text-align: center; }
 .rp-grid { fill: none; stroke: #3a3f45; stroke-width: 1; }
-.rp-grid-outer { stroke: #4a4f55; stroke-width: 1.2; }
+.rp-grid-strong { stroke: #4a4f55; stroke-width: 1.2; }
 .rp-axis { stroke: #3a3f45; stroke-width: 1; }
 .rp-scale { fill: #9aa0a6; font-size: 9px; font-weight: 600; }
-.rp-data { fill: rgba(212, 160, 23, .28); stroke: #d4a017; stroke-width: 2; }
-.rp-ref { fill: none; stroke: #9aa0a6; stroke-width: 1; stroke-dasharray: 4 3; }
+.rp-data { fill: rgba(212, 160, 23, .22); stroke: #d4a017; stroke-width: 2; }
+.rp-ref { fill: none; stroke: #9aa0a6; stroke-width: 1.3; stroke-dasharray: 4 3; }
 .rp-dot { fill: #d4a017; }
 .rp-label { fill: #cfd2d6; font-size: 12px; font-weight: 700; }
 .rp-detail { width: 100%; border-collapse: collapse; font-size: .82rem; margin-top: 8px; }
