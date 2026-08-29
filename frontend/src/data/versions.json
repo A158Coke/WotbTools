@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.47",
+    "date": "2026-08-29",
+    "tag": "chg",
+    "zh": "管理员 Rating V2 灰度页的六轴雷达从结果表底部移入右侧选手抽屉：点击昵称即可原地查看并继续切换其他玩家，多队伍或大型回放批次不再需要滚到表尾；桌面端保留表格交互，手机端使用遮罩面板。评分公式、数据和 League V5 页面均不改变。",
+    "en": "The hidden admin Rating V2 page now opens its six-axis radar in a right-side player drawer instead of below the results table. Select a nickname and keep switching players in place without scrolling to the end of large or multi-team batches; desktop keeps the table interactive and mobile uses an overlay panel. Rating formulas, data and the League V5 page are unchanged.",
+    "ru": "На скрытой административной странице Rating V2 шестиосевой радар теперь открывается в боковой панели игрока справа, а не под таблицей результатов. Можно выбрать имя и переключаться между игроками без прокрутки к концу большой выборки или набора с несколькими командами; на компьютере таблица остаётся доступной, на телефоне используется панель с затемнением. Формулы, данные и страница League V5 не изменены."
+  },
+  {
     "v": "2.12.46",
     "date": "2026-08-29",
     "tag": "fix",
