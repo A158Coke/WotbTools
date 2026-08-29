@@ -83,10 +83,10 @@ public class HundredBattleSubmissionService {
     /** 「百场」资格最低场次：写入排行榜的冻结 battleCount 必须 ≥ 100。 */
     private static final int MIN_APPROVED_BATTLE_COUNT = 100;
 
-    /** 拒绝原因分类（docs/features/hall-of-fame.md §32）。 */
+    /** 拒绝原因分类。 */
     private static final Set<String> REJECT_CATEGORIES = Set.of(
             "SCREENSHOT_MISMATCH", "SCREENSHOT_UNREADABLE", "INSUFFICIENT_PROOF", "SUSPECTED_FRAUD", "OTHER");
-    /** 删除原因分类（docs/features/hall-of-fame.md §34）。 */
+    /** 删除原因分类。 */
     private static final Set<String> DELETE_CATEGORIES = Set.of(
             "CHEATING_FORGERY", "WRONG_REVIEW", "PLAYER_IDENTITY_ISSUE", "DATA_ERROR", "ADMIN_CORRECTION", "OTHER");
 

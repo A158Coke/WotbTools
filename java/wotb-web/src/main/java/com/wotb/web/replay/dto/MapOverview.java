@@ -187,7 +187,7 @@ public record MapOverview(
     }
 
     /**
-     * 单车一次权威 HP 变化（docs/features/battle-playback.md §12/§13）。
+     * 单车一次权威 HP 变化。
      *
      * @param fromSec           窗口起点（前一可信 HP sample，battle-relative 秒）
      * @param toSec             窗口终点（后一可信 HP sample；掉血发生在 (fromSec, toSec]）

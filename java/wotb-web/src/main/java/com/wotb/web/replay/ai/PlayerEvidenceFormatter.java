@@ -401,7 +401,7 @@ final class PlayerEvidenceFormatter {
         for (final PlayerResult p : battle.players) {
             byAccount.putIfAbsent(p.accountId, p);
         }
-        // §P0-5: killer identity derives ONLY from canonical terminal evidence
+        // killer identity derives ONLY from canonical terminal evidence
         // (PlaybackCombatReconstruction.destroyed: timeSec + victimAccountId + reliable killerAccountId).
         // The stale PlayerResult.killVictims (damage-threshold heuristic) is removed; a terminal with no
         // reliably attributed killer is reported as UNKNOWN, never guessed from cumulative damage.

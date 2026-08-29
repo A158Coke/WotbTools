@@ -102,7 +102,7 @@ final class TeamAggregateExtractor {
             final int perspectiveTeam,
             final int unattributedCount
     ) {
-        // §12/§13：dealt 只计有支持证据且攻击者属本队的掉血；received 计本队车辆全部掉血
+        // dealt 只计有支持证据且攻击者属本队的掉血；received 计本队车辆全部掉血
         // （含不可归属——掉血真实发生，不计入任何攻击者即可）。Type-8 raw 不得参与。
         int dealt = 0;
         int received = 0;

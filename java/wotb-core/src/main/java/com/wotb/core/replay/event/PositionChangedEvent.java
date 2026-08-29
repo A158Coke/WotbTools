@@ -19,7 +19,7 @@ package com.wotb.core.replay.event;
  * @param pitch       俯仰角
  * @param roll        翻滚角
  * @param trailingStateRaw 尾部原始字节（u8；semantic = UNKNOWN，绝非 onGround/isError，
- *                         见 type10-movement-transform-closure.md §13）
+ *                         见 type10-movement-transform-closure.md）
  * @param confidence  置信度（浮点数值验证后返回 EXACT 或有问题的返回 PARTIAL）
  */
 public record PositionChangedEvent(

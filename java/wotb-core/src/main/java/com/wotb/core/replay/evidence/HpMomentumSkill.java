@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * HP 动量 Skill（文档 §17）：计算双方可观察 HP 差随时间变化，找出明显 Swing 窗口。
+ * HP 动量 Skill：计算双方可观察 HP 差随时间变化，找出明显 Swing 窗口。
  * <p>严格遵守观察性约束：只有 {@code observationState == OBSERVED} 且血量可靠的实体才计入；
  * {@code LifeState.DESTROYED} 是可靠终态，按 0 HP 计入；
  * 两个采样点之间只使用<strong>两端共同可靠观察的实体</strong>计算 HP delta——

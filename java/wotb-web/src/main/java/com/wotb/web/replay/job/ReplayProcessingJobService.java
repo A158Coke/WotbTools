@@ -260,7 +260,7 @@ public class ReplayProcessingJobService {
             return;
         }
         final Battle battle = result.battle();
-        // Derived artifacts：MapOverview 不可用 ≠ parse failure（§107）；
+        // Derived artifacts：MapOverview 不可用 ≠ parse failure；
         // artifact 写失败属于存储不可用 → source FAILED（消费者依赖 artifact）。
         try {
             ReplayArtifactWriter.writeMapOverview(store.jobDir(job.jobId()), index,

@@ -12,7 +12,7 @@ package com.wotb.core.replay.event;
  * It only carries the raw low-bit counter for relative-clock observation / monotonicity checks; no
  * absolute-time interpretation.</p>
  *
- * <p><b>Version gate (§P1-2)</b>: only the current canonical 11.19 family may decode this semantic;
+ * <p><b>Version gate</b>: only the current canonical 11.19 family may decode this semantic;
  * unknown/future versions raw-preserve (UNKNOWN + diagnostic), never generalized.</p>
  *
  * @param sequence    event sequence number

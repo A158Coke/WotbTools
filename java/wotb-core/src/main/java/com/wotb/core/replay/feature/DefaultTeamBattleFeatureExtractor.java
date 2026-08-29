@@ -86,7 +86,7 @@ public class DefaultTeamBattleFeatureExtractor {
         final int invalidTimestampEventCount = (int) resolvedEvents.stream()
                 .filter(re -> re.resolution().status() == TacticalTimeResolution.Status.INVALID_TIMESTAMP)
                 .count();
-        // §11–§17：伤害/掉血事实只消费权威 HP loss（Type-7 推导 + attacker attribution）。
+        // 伤害/掉血事实只消费权威 HP loss（Type-7 推导 + attacker attribution）。
         // Type-8 rawProtocolValue 语义未证明，不得作为 dealt/received/关键事件伤害。
         final Float battleStartRaw = reconstruction == null ? null
                 : reconstruction.battleStartRawClockSec();

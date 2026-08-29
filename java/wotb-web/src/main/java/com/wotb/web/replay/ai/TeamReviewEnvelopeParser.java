@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
  * （reviewMarkdown 为空 / primaryDiagnosis 缺 title 或 reasoning / claims 非数组 /
  * evidenceIds 非字符串数组）时 {@link #parse(String)} 返回 {@code null}，由编排器把
  * 「输出必须是合法 JSON envelope」反馈给 LLM 重写（targeted rewrite → full rewrite → fail-safe）。</p>
- * <p>Observability（docs/features/team-ai-review.md §44/§45）：{@link #parseDetailed(String)} 返回
+ * <p>Observability：{@link #parseDetailed(String)} 返回
  * 可诊断的 {@link ParseResult}，携带稳定低基数 {@link ParseFailureReason}——启用 DeepSeek
  * JSON Output 后剩余的 parser failure 类型必须可机器分类，不能只看到笼统的 null。
  * 字符串数组字段（evidenceIds / supportingEvidenceIds）区分 MISSING（缺失）/ INVALID（存在但
@@ -410,7 +410,7 @@ public final class TeamReviewEnvelopeParser {
     }
 
     /**
-     * 可诊断解析结果（§45）：成功时 {@code envelope} 非 null、{@code failureReason} 为 null；
+     * 可诊断解析结果：成功时 {@code envelope} 非 null、{@code failureReason} 为 null；
      * 失败时相反。不要靠 catch 后统一「parse failed」——JSON Output 启用后剩余失败类型必须可分类。
      */
     public record ParseResult(TeamReviewEnvelope envelope, ParseFailureReason failureReason) {
@@ -428,7 +428,7 @@ public final class TeamReviewEnvelopeParser {
         }
     }
 
-    /** 稳定低基数 parser 失败分类（§44；日志/指标使用，不记录 rawJson）。 */
+    /** 稳定低基数 parser 失败分类（日志/指标使用，不记录 rawJson）。 */
     public enum ParseFailureReason {
         EMPTY_OUTPUT,
         INVALID_JSON,

@@ -4,7 +4,7 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.feature.PlaybackCombatReconstruction;
 
 /**
- * 击杀者证据（PR147 §11）：settlement field25 killerID（result/entity-id → accountId）是<b>强 authority</b>；
+ * 击杀者证据：settlement field25 killerID（result/entity-id → accountId）是<b>强 authority</b>；
  * live reconstruction（{@link PlaybackCombatReconstruction.Destroyed}）是 cross-check。
  * <ul>
  *   <li>settlement killer 已知 → {@link Source#SETTLEMENT}（confirmed）；</li>
