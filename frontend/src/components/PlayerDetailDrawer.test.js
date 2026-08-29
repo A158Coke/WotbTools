@@ -659,18 +659,25 @@ describe('Rating Profile PNG 导出不可变快照', () => {
     wrapper.unmount()
   })
 
-  it('页面与 PNG 导出消费完全相同的 player/reference polygon points', async () => {
+  it('页面与 PNG 导出消费相同的雷达点位、顶点分数和分数明细', async () => {
     const wrapper = mountDrawer(
       { scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER, {}, { realRadar: true })
     await flushPromises()
     const pagePlayerPoints = wrapper.find('.radar-data').attributes('points')
     const pageReferencePoints = wrapper.find('.radar-ref').attributes('points')
+    const pageScores = wrapper.findAll('.radar-score').map(node => node.text())
+    const badgeAttrs = node => ['x', 'y', 'width', 'height', 'rx'].map(name => node.getAttribute(name))
+    const pageBadges = wrapper.findAll('.radar-score-bg').map(node => badgeAttrs(node.element))
 
     await wrapper.find('[data-testid="export-profile"]').trigger('click')
     await flushPromises()
     const card = h2c.getCalls()[0][0]
     expect(card.querySelector('.rp-data').getAttribute('points')).toBe(pagePlayerPoints)
     expect(card.querySelector('.rp-ref').getAttribute('points')).toBe(pageReferencePoints)
+    expect([...card.querySelectorAll('.rp-score')].map(node => node.textContent)).toEqual(pageScores)
+    expect([...card.querySelectorAll('.rp-score-bg')].map(badgeAttrs)).toEqual(pageBadges)
+    expect(card.querySelector('.rp-detail').textContent).toContain('radarScale.playerScore')
+    expect(card.querySelector('.rp-detail').textContent).toContain('radarScale.averageScore')
     expect([...card.querySelectorAll('.rp-scale')].map(node => node.textContent)).toEqual(['25', '50', '75', '100'])
     expect(card.querySelectorAll('.rp-grid').length).toBe(3)
     expect(card.querySelector('[class*="outer"]')).toBeNull()

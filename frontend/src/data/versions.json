@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.50",
+    "date": "2026-08-30",
+    "tag": "chg",
+    "zh": "Rating V2 与 League Rating V5 雷达现在会在每个玩家顶点直接标出 0–150 视觉分数，明细可在「分数」与「原始数值」之间切换；两套雷达都支持 50%–150% 缩放，V2 桌面抽屉也扩大以容纳完整放大视图。V5 选手画像 PNG 同步分数标注，手机端 V2 抽屉补齐键盘焦点循环。评分公式、排序、API 与 Excel 均不改变。",
+    "en": "Rating V2 and League Rating V5 radars now label every player vertex with its 0–150 visual score, and details can switch between Scores and Raw values. Both radars support 50%–150% zoom, while the desktop V2 drawer is wider to fit the enlarged view. V5 Rating Profile PNGs include the same labels, and the mobile V2 drawer keeps keyboard focus inside the modal. Rating formulas, ranking, APIs and Excel remain unchanged.",
+    "ru": "На радарах Rating V2 и League Rating V5 у каждой вершины игрока теперь показан визуальный балл 0–150, а в деталях можно переключаться между баллами и исходными значениями. Оба радара масштабируются от 50% до 150%, а панель V2 на компьютере расширена для увеличенного вида. Те же подписи добавлены в PNG-профиль V5, а мобильная панель V2 удерживает клавиатурный фокус внутри модального окна. Формулы, сортировка, API и Excel не меняются."
+  },
+  {
     "v": "2.12.49",
     "date": "2026-08-29",
     "tag": "add",

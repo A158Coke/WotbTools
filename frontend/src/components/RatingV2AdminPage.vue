@@ -35,6 +35,11 @@ const sort = ref(null)
 const selectedRow = ref(null)
 const radarDrawer = ref(null)
 const isMobile = ref(false)
+const FOCUSABLE_SELECTOR = [
+  'a[href]', 'button:not([disabled])', 'input:not([disabled])',
+  'select:not([disabled])', 'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
 let lastPlayerTrigger = null
 let requestVersion = 0
 
@@ -124,8 +129,35 @@ function closePlayerRadar() {
   void nextTick(() => trigger?.focus?.())
 }
 
+function trapMobileRadarFocus(event) {
+  if (event.key !== 'Tab' || !isMobile.value || !selectedRow.value) return
+  const drawer = radarDrawer.value
+  if (!drawer) return
+  const focusable = [...drawer.querySelectorAll(FOCUSABLE_SELECTOR)]
+  if (!focusable.length) {
+    event.preventDefault()
+    drawer.focus()
+    return
+  }
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  const active = document.activeElement
+  const outside = !drawer.contains(active)
+  if (event.shiftKey && (outside || active === first)) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && (outside || active === last)) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
 function onKeydown(event) {
-  if (event.key === 'Escape' && selectedRow.value) closePlayerRadar()
+  if (event.key === 'Escape' && selectedRow.value) {
+    closePlayerRadar()
+    return
+  }
+  trapMobileRadarFocus(event)
 }
 
 function syncMobile() {
@@ -254,7 +286,7 @@ onBeforeUnmount(() => {
         <div v-if="selectedRow" class="rating-v2-radar-backdrop"
           :class="{ 'rating-v2-radar-modal': isMobile }"
           @click.self="isMobile ? closePlayerRadar() : null">
-          <aside ref="radarDrawer" class="rating-v2-radar-drawer" role="dialog"
+          <aside ref="radarDrawer" class="rating-v2-radar-drawer" role="dialog" tabindex="-1"
             :aria-modal="isMobile ? 'true' : undefined" aria-labelledby="rating-v2-radar-title">
             <RatingV2RadarPanel :row="selectedRow" :rows="ratingResponse.rows" @close="closePlayerRadar" />
           </aside>
@@ -292,7 +324,7 @@ onBeforeUnmount(() => {
 .rating-v2-radar-backdrop { position: fixed; inset: 0; z-index: 60; pointer-events: none; background: none; }
 .rating-v2-radar-drawer {
   position: fixed; top: calc(var(--topbar-h) + 8px); right: 8px; bottom: 8px;
-  width: min(380px, calc(100vw - 16px)); overflow-y: auto; padding: 16px;
+  width: min(560px, calc(100vw - 16px)); overflow-y: auto; padding: 16px;
   border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card2);
   box-shadow: var(--surface-shadow); pointer-events: auto; animation: rating-v2-drawer-in .22s ease-out;
 }

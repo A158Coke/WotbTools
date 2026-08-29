@@ -94,7 +94,15 @@
       "average": "{label} = 75",
       "strong": "强势线 100",
       "overflow": "超过 100 = 显著高于当前比较组",
-      "ariaDescription": "{label}固定在 75，强势线为 100；玩家轮廓可以超过 100。"
+      "ariaDescription": "{label}固定在 75，强势线为 100；玩家轮廓可以超过 100，顶点标注玩家分数。",
+      "detailMode": "明细显示",
+      "scoreMode": "分数",
+      "rawMode": "原始数值",
+      "playerScore": "玩家分数",
+      "averageScore": "平均分数",
+      "zoom": "雷达缩放",
+      "zoomOut": "缩小雷达图",
+      "zoomIn": "放大雷达图"
     },
     "ratingV2": {
       "kicker": "管理员 · 灰度",
@@ -223,7 +231,15 @@
       "average": "{label} = 75",
       "strong": "Strong line 100",
       "overflow": "Above 100 = significantly above the current comparison group",
-      "ariaDescription": "{label} is fixed at 75 and the strong line is 100; the player profile may extend above 100."
+      "ariaDescription": "{label} is fixed at 75 and the strong line is 100; the player profile may extend above 100, with player scores labeled at each vertex.",
+      "detailMode": "Detail display",
+      "scoreMode": "Scores",
+      "rawMode": "Raw values",
+      "playerScore": "Player score",
+      "averageScore": "Average score",
+      "zoom": "Radar zoom",
+      "zoomOut": "Zoom radar out",
+      "zoomIn": "Zoom radar in"
     },
     "ratingV2": {
       "kicker": "ADMIN · GRAY",
@@ -352,7 +368,15 @@
       "average": "{label} = 75",
       "strong": "Сильный уровень 100",
       "overflow": "Выше 100 = значительно выше текущей группы сравнения",
-      "ariaDescription": "{label} зафиксировано на 75, сильный уровень равен 100; профиль игрока может выходить выше 100."
+      "ariaDescription": "{label} зафиксировано на 75, сильный уровень равен 100; профиль игрока может выходить выше 100, а баллы игрока подписаны у каждой вершины.",
+      "detailMode": "Отображение данных",
+      "scoreMode": "Баллы",
+      "rawMode": "Исходные значения",
+      "playerScore": "Баллы игрока",
+      "averageScore": "Средний балл",
+      "zoom": "Масштаб радара",
+      "zoomOut": "Уменьшить радар",
+      "zoomIn": "Увеличить радар"
     },
     "ratingV2": {
       "kicker": "АДМИН · СЕРАЯ ПРОВЕРКА",
