@@ -297,7 +297,7 @@ API 只输出稳定英文 key/enum。前端 `player_labels` / `agg_labels` 渲�
 
 主流水线在 `.github/workflows/deploy.yml`。生产发布原则：
 
-1. 后端 Maven、前端 Vitest/Vite build 先通过。
+1. 代码质量验证（后端 Maven / 前端 Vitest + Vite build）由 PR CI 作为 merge gate 承担；部署流水线不再重复运行测试套件，只负责 production build、Docker 三镜像构建推送、部署与健康检查。
 2. 每次部署统一构建 backend/frontend/keycloak 三个 `sha-<SHA>` 镜像；生产 compose 钉 SHA，不依赖 `latest`。
 3. 新 compose 先写 `docker-compose.next.yml` 并 pull；成功后才替换正式 compose。
 4. 部署后检查 backend `/api/health`、前端 nginx E2E、Keycloak realm。

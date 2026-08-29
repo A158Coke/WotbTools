@@ -5,7 +5,7 @@
 ## 镜像与产物（经 deploy.yml / Dockerfile×3 核对）
 
 - 三镜像推 GHCR（`ghcr.io/a158coke/wotbtools`）：`docker/Dockerfile.backend`（Maven→JRE，:8087）、`docker/Dockerfile.frontend`（Node→nginx，:80）、`docker/Dockerfile.keycloak`（含 `docker/keycloak/wotbtools-realm.json` realm 导入）。
-- **统一构建**：生产部署（deploy.yml）每次运行都统一构建三个 SHA 镜像——`wotbtools-backend` / `wotbtools-frontend` / `wotbtools-keycloak`（GHCR 前缀 `ghcr.io/a158coke/`，tag = `sha-<short>` + `latest`）；路径检测（backend/frontend 变更标志）**只用于** test-backend/test-frontend 测试门禁与 tag 计算，**不用于**增量构建镜像（未变更时对应测试 job 为 skipped，构建仍执行）。改动此逻辑时同步 workflow 与 `deploy.sh` 契约校验。
+- **统一构建**：生产部署（deploy.yml）每次运行都统一构建三个 SHA 镜像——`wotbtools-backend` / `wotbtools-frontend` / `wotbtools-keycloak`（GHCR 前缀 `ghcr.io/a158coke/`，tag = `sha-<short>` + `latest`）；代码质量验证由 PR CI（merge gate）承担，deploy 只做 production build / Docker 三镜像构建推送 / 部署与健康检查，**不再重复运行测试套件**。tag 基于 main 提交哈希确定性计算。改动此逻辑时同步 workflow 与 `deploy.sh` 契约校验。
 - 生产编排 `deploy/docker-compose.prod.yml` + `deploy/deploy.sh`（fail-fast 校验，含 `AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC=1100` 等契约；改动后端超时/编排变量必须同步 `AiTimeoutChainContractTest`、仓库根 `.env.example` 与本文件）。
 - 反向代理 `deploy/nginx/nginx.conf`：`/api/replay/analyze` 固定 `proxy_read/send_timeout 1120s` + `proxy_buffering off`（SSE 流式）；其余 120s。
 - **SPA 缓存策略（frontend 部署即生效的关键）**：`location = /index.html` 固定 `Cache-Control: no-cache, no-store, must-revalidate`（禁止浏览器缓存入口页，新 bundle hash 部署后立即生效）；`location /assets/`（Vite 内容 hash 产物）固定 `Cache-Control: public, max-age=31536000, immutable`，且 404 不 fallback 到 index.html。改缓存头会影响用户能否看到新前端版本，改动需在 `?view=hof-admin` 等页验证。
