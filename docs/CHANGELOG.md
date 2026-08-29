@@ -5,6 +5,23 @@
 ## [Unreleased]
 
 ### Added
+- **Android Release 一键发布入口（CI/CD）**：`android-release.yml` 新增
+  `workflow_dispatch`（输入 `X.Y.Z`，推荐入口），保留 `android-v*` tag push（兼容入口），
+  两条入口合并为同一套 `Resolve release metadata / fail-fast guards / 发布协议`。新增
+  fail-fast 校验：版本格式（每段 `0` 或非零开头整数，拒绝 `1.0.02`/`01.0.2`）、
+  发布源固定 `main` HEAD、生产 monotonic 防回退、`minSupportedVersionCode` 上界校验、
+  release tag 防重复 + `GITHUB_TOKEN` 自动建 tag（不回弹触发）、生产同版本 APK 不可变
+  防覆盖、`apksigner --print-certs` 签名证书 SHA-256 与 `ANDROID_SIGNING_CERT_SHA256`
+  Variable 固定比对、生产 APK HTTP 200 + 非空 + SHA 比对、生产 `version.json` jq 内容比对、
+  `$GITHUB_STEP_SUMMARY` 汇总。权限 `contents: read` → `contents: write`（最小必要）。
+  新增 `scripts/android-release/`（`resolve-version.sh` / `check-release-guards.sh` /
+  `test-release.sh`，纯逻辑无 secret），并在 `ci.yml` 加 `android-release-helpers` job
+  （`bash -n` + 版本/守卫单测，不跑真实 release、不用 production signing secret）。
+  `version.json` schema、nginx 路由、compose bind-mount、Gradle 签名契约、发布目录
+  `/opt/wotb/android-release`、`version.json` LAST 发布顺序均不变。验证：workflow YAML
+  解析、helper 单测（合法/非法版本、versionCode 公式、monotonic/minSupported/tag/APK 守卫、
+  bash -n）全部通过；真实 production signing/publish 由 merge 后首次 release 权威验证。
+
 - **Android 在线纯客户端（Thin Client）初版**：新增 `android/` 最小 Kotlin 壳（Remote Web Architecture，WebView 加载 `https://wotbtools.com`）、网络/版本门禁（fail-closed）、APK 强制/可选更新、Replay 意图入口（ACTION_SEND/ACTION_VIEW → content URI → 现有 Web upload transport）、极薄 Native Bridge（能力探测 + pending replay 交接）、FileProvider 与未知来源授权。发布走 `.github/workflows/android-release.yml`（tag `android-v*`），APK + `version.json` 静态托管于 `/download/android/`（nginx location + compose bind-mount `/opt/wotb/android-release`）。前端新增 `?view=android` 下载页与「下载 Android 版」入口。Web 端只做 Web 之外的系统能力；回放业务展示（AI Review / 战局重建 / capability 状态）沿用现有 Vue，不在 Native 重写（待 V2 contract 定稿后共用同一套 capability/domain API）。验证：frontend `npm test` + `npm run build` 通过；Android 编译/签名/真机验证在 CI tag 与真机侧进行。
 
 - **Battle Playback V2 — Canonical Replay Truth Convergence（后端 decoder → canonical facts → BattleTimeline → V2 稀疏投影）**：把战局重建从「decoder events → Playback/AI 各自重新解释 → frontend 再推理」收敛为「版本门禁解码 → canonical facts/lifecycles → BattleTimeline → thin projection」。本轮在已有 PR162 canonical Timeline 基础上新增：
