@@ -8,7 +8,7 @@ import java.util.List;
  * <p>禁止固定 30 秒机械切块；关键战术变化优先于固定长度：
  * 强信号（首次接敌/阵亡/存活人数变化/点数变化/信息空窗 HP 差异）触发切分，
  * 同时受时长约束（首选 15–45s，硬最小 8s，硬最大 60s）。覆盖整场、连续、无重叠。</p>
- * <p><b>Episode state/event boundary contract（PR #102 review）</b>：segment 为半开秒区间
+ * <p><b>Episode state/event boundary contract（PR #102）</b>：segment 为半开秒区间
  * {@code [start, end)}，second=start 的 delta 属于<b>该</b> Episode；
  * {@code BattleFrame(second=N).world()} 已消费所有 battle-relative time ≤ N 的事件
  * （stateAt=N、事件窗口 (N-1, N]），因此：

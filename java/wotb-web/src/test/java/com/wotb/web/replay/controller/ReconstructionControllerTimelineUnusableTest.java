@@ -26,7 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
- * PR #102 review P0：{@code AiTimelineUnusableException} 的 SSE error 契约。
+ * PR #102 P0：{@code AiTimelineUnusableException} 的 SSE error 契约。
  * <p>真实 boundary 测试（非 Mockito）：构造真实 {@link ReconstructionController} +
  * 真实 {@link AiReviewWorkerExecutor} + 收集事件的 {@code RecordingEmitter}，
  * worker 内抛出带 {@link TimelineError} detail 的 {@code AiTimelineUnusableException}，

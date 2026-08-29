@@ -19,7 +19,7 @@ import java.util.Set;
  * <p>
  * 使用 AiTokenEstimator 进行 token 预算管理，不再使用固定字符限制或固定数量截断。
  * </p>
- * <p><b>Canonical Timeline 契约（PR #102 review）</b>：本类<b>不</b>构建
+ * <p><b>Canonical Timeline 契约（PR #102）</b>：本类<b>不</b>构建
  * {@link BattleTimeline}——build+validation 的唯一入口在
  * {@link TeamReplayAnalysisService} orchestration 层（任何 LLM 调用之前，一次 build
  * 一次 validation）；本类只做确定性渲染。production Team Call #2 通过带

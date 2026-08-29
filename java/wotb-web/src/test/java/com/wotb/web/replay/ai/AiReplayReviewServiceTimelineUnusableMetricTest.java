@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 /**
- * PR #102 review P0：{@code AiTimelineUnusableException} 的错误类型指标。
+ * PR #102 P0：{@code AiTimelineUnusableException} 的错误类型指标。
  * <p>真实 {@link AiReplayReviewService} + 抛 {@code AiTimelineUnusableException}
  * 的 AI 分析 mock + {@link SimpleMeterRegistry}，验证错误类型指标记录为固定稳定码
  * {@code AI_TIMELINE_UNUSABLE}（不引入高基数 label，不携带 detail），
