@@ -127,7 +127,7 @@ class TeamGroundingFactsTest {
     }
 
     /**
-     * Review B2-1 死亡时刻时钟契约：{@code PlayerResultFormat.deathSec()} 数值域不统一——
+     *  死亡时刻时钟契约：{@code PlayerResultFormat.deathSec()} 数值域不统一——
      * deathTimeMillis（结算权威）与 legacy 估算为<b>原始时钟域</b>；显式传入 battle start raw
      * clock 时必须按 {@code raw > startRaw → raw − startRaw} 转 battle-relative。
      */

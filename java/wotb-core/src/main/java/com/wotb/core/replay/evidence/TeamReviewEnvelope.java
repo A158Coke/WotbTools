@@ -8,7 +8,7 @@ import java.util.List;
  * （Backend 绝不自行拼接主体）；{@code primaryDiagnosis} 强制 LLM 选出唯一主判断；
  * {@code claims} 是 machine-readable grounding 元数据（数值/时间/位置/玩家事件类陈述引用
  * GROUNDING FACTS 的证据编号）。evidenceIds 只出现在结构化字段，绝不进入 {@code reviewMarkdown}。</p>
- * <p>三语契约（Review B1-2）：涉及数值/时间/位置/玩家事件的 claim 必须携带机器可校验字段
+ * <p>三语契约：涉及数值/时间/位置/玩家事件的 claim 必须携带机器可校验字段
  * （{@code timeSec} / {@code region} / {@code count} / {@code subject} / {@code value}），
  * validator 优先按结构化字段做语言无关校验；{@code text} 是自然语言描述（ZH/EN/RU 皆可），
  * 仅作兜底文本检查。纯战术观点 claim 使用 {@code claimType=TACTICAL}，不要求机器字段。</p>
@@ -39,7 +39,7 @@ public record TeamReviewEnvelope(
     }
 
     /**
-     * 一条 grounded 陈述（Review Blocker B1：structured factual contract，fail-close）。
+     * 一条 grounded 陈述（structured factual contract，fail-close）。
      * <p><b>claimType schema</b>（由 {@code TeamReviewEnvelopeParser} 强制）：</p>
      * <ul>
      *   <li>{@code DEATH}：subject + timeSec + evidenceIds；</li>

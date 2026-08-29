@@ -79,7 +79,7 @@
 - **Personal AI hard gate（§3）**：TacticalReviewHarness / analyzePlayerOrFallback 在 Call #1 之前
   构建并验证 canonical timeline（无重建 / 录像者未解析 / timeline 不可用 → AI_TIMELINE_UNUSABLE，
   AI Gateway requests = 0）。
-- **Team AI hard gate（§3，PR #102 review B1）**：TeamReplayAnalysisService.analyzeTeamGroups（Team AI
+- **Team AI hard gate（§3，PR #102 ）**：TeamReplayAnalysisService.analyzeTeamGroups（Team AI
   唯一 production 编排入口）在 Call #1 / Call #2 / Team Autopsy 之前为每个 context 构建并验证 canonical
   timeline（一次 build、一次 validation）：reconstruction 缺失 / timeline 不可用 → AI_TIMELINE_UNUSABLE，
   AI Gateway requests = 0；验证通过后同一 validated timeline 下传 TeamAiPromptBuilder 渲染 TACTICAL

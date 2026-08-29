@@ -982,7 +982,7 @@ class AiReplayAnalysisServiceTest {
 
     /**
      * {@link #teamResult} 的有效重建变体：通过 Team canonical Timeline hard gate
-     * （PR #102 review B1）—— analyzeTeamGroups 在 LLM 调用前要求 timeline 可构建。
+     * （PR #102 ）—— analyzeTeamGroups 在 LLM 调用前要求 timeline 可构建。
      */
     private static ReplayProcessingResult teamResultWithRecon(
             final String fileName, final String arenaId,

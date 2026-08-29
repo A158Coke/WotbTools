@@ -103,7 +103,7 @@ public final class TeamReviewEnvelopeParser {
                     if (ids.size() > MAX_IDS_PER_CLAIM) {
                         return ParseResult.fail(ParseFailureReason.TOO_MANY_EVIDENCE_IDS);
                     }
-                    // Review Blocker B1：structured factual contract（fail-close，P0-4 容错）——
+                    // structured factual contract（fail-close，P0-4 容错）——
                     // claimType 必填且必须属于 schema；缺失/未知时按机器字段确定性推断（能
                     // deterministic 修复的 schema 缺失不浪费 LLM retry）；显式禁止类型（LOS 等）
                     // 一律拒绝；每种 factual claimType 的 required machine 字段必须齐全；机器
@@ -112,7 +112,7 @@ public final class TeamReviewEnvelopeParser {
                     final NumField regionF = intField(item.get("region"), 1, 9);
                     final NumField countF = intField(item.get("count"), 0, 99);
                     final String subject = text(item.get("subject"));
-                    // Review Blocker B1：稳定身份 subjectAccountId（可选；JSON number 正整数，类型错误 fail-close）
+                    // 稳定身份 subjectAccountId（可选；JSON number 正整数，类型错误 fail-close）
                     final NumField accF = longField(item.get("subjectAccountId"));
                     final String value = text(item.get("value"));
                     final String side = text(item.get("side")).toUpperCase(java.util.Locale.ROOT);
@@ -220,7 +220,7 @@ public final class TeamReviewEnvelopeParser {
         return node == null || node.isNull() ? "" : node.asText("");
     }
 
-    /** Review Blocker B1：结构化 factual contract 的 machine 枚举值。 */
+    /** ：结构化 factual contract 的 machine 枚举值。 */
     static final Set<String> CLAIM_TYPES = Set.of(
             "DEATH", "ALIVE_TRANSITION", "POSITION_REGION", "ENEMY_POSITION", "TACTICAL");
 
@@ -269,7 +269,7 @@ public final class TeamReviewEnvelopeParser {
     }
 
     /**
-     * 数值字段（Review Blocker B1：fail-close）：
+     * 数值字段（fail-close）：
      * 字段缺失 → {@code MISSING}；字段存在但类型/取值非法（如 {@code "112"} 字符串、
      * {@code "three"}、非正数）→ {@code INVALID}（整个 envelope 拒绝，不静默 null）。
      */

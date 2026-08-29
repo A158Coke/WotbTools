@@ -81,7 +81,7 @@ class TeamReviewEnvelopeParserTest {
 
     @Test
     void parsesMachineClaimFields() {
-        // Review B1-2：机器可校验字段（timeSec/region/count/subject/value/claimType）三语通用
+        // 机器可校验字段（timeSec/region/count/subject/value/claimType）三语通用
         final String json = "{"
                 + "\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
                 + "\"reviewMarkdown\":\"## 团队复盘\\n\\n内容\","
@@ -103,7 +103,7 @@ class TeamReviewEnvelopeParserTest {
 
     @Test
     void tacticalClaimWithoutMachineFieldsPasses() {
-        // Review Blocker B1：TACTICAL（纯战术观点）不需要 factual machine 字段 → PASS
+        // TACTICAL（纯战术观点）不需要 factual machine 字段 → PASS
         final String json = "{"
                 + "\"primaryDiagnosis\":{\"title\":\"主判断\",\"reasoning\":\"理由\"},"
                 + "\"reviewMarkdown\":\"## 团队复盘\\n\\n内容\","
@@ -125,7 +125,7 @@ class TeamReviewEnvelopeParserTest {
         assertNull(TeamReviewEnvelopeParser.parse("   "));
     }
 
-    // ===== Review Blocker B1：structured factual contract fail-close =====
+    // ===== ：structured factual contract fail-close =====
 
     private static String claimJson(final String claimBody) {
         return "{"
@@ -243,7 +243,7 @@ class TeamReviewEnvelopeParserTest {
 
     @Test
     void parsesSubjectAccountIdStableIdentity() {
-        // Review Blocker B1：subjectAccountId（可选稳定身份，JSON number）
+        // subjectAccountId（可选稳定身份，JSON number）
         final String json = claimJson(
                 "\"claimType\":\"ENEMY_POSITION\",\"subject\":\"SPHT\",\"timeSec\":112.0,"
                         + "\"region\":6,\"knowledge\":\"LAST_KNOWN\",\"subjectAccountId\":2001,"
@@ -255,7 +255,7 @@ class TeamReviewEnvelopeParserTest {
 
     @Test
     void failCloseSubjectAccountIdAsString() {
-        // Review Blocker B1：subjectAccountId 为字符串 → reject/rewrite（fail-close）
+        // subjectAccountId 为字符串 → reject/rewrite（fail-close）
         final String json = claimJson(
                 "\"claimType\":\"ENEMY_POSITION\",\"subject\":\"SPHT\",\"timeSec\":112.0,"
                         + "\"region\":6,\"knowledge\":\"LAST_KNOWN\",\"subjectAccountId\":\"2001\","

@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PR #103 最终 review B1 回归：Canonical BattleTimeline 的 ActualCombatantEntitySet 过滤后，
+ * PR #103 最终  回归：Canonical BattleTimeline 的 ActualCombatantEntitySet 过滤后，
  * Team / Personal AI Context Compiler 输出不得包含 spectator entity（车辆#99 / account 9999）。
  */
 class NonCombatantExcludedFromAiContextTest {
