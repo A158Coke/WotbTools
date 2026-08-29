@@ -269,13 +269,11 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
   场次/评分场次/胜场/胜率/场均伤害/场均助攻/场均击杀/获取点数每场/表现指标
   （rated_battles 进入生产 Column contract：leaguePlayerSummaryColumns → mergeCwPlayerColumns
   → useColumns cw scope → ColumnPicker）。列名与原始字段区分（「伤害」vs「伤害评分」）。
-- **选手 Drawer 雷达**：默认七维 League Rating，用户可自定义指标（七维 + contribution/kast；
-  **Impact 不入 Radar**——暂无已确认的稳定 normalization contract，仍完整保留在表格/Drawer
-  表现指标区/排序/导出）与顺序（min 3 / max 8），偏好独立 localStorage
-  （wotb-radar-metric-order），Summary 与 Battle 共用；normalization 由 Radar Metric Registry
-  （utils/radarMetrics.js）统一提供——League 维度满分来自后端 `resp.league.columns`
-  （key/max，禁止 frontend 复制 domain max 常量；缺失 → 该轴 "--"），KAST/Contribution = /100，
-  batch 无关、禁止 current-batch-max；axis 缺失显示 "--"，不冒充 0/0%。
+- **选手 Drawer 雷达**：只允许七维 League Rating，用户可自定义维度与顺序（min 3 / max 7），
+  偏好独立 localStorage（`wotb-radar-metric-order`），Summary 与 Battle 共用；Contribution/KAST/Impact
+  继续保留在表现指标区，不进入 Radar。维度 raw score 与 `score/max` 明细仍来自后端 metadata，最终几何
+  则按当前 Battle/Global Average 使用共用相对表现标尺（平均=75、2×平均=100、隐藏150上限）；max
+  metadata 缺失时明细降级显示 raw score，但不影响 raw/reference 完整轴的相对几何。
 - 所有可见列（单场 / 普通汇总 / CW 统一玩家表 / 战队汇总）均支持 ASC/DESC 排序：
   数值 numeric、字符串自然序（Intl.Collator numeric）、缺失（null/''/NaN/--）恒排最后、
   排序基于 raw 值（格式化单元格按原始数值排）。
@@ -337,9 +335,9 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
    （ColumnPicker 偏好、Excel 表头、PNG），且用户会把「伤害」与「伤害评分」混淆。模式化后：
    API 按模式返回列集合、前端按模式隔离 storage scope、导出按模式选择 writer。
 7. **为什么 Radar 指标需要 Registry 而不是组件硬编码**：不同指标取值语义不同（League 维度
-   满分由后端 metadata 提供；KAST/Contribution 是 0–100 百分比；Impact 可 >100），组件无法
-   现场猜 normalization。Registry 让每个可选指标自带稳定、batch 无关的 normalize，保证同玩家
-   同数值在任何批次形状一致；Radar 是 visualization preference，永远不改 Rating。
+   满分由后端 metadata 提供），组件不应现场猜 raw source 或维度顺序。Registry 负责稳定取数与明细，
+   共用 `radarScale` 负责相对当前比较组的几何；因此形状会随 Battle/Global Average 改变，必须明确标注
+   比较范围，不能宣称跨批次绝对可比。Radar 是 visualization preference，永远不改 Rating。
 7. **如何避免 preview / Excel / PNG 出现三套算法**：评分 core（`LeagueRatingCalculator`）
    是纯 Java 单点实现；preview 与 Excel 都由 `LeagueReplays.collect` 产出同一
    `LeagueRatingBatch`（Excel 从 ProcessedDataset 复用，不二次解析/不二次计算）；
@@ -389,8 +387,10 @@ Team Rating 计算；Radar aggregation 只发生在多场 player summary visuali
 - **missing / invalid ≠ 真实 0**：`dimensionScores` 非 7 维、null、NaN、Infinity 是
   invariant violation（`LeagueRatingBatchAggregator.chunkMeans/chunkMedians`
   对残缺 stride fail fast）；Radar 轴缺失显示 `--`，不冒充 0/0%。
-- **归一化**：League 维度满分来自后端 `resp.league.columns`（key/max），
-  frontend 不硬编码 domain max；Performance 按 /100；禁止 current-batch-max 归一化。
+- **几何标尺**：League 维度满分仍来自后端 `resp.league.columns`（key/max）供明细解释，frontend 不硬编码
+  domain max；max 缺失只让明细退化为 raw score，不改变 geometry availability。最终半径按 player raw
+  score / 当前 Battle/Global Average 映射为平均75、2×平均100、
+  4×平均125、>=8×平均150。150 只作不可见坐标上限，不绘制外边界或刻度。
 - **Impact 不入 Radar**（无稳定 normalization contract）；hit_rate / pen_rate
   也不入 Radar candidate。
 

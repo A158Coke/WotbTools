@@ -1,7 +1,12 @@
 // @vitest-environment happy-dom
 
 import { describe, expect, it } from 'vitest'
-import { ratingV2RadarBatchAverage, ratingV2RadarComplete, ratingV2RadarMetrics } from './ratingV2Radar.js'
+import {
+  ratingV2RadarBatchAverage,
+  ratingV2RadarComplete,
+  ratingV2RadarMetrics,
+  ratingV2RadarSeries,
+} from './ratingV2Radar.js'
 
 const t = key => key
 const KEYS = ['potential_damage_avg', 'kast', 'impact', 'assist_avg', 'multi_damage_rate', 'kills_avg']
@@ -43,6 +48,20 @@ describe('ratingV2Radar', () => {
     expect(reference[1].normalized).toBeCloseTo(0.5, 10)
     expect(reference[5]).toMatchObject({ rawValue: 1, available: true })
     expect(reference[5].normalized).toBeCloseTo(0.4, 10)
+  })
+
+  it('maps the screenshot sample against its real batch average on the shared 75/100/150 scale', () => {
+    const player = [5841.3, 100, 318.5, 363.6, 100, 3.63]
+    const average = [1514.5, 64, 79.4, 267.8, 19.2, 0.63]
+    const selected = row(player.map(value => [value, 1]))
+    const companion = player.map((value, index) => (14 * average[index] - value) / 13)
+    const rows = [selected, ...Array.from({ length: 13 }, () => row(companion.map(value => [value, 0.1])))]
+
+    const scaled = ratingV2RadarSeries(selected, rows, t, 'en-US')
+    scaled.reference.forEach((axis, index) => expect(axis.rawValue).toBeCloseTo(average[index], 10))
+    expect(scaled.reference.map(axis => axis.normalized)).toEqual(Array(6).fill(0.5))
+    const expected = [123.7, 91.1, 125.1, 86.0, 134.5, 138.2]
+    scaled.metrics.forEach((axis, index) => expect(axis.visualValue).toBeCloseTo(expected[index], 1))
   })
 
   it('marks a missing axis unavailable instead of substituting zero or shrinking the cohort', () => {

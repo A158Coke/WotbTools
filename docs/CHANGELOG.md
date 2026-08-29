@@ -14,8 +14,13 @@
   - **接入生产**：`battle-playback-v2.json` artifact（仅 timeline 可用时写出）＋ `/api/replay/battle-playback-v2` dataset endpoint（204=timeline 不可用）。
   - **前端守卫迁移**：`battlePlaybackV2.js` 查询工具（`inspectVehicleAt`/`healthAt`/`lifeAt`/`positionCoveredAtV2`/`orientationKnownAt`/`consumableRuntimeAt`/`moduleCrewAt`）＋ `V2VehicleInspector.vue`（AC-4/5/6/7）；`BattlePlaybackPanel`/`MapOverview`/`BattlePlayback` 透传 `playbackV2`，timeline 不可用时回退 legacy `MapOverview.Playback`（守卫期，短迁移 commit）。
   - 验证：wotb-core 全量 1318 green；wotb-web 相关单测 50 green；前端全量 1235 green + `npm run build` green。
+### Changed
+- **Rating V2 / League V5 雷达统一相对表现标尺**：两套雷达不再把互不等价的评分理论上限直接当作视觉满格；玩家每轴相对当前 Batch/Battle/Global Average 映射，平均固定为规则 75 环，2×平均为 100 强势线，4×为 125，8×以上在不可见 150 上限截断。可见 SVG 只保留 25/50/100 网格与 75 虚线平均环，玩家可进入 100 外侧留白；明细仍显示原始玩家值与真实平均，V2/V4.1/V5 公式、API、排序、Excel 均不变。V5 Rating Profile PNG 与页面复用同一 scale/geometry；League column max 仅控制 `score / max` 明细，缺失时降级为 raw score，不阻断 raw/reference 完整轴的相对几何。
+- **Rating V2 雷达改为右侧选手抽屉**：隐藏管理员灰度页不再把六轴雷达追加到长结果表底部；点击玩家昵称后通过 `Teleport` 打开固定右侧抽屉，桌面/平板保持非模态并可继续点击表格切换玩家，移动端使用遮罩面板。补齐 Esc 关闭、触发按钮焦点回收与 reduced-motion；V2 公式/API、共享雷达几何及 League V5 页面不变。
 
 ### Fixed
+- **回放解析预览按钮回归修复（P0）**：回放解析页选择文件后，「解析预览」按钮此前被 `showWorkspaceActions=false` 连带隐藏，导致无法启动解析任务（选完文件无任何操作入口）。现将解析按钮拆到独立的 `showPreview` 开关（默认开启），`showWorkspaceActions` 只控制 AI 复盘/战局回放快捷入口；`RatingV2AdminPage`/`ReplayCapabilityPage` 显式关闭预览以保持原有行为。
+- **管理员 Rating V2 结果表字段对齐修复**：表头现在复用 API 列元数据的 `num` 标记，数值表头与数值单元格统一右对齐，玩家/战队等文本列保持左对齐；新增 DOM 回归测试锁定表头与数据行使用同一对齐分类。列顺序、排序、数据与评分公式不变。
 - **Flyway 迁移不可变 + 部署失败诊断（Production Deploy Hotfix）**：修复 `main` 上已执行 Flyway V18 因文档注释漂移（`docs/current-plan.md` 误写回）导致的启动/健康检查失败风险。将 V18 恢复为 Git history 证明的 authoritative exact blob（`7e11d427` 的 `a7941f0d2…`，Flyway CRC32 `3353739529`），V1–V21 无其它 drift。
   - **永久 policy**：`java/AGENTS.md` 明确既有 `V*.sql` 为 immutable historical artifact——禁止修改/重命名/删除/格式化/改注释/改换行/编码；schema 只能新增更高版本 forward-only `V<N>__*.sql`；仅当 Git history 证明生产已执行且发生 checksum drift 时才允许恢复 exact deployed blob。
   - **CI guard**：新增 `deploy/check-flyway-immutability.sh`（`git diff --name-status --find-renames` 检测 M/D/R；既有 migration 一律失败，仅放行一次用户批准的 V18 blob-pair `212635eb…→a7941f0d…`；A 仅要求版本号高于 base 最大版本）。`deploy-smoke` 以 `fetch-depth:0` 传入 PR base SHA，并运行 `deploy/test-flyway-immutability.sh` fixture。
