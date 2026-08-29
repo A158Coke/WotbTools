@@ -50,12 +50,14 @@ class MainActivity : Activity() {
             "auth.wotbtools.com"
         )
 
-        /** QQ OAuth 最小 allowlist：仅在认证流程期间允许留在 WebView（由 inAuthFlow 门控）。 */
+        /**
+         * QQ OAuth 最小 allowlist：仅在认证流程期间允许留在 WebView（由 inAuthFlow 门控）。
+         * 仅保留 Juhe provider 真实返回的授权主机（graph.qq.com）。若真机 QQ 登录流程出现
+         * top-level 导航到 ssl.ptlogin2.qq.com / xui.ptlogin2.qq.com / ptlogin2.qq.com 等，
+         * 需按真实 navigation evidence 追加到本集合（不得预猜）。
+         */
         private val QQ_AUTH_HOSTS = setOf(
-            "graph.qq.com",
-            "xui.ptlogin2.qq.com",
-            "ptlogin2.qq.com",
-            "openapi.qq.com"
+            "graph.qq.com"
         )
 
         /** Native Bridge 唯一允许的调用 origin；绝不暴露给 Keycloak / IdP / 任意 frame。 */
@@ -117,18 +119,18 @@ class MainActivity : Activity() {
         versionPrimaryButton.setOnClickListener { onUpdatePrimary() }
         versionLaterButton.setOnClickListener { loadWeb() }
 
-        configureWebView()
+        val webViewOk = configureWebView()
         // startup 清理 orphan replay cache，再处理冷启动 intent（可能新增一份）。
         ReplayIntentHandler.cleanupOrphans(this)
         handleIncomingIntent(intent)
-        startStartupFlow()
+        if (webViewOk) startStartupFlow()
     }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private fun configureWebView() {
+    private fun configureWebView(): Boolean {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             showUnsupportedWebView()
-            return
+            return false
         }
         val settings = webView.settings
         settings.javaScriptEnabled = true
@@ -208,6 +210,7 @@ class MainActivity : Activity() {
                 if (request.isForMainFrame) showWebError()
             }
         }
+        return true
     }
 
     // ── 启动门禁（fail-closed）──
