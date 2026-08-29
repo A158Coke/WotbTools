@@ -8,6 +8,22 @@
       "showcaseDescription": "丰富的视觉层级与展示效果"
     },
 
+    "android": {
+      "nav": "下载 Android 版",
+      "kicker": "WotBTools Android",
+      "title": "WotBTools Android",
+      "description": "适合中国大陆 Android 用户。安装后直接使用现有 WotBTools，自动获得业务更新。",
+      "latest_version": "最新版本",
+      "published": "发布日期",
+      "release_notes": "更新内容",
+      "download": "下载 APK",
+      "sha256": "SHA-256",
+      "installed": "你已安装 WotBTools Android",
+      "unavailable": "Android 版本信息暂未配置",
+      "apk_unavailable": "APK 暂不可用",
+      "loading": "正在加载…"
+    },
+
     "home": {
       "boostDesc": "专业陪练服务，提升战斗技巧与实战表现。",
       "replayParse": "回放解析",
@@ -121,6 +137,22 @@
       "showcaseDescription": "Rich visual hierarchy and showcase effect"
     },
 
+    "android": {
+      "nav": "Download Android",
+      "kicker": "WotBTools Android",
+      "title": "WotBTools Android",
+      "description": "Built for mainland China Android users. Install to use the existing WotBTools and get business updates automatically.",
+      "latest_version": "Latest version",
+      "published": "Published",
+      "release_notes": "Release notes",
+      "download": "Download APK",
+      "sha256": "SHA-256",
+      "installed": "WotBTools Android is already installed",
+      "unavailable": "Android version info is not configured yet",
+      "apk_unavailable": "APK not available yet",
+      "loading": "Loading…"
+    },
+
     "home": {
       "boostDesc": "Coaching sessions to improve gameplay and battle performance.",
       "replayParse": "Replay Analysis",
@@ -232,6 +264,22 @@
       "showcase": "Showcase",
       "classicDescription": "Упрощённая светлая тема, без AI/декоративных фонов, сдержаннее",
       "showcaseDescription": "Богатая визуальная иерархия и эффект показа"
+    },
+
+    "android": {
+      "nav": "Скачать Android",
+      "kicker": "WotBTools Android",
+      "title": "WotBTools Android",
+      "description": "Для пользователей Android из материкового Китая. Установите и используйте текущий WotBTools с автоматическими обновлениями.",
+      "latest_version": "Последняя версия",
+      "published": "Опубликовано",
+      "release_notes": "Что нового",
+      "download": "Скачать APK",
+      "sha256": "SHA-256",
+      "installed": "WotBTools Android уже установлен",
+      "unavailable": "Данные о версии Android ещё не настроены",
+      "apk_unavailable": "APK пока недоступен",
+      "loading": "Загрузка…"
     },
 
     "home": {

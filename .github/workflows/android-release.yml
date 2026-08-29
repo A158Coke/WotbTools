@@ -1,0 +1,167 @@
+name: Android Release
+# 仅 `android-vX.Y.Z` 标签触发；普通 Web deploy 不构建 APK（规格 §58）。
+on:
+  push:
+    tags:
+      - "android-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
+env:
+  ANDROID_MIN_SUPPORTED_VERSION_CODE: ${{ vars.ANDROID_MIN_SUPPORTED_VERSION_CODE || '1000000' }}
+  ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+  ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+  ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+  ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Parse version from tag
+        id: version
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#android-v}"
+          MAJOR="${TAG_VERSION%%.*}"
+          REST="${TAG_VERSION#*.}"
+          MINOR="${REST%%.*}"
+          PATCH="${REST#*.}"
+          if [[ "$PATCH" == "$REST" ]]; then PATCH="0"; fi
+          VERSION_CODE=$(( MAJOR * 1000000 + MINOR * 1000 + PATCH ))
+          echo "versionName=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+          echo "versionCode=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "apkName=wotbtools-android-v${TAG_VERSION}.apk" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend tests + build validation
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npm run build
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Prepare staging directory (workspace-relative, 服务器路径严格)
+        shell: bash
+        run: mkdir -p release-staging
+
+      - name: Restore signing key (CI 临时还原，用完即无；secret 不入 artifact/log)
+        shell: bash
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP"/keystore.jks
+
+      - name: Build signed release APK
+        working-directory: android
+        shell: bash
+        env:
+          WOTB_VERSION_CODE: ${{ steps.version.outputs.versionCode }}
+          WOTB_VERSION_NAME: ${{ steps.version.outputs.versionName }}
+        run: |
+          gradle assembleRelease \
+            -PwotbVersionCode="$WOTB_VERSION_CODE" \
+            -PwotbVersionName="$WOTB_VERSION_NAME" \
+            -PwotbKeystorePath="$RUNNER_TEMP/keystore.jks" \
+            -PwotbKeystoreStorePass="$ANDROID_KEYSTORE_PASSWORD" \
+            -PwotbKeyAlias="$ANDROID_KEY_ALIAS" \
+            -PwotbKeyPass="$ANDROID_KEY_PASSWORD"
+
+      - name: Verify APK signature
+        shell: bash
+        run: |
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          test -f "$APK"
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)
+          "$APKSIGNER" verify --verbose "$APK"
+
+      - name: Compute SHA-256 and stage APK
+        id: artifact
+        shell: bash
+        run: |
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          APK_NAME="${{ steps.version.outputs.apkName }}"
+          cp "$APK" "release-staging/$APK_NAME"
+          SHA256="$(sha256sum "release-staging/$APK_NAME" | awk '{print $1}')"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+          echo "apkName=$APK_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK to VPS (bind-mount 目录)
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: release-staging/${{ steps.artifact.outputs.apkName }}
+          target: /opt/wotb/android-release
+          strip_components: 1
+
+      - name: Ensure APK readable by nginx
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: chmod 644 /opt/wotb/android-release/${{ steps.artifact.outputs.apkName }}
+
+      - name: Verify APK accessible before version.json
+        shell: bash
+        run: |
+          URL="https://wotbtools.com/download/android/${{ steps.artifact.outputs.apkName }}"
+          STATUS="$(curl -s -o /dev/null -w '%{http_code}' "$URL")"
+          echo "APK HTTP $STATUS $URL"
+          test "$STATUS" = "200"
+
+      - name: Write version.json (APK 可访问后才发布，规格 §60)
+        shell: bash
+        run: |
+          VERSION_SHA="${{ steps.artifact.outputs.sha256 }}"
+          VERSION_NAME="${{ steps.version.outputs.versionName }}"
+          VERSION_CODE="${{ steps.version.outputs.versionCode }}"
+          APK_NAME="${{ steps.artifact.outputs.apkName }}"
+          PUBLISHED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          MIN_SUPPORTED="$ANDROID_MIN_SUPPORTED_VERSION_CODE"
+          printf '{\n  "schemaVersion": 1,\n  "latestVersionCode": %s,\n  "latestVersionName": "%s",\n  "minSupportedVersionCode": %s,\n  "nativeBridgeVersion": 1,\n  "apkUrl": "https://wotbtools.com/download/android/%s",\n  "sha256": "%s",\n  "publishedAt": "%s",\n  "releaseNotes": ""\n}\n' \
+            "$VERSION_CODE" "$VERSION_NAME" "$MIN_SUPPORTED" "$APK_NAME" "$VERSION_SHA" "$PUBLISHED" > "release-staging/version.json"
+          cat "release-staging/version.json"
+
+      - name: Upload version.json to VPS (LAST)
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: release-staging/version.json
+          target: /opt/wotb/android-release
+          strip_components: 1
+
+      - name: Verify version.json accessible
+        shell: bash
+        run: |
+          URL="https://wotbtools.com/download/android/version.json"
+          STATUS="$(curl -s -o /dev/null -w '%{http_code}' "$URL")"
+          echo "version.json HTTP $STATUS $URL"
+          test "$STATUS" = "200"
