@@ -62,12 +62,18 @@ Android 不在 Native 层重写 AI Review / Battle Reconstruction / capability �
 - 网络/版本门禁、WebView 加载、splash、back、生命周期、错误屏
 - Replay 意图入口（ACTION_SEND / ACTION_VIEW → content URI）
 - 极薄 Native Bridge（`getCapabilities`/`getPendingReplay`/`consumePendingReplay`/
-  `checkForUpdate`/`startUpdate`；禁止 readFile/http/execute/launch）
+  `checkForUpdate`/`startUpdate`；禁止 readFile/http/execute/launch）——
+  **origin-scoped**：经 AndroidX WebKit `WebMessageListener`（`addWebMessageListener`），
+  仅 `https://wotbtools.com` / `https://www.wotbtools.com` 可调，不暴露给 Keycloak / IdP /
+  任意第三方 frame（替代 `addJavascriptInterface` 的全 frame 暴露）
 - APK 下载、SHA-256 校验、installer、未知来源授权
 - 复用现有 Web upload transport（`/api/replay/processing-jobs`）
 
 Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`replay-share`/`replay-open`/
 `app-update`），不涉及 replay 业务 capability 判断（FULL/DEGRADED/PERFORMANCE 等由 Web 端接入）。
+
+认证：正常 Keycloak 登录与 Juhe QQ IdP（`open.juhedenglu.cn`）允许留在 WebView（明确 origin
+policy），其余外链走系统浏览器；Native Bridge 不暴露给认证页面。QQ 返回链需真机验证后收口。
 
 ## WebView 安全（规格 §28–§29 / §86–§88）
 

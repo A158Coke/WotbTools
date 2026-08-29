@@ -1,34 +1,39 @@
 package com.wotbtools.app
 
-import android.webkit.JavascriptInterface
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Native Bridge —— 只暴露白名单能力（规格 §27），绝不做 readFile/http/execute/launch。
- * Web 侧通过 capability 探测（supports()）而非「if Android 就调用」。
+ * origin-scoped bridge：经 WebView WebMessageListener，仅 wotbtools.com/www 可调。
+ * 只暴露：capability/version discovery、pending replay handoff、app update 触发。
+ * 禁止 arbitrary file/http/command/intent API（规格 §27）。
  */
 class NativeBridge(private val host: MainActivity) {
 
-    @JavascriptInterface
-    fun getCapabilities(): String = JSONArray(host.bridgeCapabilities()).toString()
-
-    @JavascriptInterface
-    fun getPendingReplay(): String {
-        val pending = host.bridgePendingReplay() ?: return "null"
-        return JSONObject()
-            .put("name", pending.name ?: "replay.wotbreplay")
-            .put("uri", pending.uri.toString())
-            .put("size", pending.size)
-            .toString()
+    /** 处理来自页面的 JSON {id, method}，返回 JSON {id, result}。运行于 WebView 线程。 */
+    fun handleMessage(json: String): String {
+        val reply = JSONObject()
+        var id: Any? = JSONObject.NULL
+        var result: Any? = JSONObject.NULL
+        try {
+            val msg = JSONObject(json)
+            id = msg.opt("id")
+            when (msg.optString("method")) {
+                "getCapabilities" -> result = JSONArray(host.bridgeCapabilities())
+                "getPendingReplay" -> result = host.bridgePendingReplayJson()
+                "consumePendingReplay" -> result = host.bridgeConsumePendingReplay()
+                "checkForUpdate" -> result = host.bridgeCheckForUpdate()
+                "startUpdate" -> {
+                    host.bridgeStartUpdate()
+                    result = true
+                }
+                else -> result = JSONObject.NULL
+            }
+        } catch (_: Exception) {
+            result = JSONObject.NULL
+        }
+        reply.put("id", id)
+        reply.put("result", result)
+        return reply.toString()
     }
-
-    @JavascriptInterface
-    fun consumePendingReplay(): Boolean = host.bridgeConsumePendingReplay()
-
-    @JavascriptInterface
-    fun checkForUpdate(): Boolean = host.bridgeCheckForUpdate()
-
-    @JavascriptInterface
-    fun startUpdate(): Boolean = host.bridgeStartUpdate()
 }

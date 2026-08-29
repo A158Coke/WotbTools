@@ -14,6 +14,10 @@ concurrency:
 
 env:
   ANDROID_MIN_SUPPORTED_VERSION_CODE: ${{ vars.ANDROID_MIN_SUPPORTED_VERSION_CODE || '1000000' }}
+  ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+  ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+  ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+  ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
 jobs:
   release:
@@ -59,6 +63,10 @@ jobs:
         with:
           gradle-version: "8.7"
 
+      - name: Prepare staging directory (workspace-relative, 服务器路径严格)
+        shell: bash
+        run: mkdir -p release-staging
+
       - name: Restore signing key (CI 临时还原，用完即无；secret 不入 artifact/log)
         shell: bash
         run: |
@@ -93,8 +101,8 @@ jobs:
         run: |
           APK="android/app/build/outputs/apk/release/app-release.apk"
           APK_NAME="${{ steps.version.outputs.apkName }}"
-          cp "$APK" "$RUNNER_TEMP/$APK_NAME"
-          SHA256="$(sha256sum "$RUNNER_TEMP/$APK_NAME" | awk '{print $1}')"
+          cp "$APK" "release-staging/$APK_NAME"
+          SHA256="$(sha256sum "release-staging/$APK_NAME" | awk '{print $1}')"
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
           echo "apkName=$APK_NAME" >> "$GITHUB_OUTPUT"
 
@@ -105,9 +113,8 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: ${{ runner.temp }}/${{ steps.artifact.outputs.apkName }}
+          source: release-staging/${{ steps.artifact.outputs.apkName }}
           target: /opt/wotb/android-release
-          strip_components: 0
 
       - name: Ensure APK readable by nginx
         uses: appleboy/ssh-action@v1
@@ -136,8 +143,8 @@ jobs:
           PUBLISHED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           MIN_SUPPORTED="$ANDROID_MIN_SUPPORTED_VERSION_CODE"
           printf '{\n  "schemaVersion": 1,\n  "latestVersionCode": %s,\n  "latestVersionName": "%s",\n  "minSupportedVersionCode": %s,\n  "nativeBridgeVersion": 1,\n  "apkUrl": "https://wotbtools.com/download/android/%s",\n  "sha256": "%s",\n  "publishedAt": "%s",\n  "releaseNotes": ""\n}\n' \
-            "$VERSION_CODE" "$VERSION_NAME" "$MIN_SUPPORTED" "$APK_NAME" "$VERSION_SHA" "$PUBLISHED" > "$RUNNER_TEMP/version.json"
-          cat "$RUNNER_TEMP/version.json"
+            "$VERSION_CODE" "$VERSION_NAME" "$MIN_SUPPORTED" "$APK_NAME" "$VERSION_SHA" "$PUBLISHED" > "release-staging/version.json"
+          cat "release-staging/version.json"
 
       - name: Upload version.json to VPS (LAST)
         uses: appleboy/scp-action@v1
@@ -146,9 +153,8 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: ${{ runner.temp }}/version.json
+          source: release-staging/version.json
           target: /opt/wotb/android-release
-          strip_components: 0
 
       - name: Verify version.json accessible
         shell: bash

@@ -60,4 +60,7 @@ kotlinOptions {
 dependencies {
     // Phase 2 极薄壳：WebView shell 只依赖 Android framework。后续 Phase 按需引入 androidx。
     implementation("androidx.core:core-ktx:1.13.1")
+    // origin-scoped Native Bridge：WebView WebMessageListener（带 origin allowlist），
+    // 替代 addJavascriptInterface 的全 frame 暴露。
+    implementation("androidx.webkit:webkit:1.11.0")
 }
