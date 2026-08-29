@@ -97,8 +97,8 @@ function makeOverview() {
 }
 
 const locales = { zh, en, ru }
-// PR5 detail sidebar 文案（§8/§7.1）：最后发现 / 已击毁
-const lastSpottedLabel = { zh: '最后发现', en: 'Last spotted', ru: 'Последнее обнаружение' }
+// PR5 detail sidebar 文案（§8/§7.1）：最后已知 / 已击毁（AoI coverage ≠ spotting → observation 语义）
+const lastSpottedLabel = { zh: '最后已知', en: 'Last known', ru: 'Последнее известное' }
 const destroyedLabel = { zh: '已击毁', en: 'Destroyed', ru: 'Уничтожен' }
 
 describe('BattlePlayback with real vue-i18n (zh/en/ru)', () => {
