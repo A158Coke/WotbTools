@@ -39,7 +39,16 @@ const referenceComplete = computed(() =>
 const referenceMissing = computed(() =>
   !!props.reference && props.reference.length > 0 && !referenceComplete.value)
 
+const RADAR_ZOOM_MIN = 50
+const RADAR_ZOOM_MAX = 150
+const RADAR_ZOOM_STEP = 10
 const detailMode = ref('score')
+const radarZoom = ref(100)
+const radarSize = computed(() => `${RADAR.VIEW * radarZoom.value / 100}px`)
+
+function adjustRadarZoom(delta) {
+  radarZoom.value = Math.min(RADAR_ZOOM_MAX, Math.max(RADAR_ZOOM_MIN, radarZoom.value + delta))
+}
 
 /** player 归一化数组（available 时全可用）。 */
 const playerNormals = computed(() =>
@@ -100,8 +109,23 @@ const detailRows = computed(() =>
       {{ t('league.drawer.radar_dim_unavailable') }}
     </div>
     <template v-else>
-      <svg :viewBox="'0 0 ' + RADAR.VIEW + ' ' + RADAR.VIEW" class="radar-svg"
-           role="img" :aria-label="'Radar: ' + (metrics || []).map(m => m.label).join(', ')">
+      <div class="radar-zoom" role="group" :aria-label="t('radarScale.zoom')">
+        <span class="radar-zoom-label">{{ t('radarScale.zoom') }}</span>
+        <button type="button" :aria-label="t('radarScale.zoomOut')"
+                :disabled="radarZoom <= RADAR_ZOOM_MIN" @click="adjustRadarZoom(-RADAR_ZOOM_STEP)">−</button>
+        <input v-model.number="radarZoom" data-testid="radar-zoom"
+               type="range" :min="RADAR_ZOOM_MIN" :max="RADAR_ZOOM_MAX" :step="RADAR_ZOOM_STEP"
+               :aria-label="t('radarScale.zoom')" />
+        <output aria-live="polite">{{ radarZoom }}%</output>
+        <button type="button" :aria-label="t('radarScale.zoomIn')"
+                :disabled="radarZoom >= RADAR_ZOOM_MAX" @click="adjustRadarZoom(RADAR_ZOOM_STEP)">+</button>
+      </div>
+
+      <div class="radar-viewport">
+        <div class="radar-canvas">
+          <svg :viewBox="'0 0 ' + RADAR.VIEW + ' ' + RADAR.VIEW" class="radar-svg"
+               :style="{ width: radarSize }"
+               role="img" :aria-label="'Radar: ' + (metrics || []).map(m => m.label).join(', ')">
         <desc>{{ t('radarScale.ariaDescription', { label: referenceLabel }) }}</desc>
         <!-- 可见网格：25/50/100；75 由规则 reference 环表达，150 边界不可见。 -->
         <polygon v-for="g in gridPolys" :key="'grid-' + g.value"
@@ -139,7 +163,9 @@ const detailRows = computed(() =>
         <text v-for="(p, i) in labelPositions" :key="'label-' + i"
               :x="p.x" :y="p.y" text-anchor="middle" dominant-baseline="middle"
               class="radar-label"><title v-if="p.tip">{{ p.tip }}</title>{{ p.label }}</text>
-      </svg>
+          </svg>
+        </div>
+      </div>
 
       <!-- 图例：player（实线） vs reference（虚线） -->
       <div class="radar-legend">
@@ -187,7 +213,16 @@ const detailRows = computed(() =>
 
 <style scoped>
 .player-radar { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
-.radar-svg { width: 100%; max-width: 340px; aspect-ratio: 1 / 1; }
+.radar-zoom { display: flex; align-self: stretch; align-items: center; justify-content: flex-end; gap: 7px; min-height: 38px; }
+.radar-zoom-label { color: var(--text-muted); font-size: .7rem; font-weight: 700; }
+.radar-zoom button { width: 34px; height: 34px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text-heading); cursor: pointer; font: inherit; font-size: 1rem; font-weight: 800; }
+.radar-zoom button:hover:not(:disabled), .radar-zoom button:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+.radar-zoom button:disabled { cursor: not-allowed; opacity: .38; }
+.radar-zoom input { width: min(120px, 30vw); accent-color: var(--accent); cursor: pointer; }
+.radar-zoom output { min-width: 38px; color: var(--text-label); font-size: .72rem; font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; }
+.radar-viewport { width: 100%; overflow-x: auto; overflow-y: hidden; padding: 2px 0 4px; }
+.radar-canvas { display: flex; justify-content: center; width: max-content; min-width: 100%; }
+.radar-svg { flex: 0 0 auto; max-width: none; aspect-ratio: 1 / 1; }
 .radar-grid { fill: none; stroke: var(--border-light); stroke-width: 1; }
 .radar-grid-strong { stroke: var(--border-light-strong); stroke-width: 1.2; }
 .radar-axis { stroke: var(--border-light); stroke-width: 1; }

@@ -395,7 +395,9 @@ Team Rating 计算；Radar aggregation 只发生在多场 player summary visuali
   4×平均125、>=8×平均150。150 只作不可见坐标上限，不绘制外边界或刻度。
 - **分数标注 / 明细模式**：每个玩家顶点显示与最终半径同源、四舍五入后的 0–150 视觉分。明细默认显示
   玩家视觉分与固定 75 的平均分，可切换回原始玩家 `score/max`（max 不可用则 raw score）和真实参考值；
-  模式切换不改变雷达几何、顶点标注或 Rating Profile PNG。PNG 固定输出默认分数模式，确保静态图可直接比较。
+  模式切换不改变雷达几何、顶点标注或 Rating Profile PNG。页面雷达支持 50%–150% 缩放（默认 100%、
+  10% 步进），只改变 SVG 显示尺寸；窄屏放大时在雷达区域内滚动。PNG 固定输出默认分数模式与固定尺寸，
+  确保静态图可直接比较。
 - **Impact 不入 Radar**（无稳定 normalization contract）；hit_rate / pen_rate
   也不入 Radar candidate。
 

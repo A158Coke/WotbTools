@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
@@ -305,5 +307,11 @@ describe('RatingV2AdminPage', () => {
     const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
     window.dispatchEvent(tab)
     expect(tab.defaultPrevented).toBe(false)
+  })
+
+  it('gives the desktop radar drawer more room while preserving the mobile inset layout', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/RatingV2AdminPage.vue'), 'utf8')
+    expect(source).toContain('width: min(560px, calc(100vw - 16px))')
+    expect(source).toContain('.rating-v2-radar-drawer { left: 8px; width: auto; }')
   })
 })
