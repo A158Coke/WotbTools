@@ -55,6 +55,12 @@ const stateLabel = computed(() => {
 })
 
 const valueSeen = computed(() => health.value != null || loadout.value != null)
+
+const orientationLabel = computed(() => {
+  if (orientation.value === 'CURRENT') return t('recon.map.playback.orientation_current')
+  if (orientation.value === 'LAST_KNOWN') return t('recon.map.playback.orientation_last_known')
+  return t('recon.map.playback.unknown')
+})
 </script>
 
 <template>
@@ -87,7 +93,7 @@ const valueSeen = computed(() => health.value != null || loadout.value != null)
     </div>
 
     <div class="v2-inspector-row" data-test="v2-inspector-orientation">
-      <span class="v2-inspector-key">orientation</span>
+      <span class="v2-inspector-key">{{ $t('recon.map.playback.orientation') }}</span>
       <span class="v2-inspector-val">
         {{ orientation === 'CURRENT' ? $t('recon.map.playback.state_detected') : orientation }}
       </span>
@@ -97,7 +103,7 @@ const valueSeen = computed(() => health.value != null || loadout.value != null)
       <div class="v2-inspector-section">{{ $t('recon.map.playback.loadout') }}</div>
       <div class="v2-inspector-grid" data-test="v2-inspector-loadout">
         <div v-for="c in consumables" :key="'c' + c.slot" class="v2-inspector-chip">
-          <span class="v2-chip-type">consumable</span>
+          <span class="v2-chip-type">{{ $t('recon.map.playback.consumable') }}</span>
           <span>{{ c.logicalItemId || $t('recon.map.playback.unknown') }}</span>
           <span v-if="c.runtimeState !== 'UNKNOWN'" class="v2-chip-state">{{ c.runtimeState }}</span>
         </div>
@@ -106,7 +112,7 @@ const valueSeen = computed(() => health.value != null || loadout.value != null)
           :key="'p' + i"
           class="v2-inspector-chip"
         >
-          <span class="v2-chip-type">provision</span>
+          <span class="v2-chip-type">{{ $t('recon.map.playback.provision') }}</span>
           <span>{{ p || $t('recon.map.playback.unknown') }}</span>
         </div>
         <div
@@ -114,7 +120,7 @@ const valueSeen = computed(() => health.value != null || loadout.value != null)
           :key="'e' + i"
           class="v2-inspector-chip"
         >
-          <span class="v2-chip-type">equipment #{{ i + 1 }}</span>
+          <span class="v2-chip-type">{{ $t('recon.map.playback.equipment') }} #{{ i + 1 }}</span>
           <span>{{ e }}</span>
         </div>
       </div>
@@ -130,7 +136,7 @@ const valueSeen = computed(() => health.value != null || loadout.value != null)
         <span class="v2-inspector-key">{{ modules.component }}</span>
         <span class="v2-inspector-val">
           {{ modules.state }}
-          <span v-if="modules.recorderVisible" class="v2-inspector-badge">recorder</span>
+          <span v-if="modules.recorderVisible" class="v2-inspector-badge">{{ $t('recon.map.playback.recorder_visible') }}</span>
         </span>
       </div>
     </template>

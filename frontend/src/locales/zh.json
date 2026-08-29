@@ -1437,7 +1437,11 @@
                 "module_state": "模块/乘员状态",
                 "consumable": "消耗品",
                 "provision": "补给",
-                "equipment": "装备"
+                "equipment": "装备",
+                "orientation": "朝向",
+                "recorder_visible": "录像者可见",
+                "orientation_current": "当前朝向",
+                "orientation_last_known": "最后已知朝向"
             }
         },
         "stages": {
