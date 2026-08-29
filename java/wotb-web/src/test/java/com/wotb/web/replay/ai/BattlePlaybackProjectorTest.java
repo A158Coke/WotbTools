@@ -5,11 +5,28 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.replay.processing.TeamEntityMapper;
 import com.wotb.core.replay.processing.TeamEntityMapping;
+import com.wotb.core.replay.processing.TeamEntityIdentity;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
+import com.wotb.core.replay.reconstruction.LifeState;
+import com.wotb.core.replay.reconstruction.Vector3;
+import com.wotb.core.replay.timeline.BattleFrame;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
+import com.wotb.core.replay.timeline.BattleTimelineClock;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
+import com.wotb.core.replay.timeline.BattleTimelineValidationResult;
+import com.wotb.core.replay.timeline.Confidence;
+import com.wotb.core.replay.timeline.FrameHealth;
+import com.wotb.core.replay.timeline.FrameMapState;
+import com.wotb.core.replay.timeline.FrameOrientation;
+import com.wotb.core.replay.timeline.FramePosition;
+import com.wotb.core.replay.timeline.FrameVehicle;
+import com.wotb.core.replay.timeline.HpSource;
+import com.wotb.core.replay.timeline.PositionKnowledge;
+import com.wotb.core.replay.timeline.PositionSource;
+import com.wotb.core.replay.timeline.VehicleKnowledgeState;
+import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.timeline.TimelineError;
 import com.wotb.core.replay.timeline.TimelinePerspective;
 import com.wotb.web.replay.dto.BattlePlaybackDataset;
@@ -17,6 +34,9 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -97,5 +117,66 @@ class BattlePlaybackProjectorTest {
         assertTrue(ds.vehicles().stream()
                 .filter(v -> v.accountId() == recorder.accountId)
                 .findFirst().orElseThrow().friendly());
+    }
+
+    /**
+     * P0 orientation knowledge fix：orientationSegments 必须按每次 frame 的
+     * {@code FrameOrientation.knowledge} 分段，绝不得把整条时间轴焊成一个硬编码 "CURRENT" 段。
+     * Enemy 以 CURRENT(t=0,1) → LAST_KNOWN(t=2) 观测，应产出两个段且各带正确 knowledge。
+     */
+    @Test
+    void orientationSegmentsSplitByCanonicalKnowledge() {
+        final long account = 2001L;
+        final int entityId = 7;
+        final Battle battle = new Battle();
+        battle.mapName = "middleburg";
+        battle.durationS = 30.0;
+        final PlayerResult enemy = new PlayerResult();
+        enemy.accountId = account;
+        enemy.team = 2;
+        enemy.tankId = 456L;
+        enemy.nickname = "Enemy";
+        battle.players = new ArrayList<>(List.of(enemy));
+
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(entityId, new TeamEntityIdentity(entityId, account, "Enemy", 456L, "Enemy", 2, DecodeConfidence.EXACT)),
+                Map.of(account, List.of(entityId)),
+                Map.of(), 0, List.of());
+
+        final List<BattleFrame> frames = new ArrayList<>();
+        for (int second = 0; second <= 2; second++) {
+            final FrameOrientation.OrientationKnowledge k = second < 2
+                    ? FrameOrientation.OrientationKnowledge.CURRENT
+                    : FrameOrientation.OrientationKnowledge.LAST_KNOWN;
+            final FrameVehicle fv = new FrameVehicle(
+                    entityId, account, "Enemy", 456, "Enemy", "Medium tank", 10, 2, false,
+                    LifeState.ALIVE,
+                    new FrameHealth(1000, second, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                            FrameHealth.HealthKnowledge.CURRENT, 1000, Confidence.HIGH),
+                    new FramePosition(new Vector3(0, 0, (float) second), second, 0.0,
+                            PositionKnowledge.CURRENT, PositionSource.OBSERVED_EVENT, Confidence.HIGH),
+                    new FrameOrientation(0f, 0f, 0f, (double) second, 0.0, k, Confidence.HIGH),
+                    FrameMapState.UNKNOWN, VehicleKnowledgeState.POSITION_STREAM_ACTIVE, null, List.of());
+            frames.add(new BattleFrame(second, second, null, List.of(fv), List.of(), List.of(),
+                    Map.copyOf(Map.of("second", String.valueOf(second))), List.of()));
+        }
+
+        final BattleTimeline timeline = new BattleTimeline(
+                "middleburg", 30.0, 0.0, BattleTimelineClock.IDENTIFIED,
+                frames, List.of(), List.of(),
+                BattleTimelineValidationResult.valid(), List.of());
+
+        final BattlePlaybackDataset ds = BattlePlaybackProjector.project(battle, timeline, mapping, null);
+        assertNotNull(ds);
+        final BattlePlaybackDataset.VehiclePlaybackTrack track = ds.vehicles().stream()
+                .filter(v -> v.accountId() == account).findFirst().orElseThrow();
+        assertFalse(track.orientationSegments().isEmpty(), "enemy must have orientation segments");
+        assertEquals(2, track.orientationSegments().size(),
+                "CURRENT→LAST_KNOWN 应拆成 2 个段，而非 1 个硬编码 CURRENT");
+        assertEquals("CURRENT", track.orientationSegments().get(0).knowledge());
+        assertEquals("LAST_KNOWN", track.orientationSegments().get(1).knowledge());
+        // 每个 sample 也带 behind knowledge（防 cast 数据丢失）
+        assertEquals("CURRENT", track.orientationSegments().get(0).samples().get(0).knowledge());
+        assertEquals("LAST_KNOWN", track.orientationSegments().get(1).samples().get(0).knowledge());
     }
 }

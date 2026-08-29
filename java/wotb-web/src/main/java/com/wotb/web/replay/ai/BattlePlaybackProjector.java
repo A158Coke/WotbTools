@@ -17,6 +17,7 @@ import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.FrameHealth;
 import com.wotb.core.replay.timeline.FramePosition;
 import com.wotb.core.replay.timeline.FrameVehicle;
+import com.wotb.core.replay.timeline.FrameOrientation;
 import com.wotb.core.replay.timeline.PositionKnowledge;
 import com.wotb.core.replay.reconstruction.LifeState;
 import com.wotb.web.replay.dto.BattlePlaybackDataset;
@@ -212,6 +213,9 @@ public final class BattlePlaybackProjector {
                                                                 final List<Integer> entityIds) {
         final List<OrientationSegment> out = new ArrayList<>();
         for (final int entityId : entityIds) {
+            // 每帧取一次方向样本（有 hull yaw），并携带该帧的 canonical orientation knowledge
+            // （CURRENT / LAST_KNOWN / UNKNOWN）。knowledge 会随 AoI hidden gap 变化，
+            // 必须按 knowledge 分段，禁止把整条时间轴焊成一个硬编码 "CURRENT" 段。
             final List<OrientationSample> samples = new ArrayList<>();
             for (final BattleFrame frame : timeline.frames()) {
                 final FrameVehicle v = vehicleIn(frame, entityId);
@@ -221,16 +225,34 @@ public final class BattlePlaybackProjector {
                 samples.add(new OrientationSample(frame.stateAtSec(),
                         v.orientation().hullYawDeg().doubleValue(),
                         v.orientation().turretRelativeYawDeg() == null ? null
-                                : v.orientation().turretRelativeYawDeg().doubleValue()));
+                                : v.orientation().turretRelativeYawDeg().doubleValue(),
+                        orientationKnowledgeName(v.orientation().knowledge())));
             }
-            if (!samples.isEmpty()) {
-                out.add(new OrientationSegment(
-                        samples.get(0).timeSec(), samples.get(samples.size() - 1).timeSec(),
-                        "CURRENT", List.copyOf(samples)));
+            if (samples.isEmpty()) {
+                continue;
+            }
+            // 与 positionSegments 同构：整条时间轴按 knowledge 分段（CURRENT / LAST_KNOWN 交替）。
+            String curKnowledge = samples.get(0).knowledge();
+            int segStart = 0;
+            for (int i = 1; i <= samples.size(); i++) {
+                if (i == samples.size() || !samples.get(i).knowledge().equals(curKnowledge)) {
+                    final List<OrientationSample> seg = samples.subList(segStart, i);
+                    out.add(new OrientationSegment(
+                            seg.get(0).timeSec(), seg.get(seg.size() - 1).timeSec(),
+                            curKnowledge, List.copyOf(seg)));
+                    if (i < samples.size()) {
+                        curKnowledge = samples.get(i).knowledge();
+                        segStart = i;
+                    }
+                }
             }
         }
         out.sort(Comparator.comparingDouble(OrientationSegment::startSec));
         return out;
+    }
+
+    private static String orientationKnowledgeName(final FrameOrientation.OrientationKnowledge k) {
+        return k == null ? "UNKNOWN" : k.name();
     }
 
     private static List<HealthTransition> healthTransitions(final BattleTimeline timeline,
