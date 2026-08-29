@@ -408,7 +408,7 @@ class InitialHpProtocolProbeTest {
         return sb.toString();
     }
 
-    /** 每账号 derived observed received（§12/§13 权威 HP loss 口径，任务 C）。 */
+    /** 每账号 derived observed received（权威 HP loss 口径，任务 C）。 */
     private static int observedReceivedOf(final ReplayReconstruction recon,
                                           final TeamEntityMapping mapping, final long accountId) {
         int total = 0;

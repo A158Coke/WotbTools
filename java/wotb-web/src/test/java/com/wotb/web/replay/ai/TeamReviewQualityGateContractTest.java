@@ -69,7 +69,7 @@ class TeamReviewQualityGateContractTest {
 
     @Test
     void openingSpreadStrategicInterpretationContractInThreeLanguages() {
-        // 追加修正 §13-B：三语都必须携带「信息覆盖 ↔ 局部兵力集中度」trade-off 语义
+        // 追加修正：三语都必须携带「信息覆盖 ↔ 局部兵力集中度」trade-off 语义
         for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
             final String localized = TeamPromptLocalizer.localizeTeamSystemPrompt(ZH, lang);
             assertFalse(localized.contains("OPENING_MAP_CONTROL"),

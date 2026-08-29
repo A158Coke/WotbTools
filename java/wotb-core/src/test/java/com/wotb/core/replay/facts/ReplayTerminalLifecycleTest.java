@@ -16,7 +16,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * PR162 §31(c): canonical terminal contract tests on the facts layer.
+ * canonical terminal contract tests on the facts layer.
  *
  * <p>{@code ReplayTerminalLifecycle} is the single terminal authority. These tests pin the canonical
  * merge rules: duplicate terminal mirrors never move the death time forward, a strictly later trusted

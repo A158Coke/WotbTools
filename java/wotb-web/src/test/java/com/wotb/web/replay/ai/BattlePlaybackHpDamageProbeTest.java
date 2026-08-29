@@ -145,7 +145,7 @@ class BattlePlaybackHpDamageProbeTest {
             }
         }
 
-        // ---- HP change 交叉分析（§38：derived HP delta vs nearby Type-8 raw）----
+        // ---- HP change 交叉分析（derived HP delta vs nearby Type-8 raw）----
         System.out.println("--- HP change cross-analysis ---");
         if (playback != null) {
             for (final MapOverview.PlaybackVehicle v : playback.vehicles()) {

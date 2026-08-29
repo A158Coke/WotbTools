@@ -82,7 +82,7 @@ class SpringAiChatGatewaySensitiveLogTest {
         assertTrue(all.contains("event=ai_upstream_call_completed"),
                 "必须记录 ai_upstream_call_completed 事件");
         assertTrue(all.contains("responseFormat=JSON_OBJECT"),
-                "事件日志必须携带 responseFormat（§17）");
+                "事件日志必须携带 responseFormat");
         assertSensitiveAbsent(all);
     }
 
@@ -103,7 +103,7 @@ class SpringAiChatGatewaySensitiveLogTest {
 
         final String all = formattedLogs();
         assertTrue(all.contains("event=ai_upstream_call_failed"),
-                "必须记录 ai_upstream_call_failed 事件（§42）");
+                "必须记录 ai_upstream_call_failed 事件");
         assertSensitiveAbsent(all);
         assertFalse(all.contains("unauthorized"),
                 "provider 错误体必须整体脱敏（[PROVIDER_BODY_REDACTED]），不得泄露原始内容");

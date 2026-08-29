@@ -141,7 +141,7 @@ class TeamReviewRealReplayProbeTest {
                     "窗口事件不得早于窗口起点: " + d.timeSec());
         }
 
-        // ===== Natural Coach 轮（§25/§26）：真实 canonical facts 上的 validator golden cases =====
+        // ===== Natural Coach 轮：真实 canonical facts 上的 validator golden cases =====
         final TeamGroundingFacts.GroundingFacts grounding =
                 TeamGroundingFacts.build(battle, timeline, perspectiveTeam);
         // G3/G5：战术判断与 coaching 建议必须 PASS（Validator 不判断战术观点）

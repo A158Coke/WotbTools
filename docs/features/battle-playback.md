@@ -80,7 +80,7 @@
     **134% = 0.881/0.656 使 generic 车体长边视觉与 dedicated 对齐**（36px 容器下均 ≈31.7px；
     generic 车体宽 ≈19.8px、dedicated 按真实长宽比 ≈11–16px，宽体 icon 为素材固有比例）；
     放大地图不再显小；hull 层按 `hullYawDeg` 旋转、turret 层按
-    `turretWorldYawDeg` 旋转（炮管不脱离炮塔）；**阵营视觉（PR3 §19–§21）**：整车 team outline+glow
+    `turretWorldYawDeg` 旋转（炮管不脱离炮塔）；**阵营视觉**：整车 team outline+glow
     由 `VehicleMarker .pb-graphics` 双层 drop-shadow 表达（CSS vars `--pb-team-*/`--pb-enemy-*`，
     friendly 按地图显式 tone green|blue、enemy 固定 red，见 `data/mapTeamColors.js`；generic 素材
     自身阵营色保留，叠加同一 team 光晕）；Selected 红色倒三角（label 上方、浮动、screen-space 恒定——
@@ -93,7 +93,7 @@
     标记**上方**常显固定字号坦克型号名小标签
     （`PlaybackVehicle.tankName`，后端 `ReplayDisplayNames.tankName(tankId, tankName)` 权威解析自
     tankopedia，如 29985 → "SPHT"，不再是空串/纯数字；标签自身按 `1/view.scale` 反缩放 → 字号不随地图缩放、任意缩放下可见）。
-   - **玩家/坦克名标签与碰撞（PR4 §26–§37）**：控制栏「显示玩家名 / 显示坦克名」checkbox
+   - **玩家/坦克名标签与碰撞**：控制栏「显示玩家名 / 显示坦克名」checkbox
     （默认 玩家名关 / 坦克名开，`localStorage` 持久化 `wotb.pb.label-prefs`）；PlayerName + TankName
     共用一个半透明深色背景块（自适应宽度、team 文字色 `--pb-team-text`/`--pb-enemy-text`、
     destroyed/last-known 只弱化文字）；PlayerName 按实际像素截断（max-width+ellipsis），截断才有
@@ -166,13 +166,13 @@
      位置（临时输入框 Enter/blur 提交、Esc 取消，committed 幂等防重复）。三语文案
      `recon.map.playback.annot.*`；纯函数与交互回归见 `utils/annotation.test.js` 与
      `BattlePlayback.annot.test.js`。
-   - **阵亡状态（pb-destroyed，PR3 §24）**：destroyed 是显式独立状态，不并入 `pb-last-known`；
+   - **阵亡状态（pb-destroyed）**：destroyed 是显式独立状态，不并入 `pb-last-known`；
      敌我阵亡车结构一致（hull+turret 双层 + 同款 ✕）：方向冻结在最后可信样本
      （`interpolateDirection` 末样本冻结语义），无方向样本以素材默认 0° 渲染（不代表朝向）；
      **中度变暗**（`.pb-destroyed .pb-graphics { opacity:.55 }`，不再极端透明）+ grayscale +
      team outline 弱化保留（drop-shadow 在 grayscale 后绘制不灰化）+ 一次性 transition 0.45s
      （prefers-reduced-motion 直达终态）；红色 ✕ / Selected 三角 / Recorder 菱形在 `.pb-graphics`
-     容器外，保持完整强度。**Last-known（PR3 §25）**：`.pb-graphics` 淡化 0.35 + 仅弱 outline
+     容器外，保持完整强度。**Last-known**：`.pb-graphics` 淡化 0.35 + 仅弱 outline
      （无 glow）；label 仅文字弱化（background 正常）；Selected/Recorder 正常强度。
    - **真实 i18n 回归**：三语 `recon.map.playback.last_known` 文案不得含裸 `@`（Vue I18n 11
      linked-message 语法），选中 last-known/已击毁车辆首次渲染该文案时编译报错会导致组件整体卸载；
@@ -290,24 +290,24 @@
   （-N，受击方阵营色，约 1s 可读时长，同车连续受击纵向 stack）+ HP 数字立即切换 +
   bar 150–300ms 缩短（CSS transition，seek 单帧禁用）+ hit flash + lost-HP ghost
   （同阵营色浅版，约 600ms 消退）；DESTROYED → 克制 2D burst；KILL → kill feed
-  （只显示「受害者被击毁」，victim-only，最多 3 条队列、约 5s 生命周期，§15.2）。
-  失察期间受击（事件时刻无位置流覆盖）不跳伤害、不更新 HP、不显示 attacker（§7.2）；
+  （只显示「受害者被击毁」，victim-only，最多 3 条队列、约 5s 生命周期）。
+  失察期间受击（事件时刻无位置流覆盖）不跳伤害、不更新 HP、不显示 attacker；
   prefers-reduced-motion 取消 ghost/flash/burst/feed 动画（事实保留）。
-- **Detail Sidebar（§8，2026-08 收敛为 current-state only）**：点击 marker 打开/切换（不 toggle-off）、
+- **Detail Sidebar（2026-08 收敛为 current-state only）**：点击 marker 打开/切换（不 toggle-off）、
   点击空白不关闭、× 显式关闭、destroyed 车可选、seek 保持同一 selected vehicle；宽屏右侧固定、
   窄屏（≤768px）置于地图下方。Tier X 车辆按 tankId 懒加载随站点发布的 BlitzKit 车型图；
   非 Tier X、缺图或单图加载失败时静默省略图片，production 不访问第三方 CDN。面板只含
   **当前 playback 时间点**状态：阵营/车辆类型（replay →
-  tankopedia fallback，全部 metadata 缺失才 —，§8）/状态（已发现/最后已知/已击毁）/当前或最后已知
+  tankopedia fallback，全部 metadata 缺失才 —）/状态（已发现/最后已知/已击毁）/当前或最后已知
   HP（按 provenance 显示，PR #107 Blocker 1：已阵亡 → 0；己方开局相对满血
   （RULE_DERIVED_FULL_AT_SPAWN）→ **「100%」**（相对 UI 状态，不是具体 HP、也不证明 actual max）；
   己方开局有真实 current 采样（OPENING_RELATIVE_FULL）→ 真实 current 数字（bar 仍 100% 实心、无斜纹）；
   有真实 sample → 精确 current 数字；敌方无依据 → —。tankopedia base HP 是静态 metadata 不是本局
-  最大 HP，不再展示「最大 HP / HP %」（除已证明 OBSERVED_EXACT 的 pct），§6/§41）/
-  当前播放时间/已记录伤害（Σ 可 attribution 的权威掉血，§17）/承受伤害（Σ 该车全部
-  掉血）/击杀数 + 最近伤害记录（权威掉血，攻击者不可证明或未点亮显示「来源未知」，§12/§13）。
-  「最终战绩」分区与协助伤害行已**删除**（整场结算不混入当前时间点面板，§18/§20）。
-- **KILL 广播 provenance（§15 验证结论 + PR #107 Blocker 5 扩展）**：KILL 事件派生自 lethal
+  最大 HP，不再展示「最大 HP / HP %」（除已证明 OBSERVED_EXACT 的 pct））/
+  当前播放时间/已记录伤害（Σ 可 attribution 的权威掉血）/承受伤害（Σ 该车全部
+  掉血）/击杀数 + 最近伤害记录（权威掉血，攻击者不可证明或未点亮显示「来源未知」）。
+  「最终战绩」分区与协助伤害行已**删除**（整场结算不混入当前时间点面板）。
+- **KILL 广播 provenance（验证结论 + PR #107 Blocker 5 扩展）**：KILL 事件派生自 lethal
   DamageEvent（type-8 直接伤害通知），只能证明录像者客户端收到该伤害通知、不能证明客户端当时可见
   全局击杀广播中的击杀者身份 → kill feed 不显示攻击者（victim-only）。killer attribution 由
   `PlaybackCombatReconstruction` fail-closed 推导：致死窗口优先 = 权威致死 HP-loss 窗口

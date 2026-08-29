@@ -15,7 +15,7 @@ class EventStreamReaderTest {
 
     @Test
     void extractsDirectDamageEvents() {
-        // §P0-4: legacy damage-threshold death/killer attribution removed from production. Only the plain
+        // legacy damage-threshold death/killer attribution removed from production. Only the plain
         // raw direct-damage extraction is preserved (non-authoritative damage number, not a death truth).
         final Map<Integer, Long> entityToAccount = Map.of(10, 1L, 20, 2L, 30, 3L);
         final List<EventStreamReader.ParsedPacket> packets = List.of(
