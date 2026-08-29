@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   RADAR, axisPoint, axisRay, polygonPoints, radarGridPolygons, radarScaleTicks,
-  radarScoreBadgeWidth, radarScoreLabelPosition,
+  radarScoreLabelLayout,
 } from '../utils/radarGeometry.js'
 import { formatRadarVisualScore, radarAxisVisualScore } from '../utils/radarScale.js'
 
@@ -78,17 +78,13 @@ const labelPositions = computed(() =>
 const scaleTicks = computed(() =>
   radarScaleTicks(props.metrics.length))
 
-const scoreLabels = computed(() => props.metrics.map((metric, index) => {
-  const score = radarAxisVisualScore(metric)
-  if (score == null || playerNormals.value[index] == null) return null
-  const value = formatRadarVisualScore(metric)
-  return {
-    ...radarScoreLabelPosition(index, props.metrics.length, playerNormals.value[index]),
-    value,
-    width: radarScoreBadgeWidth(value),
-    label: metric.label,
-  }
-}))
+const scoreLabels = computed(() => {
+  const values = props.metrics.map(metric => formatRadarVisualScore(metric))
+  const ratios = props.metrics.map((metric, index) =>
+    radarAxisVisualScore(metric) == null ? null : playerNormals.value[index])
+  return radarScoreLabelLayout(ratios, values).map((position, index) =>
+    position ? { ...position, label: props.metrics[index]?.label || '' } : null)
+})
 
 /** detail 行：dimension / player / reference。 */
 const detailRows = computed(() =>
@@ -110,7 +106,6 @@ const detailRows = computed(() =>
     </div>
     <template v-else>
       <div class="radar-zoom" role="group" :aria-label="t('radarScale.zoom')">
-        <span class="radar-zoom-label">{{ t('radarScale.zoom') }}</span>
         <button type="button" :aria-label="t('radarScale.zoomOut')"
                 :disabled="radarZoom <= RADAR_ZOOM_MIN" @click="adjustRadarZoom(-RADAR_ZOOM_STEP)">−</button>
         <input v-model.number="radarZoom" data-testid="radar-zoom"
@@ -214,7 +209,6 @@ const detailRows = computed(() =>
 <style scoped>
 .player-radar { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
 .radar-zoom { display: flex; align-self: stretch; align-items: center; justify-content: flex-end; gap: 7px; min-height: 38px; }
-.radar-zoom-label { color: var(--text-muted); font-size: .7rem; font-weight: 700; }
 .radar-zoom button { width: 34px; height: 34px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text-heading); cursor: pointer; font: inherit; font-size: 1rem; font-weight: 800; }
 .radar-zoom button:hover:not(:disabled), .radar-zoom button:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
 .radar-zoom button:disabled { cursor: not-allowed; opacity: .38; }

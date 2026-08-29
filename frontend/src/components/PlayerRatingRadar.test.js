@@ -139,6 +139,8 @@ describe('PlayerRatingRadar', () => {
     const wrapper = mountRadar(SEVEN, REF)
     const slider = wrapper.find('[data-testid="radar-zoom"]')
     const buttons = wrapper.findAll('.radar-zoom button')
+    expect(wrapper.find('.radar-zoom').attributes('aria-label')).toBe('radarScale.zoom')
+    expect(wrapper.find('.radar-zoom-label').exists()).toBe(false)
     expect(slider.attributes()).toMatchObject({ min: '50', max: '150', step: '10' })
     expect(wrapper.find('.radar-zoom output').text()).toBe('100%')
     expect(wrapper.find('.radar-svg').attributes('style')).toContain('width: 340px')

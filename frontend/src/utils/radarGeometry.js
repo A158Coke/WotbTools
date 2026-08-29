@@ -20,7 +20,6 @@ export const RADAR = Object.freeze({
   SCORE_BADGE_RADIUS: 4,
   SCORE_BADGE_MIN_RATIO: 0.25,
   SCORE_BADGE_LOW_TOP_RATIO: 0.4,
-  SCORE_BADGE_TOP_SHIFT_X: 22,
   /** 150 仅是不可见坐标上限；可见网格不包含 75 reference 或 150 outer boundary。 */
   AVERAGE_VALUE: RADAR_AVERAGE_VALUE,
   STRONG_VALUE: RADAR_STRONG_VALUE,
@@ -67,15 +66,81 @@ export function radarScoreLabelPosition(index, count, ratio, g = RADAR) {
     labelRatio = Math.max(labelRatio, g.SCORE_BADGE_LOW_TOP_RATIO)
   }
   const point = axisPoint(index, count, labelRatio, g)
-  const topNeedsTickClearance = isTop
-    && safeRatio <= radarValueRatio(g.STRONG_VALUE, g) + offset
-  const x = point[0] + (topNeedsTickClearance ? g.SCORE_BADGE_TOP_SHIFT_X : 0)
-  const y = point[1]
-  return { x, y, ratio: labelRatio }
+  return { x: point[0], y: point[1], ratio: labelRatio }
 }
 
 export function radarScoreBadgeWidth(value) {
   return Math.max(18, 8 + String(value ?? '--').length * 6)
+}
+
+/**
+ * Resolve score-badge positions as one layout so the top badge can dodge both
+ * the single-side scale ticks and its two neighboring score badges.
+ */
+export function radarScoreLabelLayout(ratios = [], values = [], g = RADAR) {
+  const count = ratios.length
+  const layout = ratios.map((ratio, index) => {
+    if (!ratioIsFinite(ratio)) return null
+    const value = String(values[index] ?? '--')
+    return {
+      ...radarScoreLabelPosition(index, count, ratio, g),
+      value,
+      width: radarScoreBadgeWidth(value),
+    }
+  })
+  const top = layout[0]
+  if (!top) return layout
+
+  const tickRects = radarScaleTicks(count, g).map(tick => scaleTickRect(tick))
+  const obstacles = [
+    ...layout.slice(1).filter(Boolean).map(item => scoreBadgeRect(item, g)),
+    ...tickRects,
+  ]
+  const collides = rect => obstacles.some(obstacle => rectanglesOverlap(rect, obstacle))
+  if (!collides(scoreBadgeRect(top, g))) return layout
+
+  const tickWidth = Math.max(...tickRects.map(rect => rect.right - rect.left), 0)
+  const sideShift = top.width / 2 + tickWidth / 2 + 2
+  for (const yShift of [0, -g.SCORE_BADGE_HEIGHT, g.SCORE_BADGE_HEIGHT,
+    -2 * g.SCORE_BADGE_HEIGHT, 2 * g.SCORE_BADGE_HEIGHT]) {
+    for (const direction of [1, -1]) {
+      const candidate = { ...top, x: top.x + direction * sideShift, y: top.y + yShift }
+      const rect = scoreBadgeRect(candidate, g)
+      const insideView = rect.left >= 0 && rect.right <= g.VIEW && rect.top >= 0 && rect.bottom <= g.VIEW
+      if (insideView && !collides(rect)) {
+        layout[0] = candidate
+        return layout
+      }
+    }
+  }
+  return layout
+}
+
+function scoreBadgeRect(item, g) {
+  return {
+    left: item.x - item.width / 2,
+    right: item.x + item.width / 2,
+    top: item.y - g.SCORE_BADGE_HEIGHT / 2,
+    bottom: item.y + g.SCORE_BADGE_HEIGHT / 2,
+  }
+}
+
+function scaleTickWidth(value) {
+  return Math.max(9, String(value).length * 6)
+}
+
+function scaleTickRect(tick) {
+  const width = scaleTickWidth(tick.value)
+  return {
+    left: tick.p.x - width / 2,
+    right: tick.p.x + width / 2,
+    top: tick.p.y - 4.5,
+    bottom: tick.p.y + 4.5,
+  }
+}
+
+function rectanglesOverlap(a, b) {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
 }
 
 /** 第 i 个轴的角度（从 12 点方向顺时针）。 */
@@ -118,7 +183,6 @@ export function axisRay(i, count, g = RADAR) {
 
 /** 单侧刻度标签位置：从 12 点方向（第一个轴）向外延伸，避让轴线。 */
 function scaleTickPosition(count, ratio, g = RADAR) {
-  //
   const r = g.RADIUS * ratio
   const a = axisAngle(0, count)
   const x = g.CENTER + (r + 8) * Math.cos(a)
