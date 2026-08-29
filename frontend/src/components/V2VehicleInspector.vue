@@ -60,7 +60,8 @@ const modules = computed(() => moduleCrewAt(props.track.moduleCrewTransitions, p
 
 const stateLabel = computed(() => {
   if (life.value?.lifeState === 'DESTROYED') return t('recon.map.playback.state_destroyed')
-  if (covered.value) return t('recon.map.playback.state_detected')
+  // AoI/position coverage ≠ 点亮：CURRENT observation 表达「当前观测」，不用 Detected/已发现。
+  if (covered.value) return t('recon.map.playback.state_current_observation')
   if (valueSeen.value) return t('recon.map.playback.state_last_known')
   return t('recon.map.playback.unknown')
 })
@@ -116,9 +117,7 @@ const tankClassLabel = computed(() => {
 
     <div class="v2-inspector-row" data-test="v2-inspector-orientation">
       <span class="v2-inspector-key">{{ $t('recon.map.playback.orientation') }}</span>
-      <span class="v2-inspector-val">
-        {{ orientation === 'CURRENT' ? $t('recon.map.playback.state_detected') : orientation }}
-      </span>
+      <span class="v2-inspector-val">{{ orientationLabel }}</span>
     </div>
 
     <template v-if="loadout">
