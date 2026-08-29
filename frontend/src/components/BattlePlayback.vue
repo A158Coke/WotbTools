@@ -25,10 +25,6 @@ import {
   formatClock,
   ghostAround,
   hpDisplay,
-  interpolateDirection,
-  lastKnownPosition,
-  positionAt,
-  positionCoveredAt,
   pushFeed,
   recorderRelated,
   screenRotation,
@@ -1126,65 +1122,6 @@ const HULL_HITBOX = Object.freeze({
   generic: Object.freeze({ w: 0.58, h: 0.9 }),
 })
 
-function vehicleState(vehicle) {
-  const v2Track = v2TrackByAccount.value?.get(vehicle.accountId) || null
-  if (v2Track) {
-    return vehicleStateV2(vehicle, v2Track)
-  }
-  const route = routesByAccount.value.get(vehicle.accountId)
-  const points = route ? route.points : []
-  // 局部时间变量命名 time——避免遮蔽 setup 的 i18n t()（ariaLabel 需要）
-  const time = currentTime.value
-  const destroyed = vehicle.deathSec != null && time >= vehicle.deathSec
-  const displayT = destroyed ? Math.min(time, vehicle.deathSec) : time
-  const live = positionAt(points, displayT)
-  const last = live ? live : lastKnownPosition(points, displayT)
-  if (!last) return null // 从未有可信位置：不显示
-  const covered = positionCoveredAt(vehicle.positionIntervals, time)
-  const recorder = vehicle.accountId === props.overview.recorderAccountId
-  const direction = interpolateDirection(vehicle.directionSamples, displayT)
-  const friendly = vehicle.team === friendlyTeam.value
-  // 阵亡：恒渲染 hull+turret 双层（方向冻结在最后可信样本；无样本以素材默认 0° 渲染，不代表真实朝向）；
-  // 未阵亡：无可靠方向样本时不渲染车体（不伪造朝向），行为保持不变。
-  const hullDeg = direction ? screenRotation(direction.hullYawDeg) : null
-  const turretDeg = direction
-    ? screenRotation(turretWorldYawDeg(direction.hullYawDeg, direction.turretRelativeYawDeg))
-    : null
-  return {
-    vehicle,
-    pos: last,
-    covered,
-    destroyed,
-    destroyedKnownAtSec: life && life.lifeState === 'DESTROYED' ? life.destroyedKnownAtSec : null,
-    recorder,
-    friendly,
-    direction,
-    // dedicated model（null = generic；turretless 无 turret 层，§14）
-    model: vehicleModel(vehicle),
-    hullImage: friendly ? friendlyHull : enemyHull,
-    turretImage: friendly ? friendlyTurret : enemyTurret,
-    hullScreenDeg: destroyed ? (hullDeg == null ? 0 : hullDeg) : hullDeg,
-    turretScreenDeg: destroyed ? (turretDeg == null ? 0 : turretDeg) : turretDeg,
-    // VehicleMarker 渲染用（位置/反缩放/无障碍标签在 view model 一次性算好）
-    markerStyle: { left: markerLeft(last.x), top: markerTop(last.y), transform: markerTransform.value },
-    overlayInverseScale: overlayInverseScale.value,
-    overlayInverse: overlayInverse.value, // 数值反缩放（VehicleMarker 用它反缩放 layout offset）
-    // PR4 §26：标签数据（playerName 可为空串；tankName 权威显示名回退 tankId）
-    playerName: vehicle.playerName || '',
-    tankName: vehicle.tankName || String(vehicle.tankId),
-    // PR4 §36：hull hitbox 占 marker 盒比例（随 marker 一起缩放；dedicated 车体≈88% 视觉、
-    // generic 车体 55%×88%；+小 padding 容错）。用于点击命中判定。
-    hitbox: vehicleModel(vehicle) ? HULL_HITBOX.dedicated : HULL_HITBOX.generic,
-    ariaLabel: `${vehicle.playerName}: ${t(destroyed ? 'recon.map.playback.state_destroyed' : (covered ? 'recon.map.playback.state_position_reported' : 'recon.map.playback.state_position_stale'))}`,
-    // lastKnown = 位置流未覆盖（covered=false）才淡化（最后已知位置）。
-    // 注意：covered 只是「服务器位置流当前覆盖」，不等于录像者客户端点亮/失察（无 authoritative
-    // spotting signal，不得声称已恢复点亮）；route 采样点稀疏（长局采样间隔 max(2, duration/200)
-    // 可 >5s）导致 live=null 不代表位置中断，不得借 !live 误判淡化。destroyed 是独立视觉状态，
-    // 阵亡车信息栏同样显示最后可信时间，但视觉 class 不再套用 pb-last-known
-    lastKnown: !covered
-  }
-}
-
 /** V2 车辆状态：只消费 canonical V2 track（positionSegments/orientationSegments/healthTransitions/
  * lifeTransitions），前端不再做 HP/AoI/death 推理。 */
 function vehicleStateV2(vehicle, track) {
@@ -1238,19 +1175,18 @@ function markerTop(y) {
 const vehicleStates = computed(() => {
   // preload 未完成（asset decision 未定）时不渲染车辆——禁止 generic 闪现后替换
   if (preload.value.phase !== 'ready') return []
-  // V2 为主：playbackV2 present 时以 V2 track 为事实源；legacy vehicle 仅提供
-  // identity/model/portrait（tankId/tankName/team），不参与 HP/AoI/death 推理。
-  if (props.playbackV2?.vehicles?.length) {
-    const legacyById = new Map((playback.value?.vehicles || []).map(v => [v.accountId, v]))
-    return props.playbackV2.vehicles
-      .map(track => {
-        const legacy = legacyById.get(track.accountId) || v2LegacyVehicle(track)
-        return vehicleStateV2(legacy, track)
-      })
-      .filter(Boolean)
-  }
-  const vehicles = playback.value ? playback.value.vehicles : []
-  return vehicles.map(vehicleState).filter(Boolean)
+  // V2-only：V2 track 为唯一事实源；无 V2 车辆 → 空（不再有 legacy overview.playback 兜底）。
+  // legacy overview.playback.vehicles 仅在对账 identity/model/portrait（tankId/tankName/team）时使用，
+  // 不参与 HP/AoI/death 推理。
+  const tracks = props.playbackV2?.vehicles || []
+  if (tracks.length === 0) return []
+  const legacyById = new Map((playback.value?.vehicles || []).map(v => [v.accountId, v]))
+  return tracks
+    .map(track => {
+      const legacy = legacyById.get(track.accountId) || v2LegacyVehicle(track)
+      return vehicleStateV2(legacy, track)
+    })
+    .filter(Boolean)
 })
 
 /** 无 legacy 对应时，用 V2 track 构造最小 identity vehicle（供 model/portrait/team）。 */
