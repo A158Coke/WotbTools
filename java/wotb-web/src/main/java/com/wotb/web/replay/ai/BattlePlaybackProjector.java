@@ -36,7 +36,6 @@ import com.wotb.web.replay.dto.BattlePlaybackDataset.ShotTrack;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -93,7 +92,7 @@ public final class BattlePlaybackProjector {
             }
             final VehiclePlaybackTrack track = projectVehicle(
                     player, entityIds, timeline, battle, effectiveRecorder, friendlyTeam,
-                    loadoutByAccount.get(player.accountId),
+                    loadoutByAccount,
                     consumableByAccount.get(player.accountId),
                     moduleByAccount.get(player.accountId));
             tracks.add(track);
@@ -121,7 +120,7 @@ public final class BattlePlaybackProjector {
             final Battle battle,
             final Long recorderAccountId,
             final Integer friendlyTeam,
-            final List<VehicleLoadoutFacts.LoadoutObservation> loadoutObservations,
+            final Map<Long, List<VehicleLoadoutFacts.LoadoutObservation>> loadoutByAccount,
             final List<ConsumableLifecycle.ConsumableObservation> consumableObservations,
             final List<ModuleCrewObservation> moduleObservations) {
         final boolean friendly = player.team == (friendlyTeam != null ? friendlyTeam : 0);
@@ -134,7 +133,7 @@ public final class BattlePlaybackProjector {
         final List<ModuleCrewTransition> modules = moduleCrewTransitions(moduleObservations);
 
         final VehicleBattleLoadoutDto loadout = toLoadoutDto(
-                VehicleLoadoutFacts.loadoutAtOrBefore(loadoutByAccountOf(loadoutObservations),
+                VehicleLoadoutFacts.loadoutAtOrBefore(loadoutByAccount,
                         player.accountId, timeline.durationSec()));
 
         return new VehiclePlaybackTrack(
@@ -142,8 +141,8 @@ public final class BattlePlaybackProjector {
                 player.nickname == null ? "" : player.nickname,
                 player.tankId,
                 com.wotb.core.ref.ReplayDisplayNames.tankName(player.tankId, player.tankName),
-                player.tankType == null ? "" : player.tankType,
-                null,
+                com.wotb.core.ref.ReplayDisplayNames.tankClass(player.tankId),
+                tierOf(player.tankId),
                 player.team,
                 friendly,
                 loadout,
@@ -155,14 +154,19 @@ public final class BattlePlaybackProjector {
                 modules);
     }
 
-    private static Map<Long, List<VehicleLoadoutFacts.LoadoutObservation>> loadoutByAccountOf(
-            final List<VehicleLoadoutFacts.LoadoutObservation> observations) {
-        final Map<Long, List<VehicleLoadoutFacts.LoadoutObservation>> map = new LinkedHashMap<>();
-        for (final VehicleLoadoutFacts.LoadoutObservation o : observations) {
-            map.computeIfAbsent(o.accountId(), k -> new ArrayList<>()).add(o);
+    private static Integer tierOf(final long tankId) {
+        if (tankId <= 0) {
+            return null;
         }
-        map.values().forEach(l -> l.sort(Comparator.comparingDouble(VehicleLoadoutFacts.LoadoutObservation::timeSec)));
-        return map;
+        final String tier = com.wotb.core.ref.ReplayDisplayNames.tankTier(tankId);
+        if (tier == null || tier.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(tier.trim());
+        } catch (final NumberFormatException e) {
+            return null;
+        }
     }
 
     private static List<PositionSegment> positionSegments(final BattleTimeline timeline,
