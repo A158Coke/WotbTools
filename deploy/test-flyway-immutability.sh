@@ -66,32 +66,14 @@ printf 'create table v19_fixture (id bigint primary key);\n' \
   > "$REPO/$MIGRATION_DIR/V19__fixture.sql"
 commit_fixture
 (cd "$REPO" && bash "$GUARD" "$BASE" >/dev/null) \
-  || fail "new higher migration without comments was rejected"
+  || fail "new higher migration version was rejected"
 
 init_fixture
-printf -- '-- this comment is forbidden\ncreate table v19_fixture (id bigint primary key);\n' \
-  > "$REPO/$MIGRATION_DIR/V19__fixture.sql"
-commit_fixture
-expect_fail "new migration with SQL comment" "must not contain SQL comments"
-
-init_fixture
-printf 'create table v19_fixture (id bigint primary key); -- trailing comment\n' \
-  > "$REPO/$MIGRATION_DIR/V19__fixture.sql"
-commit_fixture
-expect_fail "new migration with inline line comment" "must not contain SQL comments"
-
-init_fixture
-printf '/* block comment */\ncreate table v19_fixture (id bigint primary key);\n' \
-  > "$REPO/$MIGRATION_DIR/V19__fixture.sql"
-commit_fixture
-expect_fail "new migration with block comment" "must not contain SQL comments"
-
-init_fixture
-printf "create table v19_fixture (id bigint default 'x--y');\n" \
+printf -- '-- explain why this index exists\ncreate table v19_fixture (id bigint primary key);\n' \
   > "$REPO/$MIGRATION_DIR/V19__fixture.sql"
 commit_fixture
 (cd "$REPO" && bash "$GUARD" "$BASE" >/dev/null) \
-  || fail "new migration with '--' inside a string literal was rejected"
+  || fail "new higher migration with a SQL comment was rejected"
 
 init_fixture
 printf 'create table v18_duplicate (id bigint primary key);\n' \
@@ -105,4 +87,4 @@ commit_fixture
 (cd "$REPO" && bash "$GUARD" "$BASE" >/dev/null) \
   || fail "ordinary non-migration change was rejected"
 
-echo "OK: Flyway immutability and new-migration comment/version guard scenarios passed"
+echo "OK: Flyway immutability and new-migration version guard scenarios passed"

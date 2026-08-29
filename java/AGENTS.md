@@ -32,7 +32,7 @@
   base branch 的 versioned migration 是 immutable historical artifact，禁止修改、重命名、删除、
   格式化、更新注释、转换换行或编码；schema 变化只能新增更高版本的 forward-only `V<N>__*.sql`。
   只有在 Git history 证明生产已执行且当前文件发生 checksum drift 时，才允许恢复到 exact deployed blob。
-  新增 versioned migration 不得包含 SQL 注释；实体列与迁移列逐列对齐。
+  实体列与迁移列逐列对齐。
 - `@RequestParam(name="x")` 必须显式写 name；字符串判空统一 `org.springframework.util.StringUtils.hasText`；集合遍历优先 Stream；禁止 `import *`；局部变量/入参 `final`；DI 用构造器注入（禁止 `@Autowired` 字段注入）。
 - 不可变模型用 `record`，可变模型用公有字段 POJO（不引入 Lombok）。
 
