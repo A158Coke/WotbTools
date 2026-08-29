@@ -267,7 +267,7 @@ final class FormationDepthEvidence {
 
         // 几何纵深：本队成员沿本队质心→敌方质心轴投影，按深度三分位（纯几何，只消费 CURRENT 位置；
         // enemy LAST_KNOWN 不得作为当前 enemy centroid / 轴参考）。
-        // fail-close gate（PR #103 review）：任何依赖双方 current geometry 的 exact 计算
+        // fail-close gate（PR #103）：任何依赖双方 current geometry 的 exact 计算
         // （enemy centroid / GEOMETRIC_* / 距离加权覆盖分 / ratio）必须在 completeness gate 之前判定，
         // 且只有 ownRefComplete && enemyRefComplete 才允许输出——enemyRef=1/2 时用 1 辆敌方 CURRENT
         // 建立 whole-team enemy centroid 会与覆盖段 POSITION_COVERAGE_INSUFFICIENT 自相矛盾；
