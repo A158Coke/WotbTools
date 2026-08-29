@@ -271,9 +271,11 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
   → useColumns cw scope → ColumnPicker）。列名与原始字段区分（「伤害」vs「伤害评分」）。
 - **选手 Drawer 雷达**：只允许七维 League Rating，用户可自定义维度与顺序（min 3 / max 7），
   偏好独立 localStorage（`wotb-radar-metric-order`），Summary 与 Battle 共用；Contribution/KAST/Impact
-  继续保留在表现指标区，不进入 Radar。维度 raw score 与 `score/max` 明细仍来自后端 metadata，最终几何
+  继续保留在表现指标区，不进入 Radar。每个玩家顶点常驻标注 0–150 视觉分；明细默认显示玩家/平均视觉分，
+  可切换为 raw `score/max` 与真实平均值，切换不改变几何。维度 raw score 与 `score/max` 解释仍来自后端 metadata，最终几何
   则按当前 Battle/Global Average 使用共用相对表现标尺（平均=75、2×平均=100、隐藏150上限）；max
-  metadata 缺失时明细降级显示 raw score，但不影响 raw/reference 完整轴的相对几何。
+  metadata 缺失时 raw 模式降级显示 raw score，但不影响 raw/reference 完整轴的相对几何。Rating Profile PNG
+  与页面复用同一顶点分数定位并默认导出分数明细。
 - 所有可见列（单场 / 普通汇总 / CW 统一玩家表 / 战队汇总）均支持 ASC/DESC 排序：
   数值 numeric、字符串自然序（Intl.Collator numeric）、缺失（null/''/NaN/--）恒排最后、
   排序基于 raw 值（格式化单元格按原始数值排）。
@@ -391,6 +393,9 @@ Team Rating 计算；Radar aggregation 只发生在多场 player summary visuali
   domain max；max 缺失只让明细退化为 raw score，不改变 geometry availability。最终半径按 player raw
   score / 当前 Battle/Global Average 映射为平均75、2×平均100、
   4×平均125、>=8×平均150。150 只作不可见坐标上限，不绘制外边界或刻度。
+- **分数标注 / 明细模式**：每个玩家顶点显示与最终半径同源、四舍五入后的 0–150 视觉分。明细默认显示
+  玩家视觉分与固定 75 的平均分，可切换回原始玩家 `score/max`（max 不可用则 raw score）和真实参考值；
+  模式切换不改变雷达几何、顶点标注或 Rating Profile PNG。PNG 固定输出默认分数模式，确保静态图可直接比较。
 - **Impact 不入 Radar**（无稳定 normalization contract）；hit_rate / pen_rate
   也不入 Radar candidate。
 

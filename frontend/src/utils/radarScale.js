@@ -28,6 +28,23 @@ export function radarRadiusRatio(visualValue) {
   return Math.min(1, Math.max(0, visualValue / RADAR_DISPLAY_CAP))
 }
 
+/** Resolve the 0..150 score consumed by chart labels and score-mode details. */
+export function radarAxisVisualScore(axis) {
+  if (axis?.available !== true) return null
+  if (isFiniteRaw(axis.visualValue)) {
+    return Math.min(RADAR_DISPLAY_CAP, Math.max(0, axis.visualValue))
+  }
+  if (isFiniteRaw(axis.normalized)) {
+    return Math.min(1, Math.max(0, axis.normalized)) * RADAR_DISPLAY_CAP
+  }
+  return null
+}
+
+export function formatRadarVisualScore(axis) {
+  const score = radarAxisVisualScore(axis)
+  return score == null ? '--' : String(Math.round(score))
+}
+
 function unavailable(axis) {
   return { ...axis, visualValue: null, normalized: null, available: false }
 }

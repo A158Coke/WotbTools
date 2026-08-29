@@ -3,6 +3,8 @@ import {
   RADAR,
   axisPoint,
   radarGridPolygons,
+  radarScoreBadgeWidth,
+  radarScoreLabelPosition,
   radarScaleTicks,
   radarValueRatio,
 } from './radarGeometry.js'
@@ -31,5 +33,40 @@ describe('radarGeometry visual scale', () => {
     expect(RADAR.CENTER - average[1]).toBe(RADAR.RADIUS / 2)
     expect(RADAR.CENTER - strong[1]).toBeCloseTo(RADAR.RADIUS * 2 / 3, 12)
     expect(RADAR.CENTER - cap[1]).toBe(RADAR.RADIUS)
+  })
+
+  it('positions score badges away from axis labels and sizes their backplates', () => {
+    const top = radarScoreLabelPosition(0, 6, 125 / 150)
+    const side = radarScoreLabelPosition(1, 6, 125 / 150)
+    expect(top.ratio).toBeGreaterThan(125 / 150)
+    expect(side.ratio).toBeLessThan(125 / 150)
+    expect(top.y).toBeLessThan(axisPoint(0, 6, 125 / 150)[1])
+    expect(radarScoreBadgeWidth('8')).toBe(18)
+    expect(radarScoreBadgeWidth('138')).toBe(26)
+  })
+
+  it.each([6, 7])('keeps %i zero/near-zero score badges readable around the center', count => {
+    for (const ratio of [0, 0.01]) {
+      const badges = Array.from({ length: count }, (_, index) => {
+        const position = radarScoreLabelPosition(index, count, ratio)
+        const width = radarScoreBadgeWidth('0')
+        return {
+          left: position.x - width / 2,
+          right: position.x + width / 2,
+          top: position.y - RADAR.SCORE_BADGE_HEIGHT / 2,
+          bottom: position.y + RADAR.SCORE_BADGE_HEIGHT / 2,
+        }
+      })
+      for (let i = 0; i < badges.length; i++) {
+        for (let j = i + 1; j < badges.length; j++) {
+          const a = badges[i]
+          const b = badges[j]
+          const overlaps = a.left < b.right && a.right > b.left
+            && a.top < b.bottom && a.bottom > b.top
+          expect(overlaps, `badges ${i}/${j} overlap at ratio ${ratio}`).toBe(false)
+        }
+      }
+      expect(radarScoreLabelPosition(0, count, ratio).x).toBeGreaterThan(RADAR.CENTER)
+    }
   })
 })
