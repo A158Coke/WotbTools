@@ -47,6 +47,12 @@
 - **名人堂管理（HoF Admin）Classic 浅色残留（Blocker 4）**：`showcase-rankings.css` 仍对 `.hof-admin .hof-admin-denied p`（无权限提示段落）与 `.hof-admin .hof-admin-login`（登录态）写死 `#9aa09c`、对 `.hof-admin-table td` 写死行分隔线 `#263136`；main 的 `classic-profile.css` 用 `.denied/.login` 选择器与真实类 `.hof-admin-denied/.hof-admin-login` 失配（未命中）。已补 `html[data-ui-profile="classic"]` 覆盖：把 `.denied/.login` 修正为真实类、`.hof-admin-denied p` 用 `var(--text-sub)`、`.hof-admin-table td` 用 `var(--border-light)`，修复 Classic 下无权限/登录态与行分隔线偏深/低对比；Showcase（默认）零回归。
 
 ### Added
+- **管理员历史 Rating V2 雷达画像**：隐藏的 `?view=rating-v2` 结果表现在可选择玩家查看 V2 六轴雷达，
+  复用 `PlayerRatingRadar` 的四层 25/50/75/100 网格、玩家实线与批次平均虚线；六轴固定为场均潜在伤害、
+  KAST、Impact、场均协助、多伤率、场均击杀。`RatingV2Calculator` 将评分所用的封顶指数作为只读 `radar`
+  投影追加到既有 admin 响应，前端不从圆整表格值或百分数字符串反算公式；V2 总分、权重、排序、READY dataset
+  只读边界、公开接口、Excel、League V5 雷达均不变。新增 core/API/前端回归测试，文档同步
+  `docs/features/rating-v2.md`。
 - **Keycloak 登录页 V8 Unified Theme（全新统一主题）**：为 WotBTools Keycloak（26.6.4）新增自定义主题 `docker/keycloak/themes/wotbtools/login`，深色=Battlefield（全屏战火背景，`login-battlefield.webp`/`-mobile.webp` 本地打包）、浅色=Minimal；仅覆盖 `template.ftl` 统一 auth shell（全页背景/brand/右上 theme toggle/hero/透明棱镜登录卡/footer），其余认证页经 Keycloak 26 的 `registrationLayout` 宏共享，最小 FTL override；登录卡为 **clear transparent prism，无任何 blur**（CSS 无 `backdrop-filter`/`filter: blur`）；IdP 按 `social.providers` 动态渲染于账号密码下方；realm 设 `registrationAllowed:false` + `loginTheme:"wotbtools"`；`Dockerfile.keycloak` 将主题打包进镜像；资源全部本地打包（禁 GitHub raw/CDN）。生产 realm 为 Admin Console 手工配置，需手动同步 `registrationAllowed=false` 与 `loginTheme=wotbtools`（见 `docs/auth/keycloak-login-theme.md`）。
 - **选手详情侧栏桌面端自由 resize**：`PlayerDetailDrawer` 在桌面(>=1200px)侧栏左缘新增 resize handle（视觉 2px 线、12px hit 区、`cursor: col-resize`），pointer capture 连续拖动；min 320px / 默认 380px / max ≈45% 视口动态钳制；宽度经 `localStorage["radarSidePanelWidth"]` 持久化，恢复时与窗口缩放时按当前视口重新 clamp（存过大值自适应）；键盘 ←/→ 每次 20px；tablet(<1200)/mobile 保持原有行为无 handle。
 - **Classic Profile 真浅色主题（Theme 计划）**：`useUiProfile` 现在把 profile 唯一派生到 `data-theme`（showcase→dark, classic→light），首屏内联脚本同步设置 `data-ui-profile` + `data-theme`（无 FOUC）；`styles/classic-profile.css` 由「仅去 AI 背景」升级为「完整浅色语义 token + namespace 覆盖」（`html[data-ui-profile="classic"]` 提供浅色 bg/card/text/border/accent/status/rating/tactical/scroll/shadow + `color-scheme:light`；同步 `--showcase-tactical*`；覆盖 topbar/user-menu/表单/表格 sticky/管理表/restoolbar 等写死深色面）；Showcase（默认）零回归；`data-theme` 不另立主题状态/开关/第二 localStorage key（禁 `useTheme`）。

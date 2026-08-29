@@ -7,6 +7,7 @@ import { apiErrorLabel } from '../utils/display.js'
 import * as api from '../utils/api.js'
 import FileUploader from './FileUploader.vue'
 import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
+import RatingV2RadarPanel from './RatingV2RadarPanel.vue'
 
 const LOGIN_VIEW = 'rating-v2'
 
@@ -31,6 +32,7 @@ const ratingResponse = ref(null)
 const ratingLoading = ref(false)
 const ratingError = ref('')
 const sort = ref(null)
+const selectedRow = ref(null)
 let requestVersion = 0
 
 const sortedRows = computed(() => {
@@ -72,9 +74,11 @@ async function loadRating(jobId) {
     const response = await api.ratingV2Admin(jobId)
     if (version !== requestVersion || processingJobId.value !== jobId) return
     ratingResponse.value = response
+    selectedRow.value = null
   } catch (cause) {
     if (version !== requestVersion || processingJobId.value !== jobId) return
     ratingError.value = apiErrorLabel(t, te, cause)
+    selectedRow.value = null
   } finally {
     if (version === requestVersion) ratingLoading.value = false
   }
@@ -82,11 +86,13 @@ async function loadRating(jobId) {
 
 async function runRating() {
   ratingError.value = ''
+  selectedRow.value = null
   await startProcessingJob()
   if (processingJobId.value) await loadRating(processingJobId.value)
 }
 
 watch(processingJobId, (jobId) => {
+  selectedRow.value = null
   if (jobId) void loadRating(jobId)
 })
 
@@ -96,7 +102,16 @@ watch(selectionRevision, () => {
   ratingResponse.value = null
   ratingError.value = ''
   sort.value = null
+  selectedRow.value = null
 })
+
+function selectPlayer(row) {
+  selectedRow.value = row
+}
+
+function closePlayerRadar() {
+  selectedRow.value = null
+}
 
 onMounted(async () => {
   let authenticated = false
@@ -189,12 +204,19 @@ onMounted(async () => {
             <tbody>
               <tr v-for="(row, index) in sortedRows" :key="`${row.cells.account_id || row.cells.nickname}-${index}`">
                 <td v-for="column in ratingResponse.columns" :key="column.key" :class="{ num: column.num }">
-                  {{ row.cells[column.key] ?? '--' }}
+                  <button v-if="column.key === 'nickname'" class="rating-v2-player" type="button"
+                    :aria-label="t('ratingV2.radar.open', { player: row.cells[column.key] ?? '--' })"
+                    :aria-pressed="selectedRow === row"
+                    @click="selectPlayer(row)">
+                    {{ row.cells[column.key] ?? '--' }}
+                  </button>
+                  <template v-else>{{ row.cells[column.key] ?? '--' }}</template>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
+        <RatingV2RadarPanel v-if="selectedRow" :row="selectedRow" :rows="ratingResponse.rows" @close="closePlayerRadar" />
       </section>
 
       <p v-else-if="!loading && !processingActive && !ratingLoading && files.length" class="rating-v2-note">
@@ -226,6 +248,8 @@ onMounted(async () => {
 .rating-v2-sort { width: 100%; padding: 8px 10px; border: 0; background: transparent; color: var(--text-heading); cursor: pointer; font: inherit; font-weight: 700; text-align: inherit; }
 .rating-v2-sort:hover, .rating-v2-sort:focus-visible { background: var(--bg-card-hover); outline: 1px solid var(--accent); outline-offset: -1px; }
 .rating-v2-tablewrap td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.rating-v2-player { padding: 0; border: 0; background: transparent; color: var(--text-heading); cursor: pointer; font: inherit; font-weight: 700; text-align: left; }
+.rating-v2-player:hover, .rating-v2-player:focus-visible, .rating-v2-player[aria-pressed="true"] { color: var(--accent); outline: none; text-decoration: underline; text-underline-offset: 3px; }
 @media (max-width: 767px) {
   .rating-v2-page { padding-bottom: 28px; }
   .rating-v2-actions { align-items: stretch; }
