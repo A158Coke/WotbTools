@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.45",
+    "date": "2026-08-29",
+    "tag": "fix",
+    "zh": "修复隐藏的管理员 Rating V2 灰度页结果表字段未对齐：数值列标题现与对应数值统一右对齐，玩家、战队等文本列保持左对齐；列顺序、排序、数据和评分公式不变。",
+    "en": "Fixed misaligned fields in the hidden admin Rating V2 gray-page results table: numeric headers now share right alignment with their values, while text columns such as player and clan remain left-aligned. Column order, sorting, data and rating formulas are unchanged.",
+    "ru": "Исправлено выравнивание полей в таблице результатов скрытой административной серой страницы Rating V2: заголовки числовых столбцов теперь выровнены вправо вместе со значениями, а текстовые столбцы игрока и клана остаются выровненными влево. Порядок столбцов, сортировка, данные и формулы рейтинга не изменены."
+  },
+  {
     "v": "2.12.44",
     "date": "2026-08-28",
     "tag": "add",
