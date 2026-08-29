@@ -171,10 +171,11 @@ class ExactReplayDuplicateDetectorTest {
                 "a", ReplayProcessingStatus.SUCCESS, id, b, null, null, caps, null, null);
         final var r2 = new ReplayProcessingResult(
                 "b", ReplayProcessingStatus.SUCCESS, id, b, null, null, caps, null, null);
-        final var plan = new BatchAnalyzer().analyze(List.of(r1, r2));
         final var partition = ExactReplayDuplicateDetector.partition(List.of(r1, r2));
-        assertEquals(plan.exactDuplicateCount(), partition.count());
-        assertEquals(plan.exactDuplicates().size(), partition.duplicates().size());
+        assertEquals(partition.count(), partition.duplicates().size());
+        // BatchAnalyzer 对同 content 输入去重为单个 group（AI 单文件 single-unit 不变量）
+        final var plan = new BatchAnalyzer().analyze(List.of(r1, r2));
+        assertEquals(1, plan.groups().size());
     }
 
     // ======== helpers ========

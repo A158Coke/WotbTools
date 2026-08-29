@@ -346,20 +346,20 @@ class AiReplayAnalysisServiceTest {
     }
 
     @Test
-    void multiTeamRequestKeepsOpposingPerspectivesIndependent() {
+    void singleTeamPerspectiveUsesSingleTeamContext() {
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
-                teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1),
-                teamResultWithRecon("enemy.wotbreplay", "shared-arena", "Enemy", 2001L, 2)));
+                teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
         final var result = service.analyzeTeamGroups(groups);
         assertEquals("team review", result.analysis().analysis());
-        // Opposing perspectives now use SEPARATE SINGLE_TEAM calls instead of one MULTI_TEAM call.
+        // 单文件 team single 路径：SINGLE_TEAM_CONTEXT，无 MULTI_TEAM_CONTEXT / PERSPECTIVE 分区
+        //（多视角批量已随 legacy 端点删除，analyze() 对 >1 analyzable 单元 fail loud）
         assertTrue(teamLastBody().contains("SINGLE_TEAM_CONTEXT"),
-                "Must use SINGLE_TEAM_CONTEXT for opposing perspectives");
+                "Must use SINGLE_TEAM_CONTEXT");
         assertTrue(teamLastBody().contains("teamDisplayLabel="),
                 "Single-team context must contain teamDisplayLabel");
         assertFalse(teamLastBody().contains("MULTI_TEAM_CONTEXT"),
-                "Must NOT use MULTI_TEAM_CONTEXT for opposing perspectives");
+                "Must NOT use MULTI_TEAM_CONTEXT");
         assertFalse(teamLastBody().contains("PERSPECTIVE 1"),
                 "Single-team context must not contain PERSPECTIVE labels");
         assertFalse(teamLastBody().contains("PERSPECTIVE 2"),
@@ -470,39 +470,23 @@ class AiReplayAnalysisServiceTest {
     }
 
     @Test
-    void opposingPerspectivesProduceTwoRequests() {
-        gateway.nextCompletionText = envelope("opposing review");
+    void singleTeamPerspectiveProducesOneRequest() {
+        gateway.nextCompletionText = envelope("team review");
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
-                teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1),
-                teamResultWithRecon("enemy.wotbreplay", "shared-arena", "Enemy", 2001L, 2)));
+                teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
         service.analyzeTeamGroups(groups);
         final List<AiChatRequest> teamRequests = teamRequests();
-        assertEquals(2, teamRequests.size(),
-                "Opposing perspectives must produce 2 team requests");
+        assertEquals(1, teamRequests.size(),
+                "Single team perspective must produce exactly 1 team request");
 
         final String first = teamRequests.get(0).userPrompt();
-        final String second = teamRequests.get(1).userPrompt();
-
-        assertTrue(first.contains("ally.wotbreplay"), "First request must be the ally perspective");
-        assertFalse(first.contains("enemy.wotbreplay"),
-                "First request must not carry the opposing perspective's file");
-        assertTrue(second.contains("enemy.wotbreplay"), "Second request must be the enemy perspective");
-        assertFalse(second.contains("ally.wotbreplay"),
-                "Second request must not carry the opposing perspective's file");
-
+        assertTrue(first.contains("ally.wotbreplay"), "Request must be the ally perspective");
         assertFalse(perspectiveBodySection(first).contains("Enemy"),
                 "Ally perspective body must not contain the opposing team's members");
-        assertFalse(perspectiveBodySection(second).contains("Ally"),
-                "Enemy perspective body must not contain the opposing team's members");
-
         assertTrue(first.contains("OPPOSING_TEAM_LINEUP_AUTHORITATIVE"),
                 "Ally perspective must still describe the opposing lineup");
-        assertTrue(second.contains("OPPOSING_TEAM_LINEUP_AUTHORITATIVE"),
-                "Enemy perspective must still describe the opposing lineup");
         assertTrue(first.contains("Enemy"),
-                "The opposing team's players are allowed as OPPOSING_TEAM_LINEUP evidence");
-        assertTrue(second.contains("Ally"),
                 "The opposing team's players are allowed as OPPOSING_TEAM_LINEUP evidence");
     }
 

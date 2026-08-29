@@ -123,7 +123,7 @@ public class AiReplayReviewService {
                 + (hit ? "hits" : "misses") + "_total", "consumer", consumer).increment();
     }
 
-    /** 对已还原的 facts 执行与旧 analyze 完全相同的 authoritative AI 链路。 */
+    /** 对 Dataset 还原的 ai-facts 执行 authoritative AI 链路（无第二条 old analyze 生产路径）。 */
     public AnalyzeResponse analyzeFacts(final AiReplayFacts facts,
                                         final AllowedLanguage language,
                                         final AiReviewStreamListener listener) {
@@ -196,7 +196,7 @@ public class AiReplayReviewService {
     }
 
     /**
-     * 已解析结果列表的 AI 编排（旧 analyze 与 Dataset 路径共用）：
+     * Dataset-derived {@link ReplayProcessingResult}（单文件 {@code facts.toResult()}）的 AI 编排：
      * coverage 日志 → 模式判定 → 可分析分组 → 单场/团队分支。
      */
     private AnalyzeResponse analyzeResults(final List<ReplayProcessingResult> allResults,
