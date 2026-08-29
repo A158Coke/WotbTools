@@ -511,7 +511,7 @@ const playbackSeek = ref(null)
 const datasetRef = ref(null)
 /** Dataset 准备失败（prepare failure）时的已本地化错误；空 = 无。 */
 const datasetError = ref('')
-/** exactly-once recovery（@164）：每个 selection / dataset generation 最多自动恢复一次。
+/** exactly-once recovery：每个 selection / dataset generation 最多自动恢复一次。
  * recovery context 是 generation-owned（token + 当前 in-flight token）；stale recovery 的 finally
  * 只有在自己仍是当前 owner 时才清 inFlight，绝不清新 generation 的 recovery 状态。 */
 let datasetRecoveryAttempted = false
