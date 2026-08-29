@@ -39,9 +39,9 @@ docker compose up -d --build
 
 `push` 到 `main` 分支触发 GitHub Actions（[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)）：
 
-1. 按完整 push change range 判断后端、前端、Keycloak 和部署脚本是否变化。
-2. 后端先跑 `mvn test`；前端先跑 `npm ci && npm test && npm run build`。测试失败不会构建或部署镜像。
-3. 按需构建并推送 backend/frontend/keycloak 镜像到 GHCR。
+1. `push` 到 `main` 触发，按 `on.push.paths` 过滤（仅当构建/部署相关路径变化才触发；纯文档 push 不触发）。
+2. 代码质量验证与测试由 PR CI（merge gate）承担；**deploy 不再运行 backend/frontend 测试套件**。
+3. 统一构建并推送 backend/frontend/keycloak 三个 SHA 镜像到 GHCR（tag = `sha-<短 hash>`，确定性构建，无需反复运行测试）。
 4. SSH 部署前先备份 `wotb` 与 `keycloak` 两个数据库，再 `docker compose pull && up -d`。
 5. 部署等待 `wotb-backend` 的 `/api/health` 成功；失败会输出后端/前端日志并让 workflow 失败。
 

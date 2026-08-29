@@ -35,11 +35,14 @@
 常用命令：
 
 ```bash
-# Java 全量测试
-cd java && JAVA_HOME=<jdk21> mvn -s settings.xml test
+# Java 分层测试
+# Targeted（改单个 class/function）：mvn -pl wotb-core -Dtest=<TestClass> test
+# Module（单模块/一个 feature）：mvn -pl wotb-core test 或 mvn -pl wotb-web -am test
+# Full（PR CI authoritative validation，Agent 默认不跑）：cd java && JAVA_HOME=<jdk21> mvn -s settings.xml test
 
-# 前端测试 + 构建
-cd frontend && npm ci && npm test && npm run build
+# 前端分层测试
+# Targeted：cd frontend && npx vitest run <related-test-files>
+# Build（仅当改动涉及 build 范围）：cd frontend && npm run build
 
 # 本地完整开发环境
 cd docker/online && docker compose up -d --build
@@ -334,13 +337,11 @@ Sponsor QR 不进仓库/镜像：生产使用 `/opt/wotb/config/sponsor-config.j
   禁字段注入/Lombok、顶层包无循环依赖）。规则失败即构建失败。
 - 前端：Vitest + happy-dom（按需声明）。
 - Replay/League/UI regression 必须补针对真实 invariant 的测试，而不是只验证函数被调用。
-
-```bash
-cd java && mvn -s settings.xml test
-cd frontend && npm test && npm run build
-```
-
-涉及 Docker/部署时同时跑对应 Docker build 与 deployment smoke。
+- **职责分层（Fast Feedback First）**：开发过程中 Agent 只跑 targeted / module / feature regression，
+  不重复跑 repository-level full test；仓库级 full validation 由 PR CI 统一执行（authoritative gate）。
+  仅当改动影响跨模块 / build / test infrastructure（`.agents/AGENTS.md` 的 Full-test 例外清单）时，
+  Agent 才跑 `cd java && mvn -s settings.xml test` / `cd frontend && npm test && npm run build`。
+- 涉及 Docker/部署时同时跑对应 Docker build 与 deployment smoke；Deploy 不重复运行测试套件。
 
 ---
 
