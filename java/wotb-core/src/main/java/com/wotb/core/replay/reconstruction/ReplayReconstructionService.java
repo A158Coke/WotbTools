@@ -11,7 +11,10 @@ import com.wotb.core.replay.decoder.ReplayDecodeContext;
 import com.wotb.core.replay.decoder.ReplayDecodeResult;
 import com.wotb.core.replay.decoder.ReplayPacketDecoderRegistry;
 import com.wotb.core.replay.decoder.EntityClass;
+import com.wotb.core.replay.decoder.EntityClass;
 import com.wotb.core.replay.decoder.EntityClassRegistry;
+import com.wotb.core.replay.decoder.EntityMethodDecoder;
+import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ArenaPeriodChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
@@ -102,7 +105,7 @@ public class ReplayReconstructionService {
         //    Type8 subtype-49 recorder sync-options → Avatar）在 prepass 建立，method decoder 纯消费，
         //    不再由 methodId 自证 class。
         final EntityClassRegistry entityClassRegistry =
-                buildEntityClassRegistry(streamResult.packets());
+                buildEntityClassRegistry(streamResult.packets(), context.recorderAccountId());
         final ReplayDecodeContext decodeContext =
                 new ReplayDecodeContext(streamResult.header().clientVersion(), entityClassRegistry);
         final List<ReplayEvent> allEvents = new ArrayList<>();
@@ -392,12 +395,15 @@ public class ReplayReconstructionService {
      * decoder 自证 semantic namespace）。
      * <ul>
      *   <li>Type5 materialization：{@code entityTypeId==2 → Vehicle}；{@code ==3 → Other}；</li>
-     *   <li>Type8 subtype-49 synchronized-options（每场唯一，recorder-local，见
-     *       entity-routing.md）：其 outer entityId 即录像者 Avatar —— 身份锚点，不属 method 族推断。</li>
+     *   <li>Type8 subtype48 参与映射（method48 content，结构性）：其 entity 映射到录像者账号
+     *       （{@code recorderAccountId}，来自 reconstruction context / meta 身份）→ Avatar。这是
+     *       <b>账号身份</b>证据，非 method numeric 身份推断（不再使用 subtype-49 numeric）。</li>
      * </ul>
-     * 只读 wire 结构；无法独立证明的 entityId 保持 {@link EntityClass#UNKNOWN}，语义解码时 raw-preserve。
+     * recorderAccountId 未知/为 null 时不标记 Avatar（fail-closed）→ 语义解码时 avatar 方法 raw-preserve；
+     * 不证明的 entityId 保持 {@link EntityClass#UNKNOWN}。
      */
-    static EntityClassRegistry buildEntityClassRegistry(final List<RawReplayPacket> packets) {
+    static EntityClassRegistry buildEntityClassRegistry(final List<RawReplayPacket> packets,
+                                                        final Long recorderAccountId) {
         final EntityClassRegistry registry = new EntityClassRegistry();
         if (packets == null) {
             return registry;
@@ -413,10 +419,12 @@ public class ReplayReconstructionService {
                 } else if (entityTypeId == 3) {
                     registry.markOther(entityId);
                 }
-            } else if (type == 8 && payload.length >= 12) {
-                final int subType = readU32LE(payload, 4);
-                if (subType == 49) {
-                    registry.markAvatar(readI32LE(payload, 0));
+            } else if (type == 8 && payload.length >= 12 && recorderAccountId != null
+                    && readU32LE(payload, 4) == 48) {
+                for (final ParticipantMappingEvent e : EntityMethodDecoder.participantMappingEvents(payload, p)) {
+                    if (e.accountId() == recorderAccountId && e.entityId() > 0) {
+                        registry.markAvatar(e.entityId());
+                    }
                 }
             }
         }

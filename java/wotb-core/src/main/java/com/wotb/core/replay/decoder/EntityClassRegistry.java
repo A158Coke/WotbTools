@@ -9,9 +9,9 @@ import java.util.Map;
  * <p>只记录真实生命周期证据（不靠 method-shape 反推）：
  * <ul>
  *   <li>{@link #markVehicle}：来源于 MaterializationEvent.entityTypeId==2（combat vehicle）。</li>
- *   <li>{@link #markAvatar}：来源于录像者 Avatar <b>身份锚点</b> —— Type8 subtype-49 synchronized-options
- *       （每场唯一、recorder-local），由 reconstruction 的 prepass 建立；这是消息身份语义本身，不是
- *       「method 族 → class」的循环推断。</li>
+ *   <li>{@link #markAvatar}：来源于<b>独立的录像者账号身份</b> —— method48 参与映射（entity→account）
+ *       中映射到录像者 accountId 的实体；由 reconstruction 的 prepass 建立。这是账号身份证据，
+ *       不是「method numeric → class」的循环推断。</li>
  *   <li>{@link #markOther}：来源于 MaterializationEvent.entityTypeId==3（static family）。</li>
  * </ul>
  * </p>

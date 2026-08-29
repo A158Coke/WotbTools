@@ -123,15 +123,17 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
         final List<ReplayEvent> events = new ArrayList<>();
         final List<ReplayDecodeWarning> warnings = new ArrayList<>();
 
-        // §A2/P0-3：method0/1/5/17/20/27/29（legacy-compatible 观测布局）不得对未知/未来版本
-        // 无条件产出 EXACT 语义事件 —— raw-preserve + VERSION_UNSUPPORTED 诊断。
+        // PR162/P0-2：method0/1/5/17/20/27/29 的 <b>语义</b>仅在 canonical/legacy VERIFIED family 上认可。
+        // future（STRUCTURALLY_COMPATIBLE）版本只有 Type8 envelope 结构可前向读取（entityId/methodId/
+        // argLen/rawArgs），numeric method identity 与 args semantic 是 closed/version-scoped ——
+        // 未认证即 raw-preserve，绝不无条件承接当前版本 EXACT semantic event。
         if (isLayoutMethod(subType)
-                && !ReplayVersionGate.methodLayoutAllowed(context.clientVersion())) {
+                && !ReplayVersionGate.methodLayoutAffirmed(context.clientVersion())) {
             events.add(new UnknownReplayEvent(
                     packet.sequence(), ts, packet.type(), payload.length,
-                    "VERSION_UNSUPPORTED_METHOD" + subType, DecodeConfidence.UNKNOWN));
+                    "FUTURE_METHOD_SEMANTIC_UNVERIFIED_METHOD" + subType, DecodeConfidence.UNKNOWN));
             warnings.add(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
-                    "EntityMethod subtype " + subType + " layout not affirmed: " + context.clientVersion()));
+                    "EntityMethod subtype " + subType + " semantic not affirmed: " + context.clientVersion()));
             return new ReplayDecodeResult(DecodeStatus.PARTIAL, events, warnings);
         }
 
@@ -396,10 +398,9 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 // closed-semantic supremacy-points value (wrapper=13) stays 11.19-only.
                 if (!ReplayVersionGate.participantMappingLayoutAllowed(context.clientVersion())) {
                     versionRawPreserve(events, warnings, packet, ts, subType, "VERSION_UNSUPPORTED_METHOD48");
-                } else if (entityClassFor(context, subType, entityId) != EntityClass.AVATAR) {
-                    rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
-                            "METHOD48_CLASS_MISMATCH");
                 } else {
+                    // PR162/P0-1：method48 参与映射是结构/身份消息（entity→account），其 outer entity 本身
+                    // 无需先被分类；解码其内容用于建立 recorder Avatar 身份（prepass），不在此由 method 自证 class。
                     // entity/account mapping
                     final ParticipantMappingResult mapping = parseUpdateArena2(payload, entityId, packet, ts);
                     if (mapping != null) {
@@ -681,7 +682,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     /**
      * 解析 subtype 48 (updateArena2) 的 entity→account 映射。
      */
-    private ParticipantMappingResult parseUpdateArena2(
+    static ParticipantMappingResult parseUpdateArena2(
             byte[] payload, int entityId, RawReplayPacket packet, ReplayTimestamp ts) {
         final DecodedUpdateArena2 decoded = decodeUpdateArena2(payload);
         if (decoded == null || decoded.wrapperFieldNumber() != WRAPPER_ROSTER) {
@@ -716,6 +717,20 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
             return null;
         }
         return new ParticipantMappingResult(mappings);
+    }
+
+    /**
+     * PR162/P0-1：结构性地提取 subtype48 参与映射（entity → account/nickname/team）。供
+     * {@code ReplayReconstructionService} 的实体类 prepass 复用（避免在 reconstruction 手写第二套
+     * method48 wire parser）。同一声明即 {@link #parseUpdateArena2} 的语义解码路径。
+     * 无法解码/非 wrapper=1 → 空列表。
+     */
+    public static List<ParticipantMappingEvent> participantMappingEvents(
+            final byte[] payload, final RawReplayPacket packet) {
+        final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
+        final int entityId = readI32LE(payload, 0);
+        final ParticipantMappingResult result = parseUpdateArena2(payload, entityId, packet, ts);
+        return result == null ? List.of() : result.mappingEvents();
     }
 
     /**

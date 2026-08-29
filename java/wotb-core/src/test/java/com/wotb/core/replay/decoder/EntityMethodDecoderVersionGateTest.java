@@ -99,16 +99,16 @@ class EntityMethodDecoderVersionGateTest {
     }
 
     @Test
-    void futureVersionDecodesMethod1StructurallyButNotCauseSemantic() {
-        // PR162 forward compatibility: method1 layout is structural (envelope/HP u16) so a future version
-        // with the exact 7-byte shape still decodes structurally; the version-scoped CAUSE semantic is gated
-        // (closed semantics) → UNKNOWN, never a fabricatied DROWNING/DIRECT claim.
+    void futureVersionMethod1SemanticNotCertifiedRawPreserves() {
+        // PR162/P0-2: future version 只有 Type8 envelope 结构可前向读取；method1 的 numeric identity 与
+        // HP/cause 语义是 closed/version-scoped —— 未认证即 raw-preserve（UnknownReplayEvent），
+        // 绝不产出 VehicleHealthStateEvent(EXACT) 继承当前版本语义。
         final ReplayDecodeResult r = decoder.decode(vehicleCtx("11.20.0_china"),
                 method1(1, 1f, 2700, 0));
-        final VehicleHealthStateEvent e = assertInstanceOf(VehicleHealthStateEvent.class, r.events().get(0));
-        assertEquals(HpRawState.CURRENT_HP, e.rawState(), "正 HP 结构值可前向解析");
-        assertEquals(VehicleHealthStateEvent.Cause.UNKNOWN, e.cause(), "未认证 cause 语义不得继承");
-        assertEquals(2700, e.currentHpRaw());
+        assertInstanceOf(UnknownReplayEvent.class, r.events().get(0));
+        assertTrue(r.events().stream().noneMatch(e -> e.getClass().isAssignableFrom(VehicleHealthStateEvent.class)
+                        || e instanceof VehicleHealthStateEvent),
+                "future method1 不得产出 VehicleHealthStateEvent");
     }
 
     @Test
