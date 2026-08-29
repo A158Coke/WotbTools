@@ -17,4 +17,5 @@
     <string name="update_unknown_source_hint">请在系统设置中允许「来自 WotBTools 的应用」安装后重试</string>
     <string name="web_error_title">WotBTools 暂时无法加载</string>
     <string name="web_error_retry">重新加载</string>
+    <string name="webview_unsupported_title">WotBTools 需要更新 Android WebView（系统组件）\n\n当前系统 WebView 版本过旧，无法安全加载 WotBTools。请升级系统 WebView / Android 后重试。</string>
 </resources>

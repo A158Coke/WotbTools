@@ -115,6 +115,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           source: release-staging/${{ steps.artifact.outputs.apkName }}
           target: /opt/wotb/android-release
+          strip_components: 1
 
       - name: Ensure APK readable by nginx
         uses: appleboy/ssh-action@v1
@@ -155,6 +156,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           source: release-staging/version.json
           target: /opt/wotb/android-release
+          strip_components: 1
 
       - name: Verify version.json accessible
         shell: bash

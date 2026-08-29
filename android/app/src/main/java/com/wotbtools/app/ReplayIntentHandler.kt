@@ -79,10 +79,6 @@ object ReplayIntentHandler {
         }
     }
 
-    fun deletePending(file: File?) {
-        file?.delete()
-    }
-
     fun cleanupOrphans(context: Context) {
         val dir = File(context.cacheDir, CACHE_DIR)
         if (!dir.exists()) return
