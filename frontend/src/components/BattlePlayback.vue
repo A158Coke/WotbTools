@@ -122,11 +122,11 @@ const preload = ref({ phase: 'idle', resolved: new Map(), failed: new Set(), byT
 // 竞态令牌：快速切换战局时，过期 preload 完成不得覆盖新战局结果
 let preloadToken = 0
 watch(
-  () => props.overview,
-  async (ov) => {
+  () => [props.overview, props.playbackV2],
+  async () => {
     const token = ++preloadToken
     preload.value = { phase: 'loading', resolved: new Map(), failed: new Set(), byTank: new Map() }
-    const vehicles = ov?.playbackV2?.vehicles || []
+    const vehicles = props.playbackV2?.vehicles || []
     if (vehicles.length === 0) {
       preload.value = { phase: 'ready', resolved: new Map(), failed: new Set(), byTank: new Map() }
       return
