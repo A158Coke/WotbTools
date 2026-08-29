@@ -1,7 +1,7 @@
 package com.wotb.core.replay.facts;
 
 /**
- * Replay-derived value 的 provenance / knowledge-state（计划 §3.1）。
+ * Replay-derived value 的 provenance / knowledge-state。
  *
  * <p>每个业务值必须能表达它来自哪里、有多确定、是否真的被观察到、是否只是派生、
  * 是否来自结算、是否未知——而不是每个字段都硬塞一个值。</p>

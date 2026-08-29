@@ -12,7 +12,7 @@ import com.wotb.core.replay.reconstruction.Vector3;
  * <strong>canonical 米</strong>，{@code averageSpeed} 为 canonical 米 / battle-relative 秒
  * （m/s），{@code averageSpeedKmh} 为 km/h。
  *
- * <p>计划 §B10 派生事实（1 Type10 unit ≈ 1 米，docs/research/replay/
+ * <p>派生事实（1 Type10 unit ≈ 1 米，docs/research/replay/
  * type10-movement-transform-closure.md）：{@code verticalDeltaMeters} /
  * {@code verticalSpeedMps} / {@code hullYawRateRadS} 由端点 raw 坐标与 yaw 派生；
  * {@code movementState} 为段级分类（FORWARD/REVERSE 由 signed longitudinal speed 判定）。</p>
@@ -110,7 +110,7 @@ public record MovementSegment(
     }
 
     /**
-     * 带派生事实的完整构造（计划 §B10）。
+     * 带派生事实的完整构造。
      *
      * @param startYawRad 起点车体 yaw（弧度；NaN = 未知）
      * @param endYawRad   终点车体 yaw（弧度；NaN = 未知）

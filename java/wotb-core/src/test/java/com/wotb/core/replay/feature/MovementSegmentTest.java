@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** MovementSegment §B10 派生事实：km/h、forward/reverse、vertical、yaw rate。 */
+/** MovementSegment 派生事实：km/h、forward/reverse、vertical、yaw rate。 */
 class MovementSegmentTest {
 
     @Test

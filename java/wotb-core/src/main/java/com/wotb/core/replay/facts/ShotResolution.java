@@ -5,12 +5,12 @@ import com.wotb.core.replay.event.ShotResultEvent;
 import java.util.List;
 
 /**
- * method38 low-16 射击结果 flags（计划 §C2，当前 11.19 bit map）。
+ * method38 low-16 射击结果 flags（当前 11.19 bit map）。
  *
  * <p>flags 是正交多 bit 集合，不是互斥枚举；一次命中可以同时包含多个 resolution 事实。
  * 未观测/未证明的 bit 保留 raw，不得命名（尤其 {@code 0x0200}：当前无样本，只能 raw）。</p>
  *
- * <p>modifier（计划 §C4）：additive modifierId list——1 = Precision Fire proc，
+ * <p>modifier：additive modifierId list——1 = Precision Fire proc，
  * 2 = Tungsten Shells；可同时 [1,2]（controlled JagdPanzer probe）。未知 ID 保留 raw。</p>
  */
 public record ShotResolution(

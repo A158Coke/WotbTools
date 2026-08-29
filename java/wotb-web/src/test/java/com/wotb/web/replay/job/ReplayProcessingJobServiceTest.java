@@ -253,7 +253,7 @@ class ReplayProcessingJobServiceTest {
 
         final ReplayProcessingJob.Snapshot snap = awaitTerminal(jobId, 10_000);
         assertEquals(ReplayProcessingJob.Status.READY, snap.status(),
-                "混合批次必须 READY（§21：禁止 mixed League eligibility 使 Processing Job FAILED）");
+                "混合批次必须 READY（禁止 mixed League eligibility 使 Processing Job FAILED）");
         assertEquals(0, snap.failures(), "混合批次无解析失败时 failures 必须为 0");
         assertEquals(2, snap.valid(), "混合批次两个已解析文件都计有效");
         final PreviewResponse r = service.result(jobId);

@@ -162,7 +162,7 @@ public final class MapOverviewBuilder {
                         events, mapping,
                         battleStartRawClockSec == null ? 0.0 : battleStartRawClockSec.doubleValue(),
                         duration);
-        // §B9：结算缺失但回放已证明击毁（combat.destroyed）时，位置覆盖不得越过该击毁时刻（禁阵亡后残余位置）。
+        // 结算缺失但回放已证明击毁（combat.destroyed）时，位置覆盖不得越过该击毁时刻（禁阵亡后残余位置）。
         // 与 BattlePlaybackAdapter 的 AoI-aware 停机口保持同源（此 map 用 raw 时钟域，与 Positions 一致）。
         final Map<Long, Double> destroyRawByAccount = new HashMap<>();
         for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Destroyed d : combat.destroyed()) {
@@ -533,7 +533,7 @@ public final class MapOverviewBuilder {
 
 
     /**
-     * §B9：把位置上报区间按「权威击毁时刻」收口——击毁后的区间整体剔除、跨越击毁的区间末端 clamp，
+     * 把位置上报区间按「权威击毁时刻」收口——击毁后的区间整体剔除、跨越击毁的区间末端 clamp，
      * 避免回放显示阵亡后的残余服务器位置。destroyRaw == null 时原样返回（未经击毁）。
      */
     private static List<MapOverview.PositionInterval> clampIntervalsToDestroyed(

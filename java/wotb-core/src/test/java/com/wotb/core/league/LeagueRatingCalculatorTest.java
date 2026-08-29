@@ -278,7 +278,7 @@ class LeagueRatingCalculatorTest {
 
     @Test
     void highDamageZeroKillLoserCanOutscoreOrdinaryWinnerAndBeTeamTop() {
-        // §62.1/62.2：败方高伤 0 kill 的 carry 玩家应高于普通胜方玩家，并成为本队最佳。
+        // 败方高伤 0 kill 的 carry 玩家应高于普通胜方玩家，并成为本队最佳。
         final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
         for (int i = 0; i < 7; i++) {
             specs.get(i).damage = 600; // 胜方本队平均输出（普通档位）
@@ -301,7 +301,7 @@ class LeagueRatingCalculatorTest {
 
     @Test
     void lowDamageTradeDoesNotPushPlayerIntoTopThree() {
-        // §62.6：RC=50 不能把明显低贡献玩家推成本队 Top3。
+        // RC=50 不能把明显低贡献玩家推成本队 Top3。
         final List<LeagueTestBattles.PlayerSpec> specs = defaultSevenVsSeven();
         specs.get(0).damage = 5;
         specs.get(0).assist = 0;

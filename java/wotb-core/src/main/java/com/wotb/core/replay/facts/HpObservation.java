@@ -1,7 +1,7 @@
 package com.wotb.core.replay.facts;
 
 /**
- * 统一 HP 观测事实（计划 §B4）。
+ * 统一 HP 观测事实。
  *
  * <p>所有 replay consumer（赛果解析 / 战局回放 / AI 复盘）消费同一条 canonical HP timeline；
  * 禁止各自对 raw events 建立互相不同的 HP 解释。</p>

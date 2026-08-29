@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 射击生命周期组装器（计划 §C1 / PR162 repair Blocker 3）。
+ * 射击生命周期组装器。
  *
  * <p>从事件流组装 canonical {@link ShotFact}：method29 launch 为锚点，按 shotId 配对
  * method20/27；Type28/method17 在发射时刻取最近先前的状态（跨 arena/init 边界不继承——

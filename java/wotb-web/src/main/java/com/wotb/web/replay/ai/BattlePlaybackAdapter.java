@@ -53,7 +53,7 @@ public final class BattlePlaybackAdapter {
         final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
                 com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
                         timeline.events(), mapping, timeline.battleStartRawClockSec(), duration);
-        // §B9：结算缺失但回放已证明击毁（combat.destroyed）时，位置覆盖不得越过该击毁时刻
+        // 结算缺失但回放已证明击毁（combat.destroyed）时，位置覆盖不得越过该击毁时刻
         // （禁阵亡后残余位置），与 MapOverviewBuilder 同源。
         final Map<Long, Double> destroyByAccount = new HashMap<>();
         for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Destroyed d
@@ -217,7 +217,7 @@ public final class BattlePlaybackAdapter {
         return out;
     }
 
-    /** §B9：把位置覆盖区间按「权威击毁时刻」收口（击毁后整体剔除、跨越击毁末端 clamp），与 MapOverviewBuilder 同源。 */
+    /** 把位置覆盖区间按「权威击毁时刻」收口（击毁后整体剔除、跨越击毁末端 clamp），与 MapOverviewBuilder 同源。 */
     private static List<MapOverview.PositionInterval> clampIntervalsToDestroyed(
             final List<MapOverview.PositionInterval> intervals, final Double destroySec) {
         if (destroySec == null || intervals == null || intervals.isEmpty()) {
