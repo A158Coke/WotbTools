@@ -76,7 +76,7 @@ class ReplayAoiLifecycleTest {
 
     @Test
     void materializationPresenceWithUnknownHpStillOpensSegment() {
-        // §P0-1: presence proven (EXACT) + HP unknown (currentHp null) must still open the AoI
+        // presence proven (EXACT) + HP unknown (currentHp null) must still open the AoI
         // observed segment. Old bug tied presence confidence to HP decode, so an HP sentinel/unknown
         // collapsed the whole Type5 into PARTIAL and silently dropped this observed interval.
         final List<ReplayEvent> events = new ArrayList<>();

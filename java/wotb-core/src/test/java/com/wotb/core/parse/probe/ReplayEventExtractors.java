@@ -51,7 +51,7 @@ final class ReplayEventExtractors {
      * 提取所有 Position 数据。
      * BigWorld 格式含 space_id: entityId(i32) + spaceId(i32) + attachmentParentEntityId(i32)
      * + position(3xf32) + positionError(3xf32) + yaw/pitch/roll(3xf32) + trailingStateRaw(u8) = 49B。
-     * trailingStateRaw semantic = UNKNOWN（绝非 onGround / is_error，type10 closure §13）。
+     * trailingStateRaw semantic = UNKNOWN（绝非 onGround / is_error，type10 closure）。
      */
     public static List<EventStreamReader.PositionData> extractPositions(List<EventStreamReader.ParsedPacket> packets) {
         final List<EventStreamReader.PositionData> positions = new ArrayList<>();

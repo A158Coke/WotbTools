@@ -548,7 +548,7 @@ class DefaultTeamBattleFeatureExtractorTest {
 
     @Test
     void coverageToStringDoesNotLeakNonCombatantCounter() {
-        // PR #103 §6：non-#301 实体位置计数是 internal-only；AI-visible 渲染（TeamEvidenceFormatter 的
+        // non-#301 实体位置计数是 internal-only；AI-visible 渲染（TeamEvidenceFormatter 的
         // coverage= 行 = record toString）不得包含 nonCombatantPositionEventCount，后端字段访问仍可用。
         final Fixture fixture = fixture();
         final List<ReplayEvent> events = List.of(
@@ -1191,7 +1191,7 @@ class DefaultTeamBattleFeatureExtractorTest {
                 null, null, damage, false);
     }
 
-    /** Type-7 propId=3 当前血量（EXACT；§12 掉血推导的数据源）。 */
+    /** Type-7 propId=3 当前血量（EXACT；掉血推导的数据源）。 */
     private static HealthChangedEvent health(
             final int sequence,
             final float time,

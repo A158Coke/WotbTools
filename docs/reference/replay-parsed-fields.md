@@ -33,7 +33,7 @@
 | `settlementLifeTimeSec` | double | 战绩 `#24` | settlement lifeTime（秒；阵亡=结算死亡秒；幸存=整场时长） | raw settlement 证据，保留 |
 | `settlementKillerResultEntityId` | long? | 战绩 `#25` | 击杀者 result/entity-id（<b>非 accountId</b>，namespace == #301 outer field1） | 经 result/entity-id → accountId 映射得 `killerAccountId` |
 | `settlementDeathReasonRaw` | int? | 战绩 `#105` | deathReason 原始值（-1=幸存 sentinel；未证明值 raw 保留） | 已证明：5=drowning；其它 UNKNOWN |
-| `survivalTimeSec` | double | 派生 | 存活时间（秒） | 权威链 LIVE_EXACT（回放精确 sub-second）> SETTLEMENT_SECOND（结算，±0.5s）> UNKNOWN=0（由 DeathTimeReconciler 校准；legacy 启发式不作为权威，§B2） |
+| `survivalTimeSec` | double | 派生 | 存活时间（秒） | 权威链 LIVE_EXACT（回放精确 sub-second）> SETTLEMENT_SECOND（结算，±0.5s）> UNKNOWN=0（由 DeathTimeReconciler 校准；legacy 启发式不作为权威） |
 | `xp` / `credits` | int | 战绩 | 经验/银币 | 展示用 |
 | `tankName` / `tankTier` / `tankType` / `tankNation` / `alphaDamage` | String | tankopedia 映射 | 展示派生字段 | 非回放原始值 |
 

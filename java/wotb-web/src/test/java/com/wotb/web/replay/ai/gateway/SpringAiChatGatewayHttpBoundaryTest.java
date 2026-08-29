@@ -299,7 +299,7 @@ class SpringAiChatGatewayHttpBoundaryTest {
 
     @Test
     void defaultResponseFormatIsText() {
-        // 兼容构造器（无 responseFormat 参数）必须保持 TEXT：存量请求不进入 JSON mode（§6/§23）。
+        // 兼容构造器（无 responseFormat 参数）必须保持 TEXT：存量请求不进入 JSON mode。
         final AiChatRequest legacy = new AiChatRequest(
                 "system-instructions", "player-evidence", "deepseek-v4-flash",
                 null, 4096, true, "max", "corr-legacy", "SINGLE_PLAYER_BATTLE");

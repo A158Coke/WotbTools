@@ -10,7 +10,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-/** KillerEvidence resolver (PR147 §11): settlement authority + live cross-check, fail-closed on conflict. */
+/** KillerEvidence resolver (settlement authority + live cross-check, fail-closed on conflict. */
 class KillerEvidenceResolverTest {
 
     private static PlayerResult victim(final long accountId, final Long settlementKiller) {

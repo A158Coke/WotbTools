@@ -455,13 +455,13 @@ class TeamReviewRetryContractTest {
                 .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode()))
                 .findFirst().orElseThrow();
         assertEquals(AiResponseFormat.JSON_OBJECT, teamCall2.responseFormat(),
-                "Team Call #2 必须显式请求 JSON_OBJECT（§7）");
+                "Team Call #2 必须显式请求 JSON_OBJECT");
 
-        // Call #1（Pre-Battle Strategic Prior）保持 TEXT，不得因本任务进入 JSON mode（§6/§25）。
+        // Call #1（Pre-Battle Strategic Prior）保持 TEXT，不得因本任务进入 JSON mode。
         final AiChatRequest preBattle = gateway.requests().stream()
                 .filter(r -> "PRE_BATTLE_STRATEGIC_PRIOR".equals(r.analysisMode()))
                 .findFirst().orElseThrow();
         assertEquals(AiResponseFormat.TEXT, preBattle.responseFormat(),
-                "PRE_BATTLE_STRATEGIC_PRIOR 必须保持 TEXT（§25）");
+                "PRE_BATTLE_STRATEGIC_PRIOR 必须保持 TEXT");
     }
 }

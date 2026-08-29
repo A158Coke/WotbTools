@@ -280,7 +280,7 @@ class TeamFactualConsistencyValidatorTest {
 
     @Test
     void tacticalOpinionsAreNeverJudged() {
-        // §12：Validator 不得判断战术观点；下面这些即使 Backend 无法数学证明也必须 PASS
+        // Validator 不得判断战术观点；下面这些即使 Backend 无法数学证明也必须 PASS
         final TeamReviewEnvelope env = envelope(
                 "我认为这局主要问题是第一次正面交换。应该先回收、保持分兵、换血，"
                         + "让血量更健康的车顶上去。这局的交换节奏比站位更重要。");
@@ -841,7 +841,7 @@ class TeamFactualConsistencyValidatorTest {
                 "RU 合法战术观点/建议必须 PASS");
     }
 
-    // =====  §7：claims coverage 最低契约 =====
+    // ===== claims coverage 最低契约 =====
 
     @Test
     void emptyClaimsWithDiagnosisEvidenceFails() {
@@ -883,7 +883,7 @@ class TeamFactualConsistencyValidatorTest {
 
     @Test
     void unknownEvidenceConflictCarriesReasonCode() {
-        // DEATH claim 引用不存在的证据 E999 → BINDING/UNKNOWN_EVIDENCE（§47 首要排障信号）
+        // DEATH claim 引用不存在的证据 E999 → BINDING/UNKNOWN_EVIDENCE（首要排障信号）
         final TeamReviewEnvelope env = envelope(
                 new TeamReviewEnvelope.PrimaryDiagnosis("主判断", "理由", List.of()),
                 "## 团队复盘\n\nWildCat 在1分52秒阵亡。",

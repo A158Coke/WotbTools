@@ -110,7 +110,7 @@ class EntityMethodDecoderTest {
 
     @Test
     void directDamageDecodesSingleVehicleHitEventWithExactFields() {
-        // PR147 §33: method8 direct = hit/result-feedback (VehicleHitEvent), NOT HP damage. The raw u16
+        // method8 direct = hit/result-feedback (VehicleHitEvent), NOT HP damage. The raw u16
         // "damage" is not an HP delta; authoritative HP loss = Type7 prop3 deltas.
         final ReplayDecodeResult result = decoder.decode(context,
                 damageMethodPacket(1, 10f, 0xFC6017, 0xFC6018, 0xFC6017,

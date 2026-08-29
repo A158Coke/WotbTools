@@ -266,7 +266,7 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 8. 变量：`requestId`（日志排查）
 
 > 不提供"解析失败率 / 成功失败"面板：解析失败以 `ReplayProcessingResult.status=FAILED` 返回而非抛异常，
-> 异常判定不可靠，故不统计 `wotb_replay_results_total`（见 §10 指标清单）。
+> 异常判定不可靠，故不统计 `wotb_replay_results_total`（见指标清单）。
 
 **Dashboard 面板清单**
 
@@ -352,7 +352,7 @@ sum by (type) (rate(wotb_ai_review_errors_total[5m]))
 > Loki 可直接按字段过滤。**一次 AI Review 从进入 backend 到结束可用单个 correlationId 重建完整时间线**
 >（correlationId 即前端 cancel 用的请求 id，见 `ReconstructionController`）。
 >
-> 日志纪律（§57）：只记录低基数 metadata——严禁 prompt / completion / reviewMarkdown / API key /
+> 日志纪律：只记录低基数 metadata——严禁 prompt / completion / reviewMarkdown / API key /
 > Authorization / 回放原始内容 / 用户上传文件内容 / 明文昵称（身份用 account hash / vehicle id）。
 
 #### 追一单
@@ -391,30 +391,30 @@ event=ai_review_finished correlationId=... result=SUCCESS durationMs=...
 
 | event | 关键字段 | 含义 |
 |---|---|---|
-| `ai_review_sse_opened` / `ai_review_sse_completed` | durationMs | SSE 生命周期（§53） |
-| `ai_review_started` | language, fileCount | 请求开始（§40） |
-| `ai_review_finished` | result=SUCCESS/FAILED/CANCELLED, errorCode（FAILED）, source（CANCELLED）, durationMs | **唯一终态，exactly once**（§54；每个真正开始执行的 worker 请求恰好一次；FAILED 带稳定 errorCode，CANCELLED 带稳定 source） |
-| `ai_review_failed` | errorCode, exceptionClass, elapsedMs | 失败诊断事件（§56，随 FAILED 终态一起出现，非终态本身） |
-| `ai_review_cancelled` | source=CANCELLED_WHILE_QUEUED / SSE_DISCONNECT | 取消诊断事件（§52，INFO 非 ERROR，随 CANCELLED 终态一起出现） |
-| `ai_upstream_call_started` | stage, mode, attempt, model, responseFormat, thinking, maxOutputTokens, remainingBudgetSec | 每次上游调用（§42） |
-| `ai_upstream_call_completed` | attempt, durationMs, promptTokens, completionTokens, totalTokens | 上游成功（§42；不记录硬编码 providerStatus——成功响应无真实 transport status metadata，真实 status 只在失败事件） |
-| `ai_upstream_call_failed` | attempt, errorCode, providerStatus, retryable | 上游终态失败（§42/§56；providerStatus 为异常携带的真实 status） |
-| `ai_transport_retry` | stage, retryNumber, reason, backoffMs | 传输层退避重试（§43，与 validation retry 区分；retryNumber 为 1 基重试序号，retryNumber=1 → 下一次上游调用 attempt=2） |
-| `ai_prompt_budget` | stage, attempt, estimatedInputTokens, maxOutputTokens, contextWindowTokens, remainingBudgetSec | 发送前预算（§49，token amplification 观测） |
-| `team_review_grounding_ready` | factsTotal, deathFacts, aliveTransitions, focusWindows, positionSnapshots, enemyPositionFacts | grounding 事实计数（§48） |
-| `team_review_validation_attempt_completed` | attempt, promptTokens, completionTokens, cumulativePromptTokens, cumulativeCompletionTokens | 每轮 token 累计（§50） |
-| `team_review_parse_result` | attempt, responseFormat, result=PASS/FAIL, reason | parser 结果分类（§44） |
-| `team_review_validation` | attempt, result=PASS/FAIL, conflictCount, checks, durationMs | validator 结果（§46） |
-| `team_review_validation_conflict`（DEBUG） | attempt, check, reasonCode | 冲突机器分类明细（§47） |
-| `ai_validation_retry` | stage, validationAttempt, reason | 业务返工重试（§43） |
-| `team_review_completed` | validationAttempts, totalPromptTokens, totalCompletionTokens, durationMs, result | Team Call #2 阶段汇总（§50） |
+| `ai_review_sse_opened` / `ai_review_sse_completed` | durationMs | SSE 生命周期 |
+| `ai_review_started` | language, fileCount | 请求开始 |
+| `ai_review_finished` | result=SUCCESS/FAILED/CANCELLED, errorCode（FAILED）, source（CANCELLED）, durationMs | **唯一终态，exactly once**（每个真正开始执行的 worker 请求恰好一次；FAILED 带稳定 errorCode，CANCELLED 带稳定 source） |
+| `ai_review_failed` | errorCode, exceptionClass, elapsedMs | 失败诊断事件（随 FAILED 终态一起出现，非终态本身） |
+| `ai_review_cancelled` | source=CANCELLED_WHILE_QUEUED / SSE_DISCONNECT | 取消诊断事件（INFO 非 ERROR，随 CANCELLED 终态一起出现） |
+| `ai_upstream_call_started` | stage, mode, attempt, model, responseFormat, thinking, maxOutputTokens, remainingBudgetSec | 每次上游调用 |
+| `ai_upstream_call_completed` | attempt, durationMs, promptTokens, completionTokens, totalTokens | 上游成功（不记录硬编码 providerStatus——成功响应无真实 transport status metadata，真实 status 只在失败事件） |
+| `ai_upstream_call_failed` | attempt, errorCode, providerStatus, retryable | 上游终态失败（providerStatus 为异常携带的真实 status） |
+| `ai_transport_retry` | stage, retryNumber, reason, backoffMs | 传输层退避重试（与 validation retry 区分；retryNumber 为 1 基重试序号，retryNumber=1 → 下一次上游调用 attempt=2） |
+| `ai_prompt_budget` | stage, attempt, estimatedInputTokens, maxOutputTokens, contextWindowTokens, remainingBudgetSec | 发送前预算（token amplification 观测） |
+| `team_review_grounding_ready` | factsTotal, deathFacts, aliveTransitions, focusWindows, positionSnapshots, enemyPositionFacts | grounding 事实计数 |
+| `team_review_validation_attempt_completed` | attempt, promptTokens, completionTokens, cumulativePromptTokens, cumulativeCompletionTokens | 每轮 token 累计 |
+| `team_review_parse_result` | attempt, responseFormat, result=PASS/FAIL, reason | parser 结果分类 |
+| `team_review_validation` | attempt, result=PASS/FAIL, conflictCount, checks, durationMs | validator 结果 |
+| `team_review_validation_conflict`（DEBUG） | attempt, check, reasonCode | 冲突机器分类明细 |
+| `ai_validation_retry` | stage, validationAttempt, reason | 业务返工重试 |
+| `team_review_completed` | validationAttempts, totalPromptTokens, totalCompletionTokens, durationMs, result | Team Call #2 阶段汇总 |
 
-#### parser 失败分类（§44，低基数枚举）
+#### parser 失败分类（低基数枚举）
 
 `EMPTY_OUTPUT` · `INVALID_JSON` · `MISSING_PRIMARY_DIAGNOSIS` · `MISSING_REVIEW_MARKDOWN` · `INVALID_CLAIMS` ·
 `UNKNOWN_CLAIM_TYPE` · `INVALID_MACHINE_FIELD_TYPE` · `MISSING_REQUIRED_MACHINE_FIELD` · `TOO_MANY_CLAIMS` · `TOO_MANY_EVIDENCE_IDS`
 
-#### validator conflict reasonCode（§47，机器分类）
+#### validator conflict reasonCode（机器分类）
 
 `UNKNOWN_EVIDENCE` · `EVIDENCE_TYPE_MISMATCH` · `SUBJECT_MISMATCH` · `TIME_MISMATCH` · `REGION_MISMATCH` ·
 `KNOWLEDGE_MISMATCH` · `COUNT_MISMATCH` · `UNSUPPORTED_HARD_FACT` · `TEMPORAL_OWNERSHIP` · `IDENTITY_AMBIGUITY` ·

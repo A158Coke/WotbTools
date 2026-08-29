@@ -32,7 +32,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
     private static final long RECORDER_ACCOUNT = 1L;
     private static final long ENEMY_ACCOUNT = 2L;
 
-    /** §12/§13 权威掉血 fixture：recorder 对 enemy 掉 900、enemy 对 recorder 掉 640（Type-7 推导 + 单通知归属）。 */
+    /** 权威掉血 fixture：recorder 对 enemy 掉 900、enemy 对 recorder 掉 640（Type-7 推导 + 单通知归属）。 */
     private static ReplayReconstruction killRecon() {
         return new ReplayReconstruction(null, null, 120f, 0f, List.of(),
                 List.of(
@@ -46,7 +46,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
                         new com.wotb.core.replay.event.HealthChangedEvent(8, new ReplayTimestamp(12f, null), 7, DecodeConfidence.EXACT, 1, 1360, null, true)),
                 List.of(), null, null, null);
     }
-    /** §P0-5 canonical kill attribution fixture: both sides terminal + reliable cross-attribution. */
+    /** canonical kill attribution fixture: both sides terminal + reliable cross-attribution. */
     private static ReplayReconstruction dualKillRecon() {
         return new ReplayReconstruction(null, null, 120f, 0f, List.of(),
                 List.of(
@@ -145,7 +145,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
 
     @Test
     void killAttributionNamesBothDirections() {
-        // §P0-5: killer identity derives from canonical terminal evidence (combat.destroyed());
+        // killer identity derives from canonical terminal evidence (combat.destroyed());
         // the stale PlayerResult.killVictims model is removed.
         final Battle battle = battleWithRecorderAndEnemy();
         final PlayerResult recorder = battle.players.get(0);

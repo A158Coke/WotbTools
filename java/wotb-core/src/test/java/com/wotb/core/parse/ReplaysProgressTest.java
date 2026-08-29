@@ -10,7 +10,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-/** 回归：collect 的逐文件进度回调每个输入恰好回调一次，结果类别正确（§11/§12）。 */
+/** 回归：collect 的逐文件进度回调每个输入恰好回调一次，结果类别正确。 */
 class ReplaysProgressTest {
 
     @Test
