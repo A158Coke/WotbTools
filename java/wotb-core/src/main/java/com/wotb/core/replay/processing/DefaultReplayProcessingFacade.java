@@ -3,6 +3,7 @@ package com.wotb.core.replay.processing;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
+import com.wotb.core.parse.ParsedReplay;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.util.PlayerResultFormat;
 import com.wotb.core.replay.evidence.ObservedMaxHp;
@@ -87,12 +88,27 @@ public class DefaultReplayProcessingFacade {
         final String contentHash = sha256(input.bytes());
         final byte[] data = input.bytes();
 
+        // PR162/P0-2: 归档解压 + settlement + header 版本只解析一次，供战绩解析与重建共享。
+        final ParsedReplay parsed;
+        try {
+            parsed = ParsedReplay.read(data);
+        } catch (Exception e) {
+            return new ReplayProcessingResult(
+                    input.name(), ReplayProcessingStatus.FAILED,
+                    new ReplayIdentity(contentHash, null, null, null, null, null),
+                    null, null,
+                    ReplayProcessingDiagnostics.summaryOnly(false),
+                    ReplayProcessingCapabilities.NONE,
+                    ReplayProcessingError.of("ARCHIVE_PARSE_FAILED", e.getMessage()),
+                    null);
+        }
+
         // 1. 战绩解析
         Battle battle = null;
         boolean summaryOk = false;
         if (options.parseSummary()) {
             try {
-                battle = ReplayParser.parse(data);
+                battle = ReplayParser.parse(parsed);
                 summaryOk = true;
             } catch (Exception e) {
                 // 战绩解析失败是致命错误（无权威数据），直接返回 FAILED
@@ -117,7 +133,7 @@ public class DefaultReplayProcessingFacade {
         if (options.reconstructTimeline()) {
             try {
                 final ReplayReconstructionContext ctx = buildContext(battle);
-                reconstruction = reconstructionService.reconstruct(data, ctx);
+                reconstruction = reconstructionService.reconstruct(parsed, ctx);
                 streamOk = true;
                 reconOk = true;
                 recorderParticipantResolved = isRecorderParticipantResolved(reconstruction);

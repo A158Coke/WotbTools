@@ -69,46 +69,17 @@ public final class ReplayParser {
         return meta.get("arenaBonusType").asInt();
     }
 
-    /**
-     * 从 data.wotreplay 文件头读取 clientVersion 字符串 —— 唯一权威 header 解析
-     * ({@link ReplayStreamHeader})。缺失/非法头部 → null（调用方按未知版本 fail-closed）。
-     */
-    private static String readClientVersionFromHeader(final byte[] data) {
-        if (data == null) {
-            return null;
-        }
-        try {
-            return ReplayStreamHeader.parse(data).clientVersion();
-        } catch (final ReplayHeaderException e) {
-            return null;
-        }
-    }
-
-    /**
-     * PR147 settlement version gate (P0-3): whether the battle_results.dat numeric semantics of
-     * {@code #24/#25/#105} and {@code root2/4/5} are affirmed (11.19 current family, plus the explicit
-     * 11.18 legacy family that repository fixtures independently proved). Unknown/future versions are
-     * <b>not</b> affirmed → the parser raw-preserves the settlement fields and fails closed on every
-     * derived conclusion (survived / death time / killer id).
-     *
-     * <p>This is a parse-local copy of the {@code com.wotb.core.replay.decoder.ReplayVersionGate} prefix
-     * set. The parse package cannot depend on {@code replay.*} (CoreArchitectureTest rejects the cycle);
-     * consolidating both onto a neutral package is tracked as the stream-header version-grammar debt.</p>
-     */
-    private static boolean isAffirmedSettlementSchema(final String clientVersion) {
-        final String v = clientVersion == null ? "" : clientVersion.trim().toLowerCase(java.util.Locale.ROOT);
-        return v.startsWith("11.19.0_china") || v.startsWith("11.18.0_china");
-    }
-
     public static Battle parse(final byte[] replayBytes) throws IOException {
         try {
-            return parse(unzip(replayBytes));
+            return parse(ParsedReplay.read(replayBytes));
         } catch (final IllegalArgumentException | IllegalStateException e) {
             throw new IOException("Invalid replay data: " + e.getMessage(), e);
         }
     }
 
-    private static Battle parse(final Map<String, byte[]> entries) throws IOException {
+    /** PR162/P0-2: 消费 canonical parse context（归档解压 + settlement 均只一次）。 */
+    public static Battle parse(final ParsedReplay parsed) throws IOException {
+        final Map<String, byte[]> entries = parsed.entries();
         final JsonNode meta;
         if (entries.containsKey("meta.json")) {
             final JsonNode parsedMeta = MAPPER.readTree(entries.get("meta.json"));
@@ -120,20 +91,18 @@ public final class ReplayParser {
             meta = MAPPER.createObjectNode();
         }
         // PR147 settlement version gate (P0-3): the 11.19/11.18 numeric semantics of #24/#25/#105 and
-        // root2/4/5 are version-scoped. Read the authoritative clientVersion from data.wotreplay BEFORE
-        // deriving any settlement conclusion so an unknown/future version is raw-preserved rather than
-        // interpreted with current-version settlement numerics (fail-closed).
-        final byte[] eventData = entries.get("data.wotreplay");
-        final String clientVersion = readClientVersionFromHeader(eventData);
-        final boolean settlementSchemaAffirmed = isAffirmedSettlementSchema(clientVersion);
-        final byte[] dat = entries.get("battle_results.dat");
-        if (dat == null) {
-            throw new IOException("Replay is missing battle_results.dat");
+        // root2/4/5 are version-scoped. clientVersion 与 settlement facts 都来自共享 parse context
+        // （ParsedReplay，解码一次）。
+        final String clientVersion = parsed.clientVersion();
+        final boolean settlementSchemaAffirmed = SettlementFacts.isAffirmedFamily(clientVersion);
+        final SettlementFacts facts = parsed.settlementFacts();
+        if (facts == null) {
+            if (parsed.battleResultsDat() == null) {
+                throw new IOException("Replay is missing battle_results.dat");
+            }
+            // 保留既有稳定错误契约：malformed settlement → "Invalid replay data: <cause>"。
+            throw new IOException("Invalid replay data: " + parsed.settlementError());
         }
-
-        // battle_results.dat 的唯一 production 解码权威（SettlementFacts）：ReplayParser 与
-        // ReplayReconstructionService 都经此消费，不再各自 PickleReader.loads + Protobuf.decode。
-        final SettlementFacts facts = SettlementFacts.decode(dat);
         final Object arenaId = facts.arenaId();
         final Map<Integer, List<Object>> root = facts.root();
 
@@ -177,6 +146,9 @@ public final class ReplayParser {
         // PR147: field25 killerID 与 #301 outer field1 用同一个 result/entity-id namespace；先收集
         // result/entity-id -> accountId，再回填 killerAccountId（killerID 绝非 accountId）。
         final Map<Long, Long> resultToAccount = new HashMap<>();
+        // PR162/P0-2.1: 每个 #301 result 只 decode 一次为中间结构，随后 resultId 映射与 PlayerResult
+        // 都从同一份 decoded structure 构建，避免重复 decode raw bytes。
+        final List<DecodedResult> decodedResults = new ArrayList<>();
         for (final Object rraw : resultEntries) {
             if (!(rraw instanceof byte[] resultBytes)) {
                 throw new IOException("Invalid battle protobuf: field 301 must be length-delimited");
@@ -188,13 +160,11 @@ public final class ReplayParser {
             if (resultEntityId > 0 && accountId > 0) {
                 resultToAccount.put(resultEntityId, accountId);
             }
+            decodedResults.add(new DecodedResult(r, info));
         }
-        for (final Object rraw : resultEntries) {
-            if (!(rraw instanceof byte[] resultBytes)) {
-                throw new IOException("Invalid battle protobuf: field 301 must be length-delimited");
-            }
-            final Map<Integer, List<Object>> r = Protobuf.decode(resultBytes);
-            final Map<Integer, List<Object>> info = Protobuf.message(r, 2);
+        for (final DecodedResult decoded : decodedResults) {
+            final Map<Integer, List<Object>> r = decoded.r();
+            final Map<Integer, List<Object>> info = decoded.info();
             final PlayerResult pr = new PlayerResult();
             pr.accountId = Protobuf.firstLong(info, F_ACCOUNT, 0);
             pr.team = (int) Protobuf.firstLong(info, F_TEAM, 0);
@@ -461,7 +431,10 @@ public final class ReplayParser {
         }
     }
 
-    private static Map<String, byte[]> unzip(final byte[] data) throws IOException {
-        return ReplayArchiveReader.read(data);
+    /** PR162/P0-2.1：单条 #301 result 的一次解码结果（r=外层消息，info=#2 单场明细子消息）。 */
+    private record DecodedResult(
+            Map<Integer, List<Object>> r,
+            Map<Integer, List<Object>> info
+    ) {
     }
 }

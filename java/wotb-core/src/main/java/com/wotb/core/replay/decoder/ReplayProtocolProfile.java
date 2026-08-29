@@ -59,8 +59,9 @@ public final class ReplayProtocolProfile {
         UNKNOWN
     }
 
-    private static final String CURRENT_VERIFIED_FAMILY = "11.19.0_china";
-    private static final String LEGACY_VERIFIED_FAMILY = "11.18.0_china";
+    // 单一版本家族定义（PR162/P1-2）：与 SettlementFacts 共享，避免多处 prefix copy。
+    private static final String CURRENT_VERIFIED_FAMILY = com.wotb.core.parse.SettlementFacts.CURRENT_VERIFIED_FAMILY;
+    private static final String LEGACY_VERIFIED_FAMILY = com.wotb.core.parse.SettlementFacts.LEGACY_VERIFIED_FAMILY;
 
     private ReplayProtocolProfile() {
     }
