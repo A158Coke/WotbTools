@@ -15,7 +15,7 @@ import com.wotb.core.replay.stream.RawReplayPacket;
  *
  * <p>payload 未证明 → raw-preserve（{@code UNKNOWN} + 诊断），不产出具象的 {@code BattleEndedEvent}。</p>
  *
- * <p><b>§25 (PR162)</b>: Type14 stream-close is a Layer B structural invariant expressed through the
+ * <p><b>Type14</b>: Type14 stream-close is a Layer B structural invariant expressed through the
  * {@link ReplayProtocolProfile.Capability#TYPE14_STREAM_CLOSE} capability / {@link ReplayVersionGate
  * #type14StreamCloseAllowed}. The decoder never unconditionally reinterprets future payloads as a current
  * semantic; when the profile says {@code UNKNOWN} the registry raw-preserves (via {@code supports()}).

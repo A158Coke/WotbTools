@@ -121,7 +121,7 @@ final class EntityIndex {
                             .add(new TurretSample(t, td.turretRelativeYawDeg()));
                 }
                 case DamageEvent d -> {
-                    // §P0-3: DamageEvent raw value is NOT authoritative HP delta; never feed it into
+                    // DamageEvent raw value is NOT authoritative HP delta; never feed it into
                     // canonical FrameVehicle damage totals. Only register entity observation.
                     firstObserved.merge(d.attackerEid(), t, Math::min);
                     firstObserved.merge(d.victimEid(), t, Math::min);
@@ -133,7 +133,7 @@ final class EntityIndex {
                     }
                 }
                 case EntityCreatedEvent ec -> {
-                    // §P1-3: unproven/guessed entityId must not enter canonical firstObserved.
+                    // unproven/guessed entityId must not enter canonical firstObserved.
                     if (ec.entityId() > 0) {
                         firstObserved.merge(ec.entityId(), t, Math::min);
                     }

@@ -116,7 +116,7 @@ public final class ReplayProtocolProfile {
 
     /**
      * 11.18 legacy evidence（逐项可追）：
-     * PR147 research corpus 为 <b>11.18.0_china_apple + 11.19.0_china_apple</b>（protocol.md §2），并包含
+     * PR147 research corpus 为 <b>11.18.0_china_apple + 11.19.0_china_apple</b>（见 protocol.md），并包含
      * 11.18 样本对以下结构的独立证明：Type10（PositionDecoderTest 使用 11.18 上下文）、EntityProperty prop2
      * valueLen=2 九年来稳定（visibility/turret-direction）、EntityMethod method1 布局（EntityMethodDecoderVersionGateTest
      * 11.18）、entity-lifecycle（11.18 死亡/visibility 样本）、participant mapping（protocol.md #201 11.18 名册）、

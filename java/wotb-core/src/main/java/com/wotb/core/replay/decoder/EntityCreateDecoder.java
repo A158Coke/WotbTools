@@ -13,7 +13,7 @@ import java.util.List;
  * 建立玩家或控制实体，提取能够确定的实体初始化信息，
  * 保留不能理解的初始化属性，不要猜测未知字段。
  * </p>
- * <p><b>§P1-3</b>：entityId 格式未经 PR147/fixtures 证明，本 decoder 不生成 semantic entityId
+ * <p><b>entityId 格式未证明</b>：entityId 格式未经 PR147/fixtures 证明，本 decoder 不生成 semantic entityId
  * （恒为 UNRESOLVED -1），只 raw-preserve 载荷注入 {@link EntityCreatedEvent#unknownInitData()}
  * 让后续 decoder 用 PR147 证明后再语义化；canonical timeline 对 entityId &lt;= 0 一律不消费。</p>
  */
@@ -40,7 +40,7 @@ public class EntityCreateDecoder implements ReplayPacketDecoder {
         // 这里保守做法：记录未知初始化数据，不做猜测
 
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
-        // §P1-3: entityId 格式未被 PR147/fixtures 证明，不得猜测并送入 canonical timeline。这里只
+        // entityId 格式未被证明，不得猜测并送入 canonical timeline。这里只
         // raw-preserve 载荷，entityId 置为 UNRESOLVED(-1)（消费者对 <=0 一律视为未解析），绝不升级为
         // production truth。
         final int entityId = -1;

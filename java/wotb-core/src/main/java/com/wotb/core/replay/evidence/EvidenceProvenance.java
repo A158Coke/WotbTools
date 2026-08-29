@@ -1,7 +1,7 @@
 package com.wotb.core.replay.evidence;
 
 /**
- * 证据来源层级，对齐文档 §29 Authority Hierarchy：
+ * 证据来源层级，对齐 Authority Hierarchy：
  * Battle Result &gt; Replay deterministic event &gt; Reconstruction &gt; Backend Skill。
  */
 public enum EvidenceProvenance {

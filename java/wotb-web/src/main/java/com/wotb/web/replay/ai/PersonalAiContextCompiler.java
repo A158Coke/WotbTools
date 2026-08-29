@@ -13,7 +13,7 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Personal AI Context Compiler（docs/architecture/ai-review.md §34/§35/§36）：
+ * Personal AI Context Compiler：
  * 把 canonical BattleTimeline 编译为按时间的 Episode 化 compact 上下文，
  * 供 Call #2 主 prompt 使用（TACTICAL TIMELINE 段）。
  * <p>不 dump 全部帧；使用 Episode + Delta + Keyframe 压缩；只输出当时已知道的信息

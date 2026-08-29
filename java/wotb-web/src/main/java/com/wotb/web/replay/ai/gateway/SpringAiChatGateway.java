@@ -611,7 +611,7 @@ public class SpringAiChatGateway implements AiChatGateway {
             recordRetryOutcome(request.analysisMode(),
                     retryCount == 0 ? "no_retry" : "failure_after_retry");
         }
-        // 终态失败事件（docs/architecture/ai-review.md §42）：attempt 为该请求已执行的尝试数。
+        // 终态失败事件：attempt 为该请求已执行的尝试数。
         logUpstreamFailed(request, failure, retryCount + 1);
         return failure;
     }
@@ -686,9 +686,9 @@ public class SpringAiChatGateway implements AiChatGateway {
         options.model(model);
         options.maxTokens(request.maxOutputTokens());
         options.extraBody(extraBody);
-        // Per-request output format（docs/architecture/ai-review.md §8/§10）：JSON_OBJECT → 原生
+        // Per-request output format：JSON_OBJECT → 原生
         // response_format=json_object；TEXT 不发送 response_format（最小 provider surface，
-        // 绝不全局污染连接级 model options，§9）。
+        // 绝不全局污染连接级 model options）。
         if (request.responseFormat() == AiResponseFormat.JSON_OBJECT) {
             options.responseFormat(OpenAiChatModel.ResponseFormat.builder()
                     .type(OpenAiChatModel.ResponseFormat.Type.JSON_OBJECT)
@@ -948,7 +948,7 @@ public class SpringAiChatGateway implements AiChatGateway {
     }
 
 
-    // ===== AI Review 全链路事件日志（docs/architecture/ai-review.md §42/§43） =====
+    // ===== AI Review 全链路事件日志 =====
 
     private void logUpstreamStarted(final AiChatRequest request, final String model,
                                     final String correlationId, final int attempt,
@@ -982,7 +982,7 @@ public class SpringAiChatGateway implements AiChatGateway {
     }
 
     /**
-     * Transport retry（§43 与 validation retry 区分）：上游 429/5xx/连接失败后的退避重试。
+     * Transport retry（与 validation retry 区分）：上游 429/5xx/连接失败后的退避重试。
      * 由 Gateway 单点执行；业务层的 validation retry 用 ai_validation_retry 事件。
      * <p>字段语义：{@code retryNumber} = 本次退避重试的 1 基序号
      * （retryNumber=1 表示第一次重试，其后的下一次上游调用是 {@code attempt=2}）；
@@ -1014,7 +1014,7 @@ public class SpringAiChatGateway implements AiChatGateway {
                 "retryable", retryPolicy.isRetryable(failure)));
     }
 
-    /** analysisMode → 稳定 stage 标签（§42 口径，低基数）。 */
+    /** analysisMode → 稳定 stage 标签（低基数口径）。 */
     private static String stageOf(final String analysisMode) {
         return switch (analysisMode == null ? "" : analysisMode) {
             case "SINGLE_TEAM_BATTLE" -> "TEAM_CALL_2";

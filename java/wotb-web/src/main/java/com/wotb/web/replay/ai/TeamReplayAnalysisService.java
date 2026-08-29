@@ -133,7 +133,7 @@ public class TeamReplayAnalysisService {
         final List<String> extraLimitations = evidence != null ? evidence.limitations() : List.of();
         final TeamAiPromptBuilder.PromptInput input = TeamAiPromptBuilder.single(
                 context, extraLimitations, prior, config.estimator(), config.singleReplayMaxInputTokens());
-        // 兼容入口无已验证 timeline：Grounding Facts 只含结算可推导事实（§28 稳定模块不动）。
+        // 兼容入口无已验证 timeline：Grounding Facts 只含结算可推导事实（该稳定模块不动）。
         return callSingleTeamContext(context, input, language, startNanos, listener, null);
     }
 
@@ -295,7 +295,7 @@ public class TeamReplayAnalysisService {
 
     /**
      * Team Call #2 编排（Natural Coach 轮）：envelope 解析 + 事实一致性校验 + LLM 自修循环。
-     * <p>流程（docs/features/team-ai-review.md §13/§14）：Draft → validate；FAIL → targeted rewrite；
+     * <p>流程（Draft → validate；FAIL → targeted rewrite；
      * FAIL → full rewrite；仍 FAIL → fail-safe（{@code AI_REVIEW_GROUNDING_FAILED}）。
      * Backend 绝不代改句子；校验通过后才把 {@code reviewMarkdown} 以 token 增量转给前端
      * （避免把待改写的草稿暴露给用户）。</p>
@@ -324,7 +324,7 @@ public class TeamReplayAnalysisService {
                         context.perspectiveTeam());
         final String correlationId = AiRequestContext.correlationId();
         final long reviewStartNanos = nanoTimeSource.getAsLong();
-        // docs/features/team-ai-review.md §48：只记录低基数 grounding facts 计数（不打印事实内容）。
+        // 只记录低基数 grounding facts 计数（不打印事实内容）。
         logGroundingReady(facts, correlationId);
         final String groundingSection = TeamGroundingFacts.renderGroundingSection(facts);
         final String baseUser = input.content()
@@ -352,7 +352,7 @@ public class TeamReplayAnalysisService {
             final String raw = response.completionText();
             cumulativePromptTokens += response.inputTokens();
             cumulativeCompletionTokens += response.outputTokens();
-            // §50：每个 validation attempt 完成后记录累计 token（先记录每次调用，不重构 Gateway 聚合）。
+            // 每个 validation attempt 完成后记录累计 token（先记录每次调用，不重构 Gateway 聚合）。
             LOGGER.info(AiReviewEventLog.line("team_review_validation_attempt_completed", correlationId,
                     "attempt", attempt,
                     "promptTokens", response.inputTokens(),
@@ -425,7 +425,7 @@ public class TeamReplayAnalysisService {
                     "checks", checks,
                     "durationMs", elapsedMillis(validationStartNanos)));
             countValidationAttempt(hardConflicts ? "validation_failed" : "metadata_only_pass");
-            // docs/features/team-ai-review.md §47：DEBUG 级安全化冲突明细（只记录 check/reasonCode 低基数
+            // DEBUG 级安全化冲突明细（只记录 check/reasonCode 低基数
             // 分类，不记录完整冲突 message / AI 原句 / Grounding Fact 内容）。
             if (LOGGER.isDebugEnabled()) {
                 for (final TeamFactualConsistencyValidator.FactConflict c : conflicts) {
@@ -463,7 +463,7 @@ public class TeamReplayAnalysisService {
                         cumulativeCompletionTokens, "GROUNDING_FAILED", reviewStartNanos);
                 throw new AiUpstreamException("AI_REVIEW_GROUNDING_FAILED", 502, correlationId);
             }
-            // docs/features/team-ai-review.md §43：validation retry（业务返工）与 transport retry（网关退避）区分记录。
+            // validation retry（业务返工）与 transport retry（网关退避）区分记录。
             LOGGER.warn(AiReviewEventLog.line("ai_validation_retry", correlationId,
                     "stage", "TEAM_CALL_2",
                     "validationAttempt", attempt + 1,
@@ -539,7 +539,7 @@ public class TeamReplayAnalysisService {
                 config.contextWindowTokens(),
                 maxOutput,
                 config.promptSafetyMarginTokens());
-        // docs/features/team-ai-review.md §49：发送前记录 prompt 预算（~234k×3 的 token amplification 必须可观测）。
+        // 发送前记录 prompt 预算（~234k×3 的 token amplification 必须可观测）。
         LOGGER.info(AiReviewEventLog.line("ai_prompt_budget", AiRequestContext.correlationId(),
                 "stage", "TEAM_CALL_2",
                 "attempt", attempt,
@@ -547,7 +547,7 @@ public class TeamReplayAnalysisService {
                 "maxOutputTokens", maxOutput,
                 "contextWindowTokens", config.contextWindowTokens(),
                 "remainingBudgetSec", callTimeoutSec));
-        // docs/features/team-ai-review.md §7：仅 Team Call #2（SINGLE_TEAM_BATTLE Natural Coach Call #2）
+        // 仅 Team Call #2（SINGLE_TEAM_BATTLE Natural Coach Call #2）
         // 显式使用 JSON_OBJECT；输出格式属于 request contract，不由 analysisMode 隐式推断。
         final AiChatRequest request = new AiChatRequest(
                 systemPrompt,
@@ -643,9 +643,9 @@ public class TeamReplayAnalysisService {
         }
     }
 
-    // ===== AI Review 全链路事件日志与指标（docs/features/team-ai-review.md §44-§50、§16/§59） =====
+    // ===== AI Review 全链路事件日志与指标 =====
 
-    /** §48：只记录低基数 grounding facts 计数（不打印事实内容）。 */
+    /** 只记录低基数 grounding facts 计数（不打印事实内容）。 */
     private void logGroundingReady(final TeamGroundingFacts.GroundingFacts facts,
                                    final String correlationId) {
         LOGGER.info(AiReviewEventLog.line("team_review_grounding_ready", correlationId,
@@ -660,7 +660,7 @@ public class TeamReplayAnalysisService {
                         .filter(f -> TeamGroundingFacts.TYPE_ENEMY_POSITION.equals(f.type())).count()));
     }
 
-    /** §50/§54：Team Call #2 阶段汇总（终态以 controller 的 ai_review_finished 为准，exactly once）。 */
+    /** Team Call #2 阶段汇总（终态以 controller 的 ai_review_finished 为准，exactly once）。 */
     private void logTeamReviewCompleted(final String correlationId,
                                         final int validationAttempts,
                                         final long cumulativePromptTokens,
@@ -675,7 +675,7 @@ public class TeamReplayAnalysisService {
                 "result", result));
     }
 
-    /** §16/§59：Team Call #2 validation attempt 低基数指标（result=pass/parser_invalid/validation_failed）。 */
+    /** Team Call #2 validation attempt 低基数指标（result=pass/parser_invalid/validation_failed）。 */
     private void countValidationAttempt(final String result) {
         if (meterRegistry != null) {
             meterRegistry.counter("wotb_ai_team_review_validation_attempt_total", "result", result)
@@ -683,7 +683,7 @@ public class TeamReplayAnalysisService {
         }
     }
 
-    /** §59/P0-14：grounding conflict 低基数指标（check=稳定 checkId；severity=HARD/metadata）。 */
+    /** grounding conflict 低基数指标（check=稳定 checkId；severity=HARD/metadata）。 */
     private void countGroundingConflict(final String checkId, final String severity) {
         if (meterRegistry != null) {
             meterRegistry.counter("wotb_ai_team_review_grounding_conflict_total",

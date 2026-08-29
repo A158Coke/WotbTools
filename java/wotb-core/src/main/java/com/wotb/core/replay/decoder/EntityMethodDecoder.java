@@ -141,7 +141,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
             return new ReplayDecodeResult(DecodeStatus.PARTIAL, events, warnings);
         }
 
-        // §P1 / P1-6：method4 (round-finished winner/finishReason) 是 <b>closed numeric semantic</b>，只有
+        // method4 (round-finished winner/finishReason) 是 <b>closed numeric semantic</b>，只有
         // 11.19 current 证明 → 由 METHOD_SEMANTICS 门禁；<b>method8 (damage)</b> 是结构观测帧
         // （attacker/victim/timing/raw value，11.18+11.19 证明 structural layout），在 subtype8 branch 内部
         // 用 damageLayoutAllowed 单独门禁 —— 这里不把它用 broad METHOD_SEMANTICS 拦死（否则 11.18 连
@@ -291,7 +291,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                     final int currentHpRaw = readU16LE(payload, 12);
                     final int sourceEntity = readI32LE(payload, 14);
                     final int causeFlag = payload[18] & 0xFF;
-                    // §P0-1: version-scoped HP raw classification done exactly once at the decoder
+                    // version-scoped HP raw classification done exactly once at the decoder
                     // boundary (knows clientVersion); consumers consume the propagated rawState and
                     // never re-classify (0xFFFE gated by verifiedFffeTerminalAllowed only).
                     final HpRawState hpRawState = HpRawState.classify(currentHpRaw,
@@ -299,7 +299,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                                     ReplayProtocolProfile.Capability.TERMINAL_FFFD)
                                     == ReplayProtocolProfile.Level.VERIFIED,
                             ReplayVersionGate.verifiedFffeTerminalAllowed(context.clientVersion()));
-                    // §P0-1: method1 cause semantics are PR147 closed semantics proven only on the
+                    // method1 cause semantics are closed semantics proven only on the
                     // current version family. 11.18 proves only the layout -> keep raw causeFlag,
                     // semantic UNKNOWN (no independent cause-semantics proof for 11.18).
                     final VehicleHealthStateEvent.Cause cause =
@@ -328,7 +328,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 }
             }
             case SUBTYPE_ROUND_FINISHED -> {
-                // §P1/PR162：method4 是 class-colliding index。Avatar method4（2-byte）= RoundFinished；
+                // method4 是 class-colliding index。Avatar method4（2-byte）= RoundFinished；
                 // Vehicle method4（16-byte）= vehicle-to-vehicle collision/contact。必须由 registry 类证据分派，
                 // 绝不因 argLen 猜测 class。其余（shape/class 不符）→ UnknownReplayEvent。
                 final EntityClass entityClass = entityClassFor(context, subType, entityId);
@@ -667,7 +667,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                     attackerEid, effectiveVictim, null, null, "DAMAGE_METHOD_VARIANT"));
         }
 
-        // PR147 §33: the method8 21-byte variant is a hit/result-feedback family — its packed bytes are
+        // the method8 21-byte variant is a hit/result-feedback family — its packed bytes are
         // NOT HP damage. Produce VehicleHitEvent (attacker/victim + primary/secondary result + packed
         // metadata + conservative penetrationFamily); authoritative HP loss comes from Type7 prop3 deltas.
         final int primary = body[13] & 0xFF;

@@ -17,7 +17,7 @@ import java.util.List;
  * 长度不符 / zeroTail 非零 → {@link UnknownReplayEvent}（UNKNOWN）+ raw-preserve，
  * 绝不把未证明的变体升级为 EXACT semantic announcement。</p>
  *
- * <p><b>版本门禁（§P0-2）</b>：虽然结构属 container 级，但把它解为「物化预告」并驱动 canonical AoI
+ * <p><b>版本门禁</b>：虽然结构属 container 级，但把它解为「物化预告」并驱动 canonical AoI
  * 仍需当前 canonical + 显式证明的 11.18 legacy
  * （{@link ReplayVersionGate#entityLifecycleLayoutAllowed}）；未知/未来版本 raw-preserve
  * （UNKNOWN + 诊断），不无条件产出 EXACT announcement。</p>
@@ -43,7 +43,7 @@ public class MaterializationAnnouncedDecoder implements ReplayPacketDecoder {
                     List.of(new ReplayDecodeWarning("TRUNCATED_PAYLOAD",
                             "Type33 packet too short: " + payload.length)));
         }
-        // §P0-2: Type33 announcement is version-scoped despite being container-level. Unknown/future
+        // Type33 announcement is version-scoped despite being container-level. Unknown/future
         // versions must raw-preserve; never unconditionally decode into an EXACT announcement.
         if (!ReplayVersionGate.entityLifecycleLayoutAllowed(context.clientVersion())) {
             final ReplayTimestamp tsUnsupported = new ReplayTimestamp(packet.rawClockSec(), null);
@@ -55,7 +55,7 @@ public class MaterializationAnnouncedDecoder implements ReplayPacketDecoder {
                             "Type33 announcement layout not affirmed: " + context.clientVersion())));
         }
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
-        // §P1: only the exact proven shape produces an EXACT announcement.
+        // only the exact proven shape produces an EXACT announcement.
         if (payload.length != EXACT_PROVEN_LEN) {
             return new ReplayDecodeResult(DecodeStatus.PARTIAL,
                     List.of(new UnknownReplayEvent(packet.sequence(), ts, packet.type(),

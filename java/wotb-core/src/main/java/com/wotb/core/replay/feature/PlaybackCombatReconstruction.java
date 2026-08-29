@@ -92,7 +92,7 @@ public final class PlaybackCombatReconstruction {
                 samples.computeIfAbsent(account, k -> new ArrayList<>())
                         .add(new double[]{t, current});
             } else if (event instanceof VehicleHitEvent hit) {
-                // PR147 §33: method8 is a hit/result-feedback family (VehicleHitEvent), NOT a damage number.
+                // method8 is a hit/result-feedback family (VehicleHitEvent), NOT a damage number.
                 // A proven hit is the attacker→victim engagement signal for attribution; authoritative HP
                 // loss is derived from the Type7 samples (above), never from a method8 magnitude.
                 if (hit.confidence() != DecodeConfidence.EXACT) {

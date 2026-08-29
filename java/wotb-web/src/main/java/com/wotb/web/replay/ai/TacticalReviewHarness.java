@@ -26,14 +26,14 @@ import org.springframework.stereotype.Service;
 import java.util.function.LongSupplier;
 
 /**
- * AI Review Harness 双 Call 编排器（文档 §25/§30）：
+ * AI Review Harness 双 Call 编排器：
  * Call #1（赛前战略基线）→ Backend Evidence Skills → Call #2（Tactical Review）。
  * <p>随机战斗个人复盘不评判 MVP/战犯；Team Autopsy（战犯/MVP）只应用于
  * team perspective（训练房/联赛团队复盘），由 {@link TeamReplayAnalysisService}
  * 以结算级独立 TEAM_AUTOPSY 调用执行。</p>
  * <p>降级阶梯：非 ZH / 特征不可用 / Call #1 失败 / 无证据 → 旧路径（保持现有单 Call
  * 路径为兜底，用户可感知行为不倒退）。</p>
- * <p><b>hard reject（docs/architecture/ai-review.md §3，PR #102 已确认）</b>：无重建 /
+ * <p><b>hard reject</b>（canonical timeline 不可用）：无重建 /
  * 录像者未解析 / canonical timeline 不可用 → 抛 {@code AiTimelineUnusableException}，
  * <b>不</b>走旧路径、<b>不</b>调用 LLM（禁止 settlement-only fallback）。</p>
  */
@@ -118,7 +118,7 @@ public class TacticalReviewHarness {
         if (!preBattleService.isConfigured()) {
             return new HarnessOutcome(fallback(result, language, "AI_NOT_CONFIGURED", listener), null);
         }
-        // docs/architecture/ai-review.md §3：无 canonical timeline 可用 → 拒绝 AI Review（不走 settlement-only fallback）
+        // 无 canonical timeline 可用 → 拒绝 AI Review（不走 settlement-only fallback）
         if (result.reconstruction() == null) {
             LOGGER.info("Harness rejecting AI review: NO_RECONSTRUCTION (timeline unusable)");
             throw new AiTimelineUnusableException("NO_RECONSTRUCTION");

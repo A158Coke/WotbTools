@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * BattlePlaybackAdapter（docs/features/battle-playback.md §40/§42）：从 Canonical BattleTimeline 派生
+ * BattlePlaybackAdapter：从 Canonical BattleTimeline 派生
  * {@link MapOverview.Playback} 契约（duration / positionIntervals / hpSamples / directionSamples /
  * deathSec / events / pointsSamples），不再独立重扫 raw events 形成第二套事实模型。
  * <p>与 {@link MapOverviewBuilder} 同一 battle-relative 时钟口径；位置上报区间 =
@@ -49,7 +49,7 @@ public final class BattlePlaybackAdapter {
             return null;
         }
         final Long recorderAccount = recorderAccountId(battle);
-        // 战斗事实重建（§11–§17 共享推导，MapOverviewBuilder 同源）：权威 HP loss + 击毁
+        // 战斗事实重建（共享推导，MapOverviewBuilder 同源）：权威 HP loss + 击毁
         final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
                 com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
                         timeline.events(), mapping, timeline.battleStartRawClockSec(), duration);
@@ -116,7 +116,7 @@ public final class BattlePlaybackAdapter {
                         com.wotb.core.replay.feature.PlaybackCombatReconstruction
                                 .observedHpLossAt(combat, victim, t)));
             } else if (event instanceof VehicleHitEvent hit) {
-                // PR147 §33: method8 is a hit/result-feedback family (VehicleHitEvent); a proven hit is the
+                // method8 is a hit/result-feedback family (VehicleHitEvent); a proven hit is the
                 // engagement marker. Authoritative HP-loss (Type7 delta) is the DAMAGE value.
                 final long victim = accountOf(hit.victimEntityId(), mapping);
                 if (victim <= 0) {
@@ -359,7 +359,7 @@ public final class BattlePlaybackAdapter {
     }
 
     /**
-     * 车辆类型统一 fallback（docs/features/battle-playback.md §8）：replay/player 权威 tankType →
+     * 车辆类型统一 fallback：replay/player 权威 tankType →
      * tankopedia class（英文，API 纯英文契约）→ 空串（前端展示 —）。
      */
     private static String tankTypeOf(final PlayerResult player) {
