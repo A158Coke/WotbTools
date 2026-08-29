@@ -92,11 +92,23 @@ const LEAGUE_COLUMNS = [
   { key: 'league_shooting_score', max: 100 },
 ]
 
-function mountDrawer(context, player, extraProps = {}) {
+function mountDrawer(context, player, extraProps = {}, mountOptions = {}) {
+  const defaultScopePlayers = context?.scope === 'summary'
+    ? [{ cells: { account_id: player?.accountId }, league: { dimensionMeans: player?.dimensionMeans } }]
+    : [{ cells: {
+        account_id: player?.accountId,
+        league_rating: player?.rating,
+        ...Object.fromEntries((player?.dimensionScores || []).map((value, index) => [
+          ['league_damage_score', 'league_assist_score', 'league_kill_score', 'league_exchange_score',
+            'league_blocked_score', 'league_survival_score', 'league_shooting_score'][index], value,
+        ])),
+      } }]
+  const stubs = { teleport: true }
+  if (!mountOptions.realRadar) stubs.PlayerRatingRadar = RADAR_STUB
   return mount(PlayerDetailDrawer, {
-    props: { context, player, leagueColumns: LEAGUE_COLUMNS, ...extraProps },
+    props: { context, player, leagueColumns: LEAGUE_COLUMNS, scopePlayers: defaultScopePlayers, ...extraProps },
     global: {
-      stubs: { PlayerRatingRadar: RADAR_STUB, teleport: true },
+      stubs,
       mocks: { $t: key => key },
     }
   })
@@ -336,6 +348,26 @@ describe('PlayerDetailDrawer reference average', () => {
     expect(ref.find(r => r.key === 'league_damage_score').rawValue).toBeCloseTo(260, 6)
     expect(wrapper.find('.radar-stub').attributes('data-reference-label')).toBe('league.drawer.battle_average')
   })
+
+  it('battle relative scale puts exceptional dimensions outside 100 while ordinary RC stays inside', () => {
+    const keys = ['league_damage_score', 'league_assist_score', 'league_kill_score', 'league_exchange_score',
+      'league_blocked_score', 'league_survival_score', 'league_shooting_score']
+    const selected = Object.fromEntries(keys.map((key, index) => [key, BATTLE_PLAYER.dimensionScores[index]]))
+    const low = Object.fromEntries(keys.map((key, index) => [key, [20, 5, 5, 10, 5, 50, 10][index]]))
+    const scopePlayers = [
+      { cells: { account_id: 2001, league_rating: 812.6, ...selected } },
+      ...Array.from({ length: 13 }, (_, index) => ({
+        cells: { account_id: 3000 + index, league_rating: 400, ...low },
+      })),
+    ]
+    const wrapper = mountDrawer(
+      { scope: 'battle', accountId: 2001 }, BATTLE_PLAYER, { scopePlayers })
+    const values = radarValues(wrapper)
+    expect(values.league_damage_score.normalized).toBeGreaterThan(2 / 3)
+    expect(values.league_kill_score.normalized).toBeGreaterThan(2 / 3)
+    expect(values.league_survival_score.normalized).toBeLessThan(2 / 3)
+    expect(radarReference(wrapper).every(axis => axis.normalized === 0.5)).toBe(true)
+  })
 })
 
 describe('PlayerDetailDrawer navigation', () => {
@@ -402,7 +434,7 @@ describe('Drawer stacking / layout contract', () => {
 })
 
 describe('Radar scope-aware data source contract', () => {
-  it('Summary：League 七维取 dimensionMeans（非 median），归一化=raw/后端 max，displayValue 无百分比', () => {
+  it('Summary：League 七维取 dimensionMeans（非 median），相对自身 reference=75，displayValue 无百分比', () => {
     const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
     const values = radarValues(wrapper)
     expect(values.league_damage_score.rawValue).toBe(250)
@@ -411,8 +443,8 @@ describe('Radar scope-aware data source contract', () => {
     expect(values.league_blocked_score.rawValue).toBe(10)
     expect(values.league_survival_score.rawValue).toBe(50)
     expect(values.league_assist_score.rawValue).not.toBe(60)
-    expect(values.league_damage_score.normalized).toBeCloseTo(0.625, 3)
-    expect(values.league_assist_score.normalized).toBeCloseTo(0.4, 3)
+    expect(values.league_damage_score.normalized).toBe(0.5)
+    expect(values.league_assist_score.normalized).toBe(0.5)
     expect(values.league_assist_score.displayValue).toBe('40 / 100')
     expect(values.league_assist_score.displayValue).not.toContain('%')
   })
@@ -427,7 +459,7 @@ describe('Radar scope-aware data source contract', () => {
     const wrapper = mountDrawer({ scope: 'battle', accountId: 2001 }, battle)
     const values = radarValues(wrapper)
     expect(values.league_damage_score.rawValue).toBe(320)
-    expect(values.league_damage_score.normalized).toBeCloseTo(0.8, 3)
+    expect(values.league_damage_score.normalized).toBe(0.5)
     expect(values.league_assist_score.rawValue).not.toBe(2)
     expect(values.league_kill_score.rawValue).not.toBe(10)
   })
@@ -608,6 +640,24 @@ describe('Rating Profile PNG 导出不可变快照', () => {
     expect(card.textContent).toContain('IS-7')
     expect(card.querySelector('img.rp-vehicle-img')).toBeNull() // 纯文字降级
     expect(dl.downloadBlob).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('页面与 PNG 导出消费完全相同的 player/reference polygon points', async () => {
+    const wrapper = mountDrawer(
+      { scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER, {}, { realRadar: true })
+    await flushPromises()
+    const pagePlayerPoints = wrapper.find('.radar-data').attributes('points')
+    const pageReferencePoints = wrapper.find('.radar-ref').attributes('points')
+
+    await wrapper.find('[data-testid="export-profile"]').trigger('click')
+    await flushPromises()
+    const card = h2c.getCalls()[0][0]
+    expect(card.querySelector('.rp-data').getAttribute('points')).toBe(pagePlayerPoints)
+    expect(card.querySelector('.rp-ref').getAttribute('points')).toBe(pageReferencePoints)
+    expect([...card.querySelectorAll('.rp-scale')].map(node => node.textContent)).toEqual(['25', '50', '75', '100'])
+    expect(card.querySelectorAll('.rp-grid').length).toBe(3)
+    expect(card.querySelector('[class*="outer"]')).toBeNull()
     wrapper.unmount()
   })
 

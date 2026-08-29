@@ -1,19 +1,20 @@
 /**
  * Radar Metric Registry：
  * 选手画像雷达图只允许 League Rating 七维，禁止 contribution/kast/impact 进入 Radar。
- * 每个 League 维度自带 normalization contract：normalized = raw / 后端 column.max，clamp 0..1。
+ * 每个 League 维度保留 score/max 解释值；最终 Radar 几何由 radarScale 相对当前 reference 生成。
  * PlayerDetailDrawer 只消费本 registry + resolveRadarMetric，组件不硬编码业务公式。
  *
  * 架构边界：
  * - Radar selection 是 presentation-only 的 visualization preference；
  *   永远不能改变 final Rating（七维 League Rating 算法固定）。
  * - Table ColumnPicker 与 Radar Metric Picker 是两套完全独立的偏好。
- * - 禁止用 current batch max 做 normalization（同玩家同数值在不同 batch 形状必须一致）。
+ * - 禁止用 current batch max 做 normalization；最终几何相对当前 Battle/Global Average，
+ *   因而允许同一 raw score 随 reference cohort 改变形状，UI 必须明确比较范围。
  * - 禁止复制后端 domain max 常量：League 维度满分由后端 resp.league.columns
  *   （key/max 元数据）提供，resolveRadarMetric 必须消费该 metadata（缺失 → 该轴
  *   unavailable "--"，不伪造 0/0%）。
- * - V5 Evidence Adjustment 只作用于 Batch Player Rating，绝不影响 Radar 几何
- *   （dimensionMeans）；Radar 与 V5 严格分离。
+ * - V5 Evidence Adjustment 只作用于 Batch Player Rating，不改 Radar 的 raw dimensionMeans；
+ *   最终 relative geometry 由 radarScale 独立生成。
  */
 
 import { CW_DIM_KEYS } from './playerSummaryMerge.js'

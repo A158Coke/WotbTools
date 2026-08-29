@@ -252,8 +252,8 @@ Processing/Export task notification 必须低于 Modal stacking level；移动�
   「算法说明」按钮跳转进入，返回时经 KeepAlive 保留解析状态）。
 - `?view=playback-qa`：隐藏 QA 页（admin）。
 - `?view=rating-v2`：隐藏历史 Rating V2 灰度页（仅 `wotbtools-admin`，只读 READY Processing Job）；
-  选中结果表玩家后在右侧非模态抽屉查看 V2 六轴雷达（移动端为遮罩面板），几何归一化由后端 V2 只读投影提供，
-  不能影响 V2 总分或 League 雷达。
+  选中结果表玩家后在右侧非模态抽屉查看 V2 六轴雷达（移动端为遮罩面板）。V2/V5 共用前端相对表现标尺：
+  当前参考平均=75、2×平均=100、不可见显示上限=150；后端 raw score/评分公式与 API 不变。
 - `?view=ai-review`：AI 复盘独立能力页（登录后使用）。
 - `?view=battle-playback`：战局重建独立能力页（登录后使用）。
 - `?view=rating-v2`：隐藏历史 Rating V2 灰度页（仅 `wotbtools-admin`，只读 READY Processing Job）。
