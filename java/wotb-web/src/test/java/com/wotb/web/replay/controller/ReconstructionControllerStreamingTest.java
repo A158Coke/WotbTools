@@ -1,5 +1,35 @@
 package com.wotb.web.replay.controller;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wotb.web.replay.MapOverviewQueryService;
+import com.wotb.web.replay.ReplayLegacyEndpoints;
+import com.wotb.web.replay.ai.AiReplayAnalysisService;
+import com.wotb.web.replay.ai.AiReplayReviewService;
+import com.wotb.web.replay.ai.AiReviewStreamListener;
+import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
+import com.wotb.web.replay.ai.AllowedLanguage;
+import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
+import com.wotb.web.replay.ai.gateway.AiUpstreamException;
+import com.wotb.web.replay.dto.AnalyzeResponse;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -8,7 +38,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -16,36 +45,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-
-import com.wotb.web.replay.ai.AiReplayAnalysisService;
-import com.wotb.web.replay.MapOverviewQueryService;
-import com.wotb.web.replay.ai.AiReplayReviewService;
-import com.wotb.web.replay.ai.AiReviewStreamListener;
-import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
-import com.wotb.web.replay.ai.AllowedLanguage;
-import com.wotb.web.replay.ReplayLegacyEndpoints;
-import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
-import com.wotb.web.replay.ai.gateway.AiUpstreamException;
-import com.wotb.web.replay.dto.AnalyzeResponse;
-import java.util.List;
-import java.util.Map;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
-import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * {@code /api/replay/analyze} SSE 流式契约测试（真实异步 worker）：

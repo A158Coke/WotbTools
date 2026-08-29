@@ -1,10 +1,8 @@
 package com.wotb.core.replay.feature;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.TeamPerspectiveResolution;
-import com.wotb.core.replay.processing.TeamPerspectiveResolver;
-import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
@@ -12,6 +10,9 @@ import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.event.RoundFinishedEvent;
+import com.wotb.core.replay.processing.TeamPerspectiveResolution;
+import com.wotb.core.replay.processing.TeamPerspectiveResolver;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
@@ -263,7 +264,7 @@ class DefaultTeamBattleFeatureExtractorTest {
         final ReplayReconstruction reconstruction = new ReplayReconstruction(
                 null, null, 60f, 0f, participants, events,
                 List.of(), null,
-                new ReplayCoverage(true, events.size(), events.size(),
+                new ReplayCoverage(events.size(), events.size(),
                         0, 0, 0, 1.0, Map.of()),
                 null);
         final TeamPerspectiveResolution perspective =
@@ -625,13 +626,13 @@ class DefaultTeamBattleFeatureExtractorTest {
     void replayBattleEndKeepsItsSourceAndConfidence() {
         final Fixture fixture = fixture();
         fixture.battle().durationS = null;
-        // Non-zero battle start (raw 30): BattleEndedEvent raw 120 must convert to relative 90,
+        // Non-zero battle start (raw 30): RoundFinishedEvent raw 120 must convert to relative 90,
         // proving the conversion actually runs rather than being hidden by a zero clock.
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),
-                new BattleEndedEvent(
+                new RoundFinishedEvent(
                         2, new ReplayTimestamp(120f, null), 14,
-                        DecodeConfidence.INFERRED, 1));
+                        DecodeConfidence.INFERRED, 1, 1, RoundFinishedEvent.FinishCause.ELIMINATION));
 
         final KeyBattleEvent battleEnd = extractWithStart(fixture, events, 30f).keyEvents().stream()
                 .filter(event -> "BATTLE_END".equals(event.type()))
@@ -700,11 +701,11 @@ class DefaultTeamBattleFeatureExtractorTest {
     void replayBattleEndConvertedToBattleRelativeClock() {
         final Fixture fixture = fixture();
         fixture.battle().durationS = null;   // force replay-event battle end
-        // battle start raw = 60, BattleEndedEvent raw = 240 -> relative end 180.
+        // battle start raw = 60, RoundFinishedEvent raw = 240 -> relative end 180.
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),
-                new BattleEndedEvent(2, new ReplayTimestamp(240f, null), 14,
-                        DecodeConfidence.INFERRED, 1));
+                new RoundFinishedEvent(2, new ReplayTimestamp(240f, null), 14,
+                        DecodeConfidence.INFERRED, 1, 1, RoundFinishedEvent.FinishCause.ELIMINATION));
 
         final TeamBattleFeatureSet features = extractWithStart(fixture, events, 60f);
 
@@ -722,7 +723,7 @@ class DefaultTeamBattleFeatureExtractorTest {
     @Test
     void lastObservedClockFallbackIsBattleRelative() {
         final Fixture fixture = fixture();
-        fixture.battle().durationS = null;   // no authoritative duration, no BattleEndedEvent
+        fixture.battle().durationS = null;   // no authoritative duration, no RoundFinishedEvent
         // battle start raw = 60, last observed raw = 150 -> relative fallback 90.
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),
@@ -1006,8 +1007,7 @@ class DefaultTeamBattleFeatureExtractorTest {
             final List<? extends ReplayEvent> events,
             final Float battleStartRaw
     ) {
-        final ReplayCoverage coverage = new ReplayCoverage(
-                true, events.size(), events.size(), 0, 0, 0, 1.0, Map.of());
+        final ReplayCoverage coverage = new ReplayCoverage(events.size(), events.size(), 0, 0, 0, 1.0, Map.of());
         final ReplayReconstruction reconstruction = new ReplayReconstruction(
                 null, null, 300f, battleStartRaw,
                 fixture.participants(), List.copyOf(events), List.of(), null,
@@ -1122,6 +1122,10 @@ class DefaultTeamBattleFeatureExtractorTest {
         player.kills = 1;
         player.survived = survived;
         player.deathTimeMillis = deathTimeMillis;
+        if (!survived) {
+            player.deathTimeSource = deathTimeMillis > 0
+                    ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
+        }
         player.tankId = accountId + 1;
         player.tankName = "tank-" + accountId;
         return player;
@@ -1159,7 +1163,7 @@ class DefaultTeamBattleFeatureExtractorTest {
         return new PositionChangedEvent(
                 sequence, new ReplayTimestamp(time, null), 10,
                 confidence, entityId, 0, 0,
-                x, 0, z, 0, 0, 0, 0, 0, 0, (byte) 0);
+                x, 0, z, 0, 0, 0, 0, 0, 0, 0);
     }
 
     private static PositionChangedEvent positionWithElevation(
@@ -1203,8 +1207,7 @@ class DefaultTeamBattleFeatureExtractorTest {
             final Fixture fixture,
             final List<? extends ReplayEvent> events
     ) {
-        final ReplayCoverage coverage = new ReplayCoverage(
-                true, events.size(), events.size(), 0, 0, 0,
+        final ReplayCoverage coverage = new ReplayCoverage(events.size(), events.size(), 0, 0, 0,
                 1.0, Map.of());
         return new ReplayReconstruction(
                 null, null, 120f, 0f,

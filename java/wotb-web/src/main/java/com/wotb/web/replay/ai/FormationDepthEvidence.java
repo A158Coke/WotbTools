@@ -2,27 +2,26 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.TeamEntityIdentity;
-import com.wotb.core.replay.processing.TeamEntityMapper;
-import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.event.DamageEvent;
-import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.evidence.TankTacticalProfile;
 import com.wotb.core.replay.evidence.TankTacticalProfileRegistry;
+import com.wotb.core.replay.facts.AoiObservationSegment;
+import com.wotb.core.replay.facts.ReplayAoiLifecycle;
 import com.wotb.core.replay.feature.MapCoordinateProfile;
 import com.wotb.core.replay.feature.MapCoordinateResolution;
 import com.wotb.core.replay.feature.MapRegionResolver;
+import com.wotb.core.replay.processing.TeamEntityIdentity;
+import com.wotb.core.replay.processing.TeamEntityMapper;
+import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.PositionKnowledge;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,7 +41,8 @@ import java.util.Map;
  *       不是位置包数量）与双方距离加权火力覆盖分
  *       （F=Σ 火力权重/(1+d/100)，ownWeightedCoverageScore/enemyWeightedCoverageScore）及 ratio；
  *       exact 数学只消费 CURRENT 位置参考（knowledge 契约：friendly carry-forward=CURRENT；
- *       enemy 最后观测 age ≤ canonical 当前阈值=CURRENT，否则 LAST_KNOWN）；CURRENT 不完整时 fail-closed
+ *       enemy：phase end 位于 observed segment（canonical AoI）=CURRENT，位于 UNKNOWN_AOI gap / 跨 gap
+ *       =LAST_KNOWN）；CURRENT 不完整时 fail-closed
  *       只输出 presence + coverage completeness + ENEMY_LAST_KNOWN_POSITION_REFERENCES（独立信息，
  *       LAST_KNOWN 不得当作当前精确位置）；只给确定性测量，不输出 own/contested/enemy 权威控制权标签——
  *       哪方「实际控制/压制某区」由 LLM 判断。</li>
@@ -56,6 +56,12 @@ final class FormationDepthEvidence {
 
     /** 阶段窗口（battle-relative 秒）。 */
     record PhaseRange(String key, double start, double end) {
+    }
+
+    /**
+     * 单条位置样本：携带实体 provenance（entityId），供阶段窗口 / 观测段窗口与<b>同实体</b>样本相交
+     * （Item P1：跨实体生命周期时绝不把另一实体坐标并入同一 CURRENT）。 */
+    record PositionSample(int entityId, double t, double x, double z) {
     }
 
     static String renderSection(
@@ -82,8 +88,8 @@ final class FormationDepthEvidence {
             }
         }
 
-        // 每账号位置样本（双方）+ 队伍；t/x/z 三元组
-        final Map<Long, List<double[]>> tracks = new LinkedHashMap<>();
+        // 每账号位置样本（双方）+ 队伍；{entityId, t, x, z}（保留实体 provenance，Item P1）
+        final Map<Long, List<PositionSample>> tracks = new LinkedHashMap<>();
         final Map<Long, Integer> teamByAccount = new LinkedHashMap<>();
         for (final ReplayEvent event : recon.events()) {
             if (!(event instanceof PositionChangedEvent pos)) {
@@ -111,7 +117,7 @@ final class FormationDepthEvidence {
                 continue; // 阵亡后的服务器位置流残留不得进入阵型/控制权
             }
             tracks.computeIfAbsent(identity.accountId(), k -> new ArrayList<>())
-                    .add(new double[]{t, pos.x(), pos.z()});
+                    .add(new PositionSample(pos.entityId(), t, pos.x(), pos.z()));
             teamByAccount.putIfAbsent(identity.accountId(), identity.team());
         }
         if (tracks.isEmpty()) {
@@ -137,18 +143,14 @@ final class FormationDepthEvidence {
 
         final List<PhaseRange> phases = buildPhases(firstDamageTime(recon.events(), battleStart), battleEnd);
 
-        // entity -> 最后一次 EntityLeave（battle-relative）；carry-forward 位置 state 的终止边界
-        final Map<Integer, Double> lastLeaveByEntity = new HashMap<>();
-        for (final ReplayEvent event : recon.events()) {
-            if (event instanceof EntityRemovedEvent removed) {
-                final double t = relativeSec(removed, battleStart);
-                lastLeaveByEntity.merge(removed.entityId(), t, Math::max);
-            }
-        }
+        // Canonical AoI authority：AoI observed segment 索引（Type4 收段 / Type33+Type5 重入；段间 UNKNOWN_AOI）。
+        final Map<Integer, List<AoiObservationSegment>> aoiByEntity =
+                ReplayAoiLifecycle.indexByEntity(ReplayAoiLifecycle.build(
+                        recon.events(), battleStart == null ? null : battleStart.doubleValue()));
 
         final StringBuilder sb = new StringBuilder();
         for (final PhaseRange phase : phases) {
-            sb.append(renderPhase(phase, tracks, teamByAccount, perspectiveTeam, mapCode, playersByAccount, accountProfiles, mapping, lastLeaveByEntity));
+            sb.append(renderPhase(phase, tracks, teamByAccount, perspectiveTeam, mapCode, playersByAccount, accountProfiles, mapping, aoiByEntity));
         }
         return sb.isEmpty() ? "" : "\n=== FORMATION_DEPTH（阵型深度·确定性） ===\n" + sb;
     }
@@ -156,26 +158,26 @@ final class FormationDepthEvidence {
     /** 单阶段：前后排（深度三分位）+ 控制区域（九宫格计数优势）。 */
     private static String renderPhase(
             final PhaseRange phase,
-            final Map<Long, List<double[]>> tracks,
+            final Map<Long, List<PositionSample>> tracks,
             final Map<Long, Integer> teamByAccount,
             final int perspectiveTeam,
             final String mapCode,
             final Map<Long, PlayerResult> playersByAccount,
             final Map<Long, TankTacticalProfile> profiles,
             final TeamEntityMapping mapping,
-            final Map<Integer, Double> lastLeaveByEntity
+            final Map<Integer, List<AoiObservationSegment>> aoiByEntity
     ) {
         // 阶段位置参考（带知识状态）：每个 eligible 车辆解析 phase 位置 + CURRENT/LAST_KNOWN。
-        // friendly actual combatant（有 last position、无 EntityLeave、未阵亡）→ CURRENT（canonical carry-forward）；
-        // enemy → 最后观测 age ≤ canonical 当前阈值（POSITION_GAP_SEC）→ CURRENT，否则 LAST_KNOWN。
+        // canonical AoI authority：phase end 位于 observed segment 且位置参考来自本段 → CURRENT；
+        // 位于 UNKNOWN_AOI gap / 位置参考跨 gap → LAST_KNOWN（不再按 age>5s 推断，P0-1）。
         // LAST_KNOWN 永不进入 exact 阵型/覆盖数学（fail-closed），只作为独立信息输出（不 future-leak）。
         final Map<Long, PhasePositionReference> refsByAccount = new LinkedHashMap<>();
-        for (final Map.Entry<Long, List<double[]>> entry : tracks.entrySet()) {
+        for (final Map.Entry<Long, List<PositionSample>> entry : tracks.entrySet()) {
             final int team = teamByAccount.getOrDefault(entry.getKey(), 0);
             final PhasePositionReference ref = resolvePhasePosition(
                     entry.getKey(), team, entry.getValue(),
                     phase.start(), phase.end(), playersByAccount,
-                    mapping, lastLeaveByEntity, perspectiveTeam);
+                    mapping, aoiByEntity, perspectiveTeam);
             if (ref != null) {
                 refsByAccount.put(entry.getKey(), ref);
             }
@@ -355,92 +357,109 @@ final class FormationDepthEvidence {
     }
 
     /**
-     * 解析某账号在 [phaseStart, phaseEnd] 的阶段位置参考（canonical knowledge 同口径）：
+     * 解析某账号在 [phaseStart, phaseEnd] 的阶段位置参考（canonical knowledge 同口径）。
+     * <p><b>P0-1 禁止跨 UNKNOWN_AOI gap 混坐标</b>：先定位 phaseEnd 所属 canonical AoI
+     * observed segment（该 segment 的 entityId 即<b>目标实体</b>），再<b>只</b>允许该
+     * segment ∩ phase 的<b>同实体</b> position samples 进入 CURRENT 参考；
+     * 若 phaseEnd ∈ UNKNOWN_AOI gap（或当前 segment 内无样本且 last-known 跨 gap）→
+     * LAST_KNOWN / 不产出 CURRENT exact geometry。绝不把 gap 两边互相独立的 observed segments
+     * 混成一个 exact 坐标。</p>
+     * <p><b>Item P1 禁止跨实体混坐标</b>：位置样本必须保留 entity provenance（{@link PositionSample}），
+     * CURRENT / carry-forward 参考<b>只与该 segment 所属的同一实体</b>相交——同账号因 re-entry /
+     * 多生命周期出现的另一实体坐标绝不并入；目标实体无同源样本时 fail-closed 不产出 CURRENT。</p>
      * <ul>
-     *   <li>阶段内有观测样本 → 阶段均值（观测窗口事实），observedAt=最后阶段内样本时刻；</li>
-     *   <li>阶段内无样本 → carry-forward 最后位置（无 EntityLeave、未阵亡），observedAt=该样本时刻；</li>
-     *   <li>存活门禁：phase 末已阵亡 → 位置 state 终止 → null（不参与当前几何）；</li>
-     *   <li>knowledge：friendly actual combatant 无 EntityLeave 中断 → CURRENT（canonical carry-forward，
-     *       与 BattleTimelineBuilder 同口径）；enemy → 最后观测 age ≤ canonical 当前阈值
-     *       （{@link BattleTimelineBuilder#POSITION_GAP_SEC}）→ CURRENT，否则 LAST_KNOWN。</li>
+     *   <li>存活门禁：phase 末已阵亡 → null（不参与当前几何）；</li>
+     *   <li>segment ∩ phase 内有同实体样本 → 该窗口均值（CURRENT），observedAt=窗口内最后样本时刻；</li>
+     *   <li>segment ∩ phase 无同实体样本 → carry-forward 该实体最后位置；仅当其位于 phaseEnd 的
+     *       observed segment 内（不跨 gap）才 CURRENT，否则 LAST_KNOWN。</li>
      * </ul>
      */
     static PhasePositionReference resolvePhasePosition(
             final long accountId,
             final int team,
-            final List<double[]> track,
+            final List<PositionSample> samples,
             final double phaseStart,
             final double phaseEnd,
             final Map<Long, PlayerResult> playersByAccount,
             final TeamEntityMapping mapping,
-            final Map<Integer, Double> lastLeaveByEntity,
+            final Map<Integer, List<AoiObservationSegment>> aoiByEntity,
             final int perspectiveTeam) {
+        // 存活门禁：phase 末已阵亡 → 位置 state 终止 → null（不参与当前几何）
+        if (!isAliveAt(playersByAccount, accountId, phaseEnd)) {
+            return null;
+        }
+        // Canonical AoI authority：先定位 phaseEnd 所属 observed segment——该 segment 的实体即「目标实体」。
+        // Item P1：CURRENT / carry-forward 只与目标实体的样本相交；同一账号多实体生命周期（re-entry）
+        // 时不得把另一实体的坐标并入同一 CURRENT（fail-closed）。
+        final AoiObservationSegment seg = observedSegmentAt(aoiByEntity, mapping, accountId, phaseEnd);
+        // phaseEnd ∈ UNKNOWN_AOI gap（seg==null）时退化为「phaseEnd 前最后有样本的实体」，以保持单实体来源。
+        final int targetEntity = seg != null ? seg.entityId() : lastObservedEntityId(samples, phaseEnd);
+        // 同实体样本过滤（fail-closed）：目标实体无任何样本 → 无同源位置可消费，不产出 CURRENT。
+        final List<PositionSample> entitySamples = sameEntitySamples(samples, targetEntity);
+        if (entitySamples.isEmpty()) {
+            return null;
+        }
         double sx = 0, sz = 0;
         int n = 0;
-        double lastInPhase = -1;
-        for (final double[] sample : track) {
-            if (sample[0] < phaseStart || sample[0] > phaseEnd) {
-                continue;
+        double lastInWindow = -1;
+        if (seg != null) {
+            final double segStart = Math.max(phaseStart, seg.observedFromSec());
+            final double segEnd = seg.absentFromSec() != null
+                    ? Math.min(phaseEnd, seg.absentFromSec()) : phaseEnd;
+            for (final PositionSample sample : entitySamples) {
+                if (sample.t() < segStart || sample.t() > segEnd) {
+                    continue;
+                }
+                sx += sample.x();
+                sz += sample.z();
+                n++;
+                lastInWindow = Math.max(lastInWindow, sample.t());
             }
-            sx += sample[1];
-            sz += sample[2];
-            n++;
-            lastInPhase = Math.max(lastInPhase, sample[0]);
         }
         final double x;
         final double z;
         final double observedAt;
+        final PositionKnowledge knowledge;
         if (n > 0) {
+            // 样本全部来自 phaseEnd 的 observed segment ∩ phase 的同一实体 → CURRENT（exact 几何可消费）
             x = sx / n;
             z = sz / n;
-            observedAt = lastInPhase;
+            observedAt = lastInWindow;
+            knowledge = PositionKnowledge.CURRENT;
         } else {
-            if (!isAliveAt(playersByAccount, accountId, phaseEnd)) {
-                return null;
-            }
-            final double[] carry = carriedForwardReference(
-                    track, phaseEnd, mapping, lastLeaveByEntity, accountId);
+            // 当前 segment 内无同实体样本（或 phaseEnd ∈ UNKNOWN_AOI gap）：carry-forward last-known；
+            // 仅当 last-known 位于 phaseEnd 的 observed segment（不跨 gap）才 CURRENT，否则 LAST_KNOWN。
+            final double[] carry = carriedForwardReference(entitySamples, phaseEnd);
             if (carry == null) {
                 return null;
             }
             x = carry[1];
             z = carry[2];
             observedAt = carry[0];
-        }
-        if (!isAliveAt(playersByAccount, accountId, phaseEnd)) {
-            return null; // phase 末已阵亡：位置 state 终止，不参与当前几何
-        }
-        // EntityLeave 中断当前位置 state（canonical 同口径：leave ≥ 最后观测 → 状态终止）
-        final boolean interrupted = hasLeaveOnOrAfter(
-                mapping, lastLeaveByEntity, accountId, observedAt, phaseEnd);
-        final boolean friendly = team == perspectiveTeam;
-        final PositionKnowledge knowledge;
-        if (friendly) {
-            knowledge = interrupted
-                    ? PositionKnowledge.LAST_KNOWN : PositionKnowledge.CURRENT;
-        } else {
-            final double age = phaseEnd - observedAt;
-            knowledge = !interrupted && age <= BattleTimelineBuilder.POSITION_GAP_SEC + 1e-6
+            knowledge = (seg != null && observedAt >= seg.observedFromSec() - 1e-9
+                    && (seg.absentFromSec() == null || observedAt < seg.absentFromSec() - 1e-9))
                     ? PositionKnowledge.CURRENT : PositionKnowledge.LAST_KNOWN;
         }
         return new PhasePositionReference(
                 accountId, team, x, z, knowledge, observedAt, phaseEnd - observedAt);
     }
 
-    /** 该账号在 [observedAt, phaseEnd] 内是否有 EntityLeave（≥ observedAt 的中断）。 */
-    private static boolean hasLeaveOnOrAfter(
+    /** 该账号任一实体在 phaseEnd 所处的 observed segment（∈ UNKNOWN_AOI gap / 未观测 → null）。 */
+    private static AoiObservationSegment observedSegmentAt(
+            final Map<Integer, List<AoiObservationSegment>> aoiByEntity,
             final TeamEntityMapping mapping,
-            final Map<Integer, Double> lastLeaveByEntity,
             final long accountId,
-            final double observedAt,
             final double phaseEnd) {
+        if (mapping == null || aoiByEntity == null) {
+            return null;
+        }
         for (final int eid : mapping.entityIds(accountId)) {
-            final Double leave = lastLeaveByEntity.get(eid);
-            if (leave != null && leave >= observedAt - 1e-6 && leave <= phaseEnd + 1e-6) {
-                return true;
+            final AoiObservationSegment seg = ReplayAoiLifecycle.segmentAt(aoiByEntity, eid, phaseEnd);
+            if (seg != null) {
+                return seg;
             }
         }
-        return false;
+        return null;
     }
 
     /** 参考位置所属九宫格 region（0 = 不可用）。 */
@@ -464,34 +483,57 @@ final class FormationDepthEvidence {
     }
 
     /**
-     * 该账号在 phaseEnd 时刻的 carry-forward 位置参考：取 ≤ phaseEnd 的最后位置样本；
-     * 若该样本之后有 EntityLeave 且 leave ≤ phaseEnd（位置 state 已终止）或从未有样本 → null。
+     * 该账号在 phaseEnd 时刻的 carry-forward 位置参考：取 ≤ phaseEnd 的最后<b>同实体</b>位置样本；
+     * 从未有样本 → null。
+     * <p>P0-1：即使该实体已 EntityLeave（Type4，位置 state 终止），最后已知位置仍作为
+     * LAST_KNOWN 参考保留（不得静默丢弃）——CURRENT vs LAST_KNOWN 由
+     * {@link #resolvePhasePosition} 的 canonical segment 判定；LAST_KNOWN 不进 exact geometry（fail-closed）。</p>
      */
     static double[] carriedForwardReference(
-            final List<double[]> track,
-            final double phaseEnd,
-            final TeamEntityMapping mapping,
-            final Map<Integer, Double> lastLeaveByEntity,
-            final long accountId) {
+            final List<PositionSample> samples,
+            final double phaseEnd) {
         double[] carry = null;
-        for (final double[] s : track) {
-            if (s[0] <= phaseEnd + 1e-6) {
-                carry = s;
+        for (final PositionSample s : samples) {
+            if (s.t() <= phaseEnd + 1e-6) {
+                carry = new double[]{s.t(), s.x(), s.z()};
             } else {
                 break;
             }
         }
-        if (carry == null) {
-            return null;
+        return carry;
+    }
+
+    /** 过滤出属于指定实体的样本（Item P1：保持 entity provenance，禁止跨实体合并坐标）。 */
+    private static List<PositionSample> sameEntitySamples(
+            final List<PositionSample> samples, final int entityId) {
+        if (samples == null || entityId <= 0) {
+            return List.of();
         }
-        final List<Integer> eids = mapping.entityIds(accountId);
-        for (final int eid : eids) {
-            final Double leave = lastLeaveByEntity.get(eid);
-            if (leave != null && leave >= carry[0] - 1e-6 && leave <= phaseEnd + 1e-6) {
-                return null;
+        final List<PositionSample> out = new ArrayList<>();
+        for (final PositionSample s : samples) {
+            if (s.entityId() == entityId) {
+                out.add(s);
             }
         }
-        return carry;
+        return out;
+    }
+
+    /** phaseEnd 前最后有位置样本的实体（确定性：t 最大，同 t 取 entityId 小）；无样本 → -1。 */
+    private static int lastObservedEntityId(
+            final List<PositionSample> samples, final double phaseEnd) {
+        double bestT = -Double.MAX_VALUE;
+        int bestEntity = -1;
+        for (final PositionSample s : samples) {
+            if (s.t() > phaseEnd + 1e-6) {
+                continue;
+            }
+            if (bestEntity < 0 || s.t() > bestT + 1e-9
+                    || (Math.abs(s.t() - bestT) <= 1e-9 && s.entityId() < bestEntity)) {
+                bestT = s.t();
+                bestEntity = s.entityId();
+            }
+        }
+        return bestEntity;
     }
 
     /** 账号展示 key：附 tank profile 标注（如 account:1234(HEAVY,armor=HIGH)）；UNKNOWN 只标未知。 */
@@ -706,11 +748,11 @@ final class FormationDepthEvidence {
         return first;
     }
 
-    static double lastSampleTime(final Map<Long, List<double[]>> tracks) {
+    static double lastSampleTime(final Map<Long, List<PositionSample>> tracks) {
         double last = 0;
-        for (final List<double[]> list : tracks.values()) {
-            for (final double[] s : list) {
-                last = Math.max(last, s[0]);
+        for (final List<PositionSample> list : tracks.values()) {
+            for (final PositionSample s : list) {
+                last = Math.max(last, s.t());
             }
         }
         return last;

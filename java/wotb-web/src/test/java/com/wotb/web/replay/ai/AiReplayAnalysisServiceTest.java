@@ -2,9 +2,30 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.parse.ReplayStreamHeader;
+import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.HealthChangedEvent;
+import com.wotb.core.replay.event.ParticipantMappingEvent;
+import com.wotb.core.replay.event.PositionChangedEvent;
+import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.feature.EngagementSummary;
+import com.wotb.core.replay.feature.KeyBattleEvent;
+import com.wotb.core.replay.feature.MovementSegment;
+import com.wotb.core.replay.feature.MovementType;
+import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
+import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
+import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
+import com.wotb.core.replay.feature.TeamAggregateResult;
+import com.wotb.core.replay.feature.TeamBattleFeatureSet;
+import com.wotb.core.replay.feature.TeamFeatureCoverage;
+import com.wotb.core.replay.feature.TeamMemberFeatureSet;
+import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.processing.AiNotConfiguredException;
 import com.wotb.core.replay.processing.BatchAnalyzer;
+import com.wotb.core.replay.processing.BattleCategory;
 import com.wotb.core.replay.processing.PlayerSideResolver;
 import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.processing.ReplayIdentity;
@@ -12,35 +33,16 @@ import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
 import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.processing.ReplayProcessingStatus;
-import com.wotb.core.replay.event.DecodeConfidence;
-import com.wotb.core.replay.event.HealthChangedEvent;
-import com.wotb.core.replay.event.ParticipantMappingEvent;
-import com.wotb.core.replay.event.PositionChangedEvent;
-import com.wotb.core.replay.event.ReplayEvent;
-import com.wotb.core.replay.event.ReplayTimestamp;
-import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
-import com.wotb.core.replay.processing.BattleCategory;
-import com.wotb.core.replay.feature.KeyBattleEvent;
-import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
-import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
-import com.wotb.core.replay.feature.TeamMemberFeatureSet;
-import com.wotb.core.replay.feature.TeamAggregateResult;
-import com.wotb.core.replay.feature.TeamBattleFeatureSet;
-import com.wotb.core.replay.feature.TeamFeatureCoverage;
-import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
-import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
-import com.wotb.core.replay.stream.ReplayStreamHeader;
-import com.wotb.core.replay.feature.EngagementSummary;
-import com.wotb.core.replay.feature.MovementSegment;
-import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.Vector3;
+import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
+import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -58,14 +60,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-
-import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 
 class AiReplayAnalysisServiceTest {
 
@@ -879,8 +873,7 @@ class AiReplayAnalysisServiceTest {
                 123,
                 DecodeConfidence.EXACT
         );
-        final ReplayCoverage coverage = new ReplayCoverage(
-                true, 100, 100, 0, 0, 0, 1.0, Map.of());
+        final ReplayCoverage coverage = new ReplayCoverage(100, 100, 0, 0, 0, 1.0, Map.of());
         return new SinglePlayerBattleAnalysisContext(
                 null, battle, features, recorderMapping, coverage, List.of("TEST_LIMITATION"));
     }
@@ -908,8 +901,7 @@ class AiReplayAnalysisServiceTest {
                 rec != null ? rec.accountId : 0L, 501, 42, "RecorderPlayer",
                 rec != null && PlayerSideResolver.isValidRawTeam(rec.team) ? rec.team : null,
                 123, DecodeConfidence.EXACT);
-        final ReplayCoverage coverage = new ReplayCoverage(
-                true, 100, 100, 0, 0, 0, 1.0, Map.of());
+        final ReplayCoverage coverage = new ReplayCoverage(100, 100, 0, 0, 0, 1.0, Map.of());
         return new SinglePlayerBattleAnalysisContext(
                 null, battle, features, recorderMapping, coverage, List.of("TEST_LIMITATION"));
     }
@@ -985,9 +977,8 @@ class AiReplayAnalysisServiceTest {
         final ReplayMetadata meta = new ReplayMetadata(
                 "arena", "team_map", "1", "1", 2, "rec1", "", 300.0, 0L);
         final ReplayStreamHeader header = new ReplayStreamHeader(0x12345678L, new byte[8], "h", "v", 15);
-        final ReplayCoverage coverage = new ReplayCoverage(true, 8, 8, 0, 0, 0, 1.0, Map.of());
-        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true, 1000f, true);
+        final ReplayCoverage coverage = new ReplayCoverage(8, 8, 0, 0, 0, 1.0, Map.of());
+        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(0, 0, 0f, 0f, 0, Map.of());
         final List<ReplayEvent> events = new ArrayList<>();
         int seq = 0;
         int eid = 1;
@@ -1112,6 +1103,8 @@ class AiReplayAnalysisServiceTest {
         p.kills = team == 1 ? 2 : 1;
         p.survived = team == 1;
         p.deathTimeMillis = team == 1 ? 0 : 180_000;
+        p.deathTimeSource = p.deathTimeMillis > 0
+                ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
         return p;
     }
 

@@ -1,21 +1,18 @@
 package com.wotb.core;
 
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.json.JsonMapper;
-import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.parse.EventStreamReader;
+import com.wotb.core.parse.probe.EventStreamReader;
+import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.replay.processing.ReplayProcessingOptions;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
-import com.wotb.core.replay.feature.MapRegionResolver;
-import com.wotb.core.replay.stream.RawReplayPacket;
-import com.wotb.core.replay.stream.ReplayPacketStreamReader;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.ByteArrayInputStream;
 import java.nio.file.Files;

@@ -1,14 +1,11 @@
 package com.wotb.web.hundred.service;
 
-import com.wotb.web.replayfile.ReplayFileNames;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.TankInfo;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.ref.VehicleCodes;
-import com.wotb.web.hof.service.HallOfFameUploadService;
-import com.wotb.web.replayfile.ReplayHashLock;
 import com.wotb.web.hundred.dto.HundredAdminDetailDto;
 import com.wotb.web.hundred.dto.HundredAdminPageDto;
 import com.wotb.web.hundred.dto.HundredCreateResult;
@@ -22,6 +19,8 @@ import com.wotb.web.hundred.gateway.WargamingOfficialStats;
 import com.wotb.web.hundred.gateway.WargamingServer;
 import com.wotb.web.hundred.repository.HundredBattleSubmissionRepository;
 import com.wotb.web.replay.ReplayUploadValidator;
+import com.wotb.web.replayfile.ReplayFileNames;
+import com.wotb.web.replayfile.ReplayHashLock;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
 import org.springframework.dao.DataIntegrityViolationException;

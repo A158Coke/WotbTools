@@ -1,6 +1,6 @@
 package com.wotb.core.parse;
 
-import com.wotb.core.parse.EventStreamReader.ArenaInfo;
+import com.wotb.core.parse.probe.EventStreamReader;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -29,7 +29,7 @@ class PickleDecoderTest {
     void decodesRealArenaInfoPickle() {
         final EventStreamReader.ParsedPacket pkt =
                 new EventStreamReader.ParsedPacket(0, 0.2f, hexToBytes(TYPE0_HEX));
-        final ArenaInfo info = EventStreamReader.extractArenaInfo(List.of(pkt));
+        final EventStreamReader.ArenaInfo info = EventStreamReader.extractArenaInfo(List.of(pkt));
 
         assertEquals(14, info.accountDatabaseIds().size());
         assertTrue(info.accountDatabaseIds().contains(3125216420L));

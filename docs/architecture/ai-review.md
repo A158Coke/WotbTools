@@ -2,6 +2,7 @@
 
 > 开发入口见 `docs/DEVELOPER_GUIDE.md`；Team-Level 复盘产品设计见 `docs/features/team-ai-review.md`。
 > 权威结算 vs 事件流观测的数据边界见文末「权威数据源与 AI 分析」。
+> 生产状态：AI 证据只消费 canonical facts（AFFIRMED）；UNKNOWN 为合法内部状态，不得猜成 0/无事件/静止/满血（选用例见 prompts 与 `PlayerEvidenceFormatter`）。
 
 ## AI Review Harness（随机战双 Call / 团队复盘 + Team Autopsy）
 
@@ -395,6 +396,6 @@ POST /api/replay/analyze（Dataset JSON `{processingJobId, sourceId, lang, corre
 - `RANDOM` 仍是录像者个人复盘；`TRAINING` / `TOURNAMENT` 是录像者所在整队复盘。
 - 录像者不获得特殊个人分析权重，只用于解析 `perspectiveTeam`。
 - 同场同队回放是 `SAME_TEAM_DUPLICATE_PERSPECTIVE`，只选质量最高的代表；禁止拼接原始事件流。
-- **死亡时刻口径**：部分回放 `battle_results` 的 `deathTimeMillis` 为 0，系统回退事件流估算；prompt 用 `DEATH_SOURCE` 标注来源（`BattlePhaseSummary.deathSourceLabel`），禁止把估算当权威。阶段存活人数为「至阶段末」语义（`BattlePhaseTimelineSection`），prompt 注入双方逐车阵亡时间线（`DEATH_TIMELINE`）。
+- **死亡时刻口径**：死亡权威链为 `LIVE_EXACT`（回放 live EXACT，sub-second）→ `SETTLEMENT_SECOND`（结算 `deathTimeMillis`）→ `UNKNOWN`（`survivalTimeSec=0`）；prompt 用 `DEATH_SOURCE` 标注来源（`BattlePhaseSummary.deathSourceLabel`），`PlayerResultFormat.deathSec` 按 `deathTimeSource` 消费，legacy 启发式不作为权威。阶段存活人数为「至阶段末」语义（`BattlePhaseTimelineSection`），prompt 注入双方逐车阵亡时间线（`DEATH_TIMELINE`）。
 - **观测伤害抑制**：事件流覆盖未达 100% 时 `DefaultTeam/PlayerBattleFeatureExtractor` 条件标记 `OBSERVED_DAMAGE_IS_PARTIAL`，prompt 层抑制观测数字（`TeamAiPromptBuilder.appendObserved` / 随机战交火段），以权威结算为唯一口径；覆盖补齐后自动恢复。
 - **赛前预测渲染**：`PreBattleSectionRenderer` 覆盖 TEAM 变体（A队/B队/A 队/队伍1 等）、AREA ID → 中文名 + 九宫格（复用 `MapTacticalSemanticsRegistry`）、composition 键值三语翻译。

@@ -1,24 +1,25 @@
 package com.wotb.web.replay.ai;
 
+import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
+import com.wotb.core.replay.facts.AiReplayFacts;
+import com.wotb.core.replay.processing.ReplayIdentity;
+import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.ReplayProcessingStatus;
+import com.wotb.core.replay.timeline.TimelineError;
+import com.wotb.web.replay.exception.AiTimelineUnusableException;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
-
-import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.ReplayIdentity;
-import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
-import com.wotb.core.replay.processing.ReplayProcessingStatus;
-import com.wotb.core.replay.facts.AiReplayFacts;
-import com.wotb.core.replay.timeline.TimelineError;
-import com.wotb.web.replay.exception.AiTimelineUnusableException;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.util.List;
-import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
 /**
  * PR #102 P0：{@code AiTimelineUnusableException} 的错误类型指标。

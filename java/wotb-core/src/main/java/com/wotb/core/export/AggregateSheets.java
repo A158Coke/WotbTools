@@ -163,7 +163,7 @@ final class AggregateSheets {
      * 完整 canonical {@link Columns#PLAYER}（玩家/战队/车辆/等级/类型/国家/炮伤/单场 stats/
      * 被命中/被击穿/击伤/排/军阶/车辆ID/账号ID——单一 schema 源，不复制字段列表）。
      *
-     * <p>排标签（{@link Players#platoonLabeler}）按单场 Battle 独立：platoonId → A/B/C
+     * <p>（PR147：field2 为 prebattle/training-room 分组 ID，非排/小队；A/B/C 排标签已删除。）
      * 映射只在该场有效，不同 replay 的排号重新从 A 开始（排号不是跨场身份）。</p>
      */
     private static void detail(final ExcelStyles styles, final List<Battle> battles, final List<String> sourceNames,
@@ -187,8 +187,6 @@ final class AggregateSheets {
             final Integer winner = b.winnerTeam;
             final String sourceName = i < sourceNames.size() ? sourceNames.get(i) : "";
             final String mapName = MapNames.cn(b.mapName);
-            // 每场独立 platoon labeler：跨 battle 不共享 platoonId → 字母映射
-            final Function<Long, String> platoon = Players.platoonLabeler();
             final List<DCol> head = List.of(
                     new DCol("文件名", 40, "nickname", p -> sourceName),
                     new DCol("竞技场ID", 22, "x", p -> b.arenaId),
@@ -198,7 +196,6 @@ final class AggregateSheets {
             );
             for (final PlayerResult p : Players.sorted(b.players)) {
                 Players.enrich(p, tp);
-                p.platoonLabel = platoon.apply(p.platoonId);
                 final Row row = ws.createRow(rIdx++);
                 int c = 0;
                 for (final DCol d : head) {

@@ -1,9 +1,9 @@
 package com.wotb.core.replay.feature;
 
-import com.wotb.core.replay.processing.TeamEntityIdentity;
-import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.PositionChangedEvent;
+import com.wotb.core.replay.processing.TeamEntityIdentity;
+import com.wotb.core.replay.processing.TeamEntityMapping;
 
 import java.util.ArrayList;
 import java.util.Comparator;

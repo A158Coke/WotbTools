@@ -2,6 +2,7 @@ package com.wotb.core.replay.decoder;
 
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
+import com.wotb.core.replay.event.HpRawState;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.event.TurretDirectionChangedEvent;
 import com.wotb.core.replay.event.UnknownReplayEvent;
@@ -10,53 +11,32 @@ import com.wotb.core.replay.stream.RawReplayPacket;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Type 7 (EntityProperty) 解码器。
- * <p>
- * 优先研究并解析：当前血量、最大血量、存活状态、其他能可靠识别的车辆属性。
- * 属性 ID 可能随游戏版本变化，必须设计成版本感知。
- * 第一阶段做保守解析，优先确保不产生错误语义。
- * </p>
- *
- * <p>
- * EntityProperty payload 格式（待确认）：
- * entityId(i32) + propertyCount(i32) + 若干个 property block。
- * 每个 property block 的格式和语义需要进一步逆向工程。
- * </p>
- *
- * <p>已逆向（2026-08-09，4 个训练房样本交叉验证）：payload = entityId(u32) +
- * propId(u32) + valueLen(u32) + value；propId=3 的 value 为当前血量（u16 LE，
- * 含装备加成；受击时同步、阵亡到 0、存活不到 0）。其它 propId 语义：
- * 0（len=1，{0,1} 布尔）、4（len=2，256×n+(0|1) 模式）、9（len=1..4，float 类 ~1e9）
- * 均经 7 真实样本统计排除为 HP（2026-08-21 InitialHpProtocolProbeTest）；
- * 其余未确认，仍输出 UnknownReplayEvent。</p>
- */
+/** Vehicle Type7 EntityProperty decoder with explicit version capability boundaries. */
 public class EntityPropertyDecoder implements ReplayPacketDecoder {
 
     static final int TYPE_ENTITY_PROPERTY = 7;
-    /** propId=3：当前血量（u16 LE，含装备加成；受击时同步）。 */
-    static final int PROP_CURRENT_HP = 3;
-    /**
-     * propId=2：炮塔相对车体偏航（valueLen=2 u16 LE；度 = raw*360/65536 - 180，[-180,180)）。
-     * 2026-08-13 旋转实验证明：车体静止炮塔转一圈 prop2 恰好扫过 360° 且带 wrap；
-     * 开火锚点拟合证明：炮口世界方向 = normalize(hullYaw + prop2)（交叉验证残差 2.3°）。
-     */
     static final int PROP_TURRET_RELATIVE_YAW = 2;
+    static final int PROP_CURRENT_HP = 3;
     static final double TURRET_YAW_SCALE_DEG = 360.0 / 65536.0;
     static final double TURRET_YAW_OFFSET_DEG = -180.0;
 
     @Override
-    public boolean supports(ReplayDecodeContext context, RawReplayPacket packet) {
+    public boolean supports(final ReplayDecodeContext context, final RawReplayPacket packet) {
         return packet.type() == TYPE_ENTITY_PROPERTY;
     }
 
     @Override
-    public ReplayDecodeResult decode(ReplayDecodeContext context, RawReplayPacket packet) {
+    public ReplayDecodeResult decode(final ReplayDecodeContext context, final RawReplayPacket packet) {
         final byte[] payload = packet.payload();
-
-        // 载荷结构（已从 11.18 样本逆向确认，稳定）：
-        //   entityId(u32) + propId(u32) + valueLen(u32) + value(valueLen 字节)
-        // 至少需要 12 字节的三段头。
+        final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
+        if (!ReplayVersionGate.basicVehiclePropertiesAllowed(context.clientVersion())) {
+            return new ReplayDecodeResult(DecodeStatus.UNSUPPORTED,
+                    List.of(new UnknownReplayEvent(packet.sequence(), ts, packet.type(), payload.length,
+                            "VERSION_UNSUPPORTED_ENTITY_PROPERTY", DecodeConfidence.UNKNOWN)),
+                    List.of(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
+                            "EntityProperty numeric semantics not affirmed for client version: "
+                                    + context.clientVersion())));
+        }
         if (payload.length < 12) {
             return new ReplayDecodeResult(DecodeStatus.MALFORMED, List.of(),
                     List.of(new ReplayDecodeWarning("TRUNCATED_PAYLOAD",
@@ -66,76 +46,79 @@ public class EntityPropertyDecoder implements ReplayPacketDecoder {
         final int entityId = readI32LE(payload, 0);
         final int propId = readU32LE(payload, 4);
         final int valueLen = readU32LE(payload, 8);
-        final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
-
-        final List<ReplayDecodeWarning> warnings = new ArrayList<>();
-        if (valueLen < 0 || 12 + valueLen > payload.length) {
-            warnings.add(new ReplayDecodeWarning("PROPERTY_VALUE_TRUNCATED",
-                    "EntityProperty valueLen=" + valueLen + " exceeds payload " + payload.length
-                            + " at entity " + entityId));
+        if (valueLen < 0 || 12 + valueLen != payload.length) {
+            return new ReplayDecodeResult(DecodeStatus.MALFORMED,
+                    List.of(new UnknownReplayEvent(packet.sequence(), ts, packet.type(), payload.length,
+                            "ENTITY_PROPERTY_LENGTH_MISMATCH", DecodeConfidence.UNKNOWN)),
+                    List.of(new ReplayDecodeWarning("PROPERTY_VALUE_LENGTH_MISMATCH",
+                            "EntityProperty valueLen=" + valueLen + " payload=" + payload.length
+                                    + " entity=" + entityId)));
         }
 
-        final List<com.wotb.core.replay.event.ReplayEvent> events = new ArrayList<>();
-        if (propId == PROP_CURRENT_HP && valueLen >= 2 && 12 + 2 <= payload.length) {
-            // 当前血量：u16 LE 但按 **signed i16** 解释（真实正 HP 恒小，signed 无歧义）。
-            // 受击时客户端同步；阵亡到 0；0xFFFD(signed -3)=已证明的死亡关联 sentinel（11/11 与击毁 ±40 点同刻），
-            // 归一化为死亡 HP=0（alive=false）；0xFFFF(signed -1) 及其它 ≤0 高位值 = UNKNOWN sentinel
-            // （-1 时刻无死亡证据，不得臆测为死亡或 65535），currentHealth 记 null、alive 记 null。
-            final int raw = (payload[12] & 0xFF) | ((payload[13] & 0xFF) << 8);
-            final short signed = (short) raw;
-            if (raw == 0 || raw == HealthChangedEvent.SENTINEL_UNKNOWN_HP) {
-                // 0 = 阵亡到 0；0xFFFD(-3) = 已证明死亡 sentinel → 死亡 HP=0
-                events.add(new HealthChangedEvent(
-                        packet.sequence(), ts, packet.type(),
-                        DecodeConfidence.EXACT,
-                        entityId, 0, null, false));
-            } else if (signed > 0) {
-                // 真实正 HP（含装备加成）
-                events.add(new HealthChangedEvent(
-                        packet.sequence(), ts, packet.type(),
-                        DecodeConfidence.EXACT,
-                        entityId, (int) signed, null, true));
-            } else {
-                // 其它 ≤0 sentinel（如 0xFFFF=-1）：UNKNOWN，不臆测语义；血量记 null
-                warnings.add(new ReplayDecodeWarning("HP_SENTINEL",
-                        "propId=3 raw=0x" + Integer.toHexString(raw)
-                                + " (signed " + signed + ") treated as UNKNOWN HP sentinel at entity "
-                                + entityId));
-                events.add(new HealthChangedEvent(
-                        packet.sequence(), ts, packet.type(),
-                        DecodeConfidence.PARTIAL,
-                        entityId, null, null, null));
+        if (propId == PROP_CURRENT_HP && valueLen == 2) {
+            final int raw = readU16LE(payload, 12);
+            final HpRawState rawState = HpRawState.classify(raw,
+                    ReplayProtocolProfile.levelOf(context.clientVersion(),
+                            ReplayProtocolProfile.Capability.TERMINAL_FFFD)
+                            == ReplayProtocolProfile.Level.VERIFIED,
+                    ReplayVersionGate.verifiedFffeTerminalAllowed(context.clientVersion()));
+            final List<ReplayDecodeWarning> warnings = new ArrayList<>();
+            final HealthChangedEvent event;
+            switch (rawState) {
+                case CURRENT_HP -> {
+                    final int hp = (short) raw;
+                    event = new HealthChangedEvent(packet.sequence(), ts, packet.type(),
+                            DecodeConfidence.EXACT, entityId, hp, null, true, raw, rawState);
+                }
+                case HP_ZERO_TERMINAL ->
+                        event = new HealthChangedEvent(packet.sequence(), ts, packet.type(),
+                                DecodeConfidence.EXACT, entityId, 0, null, false, raw, rawState);
+                case DEATH_TERMINAL_FFFD, VERIFIED_TERMINAL_FFFE ->
+                        // terminal != HP-zero: preserve terminal truth without inventing current HP=0.
+                        event = new HealthChangedEvent(packet.sequence(), ts, packet.type(),
+                                DecodeConfidence.EXACT, entityId, null, null, false, raw, rawState);
+                case UNKNOWN_FFFF, UNKNOWN_OTHER -> {
+                    warnings.add(new ReplayDecodeWarning("HP_SENTINEL_UNKNOWN",
+                            "prop3 raw=0x" + Integer.toHexString(raw)
+                                    + " preserved as UNKNOWN at entity " + entityId));
+                    event = new HealthChangedEvent(packet.sequence(), ts, packet.type(),
+                            DecodeConfidence.PARTIAL, entityId, null, null, null, raw, rawState);
+                }
+                default -> throw new IllegalStateException("Unhandled HP state: " + rawState);
             }
             return new ReplayDecodeResult(
                     warnings.isEmpty() ? DecodeStatus.SUCCESS : DecodeStatus.PARTIAL,
-                    events, warnings);
+                    List.of(event), warnings);
         }
-        if (propId == PROP_TURRET_RELATIVE_YAW && valueLen >= 2 && 12 + 2 <= payload.length) {
-            // 炮塔相对车体偏航（u16 LE）：度 = raw*360/65536 - 180（完整 360°，±180 回绕）。
-            final int raw = (payload[12] & 0xFF) | ((payload[13] & 0xFF) << 8);
+
+        // PR162/P0-2：prop2 turret-relative yaw 语义必须由 PROP_TURRET_YAW capability 授权（不是 generic
+        // ENTITY_PROPERTY_ENVELOPE）。future 版本 prop2 只 raw-preserve，绝不自动产出 TurretDirectionChangedEvent。
+        if (propId == PROP_TURRET_RELATIVE_YAW && valueLen == 2
+                && ReplayVersionGate.turretYawAllowed(context.clientVersion())) {
+            final int raw = readU16LE(payload, 12);
             final double deg = raw * TURRET_YAW_SCALE_DEG + TURRET_YAW_OFFSET_DEG;
-            events.add(new TurretDirectionChangedEvent(
-                    packet.sequence(), ts, packet.type(),
-                    DecodeConfidence.EXACT, entityId, deg));
-            return new ReplayDecodeResult(
-                    warnings.isEmpty() ? DecodeStatus.SUCCESS : DecodeStatus.PARTIAL,
-                    events, warnings);
+            return ReplayDecodeResult.of(new TurretDirectionChangedEvent(
+                    packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT, entityId, deg));
         }
-        // 其它 propId 语义未确认：只保留结构信息，不臆断语义，避免向上层/AI 提供伪造数据。
-        events.add(new UnknownReplayEvent(
-                packet.sequence(), ts, packet.type(),
-                payload.length, "ENTITY_PROPERTY_prop" + propId + "_len" + valueLen,
-                DecodeConfidence.UNKNOWN));
-        return new ReplayDecodeResult(DecodeStatus.PARTIAL, events, warnings);
+
+        return new ReplayDecodeResult(DecodeStatus.PARTIAL,
+                List.of(new UnknownReplayEvent(packet.sequence(), ts, packet.type(), payload.length,
+                        "ENTITY_PROPERTY_prop" + propId + "_len" + valueLen,
+                        DecodeConfidence.UNKNOWN)),
+                List.of());
     }
 
-    private static int readI32LE(byte[] buf, int i) {
+    private static int readI32LE(final byte[] buf, final int i) {
         return (buf[i] & 0xFF) | ((buf[i + 1] & 0xFF) << 8)
                 | ((buf[i + 2] & 0xFF) << 16) | (buf[i + 3] << 24);
     }
 
-    private static int readU32LE(byte[] buf, int i) {
+    private static int readU32LE(final byte[] buf, final int i) {
         return (buf[i] & 0xFF) | ((buf[i + 1] & 0xFF) << 8)
                 | ((buf[i + 2] & 0xFF) << 16) | ((buf[i + 3] & 0xFF) << 24);
+    }
+
+    private static int readU16LE(final byte[] buf, final int i) {
+        return (buf[i] & 0xFF) | ((buf[i + 1] & 0xFF) << 8);
     }
 }

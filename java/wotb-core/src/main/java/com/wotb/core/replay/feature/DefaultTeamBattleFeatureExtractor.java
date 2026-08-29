@@ -2,19 +2,18 @@ package com.wotb.core.replay.feature;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.TeamEntityIdentity;
-import com.wotb.core.replay.processing.TeamEntityMapper;
-import com.wotb.core.replay.processing.TeamEntityMapping;
-import com.wotb.core.replay.processing.TeamPerspectiveResolution;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
-
+import com.wotb.core.replay.processing.TeamEntityIdentity;
+import com.wotb.core.replay.processing.TeamEntityMapper;
+import com.wotb.core.replay.processing.TeamEntityMapping;
+import com.wotb.core.replay.processing.TeamPerspectiveResolution;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import org.springframework.util.StringUtils;
 import com.wotb.core.util.PlayerResultFormat;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -48,7 +47,6 @@ public class DefaultTeamBattleFeatureExtractor {
         final int perspectiveTeam = perspective.perspectiveTeam();
         final BattleStartResolution battleStartRes = BattleStartResolver.resolve(
                 reconstruction != null ? reconstruction.battleStartRawClockSec() : null,
-                reconstruction != null ? reconstruction.diagnostics() : null,
                 reconstruction != null && reconstruction.events() != null ? reconstruction.events() : List.of(),
                 battle);
         final List<ReplayEvent> events = reconstruction != null && reconstruction.events() != null
@@ -92,8 +90,8 @@ public class DefaultTeamBattleFeatureExtractor {
         // Type-8 rawProtocolValue 语义未证明，不得作为 dealt/received/关键事件伤害。
         final Float battleStartRaw = reconstruction == null ? null
                 : reconstruction.battleStartRawClockSec();
-        final double duration = reconstruction != null && reconstruction.replayDurationSec() > 0
-                ? reconstruction.replayDurationSec()
+        final double duration = reconstruction != null && reconstruction.battleDurationSec() > 0
+                ? reconstruction.battleDurationSec()
                 : (battle != null && battle.durationS != null && battle.durationS > 0
                         ? battle.durationS : 0.0);
         final PlaybackCombatReconstruction.Result combat = PlaybackCombatReconstruction.derive(
@@ -162,9 +160,23 @@ public class DefaultTeamBattleFeatureExtractor {
         ).toList();
         final boolean hasUsableTimedEvent = !acceptedEvents.isEmpty();
 
+        // AoI 离开边界（Type4）：从 canonical ReplayAoiLifecycle 获取（facts 只定义一次，
+        // 禁止从 raw EntityRemovedEvent 重建第二套 Type4 时间表——P1 architecture convergence）。
+        final Double teamStartRaw = battleStartRaw == null ? null : battleStartRaw.doubleValue();
+        final Map<Integer, List<Double>> leaveTimesByEntity = new LinkedHashMap<>();
+        for (final com.wotb.core.replay.facts.AoiObservationSegment segment
+                : com.wotb.core.replay.facts.ReplayAoiLifecycle.build(events, teamStartRaw)) {
+            if (segment.absentFromSec() == null) {
+                continue; // 未关闭段（直到战斗结束仍被观测）
+            }
+            leaveTimesByEntity.computeIfAbsent(segment.entityId(), k -> new ArrayList<>())
+                    .add(segment.absentFromSec());
+        }
+
         final List<TeamMemberFeatureSet> members = authoritativeMembers.stream()
                 .map(player -> buildMember(
-                        player, entityMapping, timedPositionsByEntity, timedDamages, teamLosses,
+                        player, entityMapping, timedPositionsByEntity, leaveTimesByEntity,
+                        timedDamages, teamLosses,
                         authoritativeMembers, mapCode,
                         deathProxByAcc.getOrDefault(player.accountId, null)))
                 .sorted(Comparator.comparingLong(TeamMemberFeatureSet::accountId)
@@ -218,16 +230,12 @@ public class DefaultTeamBattleFeatureExtractor {
         final boolean fullFeaturesAvailable = reconstructionAvailable
                 && mappedMembers > 0
                 && (observedPositionEventCount > 0 || !engagements.isEmpty());
-        final boolean streamComplete = reconstructionAvailable
-                && reconstruction.coverage() != null
-                && reconstruction.coverage().streamComplete();
         final double decodedRatio = reconstructionAvailable
                 && reconstruction.coverage() != null
                 ? reconstruction.coverage().decodedPacketRatio() : 0.0;
         final TeamFeatureCoverage coverage = new TeamFeatureCoverage(
                 authoritativeAggregate != null,
                 reconstructionAvailable,
-                streamComplete,
                 authoritativeMembers.size(),
                 mappedMembers,
                 observedPositionEventCount,
@@ -282,9 +290,6 @@ public class DefaultTeamBattleFeatureExtractor {
         }
         if (invalidTimestampEventCount > 0) {
             limitations.add("INVALID_EVENT_TIMESTAMPS_IGNORED");
-        }
-        if (reconstructionAvailable && reconstruction.coverage() != null && !streamComplete) {
-            limitations.add("REPLAY_STREAM_PARTIAL");
         }
         limitations.addAll(timeLimitations);
         if (battleEndResolved.limitation() != null) {
@@ -431,6 +436,7 @@ public class DefaultTeamBattleFeatureExtractor {
             final PlayerResult player,
             final TeamEntityMapping mapping,
             final Map<Integer, List<TimedTeamPosition>> timedPositionsByEntity,
+            final Map<Integer, List<Double>> leaveTimesByEntity,
             final List<TimedTeamDamage> damageEvents,
             final List<AttributedHpLoss> teamLosses,
             final List<PlayerResult> authoritativeMembers,
@@ -442,14 +448,16 @@ public class DefaultTeamBattleFeatureExtractor {
         final MemberIdentity memberId = MemberIdentity.resolve(player, authoritativeMembers);
         final List<Integer> entityIds =
                 mapping.entityIds(player.accountId, player.nickname);
-        final List<MovementSegment> movements = entityIds.stream()
-                .map(entityId -> timedPositionsByEntity.getOrDefault(entityId, List.of()))
-                .flatMap(timedPositions ->
-                    DefaultPlayerBattleFeatureExtractor
-                            .compressMovements(convertTimedPositions(timedPositions), mapCode).stream())
-                .sorted(Comparator.comparingDouble(MovementSegment::startTime)
-                        .thenComparingDouble(MovementSegment::endTime))
-                .toList();
+        final List<MovementSegment> movements = new ArrayList<>();
+        for (final int entityId : entityIds) {
+            final List<TimedTeamPosition> timedPositions =
+                    timedPositionsByEntity.getOrDefault(entityId, List.of());
+            movements.addAll(DefaultPlayerBattleFeatureExtractor.compressMovements(
+                    convertTimedPositions(timedPositions), mapCode,
+                    leaveTimesByEntity.getOrDefault(entityId, List.of())));
+        }
+        movements.sort(Comparator.comparingDouble(MovementSegment::startTime)
+                .thenComparingDouble(MovementSegment::endTime));
         final DecodeConfidence mappingConfidence = entityIds.stream()
                 .map(mapping::identity)
                 .filter(Objects::nonNull)

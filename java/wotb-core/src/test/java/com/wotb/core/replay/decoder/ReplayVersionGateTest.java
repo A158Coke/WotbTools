@@ -1,0 +1,135 @@
+package com.wotb.core.replay.decoder;
+
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * Capability-based version gate (PR162 architecture): structural layouts are forward-compatible
+ * (shape-validated), closed numeric semantics stay strictly evidence-gated.
+ *
+ * <p>This is <b>not</b> an allowlist — a future version such as {@code 11.22.0_china} keeps decoding
+ * framing/header/Type10 layout/EntityProperty envelope/entity-lifecycle/method envelopes, while the
+ * version-scoped closed semantics it does not verify degrade to {@code RAW/UNKNOWN}. Only the verified
+ * {@code 11.19.0_china*} family inherits PR147 closed numeric meanings; 11.18 is structural + settlement
+ * compatible without PR147 closed decoders.</p>
+ */
+class ReplayVersionGateTest {
+
+    @Test
+    void closedSemanticsOnlyForCurrentFamily() {
+        assertTrue(ReplayVersionGate.closedSemanticsAllowed("11.19.0_china"));
+        assertTrue(ReplayVersionGate.closedSemanticsAllowed("11.19.0_china_apple"));
+        assertFalse(ReplayVersionGate.closedSemanticsAllowed("11.18.0_china"));
+        assertFalse(ReplayVersionGate.closedSemanticsAllowed("11.20.0_china"));
+        assertFalse(ReplayVersionGate.closedSemanticsAllowed("11.22.0_china"));
+        assertFalse(ReplayVersionGate.closedSemanticsAllowed("12.0.0_eu"));
+        assertFalse(ReplayVersionGate.closedSemanticsAllowed("1.2.3"));
+        assertFalse(ReplayVersionGate.closedSemanticsAllowed(null));
+        assertFalse(ReplayVersionGate.closedSemanticsAllowed(""));
+        assertFalse(ReplayVersionGate.closedSemanticsAllowed("   "));
+    }
+
+    @Test
+    void methodSemanticsOnlyForCurrentFamily() {
+        assertTrue(ReplayVersionGate.methodSemanticsAllowed("11.19.0_china"));
+        assertFalse(ReplayVersionGate.methodSemanticsAllowed("11.18.0_china"));
+        assertFalse(ReplayVersionGate.methodSemanticsAllowed("11.20.0_china"));
+        assertFalse(ReplayVersionGate.methodSemanticsAllowed("11.22.0_china"));
+        assertFalse(ReplayVersionGate.methodSemanticsAllowed(null));
+    }
+
+    @Test
+    void prefixMatchingIsBoundarySafe() {
+        assertTrue(ReplayVersionGate.closedSemanticsAllowed("11.19.0_china_apple_beta"));
+        assertFalse(ReplayVersionGate.closedSemanticsAllowed("11.19.0_chin"));
+        assertFalse(ReplayVersionGate.closedSemanticsAllowed("11.19.0_chinaX"));
+    }
+
+    // ---- Layer B structural layouts: forward-compatible (shape-validated), not version-blocked ----
+
+    @Test
+    void type10LayoutIsForwardCompatible() {
+        assertTrue(ReplayVersionGate.type10LayoutAllowed("11.19.0_china"));
+        assertTrue(ReplayVersionGate.type10LayoutAllowed("11.18.0_china_apple"));
+        assertTrue(ReplayVersionGate.type10LayoutAllowed("11.20.0_china"), "Type10 49B 结构应前向兼容");
+        assertTrue(ReplayVersionGate.type10LayoutAllowed("11.22.0_china"), "future 不得因版本号拒绝稳定布局");
+        assertTrue(ReplayVersionGate.type10LayoutAllowed("12.0.0_eu"));
+    }
+
+    @Test
+    void entityPropertyEnvelopeIsForwardCompatible() {
+        assertTrue(ReplayVersionGate.basicVehiclePropertiesAllowed("11.19.0_china"));
+        assertTrue(ReplayVersionGate.basicVehiclePropertiesAllowed("11.18.0_china_apple"));
+        assertTrue(ReplayVersionGate.basicVehiclePropertiesAllowed("11.22.0_china"), "EntityProperty envelope 前向兼容");
+    }
+
+    @Test
+    void positiveHpValueIsForwardCompatible() {
+        assertTrue(ReplayVersionGate.positiveHpValueAllowed("11.19.0_china"));
+        assertTrue(ReplayVersionGate.positiveHpValueAllowed("11.18.0_china_apple"));
+        assertTrue(ReplayVersionGate.positiveHpValueAllowed("11.22.0_china"), "普通正 HP 结构值可前向解析");
+    }
+
+    @Test
+    void methodLayoutAllowedIsForwardCompatible() {
+        assertTrue(ReplayVersionGate.methodLayoutAllowed("11.19.0_china"));
+        assertTrue(ReplayVersionGate.methodLayoutAllowed("11.19.0_china_apple"));
+        assertTrue(ReplayVersionGate.methodLayoutAllowed("11.18.0_china_apple"));
+        assertTrue(ReplayVersionGate.methodLayoutAllowed("11.20.0_china"), "method 结构 envelope 前向兼容");
+        assertTrue(ReplayVersionGate.methodLayoutAllowed("11.22.0_china"));
+        assertTrue(ReplayVersionGate.methodLayoutAllowed("12.0.0_eu"));
+        assertTrue(ReplayVersionGate.methodLayoutAllowed(null));
+    }
+
+    @Test
+    void entityLifecycleLayoutAllowedIsVerifiedFamilyOnly() {
+        // PR162/P1-5：entity-lifecycle（Type4/5/33）numeric layout 是 version-scoped 语义，当前无独立
+        // version-invariant 可证明未来仍同属该结构 → 仅 verified family 允许；future/unknown fail-closed。
+        assertTrue(ReplayVersionGate.entityLifecycleLayoutAllowed("11.19.0_china"));
+        assertTrue(ReplayVersionGate.entityLifecycleLayoutAllowed("11.19.0_china_apple"));
+        assertTrue(ReplayVersionGate.entityLifecycleLayoutAllowed("11.18.0_china_apple"));
+        assertFalse(ReplayVersionGate.entityLifecycleLayoutAllowed("11.20.0_china"),
+                "future entity-lifecycle must fail closed（无 invariant 证据）");
+        assertFalse(ReplayVersionGate.entityLifecycleLayoutAllowed("11.22.0_china"));
+        assertFalse(ReplayVersionGate.entityLifecycleLayoutAllowed("1.2.3"));
+        assertFalse(ReplayVersionGate.entityLifecycleLayoutAllowed(null));
+        assertFalse(ReplayVersionGate.entityLifecycleLayoutAllowed(""));
+    }
+
+    /** PR162/P0-1：method semantic 按 method 单独 gated；11.18 仅 method1 有独立 evidence。 */
+    @Test
+    void methodSemanticAllowedIsPerMethodNotPerEnvelope() {
+        // 11.19 current → 所有 method 语义
+        assertTrue(ReplayVersionGate.methodSemanticAllowed("11.19.0_china", 1));
+        assertTrue(ReplayVersionGate.methodSemanticAllowed("11.19.0_china_apple", 29));
+        // 11.18 legacy → 仅 method1（Vehicle health/state）有 evidence
+        assertTrue(ReplayVersionGate.methodSemanticAllowed("11.18.0_china", 1));
+        assertFalse(ReplayVersionGate.methodSemanticAllowed("11.18.0_china", 0), "11.18 method0 无独立证据");
+        assertFalse(ReplayVersionGate.methodSemanticAllowed("11.18.0_china", 5), "11.18 method5 无独立证据");
+        assertFalse(ReplayVersionGate.methodSemanticAllowed("11.18.0_china_apple", 17), "11.18 method17 无独立证据");
+        assertFalse(ReplayVersionGate.methodSemanticAllowed("11.18.0_china_apple", 29), "11.18 method29 无独立证据");
+        // future → 全部 raw
+        assertFalse(ReplayVersionGate.methodSemanticAllowed("11.22.0_china", 1));
+        assertFalse(ReplayVersionGate.methodSemanticAllowed("11.22.0_china", 29));
+        assertFalse(ReplayVersionGate.methodSemanticAllowed("12.0.0_eu", 17));
+    }
+
+    /** PR162/P0-2：prop2 turret-yaw 语义只由 PROP_TURRET_YAW 授权。 */
+    @Test
+    void turretYawAllowedIsCapabilityGated() {
+        assertTrue(ReplayVersionGate.turretYawAllowed("11.19.0_china"));
+        assertTrue(ReplayVersionGate.turretYawAllowed("11.18.0_china_apple"), "11.18 prop2 有独立 evidence");
+        assertFalse(ReplayVersionGate.turretYawAllowed("11.22.0_china"), "future prop2 不得继承 turret yaw 语义");
+        assertFalse(ReplayVersionGate.turretYawAllowed("12.0.0_eu"));
+        assertFalse(ReplayVersionGate.turretYawAllowed(null));
+    }
+
+    @Test
+    void verifiedFffeTerminalOnlyForCurrentFamily() {
+        assertTrue(ReplayVersionGate.verifiedFffeTerminalAllowed("11.19.0_china"));
+        assertFalse(ReplayVersionGate.verifiedFffeTerminalAllowed("11.18.0_china"));
+        assertFalse(ReplayVersionGate.verifiedFffeTerminalAllowed("11.22.0_china"));
+    }
+}

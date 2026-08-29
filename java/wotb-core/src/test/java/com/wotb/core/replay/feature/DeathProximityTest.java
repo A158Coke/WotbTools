@@ -1,9 +1,10 @@
 package com.wotb.core.replay.feature;
 
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.processing.TeamEntityIdentity;
 import com.wotb.core.replay.processing.TeamEntityMapping;
-import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ObservationState;
@@ -123,6 +124,8 @@ class DeathProximityTest {
         p.tankName = "SPHT";
         p.survived = false;
         p.deathTimeMillis = (long) (deathSec * 1000);
+        p.deathTimeSource = deathSec > 0
+                ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
         return p;
     }
 

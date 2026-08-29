@@ -1,9 +1,9 @@
 package com.wotb.web.replay.job;
 
-import jakarta.annotation.PreDestroy;
-import jakarta.annotation.PostConstruct;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;

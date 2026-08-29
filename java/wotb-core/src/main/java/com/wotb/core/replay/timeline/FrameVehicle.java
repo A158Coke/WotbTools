@@ -25,8 +25,6 @@ public record FrameVehicle(
         FrameOrientation orientation,
         FrameMapState mapState,
         VehicleKnowledgeState knowledgeState,
-        int damageDealt,
-        int damageReceived,
         Double destroyedKnownAtSec,
         List<String> limitations
 ) {

@@ -3,14 +3,14 @@ package com.wotb.core.replay.evidence;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.EntryHpSource;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.TeamEntityMapper;
-import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.processing.TeamEntityMapper;
+import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import org.junit.jupiter.api.Test;
 
@@ -130,6 +130,27 @@ class ObservedMaxHpTest {
                 TeamEntityMapper.resolve(battle, recon(events)));
         assertEquals(EntryHpSource.BASE_FALLBACK, battle.players.getFirst().entryHpSource);
         assertNull(battle.players.getFirst().entryHp);
+    }
+
+    @Test
+    void recorderOpeningHpFromMethod5IsAffirmedEvenBelowTankopediaBase() {
+        // 录像者：Avatar method5 初始化 HP = opening HP 种子（34/34 == 首个 Type5 hpRaw）；
+        // 即使 opening HP（3200）< tankopedia base（3400）也 AFFIRMED（装备/物资加成与 base 无关）
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(5f, null), 8,
+                DecodeConfidence.EXACT, 10, 1001L));
+        events.add(new com.wotb.core.replay.event.RecorderHealthChangedEvent(
+                2, new ReplayTimestamp(8f, null), 8,
+                DecodeConfidence.EXACT, 10, 3200, 1));
+        final Battle battle = battle();
+        battle.recorder = "rec"; // PlayerResultFormat.recorderAccountId 需要 nickname 匹配
+        battle.players.getFirst().nickname = "rec";
+        ObservedMaxHp.populate(battle, events,
+                TeamEntityMapper.resolve(battle, recon(events)));
+        final PlayerResult p = battle.players.getFirst();
+        assertEquals(EntryHpSource.OBSERVED_EXACT, p.entryHpSource,
+                "recorder own-health mirror 是客户端直接权威，无需 damage coverage");
+        assertEquals(3200, p.entryHp);
     }
 
     @Test

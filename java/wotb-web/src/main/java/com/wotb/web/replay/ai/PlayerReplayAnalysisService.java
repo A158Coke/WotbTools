@@ -1,20 +1,16 @@
 package com.wotb.web.replay.ai;
 
-import java.util.List;
-import java.util.Map;
-
 import com.wotb.core.ai.EvidenceDensity;
 import com.wotb.core.model.Battle;
-import com.wotb.core.replay.processing.AiNotConfiguredException;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
+import com.wotb.core.replay.processing.AiNotConfiguredException;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
 import com.wotb.core.replay.timeline.TimelinePerspective;
-
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
@@ -22,6 +18,9 @@ import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.Map;
 
 /**
  * 单玩家/多场趋势 AI 复盘编排。

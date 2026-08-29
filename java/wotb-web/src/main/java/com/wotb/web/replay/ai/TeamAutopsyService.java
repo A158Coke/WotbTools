@@ -1,11 +1,11 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.replay.feature.TeamAutopsyStats;
+import com.wotb.core.replay.feature.TeamAutopsyStatsBuilder;
 import com.wotb.core.replay.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.replay.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.feature.TeamAutopsyStats;
-import com.wotb.core.replay.feature.TeamAutopsyStatsBuilder;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;

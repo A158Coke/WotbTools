@@ -11,7 +11,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -30,39 +32,24 @@ class TimelineRealFixtureProbeTest {
     }
 
     @Test
-    void realRandomBattleBuildsUsableTimeline() throws Exception {
+    void realRandomBattleWithoutBattleStartAuthorityFailsClosed() throws Exception {
         final byte[] bytes = Files.readAllBytes(fixture());
         final Battle battle = ReplayParser.parse(bytes);
         final ReplayReconstruction recon = new ReplayReconstructionService().reconstruct(bytes);
         final PlayerResult recorder = battle.recorderResult();
         assertNotNull(recorder, "真实夹具必须能解析录像者");
+        // PR162/P0-3：随机战夹具无 ArenaPeriod BATTLE / RoundFinished 权威（probe 证实 arenaPeriod=0,
+        // roundFinished=0），battle-start 必须 fail-closed 为 null，绝不退化为「max clock - settlement
+        // duration」伪造。
+        assertNull(recon.battleStartRawClockSec(),
+                "无权威 battle-start 时必须 fail-closed（不得用 max clock - duration 伪造）");
 
         final BattleTimelineResult result = BattleTimelineBuilder.build(
                 battle, recon, TimelinePerspective.personal(
                         recorder.accountId > 0 ? recorder.accountId : null, recorder.team));
-        assertTrue(result.usable(), "真实回放必须构建可用 timeline: " + result.validation().errors());
-
-        final BattleTimeline timeline = result.timeline();
-        assertTrue(timeline.durationSec() > 0);
-        assertTrue(timeline.frames().size() > 100, "300s 战斗应有 >100 帧，实际 " + timeline.frames().size());
-        // 时钟：生产无 IDENTIFIED start，应走 ESTIMATED（BattleEndedEvent - duration）
-        assertTrue(timeline.clockResolution() == BattleTimelineClock.IDENTIFIED
-                        || timeline.clockResolution() == BattleTimelineClock.ESTIMATED,
-                "时钟必须可解析，实际 " + timeline.clockResolution());
-
-        // 敌方知识状态在真实数据上必须有分布（已知/last-known/未知/阵亡至少出现两种）
-        final BattleFrame late = timeline.frameAt(timeline.durationSec() * 0.9);
-        final WorldSummary world = late.world();
-        assertTrue(world.enemyTotal() > 0);
-        assertTrue(world.enemyKnown() + world.enemyLastKnown() + world.enemyUnknown() >= 0);
-
-        // 录像者位置知识应为 CURRENT（本方位置流开局完整，见 docs/research/replay/protocol.md）
-        final FrameVehicle recorderVehicle = late.vehicles().stream()
-                .filter(v -> v.friendly() && v.entityId() > 0)
-                .findFirst().orElse(null);
-        assertNotNull(recorderVehicle, "帧中应包含己方车辆");
-        assertNotNull(recorderVehicle.position());
-        assertTrue(recorderVehicle.position().knowledge() != PositionKnowledge.UNKNOWN,
-                "己方位置流应可观测");
+        assertFalse(result.usable(),
+                "无 battle-start 权威时必须 fail-closed（不伪造 clock）: " + result.validation().errors());
+        assertTrue(result.validation().errors().contains(TimelineError.TIMELINE_CLOCK_UNRESOLVED),
+                "失败原因必须是 TIMELINE_CLOCK_UNRESOLVED: " + result.validation().errors());
     }
 }

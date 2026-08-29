@@ -10,7 +10,6 @@ package com.wotb.core.replay.feature;
 public record TeamFeatureCoverage(
         boolean authoritativeSummaryAvailable,
         boolean reconstructionAvailable,
-        boolean streamComplete,
         int authoritativeMemberCount,
         int mappedMemberCount,
         int observedPositionEventCount,
@@ -65,7 +64,6 @@ public record TeamFeatureCoverage(
     public String toString() {
         return "TeamFeatureCoverage[authoritativeSummaryAvailable=" + authoritativeSummaryAvailable
                 + ", reconstructionAvailable=" + reconstructionAvailable
-                + ", streamComplete=" + streamComplete
                 + ", authoritativeMemberCount=" + authoritativeMemberCount
                 + ", mappedMemberCount=" + mappedMemberCount
                 + ", observedPositionEventCount=" + observedPositionEventCount
@@ -81,7 +79,7 @@ public record TeamFeatureCoverage(
 
     public static TeamFeatureCoverage empty() {
         return new TeamFeatureCoverage(
-                false, false, false, 0, 0, 0, 0,
+                false, false, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0.0, false);
     }
 }

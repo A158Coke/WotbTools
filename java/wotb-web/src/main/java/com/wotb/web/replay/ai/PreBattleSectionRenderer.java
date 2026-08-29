@@ -1,9 +1,8 @@
 package com.wotb.web.replay.ai;
 
-import org.springframework.util.StringUtils;
-
 import com.wotb.core.replay.map.MapTacticalSemantics;
 import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
+import org.springframework.util.StringUtils;
 
 import java.util.List;
 import java.util.Map;

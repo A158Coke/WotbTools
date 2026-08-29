@@ -3,7 +3,6 @@ package com.wotb.core.replay.timeline;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Objects;
 
 /**
  * 团队复盘 Focus Window 选择器（确定性、小型，docs/architecture/battle-timeline.md §4/§5）。

@@ -2,12 +2,12 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.AiNotConfiguredException;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.evidence.TankTacticalProfile;
 import com.wotb.core.replay.evidence.TankTacticalProfileRegistry;
 import com.wotb.core.replay.map.MapTacticalSemantics;
 import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
+import com.wotb.core.replay.processing.AiNotConfiguredException;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;

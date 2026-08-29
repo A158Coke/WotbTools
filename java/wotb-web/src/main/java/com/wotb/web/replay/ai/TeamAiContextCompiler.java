@@ -1,9 +1,9 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.replay.timeline.BattleDelta;
-import com.wotb.core.replay.timeline.DeltaKind;
 import com.wotb.core.replay.timeline.BattleFrame;
 import com.wotb.core.replay.timeline.BattleTimeline;
+import com.wotb.core.replay.timeline.DeltaKind;
 import com.wotb.core.replay.timeline.EpisodeDetector;
 import com.wotb.core.replay.timeline.FrameVehicle;
 import com.wotb.core.replay.timeline.TacticalEpisode;
