@@ -127,15 +127,9 @@ class MainActivity : Activity() {
             webView,
             BRIDGE_NAME,
             BRIDGE_ORIGINS,
-            object : WebViewCompat.WebMessageListener {
-                override fun onPostMessage(
-                    view: WebView,
-                    message: WebMessageCompat,
-                    sourceOrigin: Uri,
-                    isMainFrame: Boolean,
-                    replyProxy: WebViewCompat.WebMessageListener.ReplyProxy
-                ) {
-                    val data = message.data ?: return
+            WebViewCompat.WebMessageListener { _, message, _, _, replyProxy ->
+                val data = message.data
+                if (data != null) {
                     replyProxy.postMessage(WebMessageCompat(nativeBridge.handleMessage(data)))
                 }
             }
