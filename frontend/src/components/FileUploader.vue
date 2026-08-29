@@ -16,7 +16,9 @@ const props = defineProps({
   loading: Boolean,
   confirmRemove: Boolean,
   showWorkspaceActions: { type: Boolean, default: true },
-  showPreview: { type: Boolean, default: true }
+  showPreview: { type: Boolean, default: true },
+  /** AI 复盘 / 战局重建 单文件语义时禁 folder（默认 true 兼容批处理）。 */
+  allowFolder: { type: Boolean, default: true }
 })
 const dragging = ref(false)
 const listOpen = ref(false)
@@ -161,7 +163,7 @@ function openReplayAction(mode) {
               <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>{{ $t('upload.select_files') }}
               <input type="file" multiple accept=".wotbreplay" data-testid="select-files-input" @change="onPick" />
             </label>
-            <label class="filebtn ghost">
+            <label v-if="allowFolder" class="filebtn ghost">
               <svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /></svg>{{ $t('upload.select_folder') }}
               <input type="file" multiple webkitdirectory data-testid="select-folder-input" @change="onPick" />
             </label>
@@ -193,7 +195,7 @@ function openReplayAction(mode) {
           <svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>{{ $t('upload.add') }}
           <input type="file" multiple accept=".wotbreplay" data-testid="add-files-input" @change="onPick" />
         </label>
-        <label class="filebtn ghost sm" :title="$t('upload.add_folder_title')">
+        <label v-if="allowFolder" class="filebtn ghost sm" :title="$t('upload.add_folder_title')">
           <svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /></svg>{{ $t('upload.folder') }}
           <input type="file" multiple webkitdirectory data-testid="add-folder-input" @change="onPick" />
         </label>

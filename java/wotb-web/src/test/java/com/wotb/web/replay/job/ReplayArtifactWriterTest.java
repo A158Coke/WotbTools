@@ -52,7 +52,7 @@ class ReplayArtifactWriterTest {
                     "malinovka", "Malinovka", Map.of("zh", "马利诺夫卡"), 1,
                     new MapOverview.Bounds(0, 500, 0, 500), java.util.List.of(), null,
                     java.util.List.of(), java.util.List.of(), null, java.util.List.of(),
-                    2, 123L, null);
+                    2, 123L);
 
             ReplayArtifactWriter.writeMapOverview(jobDir, 1, overview);
             final MapOverview read = ReplayArtifactWriter.readMapOverview(jobDir, 1);

@@ -126,7 +126,7 @@ watch(
   async (ov) => {
     const token = ++preloadToken
     preload.value = { phase: 'loading', resolved: new Map(), failed: new Set(), byTank: new Map() }
-    const vehicles = ov?.playback?.vehicles || []
+    const vehicles = ov?.playbackV2?.vehicles || []
     if (vehicles.length === 0) {
       preload.value = { phase: 'ready', resolved: new Map(), failed: new Set(), byTank: new Map() }
       return
