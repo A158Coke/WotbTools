@@ -47,6 +47,7 @@ import {
   orientationAtV2,
   healthAt,
   lifeAt,
+  v2VehicleView,
 } from '../utils/battlePlaybackV2'
 import {
   MARKER_CORE_PX,
@@ -101,7 +102,8 @@ watch(image, async (img) => {
   palette.value = paletteForLuminance(await luminanceOfImage(img))
 }, { immediate: true })
 
-const playback = computed(() => props.overview.playback || null)
+// V2 canonical dataset 是唯一 playback 事实源（cleanup：移除 legacy overview.playback）。
+const playback = computed(() => props.playbackV2 || null)
 /** V2 canonical tracks 按账号索引（迁移期守卫：present 时 marker/HUD 用 V2 事实源）。 */
 const v2TrackByAccount = computed(() => {
   const tracks = props.playbackV2?.vehicles || []
@@ -1080,7 +1082,8 @@ const routesByAccount = computed(() => {
 const vehiclesByAccount = computed(() => {
   const map = new Map()
   for (const vehicle of (playback.value ? playback.value.vehicles : [])) {
-    map.set(vehicle.accountId, vehicle)
+    // V2 canonical vehicle view（带 hpLosses/deathSec 供累计统计/伤害日志/teamRelated）
+    map.set(vehicle.accountId, v2VehicleView(vehicle))
   }
   return map
 })
