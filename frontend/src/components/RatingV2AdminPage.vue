@@ -152,6 +152,7 @@ onMounted(async () => {
         :loading="loading"
         :confirm-remove="false"
         :show-workspace-actions="false"
+        :show-preview="false"
         @update:files="updateFiles" />
 
       <div v-if="files.length" class="rating-v2-actions">
