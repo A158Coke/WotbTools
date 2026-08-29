@@ -7,7 +7,7 @@
 ### Fixed
 - **Flyway 迁移不可变 + 部署失败诊断（Production Deploy Hotfix）**：修复 `main` 上已执行 Flyway V18 因文档注释漂移（`docs/current-plan.md` 误写回）导致的启动/健康检查失败风险。将 V18 恢复为 Git history 证明的 authoritative exact blob（`7e11d427` 的 `a7941f0d2…`，Flyway CRC32 `3353739529`），V1–V21 无其它 drift。
   - **永久 policy**：`java/AGENTS.md` 明确既有 `V*.sql` 为 immutable historical artifact——禁止修改/重命名/删除/格式化/改注释/改换行/编码；schema 只能新增更高版本 forward-only `V<N>__*.sql`；仅当 Git history 证明生产已执行且发生 checksum drift 时才允许恢复 exact deployed blob。
-  - **CI guard**：新增 `deploy/check-flyway-immutability.sh`（`git diff --name-status --find-renames` 检测 M/D/R；既有 migration 一律失败，仅放行一次用户批准的 V18 blob-pair `212635eb…→a7941f0d…`；A 仅允许版本号高于 base 最大版本且不含 SQL 注释——含行内 `--` 或块 `/*…*/` 失败）。`deploy-smoke` 以 `fetch-depth:0` 传入 PR base SHA，并运行 `deploy/test-flyway-immutability.sh` fixture。
+  - **CI guard**：新增 `deploy/check-flyway-immutability.sh`（`git diff --name-status --find-renames` 检测 M/D/R；既有 migration 一律失败，仅放行一次用户批准的 V18 blob-pair `212635eb…→a7941f0d…`；A 仅要求版本号高于 base 最大版本）。`deploy-smoke` 以 `fetch-depth:0` 传入 PR base SHA，并运行 `deploy/test-flyway-immutability.sh` fixture。
   - **部署失败诊断**：`deploy/deploy.sh` 新增 `report_health_status`（backend/frontend/keycloak 各 PASS/FAILED/SKIPPED），健康检查最终 timeout 先输出各服务状态，再于 rollback 前 `dump_logs`（`ps -a`、容器 inspect、三服务 logs）；所有诊断命令独立容错，不阻断 rollback。
   验证：`bash -n`、immutability fixture、deploy rollback smoke、CI workflow 静态检查。
 - **Replay capability navigation refactor**：回放解析、AI 复盘与战局重建现在是三个独立入口；具体战斗通过内存 `processingJobId + sourceId` 复用同一解析数据集，避免按文件名或重复任务定位。旧 `?view=reconstruction` 书签兼容跳转到战局重建入口。

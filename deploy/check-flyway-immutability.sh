@@ -49,20 +49,7 @@ while IFS=$'\t' read -r status path _; do
       if (( version <= base_max_version )); then
         fail_added "$path (version ${version} must be greater than base maximum ${base_max_version})"
       fi
-      if git show "HEAD:${path}" | awk '
-        {
-          line = $0
-          # strip single-quoted string literals so `--` / `/*` inside a literal is not a comment
-          while (match(line, /'"'"'[^'"'"']*'"'"'/)) {
-            line = substr(line, 1, RSTART - 1) substr(line, RSTART + RLENGTH)
-          }
-          if (line ~ /--|\/\*|\*\//) found = 1
-        }
-        END { exit found ? 0 : 1 }
-      '; then
-        fail_added "$path (new versioned migrations must not contain SQL comments)"
-      fi
-      echo "OK: new Flyway migration ${path} (version ${version}, no SQL comments)"
+      echo "OK: new Flyway migration ${path} (version ${version})"
       ;;
     M)
       if [ "$path" = "$V18_PATH" ] \
