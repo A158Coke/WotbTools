@@ -5,7 +5,26 @@
 ## 构建（全部经 ci.yml / settings.xml 核对）
 
 - JDK 21（CI `java-version: "21"`）；Maven 必须 `-s java/settings.xml`（aliyun 镜像 + 独立 `java/.m2repo`；CI 等价 `-Dmaven.repo.local=.m2repo`）。容器构建用 `java/settings-docker.xml`。
-- 全量测试：`cd java && mvn -s settings.xml test`（JAVA_HOME 指向 JDK 21）。
+- 全量测试：`cd java && mvn -s settings.xml test`（JAVA_HOME 指向 JDK 21）——**CI authoritative validation**，
+  不是每次提交前必跑（见下「测试策略」）。
+
+## 测试策略（Agent 即时验证，Fast Feedback First）
+
+开发过程中禁止无理由重复运行 repository-level full test；按改动层级选择最合适的验证：
+
+- **Targeted**：`mvn -pl <module> -Dtest=<TestClass> test`
+  （改单个 class/function/组件，只跑直接相关测试类）。
+- **Module**：`mvn -pl wotb-core test` 或 `mvn -pl wotb-web -am test`
+  （单模块改动、或一个 feature 的多文件改动，验证该模块/feature 回归）。
+- **Full**：`cd java && mvn -s settings.xml test`
+  （**CI authoritative validation**，由 PR CI 统一执行；Agent 仅在 Full-test 例外情形运行，例外清单见 `.agents/AGENTS.md`）。
+
+改动时须先声明：`Affected scope`（改了什么/影响哪些模块）→ `Selected validation`（选择哪档）→
+`Why`（为什么这一档足够）。禁止无脑执行 full suite。
+
+测试失败处理：先修复失败测试并重跑该测试，禁止每次失败后升级到 full suite；修复完成后跑相关
+regression tests 即可，PR CI 负责最终发现遗漏影响。同一任务内若测试已通过且对应代码、依赖代码、
+测试配置均未变化，则不得重复运行同一测试。
 
 ## 模块边界（真实职责）
 

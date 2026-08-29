@@ -44,7 +44,9 @@ description: >
    停下汇报并给出选项；不静默扩大范围、不自行改方案。
 7. **全部完成后**：
    - 按"验收标准"逐条验证（映射到具体测试/检查，禁止口头宣称通过）；
-   - 跑全量测试与构建（Java / 前端，按项目 CI 口径）；
+   - 运行本任务 affected regression tests（targeted / module / feature）；
+     repository-level full validation 交由 PR CI 统一执行，**不在任务结束重复跑全量**（仅在 `.agents/AGENTS.md`
+     的 Full-test 例外情形下才跑全量，并须先声明 Affected scope / Selected validation / Why）；
    - 影响行为/文档时更新 `docs/CHANGELOG.md`；
    - 汇总：修改文件、测试结果、仍存在的真实限制；
    - **自动调用 review-with-docs 审查**（必须执行，不是建议）：读
