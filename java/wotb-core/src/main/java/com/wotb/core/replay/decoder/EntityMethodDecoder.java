@@ -1,11 +1,10 @@
 package com.wotb.core.replay.decoder;
 
-import com.wotb.core.replay.event.DamageEvent;
-import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.AmmunitionStateEvent;
 import com.wotb.core.replay.event.ArenaPeriodChangedEvent;
+import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HpRawState;
-import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ProjectileLaunchedEvent;
 import com.wotb.core.replay.event.ProjectileResolutionEvent;
@@ -13,14 +12,15 @@ import com.wotb.core.replay.event.ProjectileTerminalEvent;
 import com.wotb.core.replay.event.RecorderHealthChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.event.ShotResultEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.event.TargetingInfoSnapshotEvent;
 import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.event.UnsupportedDamageEvent;
 import com.wotb.core.replay.event.VehicleFiredEvent;
-import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.event.VehicleHealthStateEvent;
+import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.event.VehicleVehicleCollisionEvent;
 import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.replay.stream.RawReplayPacket;
@@ -30,7 +30,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * Type 8 (EntityMethod) 解码器。

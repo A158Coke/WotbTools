@@ -84,15 +84,18 @@ class ReplayVersionGateTest {
     }
 
     @Test
-    void entityLifecycleLayoutAllowedIsForwardCompatible() {
+    void entityLifecycleLayoutAllowedIsVerifiedFamilyOnly() {
+        // PR162/P1-5：entity-lifecycle（Type4/5/33）numeric layout 是 version-scoped 语义，当前无独立
+        // version-invariant 可证明未来仍同属该结构 → 仅 verified family 允许；future/unknown fail-closed。
         assertTrue(ReplayVersionGate.entityLifecycleLayoutAllowed("11.19.0_china"));
         assertTrue(ReplayVersionGate.entityLifecycleLayoutAllowed("11.19.0_china_apple"));
         assertTrue(ReplayVersionGate.entityLifecycleLayoutAllowed("11.18.0_china_apple"));
-        assertTrue(ReplayVersionGate.entityLifecycleLayoutAllowed("11.20.0_china"), "entity-lifecycle 结构前向兼容");
-        assertTrue(ReplayVersionGate.entityLifecycleLayoutAllowed("11.22.0_china"));
-        assertTrue(ReplayVersionGate.entityLifecycleLayoutAllowed("1.2.3"), "未知版本结构能力仅 SHAPE 门禁，不因版本号直接 UNKNOWN");
-        assertTrue(ReplayVersionGate.entityLifecycleLayoutAllowed(null));
-        assertTrue(ReplayVersionGate.entityLifecycleLayoutAllowed(""));
+        assertFalse(ReplayVersionGate.entityLifecycleLayoutAllowed("11.20.0_china"),
+                "future entity-lifecycle must fail closed（无 invariant 证据）");
+        assertFalse(ReplayVersionGate.entityLifecycleLayoutAllowed("11.22.0_china"));
+        assertFalse(ReplayVersionGate.entityLifecycleLayoutAllowed("1.2.3"));
+        assertFalse(ReplayVersionGate.entityLifecycleLayoutAllowed(null));
+        assertFalse(ReplayVersionGate.entityLifecycleLayoutAllowed(""));
     }
 
     @Test

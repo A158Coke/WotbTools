@@ -85,10 +85,15 @@ public final class ReplayVersionGate {
                 == ReplayProtocolProfile.Level.VERIFIED;
     }
 
-    /** Entity-lifecycle observer layout (Type4 leave / Type5 materialization / Type33: forward-compatible structural. */
+    /**
+     * PR162/P1-5: Entity-lifecycle (Type4 leave / Type5 materialization / Type33) numeric layout is
+     * version-scoped class semantic (entityTypeId). Currently no independent version-invariant structural
+     * predicate exists to prove a future Type5 shape is still the same materialization structure, so future
+     * versions FAIL CLOSED (raw-preserve) rather than producing an EXACT MaterializationEvent.
+     */
     public static boolean entityLifecycleLayoutAllowed(final String clientVersion) {
         return ReplayProtocolProfile.levelOf(clientVersion, ReplayProtocolProfile.Capability.ENTITY_LIFECYCLE_LAYOUT)
-                != ReplayProtocolProfile.Level.UNKNOWN;
+                == ReplayProtocolProfile.Level.VERIFIED;
     }
 
     /** Ordinary positive HP structural value: proven for verified + legacy, forward-compatible otherwise. */

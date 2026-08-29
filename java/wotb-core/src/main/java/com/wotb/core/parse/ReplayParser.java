@@ -1,11 +1,11 @@
 package com.wotb.core.parse;
 
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.json.JsonMapper;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import org.springframework.util.StringUtils;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -80,16 +80,8 @@ public final class ReplayParser {
     /** PR162/P0-2: 消费 canonical parse context（归档解压 + settlement 均只一次）。 */
     public static Battle parse(final ParsedReplay parsed) throws IOException {
         final Map<String, byte[]> entries = parsed.entries();
-        final JsonNode meta;
-        if (entries.containsKey("meta.json")) {
-            final JsonNode parsedMeta = MAPPER.readTree(entries.get("meta.json"));
-            if (parsedMeta == null || !parsedMeta.isObject()) {
-                throw new IOException("Invalid meta.json: expected a JSON object");
-            }
-            meta = parsedMeta;
-        } else {
-            meta = MAPPER.createObjectNode();
-        }
+        // PR162/P1-4：meta.json 已由 ParsedReplay 一次解析，这里直接消费，不再各自 readTree。
+        final JsonNode meta = parsed.meta();
         // PR147 settlement version gate (P0-3): the 11.19/11.18 numeric semantics of #24/#25/#105 and
         // root2/4/5 are version-scoped. clientVersion 与 settlement facts 都来自共享 parse context
         // （ParsedReplay，解码一次）。

@@ -1,5 +1,9 @@
 package com.wotb.core.parse;
 
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+
 import java.io.IOException;
 import java.util.Map;
 
@@ -19,14 +23,18 @@ import java.util.Map;
  * @param settlementFacts battle_results.dat 的解码事实；缺失/损坏 → null
  * @param settlementError settlement 缺失/损坏的原因（settlementFacts != null 时为 null）
  * @param streamHeader     data.wotreplay 的 <b>一次解析</b> 头部（consumers 复用，不再二次 parse）；缺失/非法 → null
+ * @param meta              meta.json 的 <b>一次解析</b> JSON（consumers 复用，不再各自 readTree）；缺失 → 空对象
  */
 public record ParsedReplay(
         Map<String, byte[]> entries,
         String clientVersion,
         SettlementFacts settlementFacts,
         String settlementError,
-        ReplayStreamHeader streamHeader
+        ReplayStreamHeader streamHeader,
+        JsonNode meta
 ) {
+
+    private static final ObjectMapper MAPPER = JsonMapper.builder().build();
 
     /**
      * 从 .wotbreplay 字节一次性读取归档 + 头部版本 + settlement facts。
@@ -46,6 +54,18 @@ public record ParsedReplay(
             }
         }
         final String clientVersion = streamHeader != null ? streamHeader.clientVersion() : "";
+        // PR162/P1-4：meta.json 只解析一次；ReplayParser / Reconstruction 消费同一 JsonNode。
+        JsonNode meta;
+        final byte[] metaBytes = entries.get("meta.json");
+        if (metaBytes != null) {
+            final JsonNode parsedMeta = MAPPER.readTree(metaBytes);
+            if (parsedMeta == null || !parsedMeta.isObject()) {
+                throw new IOException("Invalid meta.json: expected a JSON object");
+            }
+            meta = parsedMeta;
+        } else {
+            meta = MAPPER.createObjectNode();
+        }
         SettlementFacts facts = null;
         String error = null;
         final byte[] dat = entries.get("battle_results.dat");
@@ -58,7 +78,7 @@ public record ParsedReplay(
                 error = e.getMessage();
             }
         }
-        return new ParsedReplay(entries, clientVersion, facts, error, streamHeader);
+        return new ParsedReplay(entries, clientVersion, facts, error, streamHeader, meta);
     }
 
     /** data.wotreplay 原始字节；缺失 → null。 */

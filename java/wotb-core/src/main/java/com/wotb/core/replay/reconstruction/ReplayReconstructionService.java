@@ -1,24 +1,20 @@
 package com.wotb.core.replay.reconstruction;
 
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.json.JsonMapper;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.ParsedReplay;
 import com.wotb.core.parse.SettlementFacts;
-import com.wotb.core.replay.decoder.ReplayDecodeContext;
-import com.wotb.core.replay.decoder.ReplayDecodeResult;
-import com.wotb.core.replay.decoder.ReplayPacketDecoderRegistry;
-import com.wotb.core.replay.decoder.EntityClass;
 import com.wotb.core.replay.decoder.EntityClass;
 import com.wotb.core.replay.decoder.EntityClassRegistry;
 import com.wotb.core.replay.decoder.EntityMethodDecoder;
-import com.wotb.core.replay.decoder.ReplayVersionGate;
+import com.wotb.core.replay.decoder.MaterializationDecoder;
+import com.wotb.core.replay.decoder.ReplayDecodeContext;
+import com.wotb.core.replay.decoder.ReplayDecodeResult;
+import com.wotb.core.replay.decoder.ReplayPacketDecoderRegistry;
 import com.wotb.core.replay.decoder.ReplayProtocolProfile;
-import com.wotb.core.replay.event.ParticipantMappingEvent;
-import com.wotb.core.replay.event.ParticipantMappingEvent;
+import com.wotb.core.replay.decoder.ReplayVersionGate;
 import com.wotb.core.replay.event.ArenaPeriodChangedEvent;
+import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.stream.PacketTypeDiagnostics;
@@ -26,6 +22,7 @@ import com.wotb.core.replay.stream.RawReplayPacket;
 import com.wotb.core.replay.stream.ReplayPacketStreamReader;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
 import org.springframework.util.StringUtils;
+import tools.jackson.databind.JsonNode;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -37,8 +34,6 @@ import java.util.Map;
  * 回放重建服务 —— 协调完整重建流程的主入口。
  */
 public class ReplayReconstructionService {
-
-    private static final ObjectMapper MAPPER = JsonMapper.builder().build();
 
     private final float maxClockSec;
     private final float clockToleranceSec;
@@ -76,8 +71,8 @@ public class ReplayReconstructionService {
             throws IOException {
         final Map<String, byte[]> entries = parsed.entries();
 
-        // 1. 读取元数据
-        final JsonNode meta = parseMeta(entries);
+        // 1. 读取元数据（PR162/P1-4：meta.json 已由 ParsedReplay 一次解析，不再各自 readTree）
+        final JsonNode meta = parsed.meta();
         final ReplayMetadata metadata = buildMetadata(meta);
 
         // 2. 读取 data.wotreplay 原始流
@@ -261,17 +256,6 @@ public class ReplayReconstructionService {
         return 0f;
     }
 
-    private static JsonNode parseMeta(Map<String, byte[]> entries) throws IOException {
-        if (entries.containsKey("meta.json")) {
-            final JsonNode parsed = MAPPER.readTree(entries.get("meta.json"));
-            if (parsed == null || !parsed.isObject()) {
-                throw new IOException("Invalid meta.json: expected a JSON object");
-            }
-            return parsed;
-        }
-        return MAPPER.createObjectNode();
-    }
-
     private static ReplayMetadata buildMetadata(JsonNode meta) {
         final Long startTime = parseLong(text(meta, "battleStartTime"));
         return new ReplayMetadata(
@@ -412,18 +396,20 @@ public class ReplayReconstructionService {
         for (final RawReplayPacket p : packets) {
             final byte[] payload = p.payload();
             final int type = p.type();
-            if (type == 5 && payload.length >= 6
+            if (type == 5
                     && ReplayProtocolProfile.levelOf(clientVersion,
                             ReplayProtocolProfile.Capability.ENTITY_TYPE_ID_SEMANTIC)
                             == ReplayProtocolProfile.Level.VERIFIED) {
-                //PR162/P1-5：entityTypeId numeric meaning (2/3) 是 closed/version-scoped class semantic；
-                // future version 只保留 Type5 结构 + raw entityTypeId，不得自动 Assign Vehicle/Other。
-                final int entityId = readI32LE(payload, 0);
-                final int entityTypeId = readU16LE(payload, 4);
-                if (entityTypeId == 2) {
-                    registry.markVehicle(entityId);
-                } else if (entityTypeId == 3) {
-                    registry.markOther(entityId);
+                //PR162/P1-1：消费 Type5 结构 envelope 的<b>唯一</b>解析点（MaterializationDecoder），
+                // 不在 prepass 保留第二套 readU16LE/readI32LE wire parser。
+                final MaterializationDecoder.MaterializationEnvelope env =
+                        MaterializationDecoder.materializationEnvelope(payload);
+                if (env != null) {
+                    if (env.entityTypeId() == 2) {
+                        registry.markVehicle(env.entityId());
+                    } else if (env.entityTypeId() == 3) {
+                        registry.markOther(env.entityId());
+                    }
                 }
             } else if (type == 8 && payload.length >= 12 && recorderAccountId != null
                     && readU32LE(payload, 4) == 48
@@ -440,17 +426,9 @@ public class ReplayReconstructionService {
         return registry;
     }
 
-    private static int readI32LE(final byte[] buf, final int i) {
+    private static int readU32LE(final byte[] buf, final int i) {
         return (buf[i] & 0xFF) | ((buf[i + 1] & 0xFF) << 8)
                 | ((buf[i + 2] & 0xFF) << 16) | (buf[i + 3] << 24);
-    }
-
-    private static int readU32LE(final byte[] buf, final int i) {
-        return readI32LE(buf, i);
-    }
-
-    private static int readU16LE(final byte[] buf, final int i) {
-        return (buf[i] & 0xFF) | ((buf[i + 1] & 0xFF) << 8);
     }
 
     private static final class TypeDecodeStats {
