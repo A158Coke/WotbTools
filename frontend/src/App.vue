@@ -14,6 +14,7 @@ import BoostPage from './components/BoostPage.vue'
 import AdminUsersPage from './components/AdminUsersPage.vue'
 import VersionPage from './components/VersionPage.vue'
 import ContactPage from './components/ContactPage.vue'
+import AndroidDownloadPage from './components/AndroidDownloadPage.vue'
 // 隐藏 QA 页（?view=playback-qa，仅 wotbtools-admin）：PR4 固定 14 车标签碰撞场景，
 // 复用生产 BattlePlayback（异步加载，不拖进普通用户初始 bundle）
 const PlaybackQaPage = defineAsyncComponent(() => import('./components/PlaybackQaPage.vue'))
@@ -36,7 +37,7 @@ const languageOptions = [
 const params = new URLSearchParams(window.location.search)
 const isHomeHost = window.location.hostname === 'wotbtools.com' || window.location.hostname === 'www.wotbtools.com'
 const defaultView = isHomeHost ? 'home' : 'replay'
-const rawViewParam = params.get('view')
+const rawViewParam = params.get('view') ?? (window.location.pathname === '/download/android' ? 'android' : null)
 // 旧书签兼容：单一来源别名映射（leaderboard → hof；extended → replay；
 // reconstruction → battle-playback），
 // 一次轻量 replaceState 重定向为 canonical view，不建第二套 Dataset pipeline。
@@ -52,6 +53,7 @@ const ALLOWED_VIEWS = [
   'home', 'replay', 'hof', 'hof-admin',
   'profile', 'boost', 'admin-users', 'version', 'contact',
   'ai-review', 'battle-playback', 'playback-qa', 'rating-docs', 'rating-v2',
+  'android',
 ]
 const activeTool = ref(ALLOWED_VIEWS.includes(viewParam) ? viewParam : defaultView)
 
@@ -68,6 +70,7 @@ const VIEW_COMPONENTS = {
   'admin-users': AdminUsersPage,
   version: VersionPage,
   contact: ContactPage,
+  android: AndroidDownloadPage,
   'playback-qa': PlaybackQaPage,
   'rating-docs': RatingDocsPage,
   'rating-v2': RatingV2AdminPage,
@@ -186,6 +189,7 @@ onBeforeUnmount(() => {
             <button v-if="isAdmin" class="user-menu-item" role="menuitem" @click="go('admin-users')">{{ $t('admin.title') }}</button>
             <button v-if="isHofAdmin" class="user-menu-item" role="menuitem" @click="go('hof-admin')">{{ $t('hofAdmin.cardTitle') }}</button>
             <button class="user-menu-item" role="menuitem" @click="go('version')">{{ $t('version.btn') }}</button>
+            <button class="user-menu-item" role="menuitem" @click="go('android')">{{ $t('android.nav') }}</button>
             <button class="user-menu-item" role="menuitem" @click="go('contact')">{{ $t('contact.nav') }}</button>
             <a class="user-menu-item" role="menuitem" href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }}</a>
             <button class="user-menu-item danger" role="menuitem" @click="handleLogout">{{ $t('profile.logout') }}</button>
@@ -193,6 +197,7 @@ onBeforeUnmount(() => {
           <template v-else>
             <button class="user-menu-item" role="menuitem" @click="handleLogin">{{ $t('app.login') }}</button>
             <button class="user-menu-item" role="menuitem" @click="go('version')">{{ $t('version.btn') }}</button>
+            <button class="user-menu-item" role="menuitem" @click="go('android')">{{ $t('android.nav') }}</button>
             <button class="user-menu-item" role="menuitem" @click="go('contact')">{{ $t('contact.nav') }}</button>
             <a class="user-menu-item" role="menuitem" href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }}</a>
           </template>
