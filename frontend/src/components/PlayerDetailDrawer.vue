@@ -9,9 +9,10 @@ import {
   RADAR_METRIC_DEFS, RADAR_AVAILABLE_KEYS, RADAR_MIN_AXES, RADAR_MAX_AXES,
   loadRadarPreference, saveRadarPreference, resolveRadarMetric,
 } from '../utils/radarMetrics.js'
-import { scaleRadarSeries } from '../utils/radarScale.js'
+import { formatRadarVisualScore, scaleRadarSeries } from '../utils/radarScale.js'
 import {
   RADAR, axisPoint, axisRay, polygonPoints, radarGridPolygons, radarScaleTicks,
+  radarScoreBadgeWidth, radarScoreLabelPosition,
 } from '../utils/radarGeometry.js'
 import { sanitizeFilename, downloadBlob } from '../utils/exportReplayPng.js'
 
@@ -25,7 +26,7 @@ import { sanitizeFilename, downloadBlob } from '../utils/exportReplayPng.js'
  *   本场七维 dimensionScores → Battle Average；禁止使用 dimensionMeans/Medians）。
  * - Radar：默认七维（仅 League 维度，§8），用户可自定义 3–7 个指标/顺序（presentation-only，
  *   独立于 Table ColumnPicker，独立 localStorage）；axis 缺失 → 整图 unavailable（§24）。
- *   League 维度归一化使用后端 resp.league.columns 满分 metadata（key/max），不复制常量。
+ *   League 几何只使用 raw/reference 相对标尺；resp.league.columns max 仅解释 raw 明细，不参与半径。
  * - 参考多边形（Battle/Global Average）由 utils/radarReference.js 纯函数计算；V5 不影响几何。
  */
 const props = defineProps({
@@ -410,6 +411,7 @@ const snapRefPoints = computed(() => exportSnapshot.value?.refPoints || [])
 const snapGrids = computed(() => exportSnapshot.value?.grids || [])
 const snapAxes = computed(() => exportSnapshot.value?.axes || [])
 const snapLabels = computed(() => exportSnapshot.value?.labels || [])
+const snapScoreLabels = computed(() => exportSnapshot.value?.scoreLabels || [])
 const snapScaleTicks = computed(() => exportSnapshot.value?.scaleTicks || [])
 const snapDetailRows = computed(() => exportSnapshot.value?.detailRows || [])
 
@@ -439,12 +441,21 @@ function buildExportSnapshot() {
       const m = metrics[i]
       return { x, y, label: m?.label || '', tip: m?.tip || '' }
     }),
+    scoreLabels: metrics.map((m, i) => {
+      if (!m.available) return null
+      const value = formatRadarVisualScore(m)
+      return {
+        ...radarScoreLabelPosition(i, metrics.length, m.normalized),
+        value,
+        width: radarScoreBadgeWidth(value),
+      }
+    }),
     detailRows: metrics.map((m, i) => {
       const ref = refs[i]
       return {
         label: m.label, tip: m.tip || '',
-        player: m.displayValue || '--',
-        reference: (ref && ref.available) ? ref.displayValue : '--',
+        player: formatRadarVisualScore(m),
+        reference: formatRadarVisualScore(ref),
       }
     }),
   }
@@ -667,6 +678,15 @@ function ensureImageLoaded(url) {
                       :cx="axisPoint(i, snapMetrics.length, m.normalized)[0]"
                       :cy="axisPoint(i, snapMetrics.length, m.normalized)[1]" r="3" class="rp-dot" />
             </template>
+            <template v-for="(score, i) in snapScoreLabels" :key="'s' + i">
+              <g v-if="score" class="rp-score-badge">
+                <rect :x="score.x - score.width / 2" :y="score.y - RADAR.SCORE_BADGE_HEIGHT / 2"
+                      :width="score.width" :height="RADAR.SCORE_BADGE_HEIGHT" :rx="RADAR.SCORE_BADGE_RADIUS"
+                      class="rp-score-bg" />
+                <text :x="score.x" :y="score.y" text-anchor="middle" dominant-baseline="middle"
+                      class="rp-score">{{ score.value }}</text>
+              </g>
+            </template>
             <text v-for="(p, i) in snapLabels" :key="'l' + i" :x="p.x" :y="p.y" text-anchor="middle" dominant-baseline="middle" class="rp-label">{{ p.label }}</text>
           </svg>
           <div class="rp-scale-legend">
@@ -676,7 +696,7 @@ function ensureImageLoaded(url) {
           <div class="rp-scale-note">{{ t('radarScale.overflow') }}</div>
         </div>
         <table class="rp-detail">
-          <thead><tr><th>{{ t('radar_lbl.dimension') }}</th><th>{{ t('radar_lbl.player') }}</th><th>{{ snapReferenceLabel }}</th></tr></thead>
+          <thead><tr><th>{{ t('radar_lbl.dimension') }}</th><th>{{ t('radarScale.playerScore') }}</th><th>{{ t('radarScale.averageScore') }}</th></tr></thead>
           <tbody>
             <tr v-for="(row, i) in snapDetailRows" :key="i">
               <td>{{ row.label }}</td><td>{{ row.player }}</td><td>{{ row.reference }}</td>
@@ -851,6 +871,8 @@ body.pd-resizing .pd-resizer-line,
 .rp-data { fill: rgba(212, 160, 23, .22); stroke: #d4a017; stroke-width: 2; }
 .rp-ref { fill: none; stroke: #9aa0a6; stroke-width: 1.3; stroke-dasharray: 4 3; }
 .rp-dot { fill: #d4a017; }
+.rp-score-bg { fill: #17191d; stroke: #d4a017; stroke-width: .8; }
+.rp-score { fill: #d4a017; font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .rp-label { fill: #cfd2d6; font-size: 12px; font-weight: 700; }
 .rp-detail { width: 100%; border-collapse: collapse; font-size: .82rem; margin-top: 8px; }
 .rp-detail th, .rp-detail td { padding: 5px 8px; text-align: left; }

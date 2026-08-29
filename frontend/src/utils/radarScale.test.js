@@ -3,6 +3,8 @@ import {
   RADAR_AVERAGE_VALUE,
   RADAR_DISPLAY_CAP,
   RADAR_STRONG_VALUE,
+  formatRadarVisualScore,
+  radarAxisVisualScore,
   radarRadiusRatio,
   radarVisualValue,
   scaleRadarSeries,
@@ -24,6 +26,15 @@ describe('radarScale', () => {
     expect(radarRadiusRatio(100)).toBeCloseTo(2 / 3, 12)
     expect(radarRadiusRatio(150)).toBe(1)
     expect(radarRadiusRatio(200)).toBe(1)
+  })
+
+  it('resolves the shared 0..150 score for vertex labels and detail mode', () => {
+    expect(radarAxisVisualScore({ available: true, visualValue: 124.4, normalized: 0.1 })).toBe(124.4)
+    expect(radarAxisVisualScore({ available: true, visualValue: null, normalized: 0.5 })).toBe(75)
+    expect(radarAxisVisualScore({ available: true, visualValue: 200, normalized: 1 })).toBe(150)
+    expect(radarAxisVisualScore({ available: false, visualValue: 90, normalized: 0.6 })).toBeNull()
+    expect(formatRadarVisualScore({ available: true, visualValue: 124.6 })).toBe('125')
+    expect(formatRadarVisualScore({ available: false, visualValue: 90 })).toBe('--')
   })
 
   it('fails closed for missing, non-finite, negative, or zero-reference inputs', () => {

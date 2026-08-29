@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
@@ -108,6 +110,7 @@ function mountPage(options = {}) {
 
 describe('RatingV2AdminPage', () => {
   beforeEach(() => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1024 })
     authState.loggedIn = true
     authState.roles = ['wotbtools-admin']
     authState.login.mockClear()
@@ -253,5 +256,62 @@ describe('RatingV2AdminPage', () => {
     await flushPromises()
     expect(wrapper.find('.rating-v2-radar-drawer').exists()).toBe(false)
     expect(document.activeElement).toBe(trigger.element)
+  })
+
+  it('traps Tab focus inside the mobile modal drawer', async () => {
+    window.innerWidth = 375
+    api.ratingV2Admin.mockResolvedValue({
+      rows: [{ cells: { nickname: 'Pilot', rating: 1200 }, radar: [] }],
+      duplicates: [], failures: [],
+      columns: [{ key: 'nickname', num: false }, { key: 'rating', num: true }],
+    })
+    const wrapper = mountPage({ attachTo: document.body })
+    await flushPromises()
+    replayState.files.value = [new File(['x'], 'a.wotbreplay')]
+    replayState.processingJobId.value = 'ready-job'
+    await flushPromises()
+
+    await wrapper.find('.rating-v2-player').trigger('click')
+    await flushPromises()
+    const drawer = wrapper.find('.rating-v2-radar-drawer')
+    const close = wrapper.find('.rating-v2-radar-close').element
+    expect(drawer.attributes('aria-modal')).toBe('true')
+    expect(document.activeElement).toBe(close)
+
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    window.dispatchEvent(tab)
+    expect(tab.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(close)
+
+    const shiftTab = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true })
+    window.dispatchEvent(shiftTab)
+    expect(shiftTab.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(close)
+  })
+
+  it('does not trap Tab focus for the desktop non-modal drawer', async () => {
+    api.ratingV2Admin.mockResolvedValue({
+      rows: [{ cells: { nickname: 'Pilot', rating: 1200 }, radar: [] }],
+      duplicates: [], failures: [],
+      columns: [{ key: 'nickname', num: false }, { key: 'rating', num: true }],
+    })
+    const wrapper = mountPage({ attachTo: document.body })
+    await flushPromises()
+    replayState.files.value = [new File(['x'], 'a.wotbreplay')]
+    replayState.processingJobId.value = 'ready-job'
+    await flushPromises()
+
+    await wrapper.find('.rating-v2-player').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.rating-v2-radar-drawer').attributes('aria-modal')).toBeUndefined()
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    window.dispatchEvent(tab)
+    expect(tab.defaultPrevented).toBe(false)
+  })
+
+  it('gives the desktop radar drawer more room while preserving the mobile inset layout', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/RatingV2AdminPage.vue'), 'utf8')
+    expect(source).toContain('width: min(560px, calc(100vw - 16px))')
+    expect(source).toContain('.rating-v2-radar-drawer { left: 8px; width: auto; }')
   })
 })
