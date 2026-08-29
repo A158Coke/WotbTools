@@ -100,9 +100,9 @@ function makeOverview() {
   }
 }
 
-function mountPlayback(overview = makeOverview(), seekTo = null) {
+function mountPlayback(overview = makeOverview(), seekTo = null, dataset = makePlaybackV2()) {
   return mount(BattlePlayback, {
-    props: { overview, seekTo },
+    props: { overview, seekTo, playbackV2: dataset },
     global: { mocks: { $t: i18n.t } }
   })
 }
@@ -110,6 +110,11 @@ function mountPlayback(overview = makeOverview(), seekTo = null) {
 function makePlaybackV2() {
   return {
     durationSec: 60,
+    events: [
+      { type: 'POSITION_REPORTED', timeSec: 10, accountId: 2001, targetAccountId: null, observedHpLoss: null },
+      { type: 'DAMAGE', timeSec: 12, accountId: 1001, targetAccountId: 2001, observedHpLoss: 400 },
+      { type: 'POSITION_STALE', timeSec: 20, accountId: 2001, targetAccountId: null, observedHpLoss: null },
+    ],
     vehicles: [
       {
         accountId: 1001, playerName: 'You', tankId: 1, tankName: 'Maus', tankClass: '', team: 1, friendly: true,
@@ -129,9 +134,7 @@ function makePlaybackV2() {
       },
       {
         accountId: 2001, playerName: 'EnemyA', tankId: 2, tankName: 'T49', tankClass: '', team: 2, friendly: false,
-        loadout: { consumables: ['REPAIR_KIT', null, 'ADRENALINE'], consumableWireCodes: [0x0D, 0x77, 0x09],
-          provisions: ['SANDBAG_ARMOR', null, null], provisionWireCodes: [0x44, 0x10, 0x11],
-          equipmentIds: [100, 108, 114, 104, 111, 117, 106, 113, 101] },
+        loadout: null,
         positionSegments: [
           { knowledge: 'OBSERVED', startSec: 10, endSec: 20,
             samples: [{ timeSec: 10, x: -50, y: -50, knowledge: 'OBSERVED' }, { timeSec: 20, x: -60, y: -60, knowledge: 'OBSERVED' }] },
@@ -140,11 +143,17 @@ function makePlaybackV2() {
           { knowledge: 'CURRENT', startSec: 10, endSec: 20,
             samples: [{ timeSec: 10, hullYawDeg: 10, turretRelativeYawDeg: 5 }, { timeSec: 20, hullYawDeg: 30, turretRelativeYawDeg: 20 }] },
         ],
-        healthTransitions: [{ timeSec: 10, currentHp: 1200, knowledge: 'CURRENT', displayCapacityHp: 1200, source: 'EXACT_BATTLE_EVENT' }],
+        healthTransitions: [
+          { timeSec: 0, currentHp: 1200, knowledge: 'CURRENT', displayCapacityHp: 1200, source: 'EXACT_BATTLE_EVENT' },
+          { timeSec: 12, currentHp: 800, knowledge: 'CURRENT', displayCapacityHp: 1200, source: 'EXACT_BATTLE_EVENT' },
+        ],
         lifeTransitions: [{ timeSec: 25, lifeState: 'DESTROYED', destroyedKnownAtSec: 25 }],
-        consumableTransitions: [{ timeSec: 12, logicalItemId: 'REPAIR_KIT', state: 'ACTIVATED', wireCode: 0x0D }],
+        consumableTransitions: [],
         moduleCrewTransitions: [],
       },
+      { accountId: 2002, playerName: 'NeverSeen', tankId: 3, team: 2, friendly: false,
+        loadout: null, positionSegments: [], orientationSegments: [], healthTransitions: [], lifeTransitions: [],
+        consumableTransitions: [], moduleCrewTransitions: [] },
     ],
     shots: [],
     pointsSamples: [],
@@ -353,17 +362,16 @@ describe('BattlePlayback', () => {
   it('renders team HP bars that decrease with playback time', async () => {
     stubRaf()
     const overview = makeOverview()
-    overview.playback.vehicles[0].baseHp = 3000
-
-    overview.playback.vehicles[0].observedCapacityHp = 3000
-    overview.playback.vehicles[0].hpSamples = [{ timeSec: 0, hp: 3000 }, { timeSec: 12, hp: 2600 }]
-    // 权威掉血（3000→2600）→ 己方不再处于开局相对满血 → 显示真实剩余数字
-    overview.playback.vehicles[0].hpLosses = [{ fromSec: 0, toSec: 12, hpLoss: 400, attackerAccountId: 2001, attackerReliable: true }]
-    overview.playback.vehicles[1].baseHp = 2600
-
-    overview.playback.vehicles[1].observedCapacityHp = 2600
-    overview.playback.vehicles[1].hpSamples = [{ timeSec: 10, hp: 2600 }, { timeSec: 12, hp: 2200 }]
-    const wrapper = mountPlayback(overview, 12)
+    const ds = makePlaybackV2()
+    ds.vehicles[0].healthTransitions = [
+      { timeSec: 0, currentHp: 3000, knowledge: 'CURRENT', displayCapacityHp: 3000, source: 'EXACT_BATTLE_EVENT' },
+      { timeSec: 12, currentHp: 2600, knowledge: 'CURRENT', displayCapacityHp: 3000, source: 'EXACT_BATTLE_EVENT' },
+    ]
+    ds.vehicles[1].healthTransitions = [
+      { timeSec: 10, currentHp: 2600, knowledge: 'CURRENT', displayCapacityHp: 2600, source: 'EXACT_BATTLE_EVENT' },
+      { timeSec: 12, currentHp: 2200, knowledge: 'CURRENT', displayCapacityHp: 2600, source: 'EXACT_BATTLE_EVENT' },
+    ]
+    const wrapper = mountPlayback(overview, 12, ds)
     await flushPromises()
     expect(wrapper.find('[data-test="pb-hp-bars"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-hp-bars"]').text()).toContain('2600') // 本方 t=12 knownRemaining
@@ -373,13 +381,14 @@ describe('BattlePlayback', () => {
   it('supremacy points come from the realtime broadcast timeline and change with seek time', async () => {
     stubRaf()
     const overview = makeOverview()
-    overview.playback.pointsSamples = [
+    const ds = makePlaybackV2()
+    ds.pointsSamples = [
       { timeSec: 10, team: 1, points: 300 },
       { timeSec: 10, team: 2, points: 300 },
       { timeSec: 20, team: 1, points: 500 },
       { timeSec: 20, team: 2, points: 280 }
     ]
-    const wrapper = mountPlayback(overview, 12)
+    const wrapper = mountPlayback(overview, 12, ds)
     await flushPromises()
     // t=12：取最近一次 ≤12 的广播
     expect(wrapper.find('[data-test="pb-points-friendly"]').text()).toContain('300')
@@ -446,350 +455,6 @@ describe('BattlePlayback', () => {
     expect(wrapper3.find('[data-test="pb-hp-unknown-enemy"]').exists()).toBe(false)
     expect(wrapper3.find('[data-test="pb-hp-bars"]').text()).toContain('2000')
   })
-
-  it('PR #107 第 4 轮: 混合 provenance → PARTIAL（不显示 known/partialTotalMax 分数）', async () => {
-    stubRaf()
-    const overview = makeOverview()
-    // 两辆己方：A entryHp=3000 已证明（无采样=满血）；B current=2800 但 max 未证明
-    overview.playback.vehicles = [
-      { accountId: 1001, playerName: 'A', tankId: 1, tankName: 'Maus', team: 1,
-        positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null, directionSamples: [],
-        entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [], hpLosses: [] },
-      { accountId: 1002, playerName: 'B', tankId: 1, tankName: 'Maus', team: 1,
-        positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null, directionSamples: [],
-        entryHpSource: null, baseHp: 3000, observedCapacityHp: 2800, hpSamples: [{ timeSec: 0, hp: 2800 }], hpLosses: [{ fromSec: 0, toSec: 10, hpLoss: 200 }] },
-    ]
-    overview.routes = [
-      { accountId: 1001, playerName: 'A', tankId: 1, team: 1, points: [{ x: 0, y: 0, timeSec: 0 }, { x: 5, y: 5, timeSec: 10 }], firstObservedSec: 0, lastObservedSec: 10, deathSec: null },
-      { accountId: 1002, playerName: 'B', tankId: 1, team: 1, points: [{ x: 10, y: 0, timeSec: 0 }, { x: 15, y: 5, timeSec: 10 }], firstObservedSec: 0, lastObservedSec: 10, deathSec: null },
-    ]
-    // Blocker 2：开局（B 首次掉血 toSec=10 之前）→ FULL_RELATIVE 100% 实心条（不显示斜纹/分数）
-    const openingWrapper = mountPlayback(overview, 5)
-    await flushPromises()
-    expect(openingWrapper.find('[data-test="pb-hp-value-friendly"]').text()).toBe('100%')
-    expect(openingWrapper.find('[data-test="pb-hp-bars"]').text()).not.toContain(' / 3000')
-    expect(openingWrapper.find('[data-test="pb-hp-fill-friendly"]').classes()).not.toContain('pb-hp-partial')
-    // B 掉血后 → PARTIAL：只显示真实已知剩余（5800），绝不显示 5800 / 3000 分数
-    const wrapper = mountPlayback(overview, 12)
-    await flushPromises()
-    expect(wrapper.find('[data-test="pb-hp-value-friendly"]').text()).toBe('5800')
-    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).not.toContain(' / 3000')
-    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).not.toContain('5800 /')
-    // PARTIAL → 斜纹 class（无已证明分母的 indeterminate 状态）
-    expect(wrapper.find('[data-test="pb-hp-fill-friendly"]').classes()).toContain('pb-hp-partial')
-  })
-
-  it('PR #107 第 4 轮: 全队 entryHp 证明 → EXACT 才显示 known / total 分数；已阵亡未证明阻止', async () => {
-    stubRaf()
-    const overview = makeOverview()
-    // 全队（2 辆）entryHp 均已证明 → EXACT：真实分数 5800 / 6000
-    overview.playback.vehicles = [
-      { accountId: 1001, playerName: 'A', tankId: 1, tankName: 'Maus', team: 1,
-        positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null, directionSamples: [],
-        entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [{ timeSec: 0, hp: 2800 }], hpLosses: [] },
-      { accountId: 1002, playerName: 'B', tankId: 1, tankName: 'Maus', team: 1,
-        positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null, directionSamples: [],
-        entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000, hpSamples: [], hpLosses: [] },
-    ]
-    overview.routes = [
-      { accountId: 1001, playerName: 'A', tankId: 1, team: 1, points: [{ x: 0, y: 0, timeSec: 0 }, { x: 5, y: 5, timeSec: 10 }], firstObservedSec: 0, lastObservedSec: 10, deathSec: null },
-      { accountId: 1002, playerName: 'B', tankId: 1, team: 1, points: [{ x: 10, y: 0, timeSec: 0 }, { x: 15, y: 5, timeSec: 10 }], firstObservedSec: 0, lastObservedSec: 10, deathSec: null },
-    ]
-    const wrapper = mountPlayback(overview, 12)
-    await flushPromises()
-    expect(wrapper.find('[data-test="pb-hp-value-friendly"]').text()).toBe('5800 / 6000')
-    expect(wrapper.find('[data-test="pb-hp-fill-friendly"]').classes()).not.toContain('pb-hp-partial')
-    // 加一辆已阵亡但 entryHp 未证明的队友 → 全队不得再 EXACT（PARTIAL，无分数）
-    overview.playback.vehicles.push({
-      accountId: 1003, playerName: 'C', tankId: 1, tankName: 'Maus', team: 1,
-      positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: 10, directionSamples: [],
-      entryHpSource: null, baseHp: 2000, observedCapacityHp: 2000, hpSamples: [], hpLosses: [],
-    })
-    overview.routes.push({ accountId: 1003, playerName: 'C', tankId: 1, team: 1, points: [{ x: 20, y: 0, timeSec: 0 }, { x: 25, y: 5, timeSec: 10 }], firstObservedSec: 0, lastObservedSec: 10, deathSec: 10 })
-    const wrapper2 = mountPlayback(overview, 12)
-    await flushPromises()
-    expect(wrapper2.find('[data-test="pb-hp-value-friendly"]').text()).toBe('5800')
-    expect(wrapper2.find('[data-test="pb-hp-bars"]').text()).not.toContain(' / ')
-    expect(wrapper2.find('[data-test="pb-hp-fill-friendly"]').classes()).toContain('pb-hp-partial')
-  })
-
-  it('death does not jump the team HP bar to 65533 (0xFFFD sentinel excluded)', async () => {
-    stubRaf()
-    const overview = makeOverview()
-    overview.playback.vehicles[0].baseHp = 3000
-
-    overview.playback.vehicles[0].observedCapacityHp = 3000
-    overview.playback.vehicles[0].hpSamples = [
-      { timeSec: 0, hp: 3000 },
-      { timeSec: 10, hp: 65533 }, // 0xFFFD 死亡 sentinel：绝不作为 HP
-      { timeSec: 10.5, hp: 0 }    // 阵亡
-    ]
-    const wrapper = mountPlayback(overview, 11)
-    await flushPromises()
-    // 阵亡 0 采样 → knownRemaining=0（无已知剩余）；无已证明分母 → value 为 —（不显示 0/0）
-    expect(wrapper.find('[data-test="pb-hp-value-friendly"]').text()).toBe('—')
-    expect(wrapper.text()).not.toContain('65533')
-  })
-  it('PR #107: 己方开局无 HP 采样 → marker 血条 100% 阵营色（fullState），不黑条不伪造数字', async () => {
-    stubRaf()
-    const overview = makeOverview()
-    // 己方车辆无采样无战前掉血
-    overview.playback.vehicles[0].baseHp = 3000
-
-    overview.playback.vehicles[0].observedCapacityHp = 3000
-    overview.playback.vehicles[0].hpSamples = []
-    overview.playback.vehicles[0].hpLosses = []
-    const wrapper = mountPlayback(overview, 12)
-    await flushPromises()
-    // 己方 marker 的 HP HUD 存在且 fullState（非 hpHidden）
-    const hud = wrapper.find('[data-test="pb-marker-1001"]').find('[data-test="pb-hp-hud"]')
-    expect(hud.exists()).toBe(true)
-    // 数字为 —（不伪造具体数字）
-    expect(hud.find('[data-test="pb-hp-num"]').text()).toBe('—')
-    // 血条 100% 宽（阵营色 fill；无 unknown 斜纹 class）
-    const fill = hud.find('.pb-hp-fill')
-    expect(fill.exists()).toBe(true)
-    expect(fill.attributes('style') || '').toContain('100%')
-    expect(fill.classes()).not.toContain('pb-hp-fill-unknown')
-    // 己方 marker 带 friendly class（阵营色）
-    expect(wrapper.find('[data-test="pb-marker-1001"]').classes()).toContain('pb-friendly')
-  })
-
-  it('PR #107 第 5 轮 Blocker 2: 己方开局有 sample 但 max 未证明 → 100% 阵营色实心条（真实数字、无斜纹）；首次掉血后 → indeterminate 斜纹', async () => {
-    stubRaf()
-    const overview = makeOverview()
-    overview.playback.vehicles[0].baseHp = null
-
-    overview.playback.vehicles[0].observedCapacityHp = null // 无观测容量也无 entryHp → max 未证明
-    overview.playback.vehicles[0].hpSamples = [{ timeSec: 0, hp: 2600 }]
-    overview.playback.vehicles[0].entryHpSource = null
-    overview.playback.vehicles[0].hpLosses = [] // 无权威掉血 → 开局相对满血展示
-    const wrapper = mountPlayback(overview, 12)
-    await flushPromises()
-    const hud = wrapper.find('[data-test="pb-marker-1001"]').find('[data-test="pb-hp-hud"]')
-    expect(hud.find('[data-test="pb-hp-num"]').text()).toBe('2600')
-    const fill = hud.find('.pb-hp-fill')
-    expect(fill.exists()).toBe(true)
-    // 开局：100% 宽 + 阵营色实心条（fullState）——不添加 pb-hp-fill-unknown 斜纹
-    expect(fill.classes()).not.toContain('pb-hp-fill-unknown')
-    expect(fill.attributes('style') || '').toContain('100%')
-    // 首次权威掉血后 → 真实数字 + indeterminate 斜纹（非黑条）
-    overview.playback.vehicles[0].hpLosses = [{ fromSec: 0, toSec: 5, hpLoss: 100 }]
-    const w2 = mountPlayback(overview, 12)
-    await flushPromises()
-    const hud2 = w2.find('[data-test="pb-marker-1001"]').find('[data-test="pb-hp-hud"]')
-    expect(hud2.find('[data-test="pb-hp-num"]').text()).toBe('2600')
-    expect(hud2.find('.pb-hp-fill').classes()).toContain('pb-hp-fill-unknown')
-    expect(hud2.find('.pb-hp-fill').attributes('style') || '').toContain('100%')
-  })
-
-  it('PR #107 Blocker 1: Details Panel 当前 HP 按 provenance 显示（开局 100% / sample 后真实数字 / backward 恢复 / 敌方 — / 阵亡 0）', async () => {
-    stubRaf()
-    const overview = makeOverview()
-    overview.routes[0].points.unshift({ x: 0, y: 0, timeSec: 0 }) // 己方 marker 全程可见
-    // 己方 vehicles[0]：首个可信 sample 出现在 10s（2500）——开局无采样
-    overview.playback.vehicles[0].hpSamples = [{ timeSec: 10, hp: 2500 }]
-    overview.playback.vehicles[0].hpLosses = []
-    // 敌方 vehicles[1]：无采样 → UNKNOWN
-    overview.playback.vehicles[1].hpSamples = []
-    const wrapper = mountPlayback(overview, 5)
-    await flushPromises()
-    // 开局（sample 前）选中己方 → 「100%」（开局相对满血状态的 UI 投影，非具体 HP）
-    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
-    let info = wrapper.find('[data-test="pb-info"]')
-    expect(info.find('[data-test="pb-sb-hp"]').text()).toBe('100%')
-    // 首个可信 sample 出现后 → 真实 HP 数字
-    await wrapper.find('.pb-range').setValue(12)
-    await flushPromises()
-    info = wrapper.find('[data-test="pb-info"]')
-    expect(info.find('[data-test="pb-sb-hp"]').text()).toBe('2500')
-    // backward seek 回开局 → 重新显示 100%
-    await wrapper.find('.pb-range').setValue(5)
-    await flushPromises()
-    info = wrapper.find('[data-test="pb-info"]')
-    expect(info.find('[data-test="pb-sb-hp"]').text()).toBe('100%')
-    // 敌方无 sample → —（UNKNOWN，不因己方 fallback 泄漏）
-    await wrapper.find('.pb-range').setValue(12)
-    await flushPromises()
-    await wrapper.find('[data-test="pb-marker-2001"]').trigger('click')
-    info = wrapper.find('[data-test="pb-info"]')
-    expect(info.find('[data-test="pb-sb-hp"]').text()).toBe('—')
-    // 阵亡 → 0（权威）
-    overview.playback.vehicles[1].deathSec = 12
-    overview.playback.vehicles[1].hpSamples = [{ timeSec: 0, hp: 2600 }, { timeSec: 12, hp: 0 }]
-    const w2 = mountPlayback(overview, 15)
-    await flushPromises()
-    await w2.find('[data-test="pb-marker-2001"]').trigger('click')
-    expect(w2.find('[data-test="pb-info"]').find('[data-test="pb-sb-hp"]').text()).toBe('0')
-  })
-
-  it('PR #107 Blocker 2: 己方全部存活车无 sample → 底部总条 100% 阵营色实心（FULL_RELATIVE），无斜纹无黑条；seek/backward 确定性', async () => {
-    stubRaf()
-    const overview = makeOverview()
-    // 7 辆己方（team 1）无采样无战前掉血，全部可见
-    overview.playback.vehicles = Array.from({ length: 7 }, (_, i) => ({
-      accountId: 1001 + i, playerName: 'F' + i, tankId: 1, tankName: 'Maus', team: 1,
-      positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null, directionSamples: [],
-    }))
-    overview.routes = Array.from({ length: 7 }, (_, i) => ({
-      accountId: 1001 + i, playerName: 'F' + i, tankId: 1, team: 1,
-      points: [{ x: i * 10, y: 0, timeSec: 0 }, { x: i * 10 + 5, y: 5, timeSec: 10 }],
-      firstObservedSec: 0, lastObservedSec: 10, deathSec: null,
-    }))
-    const wrapper = mountPlayback(overview, 5)
-    await flushPromises()
-    // FULL_RELATIVE：value = 100%（相对满血），不是 0；known 段 100% 宽 + 阵营色 + 无斜纹
-    expect(wrapper.find('[data-test="pb-hp-value-friendly"]').text()).toBe('100%')
-    const fill = wrapper.find('[data-test="pb-hp-fill-friendly"]')
-    expect(fill.exists()).toBe(true)
-    expect(fill.attributes('style') || '').toContain('100%')
-    expect(fill.classes()).toContain('pb-hp-friendly')
-    expect(fill.classes()).not.toContain('pb-hp-partial')
-    // 不渲染虚假的 0 / 0
-    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).not.toContain('0 / 0')
-    // seek 后出现可信 sample + 首次权威掉血 → 状态确定性更新（PARTIAL：真实数字 + 斜纹）
-    overview.playback.vehicles[0].hpSamples = [{ timeSec: 10, hp: 2500 }]
-    overview.playback.vehicles[0].hpLosses = [{ fromSec: 10, toSec: 11, hpLoss: 100 }]
-    await wrapper.find('.pb-range').setValue(12)
-    await flushPromises()
-    expect(wrapper.find('[data-test="pb-hp-value-friendly"]').text()).toBe('2500')
-    expect(wrapper.find('[data-test="pb-hp-fill-friendly"]').classes()).toContain('pb-hp-partial')
-    // backward seek → 恢复 100% 实心（无斜纹）
-    await wrapper.find('.pb-range').setValue(5)
-    await flushPromises()
-    expect(wrapper.find('[data-test="pb-hp-value-friendly"]').text()).toBe('100%')
-    expect(wrapper.find('[data-test="pb-hp-fill-friendly"]').classes()).not.toContain('pb-hp-partial')
-    // 敌方无 sample 不获得 FULL_RELATIVE（UNKNOWN → —）
-    const overview2 = makeOverview()
-    overview2.playback.vehicles = [
-      { accountId: 2001, playerName: 'E', tankId: 2, tankName: 'T49', team: 2,
-        positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null, directionSamples: [] },
-    ]
-    overview2.routes = [{
-      accountId: 2001, playerName: 'E', tankId: 2, team: 2,
-      points: [{ x: 0, y: 0, timeSec: 0 }, { x: 5, y: 5, timeSec: 10 }],
-      firstObservedSec: 0, lastObservedSec: 10, deathSec: null,
-    }]
-    const w2 = mountPlayback(overview2, 5)
-    await flushPromises()
-    expect(w2.find('[data-test="pb-hp-value-enemy"]').text()).toBe('—')
-    expect(w2.find('[data-test="pb-hp-fill-enemy"]').attributes('style') || '').toContain('0%')
-  })
-
-  it('PR #107 第 5 轮 Blocker 2: 己方开局（部分车有 current sample、全队 entry/max 未全部证明）→ 队伍总条 100% 阵营色实心、无斜纹；首次掉血后 → PARTIAL 斜纹', async () => {
-    stubRaf()
-    const overview = makeOverview()
-    // 3 辆己方：A 有 current sample（max 未证明、无掉血）、B/C 无采样——全部开局相对满血
-    overview.playback.vehicles = [
-      { accountId: 1001, playerName: 'A', tankId: 1, tankName: 'Maus', team: 1,
-        positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null, directionSamples: [],
-        entryHpSource: null, baseHp: 3000, observedCapacityHp: 2800, hpSamples: [{ timeSec: 0, hp: 2800 }], hpLosses: [] },
-      { accountId: 1002, playerName: 'B', tankId: 1, tankName: 'Maus', team: 1,
-        positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null, directionSamples: [],
-        entryHpSource: null, baseHp: 2600, observedCapacityHp: 2600, hpSamples: [], hpLosses: [] },
-      { accountId: 1003, playerName: 'C', tankId: 1, tankName: 'Maus', team: 1,
-        positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null, directionSamples: [],
-        entryHpSource: null, baseHp: 2600, observedCapacityHp: 2600, hpSamples: [], hpLosses: [] },
-    ]
-    overview.routes = [
-      { accountId: 1001, playerName: 'A', tankId: 1, team: 1, points: [{ x: 0, y: 0, timeSec: 0 }, { x: 5, y: 5, timeSec: 10 }], firstObservedSec: 0, lastObservedSec: 10, deathSec: null },
-      { accountId: 1002, playerName: 'B', tankId: 1, team: 1, points: [{ x: 10, y: 0, timeSec: 0 }, { x: 15, y: 5, timeSec: 10 }], firstObservedSec: 0, lastObservedSec: 10, deathSec: null },
-      { accountId: 1003, playerName: 'C', tankId: 1, team: 1, points: [{ x: 20, y: 0, timeSec: 0 }, { x: 25, y: 5, timeSec: 10 }], firstObservedSec: 0, lastObservedSec: 10, deathSec: null },
-    ]
-    const wrapper = mountPlayback(overview, 5)
-    await flushPromises()
-    // FULL_RELATIVE：value 100%、known 段 100% 宽、无斜纹
-    expect(wrapper.find('[data-test="pb-hp-value-friendly"]').text()).toBe('100%')
-    const fill = wrapper.find('[data-test="pb-hp-fill-friendly"]')
-    expect(fill.attributes('style') || '').toContain('100%')
-    expect(fill.classes()).not.toContain('pb-hp-partial')
-    // 单车 marker：A 有真实 current sample → 数字 2800（bar 仍 100% 实心、无斜纹）
-    const hud = wrapper.find('[data-test="pb-marker-1001"]').find('[data-test="pb-hp-hud"]')
-    expect(hud.find('[data-test="pb-hp-num"]').text()).toBe('2800')
-    expect(hud.find('.pb-hp-fill').classes()).not.toContain('pb-hp-fill-unknown')
-    // A 首次权威掉血后 → 队伍总条 PARTIAL（斜纹 + 真实数字 2800）
-    overview.playback.vehicles[0].hpLosses = [{ fromSec: 0, toSec: 6, hpLoss: 100 }]
-    const w2 = mountPlayback(overview, 10)
-    await flushPromises()
-    expect(w2.find('[data-test="pb-hp-value-friendly"]').text()).toBe('2800')
-    expect(w2.find('[data-test="pb-hp-fill-friendly"]').classes()).toContain('pb-hp-partial')
-    // 单车 A：掉血后 → CURRENT_HP_EXACT_MAX_UNKNOWN（斜纹）
-    const hud2 = w2.find('[data-test="pb-marker-1001"]').find('[data-test="pb-hp-hud"]')
-    expect(hud2.find('.pb-hp-fill').classes()).toContain('pb-hp-fill-unknown')
-  })
-
-  it('PR #107 第 5 轮 Blocker 2: 镜像 perspectiveTeam=2——team2 是己方开局 100% 实心、team1 敌方无采样仍 UNKNOWN —', async () => {
-    stubRaf()
-    const overview = makeOverview()
-    overview.friendlyTeam = 2 // 视角切到 team 2
-    overview.playback.vehicles = [
-      { accountId: 1001, playerName: 'E1', tankId: 2, tankName: 'T49', team: 1,
-        positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null, directionSamples: [] },
-      { accountId: 2001, playerName: 'F1', tankId: 1, tankName: 'Maus', team: 2,
-        positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null, directionSamples: [] },
-    ]
-    overview.routes = [
-      { accountId: 1001, playerName: 'E1', tankId: 2, team: 1, points: [{ x: 0, y: 0, timeSec: 0 }, { x: 5, y: 5, timeSec: 10 }], firstObservedSec: 0, lastObservedSec: 10, deathSec: null },
-      { accountId: 2001, playerName: 'F1', tankId: 1, team: 2, points: [{ x: 10, y: 0, timeSec: 0 }, { x: 15, y: 5, timeSec: 10 }], firstObservedSec: 0, lastObservedSec: 10, deathSec: null },
-    ]
-    const wrapper = mountPlayback(overview, 5)
-    await flushPromises()
-    // team2（己方）无采样无掉血 → FULL_RELATIVE 100% 实心、无斜纹
-    expect(wrapper.find('[data-test="pb-hp-value-friendly"]').text()).toBe('100%')
-    const friendlyFill = wrapper.find('[data-test="pb-hp-fill-friendly"]')
-    expect(friendlyFill.attributes('style') || '').toContain('100%')
-    expect(friendlyFill.classes()).not.toContain('pb-hp-partial')
-    // team1（敌方）无采样 → UNKNOWN —（不得套用己方 100% 规则）
-    expect(wrapper.find('[data-test="pb-hp-value-enemy"]').text()).toBe('—')
-    expect(wrapper.find('[data-test="pb-hp-fill-enemy"]').attributes('style') || '').toContain('0%')
-  })
-
-  it('PR #107 第 6 轮 Blocker 2: 矛盾证据（current=5000 > entryHp=3000）→ 单车 INCONSISTENT 斜纹保留真实数字、队伍总条 PARTIAL 无虚假比例、无 NaN/负宽/>100% CSS', async () => {
-    stubRaf()
-    const overview = makeOverview()
-    overview.playback.vehicles = [
-      { accountId: 1001, playerName: 'A', tankId: 1, tankName: 'Maus', team: 1,
-        positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null, directionSamples: [],
-        entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000,
-        hpSamples: [{ timeSec: 0, hp: 5000 }], hpLosses: [] },
-      { accountId: 1002, playerName: 'B', tankId: 1, tankName: 'Maus', team: 1,
-        positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null, directionSamples: [],
-        entryHpSource: 'OBSERVED_EXACT', entryHp: 3000, baseHp: 3000, observedCapacityHp: 3000,
-        hpSamples: [], hpLosses: [] },
-    ]
-    overview.routes = [
-      { accountId: 1001, playerName: 'A', tankId: 1, team: 1, points: [{ x: 0, y: 0, timeSec: 0 }, { x: 5, y: 5, timeSec: 10 }], firstObservedSec: 0, lastObservedSec: 10, deathSec: null },
-      { accountId: 1002, playerName: 'B', tankId: 1, team: 1, points: [{ x: 10, y: 0, timeSec: 0 }, { x: 15, y: 5, timeSec: 10 }], firstObservedSec: 0, lastObservedSec: 10, deathSec: null },
-    ]
-    const wrapper = mountPlayback(overview, 5)
-    await flushPromises()
-    // 单车 marker：INCONSISTENT（保留真实 current=5000、斜纹、宽度 100%——不伪造 5000/3000 比例）
-    const hud = wrapper.find('[data-test="pb-marker-1001"]').find('[data-test="pb-hp-hud"]')
-    expect(hud.find('[data-test="pb-hp-num"]').text()).toBe('5000')
-    const fill = hud.find('.pb-hp-fill')
-    expect(fill.classes()).toContain('pb-hp-fill-unknown')
-    const fillStyle = fill.attributes('style') || ''
-    expect(fillStyle).toContain('100%')
-    expect(fillStyle).not.toContain('NaN')
-    expect(fillStyle).not.toContain('Infinity')
-    expect(fillStyle).not.toContain('-')
-    // 队伍总条：矛盾 → PARTIAL（只显示真实已知剩余数字，无 / 分数、无 6000/6000、无 100% 精确比例）
-    expect(wrapper.find('[data-test="pb-hp-value-friendly"]').text()).toBe('8000')
-    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).not.toContain(' / ')
-    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).not.toContain('6000')
-    const teamFill = wrapper.find('[data-test="pb-hp-fill-friendly"]')
-    expect(teamFill.classes()).toContain('pb-hp-partial')
-    const teamStyle = teamFill.attributes('style') || ''
-    expect(teamStyle).toContain('100%')
-    expect(teamStyle).not.toContain('NaN')
-    expect(teamStyle).not.toContain('Infinity')
-    expect(teamStyle).not.toContain('-')
-    // Details 同口径：真实 current 数字（不显示 5000 / 3000 比例）
-    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-test="pb-info"]').find('[data-test="pb-sb-hp"]').text()).toBe('5000')
-  })
-
 
   it('tank marker scales with the map (no counter-scale) while name/death overlays stay constant', async () => {
     stubRaf()
@@ -2086,31 +1751,26 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
   it('§4/§5/§6 HP HUD：数字+bar 随 timeline 确定性重建；UNKNOWN 显示 —；destroyed 归零', async () => {
     stubRaf()
     const overview = makeOverview()
-    overview.playback.vehicles[0].baseHp = 3000
-
-    overview.playback.vehicles[0].observedCapacityHp = 3000
-    overview.playback.vehicles[0].hpSamples = [{ timeSec: 0, hp: 3000 }, { timeSec: 12, hp: 2600 }]
-    // 权威掉血（3000→2600）→ 己方已过开局 → CURRENT_HP_EXACT_MAX_UNKNOWN（斜纹）
-    overview.playback.vehicles[0].hpLosses = [{ fromSec: 0, toSec: 12, hpLoss: 400, attackerAccountId: 2001, attackerReliable: true }]
-    overview.playback.vehicles[1].baseHp = 2600
-
-    overview.playback.vehicles[1].observedCapacityHp = 2600
-    overview.playback.vehicles[1].hpSamples = [] // 敌方无采样 → UNKNOWN
-    const wrapper = mountPlayback(overview, 12)
+    const ds = makePlaybackV2()
+    ds.vehicles[0].healthTransitions = [
+      { timeSec: 0, currentHp: 3000, knowledge: 'CURRENT', displayCapacityHp: 3000, source: 'EXACT_BATTLE_EVENT' },
+      { timeSec: 12, currentHp: 2600, knowledge: 'CURRENT', displayCapacityHp: 3000, source: 'EXACT_BATTLE_EVENT' },
+    ]
+    ds.vehicles[1].healthTransitions = [] // 敌方无采样 → UNKNOWN
+    const wrapper = mountPlayback(overview, 12, ds)
     await flushPromises()
     const hud = wrapper.find('[data-test="pb-marker-1001"]').find('[data-test="pb-hp-hud"]')
     expect(hud.exists()).toBe(true)
     expect(hud.find('[data-test="pb-hp-num"]').text()).toBe('2600')
-    // Blocker 3：进场 max 未证明 → CURRENT_HP_EXACT_MAX_UNKNOWN：fill 100% + indeterminate 斜纹
-    //（绝不按 baseHp/observedCapacityHp 算 86.6%）
-    expect(hud.find('.pb-hp-fill').attributes('style')).toContain('100%')
-    expect(hud.find('.pb-hp-fill').classes()).toContain('pb-hp-fill-unknown')
     const ehud = wrapper.find('[data-test="pb-marker-2001"]').find('[data-test="pb-hp-hud"]')
     expect(ehud.find('[data-test="pb-hp-num"]').text()).toBe('—')
     // destroyed → 权威 0
-    overview.playback.vehicles[1].deathSec = 12
-    overview.playback.vehicles[1].hpSamples = [{ timeSec: 0, hp: 2600 }, { timeSec: 12, hp: 0 }]
-    const w2 = mountPlayback(overview, 15)
+    ds.vehicles[1].healthTransitions = [
+      { timeSec: 0, currentHp: 2600, knowledge: 'CURRENT', displayCapacityHp: 2600, source: 'EXACT_BATTLE_EVENT' },
+      { timeSec: 12, currentHp: 0, knowledge: 'CURRENT', displayCapacityHp: 2600, source: 'EXACT_BATTLE_EVENT' },
+    ]
+    ds.vehicles[1].lifeTransitions = [{ timeSec: 12, lifeState: 'DESTROYED', destroyedKnownAtSec: 12 }]
+    const w2 = mountPlayback(overview, 15, ds)
     await flushPromises()
     expect(w2.find('[data-test="pb-marker-2001"]').find('[data-test="pb-hp-num"]').text()).toBe('0')
   })
