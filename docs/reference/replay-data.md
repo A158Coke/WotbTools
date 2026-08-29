@@ -1,7 +1,10 @@
 # WOTB replay 回放数据字典
 
-> 基于 v11.18.0_china_apple 版本回放分析。字段号和含义可能随游戏版本变化。
-> 生产状态：文件结构/字段按 PR147 已证明事实（AFFIRMED）；未证明语义标 UNKNOWN（详见 `docs/reference/replay-parsed-fields.md`，不冒充实锤）。
+> **Authoritative production replay contract.**
+> Primary evidence: **PR147 11.19 corpus**（`11.19.0_china` + `11.19.0_china_apple`）。
+> 历史 11.18 观察（`docs/research/replay/`）<b>不自动等于生产语义</b>；每个 capability 均需独立证据（fixture / research / known invariant）。
+> 生产状态：文件结构/字段按 PR147 已证明事实（AFFIRMED）；未证明语义标 UNKNOWN（见 `docs/reference/replay-parsed-fields.md`）。
+> 前向兼容按三层能力模型（见 `ReplayProtocolProfile`）：容器/framing（A）与稳定结构布局（B）可前向；闭式数字语义（C）仅 VERIFIED family。
 
 ## 文件结构
 
@@ -50,6 +53,10 @@ clock:       f32 LE   // 从 0 起始的战斗计时（秒）
 payload:     [u8; payload_len]  // 负载
 ```
 
+**时钟语义（PR147/PR162）：** `rawClockSec` 是 replay/session <b>原始包时钟</b>，<b>不是</b>「从 0 起始的战斗计时」。
+只有 battle-start 有权威时，battle-relative 时间 = `rawClock - resolvedBattleStartRawClock`；battle-start UNKNOWN
+时不得把 raw clock 当 battle-relative 时间（消费者必须 fail closed）。
+
 **错误容忍：** 采用<b>严格连续 framing</b>（strict contiguous framing）。包长度非法、时钟回退/异常、
 payload 截断、或尾部剩余不足一个完整包时直接失败（fail closed）并记录诊断；不做逐字节 resync，也
 不「继续寻找下一个看起来合理的包」。整个文件必须是连续的有效包序列，任何 framing 损坏都终止解析。
@@ -63,7 +70,7 @@ payload 截断、或尾部剩余不足一个完整包时直接失败（fail clos
 | 2  | `0x02` | **Control/PlayerCreate** | init_props_flat                                                                     | 1                 |
 | 4  | `0x04` | **EntityLeave**          | entity_id(i32 LE)                                                                   | 13–21             |
 | 5  | `0x05` | **Materialization**      | 物化/重物化（初始 transform 快照 + 类专属初始化负载）                                              | ~100              |
-| 7  | `0x07` | **EntityProperty**       | `entity_id(u32)+propId(u32)+valueLen(u32)+value`（结构已确认；血量语义未解，见下）                   | 13K–29K           |
+| 7  | `0x07` | **EntityProperty**       | `entity_id(u32)+propId(u32)+valueLen(u32)+value`（generic envelope 结构前向；prop3 正 HP 见下）        | 13K–29K           |
 | 8  | `0x08` | **EntityMethod**（RPC 调用） | entity_id(i32) + sub_type(u32) + args                                               | 630–700           |
 | 10 | `0x0A` | **Position**（坐标）         | 49 字节（见下）                                                                           | 14K–29K           |
 | 11 | `0x0B` | Entity method（未知）        | —                                                                                   | 2                 |
@@ -131,13 +138,34 @@ value:     [u8; value_len]
 
 ### Type 8：EntityMethod（关键）
 
-格式：`entity_id(i32) + sub_type(u32) + args`
+格式：`entity_id(u32) + methodId(u32) + argLen(u32) + args`（envelope 结构前向兼容）。
 
-| sub_type | 名称                     | 说明                                     |
-|----------|------------------------|----------------------------------------|
-| 8        | **entityMethodDamage** | 伤害事件（仅 sub=3 直接 HP 伤害用于死亡推算）           |
-| 47       | **updateArena**        | 玩家存活名单（WoT PC/Blitz 通用）                |
-| 48       | **updateArena2**       | **Blitz 特有**，含 entity_id↔account_id 映射 |
+**PR147/PR162：methodId 是 entity-class scoped** —— 同一 methodId 在不同实体类上是不同语义（如
+Avatar method4 2B=RoundFinished，Vehicle method4 16B=vehicle-to-vehicle collision）。安全 key 为
+`(capability, entityClass, methodId, exact argShape)`；entityClass 只能由独立生命周期/身份证据建立
+（Type5 materialization `entityTypeId`；method48 参与映射中的 recorder 账号身份），**method decoder 不得
+由 methodId 自证 class**。class UNKNOWN → raw-preserve（`UnknownReplayEvent`）。
+
+**语义仅 VERIFIED family 认可为 EXACT**：future（STRUCTURALLY_COMPATIBLE）版本只前向读取 envelope 结构，
+numeric method 语义（含 method0/1/5/17/20/27/29）未认证 → raw/Unknown，绝不承接当前版本 EXACT semantic
+（见 `ReplayVersionGate.methodLayoutAffirmed`）。stable 结构（如 Type10 49B、普通正 HP 结构值）仍可前向。
+
+| 实体类 | methodId | 语义 / 证据状态 | exact args shape | 产出 |
+|---:|---:|---|---|---|
+| Vehicle | 0 | AFFIRMED（观测开火） | 1B | `VehicleFiredEvent` |
+| Vehicle | 1 | AFFIRMED（HP/state family；cause 语义仅 11.19 闭合，11.18 UNKNOWN） | 7B | `VehicleHealthStateEvent` |
+| Vehicle | 4 | AFFIRMED（vehicle-to-vehicle collision） | 16B | `VehicleVehicleCollisionEvent` |
+| Vehicle | 8 | AFFIRMED 结构观测（hit/result feedback；非权威伤害数字） | — | `VehicleHitEvent`/`UnsupportedDamageEvent` |
+| Avatar | 4 | AFFIRMED（round-finished，winner + finishReason） | 2B | `RoundFinishedEvent` |
+| Avatar | 5 | AFFIRMED（recorder own-health mirror） | 3B | `RecorderHealthChangedEvent` |
+| Avatar | 16 | AFFIRMED（module/crew state） | 10B | `VehicleModuleCrewStateEvent` |
+| Avatar | 17 | AFFIRMED（recorder ammo state） | 12B | `AmmunitionStateEvent` |
+| Avatar | 20 | AFFIRMED（shot terminal endpoint） | 16B | `ProjectileTerminalEvent` |
+| Avatar | 27/29 | AFFIRMED（projectile resolution / launch） | 34B / 37B | `ProjectileResolutionEvent` / `ProjectileLaunchedEvent` |
+| Avatar | 36 | AFFIRMED field1-5/field6.1 physical roles（private symbol UNKNOWN） | 92/74B | `TargetingInfoSnapshotEvent` |
+| Avatar | 38 | AFFIRMED low16 shot-result bitfield（0x0200 等） | 14..22B | `ShotResultEvent` |
+| Avatar | 47/48/49 | 47 chat-action（未实现→raw）；48 结构参与映射（entity→account）+ ARENA_PERIOD；49 sync-options | — | `ParticipantMappingEvent`/`ArenaPeriodChangedEvent`/raw |
+| Unknown | 其它 | UNKNOWN / 未实现 → raw-preserve（`UnknownReplayEvent`） | — | `UnknownReplayEvent` |
 
 #### sub_type 48 (updateArena2) 完整格式
 
@@ -162,7 +190,7 @@ args:
 
 **重要性：** 这是唯一能从事件流获取 entity_id ↔ account_id 映射的地方。首批 updateArena2 包（@0.2s）即包含全部 14 名玩家的完整映射。
 
-#### sub_type 8 (entityMethodDamage) 格式
+#### Vehicle method8（hit/result 观测帧，非 entityMethodDamage）
 
 ```
 args (25B body):
@@ -171,15 +199,18 @@ args (25B body):
   victimEid:   i32 LE      // 被击方 entity_id
   type:        u8          // 恒为 01
   sub:         u8          // 3=direct HP damage, 0/1/2/4=module/其他
-  dmg:         u16 BE       // HP 伤害值（仅 sub=3 时为 HP 伤害）
+  value:       u16 BE       // 观测值（非权威 HP 伤害数字；权威 HP loss 以 Type7 prop3 为准）
   data[6]:     bytes       // 位置/方向等额外数据
   flag:        u8          // 末尾标志 (01=正常, 03=致命一击?)
 ```
 
-方法调用在 victim 实体上（methodEid == victimEid）。**PR147/PR162：** damage 事件只是<b>观测</b>子集
+方法调用在 victim 实体上（methodEid == victimEid）。**PR147/PR162：** 这是 Vehicle method8 的结构观测帧
+（hit/result feedback）。damage 事件只是<b>观测</b>子集
 （`DamageEvent`），覆盖未达 100% 时标记 `OBSERVED_DAMAGE_IS_PARTIAL`；它<b>不是</b>死亡 authority，不再累计
 到 `damageReceived` 阈值推断阵亡，也不再填充 `PlayerResult.killVictims`（该字段与 `DeathTimeEstimator`
-已从生产移除）。击杀归因由 canonical terminal lifecycle + 可靠 damage backing 产生；无法证明则 `UNKNOWN`。
+已从生产移除）。<b>击杀归因</b>以 settlement `field25`（killer result/entity ID）+ `#301 outer field1`
+result-id 映射为 canonical authority（见「死亡时间 authority」）；不通过 terminal lifecycle + damage backing
+猜测 killer。
 
 ### Type 10：Position（含 space_id）
 
