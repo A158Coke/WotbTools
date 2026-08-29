@@ -5,6 +5,7 @@ import cardReplayImg from '../assets/showcase/home/card-replay-analysis-v1.png'
 import cardHofImg from '../assets/showcase/home/card-hall-of-fame-v1.png'
 import cardCoachingImg from '../assets/showcase/home/card-coaching-v1.png'
 import cardSupportImg from '../assets/showcase/home/card-support-v1.png'
+import { isAndroidApp } from '../composables/usePlatformBridge.js'
 
 const topRecord = ref(null)
 // 下载 Android 版为 feature flag：仅 wotbtools-admin 可见（由 App.vue 提供）。
@@ -39,7 +40,7 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
           <a class="hero-btn primary" href="/?view=replay">{{ $t('home.replayParse') }}</a>
           <a class="hero-btn secondary" href="/?view=ai-review">{{ $t('home.aiReview') }}</a>
           <a class="hero-btn secondary" href="/?view=battle-playback">{{ $t('home.battlePlayback') }}</a>
-          <a v-if="isAdmin" class="hero-btn secondary" href="/download/android">{{ $t('android.nav') }}</a>
+          <a v-if="isAdmin && !isAndroidApp()" class="hero-btn secondary" href="/download/android">{{ $t('android.nav') }}</a>
         </div>
       </div>
       <aside class="record-card">
@@ -87,7 +88,7 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
         <p class="recent-empty-desc">{{ $t('home.recentAnalysisEmptyDesc') }}</p>
         <div class="panel-actions"><a class="mini-action primary" href="/?view=replay">{{ $t('home.uploadReplay') }}</a></div>
       </div>
-      <div class="bottom-panel quick-panel"><h2>{{ $t('app.title') }}</h2><a href="/?view=version">{{ $t('version.btn') }} <span>→</span></a><a href="/?view=contact">{{ $t('contact.nav') }} <span>→</span></a><a v-if="isAdmin" href="/download/android">{{ $t('android.nav') }} <span>→</span></a><a href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }} <span>→</span></a><a href="/sponsor.html">{{ $t('home.sponsorTitle') }} <span>→</span></a></div>
+      <div class="bottom-panel quick-panel"><h2>{{ $t('app.title') }}</h2><a href="/?view=version">{{ $t('version.btn') }} <span>→</span></a><a href="/?view=contact">{{ $t('contact.nav') }} <span>→</span></a><a v-if="isAdmin && !isAndroidApp()" href="/download/android">{{ $t('android.nav') }} <span>→</span></a><a href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }} <span>→</span></a><a href="/sponsor.html">{{ $t('home.sponsorTitle') }} <span>→</span></a></div>
     </section>
     <footer class="home-footer">{{ $t('home.footer') }}</footer>
   </main>
