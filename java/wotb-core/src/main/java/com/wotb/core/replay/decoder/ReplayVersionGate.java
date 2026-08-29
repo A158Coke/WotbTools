@@ -42,6 +42,18 @@ public final class ReplayVersionGate {
                 != ReplayProtocolProfile.Level.UNKNOWN;
     }
 
+    /**
+     * PR162/P0-2：EntityMethod 的<b>语义</b>（method0/1/5/17/20/27/29 → 对应 semantic event）只在
+     * canonical/legacy <b>VERIFIED family</b> 上被认可为 EXACT。future（STRUCTURALLY_COMPATIBLE）版本：
+     * 只有 envelope 结构可前向读取（entityId/methodId/argLen/rawArgs），而 numeric method identity 与
+     * method-specific args semantic 属 closed/version-scoped —— 未认证即 raw-preserve，不得无条件承接
+     * 当前版本 EXACT semantic。
+     */
+    public static boolean methodLayoutAffirmed(final String clientVersion) {
+        return ReplayProtocolProfile.structuralLevel(clientVersion)
+                == ReplayProtocolProfile.Level.VERIFIED;
+    }
+
     /** EntityMethod closed numeric semantics (winner/finish, damage, updateArena): current family only. */
     public static boolean methodSemanticsAllowed(final String clientVersion) {
         return closedSemanticsAllowed(clientVersion);

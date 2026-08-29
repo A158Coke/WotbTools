@@ -393,24 +393,22 @@ class EntityMethodDecoderTest {
         buf[i + 3] = (byte) (v >>> 24);
     }
 
-    /** PR162 前向兼容：method0（VehicleFired）布局是结构（envelope + 1-byte arg）——
-     *  未来版本用精确 1-byte shape 仍结构化解为 EXACT VehicleFiredEvent（观测开火是结构事实）。 */
+    /** PR162/P0-2：future version 只有 Type8 envelope 结构可前向读取；method0 的 numeric semantic
+     *  （VehicleFired）未认证 → 必须 raw/Unknown，绝不继承当前版本 EXACT semantic。 */
     @Test
     void futureVersionLayoutMethodStructurallyDecodes() {
         final ReplayDecodeContext future = new ReplayDecodeContext("11.20.0_china");
         future.entityClassRegistry().markVehicle(12345);
         final ReplayDecodeResult result = decoder.decode(future,
                 methodPacket(1, EntityMethodDecoder.SUBTYPE_VEHICLE_FIRED, new byte[]{0x01}));
-        assertEquals(DecodeStatus.SUCCESS, result.status(),
-                "future method0 structural layout decodes exact");
-        assertEquals(1, result.events().size());
-        final VehicleFiredEvent fired = (VehicleFiredEvent) result.events().getFirst();
-        assertEquals(DecodeConfidence.EXACT, fired.confidence());
-        assertEquals(12345, fired.entityId(), "methodPacket 外层 entityId 按 u32 LE 解码");
+        assertEquals(DecodeStatus.PARTIAL, result.status(),
+                "future method0 semantic 未认证 → raw-preserve，不得 EXACT");
+        assertInstanceOf(UnknownReplayEvent.class, result.events().getFirst());
+        assertTrue(result.events().stream().noneMatch(VehicleFiredEvent.class::isInstance),
+                "future method0 不得产出 VehicleFiredEvent(EXACT)");
     }
 
-    /** PR162 前向兼容：method29（ProjectileLaunched）布局是结构（37-byte shape）——
-     *  未来版本用精确 shape 仍结构化解为 EXACT ProjectileLaunchedEvent（发射点/速度是结构事实）。 */
+    /** PR162/P0-2：future method29（ProjectileLaunched）semantic 未认证 → raw/Unknown，不得 EXACT。 */
     @Test
     void futureVersionProjectileLaunchStructurallyDecodes() {
         final ReplayDecodeContext future = new ReplayDecodeContext("12.0.0_eu");
@@ -418,11 +416,11 @@ class EntityMethodDecoderTest {
         final byte[] args = new byte[37]; // PROJECTILE_LAUNCH_ARGS_LEN
         final ReplayDecodeResult result = decoder.decode(future,
                 methodPacket(1, EntityMethodDecoder.SUBTYPE_PROJECTILE_LAUNCH, args));
-        assertEquals(DecodeStatus.SUCCESS, result.status(),
-                "future method29 structural layout decodes exact");
-        assertEquals(1, result.events().size());
-        final ProjectileLaunchedEvent launched = (ProjectileLaunchedEvent) result.events().getFirst();
-        assertEquals(DecodeConfidence.EXACT, launched.confidence());
+        assertEquals(DecodeStatus.PARTIAL, result.status(),
+                "future method29 semantic 未认证 → raw-preserve，不得 EXACT");
+        assertInstanceOf(UnknownReplayEvent.class, result.events().getFirst());
+        assertTrue(result.events().stream().noneMatch(ProjectileLaunchedEvent.class::isInstance),
+                "future method29 不得产出 ProjectileLaunchedEvent(EXACT)");
     }
 
     /** P0-3：当前 canonical 11.19 仍解码 method29 为 EXACT（不因 gate 回归）。 */
@@ -549,6 +547,27 @@ class EntityMethodDecoderTest {
                 methodPacketOn(1, 910, EntityMethodDecoder.SUBTYPE_ROUND_FINISHED, new byte[]{2, 1}));
         final RoundFinishedEvent e = assertInstanceOf(RoundFinishedEvent.class, r.events().get(0));
         assertEquals(2, e.winnerTeam());
+    }
+
+    /** PR162/P0-1.5：EntityMethod decode 必须是 class authority 的<b>纯消费</b>，不得修改 registry。 */
+    @Test
+    void entityMethodDecodeDoesNotMutateEntityClassRegistry() {
+        final ReplayDecodeContext ctx = new ReplayDecodeContext("11.19.0_china");
+        ctx.entityClassRegistry().markVehicle(7);
+        ctx.entityClassRegistry().markAvatar(900);
+        final EntityClass v7 = ctx.entityClassRegistry().resolve(7);
+        final EntityClass a900 = ctx.entityClassRegistry().resolve(900);
+        final EntityClass u999 = ctx.entityClassRegistry().resolve(999);
+
+        // method4 2B 在未分类 entity 999 上 → UnknownReplayEvent，且不得把 999 标记为任意类。
+        decoder.decode(ctx, methodPacketOn(1, 999, EntityMethodDecoder.SUBTYPE_ROUND_FINISHED,
+                new byte[]{2, 1}));
+        // method29 在未分类 entity 999 上 → Unknown，不得自证 Avatar。
+        decoder.decode(ctx, methodPacketOn(1, 999, EntityMethodDecoder.SUBTYPE_PROJECTILE_LAUNCH,
+                new byte[37]));
+        assertEquals(v7, ctx.entityClassRegistry().resolve(7), "decode 不得改动已分类 Vehicle");
+        assertEquals(a900, ctx.entityClassRegistry().resolve(900), "decode 不得改动已分类 Avatar");
+        assertEquals(u999, ctx.entityClassRegistry().resolve(999), "未分类 entity 不得被 method decode 自证 class");
     }
 
     /** subtype48 载荷（指定 entityId）：body[0..3] 固定字段 + varint(wrapperFieldNumber) + msgLen + protoData。 */
