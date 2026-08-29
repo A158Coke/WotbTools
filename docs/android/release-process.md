@@ -10,13 +10,25 @@
 4. 点 `Run workflow`，等待绿色。
 5. 在真机上做 smoke。
 
-Workflow 自动完成：版本格式 fail-fast → 固定使用 `main` HEAD → monotonic 防回退 +
-`minSupportedVersionCode` 校验 → tag 防重复 → frontend 校验 → signing secret/keystore/alias
-fail-fast → `gradle assembleRelease` → `apksigner verify` + 签名证书 SHA-256 固定校验 →
-SHA-256 单源 → 生产同版本 APK 不可变防覆盖 → 用 `GITHUB_TOKEN` 创建 release tag（不会再次
-触发本 workflow）→ scp 上传到 `/opt/wotb/android-release` → `chmod 644` → 生产 APK
-HTTP 200 + 非空 + SHA 比对 → **最后写 `version.json`** → 生产 `version.json` jq 内容比对 →
+Workflow 自动完成（按真实执行顺序）：版本格式 fail-fast（含 minor/patch 0..999 与
+versionCode 范围校验）→ 固定使用 `main` HEAD → **preflight 幂等分类**（生产最新版本
+> 本次 → 回滚拒绝；== 本次且 metadata 一致 → `already-published` 安全成功，不再构建；
+== 但 metadata 不一致 → 拒绝；< 本次 → 进入发布）+ `minSupportedVersionCode` 校验 →
+frontend 校验 → signing secret/keystore/alias fail-fast → `gradle assembleRelease` →
+`apksigner verify` + 签名证书 SHA-256 固定校验 → SHA-256 单源 → **生产 APK 幂等分类**
+（不存在 → 上传；存在且 SHA == 本次 → 复用不覆盖；存在但 SHA 不同 → immutable 冲突拒绝）
+→ scp 上传 `/opt/wotb/android-release` → `chmod 644` → 生产 APK HTTP 200 + 非空 + SHA 比对
+→ **tag 幂等**（仅 dispatch：不存在 → 创建；已存在且指向本次 commit → 复用；指向其它 commit
+→ 拒绝 repoint）→ **最后写 `version.json`** → 生产 `version.json` jq 内容比对 →
 `$GITHUB_STEP_SUMMARY`。任一关键校验失败即终态失败，fail-closed，不自动覆盖/不降级。
+
+### 失败重跑 / 幂等语义
+
+- 已完全发布：preflight 判定 `already-published` → 安全成功（no-op），不重新构建。
+- APK 上传后失败：重跑同一版本，生产 APK 已存在；若重构建 SHA 与原 APK 相同 → 复用；
+  若不同 → 按 immutable 规则失败（不会覆盖、不会双写）。
+- tag 后失败：重跑时 tag 已存在且指向本次 commit → 复用；指向其它 commit → 失败。
+- version.json 前失败：APK/tag 已就位，重跑只补写 `version.json`（LAST/最后发布）。
 
 ## 兼容入口：`android-v*` tag push
 
@@ -32,6 +44,8 @@ HTTP 200 + 非空 + SHA 比对 → **最后写 `version.json`** → 生产 `vers
 
 - 版本号必须是 `X.Y.Z`，每段为 `0` 或非零开头的整数（拒绝 `1.0.02` / `01.0.2` 等前导零，
   避免同一 versionCode 对应多个 versionName）。
+- `minor` / `patch` 必须在 `0..999`，最终 versionCode 必须在 `1..2_100_000_000`（Android /
+  Play Store 合法范围）；越界即 fail-fast。
 - tag：`android-vX.Y.Z`（如 `android-v1.2.0`）。
 - versionCode = `major*1_000_000 + minor*1_000 + patch`（单调递增）。
 - 普通 Web deploy 不触发 APK 构建。
@@ -55,14 +69,16 @@ Variable，未配置或指纹不匹配即刻失败，不允许 fallback/skip。
 ## 流程（.github/workflows/android-release.yml）
 
 `workflow_dispatch`（或 `android-v*` tag）→ checkout `main`（dispatch）/tag commit（push）→
-解析 + 严格校验版本 → 校验 source 为 `main` HEAD → frontend `npm ci/test/build` →
-生产 monotonic + minSupported 防回退 → tag 防重复 → JDK 21 + Gradle 8.7 → 校验并还原
-signing keystore（fail-fast：4 个 secret 非空 → `printf '%s'` 解码 Base64 → keystore 非空 →
+解析 + 严格校验版本（格式 + minor/patch 0..999 + versionCode 范围）→ 校验 source 为
+`main` HEAD → **preflight 幂等分类**（见上，决定 `publish` 或 `already-published`）→
+frontend `npm ci/test/build` → JDK 21 + Gradle 8.7 → 校验并还原 signing keystore
+（fail-fast：4 个 secret 非空 → `printf '%s'` 解码 Base64 → keystore 非空 →
 `keytool -list` 命中 alias；全程不打印 secret/密码/Base64/私钥）→ `gradle assembleRelease`
 （注入 `-PwotbKeystore*`）→ `apksigner verify --verbose --print-certs` + 证书指纹比对 →
-`sha256sum` 单源 → 生产同类 APK 不可变防覆盖 → 创建 release tag（仅 dispatch，`GITHUB_TOKEN`）
-→ scp 上传 `/opt/wotb/android-release` → `chmod 644` → 生产 APK HTTP 200 + 非空 + SHA 比对 →
-**写 `version.json`（LAST）** → scp 上传 → 生产 `version.json` jq 内容比对 → 汇总。
+`sha256sum` 单源 → **生产 APK 幂等分类**（不存在/同 SHA/异 SHA 三分支）→ scp 上传
+`/opt/wotb/android-release`（仅不存在时）→ `chmod 644` → 生产 APK HTTP 200 + 非空 + SHA 比对
+→ **tag 幂等**（仅 dispatch）→ **写 `version.json`（LAST）** → scp 上传 → 生产
+`version.json` jq 内容比对 → 汇总。
 
 原子发布顺序：APK 可访问且内容校验通过后才更新 `version.json`，避免「强制更新但 APK 404 /
 内容不一致」。
