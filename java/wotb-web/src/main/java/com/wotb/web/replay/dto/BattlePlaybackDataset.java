@@ -122,7 +122,12 @@ public record BattlePlaybackDataset(
         }
     }
 
-    public record OrientationSample(double timeSec, Double hullYawDeg, Double turretRelativeYawDeg) {
+    public record OrientationSample(
+            double timeSec,
+            Double hullYawDeg,
+            Double turretRelativeYawDeg,
+            String knowledge      // CURRENT / LAST_KNOWN / UNKNOWN
+    ) {
     }
 
     /** 血量过渡（统一 currentHp；knowledge + displayCapacityHp）。 */
