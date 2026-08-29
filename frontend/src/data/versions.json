@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.46",
+    "date": "2026-08-29",
+    "tag": "fix",
+    "zh": "修复回放解析页「解析预览」按钮消失：在回放解析页上传回放文件后，此前看不到「解析预览/战局回放/AI 复盘」整组操作按钮，无法开始解析。现恢复「解析预览」按钮，选好文件即可一键开始解析；战局回放与 AI 复盘仍从解析结果的具体战斗进入。",
+    "en": "Fixed the missing 'Parse Preview' button on the replay analysis page: after uploading replay files, the whole action group (Parse Preview / Battle Playback / AI Review) was hidden, so parsing could not be started. The 'Parse Preview' button is now restored so you can start parsing with one click; Battle Playback and AI Review still open from a specific battle in the parsed results.",
+    "ru": "Исправлено исчезновение кнопки «Разобрать» на странице разбора реплея: после загрузки файлов вся группа действий («Разобрать» / «Воспроизведение боя» / «AI-разбор») была скрыта, и разбор нельзя было запустить. Кнопка «Разобрать» возвращена — теперь разбор запускается в один клик; «Воспроизведение боя» и «AI-разбор» по-прежнему открываются из конкретного боя в результатах."
+  },
+  {
     "v": "2.12.45",
     "date": "2026-08-29",
     "tag": "fix",

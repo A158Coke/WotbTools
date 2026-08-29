@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Fixed
+- **回放解析预览按钮回归修复（P0）**：回放解析页选择文件后，「解析预览」按钮此前被 `showWorkspaceActions=false` 连带隐藏，导致无法启动解析任务（选完文件无任何操作入口）。现将解析按钮拆到独立的 `showPreview` 开关（默认开启），`showWorkspaceActions` 只控制 AI 复盘/战局回放快捷入口；`RatingV2AdminPage`/`ReplayCapabilityPage` 显式关闭预览以保持原有行为。
 - **管理员 Rating V2 结果表字段对齐修复**：表头现在复用 API 列元数据的 `num` 标记，数值表头与数值单元格统一右对齐，玩家/战队等文本列保持左对齐；新增 DOM 回归测试锁定表头与数据行使用同一对齐分类。列顺序、排序、数据与评分公式不变。
 - **Flyway 迁移不可变 + 部署失败诊断（Production Deploy Hotfix）**：修复 `main` 上已执行 Flyway V18 因文档注释漂移（`docs/current-plan.md` 误写回）导致的启动/健康检查失败风险。将 V18 恢复为 Git history 证明的 authoritative exact blob（`7e11d427` 的 `a7941f0d2…`，Flyway CRC32 `3353739529`），V1–V21 无其它 drift。
   - **永久 policy**：`java/AGENTS.md` 明确既有 `V*.sql` 为 immutable historical artifact——禁止修改/重命名/删除/格式化/改注释/改换行/编码；schema 只能新增更高版本 forward-only `V<N>__*.sql`；仅当 Git history 证明生产已执行且发生 checksum drift 时才允许恢复 exact deployed blob。
