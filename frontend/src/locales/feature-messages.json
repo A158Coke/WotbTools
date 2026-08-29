@@ -9,7 +9,13 @@
     },
 
     "home": {
-      "boostDesc": "专业陪练服务，提升战斗技巧与实战表现。"
+      "boostDesc": "专业陪练服务，提升战斗技巧与实战表现。",
+      "replayParse": "回放解析",
+      "replayParseDesc": "批量解析回放，查看汇总、单场数据与 League Rating。",
+      "aiReview": "AI 复盘",
+      "aiReviewDesc": "基于真实战斗数据分析决策、关键时间点与战术表现。",
+      "battlePlayback": "战局重建",
+      "battlePlaybackDesc": "通过地图、时间轴、车辆状态、HP 与战斗事件重现整场战斗。"
     },
     "boost": {
       "notificationTitle": {
@@ -36,6 +42,12 @@
         "no_valid_replays": "没有可用的回放文件",
         "cancelled": "解析已取消"
       }
+    },
+    "workspace": {
+      "back_to_replay": "返回回放解析",
+      "change_replay": "更换回放",
+      "capability_upload_hint": "请选择一份 .wotbreplay 回放开始。",
+      "single_replay_required": "此功能一次只支持一份回放。"
     },
     "league": {
       "rated_count": "可评分 {rated} / {total}",
@@ -92,7 +104,13 @@
     },
 
     "home": {
-      "boostDesc": "Coaching sessions to improve gameplay and battle performance."
+      "boostDesc": "Coaching sessions to improve gameplay and battle performance.",
+      "replayParse": "Replay Analysis",
+      "replayParseDesc": "Batch-parse replays and inspect summaries, battles, and League Rating.",
+      "aiReview": "AI Review",
+      "aiReviewDesc": "Analyze decisions, key moments, and tactical performance from battle data.",
+      "battlePlayback": "Battle Reconstruction",
+      "battlePlaybackDesc": "Reconstruct the battle with maps, timeline, vehicle state, HP, and events."
     },
     "boost": {
       "notificationTitle": {
@@ -119,6 +137,12 @@
         "no_valid_replays": "No valid replay files were found",
         "cancelled": "Parsing cancelled"
       }
+    },
+    "workspace": {
+      "back_to_replay": "Back to Replay Analysis",
+      "change_replay": "Change replay",
+      "capability_upload_hint": "Choose one .wotbreplay file to begin.",
+      "single_replay_required": "This capability supports one replay at a time."
     },
     "league": {
       "rated_count": "Rateable {rated} / {total}",
@@ -175,7 +199,13 @@
     },
 
     "home": {
-      "boostDesc": "Тренировки для улучшения игровых навыков и эффективности в бою."
+      "boostDesc": "Тренировки для улучшения игровых навыков и эффективности в бою.",
+      "replayParse": "Анализ реплеев",
+      "replayParseDesc": "Пакетная обработка реплеев, сводки, бои и League Rating.",
+      "aiReview": "ИИ-разбор",
+      "aiReviewDesc": "Анализ решений, ключевых моментов и тактики по данным боя.",
+      "battlePlayback": "Реконструкция боя",
+      "battlePlaybackDesc": "Восстановление боя по карте, таймлайну, состоянию техники, HP и событиям."
     },
     "boost": {
       "notificationTitle": {
@@ -202,6 +232,12 @@
         "no_valid_replays": "Подходящие файлы реплеев не найдены",
         "cancelled": "Обработка отменена"
       }
+    },
+    "workspace": {
+      "back_to_replay": "Назад к анализу реплея",
+      "change_replay": "Сменить реплей",
+      "capability_upload_hint": "Выберите один файл .wotbreplay.",
+      "single_replay_required": "Эта функция поддерживает только один реплей за раз."
     },
     "league": {
       "rated_count": "Оценено {rated} / {total}",

@@ -35,8 +35,27 @@ class ReplaysProgressTest {
 
         assertEquals(List.of("a.wotbreplay:SUCCESS", "b.wotbreplay:DUPLICATE", "c.wotbreplay:FAILURE"), outcomes);
         assertEquals(1, collected.battles.size());
+        assertEquals(List.of("r0"), collected.battleSourceIds);
         assertEquals(1, collected.duplicates.size());
         assertEquals(1, collected.failures.size());
+    }
+
+    @Test
+    void sourceIdsFollowInputIdentityAfterDuplicateFiltering() {
+        final List<Source> sources = List.of(
+                new Source("first.wotbreplay", new byte[]{1}),
+                new Source("duplicate.wotbreplay", new byte[]{2}),
+                new Source("third.wotbreplay", new byte[]{3}));
+        final List<Battle> battles = new ArrayList<>();
+        final Collected collected = Replays.collect(sources, source -> {
+            final Battle battle = new Battle();
+            battle.arenaId = source.name().startsWith("third") ? "arena-2" : "arena-1";
+            battles.add(battle);
+            return battle;
+        }, null, null);
+
+        assertEquals(List.of("r0", "r2"), collected.battleSourceIds,
+                "duplicate r1 must not shift the identity of the following Battle");
     }
 
     @Test

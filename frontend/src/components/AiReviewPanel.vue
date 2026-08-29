@@ -1,9 +1,8 @@
 <!--
-  AI 复盘 Workspace 面板（单页 Workspace 改造）。
-  AI 复盘核心（ReplayPage Workspace 内联）：SSE 分析流（call1/evidence/call2/autopsy）+ 流式进度 + 结果面板。
+  AI 复盘能力面板：SSE 分析流（call1/evidence/call2/autopsy）+ 流式进度 + 结果面板。
   不负责页面级登录门禁/自动跳转（由宿主入口把关）；仅在发起请求时经 authedFetch 兜底
   ensureToken + 401/403 处理。目标文件由父组件以 prop 传入（文件始终在 ReplayPage 内存中，
-  不重新上传、不跨视图交接）。
+  由 capability page 传入（可来自解析页的内存 handoff）。
 -->
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'

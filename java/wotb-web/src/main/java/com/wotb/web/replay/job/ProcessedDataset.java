@@ -24,6 +24,7 @@ import java.util.List;
  */
 public record ProcessedDataset(List<Battle> battles,
                                List<String> battleSourceNames,
+                               List<String> battleSourceIds,
                                List<String[]> duplicates,
                                List<String[]> failures,
                                LeagueRatingBatch league,
@@ -38,8 +39,19 @@ public record ProcessedDataset(List<Battle> battles,
     public ProcessedDataset {
         battles = battles == null ? List.of() : List.copyOf(battles);
         battleSourceNames = battleSourceNames == null ? List.of() : List.copyOf(battleSourceNames);
+        battleSourceIds = battleSourceIds == null ? List.of() : List.copyOf(battleSourceIds);
         duplicates = duplicates == null ? List.of() : List.copyOf(duplicates);
         failures = failures == null ? List.of() : List.copyOf(failures);
+    }
+
+    /** Compatibility constructor for synthetic callers that predate the source identity contract. */
+    public ProcessedDataset(final List<Battle> battles,
+                            final List<String> battleSourceNames,
+                            final List<String[]> duplicates,
+                            final List<String[]> failures,
+                            final LeagueRatingBatch league,
+                            final String leagueUnavailableCode) {
+        this(battles, battleSourceNames, List.of(), duplicates, failures, league, leagueUnavailableCode);
     }
 
     /** 是否为 League Rating 批次。 */

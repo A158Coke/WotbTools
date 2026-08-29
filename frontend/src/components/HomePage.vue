@@ -34,8 +34,9 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
         <h1>{{ $t('app.title') }}</h1>
         <p class="hero-subtitle">{{ $t('app.subtitle') }}</p>
         <div class="hero-actions">
-          <a class="hero-btn primary" href="/?view=replay">{{ $t('home.uploadReplay') }}</a>
-          <a class="hero-btn secondary" href="/?view=replay">{{ $t('home.viewAnalysisHistory') }}</a>
+          <a class="hero-btn primary" href="/?view=replay">{{ $t('home.replayParse') }}</a>
+          <a class="hero-btn secondary" href="/?view=ai-review">{{ $t('home.aiReview') }}</a>
+          <a class="hero-btn secondary" href="/?view=battle-playback">{{ $t('home.battlePlayback') }}</a>
         </div>
       </div>
       <aside class="record-card">
@@ -52,18 +53,26 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
     <section class="feature-grid" aria-label="WotBTools">
       <a class="feature-card feature-primary" href="/?view=replay">
         <div class="feature-visual"><img :src="cardReplayImg" alt="" aria-hidden="true"><span class="feature-index">01</span></div>
-        <div class="feature-copy"><h2>{{ $t('home.analysisTitle') }}</h2><p>{{ $t('home.analysisDesc') }}</p><span class="feature-action">{{ $t('home.learnAnalysis') }} →</span></div>
+        <div class="feature-copy"><h2>{{ $t('home.replayParse') }}</h2><p>{{ $t('home.replayParseDesc') }}</p><span class="feature-action">{{ $t('home.replayParse') }} →</span></div>
+      </a>
+      <a class="feature-card" href="/?view=ai-review">
+        <div class="feature-visual"><img :src="cardReplayImg" alt="" aria-hidden="true"><span class="feature-index">02</span></div>
+        <div class="feature-copy"><h2>{{ $t('home.aiReview') }}</h2><p>{{ $t('home.aiReviewDesc') }}</p><span class="feature-action">{{ $t('home.aiReview') }} →</span></div>
+      </a>
+      <a class="feature-card" href="/?view=battle-playback">
+        <div class="feature-visual"><img :src="cardReplayImg" alt="" aria-hidden="true"><span class="feature-index">03</span></div>
+        <div class="feature-copy"><h2>{{ $t('home.battlePlayback') }}</h2><p>{{ $t('home.battlePlaybackDesc') }}</p><span class="feature-action">{{ $t('home.battlePlayback') }} →</span></div>
       </a>
       <a class="feature-card" href="/?view=hof">
-        <div class="feature-visual"><img :src="cardHofImg" alt="" aria-hidden="true"><span class="feature-index">02</span></div>
+        <div class="feature-visual"><img :src="cardHofImg" alt="" aria-hidden="true"><span class="feature-index">04</span></div>
         <div class="feature-copy"><h2>{{ $t('hof.btn') }}</h2><p>{{ $t('home.hofDesc') }}</p><span class="feature-action">{{ $t('hof.btn') }} →</span></div>
       </a>
       <a class="feature-card" href="/?view=boost">
-        <div class="feature-visual"><img :src="cardCoachingImg" alt="" aria-hidden="true"><span class="feature-index">03</span></div>
+        <div class="feature-visual"><img :src="cardCoachingImg" alt="" aria-hidden="true"><span class="feature-index">05</span></div>
         <div class="feature-copy"><h2>{{ $t('app.boost_tab') }}</h2><p>{{ $t('home.boostDesc') }}</p><span class="feature-action">{{ $t('app.boost_tab') }} →</span></div>
       </a>
       <a class="feature-card" href="/sponsor.html">
-        <div class="feature-visual"><img :src="cardSupportImg" alt="" aria-hidden="true"><span class="feature-index">SP</span></div>
+        <div class="feature-visual"><img :src="cardSupportImg" alt="" aria-hidden="true"><span class="feature-index">06</span></div>
         <div class="feature-copy"><h2>{{ $t('home.sponsorTitle') }}</h2><p>{{ $t('home.sponsorDesc') }}</p><span class="feature-action">{{ $t('home.sponsorTag') }} →</span></div>
       </a>
     </section>
@@ -168,7 +177,7 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
 .record-meta { display: grid; gap: 3px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, .12); }
 .record-meta small { color: rgba(255, 255, 255, .58); }
 
-.feature-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
+.feature-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
 .feature-card {
   min-width: 0;
   overflow: hidden;
