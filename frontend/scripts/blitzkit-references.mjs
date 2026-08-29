@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * BlitzKit 辅助脚本（计划 §38）— 为 ChatGPT SVG 生成准备输入资料。
+ * BlitzKit 辅助脚本— 为 ChatGPT SVG 生成准备输入资料。
  *
  * 职责：
  * 1. 读取真实项目 Tankopedia（common/tankopedia-tier10.json）+ 车型 mapping；

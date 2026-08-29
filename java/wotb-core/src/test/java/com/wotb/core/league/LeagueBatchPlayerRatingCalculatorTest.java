@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** League Rating V5 Batch Player Evidence Adjustment（计划 §29–§32）。 */
+/** League Rating V5 Batch Player Evidence Adjustment。 */
 class LeagueBatchPlayerRatingCalculatorTest {
 
     /** 期望 E(n)=1-exp(-n/6) 的精确值。 */
@@ -98,7 +98,7 @@ class LeagueBatchPlayerRatingCalculatorTest {
         assertEquals(449.0, LeagueBatchPlayerRatingCalculator.apply(449, 25), 1e-12);
     }
 
-    // ---- 数值安全（计划 §45）----
+    // ---- 数值安全----
 
     @Test
     void rejectsNonPositiveCountAndNonFiniteRaw() {

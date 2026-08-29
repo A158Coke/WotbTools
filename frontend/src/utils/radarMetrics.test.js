@@ -80,7 +80,7 @@ describe('Radar League 维度 normalization 使用后端 metadata（禁止 front
     expect(RADAR_MAX_AXES).toBe(7)
   })
 
-  it('默认顺序 = 计划 §10：Damage/Shooting/Kill/RC/Blocked/Exchange/Assist', () => {
+  it('默认顺序 =Damage/Shooting/Kill/RC/Blocked/Exchange/Assist', () => {
     expect(RADAR_DEFAULT_ORDER).toEqual([
       'league_damage_score',
       'league_shooting_score',

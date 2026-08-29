@@ -8,6 +8,17 @@ const JOB_TERMINAL = new Set(['READY', 'FAILED', 'CANCELLED'])
 const JOB_ACTIVE = new Set(['QUEUED', 'PROCESSING'])
 const JOB_POLL_MS = 1500
 
+/**
+ * Dataset-only 目标 source 可用性判定（现存 job 上）：source READY 由调用方复用；
+ * FAILED → SOURCE_PROCESSING_FAILED（不可恢复）；source 不存在 → SOURCE_NOT_FOUND；
+ * 其它 terminal/non-ready → SOURCE_NOT_READY。只有权威 JOB_NOT_FOUND 才允许重建 Dataset。
+ */
+function assertSourceAvailable(sourceId, source) {
+  if (source && source.status === 'FAILED') throw new Error('SOURCE_PROCESSING_FAILED')
+  if (!source) throw new Error('SOURCE_NOT_FOUND')
+  throw new Error('SOURCE_NOT_READY')
+}
+
 /** 处理中 UI 状态（单一事实源；UPLOADING/REGISTERING 为前端本地态）。 */
 const PROCESSING_UI_STATES = Object.freeze({
   EMPTY: 'EMPTY',
@@ -526,6 +537,12 @@ export function useReplay() {
         } else if (data.status === 'QUEUED' || data.status === 'PROCESSING') {
           // poll 绑定至 capture 的 datasetJobId：即使 current 后来切到 p2，p1 poll 只影响 p1。
           return pollSourceReady(datasetJobId, sourceId)
+        } else {
+          // 现存 Job 已 terminal（READY/FAILED/CANCELLED）且目标 source 未 READY——source FAILED /
+          // source 不存在 / 其它 non-ready → 抛出稳定不可恢复错误，绝不静默续到步骤 3 新建
+          // Processing Job（只有权威 JOB_NOT_FOUND 才允许重建）。source 在 create 时即按上传顺序
+          // 固定为 r{index}，不会「稍后出现」，因此缺失 source 就是 SOURCE_NOT_FOUND。
+          assertSourceAvailable(sourceId, s)
         }
       } catch (e) {
         // 只有稳定 not-found（404 / JOB_NOT_FOUND）才 invalidate 并允许重建；
@@ -540,14 +557,16 @@ export function useReplay() {
         invalidateProcessingDatasetJob(datasetJobId)
       }
     }
-    // 2) 当前 active job：source READY 直接返回；仍在处理则等自己的 sourceId
+    // 2) 当前 active job：source READY 直接返回；仍在处理则等自己的 sourceId；
+    //    已 terminal（READY/FAILED/CANCELLED）但 source 未 READY → 稳定不可恢复错误（不重建）。
     const job = processingJob.value
-    if (job && (job.status === 'QUEUED' || job.status === 'PROCESSING' || job.status === 'READY')) {
+    if (job && (job.status === 'QUEUED' || job.status === 'PROCESSING' || job.status === 'READY' || job.status === 'FAILED' || job.status === 'CANCELLED')) {
       const s = (job.sources || []).find(x => x.sourceId === sourceId)
       if (s && s.status === 'READY') return { processingJobId: job.jobId, sourceId }
       if (job.status === 'QUEUED' || job.status === 'PROCESSING') {
         return pollSourceReady(job.jobId, sourceId)
       }
+      assertSourceAvailable(sourceId, s)
     }
     // 3)+4) in-flight create 或新建（single-flight：B 复用 A 的 create，绝不双 job）
     const created = await ensureProcessingCreate(idx)

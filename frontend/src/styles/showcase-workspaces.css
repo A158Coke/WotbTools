@@ -4,7 +4,7 @@
 
 /* Side Panel（PlayerDetailDrawer）桌面端真 reflow：工作区按抽屉宽度预留右侧空间
    （--pd-drawer-offset 由组件设置，tablet/mobile 恒为 0px 走原有 overlay），主内容随之收窄/扩展，
-   不被 fixed overlay 覆盖（计划 §7）。 */
+   不被 fixed overlay 覆盖。 */
 .layout-data-workspace { padding-right: var(--pd-drawer-offset, 0px) !important; }
 
 /* ========== Replay parser ========== */

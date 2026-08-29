@@ -751,7 +751,7 @@ export const GHOST_MS = 600
 export const FLASH_MS = 280
 /** 击毁 burst（真实 ms）。 */
 export const BURST_MS = 700
-/** kill feed 生命周期（真实 ms；计划 §16.2：约 4–6s）。 */
+/** kill feed 生命周期（真实 ms约 4–6s）。 */
 export const KILL_FEED_MS = 5000
 /** kill feed 同时最多条数（§16.2：最多 3 条，队列，新进挤最旧）。 */
 const KILL_FEED_MAX = 3

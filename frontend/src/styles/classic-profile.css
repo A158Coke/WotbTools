@@ -13,7 +13,7 @@
  *    展示层更高的 specificity 覆盖,不重排现有 showcase 全局样式。
  * 4) 关闭全屏 AI/装饰性展示层(沿用原「从简」规则)与 Home 四张 AI 装饰卡图。
  *
- * 约束(对应计划 §43 A/B/D + §Classic):每条规则都带 [data-ui-profile="classic"] 前缀;
+ * 约束(对应
  * 禁 display:none 隐藏业务;禁 filter:invert / 全局 opacity / html *;不 fork 业务组件。
  */
 

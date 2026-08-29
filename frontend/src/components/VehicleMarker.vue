@@ -1,6 +1,6 @@
 <script setup>
 /**
- * VehicleMarker（计划 §17/§19–§25）——Battle Playback 正式单车 marker 组件。
+ * VehicleMarker——Battle Playback 正式单车 marker 组件。
  *
  * 职责：dedicated/generic model display + hull rotation + turret rotation
  * （含 OFF_CENTER turret assembly 嵌套 transform）+ PR3 状态视觉：
@@ -44,7 +44,7 @@ const props = defineProps({
   },
   /** HP HUD 显示数据（hpDisplay 结果：{current,maxHp,pct,destroyed}|null；null=不渲染） */
   hp: { type: Object, default: null },
-  /** HP HUD 开关（计划 §4.3：关闭后隐藏数字/bar/ghost，不影响其余 combat feedback） */
+  /** HP HUD 开关（关闭后隐藏数字/bar/ghost，不影响其余 combat feedback） */
   hpVisible: { type: Boolean, default: true },
   /** lost-HP ghost：{prevPct,nextPct}|null（§11；同阵营色浅版，约 600ms 消退） */
   hpGhost: { type: Object, default: null },
