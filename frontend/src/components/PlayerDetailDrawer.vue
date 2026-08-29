@@ -12,7 +12,7 @@ import {
 import { formatRadarVisualScore, scaleRadarSeries } from '../utils/radarScale.js'
 import {
   RADAR, axisPoint, axisRay, polygonPoints, radarGridPolygons, radarScaleTicks,
-  radarScoreBadgeWidth, radarScoreLabelPosition,
+  radarScoreLabelLayout,
 } from '../utils/radarGeometry.js'
 import { sanitizeFilename, downloadBlob } from '../utils/exportReplayPng.js'
 
@@ -441,15 +441,9 @@ function buildExportSnapshot() {
       const m = metrics[i]
       return { x, y, label: m?.label || '', tip: m?.tip || '' }
     }),
-    scoreLabels: metrics.map((m, i) => {
-      if (!m.available) return null
-      const value = formatRadarVisualScore(m)
-      return {
-        ...radarScoreLabelPosition(i, metrics.length, m.normalized),
-        value,
-        width: radarScoreBadgeWidth(value),
-      }
-    }),
+    scoreLabels: radarScoreLabelLayout(
+      metrics.map(m => m.available ? m.normalized : null),
+      metrics.map(m => formatRadarVisualScore(m))),
     detailRows: metrics.map((m, i) => {
       const ref = refs[i]
       return {

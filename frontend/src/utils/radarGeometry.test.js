@@ -4,6 +4,7 @@ import {
   axisPoint,
   radarGridPolygons,
   radarScoreBadgeWidth,
+  radarScoreLabelLayout,
   radarScoreLabelPosition,
   radarScaleTicks,
   radarValueRatio,
@@ -55,12 +56,13 @@ describe('radarGeometry visual scale', () => {
 
   it.each([6, 7])('keeps %i zero/near-zero score badges readable around the center', count => {
     for (const ratio of [0, 0.01]) {
-      const badges = Array.from({ length: count }, (_, index) => {
-        const position = radarScoreLabelPosition(index, count, ratio)
-        const width = radarScoreBadgeWidth('0')
+      const positions = radarScoreLabelLayout(
+        Array.from({ length: count }, () => ratio),
+        Array.from({ length: count }, () => '0'))
+      const badges = positions.map(position => {
         return {
-          left: position.x - width / 2,
-          right: position.x + width / 2,
+          left: position.x - position.width / 2,
+          right: position.x + position.width / 2,
           top: position.y - RADAR.SCORE_BADGE_HEIGHT / 2,
           bottom: position.y + RADAR.SCORE_BADGE_HEIGHT / 2,
         }
@@ -74,7 +76,30 @@ describe('radarGeometry visual scale', () => {
           expect(overlaps, `badges ${i}/${j} overlap at ratio ${ratio}`).toBe(false)
         }
       }
-      expect(radarScoreLabelPosition(0, count, ratio).x).toBeGreaterThan(RADAR.CENTER)
     }
+  })
+
+  it('keeps a seven-axis top score 38 clear of its clockwise score 74 neighbor', () => {
+    const scores = [38, 74, 75, 75, 75, 75, 74]
+    const positions = radarScoreLabelLayout(
+      scores.map(score => score / RADAR.DISPLAY_CAP), scores.map(String))
+    const badge = index => {
+      const position = positions[index]
+      return {
+        left: position.x - position.width / 2,
+        right: position.x + position.width / 2,
+        top: position.y - RADAR.SCORE_BADGE_HEIGHT / 2,
+        bottom: position.y + RADAR.SCORE_BADGE_HEIGHT / 2,
+      }
+    }
+    const top = badge(0)
+    const clockwise = badge(1)
+    const counterclockwise = badge(6)
+    const overlaps = top.left < clockwise.right && top.right > clockwise.left
+      && top.top < clockwise.bottom && top.bottom > clockwise.top
+    const counterOverlap = top.left < counterclockwise.right && top.right > counterclockwise.left
+      && top.top < counterclockwise.bottom && top.bottom > counterclockwise.top
+    expect(overlaps).toBe(false)
+    expect(counterOverlap).toBe(false)
   })
 })
