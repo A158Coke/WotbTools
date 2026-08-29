@@ -33,15 +33,33 @@ public record BattlePlaybackDataset(
         Integer friendlyTeam,
         Long recorderAccountId,
         List<VehiclePlaybackTrack> vehicles,
+        List<BattleEvent> events,
         List<ShotTrack> shots,
         List<PointsSample> pointsSamples,
         List<String> limitations
 ) {
     public BattlePlaybackDataset {
         vehicles = vehicles == null ? List.of() : List.copyOf(vehicles);
+        events = events == null ? List.of() : List.copyOf(events);
         shots = shots == null ? List.of() : List.copyOf(shots);
         pointsSamples = pointsSamples == null ? List.of() : List.copyOf(pointsSamples);
         limitations = limitations == null ? List.of() : List.copyOf(limitations);
+    }
+
+    /**
+     * battle-level 时间轴事件（canonical，源自唯一伤害/击毁权威，非 raw 重扫）。
+     * <p>type ∈ {@code DAMAGE | DESTROYED | KILL | POSITION_REPORTED | POSITION_STALE}。
+     * {@code observedHpLoss} 仅在 DAMAGE 且窗口内唯一伤害通知 + 可 attribution 时非 null
+     * （前端不得把 unsupported 冲突窗口的掉血挂到单条通知）；{@code rawProtocolValue} 一律丢弃
+     * （Type-8 语义未证明，不进入 canonical）。</p>
+     */
+    public record BattleEvent(
+            String type,
+            double timeSec,
+            Long accountId,
+            Long targetAccountId,
+            Integer observedHpLoss
+    ) {
     }
 
     /** 一辆车的完整投影：identity / loadout / 各 transition track。 */
