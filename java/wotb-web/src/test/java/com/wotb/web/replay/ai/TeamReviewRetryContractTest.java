@@ -116,7 +116,7 @@ class TeamReviewRetryContractTest {
         assertEquals(2, gateway.teamCall2Requests());
     }
 
-    // ===== Review B1-1：callRaw authoritative response source = completionText() =====
+    // ===== ：callRaw authoritative response source = completionText() =====
 
     @Test
     void completionTextIsAuthoritativeOverPartialCallbackChunks() {
@@ -278,7 +278,7 @@ class TeamReviewRetryContractTest {
     }
 
     /**
-     * Review B1-1 流式替身：{@code stream()} 按调用顺序返回预设 completionText，
+     *  流式替身：{@code stream()} 按调用顺序返回预设 completionText，
      * 并先向 callback 发出预设 chunk（可为零散 JSON / 垃圾）——验证 callRaw 只用
      * completionText()（authoritative），callback 仅为 progress。
      */

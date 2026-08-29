@@ -73,7 +73,7 @@ class TeamReviewNaturalCoachContractTest {
 
     @Test
     void groundingMachineFieldsContractTrilingual() {
-        // Review B1-2：structured claims 必须支持机器可校验字段（语言无关）
+        // structured claims 必须支持机器可校验字段（语言无关）
         assertTrue(ZH.contains("机器字段（三语通用，language-neutral）"),
                 "必须声明机器字段三语通用");
         assertTrue(ZH.contains("timeSec"), "必须有 timeSec 机器字段");

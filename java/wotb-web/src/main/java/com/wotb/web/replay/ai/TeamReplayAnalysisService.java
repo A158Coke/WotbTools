@@ -51,7 +51,7 @@ import java.util.function.LongSupplier;
  * 单团队单元后追加 Team Autopsy（判负战犯 / 判胜 MVP）——这是<b>结算级</b>独立 TEAM_AUTOPSY
  * 调用：Autopsy 输入只有权威逐人结算（无 Call #1 prior / Critical Window / Route 证据），相关结论置信度
  * PARTIAL/UNKNOWN。随机战斗个人复盘不输出战犯/MVP。</p>
- * <p><b>Canonical Timeline hard gate（PR #102 review B1）</b>：{@code analyzeTeamGroups}
+ * <p><b>Canonical Timeline hard gate（PR #102 ）</b>：{@code analyzeTeamGroups}
  * 是 Team AI 的<b>唯一 production 编排入口</b>（由 {@code AiReplayReviewService} 调用）。
  * 它在<b>任何 LLM 调用之前</b>（Call #1 prior / Call #2 / Team Autopsy）为每个 context 构建并
  * 验证 canonical BattleTimeline（一次 build、一次 validation）：reconstruction 缺失 /
@@ -107,7 +107,7 @@ public class TeamReplayAnalysisService {
      * 任何 LLM 调用前执行 canonical Timeline hard gate）。
      * <p>本入口保持旧语义（Call #1 → prompt 构建 → Call #2 + Autopsy），不执行 timeline
      * hard gate，也不渲染 TACTICAL TIMELINE 段（未提供 validated timeline）；不得被
-     * production 编排引用（否则构成 hard-gate bypass，见 PR #102 review B1）。</p>
+     * production 编排引用（否则构成 hard-gate bypass，见 PR #102 ）。</p>
      */
     public AnalyzeResult analyzeSingleTeamContext(final SingleTeamBattleAnalysisContext context) {
         return analyzeSingleTeamContext(context, AllowedLanguage.ZH);
@@ -190,7 +190,7 @@ public class TeamReplayAnalysisService {
                 throw new IllegalArgumentException("Duplicate analysisUnitId: " + ctx.analysisUnitId());
             }
         }
-        // Canonical Timeline hard gate（PR #102 review B1）：在任何 LLM 调用（Call #1 /
+        // Canonical Timeline hard gate（PR #102 ）：在任何 LLM 调用（Call #1 /
         // Call #2 / Team Autopsy）之前为每个 context 构建并验证 canonical timeline。
         // reconstruction 缺失 / timeline 不可用 / timeline 为 null → 立即拒绝（AI Gateway
         // requests = 0），禁止 settlement-only fallback；验证通过后同一 timeline 下传给
@@ -312,7 +312,7 @@ public class TeamReplayAnalysisService {
     ) {
         final String systemPrompt = TeamPromptLocalizer.localizeTeamSystemPrompt(
                 TeamPromptLocalizer.SINGLE_TEAM_PROMPT, language);
-        // Review B2-1：死亡时刻时钟契约——production（timeline 非 null）用 timeline 全量构建
+        // 死亡时刻时钟契约——production（timeline 非 null）用 timeline 全量构建
         // （关注窗口/位置快照/敌方位置知识）并转 battle-relative；兼容入口（timeline 为 null）
         // 用 reconstruction 的 battleStartRawClockSec 转 battle-relative，避免结算 deathTimeMillis
         // （原始时钟域）以原始值进入 Grounding Facts。
@@ -370,7 +370,7 @@ public class TeamReplayAnalysisService {
                         "result", "FAIL",
                         "reason", parseResult.failureReason()));
                 countValidationAttempt("parser_invalid");
-                // Review Blocker B1：envelope / structured claims schema 违反（fail-close）——
+                // envelope / structured claims schema 违反（fail-close）——
                 // 给 LLM 明确 schema 提示，让它自修，而非静默降级为 text-only
                 feedback = "输出不是合法 JSON envelope 或 claims 违反 machine schema："
                         + "必须包含 primaryDiagnosis（title + reasoning 非空）与 reviewMarkdown；"
@@ -485,7 +485,7 @@ public class TeamReplayAnalysisService {
         return sb.toString();
     }
 
-    /** 把最终 reviewMarkdown 按段落/句子边界切成 ≤400 字符增量转给前端（单线程顺序）。 */
+    /** 把reviewMarkdown 按段落/句子边界切成 ≤400 字符增量转给前端（单线程顺序）。 */
     private static void forwardTokens(final AiReviewStreamListener listener, final String markdown) {
         if (listener == null || markdown == null || markdown.isEmpty()) {
             return;
@@ -511,7 +511,7 @@ public class TeamReplayAnalysisService {
 
     /**
      * 原始传输调用：<b>authoritative response source = {@code completionText()}</b>
-     * （Review B1-1）。
+     * 。
      * <p>Gateway 契约（{@link AiChatGateway#stream} + {@code SpringAiChatGateway}）：
      * callback 是流式增量（progress），{@code completionText()} 是聚合后的完整响应——
      * 正常结束时 {@code SpringAiChatGateway} 用内部累加的全部 delta 构造返回响应；

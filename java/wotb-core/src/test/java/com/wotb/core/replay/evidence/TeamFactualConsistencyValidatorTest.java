@@ -321,7 +321,7 @@ class TeamFactualConsistencyValidatorTest {
                 "证据编号不得进入用户正文: " + conflicts);
     }
 
-    // ===== Review B1-2：机器结构化校验（语言无关，三语通用） =====
+    // ===== ：机器结构化校验（语言无关，三语通用） =====
 
     private static TeamReviewEnvelope.Claim machineClaim(final String text, final String claimType,
                                                          final Double timeSec, final Integer region,
@@ -332,7 +332,7 @@ class TeamFactualConsistencyValidatorTest {
                 null, null, null, null);
     }
 
-    /** 完整机器字段 helper（Review Blocker B1）：side / countSemantics / knowledge。 */
+    /** 完整机器字段 helper：side / countSemantics / knowledge。 */
     private static TeamReviewEnvelope.Claim machineClaimFull(
             final String text, final String claimType,
             final Double timeSec, final Integer region, final Integer count,
@@ -343,7 +343,7 @@ class TeamFactualConsistencyValidatorTest {
                 side, countSemantics, knowledge, null);
     }
 
-    /** 完整机器字段 + 稳定身份 helper（Review Blocker B1）：subjectAccountId。 */
+    /** 完整机器字段 + 稳定身份 helper：subjectAccountId。 */
     private static TeamReviewEnvelope.Claim machineClaimFullAcc(
             final String text, final String claimType,
             final Double timeSec, final Integer region, final Integer count,
@@ -518,7 +518,7 @@ class TeamFactualConsistencyValidatorTest {
     }
 
 
-    // ===== Review Blocker B1：Evidence Binding（claim 必须与其 evidenceIds 真正绑定） =====
+    // ===== ：Evidence Binding（claim 必须与其 evidenceIds 真正绑定） =====
 
     @Test
     void b1DeathValidBindingPasses() {
@@ -739,7 +739,7 @@ class TeamFactualConsistencyValidatorTest {
         assertTrue(hasCheck(zhConflicts, "BINDING"), "三语共用同一 machine claim 必须 FAIL（BINDING）");
     }
 
-    // ===== Review B1-2：EN / RU 正文回归（三语 factual guard） =====
+    // ===== ：EN / RU 正文回归（三语 factual guard） =====
 
     @Test
     void enWrongDeathTimeFails() {
@@ -841,7 +841,7 @@ class TeamFactualConsistencyValidatorTest {
                 "RU 合法战术观点/建议必须 PASS");
     }
 
-    // ===== Review Blocker B1 §7：claims coverage 最低契约 =====
+    // =====  §7：claims coverage 最低契约 =====
 
     @Test
     void emptyClaimsWithDiagnosisEvidenceFails() {

@@ -43,7 +43,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * PR #102 review B1：Team AI Canonical Timeline hard gate（真实 Team production
+ * PR #102 ：Team AI Canonical Timeline hard gate（真实 Team production
  * orchestration path，非 Mockito）。
  * <p>通过 {@link TeamReplayAnalysisService#analyzeTeamGroups}（Team AI 唯一 production 编排
  * 入口）验证：timeline invalid / reconstruction 缺失 → {@link AiTimelineUnusableException}
@@ -129,7 +129,7 @@ class TeamReplayAnalysisServiceTimelineGateTest {
 
     @Test
     void teamPromptBuilderDoesNotBuildTimelineItself() throws Exception {
-        // 结构契约（PR #102 review B1）：build+validation 唯一入口在 orchestration 层；
+        // 结构契约（PR #102 ）：build+validation 唯一入口在 orchestration 层；
         // TeamAiPromptBuilder 不得再引用 BattleTimelineBuilder（避免二次 build / 静默降级）。
         final Path classFile = Path.of(TeamAiPromptBuilder.class.getResource(
                 "TeamAiPromptBuilder.class").toURI());

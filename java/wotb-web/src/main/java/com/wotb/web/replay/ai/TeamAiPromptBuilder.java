@@ -62,7 +62,7 @@ public final class TeamAiPromptBuilder {
 
     /**
      * production Team Call #2 入口：接收 orchestration 层已 build+validate 的 canonical
-     * {@link BattleTimeline}（PR #102 review B1）——一次 build、一次 validation 后下传，
+     * {@link BattleTimeline}（PR #102 ）——一次 build、一次 validation 后下传，
      * 本方法只渲染（绝不再次 build / 绝不 catch 后降级）；validated timeline 渲染为空是
      * 编程错误 → fail loud。timeline 为 null 只允许出现在兼容/测试入口（本方法不接收 null
      * 语义：production 必然非 null，若调用方传入 null 等价于无 timeline 段）。
@@ -237,7 +237,7 @@ public final class TeamAiPromptBuilder {
     /**
      * 渲染已验证 canonical timeline 的 TACTICAL TIMELINE 段（确定性；只渲染，不 build、
      * 不 catch、不静默降级）。
-     * <p>PR #102 review B1：timeline 由 orchestration 层在 LLM 调用之前构建并验证后传入，
+     * <p>PR #102 ：timeline 由 orchestration 层在 LLM 调用之前构建并验证后传入，
      * 此处只消费；{@code timeline == null}（兼容/测试入口未提供 validated timeline）时不
      * 渲染任何段；非 null 却渲染为空是编程错误 → fail loud，不得降级为「无 timeline 的
      * AI Review」。</p>

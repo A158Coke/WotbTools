@@ -24,7 +24,7 @@ import java.util.regex.Pattern;
  *   <li>V5 CURRENT / LAST_KNOWN：敌方 LAST_KNOWN 不得被写成「此时就在这里」；</li>
  *   <li>V6 unsupported hard facts：无 LOS/spotting 证据时禁止硬事实化表达（除非已降级为
  *       「更可能/从交换结果看/如果当时」级别）；</li>
- *   <li>B1 evidence binding（Review Blocker B1）：有 {@code evidenceIds} 时引用证据是 primary
+ *   <li>B1 evidence binding：有 {@code evidenceIds} 时引用证据是 primary
      *       source——每个引用必须存在且属于该 claimType 允许的 evidence 类型，且至少一个必须
      *       完整支撑该 claim（身份/时间/数值/区域/knowledge 一致）；DEATH 必须引用该玩家的
      *       PLAYER_DESTROYED，ALIVE_TRANSITION 必须引用 before/after 一致的 ALIVE_COUNT_TRANSITION
@@ -134,7 +134,7 @@ public final class TeamFactualConsistencyValidator {
     private static final Pattern CN_SEC = Pattern.compile("(\\d+)秒");
     private static final Pattern COLON_TIME = Pattern.compile("(\\d+):(\\d+)");
     private static final Pattern DECIMAL_SEC = Pattern.compile("(\\d+(?:\\.\\d+)?)s");
-    // 三语机器/常见时间格式（Review B1-2）：109s / 1m49s / 1 мин 49 сек / 109 seconds / 109 секунд
+    // 三语机器/常见时间格式：109s / 1m49s / 1 мин 49 сек / 109 seconds / 109 секунд
     private static final Pattern EN_MIN_SEC = Pattern.compile("(\\d+)\\s*m\\s*(\\d+)\\s*s");
     private static final Pattern RU_MIN_SEC = Pattern.compile("(\\d+)\\s*мин\\s*(\\d+)\\s*сек");
     private static final Pattern EN_SEC = Pattern.compile("(\\d+)\\s*(?:sec|seconds)(?![\\p{L}\\p{N}])");
@@ -158,7 +158,7 @@ public final class TeamFactualConsistencyValidator {
                     + "(?:GRID)?(\\d+)\\s*区");
     private static final Pattern REGION_ALL = Pattern.compile(
             "全部\\s*(?:在|位于|集中到|压进)?\\s*(?:GRID)?(\\d+)\\s*区");
-    // EN/RU 位置断言（Review B1-2）：7 vehicles in region 6 / 7 машин в 6-й зоне
+    // EN/RU 位置断言：7 vehicles in region 6 / 7 машин в 6-й зоне
     private static final Pattern REGION_WITH_COUNT_EN = Pattern.compile(
             "(\\d+)\\s*(?:vehicles|tanks|units)?\\s*(?:in|at|on|near)?\\s*(?:GRID|region|sector|zone|area)\\s*(\\d+)");
     private static final Pattern REGION_WITH_COUNT_RU = Pattern.compile(
@@ -169,7 +169,7 @@ public final class TeamFactualConsistencyValidator {
             "все\\s*(?:в|на)\\s*(?:GRID)?\\s*(\\d+)(?:-?\\s*(?:зоне|области|регионе|секторе))?");
     private static final Pattern GRID_COUNT = Pattern.compile("GRID(\\d+)=(\\d+)");
 
-    /** V5 当前断言短语（把 LAST_KNOWN 说成当前位置；ZH + EN + RU 三语覆盖，Review B1-2）。 */
+    /** V5 当前断言短语（把 LAST_KNOWN 说成当前位置；ZH + EN + RU 三语覆盖）。 */
     static final List<String> CURRENT_ASSERTION_PHRASES = List.of(
             // ZH
             "就在这里", "正在这里", "就在原地", "现在还在", "此刻在", "此时在", "现在还在这里", "正在原地",
@@ -247,7 +247,7 @@ public final class TeamFactualConsistencyValidator {
             units.add(nonNull(c.text()));
         }
 
-        // Review B1-2：机器结构化校验（语言无关，三语通用）优先于正文文本兜底
+        // 机器结构化校验（语言无关，三语通用）优先于正文文本兜底
         checkStructuredMachineClaims(envelope, facts, conflicts);
         checkTemporalOwnership(envelope, facts, conflicts);
         checkPlayerEventTimes(units, facts, conflicts);
@@ -259,13 +259,13 @@ public final class TeamFactualConsistencyValidator {
         return conflicts;
     }
 
-    // ===== 机器结构化校验（Review B1-2：语言无关，三语通用） =====
+    // ===== 机器结构化校验（语言无关，三语通用） =====
 
     private static void checkStructuredMachineClaims(final TeamReviewEnvelope envelope,
                                                      final GroundingFacts facts,
                                                      final List<FactConflict> conflicts) {
         checkClaimsCoverage(envelope, facts, conflicts);
-        // Review Blocker B1：structured evidence binding——有 evidenceIds 时引用证据是 primary source
+        // structured evidence binding——有 evidenceIds 时引用证据是 primary source
         checkStructuredEvidenceBinding(envelope, facts, conflicts);
         for (final TeamReviewEnvelope.Claim c : envelope.claims()) {
             final String type = c.claimType() == null ? "" : c.claimType().toUpperCase(java.util.Locale.ROOT);
@@ -283,7 +283,7 @@ public final class TeamFactualConsistencyValidator {
         }
     }
 
-    // ===== Review Blocker B1：Evidence Binding Contract（claim ↔ evidenceFact 必须真正绑定） =====
+    // ===== ：Evidence Binding Contract（claim ↔ evidenceFact 必须真正绑定） =====
 
     /** claimType → 允许引用的 evidence 类型（TACTICAL/未知 = 无要求）。 */
     private static java.util.Set<String> requiredEvidenceType(final String claimType) {
@@ -801,7 +801,7 @@ public final class TeamFactualConsistencyValidator {
     }
 
     /**
-     * claims coverage 最低契约（Review Blocker B1 §7）：Grounding Facts 非空且主判断引用证据编号，
+     * claims coverage 最低契约（ §7）：Grounding Facts 非空且主判断引用证据编号，
      * 或正文出现可验证事实锚点（玩家阵亡+时间 / 存活变化 / 位置数量）时，claims 不允许无条件为空。
      */
     private static void checkClaimsCoverage(final TeamReviewEnvelope envelope,

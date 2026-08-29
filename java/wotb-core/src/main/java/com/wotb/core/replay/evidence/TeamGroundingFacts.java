@@ -143,7 +143,7 @@ public final class TeamGroundingFacts {
 
     /**
      * 构建 Grounding Facts（compat 入口：无已验证 timeline）。
-     * <p><b>死亡时刻时钟契约（Review B2-1）</b>：{@code PlayerResultFormat.deathSec()} 的
+     * <p><b>死亡时刻时钟契约</b>：{@code PlayerResultFormat.deathSec()} 的
      * 数值域不统一——{@code deathTimeMillis}（结算权威）与 legacy 估算都是<b>原始时钟域</b>，
      * 而 {@code DeathTimeReconciler} 校准的 {@code survivalTimeSec} 是 <b>battle-relative</b>。
      * 本方法统一按 {@code raw > startRaw → raw − startRaw} 转 battle-relative（与
