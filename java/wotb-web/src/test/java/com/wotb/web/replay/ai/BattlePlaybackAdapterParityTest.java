@@ -11,6 +11,7 @@ import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
 import com.wotb.core.replay.timeline.TimelinePerspective;
+import com.wotb.core.replay.timeline.TimelineError;
 import com.wotb.web.replay.dto.MapOverview;
 import org.junit.jupiter.api.Test;
 
@@ -22,6 +23,7 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -55,6 +57,12 @@ class BattlePlaybackAdapterParityTest {
         final BattleTimelineResult tl = BattleTimelineBuilder.build(
                 battle, recon, TimelinePerspective.personal(
                         recorder.accountId > 0 ? recorder.accountId : null, recorder.team));
+        // PR162/P0-3：随机战夹具无 ArenaPeriod BATTLE / RoundFinished 权威 → battle-start fail-closed。
+        if (recon.battleStartRawClockSec() == null) {
+            assertFalse(tl.usable(), "无 battle-start 权威时必须 fail-closed: " + tl.validation().errors());
+            assertTrue(tl.validation().errors().contains(TimelineError.TIMELINE_CLOCK_UNRESOLVED));
+            return;
+        }
         assertTrue(tl.usable(), "真实回放必须构建 timeline: " + tl.validation().errors());
         final BattleTimeline timeline = tl.timeline();
         final TeamEntityMapping mapping = TeamEntityMapper.resolve(battle, recon);

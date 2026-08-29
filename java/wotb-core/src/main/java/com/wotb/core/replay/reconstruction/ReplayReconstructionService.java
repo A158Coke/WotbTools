@@ -5,7 +5,7 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.parse.ReplayArchiveReader;
+import com.wotb.core.parse.ParsedReplay;
 import com.wotb.core.parse.SettlementFacts;
 import com.wotb.core.replay.decoder.ReplayDecodeContext;
 import com.wotb.core.replay.decoder.ReplayDecodeResult;
@@ -60,14 +60,23 @@ public class ReplayReconstructionService {
      * 带上下文重建 —— 使用 roster 丰富参与者映射。
      */
     public ReplayReconstruction reconstruct(byte[] replayBytes, ReplayReconstructionContext context) throws IOException {
-        final var entries = unzip(replayBytes);
+        return reconstruct(ParsedReplay.read(replayBytes), context);
+    }
+
+    /**
+     * PR162/P0-2：消费 canonical parse context（归档解压、clientVersion、settlement 均只一次）。
+     * reconstruction 不再自行 unzip / SettlementFacts.decode —— 二者已在 {@link ParsedReplay#read} 完成。
+     */
+    public ReplayReconstruction reconstruct(final ParsedReplay parsed, final ReplayReconstructionContext context)
+            throws IOException {
+        final Map<String, byte[]> entries = parsed.entries();
 
         // 1. 读取元数据
         final JsonNode meta = parseMeta(entries);
         final ReplayMetadata metadata = buildMetadata(meta);
 
         // 2. 读取 data.wotreplay 原始流
-        final byte[] eventData = entries.get("data.wotreplay");
+        final byte[] eventData = parsed.dataWotreplay();
         if (eventData == null || eventData.length == 0) {
             throw new IOException("Replay is missing data.wotreplay");
         }
@@ -123,7 +132,8 @@ public class ReplayReconstructionService {
         // (that fabricated fallback has no PR147 authority and must not synthesize battle-start).
         // battle_results.dat 的唯一 production 解码权威（SettlementFacts）：reconstruction 不再自行
         // PickleReader.loads + Protobuf.decode；缺失/损坏时 fail-closed → null。
-        final SettlementFacts settlementFacts = settlementFacts(entries);
+        // PR162/P0-2：settlement 已由 ParsedReplay 一次解码，缺失/损坏 fail-closed → null。
+        final SettlementFacts settlementFacts = parsed.settlementFacts();
         final Double settledDur = settlementFacts == null ? null : settlementFacts.settlementDurationSec();
         final Float battleStartResolved = resolveBattleStartRawClock(allEvents, settledDur);
 
@@ -217,24 +227,6 @@ public class ReplayReconstructionService {
             }
         }
         return null;
-    }
-
-    /**
-     * Settlement facts from battle_results.dat (PR147); null when missing/corrupt. The single production
-     * decode authority is {@link SettlementFacts#decode}; this is a fail-closed convenience for the
-     * reconstruction path (never throws; a corrupt/missing settlement simply yields null so consumers
-     * fall back to the duration authority chain).
-     */
-    static SettlementFacts settlementFacts(final Map<String, byte[]> entries) {
-        try {
-            final byte[] dat = entries.get("battle_results.dat");
-            if (dat == null) {
-                return null;
-            }
-            return SettlementFacts.decode(dat);
-        } catch (final RuntimeException e) {
-            return null;
-        }
     }
 
     /**
@@ -393,10 +385,6 @@ public class ReplayReconstructionService {
         }
 
         return participants;
-    }
-
-    private static Map<String, byte[]> unzip(byte[] data) throws IOException {
-        return ReplayArchiveReader.read(data);
     }
 
     /**

@@ -9,6 +9,7 @@ import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
 import com.wotb.core.replay.timeline.TimelinePerspective;
+import com.wotb.core.replay.timeline.TimelineError;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -18,7 +19,9 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -46,22 +49,13 @@ class PersonalAiContextCompilerTest {
         final BattleTimelineResult result = BattleTimelineBuilder.build(
                 battle, recon, TimelinePerspective.personal(
                         recorder.accountId > 0 ? recorder.accountId : null, recorder.team));
-        assertTrue(result.usable(), "真实回放必须能构建 timeline: " + result.validation().errors());
-        final BattleTimeline timeline = result.timeline();
-
-        final String section = PersonalAiContextCompiler.renderTimelineSection(
-                timeline, recorder.accountId > 0 ? recorder.accountId : null);
-        assertTrue(section.contains("EPISODE 1"), "必须渲染 EPISODE 章节");
-        assertTrue(section.contains("BEFORE friendly_alive="), "必须包含双方世界状态（BEFORE）");
-        assertTrue(section.contains("AFTER friendly_alive="), "必须包含双方世界状态（AFTER）");
-        assertTrue(section.contains("enemy_unknown="), "必须显式表达未知敌人数（docs/current-plan.md §9.2）");
-        assertTrue(section.contains("战斗总时长"), "必须给出战斗总时长");
-        // 时间格式必须为 X分XX秒（AI 复盘约定），不得出现裸秒数时间轴
-        assertTrue(section.contains("分"), "时间必须使用分秒格式");
-        // 确定性
-        final String again = PersonalAiContextCompiler.renderTimelineSection(timeline,
-                recorder.accountId > 0 ? recorder.accountId : null);
-        assertTrue(again.equals(section), "编译结果必须 deterministic");
+        // PR162/P0-3：该真实随机战夹具无 ArenaPeriod BATTLE / RoundFinished 权威（probe 证实），battle-start
+        // 必须 fail-closed 为 UNKNOWN；旧断言依赖以「max clock - settlement duration」伪造 battle-start，
+        // 已被移除。渲染用合成/带权威 fixture 的 case 由 nullTimelineReturnsEmpty 及他人覆盖。
+        assertNull(recon.battleStartRawClockSec(),
+                "无权威 battle-start 时必须 fail-closed（不得伪造）");
+        assertFalse(result.usable(), "无 battle-start 权威时必须 fail-closed: " + result.validation().errors());
+        assertTrue(result.validation().errors().contains(TimelineError.TIMELINE_CLOCK_UNRESOLVED));
     }
 
     @Test
