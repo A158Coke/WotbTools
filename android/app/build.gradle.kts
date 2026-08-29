@@ -7,7 +7,9 @@ plugins {
 // 绝不把 keystore/口令写入仓库（规格 §21）。
 val keystorePath = (project.findProperty("wotbKeystorePath") as String?)?.takeIf { it.isNotBlank() }
 val keystoreStorePass = (project.findProperty("wotbKeystoreStorePass") as String?) ?: ""
-val keyAlias = (project.findProperty("wotbKeyAlias") as String?) ?: ""
+// 外层变量避免与 DSL property（SigningConfig.keyAlias）同名遮蔽，否则赋值命中本地 val，
+// 导致 release SigningConfig.keyAlias 未被设置（Gradle：SigningConfig "release" is missing required property "keyAlias"）。
+val signingKeyAlias = (project.findProperty("wotbKeyAlias") as String?) ?: ""
 val keyPass = (project.findProperty("wotbKeyPass") as String?) ?: ""
 
 android {
@@ -28,7 +30,7 @@ android {
             create("release") {
                 storeFile = file(keystorePath)
                 storePassword = keystoreStorePass
-                keyAlias = keyAlias
+                keyAlias = signingKeyAlias
                 keyPassword = keyPass
             }
         }
