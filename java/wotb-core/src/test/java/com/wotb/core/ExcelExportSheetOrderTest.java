@@ -18,7 +18,7 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 回归（plan §28/§42）：单场 XLSX 默认打开「玩家数据」，表顺序为 玩家数据/战斗信息/原始字段。 */
+/** 回归：单场 XLSX 默认打开「玩家数据」，表顺序为 玩家数据/战斗信息/原始字段。 */
 class ExcelExportSheetOrderTest {
 
     @Test

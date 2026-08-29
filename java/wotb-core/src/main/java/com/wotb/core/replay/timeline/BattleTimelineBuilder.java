@@ -27,9 +27,9 @@ import java.util.Set;
 /**
  * Canonical BattleTimeline 构建器。
  * <p>数据流：ReplayEvent → BattleStateReconstructor → BattleTimelineBuilder → BattleTimeline。
- * Timeline 一律 battle-relative 时间（docs/current-plan.md §2.3/§2.4）；时钟无法可靠建立时
- * Timeline = INVALID，该 replay 不进入 AI Review（§3，禁止 settlement-only fallback）。</p>
- * <p>Anti-future-leak invariant（§10）：任意 frame second=N 的状态只使用 battle-relative
+ * Timeline 一律 battle-relative 时间（docs/architecture/battle-timeline.md §2.3/§2.4）；时钟无法可靠建立时
+ * Timeline = INVALID，该 replay 不进入 AI Review（禁止 settlement-only fallback）。</p>
+ * <p>Anti-future-leak invariant：任意 frame second=N 的状态只使用 battle-relative
  * time ≤ N 的事件信息，绝不使用未来信息（含 battle_results 最终状态）。</p>
  * <p>ActualCombatantEntitySet 边界：tactical FrameVehicle universe 只包含可靠映射到
  * battle_results #301（battle.players）actual combatant 账号的实体；non-#301
@@ -150,7 +150,7 @@ public final class BattleTimelineBuilder {
         final TimelineMapEnricher enricher = new TimelineMapEnricher(
                 battle == null ? "" : battle.mapName);
 
-        // §11–§17：交火活动强度只使用权威 HP loss（Type-8 raw 语义未证明）
+        // 交火活动强度只使用权威 HP loss（Type-8 raw 语义未证明）
         final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
                 com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
                         orderedEvents, mapping, clock.startRawClockSec(), duration);
@@ -464,7 +464,7 @@ public final class BattleTimelineBuilder {
                     Math.max(pos.clock(), turret == null ? -1 : turret.clock()));
         }
 
-        // §P0-3: no cumulative damage on the canonical vehicle frame. DamageEvent raw value is NOT
+        // no cumulative damage on the canonical vehicle frame. DamageEvent raw value is NOT
         // authoritative HP delta; authoritative HP loss lives in PlaybackCombatReconstruction. The
         // cumulative dealt/received that previously lived here were write-only and never consumed.
 

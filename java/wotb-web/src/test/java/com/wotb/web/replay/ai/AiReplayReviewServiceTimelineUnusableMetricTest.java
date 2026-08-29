@@ -22,7 +22,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 /**
- * PR #102 review P0：{@code AiTimelineUnusableException} 的错误类型指标。
+ * PR #102 P0：{@code AiTimelineUnusableException} 的错误类型指标。
  * <p>真实 {@link AiReplayReviewService} + 抛 {@code AiTimelineUnusableException}
  * 的 AI 分析 mock + {@link SimpleMeterRegistry}，验证错误类型指标记录为固定稳定码
  * {@code AI_TIMELINE_UNUSABLE}（不引入高基数 label，不携带 detail），
@@ -77,7 +77,7 @@ class AiReplayReviewServiceTimelineUnusableMetricTest {
     /** 构造 service 并初始化 metrics（@PostConstruct 语义，否则 aiReviewDuration 为 null）。 */
     private static AiReplayReviewService serviceWithMetrics(final SimpleMeterRegistry registry,
                                                             final AiReplayAnalysisService aiService) {
-        final AiReplayReviewService service = new AiReplayReviewService(aiService, null, registry);
+        final AiReplayReviewService service = new AiReplayReviewService(aiService, null, registry, null);
         service.initMetrics();
         return service;
     }

@@ -581,7 +581,7 @@ class FormationDepthEvidenceTest {
 
     @Test
     void partialEnemyCurrentDoesNotProduceGeometricTerciles() {
-        // PR #103 最终 review B2：enemy CURRENT 不完整（2 存活、1 CURRENT + 1 LAST_KNOWN）时，
+        // PR #103：enemy CURRENT 不完整（2 存活、1 CURRENT + 1 LAST_KNOWN）时，
         // 不得用 1 辆敌方 CURRENT 建立 whole-team enemy centroid 输出我方 GEOMETRIC_*
         // （否则与覆盖段 POSITION_COVERAGE_INSUFFICIENT enemyRef=1/2 自相矛盾）；
         // 只输出 fail-closed 段（INSUFFICIENT + CURRENT presence + coverage counts + LAST_KNOWN 独立信息）。
@@ -817,7 +817,7 @@ class FormationDepthEvidenceTest {
 
     @Test
     void completeEnemyCurrentStillProducesGeometricTerciles() {
-        // PR #103 最终 review B2 保留：双方 CURRENT 完整（ownRef=2/2 enemyRef=2/2）时，
+        // PR #103：保留：双方 CURRENT 完整（ownRef=2/2 enemyRef=2/2）时，
         // GEOMETRIC_* 三分位与距离加权覆盖分照常输出（fail-close gate 不得误伤完整场景）。
         final String section = FormationDepthEvidence.renderSection(battle(), reconWithPositions(20f), 1, MAP);
         assertTrue(section.contains("GEOMETRIC_FORWARD=account:1001"), section);

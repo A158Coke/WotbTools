@@ -871,7 +871,7 @@ final class TeamEvidenceFormatter {
     }
 
     /**
-     * 视角队伍的用户可见 display label（PR #103 review BLOCKER A）：唯一 dominant 且严格多数
+     * 视角队伍的用户可见 display label：唯一 dominant 且严格多数
      * 的 clan tag，否则空串（上层 fallback「我方」）；绝不返回 {@code 队伍-XXXX}。
      */
     static String resolveDisplayLabel(

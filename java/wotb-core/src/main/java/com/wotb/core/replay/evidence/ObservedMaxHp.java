@@ -207,7 +207,7 @@ public final class ObservedMaxHp {
     }
 
     /**
-     * 每账号受击总量（§12/§13 权威 HP loss 口径，用于覆盖判定）：
+     * 每账号受击总量（权威 HP loss 口径，用于覆盖判定）：
      * Type-8 rawProtocolValue 语义未证明，不得作为「事件流 received」与结算比较；
      * 只有连续可信 Type-7 propId=3 掉血（含阵亡到 0）才反映真实承受伤害。
      */
@@ -265,7 +265,7 @@ public final class ObservedMaxHp {
             return out;
         }
         for (final ReplayEvent event : events) {
-            // PR147 §33: method8 is a hit/result-feedback family (VehicleHitEvent), not a damage number;
+            // method8 is a hit/result-feedback family (VehicleHitEvent), not a damage number;
             // a hit on the victim is engagement signal regardless of the old fabricated damage value.
             final int victimEid;
             if (event instanceof VehicleHitEvent hit && hit.confidence() == DecodeConfidence.EXACT) {

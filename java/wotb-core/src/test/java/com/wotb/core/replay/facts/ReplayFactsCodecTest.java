@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-/** Phase 5：AiReplayFacts 真实 fixture 全量往返 parity（plan §19–§20/§86）。 */
+/** Phase 5：AiReplayFacts 真实 fixture 全量往返 parity。 */
 class ReplayFactsCodecTest {
 
     @Test

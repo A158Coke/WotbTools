@@ -113,7 +113,7 @@ public record BattlePhaseSummary(
         if (phases.isEmpty() || survival == null) {
             return phases;
         }
-        // PR147 §C precision-aware: a SETTLEMENT_SECOND death is an interval [rep-0.5, rep+0.5], not a
+        // precision-aware: a SETTLEMENT_SECOND death is an interval [rep-0.5, rep+0.5], not a
         // point. When such an interval straddles a phase boundary the exact alive count is UNKNOWN
         // (fail-closed) rather than forced to a naked-float verdict.
         final List<PlayerResultFormat.DeathTimeEvidence> friendlySorted =
@@ -172,7 +172,7 @@ public record BattlePhaseSummary(
     }
 
     /**
-     * PR147 §C precision-aware alive count at a phase boundary. A death counts as dead only when the whole
+     * precision-aware alive count at a phase boundary. A death counts as dead only when the whole
      * evidence interval is {@code <= endTime}; alive only when the whole interval is {@code > endTime}.
      * If any interval straddles the boundary the exact count is unavailable → {@code null} (fail-closed,
      * consumers must not force a "already dead/alive at the boundary" verdict from insufficient evidence).
@@ -197,7 +197,7 @@ public record BattlePhaseSummary(
 
     /**
      * Dense-kill window over death intervals. A kill is eligible when its interval intersects the phase
-     * {@code [start, end]} (PR147 §C precision-aware — never a naked-float boundary cut).
+     * {@code [start, end]} (precision-aware — never a naked-float boundary cut).
      */
     private static boolean isDenseKillWindow(
             final BattlePhaseSummary phase,

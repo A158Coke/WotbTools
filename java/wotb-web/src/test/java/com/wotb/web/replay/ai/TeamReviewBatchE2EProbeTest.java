@@ -19,7 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 真实 DeepSeek 批量 E2E 验收探针（计划 §19：>= 5 真实 team replay，usable success >= 80%，
+ * 真实 DeepSeek 批量 E2E 验收探针（>= 5 真实 team replay，usable success >= 80%，
  * HARD_FACT_CONFLICT 输出 = 0）。手动运行，不进 CI；需 AI_API_KEY 环境变量。
  */
 class TeamReviewBatchE2EProbeTest {
@@ -95,7 +95,7 @@ class TeamReviewBatchE2EProbeTest {
             System.out.println("failures:");
             failures.forEach(f -> System.out.println("  - " + f));
         }
-        // 显式运行时验收（计划 §20）：executed >= 1 时 usable rate 必须 >= 80%。
+        // 显式运行时验收：executed >= 1 时 usable rate 必须 >= 80%。
         // 该断言只作用于开发者主动运行本 probe 的场景——无 AI_API_KEY 时上方
         // Assumptions 已 skip，CI 不设 key 不会执行到这里，也不消耗任何 token。
         org.junit.jupiter.api.Assertions.assertTrue(executed > 0,

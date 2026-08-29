@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PR162 §31(b): strict-framing / no-resync API contract.
+ * strict-framing / no-resync API contract.
  *
  * <p>PR147/PR162 made strict contiguous framing the production contract: the reader never byte-by-byte
  * resyncs, never reports a resync/recovered/skipped-byte model, and the single-value

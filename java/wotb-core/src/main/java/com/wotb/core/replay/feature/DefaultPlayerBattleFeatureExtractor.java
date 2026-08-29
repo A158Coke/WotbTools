@@ -99,7 +99,7 @@ public class DefaultPlayerBattleFeatureExtractor {
                     }
                 }
                 case VehicleHitEvent h -> {
-                    // PR147 §33: method8 is a hit/result-feedback family — a proven hit still marks first
+                    // method8 is a hit/result-feedback family — a proven hit still marks first
                     // contact (attacker/victim engagement); no damage magnitude is used.
                     final boolean recorderIsAttacker = h.attackerEntityId() == recorderEid;
                     final boolean recorderIsVictim = h.victimEntityId() == recorderEid;

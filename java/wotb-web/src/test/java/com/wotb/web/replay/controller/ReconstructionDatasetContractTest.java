@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 
 /**
- * BLOCKER 4：Dataset JSON reference REST 契约——缺失/空引用 → 400
+ * Dataset JSON reference REST 契约——缺失/空引用 → 400
  * DATASET_REFERENCE_REQUIRED、非法 sourceId → 400 SOURCE_NOT_FOUND、
  * job 不存在/过期 → 404 JOB_NOT_FOUND、source 未 READY → 409 SOURCE_NOT_READY。
  * 绝不允许 null processingJobId 进入 store 查找 NPE → 500。

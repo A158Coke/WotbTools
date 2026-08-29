@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Call #1（Pre-Battle Strategic Prior）的结构化输出契约（文档 §9/§10）。
+ * Call #1（Pre-Battle Strategic Prior）的结构化输出契约。
  * <p>由 LLM 在完全不知道比赛结果的情况下产出；Backend 只负责解析与传输，
  * 不修改其中任何战术内容。字段缺失时解析器用空值兜底。</p>
  */

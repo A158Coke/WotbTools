@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 模式判定 / 去重 / 冲突 / 校验失败（plan §2、§4、§21.3）。 */
+/** 模式判定 / 去重 / 冲突 / 校验失败。 */
 class LeagueReplaysTest {
 
     private static Source source(final String name, final Battle battle, final int arenaBonusType) throws Exception {
@@ -83,7 +83,7 @@ class LeagueReplaysTest {
 
     @Test
     void trainingPlusRandomIsMixedKeepsParsedBattles() throws Exception {
-        // plan §21/Case I：混合批次不再整体拒绝——League Rating 不聚合，但全部可解析
+        // 混合批次不再整体拒绝——League Rating 不聚合，但全部可解析
         // replay 仍按普通回放语义成功返回（battles 保留、无 leagueBatch、progress 真实 outcome）。
         final Battle t = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         t.arenaId = "111";
@@ -150,7 +150,7 @@ class LeagueReplaysTest {
 
     @Test
     void multipleValidLeagueReplaysProduceSummaries() throws Exception {
-        // 真实批量（plan §17）：N>=2 份合法 League 回放 → playerSummaries / teamSummaries 非空
+        // 真实批量：N>=2 份合法 League 回放 → playerSummaries / teamSummaries 非空
         final Battle t1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         t1.arenaId = "111";
         final Battle t2 = LeagueTestBattles.battle(2, LeagueTestBattles.defaultSevenVsSeven());
@@ -268,7 +268,7 @@ class LeagueReplaysTest {
     @Test
     void unknownPlusKnownReconciledDeterministicallyRegardlessOfUploadOrder() {
         // 同一 arenaId 两份一致副本：玩家 1001 死亡时间一份 UNKNOWN(0)、一份 KNOWN 128.12；
-        // 敌方 2001 在两份中都于 132.0s 阵亡——PR147 §C precision-aware：SETTLEMENT_SECOND ±0.5s 量化，
+        // 敌方 2001 在两份中都于 132.0s 阵亡——precision-aware：SETTLEMENT_SECOND ±0.5s 量化，
         // 该值区间 [131.5,132.5] 确定性落在玩家 [128.12, 133.12] 窗口内（enemy_min>=player_max）→ TRADE；
         // 原本 128.5 在 ±0.5 区间下与玩家 128.12 为 ambiguous（敌方可能 128.0<玩家）→ fails closed，不再用 midpoint 强判。
         // UNKNOWN+KNOWN 不是 conflict；canonical 使用 KNOWN；上传顺序不影响最终 Rating。
@@ -521,7 +521,7 @@ class LeagueReplaysTest {
         assertEquals(1, r.battles().size());
         assertEquals(1, r.leagueFailures().size());
         assertEquals(List.of("bad.wotbreplay:SUCCESS"), outcomes,
-                "Rating-ineligible 但已解析的 replay 必须报 SUCCESS（不得计入解析失败，plan §18）");
+                "Rating-ineligible 但已解析的 replay 必须报 SUCCESS（不得计入解析失败）");
     }
 
     @Test

@@ -13,7 +13,7 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Personal AI Context Compiler（docs/current-plan.md §34/§35/§36）：
+ * Personal AI Context Compiler：
  * 把 canonical BattleTimeline 编译为按时间的 Episode 化 compact 上下文，
  * 供 Call #2 主 prompt 使用（TACTICAL TIMELINE 段）。
  * <p>不 dump 全部帧；使用 Episode + Delta + Keyframe 压缩；只输出当时已知道的信息
@@ -52,7 +52,7 @@ public final class PersonalAiContextCompiler {
             sb.append("时间轴: battle-relative（由战斗结束事件推算，确定性）\n");
         }
 
-        // 首尾保留：高密度长战斗不丢残局关键决策；中间章节折叠为一行摘要（P1 review）
+        // 首尾保留：高密度长战斗不丢残局关键决策；中间章节折叠为一行摘要
         final List<Integer> selected = selectedEpisodeIndices(episodes.size(), MAX_EPISODES);
         for (final int i : selected) {
             renderEpisode(sb, timeline, episodes.get(i), i, recorderAccountId);

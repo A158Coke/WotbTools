@@ -1,7 +1,7 @@
 package com.wotb.core.replay.feature;
 
 /**
- * Type10 物理坐标契约与派生运动事实（计划 §A4）。
+ * Type10 物理坐标契约与派生运动事实。
  *
  * <p>证据：docs/research/replay/type10-movement-transform-closure.md。
  * <ul>

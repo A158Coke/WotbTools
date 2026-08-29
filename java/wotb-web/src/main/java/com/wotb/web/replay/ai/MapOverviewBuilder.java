@@ -92,7 +92,7 @@ public final class MapOverviewBuilder {
                 .filter(DamageEvent.class::isInstance)
                 .map(DamageEvent.class::cast)
                 .toList();
-        // 战斗事实重建（§11–§17 唯一可信伤害源）：热力图伤害用权威 HP loss，不用 Type-8 raw
+        // 战斗事实重建（唯一可信伤害源）：热力图伤害用权威 HP loss，不用 Type-8 raw
         final double duration = battle.durationS != null && battle.durationS > 0
                 ? battle.durationS.doubleValue()
                 : Math.max(0.0, reconstruction.battleDurationSec());
@@ -156,13 +156,13 @@ public final class MapOverviewBuilder {
         // 时长契约：所有 playback 数据（event/interval/direction/deathSec）都必须落在 [0, durationSec]。
         final double duration = resolveDurationSec(battle, positions, events, battleStartRawClockSec);
         final Long recorderAccount = resolveRecorderAccountId(battle);
-        // 战斗事实重建（§11–§17 共享推导，BattlePlaybackAdapter 同源）：权威 HP loss + 击毁
+        // 战斗事实重建（共享推导，BattlePlaybackAdapter 同源）：权威 HP loss + 击毁
         final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
                 com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
                         events, mapping,
                         battleStartRawClockSec == null ? 0.0 : battleStartRawClockSec.doubleValue(),
                         duration);
-        // §B9：结算缺失但回放已证明击毁（combat.destroyed）时，位置覆盖不得越过该击毁时刻（禁阵亡后残余位置）。
+        // 结算缺失但回放已证明击毁（combat.destroyed）时，位置覆盖不得越过该击毁时刻（禁阵亡后残余位置）。
         // 与 BattlePlaybackAdapter 的 AoI-aware 停机口保持同源（此 map 用 raw 时钟域，与 Positions 一致）。
         final Map<Long, Double> destroyRawByAccount = new HashMap<>();
         for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Destroyed d : combat.destroyed()) {
@@ -223,7 +223,7 @@ public final class MapOverviewBuilder {
                         com.wotb.core.replay.feature.PlaybackCombatReconstruction
                                 .observedHpLossAt(combat, victim, t)));
             } else if (event instanceof VehicleHitEvent hit) {
-                // PR147 §33: method8 is a hit/result-feedback family (VehicleHitEvent); a proven hit is the
+                // method8 is a hit/result-feedback family (VehicleHitEvent); a proven hit is the
                 // engagement marker. The authoritative HP-loss (Type7 delta) is exposed as the DAMAGE value;
                 // the raw method8 value is never used as a damage fact.
                 final long victim = accountOf(hit.victimEntityId(), mapping);
@@ -517,7 +517,7 @@ public final class MapOverviewBuilder {
                 com.wotb.core.replay.facts.ReplayAoiLifecycle.build(
                         events, battleStartRawClockSec == null
                                 ? null : battleStartRawClockSec.doubleValue());
-        // §P1-1: 按 entityId 保留位置 provenance（每实体独立升序），段只与同 entity 的样本相交，
+        // 按 entityId 保留位置 provenance（每实体独立升序），段只与同 entity 的样本相交，
         // 防止 re-entry 多 entity 时另一实体的 position 替本实体证明覆盖。
         final Map<Integer, List<Double>> positionTimesByEntity = new LinkedHashMap<>();
         for (final int entityId : entityIds) {
@@ -533,7 +533,7 @@ public final class MapOverviewBuilder {
 
 
     /**
-     * §B9：把位置上报区间按「权威击毁时刻」收口——击毁后的区间整体剔除、跨越击毁的区间末端 clamp，
+     * 把位置上报区间按「权威击毁时刻」收口——击毁后的区间整体剔除、跨越击毁的区间末端 clamp，
      * 避免回放显示阵亡后的残余服务器位置。destroyRaw == null 时原样返回（未经击毁）。
      */
     private static List<MapOverview.PositionInterval> clampIntervalsToDestroyed(
@@ -683,7 +683,7 @@ public final class MapOverviewBuilder {
             }
         }
 
-        // 伤害热力按受击方位置落格（§12）：值 = 权威 HP loss（Type-7 推导，含无法归属的掉血——
+        // 伤害热力按受击方位置落格：值 = 权威 HP loss（Type-7 推导，含无法归属的掉血——
         // 掉血真实发生在 victim 身上，热力按 victim 位置刻画实际承受的伤害）；
         // Type-8 rawProtocolValue 语义未证明，不得进热力。
         for (final Map.Entry<Long, List<com.wotb.core.replay.feature.PlaybackCombatReconstruction.Loss>> entry
@@ -841,7 +841,7 @@ public final class MapOverviewBuilder {
     }
 
     /**
-     * 车辆类型统一 fallback（docs/current-plan.md §8）：replay/player 权威 tankType →
+     * 车辆类型统一 fallback：replay/player 权威 tankType →
      * tankopedia class（英文，API 纯英文契约）→ 空串（前端展示 —）。
      */
     private static String tankTypeOf(final PlayerResult player) {

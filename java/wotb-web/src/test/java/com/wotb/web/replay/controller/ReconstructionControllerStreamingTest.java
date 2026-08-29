@@ -70,7 +70,7 @@ class ReconstructionControllerStreamingTest {
     @BeforeEach
     void setUp() {
         aiService = mock(AiReplayAnalysisService.class);
-        reviewService = spy(new AiReplayReviewService(aiService));
+        reviewService = spy(new AiReplayReviewService(aiService, null, null, null));
         cancellationRegistry = spy(new AiCancellationRegistry());
         workerExecutor = new AiReviewWorkerExecutor();
         controller = new ReconstructionController(reviewService, cancellationRegistry, workerExecutor,
@@ -91,14 +91,7 @@ class ReconstructionControllerStreamingTest {
             listener.onStage("evidence_done");
             listener.onToken("hello ");
             listener.onToken("world");
-            return new AnalyzeResponse("full analysis", "## 赛前预测",
-                    new com.wotb.web.replay.dto.MapOverview(
-                            "desert_train", "Desert Sands",
-                            Map.of("zh", "黄沙荒漠", "en", "Desert Sands", "ru", "Пустынные пески"),
-                            2,
-                            new com.wotb.web.replay.dto.MapOverview.Bounds(-256, 260, -251, 254.3),
-                            List.of(), null, List.of(), List.of(), null, List.of(),
-                            null, null, null));
+            return new AnalyzeResponse("full analysis", "## 赛前预测");
         }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         final String body = drainUntilTerminal(analyzeDirect("zh", null));
@@ -112,7 +105,8 @@ class ReconstructionControllerStreamingTest {
         assertTrue(body.contains("event:done"), body);
         assertTrue(body.contains("\"analysis\":\"full analysis\""), body);
         assertTrue(body.contains("\"preBattleSection\":\"## 赛前预测\""), body);
-        assertTrue(body.contains("\"mapOverview\":{\"mapCode\":\"desert_train\""), body);
+        // AI done 载荷不再携带 mapOverview（地图由独立 Processing Job artifact 承载）。
+        assertFalse(body.contains("\"mapOverview\""), body);
     }
 
     @Test
@@ -407,7 +401,7 @@ class ReconstructionControllerStreamingTest {
     @Test
     void legacyBatchAndValidationEndpointsReturnStableGone() {
         // multipart 校验与批量处理属于已废弃同步路径：一律 410 REPLAY_LEGACY_DEPRECATED，
-        // 不再有第二套 scheduler 之外的 full processing（BLOCKER 2）。
+        // 不再有第二套 scheduler 之外的 full processing。
         goneOf(() -> {
             try {
                 controller.reconstructBatch(new org.springframework.mock.web.MockMultipartFile[0]);

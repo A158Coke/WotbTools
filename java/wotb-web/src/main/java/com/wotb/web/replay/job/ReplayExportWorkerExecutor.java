@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>容量设计（V1：2C4G VPS）：固定 {@code max-concurrent}（默认 1，与
  * {@code REPLAY_ARTIFACT_MAX_CONCURRENT} 同值）worker + 有界队列（默认 4），满载抛
  * {@code RejectedExecutionException}（AbortPolicy），由服务层转 503
- * {@code EXPORT_QUEUE_FULL}。BLOCKER 2 后 Export 只消费 Processing Job dataset
+ * {@code EXPORT_QUEUE_FULL}。后 Export 只消费 Processing Job dataset
  * （无 replay processing），不再获取全局 replay 容量许可——解析 CPU 预算唯一权威是
  * {@code ReplayParseScheduler}。</p>
  *

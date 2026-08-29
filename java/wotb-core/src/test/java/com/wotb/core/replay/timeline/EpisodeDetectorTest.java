@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * EpisodeDetector（docs/current-plan.md §23/§24）：覆盖整场、连续、无重叠、deterministic、
+ * EpisodeDetector（docs/architecture/battle-timeline.md §23/§24）：覆盖整场、连续、无重叠、deterministic、
  * 不机械固定 30 秒切块；Episode 与 Window 分离。
  */
 class EpisodeDetectorTest {
@@ -109,7 +109,7 @@ class EpisodeDetectorTest {
 
     @Test
     void episodeDeltasAppearExactlyOnceAcrossAllEpisodes() {
-        // P0 review：flatten 所有 Episode deltas 后，每个 canonical delta 恰好出现一次
+        // flatten 所有 Episode deltas 后，每个 canonical delta 恰好出现一次
         // （半开区间 [start, end) 契约：边界秒的 delta 不重复）。
         final Battle battle = TimelineTestFixtures.battle(120.0);
         final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
@@ -136,7 +136,7 @@ class EpisodeDetectorTest {
 
     @Test
     void openingQuietGapSplitsBeforeFirstContact() {
-        // P1 review：开局长时间无事件（quiet gap）后首次接敌，应产生切分；
+        // 开局长时间无事件（quiet gap）后首次接敌，应产生切分；
         // lastDeltaSeen 初始值不得使用整场最后一次 delta（未来信息）。
         final Battle battle = TimelineTestFixtures.battle(120.0);
         final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());

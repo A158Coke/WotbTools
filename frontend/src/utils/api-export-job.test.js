@@ -42,54 +42,46 @@ describe('replay export job api', () => {
     vi.unstubAllGlobals()
   })
 
-  it('createExportJob posts multipart and returns 202 job payload', async () => {
+  it('createExportJob posts Dataset-only create and returns 202 job payload', async () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse(202, { jobId: 'j1', status: 'QUEUED', total: 2 }))
-    const body = new FormData()
-    const result = await createExportJob(body, 'aggregate')
+    // Dataset-only：只传 mode + processingJobId（query），无 replay files body / 无 FormData。
+    const result = await createExportJob('aggregate', 'p1')
     expect(result).toEqual({ jobId: 'j1', status: 'QUEUED', total: 2 })
-    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-      '/api/replay/export-jobs?mode=aggregate',
-      expect.objectContaining({ method: 'POST', body }),
-    )
+    const url = vi.mocked(fetch).mock.calls[0][0]
+    expect(url).toBe('/api/replay/export-jobs?mode=aggregate&processingJobId=p1')
+    expect(vi.mocked(fetch).mock.calls[0][1]).toEqual(expect.objectContaining({ method: 'POST' }))
   })
 
   it('createExportJob appends teamNames multipart field when provided (PR #123 Blocker 1)', async () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse(202, { jobId: 'j1', status: 'QUEUED', total: 1 }))
-    // 复用 processingJobId 路径：body=null + teamNames → 构造含 teamNames 字段的 FormData
-    await createExportJob(null, 'aggregate', 'p1', '{"battle":{"a:1":"X"}}')
+    // Dataset-only：无 body，仅 teamNames → 构造含 teamNames 字段的 FormData（不重新上传 replay）。
+    await createExportJob('aggregate', 'p1', '{"battle":{"a:1":"X"}}')
     const [url, opts] = vi.mocked(fetch).mock.calls[0]
     expect(url).toContain('mode=aggregate')
     expect(url).toContain('processingJobId=p1')
     expect(opts.body).toBeInstanceOf(FormData)
+    expect(opts.body.get('files')).toBeNull() // Dataset-only：绝不再携带 replay files
     expect(opts.body.get('teamNames')).toBe('{"battle":{"a:1":"X"}}')
-
-    // 有 files body 时保留原字段并追加 teamNames
-    vi.mocked(fetch).mockClear()
-    const body = new FormData()
-    body.append('files', new Blob(['x']), 'a.wotbreplay')
-    await createExportJob(body, 'each', undefined, '{"summary":{"clan:CHRD":"Y"}}')
-    const [, opts2] = vi.mocked(fetch).mock.calls[0]
-    expect(opts2.body.get('files')).toBeTruthy()
-    expect(opts2.body.get('teamNames')).toBe('{"summary":{"clan:CHRD":"Y"}}')
   })
 
   it('createExportJob reuses processing result with bodyless POST (no teamNames)', async () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse(202, { jobId: 'j1', status: 'QUEUED', total: 34 }))
     // 生产 500 回归：reuse 解析结果 + 无战队名称覆盖 → body=null + processingJobId。
     // HTTP contract：bodyless POST 合法（backend 不强制 multipart），不得伪造空 FormData。
-    const result = await createExportJob(null, 'aggregate', 'p1', null)
+    const result = await createExportJob('aggregate', 'p1')
     expect(result).toEqual({ jobId: 'j1', status: 'QUEUED', total: 34 })
     const [url, opts] = vi.mocked(fetch).mock.calls[0]
     expect(url).toContain('mode=aggregate')
     expect(url).toContain('processingJobId=p1')
     expect(opts.method).toBe('POST')
-    expect(opts.body).toBeNull()
+    expect(opts.body).toBeUndefined()
     expect(opts.body).not.toBeInstanceOf(FormData)
   })
 
   it('createExportJob propagates 503 EXPORT_QUEUE_FULL as ApiError', async () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse(503, { error: 'EXPORT_QUEUE_FULL' }))
-    const err = await createExportJob(new FormData(), 'aggregate').catch(e => e)
+    // 真实 request shape：携带 processingJobId（缺失会先走 410，根本到不了 Export queue）。
+    const err = await createExportJob('aggregate', 'p1').catch(e => e)
     expect(err).toBeInstanceOf(ApiError)
     expect(err.code).toBe('EXPORT_QUEUE_FULL')
     expect(err.status).toBe(503)

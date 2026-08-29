@@ -61,7 +61,7 @@ public final class AoiPositionCoverage {
                 continue; // 零长段（无观测）/段被 duration 截到空
             }
             // 实际位置存在（该段内第一条<b>同 entity</b> 位置样本）；段内无该实体位置 → 不产生区间。
-            // §P1-1: 只在同 entity 的 sample 中找，防止因 re-entry 出现多个 entity ID 时，另一实体的
+            // 只在同 entity 的 sample 中找，防止因 re-entry 出现多个 entity ID 时，另一实体的
             // position 替本实体证明覆盖（provenance loss）。
             Double firstPos = null;
             for (final double pt : positionTimesByEntity.getOrDefault(seg.entityId(), List.of())) {

@@ -99,7 +99,7 @@ class TradeFactsTest {
 
     @Test
     void tradeWindowDefinitelyInsidePrecisionInterval() {
-        // PR147 §C precision-aware：SETTLEMENT_SECOND ±0.5s 量化。a=100 → [99.5,100.5]。
+        // precision-aware：SETTLEMENT_SECOND ±0.5s 量化。a=100 → [99.5,100.5]。
         // 确定性满足窗口（0 ≤ e−p ≤ 5，∀ 真实组合）的敌方 rep 区间约为 [101, 104]：
         //   eMin ≥ pMax(100.5) 且 eMax ≤ pMin+5(104.5)。边界附近（同刻 / +4.999 / +5.0）为
         //   ambiguous（某些组合不满足）→ fail-closed 0。

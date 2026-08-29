@@ -15,7 +15,7 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Team AI Context Compiler（docs/current-plan.md §29/§51）：
+ * Team AI Context Compiler：
  * 把 canonical BattleTimeline 编译为团队视角的 Episode 化上下文——双方对称
  * （friendly deployment / enemy knowledge / local force / HP momentum / points）。
  * actor = perspectiveTeam，不以录像者为中心。
@@ -44,7 +44,7 @@ public final class TeamAiContextCompiler {
             sb.append("时间轴: battle-relative（由战斗结束事件推算，确定性）\n");
         }
 
-        // 首尾保留：高密度长战斗不丢残局关键决策；中间章节折叠为一行摘要（P1 review）
+        // 首尾保留：高密度长战斗不丢残局关键决策；中间章节折叠为一行摘要
         final java.util.List<Integer> selected =
                 PersonalAiContextCompiler.selectedEpisodeIndices(episodes.size(), MAX_EPISODES);
         for (final int i : selected) {
@@ -59,7 +59,7 @@ public final class TeamAiContextCompiler {
 
 
     /**
-     * 渲染 TEAM REVIEW FOCUS WINDOWS 段（确定性，docs/current-plan.md §4/§5）：
+     * 渲染 TEAM REVIEW FOCUS WINDOWS 段（确定性）：
      * 1–3 个信息密度最高的决策窗口，每个窗口输出 BEFORE / EVENTS / AFTER /
      * OBSERVED FACTS / EVIDENCE LIMITATIONS。全部来自已验证 canonical timeline，
      * 不编造战术原因；timeline 为 null 或无可选窗口时返回空串。

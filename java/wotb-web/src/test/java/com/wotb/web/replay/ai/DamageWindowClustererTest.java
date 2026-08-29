@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 真实 entity 映射（accountId 为 null）/ 准备阶段过滤 / 非受击者忽略 /
  * 攻击者解析（单一攻击者≠集火、多攻击者才可集火、未解析不得集火）。
  *
- * <p>§12/§13 口径：窗口只消费权威 HP loss（Type-7 推导），fixture 用
+ * <p>口径：窗口只消费权威 HP loss（Type-7 推导），fixture 用
  * {@code hpLoss(...)} helper 生成「prev/cur HP sample 对 + 单条 DAMAGE 通知」，
  * 使每条掉血都得到精确 attribution。</p>
  */

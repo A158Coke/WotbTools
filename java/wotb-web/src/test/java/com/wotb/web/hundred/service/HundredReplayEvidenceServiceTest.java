@@ -39,7 +39,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * 百场回放审核证据编排契约测试（Mockito，无 DB/FS 依赖；下载字节用 @TempDir 真实文件）。
- * 覆盖 docs/current-plan.md（百场 evidence）：storeAll 幂等/失败清理、attach 原子 5 行、
+ * 覆盖 docs/features/hall-of-fame.md（百场 evidence）：storeAll 幂等/失败清理、attach 原子 5 行、
  * admin list/download ownership、审批前完整性校验与跨表引用计数。
  */
 @ExtendWith(MockitoExtension.class)

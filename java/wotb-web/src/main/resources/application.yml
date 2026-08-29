@@ -110,7 +110,7 @@ wotb:
     context-window-tokens: ${AI_CONTEXT_WINDOW_TOKENS:1000000}
     single-replay-max-input-tokens: ${AI_SINGLE_REPLAY_MAX_INPUT_TOKENS:940000}
     max-output-tokens: ${AI_MAX_OUTPUT_TOKENS:32768}
-    # Team Call #2 专用输出上限（PR #103 review BLOCKER C）：effective = min(global, team-review)
+    # Team Call #2 专用输出上限（effective = min(global, team-review)）
     team-review-max-output-tokens: ${AI_TEAM_REVIEW_MAX_OUTPUT_TOKENS:4096}
     prompt-safety-margin-tokens: ${AI_PROMPT_SAFETY_MARGIN_TOKENS:16384}
     # Call #2 自由文本复盘默认关闭 thinking（DeepSeek 推理模式会让 content 末尾一次性到达，
@@ -132,12 +132,12 @@ wotb:
   replay:
     max-concurrent-jobs: ${REPLAY_MAX_CONCURRENT_JOBS:2}
     parse:
-      # Replay Full Processing 唯一 CPU 预算（2C4G VPS 默认 2；禁止超过核心数，plan §11/§6.5）
+      # Replay Full Processing 唯一 CPU 预算（2C4G VPS 默认 2；禁止超过核心数）
       max-concurrent: ${REPLAY_PARSE_MAX_CONCURRENT:2}
-      # 全部 job 的 pending source 总数上限；满载 503 PROCESSING_QUEUE_FULL（plan §95/§116）
+      # 全部 job 的 pending source 总数上限；满载 503 PROCESSING_QUEUE_FULL
       queue-capacity: ${REPLAY_PARSE_QUEUE_CAPACITY:200}
     artifact:
-      # Excel/ZIP artifact 构建并发（plan §46：与 parse 分离，2C 默认 1）
+      # Excel/ZIP artifact 构建并发（与 parse 分离，2C 默认 1）
       max-concurrent: ${REPLAY_ARTIFACT_MAX_CONCURRENT:1}
     export-job:
       # 导出 Job 临时目录（上传输入 + 最终 artifact；TTL 自动清理，见 ExportJobStore）

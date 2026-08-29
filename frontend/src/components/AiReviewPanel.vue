@@ -1,6 +1,6 @@
 <!--
   AI 复盘 Workspace 面板（单页 Workspace 改造）。
-  从 ReconstructionPage 抽出的 AI 复盘核心：SSE 分析流（call1/evidence/call2/autopsy）+ 流式进度 + 结果面板。
+  AI 复盘核心（ReplayPage Workspace 内联）：SSE 分析流（call1/evidence/call2/autopsy）+ 流式进度 + 结果面板。
   不负责页面级登录门禁/自动跳转（由宿主入口把关）；仅在发起请求时经 authedFetch 兜底
   ensureToken + 401/403 处理。目标文件由父组件以 prop 传入（文件始终在 ReplayPage 内存中，
   不重新上传、不跨视图交接）。
@@ -9,21 +9,21 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
-import { localizeAiError } from '../utils/reconstruction-analysis.js'
+import { localizeAiError, isRecoverableDatasetCode } from '../utils/reconstruction-analysis.js'
 import AnalysisResultPanel from './AnalysisResultPanel.vue'
 import ReplayAnalysisAction from './ReplayAnalysisAction.vue'
 
 const props = defineProps({
   /** 目标回放文件（null = 尚未选择，显示空态提示）。 */
   file: { type: Object, default: null },
-  /** Dataset 引用（plan §36–§37）：两者齐备时走 derived ai-facts，不再上传 replay。 */
+  /** Dataset 引用：两者齐备时走 derived ai-facts，不再上传 replay。 */
   processingJobId: { type: String, default: null },
   sourceId: { type: String, default: null },
-  /** 未登录/401 时回跳视图：ReplayPage Workspace=replay，独立 reconstruction 页=reconstruction。 */
-  loginView: { type: String, default: 'replay' }
+  /** Dataset 准备失败（父组件 ensureDatasetFor 未能建立引用）时的已本地化错误；空 = 无。 */
+  datasetError: { type: String, default: '' }
 })
 
-const emit = defineEmits(['seek'])
+const emit = defineEmits(['seek', 'dataset-recover'])
 
 const { t, locale } = useI18n()
 const { tokenParsed, token, ensureToken, login } = useAuth()
@@ -34,6 +34,20 @@ const canUseAiReview = computed(() => {
   return Array.isArray(roles) && (
     roles.includes('wotbtools-user') || roles.includes('wotbtools-admin')
   )
+})
+
+/**
+ * Dataset 就绪守卫（defense-in-depth）：AI Analyze 只有在 authoritative
+ * processingJobId + sourceId 都已绑定到面板后才能执行。file 已选但引用缺失 =
+ * PREPARING_DATASET（状态机问题），不是用户错误。
+ */
+const datasetReady = computed(() => !!props.file && !!props.processingJobId && !!props.sourceId)
+const datasetRecovering = ref(false)
+/** Dataset 准备中/过期重试/失败的用户可读文案（数据集生命周期，非 AI 模型错误）。 */
+const datasetMessage = computed(() => {
+  if (datasetRecovering.value) return t('workspace.dataset_expired')
+  if (props.datasetError) return props.datasetError
+  return t('workspace.dataset_preparing')
 })
 
 const error = ref('')
@@ -49,16 +63,11 @@ const partialAnalysis = ref('')
 // 超时链对齐：后端整体 deadline=1100s < nginx analyze 1120s；前端 1100s 在 nginx 之前给出干净 AI_TIMEOUT。
 const AI_ANALYZE_TIMEOUT_MS = 1_100_000
 /**
- * Dataset 请求代际（BLOCKER 1.1）：authoritative input = file + processingJobId + sourceId
- * 三者。任一变化（含 Dataset identity 单独变化）都使在途分析作废——迟到响应不得写
- * analysisResult / partialAnalysis / error，也不得覆盖新 generation 的 loading/finally。
- */
-let datasetRevision = 0
-/**
- * 当前 AI analysis run（BLOCKER 2）：每次 runAnalyze 创建独立 run context
- * {revision, controller, correlationId, startedAt, timeoutTimer, cancelRequested, timedOut}。
- * 跨 generation 不再共享任何 mutable request 字段——旧 A 永远只能操作 A 自己的
- * controller / timer / correlationId，绝不可能清掉 B 的 timer 或 cancel B 的请求。
+ * 当前 AI analysis run：每次 runAnalyze 创建独立 run context
+ * {controller, correlationId, startedAt, timeoutTimer, cancelRequested, timedOut}。
+ * Dataset identity 变化（file / processingJobId / sourceId）只取消旧 activeRun（它自己
+ * 的 timer / correlationId / controller），再解除 active ownership 并重置共享 UI 状态；
+ * stale run 通过 activeRun === run 判定作废，绝不修改新 generation 的状态。
  */
 let activeRun = null
 
@@ -71,7 +80,7 @@ function resetResults() {
 // 目标 file 或 Dataset identity 变化：只取消 oldRun（自己的 timer/correlationId/controller），
 // 再解除 active ownership；新 B run 不得被 oldRun 的异步 unwind 影响。
 watch(() => [props.file, props.processingJobId, props.sourceId], () => {
-  datasetRevision++
+  datasetRecovering.value = false
   const oldRun = activeRun
   if (oldRun) {
     cancelRun(oldRun)
@@ -87,7 +96,7 @@ watch(() => [props.file, props.processingJobId, props.sourceId], () => {
 async function authedFetch(url, body, { signal } = {}) {
   const valid = await ensureToken(30)
   if (!valid) {
-    login(props.loginView)
+    login('replay')
     throw new Error(t('recon.auth_required'))
   }
   const accessToken = token()
@@ -95,7 +104,7 @@ async function authedFetch(url, body, { signal } = {}) {
   if (typeof body === 'string') headers['Content-Type'] = 'application/json'
   const r = await fetch(url, { method: 'POST', headers, body, signal })
   if (r.status === 401) {
-    login(props.loginView)
+    login('replay')
     throw new Error(t('recon.auth_required'))
   }
   if (r.status === 403) {
@@ -139,14 +148,18 @@ function newCorrelationId() {
   return `ai-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+/** 数据集可恢复错误（job/dataset 引用过期或缺失）：交给父组件重建引用，不当作最终用户错误。 */
+function handleDatasetRecover(code) {
+  datasetRecovering.value = true
+  error.value = ''
+  emit('dataset-recover', code)
+}
+
 async function runAnalyze() {
   if (analyzing.value) return
-  if (!props.file) {
-    error.value = t('recon.errors.NO_REPLAY_FILE')
-    return
-  }
+  // Dataset 尚未就绪属于状态机问题（PREPARING_DATASET），不是用户错误：不发请求、不显示裸错误码。
+  if (!datasetReady.value) return
   const run = {
-    revision: datasetRevision,
     controller: new AbortController(),
     correlationId: newCorrelationId(),
     startedAt: Date.now(),
@@ -160,7 +173,7 @@ async function runAnalyze() {
   analysisResult.value = null
   progressStage.value = 'call1'
   partialAnalysis.value = ''
-  // timeout closure-capture run：fire 时只读 run.correlationId / run.controller（BLOCKER 2.4）。
+  // timeout closure-capture run：fire 时只读 run.correlationId / run.controller。
   run.timeoutTimer = setTimeout(() => {
     run.timedOut = true
     fireCancel(run.correlationId)
@@ -181,6 +194,11 @@ async function runAnalyze() {
         } catch {
         }
       }
+      // 数据集引用过期/缺失（JOB_NOT_FOUND 等）：触发父组件重建，而非把错误码展示给用户。
+      if (isRecoverableDatasetCode(errorData.code)) {
+        handleDatasetRecover(errorData.code)
+        return
+      }
       throw new Error(localizeAiError(errorData, r.status, t))
     }
     // SSE 流式解析：阶段事件 + call2_token 主复盘增量 + done 收尾。
@@ -192,6 +210,11 @@ async function runAnalyze() {
   } catch (e) {
     // file / Dataset identity 已切换：本次分析作废，不写任何状态。
     if (activeRun !== run) return
+    // 数据集引用过期（后端稳定码 / SSE error 事件）：交回父组件重建，不显示裸错误码。
+    if (e && e.recoverableDatasource) {
+      handleDatasetRecover(e.message)
+      return
+    }
     if (e && e.name === 'AbortError') {
       error.value = run.timedOut ? t('recon.errors.AI_TIMEOUT') : t('recon.cancelled')
     } else if (run.cancelRequested) {
@@ -201,7 +224,7 @@ async function runAnalyze() {
       error.value = e.message || String(e)
     }
   } finally {
-    // BLOCKER 2.3：只清理自己的 timer；非当前 run 的 finally 不得触碰共享 UI 状态。
+    // 只清理自己的 timer；非当前 run 的 finally 不得触碰共享 UI 状态。
     clearTimeout(run.timeoutTimer)
     run.timeoutTimer = null
     if (activeRun === run) {
@@ -212,12 +235,14 @@ async function runAnalyze() {
 }
 
 /**
- * Dataset 路径（plan §36/§109）：必须携带 processingJobId+sourceId，绝不回退 multipart
- * 重新上传/重新 full process（BLOCKER A）。
+ * Dataset 路径：必须携带 processingJobId+sourceId，绝不回退 multipart
+ * 重新上传/重新 full process。
  */
 function analyzeBody(correlationId) {
   if (!props.processingJobId || !props.sourceId) {
-    throw new Error('DATASET_UNAVAILABLE')
+    // 防御：runAnalyze 已用 datasetReady 守卫；此路径正常情况下不可达。绝不裸抛内部错误码，
+    // 以本地化消息兜底（状态机问题，非最终用户错误）。
+    throw new Error(t('recon.errors.DATASET_REFERENCE_REQUIRED'))
   }
   return JSON.stringify({
     processingJobId: props.processingJobId,
@@ -228,7 +253,7 @@ function analyzeBody(correlationId) {
 }
 
 /**
- * 读取 SSE 响应体并分发事件（run context 显式传入，BLOCKER 2.5）：
+ * 读取 SSE 响应体并分发事件（run context 显式传入）：
  * call1_start/call1_done/evidence_done → 阶段状态；
  * call2_token → 主复盘文本累积（token 滚动）；
  * autopsy_start/autopsy_done → 团队剖析阶段；
@@ -295,7 +320,6 @@ async function readAnalyzeStream(r, run) {
         break
       case 'done':
         if (typeof data.analysis === 'string' && data.analysis.trim()) {
-          // done 载荷的 mapOverview 不再消费：地图已拆为独立战局回放面板（BattlePlaybackPanel）。
           analysisResult.value = {
             analysis: data.analysis,
             preBattleSection: data.preBattleSection
@@ -306,6 +330,12 @@ async function readAnalyzeStream(r, run) {
         break
       case 'error':
         // 流中途失败：以稳定错误码本地化后终止流。
+        // 数据集引用过期（JOB_NOT_FOUND 等）不是 AI 错误：作为可恢复信号向上传播。
+        if (isRecoverableDatasetCode(data.code)) {
+          const recoverable = new Error(data.code || 'JOB_NOT_FOUND')
+          recoverable.recoverableDatasource = true
+          throw recoverable
+        }
         const localized = new Error(localizeAiError({ code: data.code || '' }, 502, t))
         localized.isLocalized = true
         throw localized
@@ -351,6 +381,10 @@ async function readAnalyzeStream(r, run) {
       // error 事件已生成本地化消息：原样传播。
       throw e
     }
+    if (e && e.recoverableDatasource) {
+      // 数据集引用过期：交给 runAnalyze 的 recover 分支。
+      throw e
+    }
     throw new Error(t('recon.errors.AI_RESPONSE_INVALID'))
   } finally {
     reader.releaseLock?.()
@@ -378,7 +412,13 @@ onBeforeUnmount(() => {
     <p v-if="!file" class="ws-note">{{ $t('workspace.ai_empty') }}</p>
     <template v-else>
       <div v-if="canUseAiReview" class="ai-action-row">
-        <ReplayAnalysisAction :analyzing="analyzing" @analyze="runAnalyze" @cancel="cancelAnalyze" />
+        <ReplayAnalysisAction :analyzing="analyzing" :disabled="!datasetReady" @analyze="runAnalyze" @cancel="cancelAnalyze" />
+      </div>
+
+      <!-- dataset 未就绪（PREPARING_DATASET / JOB_NOT_FOUND / FAILURE）：AI Analyze 禁用，显示准备/失败状态 -->
+      <div v-if="!datasetReady" class="ai-dataset-status" data-test="ai-dataset-status">
+        <span v-if="!datasetError" class="stream-spinner" aria-hidden="true"></span>
+        <span :class="{ 'ai-dataset-error': !!datasetError }">{{ datasetMessage }}</span>
       </div>
 
       <p v-if="error" class="error">{{ error }}</p>
@@ -411,6 +451,20 @@ onBeforeUnmount(() => {
   margin: 16px 0;
 }
 .ws-note { margin: 18px 4px; color: var(--text-muted); font-size: .85rem; }
+
+/* Dataset 准备中/过期重试状态：loading 文案（非红色错误） */
+.ai-dataset-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0;
+  font-size: .9rem;
+  color: var(--text-label);
+}
+/* FAILURE：与 PREPARING 明确区分——无 spinner、错误色文本 */
+.ai-dataset-status .ai-dataset-error {
+  color: var(--error);
+}
 
 /* 流式生成面板：阶段状态 + 主复盘 token 滚动预览 */
 .streaming-panel { margin-top: 16px; }

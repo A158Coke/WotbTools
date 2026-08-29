@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class TankNameProperNounTest {
 
-    /** §12/§13 权威掉血 fixture：recorder(1) 对 victim(2) 掉 780（Type-7 推导 + 单通知归属）。 */
+    /** 权威掉血 fixture：recorder(1) 对 victim(2) 掉 780（Type-7 推导 + 单通知归属）。 */
     private static ReplayReconstruction dealtRecon() {
         return new ReplayReconstruction(null, null, 120f, 0f, List.of(),
                 List.of(

@@ -52,7 +52,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 名人堂「百场」业务（docs/current-plan.md 百场需求）。
+ * 名人堂「百场」业务（docs/features/hall-of-fame.md 百场需求）。
  *
  * <p>核心不变量（全部由 DB + 行锁保证，非前端保证）：</p>
  * <ul>
@@ -83,10 +83,10 @@ public class HundredBattleSubmissionService {
     /** 「百场」资格最低场次：写入排行榜的冻结 battleCount 必须 ≥ 100。 */
     private static final int MIN_APPROVED_BATTLE_COUNT = 100;
 
-    /** 拒绝原因分类（docs/current-plan.md §32）。 */
+    /** 拒绝原因分类。 */
     private static final Set<String> REJECT_CATEGORIES = Set.of(
             "SCREENSHOT_MISMATCH", "SCREENSHOT_UNREADABLE", "INSUFFICIENT_PROOF", "SUSPECTED_FRAUD", "OTHER");
-    /** 删除原因分类（docs/current-plan.md §34）。 */
+    /** 删除原因分类。 */
     private static final Set<String> DELETE_CATEGORIES = Set.of(
             "CHEATING_FORGERY", "WRONG_REVIEW", "PLAYER_IDENTITY_ISSUE", "DATA_ERROR", "ADMIN_CORRECTION", "OTHER");
 

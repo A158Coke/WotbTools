@@ -10,7 +10,7 @@ package com.wotb.core.replay.event;
  * 0 direct / 1 fire / 2 ramming / 3 world-or-self-environment / 5 drowning；
  * 4 未观测，保留 raw。</p>
  *
- * <p><b>版本作用域（§P0-1）</b>：{@link #rawState()} 由 decoder/evidence 边界在已知
+ * <p><b>版本作用域</b>：{@link #rawState()} 由 decoder/evidence 边界在已知
  * {@code clientVersion} 下<em>一次</em>执行 {@link HpRawState#classify} 完成并随本事件传播；
  * 消费方（ReplayHpTimeline / ReplayTerminalLifecycle / BattleStateReconstructor）一律直接消费
  * {@link #rawState()}，禁止再以 {@code HpRawState.classify(raw, true)} 重新解释 —— 0xFFFE 只有在

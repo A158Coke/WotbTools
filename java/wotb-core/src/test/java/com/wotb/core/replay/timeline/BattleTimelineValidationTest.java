@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Timeline validation（docs/current-plan.md §4）：关键条件缺失 → 拒绝，不进入 AI Review。
+ * Timeline validation（docs/architecture/battle-timeline.md §4）：关键条件缺失 → 拒绝，不进入 AI Review。
  */
 class BattleTimelineValidationTest {
 
@@ -101,7 +101,7 @@ class BattleTimelineValidationTest {
 
     @Test
     void mixedClockDomainsRejectZeroBaselineAndMarkLimitation() {
-        // P1 review：同一 stream 部分事件带 battleClockSec、部分 raw-only → 时钟域混合，
+        // 同一 stream 部分事件带 battleClockSec、部分 raw-only → 时钟域混合，
         // 不得用 0 基准（IDENTIFIED）；走 ESTIMATED 并标记 MIXED_CLOCK_DOMAINS。
         final Battle battle = TimelineTestFixtures.battle(60.0);
         final java.util.List<com.wotb.core.replay.event.ReplayEvent> events =

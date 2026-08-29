@@ -13,7 +13,7 @@
  *    展示层更高的 specificity 覆盖,不重排现有 showcase 全局样式。
  * 4) 关闭全屏 AI/装饰性展示层(沿用原「从简」规则)与 Home 四张 AI 装饰卡图。
  *
- * 约束(对应计划 §43 A/B/D + §Classic):每条规则都带 [data-ui-profile="classic"] 前缀;
+ * 约束(对应
  * 禁 display:none 隐藏业务;禁 filter:invert / 全局 opacity / html *;不 fork 业务组件。
  */
 
@@ -137,8 +137,8 @@ html[data-ui-profile="classic"] {
 [data-ui-profile="classic"] .restoolbar {background: color-mix(in srgb, #ffffff 96%, transparent) !important; box-shadow: 0 8px 22px rgba(0, 0, 0, .07) !important}
 
 /* 4) 关闭全屏 AI 路景背景(::after)与 readability 渐变遮罩(::before) */
-[data-ui-profile="classic"] :is(.layout-content,.layout-wide,.layout-data-workspace,.admin-page,.profile-page,.boost-page,.version-page,.contact-page,.hof-page,.hof-wrap,.hall-page,.lb-wrap,.hof-admin-page,.hofadmin-page,.admin-hof-page,.hof-admin,.rating-page,.rating-section,.rating-workspace,.recon-page,.homepage-showcase)::after,
-[data-ui-profile="classic"] :is(.layout-content,.layout-wide,.layout-data-workspace,.admin-page,.profile-page,.boost-page,.version-page,.contact-page,.hof-page,.hof-wrap,.hall-page,.lb-wrap,.hof-admin-page,.hofadmin-page,.admin-hof-page,.hof-admin,.rating-page,.rating-section,.rating-workspace,.recon-page,.homepage-showcase)::before {content: none}
+[data-ui-profile="classic"] :is(.layout-content,.layout-wide,.layout-data-workspace,.admin-page,.profile-page,.boost-page,.version-page,.contact-page,.hof-page,.hof-wrap,.hall-page,.lb-wrap,.hof-admin-page,.hofadmin-page,.admin-hof-page,.hof-admin,.rating-page,.rating-section,.rating-workspace,.homepage-showcase)::after,
+[data-ui-profile="classic"] :is(.layout-content,.layout-wide,.layout-data-workspace,.admin-page,.profile-page,.boost-page,.version-page,.contact-page,.hof-page,.hof-wrap,.hall-page,.lb-wrap,.hof-admin-page,.hofadmin-page,.admin-hof-page,.hof-admin,.rating-page,.rating-section,.rating-workspace,.homepage-showcase)::before {content: none}
 
 /* 5) 装饰性 hero / 上传 / profile-hero 表面:去掉 AI 图,落回浅色(保留结构) */
 [data-ui-profile="classic"] .layout-data-workspace .uploadwrap,
@@ -430,17 +430,6 @@ html[data-ui-profile="classic"] .profile-page .profile-hero :is(h1, h2) {color: 
 html[data-ui-profile="classic"] .profile-page .profile-card {background: var(--bg-card) !important}
 html[data-ui-profile="classic"] .profile-page .profile-card .card-title {color: var(--text-heading) !important}
 
-/* ---- Battle Reconstruction 外围 UI（地图本体保留游戏视觉） ---- */
-html[data-ui-profile="classic"] .recon-page {color: var(--text) !important}
-html[data-ui-profile="classic"] .recon-page .recon-toolbar,
-html[data-ui-profile="classic"] .recon-toolbar {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important; box-shadow: var(--surface-shadow) !important}
-html[data-ui-profile="classic"] .recon-page .recon-sidebar, html[data-ui-profile="classic"] .recon-sidebar {background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text) !important}
-html[data-ui-profile="classic"] .recon-page .details-panel, html[data-ui-profile="classic"] .recon-details, html[data-ui-profile="classic"] .battle-details {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important}
-html[data-ui-profile="classic"] .recon-page .timeline, html[data-ui-profile="classic"] .recon-timeline {color: var(--text) !important; border-color: var(--border-light) !important; background: var(--bg-elevated) !important}
-html[data-ui-profile="classic"] :is(.recon-page .recon-control, .recon-page button, .recon-toolbar button, .recon-control) {background: var(--bg-card) !important; color: var(--text-sub) !important; border-color: var(--border) !important}
-html[data-ui-profile="classic"] :is(.recon-page .recon-control, .recon-page button, .recon-toolbar button, .recon-control):hover {color: var(--text-heading) !important; border-color: var(--accent) !important; background: var(--bg-list-hover) !important}
-html[data-ui-profile="classic"] :is(.recon-page, .recon-workspace) .map-stage {filter: none}
-html[data-ui-profile="classic"] :is(.recon-page, .recon-workspace) :is(svg.map, .map, .map-container) * {filter: none}
 
 /* ---- Boost 分页 / Profile .btn-ghost（scoped 写死深底/深边框/深 hover，Classic 补覆盖） ---- */
 html[data-ui-profile="classic"] .boost-page .pager button {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important}

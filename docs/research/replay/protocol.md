@@ -295,7 +295,7 @@ spectator 的 extra（如 #201=4 / #301=3）时不得视为完整。League Ratin
 首个 HP loss 无法推导 → 事件流 received 恒小于结算 → 覆盖永不完全。**这是真实数据限制，
 不是门禁 bug**；不得放宽真实性门禁，由前端「相对满血状态」解决 UX（见 docs/features/battle-playback.md）。
 
-**HP provenance 语义（前端，docs/current-plan.md §4 扩展 + PR #107 Blocker 3 收口）**：
+**HP provenance 语义（前端，见 docs/features/battle-playback.md §4 扩展 + PR #107 Blocker 3 收口）**：
 - `OBSERVED_EXACT`：进场满血已证明（entryHpSource=OBSERVED_EXACT）→ 精确 current/entryHp/pct
   （pct = current/entryHp；只有实际进场 max 已被可靠证明时才允许计算真实 HP 百分比）；
 - `CURRENT_HP_EXACT_MAX_UNKNOWN`：有真实 Type-7 current 采样但进场 max 未证明 →

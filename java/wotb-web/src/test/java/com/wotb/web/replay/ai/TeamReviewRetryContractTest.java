@@ -44,7 +44,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Natural Coach 轮：Team Call #2 事实一致性校验 + LLM 自修循环编排契约。
- * <p>流程（docs/current-plan.md §13/§14）：Draft → validate；FAIL → targeted rewrite；
+ * <p>流程：Draft → validate；FAIL → targeted rewrite；
  * FAIL → full rewrite；仍 FAIL → fail-safe（AI_REVIEW_GROUNDING_FAILED）。Backend 绝不代改句子。</p>
  */
 class TeamReviewRetryContractTest {
@@ -116,7 +116,7 @@ class TeamReviewRetryContractTest {
         assertEquals(2, gateway.teamCall2Requests());
     }
 
-    // ===== Review B1-1：callRaw authoritative response source = completionText() =====
+    // ===== ：callRaw authoritative response source = completionText() =====
 
     @Test
     void completionTextIsAuthoritativeOverPartialCallbackChunks() {
@@ -277,7 +277,7 @@ class TeamReviewRetryContractTest {
     }
 
     /**
-     * Review B1-1 流式替身：{@code stream()} 按调用顺序返回预设 completionText，
+     *  流式替身：{@code stream()} 按调用顺序返回预设 completionText，
      * 并先向 callback 发出预设 chunk（可为零散 JSON / 垃圾）——验证 callRaw 只用
      * completionText()（authoritative），callback 仅为 progress。
      */
@@ -443,7 +443,7 @@ class TeamReviewRetryContractTest {
                 "HARD 冲突仍恰好 3 次尝试后 fail-safe");
     }
 
-    // ===== docs/current-plan.md §7/§25：只有 Team Call #2 使用 JSON_OBJECT =====
+    // ===== 只有 Team Call #2 使用 JSON_OBJECT =====
 
     @Test
     void teamCall2ExplicitlyUsesJsonObjectWhilePreBattleStaysText() {
@@ -455,13 +455,13 @@ class TeamReviewRetryContractTest {
                 .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode()))
                 .findFirst().orElseThrow();
         assertEquals(AiResponseFormat.JSON_OBJECT, teamCall2.responseFormat(),
-                "Team Call #2 必须显式请求 JSON_OBJECT（§7）");
+                "Team Call #2 必须显式请求 JSON_OBJECT");
 
-        // Call #1（Pre-Battle Strategic Prior）保持 TEXT，不得因本任务进入 JSON mode（§6/§25）。
+        // Call #1（Pre-Battle Strategic Prior）保持 TEXT，不得因本任务进入 JSON mode。
         final AiChatRequest preBattle = gateway.requests().stream()
                 .filter(r -> "PRE_BATTLE_STRATEGIC_PRIOR".equals(r.analysisMode()))
                 .findFirst().orElseThrow();
         assertEquals(AiResponseFormat.TEXT, preBattle.responseFormat(),
-                "PRE_BATTLE_STRATEGIC_PRIOR 必须保持 TEXT（§25）");
+                "PRE_BATTLE_STRATEGIC_PRIOR 必须保持 TEXT");
     }
 }

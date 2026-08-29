@@ -4,7 +4,7 @@ package com.wotb.core.replay.timeline;
  * 车辆朝向（度）。hull yaw 来自 type-10 yaw（PROVEN 权威，弧度→度）；
  * 炮塔相对车体偏航来自 type-7 propId=2（u16*360/65536-180，PROVEN）；
  * 炮塔世界偏航 = normalize(hull + relative)。
- * 方向只能作为 DERIVED spatial relation，不能直接声称「正在瞄准」（docs/current-plan.md §17）。
+ * 方向只能作为 DERIVED spatial relation，不能直接声称「正在瞄准」（docs/architecture/battle-timeline.md §17）。
  */
 public record FrameOrientation(
         Float hullYawDeg,

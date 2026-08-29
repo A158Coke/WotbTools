@@ -16,11 +16,11 @@ import java.util.List;
  * payload = {@code entityId(u32 LE) + entityTypeId(u16 LE) + transform/state bootstrap
  * + class-specific init}。</p>
  *
- * <p><b>版本门禁（§P0-2）</b>：仅当前 canonical + 显式证明的 11.18 legacy
+ * <p><b>版本门禁</b>：仅当前 canonical + 显式证明的 11.18 legacy
  * （{@link ReplayVersionGate#entityLifecycleLayoutAllowed}）允许把 type=5 解为物化；未知/未来版本
  * raw-preserve（UNKNOWN + 诊断），绝不静默进入 canonical AoI。</p>
  *
- * <p><b>置信度（§P0-1）</b>：{@code MaterializationEvent.confidence} 只表示「物化 presence 已证明」
+ * <p><b>置信度</b>：{@code MaterializationEvent.confidence} 只表示「物化 presence 已证明」
  * （结构解码成功即 EXACT）；HP 是独立维度（{@code currentHp} 可 null），HP sentinel/unknown
  * 不降级 presence 置信度。</p>
  *
@@ -77,7 +77,7 @@ public class MaterializationDecoder implements ReplayPacketDecoder {
                     List.of(new ReplayDecodeWarning("TRUNCATED_PAYLOAD",
                             "Type5 packet too short: " + payload.length)));
         }
-        // §P0-2: Type5 materialization semantics are version-scoped. Unknown/future versions must
+        // Type5 materialization semantics are version-scoped. Unknown/future versions must
         // raw-preserve (UNKNOWN + diagnostic), never unconditionally decode into a semantic event.
         if (!ReplayVersionGate.entityLifecycleLayoutAllowed(context.clientVersion())) {
             final ReplayTimestamp tsUnsupported = new ReplayTimestamp(packet.rawClockSec(), null);
@@ -137,7 +137,7 @@ public class MaterializationDecoder implements ReplayPacketDecoder {
             System.arraycopy(payload, TRANSFORM_PREFIX_OFFSET + 8, initRaw, 0, initRaw.length);
         }
 
-        // §P0-1: two independent evidence dimensions. The Type5 structure proves the entity
+        // two independent evidence dimensions. The Type5 structure proves the entity
         // materialized (presence = EXACT); HP decode is a separate field (currentHp nullable). HP
         // being unknown/sentinel must NOT downgrade the materialization presence confidence, else
         // ReplayAoiLifecycle would drop the observed segment for a proven presence.

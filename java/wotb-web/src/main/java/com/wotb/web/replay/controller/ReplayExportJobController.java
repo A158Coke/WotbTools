@@ -15,8 +15,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.multipart.MultipartFile;
-
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -31,10 +29,12 @@ import java.util.Map;
  * DELETE /api/replay/export-jobs/{jobId}    → 204（取消）
  * GET    /api/replay/export-jobs/{jobId}/download → streaming artifact
  * </pre>
- * 创建即持久化输入并返回 jobId；真实进度经 status 轮询；下载走 resource streaming
- * （不 readAllBytes / 大 byte[] 重新复制）。错误码：EXPORT_QUEUE_FULL(503) /
- * JOB_NOT_FOUND(404) / JOB_NOT_READY(409)，job 内失败经 status.errorCode 返回
- * （如 NO_VALID_REPLAYS）。
+ * Dataset-only 创建：引用 READY Processing Job 的 {@code ProcessedDataset}（不接收 replay
+ * files / 不上传输入），注册 Export Job 后由 worker 生成 XLSX/ZIP artifact；真实进度经
+ * status 轮询；下载走 resource streaming（不 readAllBytes / 大 byte[] 重新复制）。
+ * Create 错误码：PROCESSING_JOB_NOT_FOUND(404) / PROCESSING_JOB_NOT_READY(409) /
+ * EXPORT_QUEUE_FULL(503)；Export Job status/download 错误码：JOB_NOT_FOUND(404) /
+ * JOB_NOT_READY(409)；job 内失败经 status.errorCode 返回（如 NO_VALID_REPLAYS）。
  */
 @RestController
 @CrossOrigin(origins = "*")
@@ -46,19 +46,17 @@ public class ReplayExportJobController {
         this.service = service;
     }
 
-    // HTTP contract（修复生产 500：Processing result reuse 是合法 bodyless create）：
-    // 不强制 consumes=multipart/form-data——POST 同时支持
-    //   a) multipart 上传（files 字段，首传路径）
-    //   b) bodyless processingJobId reuse（无 body、无 multipart Content-Type）
-    //   c) multipart teamNames reuse（processingJobId + teamNames 字段）
-    // 三者与 service 契约一致（files/processingJobId 均 required=false）。
+    // HTTP contract（Export 已收口为 Dataset-only——只消费已 READY 的
+    // Processing Job result，无 multipart 首传路径）。processingJobId 语义必填：缺失/空 →
+    // 410 REPLAY_LEGACY_DEPRECATED（service 统一裁决，保留 intentional 410 契约）；
+    // mode 默认 aggregate；teamNames 可选（multipart form-field 传递，不拼 URL query）。
+    // client contract == controller contract == service contract（无 files/multipart 死参数）。
     @PostMapping(value = ApiPaths.REPLAY_EXPORT_JOBS)
     public ResponseEntity<Map<String, Object>> create(
-            @RequestParam(name = "files", required = false) final MultipartFile[] files,
             @RequestParam(name = "mode", defaultValue = "aggregate") final String mode,
             @RequestParam(name = "processingJobId", required = false) final String processingJobId,
             @RequestParam(name = "teamNames", required = false) final String teamNames) {
-        final String jobId = service.createJob(files, mode, processingJobId, teamNames);
+        final String jobId = service.createJob(mode, processingJobId, teamNames);
         final ExportJob.Snapshot snap = service.status(jobId);
         return ResponseEntity.accepted().body(Map.of(
                 "jobId", snap.jobId(),

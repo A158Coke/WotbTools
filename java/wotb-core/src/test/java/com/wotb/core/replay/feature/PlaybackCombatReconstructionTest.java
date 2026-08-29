@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PlaybackCombatReconstruction 单测（docs/current-plan.md §12/§13/§15/§42）：
+ * PlaybackCombatReconstruction 单测：
  * 权威 HP loss 推导 + 攻击者 attribution 边界 + 击毁/击杀推导。
  */
 class PlaybackCombatReconstructionTest {

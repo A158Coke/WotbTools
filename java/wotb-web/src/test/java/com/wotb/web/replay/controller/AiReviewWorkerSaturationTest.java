@@ -54,7 +54,7 @@ class AiReviewWorkerSaturationTest {
     @BeforeEach
     void setUp() {
         aiService = mock(AiReplayAnalysisService.class);
-        reviewService = spy(new AiReplayReviewService(aiService));
+        reviewService = spy(new AiReplayReviewService(aiService, null, null, null));
         cancellationRegistry = spy(new AiCancellationRegistry());
     }
 

@@ -68,7 +68,7 @@ class ReplayDamageWindowIntegrationTest {
                 ? battle.recorderResult().accountId : 0L;
         assertTrue(recorderAccount > 0, "录像者账号应解析");
 
-        // PR147 §33: method8 is a hit/result-feedback family (VehicleHitEvent) — it carries attacker/
+        // method8 is a hit/result-feedback family (VehicleHitEvent) — it carries attacker/
         // victim entity ids, never account ids. The hit events are the observed damage-window signal.
         final List<VehicleHitEvent> damages = result.reconstruction().events().stream()
                 .filter(VehicleHitEvent.class::isInstance)
@@ -246,7 +246,7 @@ class ReplayDamageWindowIntegrationTest {
         assertTrue(recorder.resolved());
         final PlayerResult rec = battle.recorderResult();
         assertNotNull(rec);
-        // §P0-5: killer identity derives from canonical terminal evidence (combat.destroyed()); the
+        // killer identity derives from canonical terminal evidence (combat.destroyed()); the
         // former killVictims construction is removed. The recorder survives in this fixture, so there is
         // no "击杀你的是" entry — that would only have been fabricated by stale killVictims data.
 

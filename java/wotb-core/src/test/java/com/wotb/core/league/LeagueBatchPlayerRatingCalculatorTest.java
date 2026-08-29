@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** League Rating V5 Batch Player Evidence Adjustment（计划 §29–§32）。 */
+/** League Rating V5 Batch Player Evidence Adjustment。 */
 class LeagueBatchPlayerRatingCalculatorTest {
 
     /** 期望 E(n)=1-exp(-n/6) 的精确值。 */
@@ -14,7 +14,7 @@ class LeagueBatchPlayerRatingCalculatorTest {
         return 1.0 - Math.exp(-n / LeagueBatchPlayerRatingCalculator.EVIDENCE_TIME_CONSTANT);
     }
 
-    // ---- §29 Evidence 纯函数 ----
+    // ---- Evidence 纯函数 ----
 
     @Test
     void evidenceMatchesClosedFormAcrossTypicalCounts() {
@@ -53,7 +53,7 @@ class LeagueBatchPlayerRatingCalculatorTest {
         assertThrows(IllegalArgumentException.class, () -> LeagueBatchPlayerRatingCalculator.evidence(-3));
     }
 
-    // ---- §30 Anchor boundary ----
+    // ---- Anchor boundary ----
 
     @Test
     void rawAtOrBelowAnchorIsReturnedExactly() {
@@ -77,7 +77,7 @@ class LeagueBatchPlayerRatingCalculatorTest {
                 "超过上限必须 clamp 到 1000");
     }
 
-    // ---- §31 典型产品案例（Raw=900） ----
+    // ---- 典型产品案例（Raw=900） ----
 
     @Test
     void productCasesRaw900() {
@@ -90,7 +90,7 @@ class LeagueBatchPlayerRatingCalculatorTest {
         assertEquals(878, Math.round(LeagueBatchPlayerRatingCalculator.apply(raw, 18)), "Case F n=18 ≈ 878");
     }
 
-    // ---- §32 低分不加分 ----
+    // ---- 低分不加分 ----
 
     @Test
     void lowRawNeverBoosted() {
@@ -98,7 +98,7 @@ class LeagueBatchPlayerRatingCalculatorTest {
         assertEquals(449.0, LeagueBatchPlayerRatingCalculator.apply(449, 25), 1e-12);
     }
 
-    // ---- 数值安全（计划 §45）----
+    // ---- 数值安全----
 
     @Test
     void rejectsNonPositiveCountAndNonFiniteRaw() {

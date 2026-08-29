@@ -20,31 +20,41 @@
 - 同场双方 perspectives 各自独立分析，不得合并
 - Recorder 只用于确定视角，不被 AI 视为分析对象
 
-## 2. 入口和分层
+## 2. 入口和分层（Dataset-only）
 
 ```
-ReconstructionController.analyze()
-  -> AiReplayReviewService.analyze(MultipartFile[], AllowedLanguage)
-    -> validateBatchSize() [1-file guard]
-    -> file validation (extension/empty/size/total)
-    -> DefaultReplayProcessingFacade.process()
-    -> BatchAnalyzer.analyze()
-    -> AiReplayAnalysisService.analyzeTeamGroups(groups, AllowedLanguage)
-      -> buildSingleTeamContext()
-      -> buildPartitions() [complete-link]
-      -> TeamAiPromptBuilder.single()/multi()
-    -> AnalyzeResponse
+Replay selection
+  -> Processing Job (ReplayParseScheduler / full process，multipart 上传仅发生在此一次)
+  -> derived artifacts：
+       ai-facts.json       (ReplayArtifactWriter.writeAiFacts)
+       map-overview.json   (ReplayArtifactWriter.writeMapOverview)
+  -> source READY（r0）
+  -> authoritative Dataset identity = processingJobId + sourceId
+
+AI：
+  ReplayPage Workspace -> AiReviewPanel
+  -> POST /api/replay/analyze   (Content-Type: application/json)
+       { processingJobId, sourceId, lang, correlationId }
+  -> ReconstructionController.analyzeDataset
+  -> AiReplayReviewService.analyzeFacts(processingJobId, sourceIndex, language, listener)
+       -> ReplayProcessingJobStore.acquireForSource(processingJobId)   [Dataset lease]
+       -> ReplayArtifactWriter.readAiFacts(...)
+       -> AiReplayAnalysisService.analyzeTeamGroups / analyzePlayerOrFallback / TacticalReviewHarness
+  -> SSE 流式响应（call1 / evidence / call2 / autopsy 阶段事件 + call2_token 主复盘增量）
 ```
 
-Controller 只负责 HTTP binding + 委托 Service。Service 接管 validate / process / BatchAnalyzer / AI orchestration。
+- 不重新上传 replay、不重新 full-process：AI Review / Battle Playback / Export 全部消费同一 Processing Dataset。
+- multipart `POST /api/replay/analyze` 已废弃为 legacy 410 compatibility shim（`ReplayLegacyEndpoints`），不是业务入口。
 
-## 3. 上传边界
+## 3. 上传边界 / Dataset 边界
 
-- AI Review 单次最多 1 个原始回放文件
-- 原始数量检查早于 getBytes / hash / parsing
-- 空文件和重复文件计入原始数量
-- 单文件 <= 20MB，总请求 <= 200MB
-- `/api/replay/process` 和 `/api/replay/reconstruct-batch` 不受 1 文件限制
+- 用户选择回放 → 创建 Processing Job（multipart 上传在此发生一次；upload/process once → derived artifacts 复用）
+- AI Review 单次分析 1 个 source（`sourceId` 形如 `r0`，对应 Processing Job sources[i]）
+- source 未 READY → `PREPARING_DATASET`（前端禁用 Analyze，显示「正在准备回放数据…」）
+- Dataset 过期（`JOB_NOT_FOUND`）→ 前端可自动恢复一次（exactly-once + generation-owned + authoritative invalidation，保留已有 `resp`）
+- `DATASET_UNAVAILABLE` / `DATASET_REFERENCE_REQUIRED` / `SOURCE_NOT_FOUND` 不是可恢复的过期信号：本地化展示，绝不静默 full-process
+- `SOURCE_NOT_READY` / `SOURCE_PROCESSING_FAILED` 保持稳定语义
+- `/api/replay/analyze`（AI）与 `/api/replay/map-overview`（Playback）走同一 Dataset 引用，绝无 multipart AI/Playback 回退
 
 ## 4. Grouping 与 Partition
 
@@ -198,12 +208,12 @@ content 末尾一次性到达会破坏逐段流式；`SpringAiChatGateway` 另�
 - Team Call #2 输出改为 JSON envelope（`primaryDiagnosis` / `reviewMarkdown` / `claims`，
   由 `TeamReviewEnvelopeParser` 解析）；`done.analysis` 仍为 `reviewMarkdown`（用户看到的
   完整自然语言复盘，主标题 `## 团队复盘`），structured 字段为内部 grounding 契约，不进正文。
-- **claims 机器字段（Review B1-2，三语通用）**：涉及数值/时间/位置/玩家事件的 claim 携带
+- **claims 机器字段（三语通用）**：涉及数值/时间/位置/玩家事件的 claim 携带
   `timeSec`（battle-relative 秒）/ `region`（1-9）/ `count`（车辆数）/ `subject`（玩家昵称或坦克名）/
   `value`（存活变化机器格式如 `7v7 -> 4v6`）/ `claimType` / `side`（FRIENDLY/ENEMY）/
   `countSemantics`（EXACT/AT_LEAST/SUBSET）/ `knowledge`（CURRENT/LAST_KNOWN）；validator 优先按机器字段做语言无关校验，
   正文自然语言（ZH/EN/RU）仅作兜底；`region + count` 为精确语义（exact），at-least/subset 标记放行下界/子集。
-- **Evidence Binding（Review Blocker B1，最终）**：claims 的 `evidenceIds` 必须真正绑定支撑它的证据——
+- **Evidence Binding（最终）**：claims 的 `evidenceIds` 必须真正绑定支撑它的证据——
   claimType→允许证据类型统一映射（DEATH→PLAYER_DESTROYED / ALIVE_TRANSITION→ALIVE_COUNT_TRANSITION·
   FOCUS_WINDOW / POSITION_REGION→POSITION_REGION / ENEMY_POSITION→ENEMY_POSITION_KNOWN），每个引用必须
   存在且属于允许类型（借用无关编号 → BINDING FAIL），且至少一个引用证据完整支撑该 claim（身份/时间/数值/

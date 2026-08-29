@@ -114,7 +114,7 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * Multipart transport 错误码（BLOCKER 5）：框架解析失败发生在 controller 之前，
+     * Multipart transport 错误码：框架解析失败发生在 controller 之前，
      * 正常用户的精确错误由 frontend preflight 提供。这里只按结构化 cause chain 区分：
      * Tomcat 单 part 超限 → {@code FILE_TOO_LARGE}；request 总大小超限 →
      * {@code TOTAL_REQUEST_TOO_LARGE}；无法结构区分（其他容器/未知 cause）→

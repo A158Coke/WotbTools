@@ -9,7 +9,7 @@ import static com.wotb.core.league.LeagueTestBattles.defaultSevenVsSeven;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** League Rating 完整性门槛测试（plan §21.2）。 */
+/** League Rating 完整性门槛测试。 */
 class LeagueRatingValidatorTest {
 
     private static List<String> codes(final Battle battle) {

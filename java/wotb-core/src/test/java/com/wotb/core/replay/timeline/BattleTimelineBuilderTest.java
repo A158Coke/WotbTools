@@ -199,7 +199,7 @@ class BattleTimelineBuilderTest {
 
     @Test
     void enemyKnowledgePartitionIsExclusiveAndDestroyedCountedOnce() {
-        // P0 review 回归：knowledge partition 必须互斥（known+lastKnown+unknown+destroyedKnown == total），
+        // 回归：knowledge partition 必须互斥（known+lastKnown+unknown+destroyedKnown == total），
         // 且一辆敌车阵亡只减少一个 enemyAlive（DESTROYED_KNOWN 不得双重计数）。
         final Battle battle = TimelineTestFixtures.battle(60.0);
         final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
@@ -229,7 +229,7 @@ class BattleTimelineBuilderTest {
 
     @Test
     void nullTimestampEventsAreExcludedNotBucketedIntoFrameZero() {
-        // P1 review：timestamp == null 的事件不得被塞进 frame 0，且计入 invalid 计数
+        // timestamp == null 的事件不得被塞进 frame 0，且计入 invalid 计数
         final Battle battle = TimelineTestFixtures.battle(60.0);
         final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
         events.add(new com.wotb.core.replay.event.DamageEvent(
@@ -294,7 +294,7 @@ class BattleTimelineBuilderTest {
 
     @Test
     void canonicalTimelineExcludesNonCombatantPositionEntity() {
-        // PR #103 最终 review B1：spectator/camera/静态实体（无任何 participant identity）即使拥有
+        // spectator/camera/静态实体（无任何 participant identity）即使拥有
         // 连续 PositionChanged + >5s gap + region teleport + 阵亡事件，也不得进入 tactical
         // FrameVehicle universe（Canonical BattleTimeline 的 ActualCombatantEntitySet 源头过滤）。
         // 否则 BattleDeltaEngine 会把 team=null 的 spectator 当作 enemy（isEnemy = !friendly()），
@@ -336,7 +336,7 @@ class BattleTimelineBuilderTest {
 
     @Test
     void nonCombatantWithUsableBroadRosterIdentityStillExcluded() {
-        // PR #103 最终 review B1：即使 broad roster / ParticipantMapping 给 spectator 提供完整身份
+        // 即使 broad roster / ParticipantMapping 给 spectator 提供完整身份
         // （accountId=9999 / team / nickname / tank-like metadata），只要 account 不在 #301
         // （battle.players），仍必须从 tactical timeline 排除——防止未来 spectator metadata
         // 更完整后重新污染（spectator ≠ combatant，#301 是权威边界）。

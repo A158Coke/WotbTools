@@ -28,7 +28,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * 非 CI 手动探针：真实回放的 HP / DAMAGE 数据链路调查（docs/current-plan.md §37/§38）。
+ * 非 CI 手动探针：真实回放的 HP / DAMAGE 数据链路调查。
  *
  * <p>输出（stdout / surefire report）：</p>
  * <ul>
@@ -145,7 +145,7 @@ class BattlePlaybackHpDamageProbeTest {
             }
         }
 
-        // ---- HP change 交叉分析（§38：derived HP delta vs nearby Type-8 raw）----
+        // ---- HP change 交叉分析（derived HP delta vs nearby Type-8 raw）----
         System.out.println("--- HP change cross-analysis ---");
         if (playback != null) {
             for (final MapOverview.PlaybackVehicle v : playback.vehicles()) {

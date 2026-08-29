@@ -52,7 +52,6 @@ final class ReplaySseWriter {
         final Map<String, Object> data = new LinkedHashMap<>();
         data.put("analysis", response.analysis());
         data.put("preBattleSection", response.preBattleSection());
-        data.put("mapOverview", response.mapOverview());
         send("done", data);
     }
 

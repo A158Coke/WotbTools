@@ -1,5 +1,5 @@
 /**
- * Tier X 专属车型 — 覆盖率门禁（计划 §10）。
+ * Tier X 专属车型 — 覆盖率门禁。
  *
  * 强制契约：
  * - Tankopedia 中所有 Tier X 必须 100% 有 baseModelKey mapping；

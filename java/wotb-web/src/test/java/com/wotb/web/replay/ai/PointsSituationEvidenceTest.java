@@ -221,7 +221,7 @@ class PointsSituationEvidenceTest {
 
     @Test
     void tollUsesHpLossNotRawProtocolValue() {
-        // raw=767、HP loss=377（§12 实测结论）：输出只能使用 377，不得用 raw 补齐
+        // raw=767、HP loss=377（实测结论）：输出只能使用 377，不得用 raw 补齐
         final Battle battle = battle();
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,

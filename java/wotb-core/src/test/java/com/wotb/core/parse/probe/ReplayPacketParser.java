@@ -11,7 +11,7 @@ import java.util.List;
  * <p>PR147 framing 契约（docs/research/replay/packet-stream.md）：包从 header 后严格连续排列；
  * {@code payloadLen == 0} 合法（Type 17）；流以 {@code type == 0xFFFFFFFF} 的 terminator 记录
  * 结束；任何 framing corruption 直接 FAIL（抛 {@link IllegalArgumentException}），
- * 绝不逐 byte 寻找 plausible packet（恢复扫描仅用于 diagnostics/research，见计划 §A1）。</p>
+ * 绝不逐 byte 寻找 plausible packet（恢复扫描仅用于 diagnostics/research）。</p>
  */
 final class ReplayPacketParser {
 

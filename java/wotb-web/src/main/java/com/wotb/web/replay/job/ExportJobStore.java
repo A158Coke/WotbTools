@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
  * {@code @PreDestroy} 关闭调度器（不删数据，留给下次启动清理）。</p>
  *
  * <p>目录 / TTL / 孤儿清理 / 删除逻辑委托共享的 {@link ReplayJobStorage}
- * （plan §3：Export 与 Processing 共用同一存储组件，不复制两套 infrastructure）。</p>
+ * （Export 与 Processing 共用同一存储组件，不复制两套 infrastructure）。</p>
  */
 @Component
 public class ExportJobStore {

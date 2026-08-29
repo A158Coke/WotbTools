@@ -34,7 +34,7 @@
 
 ## AI Review 边界（wotb-web/.../replay/ai + wotb-core/.../replay）
 
-- 单文件策略：`AiReplayBatchPolicy.MAX_FILES = 1`（仅 `/api/replay/analyze`；`/process`、`/reconstruct-batch` 不受限）。
+- 单文件策略：`AiReplayBatchPolicy.MAX_FILES = 1`（仅 AI 复盘；多文件批量端点 `/process`、`/reconstruct-batch` 已 410，批量分析模式 `MULTI_*` 已删除）。
 - 编排归属：`AiReplayAnalysisService` 是**兼容 facade**（无真实编排）；随机战双 Call 在 `TacticalReviewHarness`，团队复盘在 `TeamReplayAnalysisService`，赛前基线 `PreBattleStrategicService`，Team Autopsy `TeamAutopsyService`。
 - transport 唯一生产实现：`SpringAiChatGateway`（Spring AI OpenAI-compatible → api.deepseek.com）；业务只依赖 `AiChatGateway` 接口。Prompt 文本单一来源 `wotb-web/src/main/resources/prompts/{player,prebattle,team}/*.zh.md`（`AiPromptLibrary.zh("player/tactical" 等 key)` 按 `classpath:/prompts/<key>.zh.md` 加载，如 `player/fallback`、`player/single`、`player/tactical`、`prebattle/system`、`prebattle/user-header`、`prebattle/confidence-legend`、`team/single`、`team/autopsy`；md 支持 `{{key}}` 占位包含（`AiPromptLibrary` 加载时递归展开，公共规则块在 `prompts/common/*.zh.md` 复用，循环包含 fail loud）；展开后 md 内 ZH 规则片段与 Java 常量必须逐字一致（`PromptRuleContractTest` 强制），否则 EN/RU `.replace` 锚点静默失效、残留中文规则段）。
 - 超时链：worker 整体 1100s（`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）→ 单次 AI call 315s；SSE `SseEmitter` 1120s 对齐 nginx；改任何一层都要同步 `AiTimeoutChainContractTest` 与 deploy 校验。

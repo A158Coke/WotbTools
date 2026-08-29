@@ -3,7 +3,7 @@
 - **类型**：Team AI Review 因果过度断言（FACT → TACTICAL INFERENCE → RECOMMENDATION 质量不合格）
 - **replay**：`20260817_2021____WildCat__A178_SPHT_1161423218062589123(2).wotbreplay`
   （本地样本，不入库；放置于 `common/data/` 后由 `TeamReviewRealReplayProbeTest` 自动回归）
-- **对应计划**：docs/current-plan.md（AI Review V2.1 — Team Review Quality Gate）
+- **对应计划**：docs/features/team-ai-review.md（AI Review V2.1 — Team Review Quality Gate）
 
 ## 失败类别
 

@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PR #103 review §8：Team display label 生产路径集成测试——
+ * Team display label 生产路径集成测试——
  * Battle roster → {@link TeamRosterResolver}（display labels）→ {@link TeamAiPromptBuilder}
  * （system/user prompt 的 teamDisplayLabel / opponentDisplayLabel）→ {@link PreBattleSectionRenderer}。
  * <p>无 clan：不得出现 {@code 队伍-\d+} / 「对方主要军团」，PreBattle 只显示「我方画像/对方画像」；

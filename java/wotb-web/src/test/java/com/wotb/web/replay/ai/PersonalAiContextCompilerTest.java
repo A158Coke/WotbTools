@@ -64,7 +64,7 @@ class PersonalAiContextCompilerTest {
 
     @Test
     void hpChangesRenderCorrectSideLabels() {
-        // P0 review：己方 HP 变化不得被渲染成“敌方 HP”；
+        // 己方 HP 变化不得被渲染成“敌方 HP”；
         // recorder → 「你」，friendly 队友 → 「队友」，enemy → 「敌方」（side 来自 delta 属性）。
         final com.wotb.core.model.PlayerResult rec = new com.wotb.core.model.PlayerResult();
         rec.accountId = 1001;
@@ -162,7 +162,7 @@ class PersonalAiContextCompilerTest {
 
     @Test
     void episodeSelectionKeepsHeadAndTailForLongBattles() {
-        // P1 review：超长战斗保留首尾 Episode（残局不丢），中间折叠
+        // 超长战斗保留首尾 Episode（残局不丢），中间折叠
         final java.util.List<Integer> selected = PersonalAiContextCompiler.selectedEpisodeIndices(20, 14);
         assertEquals(14, selected.size());
         assertEquals(Integer.valueOf(0), selected.getFirst(), "必须保留首个 Episode");

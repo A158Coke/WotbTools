@@ -33,7 +33,7 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 
 /**
- * AI 复盘 Dataset 路径（BLOCKER 2）控制器契约：SSE 生命周期 + 稳定错误码映射 +
+ * AI 复盘 Dataset 路径控制器契约：SSE 生命周期 + 稳定错误码映射 +
  * 语言透传 + correlation/语言白名单。multipart 上传入口已废弃（410
  * {@code REPLAY_LEGACY_DEPRECATED}，见 ReplayLegacyEndpointContractTest）；
  * AI 链路内部行为（团队/单场分支）由 AiReplayReviewServiceTest 覆盖。

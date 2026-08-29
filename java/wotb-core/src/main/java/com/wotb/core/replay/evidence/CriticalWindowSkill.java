@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 关键决策窗口 Skill（文档 §16）：把其它 Skill 的信号合并成"战局发生明显变化"的时间窗口。
+ * 关键决策窗口 Skill：把其它 Skill 的信号合并成"战局发生明显变化"的时间窗口。
  * <p>只负责找窗口、给确定性优先级；不判断谁背锅、不判断是否犯错。</p>
  */
 public final class CriticalWindowSkill {

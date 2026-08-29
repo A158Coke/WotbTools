@@ -26,8 +26,33 @@ const LOCALIZED_ERROR_CODES = new Set([
   'TOO_MANY_REPLAY_FILES',
   'REPLAY_FILE_COUNT_EXCEEDED',
   'TOTAL_REQUEST_TOO_LARGE',
-  'UNKNOWN_LOCALE'
+  'UNKNOWN_LOCALE',
+  'DATASET_UNAVAILABLE',
+  'DATASET_REFERENCE_REQUIRED',
+  'JOB_NOT_FOUND',
+  'SOURCE_NOT_FOUND',
+  'SOURCE_NOT_READY',
+  'SOURCE_PROCESSING_FAILED'
 ])
+
+/**
+ * Dataset 生命周期可恢复错误码（唯一 = JOB_NOT_FOUND：job/dataset 已过期，可由原 replay File
+ * 重新建立 Processing Job）。其它内部稳定码<b>不得</b>走自动 full-process 恢复：
+ * - {@code DATASET_UNAVAILABLE}：Dataset artifact 存储 / 读取不可用（permission / disk I/O /
+ *   corrupt artifact），重跑 full-process 无法修复；
+ * - {@code DATASET_REFERENCE_REQUIRED}：前端契约违规，不能用重新上传掩盖；
+ * - {@code SOURCE_NOT_FOUND}：source identity / 契约问题，除非能证明是过期 Dataset；
+ * - {@code SOURCE_NOT_READY} / {@code SOURCE_PROCESSING_FAILED}：保持各自稳定语义。
+ * 这些码一律 {@link localizeAiError} 本地化后作为用户可读错误展示，绝不静默 full-process。
+ */
+const RECOVERABLE_DATASET_CODES = new Set([
+  'JOB_NOT_FOUND'
+])
+
+/** 判定某稳定错误码是否属于「数据集可恢复」类别（只有 JOB_NOT_FOUND 可由原 replay File 重建）。 */
+export function isRecoverableDatasetCode(code) {
+  return !!code && RECOVERABLE_DATASET_CODES.has(String(code))
+}
 
 export function localizeAiError(rawCode, status, t) {
   let code = ''
