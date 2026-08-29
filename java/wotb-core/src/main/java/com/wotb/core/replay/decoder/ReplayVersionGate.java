@@ -20,14 +20,14 @@ public final class ReplayVersionGate {
 
     /** PR147 closed numeric semantics (method36/38, Type31/39, AMMO select, TURRET yaw, shot bits): current family only. */
     public static boolean closedSemanticsAllowed(final String clientVersion) {
-        return ReplayProtocolProfile.closedSemanticLevel(clientVersion)
-                == ReplayProtocolProfile.Level.VERIFIED;
+        return ReplayProtocolProfile.levelOf(clientVersion,
+                ReplayProtocolProfile.Capability.METHOD_SEMANTICS) == ReplayProtocolProfile.Level.VERIFIED;
     }
 
     /** Type10 49-byte transform layout: forward-compatible structural (shape-validated). */
     public static boolean type10LayoutAllowed(final String clientVersion) {
-        return ReplayProtocolProfile.structuralLevel(clientVersion)
-                != ReplayProtocolProfile.Level.UNKNOWN;
+        return ReplayProtocolProfile.levelOf(clientVersion,
+                ReplayProtocolProfile.Capability.TYPE10_LAYOUT) != ReplayProtocolProfile.Level.UNKNOWN;
     }
 
     /** Vehicle EntityProperty envelope + prop2/prop3 structural decode: forward-compatible. */
@@ -50,7 +50,8 @@ public final class ReplayVersionGate {
      * 当前版本 EXACT semantic。
      */
     public static boolean methodLayoutAffirmed(final String clientVersion) {
-        return ReplayProtocolProfile.structuralLevel(clientVersion)
+        return ReplayProtocolProfile.levelOf(clientVersion,
+                ReplayProtocolProfile.Capability.ENTITY_METHOD_ENVELOPE)
                 == ReplayProtocolProfile.Level.VERIFIED;
     }
 
@@ -81,7 +82,8 @@ public final class ReplayVersionGate {
      * version if/else). The closed-semantic interpretation stays separate.
      */
     public static boolean damageLayoutAllowed(final String clientVersion) {
-        return ReplayProtocolProfile.structuralLevel(clientVersion)
+        return ReplayProtocolProfile.levelOf(clientVersion,
+                ReplayProtocolProfile.Capability.ENTITY_METHOD_ENVELOPE)
                 == ReplayProtocolProfile.Level.VERIFIED;
     }
 
