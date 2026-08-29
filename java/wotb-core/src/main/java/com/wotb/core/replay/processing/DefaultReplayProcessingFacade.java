@@ -31,8 +31,6 @@ import java.util.Map;
  *   <li>保留上传顺序</li>
  *   <li>根据 options 控制是否执行重建</li>
  *   <li>计算 ReplayIdentity 用于去重</li>
- *   <li>解析 ReplayAnalysisMode</li>
- *   <li>生成 ReplayBatchProcessingResult</li>
  * </ul>
  * </p>
  */
@@ -61,23 +59,6 @@ public class DefaultReplayProcessingFacade {
                     null);
         }
         return processSingle(input, options);
-    }
-
-    public ReplayBatchProcessingResult processBatch(final List<Source> inputs, final ReplayProcessingOptions options) {
-        final List<ReplayProcessingResult> results = new ArrayList<>();
-        for (final Source input : inputs) {
-            try {
-                final ReplayFileValidationResult validation = validateFile(input);
-                if (!validation.valid()) {
-                    results.add(fileValidationFailed(input.name(), validation.errors()));
-                    continue;
-                }
-                results.add(processSingle(input, options));
-            } catch (Exception e) {
-                results.add(failedResult(input.name(), e));
-            }
-        }
-        return assembleBatchResult(inputs.size(), results);
     }
 
     /**
@@ -189,59 +170,6 @@ public class DefaultReplayProcessingFacade {
                 capabilities, null, reconstructionError);
     }
 
-    /**
-     * 由外部逐文件处理后汇总批量结果（用于流式处理减少内存峰值）。
-     *
-     * @param totalInputs 总文件数
-     * @param results     已处理的逐文件结果列表
-     */
-    public ReplayBatchProcessingResult buildBatchResult(
-            final int totalInputs, final List<ReplayProcessingResult> results) {
-        return assembleBatchResult(totalInputs, results);
-    }
-
-    /** 统一汇总入口：mode + duplicates + summary。processBatch 与 buildBatchResult 共享。 */
-    private ReplayBatchProcessingResult assembleBatchResult(
-            final int totalInputs, final List<ReplayProcessingResult> results) {
-        final var partition = ExactReplayDuplicateDetector.partition(results);
-        ReplayAnalysisMode mode;
-        try {
-            mode = new BatchAnalyzer().analyzePartition(partition).mode();
-        } catch (MixedAnalysisScopesException | MixedRandomBattleRecordersException e) {
-            mode = ReplayAnalysisMode.NONE;
-        }
-        final ReplayBatchSummary summary = buildSummary(totalInputs, results, partition.duplicateFileNames());
-        return new ReplayBatchProcessingResult(
-                mode, totalInputs, summary.totalSuccessful(), summary.totalPartial(), summary.totalFailed(),
-                List.copyOf(results), summary);
-    }
-
-    /**
-     * 构建批量摘要统计。
-     */
-    private static ReplayBatchSummary buildSummary(
-            final int totalInputs, final List<ReplayProcessingResult> results, final List<String> duplicateNames) {
-        int success = 0, partial = 0, failed = 0;
-        for (final ReplayProcessingResult r : results) {
-            switch (r.status()) {
-                case SUCCESS -> success++;
-                case PARTIAL_SUCCESS -> partial++;
-                case FAILED -> failed++;
-            }
-        }
-        return new ReplayBatchSummary(
-                totalInputs, success, partial, failed, duplicateNames.size(), List.copyOf(duplicateNames));
-    }
-
-    private static ReplayProcessingResult failedResult(final String fileName, final Exception e) {
-        return new ReplayProcessingResult(
-                fileName, ReplayProcessingStatus.FAILED,
-                null, null, null, null,
-                ReplayProcessingCapabilities.NONE,
-                ReplayProcessingError.of(e),
-                null);
-    }
-
     /** 文件级基础验证：扩展名 + 非空 + 大小限制。 */
     private static ReplayFileValidationResult validateFile(final Source input) {
         final List<ReplayValidationError> errors = new ArrayList<>();
@@ -265,18 +193,6 @@ public class DefaultReplayProcessingFacade {
         }
         if (errors.isEmpty()) return ReplayFileValidationResult.ok();
         return ReplayFileValidationResult.failed(errors);
-    }
-
-    private static ReplayProcessingResult fileValidationFailed(
-            final String fileName, final List<ReplayValidationError> errors) {
-        final String message = errors.isEmpty() ? "Validation failed"
-                : errors.getFirst().code() + ": " + errors.getFirst().message();
-        return new ReplayProcessingResult(
-                fileName, ReplayProcessingStatus.FAILED,
-                null, null, null, null,
-                ReplayProcessingCapabilities.NONE,
-                ReplayProcessingError.of("FILE_VALIDATION_FAILED", message),
-                null);
     }
 
     private static ReplayReconstructionContext buildContext(final Battle battle) {

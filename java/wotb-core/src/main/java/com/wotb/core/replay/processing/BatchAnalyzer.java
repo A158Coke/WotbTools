@@ -52,7 +52,7 @@ public class BatchAnalyzer {
         return analyzePartition(ExactReplayDuplicateDetector.partition(results));
     }
 
-    /** 直接使用已计算的 partition（package-private 供 Facade 共享）。 */
+    /** 直接使用已计算的 partition（{@link #analyze} 的内部实现；同包测试可复用）。 */
     AnalysisPlan analyzePartition(
             final ExactReplayDuplicateDetector.ExactDuplicatePartition partition
     ) {
@@ -273,18 +273,15 @@ public class BatchAnalyzer {
         return isAiAnalyzable(result, scoped != null ? scoped.scope() : null);
     }
 
+    /**
+     * 单文件 AI 复盘下有效可分析单元数最多为 1，因此只会返回 NONE 或 SINGLE_*。
+     * 入参仍是列表（通用分组），防御性保留：多于 1 个可分析单元时按所属 scope 返回
+     * SINGLE_*（MULTI_* 已随 legacy 批量端点删除，不再产生）。
+     */
     private static ReplayAnalysisMode resolveMode(final ReplayAnalysisScope scope, final int analyzableCount) {
         if (analyzableCount <= 0) return ReplayAnalysisMode.NONE;
-        if (scope == ReplayAnalysisScope.PLAYER_FOCUSED) {
-            return analyzableCount == 1
-                    ? ReplayAnalysisMode.SINGLE_PLAYER_BATTLE
-                    : ReplayAnalysisMode.MULTI_PLAYER_BATTLE;
-        }
-        if (scope == ReplayAnalysisScope.TEAM_PERSPECTIVE) {
-            return analyzableCount == 1
-                    ? ReplayAnalysisMode.SINGLE_TEAM_BATTLE
-                    : ReplayAnalysisMode.MULTI_TEAM_BATTLE;
-        }
+        if (scope == ReplayAnalysisScope.PLAYER_FOCUSED) return ReplayAnalysisMode.SINGLE_PLAYER_BATTLE;
+        if (scope == ReplayAnalysisScope.TEAM_PERSPECTIVE) return ReplayAnalysisMode.SINGLE_TEAM_BATTLE;
         return ReplayAnalysisMode.NONE;
     }
 

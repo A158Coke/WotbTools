@@ -529,7 +529,10 @@ class BatchAnalyzerTest {
                 .map(group -> group.key().perspectiveTeam())
                 .sorted()
                 .toList());
-        assertEquals(ReplayAnalysisMode.MULTI_TEAM_BATTLE, plan.mode());
+        // 分组独立性是不变式：对立视角各自成为独立 group（不合并为同一团队视角）。
+        // MULTI_* 模式已随 legacy 批量端点删除——单文件 AI 复盘无多视角批量场景，
+        // 此防御性多结果入参下 mode 取 SINGLE_TEAM_BATTLE。
+        assertEquals(ReplayAnalysisMode.SINGLE_TEAM_BATTLE, plan.mode());
     }
 
     @Test

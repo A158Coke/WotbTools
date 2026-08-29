@@ -397,7 +397,7 @@ class TeamFactualConsistencyValidatorTest {
                 "machine value 7v7 -> 4v6 必须 PASS");
     }
 
-    // ---- B2-2：V4 精确语义（exact == actual；at-least/subset ≤ actual） ----
+    // ---- V4 精确语义（exact == actual；at-least/subset ≤ actual） ----
 
     @Test
     void v4ExactOverCountFails() {
@@ -410,7 +410,7 @@ class TeamFactualConsistencyValidatorTest {
 
     @Test
     void v4ExactUnderCountFails() {
-        // B2-2：EXACT 语义下少报（3 != 5）同样是事实不一致
+        // EXACT 语义下少报（3 != 5）同样是事实不一致
         final TeamReviewEnvelope env = envWith(machineClaimFull(
                 "3 vehicles in region 6", "POSITION_REGION", 112.0, 6, 3, null, null,
                 "FRIENDLY", "EXACT", null, "E106"));
