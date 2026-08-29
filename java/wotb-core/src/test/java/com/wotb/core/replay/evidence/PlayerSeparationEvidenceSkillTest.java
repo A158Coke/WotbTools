@@ -1,9 +1,9 @@
 package com.wotb.core.replay.evidence;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.DeathTimeSource;
-import com.wotb.core.replay.processing.RecorderEntityMapping;
+import com.wotb.core.model.PlayerResult;
+import com.wotb.core.parse.ReplayStreamHeader;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
@@ -11,10 +11,10 @@ import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.EngagementSummary;
-import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.reconstruction.BattleLifecycle;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
@@ -23,10 +23,9 @@ import com.wotb.core.replay.reconstruction.ObservationState;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.reconstruction.VehicleState;
 import com.wotb.core.replay.reconstruction.Vector3;
+import com.wotb.core.replay.reconstruction.VehicleState;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
-import com.wotb.core.parse.ReplayStreamHeader;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;

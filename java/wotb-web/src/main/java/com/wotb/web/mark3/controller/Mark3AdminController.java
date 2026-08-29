@@ -1,7 +1,6 @@
 package com.wotb.web.mark3.controller;
 
 import com.wotb.web.config.ApiPaths;
-import com.wotb.web.replayfile.ReplayDownload;
 import com.wotb.web.mark3.dto.Mark3AdminDetailDto;
 import com.wotb.web.mark3.dto.Mark3AdminPageDto;
 import com.wotb.web.mark3.dto.Mark3DeleteRequest;
@@ -10,6 +9,7 @@ import com.wotb.web.mark3.dto.Mark3ReplayEvidenceDto;
 import com.wotb.web.mark3.dto.Mark3SubmissionSummaryDto;
 import com.wotb.web.mark3.service.Mark3ReplayEvidenceService;
 import com.wotb.web.mark3.service.Mark3SubmissionService;
+import com.wotb.web.replayfile.ReplayDownload;
 import com.wotb.web.util.JwtUtil;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;

@@ -3,7 +3,6 @@ package com.wotb.core.league;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.Source;
 import com.wotb.core.parse.ReplayParser;
-import com.wotb.core.parse.Replays;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -11,7 +10,6 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 

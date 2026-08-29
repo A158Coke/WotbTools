@@ -1,8 +1,8 @@
 package com.wotb.core.export;
 
+import com.wotb.core.Columns;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.Columns;
 import com.wotb.core.ref.MapNames;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.Players;
@@ -17,7 +17,6 @@ import org.apache.poi.ss.util.CellRangeAddress;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.TreeSet;
-import java.util.function.Function;
 
 /** 单场工作簿的三张表: 战斗信息 / 玩家数据 / 原始字段。 */
 final class SingleBattleSheets {

@@ -2,9 +2,8 @@ package com.wotb.core.replay.evidence;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.FriendlyEnemyResult;
-import com.wotb.core.replay.processing.PlayerSideResolver;
 import com.wotb.core.replay.feature.MapRegionResolver;
+import com.wotb.core.replay.processing.PlayerSideResolver;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;

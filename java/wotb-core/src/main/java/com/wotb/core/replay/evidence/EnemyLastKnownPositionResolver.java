@@ -2,10 +2,10 @@ package com.wotb.core.replay.evidence;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.PlayerSideResolver;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.MapRegionResolver;
+import com.wotb.core.replay.processing.PlayerSideResolver;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ObservationState;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;

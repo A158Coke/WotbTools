@@ -1,6 +1,5 @@
 package com.wotb.web.replay;
 
-import com.wotb.web.replay.ai.MapOverviewBuilder;
 import com.wotb.web.replay.dto.MapOverview;
 import com.wotb.web.replay.job.ReplayArtifactWriter;
 import com.wotb.web.replay.job.ReplayProcessingJob;
@@ -9,8 +8,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
-
-import java.io.IOException;
 
 /**
  * 地图鸟瞰查询服务（V2 收口，BLOCKER 2）：只读 Processing Job 的 cached

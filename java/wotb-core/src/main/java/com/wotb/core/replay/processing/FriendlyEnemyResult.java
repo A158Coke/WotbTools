@@ -1,7 +1,6 @@
 package com.wotb.core.replay.processing;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
 
 /**
  * Converts winner team into FRIENDLY_WIN / ENEMY_WIN / DRAW_OR_UNKNOWN

@@ -1,5 +1,8 @@
 package com.wotb.web.replay.ai;
 
+import com.wotb.core.replay.feature.DefaultTeamBattleFeatureExtractor;
+import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
+import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.processing.BattleCategory;
 import com.wotb.core.replay.processing.BattleCategoryUtils;
 import com.wotb.core.replay.processing.PerspectiveTeamNotResolvedException;
@@ -7,9 +10,6 @@ import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.processing.TeamPerspectiveResolution;
 import com.wotb.core.replay.processing.TeamPerspectiveResolver;
-import com.wotb.core.replay.feature.DefaultTeamBattleFeatureExtractor;
-import com.wotb.core.replay.feature.TeamBattleFeatureSet;
-import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 
 /**
  * 团队分析上下文构建器：single TeamBattleAnalysisContext 组装与未解析视角错误码。

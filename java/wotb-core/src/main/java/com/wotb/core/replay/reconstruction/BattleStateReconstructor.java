@@ -1,7 +1,5 @@
 package com.wotb.core.replay.reconstruction;
 
-import com.wotb.core.replay.event.ReplayStreamClosedEvent;
-import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.EntityCreatedEvent;
@@ -12,9 +10,11 @@ import com.wotb.core.replay.event.MaterializationEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.RecorderHealthChangedEvent;
-import com.wotb.core.replay.event.VehicleHitEvent;
 import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.ReplayStreamClosedEvent;
+import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.event.VehicleHealthStateEvent;
+import com.wotb.core.replay.event.VehicleHitEvent;
 
 import java.util.ArrayList;
 import java.util.List;

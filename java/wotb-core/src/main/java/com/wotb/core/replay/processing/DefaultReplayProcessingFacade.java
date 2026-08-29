@@ -5,13 +5,13 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
 import com.wotb.core.parse.ParsedReplay;
 import com.wotb.core.parse.ReplayParser;
-import com.wotb.core.util.PlayerResultFormat;
-import com.wotb.core.replay.evidence.ObservedMaxHp;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
+import com.wotb.core.replay.evidence.ObservedMaxHp;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionContext;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
+import com.wotb.core.util.PlayerResultFormat;
 import org.springframework.util.StringUtils;
 
 import java.security.MessageDigest;

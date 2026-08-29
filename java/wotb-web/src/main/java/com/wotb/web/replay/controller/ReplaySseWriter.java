@@ -1,11 +1,11 @@
 package com.wotb.web.replay.controller;
 
+import com.wotb.web.replay.dto.AnalyzeResponse;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
-
-import com.wotb.web.replay.dto.AnalyzeResponse;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * 把 {@link com.wotb.web.replay.ai.AiReviewStreamListener} 阶段/事件翻译成

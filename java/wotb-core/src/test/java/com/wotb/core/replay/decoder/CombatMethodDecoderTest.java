@@ -5,7 +5,6 @@ import com.wotb.core.replay.event.AmmunitionStateEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ProjectileLaunchedEvent;
 import com.wotb.core.replay.event.ProjectileTerminalEvent;
-import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ShotResultEvent;
 import com.wotb.core.replay.event.TargetingInfoSnapshotEvent;
 import com.wotb.core.replay.event.VehicleFiredEvent;
