@@ -22,7 +22,6 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.webkit.WebMessageCompat
-import androidx.webkit.WebMessageListener
 import androidx.webkit.WebViewCompat
 import java.io.File
 import java.util.concurrent.ExecutorService
@@ -128,13 +127,13 @@ class MainActivity : Activity() {
             webView,
             BRIDGE_NAME,
             BRIDGE_ORIGINS,
-            object : WebMessageListener {
+            object : WebViewCompat.WebMessageListener {
                 override fun onPostMessage(
                     view: WebView,
                     message: WebMessageCompat,
                     sourceOrigin: Uri,
                     isMainFrame: Boolean,
-                    replyProxy: WebMessageListener.ReplyProxy
+                    replyProxy: WebViewCompat.WebMessageListener.ReplyProxy
                 ) {
                     val data = message.data ?: return
                     replyProxy.postMessage(WebMessageCompat(nativeBridge.handleMessage(data)))

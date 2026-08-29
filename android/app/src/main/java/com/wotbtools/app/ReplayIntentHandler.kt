@@ -28,7 +28,7 @@ object ReplayIntentHandler {
 
     fun fromIntent(context: Context, intent: Intent?): PendingReplay? {
         if (intent == null) return null
-        val uri: Uri? = when (intent.action) {
+        val uri: Uri = when (intent.action) {
             Intent.ACTION_SEND -> {
                 @Suppress("DEPRECATION")
                 if (Build.VERSION.SDK_INT >= 33) {
