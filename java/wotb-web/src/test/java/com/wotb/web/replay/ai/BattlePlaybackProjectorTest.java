@@ -93,6 +93,11 @@ class BattlePlaybackProjectorTest {
             assertTrue(v.accountId() > 0);
             assertFalse(v.positionSegments().isEmpty(), "vehicle must have observed position segments");
         }
+        // canonical battle-level events：真实权造成 DAMAGE / DESTROYED / POSITION 事件
+        assertTrue(ds.events() != null && !ds.events().isEmpty(),
+                "V2 dataset must carry canonical battle-level events (damage/destroyed/position)");
+        assertTrue(ds.events().stream().anyMatch(e -> "DAMAGE".equals(e.type())),
+                "real fixture must yield at least one DAMAGE event");
     }
 
     @Test
