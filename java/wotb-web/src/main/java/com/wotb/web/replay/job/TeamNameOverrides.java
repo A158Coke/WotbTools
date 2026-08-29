@@ -3,7 +3,7 @@ package com.wotb.web.replay.job;
 import java.util.Map;
 
 /**
- * League 战队名称覆盖快照（Export Job 创建时从请求复制，不可变；plan §12 / PR #123 Blocker 1）。
+ * League 战队名称覆盖快照（Export Job 创建时从请求复制，不可变）。
  *
  * <p>两种独立 identity（PR #123 Blocker 2，禁止混用一个扁平 Map）：</p>
  * <ul>

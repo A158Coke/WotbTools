@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-/** 批次选手/战队中位数汇总（plan §17）。 */
+/** 批次选手/战队中位数汇总。 */
 class LeagueRatingBatchAggregatorTest {
 
     private static LeagueRatingResult rated(final int winner, final int offset) {

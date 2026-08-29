@@ -301,7 +301,7 @@ class SpringAiChatGatewayTest {
         verify(chatModel, times(2)).call(any(Prompt.class));
     }
 
-    /** PR #106 review（非 blocker A/B）：transport retry 用无歧义 retryNumber；completed 不记录伪 providerStatus。 */
+    /** （非 blocker A/B）：transport retry 用无歧义 retryNumber；completed 不记录伪 providerStatus。 */
     @Test
     void transportRetryLogUsesRetryNumberAndCompletedOmitsFakeProviderStatus() {
         when(chatModel.call(any(Prompt.class)))

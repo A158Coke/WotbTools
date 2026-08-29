@@ -40,7 +40,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** Replay Processing Job 编排回归（plan §57–§62）：lifecycle / progress / 顺序 / 取消 / exactly-once / 复用 / TTL。 */
+/** Replay Processing Job 编排回归：lifecycle / progress / 顺序 / 取消 / exactly-once / 复用 / TTL。 */
 class ReplayProcessingJobServiceTest {
 
     private Path tmpDir;
@@ -81,7 +81,7 @@ class ReplayProcessingJobServiceTest {
         assertEquals(0, snap.failures());
 
         final ProcessedDataset ds = store.get(jobId).result();
-        assertNotNull(ds, "READY 后必须持有 ProcessedDataset（plan §22）");
+        assertNotNull(ds, "READY 后必须持有 ProcessedDataset");
         assertEquals(1, ds.validCount());
         assertEquals("battle-a.wotbreplay", ds.battleSourceNames().getFirst());
     }
@@ -112,7 +112,7 @@ class ReplayProcessingJobServiceTest {
         final ReplayProcessingJob.Snapshot snap = awaitTerminal(jobId, 10_000);
         assertEquals(ReplayProcessingJob.Status.READY, snap.status());
         assertEquals(2, snap.total());
-        assertEquals(2, snap.processed(), "重复文件也推进 processed（plan §10）");
+        assertEquals(2, snap.processed(), "重复文件也推进 processed");
         assertEquals(1, snap.valid());
         assertEquals(1, snap.duplicates());
         assertEquals(0, snap.failures());
@@ -131,9 +131,9 @@ class ReplayProcessingJobServiceTest {
                 file("one.wotbreplay"), file("bad.wotbreplay"), file("three.wotbreplay")});
 
         final ReplayProcessingJob.Snapshot snap = awaitTerminal(jobId, 10_000);
-        assertEquals(ReplayProcessingJob.Status.READY, snap.status(), "存在有效 replay 时整体 READY（plan §38）");
+        assertEquals(ReplayProcessingJob.Status.READY, snap.status(), "存在有效 replay 时整体 READY");
         assertEquals(3, snap.total());
-        assertEquals(3, snap.processed(), "processed 必须最终 == total（即使存在失败，plan §10）");
+        assertEquals(3, snap.processed(), "processed 必须最终 == total（即使存在失败）");
         assertEquals(1, snap.valid());
         assertEquals(1, snap.duplicates());
         assertEquals(1, snap.failures());
@@ -199,7 +199,7 @@ class ReplayProcessingJobServiceTest {
         assertEquals(ReplayProcessingJob.Status.READY, snap.status(),
                 "全部 League replay 成功解析时 Job 必须 READY（P0 Blocker，禁止 NO_VALID_REPLAYS）");
         assertEquals(3, snap.valid(), "valid = 成功解析并可进入 Preview 的 replay 数");
-        assertEquals(0, snap.failures(), "Rating 不合格不得计入解析失败（plan §18）");
+        assertEquals(0, snap.failures(), "Rating 不合格不得计入解析失败");
 
         final ProcessedDataset ds = store.get(jobId).result();
         assertEquals(3, ds.battles().size(), "全部 Battle 必须保留在 dataset");
@@ -237,7 +237,7 @@ class ReplayProcessingJobServiceTest {
 
     @Test
     void mixedLeagueAndStandardJobReadyKeepsAllBattles() throws Exception {
-        // plan §21/Case I：混合批次 Processing Job 必须 READY（禁止 mixed 污染 Processing Job）；
+        // 混合批次 Processing Job 必须 READY（禁止 mixed 污染 Processing Job）；
         // League Rating 不聚合，battles 按普通回放语义成功返回，dataset 携带 leagueUnavailableCode。
         when(facade.process(any(), eq(ReplayProcessingOptions.full()))).thenAnswer(inv -> {
             final Source s = inv.getArgument(0);
@@ -272,7 +272,7 @@ class ReplayProcessingJobServiceTest {
 
         final ReplayProcessingJob.Snapshot snap = awaitTerminal(jobId, 10_000);
         assertEquals(ReplayProcessingJob.Status.FAILED, snap.status());
-        assertEquals("NO_VALID_REPLAYS", snap.errorCode(), "0 场有效必须 FAILED + 稳定错误码（plan §39）");
+        assertEquals("NO_VALID_REPLAYS", snap.errorCode(), "0 场有效必须 FAILED + 稳定错误码");
         assertEquals(1, snap.failures());
     }
 
@@ -295,7 +295,7 @@ class ReplayProcessingJobServiceTest {
         assertEquals(ReplayProcessingJob.Status.CANCELLED, snap.status(), "协作取消后 worker 应终态 CANCELLED");
     }
 
-    // ---- plan §36：QUEUED 取消必须真正释放 scheduler pending 容量 ----
+    // ---- QUEUED 取消必须真正释放 scheduler pending 容量 ----
 
     @Test
     void cancelledQueuedJobFreesSchedulerCapacity() throws Exception {
@@ -368,7 +368,7 @@ class ReplayProcessingJobServiceTest {
                 "被取消的 queued job 不得执行任何 replay processing");
     }
 
-    // ---- BLOCKER 1：PROCESSING 取消竞态（completion 记账后、pump 派发前 cancel）----
+    // ---- PROCESSING 取消竞态（completion 记账后、pump 派发前 cancel）----
 
     @Test
     void processCancelRaceWithNoCompletionPendingTerminatesCancelled() throws Exception {
@@ -415,7 +415,7 @@ class ReplayProcessingJobServiceTest {
         assertTrue(parseScheduler.registeredJobs().isEmpty(), "取消后 scheduler 不得残留 job 注册");
     }
 
-    // ---- plan §59/§84：34 replay 并行处理，结果顺序必须恢复上传顺序 ----
+    // ---- 34 replay 并行处理，结果顺序必须恢复上传顺序 ----
 
     @Test
     void thirtyFourReplaysKeepResultOrderWithParallelProcessing() throws Exception {
@@ -439,7 +439,7 @@ class ReplayProcessingJobServiceTest {
         assertEquals(34, snap.valid());
         assertEquals(34, processedOrder.size(), "全部 34 个 source 都必须执行");
 
-        // V2 并行：完成顺序允许乱序（plan §84），但最终业务顺序必须恢复上传顺序
+        // V2 并行：完成顺序允许乱序，但最终业务顺序必须恢复上传顺序
         final ProcessedDataset ds = store.get(jobId).result();
         assertEquals(expected, ds.battleSourceNames());
         assertEquals(expected, snap.sources().stream()
@@ -447,7 +447,7 @@ class ReplayProcessingJobServiceTest {
                 "per-source 顺序必须保持上传顺序（不随并行完成顺序变化）");
     }
 
-    // ---- plan §29/§31：真实 parse 进度（parseCompleted/parseSucceeded/parseFailed）与 FINALIZING_BATCH ----
+    // ---- 真实 parse 进度（parseCompleted/parseSucceeded/parseFailed）与 FINALIZING_BATCH ----
 
     @Test
     void parseProgressAndFinalizingPhaseAreExposed() throws Exception {
@@ -505,7 +505,7 @@ class ReplayProcessingJobServiceTest {
         assertEquals(3, snap.valid());
     }
 
-    // ---- BLOCKER 2：parse 进度单一原子状态权威（一致三元组 + 单调 + 中间态轮询）----
+    // ---- parse 进度单一原子状态权威（一致三元组 + 单调 + 中间态轮询）----
 
     @Test
     void twoWorkersCompletingSuccessAndSuccessKeepConsistentParseSnapshot() throws Exception {
@@ -571,7 +571,7 @@ class ReplayProcessingJobServiceTest {
         assertEquals(1, snap.failures());
     }
 
-    // ---- BLOCKER 3：任何已注册 source 失败都必须产生 authoritative failed ParsedEntry ----
+    // ---- 任何已注册 source 失败都必须产生 authoritative failed ParsedEntry ----
 
     @Test
     void inputStorageReadFailureProducesFailedParsedEntryAndConsistentDataset() throws Exception {
@@ -694,7 +694,7 @@ class ReplayProcessingJobServiceTest {
                 && f[1].contains("REPLAY_PROCESSING_FAILED")));
     }
 
-    // ---- plan §9/§42：sourceId/sourceIndex/per-source 状态与 activeSources[] ----
+    // ---- sourceId/sourceIndex/per-source 状态与 activeSources[] ----
 
     @Test
     void sourceLevelStatesExposeSourceIdOrderAndActiveSources() throws Exception {
@@ -736,7 +736,7 @@ class ReplayProcessingJobServiceTest {
         assertEquals(ReplayProcessingJob.SourceStatus.READY, done.sources().get(1).status());
     }
 
-    // ---- plan §21/§22/§23：READY 前写 derived artifacts（MapOverview unavailable ≠ parse failure）----
+    // ---- READY 前写 derived artifacts（MapOverview unavailable ≠ parse failure）----
 
     @Test
     void readyJobWritesDerivedArtifactsAndSkipsUnavailableMapOverview() throws Exception {
@@ -758,7 +758,7 @@ class ReplayProcessingJobServiceTest {
         assertEquals("arena-a.wotbreplay", facts.battle().arenaId);
     }
 
-    // ---- plan §40–§43：prioritySourceIndex 目标 source 优先调度（不突破并发=2）----
+    // ---- prioritySourceIndex 目标 source 优先调度（不突破并发=2）----
 
     @Test
     void prioritySourceIndexSchedulesTargetFirst() throws Exception {
@@ -776,7 +776,7 @@ class ReplayProcessingJobServiceTest {
                 file("r0.wotbreplay"), file("r1.wotbreplay"), file("r2.wotbreplay")}, 1);
 
         awaitTerminal(jobId, 10_000);
-        assertEquals("r1.wotbreplay", order.getFirst(), "priority source 必须先执行（plan §41）");
+        assertEquals("r1.wotbreplay", order.getFirst(), "priority source 必须先执行");
         assertEquals(3, order.size());
         assertEquals(List.of("r0.wotbreplay", "r1.wotbreplay", "r2.wotbreplay"),
                 service.status(jobId).sources().stream()
@@ -784,7 +784,7 @@ class ReplayProcessingJobServiceTest {
                 "业务顺序仍保持上传顺序");
     }
 
-    // ---- plan §57：exactly once processing（Preview/result/Export 不得二次 processFull）----
+    // ---- exactly once processing（Preview/result/Export 不得二次 processFull）----
 
     @Test
     void processingExecutesEachReplayExactlyOnceAndResultDoesNotReprocess() throws Exception {
@@ -797,10 +797,10 @@ class ReplayProcessingJobServiceTest {
         final String jobId = service.createJob(files);
         final ReplayProcessingJob.Snapshot snap = awaitTerminal(jobId, 30_000);
         assertEquals(ReplayProcessingJob.Status.READY, snap.status());
-        // exactly once：Processing Job 本身恰好 processFull ×N（plan §56）
+        // exactly once：Processing Job 本身恰好 processFull ×N
         verify(facade, times(n)).process(any(), eq(ReplayProcessingOptions.full()));
 
-        // GET result 不重新解析：再次读取后调用数仍 == N（plan §21/§61）
+        // GET result 不重新解析：再次读取后调用数仍 == N
         final PreviewResponse preview = service.result(jobId);
         assertEquals(n, preview.battles().size());
         assertEquals(0, preview.duplicates().size());
@@ -847,14 +847,14 @@ class ReplayProcessingJobServiceTest {
 
         final ReplayProcessingJob.Snapshot snap = service.status(jobId);
         assertEquals(ReplayProcessingJob.Status.PROCESSING, snap.status());
-        assertEquals("block.wotbreplay", snap.currentFile(), "PROCESSING 期间应显示当前处理文件（plan §12）");
+        assertEquals("block.wotbreplay", snap.currentFile(), "PROCESSING 期间应显示当前处理文件");
 
         service.cancel(jobId);
         release.countDown();
         awaitTerminal(jobId, 10_000);
     }
 
-    // ---- plan §62：TTL cleanup 不得误删被活跃 Export 引用的 result ----
+    // ---- TTL cleanup 不得误删被活跃 Export 引用的 result ----
 
     @Test
     void ttlCleanupSkipsAcquiredResultAndRemovesReleased() throws Exception {
@@ -863,7 +863,7 @@ class ReplayProcessingJobServiceTest {
         final ReplayProcessingJob.Snapshot snap = awaitTerminal(jobId, 10_000);
         assertEquals(ReplayProcessingJob.Status.READY, snap.status());
 
-        // Export 引用该 result（plan §52）：即使过期也不得清理
+        // Export 引用该 result：即使过期也不得清理
         final ReplayProcessingJob acquired = store.acquireForExport(jobId);
         assertNotNull(acquired, "READY job 应可被 Export acquire");
         ageJob(store.get(jobId), 61 * 60 * 1000L);
@@ -996,7 +996,7 @@ class ReplayProcessingJobServiceTest {
         throw new AssertionError("job did not reach " + status + " within " + timeoutMs + " ms");
     }
 
-    /** 轮询直到终态，每个中间 snapshot 都校验 parse 一致三元组 + 单调性（BLOCKER 2）。 */
+    /** 轮询直到终态，每个中间 snapshot 都校验 parse 一致三元组 + 单调性。 */
     private ReplayProcessingJob.Snapshot awaitParseInvariants(final String jobId, final long timeoutMs)
             throws InterruptedException {
         final long deadline = System.currentTimeMillis() + timeoutMs;

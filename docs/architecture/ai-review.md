@@ -227,7 +227,7 @@ Draft → validate → PASS → 流式输出
   最终 fail-safe）/ `STRUCTURED_METADATA`（evidence binding 类型/时间细节、coverage 缺失、
   非关键 machine 字段——正文事实正确时不阻塞输出）/ `FORMAT`（可 deterministic normalize 的
   格式问题——由 parser 容错处理）。生产已证明旧行为「任何 structured 小错误都 3 次 140k prompt
-  全量重写后 502」导致 AI Review 连续不可用，本轮修复后 metadata-only 冲突 0 次额外 LLM 调用。
+  全量重写后 502」导致 AI Review 连续不可用，修复后 metadata-only 冲突 0 次额外 LLM 调用。
 - Backend 绝不代改句子；校验通过后才把 reviewMarkdown 转给前端（不暴露待改写草稿）。
 - 上限：`TeamReplayAnalysisService.MAX_VALIDATION_ATTEMPTS = 3`（draft + 2 次 rewrite，仅 HARD 冲突）。
 - **authoritative response source（Review B1-1）**：`callRaw()` 以 `AiChatResponse.completionText()`
@@ -274,7 +274,7 @@ AI 复盘区分两种 scope，互不混用：
 - **battle phases**：通过 `BATTLE_PHASES` 输出 start/end time 和 phase type。
 - **uniqueBattleCount**：multi-perspective 中区分 perspective count 和 unique battle count，同一场战斗的 opposing perspective 只算一个 battle。
 - **MemberIdentity**：accountId > 0 时优先使用 accountId；accountId ≤ 0 时使用规范化 nickname（trim、Locale.ROOT、case-insensitive）。用于 engagement 匹配、cluster 成员标识和 key events 的全链路 identity。
-- **prompt 禁止 raw team**：AI prompt 中不出现 `perspectiveTeam=1/2`、`winnerTeam=1/2`、`Team 1/2`、`队伍1/2`。使用 `teamDisplayLabel=` / `opponentDisplayLabel=`（PR #103 review BLOCKER A：唯一 dominant 且严格多数（>一半）的 clan tag；无可靠 clan 时为 `(none)`，正文称「我方/对方」；`队伍-XXXX` 只存在于 core 的 internal `resolveStableKey`，禁止进入 Prompt/UI/渲染）、`result=TEAM_WIN/TEAM_LOSS/DRAW_OR_UNKNOWN`。BATTLE_END key event 同样使用 `result=` 三态。
+- **prompt 禁止 raw team**：AI prompt 中不出现 `perspectiveTeam=1/2`、`winnerTeam=1/2`、`Team 1/2`、`队伍1/2`。使用 `teamDisplayLabel=` / `opponentDisplayLabel=`（唯一 dominant 且严格多数（>一半）的 clan tag；无可靠 clan 时为 `(none)`，正文称「我方/对方」；`队伍-XXXX` 只存在于 core 的 internal `resolveStableKey`，禁止进入 Prompt/UI/渲染）、`result=TEAM_WIN/TEAM_LOSS/DRAW_OR_UNKNOWN`。BATTLE_END key event 同样使用 `result=` 三态。
 - **secret redaction**：AI provider 错误摘要优先使用 Jackson tree JSON 递归隐藏敏感 key。`isSensitiveKey()` 归一化匹配覆盖 x-api-key、AWS Access Key、大小写/连字符/下划线变体。文本回退脱敏 `redactNonJson()` 采用分层正则策略：(1) `Authorization:` 前缀行整个隐藏；(2) JSON key-value 已知敏感 key 脱敏；(3) 无引号 key=value 脱敏；(4) AWS Signature/Credential 脱敏；(5) 已知 auth scheme（bearer/basic/digest）大小写不敏感，credential 任意长度，始终脱敏；(6) PascalCase custom scheme（如 `CustomScheme`、`TokenV2`）credential ≥ 3 脱敏；(7) 含数字的 scheme（如 `tokenv2`、`auth2`）credential ≥ 3 脱敏；(8) 小写 custom scheme 仅 credential 含非字母字符（数字或标点）时脱敏，避免自然语言误判。Digest auth 参数（response/nonce/opaque 等）独立脱敏。
 - **battle start resolution**：`BattleStartResolver.resolve(reconstructionBattleStart, diagnostics)` 返回 `BattleStartResolution`（IDENTIFIED / ESTIMATED / UNRESOLVED）。仅通过静态 factories 构造。准备阶段静止不进入 STATIONARY；formation/first contact/engagement/key events 使用 `battleRelative(rawClock)`。`PRE_BATTLE_START_ESTIMATED`/`PRE_BATTLE_START_UNRESOLVED` limitation 传播。
 

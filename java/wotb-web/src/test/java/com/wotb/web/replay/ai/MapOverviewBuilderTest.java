@@ -270,7 +270,7 @@ class MapOverviewBuilderTest {
         assertTrue(point.containsKey("timeSec"));
         assertTrue(point.containsKey("x"));
         assertTrue(point.containsKey("y"));
-        // AI done 载荷已无 mapOverview（BLOCKER 2）：地图由 canonical map-overview.json artifact 承载。
+        // AI done 载荷已无 mapOverview：地图由 canonical map-overview.json artifact 承载。
     }
 
     private static PlayerResult player(final long account, final String nick,

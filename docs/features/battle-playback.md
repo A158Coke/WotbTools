@@ -12,8 +12,8 @@
 前端 `MapOverview.vue` 纯 SVG 渲染（热力 + 路线 + 战局回放三视图）。
 - **不重新上传 replay、不单独 full-process**：AI Review / Battle Playback / Export 共用同一 Processing Dataset。
 - 地图不可构建（未知地图/无语义网格/无名册/无观测/视角未解析）→ `mapOverview = null` → 204。
-- `JOB_NOT_FOUND`（Dataset TTL / artifact 过期）→ 触发前端 Dataset recovery（exactly-once + generation-owned + authoritative invalidation）。
-- `SOURCE_NOT_READY` / `SOURCE_PROCESSING_FAILED` / `DATASET_UNAVAILABLE` → 稳定错误码，经 i18n 本地化，不裸展示。
+- `JOB_NOT_FOUND`（Processing Job / Dataset identity 已被 TTL 清理）→ 触发前端 Dataset recovery（exactly-once + generation-owned + authoritative invalidation）。
+- map-overview artifact 缺失 = capability unavailable → 204（不是 `JOB_NOT_FOUND`，不触发 recovery）；artifact 读/解码/存储故障 → `DATASET_UNAVAILABLE`（503，不可恢复，不重新 full-process）。`SOURCE_NOT_READY` / `SOURCE_PROCESSING_FAILED` → 稳定错误码，经 i18n 本地化，不裸展示。
 - 旧的 multipart `POST /api/replay/map-overview`（`MultipartFile[]`）已废弃为 legacy 410 compatibility shim（`ReplayLegacyEndpoints`），不是业务入口。
 
 ### 数据链路

@@ -158,7 +158,7 @@ class BattleTimelineBuilderTest {
 
     @Test
     void enemyKnowledgePartitionIsExclusiveAndDestroyedCountedOnce() {
-        // P0 review 回归：knowledge partition 必须互斥（known+lastKnown+unknown+destroyedKnown == total），
+        // 回归：knowledge partition 必须互斥（known+lastKnown+unknown+destroyedKnown == total），
         // 且一辆敌车阵亡只减少一个 enemyAlive（DESTROYED_KNOWN 不得双重计数）。
         final Battle battle = TimelineTestFixtures.battle(60.0);
         final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
@@ -188,7 +188,7 @@ class BattleTimelineBuilderTest {
 
     @Test
     void nullTimestampEventsAreExcludedNotBucketedIntoFrameZero() {
-        // P1 review：timestamp == null 的事件不得被塞进 frame 0，且计入 invalid 计数
+        // timestamp == null 的事件不得被塞进 frame 0，且计入 invalid 计数
         final Battle battle = TimelineTestFixtures.battle(60.0);
         final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
         events.add(new com.wotb.core.replay.event.DamageEvent(

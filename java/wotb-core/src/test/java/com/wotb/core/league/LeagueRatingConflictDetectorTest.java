@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 同 arenaId 多份回放关键事实一致性（plan §4/§21.2）。 */
+/** 同 arenaId 多份回放关键事实一致性。 */
 class LeagueRatingConflictDetectorTest {
 
     private static Battle battle() {

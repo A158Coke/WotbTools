@@ -53,7 +53,7 @@ public final class TeamFactualConsistencyValidator {
      * KNOWLEDGE_MISMATCH / COUNT_MISMATCH / UNSUPPORTED_HARD_FACT / TEMPORAL_OWNERSHIP 等），
      * 供 production 直接判断 validator 为什么失败；2 参构造器按 checkId 推断（BINDING 类冲突
      * 必须显式传具体原因，见各 binding 校验点）。</p>
-     * <p>severity（本轮 P0：production availability + factual safety 分界）：
+     * <p>severity（P0：production availability + factual safety 分界）：
      * <ul>
      *   <li>{@link Severity#HARD_FACT}：真正用户可见事实错误（阵亡时间/存活变化/位置数量/
      *       knowledge/身份/unsupported hard fact）——必须阻止输出，可 retry，最终 fail-safe；</li>

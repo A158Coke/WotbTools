@@ -534,7 +534,7 @@ class ReplayExportJobServiceTest {
         }
     }
 
-    // ---- BLOCKER 2：Export 不再接受裸 replay 上传（legacy multipart 已废弃）----
+    // ---- Export 不再接受裸 replay 上传（legacy multipart 已废弃）----
 
     @Test
     void exportJobWithoutProcessingJobIdIsRejectedAsGone() {

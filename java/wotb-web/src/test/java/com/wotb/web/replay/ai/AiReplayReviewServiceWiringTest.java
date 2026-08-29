@@ -15,13 +15,13 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.mock;
 
 /**
- * 生产 Spring 装配证明（plan §12）：
+ * 生产 Spring 装配证明：
  * <ul>
  *   <li>{@link ReplayProcessingJobStore}（{@code @Component}，属 {@code com.wotb.web} 组件扫描包）
  *       是 AI Dataset 路径的 <b>mandatory</b> 依赖——Spring 必须通过 {@link AiReplayReviewService}
  *       的 {@code @Autowired} 构造器注入非空 store；</li>
  *   <li>production 装配缺失该 bean 时 Spring 必须 fail-fast（启动失败），而不是启动成功后运行时
- *       才返回 {@code DATASET_UNAVAILABLE}（BLOCKER #164 审查）。</li>
+ *       才返回 {@code DATASET_UNAVAILABLE}（#164 审查）。</li>
  * </ul>
  *
  * <p>本测试<b>不</b>手工 {@code new AiReplayReviewService(...)}：通过 {@code @Import}

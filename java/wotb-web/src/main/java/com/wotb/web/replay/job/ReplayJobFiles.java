@@ -12,7 +12,7 @@ import java.util.List;
 
 /**
  * Replay Job 共享的临时输入文件工具（Export Job 与 Replay Processing Job 共用，
- * plan §3 避免两套几乎相同的 job infrastructure）。
+ * ）。
  *
  * <p>关键契约（PR #118 Blocker 1）：上传按 {@code N__name} 数字前缀持久化，处理时按
  * 前缀整数排序，严格保持 {@code MultipartFile[]} 原始上传顺序（10+ 时不得回退到

@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 模式判定 / 去重 / 冲突 / 校验失败（plan §2、§4、§21.3）。 */
+/** 模式判定 / 去重 / 冲突 / 校验失败（§4、§21.3）。 */
 class LeagueReplaysTest {
 
     private static Source source(final String name, final Battle battle, final int arenaBonusType) throws Exception {
@@ -85,7 +85,7 @@ class LeagueReplaysTest {
 
     @Test
     void trainingPlusRandomIsMixedKeepsParsedBattles() throws Exception {
-        // plan §21/Case I：混合批次不再整体拒绝——League Rating 不聚合，但全部可解析
+        // 混合批次不再整体拒绝——League Rating 不聚合，但全部可解析
         // replay 仍按普通回放语义成功返回（battles 保留、无 leagueBatch、progress 真实 outcome）。
         final Battle t = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         t.arenaId = "111";
@@ -152,7 +152,7 @@ class LeagueReplaysTest {
 
     @Test
     void multipleValidLeagueReplaysProduceSummaries() throws Exception {
-        // 真实批量（plan §17）：N>=2 份合法 League 回放 → playerSummaries / teamSummaries 非空
+        // 真实批量：N>=2 份合法 League 回放 → playerSummaries / teamSummaries 非空
         final Battle t1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
         t1.arenaId = "111";
         final Battle t2 = LeagueTestBattles.battle(2, LeagueTestBattles.defaultSevenVsSeven());
@@ -521,7 +521,7 @@ class LeagueReplaysTest {
         assertEquals(1, r.battles().size());
         assertEquals(1, r.leagueFailures().size());
         assertEquals(List.of("bad.wotbreplay:SUCCESS"), outcomes,
-                "Rating-ineligible 但已解析的 replay 必须报 SUCCESS（不得计入解析失败，plan §18）");
+                "Rating-ineligible 但已解析的 replay 必须报 SUCCESS（不得计入解析失败）");
     }
 
     @Test

@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 真实失败回放 Golden Probe（docs/architecture/battle-timeline.md §12/§13-G，可重复运行、无样本自动跳过）：
  * 样本 `20260817_2021____WildCat__A178_SPHT_1161423218062589123(2).wotbreplay` 应放置于
  * `common/data/`（本地样本目录，不入库）。
- * <p><b>PR #103 review §7：Golden acceptance 必须是 assertion，不是 println。</b>
+ * <p><b>Golden acceptance 必须是 assertion，不是 println。</b>
  * 样本存在时硬断言（来自已确认的真实 canonical facts，CHANGELOG 报告 core 约 109–128s）：
  * <ul>
  *   <li>Top collapse core 必须是 3:1（本方 3 死、对方 1 死），不允许 3:2 通过；</li>
@@ -106,7 +106,7 @@ class TeamReviewRealReplayProbeTest {
                 + " BEFORE=" + collapse.before().friendlyAlive() + "v" + collapse.before().enemyAlive()
                 + " AFTER=" + collapse.after().friendlyAlive() + "v" + collapse.after().enemyAlive());
 
-        // ===== Golden hard assertions（PR #103 review §7.2；绝不降级为 print-only） =====
+        // ===== Golden hard assertions（绝不降级为 print-only） =====
         assertEquals(3, collapse.friendlyDeaths(),
                 "Golden: collapse core 必须是本方 3 死（真实 canonical 3:1）: " + collapse);
         assertEquals(1, collapse.enemyDeaths(),

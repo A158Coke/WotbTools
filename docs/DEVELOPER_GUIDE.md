@@ -145,7 +145,7 @@ Lease（读取期间 TTL 不清）。
 
 ### League Rating
 
-训练房 `arenaBonusType=2` 与联赛/锦标赛 `=4` 才启用 0–1000 League Rating。普通回放不显示 Rating；混合普通 + League 批次 League Rating 不聚合（`league=null` + `leagueUnavailableCode=MIXED_LEAGUE_AND_STANDARD_REPLAYS`，battles 仍按普通回放语义成功返回，plan §21）。评分、完整性校验、批次中位数和 Excel 必须复用 core 单一公式。
+训练房 `arenaBonusType=2` 与联赛/锦标赛 `=4` 才启用 0–1000 League Rating。普通回放不显示 Rating；混合普通 + League 批次 League Rating 不聚合（`league=null` + `leagueUnavailableCode=MIXED_LEAGUE_AND_STANDARD_REPLAYS`，battles 仍按普通回放语义成功返回）。评分、完整性校验、批次中位数和 Excel 必须复用 core 单一公式。
 
 选手 Drawer 的「最常使用坦克」是纯展示（不参与 Rating / 七维 / MVP / Team Rating）：Core
 `LeagueRatingBatchAggregator` 在 rated-only 循环里按 accountId 关联 `PlayerResult.tankId` 累计为

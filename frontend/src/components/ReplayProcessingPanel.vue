@@ -3,9 +3,9 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 /**
- * Replay Processing 主操作区进度面板（plan §32/§57）：真实分阶段
+ * Replay Processing 主操作区进度面板：真实分阶段
  * UPLOADING → REGISTERING → QUEUED → PROCESSING → FINALIZING → READY|FAILED|CANCELLED。
- * 替代旧的 fixed toast（与 Export 任务卡不再互斥，plan §35）。
+ * 替代旧的 fixed toast（与 Export 任务卡不再互斥）。
  */
 const props = defineProps({
   /** 上传阶段本地状态（null = 无上传）。 */

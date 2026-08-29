@@ -139,7 +139,7 @@ const pJobState = vi.hoisted(() => {
   }
 })
 
-/** BLOCKER 1：requestDirectAction 可控制 impl（deferred Promise 决定 resolve 顺序）。 */
+/** requestDirectAction 可控制 impl（deferred Promise 决定 resolve 顺序）。 */
 const directActionHolder = vi.hoisted(() => {
   let impl = async () => ({ processingJobId: 'p1', sourceId: 'r0' })
   return {
@@ -149,7 +149,7 @@ const directActionHolder = vi.hoisted(() => {
   }
 })
 
-/** BLOCKER 1：stale 失败不得写 processingError（持有 useReplay mock 的 error ref）。 */
+/** stale 失败不得写 processingError（持有 useReplay mock 的 error ref）。 */
 const wsErrState = vi.hoisted(() => {
   let ref = null
   return {
@@ -397,7 +397,7 @@ describe('ReplayPage processing job flow', () => {
     expect(panel.text()).toContain('replay.processing_job.progress')
   })
 
-  it('processing panel and export card coexist (no mutual exclusion, plan §35)', async () => {
+  it('processing panel and export card coexist (no mutual exclusion)', async () => {
     state.init.resp = null
     const wrapper = mountPage()
     pJobState.setJob({ jobId: 'p1', status: 'READY', phase: null, total: 34, processed: 34, valid: 31, duplicates: 2, failures: 1 })
@@ -2560,9 +2560,9 @@ describe('ReplayPage League failure UX separation', () => {
   })
 })
 
-// ---- BLOCKER 1：Workspace Dataset stale response ownership（generation/revision）----
+// ---- Workspace Dataset stale response ownership（generation/revision）----
 
-describe('ReplayPage Workspace Dataset generation ownership（BLOCKER 1）', () => {
+describe('ReplayPage Workspace Dataset generation ownership', () => {
   function mountWithFilesLocal(files) {
     state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en', files }
     return mountPage({ auth: { authenticated: true, login: vi.fn() } })

@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 领域边界回归守卫（plan §24）：防止未来对 {@code league/**} 的改动再次让
+ * 领域边界回归守卫：防止未来对 {@code league/**} 的改动再次让
  * LeagueFailure 改变 ReplayParseStatus / ProcessingJob.failed / valid /
  * NO_VALID_REPLAYS（§27 业务不变量）。
  *

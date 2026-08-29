@@ -20,7 +20,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 
 /**
- * BLOCKER 2 — {@link MapOverviewQueryService} 强制依赖 {@link ReplayProcessingJobStore}
+ * — {@link MapOverviewQueryService} 强制依赖 {@link ReplayProcessingJobStore}
  * （单一构造器）：store 缺失必须启动失败（fail-fast），store 存在则正常注入并可用。
  */
 @SpringJUnitConfig(MapOverviewQueryServiceWiringTest.Cfg.class)
@@ -62,7 +62,7 @@ class MapOverviewQueryServiceWiringTest {
     void storeMissingFailsContextStartup() {
         final AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext();
         ctx.register(MissingStoreCfg.class);
-        // 启动失败 = 强制依赖注入 fail-fast（BLOCKER 2）：store bean 缺失 → refresh() 必须抛。
+        // 启动失败 = 强制依赖注入 fail-fast：store bean 缺失 → refresh() 必须抛。
         assertThrows(RuntimeException.class, ctx::refresh);
         ctx.close();
     }

@@ -50,7 +50,7 @@ public class AiReplayReviewService {
     private final AiReplayAnalysisService aiAnalysisService;
     private final TacticalReviewHarness tacticalReviewHarness;
     private final MeterRegistry meterRegistry;
-    /** Dataset Lease 提供方（plan §25）：AI 读取 derived artifact 前 acquire，防止 TTL 清理。 */
+    /** Dataset Lease 提供方：AI 读取 derived artifact 前 acquire，防止 TTL 清理。 */
     private final ReplayProcessingJobStore processingStore;
 
     private final AtomicInteger aiReviewInFlight = new AtomicInteger();
@@ -67,9 +67,9 @@ public class AiReplayReviewService {
     }
 
     /**
-     * Dataset 路径（plan §36–§38）：从 Processing Job 的 derived artifact 读取
+     * Dataset 路径：从 Processing Job 的 derived artifact 读取
      * {@link AiReplayFacts} 并执行同一 AI 链路；<b>不</b>重新上传 / 不重新 full
-     * process（BLOCKER A）。source 未 READY / job 不存在返回稳定错误码。
+     * process。source 未 READY / job 不存在返回稳定错误码。
      */
     public AnalyzeResponse analyzeFacts(final String processingJobId, final int sourceIndex,
                                         final AllowedLanguage language,
@@ -97,7 +97,7 @@ public class AiReplayReviewService {
             return analyzeFacts(facts, language, listener);
         } catch (final java.io.IOException | tools.jackson.core.JacksonException e) {
             datasetCache("ai", false);
-            // BLOCKER 3：artifact 读取 / 解码 / 存储 I/O 故障（含 ai-facts.json 缺失、corrupt
+            // artifact 读取 / 解码 / 存储 I/O 故障（含 ai-facts.json 缺失、corrupt
             // JSON、permission / disk error）。这些<b>不是</b>「job 不存在」——映射为不可恢复的
             // 503 DATASET_UNAVAILABLE（否则前端会误触发 exactly-once full-process recovery，
             // 浪费 CPU 并掩盖真实存储故障）。job 缺失 / source 缺失 / source 未 READY 各自有
@@ -196,7 +196,7 @@ public class AiReplayReviewService {
     }
 
     /**
-     * 已解析结果列表的 AI 编排（旧 analyze 与 Dataset 路径共用，plan §20）：
+     * 已解析结果列表的 AI 编排（旧 analyze 与 Dataset 路径共用）：
      * coverage 日志 → 模式判定 → 可分析分组 → 单场/团队分支。
      */
     private AnalyzeResponse analyzeResults(final List<ReplayProcessingResult> allResults,

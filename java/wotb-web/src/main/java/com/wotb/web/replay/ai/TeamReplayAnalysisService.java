@@ -519,7 +519,7 @@ public class TeamReplayAnalysisService {
      * <b>绝不返回 partial completion</b>。因此这里传 no-op consumer（校验通过前不向用户
      * 暴露草稿 token），只以 {@code completionText()} 作为 envelope parser 输入；
      * 每轮 attempt 都是独立的一次 {@code stream()} 调用，不共享任何 buffer。</p>
-     * PR #103 review BLOCKER C 的 Team Call #2 独立输出上限保持不变。
+     * Team Call #2 独立输出上限保持不变。
      */
     private AiChatResponse callRaw(
             final String systemPrompt,
@@ -531,7 +531,7 @@ public class TeamReplayAnalysisService {
         final List<Map<String, Object>> messages = List.of(
                 Map.<String, Object>of("role", "system", "content", systemPrompt),
                 Map.<String, Object>of("role", "user", "content", userContent));
-        // PR #103 review BLOCKER C：Team Call #2 独立输出上限——effective = min(global, teamReview)，
+        // Team Call #2 独立输出上限——effective = min(global, teamReview)，
         // 同时用于 AiPromptBudgetGuard（input + output 预算）与 AiChatRequest；Player Call #2 保持 global。
         final int maxOutput = Math.min(config.maxOutputTokens(), config.teamReviewMaxOutputTokens());
         final int estimatedInputTokens = config.estimator().estimateMessagesTokens(messages);
@@ -611,7 +611,7 @@ public class TeamReplayAnalysisService {
         if (outcome == null) {
             return reviewText;
         }
-        // PR #103 最终收尾 BLOCKER A：renderSection 不再接收胜负/队名参数——Autopsy 不重复胜负，
+        // renderSection 不再接收胜负/队名参数——Autopsy 不重复胜负，
         // 只渲染「重点复查/高贡献者」两块（无 standout 时为空串）；playerKey 仅作内部 lookup。
         return reviewText + TeamAutopsyPromptBuilder.renderSection(
                 outcome.result(), outcome.roster());

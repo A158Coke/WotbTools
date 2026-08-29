@@ -11,7 +11,7 @@ import java.util.stream.Collectors;
 
 /**
  * Resolves team identity labels for TEAM_PERSPECTIVE scope.
- * <p><b>PR #103 review BLOCKER A</b>：internal identity 与 user-facing display label
+ * <p>internal identity 与 user-facing display label
  * 严格分离，任何方法都不再同时承担两者：
  * <ul>
  *   <li>{@link #resolveDisplayLabel(List)} —— 用户可见 display label：只有<b>唯一 dominant

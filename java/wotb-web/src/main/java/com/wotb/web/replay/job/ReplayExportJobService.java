@@ -37,7 +37,7 @@ import java.util.zip.ZipOutputStream;
  * Replay Export Job 编排（异步长任务：bounded worker + 有界队列 + 真实进度 + 终态 exactly once）。
  *
  * <p>Create（request 线程）：复用 Replay Processing Job 的已解析
- * {@link ProcessedDataset}（BLOCKER 2：Export 不再接受裸 replay 上传——无
+ * {@link ProcessedDataset}（Export 不再接受裸 replay 上传——无
  * {@code processingJobId} 一律 410 {@code REPLAY_LEGACY_DEPRECATED}，绝不绕过
  * {@link ReplayParseScheduler} 创建第二套 full processing）→ 注册 job →
  * 提交有界 worker 池 → 202。Worker：直接生成 XLSX/ZIP 流式 artifact（不
@@ -76,7 +76,7 @@ public class ReplayExportJobService {
     /**
      * 创建 Export Job。
      *
-     * <p>V2 唯一路径（BLOCKER 2）：{@code processingJobId} <b>必填</b>——Export
+     * <p>V2 唯一路径：{@code processingJobId} <b>必填</b>——Export
      * 只复用 Replay Processing Job result，不重新上传 replay、不 processFull，
      * worker 直接从已解析的 {@link ProcessedDataset} 生成 XLSX/ZIP；Export 创建时对
      * Processing result acquire 引用（引用计数阻止其被 TTL 清理）。缺少

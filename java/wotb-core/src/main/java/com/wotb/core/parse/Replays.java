@@ -20,7 +20,7 @@ public final class Replays {
         FAILURE
     }
 
-    /** 逐文件进度回调（供长任务展示真实 processed/total；不携带 Source/byte[]，plan §16）。 */
+    /** 逐文件进度回调（供长任务展示真实 processed/total；不携带 Source/byte[]）。 */
     @FunctionalInterface
     public interface ReplayProgressListener {
         void onProcessed(final int sourceIndex, final String sourceName, final Outcome outcome);
@@ -34,7 +34,7 @@ public final class Replays {
     /**
      * 一个输入文件的轻量解析结果（成功 → {@code battle != null}；失败 →
      * {@code failureMessage != null}）。<b>不持有 {@link Source} / byte[]</b>——
-     * 解析完成后 batch 聚合阶段不再需要原始字节（plan §16/BLOCKER F）。
+     * 解析完成后 batch 聚合阶段不再需要原始字节。
      */
     public record ParsedEntry(int sourceIndex, String sourceName, Battle battle, String failureMessage) {
         public boolean failed() {

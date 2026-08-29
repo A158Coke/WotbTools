@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** ExportJob 状态机：终态 exactly once（plan §9/§40）。 */
+/** ExportJob 状态机：终态 exactly once。 */
 class ExportJobTest {
 
     @Test

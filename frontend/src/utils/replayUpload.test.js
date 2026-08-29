@@ -16,7 +16,7 @@ function replayFile(name, size) {
   return { name, size }
 }
 
-describe('replayUpload 共享 contract（BLOCKER 4）', () => {
+describe('replayUpload 共享 contract', () => {
   it('定义与后端一致的 magic numbers', () => {
     expect(MAX_REPLAY_FILES).toBe(100)
     expect(MAX_REPLAY_FILE_BYTES).toBe(20 * MiB)

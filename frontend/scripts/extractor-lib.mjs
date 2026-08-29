@@ -423,7 +423,7 @@ export function silhouetteToSvgPaths(polygons, fit, fill) {
   return paths
 }
 /**
- * Layer B — 真实模型驱动的内部结构细节提取（本轮目标）。
+ * Layer B — 真实模型驱动的内部结构细节提取（当前目标）。
  *
  * 思路（调查 Maus 顶面 z 分布后确定）：
  * - hull 顶面存在多个高度层（主甲板 z≈2.2 / 过渡 1.0-1.6 / 裙板 0.4-0.9）；

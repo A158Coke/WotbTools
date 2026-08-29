@@ -184,7 +184,7 @@ public class WebApiTest {
         for (final Path p : files) {
             req = req.file(file(p));
         }
-        // BLOCKER 2：同步 multipart preview 已废弃 → 稳定 410 REPLAY_LEGACY_DEPRECATED，
+        // 同步 multipart preview 已废弃 → 稳定 410 REPLAY_LEGACY_DEPRECATED，
         // 不在 scheduler 之外做任何 full processing。
         mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
                 .andExpect(status().isGone())
@@ -900,7 +900,7 @@ public class WebApiTest {
                 final boolean fileExists = Files.exists(REPLAY_DIR.resolve(hash + ".wotbreplay"));
                 assertTrue(refs == 0 || fileExists,
                         "round=" + round + " 禁止 dangling reference: refs=" + refs + " fileExists=" + fileExists);
-                // 清理本轮记录（round 是循环变量，lambda 需副本）
+                // 清理当前轮记录（round 是循环变量，lambda 需副本）
                 final int roundId = round;
                 final List<HallOfFameRecord> roundRows = hallOfFameRecordRepository.findAll().stream()
                         .filter(x -> x.getArenaId().startsWith("race-del-" + roundId + "-")).toList();

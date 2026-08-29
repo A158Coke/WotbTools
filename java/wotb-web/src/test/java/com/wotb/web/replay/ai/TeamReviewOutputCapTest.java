@@ -39,7 +39,7 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * PR #103 review BLOCKER C：Team Call #2 独立输出上限。
+ * Team Call #2 独立输出上限。
  * <p>effective = min(globalMaxOutputTokens, teamReviewMaxOutputTokens)，且同时用于
  * AiPromptBudgetGuard 与 AiChatRequest；Player Call #2（TacticalReviewHarness）不受 Team cap 影响
  * （Player 隔离断言见 TacticalReviewHarnessTest.playerCall2IsNotLimitedByTeamReviewCap）。</p>

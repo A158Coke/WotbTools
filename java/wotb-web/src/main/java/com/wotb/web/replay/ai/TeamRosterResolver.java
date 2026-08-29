@@ -16,7 +16,7 @@ import java.util.stream.Collectors;
 
 /**
  * 团队名册解析器：RosterEvidence 构建、覆盖度/Jaccard 校验、主导军团归一化与 display label。
- * <p>PR #103 review BLOCKER A：user-facing 名称只经 {@link #resolveDisplayLabel} /
+ * <p>user-facing 名称只经 {@link #resolveDisplayLabel} /
  * {@link #resolveOpponentDisplayLabel} 输出——无可靠 clan（无 clan / 平票 / 非多数）时返回
  * 空串，由上层 fallback 到「我方/对方」；{@code 队伍-XXXX} 只保留在 core 的 internal
  * {@code resolveStableKey}，绝不进入 Prompt/UI。</p>

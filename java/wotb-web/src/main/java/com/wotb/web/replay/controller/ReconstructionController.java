@@ -58,7 +58,7 @@ import java.util.concurrent.RejectedExecutionException;
 @CrossOrigin(origins = "*")
 public class ReconstructionController {
 
-    /** Dataset 路径 AI 复盘请求体（plan §36–§37；API 纯英文 key）。 */
+    /** Dataset 路径 AI 复盘请求体（API 纯英文 key）。 */
     public record AnalyzeDatasetRequest(String processingJobId, String sourceId,
                                         String lang, String correlationId) {
     }
@@ -103,9 +103,9 @@ public class ReconstructionController {
     }
 
     /**
-     * AI 复盘 Dataset 路径（plan §36–§38）：请求体为 {@code {processingJobId, sourceId,
+     * AI 复盘 Dataset 路径：请求体为 {@code {processingJobId, sourceId,
      * lang, correlationId}}，AI 只读 derived {@code ai-facts.json}，<b>不</b>重新上传 /
-     * 不重新 full process（BLOCKER A）。
+     * 不重新 full process。
      * <p>SSE 异步模型：request 线程只做 reference / {@code lang} / {@code correlationId}
      * 校验，注册 cancellation、创建 {@link SseEmitter} 并把分析提交到
      * {@link AiReviewWorkerExecutor} 后立即返回。worker 线程内 acquire Processing
@@ -114,7 +114,7 @@ public class ReconstructionController {
      */
     @PostMapping(value = ApiPaths.REPLAY_ANALYZE, consumes = MediaType.APPLICATION_JSON_VALUE)
     public SseEmitter analyzeDataset(@RequestBody final AnalyzeDatasetRequest request) {
-        // BLOCKER 4：显式 reference 校验（缺失 → 400 DATASET_REFERENCE_REQUIRED），
+        // 显式 reference 校验（缺失 → 400 DATASET_REFERENCE_REQUIRED），
         // 杜绝 null processingJobId / sourceId 进入 store 查找 NPE → 500。
         requireDatasetReference(request);
         final AllowedLanguage allowedLanguage = AllowedLanguage.fromCode(request.lang());
@@ -151,7 +151,7 @@ public class ReconstructionController {
         return emitter;
     }
 
-    /** sourceId 形如 {@code r0} / {@code r12}（plan §9）；非法/缺失 → 400 SOURCE_NOT_FOUND。 */
+    /** sourceId 形如 {@code r0} / {@code r12}；非法/缺失 → 400 SOURCE_NOT_FOUND。 */
     private static int parseSourceIndex(final String sourceId) {
         if (sourceId == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SOURCE_NOT_FOUND");
@@ -216,7 +216,7 @@ public class ReconstructionController {
             if (cancellation.isCancelled()) {
                 LOGGER.info(AiReviewEventLog.line("ai_review_cancelled", requestId,
                         "source", "CANCELLED_WHILE_QUEUED"));
-                // §54（PR #106 review）：统一终态 exactly once——queued cancellation 也是
+                // 统一终态 exactly once——queued cancellation 也是
                 // worker 生命周期的一部分，必须与 success/failure 一样恰好记录一次 ai_review_finished。
                 LOGGER.info(AiReviewEventLog.line("ai_review_finished", requestId,
                         "result", "CANCELLED",
@@ -264,7 +264,7 @@ public class ReconstructionController {
             cancellationRegistry.cancel(requestId);
             LOGGER.info(AiReviewEventLog.line("ai_review_cancelled", requestId,
                     "source", "SSE_DISCONNECT"));
-            // §54（PR #106 review）：终态 exactly once——SSE 断开 = CANCELLED 终态。
+            // 终态 exactly once——SSE 断开 = CANCELLED 终态。
             LOGGER.info(AiReviewEventLog.line("ai_review_finished", requestId,
                     "result", "CANCELLED",
                     "source", "SSE_DISCONNECT",
@@ -285,7 +285,7 @@ public class ReconstructionController {
                 // 会让本分支逃逸，导致下方 ai_review_finished 终态缺失（exactly once 契约破坏）。
             }
             quietComplete(emitter);
-            // §54（PR #106 review）：终态 exactly once——任何失败都恰好记录一次
+            // 终态 exactly once——任何失败都恰好记录一次
             // ai_review_finished result=FAILED；稳定 errorCode 保留失败细节
             // （AI_REVIEW_GROUNDING_FAILED / AI_TIMEOUT / AI_RATE_LIMITED 等）。
             LOGGER.info(AiReviewEventLog.line("ai_review_finished", requestId,
@@ -356,7 +356,7 @@ public class ReconstructionController {
             return "MIXED_RANDOM_BATTLE_RECORDERS";
         }
         if (e instanceof ResponseStatusException rse) {
-            // BLOCKER 4：Dataset reference 稳定码（JOB_NOT_FOUND / SOURCE_NOT_READY / ...）。
+            // Dataset reference 稳定码（JOB_NOT_FOUND / SOURCE_NOT_READY / ...）。
             final String reason = rse.getReason();
             return reason != null && !reason.isBlank() ? reason : "DATASET_REFERENCE_ERROR";
         }
@@ -433,11 +433,11 @@ public class ReconstructionController {
         throw ReplayLegacyEndpoints.gone();
     }
 
-    /** 战局回放 Dataset 路径（plan §39/§88）：读 cached map-overview.json，不重新 full process。 */
+    /** 战局回放 Dataset 路径：读 cached map-overview.json，不重新 full process。 */
     @PostMapping(value = ApiPaths.REPLAY_MAP_OVERVIEW, consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<MapOverview> mapOverviewDataset(
             @RequestBody final MapOverviewDatasetRequest request) {
-        // BLOCKER 4：显式 reference 校验（缺失 → 400），杜绝 null 进 store NPE → 500。
+        // 显式 reference 校验（缺失 → 400），杜绝 null 进 store NPE → 500。
         requireDatasetReference(request);
         final MapOverview overview = mapOverviewService.buildOverviewFromDataset(
                 request.processingJobId(), parseSourceIndex(request.sourceId()));
