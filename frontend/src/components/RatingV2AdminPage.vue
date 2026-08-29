@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { useReplay } from '../composables/useReplay.js'
@@ -33,6 +33,9 @@ const ratingLoading = ref(false)
 const ratingError = ref('')
 const sort = ref(null)
 const selectedRow = ref(null)
+const radarDrawer = ref(null)
+const isMobile = ref(false)
+let lastPlayerTrigger = null
 let requestVersion = 0
 
 const sortedRows = computed(() => {
@@ -105,15 +108,34 @@ watch(selectionRevision, () => {
   selectedRow.value = null
 })
 
-function selectPlayer(row) {
+function selectPlayer(row, event) {
+  const opening = !selectedRow.value
+  lastPlayerTrigger = event?.currentTarget || null
   selectedRow.value = row
+  if (opening) {
+    void nextTick(() => radarDrawer.value?.querySelector('.rating-v2-radar-close')?.focus())
+  }
 }
 
 function closePlayerRadar() {
+  const trigger = lastPlayerTrigger
   selectedRow.value = null
+  lastPlayerTrigger = null
+  void nextTick(() => trigger?.focus?.())
+}
+
+function onKeydown(event) {
+  if (event.key === 'Escape' && selectedRow.value) closePlayerRadar()
+}
+
+function syncMobile() {
+  isMobile.value = window.innerWidth < 768
 }
 
 onMounted(async () => {
+  syncMobile()
+  window.addEventListener('keydown', onKeydown)
+  window.addEventListener('resize', syncMobile)
   let authenticated = false
   try {
     authenticated = Boolean(await initPromise)
@@ -132,6 +154,11 @@ onMounted(async () => {
   }
   authPhase.value = 'ready'
   ready.value = true
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('resize', syncMobile)
 })
 </script>
 
@@ -208,7 +235,7 @@ onMounted(async () => {
                   <button v-if="column.key === 'nickname'" class="rating-v2-player" type="button"
                     :aria-label="t('ratingV2.radar.open', { player: row.cells[column.key] ?? '--' })"
                     :aria-pressed="selectedRow === row"
-                    @click="selectPlayer(row)">
+                    @click="selectPlayer(row, $event)">
                     {{ row.cells[column.key] ?? '--' }}
                   </button>
                   <template v-else>{{ row.cells[column.key] ?? '--' }}</template>
@@ -217,12 +244,22 @@ onMounted(async () => {
             </tbody>
           </table>
         </div>
-        <RatingV2RadarPanel v-if="selectedRow" :row="selectedRow" :rows="ratingResponse.rows" @close="closePlayerRadar" />
       </section>
 
       <p v-else-if="!loading && !processingActive && !ratingLoading && files.length" class="rating-v2-note">
         {{ t('ratingV2.empty') }}
       </p>
+
+      <Teleport to="body">
+        <div v-if="selectedRow" class="rating-v2-radar-backdrop"
+          :class="{ 'rating-v2-radar-modal': isMobile }"
+          @click.self="isMobile ? closePlayerRadar() : null">
+          <aside ref="radarDrawer" class="rating-v2-radar-drawer" role="dialog"
+            :aria-modal="isMobile ? 'true' : undefined" aria-labelledby="rating-v2-radar-title">
+            <RatingV2RadarPanel :row="selectedRow" :rows="ratingResponse.rows" @close="closePlayerRadar" />
+          </aside>
+        </div>
+      </Teleport>
     </template>
   </main>
 </template>
@@ -251,11 +288,28 @@ onMounted(async () => {
 .rating-v2-tablewrap th.num, .rating-v2-tablewrap td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .rating-v2-player { padding: 0; border: 0; background: transparent; color: var(--text-heading); cursor: pointer; font: inherit; font-weight: 700; text-align: left; }
 .rating-v2-player:hover, .rating-v2-player:focus-visible, .rating-v2-player[aria-pressed="true"] { color: var(--accent); outline: none; text-decoration: underline; text-underline-offset: 3px; }
+/* ponytail: V2 局部复用稳定抽屉视觉，避免耦合 V5 业务 Drawer；出现第三个同类抽屉时再抽中性 shell。 */
+.rating-v2-radar-backdrop { position: fixed; inset: 0; z-index: 60; pointer-events: none; background: none; }
+.rating-v2-radar-drawer {
+  position: fixed; top: calc(var(--topbar-h) + 8px); right: 8px; bottom: 8px;
+  width: min(380px, calc(100vw - 16px)); overflow-y: auto; padding: 16px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card2);
+  box-shadow: var(--surface-shadow); pointer-events: auto; animation: rating-v2-drawer-in .22s ease-out;
+}
+.rating-v2-radar-drawer :deep(.rating-v2-radar-panel) { margin: 0; padding: 0; border: 0; background: transparent; }
+@keyframes rating-v2-drawer-in { from { transform: translateX(30px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@media (max-width: 1080px) {
+  .rating-v2-radar-backdrop { z-index: var(--z-modal); }
+  .rating-v2-radar-drawer { top: 8px; }
+}
 @media (max-width: 767px) {
   .rating-v2-page { padding-bottom: 28px; }
   .rating-v2-actions { align-items: stretch; }
   .rating-v2-run { width: 100%; }
   .rating-v2-tablewrap td { padding: 7px 8px; font-size: .76rem; }
   .rating-v2-sort { padding: 7px 8px; font-size: .76rem; }
+  .rating-v2-radar-backdrop.rating-v2-radar-modal { pointer-events: auto; background: color-mix(in srgb, #000 35%, transparent); }
+  .rating-v2-radar-drawer { left: 8px; width: auto; }
 }
+@media (prefers-reduced-motion: reduce) { .rating-v2-radar-drawer { animation: none; } }
 </style>
