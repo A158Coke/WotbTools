@@ -186,6 +186,22 @@ describe('RatingV2AdminPage', () => {
     expect(wrapper.findAll('tbody tr')).toHaveLength(0)
   })
 
+  it('uses the same numeric alignment marker for headers and cells', async () => {
+    api.ratingV2Admin.mockResolvedValue({
+      rows: [{ cells: { nickname: 'Pilot', rating: 1200 } }],
+      duplicates: [], failures: [],
+      columns: [{ key: 'nickname', num: false }, { key: 'rating', num: true }],
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    replayState.files.value = [new File(['x'], 'a.wotbreplay')]
+    replayState.processingJobId.value = 'ready-job'
+    await flushPromises()
+
+    expect(wrapper.findAll('thead th').map(cell => cell.classes().includes('num'))).toEqual([false, true])
+    expect(wrapper.findAll('tbody td').map(cell => cell.classes().includes('num'))).toEqual([false, true])
+  })
+
   it('opens a selected player radar and clears it with the next file selection', async () => {
     api.ratingV2Admin.mockResolvedValue({
       rows: [{ cells: { nickname: 'Pilot', rating: 1200 }, radar: [] }],
