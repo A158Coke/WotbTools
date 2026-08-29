@@ -108,7 +108,44 @@ jobs:
               echo "releaseAction=publish" >> "$GITHUB_OUTPUT"
               ;;
             prod_equal_ok)
-              echo "Version already published and production metadata coherent; safe success (no-op)."
+              # Same version & metadata coherent is NOT auto-success: verify the
+              # already-published artifacts are still valid before no-op success.
+              echo "Same version & metadata coherent; verifying existing release."
+              PUBLISHED_SHA="$PROD_PUBLISHED_SHA"
+              APK_URL="https://wotbtools.com/download/android/$APK_NAME"
+              TMP_EXISTING="$RUNNER_TEMP/existing-release.apk"
+              if ! curl -fsSL -o "$TMP_EXISTING" "$APK_URL" 2>/dev/null; then
+                echo "::error::Existing release APK not reachable at apkUrl; refusing already-published." >&2
+                exit 1
+              fi
+              test -s "$TMP_EXISTING" || { echo "::error::Existing release APK is empty; refusing already-published." >&2; exit 1; }
+              ACTUAL_SHA="$(sha256sum "$TMP_EXISTING" | awk '{print $1}')"
+              classify_prod_apk "$ACTUAL_SHA" "$PUBLISHED_SHA"
+              case "$APK_STATE" in
+                apk_equal)
+                  echo "Existing release APK SHA-256 matches published version.json."
+                  ;;
+                apk_absent)
+                  echo "::error::Existing release APK missing; refusing already-published." >&2
+                  exit 1
+                  ;;
+                apk_conflict)
+                  echo "::error::Existing release APK SHA-256 differs from published version.json; refusing already-published." >&2
+                  exit 1
+                  ;;
+              esac
+              if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+                TAG="${{ steps.version.outputs.tagName }}"
+                COMMIT_SHA="${{ steps.version.outputs.commit }}"
+                REFS="$(git ls-remote --tags origin "refs/tags/$TAG")"
+                classify_tag "$REFS" "$TAG" "$COMMIT_SHA"
+                if [ "$TAG_STATE" != "tag_equal" ]; then
+                  echo "::error::Existing release tag must exist and point to expected commit (got $TAG_STATE); refusing already-published." >&2
+                  exit 1
+                fi
+                echo "Existing release tag verified (points to expected commit)."
+              fi
+              echo "Existing release fully verified; safe success (no-op)."
               echo "releaseAction=already-published" >> "$GITHUB_OUTPUT"
               ;;
             prod_equal_conflict)

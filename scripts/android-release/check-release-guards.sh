@@ -22,10 +22,13 @@ guard_min_supported() {
 #   prod_equal_ok         prod latest == new AND full metadata coherent -> already published (safe success)
 #   prod_equal_conflict   prod latest == new AND metadata incoherent     -> fail
 #   prod_newer            prod latestVersionCode > new    -> rollback -> fail
+# Also sets PROD_PUBLISHED_SHA to the sha256 recorded in production version.json
+# (used later to verify the already-published APK still matches).
 classify_prod() {
   local json="$1" code="$2" name="$3" apk="$4" min="$5"
   local latest latest_name apk_url sha min_pub schema
   PROD_STATE=""
+  PROD_PUBLISHED_SHA=""
   latest="$(jq -r '.latestVersionCode // empty' "$json" 2>/dev/null)" \
     || { echo "::error::Cannot parse production version.json" >&2; return 1; }
   if [ -z "$latest" ]; then
@@ -42,6 +45,7 @@ classify_prod() {
   latest_name="$(jq -r '.latestVersionName // empty' "$json" 2>/dev/null)"
   apk_url="$(jq -r '.apkUrl // empty' "$json" 2>/dev/null)"
   sha="$(jq -r '.sha256 // empty' "$json" 2>/dev/null)"
+  PROD_PUBLISHED_SHA="$sha"
   min_pub="$(jq -r '.minSupportedVersionCode // empty' "$json" 2>/dev/null)"
   schema="$(jq -r '.schemaVersion // empty' "$json" 2>/dev/null)"
   local expected_url="https://wotbtools.com/download/android/$apk"
@@ -79,6 +83,8 @@ classify_prod_apk() {
 # classify_tag <refs_text> <tag_name> <target_commit>
 # refs_text is the output of `git ls-remote --tags origin refs/tags/<tag>`,
 # i.e. lines "<sha>\trefs/tags/<tag>" (plus an optional "<peeled>\trefs/tags/<tag>^{}").
+# For an annotated tag the ^{} line carries the resolved COMMIT SHA; the plain
+# "<sha>\trefs/tags/<tag>" line is the tag OBJECT SHA, which we must not compare.
 # Sets TAG_STATE:
 #   tag_absent      tag does not exist                        -> create
 #   tag_equal       tag exists and points to the target commit -> resume
@@ -88,8 +94,13 @@ classify_tag() {
   local want="refs/tags/$tag"
   local sha
   TAG_STATE=""
-  # Match the exact annotated-tag ref, ignoring the peeled ^{} line.
-  sha="$(printf '%s\n' "$refs" | awk -F'\t' -v want="$want" '$2 == want { print $1; exit }')"
+  # Prefer the peeled ^{} COMMIT SHA (annotated tag); fall back to the tag ref
+  # SHA for a lightweight tag (which points directly at a commit).
+  sha="$(printf '%s\n' "$refs" | awk -F'\t' -v want="$want" '
+    $2 == want       { obj = $1 }
+    $2 == want "^{}" { peeled = $1 }
+    END              { if (peeled != "") print peeled; else print obj }
+  ')"
   if [ -z "$sha" ]; then
     TAG_STATE="tag_absent"; return 0
   fi
