@@ -49,7 +49,7 @@
 ```
 payload_len: u32 LE   // 负载长度（≤200K）
 type:        u32 LE   // 包类型（见下文）
-clock:       f32 LE   // 从 0 起始的战斗计时（秒）
+clock:       f32 LE   // replay/session raw packet clock（非 battle-relative 计时）
 payload:     [u8; payload_len]  // 负载
 ```
 
@@ -110,7 +110,7 @@ payload 截断、或尾部剩余不足一个完整包时直接失败（fail clos
 关闭 AoI 观测段（`ReplayAoiLifecycle`），段间为 `UNKNOWN_AOI`。不得把 EntityLeave 当作死亡、也不得据此
 推断死亡时刻。
 
-### Type 7：EntityProperty（结构已确认，血量语义未解）
+### Type 7：EntityProperty（generic envelope + verified property semantics）
 
 单个属性更新，负载为定长三段头 + 变长值：
 

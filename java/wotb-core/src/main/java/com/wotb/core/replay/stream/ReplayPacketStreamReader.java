@@ -65,15 +65,22 @@ public final class ReplayPacketStreamReader {
      */
     public static ReplayStreamResult read(byte[] data) {
         final ReplayPacketStreamReader reader = new ReplayPacketStreamReader(data);
-        return reader.scan();
+        return reader.scan(ReplayStreamHeader.parse(data));
+    }
+
+    /**
+     * PR162/P1-2：消费<b>已解析</b>的 {@link ReplayStreamHeader}，避免同一 data.wotreplay 头部被 parse 两次
+     * （ParsedReplay.read 已解析一次并复用）。header 非法时由 caller 保证（null 则由 {@link #read(byte[])} 兜底）。
+     */
+    public static ReplayStreamResult read(final byte[] data, final ReplayStreamHeader header) {
+        final ReplayPacketStreamReader reader = new ReplayPacketStreamReader(data);
+        return reader.scan(header);
     }
 
     /**
      * 扫描整个数据流。
      */
-    private ReplayStreamResult scan() {
-        // 1. 解析头部
-        final ReplayStreamHeader header = ReplayStreamHeader.parse(source);
+    private ReplayStreamResult scan(final ReplayStreamHeader header) {
         int offset = header.packetStreamOffset();
         // 2. 遍历事件包：strict contiguous framing
 

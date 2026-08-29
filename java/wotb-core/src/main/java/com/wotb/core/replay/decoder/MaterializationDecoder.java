@@ -76,11 +76,15 @@ public class MaterializationDecoder implements ReplayPacketDecoder {
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
 
         // PR162 entity-class registry：只从真实生命周期证据（entityTypeId）建立 class，不靠 method-shape 反推。
-        // entityTypeId==2 → Vehicle；entityTypeId==3 → Other（static family）。
+        // P1-5：entityTypeId numeric meaning (2/3) 是 closed/version-scoped —— 仅 capability VERIFIED 才 Assign
+        // Vehicle/Other；future 版本保留 Type5 结构 + raw entityTypeId，class 保持 UNKNOWN。
         final EntityClassRegistry classRegistry = context.entityClassRegistry();
-        if (entityTypeId == ENTITY_TYPE_COMBAT_VEHICLE) {
+        final boolean entityTypeIdSemanticAffirmed = ReplayProtocolProfile.levelOf(context.clientVersion(),
+                ReplayProtocolProfile.Capability.ENTITY_TYPE_ID_SEMANTIC)
+                == ReplayProtocolProfile.Level.VERIFIED;
+        if (entityTypeIdSemanticAffirmed && entityTypeId == ENTITY_TYPE_COMBAT_VEHICLE) {
             classRegistry.markVehicle(entityId);
-        } else if (entityTypeId == ENTITY_TYPE_STATIC_FAMILY) {
+        } else if (entityTypeIdSemanticAffirmed && entityTypeId == ENTITY_TYPE_STATIC_FAMILY) {
             classRegistry.markOther(entityId);
         }
 

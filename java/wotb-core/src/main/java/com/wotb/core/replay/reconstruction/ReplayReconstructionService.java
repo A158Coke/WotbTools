@@ -14,6 +14,8 @@ import com.wotb.core.replay.decoder.EntityClass;
 import com.wotb.core.replay.decoder.EntityClass;
 import com.wotb.core.replay.decoder.EntityClassRegistry;
 import com.wotb.core.replay.decoder.EntityMethodDecoder;
+import com.wotb.core.replay.decoder.ReplayVersionGate;
+import com.wotb.core.replay.decoder.ReplayProtocolProfile;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ArenaPeriodChangedEvent;
@@ -86,7 +88,10 @@ public class ReplayReconstructionService {
 
         final ReplayPacketStreamReader.ReplayStreamResult streamResult;
         try {
-            streamResult = ReplayPacketStreamReader.read(eventData);
+            // PR162/P1-2：消费 ParsedReplay 已解析的 header，不再二次 parse。
+            streamResult = parsed.streamHeader() != null
+                    ? ReplayPacketStreamReader.read(eventData, parsed.streamHeader())
+                    : ReplayPacketStreamReader.read(eventData);
         } catch (Exception e) {
             throw new IOException("Failed to read data.wotreplay stream: " + e.getMessage(), e);
         }
@@ -102,10 +107,11 @@ public class ReplayReconstructionService {
         // 4. 解码所有包：版本门禁使用 data.wotreplay 流头内的权威 clientVersion
         //    （meta.json#clientVersionFromExe 经常为空；与 ReplayParser.battle.clientVersion 同源）。
         //    PR162/P0-1：entity class 由独立生命周期/身份证据（Type5 entityTypeId → Vehicle/Other；
-        //    Type8 subtype-49 recorder sync-options → Avatar）在 prepass 建立，method decoder 纯消费，
+        //    method48 参与映射中的 recorder 账号身份 → Avatar）在 prepass 建立，method decoder 纯消费，
         //    不再由 methodId 自证 class。
         final EntityClassRegistry entityClassRegistry =
-                buildEntityClassRegistry(streamResult.packets(), context.recorderAccountId());
+                buildEntityClassRegistry(streamResult.packets(),
+                        context.recorderAccountId(), streamResult.header().clientVersion());
         final ReplayDecodeContext decodeContext =
                 new ReplayDecodeContext(streamResult.header().clientVersion(), entityClassRegistry);
         final List<ReplayEvent> allEvents = new ArrayList<>();
@@ -397,7 +403,8 @@ public class ReplayReconstructionService {
      * 不证明的 entityId 保持 {@link EntityClass#UNKNOWN}。
      */
     static EntityClassRegistry buildEntityClassRegistry(final List<RawReplayPacket> packets,
-                                                        final Long recorderAccountId) {
+                                                        final Long recorderAccountId,
+                                                        final String clientVersion) {
         final EntityClassRegistry registry = new EntityClassRegistry();
         if (packets == null) {
             return registry;
@@ -405,7 +412,12 @@ public class ReplayReconstructionService {
         for (final RawReplayPacket p : packets) {
             final byte[] payload = p.payload();
             final int type = p.type();
-            if (type == 5 && payload.length >= 6) {
+            if (type == 5 && payload.length >= 6
+                    && ReplayProtocolProfile.levelOf(clientVersion,
+                            ReplayProtocolProfile.Capability.ENTITY_TYPE_ID_SEMANTIC)
+                            == ReplayProtocolProfile.Level.VERIFIED) {
+                //PR162/P1-5：entityTypeId numeric meaning (2/3) 是 closed/version-scoped class semantic；
+                // future version 只保留 Type5 结构 + raw entityTypeId，不得自动 Assign Vehicle/Other。
                 final int entityId = readI32LE(payload, 0);
                 final int entityTypeId = readU16LE(payload, 4);
                 if (entityTypeId == 2) {
@@ -414,7 +426,10 @@ public class ReplayReconstructionService {
                     registry.markOther(entityId);
                 }
             } else if (type == 8 && payload.length >= 12 && recorderAccountId != null
-                    && readU32LE(payload, 4) == 48) {
+                    && readU32LE(payload, 4) == 48
+                    && ReplayVersionGate.participantMappingLayoutAllowed(clientVersion)) {
+                //PR162/P1-4：method48 参与映射仅当 capability VERIFIED 才可作为 recorder Avatar 身份证据；
+                // future/unknown version（STRUCTURALLY_COMPATIBLE）method48 numeric identity 未认证 → raw，不得 markAvatar。
                 for (final ParticipantMappingEvent e : EntityMethodDecoder.participantMappingEvents(payload, p)) {
                     if (e.accountId() == recorderAccountId && e.entityId() > 0) {
                         registry.markAvatar(e.entityId());

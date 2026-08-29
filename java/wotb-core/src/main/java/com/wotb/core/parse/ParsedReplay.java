@@ -18,12 +18,14 @@ import java.util.Map;
  * @param clientVersion  data.wotreplay 头部的权威客户端版本（缺失/非法 → ""）
  * @param settlementFacts battle_results.dat 的解码事实；缺失/损坏 → null
  * @param settlementError settlement 缺失/损坏的原因（settlementFacts != null 时为 null）
+ * @param streamHeader     data.wotreplay 的 <b>一次解析</b> 头部（consumers 复用，不再二次 parse）；缺失/非法 → null
  */
 public record ParsedReplay(
         Map<String, byte[]> entries,
         String clientVersion,
         SettlementFacts settlementFacts,
-        String settlementError
+        String settlementError,
+        ReplayStreamHeader streamHeader
 ) {
 
     /**
@@ -33,7 +35,17 @@ public record ParsedReplay(
      */
     public static ParsedReplay read(final byte[] replayBytes) throws IOException {
         final Map<String, byte[]> entries = ReplayArchiveReader.read(replayBytes);
-        final String clientVersion = readClientVersion(entries.get("data.wotreplay"));
+        // PR162/P1-2：header 只在此解析一次；ReplayPacketStreamReader 消费同一 header，不再二次 parse。
+        ReplayStreamHeader streamHeader = null;
+        final byte[] eventData = entries.get("data.wotreplay");
+        if (eventData != null) {
+            try {
+                streamHeader = ReplayStreamHeader.parse(eventData);
+            } catch (final RuntimeException e) {
+                streamHeader = null;
+            }
+        }
+        final String clientVersion = streamHeader != null ? streamHeader.clientVersion() : "";
         SettlementFacts facts = null;
         String error = null;
         final byte[] dat = entries.get("battle_results.dat");
@@ -46,19 +58,7 @@ public record ParsedReplay(
                 error = e.getMessage();
             }
         }
-        return new ParsedReplay(entries, clientVersion, facts, error);
-    }
-
-    /** 从 data.wotreplay 头部读取权威 clientVersion（唯一权威 {link ReplayStreamHeader}）。 */
-    private static String readClientVersion(final byte[] data) {
-        if (data == null || data.length == 0) {
-            return "";
-        }
-        try {
-            return ReplayStreamHeader.parse(data).clientVersion();
-        } catch (final RuntimeException e) {
-            return "";
-        }
+        return new ParsedReplay(entries, clientVersion, facts, error, streamHeader);
     }
 
     /** data.wotreplay 原始字节；缺失 → null。 */
