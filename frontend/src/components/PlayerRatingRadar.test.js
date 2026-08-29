@@ -35,10 +35,10 @@ function mountRadar(metrics, reference = null, props = {}) {
 }
 
 describe('PlayerRatingRadar', () => {
-  it('renders 7 axes / 4 grid levels / player+reference polygons / dots / labels', () => {
+  it('renders 7 axes / 3 visible grids / player+reference polygons / dots / labels', () => {
     const wrapper = mountRadar(SEVEN, REF)
     expect(wrapper.findAll('.radar-axis')).toHaveLength(7)
-    expect(wrapper.findAll('.radar-grid')).toHaveLength(4)
+    expect(wrapper.findAll('.radar-grid')).toHaveLength(3)
     expect(wrapper.findAll('.radar-dot')).toHaveLength(7)
     expect(wrapper.findAll('.radar-label')).toHaveLength(7)
     expect(wrapper.find('.radar-data').exists()).toBe(true)
@@ -67,6 +67,15 @@ describe('PlayerRatingRadar', () => {
     const wrapper = mountRadar(SEVEN, REF)
     const scales = wrapper.findAll('.radar-scale').map(n => n.text())
     expect(scales).toEqual(['25', '50', '75', '100'])
+  })
+
+  it('explains the regular average ring, strong line, and overflow without exposing 150', () => {
+    const wrapper = mountRadar(SEVEN, REF)
+    expect(wrapper.text()).toContain('radarScale.average')
+    expect(wrapper.text()).toContain('radarScale.strong')
+    expect(wrapper.text()).toContain('radarScale.overflow')
+    expect(wrapper.find('desc').text()).toBe('radarScale.ariaDescription')
+    expect(wrapper.findAll('.radar-scale').map(node => node.text())).not.toContain('150')
   })
 
   it('vertex text only shows dimension name, no numeric value', () => {
@@ -121,10 +130,12 @@ describe('PlayerRatingRadar', () => {
     expect(head).toEqual(['radar_lbl.dimension', 'radar_lbl.player'])
   })
 
-  it('outer 100% grid polygon renders with radar-grid-outer + uses a defined border token（回归：最外围边界不可再消失）', () => {
+  it('100 strong grid is visible at 2/3 radius while no 150 outer boundary is rendered', () => {
     const wrapper = mountRadar(SEVEN)
-    const outer = wrapper.findAll('.radar-grid').find(n => n.classes().includes('radar-grid-outer'))
-    expect(outer).toBeTruthy()
+    const strong = wrapper.findAll('.radar-grid').find(n => n.classes().includes('radar-grid-strong'))
+    expect(strong).toBeTruthy()
+    expect(wrapper.findAll('.radar-grid').map(n => n.attributes('class')).join(' ')).not.toContain('outer')
+    expect(wrapper.findAll('.radar-scale').map(n => n.text())).not.toContain('150')
     const comp = readFileSync(resolve(process.cwd(), 'src/components/PlayerRatingRadar.vue'), 'utf8')
     expect(comp).toContain('var(--border-light-strong)')
     const tokens = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8')

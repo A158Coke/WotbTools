@@ -150,7 +150,7 @@ onBeforeUnmount(() => { prepareRevision++ })
     </header>
 
     <template v-if="!handoffActive">
-      <FileUploader :files="files" :loading="loading" :confirm-remove="false" :show-workspace-actions="false"
+      <FileUploader :files="files" :loading="loading" :confirm-remove="false" :show-workspace-actions="false" :show-preview="false"
         @update:files="updateFiles" />
       <ReplayProcessingPanel v-if="uploadState || processingJob" :upload-state="uploadState" :job="processingJob"
         :error="processingError" @cancel="cancelProcessing" @dismiss="dismissProcessingJob" />
