@@ -3,6 +3,7 @@ package com.wotbtools.app
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
@@ -21,6 +22,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.webkit.WebViewFeature
 import androidx.webkit.WebViewCompat
 import java.io.File
 import java.util.concurrent.ExecutorService
@@ -41,12 +43,19 @@ class MainActivity : Activity() {
         private const val FILE_CHOOSER_REQUEST = 1001
         private const val BRIDGE_NAME = "WotbNative"
 
-        /** WebView 内允许停留的导航 origin；其它外链走系统浏览器（IdP 仅认证流程留在 WebView）。 */
-        private val NAV_HOSTS = setOf(
+        /** 常规导航允许停留在 WebView 的 origin；其它外链走系统浏览器。 */
+        private val GENERAL_NAV_HOSTS = setOf(
             "wotbtools.com",
             "www.wotbtools.com",
-            "auth.wotbtools.com",
-            "open.juhedenglu.cn" // Juhe QQ IdP：仅认证流程
+            "auth.wotbtools.com"
+        )
+
+        /** QQ OAuth 最小 allowlist：仅在认证流程期间允许留在 WebView（由 inAuthFlow 门控）。 */
+        private val QQ_AUTH_HOSTS = setOf(
+            "graph.qq.com",
+            "xui.ptlogin2.qq.com",
+            "ptlogin2.qq.com",
+            "openapi.qq.com"
         )
 
         /** Native Bridge 唯一允许的调用 origin；绝不暴露给 Keycloak / IdP / 任意 frame。 */
@@ -68,6 +77,7 @@ class MainActivity : Activity() {
     private lateinit var webErrorRetryButton: Button
     private lateinit var versionPrimaryButton: Button
     private lateinit var versionLaterButton: Button
+    private lateinit var webErrorTitle: TextView
 
     private lateinit var apkUpdater: ApkUpdater
     private lateinit var nativeBridge: NativeBridge
@@ -78,6 +88,8 @@ class MainActivity : Activity() {
     @Volatile private var latestManifest: VersionManifest? = null
     @Volatile private var downloadedApk: File? = null
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
+    @Volatile private var inAuthFlow = false
+    @Volatile private var awaitingUnknownSourcesPermission = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,6 +105,7 @@ class MainActivity : Activity() {
         versionCurrent = findViewById(R.id.versionCurrent)
         versionLatest = findViewById(R.id.versionLatest)
         webErrorRetryButton = findViewById(R.id.webErrorRetryButton)
+        webErrorTitle = findViewById(R.id.webErrorTitle)
         versionPrimaryButton = findViewById(R.id.versionPrimaryButton)
         versionLaterButton = findViewById(R.id.versionLaterButton)
 
@@ -113,6 +126,10 @@ class MainActivity : Activity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun configureWebView() {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            showUnsupportedWebView()
+            return
+        }
         val settings = webView.settings
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
@@ -167,9 +184,14 @@ class MainActivity : Activity() {
         }
 
         webView.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+                inAuthFlow = isAuthHost(url)
+            }
+
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val host = request.url.host ?: return false
-                if (host in NAV_HOSTS) return false
+                if (host in GENERAL_NAV_HOSTS) return false
+                if (host in QQ_AUTH_HOSTS && inAuthFlow) return false
                 try {
                     startActivity(Intent(Intent.ACTION_VIEW, request.url))
                 } catch (_: Exception) {
@@ -235,6 +257,18 @@ class MainActivity : Activity() {
         webErrorView.visibility = View.VISIBLE
     }
 
+    private fun showUnsupportedWebView() {
+        hideAllGates()
+        webErrorView.visibility = View.VISIBLE
+        webErrorTitle.text = getString(R.string.webview_unsupported_title)
+        webErrorRetryButton.visibility = View.GONE
+    }
+
+    private fun isAuthHost(url: String?): Boolean {
+        val host = url?.let { Uri.parse(it).host } ?: return false
+        return host == "auth.wotbtools.com" || host in QQ_AUTH_HOSTS
+    }
+
     private fun showMandatoryUpdate(manifest: VersionManifest, installed: Int) {
         hideAllGates()
         versionGateView.visibility = View.VISIBLE
@@ -295,6 +329,7 @@ class MainActivity : Activity() {
     }
 
     private fun openInstallPermissionSettings() {
+        awaitingUnknownSourcesPermission = true
         try {
             startActivity(
                 Intent(
@@ -309,12 +344,18 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        // 返回后保持可操作；缺权限时明确提示并可再次点击去授权。强制更新用户仍不能进入业务。
+        // 返回后保持可操作；缺权限时明确提示并可再次点击去授权。
         if (versionGateView.visibility == View.VISIBLE) {
             versionPrimaryButton.isEnabled = true
             versionPrimaryButton.text = getString(R.string.update_now)
-            if (downloadedApk != null && !installDownloadedApk()) {
-                versionMessage.text = getString(R.string.update_unknown_source_hint)
+            if (awaitingUnknownSourcesPermission) {
+                // 仅从「未知来源」授权页返回才自动继续 installer；普通 Package Installer 返回不自动重开。
+                awaitingUnknownSourcesPermission = false
+                if (downloadedApk != null && canRequestPackageInstalls()) {
+                    installDownloadedApk()
+                } else if (downloadedApk != null) {
+                    versionMessage.text = getString(R.string.update_unknown_source_hint)
+                }
             }
         }
     }
@@ -342,14 +383,13 @@ class MainActivity : Activity() {
 
     private fun handleIncomingIntent(intent: Intent?) {
         val pending = ReplayIntentHandler.fromIntent(this, intent)
-        // 替换前清理旧缓存文件。
-        pendingReplay?.file?.delete()
         pendingReplay = pending
         pendingReplayEligible = pending != null
     }
 
     private fun clearPendingReplay() {
-        pendingReplay?.file?.delete()
+        // 重要：chooser 返回 URI 后 WebView/Chromium 仍可能读取该文件，不能立即删除 backing file。
+        // 只标记已消费、不可再次注入；文件保留到下一次 app startup cleanupOrphans() 安全清理。
         pendingReplay = null
         pendingReplayEligible = false
     }
