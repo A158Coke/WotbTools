@@ -24,6 +24,8 @@ const props = defineProps({
   referenceLabel: { type: String, default: '' },
   /** player 系列名（昵称），用于图例。 */
   playerLabel: { type: String, default: '' },
+  /** Optional caller-specific incomplete-reference text; V5 keeps its existing default. */
+  referenceUnavailableLabel: { type: String, default: '' },
 })
 
 const playerComplete = computed(() =>
@@ -122,7 +124,7 @@ function fmtTick(ratio) {
               class="lg-item"><span class="lg-swatch lg-swatch-ref"></span>{{ referenceLabel }}</span>
       </div>
       <p v-if="referenceMissing" class="radar-ref-missing" data-testid="radar-ref-missing">
-        {{ t('league.drawer.ref_unavailable') }}
+        {{ props.referenceUnavailableLabel || t('league.drawer.ref_unavailable') }}
       </p>
 
       <!-- detail：Dimension | Player | Reference（score/max，无百分比、无差值） -->
