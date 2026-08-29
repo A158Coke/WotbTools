@@ -751,12 +751,16 @@ V5 evidence adjustment 只作用于最终 Batch Player Rating，不重新缩放�
 
 ### Radar
 
-V5 不修改七维 Radar geometry。
+V5 Evidence Adjustment 不修改七维 raw score；Radar 的 presentation geometry 由 V2/V5 共用相对表现标尺负责。
 
 Radar 仍然展示：
 
 - 单场：V4.1 `dimensionScores`
-- 批次：既有 dimension summary 语义
+- 批次：`dimensionMeans`（rated battle arithmetic mean）
+
+每轴与当前 Battle/Global Average 比较：平均映射为规则 75 环，2 倍平均为 100 强势线，4 倍为 125，
+8 倍及以上在不可见 150 上限截断。可见 SVG 不生成 150 边界/刻度/标签；明细继续显示原始 score/max 与真实平均。
+该相对图形只回答“相对当前比较组的轮廓”，不承诺跨上传批次绝对可比。
 
 Evidence Adjustment 不作用于单个维度。
 

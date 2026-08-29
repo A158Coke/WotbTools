@@ -308,7 +308,7 @@ onBeforeUnmount(() => {
   .rating-v2-run { width: 100%; }
   .rating-v2-tablewrap td { padding: 7px 8px; font-size: .76rem; }
   .rating-v2-sort { padding: 7px 8px; font-size: .76rem; }
-  .rating-v2-radar-backdrop.rating-v2-radar-modal { pointer-events: auto; background: color-mix(in srgb, #000 35%, transparent); }
+  .rating-v2-radar-backdrop.rating-v2-radar-modal { pointer-events: auto; background: color-mix(in srgb, var(--text-heading) 35%, transparent); }
   .rating-v2-radar-drawer { left: 8px; width: auto; }
 }
 @media (prefers-reduced-motion: reduce) { .rating-v2-radar-drawer { animation: none; } }
