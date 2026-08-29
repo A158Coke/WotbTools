@@ -251,6 +251,8 @@ Processing/Export task notification 必须低于 Modal stacking level；移动�
   `docs/WotBTools_League_Rating_V5.md`，canonical 单一事实源；ReplayPage League 模式
   「算法说明」按钮跳转进入，返回时经 KeepAlive 保留解析状态）。
 - `?view=playback-qa`：隐藏 QA 页（admin）。
+- `?view=rating-v2`：隐藏历史 Rating V2 灰度页（仅 `wotbtools-admin`，只读 READY Processing Job）；
+  选中结果表玩家可查看 V2 六轴雷达，几何归一化由后端 V2 只读投影提供，不能影响 V2 总分或 League 雷达。
 - `?view=ai-review`：AI 复盘独立能力页（登录后使用）。
 - `?view=battle-playback`：战局重建独立能力页（登录后使用）。
 - `?view=rating-v2`：隐藏历史 Rating V2 灰度页（仅 `wotbtools-admin`，只读 READY Processing Job）。
