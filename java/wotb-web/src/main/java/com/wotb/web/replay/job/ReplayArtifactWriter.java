@@ -3,6 +3,7 @@ package com.wotb.web.replay.job;
 import com.wotb.core.replay.facts.AiReplayFacts;
 import com.wotb.core.replay.facts.ReplayFactsCodec;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
+import com.wotb.web.replay.dto.BattlePlaybackDataset;
 import com.wotb.web.replay.dto.MapOverview;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
@@ -38,6 +39,11 @@ public final class ReplayArtifactWriter {
         return derivedDir(jobDir, sourceIndex).resolve("map-overview.json");
     }
 
+    /** V2 battle playback dataset 路径（仅当 canonical timeline 可用时写出）。 */
+    public static Path battlePlaybackV2Path(final Path jobDir, final int sourceIndex) {
+        return derivedDir(jobDir, sourceIndex).resolve("battle-playback-v2.json");
+    }
+
     /** 写 ai-facts.json（worker 内调用，先写后 READY）。 */
     public static void writeAiFacts(final Path jobDir, final int sourceIndex,
                                     final ReplayProcessingResult result) throws IOException {
@@ -54,6 +60,15 @@ public final class ReplayArtifactWriter {
         writeAtomic(mapOverviewPath(jobDir, sourceIndex), MAPPER.writeValueAsBytes(overview));
     }
 
+    /** 写 V2 battle playback dataset；dataset == null（timeline 不可用）时跳过。 */
+    public static void writeBattlePlaybackV2(final Path jobDir, final int sourceIndex,
+                                             final BattlePlaybackDataset dataset) throws IOException {
+        if (dataset == null) {
+            return;
+        }
+        writeAtomic(battlePlaybackV2Path(jobDir, sourceIndex), MAPPER.writeValueAsBytes(dataset));
+    }
+
     /** 读取 ai-facts（AI Dataset 迁移 Phase 6 用）。 */
     public static AiReplayFacts readAiFacts(final Path jobDir, final int sourceIndex) throws IOException {
         return ReplayFactsCodec.fromBytes(Files.readAllBytes(aiFactsPath(jobDir, sourceIndex)));
@@ -66,6 +81,16 @@ public final class ReplayArtifactWriter {
             return null;
         }
         return MAPPER.readValue(Files.readAllBytes(path), MapOverview.class);
+    }
+
+    /** 读取 V2 battle playback dataset；文件不存在（unavailable）返回 null（204 语义）。 */
+    public static BattlePlaybackDataset readBattlePlaybackV2(final Path jobDir, final int sourceIndex)
+            throws IOException {
+        final Path path = battlePlaybackV2Path(jobDir, sourceIndex);
+        if (!Files.exists(path)) {
+            return null;
+        }
+        return MAPPER.readValue(Files.readAllBytes(path), BattlePlaybackDataset.class);
     }
 
     private static Path derivedDir(final Path jobDir, final int sourceIndex) {

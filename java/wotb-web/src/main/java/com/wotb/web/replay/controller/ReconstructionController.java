@@ -18,6 +18,7 @@ import com.wotb.web.replay.ai.gateway.AiCancellationToken;
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
+import com.wotb.web.replay.dto.BattlePlaybackDataset;
 import com.wotb.web.replay.dto.MapOverview;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 import com.wotb.web.replay.exception.AiReviewBusyException;
@@ -449,6 +450,22 @@ public class ReconstructionController {
 
     /** 战局回放 Dataset 请求体（API 纯英文 key）。 */
     public record MapOverviewDatasetRequest(String processingJobId, String sourceId) {
+    }
+
+    /**
+     * 战局回放 V2 Dataset 路径：读 cached battle-playback-v2.json（canonical timeline 稀疏投影）。
+     * timeline 不可用（capability）→ 204；缺失引用 → 400；job/source 异常映射与 map-overview 一致。
+     */
+    @PostMapping(value = ApiPaths.REPLAY_BATTLE_PLAYBACK_V2, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<BattlePlaybackDataset> battlePlaybackV2(
+            @RequestBody final MapOverviewDatasetRequest request) {
+        requireDatasetReference(request);
+        final BattlePlaybackDataset dataset = mapOverviewService.buildBattlePlaybackFromDataset(
+                request.processingJobId(), parseSourceIndex(request.sourceId()));
+        if (dataset == null) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.ok(dataset);
     }
 
     // ---- 异常映射（仅本控制器；返回稳定错误码文本，供前端本地化） ----
