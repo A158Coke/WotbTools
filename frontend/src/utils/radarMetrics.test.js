@@ -26,29 +26,32 @@ function freshStorage() {
   return store
 }
 
-describe('Radar League 维度 normalization 使用后端 metadata（禁止 frontend hardcoded domain max）', () => {
+describe('Radar League raw geometry 与 max 明细解释解耦', () => {
   beforeEach(() => { freshStorage(); vi.clearAllMocks() })
 
-  it('提供 metadata：league_damage_score max=400 → 342 归一化 0.855，显示 "342 / 400"（无百分比）', () => {
+  it('提供 metadata：max 只格式化 score/max，不产生 geometry normalized', () => {
     const m = resolveRadarMetric('league_damage_score', 342, { league_damage_score: 400 })
     expect(m.available).toBe(true)
-    expect(m.normalized).toBeCloseTo(0.855, 3)
+    expect(m.normalized).toBeNull()
     expect(m.displayValue).toBe('342 / 400')
     expect(m.displayValue).not.toContain('%')
   })
 
-  it('把测试 metadata 改成 max=500：Radar 自动使用 500（证明 frontend 无 hardcoded max）', () => {
+  it('改变 metadata max 只改变 detail 文案，不改变 raw/availability/geometry input', () => {
     const m = resolveRadarMetric('league_damage_score', 342, { league_damage_score: 500 })
     expect(m.available).toBe(true)
-    expect(m.normalized).toBeCloseTo(0.684, 3)
+    expect(m.rawValue).toBe(342)
+    expect(m.normalized).toBeNull()
     expect(m.displayValue).toBe('342 / 500')
   })
 
-  it('后端未提供满分（max 缺失/非有限/<=0）→ unavailable "--"，不伪造 0/0%', () => {
+  it('后端 max 缺失/非有限/<=0：raw 仍 available，明细降级为 raw，不阻断 geometry', () => {
     for (const maxByKey of [{}, { league_damage_score: 0 }, { league_damage_score: NaN }]) {
       const m = resolveRadarMetric('league_damage_score', 342, maxByKey)
-      expect(m.available).toBe(false)
-      expect(m.displayValue).toBe('--')
+      expect(m.available).toBe(true)
+      expect(m.rawValue).toBe(342)
+      expect(m.normalized).toBeNull()
+      expect(m.displayValue).toBe('342')
     }
   })
 

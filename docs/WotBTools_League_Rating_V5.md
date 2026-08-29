@@ -762,6 +762,9 @@ Radar 仍然展示：
 8 倍及以上在不可见 150 上限截断。可见 SVG 不生成 150 边界/刻度/标签；明细继续显示原始 score/max 与真实平均。
 该相对图形只回答“相对当前比较组的轮廓”，不承诺跨上传批次绝对可比。
 
+`resp.league.columns[].max` 只用于明细的 `score / max` 解释，不参与 reference membership 或 geometry availability；
+max 缺失/非法时明细降级为 raw score，只要 player/reference raw 完整，相对多边形仍必须可绘制。
+
 Evidence Adjustment 不作用于单个维度。
 
 禁止为了让 Radar “看起来和 V5 Rating 一致”把七个维度一起乘 `E(n)`。

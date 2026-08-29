@@ -272,7 +272,8 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
 - **选手 Drawer 雷达**：只允许七维 League Rating，用户可自定义维度与顺序（min 3 / max 7），
   偏好独立 localStorage（`wotb-radar-metric-order`），Summary 与 Battle 共用；Contribution/KAST/Impact
   继续保留在表现指标区，不进入 Radar。维度 raw score 与 `score/max` 明细仍来自后端 metadata，最终几何
-  则按当前 Battle/Global Average 使用共用相对表现标尺（平均=75、2×平均=100、隐藏150上限）。
+  则按当前 Battle/Global Average 使用共用相对表现标尺（平均=75、2×平均=100、隐藏150上限）；max
+  metadata 缺失时明细降级显示 raw score，但不影响 raw/reference 完整轴的相对几何。
 - 所有可见列（单场 / 普通汇总 / CW 统一玩家表 / 战队汇总）均支持 ASC/DESC 排序：
   数值 numeric、字符串自然序（Intl.Collator numeric）、缺失（null/''/NaN/--）恒排最后、
   排序基于 raw 值（格式化单元格按原始数值排）。
@@ -387,7 +388,8 @@ Team Rating 计算；Radar aggregation 只发生在多场 player summary visuali
   invariant violation（`LeagueRatingBatchAggregator.chunkMeans/chunkMedians`
   对残缺 stride fail fast）；Radar 轴缺失显示 `--`，不冒充 0/0%。
 - **几何标尺**：League 维度满分仍来自后端 `resp.league.columns`（key/max）供明细解释，frontend 不硬编码
-  domain max；最终半径按 player raw score / 当前 Battle/Global Average 映射为平均75、2×平均100、
+  domain max；max 缺失只让明细退化为 raw score，不改变 geometry availability。最终半径按 player raw
+  score / 当前 Battle/Global Average 映射为平均75、2×平均100、
   4×平均125、>=8×平均150。150 只作不可见坐标上限，不绘制外边界或刻度。
 - **Impact 不入 Radar**（无稳定 normalization contract）；hit_rate / pen_rate
   也不入 Radar candidate。
