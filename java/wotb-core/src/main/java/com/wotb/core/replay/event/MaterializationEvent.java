@@ -37,6 +37,22 @@ public record MaterializationEvent(
         int entityTypeId,
         Integer currentHp,
         byte[] initialTransformRaw,
-        byte[] initPayloadRaw
+        byte[] initPayloadRaw,
+        VehicleBattleLoadout loadout
 ) implements ReplayEvent {
+
+    /** 兼容旧 9 参构造：loadout 未解析时为 null（仅 MaterializationDecoder 生产 semantic loadout）。 */
+    public MaterializationEvent(
+            int sequence,
+            ReplayTimestamp timestamp,
+            int packetType,
+            DecodeConfidence confidence,
+            int entityId,
+            int entityTypeId,
+            Integer currentHp,
+            byte[] initialTransformRaw,
+            byte[] initPayloadRaw) {
+        this(sequence, timestamp, packetType, confidence, entityId, entityTypeId,
+                currentHp, initialTransformRaw, initPayloadRaw, null);
+    }
 }
