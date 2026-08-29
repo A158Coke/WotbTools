@@ -13,6 +13,7 @@ import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.event.RoundFinishedEvent;
+import com.wotb.core.replay.event.TurretDirectionChangedEvent;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
@@ -94,6 +95,12 @@ final class TimelineTestFixtures {
                                      final Integer currentHp, final Boolean alive) {
         return new HealthChangedEvent(seq++, ts(battleSec), 7, DecodeConfidence.EXACT,
                 eid, currentHp, null, alive);
+    }
+
+    static TurretDirectionChangedEvent turret(final int eid, final double battleSec,
+                                              final double relYawDeg) {
+        return new TurretDirectionChangedEvent(seq++, ts(battleSec), 7, DecodeConfidence.EXACT,
+                eid, relYawDeg);
     }
 
     static DamageEvent damage(final int attackerEid, final int victimEid,

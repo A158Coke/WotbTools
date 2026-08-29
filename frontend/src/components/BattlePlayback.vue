@@ -6,6 +6,7 @@ import { teamCssVars } from '../data/mapTeamColors'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
 import { createMapView } from '../utils/mapView'
 import VehicleMarker from './VehicleMarker.vue'
+import V2VehicleInspector from './V2VehicleInspector.vue'
 import enemyHull from '../assets/tank-icons/tank-marker-enemy-hull.png'
 import enemyTurret from '../assets/tank-icons/tank-marker-enemy-turret.png'
 import friendlyHull from '../assets/tank-icons/tank-marker-friendly-hull.png'
@@ -40,6 +41,13 @@ import {
   victimFeedbackAllowed,
   zoomViewAt
 } from '../utils/battlePlayback'
+import {
+  positionCoveredAtV2,
+  positionAtV2,
+  orientationAtV2,
+  healthAt,
+  lifeAt,
+} from '../utils/battlePlaybackV2'
 import {
   MARKER_CORE_PX,
   PLAYER_FADE_MS,
@@ -77,7 +85,9 @@ const props = defineProps({
   overview: { type: Object, required: true },
   seekTo: { type: Number, default: null },
   /** QA 场景循环播放（PR4 §49：时间线到末尾自动回到 0 继续） */
-  loop: { type: Boolean, default: false }
+  loop: { type: Boolean, default: false },
+  /** V2 canonical battle-playback-dataset（可选；迁移期守卫：present 时用 V2 检查器）。 */
+  playbackV2: { type: Object, default: null }
 })
 
 const { t } = useI18n()
@@ -92,6 +102,13 @@ watch(image, async (img) => {
 }, { immediate: true })
 
 const playback = computed(() => props.overview.playback || null)
+/** V2 canonical tracks 按账号索引（迁移期守卫：present 时 marker/HUD 用 V2 事实源）。 */
+const v2TrackByAccount = computed(() => {
+  const tracks = props.playbackV2?.vehicles || []
+  const m = new Map()
+  for (const tr of tracks) m.set(tr.accountId, tr)
+  return m
+})
 const duration = computed(() => (playback.value ? Math.max(0, playback.value.durationSec) : 0))
 const friendlyTeam = computed(() => props.overview.friendlyTeam)
 
@@ -132,8 +149,16 @@ watch(
 // FULL_RELATIVE 100% 阵营色实心条（即使部分车辆已有 current sample、但全队 entry/max 尚未
 // 全部证明，开局也不显示斜纹；不伪造具体数字）；敌方：无可信采样恒 UNKNOWN 灰段
 // （不把 tankopedia base 当已知血量）
-const friendlyHp = computed(() => teamHp(playback.value?.vehicles, friendlyTeam.value, currentTime.value, true))
-const enemyHp = computed(() => teamHp(playback.value?.vehicles, friendlyTeam.value === 1 ? 2 : 1, currentTime.value, false))
+// V2 为主：playbackV2 present 时，teamHp 聚合 canonical healthTransitions + displayCapacityHp；
+// legacy 仅当无 V2 时才进入 HP 状态机推理。
+const hpVehicles = computed(() => {
+  if (props.playbackV2?.vehicles?.length) {
+    return props.playbackV2.vehicles.map(t => ({ team: t.team, healthTransitions: t.healthTransitions || [] }))
+  }
+  return playback.value?.vehicles || []
+})
+const friendlyHp = computed(() => teamHp(hpVehicles.value, friendlyTeam.value, currentTime.value, true))
+const enemyHp = computed(() => teamHp(hpVehicles.value, friendlyTeam.value === 1 ? 2 : 1, currentTime.value, false))
 // 争霸赛实时点数：来自回放广播 pointsSamples（随 currentTime 变化）；非争霸赛/无广播 → null 不显示
 const friendlyPoints = computed(() =>
   teamPointsAt(playback.value?.pointsSamples, friendlyTeam.value, currentTime.value))
@@ -352,6 +377,14 @@ function pruneTransients(now) {
 
 // ---- 单车 HP HUD 数据（§4/§5/§6/§7）----
 function hpFor(vehicle) {
+  const v2 = v2TrackByAccount.value?.get(vehicle.accountId)
+  if (v2) {
+    return hpDisplay(
+      { ...vehicle, healthTransitions: v2.healthTransitions || [], lifeTransitions: v2.lifeTransitions || [] },
+      currentTime.value,
+      { friendly: vehicle.team === friendlyTeam.value },
+    )
+  }
   return hpDisplay(vehicle, currentTime.value, { friendly: vehicle.team === friendlyTeam.value })
 }
 /** marker HP HUD 数字区实际渲染文本（VehicleMarker .pb-hp-num 同款：current 有值→数字，否则 —）。
@@ -1091,6 +1124,10 @@ const HULL_HITBOX = Object.freeze({
 })
 
 function vehicleState(vehicle) {
+  const v2Track = v2TrackByAccount.value?.get(vehicle.accountId) || null
+  if (v2Track) {
+    return vehicleStateV2(vehicle, v2Track)
+  }
   const route = routesByAccount.value.get(vehicle.accountId)
   const points = route ? route.points : []
   // 局部时间变量命名 time——避免遮蔽 setup 的 i18n t()（ariaLabel 需要）
@@ -1144,6 +1181,46 @@ function vehicleState(vehicle) {
   }
 }
 
+/** V2 车辆状态：只消费 canonical V2 track（positionSegments/orientationSegments/healthTransitions/
+ * lifeTransitions），前端不再做 HP/AoI/death 推理。 */
+function vehicleStateV2(vehicle, track) {
+  const time = currentTime.value
+  const life = lifeAt(track, time)
+  const destroyed = life != null && life.lifeState === 'DESTROYED'
+  const last = positionAtV2(track.positionSegments, time)
+  if (!last) return null
+  const covered = positionCoveredAtV2(track.positionSegments, time)
+  const recorder = vehicle.accountId === props.overview.recorderAccountId
+  const direction = orientationAtV2(track.orientationSegments, time)
+  const friendly = vehicle.team === friendlyTeam.value
+  const hullDeg = direction ? screenRotation(direction.hullYawDeg) : null
+  const turretDeg = direction
+    ? screenRotation(turretWorldYawDeg(direction.hullYawDeg, direction.turretRelativeYawDeg))
+    : null
+  return {
+    vehicle,
+    pos: last,
+    covered,
+    destroyed,
+    recorder,
+    friendly,
+    direction,
+    model: vehicleModel(vehicle),
+    hullImage: friendly ? friendlyHull : enemyHull,
+    turretImage: friendly ? friendlyTurret : enemyTurret,
+    hullScreenDeg: destroyed ? (hullDeg == null ? 0 : hullDeg) : hullDeg,
+    turretScreenDeg: destroyed ? (turretDeg == null ? 0 : turretDeg) : turretDeg,
+    markerStyle: { left: markerLeft(last.x), top: markerTop(last.y), transform: markerTransform.value },
+    overlayInverseScale: overlayInverseScale.value,
+    overlayInverse: overlayInverse.value,
+    playerName: vehicle.playerName || '',
+    tankName: vehicle.tankName || String(vehicle.tankId),
+    hitbox: vehicleModel(vehicle) ? HULL_HITBOX.dedicated : HULL_HITBOX.generic,
+    ariaLabel: `${vehicle.playerName}: ${t(destroyed ? 'recon.map.playback.state_destroyed' : (covered ? 'recon.map.playback.state_position_reported' : 'recon.map.playback.state_position_stale'))}`,
+    lastKnown: !covered,
+  }
+}
+
 /** 标记水平位置（%）：地图用户坐标 → 容器百分比。 */
 function markerLeft(x) {
   return `${((mapView.value.toX(x)) / mapView.value.W) * 100}%`
@@ -1157,9 +1234,32 @@ function markerTop(y) {
 const vehicleStates = computed(() => {
   // preload 未完成（asset decision 未定）时不渲染车辆——禁止 generic 闪现后替换
   if (preload.value.phase !== 'ready') return []
+  // V2 为主：playbackV2 present 时以 V2 track 为事实源；legacy vehicle 仅提供
+  // identity/model/portrait（tankId/tankName/team），不参与 HP/AoI/death 推理。
+  if (props.playbackV2?.vehicles?.length) {
+    const legacyById = new Map((playback.value?.vehicles || []).map(v => [v.accountId, v]))
+    return props.playbackV2.vehicles
+      .map(track => {
+        const legacy = legacyById.get(track.accountId) || v2LegacyVehicle(track)
+        return vehicleStateV2(legacy, track)
+      })
+      .filter(Boolean)
+  }
   const vehicles = playback.value ? playback.value.vehicles : []
   return vehicles.map(vehicleState).filter(Boolean)
 })
+
+/** 无 legacy 对应时，用 V2 track 构造最小 identity vehicle（供 model/portrait/team）。 */
+function v2LegacyVehicle(track) {
+  return {
+    accountId: track.accountId,
+    playerName: track.playerName || '',
+    tankId: track.tankId,
+    tankName: track.tankName || '',
+    team: track.team,
+    tankType: track.tankClass || '',
+  }
+}
 
 const filteredEvents = computed(() => {
   const events = (playback.value ? playback.value.events : [])
@@ -1322,6 +1422,14 @@ function selectAt(accountId, clientX, clientY) {
 const selectedState = computed(() => {
   if (selectedAccountId.value == null) return null
   return vehicleStates.value.find(st => st.vehicle.accountId === selectedAccountId.value) || null
+})
+
+// V2 守卫：当 playbackV2 dataset 存在时，定位选中车辆的 V2 track（按 accountId）。
+const selectedV2Track = computed(() => {
+  if (!props.playbackV2 || !selectedState.value) return null
+  const accountId = selectedState.value.vehicle.accountId
+  const tracks = props.playbackV2.vehicles || []
+  return tracks.find(t => t.accountId === accountId) || null
 })
 
 // Details Panel 车型图：仅在选中车辆后按 tankId 懒加载；图片随站点发布，production 不访问 BlitzKit。
@@ -1996,6 +2104,13 @@ const mapStyle = computed(() => ({
         <dt>{{ $t('recon.map.playback.kills') }}</dt>
         <dd>{{ selCurStats.kills }}</dd>
       </dl>
+      <!-- V2 守卫：canonical dataset present 时，选中车辆的 V2 事实面板（AC-4/5/6/7）。 -->
+      <V2VehicleInspector
+        v-if="selectedV2Track"
+        data-test="pb-sb-v2-inspector"
+        :track="selectedV2Track"
+        :time-sec="currentTime"
+      />
       <template v-if="selDamageLog.length">
         <div class="pb-sb-section">{{ $t('recon.map.playback.damage_log') }}</div>
         <ul class="pb-sb-log">

@@ -142,9 +142,15 @@ describe('BattlePlaybackPanel Dataset identity reset', () => {
   it('已加载 A 地图后 Dataset identity 切 B：清空 A 并自动加载 B（不被 mapLoaded 阻塞）', async () => {
     const dA = deferred()
     const dB = deferred()
-    const fetchMock = vi.fn()
-      .mockImplementationOnce(() => dA.promise)
-      .mockImplementationOnce(() => dB.promise)
+    let mapCall = 0
+    const fetchMock = vi.fn((url) => {
+      if (String(url) === '/api/replay/map-overview') {
+        mapCall++
+        return mapCall === 1 ? dA.promise : dB.promise
+      }
+      // V2 dataset：返回 204（timeline 不可用 → null，走 legacy）
+      return Promise.resolve({ ok: true, status: 204, json: async () => null })
+    })
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mountPanel()
 
@@ -172,9 +178,14 @@ describe('BattlePlaybackPanel Dataset identity reset', () => {
   it('file + Dataset 同一次变化只发一次请求（单一 effective identity watcher）', async () => {
     const dA = deferred()
     const dB = deferred()
-    const fetchMock = vi.fn()
-      .mockImplementationOnce(() => dA.promise)
-      .mockImplementationOnce(() => dB.promise)
+    let mapCall = 0
+    const fetchMock = vi.fn((url) => {
+      if (String(url) === '/api/replay/map-overview') {
+        mapCall++
+        return mapCall === 1 ? dA.promise : dB.promise
+      }
+      return Promise.resolve({ ok: true, status: 204, json: async () => null })
+    })
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mountPanel()
 

@@ -94,6 +94,7 @@ services:
     volumes:
       - ./config/sponsor-config.json:/usr/share/nginx/html/sponsor-config.json:ro
       - ./config/sponsor:/usr/share/nginx/html/sponsor-assets:ro
+      - ./android-release:/usr/share/nginx/html/download/android:ro
     depends_on:
       - wotb-backend
       - keycloak

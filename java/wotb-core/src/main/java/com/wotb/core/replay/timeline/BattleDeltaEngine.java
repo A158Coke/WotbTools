@@ -112,7 +112,7 @@ final class BattleDeltaEngine {
             if (curHp != null && prevHpVal != null && !curHp.equals(prevHpVal)) {
                 final double delta = curHp - prevHpVal;
                 final Double prevObserved = prevHpObservedAt.get(eid);
-                final Double curObserved = v.health().currentHpObservedAtSec();
+                final Double curObserved = v.health().observedAtSec();
                 final boolean gapInPosition = prevPos != null
                         && prevPos.knowledge() != PositionKnowledge.CURRENT;
                 // side 属性：friendly/enemy，供 Context Compiler 渲染正确称谓（你/我方/敌方），

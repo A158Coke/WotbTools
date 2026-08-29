@@ -1432,7 +1432,16 @@
                 "vehicle_class_medium": "中型坦克",
                 "vehicle_class_light": "轻型坦克",
                 "vehicle_class_td": "坦克歼击车",
-                "vehicle_class_spg": "自行火炮"
+                "vehicle_class_spg": "自行火炮",
+                "loadout": "战斗装载",
+                "module_state": "模块/乘员状态",
+                "consumable": "消耗品",
+                "provision": "补给",
+                "equipment": "装备",
+                "orientation": "朝向",
+                "recorder_visible": "录像者可见",
+                "orientation_current": "当前朝向",
+                "orientation_last_known": "最后已知朝向"
             }
         },
         "stages": {

@@ -184,6 +184,28 @@ final class EntityIndex {
         return lastAtOrBefore(healths.get(entityId), t, HpSample::clock);
     }
 
+    /**
+     * presentation-only HP bar 容量：截至 t 的真实可信 currentHp 采样最大值
+     * （anti-future-leak —— 绝不用任何 &gt;t 采样；也绝不 max(观测, tankopedia base)）。
+     * 无可信 positive sample → null。这只用于 HP bar 渲染量程，不是 canonical max HP 事实。
+     */
+    Integer displayCapacityHpAt(final int entityId, final double t) {
+        final List<HpSample> list = healths.get(entityId);
+        if (list == null || list.isEmpty()) {
+            return null;
+        }
+        int max = 0;
+        for (final HpSample s : list) {
+            if (s.clock() > t + 1e-9) {
+                break;
+            }
+            if (s.currentHp() != null && s.currentHp() > max) {
+                max = s.currentHp();
+            }
+        }
+        return max > 0 ? max : null;
+    }
+
     TurretSample lastTurretAtOrBefore(final int entityId, final double t) {
         return lastAtOrBefore(turrets.get(entityId), t, TurretSample::clock);
     }
