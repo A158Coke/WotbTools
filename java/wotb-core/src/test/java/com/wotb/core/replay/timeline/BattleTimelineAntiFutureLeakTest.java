@@ -47,8 +47,12 @@ class BattleTimelineAntiFutureLeakTest {
         final FrameVehicle at120 = frameVehicle(timeline, 120);
         assertEquals(VehicleKnowledgeState.LAST_KNOWN, at120.knowledgeState());
         assertEquals(1500, at120.health().currentHp());
-        assertEquals(100.0, at120.health().currentHpObservedAtSec(), 1e-9);
-        assertEquals(20.0, at120.health().currentHpAgeSec(), 1e-9);
+        assertEquals(100.0, at120.health().observedAtSec(), 1e-9);
+        assertEquals(20.0, at120.health().ageSec(), 1e-9);
+        // P0 frame-health knowledge：hidden interval → LAST_KNOWN；displayCapacityHp 只含 ≤t 观测 (=1500)。
+        assertEquals(FrameHealth.HealthKnowledge.LAST_KNOWN, at120.health().knowledge());
+        assertEquals(1500, at120.health().displayCapacityHp(),
+                "displayCapacityHp must be anti-future-leak: only <=120s obs, never 600 from t=140");
 
         // contextAt(130)：仍未重亮，HP 仍是 1500
         assertEquals(1500, frameVehicle(timeline, 130).health().currentHp());
@@ -57,6 +61,9 @@ class BattleTimelineAntiFutureLeakTest {
         final FrameVehicle at145 = frameVehicle(timeline, 145);
         assertEquals(600, at145.health().currentHp());
         assertEquals(VehicleKnowledgeState.POSITION_STREAM_ACTIVE, at145.knowledgeState());
+        assertEquals(FrameHealth.HealthKnowledge.CURRENT, at145.health().knowledge());
+        // 1500 仍是 display capacity 的正确上界（重亮后 600 更低，不改变容量）
+        assertEquals(1500, at145.health().displayCapacityHp());
     }
 
     @Test
@@ -107,6 +114,33 @@ class BattleTimelineAntiFutureLeakTest {
         // 160s：已确知阵亡
         assertNotNull(frameVehicle(timeline, 160).destroyedKnownAtSec());
         assertEquals(150.0, frameVehicle(timeline, 160).destroyedKnownAtSec(), 1e-9);
+    }
+
+    @Test
+    void orientationKnowledgeIsLastKnownDuringAoIHiddenInterval() {
+        final Battle battle = TimelineTestFixtures.battle(200.0);
+        final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
+        // enemy 位置流到 100s；turret 到 100s；随后 Type4 leave → UNKNOWN_AOI gap；140 重亮。
+        events.add(TimelineTestFixtures.position(ENEMY, 100, -12f, -12f, 0f));
+        events.add(TimelineTestFixtures.turret(ENEMY, 100, 30.0));
+        events.add(new EntityRemovedEvent(TimelineTestFixtures.seq++, TimelineTestFixtures.ts(100),
+                4, DecodeConfidence.EXACT, ENEMY));
+        events.add(TimelineTestFixtures.position(ENEMY, 140, -15f, -15f, 0f));
+        events.add(TimelineTestFixtures.turret(ENEMY, 140, 45.0));
+        final ReplayReconstruction recon = TimelineTestFixtures.recon(200.0, events);
+        final BattleTimeline timeline = BattleTimelineBuilder
+                .build(battle, recon, TimelineTestFixtures.personalPerspective()).timeline();
+        assertNotNull(timeline);
+
+        // 120s：hidden interval → orientation LAST_KNOWN（不能表现为实时炮塔方向）
+        final FrameVehicle at120 = frameVehicle(timeline, 120);
+        assertNotNull(at120.orientation().hullYawDeg());
+        assertEquals(FrameOrientation.OrientationKnowledge.LAST_KNOWN,
+                at120.orientation().knowledge());
+        // 145s：重亮 → CURRENT
+        final FrameVehicle at145 = frameVehicle(timeline, 145);
+        assertEquals(FrameOrientation.OrientationKnowledge.CURRENT,
+                at145.orientation().knowledge());
     }
 
     private static FrameVehicle frameVehicle(final BattleTimeline timeline, final int second) {
