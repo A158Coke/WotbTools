@@ -13,6 +13,7 @@ import java.nio.ByteOrder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Type5 物化 + Type33 预物化解码（B8/AoI 与 B4 Type5 HP 快照）。 */
 class MaterializationDecoderTest {
@@ -60,21 +61,16 @@ class MaterializationDecoderTest {
     }
 
     @Test
-    void futureVersionStructurallyDecodesType5Materialization() {
-        // PR162 前向兼容：Type5 materialization 结构是 entity-lifecycle 布局（精确 shape 校验），
-        // 未来版本（11.20）用已证明的 53-byte 车辆 shape 仍结构化解出 presence=EXACT；
-        // 但 HP 是闭合语义（closedSemanticsAllowed 11.20=false），currentHp 保持 raw/null，
-        // 绝不伪造成 HP 值。
+    void futureVersionType5MaterializationFailsClosed() {
+        // PR162/P1-5：当前无独立 version-invariant 的 Type5 structural predicate 可证明未来版本仍属
+        // 同一 materialization structure（Type5 形状随 class/version 变化，并非固定 53B）→ future 必须
+        // raw-preserve（UNSUPPORTED/Unknown），绝不产出 EXACT MaterializationEvent。
         final ReplayDecodeContext unknown = new ReplayDecodeContext("11.20.0_china");
         final ReplayDecodeResult r = decoder.decode(unknown, packet(5, vehicleType5(123, 2, 3570)));
-        assertEquals(DecodeStatus.SUCCESS, r.status(),
-                "future version structurally decodes materialization presence");
-        final MaterializationEvent e = (MaterializationEvent) r.events().get(0);
-        assertEquals(DecodeConfidence.EXACT, e.confidence(),
-                "presence EXACT independent of HP semantic gate");
-        assertEquals(123, e.entityId());
-        assertEquals(2, e.entityTypeId());
-        assertNull(e.currentHp(), "11.20 HP closed semantics not verified -> HP stays raw/null");
+        assertEquals(DecodeStatus.UNSUPPORTED, r.status(),
+                "future Type5 must fail closed, not structurally decode to EXACT");
+        assertTrue(r.events().get(0) instanceof com.wotb.core.replay.event.UnknownReplayEvent,
+                "future Type5 raw-preserve（UnknownReplayEvent），非 EXACT MaterializationEvent");
     }
 
     @Test
@@ -90,26 +86,21 @@ class MaterializationDecoderTest {
     }
 
     @Test
-    void futureVersionStructurallyDecodesType4AndType33() {
-        // PR162 前向兼容：Type4 leave + Type33 announcement 是 entity-lifecycle 结构布局；
-        // 未来版本（12.0）用已证明的精确 shape（Type4=4B、Type33=12B all-zero tail）仍结构化解出
-        // AoI boundary 证据（EXACT）；闭合语义保持 raw/gated。
+    void futureVersionType4AndType33LifecycleFailsClosed() {
+        // PR162/P1-5：entity-lifecycle（Type4/Type33）同属 version-scoped 语义；future 版本当前无独立
+        // invariant 可证明仍属同一结构 → fail closed（UNSUPPORTED/raw），不产出 EXACT AoI 边界事件。
         final ReplayDecodeContext unknown = new ReplayDecodeContext("12.0.0_eu");
         final byte[] four = new byte[4];
         four[0] = 9;
         final ReplayDecodeResult r4 = leaveDecoder.decode(unknown, packet(4, four));
-        assertEquals(DecodeStatus.SUCCESS, r4.status());
-        final EntityRemovedEvent e4 = (EntityRemovedEvent) r4.events().get(0);
-        assertEquals(9, e4.entityId());
-        assertEquals(DecodeConfidence.EXACT, e4.confidence());
+        assertEquals(DecodeStatus.UNSUPPORTED, r4.status(), "future Type4 must fail closed");
+        assertTrue(r4.events().get(0) instanceof com.wotb.core.replay.event.UnknownReplayEvent);
 
         final byte[] thirtyThree = new byte[12];
         thirtyThree[0] = 42;
         final ReplayDecodeResult r33 = announcedDecoder.decode(unknown, packet(33, thirtyThree));
-        assertEquals(DecodeStatus.SUCCESS, r33.status());
-        final MaterializationAnnouncedEvent e33 = (MaterializationAnnouncedEvent) r33.events().get(0);
-        assertEquals(42, e33.entityId());
-        assertEquals(DecodeConfidence.EXACT, e33.confidence());
+        assertEquals(DecodeStatus.UNSUPPORTED, r33.status(), "future Type33 must fail closed");
+        assertTrue(r33.events().get(0) instanceof com.wotb.core.replay.event.UnknownReplayEvent);
     }
 
     @Test

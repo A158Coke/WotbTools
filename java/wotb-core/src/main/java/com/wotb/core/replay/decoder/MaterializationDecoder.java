@@ -52,6 +52,23 @@ public class MaterializationDecoder implements ReplayPacketDecoder {
         return packet.type() == TYPE_MATERIALIZE;
     }
 
+    /**
+     * PR162/P1-1：Type5 结构 envelope 的<b>唯一</b> wire 解析点（{@code entityId(u32 LE) + entityTypeId(u16 LE)}）。
+     * semantic decoder 与 {@code ReplayReconstructionService} 的 class prepass 都消费本方法，避免第二套 Type5
+     * mini-parser。只解析结构；<b>不</b>在此解释 {@code entityTypeId} 的 numeric class meaning（见
+     * {@link ReplayProtocolProfile.Capability#ENTITY_TYPE_ID_SEMANTIC}）。
+     */
+    public static MaterializationEnvelope materializationEnvelope(final byte[] payload) {
+        if (payload == null || payload.length < 6) {
+            return null;
+        }
+        return new MaterializationEnvelope(readU32LE(payload, 0), readU16LE(payload, 4));
+    }
+
+    /** Type5 结构 envelope（entityId + raw entityTypeId）。 */
+    public record MaterializationEnvelope(int entityId, int entityTypeId) {
+    }
+
     @Override
     public ReplayDecodeResult decode(ReplayDecodeContext context, RawReplayPacket packet) {
         final byte[] payload = packet.payload();
@@ -71,8 +88,9 @@ public class MaterializationDecoder implements ReplayPacketDecoder {
                     List.of(new ReplayDecodeWarning("VERSION_UNSUPPORTED",
                             "Type5 materialization layout not affirmed: " + context.clientVersion())));
         }
-        final int entityId = readU32LE(payload, 0);
-        final int entityTypeId = readU16LE(payload, 4);
+        final MaterializationEnvelope envelope = materializationEnvelope(payload);
+        final int entityId = envelope.entityId();
+        final int entityTypeId = envelope.entityTypeId();
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
 
         // PR162 entity-class registry：只从真实生命周期证据（entityTypeId）建立 class，不靠 method-shape 反推。
