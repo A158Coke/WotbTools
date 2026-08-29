@@ -8,6 +8,7 @@ import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.event.VehicleBattleLoadout;
 import com.wotb.core.replay.facts.ConsumableLifecycle;
+import com.wotb.core.replay.facts.AoiObservationSegment;
 import com.wotb.core.replay.facts.VehicleLoadoutFacts;
 import com.wotb.core.replay.facts.VehicleModuleCrewLifecycle;
 import com.wotb.core.replay.facts.VehicleModuleCrewLifecycle.ModuleCrewObservation;
@@ -130,7 +131,8 @@ public final class BattlePlaybackProjector {
         final List<OrientationSegment> orientationSegments = orientationSegments(timeline, entityIds);
         final List<HealthTransition> health = healthTransitions(timeline, entityIds);
         final List<LifeTransition> life = lifeTransitions(timeline, entityIds);
-        final List<ConsumableTransition> consumables = consumableTransitions(consumableObservations);
+        final List<ConsumableTransition> consumables =
+                consumableTransitions(consumableObservations, timeline, entityIds);
         final List<ModuleCrewTransition> modules = moduleCrewTransitions(moduleObservations);
 
         final VehicleBattleLoadoutDto loadout = toLoadoutDto(
@@ -298,17 +300,70 @@ public final class BattlePlaybackProjector {
     }
 
     private static List<ConsumableTransition> consumableTransitions(
-            final List<ConsumableLifecycle.ConsumableObservation> observations) {
-        if (observations == null) {
-            return List.of();
-        }
+            final List<ConsumableLifecycle.ConsumableObservation> observations,
+            final BattleTimeline timeline,
+            final List<Integer> entityIds) {
         final List<ConsumableTransition> out = new ArrayList<>();
-        for (final ConsumableLifecycle.ConsumableObservation o : observations) {
-            out.add(new ConsumableTransition(o.timeSec(), null, o.logicalItemId(), o.wireCode(),
-                    o.state() == null ? "UNKNOWN" : o.state().name(), toConfidence(o.confidence())));
+        // 真实观测 transition（KNOWN runtime 事实；state 未证明 → UNKNOWN）。
+        if (observations != null) {
+            for (final ConsumableLifecycle.ConsumableObservation o : observations) {
+                out.add(new ConsumableTransition(o.timeSec(), null, o.logicalItemId(), o.wireCode(),
+                        o.state() == null || o.state() == ConsumableLifecycleEvent.ConsumableLifecycleState.UNKNOWN
+                                ? "UNKNOWN" : o.state().name(),
+                        toConfidence(o.confidence())));
+            }
+        }
+        // AoI hidden 边界：canonical contract —— known runtime 在 AoI 关闭（Type4 absent）后必须
+        // 显式插入 UNKNOWN transition，直到下一次重入（observedFrom）由后续观测接管。
+        // 前端 lastAtOrBefore 取最近一次 ≤t，因此 hidden 区间查询会命中此 UNKNOWN（而非残留 ACTIVATED）。
+        if (timeline != null && timeline.aoiSegments() != null && entityIds != null) {
+            final java.util.Set<Integer> idSet = java.util.Set.copyOf(entityIds);
+            for (final AoiObservationSegment seg : timeline.aoiSegments()) {
+                if (seg != null && seg.closed() && idSet.contains(seg.entityId())) {
+                    final double absent = seg.absentFromSec();
+                    final boolean hadKnownBefore = hasObservationBefore(observations, absent);
+                    // 仅在曾有过已知 runtime 观测的车辆上插入 UNKNOWN（未曾观测则保持 UNKNOWN 语义不变，
+                    // 不制造多余 transition）。含 teardown 之后不再插 UNKNOWN（teardown 已是终态）。
+                    if (hadKnownBefore && !hasTeardownAfter(observations, absent)) {
+                        out.add(new ConsumableTransition(absent, null, null, null,
+                                "UNKNOWN", com.wotb.web.replay.dto.BattlePlaybackDataset.ConfidenceDto.UNKNOWN));
+                    }
+                }
+            }
         }
         out.sort(Comparator.comparingDouble(ConsumableTransition::timeSec));
         return out;
+    }
+
+    /** 是否在 t 之前（含 close 时刻之前）存在真实 KNOWN 观测（logicalItemId 非 null 或 state 非 UNKNOWN）。 */
+    private static boolean hasObservationBefore(
+            final List<ConsumableLifecycle.ConsumableObservation> observations, final double t) {
+        if (observations == null) {
+            return false;
+        }
+        for (final ConsumableLifecycle.ConsumableObservation o : observations) {
+            if (o.timeSec() < t - 1e-6
+                    && (o.logicalItemId() != null
+                        || o.state() != ConsumableLifecycleEvent.ConsumableLifecycleState.UNKNOWN)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 在 t 之后（含）是否存在 teardown 终态观测（teardown 之后不应再被 UNKNOWN 覆盖成所谓 hidden）。 */
+    private static boolean hasTeardownAfter(
+            final List<ConsumableLifecycle.ConsumableObservation> observations, final double t) {
+        if (observations == null) {
+            return false;
+        }
+        for (final ConsumableLifecycle.ConsumableObservation o : observations) {
+            if (o.timeSec() >= t - 1e-6
+                    && o.state() == ConsumableLifecycleEvent.ConsumableLifecycleState.TEARDOWN) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static List<ModuleCrewTransition> moduleCrewTransitions(

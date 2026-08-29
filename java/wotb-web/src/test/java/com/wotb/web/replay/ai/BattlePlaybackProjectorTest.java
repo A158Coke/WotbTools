@@ -27,6 +27,7 @@ import com.wotb.core.replay.timeline.PositionKnowledge;
 import com.wotb.core.replay.timeline.PositionSource;
 import com.wotb.core.replay.timeline.VehicleKnowledgeState;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.facts.AoiObservationSegment;
 import com.wotb.core.replay.timeline.TimelineError;
 import com.wotb.core.replay.timeline.TimelinePerspective;
 import com.wotb.web.replay.dto.BattlePlaybackDataset;
@@ -151,9 +152,9 @@ class BattlePlaybackProjectorTest {
             final FrameVehicle fv = new FrameVehicle(
                     entityId, account, "Enemy", 456, "Enemy", "Medium tank", 10, 2, false,
                     LifeState.ALIVE,
-                    new FrameHealth(1000, second, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                    new FrameHealth(1000, (double) second, 0.0, HpSource.EXACT_BATTLE_EVENT,
                             FrameHealth.HealthKnowledge.CURRENT, 1000, Confidence.HIGH),
-                    new FramePosition(new Vector3(0, 0, (float) second), second, 0.0,
+                    new FramePosition(new Vector3(0, 0, (float) second), (double) second, 0.0,
                             PositionKnowledge.CURRENT, PositionSource.OBSERVED_EVENT, Confidence.HIGH),
                     new FrameOrientation(0f, 0f, 0f, (double) second, 0.0, k, Confidence.HIGH),
                     FrameMapState.UNKNOWN, VehicleKnowledgeState.POSITION_STREAM_ACTIVE, null, List.of());
@@ -164,7 +165,7 @@ class BattlePlaybackProjectorTest {
         final BattleTimeline timeline = new BattleTimeline(
                 "middleburg", 30.0, 0.0, BattleTimelineClock.IDENTIFIED,
                 frames, List.of(), List.of(),
-                BattleTimelineValidationResult.valid(), List.of());
+                BattleTimelineValidationResult.ok(), List.of());
 
         final BattlePlaybackDataset ds = BattlePlaybackProjector.project(battle, timeline, mapping, null);
         assertNotNull(ds);
@@ -178,5 +179,76 @@ class BattlePlaybackProjectorTest {
         // 每个 sample 也带 behind knowledge（防 cast 数据丢失）
         assertEquals("CURRENT", track.orientationSegments().get(0).samples().get(0).knowledge());
         assertEquals("LAST_KNOWN", track.orientationSegments().get(1).samples().get(0).knowledge());
+    }
+
+    /**
+     * P0 consumable hidden-AoI contract：known runtime 在 AoI 关闭（Type4 absent）后必须显式插入
+     * UNKNOWN transition，使 hidden 区间查询返回 UNKNOWN（而非残留 ACTIVATED）。
+     * 旧实现只收集 observation、不插入 UNKNOWN，本测试在其上失败。
+     */
+    @Test
+    void consumableRuntimeBecomesUnknownAfterAoiCloses() {
+        final long account = 2001L;
+        final int entityId = 7;
+        final Battle battle = new Battle();
+        battle.mapName = "middleburg";
+        battle.durationS = 30.0;
+        final PlayerResult enemy = new PlayerResult();
+        enemy.accountId = account;
+        enemy.team = 2;
+        enemy.tankId = 456L;
+        enemy.nickname = "Enemy";
+        battle.players = new ArrayList<>(List.of(enemy));
+
+        final TeamEntityMapping mapping = new TeamEntityMapping(
+                Map.of(entityId, new TeamEntityIdentity(entityId, account, "Enemy", 456L, "Enemy", 2, DecodeConfidence.EXACT)),
+                Map.of(account, List.of(entityId)),
+                Map.of(), 0, List.of());
+
+        // timeline：敌方 AoI 观测段 [0,20)（Type4 absent=20 → hidden）；一个 consumable ACTIVATED @12s。
+        // 用非 zero battle-relative start 以区分 raw/battle 时钟（battleStartRaw=0 简化即可）。
+        final com.wotb.core.replay.event.ConsumableLifecycleEvent activate =
+                new com.wotb.core.replay.event.ConsumableLifecycleEvent(
+                        1, new com.wotb.core.replay.event.ReplayTimestamp(12f, 12f), 32,
+                        DecodeConfidence.EXACT, entityId, 12f, 0x0D, "REPAIR_KIT",
+                        com.wotb.core.replay.event.ConsumableLifecycleEvent.ConsumableLifecycleState.ACTIVATED,
+                        0, 0f);
+        final java.util.List<com.wotb.core.replay.event.ReplayEvent> events =
+                new ArrayList<>(List.of(activate));
+
+        final List<BattleFrame> frames = new ArrayList<>();
+        for (int second = 0; second <= 2; second++) {
+            final FrameVehicle fv = new FrameVehicle(
+                    entityId, account, "Enemy", 456, "Enemy", "Medium tank", 10, 2, false,
+                    LifeState.ALIVE,
+                    new FrameHealth(1000, (double) second, 0.0, HpSource.EXACT_BATTLE_EVENT,
+                            FrameHealth.HealthKnowledge.CURRENT, 1000, Confidence.HIGH),
+                    new FramePosition(new Vector3(0, 0, (float) second), (double) second, 0.0,
+                            PositionKnowledge.CURRENT, PositionSource.OBSERVED_EVENT, Confidence.HIGH),
+                    new FrameOrientation(0f, 0f, 0f, (double) second, 0.0,
+                            FrameOrientation.OrientationKnowledge.CURRENT, Confidence.HIGH),
+                    FrameMapState.UNKNOWN, VehicleKnowledgeState.POSITION_STREAM_ACTIVE, null, List.of());
+            frames.add(new BattleFrame(second, second, null, List.of(fv), List.of(), List.of(),
+                    Map.copyOf(Map.of("second", String.valueOf(second))), List.of()));
+        }
+        // AoI 观测段：observedFrom=0, absentFrom=20（closed → hidden）。
+        final java.util.List<AoiObservationSegment> aoi = List.of(
+                new AoiObservationSegment(entityId, 0.0, 20.0, "REPLAY_POV"));
+
+        final BattleTimeline timeline = new BattleTimeline(
+                "middleburg", 30.0, 0.0, BattleTimelineClock.IDENTIFIED,
+                frames, events, aoi,
+                BattleTimelineValidationResult.ok(), List.of());
+
+        final BattlePlaybackDataset ds = BattlePlaybackProjector.project(battle, timeline, mapping, null);
+        assertNotNull(ds);
+        final BattlePlaybackDataset.VehiclePlaybackTrack track = ds.vehicles().stream()
+                .filter(v -> v.accountId() == account).findFirst().orElseThrow();
+        // hidden 区间 (20,30] 查询：必须命中 explicit UNKNOWN，而非残留 ACTIVATED。
+        final boolean hasPostCloseUnknown = track.consumableTransitions().stream()
+                .anyMatch(t -> t.timeSec() >= 20.0 - 1e-6
+                        && "UNKNOWN".equals(t.state()));
+        assertTrue(hasPostCloseUnknown,
+                "AoI 关闭后必须插入 explicit UNKNOWN consumable runtime transition（hidden=UNKNOWN contract）");
     }
 }
