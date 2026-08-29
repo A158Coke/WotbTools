@@ -162,6 +162,19 @@ public final class ReplayVersionGate {
     }
 
     /**
+     * Type32 consumable-lifecycle semantic (wireCode→identity, state/clock/param layout) is a
+     * 11.19-era closed numeric mapping (consumable-lifecycle.md). Independent 11.18 evidence is absent
+     * ("validate code stability outside 11.19 China" is flagged remaining work), so legacy/future
+     * versions fail closed → only the generic auxiliary-blob envelope is decoded, never an unproven
+     * consumable identity. This is a per-capability gate, never a blanket if/else.
+     */
+    public static boolean type32ConsumableLifecycleAllowed(final String clientVersion) {
+        return ReplayProtocolProfile.levelOf(clientVersion,
+                ReplayProtocolProfile.Capability.TYPE32_CONSUMABLE_LIFECYCLE)
+                == ReplayProtocolProfile.Level.VERIFIED;
+    }
+
+    /**
      * Type14 packet-stream end/stop marker: a Layer B structural invariant (container/framing), so it is
      * VERIFIED for the verified families and STRUCTURALLY_COMPATIBLE for any shape-compatible version; only
      * a profile {@code UNKNOWN} (never for a structural capability) would raw-preserve. Wired here so the

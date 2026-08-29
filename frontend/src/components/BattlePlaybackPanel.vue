@@ -61,6 +61,8 @@ async function authedFetch(url, body, { signal } = {}) {
 }
 
 const mapOverview = ref(null)
+/** V2 canonical battle-playback dataset（可选；迁移期守卫，加载失败不阻断 legacy map）。 */
+const mapPlaybackV2 = ref(null)
 const mapLoading = ref(false)
 const mapLoaded = ref(false)
 const mapError = ref('')
@@ -114,6 +116,9 @@ async function loadMapOverview() {
       throw new Error(localizeAiError(errorData, r.status, t))
     } else {
       mapOverview.value = await r.json()
+      // V2 守卫：并排拉取 canonical dataset（fire-and-forget，不扰动 legacy map 的确定性请求
+      // 时序；成功 200 则后端 timeline 可用，失败/204 保持 null 走 legacy）。
+      loadPlaybackV2(controller.signal)
     }
     if (requestSeq !== mapRequestSeq) return
     mapLoaded.value = true
@@ -131,6 +136,21 @@ async function loadMapOverview() {
   }
 }
 
+/** 拉取 V2 canonical battle-playback dataset（fire-and-forget；独立竞态序号，失败静默回退 legacy）。 */
+let playbackV2Seq = 0
+async function loadPlaybackV2(signal) {
+  const seq = ++playbackV2Seq
+  try {
+    const r = await authedFetch('/api/replay/battle-playback-v2',
+      JSON.stringify({ processingJobId: props.processingJobId, sourceId: props.sourceId }),
+      { signal })
+    if (seq !== playbackV2Seq) return
+    mapPlaybackV2.value = r.status === 200 ? await r.json() : null
+  } catch {
+    if (seq === playbackV2Seq) mapPlaybackV2.value = null
+  }
+}
+
 /** 文件变化（新增/移除/清空）或 Dataset identity 变化时使旧请求失效并取消，重置地图区块。 */
 function resetMap() {
   mapRequestSeq++
@@ -139,6 +159,7 @@ function resetMap() {
     mapAbortController = null
   }
   mapOverview.value = null
+  mapPlaybackV2.value = null
   mapLoading.value = false
   mapLoaded.value = false
   mapError.value = ''
@@ -243,6 +264,7 @@ onBeforeUnmount(() => {
             v-if="mapOverview"
             :overview="mapOverview"
             :seek-to="mapSeek"
+            :playback-v2="mapPlaybackV2"
           />
           <p v-else-if="mapLoaded && !mapLoading" class="map-unavailable" data-test="map-unavailable">
             {{ $t('recon.map.unavailable') }}
