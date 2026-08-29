@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 模式判定 / 去重 / 冲突 / 校验失败（§4、§21.3）。 */
+/** 模式判定 / 去重 / 冲突 / 校验失败。 */
 class LeagueReplaysTest {
 
     private static Source source(final String name, final Battle battle, final int arenaBonusType) throws Exception {

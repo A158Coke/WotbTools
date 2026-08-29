@@ -3,7 +3,7 @@ package com.wotb.core.replay.facts;
 import com.wotb.core.replay.reconstruction.Vector3;
 
 /**
- * Canonical 射击事实（计划 §C1）。
+ * Canonical 射击事实。
  *
  * <p>生命周期：Vehicle method0 → Avatar method29（launch）→ method20（terminal endpoint）
  * → method27（terminal/explosion）→ method38（recorder outgoing result）。

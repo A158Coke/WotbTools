@@ -69,7 +69,7 @@ class LeagueDomainBoundaryGuardTest {
         assertNotNull(r.leagueBatch().resultFor("111"));
     }
 
-    /** §21/Case I：混合批次不污染 Parser——battles 保留、无 parser failures、无 League 聚合。 */
+    /** 混合批次不污染 Parser——battles 保留、无 parser failures、无 League 聚合。 */
     @Test
     void mixedBatchLeavesParserUnpolluted() {
         final Battle t = training("111");

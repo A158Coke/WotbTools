@@ -22,7 +22,7 @@ import java.util.List;
 /**
  * 按领域事件重建战场状态；只消费 canonical world-position / HP / terminal semantics。
  *
- * <p>§21 (PR162): this is NOT a second terminal/death authority. Destroyed/death life state is derived
+ * <p>This is NOT a second terminal/death authority. Destroyed/death life state is derived
  * only from the canonical terminal surfaces {@code ReplayTerminalLifecycle} consumes — the
  * version-scoped {@code rawState.terminal()} ({@code HealthChangedEvent}/{@code VehicleHealthStateEvent}),
  * an explicit drowning cause, and {@code alive==false} legacy exact — never from the derived

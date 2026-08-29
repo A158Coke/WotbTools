@@ -120,7 +120,7 @@ public final class ReplayDisplayNames {
     /**
      * 结构化车辆 tankopedia 满血量数值（legacy 名 {@code tankMaxHp}）。
      *
-     * <p><b>契约（计划 §B6）</b>：该值只是 {@code BASE_REFERENCE}——tankopedia base HP，
+     * <p><b>契约</b>：该值只是 {@code BASE_REFERENCE}——tankopedia base HP，
      * 不是本场 actualStartingHp / actualMaxHp / currentHp。回放实测 HP（含装备/物资加成）
      * 可能高于 base（PR147 actual-hp-type5-settlement.md）。新代码应使用
      * {@link #tankBaseHpValue}（同值、语义明确的名称）；不得把本值当本场实际容量。</p>

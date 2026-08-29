@@ -100,7 +100,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     @Override
     public ReplayDecodeResult decode(ReplayDecodeContext context, RawReplayPacket packet) {
         final byte[] payload = packet.payload();
-        // §A2/P0-3：method0/1/5/17/20/27/29 是 legacy-compatible 观测布局 —— 仅当前 canonical
+        // method0/1/5/17/20/27/29 是 legacy-compatible 观测布局 —— 仅当前 canonical
         // 版本族（11.19）+ 明确 legacy 证明的 11.18 允许解码为 EXACT（methodLayoutAllowed）；
         // 未知/未来版本 raw-preserve，绝不无条件沿用 EXACT 语义。
         // Type8 envelope 至少 12B（entityId u32 + subtype u32 + argLen u32）；在读取
@@ -249,7 +249,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 }
             }
             case SUBTYPE_TARGETING_SNAPSHOT -> {
-                // §A2：method36 field semantics 是 PR147 仅 11.19 controlled 证明的 closed semantics；
+                // method36 field semantics 是仅 11.19 controlled 证明的 closed semantics；
                 // 非 11.19 → raw-preserve（UnknownReplayEvent）+ diagnostics，不伪造 numeric semantic。
                 if (!ReplayVersionGate.method36Allowed(context.clientVersion())) {
                     versionRawPreserve(events, warnings, packet, ts, subType, "VERSION_UNSUPPORTED_METHOD36");
@@ -266,7 +266,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 }
             }
             case SUBTYPE_SHOT_RESULT -> {
-                // §A2：method38 low16/modifier/component namespace 是 PR147 仅 11.19 controlled 证明的 closed semantics。
+                // method38 low16/modifier/component namespace 是仅 11.19 controlled 证明的 closed semantics。
                 if (!ReplayVersionGate.method38Allowed(context.clientVersion())) {
                     versionRawPreserve(events, warnings, packet, ts, subType, "VERSION_UNSUPPORTED_METHOD38");
                 } else if (entityClassFor(context, subType, entityId) != EntityClass.AVATAR) {

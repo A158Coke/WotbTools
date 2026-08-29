@@ -1,7 +1,7 @@
 package com.wotb.core.replay.facts;
 
 /**
- * 敌方/实体观测（AoI）段（计划 §B8）。
+ * 敌方/实体观测（AoI）段。
  *
  * <p>当前 11.19 corpus（docs/research/replay/entity-presence-aoi-lifecycle.md）：
  * Type33 → Type5(type=2) → Type10 流 = 进入 replay POV 观测集；Type4 = 离开。

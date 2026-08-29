@@ -25,9 +25,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@link DeathTimeReconciler} 回归测试。
  *
  * <p>身份解析只复用 {@link TeamEntityMapper} 的权威 {@link TeamEntityMapping}
- * （冲突/低置信实体证据被拒绝，nickname fallback 复用），死亡时刻 authority 链（§B1）：
+ * （冲突/低置信实体证据被拒绝，nickname fallback 复用），死亡时刻 authority 链：
  * EXACT alive=false（HP=0）&gt; 结算 deathTimeMillis（SETTLEMENT_SECOND，由 field24 lifeTime 派生）&gt; UNKNOWN=0；
- * legacy 启发式不再兜底（§B2）。</p>
+ * legacy 启发式不再兜底。</p>
  */
 class DeathTimeReconcilerTest {
 
@@ -187,7 +187,7 @@ class DeathTimeReconcilerTest {
 
     // ================= Blocker 2：EXACT alive=true 否决更早的 legacy death =================
 
-    /** 无最终 EXACT alive=false 证据 → UNKNOWN=0（legacy 不再兜底，§B2）。 */
+    /** 无最终 EXACT alive=false 证据 → UNKNOWN=0（legacy 不再兜底）。 */
     @Test
     void noFinalDeathEvidenceIsUnknown() {
         final PlayerResult p = deadPlayer(3117015664L, "Fe1ix_k2x", 1, 0.0);
@@ -203,7 +203,7 @@ class DeathTimeReconcilerTest {
         reconcile(battle, events, resolveMapping(battle, events));
 
         assertEquals(0.0, p.survivalTimeSec, 1e-9,
-                "无最终 EXACT 死亡证据 → UNKNOWN=0（legacy 启发式不再兜底，§B2）");
+                "无最终 EXACT 死亡证据 → UNKNOWN=0（legacy 启发式不再兜底）");
         assertEquals(DeathTimeSource.UNKNOWN, p.deathTimeSource);
         assertEquals(0.0, PlayerResultFormat.deathSec(p), 1e-9);
         assertTrue(PlayerResultFormat.deathSec(p) <= 0,
@@ -223,7 +223,7 @@ class DeathTimeReconcilerTest {
         reconcile(battle, events, resolveMapping(battle, events));
 
         assertEquals(0.0, p.survivalTimeSec, 1e-9,
-                "仅有 alive 证据不是死亡 → UNKNOWN=0（legacy 启发式不参与，§B2）");
+                "仅有 alive 证据不是死亡 → UNKNOWN=0（legacy 启发式不参与）");
         assertEquals(DeathTimeSource.UNKNOWN, p.deathTimeSource);
     }
 
@@ -399,7 +399,7 @@ class DeathTimeReconcilerTest {
                 exactDeath(2, 128.12f, 101));
         reconcile(battle, events, resolveMapping(battle, events));
         assertEquals(128.12, PlayerResultFormat.deathSec(p), 0.01,
-                "§B1 LIVE_EXACT > SETTLEMENT_SECOND：live EXACT 精确阵亡时刻覆盖结算秒级时间");
+                "LIVE_EXACT > SETTLEMENT_SECOND：live EXACT 精确阵亡时刻覆盖结算秒级时间");
         assertEquals(DeathTimeSource.LIVE_EXACT, p.deathTimeSource);
     }
 

@@ -16,7 +16,7 @@ import java.util.List;
  * @param clockResolution       时钟解析来源（IDENTIFIED / ESTIMATED）
  * @param frames                second=0..maxSecond 的 BattleFrame 列表（frameAt 按 second 索引）
  * @param events                全部事件（battle-relative 时间升序，精确时间不丢失）
- * @param aoiSegments           实体观测（AoI）段（计划 §B8：Type4 收段 / Type33+Type5 重入；
+ * @param aoiSegments           实体观测（AoI）段（Type4 收段 / Type33+Type5 重入；
  *                              段间 gap = UNKNOWN_AOI，禁止跨 gap 插值）
  * @param validation            构建期校验（有效时 valid=true）
  * @param limitations           数据限制（如 CLOCK_ESTIMATED / POSITION_GAPS 等）
