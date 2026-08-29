@@ -15,6 +15,12 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
  * stateAt 在时钟回退（clock regression）下的正确性：
  * 不能因为遇到第一个"晚于目标时间"的事件就停止，否则其后 sequence 更大、
  * 但时钟更早的事件会被漏掉。
+ *
+ * <p>观测代理（P1）：BattleStateReconstructor 收敛后不再用 DamageEvent.raw 累计
+ * damageDealt/damageReceived（raw 不是 canonical HP-loss 事实，VehicleState 已移除该字段），
+ * 这里用 {@link VehicleState#lastObservedAt()}（每次事件更新）作为「状态是否被回放」的可观测代理：
+ * at15 应回放 seq0(10) 与 seq2(15)（后者 sequence 更大但 clock 更早）→ lastObservedAt=15；
+ * 修复前会在 seq1(20) 处 break，漏掉 seq2 → lastObservedAt=10。</p>
  */
 class BattleStateReconstructorStateAtTest {
 
@@ -23,10 +29,10 @@ class BattleStateReconstructorStateAtTest {
                 DecodeConfidence.EXACT, attacker, victim, null, null, damage, false);
     }
 
-    private static int received(BattleStateSnapshot snap, int entityId) {
+    private static float lastObserved(BattleStateSnapshot snap, int entityId) {
         final VehicleState vs = snap.vehiclesByEntityId().get(entityId);
         assertNotNull(vs, "vehicle " + entityId + " missing");
-        return vs.damageReceived();
+        return vs.lastObservedAt();
     }
 
     @Test
@@ -37,11 +43,11 @@ class BattleStateReconstructorStateAtTest {
                 dmg(1, 20f, 1, 2, 50),
                 dmg(2, 15f, 1, 2, 30));
 
-        // 查询 t=15：应包含 clock<=15 的 seq0(10) 与 seq2(15)，跳过 seq1(20)
+        // 查询 t=15：应回放 clock<=15 的 seq0(10) 与 seq2(15)，跳过 seq1(20)
         final BattleStateSnapshot at15 =
                 BattleStateReconstructor.stateAt(15f, events, List.of());
-        // 修复前会在 seq1 处 break，漏掉 seq2 → 只有 100；修复后为 130
-        assertEquals(130, received(at15, 2));
+        // 修复前会在 seq1 处 break，漏掉 seq2 → lastObservedAt=10；修复后回放 seq2 → 15
+        assertEquals(15f, lastObserved(at15, 2), 0.001f);
     }
 
     @Test
@@ -51,8 +57,9 @@ class BattleStateReconstructorStateAtTest {
                 dmg(1, 20f, 1, 2, 50),
                 dmg(2, 15f, 1, 2, 30));
 
-        assertEquals(180, received(
-                BattleStateReconstructor.stateAt(20f, events, List.of()), 2));
+        // t=20：所有事件 clock<=20，按 sequence 顺序回放；最后一个回放的是 seq2(15)
+        assertEquals(15f, lastObserved(
+                BattleStateReconstructor.stateAt(20f, events, List.of()), 2), 0.001f);
     }
 
     @Test

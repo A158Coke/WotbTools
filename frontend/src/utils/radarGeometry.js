@@ -1,16 +1,16 @@
 /**
  * Radar 几何纯函数：组件（PlayerRatingRadar）与导出卡（exportRatingProfilePng）共用，
- * 保证数据模型/维度顺序/归一化/几何完全同构（计划 §48），避免导出截图整 Drawer。
+ * 保证数据模型/维度顺序/归一化/几何完全同构，避免导出截图整 Drawer。
  * 只负责坐标计算，不含业务公式与 SVG 标签。
  */
 
-/** 几何常量（计划 §51：为短标签留 breathing room；导出与组件共用）。 */
+/** 几何常量（为短标签留 breathing room；导出与组件共用）。 */
 export const RADAR = Object.freeze({
   VIEW: 340,
   CENTER: 170,
   RADIUS: 120,
   LABEL_RADIUS: 1.16,
-  /** 网格层级（计划 §17）：25 / 50 / 75 / 100（0..1 归一化几何，不截断）。 */
+  /** 网格层级：25 / 50 / 75 / 100（0..1 归一化几何，不截断）。 */
   GRID_LEVELS: [0.25, 0.5, 0.75, 1],
 })
 

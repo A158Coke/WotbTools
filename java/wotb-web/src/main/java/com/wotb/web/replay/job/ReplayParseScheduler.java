@@ -1,9 +1,9 @@
 package com.wotb.web.replay.job;
 
-import jakarta.annotation.PreDestroy;
-import jakarta.annotation.PostConstruct;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,26 +22,26 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 全局 Replay Full Processing Scheduler（plan §10–§12/§83）：
+ * 全局 Replay Full Processing Scheduler：
  * <ul>
  *   <li>全局 CPU 并发固定 {@code max-concurrent}（2C4G 默认 2，禁止超过）——唯一
- *       Replay CPU 预算权威（plan §48/BLOCKER J 最终态）。</li>
+ *       Replay CPU 预算权威。</li>
  *   <li>job-aware 公平调度：per-job pending deque + 全局 slot + round-robin 派发
  *       （每 job 在 ready 队列中至多出现一次，杜绝 dispatch/completion 重复入队），
- *       后来的 1-file Job 不会被 50-file Job 全批堵死（plan §6.7/§12）。</li>
+ *       后来的 1-file Job 不会被 50-file Job 全批堵死。</li>
  *   <li>queued cancellation：{@link #removeQueued} 立即丢弃尚未开始的 source，
- *       不泄漏 queue 容量；正在执行的 source 由调用方协作取消（plan §53）。</li>
+ *       不泄漏 queue 容量；正在执行的 source 由调用方协作取消。</li>
  *   <li>有界排队：{@code queue-capacity} 限制全部 job 的 pending source 总数，
  *       满载 submit 抛 {@link ProcessingQueueFullException}（503 PROCESSING_QUEUE_FULL）。</li>
  *   <li>shutdown 无残留线程（daemon worker + shutdown）。</li>
  * </ul>
  *
- * <p><b>线程安全（BLOCKER 1 最终态）</b>：全部调度状态（free-slot reservation、
+ * <p><b>线程安全（最终态）</b>：全部调度状态（free-slot reservation、
  * jobs map、per-job pending、ready 成员资格、queuedSources、activeForJob、派发决策、
  * cancellation bookkeeping）统一由 {@link #stateLock} 串行化。业务 runner / onStart /
  * onComplete 一律在锁外执行；worker 线程池内不允许出现 scheduler 不知道的第二层
  * backlog（每次派发前都在锁内预留 slot，{@code reserved+running ≤ maxConcurrent}）。</p>
- * 本类<b>不承担</b>业务 dedupe / League / Export / AI / DTO 映射（plan §10）。
+ * 本类<b>不承担</b>业务 dedupe / League / Export / AI / DTO 映射。
  */
 @Component
 public final class ReplayParseScheduler implements AutoCloseable {
@@ -57,7 +57,7 @@ public final class ReplayParseScheduler implements AutoCloseable {
         void run(int sourceIndex) throws Exception;
     }
 
-    /** {@link #cancelQueued} 的结果语义（BLOCKER 1）：明确 completion callback 是否还会触发。 */
+    /** {@link #cancelQueued} 的结果语义：明确 completion callback 是否还会触发。 */
     public enum CancellationResult {
         /** 该 job 已从 scheduler 移除，{@code onComplete} 永不触发——调用方必须自行推进终态。 */
         NO_COMPLETION_PENDING,
@@ -88,7 +88,7 @@ public final class ReplayParseScheduler implements AutoCloseable {
 
     private final int maxConcurrent;
     private final int maxQueuedSources;
-    /** 全部调度状态的单一协调锁（BLOCKER 1：free-slot / jobs / pending / ready / cancellation 统一串行化）。 */
+    /** 全部调度状态的单一协调锁（free-slot / jobs / pending / ready / cancellation 统一串行化）。 */
     private final Object stateLock = new Object();
     private final Map<String, JobEntry> jobs = new HashMap<>();
     /** round-robin 队列：每次派发后把该 job 排到队尾（job-aware fairness；成员资格由 entry.ready 保证唯一）。 */
@@ -102,7 +102,7 @@ public final class ReplayParseScheduler implements AutoCloseable {
     private boolean closed;
     private final ThreadPoolExecutor workers;
     private final MeterRegistry meterRegistry;
-    /** 测试专用：completion 记账后、pump 前同步钩子（确定性复现 BLOCKER 1 取消竞态窗口）。 */
+    /** 测试专用：completion 记账后、pump 前同步钩子（确定性复现 取消竞态窗口）。 */
     Runnable beforePumpHook;
 
     @Autowired
@@ -136,7 +136,7 @@ public final class ReplayParseScheduler implements AutoCloseable {
         this(maxConcurrent, maxQueuedSources, null);
     }
 
-    /** 低基数 scheduler metrics（plan §74/§78，无高基数 tag）。 */
+    /** 低基数 scheduler metrics（无高基数 tag）。 */
     @PostConstruct
     void initMetrics() {
         if (meterRegistry == null) {
@@ -315,7 +315,7 @@ public final class ReplayParseScheduler implements AutoCloseable {
                     LOGGER.error("replay_parse_job_complete_callback_failed jobId={}", entry.jobId, e);
                 }
             }
-            // BLOCKER 1 测试缝：completion 记账后、pump 派发前（复现取消竞态窗口）。
+            // 测试缝：completion 记账后、pump 派发前（复现取消竞态窗口）。
             if (beforePumpHook != null) {
                 beforePumpHook.run();
             }
@@ -347,7 +347,7 @@ public final class ReplayParseScheduler implements AutoCloseable {
         return null;
     }
 
-    // ---- observability（plan §78，低基数） ----
+    // ---- observability（低基数） ----
 
     /** 当前并行执行的 source 数（≤ max-concurrent）。 */
     public int activeSources() {

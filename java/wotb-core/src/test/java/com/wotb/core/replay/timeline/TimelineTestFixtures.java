@@ -1,8 +1,9 @@
 package com.wotb.core.replay.timeline;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.event.BattleEndedEvent;
+import com.wotb.core.parse.ReplayStreamHeader;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.EntityCreatedEvent;
@@ -11,12 +12,12 @@ import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
-import com.wotb.core.replay.stream.ReplayStreamHeader;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -54,6 +55,10 @@ final class TimelineTestFixtures {
         p.survived = survived;
         p.deathTimeMillis = survived ? 0 : 30_000L;
         p.survivalTimeSec = survived ? 60.0 : 30.0;
+        // canonical death provenance：已知死亡（30s）→ SETTLEMENT_SECOND。
+        if (!survived) {
+            p.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+        }
         return p;
     }
 
@@ -82,7 +87,7 @@ final class TimelineTestFixtures {
     static PositionChangedEvent position(final int eid, final double battleSec,
                                          final float x, final float z, final float yawRad) {
         return new PositionChangedEvent(seq++, ts(battleSec), 10, DecodeConfidence.EXACT,
-                eid, 0, 0, x, 0f, z, 0f, 0f, 0f, yawRad, 0f, 0f, (byte) 0);
+                eid, 0, 0, x, 0f, z, 0f, 0f, 0f, yawRad, 0f, 0f, 0);
     }
 
     static HealthChangedEvent health(final int eid, final double battleSec,
@@ -97,8 +102,8 @@ final class TimelineTestFixtures {
                 attackerEid, victimEid, null, null, amount, false);
     }
 
-    static BattleEndedEvent battleEnded(final double battleSec) {
-        return new BattleEndedEvent(seq++, ts(battleSec), 14, DecodeConfidence.EXACT, 1);
+    static RoundFinishedEvent battleEnded(final double battleSec) {
+        return new RoundFinishedEvent(seq++, ts(battleSec), 14, DecodeConfidence.EXACT, 1, 1, RoundFinishedEvent.FinishCause.ELIMINATION);
     }
 
     static ReplayReconstruction recon(final double durationSec, final List<ReplayEvent> events) {
@@ -106,11 +111,8 @@ final class TimelineTestFixtures {
                 "arena", "middleburg", "1", "1", 1, "rec1", "", durationSec, 0L);
         final ReplayStreamHeader header = new ReplayStreamHeader(
                 0x12345678L, new byte[8], "h", "v", 15);
-        final ReplayCoverage coverage = new ReplayCoverage(
-                true, 1, 1, 0, 0, 0, 1.0, Map.of());
-        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(),
-                true, START_RAW, true);
+        final ReplayCoverage coverage = new ReplayCoverage(1, 1, 0, 0, 0, 1.0, Map.of());
+        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(0, 0, 0f, 0f, 0, Map.of());
         final BattleStateSnapshot finalState = BattleStateSnapshot.empty();
         return new ReplayReconstruction(
                 meta, header, (float) durationSec, START_RAW, List.of(),

@@ -9,10 +9,10 @@ import com.wotb.core.league.PlayerLeagueRating;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.Source;
 import com.wotb.core.parse.PickleReader;
-import com.wotb.core.replay.processing.FriendlyEnemyResult;
 import com.wotb.core.parse.Protobuf;
 import com.wotb.core.parse.ReplayArchiveReader;
 import com.wotb.core.parse.ReplayParser;
+import com.wotb.core.replay.processing.FriendlyEnemyResult;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;

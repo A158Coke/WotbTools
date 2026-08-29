@@ -3,13 +3,13 @@ package com.wotb.web.hundred.service;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.ReplayParser;
-import com.wotb.web.replayfile.HallOfFameStorageException;
 import com.wotb.web.hundred.dto.HundredLeaderboardPageDto;
 import com.wotb.web.hundred.dto.HundredSubmissionSummaryDto;
 import com.wotb.web.hundred.dto.HundredWargamingSubmissionResult;
 import com.wotb.web.hundred.entity.HundredBattleSubmission;
 import com.wotb.web.hundred.gateway.WargamingOfficialStats;
 import com.wotb.web.hundred.repository.HundredBattleSubmissionRepository;
+import com.wotb.web.replayfile.HallOfFameStorageException;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,7 +29,6 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,7 +46,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * 百场 submission 业务契约测试（Mockito，无 DB，任何环境可跑）。
- * 覆盖 docs/current-plan.md §52：submission 校验矩阵 / CURRENT 门槛 / snapshot /
+ * 覆盖：submission 校验矩阵 / CURRENT 门槛 / snapshot /
  * approval / terminal transition 竞争 / delete / rank / files。
  */
 @ExtendWith(MockitoExtension.class)

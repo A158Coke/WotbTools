@@ -1,20 +1,5 @@
 package com.wotb.web.replay.ai.gateway;
 
-import java.net.SocketTimeoutException;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.LongSupplier;
-
 import com.openai.core.JsonValue;
 import com.openai.core.Timeout;
 import com.openai.errors.OpenAIException;
@@ -22,6 +7,9 @@ import com.openai.errors.OpenAIInvalidDataException;
 import com.openai.errors.OpenAIIoException;
 import com.openai.errors.OpenAIServiceException;
 import com.openai.models.completions.CompletionUsage;
+import com.wotb.core.replay.processing.AiNotConfiguredException;
+import com.wotb.web.config.AiModelProperties;
+import com.wotb.web.replay.ai.AiReviewEventLog;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.observation.ObservationRegistry;
@@ -43,9 +31,21 @@ import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.http.okhttp.OpenAiHttpClientBuilderCustomizer;
 import org.springframework.util.StringUtils;
 
-import com.wotb.core.replay.processing.AiNotConfiguredException;
-import com.wotb.web.config.AiModelProperties;
-import com.wotb.web.replay.ai.AiReviewEventLog;
+import java.net.SocketTimeoutException;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.LongSupplier;
+
 /**
  * The only production AI transport adapter: maps {@link AiChatRequest} onto Spring AI
  * {@link OpenAiChatModel} (official OpenAI-compatible adapter) against
@@ -611,7 +611,7 @@ public class SpringAiChatGateway implements AiChatGateway {
             recordRetryOutcome(request.analysisMode(),
                     retryCount == 0 ? "no_retry" : "failure_after_retry");
         }
-        // 终态失败事件（docs/current-plan.md §42）：attempt 为该请求已执行的尝试数。
+        // 终态失败事件：attempt 为该请求已执行的尝试数。
         logUpstreamFailed(request, failure, retryCount + 1);
         return failure;
     }
@@ -686,9 +686,9 @@ public class SpringAiChatGateway implements AiChatGateway {
         options.model(model);
         options.maxTokens(request.maxOutputTokens());
         options.extraBody(extraBody);
-        // Per-request output format（docs/current-plan.md §8/§10）：JSON_OBJECT → 原生
+        // Per-request output format：JSON_OBJECT → 原生
         // response_format=json_object；TEXT 不发送 response_format（最小 provider surface，
-        // 绝不全局污染连接级 model options，§9）。
+        // 绝不全局污染连接级 model options）。
         if (request.responseFormat() == AiResponseFormat.JSON_OBJECT) {
             options.responseFormat(OpenAiChatModel.ResponseFormat.builder()
                     .type(OpenAiChatModel.ResponseFormat.Type.JSON_OBJECT)
@@ -948,7 +948,7 @@ public class SpringAiChatGateway implements AiChatGateway {
     }
 
 
-    // ===== AI Review 全链路事件日志（docs/current-plan.md §42/§43） =====
+    // ===== AI Review 全链路事件日志 =====
 
     private void logUpstreamStarted(final AiChatRequest request, final String model,
                                     final String correlationId, final int attempt,
@@ -965,7 +965,7 @@ public class SpringAiChatGateway implements AiChatGateway {
     }
 
     /**
-     * 上游调用成功（PR #106 review）：不记录 providerStatus=200 这类硬编码常量——Spring AI
+     * 上游调用成功：不记录 providerStatus=200 这类硬编码常量——Spring AI
      * 成功响应不暴露 HTTP status metadata，伪 observation 会误导排障；真实 provider status
      * 只在失败事件（ai_upstream_call_failed）从异常元数据中提取。
      */
@@ -982,9 +982,9 @@ public class SpringAiChatGateway implements AiChatGateway {
     }
 
     /**
-     * Transport retry（§43 与 validation retry 区分）：上游 429/5xx/连接失败后的退避重试。
+     * Transport retry（与 validation retry 区分）：上游 429/5xx/连接失败后的退避重试。
      * 由 Gateway 单点执行；业务层的 validation retry 用 ai_validation_retry 事件。
-     * <p>字段语义（PR #106 review）：{@code retryNumber} = 本次退避重试的 1 基序号
+     * <p>字段语义：{@code retryNumber} = 本次退避重试的 1 基序号
      * （retryNumber=1 表示第一次重试，其后的下一次上游调用是 {@code attempt=2}）；
      * 不使用易歧义的 {@code transportAttempt}（该值常被误读为刚失败的 attempt 号）。</p>
      */
@@ -1014,7 +1014,7 @@ public class SpringAiChatGateway implements AiChatGateway {
                 "retryable", retryPolicy.isRetryable(failure)));
     }
 
-    /** analysisMode → 稳定 stage 标签（§42 口径，低基数）。 */
+    /** analysisMode → 稳定 stage 标签（低基数口径）。 */
     private static String stageOf(final String analysisMode) {
         return switch (analysisMode == null ? "" : analysisMode) {
             case "SINGLE_TEAM_BATTLE" -> "TEAM_CALL_2";

@@ -1,13 +1,12 @@
 package com.wotb.web.replay.ai.eval;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.BattleCategory;
-import com.wotb.core.replay.processing.BattleCategoryUtils;
-import com.wotb.core.replay.processing.RecorderEntityMapping;
+import com.wotb.core.parse.ReplayStreamHeader;
 import com.wotb.core.ref.ReplayDisplayNames;
-import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.evidence.TeamSeparationEvidenceSkill;
@@ -27,6 +26,9 @@ import com.wotb.core.replay.feature.TeamFormationCluster;
 import com.wotb.core.replay.feature.TeamFormationPhase;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
+import com.wotb.core.replay.processing.BattleCategory;
+import com.wotb.core.replay.processing.BattleCategoryUtils;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.reconstruction.BattleLifecycle;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
@@ -36,10 +38,9 @@ import com.wotb.core.replay.reconstruction.ObservationState;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.reconstruction.VehicleState;
 import com.wotb.core.replay.reconstruction.Vector3;
+import com.wotb.core.replay.reconstruction.VehicleState;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
-import com.wotb.core.replay.stream.ReplayStreamHeader;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -262,10 +263,8 @@ public final class AiEvalFixtures {
                 "eval-arena", "team_map", "11.0", "11.0", 1, "rec1", "", 300.0, 0L);
         final ReplayStreamHeader header = new ReplayStreamHeader(
                 0x12345678L, new byte[8], "h", "v", 15);
-        final ReplayCoverage coverage = new ReplayCoverage(
-                true, rawClocks.length, rawClocks.length, 0, 0, 0, 1.0, Map.of());
-        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true, 1000f, true);
+        final ReplayCoverage coverage = new ReplayCoverage(rawClocks.length, rawClocks.length, 0, 0, 0, 1.0, Map.of());
+        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(0, 0, 0f, 0f, 0, Map.of());
         final List<com.wotb.core.replay.event.ReplayEvent> events = List.of(
                 new ParticipantMappingEvent(
                         0, new ReplayTimestamp(1000f, 0f), 8, DecodeConfidence.EXACT, 1, 1001L),
@@ -954,6 +953,8 @@ public final class AiEvalFixtures {
         player.damageDealt = damage;
         player.survived = deathSec <= 0;
         player.deathTimeMillis = deathSec > 0 ? (long) (deathSec * 1000) : 0L;
+        player.deathTimeSource = deathSec > 0
+                ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
         return player;
     }
 

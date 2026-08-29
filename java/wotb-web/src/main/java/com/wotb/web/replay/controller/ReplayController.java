@@ -1,8 +1,8 @@
 package com.wotb.web.replay.controller;
 
-import com.wotb.web.replay.service.ReplayService;
-import com.wotb.web.replay.ReplayLegacyEndpoints;
 import com.wotb.web.config.ApiPaths;
+import com.wotb.web.replay.ReplayLegacyEndpoints;
+import com.wotb.web.replay.service.ReplayService;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;

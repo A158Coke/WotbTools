@@ -14,7 +14,7 @@ import java.util.List;
  * 绝不再次执行会修改 Battle facts 的 enrichment（缓存 raw parser 结果替代 authoritative
  * Battle 会丢失 reconstruction/HP/死亡时间校准，导致 UI 与 Excel 数值漂移）。</p>
  *
- * <p><b>heap 契约</b>：Battle 仅含结算战绩（players + killVictims 等），不携带 reconstruction
+ * <p><b>heap 契约</b>：Battle 仅含结算战绩（players 等），不携带 reconstruction
  * 事件流（ReplayReconstruction 在处理后即可 GC）；34/50 场 dataset 的 heap 成本远低于完整
  * 重建对象，消费者不得反向引入重建事件流。</p>
  *
@@ -24,6 +24,7 @@ import java.util.List;
  */
 public record ProcessedDataset(List<Battle> battles,
                                List<String> battleSourceNames,
+                               List<String> battleSourceIds,
                                List<String[]> duplicates,
                                List<String[]> failures,
                                LeagueRatingBatch league,
@@ -38,8 +39,19 @@ public record ProcessedDataset(List<Battle> battles,
     public ProcessedDataset {
         battles = battles == null ? List.of() : List.copyOf(battles);
         battleSourceNames = battleSourceNames == null ? List.of() : List.copyOf(battleSourceNames);
+        battleSourceIds = battleSourceIds == null ? List.of() : List.copyOf(battleSourceIds);
         duplicates = duplicates == null ? List.of() : List.copyOf(duplicates);
         failures = failures == null ? List.of() : List.copyOf(failures);
+    }
+
+    /** Compatibility constructor for synthetic callers that predate the source identity contract. */
+    public ProcessedDataset(final List<Battle> battles,
+                            final List<String> battleSourceNames,
+                            final List<String[]> duplicates,
+                            final List<String[]> failures,
+                            final LeagueRatingBatch league,
+                            final String leagueUnavailableCode) {
+        this(battles, battleSourceNames, List.of(), duplicates, failures, league, leagueUnavailableCode);
     }
 
     /** 是否为 League Rating 批次。 */

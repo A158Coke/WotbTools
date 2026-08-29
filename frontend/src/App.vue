@@ -5,12 +5,13 @@ import { useError } from './composables/useError.js'
 import { useUiProfile } from './composables/useUiProfile.js'
 import HomePage from './components/HomePage.vue'
 import ReplayPage from './components/ReplayPage.vue'
+import AiReviewPage from './components/AiReviewPage.vue'
+import BattlePlaybackPage from './components/BattlePlaybackPage.vue'
 import HoFPage from './components/HoFPage.vue'
 import HoFAdminPage from './components/HoFAdminPage.vue'
 import ProfilePage from './components/ProfilePage.vue'
 import BoostPage from './components/BoostPage.vue'
 import AdminUsersPage from './components/AdminUsersPage.vue'
-import ReconstructionPage from './components/ReconstructionPage.vue'
 import VersionPage from './components/VersionPage.vue'
 import ContactPage from './components/ContactPage.vue'
 // 隐藏 QA 页（?view=playback-qa，仅 wotbtools-admin）：PR4 固定 14 车标签碰撞场景，
@@ -36,40 +37,35 @@ const params = new URLSearchParams(window.location.search)
 const isHomeHost = window.location.hostname === 'wotbtools.com' || window.location.hostname === 'www.wotbtools.com'
 const defaultView = isHomeHost ? 'home' : 'replay'
 const rawViewParam = params.get('view')
-// 旧书签兼容：?view=leaderboard → canonicalize 为 ?view=hof（一次轻量重定向，不建双轨）
-if (rawViewParam === 'leaderboard') {
+// 旧书签兼容：单一来源别名映射（leaderboard → hof；extended → replay；
+// reconstruction → battle-playback），
+// 一次轻量 replaceState 重定向为 canonical view，不建第二套 Dataset pipeline。
+const LEGACY_VIEW_ALIASES = Object.freeze({ leaderboard: 'hof', extended: 'replay', reconstruction: 'battle-playback' })
+const canonicalView = LEGACY_VIEW_ALIASES[rawViewParam] ?? rawViewParam
+if (canonicalView !== rawViewParam) {
   const url = new URL(window.location.href)
-  url.searchParams.set('view', 'hof')
+  url.searchParams.set('view', canonicalView)
   window.history.replaceState({}, '', url.toString())
 }
-// 旧书签兼容：?view=extended → ?view=replay（战斗表现已并入回放解析，不再有独立页面/第二套 pipeline）
-if (rawViewParam === 'extended') {
-  const url = new URL(window.location.href)
-  url.searchParams.set('view', 'replay')
-  window.history.replaceState({}, '', url.toString())
-}
-const viewParam = rawViewParam === 'leaderboard' ? 'hof'
-  : (rawViewParam === 'extended' ? 'replay' : rawViewParam)
-// AI 复盘入口随时可见：视图列表不再依赖鉴权，未登录也能进入（含深链），
-// 由 ReconstructionPage 自行检查登录状态并跳转登录页。
+const viewParam = canonicalView
 const ALLOWED_VIEWS = [
   'home', 'replay', 'hof', 'hof-admin',
-  'profile', 'boost', 'admin-users', 'reconstruction', 'version', 'contact',
-  'playback-qa', 'rating-docs', 'rating-v2',
+  'profile', 'boost', 'admin-users', 'version', 'contact',
+  'ai-review', 'battle-playback', 'playback-qa', 'rating-docs', 'rating-v2',
 ]
 const activeTool = ref(ALLOWED_VIEWS.includes(viewParam) ? viewParam : defaultView)
 
-// 视图映射 + KeepAlive：仅「AI 复盘」页在切走时保持存活（SSE 流不中断，
-// 返回时进度/结果直接可见）；其余视图仍按需挂载/卸载，行为不变。
+// 视图映射 + KeepAlive：解析页保留结果状态；AI/战局能力页按需独立挂载。
 const VIEW_COMPONENTS = {
   home: HomePage,
   replay: ReplayPage,
+  'ai-review': AiReviewPage,
+  'battle-playback': BattlePlaybackPage,
   hof: HoFPage,
   'hof-admin': HoFAdminPage,
   profile: ProfilePage,
   boost: BoostPage,
   'admin-users': AdminUsersPage,
-  reconstruction: ReconstructionPage,
   version: VersionPage,
   contact: ContactPage,
   'playback-qa': PlaybackQaPage,
@@ -78,19 +74,25 @@ const VIEW_COMPONENTS = {
 }
 const currentView = computed(() => VIEW_COMPONENTS[activeTool.value] || ReplayPage)
 
-function navigate(view) {
+// Dataset capability handoff is intentionally memory-only: it never enters URL/history.
+const replayHandoff = ref(null)
+
+function navigate(view, payload = null) {
+  if (view === 'ai-review' || view === 'battle-playback') {
+    replayHandoff.value = payload
+  }
   activeTool.value = view
   const url = new URL(window.location.href)
   if (view === 'home') url.searchParams.delete('view')
   else url.searchParams.set('view', view)
   window.history.replaceState({}, '', url.toString())
 }
-// 注入登录态与 login：Battle action（战局回放 / AI 复盘）需登录，ReplayPage / FileUploader
-// 在未登录时明确提示而非静默跳转（单页 Workspace 内切换不再跨视图 navigate）。
+// 注入登录态与 login：AI 复盘 / 战局重建能力页需登录。
 provide('isAuthenticated', isAuthenticated)
 provide('login', login)
 // 跨视图导航注入：ReplayPage 的「算法说明」入口跳转 rating-docs 页使用。
 provide('navigate', navigate)
+provide('replayHandoff', replayHandoff)
 
 function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
 
@@ -152,7 +154,9 @@ onBeforeUnmount(() => {
     </a>
     <nav>
       <button v-if="isHomeHost" :class="{ active: activeTool === 'home' }" @click="navigate('home')">{{ $t('profile.home') }}</button>
-      <button :class="{ active: activeTool === 'replay' }" @click="navigate('replay')">{{ $t('app.analysis_tab') }}</button>
+      <button :class="{ active: activeTool === 'replay' }" @click="navigate('replay')">{{ $t('home.replayParse') }}</button>
+      <button :class="{ active: activeTool === 'ai-review' }" @click="navigate('ai-review')">{{ $t('home.aiReview') }}</button>
+      <button :class="{ active: activeTool === 'battle-playback' }" @click="navigate('battle-playback')">{{ $t('home.battlePlayback') }}</button>
       <button :class="{ active: activeTool === 'hof' }" @click="navigate('hof')">{{ $t('hof.btn') }}</button>
       <button :class="{ active: activeTool === 'boost' }" @click="navigate('boost')">{{ $t('app.boost_tab') }}</button>
     </nav>
@@ -199,7 +203,7 @@ onBeforeUnmount(() => {
 
   <div class="tb-content">
     <!-- ReplayPage 保持存活：打开文档/其他页面后返回不丢已解析结果与当前 tab -->
-    <KeepAlive :include="['ReconstructionPage', 'ReplayPage']">
+    <KeepAlive :include="['ReplayPage']">
       <component :is="currentView" />
     </KeepAlive>
   </div>

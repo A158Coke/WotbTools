@@ -1,34 +1,34 @@
 package com.wotb.web.exceptionhandler;
 
 import com.wotb.web.admin.exception.AdminBadRequestException;
-import com.wotb.web.replayfile.HallOfFameStorageException;
 import com.wotb.web.admin.exception.AdminConflictException;
 import com.wotb.web.admin.exception.AdminInternalException;
 import com.wotb.web.replay.exception.ReplayBusyException;
 import com.wotb.web.replay.job.ExportQueueFullException;
+import com.wotb.web.replayfile.HallOfFameStorageException;
+import org.apache.catalina.connector.ClientAbortException;
+import org.apache.tomcat.util.http.fileupload.impl.FileSizeLimitExceededException;
+import org.apache.tomcat.util.http.fileupload.impl.SizeLimitExceededException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.apache.catalina.connector.ClientAbortException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotWritableException;
+import org.springframework.util.StringUtils;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.MultipartException;
-import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.server.ResponseStatusException;
-import org.springframework.util.StringUtils;
-import org.apache.tomcat.util.http.fileupload.impl.FileSizeLimitExceededException;
-import org.apache.tomcat.util.http.fileupload.impl.SizeLimitExceededException;
 
 import java.io.IOException;
 import java.time.Instant;
-import java.util.Locale;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -114,7 +114,7 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * Multipart transport 错误码（BLOCKER 5）：框架解析失败发生在 controller 之前，
+     * Multipart transport 错误码：框架解析失败发生在 controller 之前，
      * 正常用户的精确错误由 frontend preflight 提供。这里只按结构化 cause chain 区分：
      * Tomcat 单 part 超限 → {@code FILE_TOO_LARGE}；request 总大小超限 →
      * {@code TOTAL_REQUEST_TOO_LARGE}；无法结构区分（其他容器/未知 cause）→

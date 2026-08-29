@@ -52,7 +52,7 @@ public class BatchAnalyzer {
         return analyzePartition(ExactReplayDuplicateDetector.partition(results));
     }
 
-    /** 直接使用已计算的 partition（package-private 供 Facade 共享）。 */
+    /** 直接使用已计算的 partition（{@link #analyze} 的内部实现；同包测试可复用）。 */
     AnalysisPlan analyzePartition(
             final ExactReplayDuplicateDetector.ExactDuplicatePartition partition
     ) {
@@ -95,7 +95,6 @@ public class BatchAnalyzer {
 
         // 5. 选择代表回放，计算同队重复视角
         final List<ReplayPerspectiveGroup> perspectiveGroups = new ArrayList<>();
-        int sameTeamDupCount = 0;
         for (final var entry : groups.entrySet()) {
             final List<ScopedResult> groupResults = entry.getValue();
             final ScopedResult representative = selectRepresentative(groupResults);
@@ -104,7 +103,6 @@ public class BatchAnalyzer {
             for (final ScopedResult sr : groupResults) {
                 if (sr.result() != representative.result()) {
                     teamDuplicates.add(sr.result());
-                    sameTeamDupCount++;
                 }
             }
             final var battleId = entry.getKey().battleKey().toBattleIdentity();
@@ -130,19 +128,15 @@ public class BatchAnalyzer {
             }
         }
 
-        // 7. 判定模式
+        // 7. 判定模式（AI 单文件 single-analyzable-unit invariant；多单元 fail loud）
         final ReplayAnalysisScope dominantScope = scopes.isEmpty() ? null : scopes.iterator().next();
-        final int effectiveUnits = perspectiveGroups.size();
         final int analyzableCount = (int) perspectiveGroups.stream()
                 .filter(g -> g.representative().capabilities() != null
                         && isAiAnalyzable(g.representative(), dominantScope))
                 .count();
 
         final ReplayAnalysisMode mode = resolveMode(dominantScope, analyzableCount);
-        final var exactDuplicates = partition.duplicates();
-
-        return new AnalysisPlan(mode, dominantScope, perspectiveGroups, effectiveUnits,
-                exactDuplicates, exactDuplicates.size(), sameTeamDupCount, analyzableCount);
+        return new AnalysisPlan(mode, dominantScope, perspectiveGroups);
     }
 
     private ScopedResult toScopedResult(final ReplayProcessingResult result) {
@@ -179,7 +173,7 @@ public class BatchAnalyzer {
     }
 
     /**
-     * 选择代表回放：按质量降序排列：reconstruction → streamComplete → decodedRatio → failedPackets → unknownPackets → resyncCount。
+     * 选择代表回放：按质量降序排列：reconstruction → decodedRatio → failedPackets → unknownPackets。
      */
     static ScopedResult selectRepresentative(final List<ScopedResult> group) {
         if (group.size() == 1) return group.getFirst();
@@ -189,23 +183,16 @@ public class BatchAnalyzer {
     private static java.util.Comparator<ScopedResult> representativeComparator() {
         return java.util.Comparator
                 .<ScopedResult>comparingInt(s -> hasReconstruction(s) ? 0 : 1)
-                .thenComparing((s -> isStreamComplete(s) ? 0 : 1))
                 .thenComparing(
                         java.util.Comparator.comparingDouble(
                                 BatchAnalyzer::decodedRatio).reversed())
                 .thenComparingInt(BatchAnalyzer::failedPackets)
-                .thenComparingInt(BatchAnalyzer::unknownPackets)
-                .thenComparingInt(BatchAnalyzer::resyncCount);
+                .thenComparingInt(BatchAnalyzer::unknownPackets);
     }
 
     private static boolean hasReconstruction(final ScopedResult s) {
         final var caps = s.result().capabilities();
         return caps != null && caps.reconstructionAvailable();
-    }
-
-    private static boolean isStreamComplete(final ScopedResult s) {
-        final var diag = s.result().diagnostics();
-        return diag != null && diag.diagnostics() != null && diag.diagnostics().streamComplete();
     }
 
     private static ReplayCoverage coverage(final ScopedResult s) {
@@ -225,12 +212,6 @@ public class BatchAnalyzer {
     private static int unknownPackets(final ScopedResult s) {
         final var cov = coverage(s);
         return cov != null ? cov.unknownPackets() : Integer.MAX_VALUE;
-    }
-
-    private static int resyncCount(final ScopedResult s) {
-        final var diag = s.result().diagnostics();
-        if (diag == null || diag.diagnostics() == null) return Integer.MAX_VALUE;
-        return diag.diagnostics().resyncCount();
     }
 
     private static Long extractRecorderAccountId(final ReplayProcessingResult result) {
@@ -273,18 +254,20 @@ public class BatchAnalyzer {
         return isAiAnalyzable(result, scoped != null ? scoped.scope() : null);
     }
 
+    /**
+     * AI 复盘为单文件 / 单可分析单元，因此只有 0（不可分析 → NONE）或 1（SINGLE_*）两种
+     * 合法结果。超过 1 个可分析单元意味着传入了多结果批量（旧 multipart multi 架构），
+     * 在此 fail loud，绝不静默将其伪装成 SINGLE。
+     */
     private static ReplayAnalysisMode resolveMode(final ReplayAnalysisScope scope, final int analyzableCount) {
-        if (analyzableCount <= 0) return ReplayAnalysisMode.NONE;
-        if (scope == ReplayAnalysisScope.PLAYER_FOCUSED) {
-            return analyzableCount == 1
-                    ? ReplayAnalysisMode.SINGLE_PLAYER_BATTLE
-                    : ReplayAnalysisMode.MULTI_PLAYER_BATTLE;
+        if (analyzableCount == 0) return ReplayAnalysisMode.NONE;
+        if (analyzableCount > 1) {
+            throw new IllegalStateException(
+                    "AI review is single-source / single-analyzable-unit only; "
+                            + "got analyzableUnitCount=" + analyzableCount + ", scope=" + scope);
         }
-        if (scope == ReplayAnalysisScope.TEAM_PERSPECTIVE) {
-            return analyzableCount == 1
-                    ? ReplayAnalysisMode.SINGLE_TEAM_BATTLE
-                    : ReplayAnalysisMode.MULTI_TEAM_BATTLE;
-        }
+        if (scope == ReplayAnalysisScope.PLAYER_FOCUSED) return ReplayAnalysisMode.SINGLE_PLAYER_BATTLE;
+        if (scope == ReplayAnalysisScope.TEAM_PERSPECTIVE) return ReplayAnalysisMode.SINGLE_TEAM_BATTLE;
         return ReplayAnalysisMode.NONE;
     }
 
@@ -302,16 +285,15 @@ public class BatchAnalyzer {
 
     /**
      * 分析计划。
+     *
+     * @param mode          判定出的 AI 分析模式（NONE / SINGLE_*；AI 单文件场景下绝不出现 MULTI）
+     * @param dominantScope 主导分析 scope（可为 null）
+     * @param groups        视角分组（AI 分析单元；单文件场景下 ≤ 1）
      */
     public record AnalysisPlan(
             ReplayAnalysisMode mode,
             ReplayAnalysisScope dominantScope,
-            List<ReplayPerspectiveGroup> groups,
-            int effectiveUnitCount,
-            List<ExactReplayDuplicate> exactDuplicates,
-            int exactDuplicateCount,
-            int sameTeamDuplicatePerspectiveCount,
-            int analyzableUnitCount
+            List<ReplayPerspectiveGroup> groups
     ) {
     }
 }

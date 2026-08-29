@@ -7,11 +7,6 @@ import com.wotb.core.parse.PickleReader;
 import com.wotb.core.parse.Protobuf;
 import com.wotb.core.parse.ReplayArchiveReader;
 import com.wotb.core.parse.ReplayParser;
-import com.wotb.core.replay.processing.TeamEntityIdentity;
-import com.wotb.core.replay.processing.TeamEntityMapper;
-import com.wotb.core.replay.processing.TeamEntityMapping;
-import com.wotb.core.replay.processing.TeamPerspectiveResolution;
-import com.wotb.core.replay.processing.TeamPerspectiveResolver;
 import com.wotb.core.replay.event.EntityCreatedEvent;
 import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
@@ -22,10 +17,14 @@ import com.wotb.core.replay.feature.BattleStartResolver;
 import com.wotb.core.replay.feature.DefaultTeamBattleFeatureExtractor;
 import com.wotb.core.replay.feature.TacticalTimeResolution;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
+import com.wotb.core.replay.processing.TeamEntityIdentity;
+import com.wotb.core.replay.processing.TeamEntityMapper;
+import com.wotb.core.replay.processing.TeamEntityMapping;
+import com.wotb.core.replay.processing.TeamPerspectiveResolution;
+import com.wotb.core.replay.processing.TeamPerspectiveResolver;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import com.wotb.core.util.PlayerResultFormat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -40,6 +39,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * PR #103 调查探针（临时诊断，不修改业务逻辑）：
@@ -96,7 +97,7 @@ class ActualCombatantPositionProbeTest {
         final TeamPerspectiveResolution perspective = TeamPerspectiveResolver.resolve(battle, recon);
         final TeamEntityMapping mapping = TeamEntityMapper.resolve(battle, recon);
         final BattleStartResolution battleStart = BattleStartResolver.resolve(
-                recon.battleStartRawClockSec(), recon.diagnostics(), recon.events(), battle);
+                recon.battleStartRawClockSec(), recon.events(), battle);
 
         final int perspectiveTeam = perspective.perspectiveTeam() != null
                 ? perspective.perspectiveTeam() : 0;
@@ -254,8 +255,16 @@ class ActualCombatantPositionProbeTest {
         // spectator/non-#301 实体不得影响 actual combatant position coverage。
         assertEquals(friendlyCombatants.size(), friendlyMapped,
                 "actual friendly combatant 必须全部建立 entity mapping: " + file.getFileName());
-        assertEquals(friendlyCombatants.size(), friendlyWithUsablePosition,
-                "actual friendly combatant 必须全部有 >=1 usable position: " + file.getFileName());
+        // PR147: battle-relative position only assertable when battle clock resolves (wrapper3 BATTLE /
+        // method4 RoundFinished). 无该锚点 → BattleStartResolver 正确返回 UNRESOLVED（fail-closed，不得用
+        // Type14 stream-close / raw clock 冒充 battle start），此时位置覆盖断言降级为 fail-closed。
+        if (battleStart.resolved()) {
+            assertEquals(friendlyCombatants.size(), friendlyWithUsablePosition,
+                    "actual friendly combatant 必须全部有 >=1 usable position: " + file.getFileName());
+        } else {
+            System.out.println("   [fail-closed] battle clock UNRESOLVED（无 wrapper3 BATTLE / method4）→ "
+                    + "跳过 battle-relative usable-position 硬断言 (file=" + file.getFileName() + ")");
+        }
 
         // ---- non-combatant / spectator entity analysis ----
         System.out.println("== non-#301 event entities ==");

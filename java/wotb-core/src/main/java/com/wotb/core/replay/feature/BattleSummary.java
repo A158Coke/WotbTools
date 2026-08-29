@@ -1,7 +1,5 @@
 package com.wotb.core.replay.feature;
 
-import com.wotb.core.replay.event.DecodeConfidence;
-
 /** 战后统计摘要。 */
 public record BattleSummary(
         String mapName,

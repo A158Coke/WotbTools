@@ -1,23 +1,18 @@
 package com.wotb.web.replay.ai;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
+import com.wotb.core.parse.ReplayStreamHeader;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.reconstruction.BattleLifecycle;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
@@ -27,10 +22,9 @@ import com.wotb.core.replay.reconstruction.ObservationState;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.reconstruction.VehicleState;
 import com.wotb.core.replay.reconstruction.Vector3;
+import com.wotb.core.replay.reconstruction.VehicleState;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
-import com.wotb.core.replay.stream.ReplayStreamHeader;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
@@ -43,6 +37,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TacticalReviewHarnessTest {
 
@@ -151,6 +152,10 @@ class TacticalReviewHarnessTest {
         p.survived = survived;
         p.deathTimeMillis = survived ? 0 : (long) (deathSec * 1000);
         p.survivalTimeSec = survived ? 300.0 : deathSec;
+        if (!survived) {
+            p.deathTimeSource = deathSec > 0
+                    ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
+        }
         p.damageDealt = 500;
         p.damageReceived = 400;
         return p;
@@ -161,11 +166,8 @@ class TacticalReviewHarnessTest {
                 "arena", "middleburg", "1", "1", 1, "rec1", "", 300.0, 0L);
         final ReplayStreamHeader header = new ReplayStreamHeader(
                 0x12345678L, new byte[8], "h", "v", 15);
-        final ReplayCoverage coverage = new ReplayCoverage(
-                true, 2, 2, 0, 0, 0, 1.0, Map.of());
-        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(),
-                true, 1000f, true);
+        final ReplayCoverage coverage = new ReplayCoverage(2, 2, 0, 0, 0, 1.0, Map.of());
+        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(0, 0, 0f, 0f, 0, Map.of());
         // 事件流必须足以构建 canonical timeline：映射 + 位置 + 血量 + 伤害
         final List<com.wotb.core.replay.event.ReplayEvent> events = List.of(
                 new ParticipantMappingEvent(
@@ -237,7 +239,7 @@ class TacticalReviewHarnessTest {
 
     @Test
     void noReconstructionRejectsWithTimelineUnusable() {
-        // docs/current-plan.md §3：无 canonical timeline → 拒绝 AI Review（不走 settlement-only fallback）
+        // 无 canonical timeline → 拒绝 AI Review（不走 settlement-only fallback）
         final com.wotb.web.replay.exception.AiTimelineUnusableException e = assertThrows(
                 com.wotb.web.replay.exception.AiTimelineUnusableException.class,
                 () -> harness(gateway(PRIOR_JSON)).analyze(result(null), AllowedLanguage.ZH));
@@ -344,7 +346,7 @@ class TacticalReviewHarnessTest {
 
     @Test
     void playerCall2IsNotLimitedByTeamReviewCap() {
-        // PR #103 review BLOCKER C：Team cap（teamReviewMaxOutputTokens）只作用于 Team Call #2；
+        // Team cap（teamReviewMaxOutputTokens）只作用于 Team Call #2；
         // Player Call #2（TacticalReviewHarness）必须保持 global cap，不被 Team cap 无意限制。
         final int globalMaxOutput = 32_768;
         final int teamCap = 4_096;

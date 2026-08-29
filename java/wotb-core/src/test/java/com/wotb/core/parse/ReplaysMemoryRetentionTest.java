@@ -9,7 +9,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
-/** Phase 4 内存契约（plan §16/BLOCKER F）：解析完成后的 ParsedEntry 不持有 Source / byte[]。 */
+/** Phase 4 内存契约：解析完成后的 ParsedEntry 不持有 Source / byte[]。 */
 class ReplaysMemoryRetentionTest {
 
     @Test

@@ -3,7 +3,7 @@ package com.wotb.core.replay.evidence;
 import java.util.List;
 
 /**
- * 坦克战术语义层（文档 §6 Tank Tactical Profile）。
+ * 坦克战术语义层。
  * <p>不是 Tankopedia 原始数值的复制，而是供 LLM 使用的语义标签：
  * 例如 {@code mobility=HIGH}、{@code hullDownAbility=HIGH}。</p>
  *

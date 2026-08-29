@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 /**
- * 统一 Replay Task Card（plan §41：Processing 与 Export 共用同一视觉体系）。
+ * 统一 Replay Task Card（Processing 与 Export 共用同一视觉体系）。
  * kind=processing → 正在解析回放（真实 processed/total + currentFile + valid/dup/fail）；
  * kind=export → 正在生成 Excel / ZIP。状态：QUEUED / PROCESSING / READY / FAILED / CANCELLED。
  */

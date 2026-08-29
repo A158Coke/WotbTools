@@ -1,16 +1,19 @@
 package com.wotb.web.replay.ai.gateway;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
+import com.wotb.web.config.AiModelProperties;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.net.InetAddress;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
@@ -19,15 +22,11 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.sun.net.httpserver.HttpServer;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
-import com.wotb.web.config.AiModelProperties;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * HTTP boundary test: a real Spring AI {@code OpenAiChatModel} plus
@@ -266,7 +265,7 @@ class SpringAiChatGatewayHttpBoundaryTest {
 
     private record CapturedRequest(String path, String authorization, String body) {
     }
-    // ===== docs/current-plan.md §24：response_format 请求体边界契约 =====
+    // ===== response_format 请求体边界契约 =====
 
     @Test
     void jsonObjectResponseFormatSendsResponseFormatInRequestBody() throws Exception {
@@ -300,7 +299,7 @@ class SpringAiChatGatewayHttpBoundaryTest {
 
     @Test
     void defaultResponseFormatIsText() {
-        // 兼容构造器（无 responseFormat 参数）必须保持 TEXT：存量请求不进入 JSON mode（§6/§23）。
+        // 兼容构造器（无 responseFormat 参数）必须保持 TEXT：存量请求不进入 JSON mode。
         final AiChatRequest legacy = new AiChatRequest(
                 "system-instructions", "player-evidence", "deepseek-v4-flash",
                 null, 4096, true, "max", "corr-legacy", "SINGLE_PLAYER_BATTLE");

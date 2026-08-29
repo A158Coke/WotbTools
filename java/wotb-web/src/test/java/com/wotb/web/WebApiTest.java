@@ -1,8 +1,5 @@
 package com.wotb.web;
 
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.json.JsonMapper;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
@@ -14,14 +11,10 @@ import com.wotb.web.hof.entity.HallOfFameRecord;
 import com.wotb.web.hof.repository.HallOfFameRecordRepository;
 import com.wotb.web.hof.service.HallOfFameAdminService;
 import com.wotb.web.hof.service.HallOfFameService;
-import com.wotb.web.replayfile.ReplayHashLock;
 import com.wotb.web.hof.service.RecordOutcome;
 import com.wotb.web.replayfile.HallOfFameReplayStorage;
+import com.wotb.web.replayfile.ReplayHashLock;
 import org.hibernate.resource.jdbc.spi.StatementInspector;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +22,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -37,6 +34,9 @@ import org.springframework.web.context.WebApplicationContext;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -51,19 +51,18 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.IntFunction;
-import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
-import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * MockMvc 进程内 REST API 测试 (不绑定端口)。
@@ -184,7 +183,7 @@ public class WebApiTest {
         for (final Path p : files) {
             req = req.file(file(p));
         }
-        // BLOCKER 2：同步 multipart preview 已废弃 → 稳定 410 REPLAY_LEGACY_DEPRECATED，
+        // 同步 multipart preview 已废弃 → 稳定 410 REPLAY_LEGACY_DEPRECATED，
         // 不在 scheduler 之外做任何 full processing。
         mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
                 .andExpect(status().isGone())
@@ -900,7 +899,7 @@ public class WebApiTest {
                 final boolean fileExists = Files.exists(REPLAY_DIR.resolve(hash + ".wotbreplay"));
                 assertTrue(refs == 0 || fileExists,
                         "round=" + round + " 禁止 dangling reference: refs=" + refs + " fileExists=" + fileExists);
-                // 清理本轮记录（round 是循环变量，lambda 需副本）
+                // 清理当前轮记录（round 是循环变量，lambda 需副本）
                 final int roundId = round;
                 final List<HallOfFameRecord> roundRows = hallOfFameRecordRepository.findAll().stream()
                         .filter(x -> x.getArenaId().startsWith("race-del-" + roundId + "-")).toList();

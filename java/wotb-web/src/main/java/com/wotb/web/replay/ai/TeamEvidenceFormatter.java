@@ -3,12 +3,9 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.FriendlyEnemyResult;
-import com.wotb.core.replay.processing.FriendlyEnemyResult.Winner;
-import com.wotb.core.replay.processing.PlayerSideResolver;
-import com.wotb.core.replay.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.evidence.AiEvidence;
+import com.wotb.core.replay.evidence.ObservedMaxHp;
 import com.wotb.core.replay.evidence.TeamSeparationEvidenceSkill;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.CanonicalMapPosition;
@@ -17,7 +14,6 @@ import com.wotb.core.replay.feature.MapCoordinateResolution;
 import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.TeamAggregateResult;
-import com.wotb.core.replay.evidence.ObservedMaxHp;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamEngagementSummary;
 import com.wotb.core.replay.feature.TeamFormationCluster;
@@ -25,6 +21,10 @@ import com.wotb.core.replay.feature.TeamFormationPhase;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
+import com.wotb.core.replay.processing.FriendlyEnemyResult;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.Winner;
+import com.wotb.core.replay.processing.PlayerSideResolver;
+import com.wotb.core.replay.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.util.PlayerResultFormat;
@@ -871,7 +871,7 @@ final class TeamEvidenceFormatter {
     }
 
     /**
-     * 视角队伍的用户可见 display label（PR #103 review BLOCKER A）：唯一 dominant 且严格多数
+     * 视角队伍的用户可见 display label：唯一 dominant 且严格多数
      * 的 clan tag，否则空串（上层 fallback「我方」）；绝不返回 {@code 队伍-XXXX}。
      */
     static String resolveDisplayLabel(

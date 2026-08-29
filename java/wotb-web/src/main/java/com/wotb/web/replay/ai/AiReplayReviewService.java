@@ -4,19 +4,23 @@ import com.wotb.core.ai.ClusterTermSanitizer;
 import com.wotb.core.ai.TankNameCorrector;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.ref.ReplayDisplayNames;
+import com.wotb.core.replay.facts.AiReplayFacts;
 import com.wotb.core.replay.processing.AiNotConfiguredException;
 import com.wotb.core.replay.processing.BatchAnalyzer;
 import com.wotb.core.replay.processing.PerspectiveTeamNotResolvedException;
 import com.wotb.core.replay.processing.PlayerSideResolver;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.processing.ReplayAnalysisScope;
 import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
-import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.processing.TeamPerspectiveResolver;
 import com.wotb.core.replay.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
-import com.wotb.core.replay.facts.AiReplayFacts;
-import com.wotb.core.ref.ReplayDisplayNames;
+import com.wotb.web.replay.ai.gateway.AiUpstreamException;
+import com.wotb.web.replay.dto.AnalyzeResponse;
+import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
+import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import com.wotb.web.replay.job.ReplayArtifactWriter;
 import com.wotb.web.replay.job.ReplayProcessingJob;
 import com.wotb.web.replay.job.ReplayProcessingJobStore;
@@ -27,10 +31,6 @@ import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import com.wotb.web.replay.ai.gateway.AiUpstreamException;
-import com.wotb.web.replay.dto.AnalyzeResponse;
-import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
-import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -38,8 +38,8 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 @Service
@@ -50,47 +50,31 @@ public class AiReplayReviewService {
     private final AiReplayAnalysisService aiAnalysisService;
     private final TacticalReviewHarness tacticalReviewHarness;
     private final MeterRegistry meterRegistry;
-    /** Dataset Lease 提供方（plan §25）：AI 读取 derived artifact 前 acquire，防止 TTL 清理。 */
+    /** Dataset Lease 提供方：AI 读取 derived artifact 前 acquire，防止 TTL 清理。 */
     private final ReplayProcessingJobStore processingStore;
 
     private final AtomicInteger aiReviewInFlight = new AtomicInteger();
     private Timer aiReviewDuration;
-    public AiReplayReviewService(final AiReplayAnalysisService aiAnalysisService) {
-        this(aiAnalysisService, null, null, null);
-    }
-
-    @Autowired
     public AiReplayReviewService(
             final AiReplayAnalysisService aiAnalysisService,
             final TacticalReviewHarness tacticalReviewHarness,
             @Autowired(required = false) final MeterRegistry meterRegistry,
-            @Autowired(required = false) final ReplayProcessingJobStore processingStore) {
+            final ReplayProcessingJobStore processingStore) {
         this.aiAnalysisService = aiAnalysisService;
         this.tacticalReviewHarness = tacticalReviewHarness;
         this.meterRegistry = meterRegistry;
         this.processingStore = processingStore;
     }
 
-    /** 测试/旧调用便利构造器（无 Dataset lease 提供方）。 */
-    public AiReplayReviewService(
-            final AiReplayAnalysisService aiAnalysisService,
-            final TacticalReviewHarness tacticalReviewHarness,
-            final MeterRegistry meterRegistry) {
-        this(aiAnalysisService, tacticalReviewHarness, meterRegistry, null);
-    }
-
     /**
-     * Dataset 路径（plan §36–§38）：从 Processing Job 的 derived artifact 读取
+     * Dataset 路径：从 Processing Job 的 derived artifact 读取
      * {@link AiReplayFacts} 并执行同一 AI 链路；<b>不</b>重新上传 / 不重新 full
-     * process（BLOCKER A）。source 未 READY / job 不存在返回稳定错误码。
+     * process。source 未 READY / job 不存在返回稳定错误码。
      */
     public AnalyzeResponse analyzeFacts(final String processingJobId, final int sourceIndex,
                                         final AllowedLanguage language,
                                         final AiReviewStreamListener listener) throws IOException {
         requireDatasetReference(processingJobId, sourceIndex);
-        if (processingStore == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "DATASET_UNAVAILABLE");
-        }
         final ReplayProcessingJob job = processingStore.acquireForSource(processingJobId);
         if (job == null) {
             datasetCache("ai", false);
@@ -111,10 +95,14 @@ public class AiReplayReviewService {
                     ReplayArtifactWriter.readAiFacts(processingStore.jobDir(processingJobId), sourceIndex);
             datasetCache("ai", true);
             return analyzeFacts(facts, language, listener);
-        } catch (final java.io.IOException e) {
+        } catch (final java.io.IOException | tools.jackson.core.JacksonException e) {
             datasetCache("ai", false);
-            // artifact 缺失 = dataset 已过期 → 404（BLOCKER 4 稳定语义）。
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "JOB_NOT_FOUND");
+            // artifact 读取 / 解码 / 存储 I/O 故障（含 ai-facts.json 缺失、corrupt
+            // JSON、permission / disk error）。这些<b>不是</b>「job 不存在」——映射为不可恢复的
+            // 503 DATASET_UNAVAILABLE（否则前端会误触发 exactly-once full-process recovery，
+            // 浪费 CPU 并掩盖真实存储故障）。job 缺失 / source 缺失 / source 未 READY 各自有
+            // 专门的稳定码（JOB_NOT_FOUND / SOURCE_NOT_FOUND / SOURCE_NOT_READY·SOURCE_PROCESSING_FAILED）。
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "DATASET_UNAVAILABLE");
         } finally {
             processingStore.release(processingJobId);
         }
@@ -135,7 +123,7 @@ public class AiReplayReviewService {
                 + (hit ? "hits" : "misses") + "_total", "consumer", consumer).increment();
     }
 
-    /** 对已还原的 facts 执行与旧 analyze 完全相同的 authoritative AI 链路。 */
+    /** 对 Dataset 还原的 ai-facts 执行 authoritative AI 链路（无第二条 old analyze 生产路径）。 */
     public AnalyzeResponse analyzeFacts(final AiReplayFacts facts,
                                         final AllowedLanguage language,
                                         final AiReviewStreamListener listener) {
@@ -208,7 +196,7 @@ public class AiReplayReviewService {
     }
 
     /**
-     * 已解析结果列表的 AI 编排（旧 analyze 与 Dataset 路径共用，plan §20）：
+     * Dataset-derived {@link ReplayProcessingResult}（单文件 {@code facts.toResult()}）的 AI 编排：
      * coverage 日志 → 模式判定 → 可分析分组 → 单场/团队分支。
      */
     private AnalyzeResponse analyzeResults(final List<ReplayProcessingResult> allResults,
@@ -264,8 +252,7 @@ public class AiReplayReviewService {
                         battle), battle);
                 yield new AnalyzeResponse(
                         withDisclaimerFooter(corrected.get(0), language),
-                        corrected.get(1),
-                        MapOverviewBuilder.build(battle, representative.reconstruction()));
+                        corrected.get(1));
             }
             case SINGLE_TEAM_BATTLE -> {
                 final TeamAnalyzeResult teamResult = aiAnalysisService
@@ -276,11 +263,11 @@ public class AiReplayReviewService {
                         teamResult.analysis().analysis(), teamResult.preBattleSection()), battle), battle);
                 yield new AnalyzeResponse(
                         withDisclaimerFooter(corrected.get(0), language),
-                        corrected.get(1),
-                        MapOverviewBuilder.build(battle, first.reconstruction()));
+                        corrected.get(1));
             }
+            // 单文件 AI 复盘：模式只可能是 NONE / SINGLE_PLAYER_BATTLE / SINGLE_TEAM_BATTLE
+            // （MULTI_* 已随 legacy 批量端点删除），switch 全枚举覆盖，无 default。
             case NONE -> throw new IllegalArgumentException("NO_BATTLE_DATA");
-            default -> throw new UnsupportedReplayAnalysisModeException("UNSUPPORTED_BATTLE_CATEGORY");
         };
     }
 

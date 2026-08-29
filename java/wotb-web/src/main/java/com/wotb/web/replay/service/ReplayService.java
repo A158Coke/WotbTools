@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 回放业务只读入口（V2 收口，BLOCKER 2）：同步 full processing（preview/export）
+ * 回放业务只读入口（V2 收口）：同步 full processing（preview/export）
  * 已随 Replay Processing V2 废弃（HTTP 层稳定 410 {@code REPLAY_LEGACY_DEPRECATED}）；
  * 本服务只保留列定义与健康检查元数据。解析/导出全走 Processing Job +
  * {@link com.wotb.web.replay.job.ReplayParseScheduler} 权威路径，不存在第二套
@@ -18,7 +18,7 @@ import java.util.Map;
 @Service
 public class ReplayService {
 
-    /** Processing/Export Job 共用输入数量上限（V2 契约，plan §41）。 */
+    /** Processing/Export Job 共用输入数量上限（V2 契约）。 */
     public static final int MAX_REPLAY_FILES = 100;
 
     private final Tankopedia tankopedia = Tankopedia.load();

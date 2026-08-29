@@ -12,7 +12,6 @@ package com.wotb.core.replay.stream;
  * @param payloadLength 原始 payload 长度
  * @param type          原始 packet type
  * @param rawClockSec   文件中原始时钟（浮点数，不修改）
- * @param readStatus    读取状态：正常或重同步恢复
  * @param source        共享的 data.wotreplay 字节数组（只读引用）
  * @param payloadOffset source 中 payload 的起始偏移
  */
@@ -22,7 +21,6 @@ public record RawReplayPacket(
         int payloadLength,
         int type,
         float rawClockSec,
-        PacketReadStatus readStatus,
         byte[] source,
         int payloadOffset
 ) {

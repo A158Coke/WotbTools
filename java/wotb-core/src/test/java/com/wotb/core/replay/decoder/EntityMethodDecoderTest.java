@@ -1,18 +1,24 @@
 package com.wotb.core.replay.decoder;
 
-import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
+import com.wotb.core.replay.event.ProjectileLaunchedEvent;
+import com.wotb.core.replay.event.RoundFinishedEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
+import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.event.UnsupportedDamageEvent;
-import com.wotb.core.replay.stream.PacketReadStatus;
+import com.wotb.core.replay.event.VehicleFiredEvent;
+import com.wotb.core.replay.event.VehicleHitEvent;
+import com.wotb.core.replay.event.VehicleVehicleCollisionEvent;
 import com.wotb.core.replay.stream.RawReplayPacket;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -34,7 +40,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class EntityMethodDecoderTest {
 
     private final EntityMethodDecoder decoder = new EntityMethodDecoder();
-    private final ReplayDecodeContext context = new ReplayDecodeContext("test");
+    private final ReplayDecodeContext context = new ReplayDecodeContext("11.19.0_china");
+
+    /** PR162 entity-class scoped：method8 的 outer entityId（受击者）需先由 MaterializationEvent(entityTypeId==2) 证明为 Vehicle。 */
+    @BeforeEach
+    void registerVehicleDamageTarget() {
+        // 0xFC6017 是 method8 测试的 outer entityId（受击者）。真实 lifecycle 证据：entityTypeId==2 → Vehicle。
+        context.entityClassRegistry().markVehicle(0xFC6017);
+    }
 
     /** 伤害方法包（type 8 / sub 8）：payload[0..3]=entityId、[4..7]=subtype、body[4..7]=攻击者 eid(LE)、
      *  body[8..11]=目标 eid(LE)、body[13]=伤害子类型、body[14..15]=伤害（u16 BE：高字节在前）。 */
@@ -62,11 +75,12 @@ class EntityMethodDecoderTest {
         payload[22] = (byte) ((damage >> 8) & 0xFF); // u16 高字节在前（网络序），非 LE
         payload[23] = (byte) (damage & 0xFF);
         return new RawReplayPacket(seq, 0, payload.length, EntityMethodDecoder.TYPE_ENTITY_METHOD,
-                clock, PacketReadStatus.NORMAL, payload, 0);
+                clock, payload, 0);
     }
 
     @Test
     void updateArenaKeepsNicknameEvidenceWhenAccountIdIsMissing() {
+        context.entityClassRegistry().markAvatar(0);
         final byte[] player = new byte[]{
                 0x08, 0x0A,
                 0x1A, 0x04, 'A', 'l', 'l', 'y',
@@ -81,7 +95,7 @@ class EntityMethodDecoderTest {
         System.arraycopy(root, 0, payload, 14, root.length);
         final RawReplayPacket packet = new RawReplayPacket(
                 7, 0, payload.length, EntityMethodDecoder.TYPE_ENTITY_METHOD,
-                1.0f, PacketReadStatus.NORMAL, payload, 0);
+                1.0f, payload, 0);
 
         final ReplayDecodeResult result = decoder.decode(context, packet);
         final ParticipantMappingEvent event =
@@ -95,17 +109,21 @@ class EntityMethodDecoderTest {
     }
 
     @Test
-    void directDamageDecodesSingleDamageEventWithExactFields() {
+    void directDamageDecodesSingleVehicleHitEventWithExactFields() {
+        // method8 direct = hit/result-feedback (VehicleHitEvent), NOT HP damage. The raw u16
+        // "damage" is not an HP delta; authoritative HP loss = Type7 prop3 deltas.
         final ReplayDecodeResult result = decoder.decode(context,
                 damageMethodPacket(1, 10f, 0xFC6017, 0xFC6018, 0xFC6017,
                         EntityMethodDecoder.DAMAGE_SUB_DIRECT, 500));
         assertEquals(DecodeStatus.SUCCESS, result.status());
         assertTrue(result.warnings().isEmpty());
         assertEquals(1, result.events().size());
-        final DamageEvent event = (DamageEvent) result.events().getFirst();
-        assertEquals(0xFC6018, event.attackerEid(), "攻击者 eid 按 LE u32 解码");
-        assertEquals(0xFC6017, event.victimEid());
-        assertEquals(500, event.damage(), "伤害 u16 高字节在前（0x01F4），不得按 LE 误读为 62465");
+        final VehicleHitEvent event = (VehicleHitEvent) result.events().getFirst();
+        assertEquals(0xFC6018, event.attackerEntityId(), "攻击者 eid 按 LE u32 解码");
+        assertEquals(0xFC6017, event.victimEntityId());
+        assertEquals(3, event.primaryResultRaw(), "direct 变体 primary=body[13]=3");
+        assertEquals(1, event.secondaryResultRaw(), "secondary=body[14]=damage 高字节(0x01F4 -> 1)");
+        assertEquals(VehicleHitEvent.PenetrationFamily.PENETRATION, event.penetrationFamily());
         assertEquals(DecodeConfidence.EXACT, event.confidence());
         assertEquals(10f, event.timestamp().rawClockSec());
     }
@@ -143,58 +161,52 @@ class EntityMethodDecoderTest {
     }
 
     @Test
-    void directSubWithZeroRawDamageProducesConflictEvidence() {
-        // direct 变体但 raw == 0：raw 不是权威 HP delta（protocol.md），不得仅凭 0 判定
-        // 「无伤害」→ 作为 unsupported/conflict 证据保留（身份可解析则填写；供 attribution fail-closed）
+    void directSubWithZeroRawDamageStillProducesVehicleHitEvent() {
+        // direct 变体但 raw "damage" == 0：method8 是 hit/result-feedback 家族，raw 值不是数值伤害——
+        // 仍产出 EXACT VehicleHitEvent（attacker/victim + result 分类），非冲突证据。
         final ReplayDecodeResult result = decoder.decode(context,
                 damageMethodPacket(1, 10f, 0xFC6017, 0xFC6018, 0xFC6017,
                         EntityMethodDecoder.DAMAGE_SUB_DIRECT, 0));
-        assertEquals(DecodeStatus.PARTIAL, result.status());
-        assertEquals(1, result.events().size(), "direct raw=0 必须产出冲突证据事件（不能只有 warning）");
-        final UnsupportedDamageEvent ev = (UnsupportedDamageEvent) result.events().getFirst();
-        assertEquals(0xFC6018, ev.attackerEid(), "身份可解析则填写");
-        assertEquals(0xFC6017, ev.victimEid());
-        assertEquals(DecodeConfidence.PARTIAL, ev.confidence(), "不得标 EXACT/PROVEN");
-        assertEquals("ZERO_RAW_DAMAGE", ev.variant());
-        assertEquals(10f, ev.timestamp().rawClockSec(), 1e-6);
-        assertEquals("UNSUPPORTED_DAMAGE_VARIANT", result.warnings().getFirst().code(),
-                "warning 保留作诊断（但不是唯一输出）");
+        assertEquals(DecodeStatus.SUCCESS, result.status());
+        assertEquals(1, result.events().size());
+        final VehicleHitEvent ev = (VehicleHitEvent) result.events().getFirst();
+        assertEquals(0xFC6018, ev.attackerEntityId());
+        assertEquals(0xFC6017, ev.victimEntityId());
+        assertEquals(3, ev.primaryResultRaw());
+        assertEquals(0, ev.secondaryResultRaw());
+        assertEquals(DecodeConfidence.EXACT, ev.confidence());
     }
 
     @Test
     void zeroRawDamageWithMissingVictimEidFallsBackToOuterEntityId() {
-        // direct raw=0 且 body 内 victim eid 缺失（0）：victim 用可靠 outer entityId 回退
+        // direct 且 body 内 victim eid 缺失（0）：仍产出 EXACT VehicleHitEvent，victim 用可靠 outer entityId。
         final ReplayDecodeResult result = decoder.decode(context,
                 damageMethodPacket(1, 10f, 0xFC6017, 0xFC6018, 0,
                         EntityMethodDecoder.DAMAGE_SUB_DIRECT, 0));
-        assertEquals(DecodeStatus.PARTIAL, result.status());
+        assertEquals(DecodeStatus.SUCCESS, result.status());
         assertEquals(1, result.events().size());
-        final UnsupportedDamageEvent ev = (UnsupportedDamageEvent) result.events().getFirst();
-        assertEquals(0xFC6017, ev.victimEid(), "victim eid 缺失时用 outer entityId 作 victim 证据");
-        assertEquals(0xFC6018, ev.attackerEid());
-        assertEquals("ZERO_RAW_DAMAGE", ev.variant());
+        final VehicleHitEvent ev = (VehicleHitEvent) result.events().getFirst();
+        assertEquals(0xFC6017, ev.victimEntityId(), "victim eid 缺失时用 outer entityId 作 victim 证据");
+        assertEquals(0xFC6018, ev.attackerEntityId());
+        assertEquals(3, ev.primaryResultRaw());
+        assertEquals(DecodeConfidence.EXACT, ev.confidence());
     }
 
     @Test
-    void directDamageWithMissingVictimEidFallsBackToUnsupported() {
-        // direct raw>0 但 body 内 victim eid 缺失（0）：不能保证完整 direct identity——
-        // 降级为 UnsupportedDamageEvent（PARTIAL，victim 用可靠 outer entityId），
-        // 绝不产出 victim=0 的 EXACT DamageEvent（否则重建无法映射 victim 会静默丢弃 → 窗口「无冲突」）
+    void directDamageWithMissingVictimEidFallsBackToOuterEntityId() {
+        // direct 且 body 内 victim eid 缺失（0）：仍产出 EXACT VehicleHitEvent，victim 用可靠 outer entityId
+        // （方法调用目标实体）——整个 direct 分支产出 hit-feedback 证据，非冲突/降级。
         final ReplayDecodeResult result = decoder.decode(context,
                 damageMethodPacket(1, 10f, 0xFC6017, 0xFC6018, 0,
                         EntityMethodDecoder.DAMAGE_SUB_DIRECT, 500));
-        assertEquals(DecodeStatus.PARTIAL, result.status());
+        assertEquals(DecodeStatus.SUCCESS, result.status());
         assertEquals(1, result.events().size());
-        assertTrue(result.events().getFirst() instanceof UnsupportedDamageEvent,
-                "direct raw>0 且 victim eid 缺失必须降级为冲突证据事件（不是 victim=0 的 EXACT DamageEvent）");
-        final UnsupportedDamageEvent ev = (UnsupportedDamageEvent) result.events().getFirst();
-        assertEquals(0xFC6018, ev.attackerEid(), "攻击者 eid 仍可解析则填写");
-        assertEquals(0xFC6017, ev.victimEid(), "victim 用可靠 outer entityId（方法调用目标实体）");
-        assertEquals(DecodeConfidence.PARTIAL, ev.confidence(), "不得标 EXACT/PROVEN");
-        assertEquals("DIRECT_VICTIM_UNKNOWN", ev.variant());
-        assertEquals(10f, ev.timestamp().rawClockSec(), 1e-6);
-        assertEquals("UNSUPPORTED_DAMAGE_VARIANT", result.warnings().getFirst().code(),
-                "warning 保留作诊断（但不是唯一输出）");
+        final VehicleHitEvent ev = (VehicleHitEvent) result.events().getFirst();
+        assertEquals(0xFC6018, ev.attackerEntityId(), "攻击者 eid 仍可解析");
+        assertEquals(0xFC6017, ev.victimEntityId(), "victim 用可靠 outer entityId（方法调用目标实体）");
+        assertEquals(3, ev.primaryResultRaw());
+        assertEquals(1, ev.secondaryResultRaw());
+        assertEquals(DecodeConfidence.EXACT, ev.confidence());
     }
 
     @Test
@@ -209,7 +221,7 @@ class EntityMethodDecoderTest {
         payload[4] = EntityMethodDecoder.SUBTYPE_ENTITY_METHOD_DAMAGE;
         payload[8] = 0x05;
         final RawReplayPacket packet = new RawReplayPacket(1, 0, payload.length,
-                EntityMethodDecoder.TYPE_ENTITY_METHOD, 10f, PacketReadStatus.NORMAL, payload, 0);
+                EntityMethodDecoder.TYPE_ENTITY_METHOD, 10f, payload, 0);
         final ReplayDecodeResult result = decoder.decode(context, packet);
         assertEquals(DecodeStatus.PARTIAL, result.status());
         assertEquals(1, result.events().size(), "短体变体必须产出冲突证据事件（不能只有 warning）");
@@ -224,13 +236,18 @@ class EntityMethodDecoderTest {
     }
 
     @Test
-    void truncatedPacketIsMalformedNotVariant() {
+    void truncatedPacketIsMalformedButRawPreserved() {
+        // PR162/P1-4：known packet type + invalid semantic shape 不得 silent disappear —— 必须 raw-preserve
+        // 为 UnknownReplayEvent（保留 debug），而非旧「events 为空 + warning」。
         final byte[] payload = new byte[5];
         final RawReplayPacket packet = new RawReplayPacket(1, 0, payload.length,
-                EntityMethodDecoder.TYPE_ENTITY_METHOD, 10f, PacketReadStatus.NORMAL, payload, 0);
+                EntityMethodDecoder.TYPE_ENTITY_METHOD, 10f, payload, 0);
         final ReplayDecodeResult result = decoder.decode(context, packet);
         assertEquals(DecodeStatus.MALFORMED, result.status());
-        assertTrue(result.events().isEmpty());
+        assertEquals(1, result.events().size(), "malformed 不得 silent disappear");
+        assertTrue(result.events().get(0) instanceof com.wotb.core.replay.event.UnknownReplayEvent);
+        assertEquals("TYPE8_ENVELOPE_TRUNCATED",
+                ((com.wotb.core.replay.event.UnknownReplayEvent) result.events().get(0)).reasonCode());
         assertEquals("TRUNCATED_PAYLOAD", result.warnings().getFirst().code());
     }
 
@@ -263,6 +280,7 @@ class EntityMethodDecoderTest {
 
     @Test
     void updateArena2Field12DecodesRealtimeSupremacyPointsForBothTeams() {
+        context.entityClassRegistry().markAvatar(0);
         final RawReplayPacket packet = pointsPacket(1, 56.233f, 1, 303, 2, 306);
         final ReplayDecodeResult result = decoder.decode(context, packet);
         final List<SupremacyPointsChangedEvent> points = result.events().stream()
@@ -283,6 +301,7 @@ class EntityMethodDecoderTest {
 
     @Test
     void wrapper13MalformedField12DoesNotProduceExactPointEvent() {
+        context.entityClassRegistry().markAvatar(0);
         // wrapper=13 但：team=9（非法）→ 跳过；points=负数 → 跳过；缺 field2 → 跳过
         final byte[] badTeam = fieldDelimited(12, teamPointsMessage(9, 100));
         final byte[] badPoints = fieldDelimited(12, teamPointsMessage(1, -5));
@@ -360,6 +379,213 @@ class EntityMethodDecoderTest {
                         fieldDelimited(12, teamPointsMessage(team2, p2))));
     }
 
+    /** 通用 EntityMethod 包：entityId + subtype + argLen + args（P0-3 版本门禁测试）。 */
+    private static RawReplayPacket methodPacket(final int seq, final int subtype, final byte[] args) {
+        final byte[] payload = new byte[12 + args.length];
+        putU32(payload, 0, 12345);
+        putU32(payload, 4, subtype);
+        putU32(payload, 8, args.length);
+        System.arraycopy(args, 0, payload, 12, args.length);
+        return new RawReplayPacket(seq, 0, payload.length,
+                EntityMethodDecoder.TYPE_ENTITY_METHOD, 10f, payload, 0);
+    }
+
+    private static void putU32(final byte[] buf, final int i, final int v) {
+        buf[i] = (byte) v;
+        buf[i + 1] = (byte) (v >>> 8);
+        buf[i + 2] = (byte) (v >>> 16);
+        buf[i + 3] = (byte) (v >>> 24);
+    }
+
+    /** PR162/P0-2：future version 只有 Type8 envelope 结构可前向读取；method0 的 numeric semantic
+     *  （VehicleFired）未认证 → 必须 raw/Unknown，绝不继承当前版本 EXACT semantic。 */
+    @Test
+    void futureVersionLayoutMethodStructurallyDecodes() {
+        final ReplayDecodeContext future = new ReplayDecodeContext("11.20.0_china");
+        future.entityClassRegistry().markVehicle(12345);
+        final ReplayDecodeResult result = decoder.decode(future,
+                methodPacket(1, EntityMethodDecoder.SUBTYPE_VEHICLE_FIRED, new byte[]{0x01}));
+        assertEquals(DecodeStatus.PARTIAL, result.status(),
+                "future method0 semantic 未认证 → raw-preserve，不得 EXACT");
+        assertInstanceOf(UnknownReplayEvent.class, result.events().getFirst());
+        assertTrue(result.events().stream().noneMatch(VehicleFiredEvent.class::isInstance),
+                "future method0 不得产出 VehicleFiredEvent(EXACT)");
+    }
+
+    /** PR162/P0-2：future method29（ProjectileLaunched）semantic 未认证 → raw/Unknown，不得 EXACT。 */
+    @Test
+    void futureVersionProjectileLaunchStructurallyDecodes() {
+        final ReplayDecodeContext future = new ReplayDecodeContext("12.0.0_eu");
+        future.entityClassRegistry().markAvatar(12345);
+        final byte[] args = new byte[37]; // PROJECTILE_LAUNCH_ARGS_LEN
+        final ReplayDecodeResult result = decoder.decode(future,
+                methodPacket(1, EntityMethodDecoder.SUBTYPE_PROJECTILE_LAUNCH, args));
+        assertEquals(DecodeStatus.PARTIAL, result.status(),
+                "future method29 semantic 未认证 → raw-preserve，不得 EXACT");
+        assertInstanceOf(UnknownReplayEvent.class, result.events().getFirst());
+        assertTrue(result.events().stream().noneMatch(ProjectileLaunchedEvent.class::isInstance),
+                "future method29 不得产出 ProjectileLaunchedEvent(EXACT)");
+    }
+
+    /** P0-3：当前 canonical 11.19 仍解码 method29 为 EXACT（不因 gate 回归）。 */
+    @Test
+    void currentVersionLayoutMethodStillDecodesExact() {
+        context.entityClassRegistry().markAvatar(12345);
+        final byte[] args = new byte[37];
+        args[0] = 0x01;
+        args[1] = 0x02;
+        args[2] = 0x03;
+        args[3] = 0x04;
+        // other bytes zero -> launchPoint=(0,0,0), velocity=(0,0,0), invariant=0 (finite)
+        final ReplayDecodeResult result = decoder.decode(context,
+                methodPacket(1, EntityMethodDecoder.SUBTYPE_PROJECTILE_LAUNCH, args));
+        assertEquals(DecodeStatus.SUCCESS, result.status(), "11.19 method29 仍应解码 EXACT");
+        assertEquals(1, result.events().size());
+    }
+
+    // ---- PR162 entity-class scoped contract（method4：Avatar 2B=RoundFinished；Vehicle 16B=collision）----
+
+    /** 指定 entityId 的 EntityMethod 包（type 8）：entityId + subtype + argLen + args。 */
+    private static RawReplayPacket methodPacketOn(final int seq, final int entityId,
+                                                  final int subtype, final byte[] args) {
+        final byte[] payload = new byte[12 + args.length];
+        putU32(payload, 0, entityId);
+        putU32(payload, 4, subtype);
+        putU32(payload, 8, args.length);
+        System.arraycopy(args, 0, payload, 12, args.length);
+        return new RawReplayPacket(seq, 0, payload.length,
+                EntityMethodDecoder.TYPE_ENTITY_METHOD, 10f, payload, 0);
+    }
+
+    /** f32 LE 字节。 */
+    private static byte[] f32(final float v) {
+        final int bits = Float.floatToIntBits(v);
+        return new byte[]{(byte) (bits & 0xFF), (byte) ((bits >>> 8) & 0xFF),
+                (byte) ((bits >>> 16) & 0xFF), (byte) ((bits >>> 24) & 0xFF)};
+    }
+
+    /** Vehicle method4 16-byte collision/contact args：sharedScalar + contactPoint(3×f32)。 */
+    private static byte[] vehicleCollisionArgs(final float scalar, final float x, final float y, final float z) {
+        return concat(f32(scalar), f32(x), f32(y), f32(z));
+    }
+
+    @Test
+    void avatarMethod4TwoByteDecodesRoundFinishedNotCollision() {
+        final ReplayDecodeContext ctx = new ReplayDecodeContext("11.19.0_china");
+        ctx.entityClassRegistry().markAvatar(900);
+        final ReplayDecodeResult r = decoder.decode(ctx,
+                methodPacketOn(1, 900, EntityMethodDecoder.SUBTYPE_ROUND_FINISHED, new byte[]{2, 1}));
+        assertEquals(1, r.events().size());
+        final RoundFinishedEvent e = assertInstanceOf(RoundFinishedEvent.class, r.events().get(0));
+        assertEquals(2, e.winnerTeam());
+        assertEquals(1, e.finishReasonRaw());
+        assertEquals(RoundFinishedEvent.FinishCause.ELIMINATION, e.finishCause());
+        assertTrue(r.events().stream().noneMatch(VehicleVehicleCollisionEvent.class::isInstance),
+                "Avatar method4 2B 禁止生 VehicleVehicleCollisionEvent");
+    }
+
+    @Test
+    void vehicleMethod4SixteenByteDecodesCollisionNotRoundFinished() {
+        final ReplayDecodeContext ctx = new ReplayDecodeContext("11.19.0_china");
+        ctx.entityClassRegistry().markVehicle(901);
+        final ReplayDecodeResult r = decoder.decode(ctx,
+                methodPacketOn(1, 901, EntityMethodDecoder.SUBTYPE_ROUND_FINISHED,
+                        vehicleCollisionArgs(1.5f, 2f, 3f, 4f)));
+        assertEquals(1, r.events().size());
+        final VehicleVehicleCollisionEvent e =
+                assertInstanceOf(VehicleVehicleCollisionEvent.class, r.events().get(0));
+        assertEquals(901, e.vehicleEntityId());
+        assertEquals(1.5f, e.sharedScalar(), 1e-6f);
+        assertEquals(2f, e.contactPointWorld().x(), 1e-6f);
+        assertEquals(3f, e.contactPointWorld().y(), 1e-6f);
+        assertEquals(4f, e.contactPointWorld().z(), 1e-6f);
+        assertEquals(DecodeConfidence.EXACT, e.confidence());
+        assertTrue(r.events().stream().noneMatch(RoundFinishedEvent.class::isInstance),
+                "Vehicle method4 16B 禁止生 RoundFinishedEvent");
+    }
+
+    @Test
+    void unknownClassMethod4TwoByteRawPreserves() {
+        // UnknownEntity（无类证据）method4+2B → UnknownReplayEvent，不得因 shape 猜 class
+        final ReplayDecodeContext ctx = new ReplayDecodeContext("11.19.0_china");
+        final ReplayDecodeResult r = decoder.decode(ctx,
+                methodPacketOn(1, 902, EntityMethodDecoder.SUBTYPE_ROUND_FINISHED, new byte[]{2, 1}));
+        assertInstanceOf(UnknownReplayEvent.class, r.events().getFirst());
+        assertTrue(r.events().stream().noneMatch(RoundFinishedEvent.class::isInstance));
+        assertTrue(r.events().stream().noneMatch(VehicleVehicleCollisionEvent.class::isInstance));
+    }
+
+    @Test
+    void vehicleClassMethod4TwoByteRawPreserves() {
+        // Vehicle 类 method4+2B（shape 不符，Vehicle collision 需 16B）→ UnknownReplayEvent
+        final ReplayDecodeContext ctx = new ReplayDecodeContext("11.19.0_china");
+        ctx.entityClassRegistry().markVehicle(903);
+        final ReplayDecodeResult r = decoder.decode(ctx,
+                methodPacketOn(1, 903, EntityMethodDecoder.SUBTYPE_ROUND_FINISHED, new byte[]{2, 1}));
+        assertInstanceOf(UnknownReplayEvent.class, r.events().getFirst());
+        assertTrue(r.events().stream().noneMatch(RoundFinishedEvent.class::isInstance));
+    }
+
+    @Test
+    void avatarClassMethod4SixteenByteRawPreserves() {
+        // Avatar 类 method4+16B（shape 不符，Avatar round finished 需 2B）→ UnknownReplayEvent
+        final ReplayDecodeContext ctx = new ReplayDecodeContext("11.19.0_china");
+        ctx.entityClassRegistry().markAvatar(904);
+        final ReplayDecodeResult r = decoder.decode(ctx,
+                methodPacketOn(1, 904, EntityMethodDecoder.SUBTYPE_ROUND_FINISHED,
+                        vehicleCollisionArgs(1.5f, 2f, 3f, 4f)));
+        assertInstanceOf(UnknownReplayEvent.class, r.events().getFirst());
+        assertTrue(r.events().stream().noneMatch(RoundFinishedEvent.class::isInstance));
+        assertTrue(r.events().stream().noneMatch(VehicleVehicleCollisionEvent.class::isInstance));
+    }
+
+    @Test
+    void recorderAvatarIdentityOverridesMaterializedVehicleClass() {
+        // PR162/P0-1：Avatar 类只由独立身份/生命周期证据建立（此处 markAvatar 模拟 subtype-49 recorder
+        // sync-options 身份锚点）；先物化为 Vehicle（markVehicle）不会把已证明的 Avatar 降级（粘性）。
+        // method4+2B 必须按 Avatar 分派为 RoundFinished（不允许因「先 Vehicle」而 raw-preserve）。
+        final ReplayDecodeContext ctx = new ReplayDecodeContext("11.19.0_china");
+        ctx.entityClassRegistry().markVehicle(910);
+        ctx.entityClassRegistry().markAvatar(910);
+        final ReplayDecodeResult r = decoder.decode(ctx,
+                methodPacketOn(1, 910, EntityMethodDecoder.SUBTYPE_ROUND_FINISHED, new byte[]{2, 1}));
+        final RoundFinishedEvent e = assertInstanceOf(RoundFinishedEvent.class, r.events().get(0));
+        assertEquals(2, e.winnerTeam());
+    }
+
+    /** PR162/P0-1.5：EntityMethod decode 必须是 class authority 的<b>纯消费</b>，不得修改 registry。 */
+    @Test
+    void entityMethodDecodeDoesNotMutateEntityClassRegistry() {
+        final ReplayDecodeContext ctx = new ReplayDecodeContext("11.19.0_china");
+        ctx.entityClassRegistry().markVehicle(7);
+        ctx.entityClassRegistry().markAvatar(900);
+        final EntityClass v7 = ctx.entityClassRegistry().resolve(7);
+        final EntityClass a900 = ctx.entityClassRegistry().resolve(900);
+        final EntityClass u999 = ctx.entityClassRegistry().resolve(999);
+
+        // method4 2B 在未分类 entity 999 上 → UnknownReplayEvent，且不得把 999 标记为任意类。
+        decoder.decode(ctx, methodPacketOn(1, 999, EntityMethodDecoder.SUBTYPE_ROUND_FINISHED,
+                new byte[]{2, 1}));
+        // method29 在未分类 entity 999 上 → Unknown，不得自证 Avatar。
+        decoder.decode(ctx, methodPacketOn(1, 999, EntityMethodDecoder.SUBTYPE_PROJECTILE_LAUNCH,
+                new byte[37]));
+        assertEquals(v7, ctx.entityClassRegistry().resolve(7), "decode 不得改动已分类 Vehicle");
+        assertEquals(a900, ctx.entityClassRegistry().resolve(900), "decode 不得改动已分类 Avatar");
+        assertEquals(u999, ctx.entityClassRegistry().resolve(999), "未分类 entity 不得被 method decode 自证 class");
+    }
+
+    /** subtype48 载荷（指定 entityId）：body[0..3] 固定字段 + varint(wrapperFieldNumber) + msgLen + protoData。 */
+    private static RawReplayPacket rawPacket48For(final long wrapperFieldNumber, final byte[] root, final int entityId) {
+        final byte[] payload = new byte[8 + 4 + 1 + 1 + root.length];
+        putU32(payload, 0, entityId);
+        payload[4] = EntityMethodDecoder.SUBTYPE_UPDATE_ARENA2;
+        payload[12] = (byte) wrapperFieldNumber;
+        payload[13] = (byte) root.length;
+        System.arraycopy(root, 0, payload, 14, root.length);
+        return new RawReplayPacket(7, 0, payload.length,
+                EntityMethodDecoder.TYPE_ENTITY_METHOD, 56.233f, payload, 0);
+    }
+
     /** subtype48 载荷：body[0..3] 固定字段 + varint(wrapperFieldNumber) + msgLen + protoData（root 直接放入）。 */
     private static RawReplayPacket rawPacket48(final long wrapperFieldNumber, final byte[] root) {
         final byte[] payload = new byte[8 + 4 + 1 + 1 + root.length];
@@ -368,6 +594,6 @@ class EntityMethodDecoderTest {
         payload[13] = (byte) root.length;
         System.arraycopy(root, 0, payload, 14, root.length);
         return new RawReplayPacket(7, 0, payload.length,
-                EntityMethodDecoder.TYPE_ENTITY_METHOD, 56.233f, PacketReadStatus.NORMAL, payload, 0);
+                EntityMethodDecoder.TYPE_ENTITY_METHOD, 56.233f, payload, 0);
     }
 }

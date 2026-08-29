@@ -63,15 +63,6 @@
     url('../assets/showcase/replay/replay-hero-battlefield-v1.png') center / cover no-repeat !important;
 }
 
-/* ---------- Reconstruction — tactical atmosphere; the real replay map stays authoritative ---------- */
-.recon-page::after {
-  background-image: url('../assets/showcase/reconstruction/reconstruction-hero-tactical-v1.png') !important;
-  opacity: .90 !important;
-}
-.recon-page::before {
-  background: linear-gradient(180deg, rgba(4,10,12,.14), rgba(4,10,12,.40)) !important;
-}
-
 /* ---------- Hall of Fame — ceremonial hall, strong gold focal point ---------- */
 .hof-page::after,
 .hof-wrap::after,
@@ -137,7 +128,6 @@
   .homepage-showcase::before,
   .homepage-showcase .showcase-hero,
   .layout-data-workspace::after,
-  .recon-page::after,
   .hof-page::after,
   .hof-wrap::after,
   .hall-page::after,

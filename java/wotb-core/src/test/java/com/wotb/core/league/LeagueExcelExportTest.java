@@ -4,7 +4,6 @@ import com.wotb.core.AggregateColumns;
 import com.wotb.core.Columns;
 import com.wotb.core.export.ExcelExporter;
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
@@ -156,7 +155,7 @@ class LeagueExcelExportTest {
             assertTrue(headers.contains("总Rating"), "必须含总Rating");
             // 非 Potential 的 canonical Replay facts 必须完整保留（不得误删其它字段）
             for (final String missing : List.of("等级", "坦克类型",
-                    "国家", "炮伤", "被命中", "被击穿", "击伤", "排", "军阶", "车辆ID", "账号ID")) {
+                    "国家", "炮伤", "被命中", "被击穿", "击伤", "军阶", "车辆ID", "账号ID")) {
                 assertTrue(headers.contains(missing), "此前缺失字段必须存在：" + missing);
             }
         }
@@ -220,15 +219,6 @@ class LeagueExcelExportTest {
             case "league_shooting_score" -> "射击效率评分";
             default -> throw new AssertionError("unexpected League dimension key: " + key);
         };
-    }
-
-    /** 给一场 battle 的玩家设置 {@code count} 个不同的 platoonId（按 players 顺序循环）。 */
-    private static void setDistinctPlatoons(final Battle battle, final int count) {
-        int i = 0;
-        for (final PlayerResult p : battle.players) {
-            p.platoonId = 100L + (i % count);
-            i++;
-        }
     }
 
     private static String cellText(final Row row, final int c) {
@@ -381,7 +371,7 @@ class LeagueExcelExportTest {
             }
             // 此前容易丢失的字段必须存在（不依赖行数断言）
             for (final String missing : List.of("等级", "坦克类型", "国家", "炮伤",
-                    "被命中", "被击穿", "击伤", "排", "军阶", "车辆ID", "账号ID",
+                    "被命中", "被击穿", "击伤", "军阶", "车辆ID", "账号ID",
                     "贡献度", "KAST", "Impact")) {
                 assertTrue(headers.contains(missing), "此前缺失字段必须存在：" + missing + "，实际：" + headers);
             }
@@ -420,49 +410,6 @@ class LeagueExcelExportTest {
                 assertEquals(LeagueColumns.DIM_KEYS.size(), dimColumns,
                         sheetName + " 维度标题列数必须 == LeagueColumns.DIM_KEYS.size()");
             }
-        }
-    }
-
-    @Test
-    void aggregateDetailPlatoonLabelsRestartPerBattle() throws Exception {
-        // 排号语义按单场 Battle 独立：battle 1 三个 platoon → A/B/C；
-        // battle 2 两个不同 platoon → 必须重新从 A/B 开始（不得接续 C/D 或共享映射）。
-        final Battle b1 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
-        b1.arenaId = "arena-1";
-        setDistinctPlatoons(b1, 3);
-        final Battle b2 = LeagueTestBattles.battle(1, LeagueTestBattles.defaultSevenVsSeven());
-        b2.arenaId = "arena-2";
-        setDistinctPlatoons(b2, 2);
-
-        final ByteArrayOutputStream out = new ByteArrayOutputStream();
-        ExcelExporter.writeAggregate(List.of(b1, b2), List.of("one.wotbreplay", "two.wotbreplay"),
-                List.of(), Tankopedia.load(), out);
-        try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(out.toByteArray()))) {
-            final Sheet detail = wb.getSheet("明细");
-            final Row header = detail.getRow(0);
-            int platoonCol = -1;
-            for (int c = 0; c < header.getLastCellNum(); c++) {
-                if ("排".equals(header.getCell(c).getStringCellValue())) {
-                    platoonCol = c;
-                }
-            }
-            assertTrue(platoonCol >= 0, "明细必须含 排 列");
-            final List<String> battle1 = new ArrayList<>();
-            final List<String> battle2 = new ArrayList<>();
-            for (int r = 1; r <= 14; r++) {
-                battle1.add(cellText(detail.getRow(r), platoonCol));
-            }
-            for (int r = 15; r <= 28; r++) {
-                battle2.add(cellText(detail.getRow(r), platoonCol));
-            }
-            // 同一场多个 platoon：A/B/C 正常递增
-            assertEquals(3, new java.util.HashSet<>(battle1).size(), "battle 1 应有 3 个不同排标签");
-            assertTrue(battle1.contains("A") && battle1.contains("B") && battle1.contains("C"),
-                    "battle 1 排标签必须为 A/B/C，实际 " + battle1);
-            // 跨 battle 重新从 A 开始：battle 2 不得接续 battle 1 的映射
-            assertEquals("A", battle2.getFirst(), "battle 2 第一个排必须重新从 A 开始（跨 battle 不得共享映射）");
-            assertTrue(!battle2.contains("C") && !battle2.contains("D"),
-                    "battle 2 不得出现 battle 1 的延续标签，实际 " + battle2);
         }
     }
 

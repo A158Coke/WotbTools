@@ -2,6 +2,7 @@ package com.wotb.core.replay.timeline;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
@@ -16,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * EpisodeDetector（docs/current-plan.md §23/§24）：覆盖整场、连续、无重叠、deterministic、
+ * EpisodeDetector（docs/architecture/battle-timeline.md §23/§24）：覆盖整场、连续、无重叠、deterministic、
  * 不机械固定 30 秒切块；Episode 与 Window 分离。
  */
 class EpisodeDetectorTest {
@@ -84,6 +85,10 @@ class EpisodeDetectorTest {
     void notFixedThirtySecondChunks() {
         final Battle battle = TimelineTestFixtures.battle(150.0);
         final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
+        // P0-1：enemy 于 t=60 离开（Type4）→ observed segment 关闭，72/74s 敌方 HP 事件成为 HP_GAP_DELTA
+        // （信息空窗集中 70-90s；Episode 边界跟随信号，而非固定 30s 网格）。
+        events.add(new EntityRemovedEvent(TimelineTestFixtures.seq++, TimelineTestFixtures.ts(60),
+                4, DecodeConfidence.EXACT, TimelineTestFixtures.ENEMY_EID));
         // 所有战术信号集中在 70-90s：Episode 边界应跟随信号而不是 30s 网格
         events.add(TimelineTestFixtures.damage(TimelineTestFixtures.RECORDER_EID,
                 TimelineTestFixtures.ENEMY_EID, 72, 400));
@@ -95,19 +100,16 @@ class EpisodeDetectorTest {
                 .build(battle, recon, TimelineTestFixtures.personalPerspective()).timeline();
 
         final List<TacticalEpisode> episodes = EpisodeDetector.detect(timeline);
-        // 若有多个 episode，其边界必须偏离纯 30s 网格（0/30/60/90/120/150）
-        if (episodes.size() > 1) {
-            for (int i = 1; i < episodes.size(); i++) {
-                final double boundary = episodes.get(i).startSec();
-                final boolean onGrid = Math.abs(boundary % 30.0) < 1.0;
-                assertFalse(onGrid, "episode boundary " + boundary + " lies on fixed 30s grid");
-            }
-        }
+        // P0-1：canonical AoI 下实体不再因 age>5s 产生 age-based ENEMY_LOST（那是已移除的 5s prohibition）；
+        // episode 仍必须跟随交火/击毁信号形成独立段（信号边界 70 偏离 30s 网格），且不得把整场粘成一个 episode。
+        assertTrue(episodes.size() > 1, "must segment into multiple episodes: " + episodes);
+        assertTrue(episodes.stream().anyMatch(ep -> Math.abs(ep.startSec() - 70.0) < 1e-9),
+                "交火/击毁信号应开启新的 episode（边界 70）：" + episodes);
     }
 
     @Test
     void episodeDeltasAppearExactlyOnceAcrossAllEpisodes() {
-        // P0 review：flatten 所有 Episode deltas 后，每个 canonical delta 恰好出现一次
+        // flatten 所有 Episode deltas 后，每个 canonical delta 恰好出现一次
         // （半开区间 [start, end) 契约：边界秒的 delta 不重复）。
         final Battle battle = TimelineTestFixtures.battle(120.0);
         final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
@@ -134,7 +136,7 @@ class EpisodeDetectorTest {
 
     @Test
     void openingQuietGapSplitsBeforeFirstContact() {
-        // P1 review：开局长时间无事件（quiet gap）后首次接敌，应产生切分；
+        // 开局长时间无事件（quiet gap）后首次接敌，应产生切分；
         // lastDeltaSeen 初始值不得使用整场最后一次 delta（未来信息）。
         final Battle battle = TimelineTestFixtures.battle(120.0);
         final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
@@ -231,6 +233,10 @@ class EpisodeDetectorTest {
         // （己方 HP 在 PR #103 carry-forward 语义下为直接观测 HP_CHANGE score 0，故用敌方 HP 构造信息空窗。）
         final Battle battle = TimelineTestFixtures.battle(120.0);
         final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
+        // P0-1：enemy 在 t=10 离开（Type4）→ observed segment 关闭 → 12/20s HP 变化成为 HP_GAP_DELTA
+        // （canonical AoI gap；不再按 5s 失联）。
+        events.add(new EntityRemovedEvent(TimelineTestFixtures.seq++, TimelineTestFixtures.ts(10),
+                4, DecodeConfidence.EXACT, TimelineTestFixtures.ENEMY_EID));
         // 先有基线点数（t=0，0 分），20s 变化为 100 → frame(20) 触发 POINTS_CHANGE
         events.add(new SupremacyPointsChangedEvent(TimelineTestFixtures.seq++,
                 TimelineTestFixtures.ts(0), 8, DecodeConfidence.EXACT, 1, 0));

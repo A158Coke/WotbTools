@@ -1,10 +1,7 @@
 package com.wotb.core.replay.feature;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.evidence.AiEvidence;
@@ -16,6 +13,10 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TeamAutopsyStatsBuilderTest {
 
@@ -33,6 +34,10 @@ class TeamAutopsyStatsBuilderTest {
         p.survived = survived;
         p.deathTimeMillis = survived ? 0 : (long) (deathSec * 1000);
         p.survivalTimeSec = survived ? 300.0 : deathSec;
+        if (!survived) {
+            p.deathTimeSource = deathSec > 0
+                    ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
+        }
         return p;
     }
 

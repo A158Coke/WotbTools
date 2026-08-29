@@ -3,13 +3,17 @@ package com.wotb.core.replay.evidence;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.EntryHpSource;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.TeamEntityIdentity;
-import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
-import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.VehicleHitEvent;
+import com.wotb.core.replay.facts.HpObservation;
+import com.wotb.core.replay.facts.HpObservationKind;
+import com.wotb.core.replay.facts.ReplayHpTimeline;
+import com.wotb.core.replay.processing.TeamEntityIdentity;
+import com.wotb.core.replay.processing.TeamEntityMapping;
+import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -47,31 +51,22 @@ public final class ObservedMaxHp {
     private ObservedMaxHp() {
     }
 
-    /** 按账号统计回放实测最大血量（EXACT 置信度且 hp>0；re-entry 跨实体合并取 max）。
-     * 语义 = 整场观测到的最大 current HP，不是进场满血。 */
+    /** 按账号统计回放实测最大血量（统一 HP timeline 中可信正 HP；re-entry 跨实体合并取 max）。
+     * 语义 = 整场观测到的最大 current HP，不是进场满血。
+     * surface：Type7 prop3 / Type5 物化快照 / Avatar method5 镜像 / Vehicle method1。 */
     public static Map<Long, Integer> byAccount(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping
     ) {
         final Map<Long, Integer> observed = new HashMap<>();
-        if (events == null || mapping == null) {
+        if (events == null) {
             return observed;
         }
-        for (final ReplayEvent event : events) {
-            if (!(event instanceof HealthChangedEvent hp)) {
+        for (final HpObservation hp : ReplayHpTimeline.build(events, mapping, null)) {
+            if (!hp.plausible()) {
                 continue;
             }
-            // 只接受可信正 HP：signed i16 语义下 0xFFFD(-3) 死亡 sentinel、0xFFFF(-1)
-            // UNKNOWN sentinel 及其它 ≤0/≥0xFF00 高位值一律不得进入（防 65533/65535 污染）
-            if (hp.confidence() != DecodeConfidence.EXACT
-                    || !HealthChangedEvent.isPlausibleHp(hp.currentHealth())) {
-                continue;
-            }
-            final TeamEntityIdentity identity = mapping.identity(hp.entityId());
-            if (identity == null || identity.accountId() <= 0) {
-                continue;
-            }
-            observed.merge(identity.accountId(), hp.currentHealth(), Math::max);
+            observed.merge(hp.accountId(), hp.hp(), Math::max);
         }
         return observed;
     }
@@ -86,9 +81,11 @@ public final class ObservedMaxHp {
             return;
         }
         final Map<Long, Integer> observed = byAccount(events, mapping);
-        final Map<Long, List<double[]>> hpTimeline = hpTimelineByAccount(events, mapping);
+        final Map<Long, List<HpObservation>> hpTimeline =
+                hpTimelineByAccount(events, mapping);
         final Map<Long, Double> firstDamageSec = firstDamageSecByAccount(events, mapping);
         final Map<Long, Integer> observedReceived = observedReceivedByAccount(events, mapping);
+        final Long recorderAccountId = PlayerResultFormat.recorderAccountId(battle);
         for (final PlayerResult player : battle.players) {
             if (player == null) {
                 continue;
@@ -100,7 +97,8 @@ public final class ObservedMaxHp {
             player.observedMaxHp = resolve(observed.get(player.accountId), player.tankId);
             final boolean coverageExact = receivedCoverageExact(player, observedReceived.get(player.accountId));
             resolveEntryHp(player, hpTimeline.get(player.accountId),
-                    firstDamageSec.get(player.accountId), coverageExact);
+                    firstDamageSec.get(player.accountId), coverageExact,
+                    recorderAccountId != null && recorderAccountId == player.accountId);
         }
     }
 
@@ -148,9 +146,10 @@ public final class ObservedMaxHp {
      * 「样本早于首次观测受击」不能证明「样本发生时尚未损失 HP」，一律 fail closed。</p>
      */
     private static void resolveEntryHp(final PlayerResult player,
-                                       final List<double[]> samples,
+                                       final List<HpObservation> samples,
                                        final Double firstDamageSec,
-                                       final boolean coverageExact) {
+                                       final boolean coverageExact,
+                                       final boolean recorder) {
         final Integer base = ReplayDisplayNames.tankMaxHpValue(player.tankId);
         player.entryHpSource = null;
         player.entryHp = null;
@@ -158,18 +157,44 @@ public final class ObservedMaxHp {
             player.entryHpSource = base != null ? EntryHpSource.BASE_FALLBACK : EntryHpSource.UNKNOWN;
             return;
         }
+        // 录像者 AFFIRMED opening HP（docs/research/replay/avatar-method5-own-health.md）：
+        // Avatar method5 初始化值 = opening HP 种子（34/34 == 首个 recorder Type5 hpRaw；
+        // 即使 opening HP != tankopedia base 也成立）。只要求该种子严格早于首次受击
+        // （opening seed 必然在开战前），不需要 damage coverage —— own-health mirror 是
+        // 客户端直接权威，不受事件流受击覆盖完整性影响。
+        if (recorder) {
+            final HpObservation opening = samples.stream()
+                    .filter(HpObservation::plausible)
+                    .filter(s -> s.kind() == HpObservationKind.RECORDER_HP_MIRROR
+                            || s.kind() == HpObservationKind.MATERIALIZATION_HP)
+                    .filter(s -> beforeFirstDamage(s.timeSec(), firstDamageSec))
+                    .min(java.util.Comparator.comparingDouble(HpObservation::timeSec))
+                    .orElse(null);
+            if (opening != null) {
+                player.entryHpSource = EntryHpSource.OBSERVED_EXACT;
+                player.entryHp = opening.hp();
+                return;
+            }
+        }
         if (!coverageExact) {
             // 受击覆盖 PARTIAL/UNKNOWN：不得仅凭「首次观测受击的缺席」判受击前满血
             player.entryHpSource = base != null ? EntryHpSource.BASE_FALLBACK : EntryHpSource.UNKNOWN;
             return;
         }
-        final double firstSampleTime = samples.get(0)[0];
-        final int firstSampleHp = (int) samples.get(0)[1];
+        final HpObservation firstPlausible = samples.stream()
+                .filter(HpObservation::plausible)
+                .min(java.util.Comparator.comparingDouble(HpObservation::timeSec))
+                .orElse(null);
+        if (firstPlausible == null) {
+            player.entryHpSource = base != null ? EntryHpSource.BASE_FALLBACK : EntryHpSource.UNKNOWN;
+            return;
+        }
+        final double firstSampleTime = firstPlausible.timeSec();
+        final int firstSampleHp = firstPlausible.hp();
         // 覆盖完整时 firstDamageSec 可靠：受击前（或结算确认从未受击）的首个样本 = 当时满血；
         // 且 ≥ tankopedia base 才可证明为 initial full（base 是 entry 下界）。
-        final boolean beforeFirstDamage = firstDamageSec == null
-                || firstSampleTime < firstDamageSec - 1e-6;
-        if (beforeFirstDamage && base != null && firstSampleHp >= base) {
+        if (beforeFirstDamage(firstSampleTime, firstDamageSec) && base != null
+                && firstSampleHp >= base) {
             player.entryHpSource = EntryHpSource.OBSERVED_EXACT;
             player.entryHp = firstSampleHp;
             return;
@@ -177,8 +202,12 @@ public final class ObservedMaxHp {
         player.entryHpSource = base != null ? EntryHpSource.BASE_FALLBACK : EntryHpSource.UNKNOWN;
     }
 
+    private static boolean beforeFirstDamage(final double sampleTime, final Double firstDamageSec) {
+        return firstDamageSec == null || sampleTime < firstDamageSec - 1e-6;
+    }
+
     /**
-     * 每账号受击总量（§12/§13 权威 HP loss 口径，用于覆盖判定）：
+     * 每账号受击总量（权威 HP loss 口径，用于覆盖判定）：
      * Type-8 rawProtocolValue 语义未证明，不得作为「事件流 received」与结算比较；
      * 只有连续可信 Type-7 propId=3 掉血（含阵亡到 0）才反映真实承受伤害。
      */
@@ -206,30 +235,23 @@ public final class ObservedMaxHp {
         return out;
     }
 
-    /** 每账号 positive HP 时间线（battle-relative 秒升序；EXACT & plausible；re-entry 合并）。 */
-    private static Map<Long, List<double[]>> hpTimelineByAccount(
+    /** 每账号 HP 观测时间线（统一 surface；battle-relative 秒升序；re-entry 跨实体合并）。 */
+    private static Map<Long, List<HpObservation>> hpTimelineByAccount(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping
     ) {
-        final Map<Long, List<double[]>> out = new HashMap<>();
-        if (events == null || mapping == null) {
+        final Map<Long, List<HpObservation>> out = new HashMap<>();
+        if (events == null) {
             return out;
         }
-        for (final ReplayEvent event : events) {
-            if (!(event instanceof HealthChangedEvent hp)
-                    || hp.confidence() != DecodeConfidence.EXACT
-                    || hp.currentHealth() == null
-                    || !HealthChangedEvent.isPlausibleHp(hp.currentHealth())) {
+        for (final HpObservation hp : ReplayHpTimeline.build(events, mapping, null)) {
+            if (hp.accountId() <= 0) {
                 continue;
             }
-            final TeamEntityIdentity identity = mapping.identity(hp.entityId());
-            if (identity == null || identity.accountId() <= 0) {
-                continue;
-            }
-            out.computeIfAbsent(identity.accountId(), k -> new ArrayList<>())
-                    .add(new double[]{relativeSec(event), hp.currentHealth()});
+            out.computeIfAbsent(hp.accountId(), k -> new ArrayList<>()).add(hp);
         }
-        out.values().forEach(list -> list.sort(java.util.Comparator.comparingDouble(a -> a[0])));
+        out.values().forEach(list -> list.sort(
+                java.util.Comparator.comparingDouble(HpObservation::timeSec)));
         return out;
     }
 
@@ -243,14 +265,21 @@ public final class ObservedMaxHp {
             return out;
         }
         for (final ReplayEvent event : events) {
-            if (!(event instanceof DamageEvent damage) || damage.damage() <= 0) {
+            // method8 is a hit/result-feedback family (VehicleHitEvent), not a damage number;
+            // a hit on the victim is engagement signal regardless of the old fabricated damage value.
+            final int victimEid;
+            if (event instanceof VehicleHitEvent hit && hit.confidence() == DecodeConfidence.EXACT) {
+                victimEid = hit.victimEntityId();
+            } else if (event instanceof DamageEvent damage && damage.damage() > 0) {
+                victimEid = damage.victimEid();
+            } else {
                 continue;
             }
-            final TeamEntityIdentity identity = mapping.identity(damage.victimEid());
+            final TeamEntityIdentity identity = mapping.identity(victimEid);
             if (identity == null || identity.accountId() <= 0) {
                 continue;
             }
-            final double t = relativeSec(damage);
+            final double t = relativeSec(event);
             out.merge(identity.accountId(), t, Math::min);
         }
         return out;

@@ -1,6 +1,6 @@
 <script setup>
 /**
- * VehicleMarker（计划 §17/§19–§25）——Battle Playback 正式单车 marker 组件。
+ * VehicleMarker——Battle Playback 正式单车 marker 组件。
  *
  * 职责：dedicated/generic model display + hull rotation + turret rotation
  * （含 OFF_CENTER turret assembly 嵌套 transform）+ PR3 状态视觉：
@@ -44,7 +44,7 @@ const props = defineProps({
   },
   /** HP HUD 显示数据（hpDisplay 结果：{current,maxHp,pct,destroyed}|null；null=不渲染） */
   hp: { type: Object, default: null },
-  /** HP HUD 开关（计划 §4.3：关闭后隐藏数字/bar/ghost，不影响其余 combat feedback） */
+  /** HP HUD 开关（关闭后隐藏数字/bar/ghost，不影响其余 combat feedback） */
   hpVisible: { type: Boolean, default: true },
   /** lost-HP ghost：{prevPct,nextPct}|null（§11；同阵营色浅版，约 600ms 消退） */
   hpGhost: { type: Object, default: null },
@@ -171,7 +171,7 @@ const stateClasses = computed(() => ({
   'pb-enemy': st.value.friendly === false,
 }))
 
-// ---- HP HUD（docs/current-plan.md §4/§5/§6/§7/§10/§11）----
+// ---- HP HUD（docs/features/battle-playback.md HP HUD）----
 // 布局：HP 数字 + 定宽 bar 位于 marker 上方；标签块在有内容时让位（HP 优先级最高）。
 // offset（screen px，沿 labelsStyle 同款 inverse-scale 模式）：
 //   base 2px + 标签块屏幕高度 + 4px 间隙；标签全关时 = 2 + 0 + 4 = 6px。
@@ -344,7 +344,7 @@ const hpClasses = computed(() => ({
       :style="recorderBadgeStyle"
     ></span>
 
-    <!-- HP HUD（docs/current-plan.md §4/§5/§6/§7/§10/§11）：HP 数字 + 定宽 bar，
+    <!-- HP HUD（docs/features/battle-playback.md HP HUD）：HP 数字 + 定宽 bar，
          位于 marker 上方、标签块之上（HP 优先级最高）；last-known 弱化、destroyed 归零、
          UNKNOWN 显示 —；ghost/flash 由外层 transient 状态驱动；hpVisible=false 整体隐藏 -->
     <div
@@ -623,7 +623,7 @@ const hpClasses = computed(() => ({
   .pb-label-fading { animation: none; }
 }
 
-/* —— HP HUD（docs/current-plan.md §4/§5/§6/§7/§10/§11）：数字 + 定宽 bar，screen-space
+/* —— HP HUD（docs/features/battle-playback.md HP HUD）：数字 + 定宽 bar，screen-space
    恒定（overlayInverseScale 反缩放）；friendly/enemy 沿用 team token（§4.2 现有阵营色）——
     friendly = --pb-team-text（地图 tone），enemy = --pb-enemy-text（red）——与整车 outline 同源。
    UNKNOWN（maxHp 缺失）时 fill 进入斜纹 UNKNOWN 语义（§5.2：不伪造百分比、不隐藏 HP）。 */

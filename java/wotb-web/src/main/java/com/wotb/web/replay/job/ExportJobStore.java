@@ -1,12 +1,12 @@
 package com.wotb.web.replay.job;
 
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import jakarta.annotation.PreDestroy;
 import java.nio.file.Path;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
  * {@code @PreDestroy} 关闭调度器（不删数据，留给下次启动清理）。</p>
  *
  * <p>目录 / TTL / 孤儿清理 / 删除逻辑委托共享的 {@link ReplayJobStorage}
- * （plan §3：Export 与 Processing 共用同一存储组件，不复制两套 infrastructure）。</p>
+ * （Export 与 Processing 共用同一存储组件，不复制两套 infrastructure）。</p>
  */
 @Component
 public class ExportJobStore {

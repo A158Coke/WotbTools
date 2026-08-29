@@ -2,9 +2,30 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.parse.ReplayStreamHeader;
+import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.HealthChangedEvent;
+import com.wotb.core.replay.event.ParticipantMappingEvent;
+import com.wotb.core.replay.event.PositionChangedEvent;
+import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.feature.EngagementSummary;
+import com.wotb.core.replay.feature.KeyBattleEvent;
+import com.wotb.core.replay.feature.MovementSegment;
+import com.wotb.core.replay.feature.MovementType;
+import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
+import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
+import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
+import com.wotb.core.replay.feature.TeamAggregateResult;
+import com.wotb.core.replay.feature.TeamBattleFeatureSet;
+import com.wotb.core.replay.feature.TeamFeatureCoverage;
+import com.wotb.core.replay.feature.TeamMemberFeatureSet;
+import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.processing.AiNotConfiguredException;
 import com.wotb.core.replay.processing.BatchAnalyzer;
+import com.wotb.core.replay.processing.BattleCategory;
 import com.wotb.core.replay.processing.PlayerSideResolver;
 import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.processing.ReplayIdentity;
@@ -12,35 +33,16 @@ import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
 import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.processing.ReplayProcessingStatus;
-import com.wotb.core.replay.event.DecodeConfidence;
-import com.wotb.core.replay.event.HealthChangedEvent;
-import com.wotb.core.replay.event.ParticipantMappingEvent;
-import com.wotb.core.replay.event.PositionChangedEvent;
-import com.wotb.core.replay.event.ReplayEvent;
-import com.wotb.core.replay.event.ReplayTimestamp;
-import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
-import com.wotb.core.replay.processing.BattleCategory;
-import com.wotb.core.replay.feature.KeyBattleEvent;
-import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
-import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
-import com.wotb.core.replay.feature.TeamMemberFeatureSet;
-import com.wotb.core.replay.feature.TeamAggregateResult;
-import com.wotb.core.replay.feature.TeamBattleFeatureSet;
-import com.wotb.core.replay.feature.TeamFeatureCoverage;
-import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
-import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
-import com.wotb.core.replay.stream.ReplayStreamHeader;
-import com.wotb.core.replay.feature.EngagementSummary;
-import com.wotb.core.replay.feature.MovementSegment;
-import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.Vector3;
+import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
+import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -58,14 +60,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-
-import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 
 class AiReplayAnalysisServiceTest {
 
@@ -222,7 +216,7 @@ class AiReplayAnalysisServiceTest {
         assertTrue(req.systemPrompt().contains("资深团队教练"));
         assertTrue(req.systemPrompt().contains("不可信数据"));
         assertTrue(teamLastBody().contains("teamDisplayLabel="),
-                "header must carry teamDisplayLabel (PR #103 review BLOCKER A)");
+                "header must carry teamDisplayLabel ()");
         assertFalse(teamLastBody().contains("teamLabel="),
                 "old teamLabel= internal header must be replaced by teamDisplayLabel=");
         assertTrue(teamLastBody().contains("opponentDisplayLabel="),
@@ -269,7 +263,7 @@ class AiReplayAnalysisServiceTest {
                         .getFirst());
         final var result = service.analyzeSingleTeamContext(context);
         assertTrue(result.analysis().startsWith("team review"));
-        // PR #103 最终收尾 BLOCKER A（生产装配输出，测试 E）：最终 analysis 不得出现
+        // （生产装配输出，测试 E）：最终 analysis 不得出现
         // 逐人贡献 / P1（ / P2（ / P3（ / 置信度 / PARTIAL / 团队剖析 header / 重复胜负
         assertTrue(result.analysis().contains("## 高贡献者"),
                 "有 MVP 时必须输出高贡献者块: " + result.analysis());
@@ -337,7 +331,7 @@ class AiReplayAnalysisServiceTest {
 
     @Test
     void playerRequestWithoutReconstructionRejectsAiReview() {
-        // docs/current-plan.md §3：无法构建 canonical timeline → 拒绝 AI Review，不走 settlement-only
+        // 无法构建 canonical timeline → 拒绝 AI Review，不走 settlement-only
         final var service = startService();
         final com.wotb.web.replay.exception.AiTimelineUnusableException e = assertThrows(
                 com.wotb.web.replay.exception.AiTimelineUnusableException.class,
@@ -346,20 +340,20 @@ class AiReplayAnalysisServiceTest {
     }
 
     @Test
-    void multiTeamRequestKeepsOpposingPerspectivesIndependent() {
+    void singleTeamPerspectiveUsesSingleTeamContext() {
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
-                teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1),
-                teamResultWithRecon("enemy.wotbreplay", "shared-arena", "Enemy", 2001L, 2)));
+                teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
         final var result = service.analyzeTeamGroups(groups);
         assertEquals("team review", result.analysis().analysis());
-        // Opposing perspectives now use SEPARATE SINGLE_TEAM calls instead of one MULTI_TEAM call.
+        // 单文件 team single 路径：SINGLE_TEAM_CONTEXT，无 MULTI_TEAM_CONTEXT / PERSPECTIVE 分区
+        //（多视角批量已随 legacy 端点删除，analyze() 对 >1 analyzable 单元 fail loud）
         assertTrue(teamLastBody().contains("SINGLE_TEAM_CONTEXT"),
-                "Must use SINGLE_TEAM_CONTEXT for opposing perspectives");
+                "Must use SINGLE_TEAM_CONTEXT");
         assertTrue(teamLastBody().contains("teamDisplayLabel="),
                 "Single-team context must contain teamDisplayLabel");
         assertFalse(teamLastBody().contains("MULTI_TEAM_CONTEXT"),
-                "Must NOT use MULTI_TEAM_CONTEXT for opposing perspectives");
+                "Must NOT use MULTI_TEAM_CONTEXT");
         assertFalse(teamLastBody().contains("PERSPECTIVE 1"),
                 "Single-team context must not contain PERSPECTIVE labels");
         assertFalse(teamLastBody().contains("PERSPECTIVE 2"),
@@ -470,39 +464,23 @@ class AiReplayAnalysisServiceTest {
     }
 
     @Test
-    void opposingPerspectivesProduceTwoRequests() {
-        gateway.nextCompletionText = envelope("opposing review");
+    void singleTeamPerspectiveProducesOneRequest() {
+        gateway.nextCompletionText = envelope("team review");
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
-                teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1),
-                teamResultWithRecon("enemy.wotbreplay", "shared-arena", "Enemy", 2001L, 2)));
+                teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
         service.analyzeTeamGroups(groups);
         final List<AiChatRequest> teamRequests = teamRequests();
-        assertEquals(2, teamRequests.size(),
-                "Opposing perspectives must produce 2 team requests");
+        assertEquals(1, teamRequests.size(),
+                "Single team perspective must produce exactly 1 team request");
 
         final String first = teamRequests.get(0).userPrompt();
-        final String second = teamRequests.get(1).userPrompt();
-
-        assertTrue(first.contains("ally.wotbreplay"), "First request must be the ally perspective");
-        assertFalse(first.contains("enemy.wotbreplay"),
-                "First request must not carry the opposing perspective's file");
-        assertTrue(second.contains("enemy.wotbreplay"), "Second request must be the enemy perspective");
-        assertFalse(second.contains("ally.wotbreplay"),
-                "Second request must not carry the opposing perspective's file");
-
+        assertTrue(first.contains("ally.wotbreplay"), "Request must be the ally perspective");
         assertFalse(perspectiveBodySection(first).contains("Enemy"),
                 "Ally perspective body must not contain the opposing team's members");
-        assertFalse(perspectiveBodySection(second).contains("Ally"),
-                "Enemy perspective body must not contain the opposing team's members");
-
         assertTrue(first.contains("OPPOSING_TEAM_LINEUP_AUTHORITATIVE"),
                 "Ally perspective must still describe the opposing lineup");
-        assertTrue(second.contains("OPPOSING_TEAM_LINEUP_AUTHORITATIVE"),
-                "Enemy perspective must still describe the opposing lineup");
         assertTrue(first.contains("Enemy"),
-                "The opposing team's players are allowed as OPPOSING_TEAM_LINEUP evidence");
-        assertTrue(second.contains("Ally"),
                 "The opposing team's players are allowed as OPPOSING_TEAM_LINEUP evidence");
     }
 
@@ -895,8 +873,7 @@ class AiReplayAnalysisServiceTest {
                 123,
                 DecodeConfidence.EXACT
         );
-        final ReplayCoverage coverage = new ReplayCoverage(
-                true, 100, 100, 0, 0, 0, 1.0, Map.of());
+        final ReplayCoverage coverage = new ReplayCoverage(100, 100, 0, 0, 0, 1.0, Map.of());
         return new SinglePlayerBattleAnalysisContext(
                 null, battle, features, recorderMapping, coverage, List.of("TEST_LIMITATION"));
     }
@@ -924,8 +901,7 @@ class AiReplayAnalysisServiceTest {
                 rec != null ? rec.accountId : 0L, 501, 42, "RecorderPlayer",
                 rec != null && PlayerSideResolver.isValidRawTeam(rec.team) ? rec.team : null,
                 123, DecodeConfidence.EXACT);
-        final ReplayCoverage coverage = new ReplayCoverage(
-                true, 100, 100, 0, 0, 0, 1.0, Map.of());
+        final ReplayCoverage coverage = new ReplayCoverage(100, 100, 0, 0, 0, 1.0, Map.of());
         return new SinglePlayerBattleAnalysisContext(
                 null, battle, features, recorderMapping, coverage, List.of("TEST_LIMITATION"));
     }
@@ -982,7 +958,7 @@ class AiReplayAnalysisServiceTest {
 
     /**
      * {@link #teamResult} 的有效重建变体：通过 Team canonical Timeline hard gate
-     * （PR #102 review B1）—— analyzeTeamGroups 在 LLM 调用前要求 timeline 可构建。
+     * （PR #102 ）—— analyzeTeamGroups 在 LLM 调用前要求 timeline 可构建。
      */
     private static ReplayProcessingResult teamResultWithRecon(
             final String fileName, final String arenaId,
@@ -1001,9 +977,8 @@ class AiReplayAnalysisServiceTest {
         final ReplayMetadata meta = new ReplayMetadata(
                 "arena", "team_map", "1", "1", 2, "rec1", "", 300.0, 0L);
         final ReplayStreamHeader header = new ReplayStreamHeader(0x12345678L, new byte[8], "h", "v", 15);
-        final ReplayCoverage coverage = new ReplayCoverage(true, 8, 8, 0, 0, 0, 1.0, Map.of());
-        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true, 1000f, true);
+        final ReplayCoverage coverage = new ReplayCoverage(8, 8, 0, 0, 0, 1.0, Map.of());
+        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(0, 0, 0f, 0f, 0, Map.of());
         final List<ReplayEvent> events = new ArrayList<>();
         int seq = 0;
         int eid = 1;
@@ -1128,6 +1103,8 @@ class AiReplayAnalysisServiceTest {
         p.kills = team == 1 ? 2 : 1;
         p.survived = team == 1;
         p.deathTimeMillis = team == 1 ? 0 : 180_000;
+        p.deathTimeSource = p.deathTimeMillis > 0
+                ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
         return p;
     }
 

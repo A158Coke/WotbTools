@@ -14,11 +14,12 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Structural regression（docs/current-plan.md §52.1）：真实夹具上的 Timeline 结构不变量——
+ * Structural regression（docs/architecture/battle-timeline.md §52.1）：真实夹具上的 Timeline 结构不变量——
  * deterministic、事件无丢失/无重复、Episode 覆盖完整。
  */
 class BattleTimelineStructuralEvalTest {
@@ -40,6 +41,13 @@ class BattleTimelineStructuralEvalTest {
         final PlayerResult recorder = battle.recorderResult();
         final TimelinePerspective perspective = TimelinePerspective.personal(
                 recorder.accountId > 0 ? recorder.accountId : null, recorder.team);
+        // P0-3: 现场夹具无 battle-start 权威（ArenaPeriod/RoundFinished）→ 必须 fail-closed，不得伪造。
+        if (recon.battleStartRawClockSec() == null) {
+            final BattleTimelineResult r = BattleTimelineBuilder.build(battle, recon, perspective);
+            assertFalse(r.usable());
+            assertTrue(r.validation().errors().contains(TimelineError.TIMELINE_CLOCK_UNRESOLVED));
+            return;
+        }
 
         final BattleTimeline a = BattleTimelineBuilder.build(battle, recon, perspective).timeline();
         final BattleTimeline b = BattleTimelineBuilder.build(battle, recon, perspective).timeline();
@@ -59,6 +67,14 @@ class BattleTimelineStructuralEvalTest {
         final Battle battle = ReplayParser.parse(bytes);
         final ReplayReconstruction recon = new ReplayReconstructionService().reconstruct(bytes);
         final PlayerResult recorder = battle.recorderResult();
+        if (recon.battleStartRawClockSec() == null) {
+            final BattleTimelineResult r = BattleTimelineBuilder.build(
+                    battle, recon, TimelinePerspective.personal(
+                            recorder.accountId > 0 ? recorder.accountId : null, recorder.team));
+            assertFalse(r.usable());
+            assertTrue(r.validation().errors().contains(TimelineError.TIMELINE_CLOCK_UNRESOLVED));
+            return;
+        }
         final BattleTimeline timeline = BattleTimelineBuilder.build(
                 battle, recon, TimelinePerspective.personal(
                         recorder.accountId > 0 ? recorder.accountId : null, recorder.team)).timeline();
@@ -94,6 +110,14 @@ class BattleTimelineStructuralEvalTest {
         final Battle battle = ReplayParser.parse(bytes);
         final ReplayReconstruction recon = new ReplayReconstructionService().reconstruct(bytes);
         final PlayerResult recorder = battle.recorderResult();
+        if (recon.battleStartRawClockSec() == null) {
+            final BattleTimelineResult r = BattleTimelineBuilder.build(
+                    battle, recon, TimelinePerspective.personal(
+                            recorder.accountId > 0 ? recorder.accountId : null, recorder.team));
+            assertFalse(r.usable());
+            assertTrue(r.validation().errors().contains(TimelineError.TIMELINE_CLOCK_UNRESOLVED));
+            return;
+        }
         final BattleTimeline timeline = BattleTimelineBuilder.build(
                 battle, recon, TimelinePerspective.personal(
                         recorder.accountId > 0 ? recorder.accountId : null, recorder.team)).timeline();

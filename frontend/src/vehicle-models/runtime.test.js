@@ -104,7 +104,7 @@ describe('preloadBattleModels（module-lifetime cache，PR #92 Blocker 2）', ()
     expect(r.byTank.get('1')).toBeNull()
   })
 
-  it('默认超时常量 = 3 秒（计划 §13）', () => {
+  it('默认超时常量 = 3 秒', () => {
     expect(PRELOAD_TIMEOUT_MS).toBe(3000)
   })
 

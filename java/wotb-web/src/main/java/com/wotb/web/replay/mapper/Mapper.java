@@ -8,9 +8,9 @@ import com.wotb.core.league.LeagueRatingBatchAggregator;
 import com.wotb.core.league.LeagueRatingResult;
 import com.wotb.core.league.PlayerLeagueRating;
 import com.wotb.core.league.PlayerLeagueSummary;
+import com.wotb.core.league.PlayerVehicleUsage;
 import com.wotb.core.league.TeamLeagueRating;
 import com.wotb.core.league.TeamLeagueSummary;
-import com.wotb.core.league.PlayerVehicleUsage;
 import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
@@ -21,6 +21,8 @@ import com.wotb.core.stats.Aggregator;
 import com.wotb.core.stats.PerformanceMetricsCalculator;
 import com.wotb.core.stats.Players;
 import com.wotb.web.replay.dto.AggRow;
+import com.wotb.web.replay.dto.BattleDto;
+import com.wotb.web.replay.dto.ColumnDef;
 import com.wotb.web.replay.dto.LeagueBattleDto;
 import com.wotb.web.replay.dto.LeagueColumnDef;
 import com.wotb.web.replay.dto.LeagueFailureDto;
@@ -28,12 +30,10 @@ import com.wotb.web.replay.dto.LeaguePlayerSummaryDto;
 import com.wotb.web.replay.dto.LeagueRatingDto;
 import com.wotb.web.replay.dto.LeagueRatingQualityDto;
 import com.wotb.web.replay.dto.LeagueTeamDto;
-import com.wotb.web.replay.dto.LeagueVehicleUsageDto;
 import com.wotb.web.replay.dto.LeagueTeamSummaryDto;
-import com.wotb.web.replay.dto.PreviewResponse;
-import com.wotb.web.replay.dto.BattleDto;
-import com.wotb.web.replay.dto.ColumnDef;
+import com.wotb.web.replay.dto.LeagueVehicleUsageDto;
 import com.wotb.web.replay.dto.PlayerRow;
+import com.wotb.web.replay.dto.PreviewResponse;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -155,7 +155,7 @@ public final class Mapper {
     // ---- Battle / 单场 ----
 
     public static BattleDto toBattle(final Battle b, final String sourceName, final Tankopedia tp) {
-        return toBattle(b, sourceName, tp, null, false);
+        return toBattle(b, null, sourceName, tp, null, false);
     }
 
     /**
@@ -170,7 +170,13 @@ public final class Mapper {
      */
     public static BattleDto toBattle(final Battle b, final String sourceName, final Tankopedia tp,
                                      final LeagueRatingResult league, final boolean leagueMode) {
-        final Function<Long, String> platoon = Players.platoonLabeler();
+        return toBattle(b, null, sourceName, tp, league, leagueMode);
+    }
+
+    /** Battle DTO mapping with the authoritative Processing source identity. */
+    public static BattleDto toBattle(final Battle b, final String sourceId, final String sourceName,
+                                     final Tankopedia tp, final LeagueRatingResult league,
+                                     final boolean leagueMode) {
         final List<PlayerRow> rows = new ArrayList<>();
         final Map<Long, PlayerLeagueRating> leagueByAccount = new LinkedHashMap<>();
         if (league != null) {
@@ -180,7 +186,6 @@ public final class Mapper {
         }
         for (final PlayerResult p : Players.sorted(b.players)) {
             Players.enrich(p, tp);
-            p.platoonLabel = platoon.apply(p.platoonId);
             final Map<String, Object> cells = new LinkedHashMap<>();
             for (final Columns.Column c : Columns.PLAYER) {
                 // 单场 Performance Metrics（contribution/kast/impact）在 League 模式同样保留
@@ -206,7 +211,7 @@ public final class Mapper {
             rows.add(new PlayerRow(cells, p.team));
         }
         return new BattleDto(b.arenaId, b.mapName, b.version, b.durationS,
-                b.startTime, b.winnerTeam, sourceName, rows, leagueBattleDto(league, b));
+                b.startTime, b.winnerTeam, sourceId, sourceName, rows, leagueBattleDto(league, b));
     }
 
     private static LeagueBattleDto leagueBattleDto(final LeagueRatingResult league, final Battle battle) {
@@ -374,11 +379,28 @@ public final class Mapper {
                                                     final Tankopedia tp,
                                                     final LeagueRatingBatch league,
                                                     final String leagueUnavailableCode) {
+        return toPreviewResponse(battles, null, battleSourceNames, duplicates, failures, tp,
+                league, leagueUnavailableCode);
+    }
+
+    /** Complete Preview mapping with source identity aligned to the authoritative Battle list. */
+    public static PreviewResponse toPreviewResponse(final List<Battle> battles,
+                                                    final List<String> battleSourceIds,
+                                                    final List<String> battleSourceNames,
+                                                    final List<String[]> duplicates,
+                                                    final List<String[]> failures,
+                                                    final Tankopedia tp,
+                                                    final LeagueRatingBatch league,
+                                                    final String leagueUnavailableCode) {
         final List<BattleDto> battlesDto = new ArrayList<>();
         for (int i = 0; i < battles.size(); i++) {
             final Battle battle = battles.get(i);
             final LeagueRatingResult battleLeague = league == null ? null : league.resultFor(battle.arenaId);
-            battlesDto.add(toBattle(battle, battleSourceNames.get(i), tp, battleLeague, league != null));
+            final String sourceId = battleSourceIds != null && i < battleSourceIds.size()
+                    ? battleSourceIds.get(i) : null;
+            final String sourceName = battleSourceNames != null && i < battleSourceNames.size()
+                    ? battleSourceNames.get(i) : "";
+            battlesDto.add(toBattle(battle, sourceId, sourceName, tp, battleLeague, league != null));
         }
         // 基础 Replay Aggregate 属于 Replay Core：无论 League Rating 是否成功，
         // 只要是多场（跨场汇总语义），就必须输出标准基础汇总——League Rating Summary

@@ -1,6 +1,5 @@
 package com.wotb.core.replay.evidence;
 
-import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.util.PlayerResultFormat;
@@ -12,7 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 换血 Skill（文档 §18）：把已有 EngagementSummary 扩展为
+ * 换血 Skill：把已有 EngagementSummary 扩展为
  * 双方存活数变化 + 局部人数变化 + HP 差变化，而不是简单
  * {@code dealt > received * 1.25 → FAVORABLE}。
  */

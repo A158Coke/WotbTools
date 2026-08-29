@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * PR #103 review §9：Team 输出风格契约（prompt 主体，不需要 runtime regex sanitizer）。
+ * Team 输出风格契约（prompt 主体，不需要 runtime regex sanitizer）。
  * <p>验证 Team prompt 明确：internal evidence ≠ user-facing output；中文默认 400–1200 字
  * （简单局更短、复杂局约 1500 上限）；UNKNOWN selective；不单独建立「数据完整性/证据限制」章节；
  * Focus Window 只是内部 attention 提示、正文不机械输出；数字只保留支撑核心判断的。</p>
@@ -80,7 +80,7 @@ class TeamReviewStyleContractTest {
     }
 
     /**
-     * PR #103 最终收尾 BLOCKER B：局部规则不得重新把 UNKNOWN 定义成「必须告诉用户」——
+     * 局部规则不得重新把 UNKNOWN 定义成「必须告诉用户」——
      * 任何「证据不足」都必须收敛到内部 UNKNOWN + 默认静默，只有符合全局选择性条件才自然说明。
      */
     @Test

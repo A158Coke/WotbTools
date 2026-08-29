@@ -1,5 +1,35 @@
 package com.wotb.web.replay.controller;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wotb.web.replay.MapOverviewQueryService;
+import com.wotb.web.replay.ReplayLegacyEndpoints;
+import com.wotb.web.replay.ai.AiReplayAnalysisService;
+import com.wotb.web.replay.ai.AiReplayReviewService;
+import com.wotb.web.replay.ai.AiReviewStreamListener;
+import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
+import com.wotb.web.replay.ai.AllowedLanguage;
+import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
+import com.wotb.web.replay.ai.gateway.AiUpstreamException;
+import com.wotb.web.replay.dto.AnalyzeResponse;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -8,7 +38,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -16,36 +45,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-
-import com.wotb.web.replay.ai.AiReplayAnalysisService;
-import com.wotb.web.replay.MapOverviewQueryService;
-import com.wotb.web.replay.ai.AiReplayReviewService;
-import com.wotb.web.replay.ai.AiReviewStreamListener;
-import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
-import com.wotb.web.replay.ai.AllowedLanguage;
-import com.wotb.web.replay.ReplayLegacyEndpoints;
-import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
-import com.wotb.web.replay.ai.gateway.AiUpstreamException;
-import com.wotb.web.replay.dto.AnalyzeResponse;
-import java.util.List;
-import java.util.Map;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
-import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * {@code /api/replay/analyze} SSE 流式契约测试（真实异步 worker）：
@@ -71,7 +70,7 @@ class ReconstructionControllerStreamingTest {
     @BeforeEach
     void setUp() {
         aiService = mock(AiReplayAnalysisService.class);
-        reviewService = spy(new AiReplayReviewService(aiService));
+        reviewService = spy(new AiReplayReviewService(aiService, null, null, null));
         cancellationRegistry = spy(new AiCancellationRegistry());
         workerExecutor = new AiReviewWorkerExecutor();
         controller = new ReconstructionController(reviewService, cancellationRegistry, workerExecutor,
@@ -92,14 +91,7 @@ class ReconstructionControllerStreamingTest {
             listener.onStage("evidence_done");
             listener.onToken("hello ");
             listener.onToken("world");
-            return new AnalyzeResponse("full analysis", "## 赛前预测",
-                    new com.wotb.web.replay.dto.MapOverview(
-                            "desert_train", "Desert Sands",
-                            Map.of("zh", "黄沙荒漠", "en", "Desert Sands", "ru", "Пустынные пески"),
-                            2,
-                            new com.wotb.web.replay.dto.MapOverview.Bounds(-256, 260, -251, 254.3),
-                            List.of(), null, List.of(), List.of(), null, List.of(),
-                            null, null, null));
+            return new AnalyzeResponse("full analysis", "## 赛前预测");
         }).when(reviewService).analyzeFacts(eq("p1"), eq(0), any(AllowedLanguage.class), any());
 
         final String body = drainUntilTerminal(analyzeDirect("zh", null));
@@ -113,7 +105,8 @@ class ReconstructionControllerStreamingTest {
         assertTrue(body.contains("event:done"), body);
         assertTrue(body.contains("\"analysis\":\"full analysis\""), body);
         assertTrue(body.contains("\"preBattleSection\":\"## 赛前预测\""), body);
-        assertTrue(body.contains("\"mapOverview\":{\"mapCode\":\"desert_train\""), body);
+        // AI done 载荷不再携带 mapOverview（地图由独立 Processing Job artifact 承载）。
+        assertFalse(body.contains("\"mapOverview\""), body);
     }
 
     @Test
@@ -408,7 +401,7 @@ class ReconstructionControllerStreamingTest {
     @Test
     void legacyBatchAndValidationEndpointsReturnStableGone() {
         // multipart 校验与批量处理属于已废弃同步路径：一律 410 REPLAY_LEGACY_DEPRECATED，
-        // 不再有第二套 scheduler 之外的 full processing（BLOCKER 2）。
+        // 不再有第二套 scheduler 之外的 full processing。
         goneOf(() -> {
             try {
                 controller.reconstructBatch(new org.springframework.mock.web.MockMultipartFile[0]);

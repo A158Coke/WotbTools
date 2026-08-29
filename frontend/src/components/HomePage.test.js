@@ -55,23 +55,31 @@ describe('HomePage information architecture — single replay entry point', () =
   it('hero primary CTA is Upload Replay → replay view', () => {
     const wrapper = mountPage()
     const primary = wrapper.find('.hero-btn.primary')
-    expect(primary.text()).toBe('home.uploadReplay')
+    expect(primary.text()).toBe('home.replayParse')
     expect(primary.attributes('href')).toBe('/?view=replay')
     wrapper.unmount()
   })
 
-  it('hero secondary CTA is View Analysis History → replay view (not a second upload CTA)', () => {
+  it('hero secondary CTA opens the standalone AI Review view', () => {
     const wrapper = mountPage()
     const secondary = wrapper.find('.hero-btn.secondary')
-    expect(secondary.text()).toBe('home.viewAnalysisHistory')
-    expect(secondary.attributes('href')).toBe('/?view=replay')
+    expect(secondary.text()).toBe('home.aiReview')
+    expect(secondary.attributes('href')).toBe('/?view=ai-review')
+    wrapper.unmount()
+  })
+
+  it('hero exposes a standalone Battle Playback entry', () => {
+    const wrapper = mountPage()
+    const actions = wrapper.findAll('.hero-btn')
+    expect(actions[2].text()).toBe('home.battlePlayback')
+    expect(actions[2].attributes('href')).toBe('/?view=battle-playback')
     wrapper.unmount()
   })
 
   it('feature card 01 CTA is Explore Battle Analysis, not Upload Replay', () => {
     const wrapper = mountPage()
     const action = wrapper.find('.feature-primary .feature-action')
-    expect(action.text()).toBe('home.learnAnalysis →')
+    expect(action.text()).toBe('home.replayParse →')
     expect(wrapper.find('.feature-primary').attributes('href')).toBe('/?view=replay')
     wrapper.unmount()
   })

@@ -1,7 +1,7 @@
 package com.wotb.core.replay.timeline;
 
 /**
- * BattleDelta 的类型（docs/current-plan.md §15）。Delta 表示 Frame(t-1) → Frame(t) 的重要变化；
+ * BattleDelta 的类型（docs/architecture/battle-timeline.md §15）。Delta 表示 Frame(t-1) → Frame(t) 的重要变化；
  * 不要把每一个微小 Position packet 变成 AI delta。
  */
 public enum DeltaKind {

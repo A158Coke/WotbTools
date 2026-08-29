@@ -1,41 +1,39 @@
 package com.wotb.web.replay.ai;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
 import com.wotb.core.model.Battle;
-import com.wotb.core.replay.processing.AiNotConfiguredException;
-import com.wotb.core.replay.processing.FriendlyEnemyResult;
-import com.wotb.core.replay.processing.FriendlyEnemyResult.TeamBattleWinner;
-import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
 import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator;
 import com.wotb.core.replay.evidence.TeamGroundingFacts;
 import com.wotb.core.replay.evidence.TeamReviewEnvelope;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
+import com.wotb.core.replay.processing.AiNotConfiguredException;
+import com.wotb.core.replay.processing.FriendlyEnemyResult;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.TeamBattleWinner;
+import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
 import com.wotb.core.replay.timeline.TimelinePerspective;
-
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
-import com.wotb.web.replay.ai.gateway.AiChatResponse;
-import com.wotb.web.replay.ai.gateway.AiResponseFormat;
-import com.wotb.web.replay.ai.gateway.AiRequestContext;
-import com.wotb.web.replay.ai.gateway.StreamConsumer;
-import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
-import com.wotb.web.replay.exception.AiTimelineUnusableException;
+import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
+import com.wotb.web.replay.ai.gateway.AiRequestContext;
+import com.wotb.web.replay.ai.gateway.AiResponseFormat;
+import com.wotb.web.replay.ai.gateway.AiUpstreamException;
+import com.wotb.web.replay.ai.gateway.StreamConsumer;
+import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.LongSupplier;
 
 /**
@@ -51,7 +49,7 @@ import java.util.function.LongSupplier;
  * 单团队单元后追加 Team Autopsy（判负战犯 / 判胜 MVP）——这是<b>结算级</b>独立 TEAM_AUTOPSY
  * 调用：Autopsy 输入只有权威逐人结算（无 Call #1 prior / Critical Window / Route 证据），相关结论置信度
  * PARTIAL/UNKNOWN。随机战斗个人复盘不输出战犯/MVP。</p>
- * <p><b>Canonical Timeline hard gate（PR #102 review B1）</b>：{@code analyzeTeamGroups}
+ * <p><b>Canonical Timeline hard gate（PR #102 ）</b>：{@code analyzeTeamGroups}
  * 是 Team AI 的<b>唯一 production 编排入口</b>（由 {@code AiReplayReviewService} 调用）。
  * 它在<b>任何 LLM 调用之前</b>（Call #1 prior / Call #2 / Team Autopsy）为每个 context 构建并
  * 验证 canonical BattleTimeline（一次 build、一次 validation）：reconstruction 缺失 /
@@ -107,7 +105,7 @@ public class TeamReplayAnalysisService {
      * 任何 LLM 调用前执行 canonical Timeline hard gate）。
      * <p>本入口保持旧语义（Call #1 → prompt 构建 → Call #2 + Autopsy），不执行 timeline
      * hard gate，也不渲染 TACTICAL TIMELINE 段（未提供 validated timeline）；不得被
-     * production 编排引用（否则构成 hard-gate bypass，见 PR #102 review B1）。</p>
+     * production 编排引用（否则构成 hard-gate bypass，见 PR #102 ）。</p>
      */
     public AnalyzeResult analyzeSingleTeamContext(final SingleTeamBattleAnalysisContext context) {
         return analyzeSingleTeamContext(context, AllowedLanguage.ZH);
@@ -135,7 +133,7 @@ public class TeamReplayAnalysisService {
         final List<String> extraLimitations = evidence != null ? evidence.limitations() : List.of();
         final TeamAiPromptBuilder.PromptInput input = TeamAiPromptBuilder.single(
                 context, extraLimitations, prior, config.estimator(), config.singleReplayMaxInputTokens());
-        // 兼容入口无已验证 timeline：Grounding Facts 只含结算可推导事实（§28 稳定模块不动）。
+        // 兼容入口无已验证 timeline：Grounding Facts 只含结算可推导事实（该稳定模块不动）。
         return callSingleTeamContext(context, input, language, startNanos, listener, null);
     }
 
@@ -190,7 +188,7 @@ public class TeamReplayAnalysisService {
                 throw new IllegalArgumentException("Duplicate analysisUnitId: " + ctx.analysisUnitId());
             }
         }
-        // Canonical Timeline hard gate（PR #102 review B1）：在任何 LLM 调用（Call #1 /
+        // Canonical Timeline hard gate（PR #102 ）：在任何 LLM 调用（Call #1 /
         // Call #2 / Team Autopsy）之前为每个 context 构建并验证 canonical timeline。
         // reconstruction 缺失 / timeline 不可用 / timeline 为 null → 立即拒绝（AI Gateway
         // requests = 0），禁止 settlement-only fallback；验证通过后同一 timeline 下传给
@@ -297,7 +295,7 @@ public class TeamReplayAnalysisService {
 
     /**
      * Team Call #2 编排（Natural Coach 轮）：envelope 解析 + 事实一致性校验 + LLM 自修循环。
-     * <p>流程（docs/current-plan.md §13/§14）：Draft → validate；FAIL → targeted rewrite；
+     * <p>流程（Draft → validate；FAIL → targeted rewrite；
      * FAIL → full rewrite；仍 FAIL → fail-safe（{@code AI_REVIEW_GROUNDING_FAILED}）。
      * Backend 绝不代改句子；校验通过后才把 {@code reviewMarkdown} 以 token 增量转给前端
      * （避免把待改写的草稿暴露给用户）。</p>
@@ -312,7 +310,7 @@ public class TeamReplayAnalysisService {
     ) {
         final String systemPrompt = TeamPromptLocalizer.localizeTeamSystemPrompt(
                 TeamPromptLocalizer.SINGLE_TEAM_PROMPT, language);
-        // Review B2-1：死亡时刻时钟契约——production（timeline 非 null）用 timeline 全量构建
+        // 死亡时刻时钟契约——production（timeline 非 null）用 timeline 全量构建
         // （关注窗口/位置快照/敌方位置知识）并转 battle-relative；兼容入口（timeline 为 null）
         // 用 reconstruction 的 battleStartRawClockSec 转 battle-relative，避免结算 deathTimeMillis
         // （原始时钟域）以原始值进入 Grounding Facts。
@@ -326,7 +324,7 @@ public class TeamReplayAnalysisService {
                         context.perspectiveTeam());
         final String correlationId = AiRequestContext.correlationId();
         final long reviewStartNanos = nanoTimeSource.getAsLong();
-        // docs/current-plan.md §48：只记录低基数 grounding facts 计数（不打印事实内容）。
+        // 只记录低基数 grounding facts 计数（不打印事实内容）。
         logGroundingReady(facts, correlationId);
         final String groundingSection = TeamGroundingFacts.renderGroundingSection(facts);
         final String baseUser = input.content()
@@ -354,7 +352,7 @@ public class TeamReplayAnalysisService {
             final String raw = response.completionText();
             cumulativePromptTokens += response.inputTokens();
             cumulativeCompletionTokens += response.outputTokens();
-            // §50：每个 validation attempt 完成后记录累计 token（先记录每次调用，不重构 Gateway 聚合）。
+            // 每个 validation attempt 完成后记录累计 token（先记录每次调用，不重构 Gateway 聚合）。
             LOGGER.info(AiReviewEventLog.line("team_review_validation_attempt_completed", correlationId,
                     "attempt", attempt,
                     "promptTokens", response.inputTokens(),
@@ -370,7 +368,7 @@ public class TeamReplayAnalysisService {
                         "result", "FAIL",
                         "reason", parseResult.failureReason()));
                 countValidationAttempt("parser_invalid");
-                // Review Blocker B1：envelope / structured claims schema 违反（fail-close）——
+                // envelope / structured claims schema 违反（fail-close）——
                 // 给 LLM 明确 schema 提示，让它自修，而非静默降级为 text-only
                 feedback = "输出不是合法 JSON envelope 或 claims 违反 machine schema："
                         + "必须包含 primaryDiagnosis（title + reasoning 非空）与 reviewMarkdown；"
@@ -427,7 +425,7 @@ public class TeamReplayAnalysisService {
                     "checks", checks,
                     "durationMs", elapsedMillis(validationStartNanos)));
             countValidationAttempt(hardConflicts ? "validation_failed" : "metadata_only_pass");
-            // docs/current-plan.md §47：DEBUG 级安全化冲突明细（只记录 check/reasonCode 低基数
+            // DEBUG 级安全化冲突明细（只记录 check/reasonCode 低基数
             // 分类，不记录完整冲突 message / AI 原句 / Grounding Fact 内容）。
             if (LOGGER.isDebugEnabled()) {
                 for (final TeamFactualConsistencyValidator.FactConflict c : conflicts) {
@@ -465,7 +463,7 @@ public class TeamReplayAnalysisService {
                         cumulativeCompletionTokens, "GROUNDING_FAILED", reviewStartNanos);
                 throw new AiUpstreamException("AI_REVIEW_GROUNDING_FAILED", 502, correlationId);
             }
-            // docs/current-plan.md §43：validation retry（业务返工）与 transport retry（网关退避）区分记录。
+            // validation retry（业务返工）与 transport retry（网关退避）区分记录。
             LOGGER.warn(AiReviewEventLog.line("ai_validation_retry", correlationId,
                     "stage", "TEAM_CALL_2",
                     "validationAttempt", attempt + 1,
@@ -485,7 +483,7 @@ public class TeamReplayAnalysisService {
         return sb.toString();
     }
 
-    /** 把最终 reviewMarkdown 按段落/句子边界切成 ≤400 字符增量转给前端（单线程顺序）。 */
+    /** 把reviewMarkdown 按段落/句子边界切成 ≤400 字符增量转给前端（单线程顺序）。 */
     private static void forwardTokens(final AiReviewStreamListener listener, final String markdown) {
         if (listener == null || markdown == null || markdown.isEmpty()) {
             return;
@@ -511,7 +509,7 @@ public class TeamReplayAnalysisService {
 
     /**
      * 原始传输调用：<b>authoritative response source = {@code completionText()}</b>
-     * （Review B1-1）。
+     * 。
      * <p>Gateway 契约（{@link AiChatGateway#stream} + {@code SpringAiChatGateway}）：
      * callback 是流式增量（progress），{@code completionText()} 是聚合后的完整响应——
      * 正常结束时 {@code SpringAiChatGateway} 用内部累加的全部 delta 构造返回响应；
@@ -519,7 +517,7 @@ public class TeamReplayAnalysisService {
      * <b>绝不返回 partial completion</b>。因此这里传 no-op consumer（校验通过前不向用户
      * 暴露草稿 token），只以 {@code completionText()} 作为 envelope parser 输入；
      * 每轮 attempt 都是独立的一次 {@code stream()} 调用，不共享任何 buffer。</p>
-     * PR #103 review BLOCKER C 的 Team Call #2 独立输出上限保持不变。
+     * Team Call #2 独立输出上限保持不变。
      */
     private AiChatResponse callRaw(
             final String systemPrompt,
@@ -531,7 +529,7 @@ public class TeamReplayAnalysisService {
         final List<Map<String, Object>> messages = List.of(
                 Map.<String, Object>of("role", "system", "content", systemPrompt),
                 Map.<String, Object>of("role", "user", "content", userContent));
-        // PR #103 review BLOCKER C：Team Call #2 独立输出上限——effective = min(global, teamReview)，
+        // Team Call #2 独立输出上限——effective = min(global, teamReview)，
         // 同时用于 AiPromptBudgetGuard（input + output 预算）与 AiChatRequest；Player Call #2 保持 global。
         final int maxOutput = Math.min(config.maxOutputTokens(), config.teamReviewMaxOutputTokens());
         final int estimatedInputTokens = config.estimator().estimateMessagesTokens(messages);
@@ -541,7 +539,7 @@ public class TeamReplayAnalysisService {
                 config.contextWindowTokens(),
                 maxOutput,
                 config.promptSafetyMarginTokens());
-        // docs/current-plan.md §49：发送前记录 prompt 预算（~234k×3 的 token amplification 必须可观测）。
+        // 发送前记录 prompt 预算（~234k×3 的 token amplification 必须可观测）。
         LOGGER.info(AiReviewEventLog.line("ai_prompt_budget", AiRequestContext.correlationId(),
                 "stage", "TEAM_CALL_2",
                 "attempt", attempt,
@@ -549,7 +547,7 @@ public class TeamReplayAnalysisService {
                 "maxOutputTokens", maxOutput,
                 "contextWindowTokens", config.contextWindowTokens(),
                 "remainingBudgetSec", callTimeoutSec));
-        // docs/current-plan.md §7：仅 Team Call #2（SINGLE_TEAM_BATTLE Natural Coach Call #2）
+        // 仅 Team Call #2（SINGLE_TEAM_BATTLE Natural Coach Call #2）
         // 显式使用 JSON_OBJECT；输出格式属于 request contract，不由 analysisMode 隐式推断。
         final AiChatRequest request = new AiChatRequest(
                 systemPrompt,
@@ -611,7 +609,7 @@ public class TeamReplayAnalysisService {
         if (outcome == null) {
             return reviewText;
         }
-        // PR #103 最终收尾 BLOCKER A：renderSection 不再接收胜负/队名参数——Autopsy 不重复胜负，
+        // renderSection 不再接收胜负/队名参数——Autopsy 不重复胜负，
         // 只渲染「重点复查/高贡献者」两块（无 standout 时为空串）；playerKey 仅作内部 lookup。
         return reviewText + TeamAutopsyPromptBuilder.renderSection(
                 outcome.result(), outcome.roster());
@@ -645,9 +643,9 @@ public class TeamReplayAnalysisService {
         }
     }
 
-    // ===== AI Review 全链路事件日志与指标（docs/current-plan.md §44-§50、§16/§59） =====
+    // ===== AI Review 全链路事件日志与指标 =====
 
-    /** §48：只记录低基数 grounding facts 计数（不打印事实内容）。 */
+    /** 只记录低基数 grounding facts 计数（不打印事实内容）。 */
     private void logGroundingReady(final TeamGroundingFacts.GroundingFacts facts,
                                    final String correlationId) {
         LOGGER.info(AiReviewEventLog.line("team_review_grounding_ready", correlationId,
@@ -662,7 +660,7 @@ public class TeamReplayAnalysisService {
                         .filter(f -> TeamGroundingFacts.TYPE_ENEMY_POSITION.equals(f.type())).count()));
     }
 
-    /** §50/§54：Team Call #2 阶段汇总（终态以 controller 的 ai_review_finished 为准，exactly once）。 */
+    /** Team Call #2 阶段汇总（终态以 controller 的 ai_review_finished 为准，exactly once）。 */
     private void logTeamReviewCompleted(final String correlationId,
                                         final int validationAttempts,
                                         final long cumulativePromptTokens,
@@ -677,7 +675,7 @@ public class TeamReplayAnalysisService {
                 "result", result));
     }
 
-    /** §16/§59：Team Call #2 validation attempt 低基数指标（result=pass/parser_invalid/validation_failed）。 */
+    /** Team Call #2 validation attempt 低基数指标（result=pass/parser_invalid/validation_failed）。 */
     private void countValidationAttempt(final String result) {
         if (meterRegistry != null) {
             meterRegistry.counter("wotb_ai_team_review_validation_attempt_total", "result", result)
@@ -685,7 +683,7 @@ public class TeamReplayAnalysisService {
         }
     }
 
-    /** §59/P0-14：grounding conflict 低基数指标（check=稳定 checkId；severity=HARD/metadata）。 */
+    /** grounding conflict 低基数指标（check=稳定 checkId；severity=HARD/metadata）。 */
     private void countGroundingConflict(final String checkId, final String severity) {
         if (meterRegistry != null) {
             meterRegistry.counter("wotb_ai_team_review_grounding_conflict_total",

@@ -1,6 +1,5 @@
 package com.wotb.web.hundred;
 
-import com.wotb.web.replayfile.ReplayDownload;
 import com.wotb.web.hundred.dto.HundredReplayEvidenceDto;
 import com.wotb.web.hundred.entity.HundredBattleReplayEvidence;
 import com.wotb.web.hundred.entity.HundredBattleSubmission;
@@ -9,6 +8,7 @@ import com.wotb.web.hundred.repository.HundredBattleReplayEvidenceRepository;
 import com.wotb.web.hundred.repository.HundredBattleSubmissionRepository;
 import com.wotb.web.hundred.service.HundredBattleSubmissionService;
 import com.wotb.web.hundred.service.HundredReplayEvidenceService;
+import com.wotb.web.replayfile.ReplayDownload;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,7 +20,6 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;

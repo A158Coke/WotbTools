@@ -1,12 +1,12 @@
 package com.wotb.web.boost.service;
 
-import com.wotb.web.config.KeycloakAdminUserService;
 import com.wotb.web.boost.dto.BoosterDto;
 import com.wotb.web.boost.entity.BoosterApplication;
 import com.wotb.web.boost.entity.BoosterProfile;
 import com.wotb.web.boost.repository.BoostRequestAssignmentRepository;
 import com.wotb.web.boost.repository.BoosterApplicationRepository;
 import com.wotb.web.boost.repository.BoosterProfileRepository;
+import com.wotb.web.config.KeycloakAdminUserService;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
 import org.junit.jupiter.api.BeforeEach;

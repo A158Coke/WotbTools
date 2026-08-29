@@ -1,22 +1,22 @@
 package com.wotb.web.replay.ai;
 
-import com.wotb.core.replay.processing.RecorderEntityMapping;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.evidence.EvidenceSkillContext;
 import com.wotb.core.replay.evidence.EvidenceSkillEngine;
 import com.wotb.core.replay.evidence.EvidenceSkillResult;
+import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
+import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
 import com.wotb.core.replay.timeline.TimelinePerspective;
-import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
-import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
-import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
+import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,14 +26,14 @@ import org.springframework.stereotype.Service;
 import java.util.function.LongSupplier;
 
 /**
- * AI Review Harness 双 Call 编排器（文档 §25/§30）：
+ * AI Review Harness 双 Call 编排器：
  * Call #1（赛前战略基线）→ Backend Evidence Skills → Call #2（Tactical Review）。
  * <p>随机战斗个人复盘不评判 MVP/战犯；Team Autopsy（战犯/MVP）只应用于
  * team perspective（训练房/联赛团队复盘），由 {@link TeamReplayAnalysisService}
  * 以结算级独立 TEAM_AUTOPSY 调用执行。</p>
  * <p>降级阶梯：非 ZH / 特征不可用 / Call #1 失败 / 无证据 → 旧路径（保持现有单 Call
  * 路径为兜底，用户可感知行为不倒退）。</p>
- * <p><b>hard reject（docs/current-plan.md §3，PR #102 review 已确认）</b>：无重建 /
+ * <p><b>hard reject</b>（canonical timeline 不可用）：无重建 /
  * 录像者未解析 / canonical timeline 不可用 → 抛 {@code AiTimelineUnusableException}，
  * <b>不</b>走旧路径、<b>不</b>调用 LLM（禁止 settlement-only fallback）。</p>
  */
@@ -118,7 +118,7 @@ public class TacticalReviewHarness {
         if (!preBattleService.isConfigured()) {
             return new HarnessOutcome(fallback(result, language, "AI_NOT_CONFIGURED", listener), null);
         }
-        // docs/current-plan.md §3：无 canonical timeline 可用 → 拒绝 AI Review（不走 settlement-only fallback）
+        // 无 canonical timeline 可用 → 拒绝 AI Review（不走 settlement-only fallback）
         if (result.reconstruction() == null) {
             LOGGER.info("Harness rejecting AI review: NO_RECONSTRUCTION (timeline unusable)");
             throw new AiTimelineUnusableException("NO_RECONSTRUCTION");
@@ -190,7 +190,7 @@ public class TacticalReviewHarness {
                 config.contextWindowTokens(),
                 config.maxOutputTokens(),
                 config.promptSafetyMarginTokens());
-        // Context 可观测性（docs/current-plan.md 38/39）：低基数 section token 估算 + 完成计数
+        // Context 可观测性：记录低基数 section token 估算与完成计数
         if (meterRegistry != null && prepared.sectionTokens() != null) {
             prepared.sectionTokens().forEach((section, tokens) ->
                     meterRegistry.counter(

@@ -1,7 +1,7 @@
 /**
  * 生产 runtime 车型资产解析（PR2 — Dedicated Tier X Models in Battle Playback）。
  *
- * 职责（计划 §11–§13、§18）：
+ * 职责（、§18）：
  * - tankId → modelKey（mapping，单一事实源）；
  * - modelKey → 正式资产（hull.webp / turret.webp / metadata，Vite 静态打包 URL）；
  * - 战局级 preload：只预加载当前战局实际出现的 Tier X base models（dedupe：同 modelKey
@@ -23,7 +23,7 @@ const hullUrls = import.meta.glob('./assets/*/hull.webp', { query: '?url', impor
 const turretUrls = import.meta.glob('./assets/*/turret.webp', { query: '?url', import: 'default', eager: true })
 const metadataMap = import.meta.glob('./assets/*/metadata.json', { import: 'default', eager: true })
 
-/** 默认 preload 超时（计划 §13：3 秒）。 */
+/** 默认 preload 超时（3 秒）。 */
 export const PRELOAD_TIMEOUT_MS = 3000
 
 /**
@@ -96,7 +96,7 @@ function loadImage(url, timeoutMs) {
 }
 
 /**
- * module-lifetime preload cache（current-page cache，计划 §12；页面刷新自然清空，
+ * module-lifetime preload cache（current-page cache；页面刷新自然清空，
  * 不做 localStorage/IndexedDB/persistent cache）。
  *
  * modelKey 级状态机（Map 值）：
@@ -145,7 +145,7 @@ async function preloadModel(modelKey, { timeoutMs, imageLoader }) {
 }
 
 /**
- * 战局级 preload（计划 §12/§13）：
+ * 战局级 preload：
  * - 输入本场全部 tankIds；只处理 Tier X modelKeys；
  * - module-lifetime cache：已成功/已失败的 modelKey 不重复解析、不重复调用 imageLoader；
  * - 并发请求同一 modelKey 共享 in-flight Promise（实际只加载一次）；

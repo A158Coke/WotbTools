@@ -1,12 +1,12 @@
 package com.wotb.web.replay.job;
 
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import jakarta.annotation.PreDestroy;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,9 +20,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>目录布局：{@code <root>/<jobId>/input/*}（上传持久化输入）。TTL 清理只回收
  * 终态（READY/FAILED/CANCELLED）过期 job；启动时清理孤儿目录；{@code @PreDestroy}
  * 关闭调度器。目录 / TTL / 孤儿清理 / 删除委托共享 {@link ReplayJobStorage}
- * （plan §3，与 Export 共用同一存储组件）。</p>
+ * （与 Export 共用同一存储组件）。</p>
  *
- * <p><b>Dataset Lease 生命周期（plan §52/BLOCKER 3）</b>：AI / Playback / Export 消费
+ * <p><b>Dataset Lease 生命周期</b>：AI / Playback / Export 消费
  * Processing result 或 derived artifact 前 {@link #acquireForSource(String)} /
  * {@link #acquireForExport(String)} 对 job 的 lease 计数 +1，消费结束后
  * {@link #release(String)} -1；TTL sweeper 只清理 lease 为 0 的过期 job。acquire /
@@ -38,11 +38,11 @@ public class ReplayProcessingJobStore {
     private final ConcurrentHashMap<String, ReplayProcessingJob> jobs = new ConcurrentHashMap<>();
     /**
      * processingJobId → 活跃 Dataset Lease 数（AI / Playback / Export 共享，
-     * acquire/release 配对；BLOCKER 3 语义命名，不再叫 export refs）。
+     * acquire/release 配对；语义命名，不再叫 export refs）。
      */
     private final ConcurrentHashMap<String, AtomicInteger> datasetLeaseRefs = new ConcurrentHashMap<>();
     /**
-     * Dataset 生命周期原子性边界（BLOCKER 3）：acquire（lease+1）、release（lease-1）、
+     * Dataset 生命周期原子性边界：acquire（lease+1）、release（lease-1）、
      * sweep/remove（registry 移除 + 建立 no-new-acquire 状态）都在这把锁内线性化；
      * 物理磁盘删除在锁外执行（不长时间占锁），但 acquire 在 registry 移除后无法成功。
      */
@@ -106,9 +106,9 @@ public class ReplayProcessingJobStore {
     }
 
     /**
-     * Dataset Lease（plan §25）：AI / Playback 读取 derived artifact 前获取引用
+     * Dataset Lease：AI / Playback 读取 derived artifact 前获取引用
      * （+1，阻止 TTL 清理）。与 {@link #acquireForExport} 不同，不要求 batch READY——
-     * per-source READY 即可（plan §42/§43，Direct Capability 在 batch finalize 前消费）。
+     * per-source READY 即可（Direct Capability 在 batch finalize 前消费）。
      */
     public ReplayProcessingJob acquireForSource(final String jobId) {
         synchronized (lifecycleLock) {
@@ -131,7 +131,7 @@ public class ReplayProcessingJobStore {
         }
     }
 
-    /** 移除并物理删除整个 job 目录（输入 + artifact/result；BLOCKER 3：registry 移除在锁内，磁盘删除在锁外）。 */
+    /** 移除并物理删除整个 job 目录（输入 + artifact/result；registry 移除在锁内，磁盘删除在锁外）。 */
     public void removeAndCleanup(final String jobId) {
         synchronized (lifecycleLock) {
             jobs.remove(jobId);
@@ -141,8 +141,8 @@ public class ReplayProcessingJobStore {
     }
 
     /**
-     * 周期 TTL 清理（同包测试可直接触发；lease > 0 的 job 跳过，plan §52）。
-     * BLOCKER 3：锁内完成过期判定 + registry 移除（建立 no-new-acquire 状态），
+     * 周期 TTL 清理（同包测试可直接触发；lease > 0 的 job 跳过）。
+     * 锁内完成过期判定 + registry 移除（建立 no-new-acquire 状态），
      * 锁外执行物理磁盘删除——acquire 在 registry 移除后无法成功，物理删除不会
      * 与 acquire 竞争出「acquire 成功但 storage 已删」。
      */

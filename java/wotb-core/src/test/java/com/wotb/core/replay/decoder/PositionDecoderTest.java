@@ -2,46 +2,42 @@ package com.wotb.core.replay.decoder;
 
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.PositionChangedEvent;
-import com.wotb.core.replay.stream.PacketReadStatus;
+import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Type 10 位置包解码：完整(49B)= EXACT；截断(<49B)= PARTIAL（尾部字段缺失不得当作真实值）。
- */
+/** Type10 current layout is strict 49B; any other payload length fails closed as MALFORMED. */
 class PositionDecoderTest {
 
     private final PositionDecoder decoder = new PositionDecoder();
     private final ReplayDecodeContext ctx = new ReplayDecodeContext("11.18.0_china_apple");
 
-    /** 构造一个 type=10 的包，payload 为全 0 的指定长度（坐标 0 为合法有限值）。 */
-    private static RawReplayPacket positionPacket(int payloadLen) {
+    private static RawReplayPacket positionPacket(final int payloadLen) {
         final byte[] payload = new byte[payloadLen];
         return new RawReplayPacket(0, 0, payloadLen, 10, 1.0f,
-                PacketReadStatus.NORMAL, payload, 0);
+                payload, 0);
     }
 
     @Test
     void fullLengthIsExact() {
         final ReplayDecodeResult r = decoder.decode(ctx, positionPacket(49));
         assertEquals(DecodeStatus.SUCCESS, r.status());
-        final PositionChangedEvent e = (PositionChangedEvent) r.events().get(0);
+        final PositionChangedEvent e = assertInstanceOf(PositionChangedEvent.class, r.events().getFirst());
         assertEquals(DecodeConfidence.EXACT, e.confidence());
     }
 
     @Test
-    void truncatedIsPartialNotExact() {
-        // 45..48 字节：进入解码但缺失 roll/errorFlag → 必须降级为 PARTIAL
+    void truncatedPayloadFailsClosedAsMalformed() {
         for (int len = 45; len <= 48; len++) {
             final ReplayDecodeResult r = decoder.decode(ctx, positionPacket(len));
-            assertEquals(DecodeStatus.PARTIAL, r.status(), "len=" + len);
-            final PositionChangedEvent e = (PositionChangedEvent) r.events().get(0);
-            assertEquals(DecodeConfidence.PARTIAL, e.confidence(), "len=" + len);
-            assertTrue(r.warnings().stream().anyMatch(w -> "TRUNCATED_POSITION".equals(w.code())),
-                    "expected TRUNCATED_POSITION warning at len=" + len);
+            assertEquals(DecodeStatus.MALFORMED, r.status(), "len=" + len);
+            assertInstanceOf(UnknownReplayEvent.class, r.events().getFirst(), "len=" + len);
+            assertTrue(r.warnings().stream().anyMatch(w -> "TYPE10_LAYOUT_MISMATCH".equals(w.code())),
+                    "expected TYPE10_LAYOUT_MISMATCH warning at len=" + len);
         }
     }
 
@@ -49,5 +45,20 @@ class PositionDecoderTest {
     void tooShortIsMalformed() {
         final ReplayDecodeResult r = decoder.decode(ctx, positionPacket(44));
         assertEquals(DecodeStatus.MALFORMED, r.status());
+        assertInstanceOf(UnknownReplayEvent.class, r.events().getFirst());
+    }
+
+    /**
+     * PR162 forward compatibility: a future client version whose exact 49B transform layout is
+     * structurally valid must STILL decode (structural capability, layer B) — never a hard
+     * UNKNOWN solely because the version is newer.
+     */
+    @Test
+    void futureVersionDecodesStructuralTransform() {
+        for (final String v : new String[]{"11.22.0_china", "11.20.0_china", "12.0.0_eu"}) {
+            final ReplayDecodeResult r = decoder.decode(new ReplayDecodeContext(v), positionPacket(49));
+            assertEquals(DecodeStatus.SUCCESS, r.status(), "版本 " + v + " 不得拒绝稳定 49B 布局");
+            assertInstanceOf(PositionChangedEvent.class, r.events().getFirst(), "版本 " + v);
+        }
     }
 }

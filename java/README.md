@@ -81,7 +81,7 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 未显式声明的 `/api/**` 默认拒绝；`boost-manager` 仅能访问 `/api/admin/boost/**`。
 
 
-列定义由后端 `/api/preview` 响应中的 `playerColumns`/`aggregateColumns` 字段和 `/api/columns` 提供（纯英文 key）。
+列定义由后端 `GET /api/replay/processing-jobs/{jobId}/result` 响应中的 `playerColumns`/`aggregateColumns` 字段和 `/api/columns` 提供（纯英文 key）。
 前端用 `vue-i18n` 三语 locale（`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`）映射显示名，
 导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx 表头。回放页列选择器会把单场/汇总两套列顺序与可见性记到 `localStorage`，
 并在后端新增列时自动补齐缺失键。详见 [DEVELOPER_GUIDE.md](../docs/DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
@@ -90,73 +90,37 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 地图名由共享字典 `common/map_names.json` 提供 `zh/en/ru` 三语映射；前端 `mapLabel()` 按当前 locale 取值，导出层 `MapNames.cn()` 继续固定使用中文。
 
 
-战斗表现（Performance Metrics）已并入 `POST /api/preview`：一次上传、一次完整回放处理
-（parse + reconstruction + `ObservedMaxHp` + `DeathTimeReconciler`）同时产出基础战绩与汇总，
-单场玩家表直接包含 `contribution`/`kast`/`impact` 列，汇总表包含跨场 `contribution`/`kast`/`impact`/`multi_damage_rate`/`traded_deaths`，
+战斗表现（Performance Metrics）由 Replay Processing V2 的
+`GET /api/replay/processing-jobs/{jobId}/result` 统一返回。完整链：
+`POST /api/replay/processing-jobs` → Processing Job → `ReplayParseScheduler` →
+共享 `ProcessedDataset` → `GET .../result`。Performance Metrics / League Rating /
+base replay facts 都来自同一 result。单场玩家表直接包含 `contribution`/`kast`/`impact`
+列，汇总表包含跨场 `contribution`/`kast`/`impact`/`multi_damage_rate`/`traded_deaths`，
 不存在独立 `/extended` 页面、`/api/performance` 端点或「战斗表现」tab。
 
-### `POST /api/preview`
+### Legacy（已废弃）
 
-`multipart/form-data`，字段名为 `files`，可上传一个或多个 `.wotbreplay`。
-每个文件走统一完整处理链（`DefaultReplayProcessingFacade` full），同一请求生命周期内只解析一次：
-为取得已证明的进场满血，`OBSERVED_EXACT` 使用回放实测进场满血，其余车辆使用 Tankopedia 基础 HP
-（车辆库也缺失时 fail-closed，不再硬编码 2400；存在 UNKNOWN 时场均 HP unavailable，依赖 HP 的
-衍生指标 fail-closed，见 `BattleHpFacts`）。
+以下同步端点已随 Replay Processing V2 移除，一律返回 `410 REPLAY_LEGACY_DEPRECATED`：
 
-返回：
+`POST /api/preview`、`POST /api/export`、multipart `POST /api/replay/analyze`、
+multipart `POST /api/replay/map-overview`、`POST /api/replay/process`、
+`POST /api/replay/reconstruct-batch`。
 
-- `battles`：每场玩家基础战绩 + 扩展字段（`alpha_damage`、`rank`），玩家 cells 直接包含 `contribution`/`kast`/`impact`（HP UNKNOWN 时为 null，UI 显示 `--`）。
-- `aggregate`：跨场汇总（>1 场时），含跨场 `contribution`/`kast`/`impact`/`multi_damage_rate`/`traded_deaths`。
-- `duplicates` / `failures`：去重和失败信息。
-- `playerColumns` / `aggregateColumns`：纯英文 key + 是否数值，前端由三语 `player_labels` / `agg_labels` 显示。
-
-> **League Rating（训练赛/联赛）**：上传含训练房（arenaBonusType=2）或联赛/锦标赛（=4）回放时，
-> 响应额外返回 `league` 元数据（mode=LEAGUE_RATING、战队 Rating/MVP/队内最佳、七维度
-> `league_*` 列与固定列元数据、选手/战队中位数汇总、校验失败列表）。`playerColumns` /
-> `aggregateColumns` **保留** `contribution`/`kast`/`impact`（Performance Metrics 属于
-> Replay 数据，CW 单场/汇总表必须可显示；不是 League Rating 维度，不进七维 Rating；
-> contribution/kast 可进自定义 Radar，Impact 无稳定 normalization contract 暂不入 Radar）。
-> 响应另带 `leagueMode`（true = CW 批次，与 `league` 结果存在性分离：
-> Rating-ineligible 场次 `league=null` 但 `leagueMode=true`）。
-> 混合普通+训练赛/联赛 → League Rating 不聚合（`league=null`、
-> `leagueUnavailableCode=MIXED_LEAGUE_AND_STANDARD_REPLAYS`，battles 仍按普通回放语义成功返回）。
-> 评分 core 见 `wotb-core/.../league/`（LeagueRatingCalculator 等），
-> preview/Excel 复用同一评分结果。
-
-### `POST /api/preview`
-
-`multipart/form-data`，字段名为 `files`，可上传一个或多个 `.wotbreplay`。
-
-入口限制：最多 100 个文件，单文件不超过 20 MiB，请求合计不超过 200 MiB；每个应用实例默认最多同时处理 2 个解析任务（`REPLAY_MAX_CONCURRENT_JOBS` 可调），容量满返回 HTTP 503 + `REPLAY_BUSY`。ZIP、pickle、protobuf、单场玩家数与事件流包/扫描次数另有独立预算。
-
-返回：
-
-- 去重后的战斗列表。
-- 每场玩家数据。
-- 多场上传时的跨场汇总。
-- 重复文件与失败文件信息。
-- 列定义。
-
-### `POST /api/export`
-
-`multipart/form-data`，字段名为 `files`。可选 `?mode=aggregate`（默认）或 `?mode=each`。
-
-返回：
-
-- `mode=aggregate`（默认）：返回 xlsx。仅一场战斗时为单场工作簿；多场时为按 `arenaUniqueId` 去重后的汇总工作簿。
-- `mode=each`：返回 zip（`逐场导出.zip`），内含每场各自的单场 xlsx；无法解析的文件会被跳过。
+当前 V2 只有：Processing Dataset → Export Job → XLSX/ZIP（`GET .../result` +
+`POST /api/replay/export-jobs`），不再有 raw replay → Export 路径。历史契约见
+`docs/CHANGELOG.md` 与 git history（当前 README 只描述 current state）。
 
 
 ### Replay Export Job（匿名公开，长任务导出）
 
 大文件量导出（如 34+ 个回放）走异步 Job，页面不再阻塞等待同步 HTTP 响应：
 
-- `POST /api/replay/export-jobs`（multipart `files` + `?mode=aggregate|each`；或 `?processingJobId=<解析任务>` 复用已解析；可传 `teamNames` JSON（`{battle:{arenaId:team:名}, summary:{teamKey:名}}`：单场 vs 批次战队 identity 两种独立 override，仅本次调用内使用）result，**不再重新上传 replay / 重新 processFull**）— 校验并立即把上传输入持久化到 job 临时目录（复用路径无上传输入，直接从 Processing Job 的 ProcessedDataset 生成 artifact），返回 `202 {jobId, status, total}`。引用不存在的解析任务 → 404 `PROCESSING_JOB_NOT_FOUND`，未 READY → 409 `PROCESSING_JOB_NOT_READY`。
+- `POST /api/replay/export-jobs`（**Dataset-only**，`?mode=aggregate|each`；`processingJobId` 语义必填，缺失/空 → 410 `REPLAY_LEGACY_DEPRECATED`；可传 `teamNames` JSON（`{battle:{arenaId:team:名}, summary:{teamKey:名}}`：单场 vs 批次战队 identity 两种独立 override，仅本次调用内使用）result，**不接收 replay files / 不重新上传 / 不重新 processFull**）— 复用 READY Processing Job 的 ProcessedDataset 直接生成 artifact（无上传输入），返回 `202 {jobId, status, total}`。引用不存在的解析任务 → 404 `PROCESSING_JOB_NOT_FOUND`，未 READY → 409 `PROCESSING_JOB_NOT_READY`。
 - `GET /api/replay/export-jobs/{jobId}` — 轮询真实进度：`{jobId, status, phase, total, processed, duplicates, failures, errorCode, filename, contentType}`。`status` ∈ QUEUED / PROCESSING / READY / FAILED / CANCELLED（终态 exactly once）；`phase` ∈ PROCESSING_REPLAYS / BUILDING_EXCEL / BUILDING_ARCHIVE。0 场有效 → FAILED `NO_VALID_REPLAYS`（不生成空 Excel）。
 - `DELETE /api/replay/export-jobs/{jobId}` — 取消（QUEUED 立即终态；PROCESSING 协作取消，安全 checkpoint 后终态）。
 - `GET /api/replay/export-jobs/{jobId}/download` — READY 后流式下载 artifact（单场/汇总 xlsx 或 each zip；`FileSystemResource` streaming，不 `readAllBytes`）。
 
-容量：内存态 job store（单实例部署）+ 有界 worker 池（`REPLAY_EXPORT_JOB_MAX_CONCURRENT=2` / `REPLAY_EXPORT_JOB_QUEUE_CAPACITY=4`，满载 503 `EXPORT_QUEUE_FULL`）；worker 仍获取全局 `ReplayCapacityLimiter` 许可（`REPLAY_MAX_CONCURRENT_JOBS=2` 不变），batch 内 replay 串行。终态 job 与临时目录由 TTL（`REPLAY_EXPORT_JOB_TTL_MINUTES=30`）清理，启动清理孤儿目录。旧同步 `POST /api/export` 保留（向后兼容）。
+容量：内存态 job store（单实例部署）+ 有界 worker 池（`REPLAY_EXPORT_JOB_MAX_CONCURRENT=2` / `REPLAY_EXPORT_JOB_QUEUE_CAPACITY=4`，满载 503 `EXPORT_QUEUE_FULL`）；Export 只消费已解析 result，**不执行 replay 解析，故不获取全局 `ReplayCapacityLimiter` 许可**。终态 job 与临时目录由 TTL（`REPLAY_EXPORT_JOB_TTL_MINUTES=30`）清理，启动清理孤儿目录。旧同步 `POST /api/export` 已随 V2 废弃（410）；当前只保留 `/api/replay/export-jobs`。
 
 ### Replay Processing Job（匿名公开，解析预览异步化）
 
@@ -177,20 +141,23 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 TTL 随 job 目录清理）。Dataset Lease：Export / AI / Playback 读取前 `acquire`（引用计数
 +1，TTL 清理跳过），结束后 `release`；acquire 后任何失败都释放引用（不泄漏 refcount）。
 临时输入目录由 `REPLAY_PROCESSING_JOB_DIR` 管理（TTL 清理 + 启动孤儿清理）。旧同步
-`POST /api/preview` 保留（向后兼容，deprecated）。
+`POST /api/preview` / `POST /api/export` 已随 V2 移除（返回 `410 REPLAY_LEGACY_DEPRECATED`；
+导出改走 `/api/replay/export-jobs` 异步 Job）。
+
+> **容量边界**：Replay Full Processing 的唯一 CPU 预算是 Processing Job 的 `ReplayParseScheduler`（`REPLAY_PARSE_MAX_CONCURRENT` / `REPLAY_PARSE_QUEUE_CAPACITY`）。全局 `ReplayCapacityLimiter`（`REPLAY_MAX_CONCURRENT_JOBS`，默认 2，与 HoF/Hundred/Mark3 等**非 Processing** 业务共享）是「同一实例同一时刻执行其它领域回放解析任务」的独立许可，容量满由对应业务接口返回 `503 REPLAY_BUSY`；它**不是** Processing V2（`/api/replay/processing-jobs`）的容量 authority，二者不重复计费、不存在第二套并行处理。
 
 ### AI 复盘与批量处理（wotbtools-user / wotbtools-admin）
 
-完整战斗重建：读取 `data.wotreplay` 全部事件包 → 解码为领域事件 → 重建战场状态。
-重建不单独暴露端点，由 `/analyze` 在内部完成。
+完整战斗重建（parse + reconstruction + enrich）在 Processing Job 的 per-source
+`processFull` 阶段完成（`ReplayParseScheduler` → `DefaultReplayProcessingFacade`），产出
+`ai-facts.json` / `map-overview.json` 等 derived artifact。AI / 战局回放只读这些 artifact，
+**不在** `/analyze` 内部做 reconstruction，也绝不重新上传 / 重新 full process。
 
-- `POST /api/replay/reconstruct-batch` — 批量重建（单文件 ≤ 20 MiB、请求合计 ≤ 200 MiB），返回 `ReplayBatchProcessingResult`（含 `suggestedAnalysisMode`、逐文件 `ReplayProcessingResult`）。
-- `POST /api/replay/process?reconstruct=false` — 通用批量处理，可选开启重建。
-- `POST /api/replay/analyze` — **Dataset 路径（推荐）**：JSON body `{processingJobId, sourceId, lang, correlationId}`，只读 derived `ai-facts.json`（**不再重新上传 / 重新 full process**）；legacy multipart `files[]` 路径保留（deprecated）。**单文件限制（`AiReplayBatchPolicy.MAX_FILES=1`）**，仅 `SINGLE_PLAYER_BATTLE` / `SINGLE_TEAM_BATTLE` 模式。表单/JSON 字段 `lang`（必填，白名单 `zh`/`en`/`ru`）控制输出语言；缺失返回 `400`，空白或未知值返回 `400 UNKNOWN_LOCALE`。可选 `correlationId` 用于客户端取消；`POST /api/replay/analyze/cancel?correlationId=...` 中断 in-flight 上游调用（返回 `204`，未注册返回 `404`）。稳定错误码含 `JOB_NOT_FOUND` / `SOURCE_NOT_FOUND` / `SOURCE_NOT_READY` / `SOURCE_PROCESSING_FAILED` / `DATASET_EXPIRED`。`POST /api/replay/map-overview` — Dataset 路径 JSON body `{processingJobId, sourceId}` 读 cached `map-overview.json`（不重新 full process）；legacy multipart 路径保留（deprecated）。地图不可构建返回 `204`。**响应为 SSE 流式**：事件 `call1_start` / `call1_done` / `evidence_done` / `call2_token`（`{"delta"}`）/ `autopsy_start` / `autopsy_done` / `done`（`{"analysis","preBattleSection","mapOverview"}`）/ `error`（`{"code"}`）；request-envelope 校验与 worker 池饱和在返回 `SseEmitter` 前由 HTTP 状态码 + 稳定错误码文本返回（400/503）。完整协议见 `docs/features/team-ai-review.md` §8。
+- `POST /api/replay/analyze` — **Dataset 路径（唯一）**：JSON body `{processingJobId, sourceId, lang, correlationId}`，只读 derived `ai-facts.json`（**不重新上传 / 不重新 full process / 不执行 reconstruction**）；legacy multipart `files[]` 路径已废弃（410 `REPLAY_LEGACY_DEPRECATED`）。**单文件限制（`AiReplayBatchPolicy.MAX_FILES=1`）**，仅 `SINGLE_PLAYER_BATTLE` / `SINGLE_TEAM_BATTLE` 模式。表单/JSON 字段 `lang`（必填，白名单 `zh`/`en`/`ru`）控制输出语言；缺失返回 `400`，空白或未知值返回 `400 UNKNOWN_LOCALE`。可选 `correlationId` 用于客户端取消；`POST /api/replay/analyze/cancel?correlationId=...` 中断 in-flight 上游调用（返回 `204`，未注册返回 `404`）。稳定错误码：`JOB_NOT_FOUND`（job/dataset 已 TTL 清理，可重建）/`SOURCE_NOT_FOUND` / `SOURCE_NOT_READY` / `SOURCE_PROCESSING_FAILED` / `DATASET_UNAVAILABLE`（artifact 读取/存储故障，**不可**按过期 dataset 自动重建）。`POST /api/replay/map-overview` — Dataset 路径 JSON body `{processingJobId, sourceId}` 读 cached `map-overview.json`（不重新 full process）；legacy multipart 路径已废弃（410 `REPLAY_LEGACY_DEPRECATED`）。地图不可构建返回 `204`。**响应为 SSE 流式**：事件 `call1_start` / `call1_done` / `evidence_done` / `call2_token`（`{"delta"}`）/ `autopsy_start` / `autopsy_done` / `done`（`{"analysis","preBattleSection"}`）/ `error`（`{"code"}`）；request-envelope 校验与 worker 池饱和在返回 `SseEmitter` 前由 HTTP 状态码 + 稳定错误码文本返回（400/503）。完整协议见 `docs/features/team-ai-review.md`。
 
 **策略**：上传文件先统一校验扩展名、空文件和单文件大小；通过预校验后，解析/重建错误才按文件隔离。系统执行 SHA-256 精确去重，并按 battle + perspective 分组。随机战斗分析录像者个人；训练房/联赛分析录像者所在整队，录像者只用于解析 `perspectiveTeam`。同场同队回放只选一个代表，同场双方保持独立；未点亮敌人仍未知，不能跨录像补全视野。
 
-团队总伤害、承伤、助攻、格挡、击杀、存活来自 `battle_results.dat` 权威结算；死亡时刻优先 `battle_results` 的 deathTimeMillis，缺失时回退事件流估算（`PlayerResultFormat.deathSec`，来源经 `DEATH_SOURCE` 标注）；事件流伤害只作为观测子集。重建可用时补充每名队员独立移动、阵型、交火和关键事件；重建不可用时仍可生成明确标注的权威结算 fallback。AI 输入不包含原始事件流，prompt 长度由 token 估算器（`AiTokenEstimator`）按 `AiModelProperties` 预算控制（`singleReplayMaxInputTokens` 等），不再使用固定成员数/事件数/字符数截断；超限时返回 `AI_INPUT_TRUNCATED` limitation。
+团队总伤害、承伤、助攻、格挡、击杀、存活来自 `battle_results.dat` 权威结算；死亡时刻权威链为 `LIVE_EXACT`（回放 live EXACT，sub-second）→ `SETTLEMENT_SECOND`（结算 `deathTimeMillis`）→ `UNKNOWN`（`survivalTimeSec=0`）；`PlayerResultFormat.deathSec` 按 `deathTimeSource` 消费，legacy 启发式不作为死亡 authority；事件流伤害只作为观测子集。重建可用时补充每名队员独立移动、阵型、交火和关键事件；重建不可用时仍可生成明确标注的权威结算 fallback。AI 输入不包含原始事件流，prompt 长度由 token 估算器（`AiTokenEstimator`）按 `AiModelProperties` 预算控制（`singleReplayMaxInputTokens` 等），不再使用固定成员数/事件数/字符数截断；超限时返回 `AI_INPUT_TRUNCATED` limitation。
 
 AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`AI_CANCELLED`、`AI_UPSTREAM_UNAVAILABLE` 等），前端以 zh/en/ru 本地化。`/api/replay/**` 需要 `wotbtools-user` 或 `wotbtools-admin` 角色；未配置 `AI_API_KEY` 时 `/analyze` 返回 `AI_NOT_CONFIGURED`，应用其余功能不受影响。全链路超时对齐：整体 deadline 默认 1100s（团队 3 次 AI 调用 + 余量，`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）→ 前端 analyze 安全超时 1100s < 容器 nginx `/api/replay/analyze` 1120s，后端 AI 单次预算 `AI_CALL_TIMEOUT_SEC=315s` + 解析余量；`AI_TIMEOUT` 不再自动重试（上游可能已计费）。
 
@@ -306,5 +273,5 @@ wotb:
 
 ## 维护注意
 
-- 列定义在 `wotb-core/.../Columns.java` 中集中管理，前端通过 `/api/preview` 响应获取列定义，不在前端硬编码业务字段。
+- 列定义在 `wotb-core/.../Columns.java` 中集中管理，前端通过 `GET /api/replay/processing-jobs/{jobId}/result` 响应获取列定义，不在前端硬编码业务字段。
 - 车辆库单一来源在 `common/tankopedia-tier{7,8,9,10}.json`（由 `common/python/update_tankopedia.py` 从 blitzkit 游戏客户端数据同步，按等级拆分 4 个文件，`vehicles` 数组全英文格式，含手工 `extraInfo` 每车知识点与每车可用物资/消耗品/装备）；`wotb-core` 构建时自动复制到 classpath，勿在模块内再放副本。

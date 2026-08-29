@@ -1,14 +1,16 @@
 package com.wotb.core.replay.evidence;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.RecorderEntityMapping;
+import com.wotb.core.parse.ReplayStreamHeader;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.reconstruction.BattleLifecycle;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
@@ -18,10 +20,9 @@ import com.wotb.core.replay.reconstruction.ObservationState;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.reconstruction.VehicleState;
 import com.wotb.core.replay.reconstruction.Vector3;
+import com.wotb.core.replay.reconstruction.VehicleState;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
-import com.wotb.core.replay.stream.ReplayStreamHeader;
 
 import java.util.HashMap;
 import java.util.List;
@@ -45,6 +46,11 @@ final class EvidenceTestFixtures {
         p.survived = survived;
         p.deathTimeMillis = survived ? 0 : (long) (deathSec * 1000);
         p.survivalTimeSec = survived ? 300.0 : deathSec;
+        // canonical death provenance：已知死亡（deathSec>0）→ SETTLEMENT_SECOND；否则 UNKNOWN。
+        if (!survived) {
+            p.deathTimeSource = deathSec > 0
+                    ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
+        }
         p.damageDealt = 100;
         p.damageReceived = 100;
         return p;
@@ -120,11 +126,8 @@ final class EvidenceTestFixtures {
                 "arena", "middleburg", "1", "1", 1, "rec1", "", 300.0, 0L);
         final ReplayStreamHeader header = new ReplayStreamHeader(
                 0x12345678L, new byte[8], "h", "v", 15);
-        final ReplayCoverage coverage = new ReplayCoverage(
-                true, 1, 1, 0, 0, 0, 1.0, Map.of());
-        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
-                0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(),
-                true, START_RAW, true);
+        final ReplayCoverage coverage = new ReplayCoverage(1, 1, 0, 0, 0, 1.0, Map.of());
+        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(0, 0, 0f, 0f, 0, Map.of());
         final BattleStateSnapshot finalState = checkpoints.isEmpty()
                 ? BattleStateSnapshot.empty() : checkpoints.getLast().stateSnapshot();
         return new ReplayReconstruction(

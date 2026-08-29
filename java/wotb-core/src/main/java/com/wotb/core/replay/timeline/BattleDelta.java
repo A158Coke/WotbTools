@@ -4,7 +4,7 @@ import java.util.Map;
 
 /**
  * 帧间确定性变化（Frame(t-1) → Frame(t)）。结构化、可测试、供 AI Context Compiler 渲染，
- * 避免把 raw 位置包灌给 LLM（docs/current-plan.md §14/§15）。
+ * 避免把 raw 位置包灌给 LLM（docs/architecture/battle-timeline.md §14/§15）。
  */
 public record BattleDelta(
         DeltaKind kind,

@@ -1,9 +1,5 @@
 package com.wotb.web.replay.controller;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import com.wotb.core.replay.processing.AiNotConfiguredException;
 import com.wotb.core.replay.timeline.TimelineError;
 import com.wotb.web.replay.MapOverviewQueryService;
@@ -15,18 +11,23 @@ import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.AiTimelineUnusableException;
-import java.util.List;
-import java.util.UUID;
-import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 /**
- * PR #102 review P0：{@code AiTimelineUnusableException} 的 SSE error 契约。
+ * PR #102 P0：{@code AiTimelineUnusableException} 的 SSE error 契约。
  * <p>真实 boundary 测试（非 Mockito）：构造真实 {@link ReconstructionController} +
  * 真实 {@link AiReviewWorkerExecutor} + 收集事件的 {@code RecordingEmitter}，
  * worker 内抛出带 {@link TimelineError} detail 的 {@code AiTimelineUnusableException}，
@@ -186,7 +187,7 @@ class ReconstructionControllerTimelineUnusableTest {
         }
 
         private ThrowingReviewService(final RuntimeException failure) {
-            super(null);
+            super(null, null, null, null);
             this.failure = failure;
         }
 

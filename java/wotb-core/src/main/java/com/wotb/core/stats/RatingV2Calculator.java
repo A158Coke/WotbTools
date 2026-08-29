@@ -1,11 +1,9 @@
 package com.wotb.core.stats;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.EntryHpSource;
-import com.wotb.core.model.KillVictim;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.model.TankInfo;
 import com.wotb.core.ref.Tankopedia;
+import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -19,6 +17,14 @@ import java.util.Map;
  * <p>This calculator deliberately consumes the already processed replay facts as read-only input. In
  * particular, potential damage is calculated locally instead of being written back to {@link PlayerResult},
  * so invoking the admin-only V2 gray page cannot alter Preview, Export, AI, or Playback data.</p>
+ *
+ * <p><b>STATIC_BASELINE (not replay actual-HP truth)</b>: the V2 composite's HP denominator is ALWAYS a static
+ * tankopedia baseline — {@code tankopedia.info(tankId).maxHp()} when positive, otherwise
+ * {@code STATIC_BASELINE_TANK_HP}. It is NEVER the replay's observed entry HP
+ * ({@code PlayerResult.entryHpSource == EntryHpSource.OBSERVED_EXACT} / {@code PlayerResult.entryHp}) and must
+ * never be presented as an observed HP fact. The single static-baseline formula must not switch denominator
+ * semantics based on evidence coverage. the old alpha-damage potential-damage supplement driven by
+ * {@code PlayerResult.killVictims} is removed because that field has no authoritative producer.</p>
  */
 public final class RatingV2Calculator {
 
@@ -39,6 +45,8 @@ public final class RatingV2Calculator {
     private static final double KILLS_INDEX_MAX = 250.0;
     private static final double FALLBACK_TANK_HP = 2400.0;
     private static final double MIN_ALPHA_RATIO = 0.9;
+    /** STATIC_BASELINE fallback HP for the historical gray-page V2 formula (NOT replay actual-HP). */
+    private static final double STATIC_BASELINE_TANK_HP = 2400.0;
 
     private RatingV2Calculator() {
     }
@@ -193,7 +201,7 @@ public final class RatingV2Calculator {
         final boolean traded = tradedDeath(player, battle.players);
         final double kastBattle = singleBattleKast(player, win, traded, averageHp);
         final double impactValue = singleBattleImpact(player, context);
-        final PotentialDamage potential = potentialDamage(player, tankopedia);
+        final PotentialDamage potential = potentialDamage(player);
 
         row.battles++;
         if (win) {
@@ -215,26 +223,14 @@ public final class RatingV2Calculator {
         }
     }
 
-    private static PotentialDamage potentialDamage(final PlayerResult player, final Tankopedia tankopedia) {
+    private static PotentialDamage potentialDamage(final PlayerResult player) {
         if (player.damageDealt < 0) {
             throw new IllegalArgumentException("actualDamage must be >= 0");
         }
-        final TankInfo info = tankopedia.info(player.tankId);
-        final Integer alphaDamage = info.alphaDamage();
-        if (alphaDamage == null || alphaDamage <= 0 || player.killVictims.isEmpty()) {
-            return new PotentialDamage(player.damageDealt, 0);
-        }
-        int supplement = 0;
-        for (final KillVictim victim : player.killVictims) {
-            if (victim == null || victim.damage() < 0 || victim.penetrations() <= 0) {
-                continue;
-            }
-            final double minimum = victim.penetrations() * alphaDamage * MIN_ALPHA_RATIO;
-            if (victim.damage() < minimum) {
-                supplement += (int) Math.ceil(minimum - victim.damage());
-            }
-        }
-        return new PotentialDamage(player.damageDealt + supplement, supplement);
+        // the former alpha-damage supplement was driven by PlayerResult.killVictims, produced by a
+        // damage-threshold heuristic with no authoritative producer (the parser no longer emits it). Remove
+        // that stale input; potential damage is the observed damage only (no fabricated supplement).
+        return new PotentialDamage(player.damageDealt, 0);
     }
 
     private static double singleBattleImpact(final PlayerResult player, final BattleContext context) {
@@ -269,28 +265,47 @@ public final class RatingV2Calculator {
         return player.damageDealt + player.damageAssisted + player.kills * averageHp / 7.0;
     }
 
+    /**
+     * 互换击杀判定：使用 canonical {@link PlayerResultFormat#deathSec}（source-aware,
+     * LIVE_EXACT &gt; SETTLEMENT_SECOND &gt; UNKNOWN）。UNKNOWN 的 residual survivalTimeSec 不得
+     * 被当成 KNOWN 死亡时刻（P0-2 provenance）。窗口保持 V2 定义：双方死亡时刻差 ±5s。
+     */
     private static boolean tradedDeath(final PlayerResult player, final List<PlayerResult> players) {
-        if (player.survived || player.survivalTimeSec <= 0) {
+        if (player == null || player.survived) {
             return false;
         }
-        final double from = player.survivalTimeSec - 5.0;
-        final double to = player.survivalTimeSec + 5.0;
+        final PlayerResultFormat.DeathTimeEvidence pEv = PlayerResultFormat.deathEvidence(player);
+        if (pEv == null || !pEv.known()) {
+            return false;
+        }
+        // precision-aware（V2 双向 ±5s 窗口）：SETTLEMENT_SECOND ±0.5s，不得用 midpoint。
+        // 只有 <b>所有</b> 真实死亡时刻组合的差都在 ±5s 内（max(eMax-pMin, pMax-eMin) ≤ 5）才判定
+        // traded；「有可能」但无法证明（ambiguous）→ fail-closed false。
         for (final PlayerResult other : players) {
-            if (other.team != player.team && !other.survived && other.survivalTimeSec > 0
-                    && other.survivalTimeSec >= from && other.survivalTimeSec <= to) {
+            if (other == null || other.team == player.team || other.survived) {
+                continue;
+            }
+            final PlayerResultFormat.DeathTimeEvidence oEv = PlayerResultFormat.deathEvidence(other);
+            if (oEv == null || !oEv.known()) {
+                continue;
+            }
+            final double worstGap = Math.max(oEv.upperBoundSec() - pEv.lowerBoundSec(),
+                    pEv.upperBoundSec() - oEv.lowerBoundSec());
+            if (worstGap <= 5.0 + 1e-9) {
                 return true;
             }
         }
         return false;
     }
 
+    /**
+     * Static baseline for the historical V2 HP denominator: {@code tankopedia} maxHp when positive, else the
+     * {@link #STATIC_BASELINE_TANK_HP} fallback. Never the replay's observed entry HP — the formula must not
+     * switch denominator semantics based on evidence coverage (see class JavaDoc).
+     */
     private static double estimatedHp(final PlayerResult player, final Tankopedia tankopedia) {
-        if (player.entryHpSource == EntryHpSource.OBSERVED_EXACT
-                && player.entryHp != null && player.entryHp > 0) {
-            return player.entryHp;
-        }
         final Integer maxHp = tankopedia.info(player.tankId).maxHp();
-        return maxHp != null && maxHp > 0 ? maxHp : FALLBACK_TANK_HP;
+        return maxHp != null && maxHp > 0 ? maxHp : STATIC_BASELINE_TANK_HP;
     }
 
     private static double ratio(final double numerator, final double denominator) {
@@ -353,7 +368,7 @@ public final class RatingV2Calculator {
         }
 
         private double averageHp() {
-            return battleAverageHp > 0 ? battleAverageHp : FALLBACK_TANK_HP;
+            return battleAverageHp > 0 ? battleAverageHp : STATIC_BASELINE_TANK_HP;
         }
     }
 }
