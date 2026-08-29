@@ -18,6 +18,11 @@ const props = defineProps({
   seekTo: {
     type: Number,
     default: null
+  },
+  /** V2 canonical battle-playback-dataset（可选；迁移期守卫）。 */
+  playbackV2: {
+    type: Object,
+    default: null
   }
 })
 
@@ -374,6 +379,7 @@ const gridRegions = computed(() => {
       v-if="view === 'playback' && overview.playback"
       :overview="overview"
       :seek-to="seekTo"
+      :playback-v2="playbackV2"
     />
 
     <div v-if="view !== 'playback'" class="map-legend">
