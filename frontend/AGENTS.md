@@ -5,7 +5,29 @@
 ## 工具链（经 .nvmrc / package.json / CI 核对）
 
 - Node 24（`.nvmrc`）；依赖安装 `npm ci`（CI 与 Dockerfile.frontend 一致）。
-- 脚本：`npm run dev`（Vite，端口 5173）/ `npm test`（vitest run）/ `npm run build`（vite build）。提交前必须 `npm test` + `npm run build`。
+- 脚本：`npm run dev`（Vite，端口 5173）/ `npm test`（vitest run）/ `npm run build`（vite build）。提交前不默认跑全量 `npm test` + `npm run build`（见下「测试策略」）。
+
+## 测试策略（Agent 即时验证，Fast Feedback First）
+
+开发过程中禁止无理由重复运行 repository-level full test；优先跑改动直接相关的测试：
+
+```bash
+npx vitest run <related-test-files>
+```
+
+改动覆盖一个 feature 多文件时再运行 feature-related suite。禁止小改动默认 `npm test` / `npm run build`。
+
+**Build（`npm run build`）只在改动涉及以下范围时本地执行**：
+
+* Vite config
+* dynamic import / bundle separation（`scripts/check-bundle-separation.mjs`）
+* new asset pipeline（含 `scripts/extract-tier-x-model.mjs` / `scripts/validate-vehicle-models.mjs` 相关）
+* dependency change
+* production-only compile issue
+* build-time raw import（如 `?raw`，`RatingDocsPage` 读取 `WotBTools_League_Rating_V5.md`）
+
+普通改动（CSS / Vue state / button behavior / API rendering / localized UI fix）不要求每次 build。
+repository-level full validation 由 PR CI 统一执行（唯一 authoritative full-validation gate）。
 - 死代码检查：`npx fallow check dead-code`（配置 `.fallowrc.json`；可选依赖误报先核实再处理）。
 
 ## 结构与约定

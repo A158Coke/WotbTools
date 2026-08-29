@@ -14,7 +14,41 @@
 3. **改动即更新文档** — 影响界面/导出/数据/构建的改动，同提交更新 CHANGELOG、CHANGELOG-PRODUCT、DEVELOPER_GUIDE、相关 README、`docs/current-plan.md`（任务状态）。
 4. **跨层一致** — 列 key（snake_case）API/前端/导出三方一致；显示名前端三语 locale + 导出两处一致。跨层改动走 `.agents/skills/wotb-sync/SKILL.md`（单一事实源）；增删列再走 `column-sync`。
 5. **API 纯英文** — 只回 key+数据；中文归前端/导出。
-6. **提交前通过测试** — Java `mvn -s settings.xml test`（JDK 21）、前端 `npm test` + `npm run build`（命令细节见 java/AGENTS.md 与 frontend/AGENTS.md）。
+6. **测试策略 — Fast Feedback First** — 开发过程中禁止无理由重复运行 repository-level full test。
+   默认分层验证：
+   1. **Targeted**：修改后运行与改动直接相关的最小测试集（单个测试类 / 单个组件测试）；
+   2. **Module / Feature**：一个实现阶段完成后运行 affected module / feature 测试，捕获本次改动影响范围内的回归；
+   3. **Regression**：review/fix 后运行相关 regression tests；
+   4. **Repository full validation 由 PR CI 统一执行**（唯一 authoritative full-validation gate）。
+   Agent 开 PR 前不默认重新运行 java 全量 `mvn test`、frontend 全量 `npm test`、frontend `npm run build`；
+   只有改动影响跨模块 / build / test infrastructure（无法可靠限定影响范围）时才允许 full validation。
+
+   **Full-test 例外（仅以下情形允许 Agent 主动运行 repository-level full validation）**：
+   1. 用户明确要求 full test；
+   2. 修改 Maven parent / dependencyManagement / plugin configuration；
+   3. 修改 Node/Vite/Vitest 全局配置；
+   4. 修改跨多个 module 的公共 contract；
+   5. 修改 architecture rules；
+   6. 修改 test infrastructure 本身；
+   7. 修改 build infrastructure，且无法通过 targeted validation 判断影响范围；
+   8. CI 当前不可用，但必须给出高置信度验证，或 affected scope 无法可靠确定。
+   即便触发 full test，也必须先说明原因（Affected scope / Selected validation / Why），
+   禁止以「为了保险，再跑一次全量」为由执行。
+
+   Targeted / Module / Full 的具体命令与分层见 `java/AGENTS.md` 与 `frontend/AGENTS.md`。
+
+   选档决策树：
+   ├─ 单一 class / function / component → Targeted tests
+   ├─ 单一 feature 多文件 → feature test group
+   ├─ 单个 Maven module → Module tests
+   ├─ build / config / dependency / architecture → broader validation（可能触发 Full）
+   └─ 无法确定影响范围 → Full-test 例外，先说明原因
+
+   迭代验证去重与失效：
+   - CI 失败后只复现失败 job 对应的本地范围（backend 失败→重跑失败测试；bundle 失败→`npm run build`），
+     修复后 `git push` 让 PR CI 重新成为权威验证，不默认再跑整个 repository full suite。
+   - 同一任务内测试已通过且对应代码/依赖代码/测试配置均未变化 → 不得重复运行同一测试。
+   - review 修复后按修改决定哪些验证已失效：改了 A 对应代码 → A 失效需重跑；只改 README → 不失效。
 7. **Review-Fix 闭环** — 每次代码变更后自审（残留/硬编码/未用 import/命名/空值/并发），修复后循环到零问题；影响界面/导出/数据/构建的变更再走 `review-with-docs`（含文档同步 + AI 死代码清理）。
 8. **Git** — 推送前先 `git remote -v` 确认实际 remote（本机 remote 名/SSH 别名以本机配置为准，不写死）；仓库账号 A158Coke。中文提交、尾带 `Co-Authored-By`；禁止 force push、禁止改写已公开历史、禁止动与当前任务无关的分支/PR。
 9. **子代理** — spawn 子代理后必须显式验证其完成状态与产物（不可假设自动完成），完成后以醒目格式通知用户。
