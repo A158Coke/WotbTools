@@ -34,7 +34,7 @@ commit_fixture() {
 expect_fail() {
   local label="$1" expected="$2" output rc
   set +e
-  output="$(cd "$REPO" && "$GUARD" "$BASE" 2>&1)"
+  output="$(cd "$REPO" && bash "$GUARD" "$BASE" 2>&1)"
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "$label unexpectedly passed: $output"
@@ -42,7 +42,7 @@ expect_fail() {
 }
 
 # The production hotfix uses the one explicitly approved historical restore pair.
-(cd "$ROOT" && "$GUARD" 8d94a24c >/dev/null) \
+(cd "$ROOT" && bash "$GUARD" 8d94a24c >/dev/null) \
   || fail "approved V18 historical restore did not pass"
 
 init_fixture
@@ -65,7 +65,7 @@ init_fixture
 printf 'create table v19_fixture (id bigint primary key);\n' \
   > "$REPO/$MIGRATION_DIR/V19__fixture.sql"
 commit_fixture
-(cd "$REPO" && "$GUARD" "$BASE" >/dev/null) \
+(cd "$REPO" && bash "$GUARD" "$BASE" >/dev/null) \
   || fail "new higher migration without comments was rejected"
 
 init_fixture
@@ -90,7 +90,7 @@ init_fixture
 printf "create table v19_fixture (id bigint default 'x--y');\n" \
   > "$REPO/$MIGRATION_DIR/V19__fixture.sql"
 commit_fixture
-(cd "$REPO" && "$GUARD" "$BASE" >/dev/null) \
+(cd "$REPO" && bash "$GUARD" "$BASE" >/dev/null) \
   || fail "new migration with '--' inside a string literal was rejected"
 
 init_fixture
@@ -102,7 +102,7 @@ expect_fail "duplicate migration version" "must be greater than base maximum"
 init_fixture
 printf 'ordinary change\n' > "$REPO/README.txt"
 commit_fixture
-(cd "$REPO" && "$GUARD" "$BASE" >/dev/null) \
+(cd "$REPO" && bash "$GUARD" "$BASE" >/dev/null) \
   || fail "ordinary non-migration change was rejected"
 
 echo "OK: Flyway immutability and new-migration comment/version guard scenarios passed"
