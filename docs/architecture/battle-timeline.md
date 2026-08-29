@@ -25,7 +25,7 @@
    events = (N-1, N] 内的精确事件（原始时间精度不丢失，§2.1/§2.2）。
 2. **battle-relative 时钟硬门禁**（§2.4）：时钟解析优先级
    recon.battleStartRawClockSec（IDENTIFIED）→ 事件自带 battleClockSec（IDENTIFIED）
-   → BattleEndedEvent.raw − battle.durationS（ESTIMATED，当前生产唯一路径）。
+   → RoundFinishedEvent.raw − battle.durationS（ESTIMATED，estimation fallback；PR147 cannonical 由 settlement root5 决定 battle duration）。
    无法解析 → TIMELINE_CLOCK_UNRESOLVED → Timeline = INVALID → 拒绝 AI Review。
 3. **Anti-future-leak**（§10/§47）：任意 frame 的状态只使用 battle-relative time ≤ t 的事件；
    battle_results 最终状态绝不反写进历史 Frame；重亮后仅允许 bounded retrospective

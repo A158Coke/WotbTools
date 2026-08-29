@@ -1,7 +1,6 @@
 package com.wotb.core.replay.feature;
 
 import com.wotb.core.replay.event.ReplayTimestamp;
-import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
 public record BattleStartResolution(Status status, Float battleStartRawClockSec, String limitation) {
 
     public enum Status {
@@ -49,14 +48,6 @@ public record BattleStartResolution(Status status, Float battleStartRawClockSec,
     public static BattleStartResolution fromReconstruction(final Float battleStartRawClockSec) {
         if (battleStartRawClockSec != null && Float.isFinite(battleStartRawClockSec)) {
             return identified(battleStartRawClockSec);
-        }
-        return unresolved();
-    }
-
-    public static BattleStartResolution fromDiagnostics(final ReplayStreamDiagnostics diagnostics) {
-        if (diagnostics == null) return unresolved();
-        if (diagnostics.battleStartIdentified() && diagnostics.battleStartRawClockSec() != null) {
-            return identified(diagnostics.battleStartRawClockSec());
         }
         return unresolved();
     }

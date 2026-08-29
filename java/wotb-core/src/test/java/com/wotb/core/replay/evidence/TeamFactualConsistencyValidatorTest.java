@@ -1,11 +1,11 @@
 package com.wotb.core.replay.evidence;
 
+import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator.FactConflict;
 import com.wotb.core.replay.evidence.TeamGroundingFacts.AliveTransition;
 import com.wotb.core.replay.evidence.TeamGroundingFacts.EvidenceFact;
 import com.wotb.core.replay.evidence.TeamGroundingFacts.GroundingFacts;
 import com.wotb.core.replay.evidence.TeamGroundingFacts.RegionSnapshot;
 import com.wotb.core.replay.evidence.TeamGroundingFacts.Side;
-import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator.FactConflict;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;

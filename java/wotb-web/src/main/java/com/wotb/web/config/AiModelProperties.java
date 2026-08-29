@@ -1,8 +1,8 @@
 package com.wotb.web.config;
 
+import jakarta.validation.constraints.Positive;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
-import jakarta.validation.constraints.Positive;
 
 @ConfigurationProperties(prefix = "wotb.ai")
 @Validated

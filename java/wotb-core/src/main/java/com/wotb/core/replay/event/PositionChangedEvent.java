@@ -7,7 +7,8 @@ package com.wotb.core.replay.event;
  * @param timestamp   时间戳
  * @param entityId    实体 ID
  * @param spaceId     空间 ID
- * @param vehicleId   车辆 ID
+ * @param attachmentParentEntityId 车辆/挂载父实体 ID（0 = 直接世界坐标；非 0 = attached/parented，
+ *                                 本地 (0,0,0) 不得当作世界原点）
  * @param x           X 坐标
  * @param y           Y 坐标
  * @param z           Z 坐标
@@ -17,7 +18,8 @@ package com.wotb.core.replay.event;
  * @param yaw         偏航角
  * @param pitch       俯仰角
  * @param roll        翻滚角
- * @param errorFlag   错误标志
+ * @param trailingStateRaw 尾部原始字节（u8；semantic = UNKNOWN，绝非 onGround/isError，
+ *                         见 type10-movement-transform-closure.md §13）
  * @param confidence  置信度（浮点数值验证后返回 EXACT 或有问题的返回 PARTIAL）
  */
 public record PositionChangedEvent(
@@ -27,7 +29,7 @@ public record PositionChangedEvent(
         DecodeConfidence confidence,
         int entityId,
         int spaceId,
-        int vehicleId,
+        int attachmentParentEntityId,
         float x,
         float y,
         float z,
@@ -37,7 +39,7 @@ public record PositionChangedEvent(
         float yaw,
         float pitch,
         float roll,
-        byte errorFlag
+        int trailingStateRaw
 ) implements ReplayEvent {
 
     public PositionChangedEvent {

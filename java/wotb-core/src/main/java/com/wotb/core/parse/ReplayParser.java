@@ -1,11 +1,11 @@
 package com.wotb.core.parse;
 
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.json.JsonMapper;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import org.springframework.util.StringUtils;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -14,7 +14,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -40,10 +39,14 @@ public final class ReplayParser {
     static final int F_POINTS_EARNED = 32, F_POINTS_SEIZED = 33;
     static final int F_XP = 23, F_CREDITS = 106;
     static final int[] F_ASSIST = {9, 10};
-    static final int F_SURVIVED = 105;          // == -1 表示存活
-    static final int F_DEATH_TIME = 104;        // 死亡时刻(ms; 存活时=0)
+    // PR147 settlement: 11.19 corpus 无 #104 deathTimeMillis。#105 = deathReason(-1=幸存 sentinel)；
+    // #24 = lifeTime(秒)；#25 = killerID(result/entity-id namespace，#301 outer field1)。
+    static final int F_DEATH_REASON = 105;      // deathReason: -1 = 幸存 sentinel; 其它/缺失 = 阵亡
+    static final int F_LIFE_TIME = 24;          // lifeTime(秒): 阵亡=结算死亡秒; 幸存=整场时长
+    static final int F_KILLER = 25;             // killer result/entity-id (非 accountId)
+    static final int F_RESULT_ENTITY = 1;       // #301 outer field1 = result/entity id
     // 名册 PlayerInfo (#201 -> #2)
-    static final int R_NICK = 1, R_PLATOON = 2, R_CLAN = 5, R_RANK = 9;
+    static final int R_NICK = 1, R_PREBATTLE_GROUP = 2, R_CLAN = 5, R_RANK = 9;
     static final int R_TEAM = 3;                // 名册来源队伍（1/2；用于结算阵容完整性校验）
 
     private ReplayParser() {
@@ -68,39 +71,36 @@ public final class ReplayParser {
 
     public static Battle parse(final byte[] replayBytes) throws IOException {
         try {
-            return parse(unzip(replayBytes));
+            return parse(ParsedReplay.read(replayBytes));
         } catch (final IllegalArgumentException | IllegalStateException e) {
             throw new IOException("Invalid replay data: " + e.getMessage(), e);
         }
     }
 
-    private static Battle parse(final Map<String, byte[]> entries) throws IOException {
-        final JsonNode meta;
-        if (entries.containsKey("meta.json")) {
-            final JsonNode parsedMeta = MAPPER.readTree(entries.get("meta.json"));
-            if (parsedMeta == null || !parsedMeta.isObject()) {
-                throw new IOException("Invalid meta.json: expected a JSON object");
+    /** PR162/P0-2: 消费 canonical parse context（归档解压 + settlement 均只一次）。 */
+    public static Battle parse(final ParsedReplay parsed) throws IOException {
+        final Map<String, byte[]> entries = parsed.entries();
+        // PR162/P1-4：meta.json 已由 ParsedReplay 一次解析，这里直接消费，不再各自 readTree。
+        final JsonNode meta = parsed.meta();
+        // PR147 settlement version gate (P0-3): the 11.19/11.18 numeric semantics of #24/#25/#105 and
+        // root2/4/5 are version-scoped. clientVersion 与 settlement facts 都来自共享 parse context
+        // （ParsedReplay，解码一次）。
+        final String clientVersion = parsed.clientVersion();
+        final boolean settlementSchemaAffirmed = SettlementFacts.isAffirmedFamily(clientVersion);
+        final SettlementFacts facts = parsed.settlementFacts();
+        if (facts == null) {
+            if (parsed.battleResultsDat() == null) {
+                throw new IOException("Replay is missing battle_results.dat");
             }
-            meta = parsedMeta;
-        } else {
-            meta = MAPPER.createObjectNode();
+            // 保留既有稳定错误契约：malformed settlement → "Invalid replay data: <cause>"。
+            throw new IOException("Invalid replay data: " + parsed.settlementError());
         }
-        final byte[] dat = entries.get("battle_results.dat");
-        if (dat == null) {
-            throw new IOException("Replay is missing battle_results.dat");
-        }
-
-        final Object pickle = PickleReader.loads(dat);
-        if (!(pickle instanceof Object[] tuple) || tuple.length != 2 || !(tuple[1] instanceof byte[])) {
-            throw new IOException("Invalid battle_results.dat: expected (arenaId, protobufBytes)");
-        }
-        final Object arenaId = tuple[0];
-        final byte[] pb = (byte[]) tuple[1];
-        final Map<Integer, List<Object>> root = Protobuf.decode(pb);
+        final Object arenaId = facts.arenaId();
+        final Map<Integer, List<Object>> root = facts.root();
 
         // ---- 名册 #201 ----
         final Map<Long, String[]> roster = new HashMap<>();   // acc -> [nickname, clan]
-        final Map<Long, Long> platoonByAcc = new HashMap<>();
+        final Map<Long, Long> prebattleGroupByAcc = new HashMap<>();
         final Map<Long, Long> rankByAcc = new HashMap<>();
         final Map<Long, Integer> rosterTeamByAcc = new HashMap<>();  // acc -> 名册队伍(#201→#2→#3)
         final List<Object> rosterEntries = root.getOrDefault(201, List.of());
@@ -119,9 +119,9 @@ public final class ReplayParser {
             if (team instanceof Number) {
                 rosterTeamByAcc.put(acc, ((Number) team).intValue());
             }
-            final Object pl = Protobuf.first(info, R_PLATOON);
+            final Object pl = Protobuf.first(info, R_PREBATTLE_GROUP);
             if (pl instanceof Number) {
-                platoonByAcc.put(acc, ((Number) pl).longValue());
+                prebattleGroupByAcc.put(acc, ((Number) pl).longValue());
             }
             final Object rank = Protobuf.first(info, R_RANK);
             if (rank instanceof Number) {
@@ -135,12 +135,28 @@ public final class ReplayParser {
         if (resultEntries.size() > MAX_PLAYERS_PER_REPLAY) {
             throw new IOException("Replay results exceed player limit");
         }
+        // PR147: field25 killerID 与 #301 outer field1 用同一个 result/entity-id namespace；先收集
+        // result/entity-id -> accountId，再回填 killerAccountId（killerID 绝非 accountId）。
+        final Map<Long, Long> resultToAccount = new HashMap<>();
+        // PR162/P0-2.1: 每个 #301 result 只 decode 一次为中间结构，随后 resultId 映射与 PlayerResult
+        // 都从同一份 decoded structure 构建，避免重复 decode raw bytes。
+        final List<DecodedResult> decodedResults = new ArrayList<>();
         for (final Object rraw : resultEntries) {
             if (!(rraw instanceof byte[] resultBytes)) {
                 throw new IOException("Invalid battle protobuf: field 301 must be length-delimited");
             }
             final Map<Integer, List<Object>> r = Protobuf.decode(resultBytes);
             final Map<Integer, List<Object>> info = Protobuf.message(r, 2);
+            final long resultEntityId = Protobuf.firstLong(r, F_RESULT_ENTITY, 0);
+            final long accountId = Protobuf.firstLong(info, F_ACCOUNT, 0);
+            if (resultEntityId > 0 && accountId > 0) {
+                resultToAccount.put(resultEntityId, accountId);
+            }
+            decodedResults.add(new DecodedResult(r, info));
+        }
+        for (final DecodedResult decoded : decodedResults) {
+            final Map<Integer, List<Object>> r = decoded.r();
+            final Map<Integer, List<Object>> info = decoded.info();
             final PlayerResult pr = new PlayerResult();
             pr.accountId = Protobuf.firstLong(info, F_ACCOUNT, 0);
             pr.team = (int) Protobuf.firstLong(info, F_TEAM, 0);
@@ -164,11 +180,45 @@ public final class ReplayParser {
             pr.victoryPointsSeized = (int) Protobuf.firstLong(info, F_POINTS_SEIZED, 0);
             pr.xp = (int) Protobuf.firstLong(info, F_XP, 0);
             pr.credits = (int) Protobuf.firstLong(info, F_CREDITS, 0);
-            final Object killer = Protobuf.first(info, F_SURVIVED);
-            pr.survived = (killer instanceof Number) && ((Number) killer).longValue() == -1L;
-            pr.deathTimeMillis = Protobuf.firstLong(info, F_DEATH_TIME, 0);
+            // PR147 settlement raw evidence (#24 lifeTime / #25 killer / #105 deathReason / outer field1).
+            pr.settlementResultEntityId = Protobuf.firstLong(r, F_RESULT_ENTITY, 0);
+            pr.settlementLifeTimeSec = Protobuf.firstLong(info, F_LIFE_TIME, 0);
+            final Object killerRaw = Protobuf.first(info, F_KILLER);
+            pr.settlementKillerResultEntityId =
+                    killerRaw instanceof Number ? ((Number) killerRaw).longValue() : null;
+            final Object deathReasonRaw = Protobuf.first(info, F_DEATH_REASON);
+            pr.settlementDeathReasonRaw = deathReasonRaw instanceof Number
+                    ? ((Number) deathReasonRaw).intValue() : null;
+            // survived is derived from deathReason (== -1 survivor sentinel); NOT a survived field.
+            if (settlementSchemaAffirmed) {
+                // Affirmed 11.19/11.18 settlement schema: derive the concrete survivor/dead + death-time
+                // conclusion from the proven numeric semantics (#105 deathReason / #24 lifeTime).
+                pr.survived = pr.settlementDeathReasonRaw != null
+                        && pr.settlementDeathReasonRaw == -1;
+                // deathTimeMillis = canonical settlement death ms (derived from field24 lifeTime; #104
+                // does not exist in 11.19). Survived = 0.
+                final long lifeMs = pr.settlementLifeTimeSec > 0
+                        ? Math.round(pr.settlementLifeTimeSec * 1000.0) : 0L;
+                pr.deathTimeMillis = pr.survived ? 0L : lifeMs;
+            } else {
+                // Unknown/future version: settlement numeric semantics NOT affirmed (P0-3). Raw-preserve
+                // the #24/#25/#105 fields above but fail-closed on the derived conclusion — never turn a
+                // missing/unsupported deathReason into an affirmed "dead" or a fabricated death time.
+                pr.survived = false;
+                pr.deathTimeMillis = 0L;
+            }
             pr.raw = info;
             players.add(pr);
+        }
+        // Map killer result/entity-id -> killer accountId (PR147 namespace). Only under an affirmed
+        // settlement schema; an unknown/future version's #25 is raw-preserved and never mis-attributed.
+        if (settlementSchemaAffirmed) {
+            for (final PlayerResult pr : players) {
+                if (pr.settlementKillerResultEntityId != null) {
+                    final Long ka = resultToAccount.get(pr.settlementKillerResultEntityId);
+                    pr.killerAccountId = ka != null && ka > 0 ? ka : null;
+                }
+            }
         }
 
         // 合并名册
@@ -177,7 +227,7 @@ public final class ReplayParser {
             pr.nickname = (info != null && StringUtils.hasText(info[0]))
                     ? info[0] : String.valueOf(pr.accountId);
             pr.clan = (info != null && info[1] != null) ? info[1] : "";
-            pr.platoonId = platoonByAcc.get(pr.accountId);
+            pr.prebattleGroupId = prebattleGroupByAcc.get(pr.accountId);
             pr.rank = rankByAcc.get(pr.accountId);
         }
 
@@ -185,11 +235,24 @@ public final class ReplayParser {
         battle.arenaId = String.valueOf(arenaId);
         final Object win = Protobuf.first(root, 3);
         battle.winnerTeam = (win instanceof Number) ? ((Number) win).intValue() : null;
+        // PR147 settlement root facts (RAW preserved): root2=battle unix ts, root4=finishReason, root5=duration.
+        battle.settlementStartTime = facts.battleStartTimestampSec();
+        battle.settlementFinishReasonRaw = facts.finishReasonRaw();
+        battle.settlementDurationSec = facts.settlementDurationSec();
         battle.version = text(meta, "version");
         battle.mapName = text(meta, "mapName");
-        battle.durationS = meta.hasNonNull("battleDuration") ? Math.min(meta.get("battleDuration").asDouble(), 420) : null;
-        final Long startTime = parseLong(text(meta, "battleStartTime"));
-        battle.startTime = (startTime != null && startTime > 1388534400L) ? startTime : null;
+        // Settlement duration/timestamp are the primary authority (root5/root2); meta only a fallback/cross-check.
+        final Double metaDur = meta.hasNonNull("battleDuration") ? meta.get("battleDuration").asDouble() : null;
+        battle.durationS = null;
+        if (battle.settlementDurationSec != null && battle.settlementDurationSec > 0) {
+            battle.durationS = Math.min(battle.settlementDurationSec, 420);
+        } else if (metaDur != null) {
+            battle.durationS = Math.min(metaDur, 420);
+        }
+        final Long metaStart = parseLong(text(meta, "battleStartTime"));
+        battle.startTime = (battle.settlementStartTime != null && battle.settlementStartTime > 1388534400L)
+                ? battle.settlementStartTime
+                : (metaStart != null && metaStart > 1388534400L ? metaStart : null);
         battle.recorder = resolveRecorderNickname(text(meta, "playerName"), players);
         battle.recorderVehicle = text(meta, "playerVehicleName");
         battle.arenaBonusType = meta.hasNonNull("arenaBonusType") ? meta.get("arenaBonusType").asInt() : null;
@@ -208,73 +271,32 @@ public final class ReplayParser {
         battle.rosterComplete = resolveRosterComplete(roster.keySet(), rosterTeamByAcc, players);
 
         // ---- data.wotreplay 事件流 ----
-        final byte[] eventData = entries.get("data.wotreplay");
-        List<EventStreamReader.ParsedPacket> esPackets = List.of();
-        if (eventData != null) {
-            try {
-                final EventStreamReader.EventStream es = EventStreamReader.read(eventData);
-                battle.clientVersion = es.clientVersion;
-                esPackets = es.packets;
-            } catch (Exception ignored) {
-            }
-        }
+        // clientVersion 已在方法开头读取（header 内权威版本），这里仅回填到 Battle。
+        // ReplayParser 之前基于 direct-damage 累计达到 settlement damageReceived 阈值来生成
+        // PlayerResult.killVictims 的逻辑已移除：damageReceived 不是本局最大 HP，也不能证明 lethal
+        // boundary / killer identity。击杀归因必须由 canonical terminal lifecycle + 可靠 damage backing
+        // 产生；无法证明则 UNKNOWN。
+        battle.clientVersion = clientVersion == null ? "" : clientVersion;
 
-        // 存活时间: 存活=战斗时长, 阵亡=4 层 fallback
+
+        // 存活时间: 存活=战斗时长；阵亡=senttlement field24 lifeTime 或 UNKNOWN=0。
+        // legacy 启发式（damage-threshold / EntityLeave / Position 停止）不得写入 PlayerResult。
+        // 死亡 authority 链由 DefaultReplayProcessingFacade 的 DeathTimeReconciler 继续收口：
+        // LIVE_EXACT → SETTLEMENT_SECOND → UNKNOWN；settlement 只提供 SETTLEMENT_SECOND (±0.5s) 证据。
         final double bd = battle.durationS != null ? battle.durationS : 0;
-        Map<Long, Double> deathTimesByDamage = Map.of();
-        Map<Long, Double> deathTimesByEntityLeave = Map.of();
-        Map<Long, Double> deathTimesByPosition = Map.of();
-        if (!esPackets.isEmpty()) {
-            // 第 1 层: data.wotreplay 事件流 Type 8 EntityMethod 伤害子类型 3 (直接HP伤害)
-            final Map<Integer, Long> e2a = EventStreamReader.extractEntityToAccountMap(esPackets);
-            final Map<Long, Integer> threshold = new HashMap<>();
-            for (final PlayerResult pr : players) {
-                // 用 damageReceived 作阈值: 阵亡玩家所受总伤害 ≈ 坦克最大 HP
-                if (!pr.survived && pr.damageReceived > 0) {
-                    threshold.put(pr.accountId, pr.damageReceived);
-                }
-            }
-            final Map<Long, PlayerResult> playersByAccount = players.stream()
-                    .collect(Collectors.toMap(player -> player.accountId,
-                            Function.identity(), (first, ignored) -> first));
-            final Map<Long, List<EventStreamReader.KillVictimDamage>> killVictims =
-                    EventStreamReader.extractKillVictims(esPackets, e2a, threshold);
-            for (final Map.Entry<Long, List<EventStreamReader.KillVictimDamage>> entry : killVictims.entrySet()) {
-                final PlayerResult killer = playersByAccount.get(entry.getKey());
-                if (killer == null) {
-                    continue;
-                }
-                for (final EventStreamReader.KillVictimDamage victim : entry.getValue()) {
-                    killer.killVictims.add(new com.wotb.core.model.KillVictim(
-                            victim.victimAccountId(), victim.damage(), victim.penetrations()));
-                }
-            }
-            deathTimesByDamage = EventStreamReader.estimateDeathTimesByDamage(esPackets, e2a, threshold, bd);
-
-            deathTimesByEntityLeave = EventStreamReader.estimateDeathTimesByEntityLeaves(esPackets, bd);
-            deathTimesByPosition = EventStreamReader.estimateDeathTimesByPositions(esPackets, bd);
-        }
         for (final PlayerResult pr : players) {
             if (pr.survived) {
                 pr.survivalTimeSec = bd;
             } else {
-                double st = pr.deathTimeMillis / 1000.0;
-                if (st <= 0) {
-                    st = deathTimesByDamage.getOrDefault(pr.accountId, 0.0);
-                }
-                if (st <= 0) {
-                    final double el = deathTimesByEntityLeave.getOrDefault(pr.accountId, 0.0);
-                    final double pos = deathTimesByPosition.getOrDefault(pr.accountId, 0.0);
-                    // EntityLeave 常出现假阳性(临时离场而非阵亡), 若 Position 数据显著晚于
-                    // EntityLeave 且 >0, 取 Position 作为更可靠的死亡时间
-                    if (el > 0 && pos > 0 && pos > el + 5.0) {
-                        st = pos;
-                    } else if (el > 0) {
-                        st = el;
-                    } else {
-                        st = pos;
-                    }
-                }
+                // Death authority fail-closed: only an affirmed settlement schema produces
+                // SETTLEMENT_SECOND (lifeTime is the proven settlement death second). An unknown/future
+                // version is never given a fabricated death time — consumers must honor UNKNOWN.
+                final boolean settlementDeathAffirmed = settlementSchemaAffirmed
+                        && pr.settlementLifeTimeSec > 0;
+                final double st = settlementDeathAffirmed ? pr.settlementLifeTimeSec : 0;
+                pr.deathTimeSource = settlementDeathAffirmed
+                        ? com.wotb.core.model.DeathTimeSource.SETTLEMENT_SECOND
+                        : com.wotb.core.model.DeathTimeSource.UNKNOWN;
                 pr.survivalTimeSec = st > 0 ? Math.min(st, bd) : 0;
             }
         }
@@ -401,7 +423,10 @@ public final class ReplayParser {
         }
     }
 
-    private static Map<String, byte[]> unzip(final byte[] data) throws IOException {
-        return ReplayArchiveReader.read(data);
+    /** PR162/P0-2.1：单条 #301 result 的一次解码结果（r=外层消息，info=#2 单场明细子消息）。 */
+    private record DecodedResult(
+            Map<Integer, List<Object>> r,
+            Map<Integer, List<Object>> info
+    ) {
     }
 }

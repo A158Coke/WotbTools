@@ -1,15 +1,13 @@
 package com.wotb.core.league;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
 import java.util.List;
 
+import static com.wotb.core.league.LeagueTestBattles.defaultSevenVsSeven;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static com.wotb.core.league.LeagueTestBattles.defaultSevenVsSeven;
 
 /** League Rating 完整性门槛测试。 */
 class LeagueRatingValidatorTest {

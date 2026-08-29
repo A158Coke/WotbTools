@@ -1,11 +1,11 @@
 package com.wotb.web.mark3.service;
 
-import com.wotb.web.replayfile.ReplayDownload;
-import com.wotb.web.replayfile.ReplayHashLock;
 import com.wotb.web.mark3.dto.Mark3ReplayEvidenceDto;
 import com.wotb.web.mark3.entity.Mark3ReplayEvidence;
 import com.wotb.web.mark3.repository.Mark3ReplayEvidenceRepository;
 import com.wotb.web.mark3.repository.Mark3SubmissionRepository;
+import com.wotb.web.replayfile.ReplayDownload;
+import com.wotb.web.replayfile.ReplayHashLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;

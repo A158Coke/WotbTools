@@ -1,14 +1,11 @@
 package com.wotb.web.mark3.service;
 
-import com.wotb.web.replayfile.ReplayFileNames;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.TankInfo;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.ref.VehicleCodes;
-import com.wotb.web.hof.service.HallOfFameUploadService;
-import com.wotb.web.replayfile.ReplayHashLock;
 import com.wotb.web.mark3.dto.Mark3AdminDetailDto;
 import com.wotb.web.mark3.dto.Mark3AdminPageDto;
 import com.wotb.web.mark3.dto.Mark3CreateResult;
@@ -20,6 +17,8 @@ import com.wotb.web.mark3.enums.Mark3Status;
 import com.wotb.web.mark3.repository.Mark3SubmissionRepository;
 import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.replay.service.ReplayCapacityLimiter;
+import com.wotb.web.replayfile.ReplayFileNames;
+import com.wotb.web.replayfile.ReplayHashLock;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
 import org.springframework.dao.DataIntegrityViolationException;

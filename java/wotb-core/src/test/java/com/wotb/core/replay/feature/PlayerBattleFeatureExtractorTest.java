@@ -1,22 +1,21 @@
 package com.wotb.core.replay.feature;
 
-import com.wotb.core.model.Battle;
-import com.wotb.core.replay.processing.RecorderEntityMapping;
-import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.reconstruction.VehicleState;
-import com.wotb.core.replay.reconstruction.BattleLifecycle;
+import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
 
-import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 18.5: PlayerBattleFeatureExtractor 测试。
@@ -30,7 +29,7 @@ class PlayerBattleFeatureExtractorTest {
 
     private static PositionChangedEvent pos(int seq, float time, int entityId, float x, float z) {
         return new PositionChangedEvent(seq, new ReplayTimestamp(time, null), 10, DecodeConfidence.EXACT,
-                entityId, 0, 0, x, 0, z, 0, 0, 0, 0, 0, 0, (byte) 0);
+                entityId, 0, 0, x, 0, z, 0, 0, 0, 0, 0, 0, 0);
     }
 
     private static DamageEvent dmg(int seq, float time, int attacker, int victim, int damage) {

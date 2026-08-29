@@ -1,41 +1,39 @@
 package com.wotb.web.replay.ai;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
 import com.wotb.core.model.Battle;
-import com.wotb.core.replay.processing.AiNotConfiguredException;
-import com.wotb.core.replay.processing.FriendlyEnemyResult;
-import com.wotb.core.replay.processing.FriendlyEnemyResult.TeamBattleWinner;
-import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
 import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator;
 import com.wotb.core.replay.evidence.TeamGroundingFacts;
 import com.wotb.core.replay.evidence.TeamReviewEnvelope;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
+import com.wotb.core.replay.processing.AiNotConfiguredException;
+import com.wotb.core.replay.processing.FriendlyEnemyResult;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.TeamBattleWinner;
+import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
 import com.wotb.core.replay.timeline.TimelinePerspective;
-
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
-import com.wotb.web.replay.ai.gateway.AiChatResponse;
-import com.wotb.web.replay.ai.gateway.AiResponseFormat;
-import com.wotb.web.replay.ai.gateway.AiRequestContext;
-import com.wotb.web.replay.ai.gateway.StreamConsumer;
-import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
-import com.wotb.web.replay.exception.AiTimelineUnusableException;
+import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
+import com.wotb.web.replay.ai.gateway.AiRequestContext;
+import com.wotb.web.replay.ai.gateway.AiResponseFormat;
+import com.wotb.web.replay.ai.gateway.AiUpstreamException;
+import com.wotb.web.replay.ai.gateway.StreamConsumer;
+import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.LongSupplier;
 
 /**

@@ -189,6 +189,11 @@ spectator 的 extra（如 #201=4 / #301=3）时不得视为完整。League Ratin
 **结论**：玩家死亡时刻（`PlayerResultFormat#deathSec`，供 playback 死亡 ✕ 与 AI/阶段消费）只信
 可归属到同一实体/账号的可靠死亡证据，优先级：
 
+> **⚠️ 本段为 research 历史记录，非 production contract。** PR147/PR162 已取代：#104 deathTimeMillis
+> 在 11.19 corpus 不存在；权威链为 `LIVE_EXACT`（回放 live exact）→ `SETTLEMENT_SECOND`
+> （由 settlement field24 lifeTime 派生）→ `UNKNOWN`（survivalTimeSec=0，绝不伪造）。
+> 现行契约见 docs/reference/replay-parsed-fields.md 与 docs/reference/replay-data.md。
+
 ```
 1. battle_results 结算 deathTimeMillis（proto #104，游戏权威；>0 时直接采用，不校准）
 2. 重建事件流 EXACT alive=false（type-7 propId=3 HP=0 / 0xFFFD 死亡 sentinel，同实体→账号映射，

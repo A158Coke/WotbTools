@@ -2,11 +2,11 @@ package com.wotb.core.replay.timeline;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator;
+import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator.FactConflict;
 import com.wotb.core.replay.evidence.TeamGroundingFacts;
 import com.wotb.core.replay.evidence.TeamReviewEnvelope;
-import com.wotb.core.replay.evidence.TeamFactualConsistencyValidator.FactConflict;
-import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import com.wotb.core.util.PlayerResultFormat;

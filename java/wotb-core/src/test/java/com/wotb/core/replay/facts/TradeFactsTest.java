@@ -1,5 +1,6 @@
 package com.wotb.core.replay.facts;
 
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.model.PlayerResult;
 import org.junit.jupiter.api.Test;
 
@@ -17,6 +18,13 @@ class TradeFactsTest {
         p.team = team;
         p.survived = survived;
         p.survivalTimeSec = survivalTimeSec;
+        // 已知死亡（survivalTimeSec>0）携带 canonical SETTLEMENT_SECOND 证据；dead=0=UNKNOWN。
+        if (!survived && survivalTimeSec > 0) {
+            p.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
+            p.deathTimeMillis = Math.round(survivalTimeSec * 1000.0);
+        } else if (!survived) {
+            p.deathTimeSource = DeathTimeSource.UNKNOWN;
+        }
         return p;
     }
 
@@ -90,13 +98,22 @@ class TradeFactsTest {
     }
 
     @Test
-    void tradeWindowBoundaryInclusiveFromSameTimestampToPlusFiveSeconds() {
-        // 玩家死亡时刻 T=100：enemy ∈ [100.0, 105.0]（边界包含）都算 trade
-        for (final double enemyDeath : new double[]{100.0, 100.001, 102.5, 104.999, 105.0}) {
+    void tradeWindowDefinitelyInsidePrecisionInterval() {
+        // PR147 §C precision-aware：SETTLEMENT_SECOND ±0.5s 量化。a=100 → [99.5,100.5]。
+        // 确定性满足窗口（0 ≤ e−p ≤ 5，∀ 真实组合）的敌方 rep 区间约为 [101, 104]：
+        //   eMin ≥ pMax(100.5) 且 eMax ≤ pMin+5(104.5)。边界附近（同刻 / +4.999 / +5.0）为
+        //   ambiguous（某些组合不满足）→ fail-closed 0。
+        for (final double enemyDeath : new double[]{101.0, 102.5, 103.0, 104.0}) {
             final PlayerResult a = player(1001L, 1, false, 100);
             final PlayerResult b = player(2001L, 2, false, enemyDeath);
             assertEquals(1, TradeFacts.tradedDeaths(a, List.of(a, b)),
-                    "T=100, enemy=" + enemyDeath + " 应在 [0,+5s] 窗口内（边界包含）");
+                    "T=100, enemy=" + enemyDeath + " 应确定性满足 trade 窗口");
+        }
+        for (final double enemyDeath : new double[]{100.0, 100.001, 104.999, 105.0}) {
+            final PlayerResult a = player(1001L, 1, false, 100);
+            final PlayerResult b = player(2001L, 2, false, enemyDeath);
+            assertEquals(0, TradeFacts.tradedDeaths(a, List.of(a, b)),
+                    "T=100, enemy=" + enemyDeath + " 为 ambiguous（±0.5s 量化）→ fail-closed 0");
         }
     }
 

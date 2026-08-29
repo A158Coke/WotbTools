@@ -1,22 +1,18 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.ai.AiTokenEstimator;
-import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
-import com.wotb.core.replay.processing.BatchAnalyzer;
-import com.wotb.core.replay.processing.ReplayIdentity;
-import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
-import com.wotb.core.replay.processing.ReplayProcessingResult;
-import com.wotb.core.replay.processing.ReplayProcessingStatus;
-import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.model.Battle;
+import com.wotb.core.model.DeathTimeSource;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
-import com.wotb.core.replay.feature.CanonicalMapPosition;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
+import com.wotb.core.replay.feature.CanonicalMapPosition;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
@@ -25,14 +21,19 @@ import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamEngagementSummary;
 import com.wotb.core.replay.feature.TeamFeatureCoverage;
 import com.wotb.core.replay.feature.TeamFormationPhase;
-import com.wotb.web.replay.ai.gateway.AiChatGateway;
-import com.wotb.web.replay.ai.gateway.AiChatRequest;
-import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
+import com.wotb.core.replay.processing.BatchAnalyzer;
+import com.wotb.core.replay.processing.ReplayIdentity;
+import com.wotb.core.replay.processing.ReplayProcessingCapabilities;
+import com.wotb.core.replay.processing.ReplayProcessingResult;
+import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.Vector3;
+import com.wotb.web.replay.ai.gateway.AiChatGateway;
+import com.wotb.web.replay.ai.gateway.AiChatRequest;
+import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -192,7 +193,7 @@ class TeamAiPromptBuilderTest {
                         DecodeConfidence.EXACT, 0, 0, 20_001L, 10_001L, 300, false));
         final SingleTeamBattleAnalysisContext context = new SingleTeamBattleAnalysisContext(
                 "unit-A", null, "f.wotbreplay", null, battle, 1, features,
-                new ReplayCoverage(false, 0, 0, 0, 0, 0, 0.0, Map.of()),
+                new ReplayCoverage(0, 0, 0, 0, 0, 0.0, Map.of()),
                 List.of(), recon);
 
         final String content = TeamAiPromptBuilder.single(context).content();
@@ -204,7 +205,7 @@ class TeamAiPromptBuilderTest {
         // 事件流覆盖不全时抑制数字（与 OBSERVED_EVENT_SUBSET 同口径）
         final SingleTeamBattleAnalysisContext partial = new SingleTeamBattleAnalysisContext(
                 "unit-A", null, "f.wotbreplay", null, battle, 1, features,
-                new ReplayCoverage(false, 0, 0, 0, 0, 0, 0.0, Map.of()),
+                new ReplayCoverage(0, 0, 0, 0, 0, 0.0, Map.of()),
                 List.of("OBSERVED_DAMAGE_IS_PARTIAL"), recon);
         final String partialContent = TeamAiPromptBuilder.single(partial).content();
         assertTrue(partialContent.contains("MEMBER_DAMAGE_RECEIVED_WINDOWS ===\n"
@@ -327,7 +328,7 @@ class TeamAiPromptBuilderTest {
                 TeamFeatureCoverage.empty(), List.of(), true);
         final SingleTeamBattleAnalysisContext context = new SingleTeamBattleAnalysisContext(
                 "unit-A", null, "f.wotbreplay", null, battle, 1, features,
-                new ReplayCoverage(false, 0, 0, 0, 0, 0, 0.0, Map.of()), List.of(), null);
+                new ReplayCoverage(0, 0, 0, 0, 0, 0.0, Map.of()), List.of(), null);
 
         final String content = TeamAiPromptBuilder.single(context).content();
 
@@ -573,6 +574,7 @@ class TeamAiPromptBuilderTest {
         allyKnown.survived = false;
         allyKnown.deathTimeMillis = 62_000L;
         allyKnown.survivalTimeSec = 62.0;
+        allyKnown.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
         final PlayerResult allyUnknown = new PlayerResult();
         allyUnknown.accountId = 10_002L;
         allyUnknown.nickname = "AllyUnknown";
@@ -762,8 +764,7 @@ class TeamAiPromptBuilderTest {
                 1, List.of(), aggregate, TeamObservedAggregate.empty(),
                 List.of(), List.of(engagement), List.of(), List.of(),
                 TeamFeatureCoverage.empty(), List.of(), true);
-        final ReplayCoverage coverage = new ReplayCoverage(
-                false, 0, 0, 0, 0, 0, 0.0, Map.of());
+        final ReplayCoverage coverage = new ReplayCoverage(0, 0, 0, 0, 0, 0.0, Map.of());
 
         // partial：TEAM_ENGAGEMENTS 不得输出 dealtSubset/receivedSubset 等事件流伤害数字
         final SingleTeamBattleAnalysisContext partial = new SingleTeamBattleAnalysisContext(
@@ -833,6 +834,7 @@ class TeamAiPromptBuilderTest {
             player.team = 1;
             player.survived = false;
             player.deathTimeMillis = 40_000L + index * 5_000L;
+        player.deathTimeSource = DeathTimeSource.SETTLEMENT_SECOND;
             players.add(player);
         }
         for (int index = 0; index < 7; index++) {

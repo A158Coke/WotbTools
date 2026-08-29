@@ -3,11 +3,11 @@ package com.wotb.web.user.service;
 import com.wotb.web.user.dto.UserNotificationDto;
 import com.wotb.web.user.entity.UserNotification;
 import org.springframework.stereotype.Service;
-
-import java.util.Map;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
+
+import java.util.Map;
 
 @Service
 public class UserNotificationMapper {

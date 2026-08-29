@@ -1,16 +1,18 @@
-package com.wotb.core.parse;
+package com.wotb.core.parse.probe;
+
+import com.wotb.core.parse.PickleDecoder;
+import com.wotb.core.parse.Protobuf;
 
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * 事件流类型提取器：EntityLeave/Position/updateArena/EntityMethod 伤害与击杀归因提取，
+ * 事件流类型提取器：EntityLeave/Position/updateArena/EntityMethod 伤害提取，
  * 含 protobuf 嵌套解析。
  * <p>从 {@link EventStreamReader} 拆出，纯静态工具类。</p>
  */
@@ -47,19 +49,20 @@ final class ReplayEventExtractors {
 
     /**
      * 提取所有 Position 数据。
-     * BigWorld 格式含 space_id: entityId(i32) + spaceId(i32) + vehicleId(i32)
-     * + position(3xf32) + positionError(3xf32) + yaw/pitch/roll(3xf32) + is_error(i8) = 49B。
+     * BigWorld 格式含 space_id: entityId(i32) + spaceId(i32) + attachmentParentEntityId(i32)
+     * + position(3xf32) + positionError(3xf32) + yaw/pitch/roll(3xf32) + trailingStateRaw(u8) = 49B。
+     * trailingStateRaw semantic = UNKNOWN（绝非 onGround / is_error，type10 closure §13）。
      */
     public static List<EventStreamReader.PositionData> extractPositions(List<EventStreamReader.ParsedPacket> packets) {
         final List<EventStreamReader.PositionData> positions = new ArrayList<>();
         for (final EventStreamReader.ParsedPacket pkt : packets) {
-            if (pkt.type != TYPE_POSITION || pkt.payload.length < 45) {
+            if (pkt.type != TYPE_POSITION || pkt.payload.length < 49) {
                 continue;
             }
             final byte[] pl = pkt.payload;
             final int eid = ReplayPacketParser.readI32LE(pl, 0);
             final int sid = ReplayPacketParser.readI32LE(pl, 4);
-            final int vid = ReplayPacketParser.readI32LE(pl, 8);
+            final int attachmentParentEntityId = ReplayPacketParser.readI32LE(pl, 8);
             final float x = Float.intBitsToFloat(ReplayPacketParser.readU32LE(pl, 12));
             final float y = Float.intBitsToFloat(ReplayPacketParser.readU32LE(pl, 16));
             final float z = Float.intBitsToFloat(ReplayPacketParser.readU32LE(pl, 20));
@@ -69,7 +72,7 @@ final class ReplayEventExtractors {
             if (Math.abs(x) > 5000 || Math.abs(z) > 5000 || Math.abs(y) > 200) {
                 continue;
             }
-            positions.add(new EventStreamReader.PositionData(pkt.clockSecs, eid, sid, vid,
+            positions.add(new EventStreamReader.PositionData(pkt.clockSecs, eid, sid, attachmentParentEntityId,
                     x, y, z, yaw, pitch, roll));
         }
         return positions;
@@ -234,68 +237,6 @@ final class ReplayEventExtractors {
         return events;
     }
 
-    public static Map<Long, List<EventStreamReader.KillVictimDamage>> extractKillVictims(
-            final List<EventStreamReader.ParsedPacket> packets,
-            final Map<Integer, Long> entityToAccount,
-            final Map<Long, Integer> accountToThreshold) {
-        final List<EventStreamReader.DirectDamageEvent> events = extractDirectDamageEvents(packets, entityToAccount);
-        events.sort(Comparator.comparingDouble(EventStreamReader.DirectDamageEvent::clockSecs));
-
-        final Map<Long, Integer> directTotalByVictim = new HashMap<>();
-        for (final EventStreamReader.DirectDamageEvent event : events) {
-            directTotalByVictim.merge(event.victimAccountId(), event.damage(), Integer::sum);
-        }
-
-        final Map<Long, Integer> cumulativeByVictim = new HashMap<>();
-        final Map<DamagePair, DamageBucket> damageByPair = new HashMap<>();
-        final Map<Long, List<EventStreamReader.KillVictimDamage>> victimsByKiller = new HashMap<>();
-        final Set<Long> completedVictims = new HashSet<>();
-        for (final EventStreamReader.DirectDamageEvent event : events) {
-            final long victimAccountId = event.victimAccountId();
-            if (completedVictims.contains(victimAccountId)) {
-                continue;
-            }
-
-            final int previousDamage = cumulativeByVictim.getOrDefault(victimAccountId, 0);
-            final int nextDamage = previousDamage + event.damage();
-            cumulativeByVictim.put(victimAccountId, nextDamage);
-
-            if (event.attackerAccountId() != victimAccountId) {
-                final DamagePair pair = new DamagePair(event.attackerAccountId(), victimAccountId);
-                final DamageBucket bucket = damageByPair.computeIfAbsent(pair, ignored -> new DamageBucket());
-                bucket.damage += event.damage();
-                bucket.penetrations++;
-            }
-
-            final Integer receivedThreshold = accountToThreshold.get(victimAccountId);
-            if (receivedThreshold == null || receivedThreshold <= 0) {
-                continue;
-            }
-            final int directTotal = directTotalByVictim.getOrDefault(victimAccountId, 0);
-            if (directTotal < receivedThreshold) {
-                continue;
-            }
-            final int threshold = receivedThreshold;
-            if (threshold <= 0 || previousDamage >= threshold || nextDamage < threshold) {
-                continue;
-            }
-            completedVictims.add(victimAccountId);
-
-            final long killerAccountId = event.attackerAccountId();
-            if (killerAccountId == victimAccountId) {
-                continue;
-            }
-            final DamageBucket bucket = damageByPair.get(new DamagePair(killerAccountId, victimAccountId));
-            if (bucket == null || bucket.damage <= 0 || bucket.penetrations <= 0) {
-                continue;
-            }
-            victimsByKiller.computeIfAbsent(killerAccountId, ignored -> new ArrayList<>())
-                    .add(new EventStreamReader.KillVictimDamage(killerAccountId, victimAccountId,
-                            bucket.damage, bucket.penetrations));
-        }
-        return victimsByKiller;
-    }
-
     private static EventStreamReader.DirectDamageEvent parseDirectDamageEvent(
             final EventStreamReader.ParsedPacket packet,
             final Map<Integer, Long> entityToAccount) {
@@ -323,14 +264,6 @@ final class ReplayEventExtractors {
             return null;
         }
         return new EventStreamReader.DirectDamageEvent(packet.clockSecs, attackerAccountId, victimAccountId, damage);
-    }
-
-    private record DamagePair(long attackerAccountId, long victimAccountId) {
-    }
-
-    private static final class DamageBucket {
-        private int damage;
-        private int penetrations;
     }
 
     // ---- EntityMethod 解析 ----

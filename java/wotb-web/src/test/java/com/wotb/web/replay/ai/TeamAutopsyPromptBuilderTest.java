@@ -1,29 +1,29 @@
 package com.wotb.web.replay.ai;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import com.wotb.core.replay.processing.FriendlyEnemyResult.Winner;
-import com.wotb.core.replay.processing.FriendlyEnemyResult.TeamBattleWinner;
-import com.wotb.core.replay.processing.FriendlyEnemyResult.WinnerSource;
-import com.wotb.core.replay.processing.FriendlyEnemyResult.PointsEndReason;
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.EntryHpSource;
-import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DamageEvent;
-import com.wotb.core.replay.event.ParticipantMappingEvent;
-import com.wotb.core.replay.event.ReplayEvent;
-import com.wotb.core.replay.event.HealthChangedEvent;
-import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.HealthChangedEvent;
+import com.wotb.core.replay.event.ParticipantMappingEvent;
+import com.wotb.core.replay.event.PositionChangedEvent;
+import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.feature.TeamAutopsyStats;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.PointsEndReason;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.TeamBattleWinner;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.Winner;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.WinnerSource;
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TeamAutopsyPromptBuilderTest {
 

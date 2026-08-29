@@ -117,13 +117,25 @@ public final class ReplayDisplayNames {
         return hp != null && hp > 0 ? String.valueOf(hp) : "";
     }
 
-    /** 结构化车辆满血量数值（tankopedia maxHp）；缺失或 ≤0 返回 null（供掉血百分比计算）。 */
+    /**
+     * 结构化车辆 tankopedia 满血量数值（legacy 名 {@code tankMaxHp}）。
+     *
+     * <p><b>契约（计划 §B6）</b>：该值只是 {@code BASE_REFERENCE}——tankopedia base HP，
+     * 不是本场 actualStartingHp / actualMaxHp / currentHp。回放实测 HP（含装备/物资加成）
+     * 可能高于 base（PR147 actual-hp-type5-settlement.md）。新代码应使用
+     * {@link #tankBaseHpValue}（同值、语义明确的名称）；不得把本值当本场实际容量。</p>
+     */
     public static Integer tankMaxHpValue(final long tankId) {
         if (tankId <= 0) {
             return null;
         }
         final Integer hp = TANKOPEDIA.info(tankId).maxHp();
         return hp != null && hp > 0 ? hp : null;
+    }
+
+    /** 车辆 tankopedia base HP（BASE_REFERENCE，不是本场 actual capacity；同 {@link #tankMaxHpValue}）。 */
+    public static Integer tankBaseHpValue(final long tankId) {
+        return tankMaxHpValue(tankId);
     }
 
     /** 手工维护的每辆车知识点，取自 tankopedia 的 {@code extraInfo}；空串时不输出。 */

@@ -6,14 +6,14 @@ import com.wotb.core.ai.PlannedPrompt;
 import com.wotb.core.ai.SingleReplayPromptPlanner;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.FriendlyEnemyResult;
-import com.wotb.core.replay.processing.FriendlyEnemyResult.Winner;
-import com.wotb.core.replay.processing.PlayerSideResolver;
-import com.wotb.core.replay.processing.PlayerSideResolver.Side;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
+import com.wotb.core.replay.processing.FriendlyEnemyResult;
+import com.wotb.core.replay.processing.FriendlyEnemyResult.Winner;
+import com.wotb.core.replay.processing.PlayerSideResolver;
+import com.wotb.core.replay.processing.PlayerSideResolver.Side;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.timeline.BattleTimelineBuilder;
 import com.wotb.core.replay.timeline.BattleTimelineResult;
@@ -253,7 +253,7 @@ final class PlayerSummaryBuilder {
         final StringBuilder sb = new StringBuilder(4096);
         final var battle = ctx.battle();
         final var features = ctx.features();
-        // 基础 summary 构建期就统一读取 partial 门禁：killVictims 等事件流观测伤害段一并抑制
+        // 基础 summary 构建期就统一读取 partial 门禁：事件流观测伤害段一并抑制
         final boolean observedDamagePartial = hasObservedDamagePartial(ctx);
 
         int authoritativeDealt = 0;

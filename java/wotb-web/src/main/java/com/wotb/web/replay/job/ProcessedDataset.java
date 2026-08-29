@@ -14,7 +14,7 @@ import java.util.List;
  * 绝不再次执行会修改 Battle facts 的 enrichment（缓存 raw parser 结果替代 authoritative
  * Battle 会丢失 reconstruction/HP/死亡时间校准，导致 UI 与 Excel 数值漂移）。</p>
  *
- * <p><b>heap 契约</b>：Battle 仅含结算战绩（players + killVictims 等），不携带 reconstruction
+ * <p><b>heap 契约</b>：Battle 仅含结算战绩（players 等），不携带 reconstruction
  * 事件流（ReplayReconstruction 在处理后即可 GC）；34/50 场 dataset 的 heap 成本远低于完整
  * 重建对象，消费者不得反向引入重建事件流。</p>
  *

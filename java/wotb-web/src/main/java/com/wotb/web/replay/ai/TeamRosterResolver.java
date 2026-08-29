@@ -2,10 +2,10 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.replay.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
+import com.wotb.core.replay.processing.TeamPerspectiveLabelResolver;
 
 import java.util.ArrayList;
 import java.util.Collections;

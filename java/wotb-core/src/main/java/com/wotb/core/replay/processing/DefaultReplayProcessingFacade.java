@@ -3,14 +3,15 @@ package com.wotb.core.replay.processing;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
+import com.wotb.core.parse.ParsedReplay;
 import com.wotb.core.parse.ReplayParser;
-import com.wotb.core.util.PlayerResultFormat;
-import com.wotb.core.replay.evidence.ObservedMaxHp;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
+import com.wotb.core.replay.evidence.ObservedMaxHp;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionContext;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
+import com.wotb.core.util.PlayerResultFormat;
 import org.springframework.util.StringUtils;
 
 import java.security.MessageDigest;
@@ -68,12 +69,27 @@ public class DefaultReplayProcessingFacade {
         final String contentHash = sha256(input.bytes());
         final byte[] data = input.bytes();
 
+        // PR162/P0-2: 归档解压 + settlement + header 版本只解析一次，供战绩解析与重建共享。
+        final ParsedReplay parsed;
+        try {
+            parsed = ParsedReplay.read(data);
+        } catch (Exception e) {
+            return new ReplayProcessingResult(
+                    input.name(), ReplayProcessingStatus.FAILED,
+                    new ReplayIdentity(contentHash, null, null, null, null, null),
+                    null, null,
+                    ReplayProcessingDiagnostics.summaryOnly(false),
+                    ReplayProcessingCapabilities.NONE,
+                    ReplayProcessingError.of("ARCHIVE_PARSE_FAILED", e.getMessage()),
+                    null);
+        }
+
         // 1. 战绩解析
         Battle battle = null;
         boolean summaryOk = false;
         if (options.parseSummary()) {
             try {
-                battle = ReplayParser.parse(data);
+                battle = ReplayParser.parse(parsed);
                 summaryOk = true;
             } catch (Exception e) {
                 // 战绩解析失败是致命错误（无权威数据），直接返回 FAILED
@@ -98,7 +114,7 @@ public class DefaultReplayProcessingFacade {
         if (options.reconstructTimeline()) {
             try {
                 final ReplayReconstructionContext ctx = buildContext(battle);
-                reconstruction = reconstructionService.reconstruct(data, ctx);
+                reconstruction = reconstructionService.reconstruct(parsed, ctx);
                 streamOk = true;
                 reconOk = true;
                 recorderParticipantResolved = isRecorderParticipantResolved(reconstruction);
@@ -147,9 +163,9 @@ public class DefaultReplayProcessingFacade {
         // 回放实测血量（含装备/物资加成）回填到 players.observedMaxHp，供 AI 事实与地图鸟瞰使用
         ObservedMaxHp.populate(battle,
                 reconstruction != null ? reconstruction.events() : null, teamEntityMapping);
-        // 死亡时刻校准：结算缺失死亡时刻（deathTimeMillis==0）且非存活时，用重建事件流的
-        // 权威 HP 死亡证据（EXACT alive=false）校准 survivalTimeSec，覆盖 legacy 启发式
-        // （damage-threshold 等）的提前误判——如 IS-4 残血（102 HP）在 96.9s 被提前判死。
+        // 死亡时刻校准（§B1/B2）：结算缺失死亡时刻（deathTimeMillis==0）且非存活时，
+        // 用重建事件流的权威 HP 死亡证据（EXACT alive=false）填补 survivalTimeSec；
+        // 无证据 → UNKNOWN=0。legacy 启发式（damage-threshold 等）已不再是死亡 authority。
         // 身份复用上面 TeamEntityMapper.resolve 产出的权威 mapping（冲突/低置信实体证据被拒绝）。
         DeathTimeReconciler.reconcile(battle,
                 reconstruction != null ? reconstruction.events() : null,

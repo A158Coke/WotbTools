@@ -1,8 +1,8 @@
 package com.wotb.web.user.service;
 
-import com.wotb.web.util.Mapper;
 import com.wotb.web.user.dto.UserProfileDto;
 import com.wotb.web.user.entity.UserProfile;
+import com.wotb.web.util.Mapper;
 import org.springframework.stereotype.Service;
 
 @Service

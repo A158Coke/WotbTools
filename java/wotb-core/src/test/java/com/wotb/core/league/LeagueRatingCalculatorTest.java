@@ -7,9 +7,9 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
+import static com.wotb.core.league.LeagueTestBattles.defaultSevenVsSeven;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static com.wotb.core.league.LeagueTestBattles.defaultSevenVsSeven;
 
 /** League Rating 七维度公式 / 存活 / 最终分 / MVP。 */
 class LeagueRatingCalculatorTest {
