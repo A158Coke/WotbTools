@@ -18,7 +18,12 @@ description: >
 3. **修复** — 根据 verifier 报告逐项修复
 4. **重审** — 再次 spawn verifier 审查修复后的代码
 5. **循环** — 直到 verifier 返回零新问题
-6. **跑测试** — `mvn -s settings.xml test` 或 `npm run build`
+6. **Validation（targeted regression）** — 根据 review 修复点运行受影响的
+   targeted / module / feature regression tests（如 `mvn -pl wotb-core -Dtest=<Test> test`、
+   `npx vitest run <related-test-files>`）；修复只影响单 feature 时禁止升级成 repository full test。
+   若修复跨模块 / build / test infrastructure，再按 `.agents/AGENTS.md` 的 Full-test 例外规则执行
+   full validation（并先声明 Affected scope / Selected validation / Why）。
+   review-fix **不负责** repository exhaustive validation——那由 PR CI 承担。
 7. **出具报告**（见下方模板）→ 零问题闭环时允许直接提交并开 PR；
    存在未闭环问题时等待用户审批后提交
 
