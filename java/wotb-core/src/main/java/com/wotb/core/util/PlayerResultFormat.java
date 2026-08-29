@@ -25,7 +25,7 @@ public final class PlayerResultFormat {
     }
 
     /**
-     * 死亡时刻（秒），按 §B1 deathTimeSource 严格权威链（<b>禁止 UNKNOWN 偷渡成 KNOWN</b>）：
+     * 死亡时刻（秒），按 deathTimeSource 严格权威链（<b>禁止 UNKNOWN 偷渡成 KNOWN</b>）：
      * <ul>
      *   <li>{@link DeathTimeSource#LIVE_EXACT} → {@code survivalTimeSec}（回放精确 sub-second）；</li>
      *   <li>{@link DeathTimeSource#SETTLEMENT_SECOND} → {@code deathTimeMillis / 1000}（±0.5s 量化）；</li>
@@ -33,7 +33,7 @@ public final class PlayerResultFormat {
      *       {@code deathTimeMillis} 把 UNKNOWN 偷渡成 KNOWN（<b>compatibility fallback 已经移除</b>）。</li>
      * </ul>
      *
-     * <p>这是所有 Trade/KAST/League/AI 死亡时刻消费方的唯一入口（§6 集中 eligibility）。
+     * <p>这是所有 Trade/KAST/League/AI 死亡时刻消费方的唯一入口（eligibility 集中在此）。
      * 已知死亡时刻必须由 {@code deathTimeSource} 显式声明：生产上 ReplayParser 为阵亡玩家写
      * {@code SETTLEMENT_SECOND}+{@code deathTimeMillis}，DeathTimeReconciler 用 LIVE_EXACT 覆盖；
      * 测试/手工 DTO 构造已知死亡时也应携带对应 source（见各 fixture）。</p>
@@ -52,7 +52,7 @@ public final class PlayerResultFormat {
     }
 
     /**
-     * 死亡时刻 precision interval（PR147 §C）：SETTLEMENT_SECOND 有 ±0.5s 量化，consumer 不得当作
+     * 死亡时刻 precision interval（SETTLEMENT_SECOND 量化）：SETTLEMENT_SECOND 有 ±0.5s 量化，consumer 不得当作
      * exact point 用于 trade / 谁先死 / 5s 窗口 / phase boundary。保存代表值 + 上下界。
      */
     public record DeathTimeEvidence(
@@ -65,7 +65,7 @@ public final class PlayerResultFormat {
         }
     }
 
-    /** SETTLEMENT_SECOND ±0.5s 量化（PR147 §C）。 */
+    /** SETTLEMENT_SECOND ±0.5s 量化。 */
     public static final double SETTLEMENT_SECOND_QUANTIZATION_HALF = 0.5;
 
     /**

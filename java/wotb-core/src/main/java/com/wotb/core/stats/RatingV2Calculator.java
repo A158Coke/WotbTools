@@ -237,7 +237,7 @@ public final class RatingV2Calculator {
         if (pEv == null || !pEv.known()) {
             return false;
         }
-        // PR147 §C precision-aware（V2 双向 ±5s 窗口）：SETTLEMENT_SECOND ±0.5s，不得用 midpoint。
+        // precision-aware（V2 双向 ±5s 窗口）：SETTLEMENT_SECOND ±0.5s，不得用 midpoint。
         // 只有 <b>所有</b> 真实死亡时刻组合的差都在 ±5s 内（max(eMax-pMin, pMax-eMin) ≤ 5）才判定
         // traded；「有可能」但无法证明（ambiguous）→ fail-closed false。
         for (final PlayerResult other : players) {
