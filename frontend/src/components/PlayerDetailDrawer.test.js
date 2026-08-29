@@ -463,6 +463,22 @@ describe('Radar scope-aware data source contract', () => {
     expect(values.league_assist_score.rawValue).not.toBe(2)
     expect(values.league_kill_score.rawValue).not.toBe(10)
   })
+
+  it('column.max 缺失只降级 detail formatting，不影响 raw/reference relative geometry', () => {
+    const columnsWithoutMax = LEAGUE_COLUMNS.map(column => ({ key: column.key, fixed: column.fixed }))
+    const wrapper = mountDrawer(
+      { scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER, { leagueColumns: columnsWithoutMax })
+    const values = radarValues(wrapper)
+    const reference = radarReference(wrapper)
+    expect(wrapper.find('.radar-stub').exists()).toBe(true)
+    expect(values.league_assist_score).toMatchObject({
+      rawValue: 40,
+      normalized: 0.5,
+      displayValue: '40',
+      available: true,
+    })
+    expect(reference.every(axis => axis.normalized === 0.5 && axis.available)).toBe(true)
+  })
 })
 
 describe('PlayerDetailDrawer 坦克展示（Summary=最常使用；Battle=本场）', () => {

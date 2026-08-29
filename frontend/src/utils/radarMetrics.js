@@ -10,9 +10,8 @@
  * - Table ColumnPicker 与 Radar Metric Picker 是两套完全独立的偏好。
  * - 禁止用 current batch max 做 normalization；最终几何相对当前 Battle/Global Average，
  *   因而允许同一 raw score 随 reference cohort 改变形状，UI 必须明确比较范围。
- * - 禁止复制后端 domain max 常量：League 维度满分由后端 resp.league.columns
- *   （key/max 元数据）提供，resolveRadarMetric 必须消费该 metadata（缺失 → 该轴
- *   unavailable "--"，不伪造 0/0%）。
+ * - 禁止复制后端 domain max 常量：League 维度满分由后端 resp.league.columns 提供，
+ *   只负责 score/max 明细解释；max 缺失时降级显示 raw score，不得阻断 relative geometry。
  * - V5 Evidence Adjustment 只作用于 Batch Player Rating，不改 Radar 的 raw dimensionMeans；
  *   最终 relative geometry 由 radarScale 独立生成。
  */
@@ -25,8 +24,6 @@ export const RADAR_MAX_AXES = 7
 
 /** Radar 偏好 localStorage key（独立于 table column preference）。 */
 const RADAR_PREF_KEY = 'wotb-radar-metric-order'
-
-export const clamp01 = v => Math.max(0, Math.min(1, v))
 
 /** 七维在 Radar 上的 presentation-only 短标签（RC 短标签 + tip）。 */
 const DIM_LABEL_KEY = {
@@ -108,8 +105,8 @@ export function saveRadarPreference(order) {
 /**
  * 把指标 key + 原始值解析为雷达轴输入（缺失 → available:false，UI 显示 "--"，
  * 绝不伪装成 0/0%）。
- * League 维度满分来自后端 metadata（maxByKey = resp.league.columns 的 key → max）；
- * 后端未提供满分（max 缺失/非有限/<=0）→ 该轴 unavailable（不伪造归一化）。
+ * League 维度满分来自后端 metadata（maxByKey = resp.league.columns 的 key → max），
+ * 只用于 score/max 明细。max 缺失/非法时保留 raw 与 geometry availability，明细降级为 raw。
  * @param {string} key
  * @param {*} raw 原始值（null = unavailable）
  * @param {Object} [maxByKey] league 列满分元数据 {key: max}
@@ -124,13 +121,20 @@ export function resolveRadarMetric(key, raw, maxByKey = {}) {
   const v = Number(raw)
   const max = Number(maxByKey[key])
   if (!Number.isFinite(max) || max <= 0) {
-    return { key, label, rawValue: v, normalized: null, displayValue: '--', available: false }
+    return {
+      key,
+      label,
+      rawValue: v,
+      normalized: null,
+      displayValue: String(Math.round(v)),
+      available: true,
+    }
   }
   return {
     key,
     label,
     rawValue: v,
-    normalized: clamp01(v / max),
+    normalized: null,
     // §20：detail 只显示 score / max，不追加百分比。
     displayValue: Math.round(v) + ' / ' + max,
     available: true,

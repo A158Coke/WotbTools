@@ -5,7 +5,7 @@
 ## [Unreleased]
 
 ### Changed
-- **Rating V2 / League V5 雷达统一相对表现标尺**：两套雷达不再把互不等价的评分理论上限直接当作视觉满格；玩家每轴相对当前 Batch/Battle/Global Average 映射，平均固定为规则 75 环，2×平均为 100 强势线，4×为 125，8×以上在不可见 150 上限截断。可见 SVG 只保留 25/50/100 网格与 75 虚线平均环，玩家可进入 100 外侧留白；明细仍显示原始玩家值与真实平均，V2/V4.1/V5 公式、API、排序、Excel 均不变。V5 Rating Profile PNG 与页面复用同一 scale/geometry。
+- **Rating V2 / League V5 雷达统一相对表现标尺**：两套雷达不再把互不等价的评分理论上限直接当作视觉满格；玩家每轴相对当前 Batch/Battle/Global Average 映射，平均固定为规则 75 环，2×平均为 100 强势线，4×为 125，8×以上在不可见 150 上限截断。可见 SVG 只保留 25/50/100 网格与 75 虚线平均环，玩家可进入 100 外侧留白；明细仍显示原始玩家值与真实平均，V2/V4.1/V5 公式、API、排序、Excel 均不变。V5 Rating Profile PNG 与页面复用同一 scale/geometry；League column max 仅控制 `score / max` 明细，缺失时降级为 raw score，不阻断 raw/reference 完整轴的相对几何。
 - **Rating V2 雷达改为右侧选手抽屉**：隐藏管理员灰度页不再把六轴雷达追加到长结果表底部；点击玩家昵称后通过 `Teleport` 打开固定右侧抽屉，桌面/平板保持非模态并可继续点击表格切换玩家，移动端使用遮罩面板。补齐 Esc 关闭、触发按钮焦点回收与 reduced-motion；V2 公式/API、共享雷达几何及 League V5 页面不变。
 
 ### Fixed

@@ -227,8 +227,8 @@ const rawRadarMetrics = computed(() => {
 /** 参考多边形（Battle/Global Average）：不依赖选中玩家，只依赖 scope（§61）。 */
 const rawReferenceSeries = computed(() => {
   const ref = isSummary.value
-    ? globalAverage(props.scopePlayers, { dimKeys: radarOrder.value, maxByKey: maxByKey.value })
-    : battleAverage(props.scopePlayers, { dimKeys: radarOrder.value, maxByKey: maxByKey.value })
+    ? globalAverage(props.scopePlayers, { dimKeys: radarOrder.value })
+    : battleAverage(props.scopePlayers, { dimKeys: radarOrder.value })
   return ref.axes.map((a) => {
     const r = resolveRadarMetric(a.key, a.rawValue, maxByKey.value)
     const def = RADAR_METRIC_DEFS[a.key]
