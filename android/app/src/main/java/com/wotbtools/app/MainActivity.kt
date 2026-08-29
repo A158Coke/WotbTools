@@ -8,6 +8,7 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.view.View
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -20,6 +21,9 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.webkit.WebMessageCompat
+import androidx.webkit.WebMessageListener
+import androidx.webkit.WebViewCompat
 import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -27,16 +31,31 @@ import java.util.concurrent.Executors
 /**
  * WotBTools Android 壳 —— 现有 Vue 的纯联网 Thin Client。
  *
- * 职责：网络/版本门禁（fail-closed）→ 远程加载 https://wotbtools.com；
- * Replay 意图（ACTION_SEND/ACTION_VIEW）→ 经 onShowFileChooser 把 content URI 交给现有
- * Web upload pipeline；极薄 Native Bridge 能力探测。不解析 replay、不重复业务规则。
+ * 职责：网络/版本门禁（fail-closed）→ 远程加载 https://wotbtools.com（有 pending replay 时加载
+ * ?view=replay）；Replay 意图（ACTION_SEND/ACTION_VIEW）经安全 ingress 复制到 app cache 后交给
+ * 现有 Web upload pipeline；origin-scoped Native Bridge（仅 wotbtools.com/www 可用）。
  */
 class MainActivity : Activity() {
 
     companion object {
-        private const val PRODUCTION_URL = "https://wotbtools.com"
         private const val BASE_URL = "https://wotbtools.com"
+        private const val REPLAY_URL = BASE_URL + "?view=replay"
         private const val FILE_CHOOSER_REQUEST = 1001
+        private const val BRIDGE_NAME = "WotbNative"
+
+        /** WebView 内允许停留的导航 origin；其它外链走系统浏览器（IdP 仅认证流程留在 WebView）。 */
+        private val NAV_HOSTS = setOf(
+            "wotbtools.com",
+            "www.wotbtools.com",
+            "auth.wotbtools.com",
+            "open.juhedenglu.cn" // Juhe QQ IdP：仅认证流程
+        )
+
+        /** Native Bridge 唯一允许的调用 origin；绝不暴露给 Keycloak / IdP / 任意 frame。 */
+        private val BRIDGE_ORIGINS = setOf(
+            "https://wotbtools.com",
+            "https://www.wotbtools.com"
+        )
     }
 
     private lateinit var webView: WebView
@@ -53,12 +72,13 @@ class MainActivity : Activity() {
     private lateinit var versionLaterButton: Button
 
     private lateinit var apkUpdater: ApkUpdater
+    private lateinit var nativeBridge: NativeBridge
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
 
-    private var pendingReplay: PendingReplay? = null
-    private var pendingReplayEligible = true
-    private var latestManifest: VersionManifest? = null
-    private var downloadedApk: File? = null
+    @Volatile private var pendingReplay: PendingReplay? = null
+    @Volatile private var pendingReplayEligible = true
+    @Volatile private var latestManifest: VersionManifest? = null
+    @Volatile private var downloadedApk: File? = null
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -79,13 +99,16 @@ class MainActivity : Activity() {
         versionLaterButton = findViewById(R.id.versionLaterButton)
 
         apkUpdater = ApkUpdater(this)
+        nativeBridge = NativeBridge(this)
 
         findViewById<Button>(R.id.retryButton).setOnClickListener { hideAllGates(); startStartupFlow() }
         webErrorRetryButton.setOnClickListener { hideAllGates(); loadWeb() }
-        versionPrimaryButton.setOnClickListener { startUpdate() }
+        versionPrimaryButton.setOnClickListener { onUpdatePrimary() }
         versionLaterButton.setOnClickListener { loadWeb() }
 
         configureWebView()
+        // startup 清理 orphan replay cache，再处理冷启动 intent（可能新增一份）。
+        ReplayIntentHandler.cleanupOrphans(this)
         handleIncomingIntent(intent)
         startStartupFlow()
     }
@@ -99,24 +122,41 @@ class MainActivity : Activity() {
         settings.allowFileAccess = false
         settings.allowContentAccess = false
         settings.setGeolocationEnabled(false)
-        webView.addJavascriptInterface(NativeBridge(this), "WotbNative")
+
+        // origin-scoped Native Bridge：仅 wotbtools.com/www；替代 addJavascriptInterface 的全 frame 暴露。
+        WebViewCompat.addWebMessageListener(
+            webView,
+            BRIDGE_NAME,
+            BRIDGE_ORIGINS,
+            object : WebMessageListener {
+                override fun onPostMessage(
+                    view: WebView,
+                    message: WebMessageCompat,
+                    sourceOrigin: Uri,
+                    isMainFrame: Boolean,
+                    replyProxy: WebMessageListener.ReplyProxy
+                ) {
+                    val data = message.data ?: return
+                    replyProxy.postMessage(WebMessageCompat(nativeBridge.handleMessage(data)))
+                }
+            }
+        )
 
         webView.webChromeClient = object : WebChromeClient() {
             override fun onShowFileChooser(
                 view: WebView,
                 callback: ValueCallback<Array<Uri>>,
-                params: FileChooserParams
+                params: WebChromeClient.FileChooserParams
             ): Boolean {
                 val pending = pendingReplay
                 if (pending != null && pendingReplayEligible) {
-                    // 分享/打开导入：把 content URI 直接回传给 Web <input type="file">，
+                    // 分享/打开导入：回传 app-owned FileProvider URI（已复制到 private cache），
                     // 复用现有 FileUploader/validate/upload pipeline（规格 §39）。
                     pendingReplayEligible = false
                     callback.onReceiveValue(arrayOf(pending.uri))
                     clearPendingReplay()
                     return true
                 }
-                // 用户手动选择：启动系统文件选择器。
                 val intent = try {
                     params.createIntent()
                 } catch (_: Exception) {
@@ -132,16 +172,16 @@ class MainActivity : Activity() {
                     false
                 }
             }
-
         }
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val host = request.url.host ?: return false
-                if (TrustedHosts.isTrusted(host)) return false
+                if (host in NAV_HOSTS) return false
                 try {
                     startActivity(Intent(Intent.ACTION_VIEW, request.url))
                 } catch (_: Exception) {
+                    // 无可用 browser 时忽略，留在原页。
                 }
                 return true
             }
@@ -156,6 +196,8 @@ class MainActivity : Activity() {
         }
     }
 
+    // ── 启动门禁（fail-closed）──
+
     private fun startStartupFlow() {
         executor.execute {
             if (!isNetworkAvailable()) {
@@ -166,7 +208,6 @@ class MainActivity : Activity() {
             runOnUiThread {
                 when (result) {
                     is StartupGate.Result.Ok -> onVersionReady(result.manifest)
-                    // fail-closed：manifest 获取失败 → 不允许进入业务
                     is StartupGate.Result.VersionUnavailable -> showNetworkGate()
                 }
             }
@@ -183,66 +224,71 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun entryUrl(): String = if (pendingReplay != null) REPLAY_URL else BASE_URL
+
     private fun loadWeb() {
         hideAllGates()
-        webViewContainer.visibility = android.view.View.VISIBLE
-        if (webView.url.isNullOrEmpty()) webView.loadUrl(BASE_URL)
+        webViewContainer.visibility = View.VISIBLE
+        if (webView.url.isNullOrEmpty()) webView.loadUrl(entryUrl())
         else webView.reload()
     }
 
     private fun showNetworkGate() {
         hideAllGates()
-        networkGateView.visibility = android.view.View.VISIBLE
+        networkGateView.visibility = View.VISIBLE
     }
 
     private fun showWebError() {
         hideAllGates()
-        webErrorView.visibility = android.view.View.VISIBLE
+        webErrorView.visibility = View.VISIBLE
     }
 
     private fun showMandatoryUpdate(manifest: VersionManifest, installed: Int) {
         hideAllGates()
-        versionGateView.visibility = android.view.View.VISIBLE
+        versionGateView.visibility = View.VISIBLE
         versionTitle.text = getString(R.string.update_mandatory_title)
         versionMessage.text = getString(R.string.update_mandatory_message)
         versionCurrent.text = getString(R.string.update_current_version, installed.toString())
         versionLatest.text = getString(R.string.update_latest_version, manifest.latestVersionName)
         versionPrimaryButton.text = getString(R.string.update_now)
-        versionLaterButton.visibility = android.view.View.GONE
+        versionLaterButton.visibility = View.GONE
     }
 
     private fun showOptionalUpdate(manifest: VersionManifest, installed: Int) {
         hideAllGates()
-        versionGateView.visibility = android.view.View.VISIBLE
+        versionGateView.visibility = View.VISIBLE
         versionTitle.text = getString(R.string.update_optional_title)
         versionMessage.text = getString(R.string.update_optional_message)
         versionCurrent.text = getString(R.string.update_current_version, installed.toString())
         versionLatest.text = getString(R.string.update_latest_version, manifest.latestVersionName)
         versionPrimaryButton.text = getString(R.string.update_now)
-        versionLaterButton.visibility = android.view.View.VISIBLE
+        versionLaterButton.visibility = View.VISIBLE
         versionLaterButton.text = getString(R.string.update_later)
     }
 
-    private fun startUpdate() {
-        val manifest = latestManifest ?: return
-        val apkUrl = manifest.apkUrl
-        if (apkUrl.isNullOrBlank()) {
-            toast(getString(R.string.update_apk_unavailable))
+    // ── 更新（fail-closed：SHA-256 必校验；未授权可恢复）──
+
+    private fun onUpdatePrimary() {
+        if (!packageManager.canRequestPackageInstalls()) {
+            openInstallPermissionSettings()
             return
         }
+        startDownload()
+    }
+
+    private fun startDownload() {
+        val manifest = latestManifest ?: return
         versionPrimaryButton.isEnabled = false
         versionPrimaryButton.text = getString(R.string.update_downloading)
         executor.execute {
-            val result = apkUpdater.downloadAndInstall(apkUrl, manifest.sha256)
+            val result = apkUpdater.downloadAndInstall(manifest.apkUrl, manifest.sha256)
             runOnUiThread {
                 versionPrimaryButton.isEnabled = true
                 versionPrimaryButton.text = getString(R.string.update_now)
                 when (result) {
                     is ApkUpdater.Result.Ok -> {
                         downloadedApk = result.apk
-                        if (!installDownloadedApk()) {
-                            openInstallPermissionSettings()
-                        }
+                        if (!installDownloadedApk()) openInstallPermissionSettings()
                     }
                     is ApkUpdater.Result.Fail -> toast(result.message)
                 }
@@ -271,44 +317,62 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        // 用户从「未知来源」设置返回后重试安装；未授权前绝不能进业务（强制更新屏仍占用）。
-        if (downloadedApk != null && versionGateView.visibility == android.view.View.VISIBLE) {
-            if (!installDownloadedApk()) {
-                versionPrimaryButton.text = getString(R.string.update_downloading)
-                versionPrimaryButton.isEnabled = false
+        // 返回后保持可操作；缺权限时明确提示并可再次点击去授权。强制更新用户仍不能进入业务。
+        if (versionGateView.visibility == View.VISIBLE) {
+            versionPrimaryButton.isEnabled = true
+            versionPrimaryButton.text = getString(R.string.update_now)
+            if (downloadedApk != null && !installDownloadedApk()) {
+                versionMessage.text = getString(R.string.update_unknown_source_hint)
             }
         }
     }
 
-    // ── 生命周期：Replay 意图（冷启动 / 热启动 / 后台恢复）──
+    // ── Replay 意图生命周期（冷启动 / 热启动 / 后台恢复）──
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         handleIncomingIntent(intent)
-        pendingReplay?.let {
-            webView.post { webView.evaluateJavascript("window.wotbtoolsOnReplay && window.wotbtoolsOnReplay()", null) }
+        val replayPending = pendingReplay != null
+        if (replayPending && webViewContainer.visibility == View.VISIBLE) {
+            val current = webView.url
+            if (current != null && current.contains("view=replay")) {
+                // 已在 replay workspace：直接通知导入（exactly-once 由 pending 被消费清空保证）。
+                webView.post {
+                    webView.evaluateJavascript("window.wotbtoolsOnReplay && window.wotbtoolsOnReplay()", null)
+                }
+            } else {
+                // 切到 replay canonical view；ReplayPage 就绪后消费。
+                webView.post { webView.loadUrl(REPLAY_URL) }
+            }
         }
     }
 
     private fun handleIncomingIntent(intent: Intent?) {
-        pendingReplay = ReplayIntentHandler.fromIntent(intent, contentResolver)
-        pendingReplayEligible = pendingReplay != null
+        val pending = ReplayIntentHandler.fromIntent(this, intent)
+        // 替换前清理旧缓存文件。
+        pendingReplay?.file?.delete()
+        pendingReplay = pending
+        pendingReplayEligible = pending != null
     }
 
     private fun clearPendingReplay() {
+        pendingReplay?.file?.delete()
         pendingReplay = null
         pendingReplayEligible = false
     }
 
-    // ── Native Bridge 白名单能力（供 Vue 端使用）──
+    // ── Native Bridge 白名单能力（供 Vue 端；origin-scoped）──
 
-    fun bridgeCapabilities(): List<String> {
-        // 原生能力是「App 支持该通道」的静态声明，与当前是否有 pending replay 无关。
-        return listOf("replay-share", "replay-open", "app-update")
+    fun bridgeCapabilities(): List<String> = listOf("replay-share", "replay-open", "app-update")
+
+    fun bridgePendingReplayJson(): Any {
+        val pending = pendingReplay?.takeIf { pendingReplayEligible } ?: return org.json.JSONObject.NULL
+        return org.json.JSONObject()
+            .put("name", pending.name)
+            .put("size", pending.size)
+            .put("uri", pending.uri.toString())
     }
-
-    fun bridgePendingReplay(): PendingReplay? = pendingReplay?.takeIf { pendingReplayEligible }
 
     fun bridgeConsumePendingReplay(): Boolean {
         val had = pendingReplay != null
@@ -321,18 +385,18 @@ class MainActivity : Activity() {
         return installedVersionCode() < manifest.latestVersionCode
     }
 
-    fun bridgeStartUpdate(): Boolean {
-        startUpdate()
-        return true
+    /** @JavascriptInterface 等效的 bridge 调用运行在 WebView 线程；UI 动作必须分发到主线程。 */
+    fun bridgeStartUpdate() {
+        runOnUiThread { onUpdatePrimary() }
     }
 
     // ── 通用 ──
 
     private fun hideAllGates() {
-        networkGateView.visibility = android.view.View.GONE
-        versionGateView.visibility = android.view.View.GONE
-        webErrorView.visibility = android.view.View.GONE
-        webViewContainer.visibility = android.view.View.GONE
+        networkGateView.visibility = View.GONE
+        versionGateView.visibility = View.GONE
+        webErrorView.visibility = View.GONE
+        webViewContainer.visibility = View.GONE
     }
 
     private fun isNetworkAvailable(): Boolean {
@@ -377,15 +441,5 @@ class MainActivity : Activity() {
         webView.destroy()
         executor.shutdown()
         super.onDestroy()
-    }
-
-    /** WebView 内允许停留的 origin；其它外链走系统浏览器（规格 §28/§87）。 */
-    private object TrustedHosts {
-        val allowed = setOf(
-            "wotbtools.com",
-            "www.wotbtools.com",
-            "auth.wotbtools.com"
-        )
-        fun isTrusted(host: String): Boolean = host in allowed
     }
 }

@@ -23,7 +23,7 @@ class ApkUpdater(private val context: Context) {
         data class Fail(val message: String) : Result()
     }
 
-    fun downloadAndInstall(apkUrl: String, expectedSha256: String?): Result {
+    fun downloadAndInstall(apkUrl: String, expectedSha256: String): Result {
         return try {
             val file = File(context.cacheDir, "wotbtools-update.apk")
             if (file.exists()) file.delete()
@@ -47,7 +47,7 @@ class ApkUpdater(private val context: Context) {
                 }
             }
             val actualSha = sha256(file)
-            if (expectedSha256 != null && !expectedSha256.equals(actualSha, ignoreCase = true)) {
+            if (!expectedSha256.equals(actualSha, ignoreCase = true)) {
                 file.delete()
                 return Result.Fail("SHA-256 mismatch")
             }

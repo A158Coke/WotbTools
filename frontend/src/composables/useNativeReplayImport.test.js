@@ -4,9 +4,20 @@ import { describe, expect, it, vi, afterEach } from 'vitest'
 import { useNativeReplayImport } from './useNativeReplayImport.js'
 
 function stubNative(pending) {
+  const listeners = []
+  const results = { getPendingReplay: pending ?? null }
   window.WotbNative = {
-    getCapabilities: () => JSON.stringify(['replay-share']),
-    getPendingReplay: () => (pending ? JSON.stringify(pending) : 'null'),
+    postMessage: vi.fn((json) => {
+      const msg = JSON.parse(json)
+      listeners.forEach(cb =>
+        cb({ data: JSON.stringify({ id: msg.id, result: results[msg.method] ?? null }) })
+      )
+    }),
+    addEventListener: vi.fn((type, cb) => listeners.push(cb)),
+    removeEventListener: vi.fn((type, cb) => {
+      const i = listeners.indexOf(cb)
+      if (i >= 0) listeners.splice(i, 1)
+    }),
   }
 }
 
@@ -16,13 +27,13 @@ describe('useNativeReplayImport', () => {
     delete window.wotbtoolsOnReplay
   })
 
-  it('registers the global handler and is a no-op on a plain browser', () => {
+  it('registers the global handler and is a no-op on a plain browser', async () => {
     const { triggerFileInput } = useNativeReplayImport()
     expect(typeof window.wotbtoolsOnReplay).toBe('function')
-    expect(() => triggerFileInput()).not.toThrow()
+    await expect(triggerFileInput()).resolves.toBeUndefined()
   })
 
-  it('clicks the first .wotbreplay file input when a native pending replay exists', () => {
+  it('clicks the first .wotbreplay file input when a native pending replay exists', async () => {
     stubNative({ name: 'a.wotbreplay', uri: 'content://x', size: 1 })
     const input = document.createElement('input')
     input.setAttribute('type', 'file')
@@ -30,7 +41,7 @@ describe('useNativeReplayImport', () => {
     document.body.appendChild(input)
     const clickSpy = vi.spyOn(input, 'click')
     const { triggerFileInput } = useNativeReplayImport()
-    triggerFileInput()
+    await triggerFileInput()
     expect(clickSpy).toHaveBeenCalled()
     input.remove()
   })
