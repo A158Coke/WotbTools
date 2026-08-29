@@ -60,6 +60,7 @@ if [ -f DEPLOYED_SHA ]; then
 fi
 
 mkdir -p config/sponsor
+mkdir -p android-release
 if [ ! -e config/sponsor-config.json ] && [ ! -L config/sponsor-config.json ]; then
   install -m 644 deploy/sponsor-config.example.json config/sponsor-config.json
 fi

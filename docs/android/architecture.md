@@ -1,0 +1,83 @@
+# WotBTools Android — 架构
+
+## 定位
+
+WotBTools Android 是现有 Vue/Web 的**纯联网 Thin Client**（用户规格 §8）。它不是第二套 WotBTools：
+所有业务运算（replay 解析、Rating、AI、战局重建）仍在服务器；Android 只负责设备能力、文件入口、
+Web 容器、网络门禁与 APK 更新。
+
+```text
+Android App (Native shell)
+   └── WebView ──> https://wotbtools.com
+```
+
+普通业务更新 = Web deploy → Android 自动获得，无需重发 APK；只有 Native 层变化（Intent/
+WebView/manifest/bridge/updater/shell）才重发 APK。
+
+## 工程结构
+
+```
+android/
+  settings.gradle.kts
+  build.gradle.kts            # plugin 版本
+  gradle.properties
+  app/
+    build.gradle.kts          # namespace com.wotbtools.app, minSdk 26
+    src/main/
+      AndroidManifest.xml
+      java/com/wotbtools/app/
+        MainActivity.kt       # 编排（门禁/web/back/意图/file-chooser/bridge）
+        StartupGate.kt        # 网络 + version.json（fail-closed）
+        VersionManifest.kt    # version.json 解析
+        ApkUpdater.kt         # 下载 / SHA-256 / installer
+        ReplayIntentHandler.kt# ACTION_SEND/ACTION_VIEW → PendingReplay
+        NativeBridge.kt       # getCapabilities / getPendingReplay / ...（白名单）
+      res/
+        layout/activity_main.xml         # webView + networkGate + versionGate + webError
+        values/{strings,colors,themes}.xml
+        xml/file_paths.xml               # FileProvider cache-path
+        drawable/ic_launcher_foreground.xml
+        mipmap-anydpi-v26/{ic_launcher,ic_launcher_round}.xml
+```
+
+## 启动门禁
+
+```text
+网络 OK? ──No──▶ Network Gate（重试）
+   │Yes
+version.json 拉取 ──失败──▶ Network Gate（fail-closed）
+   │成功
+installed < minSupportedVersionCode ──▶ Mandatory Update
+installed < latestVersionCode        ──▶ Optional Update [立即更新][稍后]
+else                                  ──▶ Load https://wotbtools.com
+```
+
+`version.json` 获取失败不允许进入业务（fail-closed，规格 §16）。
+
+## 能力边界（V2 冻结区）
+
+Android 不在 Native 层重写 AI Review / Battle Reconstruction / capability 业务状态机，
+这些由 Vue 提供。Android 只实现 Web 之外的系统能力：
+
+- 网络/版本门禁、WebView 加载、splash、back、生命周期、错误屏
+- Replay 意图入口（ACTION_SEND / ACTION_VIEW → content URI）
+- 极薄 Native Bridge（`getCapabilities`/`getPendingReplay`/`consumePendingReplay`/
+  `checkForUpdate`/`startUpdate`；禁止 readFile/http/execute/launch）
+- APK 下载、SHA-256 校验、installer、未知来源授权
+- 复用现有 Web upload transport（`/api/replay/processing-jobs`）
+
+Native Bridge 的 `getCapabilities()` 只表达**原生能力**（`replay-share`/`replay-open`/
+`app-update`），不涉及 replay 业务 capability 判断（FULL/DEGRADED/PERFORMANCE 等由 Web 端接入）。
+
+## WebView 安全（规格 §28–§29 / §86–§88）
+
+- 仅信任 `wotbtools.com` / `www.wotbtools.com` / `auth.wotbtools.com`；其余外链走系统浏览器。
+- `usesCleartextTraffic=false`；`mixedContentMode=NEVER_ALLOW`；`allowFileAccess=false`；
+  `allowContentAccess=false`；`setGeolocationEnabled(false)`。
+- 禁用 `allowUniversalAccessFromFileURLs` / `ignoreSslErrors`；SSL 错误必须失败。
+- Native Bridge 只加到 `wotbtools.com` 页面，第三方页不可调用。
+
+## 权限（least privilege，规格 §69）
+
+`INTERNET`、`ACCESS_NETWORK_STATE`、`REQUEST_INSTALL_PACKAGES` + FileProvider URI grant。
+不申请 `READ_EXTERNAL_STORAGE` / `MANAGE_EXTERNAL_STORAGE` / Contacts / Location / Camera / Microphone。
