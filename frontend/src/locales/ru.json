@@ -15,10 +15,12 @@
     "upload": {
         "drop_hint": "Перетащите .wotbreplay файлы сюда",
         "sub_hint": "Поддерживаются несколько файлов или целые папки",
+        "sub_hint_single": "Перетащите один файл .wotbreplay сюда",
         "kicker": "Пакетный разбор",
         "title": "Извлечение данных реплея",
         "description": "Загрузите или перетащите .wotbreplay, просмотрите данные боя и экспортируйте в Excel.",
         "multi": "Файлы и папки",
+        "multi_single": "Один файл",
         "excel": "Сводный или побоевой Excel",
         "privacy": "Реплеи не сохраняются",
         "selected_title": "Выбранные реплеи",
@@ -39,6 +41,7 @@
         "reject_too_large_file": "{name} — {size}",
         "reject_invalid_type": "{name} — не файл .wotbreplay",
         "reject_no_replay": "В выборе не найдено файлов .wotbreplay.",
+        "single_only": "Режим одного файла: за один раз принимается только один реплей.",
         "reject_size_hint": "Максимальный размер одного реплея — 20 МБ.",
         "reject_count": "Можно выбрать не более {max} реплеев, сейчас {current}.",
         "reject_total": "Текущий набор — {size}, максимум {max}."

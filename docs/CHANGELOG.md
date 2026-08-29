@@ -29,7 +29,10 @@
   `BattlePlaybackAdapter` + `AoiPositionCoverage`）；`BattlePlaybackDataset` 增加 battle-level
   `events`（DAMAGE/KILL/DESTROYED/POSITION）。`FileUploader` 对 AI 复盘/战局重建禁 folder（单文件）。
   HP marker 百分比改用 canonical `displayCapacityHp`（presentation-only，anti-future-leak），
-  UNKNOWN 不再冒充满血；`LAST_KNOWN` hidden interval 冻结、不跨 AoI 更新。
+  UNKNOWN 不再冒充满血；`LAST_KNOWN` hidden interval 冻结、不跨 AoI 更新。队伍总血量仅在
+  全队 denominator/current 均可证时显示真实分数（存在未知 / LAST_KNOWN 车辆降级为 PARTIAL，
+  不再以 partial capacity 冒充全队总 HP）；Details Panel 合并为单一 canonical V2 面板，
+  移除与 V2 检查器重复的 HP / State / 车型展示。
 
 ### Fixed
 - **Rating V2 移动端雷达抽屉焦点约束**：移动端以 `aria-modal=true` 打开雷达遮罩时，Tab / Shift+Tab 现在在抽屉可聚焦元素内循环，无法落到遮罩后的结果表；Escape 关闭与触发昵称焦点回收保持不变。桌面/平板非模态抽屉仍允许正常离开侧栏继续操作表格。

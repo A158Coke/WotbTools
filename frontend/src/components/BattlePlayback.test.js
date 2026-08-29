@@ -222,6 +222,18 @@ function stubRaf() {
   vi.stubGlobal('cancelAnimationFrame', () => {})
 }
 
+/** canonical V2 Details Panel HP：读 v2-inspector-hp 值区首个数字（去掉 LAST_KNOWN badge / capacity）。 */
+function detailsHpNum(info) {
+  const val = info.find('[data-test="v2-inspector-hp"] .v2-inspector-val').text()
+  const m = val.match(/\d+/)
+  return m ? m[0] : null
+}
+
+/** marker HUD HP 数字（账号 2001）。 */
+function enemyHudNum(wrapper) {
+  return wrapper.find('[data-test="pb-marker-2001"]').find('[data-test="pb-hp-num"]').text()
+}
+
 describe('BattlePlayback', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -1912,7 +1924,7 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     let info = wrapper.find('[data-test="pb-info"]')
     expect(info.exists()).toBe(true)
     expect(info.find('[data-test="pb-sb-tank"]').text()).toBe('T49')
-    expect(info.find('[data-test="pb-sb-hp"]').text()).toBe('0')
+    expect(detailsHpNum(info)).toBe('0')
     expect(info.text()).toContain('00:12') // destroyed at / last spotted
     // 点击另一辆切换
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
@@ -1962,7 +1974,7 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     await flushPromises()
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
     const info = wrapper.find('[data-test="pb-info"]')
-    expect(info.find('[data-test="pb-sb-hp"]').text()).toBe('2600')
+    expect(detailsHpNum(info)).toBe('2600')
     // §41：tankopedia base HP 不得包装成「最大 HP」展示
     expect(info.text()).not.toContain('recon.map.playback.max_hp')
     expect(info.text()).not.toContain('recon.map.playback.hp_pct')
@@ -2035,10 +2047,6 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
 
   function logTimes(wrapper) {
     return wrapper.findAll('.pb-sb-log li').map((li) => li.find('.pb-sb-log-time').text())
-  }
-
-  function enemyHudNum(wrapper) {
-    return wrapper.find('[data-test="pb-marker-2001"]').find('[data-test="pb-hp-num"]').text()
   }
 
   it('B1-1 typeFilter：关闭 DAMAGE/KILL checkbox 后 deterministic stats 完全不变', async () => {
@@ -2228,15 +2236,15 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     // sidebar 与 marker HUD 完全一致（冻结值与恢复值都一致）
     await wrapper.find('[data-test="pb-marker-2001"]').trigger('click')
     let info = wrapper.find('[data-test="pb-info"]')
-    expect(info.find('[data-test="pb-sb-hp"]').text()).toBe('3000')
+    expect(detailsHpNum(info)).toBe('3000')
     await wrapper.find('.pb-range').setValue(35)
     await flushPromises()
     expect(enemyHudNum(wrapper)).toBe('3000')
-    expect(wrapper.find('[data-test="pb-info"]').find('[data-test="pb-sb-hp"]').text()).toBe('3000')
+    expect(detailsHpNum(wrapper.find('[data-test="pb-info"]'))).toBe('3000')
     await wrapper.find('.pb-range').setValue(42)
     await flushPromises()
     expect(enemyHudNum(wrapper)).toBe('1700')
-    expect(wrapper.find('[data-test="pb-info"]').find('[data-test="pb-sb-hp"]').text()).toBe('1700')
+    expect(detailsHpNum(wrapper.find('[data-test="pb-info"]'))).toBe('1700')
   })
 
   it('B2 末尾事件消费：播放跨到 duration 时 (prev, duration] 内事件 exactly-once；seek 到末尾不补播', async () => {
@@ -2321,5 +2329,109 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     await flushPromises()
     expect(wrapper.find('[data-test="pb-float-dmg"]').exists()).toBe(false) // 上一轮 float 到期，未重复
     expect(wrapper.findAll('.pb-feed-item')).toHaveLength(1) // 上一轮 feed 仍在自然存活，未重复
+  })
+})
+
+describe('V2 HP regression (restored critical coverage)', () => {
+  function mountV2(seekTo = 0, ds = makePlaybackV2()) {
+    return mount(BattlePlayback, {
+      props: { overview: makeOverview(), seekTo, playbackV2: ds },
+      global: { mocks: { $t: i18n.t } }
+    })
+  }
+
+  it('known+unknown team：enemy 含未知车辆 → PARTIAL 数值，不伪造全队分数', async () => {
+    const w = mountV2(15)
+    await flushPromises()
+    // friendly 队唯一车辆全 known（CURRENT+cap）→ EXACT 真实分数
+    expect(w.find('[data-test="pb-hp-value-friendly"]').text()).toBe('1500 / 1500')
+    // enemy 队 2001 known + 2002 无数据 → PARTIAL：只显示真实已知剩余，不带 /总HP
+    expect(w.find('[data-test="pb-hp-value-enemy"]').text()).toBe('800')
+    expect(w.find('[data-test="pb-hp-value-enemy"]').text()).not.toContain('/')
+  })
+
+  it('UNKNOWN team：全队无 canonical 数据 → HUD 显示 —', async () => {
+    const ds = makePlaybackV2()
+    ds.vehicles.forEach((v) => { v.healthTransitions = [] })
+    const w = mountV2(15, ds)
+    await flushPromises()
+    expect(w.find('[data-test="pb-hp-value-friendly"]').text()).toBe('—')
+    expect(w.find('[data-test="pb-hp-value-enemy"]').text()).toBe('—')
+  })
+
+  it('LAST_KNOWN：hidden interval 冻结 HP、不泄漏未来值；Details 标 LAST_KNOWN', async () => {
+    const ds = makePlaybackV2()
+    const enemy = ds.vehicles[1]
+    enemy.positionSegments = [
+      { knowledge: 'OBSERVED', startSec: 0, endSec: 20,
+        samples: [{ timeSec: 0, x: -50, y: -50, knowledge: 'OBSERVED' }, { timeSec: 20, x: -60, y: -60, knowledge: 'OBSERVED' }] },
+      { knowledge: 'OBSERVED', startSec: 30, endSec: 60,
+        samples: [{ timeSec: 30, x: -60, y: -60, knowledge: 'OBSERVED' }, { timeSec: 60, x: -60, y: -60, knowledge: 'OBSERVED' }] },
+    ]
+    enemy.orientationSegments = []
+    enemy.healthTransitions = [
+      { timeSec: 0, currentHp: 1200, knowledge: 'CURRENT', displayCapacityHp: 1200, source: 'EXACT_BATTLE_EVENT' },
+      { timeSec: 20, currentHp: 1200, knowledge: 'LAST_KNOWN', displayCapacityHp: 1200, source: 'EXACT_BATTLE_EVENT' },
+      { timeSec: 30, currentHp: 600, knowledge: 'CURRENT', displayCapacityHp: 1200, source: 'EXACT_BATTLE_EVENT' },
+    ]
+    enemy.lifeTransitions = []
+    const w = mountV2(10, ds)
+    await flushPromises()
+    // 覆盖期 t=10 → CURRENT 1200
+    expect(enemyHudNum(w)).toBe('1200')
+    // hidden interval t=25 → LAST_KNOWN 冻结 1200，不泄漏未来 600
+    await w.find('.pb-range').setValue(25)
+    await flushPromises()
+    expect(enemyHudNum(w)).toBe('1200')
+    expect(enemyHudNum(w)).not.toBe('600')
+    await w.find('[data-test="pb-marker-2001"]').trigger('click')
+    await flushPromises()
+    expect(detailsHpNum(w.find('[data-test="pb-info"]'))).toBe('1200')
+    expect(w.find('[data-test="pb-info"]').text()).toContain('recon.map.playback.last_known_hp')
+    // backward seek 确定性：30（re-acquire 600）→ 25（冻结 1200），未来值不泄漏
+    await w.find('.pb-range').setValue(30)
+    await flushPromises()
+    expect(enemyHudNum(w)).toBe('600')
+    await w.find('.pb-range').setValue(25)
+    await flushPromises()
+    expect(enemyHudNum(w)).toBe('1200')
+  })
+
+  it('marker 百分比 + Details HP 一致性：pct=current/displayCapacityHp', async () => {
+    const ds = makePlaybackV2()
+    const enemy = ds.vehicles[1]
+    enemy.positionSegments = [{ knowledge: 'OBSERVED', startSec: 0, endSec: 60,
+      samples: [{ timeSec: 0, x: -50, y: -50, knowledge: 'OBSERVED' }, { timeSec: 60, x: -60, y: -60, knowledge: 'OBSERVED' }] }]
+    enemy.orientationSegments = []
+    enemy.healthTransitions = [
+      { timeSec: 0, currentHp: 1200, knowledge: 'CURRENT', displayCapacityHp: 1200, source: 'EXACT_BATTLE_EVENT' },
+      { timeSec: 10, currentHp: 600, knowledge: 'CURRENT', displayCapacityHp: 1200, source: 'EXACT_BATTLE_EVENT' },
+    ]
+    enemy.lifeTransitions = []
+    const w = mountV2(10, ds)
+    await flushPromises()
+    // marker HUD 数字 + 百分比条
+    expect(enemyHudNum(w)).toBe('600')
+    expect(w.find('[data-test="pb-marker-2001"] .pb-hp-fill').attributes('style')).toContain('50%')
+    // Details HP 与 marker 一致（600）
+    await w.find('[data-test="pb-marker-2001"]').trigger('click')
+    await flushPromises()
+    expect(detailsHpNum(w.find('[data-test="pb-info"]'))).toBe('600')
+  })
+
+  it('destroyed：标记归零 + Details 显示 0 与 destroyed_at', async () => {
+    const ds = makePlaybackV2()
+    ds.vehicles[1].lifeTransitions = [{ timeSec: 25, lifeState: 'DESTROYED', destroyedKnownAtSec: 25 }]
+    const w = mountV2(30, ds)
+    await flushPromises()
+    // marker 阵亡 → 0
+    expect(enemyHudNum(w)).toBe('0')
+    expect(w.find('[data-test="pb-marker-2001"] .pb-hp-fill').attributes('style')).toContain('0%')
+    // Details HP → 0；destroyed_at → 00:25
+    await w.find('[data-test="pb-marker-2001"]').trigger('click')
+    await flushPromises()
+    const info = w.find('[data-test="pb-info"]')
+    expect(detailsHpNum(info)).toBe('0')
+    expect(info.text()).toContain('00:25')
   })
 })
