@@ -3,9 +3,9 @@
 > 用途：记录本项目**已确认解析**的字段与含义，方便后人查阅，避免重复逆向。
 > 解析实现细节见 `docs/reference/replay-data.md`（文件结构/事件流逆向）与 `docs/research/replay/protocol.md`；
 > AI 证据链见 `docs/architecture/ai-review.md`。
-> 字段号基于 <b>PR147 11.19 corpus</b>（`11.19.0_china*`）分析；历史 11.18 观察不自动等于生产语义，
+> 字段号基于 <b>11.19 corpus</b>（`11.19.0_china*`）分析；历史 11.18 观察不自动等于生产语义，
 > capacity 需独立 evidence。字段号可能随版本变化。
-> 生产状态：本文件字段/语义按 PR147 已证明事实标注（AFFIRMED）；尾部 `trailingStateRaw` 与未知系数标 UNKNOWN，不得冒充已证明语义。
+> 生产状态：本文件字段/语义按已证明事实标注（AFFIRMED）；尾部 `trailingStateRaw` 与未知系数标 UNKNOWN，不得冒充已证明语义。
 
 ## 1. 权威结算层（`battle_results.dat` → `PlayerResult`）
 

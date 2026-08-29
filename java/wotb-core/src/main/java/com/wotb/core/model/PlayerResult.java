@@ -80,7 +80,7 @@ public class PlayerResult {
     // 存活时间(秒, 由 ReplayParser 计算；0 = UNKNOWN，绝不伪造)
     public double survivalTimeSec;
 
-    /** 死亡时刻 provenance（§B1/D2；null = 未回填，按 UNKNOWN 处理）。 */
+    /** 死亡时刻 provenance（null = 未回填，按 UNKNOWN 处理）。 */
     public DeathTimeSource deathTimeSource;
 
     // 完整原始字段 (字段号 -> 值列表), 供"原始字段"表/排查

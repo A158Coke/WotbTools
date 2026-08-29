@@ -139,10 +139,10 @@ ReplayReconstruction 输出
 
 | Type | 含义                 | 状态      | 说明                |
 |------|--------------------|---------|-------------------|
-| 7    | EntityProperty     | EXACT   | propId=3 当前 HP / propId=2 炮塔方向（PR147 证明） |
+| 7    | EntityProperty     | EXACT   | propId=3 当前 HP / propId=2 炮塔方向（已证明） |
 | 5    | Materialization    | EXACT/PARTIAL | Type 5 实体物化（payload 长度门禁，非 Spotting） |
 | 31   | GunMarkerSize      | EXACT   | 炮口大小（closed semantics 版本门禁） |
-| 35   | SessionDecisecond  | EXACT   | 秒级 decisecond 低字节（PR147 证明） |
+| 35   | SessionDecisecond  | EXACT   | 秒级 decisecond 低字节（已证明） |
 | 39   | AimRayState        | EXACT   | 瞄准射线状态（method36 protobuf） |
 
 ### 尚未支持的 packet type
