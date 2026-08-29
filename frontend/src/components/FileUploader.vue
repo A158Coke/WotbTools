@@ -15,7 +15,8 @@ const props = defineProps({
   files: Array,
   loading: Boolean,
   confirmRemove: Boolean,
-  showWorkspaceActions: { type: Boolean, default: true }
+  showWorkspaceActions: { type: Boolean, default: true },
+  showPreview: { type: Boolean, default: true }
 })
 const dragging = ref(false)
 const listOpen = ref(false)
@@ -202,18 +203,25 @@ function openReplayAction(mode) {
       </div>
     </div>
 
+    <!-- 解析预览：ReplayPage 基础操作，独立于 workspace shortcut 开关（showPreview）。
+         showWorkspaceActions 只控制 AI 复盘 / 战局回放快捷入口，不得连带隐藏解析。 -->
+    <div v-if="files.length && showPreview" class="replay-primary-actions">
+      <div class="actionrow">
+        <button class="lg" :disabled="loading" @click="$emit('preview')">
+          {{ $t('action.preview') }}<svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+        </button>
+        <span v-if="loading" class="muted">{{ $t('action.processing') }}</span>
+      </div>
+    </div>
+
     <div v-if="files.length && showWorkspaceActions" class="replay-workspace-actions">
       <select v-if="files.length > 1" v-model="actionFileKey" class="replay-action-file" :aria-label="$t('upload.action_replay_selector')">
         <option value="" disabled>{{ $t('upload.action_replay_placeholder') }}</option>
         <option v-for="f in files" :key="fileKey(f)" :value="fileKey(f)">{{ displayName(f) }}</option>
       </select>
       <div class="actionrow">
-        <button class="lg" :disabled="loading" @click="$emit('preview')">
-          {{ $t('action.preview') }}<svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
-        </button>
         <button class="battle-action" :disabled="directActionDisabled" data-testid="direct-playback-btn" @click="openReplayAction('playback')">{{ $t('action.battle_playback') }}</button>
         <button class="battle-action primary" :disabled="directActionDisabled" data-testid="direct-ai-btn" @click="openReplayAction('ai')">{{ $t('action.ai_review') }}</button>
-        <span v-if="loading" class="muted">{{ $t('action.processing') }}</span>
       </div>
     </div>
   </section>
@@ -230,7 +238,7 @@ function openReplayAction(mode) {
 .upload-errors-title { font-weight:700; margin:0 0 6px; }
 .upload-errors-list { margin:0 0 4px; padding-left:18px; display:flex; flex-direction:column; gap:2px; }
 .upload-errors-hint { margin:2px 0 0; opacity:.9; }
-.replay-workspace-actions { margin-top:14px; padding-top:14px; border-top:1px solid var(--border-ghost); }
+.replay-primary-actions, .replay-workspace-actions { margin-top:14px; padding-top:14px; border-top:1px solid var(--border-ghost); }
 .replay-action-file { width:min(100%,560px); margin-bottom:10px; min-height:36px; padding:6px 10px; border:1px solid var(--border-ghost); border-radius:7px; background:var(--bg-card); color:var(--text); }
 .actionrow { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
 .battle-action { display:inline-flex; align-items:center; min-height:40px; padding:8px 16px; border:1px solid var(--border-ghost); border-radius:7px; background:var(--bg-card); color:var(--text-label); cursor:pointer; font:inherit; font-weight:700; }

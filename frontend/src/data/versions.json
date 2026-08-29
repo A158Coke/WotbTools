@@ -1,11 +1,27 @@
 [
   {
-    "v": "2.12.45",
+    "v": "2.12.47",
     "date": "2026-08-29",
     "tag": "add",
     "zh": "新增 WotBTools Android 在线客户端：安装后直接进入现有 WotBTools，自动随站点获得业务更新；可从游戏「分享」或文件管理器「打开方式」直接导入回放；Web 新增「下载 Android 版」入口与下载页（含最新版本与 SHA-256）。",
     "en": "New WotBTools Android online client: after installing you go straight into the existing WotBTools and get business updates automatically with the site; you can import a replay directly via Share or Open-with from the file manager; the Web now has a Download Android entry and page (with latest version and SHA-256).",
     "ru": "Новый онлайн-клиент WotBTools Android: после установки вы сразу попадаете в существующий WotBTools и автоматически получаете обновления вместе с сайтом; реплей можно импортировать напрямую через «Поделиться» или «Открыть с помощью» из файлового менеджера; на сайте появился раздел «Скачать Android» и страница загрузки (с последней версией и SHA-256)."
+  },
+  {
+    "v": "2.12.46",
+    "date": "2026-08-29",
+    "tag": "fix",
+    "zh": "修复回放解析页「解析预览」按钮消失：在回放解析页上传回放文件后，此前看不到「解析预览/战局回放/AI 复盘」整组操作按钮，无法开始解析。现恢复「解析预览」按钮，选好文件即可一键开始解析；战局回放与 AI 复盘仍从解析结果的具体战斗进入。",
+    "en": "Fixed the missing 'Parse Preview' button on the replay analysis page: after uploading replay files, the whole action group (Parse Preview / Battle Playback / AI Review) was hidden, so parsing could not be started. The 'Parse Preview' button is now restored so you can start parsing with one click; Battle Playback and AI Review still open from a specific battle in the parsed results.",
+    "ru": "Исправлено исчезновение кнопки «Разобрать» на странице разбора реплея: после загрузки файлов вся группа действий («Разобрать» / «Воспроизведение боя» / «AI-разбор») была скрыта, и разбор нельзя было запустить. Кнопка «Разобрать» возвращена — теперь разбор запускается в один клик; «Воспроизведение боя» и «AI-разбор» по-прежнему открываются из конкретного боя в результатах."
+  },
+  {
+    "v": "2.12.45",
+    "date": "2026-08-29",
+    "tag": "fix",
+    "zh": "修复隐藏的管理员 Rating V2 灰度页结果表字段未对齐：数值列标题现与对应数值统一右对齐，玩家、战队等文本列保持左对齐；列顺序、排序、数据和评分公式不变。",
+    "en": "Fixed misaligned fields in the hidden admin Rating V2 gray-page results table: numeric headers now share right alignment with their values, while text columns such as player and clan remain left-aligned. Column order, sorting, data and rating formulas are unchanged.",
+    "ru": "Исправлено выравнивание полей в таблице результатов скрытой административной серой страницы Rating V2: заголовки числовых столбцов теперь выровнены вправо вместе со значениями, а текстовые столбцы игрока и клана остаются выровненными влево. Порядок столбцов, сортировка, данные и формулы рейтинга не изменены."
   },
   {
     "v": "2.12.44",
