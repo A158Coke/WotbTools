@@ -1,6 +1,7 @@
 package com.wotb.web.replay.controller;
 
 import com.wotb.web.replay.dto.ColumnDef;
+import com.wotb.web.replay.dto.RatingV2RadarAxis;
 import com.wotb.web.replay.dto.RatingV2Response;
 import com.wotb.web.replay.dto.RatingV2Row;
 import com.wotb.web.replay.service.RatingV2AdminService;
@@ -24,13 +25,15 @@ class RatingV2AdminControllerContractTest {
     void mapsTheAdminJobPathToTheDedicatedService() throws Exception {
         final RatingV2AdminService service = mock(RatingV2AdminService.class);
         when(service.analyzeReadyJob("ready-job")).thenReturn(new RatingV2Response(
-                List.of(new RatingV2Row(Map.of("rating", 1234))), List.of(), List.of(),
+                List.of(new RatingV2Row(Map.of("rating", 1234),
+                        List.of(new RatingV2RadarAxis("impact", 123.4, 0.4936, true)))), List.of(), List.of(),
                 List.of(new ColumnDef("rating", true))));
         final MockMvc mvc = MockMvcBuilders.standaloneSetup(new RatingV2AdminController(service)).build();
 
         mvc.perform(post("/api/admin/rating-v2/processing-jobs/ready-job"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.rows[0].cells.rating").value(1234))
+                .andExpect(jsonPath("$.rows[0].radar[0].key").value("impact"))
                 .andExpect(jsonPath("$.columns[0].key").value("rating"));
 
         verify(service).analyzeReadyJob("ready-job");

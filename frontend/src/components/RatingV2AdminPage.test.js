@@ -90,6 +90,11 @@ function mountPage() {
       stubs: {
         FileUploader: FileUploaderStub,
         ReplayProcessingPanel: { template: '<div class="processing-panel-stub" />' },
+        RatingV2RadarPanel: {
+          props: ['row', 'rows'],
+          emits: ['close'],
+          template: '<aside class="rating-v2-radar-stub">{{ row.cells.nickname }}<button class="close-radar" @click="$emit(\'close\')">close</button></aside>',
+        },
       },
     },
   })
@@ -179,5 +184,27 @@ describe('RatingV2AdminPage', () => {
     replayState.selectionRevision.value++
     await flushPromises()
     expect(wrapper.findAll('tbody tr')).toHaveLength(0)
+  })
+
+  it('opens a selected player radar and clears it with the next file selection', async () => {
+    api.ratingV2Admin.mockResolvedValue({
+      rows: [{ cells: { nickname: 'Pilot', rating: 1200 }, radar: [] }],
+      duplicates: [], failures: [],
+      columns: [{ key: 'nickname', num: false }, { key: 'rating', num: true }],
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    replayState.files.value = [new File(['x'], 'a.wotbreplay')]
+    replayState.processingJobId.value = 'ready-job'
+    await flushPromises()
+
+    await wrapper.find('.rating-v2-player').trigger('click')
+    expect(wrapper.find('.rating-v2-radar-stub').text()).toContain('Pilot')
+    expect(wrapper.find('.rating-v2-player').attributes('aria-label')).toBe('ratingV2.radar.open:Pilot')
+    expect(wrapper.find('.rating-v2-player').attributes('aria-pressed')).toBe('true')
+
+    replayState.selectionRevision.value++
+    await flushPromises()
+    expect(wrapper.find('.rating-v2-radar-stub').exists()).toBe(false)
   })
 })
