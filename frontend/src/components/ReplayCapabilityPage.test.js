@@ -33,21 +33,23 @@ vi.mock('./AiReviewPanel.vue', () => ({ default: {
   template: '<div data-test="ai-panel">{{ processingJobId }}|{{ sourceId }}|{{ file?.name }}</div>'
 } }))
 vi.mock('./BattlePlaybackPanel.vue', () => ({ default: {
-  props: ['file', 'processingJobId', 'sourceId'],
-  template: '<div data-test="playback-panel">{{ processingJobId }}|{{ sourceId }}|{{ file?.name }}</div>'
+  props: ['file', 'processingJobId', 'sourceId', 'seekTo'],
+  template: '<div data-test="playback-panel">{{ processingJobId }}|{{ sourceId }}|{{ file?.name }}|{{ seekTo }}</div>'
 } }))
 
 function mountPage(mode, handoff = null) {
-  return mount(ReplayCapabilityPage, {
+  const handoffRef = ref(handoff)
+  const wrapper = mount(ReplayCapabilityPage, {
     props: { mode },
     global: {
       provide: {
         isAuthenticated: () => true,
-        replayHandoff: ref(handoff),
+        replayHandoff: handoffRef,
       },
       mocks: { $t: key => key },
     },
   })
+  return { wrapper, handoffRef }
 }
 
 describe('Replay capability pages', () => {
@@ -57,14 +59,16 @@ describe('Replay capability pages', () => {
   })
 
   it('consumes an in-memory source reference for AI Review without an uploader', async () => {
-    const wrapper = mountPage('ai', { processingJobId: 'job-42', sourceId: 'r7' })
+    const { wrapper, handoffRef } = mountPage('ai', { processingJobId: 'job-42', sourceId: 'r7' })
     await flushPromises()
     expect(wrapper.find('[data-test="uploader"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="ai-panel"]').text()).toContain('job-42|r7|r7.wotbreplay')
+    expect(wrapper.find('[data-test="ai-panel"]').text()).toContain('job-42|r7|')
+    expect(handoffRef.value).toBe(null)
+    expect(replayState.requestDirectAction).not.toHaveBeenCalled()
   })
 
   it('prepares a selected replay and binds the returned reference to playback', async () => {
-    const wrapper = mountPage('playback')
+    const { wrapper } = mountPage('playback')
     await wrapper.find('[data-test="uploader"]').trigger('click')
     await flushPromises()
     expect(replayState.requestDirectAction).toHaveBeenCalledTimes(1)
@@ -72,9 +76,46 @@ describe('Replay capability pages', () => {
   })
 
   it('rejects an invalid handoff and keeps the upload entry point available', async () => {
-    const wrapper = mountPage('ai', { processingJobId: 'job-42', sourceId: 'battle-7' })
+    const { wrapper, handoffRef } = mountPage('ai', { processingJobId: 'job-42', sourceId: 'battle-7' })
     await flushPromises()
     expect(wrapper.find('[data-test="uploader"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="ai-panel"]').text()).not.toContain('job-42')
+    expect(handoffRef.value).toBe(null)
+  })
+
+  it('does not reuse a consumed handoff on a later direct AI entry', async () => {
+    const first = mountPage('ai', { processingJobId: 'job-42', sourceId: 'r7' })
+    await flushPromises()
+    first.wrapper.unmount()
+    const second = mountPage('ai')
+    await flushPromises()
+    expect(second.wrapper.find('[data-test="uploader"]').exists()).toBe(true)
+    expect(second.wrapper.find('[data-test="ai-panel"]').text()).not.toContain('job-42')
+  })
+
+  it('keeps a replay → AI → replay → AI direct navigation free of stale Dataset state', async () => {
+    const replay = mountPage('playback', { processingJobId: 'job-42', sourceId: 'r7' })
+    await flushPromises()
+    replay.wrapper.unmount()
+    const ai = mountPage('ai')
+    await flushPromises()
+    expect(ai.wrapper.find('[data-test="uploader"]').exists()).toBe(true)
+    expect(ai.wrapper.find('[data-test="ai-panel"]').text()).not.toContain('job-42')
+  })
+
+  it('forwards AI seek to playback with the same DatasetRef and clears the next handoff', async () => {
+    const navigate = vi.fn()
+    const ai = mount(ReplayCapabilityPage, {
+      props: { mode: 'ai' },
+      global: { provide: { isAuthenticated: () => true, replayHandoff: ref({ processingJobId: 'job-42', sourceId: 'r7' }), navigate }, mocks: { $t: key => key } },
+    })
+    await flushPromises()
+    ai.findComponent({ name: 'AiReviewPanel' }).vm.$emit('seek', 123)
+    expect(navigate).toHaveBeenCalledWith('battle-playback', { processingJobId: 'job-42', sourceId: 'r7', seekTo: 123 })
+    const handoffRef = ref(navigate.mock.calls[0][1])
+    const playback = mountPage('playback', handoffRef.value)
+    await flushPromises()
+    expect(playback.handoffRef.value).toBe(null)
+    expect(playback.wrapper.find('[data-test="playback-panel"]').text()).toContain('job-42|r7||123')
   })
 })

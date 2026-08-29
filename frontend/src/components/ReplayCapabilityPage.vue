@@ -35,23 +35,20 @@ let prepareRevision = 0
 
 const isAi = computed(() => props.mode === 'ai')
 const title = computed(() => isAi.value ? t('home.aiReview') : t('home.battlePlayback'))
-const panelReady = computed(() => !!targetFile.value && !!datasetRef.value?.processingJobId && !!datasetRef.value?.sourceId)
+const panelReady = computed(() => !!datasetRef.value?.processingJobId && !!datasetRef.value?.sourceId)
 
 function validRef(value) {
   return !!value && typeof value.processingJobId === 'string' && value.processingJobId.trim() !== ''
     && typeof value.sourceId === 'string' && /^r\d+$/.test(value.sourceId)
 }
 
-function syntheticFile(sourceId) {
-  return { name: `${sourceId}.wotbreplay`, size: 0, type: 'application/octet-stream' }
-}
-
 function consumeHandoff() {
   const incoming = replayHandoff?.value
+  if (replayHandoff) replayHandoff.value = null
   if (!validRef(incoming)) return
   handoffActive.value = true
   datasetRef.value = { processingJobId: incoming.processingJobId, sourceId: incoming.sourceId }
-  targetFile.value = syntheticFile(incoming.sourceId)
+  targetFile.value = null
   seekTo.value = Number.isFinite(incoming.seekTo) ? incoming.seekTo : null
 }
 
