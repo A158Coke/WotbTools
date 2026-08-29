@@ -2292,6 +2292,13 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
       { type: 'KILL', timeSec: 20, accountId: 1001, targetAccountId: 2001, rawProtocolValue: null }
     )
     const ds = legacyPlaybackToV2Dataset(overview)
+    // 回绕到 t=0 后受害车（2001）必须仍有锚点：t=0 有真实位置上报，OBSERVED 段从 0 起。
+    ds.vehicles[1].positionSegments = [{ knowledge: 'OBSERVED', startSec: 0, endSec: 20,
+      samples: [
+        { timeSec: 0, x: -50, y: -50, knowledge: 'OBSERVED' },
+        { timeSec: 10, x: -50, y: -50, knowledge: 'OBSERVED' },
+        { timeSec: 14, x: -100, y: -100, knowledge: 'OBSERVED' },
+      ] }]
     const wrapper = mount(BattlePlayback, {
       props: { overview, seekTo: 19, loop: true, playbackV2: ds },
       global: { mocks: { $t: i18n.t } }
