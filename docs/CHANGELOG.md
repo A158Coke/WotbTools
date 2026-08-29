@@ -35,6 +35,7 @@
   移除与 V2 检查器重复的 HP / State / 车型展示。
 
 ### Fixed
+- **Android Release 首发签名失败（P0）**：修复 `app/build.gradle.kts` 中 `release` 签名 `keyAlias` 被外层同名局部变量遮蔽，导致 Gradle 报 `SigningConfig "release" is missing required property "keyAlias"` 的问题——外层变量更名 `signingKeyAlias`，`keyAlias = signingKeyAlias` 明确赋给 DSL property（签名参数协议 `wotbKeystorePath/wotbKeystoreStorePass/wotbKeyAlias/wotbKeyPass` 不变）；并在 `.github/workflows/android-release.yml` 的 Gradle build 前新增 signing fail-fast 校验（`ANDROID_KEYSTORE_BASE64`/`ANDROID_KEYSTORE_PASSWORD`/`ANDROID_KEY_ALIAS`/`ANDROID_KEY_PASSWORD` 非空 → `printf '%s'` 解码 Base64 → 解码后 keystore 非空 → `keytool -list` 以配置 store password 命中配置 alias），全程不打印 secret。验证：workflow YAML 解析通过、校验步骤 bash 语法与分支逻辑正确（`bash -n`/`bash -x`）；Gradle 编译与真实签名由 merge 后 release CI 权威验证。仅限 Android release/signing 链路，不涉业务功能、不引入新 key、不透出 keystore/口令。
 - **雷达缩放移动端宽度与七轴徽标碰撞修复**：移除缩放工具栏中冗余的可见标题（保留 group/input/button 完整 aria-label），避免约 375px 手机抽屉或俄文长标签把页面横向撑开；顶部徽标改由共享批量布局同时避让刻度与相邻两轴，覆盖七轴 `38 / 74` 混合分数回归。V2/V5 页面与 V5 Rating Profile PNG 继续共用同一徽标坐标，评分、缩放范围、明细与导出尺寸不变。
 - **Rating V2 移动端雷达抽屉焦点约束**：移动端以 `aria-modal=true` 打开雷达遮罩时，Tab / Shift+Tab 现在在抽屉可聚焦元素内循环，无法落到遮罩后的结果表；Escape 关闭与触发昵称焦点回收保持不变。桌面/平板非模态抽屉仍允许正常离开侧栏继续操作表格。
 - **回放解析预览按钮回归修复（P0）**：回放解析页选择文件后，「解析预览」按钮此前被 `showWorkspaceActions=false` 连带隐藏，导致无法启动解析任务（选完文件无任何操作入口）。现将解析按钮拆到独立的 `showPreview` 开关（默认开启），`showWorkspaceActions` 只控制 AI 复盘/战局回放快捷入口；`RatingV2AdminPage`/`ReplayCapabilityPage` 显式关闭预览以保持原有行为。

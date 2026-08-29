@@ -25,7 +25,9 @@ ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROI
 ## 流程（.github/workflows/android-release.yml）
 
 tag `android-v*` → checkout → 解析版本 → frontend test/build 校验 → JDK 21 + Gradle 8.7 →
-还原 keystore → `gradle assembleRelease`（注入 `-PwotbKeystore*`）→ `apksigner verify` →
+校验并还原 signing keystore（fail-fast：`ANDROID_KEYSTORE_BASE64`/`ANDROID_KEYSTORE_PASSWORD`/`ANDROID_KEY_ALIAS`/`ANDROID_KEY_PASSWORD`
+非空 → `printf '%s'` 解码 Base64 → keystore 非空 → `keytool -list` 以配置 store password 命中配置 alias；全程不打印 secret/密码/Base64/私钥）→
+`gradle assembleRelease`（注入 `-PwotbKeystore*`）→ `apksigner verify` →
 `sha256sum` → 上传 APK 到 `/opt/wotb/android-release` → `chmod 644` → curl 校验 APK 200 →
 **写 version.json（LAST）** → curl 校验 version.json 200。
 
