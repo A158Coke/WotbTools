@@ -210,7 +210,9 @@ requirement 未完成 → **即使 OCR 无 finding 也必须成为 BLOCKER**。
 - [ ] **识别模式**：单实现接口/工厂/策略/观察者；从不覆盖的字段与参数（含恒为 `null` 的元数据字段）；为"可测试性"引入的抽象层；无引用构造函数/空壳实现；仅测试引用的方法
 - [ ] **扫描证明**：全仓 `rg` 零引用（含 `src/test`、`scripts`、`docs`、`deploy`、`frontend/src/locales`、Grafana dashboards）；前端可执行 `cd frontend && npx fallow check dead-code`
 - [ ] **三分类**：真死（零引用且非契约/反射）→ 删除并连带专属测试；假死 → 保留并在报告中记录；待定（引用本身可疑）→ 报告人工确认，不删
-- [ ] **删除粒度**：先方法/字段，后类/文件；一个主题一个 commit；删除后 `mvn -s settings.xml test` + `npm test` + `npm run build` 全绿
+- [ ] **删除粒度**：先方法/字段，后类/文件；一个主题一个 commit；删除后运行 affected regression tests 全绿
+       （repository-level full validation 交由 PR CI；仅当删除触及公共 contract / build / test infrastructure 时，
+      才按 `.agents/AGENTS.md` 的 Full-test 例外规则跑 full，并先声明 Affected scope / Selected validation / Why）
 - [ ] **安全边界（绝不能删）**：前端消费的 JSON 字段/DTO/错误码；Flyway 迁移与实体列；Spring bean 装配/Jackson 反序列化/反射引用；Prometheus/Grafana 指标名（dashboards 引用）；i18n keys（三语 locale）；文档承诺的功能；测试夹具仍需要的行为
 - [ ] **品味判断**引用 `.agents/skills/code-smell/SKILL.md`（不复制其清单）
 
@@ -264,6 +266,11 @@ Blocker count: N
 - 按 BLOCKER → MAJOR → MINOR 顺序逐项修复（MINOR 不阻塞合入，可记录为 known issues）
 - 修复后重新运行受影响的测试；对修复内容重跑 Layer B（OCR 只审 diff，自动覆盖修复后的变更）
 - 循环直到 `Blocker count: 0`；单轮无法闭环的阻塞项停下汇报
+
+> **Validation 策略**：每个 finding 修复后 → 运行 affected regression tests；审查结束**不自动执行
+> repository-level full test**。repository-level full validation 由 PR CI 统一执行（authoritative gate）。
+> 不能因为「review-with-docs 完成」本身触发 full test；仅当删除代码 / 修改公共 contract / build 或
+> test infrastructure 时，才按 `.agents/AGENTS.md` 的 Full-test 例外规则判断是否跑 full。
 
 ## OCR 失败处理（tool failure ≠ no findings）
 
@@ -346,8 +353,9 @@ Tool failure 必须：
 ### MINOR m1 — ...
 
 #### Validation（实际运行的命令，禁止声称未跑的测试通过）
-- tests: `mvn -s settings.xml test` → 通过/失败
-- frontend: `npm test` / `npm run build` → ...
+- tests: `mvn -pl <module> -Dtest=<Test> test`（affected regression）→ 通过/失败；
+  仅当触犯 Full-test 例外时才列 `mvn -s settings.xml test`
+- frontend: `npx vitest run <related-test-files>` / `npm run build`（仅当改动涉及 build 范围）→ ...
 - OCR: `ocr delegate preview/rule` → reviewable N / reviewed N / skipped N
 
 #### DI 审计清单
