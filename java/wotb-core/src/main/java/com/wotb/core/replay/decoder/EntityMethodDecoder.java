@@ -107,7 +107,12 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
         // Type8 envelope 至少 12B（entityId u32 + subtype u32 + argLen u32）；在读取
         // entityId(offset0)/subtype(offset4)/argLen(offset8) 前必须保证 12B，否则数组越界。
         if (payload.length < 12) {
-            return new ReplayDecodeResult(DecodeStatus.MALFORMED, List.of(),
+            // PR162/P1-4：已知包类型 + 无效语义 shape 不得 silent disappear —— 保留 UnknownReplayEvent。
+            final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
+            return new ReplayDecodeResult(DecodeStatus.MALFORMED,
+                    List.of(new UnknownReplayEvent(
+                            packet.sequence(), ts, packet.type(), payload.length,
+                            "TYPE8_ENVELOPE_TRUNCATED", DecodeConfidence.UNKNOWN)),
                     List.of(new ReplayDecodeWarning("TRUNCATED_PAYLOAD",
                             "EntityMethod packet too short: " + payload.length)));
         }
