@@ -40,7 +40,7 @@ const canUseAiReview = computed(() => {
  * processingJobId + sourceId 都已绑定到面板后才能执行。file 已选但引用缺失 =
  * PREPARING_DATASET（状态机问题），不是用户错误。
  */
-const datasetReady = computed(() => !!props.file && !!props.processingJobId && !!props.sourceId)
+const datasetReady = computed(() => !!props.processingJobId && !!props.sourceId)
 const datasetRecovering = ref(false)
 /** Dataset 准备中/过期重试/失败的用户可读文案（数据集生命周期，非 AI 模型错误）。 */
 const datasetMessage = computed(() => {
@@ -408,7 +408,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="ai-review-panel">
-    <p v-if="!file" class="ws-note">{{ $t('workspace.ai_empty') }}</p>
+    <p v-if="!file && !datasetReady" class="ws-note">{{ $t('workspace.ai_empty') }}</p>
     <template v-else>
       <div v-if="canUseAiReview" class="ai-action-row">
         <ReplayAnalysisAction :analyzing="analyzing" :disabled="!datasetReady" @analyze="runAnalyze" @cancel="cancelAnalyze" />

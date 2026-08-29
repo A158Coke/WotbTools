@@ -12,7 +12,6 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { localizeAiError, isRecoverableDatasetCode } from '../utils/reconstruction-analysis.js'
-import { fileKey } from '../utils/helpers.js'
 import MapOverview from './MapOverview.vue'
 
 const props = defineProps({
@@ -37,7 +36,7 @@ const { t } = useI18n()
 const { token, ensureToken, login } = useAuth()
 
 /** Dataset 就绪守卫：战局回放只有拿到 authoritative processingJobId+sourceId 才读 cached artifact。 */
-const datasetReady = computed(() => !!props.file && !!props.processingJobId && !!props.sourceId)
+const datasetReady = computed(() => !!props.processingJobId && !!props.sourceId)
 
 // 统一的受保护请求：确保带上有效的 Keycloak Bearer Token（/api/replay/* 需要角色），
 // 并统一处理 token 刷新失败 / 401 / 403。
@@ -80,7 +79,7 @@ let mapAbortController = null
  * 旧请求（含 AbortError）不得影响新文件的状态。
  */
 async function loadMapOverview() {
-  if (mapLoading.value || !props.file) return
+  if (mapLoading.value) return
   // Dataset 路径：必须携带 processingJobId+sourceId，绝不回退 multipart。
   // 数据集未就绪属于状态机问题（PREPARING_DATASET）：不尝试加载、不设裸错误码；datasetReady 后自动重试。
   if (!datasetReady.value) return
@@ -153,14 +152,13 @@ function toggleMap() {
 }
 
 /**
- * effective Dataset identity：file + processingJobId + sourceId 三者共同
- * 决定「当前地图属于谁」。任一变化都必须真正 reset（abort 在途请求、清空已加载的旧 map、
+ * effective Dataset identity：processingJobId + sourceId 共同决定「当前地图属于谁」。任一变化
+ * 都必须真正 reset（abort 在途请求、清空已加载的旧 map、
  * 解除 mapLoaded 阻塞），否则错误 Dataset A 的已加载地图会在 B 身份下继续显示。
  * 单一 watcher 同时避免 file watcher + dataset watcher 对同一变化的双重请求。
  */
 function effectiveDatasetKey() {
-  const f = props.file
-  return `${f ? fileKey(f) : ''}|${props.processingJobId || ''}|${props.sourceId || ''}`
+  return `${props.processingJobId || ''}|${props.sourceId || ''}`
 }
 
 watch(effectiveDatasetKey, () => {
@@ -178,7 +176,7 @@ watch(() => props.active, () => {
  * + 无在途请求。同一文件已加载（或已尝试失败/204）后再次进入不重复请求；手动按钮仍可重试。
  */
 function maybeAutoLoadMap() {
-  if (props.file && props.active && !mapLoaded.value && !mapLoading.value) {
+  if (props.active && props.processingJobId && props.sourceId && !mapLoaded.value && !mapLoading.value) {
     loadMapOverview()
   }
 }
@@ -189,7 +187,7 @@ function maybeAutoLoadMap() {
  * 写回同一数值：连续点击同一时间戳（值不变）也会触发子组件 watch，播放器被拖走后仍会重新 seek。
  */
 watch(() => props.seekTo, async (sec) => {
-  if (!props.file || !Number.isFinite(sec)) return
+  if (!Number.isFinite(sec)) return
   if (!mapOverview.value && !mapLoading.value) {
     await loadMapOverview()
   }
@@ -211,7 +209,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div>
-    <p v-if="!file" class="ws-note">{{ $t('workspace.playback_empty') }}</p>
+    <p v-if="!file && !datasetReady" class="ws-note">{{ $t('workspace.playback_empty') }}</p>
     <div v-else class="panel map-panel" data-test="map-panel">
       <!-- dataset 未就绪（PREPARING_DATASET / FAILURE）：不读 cached artifact，显示准备/失败状态 -->
       <div v-if="!datasetReady" class="map-dataset-status" data-test="map-dataset-status">
