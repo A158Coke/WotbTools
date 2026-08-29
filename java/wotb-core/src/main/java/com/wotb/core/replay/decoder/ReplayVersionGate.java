@@ -1,17 +1,25 @@
 package com.wotb.core.replay.decoder;
 
+import com.wotb.core.parse.ReplayVersionFamily;
+
 /**
  * Replay protocol version capability facade (delegates to {@link ReplayProtocolProfile}).
  *
- * <p>This is <b>not</b> a client-version allowlist. The structurally-proven layouts are forward-compatible
- * (see {@link ReplayProtocolProfile.Level#STRUCTURALLY_COMPATIBLE}); only version-scoped closed numeric
- * semantics (sentinels / enums / bit-masks / cause-codes) remain strictly evidence-gated. A future version
- * therefore keeps decoding container/framing, Type10 layout, EntityProperty envelope, entity lifecycle
- * layout and EntityMethod envelopes, while its unverified closed semantics degrade to {@code RAW/UNKNOWN}.</p>
+ * <p>This is <b>not</b> a client-version allowlist. Each capability decides its own future policy
+ * (see {@link ReplayProtocolProfile#levelOf}). A future version keeps decoding container/framing and the
+ * deliberately forward-compatible structural surfaces (Type10 49B, generic Type7/Type8 envelope, ordinary
+ * positive HP), while:
+ * <ul>
+ *   <li>entity-lifecycle (Type4/5/33) <b>fails closed</b> for future versions — there is currently no
+ *       reliable version-independent invariant, so {@code entityLifecycleLayoutAllowed} requires VERIFIED;</li>
+ *   <li>closed numeric semantics (sentinels / enums / bit-masks / cause-codes / method identity / prop2
+ *       turret yaw / settlement field-number identity) degrade to {@code RAW/UNKNOWN}.</li>
+ * </ul>
+ * </p>
  *
- * <p><b>Structural</b> entry points return {@code true} whenever the level is not {@code UNKNOWN}
- * (i.e. VERIFIED or STRUCTURALLY_COMPATIBLE) — the decoder still validates the exact shape, so a shape
- * mismatch falls back to UNKNOWN, and the version number never alone blocks a stable layout.</p>
+ * <p>There is no global rule that "future keeps all structural capabilities": each gate consults its own
+ * capability level, so capability can be forward-compatible (STRUCTURALLY_COMPATIBLE) or fail-closed
+ * (UNKNOWN) as its evidence dictates.</p>
  */
 public final class ReplayVersionGate {
 
@@ -36,6 +44,16 @@ public final class ReplayVersionGate {
                 != ReplayProtocolProfile.Level.UNKNOWN;
     }
 
+    /**
+     * PR162/P0-2：prop2 turret-relative yaw 的<b>语义</b>（u16 * 360/65536 - 180°）只由
+     * {@code PROP_TURRET_YAW} capability 授权。generic Type7 envelope（entityId/propId/valueLen/rawValue）
+     * 只是结构可解析；future 版本不得因 envelope STRUCTURALLY_COMPATIBLE 就自动把 prop2 当 turret yaw。
+     */
+    public static boolean turretYawAllowed(final String clientVersion) {
+        return ReplayProtocolProfile.levelOf(clientVersion,
+                ReplayProtocolProfile.Capability.PROP_TURRET_YAW) == ReplayProtocolProfile.Level.VERIFIED;
+    }
+
     /** EntityMethod envelope + observed method layouts: forward-compatible structural. */
     public static boolean methodLayoutAllowed(final String clientVersion) {
         return ReplayProtocolProfile.levelOf(clientVersion, ReplayProtocolProfile.Capability.ENTITY_METHOD_ENVELOPE)
@@ -49,10 +67,25 @@ public final class ReplayVersionGate {
      * method-specific args semantic 属 closed/version-scoped —— 未认证即 raw-preserve，不得无条件承接
      * 当前版本 EXACT semantic。
      */
-    public static boolean methodLayoutAffirmed(final String clientVersion) {
-        return ReplayProtocolProfile.levelOf(clientVersion,
-                ReplayProtocolProfile.Capability.ENTITY_METHOD_ENVELOPE)
-                == ReplayProtocolProfile.Level.VERIFIED;
+    /**
+     * PR162/P1-6：EntityMethod <b>numeric method semantic</b>（method0/1/5/17/20/27/29 等）按 method 单独 gated，
+     * 不是由 generic {@code ENTITY_METHOD_ENVELOPE} 授权 —— envelope 只证明 entityId/methodId/argLen/rawArgs 可解析，
+     * 绝不证明「method29 = projectile launch」等 identity。
+     * <ul>
+     *   <li>11.19 current（PR147 primary）→ 所有 production method 语义 VERIFIED。</li>
+     *   <li>11.18 legacy → 仅 Vehicle method1（health/state）有独立 evidence（Javadoc /
+     *       EntityMethodDecoderVersionGateTest）；其它（0/4/5/17/20/27/29/36/38/47/48）无独立 11.18 evidence → raw-preserve。</li>
+     *   <li>future/unknown → raw-preserve（envelope 结构仍可读取，numeric semantic 不继承）。</li>
+     * </ul>
+     */
+    public static boolean methodSemanticAllowed(final String clientVersion, final int methodId) {
+        if (ReplayVersionFamily.isCurrentVerified(clientVersion)) {
+            return true;
+        }
+        if (ReplayVersionFamily.isLegacyVerified(clientVersion)) {
+            return methodId == EntityMethodDecoder.SUBTYPE_VEHICLE_HEALTH_STATE;
+        }
+        return false;
     }
 
     /** EntityMethod closed numeric semantics (winner/finish, damage, updateArena): current family only. */
@@ -106,7 +139,38 @@ public final class ReplayVersionGate {
 
     /** Current-version verified 0xFFFE terminal classification: current family only. */
     public static boolean verifiedFffeTerminalAllowed(final String clientVersion) {
-        return closedSemanticsAllowed(clientVersion);
+        return ReplayProtocolProfile.levelOf(clientVersion,
+                ReplayProtocolProfile.Capability.TERMINAL_FFFE) == ReplayProtocolProfile.Level.VERIFIED;
+    }
+
+    /** PR162/P0-3：method36 targeting/snapshot 语义只由 {@code METHOD36_AIM_RAY} capability 授权（非统一 closed gate）。 */
+    public static boolean method36Allowed(final String clientVersion) {
+        return ReplayProtocolProfile.levelOf(clientVersion,
+                ReplayProtocolProfile.Capability.METHOD36_AIM_RAY) == ReplayProtocolProfile.Level.VERIFIED;
+    }
+
+    /** PR162/P0-3：method38 shot-result 语义只由 {@code METHOD38_SHOT_RESULT} capability 授权。 */
+    public static boolean method38Allowed(final String clientVersion) {
+        return ReplayProtocolProfile.levelOf(clientVersion,
+                ReplayProtocolProfile.Capability.METHOD38_SHOT_RESULT) == ReplayProtocolProfile.Level.VERIFIED;
+    }
+
+    /** PR162/P0-3：Type31 gun-marker 语义只由 {@code TYPE31_GUN_MARKER} capability 授权。 */
+    public static boolean gunMarkerAllowed(final String clientVersion) {
+        return ReplayProtocolProfile.levelOf(clientVersion,
+                ReplayProtocolProfile.Capability.TYPE31_GUN_MARKER) == ReplayProtocolProfile.Level.VERIFIED;
+    }
+
+    /** PR162/P0-3：Type35 session-decisecond 语义只由 {@code TYPE35_SESSION_DECISECOND} capability 授权。 */
+    public static boolean sessionDecisecondAllowed(final String clientVersion) {
+        return ReplayProtocolProfile.levelOf(clientVersion,
+                ReplayProtocolProfile.Capability.TYPE35_SESSION_DECISECOND) == ReplayProtocolProfile.Level.VERIFIED;
+    }
+
+    /** PR162/P0-3：ammunition-selection 语义只由 {@code AMMO_SELECTION} capability 授权。 */
+    public static boolean ammoSelectionAllowed(final String clientVersion) {
+        return ReplayProtocolProfile.levelOf(clientVersion,
+                ReplayProtocolProfile.Capability.AMMO_SELECTION) == ReplayProtocolProfile.Level.VERIFIED;
     }
 
     /**

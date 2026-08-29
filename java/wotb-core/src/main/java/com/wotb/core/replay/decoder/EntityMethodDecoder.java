@@ -132,7 +132,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
         // argLen/rawArgs），numeric method identity 与 args semantic 是 closed/version-scoped ——
         // 未认证即 raw-preserve，绝不无条件承接当前版本 EXACT semantic event。
         if (isLayoutMethod(subType)
-                && !ReplayVersionGate.methodLayoutAffirmed(context.clientVersion())) {
+                && !ReplayVersionGate.methodSemanticAllowed(context.clientVersion(), subType)) {
             events.add(new UnknownReplayEvent(
                     packet.sequence(), ts, packet.type(), payload.length,
                     "FUTURE_METHOD_SEMANTIC_UNVERIFIED_METHOD" + subType, DecodeConfidence.UNKNOWN));
@@ -251,7 +251,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
             case SUBTYPE_TARGETING_SNAPSHOT -> {
                 // §A2：method36 field semantics 是 PR147 仅 11.19 controlled 证明的 closed semantics；
                 // 非 11.19 → raw-preserve（UnknownReplayEvent）+ diagnostics，不伪造 numeric semantic。
-                if (!ReplayVersionGate.closedSemanticsAllowed(context.clientVersion())) {
+                if (!ReplayVersionGate.method36Allowed(context.clientVersion())) {
                     versionRawPreserve(events, warnings, packet, ts, subType, "VERSION_UNSUPPORTED_METHOD36");
                 } else if (entityClassFor(context, subType, entityId) != EntityClass.AVATAR) {
                     rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
@@ -267,7 +267,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
             }
             case SUBTYPE_SHOT_RESULT -> {
                 // §A2：method38 low16/modifier/component namespace 是 PR147 仅 11.19 controlled 证明的 closed semantics。
-                if (!ReplayVersionGate.closedSemanticsAllowed(context.clientVersion())) {
+                if (!ReplayVersionGate.method38Allowed(context.clientVersion())) {
                     versionRawPreserve(events, warnings, packet, ts, subType, "VERSION_UNSUPPORTED_METHOD38");
                 } else if (entityClassFor(context, subType, entityId) != EntityClass.AVATAR) {
                     rawPreserve(events, warnings, packet, ts, entityId, subType, argLen,
