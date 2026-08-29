@@ -1,10 +1,10 @@
 package com.wotb.core.ai;
 
-import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.reconstruction.BattleLifecycle;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;

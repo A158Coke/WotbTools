@@ -5,6 +5,23 @@
 ## [Unreleased]
 
 ### Fixed
+- **Replay 版本作用域 / 权威收敛 + 平行 parser 清除（PR162 deep review · P0/P1 全清）**：
+  ① **method1 版本 provenance**：HP raw 分类改在 decoder/evidence 边界一次完成并随 `VehicleHealthStateEvent.rawState` 传播（0xFFFE 仅在 `verifiedFffeTerminalAllowed` 时成 VERIFIED_TERMINAL_FFFE），`ReplayHpTimeline`/`ReplayTerminalLifecycle`/`BattleStateReconstructor` 不再 `HpRawState.classify(raw,true)`；method1 cause 语义仅 current version family 证明（11.18 保留 raw causeFlag / semantic UNKNOWN）。
+  ② **BattleStateReconstructor 收敛**：删除 `VehicleState` 由 `DamageEvent.raw` 累计的 `damageDealt/damageReceived` 及其 add/get/copy plumbing；PARTIAL `PositionChangedEvent` 不再把 `ObservationState` 升为 OBSERVED；AoI/terminal/HP 分别由 `ReplayAoiLifecycle`/`ReplayTerminalLifecycle`/`ReplayHpTimeline` 唯一 authority。
+  ③ **EntityMethod 完整版本门禁**：subtype 8/47/48（damage/updateArena/updateArena2）对未知/未来版本 raw-preserve，绝不产出 current-version semantic event（DamageEvent/ParticipantMappingEvent/SupremacyPointsChangedEvent）。
+  ④ **Type14 = stream close（非 battle end）**：`BattleEndDecoder` 恒产出 `ReplayStreamClosedEvent`（packet stream 关闭/停止 marker），不推导 winner / finish reason / battle start；battle-start clock 只用 raw framing 时间 + proven 结算 duration。
+  ⑤ **清除 main-source 平行 parser**：`EventStreamReader`/`ReplayEventExtractors`/`ReplayPacketParser` 移入 test-probe 范围（研究/逆向工具），生产解析只经 `ReplayPacketStreamReader`(framing/header) + `ReplayPacketDecoderRegistry`(canonical decoder)；`ReplayParser` 仅内联读 header 的 clientVersion（避免 parse↔replay 包级循环）。
+  ⑥ **Type33/Type4 shape 收紧**：仅精确命中已证明 shape（Type33=12B all-zero zeroTail；Type4=4B）才 EXACT，其余 raw-preserve。
+  ⑦ **RatingV2 HP 分母**：恒为静态 tankopedia baseline（绝不切到 replay actual entryHp）。
+  ⑧ **FormationDepthEvidence/RelativeDepthHpEvidence entity provenance**：改为 per-entity `PositionSample(entityId,t,x,z)`，被测 AoI segment 只消费同 entity 样本（多实体/重入生命周期不混坐标）。
+  测试：`EntityMethodDecoderVersionGateTest`/`BattleEndDecoderRawPreserveTest`/`MaterializationDecoderTest`(shape)/`FormationDepthEvidenceTest`(re-entry)/`RatingV2CalculatorTest`；wotb-core 全量 1267 绿 + wotb-web 受影响测试绿（Mockito 需 CI javaagent）。
+- **Replay AoI 唯一 authority + death provenance source-aware（PR162 deep review blockers）**：
+  ① **AoI 唯一 authority**：`ReplayAoiLifecycle` 成为 AoI observed/hidden 唯一 authority——`BattleTimelineBuilder`（frame vehicle 用 `segmentAt(entityId, t)` 判 CURRENT/LAST_KNOWN，删除 `POSITION_GAP_SEC`/5s packet-age 推断）、`BattlePlaybackAdapter`/`MapOverviewBuilder`（共享 `AoiPositionCoverage`，区间 = AoI observed segment ∩ 实际位置存在 ∩ death/duration clamp，同一 open segment 内静止 >5s 无 Type10 不再产生 POSITION_STALE）、`FormationDepthEvidence`/`RelativeDepthHpEvidence`（`resolvePhasePosition` 先定位 phaseEnd 的 segment，只用该 segment ∩ phase 的样本计算 CURRENT 参考，禁止跨 UNKNOWN_AOI gap 混坐标；gap 内 fail-closed，不产出 CURRENT exact geometry）。
+  ② **死亡 provenance source-aware**：`LeagueRatingConflictDetector` 改用 `DeathEvidence`（LIVE_EXACT > SETTLEMENT_SECOND > UNKNOWN），reconcile 不再跨 source `Math::min`（LIVE_EXACT 128.50 不被 settlement 128.00 覆盖）；`LeagueRatingValidator`/`BattlePhaseSummary` 改用 canonical `PlayerResultFormat.deathSec`；UNKNOWN source 的 residual `survivalTimeSec`/`deathTimeMillis` 永不成 KNOWN；`RatingV2Calculator.tradedDeath` 也用 canonical deathSec。
+  ③ **Team AoI convergence**：`DefaultTeamBattleFeatureExtractor` 从 `ReplayAoiLifecycle` 获取 Type4 边界，不再从 raw `EntityRemovedEvent` 重建第二套事实推导。
+  ④ **raw 字段保真**：reconcile 到 LIVE_EXACT 时保留结算原始证据 `field24 lifeTime`（`settlementLifeTimeSec`），
+     不把 live-derived canonical fact 写回原始字段——11.19 corpus <b>无 #104</b>，`deathTimeMillis` 是派生兼容值。
+  测试：`LeagueDeathProvenanceContractTest`（source-aware reconcile + 死亡时间保真）、`BattleTimelineBuilderTest`/`MapOverviewBuilderPositionIntervalsTest`（AoI 回归）、`FormationDepthEvidenceTest`（phase 跨 gap 不混坐标 + gap 不产出 CURRENT）、`RatingV2CalculatorTest`（UNKNOWN residual 不升级）；wotb-core 全量 + wotb-web replay/ai 受影响测试全绿。
 - **Keycloak 登录主题 UX Hotfix（品牌收敛 / 主题切换图标 / 深色毛玻璃）**：`docker/keycloak/themes/wotbtools/login` 修改——① 左上角品牌 Logo 固定显示高度 desktop 36px、mobile(≤767)/tablet-portrait 28px（PNG 白底来自图片本身，保留 256px/37KB 优化版，不裁切、不换源、不加容器背景/padding）；② 右上角主题切换按钮由单色圆点改为 CSS 绘制的 Sun+Moon 双图标（当前主题态高亮、另一态置灰），补齐 light `:focus-visible`，aria/title 与持久化逻辑不变，mobile(≤767) 实际点击区域经 `::after` 扩至 ≥40px（视觉保持 44×26）；③ 深色 Battlefield 登录卡由透明 prism 改为局部毛玻璃：`rgba(8,12,16,0.34)` + `backdrop-filter: blur(10px) saturate(120%)`，仅 `html[data-theme="dark"] .wbtb-card`（token `--auth-card-*`），light 保持 prism 无 blur 零回归，深色 `.wbtb-shell__auth::before` veil 强度随之下调（0.20/0.09 → 0.12/0.05）避免双重黑化；同步移除无消费的 `--auth-prism-alpha` token。文档同步 `docs/auth/keycloak-login-theme.md` / `DEVELOPER_GUIDE.md`；仅重建 keycloak 镜像，不动 realm/OIDC/IdP/flow/主站前端。
 - **Keycloak 登录主题 V8 生产润色（Hotfix）**：`docker/keycloak/themes/wotbtools/login` 三处小修——① topbar 品牌改为复用主站官方 Logo（`common/assets/wotbtoolslogo.png` 打包至 `resources/img/`，删除主题内临时橙色 CSS mark 与 `--auth-logo` token）；② 撤销登录页 i18n：删除 `registrationLayout` 内 locale 选择器与 `theme.js` locale 绑定、主题自创文案（theme toggle aria/tooltip）改中文硬编码、精简 `messages_*.properties` 仅保留 `identity-provider-login-label`；③ 深色（Battlefield）登录区新增局部可读性：`.wbtb-shell__auth::before` 软径向 dark veil（无 `backdrop-filter`/`filter: blur`、无硬矩形/左右分区）+ 提升 input/eye/IdP/divider 对比（dark-only token/选择器）。Light 零回归；仅重建 keycloak 镜像，不动 realm/OIDC/IdP。
 - **回放结果页列选择器被表格遮挡修复**：`ReplayPage` 解析结果工具栏的列选择器（`.colpanel`，`position:fixed; z-index:260`）此前被 `.restoolbar` 的 `backdrop-filter` 层叠上下文锁住，其 z-index 只在 `.restoolbar` 内部生效；结果表容器 `.tablewrap` 同样因 `backdrop-filter` 成为 stacking context 且 DOM 中晚于工具栏，按同层 DOM 顺序后绘制规则盖住列选择器。已将 `ReplayPage.vue` 的 `<ColumnPicker>` 用 `<Teleport to="body">` 包裹，使其脱离 `.restoolbar` 层叠上下文/包含块，回归视口定位与 root stacking context，列选择器稳定浮于结果表之上（普通/League 模式、桌面/平板/移动端共用）；列勾选/全选/重置/拖拽排序与「完成」行为不变。`ReplayPage.test.js` / `ReplayPageReadyFlow.test.js` 回归，前端全量测试与构建通过。
@@ -1674,7 +1691,7 @@ c2 等待导致的 countFinished(c2)==0 偶发失败。仅改测试基础设施�
 - **战局回放 review 修复（4 项）**：① 炮塔方向证据文档 source-of-truth 统一为受控旋转实验定案
   PROVEN（历史 NOT_PROVEN 标 SUPERSEDED）；② `directionSamples` 只接受落在该车同一可信
   position-interval 内的 prop2 样本、hull yaw 仅从同区间位置配对（跨 gap 不取对侧、段末样本恒保留
-  保证冻结）；③ playback 时长三优先级（`battle.durationS` → `BattleEndedEvent` → 位置流最后时刻）
+  保证冻结）；③ playback 时长三优先级（`battle.durationS` → `RoundFinishedEvent` → 位置流最后时刻）
   并对全部 event/interval/direction/deathSec 施加 `[0,durationSec]` 契约；④ 前端同一 AI 时间戳重复
   点击可再次 seek、单点 last-known 时间保持真实采样时间。
 - **战局回放坦克名权威解析**：MapOverviewBuilder.buildPlayback 的 PlaybackVehicle.tankName 由空串改为 ReplayDisplayNames.tankName(tankId, tankName) 权威解析（与 AI 证据路径同源，如 29985 → "SPHT"），前端不再回退显示纯数字 tankId；新增 MapOverviewBuilderTest 坦克名非空/非数字断言。

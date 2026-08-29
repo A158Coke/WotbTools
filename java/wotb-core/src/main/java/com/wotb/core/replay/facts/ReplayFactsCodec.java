@@ -1,8 +1,8 @@
 package com.wotb.core.replay.facts;
 
-import com.wotb.core.replay.event.ReplayEvent;
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
+import com.wotb.core.replay.event.ReplayEvent;
 import tools.jackson.databind.DeserializationContext;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.MapperFeature;
@@ -15,10 +15,8 @@ import tools.jackson.databind.ser.std.StdSerializer;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.RecordComponent;
-import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**

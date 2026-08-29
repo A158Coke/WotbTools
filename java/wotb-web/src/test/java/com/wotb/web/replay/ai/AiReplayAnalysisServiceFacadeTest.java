@@ -1,10 +1,8 @@
 package com.wotb.web.replay.ai;
 
-import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
-import com.wotb.core.replay.processing.ReplayAnalysisScope;
-import com.wotb.core.replay.processing.ReplayPerspectiveGroup;
+import com.wotb.core.model.DeathTimeSource;
 import com.wotb.core.replay.processing.ReplayProcessingResult;
 import com.wotb.core.replay.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
@@ -118,6 +116,8 @@ class AiReplayAnalysisServiceFacadeTest {
         p.damageDealt = dmg;
         p.survived = team == 1;
         p.deathTimeMillis = team == 1 ? 0 : 180_000;
+        p.deathTimeSource = p.deathTimeMillis > 0
+                ? DeathTimeSource.SETTLEMENT_SECOND : DeathTimeSource.UNKNOWN;
         return p;
     }
 

@@ -14,50 +14,36 @@ class RepresentativeComparatorTest {
 
     @Test
     void reconstructionBeatsNone() {
-        var a = scoped("a", true, true, 0.95, 0, 0, 0);
-        var b = scoped("b", false, true, 0.95, 0, 0, 0);
-        assertSelected("a", a, b);
-    }
-
-    @Test
-    void streamCompleteBeatsIncomplete() {
-        var a = scoped("a", true, true, 0.95, 0, 0, 0);
-        var b = scoped("b", true, false, 0.95, 0, 0, 0);
+        var a = scoped("a", true, 0.95, 0, 0);
+        var b = scoped("b", false, 0.95, 0, 0);
         assertSelected("a", a, b);
     }
 
     @Test
     void higherDecodedRatioWins() {
-        var a = scoped("a", true, true, 0.95, 1, 1, 0);
-        var b = scoped("b", true, true, 0.40, 1, 1, 0);
+        var a = scoped("a", true, 0.95, 1, 1);
+        var b = scoped("b", true, 0.40, 1, 1);
         assertSelected("a", a, b);
     }
 
     @Test
     void fewerFailedPacketsWins() {
-        var a = scoped("a", true, true, 0.95, 1, 5, 0);
-        var b = scoped("b", true, true, 0.95, 5, 5, 0);
+        var a = scoped("a", true, 0.95, 1, 5);
+        var b = scoped("b", true, 0.95, 5, 5);
         assertSelected("a", a, b);
     }
 
     @Test
     void fewerUnknownPacketsWins() {
-        var a = scoped("a", true, true, 0.95, 5, 1, 0);
-        var b = scoped("b", true, true, 0.95, 5, 5, 0);
-        assertSelected("a", a, b);
-    }
-
-    @Test
-    void fewerResyncsWins() {
-        var a = scoped("a", true, true, 0.95, 5, 5, 0);
-        var b = scoped("b", true, true, 0.95, 5, 5, 3);
+        var a = scoped("a", true, 0.95, 5, 1);
+        var b = scoped("b", true, 0.95, 5, 5);
         assertSelected("a", a, b);
     }
 
     @Test
     void allEqualFirstWins() {
-        var a = scoped("a", true, true, 0.95, 5, 5, 0);
-        var b = scoped("b", true, true, 0.95, 5, 5, 0);
+        var a = scoped("a", true, 0.95, 5, 5);
+        var b = scoped("b", true, 0.95, 5, 5);
         assertSelected("a", a, b);
     }
 
@@ -71,20 +57,17 @@ class RepresentativeComparatorTest {
     private BatchAnalyzer.ScopedResult scoped(
             final String name,
             final boolean recon,
-            final boolean complete,
             final double ratio,
             final int failed,
-            final int unknown,
-            final int resync) {
+            final int unknown) {
         var caps = new ReplayProcessingCapabilities(
                 true, true, recon, false, false, false, false, false);
         var coverage = new ReplayCoverage(
-                complete, 100, (int) (ratio * 100), 0, unknown, failed, ratio, Map.of());
+                100, (int) (ratio * 100), 0, unknown, failed, ratio, Map.of());
         var diag = new ReplayStreamDiagnostics(
-                0, 0, 100, 100 - failed - unknown, 0, resync,
-                0, 0, 0f, 0f, 0, Map.of(), false, null, complete);
+                0, 100, 0f, 0f, 0, Map.of());
         var processingDiag = new ReplayProcessingDiagnostics(
-                true, complete, recon, diag);
+                true, true, recon, diag);
         var reconstruction = recon
                 ? new ReplayReconstruction(null, null, 300f, null,
                         List.of(), List.of(), List.of(), null, coverage, diag)

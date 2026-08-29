@@ -5,8 +5,8 @@ import com.wotb.core.replay.evidence.EvidenceSkillContext;
 import com.wotb.core.replay.evidence.EvidenceSkillEngine;
 import com.wotb.core.replay.evidence.EvidenceSkillResult;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
-import com.wotb.web.replay.ai.TeamAiPromptBuilder;
 import com.wotb.web.replay.ai.TacticalReviewPromptBuilder;
+import com.wotb.web.replay.ai.TeamAiPromptBuilder;
 
 import java.util.List;
 

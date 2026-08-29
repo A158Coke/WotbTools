@@ -4,6 +4,7 @@ import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
+import com.wotb.core.util.PlayerResultFormat;
 import org.springframework.util.StringUtils;
 
 import java.util.LinkedHashMap;
@@ -41,7 +42,11 @@ public final class Aggregator {
                 if (p.survived) {
                     a.survived++;
                 }
-                a.survivalSum += p.survivalTimeSec;
+                final double survivalSec = canonicalSurvivalSec(b, p);
+                if (survivalSec > 0) {
+                    a.survivalSum += survivalSec;
+                    a.survivalKnownBattles++;
+                }
                 a.kills += p.kills;
                 a.damage += p.damageDealt;
                 a.assisted += p.damageAssisted;
@@ -57,5 +62,18 @@ public final class Aggregator {
             }
         }
         return map;
+    }
+
+    /**
+     * 存活玩家的 survival time 来自该场 battle duration；阵亡玩家统一走 canonical death source。
+     * 任一来源不可证明时返回 0 表示 UNKNOWN，但调用方不会把它加入 survivalSum。
+     */
+    private static double canonicalSurvivalSec(final Battle battle, final PlayerResult player) {
+        if (player.survived) {
+            return battle != null && battle.durationS != null && battle.durationS > 0
+                    ? battle.durationS
+                    : 0;
+        }
+        return PlayerResultFormat.deathSec(player);
     }
 }

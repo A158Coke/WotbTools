@@ -31,9 +31,6 @@ public final class VehicleState {
     private Float removedAt;
     private Float destroyedAt;
 
-    private int damageDealt;
-    private int damageReceived;
-
     public VehicleState(int entityId, float firstObservedAt) {
         this.entityId = entityId;
         this.lifeState = LifeState.UNKNOWN;
@@ -61,8 +58,6 @@ public final class VehicleState {
     public Float lastPositionAt() { return lastPositionAt; }
     public Float removedAt() { return removedAt; }
     public Float destroyedAt() { return destroyedAt; }
-    public int damageDealt() { return damageDealt; }
-    public int damageReceived() { return damageReceived; }
 
     // ---- Setters (package-private for reconstructor) ----
 
@@ -108,9 +103,6 @@ public final class VehicleState {
         this.observationState = ObservationState.REMOVED;
     }
 
-    public void addDamageDealt(int damage) { this.damageDealt += damage; }
-    public void addDamageReceived(int damage) { this.damageReceived += damage; }
-
     /**
      * 创建此状态的深度拷贝。
      */
@@ -132,8 +124,6 @@ public final class VehicleState {
         copy.lastPositionAt = this.lastPositionAt;
         copy.removedAt = this.removedAt;
         copy.destroyedAt = this.destroyedAt;
-        copy.damageDealt = this.damageDealt;
-        copy.damageReceived = this.damageReceived;
         return copy;
     }
 }

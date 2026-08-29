@@ -3,13 +3,13 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.replay.evidence.TeamReviewEnvelope;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.util.List;
 
 /**
  * Natural Coach 轮：Team Call #2 structured JSON envelope 解析契约。

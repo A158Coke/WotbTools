@@ -1,7 +1,7 @@
 package com.wotb.core;
 
-import com.wotb.core.parse.EventStreamReader;
 import com.wotb.core.parse.Protobuf;
+import com.wotb.core.parse.probe.EventStreamReader;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
@@ -11,11 +11,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;

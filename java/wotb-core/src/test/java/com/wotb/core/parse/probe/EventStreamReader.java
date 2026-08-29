@@ -1,4 +1,4 @@
-package com.wotb.core.parse;
+package com.wotb.core.parse.probe;
 
 import java.util.List;
 import java.util.Map;
@@ -10,7 +10,9 @@ import java.util.Set;
  * <p>包头: 魔数(4) + 未知(8) + hash(1+len) + version(1+len) + 1字节填充。
  * 后跟 N 个事件包: payload_len(4) + type(4) + clock(f32 4) + payload(len 字节)。
  *
- * <p>错误容忍: 遇到坏包时跳过 1 字节继续 (整个文件都是包序列)。</p>
+ * <p>Strict contiguous framing（PR147）：包从头到尾连续排列，{@code payloadLen == 0} 合法，
+ * 流以 {@code type == 0xFFFFFFFF} terminator 结束；framing corruption 直接抛异常，
+ * 不做逐 byte resync。</p>
  */
 public final class EventStreamReader {
 
@@ -21,11 +23,6 @@ public final class EventStreamReader {
     /** One direct HP damage event resolved from replay entity ids to account ids. */
     public record DirectDamageEvent(float clockSecs, long attackerAccountId,
                                     long victimAccountId, int damage) {
-    }
-
-    /** Damage dealt by one killer to one victim before the victim is inferred dead. */
-    public record KillVictimDamage(long killerAccountId, long victimAccountId,
-                                   int damage, int penetrations) {
     }
 
     public static final class EventStream {
@@ -73,21 +70,21 @@ public final class EventStreamReader {
         }
     }
 
-    /** Type 10 (Position) 解码结果。 */
+    /** Type 10 (Position) 解码结果（legacy diagnostics 用途）。 */
     public static final class PositionData {
         public final float clockSecs;
         public final int entityId;
         public final int spaceId;
-        public final int vehicleId;
+        public final int attachmentParentEntityId;
         public final float x, y, z;
         public final float yaw, pitch, roll;
 
-        public PositionData(float clockSecs, int entityId, int spaceId, int vehicleId,
+        public PositionData(float clockSecs, int entityId, int spaceId, int attachmentParentEntityId,
                             float x, float y, float z, float yaw, float pitch, float roll) {
             this.clockSecs = clockSecs;
             this.entityId = entityId;
             this.spaceId = spaceId;
-            this.vehicleId = vehicleId;
+            this.attachmentParentEntityId = attachmentParentEntityId;
             this.x = x;
             this.y = y;
             this.z = z;
@@ -112,10 +109,9 @@ public final class EventStreamReader {
     }
 
 
-    static final int MAX_PACKETS = ReplayPacketParser.MAX_PACKETS;
-    static final int MAX_SCAN_STEPS = ReplayPacketParser.MAX_SCAN_STEPS;
+    public static final int MAX_PACKETS = ReplayPacketParser.MAX_PACKETS;
 
-    // ===== forwarder：解析逻辑已拆至 ReplayPacketParser / ReplayEventExtractors / DeathTimeEstimator =====
+    // ===== forwarder：解析逻辑已拆至 ReplayPacketParser / ReplayEventExtractors =====
 
     public static EventStream read(byte[] data) {
         return ReplayPacketParser.read(data);
@@ -129,11 +125,6 @@ public final class EventStreamReader {
         return ReplayEventExtractors.extractPositions(packets);
     }
 
-    public static double estimateDeathTimeByEntity(
-            int entityId, double battleDurationS, List<EntityLeaveEvent> leaves) {
-        return DeathTimeEstimator.estimateDeathTimeByEntity(entityId, battleDurationS, leaves);
-    }
-
     public static Map<Integer, Long> extractEntityToAccountMap(List<ParsedPacket> packets) {
         return ReplayEventExtractors.extractEntityToAccountMap(packets);
     }
@@ -142,46 +133,14 @@ public final class EventStreamReader {
         return ReplayEventExtractors.extractArenaInfo(packets);
     }
 
-    public static Map<Long, Double> estimateDeathTimesByEntityLeaves(
-            List<ParsedPacket> packets, double battleDurationS) {
-        return DeathTimeEstimator.estimateDeathTimesByEntityLeaves(packets, battleDurationS);
-    }
-
-    public static Map<Long, Double> estimateDeathTimesByPositions(
-            List<ParsedPacket> packets, double battleDurationS) {
-        return DeathTimeEstimator.estimateDeathTimesByPositions(packets, battleDurationS);
-    }
-
-    public static Map<Long, Double> estimateDeathTimesByDamage(
-            final List<ParsedPacket> packets,
-            final Map<Integer, Long> entityToAccount,
-            final Map<Long, Integer> accountToThreshold,
-            final double battleDurationS) {
-        return DeathTimeEstimator.estimateDeathTimesByDamage(
-                packets, entityToAccount, accountToThreshold, battleDurationS);
-    }
-
     public static List<DirectDamageEvent> extractDirectDamageEvents(
             final List<ParsedPacket> packets,
             final Map<Integer, Long> entityToAccount) {
         return ReplayEventExtractors.extractDirectDamageEvents(packets, entityToAccount);
     }
 
-    public static Map<Long, List<KillVictimDamage>> extractKillVictims(
-            final List<ParsedPacket> packets,
-            final Map<Integer, Long> entityToAccount,
-            final Map<Long, Integer> accountToThreshold) {
-        return ReplayEventExtractors.extractKillVictims(packets, entityToAccount, accountToThreshold);
-    }
-
     public static List<ArenaSnapshot> extractArenaSnapshots(List<ParsedPacket> packets) {
         return ReplayEventExtractors.extractArenaSnapshots(packets);
-    }
-
-    public static double estimateDeathTime(
-            long accountId, boolean survived, double battleDurationS,
-            List<ArenaSnapshot> snapshots) {
-        return DeathTimeEstimator.estimateDeathTime(accountId, survived, battleDurationS, snapshots);
     }
 
 }
