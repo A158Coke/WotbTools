@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Fixed
+- **Replay capability navigation refactor**：回放解析、AI 复盘与战局重建现在是三个独立入口；具体战斗通过内存 `processingJobId + sourceId` 复用同一解析数据集，避免按文件名或重复任务定位。旧 `?view=reconstruction` 书签兼容跳转到战局重建入口。
 - **AI 复盘裸抛 DATASET_UNAVAILABLE 修复（Dataset 状态机 Hotfix，PR #164）——Dataset lifecycle 收敛为唯一事实源**：AI 复盘此前仅凭 `file != null` 就启用「AI 战术复盘」按钮，而 `processingJobId`/`sourceId`（authoritative Dataset 引用）由 `requestDirectAction` 异步补齐，准备期点击即被 `analyzeBody` 裸抛 `DATASET_UNAVAILABLE`。本轮收尾：
   - **Dataset 状态机**：`file && processingJobId && sourceId` 齐备才允许 Analyze（`datasetReady` 硬 guard）；未 READY 时显示「正在准备回放数据…」并禁用按钮；`PREPARING`/`FAILURE` 与 AI 模型错误明确区分；`runAnalyze`/`analyzeBody` 不再把 Dataset 未就绪当作最终用户错误。
   - **Dataset 过期恢复（exactly-once + generation-owned）**：`JOB_NOT_FOUND` 是唯一可自动恢复的过期信号（`isRecoverableDatasetCode` 收窄）。面板 emit `dataset-recover` → 页面失效引用并重建 p2；每个 selection / dataset generation 最多自动恢复一次，recovery in-flight 时重复事件合并/忽略；第二次 `JOB_NOT_FOUND` 经 `invalidateExpiredProcessingDataset` 做 authoritative 失效（清 `processingJobId`/`processingJob` snapshot、保留 `resp`）后结束为本地化 FAILURE；stale recovery `finally` 不清新 generation 的 recovery 状态。

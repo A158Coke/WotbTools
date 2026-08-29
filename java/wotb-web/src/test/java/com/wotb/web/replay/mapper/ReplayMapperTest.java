@@ -23,6 +23,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ReplayMapperTest {
 
     @Test
+    void battleDtoCarriesAuthoritativeSourceIdSeparatelyFromDisplayName() {
+        final Battle battle = new Battle();
+        battle.players = List.of();
+        final BattleDto dto = Mapper.toBattle(battle, "r10", "folder_display.wotbreplay",
+                Tankopedia.load(), null, false);
+
+        assertEquals("r10", dto.sourceId());
+        assertEquals("folder_display.wotbreplay", dto.sourceName());
+    }
+
+    @Test
     void exposesLanguageNeutralSurvivalValues() {
         final PlayerResult survivor = player(1L, true);
         final PlayerResult destroyed = player(2L, false);
