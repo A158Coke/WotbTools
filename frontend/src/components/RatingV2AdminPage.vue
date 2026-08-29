@@ -193,7 +193,7 @@ onMounted(async () => {
           <table>
             <thead>
               <tr>
-                <th v-for="column in ratingResponse.columns" :key="column.key"
+                <th v-for="column in ratingResponse.columns" :key="column.key" :class="{ num: column.num }"
                   :aria-sort="sort?.key === column.key ? (sort.reverse ? 'descending' : 'ascending') : 'none'">
                   <button class="rating-v2-sort" type="button" @click="setSort(column)">
                     {{ t(`ratingV2.labels.${column.key}`) }}{{ sortArrow(column) }}
@@ -247,7 +247,7 @@ onMounted(async () => {
 .rating-v2-tablewrap th { padding: 0; background: var(--bg-card2); }
 .rating-v2-sort { width: 100%; padding: 8px 10px; border: 0; background: transparent; color: var(--text-heading); cursor: pointer; font: inherit; font-weight: 700; text-align: inherit; }
 .rating-v2-sort:hover, .rating-v2-sort:focus-visible { background: var(--bg-card-hover); outline: 1px solid var(--accent); outline-offset: -1px; }
-.rating-v2-tablewrap td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.rating-v2-tablewrap th.num, .rating-v2-tablewrap td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .rating-v2-player { padding: 0; border: 0; background: transparent; color: var(--text-heading); cursor: pointer; font: inherit; font-weight: 700; text-align: left; }
 .rating-v2-player:hover, .rating-v2-player:focus-visible, .rating-v2-player[aria-pressed="true"] { color: var(--accent); outline: none; text-decoration: underline; text-underline-offset: 3px; }
 @media (max-width: 767px) {
