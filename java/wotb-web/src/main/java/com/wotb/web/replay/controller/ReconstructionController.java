@@ -225,7 +225,7 @@ public class ReconstructionController {
                 quietComplete(emitter);
                 return;
             }
-            // docs/architecture/ai-review.md §40：AI Review 生命周期开始（只记录低基数 metadata，
+            // docs/architecture/ai-review.md：AI Review 生命周期开始（只记录低基数 metadata，
             // 不记录文件名/上传内容；workerQueueWaitMs 见 worker executor 的 debug 日志）。
             LOGGER.info(AiReviewEventLog.line("ai_review_started", requestId,
                     "language", language == null ? "N/A" : language.code()));
@@ -250,7 +250,7 @@ public class ReconstructionController {
                     });
             writer.done(response);
             emitter.complete();
-            // docs/architecture/ai-review.md §53/§54：SSE 完成 + 统一终态 ai_review_finished（exactly once）。
+            // docs/architecture/ai-review.md：SSE 完成 + 统一终态 ai_review_finished（exactly once）。
             // 成功路径 result=SUCCESS；失败/取消路径见下方 catch——try / catch(ClientDisconnected) /
             // catch(RuntimeException|IOException) 三分支互斥，每分支各自恰好记录一次终态。
             LOGGER.info(AiReviewEventLog.line("ai_review_sse_completed", requestId,

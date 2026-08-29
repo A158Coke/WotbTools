@@ -82,7 +82,7 @@ const unifiedShownCols = computed(() => {
 // ---- Player Detail Drawer（只存 identity，不存 mutable row；刷新后按 accountId 重新 resolve） ----
 const selectedPlayerContext = ref(null)
 
-// ---- Player Detail Drawer 导航：跟随当前可见表格顺序（§29），scope 不跨界（§30）----
+// ---- Player Detail Drawer 导航：跟随当前可见表格顺序，scope 不跨界 ----
 const navOrder = ref([])
 const navIndex = ref(-1)
 
@@ -99,7 +99,7 @@ function closeDrawer() {
   navIndex.value = -1
 }
 
-/** 前后导航可用性（§31）：首位 prev 禁用、末位 next 禁用，不循环。 */
+/** 前后导航可用性：首位 prev 禁用、末位 next 禁用，不循环。 */
 const hasPrevPlayer = computed(() => navOrder.value.length > 0 && navIndex.value > 0)
 const hasNextPlayer = computed(() => navOrder.value.length > 0 && navIndex.value >= 0 && navIndex.value < navOrder.value.length - 1)
 

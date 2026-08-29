@@ -1,6 +1,6 @@
 /**
  * Radar Metric Registry：
- * 选手画像雷达图只允许 League Rating 七维（计划 §8），禁止 contribution/kast/impact 进入 Radar。
+ * 选手画像雷达图只允许 League Rating 七维，禁止 contribution/kast/impact 进入 Radar。
  * 每个 League 维度自带 normalization contract：normalized = raw / 后端 column.max，clamp 0..1。
  * PlayerDetailDrawer 只消费本 registry + resolveRadarMetric，组件不硬编码业务公式。
  *
@@ -13,12 +13,12 @@
  *   （key/max 元数据）提供，resolveRadarMetric 必须消费该 metadata（缺失 → 该轴
  *   unavailable "--"，不伪造 0/0%）。
  * - V5 Evidence Adjustment 只作用于 Batch Player Rating，绝不影响 Radar 几何
- *   （dimensionMeans）；Radar 与 V5 严格分离（计划 §27）。
+ *   （dimensionMeans）；Radar 与 V5 严格分离。
  */
 
 import { CW_DIM_KEYS } from './playerSummaryMerge.js'
 
-/** Radar 轴数量约束（计划 §9）：min 3 / max 7。 */
+/** Radar 轴数量约束：min 3 / max 7。 */
 export const RADAR_MIN_AXES = 3
 export const RADAR_MAX_AXES = 7
 
@@ -27,7 +27,7 @@ const RADAR_PREF_KEY = 'wotb-radar-metric-order'
 
 export const clamp01 = v => Math.max(0, Math.min(1, v))
 
-/** 七维在 Radar 上的 presentation-only 短标签（计划 §10/§11：RC 短标签 + tip）。 */
+/** 七维在 Radar 上的 presentation-only 短标签（RC 短标签 + tip）。 */
 const DIM_LABEL_KEY = {
   league_damage_score: 'radar_labels.league_damage_score',
   league_assist_score: 'radar_labels.league_assist_score',
@@ -57,7 +57,7 @@ export const RADAR_METRIC_DEFS = Object.freeze(
   }]))
 )
 
-/** 默认 Radar 顺序（计划 §10）：Damage / Shooting / Kill / RC / Blocked / Exchange / Assist。
+/** 默认 Radar 顺序：Damage / Shooting / Kill / RC / Blocked / Exchange / Assist。
  *  仅 presentation order，不修改后端 canonical dimension 顺序。 */
 export const RADAR_DEFAULT_ORDER = [
   'league_damage_score',
@@ -85,7 +85,7 @@ function readStoredList() {
 
 /**
  * 加载并净化 Radar 偏好：过滤无效/已移除 key（contribution/kast/impact 等旧值被静默淘汰，
- * 计划 §66）；过滤后不足 min → fallback 默认七维。
+ *）；过滤后不足 min → fallback 默认七维。
  */
 export function loadRadarPreference() {
   const stored = readStoredList()

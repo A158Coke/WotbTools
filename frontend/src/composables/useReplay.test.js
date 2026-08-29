@@ -369,6 +369,58 @@ describe('useReplay Processing Dataset lifecycle', () => {
     expect(api.createProcessingJob.mock.calls.length).toBe(callsBefore)
   })
 
+  it('READY job + FAILED source → SOURCE_PROCESSING_FAILED，绝不 create 新 Processing Job', async () => {
+    replay.files.value = [new File(['a'], 'a.wotbreplay'), new File(['b'], 'b.wotbreplay')]
+    replay.processingJobId.value = 'p1'
+    replay.processingJob.value = {
+      jobId: 'p1', status: 'READY', total: 2,
+      sources: [{ sourceId: 'r0', status: 'READY' }, { sourceId: 'r1', status: 'FAILED' }]
+    }
+    api.getProcessingJob.mockResolvedValue({
+      jobId: 'p1', status: 'READY', total: 2,
+      sources: [{ sourceId: 'r0', status: 'READY' }, { sourceId: 'r1', status: 'FAILED' }]
+    })
+    // 整批 READY 但目标 source FAILED：必须给稳定不可恢复错误，绝不静默新建第二个 Processing Job。
+    await expect(replay.requestDirectAction(replay.files.value[1]))
+      .rejects.toMatchObject({ message: 'SOURCE_PROCESSING_FAILED' })
+    expect(api.createProcessingJob).not.toHaveBeenCalled()
+  })
+
+  it('READY job + 缺失 source → SOURCE_NOT_FOUND，绝不 create 新 Processing Job', async () => {
+    replay.files.value = [new File(['a'], 'a.wotbreplay'), new File(['b'], 'b.wotbreplay')]
+    replay.processingJobId.value = 'p1'
+    replay.processingJob.value = {
+      jobId: 'p1', status: 'READY', total: 1,
+      sources: [{ sourceId: 'r0', status: 'READY' }]
+    }
+    api.getProcessingJob.mockResolvedValue({
+      jobId: 'p1', status: 'READY', total: 1,
+      sources: [{ sourceId: 'r0', status: 'READY' }]
+    })
+    // source 在 create 时即按上传顺序固定为 r{index}，不存在「稍后出现」；缺失 = SOURCE_NOT_FOUND。
+    await expect(replay.requestDirectAction(replay.files.value[1]))
+      .rejects.toMatchObject({ message: 'SOURCE_NOT_FOUND' })
+    expect(api.createProcessingJob).not.toHaveBeenCalled()
+  })
+
+  it('READY dataset 但权威 GET 返回 JOB_NOT_FOUND → exactly-one 重建 p2（single-flight）', async () => {
+    replay.processingJobId.value = 'p1'
+    replay.processingJob.value = {
+      jobId: 'p1', status: 'READY', total: 1,
+      sources: [{ sourceId: 'r0', status: 'READY' }]
+    }
+    api.getProcessingJob
+      .mockRejectedValueOnce(apiError('JOB_NOT_FOUND', 404)) // authoritative p1 expired
+      .mockResolvedValue({
+        jobId: 'p2', status: 'READY', total: 1,
+        sources: [{ sourceId: 'r0', status: 'READY' }]
+      })
+    api.createProcessingJob.mockResolvedValue({ jobId: 'p2', status: 'QUEUED', total: 1 })
+    const ref = await replay.requestDirectAction(replay.files.value[0])
+    expect(api.createProcessingJob).toHaveBeenCalledTimes(1)
+    expect(ref).toEqual({ processingJobId: 'p2', sourceId: 'r0' })
+  })
+
   it('GET p1 transient 502：传播错误、不重建 Dataset、processingJobId 保留', async () => {
     replay.processingJobId.value = 'p1'
     api.getProcessingJob.mockRejectedValue(apiError('HTTP_502', 502))

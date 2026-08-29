@@ -49,11 +49,11 @@ const isSummary = computed(() => props.context?.scope === 'summary')
 
 // 桌面/平板非模态侧栏，移动端(<768px)保持 modal：复用现有 mobile 断点（max-width: 767px）。
 const isMobile = ref(typeof window !== 'undefined' ? window.innerWidth <= 767 : false)
-// 仅 Desktop (>=1200px) 提供自由 resize；Tablet/Mobile 保持原有行为（计划 §15）。
+// 仅 Desktop (>=1200px) 提供自由 resize；Tablet/Mobile 保持原有行为。
 const isDesktop = ref(typeof window !== 'undefined' ? window.innerWidth >= 1200 : true)
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1440)
 
-// ---- Side Panel 自由 Resize（仅桌面；计划 §5/§8/§12-14）----
+// ---- Side Panel 自由 Resize（仅桌面）----
 const DRAWER_MIN = 320
 const DRAWER_DEFAULT = 380
 const DRAWER_MAX_RATIO = 0.45
@@ -120,13 +120,13 @@ function onResizeEnd() {
   document.body.style.userSelect = ''
   document.body.classList.remove('pd-resizing')
 }
-/** 键盘调整（计划 §16）：每次 20px。 */
+/** 键盘调整：每次 20px。 */
 function onResizeKey(delta) {
   if (!isDesktop.value) return
   setDrawerWidth(drawerWidth.value + delta)
 }
 
-/** Side Panel 真 reflow（计划 §7）：桌面(>=1200px)开启时把抽屉宽度暴露成 CSS 变量，
+/** Side Panel 真 reflow：桌面(>=1200px)开启时把抽屉宽度暴露成 CSS 变量，
  * 供 .layout-data-workspace 预留右侧空间，主内容随之收窄/扩展，不再被 fixed overlay 覆盖；
  * tablet/mobile 保持原有 overlay 行为（offset=0px）。 */
 const workspaceOffset = computed(() =>
@@ -142,7 +142,7 @@ function updateViewport() {
   isMobile.value = w <= 767
   isDesktop.value = w >= 1200
   viewportWidth.value = w
-  // 屏幕尺寸变化时自动 clamp 当前宽度（计划 §14），不强制写回 localStorage。
+  // 屏幕尺寸变化时自动 clamp 当前宽度，不强制写回 localStorage。
   drawerWidth.value = clampDrawerWidth(drawerWidth.value)
 }
 function bindMobile() { updateViewport(); window.addEventListener('resize', updateViewport) }

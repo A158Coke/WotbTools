@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 车型资产 CLI validator（计划 §43G「Validation commands」）。
+ * 车型资产 CLI validator。
  *
  * 资产放回仓库后，ChatGPT/开发者可本地自检：
  *   node frontend/scripts/validate-vehicle-models.mjs

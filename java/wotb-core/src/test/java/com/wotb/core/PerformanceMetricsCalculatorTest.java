@@ -195,7 +195,7 @@ class PerformanceMetricsCalculatorTest {
 
     @Test
     void battleMetricsMatchesAggregateForSingleBattle() {
-        // 单场 battleMetrics 必须与 compute(List.of(battle)) 同一公式、同一值（计划 §19 单一事实源）
+        // 单场 battleMetrics 必须与 compute(List.of(battle)) 同一公式、同一值
         final Battle battle = new Battle();
         battle.winnerTeam = 1;
         battle.players = List.of(

@@ -95,7 +95,7 @@ const playback = computed(() => props.overview.playback || null)
 const duration = computed(() => (playback.value ? Math.max(0, playback.value.durationSec) : 0))
 const friendlyTeam = computed(() => props.overview.friendlyTeam)
 
-// ---- PR2：Tier X dedicated model preload（计划 §12/§13）----
+// ---- PR2：Tier X dedicated model preload----
 // runtime.js 含全部车型资产引用（import.meta.glob），必须动态 import 保持主 bundle 分离
 // （scripts/check-bundle-separation.mjs 门禁：主入口不得含 'vehicle-models/assets'）。
 // preload 完成前不渲染车辆（asset decision 先于渲染，禁止 generic 闪现后替换）。
@@ -118,7 +118,7 @@ watch(
       if (token !== preloadToken) return // 过期结果丢弃
       preload.value = { phase: 'ready', ...result }
     } catch (e) {
-      // 模块加载异常 → 整场 generic fallback（计划 §11：静默，不弹 warning）
+      // 模块加载异常 → 整场 generic fallback（静默，不弹 warning）
       console.error('[vehicle-models] preload 模块加载失败 → 整场 generic fallback', e)
       if (token !== preloadToken) return
       preload.value = { phase: 'ready', resolved: new Map(), failed: new Set(), byTank: new Map() }
@@ -1074,7 +1074,7 @@ function vehicleColor(vehicle) {
 /**
  * PR2：该车辆的 dedicated model 决策（preload 结果）——
  * 非 Tier X / preload 失败 / 模块加载失败 → null（generic marker 单车 fallback，
- * 计划 §11：不做整场 fallback）。
+ *不做整场 fallback）。
  */
 function vehicleModel(vehicle) {
   const p = preload.value

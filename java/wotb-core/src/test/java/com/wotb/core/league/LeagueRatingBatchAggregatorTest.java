@@ -204,7 +204,7 @@ class LeagueRatingBatchAggregatorTest {
                 "ineligible 场不进入 mean 分母（2 场都是 110 → mean 仍 110，不是 73.33）");
     }
 
-    // ---- League Rating V5 Batch Evidence Adjustment（计划 §7/§12/§13/§33–§36）----
+    // ---- League Rating V5 Batch Evidence Adjustment----
 
     @Test
     void v5AdjustsMainRatingAndPreservesRawMedian() {
