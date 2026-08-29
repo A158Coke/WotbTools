@@ -28,7 +28,9 @@ class ReplayProtocolProfileTest {
                 ReplayProtocolProfile.Capability.TYPE14_STREAM_CLOSE,
                 ReplayProtocolProfile.Capability.SETTLEMENT_SCHEMA,
                 ReplayProtocolProfile.Capability.HP_POSITIVE_VALUE,
-                ReplayProtocolProfile.Capability.PROP_TURRET_YAW}) {
+                ReplayProtocolProfile.Capability.PROP_TURRET_YAW,
+                ReplayProtocolProfile.Capability.TERMINAL_FFFD,
+                ReplayProtocolProfile.Capability.ENTITY_TYPE_ID_SEMANTIC}) {
             assertEquals(ReplayProtocolProfile.Level.VERIFIED,
                     ReplayProtocolProfile.levelOf("11.18.0_china_apple", c), "11.18 evidence: " + c);
         }
@@ -38,9 +40,7 @@ class ReplayProtocolProfileTest {
     void legacyFamilyDoesNotInheritClosedNumericSemantics() {
         // 无独立 11.18 evidence 的闭式数值语义 → UNKNOWN（不因 family 自动 VERIFIED）
         for (final ReplayProtocolProfile.Capability c : new ReplayProtocolProfile.Capability[]{
-                ReplayProtocolProfile.Capability.TERMINAL_FFFD,
                 ReplayProtocolProfile.Capability.TERMINAL_FFFE,
-                ReplayProtocolProfile.Capability.ENTITY_TYPE_ID_SEMANTIC,
                 ReplayProtocolProfile.Capability.METHOD_SEMANTICS,
                 ReplayProtocolProfile.Capability.METHOD36_AIM_RAY,
                 ReplayProtocolProfile.Capability.METHOD38_SHOT_RESULT,

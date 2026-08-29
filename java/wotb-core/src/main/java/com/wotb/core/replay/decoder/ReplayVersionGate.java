@@ -68,24 +68,12 @@ public final class ReplayVersionGate {
      * 当前版本 EXACT semantic。
      */
     /**
-     * PR162/P1-6：EntityMethod <b>numeric method semantic</b>（method0/1/5/17/20/27/29 等）按 method 单独 gated，
-     * 不是由 generic {@code ENTITY_METHOD_ENVELOPE} 授权 —— envelope 只证明 entityId/methodId/argLen/rawArgs 可解析，
-     * 绝不证明「method29 = projectile launch」等 identity。
-     * <ul>
-     *   <li>11.19 current（PR147 primary）→ 所有 production method 语义 VERIFIED。</li>
-     *   <li>11.18 legacy → 仅 Vehicle method1（health/state）有独立 evidence（Javadoc /
-     *       EntityMethodDecoderVersionGateTest）；其它（0/4/5/17/20/27/29/36/38/47/48）无独立 11.18 evidence → raw-preserve。</li>
-     *   <li>future/unknown → raw-preserve（envelope 结构仍可读取，numeric semantic 不继承）。</li>
-     * </ul>
+     * PR162/P1-6：EntityMethod numeric semantic 只由 <b>单一</b> authority
+     * {@link ReplayProtocolProfile#methodSemanticLevel} 决定 —— 本方法只是转发，不在这里维护版本/方法矩阵。
      */
     public static boolean methodSemanticAllowed(final String clientVersion, final int methodId) {
-        if (ReplayVersionFamily.isCurrentVerified(clientVersion)) {
-            return true;
-        }
-        if (ReplayVersionFamily.isLegacyVerified(clientVersion)) {
-            return methodId == EntityMethodDecoder.SUBTYPE_VEHICLE_HEALTH_STATE;
-        }
-        return false;
+        return ReplayProtocolProfile.methodSemanticLevel(clientVersion, methodId)
+                == ReplayProtocolProfile.Level.VERIFIED;
     }
 
     /** EntityMethod closed numeric semantics (winner/finish, damage, updateArena): current family only. */

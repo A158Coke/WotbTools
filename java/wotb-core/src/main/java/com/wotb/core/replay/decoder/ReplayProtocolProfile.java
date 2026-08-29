@@ -18,11 +18,17 @@ import com.wotb.core.parse.ReplayVersionFamily;
  *       evidence-gated. Only verified versions inherit them; others {@code RAW / UNKNOWN}.</li>
  * </ul>
  *
- * <p>Confidence is decided per-fact, never by the raw version string ("11.19 = exact / 11.22 = unknown").
- * Structural capabilities use {@link Level#STRUCTURALLY_COMPATIBLE} for non-verified versions so the
- * decoder's exact-shape validation (not the version number) decides the outcome; a shape mismatch still
- * falls back to {@link Level#UNKNOWN} in the decoder. Closed semantics are only {@link Level#VERIFIED}
- * for the current 11.19 family.</p>
+ * <p>Confidence is decided per-fact / per-capability, never by the raw version string
+ * ("11.19 = exact / 11.22 = unknown"). A capability is {@link Level#VERIFIED} only when its own evidence
+ * (fixture/research/regression) supports that family; a capability is <b>not</b> automatically VERIFIED
+ * across versions just because its family is "known". Closed numeric semantics do <b>not</b> inherit
+ * across versions by default, but a specific semantic capability that has independent <b>11.18 legacy
+ * evidence</b> (e.g. {@code PROP_TURRET_YAW}, {@code TERMINAL_FFFD}, {@code ENTITY_TYPE_ID_SEMANTIC},
+ * ordinary positive HP) <b>is</b> VERIFIED for 11.18; the remaining closed semantics that lack such
+ * evidence (e.g. {@code METHOD_SEMANTICS}, {@code TERMINAL_FFFE}, {@code METHOD36/38}, {@code TYPE31/35},
+ * {@code AMMO_SELECTION}) are 11.19-only. Forward-compatible structural surfaces use
+ * {@link Level#STRUCTURALLY_COMPATIBLE} for future versions, and the decoder's exact-shape validation
+ * (not the version number) decides the outcome.</p>
  */
 public final class ReplayProtocolProfile {
 
@@ -87,6 +93,26 @@ public final class ReplayProtocolProfile {
     }
 
     /**
+     * PR162/P1-6：<b>single</b> numeric EntityMethod semantic authority（version + methodId）。
+     * <ul>
+     *   <li>11.19 current（PR147 primary）→ 所有 production method 语义 VERIFIED。</li>
+     *   <li>11.18 legacy → 仅 Vehicle method1（health/state）有独立 evidence（Javadoc /
+     *       EntityMethodDecoderVersionGateTest）→ VERIFIED；其它（0/4/5/17/20/27/29/36/38/47/48）UNKNOWN。</li>
+     *   <li>future/unknown → UNKNOWN（envelope 结构仍可读取，numeric semantic 不继承）。</li>
+     * </ul>
+     */
+    public static Level methodSemanticLevel(final String clientVersion, final int methodId) {
+        if (ReplayVersionFamily.isCurrentVerified(clientVersion)) {
+            return Level.VERIFIED;
+        }
+        if (ReplayVersionFamily.isLegacyVerified(clientVersion)) {
+            return methodId == EntityMethodDecoder.SUBTYPE_VEHICLE_HEALTH_STATE
+                    ? Level.VERIFIED : Level.UNKNOWN;
+        }
+        return Level.UNKNOWN;
+    }
+
+    /**
      * 11.18 legacy evidence（逐项可追）：
      * PR147 research corpus 为 <b>11.18.0_china_apple + 11.19.0_china_apple</b>（protocol.md §2），并包含
      * 11.18 样本对以下结构的独立证明：Type10（PositionDecoderTest 使用 11.18 上下文）、EntityProperty prop2
@@ -100,8 +126,11 @@ public final class ReplayProtocolProfile {
         return switch (capability) {
             case TYPE10_LAYOUT, ENTITY_PROPERTY_ENVELOPE, ENTITY_METHOD_ENVELOPE, ENTITY_LIFECYCLE_LAYOUT,
                     PARTICIPANT_MAPPING, TYPE14_STREAM_CLOSE, SETTLEMENT_SCHEMA,
-                    HP_POSITIVE_VALUE, PROP_TURRET_YAW -> true;
-            case TERMINAL_FFFD, TERMINAL_FFFE, ENTITY_TYPE_ID_SEMANTIC, METHOD_SEMANTICS, METHOD36_AIM_RAY,
+                    HP_POSITIVE_VALUE, PROP_TURRET_YAW,
+                    // 11.18 corpus（PR147 corpus = 11.18/11.19，random-battle-example.wotbreplay 即 11.18）
+                    // 独立证明：entityTypeId==2 vehicle materialization（Type5 物化）与 FFFD 死亡终态。
+                    TERMINAL_FFFD, ENTITY_TYPE_ID_SEMANTIC -> true;
+            case TERMINAL_FFFE, METHOD_SEMANTICS, METHOD36_AIM_RAY,
                     METHOD38_SHOT_RESULT, TYPE31_GUN_MARKER, TYPE35_SESSION_DECISECOND, AMMO_SELECTION -> false;
         };
     }

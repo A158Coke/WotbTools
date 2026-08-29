@@ -141,12 +141,12 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
             return new ReplayDecodeResult(DecodeStatus.PARTIAL, events, warnings);
         }
 
-        // §P1: closed-semantic methods（subtype 4/8 —— roundFinished/damage）produce version-scoped
-        // PR147 semantic events (RoundFinishedEvent, DamageEvent). The structural EntityMethod envelope is
-        // forward-compatible, but these CLOSED semantics are strictly evidence-gated: unknown/future
-        // versions raw-preserve and never emit a current-version semantic for an unaffirmed version.
-        // (method48 participant-mapping/ARENA_PERIOD are structural — gated inside the subtype48 branch.)
-        if (isSemanticMethod(subType)
+        // §P1 / P1-6：method4 (round-finished winner/finishReason) 是 <b>closed numeric semantic</b>，只有
+        // 11.19 current 证明 → 由 METHOD_SEMANTICS 门禁；<b>method8 (damage)</b> 是结构观测帧
+        // （attacker/victim/timing/raw value，11.18+11.19 证明 structural layout），在 subtype8 branch 内部
+        // 用 damageLayoutAllowed 单独门禁 —— 这里不把它用 broad METHOD_SEMANTICS 拦死（否则 11.18 连
+        // structural damage observation 都消失）。
+        if (subType == SUBTYPE_ROUND_FINISHED
                 && !ReplayVersionGate.methodSemanticsAllowed(context.clientVersion())) {
             events.add(new UnknownReplayEvent(
                     packet.sequence(), ts, packet.type(), payload.length,
