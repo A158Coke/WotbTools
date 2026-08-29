@@ -107,9 +107,7 @@
   gap: 10px 12px;
   margin: 14px 0 !important;
 }
-/* restoolbar（解析结果二级 tab 行）专属：battle 分栏随内容伸展 + 横滚。
-   不用 `.layout-data-workspace .tabs` 裸选择器——一级 Workspace 导航是独立的
-   .workspace-tabs，不继承 .tabs contract。 */
+/* restoolbar（解析结果二级 tab 行）专属：battle 分栏随内容伸展 + 横滚。 */
 .layout-data-workspace .restoolbar .tabs {
   display: flex;
   flex: 1 1 460px;
@@ -124,51 +122,6 @@
   border-radius: 6px;
 }
 
-/* 一级 Workspace 能力切换（解析结果 / AI 复盘 / 战局回放）：独立的一级能力导航，
-   与 restoolbar 的 battle 二级 .tabs 完全解耦（DOM 不携带 .tabs class）。
-   外层只负责 layout / spacing / 横向溢出；每个按钮自己承担视觉边界（独立 border /
-   radius / 背景），active 不改变尺寸、不产生 layout shift。 */
-.layout-data-workspace .workspace-tabs {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: fit-content;
-  max-width: 100%;
-  margin: 16px 0 14px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-.layout-data-workspace .workspace-tabs button {
-  flex: 0 0 auto;
-  min-height: 36px;
-  padding: 7px 14px;
-  border: 1px solid var(--border-ghost);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
-  color: var(--text-label);
-  font-size: .85rem;
-  font-family: inherit;
-  font-weight: 650;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: border-color .15s, color .15s, background .15s;
-}
-.layout-data-workspace .workspace-tabs button:hover:not(.active) {
-  border-color: var(--accent);
-  color: var(--accent-dark);
-  background: var(--bg-list-hover);
-}
-.layout-data-workspace .workspace-tabs button.active {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 16%, var(--bg-card));
-  color: var(--accent-dark);
-  font-weight: 700;
-}
 .layout-data-workspace .resactions {
   display: flex;
   flex: 0 1 auto;

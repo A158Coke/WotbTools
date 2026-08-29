@@ -183,7 +183,7 @@ public class ReplayProcessingJobService {
      */
     public PreviewResponse result(final String jobId) {
         final ProcessedDataset ds = readyDataset(jobId);
-        return Mapper.toPreviewResponse(ds.battles(), ds.battleSourceNames(),
+        return Mapper.toPreviewResponse(ds.battles(), ds.battleSourceIds(), ds.battleSourceNames(),
                 ds.duplicates(), ds.failures(), tankopedia, ds.league(), ds.leagueUnavailableCode());
     }
 
@@ -338,10 +338,10 @@ public class ReplayProcessingJobService {
                 PerformanceMetricsCalculator.populateBattle(battle);
             }
             if (c.mode() == LeagueRatingMode.LEAGUE_RATING) {
-                job.markReady(new ProcessedDataset(c.battles(), c.battleSourceNames(),
+                job.markReady(new ProcessedDataset(c.battles(), c.battleSourceNames(), c.battleSourceIds(),
                         c.duplicates(), c.failures(), c.leagueBatch(), null));
             } else {
-                job.markReady(new ProcessedDataset(c.battles(), c.battleSourceNames(),
+                job.markReady(new ProcessedDataset(c.battles(), c.battleSourceNames(), c.battleSourceIds(),
                         c.duplicates(), c.failures(), null, leagueUnavailableCode));
             }
             finishTerminal(job, startNanos);

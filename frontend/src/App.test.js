@@ -10,6 +10,8 @@ import { setUiProfile } from './composables/useUiProfile.js'
 
 // 重视图 mock 为轻组件（本测试只验证 view 解析，不挂载重型页面）
 vi.mock('./components/ReplayPage.vue', () => ({ default: { name: 'ReplayPageMock', template: '<div data-test="view-replay" />' } }))
+vi.mock('./components/AiReviewPage.vue', () => ({ default: { name: 'AiReviewPageMock', template: '<div data-test="view-ai-review" />' } }))
+vi.mock('./components/BattlePlaybackPage.vue', () => ({ default: { name: 'BattlePlaybackPageMock', template: '<div data-test="view-battle-playback" />' } }))
 vi.mock('./components/HomePage.vue', () => ({ default: { name: 'HomePageMock', template: '<div data-test="view-home" />' } }))
 vi.mock('./components/HoFPage.vue', () => ({ default: { name: 'HoFPageMock', template: '<div data-test="view-hof" />' } }))
 // PlaybackQaPage 真实异步解析；mock useAuth 让 QA 页走未登录分支（轻量，不加载 14 车场景）
@@ -60,13 +62,11 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
     expect(wrapper.find('[data-test="view-home"]').exists()).toBe(false)
   })
 
-  it('?view=reconstruction 不再是独立视图 → canonicalize/回退到 replay（不加载已删除的 ReconstructionPage）', async () => {
+  it('?view=reconstruction canonicalize 到 battle-playback 独立视图', async () => {
     window.history.replaceState({}, '', '/?view=reconstruction')
     const wrapper = mountApp()
     await flushPromises()
-    // ReconstructionPage 已删除：?view=reconstruction 必须回退/跳转至 ReplayPage，而非渲染死页面。
-    expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('recon-page')
+    expect(wrapper.find('[data-test="view-battle-playback"]').exists()).toBe(true)
   })
 
   it('?view=leaderboard canonicalize 到 hof（旧书签兼容，不得误映射到 replay）', async () => {
@@ -82,7 +82,7 @@ describe('App shell — view 路由（PR94 P0：defineAsyncComponent import 回�
     const cases = [
       { in: 'leaderboard', out: 'hof', test: 'view-hof' },
       { in: 'extended', out: 'replay', test: 'view-replay' },
-      { in: 'reconstruction', out: 'replay', test: 'view-replay' },
+      { in: 'reconstruction', out: 'battle-playback', test: 'view-battle-playback' },
       { in: 'hof', out: 'hof', test: 'view-hof' },
       { in: 'replay', out: 'replay', test: 'view-replay' },
     ]

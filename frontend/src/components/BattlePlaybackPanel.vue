@@ -1,11 +1,10 @@
 <!--
-  战局回放 / 战局重建 Workspace 面板（单页 Workspace 改造）。
+  战局回放 / 战局重建能力面板。
   Dataset-only：读已解析 Processing Job 的 cached map-overview.json（processingJobId + sourceId），
   不重新上传 replay / 不重新 full process（multipart map-overview 已随 /api/replay/map-overview 废弃为 410）。
   热力/路线/战局回放（MapOverview）。与 AI 复盘解耦——不想跑 AI 复盘时也能看图。
   目标文件由父组件以 prop 传入；file identity 与「是否开始加载」解耦：仅当宿主声明
-  active=true（战局回放 capability 已进入，如 ReplayPage 切到 playback tab）且该文件尚未
-  尝试加载时才自动请求 cached map-overview；capability 未进入（active=false）时不请求；手动按钮仅用于重试 / 用户主动加载当前 Dataset artifact（宿主为 ReplayPage Workspace，无 standalone host）。
+  active=true 且该文件尚未尝试加载时才自动请求 cached map-overview；手动按钮仅用于重试。
   seekTo 支持 AI 报告时间链接（未加载先拉取、自动展开折叠，MapOverview 收到 seek 后切回放视图）。
 -->
 <script setup>
@@ -23,7 +22,7 @@ const props = defineProps({
   processingJobId: { type: String, default: null },
   sourceId: { type: String, default: null },
   /** 宿主声明「战局回放 capability 已进入」：仅当 active=true 且该文件尚未尝试加载时自动请求
-   * （ReplayPage 传入 workspaceTab === 'playback'）。
+   * （独立 BattlePlaybackPage 传入 active=true）。
    * 不再把「file prop 变化」当作「用户要求加载 playback」——两个状态相互独立。 */
   active: { type: Boolean, default: false },
   /** AI 报告时间跳转（秒）；宿主切换到本面板后传入。 */
@@ -69,7 +68,6 @@ const mapError = ref('')
 const mapSeek = ref(null)
 // 地图区块折叠状态（默认展开）；折叠用 v-show 不销毁 MapOverview，保留视图/播放器状态。
 const mapOpen = ref(true)
-const mapPanelEl = ref(null)
 // 换文件竞态防护：每次请求独占一个 generation（递增序号 + AbortController）；
 // 文件变化（resetMap）或组件真正卸载时递增序号并 abort 旧请求，
 // 旧请求在成功/失败/finally 写状态前必须校验序号，绝不覆盖新文件的 mapOverview/mapError/mapLoaded/mapLoading。
@@ -214,7 +212,7 @@ onBeforeUnmount(() => {
 <template>
   <div>
     <p v-if="!file" class="ws-note">{{ $t('workspace.playback_empty') }}</p>
-    <div v-else class="panel map-panel" data-test="map-panel" ref="mapPanelEl">
+    <div v-else class="panel map-panel" data-test="map-panel">
       <!-- dataset 未就绪（PREPARING_DATASET / FAILURE）：不读 cached artifact，显示准备/失败状态 -->
       <div v-if="!datasetReady" class="map-dataset-status" data-test="map-dataset-status">
         <span v-if="!datasetError" class="map-status-spinner" aria-hidden="true"></span>
