@@ -32,7 +32,7 @@ class MapOverviewQueryServiceTest {
                 "malinovka", "Malinovka", java.util.Map.of("zh", "马利诺夫卡"), 1,
                 new MapOverview.Bounds(0, 500, 0, 500), java.util.List.of(), null,
                 java.util.List.of(), java.util.List.of(), null, java.util.List.of(),
-                2, 123L, null);
+                2, 123L);
     }
 
     /** 建一个已注册 source#0 的 Processing Job store；按 {@code status} 置位 source 状态，可选写 map-overview.json。 */

@@ -39,9 +39,9 @@ import java.util.Map;
  * {@link EntryHpSource#BASE_FALLBACK}（只允许 tankopedia base 作 baseline）或
  * {@link EntryHpSource#UNKNOWN}。{@link PlayerResult#observedMaxHp} 保留为
  * 「整场观测最大 current HP（下界 tankopedia base）」的 legacy 语义（供 AI 证据保守使用），
- * 不得当 entry full；<b>Playback DTO 的 observedCapacityHp 不得使用
- * {@link #resolve(Integer, long)}（max(观测, base) 钳制/fallback），必须从真实可信 Type-7
- * positive HP 采样（hpSamples/纯观测结果）独立取最大值，无可信 sample 为 null</b>。</p>
+ * 不得当 entry full；本字段仅供 AI 证据保守使用，绝不由它推导播放 UI 的 displayCapacityHp
+ *（V2 canonical 由 {@code BattlePlaybackProjector} 从真实可信 Type-7 positive HP 采样
+ * 独立取最大值）。</p>
  * <p>注意：{@code first observed DamageEvent} 只能帮助<b>证伪</b>「整场 max current HP ==
  * entry HP」（见 {@code EntryHpProbeTest}），不能独立证明「sample before first observed
  * damage == authoritative initial full HP」。</p>
@@ -92,8 +92,8 @@ public final class ObservedMaxHp {
             }
             // observedMaxHp 保留「观测最大 current HP，下界 tankopedia base」legacy 语义：
             // 供 AI 证据保守使用（≥ base，不得低于基础值）。
-            // 注意：Playback DTO 的 observedCapacityHp 必须从真实 hpSamples/纯观测结果独立产生
-            // （MapOverview.observedCapacityHpOf），绝不使用本字段的 resolve() 钳制/fallback。
+            // 注意：V2 播放 UI 的 displayCapacityHp 由 BattlePlaybackProjector 从真实 hpSamples
+            // 独立产生，绝不使用本字段的 resolve() 钳制/fallback。
             player.observedMaxHp = resolve(observed.get(player.accountId), player.tankId);
             final boolean coverageExact = receivedCoverageExact(player, observedReceived.get(player.accountId));
             resolveEntryHp(player, hpTimeline.get(player.accountId),
@@ -126,8 +126,7 @@ public final class ObservedMaxHp {
     }
 
     /** 观测最大血量解析（legacy AI 语义，保留）：max(回放实测, tankopedia base)；均无 → null。
-     * 仅供 AI 证据保守使用；Playback DTO 的 observedCapacityHp 禁止使用本方法
-     * （须从真实 Type-7 positive sample 纯观测最大值独立产生，见 MapOverview.observedCapacityHpOf）。 */
+     * 仅供 AI 证据保守使用；V2 播放 UI 的 displayCapacityHp 不经过本方法。 */
     public static Integer resolve(final Integer observed, final long tankId) {
         final Integer base = ReplayDisplayNames.tankMaxHpValue(tankId);
         if (observed == null) {

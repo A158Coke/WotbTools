@@ -222,3 +222,59 @@ export function moduleCrewAt(transitions, t) {
     confidence: tr.confidence,
   }
 }
+
+/**
+ * 从 canonical healthTransitions 推导每辆车到 t 的 HP losses（相邻 transition 的 currentHp 下降）。
+ * 用于累积统计 / 伤害日志（legacy vehicle.hpLosses 的 V2 等价），只消费 <= t 的 transition。
+ * @returns [{ fromSec, toSec, hpLoss }]
+ */
+export function deriveHpLosses(healthTransitions, t) {
+  if (!Array.isArray(healthTransitions) || healthTransitions.length === 0) return []
+  const out = []
+  let prev = null
+  for (const tr of healthTransitions) {
+    if (tr.timeSec > t + 1e-6) break
+    if (prev != null && Number.isFinite(prev.currentHp) && Number.isFinite(tr.currentHp)
+        && tr.currentHp < prev.currentHp) {
+      out.push({ fromSec: prev.timeSec, toSec: tr.timeSec, hpLoss: prev.currentHp - tr.currentHp })
+    }
+    prev = tr
+  }
+  return out
+}
+
+/**
+ * V2 canonical vehicle view：把 VehiclePlaybackTrack 规范化为与既有
+ * vehicleHpAt/teamHp/cumulativeStatsAt/damageLogAt/hpDisplay 兼容的对象
+ * （携带 healthTransitions/lifeTransitions/team/accountId/deathSec/hpLosses）。
+ */
+export function v2VehicleView(track) {
+  if (!track) return null
+  const lt = track.lifeTransitions || []
+  const lastLife = lt[lt.length - 1] || null
+  // legacy 兼容视图字段（供 positionCoveredAt / interpolateDirection / victimFeedbackAllowed 复用）
+  const positionIntervals = (track.positionSegments || [])
+    .filter(s => s.knowledge === 'OBSERVED')
+    .map(s => ({ startSec: s.startSec, endSec: s.endSec }))
+  const directionSamples = (track.orientationSegments || [])
+    .flatMap(s => (s.samples || []).map(x => ({ timeSec: x.timeSec, hullYawDeg: x.hullYawDeg, turretRelativeYawDeg: x.turretRelativeYawDeg })))
+  return {
+    accountId: track.accountId,
+    playerName: track.playerName || '',
+    tankId: track.tankId,
+    tankName: track.tankName || '',
+    team: track.team,
+    tankType: track.tankClass || '',
+    healthTransitions: track.healthTransitions || [],
+    lifeTransitions: lt,
+    deathSec: lastLife && lastLife.lifeState === 'DESTROYED' ? lastLife.destroyedKnownAtSec : null,
+    hpLosses: Array.isArray(track.hpLosses) && track.hpLosses.length > 0
+      ? track.hpLosses
+      : deriveHpLosses(track.healthTransitions, Number.POSITIVE_INFINITY),
+    positionIntervals,
+    directionSamples,
+    positionSegments: track.positionSegments || [],
+    orientationSegments: track.orientationSegments || [],
+    loadout: track.loadout || null,
+  }
+}

@@ -103,9 +103,9 @@ function makeOverview(overrides = {}) {
   }
 }
 
-function mountOverview(overview) {
+function mountOverview(overview, playbackV2 = null) {
   return mount(MapOverview, {
-    props: { overview },
+    props: { overview, playbackV2 },
     global: { mocks: { $t: i18n.t } }
   })
 }
@@ -335,9 +335,9 @@ describe('MapOverview', () => {
   it('shows the playback tab and view only when playback data exists', async () => {
     const withPlayback = makeOverview({
       recorderAccountId: 1,
-      playback: { durationSec: 60, vehicles: [], events: [] }
+      playbackV2: { durationSec: 60, vehicles: [], events: [], shots: [], pointsSamples: [] }
     })
-    const wrapper = mountOverview(withPlayback)
+    const wrapper = mountOverview(withPlayback, withPlayback.playbackV2)
     expect(wrapper.find('[data-test="map-tab-playback"]').exists()).toBe(true)
     await wrapper.findAll('.map-tab')[2].trigger('click')
     expect(wrapper.find('[data-test="battle-playback"]').exists()).toBe(true)
@@ -351,10 +351,10 @@ describe('MapOverview', () => {
   it('switches to playback view when seekTo is provided', async () => {
     const withPlayback = makeOverview({
       recorderAccountId: 1,
-      playback: { durationSec: 60, vehicles: [], events: [] }
+      playbackV2: { durationSec: 60, vehicles: [], events: [], shots: [], pointsSamples: [] }
     })
     const wrapper = mount(MapOverview, {
-      props: { overview: withPlayback, seekTo: 30 },
+      props: { overview: withPlayback, seekTo: 30, playbackV2: withPlayback.playbackV2 },
       global: { mocks: { $t: i18n.t } }
     })
     await flushPromises()

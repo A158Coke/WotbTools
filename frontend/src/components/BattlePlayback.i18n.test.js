@@ -9,6 +9,7 @@ import zh from '../locales/zh.json'
 import en from '../locales/en.json'
 import ru from '../locales/ru.json'
 import BattlePlayback from './BattlePlayback.vue'
+import { legacyPlaybackToV2Dataset } from '../test/playbackV2TestUtil'
 
 vi.mock('../data/mapImages', () => ({
   mapImages: {
@@ -96,8 +97,8 @@ function makeOverview() {
 }
 
 const locales = { zh, en, ru }
-// PR5 detail sidebar 文案（§8/§7.1）：最后发现 / 已击毁
-const lastSpottedLabel = { zh: '最后发现', en: 'Last spotted', ru: 'Последнее обнаружение' }
+// PR5 detail sidebar 文案（§8/§7.1）：最后已知 / 已击毁（AoI coverage ≠ spotting → observation 语义）
+const lastSpottedLabel = { zh: '最后已知', en: 'Last known', ru: 'Последнее известное' }
 const destroyedLabel = { zh: '已击毁', en: 'Destroyed', ru: 'Уничтожен' }
 
 describe('BattlePlayback with real vue-i18n (zh/en/ru)', () => {
@@ -105,7 +106,7 @@ describe('BattlePlayback with real vue-i18n (zh/en/ru)', () => {
     it(lang + ': selecting a last-known vehicle does not throw and keeps the map visible', async () => {
       const i18n = createI18n({ locale: lang, fallbackLocale: 'en', messages: locales })
       const wrapper = mount(BattlePlayback, {
-        props: { overview: makeOverview(), seekTo: 20 },
+        props: { overview: makeOverview(), seekTo: 20, playbackV2: legacyPlaybackToV2Dataset(makeOverview()) },
         global: { plugins: [i18n] }
       })
       await flushPromises()
@@ -126,7 +127,7 @@ describe('BattlePlayback with real vue-i18n (zh/en/ru)', () => {
     it(lang + ': selecting a destroyed vehicle does not collapse the component', async () => {
       const i18n = createI18n({ locale: lang, fallbackLocale: 'en', messages: locales })
       const wrapper = mount(BattlePlayback, {
-        props: { overview: makeOverview(), seekTo: 35 },
+        props: { overview: makeOverview(), seekTo: 35, playbackV2: legacyPlaybackToV2Dataset(makeOverview()) },
         global: { plugins: [i18n] }
       })
       await flushPromises()
