@@ -161,7 +161,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
                 .contains("逐车分析敌方阵容"), PlayerReplayPromptBuilder.SYSTEM_PROMPT);
         assertTrue(PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT
                 .contains("必须逐车分析敌方阵容"), PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT);
-        // 团队路径（AI Review V2.1 + PR #103 最终收尾）：对方关键威胁是【可选】内容，
+        // 团队路径（AI Review V2.1 + ）：对方关键威胁是【可选】内容，
         // 不再强制逐车作文，也不再无条件强制「指出对方主要威胁」
         final String team = TeamReplayAnalysisService.SINGLE_TEAM_PROMPT;
         assertTrue(team.contains("对方关键威胁是【可选】内容"), team);

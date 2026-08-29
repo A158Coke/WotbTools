@@ -19,7 +19,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 /**
- * {@code /api/replay/map-overview} Dataset 路径查询服务契约（BLOCKER 2）：
+ * {@code /api/replay/map-overview} Dataset 路径查询服务契约：
  * 只读 Processing Job cached {@code map-overview.json}，<b>不</b>重新 full
  * process（multipart 上传路径已废弃，服务不再持有 processingFacade）。
  * store 为单一强制构造器（production mandatory）——缺失 bean 启动即失败。
@@ -181,7 +181,7 @@ class MapOverviewQueryServiceTest {
         final ReplayProcessingJobStore store = storeWithJob(dir, ReplayProcessingJob.SourceStatus.READY, false);
         try {
             // 手动写入 corrupt map-overview.json（readMapOverview 反序列化失败 → IOException）。
-            // BLOCKER 3：这<b>不是</b>「job 不存在」——必须映射不可恢复的 503 DATASET_UNAVAILABLE，
+            // 这<b>不是</b>「job 不存在」——必须映射不可恢复的 503 DATASET_UNAVAILABLE，
             // 绝不 JOB_NOT_FOUND（否则前端会误触发 exactly-once full-process recovery）。
             final Path artifact = ReplayArtifactWriter.mapOverviewPath(store.jobDir("j1"), 0);
             Files.createDirectories(artifact.getParent());

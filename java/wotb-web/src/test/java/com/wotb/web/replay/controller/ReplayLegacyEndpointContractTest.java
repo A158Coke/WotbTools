@@ -35,7 +35,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 /**
- * BLOCKER 2 架构/契约测试：ReplayParseScheduler 是唯一 full-processing CPU budget
+ * 架构/契约测试：ReplayParseScheduler 是唯一 full-processing CPU budget
  * authority——public/anonymous 与 authenticated 的 legacy 同步端点一律稳定 410
  * {@code REPLAY_LEGACY_DEPRECATED}，绝不创建 scheduler 之外的 full processing；
  * 控制器/服务不再持有 processingFacade，不存在第二套 ReplayCapacityLimiter 并行

@@ -34,7 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
 /**
- * PR #106 review（blocker 2）：AI Review worker 生命周期<b>终态 exactly once</b>——
+ * （blocker 2）：AI Review worker 生命周期<b>终态 exactly once</b>——
  * 每个真正开始执行的 worker 请求恰好产生一次 {@code event=ai_review_finished}，
  * result ∈ {SUCCESS, FAILED, CANCELLED}（FAILED 带稳定 errorCode，CANCELLED 带稳定 source）。
  * <p>用 logback {@link ListAppender} 捕获 {@code ReconstructionController} 日志并<b>计数</b>

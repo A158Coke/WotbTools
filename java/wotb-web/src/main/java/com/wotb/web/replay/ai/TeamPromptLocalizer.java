@@ -66,7 +66,7 @@ final class TeamPromptLocalizer {
                         селективного UNKNOWN.
             """;
 
-    /** Team 专用（PR #103 review BLOCKER B）：内部证据 ≠ 用户输出模板。 */
+    /** Team 专用：内部证据 ≠ 用户输出模板。 */
     static final String TEAM_INTERNAL_VS_USER_FACING_RULE = """
 
             === 内部证据与用户正文的关系（强制） ===
@@ -681,7 +681,7 @@ final class TeamPromptLocalizer {
             5. Высокий урон ≠ высокий вклад: оценивая вклад, взвешивайте урон / потерю ОЗ / позиционные измерения, но никогда не ссылайтесь на заранее вычисленную «степень игры за спиной» как на авторитетный ярлык — это ваше умозаключение.
             6. Если секция отсутствует (недостаточно наблюдений позиций/ОЗ), запрещено её выдумывать.""";
 
-    /** 数据不足时的输出措辞（PR #103 review BLOCKER B：UNKNOWN selective，不再 blanket 强制写明）。 */
+    /** 数据不足时的输出措辞（UNKNOWN selective，不再 blanket 强制写明）。 */
     static final String ZH_CANNOT_DETERMINE_RULE =
             "UNKNOWN 是合法内部状态：只有不说明会误写成确定因果、或该未知直接影响核心结论/训练建议、"
                     + "或用户自然会关心这个关键原因时，才自然说明「无法从当前回放数据确定」；其他未知静默，不要逐条列出。";
@@ -804,7 +804,7 @@ final class TeamPromptLocalizer {
                поддержка с другой стороны; стоила ли информационная ценность рассредоточения цены нехватки
                локальных сил.
             """;
-    /** Team 专用（PR #103 review BLOCKER E）：重新集中/合流是本场具体结论，必须有证据。 */
+    /** Team 专用：重新集中/合流是本场具体结论，必须有证据。 */
     static final String TEAM_REGROUP_INFERENCE_RULE = """
 
             === 重新集中推断规则（强制：本场具体结论必须有证据） ===

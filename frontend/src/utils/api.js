@@ -33,7 +33,7 @@ async function downloadResponse(response, fallbackName) {
 // ── Replay Export Job（/api/replay/export-jobs，匿名公开；创建立即返回 jobId，轮询真实进度）──
 
 /**
- * 创建导出任务（Dataset-only，plan §28–§30）：只消费已 READY 的 Processing Job result，
+ * 创建导出任务（Dataset-only）：只消费已 READY 的 Processing Job result，
  * 不接收 replay files / 手工 body（无上传输入）。
  * mode 经 query 传递；teamNamesJson（League 战队名称覆盖）经 multipart form-field 传递
  * （不拼 URL query，避免超长 URL）。processingJobId 必填（缺失 → 后端稳定 410/400）。
@@ -65,7 +65,7 @@ export async function cancelExportJob(jobId) {
 // ── Replay Processing Job（/api/replay/processing-jobs，匿名公开；解析预览改为异步 Job）──
 
 /**
- * 创建解析任务：XHR 上传 multipart（真实 upload progress，plan §27），202 返回
+ * 创建解析任务：XHR 上传 multipart（真实 upload progress），202 返回
  * {jobId, status, total}（HTTP request 不等待解析）。
  * @param {FormData} body multipart files
  * @param {{onProgress?: (p:{loaded:number,total:number,percent:number})=>void,
@@ -136,7 +136,7 @@ export async function cancelProcessingJob(jobId) {
   await requireOk(await fetch(`/api/replay/processing-jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }))
 }
 
-/** READY 后获取 Preview 数据（不重新解析回放，plan §21）。 */
+/** READY 后获取 Preview 数据（不重新解析回放）。 */
 export async function getProcessingJobResult(jobId) {
   const r = await requireOk(await fetch(`/api/replay/processing-jobs/${encodeURIComponent(jobId)}/result`))
   return r.json()

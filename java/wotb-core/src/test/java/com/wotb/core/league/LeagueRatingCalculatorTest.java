@@ -274,7 +274,7 @@ class LeagueRatingCalculatorTest {
                 "小样本仍应保持保守：lowShotSoft=" + lowSoft + " highShotSoft=" + highSoft);
     }
 
-    // ---- Adversarial 哲学回归（plan §62：只锁排序关系，不锁具体分数）----
+    // ---- Adversarial 哲学回归（只锁排序关系，不锁具体分数）----
 
     @Test
     void highDamageZeroKillLoserCanOutscoreOrdinaryWinnerAndBeTeamTop() {

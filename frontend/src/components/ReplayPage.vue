@@ -511,14 +511,14 @@ const playbackSeek = ref(null)
 const datasetRef = ref(null)
 /** Dataset 准备失败（prepare failure）时的已本地化错误；空 = 无。 */
 const datasetError = ref('')
-/** exactly-once recovery（BLOCKER @164）：每个 selection / dataset generation 最多自动恢复一次。
+/** exactly-once recovery（@164）：每个 selection / dataset generation 最多自动恢复一次。
  * recovery context 是 generation-owned（token + 当前 in-flight token）；stale recovery 的 finally
  * 只有在自己仍是当前 owner 时才清 inFlight，绝不清新 generation 的 recovery 状态。 */
 let datasetRecoveryAttempted = false
 let datasetRecoveryToken = 0
 let datasetRecoveryInFlightToken = null
 /**
- * Workspace Dataset 请求 generation（BLOCKER 1）：每次目标变化（workspaceFile 或新的
+ * Workspace Dataset 请求 generation：每次目标变化（workspaceFile 或新的
  * ensureDatasetFor 调用）自增；requestDirectAction 是异步的，返回后必须校验 revision +
  * target file identity 仍属于当前 generation，否则直接丢弃——绝不让 A 的迟到响应把
  * datasetRef 绑到已切走的 B 上（data correctness，不是 UI cosmetic）。
@@ -528,7 +528,7 @@ let workspaceDatasetRevision = 0
 /**
  * 目标文件变化 → 旧 dataset 引用立即失效（清空，UI 不残留旧引用）。revision 的递增
  * 只由 ensureDatasetFor 负责（每次请求前 ++）；这里不能 ++——Vue 的 pre-flush watcher
- * 会在「请求发起后、await 续体前」运行，把当前请求自己误判成 stale（BLOCKER 1 竞态测试
+ * 会在「请求发起后、await 续体前」运行，把当前请求自己误判成 stale（竞态测试
  * 暴露：workspaceFile 变化 → flush → revision 被顶掉 → 新 dataset 被丢弃）。清空旧值
  * 只是即时 UI 失效；真正的 ownership 由 ensureDatasetFor 的 revision + fileKey 校验保证。
  */
@@ -541,7 +541,7 @@ watch(workspaceFile, () => {
 })
 
 /**
- * 确保目标 source READY 后返回 Dataset 引用（自动创建/复用 Processing Job，plan §40）。
+ * 确保目标 source READY 后返回 Dataset 引用（自动创建/复用 Processing Job）。
  * 写入 datasetRef 前必须确认：请求发起时的 revision 仍是最新、当前 workspaceFile 的
  * fileKey 仍等于目标文件。任何 stale 结果（成功或失败）一律 discard——不写 datasetRef、
  * 不写 processingError、不修改当前 workspace 状态。
@@ -697,8 +697,8 @@ watch(files, (next) => {
 
     <p v-if="error" class="error">{{ error }}</p>
 
-    <!-- 主操作区 inline 进度面板（plan §32/§35）：不依赖 files/resp 渲染条件，
-         与 Export 任务卡各自独立，不再互斥隐藏（BLOCKER H）。 -->
+    <!-- 主操作区 inline 进度面板：不依赖 files/resp 渲染条件，
+         与 Export 任务卡各自独立，不再互斥隐藏。 -->
     <ReplayProcessingPanel
       v-if="uploadState || processingJob"
       :upload-state="uploadState"

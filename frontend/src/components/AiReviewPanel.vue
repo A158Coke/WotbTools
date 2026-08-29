@@ -16,7 +16,7 @@ import ReplayAnalysisAction from './ReplayAnalysisAction.vue'
 const props = defineProps({
   /** 目标回放文件（null = 尚未选择，显示空态提示）。 */
   file: { type: Object, default: null },
-  /** Dataset 引用（plan §36–§37）：两者齐备时走 derived ai-facts，不再上传 replay。 */
+  /** Dataset 引用：两者齐备时走 derived ai-facts，不再上传 replay。 */
   processingJobId: { type: String, default: null },
   sourceId: { type: String, default: null },
   /** Dataset 准备失败（父组件 ensureDatasetFor 未能建立引用）时的已本地化错误；空 = 无。 */
@@ -37,7 +37,7 @@ const canUseAiReview = computed(() => {
 })
 
 /**
- * Dataset 就绪守卫（defense-in-depth，plan §36/§109）：AI Analyze 只有在 authoritative
+ * Dataset 就绪守卫（defense-in-depth）：AI Analyze 只有在 authoritative
  * processingJobId + sourceId 都已绑定到面板后才能执行。file 已选但引用缺失 =
  * PREPARING_DATASET（状态机问题），不是用户错误。
  */
@@ -63,7 +63,7 @@ const partialAnalysis = ref('')
 // 超时链对齐：后端整体 deadline=1100s < nginx analyze 1120s；前端 1100s 在 nginx 之前给出干净 AI_TIMEOUT。
 const AI_ANALYZE_TIMEOUT_MS = 1_100_000
 /**
- * 当前 AI analysis run（BLOCKER 2）：每次 runAnalyze 创建独立 run context
+ * 当前 AI analysis run：每次 runAnalyze 创建独立 run context
  * {controller, correlationId, startedAt, timeoutTimer, cancelRequested, timedOut}。
  * Dataset identity 变化（file / processingJobId / sourceId）只取消旧 activeRun（它自己
  * 的 timer / correlationId / controller），再解除 active ownership 并重置共享 UI 状态；
@@ -173,7 +173,7 @@ async function runAnalyze() {
   analysisResult.value = null
   progressStage.value = 'call1'
   partialAnalysis.value = ''
-  // timeout closure-capture run：fire 时只读 run.correlationId / run.controller（BLOCKER 2.4）。
+  // timeout closure-capture run：fire 时只读 run.correlationId / run.controller。
   run.timeoutTimer = setTimeout(() => {
     run.timedOut = true
     fireCancel(run.correlationId)
@@ -224,7 +224,7 @@ async function runAnalyze() {
       error.value = e.message || String(e)
     }
   } finally {
-    // BLOCKER 2.3：只清理自己的 timer；非当前 run 的 finally 不得触碰共享 UI 状态。
+    // 只清理自己的 timer；非当前 run 的 finally 不得触碰共享 UI 状态。
     clearTimeout(run.timeoutTimer)
     run.timeoutTimer = null
     if (activeRun === run) {
@@ -235,8 +235,8 @@ async function runAnalyze() {
 }
 
 /**
- * Dataset 路径（plan §36/§109）：必须携带 processingJobId+sourceId，绝不回退 multipart
- * 重新上传/重新 full process（BLOCKER A）。
+ * Dataset 路径：必须携带 processingJobId+sourceId，绝不回退 multipart
+ * 重新上传/重新 full process。
  */
 function analyzeBody(correlationId) {
   if (!props.processingJobId || !props.sourceId) {
@@ -253,7 +253,7 @@ function analyzeBody(correlationId) {
 }
 
 /**
- * 读取 SSE 响应体并分发事件（run context 显式传入，BLOCKER 2.5）：
+ * 读取 SSE 响应体并分发事件（run context 显式传入）：
  * call1_start/call1_done/evidence_done → 阶段状态；
  * call2_token → 主复盘文本累积（token 滚动）；
  * autopsy_start/autopsy_done → 团队剖析阶段；

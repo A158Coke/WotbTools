@@ -1,5 +1,5 @@
 /**
- * 共享 Replay 上传 contract（BLOCKER 4）：FileUploader（选择文件/文件夹/Add/drag-drop）、
+ * 共享 Replay 上传 contract：FileUploader（选择文件/文件夹/Add/drag-drop）、
  * 回放文件选择（ReplayPage FileUploader）统一走同一个 validator，magic number 不散落
  * 在 Vue component。与后端 ReplayUploadValidator / application.yml multipart 限制一致：
  * 单文件 20 MiB、总量 200 MiB（后端保持 hard limit，前端 preflight 提供精确错误）。

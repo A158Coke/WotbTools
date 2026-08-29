@@ -179,7 +179,7 @@ class TeamReviewQualityGateContractTest {
         assertFalse(ru.contains("是图控/拿视野，不是脱节"), "RU 不得携带旧规则");
     }
 
-    // ---- PR #103 review BLOCKER E：Opening Spread 的 battle-specific inference 必须有证据 ----
+    // ---- Opening Spread 的 battle-specific inference 必须有证据 ----
 
     @Test
     void regroupingIsBattleSpecificConclusionNeedingEvidence() {
@@ -227,7 +227,7 @@ class TeamReviewQualityGateContractTest {
         assertTrue(ru.contains("ПРАВИЛО ВЫВОДА О ПЕРЕГРУППИРОВКЕ"), "RU 必须携带重新集中规则");
     }
 
-    // ---- PR #103 最终收尾：对方关键威胁 optional contract 统一 ----
+    // ---- 对方关键威胁 optional contract 统一 ----
 
     @Test
     void opposingThreatIsOptionalOnlyWhenMaterial() {

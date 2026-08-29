@@ -123,7 +123,7 @@ public final class TeamAiPromptBuilder {
         headerBuf.append("battleIdentity=").append(TeamEvidenceFormatter.quoteData(context.battleId())).append("\n");
         headerBuf.append("category=").append(context.battleCategory()).append("\n");
         if (context.battle() != null) {
-            // PR #103 review BLOCKER A：user-facing 名称只使用 backend display labels；
+            // user-facing 名称只使用 backend display labels；
             // 无可靠 clan（无 clan / 平票 / 非多数）时为空串，prompt 规则要求 fallback「我方/对方」。
             final String teamLabel = TeamEvidenceFormatter.resolveDisplayLabel(
                     context.battle().players, context.perspectiveTeam());

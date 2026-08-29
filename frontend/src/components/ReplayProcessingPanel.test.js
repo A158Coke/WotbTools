@@ -32,7 +32,7 @@ function pJob(overrides = {}) {
   }
 }
 
-describe('ReplayProcessingPanel (plan §32/§35)', () => {
+describe('ReplayProcessingPanel', () => {
   it('renders nothing when neither upload nor job exists', () => {
     const wrapper = mountPanel()
     expect(wrapper.find('[data-testid="replay-processing-panel"]').exists()).toBe(false)

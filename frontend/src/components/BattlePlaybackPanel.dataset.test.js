@@ -18,7 +18,7 @@ vi.mock('../composables/useAuth.js', () => ({
   })
 }))
 
-/** Phase 7（plan §39/§88）：Dataset 路径读 cached map-overview，不重新上传 replay。 */
+/** Phase 7：Dataset 路径读 cached map-overview，不重新上传 replay。 */
 describe('BattlePlaybackPanel dataset request', () => {
   function mountDatasetPanel() {
     return mount(BattlePlaybackPanel, {
@@ -61,7 +61,7 @@ describe('BattlePlaybackPanel dataset request', () => {
     vi.unstubAllGlobals()
   })
 
-  it('无 dataset 引用时拒绝发起请求并显示准备态（不裸抛 DATASET_UNAVAILABLE，BLOCKER B）', async () => {
+  it('无 dataset 引用时拒绝发起请求并显示准备态（不裸抛 DATASET_UNAVAILABLE）', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 })
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mount(BattlePlaybackPanel, {
@@ -109,9 +109,9 @@ describe('BattlePlaybackPanel dataset request', () => {
   })
 })
 
-// ---- BLOCKER 1.2：effective Dataset identity（file + processingJobId + sourceId）变化必须真正 reset ----
+// ---- effective Dataset identity（file + processingJobId + sourceId）变化必须真正 reset ----
 
-describe('BattlePlaybackPanel Dataset identity reset（BLOCKER 1.2）', () => {
+describe('BattlePlaybackPanel Dataset identity reset', () => {
   function deferred() {
     let resolve
     let reject

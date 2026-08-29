@@ -42,7 +42,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * AI 复盘共享链（V2 Dataset 路径，BLOCKER 2）：multipart 上传入口已废弃，
+ * AI 复盘共享链（V2 Dataset 路径）：multipart 上传入口已废弃，
  * {@code analyzeFacts(AiReplayFacts, ...)} 是唯一 AI 复盘入口（读 Processing Job
  * derived facts，不重新 full process）。本测试覆盖 AI 链：preBattleSection 渲染、
  * tank-name correction package 传播、team/player 分支、listener 事件转发与 Dataset
@@ -206,7 +206,7 @@ class AiReplayReviewServiceTest {
         assertFalse(section.contains("TEAM_A"), "internal team tokens must be replaced");
     }
 
-    // ---- plan §36–§38/§87：Dataset 路径只读 ai-facts（ReplayProcessingJobStore / ReplayArtifactWriter） ----
+    // ---- Dataset 路径只读 ai-facts（ReplayProcessingJobStore / ReplayArtifactWriter） ----
 
     @Test
     void analyzeFactsFromDatasetReadsAiFactsArtifactFromStore() throws Exception {
@@ -267,7 +267,7 @@ class AiReplayReviewServiceTest {
 
             final ResponseStatusException e = assertThrows(ResponseStatusException.class,
                     () -> service.analyzeFacts("j1", 0, AllowedLanguage.ZH, AiReviewStreamListener.NOOP));
-            // BLOCKER 3：artifact 解码/存储故障 ≠ 「job 不存在」——必须是不可恢复的 503 DATASET_UNAVAILABLE
+            // artifact 解码/存储故障 ≠ 「job 不存在」——必须是不可恢复的 503 DATASET_UNAVAILABLE
             assertEquals(HttpStatus.SERVICE_UNAVAILABLE, e.getStatusCode());
             assertEquals("DATASET_UNAVAILABLE", e.getReason());
         } finally {

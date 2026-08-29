@@ -46,7 +46,7 @@ public class ReplayExportJobController {
         this.service = service;
     }
 
-    // HTTP contract（BLOCKER 2：Export 已收口为 Dataset-only——只消费已 READY 的
+    // HTTP contract（Export 已收口为 Dataset-only——只消费已 READY 的
     // Processing Job result，无 multipart 首传路径）。processingJobId 语义必填：缺失/空 →
     // 410 REPLAY_LEGACY_DEPRECATED（service 统一裁决，保留 intentional 410 契约）；
     // mode 默认 aggregate；teamNames 可选（multipart form-field 传递，不拼 URL query）。

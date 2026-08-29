@@ -152,7 +152,7 @@ class TeamAutopsyPromptBuilderTest {
                 "autopsy must ban window-level toll/attack-defense claims");
     }
 
-    /** BLOCKER A-1：empty verdict（players 完整但 mvps/biggestLiabilities 均为空）→ renderSection 返回空串。 */
+    /** -1：empty verdict（players 完整但 mvps/biggestLiabilities 均为空）→ renderSection 返回空串。 */
     @Test
     void renderSectionIsEmptyWithoutStandout() {
         final TeamAutopsyResult empty = new TeamAutopsyResult(
@@ -170,7 +170,7 @@ class TeamAutopsyPromptBuilderTest {
         assertEquals("", TeamAutopsyPromptBuilder.renderSection(null, sevenStats()));
     }
 
-    /** BLOCKER A-2：只有 liability（重点复查）时，只显示 nickname/tank + reason，不暴露任何 internal。 */
+    /** -2：只有 liability（重点复查）时，只显示 nickname/tank + reason，不暴露任何 internal。 */
     @Test
     void renderSectionLiabilityOnlyShowsNicknameTankAndReason() {
         final TeamAutopsyResult result = new TeamAutopsyResult(
@@ -195,7 +195,7 @@ class TeamAutopsyPromptBuilderTest {
         assertFalse(section.contains("高贡献者"), "无 MVP 时不得输出高贡献者块：" + section);
     }
 
-    /** BLOCKER A-3：只有 MVP（高贡献者）时，同上；不输出重点复查。 */
+    /** -3：只有 MVP（高贡献者）时，同上；不输出重点复查。 */
     @Test
     void renderSectionMvpOnlyShowsNicknameTankAndReason() {
         final TeamAutopsyResult result = new TeamAutopsyResult(
@@ -218,7 +218,7 @@ class TeamAutopsyPromptBuilderTest {
         assertFalse(section.contains("重点复查"), "无 liability 时不得输出重点复查块：" + section);
     }
 
-    /** BLOCKER A-4：既有 liability 又有 MVP 时允许同时显示，但仍保持简洁、无 internal。 */
+    /** -4：既有 liability 又有 MVP 时允许同时显示，但仍保持简洁、无 internal。 */
     @Test
     void renderSectionBothBlocksConciseWithoutInternalLeak() {
         final TeamAutopsyResult result = new TeamAutopsyResult(
@@ -233,8 +233,8 @@ class TeamAutopsyPromptBuilderTest {
         assertTrue(section.contains("## 高贡献者"), "必须输出高贡献者：" + section);
         assertTrue(section.contains("nick1 / Kranvagn 1"), "MVP 显示 nickname / tank：" + section);
         assertTrue(section.contains("nick2 / Kranvagn 2"), "liability 显示 nickname / tank：" + section);
-        assertFalse(section.contains("P1（"), "不得暴露 P1（：" + section);
-        assertFalse(section.contains("P2（"), "不得暴露 P2（：" + section);
+        assertFalse(section.contains("P1（"), "不得暴露 P1（" + section);
+        assertFalse(section.contains("P2（"), "不得暴露 P2（" + section);
         assertFalse(section.contains("逐人贡献"), "不得输出逐人贡献：" + section);
         assertFalse(section.contains("置信度"), "不得暴露置信度：" + section);
         assertFalse(section.contains("PARTIAL"), "不得暴露 PARTIAL：" + section);
@@ -255,7 +255,7 @@ class TeamAutopsyPromptBuilderTest {
         assertTrue(content.contains("叙述必须写「时间耗尽」"));
         assertTrue(content.contains("不要描述成敌方全歼"));
 
-        // BLOCKER A：空 standout（无重点复查/高贡献者）时 renderSection 必须为空串，
+        // 空 standout（无重点复查/高贡献者）时 renderSection 必须为空串，
         // 不再输出胜负标签（胜负由主复盘/UI 提供，Autopsy 不重复）。
         final TeamAutopsyResult empty =
                 new TeamAutopsyResult(List.of(), List.of(), List.of(), List.of());
@@ -302,7 +302,7 @@ class TeamAutopsyPromptBuilderTest {
 
     @Test
     void winnerLabelFallsBackToBenFangWithoutReliableClan() {
-        // PR #103 review BLOCKER A/D：无可靠 clan 时 user-facing 胜负标签必须是「本方」，
+        // 无可靠 clan 时 user-facing 胜负标签必须是「本方」，
         // 绝不出现 TEAM_A / 队伍-XXXX / 主要军团
         assertEquals("本方落败", TeamAutopsyPromptBuilder.winnerLabel(
                 new TeamBattleWinner(Winner.ENEMY_WIN, WinnerSource.BATTLE_RESULTS, false,
@@ -310,7 +310,7 @@ class TeamAutopsyPromptBuilderTest {
         assertEquals("本方获胜", TeamAutopsyPromptBuilder.winnerLabel(
                 new TeamBattleWinner(Winner.FRIENDLY_WIN, WinnerSource.BATTLE_RESULTS, false,
                         PointsEndReason.NOT_APPLICABLE), null, completeBothAlive(), 1));
-        // BLOCKER A：无 standout 时 renderSection 为空串——胜负标签只存在于 winnerLabel（prompt 侧），
+        // 无 standout 时 renderSection 为空串——胜负标签只存在于 winnerLabel（prompt 侧），
         // 用户可见渲染不输出胜负；也不得出现 TEAM_A / 队伍- / 主要军团。
         final TeamAutopsyResult empty =
                 new TeamAutopsyResult(List.of(), List.of(), List.of(), List.of());

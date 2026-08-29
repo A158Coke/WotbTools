@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * BLOCKER 3：Dataset Lease 与 TTL cleanup 的 lifecycle atomicity（线性化）确定性测试。
+ * Dataset Lease 与 TTL cleanup 的 lifecycle atomicity（线性化）确定性测试。
  *
  * <p>不依赖 sleep：过期状态通过反射回拨 finishedAtMillis 确定构造；acquire 先成功 /
  * sweep 先成功两种 linearization 都以确定顺序驱动。invariant：

@@ -71,7 +71,7 @@ describe('AiReviewPanel workspace layout ownership', () => {
   })
 })
 
-// ---- plan §36–§37：Dataset 路径发送 processingJobId+sourceId JSON（不再上传 replay）----
+// ---- Dataset 路径发送 processingJobId+sourceId JSON（不再上传 replay）----
 
 describe('AiReviewPanel dataset request', () => {
   function mountDatasetPanel(overrides = {}) {
@@ -128,7 +128,7 @@ describe('AiReviewPanel dataset request', () => {
     vi.unstubAllGlobals()
   })
 
-  it('无 dataset 引用时拒绝发起请求并显示准备态（不裸抛 DATASET_UNAVAILABLE，BLOCKER A）', async () => {
+  it('无 dataset 引用时拒绝发起请求并显示准备态（不裸抛 DATASET_UNAVAILABLE）', async () => {
     const fetchMock = vi.fn().mockResolvedValue(sseResponse())
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mountDatasetPanel({ processingJobId: null, sourceId: null })
@@ -166,9 +166,9 @@ describe('AiReviewPanel dataset request', () => {
   })
 })
 
-// ---- BLOCKER 1.1：Dataset identity 必须进入 AI request ownership ----
+// ---- Dataset identity 必须进入 AI request ownership ----
 
-describe('AiReviewPanel Dataset identity ownership（BLOCKER 1.1）', () => {
+describe('AiReviewPanel Dataset identity ownership', () => {
   function deferred() {
     let resolve
     let reject
@@ -326,9 +326,9 @@ describe('AiReviewPanel Dataset identity ownership（BLOCKER 1.1）', () => {
   })
 })
 
-// ---- BLOCKER 2：每次 AI analysis 独立 run context（timer/correlationId/controller 所有权）----
+// ---- 每次 AI analysis 独立 run context（timer/correlationId/controller 所有权）----
 
-describe('AiReviewPanel per-run context（BLOCKER 2）', () => {
+describe('AiReviewPanel per-run context', () => {
   function deferred() {
     let resolve
     let reject

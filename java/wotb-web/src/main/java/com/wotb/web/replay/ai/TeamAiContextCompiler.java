@@ -44,7 +44,7 @@ public final class TeamAiContextCompiler {
             sb.append("时间轴: battle-relative（由战斗结束事件推算，确定性）\n");
         }
 
-        // 首尾保留：高密度长战斗不丢残局关键决策；中间章节折叠为一行摘要（P1 review）
+        // 首尾保留：高密度长战斗不丢残局关键决策；中间章节折叠为一行摘要
         final java.util.List<Integer> selected =
                 PersonalAiContextCompiler.selectedEpisodeIndices(episodes.size(), MAX_EPISODES);
         for (final int i : selected) {

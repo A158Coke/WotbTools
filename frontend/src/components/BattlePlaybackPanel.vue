@@ -19,7 +19,7 @@ import MapOverview from './MapOverview.vue'
 const props = defineProps({
   /** 目标回放文件（null = 尚未选择，显示空态提示）。 */
   file: { type: Object, default: null },
-  /** Dataset 引用（plan §39）：两者齐备时读 cached map-overview，不再上传 replay。 */
+  /** Dataset 引用：两者齐备时读 cached map-overview，不再上传 replay。 */
   processingJobId: { type: String, default: null },
   sourceId: { type: String, default: null },
   /** 宿主声明「战局回放 capability 已进入」：仅当 active=true 且该文件尚未尝试加载时自动请求
@@ -37,7 +37,7 @@ const emit = defineEmits(['dataset-recover'])
 const { t } = useI18n()
 const { token, ensureToken, login } = useAuth()
 
-/** Dataset 就绪守卫（plan §39/§109）：战局回放只有拿到 authoritative processingJobId+sourceId 才读 cached artifact。 */
+/** Dataset 就绪守卫：战局回放只有拿到 authoritative processingJobId+sourceId 才读 cached artifact。 */
 const datasetReady = computed(() => !!props.file && !!props.processingJobId && !!props.sourceId)
 
 // 统一的受保护请求：确保带上有效的 Keycloak Bearer Token（/api/replay/* 需要角色），
@@ -83,7 +83,7 @@ let mapAbortController = null
  */
 async function loadMapOverview() {
   if (mapLoading.value || !props.file) return
-  // Dataset 路径（plan §39/§109）：必须携带 processingJobId+sourceId，绝不回退 multipart（BLOCKER B）。
+  // Dataset 路径：必须携带 processingJobId+sourceId，绝不回退 multipart。
   // 数据集未就绪属于状态机问题（PREPARING_DATASET）：不尝试加载、不设裸错误码；datasetReady 后自动重试。
   if (!datasetReady.value) return
   const controller = new AbortController()
@@ -155,7 +155,7 @@ function toggleMap() {
 }
 
 /**
- * effective Dataset identity（BLOCKER 1.2）：file + processingJobId + sourceId 三者共同
+ * effective Dataset identity：file + processingJobId + sourceId 三者共同
  * 决定「当前地图属于谁」。任一变化都必须真正 reset（abort 在途请求、清空已加载的旧 map、
  * 解除 mapLoaded 阻塞），否则错误 Dataset A 的已加载地图会在 B 身份下继续显示。
  * 单一 watcher 同时避免 file watcher + dataset watcher 对同一变化的双重请求。
@@ -313,7 +313,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   transition: border-color .15s, color .15s;
 }
-.map-load-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-dark); }
+.map-load-btn:hover:not(disabled) { border-color: var(--accent); color: var(--accent-dark); }
 .map-load-btn:disabled { opacity: .6; cursor: default; }
 .map-error { margin: 0 0 8px; }
 .map-unavailable { color: var(--text-secondary); font-size: .85rem; margin: 0; }

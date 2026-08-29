@@ -173,7 +173,7 @@ class GlobalExceptionHandlerTest {
         assertEquals(0, errorEvents().size(), "IO_ERROR is a handled warning, not Unhandled exception");
     }
 
-    // ---- BLOCKER 5：MaxUploadSizeExceededException transport contract（HTTP 恒 413）----
+    // ---- MaxUploadSizeExceededException transport contract（HTTP 恒 413）----
 
     @Test
     void singlePartTooLargeMapsToFileTooLargeWith413() {

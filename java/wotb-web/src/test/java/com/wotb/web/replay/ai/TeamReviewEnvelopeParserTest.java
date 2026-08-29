@@ -381,7 +381,7 @@ class TeamReviewEnvelopeParserTest {
         assertNotNull(result.envelope());
     }
 
-    // ===== PR #106 review：字符串数组字段三态（MISSING / INVALID / VALID-empty）=====
+    // ===== 字符串数组字段三态（MISSING / INVALID / VALID-empty）=====
 
     private static String diagnosisJson(final String diagnosisBody) {
         return "{\"primaryDiagnosis\":{" + diagnosisBody + "},"

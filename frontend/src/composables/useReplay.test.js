@@ -130,9 +130,9 @@ describe('useReplay export job flow', () => {
   })
 })
 
-// ---- 最终终审：REGISTERING/UPLOADING 取消语义 / unmount ownership / stale async / READY reuse ----
+// ---- Processing Dataset lifecycle：REGISTERING/UPLOADING 取消语义 / unmount ownership / stale async / READY reuse ----
 
-describe('useReplay 最终终审 lifecycle（BLOCKER 1/2/3）', () => {
+describe('useReplay Processing Dataset lifecycle', () => {
   let replay
 
   function deferred() {
@@ -464,7 +464,7 @@ describe('useReplay 最终终审 lifecycle（BLOCKER 1/2/3）', () => {
   })
 })
 
-// ---- BLOCKER：pollSourceReady 取消必须 exactly-once settle（绝不永久 pending / 双 terminal）----
+// ---- pollSourceReady 取消必须 exactly-once settle（绝不永久 pending / 双 terminal）----
 
 describe('useReplay source poll exactly-once settlement（pollSourceReady cancellation）', () => {
   let replay
@@ -670,7 +670,7 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
     await expect(replay.requestDirectAction(replay.files.value[0])).rejects.toThrow('Failed to fetch')
   })
 
-  // ---- BLOCKER 3.2：authoritative invalidate（invalidateProcessingDatasetJob）与 source poll 的确定性并发 ----
+  // ---- authoritative invalidate（invalidateProcessingDatasetJob）与 source poll 的确定性并发 ----
 
   it('A — invalidate p1：acknowledged p1 poll settle SOURCE_POLL_CANCELLED (exactly once)', async () => {
     const dP1 = deferred()
@@ -739,12 +739,12 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
     expect(replay.resp.value).toEqual({ battles: [{ mapName: 'A' }] }) // resp 保留
   })
 
-  // ---- BLOCKER 1（本轮）：requestDirectAction 跨 await 的 dataset generation ownership race ----
+  // ---- requestDirectAction 跨 await 的 dataset generation ownership race ----
   // path 1 在 GET(p1) pending 期间切换到 p2，迟到的 p1 响应（404 / READY / PROCESSING）
   // 必须只作用于 p1（invalidate / discard / poll 绑定 p1），绝不 invalidate p2、绝不把
   // p1 response 混入 p2 identity。
 
-  it('BLOCKER1-A — p1 迟到 404 不得 invalidate 当前 p2（generation ownership）', async () => {
+  it('late JOB_NOT_FOUND from an obsolete job does not invalidate the current job', async () => {
     const dGet = deferred()
     replay.processingJobId.value = 'p1'
     api.getProcessingJob.mockReturnValueOnce(dGet.promise)
@@ -761,7 +761,7 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
     dGet.reject({ status: 404, code: 'JOB_NOT_FOUND' })
     await vi.advanceTimersByTimeAsync(0)
 
-    // 不得 invalidate p2 / 清空 resp（BLOCKER 1：只失效 capture 的 datasetJobId）
+    // 不得 invalidate p2 / 清空 resp（只失效 capture 的 datasetJobId）
     expect(replay.processingJobId.value).toBe('p2')
     expect(replay.processingJob.value?.jobId).toBe('p2')
     expect(replay.resp.value).toBe(respBefore)
@@ -769,7 +769,7 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
     await expect(pDirect).resolves.toEqual({ processingJobId: 'p2', sourceId: 'r0' })
   })
 
-  it('BLOCKER1-B — p1 迟到 READY 不得混入 p2 identity（stale p1 discard + 复用 p2）', async () => {
+  it('late READY response never mixes identities across Processing Jobs', async () => {
     const dGet = deferred()
     replay.processingJobId.value = 'p1'
     api.getProcessingJob.mockReturnValueOnce(dGet.promise)
@@ -795,7 +795,7 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
     expect(api.getProcessingJob.mock.calls[1][0]).toBe('p2')
   })
 
-  it('BLOCKER1-C — p1 GET 返回 PROCESSING → pollSourceReady 绑定 p1，即使 current 切换到 p2', async () => {
+  it('source polling remains owned by the job that started it', async () => {
     const dGet = deferred()
     replay.processingJobId.value = 'p1'
     api.getProcessingJob.mockReturnValueOnce(dGet.promise)
@@ -817,9 +817,9 @@ describe('useReplay source poll exactly-once settlement（pollSourceReady cancel
   })
 })
 
-// ---- BLOCKER 1：Processing create single-flight（同一 selection 至多一个 backend Job）----
+// ---- Processing create single-flight（同一 selection 至多一个 backend Job）----
 
-describe('useReplay Processing create single-flight（BLOCKER 1）', () => {
+describe('useReplay Processing create single-flight', () => {
   let replay
 
   function deferred() {
@@ -1124,7 +1124,7 @@ describe('useReplay processing job flow', () => {
     expect(replay.processingUiState.value).toBe('UPLOADING')
     expect(replay.uploadState.value.percent).toBe(50)
 
-    // 上传体已发完、202 未返回 → REGISTERING（plan §28）
+    // 上传体已发完、202 未返回 → REGISTERING
     const opts = api.createProcessingJob.mock.calls[0][1]
     opts.onProgress({ loaded: 67_108_864, total: 67_108_864, percent: 100 })
     expect(replay.processingUiState.value).toBe('REGISTERING')
@@ -1206,7 +1206,7 @@ describe('useReplay processing job flow', () => {
     })
   })
 
-  it('export without processing result is rejected (dataset-only, BLOCKER-free 收敛)', async () => {
+  it('export without processing result is rejected (dataset-only)', async () => {
     api.createExportJob.mockResolvedValue({ jobId: 'e1', status: 'QUEUED', total: 2 })
     api.getExportJob.mockResolvedValue({ jobId: 'e1', status: 'READY', phase: null, total: 2, processed: 2, duplicates: 0, failures: 0, filename: 'x.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     await replay.startExportJob('each')

@@ -106,7 +106,7 @@ class ReconstructionControllerStreamingTest {
         assertTrue(body.contains("event:done"), body);
         assertTrue(body.contains("\"analysis\":\"full analysis\""), body);
         assertTrue(body.contains("\"preBattleSection\":\"## 赛前预测\""), body);
-        // BLOCKER 2：AI done 载荷不再携带 mapOverview（地图由独立 Processing Job artifact 承载）。
+        // AI done 载荷不再携带 mapOverview（地图由独立 Processing Job artifact 承载）。
         assertFalse(body.contains("\"mapOverview\""), body);
     }
 
@@ -402,7 +402,7 @@ class ReconstructionControllerStreamingTest {
     @Test
     void legacyBatchAndValidationEndpointsReturnStableGone() {
         // multipart 校验与批量处理属于已废弃同步路径：一律 410 REPLAY_LEGACY_DEPRECATED，
-        // 不再有第二套 scheduler 之外的 full processing（BLOCKER 2）。
+        // 不再有第二套 scheduler 之外的 full processing。
         goneOf(() -> {
             try {
                 controller.reconstructBatch(new org.springframework.mock.web.MockMultipartFile[0]);

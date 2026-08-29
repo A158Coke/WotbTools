@@ -14,13 +14,13 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 
 /**
- * Derived Artifact 读写（plan §21–§24/§107）：
+ * Derived Artifact 读写：
  * <ul>
  *   <li>路径固定 {@code <jobDir>/derived/{sourceId}/ai-facts.json} 与
- *       {@code map-overview.json}（sourceId = r{sourceIndex}，sourceName 不入路径，plan §104）；</li>
- *   <li>写：临时文件 + atomic move，先写 artifact 后置 source READY（plan §21）；</li>
- *   <li>MapOverview 不可用（builder 返回 null）→ 不写伪 artifact，不判 parse failure（plan §23）；</li>
- *   <li>immutable JSON（Jackson），TTL 由 job 目录清理接管（plan §24/§105）。</li>
+ *       {@code map-overview.json}（sourceId = r{sourceIndex}，sourceName 不入路径）；</li>
+ *   <li>写：临时文件 + atomic move，先写 artifact 后置 source READY；</li>
+ *   <li>MapOverview 不可用（builder 返回 null）→ 不写伪 artifact，不判 parse failure；</li>
+ *   <li>immutable JSON（Jackson），TTL 由 job 目录清理接管。</li>
  * </ul>
  */
 public final class ReplayArtifactWriter {
@@ -45,7 +45,7 @@ public final class ReplayArtifactWriter {
                 ReplayFactsCodec.toBytes(AiReplayFacts.fromResult(result)));
     }
 
-    /** 写 map-overview.json；overview == null（capability unavailable）时跳过（plan §23）。 */
+    /** 写 map-overview.json；overview == null（capability unavailable）时跳过。 */
     public static void writeMapOverview(final Path jobDir, final int sourceIndex,
                                         final MapOverview overview) throws IOException {
         if (overview == null) {

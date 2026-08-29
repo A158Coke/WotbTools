@@ -222,7 +222,7 @@ class AiReplayAnalysisServiceTest {
         assertTrue(req.systemPrompt().contains("资深团队教练"));
         assertTrue(req.systemPrompt().contains("不可信数据"));
         assertTrue(teamLastBody().contains("teamDisplayLabel="),
-                "header must carry teamDisplayLabel (PR #103 review BLOCKER A)");
+                "header must carry teamDisplayLabel ()");
         assertFalse(teamLastBody().contains("teamLabel="),
                 "old teamLabel= internal header must be replaced by teamDisplayLabel=");
         assertTrue(teamLastBody().contains("opponentDisplayLabel="),
@@ -269,7 +269,7 @@ class AiReplayAnalysisServiceTest {
                         .getFirst());
         final var result = service.analyzeSingleTeamContext(context);
         assertTrue(result.analysis().startsWith("team review"));
-        // PR #103 最终收尾 BLOCKER A（生产装配输出，测试 E）：最终 analysis 不得出现
+        // （生产装配输出，测试 E）：最终 analysis 不得出现
         // 逐人贡献 / P1（ / P2（ / P3（ / 置信度 / PARTIAL / 团队剖析 header / 重复胜负
         assertTrue(result.analysis().contains("## 高贡献者"),
                 "有 MVP 时必须输出高贡献者块: " + result.analysis());

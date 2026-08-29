@@ -15,7 +15,7 @@ import java.util.stream.IntStream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 全局 ReplayParseScheduler 测试（plan §83：concurrency / single large job / fairness / cancellation / shutdown）。 */
+/** 全局 ReplayParseScheduler 测试（concurrency / single large job / fairness / cancellation / shutdown）。 */
 class ReplayParseSchedulerTest {
 
     private ReplayParseScheduler scheduler;
@@ -172,7 +172,7 @@ class ReplayParseSchedulerTest {
         scheduler.close(); // 幂等
     }
 
-    // ---- BLOCKER 1：多线程 submit / 多 worker completion / submit+completion 竞态 / 取消竞态 / 公平性 ----
+    // ---- 多线程 submit / 多 worker completion / submit+completion 竞态 / 取消竞态 / 公平性 ----
 
     @Test
     void concurrentSubmitsNeverExceedMaxConcurrentAndRunAll() throws Exception {

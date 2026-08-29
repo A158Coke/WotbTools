@@ -22,7 +22,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Export Job HTTP 边界契约回归（BLOCKER 2：Export 收口 Dataset-only）。
+ * Export Job HTTP 边界契约回归（Export 收口 Dataset-only）。
  *
  * <p>契约：POST /api/replay/export-jobs 只接受 mode / processingJobId / teamNames，
  * 不再接受 replay files（无 multipart 首传路径）；processingJobId 缺失/空 → 410
@@ -71,7 +71,7 @@ class ReplayExportJobControllerContractTest {
 
     @Test
     void missingProcessingJobIdIsRejectedAsGone() throws Exception {
-        // BLOCKER 2：无 processingJobId 的 create 不得再被当作 multipart 首传——必须稳定 410。
+        // 无 processingJobId 的 create 不得再被当作 multipart 首传——必须稳定 410。
         mvc.perform(post("/api/replay/export-jobs?mode=aggregate"))
                 .andExpect(status().isGone());
         verify(service).createJob(eq("aggregate"), isNull(), isNull());
