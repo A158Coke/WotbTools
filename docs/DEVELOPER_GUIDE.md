@@ -220,19 +220,17 @@ Replay/管理宽表必须保持高 information density；允许横向滚动，�
 
 Showcase Topbar 为 60px。跨页面高优先级修复集中在 `showcase-regressions.css`，该文件最后加载，只用于布局/叠层 regression guard，不承载主题状态。
 
-### Replay Workspace
+### Replay capabilities
 
-`?view=replay` 是统一回放工作台。选择 replay 后提供三个并列一级能力：
-
-1. **解析预览**：支持批量。
-2. **战局回放**：单场能力。
-3. **AI 复盘**：单场能力。
+`?view=replay` 专注批量解析、结果预览和汇总；AI 复盘与战局重建分别注册为
+`?view=ai-review`、`?view=battle-playback` 独立能力页。解析页的具体 Battle 通过
+内存 `ReplayDatasetRef = { processingJobId, sourceId }` 交接，三者继续消费同一
+`ProcessedDataset`，不按文件名推断身份，也不重复创建 Processing Job。
 
 规则：
 
-- 单文件：AI/Playback 可直接进入，不要求先看赛果。
-- 多文件：必须显式选择目标 replay；禁止默认/fallback 第一场。
-- 目标 replay 被删除后选择立即失效，不得改指其它文件。
+- 独立能力页只接受单个 replay；多文件选择会给出明确提示。
+- 从解析页进入 AI/Playback 时不显示上传器，直接使用权威 sourceId；刷新或引用过期后回到可重新上传状态。
 - 解析后的 Aggregate/Summary 不代表某一场 battle；结果 toolbar 的 battle-level shortcut 只在具体 battle tab 出现。
 - League 模式的汇总人数读取 `league.playerSummaries.length`；普通模式读取 `aggregate.length`。
 
@@ -253,13 +251,15 @@ Processing/Export task notification 必须低于 Modal stacking level；移动�
   `docs/WotBTools_League_Rating_V5.md`，canonical 单一事实源；ReplayPage League 模式
   「算法说明」按钮跳转进入，返回时经 KeepAlive 保留解析状态）。
 - `?view=playback-qa`：隐藏 QA 页（admin）。
+- `?view=ai-review`：AI 复盘独立能力页（登录后使用）。
+- `?view=battle-playback`：战局重建独立能力页（登录后使用）。
 - `?view=rating-v2`：隐藏历史 Rating V2 灰度页（仅 `wotbtools-admin`，只读 READY Processing Job）。
 
-旧 `?view=leaderboard` canonicalize 到 `hof`；旧 `?view=extended` / `?view=reconstruction` canonicalize 到 `replay`。
+旧 `?view=leaderboard` canonicalize 到 `hof`；旧 `?view=extended` canonicalize 到 `replay`；旧 `?view=reconstruction` canonicalize 到 `battle-playback`。
 
 ### AI Review / Battle Playback
 
-主入口在 `?view=replay` 的 Battle Workspace：`ReplayPage` 下半部分原地切换「解析结果 / AI 复盘 / 战局回放」三个面板（`v-show` 保持状态，不跨视图跳转）。`AiReviewPanel`（SSE 分析流 + 结果）与 `BattlePlaybackPanel`（`/api/replay/map-overview` + MapOverview）是单一事实源实现，二者复用同一 Processing Dataset（processingJobId + sourceId）、绝不 multipart 重传/重解析；旧 `?view=reconstruction` 已合并到 `?view=replay`。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，由 BlitzKit 确定性生成，production 不访问 BlitzKit。
+`AiReviewPage` 与 `BattlePlaybackPage` 仅负责能力页生命周期、登录门控和 Dataset handoff，核心实现仍由 `AiReviewPanel`（SSE 分析流 + 结果）与 `BattlePlaybackPanel`（cached map-overview + MapOverview）提供。二者复用同一 Processing Dataset（processingJobId + sourceId）、绝不 multipart 重传/重解析。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，由 BlitzKit 确定性生成，production 不访问 BlitzKit。
 
 地图鸟瞰/战局回放契约见 `docs/features/battle-playback.md`；AI 双 Call、Team Review、Evidence/Validator 契约见 `docs/architecture/ai-review.md` 与 `docs/features/team-ai-review.md`。
 

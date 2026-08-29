@@ -121,6 +121,7 @@ public final class Replays {
             seen.put(aid, entry.sourceName());
             res.battles.add(battle);
             res.battleSourceNames.add(entry.sourceName());
+            res.battleSourceIds.add("r" + entry.sourceIndex());
             if (log != null) {
                 log.accept("[读取] " + entry.sourceName() + "  地图:" + battle.mapName + "  玩家:" + battle.nPlayers());
             }

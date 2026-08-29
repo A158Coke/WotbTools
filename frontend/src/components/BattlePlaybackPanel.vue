@@ -1,11 +1,10 @@
 <!--
-  战局回放 / 战局重建 Workspace 面板（单页 Workspace 改造）。
+  战局回放 / 战局重建能力面板。
   Dataset-only：读已解析 Processing Job 的 cached map-overview.json（processingJobId + sourceId），
   不重新上传 replay / 不重新 full process（multipart map-overview 已随 /api/replay/map-overview 废弃为 410）。
   热力/路线/战局回放（MapOverview）。与 AI 复盘解耦——不想跑 AI 复盘时也能看图。
   目标文件由父组件以 prop 传入；file identity 与「是否开始加载」解耦：仅当宿主声明
-  active=true（战局回放 capability 已进入，如 ReplayPage 切到 playback tab）且该文件尚未
-  尝试加载时才自动请求 cached map-overview；capability 未进入（active=false）时不请求；手动按钮仅用于重试 / 用户主动加载当前 Dataset artifact（宿主为 ReplayPage Workspace，无 standalone host）。
+  active=true 且该文件尚未尝试加载时才自动请求 cached map-overview；手动按钮仅用于重试。
   seekTo 支持 AI 报告时间链接（未加载先拉取、自动展开折叠，MapOverview 收到 seek 后切回放视图）。
 -->
 <script setup>
@@ -13,7 +12,6 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { localizeAiError, isRecoverableDatasetCode } from '../utils/reconstruction-analysis.js'
-import { fileKey } from '../utils/helpers.js'
 import MapOverview from './MapOverview.vue'
 
 const props = defineProps({
@@ -23,7 +21,7 @@ const props = defineProps({
   processingJobId: { type: String, default: null },
   sourceId: { type: String, default: null },
   /** 宿主声明「战局回放 capability 已进入」：仅当 active=true 且该文件尚未尝试加载时自动请求
-   * （ReplayPage 传入 workspaceTab === 'playback'）。
+   * （独立 BattlePlaybackPage 传入 active=true）。
    * 不再把「file prop 变化」当作「用户要求加载 playback」——两个状态相互独立。 */
   active: { type: Boolean, default: false },
   /** AI 报告时间跳转（秒）；宿主切换到本面板后传入。 */
@@ -38,7 +36,7 @@ const { t } = useI18n()
 const { token, ensureToken, login } = useAuth()
 
 /** Dataset 就绪守卫：战局回放只有拿到 authoritative processingJobId+sourceId 才读 cached artifact。 */
-const datasetReady = computed(() => !!props.file && !!props.processingJobId && !!props.sourceId)
+const datasetReady = computed(() => !!props.processingJobId && !!props.sourceId)
 
 // 统一的受保护请求：确保带上有效的 Keycloak Bearer Token（/api/replay/* 需要角色），
 // 并统一处理 token 刷新失败 / 401 / 403。
@@ -69,7 +67,6 @@ const mapError = ref('')
 const mapSeek = ref(null)
 // 地图区块折叠状态（默认展开）；折叠用 v-show 不销毁 MapOverview，保留视图/播放器状态。
 const mapOpen = ref(true)
-const mapPanelEl = ref(null)
 // 换文件竞态防护：每次请求独占一个 generation（递增序号 + AbortController）；
 // 文件变化（resetMap）或组件真正卸载时递增序号并 abort 旧请求，
 // 旧请求在成功/失败/finally 写状态前必须校验序号，绝不覆盖新文件的 mapOverview/mapError/mapLoaded/mapLoading。
@@ -82,7 +79,7 @@ let mapAbortController = null
  * 旧请求（含 AbortError）不得影响新文件的状态。
  */
 async function loadMapOverview() {
-  if (mapLoading.value || !props.file) return
+  if (mapLoading.value) return
   // Dataset 路径：必须携带 processingJobId+sourceId，绝不回退 multipart。
   // 数据集未就绪属于状态机问题（PREPARING_DATASET）：不尝试加载、不设裸错误码；datasetReady 后自动重试。
   if (!datasetReady.value) return
@@ -155,14 +152,13 @@ function toggleMap() {
 }
 
 /**
- * effective Dataset identity：file + processingJobId + sourceId 三者共同
- * 决定「当前地图属于谁」。任一变化都必须真正 reset（abort 在途请求、清空已加载的旧 map、
+ * effective Dataset identity：processingJobId + sourceId 共同决定「当前地图属于谁」。任一变化
+ * 都必须真正 reset（abort 在途请求、清空已加载的旧 map、
  * 解除 mapLoaded 阻塞），否则错误 Dataset A 的已加载地图会在 B 身份下继续显示。
  * 单一 watcher 同时避免 file watcher + dataset watcher 对同一变化的双重请求。
  */
 function effectiveDatasetKey() {
-  const f = props.file
-  return `${f ? fileKey(f) : ''}|${props.processingJobId || ''}|${props.sourceId || ''}`
+  return `${props.processingJobId || ''}|${props.sourceId || ''}`
 }
 
 watch(effectiveDatasetKey, () => {
@@ -180,7 +176,7 @@ watch(() => props.active, () => {
  * + 无在途请求。同一文件已加载（或已尝试失败/204）后再次进入不重复请求；手动按钮仍可重试。
  */
 function maybeAutoLoadMap() {
-  if (props.file && props.active && !mapLoaded.value && !mapLoading.value) {
+  if (props.active && props.processingJobId && props.sourceId && !mapLoaded.value && !mapLoading.value) {
     loadMapOverview()
   }
 }
@@ -191,7 +187,7 @@ function maybeAutoLoadMap() {
  * 写回同一数值：连续点击同一时间戳（值不变）也会触发子组件 watch，播放器被拖走后仍会重新 seek。
  */
 watch(() => props.seekTo, async (sec) => {
-  if (!props.file || !Number.isFinite(sec)) return
+  if (!Number.isFinite(sec)) return
   if (!mapOverview.value && !mapLoading.value) {
     await loadMapOverview()
   }
@@ -213,8 +209,8 @@ onBeforeUnmount(() => {
 
 <template>
   <div>
-    <p v-if="!file" class="ws-note">{{ $t('workspace.playback_empty') }}</p>
-    <div v-else class="panel map-panel" data-test="map-panel" ref="mapPanelEl">
+    <p v-if="!file && !datasetReady" class="ws-note">{{ $t('workspace.playback_empty') }}</p>
+    <div v-else class="panel map-panel" data-test="map-panel">
       <!-- dataset 未就绪（PREPARING_DATASET / FAILURE）：不读 cached artifact，显示准备/失败状态 -->
       <div v-if="!datasetReady" class="map-dataset-status" data-test="map-dataset-status">
         <span v-if="!datasetError" class="map-status-spinner" aria-hidden="true"></span>

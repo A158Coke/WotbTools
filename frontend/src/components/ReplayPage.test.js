@@ -1207,7 +1207,7 @@ describe('ReplayPage PNG export', () => {
 })
 
 
-describe('ReplayPage Battle context actions（V2：登录门控 + Workspace 原地切换）', () => {
+describe.skip('ReplayPage Battle context actions（旧 Workspace，已迁移至独立 capability views）', () => {
   function makeRespWithSource() {
     return {
       aggregate: [{ cells: { nickname: 'Player1', damage_dealt: 5000 } }],
@@ -1306,7 +1306,7 @@ describe('ReplayPage Battle context actions（V2：登录门控 + Workspace 原�
   })
 })
 
-describe('ReplayPage 单页 Workspace（解析结果 / AI 复盘 / 战局回放 原地切换）', () => {
+describe.skip('ReplayPage 单页 Workspace（已删除：AI/Playback 为独立 views）', () => {
   function mountWithFiles(files, resp = null) {
     state.init = { activeTab: 'aggregate', resp, error: '', loading: false, locale: 'en', files }
     return mountPage({ auth: { authenticated: true, login: vi.fn() } })
@@ -1394,7 +1394,7 @@ describe('ReplayPage 单页 Workspace（解析结果 / AI 复盘 / 战局回放 
     expect(panelDisplay(wrapper, 'workspace-playback-panel')).toBe('none')
   })
 })
-describe('ReplayPage Workspace target resolution（唯一文件自动定位 / 多文件禁 fallback / 登录门禁统一）', () => {
+describe.skip('ReplayPage Workspace target resolution（已删除：独立 capability 页负责目标选择）', () => {
   function makeBattleResp(sourceName) {
     return {
       aggregate: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }],
@@ -1531,7 +1531,7 @@ describe('ReplayPage Workspace target resolution（唯一文件自动定位 / �
   })
 })
 
-describe('ReplayPage playback 加载门控（file identity 与 active 解耦，真实 BattlePlaybackPanel）', () => {
+describe.skip('ReplayPage playback 加载门控（已迁移至 BattlePlaybackPage）', () => {
   /** /api/replay/map-overview 成功响应 mock（Playback Dataset 契约）。 */
   function mapJsonResponse(overview) {
     return { ok: true, status: 200, json: vi.fn().mockResolvedValue(overview) }
@@ -2562,7 +2562,7 @@ describe('ReplayPage League failure UX separation', () => {
 
 // ---- Workspace Dataset stale response ownership（generation/revision）----
 
-describe('ReplayPage Workspace Dataset generation ownership', () => {
+describe.skip('ReplayPage Workspace Dataset generation ownership（已迁移至独立 capability 页）', () => {
   function mountWithFilesLocal(files) {
     state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en', files }
     return mountPage({ auth: { authenticated: true, login: vi.fn() } })
