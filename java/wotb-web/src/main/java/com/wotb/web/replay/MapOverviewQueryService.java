@@ -1,6 +1,7 @@
 package com.wotb.web.replay;
 
 import com.wotb.web.replay.dto.MapOverview;
+import com.wotb.web.replay.dto.BattlePlaybackDataset;
 import com.wotb.web.replay.job.ReplayArtifactWriter;
 import com.wotb.web.replay.job.ReplayProcessingJob;
 import com.wotb.web.replay.job.ReplayProcessingJobStore;
@@ -54,6 +55,34 @@ public class MapOverviewQueryService {
             // 或 JSON 解码/反序列化失败（permission / disk I/O / corrupt JSON）。这些<b>不是</b>
             // 「job 不存在」——映射为不可恢复的 503 DATASET_UNAVAILABLE，绝不 JOB_NOT_FOUND
             // （否则前端会误触发 exactly-once full-process recovery，浪费 CPU 并掩盖真实存储故障）。
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "DATASET_UNAVAILABLE");
+        } finally {
+            processingStore.release(processingJobId);
+        }
+    }
+
+    /** V2 battle playback dataset 路径：读 cached battle-playback-v2.json，不重新 full process。 */
+    public BattlePlaybackDataset buildBattlePlaybackFromDataset(final String processingJobId, final int sourceIndex) {
+        if (processingJobId == null || processingJobId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "DATASET_REFERENCE_REQUIRED");
+        }
+        final ReplayProcessingJob job = processingStore.acquireForSource(processingJobId);
+        if (job == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "JOB_NOT_FOUND");
+        }
+        try {
+            final ReplayProcessingJob.Snapshot snap = job.snapshot();
+            if (sourceIndex < 0 || sourceIndex >= snap.sources().size()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SOURCE_NOT_FOUND");
+            }
+            final ReplayProcessingJob.SourceState state = snap.sources().get(sourceIndex);
+            if (state.status() != ReplayProcessingJob.SourceStatus.READY) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        state.status() == ReplayProcessingJob.SourceStatus.FAILED
+                                ? "SOURCE_PROCESSING_FAILED" : "SOURCE_NOT_READY");
+            }
+            return ReplayArtifactWriter.readBattlePlaybackV2(processingStore.jobDir(processingJobId), sourceIndex);
+        } catch (final java.io.IOException | tools.jackson.core.JacksonException e) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "DATASET_UNAVAILABLE");
         } finally {
             processingStore.release(processingJobId);

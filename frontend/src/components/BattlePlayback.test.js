@@ -107,6 +107,50 @@ function mountPlayback(overview = makeOverview(), seekTo = null) {
   })
 }
 
+function makePlaybackV2() {
+  return {
+    durationSec: 60,
+    vehicles: [
+      {
+        accountId: 1001, playerName: 'You', tankId: 1, tankName: 'Maus', tankClass: '', team: 1, friendly: true,
+        loadout: null,
+        positionSegments: [
+          { knowledge: 'OBSERVED', startSec: 0, endSec: 60,
+            samples: [{ timeSec: 0, x: 0, y: 0, knowledge: 'OBSERVED' }, { timeSec: 60, x: 60, y: 60, knowledge: 'OBSERVED' }] },
+        ],
+        orientationSegments: [
+          { knowledge: 'CURRENT', startSec: 0, endSec: 60,
+            samples: [{ timeSec: 0, hullYawDeg: 0, turretRelativeYawDeg: 0 }, { timeSec: 60, hullYawDeg: 90, turretRelativeYawDeg: 30 }] },
+        ],
+        healthTransitions: [{ timeSec: 0, currentHp: 1500, knowledge: 'CURRENT', displayCapacityHp: 1500, source: 'EXACT_BATTLE_EVENT' }],
+        lifeTransitions: [],
+        consumableTransitions: [],
+        moduleCrewTransitions: [],
+      },
+      {
+        accountId: 2001, playerName: 'EnemyA', tankId: 2, tankName: 'T49', tankClass: '', team: 2, friendly: false,
+        loadout: { consumables: ['REPAIR_KIT', null, 'ADRENALINE'], consumableWireCodes: [0x0D, 0x77, 0x09],
+          provisions: ['SANDBAG_ARMOR', null, null], provisionWireCodes: [0x44, 0x10, 0x11],
+          equipmentIds: [100, 108, 114, 104, 111, 117, 106, 113, 101] },
+        positionSegments: [
+          { knowledge: 'OBSERVED', startSec: 10, endSec: 20,
+            samples: [{ timeSec: 10, x: -50, y: -50, knowledge: 'OBSERVED' }, { timeSec: 20, x: -60, y: -60, knowledge: 'OBSERVED' }] },
+        ],
+        orientationSegments: [
+          { knowledge: 'CURRENT', startSec: 10, endSec: 20,
+            samples: [{ timeSec: 10, hullYawDeg: 10, turretRelativeYawDeg: 5 }, { timeSec: 20, hullYawDeg: 30, turretRelativeYawDeg: 20 }] },
+        ],
+        healthTransitions: [{ timeSec: 10, currentHp: 1200, knowledge: 'CURRENT', displayCapacityHp: 1200, source: 'EXACT_BATTLE_EVENT' }],
+        lifeTransitions: [{ timeSec: 25, lifeState: 'DESTROYED', destroyedKnownAtSec: 25 }],
+        consumableTransitions: [{ timeSec: 12, logicalItemId: 'REPAIR_KIT', state: 'ACTIVATED', wireCode: 0x0D }],
+        moduleCrewTransitions: [],
+      },
+    ],
+    shots: [],
+    pointsSamples: [],
+  }
+}
+
 let rafCb
 
 function stubRaf() {
@@ -140,6 +184,20 @@ describe('BattlePlayback', () => {
     const wrapper = mountPlayback(makeOverview(), 30)
     await flushPromises()
     expect(wrapper.text()).toContain('00:30 / 01:00')
+  })
+
+  it('drives marker + inspector from V2 canonical tracks (AC-10)', async () => {
+    stubRaf()
+    const wrapper = mount(BattlePlayback, {
+      props: { overview: makeOverview(), playbackV2: makePlaybackV2(), seekTo: 30 },
+      global: { mocks: { $t: i18n.t } },
+    })
+    await flushPromises()
+    // t=30：EnemyA 在 V2 中已 DESTROYED（lifeTransition 25s）→ 存在 destroyed marker
+    // （legacy overview 里 EnemyA deathSec=null，因此 destroyed 只能来自 V2 lifeTransition，
+    //  证明 V2 canonical fact 驱动渲染，满足 AC-10）。
+    const destroyedMarkers = wrapper.findAll('.pb-vehicle.pb-destroyed')
+    expect(destroyedMarkers.length).toBeGreaterThan(0)
   })
 
   it('play advances time via RAF', async () => {
